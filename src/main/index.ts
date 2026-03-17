@@ -12,6 +12,7 @@ import { registerApiKeyHandlers } from './ipc/handlers/api-key.handler'
 import { registerDialogHandlers } from './ipc/handlers/dialog.handler'
 import { registerMessageHandlers } from './ipc/handlers/message.handler'
 import { registerRoleHandlers } from './ipc/handlers/role.handler'
+import { registerProviderConfigHandlers } from './ipc/handlers/provider-config.handler'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -61,6 +62,7 @@ function initIpcHandlers(): void {
   registerDialogHandlers()
   registerMessageHandlers()
   registerRoleHandlers()
+  registerProviderConfigHandlers()
 }
 
 // 应用就绪

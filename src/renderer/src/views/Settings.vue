@@ -6,264 +6,391 @@
     </div>
 
     <div class="settings-content">
-      <el-tabs v-model="activeTab" tab-position="left">
-        <el-tab-pane label="基本设置" name="general">
+      <el-tabs v-model="activeTab" tab-position="left" class="settings-tabs">
+        <!-- 外观设置 -->
+        <el-tab-pane label="外观设置" name="appearance">
           <div class="settings-section">
-            <h3>外观</h3>
-            <el-form label-width="100px">
-              <el-form-item label="主题">
-                <el-radio-group v-model="settings.theme" @change="saveSettings">
-                  <el-radio value="light">浅色</el-radio>
-                  <el-radio value="dark">深色</el-radio>
-                  <el-radio value="auto">跟随系统</el-radio>
-                </el-radio-group>
-              </el-form-item>
+            <h3>主题颜色</h3>
+            <p class="section-desc">选择你喜欢的主题颜色，让界面更具个性化</p>
 
+            <div class="theme-grid">
+              <div
+                v-for="theme in availableThemes"
+                :key="theme.id"
+                class="theme-card"
+                :class="{ active: currentTheme === theme.id }"
+                @click="changeTheme(theme.id)"
+              >
+                <div class="theme-preview" :style="{ background: theme.gradient }">
+                  <div class="theme-preview-inner">
+                    <div class="preview-circle"></div>
+                    <div class="preview-lines">
+                      <div class="preview-line"></div>
+                      <div class="preview-line short"></div>
+                    </div>
+                  </div>
+                  <transition name="check">
+                    <div v-if="currentTheme === theme.id" class="theme-check">
+                      <el-icon :size="20"><Check /></el-icon>
+                    </div>
+                  </transition>
+                </div>
+                <div class="theme-info">
+                  <span class="theme-name">{{ themeNames[theme.id] || theme.id }}</span>
+                  <span class="theme-desc">{{ theme.description }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h3>界面设置</h3>
+            <el-form label-width="100px">
               <el-form-item label="语言">
-                <el-select v-model="settings.language" @change="saveSettings">
-                  <el-option label="简体中文" value="zh-CN" />
-                  <el-option label="English" value="en-US" />
+                <el-select v-model="settings.language" @change="saveSettings" class="form-select">
+                  <el-option
+                    v-for="(config, key) in languageConfig"
+                    :key="key"
+                    :label="config.label"
+                    :value="key"
+                  />
                 </el-select>
               </el-form-item>
 
               <el-form-item label="字体大小">
-                <el-radio-group v-model="settings.fontSize" @change="saveSettings">
-                  <el-radio value="small">小</el-radio>
-                  <el-radio value="medium">中</el-radio>
-                  <el-radio value="large">大</el-radio>
+                <el-radio-group v-model="settings.fontSize" @change="saveSettings" class="radio-group">
+                  <el-radio-button value="small">小</el-radio-button>
+                  <el-radio-button value="medium">中</el-radio-button>
+                  <el-radio-button value="large">大</el-radio-button>
                 </el-radio-group>
               </el-form-item>
             </el-form>
           </div>
         </el-tab-pane>
 
-        <el-tab-pane label="API 密钥" name="apiKeys">
+        <!-- AI 模型配置 -->
+        <el-tab-pane label="AI 模型配置" name="aiModels">
           <div class="settings-section">
-            <h3>API 密钥管理</h3>
-            <div class="api-key-list">
+            <div class="section-header">
+              <div>
+                <h3>提供商配置</h3>
+                <p class="section-desc">配置各 AI 服务提供商的 API 密钥和参数</p>
+              </div>
+              <el-button type="primary" @click="showAddDialog = true">
+                <el-icon><Plus /></el-icon>
+                添加提供商
+              </el-button>
+            </div>
+
+            <!-- 已配置的提供商列表 -->
+            <div v-if="providerConfigs.length > 0" class="provider-config-list">
               <div
-                v-for="provider in apiProviders"
-                :key="provider.id"
-                class="api-key-item"
+                v-for="config in providerConfigs"
+                :key="config.id"
+                class="provider-config-item"
+                :class="{ disabled: !config.isEnabled, 'is-default': config.isDefault }"
               >
-                <div class="provider-info">
-                  <el-icon :size="20"><Key /></el-icon>
-                  <span class="provider-name">{{ provider.name }}</span>
-                  <el-tag v-if="provider.configured" type="success" size="small">已配置</el-tag>
-                  <el-tag v-else type="info" size="small">未配置</el-tag>
+                <div class="config-icon">
+                  {{ getTemplateIcon(config.templateId) }}
                 </div>
-                <div class="provider-actions">
-                  <el-button size="small" @click="openApiKeyDialog(provider)">
-                    {{ provider.configured ? '编辑' : '配置' }}
-                  </el-button>
+                <div class="config-info">
+                  <div class="config-header">
+                    <span class="config-name">{{ config.name }}</span>
+                    <el-tag v-if="config.isDefault" type="success" size="small" effect="plain">
+                      默认
+                    </el-tag>
+                    <el-tag
+                      :type="config.testResult === 'success' ? 'success' : config.testResult === 'failed' ? 'danger' : 'info'"
+                      size="small"
+                      effect="light"
+                    >
+                      {{ config.testResult === 'success' ? '已验证' : config.testResult === 'failed' ? '验证失败' : '未验证' }}
+                    </el-tag>
+                  </div>
+                  <div class="config-details">
+                    <span class="config-template">{{ getTemplateName(config.templateId) }}</span>
+                    <span v-if="config.baseUrl" class="config-endpoint">
+                      端点: {{ config.baseUrl }}
+                    </span>
+                    <span v-if="config.enabledModels && config.enabledModels.length > 0" class="config-models">
+                      模型: {{ config.enabledModels.length }}
+                    </span>
+                  </div>
+                </div>
+                <div class="config-actions">
+                  <el-switch v-model="config.isEnabled" @change="toggleConfigEnabled(config)" />
+                  <el-button size="small" @click="editConfig(config)">编辑</el-button>
                   <el-button
-                    v-if="provider.configured"
+                    v-if="!config.isDefault"
                     size="small"
-                    type="danger"
+                    type="primary"
                     text
-                    @click="deleteApiKey(provider)"
+                    @click="setDefaultConfig(config)"
                   >
+                    设为默认
+                  </el-button>
+                  <el-button size="small" type="danger" text @click="deleteConfig(config)">
                     删除
                   </el-button>
                 </div>
               </div>
             </div>
+
+            <!-- 空状态 -->
+            <div v-else class="empty-state">
+              <div class="empty-icon">🔌</div>
+              <p>还没有配置任何 AI 提供商</p>
+              <el-button type="primary" @click="showAddDialog = true">
+                添加第一个提供商
+              </el-button>
+            </div>
           </div>
         </el-tab-pane>
 
-        <el-tab-pane label="数据管理" name="data">
+        <!-- 数据管理 -->
+        <el-tab-pane label="数据路径" name="data">
           <div class="settings-section">
-            <h3>数据管理</h3>
+            <h3>数据路径</h3>
             <el-form label-width="100px">
-              <el-form-item label="数据路径">
-                <el-input v-model="dataPath" disabled>
+              <el-form-item label="数据存储">
+                <el-input v-model="dataPath" disabled class="path-input">
                   <template #append>
-                    <el-button @click="openDataFolder">打开目录</el-button>
+                    <el-button @click="openDataFolder">
+                      <el-icon><FolderOpened /></el-icon>
+                      打开目录
+                    </el-button>
                   </template>
                 </el-input>
               </el-form-item>
-              <el-form-item label="数据备份">
-                <el-button @click="exportData">导出数据</el-button>
-                <el-button @click="importData">导入数据</el-button>
-              </el-form-item>
-              <el-form-item label="清除数据">
-                <el-button type="danger" @click="clearAllData">清除所有数据</el-button>
-              </el-form-item>
             </el-form>
+          </div>
+
+          <div class="settings-section">
+            <h3>数据操作</h3>
+            <div class="action-buttons">
+              <el-button @click="exportData" class="action-btn">
+                <el-icon><Download /></el-icon>
+                导出数据
+              </el-button>
+              <el-button @click="importData" class="action-btn">
+                <el-icon><Upload /></el-icon>
+                导入数据
+              </el-button>
+              <el-button type="danger" @click="clearAllData" class="action-btn danger">
+                <el-icon><Delete /></el-icon>
+                清除所有数据
+              </el-button>
+            </div>
           </div>
         </el-tab-pane>
 
+        <!-- 关于 -->
         <el-tab-pane label="关于" name="about">
-          <div class="settings-section">
-            <h3>关于 The Bot</h3>
-            <div class="about-info">
-              <p><strong>版本:</strong> 0.1.0</p>
-              <p><strong>描述:</strong> AI 工具箱 - 集成多种 AI 能力的跨平台桌面应用</p>
-              <p><strong>作者:</strong> Daoge</p>
-              <p><strong>许可证:</strong> MIT</p>
+          <div class="settings-section about-section">
+            <div class="app-logo">
+              <div class="logo-circle">
+                <span>TB</span>
+              </div>
+            </div>
+            <h2 class="app-title gradient-text">The Bot</h2>
+            <p class="app-version">版本 0.1.0</p>
+            <p class="app-desc">AI 工具箱 - 集成多种 AI 能力的跨平台桌面应用</p>
+
+            <div class="info-list">
+              <div class="info-item">
+                <span class="info-label">作者</span>
+                <span class="info-value">Daoge</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">许可证</span>
+                <span class="info-value">MIT</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">技术栈</span>
+                <span class="info-value">Electron + Vue3 + TypeScript</span>
+              </div>
             </div>
           </div>
         </el-tab-pane>
       </el-tabs>
     </div>
 
-    <!-- API 密钥配置对话框 -->
-    <el-dialog
-      v-model="apiKeyDialogVisible"
-      :title="`配置 ${currentProvider?.name} API 密钥`"
-      width="500px"
-    >
-      <el-form label-width="100px">
-        <el-form-item label="API 密钥">
-          <el-input
-            v-model="apiKeyForm.key"
-            type="password"
-            show-password
-            placeholder="请输入 API 密钥"
-          />
-        </el-form-item>
-        <el-form-item label="自定义端点">
-          <el-input
-            v-model="apiKeyForm.endpoint"
-            placeholder="可选，留空使用默认端点"
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="apiKeyDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveApiKey">保存</el-button>
-      </template>
-    </el-dialog>
+    <!-- 添加/编辑提供商对话框 -->
+    <AddProviderDialog
+      v-model="showAddDialog"
+      :edit-config="editingConfig"
+      @saved="loadProviderConfigs"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Key } from '@element-plus/icons-vue'
+import { Check, FolderOpened, Download, Upload, Delete, Plus } from '@element-plus/icons-vue'
+import { useTheme, availableThemes, type ThemeConfig } from '@/composables/useTheme'
+import { useAppSettings, fontSizeConfig, languageConfig, type FontSize, type Language } from '@/composables/useAppSettings'
+import AddProviderDialog from '@/components/settings/AddProviderDialog.vue'
+import type {
+  ProviderTemplate,
+  UserProviderConfig
+} from '../../../shared/types/provider-template.types'
+
+// 主题名称映射
+const themeNames: Record<string, string> = {
+  techBlue: '科技蓝',
+  emerald: '翡翠绿',
+  purple: '紫罗兰',
+  flame: '火焰橙',
+  cosmic: '深空紫',
+  midnight: '暗夜黑',
+  chineseRed: '朱砂红',
+  jadeGreen: '翡翠青',
+  inkBlue: '黛蓝',
+  goldAmber: '琥珀黄',
+  plumPurple: '梅子青'
+}
+
+// 主题
+const { currentTheme, setTheme } = useTheme()
+
+// 应用设置
+const { settings: appSettings, loadSettings: loadAppSettings, setFontSize, setLanguage } = useAppSettings()
 
 // 当前标签
-const activeTab = ref('general')
+const activeTab = ref('appearance')
 
-// 基本设置
+// 本地设置状态（用于双向绑定）
 const settings = reactive({
-  theme: 'auto' as 'light' | 'dark' | 'auto',
-  language: 'zh-CN',
-  fontSize: 'medium' as 'small' | 'medium' | 'large'
+  language: appSettings.language,
+  fontSize: appSettings.fontSize
 })
 
 // 数据路径
-const dataPath = ref('')
+const dataPath = ref('C:\\Users\\daoge\\AppData\\Roaming\\the_bot')
 
-// API 提供商列表
-const apiProviders = ref([
-  { id: 'openai', name: 'OpenAI', configured: false },
-  { id: 'anthropic', name: 'Anthropic (Claude)', configured: false },
-  { id: 'google', name: 'Google (Gemini)', configured: false },
-  { id: 'deepseek', name: 'DeepSeek', configured: false },
-  { id: 'glm', name: '智谱 AI', configured: false },
-  { id: 'volcengine', name: '火山引擎', configured: false }
-])
+// 提供商配置
+const providerConfigs = ref<UserProviderConfig[]>([])
+const templates = ref<ProviderTemplate[]>([])
+const showAddDialog = ref(false)
+const editingConfig = ref<UserProviderConfig | undefined>(undefined)
 
-// API 密钥对话框
-const apiKeyDialogVisible = ref(false)
-const currentProvider = ref<{ id: string; name: string } | null>(null)
-const apiKeyForm = reactive({
-  key: '',
-  endpoint: ''
-})
-
-// 加载设置
-const loadSettings = async () => {
-  try {
-    const result = await window.electronAPI.settings.get()
-    if (result.success && result.data) {
-      Object.assign(settings, result.data)
-    }
-  } catch (error) {
-    console.error('加载设置失败:', error)
-  }
+// 切换主题
+const changeTheme = async (themeId: string) => {
+  await setTheme(themeId)
+  ElMessage.success('主题已更换')
 }
 
 // 保存设置
 const saveSettings = async () => {
   try {
-    await window.electronAPI.settings.set('theme', settings.theme)
-    await window.electronAPI.settings.set('language', settings.language)
-    await window.electronAPI.settings.set('fontSize', settings.fontSize)
+    // 应用语言设置
+    if (settings.language !== appSettings.language) {
+      await setLanguage(settings.language as Language)
+    }
+    // 应用字体大小设置
+    if (settings.fontSize !== appSettings.fontSize) {
+      await setFontSize(settings.fontSize as FontSize)
+    }
     ElMessage.success('设置已保存')
   } catch (error) {
+    console.error('保存设置失败:', error)
     ElMessage.error('保存设置失败')
   }
 }
 
-// 加载 API 密钥状态
-const loadApiKeys = async () => {
+// 加载模板列表
+const loadTemplates = async () => {
   try {
-    const result = await window.electronAPI.apiKey.list()
-    if (result.success && result.keys) {
-      result.keys.forEach((key) => {
-        const provider = apiProviders.value.find((p) => p.id === key.provider)
-        if (provider) {
-          provider.configured = true
-        }
-      })
+    const result = await window.electronAPI.providerTemplate.list()
+    if (result.success && result.templates) {
+      templates.value = result.templates
     }
   } catch (error) {
-    console.error('加载 API 密钥状态失败:', error)
+    console.error('加载模板列表失败:', error)
   }
 }
 
-// 打开 API 密钥配置对话框
-const openApiKeyDialog = (provider: { id: string; name: string }) => {
-  currentProvider.value = provider
-  apiKeyForm.key = ''
-  apiKeyForm.endpoint = ''
-  apiKeyDialogVisible.value = true
-}
-
-// 保存 API 密钥
-const saveApiKey = async () => {
-  if (!currentProvider.value || !apiKeyForm.key.trim()) {
-    ElMessage.warning('请输入 API 密钥')
-    return
-  }
-
+// 加载提供商配置
+const loadProviderConfigs = async () => {
   try {
-    const result = await window.electronAPI.apiKey.set(
-      currentProvider.value.id,
-      apiKeyForm.key,
-      apiKeyForm.endpoint || undefined
-    )
-    if (result.success) {
-      const provider = apiProviders.value.find((p) => p.id === currentProvider.value!.id)
-      if (provider) {
-        provider.configured = true
-      }
-      apiKeyDialogVisible.value = false
-      ElMessage.success('API 密钥已保存')
+    const result = await window.electronAPI.providerConfig.list()
+    if (result.success && result.configs) {
+      providerConfigs.value = result.configs
     }
   } catch (error) {
-    ElMessage.error('保存 API 密钥失败')
+    console.error('加载提供商配置失败:', error)
   }
 }
 
-// 删除 API 密钥
-const deleteApiKey = async (provider: { id: string; name: string }) => {
+// 获取模板名称
+const getTemplateName = (templateId: string): string => {
+  const template = templates.value.find((t) => t.id === templateId)
+  return template?.name || templateId
+}
+
+// 获取模板图标
+const getTemplateIcon = (templateId: string): string => {
+  const template = templates.value.find((t) => t.id === templateId)
+  return template?.icon || '🔌'
+}
+
+// 切换配置启用状态
+const toggleConfigEnabled = async (config: UserProviderConfig) => {
   try {
-    await ElMessageBox.confirm('确定要删除此 API 密钥吗？', '确认删除', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-      type: 'warning'
+    await window.electronAPI.providerConfig.update(config.id, {
+      isEnabled: config.isEnabled
     })
+    ElMessage.success(config.isEnabled ? '已启用' : '已禁用')
+  } catch (error) {
+    console.error('更新配置失败:', error)
+    config.isEnabled = !config.isEnabled // 回滚
+    ElMessage.error('操作失败')
+  }
+}
 
-    const result = await window.electronAPI.apiKey.delete(provider.id)
+// 设置默认配置
+const setDefaultConfig = async (config: UserProviderConfig) => {
+  try {
+    const result = await window.electronAPI.providerConfig.setDefault(config.id)
     if (result.success) {
-      const p = apiProviders.value.find((p) => p.id === provider.id)
-      if (p) {
-        p.configured = false
+      // 更新本地状态
+      providerConfigs.value.forEach((c) => {
+        c.isDefault = c.id === config.id
+      })
+      ElMessage.success('操作成功')
+    }
+  } catch (error) {
+    console.error('设置默认配置失败:', error)
+    ElMessage.error('操作失败')
+  }
+}
+
+// 编辑配置
+const editConfig = (config: UserProviderConfig) => {
+  editingConfig.value = config
+  showAddDialog.value = true
+}
+
+// 删除配置
+const deleteConfig = async (config: UserProviderConfig) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除该配置吗？ (${config.name})`,
+      '确认删除',
+      {
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        type: 'warning'
       }
-      ElMessage.success('API 密钥已删除')
+    )
+
+    const result = await window.electronAPI.providerConfig.delete(config.id)
+    if (result.success) {
+      await loadProviderConfigs()
+      ElMessage.success('已删除')
+    } else {
+      ElMessage.error(result.error || '操作失败')
     }
   } catch {
     // 用户取消
@@ -272,36 +399,50 @@ const deleteApiKey = async (provider: { id: string; name: string }) => {
 
 // 打开数据目录
 const openDataFolder = () => {
-  ElMessage.info('打开目录功能开发中...')
+  ElMessage.info('功能开发中...')
 }
 
 // 导出数据
 const exportData = () => {
-  ElMessage.info('导出数据功能开发中...')
+  ElMessage.info('功能开发中...')
 }
 
 // 导入数据
 const importData = () => {
-  ElMessage.info('导入数据功能开发中...')
+  ElMessage.info('功能开发中...')
 }
 
 // 清除所有数据
 const clearAllData = async () => {
   try {
-    await ElMessageBox.confirm('确定要清除所有数据吗？此操作不可恢复！', '警告', {
-      confirmButtonText: '确定清除',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
-    ElMessage.info('清除数据功能开发中...')
+    await ElMessageBox.confirm(
+      '确定要清除所有数据吗？此操作不可恢复！',
+      '警告',
+      {
+        confirmButtonText: '确认',
+        cancelButtonText: '取消',
+        type: 'warning',
+        confirmButtonClass: 'el-button--danger'
+      }
+    )
+    ElMessage.info('功能开发中...')
   } catch {
     // 用户取消
   }
 }
 
-onMounted(() => {
-  loadSettings()
-  loadApiKeys()
+// 监听对话框关闭，清除编辑状态
+const handleDialogClose = () => {
+  editingConfig.value = undefined
+}
+
+onMounted(async () => {
+  await loadAppSettings()
+  // 同步本地状态
+  settings.language = appSettings.language
+  settings.fontSize = appSettings.fontSize
+  await loadTemplates()
+  await loadProviderConfigs()
 })
 </script>
 
@@ -310,24 +451,24 @@ onMounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #f5f7fa;
+  background: var(--bg-color-page);
 }
 
 .page-header {
-  padding: 24px;
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
+  padding: 24px 32px;
+  background: var(--bg-color);
+  border-bottom: 1px solid var(--border-color-lighter);
 
   h2 {
     margin: 0 0 8px 0;
     font-size: 24px;
     font-weight: 600;
-    color: #303133;
+    color: var(--text-primary);
   }
 
   p {
     margin: 0;
-    color: #909399;
+    color: var(--text-secondary);
     font-size: 14px;
   }
 }
@@ -337,73 +478,444 @@ onMounted(() => {
   overflow: hidden;
   padding: 24px;
 
-  :deep(.el-tabs) {
+  .settings-tabs {
     height: 100%;
-  }
+    background: var(--bg-color);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: var(--shadow-card);
 
-  :deep(.el-tabs__content) {
-    height: calc(100% - 40px);
-    overflow-y: auto;
-  }
+    :deep(.el-tabs__header) {
+      margin: 0;
+      background: var(--bg-color-page);
+      border-right: 1px solid var(--border-color-lighter);
+    }
 
-  :deep(.el-tabs__item) {
-    height: 48px;
-    line-height: 48px;
+    :deep(.el-tabs__nav-wrap) {
+      height: 100%;
+    }
+
+    :deep(.el-tabs__nav-scroll) {
+      height: 100%;
+      padding: 16px 8px;
+    }
+
+    :deep(.el-tabs__nav) {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    :deep(.el-tabs__item) {
+      height: 44px;
+      line-height: 44px;
+      padding: 0 20px;
+      border-radius: var(--radius-md);
+      transition: all var(--transition-normal);
+      color: var(--text-regular);
+
+      &:hover {
+        color: var(--color-primary);
+        background: var(--bg-color-hover);
+      }
+
+      &.is-active {
+        color: var(--color-primary);
+        background: rgba(var(--color-primary), 0.1);
+        font-weight: 500;
+      }
+    }
+
+    :deep(.el-tabs__content) {
+      height: 100%;
+      padding: 24px 32px;
+      overflow-y: auto;
+    }
+
+    :deep(.el-tab-pane) {
+      height: 100%;
+    }
   }
 }
 
 .settings-section {
-  background: #fff;
-  padding: 24px;
-  border-radius: 8px;
+  margin-bottom: 32px;
 
   h3 {
-    margin: 0 0 20px 0;
+    margin: 0 0 8px 0;
     font-size: 16px;
-    font-weight: 500;
-    color: #303133;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .section-desc {
+    margin: 0 0 20px 0;
+    color: var(--text-secondary);
+    font-size: 13px;
   }
 }
 
-.api-key-list {
+// 主题选择器
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 16px;
+}
+
+.theme-card {
+  cursor: pointer;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: all var(--transition-normal);
+  border: 2px solid transparent;
+  background: var(--bg-color);
+
+  &:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-card-hover);
+  }
+
+  &.active {
+    border-color: var(--color-primary);
+    box-shadow: var(--shadow-glow);
+  }
+}
+
+.theme-preview {
+  height: 100px;
+  position: relative;
+  overflow: hidden;
+}
+
+.theme-preview-inner {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  .preview-circle {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.3);
+  }
+
+  .preview-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .preview-line {
+    height: 8px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.2);
+
+    &.short {
+      width: 60%;
+    }
+  }
+}
+
+.theme-check {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.theme-info {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.theme-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.theme-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+// 提供商配置列表
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+
+  h3 {
+    margin: 0 0 4px 0;
+  }
+
+  .section-desc {
+    margin: 0;
+  }
+}
+
+.provider-config-list {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-.api-key-item {
+.provider-config-item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 16px;
   padding: 16px;
-  border: 1px solid #e4e7ed;
-  border-radius: 8px;
-  transition: all 0.3s ease;
+  background: var(--bg-color-page);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color-lighter);
+  transition: all var(--transition-normal);
 
   &:hover {
-    border-color: #409eff;
+    border-color: var(--color-primary-light);
+    box-shadow: var(--shadow-sm);
+  }
+
+  &.disabled {
+    opacity: 0.6;
+  }
+
+  &.is-default {
+    background: linear-gradient(135deg, rgba(103, 194, 58, 0.05) 0%, rgba(103, 194, 58, 0.02) 100%);
+    border-color: rgba(103, 194, 58, 0.3);
   }
 }
 
-.provider-info {
+.config-icon {
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: center;
+  font-size: 24px;
+  background: var(--bg-color);
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
 }
 
-.provider-name {
+.config-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.config-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.config-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.config-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.config-template {
+  color: var(--text-regular);
+}
+
+.config-endpoint {
+  font-family: monospace;
+}
+
+.config-models {
+  color: var(--color-primary);
+}
+
+.config-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+// 空状态
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: var(--text-secondary);
+
+  .empty-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+  }
+
+  p {
+    margin: 0 0 20px 0;
+    font-size: 14px;
+  }
+}
+
+// 表单样式
+.form-select {
+  width: 200px;
+}
+
+.radio-group {
+  :deep(.el-radio-button__inner) {
+    padding: 8px 20px;
+  }
+}
+
+.path-input {
+  width: 400px;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.action-btn {
+  transition: all var(--transition-normal);
+
+  &:hover {
+    transform: translateY(-2px);
+  }
+
+  &.danger:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(245, 108, 108, 0.3);
+  }
+}
+
+// 关于页面
+.about-section {
+  text-align: center;
+  padding: 40px 0;
+}
+
+.app-logo {
+  margin-bottom: 24px;
+}
+
+.logo-circle {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto;
+  border-radius: var(--radius-xl);
+  background: var(--color-gradient);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-glow);
+  animation: glow-pulse 3s ease-in-out infinite;
+
+  span {
+    font-size: 28px;
+    font-weight: 700;
+    color: #fff;
+  }
+}
+
+.app-title {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0 0 8px 0;
+}
+
+.app-version {
+  color: var(--text-secondary);
+  font-size: 14px;
+  margin: 0 0 8px 0;
+}
+
+.app-desc {
+  color: var(--text-regular);
+  font-size: 14px;
+  margin: 0 0 32px 0;
+}
+
+.info-list {
+  max-width: 400px;
+  margin: 0 auto;
+  text-align: left;
+}
+
+.info-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-color-lighter);
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.info-label {
+  color: var(--text-secondary);
+}
+
+.info-value {
+  color: var(--text-primary);
   font-weight: 500;
 }
 
-.provider-actions {
-  display: flex;
-  gap: 8px;
+// API 对话框
+.api-dialog {
+  :deep(.el-dialog__body) {
+    padding: 20px 24px;
+  }
 }
 
-.about-info {
-  p {
-    margin: 8px 0;
-    color: #606266;
+.api-form {
+  .form-input {
+    width: 100%;
   }
+}
+
+// 动画
+.check-enter-active,
+.check-leave-active {
+  transition: all var(--transition-bounce);
+}
+
+.check-enter-from,
+.check-leave-to {
+  opacity: 0;
+  transform: scale(0.5);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity var(--transition-fast);
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>

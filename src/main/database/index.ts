@@ -14,6 +14,7 @@ import { DialogRepository } from './repositories/dialog.repository'
 import { MessageRepository } from './repositories/message.repository'
 import { RoleRepository } from './repositories/role.repository'
 import { ImageRepository } from './repositories/image.repository'
+import { ProviderConfigRepository } from './repositories/provider-config.repository'
 
 /**
  * 数据库管理器
@@ -31,6 +32,7 @@ export class DatabaseManager {
   public messages: MessageRepository | null = null
   public roles: RoleRepository | null = null
   public images: ImageRepository | null = null
+  public providerConfigs: ProviderConfigRepository | null = null
 
   private constructor() {
     const userDataPath = app.getPath('userData')
@@ -185,6 +187,27 @@ export class DatabaseManager {
       )
     `)
 
+    // 提供商配置表
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS provider_configs (
+        id TEXT PRIMARY KEY,
+        template_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        api_key_encrypted TEXT,
+        base_url TEXT,
+        custom_headers TEXT,
+        custom_params TEXT,
+        custom_models TEXT,
+        enabled_models TEXT,
+        is_enabled INTEGER DEFAULT 1,
+        is_default INTEGER DEFAULT 0,
+        last_tested DATETIME,
+        test_result TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
     this.save()
   }
 
@@ -200,6 +223,7 @@ export class DatabaseManager {
     this.messages = new MessageRepository(this.db, this)
     this.roles = new RoleRepository(this.db, this)
     this.images = new ImageRepository(this.db, this)
+    this.providerConfigs = new ProviderConfigRepository(this.db, this)
   }
 
   /**

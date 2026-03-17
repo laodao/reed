@@ -5,7 +5,9 @@
       "Bash(npm run:*)",
       "Bash(npm install:*)",
       "mcp__ide__getDiagnostics",
-      "WebSearch"
+      "WebSearch",
+      "Agent",
+      "Bash(cd:*)"
     ]
   }
 }

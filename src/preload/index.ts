@@ -18,6 +18,18 @@ const IPC_CHANNELS = {
   API_KEY_DELETE: 'api-key:delete',
   API_KEY_TEST: 'api-key:test',
 
+  // 提供商模板相关
+  PROVIDER_TEMPLATE_LIST: 'provider-template:list',
+
+  // 提供商配置相关
+  PROVIDER_CONFIG_LIST: 'provider-config:list',
+  PROVIDER_CONFIG_GET: 'provider-config:get',
+  PROVIDER_CONFIG_CREATE: 'provider-config:create',
+  PROVIDER_CONFIG_UPDATE: 'provider-config:update',
+  PROVIDER_CONFIG_DELETE: 'provider-config:delete',
+  PROVIDER_CONFIG_TEST: 'provider-config:test',
+  PROVIDER_CONFIG_SET_DEFAULT: 'provider-config:set-default',
+
   // 对话相关
   DIALOG_LIST: 'dialog:list',
   DIALOG_GET: 'dialog:get',
@@ -48,13 +60,70 @@ const electronAPI = {
     set: (key: string, value: any) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_SET, { key, value })
   },
 
-  // API密钥相关
+  // API密钥相关（保留兼容）
   apiKey: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.API_KEY_LIST),
     set: (provider: string, key: string, endpoint?: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.API_KEY_SET, { provider, key, endpoint }),
     delete: (provider: string) => ipcRenderer.invoke(IPC_CHANNELS.API_KEY_DELETE, { provider }),
     test: (provider: string) => ipcRenderer.invoke(IPC_CHANNELS.API_KEY_TEST, { provider })
+  },
+
+  // 提供商模板相关
+  providerTemplate: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.PROVIDER_TEMPLATE_LIST)
+  },
+
+  // 提供商配置相关
+  providerConfig: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.PROVIDER_CONFIG_LIST),
+    get: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.PROVIDER_CONFIG_GET, id),
+    create: (data: {
+      templateId: string
+      name: string
+      apiKey?: string
+      baseUrl?: string
+      customHeaders?: Record<string, string>
+      customParams?: Record<string, unknown>
+      customModels?: Array<{
+        id: string
+        name: string
+        contextWindow: number
+        maxOutputTokens: number
+        features: string[]
+      }>
+      enabledModels?: string[]
+      isEnabled?: boolean
+      isDefault?: boolean
+    }) => ipcRenderer.invoke(IPC_CHANNELS.PROVIDER_CONFIG_CREATE, data),
+    update: (
+      id: string,
+      data: Partial<{
+        name: string
+        apiKey: string
+        baseUrl: string
+        customHeaders: Record<string, string>
+        customParams: Record<string, unknown>
+        customModels: Array<{
+          id: string
+          name: string
+          contextWindow: number
+          maxOutputTokens: number
+          features: string[]
+        }>
+        enabledModels: string[]
+        isEnabled: boolean
+        isDefault: boolean
+      }>
+    ) => ipcRenderer.invoke(IPC_CHANNELS.PROVIDER_CONFIG_UPDATE, { id, data }),
+    delete: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.PROVIDER_CONFIG_DELETE, id),
+    test: (data: {
+      configId?: string
+      templateId?: string
+      apiKey?: string
+      baseUrl?: string
+    }) => ipcRenderer.invoke(IPC_CHANNELS.PROVIDER_CONFIG_TEST, data),
+    setDefault: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.PROVIDER_CONFIG_SET_DEFAULT, id)
   },
 
   // 对话相关

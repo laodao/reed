@@ -15,6 +15,9 @@ import router from './router'
 // 导入全局样式
 import './styles/index.scss'
 
+// 导入应用设置
+import { appSettings } from './composables/useAppSettings'
+
 // 创建 Vue 应用
 const app = createApp(App)
 
@@ -32,5 +35,7 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
   app.component(key, component)
 }
 
-// 挂载应用
-app.mount('#app')
+// 加载应用设置后挂载
+appSettings.loadSettings().then(() => {
+  app.mount('#app')
+})
