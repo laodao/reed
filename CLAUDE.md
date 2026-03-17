@@ -1,0 +1,128 @@
+# CLAUDE.md
+
+本文件为 Claude Code (claude.ai/code) 在此代码仓库中工作时提供指导。
+
+## 语言要求
+
+**重要：请始终使用中文进行以下内容：**
+- 与用户的交流沟通
+- 代码注释
+- 提交信息（commit message）
+- 文档编写
+- 进度报告
+
+## 项目概述
+
+这是一个基于 Electron + Vue3 + TypeScript 的 AI 工具箱桌面应用程序。
+
+**技术栈：**
+- 框架：Electron + Vue3 + Vite
+- 语言：TypeScript
+- UI组件库：Element Plus / Naive UI
+- 状态管理：Pinia
+- 数据库：SQLite (better-sqlite3)
+- 构建工具：electron-vite
+
+## 构建命令
+
+```bash
+# 安装依赖
+npm install
+
+# 开发模式运行
+npm run dev
+
+# 构建生产版本
+npm run build
+
+# 仅构建渲染进程
+npm run build:renderer
+
+# 仅构建主进程
+npm run build:main
+
+# 代码检查
+npm run lint
+
+# 代码格式化
+npm run format
+```
+
+## 测试命令
+
+```bash
+# 运行所有测试
+npm test
+
+# 运行单个测试文件
+npm test -- path/to/test.spec.ts
+
+# 运行测试并生成覆盖率报告
+npm run test:coverage
+```
+
+## 项目结构
+
+```
+src/
+├── main/                          # Electron 主进程
+│   ├── index.ts                   # 主进程入口
+│   ├── database/                  # 数据库相关
+│   │   ├── index.ts               # 数据库管理器
+│   │   └── repositories/          # 数据仓库层
+│   ├── ipc/                       # IPC 通信
+│   │   ├── index.ts               # IPC 注册
+│   │   ├── base.ts                # IPC 基类
+│   │   └── handlers/              # IPC 处理器
+│   ├── providers/                 # AI 提供商
+│   ├── services/                  # 业务服务
+│   └── utils/                     # 工具函数
+├── preload/                       # 预加载脚本
+│   └── index.ts                   # contextBridge 暴露 API
+├── renderer/                      # 渲染进程（Vue3 前端）
+│   └── src/
+│       ├── main.ts                # Vue 应用入口
+│       ├── App.vue                # 根组件
+│       ├── components/            # 组件
+│       │   └── common/            # 通用组件
+│       ├── views/                 # 页面视图
+│       ├── stores/                # Pinia 状态管理
+│       └── router/                # 路由配置
+└── shared/                        # 共享代码（主进程和渲染进程共用）
+    └── types/                     # 类型定义
+        ├── ipc.types.ts           # IPC 类型
+        ├── provider.types.ts      # Provider 类型
+        └── dialog.types.ts        # 对话类型
+```
+
+## 关键配置文件
+
+- 主配置：`electron.vite.config.ts`
+- TypeScript 配置：`tsconfig.json`
+- 包管理：`package.json`
+
+## 代码风格
+
+- 遵循 TypeScript 最佳实践
+- 使用组合式 API (Composition API) 编写 Vue 组件
+- 使用 Pinia 进行状态管理
+- 保持 IPC 处理器简洁，将业务逻辑放在服务层
+- 使用 Repository 模式进行数据访问
+- 所有共享类型定义放在 `src/shared/types/` 目录
+
+## IPC 通信规范
+
+1. 所有 IPC 通道名称定义在 `src/shared/types/ipc.types.ts`
+2. IPC 处理器放在 `src/main/ipc/handlers/`
+3. 渲染进程通过 `window.electronAPI` 调用 IPC 方法
+4. 所有 IPC 调用返回统一的 `{ success, data?, error? }` 格式
+
+## 安全规范
+
+- API 密钥必须加密存储（使用 SecureStorage）
+- 敏感信息不能出现在日志中
+- 使用 contextBridge 安全暴露 API
+
+## 开发进度跟踪
+- **非常重要** 所有交流过程和开发过程中的进度记录保存在 `progress/` 目录
+- 使用 `tasks/` 目录存放任务详情文件

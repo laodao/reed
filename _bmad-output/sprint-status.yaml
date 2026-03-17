@@ -1,0 +1,184 @@
+# Sprint Status - AI工具箱
+# BMAD Method v6
+# Created: 2026-02-27
+
+version: "6.0.0"
+project_name: "ai-tool-box"
+project_level: 2
+current_sprint: 1
+sprint_plan_path: "_bmad-output/planning-artifacts/sprint-plan-ai-tool-box-2026-02-27.md"
+
+team:
+  size: 1
+  experience: "senior"
+  sprint_length_weeks: 2
+  capacity_per_sprint: 30
+
+sprints:
+  - sprint_number: 1
+    start_date: "2026-02-27"
+    end_date: "2026-03-12"
+    capacity_points: 30
+    committed_points: 31
+    completed_points: 11
+    status: "in_progress"
+    goal: "完成项目基础架构和核心AI对话能力"
+    stories:
+      - story_id: "STORY-001"
+        title: "项目初始化与基础架构"
+        points: 5
+        status: "completed"
+        priority: "must"
+        assigned_to: "Daoge"
+        completed_at: "2026-02-28"
+        actual_points: 5
+      - story_id: "STORY-002"
+        title: "数据库初始化"
+        points: 3
+        status: "completed"
+        priority: "must"
+        assigned_to: "Daoge"
+        completed_at: "2026-02-28"
+        actual_points: 3
+        depends_on: ["STORY-001"]
+      - story_id: "STORY-003"
+        title: "IPC通信基础"
+        points: 3
+        status: "completed"
+        priority: "must"
+        assigned_to: "Daoge"
+        completed_at: "2026-02-28"
+        actual_points: 3
+        depends_on: ["STORY-001"]
+      - story_id: "STORY-004"
+        title: "安全存储实现"
+        points: 5
+        status: "not_started"
+        priority: "must"
+        assigned_to: null
+        depends_on: ["STORY-002"]
+      - story_id: "STORY-005"
+        title: "主界面布局"
+        points: 5
+        status: "not_started"
+        priority: "must"
+        assigned_to: null
+        depends_on: ["STORY-001", "STORY-003"]
+      - story_id: "STORY-006"
+        title: "Provider抽象层"
+        points: 5
+        status: "not_started"
+        priority: "must"
+        assigned_to: null
+        depends_on: ["STORY-003", "STORY-004"]
+      - story_id: "STORY-007"
+        title: "通义千问Provider"
+        points: 5
+        status: "not_started"
+        priority: "must"
+        assigned_to: null
+        depends_on: ["STORY-006"]
+
+  - sprint_number: 2
+    start_date: "2026-03-13"
+    end_date: "2026-03-27"
+    capacity_points: 30
+    committed_points: 31
+    completed_points: 0
+    status: "not_started"
+    goal: "完善对话功能，添加文档处理和图像生成能力"
+    stories:
+      - story_id: "STORY-009"
+        title: "对话界面"
+        points: 8
+        status: "not_started"
+        priority: "must"
+        assigned_to: null
+        depends_on: ["STORY-005", "STORY-007"]
+      - story_id: "STORY-010"
+        title: "角色预设系统"
+        points: 5
+        status: "not_started"
+        priority: "must"
+        assigned_to: null
+        depends_on: ["STORY-002", "STORY-009"]
+      - story_id: "STORY-012"
+        title: "OCR识别"
+        points: 5
+        status: "not_started"
+        priority: "must"
+        assigned_to: null
+        depends_on: ["STORY-005"]
+      - story_id: "STORY-014"
+        title: "文本转语音（TTS）"
+        points: 5
+        status: "not_started"
+        priority: "must"
+        assigned_to: null
+        depends_on: ["STORY-004", "STORY-005"]
+      - story_id: "STORY-016"
+        title: "多语言翻译"
+        points: 3
+        status: "not_started"
+        priority: "must"
+        assigned_to: null
+        depends_on: ["STORY-005"]
+      - story_id: "STORY-017"
+        title: "图像生成基础"
+        points: 5
+        status: "not_started"
+        priority: "must"
+        assigned_to: null
+        depends_on: ["STORY-004", "STORY-005"]
+
+# v1.1版本待办（后续迭代）
+backlog:
+  - story_id: "STORY-008"
+    title: "其他AI Provider"
+    points: 5
+    priority: "should"
+  - story_id: "STORY-011"
+    title: "对话历史管理"
+    points: 3
+    priority: "should"
+  - story_id: "STORY-013"
+    title: "OCR批量处理"
+    points: 3
+    priority: "should"
+  - story_id: "STORY-015"
+    title: "语音转文本"
+    points: 5
+    priority: "should"
+  - story_id: "STORY-018"
+    title: "多图像Provider"
+    points: 5
+    priority: "should"
+  - story_id: "STORY-019"
+    title: "视频生成"
+    points: 5
+    priority: "should"
+  - story_id: "STORY-020"
+    title: "流程化创作"
+    points: 5
+    priority: "should"
+  - story_id: "STORY-021"
+    title: "知识库创建"
+    points: 5
+    priority: "should"
+  - story_id: "STORY-022"
+    title: "知识库集成"
+    points: 5
+    priority: "should"
+  - story_id: "STORY-023"
+    title: "网络搜索"
+    points: 3
+    priority: "should"
+
+# 速度跟踪
+velocity:
+  sprint_1: null
+  sprint_2: null
+  rolling_average: null
+
+# 最后更新
+last_updated: "2026-02-28T05:15:00.000Z"
