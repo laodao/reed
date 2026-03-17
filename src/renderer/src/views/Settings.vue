@@ -46,17 +46,6 @@
           <div class="settings-section">
             <h3>界面设置</h3>
             <el-form label-width="100px">
-              <el-form-item label="语言">
-                <el-select v-model="settings.language" @change="saveSettings" class="form-select">
-                  <el-option
-                    v-for="(config, key) in languageConfig"
-                    :key="key"
-                    :label="config.label"
-                    :value="key"
-                  />
-                </el-select>
-              </el-form-item>
-
               <el-form-item label="字体大小">
                 <el-radio-group v-model="settings.fontSize" @change="saveSettings" class="radio-group">
                   <el-radio-button value="small">小</el-radio-button>
@@ -76,7 +65,7 @@
                 <h3>提供商配置</h3>
                 <p class="section-desc">配置各 AI 服务提供商的 API 密钥和参数</p>
               </div>
-              <el-button type="primary" @click="showAddDialog = true">
+              <el-button type="primary" @click="openAddDialog">
                 <el-icon><Plus /></el-icon>
                 添加提供商
               </el-button>
@@ -140,7 +129,7 @@
             <div v-else class="empty-state">
               <div class="empty-icon">🔌</div>
               <p>还没有配置任何 AI 提供商</p>
-              <el-button type="primary" @click="showAddDialog = true">
+              <el-button type="primary" @click="openAddDialog">
                 添加第一个提供商
               </el-button>
             </div>
@@ -333,6 +322,12 @@ const getTemplateName = (templateId: string): string => {
 const getTemplateIcon = (templateId: string): string => {
   const template = templates.value.find((t) => t.id === templateId)
   return template?.icon || '🔌'
+}
+
+// 打开添加提供商对话框
+const openAddDialog = () => {
+  editingConfig.value = undefined
+  showAddDialog.value = true
 }
 
 // 切换配置启用状态

@@ -2,7 +2,7 @@
   <el-dialog
     v-model="visible"
     :title="isEdit ? '编辑提供商配置' : '添加提供商'"
-    width="560px"
+    width="720px"
     :close-on-click-modal="false"
     class="add-provider-dialog"
     @close="handleClose"
