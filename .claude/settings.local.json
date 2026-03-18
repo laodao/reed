@@ -7,7 +7,17 @@
       "mcp__ide__getDiagnostics",
       "WebSearch",
       "Agent",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(tasklist)",
+      "Bash(findstr /i \"electron node\")",
+      "mcp__playwright__browser_navigate",
+      "Bash(npx playwright:*)",
+      "mcp__playwright__browser_console_messages",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "WebFetch(domain:docs.cherry-ai.com)",
+      "WebFetch(domain:docs.enterprise.cherry-ai.com)"
     ]
   }
 }
