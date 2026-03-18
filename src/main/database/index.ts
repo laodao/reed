@@ -98,6 +98,9 @@ export class DatabaseManager {
 
     // 初始化仓库
     this.initRepositories()
+
+    // 初始化内置角色
+    await this.initBuiltinRoles()
   }
 
   /**
@@ -146,8 +149,10 @@ export class DatabaseManager {
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
         model_id TEXT NOT NULL,
+        provider_config_id TEXT,
         role_id TEXT,
         system_prompt TEXT,
+        context_config TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         message_count INTEGER DEFAULT 0,
@@ -164,6 +169,8 @@ export class DatabaseManager {
         content TEXT NOT NULL,
         model_id TEXT,
         tokens_used INTEGER,
+        attachments TEXT,
+        metadata TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (dialog_id) REFERENCES dialogs(id) ON DELETE CASCADE
       )
@@ -208,7 +215,58 @@ export class DatabaseManager {
       )
     `)
 
+    // 附件表
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS attachments (
+        id TEXT PRIMARY KEY,
+        message_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        file_name TEXT,
+        file_path TEXT NOT NULL,
+        file_size INTEGER,
+        mime_type TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+      )
+    `)
+
+    // 执行数据库迁移
+    this.runMigrations()
+
     this.save()
+  }
+
+  /**
+   * 执行数据库迁移
+   */
+  private runMigrations(): void {
+    if (!this.db) return
+
+    // 检查 dialogs 表是否需要添加新字段
+    const dialogColumns = this.db.exec("PRAGMA table_info(dialogs)")
+    if (dialogColumns.length > 0) {
+      const columnNames = dialogColumns[0].values.map(row => row[1])
+
+      if (!columnNames.includes('provider_config_id')) {
+        this.db.run('ALTER TABLE dialogs ADD COLUMN provider_config_id TEXT')
+      }
+      if (!columnNames.includes('context_config')) {
+        this.db.run('ALTER TABLE dialogs ADD COLUMN context_config TEXT')
+      }
+    }
+
+    // 检查 messages 表是否需要添加新字段
+    const messageColumns = this.db.exec("PRAGMA table_info(messages)")
+    if (messageColumns.length > 0) {
+      const columnNames = messageColumns[0].values.map(row => row[1])
+
+      if (!columnNames.includes('attachments')) {
+        this.db.run('ALTER TABLE messages ADD COLUMN attachments TEXT')
+      }
+      if (!columnNames.includes('metadata')) {
+        this.db.run('ALTER TABLE messages ADD COLUMN metadata TEXT')
+      }
+    }
   }
 
   /**
@@ -224,6 +282,14 @@ export class DatabaseManager {
     this.roles = new RoleRepository(this.db, this)
     this.images = new ImageRepository(this.db, this)
     this.providerConfigs = new ProviderConfigRepository(this.db, this)
+  }
+
+  /**
+   * 初始化内置角色
+   */
+  private async initBuiltinRoles(): Promise<void> {
+    if (!this.roles) return
+    await this.roles.initBuiltinRoles()
   }
 
   /**

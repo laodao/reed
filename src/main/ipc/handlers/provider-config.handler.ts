@@ -321,17 +321,23 @@ async function handleTestConfig(
         testApiKey = testApiKey || secureStorage.decrypt(config.apiKey)
       }
 
-      // 更新测试结果
+      // 测试连接
       const result = await providerTemplateService.testConnection({
         templateId: testTemplateId,
         apiKey: testApiKey,
         baseUrl: testBaseUrl
       })
 
+      // 更新测试结果
+      // 获取模板中定义的有效模型 ID 列表
+      const template = providerTemplateService.getTemplateById(testTemplateId)
+      const templateModels = template?.models.map(m => m.id)
+
       await dbManager.providerConfigs.updateTestResult(
         configId,
         result.success ? 'success' : 'failed',
-        result.models
+        result.models,
+        templateModels
       )
 
       return result

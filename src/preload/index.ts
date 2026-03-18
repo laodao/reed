@@ -32,6 +32,7 @@ const IPC_CHANNELS = {
 
   // 对话相关
   DIALOG_LIST: 'dialog:list',
+  DIALOG_LIST_BY_ROLE: 'dialog:list-by-role',
   DIALOG_GET: 'dialog:get',
   DIALOG_CREATE: 'dialog:create',
   DIALOG_UPDATE: 'dialog:update',
@@ -40,6 +41,8 @@ const IPC_CHANNELS = {
   // 消息相关
   MESSAGE_LIST: 'message:list',
   MESSAGE_CREATE: 'message:create',
+  MESSAGE_GET: 'message:get',
+  MESSAGE_UPDATE: 'message:update',
   MESSAGE_DELETE: 'message:delete',
 
   // 角色相关
@@ -47,7 +50,13 @@ const IPC_CHANNELS = {
   ROLE_GET: 'role:get',
   ROLE_CREATE: 'role:create',
   ROLE_UPDATE: 'role:update',
-  ROLE_DELETE: 'role:delete'
+  ROLE_DELETE: 'role:delete',
+  ROLE_DIALOG_COUNT: 'role:dialog-count',
+
+  // 聊天相关（流式）
+  CHAT_SEND: 'chat:send',
+  CHAT_STREAM: 'chat:stream',
+  CHAT_STOP: 'chat:stop'
 } as const
 
 /**
@@ -129,24 +138,64 @@ const electronAPI = {
   // 对话相关
   dialog: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.DIALOG_LIST),
+    listByRole: (roleId: string | null) => ipcRenderer.invoke(IPC_CHANNELS.DIALOG_LIST_BY_ROLE, roleId),
     get: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.DIALOG_GET, id),
-    create: (data: { title?: string; modelId: string; roleId?: string }) =>
-      ipcRenderer.invoke(IPC_CHANNELS.DIALOG_CREATE, data),
-    update: (id: string, data: Partial<{ title: string; systemPrompt: string }>) =>
-      ipcRenderer.invoke(IPC_CHANNELS.DIALOG_UPDATE, { id, data }),
+    create: (data: {
+      title?: string
+      modelId: string
+      providerConfigId?: string
+      roleId?: string
+      systemPrompt?: string
+      contextConfig?: { maxMessages: number; maxTokens: number }
+    }) => ipcRenderer.invoke(IPC_CHANNELS.DIALOG_CREATE, data),
+    update: (
+      id: string,
+      data: Partial<{
+        title: string
+        systemPrompt: string
+        contextConfig: { maxMessages: number; maxTokens: number }
+        modelId: string
+        providerConfigId: string
+      }>
+    ) => ipcRenderer.invoke(IPC_CHANNELS.DIALOG_UPDATE, { id, data }),
     delete: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.DIALOG_DELETE, id)
   },
 
   // 消息相关
   message: {
     list: (dialogId: string) => ipcRenderer.invoke(IPC_CHANNELS.MESSAGE_LIST, dialogId),
+    get: (messageId: string) => ipcRenderer.invoke(IPC_CHANNELS.MESSAGE_GET, messageId),
     create: (data: {
       dialogId: string
-      role: string
+      role: 'user' | 'assistant' | 'system'
       content: string
       modelId?: string
       tokensUsed?: number
+      attachments?: Array<{
+        id: string
+        type: 'image' | 'document'
+        fileName: string
+        filePath: string
+        fileSize: number
+        mimeType: string
+      }>
+      metadata?: {
+        thinkingChain?: string
+        webSearch?: Array<{ title: string; url: string; snippet: string }>
+        knowledgeBase?: string[]
+      }
     }) => ipcRenderer.invoke(IPC_CHANNELS.MESSAGE_CREATE, data),
+    update: (
+      id: string,
+      data: Partial<{
+        content: string
+        metadata: {
+          thinkingChain?: string
+          webSearch?: Array<{ title: string; url: string; snippet: string }>
+          knowledgeBase?: string[]
+        }
+      }>
+    ) => ipcRenderer.invoke(IPC_CHANNELS.MESSAGE_UPDATE, { id, data }),
     delete: (dialogId: string) => ipcRenderer.invoke(IPC_CHANNELS.MESSAGE_DELETE, dialogId)
   },
 
@@ -160,7 +209,32 @@ const electronAPI = {
       id: string,
       data: Partial<{ name: string; description: string; systemPrompt: string; avatar: string }>
     ) => ipcRenderer.invoke(IPC_CHANNELS.ROLE_UPDATE, { id, data }),
-    delete: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.ROLE_DELETE, id)
+    delete: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.ROLE_DELETE, id),
+    getDialogCount: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.ROLE_DIALOG_COUNT, id)
+  },
+
+  // 聊天相关（流式消息）
+  chat: {
+    send: (data: {
+      dialogId: string
+      content: string
+      attachments?: Array<{
+        id: string
+        type: 'image' | 'document'
+        fileName: string
+        filePath: string
+        fileSize: number
+        mimeType: string
+      }>
+      enableWebSearch?: boolean
+      enableThinkingChain?: boolean
+    }) => ipcRenderer.invoke(IPC_CHANNELS.CHAT_SEND, data),
+    stop: (dialogId: string) => ipcRenderer.invoke(IPC_CHANNELS.CHAT_STOP, dialogId),
+    onStream: (callback: (event: any, data: any) => void) => {
+      const handler = (event: any, data: any) => callback(event, data)
+      ipcRenderer.on(IPC_CHANNELS.CHAT_STREAM, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.CHAT_STREAM, handler)
+    }
   }
 }
 

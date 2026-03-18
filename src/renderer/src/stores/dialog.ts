@@ -8,12 +8,10 @@ import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import type {
   Dialog,
-  DialogListItem,
   Message,
   CreateDialogRequest,
-  SendMessageRequest,
-  StreamState,
-  Model
+  StreamEvent,
+  ContextConfig
 } from '../../../shared/types'
 
 /**
@@ -38,176 +36,315 @@ export const useDialogStore = defineStore('dialog', () => {
   const messages = ref<Message[]>([])
 
   /**
-   * 可用模型列表
-   */
-  const availableModels = ref<Model[]>([])
-
-  /**
-   * 当前选中的模型
-   */
-  const currentModel = ref<Model | null>(null)
-
-  /**
    * 流式状态
    */
-  const streamState = ref<StreamState>({
+  const streamState = ref({
     isStreaming: false,
-    messageId: null,
+    messageId: null as string | null,
     content: '',
-    error: null
+    error: null as string | null
   })
+
+  /**
+   * 加载中状态
+   */
+  const loading = ref(false)
+
+  /**
+   * 按角色分组的对话
+   */
+  const dialogsByRole = computed(() => {
+    const groups = new Map<string | null, Dialog[]>()
+    for (const dialog of dialogs.value) {
+      const roleId = dialog.roleId || null
+      if (!groups.has(roleId)) {
+        groups.set(roleId, [])
+      }
+      groups.get(roleId)!.push(dialog)
+    }
+    return groups
+  })
+
+  // 流式事件取消订阅函数
+  let unsubscribeStream: (() => void) | null = null
 
   // ==================== 对话管理 ====================
 
   /**
    * 加载对话列表
-   * @returns Promise<void>
-   * @description 加载所有对话
-   * 逻辑：
-   * 1. 调用 window.electronAPI.listDialogs()
-   * 2. 更新 dialogs 响应式变量
    */
   async function loadDialogs(): Promise<void> {
-    // TODO: 实现加载对话列表
-    throw new Error('Not implemented')
+    loading.value = true
+    try {
+      const response = await window.electronAPI.dialog.list()
+      if (response.success && response.dialogs) {
+        dialogs.value = response.dialogs
+      }
+    } catch (error) {
+      console.error('加载对话列表失败:', error)
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
+   * 按角色加载对话列表
+   */
+  async function loadDialogsByRole(roleId: string | null): Promise<void> {
+    loading.value = true
+    try {
+      const response = await window.electronAPI.dialog.listByRole(roleId)
+      if (response.success && response.dialogs) {
+        dialogs.value = response.dialogs
+      }
+    } catch (error) {
+      console.error('加载对话列表失败:', error)
+    } finally {
+      loading.value = false
+    }
   }
 
   /**
    * 创建新对话
-   * @param request - 创建请求
-   * @returns Promise<Dialog>
-   * @description 创建新的对话
-   * 逻辑：
-   * 1. 验证 modelId 必填
-   * 2. 调用 window.electronAPI.createDialog(request)
-   * 3. 将新对话添加到列表开头
-   * 4. 设置为当前对话
    */
-  async function createDialog(request: CreateDialogRequest): Promise<Dialog> {
-    // TODO: 实现创建对话
-    throw new Error('Not implemented')
+  async function createDialog(request: CreateDialogRequest): Promise<Dialog | null> {
+    try {
+      const response = await window.electronAPI.dialog.create(request)
+      if (response.success && response.dialog) {
+        dialogs.value.unshift(response.dialog)
+        currentDialog.value = response.dialog
+        messages.value = []
+        return response.dialog
+      }
+      return null
+    } catch (error) {
+      console.error('创建对话失败:', error)
+      return null
+    }
+  }
+
+  /**
+   * 更新对话
+   */
+  async function updateDialog(id: string, data: Partial<Dialog>): Promise<boolean> {
+    console.log('[dialogStore.updateDialog] 开始更新:', { id, data })
+    try {
+      const response = await window.electronAPI.dialog.update(id, data)
+      console.log('[dialogStore.updateDialog] IPC 响应:', response)
+      if (response.success) {
+        const index = dialogs.value.findIndex(d => d.id === id)
+        if (index !== -1) {
+          dialogs.value[index] = { ...dialogs.value[index], ...data }
+          console.log('[dialogStore.updateDialog] 更新后的 dialogs[' + index + ']:', dialogs.value[index])
+        }
+        if (currentDialog.value?.id === id) {
+          currentDialog.value = { ...currentDialog.value, ...data }
+          console.log('[dialogStore.updateDialog] 更新后的 currentDialog:', currentDialog.value)
+        }
+        return true
+      }
+      return false
+    } catch (error) {
+      console.error('更新对话失败:', error)
+      return false
+    }
   }
 
   /**
    * 删除对话
-   * @param dialogId - 对话ID
-   * @returns Promise<void>
    */
-  async function deleteDialog(dialogId: string): Promise<void> {
-    // TODO: 实现删除对话
-    throw new Error('Not implemented')
+  async function deleteDialog(dialogId: string): Promise<boolean> {
+    try {
+      const response = await window.electronAPI.dialog.delete(dialogId)
+      if (response.success) {
+        dialogs.value = dialogs.value.filter(d => d.id !== dialogId)
+        if (currentDialog.value?.id === dialogId) {
+          currentDialog.value = null
+          messages.value = []
+        }
+        return true
+      }
+      return false
+    } catch (error) {
+      console.error('删除对话失败:', error)
+      return false
+    }
   }
 
   /**
    * 选择对话
-   * @param dialog - 对话对象
-   * @returns void
-   * @description 设置当前对话并加载消息
    */
-  function selectDialog(dialog: Dialog): void {
-    // TODO: 实现选择对话
-    throw new Error('Not implemented')
+  async function selectDialog(dialog: Dialog): Promise<void> {
+    currentDialog.value = dialog
+    await loadMessages(dialog.id)
   }
 
   // ==================== 消息管理 ====================
 
   /**
    * 加载消息列表
-   * @param dialogId - 对话ID
-   * @returns Promise<void>
    */
   async function loadMessages(dialogId: string): Promise<void> {
-    // TODO: 实现加载消息列表
-    throw new Error('Not implemented')
+    try {
+      const response = await window.electronAPI.message.list(dialogId)
+      if (response.success && response.messages) {
+        messages.value = response.messages
+      }
+    } catch (error) {
+      console.error('加载消息列表失败:', error)
+      messages.value = []
+    }
   }
 
   /**
    * 发送消息
-   * @param content - 消息内容
-   * @returns Promise<void>
-   * @description 发送消息并获取AI回复（流式）
-   * 逻辑：
-   * 1. 验证内容非空
-   * 2. 创建用户消息，添加到列表
-   * 3. 创建AI消息占位符
-   * 4. 设置 streamState.isStreaming = true
-   * 5. 调用 IPC 发送消息
-   * 6. 监听流式事件
-   * 7. 实时更新AI消息内容
    */
-  async function sendMessage(content: string): Promise<void> {
-    // TODO: 实现发送消息
-    throw new Error('Not implemented')
+  async function sendMessage(
+    content: string,
+    options?: {
+      attachments?: Message['attachments']
+      enableWebSearch?: boolean
+      enableThinkingChain?: boolean
+    }
+  ): Promise<boolean> {
+    console.log('[sendMessage] 开始发送消息')
+    console.log('[sendMessage] currentDialog:', currentDialog.value)
+
+    if (!currentDialog.value) {
+      console.error('[sendMessage] 错误: 没有选中的对话')
+      return false
+    }
+
+    console.log('[sendMessage] dialogId:', currentDialog.value.id)
+    console.log('[sendMessage] modelId:', currentDialog.value.modelId)
+    console.log('[sendMessage] providerConfigId:', currentDialog.value.providerConfigId)
+
+    // 重置流式状态
+    streamState.value = {
+      isStreaming: true,
+      messageId: null,
+      content: '',
+      error: null
+    }
+
+    // 订阅流式事件
+    if (unsubscribeStream) {
+      unsubscribeStream()
+    }
+    unsubscribeStream = window.electronAPI.chat.onStream(handleStreamEvent)
+
+    try {
+      const requestData = {
+        dialogId: currentDialog.value.id,
+        content,
+        attachments: options?.attachments,
+        enableWebSearch: options?.enableWebSearch,
+        enableThinkingChain: options?.enableThinkingChain
+      }
+      console.log('[sendMessage] 发送请求数据:', requestData)
+
+      // 发送消息请求
+      const response = await window.electronAPI.chat.send(requestData)
+      console.log('[sendMessage] 收到响应:', response)
+
+      if (!response.success) {
+        console.error('[sendMessage] 响应失败:', response.error)
+        streamState.value.error = response.error || '发送失败'
+        streamState.value.isStreaming = false
+        return false
+      }
+
+      // 重新加载消息列表
+      await loadMessages(currentDialog.value.id)
+      return true
+    } catch (error: any) {
+      console.error('[sendMessage] 捕获异常:', error)
+      console.error('[sendMessage] 异常消息:', error.message)
+      console.error('[sendMessage] 异常堆栈:', error.stack)
+      streamState.value.error = error.message || '发送失败'
+      streamState.value.isStreaming = false
+      return false
+    }
+  }
+
+  /**
+   * 处理流式事件
+   */
+  function handleStreamEvent(event: any, data: StreamEvent): void {
+    switch (data.type) {
+      case 'start':
+        streamState.value.messageId = data.messageId || null
+        streamState.value.content = ''
+        break
+      case 'delta':
+        streamState.value.content += data.content || ''
+        // 实时更新消息列表中的 AI 消息
+        if (data.messageId) {
+          const msgIndex = messages.value.findIndex(m => m.id === data.messageId)
+          if (msgIndex !== -1) {
+            messages.value[msgIndex].content = streamState.value.content
+          } else {
+            // 添加新的 AI 消息
+            messages.value.push({
+              id: data.messageId,
+              dialogId: currentDialog.value?.id || '',
+              role: 'assistant',
+              content: streamState.value.content,
+              createdAt: new Date()
+            })
+          }
+        }
+        break
+      case 'done':
+        streamState.value.isStreaming = false
+        break
+      case 'error':
+        streamState.value.error = data.error || '未知错误'
+        streamState.value.isStreaming = false
+        break
+    }
   }
 
   /**
    * 停止生成
-   * @returns void
    */
-  function stopGeneration(): void {
-    // TODO: 实现停止生成
-    throw new Error('Not implemented')
+  async function stopGeneration(): Promise<void> {
+    if (!currentDialog.value || !streamState.value.isStreaming) {
+      return
+    }
+
+    try {
+      await window.electronAPI.chat.stop(currentDialog.value.id)
+      streamState.value.isStreaming = false
+    } catch (error) {
+      console.error('停止生成失败:', error)
+    }
   }
 
   /**
-   * 重试生成
-   * @returns Promise<void>
+   * 清空当前对话的消息
    */
-  async function retryStream(): Promise<void> {
-    // TODO: 实现重试生成
-    throw new Error('Not implemented')
-  }
+  async function clearMessages(): Promise<boolean> {
+    if (!currentDialog.value) {
+      return false
+    }
 
-  /**
-   * 添加消息到列表
-   * @param message - 消息对象
-   */
-  function addMessage(message: Message): void {
-    // TODO: 实现添加消息
-    throw new Error('Not implemented')
-  }
-
-  /**
-   * 更新消息内容
-   * @param messageId - 消息ID
-   * @param content - 新内容
-   */
-  function updateMessageContent(messageId: string, content: string): void {
-    // TODO: 实现更新消息内容
-    throw new Error('Not implemented')
-  }
-
-  // ==================== 模型管理 ====================
-
-  /**
-   * 加载可用模型
-   * @returns Promise<void>
-   * @description 加载所有已配置提供商的可用模型
-   */
-  async function loadAvailableModels(): Promise<void> {
-    // TODO: 实现加载可用模型
-    throw new Error('Not implemented')
-  }
-
-  /**
-   * 选择模型
-   * @param model - 模型对象
-   */
-  function selectModel(model: Model): void {
-    // TODO: 实现选择模型
-    throw new Error('Not implemented')
-  }
-
-  // ==================== 工具函数 ====================
-
-  /**
-   * 生成对话标题
-   * @param firstMessage - 首条用户消息
-   * @returns string
-   */
-  function generateTitle(firstMessage: string): string {
-    // TODO: 实现生成对话标题
-    throw new Error('Not implemented')
+    try {
+      const response = await window.electronAPI.message.delete(currentDialog.value.id)
+      if (response.success) {
+        messages.value = []
+        // 更新对话的消息计数
+        const index = dialogs.value.findIndex(d => d.id === currentDialog.value!.id)
+        if (index !== -1) {
+          dialogs.value[index].messageCount = 0
+        }
+        return true
+      }
+      return false
+    } catch (error) {
+      console.error('清空消息失败:', error)
+      return false
+    }
   }
 
   /**
@@ -216,6 +353,22 @@ export const useDialogStore = defineStore('dialog', () => {
   function clearCurrentDialog(): void {
     currentDialog.value = null
     messages.value = []
+    streamState.value = {
+      isStreaming: false,
+      messageId: null,
+      content: '',
+      error: null
+    }
+  }
+
+  /**
+   * 清理资源
+   */
+  function cleanup(): void {
+    if (unsubscribeStream) {
+      unsubscribeStream()
+      unsubscribeStream = null
+    }
   }
 
   return {
@@ -223,12 +376,14 @@ export const useDialogStore = defineStore('dialog', () => {
     dialogs,
     currentDialog,
     messages,
-    availableModels,
-    currentModel,
     streamState,
+    loading,
+    dialogsByRole,
     // 对话管理
     loadDialogs,
+    loadDialogsByRole,
     createDialog,
+    updateDialog,
     deleteDialog,
     selectDialog,
     clearCurrentDialog,
@@ -236,13 +391,8 @@ export const useDialogStore = defineStore('dialog', () => {
     loadMessages,
     sendMessage,
     stopGeneration,
-    retryStream,
-    addMessage,
-    updateMessageContent,
-    // 模型管理
-    loadAvailableModels,
-    selectModel,
-    // 工具函数
-    generateTitle
+    clearMessages,
+    // 工具
+    cleanup
   }
 })

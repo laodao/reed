@@ -4,7 +4,7 @@
  * @description 管理对话角色的状态
  */
 
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import type { Role, CreateRoleRequest, UpdateRoleRequest } from '../../../shared/types'
 
@@ -23,72 +23,117 @@ export const useRoleStore = defineStore('role', () => {
   const currentRole = ref<Role | null>(null)
 
   /**
+   * 加载中状态
+   */
+  const loading = ref(false)
+
+  /**
+   * 内置角色列表
+   */
+  const builtinRoles = computed(() => roles.value.filter(r => r.isBuiltin))
+
+  /**
+   * 自定义角色列表
+   */
+  const customRoles = computed(() => roles.value.filter(r => !r.isBuiltin))
+
+  /**
    * 加载角色列表
-   * @returns Promise<void>
-   * @description 从数据库加载所有角色
    */
   async function loadRoles(): Promise<void> {
-    // TODO: 实现加载角色列表
-    throw new Error('Not implemented')
+    loading.value = true
+    try {
+      const response = await window.electronAPI.role.list()
+      if (response.success && response.roles) {
+        roles.value = response.roles
+      }
+    } catch (error) {
+      console.error('加载角色列表失败:', error)
+    } finally {
+      loading.value = false
+    }
   }
 
   /**
    * 创建角色
-   * @param request - 创建请求
-   * @returns Promise<Role>
-   * @description 创建新的角色
-   * 逻辑：
-   * 1. 验证 name 和 systemPrompt 非空
-   * 2. 调用 window.electronAPI.createRole(request)
-   * 3. 添加到列表
    */
-  async function createRole(request: CreateRoleRequest): Promise<Role> {
-    // TODO: 实现创建角色
-    throw new Error('Not implemented')
+  async function createRole(request: CreateRoleRequest): Promise<Role | null> {
+    try {
+      const response = await window.electronAPI.role.create(request)
+      if (response.success && response.role) {
+        roles.value.push(response.role)
+        return response.role
+      }
+      return null
+    } catch (error) {
+      console.error('创建角色失败:', error)
+      return null
+    }
   }
 
   /**
    * 更新角色
-   * @param id - 角色ID
-   * @param request - 更新请求
-   * @returns Promise<void>
    */
-  async function updateRole(id: string, request: UpdateRoleRequest): Promise<void> {
-    // TODO: 实现更新角色
-    throw new Error('Not implemented')
+  async function updateRole(id: string, request: UpdateRoleRequest): Promise<boolean> {
+    try {
+      const response = await window.electronAPI.role.update(id, request)
+      if (response.success) {
+        const index = roles.value.findIndex(r => r.id === id)
+        if (index !== -1) {
+          roles.value[index] = { ...roles.value[index], ...request }
+        }
+        return true
+      }
+      return false
+    } catch (error) {
+      console.error('更新角色失败:', error)
+      return false
+    }
+  }
+
+  /**
+   * 获取角色关联的对话数量
+   */
+  async function getDialogCount(id: string): Promise<number> {
+    try {
+      const response = await window.electronAPI.role.getDialogCount(id)
+      return response.success ? (response.count || 0) : 0
+    } catch (error) {
+      console.error('获取对话数量失败:', error)
+      return 0
+    }
   }
 
   /**
    * 删除角色
-   * @param id - 角色ID
-   * @returns Promise<void>
+   * @returns 删除结果：{ success: boolean; dialogCount: number }
    */
-  async function deleteRole(id: string): Promise<void> {
-    // TODO: 实现删除角色
-    throw new Error('Not implemented')
+  async function deleteRole(id: string): Promise<{ success: boolean; dialogCount: number }> {
+    try {
+      const response = await window.electronAPI.role.delete(id)
+      if (response.success) {
+        roles.value = roles.value.filter(r => r.id !== id)
+        if (currentRole.value?.id === id) {
+          currentRole.value = null
+        }
+        return { success: true, dialogCount: response.dialogCount || 0 }
+      }
+      return { success: false, dialogCount: 0 }
+    } catch (error) {
+      console.error('删除角色失败:', error)
+      return { success: false, dialogCount: 0 }
+    }
   }
 
   /**
    * 选择角色
-   * @param role - 角色对象
    */
   function selectRole(role: Role | null): void {
     currentRole.value = role
   }
 
   /**
-   * 增加使用次数
-   * @param id - 角色ID
-   */
-  async function incrementUseCount(id: string): Promise<void> {
-    // TODO: 实现增加使用次数
-    throw new Error('Not implemented')
-  }
-
-  /**
    * 根据ID获取角色
-   * @param id - 角色ID
-   * @returns Role | undefined
    */
   function getRoleById(id: string): Role | undefined {
     return roles.value.find(r => r.id === id)
@@ -98,13 +143,16 @@ export const useRoleStore = defineStore('role', () => {
     // 状态
     roles,
     currentRole,
+    loading,
+    builtinRoles,
+    customRoles,
     // 方法
     loadRoles,
     createRole,
     updateRole,
     deleteRole,
+    getDialogCount,
     selectRole,
-    incrementUseCount,
     getRoleById
   }
 })

@@ -17,6 +17,7 @@ export function registerRoleHandlers(): void {
   ipcMain.handle('role:create', handleCreateRole)
   ipcMain.handle('role:update', handleUpdateRole)
   ipcMain.handle('role:delete', handleDeleteRole)
+  ipcMain.handle('role:dialog-count', handleGetDialogCount)
 }
 
 /**
@@ -100,17 +101,45 @@ async function handleUpdateRole(
 /**
  * 处理删除角色
  */
-async function handleDeleteRole(event: IpcMainInvokeEvent, id: string): Promise<{ success: boolean }> {
+async function handleDeleteRole(
+  event: IpcMainInvokeEvent,
+  id: string
+): Promise<{ success: boolean; dialogCount?: number; error?: string }> {
+  try {
+    const dbManager = getDatabaseManager()
+    if (!dbManager.roles) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    const result = await dbManager.roles.delete(id)
+    if (!result.deleted) {
+      return { success: false, error: '无法删除内置角色或角色不存在' }
+    }
+
+    return { success: true, dialogCount: result.dialogCount }
+  } catch (error) {
+    console.error('删除角色失败:', error)
+    return { success: false, error: String(error) }
+  }
+}
+
+/**
+ * 处理获取角色关联的对话数量
+ */
+async function handleGetDialogCount(
+  event: IpcMainInvokeEvent,
+  id: string
+): Promise<{ success: boolean; count?: number }> {
   try {
     const dbManager = getDatabaseManager()
     if (!dbManager.roles) {
       return { success: false }
     }
 
-    await dbManager.roles.delete(id)
-    return { success: true }
+    const count = await dbManager.roles.getDialogCount(id)
+    return { success: true, count }
   } catch (error) {
-    console.error('删除角色失败:', error)
+    console.error('获取对话数量失败:', error)
     return { success: false }
   }
 }
@@ -124,4 +153,5 @@ export function unregisterRoleHandlers(): void {
   ipcMain.removeHandler('role:create')
   ipcMain.removeHandler('role:update')
   ipcMain.removeHandler('role:delete')
+  ipcMain.removeHandler('role:dialog-count')
 }

@@ -1,0 +1,223 @@
+<template>
+  <div class="chat-input">
+    <!-- 工具栏 -->
+    <div class="toolbar">
+      <div class="tool-left">
+        <el-tooltip content="附件（开发中）" placement="top">
+          <el-button
+            class="tool-btn"
+            :class="{ active: hasAttachments }"
+            text
+            @click="handleAttach"
+          >
+            <el-icon><Paperclip /></el-icon>
+          </el-button>
+        </el-tooltip>
+        <el-tooltip content="联网搜索" placement="top">
+          <el-button
+            class="tool-btn"
+            :class="{ active: enableWebSearch }"
+            text
+            @click="enableWebSearch = !enableWebSearch"
+          >
+            <el-icon><Search /></el-icon>
+          </el-button>
+        </el-tooltip>
+        <el-tooltip content="深度思考" placement="top">
+          <el-button
+            class="tool-btn"
+            :class="{ active: enableThinkingChain }"
+            text
+            @click="enableThinkingChain = !enableThinkingChain"
+          >
+            <el-icon><Cpu /></el-icon>
+          </el-button>
+        </el-tooltip>
+        <el-tooltip content="知识库（开发中）" placement="top">
+          <el-button
+            class="tool-btn"
+            :class="{ active: enableKnowledgeBase }"
+            text
+            @click="enableKnowledgeBase = !enableKnowledgeBase"
+          >
+            <el-icon><Collection /></el-icon>
+          </el-button>
+        </el-tooltip>
+      </div>
+      <div class="tool-right">
+        <span class="tool-hint">Ctrl + Enter 发送</span>
+      </div>
+    </div>
+
+    <!-- 输入区域 -->
+    <div class="input-area">
+      <el-input
+        v-model="inputContent"
+        type="textarea"
+        :rows="3"
+        :placeholder="disabled ? '请等待 AI 响应完成...' : '输入消息...'"
+        :disabled="disabled"
+        resize="none"
+        @keydown="handleKeydown"
+        class="input-textarea"
+      />
+
+      <div class="input-actions">
+        <div class="action-left">
+          <!-- 功能标签已移除，仅保留工具栏按钮状态指示 -->
+        </div>
+        <div class="action-right">
+          <el-button v-if="disabled" type="danger" round @click="$emit('stop')">
+            <el-icon><VideoPause /></el-icon>
+            停止
+          </el-button>
+          <el-button
+            v-else
+            type="primary"
+            round
+            :disabled="!inputContent.trim()"
+            @click="handleSend"
+          >
+            <el-icon><Promotion /></el-icon>
+            发送
+          </el-button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed } from 'vue'
+import { Paperclip, Search, Cpu, Collection, VideoPause, Promotion } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import type { Message } from '../../../shared/types'
+
+defineProps<{
+  disabled: boolean
+}>()
+
+const emit = defineEmits<{
+  (e: 'send', content: string, options?: {
+    attachments?: Message['attachments']
+    enableWebSearch?: boolean
+    enableThinkingChain?: boolean
+  }): void
+  (e: 'stop'): void
+}>()
+
+// 输入内容
+const inputContent = ref('')
+
+// 工具选项
+const enableWebSearch = ref(false)
+const enableThinkingChain = ref(false)
+const enableKnowledgeBase = ref(false)
+const hasAttachments = ref(false)
+
+// 发送消息
+function handleSend(): void {
+  const content = inputContent.value.trim()
+  if (!content) return
+
+  emit('send', content, {
+    enableWebSearch: enableWebSearch.value,
+    enableThinkingChain: enableThinkingChain.value
+  })
+
+  inputContent.value = ''
+}
+
+// 键盘事件
+function handleKeydown(event: KeyboardEvent): void {
+  if (event.ctrlKey && event.key === 'Enter') {
+    event.preventDefault()
+    handleSend()
+  }
+}
+
+// 附件处理（暂未实现）
+function handleAttach(): void {
+  ElMessage.info('附件功能开发中')
+}
+</script>
+
+<style lang="scss" scoped>
+.chat-input {
+  border-top: 1px solid #e2e8f0;
+  background: #fff;
+  padding: 10px 16px;
+}
+
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.tool-left {
+  display: flex;
+  gap: 2px;
+}
+
+.tool-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: #64748b;
+
+  &:hover {
+    background: #f1f5f9;
+    color: #3b82f6;
+  }
+
+  &.active {
+    background: #eff6ff;
+    color: #3b82f6;
+  }
+}
+
+.tool-right {
+  .tool-hint {
+    font-size: 11px;
+    color: #94a3b8;
+  }
+}
+
+.input-area {
+  position: relative;
+}
+
+.input-textarea {
+  :deep(.el-textarea__inner) {
+    border-radius: 12px;
+    border-color: #e2e8f0;
+    padding: 12px;
+    font-size: 14px;
+    line-height: 1.5;
+    resize: none !important;
+
+    &:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+
+    &::placeholder {
+      color: #94a3b8;
+    }
+  }
+}
+
+.input-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.action-right {
+  display: flex;
+  gap: 8px;
+}
+</style>

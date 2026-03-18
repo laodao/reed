@@ -6,7 +6,7 @@
 
 import { ipcMain, IpcMainInvokeEvent } from 'electron'
 import { getDatabaseManager } from '../../database'
-import type { Message, ListMessagesResponse } from '../../../shared/types'
+import type { Message, CreateMessageRequest, ListMessagesResponse } from '../../../shared/types'
 
 /**
  * 注册消息相关IPC处理器
@@ -14,6 +14,8 @@ import type { Message, ListMessagesResponse } from '../../../shared/types'
 export function registerMessageHandlers(): void {
   ipcMain.handle('message:list', handleListMessages)
   ipcMain.handle('message:create', handleCreateMessage)
+  ipcMain.handle('message:get', handleGetMessage)
+  ipcMain.handle('message:update', handleUpdateMessage)
   ipcMain.handle('message:delete', handleDeleteMessages)
 }
 
@@ -39,17 +41,32 @@ async function handleListMessages(
 }
 
 /**
+ * 处理获取单个消息
+ */
+async function handleGetMessage(
+  event: IpcMainInvokeEvent,
+  messageId: string
+): Promise<{ success: boolean; message?: Message }> {
+  try {
+    const dbManager = getDatabaseManager()
+    if (!dbManager.messages) {
+      return { success: false }
+    }
+
+    const message = await dbManager.messages.getById(messageId)
+    return { success: true, message: message || undefined }
+  } catch (error) {
+    console.error('获取消息失败:', error)
+    return { success: false }
+  }
+}
+
+/**
  * 处理创建消息
  */
 async function handleCreateMessage(
   event: IpcMainInvokeEvent,
-  payload: {
-    dialogId: string
-    role: string
-    content: string
-    modelId?: string
-    tokensUsed?: number
-  }
+  payload: CreateMessageRequest
 ): Promise<{ success: boolean; message?: Message }> {
   try {
     const dbManager = getDatabaseManager()
@@ -59,10 +76,12 @@ async function handleCreateMessage(
 
     const message = await dbManager.messages.create({
       dialogId: payload.dialogId,
-      role: payload.role as 'user' | 'assistant' | 'system',
+      role: payload.role,
       content: payload.content,
       modelId: payload.modelId,
-      tokensUsed: payload.tokensUsed
+      tokensUsed: payload.tokensUsed,
+      attachments: payload.attachments,
+      metadata: payload.metadata
     })
 
     // 更新对话的消息计数和时间戳
@@ -75,6 +94,33 @@ async function handleCreateMessage(
     return { success: true, message }
   } catch (error) {
     console.error('创建消息失败:', error)
+    return { success: false }
+  }
+}
+
+/**
+ * 处理更新消息
+ */
+async function handleUpdateMessage(
+  event: IpcMainInvokeEvent,
+  payload: { id: string; content?: string; metadata?: Message['metadata'] }
+): Promise<{ success: boolean }> {
+  try {
+    const dbManager = getDatabaseManager()
+    if (!dbManager.messages) {
+      return { success: false }
+    }
+
+    if (payload.content !== undefined) {
+      await dbManager.messages.updateContent(payload.id, payload.content)
+    }
+    if (payload.metadata !== undefined) {
+      await dbManager.messages.updateMetadata(payload.id, payload.metadata)
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error('更新消息失败:', error)
     return { success: false }
   }
 }
@@ -93,6 +139,12 @@ async function handleDeleteMessages(
     }
 
     await dbManager.messages.deleteByDialogId(dialogId)
+
+    // 更新对话的消息计数
+    if (dbManager.dialogs) {
+      await dbManager.dialogs.updateMessageCount(dialogId, 0)
+    }
+
     return { success: true }
   } catch (error) {
     console.error('删除消息失败:', error)
@@ -106,5 +158,7 @@ async function handleDeleteMessages(
 export function unregisterMessageHandlers(): void {
   ipcMain.removeHandler('message:list')
   ipcMain.removeHandler('message:create')
+  ipcMain.removeHandler('message:get')
+  ipcMain.removeHandler('message:update')
   ipcMain.removeHandler('message:delete')
 }

@@ -572,8 +572,8 @@ watch(
       form.name = config.name
       form.apiKey = ''
       form.baseUrl = config.baseUrl || ''
-      form.customModels = config.customModels || []
-      form.enabledModels = config.enabledModels || []
+      form.customModels = config.customModels ? [...config.customModels] : []
+      form.enabledModels = config.enabledModels ? [...config.enabledModels] : []
       form.isDefault = config.isDefault
 
       // 转换自定义请求头
@@ -588,10 +588,33 @@ watch(
       const template = templates.value.find((t) => t.id === config.templateId)
       if (template) {
         selectedTemplate.value = template
+        // 如果配置中没有启用的模型，使用模板的默认模型
+        if (form.enabledModels.length === 0 && template.models) {
+          form.enabledModels = template.models.map((m) => m.id)
+        }
       }
     }
   },
   { immediate: true }
+)
+
+// 监听模板列表加载完成，用于编辑模式下查找模板
+watch(
+  templates,
+  (newTemplates) => {
+    // 如果是编辑模式且还没有找到模板
+    if (props.editConfig && !selectedTemplate.value && newTemplates.length > 0) {
+      const template = newTemplates.find((t) => t.id === props.editConfig.templateId)
+      if (template) {
+        selectedTemplate.value = template
+        // 如果配置中没有启用的模型，使用模板的默认模型
+        if (form.enabledModels.length === 0 && template.models) {
+          form.enabledModels = template.models.map((m) => m.id)
+        }
+      }
+    }
+  },
+  { deep: true }
 )
 
 // 对话框打开时加载模板

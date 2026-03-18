@@ -358,12 +358,14 @@ export class ProviderConfigRepository {
    * @param id - 配置 ID
    * @param result - 测试结果
    * @param models - 获取到的模型列表（可选）
+   * @param templateModels - 模板中定义的有效模型 ID 列表（可选）
    * @returns Promise<boolean>
    */
   async updateTestResult(
     id: string,
     result: 'success' | 'failed' | 'unknown',
-    models?: ModelDefinition[]
+    models?: ModelDefinition[],
+    templateModels?: string[]
   ): Promise<boolean> {
     const now = new Date().toISOString()
 
@@ -372,9 +374,31 @@ export class ProviderConfigRepository {
       [now, result, now, id]
     )
 
-    // 如果提供了模型列表且测试成功，更新启用的模型
+    // 如果测试成功且提供了模型列表，更新启用的模型
     if (result === 'success' && models && models.length > 0) {
-      const enabledModels = models.map((m) => m.id)
+      let enabledModels = models.map((m) => m.id)
+
+      // 如果提供了模板模型列表，过滤掉不属于该模板的模型
+      if (templateModels && templateModels.length > 0) {
+        const validModelSet = new Set(templateModels)
+        const filteredModels = enabledModels.filter(modelId => validModelSet.has(modelId))
+
+        // 如果过滤后还有模型，使用过滤后的列表
+        if (filteredModels.length > 0) {
+          enabledModels = filteredModels
+          console.log(`[updateTestResult] 过滤后的有效模型:`, enabledModels)
+        } else {
+          // API 返回的模型均不属于该模板，清除 enabled_models（设为 NULL 使用模板默认模型）
+          console.log(`[updateTestResult] API 返回的模型均不属于该模板，清除 enabled_models`)
+          this.db.run(
+            'UPDATE provider_configs SET enabled_models = NULL WHERE id = ?',
+            [id]
+          )
+          this.dbManager.save()
+          return true
+        }
+      }
+
       this.db.run(
         'UPDATE provider_configs SET enabled_models = ? WHERE id = ?',
         [JSON.stringify(enabledModels), id]

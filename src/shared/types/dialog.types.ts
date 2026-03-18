@@ -4,14 +4,24 @@
  */
 
 /**
+ * 上下文配置
+ */
+export interface ContextConfig {
+  maxMessages: number
+  maxTokens: number
+}
+
+/**
  * 对话
  */
 export interface Dialog {
   id: string
   title: string
   modelId: string
+  providerConfigId?: string  // 使用的提供商配置 ID
   roleId?: string
   systemPrompt?: string
+  contextConfig?: ContextConfig  // 上下文配置
   createdAt: Date
   updatedAt: Date
   messageCount: number
@@ -23,7 +33,21 @@ export interface Dialog {
 export interface CreateDialogRequest {
   title?: string
   modelId: string
+  providerConfigId?: string
   roleId?: string
+  systemPrompt?: string
+  contextConfig?: ContextConfig
+}
+
+/**
+ * 更新对话请求
+ */
+export interface UpdateDialogRequest {
+  title?: string
+  systemPrompt?: string
+  contextConfig?: ContextConfig
+  modelId?: string
+  providerConfigId?: string
 }
 
 /**

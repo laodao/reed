@@ -4,7 +4,7 @@
  * @description 所有 AI 提供商的基类，定义统一接口
  */
 
-import type { ChatContext, ChatCompletionResponse } from '../../shared/types'
+import type { ChatContext, ChatCompletionResponse, ProviderTemplate, UserProviderConfig } from '../../shared/types'
 
 /**
  * Provider 配置
@@ -16,14 +16,28 @@ export interface ProviderConfig {
 }
 
 /**
+ * 流式事件回调
+ */
+export type StreamCallback = (event: {
+  type: 'start' | 'delta' | 'done' | 'error'
+  messageId?: string
+  content?: string
+  error?: string
+}) => void
+
+/**
  * Provider 基类
  * 所有 AI 提供商必须继承此类并实现其方法
  */
 export abstract class BaseProvider {
   protected config: ProviderConfig
+  protected template?: ProviderTemplate
+  protected userConfig?: UserProviderConfig
 
-  constructor(config: ProviderConfig) {
+  constructor(config: ProviderConfig, template?: ProviderTemplate, userConfig?: UserProviderConfig) {
     this.config = config
+    this.template = template
+    this.userConfig = userConfig
   }
 
   /**
@@ -64,9 +78,22 @@ export abstract class BaseProvider {
    * 5. 检查 signal 是否中断
    * 6. 返回完整响应
    */
-  abstract async chat(
+  abstract chat(
     context: ChatContext,
     onDelta: (content: string) => void,
+    signal?: AbortSignal
+  ): Promise<string>
+
+  /**
+   * 流式聊天（带完整事件）
+   * @param context - 对话上下文
+   * @param onEvent - 事件回调
+   * @param signal - 中断信号
+   * @returns Promise<string>
+   */
+  abstract chatStream(
+    context: ChatContext,
+    onEvent: StreamCallback,
     signal?: AbortSignal
   ): Promise<string>
 
@@ -75,27 +102,57 @@ export abstract class BaseProvider {
    * @param context - 对话上下文
    * @returns Promise<ChatCompletionResponse>
    */
-  abstract async chatSync(context: ChatContext): Promise<ChatCompletionResponse>
+  abstract chatSync(context: ChatContext): Promise<ChatCompletionResponse>
 
   /**
    * 测试连接
    * @returns Promise<{ success: boolean, message: string }>
    * @description 测试 API 密钥是否有效
-   * 逻辑：
-   * 1. 发送一个简单的测试请求
-   * 2. 返回测试结果
    */
-  abstract async testConnection(): Promise<{ success: boolean, message: string }>
+  abstract testConnection(): Promise<{ success: boolean, message: string }>
 
   /**
    * 构建请求头
    * @returns Record<string, string>
    */
   protected buildHeaders(): Record<string, string> {
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${this.config.apiKey}`
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
     }
+
+    // 如果有模板配置，使用模板的认证方式
+    if (this.template) {
+      const { authType, authHeader, authPrefix, defaultHeaders } = this.template.apiConfig
+      const apiKey = this.config.apiKey
+
+      // 添加默认请求头
+      if (defaultHeaders) {
+        Object.assign(headers, defaultHeaders)
+      }
+
+      // 添加自定义请求头
+      if (this.userConfig?.customHeaders) {
+        Object.assign(headers, this.userConfig.customHeaders)
+      }
+
+      // 根据认证类型添加认证头
+      switch (authType) {
+        case 'bearer':
+          headers[authHeader] = `${authPrefix || 'Bearer '}${apiKey}`
+          break
+        case 'api-key':
+          headers[authHeader] = apiKey
+          break
+        case 'none':
+          // 无需认证
+          break
+      }
+    } else {
+      // 默认使用 Bearer 认证
+      headers['Authorization'] = `Bearer ${this.config.apiKey}`
+    }
+
+    return headers
   }
 
   /**
@@ -104,8 +161,25 @@ export abstract class BaseProvider {
    * @returns string
    */
   protected buildUrl(endpoint: string): string {
-    const baseUrl = this.config.baseUrl || this.getDefaultBaseUrl()
+    // 优先使用用户配置的 baseUrl，然后是模板的 baseUrl，最后是默认值
+    let baseUrl = this.config.baseUrl
+    if (!baseUrl && this.template) {
+      baseUrl = this.template.apiConfig.baseUrl
+    }
+    if (!baseUrl) {
+      baseUrl = this.getDefaultBaseUrl()
+    }
     return `${baseUrl}${endpoint}`
+  }
+
+  /**
+   * 获取聊天端点
+   */
+  protected getChatEndpoint(): string {
+    if (this.template) {
+      return this.template.apiConfig.chatEndpoint
+    }
+    return '/v1/chat/completions'
   }
 
   /**

@@ -6,13 +6,14 @@
 
 import { ipcMain, IpcMainInvokeEvent } from 'electron'
 import { getDatabaseManager } from '../../database'
-import type { Dialog, CreateDialogRequest, ListDialogsResponse, GetDialogResponse, CreateDialogResponse } from '../../../shared/types'
+import type { Dialog, CreateDialogRequest, UpdateDialogRequest, ListDialogsResponse, GetDialogResponse, CreateDialogResponse } from '../../../shared/types'
 
 /**
  * 注册对话相关IPC处理器
  */
 export function registerDialogHandlers(): void {
   ipcMain.handle('dialog:list', handleListDialogs)
+  ipcMain.handle('dialog:list-by-role', handleListDialogsByRole)
   ipcMain.handle('dialog:get', handleGetDialog)
   ipcMain.handle('dialog:create', handleCreateDialog)
   ipcMain.handle('dialog:update', handleUpdateDialog)
@@ -30,6 +31,27 @@ async function handleListDialogs(event: IpcMainInvokeEvent): Promise<ListDialogs
     }
 
     const dialogs = await dbManager.dialogs.getAll()
+    return { success: true, dialogs }
+  } catch (error) {
+    console.error('获取对话列表失败:', error)
+    return { success: false, dialogs: [] }
+  }
+}
+
+/**
+ * 处理按角色获取对话列表
+ */
+async function handleListDialogsByRole(
+  event: IpcMainInvokeEvent,
+  roleId: string | null
+): Promise<ListDialogsResponse> {
+  try {
+    const dbManager = getDatabaseManager()
+    if (!dbManager.dialogs) {
+      return { success: false, dialogs: [] }
+    }
+
+    const dialogs = await dbManager.dialogs.getByRoleId(roleId)
     return { success: true, dialogs }
   } catch (error) {
     console.error('获取对话列表失败:', error)
@@ -71,10 +93,16 @@ async function handleCreateDialog(
       return { success: false, error: '数据库未初始化' }
     }
 
-    // 如果指定了角色，获取角色的系统提示词
-    let systemPrompt: string | undefined
-    if (request.roleId && dbManager.roles) {
-      const role = await dbManager.roles.getById(request.roleId)
+    // 默认助手 ID（'default-assistant' 是对话首页创建对话时的默认助手）
+    const DEFAULT_ROLE_ID = 'default-assistant'
+
+    // 如果没有指定角色，使用默认助手
+    const roleId = request.roleId || DEFAULT_ROLE_ID
+
+    // 获取角色的系统提示词
+    let systemPrompt: string | undefined = request.systemPrompt
+    if (roleId && dbManager.roles && !systemPrompt) {
+      const role = await dbManager.roles.getById(roleId)
       if (role) {
         systemPrompt = role.systemPrompt
       }
@@ -83,8 +111,10 @@ async function handleCreateDialog(
     const dialog = await dbManager.dialogs.create({
       title: request.title || '新对话',
       modelId: request.modelId,
-      roleId: request.roleId,
-      systemPrompt
+      providerConfigId: request.providerConfigId,
+      roleId,
+      systemPrompt,
+      contextConfig: request.contextConfig
     })
 
     return { success: true, dialog }
@@ -99,7 +129,7 @@ async function handleCreateDialog(
  */
 async function handleUpdateDialog(
   event: IpcMainInvokeEvent,
-  payload: { id: string; data: Partial<Dialog> }
+  payload: { id: string; data: UpdateDialogRequest }
 ): Promise<{ success: boolean }> {
   try {
     const dbManager = getDatabaseManager()
@@ -141,6 +171,7 @@ async function handleDeleteDialog(
  */
 export function unregisterDialogHandlers(): void {
   ipcMain.removeHandler('dialog:list')
+  ipcMain.removeHandler('dialog:list-by-role')
   ipcMain.removeHandler('dialog:get')
   ipcMain.removeHandler('dialog:create')
   ipcMain.removeHandler('dialog:update')

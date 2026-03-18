@@ -5,7 +5,7 @@
  */
 
 import { Database as SqlJsDatabase } from 'sql.js'
-import type { Dialog } from '../../../shared/types'
+import type { Dialog, ContextConfig } from '../../../shared/types'
 import type { DatabaseManager } from '../index'
 import { randomUUID } from 'crypto'
 
@@ -22,12 +22,27 @@ export class DialogRepository {
   }
 
   /**
+   * 解析上下文配置
+   */
+  private parseContextConfig(configStr: string | null): ContextConfig | undefined {
+    if (!configStr) return undefined
+    try {
+      return JSON.parse(configStr)
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
    * 获取所有对话
    * @returns Promise<Dialog[]>
    */
   async getAll(): Promise<Dialog[]> {
     const result = this.db.exec(
-      'SELECT id, title, model_id, role_id, system_prompt, created_at, updated_at, message_count FROM dialogs ORDER BY updated_at DESC'
+      `SELECT id, title, model_id, provider_config_id, role_id, system_prompt,
+              context_config, created_at, updated_at, message_count
+       FROM dialogs
+       ORDER BY updated_at DESC`
     )
     const dialogs: Dialog[] = []
     if (result.length > 0) {
@@ -36,11 +51,56 @@ export class DialogRepository {
           id: row[0] as string,
           title: row[1] as string,
           modelId: row[2] as string,
-          roleId: (row[3] as string) || undefined,
-          systemPrompt: (row[4] as string) || undefined,
-          createdAt: new Date(row[5] as string),
-          updatedAt: new Date(row[6] as string),
-          messageCount: row[7] as number
+          providerConfigId: (row[3] as string) || undefined,
+          roleId: (row[4] as string) || undefined,
+          systemPrompt: (row[5] as string) || undefined,
+          contextConfig: this.parseContextConfig(row[6] as string | null),
+          createdAt: new Date(row[7] as string),
+          updatedAt: new Date(row[8] as string),
+          messageCount: row[9] as number
+        })
+      })
+    }
+    return dialogs
+  }
+
+  /**
+   * 根据角色 ID 获取对话列表
+   * @param roleId - 角色 ID
+   * @returns Promise<Dialog[]>
+   */
+  async getByRoleId(roleId: string | null): Promise<Dialog[]> {
+    const result = roleId
+      ? this.db.exec(
+          `SELECT id, title, model_id, provider_config_id, role_id, system_prompt,
+                  context_config, created_at, updated_at, message_count
+           FROM dialogs
+           WHERE role_id = ?
+           ORDER BY updated_at DESC`,
+          [roleId]
+        )
+      : this.db.exec(
+          `SELECT id, title, model_id, provider_config_id, role_id, system_prompt,
+                  context_config, created_at, updated_at, message_count
+           FROM dialogs
+           WHERE role_id IS NULL
+           ORDER BY updated_at DESC`
+        )
+
+    const dialogs: Dialog[] = []
+    if (result.length > 0) {
+      result[0].values.forEach((row) => {
+        dialogs.push({
+          id: row[0] as string,
+          title: row[1] as string,
+          modelId: row[2] as string,
+          providerConfigId: (row[3] as string) || undefined,
+          roleId: (row[4] as string) || undefined,
+          systemPrompt: (row[5] as string) || undefined,
+          contextConfig: this.parseContextConfig(row[6] as string | null),
+          createdAt: new Date(row[7] as string),
+          updatedAt: new Date(row[8] as string),
+          messageCount: row[9] as number
         })
       })
     }
@@ -54,7 +114,10 @@ export class DialogRepository {
    */
   async getById(id: string): Promise<Dialog | null> {
     const result = this.db.exec(
-      'SELECT id, title, model_id, role_id, system_prompt, created_at, updated_at, message_count FROM dialogs WHERE id = ?',
+      `SELECT id, title, model_id, provider_config_id, role_id, system_prompt,
+              context_config, created_at, updated_at, message_count
+       FROM dialogs
+       WHERE id = ?`,
       [id]
     )
     if (result.length > 0 && result[0].values.length > 0) {
@@ -63,11 +126,13 @@ export class DialogRepository {
         id: row[0] as string,
         title: row[1] as string,
         modelId: row[2] as string,
-        roleId: (row[3] as string) || undefined,
-        systemPrompt: (row[4] as string) || undefined,
-        createdAt: new Date(row[5] as string),
-        updatedAt: new Date(row[6] as string),
-        messageCount: row[7] as number
+        providerConfigId: (row[3] as string) || undefined,
+        roleId: (row[4] as string) || undefined,
+        systemPrompt: (row[5] as string) || undefined,
+        contextConfig: this.parseContextConfig(row[6] as string | null),
+        createdAt: new Date(row[7] as string),
+        updatedAt: new Date(row[8] as string),
+        messageCount: row[9] as number
       }
     }
     return null
@@ -81,18 +146,24 @@ export class DialogRepository {
   async create(dialog: Omit<Dialog, 'id' | 'createdAt' | 'updatedAt' | 'messageCount'>): Promise<Dialog> {
     const id = randomUUID()
     const now = new Date().toISOString()
+    const contextConfigStr = dialog.contextConfig ? JSON.stringify(dialog.contextConfig) : null
+
     this.db.run(
-      `INSERT INTO dialogs (id, title, model_id, role_id, system_prompt, created_at, updated_at, message_count)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
-      [id, dialog.title, dialog.modelId, dialog.roleId || null, dialog.systemPrompt || null, now, now]
+      `INSERT INTO dialogs (id, title, model_id, provider_config_id, role_id, system_prompt,
+                            context_config, created_at, updated_at, message_count)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      [id, dialog.title, dialog.modelId, dialog.providerConfigId || null,
+       dialog.roleId || null, dialog.systemPrompt || null, contextConfigStr, now, now]
     )
     this.dbManager.save()
     return {
       id,
       title: dialog.title,
       modelId: dialog.modelId,
+      providerConfigId: dialog.providerConfigId,
       roleId: dialog.roleId,
       systemPrompt: dialog.systemPrompt,
+      contextConfig: dialog.contextConfig,
       createdAt: new Date(now),
       updatedAt: new Date(now),
       messageCount: 0
@@ -116,6 +187,18 @@ export class DialogRepository {
     if (data.systemPrompt !== undefined) {
       fields.push('system_prompt = ?')
       values.push(data.systemPrompt)
+    }
+    if (data.contextConfig !== undefined) {
+      fields.push('context_config = ?')
+      values.push(data.contextConfig ? JSON.stringify(data.contextConfig) : null)
+    }
+    if (data.modelId !== undefined) {
+      fields.push('model_id = ?')
+      values.push(data.modelId)
+    }
+    if (data.providerConfigId !== undefined) {
+      fields.push('provider_config_id = ?')
+      values.push(data.providerConfigId || null)
     }
 
     if (fields.length > 0) {
