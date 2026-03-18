@@ -38,6 +38,11 @@ export const useRoleStore = defineStore('role', () => {
   const customRoles = computed(() => roles.value.filter(r => !r.isBuiltin))
 
   /**
+   * 默认助手（ID 为 'default-assistant'）
+   */
+  const defaultAssistant = computed(() => roles.value.find(r => r.id === 'default-assistant'))
+
+  /**
    * 加载角色列表
    */
   async function loadRoles(): Promise<void> {
@@ -74,20 +79,25 @@ export const useRoleStore = defineStore('role', () => {
   /**
    * 更新角色
    */
-  async function updateRole(id: string, request: UpdateRoleRequest): Promise<boolean> {
+  async function updateRole(id: string, request: UpdateRoleRequest): Promise<Role | null> {
     try {
       const response = await window.electronAPI.role.update(id, request)
       if (response.success) {
         const index = roles.value.findIndex(r => r.id === id)
         if (index !== -1) {
-          roles.value[index] = { ...roles.value[index], ...request }
+          // 更新角色数据
+          roles.value[index] = {
+            ...roles.value[index],
+            ...request,
+            updatedAt: new Date()
+          }
+          return roles.value[index]
         }
-        return true
       }
-      return false
+      return null
     } catch (error) {
       console.error('更新角色失败:', error)
-      return false
+      return null
     }
   }
 
@@ -139,6 +149,26 @@ export const useRoleStore = defineStore('role', () => {
     return roles.value.find(r => r.id === id)
   }
 
+  /**
+   * 更新角色列表中的角色数据
+   */
+  function updateRoleInList(role: Role): void {
+    const index = roles.value.findIndex(r => r.id === role.id)
+    if (index !== -1) {
+      roles.value[index] = role
+    }
+  }
+
+  /**
+   * 添加新角色到列表
+   */
+  function addRoleToList(role: Role): void {
+    const exists = roles.value.some(r => r.id === role.id)
+    if (!exists) {
+      roles.value.push(role)
+    }
+  }
+
   return {
     // 状态
     roles,
@@ -146,6 +176,7 @@ export const useRoleStore = defineStore('role', () => {
     loading,
     builtinRoles,
     customRoles,
+    defaultAssistant,
     // 方法
     loadRoles,
     createRole,
@@ -153,6 +184,8 @@ export const useRoleStore = defineStore('role', () => {
     deleteRole,
     getDialogCount,
     selectRole,
-    getRoleById
+    getRoleById,
+    updateRoleInList,
+    addRoleToList
   }
 })

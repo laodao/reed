@@ -58,7 +58,7 @@ defineEmits<{
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #fff;
+  background: var(--el-bg-color);
   min-width: 0;
 }
 </style>

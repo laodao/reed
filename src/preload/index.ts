@@ -203,11 +203,42 @@ const electronAPI = {
   role: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.ROLE_LIST),
     get: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.ROLE_GET, id),
-    create: (data: { name: string; description?: string; systemPrompt?: string; avatar?: string }) =>
-      ipcRenderer.invoke(IPC_CHANNELS.ROLE_CREATE, data),
+    create: (data: {
+      name: string
+      description?: string
+      systemPrompt?: string
+      avatar?: string
+      // 模型配置
+      defaultModelId?: string
+      defaultProviderConfigId?: string
+      autoResetModel?: boolean
+      // 生成参数
+      temperature?: number
+      topP?: number
+      maxContextMessages?: number
+      maxTokens?: number
+      enableStream?: boolean
+      customParams?: Record<string, unknown>
+    }) => ipcRenderer.invoke(IPC_CHANNELS.ROLE_CREATE, data),
     update: (
       id: string,
-      data: Partial<{ name: string; description: string; systemPrompt: string; avatar: string }>
+      data: Partial<{
+        name: string
+        description: string
+        systemPrompt: string
+        avatar: string
+        // 模型配置
+        defaultModelId: string
+        defaultProviderConfigId: string
+        autoResetModel: boolean
+        // 生成参数
+        temperature: number
+        topP: number
+        maxContextMessages: number
+        maxTokens: number
+        enableStream: boolean
+        customParams: Record<string, unknown>
+      }>
     ) => ipcRenderer.invoke(IPC_CHANNELS.ROLE_UPDATE, { id, data }),
     delete: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.ROLE_DELETE, id),
     getDialogCount: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.ROLE_DIALOG_COUNT, id)

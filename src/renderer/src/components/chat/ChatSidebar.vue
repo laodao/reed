@@ -22,33 +22,22 @@
 
     <!-- 助手列表 -->
     <div v-if="currentTab === 'assistants'" class="sidebar-content">
-      <div class="section-header">
-        <span class="section-title">内置助手</span>
-      </div>
+      <!-- 只显示用户的助手（包含默认助手和自定义助手） -->
       <AssistantCard
-        v-for="role in builtinRoles"
+        v-for="role in userRoles"
         :key="role.id"
         :role="role"
         :selected="selectedRole?.id === role.id"
+        :deletable="!isDefaultAssistant(role)"
+        :editable="true"
         @click="$emit('selectRole', role)"
-      />
-
-      <div v-if="customRoles.length > 0" class="section-header" style="margin-top: 16px;">
-        <span class="section-title">自定义助手</span>
-      </div>
-      <AssistantCard
-        v-for="role in customRoles"
-        :key="role.id"
-        :role="role"
-        :selected="selectedRole?.id === role.id"
-        :deletable="true"
-        @click="$emit('selectRole', role)"
+        @edit="handleEditRole(role)"
         @delete="handleDeleteRole(role)"
       />
 
-      <div class="add-assistant" @click="showAddDialog = true">
+      <div class="add-assistant" @click="showLibraryPicker = true">
         <el-icon><Plus /></el-icon>
-        <span>添加自定义助手</span>
+        <span>添加助手</span>
       </div>
     </div>
 
@@ -83,56 +72,20 @@
       </div>
     </div>
 
-    <!-- 添加助手对话框 -->
-    <el-dialog
-      v-model="showAddDialog"
-      title="添加自定义助手"
-      width="440px"
-      :close-on-click-modal="false"
-    >
-      <el-form :model="newRoleForm" label-width="80px" size="default">
-        <el-form-item label="名称" required>
-          <el-input v-model="newRoleForm.name" placeholder="请输入助手名称" maxlength="20" show-word-limit />
-        </el-form-item>
-        <el-form-item label="描述">
-          <el-input
-            v-model="newRoleForm.description"
-            type="textarea"
-            :rows="2"
-            placeholder="请输入助手描述"
-            maxlength="100"
-            show-word-limit
-          />
-        </el-form-item>
-        <el-form-item label="系统提示">
-          <el-input
-            v-model="newRoleForm.systemPrompt"
-            type="textarea"
-            :rows="4"
-            placeholder="请输入系统提示词，定义助手的角色和行为"
-          />
-        </el-form-item>
-        <el-form-item label="图标">
-          <div class="avatar-picker">
-            <div
-              v-for="emoji in avatarOptions"
-              :key="emoji"
-              class="avatar-option"
-              :class="{ selected: newRoleForm.avatar === emoji }"
-              @click="newRoleForm.avatar = emoji"
-            >
-              {{ emoji }}
-            </div>
-          </div>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showAddDialog = false">取消</el-button>
-        <el-button type="primary" @click="handleCreateRole" :disabled="!newRoleForm.name.trim()">
-          创建
-        </el-button>
-      </template>
-    </el-dialog>
+    <!-- 助手库选择器 -->
+    <AssistantLibraryPicker
+      v-model="showLibraryPicker"
+      @select="handleSelectTemplate"
+      @custom="handleCustomCreate"
+    />
+
+    <!-- 助手编辑器对话框 -->
+    <AssistantEditor
+      v-model="showEditorDialog"
+      :role="roleToEdit"
+      :template="selectedTemplate"
+      @saved="handleRoleSaved"
+    />
 
     <!-- 删除确认对话框 -->
     <el-dialog
@@ -159,21 +112,25 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { Plus, User, ChatLineSquare, WarningFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import AssistantCard from './AssistantCard.vue'
+import AssistantEditor from './AssistantEditor.vue'
+import AssistantLibraryPicker from './AssistantLibraryPicker.vue'
 import TopicCard from './TopicCard.vue'
 import type { Role, Dialog, SidebarTab } from '../../../shared/types'
+import type { AssistantLibraryTemplate } from '../../../shared/types/assistant-library.types'
 
 // Props
-defineProps<{
+const props = defineProps<{
   currentTab: SidebarTab
   selectedRole: Role | null
-  builtinRoles: Role[]
   customRoles: Role[]
   dialogs: Dialog[]
   currentDialog: Dialog | null
+  getDialogCount: (roleId: string) => Promise<number>
+  deleteRole: (roleId: string) => Promise<{ success: boolean; dialogCount: number }>
 }>()
 
 // Emits
@@ -184,20 +141,34 @@ const emit = defineEmits<{
   (e: 'createDialog', options?: { roleId?: string }): void
   (e: 'deleteDialog', dialogId: string): void
   (e: 'createRole', request: { name: string; description?: string; systemPrompt?: string; avatar?: string }): void
-  (e: 'deleteRole', roleId: string): Promise<{ success: boolean; dialogCount: number }>
+  (e: 'updateRole', role: Role): void
+  (e: 'roleCreated', role: Role): void
 }>()
 
-// 新角色表单
-const showAddDialog = ref(false)
-const newRoleForm = ref({
-  name: '',
-  description: '',
-  systemPrompt: '',
-  avatar: '🤖'
+// 默认助手（固定的）
+const defaultAssistant: Role = {
+  id: 'default-assistant',
+  name: '默认助手',
+  description: '通用的智能助手，适合日常对话和问答',
+  systemPrompt: '你是一个智能助手，能够帮助用户解答各种问题，提供专业、准确、有建设性的回答。',
+  avatar: '💬',
+  isBuiltin: true,
+  createdAt: new Date(),
+  updatedAt: new Date()
+}
+
+// 用户的助手列表（默认助手 + 自定义助手）
+const userRoles = computed(() => {
+  return [defaultAssistant, ...props.customRoles]
 })
 
-// 头像选项
-const avatarOptions = ['🤖', '🌐', '💻', '✍️', '📚', '🎨', '🎵', '🔬', '💼', '🎮', '🏥', '⚖️']
+// 助手库选择器
+const showLibraryPicker = ref(false)
+const selectedTemplate = ref<AssistantLibraryTemplate | undefined>(undefined)
+
+// 编辑相关
+const showEditorDialog = ref(false)
+const roleToEdit = ref<Role | undefined>(undefined)
 
 // 删除相关
 const showDeleteDialog = ref(false)
@@ -205,38 +176,60 @@ const roleToDelete = ref<Role | null>(null)
 const deleteDialogCount = ref(0)
 const deleting = ref(false)
 
-// 创建角色
-function handleCreateRole(): void {
-  if (!newRoleForm.value.name.trim()) {
-    ElMessage.warning('请输入助手名称')
-    return
-  }
-  emit('createRole', { ...newRoleForm.value })
-  showAddDialog.value = false
-  newRoleForm.value = {
-    name: '',
-    description: '',
-    systemPrompt: '',
-    avatar: '🤖'
-  }
+// 检查是否是默认助手
+function isDefaultAssistant(role: Role): boolean {
+  return role.id === 'default-assistant'
 }
 
-// 删除角色
+// 从助手库选择模板
+function handleSelectTemplate(template: AssistantLibraryTemplate): void {
+  selectedTemplate.value = template
+  roleToEdit.value = undefined
+  showEditorDialog.value = true
+}
+
+// 自定义创建（不选择模板）
+function handleCustomCreate(): void {
+  selectedTemplate.value = undefined
+  roleToEdit.value = undefined
+  showEditorDialog.value = true
+}
+
+// 编辑角色
+function handleEditRole(role: Role): void {
+  roleToEdit.value = role
+  selectedTemplate.value = undefined
+  showEditorDialog.value = true
+}
+
+// 角色保存成功
+function handleRoleSaved(role: Role): void {
+  // 检查是否是新建的角色（不在当前列表中）
+  const isNewRole = !userRoles.value.some(r => r.id === role.id)
+  if (isNewRole) {
+    emit('roleCreated', role)
+  } else {
+    emit('updateRole', role)
+  }
+  roleToEdit.value = undefined
+  selectedTemplate.value = undefined
+}
+
+// 删除角色 - 显示确认对话框
 async function handleDeleteRole(role: Role): Promise<void> {
   roleToDelete.value = role
-  // 先获取关联的对话数量
-  const result = await emit('deleteRole', role.id)
-  deleteDialogCount.value = result?.dialogCount || 0
+  // 获取关联的对话数量
+  deleteDialogCount.value = await props.getDialogCount(role.id)
   showDeleteDialog.value = true
 }
 
-// 确认删除
+// 确认删除 - 实际执行删除操作
 async function confirmDeleteRole(): Promise<void> {
   if (!roleToDelete.value) return
 
   deleting.value = true
   try {
-    const result = await emit('deleteRole', roleToDelete.value.id)
+    const result = await props.deleteRole(roleToDelete.value.id)
     if (result?.success) {
       ElMessage.success('助手已删除')
       showDeleteDialog.value = false
@@ -287,9 +280,9 @@ async function confirmDeleteRole(): Promise<void> {
   }
 
   &.active {
-    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    background: var(--el-color-primary);
     color: #fff;
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+    box-shadow: 0 2px 8px var(--el-color-primary-light-5);
   }
 }
 
@@ -361,39 +354,9 @@ async function confirmDeleteRole(): Promise<void> {
   transition: all 0.2s ease;
 
   &:hover {
-    border-color: #3b82f6;
-    color: #3b82f6;
-    background: rgba(59, 130, 246, 0.05);
-  }
-}
-
-.avatar-picker {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.avatar-option {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 20px;
-  border: 2px solid #e2e8f0;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-
-  &:hover {
-    border-color: #3b82f6;
-    transform: scale(1.1);
-  }
-
-  &.selected {
-    border-color: #3b82f6;
-    background: rgba(59, 130, 246, 0.1);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+    border-color: var(--el-color-primary);
+    color: var(--el-color-primary);
+    background: var(--el-color-primary-light-9);
   }
 }
 

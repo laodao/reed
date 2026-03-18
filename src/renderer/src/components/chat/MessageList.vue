@@ -84,7 +84,7 @@ watch(
   flex: 1;
   overflow-y: auto;
   padding: 16px;
-  background: linear-gradient(180deg, #fafbfc 0%, #f5f7fa 100%);
+  background: var(--el-fill-color-lighter);
 }
 
 .messages-container {
@@ -154,7 +154,7 @@ watch(
 
   :deep(code:not(pre code)) {
     background: #f1f5f9;
-    color: #3b82f6;
+    color: var(--el-color-primary);
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 13px;
@@ -169,7 +169,7 @@ watch(
   span {
     width: 6px;
     height: 6px;
-    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    background: var(--el-color-primary);
     border-radius: 50%;
     animation: typing 1s infinite;
 

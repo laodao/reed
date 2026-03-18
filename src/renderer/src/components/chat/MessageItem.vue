@@ -74,7 +74,7 @@ function formatTime(date: Date | string): string {
     flex-direction: row-reverse;
 
     .message-content {
-      background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+      background: var(--el-color-primary);
       color: #fff;
       border: none;
 
@@ -145,7 +145,7 @@ function formatTime(date: Date | string): string {
 
   :deep(code:not(pre code)) {
     background: #f1f5f9;
-    color: #3b82f6;
+    color: var(--el-color-primary);
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 13px;

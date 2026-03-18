@@ -77,9 +77,9 @@ function formatTime(date: Date | string): string {
   }
 
   &.selected {
-    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-    border-color: #3b82f6;
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+    background: var(--el-color-primary-light-9);
+    border-color: var(--el-color-primary);
+    box-shadow: 0 2px 8px var(--el-color-primary-light-7);
   }
 }
 

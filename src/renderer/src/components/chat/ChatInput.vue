@@ -169,12 +169,12 @@ function handleAttach(): void {
 
   &:hover {
     background: #f1f5f9;
-    color: #3b82f6;
+    color: var(--el-color-primary);
   }
 
   &.active {
-    background: #eff6ff;
-    color: #3b82f6;
+    background: var(--el-color-primary-light-9);
+    color: var(--el-color-primary);
   }
 }
 
@@ -199,8 +199,8 @@ function handleAttach(): void {
     resize: none !important;
 
     &:focus {
-      border-color: #3b82f6;
-      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+      border-color: var(--el-color-primary);
+      box-shadow: 0 0 0 3px var(--el-color-primary-light-8);
     }
 
     &::placeholder {

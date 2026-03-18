@@ -5,32 +5,57 @@
       <div class="name">{{ role.name }}</div>
       <div class="description">{{ role.description || '暂无描述' }}</div>
     </div>
-    <el-button
-      v-if="deletable && !role.isBuiltin"
-      class="delete-btn"
-      type="danger"
-      size="small"
-      circle
-      text
-      @click.stop="$emit('delete')"
+    <!-- 操作菜单 -->
+    <el-dropdown
+      v-if="editable || (deletable && !role.isBuiltin)"
+      trigger="click"
+      placement="bottom-end"
+      @click.stop
     >
-      <el-icon><Delete /></el-icon>
-    </el-button>
+      <el-button
+        class="action-btn"
+        type="primary"
+        size="small"
+        circle
+        text
+        @click.stop
+      >
+        <el-icon><MoreFilled /></el-icon>
+      </el-button>
+      <template #dropdown>
+        <el-dropdown-menu>
+          <el-dropdown-item v-if="editable" @click="$emit('edit')">
+            <el-icon><Edit /></el-icon>
+            <span>编辑</span>
+          </el-dropdown-item>
+          <el-dropdown-item
+            v-if="deletable && !role.isBuiltin"
+            divided
+            @click="$emit('delete')"
+          >
+            <el-icon class="delete-icon"><Delete /></el-icon>
+            <span class="delete-text">删除</span>
+          </el-dropdown-item>
+        </el-dropdown-menu>
+      </template>
+    </el-dropdown>
   </div>
 </template>
 
 <script setup lang="ts">
-import { Delete } from '@element-plus/icons-vue'
+import { Delete, Edit, MoreFilled } from '@element-plus/icons-vue'
 import type { Role } from '../../../shared/types'
 
 defineProps<{
   role: Role
   selected: boolean
   deletable?: boolean
+  editable?: boolean
 }>()
 
 defineEmits<{
   (e: 'click'): void
+  (e: 'edit'): void
   (e: 'delete'): void
 }>()
 </script>
@@ -52,15 +77,15 @@ defineEmits<{
     background: #f8fafc;
     border-color: #e2e8f0;
 
-    .delete-btn {
+    .action-btn {
       opacity: 1;
     }
   }
 
   &.selected {
-    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-    border-color: #3b82f6;
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+    background: var(--el-color-primary-light-9);
+    border-color: var(--el-color-primary);
+    box-shadow: 0 2px 8px var(--el-color-primary-light-7);
   }
 }
 
@@ -99,12 +124,17 @@ defineEmits<{
   white-space: nowrap;
 }
 
-.delete-btn {
+.action-btn {
   opacity: 0;
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
+  flex-shrink: 0;
   transition: opacity 0.2s ease;
+}
+
+.delete-icon {
+  color: #f56c6c;
+}
+
+.delete-text {
+  color: #f56c6c;
 }
 </style>

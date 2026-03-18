@@ -6,7 +6,7 @@
 
 import { ipcMain, IpcMainInvokeEvent } from 'electron'
 import { getDatabaseManager } from '../../database'
-import type { Role, CreateRoleRequest, ListRolesResponse, GetRoleResponse, CreateRoleResponse } from '../../../shared/types'
+import type { Role, CreateRoleRequest, UpdateRoleRequest, ListRolesResponse, GetRoleResponse, CreateRoleResponse } from '../../../shared/types'
 
 /**
  * 注册角色相关IPC处理器
@@ -82,7 +82,7 @@ async function handleCreateRole(
  */
 async function handleUpdateRole(
   event: IpcMainInvokeEvent,
-  payload: { id: string; data: Partial<Role> }
+  payload: { id: string; data: UpdateRoleRequest }
 ): Promise<{ success: boolean }> {
   try {
     const dbManager = getDatabaseManager()

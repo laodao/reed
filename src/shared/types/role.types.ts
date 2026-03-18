@@ -72,6 +72,25 @@ export interface Role {
   systemPrompt?: string
   avatar?: string
   isBuiltin?: boolean
+
+  // 模型配置
+  defaultModelId?: string          // 默认模型 ID
+  defaultProviderConfigId?: string // 默认提供商配置 ID
+  autoResetModel?: boolean         // 新话题是否重置模型（默认 true）
+
+  // 生成参数
+  temperature?: number             // 温度 (0-2)
+  topP?: number                    // Top P (0-1)
+  maxContextMessages?: number      // 上下文消息数量
+  maxTokens?: number               // 最大输出 Token
+  enableStream?: boolean           // 是否流式输出（默认 true）
+  customParams?: Record<string, unknown>  // 自定义参数
+
+  // 知识库配置
+  knowledgeBaseIds?: string[]      // 关联的知识库 ID 列表
+  knowledgeRetrieveCount?: number  // 检索数量（默认 5）
+  knowledgeThreshold?: number      // 检索阈值（0-1，默认 0.5）
+
   createdAt: Date
   updatedAt: Date
 }
@@ -84,6 +103,21 @@ export interface CreateRoleRequest {
   description?: string
   systemPrompt?: string
   avatar?: string
+  // 模型配置
+  defaultModelId?: string
+  defaultProviderConfigId?: string
+  autoResetModel?: boolean
+  // 生成参数
+  temperature?: number
+  topP?: number
+  maxContextMessages?: number
+  maxTokens?: number
+  enableStream?: boolean
+  customParams?: Record<string, unknown>
+  // 知识库配置
+  knowledgeBaseIds?: string[]
+  knowledgeRetrieveCount?: number
+  knowledgeThreshold?: number
 }
 
 /**
@@ -94,6 +128,21 @@ export interface UpdateRoleRequest {
   description?: string
   systemPrompt?: string
   avatar?: string
+  // 模型配置
+  defaultModelId?: string
+  defaultProviderConfigId?: string
+  autoResetModel?: boolean
+  // 生成参数
+  temperature?: number
+  topP?: number
+  maxContextMessages?: number
+  maxTokens?: number
+  enableStream?: boolean
+  customParams?: Record<string, unknown>
+  // 知识库配置
+  knowledgeBaseIds?: string[]
+  knowledgeRetrieveCount?: number
+  knowledgeThreshold?: number
 }
 
 /**

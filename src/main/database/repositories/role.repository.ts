@@ -11,7 +11,7 @@ import type { DatabaseManager } from '../index'
 import { randomUUID } from 'crypto'
 
 /**
- * 角色数据仓库
+   * 角色数据仓库
  */
 export class RoleRepository {
   private db: SqlJsDatabase
@@ -23,28 +23,56 @@ export class RoleRepository {
   }
 
   /**
+   * 将数据库行映射为 Role 对象
+   * @param row - 数据库行
+   * @returns Role
+   */
+  private mapRowToRole(row: any[]): Role {
+    return {
+      id: row[0] as string,
+      name: row[1] as string,
+      description: (row[2] as string) || undefined,
+      systemPrompt: (row[3] as string) || undefined,
+      avatar: (row[4] as string) || undefined,
+      isBuiltin: !!row[5],
+      // 模型配置
+      defaultModelId: (row[6] as string) || undefined,
+      defaultProviderConfigId: (row[7] as string) || undefined,
+      autoResetModel: row[8] !== null ? !!row[8] : true,
+      // 生成参数
+      temperature: row[9] !== null ? (row[9] as number) : undefined,
+      topP: row[10] !== null ? (row[10] as number) : undefined,
+      maxContextMessages: row[11] !== null ? (row[11] as number) : undefined,
+      maxTokens: row[12] !== null ? (row[12] as number) : undefined,
+      enableStream: row[13] !== null ? !!row[13] : true,
+      customParams: row[14] ? JSON.parse(row[14] as string) : undefined,
+      // 知识库配置
+      knowledgeBaseIds: row[17] ? JSON.parse(row[17] as string) : undefined,
+      knowledgeRetrieveCount: row[18] !== null ? (row[18] as number) : undefined,
+      knowledgeThreshold: row[19] !== null ? (row[19] as number) : undefined,
+      createdAt: new Date(row[15] as string),
+      updatedAt: new Date(row[16] as string)
+    }
+  }
+
+  /**
    * 获取所有角色
    * @returns Promise<Role[]>
    */
   async getAll(): Promise<Role[]> {
     const result = this.db.exec(
-      `SELECT id, name, description, system_prompt, avatar, is_builtin, created_at, updated_at
+      `SELECT id, name, description, system_prompt, avatar, is_builtin,
+              default_model_id, default_provider_config_id, auto_reset_model,
+              temperature, top_p, max_context_messages, max_tokens, enable_stream, custom_params,
+              knowledge_base_ids, knowledge_retrieve_count, knowledge_threshold,
+              created_at, updated_at
        FROM roles
        ORDER BY is_builtin DESC, created_at ASC`
     )
     const roles: Role[] = []
     if (result.length > 0) {
       result[0].values.forEach((row) => {
-        roles.push({
-          id: row[0] as string,
-          name: row[1] as string,
-          description: (row[2] as string) || undefined,
-          systemPrompt: (row[3] as string) || undefined,
-          avatar: (row[4] as string) || undefined,
-          isBuiltin: !!row[5],
-          createdAt: new Date(row[6] as string),
-          updatedAt: new Date(row[7] as string)
-        })
+        roles.push(this.mapRowToRole(row))
       })
     }
     return roles
@@ -57,23 +85,18 @@ export class RoleRepository {
    */
   async getById(id: string): Promise<Role | null> {
     const result = this.db.exec(
-      `SELECT id, name, description, system_prompt, avatar, is_builtin, created_at, updated_at
+      `SELECT id, name, description, system_prompt, avatar, is_builtin,
+              default_model_id, default_provider_config_id, auto_reset_model,
+              temperature, top_p, max_context_messages, max_tokens, enable_stream, custom_params,
+              knowledge_base_ids, knowledge_retrieve_count, knowledge_threshold,
+              created_at, updated_at
        FROM roles
        WHERE id = ?`,
       [id]
     )
     if (result.length > 0 && result[0].values.length > 0) {
       const row = result[0].values[0]
-      return {
-        id: row[0] as string,
-        name: row[1] as string,
-        description: (row[2] as string) || undefined,
-        systemPrompt: (row[3] as string) || undefined,
-        avatar: (row[4] as string) || undefined,
-        isBuiltin: !!row[5],
-        createdAt: new Date(row[6] as string),
-        updatedAt: new Date(row[7] as string)
-      }
+      return this.mapRowToRole(row)
     }
     return null
   }
@@ -86,10 +109,38 @@ export class RoleRepository {
   async create(request: CreateRoleRequest): Promise<Role> {
     const id = randomUUID()
     const now = new Date().toISOString()
+    const customParamsJson = request.customParams ? JSON.stringify(request.customParams) : null
+    const knowledgeBaseIdsJson = request.knowledgeBaseIds ? JSON.stringify(request.knowledgeBaseIds) : null
+
     this.db.run(
-      `INSERT INTO roles (id, name, description, system_prompt, avatar, is_builtin, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
-      [id, request.name, request.description || null, request.systemPrompt || null, request.avatar || null, now, now]
+      `INSERT INTO roles (id, name, description, system_prompt, avatar, is_builtin,
+                          default_model_id, default_provider_config_id, auto_reset_model,
+                          temperature, top_p, max_context_messages, max_tokens, enable_stream, custom_params,
+                          knowledge_base_ids, knowledge_retrieve_count, knowledge_threshold,
+                          created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        request.name,
+        request.description || null,
+        request.systemPrompt || null,
+        request.avatar || null,
+        0, // is_builtin = false for user-created roles
+        request.defaultModelId || null,
+        request.defaultProviderConfigId || null,
+        request.autoResetModel !== undefined ? (request.autoResetModel ? 1 : 0) : 1,
+        request.temperature ?? 0.7,
+        request.topP ?? 1.0,
+        request.maxContextMessages ?? 20,
+        request.maxTokens ?? 4096,
+        request.enableStream !== undefined ? (request.enableStream ? 1 : 0) : 1,
+        customParamsJson,
+        knowledgeBaseIdsJson,
+        request.knowledgeRetrieveCount ?? 5,
+        request.knowledgeThreshold ?? 0.5,
+        now,
+        now
+      ]
     )
     this.dbManager.save()
     return {
@@ -99,6 +150,18 @@ export class RoleRepository {
       systemPrompt: request.systemPrompt,
       avatar: request.avatar,
       isBuiltin: false,
+      defaultModelId: request.defaultModelId,
+      defaultProviderConfigId: request.defaultProviderConfigId,
+      autoResetModel: request.autoResetModel ?? true,
+      temperature: request.temperature,
+      topP: request.topP,
+      maxContextMessages: request.maxContextMessages,
+      maxTokens: request.maxTokens,
+      enableStream: request.enableStream ?? true,
+      customParams: request.customParams,
+      knowledgeBaseIds: request.knowledgeBaseIds,
+      knowledgeRetrieveCount: request.knowledgeRetrieveCount,
+      knowledgeThreshold: request.knowledgeThreshold,
       createdAt: new Date(now),
       updatedAt: new Date(now)
     }
@@ -112,8 +175,11 @@ export class RoleRepository {
   async createBuiltin(definition: BuiltinRoleDefinition): Promise<Role> {
     const now = new Date().toISOString()
     this.db.run(
-      `INSERT INTO roles (id, name, description, system_prompt, avatar, is_builtin, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 1, ?, ?)`,
+      `INSERT INTO roles (id, name, description, system_prompt, avatar, is_builtin,
+                          default_model_id, default_provider_config_id, auto_reset_model,
+                          temperature, top_p, max_context_messages, max_tokens, enable_stream, custom_params,
+                          created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 1, NULL, NULL, 1, 0.7, 1.0, 20, 4096, 1, NULL, ?, ?)`,
       [definition.id, definition.name, definition.description, definition.systemPrompt, definition.avatar, now, now]
     )
     this.dbManager.save()
@@ -124,6 +190,12 @@ export class RoleRepository {
       systemPrompt: definition.systemPrompt,
       avatar: definition.avatar,
       isBuiltin: true,
+      autoResetModel: true,
+      temperature: 0.7,
+      topP: 1.0,
+      maxContextMessages: 20,
+      maxTokens: 4096,
+      enableStream: true,
       createdAt: new Date(now),
       updatedAt: new Date(now)
     }
@@ -169,6 +241,57 @@ export class RoleRepository {
     if (request.avatar !== undefined) {
       fields.push('avatar = ?')
       values.push(request.avatar)
+    }
+    // 模型配置
+    if (request.defaultModelId !== undefined) {
+      fields.push('default_model_id = ?')
+      values.push(request.defaultModelId || null)
+    }
+    if (request.defaultProviderConfigId !== undefined) {
+      fields.push('default_provider_config_id = ?')
+      values.push(request.defaultProviderConfigId || null)
+    }
+    if (request.autoResetModel !== undefined) {
+      fields.push('auto_reset_model = ?')
+      values.push(request.autoResetModel ? 1 : 0)
+    }
+    // 生成参数
+    if (request.temperature !== undefined) {
+      fields.push('temperature = ?')
+      values.push(request.temperature)
+    }
+    if (request.topP !== undefined) {
+      fields.push('top_p = ?')
+      values.push(request.topP)
+    }
+    if (request.maxContextMessages !== undefined) {
+      fields.push('max_context_messages = ?')
+      values.push(request.maxContextMessages)
+    }
+    if (request.maxTokens !== undefined) {
+      fields.push('max_tokens = ?')
+      values.push(request.maxTokens)
+    }
+    if (request.enableStream !== undefined) {
+      fields.push('enable_stream = ?')
+      values.push(request.enableStream ? 1 : 0)
+    }
+    if (request.customParams !== undefined) {
+      fields.push('custom_params = ?')
+      values.push(request.customParams ? JSON.stringify(request.customParams) : null)
+    }
+    // 知识库配置
+    if (request.knowledgeBaseIds !== undefined) {
+      fields.push('knowledge_base_ids = ?')
+      values.push(request.knowledgeBaseIds ? JSON.stringify(request.knowledgeBaseIds) : null)
+    }
+    if (request.knowledgeRetrieveCount !== undefined) {
+      fields.push('knowledge_retrieve_count = ?')
+      values.push(request.knowledgeRetrieveCount)
+    }
+    if (request.knowledgeThreshold !== undefined) {
+      fields.push('knowledge_threshold = ?')
+      values.push(request.knowledgeThreshold)
     }
 
     if (fields.length > 0) {

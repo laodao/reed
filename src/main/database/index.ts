@@ -267,6 +267,50 @@ export class DatabaseManager {
         this.db.run('ALTER TABLE messages ADD COLUMN metadata TEXT')
       }
     }
+
+    // 检查 roles 表是否需要添加新字段（模型配置和生成参数）
+    const roleColumns = this.db.exec("PRAGMA table_info(roles)")
+    if (roleColumns.length > 0) {
+      const columnNames = roleColumns[0].values.map(row => row[1])
+
+      if (!columnNames.includes('default_model_id')) {
+        this.db.run('ALTER TABLE roles ADD COLUMN default_model_id TEXT')
+      }
+      if (!columnNames.includes('default_provider_config_id')) {
+        this.db.run('ALTER TABLE roles ADD COLUMN default_provider_config_id TEXT')
+      }
+      if (!columnNames.includes('auto_reset_model')) {
+        this.db.run('ALTER TABLE roles ADD COLUMN auto_reset_model INTEGER DEFAULT 1')
+      }
+      if (!columnNames.includes('temperature')) {
+        this.db.run('ALTER TABLE roles ADD COLUMN temperature REAL DEFAULT 0.7')
+      }
+      if (!columnNames.includes('top_p')) {
+        this.db.run('ALTER TABLE roles ADD COLUMN top_p REAL DEFAULT 1.0')
+      }
+      if (!columnNames.includes('max_context_messages')) {
+        this.db.run('ALTER TABLE roles ADD COLUMN max_context_messages INTEGER DEFAULT 20')
+      }
+      if (!columnNames.includes('max_tokens')) {
+        this.db.run('ALTER TABLE roles ADD COLUMN max_tokens INTEGER DEFAULT 4096')
+      }
+      if (!columnNames.includes('enable_stream')) {
+        this.db.run('ALTER TABLE roles ADD COLUMN enable_stream INTEGER DEFAULT 1')
+      }
+      if (!columnNames.includes('custom_params')) {
+        this.db.run('ALTER TABLE roles ADD COLUMN custom_params TEXT')
+      }
+      // 知识库配置
+      if (!columnNames.includes('knowledge_base_ids')) {
+        this.db.run('ALTER TABLE roles ADD COLUMN knowledge_base_ids TEXT')
+      }
+      if (!columnNames.includes('knowledge_retrieve_count')) {
+        this.db.run('ALTER TABLE roles ADD COLUMN knowledge_retrieve_count INTEGER DEFAULT 5')
+      }
+      if (!columnNames.includes('knowledge_threshold')) {
+        this.db.run('ALTER TABLE roles ADD COLUMN knowledge_threshold REAL DEFAULT 0.5')
+      }
+    }
   }
 
   /**

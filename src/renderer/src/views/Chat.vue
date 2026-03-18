@@ -4,16 +4,18 @@
     <ChatSidebar
       v-model:current-tab="currentTab"
       :selected-role="selectedRole"
-      :builtin-roles="builtinRoles"
       :custom-roles="customRoles"
       :dialogs="currentRoleDialogs"
       :current-dialog="currentDialog"
+      :get-dialog-count="getRoleDialogCount"
+      :delete-role="deleteRole"
       @select-role="handleSelectRole"
       @select-dialog="handleSelectDialog"
       @create-dialog="handleCreateDialog"
       @delete-dialog="handleDeleteDialog"
       @create-role="handleCreateRole"
-      @delete-role="handleDeleteRole"
+      @update-role="handleUpdateRole"
+      @role-created="handleRoleCreated"
     />
 
     <!-- 右侧主区域 -->
@@ -59,7 +61,6 @@ const {
   selectedRole,
   hasCurrentDialog,
   isGenerating,
-  builtinRoles,
   customRoles,
   messages,
   currentDialog,
@@ -74,8 +75,11 @@ const {
   stopGeneration,
   clearMessages,
   createCustomRole,
-  updateDialogConfig,
+  updateRole,
+  addRoleToList,
   deleteRole,
+  getRoleDialogCount,
+  updateDialogConfig,
   dialogStore,
   roleStore
 } = useChat()
@@ -171,10 +175,16 @@ async function handleCreateRole(request: {
   }
 }
 
-// 处理删除角色
-async function handleDeleteRole(roleId: string): Promise<{ success: boolean; dialogCount: number }> {
-  const result = await deleteRole(roleId)
-  return result
+// 处理更新角色
+async function handleUpdateRole(role: Role): Promise<void> {
+  await updateRole(role)
+  ElMessage.success('助手已更新')
+}
+
+// 处理新建角色完成
+function handleRoleCreated(role: Role): void {
+  addRoleToList(role)
+  // 不显示成功消息，因为 AssistantEditor 已经显示了
 }
 
 // 处理更新配置

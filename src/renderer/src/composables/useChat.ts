@@ -246,6 +246,20 @@ export function useChat() {
   }
 
   /**
+   * 更新角色
+   */
+  async function updateRole(role: Role): Promise<void> {
+    await roleStore.updateRoleInList(role)
+  }
+
+  /**
+   * 添加新角色到列表
+   */
+  function addRoleToList(role: Role): void {
+    roleStore.addRoleToList(role)
+  }
+
+  /**
    * 删除角色
    */
   async function deleteRole(roleId: string): Promise<{ success: boolean; dialogCount: number }> {
@@ -260,6 +274,13 @@ export function useChat() {
     }
 
     return result
+  }
+
+  /**
+   * 获取角色关联的对话数量
+   */
+  async function getRoleDialogCount(roleId: string): Promise<number> {
+    return await roleStore.getDialogCount(roleId)
   }
 
   /**
@@ -315,7 +336,10 @@ export function useChat() {
     stopGeneration,
     clearMessages,
     createCustomRole,
+    updateRole,
+    addRoleToList,
     deleteRole,
+    getRoleDialogCount,
     updateDialogConfig,
 
     // Store 引用
