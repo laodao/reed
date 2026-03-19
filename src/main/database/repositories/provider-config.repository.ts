@@ -19,6 +19,8 @@ interface ProviderConfigRow {
   template_id: string
   name: string
   api_key_encrypted: string | null
+  access_key_id: string | null
+  access_key_secret_encrypted: string | null
   base_url: string | null
   custom_headers: string | null
   custom_params: string | null
@@ -53,6 +55,8 @@ export class ProviderConfigRepository {
       templateId: row.template_id,
       name: row.name,
       apiKey: row.api_key_encrypted || undefined,
+      accessKeyId: row.access_key_id || undefined,
+      accessKeySecret: row.access_key_secret_encrypted || undefined,
       baseUrl: row.base_url || undefined,
       customHeaders: row.custom_headers ? JSON.parse(row.custom_headers) : undefined,
       customParams: row.custom_params ? JSON.parse(row.custom_params) : undefined,
@@ -148,16 +152,18 @@ export class ProviderConfigRepository {
 
     this.db.run(
       `INSERT INTO provider_configs (
-        id, template_id, name, api_key_encrypted, base_url,
+        id, template_id, name, api_key_encrypted, access_key_id, access_key_secret_encrypted, base_url,
         custom_headers, custom_params, custom_models, enabled_models,
         is_enabled, is_default, last_tested, test_result,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         config.templateId,
         config.name,
         config.apiKey || null,
+        config.accessKeyId || null,
+        config.accessKeySecret || null,
         config.baseUrl || null,
         config.customHeaders ? JSON.stringify(config.customHeaders) : null,
         config.customParams ? JSON.stringify(config.customParams) : null,
@@ -213,6 +219,14 @@ export class ProviderConfigRepository {
     if (updates.apiKey !== undefined) {
       setClauses.push('api_key_encrypted = ?')
       values.push(updates.apiKey || null)
+    }
+    if (updates.accessKeyId !== undefined) {
+      setClauses.push('access_key_id = ?')
+      values.push(updates.accessKeyId || null)
+    }
+    if (updates.accessKeySecret !== undefined) {
+      setClauses.push('access_key_secret_encrypted = ?')
+      values.push(updates.accessKeySecret || null)
     }
     if (updates.baseUrl !== undefined) {
       setClauses.push('base_url = ?')

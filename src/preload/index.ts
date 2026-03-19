@@ -104,6 +104,8 @@ const electronAPI = {
       templateId: string
       name: string
       apiKey?: string
+      accessKeyId?: string
+      accessKeySecret?: string
       baseUrl?: string
       customHeaders?: Record<string, string>
       customParams?: Record<string, unknown>
@@ -123,6 +125,8 @@ const electronAPI = {
       data: Partial<{
         name: string
         apiKey: string
+        accessKeyId: string
+        accessKeySecret: string
         baseUrl: string
         customHeaders: Record<string, string>
         customParams: Record<string, unknown>
@@ -143,6 +147,8 @@ const electronAPI = {
       configId?: string
       templateId?: string
       apiKey?: string
+      accessKeyId?: string
+      accessKeySecret?: string
       baseUrl?: string
     }) => ipcRenderer.invoke(IPC_CHANNELS.PROVIDER_CONFIG_TEST, data),
     setDefault: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.PROVIDER_CONFIG_SET_DEFAULT, id)

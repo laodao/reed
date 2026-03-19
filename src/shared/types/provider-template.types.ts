@@ -7,12 +7,12 @@
 /**
  * API 认证类型
  */
-export type AuthType = 'bearer' | 'api-key' | 'query' | 'none' | 'custom'
+export type AuthType = 'bearer' | 'api-key' | 'query' | 'none' | 'custom' | 'access-key'
 
 /**
  * 请求格式类型
  */
-export type RequestFormat = 'openai' | 'anthropic' | 'google' | 'ollama' | 'custom'
+export type RequestFormat = 'openai' | 'anthropic' | 'google' | 'ollama' | 'custom' | 'volcengine'
 
 /**
  * 模板分类
@@ -65,6 +65,8 @@ export interface ModelDefinition {
 export interface ApiConfigTemplate {
   /** 基础 URL */
   baseUrl: string
+  /** 管控面基础 URL（用于模型列表等管理功能，如火山引擎） */
+  managementBaseUrl?: string
   /** 认证类型 */
   authType: AuthType
   /** 认证头名称 */
@@ -81,6 +83,8 @@ export interface ApiConfigTemplate {
   defaultHeaders?: Record<string, string>
   /** 查询参数中的 API 密钥名称（仅 authType 为 query 时有效） */
   queryAuthKey?: string
+  /** 是否需要 Access Key 来获取模型列表（如火山引擎） */
+  requiresAccessKeyForModels?: boolean
 }
 
 /**
@@ -134,6 +138,10 @@ export interface UserProviderConfig {
   name: string
   /** API 密钥（加密存储） */
   apiKey?: string
+  /** Access Key ID（用于火山引擎等需要签名认证的平台） */
+  accessKeyId?: string
+  /** Access Key Secret（加密存储，用于火山引擎等需要签名认证的平台） */
+  accessKeySecret?: string
   /** 覆盖默认端点 */
   baseUrl?: string
   /** 自定义请求头 */
@@ -201,6 +209,8 @@ export interface SaveProviderConfigRequest {
   templateId: string
   name: string
   apiKey?: string
+  accessKeyId?: string
+  accessKeySecret?: string
   baseUrl?: string
   customHeaders?: Record<string, string>
   customParams?: Record<string, unknown>
@@ -218,5 +228,7 @@ export interface TestProviderConfigRequest {
   // 或者直接测试（未保存的配置）
   templateId?: string
   apiKey?: string
+  accessKeyId?: string
+  accessKeySecret?: string
   baseUrl?: string
 }

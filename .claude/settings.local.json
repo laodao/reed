@@ -20,7 +20,8 @@
       "WebFetch(domain:docs.enterprise.cherry-ai.com)",
       "WebFetch(domain:www.npmjs.com)",
       "WebFetch(domain:help.aliyun.com)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "WebFetch(domain:www.volcengine.com)"
     ]
   }
 }

@@ -201,6 +201,8 @@ export class DatabaseManager {
         template_id TEXT NOT NULL,
         name TEXT NOT NULL,
         api_key_encrypted TEXT,
+        access_key_id TEXT,
+        access_key_secret_encrypted TEXT,
         base_url TEXT,
         custom_headers TEXT,
         custom_params TEXT,
@@ -252,6 +254,19 @@ export class DatabaseManager {
       }
       if (!columnNames.includes('context_config')) {
         this.db.run('ALTER TABLE dialogs ADD COLUMN context_config TEXT')
+      }
+    }
+
+    // 检查 provider_configs 表是否需要添加新字段（Access Key）
+    const providerConfigColumns = this.db.exec("PRAGMA table_info(provider_configs)")
+    if (providerConfigColumns.length > 0) {
+      const columnNames = providerConfigColumns[0].values.map(row => row[1])
+
+      if (!columnNames.includes('access_key_id')) {
+        this.db.run('ALTER TABLE provider_configs ADD COLUMN access_key_id TEXT')
+      }
+      if (!columnNames.includes('access_key_secret_encrypted')) {
+        this.db.run('ALTER TABLE provider_configs ADD COLUMN access_key_secret_encrypted TEXT')
       }
     }
 

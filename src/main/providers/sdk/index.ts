@@ -7,3 +7,4 @@
 export { OpenAISdkProvider } from './openai-sdk-provider'
 export { AnthropicSdkProvider } from './anthropic-sdk-provider'
 export { GoogleSdkProvider } from './google-sdk-provider'
+export { VolcEngineSdkProvider } from './volcengine-sdk-provider'

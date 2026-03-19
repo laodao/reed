@@ -77,6 +77,28 @@
         />
       </el-form-item>
 
+      <!-- Access Key（火山引擎等需要签名认证的平台） -->
+      <template v-if="selectedTemplate?.apiConfig?.requiresAccessKeyForModels">
+        <el-form-item label="Access Key ID">
+          <el-input
+            v-model="form.accessKeyId"
+            :placeholder="isEdit ? '留空保持不变' : '请输入 Access Key ID'"
+          />
+        </el-form-item>
+        <el-form-item label="Access Key Secret">
+          <el-input
+            v-model="form.accessKeySecret"
+            type="password"
+            show-password
+            :placeholder="isEdit ? '留空保持不变' : '请输入 Access Key Secret'"
+          />
+        </el-form-item>
+        <div class="access-key-hint">
+          <el-icon><InfoFilled /></el-icon>
+          <span>Access Key 用于获取模型列表，API 密钥用于对话。可在火山引擎控制台的"API 访问密钥"中创建。</span>
+        </div>
+      </template>
+
       <!-- 高级设置 -->
       <el-collapse v-model="activeCollapse" class="advanced-settings">
         <el-collapse-item title="高级设置" name="advanced">
@@ -267,6 +289,8 @@ const formRef = ref<FormInstance>()
 const form = reactive({
   name: '',
   apiKey: '',
+  accessKeyId: '',
+  accessKeySecret: '',
   baseUrl: '',
   customHeaders: {} as Record<string, string>,
   customModels: [] as ModelDefinition[],
@@ -403,6 +427,8 @@ const fetchModelsFromApi = async () => {
       configId: isEdit.value ? props.editConfig?.id : undefined,
       templateId: selectedTemplate.value?.id,
       apiKey: form.apiKey || undefined,
+      accessKeyId: form.accessKeyId || undefined,
+      accessKeySecret: form.accessKeySecret || undefined,
       baseUrl: form.baseUrl || undefined
     })
 
@@ -437,6 +463,8 @@ const handleTest = async () => {
       configId: isEdit.value ? props.editConfig?.id : undefined,
       templateId: selectedTemplate.value?.id,
       apiKey: form.apiKey || undefined,
+      accessKeyId: form.accessKeyId || undefined,
+      accessKeySecret: form.accessKeySecret || undefined,
       baseUrl: form.baseUrl || undefined
     })
 
@@ -486,6 +514,8 @@ const handleSave = async () => {
       const result = await window.electronAPI.providerConfig.update(props.editConfig.id, {
         name: form.name,
         apiKey: form.apiKey || undefined,
+        accessKeyId: form.accessKeyId || undefined,
+        accessKeySecret: form.accessKeySecret || undefined,
         baseUrl: form.baseUrl || undefined,
         customHeaders: Object.keys(customHeaders).length > 0 ? customHeaders : undefined,
         customModels: plainCustomModels.length > 0 ? plainCustomModels : undefined,
@@ -506,6 +536,8 @@ const handleSave = async () => {
         templateId: selectedTemplate.value.id,
         name: form.name,
         apiKey: form.apiKey || undefined,
+        accessKeyId: form.accessKeyId || undefined,
+        accessKeySecret: form.accessKeySecret || undefined,
         baseUrl: form.baseUrl || undefined,
         customHeaders: Object.keys(customHeaders).length > 0 ? customHeaders : undefined,
         customModels: plainCustomModels.length > 0 ? plainCustomModels : undefined,
@@ -536,6 +568,8 @@ const handleClose = () => {
   formRef.value?.resetFields()
   form.name = ''
   form.apiKey = ''
+  form.accessKeyId = ''
+  form.accessKeySecret = ''
   form.baseUrl = ''
   form.customHeaders = {}
   form.customModels = []
@@ -603,6 +637,8 @@ watch(
     if (config) {
       form.name = config.name
       form.apiKey = ''
+      form.accessKeyId = config.accessKeyId || ''
+      form.accessKeySecret = ''
       form.baseUrl = config.baseUrl || ''
       form.customModels = config.customModels ? [...config.customModels] : []
       form.enabledModels = config.enabledModels ? [...config.enabledModels] : []
@@ -857,6 +893,23 @@ watch(
   font-size: 13px;
   background: var(--bg-color-page);
   border-radius: var(--radius-sm);
+}
+
+.access-key-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px;
+  margin-bottom: 16px;
+  background: var(--el-color-warning-light-9);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--el-color-warning-dark-2);
+
+  .el-icon {
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
 }
 
 .model-list-header {

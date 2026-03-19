@@ -149,6 +149,38 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     models: [],
     allowCustomModels: true
   },
+  // 火山引擎 - 豆包
+  {
+    id: 'volcengine',
+    name: '火山引擎 - 豆包',
+    description: '火山引擎方舟平台，支持豆包系列模型',
+    category: 'openai-compatible',
+    icon: '🌋',
+    isOfficial: true,
+    apiConfig: {
+      // 数据面 API（对话）
+      baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+      // 管控面 API（模型列表等管理功能）
+      managementBaseUrl: 'https://ark.cn-beijing.volcengineapi.com',
+      authType: 'bearer',
+      authHeader: 'Authorization',
+      authPrefix: 'Bearer ',
+      requestFormat: 'openai',
+      chatEndpoint: '/chat/completions',
+      // 模型列表需要 Access Key 签名认证
+      requiresAccessKeyForModels: true
+    },
+    supportedParams: {
+      stream: true,
+      temperature: true,
+      maxTokens: true,
+      topP: true,
+      custom: []
+    },
+    // 模型列表从 API 动态获取（需要 Access Key）
+    models: [],
+    allowCustomModels: true
+  },
   // Anthropic 格式
   {
     id: 'anthropic',
@@ -541,6 +573,8 @@ export class ProviderTemplateService {
   async testConnection(config: {
     templateId: string
     apiKey?: string
+    accessKeyId?: string
+    accessKeySecret?: string
     baseUrl?: string
   }): Promise<{ success: boolean; message: string; models?: ModelDefinition[] }> {
     const template = this.getTemplateById(config.templateId)
@@ -561,7 +595,18 @@ export class ProviderTemplateService {
           apiKey: config.apiKey || '',
           baseUrl: config.baseUrl
         },
-        template
+        template,
+        {
+          id: '',
+          templateId: config.templateId,
+          name: '',
+          isEnabled: true,
+          isDefault: false,
+          createdAt: '',
+          updatedAt: '',
+          accessKeyId: config.accessKeyId,
+          accessKeySecret: config.accessKeySecret
+        } as UserProviderConfig
       )
 
       const models = await provider.getModels()

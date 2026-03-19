@@ -67,7 +67,8 @@ async function handleListConfigs(event: IpcMainInvokeEvent): Promise<ProviderCon
     // 隐藏 API 密钥
     const safeConfigs = configs.map((config) => ({
       ...config,
-      apiKey: config.apiKey ? '******' : undefined
+      apiKey: config.apiKey ? '******' : undefined,
+      accessKeySecret: config.accessKeySecret ? '******' : undefined
     }))
 
     return { success: true, configs: safeConfigs }
@@ -101,7 +102,8 @@ async function handleGetConfig(
     // 隐藏 API 密钥
     const safeConfig = {
       ...config,
-      apiKey: config.apiKey ? '******' : undefined
+      apiKey: config.apiKey ? '******' : undefined,
+      accessKeySecret: config.accessKeySecret ? '******' : undefined
     }
 
     return { success: true, config: safeConfig }
@@ -143,6 +145,16 @@ async function handleCreateConfig(
       encryptedApiKey = secureStorage.encrypt(request.apiKey)
     }
 
+    // 加密 Access Key Secret
+    let encryptedAccessKeySecret: string | undefined
+    if (request.accessKeySecret) {
+      const secureStorage = SecureStorageService.getInstance()
+      if (!secureStorage.isInitialized()) {
+        await secureStorage.initialize()
+      }
+      encryptedAccessKeySecret = secureStorage.encrypt(request.accessKeySecret)
+    }
+
     // 如果设置为默认，先清除其他默认
     if (request.isDefault) {
       const existingConfigs = await dbManager.providerConfigs.getAll()
@@ -158,6 +170,8 @@ async function handleCreateConfig(
       templateId: request.templateId,
       name: request.name,
       apiKey: encryptedApiKey,
+      accessKeyId: request.accessKeyId,
+      accessKeySecret: encryptedAccessKeySecret,
       baseUrl: request.baseUrl,
       customHeaders: request.customHeaders,
       customParams: request.customParams,
@@ -170,7 +184,8 @@ async function handleCreateConfig(
     // 返回时隐藏 API 密钥
     const safeConfig = {
       ...config,
-      apiKey: config.apiKey ? '******' : undefined
+      apiKey: config.apiKey ? '******' : undefined,
+      accessKeySecret: config.accessKeySecret ? '******' : undefined
     }
 
     return { success: true, config: safeConfig }
@@ -228,6 +243,24 @@ async function handleUpdateConfig(
       }
     }
 
+    // 处理 Access Key ID 更新
+    if (data.accessKeyId !== undefined) {
+      updates.accessKeyId = data.accessKeyId || undefined
+    }
+
+    // 处理 Access Key Secret 更新
+    if (data.accessKeySecret !== undefined) {
+      if (data.accessKeySecret && data.accessKeySecret !== '******') {
+        const secureStorage = SecureStorageService.getInstance()
+        if (!secureStorage.isInitialized()) {
+          await secureStorage.initialize()
+        }
+        updates.accessKeySecret = secureStorage.encrypt(data.accessKeySecret)
+      } else if (data.accessKeySecret === '') {
+        updates.accessKeySecret = undefined
+      }
+    }
+
     // 如果设置为默认，先清除其他默认
     if (data.isDefault) {
       const allConfigs = await dbManager.providerConfigs.getAll()
@@ -246,7 +279,8 @@ async function handleUpdateConfig(
     // 返回时隐藏 API 密钥
     const safeConfig = {
       ...config,
-      apiKey: config.apiKey ? '******' : undefined
+      apiKey: config.apiKey ? '******' : undefined,
+      accessKeySecret: config.accessKeySecret ? '******' : undefined
     }
 
     return { success: true, config: safeConfig }
@@ -288,13 +322,22 @@ async function handleDeleteConfig(
  */
 async function handleTestConfig(
   event: IpcMainInvokeEvent,
-  request: { configId?: string; templateId?: string; apiKey?: string; baseUrl?: string }
+  request: {
+    configId?: string
+    templateId?: string
+    apiKey?: string
+    accessKeyId?: string
+    accessKeySecret?: string
+    baseUrl?: string
+  }
 ): Promise<TestProviderConfigResponse> {
   try {
-    const { configId, templateId, apiKey, baseUrl } = request
+    const { configId, templateId, apiKey, accessKeyId, accessKeySecret, baseUrl } = request
 
     let testTemplateId = templateId
     let testApiKey = apiKey
+    let testAccessKeyId = accessKeyId
+    let testAccessKeySecret = accessKeySecret
     let testBaseUrl = baseUrl
 
     // 如果提供了配置 ID，从数据库获取配置
@@ -311,6 +354,7 @@ async function handleTestConfig(
 
       testTemplateId = config.templateId
       testBaseUrl = testBaseUrl || config.baseUrl
+      testAccessKeyId = testAccessKeyId || config.accessKeyId
 
       // 解密 API 密钥
       if (config.apiKey) {
@@ -321,10 +365,21 @@ async function handleTestConfig(
         testApiKey = testApiKey || secureStorage.decrypt(config.apiKey)
       }
 
+      // 解密 Access Key Secret
+      if (config.accessKeySecret) {
+        const secureStorage = SecureStorageService.getInstance()
+        if (!secureStorage.isInitialized()) {
+          await secureStorage.initialize()
+        }
+        testAccessKeySecret = testAccessKeySecret || secureStorage.decrypt(config.accessKeySecret)
+      }
+
       // 测试连接
       const result = await providerTemplateService.testConnection({
         templateId: testTemplateId,
         apiKey: testApiKey,
+        accessKeyId: testAccessKeyId,
+        accessKeySecret: testAccessKeySecret,
         baseUrl: testBaseUrl
       })
 
@@ -351,6 +406,8 @@ async function handleTestConfig(
     return await providerTemplateService.testConnection({
       templateId: testTemplateId,
       apiKey: testApiKey,
+      accessKeyId: testAccessKeyId,
+      accessKeySecret: testAccessKeySecret,
       baseUrl: testBaseUrl
     })
   } catch (error) {

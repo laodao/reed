@@ -11,6 +11,7 @@ import type { ProviderTemplate, UserProviderConfig } from '../../shared/types'
 import { OpenAISdkProvider } from './sdk/openai-sdk-provider'
 import { AnthropicSdkProvider } from './sdk/anthropic-sdk-provider'
 import { GoogleSdkProvider } from './sdk/google-sdk-provider'
+import { VolcEngineSdkProvider } from './sdk/volcengine-sdk-provider'
 
 // 备用 Provider 导入（用于不支持 SDK 的情况）
 import { OpenAICompatibleProvider } from './openai-compatible-provider'
@@ -51,6 +52,7 @@ export function registerProvider(id: string, providerClass: new (config: Provide
  * - OpenAI 兼容平台使用 OpenAI SDK
  * - Anthropic 使用官方 SDK
  * - Google 使用官方 SDK
+ * - 火山引擎使用专用 Provider（支持 Access Key 签名获取模型列表）
  * - 其他平台使用旧的 OpenAI 兼容实现
  *
  * @param templateId - 模板 ID
@@ -86,6 +88,19 @@ export function createProvider(
   // Google 使用官方 SDK
   if (templateId === 'google') {
     return new GoogleSdkProvider(config, template, userConfig)
+  }
+
+  // 火山引擎使用专用 Provider
+  if (templateId === 'volcengine') {
+    return new VolcEngineSdkProvider(
+      config,
+      templateId,
+      '火山引擎 - 豆包',
+      'https://ark.cn-beijing.volces.com/api/v3',
+      'https://ark.cn-beijing.volcengineapi.com',
+      template,
+      userConfig
+    )
   }
 
   // 其他平台使用旧的 OpenAI 兼容实现
@@ -134,6 +149,7 @@ export function getSupportedTemplateIds(): string[] {
   return [
     ...Object.keys(OPENAI_COMPATIBLE_CONFIGS),
     'anthropic',
-    'google'
+    'google',
+    'volcengine'
   ]
 }
