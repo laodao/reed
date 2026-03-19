@@ -30,38 +30,6 @@ export class OpenAIImageProvider extends BaseImageProvider {
   private client: OpenAI
 
   /**
-   * 支持的模型配置
-   */
-  private static MODELS: ImageModel[] = [
-    {
-      id: 'dall-e-3',
-      name: 'DALL-E 3',
-      providerId: 'openai',
-      providerName: 'OpenAI',
-      features: {
-        textToImage: true,
-        imageToImage: false,
-        imageEdit: true,
-        maxResolution: '1792x1792',
-        supportedSizes: ['1024x1024', '1792x1024', '1024x1792']
-      }
-    },
-    {
-      id: 'dall-e-2',
-      name: 'DALL-E 2',
-      providerId: 'openai',
-      providerName: 'OpenAI',
-      features: {
-        textToImage: true,
-        imageToImage: true,
-        imageEdit: true,
-        maxResolution: '1024x1024',
-        supportedSizes: ['256x256', '512x512', '1024x1024']
-      }
-    }
-  ]
-
-  /**
    * 构造函数
    */
   constructor(config: ImageProviderConfig) {
@@ -90,9 +58,11 @@ export class OpenAIImageProvider extends BaseImageProvider {
 
   /**
    * 获取支持的模型列表
+   * OpenAI 没有专门的图像模型列表 API，需要手动配置模型
    */
   async getModels(): Promise<ImageModel[]> {
-    return OpenAIImageProvider.MODELS
+    // 返回空数组，模型需要从配置或模板中获取
+    return []
   }
 
   /**
@@ -106,12 +76,20 @@ export class OpenAIImageProvider extends BaseImageProvider {
    */
   async generateImage(request: ImageGenerationRequest): Promise<ImageGenerationResponse> {
     try {
+      // 检查是否指定了模型
+      if (!request.model) {
+        return {
+          success: false,
+          error: '未指定模型，请在配置中选择一个模型'
+        }
+      }
+
       // 构建尺寸字符串
       const size = `${request.width}x${request.height}` as '256x256' | '512x512' | '1024x1024' | '1792x1024' | '1024x1792'
 
       // 调用 OpenAI SDK
       const response = await this.client.images.generate({
-        model: request.model || 'dall-e-3',
+        model: request.model,
         prompt: request.prompt,
         size,
         n: request.count || 1,

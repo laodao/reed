@@ -56,25 +56,6 @@ export class BailianImageProvider extends BaseImageProvider {
   private static API_VERSION = '2023-12-29'
 
   /**
-   * 支持的模型配置
-   */
-  private static MODELS: ImageModel[] = [
-    {
-      id: 'wanx-v1',
-      name: '通义万相 v1',
-      providerId: 'bailian',
-      providerName: '百炼平台',
-      features: {
-        textToImage: true,
-        imageToImage: true,
-        imageEdit: false,
-        maxResolution: '2048x2048',
-        supportedSizes: ['512x512', '1024x1024', '1024x768', '768x1024']
-      }
-    }
-  ]
-
-  /**
    * Provider 唯一标识
    */
   get id(): string {
@@ -90,10 +71,12 @@ export class BailianImageProvider extends BaseImageProvider {
 
   /**
    * 获取支持的模型列表
+   * 百炼平台没有专门的模型列表 API，需要手动配置模型
    * @returns 模型列表
    */
   async getModels(): Promise<ImageModel[]> {
-    return BailianImageProvider.MODELS
+    // 返回空数组，模型需要从配置或模板中获取
+    return []
   }
 
   /**
