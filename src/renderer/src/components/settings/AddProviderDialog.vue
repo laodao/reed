@@ -2,7 +2,7 @@
   <el-dialog
     v-model="visible"
     :title="isEdit ? '编辑提供商配置' : '添加提供商'"
-    width="720px"
+    width="960px"
     :close-on-click-modal="false"
     class="add-provider-dialog"
     @close="handleClose"
@@ -109,8 +109,8 @@
         <!-- 模型管理 -->
         <el-collapse-item title="模型管理" name="models">
           <div class="model-management">
-            <!-- 模板预定义模型 -->
-            <div v-if="templateModels.length > 0" class="predefined-models">
+            <!-- 可用模型列表（预定义 + 自定义） -->
+            <div v-if="allModels.length > 0" class="predefined-models">
               <div class="model-list-header">
                 <span>可用模型</span>
                 <el-button
@@ -129,32 +129,26 @@
                   :key="model.id"
                   :label="model.id"
                   class="model-checkbox"
+                  :class="{ 'is-custom': isCustomModel(model.id) }"
                 >
                   <div class="model-info">
-                    <span class="model-name">{{ model.name }}</span>
+                    <span class="model-name">
+                      {{ model.name }}
+                      <el-tag v-if="isCustomModel(model.id)" type="warning" size="small" effect="plain">自定义</el-tag>
+                    </span>
                     <span class="model-id">{{ model.id }}</span>
                   </div>
                 </el-checkbox>
               </el-checkbox-group>
             </div>
 
-            <!-- 自定义模型 -->
+            <!-- 自定义模型添加区域 -->
             <div v-if="selectedTemplate?.allowCustomModels" class="custom-models">
               <div class="model-list-header">
-                <span>自定义模型</span>
+                <span>添加自定义模型</span>
                 <el-button type="primary" text size="small" @click="showAddCustomModel = true">
                   添加模型
                 </el-button>
-              </div>
-              <div v-if="form.customModels && form.customModels.length > 0" class="custom-model-list">
-                <el-tag
-                  v-for="model in form.customModels"
-                  :key="model.id"
-                  closable
-                  @close="removeCustomModel(model.id)"
-                >
-                  {{ model.name }}
-                </el-tag>
               </div>
             </div>
           </div>
@@ -198,10 +192,11 @@
   <el-dialog
     v-model="showAddCustomModel"
     title="添加自定义模型"
-    width="400px"
+    width="960px"
     append-to-body
+    class="custom-model-dialog"
   >
-    <el-form :model="customModelForm" label-width="100px">
+    <el-form :model="customModelForm" label-width="120px">
       <el-form-item label="模型 ID" required>
         <el-input v-model="customModelForm.id" placeholder="如：gpt-4-custom" />
       </el-form-item>
@@ -209,7 +204,7 @@
         <el-input v-model="customModelForm.name" placeholder="显示名称" />
       </el-form-item>
       <el-form-item label="上下文长度">
-        <el-input-number v-model="customModelForm.contextWindow" :min="1024" :step="1024" />
+        <el-input-number v-model="customModelForm.contextWindow" :min="1024" :step="1024" style="width: 100%" />
       </el-form-item>
     </el-form>
     <template #footer>
@@ -297,21 +292,46 @@ const customModelForm = reactive({
 // 从 API 获取的模型列表
 const apiModels = ref<ModelDefinition[]>([])
 
-// 所有模型（模板预定义 + API 获取）
+// 所有模型（模板预定义 + API 获取 + 自定义模型，自定义模型放最后）
 const allModels = computed(() => {
   const templateModels = selectedTemplate.value?.models || []
+
+  // 获取自定义模型的 ID 集合
+  const customModelIds = new Set(form.customModels.map((m) => m.id))
+
+  // 用于合并模板模型和 API 模型
   const modelsMap = new Map<string, ModelDefinition>()
 
-  // 先添加模板模型
-  templateModels.forEach((m) => modelsMap.set(m.id, m))
-  // 再添加 API 模型（会覆盖同 ID 的模板模型）
-  apiModels.value.forEach((m) => modelsMap.set(m.id, m))
+  // 添加模板模型（排除自定义模型）
+  templateModels.forEach((m) => {
+    if (!customModelIds.has(m.id)) {
+      modelsMap.set(m.id, m)
+    }
+  })
 
-  return Array.from(modelsMap.values())
+  // 添加 API 模型（排除自定义模型，会覆盖同 ID 的模板模型）
+  apiModels.value.forEach((m) => {
+    if (!customModelIds.has(m.id)) {
+      modelsMap.set(m.id, m)
+    }
+  })
+
+  // 预定义模型列表
+  const predefinedModels = Array.from(modelsMap.values())
+
+  // 自定义模型始终放到最后
+  const customModelsList = [...form.customModels]
+
+  return [...predefinedModels, ...customModelsList]
 })
 
 // 模板预定义模型
 const templateModels = computed(() => selectedTemplate.value?.models || [])
+
+// 判断是否是自定义模型
+const isCustomModel = (modelId: string): boolean => {
+  return form.customModels.some((m) => m.id === modelId)
+}
 
 // 认证类型
 const templateAuthType = computed(() => selectedTemplate.value?.apiConfig.authType || 'bearer')
@@ -365,6 +385,11 @@ const selectTemplate = (template: ProviderTemplate) => {
 // 从 API 获取模型列表
 const fetchModelsFromApi = async () => {
   if (!selectedTemplate.value) return
+
+  // 检查是否需要 API Key
+  if (templateAuthType.value !== 'none' && !form.apiKey) {
+    return
+  }
 
   loadingModels.value = true
   try {
@@ -623,18 +648,42 @@ watch(visible, (val) => {
     loadTemplates()
   }
 })
+
+// 防抖定时器
+let fetchModelsTimer: ReturnType<typeof setTimeout> | null = null
+
+// 监听 API Key 变化，自动获取模型列表
+watch(
+  () => form.apiKey,
+  (newApiKey, oldApiKey) => {
+    // 只在新建模式下自动获取
+    if (isEdit.value) return
+
+    // 清除之前的定时器
+    if (fetchModelsTimer) {
+      clearTimeout(fetchModelsTimer)
+    }
+
+    // API Key 发生变化且有值时，延迟获取模型列表
+    if (newApiKey && newApiKey !== oldApiKey && selectedTemplate.value) {
+      // 防抖：延迟 500ms 后执行
+      fetchModelsTimer = setTimeout(() => {
+        fetchModelsFromApi()
+      }, 500)
+    }
+  }
+)
 </script>
 
 <style lang="scss" scoped>
 .add-provider-dialog {
-  :deep(.el-dialog__body) {
-    padding: 20px 24px;
-    max-height: 60vh;
-    overflow-y: auto;
-  }
+  // body 的 padding 在全局样式中设置
 }
 
 .template-select {
+  height: 100%;
+  overflow-y: auto;
+
   h4 {
     margin: 0 0 16px 0;
     font-size: 14px;
@@ -747,6 +796,8 @@ watch(visible, (val) => {
 
 .config-form {
   margin-top: 20px;
+  height: calc(100% - 20px);
+  overflow-y: auto;
 }
 
 .advanced-settings {
@@ -823,6 +874,11 @@ watch(visible, (val) => {
     background: var(--bg-color-hover);
   }
 
+  &.is-custom {
+    background: linear-gradient(135deg, rgba(230, 162, 60, 0.1) 0%, rgba(230, 162, 60, 0.05) 100%);
+    border: 1px dashed rgba(230, 162, 60, 0.4);
+  }
+
   :deep(.el-checkbox__label) {
     display: flex;
     align-items: center;
@@ -868,5 +924,40 @@ watch(visible, (val) => {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.custom-model-dialog {
+  :deep(.el-dialog__body) {
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+}
+</style>
+
+<!-- 全局样式：控制对话框高度（el-dialog teleport 到 body，scoped 无效） -->
+<style lang="scss">
+.add-provider-dialog {
+  .el-dialog {
+    height: 80vh;
+    display: flex;
+    flex-direction: column;
+    margin-top: 10vh !important;
+    overflow: hidden;
+  }
+
+  .el-dialog__header {
+    flex-shrink: 0;
+  }
+
+  .el-dialog__body {
+    flex: 1;
+    min-height: 0;
+    padding: 20px 24px;
+    overflow: hidden;
+  }
+
+  .el-dialog__footer {
+    flex-shrink: 0;
+  }
 }
 </style>
