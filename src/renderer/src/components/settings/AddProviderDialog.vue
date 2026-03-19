@@ -131,18 +131,9 @@
         <!-- 模型管理 -->
         <el-collapse-item title="模型管理" name="models">
           <div class="model-management">
-            <!-- 从 API 刷新按钮（始终显示） -->
+            <!-- 模型列表标题 -->
             <div class="model-list-header">
               <span>可用模型</span>
-              <el-button
-                type="primary"
-                text
-                size="small"
-                :loading="loadingModels"
-                @click="fetchModelsFromApi"
-              >
-                从 API 刷新
-              </el-button>
             </div>
 
             <!-- 模型列表 -->
@@ -166,7 +157,7 @@
               </el-checkbox-group>
             </div>
             <div v-else class="no-models-hint">
-              <span>暂无模型，请点击"从 API 刷新"获取模型列表，或添加自定义模型</span>
+              <span>暂无模型，请在下方添加自定义模型</span>
             </div>
 
             <!-- 自定义模型添加区域 -->
