@@ -56,7 +56,20 @@ const IPC_CHANNELS = {
   // 聊天相关（流式）
   CHAT_SEND: 'chat:send',
   CHAT_STREAM: 'chat:stream',
-  CHAT_STOP: 'chat:stop'
+  CHAT_STOP: 'chat:stop',
+
+  // 图像生成相关
+  IMAGE_GENERATE: 'image:generate',
+  IMAGE_TASK_STATUS: 'image:task-status',
+  IMAGE_STOP: 'image:stop',
+  IMAGE_LIST: 'image:list',
+  IMAGE_GET: 'image:get',
+  IMAGE_TOGGLE_FAVORITE: 'image:toggle-favorite',
+  IMAGE_DELETE: 'image:delete',
+  IMAGE_DELETE_MANY: 'image:delete-many',
+  IMAGE_PROVIDERS: 'image:providers',
+  IMAGE_MODELS: 'image:models',
+  IMAGE_TEST_PROVIDER: 'image:test-provider'
 } as const
 
 /**
@@ -266,6 +279,46 @@ const electronAPI = {
       ipcRenderer.on(IPC_CHANNELS.CHAT_STREAM, handler)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.CHAT_STREAM, handler)
     }
+  },
+
+  // 图像生成相关
+  image: {
+    // 生成图像
+    generate: (request: {
+      providerId: string
+      modelId: string
+      prompt: string
+      negativePrompt?: string
+      width: number
+      height: number
+      style?: string
+      quality?: string
+      count?: number
+      seed?: number
+      referenceImage?: string
+    }) => ipcRenderer.invoke(IPC_CHANNELS.IMAGE_GENERATE, request),
+    // 获取任务状态
+    getTaskStatus: (taskId: string) => ipcRenderer.invoke(IPC_CHANNELS.IMAGE_TASK_STATUS, taskId),
+    // 停止生成
+    stop: (taskId: string) => ipcRenderer.invoke(IPC_CHANNELS.IMAGE_STOP, taskId),
+    // 获取图像列表
+    list: (page?: number, pageSize?: number, favoriteOnly?: boolean, status?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.IMAGE_LIST, page, pageSize, favoriteOnly, status),
+    // 获取单个图像
+    get: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.IMAGE_GET, id),
+    // 切换收藏状态
+    toggleFavorite: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.IMAGE_TOGGLE_FAVORITE, id),
+    // 删除图像
+    delete: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.IMAGE_DELETE, id),
+    // 批量删除图像
+    deleteMany: (ids: string[]) => ipcRenderer.invoke(IPC_CHANNELS.IMAGE_DELETE_MANY, ids),
+    // 获取图像提供商列表
+    getProviders: () => ipcRenderer.invoke(IPC_CHANNELS.IMAGE_PROVIDERS),
+    // 获取图像模型列表
+    getModels: (providerId?: string) => ipcRenderer.invoke(IPC_CHANNELS.IMAGE_MODELS, providerId),
+    // 测试提供商连接
+    testProvider: (providerId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.IMAGE_TEST_PROVIDER, providerId)
   }
 }
 

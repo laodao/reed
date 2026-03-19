@@ -52,16 +52,6 @@ export class AnthropicSdkProvider extends BaseProvider {
    * 获取模型列表
    */
   async getModels(): Promise<Array<{ id: string; name: string; maxTokens: number; contextWindow: number }>> {
-    // Anthropic 没有模型列表 API，返回预定义的模型
-    const models = [
-      { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', maxTokens: 64000, contextWindow: 200000 },
-      { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', maxTokens: 8192, contextWindow: 200000 },
-      { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', maxTokens: 8192, contextWindow: 200000 },
-      { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', maxTokens: 4096, contextWindow: 200000 },
-      { id: 'claude-3-sonnet-20240229', name: 'Claude 3 Sonnet', maxTokens: 4096, contextWindow: 200000 },
-      { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku', maxTokens: 4096, contextWindow: 200000 }
-    ]
-
     // 如果模板中有模型定义，使用模板中的
     if (this.template?.models && this.template.models.length > 0) {
       return this.template.models.map((m) => ({
@@ -72,22 +62,26 @@ export class AnthropicSdkProvider extends BaseProvider {
       }))
     }
 
-    return models
+    // Anthropic 没有模型列表 API，返回空数组
+    return []
   }
 
   /**
    * 获取默认模型
    */
   private getDefaultModel(): string {
+    // 优先使用配置中指定的模型
     if (this.config.defaultModel) {
       return this.config.defaultModel
     }
 
+    // 然后尝试使用模板中定义的第一个模型
     if (this.template?.models && this.template.models.length > 0) {
       return this.template.models[0].id
     }
 
-    return 'claude-sonnet-4-20250514'
+    // 没有可用模型时抛出错误
+    throw new Error('未指定模型，请在配置中选择一个模型')
   }
 
   /**

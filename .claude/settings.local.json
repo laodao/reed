@@ -17,7 +17,10 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "WebFetch(domain:docs.cherry-ai.com)",
-      "WebFetch(domain:docs.enterprise.cherry-ai.com)"
+      "WebFetch(domain:docs.enterprise.cherry-ai.com)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:help.aliyun.com)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

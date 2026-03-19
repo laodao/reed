@@ -49,15 +49,6 @@ export class GoogleSdkProvider extends BaseProvider {
    * 获取模型列表
    */
   async getModels(): Promise<Array<{ id: string; name: string; maxTokens: number; contextWindow: number }>> {
-    // Google Gemini 预定义模型
-    const models = [
-      { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', maxTokens: 8192, contextWindow: 1048576 },
-      { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', maxTokens: 8192, contextWindow: 2097152 },
-      { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', maxTokens: 8192, contextWindow: 1048576 },
-      { id: 'gemini-1.5-pro-002', name: 'Gemini 1.5 Pro 002', maxTokens: 8192, contextWindow: 2097152 },
-      { id: 'gemini-1.5-flash-002', name: 'Gemini 1.5 Flash 002', maxTokens: 8192, contextWindow: 1048576 }
-    ]
-
     // 如果模板中有模型定义，使用模板中的
     if (this.template?.models && this.template.models.length > 0) {
       return this.template.models.map((m) => ({
@@ -68,22 +59,26 @@ export class GoogleSdkProvider extends BaseProvider {
       }))
     }
 
-    return models
+    // Google 没有模型列表 API，返回空数组
+    return []
   }
 
   /**
    * 获取默认模型
    */
   private getDefaultModel(): string {
+    // 优先使用配置中指定的模型
     if (this.config.defaultModel) {
       return this.config.defaultModel
     }
 
+    // 然后尝试使用模板中定义的第一个模型
     if (this.template?.models && this.template.models.length > 0) {
       return this.template.models[0].id
     }
 
-    return 'gemini-2.0-flash'
+    // 没有可用模型时抛出错误
+    throw new Error('未指定模型，请在配置中选择一个模型')
   }
 
   /**

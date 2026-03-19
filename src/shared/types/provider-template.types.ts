@@ -17,7 +17,7 @@ export type RequestFormat = 'openai' | 'anthropic' | 'google' | 'ollama' | 'cust
 /**
  * 模板分类
  */
-export type TemplateCategory = 'openai-compatible' | 'anthropic' | 'google' | 'ollama' | 'custom'
+export type TemplateCategory = 'openai-compatible' | 'anthropic' | 'google' | 'ollama' | 'image' | 'custom'
 
 /**
  * 自定义参数定义

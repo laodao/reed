@@ -311,6 +311,49 @@ export class DatabaseManager {
         this.db.run('ALTER TABLE roles ADD COLUMN knowledge_threshold REAL DEFAULT 0.5')
       }
     }
+
+    // 检查 images 表是否需要添加图像生成相关字段
+    const imageColumns = this.db.exec("PRAGMA table_info(images)")
+    if (imageColumns.length > 0) {
+      const columnNames = imageColumns[0].values.map(row => row[1])
+
+      if (!columnNames.includes('prompt')) {
+        this.db.run('ALTER TABLE images ADD COLUMN prompt TEXT')
+      }
+      if (!columnNames.includes('negative_prompt')) {
+        this.db.run('ALTER TABLE images ADD COLUMN negative_prompt TEXT')
+      }
+      if (!columnNames.includes('style')) {
+        this.db.run('ALTER TABLE images ADD COLUMN style TEXT')
+      }
+      if (!columnNames.includes('quality')) {
+        this.db.run('ALTER TABLE images ADD COLUMN quality TEXT')
+      }
+      if (!columnNames.includes('provider_id')) {
+        this.db.run('ALTER TABLE images ADD COLUMN provider_id TEXT')
+      }
+      if (!columnNames.includes('model_id')) {
+        this.db.run('ALTER TABLE images ADD COLUMN model_id TEXT')
+      }
+      if (!columnNames.includes('generation_params')) {
+        this.db.run('ALTER TABLE images ADD COLUMN generation_params TEXT')
+      }
+      if (!columnNames.includes('seed')) {
+        this.db.run('ALTER TABLE images ADD COLUMN seed INTEGER')
+      }
+      if (!columnNames.includes('task_id')) {
+        this.db.run('ALTER TABLE images ADD COLUMN task_id TEXT')
+      }
+      if (!columnNames.includes('status')) {
+        this.db.run("ALTER TABLE images ADD COLUMN status TEXT DEFAULT 'completed'")
+      }
+      if (!columnNames.includes('error_message')) {
+        this.db.run('ALTER TABLE images ADD COLUMN error_message TEXT')
+      }
+      if (!columnNames.includes('favorite')) {
+        this.db.run('ALTER TABLE images ADD COLUMN favorite INTEGER DEFAULT 0')
+      }
+    }
   }
 
   /**

@@ -100,17 +100,8 @@ export class OpenAISdkProvider extends BaseProvider {
       return this.template.models[0].id
     }
 
-    // 最后使用各平台的默认模型
-    const defaultModels: Record<string, string> = {
-      openai: 'gpt-4o',
-      deepseek: 'deepseek-chat',
-      glm: 'glm-4-flash',
-      qwen: 'qwen-turbo',
-      moonshot: 'moonshot-v1-8k',
-      minimax: 'abab6.5s-chat'
-    }
-
-    return defaultModels[this.providerId] || 'gpt-4o'
+    // 没有可用模型时抛出错误
+    throw new Error('未指定模型，请在配置中选择一个模型')
   }
 
   /**

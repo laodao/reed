@@ -176,45 +176,8 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
       topK: true,
       custom: []
     },
-    // Anthropic 没有 models API，使用预定义模型
-    models: [
-      {
-        id: 'claude-sonnet-4-20250514',
-        name: 'Claude Sonnet 4',
-        contextWindow: 200000,
-        maxOutputTokens: 64000,
-        features: ['chat', 'vision', 'function-calling', 'streaming'],
-        inputPrice: 3,
-        outputPrice: 15
-      },
-      {
-        id: 'claude-3-5-sonnet-20241022',
-        name: 'Claude 3.5 Sonnet',
-        contextWindow: 200000,
-        maxOutputTokens: 8192,
-        features: ['chat', 'vision', 'function-calling', 'streaming'],
-        inputPrice: 3,
-        outputPrice: 15
-      },
-      {
-        id: 'claude-3-5-haiku-20241022',
-        name: 'Claude 3.5 Haiku',
-        contextWindow: 200000,
-        maxOutputTokens: 8192,
-        features: ['chat', 'vision', 'function-calling', 'streaming'],
-        inputPrice: 0.8,
-        outputPrice: 4
-      },
-      {
-        id: 'claude-3-opus-20240229',
-        name: 'Claude 3 Opus',
-        contextWindow: 200000,
-        maxOutputTokens: 4096,
-        features: ['chat', 'vision', 'function-calling', 'streaming'],
-        inputPrice: 15,
-        outputPrice: 75
-      }
-    ],
+    // Anthropic 没有 models API，模型需要手动配置
+    models: [],
     allowCustomModels: true
   },
   // Google 格式
@@ -242,36 +205,8 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
       topK: true,
       custom: []
     },
-    // Google 没有 models API，使用预定义模型
-    models: [
-      {
-        id: 'gemini-2.0-flash',
-        name: 'Gemini 2.0 Flash',
-        contextWindow: 1048576,
-        maxOutputTokens: 8192,
-        features: ['chat', 'vision', 'function-calling', 'streaming'],
-        inputPrice: 0,
-        outputPrice: 0
-      },
-      {
-        id: 'gemini-1.5-pro',
-        name: 'Gemini 1.5 Pro',
-        contextWindow: 2097152,
-        maxOutputTokens: 8192,
-        features: ['chat', 'vision', 'function-calling', 'streaming'],
-        inputPrice: 1.25,
-        outputPrice: 5
-      },
-      {
-        id: 'gemini-1.5-flash',
-        name: 'Gemini 1.5 Flash',
-        contextWindow: 1048576,
-        maxOutputTokens: 8192,
-        features: ['chat', 'vision', 'function-calling', 'streaming'],
-        inputPrice: 0.075,
-        outputPrice: 0.3
-      }
-    ],
+    // Google 没有 models API，模型需要手动配置
+    models: [],
     allowCustomModels: true
   },
   // Ollama 本地模型
@@ -359,18 +294,8 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
         }
       ]
     },
-    models: [
-      {
-        id: 'wanx-v1',
-        name: '通义万相 v1',
-        contextWindow: 0,
-        maxOutputTokens: 0,
-        features: ['text-to-image', 'image-to-image'],
-        inputPrice: 0,
-        outputPrice: 0
-      }
-    ],
-    allowCustomModels: false
+    models: [],
+    allowCustomModels: true
   },
   // 火山引擎 - 豆包
   {
@@ -419,18 +344,8 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
         }
       ]
     },
-    models: [
-      {
-        id: 'doubao-image',
-        name: '豆包图像生成',
-        contextWindow: 0,
-        maxOutputTokens: 0,
-        features: ['text-to-image'],
-        inputPrice: 0,
-        outputPrice: 0
-      }
-    ],
-    allowCustomModels: false
+    models: [],
+    allowCustomModels: true
   },
   // MiniMax
   {
@@ -478,18 +393,8 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
         }
       ]
     },
-    models: [
-      {
-        id: 'minimax-image',
-        name: 'MiniMax 图像生成',
-        contextWindow: 0,
-        maxOutputTokens: 0,
-        features: ['text-to-image'],
-        inputPrice: 0,
-        outputPrice: 0
-      }
-    ],
-    allowCustomModels: false
+    models: [],
+    allowCustomModels: true
   },
   // 智谱AI - CogView
   {
@@ -537,18 +442,8 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
         }
       ]
     },
-    models: [
-      {
-        id: 'cogview-3',
-        name: 'CogView-3',
-        contextWindow: 0,
-        maxOutputTokens: 0,
-        features: ['text-to-image'],
-        inputPrice: 0,
-        outputPrice: 0
-      }
-    ],
-    allowCustomModels: false
+    models: [],
+    allowCustomModels: true
   },
   // 自定义模型
   {

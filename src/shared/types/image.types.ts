@@ -4,6 +4,11 @@
  */
 
 /**
+ * 图像生成状态
+ */
+export type ImageGenerationStatus = 'pending' | 'completed' | 'failed'
+
+/**
  * 图像记录
  */
 export interface ImageRecord {
@@ -18,6 +23,19 @@ export interface ImageRecord {
   height?: number
   favorite: boolean
   createdAt: Date
+
+  // 图像生成相关字段
+  prompt?: string
+  negativePrompt?: string
+  style?: string
+  quality?: string
+  providerId?: string
+  modelId?: string
+  generationParams?: Record<string, any>
+  seed?: number
+  taskId?: string
+  status: ImageGenerationStatus
+  errorMessage?: string
 }
 
 /**

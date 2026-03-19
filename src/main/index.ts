@@ -14,6 +14,7 @@ import { registerMessageHandlers } from './ipc/handlers/message.handler'
 import { registerRoleHandlers } from './ipc/handlers/role.handler'
 import { registerProviderConfigHandlers } from './ipc/handlers/provider-config.handler'
 import { registerChatHandlers } from './ipc/handlers/chat.handler'
+import { registerImageHandlers } from './ipc/handlers/image.handler'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -65,6 +66,7 @@ function initIpcHandlers(): void {
   registerRoleHandlers()
   registerProviderConfigHandlers()
   registerChatHandlers()
+  registerImageHandlers()
 }
 
 // 应用就绪

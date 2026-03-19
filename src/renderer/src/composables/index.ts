@@ -4,3 +4,4 @@
 
 export * from './useTheme'
 export * from './useChat'
+export * from './useImage'
