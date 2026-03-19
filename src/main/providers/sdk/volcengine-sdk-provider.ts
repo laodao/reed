@@ -91,6 +91,11 @@ export class VolcEngineSdkProvider extends BaseProvider {
     }
 
     try {
+      console.log('开始获取火山引擎模型列表...', {
+        accessKeyId: this.accessKeyId.substring(0, 4) + '***',
+        hasSecret: !!this.accessKeySecret
+      })
+
       const response = await this.listFoundationModels({
         accessKeyId: this.accessKeyId,
         accessKeySecret: this.accessKeySecret,
@@ -98,8 +103,10 @@ export class VolcEngineSdkProvider extends BaseProvider {
         service: 'ark'
       })
 
+      console.log('火山引擎 API 响应:', JSON.stringify(response, null, 2))
+
       if (response.Result?.Items) {
-        return response.Result.Items.map((item) => ({
+        return response.Result.Items.map((item: any) => ({
           id: item.Name,
           name: item.DisplayName || item.Name,
           maxTokens: 4096,
@@ -110,7 +117,7 @@ export class VolcEngineSdkProvider extends BaseProvider {
       return []
     } catch (error) {
       console.error('获取火山引擎模型列表失败:', error)
-      return []
+      throw error
     }
   }
 
@@ -122,16 +129,12 @@ export class VolcEngineSdkProvider extends BaseProvider {
     const action = 'ListFoundationModels'
     const version = '2024-01-01'
 
-    // 构建请求 URL
-    const url = new URL(this.managementBaseUrl)
-    url.searchParams.set('Action', action)
-    url.searchParams.set('Version', version)
+    // 火山引擎统一 API 网关地址
+    const apiHost = 'open.volcengineapi.com'
+    const url = new URL(`https://${apiHost}/?Action=${action}&Version=${version}`)
 
-    // 请求体
-    const body = JSON.stringify({
-      PageNumber: 1,
-      PageSize: 100
-    })
+    // 请求体（空对象即可，不需要分页参数）
+    const body = JSON.stringify({})
 
     // 生成时间戳
     const now = new Date()
@@ -143,13 +146,12 @@ export class VolcEngineSdkProvider extends BaseProvider {
 
     // 构建规范化请求
     const canonicalHeaders = [
-      'content-type:application/json; charset=UTF-8',
-      `host:${url.host}`,
+      `host:${apiHost}`,
       `x-content-sha256:${bodyHash}`,
       `x-date:${xDate}`
     ].join('\n')
 
-    const signedHeaders = 'content-type;host;x-content-sha256;x-date'
+    const signedHeaders = 'host;x-content-sha256;x-date'
 
     const canonicalRequest = [
       method,
@@ -188,7 +190,7 @@ export class VolcEngineSdkProvider extends BaseProvider {
       method,
       headers: {
         'Content-Type': 'application/json; charset=UTF-8',
-        'Host': url.host,
+        'Host': apiHost,
         'X-Date': xDate,
         'X-Content-Sha256': bodyHash,
         'Authorization': authorization
@@ -365,11 +367,23 @@ export class VolcEngineSdkProvider extends BaseProvider {
     try {
       // 如果有 Access Key，尝试获取模型列表
       if (this.accessKeyId && this.accessKeySecret) {
-        const models = await this.getModels()
-        if (models.length > 0) {
+        try {
+          const models = await this.getModels()
+          if (models.length > 0) {
+            return {
+              success: true,
+              message: `连接成功，发现 ${models.length} 个模型`
+            }
+          }
           return {
             success: true,
-            message: `连接成功，发现 ${models.length} 个模型`
+            message: '连接成功，但未发现模型'
+          }
+        } catch (modelError) {
+          console.error('获取模型列表失败:', modelError)
+          return {
+            success: false,
+            message: `获取模型列表失败: ${modelError instanceof Error ? modelError.message : String(modelError)}`
           }
         }
       }
