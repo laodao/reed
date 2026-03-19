@@ -384,17 +384,19 @@ const selectTemplate = (template: ProviderTemplate) => {
 
 // 从 API 获取模型列表
 const fetchModelsFromApi = async () => {
-  if (!selectedTemplate.value) return
+  if (!selectedTemplate.value && !isEdit.value) return
 
-  // 检查是否需要 API Key
-  if (templateAuthType.value !== 'none' && !form.apiKey) {
+  // 编辑模式下，如果没有输入新的 API Key，使用 configId 让后端从数据库读取
+  // 新建模式下，需要检查是否输入了 API Key
+  if (!isEdit.value && templateAuthType.value !== 'none' && !form.apiKey) {
     return
   }
 
   loadingModels.value = true
   try {
     const result = await window.electronAPI.providerConfig.test({
-      templateId: selectedTemplate.value.id,
+      configId: isEdit.value ? props.editConfig?.id : undefined,
+      templateId: selectedTemplate.value?.id,
       apiKey: form.apiKey || undefined,
       baseUrl: form.baseUrl || undefined
     })

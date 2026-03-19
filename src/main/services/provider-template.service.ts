@@ -7,6 +7,7 @@
 import type { ProviderTemplate, ModelDefinition } from '../../shared/types/provider-template.types'
 import { getDatabaseManager } from '../database/index'
 import { SecureStorageService } from './secure-storage.service'
+import { createProvider } from '../providers'
 
 /**
  * 预定义的提供商模板
@@ -36,44 +37,8 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
       topP: true,
       custom: []
     },
-    models: [
-      {
-        id: 'gpt-4o',
-        name: 'GPT-4o',
-        contextWindow: 128000,
-        maxOutputTokens: 4096,
-        features: ['chat', 'vision', 'function-calling', 'streaming'],
-        inputPrice: 5,
-        outputPrice: 15
-      },
-      {
-        id: 'gpt-4o-mini',
-        name: 'GPT-4o Mini',
-        contextWindow: 128000,
-        maxOutputTokens: 16384,
-        features: ['chat', 'vision', 'function-calling', 'streaming'],
-        inputPrice: 0.15,
-        outputPrice: 0.6
-      },
-      {
-        id: 'gpt-4-turbo',
-        name: 'GPT-4 Turbo',
-        contextWindow: 128000,
-        maxOutputTokens: 4096,
-        features: ['chat', 'vision', 'function-calling', 'streaming'],
-        inputPrice: 10,
-        outputPrice: 30
-      },
-      {
-        id: 'gpt-3.5-turbo',
-        name: 'GPT-3.5 Turbo',
-        contextWindow: 16385,
-        maxOutputTokens: 4096,
-        features: ['chat', 'function-calling', 'streaming'],
-        inputPrice: 0.5,
-        outputPrice: 1.5
-      }
-    ],
+    // 模型列表从 API 动态获取
+    models: [],
     allowCustomModels: true
   },
   {
@@ -99,35 +64,8 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
       topP: true,
       custom: []
     },
-    models: [
-      {
-        id: 'deepseek-chat',
-        name: 'DeepSeek Chat',
-        contextWindow: 64000,
-        maxOutputTokens: 4096,
-        features: ['chat', 'function-calling', 'streaming'],
-        inputPrice: 0.14,
-        outputPrice: 0.28
-      },
-      {
-        id: 'deepseek-coder',
-        name: 'DeepSeek Coder',
-        contextWindow: 64000,
-        maxOutputTokens: 4096,
-        features: ['chat', 'function-calling', 'streaming'],
-        inputPrice: 0.14,
-        outputPrice: 0.28
-      },
-      {
-        id: 'deepseek-reasoner',
-        name: 'DeepSeek Reasoner',
-        contextWindow: 64000,
-        maxOutputTokens: 4096,
-        features: ['chat', 'streaming'],
-        inputPrice: 0.55,
-        outputPrice: 2.19
-      }
-    ],
+    // 模型列表从 API 动态获取
+    models: [],
     allowCustomModels: true
   },
   {
@@ -153,35 +91,8 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
       topP: true,
       custom: []
     },
-    models: [
-      {
-        id: 'glm-4-plus',
-        name: 'GLM-4 Plus',
-        contextWindow: 128000,
-        maxOutputTokens: 4096,
-        features: ['chat', 'function-calling', 'streaming'],
-        inputPrice: 50,
-        outputPrice: 50
-      },
-      {
-        id: 'glm-4-air',
-        name: 'GLM-4 Air',
-        contextWindow: 128000,
-        maxOutputTokens: 4096,
-        features: ['chat', 'function-calling', 'streaming'],
-        inputPrice: 1,
-        outputPrice: 1
-      },
-      {
-        id: 'glm-4-flash',
-        name: 'GLM-4 Flash',
-        contextWindow: 128000,
-        maxOutputTokens: 4096,
-        features: ['chat', 'function-calling', 'streaming'],
-        inputPrice: 0.1,
-        outputPrice: 0.1
-      }
-    ],
+    // 模型列表从 API 动态获取
+    models: [],
     allowCustomModels: true
   },
   {
@@ -207,35 +118,8 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
       topP: true,
       custom: []
     },
-    models: [
-      {
-        id: 'qwen-turbo',
-        name: '通义千问 Turbo',
-        contextWindow: 128000,
-        maxOutputTokens: 6144,
-        features: ['chat', 'function-calling', 'streaming'],
-        inputPrice: 0.3,
-        outputPrice: 0.6
-      },
-      {
-        id: 'qwen-plus',
-        name: '通义千问 Plus',
-        contextWindow: 128000,
-        maxOutputTokens: 6144,
-        features: ['chat', 'function-calling', 'streaming'],
-        inputPrice: 0.8,
-        outputPrice: 2
-      },
-      {
-        id: 'qwen-max',
-        name: '通义千问 Max',
-        contextWindow: 32000,
-        maxOutputTokens: 8192,
-        features: ['chat', 'function-calling', 'streaming'],
-        inputPrice: 20,
-        outputPrice: 60
-      }
-    ],
+    // 模型列表从 API 动态获取
+    models: [],
     allowCustomModels: true
   },
   {
@@ -261,35 +145,8 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
       topP: true,
       custom: []
     },
-    models: [
-      {
-        id: 'moonshot-v1-8k',
-        name: 'Moonshot V1 8K',
-        contextWindow: 8192,
-        maxOutputTokens: 4096,
-        features: ['chat', 'streaming'],
-        inputPrice: 12,
-        outputPrice: 12
-      },
-      {
-        id: 'moonshot-v1-32k',
-        name: 'Moonshot V1 32K',
-        contextWindow: 32768,
-        maxOutputTokens: 4096,
-        features: ['chat', 'streaming'],
-        inputPrice: 24,
-        outputPrice: 24
-      },
-      {
-        id: 'moonshot-v1-128k',
-        name: 'Moonshot V1 128K',
-        contextWindow: 131072,
-        maxOutputTokens: 4096,
-        features: ['chat', 'streaming'],
-        inputPrice: 60,
-        outputPrice: 60
-      }
-    ],
+    // 模型列表从 API 动态获取
+    models: [],
     allowCustomModels: true
   },
   // Anthropic 格式
@@ -319,6 +176,7 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
       topK: true,
       custom: []
     },
+    // Anthropic 没有 models API，使用预定义模型
     models: [
       {
         id: 'claude-sonnet-4-20250514',
@@ -384,6 +242,7 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
       topK: true,
       custom: []
     },
+    // Google 没有 models API，使用预定义模型
     models: [
       {
         id: 'gemini-2.0-flash',
@@ -416,39 +275,287 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     allowCustomModels: true
   },
   // Ollama 本地模型
+  // {
+  //   id: 'ollama',
+  //   name: 'Ollama',
+  //   description: '本地部署的 Ollama 模型服务',
+  //   category: 'ollama',
+  //   icon: '🦙',
+  //   isOfficial: true,
+  //   apiConfig: {
+  //     baseUrl: 'http://localhost:11434',
+  //     authType: 'none',
+  //     authHeader: '',
+  //     authPrefix: '',
+  //     requestFormat: 'ollama',
+  //     chatEndpoint: '/api/chat',
+  //     modelsEndpoint: '/api/tags'
+  //   },
+  //   supportedParams: {
+  //     stream: true,
+  //     temperature: true,
+  //     maxTokens: true,
+  //     topP: true,
+  //     topK: true,
+  //     custom: []
+  //   },
+  //   models: [],
+  //   allowCustomModels: true
+  // },
+  // ==================== 图像生成提供商 ====================
+  // 百炼平台（阿里云）- 通义万相
   {
-    id: 'ollama',
-    name: 'Ollama',
-    description: '本地部署的 Ollama 模型服务',
-    category: 'ollama',
-    icon: '🦙',
+    id: 'image-bailian',
+    name: '百炼平台 - 通义万相',
+    description: '阿里云百炼平台图像生成服务，支持通义万相模型',
+    category: 'image',
+    icon: '🎨',
     isOfficial: true,
     apiConfig: {
-      baseUrl: 'http://localhost:11434',
-      authType: 'none',
+      baseUrl: 'https://bailian.cn-beijing.aliyuncs.com',
+      // 百炼平台使用阿里云 ACS3-HMAC-SHA256 签名认证
+      // API Key 格式: AccessKeyId:AccessKeySecret
+      authType: 'custom',
       authHeader: '',
       authPrefix: '',
-      requestFormat: 'ollama',
-      chatEndpoint: '/api/chat',
-      modelsEndpoint: '/api/tags'
+      requestFormat: 'custom',
+      chatEndpoint: ''
     },
     supportedParams: {
-      stream: true,
-      temperature: true,
-      maxTokens: true,
-      topP: true,
-      topK: true,
-      custom: []
+      stream: false,
+      temperature: false,
+      maxTokens: false,
+      topP: false,
+      custom: [
+        {
+          key: 'negativePrompt',
+          label: '负向提示词',
+          type: 'string',
+          description: '指定不希望出现在图像中的元素'
+        },
+        {
+          key: 'style',
+          label: '风格',
+          type: 'select',
+          options: ['auto', 'photography', 'portrait', '3d', 'anime', 'oil_painting', 'watercolor', 'sketch', 'chinese_painting', 'digital_art'],
+          default: 'auto',
+          description: '图像生成风格'
+        },
+        {
+          key: 'quality',
+          label: '质量',
+          type: 'select',
+          options: ['standard', 'hd'],
+          default: 'standard',
+          description: '图像生成质量'
+        },
+        {
+          key: 'size',
+          label: '尺寸',
+          type: 'select',
+          options: ['512x512', '1024x1024', '1024x768', '768x1024', '2048x2048'],
+          default: '1024x1024',
+          description: '图像尺寸'
+        }
+      ]
     },
-    models: [],
-    allowCustomModels: true
+    models: [
+      {
+        id: 'wanx-v1',
+        name: '通义万相 v1',
+        contextWindow: 0,
+        maxOutputTokens: 0,
+        features: ['text-to-image', 'image-to-image'],
+        inputPrice: 0,
+        outputPrice: 0
+      }
+    ],
+    allowCustomModels: false
   },
-  // 自定义 OpenAI 兼容
+  // 火山引擎 - 豆包
   {
-    id: 'openai-compatible-custom',
-    name: '自定义 OpenAI 兼容',
-    description: '自定义的 OpenAI 兼容 API 端点',
-    category: 'openai-compatible',
+    id: 'image-volcengine',
+    name: '火山引擎 - 豆包',
+    description: '火山引擎图像生成服务，支持豆包模型',
+    category: 'image',
+    icon: '🌋',
+    isOfficial: true,
+    apiConfig: {
+      baseUrl: 'https://ark.cn-beijing.volces.com',
+      // 火山引擎使用 API Key 认证
+      authType: 'bearer',
+      authHeader: 'Authorization',
+      authPrefix: 'Bearer ',
+      requestFormat: 'openai',
+      chatEndpoint: ''
+    },
+    supportedParams: {
+      stream: false,
+      temperature: false,
+      maxTokens: false,
+      topP: false,
+      custom: [
+        {
+          key: 'negativePrompt',
+          label: '负向提示词',
+          type: 'string',
+          description: '指定不希望出现在图像中的元素'
+        },
+        {
+          key: 'style',
+          label: '风格',
+          type: 'select',
+          options: ['auto', 'photography', 'portrait', '3d', 'anime', 'oil_painting'],
+          default: 'auto',
+          description: '图像生成风格'
+        },
+        {
+          key: 'size',
+          label: '尺寸',
+          type: 'select',
+          options: ['512x512', '1024x1024', '1024x768', '768x1024'],
+          default: '1024x1024',
+          description: '图像尺寸'
+        }
+      ]
+    },
+    models: [
+      {
+        id: 'doubao-image',
+        name: '豆包图像生成',
+        contextWindow: 0,
+        maxOutputTokens: 0,
+        features: ['text-to-image'],
+        inputPrice: 0,
+        outputPrice: 0
+      }
+    ],
+    allowCustomModels: false
+  },
+  // MiniMax
+  {
+    id: 'image-minimax',
+    name: 'MiniMax',
+    description: 'MiniMax 图像生成服务',
+    category: 'image',
+    icon: '✨',
+    isOfficial: true,
+    apiConfig: {
+      baseUrl: 'https://api.minimax.chat',
+      authType: 'bearer',
+      authHeader: 'Authorization',
+      authPrefix: 'Bearer ',
+      requestFormat: 'openai',
+      chatEndpoint: ''
+    },
+    supportedParams: {
+      stream: false,
+      temperature: false,
+      maxTokens: false,
+      topP: false,
+      custom: [
+        {
+          key: 'negativePrompt',
+          label: '负向提示词',
+          type: 'string',
+          description: '指定不希望出现在图像中的元素'
+        },
+        {
+          key: 'style',
+          label: '风格',
+          type: 'select',
+          options: ['auto', 'photography', 'portrait', 'anime', 'digital_art'],
+          default: 'auto',
+          description: '图像生成风格'
+        },
+        {
+          key: 'size',
+          label: '尺寸',
+          type: 'select',
+          options: ['512x512', '1024x1024', '1024x768', '768x1024'],
+          default: '1024x1024',
+          description: '图像尺寸'
+        }
+      ]
+    },
+    models: [
+      {
+        id: 'minimax-image',
+        name: 'MiniMax 图像生成',
+        contextWindow: 0,
+        maxOutputTokens: 0,
+        features: ['text-to-image'],
+        inputPrice: 0,
+        outputPrice: 0
+      }
+    ],
+    allowCustomModels: false
+  },
+  // 智谱AI - CogView
+  {
+    id: 'image-zhipu',
+    name: '智谱AI - CogView',
+    description: '智谱AI 图像生成服务，支持 CogView 模型',
+    category: 'image',
+    icon: '🖼️',
+    isOfficial: true,
+    apiConfig: {
+      baseUrl: 'https://open.bigmodel.cn',
+      authType: 'bearer',
+      authHeader: 'Authorization',
+      authPrefix: 'Bearer ',
+      requestFormat: 'openai',
+      chatEndpoint: ''
+    },
+    supportedParams: {
+      stream: false,
+      temperature: false,
+      maxTokens: false,
+      topP: false,
+      custom: [
+        {
+          key: 'negativePrompt',
+          label: '负向提示词',
+          type: 'string',
+          description: '指定不希望出现在图像中的元素'
+        },
+        {
+          key: 'style',
+          label: '风格',
+          type: 'select',
+          options: ['auto', 'photography', 'portrait', '3d', 'anime', 'chinese_painting'],
+          default: 'auto',
+          description: '图像生成风格'
+        },
+        {
+          key: 'size',
+          label: '尺寸',
+          type: 'select',
+          options: ['512x512', '1024x1024', '1024x768', '768x1024'],
+          default: '1024x1024',
+          description: '图像尺寸'
+        }
+      ]
+    },
+    models: [
+      {
+        id: 'cogview-3',
+        name: 'CogView-3',
+        contextWindow: 0,
+        maxOutputTokens: 0,
+        features: ['text-to-image'],
+        inputPrice: 0,
+        outputPrice: 0
+      }
+    ],
+    allowCustomModels: false
+  },
+  // 自定义模型
+  {
+    id: 'custom-model',
+    name: '自定义模型',
+    description: '自定义 API 端点，支持 OpenAI 兼容接口或自定义图像生成服务',
+    category: 'custom',
     icon: '⚙️',
     isOfficial: false,
     apiConfig: {
@@ -465,7 +572,22 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
       temperature: true,
       maxTokens: true,
       topP: true,
-      custom: []
+      custom: [
+        {
+          key: 'negativePrompt',
+          label: '负向提示词',
+          type: 'string',
+          description: '指定不希望出现在生成结果中的元素（适用于图像生成）'
+        },
+        {
+          key: 'size',
+          label: '图像尺寸',
+          type: 'select',
+          options: ['512x512', '1024x1024', '1024x768', '768x1024', '2048x2048'],
+          default: '1024x1024',
+          description: '图像生成尺寸'
+        }
+      ]
     },
     models: [],
     allowCustomModels: true
@@ -531,23 +653,37 @@ export class ProviderTemplateService {
       return { success: false, message: '模板不存在' }
     }
 
-    const baseUrl = config.baseUrl || template.apiConfig.baseUrl
-    if (!baseUrl) {
-      return { success: false, message: '请提供 API 端点' }
-    }
-
     // 检查是否需要 API 密钥
     if (template.apiConfig.authType !== 'none' && !config.apiKey) {
       return { success: false, message: '请提供 API 密钥' }
     }
 
     try {
-      // 尝试获取模型列表
-      const models = await this.fetchModels(template, baseUrl, config.apiKey)
+      // 使用 SDK Provider 获取模型列表
+      const provider = createProvider(
+        config.templateId,
+        {
+          apiKey: config.apiKey || '',
+          baseUrl: config.baseUrl
+        },
+        template
+      )
+
+      const models = await provider.getModels()
+
+      // 转换为 ModelDefinition 格式
+      const modelDefinitions: ModelDefinition[] = models.map((m) => ({
+        id: m.id,
+        name: m.name,
+        contextWindow: m.contextWindow,
+        maxOutputTokens: m.maxTokens,
+        features: ['chat', 'streaming']
+      }))
+
       return {
         success: true,
         message: '连接成功',
-        models
+        models: modelDefinitions
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '未知错误'
@@ -559,116 +695,37 @@ export class ProviderTemplateService {
   }
 
   /**
-   * 从 API 获取模型列表
+   * 从 API 获取模型列表（使用 SDK Provider）
    * @param template - 模板
    * @param baseUrl - 基础 URL
    * @param apiKey - API 密钥
    * @returns Promise<ModelDefinition[]>
+   * @deprecated 请使用 testConnection 方法获取模型列表
    */
   private async fetchModels(
     template: ProviderTemplate,
     baseUrl: string,
     apiKey?: string
   ): Promise<ModelDefinition[]> {
-    if (!template.apiConfig.modelsEndpoint) {
-      return template.models
-    }
+    // 使用 SDK Provider 获取模型
+    const provider = createProvider(
+      template.id,
+      {
+        apiKey: apiKey || '',
+        baseUrl
+      },
+      template
+    )
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json'
-    }
+    const models = await provider.getModels()
 
-    // 添加认证头
-    if (template.apiConfig.authType !== 'none' && apiKey) {
-      if (template.apiConfig.authType === 'bearer' || template.apiConfig.authType === 'api-key') {
-        headers[template.apiConfig.authHeader] = `${template.apiConfig.authPrefix || ''}${apiKey}`
-      }
-    }
-
-    let url = `${baseUrl}${template.apiConfig.modelsEndpoint}`
-
-    // 处理查询参数认证
-    if (template.apiConfig.authType === 'query' && apiKey && template.apiConfig.queryAuthKey) {
-      url += `?${template.apiConfig.queryAuthKey}=${apiKey}`
-    }
-
-    const response = await fetch(url, {
-      method: 'GET',
-      headers
-    })
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-    }
-
-    const data = await response.json()
-
-    // 解析不同 API 的模型列表格式
-    return this.parseModelsResponse(template.category, data)
-  }
-
-  /**
-   * 解析模型列表响应
-   * @param category - 模板分类
-   * @param data - 响应数据
-   * @returns ModelDefinition[]
-   */
-  private parseModelsResponse(category: string, data: unknown): ModelDefinition[] {
-    const models: ModelDefinition[] = []
-
-    switch (category) {
-      case 'openai-compatible': {
-        // OpenAI 格式: { data: [{ id: string, ... }] }
-        const openaiData = data as { data?: Array<{ id: string }> }
-        if (openaiData.data && Array.isArray(openaiData.data)) {
-          openaiData.data.forEach((model) => {
-            models.push({
-              id: model.id,
-              name: model.id,
-              contextWindow: 8192,
-              maxOutputTokens: 4096,
-              features: ['chat', 'streaming']
-            })
-          })
-        }
-        break
-      }
-      case 'ollama': {
-        // Ollama 格式: { models: [{ name: string, ... }] }
-        const ollamaData = data as { models?: Array<{ name: string }> }
-        if (ollamaData.models && Array.isArray(ollamaData.models)) {
-          ollamaData.models.forEach((model) => {
-            models.push({
-              id: model.name,
-              name: model.name,
-              contextWindow: 8192,
-              maxOutputTokens: 4096,
-              features: ['chat', 'streaming']
-            })
-          })
-        }
-        break
-      }
-      case 'google': {
-        // Google 格式: { models: [{ name: string, ... }] }
-        const googleData = data as { models?: Array<{ name: string }> }
-        if (googleData.models && Array.isArray(googleData.models)) {
-          googleData.models.forEach((model) => {
-            const modelId = model.name.replace('models/', '')
-            models.push({
-              id: modelId,
-              name: modelId,
-              contextWindow: 8192,
-              maxOutputTokens: 4096,
-              features: ['chat', 'streaming']
-            })
-          })
-        }
-        break
-      }
-    }
-
-    return models
+    return models.map((m) => ({
+      id: m.id,
+      name: m.name,
+      contextWindow: m.contextWindow,
+      maxOutputTokens: m.maxTokens,
+      features: ['chat', 'streaming']
+    }))
   }
 
   /**
