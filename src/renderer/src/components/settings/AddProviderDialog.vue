@@ -109,20 +109,22 @@
         <!-- 模型管理 -->
         <el-collapse-item title="模型管理" name="models">
           <div class="model-management">
-            <!-- 可用模型列表（预定义 + 自定义） -->
+            <!-- 从 API 刷新按钮（始终显示） -->
+            <div class="model-list-header">
+              <span>可用模型</span>
+              <el-button
+                type="primary"
+                text
+                size="small"
+                :loading="loadingModels"
+                @click="fetchModelsFromApi"
+              >
+                从 API 刷新
+              </el-button>
+            </div>
+
+            <!-- 模型列表 -->
             <div v-if="allModels.length > 0" class="predefined-models">
-              <div class="model-list-header">
-                <span>可用模型</span>
-                <el-button
-                  type="primary"
-                  text
-                  size="small"
-                  :loading="loadingModels"
-                  @click="fetchModelsFromApi"
-                >
-                  从 API 刷新
-                </el-button>
-              </div>
               <el-checkbox-group v-model="form.enabledModels" class="model-checkbox-group">
                 <el-checkbox
                   v-for="model in allModels"
@@ -140,6 +142,9 @@
                   </div>
                 </el-checkbox>
               </el-checkbox-group>
+            </div>
+            <div v-else class="no-models-hint">
+              <span>暂无模型，请点击"从 API 刷新"获取模型列表，或添加自定义模型</span>
             </div>
 
             <!-- 自定义模型添加区域 -->
@@ -843,6 +848,15 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.no-models-hint {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+  background: var(--bg-color-page);
+  border-radius: var(--radius-sm);
 }
 
 .model-list-header {
