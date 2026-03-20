@@ -151,7 +151,7 @@ export function useChat() {
   /**
    * 选择角色
    */
-  function selectRole(role: Role): void {
+  async function selectRole(role: Role): Promise<void> {
     // 如果选择的是默认助手，设置 selectedRole 为 null（表示没有选择自定义助手）
     // 注意：默认助手的对话在数据库中 roleId 为 null
     if (role.id === 'default-assistant') {
@@ -159,14 +159,16 @@ export function useChat() {
       // 切换到话题列表
       currentTab.value = 'topics'
       // 加载没有 roleId 的对话（即默认助手的对话）
-      dialogStore.loadDialogsByRole(null)
+      // 重要：必须 await 等待加载完成，否则 currentRoleDialogs 计算属性会在数据加载前计算
+      await dialogStore.loadDialogsByRole(null)
     } else {
       selectedRole.value = role
       roleStore.selectRole(role)
       // 切换到话题列表
       currentTab.value = 'topics'
       // 加载该角色的对话
-      dialogStore.loadDialogsByRole(role.id)
+      // 重要：必须 await 等待加载完成
+      await dialogStore.loadDialogsByRole(role.id)
     }
   }
 
