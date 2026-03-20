@@ -4,7 +4,7 @@
  * @description 支持所有 OpenAI API 格式的提供商
  */
 
-import { BaseProvider, ProviderConfig, StreamCallback } from './base-provider'
+import { BaseProvider, ProviderConfig, StreamCallback, ChatOptions } from './base-provider'
 import type { ChatContext, ChatCompletionResponse, ProviderTemplate, UserProviderConfig, ModelDefinition } from '../../shared/types'
 
 /**
@@ -66,7 +66,7 @@ export class OpenAICompatibleProvider extends BaseProvider {
       if (data.data && Array.isArray(data.data)) {
         return data.data.map((model: any) => ({
           id: model.id,
-          name: model.id,
+          name: model.name || model.id, // 使用 API 返回的 name，如果没有则使用 id
           maxTokens: model.max_output_tokens || 4096,
           contextWindow: model.context_window || 8192
         }))
@@ -82,24 +82,96 @@ export class OpenAICompatibleProvider extends BaseProvider {
   /**
    * 构建请求体
    */
-  private buildRequestBody(context: ChatContext, model: string, stream: boolean = true): any {
+  private buildRequestBody(context: ChatContext, model: string, stream: boolean = true, options?: ChatOptions): any {
     const messages = []
 
     // 添加系统消息
-    if (context.systemPrompt) {
-      messages.push({
-        role: 'system',
-        content: context.systemPrompt
-      })
+    let systemPrompt = context.systemPrompt || ''
+
+    // 如果有联网搜索上下文，添加到系统提示
+    if (options?.webSearchContext) {
+      systemPrompt = systemPrompt
+        ? `${systemPrompt}\n\n以下是联网搜索的相关信息，请参考这些信息回答问题：\n${options.webSearchContext}`
+        : `请参考以下联网搜索的相关信息回答问题：\n${options.webSearchContext}`
     }
 
+    // 检测是否是智谱 GLM（需要特殊格式）
+    const isZhipuGLM = this.providerId === 'zhipu' || this.providerId === 'glm'
+
     // 添加历史消息
+    // 确保消息格式正确，过滤掉空消息和无效角色
     for (const msg of context.messages) {
-      messages.push({
-        role: msg.role,
-        content: msg.content
-      })
+      // 跳过空消息
+      if (!msg.content || typeof msg.content !== 'string' || msg.content.trim() === '') {
+        console.warn('[OpenAICompatibleProvider.buildRequestBody] 跳过空消息, role:', msg.role)
+        continue
+      }
+
+      // 确保 role 是有效的值
+      const role = msg.role
+      if (role !== 'user' && role !== 'assistant' && role !== 'system') {
+        console.warn('[OpenAICompatibleProvider.buildRequestBody] 无效的角色:', msg.role, ', 跳过该消息')
+        continue
+      }
+
+      // 构建消息内容
+      const messageContent = msg.content.trim()
+
+      if (isZhipuGLM) {
+        // 智谱 GLM 特殊格式：
+        // 1. content 必须是数组格式
+        // 2. 不支持 system 角色
+        if (role === 'system') {
+          continue
+        }
+
+        messages.push({
+          role,
+          content: [{ type: 'text', text: messageContent }]
+        })
+      } else {
+        // 标准 OpenAI 格式
+        messages.push({
+          role,
+          content: messageContent
+        })
+      }
     }
+
+    // 处理 system prompt
+    if (systemPrompt) {
+      if (isZhipuGLM) {
+        // 智谱 GLM：将 system prompt 合并到第一条 user 消息中
+        if (messages.length > 0 && messages[0].role === 'user') {
+          const firstContent = messages[0].content
+          const originalText = Array.isArray(firstContent)
+            ? firstContent[0]?.text || ''
+            : firstContent
+          messages[0] = {
+            role: 'user',
+            content: [{
+              type: 'text',
+              text: `[系统指令]\n${systemPrompt}\n\n[用户消息]\n${originalText}`
+            }]
+          }
+        } else {
+          messages.unshift({
+            role: 'user',
+            content: [{ type: 'text', text: `[系统指令]\n${systemPrompt}` }]
+          })
+        }
+      } else {
+        // 标准 OpenAI 格式：在开头添加 system 消息
+        messages.unshift({
+          role: 'system',
+          content: systemPrompt
+        })
+      }
+    }
+
+    console.log('[OpenAICompatibleProvider.buildRequestBody] 构建的消息数量:', messages.length)
+    console.log('[OpenAICompatibleProvider.buildRequestBody] 消息角色:', messages.map((m: any) => m.role))
+    console.log('[OpenAICompatibleProvider.buildRequestBody] 是否智谱 GLM:', isZhipuGLM)
 
     const body: any = {
       model,
@@ -169,16 +241,22 @@ export class OpenAICompatibleProvider extends BaseProvider {
   async chatStream(
     context: ChatContext,
     onEvent: StreamCallback,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options?: ChatOptions
   ): Promise<string> {
     const model = this.getDefaultModel()
     console.log('[OpenAICompatibleProvider.chatStream] 使用的模型:', model)
     const url = this.buildUrl(this.getChatEndpoint())
     const headers = this.buildHeaders()
-    const body = this.buildRequestBody(context, model, true)
+    const body = this.buildRequestBody(context, model, true, options)
 
     let fullContent = ''
+    let fullThinkingContent = ''
     let messageId = ''
+
+    // 检测是否为 DeepSeek R1 模型（支持思维链）
+    const isDeepSeekR1 = model.toLowerCase().includes('deepseek-reasoner') ||
+                         model.toLowerCase().includes('deepseek-r1')
 
     try {
       onEvent({ type: 'start' })
@@ -232,6 +310,17 @@ export class OpenAICompatibleProvider extends BaseProvider {
                 messageId = data.id
               }
 
+              // 处理 DeepSeek R1 的思维链内容（reasoning_content）
+              if (isDeepSeekR1 && data.choices && data.choices[0]?.delta?.reasoning_content) {
+                const thinkingContent = data.choices[0].delta.reasoning_content
+                fullThinkingContent += thinkingContent
+                onEvent({
+                  type: 'thinking',
+                  messageId,
+                  thinkingContent
+                })
+              }
+
               // 处理增量内容
               if (data.choices && data.choices[0]?.delta?.content) {
                 const content = data.choices[0].delta.content
@@ -248,6 +337,10 @@ export class OpenAICompatibleProvider extends BaseProvider {
           }
         }
       }
+
+      // 如果有思维链内容，将其附加到消息元数据中
+      // 注意：这里我们需要返回思维链内容，但当前的返回值只有 fullContent
+      // 可以通过事件传递思维链，由 ChatService 处理
 
       onEvent({ type: 'done', messageId })
       return fullContent

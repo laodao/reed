@@ -282,7 +282,7 @@ export class RoleRepository {
     }
 
     if (fields.length > 0) {
-      fields.push('updated_at = datetime("now")')
+      fields.push("updated_at = datetime('now')")
       values.push(id)
       this.db.prepare(`UPDATE roles SET ${fields.join(', ')} WHERE id = ?`).run(...values)
     }

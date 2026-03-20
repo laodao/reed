@@ -83,10 +83,12 @@
                 v-model="selectedModelKey"
                 placeholder="选择默认模型"
                 clearable
+                filterable
+                :filter-method="filterModels"
                 class="model-select"
               >
                 <el-option-group
-                  v-for="provider in providerModels"
+                  v-for="provider in filteredProviderModels"
                   :key="provider.id"
                   :label="provider.name"
                 >
@@ -354,7 +356,11 @@ const providerModels = computed(() => {
 
     const models: Array<{ id: string; name: string; contextWindow: number }> = []
     const template = providerTemplates.value.find(t => t.id === config.templateId)
-    const validModelIds = template ? new Set(template.models.map(m => m.id)) : null
+
+    // 只有当模板有预定义模型且不为空时才进行验证
+    // 如果模板 models 为空，说明模型是动态从 API 获取的，不应过滤
+    const templateHasModels = template && template.models && template.models.length > 0
+    const validModelIds = templateHasModels ? new Set(template.models.map(m => m.id)) : null
 
     // 自定义模型
     if (config.customModels) {
@@ -404,6 +410,43 @@ const providerModels = computed(() => {
 
   return result
 })
+
+// 模型搜索关键词
+const modelSearchKeyword = ref('')
+
+// 过滤后的模型列表
+const filteredProviderModels = computed(() => {
+  if (!modelSearchKeyword.value) {
+    return providerModels.value
+  }
+
+  const keyword = modelSearchKeyword.value.toLowerCase()
+  const result: Array<{ id: string; name: string; models: Array<{ id: string; name: string; contextWindow: number }> }> = []
+
+  for (const provider of providerModels.value) {
+    // 过滤模型
+    const filteredModels = provider.models.filter(model =>
+      model.name.toLowerCase().includes(keyword) ||
+      model.id.toLowerCase().includes(keyword) ||
+      provider.name.toLowerCase().includes(keyword)
+    )
+
+    // 如果有匹配的模型或提供商名称匹配，添加到结果
+    if (filteredModels.length > 0) {
+      result.push({
+        ...provider,
+        models: filteredModels
+      })
+    }
+  }
+
+  return result
+})
+
+// 模型搜索过滤方法
+function filterModels(keyword: string): void {
+  modelSearchKeyword.value = keyword
+}
 
 // 加载提供商配置
 async function loadProviderConfigs(): Promise<void> {

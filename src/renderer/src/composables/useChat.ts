@@ -7,7 +7,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useDialogStore } from '../stores/dialog'
 import { useRoleStore } from '../stores/role'
-import type { Dialog, Role, Message, ContextConfig } from '../../../shared/types'
+import type { Dialog, Role, Message, ContextConfig, WebSearchEngine } from '../../../shared/types'
 
 /**
  * 侧边栏选项卡类型
@@ -95,6 +95,50 @@ export function useChat() {
       roleStore.loadRoles(),
       dialogStore.loadDialogs()
     ])
+
+    // 初始化完成后，自动选择最后一个对话
+    await selectLastDialog()
+  }
+
+  /**
+   * 选择最后一个对话
+   */
+  async function selectLastDialog(): Promise<void> {
+    // 直接从数据库加载所有对话（按 updated_at DESC 排序）
+    const response = await window.electronAPI.dialog.list()
+    if (!response.success || !response.dialogs || response.dialogs.length === 0) {
+      // 没有对话，保持默认状态
+      return
+    }
+
+    // 列表已经是按 updated_at DESC 排序的，第一个就是最近的对话
+    const lastDialog = response.dialogs[0]
+
+    // 根据对话的 roleId 找到对应的助手并设置 selectedRole
+    if (lastDialog.roleId) {
+      const allRoles = [...roleStore.builtinRoles, ...roleStore.customRoles]
+      const role = allRoles.find(r => r.id === lastDialog.roleId)
+      if (role) {
+        selectedRole.value = role
+        roleStore.selectRole(role)
+      } else {
+        // 找不到对应的角色，保持 selectedRole 为 null
+        selectedRole.value = null
+      }
+    } else {
+      // 没有roleId，表示是默认助手的对话
+      selectedRole.value = null
+    }
+
+    // 加载该角色的对话列表（会更新 dialogStore.dialogs）
+    await dialogStore.loadDialogsByRole(lastDialog.roleId || null)
+
+    // 切换到话题 tab
+    currentTab.value = 'topics'
+
+    // 从更新后的列表中找到该对话（使用 id 匹配，因为对象引用可能不同）
+    const dialogToSelect = dialogStore.dialogs.find(d => d.id === lastDialog.id) || lastDialog
+    await dialogStore.selectDialog(dialogToSelect)
   }
 
   /**
@@ -108,12 +152,22 @@ export function useChat() {
    * 选择角色
    */
   function selectRole(role: Role): void {
-    selectedRole.value = role
-    roleStore.selectRole(role)
-    // 切换到话题列表
-    currentTab.value = 'topics'
-    // 加载该角色的对话
-    dialogStore.loadDialogsByRole(role.id)
+    // 如果选择的是默认助手，设置 selectedRole 为 null（表示没有选择自定义助手）
+    // 注意：默认助手的对话在数据库中 roleId 为 null
+    if (role.id === 'default-assistant') {
+      selectedRole.value = null
+      // 切换到话题列表
+      currentTab.value = 'topics'
+      // 加载没有 roleId 的对话（即默认助手的对话）
+      dialogStore.loadDialogsByRole(null)
+    } else {
+      selectedRole.value = role
+      roleStore.selectRole(role)
+      // 切换到话题列表
+      currentTab.value = 'topics'
+      // 加载该角色的对话
+      dialogStore.loadDialogsByRole(role.id)
+    }
   }
 
   /**
@@ -172,16 +226,23 @@ export function useChat() {
         modelId = 'deepseek-chat' // 使用一个更通用的默认值
       }
 
+      // 确定 roleId：如果 selectedRole 是自定义助手，使用其 id；否则为 undefined（默认助手）
+      // 注意：不要使用 options?.roleId，因为新建按钮不会传递这个参数
+      const roleId = selectedRole.value?.id || undefined
+
       const dialog = await dialogStore.createDialog({
         title: '新对话',
         modelId,
         providerConfigId,
-        roleId: options?.roleId || selectedRole.value?.id,
+        roleId,
         systemPrompt: options?.systemPrompt || selectedRole.value?.systemPrompt
       })
 
       if (dialog) {
         currentTab.value = 'topics'
+        // 创建对话后，重新加载当前角色的对话列表以确保新对话显示
+        // 使用 dialog.roleId 而不是 selectedRole.value?.id，因为数据库可能返回 null
+        await dialogStore.loadDialogsByRole(dialog.roleId || null)
       }
 
       return dialog
@@ -212,7 +273,10 @@ export function useChat() {
     content: string,
     options?: {
       attachments?: Message['attachments']
-      enableWebSearch?: boolean
+      webSearch?: {
+        enabled: boolean
+        engine: WebSearchEngine
+      }
       enableThinkingChain?: boolean
     }
   ): Promise<boolean> {

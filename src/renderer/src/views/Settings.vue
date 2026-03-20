@@ -214,7 +214,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, FolderOpened, Download, Upload, Delete, Plus } from '@element-plus/icons-vue'
 import { useTheme, availableThemes, type ThemeConfig } from '@/composables/useTheme'
@@ -426,10 +426,13 @@ const clearAllData = async () => {
   }
 }
 
-// 监听对话框关闭，清除编辑状态
-const handleDialogClose = () => {
-  editingConfig.value = undefined
-}
+// 监听对话框状态变化，关闭时清除编辑配置
+watch(showAddDialog, (visible) => {
+  if (!visible) {
+    // 对话框关闭时清除编辑状态
+    editingConfig.value = undefined
+  }
+})
 
 onMounted(async () => {
   await loadAppSettings()

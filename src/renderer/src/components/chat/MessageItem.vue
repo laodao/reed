@@ -4,6 +4,15 @@
       {{ message.role === 'user' ? '👤' : '🤖' }}
     </div>
     <div class="message-content">
+      <!-- 思维链显示 - 放在答案内容之前 -->
+      <div v-if="message.metadata?.thinkingChain" class="thinking-chain">
+        <el-collapse>
+          <el-collapse-item title="思维链" name="thinking">
+            <div class="thinking-content">{{ message.metadata.thinkingChain }}</div>
+          </el-collapse-item>
+        </el-collapse>
+      </div>
+
       <div class="message-text" v-html="formatContent(message.content)"></div>
 
       <!-- 附件显示 -->
@@ -18,11 +27,23 @@
         </div>
       </div>
 
-      <!-- 思维链显示 -->
-      <div v-if="message.metadata?.thinkingChain" class="thinking-chain">
+      <!-- 联网搜索结果显示 -->
+      <div v-if="message.metadata?.webSearch && message.metadata.webSearch.length > 0" class="web-search-results">
         <el-collapse>
-          <el-collapse-item title="思维链" name="thinking">
-            <div class="thinking-content">{{ message.metadata.thinkingChain }}</div>
+          <el-collapse-item title="联网搜索结果" name="webSearch">
+            <div class="search-results-list">
+              <a
+                v-for="(result, index) in message.metadata.webSearch"
+                :key="index"
+                :href="result.url"
+                target="_blank"
+                class="search-result-item"
+              >
+                <div class="result-title">{{ index + 1 }}. {{ result.title }}</div>
+                <div class="result-snippet">{{ result.snippet }}</div>
+                <div class="result-url">{{ result.url }}</div>
+              </a>
+            </div>
           </el-collapse-item>
         </el-collapse>
       </div>
@@ -198,6 +219,77 @@ function formatTime(date: Date | string): string {
   line-height: 1.5;
   white-space: pre-wrap;
   padding: 8px 12px;
+}
+
+.web-search-results {
+  margin-top: 8px;
+
+  :deep(.el-collapse) {
+    border: none;
+  }
+
+  :deep(.el-collapse-item__header) {
+    font-size: 12px;
+    color: var(--el-color-primary);
+    background: var(--el-color-primary-light-9);
+    border-radius: 6px;
+    padding: 0 12px;
+    height: 32px;
+  }
+
+  :deep(.el-collapse-item__wrap) {
+    border: none;
+    background: var(--el-color-primary-light-9);
+    border-radius: 0 0 6px 6px;
+  }
+}
+
+.search-results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.search-result-item {
+  display: block;
+  padding: 8px 10px;
+  background: #fff;
+  border-radius: 6px;
+  text-decoration: none;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: var(--el-color-primary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+
+  .result-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: #1e293b;
+    margin-bottom: 4px;
+  }
+
+  .result-snippet {
+    font-size: 12px;
+    color: #64748b;
+    line-height: 1.4;
+    margin-bottom: 4px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .result-url {
+    font-size: 11px;
+    color: #94a3b8;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 .message-time {

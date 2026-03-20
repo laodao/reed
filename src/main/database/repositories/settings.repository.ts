@@ -45,7 +45,7 @@ export class SettingsRepository {
   set(key: string, value: any): void {
     const jsonValue = JSON.stringify(value)
     this.db.prepare(
-      'INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime("now"))'
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))"
     ).run(key, jsonValue)
   }
 

@@ -1,5 +1,5 @@
 <template>
-  <div class="message-list" ref="listRef">
+  <div class="message-list" ref="listRef" @scroll="handleScroll">
     <div class="messages-container">
       <MessageItem
         v-for="message in displayMessages"
@@ -24,7 +24,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, nextTick } from 'vue'
+import { computed, ref, watch, nextTick, onMounted } from 'vue'
 import MessageItem from './MessageItem.vue'
 import type { Message, StreamState } from '../../../shared/types'
 
@@ -35,6 +35,13 @@ const props = defineProps<{
 }>()
 
 const listRef = ref<HTMLElement | null>(null)
+
+// 用户是否正在手动滚动
+const isUserScrolling = ref(false)
+// 上一次滚动位置
+const lastScrollTop = ref(0)
+// 是否应该自动滚动
+const shouldAutoScroll = ref(true)
 
 // 显示的消息列表（排除正在生成的消息）
 const displayMessages = computed(() => {
@@ -66,17 +73,61 @@ function formatContent(content: string): string {
   return formatted
 }
 
-// 自动滚动到底部
+// 处理滚动事件
+function handleScroll(): void {
+  if (!listRef.value) return
+
+  const { scrollTop, scrollHeight, clientHeight } = listRef.value
+  const isAtBottom = scrollHeight - scrollTop - clientHeight < 50
+
+  // 如果用户向上滚动，禁用自动滚动
+  if (scrollTop < lastScrollTop.value && !isAtBottom) {
+    shouldAutoScroll.value = false
+  }
+
+  // 如果用户滚动到底部，重新启用自动滚动
+  if (isAtBottom) {
+    shouldAutoScroll.value = true
+  }
+
+  lastScrollTop.value = scrollTop
+}
+
+// 滚动到底部
+function scrollToBottom(): void {
+  if (!listRef.value || !shouldAutoScroll.value) return
+
+  nextTick(() => {
+    if (listRef.value) {
+      listRef.value.scrollTop = listRef.value.scrollHeight
+    }
+  })
+}
+
+// 监听消息变化
 watch(
-  () => [props.messages.length, props.streamState.content],
-  () => {
-    nextTick(() => {
-      if (listRef.value) {
-        listRef.value.scrollTop = listRef.value.scrollHeight
-      }
-    })
+  () => props.messages.length,
+  (newLength, oldLength) => {
+    // 新消息添加时，强制滚动到底部
+    if (newLength > (oldLength || 0)) {
+      shouldAutoScroll.value = true
+      scrollToBottom()
+    }
   }
 )
+
+// 监听流式内容变化
+watch(
+  () => props.streamState.content,
+  () => {
+    scrollToBottom()
+  }
+)
+
+// 组件挂载后滚动到底部
+onMounted(() => {
+  scrollToBottom()
+})
 </script>
 
 <style lang="scss" scoped>

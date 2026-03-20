@@ -169,6 +169,7 @@ async function handleCreateConfig(
     const config = await dbManager.providerConfigs.create({
       templateId: request.templateId,
       name: request.name,
+      shortId: request.shortId,
       apiKey: encryptedApiKey,
       accessKeyId: request.accessKeyId,
       accessKeySecret: encryptedAccessKeySecret,
@@ -177,6 +178,7 @@ async function handleCreateConfig(
       customParams: request.customParams,
       customModels: request.customModels,
       enabledModels: request.enabledModels,
+      apiModels: request.apiModels,
       isEnabled: request.isEnabled ?? true,
       isDefault: request.isDefault ?? false
     })
@@ -222,11 +224,13 @@ async function handleUpdateConfig(
     const updates: Partial<UserProviderConfig> = {}
 
     if (data.name !== undefined) updates.name = data.name
+    if (data.shortId !== undefined) updates.shortId = data.shortId
     if (data.baseUrl !== undefined) updates.baseUrl = data.baseUrl
     if (data.customHeaders !== undefined) updates.customHeaders = data.customHeaders
     if (data.customParams !== undefined) updates.customParams = data.customParams
     if (data.customModels !== undefined) updates.customModels = data.customModels
     if (data.enabledModels !== undefined) updates.enabledModels = data.enabledModels
+    if (data.apiModels !== undefined) updates.apiModels = data.apiModels
     if (data.isEnabled !== undefined) updates.isEnabled = data.isEnabled
     if (data.isDefault !== undefined) updates.isDefault = data.isDefault
 

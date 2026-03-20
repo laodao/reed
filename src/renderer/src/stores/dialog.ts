@@ -128,55 +128,33 @@ export const useDialogStore = defineStore('dialog', () => {
    * 更新对话
    */
   async function updateDialog(id: string, data: Partial<Dialog>): Promise<boolean> {
-    console.log('[dialogStore.updateDialog] ========== 开始更新对话 ==========')
-    console.log('[dialogStore.updateDialog] 参数 id:', id)
-    console.log('[dialogStore.updateDialog] 参数 data:', JSON.stringify(data, null, 2))
-    console.log('[dialogStore.updateDialog] data.modelId:', data.modelId)
-    console.log('[dialogStore.updateDialog] data.providerConfigId:', data.providerConfigId)
+    console.log('[dialogStore.updateDialog] 开始更新, id:', id, ', data:', JSON.stringify(data))
     try {
-      // 重要：将响应式对象转换为普通对象，避免 IPC 序列化失败
-      // IPC 无法序列化 Vue 响应式对象（Proxy）
-      const plainData = JSON.parse(JSON.stringify(data))
-      console.log('[dialogStore.updateDialog] 转换后的普通对象:', JSON.stringify(plainData, null, 2))
-      console.log('[dialogStore.updateDialog] plainData.modelId:', plainData.modelId)
-      console.log('[dialogStore.updateDialog] plainData.providerConfigId:', plainData.providerConfigId)
-
-      console.log('[dialogStore.updateDialog] 准备调用 IPC dialog.update')
-      const response = await window.electronAPI.dialog.update(id, plainData)
-      console.log('[dialogStore.updateDialog] IPC 响应:', response)
-      if (response.success) {
-        const index = dialogs.value.findIndex(d => d.id === id)
-        if (index !== -1) {
-          dialogs.value[index] = { ...dialogs.value[index], ...data }
-          console.log('[dialogStore.updateDialog] 更新后的 dialogs[' + index + ']:', dialogs.value[index])
+      // 1. 先立即更新内存中的数据（不等数据库）
+      if (currentDialog.value?.id === id) {
+        currentDialog.value = {
+          ...currentDialog.value,
+          modelId: data.modelId ?? currentDialog.value.modelId,
+          providerConfigId: data.providerConfigId ?? currentDialog.value.providerConfigId,
+          systemPrompt: data.systemPrompt ?? currentDialog.value.systemPrompt,
+          contextConfig: data.contextConfig ?? currentDialog.value.contextConfig,
+          title: data.title ?? currentDialog.value.title
         }
-        if (currentDialog.value?.id === id) {
-          // 强制创建新对象以触发响应式更新
-          // 直接使用传入的值更新，不需要 ?? 运算符
-          const updatedDialog = { ...currentDialog.value }
-          if (plainData.modelId !== undefined) {
-            updatedDialog.modelId = plainData.modelId
-          }
-          if (plainData.providerConfigId !== undefined) {
-            updatedDialog.providerConfigId = plainData.providerConfigId
-          }
-          if (plainData.systemPrompt !== undefined) {
-            updatedDialog.systemPrompt = plainData.systemPrompt
-          }
-          if (plainData.contextConfig !== undefined) {
-            updatedDialog.contextConfig = plainData.contextConfig
-          }
-          if (plainData.title !== undefined) {
-            updatedDialog.title = plainData.title
-          }
-          currentDialog.value = updatedDialog
-          console.log('[dialogStore.updateDialog] 更新后的 currentDialog:', currentDialog.value)
-          console.log('[dialogStore.updateDialog] currentDialog.modelId:', currentDialog.value.modelId)
-          console.log('[dialogStore.updateDialog] currentDialog.providerConfigId:', currentDialog.value.providerConfigId)
-        }
-        return true
+        console.log('[dialogStore.updateDialog] 立即更新了 currentDialog, modelId:', currentDialog.value.modelId)
       }
-      return false
+
+      // 2. 更新 dialogs 列表
+      const index = dialogs.value.findIndex(d => d.id === id)
+      if (index !== -1) {
+        dialogs.value[index] = { ...dialogs.value[index], ...data }
+      }
+
+      // 3. 写入数据库
+      const plainData = JSON.parse(JSON.stringify(data))
+      const response = await window.electronAPI.dialog.update(id, plainData)
+      console.log('[dialogStore.updateDialog] 数据库更新结果:', response.success)
+
+      return response.success
     } catch (error) {
       console.error('更新对话失败:', error)
       return false

@@ -21,7 +21,9 @@
       "WebFetch(domain:www.npmjs.com)",
       "WebFetch(domain:help.aliyun.com)",
       "Bash(npx tsc:*)",
-      "WebFetch(domain:www.volcengine.com)"
+      "WebFetch(domain:www.volcengine.com)",
+      "Bash(npx eslint:*)",
+      "WebFetch(domain:api-docs.deepseek.com)"
     ]
   }
 }

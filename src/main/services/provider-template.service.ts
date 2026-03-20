@@ -4,7 +4,7 @@
  * @description 管理 AI 提供商模板和配置
  */
 
-import type { ProviderTemplate, ModelDefinition } from '../../shared/types/provider-template.types'
+import type { ProviderTemplate, ModelDefinition, ModelType } from '../../shared/types/provider-template.types'
 import { getDatabaseManager } from '../database/index'
 import { SecureStorageService } from './secure-storage.service'
 import { createProvider } from '../providers'
@@ -17,8 +17,9 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
   {
     id: 'openai',
     name: 'OpenAI',
-    description: 'OpenAI 官方 API，支持 GPT-4、GPT-3.5 等模型',
+    description: 'OpenAI 官方 API，支持 GPT-4、GPT-3.5、DALL-E 等模型',
     category: 'openai-compatible',
+    capabilities: ['chat', 'image'],
     icon: '🟢',
     isOfficial: true,
     apiConfig: {
@@ -46,6 +47,7 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     name: 'DeepSeek',
     description: 'DeepSeek API，性价比高的国产大模型',
     category: 'openai-compatible',
+    capabilities: ['chat'],
     icon: '🔵',
     isOfficial: true,
     apiConfig: {
@@ -68,11 +70,13 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     models: [],
     allowCustomModels: true
   },
+  // 智谱AI（合并原 GLM 对话和 CogView 图像生成）
   {
-    id: 'glm',
-    name: '智谱 GLM',
-    description: '智谱 AI GLM 系列模型',
+    id: 'zhipu',
+    name: '智谱AI',
+    description: '智谱AI 大模型平台，支持 GLM 对话模型和 CogView 图像生成',
     category: 'openai-compatible',
+    capabilities: ['chat', 'image'],
     icon: '🟣',
     isOfficial: true,
     apiConfig: {
@@ -93,23 +97,52 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     },
     // 模型列表从 API 动态获取
     models: [],
-    allowCustomModels: true
+    allowCustomModels: true,
+    // 图像生成参数
+    imageParams: [
+      {
+        key: 'negativePrompt',
+        label: '负向提示词',
+        type: 'string',
+        description: '指定不希望出现在图像中的元素'
+      },
+      {
+        key: 'style',
+        label: '风格',
+        type: 'select',
+        options: ['auto', 'photography', 'portrait', '3d', 'anime', 'chinese_painting'],
+        default: 'auto',
+        description: '图像生成风格'
+      },
+      {
+        key: 'size',
+        label: '尺寸',
+        type: 'select',
+        options: ['512x512', '1024x1024', '1024x768', '768x1024'],
+        default: '1024x1024',
+        description: '图像尺寸'
+      }
+    ]
   },
+  // 阿里百炼平台（合并原通义千问对话和通义万相图像生成）
   {
-    id: 'qwen',
-    name: '通义千问',
-    description: '阿里云通义千问系列模型',
+    id: 'bailian',
+    name: '阿里百炼平台',
+    description: '阿里云百炼平台，支持通义千问对话模型和通义万相图像生成',
     category: 'openai-compatible',
+    capabilities: ['chat', 'image'],
     icon: '🟠',
     isOfficial: true,
     apiConfig: {
       baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      imageBaseUrl: 'https://bailian.cn-beijing.aliyuncs.com',
       authType: 'bearer',
       authHeader: 'Authorization',
       authPrefix: 'Bearer ',
       requestFormat: 'openai',
       chatEndpoint: '/chat/completions',
-      modelsEndpoint: '/models'
+      modelsEndpoint: '/models',
+      imageAuthType: 'custom'
     },
     supportedParams: {
       stream: true,
@@ -120,13 +153,47 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     },
     // 模型列表从 API 动态获取
     models: [],
-    allowCustomModels: true
+    allowCustomModels: true,
+    // 图像生成参数
+    imageParams: [
+      {
+        key: 'negativePrompt',
+        label: '负向提示词',
+        type: 'string',
+        description: '指定不希望出现在图像中的元素'
+      },
+      {
+        key: 'style',
+        label: '风格',
+        type: 'select',
+        options: ['auto', 'photography', 'portrait', '3d', 'anime', 'oil_painting', 'watercolor', 'sketch', 'chinese_painting', 'digital_art'],
+        default: 'auto',
+        description: '图像生成风格'
+      },
+      {
+        key: 'quality',
+        label: '质量',
+        type: 'select',
+        options: ['standard', 'hd'],
+        default: 'standard',
+        description: '图像生成质量'
+      },
+      {
+        key: 'size',
+        label: '尺寸',
+        type: 'select',
+        options: ['512x512', '1024x1024', '1024x768', '768x1024', '2048x2048'],
+        default: '1024x1024',
+        description: '图像尺寸'
+      }
+    ]
   },
   {
     id: 'moonshot',
     name: 'Moonshot',
     description: '月之暗面 Kimi 模型',
     category: 'openai-compatible',
+    capabilities: ['chat'],
     icon: '🌙',
     isOfficial: true,
     apiConfig: {
@@ -149,12 +216,13 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     models: [],
     allowCustomModels: true
   },
-  // 火山引擎 - 豆包
+  // 火山引擎（支持对话和图像生成）
   {
     id: 'volcengine',
-    name: '火山引擎 - 豆包',
-    description: '火山引擎方舟平台，支持豆包系列模型',
+    name: '火山引擎',
+    description: '火山引擎方舟平台，支持豆包等对话模型和图像生成',
     category: 'openai-compatible',
+    capabilities: ['chat', 'image'],
     icon: '🌋',
     isOfficial: true,
     apiConfig: {
@@ -179,7 +247,86 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     },
     // 模型列表从 API 动态获取（需要 Access Key）
     models: [],
-    allowCustomModels: true
+    allowCustomModels: true,
+    // 图像生成参数
+    imageParams: [
+      {
+        key: 'negativePrompt',
+        label: '负向提示词',
+        type: 'string',
+        description: '指定不希望出现在图像中的元素'
+      },
+      {
+        key: 'style',
+        label: '风格',
+        type: 'select',
+        options: ['auto', 'photography', 'portrait', '3d', 'anime', 'oil_painting'],
+        default: 'auto',
+        description: '图像生成风格'
+      },
+      {
+        key: 'size',
+        label: '尺寸',
+        type: 'select',
+        options: ['512x512', '1024x1024', '1024x768', '768x1024'],
+        default: '1024x1024',
+        description: '图像尺寸'
+      }
+    ]
+  },
+  // MiniMax
+  {
+    id: 'minimax',
+    name: 'MiniMax',
+    description: 'MiniMax 大模型平台，支持对话和图像生成',
+    category: 'openai-compatible',
+    capabilities: ['chat', 'image'],
+    icon: '✨',
+    isOfficial: true,
+    apiConfig: {
+      baseUrl: 'https://api.minimax.chat',
+      authType: 'bearer',
+      authHeader: 'Authorization',
+      authPrefix: 'Bearer ',
+      requestFormat: 'openai',
+      chatEndpoint: '/v1/chat/completions',
+      modelsEndpoint: '/v1/models'
+    },
+    supportedParams: {
+      stream: true,
+      temperature: true,
+      maxTokens: true,
+      topP: true,
+      custom: []
+    },
+    // 模型列表从 API 动态获取
+    models: [],
+    allowCustomModels: true,
+    // 图像生成参数
+    imageParams: [
+      {
+        key: 'negativePrompt',
+        label: '负向提示词',
+        type: 'string',
+        description: '指定不希望出现在图像中的元素'
+      },
+      {
+        key: 'style',
+        label: '风格',
+        type: 'select',
+        options: ['auto', 'photography', 'portrait', 'anime', 'digital_art'],
+        default: 'auto',
+        description: '图像生成风格'
+      },
+      {
+        key: 'size',
+        label: '尺寸',
+        type: 'select',
+        options: ['512x512', '1024x1024', '1024x768', '768x1024'],
+        default: '1024x1024',
+        description: '图像尺寸'
+      }
+    ]
   },
   // Anthropic 格式
   {
@@ -187,6 +334,7 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     name: 'Anthropic',
     description: 'Anthropic Claude 系列模型',
     category: 'anthropic',
+    capabilities: ['chat'],
     icon: '🟤',
     isOfficial: true,
     apiConfig: {
@@ -218,6 +366,7 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     name: 'Google AI',
     description: 'Google Gemini 系列模型',
     category: 'google',
+    capabilities: ['chat'],
     icon: '🔷',
     isOfficial: true,
     apiConfig: {
@@ -241,248 +390,13 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     models: [],
     allowCustomModels: true
   },
-  // Ollama 本地模型
-  // {
-  //   id: 'ollama',
-  //   name: 'Ollama',
-  //   description: '本地部署的 Ollama 模型服务',
-  //   category: 'ollama',
-  //   icon: '🦙',
-  //   isOfficial: true,
-  //   apiConfig: {
-  //     baseUrl: 'http://localhost:11434',
-  //     authType: 'none',
-  //     authHeader: '',
-  //     authPrefix: '',
-  //     requestFormat: 'ollama',
-  //     chatEndpoint: '/api/chat',
-  //     modelsEndpoint: '/api/tags'
-  //   },
-  //   supportedParams: {
-  //     stream: true,
-  //     temperature: true,
-  //     maxTokens: true,
-  //     topP: true,
-  //     topK: true,
-  //     custom: []
-  //   },
-  //   models: [],
-  //   allowCustomModels: true
-  // },
-  // ==================== 图像生成提供商 ====================
-  // 百炼平台（阿里云）- 通义万相
-  {
-    id: 'image-bailian',
-    name: '百炼平台 - 通义万相',
-    description: '阿里云百炼平台图像生成服务，支持通义万相模型',
-    category: 'image',
-    icon: '🎨',
-    isOfficial: true,
-    apiConfig: {
-      baseUrl: 'https://bailian.cn-beijing.aliyuncs.com',
-      // 百炼平台使用阿里云 ACS3-HMAC-SHA256 签名认证
-      // API Key 格式: AccessKeyId:AccessKeySecret
-      authType: 'custom',
-      authHeader: '',
-      authPrefix: '',
-      requestFormat: 'custom',
-      chatEndpoint: ''
-    },
-    supportedParams: {
-      stream: false,
-      temperature: false,
-      maxTokens: false,
-      topP: false,
-      custom: [
-        {
-          key: 'negativePrompt',
-          label: '负向提示词',
-          type: 'string',
-          description: '指定不希望出现在图像中的元素'
-        },
-        {
-          key: 'style',
-          label: '风格',
-          type: 'select',
-          options: ['auto', 'photography', 'portrait', '3d', 'anime', 'oil_painting', 'watercolor', 'sketch', 'chinese_painting', 'digital_art'],
-          default: 'auto',
-          description: '图像生成风格'
-        },
-        {
-          key: 'quality',
-          label: '质量',
-          type: 'select',
-          options: ['standard', 'hd'],
-          default: 'standard',
-          description: '图像生成质量'
-        },
-        {
-          key: 'size',
-          label: '尺寸',
-          type: 'select',
-          options: ['512x512', '1024x1024', '1024x768', '768x1024', '2048x2048'],
-          default: '1024x1024',
-          description: '图像尺寸'
-        }
-      ]
-    },
-    models: [],
-    allowCustomModels: true
-  },
-  // 火山引擎 - 豆包
-  {
-    id: 'image-volcengine',
-    name: '火山引擎 - 豆包',
-    description: '火山引擎图像生成服务，支持豆包模型',
-    category: 'image',
-    icon: '🌋',
-    isOfficial: true,
-    apiConfig: {
-      baseUrl: 'https://ark.cn-beijing.volces.com',
-      // 火山引擎使用 API Key 认证
-      authType: 'bearer',
-      authHeader: 'Authorization',
-      authPrefix: 'Bearer ',
-      requestFormat: 'openai',
-      chatEndpoint: ''
-    },
-    supportedParams: {
-      stream: false,
-      temperature: false,
-      maxTokens: false,
-      topP: false,
-      custom: [
-        {
-          key: 'negativePrompt',
-          label: '负向提示词',
-          type: 'string',
-          description: '指定不希望出现在图像中的元素'
-        },
-        {
-          key: 'style',
-          label: '风格',
-          type: 'select',
-          options: ['auto', 'photography', 'portrait', '3d', 'anime', 'oil_painting'],
-          default: 'auto',
-          description: '图像生成风格'
-        },
-        {
-          key: 'size',
-          label: '尺寸',
-          type: 'select',
-          options: ['512x512', '1024x1024', '1024x768', '768x1024'],
-          default: '1024x1024',
-          description: '图像尺寸'
-        }
-      ]
-    },
-    models: [],
-    allowCustomModels: true
-  },
-  // MiniMax
-  {
-    id: 'image-minimax',
-    name: 'MiniMax',
-    description: 'MiniMax 图像生成服务',
-    category: 'image',
-    icon: '✨',
-    isOfficial: true,
-    apiConfig: {
-      baseUrl: 'https://api.minimax.chat',
-      authType: 'bearer',
-      authHeader: 'Authorization',
-      authPrefix: 'Bearer ',
-      requestFormat: 'openai',
-      chatEndpoint: ''
-    },
-    supportedParams: {
-      stream: false,
-      temperature: false,
-      maxTokens: false,
-      topP: false,
-      custom: [
-        {
-          key: 'negativePrompt',
-          label: '负向提示词',
-          type: 'string',
-          description: '指定不希望出现在图像中的元素'
-        },
-        {
-          key: 'style',
-          label: '风格',
-          type: 'select',
-          options: ['auto', 'photography', 'portrait', 'anime', 'digital_art'],
-          default: 'auto',
-          description: '图像生成风格'
-        },
-        {
-          key: 'size',
-          label: '尺寸',
-          type: 'select',
-          options: ['512x512', '1024x1024', '1024x768', '768x1024'],
-          default: '1024x1024',
-          description: '图像尺寸'
-        }
-      ]
-    },
-    models: [],
-    allowCustomModels: true
-  },
-  // 智谱AI - CogView
-  {
-    id: 'image-zhipu',
-    name: '智谱AI - CogView',
-    description: '智谱AI 图像生成服务，支持 CogView 模型',
-    category: 'image',
-    icon: '🖼️',
-    isOfficial: true,
-    apiConfig: {
-      baseUrl: 'https://open.bigmodel.cn',
-      authType: 'bearer',
-      authHeader: 'Authorization',
-      authPrefix: 'Bearer ',
-      requestFormat: 'openai',
-      chatEndpoint: ''
-    },
-    supportedParams: {
-      stream: false,
-      temperature: false,
-      maxTokens: false,
-      topP: false,
-      custom: [
-        {
-          key: 'negativePrompt',
-          label: '负向提示词',
-          type: 'string',
-          description: '指定不希望出现在图像中的元素'
-        },
-        {
-          key: 'style',
-          label: '风格',
-          type: 'select',
-          options: ['auto', 'photography', 'portrait', '3d', 'anime', 'chinese_painting'],
-          default: 'auto',
-          description: '图像生成风格'
-        },
-        {
-          key: 'size',
-          label: '尺寸',
-          type: 'select',
-          options: ['512x512', '1024x1024', '1024x768', '768x1024'],
-          default: '1024x1024',
-          description: '图像尺寸'
-        }
-      ]
-    },
-    models: [],
-    allowCustomModels: true
-  },
   // 自定义模型
   {
     id: 'custom-model',
     name: '自定义模型',
-    description: '自定义 API 端点，支持 OpenAI 兼容接口或自定义图像生成服务',
+    description: '自定义 API 端点，支持 OpenAI 兼容接口或自定义服务',
     category: 'custom',
+    capabilities: ['chat', 'image'],
     icon: '⚙️',
     isOfficial: false,
     apiConfig: {
@@ -611,14 +525,34 @@ export class ProviderTemplateService {
 
       const models = await provider.getModels()
 
-      // 转换为 ModelDefinition 格式
-      const modelDefinitions: ModelDefinition[] = models.map((m) => ({
-        id: m.id,
-        name: m.name,
-        contextWindow: m.contextWindow,
-        maxOutputTokens: m.maxTokens,
-        features: ['chat', 'streaming']
-      }))
+      // 转换为 ModelDefinition 格式，并自动识别模型能力
+      const modelDefinitions: ModelDefinition[] = models.map((m) => {
+        const modelId = m.id.toLowerCase()
+
+        // 自动识别模型类型
+        const type = this.detectModelType(modelId)
+
+        // 自动识别是否支持深度思考
+        const supportsThinking = this.detectThinkingSupport(modelId)
+
+        // 自动识别是否支持联网搜索
+        const supportsWebSearch = this.detectWebSearchSupport(modelId)
+
+        // 自动识别是否支持工具调用
+        const supportsTools = this.detectToolSupport(modelId)
+
+        return {
+          id: m.id,
+          name: m.name,
+          type,
+          contextWindow: m.contextWindow,
+          maxOutputTokens: m.maxTokens,
+          features: ['chat', 'streaming'],
+          supportsThinking,
+          supportsWebSearch,
+          supportsTools
+        }
+      })
 
       return {
         success: true,
@@ -632,6 +566,122 @@ export class ProviderTemplateService {
         message: `连接失败: ${errorMessage}`
       }
     }
+  }
+
+  /**
+   * 检测模型是否支持深度思考
+   * @param modelId - 模型 ID（小写）
+   * @returns boolean
+   */
+  private detectThinkingSupport(modelId: string): boolean {
+    // DeepSeek R1 / Reasoner
+    if (modelId.includes('deepseek-reasoner') || modelId.includes('deepseek-r1')) {
+      return true
+    }
+    // OpenAI o1 / o3 系列
+    if (modelId.match(/\bo1[-_]?/) || modelId.match(/\bo3[-_]?/)) {
+      return true
+    }
+    // Claude extended thinking（需要特定配置，暂不自动识别）
+    return false
+  }
+
+  /**
+   * 检测模型是否支持联网搜索
+   * @param modelId - 模型 ID（小写）
+   * @returns boolean
+   */
+  private detectWebSearchSupport(modelId: string): boolean {
+    // Perplexity sonar 系列
+    if (modelId.includes('sonar')) {
+      return true
+    }
+    // 其他内置搜索的模型
+    return false
+  }
+
+  /**
+   * 检测模型类型
+   * @param modelId - 模型 ID（小写）
+   * @returns ModelType
+   */
+  private detectModelType(modelId: string): ModelType {
+    // 图像生成模型
+    if (modelId.includes('dall-e') ||
+        modelId.includes('stable-diffusion') ||
+        modelId.includes('midjourney') ||
+        modelId.includes('cogview') ||
+        modelId.includes('wanx') ||
+        modelId.includes('image')) {
+      return 'image'
+    }
+
+    // 视频生成模型
+    if (modelId.includes('sora') ||
+        modelId.includes('video') ||
+        modelId.includes('runway')) {
+      return 'video'
+    }
+
+    // 音频模型
+    if (modelId.includes('whisper') ||
+        modelId.includes('tts') ||
+        modelId.includes('audio')) {
+      return 'audio'
+    }
+
+    // 多模态模型（支持图像输入）
+    if (modelId.includes('gpt-4') ||
+        modelId.includes('gpt-4o') ||
+        modelId.includes('claude-3') ||
+        modelId.includes('gemini') ||
+        modelId.includes('qwen-vl') ||
+        modelId.includes('glm-4v')) {
+      return 'multimodal'
+    }
+
+    // 默认为文本模型
+    return 'text'
+  }
+
+  /**
+   * 检测模型是否支持工具调用
+   * @param modelId - 模型 ID（小写）
+   * @returns boolean
+   */
+  private detectToolSupport(modelId: string): boolean {
+    // OpenAI GPT-4 系列支持函数调用
+    if (modelId.includes('gpt-4') || modelId.includes('gpt-4o')) {
+      // gpt-4-turbo, gpt-4o, gpt-4-0125-preview 等都支持
+      return true
+    }
+
+    // Anthropic Claude 3 系列支持工具使用
+    if (modelId.includes('claude-3')) {
+      return true
+    }
+
+    // Google Gemini 支持函数调用
+    if (modelId.includes('gemini')) {
+      return true
+    }
+
+    // DeepSeek 支持函数调用
+    if (modelId.includes('deepseek') && !modelId.includes('reasoner') && !modelId.includes('r1')) {
+      return true
+    }
+
+    // 智谱 GLM-4 支持
+    if (modelId.includes('glm-4')) {
+      return true
+    }
+
+    // 通义千问支持
+    if (modelId.includes('qwen') && !modelId.includes('vl')) {
+      return true
+    }
+
+    return false
   }
 
   /**

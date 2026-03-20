@@ -63,6 +63,16 @@
         <el-input v-model="form.name" placeholder="如：我的 OpenAI" />
       </el-form-item>
 
+      <!-- 提供商 ID -->
+      <el-form-item label="提供商 ID" prop="shortId">
+        <el-input
+          v-model="form.shortId"
+          placeholder="如：openai、deepseek（英文，用于模型显示）"
+          :disabled="!!isEdit && !!editConfig?.shortId"
+        />
+        <div class="form-hint">提供商 ID 用于模型显示，格式为：提供商ID/模型ID</div>
+      </el-form-item>
+
       <!-- API 密钥 -->
       <el-form-item
         v-if="templateAuthType !== 'none'"
@@ -134,37 +144,85 @@
             <!-- 模型列表标题 -->
             <div class="model-list-header">
               <span>可用模型</span>
+              <el-button
+                type="primary"
+                text
+                size="small"
+                :loading="loadingModels"
+                @click="fetchModelsFromApi"
+              >
+                从 API 刷新
+              </el-button>
             </div>
 
             <!-- 模型列表 -->
             <div v-if="allModels.length > 0" class="predefined-models">
-              <el-checkbox-group v-model="form.enabledModels" class="model-checkbox-group">
+              <div v-for="model in allModels" :key="model.id" class="model-item">
+                <!-- checkbox 只控制勾选状态，使用 value 而不是 label -->
                 <el-checkbox
-                  v-for="model in allModels"
-                  :key="model.id"
-                  :label="model.id"
+                  v-model="form.enabledModels"
+                  :value="model.id"
                   class="model-checkbox"
                   :class="{ 'is-custom': isCustomModel(model.id) }"
-                >
-                  <div class="model-info">
-                    <span class="model-name">
-                      {{ model.name }}
-                      <el-tag v-if="isCustomModel(model.id)" type="warning" size="small" effect="plain">自定义</el-tag>
-                    </span>
-                    <span class="model-id">{{ model.id }}</span>
-                  </div>
-                </el-checkbox>
-              </el-checkbox-group>
+                />
+                <!-- 模型信息单独放 -->
+                <div class="model-info">
+                  <span class="model-name">
+                    {{ model.name }}
+                    <el-tag v-if="isCustomModel(model.id)" type="warning" size="small" effect="plain">自定义</el-tag>
+                  </span>
+                  <span class="model-id">{{ model.id }}</span>
+                </div>
+                <!-- 模型特性图标 -->
+                <div class="model-features">
+                  <!-- 模型类型图标 -->
+                  <el-tooltip v-if="model.type === 'image'" content="图像模型" placement="top">
+                    <el-icon class="feature-icon image"><Picture /></el-icon>
+                  </el-tooltip>
+                  <el-tooltip v-else-if="model.type === 'video'" content="视频模型" placement="top">
+                    <el-icon class="feature-icon video"><VideoCamera /></el-icon>
+                  </el-tooltip>
+                  <el-tooltip v-else-if="model.type === 'multimodal'" content="多模态模型" placement="top">
+                    <el-icon class="feature-icon multimodal"><Camera /></el-icon>
+                  </el-tooltip>
+                  <el-tooltip v-else content="文本模型" placement="top">
+                    <el-icon class="feature-icon text"><Document /></el-icon>
+                  </el-tooltip>
+                  <!-- 深度思考 -->
+                  <el-tooltip v-if="model.supportsThinking" content="支持深度思考" placement="top">
+                    <el-icon class="feature-icon thinking"><Cpu /></el-icon>
+                  </el-tooltip>
+                  <!-- 联网搜索 -->
+                  <el-tooltip v-if="model.supportsWebSearch" content="支持联网搜索" placement="top">
+                    <el-icon class="feature-icon websearch"><Search /></el-icon>
+                  </el-tooltip>
+                  <!-- 工具支持 -->
+                  <el-tooltip v-if="model.supportsTools" content="支持工具调用" placement="top">
+                    <el-icon class="feature-icon tools"><SetUp /></el-icon>
+                  </el-tooltip>
+                </div>
+                <!-- 模型操作按钮 -->
+                <div class="model-actions">
+                  <!-- 自定义模型可以编辑 -->
+                  <el-button v-if="isCustomModel(model.id)" type="primary" text size="small" @click.stop="editCustomModel(model)">
+                    编辑
+                  </el-button>
+                  <!-- 所有模型都可以移除（从列表中隐藏） -->
+                  <el-button type="danger" text size="small" @click.stop="removeModel(model.id, isCustomModel(model.id))">
+                    {{ isCustomModel(model.id) ? '删除' : '移除' }}
+                  </el-button>
+                </div>
+              </div>
             </div>
             <div v-else class="no-models-hint">
-              <span>暂无模型，请在下方添加自定义模型</span>
+              <span>{{ isEdit ? '暂无已启用模型，请点击"从 API 刷新"添加模型' : '暂无模型，请点击"从 API 刷新"获取模型列表' }}</span>
             </div>
 
             <!-- 自定义模型添加区域 -->
             <div v-if="selectedTemplate?.allowCustomModels" class="custom-models">
               <div class="model-list-header">
-                <span>添加自定义模型</span>
-                <el-button type="primary" text size="small" @click="showAddCustomModel = true">
+                <span>自定义模型</span>
+                <el-button type="primary" text size="small" @click="showAddCustomModelDialog">
                   添加模型
                 </el-button>
               </div>
@@ -206,17 +264,22 @@
     </template>
   </el-dialog>
 
-  <!-- 添加自定义模型对话框 -->
+  <!-- 添加/编辑自定义模型对话框 -->
   <el-dialog
     v-model="showAddCustomModel"
-    title="添加自定义模型"
-    width="960px"
+    :title="isEditingCustomModel ? '编辑自定义模型' : '添加自定义模型'"
+    width="480px"
     append-to-body
     class="custom-model-dialog"
   >
     <el-form :model="customModelForm" label-width="120px">
       <el-form-item label="模型 ID" required>
-        <el-input v-model="customModelForm.id" placeholder="如：gpt-4-custom" />
+        <el-input
+          v-model="customModelForm.id"
+          placeholder="如：gpt-4-custom"
+          :disabled="isEditingCustomModel"
+        />
+        <div v-if="isEditingCustomModel" class="form-hint">编辑时不可修改模型 ID</div>
       </el-form-item>
       <el-form-item label="模型名称">
         <el-input v-model="customModelForm.name" placeholder="显示名称" />
@@ -224,18 +287,30 @@
       <el-form-item label="上下文长度">
         <el-input-number v-model="customModelForm.contextWindow" :min="1024" :step="1024" style="width: 100%" />
       </el-form-item>
+      <el-form-item label="模型能力">
+        <div class="model-capabilities">
+          <el-checkbox v-model="customModelForm.supportsThinking">
+            支持深度思考
+          </el-checkbox>
+          <div class="capability-hint">如 DeepSeek R1、OpenAI o1 等支持思维链的模型</div>
+          <el-checkbox v-model="customModelForm.supportsWebSearch">
+            支持联网搜索
+          </el-checkbox>
+          <div class="capability-hint">如 Perplexity sonar 等内置搜索功能的模型</div>
+        </div>
+      </el-form-item>
     </el-form>
     <template #footer>
       <el-button @click="showAddCustomModel = false">取消</el-button>
-      <el-button type="primary" @click="addCustomModel">添加</el-button>
+      <el-button type="primary" @click="saveCustomModel">{{ isEditingCustomModel ? '保存' : '添加' }}</el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, toRaw } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { Delete, Plus, Loading } from '@element-plus/icons-vue'
+import { Delete, Plus, Loading, Picture, VideoCamera, Camera, Document, Cpu, Search, SetUp } from '@element-plus/icons-vue'
 import type {
   ProviderTemplate,
   ModelDefinition
@@ -248,11 +323,15 @@ const props = defineProps<{
     id: string
     templateId: string
     name: string
+    shortId?: string
     apiKey?: string
+    accessKeyId?: string
+    accessKeySecret?: string
     baseUrl?: string
     customHeaders?: Record<string, string>
     customModels?: ModelDefinition[]
     enabledModels?: string[]
+    apiModels?: ModelDefinition[]
     isDefault: boolean
   }
 }>()
@@ -279,6 +358,7 @@ const selectedTemplate = ref<ProviderTemplate | null>(null)
 const formRef = ref<FormInstance>()
 const form = reactive({
   name: '',
+  shortId: '',
   apiKey: '',
   accessKeyId: '',
   accessKeySecret: '',
@@ -303,38 +383,53 @@ const loadingTemplates = ref(false)
 
 // 自定义模型对话框
 const showAddCustomModel = ref(false)
+const isEditingCustomModel = ref(false)
+const editingModelId = ref<string | null>(null)
 const customModelForm = reactive({
   id: '',
   name: '',
-  contextWindow: 8192
+  contextWindow: 8192,
+  supportsThinking: false,
+  supportsWebSearch: false
 })
 
-// 从 API 获取的模型列表
+// 从 API 获取的模型列表（只有点击"从 API 刷新"后才有值）
 const apiModels = ref<ModelDefinition[]>([])
 
-// 所有模型（模板预定义 + API 获取 + 自定义模型，自定义模型放最后）
-const allModels = computed(() => {
-  const templateModels = selectedTemplate.value?.models || []
+// 已保存的模型信息（从编辑配置加载，包含完整信息如名称、类型等）
+const savedModelsInfo = ref<Map<string, ModelDefinition>>(new Map())
 
+// 所有模型（默认只显示已启用模型 + 自定义模型，点击刷新后显示 API 模型）
+const allModels = computed(() => {
   // 获取自定义模型的 ID 集合
   const customModelIds = new Set(form.customModels.map((m) => m.id))
 
-  // 用于合并模板模型和 API 模型
+  // 用于合并模型的 Map
   const modelsMap = new Map<string, ModelDefinition>()
 
-  // 添加模板模型（排除自定义模型）
-  templateModels.forEach((m) => {
-    if (!customModelIds.has(m.id)) {
-      modelsMap.set(m.id, m)
-    }
-  })
-
-  // 添加 API 模型（排除自定义模型，会覆盖同 ID 的模板模型）
-  apiModels.value.forEach((m) => {
-    if (!customModelIds.has(m.id)) {
-      modelsMap.set(m.id, m)
-    }
-  })
+  // 如果已从 API 获取模型，显示 API 模型（排除自定义模型）
+  if (apiModels.value.length > 0) {
+    apiModels.value.forEach((m) => {
+      if (!customModelIds.has(m.id)) {
+        modelsMap.set(m.id, m)
+      }
+    })
+  } else {
+    // 未从 API 获取时，只显示已启用的模型
+    // 优先使用保存的完整模型信息，否则显示简化信息
+    form.enabledModels.forEach((modelId) => {
+      if (!customModelIds.has(modelId)) {
+        const savedInfo = savedModelsInfo.value.get(modelId)
+        modelsMap.set(modelId, savedInfo || {
+          id: modelId,
+          name: modelId,
+          contextWindow: 8192,
+          maxOutputTokens: 4096,
+          features: ['chat', 'streaming']
+        })
+      }
+    })
+  }
 
   // 预定义模型列表
   const predefinedModels = Array.from(modelsMap.values())
@@ -342,11 +437,11 @@ const allModels = computed(() => {
   // 自定义模型始终放到最后
   const customModelsList = [...form.customModels]
 
-  return [...predefinedModels, ...customModelsList]
+  const result = [...predefinedModels, ...customModelsList]
+
+  return result
 })
 
-// 模板预定义模型
-const templateModels = computed(() => selectedTemplate.value?.models || [])
 
 // 判断是否是自定义模型
 const isCustomModel = (modelId: string): boolean => {
@@ -397,7 +492,7 @@ const selectTemplate = (template: ProviderTemplate) => {
   form.name = `我的 ${template.name}`
   form.baseUrl = ''
   form.apiKey = ''
-  form.enabledModels = template.models.map((m) => m.id)
+  form.enabledModels = []  // 新建时默认不选中任何模型，用户需要手动勾选或从API刷新后勾选
   customHeadersList.value = []
   apiModels.value = []
 }
@@ -425,14 +520,9 @@ const fetchModelsFromApi = async () => {
 
     if (result.success && result.models) {
       apiModels.value = result.models
-      // 自动选中所有模型
-      const newModelIds = result.models.map((m) => m.id)
-      newModelIds.forEach((id) => {
-        if (!form.enabledModels.includes(id)) {
-          form.enabledModels.push(id)
-        }
-      })
-      ElMessage.success(`获取到 ${result.models.length} 个模型`)
+      // 不再自动选中所有模型，用户需要手动勾选
+      // 编辑模式下，已有的模型保持选中状态
+      ElMessage.success(`获取到 ${result.models.length} 个模型，请勾选需要启用的模型`)
     } else {
       ElMessage.warning(result.message || '获取模型列表失败')
     }
@@ -496,14 +586,31 @@ const handleSave = async () => {
 
   saving.value = true
   try {
+    // 使用 JSON 序列化/反序列化确保数据可被 IPC 传输
+    // 这可以移除所有不可序列化的属性
+    const safeStringify = (obj: any): any => {
+      try {
+        return JSON.parse(JSON.stringify(obj))
+      } catch {
+        return undefined
+      }
+    }
+
     // 将响应式对象转换为普通对象，避免 IPC 序列化问题
-    const plainEnabledModels = toRaw(form.enabledModels)
-    const plainCustomModels = toRaw(form.customModels)
+    const plainEnabledModels = safeStringify(form.enabledModels) || []
+    const plainCustomModels = safeStringify(form.customModels) || []
+    const plainApiModels = safeStringify(apiModels.value) || []
+
+    console.log('[handleSave] 准备保存配置')
+    console.log('[handleSave] plainEnabledModels:', plainEnabledModels)
+    console.log('[handleSave] plainCustomModels:', plainCustomModels)
+    console.log('[handleSave] plainApiModels:', plainApiModels)
 
     if (isEdit.value && props.editConfig) {
       // 更新配置
       const result = await window.electronAPI.providerConfig.update(props.editConfig.id, {
         name: form.name,
+        shortId: form.shortId || undefined,
         apiKey: form.apiKey || undefined,
         accessKeyId: form.accessKeyId || undefined,
         accessKeySecret: form.accessKeySecret || undefined,
@@ -511,6 +618,7 @@ const handleSave = async () => {
         customHeaders: Object.keys(customHeaders).length > 0 ? customHeaders : undefined,
         customModels: plainCustomModels.length > 0 ? plainCustomModels : undefined,
         enabledModels: plainEnabledModels.length > 0 ? plainEnabledModels : undefined,
+        apiModels: plainApiModels.length > 0 ? plainApiModels : undefined,
         isDefault: form.isDefault
       })
 
@@ -526,6 +634,7 @@ const handleSave = async () => {
       const result = await window.electronAPI.providerConfig.create({
         templateId: selectedTemplate.value.id,
         name: form.name,
+        shortId: form.shortId || undefined,
         apiKey: form.apiKey || undefined,
         accessKeyId: form.accessKeyId || undefined,
         accessKeySecret: form.accessKeySecret || undefined,
@@ -533,10 +642,22 @@ const handleSave = async () => {
         customHeaders: Object.keys(customHeaders).length > 0 ? customHeaders : undefined,
         customModels: plainCustomModels.length > 0 ? plainCustomModels : undefined,
         enabledModels: plainEnabledModels.length > 0 ? plainEnabledModels : undefined,
+        apiModels: plainApiModels.length > 0 ? plainApiModels : undefined,
         isDefault: form.isDefault
       })
 
-      if (result.success) {
+      if (result.success && result.config) {
+        // 创建成功后，调用测试接口保存测试结果
+        // 这样第一次添加时也能显示"已验证"状态
+        try {
+          await window.electronAPI.providerConfig.test({
+            configId: result.config.id
+          })
+        } catch (testError) {
+          // 测试失败不影响创建成功的提示
+          console.warn('创建后测试连接失败:', testError)
+        }
+
         ElMessage.success('配置已保存')
         emit('saved')
         handleClose()
@@ -558,6 +679,7 @@ const handleClose = () => {
   selectedTemplate.value = null
   formRef.value?.resetFields()
   form.name = ''
+  form.shortId = ''
   form.apiKey = ''
   form.accessKeyId = ''
   form.accessKeySecret = ''
@@ -568,6 +690,7 @@ const handleClose = () => {
   form.isDefault = false
   customHeadersList.value = []
   apiModels.value = []
+  savedModelsInfo.value = new Map()
   activeCollapse.value = []
 }
 
@@ -581,35 +704,32 @@ const removeCustomHeader = (index: number) => {
   customHeadersList.value.splice(index, 1)
 }
 
-// 添加自定义模型
-const addCustomModel = () => {
-  if (!customModelForm.id) {
-    ElMessage.warning('请输入模型 ID')
-    return
-  }
-
-  form.customModels.push({
-    id: customModelForm.id,
-    name: customModelForm.name || customModelForm.id,
-    contextWindow: customModelForm.contextWindow,
-    maxOutputTokens: 4096,
-    features: ['chat', 'streaming']
-  })
-
-  // 自动选中
-  if (!form.enabledModels.includes(customModelForm.id)) {
-    form.enabledModels.push(customModelForm.id)
-  }
-
-  // 重置表单
+// 显示添加自定义模型对话框
+const showAddCustomModelDialog = () => {
+  isEditingCustomModel.value = false
+  editingModelId.value = null
   customModelForm.id = ''
   customModelForm.name = ''
   customModelForm.contextWindow = 8192
-  showAddCustomModel.value = false
+  customModelForm.supportsThinking = false
+  customModelForm.supportsWebSearch = false
+  showAddCustomModel.value = true
 }
 
-// 移除自定义模型
-const removeCustomModel = (modelId: string) => {
+// 编辑自定义模型
+const editCustomModel = (model: ModelDefinition) => {
+  isEditingCustomModel.value = true
+  editingModelId.value = model.id
+  customModelForm.id = model.id
+  customModelForm.name = model.name
+  customModelForm.contextWindow = model.contextWindow || 8192
+  customModelForm.supportsThinking = model.supportsThinking || false
+  customModelForm.supportsWebSearch = model.supportsWebSearch || false
+  showAddCustomModel.value = true
+}
+
+// 删除自定义模型
+const deleteCustomModel = (modelId: string) => {
   const index = form.customModels.findIndex((m) => m.id === modelId)
   if (index > -1) {
     form.customModels.splice(index, 1)
@@ -621,12 +741,91 @@ const removeCustomModel = (modelId: string) => {
   }
 }
 
+// 移除模型（支持所有类型的模型）
+const removeModel = (modelId: string, isCustom: boolean) => {
+  if (isCustom) {
+    // 自定义模型：从 customModels 中删除
+    deleteCustomModel(modelId)
+  } else {
+    // API 获取的模型：仅从启用列表中移除（取消勾选）
+    const enabledIndex = form.enabledModels.indexOf(modelId)
+    if (enabledIndex > -1) {
+      form.enabledModels.splice(enabledIndex, 1)
+    }
+  }
+}
+
+// 添加或更新自定义模型
+const saveCustomModel = () => {
+  if (!customModelForm.id) {
+    ElMessage.warning('请输入模型 ID')
+    return
+  }
+
+  if (isEditingCustomModel.value && editingModelId.value) {
+    // 编辑模式：更新现有模型
+    const index = form.customModels.findIndex((m) => m.id === editingModelId.value)
+    if (index > -1) {
+      // 如果 ID 改变了，需要更新启用列表
+      if (editingModelId.value !== customModelForm.id) {
+        const enabledIndex = form.enabledModels.indexOf(editingModelId.value)
+        if (enabledIndex > -1) {
+          form.enabledModels.splice(enabledIndex, 1, customModelForm.id)
+        }
+      }
+      form.customModels[index] = {
+        id: customModelForm.id,
+        name: customModelForm.name || customModelForm.id,
+        contextWindow: customModelForm.contextWindow,
+        maxOutputTokens: 4096,
+        features: ['chat', 'streaming'],
+        supportsThinking: customModelForm.supportsThinking,
+        supportsWebSearch: customModelForm.supportsWebSearch
+      }
+    }
+  } else {
+    // 添加模式：检查 ID 是否已存在
+    if (form.customModels.some((m) => m.id === customModelForm.id)) {
+      ElMessage.warning('该模型 ID 已存在')
+      return
+    }
+
+    form.customModels.push({
+      id: customModelForm.id,
+      name: customModelForm.name || customModelForm.id,
+      contextWindow: customModelForm.contextWindow,
+      maxOutputTokens: 4096,
+      features: ['chat', 'streaming'],
+      supportsThinking: customModelForm.supportsThinking,
+      supportsWebSearch: customModelForm.supportsWebSearch
+    })
+
+    // 自动选中
+    if (!form.enabledModels.includes(customModelForm.id)) {
+      form.enabledModels.push(customModelForm.id)
+    }
+  }
+
+  // 重置表单并关闭对话框
+  customModelForm.id = ''
+  customModelForm.name = ''
+  customModelForm.contextWindow = 8192
+  customModelForm.supportsThinking = false
+  customModelForm.supportsWebSearch = false
+  isEditingCustomModel.value = false
+  editingModelId.value = null
+  showAddCustomModel.value = false
+}
+
+
 // 监听编辑配置
 watch(
   () => props.editConfig,
   (config) => {
+    console.log('[watch editConfig] 触发, config:', config)
     if (config) {
       form.name = config.name
+      form.shortId = config.shortId || ''
       form.apiKey = ''
       form.accessKeyId = config.accessKeyId || ''
       form.accessKeySecret = ''
@@ -635,23 +834,43 @@ watch(
       form.enabledModels = config.enabledModels ? [...config.enabledModels] : []
       form.isDefault = config.isDefault
 
+      // 不自动加载 apiModels，只加载已保存模型的完整信息
+      // 用户需要点击"从 API 刷新"才会显示所有模型
+      apiModels.value = []
+      savedModelsInfo.value = new Map()
+      if (config.apiModels) {
+        // 将已保存的 API 模型信息存入 savedModelsInfo，用于显示已启用模型的详细信息
+        config.apiModels.forEach(m => {
+          if (form.enabledModels.includes(m.id)) {
+            savedModelsInfo.value.set(m.id, m)
+          }
+        })
+      }
+
       // 转换自定义请求头
       if (config.customHeaders) {
         customHeadersList.value = Object.entries(config.customHeaders).map(([key, value]) => ({
           key,
           value
         }))
+      } else {
+        customHeadersList.value = []
       }
 
       // 查找模板
       const template = templates.value.find((t) => t.id === config.templateId)
+      console.log('[watch editConfig] 找到模板:', template ? template.name : null, 'templates数量:', templates.value.length)
       if (template) {
         selectedTemplate.value = template
-        // 如果配置中没有启用的模型，使用模板的默认模型
-        if (form.enabledModels.length === 0 && template.models) {
-          form.enabledModels = template.models.map((m) => m.id)
-        }
+        // 编辑模式下，保持已有的 enabledModels，不自动填充模板默认模型
+        // 如果需要添加模型，用户需要手动勾选或从API刷新后勾选
+      } else {
+        // 模板还没加载，等待模板加载完成后再设置
+        console.log('[watch editConfig] 模板未找到，等待加载...')
       }
+    } else {
+      // editConfig 被清除时，重置状态
+      selectedTemplate.value = null
     }
   },
   { immediate: true }
@@ -666,10 +885,7 @@ watch(
       const template = newTemplates.find((t) => t.id === props.editConfig.templateId)
       if (template) {
         selectedTemplate.value = template
-        // 如果配置中没有启用的模型，使用模板的默认模型
-        if (form.enabledModels.length === 0 && template.models) {
-          form.enabledModels = template.models.map((m) => m.id)
-        }
+        // 编辑模式下，保持已有的 enabledModels，不自动填充模板默认模型
       }
     }
   },
@@ -682,31 +898,6 @@ watch(visible, (val) => {
     loadTemplates()
   }
 })
-
-// 防抖定时器
-let fetchModelsTimer: ReturnType<typeof setTimeout> | null = null
-
-// 监听 API Key 变化，自动获取模型列表
-watch(
-  () => form.apiKey,
-  (newApiKey, oldApiKey) => {
-    // 只在新建模式下自动获取
-    if (isEdit.value) return
-
-    // 清除之前的定时器
-    if (fetchModelsTimer) {
-      clearTimeout(fetchModelsTimer)
-    }
-
-    // API Key 发生变化且有值时，延迟获取模型列表
-    if (newApiKey && newApiKey !== oldApiKey && selectedTemplate.value) {
-      // 防抖：延迟 500ms 后执行
-      fetchModelsTimer = setTimeout(() => {
-        fetchModelsFromApi()
-      }, 500)
-    }
-  }
-)
 </script>
 
 <style lang="scss" scoped>
@@ -922,27 +1113,47 @@ watch(
   gap: 8px;
 }
 
-.model-checkbox {
+.model-name {
+  font-size: 13px;
+  color: var(--text-primary);
   display: flex;
   align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.model-id {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: monospace;
+}
+
+.model-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   padding: 8px 12px;
   background: var(--bg-color-page);
   border-radius: var(--radius-sm);
+  margin-bottom: 8px;
   transition: all var(--transition-fast);
 
   &:hover {
     background: var(--bg-color-hover);
   }
 
-  &.is-custom {
-    background: linear-gradient(135deg, rgba(230, 162, 60, 0.1) 0%, rgba(230, 162, 60, 0.05) 100%);
-    border: 1px dashed rgba(230, 162, 60, 0.4);
+  &:last-child {
+    margin-bottom: 0;
   }
+}
 
-  :deep(.el-checkbox__label) {
-    display: flex;
-    align-items: center;
-    flex: 1;
+.model-checkbox {
+  flex-shrink: 0;
+
+  &.is-custom {
+    :deep(.el-checkbox__inner) {
+      border-color: rgba(230, 162, 60, 0.6);
+    }
   }
 }
 
@@ -951,17 +1162,78 @@ watch(
   justify-content: space-between;
   align-items: center;
   flex: 1;
+  min-width: 0;
 }
 
-.model-name {
-  font-size: 13px;
-  color: var(--text-primary);
+.model-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: 12px;
 }
 
-.model-id {
+.model-features {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+
+  .feature-icon {
+    font-size: 14px;
+    padding: 2px;
+    border-radius: 4px;
+
+    &.text {
+      color: #909399;
+    }
+
+    &.image {
+      color: #E6A23C;
+    }
+
+    &.video {
+      color: #F56C6C;
+    }
+
+    &.multimodal {
+      color: #409EFF;
+    }
+
+    &.thinking {
+      color: #67C23A;
+    }
+
+    &.websearch {
+      color: #409EFF;
+    }
+
+    &.tools {
+      color: #909399;
+    }
+  }
+}
+
+.predefined-models {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.form-hint {
+  margin-top: 4px;
   font-size: 12px;
   color: var(--text-secondary);
-  font-family: monospace;
+}
+
+.model-capabilities {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.capability-hint {
+  margin-top: 2px;
+  margin-left: 24px;
+  font-size: 11px;
+  color: var(--text-secondary);
 }
 
 .custom-model-list {

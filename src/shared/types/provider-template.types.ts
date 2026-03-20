@@ -20,6 +20,11 @@ export type RequestFormat = 'openai' | 'anthropic' | 'google' | 'ollama' | 'cust
 export type TemplateCategory = 'openai-compatible' | 'anthropic' | 'google' | 'ollama' | 'image' | 'custom'
 
 /**
+ * 提供商能力
+ */
+export type ProviderCapability = 'chat' | 'image' | 'embedding'
+
+/**
  * 自定义参数定义
  */
 export interface CustomParamDefinition {
@@ -40,6 +45,11 @@ export interface CustomParamDefinition {
 }
 
 /**
+ * 模型类型
+ */
+export type ModelType = 'text' | 'image' | 'video' | 'audio' | 'multimodal'
+
+/**
  * 模型定义
  */
 export interface ModelDefinition {
@@ -47,12 +57,20 @@ export interface ModelDefinition {
   id: string
   /** 模型名称 */
   name: string
+  /** 模型类型（文本/图片/视频/音频/多模态） */
+  type?: ModelType
   /** 上下文窗口大小 */
   contextWindow: number
   /** 最大输出 token 数 */
   maxOutputTokens: number
   /** 支持的特性 */
   features: string[] // ['chat', 'vision', 'function-calling', 'streaming']
+  /** 是否支持深度思考（如 DeepSeek R1、OpenAI o1 等） */
+  supportsThinking?: boolean
+  /** 是否内置联网搜索（如 Perplexity sonar 等） */
+  supportsWebSearch?: boolean
+  /** 是否支持使用工具/函数调用 */
+  supportsTools?: boolean
   /** 输入价格（每百万 token，美元） */
   inputPrice?: number
   /** 输出价格（每百万 token，美元） */
@@ -65,6 +83,8 @@ export interface ModelDefinition {
 export interface ApiConfigTemplate {
   /** 基础 URL */
   baseUrl: string
+  /** 图像生成基础 URL（如果与对话不同） */
+  imageBaseUrl?: string
   /** 管控面基础 URL（用于模型列表等管理功能，如火山引擎） */
   managementBaseUrl?: string
   /** 认证类型 */
@@ -85,6 +105,8 @@ export interface ApiConfigTemplate {
   queryAuthKey?: string
   /** 是否需要 Access Key 来获取模型列表（如火山引擎） */
   requiresAccessKeyForModels?: boolean
+  /** 图像生成认证类型（如果与对话不同） */
+  imageAuthType?: AuthType
 }
 
 /**
@@ -99,10 +121,14 @@ export interface ProviderTemplate {
   description: string
   /** 模板分类 */
   category: TemplateCategory
+  /** 提供商能力 */
+  capabilities: ProviderCapability[]
   /** 图标（emoji 或 URL） */
   icon?: string
   /** API 配置 */
   apiConfig: ApiConfigTemplate
+  /** 图像生成参数配置 */
+  imageParams?: CustomParamDefinition[]
   /** 支持的参数 */
   supportedParams: {
     /** 是否支持流式 */
@@ -130,8 +156,10 @@ export interface ProviderTemplate {
  * 用户提供商配置
  */
 export interface UserProviderConfig {
-  /** 配置 ID */
+  /** 配置 ID（系统生成） */
   id: string
+  /** 用户自定义 ID（短标识符，用于显示，如 'deepseek', 'openai'） */
+  shortId?: string
   /** 关联的模板 ID */
   templateId: string
   /** 用户自定义名称 */
@@ -152,6 +180,8 @@ export interface UserProviderConfig {
   customModels?: ModelDefinition[]
   /** 启用的模型 ID 列表 */
   enabledModels?: string[]
+  /** 从 API 获取的模型列表（包含完整信息如名称、上下文窗口等） */
+  apiModels?: ModelDefinition[]
   /** 是否启用 */
   isEnabled: boolean
   /** 是否为默认提供商 */
@@ -208,6 +238,7 @@ export interface ProviderConfigResponse {
 export interface SaveProviderConfigRequest {
   templateId: string
   name: string
+  shortId?: string
   apiKey?: string
   accessKeyId?: string
   accessKeySecret?: string
@@ -216,6 +247,7 @@ export interface SaveProviderConfigRequest {
   customParams?: Record<string, unknown>
   customModels?: ModelDefinition[]
   enabledModels?: string[]
+  apiModels?: ModelDefinition[]
   isEnabled?: boolean
   isDefault?: boolean
 }

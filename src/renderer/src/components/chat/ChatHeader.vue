@@ -455,27 +455,14 @@ function handleModelChange(modelKey: string): void {
   })
 
   if (providerConfigId && modelId) {
-    // 记录正在切换模型的对话 ID（而不是简单的布尔值）
+    // 记录正在切换模型的对话 ID
     changingModelDialogId.value = props.dialog.id
 
-    // 先更新本地状态，确保 UI 立即反映变化
+    // 更新本地 UI 状态
     selectedModelKey.value = modelKey
 
-    // ===== 关键：立即更新 store 中的 currentDialog =====
-    if (dialogStore.currentDialog && dialogStore.currentDialog.id === props.dialog.id) {
-      dialogStore.currentDialog = {
-        ...dialogStore.currentDialog,
-        modelId,
-        providerConfigId
-      }
-      console.log('[ChatHeader.handleModelChange] 立即更新了 currentDialog')
-      console.log('[ChatHeader.handleModelChange] 新的 modelId:', dialogStore.currentDialog.modelId)
-      console.log('[ChatHeader.handleModelChange] 新的 providerConfigId:', dialogStore.currentDialog.providerConfigId)
-    }
-
-    console.log('[ChatHeader.handleModelChange] 准备发送 updateConfig 事件（异步写数据库）')
-    // 发送更新请求（异步写数据库，不阻塞）
-    emit('updateConfig', props.dialog.id, {
+    // 直接调用 store 的更新方法，同时更新内存和数据库
+    dialogStore.updateDialog(props.dialog.id, {
       modelId,
       providerConfigId
     })

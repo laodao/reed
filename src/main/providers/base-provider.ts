@@ -19,11 +19,23 @@ export interface ProviderConfig {
  * 流式事件回调
  */
 export type StreamCallback = (event: {
-  type: 'start' | 'delta' | 'done' | 'error'
+  type: 'start' | 'delta' | 'done' | 'error' | 'thinking'
   messageId?: string
   content?: string
+  /** 思维链内容 */
+  thinkingContent?: string
   error?: string
 }) => void
+
+/**
+ * 聊天选项
+ */
+export interface ChatOptions {
+  /** 启用深度思考 */
+  enableThinking?: boolean
+  /** 联网搜索上下文（已格式化的搜索结果） */
+  webSearchContext?: string
+}
 
 /**
  * Provider 基类
@@ -89,12 +101,14 @@ export abstract class BaseProvider {
    * @param context - 对话上下文
    * @param onEvent - 事件回调
    * @param signal - 中断信号
+   * @param options - 聊天选项（深度思考、联网搜索等）
    * @returns Promise<string>
    */
   abstract chatStream(
     context: ChatContext,
     onEvent: StreamCallback,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options?: ChatOptions
   ): Promise<string>
 
   /**

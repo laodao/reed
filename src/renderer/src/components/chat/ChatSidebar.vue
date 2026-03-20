@@ -27,7 +27,7 @@
         v-for="role in userRoles"
         :key="role.id"
         :role="role"
-        :selected="selectedRole?.id === role.id"
+        :selected="isRoleSelected(role)"
         :deletable="!isDefaultAssistant(role)"
         :editable="true"
         @click="$emit('selectRole', role)"
@@ -46,7 +46,7 @@
       <div class="sidebar-header">
         <div class="header-info">
           <span class="role-avatar">{{ selectedRole?.avatar || '💬' }}</span>
-          <span class="role-name">{{ selectedRole?.name || '所有话题' }}</span>
+          <span class="role-name">{{ selectedRole?.name || '默认助手' }}</span>
         </div>
         <el-button type="primary" size="small" round @click="$emit('createDialog')">
           <el-icon><Plus /></el-icon>
@@ -62,6 +62,7 @@
           :selected="currentDialog?.id === dialog.id"
           @click="$emit('selectDialog', dialog)"
           @delete="$emit('deleteDialog', dialog.id)"
+          @rename="(newTitle) => $emit('renameDialog', dialog.id, newTitle)"
         />
 
         <el-empty v-if="dialogs.length === 0" description="暂无对话" :image-size="60">
@@ -140,6 +141,7 @@ const emit = defineEmits<{
   (e: 'selectDialog', dialog: Dialog): void
   (e: 'createDialog', options?: { roleId?: string }): void
   (e: 'deleteDialog', dialogId: string): void
+  (e: 'renameDialog', dialogId: string, newTitle: string): void
   (e: 'createRole', request: { name: string; description?: string; systemPrompt?: string; avatar?: string }): void
   (e: 'updateRole', role: Role): void
   (e: 'roleCreated', role: Role): void
@@ -161,6 +163,15 @@ const defaultAssistant: Role = {
 const userRoles = computed(() => {
   return [defaultAssistant, ...props.customRoles]
 })
+
+// 判断助手是否被选中（处理默认助手的情况）
+function isRoleSelected(role: Role): boolean {
+  // 如果选中的是默认助手（id 为 'default-assistant'）或者 selectedRole 为 null 且当前是默认助手
+  if (role.id === 'default-assistant') {
+    return props.selectedRole?.id === 'default-assistant' || props.selectedRole === null
+  }
+  return props.selectedRole?.id === role.id
+}
 
 // 助手库选择器
 const showLibraryPicker = ref(false)

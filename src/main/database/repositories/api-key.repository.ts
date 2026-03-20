@@ -39,7 +39,7 @@ export class ApiKeyRepository {
   async save(provider: string, encryptedKey: string, endpoint?: string): Promise<void> {
     this.db.prepare(
       `INSERT OR REPLACE INTO api_keys (provider, encrypted_key, endpoint, updated_at)
-       VALUES (?, ?, ?, datetime("now"))`
+       VALUES (?, ?, ?, datetime('now'))`
     ).run(provider, encryptedKey, endpoint || null)
   }
 

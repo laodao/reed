@@ -12,32 +12,74 @@
         <span class="meta-item">{{ formatTime(dialog.updatedAt) }}</span>
       </div>
     </div>
-    <el-button
-      class="delete-btn"
-      type="danger"
-      size="small"
-      circle
-      text
-      @click.stop="$emit('delete')"
+    <!-- 操作按钮 -->
+    <el-dropdown trigger="click" @command="handleCommand" @click.stop>
+      <el-button
+        class="action-btn"
+        type="info"
+        size="small"
+        circle
+        text
+        @click.stop
+      >
+        <el-icon><More /></el-icon>
+      </el-button>
+      <template #dropdown>
+        <el-dropdown-menu>
+          <el-dropdown-item command="rename">
+            <el-icon><Edit /></el-icon>
+            重命名
+          </el-dropdown-item>
+          <el-dropdown-item command="delete" divided>
+            <el-icon><Delete /></el-icon>
+            删除
+          </el-dropdown-item>
+        </el-dropdown-menu>
+      </template>
+    </el-dropdown>
+
+    <!-- 重命名对话框 -->
+    <el-dialog
+      v-model="showRenameDialog"
+      title="重命名话题"
+      width="400px"
+      :close-on-click-modal="false"
+      append-to-body
     >
-      <el-icon><Delete /></el-icon>
-    </el-button>
+      <el-input
+        v-model="newTitle"
+        placeholder="请输入新的话题名称"
+        maxlength="50"
+        show-word-limit
+        @keyup.enter="confirmRename"
+      />
+      <template #footer>
+        <el-button @click="showRenameDialog = false">取消</el-button>
+        <el-button type="primary" @click="confirmRename">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { Delete, ChatDotRound } from '@element-plus/icons-vue'
+import { ref } from 'vue'
+import { Delete, ChatDotRound, More, Edit } from '@element-plus/icons-vue'
 import type { Dialog } from '../../../shared/types'
 
-defineProps<{
+const props = defineProps<{
   dialog: Dialog
   selected: boolean
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'click'): void
   (e: 'delete'): void
+  (e: 'rename', newTitle: string): void
 }>()
+
+// 重命名对话框
+const showRenameDialog = ref(false)
+const newTitle = ref('')
 
 // 格式化时间
 function formatTime(date: Date | string): string {
@@ -51,6 +93,24 @@ function formatTime(date: Date | string): string {
   if (diff < 604800000) return `${Math.floor(diff / 86400000)} 天前`
 
   return d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
+}
+
+// 处理下拉菜单命令
+function handleCommand(command: string): void {
+  if (command === 'delete') {
+    emit('delete')
+  } else if (command === 'rename') {
+    newTitle.value = props.dialog.title
+    showRenameDialog.value = true
+  }
+}
+
+// 确认重命名
+function confirmRename(): void {
+  if (newTitle.value.trim()) {
+    emit('rename', newTitle.value.trim())
+    showRenameDialog.value = false
+  }
 }
 </script>
 
@@ -71,7 +131,8 @@ function formatTime(date: Date | string): string {
     background: #f8fafc;
     border-color: #e2e8f0;
 
-    .delete-btn {
+    .delete-btn,
+    .action-btn {
       opacity: 1;
     }
   }
@@ -80,6 +141,11 @@ function formatTime(date: Date | string): string {
     background: var(--el-color-primary-light-9);
     border-color: var(--el-color-primary);
     box-shadow: 0 2px 8px var(--el-color-primary-light-7);
+
+    .delete-btn,
+    .action-btn {
+      opacity: 1;
+    }
   }
 }
 
@@ -132,7 +198,8 @@ function formatTime(date: Date | string): string {
   color: #cbd5e1;
 }
 
-.delete-btn {
+.delete-btn,
+.action-btn {
   opacity: 0;
   position: absolute;
   right: 8px;

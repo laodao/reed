@@ -189,7 +189,7 @@ export class DialogRepository {
     }
 
     if (fields.length > 0) {
-      fields.push('updated_at = datetime("now")')
+      fields.push("updated_at = datetime('now')")
       values.push(id)
       const sql = `UPDATE dialogs SET ${fields.join(', ')} WHERE id = ?`
       console.log('[DialogRepository.update] 执行 SQL:', sql)
@@ -221,7 +221,7 @@ export class DialogRepository {
    * @returns Promise<void>
    */
   async updateMessageCount(id: string, count: number): Promise<void> {
-    this.db.prepare('UPDATE dialogs SET message_count = ?, updated_at = datetime("now") WHERE id = ?').run(count, id)
+    this.db.prepare("UPDATE dialogs SET message_count = ?, updated_at = datetime('now') WHERE id = ?").run(count, id)
   }
 
   /**
@@ -230,6 +230,6 @@ export class DialogRepository {
    * @returns Promise<void>
    */
   async touch(id: string): Promise<void> {
-    this.db.prepare('UPDATE dialogs SET updated_at = datetime("now") WHERE id = ?').run(id)
+    this.db.prepare("UPDATE dialogs SET updated_at = datetime('now') WHERE id = ?").run(id)
   }
 }

@@ -6,7 +6,7 @@
 
 import * as crypto from 'crypto'
 import OpenAI from 'openai'
-import { BaseProvider, ProviderConfig, StreamCallback } from '../base-provider'
+import { BaseProvider, ProviderConfig, StreamCallback, ChatOptions } from '../base-provider'
 import type {
   ChatContext,
   ChatCompletionResponse,
@@ -40,6 +40,7 @@ export class VolcEngineSdkProvider extends BaseProvider {
   private managementBaseUrl: string
   private accessKeyId?: string
   private accessKeySecret?: string
+  private actualBaseUrl: string // 实际使用的 baseUrl
 
   constructor(
     config: ProviderConfig,
@@ -60,10 +61,22 @@ export class VolcEngineSdkProvider extends BaseProvider {
     this.accessKeyId = userConfig?.accessKeyId
     this.accessKeySecret = userConfig?.accessKeySecret
 
+    // 数据面 API URL（用于对话）
+    // 如果用户配置了自定义 baseUrl，使用用户的；否则使用默认的数据面 API
+    this.actualBaseUrl = config.baseUrl || defaultBaseUrl
+
+    console.log('[VolcEngineSdkProvider] 初始化:')
+    console.log('  - providerId:', providerId)
+    console.log('  - 数据面 API (对话):', this.actualBaseUrl)
+    console.log('  - 管控面 API (模型列表):', this.managementBaseUrl)
+    console.log('  - apiKey 前缀:', config.apiKey?.substring(0, 8) + '***')
+    console.log('  - 预期对话 URL:', this.actualBaseUrl + '/chat/completions')
+
     // 初始化 OpenAI SDK 客户端（用于对话）
+    // OpenAI SDK 会在 baseURL 后面追加 /chat/completions
     this.client = new OpenAI({
       apiKey: config.apiKey,
-      baseURL: config.baseUrl || defaultBaseUrl
+      baseURL: this.actualBaseUrl
     })
   }
 
@@ -82,16 +95,17 @@ export class VolcEngineSdkProvider extends BaseProvider {
   /**
    * 获取模型列表
    * 使用火山引擎管控面 API，需要 Access Key 签名认证
+   * 获取火山引擎提供的基础模型列表
    */
   async getModels(): Promise<Array<{ id: string; name: string; maxTokens: number; contextWindow: number }>> {
     // 如果没有 Access Key，返回空数组
     if (!this.accessKeyId || !this.accessKeySecret) {
-      console.warn('火山引擎获取模型列表需要 Access Key，请在配置中提供')
+      console.warn('[VolcEngineSdkProvider] 获取模型列表需要 Access Key，请在配置中提供')
       return []
     }
 
     try {
-      console.log('开始获取火山引擎模型列表...', {
+      console.log('[VolcEngineSdkProvider] 开始获取基础模型列表...', {
         accessKeyId: this.accessKeyId.substring(0, 4) + '***',
         hasSecret: !!this.accessKeySecret
       })
@@ -103,20 +117,25 @@ export class VolcEngineSdkProvider extends BaseProvider {
         service: 'ark'
       })
 
-      console.log('火山引擎 API 响应:', JSON.stringify(response, null, 2))
+      console.log('[VolcEngineSdkProvider] ListFoundationModels 响应:', JSON.stringify(response, null, 2))
+
+      const models: Array<{ id: string; name: string; maxTokens: number; contextWindow: number }> = []
 
       if (response.Result?.Items) {
-        return response.Result.Items.map((item: any) => ({
-          id: item.Name,
-          name: item.DisplayName || item.Name,
-          maxTokens: 4096,
-          contextWindow: 128000
-        }))
+        for (const item of response.Result.Items) {
+          models.push({
+            id: item.Name,  // 基础模型名称，如 Doubao-pro-32k，用于API调用
+            name: item.DisplayName || item.Name,  // 显示名称
+            maxTokens: 4096,
+            contextWindow: 128000
+          })
+        }
       }
 
-      return []
+      console.log(`[VolcEngineSdkProvider] 获取到 ${models.length} 个基础模型`)
+      return models
     } catch (error) {
-      console.error('获取火山引擎模型列表失败:', error)
+      console.error('[VolcEngineSdkProvider] 获取模型列表失败:', error)
       throw error
     }
   }
@@ -129,12 +148,54 @@ export class VolcEngineSdkProvider extends BaseProvider {
     const action = 'ListFoundationModels'
     const version = '2024-01-01'
 
+    // 火山引擎方舟平台 API 网关地址
+    const apiHost = 'ark.cn-beijing.volcengineapi.com'
+    const url = new URL(`https://${apiHost}/?Action=${action}&Version=${version}`)
+
+    // 请求体（带分页参数，与官方示例一致）
+    const body = JSON.stringify({
+      PageNumber: 1,
+      PageSize: 100,
+      SortBy: "CreateTime",
+      SortOrder: "Desc"
+    })
+
+    const response = await this.signedRequest(config, apiHost, url, body)
+    return response
+  }
+
+  /**
+   * 调用火山引擎管控面 API 获取推理接入点列表
+   */
+  private async listEndpoints(config: VolcEngineSignatureConfig): Promise<any> {
+    const method = 'POST'
+    const action = 'ListEndpoints'
+    const version = '2024-01-01'
+
     // 火山引擎统一 API 网关地址
     const apiHost = 'open.volcengineapi.com'
     const url = new URL(`https://${apiHost}/?Action=${action}&Version=${version}`)
 
-    // 请求体（空对象即可，不需要分页参数）
-    const body = JSON.stringify({})
+    // 请求体（带分页参数）
+    const body = JSON.stringify({
+      PageNumber: 1,
+      PageSize: 100
+    })
+
+    const response = await this.signedRequest(config, apiHost, url, body)
+    return response
+  }
+
+  /**
+   * 发送签名请求
+   */
+  private async signedRequest(
+    config: VolcEngineSignatureConfig,
+    apiHost: string,
+    url: URL,
+    body: string
+  ): Promise<any> {
+    const method = 'POST'
 
     // 生成时间戳
     const now = new Date()
@@ -224,13 +285,23 @@ export class VolcEngineSdkProvider extends BaseProvider {
   /**
    * 构建消息列表
    */
-  private buildMessages(context: ChatContext): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
+  private buildMessages(context: ChatContext, options?: ChatOptions): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = []
 
-    if (context.systemPrompt) {
+    // 添加系统消息
+    let systemPrompt = context.systemPrompt || ''
+
+    // 如果有联网搜索上下文，添加到系统提示
+    if (options?.webSearchContext) {
+      systemPrompt = systemPrompt
+        ? `${systemPrompt}\n\n以下是联网搜索的相关信息，请参考这些信息回答问题：\n${options.webSearchContext}`
+        : `请参考以下联网搜索的相关信息回答问题：\n${options.webSearchContext}`
+    }
+
+    if (systemPrompt) {
       messages.push({
         role: 'system',
-        content: context.systemPrompt
+        content: systemPrompt
       })
     }
 
@@ -250,7 +321,8 @@ export class VolcEngineSdkProvider extends BaseProvider {
   async chat(
     context: ChatContext,
     onDelta: (content: string) => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options?: ChatOptions
   ): Promise<string> {
     return this.chatStream(
       context,
@@ -259,7 +331,8 @@ export class VolcEngineSdkProvider extends BaseProvider {
           onDelta(event.content)
         }
       },
-      signal
+      signal,
+      options
     )
   }
 
@@ -269,10 +342,17 @@ export class VolcEngineSdkProvider extends BaseProvider {
   async chatStream(
     context: ChatContext,
     onEvent: StreamCallback,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options?: ChatOptions
   ): Promise<string> {
     const model = this.getDefaultModel()
-    const messages = this.buildMessages(context)
+    console.log('[VolcEngineSdkProvider.chatStream] ========== 发送对话请求 ==========')
+    console.log('[VolcEngineSdkProvider.chatStream] 数据面 API baseUrl:', this.actualBaseUrl)
+    console.log('[VolcEngineSdkProvider.chatStream] 完整请求 URL:', this.actualBaseUrl + '/chat/completions')
+    console.log('[VolcEngineSdkProvider.chatStream] 使用的模型:', model)
+    console.log('[VolcEngineSdkProvider.chatStream] 消息数量:', context.messages.length)
+    console.log('[VolcEngineSdkProvider.chatStream] apiKey 前缀:', this.client.apiKey?.substring(0, 8) + '***')
+    const messages = this.buildMessages(context, options)
 
     let fullContent = ''
     let messageId = ''
@@ -417,7 +497,14 @@ export class VolcEngineSdkProvider extends BaseProvider {
    */
   private formatError(error: any): string {
     if (error.error?.message) {
-      return error.error.message
+      const message = error.error.message
+
+      // 火山引擎特定错误处理
+      if (error.error?.code === 'InvalidEndpointOrModel.NotFound') {
+        return `模型或接入点不存在。请在火山引擎控制台创建推理接入点，并确保使用正确的接入点 ID（如：doubao-seed-2-0-lite-260215）。错误详情：${message}`
+      }
+
+      return message
     }
 
     if (error.status) {

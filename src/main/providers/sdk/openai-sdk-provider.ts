@@ -6,7 +6,7 @@
 
 import OpenAI from 'openai'
 import type { Stream } from 'openai/streaming'
-import { BaseProvider, ProviderConfig, StreamCallback } from '../base-provider'
+import { BaseProvider, ProviderConfig, StreamCallback, ChatOptions } from '../base-provider'
 import type {
   ChatContext,
   ChatCompletionResponse,
@@ -65,11 +65,13 @@ export class OpenAISdkProvider extends BaseProvider {
     try {
       const models = await this.client.models.list()
 
+      console.log('[OpenAISdkProvider.getModels] API 返回的模型列表:', models.data.map(m => ({ id: m.id, name: (m as any).name || m.id })))
+
       return models.data.map((model) => ({
         id: model.id,
-        name: model.id,
-        maxTokens: 4096,
-        contextWindow: 8192
+        name: (model as any).name || model.id, // 使用 API 返回的 name，如果没有则使用 id
+        maxTokens: (model as any).max_output_tokens || 4096,
+        contextWindow: (model as any).context_window || 8192
       }))
     } catch (error) {
       console.error('获取模型列表失败:', error)
@@ -106,25 +108,103 @@ export class OpenAISdkProvider extends BaseProvider {
 
   /**
    * 构建消息列表
+   * 注意：不同 API 有不同的消息格式要求
+   * - OpenAI: 支持 system 角色，content 可以是字符串
+   * - 智谱 GLM: 不支持 system 角色，content 必须是数组格式
    */
-  private buildMessages(context: ChatContext): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
+  private buildMessages(context: ChatContext, options?: ChatOptions): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = []
 
     // 添加系统消息
-    if (context.systemPrompt) {
-      messages.push({
-        role: 'system',
-        content: context.systemPrompt
-      })
+    let systemPrompt = context.systemPrompt || ''
+
+    // 如果有联网搜索上下文，添加到系统提示
+    if (options?.webSearchContext) {
+      systemPrompt = systemPrompt
+        ? `${systemPrompt}\n\n以下是联网搜索的相关信息，请参考这些信息回答问题：\n${options.webSearchContext}`
+        : `请参考以下联网搜索的相关信息回答问题：\n${options.webSearchContext}`
     }
 
+    // 检测是否是智谱 GLM（需要特殊格式）
+    const isZhipuGLM = this.providerId === 'zhipu' || this.providerId === 'glm'
+
     // 添加历史消息
+    // 确保消息格式正确，content 是有效的字符串
     for (const msg of context.messages) {
-      messages.push({
-        role: msg.role as 'user' | 'assistant' | 'system',
-        content: msg.content
-      })
+      // 跳过空消息
+      if (!msg.content || typeof msg.content !== 'string' || msg.content.trim() === '') {
+        console.warn('[OpenAISdkProvider.buildMessages] 跳过空消息, role:', msg.role)
+        continue
+      }
+
+      // 确保 role 是有效的值
+      const role = msg.role as 'user' | 'assistant' | 'system'
+      if (role !== 'user' && role !== 'assistant' && role !== 'system') {
+        console.warn('[OpenAISdkProvider.buildMessages] 无效的角色:', msg.role, ', 跳过该消息')
+        continue
+      }
+
+      // 构建消息内容
+      const messageContent = msg.content.trim()
+
+      if (isZhipuGLM) {
+        // 智谱 GLM 特殊格式：
+        // 1. content 必须是数组格式
+        // 2. 不支持 system 角色
+        if (role === 'system') {
+          // 将 system 消息合并到第一条 user 消息中（稍后处理）
+          continue
+        }
+
+        messages.push({
+          role: role as 'user' | 'assistant',
+          // 智谱 GLM 需要 content 是数组格式
+          content: [{ type: 'text' as const, text: messageContent }]
+        } as any)
+      } else {
+        // 标准 OpenAI 格式
+        messages.push({
+          role,
+          content: messageContent
+        })
+      }
     }
+
+    // 处理 system prompt
+    if (systemPrompt) {
+      if (isZhipuGLM) {
+        // 智谱 GLM：将 system prompt 合并到第一条 user 消息中
+        if (messages.length > 0 && messages[0].role === 'user') {
+          const firstContent = messages[0].content
+          const originalText = typeof firstContent === 'string'
+            ? firstContent
+            : (firstContent as any)[0]?.text || ''
+          messages[0] = {
+            role: 'user',
+            content: [{
+              type: 'text' as const,
+              text: `[系统指令]\n${systemPrompt}\n\n[用户消息]\n${originalText}`
+            }]
+          } as any
+        } else {
+          // 如果没有 user 消息，创建一条
+          messages.unshift({
+            role: 'user',
+            content: [{ type: 'text' as const, text: `[系统指令]\n${systemPrompt}` }]
+          } as any)
+        }
+      } else {
+        // 标准 OpenAI 格式：在开头添加 system 消息
+        messages.unshift({
+          role: 'system',
+          content: systemPrompt
+        })
+      }
+    }
+
+    console.log('[OpenAISdkProvider.buildMessages] 构建的消息数量:', messages.length)
+    console.log('[OpenAISdkProvider.buildMessages] 消息角色:', messages.map(m => m.role))
+    console.log('[OpenAISdkProvider.buildMessages] 是否智谱 GLM:', isZhipuGLM)
 
     return messages
   }
@@ -154,13 +234,32 @@ export class OpenAISdkProvider extends BaseProvider {
   async chatStream(
     context: ChatContext,
     onEvent: StreamCallback,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options?: ChatOptions
   ): Promise<string> {
     const model = this.getDefaultModel()
-    const messages = this.buildMessages(context)
+    const messages = this.buildMessages(context, options)
 
     let fullContent = ''
+    let fullThinkingContent = ''
     let messageId = ''
+
+    // 检测是否为 DeepSeek R1 模型（支持思维链）
+    const isDeepSeekR1 = model.toLowerCase().includes('deepseek-reasoner') ||
+                         model.toLowerCase().includes('deepseek-r1')
+
+    // ===== 详细日志：打印网络请求参数 =====
+    console.log('[OpenAISdkProvider.chatStream] ========== 网络请求参数 ==========')
+    console.log('[OpenAISdkProvider.chatStream] providerId:', this.providerId)
+    console.log('[OpenAISdkProvider.chatStream] providerName:', this.providerName)
+    console.log('[OpenAISdkProvider.chatStream] defaultBaseUrl:', this.defaultBaseUrl)
+    console.log('[OpenAISdkProvider.chatStream] 实际使用的 baseURL:', this.client.baseURL)
+    console.log('[OpenAISdkProvider.chatStream] apiKey 前缀:', this.client.apiKey?.substring(0, 10) + '***')
+    console.log('[OpenAISdkProvider.chatStream] 使用的模型:', model)
+    console.log('[OpenAISdkProvider.chatStream] 是否 DeepSeek R1:', isDeepSeekR1)
+    console.log('[OpenAISdkProvider.chatStream] 启用深度思考:', options?.enableThinking)
+    console.log('[OpenAISdkProvider.chatStream] 消息数量:', messages.length)
+    console.log('[OpenAISdkProvider.chatStream] ====================================')
 
     try {
       onEvent({ type: 'start' })
@@ -184,6 +283,22 @@ export class OpenAISdkProvider extends BaseProvider {
           messageId = chunk.id
         }
 
+        // 处理 DeepSeek R1 的思维链内容（reasoning_content）
+        // 注意：OpenAI SDK 可能需要特殊处理来获取 reasoning_content
+        if (isDeepSeekR1) {
+          const delta = chunk.choices[0]?.delta as any
+          const thinkingContent = delta?.reasoning_content || ''
+          if (thinkingContent) {
+            console.log('[OpenAISdkProvider.chatStream] 收到思维链内容, 长度:', thinkingContent.length)
+            fullThinkingContent += thinkingContent
+            onEvent({
+              type: 'thinking',
+              messageId,
+              thinkingContent
+            })
+          }
+        }
+
         // 处理增量内容
         const content = chunk.choices[0]?.delta?.content || ''
         if (content) {
@@ -196,6 +311,7 @@ export class OpenAISdkProvider extends BaseProvider {
         }
       }
 
+      console.log('[OpenAISdkProvider.chatStream] 完成, 内容长度:', fullContent.length, ', 思维链长度:', fullThinkingContent.length)
       onEvent({ type: 'done', messageId })
       return fullContent
     } catch (error: any) {
