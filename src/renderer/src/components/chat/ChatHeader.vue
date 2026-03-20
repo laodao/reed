@@ -125,8 +125,16 @@ const lastDialogId = ref<string>('')
 const changingModelDialogId = ref<string | null>(null)
 
 // 提供商模型列表（用于显示）
+// 辅助函数：判断模型是否为文本类型（包含文本和多模态模型，排除图片/视频/音频生成模型）
+function isTextModel(type: string | undefined): boolean {
+  // undefined 表示旧数据，默认认为是文本模型
+  // 'text' 是纯文本模型
+  // 'multimodal' 是多模态模型，可以处理文本
+  return type === undefined || type === 'text' || type === 'multimodal'
+}
+
 const providerModels = computed(() => {
-  const result: Array<{ id: string; name: string; shortId: string; models: Array<{ id: string; name: string; contextWindow: number }> }> = []
+  const result: Array<{ id: string; name: string; shortId: string; models: Array<{ id: string; name: string; contextWindow: number; type?: string }> }> = []
 
   console.log('[ChatHeader.providerModels] 开始计算模型列表')
   console.log('[ChatHeader.providerModels] providerConfigs 数量:', providerConfigs.value.length)
@@ -137,7 +145,7 @@ const providerModels = computed(() => {
 
     console.log(`[ChatHeader.providerModels] 处理提供商: ${config.name}, id: ${config.id}, shortId: ${config.shortId}`)
 
-    const models: Array<{ id: string; name: string; contextWindow: number }> = []
+    const models: Array<{ id: string; name: string; contextWindow: number; type?: string }> = []
     const addedModelIds = new Set<string>() // 跟踪已添加的模型 ID
 
     // 获取该配置对应的模板
@@ -157,11 +165,17 @@ const providerModels = computed(() => {
       for (const model of config.customModels) {
         // 自定义模型也需要验证（如果模板不允许自定义模型，则跳过）
         if (template && !template.allowCustomModels) continue
+        // 过滤非文本模型
+        if (!isTextModel(model.type)) {
+          console.log(`[ChatHeader.providerModels] 过滤非文本模型: ${model.id}, type: ${model.type}`)
+          continue
+        }
         if (!config.enabledModels || config.enabledModels.includes(model.id)) {
           models.push({
             id: model.id,
             name: model.name,
-            contextWindow: model.contextWindow
+            contextWindow: model.contextWindow,
+            type: model.type
           })
           addedModelIds.add(model.id)
         }
@@ -206,6 +220,12 @@ const providerModels = computed(() => {
         // 从 apiModels 中获取模型特性
         const apiModelInfo = config.apiModels?.find(m => m.id === modelId)
 
+        // 过滤非文本模型（图片/视频/音频生成模型）
+        if (!isTextModel(apiModelInfo?.type)) {
+          console.log(`[ChatHeader.providerModels] 过滤非文本模型: ${modelId}, type: ${apiModelInfo?.type}`)
+          continue
+        }
+
         models.push({
           id: modelId,
           name: modelName,
@@ -223,10 +243,16 @@ const providerModels = computed(() => {
     if (models.length === 0 && template && template.models.length > 0) {
       console.log(`[ChatHeader.providerModels] 提供商 ${config.name} 没有有效模型，使用模板默认模型`)
       for (const model of template.models) {
+        // 过滤非文本模型
+        if (!isTextModel(model.type)) {
+          console.log(`[ChatHeader.providerModels] 过滤非文本模型: ${model.id}, type: ${model.type}`)
+          continue
+        }
         models.push({
           id: model.id,
           name: model.name || model.id,
-          contextWindow: model.contextWindow || 8192
+          contextWindow: model.contextWindow || 8192,
+          type: model.type
         })
       }
     }
@@ -262,7 +288,7 @@ const filteredProviderModels = computed(() => {
   }
 
   const keyword = modelSearchKeyword.value.toLowerCase()
-  const result: Array<{ id: string; name: string; shortId: string; models: Array<{ id: string; name: string; contextWindow: number }> }> = []
+  const result: Array<{ id: string; name: string; shortId: string; models: Array<{ id: string; name: string; contextWindow: number; type?: string }> }> = []
 
   for (const provider of providerModels.value) {
     // 过滤模型（包括 shortId 搜索）
