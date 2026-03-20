@@ -62,21 +62,28 @@ export class DialogRepository {
    * @returns Promise<Dialog[]>
    */
   async getByRoleId(roleId: string | null): Promise<Dialog[]> {
-    const rows = roleId
-      ? this.db.prepare(
-          `SELECT id, title, model_id, provider_config_id, role_id, system_prompt,
-                  context_config, created_at, updated_at, message_count
-           FROM dialogs
-           WHERE role_id = ?
-           ORDER BY updated_at DESC`
-        ).all(roleId) as any[]
-      : this.db.prepare(
-          `SELECT id, title, model_id, provider_config_id, role_id, system_prompt,
-                  context_config, created_at, updated_at, message_count
-           FROM dialogs
-           WHERE role_id IS NULL
-           ORDER BY updated_at DESC`
-        ).all() as any[]
+    let rows: any[]
+
+    if (roleId) {
+      // 查询指定角色的对话
+      rows = this.db.prepare(
+        `SELECT id, title, model_id, provider_config_id, role_id, system_prompt,
+                context_config, created_at, updated_at, message_count
+         FROM dialogs
+         WHERE role_id = ?
+         ORDER BY updated_at DESC`
+      ).all(roleId) as any[]
+    } else {
+      // 默认助手：查询 role_id IS NULL 或 role_id = 'default-assistant'
+      // 兼容旧数据
+      rows = this.db.prepare(
+        `SELECT id, title, model_id, provider_config_id, role_id, system_prompt,
+                context_config, created_at, updated_at, message_count
+         FROM dialogs
+         WHERE role_id IS NULL OR role_id = 'default-assistant'
+         ORDER BY updated_at DESC`
+      ).all() as any[]
+    }
 
     return rows.map(row => ({
       id: row.id,

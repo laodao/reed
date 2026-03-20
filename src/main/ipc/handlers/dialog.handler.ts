@@ -93,11 +93,12 @@ async function handleCreateDialog(
       return { success: false, error: '数据库未初始化' }
     }
 
-    // 默认助手 ID（'default-assistant' 是对话首页创建对话时的默认助手）
-    const DEFAULT_ROLE_ID = 'default-assistant'
-
-    // 如果没有指定角色，使用默认助手
-    const roleId = request.roleId || DEFAULT_ROLE_ID
+    // 默认助手的对话在数据库中 roleId 为 null
+    // 如果前端传了 roleId 且不是 'default-assistant'，使用该值
+    // 否则使用 null（表示默认助手）
+    const roleId = (request.roleId && request.roleId !== 'default-assistant')
+      ? request.roleId
+      : null
 
     // 获取角色的系统提示词
     let systemPrompt: string | undefined = request.systemPrompt
