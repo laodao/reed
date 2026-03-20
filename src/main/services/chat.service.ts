@@ -6,7 +6,7 @@
 
 import { BrowserWindow } from 'electron'
 import { getDatabaseManager } from '../database'
-import { OpenAICompatibleProvider } from '../providers/openai-compatible-provider'
+import { createProvider } from '../providers'
 import { PROVIDER_TEMPLATES } from './provider-template.service'
 import { SecureStorageService } from './secure-storage.service'
 import type {
@@ -16,8 +16,11 @@ import type {
   SendMessageRequest,
   StreamEvent,
   ProviderTemplate,
-  UserProviderConfig
+  UserProviderConfig,
+  WebSearchResult,
+  MessageMetadata
 } from '../../shared/types'
+import { WebSearchService } from './web-search.service'
 
 /**
  * 正在进行的流式请求
@@ -55,14 +58,24 @@ export class ChatService {
         return { success: false, error: '对话不存在' }
       }
 
+      // 关键：优先使用前端传来的 modelId 和 providerConfigId（内存中的值）
+      // 只有前端没传时才从数据库读取
+      const effectiveModelId = request.modelId || dialog.modelId
+      const effectiveProviderConfigId = request.providerConfigId || dialog.providerConfigId
+
+      console.log('[ChatService.sendMessage] 使用的模型ID:', effectiveModelId)
+      console.log('[ChatService.sendMessage] 使用的提供商配置ID:', effectiveProviderConfigId)
+      console.log('[ChatService.sendMessage] 来源 - 前端传递 modelId:', request.modelId)
+      console.log('[ChatService.sendMessage] 来源 - 前端传递 providerConfigId:', request.providerConfigId)
+
       // 获取提供商配置
       let providerConfig = null
 
-      // 优先使用对话中指定的提供商配置
-      console.log('[ChatService.sendMessage] dialog.providerConfigId:', dialog.providerConfigId)
-      if (dialog.providerConfigId) {
+      // 优先使用前端传来的提供商配置
+      console.log('[ChatService.sendMessage] effectiveProviderConfigId:', effectiveProviderConfigId)
+      if (effectiveProviderConfigId) {
         console.log('[ChatService.sendMessage] 尝试获取指定的提供商配置')
-        providerConfig = await dbManager.providerConfigs.getById(dialog.providerConfigId)
+        providerConfig = await dbManager.providerConfigs.getById(effectiveProviderConfigId)
         console.log('[ChatService.sendMessage] 指定的提供商配置:', providerConfig ? providerConfig.name : null)
       }
 
@@ -90,7 +103,13 @@ export class ChatService {
       }
 
       console.log('[ChatService.sendMessage] 最终使用的提供商:', providerConfig.name)
-      console.log('[ChatService.sendMessage] 提供商是否有 apiKey:', !!providerConfig.apiKey)
+      console.log('[ChatService.sendMessage] providerConfig.id:', providerConfig.id)
+      console.log('[ChatService.sendMessage] providerConfig.templateId:', providerConfig.templateId)
+      console.log('[ChatService.sendMessage] providerConfig.baseUrl:', providerConfig.baseUrl || '(未设置)')
+      console.log('[ChatService.sendMessage] providerConfig 是否有 apiKey:', !!providerConfig.apiKey)
+      console.log('[ChatService.sendMessage] providerConfig.enabledModels:', providerConfig.enabledModels?.slice(0, 3))
+      console.log('[ChatService.sendMessage] effectiveModelId:', effectiveModelId)
+      console.log('[ChatService.sendMessage] effectiveProviderConfigId:', effectiveProviderConfigId)
 
       if (!providerConfig.apiKey) {
         console.error('[ChatService.sendMessage] 错误: 提供商未配置 API 密钥')
@@ -124,20 +143,23 @@ export class ChatService {
 
       // 创建 Provider 实例
       console.log('[ChatService.sendMessage] 创建 Provider 实例')
-      console.log('[ChatService.sendMessage] dialog.modelId:', dialog.modelId)
-      console.log('[ChatService.sendMessage] dialog.providerConfigId:', dialog.providerConfigId)
-      const provider = new OpenAICompatibleProvider(
+      console.log('[ChatService.sendMessage] effectiveModelId:', effectiveModelId)
+      console.log('[ChatService.sendMessage] effectiveProviderConfigId:', effectiveProviderConfigId)
+      console.log('[ChatService.sendMessage] template.id:', template.id)
+      console.log('[ChatService.sendMessage] providerConfig.baseUrl:', providerConfig.baseUrl || '(使用默认)')
+
+      const provider = createProvider(
+        template.id,
         {
           apiKey: decryptedApiKey,
           baseUrl: providerConfig.baseUrl,
-          defaultModel: dialog.modelId
+          defaultModel: effectiveModelId
         },
-        template.id,
-        template.name,
-        template.apiConfig.baseUrl,
         template,
         providerConfig
       )
+
+      console.log('[ChatService.sendMessage] Provider 类型:', provider.constructor.name)
 
       // 保存用户消息
       console.log('[ChatService.sendMessage] 保存用户消息')
@@ -154,47 +176,97 @@ export class ChatService {
       const context = await this.buildContext(dialog, request.dialogId, dbManager)
       console.log('[ChatService.sendMessage] 上下文消息数量:', context.messages.length)
 
+      // 处理联网搜索
+      let webSearchResults: WebSearchResult[] = []
+      let webSearchContext = ''
+
+      if (request.webSearch?.enabled && request.webSearch.engine !== 'model') {
+        console.log('[ChatService.sendMessage] 执行联网搜索, engine:', request.webSearch.engine)
+        const searchResponse = await WebSearchService.search(
+          request.content,
+          request.webSearch.engine,
+          undefined, // API Key 需要从配置中获取，暂不实现
+          5
+        )
+
+        if (searchResponse.success && searchResponse.results.length > 0) {
+          webSearchResults = searchResponse.results
+          webSearchContext = WebSearchService.formatResultsAsContext(searchResponse.results)
+          console.log('[ChatService.sendMessage] 联网搜索成功, 结果数量:', webSearchResults.length)
+        } else if (searchResponse.error) {
+          console.log('[ChatService.sendMessage] 联网搜索失败:', searchResponse.error)
+          // 搜索失败不影响主流程，继续调用 AI
+        }
+      }
+
       // 创建 AbortController
       const abortController = new AbortController()
       activeStreams.set(request.dialogId, abortController)
 
-      // 发送流式开始事件
-      this.sendStreamEvent(window, {
-        type: 'start',
-        messageId: undefined
-      })
-
-      // 创建 AI 消息（先创建空消息）
+      // 创建 AI 消息（先创建空消息，在发送 start 事件之前）
       console.log('[ChatService.sendMessage] 创建 AI 消息')
       const aiMessage = await dbManager.messages.create({
         dialogId: request.dialogId,
         role: 'assistant',
         content: '',
-        modelId: dialog.modelId
+        modelId: effectiveModelId,
+        metadata: webSearchResults.length > 0 ? { webSearch: webSearchResults } : undefined
       })
       console.log('[ChatService.sendMessage] AI 消息已创建, id:', aiMessage.id)
 
+      // 发送流式开始事件（包含 messageId）
+      this.sendStreamEvent(window, {
+        type: 'start',
+        messageId: aiMessage.id
+      })
+
+      // 构建聊天选项
+      const chatOptions = {
+        enableThinking: request.enableThinkingChain,
+        webSearchContext: webSearchContext || undefined
+      }
+
       // 流式调用 AI
-      console.log('[ChatService.sendMessage] 开始流式调用 AI, model:', dialog.modelId)
+      console.log('[ChatService.sendMessage] 开始流式调用 AI, model:', effectiveModelId)
+      console.log('[ChatService.sendMessage] 聊天选项:', chatOptions)
       let fullContent = ''
+      let fullThinkingContent = ''
+
       try {
         fullContent = await provider.chatStream(
           context,
           (event: StreamEvent) => {
+            // 收集思维链内容
+            if (event.type === 'thinking' && event.thinkingContent) {
+              console.log('[ChatService.sendMessage] 收到思维链事件, 长度:', event.thinkingContent.length)
+              fullThinkingContent += event.thinkingContent
+            }
+
             // 转发事件到渲染进程
             this.sendStreamEvent(window, {
               ...event,
               messageId: aiMessage.id
             })
           },
-          abortController.signal
+          abortController.signal,
+          chatOptions
         )
-        console.log('[ChatService.sendMessage] AI 调用完成, 内容长度:', fullContent.length)
+        console.log('[ChatService.sendMessage] AI 调用完成, 内容长度:', fullContent.length, ', 思维链长度:', fullThinkingContent.length)
       } catch (error: any) {
         console.error('[ChatService.sendMessage] AI 调用异常:', error)
         // 更新 AI 消息内容（即使是错误也保存已获取的内容）
         if (fullContent) {
+          const metadata: MessageMetadata = {}
+          if (fullThinkingContent) {
+            metadata.thinkingChain = fullThinkingContent
+          }
+          if (webSearchResults.length > 0) {
+            metadata.webSearch = webSearchResults
+          }
           await dbManager.messages.updateContent(aiMessage.id, fullContent)
+          if (Object.keys(metadata).length > 0) {
+            await dbManager.messages.updateMetadata(aiMessage.id, metadata)
+          }
         }
 
         // 发送错误事件
@@ -207,9 +279,25 @@ export class ChatService {
         return { success: false, error: error.message }
       }
 
-      // 更新 AI 消息内容
+      // 更新 AI 消息内容和元数据
       console.log('[ChatService.sendMessage] 更新 AI 消息内容')
       await dbManager.messages.updateContent(aiMessage.id, fullContent)
+
+      // 更新元数据（思维链和搜索结果）
+      const metadata: MessageMetadata = {}
+      if (fullThinkingContent) {
+        metadata.thinkingChain = fullThinkingContent
+        console.log('[ChatService.sendMessage] 保存思维链到数据库, 长度:', fullThinkingContent.length)
+      } else {
+        console.log('[ChatService.sendMessage] 没有思维链内容需要保存')
+      }
+      if (webSearchResults.length > 0) {
+        metadata.webSearch = webSearchResults
+      }
+      if (Object.keys(metadata).length > 0) {
+        console.log('[ChatService.sendMessage] 保存 metadata:', JSON.stringify(Object.keys(metadata)))
+        await dbManager.messages.updateMetadata(aiMessage.id, metadata)
+      }
 
       // 发送完成事件
       this.sendStreamEvent(window, {
@@ -257,14 +345,27 @@ export class ChatService {
     // 获取最近的消息
     const messages = await dbManager.messages.getRecent(dialogId, maxMessages + 1)
 
-    // 过滤掉最后一条（即将创建的 AI 消息）
+    // 过滤并构建历史消息
+    // 1. 确保消息有内容
+    // 2. 确保内容是字符串
+    // 3. 确保角色是 'user' 或 'assistant'
     const historyMessages = messages
-      .filter((m: Message) => m.role !== 'assistant' || m.content)
+      .filter((m: Message) => {
+        // 过滤掉没有内容的消息
+        if (!m.content || typeof m.content !== 'string' || m.content.trim() === '') {
+          return false
+        }
+        // 过滤掉角色不正确的消息
+        return m.role === 'user' || m.role === 'assistant'
+      })
       .slice(-maxMessages)
       .map((m: Message) => ({
         role: m.role as 'user' | 'assistant',
-        content: m.content
+        content: m.content.trim() // 确保内容是修剪过的字符串
       }))
+
+    console.log('[ChatService.buildContext] 历史消息数量:', historyMessages.length)
+    console.log('[ChatService.buildContext] 消息详情:', historyMessages.map(m => ({ role: m.role, contentLength: m.content.length })))
 
     return {
       systemPrompt: dialog.systemPrompt,

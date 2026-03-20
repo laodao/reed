@@ -4,20 +4,17 @@
  * @description 提供设置的数据库操作
  */
 
-import { Database as SqlJsDatabase } from 'sql.js'
+import Database from 'better-sqlite3'
 import type { ThemeMode, Language, FontSize } from '../../../shared/types'
-import type { DatabaseManager } from '../index'
 
 /**
  * 设置数据仓库
  */
 export class SettingsRepository {
-  private db: SqlJsDatabase
-  private dbManager: DatabaseManager
+  private db: Database.Database
 
-  constructor(db: SqlJsDatabase, dbManager: DatabaseManager) {
+  constructor(db: Database.Database) {
     this.db = db
-    this.dbManager = dbManager
   }
 
   /**
@@ -27,12 +24,12 @@ export class SettingsRepository {
    * @description 从数据库获取单个设置值
    */
   get(key: string): any | null {
-    const result = this.db.exec('SELECT value FROM settings WHERE key = ?', [key])
-    if (result.length > 0 && result[0].values.length > 0) {
+    const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined
+    if (row) {
       try {
-        return JSON.parse(result[0].values[0][0] as string)
+        return JSON.parse(row.value)
       } catch {
-        return result[0].values[0][0]
+        return row.value
       }
     }
     return null
@@ -47,11 +44,9 @@ export class SettingsRepository {
    */
   set(key: string, value: any): void {
     const jsonValue = JSON.stringify(value)
-    this.db.run(
-      'INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime("now"))',
-      [key, jsonValue]
-    )
-    this.dbManager.save()
+    this.db.prepare(
+      'INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime("now"))'
+    ).run(key, jsonValue)
   }
 
   /**
@@ -59,16 +54,14 @@ export class SettingsRepository {
    * @returns Record<string, any> - 设置键值对
    */
   getAll(): Record<string, any> {
-    const result = this.db.exec('SELECT key, value FROM settings')
+    const rows = this.db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[]
     const settings: Record<string, any> = {}
-    if (result.length > 0) {
-      result[0].values.forEach((row) => {
-        try {
-          settings[row[0] as string] = JSON.parse(row[1] as string)
-        } catch {
-          settings[row[0] as string] = row[1]
-        }
-      })
+    for (const row of rows) {
+      try {
+        settings[row.key] = JSON.parse(row.value)
+      } catch {
+        settings[row.key] = row.value
+      }
     }
     return settings
   }
@@ -79,7 +72,6 @@ export class SettingsRepository {
    * @returns void
    */
   delete(key: string): void {
-    this.db.run('DELETE FROM settings WHERE key = ?', [key])
-    this.dbManager.save()
+    this.db.prepare('DELETE FROM settings WHERE key = ?').run(key)
   }
 }

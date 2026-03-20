@@ -13,6 +13,7 @@
       @select-dialog="handleSelectDialog"
       @create-dialog="handleCreateDialog"
       @delete-dialog="handleDeleteDialog"
+      @rename-dialog="handleRenameDialog"
       @create-role="handleCreateRole"
       @update-role="handleUpdateRole"
       @role-created="handleRoleCreated"
@@ -121,18 +122,40 @@ async function handleDeleteDialog(dialogId: string): Promise<void> {
   }
 }
 
+// 处理重命名对话
+async function handleRenameDialog(dialogId: string, newTitle: string): Promise<void> {
+  // 使用 dialogStore 更新标题
+  const success = await dialogStore.updateDialogTitle(dialogId, newTitle)
+  if (success) {
+    ElMessage.success('话题已重命名')
+  } else {
+    ElMessage.error('重命名失败')
+  }
+}
+
 // 处理发送消息
 async function handleSendMessage(
   content: string,
   options?: {
     attachments?: Message['attachments']
-    enableWebSearch?: boolean
+    webSearch?: {
+      enabled: boolean
+      engine: 'model' | 'baidu' | 'bing' | 'google'
+    }
     enableThinkingChain?: boolean
   }
 ): Promise<void> {
+  // 检查是否需要自动更新标题
+  const shouldUpdateTitle = currentDialog.value &&
+    (currentDialog.value.title === '新对话' || currentDialog.value.messageCount === 0)
+
   const success = await sendMessage(content, options)
   if (!success) {
     ElMessage.error('发送消息失败')
+  } else if (shouldUpdateTitle && currentDialog.value) {
+    // 发送成功后自动更新标题（使用消息内容的前20个字符作为标题）
+    const newTitle = content.slice(0, 20) + (content.length > 20 ? '...' : '')
+    await dialogStore.updateDialogTitle(currentDialog.value.id, newTitle)
   }
 }
 
@@ -197,15 +220,20 @@ async function handleUpdateConfig(
     contextConfig?: ContextConfig
   }
 ): Promise<void> {
-  console.log('[Chat.handleUpdateConfig] 收到更新请求:', {
-    dialogId,
-    config,
-    currentDialogId: currentDialog.value?.id
-  })
+  console.log('[Chat.handleUpdateConfig] ========== 收到更新请求 ==========')
+  console.log('[Chat.handleUpdateConfig] dialogId:', dialogId)
+  console.log('[Chat.handleUpdateConfig] config:', JSON.stringify(config, null, 2))
+  console.log('[Chat.handleUpdateConfig] config.modelId:', config.modelId)
+  console.log('[Chat.handleUpdateConfig] config.providerConfigId:', config.providerConfigId)
+  console.log('[Chat.handleUpdateConfig] 更新前 currentDialog.modelId:', currentDialog.value?.modelId)
+  console.log('[Chat.handleUpdateConfig] 更新前 currentDialog.providerConfigId:', currentDialog.value?.providerConfigId)
 
-  const success = await updateDialogConfig(dialogId, config)
+  // 重要：将响应式对象转换为普通对象，避免 IPC 序列化失败
+  const plainConfig = JSON.parse(JSON.stringify(config))
+  const success = await updateDialogConfig(dialogId, plainConfig)
   console.log('[Chat.handleUpdateConfig] 更新结果:', success)
-  console.log('[Chat.handleUpdateConfig] 更新后的 currentDialog:', currentDialog.value)
+  console.log('[Chat.handleUpdateConfig] 更新后 currentDialog.modelId:', currentDialog.value?.modelId)
+  console.log('[Chat.handleUpdateConfig] 更新后 currentDialog.providerConfigId:', currentDialog.value?.providerConfigId)
 
   // 只有非模型选择的配置更新才显示提示
   if (!config.modelId && !config.providerConfigId) {

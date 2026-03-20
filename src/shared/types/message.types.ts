@@ -32,6 +32,16 @@ export interface WebSearchResult {
   title: string
   url: string
   snippet: string
+  source: 'baidu' | 'bing' | 'google' | 'model'
+}
+
+/**
+ * 网页搜索响应
+ */
+export interface WebSearchResponse {
+  success: boolean
+  results: WebSearchResult[]
+  error?: string
 }
 
 /**
@@ -59,14 +69,33 @@ export interface Message {
 }
 
 /**
+ * 联网搜索引擎类型
+ */
+export type WebSearchEngine = 'model' | 'baidu' | 'bing' | 'google'
+
+/**
+ * 联网搜索配置
+ */
+export interface WebSearchConfig {
+  enabled: boolean
+  engine: WebSearchEngine
+}
+
+/**
  * 发送消息请求
  */
 export interface SendMessageRequest {
   dialogId: string
   content: string
   attachments?: Attachment[]  // 附件列表
-  enableWebSearch?: boolean  // 启用联网搜索
-  enableThinkingChain?: boolean  // 启用思维链
+  /** 联网搜索配置 */
+  webSearch?: WebSearchConfig
+  /** 启用思维链 */
+  enableThinkingChain?: boolean
+  /** 当前选中的模型ID（使用内存中的值，不从数据库读取） */
+  modelId?: string
+  /** 当前选中的提供商配置ID（使用内存中的值，不从数据库读取） */
+  providerConfigId?: string
 }
 
 /**
@@ -85,7 +114,7 @@ export interface CreateMessageRequest {
 /**
  * 流式事件类型
  */
-export type StreamEventType = 'start' | 'delta' | 'done' | 'error'
+export type StreamEventType = 'start' | 'delta' | 'done' | 'error' | 'thinking'
 
 /**
  * 流式事件
@@ -94,6 +123,8 @@ export interface StreamEvent {
   type: StreamEventType
   messageId?: string
   content?: string
+  /** 思维链内容 */
+  thinkingContent?: string
   error?: string
   interrupted?: boolean
 }

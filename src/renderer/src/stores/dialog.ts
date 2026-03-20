@@ -11,7 +11,8 @@ import type {
   Message,
   CreateDialogRequest,
   StreamEvent,
-  ContextConfig
+  ContextConfig,
+  WebSearchEngine
 } from '../../../shared/types'
 
 /**
@@ -127,9 +128,21 @@ export const useDialogStore = defineStore('dialog', () => {
    * 更新对话
    */
   async function updateDialog(id: string, data: Partial<Dialog>): Promise<boolean> {
-    console.log('[dialogStore.updateDialog] 开始更新:', { id, data })
+    console.log('[dialogStore.updateDialog] ========== 开始更新对话 ==========')
+    console.log('[dialogStore.updateDialog] 参数 id:', id)
+    console.log('[dialogStore.updateDialog] 参数 data:', JSON.stringify(data, null, 2))
+    console.log('[dialogStore.updateDialog] data.modelId:', data.modelId)
+    console.log('[dialogStore.updateDialog] data.providerConfigId:', data.providerConfigId)
     try {
-      const response = await window.electronAPI.dialog.update(id, data)
+      // 重要：将响应式对象转换为普通对象，避免 IPC 序列化失败
+      // IPC 无法序列化 Vue 响应式对象（Proxy）
+      const plainData = JSON.parse(JSON.stringify(data))
+      console.log('[dialogStore.updateDialog] 转换后的普通对象:', JSON.stringify(plainData, null, 2))
+      console.log('[dialogStore.updateDialog] plainData.modelId:', plainData.modelId)
+      console.log('[dialogStore.updateDialog] plainData.providerConfigId:', plainData.providerConfigId)
+
+      console.log('[dialogStore.updateDialog] 准备调用 IPC dialog.update')
+      const response = await window.electronAPI.dialog.update(id, plainData)
       console.log('[dialogStore.updateDialog] IPC 响应:', response)
       if (response.success) {
         const index = dialogs.value.findIndex(d => d.id === id)
@@ -138,8 +151,28 @@ export const useDialogStore = defineStore('dialog', () => {
           console.log('[dialogStore.updateDialog] 更新后的 dialogs[' + index + ']:', dialogs.value[index])
         }
         if (currentDialog.value?.id === id) {
-          currentDialog.value = { ...currentDialog.value, ...data }
+          // 强制创建新对象以触发响应式更新
+          // 直接使用传入的值更新，不需要 ?? 运算符
+          const updatedDialog = { ...currentDialog.value }
+          if (plainData.modelId !== undefined) {
+            updatedDialog.modelId = plainData.modelId
+          }
+          if (plainData.providerConfigId !== undefined) {
+            updatedDialog.providerConfigId = plainData.providerConfigId
+          }
+          if (plainData.systemPrompt !== undefined) {
+            updatedDialog.systemPrompt = plainData.systemPrompt
+          }
+          if (plainData.contextConfig !== undefined) {
+            updatedDialog.contextConfig = plainData.contextConfig
+          }
+          if (plainData.title !== undefined) {
+            updatedDialog.title = plainData.title
+          }
+          currentDialog.value = updatedDialog
           console.log('[dialogStore.updateDialog] 更新后的 currentDialog:', currentDialog.value)
+          console.log('[dialogStore.updateDialog] currentDialog.modelId:', currentDialog.value.modelId)
+          console.log('[dialogStore.updateDialog] currentDialog.providerConfigId:', currentDialog.value.providerConfigId)
         }
         return true
       }
@@ -203,21 +236,31 @@ export const useDialogStore = defineStore('dialog', () => {
     content: string,
     options?: {
       attachments?: Message['attachments']
-      enableWebSearch?: boolean
+      webSearch?: {
+        enabled: boolean
+        engine: WebSearchEngine
+      }
       enableThinkingChain?: boolean
     }
   ): Promise<boolean> {
-    console.log('[sendMessage] 开始发送消息')
-    console.log('[sendMessage] currentDialog:', currentDialog.value)
+    console.log('[sendMessage] ========== 开始发送消息 ==========')
+    console.log('[sendMessage] 时间戳:', new Date().toISOString())
+    console.log('[sendMessage] currentDialog:', currentDialog.value ? {
+      id: currentDialog.value.id,
+      title: currentDialog.value.title,
+      modelId: currentDialog.value.modelId,
+      providerConfigId: currentDialog.value.providerConfigId
+    } : null)
 
     if (!currentDialog.value) {
       console.error('[sendMessage] 错误: 没有选中的对话')
       return false
     }
 
-    console.log('[sendMessage] dialogId:', currentDialog.value.id)
-    console.log('[sendMessage] modelId:', currentDialog.value.modelId)
-    console.log('[sendMessage] providerConfigId:', currentDialog.value.providerConfigId)
+    const dialogId = currentDialog.value.id
+    const modelId = currentDialog.value.modelId
+    const providerConfigId = currentDialog.value.providerConfigId
+    console.log('[sendMessage] 发送参数:', { dialogId, modelId, providerConfigId, content: content.substring(0, 50) })
 
     // 重置流式状态
     streamState.value = {
@@ -227,6 +270,18 @@ export const useDialogStore = defineStore('dialog', () => {
       error: null
     }
 
+    // 立即在本地添加用户消息（乐观更新）
+    const tempUserMessageId = `temp-user-${Date.now()}`
+    const userMessage: Message = {
+      id: tempUserMessageId,
+      dialogId: currentDialog.value.id,
+      role: 'user',
+      content,
+      attachments: options?.attachments,
+      createdAt: new Date()
+    }
+    messages.value.push(userMessage)
+
     // 订阅流式事件
     if (unsubscribeStream) {
       unsubscribeStream()
@@ -234,13 +289,17 @@ export const useDialogStore = defineStore('dialog', () => {
     unsubscribeStream = window.electronAPI.chat.onStream(handleStreamEvent)
 
     try {
-      const requestData = {
+      // 重要：将响应式对象转换为普通对象，避免 IPC 序列化失败
+      // 关键：传递内存中的 modelId 和 providerConfigId，不从数据库读取
+      const requestData = JSON.parse(JSON.stringify({
         dialogId: currentDialog.value.id,
         content,
         attachments: options?.attachments,
-        enableWebSearch: options?.enableWebSearch,
-        enableThinkingChain: options?.enableThinkingChain
-      }
+        webSearch: options?.webSearch,
+        enableThinkingChain: options?.enableThinkingChain,
+        modelId: currentDialog.value.modelId,
+        providerConfigId: currentDialog.value.providerConfigId
+      }))
       console.log('[sendMessage] 发送请求数据:', requestData)
 
       // 发送消息请求
@@ -251,10 +310,12 @@ export const useDialogStore = defineStore('dialog', () => {
         console.error('[sendMessage] 响应失败:', response.error)
         streamState.value.error = response.error || '发送失败'
         streamState.value.isStreaming = false
+        // 移除临时用户消息
+        messages.value = messages.value.filter(m => m.id !== tempUserMessageId)
         return false
       }
 
-      // 重新加载消息列表
+      // 重新加载消息列表以获取真实的消息 ID
       await loadMessages(currentDialog.value.id)
       return true
     } catch (error: any) {
@@ -263,6 +324,8 @@ export const useDialogStore = defineStore('dialog', () => {
       console.error('[sendMessage] 异常堆栈:', error.stack)
       streamState.value.error = error.message || '发送失败'
       streamState.value.isStreaming = false
+      // 移除临时用户消息
+      messages.value = messages.value.filter(m => m.id !== tempUserMessageId)
       return false
     }
   }
@@ -275,6 +338,45 @@ export const useDialogStore = defineStore('dialog', () => {
       case 'start':
         streamState.value.messageId = data.messageId || null
         streamState.value.content = ''
+        // 如果有 messageId，确保 AI 消息存在于列表中
+        if (data.messageId) {
+          const msgIndex = messages.value.findIndex(m => m.id === data.messageId)
+          if (msgIndex === -1) {
+            // 消息不存在，创建占位消息
+            messages.value.push({
+              id: data.messageId,
+              dialogId: currentDialog.value?.id || '',
+              role: 'assistant',
+              content: '',
+              createdAt: new Date()
+            })
+          }
+        }
+        break
+      case 'thinking':
+        // 思维链事件 - 存储到消息的 metadata 中
+        console.log('[handleStreamEvent] 收到思维链事件, messageId:', data.messageId)
+        console.log('[handleStreamEvent] 思维链内容长度:', data.thinkingContent?.length || 0)
+        console.log('[handleStreamEvent] 思维链内容预览:', data.thinkingContent?.substring(0, 100))
+        if (data.messageId) {
+          const msgIndex = messages.value.findIndex(m => m.id === data.messageId)
+          console.log('[handleStreamEvent] 消息索引:', msgIndex)
+          if (msgIndex !== -1) {
+            // 更新现有消息的思维链内容
+            const existingThinking = messages.value[msgIndex].metadata?.thinkingChain || ''
+            console.log('[handleStreamEvent] 已有思维链长度:', existingThinking.length)
+            messages.value[msgIndex] = {
+              ...messages.value[msgIndex],
+              metadata: {
+                ...messages.value[msgIndex].metadata,
+                thinkingChain: existingThinking + (data.thinkingContent || '')
+              }
+            }
+            console.log('[handleStreamEvent] 更新后思维链长度:', messages.value[msgIndex].metadata?.thinkingChain?.length)
+          } else {
+            console.warn('[handleStreamEvent] 未找到消息, messageId:', data.messageId)
+          }
+        }
         break
       case 'delta':
         streamState.value.content += data.content || ''
@@ -283,20 +385,16 @@ export const useDialogStore = defineStore('dialog', () => {
           const msgIndex = messages.value.findIndex(m => m.id === data.messageId)
           if (msgIndex !== -1) {
             messages.value[msgIndex].content = streamState.value.content
-          } else {
-            // 添加新的 AI 消息
-            messages.value.push({
-              id: data.messageId,
-              dialogId: currentDialog.value?.id || '',
-              role: 'assistant',
-              content: streamState.value.content,
-              createdAt: new Date()
-            })
           }
+          // 注意：不再在这里创建新消息，因为在 'start' 事件中已经创建了
         }
         break
       case 'done':
         streamState.value.isStreaming = false
+        // 流式完成后重新加载消息以获取完整的 metadata
+        if (currentDialog.value) {
+          loadMessages(currentDialog.value.id)
+        }
         break
       case 'error':
         streamState.value.error = data.error || '未知错误'
@@ -362,6 +460,13 @@ export const useDialogStore = defineStore('dialog', () => {
   }
 
   /**
+   * 更新对话标题
+   */
+  async function updateDialogTitle(dialogId: string, title: string): Promise<boolean> {
+    return updateDialog(dialogId, { title })
+  }
+
+  /**
    * 清理资源
    */
   function cleanup(): void {
@@ -384,6 +489,7 @@ export const useDialogStore = defineStore('dialog', () => {
     loadDialogsByRole,
     createDialog,
     updateDialog,
+    updateDialogTitle,
     deleteDialog,
     selectDialog,
     clearCurrentDialog,

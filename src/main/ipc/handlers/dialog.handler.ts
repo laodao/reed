@@ -131,13 +131,22 @@ async function handleUpdateDialog(
   event: IpcMainInvokeEvent,
   payload: { id: string; data: UpdateDialogRequest }
 ): Promise<{ success: boolean }> {
+  console.log('[handleUpdateDialog] 收到更新请求:', JSON.stringify(payload, null, 2))
   try {
     const dbManager = getDatabaseManager()
     if (!dbManager.dialogs) {
+      console.error('[handleUpdateDialog] 数据库未初始化')
       return { success: false }
     }
 
+    console.log('[handleUpdateDialog] 开始更新对话, id:', payload.id, ', data:', payload.data)
     await dbManager.dialogs.update(payload.id, payload.data)
+    console.log('[handleUpdateDialog] 更新成功')
+
+    // 验证更新结果
+    const updatedDialog = await dbManager.dialogs.getById(payload.id)
+    console.log('[handleUpdateDialog] 更新后的对话:', JSON.stringify(updatedDialog, null, 2))
+
     return { success: true }
   } catch (error) {
     console.error('更新对话失败:', error)

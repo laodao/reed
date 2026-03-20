@@ -4,21 +4,18 @@
  * @description 提供消息的数据库操作
  */
 
-import { Database as SqlJsDatabase } from 'sql.js'
+import Database from 'better-sqlite3'
 import type { Message, MessageRole, Attachment, MessageMetadata } from '../../../shared/types'
-import type { DatabaseManager } from '../index'
 import { randomUUID } from 'crypto'
 
 /**
  * 消息数据仓库
  */
 export class MessageRepository {
-  private db: SqlJsDatabase
-  private dbManager: DatabaseManager
+  private db: Database.Database
 
-  constructor(db: SqlJsDatabase, dbManager: DatabaseManager) {
+  constructor(db: Database.Database) {
     this.db = db
-    this.dbManager = dbManager
   }
 
   /**
@@ -51,30 +48,24 @@ export class MessageRepository {
    * @returns Promise<Message[]>
    */
   async getByDialogId(dialogId: string): Promise<Message[]> {
-    const result = this.db.exec(
+    const rows = this.db.prepare(
       `SELECT id, dialog_id, role, content, model_id, tokens_used, attachments, metadata, created_at
        FROM messages
        WHERE dialog_id = ?
-       ORDER BY created_at ASC`,
-      [dialogId]
-    )
-    const messages: Message[] = []
-    if (result.length > 0) {
-      result[0].values.forEach((row) => {
-        messages.push({
-          id: row[0] as string,
-          dialogId: row[1] as string,
-          role: row[2] as MessageRole,
-          content: row[3] as string,
-          modelId: (row[4] as string) || undefined,
-          tokensUsed: (row[5] as number) || undefined,
-          attachments: this.parseAttachments(row[6] as string | null),
-          metadata: this.parseMetadata(row[7] as string | null),
-          createdAt: new Date(row[8] as string)
-        })
-      })
-    }
-    return messages
+       ORDER BY created_at ASC`
+    ).all(dialogId) as any[]
+
+    return rows.map(row => ({
+      id: row.id,
+      dialogId: row.dialog_id,
+      role: row.role as MessageRole,
+      content: row.content,
+      modelId: row.model_id || undefined,
+      tokensUsed: row.tokens_used || undefined,
+      attachments: this.parseAttachments(row.attachments),
+      metadata: this.parseMetadata(row.metadata),
+      createdAt: new Date(row.created_at)
+    }))
   }
 
   /**
@@ -88,14 +79,20 @@ export class MessageRepository {
     const attachmentsStr = message.attachments ? JSON.stringify(message.attachments) : null
     const metadataStr = message.metadata ? JSON.stringify(message.metadata) : null
 
-    this.db.run(
+    this.db.prepare(
       `INSERT INTO messages (id, dialog_id, role, content, model_id, tokens_used, attachments, metadata, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, message.dialogId, message.role, message.content,
-       message.modelId || null, message.tokensUsed || null,
-       attachmentsStr, metadataStr, now]
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      id, message.dialogId, message.role, message.content,
+      message.modelId || null, message.tokensUsed || null,
+      attachmentsStr, metadataStr, now
     )
-    this.dbManager.save()
+
+    // 更新对话的 updated_at 和 message_count
+    this.db.prepare(
+      `UPDATE dialogs SET updated_at = ?, message_count = message_count + 1 WHERE id = ?`
+    ).run(now, message.dialogId)
+
     return {
       id,
       dialogId: message.dialogId,
@@ -116,31 +113,25 @@ export class MessageRepository {
    * @returns Promise<Message[]>
    */
   async getRecent(dialogId: string, limit: number): Promise<Message[]> {
-    const result = this.db.exec(
+    const rows = this.db.prepare(
       `SELECT id, dialog_id, role, content, model_id, tokens_used, attachments, metadata, created_at
        FROM messages
        WHERE dialog_id = ?
        ORDER BY created_at DESC
-       LIMIT ?`,
-      [dialogId, limit]
-    )
-    const messages: Message[] = []
-    if (result.length > 0) {
-      result[0].values.forEach((row) => {
-        messages.push({
-          id: row[0] as string,
-          dialogId: row[1] as string,
-          role: row[2] as MessageRole,
-          content: row[3] as string,
-          modelId: (row[4] as string) || undefined,
-          tokensUsed: (row[5] as number) || undefined,
-          attachments: this.parseAttachments(row[6] as string | null),
-          metadata: this.parseMetadata(row[7] as string | null),
-          createdAt: new Date(row[8] as string)
-        })
-      })
-    }
-    return messages.reverse()
+       LIMIT ?`
+    ).all(dialogId, limit) as any[]
+
+    return rows.reverse().map(row => ({
+      id: row.id,
+      dialogId: row.dialog_id,
+      role: row.role as MessageRole,
+      content: row.content,
+      modelId: row.model_id || undefined,
+      tokensUsed: row.tokens_used || undefined,
+      attachments: this.parseAttachments(row.attachments),
+      metadata: this.parseMetadata(row.metadata),
+      createdAt: new Date(row.created_at)
+    }))
   }
 
   /**
@@ -149,11 +140,8 @@ export class MessageRepository {
    * @returns Promise<number>
    */
   async count(dialogId: string): Promise<number> {
-    const result = this.db.exec('SELECT COUNT(*) as count FROM messages WHERE dialog_id = ?', [dialogId])
-    if (result.length > 0 && result[0].values.length > 0) {
-      return result[0].values[0][0] as number
-    }
-    return 0
+    const row = this.db.prepare('SELECT COUNT(*) as count FROM messages WHERE dialog_id = ?').get(dialogId) as { count: number }
+    return row?.count || 0
   }
 
   /**
@@ -162,8 +150,9 @@ export class MessageRepository {
    * @returns Promise<void>
    */
   async deleteByDialogId(dialogId: string): Promise<void> {
-    this.db.run('DELETE FROM messages WHERE dialog_id = ?', [dialogId])
-    this.dbManager.save()
+    this.db.prepare('DELETE FROM messages WHERE dialog_id = ?').run(dialogId)
+    // 重置对话的 message_count
+    this.db.prepare('UPDATE dialogs SET message_count = 0 WHERE id = ?').run(dialogId)
   }
 
   /**
@@ -173,8 +162,7 @@ export class MessageRepository {
    * @returns Promise<void>
    */
   async updateContent(id: string, content: string): Promise<void> {
-    this.db.run('UPDATE messages SET content = ? WHERE id = ?', [content, id])
-    this.dbManager.save()
+    this.db.prepare('UPDATE messages SET content = ? WHERE id = ?').run(content, id)
   }
 
   /**
@@ -184,8 +172,7 @@ export class MessageRepository {
    * @returns Promise<void>
    */
   async updateMetadata(id: string, metadata: MessageMetadata): Promise<void> {
-    this.db.run('UPDATE messages SET metadata = ? WHERE id = ?', [JSON.stringify(metadata), id])
-    this.dbManager.save()
+    this.db.prepare('UPDATE messages SET metadata = ? WHERE id = ?').run(JSON.stringify(metadata), id)
   }
 
   /**
@@ -194,26 +181,24 @@ export class MessageRepository {
    * @returns Promise<Message | null>
    */
   async getById(id: string): Promise<Message | null> {
-    const result = this.db.exec(
+    const row = this.db.prepare(
       `SELECT id, dialog_id, role, content, model_id, tokens_used, attachments, metadata, created_at
        FROM messages
-       WHERE id = ?`,
-      [id]
-    )
-    if (result.length > 0 && result[0].values.length > 0) {
-      const row = result[0].values[0]
-      return {
-        id: row[0] as string,
-        dialogId: row[1] as string,
-        role: row[2] as MessageRole,
-        content: row[3] as string,
-        modelId: (row[4] as string) || undefined,
-        tokensUsed: (row[5] as number) || undefined,
-        attachments: this.parseAttachments(row[6] as string | null),
-        metadata: this.parseMetadata(row[7] as string | null),
-        createdAt: new Date(row[8] as string)
-      }
+       WHERE id = ?`
+    ).get(id) as any
+
+    if (!row) return null
+
+    return {
+      id: row.id,
+      dialogId: row.dialog_id,
+      role: row.role as MessageRole,
+      content: row.content,
+      modelId: row.model_id || undefined,
+      tokensUsed: row.tokens_used || undefined,
+      attachments: this.parseAttachments(row.attachments),
+      metadata: this.parseMetadata(row.metadata),
+      createdAt: new Date(row.created_at)
     }
-    return null
   }
 }

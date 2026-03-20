@@ -4,22 +4,19 @@
  * @description 提供角色的数据库操作
  */
 
-import { Database as SqlJsDatabase } from 'sql.js'
+import Database from 'better-sqlite3'
 import type { Role, CreateRoleRequest, UpdateRoleRequest, BuiltinRoleDefinition } from '../../../shared/types'
 import { BUILTIN_ROLES } from '../../../shared/types'
-import type { DatabaseManager } from '../index'
 import { randomUUID } from 'crypto'
 
 /**
-   * 角色数据仓库
+ * 角色数据仓库
  */
 export class RoleRepository {
-  private db: SqlJsDatabase
-  private dbManager: DatabaseManager
+  private db: Database.Database
 
-  constructor(db: SqlJsDatabase, dbManager: DatabaseManager) {
+  constructor(db: Database.Database) {
     this.db = db
-    this.dbManager = dbManager
   }
 
   /**
@@ -27,31 +24,31 @@ export class RoleRepository {
    * @param row - 数据库行
    * @returns Role
    */
-  private mapRowToRole(row: any[]): Role {
+  private mapRowToRole(row: any): Role {
     return {
-      id: row[0] as string,
-      name: row[1] as string,
-      description: (row[2] as string) || undefined,
-      systemPrompt: (row[3] as string) || undefined,
-      avatar: (row[4] as string) || undefined,
-      isBuiltin: !!row[5],
+      id: row.id,
+      name: row.name,
+      description: row.description || undefined,
+      systemPrompt: row.system_prompt || undefined,
+      avatar: row.avatar || undefined,
+      isBuiltin: !!row.is_builtin,
       // 模型配置
-      defaultModelId: (row[6] as string) || undefined,
-      defaultProviderConfigId: (row[7] as string) || undefined,
-      autoResetModel: row[8] !== null ? !!row[8] : true,
+      defaultModelId: row.default_model_id || undefined,
+      defaultProviderConfigId: row.default_provider_config_id || undefined,
+      autoResetModel: row.auto_reset_model !== null ? !!row.auto_reset_model : true,
       // 生成参数
-      temperature: row[9] !== null ? (row[9] as number) : undefined,
-      topP: row[10] !== null ? (row[10] as number) : undefined,
-      maxContextMessages: row[11] !== null ? (row[11] as number) : undefined,
-      maxTokens: row[12] !== null ? (row[12] as number) : undefined,
-      enableStream: row[13] !== null ? !!row[13] : true,
-      customParams: row[14] ? JSON.parse(row[14] as string) : undefined,
+      temperature: row.temperature !== null ? row.temperature : undefined,
+      topP: row.top_p !== null ? row.top_p : undefined,
+      maxContextMessages: row.max_context_messages !== null ? row.max_context_messages : undefined,
+      maxTokens: row.max_tokens !== null ? row.max_tokens : undefined,
+      enableStream: row.enable_stream !== null ? !!row.enable_stream : true,
+      customParams: row.custom_params ? JSON.parse(row.custom_params) : undefined,
       // 知识库配置
-      knowledgeBaseIds: row[17] ? JSON.parse(row[17] as string) : undefined,
-      knowledgeRetrieveCount: row[18] !== null ? (row[18] as number) : undefined,
-      knowledgeThreshold: row[19] !== null ? (row[19] as number) : undefined,
-      createdAt: new Date(row[15] as string),
-      updatedAt: new Date(row[16] as string)
+      knowledgeBaseIds: row.knowledge_base_ids ? JSON.parse(row.knowledge_base_ids) : undefined,
+      knowledgeRetrieveCount: row.knowledge_retrieve_count !== null ? row.knowledge_retrieve_count : undefined,
+      knowledgeThreshold: row.knowledge_threshold !== null ? row.knowledge_threshold : undefined,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at)
     }
   }
 
@@ -60,7 +57,7 @@ export class RoleRepository {
    * @returns Promise<Role[]>
    */
   async getAll(): Promise<Role[]> {
-    const result = this.db.exec(
+    const rows = this.db.prepare(
       `SELECT id, name, description, system_prompt, avatar, is_builtin,
               default_model_id, default_provider_config_id, auto_reset_model,
               temperature, top_p, max_context_messages, max_tokens, enable_stream, custom_params,
@@ -68,14 +65,9 @@ export class RoleRepository {
               created_at, updated_at
        FROM roles
        ORDER BY is_builtin DESC, created_at ASC`
-    )
-    const roles: Role[] = []
-    if (result.length > 0) {
-      result[0].values.forEach((row) => {
-        roles.push(this.mapRowToRole(row))
-      })
-    }
-    return roles
+    ).all() as any[]
+
+    return rows.map(row => this.mapRowToRole(row))
   }
 
   /**
@@ -84,21 +76,18 @@ export class RoleRepository {
    * @returns Promise<Role | null>
    */
   async getById(id: string): Promise<Role | null> {
-    const result = this.db.exec(
+    const row = this.db.prepare(
       `SELECT id, name, description, system_prompt, avatar, is_builtin,
               default_model_id, default_provider_config_id, auto_reset_model,
               temperature, top_p, max_context_messages, max_tokens, enable_stream, custom_params,
               knowledge_base_ids, knowledge_retrieve_count, knowledge_threshold,
               created_at, updated_at
        FROM roles
-       WHERE id = ?`,
-      [id]
-    )
-    if (result.length > 0 && result[0].values.length > 0) {
-      const row = result[0].values[0]
-      return this.mapRowToRole(row)
-    }
-    return null
+       WHERE id = ?`
+    ).get(id) as any
+
+    if (!row) return null
+    return this.mapRowToRole(row)
   }
 
   /**
@@ -112,37 +101,36 @@ export class RoleRepository {
     const customParamsJson = request.customParams ? JSON.stringify(request.customParams) : null
     const knowledgeBaseIdsJson = request.knowledgeBaseIds ? JSON.stringify(request.knowledgeBaseIds) : null
 
-    this.db.run(
+    this.db.prepare(
       `INSERT INTO roles (id, name, description, system_prompt, avatar, is_builtin,
                           default_model_id, default_provider_config_id, auto_reset_model,
                           temperature, top_p, max_context_messages, max_tokens, enable_stream, custom_params,
                           knowledge_base_ids, knowledge_retrieve_count, knowledge_threshold,
                           created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id,
-        request.name,
-        request.description || null,
-        request.systemPrompt || null,
-        request.avatar || null,
-        0, // is_builtin = false for user-created roles
-        request.defaultModelId || null,
-        request.defaultProviderConfigId || null,
-        request.autoResetModel !== undefined ? (request.autoResetModel ? 1 : 0) : 1,
-        request.temperature ?? 0.7,
-        request.topP ?? 1.0,
-        request.maxContextMessages ?? 20,
-        request.maxTokens ?? 4096,
-        request.enableStream !== undefined ? (request.enableStream ? 1 : 0) : 1,
-        customParamsJson,
-        knowledgeBaseIdsJson,
-        request.knowledgeRetrieveCount ?? 5,
-        request.knowledgeThreshold ?? 0.5,
-        now,
-        now
-      ]
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      id,
+      request.name,
+      request.description || null,
+      request.systemPrompt || null,
+      request.avatar || null,
+      0, // is_builtin = false for user-created roles
+      request.defaultModelId || null,
+      request.defaultProviderConfigId || null,
+      request.autoResetModel !== undefined ? (request.autoResetModel ? 1 : 0) : 1,
+      request.temperature ?? 0.7,
+      request.topP ?? 1.0,
+      request.maxContextMessages ?? 20,
+      request.maxTokens ?? 4096,
+      request.enableStream !== undefined ? (request.enableStream ? 1 : 0) : 1,
+      customParamsJson,
+      knowledgeBaseIdsJson,
+      request.knowledgeRetrieveCount ?? 5,
+      request.knowledgeThreshold ?? 0.5,
+      now,
+      now
     )
-    this.dbManager.save()
+
     return {
       id,
       name: request.name,
@@ -174,15 +162,14 @@ export class RoleRepository {
    */
   async createBuiltin(definition: BuiltinRoleDefinition): Promise<Role> {
     const now = new Date().toISOString()
-    this.db.run(
+    this.db.prepare(
       `INSERT INTO roles (id, name, description, system_prompt, avatar, is_builtin,
                           default_model_id, default_provider_config_id, auto_reset_model,
                           temperature, top_p, max_context_messages, max_tokens, enable_stream, custom_params,
                           created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 1, NULL, NULL, 1, 0.7, 1.0, 20, 4096, 1, NULL, ?, ?)`,
-      [definition.id, definition.name, definition.description, definition.systemPrompt, definition.avatar, now, now]
-    )
-    this.dbManager.save()
+       VALUES (?, ?, ?, ?, ?, 1, NULL, NULL, 1, 0.7, 1.0, 20, 4096, 1, NULL, ?, ?)`
+    ).run(definition.id, definition.name, definition.description, definition.systemPrompt, definition.avatar, now, now)
+
     return {
       id: definition.id,
       name: definition.name,
@@ -297,8 +284,7 @@ export class RoleRepository {
     if (fields.length > 0) {
       fields.push('updated_at = datetime("now")')
       values.push(id)
-      this.db.run(`UPDATE roles SET ${fields.join(', ')} WHERE id = ?`, values)
-      this.dbManager.save()
+      this.db.prepare(`UPDATE roles SET ${fields.join(', ')} WHERE id = ?`).run(...values)
     }
   }
 
@@ -318,35 +304,28 @@ export class RoleRepository {
     }
 
     // 统计关联的对话数量
-    const countResult = this.db.exec(
-      'SELECT COUNT(*) as count FROM dialogs WHERE role_id = ?',
-      [id]
-    )
-    const dialogCount = countResult.length > 0 && countResult[0].values.length > 0
-      ? (countResult[0].values[0][0] as number)
-      : 0
+    const countRow = this.db.prepare(
+      'SELECT COUNT(*) as count FROM dialogs WHERE role_id = ?'
+    ).get(id) as { count: number }
+    const dialogCount = countRow?.count || 0
 
     // 删除关联的对话及其消息
     if (dialogCount > 0) {
       // 获取所有关联对话的 ID
-      const dialogsResult = this.db.exec(
-        'SELECT id FROM dialogs WHERE role_id = ?',
-        [id]
-      )
-      if (dialogsResult.length > 0) {
-        for (const row of dialogsResult[0].values) {
-          const dialogId = row[0] as string
-          // 删除对话的消息
-          this.db.run('DELETE FROM messages WHERE dialog_id = ?', [dialogId])
-        }
+      const dialogRows = this.db.prepare(
+        'SELECT id FROM dialogs WHERE role_id = ?'
+      ).all(id) as { id: string }[]
+
+      for (const dialog of dialogRows) {
+        // 删除对话的消息
+        this.db.prepare('DELETE FROM messages WHERE dialog_id = ?').run(dialog.id)
       }
       // 删除关联的对话
-      this.db.run('DELETE FROM dialogs WHERE role_id = ?', [id])
+      this.db.prepare('DELETE FROM dialogs WHERE role_id = ?').run(id)
     }
 
     // 删除角色
-    this.db.run('DELETE FROM roles WHERE id = ?', [id])
-    this.dbManager.save()
+    this.db.prepare('DELETE FROM roles WHERE id = ?').run(id)
 
     return { deleted: true, dialogCount }
   }
@@ -357,14 +336,10 @@ export class RoleRepository {
    * @returns Promise<number>
    */
   async getDialogCount(id: string): Promise<number> {
-    const result = this.db.exec(
-      'SELECT COUNT(*) as count FROM dialogs WHERE role_id = ?',
-      [id]
-    )
-    if (result.length > 0 && result[0].values.length > 0) {
-      return result[0].values[0][0] as number
-    }
-    return 0
+    const row = this.db.prepare(
+      'SELECT COUNT(*) as count FROM dialogs WHERE role_id = ?'
+    ).get(id) as { count: number }
+    return row?.count || 0
   }
 
   /**

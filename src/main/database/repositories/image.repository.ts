@@ -4,21 +4,18 @@
  * @description 提供图像的数据库操作
  */
 
-import { Database as SqlJsDatabase } from 'sql.js'
+import Database from 'better-sqlite3'
 import type { ImageRecord } from '../../../shared/types'
-import type { DatabaseManager } from '../index'
 import { randomUUID } from 'crypto'
 
 /**
  * 图像数据仓库
  */
 export class ImageRepository {
-  private db: SqlJsDatabase
-  private dbManager: DatabaseManager
+  private db: Database.Database
 
-  constructor(db: SqlJsDatabase, dbManager: DatabaseManager) {
+  constructor(db: Database.Database) {
     this.db = db
-    this.dbManager = dbManager
   }
 
   /**
@@ -26,31 +23,31 @@ export class ImageRepository {
    * @param row - 数据库行
    * @returns ImageRecord
    */
-  private rowToImageRecord(row: any[]): ImageRecord {
+  private rowToImageRecord(row: any): ImageRecord {
     return {
-      id: row[0] as string,
-      dialogId: (row[1] as string) || undefined,
-      messageId: (row[2] as string) || undefined,
-      filePath: row[3] as string,
-      fileName: (row[4] as string) || undefined,
-      fileSize: (row[5] as number) || undefined,
-      mimeType: (row[6] as string) || undefined,
-      width: (row[7] as number) || undefined,
-      height: (row[8] as number) || undefined,
-      favorite: !!row[9],
-      createdAt: new Date(row[10] as string),
+      id: row.id,
+      dialogId: row.dialog_id || undefined,
+      messageId: row.message_id || undefined,
+      filePath: row.file_path,
+      fileName: row.file_name || undefined,
+      fileSize: row.file_size || undefined,
+      mimeType: row.mime_type || undefined,
+      width: row.width || undefined,
+      height: row.height || undefined,
+      favorite: !!row.favorite,
+      createdAt: new Date(row.created_at),
       // 图像生成相关字段
-      prompt: (row[11] as string) || undefined,
-      negativePrompt: (row[12] as string) || undefined,
-      style: (row[13] as string) || undefined,
-      quality: (row[14] as string) || undefined,
-      providerId: (row[15] as string) || undefined,
-      modelId: (row[16] as string) || undefined,
-      generationParams: row[17] ? JSON.parse(row[17] as string) : undefined,
-      seed: (row[18] as number) || undefined,
-      taskId: (row[19] as string) || undefined,
-      status: (row[20] as string) || 'completed',
-      errorMessage: (row[21] as string) || undefined
+      prompt: row.prompt || undefined,
+      negativePrompt: row.negative_prompt || undefined,
+      style: row.style || undefined,
+      quality: row.quality || undefined,
+      providerId: row.provider_id || undefined,
+      modelId: row.model_id || undefined,
+      generationParams: row.generation_params ? JSON.parse(row.generation_params) : undefined,
+      seed: row.seed || undefined,
+      taskId: row.task_id || undefined,
+      status: row.status || 'completed',
+      errorMessage: row.error_message || undefined
     }
   }
 
@@ -83,29 +80,22 @@ export class ImageRepository {
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
 
     // 获取总数
-    const countResult = this.db.exec(
-      `SELECT COUNT(*) as count FROM images ${whereClause}`,
-      params
-    )
-    const total = countResult.length > 0 ? (countResult[0].values[0][0] as number) : 0
+    const countRow = this.db.prepare(
+      `SELECT COUNT(*) as count FROM images ${whereClause}`
+    ).get(...params) as { count: number }
+    const total = countRow?.count || 0
 
     // 获取列表
-    const result = this.db.exec(
+    const rows = this.db.prepare(
       `SELECT id, dialog_id, message_id, file_path, file_name, file_size, mime_type, width, height, favorite, created_at,
               prompt, negative_prompt, style, quality, provider_id, model_id, generation_params, seed, task_id, status, error_message
        FROM images
        ${whereClause}
        ORDER BY created_at DESC
-       LIMIT ? OFFSET ?`,
-      [...params, pageSize, offset]
-    )
+       LIMIT ? OFFSET ?`
+    ).all(...params, pageSize, offset) as any[]
 
-    const images: ImageRecord[] = []
-    if (result.length > 0) {
-      result[0].values.forEach((row) => {
-        images.push(this.rowToImageRecord(row))
-      })
-    }
+    const images = rows.map(row => this.rowToImageRecord(row))
 
     return {
       images,
@@ -120,17 +110,15 @@ export class ImageRepository {
    * @returns Promise<ImageRecord | null>
    */
   async getById(id: string): Promise<ImageRecord | null> {
-    const result = this.db.exec(
+    const row = this.db.prepare(
       `SELECT id, dialog_id, message_id, file_path, file_name, file_size, mime_type, width, height, favorite, created_at,
               prompt, negative_prompt, style, quality, provider_id, model_id, generation_params, seed, task_id, status, error_message
        FROM images
-       WHERE id = ?`,
-      [id]
-    )
-    if (result.length > 0 && result[0].values.length > 0) {
-      return this.rowToImageRecord(result[0].values[0])
-    }
-    return null
+       WHERE id = ?`
+    ).get(id) as any
+
+    if (!row) return null
+    return this.rowToImageRecord(row)
   }
 
   /**
@@ -139,22 +127,15 @@ export class ImageRepository {
    * @returns Promise<ImageRecord[]>
    */
   async getByTaskId(taskId: string): Promise<ImageRecord[]> {
-    const result = this.db.exec(
+    const rows = this.db.prepare(
       `SELECT id, dialog_id, message_id, file_path, file_name, file_size, mime_type, width, height, favorite, created_at,
               prompt, negative_prompt, style, quality, provider_id, model_id, generation_params, seed, task_id, status, error_message
        FROM images
        WHERE task_id = ?
-       ORDER BY created_at DESC`,
-      [taskId]
-    )
+       ORDER BY created_at DESC`
+    ).all(taskId) as any[]
 
-    const images: ImageRecord[] = []
-    if (result.length > 0) {
-      result[0].values.forEach((row) => {
-        images.push(this.rowToImageRecord(row))
-      })
-    }
-    return images
+    return rows.map(row => this.rowToImageRecord(row))
   }
 
   /**
@@ -167,36 +148,34 @@ export class ImageRepository {
     const now = new Date().toISOString()
     const status = image.status || 'completed'
 
-    this.db.run(
+    this.db.prepare(
       `INSERT INTO images (id, dialog_id, message_id, file_path, file_name, file_size, mime_type, width, height, favorite, created_at,
                           prompt, negative_prompt, style, quality, provider_id, model_id, generation_params, seed, task_id, status, error_message)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id,
-        image.dialogId || null,
-        image.messageId || null,
-        image.filePath,
-        image.fileName || null,
-        image.fileSize || null,
-        image.mimeType || null,
-        image.width || null,
-        image.height || null,
-        now,
-        // 图像生成相关字段
-        image.prompt || null,
-        image.negativePrompt || null,
-        image.style || null,
-        image.quality || null,
-        image.providerId || null,
-        image.modelId || null,
-        image.generationParams ? JSON.stringify(image.generationParams) : null,
-        image.seed || null,
-        image.taskId || null,
-        status,
-        image.errorMessage || null
-      ]
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      id,
+      image.dialogId || null,
+      image.messageId || null,
+      image.filePath,
+      image.fileName || null,
+      image.fileSize || null,
+      image.mimeType || null,
+      image.width || null,
+      image.height || null,
+      now,
+      // 图像生成相关字段
+      image.prompt || null,
+      image.negativePrompt || null,
+      image.style || null,
+      image.quality || null,
+      image.providerId || null,
+      image.modelId || null,
+      image.generationParams ? JSON.stringify(image.generationParams) : null,
+      image.seed || null,
+      image.taskId || null,
+      status,
+      image.errorMessage || null
     )
-    this.dbManager.save()
 
     return {
       id,
@@ -313,8 +292,7 @@ export class ImageRepository {
 
     if (fields.length > 0) {
       values.push(id)
-      this.db.run(`UPDATE images SET ${fields.join(', ')} WHERE id = ?`, values)
-      this.dbManager.save()
+      this.db.prepare(`UPDATE images SET ${fields.join(', ')} WHERE id = ?`).run(...values)
     }
   }
 
@@ -335,8 +313,7 @@ export class ImageRepository {
     }
 
     values.push(id)
-    this.db.run(`UPDATE images SET ${fields.join(', ')} WHERE id = ?`, values)
-    this.dbManager.save()
+    this.db.prepare(`UPDATE images SET ${fields.join(', ')} WHERE id = ?`).run(...values)
   }
 
   /**
@@ -356,12 +333,8 @@ export class ImageRepository {
     }
 
     values.push(taskId)
-    this.db.run(`UPDATE images SET ${fields.join(', ')} WHERE task_id = ?`, values)
-    this.dbManager.save()
-
-    // 返回更新的记录数
-    const result = this.db.exec('SELECT changes() as count')
-    return result.length > 0 ? (result[0].values[0][0] as number) : 0
+    const result = this.db.prepare(`UPDATE images SET ${fields.join(', ')} WHERE task_id = ?`).run(...values)
+    return result.changes
   }
 
   /**
@@ -370,8 +343,7 @@ export class ImageRepository {
    * @returns Promise<void>
    */
   async delete(id: string): Promise<void> {
-    this.db.run('DELETE FROM images WHERE id = ?', [id])
-    this.dbManager.save()
+    this.db.prepare('DELETE FROM images WHERE id = ?').run(id)
   }
 
   /**
@@ -383,11 +355,8 @@ export class ImageRepository {
     if (ids.length === 0) return 0
 
     const placeholders = ids.map(() => '?').join(', ')
-    this.db.run(`DELETE FROM images WHERE id IN (${placeholders})`, ids)
-    this.dbManager.save()
-
-    const result = this.db.exec('SELECT changes() as count')
-    return result.length > 0 ? (result[0].values[0][0] as number) : 0
+    const result = this.db.prepare(`DELETE FROM images WHERE id IN (${placeholders})`).run(...ids)
+    return result.changes
   }
 
   /**
@@ -424,8 +393,8 @@ export class ImageRepository {
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
-    const result = this.db.exec(`SELECT COUNT(*) as count FROM images ${whereClause}`, params)
-    return result.length > 0 ? (result[0].values[0][0] as number) : 0
+    const row = this.db.prepare(`SELECT COUNT(*) as count FROM images ${whereClause}`).get(...params) as { count: number }
+    return row?.count || 0
   }
 
   /**
@@ -443,29 +412,22 @@ export class ImageRepository {
     const offset = (page - 1) * pageSize
 
     // 获取总数
-    const countResult = this.db.exec(
-      'SELECT COUNT(*) as count FROM images WHERE provider_id = ?',
-      [providerId]
-    )
-    const total = countResult.length > 0 ? (countResult[0].values[0][0] as number) : 0
+    const countRow = this.db.prepare(
+      'SELECT COUNT(*) as count FROM images WHERE provider_id = ?'
+    ).get(providerId) as { count: number }
+    const total = countRow?.count || 0
 
     // 获取列表
-    const result = this.db.exec(
+    const rows = this.db.prepare(
       `SELECT id, dialog_id, message_id, file_path, file_name, file_size, mime_type, width, height, favorite, created_at,
               prompt, negative_prompt, style, quality, provider_id, model_id, generation_params, seed, task_id, status, error_message
        FROM images
        WHERE provider_id = ?
        ORDER BY created_at DESC
-       LIMIT ? OFFSET ?`,
-      [providerId, pageSize, offset]
-    )
+       LIMIT ? OFFSET ?`
+    ).all(providerId, pageSize, offset) as any[]
 
-    const images: ImageRecord[] = []
-    if (result.length > 0) {
-      result[0].values.forEach((row) => {
-        images.push(this.rowToImageRecord(row))
-      })
-    }
+    const images = rows.map(row => this.rowToImageRecord(row))
 
     return {
       images,
@@ -489,29 +451,22 @@ export class ImageRepository {
     const offset = (page - 1) * pageSize
 
     // 获取总数
-    const countResult = this.db.exec(
-      'SELECT COUNT(*) as count FROM images WHERE model_id = ?',
-      [modelId]
-    )
-    const total = countResult.length > 0 ? (countResult[0].values[0][0] as number) : 0
+    const countRow = this.db.prepare(
+      'SELECT COUNT(*) as count FROM images WHERE model_id = ?'
+    ).get(modelId) as { count: number }
+    const total = countRow?.count || 0
 
     // 获取列表
-    const result = this.db.exec(
+    const rows = this.db.prepare(
       `SELECT id, dialog_id, message_id, file_path, file_name, file_size, mime_type, width, height, favorite, created_at,
               prompt, negative_prompt, style, quality, provider_id, model_id, generation_params, seed, task_id, status, error_message
        FROM images
        WHERE model_id = ?
        ORDER BY created_at DESC
-       LIMIT ? OFFSET ?`,
-      [modelId, pageSize, offset]
-    )
+       LIMIT ? OFFSET ?`
+    ).all(modelId, pageSize, offset) as any[]
 
-    const images: ImageRecord[] = []
-    if (result.length > 0) {
-      result[0].values.forEach((row) => {
-        images.push(this.rowToImageRecord(row))
-      })
-    }
+    const images = rows.map(row => this.rowToImageRecord(row))
 
     return {
       images,

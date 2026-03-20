@@ -1,10 +1,10 @@
 /**
  * 数据库管理器
  * @module database/index
- * @description 使用 sql.js 管理 SQLite 数据库
+ * @description 使用 better-sqlite3 管理 SQLite 数据库（实时持久化）
  */
 
-import initSqlJs, { Database as SqlJsDatabase, SqlJsStatic } from 'sql.js'
+import Database from 'better-sqlite3'
 import { app } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
@@ -18,11 +18,11 @@ import { ProviderConfigRepository } from './repositories/provider-config.reposit
 
 /**
  * 数据库管理器
+ * 使用 better-sqlite3 实现，每次写入都实时持久化到磁盘
  */
 export class DatabaseManager {
   private static instance: DatabaseManager
-  private db: SqlJsDatabase | null = null
-  private SQL: SqlJsStatic | null = null
+  private db: Database.Database | null = null
   private dbPath: string
 
   // 仓库实例
@@ -53,45 +53,17 @@ export class DatabaseManager {
    * 初始化数据库
    */
   async initialize(): Promise<void> {
-    // 初始化 sql.js - 在 Electron 中直接读取 WASM 文件
-    // 尝试多个可能的路径
-    const possiblePaths = [
-      // 编译后: out/main/ -> the_bot/node_modules
-      path.join(__dirname, '..', '..', 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm'),
-      // 备选: out/main/ -> out -> the_bot -> node_modules
-      path.join(__dirname, '..', '..', '..', 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm'),
-      // 开发模式: src/main -> the_bot/node_modules
-      path.join(__dirname, '..', '..', '..', '..', 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm')
-    ]
-
-    let wasmPath: string | null = null
-    for (const p of possiblePaths) {
-      console.log('Trying path:', p)
-      if (fs.existsSync(p)) {
-        wasmPath = p
-        break
-      }
+    // 确保数据目录存在
+    const dir = path.dirname(this.dbPath)
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true })
     }
 
-    if (!wasmPath) {
-      throw new Error('Could not find sql-wasm.wasm in any of the expected locations')
-    }
+    // 打开数据库连接（better-sqlite3 会自动创建文件）
+    this.db = new Database(this.dbPath)
 
-    console.log('Loading WASM from:', wasmPath)
-
-    const wasmBinary = fs.readFileSync(wasmPath)
-
-    this.SQL = await initSqlJs({
-      wasmBinary
-    })
-
-    // 尝试加载现有数据库
-    if (fs.existsSync(this.dbPath)) {
-      const buffer = fs.readFileSync(this.dbPath)
-      this.db = new this.SQL.Database(buffer)
-    } else {
-      this.db = new this.SQL.Database()
-    }
+    // 启用 WAL 模式以获得更好的并发性能
+    this.db.pragma('journal_mode = WAL')
 
     // 初始化表结构
     this.initTables()
@@ -101,6 +73,8 @@ export class DatabaseManager {
 
     // 初始化内置角色
     await this.initBuiltinRoles()
+
+    console.log('[DatabaseManager] 数据库初始化完成:', this.dbPath)
   }
 
   /**
@@ -110,7 +84,7 @@ export class DatabaseManager {
     if (!this.db) return
 
     // 设置表
-    this.db.run(`
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL,
@@ -119,7 +93,7 @@ export class DatabaseManager {
     `)
 
     // API密钥表
-    this.db.run(`
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS api_keys (
         provider TEXT PRIMARY KEY,
         encrypted_key TEXT NOT NULL,
@@ -130,7 +104,7 @@ export class DatabaseManager {
     `)
 
     // 角色表
-    this.db.run(`
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS roles (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -138,13 +112,25 @@ export class DatabaseManager {
         system_prompt TEXT,
         avatar TEXT,
         is_builtin INTEGER DEFAULT 0,
+        default_model_id TEXT,
+        default_provider_config_id TEXT,
+        auto_reset_model INTEGER DEFAULT 1,
+        temperature REAL DEFAULT 0.7,
+        top_p REAL DEFAULT 1.0,
+        max_context_messages INTEGER DEFAULT 20,
+        max_tokens INTEGER DEFAULT 4096,
+        enable_stream INTEGER DEFAULT 1,
+        custom_params TEXT,
+        knowledge_base_ids TEXT,
+        knowledge_retrieve_count INTEGER DEFAULT 5,
+        knowledge_threshold REAL DEFAULT 0.5,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `)
 
     // 对话表
-    this.db.run(`
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS dialogs (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
@@ -161,7 +147,7 @@ export class DatabaseManager {
     `)
 
     // 消息表
-    this.db.run(`
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS messages (
         id TEXT PRIMARY KEY,
         dialog_id TEXT NOT NULL,
@@ -177,7 +163,7 @@ export class DatabaseManager {
     `)
 
     // 图片表
-    this.db.run(`
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS images (
         id TEXT PRIMARY KEY,
         dialog_id TEXT,
@@ -188,6 +174,18 @@ export class DatabaseManager {
         mime_type TEXT,
         width INTEGER,
         height INTEGER,
+        prompt TEXT,
+        negative_prompt TEXT,
+        style TEXT,
+        quality TEXT,
+        provider_id TEXT,
+        model_id TEXT,
+        generation_params TEXT,
+        seed INTEGER,
+        task_id TEXT,
+        status TEXT DEFAULT 'completed',
+        error_message TEXT,
+        favorite INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (dialog_id) REFERENCES dialogs(id) ON DELETE CASCADE,
         FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
@@ -195,9 +193,10 @@ export class DatabaseManager {
     `)
 
     // 提供商配置表
-    this.db.run(`
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS provider_configs (
         id TEXT PRIMARY KEY,
+        short_id TEXT,
         template_id TEXT NOT NULL,
         name TEXT NOT NULL,
         api_key_encrypted TEXT,
@@ -208,6 +207,7 @@ export class DatabaseManager {
         custom_params TEXT,
         custom_models TEXT,
         enabled_models TEXT,
+        api_models TEXT,
         is_enabled INTEGER DEFAULT 1,
         is_default INTEGER DEFAULT 0,
         last_tested DATETIME,
@@ -218,7 +218,7 @@ export class DatabaseManager {
     `)
 
     // 附件表
-    this.db.run(`
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS attachments (
         id TEXT PRIMARY KEY,
         message_id TEXT NOT NULL,
@@ -234,8 +234,6 @@ export class DatabaseManager {
 
     // 执行数据库迁移
     this.runMigrations()
-
-    this.save()
   }
 
   /**
@@ -245,129 +243,124 @@ export class DatabaseManager {
     if (!this.db) return
 
     // 检查 dialogs 表是否需要添加新字段
-    const dialogColumns = this.db.exec("PRAGMA table_info(dialogs)")
-    if (dialogColumns.length > 0) {
-      const columnNames = dialogColumns[0].values.map(row => row[1])
+    const dialogColumns = this.db.prepare("PRAGMA table_info(dialogs)").all() as { name: string }[]
+    const dialogColumnNames = dialogColumns.map(col => col.name)
 
-      if (!columnNames.includes('provider_config_id')) {
-        this.db.run('ALTER TABLE dialogs ADD COLUMN provider_config_id TEXT')
-      }
-      if (!columnNames.includes('context_config')) {
-        this.db.run('ALTER TABLE dialogs ADD COLUMN context_config TEXT')
-      }
+    if (!dialogColumnNames.includes('provider_config_id')) {
+      this.db.exec('ALTER TABLE dialogs ADD COLUMN provider_config_id TEXT')
+    }
+    if (!dialogColumnNames.includes('context_config')) {
+      this.db.exec('ALTER TABLE dialogs ADD COLUMN context_config TEXT')
     }
 
-    // 检查 provider_configs 表是否需要添加新字段（Access Key）
-    const providerConfigColumns = this.db.exec("PRAGMA table_info(provider_configs)")
-    if (providerConfigColumns.length > 0) {
-      const columnNames = providerConfigColumns[0].values.map(row => row[1])
+    // 检查 provider_configs 表是否需要添加新字段
+    const providerConfigColumns = this.db.prepare("PRAGMA table_info(provider_configs)").all() as { name: string }[]
+    const providerConfigColumnNames = providerConfigColumns.map(col => col.name)
 
-      if (!columnNames.includes('access_key_id')) {
-        this.db.run('ALTER TABLE provider_configs ADD COLUMN access_key_id TEXT')
-      }
-      if (!columnNames.includes('access_key_secret_encrypted')) {
-        this.db.run('ALTER TABLE provider_configs ADD COLUMN access_key_secret_encrypted TEXT')
-      }
+    if (!providerConfigColumnNames.includes('access_key_id')) {
+      this.db.exec('ALTER TABLE provider_configs ADD COLUMN access_key_id TEXT')
+    }
+    if (!providerConfigColumnNames.includes('access_key_secret_encrypted')) {
+      this.db.exec('ALTER TABLE provider_configs ADD COLUMN access_key_secret_encrypted TEXT')
+    }
+    if (!providerConfigColumnNames.includes('api_models')) {
+      this.db.exec('ALTER TABLE provider_configs ADD COLUMN api_models TEXT')
+    }
+    if (!providerConfigColumnNames.includes('short_id')) {
+      this.db.exec('ALTER TABLE provider_configs ADD COLUMN short_id TEXT')
     }
 
     // 检查 messages 表是否需要添加新字段
-    const messageColumns = this.db.exec("PRAGMA table_info(messages)")
-    if (messageColumns.length > 0) {
-      const columnNames = messageColumns[0].values.map(row => row[1])
+    const messageColumns = this.db.prepare("PRAGMA table_info(messages)").all() as { name: string }[]
+    const messageColumnNames = messageColumns.map(col => col.name)
 
-      if (!columnNames.includes('attachments')) {
-        this.db.run('ALTER TABLE messages ADD COLUMN attachments TEXT')
-      }
-      if (!columnNames.includes('metadata')) {
-        this.db.run('ALTER TABLE messages ADD COLUMN metadata TEXT')
-      }
+    if (!messageColumnNames.includes('attachments')) {
+      this.db.exec('ALTER TABLE messages ADD COLUMN attachments TEXT')
+    }
+    if (!messageColumnNames.includes('metadata')) {
+      this.db.exec('ALTER TABLE messages ADD COLUMN metadata TEXT')
     }
 
-    // 检查 roles 表是否需要添加新字段（模型配置和生成参数）
-    const roleColumns = this.db.exec("PRAGMA table_info(roles)")
-    if (roleColumns.length > 0) {
-      const columnNames = roleColumns[0].values.map(row => row[1])
+    // 检查 roles 表是否需要添加新字段
+    const roleColumns = this.db.prepare("PRAGMA table_info(roles)").all() as { name: string }[]
+    const roleColumnNames = roleColumns.map(col => col.name)
 
-      if (!columnNames.includes('default_model_id')) {
-        this.db.run('ALTER TABLE roles ADD COLUMN default_model_id TEXT')
-      }
-      if (!columnNames.includes('default_provider_config_id')) {
-        this.db.run('ALTER TABLE roles ADD COLUMN default_provider_config_id TEXT')
-      }
-      if (!columnNames.includes('auto_reset_model')) {
-        this.db.run('ALTER TABLE roles ADD COLUMN auto_reset_model INTEGER DEFAULT 1')
-      }
-      if (!columnNames.includes('temperature')) {
-        this.db.run('ALTER TABLE roles ADD COLUMN temperature REAL DEFAULT 0.7')
-      }
-      if (!columnNames.includes('top_p')) {
-        this.db.run('ALTER TABLE roles ADD COLUMN top_p REAL DEFAULT 1.0')
-      }
-      if (!columnNames.includes('max_context_messages')) {
-        this.db.run('ALTER TABLE roles ADD COLUMN max_context_messages INTEGER DEFAULT 20')
-      }
-      if (!columnNames.includes('max_tokens')) {
-        this.db.run('ALTER TABLE roles ADD COLUMN max_tokens INTEGER DEFAULT 4096')
-      }
-      if (!columnNames.includes('enable_stream')) {
-        this.db.run('ALTER TABLE roles ADD COLUMN enable_stream INTEGER DEFAULT 1')
-      }
-      if (!columnNames.includes('custom_params')) {
-        this.db.run('ALTER TABLE roles ADD COLUMN custom_params TEXT')
-      }
-      // 知识库配置
-      if (!columnNames.includes('knowledge_base_ids')) {
-        this.db.run('ALTER TABLE roles ADD COLUMN knowledge_base_ids TEXT')
-      }
-      if (!columnNames.includes('knowledge_retrieve_count')) {
-        this.db.run('ALTER TABLE roles ADD COLUMN knowledge_retrieve_count INTEGER DEFAULT 5')
-      }
-      if (!columnNames.includes('knowledge_threshold')) {
-        this.db.run('ALTER TABLE roles ADD COLUMN knowledge_threshold REAL DEFAULT 0.5')
-      }
+    if (!roleColumnNames.includes('default_model_id')) {
+      this.db.exec('ALTER TABLE roles ADD COLUMN default_model_id TEXT')
+    }
+    if (!roleColumnNames.includes('default_provider_config_id')) {
+      this.db.exec('ALTER TABLE roles ADD COLUMN default_provider_config_id TEXT')
+    }
+    if (!roleColumnNames.includes('auto_reset_model')) {
+      this.db.exec('ALTER TABLE roles ADD COLUMN auto_reset_model INTEGER DEFAULT 1')
+    }
+    if (!roleColumnNames.includes('temperature')) {
+      this.db.exec('ALTER TABLE roles ADD COLUMN temperature REAL DEFAULT 0.7')
+    }
+    if (!roleColumnNames.includes('top_p')) {
+      this.db.exec('ALTER TABLE roles ADD COLUMN top_p REAL DEFAULT 1.0')
+    }
+    if (!roleColumnNames.includes('max_context_messages')) {
+      this.db.exec('ALTER TABLE roles ADD COLUMN max_context_messages INTEGER DEFAULT 20')
+    }
+    if (!roleColumnNames.includes('max_tokens')) {
+      this.db.exec('ALTER TABLE roles ADD COLUMN max_tokens INTEGER DEFAULT 4096')
+    }
+    if (!roleColumnNames.includes('enable_stream')) {
+      this.db.exec('ALTER TABLE roles ADD COLUMN enable_stream INTEGER DEFAULT 1')
+    }
+    if (!roleColumnNames.includes('custom_params')) {
+      this.db.exec('ALTER TABLE roles ADD COLUMN custom_params TEXT')
+    }
+    if (!roleColumnNames.includes('knowledge_base_ids')) {
+      this.db.exec('ALTER TABLE roles ADD COLUMN knowledge_base_ids TEXT')
+    }
+    if (!roleColumnNames.includes('knowledge_retrieve_count')) {
+      this.db.exec('ALTER TABLE roles ADD COLUMN knowledge_retrieve_count INTEGER DEFAULT 5')
+    }
+    if (!roleColumnNames.includes('knowledge_threshold')) {
+      this.db.exec('ALTER TABLE roles ADD COLUMN knowledge_threshold REAL DEFAULT 0.5')
     }
 
     // 检查 images 表是否需要添加图像生成相关字段
-    const imageColumns = this.db.exec("PRAGMA table_info(images)")
-    if (imageColumns.length > 0) {
-      const columnNames = imageColumns[0].values.map(row => row[1])
+    const imageColumns = this.db.prepare("PRAGMA table_info(images)").all() as { name: string }[]
+    const imageColumnNames = imageColumns.map(col => col.name)
 
-      if (!columnNames.includes('prompt')) {
-        this.db.run('ALTER TABLE images ADD COLUMN prompt TEXT')
-      }
-      if (!columnNames.includes('negative_prompt')) {
-        this.db.run('ALTER TABLE images ADD COLUMN negative_prompt TEXT')
-      }
-      if (!columnNames.includes('style')) {
-        this.db.run('ALTER TABLE images ADD COLUMN style TEXT')
-      }
-      if (!columnNames.includes('quality')) {
-        this.db.run('ALTER TABLE images ADD COLUMN quality TEXT')
-      }
-      if (!columnNames.includes('provider_id')) {
-        this.db.run('ALTER TABLE images ADD COLUMN provider_id TEXT')
-      }
-      if (!columnNames.includes('model_id')) {
-        this.db.run('ALTER TABLE images ADD COLUMN model_id TEXT')
-      }
-      if (!columnNames.includes('generation_params')) {
-        this.db.run('ALTER TABLE images ADD COLUMN generation_params TEXT')
-      }
-      if (!columnNames.includes('seed')) {
-        this.db.run('ALTER TABLE images ADD COLUMN seed INTEGER')
-      }
-      if (!columnNames.includes('task_id')) {
-        this.db.run('ALTER TABLE images ADD COLUMN task_id TEXT')
-      }
-      if (!columnNames.includes('status')) {
-        this.db.run("ALTER TABLE images ADD COLUMN status TEXT DEFAULT 'completed'")
-      }
-      if (!columnNames.includes('error_message')) {
-        this.db.run('ALTER TABLE images ADD COLUMN error_message TEXT')
-      }
-      if (!columnNames.includes('favorite')) {
-        this.db.run('ALTER TABLE images ADD COLUMN favorite INTEGER DEFAULT 0')
-      }
+    if (!imageColumnNames.includes('prompt')) {
+      this.db.exec('ALTER TABLE images ADD COLUMN prompt TEXT')
+    }
+    if (!imageColumnNames.includes('negative_prompt')) {
+      this.db.exec('ALTER TABLE images ADD COLUMN negative_prompt TEXT')
+    }
+    if (!imageColumnNames.includes('style')) {
+      this.db.exec('ALTER TABLE images ADD COLUMN style TEXT')
+    }
+    if (!imageColumnNames.includes('quality')) {
+      this.db.exec('ALTER TABLE images ADD COLUMN quality TEXT')
+    }
+    if (!imageColumnNames.includes('provider_id')) {
+      this.db.exec('ALTER TABLE images ADD COLUMN provider_id TEXT')
+    }
+    if (!imageColumnNames.includes('model_id')) {
+      this.db.exec('ALTER TABLE images ADD COLUMN model_id TEXT')
+    }
+    if (!imageColumnNames.includes('generation_params')) {
+      this.db.exec('ALTER TABLE images ADD COLUMN generation_params TEXT')
+    }
+    if (!imageColumnNames.includes('seed')) {
+      this.db.exec('ALTER TABLE images ADD COLUMN seed INTEGER')
+    }
+    if (!imageColumnNames.includes('task_id')) {
+      this.db.exec('ALTER TABLE images ADD COLUMN task_id TEXT')
+    }
+    if (!imageColumnNames.includes('status')) {
+      this.db.exec("ALTER TABLE images ADD COLUMN status TEXT DEFAULT 'completed'")
+    }
+    if (!imageColumnNames.includes('error_message')) {
+      this.db.exec('ALTER TABLE images ADD COLUMN error_message TEXT')
+    }
+    if (!imageColumnNames.includes('favorite')) {
+      this.db.exec('ALTER TABLE images ADD COLUMN favorite INTEGER DEFAULT 0')
     }
   }
 
@@ -377,13 +370,13 @@ export class DatabaseManager {
   private initRepositories(): void {
     if (!this.db) return
 
-    this.settings = new SettingsRepository(this.db, this)
-    this.apiKeys = new ApiKeyRepository(this.db, this)
-    this.dialogs = new DialogRepository(this.db, this)
-    this.messages = new MessageRepository(this.db, this)
-    this.roles = new RoleRepository(this.db, this)
-    this.images = new ImageRepository(this.db, this)
-    this.providerConfigs = new ProviderConfigRepository(this.db, this)
+    this.settings = new SettingsRepository(this.db)
+    this.apiKeys = new ApiKeyRepository(this.db)
+    this.dialogs = new DialogRepository(this.db)
+    this.messages = new MessageRepository(this.db)
+    this.roles = new RoleRepository(this.db)
+    this.images = new ImageRepository(this.db)
+    this.providerConfigs = new ProviderConfigRepository(this.db)
   }
 
   /**
@@ -395,28 +388,10 @@ export class DatabaseManager {
   }
 
   /**
-   * 保存数据库到文件
-   */
-  save(): void {
-    if (!this.db) return
-
-    const data = this.db.export()
-    const buffer = Buffer.from(data)
-    const dir = path.dirname(this.dbPath)
-
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true })
-    }
-
-    fs.writeFileSync(this.dbPath, buffer)
-  }
-
-  /**
    * 关闭数据库连接
    */
   close(): void {
     if (this.db) {
-      this.save()
       this.db.close()
       this.db = null
     }
@@ -425,7 +400,7 @@ export class DatabaseManager {
   /**
    * 获取数据库实例
    */
-  getDatabase(): SqlJsDatabase | null {
+  getDatabase(): Database.Database | null {
     return this.db
   }
 }

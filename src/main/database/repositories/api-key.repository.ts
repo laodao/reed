@@ -4,20 +4,17 @@
  * @description 提供API密钥的数据库操作，密钥以加密形式存储
  */
 
-import { Database as SqlJsDatabase } from 'sql.js'
+import Database from 'better-sqlite3'
 import type { ApiKeyInfo } from '../../../shared/types'
-import type { DatabaseManager } from '../index'
 
 /**
  * API密钥数据仓库
  */
 export class ApiKeyRepository {
-  private db: SqlJsDatabase
-  private dbManager: DatabaseManager
+  private db: Database.Database
 
-  constructor(db: SqlJsDatabase, dbManager: DatabaseManager) {
+  constructor(db: Database.Database) {
     this.db = db
-    this.dbManager = dbManager
   }
 
   /**
@@ -25,17 +22,11 @@ export class ApiKeyRepository {
    * @returns Promise<Array<{ provider: string, hasEndpoint: boolean }>>
    */
   async getAll(): Promise<Array<{ provider: string; hasEndpoint: boolean }>> {
-    const result = this.db.exec('SELECT provider, endpoint FROM api_keys')
-    const keys: Array<{ provider: string; hasEndpoint: boolean }> = []
-    if (result.length > 0) {
-      result[0].values.forEach((row) => {
-        keys.push({
-          provider: row[0] as string,
-          hasEndpoint: !!row[1]
-        })
-      })
-    }
-    return keys
+    const rows = this.db.prepare('SELECT provider, endpoint FROM api_keys').all() as { provider: string; endpoint: string | null }[]
+    return rows.map(row => ({
+      provider: row.provider,
+      hasEndpoint: !!row.endpoint
+    }))
   }
 
   /**
@@ -46,12 +37,10 @@ export class ApiKeyRepository {
    * @returns Promise<void>
    */
   async save(provider: string, encryptedKey: string, endpoint?: string): Promise<void> {
-    this.db.run(
+    this.db.prepare(
       `INSERT OR REPLACE INTO api_keys (provider, encrypted_key, endpoint, updated_at)
-       VALUES (?, ?, ?, datetime("now"))`,
-      [provider, encryptedKey, endpoint || null]
-    )
-    this.dbManager.save()
+       VALUES (?, ?, ?, datetime("now"))`
+    ).run(provider, encryptedKey, endpoint || null)
   }
 
   /**
@@ -60,15 +49,14 @@ export class ApiKeyRepository {
    * @returns Promise<{ encryptedKey: string, endpoint?: string } | null>
    */
   async get(provider: string): Promise<{ encryptedKey: string; endpoint?: string } | null> {
-    const result = this.db.exec(
-      'SELECT encrypted_key, endpoint FROM api_keys WHERE provider = ?',
-      [provider]
-    )
-    if (result.length > 0 && result[0].values.length > 0) {
-      const row = result[0].values[0]
+    const row = this.db.prepare(
+      'SELECT encrypted_key, endpoint FROM api_keys WHERE provider = ?'
+    ).get(provider) as { encrypted_key: string; endpoint: string | null } | undefined
+
+    if (row) {
       return {
-        encryptedKey: row[0] as string,
-        endpoint: (row[1] as string) || undefined
+        encryptedKey: row.encrypted_key,
+        endpoint: row.endpoint || undefined
       }
     }
     return null
@@ -80,8 +68,7 @@ export class ApiKeyRepository {
    * @returns Promise<void>
    */
   async delete(provider: string): Promise<void> {
-    this.db.run('DELETE FROM api_keys WHERE provider = ?', [provider])
-    this.dbManager.save()
+    this.db.prepare('DELETE FROM api_keys WHERE provider = ?').run(provider)
   }
 
   /**
@@ -90,13 +77,9 @@ export class ApiKeyRepository {
    * @returns Promise<boolean>
    */
   async exists(provider: string): Promise<boolean> {
-    const result = this.db.exec(
-      'SELECT COUNT(*) as count FROM api_keys WHERE provider = ?',
-      [provider]
-    )
-    if (result.length > 0 && result[0].values.length > 0) {
-      return (result[0].values[0][0] as number) > 0
-    }
-    return false
+    const row = this.db.prepare(
+      'SELECT COUNT(*) as count FROM api_keys WHERE provider = ?'
+    ).get(provider) as { count: number } | undefined
+    return (row?.count || 0) > 0
   }
 }

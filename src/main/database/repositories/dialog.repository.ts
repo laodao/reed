@@ -4,21 +4,18 @@
  * @description 提供对话的数据库操作
  */
 
-import { Database as SqlJsDatabase } from 'sql.js'
+import Database from 'better-sqlite3'
 import type { Dialog, ContextConfig } from '../../../shared/types'
-import type { DatabaseManager } from '../index'
 import { randomUUID } from 'crypto'
 
 /**
  * 对话数据仓库
  */
 export class DialogRepository {
-  private db: SqlJsDatabase
-  private dbManager: DatabaseManager
+  private db: Database.Database
 
-  constructor(db: SqlJsDatabase, dbManager: DatabaseManager) {
+  constructor(db: Database.Database) {
     this.db = db
-    this.dbManager = dbManager
   }
 
   /**
@@ -38,30 +35,25 @@ export class DialogRepository {
    * @returns Promise<Dialog[]>
    */
   async getAll(): Promise<Dialog[]> {
-    const result = this.db.exec(
+    const rows = this.db.prepare(
       `SELECT id, title, model_id, provider_config_id, role_id, system_prompt,
               context_config, created_at, updated_at, message_count
        FROM dialogs
        ORDER BY updated_at DESC`
-    )
-    const dialogs: Dialog[] = []
-    if (result.length > 0) {
-      result[0].values.forEach((row) => {
-        dialogs.push({
-          id: row[0] as string,
-          title: row[1] as string,
-          modelId: row[2] as string,
-          providerConfigId: (row[3] as string) || undefined,
-          roleId: (row[4] as string) || undefined,
-          systemPrompt: (row[5] as string) || undefined,
-          contextConfig: this.parseContextConfig(row[6] as string | null),
-          createdAt: new Date(row[7] as string),
-          updatedAt: new Date(row[8] as string),
-          messageCount: row[9] as number
-        })
-      })
-    }
-    return dialogs
+    ).all() as any[]
+
+    return rows.map(row => ({
+      id: row.id,
+      title: row.title,
+      modelId: row.model_id,
+      providerConfigId: row.provider_config_id || undefined,
+      roleId: row.role_id || undefined,
+      systemPrompt: row.system_prompt || undefined,
+      contextConfig: this.parseContextConfig(row.context_config),
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at),
+      messageCount: row.message_count
+    }))
   }
 
   /**
@@ -70,41 +62,34 @@ export class DialogRepository {
    * @returns Promise<Dialog[]>
    */
   async getByRoleId(roleId: string | null): Promise<Dialog[]> {
-    const result = roleId
-      ? this.db.exec(
+    const rows = roleId
+      ? this.db.prepare(
           `SELECT id, title, model_id, provider_config_id, role_id, system_prompt,
                   context_config, created_at, updated_at, message_count
            FROM dialogs
            WHERE role_id = ?
-           ORDER BY updated_at DESC`,
-          [roleId]
-        )
-      : this.db.exec(
+           ORDER BY updated_at DESC`
+        ).all(roleId) as any[]
+      : this.db.prepare(
           `SELECT id, title, model_id, provider_config_id, role_id, system_prompt,
                   context_config, created_at, updated_at, message_count
            FROM dialogs
            WHERE role_id IS NULL
            ORDER BY updated_at DESC`
-        )
+        ).all() as any[]
 
-    const dialogs: Dialog[] = []
-    if (result.length > 0) {
-      result[0].values.forEach((row) => {
-        dialogs.push({
-          id: row[0] as string,
-          title: row[1] as string,
-          modelId: row[2] as string,
-          providerConfigId: (row[3] as string) || undefined,
-          roleId: (row[4] as string) || undefined,
-          systemPrompt: (row[5] as string) || undefined,
-          contextConfig: this.parseContextConfig(row[6] as string | null),
-          createdAt: new Date(row[7] as string),
-          updatedAt: new Date(row[8] as string),
-          messageCount: row[9] as number
-        })
-      })
-    }
-    return dialogs
+    return rows.map(row => ({
+      id: row.id,
+      title: row.title,
+      modelId: row.model_id,
+      providerConfigId: row.provider_config_id || undefined,
+      roleId: row.role_id || undefined,
+      systemPrompt: row.system_prompt || undefined,
+      contextConfig: this.parseContextConfig(row.context_config),
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at),
+      messageCount: row.message_count
+    }))
   }
 
   /**
@@ -113,29 +98,27 @@ export class DialogRepository {
    * @returns Promise<Dialog | null>
    */
   async getById(id: string): Promise<Dialog | null> {
-    const result = this.db.exec(
+    const row = this.db.prepare(
       `SELECT id, title, model_id, provider_config_id, role_id, system_prompt,
               context_config, created_at, updated_at, message_count
        FROM dialogs
-       WHERE id = ?`,
-      [id]
-    )
-    if (result.length > 0 && result[0].values.length > 0) {
-      const row = result[0].values[0]
-      return {
-        id: row[0] as string,
-        title: row[1] as string,
-        modelId: row[2] as string,
-        providerConfigId: (row[3] as string) || undefined,
-        roleId: (row[4] as string) || undefined,
-        systemPrompt: (row[5] as string) || undefined,
-        contextConfig: this.parseContextConfig(row[6] as string | null),
-        createdAt: new Date(row[7] as string),
-        updatedAt: new Date(row[8] as string),
-        messageCount: row[9] as number
-      }
+       WHERE id = ?`
+    ).get(id) as any
+
+    if (!row) return null
+
+    return {
+      id: row.id,
+      title: row.title,
+      modelId: row.model_id,
+      providerConfigId: row.provider_config_id || undefined,
+      roleId: row.role_id || undefined,
+      systemPrompt: row.system_prompt || undefined,
+      contextConfig: this.parseContextConfig(row.context_config),
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at),
+      messageCount: row.message_count
     }
-    return null
   }
 
   /**
@@ -148,14 +131,15 @@ export class DialogRepository {
     const now = new Date().toISOString()
     const contextConfigStr = dialog.contextConfig ? JSON.stringify(dialog.contextConfig) : null
 
-    this.db.run(
+    this.db.prepare(
       `INSERT INTO dialogs (id, title, model_id, provider_config_id, role_id, system_prompt,
                             context_config, created_at, updated_at, message_count)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-      [id, dialog.title, dialog.modelId, dialog.providerConfigId || null,
-       dialog.roleId || null, dialog.systemPrompt || null, contextConfigStr, now, now]
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
+    ).run(
+      id, dialog.title, dialog.modelId, dialog.providerConfigId || null,
+      dialog.roleId || null, dialog.systemPrompt || null, contextConfigStr, now, now
     )
-    this.dbManager.save()
+
     return {
       id,
       title: dialog.title,
@@ -177,6 +161,7 @@ export class DialogRepository {
    * @returns Promise<void>
    */
   async update(id: string, data: Partial<Dialog>): Promise<void> {
+    console.log('[DialogRepository.update] 开始更新, id:', id, ', data:', JSON.stringify(data))
     const fields: string[] = []
     const values: any[] = []
 
@@ -195,17 +180,25 @@ export class DialogRepository {
     if (data.modelId !== undefined) {
       fields.push('model_id = ?')
       values.push(data.modelId)
+      console.log('[DialogRepository.update] 将更新 model_id 为:', data.modelId)
     }
     if (data.providerConfigId !== undefined) {
       fields.push('provider_config_id = ?')
       values.push(data.providerConfigId || null)
+      console.log('[DialogRepository.update] 将更新 provider_config_id 为:', data.providerConfigId)
     }
 
     if (fields.length > 0) {
       fields.push('updated_at = datetime("now")')
       values.push(id)
-      this.db.run(`UPDATE dialogs SET ${fields.join(', ')} WHERE id = ?`, values)
-      this.dbManager.save()
+      const sql = `UPDATE dialogs SET ${fields.join(', ')} WHERE id = ?`
+      console.log('[DialogRepository.update] 执行 SQL:', sql)
+      console.log('[DialogRepository.update] 参数:', values)
+      const result = this.db.prepare(sql).run(...values)
+      console.log('[DialogRepository.update] 更新结果 - 受影响行数:', result.changes)
+      console.log('[DialogRepository.update] 更新完成')
+    } else {
+      console.log('[DialogRepository.update] 没有需要更新的字段')
     }
   }
 
@@ -216,10 +209,9 @@ export class DialogRepository {
    */
   async delete(id: string): Promise<void> {
     // 先删除关联的消息
-    this.db.run('DELETE FROM messages WHERE dialog_id = ?', [id])
+    this.db.prepare('DELETE FROM messages WHERE dialog_id = ?').run(id)
     // 再删除对话
-    this.db.run('DELETE FROM dialogs WHERE id = ?', [id])
-    this.dbManager.save()
+    this.db.prepare('DELETE FROM dialogs WHERE id = ?').run(id)
   }
 
   /**
@@ -229,8 +221,7 @@ export class DialogRepository {
    * @returns Promise<void>
    */
   async updateMessageCount(id: string, count: number): Promise<void> {
-    this.db.run('UPDATE dialogs SET message_count = ?, updated_at = datetime("now") WHERE id = ?', [count, id])
-    this.dbManager.save()
+    this.db.prepare('UPDATE dialogs SET message_count = ?, updated_at = datetime("now") WHERE id = ?').run(count, id)
   }
 
   /**
@@ -239,7 +230,6 @@ export class DialogRepository {
    * @returns Promise<void>
    */
   async touch(id: string): Promise<void> {
-    this.db.run('UPDATE dialogs SET updated_at = datetime("now") WHERE id = ?', [id])
-    this.dbManager.save()
+    this.db.prepare('UPDATE dialogs SET updated_at = datetime("now") WHERE id = ?').run(id)
   }
 }

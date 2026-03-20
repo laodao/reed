@@ -278,6 +278,8 @@ const electronAPI = {
       }>
       enableWebSearch?: boolean
       enableThinkingChain?: boolean
+      modelId?: string
+      providerConfigId?: string
     }) => ipcRenderer.invoke(IPC_CHANNELS.CHAT_SEND, data),
     stop: (dialogId: string) => ipcRenderer.invoke(IPC_CHANNELS.CHAT_STOP, dialogId),
     onStream: (callback: (event: any, data: any) => void) => {
