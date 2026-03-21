@@ -16,6 +16,16 @@ import type {
 } from '../../../shared/types'
 
 /**
+ * 流式状态接口
+ */
+interface StreamState {
+  isStreaming: boolean
+  messageId: string | null
+  content: string
+  error: string | null
+}
+
+/**
  * 使用对话 Store
  */
 export const useDialogStore = defineStore('dialog', () => {
@@ -32,18 +42,52 @@ export const useDialogStore = defineStore('dialog', () => {
   const currentDialog = ref<Dialog | null>(null)
 
   /**
-   * 当前对话的消息列表
+   * 每个对话的消息缓存 Map<dialogId, Message[]>
+   * 用于在切换对话时保留每个对话的消息状态
    */
-  const messages = ref<Message[]>([])
+  const messagesCache = ref(new Map<string, Message[]>())
 
   /**
-   * 流式状态
+   * 每个对话的流式状态缓存 Map<dialogId, StreamState>
+   * 用于在切换对话时保留每个对话的流式状态
    */
-  const streamState = ref({
-    isStreaming: false,
-    messageId: null as string | null,
-    content: '',
-    error: null as string | null
+  const streamStateCache = ref(new Map<string, StreamState>())
+
+  /**
+   * 当前对话的消息列表（计算属性，从缓存中获取）
+   */
+  const messages = computed({
+    get: () => {
+      if (!currentDialog.value) return []
+      return messagesCache.value.get(currentDialog.value.id) || []
+    },
+    set: (value) => {
+      if (currentDialog.value) {
+        messagesCache.value.set(currentDialog.value.id, value)
+      }
+    }
+  })
+
+  /**
+   * 当前对话的流式状态（计算属性，从缓存中获取）
+   */
+  const streamState = computed({
+    get: () => {
+      if (!currentDialog.value) {
+        return { isStreaming: false, messageId: null, content: '', error: null }
+      }
+      return streamStateCache.value.get(currentDialog.value.id) || {
+        isStreaming: false,
+        messageId: null,
+        content: '',
+        error: null
+      }
+    },
+    set: (value) => {
+      if (currentDialog.value) {
+        streamStateCache.value.set(currentDialog.value.id, value)
+      }
+    }
   })
 
   /**
@@ -114,7 +158,14 @@ export const useDialogStore = defineStore('dialog', () => {
       if (response.success && response.dialog) {
         dialogs.value.unshift(response.dialog)
         currentDialog.value = response.dialog
-        messages.value = []
+        // 初始化新对话的消息缓存
+        messagesCache.value.set(response.dialog.id, [])
+        streamStateCache.value.set(response.dialog.id, {
+          isStreaming: false,
+          messageId: null,
+          content: '',
+          error: null
+        })
         return response.dialog
       }
       return null
@@ -128,7 +179,6 @@ export const useDialogStore = defineStore('dialog', () => {
    * 更新对话
    */
   async function updateDialog(id: string, data: Partial<Dialog>): Promise<boolean> {
-    console.log('[dialogStore.updateDialog] 开始更新, id:', id, ', data:', JSON.stringify(data))
     try {
       // 1. 先立即更新内存中的数据（不等数据库）
       if (currentDialog.value?.id === id) {
@@ -140,7 +190,6 @@ export const useDialogStore = defineStore('dialog', () => {
           contextConfig: data.contextConfig ?? currentDialog.value.contextConfig,
           title: data.title ?? currentDialog.value.title
         }
-        console.log('[dialogStore.updateDialog] 立即更新了 currentDialog, modelId:', currentDialog.value.modelId)
       }
 
       // 2. 更新 dialogs 列表
@@ -152,7 +201,6 @@ export const useDialogStore = defineStore('dialog', () => {
       // 3. 写入数据库
       const plainData = JSON.parse(JSON.stringify(data))
       const response = await window.electronAPI.dialog.update(id, plainData)
-      console.log('[dialogStore.updateDialog] 数据库更新结果:', response.success)
 
       return response.success
     } catch (error) {
@@ -169,9 +217,11 @@ export const useDialogStore = defineStore('dialog', () => {
       const response = await window.electronAPI.dialog.delete(dialogId)
       if (response.success) {
         dialogs.value = dialogs.value.filter(d => d.id !== dialogId)
+        // 清理该对话的缓存
+        messagesCache.value.delete(dialogId)
+        streamStateCache.value.delete(dialogId)
         if (currentDialog.value?.id === dialogId) {
           currentDialog.value = null
-          messages.value = []
         }
         return true
       }
@@ -187,7 +237,10 @@ export const useDialogStore = defineStore('dialog', () => {
    */
   async function selectDialog(dialog: Dialog): Promise<void> {
     currentDialog.value = dialog
-    await loadMessages(dialog.id)
+    // 如果该对话还没有缓存，从数据库加载
+    if (!messagesCache.value.has(dialog.id)) {
+      await loadMessages(dialog.id)
+    }
   }
 
   // ==================== 消息管理 ====================
@@ -199,11 +252,11 @@ export const useDialogStore = defineStore('dialog', () => {
     try {
       const response = await window.electronAPI.message.list(dialogId)
       if (response.success && response.messages) {
-        messages.value = response.messages
+        messagesCache.value.set(dialogId, response.messages)
       }
     } catch (error) {
       console.error('加载消息列表失败:', error)
-      messages.value = []
+      messagesCache.value.set(dialogId, [])
     }
   }
 
@@ -221,15 +274,6 @@ export const useDialogStore = defineStore('dialog', () => {
       enableThinkingChain?: boolean
     }
   ): Promise<boolean> {
-    console.log('[sendMessage] ========== 开始发送消息 ==========')
-    console.log('[sendMessage] 时间戳:', new Date().toISOString())
-    console.log('[sendMessage] currentDialog:', currentDialog.value ? {
-      id: currentDialog.value.id,
-      title: currentDialog.value.title,
-      modelId: currentDialog.value.modelId,
-      providerConfigId: currentDialog.value.providerConfigId
-    } : null)
-
     if (!currentDialog.value) {
       console.error('[sendMessage] 错误: 没有选中的对话')
       return false
@@ -238,27 +282,27 @@ export const useDialogStore = defineStore('dialog', () => {
     const dialogId = currentDialog.value.id
     const modelId = currentDialog.value.modelId
     const providerConfigId = currentDialog.value.providerConfigId
-    console.log('[sendMessage] 发送参数:', { dialogId, modelId, providerConfigId, content: content.substring(0, 50) })
 
-    // 重置流式状态
-    streamState.value = {
+    // 初始化该对话的流式状态
+    streamStateCache.value.set(dialogId, {
       isStreaming: true,
       messageId: null,
       content: '',
       error: null
-    }
+    })
 
-    // 立即在本地添加用户消息（乐观更新）
+    // 获取当前对话的消息列表并添加用户消息
+    const currentMessages = messagesCache.value.get(dialogId) || []
     const tempUserMessageId = `temp-user-${Date.now()}`
     const userMessage: Message = {
       id: tempUserMessageId,
-      dialogId: currentDialog.value.id,
+      dialogId,
       role: 'user',
       content,
       attachments: options?.attachments,
       createdAt: new Date()
     }
-    messages.value.push(userMessage)
+    messagesCache.value.set(dialogId, [...currentMessages, userMessage])
 
     // 订阅流式事件
     if (unsubscribeStream) {
@@ -267,43 +311,46 @@ export const useDialogStore = defineStore('dialog', () => {
     unsubscribeStream = window.electronAPI.chat.onStream(handleStreamEvent)
 
     try {
-      // 重要：将响应式对象转换为普通对象，避免 IPC 序列化失败
-      // 关键：传递内存中的 modelId 和 providerConfigId，不从数据库读取
       const requestData = JSON.parse(JSON.stringify({
-        dialogId: currentDialog.value.id,
+        dialogId,
         content,
         attachments: options?.attachments,
         webSearch: options?.webSearch,
         enableThinkingChain: options?.enableThinkingChain,
-        modelId: currentDialog.value.modelId,
-        providerConfigId: currentDialog.value.providerConfigId
+        modelId,
+        providerConfigId
       }))
-      console.log('[sendMessage] 发送请求数据:', requestData)
 
-      // 发送消息请求
       const response = await window.electronAPI.chat.send(requestData)
-      console.log('[sendMessage] 收到响应:', response)
 
       if (!response.success) {
-        console.error('[sendMessage] 响应失败:', response.error)
-        streamState.value.error = response.error || '发送失败'
-        streamState.value.isStreaming = false
+        // 更新流式状态
+        streamStateCache.value.set(dialogId, {
+          isStreaming: false,
+          messageId: null,
+          content: '',
+          error: response.error || '发送失败'
+        })
         // 移除临时用户消息
-        messages.value = messages.value.filter(m => m.id !== tempUserMessageId)
+        const msgs = messagesCache.value.get(dialogId) || []
+        messagesCache.value.set(dialogId, msgs.filter(m => m.id !== tempUserMessageId))
         return false
       }
 
       // 重新加载消息列表以获取真实的消息 ID
-      await loadMessages(currentDialog.value.id)
+      await loadMessages(dialogId)
       return true
     } catch (error: any) {
       console.error('[sendMessage] 捕获异常:', error)
-      console.error('[sendMessage] 异常消息:', error.message)
-      console.error('[sendMessage] 异常堆栈:', error.stack)
-      streamState.value.error = error.message || '发送失败'
-      streamState.value.isStreaming = false
+      streamStateCache.value.set(dialogId, {
+        isStreaming: false,
+        messageId: null,
+        content: '',
+        error: error.message || '发送失败'
+      })
       // 移除临时用户消息
-      messages.value = messages.value.filter(m => m.id !== tempUserMessageId)
+      const msgs = messagesCache.value.get(dialogId) || []
+      messagesCache.value.set(dialogId, msgs.filter(m => m.id !== tempUserMessageId))
       return false
     }
   }
@@ -312,71 +359,87 @@ export const useDialogStore = defineStore('dialog', () => {
    * 处理流式事件
    */
   function handleStreamEvent(event: any, data: StreamEvent): void {
+    const messageDialogId = data.dialogId
+    if (!messageDialogId) return
+
+    // 获取该对话的流式状态
+    const dialogStreamState = streamStateCache.value.get(messageDialogId)
+    if (!dialogStreamState) return
+
+    // 获取该对话的消息列表
+    const dialogMessages = messagesCache.value.get(messageDialogId) || []
+
     switch (data.type) {
       case 'start':
-        streamState.value.messageId = data.messageId || null
-        streamState.value.content = ''
+        streamStateCache.value.set(messageDialogId, {
+          ...dialogStreamState,
+          messageId: data.messageId || null,
+          content: '',
+          isStreaming: true
+        })
         // 如果有 messageId，确保 AI 消息存在于列表中
         if (data.messageId) {
-          const msgIndex = messages.value.findIndex(m => m.id === data.messageId)
+          const msgIndex = dialogMessages.findIndex(m => m.id === data.messageId)
           if (msgIndex === -1) {
-            // 消息不存在，创建占位消息
-            messages.value.push({
+            dialogMessages.push({
               id: data.messageId,
-              dialogId: currentDialog.value?.id || '',
+              dialogId: messageDialogId,
               role: 'assistant',
               content: '',
               createdAt: new Date()
             })
+            messagesCache.value.set(messageDialogId, [...dialogMessages])
           }
         }
         break
       case 'thinking':
-        // 思维链事件 - 存储到消息的 metadata 中
-        console.log('[handleStreamEvent] 收到思维链事件, messageId:', data.messageId)
-        console.log('[handleStreamEvent] 思维链内容长度:', data.thinkingContent?.length || 0)
-        console.log('[handleStreamEvent] 思维链内容预览:', data.thinkingContent?.substring(0, 100))
         if (data.messageId) {
-          const msgIndex = messages.value.findIndex(m => m.id === data.messageId)
-          console.log('[handleStreamEvent] 消息索引:', msgIndex)
+          const msgIndex = dialogMessages.findIndex(m => m.id === data.messageId)
           if (msgIndex !== -1) {
-            // 更新现有消息的思维链内容
-            const existingThinking = messages.value[msgIndex].metadata?.thinkingChain || ''
-            console.log('[handleStreamEvent] 已有思维链长度:', existingThinking.length)
-            messages.value[msgIndex] = {
-              ...messages.value[msgIndex],
+            const existingThinking = dialogMessages[msgIndex].metadata?.thinkingChain || ''
+            dialogMessages[msgIndex] = {
+              ...dialogMessages[msgIndex],
               metadata: {
-                ...messages.value[msgIndex].metadata,
+                ...dialogMessages[msgIndex].metadata,
                 thinkingChain: existingThinking + (data.thinkingContent || '')
               }
             }
-            console.log('[handleStreamEvent] 更新后思维链长度:', messages.value[msgIndex].metadata?.thinkingChain?.length)
-          } else {
-            console.warn('[handleStreamEvent] 未找到消息, messageId:', data.messageId)
+            messagesCache.value.set(messageDialogId, [...dialogMessages])
           }
         }
         break
       case 'delta':
-        streamState.value.content += data.content || ''
-        // 实时更新消息列表中的 AI 消息
+        const currentContent = dialogStreamState.content + (data.content || '')
+        streamStateCache.value.set(messageDialogId, {
+          ...dialogStreamState,
+          content: currentContent
+        })
+        // 更新消息列表中的 AI 消息
         if (data.messageId) {
-          const msgIndex = messages.value.findIndex(m => m.id === data.messageId)
+          const msgIndex = dialogMessages.findIndex(m => m.id === data.messageId)
           if (msgIndex !== -1) {
-            messages.value[msgIndex].content = streamState.value.content
+            dialogMessages[msgIndex] = {
+              ...dialogMessages[msgIndex],
+              content: currentContent
+            }
+            messagesCache.value.set(messageDialogId, [...dialogMessages])
           }
-          // 注意：不再在这里创建新消息，因为在 'start' 事件中已经创建了
         }
         break
       case 'done':
-        streamState.value.isStreaming = false
+        streamStateCache.value.set(messageDialogId, {
+          ...dialogStreamState,
+          isStreaming: false
+        })
         // 流式完成后重新加载消息以获取完整的 metadata
-        if (currentDialog.value) {
-          loadMessages(currentDialog.value.id)
-        }
+        loadMessages(messageDialogId)
         break
       case 'error':
-        streamState.value.error = data.error || '未知错误'
-        streamState.value.isStreaming = false
+        streamStateCache.value.set(messageDialogId, {
+          ...dialogStreamState,
+          error: data.error || '未知错误',
+          isStreaming: false
+        })
         break
     }
   }
@@ -385,13 +448,18 @@ export const useDialogStore = defineStore('dialog', () => {
    * 停止生成
    */
   async function stopGeneration(): Promise<void> {
-    if (!currentDialog.value || !streamState.value.isStreaming) {
-      return
-    }
+    if (!currentDialog.value) return
+
+    const dialogId = currentDialog.value.id
+    const dialogStreamState = streamStateCache.value.get(dialogId)
+    if (!dialogStreamState?.isStreaming) return
 
     try {
-      await window.electronAPI.chat.stop(currentDialog.value.id)
-      streamState.value.isStreaming = false
+      await window.electronAPI.chat.stop(dialogId)
+      streamStateCache.value.set(dialogId, {
+        ...dialogStreamState,
+        isStreaming: false
+      })
     } catch (error) {
       console.error('停止生成失败:', error)
     }
@@ -401,14 +469,12 @@ export const useDialogStore = defineStore('dialog', () => {
    * 清空当前对话的消息
    */
   async function clearMessages(): Promise<boolean> {
-    if (!currentDialog.value) {
-      return false
-    }
+    if (!currentDialog.value) return false
 
     try {
       const response = await window.electronAPI.message.delete(currentDialog.value.id)
       if (response.success) {
-        messages.value = []
+        messagesCache.value.set(currentDialog.value.id, [])
         // 更新对话的消息计数
         const index = dialogs.value.findIndex(d => d.id === currentDialog.value!.id)
         if (index !== -1) {
@@ -427,14 +493,11 @@ export const useDialogStore = defineStore('dialog', () => {
    * 清空当前对话
    */
   function clearCurrentDialog(): void {
-    currentDialog.value = null
-    messages.value = []
-    streamState.value = {
-      isStreaming: false,
-      messageId: null,
-      content: '',
-      error: null
+    if (currentDialog.value) {
+      messagesCache.value.delete(currentDialog.value.id)
+      streamStateCache.value.delete(currentDialog.value.id)
     }
+    currentDialog.value = null
   }
 
   /**

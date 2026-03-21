@@ -214,10 +214,11 @@ export class ChatService {
       })
       console.log('[ChatService.sendMessage] AI 消息已创建, id:', aiMessage.id)
 
-      // 发送流式开始事件（包含 messageId）
+      // 发送流式开始事件（包含 messageId 和 dialogId）
       this.sendStreamEvent(window, {
         type: 'start',
-        messageId: aiMessage.id
+        messageId: aiMessage.id,
+        dialogId: request.dialogId
       })
 
       // 构建聊天选项
@@ -245,7 +246,8 @@ export class ChatService {
             // 转发事件到渲染进程
             this.sendStreamEvent(window, {
               ...event,
-              messageId: aiMessage.id
+              messageId: aiMessage.id,
+              dialogId: request.dialogId
             })
           },
           abortController.signal,
@@ -273,6 +275,7 @@ export class ChatService {
         this.sendStreamEvent(window, {
           type: 'error',
           messageId: aiMessage.id,
+          dialogId: request.dialogId,
           error: error.message || 'AI 响应失败'
         })
 
@@ -302,7 +305,8 @@ export class ChatService {
       // 发送完成事件
       this.sendStreamEvent(window, {
         type: 'done',
-        messageId: aiMessage.id
+        messageId: aiMessage.id,
+        dialogId: request.dialogId
       })
 
       // 清理

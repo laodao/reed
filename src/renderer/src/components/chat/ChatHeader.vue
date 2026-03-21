@@ -350,19 +350,39 @@ const settingsForm = reactive({
 
 // 从 dialog 更新选中的模型
 function updateSelectedModelFromDialog(): void {
-  const providerId = props.dialog.providerConfigId || getDefaultProviderId()
   const modelId = props.dialog.modelId
-  if (providerId && modelId) {
-    const newKey = `${providerId}:${modelId}`
-    selectedModelKey.value = newKey
-    console.log('[ChatHeader.updateSelectedModelFromDialog] 设置 selectedModelKey:', newKey)
-  }
-}
+  let providerId = props.dialog.providerConfigId
 
-// 获取默认提供商 ID
-function getDefaultProviderId(): string {
-  const defaultProvider = providerConfigs.value.find(c => c.isDefault)
-  return defaultProvider?.id || providerConfigs.value[0]?.id || ''
+  // 如果没有 providerConfigId，尝试从模型列表中找到包含该模型的提供商
+  if (!providerId && modelId) {
+    for (const provider of providerModels.value) {
+      if (provider.models.some(m => m.id === modelId)) {
+        providerId = provider.id
+        break
+      }
+    }
+  }
+
+  // 验证 providerId 和 modelId 组合是否在选项列表中
+  if (providerId && modelId) {
+    const provider = providerModels.value.find(p => p.id === providerId)
+    if (provider && provider.models.some(m => m.id === modelId)) {
+      const newKey = `${providerId}:${modelId}`
+      selectedModelKey.value = newKey
+    } else {
+      // 如果找不到匹配，选择第一个可用模型
+      if (providerModels.value.length > 0 && providerModels.value[0].models.length > 0) {
+        const firstProvider = providerModels.value[0]
+        const firstModel = firstProvider.models[0]
+        selectedModelKey.value = `${firstProvider.id}:${firstModel.id}`
+      }
+    }
+  } else if (!modelId && providerModels.value.length > 0 && providerModels.value[0].models.length > 0) {
+    // 如果没有 modelId，选择第一个可用模型
+    const firstProvider = providerModels.value[0]
+    const firstModel = firstProvider.models[0]
+    selectedModelKey.value = `${firstProvider.id}:${firstModel.id}`
+  }
 }
 
 // 监听 dialog 变化（使用 getter 函数返回对象属性来实现深度监听）
@@ -373,8 +393,6 @@ watch(
     () => props.dialog.providerConfigId
   ],
   ([dialogId, modelId, providerConfigId], [oldDialogId]) => {
-    console.log('[ChatHeader.watch] dialog 属性变化:', { dialogId, modelId, providerConfigId, oldDialogId })
-
     // 更新设置表单
     settingsForm.title = props.dialog.title
     settingsForm.systemPrompt = props.dialog.systemPrompt || ''
@@ -384,27 +402,16 @@ watch(
     // 只有当前对话正在切换模型时才跳过，切换到其他对话时不跳过
     const shouldSkipUpdate = changingModelDialogId.value === dialogId
     if (shouldSkipUpdate) {
-      console.log('[ChatHeader.watch] 当前对话正在切换模型，跳过更新')
       return
     }
 
     // 如果切换到了不同的对话，清除之前的切换状态
     if (dialogId !== oldDialogId && changingModelDialogId.value === oldDialogId) {
-      console.log('[ChatHeader.watch] 切换到不同对话，清除旧的切换状态')
       changingModelDialogId.value = null
     }
 
-    // 更新选中的模型
-    const providerId = providerConfigId || getDefaultProviderId()
-    console.log('[ChatHeader.watch] 计算的 providerId:', providerId, ', 传入的 providerConfigId:', providerConfigId)
-    if (providerId && modelId) {
-      const newKey = `${providerId}:${modelId}`
-      console.log('[ChatHeader.watch] newKey:', newKey, ', 当前 selectedModelKey:', selectedModelKey.value)
-      if (selectedModelKey.value !== newKey) {
-        selectedModelKey.value = newKey
-        console.log('[ChatHeader.watch] 更新 selectedModelKey:', newKey)
-      }
-    }
+    // 更新选中的模型 - 直接调用更新函数
+    updateSelectedModelFromDialog()
 
     // 更新 lastDialogId
     if (dialogId !== lastDialogId.value) {

@@ -121,6 +121,8 @@ export type StreamEventType = 'start' | 'delta' | 'done' | 'error' | 'thinking'
  */
 export interface StreamEvent {
   type: StreamEventType
+  /** 对话 ID，用于验证事件是否属于当前对话 */
+  dialogId?: string
   messageId?: string
   content?: string
   /** 思维链内容 */
