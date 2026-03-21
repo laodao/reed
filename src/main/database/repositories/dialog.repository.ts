@@ -47,7 +47,8 @@ export class DialogRepository {
       title: row.title,
       modelId: row.model_id,
       providerConfigId: row.provider_config_id || undefined,
-      roleId: row.role_id || undefined,
+      // 兼容处理：'default-assistant' 等同于 null（默认助手）
+      roleId: (row.role_id && row.role_id !== 'default-assistant') ? row.role_id : null,
       systemPrompt: row.system_prompt || undefined,
       contextConfig: this.parseContextConfig(row.context_config),
       createdAt: new Date(row.created_at),
@@ -90,7 +91,8 @@ export class DialogRepository {
       title: row.title,
       modelId: row.model_id,
       providerConfigId: row.provider_config_id || undefined,
-      roleId: row.role_id || undefined,
+      // 兼容处理：'default-assistant' 等同于 null（默认助手）
+      roleId: (row.role_id && row.role_id !== 'default-assistant') ? row.role_id : null,
       systemPrompt: row.system_prompt || undefined,
       contextConfig: this.parseContextConfig(row.context_config),
       createdAt: new Date(row.created_at),
@@ -119,7 +121,8 @@ export class DialogRepository {
       title: row.title,
       modelId: row.model_id,
       providerConfigId: row.provider_config_id || undefined,
-      roleId: row.role_id || undefined,
+      // 兼容处理：'default-assistant' 等同于 null（默认助手）
+      roleId: (row.role_id && row.role_id !== 'default-assistant') ? row.role_id : null,
       systemPrompt: row.system_prompt || undefined,
       contextConfig: this.parseContextConfig(row.context_config),
       createdAt: new Date(row.created_at),

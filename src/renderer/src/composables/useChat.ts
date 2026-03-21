@@ -159,7 +159,6 @@ export function useChat() {
       // 切换到话题列表
       currentTab.value = 'topics'
       // 加载没有 roleId 的对话（即默认助手的对话）
-      // 重要：必须 await 等待加载完成，否则 currentRoleDialogs 计算属性会在数据加载前计算
       await dialogStore.loadDialogsByRole(null)
     } else {
       selectedRole.value = role
@@ -167,8 +166,16 @@ export function useChat() {
       // 切换到话题列表
       currentTab.value = 'topics'
       // 加载该角色的对话
-      // 重要：必须 await 等待加载完成
       await dialogStore.loadDialogsByRole(role.id)
+    }
+
+    // 自动选中该助手的最后一个对话（列表已按 updated_at DESC 排序）
+    if (dialogStore.dialogs.length > 0) {
+      const lastDialog = dialogStore.dialogs[0]
+      await dialogStore.selectDialog(lastDialog)
+    } else {
+      // 没有对话，清空当前对话
+      dialogStore.clearCurrentDialog()
     }
   }
 

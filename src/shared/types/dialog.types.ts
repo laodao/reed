@@ -19,7 +19,7 @@ export interface Dialog {
   title: string
   modelId: string
   providerConfigId?: string  // 使用的提供商配置 ID
-  roleId?: string
+  roleId: string | null  // 角色 ID，null 表示默认助手
   systemPrompt?: string
   contextConfig?: ContextConfig  // 上下文配置
   createdAt: Date
