@@ -59,6 +59,11 @@ import ChatMain from '../components/chat/ChatMain.vue'
 import { useChat } from '../composables/useChat'
 import type { Role, Dialog, Message, ContextConfig } from '../../../shared/types'
 
+// 定义组件名称用于 keep-alive
+defineOptions({
+  name: 'Chat'
+})
+
 // 使用 composable
 const {
   currentTab,

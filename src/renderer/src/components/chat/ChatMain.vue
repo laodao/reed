@@ -120,9 +120,18 @@ function handleSend(content: string, options?: {
   emit('sendMessage', content, options)
 }
 
-// 计算可用模型列表（用于换模型重答）
+// 模型选项接口
+interface ModelOption {
+  id: string
+  name: string
+  providerName: string
+  providerId: string
+  modelId: string
+}
+
+// 计算可用模型列表（用于换模型重答和消息显示）
 const availableModels = computed(() => {
-  const models: Array<{ id: string; name: string }> = []
+  const models: ModelOption[] = []
 
   providerConfigs.value.forEach(config => {
     // 添加启用的模型
@@ -139,10 +148,12 @@ const availableModels = computed(() => {
           }
         }
 
-        // 格式：提供商名称 / 模型名称
         models.push({
           id: `${config.id}::${modelId}`,
-          name: `${config.name} / ${modelName}`
+          name: modelName,
+          providerName: config.name,
+          providerId: config.id,
+          modelId: modelId
         })
       })
     }

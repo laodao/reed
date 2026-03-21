@@ -232,6 +232,7 @@ export class ChatService {
       console.log('[ChatService.sendMessage] 聊天选项:', chatOptions)
       let fullContent = ''
       let fullThinkingContent = ''
+      let tokenUsage: { promptTokens: number; completionTokens: number; totalTokens: number } | undefined
 
       try {
         fullContent = await provider.chatStream(
@@ -241,6 +242,12 @@ export class ChatService {
             if (event.type === 'thinking' && event.thinkingContent) {
               console.log('[ChatService.sendMessage] 收到思维链事件, 长度:', event.thinkingContent.length)
               fullThinkingContent += event.thinkingContent
+            }
+
+            // 收集 token 使用信息
+            if (event.type === 'done' && event.usage) {
+              tokenUsage = event.usage
+              console.log('[ChatService.sendMessage] 收到 token 使用信息:', tokenUsage)
             }
 
             // 转发事件到渲染进程
@@ -286,6 +293,16 @@ export class ChatService {
       console.log('[ChatService.sendMessage] 更新 AI 消息内容')
       await dbManager.messages.updateContent(aiMessage.id, fullContent)
 
+      // 更新 token 使用量
+      if (tokenUsage) {
+        console.log('[ChatService.sendMessage] 保存 AI 消息 token:', tokenUsage.completionTokens)
+        await dbManager.messages.updateTokensUsed(aiMessage.id, tokenUsage.completionTokens)
+
+        // 更新用户消息的 token（promptTokens 包含了上下文中所有消息的 token，这里简化处理）
+        console.log('[ChatService.sendMessage] 保存用户消息 token:', tokenUsage.promptTokens)
+        await dbManager.messages.updateTokensUsed(userMessage.id, tokenUsage.promptTokens)
+      }
+
       // 更新元数据（思维链和搜索结果）
       const metadata: MessageMetadata = {}
       if (fullThinkingContent) {
@@ -302,11 +319,12 @@ export class ChatService {
         await dbManager.messages.updateMetadata(aiMessage.id, metadata)
       }
 
-      // 发送完成事件
+      // 发送完成事件（包含 token 使用信息）
       this.sendStreamEvent(window, {
         type: 'done',
         messageId: aiMessage.id,
-        dialogId: request.dialogId
+        dialogId: request.dialogId,
+        usage: tokenUsage
       })
 
       // 清理

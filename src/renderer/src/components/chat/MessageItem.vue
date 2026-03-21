@@ -8,143 +8,160 @@
     <div class="message-avatar">
       {{ message.role === 'user' ? '👤' : '🤖' }}
     </div>
-    <div class="message-content">
-      <!-- 思维链显示 - 放在答案内容之前 -->
-      <div v-if="message.metadata?.thinkingChain" class="thinking-chain">
-        <el-collapse>
-          <el-collapse-item title="思维链" name="thinking">
-            <div class="thinking-content">{{ message.metadata.thinkingChain }}</div>
-          </el-collapse-item>
-        </el-collapse>
-      </div>
-
-      <!-- 编辑模式 -->
-      <div v-if="isEditing" class="edit-mode">
-        <el-input
-          v-model="editContent"
-          type="textarea"
-          :rows="4"
-          placeholder="编辑消息内容..."
-        />
-        <div class="edit-actions">
-          <el-button size="small" @click="cancelEdit">取消</el-button>
-          <el-button size="small" type="primary" @click="saveEdit">保存</el-button>
-        </div>
-      </div>
-
-      <!-- 正常显示模式 -->
-      <div v-else class="message-text" v-html="formatContent(message.content)"></div>
-
-      <!-- 附件显示 -->
-      <div v-if="message.attachments && message.attachments.length > 0" class="attachments">
-        <div
-          v-for="attachment in message.attachments"
-          :key="attachment.id"
-          class="attachment-item"
-        >
-          <el-icon><Document /></el-icon>
-          <span>{{ attachment.fileName }}</span>
-        </div>
-      </div>
-
-      <!-- 联网搜索结果显示 -->
-      <div v-if="message.metadata?.webSearch && message.metadata.webSearch.length > 0" class="web-search-results">
-        <el-collapse>
-          <el-collapse-item title="联网搜索结果" name="webSearch">
-            <div class="search-results-list">
-              <a
-                v-for="(result, index) in message.metadata.webSearch"
-                :key="index"
-                :href="result.url"
-                target="_blank"
-                class="search-result-item"
-              >
-                <div class="result-title">{{ index + 1 }}. {{ result.title }}</div>
-                <div class="result-snippet">{{ result.snippet }}</div>
-                <div class="result-url">{{ result.url }}</div>
-              </a>
-            </div>
-          </el-collapse-item>
-        </el-collapse>
-      </div>
-
-      <!-- 底部：时间和操作按钮 -->
-      <div class="message-footer">
+    <div class="message-body">
+      <!-- 顶部：发送者名称和时间 -->
+      <div class="message-header">
+        <span class="sender-name">
+          {{ message.role === 'user' ? '用户' : modelName }}
+        </span>
         <span class="message-time">{{ formatTime(message.createdAt) }}</span>
+      </div>
 
-        <!-- 消息操作工具栏 -->
-        <div v-if="!isEditing" class="message-actions" :class="{ visible: showActions }">
-          <!-- 用户消息操作 -->
-          <template v-if="message.role === 'user'">
-            <el-tooltip content="编辑" placement="top">
-              <el-button size="small" text @click="startEdit">
-                <el-icon><Edit /></el-icon>
-              </el-button>
-            </el-tooltip>
-            <el-tooltip content="复制" placement="top">
-              <el-button size="small" text @click="copyMessage">
-                <el-icon><CopyDocument /></el-icon>
-              </el-button>
-            </el-tooltip>
-            <el-tooltip content="删除" placement="top">
-              <el-button size="small" text @click="deleteMessage">
-                <el-icon><Delete /></el-icon>
-              </el-button>
-            </el-tooltip>
-          </template>
+      <div class="message-content">
+        <!-- 思维链显示 - 放在答案内容之前 -->
+        <div v-if="message.metadata?.thinkingChain" class="thinking-chain">
+          <el-collapse>
+            <el-collapse-item title="思维链" name="thinking">
+              <div class="thinking-content">{{ message.metadata.thinkingChain }}</div>
+            </el-collapse-item>
+          </el-collapse>
+        </div>
 
-          <!-- AI 回答操作 -->
-          <template v-else>
-            <el-tooltip content="重新回答" placement="top">
-              <el-button size="small" text @click="regenerate">
-                <el-icon><Refresh /></el-icon>
-              </el-button>
-            </el-tooltip>
-            <el-tooltip content="换模型重答" placement="top">
-              <el-dropdown trigger="click" @command="regenerateWithModel">
-                <el-button size="small" text>
+        <!-- 编辑模式 -->
+        <div v-if="isEditing" class="edit-mode">
+          <el-input
+            v-model="editContent"
+            type="textarea"
+            :rows="4"
+            placeholder="编辑消息内容..."
+          />
+          <div class="edit-actions">
+            <el-button size="small" @click="cancelEdit">取消</el-button>
+            <el-button size="small" type="primary" @click="saveEdit">保存</el-button>
+          </div>
+        </div>
+
+        <!-- 正常显示模式 -->
+        <div v-else class="message-text" v-html="formatContent(message.content)"></div>
+
+        <!-- 附件显示 -->
+        <div v-if="message.attachments && message.attachments.length > 0" class="attachments">
+          <div
+            v-for="attachment in message.attachments"
+            :key="attachment.id"
+            class="attachment-item"
+          >
+            <el-icon><Document /></el-icon>
+            <span>{{ attachment.fileName }}</span>
+          </div>
+        </div>
+
+        <!-- 联网搜索结果显示 -->
+        <div v-if="message.metadata?.webSearch && message.metadata.webSearch.length > 0" class="web-search-results">
+          <el-collapse>
+            <el-collapse-item title="联网搜索结果" name="webSearch">
+              <div class="search-results-list">
+                <a
+                  v-for="(result, index) in message.metadata.webSearch"
+                  :key="index"
+                  :href="result.url"
+                  target="_blank"
+                  class="search-result-item"
+                >
+                  <div class="result-title">{{ index + 1 }}. {{ result.title }}</div>
+                  <div class="result-snippet">{{ result.snippet }}</div>
+                  <div class="result-url">{{ result.url }}</div>
+                </a>
+              </div>
+            </el-collapse-item>
+          </el-collapse>
+        </div>
+
+        <!-- 底部：操作按钮 -->
+        <div class="message-footer">
+          <!-- Token 数量（暂时隐藏，待后续完善） -->
+          <!-- <span v-if="message.tokensUsed" class="token-info">
+            <el-icon><Coin /></el-icon>
+            <span>{{ message.tokensUsed }} tokens</span>
+          </span> -->
+          <span class="token-placeholder"></span>
+
+          <!-- 消息操作工具栏 -->
+          <div v-if="!isEditing" class="message-actions" :class="{ visible: showActions }">
+            <!-- 用户消息操作 -->
+            <template v-if="message.role === 'user'">
+              <el-tooltip content="编辑" placement="top">
+                <el-button size="small" text @click="startEdit">
+                  <el-icon><Edit /></el-icon>
+                </el-button>
+              </el-tooltip>
+              <el-tooltip content="复制" placement="top">
+                <el-button size="small" text @click="copyMessage">
+                  <el-icon><CopyDocument /></el-icon>
+                </el-button>
+              </el-tooltip>
+              <el-tooltip content="删除" placement="top">
+                <el-button size="small" text @click="deleteMessage">
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </el-tooltip>
+            </template>
+
+            <!-- AI 回答操作 -->
+            <template v-else>
+              <el-tooltip content="重新回答" placement="top">
+                <el-button size="small" text @click="regenerate">
+                  <el-icon><Refresh /></el-icon>
+                </el-button>
+              </el-tooltip>
+              <el-tooltip content="换模型重答" placement="top">
+                <el-button size="small" text @click="openModelSelectDialog">
                   <el-icon><Switch /></el-icon>
                 </el-button>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item
-                      v-for="model in availableModels"
-                      :key="model.id"
-                      :command="model.id"
-                    >
-                      {{ model.name }}
-                    </el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-            </el-tooltip>
-            <el-tooltip content="复制" placement="top">
-              <el-button size="small" text @click="copyMessage">
-                <el-icon><CopyDocument /></el-icon>
-              </el-button>
-            </el-tooltip>
-            <el-tooltip content="删除" placement="top">
-              <el-button size="small" text @click="deleteMessage">
-                <el-icon><Delete /></el-icon>
-              </el-button>
-            </el-tooltip>
-          </template>
+              </el-tooltip>
+              <el-tooltip content="复制" placement="top">
+                <el-button size="small" text @click="copyMessage">
+                  <el-icon><CopyDocument /></el-icon>
+                </el-button>
+              </el-tooltip>
+              <el-tooltip content="删除" placement="top">
+                <el-button size="small" text @click="deleteMessage">
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </el-tooltip>
+            </template>
+          </div>
         </div>
       </div>
     </div>
+
+    <!-- 模型选择对话框 -->
+    <ModelSelectDialog
+      v-model="showModelDialog"
+      :models="availableModels"
+      @select="handleModelSelect"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { Document, Edit, CopyDocument, Delete, Refresh, Switch } from '@element-plus/icons-vue'
+import { Document, Edit, CopyDocument, Delete, Refresh, Switch, Coin } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { Message } from '../../../shared/types'
-import CodeBlock from './CodeBlock.vue'
+import ModelSelectDialog from './ModelSelectDialog.vue'
+
+interface ModelOption {
+  id: string
+  name: string
+  providerName: string
+  providerId: string
+  modelId: string
+}
 
 const props = defineProps<{
   message: Message
-  availableModels?: Array<{ id: string; name: string }>
+  availableModels?: ModelOption[]
 }>()
 
 const emit = defineEmits<{
@@ -157,6 +174,23 @@ const emit = defineEmits<{
 const showActions = ref(false)
 const isEditing = ref(false)
 const editContent = ref('')
+const showModelDialog = ref(false)
+
+// 获取模型名称
+const modelName = computed(() => {
+  if (props.message.role !== 'assistant') return ''
+
+  // 如果消息有 modelId，从可用模型列表中查找名称
+  if (props.message.modelId && props.availableModels) {
+    const model = props.availableModels.find(m => m.modelId === props.message.modelId)
+    if (model) {
+      return model.name
+    }
+  }
+
+  // 否则返回 modelId 或默认值
+  return props.message.modelId || 'AI'
+})
 
 // 格式化内容 - 将代码块替换为 CodeBlock 组件
 function formatContent(content: string): string {
@@ -292,9 +326,14 @@ function regenerate() {
   emit('regenerate', props.message.id)
 }
 
-// 使用指定模型重新生成
-function regenerateWithModel(modelId: string) {
-  emit('regenerate', props.message.id, modelId)
+// 打开模型选择对话框
+function openModelSelectDialog() {
+  showModelDialog.value = true
+}
+
+// 处理模型选择
+function handleModelSelect(model: ModelOption) {
+  emit('regenerate', props.message.id, model.id)
 }
 </script>
 
@@ -307,18 +346,12 @@ function regenerateWithModel(modelId: string) {
   position: relative;
 
   &.user {
-    flex-direction: row-reverse;
-
     .message-content {
       background: var(--el-color-primary);
       color: #fff;
       border: none;
 
       .message-footer {
-        .message-time {
-          color: rgba(255, 255, 255, 0.7);
-        }
-
         .message-actions {
           .el-button {
             color: rgba(255, 255, 255, 0.8);
@@ -329,6 +362,10 @@ function regenerateWithModel(modelId: string) {
             }
           }
         }
+      }
+
+      .token-info {
+        color: rgba(255, 255, 255, 0.7);
       }
     }
 
@@ -351,22 +388,46 @@ function regenerateWithModel(modelId: string) {
 }
 
 .message-avatar {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: 20px;
   background: linear-gradient(135deg, #fff 0%, #f8fafc 100%);
-  border-radius: 8px;
+  border-radius: 50%;
   flex-shrink: 0;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
-.message-content {
+.message-body {
   flex: 1;
-  min-width: 300px;
+  min-width: 0;
   max-width: 85%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.message-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sender-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.message-time {
+  font-size: 11px;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+.message-content {
   background: #fff;
   padding: 12px 14px;
   border-radius: 12px;
@@ -485,7 +546,7 @@ function regenerateWithModel(modelId: string) {
   }
 }
 
-// 消息底部：时间和操作按钮
+// 消息底部：Token 数和操作按钮
 .message-footer {
   display: flex;
   align-items: center;
@@ -494,10 +555,16 @@ function regenerateWithModel(modelId: string) {
   gap: 12px;
 }
 
-.message-time {
+.token-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 11px;
   color: #94a3b8;
-  white-space: nowrap;
+}
+
+.token-placeholder {
+  flex: 1;
 }
 
 .message-actions {

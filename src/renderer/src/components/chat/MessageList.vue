@@ -34,11 +34,20 @@ import { ElMessage } from 'element-plus'
 import MessageItem from './MessageItem.vue'
 import type { Message, StreamState } from '../../../shared/types'
 
+// 模型选项接口
+interface ModelOption {
+  id: string
+  name: string
+  providerName: string
+  providerId: string
+  modelId: string
+}
+
 const props = defineProps<{
   messages: Message[]
   streamState: StreamState
   isGenerating: boolean
-  availableModels?: Array<{ id: string; name: string }>
+  availableModels?: ModelOption[]
 }>()
 
 const emit = defineEmits<{

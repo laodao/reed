@@ -435,6 +435,30 @@ export const useDialogStore = defineStore('dialog', () => {
           ...dialogStreamState,
           isStreaming: false
         })
+        // 如果有 token 使用信息，更新 AI 消息和对应的用户消息
+        if (data.usage && data.messageId) {
+          const aiMsgIndex = dialogMessages.findIndex(m => m.id === data.messageId)
+          if (aiMsgIndex !== -1) {
+            // 更新 AI 消息的 token（completionTokens）
+            dialogMessages[aiMsgIndex] = {
+              ...dialogMessages[aiMsgIndex],
+              tokensUsed: data.usage.completionTokens
+            }
+
+            // 向前查找对应的用户消息，更新其 token（promptTokens）
+            for (let i = aiMsgIndex - 1; i >= 0; i--) {
+              if (dialogMessages[i].role === 'user') {
+                dialogMessages[i] = {
+                  ...dialogMessages[i],
+                  tokensUsed: data.usage.promptTokens
+                }
+                break
+              }
+            }
+
+            messagesCache.value.set(messageDialogId, [...dialogMessages])
+          }
+        }
         // 流式完成后重新加载消息以获取完整的 metadata
         loadMessages(messageDialogId)
         break
@@ -578,7 +602,7 @@ export const useDialogStore = defineStore('dialog', () => {
   }
 
   /**
-   * 重新生成回答
+   * 重新生成回答（不删除现有回答，发送新问题）
    * @param userMessageId 用户消息ID
    * @param modelId 可选的新模型ID（格式：providerConfigId::modelId）
    */
@@ -595,23 +619,6 @@ export const useDialogStore = defineStore('dialog', () => {
       return false
     }
 
-    // 找到该用户消息后面的 AI 回答并删除
-    const userMessageIndex = dialogMessages.findIndex(m => m.id === userMessageId)
-    let aiMessageId: string | null = null
-
-    // 查找紧随其后的 AI 消息
-    for (let i = userMessageIndex + 1; i < dialogMessages.length; i++) {
-      if (dialogMessages[i].role === 'assistant') {
-        aiMessageId = dialogMessages[i].id
-        break
-      }
-    }
-
-    // 删除旧的 AI 回答
-    if (aiMessageId) {
-      await deleteMessage(aiMessageId)
-    }
-
     // 解析模型ID
     let newModelId: string | undefined
     let newProviderConfigId: string | undefined
@@ -621,7 +628,7 @@ export const useDialogStore = defineStore('dialog', () => {
       newModelId = mid
     }
 
-    // 重新发送消息
+    // 重新发送消息（不删除现有回答）
     return sendMessage(userMessage.content, {
       attachments: userMessage.attachments,
       modelId: newModelId,

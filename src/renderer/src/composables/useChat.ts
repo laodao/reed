@@ -380,9 +380,8 @@ export function useChat() {
     initialize()
   })
 
-  onUnmounted(() => {
-    dialogStore.cleanup()
-  })
+  // 注意：不在这里调用 cleanup()，因为使用了 keep-alive
+  // 流式响应需要在后台继续进行，切换页面不应该中断
 
   return {
     // 状态

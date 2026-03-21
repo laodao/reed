@@ -194,6 +194,16 @@ export class MessageRepository {
   }
 
   /**
+   * 更新消息 token 使用量
+   * @param id - 消息ID
+   * @param tokensUsed - token 使用量
+   * @returns Promise<void>
+   */
+  async updateTokensUsed(id: string, tokensUsed: number): Promise<void> {
+    this.db.prepare('UPDATE messages SET tokens_used = ? WHERE id = ?').run(tokensUsed, id)
+  }
+
+  /**
    * 根据 ID 获取消息
    * @param id - 消息ID
    * @returns Promise<Message | null>

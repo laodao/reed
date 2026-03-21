@@ -112,6 +112,15 @@ export interface CreateMessageRequest {
 }
 
 /**
+ * Token 使用量
+ */
+export interface TokenUsage {
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+}
+
+/**
  * 流式事件类型
  */
 export type StreamEventType = 'start' | 'delta' | 'done' | 'error' | 'thinking'
@@ -129,6 +138,8 @@ export interface StreamEvent {
   thinkingContent?: string
   error?: string
   interrupted?: boolean
+  /** Token 使用量（在 done 事件中返回） */
+  usage?: TokenUsage
 }
 
 /**

@@ -179,6 +179,13 @@ export class OpenAICompatibleProvider extends BaseProvider {
       stream
     }
 
+    // 流式请求时添加 stream_options 以获取 usage 信息
+    if (stream) {
+      body.stream_options = {
+        include_usage: true
+      }
+    }
+
     // 添加支持的参数
     if (this.template?.supportedParams) {
       if (this.template.supportedParams.maxTokens) {
@@ -249,10 +256,12 @@ export class OpenAICompatibleProvider extends BaseProvider {
     const url = this.buildUrl(this.getChatEndpoint())
     const headers = this.buildHeaders()
     const body = this.buildRequestBody(context, model, true, options)
+    console.log('[OpenAICompatibleProvider.chatStream] 请求体 stream_options:', body.stream_options)
 
     let fullContent = ''
     let fullThinkingContent = ''
     let messageId = ''
+    let tokenUsage: { promptTokens: number; completionTokens: number; totalTokens: number } | undefined
 
     // 检测是否为 DeepSeek R1 模型（支持思维链）
     const isDeepSeekR1 = model.toLowerCase().includes('deepseek-reasoner') ||
@@ -305,9 +314,24 @@ export class OpenAICompatibleProvider extends BaseProvider {
             try {
               const data = JSON.parse(jsonStr)
 
+              // 调试：打印每个 chunk 的数据（只打印有 usage 或没有 choices 的）
+              if (data.usage || !data.choices || data.choices.length === 0) {
+                console.log('[OpenAICompatibleProvider] 收到特殊 chunk:', JSON.stringify(data))
+              }
+
               // 获取消息 ID
               if (data.id && !messageId) {
                 messageId = data.id
+              }
+
+              // 处理 usage 信息（OpenAI 在流式响应的最后一个 chunk 中返回）
+              if (data.usage) {
+                console.log('[OpenAICompatibleProvider] 收到 usage 信息:', data.usage)
+                tokenUsage = {
+                  promptTokens: data.usage.prompt_tokens || 0,
+                  completionTokens: data.usage.completion_tokens || 0,
+                  totalTokens: data.usage.total_tokens || 0
+                }
               }
 
               // 处理 DeepSeek R1 的思维链内容（reasoning_content）
@@ -338,11 +362,12 @@ export class OpenAICompatibleProvider extends BaseProvider {
         }
       }
 
-      // 如果有思维链内容，将其附加到消息元数据中
-      // 注意：这里我们需要返回思维链内容，但当前的返回值只有 fullContent
-      // 可以通过事件传递思维链，由 ChatService 处理
-
-      onEvent({ type: 'done', messageId })
+      // 发送完成事件，包含 token 使用信息
+      onEvent({
+        type: 'done',
+        messageId,
+        usage: tokenUsage
+      })
       return fullContent
     } catch (error: any) {
       if (error.name === 'AbortError') {

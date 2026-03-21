@@ -130,7 +130,7 @@ const { currentTheme } = useTheme()
 
 const isCollapsed = ref(false)
 const pageTransition = ref('slide-fade')
-const cachedViews = ['Home']
+const cachedViews = ['Home', 'Chat']
 
 // 主菜单项
 const mainMenuItems = [
