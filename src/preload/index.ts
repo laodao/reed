@@ -206,16 +206,10 @@ const electronAPI = {
     }) => ipcRenderer.invoke(IPC_CHANNELS.MESSAGE_CREATE, data),
     update: (
       id: string,
-      data: Partial<{
-        content: string
-        metadata: {
-          thinkingChain?: string
-          webSearch?: Array<{ title: string; url: string; snippet: string }>
-          knowledgeBase?: string[]
-        }
-      }>
-    ) => ipcRenderer.invoke(IPC_CHANNELS.MESSAGE_UPDATE, { id, data }),
-    delete: (dialogId: string) => ipcRenderer.invoke(IPC_CHANNELS.MESSAGE_DELETE, dialogId)
+      content: string
+    ) => ipcRenderer.invoke(IPC_CHANNELS.MESSAGE_UPDATE, { id, content }),
+    delete: (dialogId: string) => ipcRenderer.invoke(IPC_CHANNELS.MESSAGE_DELETE, dialogId),
+    deleteSingle: (messageId: string) => ipcRenderer.invoke('message:deleteSingle', messageId)
   },
 
   // 角色相关

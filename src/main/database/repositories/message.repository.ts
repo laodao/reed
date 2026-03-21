@@ -156,6 +156,24 @@ export class MessageRepository {
   }
 
   /**
+   * 删除单条消息
+   * @param id - 消息ID
+   * @returns Promise<void>
+   */
+  async delete(id: string): Promise<void> {
+    // 先获取消息以获得 dialogId
+    const message = await this.getById(id)
+    if (!message) return
+
+    this.db.prepare('DELETE FROM messages WHERE id = ?').run(id)
+
+    // 更新对话的 message_count
+    this.db.prepare(
+      'UPDATE dialogs SET message_count = message_count - 1, updated_at = ? WHERE id = ?'
+    ).run(new Date().toISOString(), message.dialogId)
+  }
+
+  /**
    * 更新消息内容
    * @param id - 消息ID
    * @param content - 新内容

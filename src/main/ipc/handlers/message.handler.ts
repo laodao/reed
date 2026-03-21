@@ -17,6 +17,7 @@ export function registerMessageHandlers(): void {
   ipcMain.handle('message:get', handleGetMessage)
   ipcMain.handle('message:update', handleUpdateMessage)
   ipcMain.handle('message:delete', handleDeleteMessages)
+  ipcMain.handle('message:deleteSingle', handleDeleteSingleMessage)
 }
 
 /**
@@ -111,11 +112,9 @@ async function handleUpdateMessage(
       return { success: false }
     }
 
-    if (payload.content !== undefined) {
-      await dbManager.messages.updateContent(payload.id, payload.content)
-    }
-    if (payload.metadata !== undefined) {
-      await dbManager.messages.updateMetadata(payload.id, payload.metadata)
+    // 支持简化调用：直接传 content 字符串
+    if (typeof (payload as any).content === 'string') {
+      await dbManager.messages.updateContent(payload.id, (payload as any).content)
     }
 
     return { success: true }
@@ -153,6 +152,40 @@ async function handleDeleteMessages(
 }
 
 /**
+ * 处理删除单条消息
+ */
+async function handleDeleteSingleMessage(
+  event: IpcMainInvokeEvent,
+  messageId: string
+): Promise<{ success: boolean }> {
+  try {
+    const dbManager = getDatabaseManager()
+    if (!dbManager.messages) {
+      return { success: false }
+    }
+
+    // 先获取消息以获得 dialogId
+    const message = await dbManager.messages.getById(messageId)
+    if (!message) {
+      return { success: false }
+    }
+
+    await dbManager.messages.delete(messageId)
+
+    // 更新对话的消息计数
+    if (dbManager.dialogs) {
+      const count = await dbManager.messages.count(message.dialogId)
+      await dbManager.dialogs.updateMessageCount(message.dialogId, count)
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error('删除单条消息失败:', error)
+    return { success: false }
+  }
+}
+
+/**
  * 注销消息相关IPC处理器
  */
 export function unregisterMessageHandlers(): void {
@@ -161,4 +194,5 @@ export function unregisterMessageHandlers(): void {
   ipcMain.removeHandler('message:get')
   ipcMain.removeHandler('message:update')
   ipcMain.removeHandler('message:delete')
+  ipcMain.removeHandler('message:deleteSingle')
 }

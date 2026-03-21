@@ -30,6 +30,9 @@
       @stop-generation="handleStopGeneration"
       @clear-messages="handleClearMessages"
       @update-config="handleUpdateConfig"
+      @edit-message="handleEditMessage"
+      @delete-message="handleDeleteMessage"
+      @regenerate-message="handleRegenerateMessage"
     />
 
     <!-- 空状态 -->
@@ -242,6 +245,39 @@ async function handleUpdateConfig(
     } else {
       ElMessage.error('更新失败')
     }
+  }
+}
+
+// 处理消息编辑
+async function handleEditMessage(messageId: string, newContent: string): Promise<void> {
+  const success = await dialogStore.updateMessage(messageId, newContent)
+  if (success) {
+    ElMessage.success('消息已更新')
+  } else {
+    ElMessage.error('更新失败')
+  }
+}
+
+// 处理消息删除
+async function handleDeleteMessage(messageId: string): Promise<void> {
+  const success = await dialogStore.deleteMessage(messageId)
+  if (success) {
+    ElMessage.success('消息已删除')
+  } else {
+    ElMessage.error('删除失败')
+  }
+}
+
+// 处理消息重新生成
+async function handleRegenerateMessage(userMessageId: string, modelId?: string): Promise<void> {
+  if (isGenerating.value) {
+    ElMessage.warning('请等待当前回复完成')
+    return
+  }
+
+  const success = await dialogStore.regenerateResponse(userMessageId, modelId)
+  if (!success) {
+    ElMessage.error('重新生成失败')
   }
 }
 </script>

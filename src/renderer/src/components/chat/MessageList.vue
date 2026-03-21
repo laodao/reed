@@ -5,13 +5,18 @@
         v-for="message in displayMessages"
         :key="message.id"
         :message="message"
+        :available-models="availableModels"
+        @edit="handleEdit"
+        @copy="handleCopy"
+        @delete="handleDelete"
+        @regenerate="handleRegenerate"
       />
 
       <!-- 流式消息占位 -->
       <div v-if="isGenerating && streamState.messageId" class="message-item assistant">
         <div class="message-avatar">🤖</div>
         <div class="message-content">
-          <div class="message-text" v-html="formatContent(streamState.content)"></div>
+          <div class="message-text" v-html="formatStreamContent(streamState.content)"></div>
           <div class="typing-indicator">
             <span></span>
             <span></span>
@@ -24,7 +29,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, nextTick, onMounted } from 'vue'
+import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import MessageItem from './MessageItem.vue'
 import type { Message, StreamState } from '../../../shared/types'
 
@@ -32,6 +38,13 @@ const props = defineProps<{
   messages: Message[]
   streamState: StreamState
   isGenerating: boolean
+  availableModels?: Array<{ id: string; name: string }>
+}>()
+
+const emit = defineEmits<{
+  (e: 'edit', messageId: string, newContent: string): void
+  (e: 'delete', messageId: string): void
+  (e: 'regenerate', userMessageId: string, modelId?: string): void
 }>()
 
 const listRef = ref<HTMLElement | null>(null)
@@ -51,26 +64,73 @@ const displayMessages = computed(() => {
   return props.messages
 })
 
-// 格式化内容（简单的 Markdown 支持）
-function formatContent(content: string): string {
+// 格式化流式内容（带代码块）
+function formatStreamContent(content: string): string {
   if (!content) return ''
 
+  // 先处理代码块，用占位符替换
+  const codeBlocks: { language: string; code: string }[] = []
+  let processedContent = content.replace(
+    /```(\w*)\n([\s\S]*?)```/g,
+    (match, language, code) => {
+      const index = codeBlocks.length
+      codeBlocks.push({ language, code: code.trim() })
+      return `__CODE_BLOCK_${index}__`
+    }
+  )
+
   // 转义 HTML
-  let formatted = content
+  processedContent = processedContent
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
 
-  // 代码块
-  formatted = formatted.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="language-$1">$2</code></pre>')
+  // 处理行内代码
+  processedContent = processedContent.replace(/`([^`]+)`/g, '<code>$1</code>')
 
-  // 行内代码
-  formatted = formatted.replace(/`([^`]+)`/g, '<code>$1</code>')
+  // 处理换行
+  processedContent = processedContent.replace(/\n/g, '<br>')
 
-  // 换行
-  formatted = formatted.replace(/\n/g, '<br>')
+  // 还原代码块为组件渲染
+  codeBlocks.forEach((block, index) => {
+    const codeBlockHtml = renderCodeBlock(block.language, block.code)
+    processedContent = processedContent.replace(`__CODE_BLOCK_${index}__`, codeBlockHtml)
+  })
 
-  return formatted
+  return processedContent
+}
+
+// 渲染代码块 HTML
+function renderCodeBlock(language: string, code: string): string {
+  const lines = code.split('\n')
+  const lineNumbers = lines.map((_, i) => `<span class="line-number">${i + 1}</span>`).join('')
+  const codeLines = lines.map(line => escapeHtml(line)).join('\n')
+
+  return `
+    <div class="code-block-wrapper">
+      <div class="code-header">
+        <span class="language">${language || 'code'}</span>
+        <button class="copy-btn" onclick="copyCodeFromBlock(this)">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+          <span>复制</span>
+        </button>
+      </div>
+      <div class="code-content">
+        <div class="line-numbers">${lineNumbers}</div>
+        <pre><code>${codeLines}</code></pre>
+      </div>
+      <div class="code-data" style="display:none">${escapeHtml(code)}</div>
+    </div>
+  `
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
 }
 
 // 处理滚动事件
@@ -104,6 +164,65 @@ function scrollToBottom(): void {
   })
 }
 
+// 处理消息编辑
+function handleEdit(messageId: string, newContent: string): void {
+  emit('edit', messageId, newContent)
+}
+
+// 处理消息复制
+function handleCopy(content: string): void {
+  // 复制已在 MessageItem 中处理
+}
+
+// 处理消息删除
+function handleDelete(messageId: string): void {
+  emit('delete', messageId)
+}
+
+// 处理重新生成
+function handleRegenerate(messageId: string, modelId?: string): void {
+  // 找到对应的用户消息（AI 回答之前的最后一条用户消息）
+  const messageIndex = props.messages.findIndex(m => m.id === messageId)
+  if (messageIndex === -1) return
+
+  // 向前查找最近的用户消息
+  for (let i = messageIndex - 1; i >= 0; i--) {
+    if (props.messages[i].role === 'user') {
+      emit('regenerate', props.messages[i].id, modelId)
+      return
+    }
+  }
+}
+
+// 全局代码复制函数
+function setupGlobalCopyFunction(): void {
+  ;(window as any).copyCodeFromBlock = (button: HTMLElement) => {
+    const wrapper = button.closest('.code-block-wrapper')
+    if (!wrapper) return
+
+    const codeData = wrapper.querySelector('.code-data')
+    if (!codeData) return
+
+    const code = codeData.textContent || ''
+    navigator.clipboard.writeText(code).then(() => {
+      const span = button.querySelector('span')
+      if (span) {
+        const originalText = span.textContent
+        span.textContent = '已复制'
+        button.style.color = '#22c55e'
+        setTimeout(() => {
+          span.textContent = originalText
+          button.style.color = ''
+        }, 2000)
+      }
+      ElMessage.success('代码已复制到剪贴板')
+    }).catch(err => {
+      console.error('复制失败:', err)
+      ElMessage.error('复制失败')
+    })
+  }
+}
+
 // 监听消息变化
 watch(
   () => props.messages.length,
@@ -124,9 +243,15 @@ watch(
   }
 )
 
-// 组件挂载后滚动到底部
+// 组件挂载后
 onMounted(() => {
   scrollToBottom()
+  setupGlobalCopyFunction()
+})
+
+// 组件卸载时清理
+onUnmounted(() => {
+  delete (window as any).copyCodeFromBlock
 })
 </script>
 
@@ -189,13 +314,9 @@ onMounted(() => {
   color: #334155;
 
   :deep(pre) {
-    background: #1e293b;
-    color: #e2e8f0;
-    padding: 12px 14px;
-    border-radius: 8px;
-    overflow-x: auto;
-    margin: 10px 0;
-    font-size: 13px;
+    margin: 0;
+    background: transparent;
+    padding: 0;
   }
 
   :deep(code) {
@@ -209,6 +330,91 @@ onMounted(() => {
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 13px;
+  }
+
+  // 代码块样式
+  :deep(.code-block-wrapper) {
+    background: #1e293b;
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 10px 0;
+
+    .code-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      background: #334155;
+      border-bottom: 1px solid #475569;
+
+      .language {
+        font-size: 12px;
+        color: #94a3b8;
+        text-transform: lowercase;
+      }
+
+      .copy-btn {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        background: transparent;
+        border: none;
+        color: #94a3b8;
+        cursor: pointer;
+        font-size: 12px;
+        padding: 4px 8px;
+        border-radius: 4px;
+
+        &:hover {
+          color: #e2e8f0;
+          background: rgba(255, 255, 255, 0.1);
+        }
+
+        svg {
+          width: 14px;
+          height: 14px;
+        }
+      }
+    }
+
+    .code-content {
+      display: flex;
+      overflow-x: auto;
+
+      .line-numbers {
+        display: flex;
+        flex-direction: column;
+        padding: 12px 0;
+        min-width: 40px;
+        text-align: right;
+        user-select: none;
+        border-right: 1px solid #475569;
+        background: #1e293b;
+
+        .line-number {
+          padding: 0 8px;
+          font-size: 13px;
+          line-height: 1.5;
+          color: #475569;
+          font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+        }
+      }
+
+      pre {
+        margin: 0;
+        padding: 12px 14px;
+        flex: 1;
+        overflow-x: auto;
+
+        code {
+          font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+          font-size: 13px;
+          line-height: 1.5;
+          color: #e2e8f0;
+          white-space: pre;
+        }
+      }
+    }
   }
 }
 

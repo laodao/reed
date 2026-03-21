@@ -12,6 +12,10 @@
       :messages="messages"
       :stream-state="streamState"
       :is-generating="isGenerating"
+      :available-models="availableModels"
+      @edit="handleMessageEdit"
+      @delete="handleMessageDelete"
+      @regenerate="handleMessageRegenerate"
     />
 
     <!-- 输入区域 -->
@@ -55,6 +59,9 @@ const emit = defineEmits<{
     systemPrompt?: string
     contextConfig?: ContextConfig
   }): void
+  (e: 'editMessage', messageId: string, newContent: string): void
+  (e: 'deleteMessage', messageId: string): void
+  (e: 'regenerateMessage', userMessageId: string, modelId?: string): void
 }>()
 
 // 提供商配置列表
@@ -111,6 +118,52 @@ function handleSend(content: string, options?: {
   enableThinkingChain?: boolean
 }): void {
   emit('sendMessage', content, options)
+}
+
+// 计算可用模型列表（用于换模型重答）
+const availableModels = computed(() => {
+  const models: Array<{ id: string; name: string }> = []
+
+  providerConfigs.value.forEach(config => {
+    // 添加启用的模型
+    if (config.enabledModels) {
+      config.enabledModels.forEach(modelId => {
+        // 查找模型名称
+        let modelName = modelId
+
+        // 从自定义模型中查找
+        if (config.customModels) {
+          const customModel = config.customModels.find(m => m.id === modelId)
+          if (customModel) {
+            modelName = customModel.name
+          }
+        }
+
+        // 格式：提供商名称 / 模型名称
+        models.push({
+          id: `${config.id}::${modelId}`,
+          name: `${config.name} / ${modelName}`
+        })
+      })
+    }
+  })
+
+  return models
+})
+
+// 处理消息编辑
+function handleMessageEdit(messageId: string, newContent: string): void {
+  emit('editMessage', messageId, newContent)
+}
+
+// 处理消息删除
+function handleMessageDelete(messageId: string): void {
+  emit('deleteMessage', messageId)
+}
+
+// 处理消息重新生成
+function handleMessageRegenerate(userMessageId: string, modelId?: string): void {
+  emit('regenerateMessage', userMessageId, modelId)
 }
 
 // 监听 dialog 变化，重新加载配置

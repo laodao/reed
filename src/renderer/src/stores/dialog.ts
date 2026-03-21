@@ -272,6 +272,9 @@ export const useDialogStore = defineStore('dialog', () => {
         engine: WebSearchEngine
       }
       enableThinkingChain?: boolean
+      // 可选的模型和提供商配置（用于重新生成）
+      modelId?: string
+      providerConfigId?: string
     }
   ): Promise<boolean> {
     if (!currentDialog.value) {
@@ -280,8 +283,9 @@ export const useDialogStore = defineStore('dialog', () => {
     }
 
     const dialogId = currentDialog.value.id
-    const modelId = currentDialog.value.modelId
-    const providerConfigId = currentDialog.value.providerConfigId
+    // 优先使用传入的模型和提供商配置，否则使用当前对话的配置
+    const effectiveModelId = options?.modelId || currentDialog.value.modelId
+    const effectiveProviderConfigId = options?.providerConfigId || currentDialog.value.providerConfigId
 
     // 初始化该对话的流式状态
     streamStateCache.value.set(dialogId, {
@@ -317,8 +321,8 @@ export const useDialogStore = defineStore('dialog', () => {
         attachments: options?.attachments,
         webSearch: options?.webSearch,
         enableThinkingChain: options?.enableThinkingChain,
-        modelId,
-        providerConfigId
+        modelId: effectiveModelId,
+        providerConfigId: effectiveProviderConfigId
       }))
 
       const response = await window.electronAPI.chat.send(requestData)
@@ -517,6 +521,114 @@ export const useDialogStore = defineStore('dialog', () => {
     }
   }
 
+  /**
+   * 更新消息内容
+   */
+  async function updateMessage(messageId: string, newContent: string): Promise<boolean> {
+    try {
+      const response = await window.electronAPI.message.update(messageId, newContent)
+      if (response.success) {
+        // 更新缓存中的消息
+        if (currentDialog.value) {
+          const dialogMessages = messagesCache.value.get(currentDialog.value.id) || []
+          const index = dialogMessages.findIndex(m => m.id === messageId)
+          if (index !== -1) {
+            dialogMessages[index] = {
+              ...dialogMessages[index],
+              content: newContent
+            }
+            messagesCache.value.set(currentDialog.value.id, [...dialogMessages])
+          }
+        }
+        return true
+      }
+      return false
+    } catch (error) {
+      console.error('更新消息失败:', error)
+      return false
+    }
+  }
+
+  /**
+   * 删除单条消息
+   */
+  async function deleteMessage(messageId: string): Promise<boolean> {
+    try {
+      const response = await window.electronAPI.message.deleteSingle(messageId)
+      if (response.success) {
+        // 从缓存中移除消息
+        if (currentDialog.value) {
+          const dialogMessages = messagesCache.value.get(currentDialog.value.id) || []
+          const filtered = dialogMessages.filter(m => m.id !== messageId)
+          messagesCache.value.set(currentDialog.value.id, filtered)
+
+          // 更新对话的消息计数
+          const index = dialogs.value.findIndex(d => d.id === currentDialog.value!.id)
+          if (index !== -1) {
+            dialogs.value[index].messageCount = filtered.length
+          }
+        }
+        return true
+      }
+      return false
+    } catch (error) {
+      console.error('删除消息失败:', error)
+      return false
+    }
+  }
+
+  /**
+   * 重新生成回答
+   * @param userMessageId 用户消息ID
+   * @param modelId 可选的新模型ID（格式：providerConfigId::modelId）
+   */
+  async function regenerateResponse(userMessageId: string, modelId?: string): Promise<boolean> {
+    if (!currentDialog.value) return false
+
+    const dialogId = currentDialog.value.id
+    const dialogMessages = messagesCache.value.get(dialogId) || []
+
+    // 找到用户消息
+    const userMessage = dialogMessages.find(m => m.id === userMessageId)
+    if (!userMessage || userMessage.role !== 'user') {
+      console.error('未找到用户消息')
+      return false
+    }
+
+    // 找到该用户消息后面的 AI 回答并删除
+    const userMessageIndex = dialogMessages.findIndex(m => m.id === userMessageId)
+    let aiMessageId: string | null = null
+
+    // 查找紧随其后的 AI 消息
+    for (let i = userMessageIndex + 1; i < dialogMessages.length; i++) {
+      if (dialogMessages[i].role === 'assistant') {
+        aiMessageId = dialogMessages[i].id
+        break
+      }
+    }
+
+    // 删除旧的 AI 回答
+    if (aiMessageId) {
+      await deleteMessage(aiMessageId)
+    }
+
+    // 解析模型ID
+    let newModelId: string | undefined
+    let newProviderConfigId: string | undefined
+    if (modelId && modelId.includes('::')) {
+      const [providerId, mid] = modelId.split('::')
+      newProviderConfigId = providerId
+      newModelId = mid
+    }
+
+    // 重新发送消息
+    return sendMessage(userMessage.content, {
+      attachments: userMessage.attachments,
+      modelId: newModelId,
+      providerConfigId: newProviderConfigId
+    } as any)
+  }
+
   return {
     // 状态
     dialogs,
@@ -539,6 +651,9 @@ export const useDialogStore = defineStore('dialog', () => {
     sendMessage,
     stopGeneration,
     clearMessages,
+    updateMessage,
+    deleteMessage,
+    regenerateResponse,
     // 工具
     cleanup
   }
