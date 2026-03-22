@@ -362,28 +362,14 @@ const providerModels = computed(() => {
     const templateHasModels = template && template.models && template.models.length > 0
     const validModelIds = templateHasModels ? new Set(template.models.map(m => m.id)) : null
 
-    // 自定义模型
-    if (config.customModels) {
-      for (const model of config.customModels) {
-        if (template && !template.allowCustomModels) continue
-        if (!config.enabledModels || config.enabledModels.includes(model.id)) {
-          models.push({
-            id: model.id,
-            name: model.name,
-            contextWindow: model.contextWindow
-          })
-        }
-      }
-    }
-
-    // 添加启用的模型
-    if (config.enabledModels && models.length === 0) {
-      for (const modelId of config.enabledModels) {
-        if (validModelIds && !validModelIds.has(modelId)) continue
+    // 使用 models 字段
+    if (config.models && config.models.length > 0) {
+      for (const model of config.models) {
+        if (validModelIds && !validModelIds.has(model.id)) continue
         models.push({
-          id: modelId,
-          name: modelId,
-          contextWindow: 8192
+          id: model.id,
+          name: model.name,
+          contextWindow: model.contextWindow
         })
       }
     }

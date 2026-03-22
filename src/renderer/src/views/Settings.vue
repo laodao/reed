@@ -101,8 +101,8 @@
                     <span v-if="config.baseUrl" class="config-endpoint">
                       端点: {{ config.baseUrl }}
                     </span>
-                    <span v-if="config.enabledModels && config.enabledModels.length > 0" class="config-models">
-                      模型: {{ config.enabledModels.length }}
+                    <span v-if="config.models && config.models.length > 0" class="config-models">
+                      模型: {{ config.models.length }}
                     </span>
                   </div>
                 </div>

@@ -104,20 +104,24 @@ const electronAPI = {
     create: (data: {
       templateId: string
       name: string
+      shortId?: string
       apiKey?: string
       accessKeyId?: string
       accessKeySecret?: string
       baseUrl?: string
       customHeaders?: Record<string, string>
       customParams?: Record<string, unknown>
-      customModels?: Array<{
+      models?: Array<{
         id: string
         name: string
+        type?: string
         contextWindow: number
         maxOutputTokens: number
         features: string[]
+        supportsThinking?: boolean
+        supportsWebSearch?: boolean
+        supportsTools?: boolean
       }>
-      enabledModels?: string[]
       isEnabled?: boolean
       isDefault?: boolean
     }) => ipcRenderer.invoke(IPC_CHANNELS.PROVIDER_CONFIG_CREATE, data),
@@ -125,20 +129,24 @@ const electronAPI = {
       id: string,
       data: Partial<{
         name: string
+        shortId: string
         apiKey: string
         accessKeyId: string
         accessKeySecret: string
         baseUrl: string
         customHeaders: Record<string, string>
         customParams: Record<string, unknown>
-        customModels: Array<{
+        models?: Array<{
           id: string
           name: string
+          type?: string
           contextWindow: number
           maxOutputTokens: number
           features: string[]
+          supportsThinking?: boolean
+          supportsWebSearch?: boolean
+          supportsTools?: boolean
         }>
-        enabledModels: string[]
         isEnabled: boolean
         isDefault: boolean
       }>

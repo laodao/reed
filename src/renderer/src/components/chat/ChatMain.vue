@@ -81,9 +81,9 @@ async function loadProviderConfigs(): Promise<void> {
 
 // 获取模型能力信息
 function getModelCapabilities(providerConfig: UserProviderConfig, modelId: string): { supportsThinking?: boolean; supportsWebSearch?: boolean } | undefined {
-  // 优先从自定义模型中查找
-  if (providerConfig.customModels) {
-    const model = providerConfig.customModels.find(m => m.id === modelId)
+  // 从 models 中查找
+  if (providerConfig.models) {
+    const model = providerConfig.models.find(m => m.id === modelId)
     if (model) {
       return {
         supportsThinking: model.supportsThinking,
@@ -187,35 +187,20 @@ const availableModels = computed(() => {
   const models: ModelOption[] = []
 
   providerConfigs.value.forEach(config => {
-    // 添加启用的模型
-    if (config.enabledModels) {
-      config.enabledModels.forEach(modelId => {
-        // 查找模型定义（优先从 apiModels，其次从 customModels）
-        let modelDef: ModelDefinition | undefined
-        if (config.apiModels) {
-          modelDef = config.apiModels.find(m => m.id === modelId)
-        }
-        if (!modelDef && config.customModels) {
-          modelDef = config.customModels.find(m => m.id === modelId)
-        }
-
+    // 从 models 字段获取启用的模型
+    if (config.models) {
+      config.models.forEach(modelDef => {
         // 过滤非对话模型
-        if (!isChatModel(modelId, modelDef)) {
+        if (!isChatModel(modelDef.id, modelDef)) {
           return
         }
 
-        // 获取模型名称
-        let modelName = modelId
-        if (modelDef) {
-          modelName = modelDef.name
-        }
-
         models.push({
-          id: `${config.id}::${modelId}`,
-          name: modelName,
+          id: `${config.id}::${modelDef.id}`,
+          name: modelDef.name,
           providerName: config.name,
           providerId: config.id,
-          modelId: modelId,
+          modelId: modelDef.id,
           type: modelDef?.type,
           supportsThinking: modelDef?.supportsThinking,
           supportsWebSearch: modelDef?.supportsWebSearch,

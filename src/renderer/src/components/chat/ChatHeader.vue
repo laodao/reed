@@ -138,116 +138,40 @@ const providerModels = computed(() => {
 
   console.log('[ChatHeader.providerModels] 开始计算模型列表')
   console.log('[ChatHeader.providerModels] providerConfigs 数量:', providerConfigs.value.length)
-  console.log('[ChatHeader.providerModels] providerTemplates 数量:', providerTemplates.value.length)
 
   for (const config of providerConfigs.value) {
     if (!config.isEnabled) continue
 
-    console.log(`[ChatHeader.providerModels] 处理提供商: ${config.name}, id: ${config.id}, shortId: ${config.shortId}`)
+    console.log(`[ChatHeader.providerModels] 处理提供商: ${config.name}, id: ${config.id}`)
 
     const models: Array<{ id: string; name: string; contextWindow: number; type?: string }> = []
-    const addedModelIds = new Set<string>() // 跟踪已添加的模型 ID
 
     // 获取该配置对应的模板
     const template = providerTemplates.value.find(t => t.id === config.templateId)
-    console.log(`[ChatHeader.providerModels] 找到的模板:`, template ? { id: template.id, name: template.name, modelCount: template.models?.length } : null)
 
-    // 模板中定义的有效模型 ID 列表
-    // 注意：只有当模板有预定义模型且不为空时才进行验证
-    // 如果模板 models 为空，说明模型是动态从 API 获取的，不应过滤
-    const templateHasModels = template && template.models && template.models.length > 0
-    const validModelIds = templateHasModels ? new Set(template.models.map(m => m.id)) : null
-    console.log(`[ChatHeader.providerModels] 模板 ${template?.name} 是否有预定义模型:`, templateHasModels)
-
-    // 1. 先添加自定义模型
-    if (config.customModels) {
-      console.log(`[ChatHeader.providerModels] 自定义模型:`, config.customModels)
-      for (const model of config.customModels) {
-        // 自定义模型也需要验证（如果模板不允许自定义模型，则跳过）
-        if (template && !template.allowCustomModels) continue
+    // 使用 models 字段
+    if (config.models && config.models.length > 0) {
+      for (const model of config.models) {
         // 过滤非文本模型
         if (!isTextModel(model.type)) {
           console.log(`[ChatHeader.providerModels] 过滤非文本模型: ${model.id}, type: ${model.type}`)
           continue
         }
-        if (!config.enabledModels || config.enabledModels.includes(model.id)) {
-          models.push({
-            id: model.id,
-            name: model.name,
-            contextWindow: model.contextWindow,
-            type: model.type
-          })
-          addedModelIds.add(model.id)
-        }
-      }
-    }
-
-    // 2. 添加启用的模型（从 enabledModels 列表）
-    if (config.enabledModels) {
-      console.log(`[ChatHeader.providerModels] enabledModels:`, config.enabledModels)
-      for (const modelId of config.enabledModels) {
-        // 跳过已添加的模型
-        if (addedModelIds.has(modelId)) continue
-
-        // 验证模型是否属于该提供商模板（如果模板有预定义模型）
-        if (validModelIds && !validModelIds.has(modelId)) {
-          console.warn(`[ChatHeader] 模型 ${modelId} 不属于提供商 ${config.name} 的模板 ${template?.name}，已过滤`)
-          continue
-        }
-
-        // 尝试从 API 模型、模板或配置中获取模型名称
-        let modelName = modelId
-        let contextWindow = 8192
-
-        // 优先从 apiModels 中查找（保存的 API 获取的模型信息）
-        if (config.apiModels) {
-          const apiModel = config.apiModels.find(m => m.id === modelId)
-          if (apiModel) {
-            modelName = apiModel.name || modelId
-            contextWindow = apiModel.contextWindow || 8192
-          }
-        }
-
-        // 如果 apiModels 中没有，尝试从模板中查找
-        if (modelName === modelId && template?.models) {
-          const templateModel = template.models.find(m => m.id === modelId)
-          if (templateModel) {
-            modelName = templateModel.name || modelId
-            contextWindow = templateModel.contextWindow || 8192
-          }
-        }
-
-        // 从 apiModels 中获取模型特性
-        const apiModelInfo = config.apiModels?.find(m => m.id === modelId)
-
-        // 过滤非文本模型（图片/视频/音频生成模型）
-        if (!isTextModel(apiModelInfo?.type)) {
-          console.log(`[ChatHeader.providerModels] 过滤非文本模型: ${modelId}, type: ${apiModelInfo?.type}`)
-          continue
-        }
-
         models.push({
-          id: modelId,
-          name: modelName,
-          contextWindow,
-          type: apiModelInfo?.type,
-          supportsThinking: apiModelInfo?.supportsThinking,
-          supportsWebSearch: apiModelInfo?.supportsWebSearch,
-          supportsTools: apiModelInfo?.supportsTools
+          id: model.id,
+          name: model.name,
+          contextWindow: model.contextWindow,
+          type: model.type,
+          supportsThinking: model.supportsThinking,
+          supportsWebSearch: model.supportsWebSearch,
+          supportsTools: model.supportsTools
         })
-        addedModelIds.add(modelId)
       }
     }
-
-    // 3. 如果没有启用的模型，使用模板的默认模型列表
-    if (models.length === 0 && template && template.models.length > 0) {
-      console.log(`[ChatHeader.providerModels] 提供商 ${config.name} 没有有效模型，使用模板默认模型`)
+    // 如果 models 为空，使用模板的默认模型列表
+    else if (template && template.models.length > 0) {
       for (const model of template.models) {
-        // 过滤非文本模型
-        if (!isTextModel(model.type)) {
-          console.log(`[ChatHeader.providerModels] 过滤非文本模型: ${model.id}, type: ${model.type}`)
-          continue
-        }
+        if (!isTextModel(model.type)) continue
         models.push({
           id: model.id,
           name: model.name || model.id,
@@ -260,8 +184,6 @@ const providerModels = computed(() => {
     console.log(`[ChatHeader.providerModels] 提供商 ${config.name} 最终模型列表:`, models.map(m => m.id))
 
     if (models.length > 0) {
-      // 获取提供商的显示名称：优先使用 shortId，其次使用配置名称
-      // 注意：shortId 是用户设置的短标识符，不应该显示数据库 id
       const displayShortId = config.shortId || config.name
 
       result.push({

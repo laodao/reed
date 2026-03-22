@@ -731,7 +731,6 @@ const handleSave = async () => {
   saving.value = true
   try {
     // 使用 JSON 序列化/反序列化确保数据可被 IPC 传输
-    // 这可以移除所有不可序列化的属性
     const safeStringify = (obj: any): any => {
       try {
         return JSON.parse(JSON.stringify(obj))
@@ -740,15 +739,41 @@ const handleSave = async () => {
       }
     }
 
-    // 将响应式对象转换为普通对象，避免 IPC 序列化问题
-    const plainEnabledModels = safeStringify(form.enabledModels) || []
-    const plainCustomModels = safeStringify(form.customModels) || []
+    // 合并 customModels 和 enabledModels 为 models 字段
+    const mergedModels: ModelDefinition[] = []
+    const addedIds = new Set<string>()
     const plainApiModels = safeStringify(apiModels.value) || []
+    const plainCustomModels = safeStringify(form.customModels) || []
 
-    console.log('[handleSave] 准备保存配置')
-    console.log('[handleSave] plainEnabledModels:', plainEnabledModels)
-    console.log('[handleSave] plainCustomModels:', plainCustomModels)
-    console.log('[handleSave] plainApiModels:', plainApiModels)
+    // 1. 先添加 customModels（完整信息）
+    for (const model of plainCustomModels) {
+      if (!addedIds.has(model.id)) {
+        mergedModels.push(model)
+        addedIds.add(model.id)
+      }
+    }
+
+    // 2. 添加 enabledModels 中的 ID（从 apiModels 获取完整信息）
+    for (const modelId of form.enabledModels) {
+      if (!addedIds.has(modelId)) {
+        const apiModel = plainApiModels.find((m: ModelDefinition) => m.id === modelId)
+        if (apiModel) {
+          mergedModels.push(apiModel)
+          addedIds.add(modelId)
+        } else {
+          mergedModels.push({
+            id: modelId,
+            name: modelId,
+            contextWindow: 8192,
+            maxOutputTokens: 4096,
+            features: ['chat']
+          })
+          addedIds.add(modelId)
+        }
+      }
+    }
+
+    console.log('[handleSave] 准备保存配置, mergedModels:', mergedModels)
 
     if (isEdit.value && props.editConfig) {
       // 更新配置
@@ -760,9 +785,7 @@ const handleSave = async () => {
         accessKeySecret: form.accessKeySecret || undefined,
         baseUrl: form.baseUrl || undefined,
         customHeaders: Object.keys(customHeaders).length > 0 ? customHeaders : undefined,
-        customModels: plainCustomModels.length > 0 ? plainCustomModels : undefined,
-        enabledModels: plainEnabledModels.length > 0 ? plainEnabledModels : undefined,
-        apiModels: plainApiModels.length > 0 ? plainApiModels : undefined,
+        models: mergedModels.length > 0 ? mergedModels : undefined,
         isDefault: form.isDefault
       })
 
@@ -784,9 +807,7 @@ const handleSave = async () => {
         accessKeySecret: form.accessKeySecret || undefined,
         baseUrl: form.baseUrl || undefined,
         customHeaders: Object.keys(customHeaders).length > 0 ? customHeaders : undefined,
-        customModels: plainCustomModels.length > 0 ? plainCustomModels : undefined,
-        enabledModels: plainEnabledModels.length > 0 ? plainEnabledModels : undefined,
-        apiModels: plainApiModels.length > 0 ? plainApiModels : undefined,
+        models: mergedModels.length > 0 ? mergedModels : undefined,
         isDefault: form.isDefault
       })
 
@@ -1003,22 +1024,25 @@ watch(
       form.accessKeyId = config.accessKeyId || ''
       form.accessKeySecret = ''
       form.baseUrl = config.baseUrl || ''
-      form.customModels = config.customModels ? [...config.customModels] : []
-      form.enabledModels = config.enabledModels ? [...config.enabledModels] : []
       form.isDefault = config.isDefault
 
-      // 不自动加载 apiModels，只加载已保存模型的完整信息
-      // 用户需要点击"从 API 刷新"才会显示所有模型
-      apiModels.value = []
-      savedModelsInfo.value = new Map()
-      if (config.apiModels) {
-        // 将已保存的 API 模型信息存入 savedModelsInfo，用于显示已启用模型的详细信息
-        config.apiModels.forEach(m => {
-          if (form.enabledModels.includes(m.id)) {
-            savedModelsInfo.value.set(m.id, m)
-          }
+      // 从 models 字段初始化
+      if (config.models && config.models.length > 0) {
+        form.customModels = [...config.models]
+        form.enabledModels = config.models.map(m => m.id)
+        // 保存模型信息到 savedModelsInfo
+        savedModelsInfo.value = new Map()
+        config.models.forEach(m => {
+          savedModelsInfo.value.set(m.id, m)
         })
+      } else {
+        form.customModels = []
+        form.enabledModels = []
+        savedModelsInfo.value = new Map()
       }
+
+      // 不自动加载 apiModels，用户需要点击"从 API 刷新"
+      apiModels.value = []
 
       // 转换自定义请求头
       if (config.customHeaders) {
@@ -1035,8 +1059,6 @@ watch(
       console.log('[watch editConfig] 找到模板:', template ? template.name : null, 'templates数量:', templates.value.length)
       if (template) {
         selectedTemplate.value = template
-        // 编辑模式下，保持已有的 enabledModels，不自动填充模板默认模型
-        // 如果需要添加模型，用户需要手动勾选或从API刷新后勾选
       } else {
         // 模板还没加载，等待模板加载完成后再设置
         console.log('[watch editConfig] 模板未找到，等待加载...')

@@ -186,9 +186,7 @@ async function handleCreateConfig(
       baseUrl: request.baseUrl,
       customHeaders: request.customHeaders,
       customParams: request.customParams,
-      customModels: request.customModels,
-      enabledModels: request.enabledModels,
-      apiModels: request.apiModels,
+      models: request.models,
       isEnabled: request.isEnabled ?? true,
       isDefault: request.isDefault ?? false
     })
@@ -241,9 +239,7 @@ async function handleUpdateConfig(
     if (data.baseUrl !== undefined) updates.baseUrl = data.baseUrl
     if (data.customHeaders !== undefined) updates.customHeaders = data.customHeaders
     if (data.customParams !== undefined) updates.customParams = data.customParams
-    if (data.customModels !== undefined) updates.customModels = data.customModels
-    if (data.enabledModels !== undefined) updates.enabledModels = data.enabledModels
-    if (data.apiModels !== undefined) updates.apiModels = data.apiModels
+    if (data.models !== undefined) updates.models = data.models
     if (data.isEnabled !== undefined) updates.isEnabled = data.isEnabled
     if (data.isDefault !== undefined) updates.isDefault = data.isDefault
 

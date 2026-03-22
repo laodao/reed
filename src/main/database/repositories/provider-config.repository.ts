@@ -35,9 +35,7 @@ export class ProviderConfigRepository {
       baseUrl: row.base_url || undefined,
       customHeaders: row.custom_headers ? JSON.parse(row.custom_headers) : undefined,
       customParams: row.custom_params ? JSON.parse(row.custom_params) : undefined,
-      customModels: row.custom_models ? JSON.parse(row.custom_models) : undefined,
-      enabledModels: row.enabled_models ? JSON.parse(row.enabled_models) : undefined,
-      apiModels: row.api_models ? JSON.parse(row.api_models) : undefined,
+      models: row.models ? JSON.parse(row.models) : undefined,
       isEnabled: row.is_enabled === 1,
       isDefault: row.is_default === 1,
       lastTested: row.last_tested || undefined,
@@ -95,10 +93,10 @@ export class ProviderConfigRepository {
     this.db.prepare(
       `INSERT INTO provider_configs (
         id, short_id, template_id, name, api_key_encrypted, access_key_id, access_key_secret_encrypted, base_url,
-        custom_headers, custom_params, custom_models, enabled_models, api_models,
+        custom_headers, custom_params, models,
         is_enabled, is_default, last_tested, test_result,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       config.shortId || null,
@@ -110,9 +108,7 @@ export class ProviderConfigRepository {
       config.baseUrl || null,
       config.customHeaders ? JSON.stringify(config.customHeaders) : null,
       config.customParams ? JSON.stringify(config.customParams) : null,
-      config.customModels ? JSON.stringify(config.customModels) : null,
-      config.enabledModels ? JSON.stringify(config.enabledModels) : null,
-      config.apiModels ? JSON.stringify(config.apiModels) : null,
+      config.models ? JSON.stringify(config.models) : null,
       config.isEnabled ? 1 : 0,
       config.isDefault ? 1 : 0,
       config.lastTested || null,
@@ -185,17 +181,9 @@ export class ProviderConfigRepository {
       setClauses.push('custom_params = ?')
       values.push(updates.customParams ? JSON.stringify(updates.customParams) : null)
     }
-    if (updates.customModels !== undefined) {
-      setClauses.push('custom_models = ?')
-      values.push(updates.customModels ? JSON.stringify(updates.customModels) : null)
-    }
-    if (updates.enabledModels !== undefined) {
-      setClauses.push('enabled_models = ?')
-      values.push(updates.enabledModels ? JSON.stringify(updates.enabledModels) : null)
-    }
-    if (updates.apiModels !== undefined) {
-      setClauses.push('api_models = ?')
-      values.push(updates.apiModels ? JSON.stringify(updates.apiModels) : null)
+    if (updates.models !== undefined) {
+      setClauses.push('models = ?')
+      values.push(updates.models ? JSON.stringify(updates.models) : null)
     }
     if (updates.isEnabled !== undefined) {
       setClauses.push('is_enabled = ?')
@@ -292,15 +280,13 @@ export class ProviderConfigRepository {
    * 更新测试结果
    * @param id - 配置 ID
    * @param result - 测试结果
-   * @param models - 获取到的模型列表（可选）
-   * @param templateModels - 模板中定义的有效模型 ID 列表（可选）
+   * @param models - 获取到的模型列表（可选，用于返回给前端展示）
    * @returns Promise<boolean>
    */
   async updateTestResult(
     id: string,
     result: 'success' | 'failed' | 'unknown',
-    models?: ModelDefinition[],
-    templateModels?: string[]
+    models?: ModelDefinition[]
   ): Promise<boolean> {
     const now = new Date().toISOString()
 
@@ -308,14 +294,8 @@ export class ProviderConfigRepository {
       'UPDATE provider_configs SET last_tested = ?, test_result = ?, updated_at = ? WHERE id = ?'
     ).run(now, result, now, id)
 
-    // 如果测试成功且提供了模型列表，只保存到 apiModels（不自动启用）
-    // 用户需要手动从 API 模型列表中选择要启用的模型
-    if (result === 'success' && models && models.length > 0) {
-      // 保存 API 模型列表到 apiModels 字段
-      this.db.prepare(
-        'UPDATE provider_configs SET api_models = ? WHERE id = ?'
-      ).run(JSON.stringify(models), id)
-    }
+    // 注意：models 不再持久化到数据库，只返回给前端临时使用
+    // 前端会根据用户选择将模型保存到 models 字段
 
     return true
   }

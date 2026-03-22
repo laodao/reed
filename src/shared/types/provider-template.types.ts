@@ -176,12 +176,8 @@ export interface UserProviderConfig {
   customHeaders?: Record<string, string>
   /** 自定义参数 */
   customParams?: Record<string, unknown>
-  /** 自定义模型列表 */
-  customModels?: ModelDefinition[]
-  /** 启用的模型 ID 列表 */
-  enabledModels?: string[]
-  /** 从 API 获取的模型列表（包含完整信息如名称、上下文窗口等） */
-  apiModels?: ModelDefinition[]
+  /** 用户启用的所有模型 */
+  models?: ModelDefinition[]
   /** 是否启用 */
   isEnabled: boolean
   /** 是否为默认提供商 */
@@ -245,9 +241,8 @@ export interface SaveProviderConfigRequest {
   baseUrl?: string
   customHeaders?: Record<string, string>
   customParams?: Record<string, unknown>
-  customModels?: ModelDefinition[]
-  enabledModels?: string[]
-  apiModels?: ModelDefinition[]
+  /** 用户启用的所有模型 */
+  models?: ModelDefinition[]
   isEnabled?: boolean
   isDefault?: boolean
 }

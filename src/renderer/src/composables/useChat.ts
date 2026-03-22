@@ -205,60 +205,25 @@ export function useChat() {
 
             // 如果没有指定模型，尝试从提供商配置中获取
             if (!modelId) {
-              // 辅助函数：判断模型是否为文本类型
-              const isTextModel = (modelId: string): boolean => {
-                const id = modelId.toLowerCase()
-                // 排除图像生成模型
-                if (id.includes('dall-e') || id.includes('stable-diffusion') ||
-                    id.includes('midjourney') || id.includes('cogview') ||
-                    id.includes('wanx') || id.includes('flux') ||
-                    (id.includes('image') && !id.includes('vision')) ||
-                    (id.includes('picture') && !id.includes('vision'))) {
-                  return false
-                }
-                // 排除视频生成模型
-                if (id.includes('sora') || id.includes('video') || id.includes('runway')) {
-                  return false
-                }
-                // 排除音频模型
-                if (id.includes('whisper') || id.includes('tts') || id.includes('audio') ||
-                    id.includes('speech') || id.includes('voice') || id.includes('asr')) {
-                  return false
-                }
-                // 排除嵌入模型
-                if (id.includes('embedding') || id.includes('embed')) {
-                  return false
-                }
-                // 排除重排序模型
-                if (id.includes('rerank')) {
-                  return false
-                }
-                return true
+              // 辅助函数：判断模型类型是否为文本类型
+              const isTextModelType = (type: string | undefined): boolean => {
+                return type === undefined || type === 'text' || type === 'multimodal'
               }
 
-              // 优先使用自定义模型（过滤非文本模型）
-              if (defaultConfig.customModels && defaultConfig.customModels.length > 0) {
-                const textModel = defaultConfig.customModels.find(m => isTextModel(m.id))
+              // 使用 models 字段
+              if (defaultConfig.models && defaultConfig.models.length > 0) {
+                const textModel = defaultConfig.models.find((m: any) => isTextModelType(m.type))
                 if (textModel) {
                   modelId = textModel.id
                 }
               }
-              // 然后尝试启用的模型（过滤非文本模型）
-              else if (defaultConfig.enabledModels && defaultConfig.enabledModels.length > 0) {
-                const textModelId = defaultConfig.enabledModels.find(id => isTextModel(id))
-                if (textModelId) {
-                  modelId = textModelId
-                }
-              }
-              // 最后尝试从模板获取（需要查询模板信息）
+              // 如果 models 为空，从模板获取
               else if (defaultConfig.templateId) {
-                // 获取模板列表来查找默认模型
                 const templatesResponse = await window.electronAPI.providerTemplate.list()
                 if (templatesResponse.success && templatesResponse.templates) {
                   const template = templatesResponse.templates.find((t: any) => t.id === defaultConfig.templateId)
                   if (template && template.models && template.models.length > 0) {
-                    // 过滤非文本模型
-                    const textModel = template.models.find((m: any) => isTextModel(m.id))
+                    const textModel = template.models.find((m: any) => isTextModelType(m.type))
                     if (textModel) {
                       modelId = textModel.id
                     }

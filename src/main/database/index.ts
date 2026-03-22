@@ -263,11 +263,12 @@ export class DatabaseManager {
     if (!providerConfigColumnNames.includes('access_key_secret_encrypted')) {
       this.db.exec('ALTER TABLE provider_configs ADD COLUMN access_key_secret_encrypted TEXT')
     }
-    if (!providerConfigColumnNames.includes('api_models')) {
-      this.db.exec('ALTER TABLE provider_configs ADD COLUMN api_models TEXT')
-    }
     if (!providerConfigColumnNames.includes('short_id')) {
       this.db.exec('ALTER TABLE provider_configs ADD COLUMN short_id TEXT')
+    }
+    // 添加 models 字段
+    if (!providerConfigColumnNames.includes('models')) {
+      this.db.exec('ALTER TABLE provider_configs ADD COLUMN models TEXT')
     }
 
     // 检查 messages 表是否需要添加新字段
