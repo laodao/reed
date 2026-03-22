@@ -65,8 +65,12 @@ export class VolcEngineSdkProvider extends BaseProvider {
     // 如果用户配置了自定义 baseUrl，使用用户的；否则使用默认的数据面 API
     this.actualBaseUrl = config.baseUrl || defaultBaseUrl
 
-    // 初始化日志（简化）
-    console.log('[VolcEngineSdkProvider] 初始化:', providerId, ', baseUrl:', this.actualBaseUrl)
+    console.log('[VolcEngineSdkProvider] 初始化:')
+    console.log('  - providerId:', providerId)
+    console.log('  - 数据面 API (对话):', this.actualBaseUrl)
+    console.log('  - 管控面 API (模型列表):', this.managementBaseUrl)
+    console.log('  - apiKey 前缀:', config.apiKey?.substring(0, 8) + '***')
+    console.log('  - 预期对话 URL:', this.actualBaseUrl + '/chat/completions')
 
     // 初始化 OpenAI SDK 客户端（用于对话）
     // OpenAI SDK 会在 baseURL 后面追加 /chat/completions
@@ -91,7 +95,7 @@ export class VolcEngineSdkProvider extends BaseProvider {
   /**
    * 获取模型列表
    * 使用火山引擎管控面 API，需要 Access Key 签名认证
-   * 获取火山引擎的基础模型列表（可直接用于 API 调用）
+   * 获取火山引擎提供的基础模型列表
    */
   async getModels(): Promise<Array<{ id: string; name: string; maxTokens: number; contextWindow: number }>> {
     // 如果没有 Access Key，返回空数组
@@ -101,9 +105,11 @@ export class VolcEngineSdkProvider extends BaseProvider {
     }
 
     try {
-      console.log('[VolcEngineSdkProvider] 开始获取基础模型列表...')
+      console.log('[VolcEngineSdkProvider] 开始获取基础模型列表...', {
+        accessKeyId: this.accessKeyId.substring(0, 4) + '***',
+        hasSecret: !!this.accessKeySecret
+      })
 
-      // 获取基础模型列表
       const response = await this.listFoundationModels({
         accessKeyId: this.accessKeyId,
         accessKeySecret: this.accessKeySecret,
@@ -111,22 +117,15 @@ export class VolcEngineSdkProvider extends BaseProvider {
         service: 'ark'
       })
 
+      console.log('[VolcEngineSdkProvider] ListFoundationModels 响应:', JSON.stringify(response, null, 2))
+
       const models: Array<{ id: string; name: string; maxTokens: number; contextWindow: number }> = []
 
-      // 解析基础模型列表
       if (response.Result?.Items) {
         for (const item of response.Result.Items) {
-          // 获取模型的版本信息，取第一个版本作为默认
-          const modelId = item.Versions?.[0]?.Id || item.Id
-
-          // 跳过无效的模型
-          if (!modelId) continue
-
-          const modelName = item.Name || modelId
-
           models.push({
-            id: modelId,  // 模型版本 ID，可直接调用
-            name: modelName,
+            id: item.Name,  // 基础模型名称，如 Doubao-pro-32k，用于API调用
+            name: item.DisplayName || item.Name,  // 显示名称
             maxTokens: 4096,
             contextWindow: 128000
           })
@@ -136,7 +135,7 @@ export class VolcEngineSdkProvider extends BaseProvider {
       console.log(`[VolcEngineSdkProvider] 获取到 ${models.length} 个基础模型`)
       return models
     } catch (error) {
-      console.error('[VolcEngineSdkProvider] 获取基础模型列表失败:', error)
+      console.error('[VolcEngineSdkProvider] 获取模型列表失败:', error)
       throw error
     }
   }
@@ -145,11 +144,36 @@ export class VolcEngineSdkProvider extends BaseProvider {
    * 调用火山引擎管控面 API 获取基础模型列表
    */
   private async listFoundationModels(config: VolcEngineSignatureConfig): Promise<any> {
+    const method = 'POST'
     const action = 'ListFoundationModels'
     const version = '2024-01-01'
 
     // 火山引擎方舟平台 API 网关地址
     const apiHost = 'ark.cn-beijing.volcengineapi.com'
+    const url = new URL(`https://${apiHost}/?Action=${action}&Version=${version}`)
+
+    // 请求体（带分页参数，与官方示例一致）
+    const body = JSON.stringify({
+      PageNumber: 1,
+      PageSize: 100,
+      SortBy: "CreateTime",
+      SortOrder: "Desc"
+    })
+
+    const response = await this.signedRequest(config, apiHost, url, body)
+    return response
+  }
+
+  /**
+   * 调用火山引擎管控面 API 获取推理接入点列表
+   */
+  private async listEndpoints(config: VolcEngineSignatureConfig): Promise<any> {
+    const method = 'POST'
+    const action = 'ListEndpoints'
+    const version = '2024-01-01'
+
+    // 火山引擎统一 API 网关地址
+    const apiHost = 'open.volcengineapi.com'
     const url = new URL(`https://${apiHost}/?Action=${action}&Version=${version}`)
 
     // 请求体（带分页参数）
@@ -260,7 +284,6 @@ export class VolcEngineSdkProvider extends BaseProvider {
 
   /**
    * 构建消息列表
-   * 支持多模态内容（图片）
    */
   private buildMessages(context: ChatContext, options?: ChatOptions): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = []
@@ -283,33 +306,10 @@ export class VolcEngineSdkProvider extends BaseProvider {
     }
 
     for (const msg of context.messages) {
-      // 检测是否是多模态内容（数组格式）
-      const isMultimodal = Array.isArray(msg.content)
-
-      if (isMultimodal) {
-        // 多模态消息，转换为 OpenAI 格式
-        const openaiContent = (msg.content as any[]).map((block: any) => {
-          if (block.type === 'text') {
-            return { type: 'text' as const, text: block.text || '' }
-          } else if (block.type === 'image' && block.image_url?.url) {
-            return { type: 'image_url' as const, image_url: { url: block.image_url.url } }
-          }
-          return null
-        }).filter(Boolean)
-
-        messages.push({
-          role: msg.role as 'user' | 'assistant' | 'system',
-          content: openaiContent as any
-        })
-      } else {
-        // 纯文本消息
-        const textContent = (msg.content as string).trim()
-        if (!textContent) continue
-        messages.push({
-          role: msg.role as 'user' | 'assistant' | 'system',
-          content: textContent
-        })
-      }
+      messages.push({
+        role: msg.role as 'user' | 'assistant' | 'system',
+        content: msg.content
+      })
     }
 
     return messages
@@ -346,7 +346,12 @@ export class VolcEngineSdkProvider extends BaseProvider {
     options?: ChatOptions
   ): Promise<string> {
     const model = this.getDefaultModel()
-    console.log('[VolcEngineSdkProvider.chatStream] model:', model)
+    console.log('[VolcEngineSdkProvider.chatStream] ========== 发送对话请求 ==========')
+    console.log('[VolcEngineSdkProvider.chatStream] 数据面 API baseUrl:', this.actualBaseUrl)
+    console.log('[VolcEngineSdkProvider.chatStream] 完整请求 URL:', this.actualBaseUrl + '/chat/completions')
+    console.log('[VolcEngineSdkProvider.chatStream] 使用的模型:', model)
+    console.log('[VolcEngineSdkProvider.chatStream] 消息数量:', context.messages.length)
+    console.log('[VolcEngineSdkProvider.chatStream] apiKey 前缀:', this.client.apiKey?.substring(0, 8) + '***')
     const messages = this.buildMessages(context, options)
 
     let fullContent = ''
@@ -496,7 +501,7 @@ export class VolcEngineSdkProvider extends BaseProvider {
 
       // 火山引擎特定错误处理
       if (error.error?.code === 'InvalidEndpointOrModel.NotFound') {
-        return `模型不存在。请确保使用正确的模型 ID。错误详情：${message}`
+        return `模型或接入点不存在。请在火山引擎控制台创建推理接入点，并确保使用正确的接入点 ID（如：doubao-seed-2-0-lite-260215）。错误详情：${message}`
       }
 
       return message
