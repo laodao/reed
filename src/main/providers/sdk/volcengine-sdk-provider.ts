@@ -392,6 +392,14 @@ export class VolcEngineSdkProvider extends BaseProvider {
       onEvent({ type: 'done', messageId })
       return fullContent
     } catch (error: any) {
+      console.error('[VolcEngineSdkProvider.chatStream] 请求失败:', error)
+      console.error('[VolcEngineSdkProvider.chatStream] 错误详情:', {
+        message: error.message,
+        status: error.status,
+        code: error.code,
+        error: error.error
+      })
+
       if (error.name === 'AbortError' || error.code === 'aborted') {
         onEvent({ type: 'error', error: '请求已取消' })
         return fullContent
