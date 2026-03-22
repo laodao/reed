@@ -4,7 +4,7 @@
  * @description 处理提供商配置相关的 IPC 请求
  */
 
-import { ipcMain, IpcMainInvokeEvent } from 'electron'
+import { ipcMain, IpcMainInvokeEvent, BrowserWindow } from 'electron'
 import { getDatabaseManager } from '../../database'
 import {
   providerTemplateService,
@@ -19,6 +19,16 @@ import type {
   SaveProviderConfigRequest,
   UserProviderConfig
 } from '../../../shared/types/provider-template.types'
+
+/**
+ * 广播配置变化事件到所有窗口
+ */
+function broadcastConfigChanged(): void {
+  const windows = BrowserWindow.getAllWindows()
+  for (const window of windows) {
+    window.webContents.send('provider-config:changed')
+  }
+}
 
 /**
  * 注册提供商配置相关 IPC 处理器
@@ -183,6 +193,9 @@ async function handleCreateConfig(
       isDefault: request.isDefault ?? false
     })
 
+    // 广播配置变化事件
+    broadcastConfigChanged()
+
     // 返回时隐藏 API 密钥
     const safeConfig = {
       ...config,
@@ -280,6 +293,9 @@ async function handleUpdateConfig(
       return { success: false, error: '更新失败' }
     }
 
+    // 广播配置变化事件
+    broadcastConfigChanged()
+
     // 返回时隐藏 API 密钥
     const safeConfig = {
       ...config,
@@ -311,6 +327,10 @@ async function handleDeleteConfig(
     }
 
     const deleted = await dbManager.providerConfigs.delete(configId)
+    if (deleted) {
+      // 广播配置变化事件
+      broadcastConfigChanged()
+    }
     return { success: deleted }
   } catch (error) {
     console.error('删除配置失败:', error)
@@ -437,6 +457,10 @@ async function handleSetDefault(
     }
 
     const success = await dbManager.providerConfigs.setDefault(configId)
+    if (success) {
+      // 广播配置变化事件
+      broadcastConfigChanged()
+    }
     return { success }
   } catch (error) {
     console.error('设置默认配置失败:', error)

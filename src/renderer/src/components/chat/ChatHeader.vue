@@ -91,7 +91,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, computed, onMounted } from 'vue'
+import { ref, reactive, watch, computed, onMounted, onUnmounted } from 'vue'
 import { Setting, Delete, Cpu, Search, SetUp } from '@element-plus/icons-vue'
 import type { Dialog, ContextConfig, UserProviderConfig, ModelDefinition, ProviderTemplate } from '../../../shared/types'
 import { useDialogStore } from '../../stores/dialog'
@@ -319,21 +319,22 @@ function filterModels(keyword: string): void {
 // 加载提供商配置
 async function loadProviderConfigs(): Promise<void> {
   try {
-    // 加载提供商配置
+    // 先加载提供商模板（用于验证模型类型），必须先于配置加载
+    const templatesResponse = await window.electronAPI.providerTemplate.list()
+    if (templatesResponse.success && templatesResponse.templates) {
+      providerTemplates.value = templatesResponse.templates
+    }
+
+    // 然后加载提供商配置
     const response = await window.electronAPI.providerConfig.list()
     if (response.success && response.configs) {
       providerConfigs.value = response.configs.filter((c: UserProviderConfig) => c.isEnabled)
 
       // 如果没有加载过选中状态，设置默认值
+      // 此时 providerTemplates 已加载，providerModels 可以正确过滤模型类型
       if (!selectedModelKey.value && props.dialog) {
         updateSelectedModelFromDialog()
       }
-    }
-
-    // 加载提供商模板（用于验证模型）
-    const templatesResponse = await window.electronAPI.providerTemplate.list()
-    if (templatesResponse.success && templatesResponse.templates) {
-      providerTemplates.value = templatesResponse.templates
     }
   } catch (error) {
     console.error('加载提供商配置失败:', error)
@@ -350,6 +351,19 @@ const settingsForm = reactive({
 
 // 从 dialog 更新选中的模型
 function updateSelectedModelFromDialog(): void {
+  console.log('[updateSelectedModelFromDialog] ========== 开始 ==========')
+  console.log('[updateSelectedModelFromDialog] props.dialog:', {
+    id: props.dialog.id,
+    modelId: props.dialog.modelId,
+    providerConfigId: props.dialog.providerConfigId
+  })
+  console.log('[updateSelectedModelFromDialog] providerModels 数量:', providerModels.value.length)
+  console.log('[updateSelectedModelFromDialog] providerModels 详情:', providerModels.value.map(p => ({
+    id: p.id,
+    name: p.name,
+    models: p.models.map(m => m.id)
+  })))
+
   const modelId = props.dialog.modelId
   let providerId = props.dialog.providerConfigId
 
@@ -358,6 +372,7 @@ function updateSelectedModelFromDialog(): void {
     for (const provider of providerModels.value) {
       if (provider.models.some(m => m.id === modelId)) {
         providerId = provider.id
+        console.log('[updateSelectedModelFromDialog] 从模型列表找到提供商:', providerId)
         break
       }
     }
@@ -368,21 +383,58 @@ function updateSelectedModelFromDialog(): void {
     const provider = providerModels.value.find(p => p.id === providerId)
     if (provider && provider.models.some(m => m.id === modelId)) {
       const newKey = `${providerId}:${modelId}`
+      console.log('[updateSelectedModelFromDialog] 设置 selectedModelKey:', newKey)
       selectedModelKey.value = newKey
     } else {
-      // 如果找不到匹配，选择第一个可用模型
+      console.log('[updateSelectedModelFromDialog] 找不到匹配，选择第一个可用模型')
+      // 如果找不到匹配，选择第一个可用模型并持久化
       if (providerModels.value.length > 0 && providerModels.value[0].models.length > 0) {
         const firstProvider = providerModels.value[0]
         const firstModel = firstProvider.models[0]
-        selectedModelKey.value = `${firstProvider.id}:${firstModel.id}`
+        const newKey = `${firstProvider.id}:${firstModel.id}`
+        console.log('[updateSelectedModelFromDialog] 第一个模型:', { provider: firstProvider.id, model: firstModel.id })
+        selectedModelKey.value = newKey
+        // 持久化到 dialog（只有当 dialog 原本没有模型时才自动设置）
+        if (!props.dialog.modelId) {
+          console.log('[updateSelectedModelFromDialog] dialog 没有 modelId，调用 persistModelSelection')
+          persistModelSelection(firstProvider.id, firstModel.id)
+        }
       }
     }
   } else if (!modelId && providerModels.value.length > 0 && providerModels.value[0].models.length > 0) {
+    console.log('[updateSelectedModelFromDialog] 没有 modelId，选择第一个可用模型')
     // 如果没有 modelId，选择第一个可用模型
     const firstProvider = providerModels.value[0]
     const firstModel = firstProvider.models[0]
-    selectedModelKey.value = `${firstProvider.id}:${firstModel.id}`
+    const newKey = `${firstProvider.id}:${firstModel.id}`
+    console.log('[updateSelectedModelFromDialog] 第一个模型:', { provider: firstProvider.id, model: firstModel.id })
+    selectedModelKey.value = newKey
+    // 只在 dialog 原本没有 modelId 时才持久化（避免覆盖用户手动选择的值）
+    if (!props.dialog.modelId) {
+      console.log('[updateSelectedModelFromDialog] dialog 没有 modelId，调用 persistModelSelection')
+      persistModelSelection(firstProvider.id, firstModel.id)
+    }
   }
+  console.log('[updateSelectedModelFromDialog] 最终 selectedModelKey:', selectedModelKey.value)
+  console.log('[updateSelectedModelFromDialog] ========== 结束 ==========')
+}
+
+// 持久化模型选择到 dialog（不触发 UI 更新循环）
+function persistModelSelection(providerConfigId: string, modelId: string): void {
+  console.log('[ChatHeader.persistModelSelection] 持久化模型选择:', { providerConfigId, modelId, dialogId: props.dialog.id })
+  // 记录正在切换模型的对话 ID
+  changingModelDialogId.value = props.dialog.id
+  // 更新 dialog
+  dialogStore.updateDialog(props.dialog.id, {
+    modelId,
+    providerConfigId
+  })
+  // 延迟后重置标志
+  setTimeout(() => {
+    if (changingModelDialogId.value === props.dialog.id) {
+      changingModelDialogId.value = null
+    }
+  }, 300)
 }
 
 // 监听 dialog 变化（使用 getter 函数返回对象属性来实现深度监听）
@@ -523,6 +575,15 @@ function handleSaveSettings(): void {
 
 onMounted(() => {
   loadProviderConfigs()
+  // 监听配置变化，自动刷新模型列表
+  const unsubscribe = window.electronAPI.providerConfig.onChanged(() => {
+    console.log('[ChatHeader] 收到配置变化通知，重新加载提供商配置')
+    loadProviderConfigs()
+  })
+  // 组件卸载时取消监听
+  onUnmounted(() => {
+    unsubscribe()
+  })
 })
 </script>
 

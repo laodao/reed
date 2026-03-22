@@ -29,6 +29,7 @@ const IPC_CHANNELS = {
   PROVIDER_CONFIG_DELETE: 'provider-config:delete',
   PROVIDER_CONFIG_TEST: 'provider-config:test',
   PROVIDER_CONFIG_SET_DEFAULT: 'provider-config:set-default',
+  PROVIDER_CONFIG_CHANGED: 'provider-config:changed',
 
   // 对话相关
   DIALOG_LIST: 'dialog:list',
@@ -151,7 +152,13 @@ const electronAPI = {
       accessKeySecret?: string
       baseUrl?: string
     }) => ipcRenderer.invoke(IPC_CHANNELS.PROVIDER_CONFIG_TEST, data),
-    setDefault: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.PROVIDER_CONFIG_SET_DEFAULT, id)
+    setDefault: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.PROVIDER_CONFIG_SET_DEFAULT, id),
+    // 监听配置变化
+    onChanged: (callback: () => void) => {
+      const handler = () => callback()
+      ipcRenderer.on(IPC_CHANNELS.PROVIDER_CONFIG_CHANGED, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.PROVIDER_CONFIG_CHANGED, handler)
+    }
   },
 
   // 对话相关
