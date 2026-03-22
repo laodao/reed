@@ -108,6 +108,14 @@ export class ChatService {
         return { success: false, error: '提供商模板不存在' }
       }
 
+      console.log('[ChatService.sendMessage] 提供商信息:')
+      console.log('  - providerConfig.id:', providerConfig.id)
+      console.log('  - providerConfig.name:', providerConfig.name)
+      console.log('  - providerConfig.templateId:', providerConfig.templateId)
+      console.log('  - effectiveModelId:', effectiveModelId)
+      console.log('  - template.id:', template.id)
+      console.log('  - template.sdkProvider:', template.sdkProvider)
+
       // 创建 Provider 实例
       const provider = createProvider(
         template.id,
