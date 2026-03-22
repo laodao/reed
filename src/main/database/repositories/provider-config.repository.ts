@@ -308,32 +308,13 @@ export class ProviderConfigRepository {
       'UPDATE provider_configs SET last_tested = ?, test_result = ?, updated_at = ? WHERE id = ?'
     ).run(now, result, now, id)
 
-    // 如果测试成功且提供了模型列表，更新启用的模型
+    // 如果测试成功且提供了模型列表，只保存到 apiModels（不自动启用）
+    // 用户需要手动从 API 模型列表中选择要启用的模型
     if (result === 'success' && models && models.length > 0) {
-      let enabledModels = models.map((m) => m.id)
-
-      // 如果提供了模板模型列表，过滤掉不属于该模板的模型
-      if (templateModels && templateModels.length > 0) {
-        const validModelSet = new Set(templateModels)
-        const filteredModels = enabledModels.filter(modelId => validModelSet.has(modelId))
-
-        // 如果过滤后还有模型，使用过滤后的列表
-        if (filteredModels.length > 0) {
-          enabledModels = filteredModels
-          console.log(`[updateTestResult] 过滤后的有效模型:`, enabledModels)
-        } else {
-          // API 返回的模型均不属于该模板，清除 enabled_models（设为 NULL 使用模板默认模型）
-          console.log(`[updateTestResult] API 返回的模型均不属于该模板，清除 enabled_models`)
-          this.db.prepare(
-            'UPDATE provider_configs SET enabled_models = NULL WHERE id = ?'
-          ).run(id)
-          return true
-        }
-      }
-
+      // 保存 API 模型列表到 apiModels 字段
       this.db.prepare(
-        'UPDATE provider_configs SET enabled_models = ? WHERE id = ?'
-      ).run(JSON.stringify(enabledModels), id)
+        'UPDATE provider_configs SET api_models = ? WHERE id = ?'
+      ).run(JSON.stringify(models), id)
     }
 
     return true

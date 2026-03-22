@@ -171,7 +171,6 @@ export class DialogRepository {
    * @returns Promise<void>
    */
   async update(id: string, data: Partial<Dialog>): Promise<void> {
-    console.log('[DialogRepository.update] 开始更新, id:', id, ', data:', JSON.stringify(data))
     const fields: string[] = []
     const values: any[] = []
 
@@ -190,25 +189,17 @@ export class DialogRepository {
     if (data.modelId !== undefined) {
       fields.push('model_id = ?')
       values.push(data.modelId)
-      console.log('[DialogRepository.update] 将更新 model_id 为:', data.modelId)
     }
     if (data.providerConfigId !== undefined) {
       fields.push('provider_config_id = ?')
       values.push(data.providerConfigId || null)
-      console.log('[DialogRepository.update] 将更新 provider_config_id 为:', data.providerConfigId)
     }
 
     if (fields.length > 0) {
       fields.push("updated_at = datetime('now')")
       values.push(id)
       const sql = `UPDATE dialogs SET ${fields.join(', ')} WHERE id = ?`
-      console.log('[DialogRepository.update] 执行 SQL:', sql)
-      console.log('[DialogRepository.update] 参数:', values)
-      const result = this.db.prepare(sql).run(...values)
-      console.log('[DialogRepository.update] 更新结果 - 受影响行数:', result.changes)
-      console.log('[DialogRepository.update] 更新完成')
-    } else {
-      console.log('[DialogRepository.update] 没有需要更新的字段')
+      this.db.prepare(sql).run(...values)
     }
   }
 

@@ -70,22 +70,9 @@ export function createProvider(
   template?: ProviderTemplate,
   userConfig?: UserProviderConfig
 ): BaseProvider {
-  // ===== 详细日志：打印创建 Provider 的参数 =====
-  console.log('[createProvider] ========== 创建 Provider ==========')
-  console.log('[createProvider] templateId:', templateId)
-  console.log('[createProvider] config.baseUrl:', config.baseUrl || '(未设置)')
-  console.log('[createProvider] config.defaultModel:', config.defaultModel)
-  console.log('[createProvider] config.apiKey 前缀:', config.apiKey?.substring(0, 10) + '***')
-  console.log('[createProvider] userConfig?.id:', userConfig?.id)
-  console.log('[createProvider] userConfig?.name:', userConfig?.name)
-  console.log('[createProvider] userConfig?.templateId:', userConfig?.templateId)
-  console.log('[createProvider] userConfig?.baseUrl:', userConfig?.baseUrl || '(未设置)')
-  console.log('[createProvider] ====================================')
-
   // 检查是否是 OpenAI 兼容平台
   if (templateId in OPENAI_COMPATIBLE_CONFIGS) {
     const { baseUrl, name } = OPENAI_COMPATIBLE_CONFIGS[templateId]
-    console.log('[createProvider] 使用 OpenAI 兼容配置, 默认 baseUrl:', baseUrl, ', 用户 baseUrl:', config.baseUrl || '(未设置)')
     return new OpenAISdkProvider(
       config,
       templateId,
@@ -98,19 +85,16 @@ export function createProvider(
 
   // Anthropic 使用官方 SDK
   if (templateId === 'anthropic') {
-    console.log('[createProvider] 使用 Anthropic SDK')
     return new AnthropicSdkProvider(config, template, userConfig)
   }
 
   // Google 使用官方 SDK
   if (templateId === 'google') {
-    console.log('[createProvider] 使用 Google SDK')
     return new GoogleSdkProvider(config, template, userConfig)
   }
 
   // 火山引擎使用专用 Provider
   if (templateId === 'volcengine') {
-    console.log('[createProvider] 使用火山引擎 Provider')
     return new VolcEngineSdkProvider(
       config,
       templateId,
@@ -126,7 +110,6 @@ export function createProvider(
   // 这里需要提供必要的参数
   const baseUrl = config.baseUrl || template?.apiConfig.baseUrl || ''
   const name = template?.name || templateId
-  console.log('[createProvider] 使用 OpenAI 兼容实现, baseUrl:', baseUrl)
 
   return new OpenAICompatibleProvider(
     config,

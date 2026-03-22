@@ -41,23 +41,16 @@ export class ChatService {
     window: BrowserWindow,
     request: SendMessageRequest
   ): Promise<{ success: boolean; error?: string }> {
-    console.log('[ChatService.sendMessage] 开始处理请求')
-    console.log('[ChatService.sendMessage] request:', request)
-
     const dbManager = getDatabaseManager()
 
     if (!dbManager.dialogs || !dbManager.messages || !dbManager.providerConfigs) {
-      console.error('[ChatService.sendMessage] 错误: 数据库未初始化')
       return { success: false, error: '数据库未初始化' }
     }
 
     try {
       // 获取对话信息
-      console.log('[ChatService.sendMessage] 获取对话信息, dialogId:', request.dialogId)
       const dialog = await dbManager.dialogs.getById(request.dialogId)
-      console.log('[ChatService.sendMessage] dialog:', dialog)
       if (!dialog) {
-        console.error('[ChatService.sendMessage] 错误: 对话不存在')
         return { success: false, error: '对话不存在' }
       }
 
@@ -66,53 +59,30 @@ export class ChatService {
       const effectiveModelId = request.modelId || dialog.modelId
       const effectiveProviderConfigId = request.providerConfigId || dialog.providerConfigId
 
-      console.log('[ChatService.sendMessage] 使用的模型ID:', effectiveModelId)
-      console.log('[ChatService.sendMessage] 使用的提供商配置ID:', effectiveProviderConfigId)
-      console.log('[ChatService.sendMessage] 来源 - 前端传递 modelId:', request.modelId)
-      console.log('[ChatService.sendMessage] 来源 - 前端传递 providerConfigId:', request.providerConfigId)
-
       // 获取提供商配置
       let providerConfig = null
 
       // 优先使用前端传来的提供商配置
-      console.log('[ChatService.sendMessage] effectiveProviderConfigId:', effectiveProviderConfigId)
       if (effectiveProviderConfigId) {
-        console.log('[ChatService.sendMessage] 尝试获取指定的提供商配置')
         providerConfig = await dbManager.providerConfigs.getById(effectiveProviderConfigId)
-        console.log('[ChatService.sendMessage] 指定的提供商配置:', providerConfig ? providerConfig.name : null)
       }
 
       // 如果没有指定或找不到，尝试获取默认提供商
       if (!providerConfig) {
-        console.log('[ChatService.sendMessage] 尝试获取默认提供商')
         providerConfig = await dbManager.providerConfigs.getDefault()
-        console.log('[ChatService.sendMessage] 默认提供商配置:', providerConfig ? providerConfig.name : null)
       }
 
       // 如果还是没有，尝试获取第一个启用的提供商
       if (!providerConfig) {
-        console.log('[ChatService.sendMessage] 尝试获取第一个启用的提供商')
         const enabledConfigs = await dbManager.providerConfigs.getEnabled()
-        console.log('[ChatService.sendMessage] 启用的提供商数量:', enabledConfigs.length)
         if (enabledConfigs.length > 0) {
           providerConfig = enabledConfigs[0]
-          console.log('[ChatService.sendMessage] 第一个启用的提供商:', providerConfig.name)
         }
       }
 
       if (!providerConfig) {
-        console.error('[ChatService.sendMessage] 错误: 未配置 AI 提供商')
         return { success: false, error: '未配置 AI 提供商，请先在设置中添加提供商配置' }
       }
-
-      console.log('[ChatService.sendMessage] 最终使用的提供商:', providerConfig.name)
-      console.log('[ChatService.sendMessage] providerConfig.id:', providerConfig.id)
-      console.log('[ChatService.sendMessage] providerConfig.templateId:', providerConfig.templateId)
-      console.log('[ChatService.sendMessage] providerConfig.baseUrl:', providerConfig.baseUrl || '(未设置)')
-      console.log('[ChatService.sendMessage] providerConfig 是否有 apiKey:', !!providerConfig.apiKey)
-      console.log('[ChatService.sendMessage] providerConfig.enabledModels:', providerConfig.enabledModels?.slice(0, 3))
-      console.log('[ChatService.sendMessage] effectiveModelId:', effectiveModelId)
-      console.log('[ChatService.sendMessage] effectiveProviderConfigId:', effectiveProviderConfigId)
 
       if (!providerConfig.apiKey) {
         console.error('[ChatService.sendMessage] 错误: 提供商未配置 API 密钥')
@@ -120,7 +90,6 @@ export class ChatService {
       }
 
       // 解密 API 密钥
-      console.log('[ChatService.sendMessage] 开始解密 API 密钥')
       let decryptedApiKey: string
       try {
         const secureStorage = SecureStorageService.getInstance()
@@ -128,29 +97,18 @@ export class ChatService {
           await secureStorage.initialize()
         }
         decryptedApiKey = secureStorage.decrypt(providerConfig.apiKey)
-        console.log('[ChatService.sendMessage] API 密钥解密成功, 长度:', decryptedApiKey.length)
       } catch (decryptError) {
-        console.error('[ChatService.sendMessage] API 密钥解密失败:', decryptError)
         return { success: false, error: 'API 密钥解密失败，请重新配置提供商' }
       }
 
       // 获取模板
-      console.log('[ChatService.sendMessage] 获取模板, templateId:', providerConfig.templateId)
       const template = PROVIDER_TEMPLATES.find(t => t.id === providerConfig.templateId)
-      console.log('[ChatService.sendMessage] 模板:', template ? template.name : null)
 
       if (!template) {
-        console.error('[ChatService.sendMessage] 错误: 提供商模板不存在')
         return { success: false, error: '提供商模板不存在' }
       }
 
       // 创建 Provider 实例
-      console.log('[ChatService.sendMessage] 创建 Provider 实例')
-      console.log('[ChatService.sendMessage] effectiveModelId:', effectiveModelId)
-      console.log('[ChatService.sendMessage] effectiveProviderConfigId:', effectiveProviderConfigId)
-      console.log('[ChatService.sendMessage] template.id:', template.id)
-      console.log('[ChatService.sendMessage] providerConfig.baseUrl:', providerConfig.baseUrl || '(使用默认)')
-
       const provider = createProvider(
         template.id,
         {
@@ -162,28 +120,22 @@ export class ChatService {
         providerConfig
       )
 
-      console.log('[ChatService.sendMessage] Provider 类型:', provider.constructor.name)
-
       // 构建上下文（先构建，再保存用户消息，避免重复）
       // 这样 buildContext 会处理附件，然后传入 Provider
-      console.log('[ChatService.sendMessage] 构建对话上下文')
       const context = await this.buildContext(
         dialog,
         request.dialogId,
         dbManager,
         { content: request.content, attachments: request.attachments }
       )
-      console.log('[ChatService.sendMessage] 上下文消息数量:', context.messages.length)
 
       // 保存用户消息到数据库
-      console.log('[ChatService.sendMessage] 保存用户消息')
       const userMessage = await dbManager.messages.create({
         dialogId: request.dialogId,
         role: 'user',
         content: request.content,
         attachments: request.attachments
       })
-      console.log('[ChatService.sendMessage] 用户消息已保存, id:', userMessage.id)
 
       // 处理联网搜索
       let webSearchResults: WebSearchResult[] = []
@@ -213,7 +165,6 @@ export class ChatService {
       activeStreams.set(request.dialogId, abortController)
 
       // 创建 AI 消息（先创建空消息，在发送 start 事件之前）
-      console.log('[ChatService.sendMessage] 创建 AI 消息')
       const aiMessage = await dbManager.messages.create({
         dialogId: request.dialogId,
         role: 'assistant',
@@ -221,7 +172,6 @@ export class ChatService {
         modelId: effectiveModelId,
         metadata: webSearchResults.length > 0 ? { webSearch: webSearchResults } : undefined
       })
-      console.log('[ChatService.sendMessage] AI 消息已创建, id:', aiMessage.id)
 
       // 发送流式开始事件（包含 messageId 和 dialogId）
       this.sendStreamEvent(window, {
@@ -237,8 +187,6 @@ export class ChatService {
       }
 
       // 流式调用 AI
-      console.log('[ChatService.sendMessage] 开始流式调用 AI, model:', effectiveModelId)
-      console.log('[ChatService.sendMessage] 聊天选项:', chatOptions)
       let fullContent = ''
       let fullThinkingContent = ''
       let tokenUsage: { promptTokens: number; completionTokens: number; totalTokens: number } | undefined
@@ -249,14 +197,12 @@ export class ChatService {
           (event: StreamEvent) => {
             // 收集思维链内容
             if (event.type === 'thinking' && event.thinkingContent) {
-              console.log('[ChatService.sendMessage] 收到思维链事件, 长度:', event.thinkingContent.length)
               fullThinkingContent += event.thinkingContent
             }
 
             // 收集 token 使用信息
             if (event.type === 'done' && event.usage) {
               tokenUsage = event.usage
-              console.log('[ChatService.sendMessage] 收到 token 使用信息:', tokenUsage)
             }
 
             // 转发事件到渲染进程
@@ -299,16 +245,11 @@ export class ChatService {
       }
 
       // 更新 AI 消息内容和元数据
-      console.log('[ChatService.sendMessage] 更新 AI 消息内容')
       await dbManager.messages.updateContent(aiMessage.id, fullContent)
 
       // 更新 token 使用量
       if (tokenUsage) {
-        console.log('[ChatService.sendMessage] 保存 AI 消息 token:', tokenUsage.completionTokens)
         await dbManager.messages.updateTokensUsed(aiMessage.id, tokenUsage.completionTokens)
-
-        // 更新用户消息的 token（promptTokens 包含了上下文中所有消息的 token，这里简化处理）
-        console.log('[ChatService.sendMessage] 保存用户消息 token:', tokenUsage.promptTokens)
         await dbManager.messages.updateTokensUsed(userMessage.id, tokenUsage.promptTokens)
       }
 
@@ -316,15 +257,11 @@ export class ChatService {
       const metadata: MessageMetadata = {}
       if (fullThinkingContent) {
         metadata.thinkingChain = fullThinkingContent
-        console.log('[ChatService.sendMessage] 保存思维链到数据库, 长度:', fullThinkingContent.length)
-      } else {
-        console.log('[ChatService.sendMessage] 没有思维链内容需要保存')
       }
       if (webSearchResults.length > 0) {
         metadata.webSearch = webSearchResults
       }
       if (Object.keys(metadata).length > 0) {
-        console.log('[ChatService.sendMessage] 保存 metadata:', JSON.stringify(Object.keys(metadata)))
         await dbManager.messages.updateMetadata(aiMessage.id, metadata)
       }
 
@@ -339,12 +276,9 @@ export class ChatService {
       // 清理
       activeStreams.delete(request.dialogId)
 
-      console.log('[ChatService.sendMessage] 处理完成, 返回成功')
       return { success: true }
     } catch (error: any) {
-      console.error('[ChatService.sendMessage] 捕获异常:', error)
-      console.error('[ChatService.sendMessage] 异常消息:', error.message)
-      console.error('[ChatService.sendMessage] 异常堆栈:', error.stack)
+      console.error('[ChatService.sendMessage] 错误:', error.message)
       return { success: false, error: error.message || '发送失败' }
     }
   }

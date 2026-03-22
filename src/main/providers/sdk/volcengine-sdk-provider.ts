@@ -118,6 +118,10 @@ export class VolcEngineSdkProvider extends BaseProvider {
         for (const item of response.Result.Items) {
           // 获取模型的版本信息，取第一个版本作为默认
           const modelId = item.Versions?.[0]?.Id || item.Id
+
+          // 跳过无效的模型
+          if (!modelId) continue
+
           const modelName = item.Name || modelId
 
           models.push({

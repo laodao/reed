@@ -35,22 +35,16 @@ async function handleChatSend(
     enableThinkingChain?: boolean
   }
 ): Promise<{ success: boolean; error?: string }> {
-  console.log('[handleChatSend] 收到聊天请求:', request)
   try {
     const window = BrowserWindow.fromWebContents(event.sender)
     if (!window) {
-      console.error('[handleChatSend] 错误: 窗口不存在')
       return { success: false, error: '窗口不存在' }
     }
 
-    console.log('[handleChatSend] 调用 ChatService.sendMessage')
     const result = await ChatService.sendMessage(window, request)
-    console.log('[handleChatSend] ChatService 返回结果:', result)
     return result
   } catch (error: any) {
-    console.error('[handleChatSend] 捕获异常:', error)
-    console.error('[handleChatSend] 异常消息:', error.message)
-    console.error('[handleChatSend] 异常堆栈:', error.stack)
+    console.error('[handleChatSend] 错误:', error.message)
     return { success: false, error: error.message || '发送失败' }
   }
 }

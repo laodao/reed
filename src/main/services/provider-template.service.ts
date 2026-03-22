@@ -526,8 +526,10 @@ export class ProviderTemplateService {
       const models = await provider.getModels()
 
       // 转换为 ModelDefinition 格式，并自动识别模型能力
-      const modelDefinitions: ModelDefinition[] = models.map((m) => {
-        const modelId = m.id.toLowerCase()
+      const modelDefinitions: ModelDefinition[] = models
+        .filter((m) => m && m.id)  // 过滤掉无效的模型
+        .map((m) => {
+          const modelId = m.id.toLowerCase()
 
         // 自动识别模型类型
         const type = this.detectModelType(modelId)
