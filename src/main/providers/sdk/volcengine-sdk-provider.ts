@@ -63,6 +63,10 @@ export class VolcEngineSdkProvider extends BaseProvider {
 
     // 数据面 API URL（用于对话）
     // 如果用户配置了自定义 baseUrl，使用用户的；否则使用默认的数据面 API
+    console.log('[VolcEngineSdkProvider] 构造参数:')
+    console.log('  - config.baseUrl:', config.baseUrl)
+    console.log('  - defaultBaseUrl:', defaultBaseUrl)
+
     this.actualBaseUrl = config.baseUrl || defaultBaseUrl
 
     console.log('[VolcEngineSdkProvider] 初始化:')
@@ -95,7 +99,7 @@ export class VolcEngineSdkProvider extends BaseProvider {
   /**
    * 获取模型列表
    * 使用火山引擎管控面 API，需要 Access Key 签名认证
-   * 获取火山引擎提供的基础模型列表
+   * 获取用户创建的推理接入点列表（接入点 ID 可直接用于调用）
    */
   async getModels(): Promise<Array<{ id: string; name: string; maxTokens: number; contextWindow: number }>> {
     // 如果没有 Access Key，返回空数组
@@ -105,75 +109,47 @@ export class VolcEngineSdkProvider extends BaseProvider {
     }
 
     try {
-      console.log('[VolcEngineSdkProvider] 开始获取基础模型列表...', {
-        accessKeyId: this.accessKeyId.substring(0, 4) + '***',
-        hasSecret: !!this.accessKeySecret
-      })
+      console.log('[VolcEngineSdkProvider] 开始获取推理接入点列表...')
 
-      const response = await this.listFoundationModels({
+      const response = await this.listEndpoints({
         accessKeyId: this.accessKeyId,
         accessKeySecret: this.accessKeySecret,
         region: 'cn-beijing',
         service: 'ark'
       })
 
-      console.log('[VolcEngineSdkProvider] ListFoundationModels 响应:', JSON.stringify(response, null, 2))
+      console.log('[VolcEngineSdkProvider] ListEndpoints 响应:', JSON.stringify(response, null, 2))
 
       const models: Array<{ id: string; name: string; maxTokens: number; contextWindow: number }> = []
 
       if (response.Result?.Items) {
         for (const item of response.Result.Items) {
           models.push({
-            id: item.Name,  // 基础模型名称，如 Doubao-pro-32k，用于API调用
-            name: item.DisplayName || item.Name,  // 显示名称
+            id: item.Id,  // 接入点 ID，如 ep-xxxx，可直接调用
+            name: item.Name || item.Id,  // 接入点名称
             maxTokens: 4096,
             contextWindow: 128000
           })
         }
       }
 
-      console.log(`[VolcEngineSdkProvider] 获取到 ${models.length} 个基础模型`)
+      console.log(`[VolcEngineSdkProvider] 获取到 ${models.length} 个推理接入点`)
       return models
     } catch (error) {
-      console.error('[VolcEngineSdkProvider] 获取模型列表失败:', error)
+      console.error('[VolcEngineSdkProvider] 获取推理接入点列表失败:', error)
       throw error
     }
-  }
-
-  /**
-   * 调用火山引擎管控面 API 获取基础模型列表
-   */
-  private async listFoundationModels(config: VolcEngineSignatureConfig): Promise<any> {
-    const method = 'POST'
-    const action = 'ListFoundationModels'
-    const version = '2024-01-01'
-
-    // 火山引擎方舟平台 API 网关地址
-    const apiHost = 'ark.cn-beijing.volcengineapi.com'
-    const url = new URL(`https://${apiHost}/?Action=${action}&Version=${version}`)
-
-    // 请求体（带分页参数，与官方示例一致）
-    const body = JSON.stringify({
-      PageNumber: 1,
-      PageSize: 100,
-      SortBy: "CreateTime",
-      SortOrder: "Desc"
-    })
-
-    const response = await this.signedRequest(config, apiHost, url, body)
-    return response
   }
 
   /**
    * 调用火山引擎管控面 API 获取推理接入点列表
    */
   private async listEndpoints(config: VolcEngineSignatureConfig): Promise<any> {
-    const method = 'POST'
     const action = 'ListEndpoints'
     const version = '2024-01-01'
 
-    // 火山引擎统一 API 网关地址
-    const apiHost = 'open.volcengineapi.com'
+    // 火山引擎方舟平台 API 网关地址
+    const apiHost = 'ark.cn-beijing.volcengineapi.com'
     const url = new URL(`https://${apiHost}/?Action=${action}&Version=${version}`)
 
     // 请求体（带分页参数）
@@ -346,13 +322,21 @@ export class VolcEngineSdkProvider extends BaseProvider {
     options?: ChatOptions
   ): Promise<string> {
     const model = this.getDefaultModel()
-    console.log('[VolcEngineSdkProvider.chatStream] ========== 发送对话请求 ==========')
-    console.log('[VolcEngineSdkProvider.chatStream] 数据面 API baseUrl:', this.actualBaseUrl)
-    console.log('[VolcEngineSdkProvider.chatStream] 完整请求 URL:', this.actualBaseUrl + '/chat/completions')
-    console.log('[VolcEngineSdkProvider.chatStream] 使用的模型:', model)
-    console.log('[VolcEngineSdkProvider.chatStream] 消息数量:', context.messages.length)
-    console.log('[VolcEngineSdkProvider.chatStream] apiKey 前缀:', this.client.apiKey?.substring(0, 8) + '***')
     const messages = this.buildMessages(context, options)
+
+    // 构建请求体
+    const requestBody = {
+      model,
+      messages,
+      stream: true,
+      max_tokens: 4096,
+      temperature: 0.7
+    }
+
+    console.log('[VolcEngineSdkProvider.chatStream] ========== 发送对话请求 ==========')
+    console.log('[VolcEngineSdkProvider.chatStream] 请求 URL:', this.actualBaseUrl + '/chat/completions')
+    console.log('[VolcEngineSdkProvider.chatStream] 请求体:', JSON.stringify(requestBody, null, 2))
+    console.log('[VolcEngineSdkProvider.chatStream] apiKey 前缀:', this.client.apiKey?.substring(0, 8) + '***')
 
     let fullContent = ''
     let messageId = ''
