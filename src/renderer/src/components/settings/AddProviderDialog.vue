@@ -40,203 +40,257 @@
       </div>
     </div>
 
-    <!-- 配置表单 -->
-    <el-form
-      v-if="selectedTemplate || isEdit"
-      ref="formRef"
-      :model="form"
-      :rules="rules"
-      label-width="100px"
-      class="config-form"
-    >
-      <!-- 模板信息 -->
-      <div v-if="!isEdit && selectedTemplate" class="selected-template">
-        <span class="template-icon-lg">{{ selectedTemplate.icon }}</span>
-        <div class="template-details">
-          <span class="template-name">{{ selectedTemplate.name }}</span>
-          <span class="template-desc">{{ selectedTemplate.description }}</span>
+    <!-- 主内容区（选择模板后或编辑模式） -->
+    <div v-if="selectedTemplate || isEdit" class="provider-content">
+      <!-- 左侧 Tab 导航 -->
+      <div class="provider-tabs">
+        <div
+          class="tab-item"
+          :class="{ active: activeTab === 'info' }"
+          @click="activeTab = 'info'"
+        >
+          <el-icon><Setting /></el-icon>
+          <span>提供商信息</span>
+        </div>
+        <div
+          class="tab-item"
+          :class="{ active: activeTab === 'models' }"
+          @click="activeTab = 'models'"
+        >
+          <el-icon><List /></el-icon>
+          <span>模型管理</span>
         </div>
       </div>
 
-      <!-- 配置名称 -->
-      <el-form-item label="配置名称" prop="name">
-        <el-input v-model="form.name" placeholder="如：我的 OpenAI" />
-      </el-form-item>
-
-      <!-- 提供商 ID -->
-      <el-form-item label="提供商 ID" prop="shortId">
-        <el-input
-          v-model="form.shortId"
-          placeholder="如：openai、deepseek（英文，用于模型显示）"
-          :disabled="!!isEdit && !!editConfig?.shortId"
-        />
-        <div class="form-hint">提供商 ID 用于模型显示，格式为：提供商ID/模型ID</div>
-      </el-form-item>
-
-      <!-- API 密钥 -->
-      <el-form-item
-        v-if="templateAuthType !== 'none'"
-        label="API 密钥"
-        :prop="isEdit ? undefined : 'apiKey'"
-      >
-        <el-input
-          v-model="form.apiKey"
-          type="password"
-          show-password
-          :placeholder="isEdit ? '留空保持不变' : '请输入 API 密钥'"
-        />
-      </el-form-item>
-
-      <!-- Access Key（火山引擎等需要签名认证的平台） -->
-      <template v-if="selectedTemplate?.apiConfig?.requiresAccessKeyForModels">
-        <el-form-item label="Access Key ID">
-          <el-input
-            v-model="form.accessKeyId"
-            :placeholder="isEdit ? '留空保持不变' : '请输入 Access Key ID'"
-          />
-        </el-form-item>
-        <el-form-item label="Access Key Secret">
-          <el-input
-            v-model="form.accessKeySecret"
-            type="password"
-            show-password
-            :placeholder="isEdit ? '留空保持不变' : '请输入 Access Key Secret'"
-          />
-        </el-form-item>
-        <div class="access-key-hint">
-          <el-icon><InfoFilled /></el-icon>
-          <span>Access Key 用于获取模型列表，API 密钥用于对话。可在火山引擎控制台的"API 访问密钥"中创建。</span>
-        </div>
-      </template>
-
-      <!-- 高级设置 -->
-      <el-collapse v-model="activeCollapse" class="advanced-settings">
-        <el-collapse-item title="高级设置" name="advanced">
-          <!-- API 端点 -->
-          <el-form-item label="API 端点">
-            <el-input
-              v-model="form.baseUrl"
-              :placeholder="defaultBaseUrl || '自定义 API 端点'"
-            />
-          </el-form-item>
-
-          <!-- 自定义请求头 -->
-          <el-form-item label="自定义请求头">
-            <div class="custom-headers">
-              <div v-for="(header, index) in customHeadersList" :key="index" class="header-item">
-                <el-input v-model="header.key" placeholder="Header Name" class="header-key" />
-                <el-input v-model="header.value" placeholder="Header Value" class="header-value" />
-                <el-button type="danger" text @click="removeCustomHeader(index)">
-                  <el-icon><Delete /></el-icon>
-                </el-button>
+      <!-- 右侧内容区 -->
+      <div class="provider-main">
+        <!-- 提供商信息 Tab -->
+        <div v-show="activeTab === 'info'" class="tab-content info-tab">
+          <el-form
+            ref="formRef"
+            :model="form"
+            :rules="rules"
+            label-width="100px"
+            class="config-form"
+          >
+            <!-- 模板信息 -->
+            <div v-if="!isEdit && selectedTemplate" class="selected-template">
+              <span class="template-icon-lg">{{ selectedTemplate.icon }}</span>
+              <div class="template-details">
+                <span class="template-name">{{ selectedTemplate.name }}</span>
+                <span class="template-desc">{{ selectedTemplate.description }}</span>
               </div>
-              <el-button type="primary" text @click="addCustomHeader">
-                <el-icon><Plus /></el-icon>
-                添加请求头
-              </el-button>
             </div>
-          </el-form-item>
-        </el-collapse-item>
 
-        <!-- 模型管理 -->
-        <el-collapse-item title="模型管理" name="models">
-          <div class="model-management">
-            <!-- 模型列表标题 -->
-            <div class="model-list-header">
-              <span>可用模型</span>
+            <!-- 配置名称 -->
+            <el-form-item label="配置名称" prop="name">
+              <el-input v-model="form.name" placeholder="如：我的 OpenAI" />
+            </el-form-item>
+
+            <!-- 提供商 ID -->
+            <el-form-item label="提供商 ID" prop="shortId">
+              <el-input
+                v-model="form.shortId"
+                placeholder="如：openai、deepseek（英文，用于模型显示）"
+                :disabled="!!isEdit && !!editConfig?.shortId"
+              />
+              <div class="form-hint">提供商 ID 用于模型显示，格式为：提供商ID/模型ID</div>
+            </el-form-item>
+
+            <!-- API 密钥 -->
+            <el-form-item
+              v-if="templateAuthType !== 'none'"
+              label="API 密钥"
+              :prop="isEdit ? undefined : 'apiKey'"
+            >
+              <el-input
+                v-model="form.apiKey"
+                type="password"
+                show-password
+                :placeholder="isEdit ? '留空保持不变' : '请输入 API 密钥'"
+              />
+            </el-form-item>
+
+            <!-- Access Key（火山引擎等需要签名认证的平台） -->
+            <template v-if="selectedTemplate?.apiConfig?.requiresAccessKeyForModels">
+              <el-form-item label="Access Key ID">
+                <el-input
+                  v-model="form.accessKeyId"
+                  :placeholder="isEdit ? '留空保持不变' : '请输入 Access Key ID'"
+                />
+              </el-form-item>
+              <el-form-item label="Access Key Secret">
+                <el-input
+                  v-model="form.accessKeySecret"
+                  type="password"
+                  show-password
+                  :placeholder="isEdit ? '留空保持不变' : '请输入 Access Key Secret'"
+                />
+              </el-form-item>
+              <div class="access-key-hint">
+                <el-icon><InfoFilled /></el-icon>
+                <span>Access Key 用于获取模型列表，API 密钥用于对话。可在火山引擎控制台的"API 访问密钥"中创建。</span>
+              </div>
+            </template>
+
+            <!-- 高级设置 -->
+            <el-collapse v-model="activeCollapse" class="advanced-settings">
+              <el-collapse-item title="高级设置" name="advanced">
+                <!-- API 端点 -->
+                <el-form-item label="API 端点">
+                  <el-input
+                    v-model="form.baseUrl"
+                    :placeholder="defaultBaseUrl || '自定义 API 端点'"
+                  />
+                </el-form-item>
+
+                <!-- 自定义请求头 -->
+                <el-form-item label="自定义请求头">
+                  <div class="custom-headers">
+                    <div v-for="(header, index) in customHeadersList" :key="index" class="header-item">
+                      <el-input v-model="header.key" placeholder="Header Name" class="header-key" />
+                      <el-input v-model="header.value" placeholder="Header Value" class="header-value" />
+                      <el-button type="danger" text @click="removeCustomHeader(index)">
+                        <el-icon><Delete /></el-icon>
+                      </el-button>
+                    </div>
+                    <el-button type="primary" text @click="addCustomHeader">
+                      <el-icon><Plus /></el-icon>
+                      添加请求头
+                    </el-button>
+                  </div>
+                </el-form-item>
+              </el-collapse-item>
+            </el-collapse>
+
+            <!-- 设为默认 -->
+            <el-form-item label="设为默认" class="default-switch">
+              <el-switch v-model="form.isDefault" />
+              <span class="switch-hint">设为聊天默认使用的提供商</span>
+            </el-form-item>
+          </el-form>
+        </div>
+
+        <!-- 模型管理 Tab -->
+        <div v-show="activeTab === 'models'" class="tab-content models-tab">
+          <!-- API 模型区域 -->
+          <div class="model-section">
+            <div class="section-header">
+              <span class="section-title">API 模型</span>
               <el-button
                 type="primary"
-                text
                 size="small"
                 :loading="loadingModels"
                 @click="fetchModelsFromApi"
               >
+                <el-icon><Refresh /></el-icon>
                 从 API 刷新
               </el-button>
             </div>
+            <div class="section-desc">从提供商 API 获取的模型列表，点击"添加"按钮将模型添加到启用列表</div>
 
-            <!-- 模型列表 -->
-            <div v-if="allModels.length > 0" class="predefined-models">
-              <div v-for="model in allModels" :key="model.id" class="model-item">
-                <!-- checkbox 只控制勾选状态，使用 value 而不是 label -->
-                <el-checkbox
-                  v-model="form.enabledModels"
-                  :value="model.id"
-                  class="model-checkbox"
-                  :class="{ 'is-custom': isCustomModel(model.id) }"
-                />
-                <!-- 模型信息单独放 -->
-                <div class="model-info">
-                  <span class="model-name">
-                    {{ model.name }}
-                    <el-tag v-if="isCustomModel(model.id)" type="warning" size="small" effect="plain">自定义</el-tag>
-                  </span>
-                  <span class="model-id">{{ model.id }}</span>
+            <div v-if="apiModels.length > 0" class="model-list api-models">
+              <div
+                v-for="model in apiModels"
+                :key="model.id"
+                class="model-card"
+                :class="{ enabled: isModelEnabled(model.id) }"
+              >
+                <div class="model-card-main">
+                  <div class="model-card-info">
+                    <span class="model-name">{{ model.name }}</span>
+                    <span class="model-id">{{ model.id }}</span>
+                  </div>
+                  <div class="model-card-features">
+                    <el-tag v-if="model.type === 'multimodal'" type="success" size="small">多模态</el-tag>
+                    <el-tag v-else-if="model.type === 'image'" type="warning" size="small">图像</el-tag>
+                    <el-tag v-else-if="model.type === 'video'" type="danger" size="small">视频</el-tag>
+                    <el-tag v-else-if="model.type === 'audio'" type="info" size="small">音频</el-tag>
+                    <el-tag v-else-if="model.type === 'embedding'" size="small">嵌入</el-tag>
+                    <el-tag v-else-if="model.type === 'rerank'" size="small">重排序</el-tag>
+                    <el-tag v-if="model.supportsThinking" type="primary" size="small">思考</el-tag>
+                    <el-tag v-if="model.supportsWebSearch" type="primary" size="small">联网</el-tag>
+                    <el-tag v-if="model.supportsTools" type="primary" size="small">工具</el-tag>
+                  </div>
                 </div>
-                <!-- 模型特性图标 -->
-                <div class="model-features">
-                  <!-- 模型类型图标 -->
-                  <el-tooltip v-if="model.type === 'image'" content="图像模型" placement="top">
-                    <el-icon class="feature-icon image"><Picture /></el-icon>
-                  </el-tooltip>
-                  <el-tooltip v-else-if="model.type === 'video'" content="视频模型" placement="top">
-                    <el-icon class="feature-icon video"><VideoCamera /></el-icon>
-                  </el-tooltip>
-                  <el-tooltip v-else-if="model.type === 'multimodal'" content="多模态模型" placement="top">
-                    <el-icon class="feature-icon multimodal"><Camera /></el-icon>
-                  </el-tooltip>
-                  <el-tooltip v-else content="文本模型" placement="top">
-                    <el-icon class="feature-icon text"><Document /></el-icon>
-                  </el-tooltip>
-                  <!-- 深度思考 -->
-                  <el-tooltip v-if="model.supportsThinking" content="支持深度思考" placement="top">
-                    <el-icon class="feature-icon thinking"><Cpu /></el-icon>
-                  </el-tooltip>
-                  <!-- 联网搜索 -->
-                  <el-tooltip v-if="model.supportsWebSearch" content="支持联网搜索" placement="top">
-                    <el-icon class="feature-icon websearch"><Search /></el-icon>
-                  </el-tooltip>
-                  <!-- 工具支持 -->
-                  <el-tooltip v-if="model.supportsTools" content="支持工具调用" placement="top">
-                    <el-icon class="feature-icon tools"><SetUp /></el-icon>
-                  </el-tooltip>
-                </div>
-                <!-- 模型操作按钮 -->
-                <div class="model-actions">
-                  <!-- 自定义模型可以编辑 -->
-                  <el-button v-if="isCustomModel(model.id)" type="primary" text size="small" @click.stop="editCustomModel(model)">
-                    编辑
+                <div class="model-card-actions">
+                  <el-button
+                    v-if="!isModelEnabled(model.id)"
+                    type="primary"
+                    size="small"
+                    @click="addModelToEnabled(model)"
+                  >
+                    添加
                   </el-button>
-                  <!-- 所有模型都可以移除（从列表中隐藏） -->
-                  <el-button type="danger" text size="small" @click.stop="removeModel(model.id, isCustomModel(model.id))">
-                    {{ isCustomModel(model.id) ? '删除' : '移除' }}
-                  </el-button>
+                  <span v-else class="enabled-label">已启用</span>
                 </div>
               </div>
             </div>
-            <div v-else class="no-models-hint">
-              <span>{{ isEdit ? '暂无已启用模型，请点击"从 API 刷新"添加模型' : '暂无模型，请点击"从 API 刷新"获取模型列表' }}</span>
-            </div>
-
-            <!-- 自定义模型添加区域 -->
-            <div v-if="selectedTemplate?.allowCustomModels" class="custom-models">
-              <div class="model-list-header">
-                <span>自定义模型</span>
-                <el-button type="primary" text size="small" @click="showAddCustomModelDialog">
-                  添加模型
-                </el-button>
-              </div>
+            <div v-else class="empty-hint">
+              <span>暂无 API 模型，请点击"从 API 刷新"获取模型列表</span>
             </div>
           </div>
-        </el-collapse-item>
-      </el-collapse>
 
-      <!-- 设为默认 -->
-      <el-form-item label="设为默认" class="default-switch">
-        <el-switch v-model="form.isDefault" />
-        <span class="switch-hint">设为聊天默认使用的提供商</span>
-      </el-form-item>
-    </el-form>
+          <!-- 已启用模型区域 -->
+          <div class="model-section">
+            <div class="section-header">
+              <span class="section-title">已启用模型</span>
+              <el-button
+                v-if="selectedTemplate?.allowCustomModels"
+                type="primary"
+                size="small"
+                plain
+                @click="showAddCustomModelDialog"
+              >
+                <el-icon><Plus /></el-icon>
+                添加自定义模型
+              </el-button>
+            </div>
+            <div class="section-desc">启用的模型将显示在对话界面的模型选择列表中</div>
+
+            <div v-if="enabledModelList.length > 0" class="model-list enabled-models">
+              <div
+                v-for="model in enabledModelList"
+                :key="model.id"
+                class="model-card enabled"
+              >
+                <div class="model-card-main">
+                  <div class="model-card-info">
+                    <span class="model-name">
+                      {{ model.name }}
+                      <el-tag v-if="isCustomModel(model.id)" type="warning" size="small">自定义</el-tag>
+                    </span>
+                    <span class="model-id">{{ model.id }}</span>
+                  </div>
+                  <div class="model-card-features">
+                    <el-tag v-if="model.type === 'multimodal'" type="success" size="small">多模态</el-tag>
+                    <el-tag v-else-if="model.type === 'image'" type="warning" size="small">图像</el-tag>
+                    <el-tag v-else-if="model.type === 'video'" type="danger" size="small">视频</el-tag>
+                    <el-tag v-else-if="model.type === 'audio'" type="info" size="small">音频</el-tag>
+                    <el-tag v-else-if="model.type === 'embedding'" size="small">嵌入</el-tag>
+                    <el-tag v-else-if="model.type === 'rerank'" size="small">重排序</el-tag>
+                    <el-tag v-if="model.supportsThinking" type="primary" size="small">思考</el-tag>
+                    <el-tag v-if="model.supportsWebSearch" type="primary" size="small">联网</el-tag>
+                    <el-tag v-if="model.supportsTools" type="primary" size="small">工具</el-tag>
+                  </div>
+                </div>
+                <div class="model-card-actions">
+                  <el-button type="primary" text size="small" @click="editModelCapabilities(model)">
+                    编辑
+                  </el-button>
+                  <el-button type="danger" text size="small" @click="removeModelFromEnabled(model.id)">
+                    移除
+                  </el-button>
+                </div>
+              </div>
+            </div>
+            <div v-else class="empty-hint">
+              <span>暂无启用的模型，请从 API 模型列表中添加或添加自定义模型</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <template #footer>
       <div class="dialog-footer">
@@ -244,14 +298,6 @@
           返回
         </el-button>
         <el-button @click="handleClose">取消</el-button>
-        <el-button
-          v-if="selectedTemplate || isEdit"
-          type="primary"
-          :loading="testing"
-          @click="handleTest"
-        >
-          测试连接
-        </el-button>
         <el-button
           v-if="selectedTemplate || isEdit"
           type="primary"
@@ -264,28 +310,39 @@
     </template>
   </el-dialog>
 
-  <!-- 添加/编辑自定义模型对话框 -->
+  <!-- 添加/编辑模型对话框 -->
   <el-dialog
     v-model="showAddCustomModel"
-    :title="isEditingCustomModel ? '编辑自定义模型' : '添加自定义模型'"
-    width="480px"
+    :title="isEditingApiModel ? '添加模型' : (isEditingCustomModel ? '编辑模型' : '添加模型')"
+    width="500px"
     append-to-body
     class="custom-model-dialog"
   >
-    <el-form :model="customModelForm" label-width="120px">
+    <el-form :model="customModelForm" label-width="100px">
       <el-form-item label="模型 ID" required>
         <el-input
           v-model="customModelForm.id"
           placeholder="如：gpt-4-custom"
-          :disabled="isEditingCustomModel"
+          :disabled="isEditingCustomModel && !isEditingApiModel"
         />
-        <div v-if="isEditingCustomModel" class="form-hint">编辑时不可修改模型 ID</div>
+        <div v-if="isEditingCustomModel && !isEditingApiModel" class="form-hint">编辑时不可修改模型 ID</div>
       </el-form-item>
       <el-form-item label="模型名称">
         <el-input v-model="customModelForm.name" placeholder="显示名称" />
       </el-form-item>
       <el-form-item label="上下文长度">
         <el-input-number v-model="customModelForm.contextWindow" :min="1024" :step="1024" style="width: 100%" />
+      </el-form-item>
+      <el-form-item label="模型类型">
+        <el-select v-model="customModelForm.type" placeholder="选择模型类型" style="width: 100%">
+          <el-option label="文本模型" value="text" />
+          <el-option label="多模态模型（支持图片）" value="multimodal" />
+          <el-option label="图像生成模型" value="image" />
+          <el-option label="视频生成模型" value="video" />
+          <el-option label="音频模型" value="audio" />
+          <el-option label="嵌入模型" value="embedding" />
+          <el-option label="重排序模型" value="rerank" />
+        </el-select>
       </el-form-item>
       <el-form-item label="模型能力">
         <div class="model-capabilities">
@@ -297,12 +354,16 @@
             支持联网搜索
           </el-checkbox>
           <div class="capability-hint">如 Perplexity sonar 等内置搜索功能的模型</div>
+          <el-checkbox v-model="customModelForm.supportsTools">
+            支持工具调用
+          </el-checkbox>
+          <div class="capability-hint">支持函数调用/工具使用的模型</div>
         </div>
       </el-form-item>
     </el-form>
     <template #footer>
       <el-button @click="showAddCustomModel = false">取消</el-button>
-      <el-button type="primary" @click="saveCustomModel">{{ isEditingCustomModel ? '保存' : '添加' }}</el-button>
+      <el-button type="primary" @click="saveCustomModel">{{ isEditingApiModel ? '添加' : (isEditingCustomModel ? '保存' : '添加') }}</el-button>
     </template>
   </el-dialog>
 </template>
@@ -310,7 +371,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { Delete, Plus, Loading, Picture, VideoCamera, Camera, Document, Cpu, Search, SetUp } from '@element-plus/icons-vue'
+import { Delete, Plus, Loading, Picture, VideoCamera, Camera, Document, Cpu, Search, SetUp, Refresh, InfoFilled, Setting, List } from '@element-plus/icons-vue'
 import type {
   ProviderTemplate,
   ModelDefinition
@@ -375,6 +436,9 @@ const customHeadersList = ref<Array<{ key: string; value: string }>>([])
 // 折叠面板
 const activeCollapse = ref<string[]>([])
 
+// Tab 状态
+const activeTab = ref<'info' | 'models'>('info')
+
 // 加载状态
 const saving = ref(false)
 const testing = ref(false)
@@ -385,12 +449,15 @@ const loadingTemplates = ref(false)
 const showAddCustomModel = ref(false)
 const isEditingCustomModel = ref(false)
 const editingModelId = ref<string | null>(null)
+const isEditingApiModel = ref(false) // 是否正在编辑 API 模型
 const customModelForm = reactive({
   id: '',
   name: '',
   contextWindow: 8192,
+  type: 'text' as ModelDefinition['type'],
   supportsThinking: false,
-  supportsWebSearch: false
+  supportsWebSearch: false,
+  supportsTools: false
 })
 
 // 从 API 获取的模型列表（只有点击"从 API 刷新"后才有值）
@@ -447,6 +514,72 @@ const allModels = computed(() => {
 const isCustomModel = (modelId: string): boolean => {
   return form.customModels.some((m) => m.id === modelId)
 }
+
+// 判断模型是否已启用
+const isModelEnabled = (modelId: string): boolean => {
+  return form.enabledModels.includes(modelId)
+}
+
+// 添加 API 模型到启用列表（弹出对话框）
+const addApiModelToEnabled = (model: ModelDefinition) => {
+  // 打开对话框
+  isEditingCustomModel.value = false
+  isEditingApiModel.value = true
+  editingModelId.value = model.id
+  // 预填充模型信息
+  customModelForm.id = model.id
+  customModelForm.name = model.name || model.id
+  customModelForm.contextWindow = model.contextWindow || 8192
+  customModelForm.type = model.type || 'text'
+  customModelForm.supportsThinking = model.supportsThinking || false
+  customModelForm.supportsWebSearch = model.supportsWebSearch || false
+  customModelForm.supportsTools = model.supportsTools || false
+  showAddCustomModel.value = true
+}
+
+// 别名，用于模板
+const addModelToEnabled = addApiModelToEnabled
+
+// 从启用列表移除模型
+const removeModelFromEnabled = (modelId: string) => {
+  const index = form.enabledModels.indexOf(modelId)
+  if (index > -1) {
+    form.enabledModels.splice(index, 1)
+    ElMessage.success('已从启用列表移除')
+  }
+}
+
+// 获取已启用的模型列表（包含完整信息）
+const enabledModelsWithInfo = computed(() => {
+  return form.enabledModels.map(modelId => {
+    // 先从自定义模型中查找
+    const customModel = form.customModels.find(m => m.id === modelId)
+    if (customModel) {
+      return customModel
+    }
+    // 再从 API 模型中查找
+    const apiModel = apiModels.value.find(m => m.id === modelId)
+    if (apiModel) {
+      return apiModel
+    }
+    // 最后从保存的模型信息中查找
+    const savedInfo = savedModelsInfo.value.get(modelId)
+    if (savedInfo) {
+      return savedInfo
+    }
+    // 都找不到，返回基本信息
+    return {
+      id: modelId,
+      name: modelId,
+      contextWindow: 8192,
+      maxOutputTokens: 4096,
+      features: ['chat', 'streaming']
+    }
+  })
+})
+
+// 别名，用于模板
+const enabledModelList = enabledModelsWithInfo
 
 // 认证类型
 const templateAuthType = computed(() => selectedTemplate.value?.apiConfig.authType || 'bearer')
@@ -519,6 +652,17 @@ const fetchModelsFromApi = async () => {
     })
 
     if (result.success && result.models) {
+      // 调试日志：打印获取到的模型信息
+      console.log('[fetchModelsFromApi] 获取到的模型:', result.models.map(m => ({
+        id: m.id,
+        name: m.name,
+        type: m.type,
+        supportsThinking: m.supportsThinking,
+        supportsWebSearch: m.supportsWebSearch,
+        supportsTools: m.supportsTools
+      })))
+      console.log('[fetchModelsFromApi] 当前 enabledModels:', [...form.enabledModels])
+      console.log('[fetchModelsFromApi] 当前 isEdit:', isEdit.value)
       apiModels.value = result.models
       // 不再自动选中所有模型，用户需要手动勾选
       // 编辑模式下，已有的模型保持选中状态
@@ -707,24 +851,30 @@ const removeCustomHeader = (index: number) => {
 // 显示添加自定义模型对话框
 const showAddCustomModelDialog = () => {
   isEditingCustomModel.value = false
+  isEditingApiModel.value = false
   editingModelId.value = null
   customModelForm.id = ''
   customModelForm.name = ''
   customModelForm.contextWindow = 8192
+  customModelForm.type = 'text'
   customModelForm.supportsThinking = false
   customModelForm.supportsWebSearch = false
+  customModelForm.supportsTools = false
   showAddCustomModel.value = true
 }
 
-// 编辑自定义模型
-const editCustomModel = (model: ModelDefinition) => {
+// 编辑模型能力属性（支持所有模型）
+const editModelCapabilities = (model: ModelDefinition) => {
   isEditingCustomModel.value = true
+  isEditingApiModel.value = !isCustomModel(model.id) // 如果不是自定义模型，就是 API 模型
   editingModelId.value = model.id
   customModelForm.id = model.id
   customModelForm.name = model.name
   customModelForm.contextWindow = model.contextWindow || 8192
+  customModelForm.type = model.type || 'text'
   customModelForm.supportsThinking = model.supportsThinking || false
   customModelForm.supportsWebSearch = model.supportsWebSearch || false
+  customModelForm.supportsTools = model.supportsTools || false
   showAddCustomModel.value = true
 }
 
@@ -755,15 +905,49 @@ const removeModel = (modelId: string, isCustom: boolean) => {
   }
 }
 
-// 添加或更新自定义模型
+// 添加或更新模型（支持自定义模型和 API 模型）
 const saveCustomModel = () => {
   if (!customModelForm.id) {
     ElMessage.warning('请输入模型 ID')
     return
   }
 
-  if (isEditingCustomModel.value && editingModelId.value) {
-    // 编辑模式：更新现有模型
+  const modelData: ModelDefinition = {
+    id: customModelForm.id,
+    name: customModelForm.name || customModelForm.id,
+    type: customModelForm.type,
+    contextWindow: customModelForm.contextWindow,
+    maxOutputTokens: 4096,
+    features: ['chat', 'streaming'],
+    supportsThinking: customModelForm.supportsThinking,
+    supportsWebSearch: customModelForm.supportsWebSearch,
+    supportsTools: customModelForm.supportsTools
+  }
+
+  if (isEditingApiModel.value) {
+    // 从 API 模型添加到启用列表
+    // 更新 apiModels 中的模型属性
+    const index = apiModels.value.findIndex((m) => m.id === editingModelId.value)
+    if (index > -1) {
+      // 更新 API 模型列表中的模型属性
+      apiModels.value[index] = {
+        ...apiModels.value[index],
+        ...modelData
+      }
+    }
+    // 添加到启用列表
+    if (!form.enabledModels.includes(customModelForm.id)) {
+      form.enabledModels.push(customModelForm.id)
+    }
+    // 如果用户修改了模型属性，保存到 customModels（覆盖 API 模型的默认属性）
+    const existingCustomIndex = form.customModels.findIndex((m) => m.id === customModelForm.id)
+    if (existingCustomIndex > -1) {
+      form.customModels[existingCustomIndex] = modelData
+    } else {
+      form.customModels.push(modelData)
+    }
+  } else if (isEditingCustomModel.value && editingModelId.value) {
+    // 编辑自定义模型：更新现有模型
     const index = form.customModels.findIndex((m) => m.id === editingModelId.value)
     if (index > -1) {
       // 如果 ID 改变了，需要更新启用列表
@@ -773,15 +957,7 @@ const saveCustomModel = () => {
           form.enabledModels.splice(enabledIndex, 1, customModelForm.id)
         }
       }
-      form.customModels[index] = {
-        id: customModelForm.id,
-        name: customModelForm.name || customModelForm.id,
-        contextWindow: customModelForm.contextWindow,
-        maxOutputTokens: 4096,
-        features: ['chat', 'streaming'],
-        supportsThinking: customModelForm.supportsThinking,
-        supportsWebSearch: customModelForm.supportsWebSearch
-      }
+      form.customModels[index] = modelData
     }
   } else {
     // 添加模式：检查 ID 是否已存在
@@ -790,15 +966,7 @@ const saveCustomModel = () => {
       return
     }
 
-    form.customModels.push({
-      id: customModelForm.id,
-      name: customModelForm.name || customModelForm.id,
-      contextWindow: customModelForm.contextWindow,
-      maxOutputTokens: 4096,
-      features: ['chat', 'streaming'],
-      supportsThinking: customModelForm.supportsThinking,
-      supportsWebSearch: customModelForm.supportsWebSearch
-    })
+    form.customModels.push(modelData)
 
     // 自动选中
     if (!form.enabledModels.includes(customModelForm.id)) {
@@ -810,11 +978,16 @@ const saveCustomModel = () => {
   customModelForm.id = ''
   customModelForm.name = ''
   customModelForm.contextWindow = 8192
+  customModelForm.type = 'text'
   customModelForm.supportsThinking = false
   customModelForm.supportsWebSearch = false
+  customModelForm.supportsTools = false
   isEditingCustomModel.value = false
+  isEditingApiModel.value = false
   editingModelId.value = null
   showAddCustomModel.value = false
+
+  ElMessage.success('模型已保存')
 }
 
 
@@ -1060,6 +1233,193 @@ watch(visible, (val) => {
   .header-value {
     flex: 1;
   }
+}
+
+// 主内容区布局
+.provider-content {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  gap: 0;
+}
+
+// 左侧 Tab 导航
+.provider-tabs {
+  width: 160px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+  background: var(--bg-color-page);
+  border-radius: var(--radius-md);
+  margin-right: 16px;
+
+  .tab-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-size: 14px;
+    transition: all var(--transition-fast);
+
+    .el-icon {
+      font-size: 16px;
+    }
+
+    &:hover {
+      background: var(--bg-color-hover);
+      color: var(--text-primary);
+    }
+
+    &.active {
+      background: var(--color-primary-light-9);
+      color: var(--color-primary);
+      font-weight: 500;
+    }
+  }
+}
+
+// 右侧主内容区
+.provider-main {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+// Tab 内容
+.tab-content {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+
+  &.info-tab {
+    // 提供商信息 Tab 样式
+  }
+
+  &.models-tab {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+}
+
+// 模型区域
+.model-section {
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+
+    .section-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+  }
+
+  .section-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+  }
+}
+
+// 模型列表
+.model-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 8px;
+  background: var(--bg-color-page);
+  border-radius: var(--radius-sm);
+}
+
+// 模型卡片
+.model-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color-lighter);
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+
+  &:hover {
+    border-color: var(--color-primary-light);
+  }
+
+  &.enabled {
+    background: var(--color-primary-light-9);
+    border-color: var(--color-primary-light-7);
+  }
+
+  .model-card-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .model-card-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+
+    .model-name {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .model-id {
+      font-size: 11px;
+      color: var(--text-secondary);
+      font-family: monospace;
+    }
+  }
+
+  .model-card-features {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-left: 8px;
+  }
+
+  .model-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+
+    .enabled-label {
+      font-size: 12px;
+      color: var(--color-primary);
+    }
+  }
+}
+
+.empty-hint {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+  background: var(--bg-color-page);
+  border-radius: var(--radius-sm);
 }
 
 .model-management {

@@ -541,6 +541,9 @@ export class ProviderTemplateService {
         // 自动识别是否支持工具调用
         const supportsTools = this.detectToolSupport(modelId)
 
+        // 调试日志
+        console.log(`[testConnection] 模型: ${m.id}, 类型: ${type}, 思考: ${supportsThinking}, 搜索: ${supportsWebSearch}, 工具: ${supportsTools}`)
+
         return {
           id: m.id,
           name: m.name,
@@ -606,13 +609,25 @@ export class ProviderTemplateService {
    * @returns ModelType
    */
   private detectModelType(modelId: string): ModelType {
+    // 嵌入模型 - 必须最先检查
+    if (modelId.includes('embedding') || modelId.includes('embed')) {
+      return 'embedding'
+    }
+
+    // 重排序模型
+    if (modelId.includes('rerank')) {
+      return 'rerank'
+    }
+
     // 图像生成模型
     if (modelId.includes('dall-e') ||
         modelId.includes('stable-diffusion') ||
         modelId.includes('midjourney') ||
         modelId.includes('cogview') ||
         modelId.includes('wanx') ||
-        modelId.includes('image')) {
+        modelId.includes('flux') ||
+        (modelId.includes('image') && !modelId.includes('vision')) ||
+        (modelId.includes('picture') && !modelId.includes('vision'))) {
       return 'image'
     }
 
@@ -623,22 +638,55 @@ export class ProviderTemplateService {
       return 'video'
     }
 
-    // 音频模型
+    // 音频模型（语音识别、语音合成）
     if (modelId.includes('whisper') ||
         modelId.includes('tts') ||
-        modelId.includes('audio')) {
+        modelId.includes('audio') ||
+        modelId.includes('speech') ||
+        modelId.includes('voice') ||
+        modelId.includes('asr')) {
       return 'audio'
     }
 
     // 多模态模型（支持图像输入）
-    if (modelId.includes('gpt-4') ||
-        modelId.includes('gpt-4o') ||
-        modelId.includes('claude-3') ||
-        modelId.includes('gemini') ||
-        modelId.includes('qwen-vl') ||
-        modelId.includes('glm-4v')) {
+    // OpenAI GPT-4 系列（带 vision 或 turbo 的，以及 gpt-4o）
+    if (modelId.includes('gpt-4o') ||
+        modelId.includes('gpt-4-turbo') ||
+        modelId.includes('gpt-4-vision') ||
+        modelId.includes('gpt-4-1106-vision') ||
+        modelId.includes('gpt-4-0125-preview') ||
+        modelId.includes('gpt-4-1106-preview')) {
       return 'multimodal'
     }
+
+    // OpenAI o1/o3 系列 - 支持视觉的多模态模型
+    if (modelId.match(/\bo1[-_]?/) || modelId.match(/\bo3[-_]?/)) {
+      return 'multimodal'
+    }
+
+    // Anthropic Claude 3 系列
+    if (modelId.includes('claude-3') || modelId.includes('claude-sonnet') || modelId.includes('claude-opus') || modelId.includes('claude-haiku')) {
+      return 'multimodal'
+    }
+
+    // Google Gemini 系列
+    if (modelId.includes('gemini')) {
+      return 'multimodal'
+    }
+
+    // 阿里通义千问视觉模型
+    if (modelId.includes('qwen-vl') || modelId.includes('qwen2-vl') || modelId.includes('qwen2.5-vl')) {
+      return 'multimodal'
+    }
+
+    // 智谱 GLM-4V 视觉模型
+    if (modelId.includes('glm-4v') || modelId.includes('glm-4-vision')) {
+      return 'multimodal'
+    }
+
+    // Moonshot Moonshot-v1 系列（暂不支持视觉）
+    // DeepSeek 系列（不支持视觉）
+    // Minimax 系列（暂不支持视觉）
 
     // 默认为文本模型
     return 'text'
@@ -650,14 +698,18 @@ export class ProviderTemplateService {
    * @returns boolean
    */
   private detectToolSupport(modelId: string): boolean {
-    // OpenAI GPT-4 系列支持函数调用
-    if (modelId.includes('gpt-4') || modelId.includes('gpt-4o')) {
-      // gpt-4-turbo, gpt-4o, gpt-4-0125-preview 等都支持
+    // OpenAI GPT-3.5/GPT-4 系列支持函数调用
+    if (modelId.includes('gpt-3.5') || modelId.includes('gpt-4') || modelId.includes('gpt-4o')) {
+      return true
+    }
+
+    // OpenAI o1/o3 系列（部分支持工具）
+    if (modelId.match(/\bo1[-_]?/) || modelId.match(/\bo3[-_]?/)) {
       return true
     }
 
     // Anthropic Claude 3 系列支持工具使用
-    if (modelId.includes('claude-3')) {
+    if (modelId.includes('claude-3') || modelId.includes('claude-sonnet') || modelId.includes('claude-opus') || modelId.includes('claude-haiku')) {
       return true
     }
 
@@ -666,7 +718,7 @@ export class ProviderTemplateService {
       return true
     }
 
-    // DeepSeek 支持函数调用
+    // DeepSeek 支持函数调用（reasoner/r1 系列不支持）
     if (modelId.includes('deepseek') && !modelId.includes('reasoner') && !modelId.includes('r1')) {
       return true
     }
@@ -678,6 +730,11 @@ export class ProviderTemplateService {
 
     // 通义千问支持
     if (modelId.includes('qwen') && !modelId.includes('vl')) {
+      return true
+    }
+
+    // Moonshot 支持
+    if (modelId.includes('moonshot') || modelId.includes('kimi')) {
       return true
     }
 

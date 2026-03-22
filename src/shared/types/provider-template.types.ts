@@ -47,7 +47,7 @@ export interface CustomParamDefinition {
 /**
  * 模型类型
  */
-export type ModelType = 'text' | 'image' | 'video' | 'audio' | 'multimodal'
+export type ModelType = 'text' | 'image' | 'video' | 'audio' | 'multimodal' | 'embedding' | 'rerank'
 
 /**
  * 模型定义
