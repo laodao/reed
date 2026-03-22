@@ -80,6 +80,52 @@ export class OpenAICompatibleProvider extends BaseProvider {
   }
 
   /**
+   * 检测模型是否支持视觉
+   * @param modelId 模型 ID
+   * @returns 是否支持视觉
+   */
+  private supportsVision(modelId: string): boolean {
+    const id = modelId.toLowerCase()
+
+    // OpenAI GPT-4 系列（带 vision 或 turbo 的，以及 gpt-4o）
+    if (id.includes('gpt-4o') ||
+        id.includes('gpt-4-turbo') ||
+        id.includes('gpt-4-vision') ||
+        id.includes('gpt-4-1106-vision') ||
+        id.includes('gpt-4-0125-preview') ||
+        id.includes('gpt-4-1106-preview')) {
+      return true
+    }
+
+    // Anthropic Claude 3 系列
+    if (id.includes('claude-3') || id.includes('claude-sonnet') || id.includes('claude-opus') || id.includes('claude-haiku')) {
+      return true
+    }
+
+    // Google Gemini 系列
+    if (id.includes('gemini')) {
+      return true
+    }
+
+    // 阿里通义千问视觉模型
+    if (id.includes('qwen-vl') || id.includes('qwen2-vl') || id.includes('qwen2.5-vl')) {
+      return true
+    }
+
+    // 智谱视觉模型
+    if (id.includes('glm-4v') || id.includes('glm-4-vision')) {
+      return true
+    }
+
+    // 其他 OpenAI 兼容平台的视觉模型
+    if (id.includes('vision') || id.includes('-vl') || id.includes('-v-')) {
+      return true
+    }
+
+    return false
+  }
+
+  /**
    * 构建请求体
    */
   private buildRequestBody(context: ChatContext, model: string, stream: boolean = true, options?: ChatOptions): any {
@@ -98,11 +144,18 @@ export class OpenAICompatibleProvider extends BaseProvider {
     // 检测是否是智谱 GLM（需要特殊格式）
     const isZhipuGLM = this.providerId === 'zhipu' || this.providerId === 'glm'
 
+    // 检测模型是否支持视觉
+    const supportsVision = this.supportsVision(model)
+    console.log('[OpenAICompatibleProvider.buildRequestBody] 模型:', model, ', 支持视觉:', supportsVision)
+
+    // 检测消息中是否包含图片
+    let hasImagesInMessages = false
+
     // 添加历史消息
-    // 确保消息格式正确，过滤掉空消息和无效角色
+    // 支持多模态内容（字符串或 MessageContentBlock 数组）
     for (const msg of context.messages) {
       // 跳过空消息
-      if (!msg.content || typeof msg.content !== 'string' || msg.content.trim() === '') {
+      if (!msg.content) {
         console.warn('[OpenAICompatibleProvider.buildRequestBody] 跳过空消息, role:', msg.role)
         continue
       }
@@ -114,8 +167,16 @@ export class OpenAICompatibleProvider extends BaseProvider {
         continue
       }
 
-      // 构建消息内容
-      const messageContent = msg.content.trim()
+      // 检测是否是多模态内容（数组格式）
+      const isMultimodal = Array.isArray(msg.content)
+
+      // 检测是否有图片
+      if (isMultimodal) {
+        const hasImage = (msg.content as any[]).some((block: any) => block.type === 'image')
+        if (hasImage) {
+          hasImagesInMessages = true
+        }
+      }
 
       if (isZhipuGLM) {
         // 智谱 GLM 特殊格式：
@@ -125,17 +186,70 @@ export class OpenAICompatibleProvider extends BaseProvider {
           continue
         }
 
-        messages.push({
-          role,
-          content: [{ type: 'text', text: messageContent }]
-        })
+        if (isMultimodal) {
+          // 已经是多模态格式，转换图片格式
+          const glmContent = (msg.content as any[]).map((block: any) => {
+            if (block.type === 'text') {
+              return { type: 'text', text: block.text || '' }
+            } else if (block.type === 'image' && block.image_url?.url && supportsVision) {
+              // 只有支持视觉的模型才发送图片
+              return { type: 'image_url', image_url: { url: block.image_url.url } }
+            } else if (block.type === 'image' && !supportsVision) {
+              // 不支持视觉的模型，将图片转换为占位符文本
+              return { type: 'text', text: '[用户上传了图片，但当前模型不支持图片识别]' }
+            }
+            return null
+          }).filter(Boolean)
+
+          messages.push({ role, content: glmContent })
+        } else {
+          // 纯文本消息
+          const textContent = (msg.content as string).trim()
+          if (!textContent) continue
+          messages.push({
+            role,
+            content: [{ type: 'text', text: textContent }]
+          })
+        }
       } else {
         // 标准 OpenAI 格式
-        messages.push({
-          role,
-          content: messageContent
-        })
+        if (isMultimodal) {
+          if (supportsVision) {
+            // 支持视觉：保留图片
+            const openaiContent = (msg.content as any[]).map((block: any) => {
+              if (block.type === 'text') {
+                return { type: 'text', text: block.text || '' }
+              } else if (block.type === 'image' && block.image_url?.url) {
+                return { type: 'image_url', image_url: { url: block.image_url.url } }
+              }
+              return null
+            }).filter(Boolean)
+
+            messages.push({ role, content: openaiContent })
+          } else {
+            // 不支持视觉：提取文本，替换图片为占位符
+            const textParts: string[] = []
+            for (const block of msg.content as any[]) {
+              if (block.type === 'text' && block.text) {
+                textParts.push(block.text)
+              } else if (block.type === 'image') {
+                textParts.push('[用户上传了图片，但当前模型不支持图片识别]')
+              }
+            }
+            messages.push({ role, content: textParts.join('\n') })
+          }
+        } else {
+          // 纯文本消息
+          const textContent = (msg.content as string).trim()
+          if (!textContent) continue
+          messages.push({ role, content: textContent })
+        }
       }
+    }
+
+    // 如果消息包含图片但模型不支持视觉，打印警告
+    if (hasImagesInMessages && !supportsVision) {
+      console.warn('[OpenAICompatibleProvider.buildRequestBody] 警告: 消息包含图片，但模型', model, '不支持视觉功能')
     }
 
     // 处理 system prompt
@@ -145,7 +259,7 @@ export class OpenAICompatibleProvider extends BaseProvider {
         if (messages.length > 0 && messages[0].role === 'user') {
           const firstContent = messages[0].content
           const originalText = Array.isArray(firstContent)
-            ? firstContent[0]?.text || ''
+            ? firstContent.find((b: any) => b.type === 'text')?.text || ''
             : firstContent
           messages[0] = {
             role: 'user',
@@ -172,6 +286,11 @@ export class OpenAICompatibleProvider extends BaseProvider {
     console.log('[OpenAICompatibleProvider.buildRequestBody] 构建的消息数量:', messages.length)
     console.log('[OpenAICompatibleProvider.buildRequestBody] 消息角色:', messages.map((m: any) => m.role))
     console.log('[OpenAICompatibleProvider.buildRequestBody] 是否智谱 GLM:', isZhipuGLM)
+    // 打印是否有图片内容
+    const hasImages = messages.some((m: any) =>
+      Array.isArray(m.content) && m.content.some((b: any) => b.type === 'image' || b.type === 'image_url')
+    )
+    console.log('[OpenAICompatibleProvider.buildRequestBody] 包含图片消息:', hasImages)
 
     const body: any = {
       model,

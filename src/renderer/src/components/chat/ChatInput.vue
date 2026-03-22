@@ -3,10 +3,10 @@
     <!-- 工具栏 -->
     <div class="toolbar">
       <div class="tool-left">
-        <el-tooltip content="附件（开发中）" placement="top">
+        <el-tooltip content="附件" placement="top">
           <el-button
             class="tool-btn"
-            :class="{ active: hasAttachments }"
+            :class="{ active: attachments.length > 0 }"
             text
             @click="handleAttach"
           >
@@ -77,6 +77,47 @@
       </div>
     </div>
 
+    <!-- 附件预览区域 -->
+    <div v-if="attachments.length > 0" class="attachments-preview">
+      <div
+        v-for="file in attachments"
+        :key="file.id"
+        class="attachment-item"
+      >
+        <!-- 图片预览 -->
+        <div v-if="file.type === 'image'" class="attachment-image">
+          <img :src="file.previewUrl" :alt="file.fileName" />
+          <div class="attachment-overlay">
+            <el-button
+              type="danger"
+              size="small"
+              circle
+              @click="removeAttachment(file.id)"
+            >
+              <el-icon><Close /></el-icon>
+            </el-button>
+          </div>
+        </div>
+        <!-- 文件图标 -->
+        <div v-else class="attachment-file">
+          <el-icon class="file-icon"><Document /></el-icon>
+          <div class="file-info">
+            <span class="file-name" :title="file.fileName">{{ file.fileName }}</span>
+            <span class="file-size">{{ formatFileSize(file.fileSize) }}</span>
+          </div>
+          <el-button
+            type="danger"
+            size="small"
+            circle
+            class="remove-btn"
+            @click="removeAttachment(file.id)"
+          >
+            <el-icon><Close /></el-icon>
+          </el-button>
+        </div>
+      </div>
+    </div>
+
     <!-- 输入区域 -->
     <div class="input-area">
       <el-input
@@ -92,6 +133,11 @@
 
       <div class="input-actions">
         <div class="action-left">
+          <!-- 附件数量指示 -->
+          <span v-if="attachments.length > 0" class="status-tag">
+            <el-icon><Paperclip /></el-icon>
+            {{ attachments.length }} 个附件
+          </span>
           <!-- 联网搜索状态指示 -->
           <span v-if="webSearchEnabled" class="status-tag">
             <el-icon><Search /></el-icon>
@@ -112,7 +158,7 @@
             v-else
             type="primary"
             round
-            :disabled="!inputContent.trim()"
+            :disabled="!canSend"
             @click="handleSend"
           >
             <el-icon><Promotion /></el-icon>
@@ -126,9 +172,14 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { Paperclip, Search, Cpu, Collection, VideoPause, Promotion } from '@element-plus/icons-vue'
+import { Paperclip, Search, Cpu, Collection, VideoPause, Promotion, Close, Document } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import type { Message, WebSearchEngine } from '../../../shared/types'
+import type { Message, WebSearchEngine, Attachment } from '../../../shared/types'
+
+// 扩展的附件类型（包含预览 URL）
+interface AttachmentWithPreview extends Attachment {
+  previewUrl?: string
+}
 
 const props = defineProps<{
   disabled: boolean
@@ -154,11 +205,18 @@ const emit = defineEmits<{
 // 输入内容
 const inputContent = ref('')
 
+// 附件列表
+const attachments = ref<AttachmentWithPreview[]>([])
+
 // 工具选项
 const webSearchEngine = ref<WebSearchEngine | null>(null)
 const enableThinkingChain = ref(false)
 const enableKnowledgeBase = ref(false)
-const hasAttachments = ref(false)
+
+// 计算属性：是否可以发送
+const canSend = computed(() => {
+  return inputContent.value.trim() || attachments.value.length > 0
+})
 
 // 计算属性：联网搜索是否启用
 const webSearchEnabled = computed(() => webSearchEngine.value !== null)
@@ -199,12 +257,73 @@ function handleWebSearchCommand(command: string): void {
   }
 }
 
+// 格式化文件大小
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
+// 处理附件选择
+async function handleAttach(): Promise<void> {
+  try {
+    const response = await window.electronAPI.file.openDialog({
+      multiple: true
+    })
+
+    if (response.success && response.files.length > 0) {
+      for (const file of response.files) {
+        // 检查文件大小限制（20MB）
+        if (file.fileSize > 20 * 1024 * 1024) {
+          ElMessage.warning(`文件 ${file.fileName} 超过 20MB，已跳过`)
+          continue
+        }
+
+        // 为图片生成预览 URL
+        let previewUrl: string | undefined
+        if (file.type === 'image') {
+          const base64Response = await window.electronAPI.file.readAsBase64(file.filePath)
+          if (base64Response.success) {
+            previewUrl = base64Response.base64
+          }
+        }
+
+        attachments.value.push({
+          ...file,
+          previewUrl
+        })
+      }
+    }
+  } catch (error) {
+    console.error('选择文件失败:', error)
+    ElMessage.error('选择文件失败')
+  }
+}
+
+// 移除附件
+function removeAttachment(id: string): void {
+  attachments.value = attachments.value.filter(a => a.id !== id)
+}
+
 // 发送消息
 function handleSend(): void {
   const content = inputContent.value.trim()
-  if (!content) return
+
+  // 必须有内容或附件
+  if (!content && attachments.value.length === 0) return
+
+  // 构建附件数据（不包含 previewUrl）
+  const messageAttachments = attachments.value.map(a => ({
+    id: a.id,
+    type: a.type,
+    fileName: a.fileName,
+    filePath: a.filePath,
+    fileSize: a.fileSize,
+    mimeType: a.mimeType
+  }))
 
   emit('send', content, {
+    attachments: messageAttachments.length > 0 ? messageAttachments : undefined,
     webSearch: webSearchEnabled.value ? {
       enabled: true,
       engine: webSearchEngine.value!
@@ -212,7 +331,9 @@ function handleSend(): void {
     enableThinkingChain: enableThinkingChain.value && !thinkingDisabled.value
   })
 
+  // 清空输入
   inputContent.value = ''
+  attachments.value = []
 }
 
 // 键盘事件
@@ -221,11 +342,6 @@ function handleKeydown(event: KeyboardEvent): void {
     event.preventDefault()
     handleSend()
   }
-}
-
-// 附件处理（暂未实现）
-function handleAttach(): void {
-  ElMessage.info('附件功能开发中')
 }
 </script>
 
@@ -279,6 +395,97 @@ function handleAttach(): void {
   .tool-hint {
     font-size: 11px;
     color: #94a3b8;
+  }
+}
+
+// 附件预览区域
+.attachments-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 8px;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+
+.attachment-item {
+  position: relative;
+}
+
+.attachment-image {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .attachment-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  &:hover .attachment-overlay {
+    opacity: 1;
+  }
+}
+
+.attachment-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  min-width: 180px;
+  max-width: 250px;
+
+  .file-icon {
+    font-size: 24px;
+    color: var(--el-color-primary);
+  }
+
+  .file-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .file-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: #1e293b;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .file-size {
+    font-size: 11px;
+    color: #94a3b8;
+  }
+
+  .remove-btn {
+    flex-shrink: 0;
   }
 }
 

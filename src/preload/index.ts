@@ -321,6 +321,17 @@ const electronAPI = {
     // 测试提供商连接
     testProvider: (providerId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.IMAGE_TEST_PROVIDER, providerId)
+  },
+
+  // 文件对话框
+  file: {
+    // 打开文件选择对话框
+    openDialog: (options?: {
+      multiple?: boolean
+      filters?: Array<{ name: string; extensions: string[] }>
+    }) => ipcRenderer.invoke('file:open-dialog', options),
+    // 读取文件内容（用于预览）
+    readAsBase64: (filePath: string) => ipcRenderer.invoke('file:read-base64', filePath)
   }
 }
 

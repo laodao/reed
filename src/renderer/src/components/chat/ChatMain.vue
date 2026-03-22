@@ -127,9 +127,62 @@ interface ModelOption {
   providerName: string
   providerId: string
   modelId: string
+  type?: string  // 模型类型
+  supportsThinking?: boolean
+  supportsWebSearch?: boolean
+  supportsTools?: boolean
+}
+
+/**
+ * 检测模型是否为对话模型（文本或多模态）
+ * @param modelId 模型 ID
+ * @param modelDef 模型定义（可选）
+ * @returns 是否为对话模型
+ */
+function isChatModel(modelId: string, modelDef?: ModelDefinition): boolean {
+  // 如果有模型定义，检查类型
+  if (modelDef?.type) {
+    return modelDef.type === 'text' || modelDef.type === 'multimodal'
+  }
+
+  // 否则根据模型 ID 判断
+  const id = modelId.toLowerCase()
+
+  // 排除图像生成模型
+  if (id.includes('dall-e') ||
+      id.includes('stable-diffusion') ||
+      id.includes('midjourney') ||
+      id.includes('cogview') ||
+      id.includes('wanx') ||
+      (id.includes('image') && !id.includes('vision'))) {
+    return false
+  }
+
+  // 排除视频生成模型
+  if (id.includes('sora') || id.includes('video') || id.includes('runway')) {
+    return false
+  }
+
+  // 排除音频模型
+  if (id.includes('whisper') || id.includes('tts') || id.includes('audio')) {
+    return false
+  }
+
+  // 排除嵌入模型
+  if (id.includes('embedding') || id.includes('embed')) {
+    return false
+  }
+
+  // 排除重排序模型
+  if (id.includes('rerank')) {
+    return false
+  }
+
+  return true
 }
 
 // 计算可用模型列表（用于换模型重答和消息显示）
+// 只显示对话模型（文本和多模态模型），排除图像生成、视频、音频等模型
 const availableModels = computed(() => {
   const models: ModelOption[] = []
 
@@ -137,15 +190,24 @@ const availableModels = computed(() => {
     // 添加启用的模型
     if (config.enabledModels) {
       config.enabledModels.forEach(modelId => {
-        // 查找模型名称
-        let modelName = modelId
+        // 查找模型定义（优先从 apiModels，其次从 customModels）
+        let modelDef: ModelDefinition | undefined
+        if (config.apiModels) {
+          modelDef = config.apiModels.find(m => m.id === modelId)
+        }
+        if (!modelDef && config.customModels) {
+          modelDef = config.customModels.find(m => m.id === modelId)
+        }
 
-        // 从自定义模型中查找
-        if (config.customModels) {
-          const customModel = config.customModels.find(m => m.id === modelId)
-          if (customModel) {
-            modelName = customModel.name
-          }
+        // 过滤非对话模型
+        if (!isChatModel(modelId, modelDef)) {
+          return
+        }
+
+        // 获取模型名称
+        let modelName = modelId
+        if (modelDef) {
+          modelName = modelDef.name
         }
 
         models.push({
@@ -153,7 +215,11 @@ const availableModels = computed(() => {
           name: modelName,
           providerName: config.name,
           providerId: config.id,
-          modelId: modelId
+          modelId: modelId,
+          type: modelDef?.type,
+          supportsThinking: modelDef?.supportsThinking,
+          supportsWebSearch: modelDef?.supportsWebSearch,
+          supportsTools: modelDef?.supportsTools
         })
       })
     }

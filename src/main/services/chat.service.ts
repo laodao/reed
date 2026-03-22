@@ -9,6 +9,7 @@ import { getDatabaseManager } from '../database'
 import { createProvider } from '../providers'
 import { PROVIDER_TEMPLATES } from './provider-template.service'
 import { SecureStorageService } from './secure-storage.service'
+import { FileService } from './file.service'
 import type {
   Dialog,
   Message,
@@ -18,7 +19,9 @@ import type {
   ProviderTemplate,
   UserProviderConfig,
   WebSearchResult,
-  MessageMetadata
+  MessageMetadata,
+  Attachment,
+  AttachmentContent
 } from '../../shared/types'
 import { WebSearchService } from './web-search.service'
 
@@ -161,7 +164,18 @@ export class ChatService {
 
       console.log('[ChatService.sendMessage] Provider 类型:', provider.constructor.name)
 
-      // 保存用户消息
+      // 构建上下文（先构建，再保存用户消息，避免重复）
+      // 这样 buildContext 会处理附件，然后传入 Provider
+      console.log('[ChatService.sendMessage] 构建对话上下文')
+      const context = await this.buildContext(
+        dialog,
+        request.dialogId,
+        dbManager,
+        { content: request.content, attachments: request.attachments }
+      )
+      console.log('[ChatService.sendMessage] 上下文消息数量:', context.messages.length)
+
+      // 保存用户消息到数据库
       console.log('[ChatService.sendMessage] 保存用户消息')
       const userMessage = await dbManager.messages.create({
         dialogId: request.dialogId,
@@ -170,11 +184,6 @@ export class ChatService {
         attachments: request.attachments
       })
       console.log('[ChatService.sendMessage] 用户消息已保存, id:', userMessage.id)
-
-      // 构建上下文
-      console.log('[ChatService.sendMessage] 构建对话上下文')
-      const context = await this.buildContext(dialog, request.dialogId, dbManager)
-      console.log('[ChatService.sendMessage] 上下文消息数量:', context.messages.length)
 
       // 处理联网搜索
       let webSearchResults: WebSearchResult[] = []
@@ -355,11 +364,16 @@ export class ChatService {
 
   /**
    * 构建对话上下文
+   * @param dialog 对话信息
+   * @param dialogId 对话 ID
+   * @param dbManager 数据库管理器
+   * @param currentMessage 当前消息（可选，用于处理当前发送的附件）
    */
   private static async buildContext(
     dialog: Dialog,
     dialogId: string,
-    dbManager: any
+    dbManager: any,
+    currentMessage?: { content: string; attachments?: Attachment[] }
   ): Promise<ChatContext> {
     // 获取上下文配置
     const maxMessages = dialog.contextConfig?.maxMessages || 20
@@ -371,27 +385,92 @@ export class ChatService {
     // 1. 确保消息有内容
     // 2. 确保内容是字符串
     // 3. 确保角色是 'user' 或 'assistant'
-    const historyMessages = messages
-      .filter((m: Message) => {
-        // 过滤掉没有内容的消息
-        if (!m.content || typeof m.content !== 'string' || m.content.trim() === '') {
-          return false
-        }
-        // 过滤掉角色不正确的消息
-        return m.role === 'user' || m.role === 'assistant'
-      })
-      .slice(-maxMessages)
-      .map((m: Message) => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content.trim() // 确保内容是修剪过的字符串
-      }))
+    const historyMessages: Array<{
+      role: 'user' | 'assistant'
+      content: string | any[]
+      attachments?: AttachmentContent[]
+    }> = []
 
-    console.log('[ChatService.buildContext] 历史消息数量:', historyMessages.length)
-    console.log('[ChatService.buildContext] 消息详情:', historyMessages.map(m => ({ role: m.role, contentLength: m.content.length })))
+    for (const m of messages) {
+      // 过滤掉没有内容的消息
+      if (!m.content || typeof m.content !== 'string' || m.content.trim() === '') {
+        continue
+      }
+      // 过滤掉角色不正确的消息
+      if (m.role !== 'user' && m.role !== 'assistant') {
+        continue
+      }
+
+      // 处理附件
+      let attachmentContents: AttachmentContent[] | undefined
+      if (m.attachments && m.attachments.length > 0) {
+        console.log(`[ChatService.buildContext] 处理消息 ${m.id} 的附件, 数量:`, m.attachments.length)
+        try {
+          attachmentContents = await FileService.readAttachments(m.attachments)
+        } catch (error) {
+          console.error(`[ChatService.buildContext] 读取附件失败:`, error)
+        }
+      }
+
+      // 构建消息内容
+      let messageContent: string | any[]
+      if (attachmentContents && attachmentContents.length > 0) {
+        // 有附件时构建多模态内容
+        messageContent = FileService.buildMultimodalContent(m.content.trim(), attachmentContents)
+      } else {
+        // 无附件时使用纯文本
+        messageContent = m.content.trim()
+      }
+
+      historyMessages.push({
+        role: m.role as 'user' | 'assistant',
+        content: messageContent,
+        attachments: attachmentContents
+      })
+    }
+
+    // 取最近的 N 条消息
+    const limitedHistory = historyMessages.slice(-maxMessages)
+
+    // 如果有当前消息（用户正在发送的消息），添加到历史末尾
+    if (currentMessage) {
+      let currentAttachmentContents: AttachmentContent[] | undefined
+      if (currentMessage.attachments && currentMessage.attachments.length > 0) {
+        console.log('[ChatService.buildContext] 处理当前消息的附件, 数量:', currentMessage.attachments.length)
+        try {
+          currentAttachmentContents = await FileService.readAttachments(currentMessage.attachments)
+        } catch (error) {
+          console.error('[ChatService.buildContext] 读取当前消息附件失败:', error)
+        }
+      }
+
+      let currentContent: string | any[]
+      if (currentAttachmentContents && currentAttachmentContents.length > 0) {
+        currentContent = FileService.buildMultimodalContent(
+          currentMessage.content.trim(),
+          currentAttachmentContents
+        )
+      } else {
+        currentContent = currentMessage.content.trim()
+      }
+
+      limitedHistory.push({
+        role: 'user',
+        content: currentContent,
+        attachments: currentAttachmentContents
+      })
+    }
+
+    console.log('[ChatService.buildContext] 历史消息数量:', limitedHistory.length)
+    console.log('[ChatService.buildContext] 消息详情:', limitedHistory.map(m => ({
+      role: m.role,
+      contentType: typeof m.content === 'string' ? 'string' : 'array',
+      hasAttachments: !!m.attachments?.length
+    })))
 
     return {
       systemPrompt: dialog.systemPrompt,
-      messages: historyMessages
+      messages: limitedHistory
     }
   }
 

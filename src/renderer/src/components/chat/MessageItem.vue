@@ -46,14 +46,22 @@
 
         <!-- 附件显示 -->
         <div v-if="message.attachments && message.attachments.length > 0" class="attachments">
-          <div
-            v-for="attachment in message.attachments"
-            :key="attachment.id"
-            class="attachment-item"
-          >
-            <el-icon><Document /></el-icon>
-            <span>{{ attachment.fileName }}</span>
-          </div>
+          <template v-for="attachment in message.attachments" :key="attachment.id">
+            <!-- 图片附件 -->
+            <div
+              v-if="attachment.type === 'image'"
+              class="attachment-image"
+              @click="previewImage(attachment)"
+            >
+              <img :src="getImageUrl(attachment)" :alt="attachment.fileName" />
+            </div>
+            <!-- 文档附件 -->
+            <div v-else class="attachment-item">
+              <el-icon><Document /></el-icon>
+              <span class="attachment-name">{{ attachment.fileName }}</span>
+              <span class="attachment-size">{{ formatFileSize(attachment.fileSize) }}</span>
+            </div>
+          </template>
         </div>
 
         <!-- 联网搜索结果显示 -->
@@ -141,14 +149,21 @@
       :models="availableModels"
       @select="handleModelSelect"
     />
+
+    <!-- 图片预览 -->
+    <el-image-viewer
+      v-if="showImageViewer"
+      :url-list="[currentImageUrl]"
+      @close="showImageViewer = false"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { Document, Edit, CopyDocument, Delete, Refresh, Switch, Coin } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import type { Message } from '../../../shared/types'
+import { ElMessage, ElMessageBox, ElImageViewer } from 'element-plus'
+import type { Message, Attachment } from '../../../shared/types'
 import ModelSelectDialog from './ModelSelectDialog.vue'
 
 interface ModelOption {
@@ -175,6 +190,57 @@ const showActions = ref(false)
 const isEditing = ref(false)
 const editContent = ref('')
 const showModelDialog = ref(false)
+
+// 图片预览缓存
+const imagePreviewUrls = ref<Map<string, string>>(new Map())
+
+// 获取图片 URL（用于显示）
+function getImageUrl(attachment: Attachment): string {
+  // 如果已经有缓存，直接返回
+  if (imagePreviewUrls.value.has(attachment.id)) {
+    return imagePreviewUrls.value.get(attachment.id)!
+  }
+
+  // 否则异步加载并返回占位符
+  loadImagePreview(attachment)
+  return ''
+}
+
+// 异步加载图片预览
+async function loadImagePreview(attachment: Attachment): Promise<void> {
+  if (attachment.type !== 'image') return
+
+  try {
+    const response = await window.electronAPI.file.readAsBase64(attachment.filePath)
+    if (response.success) {
+      imagePreviewUrls.value.set(attachment.id, response.base64)
+      // 触发重新渲染
+      imagePreviewUrls.value = new Map(imagePreviewUrls.value)
+    }
+  } catch (error) {
+    console.error('加载图片预览失败:', error)
+  }
+}
+
+// 预览图片 - 使用 Element Plus 的图片预览组件
+const showImageViewer = ref(false)
+const currentImageUrl = ref('')
+
+function previewImage(attachment: Attachment): void {
+  const url = imagePreviewUrls.value.get(attachment.id)
+  if (url) {
+    currentImageUrl.value = url
+    showImageViewer.value = true
+  }
+}
+
+// 格式化文件大小
+function formatFileSize(bytes: number): string {
+  if (!bytes) return ''
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
 
 // 获取模型名称
 const modelName = computed(() => {
@@ -601,18 +667,65 @@ function handleModelSelect(model: ModelOption) {
 .attachments {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   margin-top: 8px;
+}
+
+.attachment-image {
+  width: 120px;
+  height: 120px;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: var(--el-color-primary);
+    transform: scale(1.02);
+  }
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
 }
 
 .attachment-item {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
+  gap: 6px;
+  padding: 8px 12px;
   background: rgba(0, 0, 0, 0.05);
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 12px;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.08);
+    border-color: #e2e8f0;
+  }
+
+  .el-icon {
+    font-size: 18px;
+    color: var(--el-color-primary);
+  }
+
+  .attachment-name {
+    font-weight: 500;
+    color: #1e293b;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .attachment-size {
+    color: #94a3b8;
+    font-size: 11px;
+  }
 }
 
 .thinking-chain {

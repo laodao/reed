@@ -284,6 +284,7 @@ export class VolcEngineSdkProvider extends BaseProvider {
 
   /**
    * 构建消息列表
+   * 支持多模态内容（图片）
    */
   private buildMessages(context: ChatContext, options?: ChatOptions): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = []
@@ -306,10 +307,33 @@ export class VolcEngineSdkProvider extends BaseProvider {
     }
 
     for (const msg of context.messages) {
-      messages.push({
-        role: msg.role as 'user' | 'assistant' | 'system',
-        content: msg.content
-      })
+      // 检测是否是多模态内容（数组格式）
+      const isMultimodal = Array.isArray(msg.content)
+
+      if (isMultimodal) {
+        // 多模态消息，转换为 OpenAI 格式
+        const openaiContent = (msg.content as any[]).map((block: any) => {
+          if (block.type === 'text') {
+            return { type: 'text' as const, text: block.text || '' }
+          } else if (block.type === 'image' && block.image_url?.url) {
+            return { type: 'image_url' as const, image_url: { url: block.image_url.url } }
+          }
+          return null
+        }).filter(Boolean)
+
+        messages.push({
+          role: msg.role as 'user' | 'assistant' | 'system',
+          content: openaiContent as any
+        })
+      } else {
+        // 纯文本消息
+        const textContent = (msg.content as string).trim()
+        if (!textContent) continue
+        messages.push({
+          role: msg.role as 'user' | 'assistant' | 'system',
+          content: textContent
+        })
+      }
     }
 
     return messages

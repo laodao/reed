@@ -92,15 +92,49 @@ export class GoogleSdkProvider extends BaseProvider {
   /**
    * 构建对话历史
    * Google Gemini 使用特定的 Content 格式
+   * 支持多模态内容（图片）
    */
   private buildHistory(context: ChatContext): Content[] {
     const history: Content[] = []
 
     for (const msg of context.messages) {
-      history.push({
-        role: msg.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: msg.content }]
-      })
+      // 检测是否是多模态内容（数组格式）
+      const isMultimodal = Array.isArray(msg.content)
+
+      if (isMultimodal) {
+        // 多模态消息，转换为 Gemini 格式
+        const parts: Part[] = (msg.content as any[]).map((block: any) => {
+          if (block.type === 'text') {
+            return { text: block.text || '' }
+          } else if (block.type === 'image' && block.image_url?.url) {
+            // 解析 data URL 获取 mimeType 和 data
+            const dataUrl = block.image_url.url
+            const matches = dataUrl.match(/^data:([^;]+);base64,(.+)$/)
+            if (matches) {
+              return {
+                inlineData: {
+                  mimeType: matches[1],
+                  data: matches[2]
+                }
+              }
+            }
+          }
+          return null
+        }).filter(Boolean) as Part[]
+
+        history.push({
+          role: msg.role === 'assistant' ? 'model' : 'user',
+          parts
+        })
+      } else {
+        // 纯文本消息
+        const textContent = (msg.content as string).trim()
+        if (!textContent) continue
+        history.push({
+          role: msg.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: textContent }]
+        })
+      }
     }
 
     return history

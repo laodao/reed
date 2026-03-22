@@ -87,15 +87,51 @@ export class AnthropicSdkProvider extends BaseProvider {
   /**
    * 构建消息列表
    * Anthropic API 不使用 system role，系统提示需要单独传递
+   * 支持多模态内容（图片）
    */
   private buildMessages(context: ChatContext): Anthropic.Messages.MessageParam[] {
     const messages: Anthropic.Messages.MessageParam[] = []
 
     for (const msg of context.messages) {
-      messages.push({
-        role: msg.role as 'user' | 'assistant',
-        content: msg.content
-      })
+      // 检测是否是多模态内容（数组格式）
+      const isMultimodal = Array.isArray(msg.content)
+
+      if (isMultimodal) {
+        // 多模态消息，转换为 Anthropic 格式
+        const content: Anthropic.ContentBlock[] = (msg.content as any[]).map((block: any) => {
+          if (block.type === 'text') {
+            return { type: 'text' as const, text: block.text || '' }
+          } else if (block.type === 'image' && block.image_url?.url) {
+            // 解析 data URL 获取 media_type 和 data
+            const dataUrl = block.image_url.url
+            const matches = dataUrl.match(/^data:([^;]+);base64,(.+)$/)
+            if (matches) {
+              return {
+                type: 'image' as const,
+                source: {
+                  type: 'base64' as const,
+                  media_type: matches[1] as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+                  data: matches[2]
+                }
+              }
+            }
+          }
+          return null
+        }).filter(Boolean) as Anthropic.ContentBlock[]
+
+        messages.push({
+          role: msg.role as 'user' | 'assistant',
+          content
+        })
+      } else {
+        // 纯文本消息
+        const textContent = (msg.content as string).trim()
+        if (!textContent) continue
+        messages.push({
+          role: msg.role as 'user' | 'assistant',
+          content: textContent
+        })
+      }
     }
 
     return messages

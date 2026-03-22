@@ -107,9 +107,55 @@ export class OpenAISdkProvider extends BaseProvider {
   }
 
   /**
+   * 检测模型是否支持视觉
+   * @param modelId 模型 ID
+   * @returns 是否支持视觉
+   */
+  private supportsVision(modelId: string): boolean {
+    const id = modelId.toLowerCase()
+
+    // OpenAI GPT-4 系列（带 vision 或 turbo 的，以及 gpt-4o）
+    if (id.includes('gpt-4o') ||
+        id.includes('gpt-4-turbo') ||
+        id.includes('gpt-4-vision') ||
+        id.includes('gpt-4-1106-vision') ||
+        id.includes('gpt-4-0125-preview') ||
+        id.includes('gpt-4-1106-preview')) {
+      return true
+    }
+
+    // Anthropic Claude 3 系列
+    if (id.includes('claude-3') || id.includes('claude-sonnet') || id.includes('claude-opus') || id.includes('claude-haiku')) {
+      return true
+    }
+
+    // Google Gemini 系列
+    if (id.includes('gemini')) {
+      return true
+    }
+
+    // 阿里通义千问视觉模型
+    if (id.includes('qwen-vl') || id.includes('qwen2-vl') || id.includes('qwen2.5-vl')) {
+      return true
+    }
+
+    // 智谱视觉模型
+    if (id.includes('glm-4v') || id.includes('glm-4-vision')) {
+      return true
+    }
+
+    // 其他 OpenAI 兼容平台的视觉模型
+    if (id.includes('vision') || id.includes('-vl') || id.includes('-v-')) {
+      return true
+    }
+
+    return false
+  }
+
+  /**
    * 构建消息列表
    * 注意：不同 API 有不同的消息格式要求
-   * - OpenAI: 支持 system 角色，content 可以是字符串
+   * - OpenAI: 支持 system 角色，content 可以是字符串或多模态数组
    * - 智谱 GLM: 不支持 system 角色，content 必须是数组格式
    */
   private buildMessages(context: ChatContext, options?: ChatOptions): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
@@ -128,11 +174,19 @@ export class OpenAISdkProvider extends BaseProvider {
     // 检测是否是智谱 GLM（需要特殊格式）
     const isZhipuGLM = this.providerId === 'zhipu' || this.providerId === 'glm'
 
+    // 检测模型是否支持视觉
+    const modelId = this.config.defaultModel || ''
+    const supportsVision = this.supportsVision(modelId)
+    console.log('[OpenAISdkProvider.buildMessages] 模型:', modelId, ', 支持视觉:', supportsVision)
+
+    // 检测消息中是否包含图片
+    let hasImagesInMessages = false
+
     // 添加历史消息
-    // 确保消息格式正确，content 是有效的字符串
+    // 支持多模态内容（字符串或 MessageContentBlock 数组）
     for (const msg of context.messages) {
       // 跳过空消息
-      if (!msg.content || typeof msg.content !== 'string' || msg.content.trim() === '') {
+      if (!msg.content) {
         console.warn('[OpenAISdkProvider.buildMessages] 跳过空消息, role:', msg.role)
         continue
       }
@@ -144,30 +198,98 @@ export class OpenAISdkProvider extends BaseProvider {
         continue
       }
 
-      // 构建消息内容
-      const messageContent = msg.content.trim()
+      // 检测是否是多模态内容（数组格式）
+      const isMultimodal = Array.isArray(msg.content)
+
+      // 检测是否有图片
+      if (isMultimodal) {
+        const hasImage = (msg.content as any[]).some((block: any) => block.type === 'image')
+        if (hasImage) {
+          hasImagesInMessages = true
+        }
+      }
 
       if (isZhipuGLM) {
         // 智谱 GLM 特殊格式：
         // 1. content 必须是数组格式
         // 2. 不支持 system 角色
         if (role === 'system') {
-          // 将 system 消息合并到第一条 user 消息中（稍后处理）
           continue
         }
 
-        messages.push({
-          role: role as 'user' | 'assistant',
-          // 智谱 GLM 需要 content 是数组格式
-          content: [{ type: 'text' as const, text: messageContent }]
-        } as any)
+        if (isMultimodal) {
+          // 已经是多模态格式
+          const glmContent = (msg.content as any[]).map((block: any) => {
+            if (block.type === 'text') {
+              return { type: 'text' as const, text: block.text || '' }
+            } else if (block.type === 'image' && block.image_url?.url && supportsVision) {
+              // 只有支持视觉的模型才发送图片
+              return { type: 'image_url' as const, image_url: { url: block.image_url.url } }
+            } else if (block.type === 'image' && !supportsVision) {
+              // 不支持视觉的模型，将图片转换为占位符文本
+              return { type: 'text' as const, text: '[用户上传了图片，但当前模型不支持图片识别]' }
+            }
+            return null
+          }).filter(Boolean)
+
+          messages.push({
+            role: role as 'user' | 'assistant',
+            content: glmContent
+          } as any)
+        } else {
+          // 纯文本消息
+          const textContent = (msg.content as string).trim()
+          if (!textContent) continue
+          messages.push({
+            role: role as 'user' | 'assistant',
+            content: [{ type: 'text' as const, text: textContent }]
+          } as any)
+        }
       } else {
         // 标准 OpenAI 格式
-        messages.push({
-          role,
-          content: messageContent
-        })
+        if (isMultimodal) {
+          // 多模态消息，转换为 OpenAI 格式
+          const openaiContent = (msg.content as any[]).map((block: any) => {
+            if (block.type === 'text') {
+              return { type: 'text' as const, text: block.text || '' }
+            } else if (block.type === 'image' && block.image_url?.url && supportsVision) {
+              // 只有支持视觉的模型才发送图片
+              return { type: 'image_url' as const, image_url: { url: block.image_url.url } }
+            } else if (block.type === 'image' && !supportsVision) {
+              // 不支持视觉的模型，将图片转换为占位符文本
+              return { type: 'text' as const, text: '[用户上传了图片，但当前模型不支持图片识别]' }
+            }
+            return null
+          }).filter(Boolean)
+
+          if (role === 'user') {
+            messages.push({
+              role: 'user',
+              content: openaiContent as OpenAI.Chat.Completions.ChatCompletionContentPart[]
+            })
+          } else if (role === 'assistant') {
+            // assistant 消息通常只有文本
+            const textBlock = openaiContent.find(b => b.type === 'text')
+            messages.push({
+              role: 'assistant',
+              content: textBlock?.text || ''
+            })
+          }
+        } else {
+          // 纯文本消息
+          const textContent = (msg.content as string).trim()
+          if (!textContent) continue
+          messages.push({
+            role,
+            content: textContent
+          })
+        }
       }
+    }
+
+    // 如果消息包含图片但模型不支持视觉，打印警告
+    if (hasImagesInMessages && !supportsVision) {
+      console.warn('[OpenAISdkProvider.buildMessages] 警告: 消息包含图片，但模型', modelId, '不支持视觉功能')
     }
 
     // 处理 system prompt
@@ -178,7 +300,7 @@ export class OpenAISdkProvider extends BaseProvider {
           const firstContent = messages[0].content
           const originalText = typeof firstContent === 'string'
             ? firstContent
-            : (firstContent as any)[0]?.text || ''
+            : (firstContent as any[])?.find(b => b.type === 'text')?.text || ''
           messages[0] = {
             role: 'user',
             content: [{
@@ -205,6 +327,11 @@ export class OpenAISdkProvider extends BaseProvider {
     console.log('[OpenAISdkProvider.buildMessages] 构建的消息数量:', messages.length)
     console.log('[OpenAISdkProvider.buildMessages] 消息角色:', messages.map(m => m.role))
     console.log('[OpenAISdkProvider.buildMessages] 是否智谱 GLM:', isZhipuGLM)
+    // 打印是否有图片内容
+    const hasImages = messages.some((m: any) =>
+      Array.isArray(m.content) && m.content.some((b: any) => b.type === 'image' || b.type === 'image_url')
+    )
+    console.log('[OpenAISdkProvider.buildMessages] 包含图片消息:', hasImages)
 
     return messages
   }

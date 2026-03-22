@@ -9,6 +9,35 @@
 export type MessageRole = 'user' | 'assistant' | 'system'
 
 /**
+ * 消息内容块 - 用于多模态消息
+ */
+export interface MessageContentBlock {
+  type: 'text' | 'image'
+  text?: string
+  image_url?: {
+    url: string  // data:image/jpeg;base64,... 格式
+  }
+}
+
+/**
+ * 消息内容类型 - 支持纯文本和多模态
+ */
+export type MessageContent = string | MessageContentBlock[]
+
+/**
+ * 附件内容 - 用于传递给 Provider
+ * 包含附件的完整数据，供 AI 提供商使用
+ */
+export interface AttachmentContent {
+  id: string
+  type: 'image' | 'document'
+  fileName: string
+  mimeType: string
+  base64Data: string
+  textContent?: string  // 文档类文件的文本内容
+}
+
+/**
  * 附件类型
  */
 export type AttachmentType = 'image' | 'document'
@@ -175,6 +204,7 @@ export interface ChatContext {
   systemPrompt?: string
   messages: Array<{
     role: MessageRole
-    content: string
+    content: MessageContent  // 支持多模态内容
+    attachments?: AttachmentContent[]  // 附件内容（可选，用于 Provider 处理）
   }>
 }
