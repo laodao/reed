@@ -380,21 +380,7 @@ import type {
 // Props
 const props = defineProps<{
   modelValue: boolean
-  editConfig?: {
-    id: string
-    templateId: string
-    name: string
-    shortId?: string
-    apiKey?: string
-    accessKeyId?: string
-    accessKeySecret?: string
-    baseUrl?: string
-    customHeaders?: Record<string, string>
-    customModels?: ModelDefinition[]
-    enabledModels?: string[]
-    apiModels?: ModelDefinition[]
-    isDefault: boolean
-  }
+  editConfig?: UserProviderConfig
 }>()
 
 // Emits
@@ -425,8 +411,7 @@ const form = reactive({
   accessKeySecret: '',
   baseUrl: '',
   customHeaders: {} as Record<string, string>,
-  customModels: [] as ModelDefinition[],
-  enabledModels: [] as string[],
+  models: [] as ModelDefinition[],  // 统一使用 models 存储所有启用的模型
   isDefault: false
 })
 
@@ -460,81 +445,71 @@ const customModelForm = reactive({
   supportsTools: false
 })
 
-// 从 API 获取的模型列表（只有点击"从 API 刷新"后才有值）
+// 从 API 获取的模型列表（用于与现有模型对比）
 const apiModels = ref<ModelDefinition[]>([])
 
-// 已保存的模型信息（从编辑配置加载，包含完整信息如名称、类型等）
-const savedModelsInfo = ref<Map<string, ModelDefinition>>(new Map())
-
-// 所有模型（默认只显示已启用模型 + 自定义模型，点击刷新后显示 API 模型）
+// 所有模型（已启用的模型 + API 获取的模型）
 const allModels = computed(() => {
-  // 获取自定义模型的 ID 集合
-  const customModelIds = new Set(form.customModels.map((m) => m.id))
+  // 获取已启用模型的 ID 集合
+  const enabledModelIds = new Set(form.models.map((m) => m.id))
 
   // 用于合并模型的 Map
   const modelsMap = new Map<string, ModelDefinition>()
 
-  // 如果已从 API 获取模型，显示 API 模型（排除自定义模型）
+  // 先添加已启用的模型
+  form.models.forEach((m) => {
+    modelsMap.set(m.id, m)
+  })
+
+  // 如果已从 API 获取模型，添加 API 模型（排除已启用的）
   if (apiModels.value.length > 0) {
     apiModels.value.forEach((m) => {
-      if (!customModelIds.has(m.id)) {
+      if (!enabledModelIds.has(m.id)) {
         modelsMap.set(m.id, m)
-      }
-    })
-  } else {
-    // 未从 API 获取时，只显示已启用的模型
-    // 优先使用保存的完整模型信息，否则显示简化信息
-    form.enabledModels.forEach((modelId) => {
-      if (!customModelIds.has(modelId)) {
-        const savedInfo = savedModelsInfo.value.get(modelId)
-        modelsMap.set(modelId, savedInfo || {
-          id: modelId,
-          name: modelId,
-          contextWindow: 8192,
-          maxOutputTokens: 4096,
-          features: ['chat', 'streaming']
-        })
       }
     })
   }
 
-  // 预定义模型列表
-  const predefinedModels = Array.from(modelsMap.values())
-
-  // 自定义模型始终放到最后
-  const customModelsList = [...form.customModels]
-
-  const result = [...predefinedModels, ...customModelsList]
-
-  return result
+  return Array.from(modelsMap.values())
 })
 
 
-// 判断是否是自定义模型
+// 判断是否是自定义模型（不在 API 列表中的模型）
 const isCustomModel = (modelId: string): boolean => {
-  return form.customModels.some((m) => m.id === modelId)
+  return !apiModels.value.some((m) => m.id === modelId)
 }
 
 // 判断模型是否已启用
 const isModelEnabled = (modelId: string): boolean => {
-  return form.enabledModels.includes(modelId)
+  return form.models.some((m) => m.id === modelId)
 }
 
-// 添加 API 模型到启用列表（弹出对话框）
+// 切换模型启用状态
+const toggleModelEnabled = (model: ModelDefinition) => {
+  const index = form.models.findIndex((m) => m.id === model.id)
+  if (index > -1) {
+    form.models.splice(index, 1)
+  } else {
+    form.models.push({
+      ...model,
+      name: model.name || model.id
+    })
+  }
+}
+
+// 添加 API 模型到启用列表（直接添加）
 const addApiModelToEnabled = (model: ModelDefinition) => {
-  // 打开对话框
-  isEditingCustomModel.value = false
-  isEditingApiModel.value = true
-  editingModelId.value = model.id
-  // 预填充模型信息
-  customModelForm.id = model.id
-  customModelForm.name = model.name || model.id
-  customModelForm.contextWindow = model.contextWindow || 8192
-  customModelForm.type = model.type || 'text'
-  customModelForm.supportsThinking = model.supportsThinking || false
-  customModelForm.supportsWebSearch = model.supportsWebSearch || false
-  customModelForm.supportsTools = model.supportsTools || false
-  showAddCustomModel.value = true
+  // 检查是否已存在
+  if (form.models.some((m) => m.id === model.id)) {
+    ElMessage.warning('该模型已在启用列表中')
+    return
+  }
+  // 直接添加到启用列表
+  form.models.push({
+    ...model,
+    name: model.name || model.id
+  })
+  ElMessage.success('已添加模型')
 }
 
 // 别名，用于模板
@@ -542,40 +517,16 @@ const addModelToEnabled = addApiModelToEnabled
 
 // 从启用列表移除模型
 const removeModelFromEnabled = (modelId: string) => {
-  const index = form.enabledModels.indexOf(modelId)
+  const index = form.models.findIndex((m) => m.id === modelId)
   if (index > -1) {
-    form.enabledModels.splice(index, 1)
+    form.models.splice(index, 1)
     ElMessage.success('已从启用列表移除')
   }
 }
 
-// 获取已启用的模型列表（包含完整信息）
+// 获取已启用的模型列表
 const enabledModelsWithInfo = computed(() => {
-  return form.enabledModels.map(modelId => {
-    // 先从自定义模型中查找
-    const customModel = form.customModels.find(m => m.id === modelId)
-    if (customModel) {
-      return customModel
-    }
-    // 再从 API 模型中查找
-    const apiModel = apiModels.value.find(m => m.id === modelId)
-    if (apiModel) {
-      return apiModel
-    }
-    // 最后从保存的模型信息中查找
-    const savedInfo = savedModelsInfo.value.get(modelId)
-    if (savedInfo) {
-      return savedInfo
-    }
-    // 都找不到，返回基本信息
-    return {
-      id: modelId,
-      name: modelId,
-      contextWindow: 8192,
-      maxOutputTokens: 4096,
-      features: ['chat', 'streaming']
-    }
-  })
+  return form.models
 })
 
 // 别名，用于模板
@@ -625,7 +576,7 @@ const selectTemplate = (template: ProviderTemplate) => {
   form.name = `我的 ${template.name}`
   form.baseUrl = ''
   form.apiKey = ''
-  form.enabledModels = []  // 新建时默认不选中任何模型，用户需要手动勾选或从API刷新后勾选
+  form.models = []  // 新建时默认不选中任何模型，用户需要手动勾选或从API刷新后勾选
   customHeadersList.value = []
   apiModels.value = []
 }
@@ -661,7 +612,7 @@ const fetchModelsFromApi = async () => {
         supportsWebSearch: m.supportsWebSearch,
         supportsTools: m.supportsTools
       })))
-      console.log('[fetchModelsFromApi] 当前 enabledModels:', [...form.enabledModels])
+      console.log('[fetchModelsFromApi] 当前 models:', [...form.models])
       console.log('[fetchModelsFromApi] 当前 isEdit:', isEdit.value)
       apiModels.value = result.models
       // 不再自动选中所有模型，用户需要手动勾选
@@ -739,41 +690,10 @@ const handleSave = async () => {
       }
     }
 
-    // 合并 customModels 和 enabledModels 为 models 字段
-    const mergedModels: ModelDefinition[] = []
-    const addedIds = new Set<string>()
-    const plainApiModels = safeStringify(apiModels.value) || []
-    const plainCustomModels = safeStringify(form.customModels) || []
+    // 直接使用 form.models
+    const modelsToSave = safeStringify(form.models) || []
 
-    // 1. 先添加 customModels（完整信息）
-    for (const model of plainCustomModels) {
-      if (!addedIds.has(model.id)) {
-        mergedModels.push(model)
-        addedIds.add(model.id)
-      }
-    }
-
-    // 2. 添加 enabledModels 中的 ID（从 apiModels 获取完整信息）
-    for (const modelId of form.enabledModels) {
-      if (!addedIds.has(modelId)) {
-        const apiModel = plainApiModels.find((m: ModelDefinition) => m.id === modelId)
-        if (apiModel) {
-          mergedModels.push(apiModel)
-          addedIds.add(modelId)
-        } else {
-          mergedModels.push({
-            id: modelId,
-            name: modelId,
-            contextWindow: 8192,
-            maxOutputTokens: 4096,
-            features: ['chat']
-          })
-          addedIds.add(modelId)
-        }
-      }
-    }
-
-    console.log('[handleSave] 准备保存配置, mergedModels:', mergedModels)
+    console.log('[handleSave] 准备保存配置, models:', modelsToSave)
 
     if (isEdit.value && props.editConfig) {
       // 更新配置
@@ -785,7 +705,7 @@ const handleSave = async () => {
         accessKeySecret: form.accessKeySecret || undefined,
         baseUrl: form.baseUrl || undefined,
         customHeaders: Object.keys(customHeaders).length > 0 ? customHeaders : undefined,
-        models: mergedModels.length > 0 ? mergedModels : undefined,
+        models: modelsToSave.length > 0 ? modelsToSave : undefined,
         isDefault: form.isDefault
       })
 
@@ -807,7 +727,7 @@ const handleSave = async () => {
         accessKeySecret: form.accessKeySecret || undefined,
         baseUrl: form.baseUrl || undefined,
         customHeaders: Object.keys(customHeaders).length > 0 ? customHeaders : undefined,
-        models: mergedModels.length > 0 ? mergedModels : undefined,
+        models: modelsToSave.length > 0 ? modelsToSave : undefined,
         isDefault: form.isDefault
       })
 
@@ -850,12 +770,10 @@ const handleClose = () => {
   form.accessKeySecret = ''
   form.baseUrl = ''
   form.customHeaders = {}
-  form.customModels = []
-  form.enabledModels = []
+  form.models = []
   form.isDefault = false
   customHeadersList.value = []
   apiModels.value = []
-  savedModelsInfo.value = new Map()
   activeCollapse.value = []
 }
 
@@ -899,34 +817,24 @@ const editModelCapabilities = (model: ModelDefinition) => {
   showAddCustomModel.value = true
 }
 
-// 删除自定义模型
+// 删除模型
 const deleteCustomModel = (modelId: string) => {
-  const index = form.customModels.findIndex((m) => m.id === modelId)
+  const index = form.models.findIndex((m) => m.id === modelId)
   if (index > -1) {
-    form.customModels.splice(index, 1)
-  }
-  // 从启用列表中移除
-  const enabledIndex = form.enabledModels.indexOf(modelId)
-  if (enabledIndex > -1) {
-    form.enabledModels.splice(enabledIndex, 1)
+    form.models.splice(index, 1)
   }
 }
 
-// 移除模型（支持所有类型的模型）
-const removeModel = (modelId: string, isCustom: boolean) => {
-  if (isCustom) {
-    // 自定义模型：从 customModels 中删除
-    deleteCustomModel(modelId)
-  } else {
-    // API 获取的模型：仅从启用列表中移除（取消勾选）
-    const enabledIndex = form.enabledModels.indexOf(modelId)
-    if (enabledIndex > -1) {
-      form.enabledModels.splice(enabledIndex, 1)
-    }
+// 移除模型（统一处理）
+const removeModel = (modelId: string) => {
+  const index = form.models.findIndex((m) => m.id === modelId)
+  if (index > -1) {
+    form.models.splice(index, 1)
+    ElMessage.success('已移除模型')
   }
 }
 
-// 添加或更新模型（支持自定义模型和 API 模型）
+// 添加或更新模型
 const saveCustomModel = () => {
   if (!customModelForm.id) {
     ElMessage.warning('请输入模型 ID')
@@ -956,43 +864,27 @@ const saveCustomModel = () => {
         ...modelData
       }
     }
-    // 添加到启用列表
-    if (!form.enabledModels.includes(customModelForm.id)) {
-      form.enabledModels.push(customModelForm.id)
-    }
-    // 如果用户修改了模型属性，保存到 customModels（覆盖 API 模型的默认属性）
-    const existingCustomIndex = form.customModels.findIndex((m) => m.id === customModelForm.id)
-    if (existingCustomIndex > -1) {
-      form.customModels[existingCustomIndex] = modelData
+    // 添加到 models 列表
+    const existingIndex = form.models.findIndex((m) => m.id === customModelForm.id)
+    if (existingIndex > -1) {
+      form.models[existingIndex] = modelData
     } else {
-      form.customModels.push(modelData)
+      form.models.push(modelData)
     }
   } else if (isEditingCustomModel.value && editingModelId.value) {
-    // 编辑自定义模型：更新现有模型
-    const index = form.customModels.findIndex((m) => m.id === editingModelId.value)
+    // 编辑模型：更新现有模型
+    const index = form.models.findIndex((m) => m.id === editingModelId.value)
     if (index > -1) {
-      // 如果 ID 改变了，需要更新启用列表
-      if (editingModelId.value !== customModelForm.id) {
-        const enabledIndex = form.enabledModels.indexOf(editingModelId.value)
-        if (enabledIndex > -1) {
-          form.enabledModels.splice(enabledIndex, 1, customModelForm.id)
-        }
-      }
-      form.customModels[index] = modelData
+      form.models[index] = modelData
     }
   } else {
     // 添加模式：检查 ID 是否已存在
-    if (form.customModels.some((m) => m.id === customModelForm.id)) {
+    if (form.models.some((m) => m.id === customModelForm.id)) {
       ElMessage.warning('该模型 ID 已存在')
       return
     }
 
-    form.customModels.push(modelData)
-
-    // 自动选中
-    if (!form.enabledModels.includes(customModelForm.id)) {
-      form.enabledModels.push(customModelForm.id)
-    }
+    form.models.push(modelData)
   }
 
   // 重置表单并关闭对话框
@@ -1006,7 +898,7 @@ const saveCustomModel = () => {
   isEditingCustomModel.value = false
   isEditingApiModel.value = false
   editingModelId.value = null
-  showAddCustomModel.value = false
+  showAddCustomModelDialog.value = false
 
   ElMessage.success('模型已保存')
 }
@@ -1028,17 +920,9 @@ watch(
 
       // 从 models 字段初始化
       if (config.models && config.models.length > 0) {
-        form.customModels = [...config.models]
-        form.enabledModels = config.models.map(m => m.id)
-        // 保存模型信息到 savedModelsInfo
-        savedModelsInfo.value = new Map()
-        config.models.forEach(m => {
-          savedModelsInfo.value.set(m.id, m)
-        })
+        form.models = [...config.models]
       } else {
-        form.customModels = []
-        form.enabledModels = []
-        savedModelsInfo.value = new Map()
+        form.models = []
       }
 
       // 不自动加载 apiModels，用户需要点击"从 API 刷新"
@@ -1080,7 +964,6 @@ watch(
       const template = newTemplates.find((t) => t.id === props.editConfig.templateId)
       if (template) {
         selectedTemplate.value = template
-        // 编辑模式下，保持已有的 enabledModels，不自动填充模板默认模型
       }
     }
   },
