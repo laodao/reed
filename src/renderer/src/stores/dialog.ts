@@ -54,6 +54,12 @@ export const useDialogStore = defineStore('dialog', () => {
   const streamStateCache = ref(new Map<string, StreamState>())
 
   /**
+   * 流式状态版本号，用于触发 computed 属性重新计算
+   * 每次 Map 内容变化时递增
+   */
+  const streamStateVersion = ref(0)
+
+  /**
    * 当前对话的消息列表（计算属性，从缓存中获取）
    */
   const messages = computed({
@@ -70,9 +76,14 @@ export const useDialogStore = defineStore('dialog', () => {
 
   /**
    * 当前对话的流式状态（计算属性，从缓存中获取）
+   * 注意：依赖 streamStateVersion 确保 Map 内容变化时重新计算
    */
   const streamState = computed({
     get: () => {
+      // 显式依赖 streamStateVersion，确保 Map 内容变化时重新计算
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const _ = streamStateVersion.value
+
       if (!currentDialog.value) {
         return { isStreaming: false, messageId: null, content: '', error: null }
       }
@@ -86,6 +97,7 @@ export const useDialogStore = defineStore('dialog', () => {
     set: (value) => {
       if (currentDialog.value) {
         streamStateCache.value.set(currentDialog.value.id, value)
+        streamStateVersion.value++
       }
     }
   })
@@ -166,6 +178,7 @@ export const useDialogStore = defineStore('dialog', () => {
           content: '',
           error: null
         })
+        streamStateVersion.value++
         return response.dialog
       }
       return null
@@ -294,6 +307,7 @@ export const useDialogStore = defineStore('dialog', () => {
       content: '',
       error: null
     })
+    streamStateVersion.value++
 
     // 获取当前对话的消息列表并添加用户消息
     const currentMessages = messagesCache.value.get(dialogId) || []
@@ -335,6 +349,7 @@ export const useDialogStore = defineStore('dialog', () => {
           content: '',
           error: response.error || '发送失败'
         })
+        streamStateVersion.value++
         // 移除临时用户消息
         const msgs = messagesCache.value.get(dialogId) || []
         messagesCache.value.set(dialogId, msgs.filter(m => m.id !== tempUserMessageId))
@@ -352,6 +367,7 @@ export const useDialogStore = defineStore('dialog', () => {
         content: '',
         error: error.message || '发送失败'
       })
+      streamStateVersion.value++
       // 移除临时用户消息
       const msgs = messagesCache.value.get(dialogId) || []
       messagesCache.value.set(dialogId, msgs.filter(m => m.id !== tempUserMessageId))
@@ -381,6 +397,7 @@ export const useDialogStore = defineStore('dialog', () => {
           content: '',
           isStreaming: true
         })
+        streamStateVersion.value++
         // 如果有 messageId，确保 AI 消息存在于列表中
         if (data.messageId) {
           const msgIndex = dialogMessages.findIndex(m => m.id === data.messageId)
@@ -418,6 +435,7 @@ export const useDialogStore = defineStore('dialog', () => {
           ...dialogStreamState,
           content: currentContent
         })
+        streamStateVersion.value++
         // 更新消息列表中的 AI 消息
         if (data.messageId) {
           const msgIndex = dialogMessages.findIndex(m => m.id === data.messageId)
@@ -435,6 +453,7 @@ export const useDialogStore = defineStore('dialog', () => {
           ...dialogStreamState,
           isStreaming: false
         })
+        streamStateVersion.value++
         // 如果有 token 使用信息，更新 AI 消息和对应的用户消息
         if (data.usage && data.messageId) {
           const aiMsgIndex = dialogMessages.findIndex(m => m.id === data.messageId)
@@ -468,6 +487,7 @@ export const useDialogStore = defineStore('dialog', () => {
           error: data.error || '未知错误',
           isStreaming: false
         })
+        streamStateVersion.value++
         break
     }
   }
@@ -488,6 +508,7 @@ export const useDialogStore = defineStore('dialog', () => {
         ...dialogStreamState,
         isStreaming: false
       })
+      streamStateVersion.value++
     } catch (error) {
       console.error('停止生成失败:', error)
     }
