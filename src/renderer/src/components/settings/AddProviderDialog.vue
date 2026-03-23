@@ -497,19 +497,26 @@ const toggleModelEnabled = (model: ModelDefinition) => {
   }
 }
 
-// 添加 API 模型到启用列表（直接添加）
+// 添加 API 模型到启用列表（弹出对话框让用户确认）
 const addApiModelToEnabled = (model: ModelDefinition) => {
   // 检查是否已存在
   if (form.models.some((m) => m.id === model.id)) {
     ElMessage.warning('该模型已在启用列表中')
     return
   }
-  // 直接添加到启用列表
-  form.models.push({
-    ...model,
-    name: model.name || model.id
-  })
-  ElMessage.success('已添加模型')
+  // 打开对话框让用户确认模型信息
+  isEditingCustomModel.value = false
+  isEditingApiModel.value = true
+  editingModelId.value = model.id
+  // 预填充模型信息
+  customModelForm.id = model.id
+  customModelForm.name = model.name || model.id
+  customModelForm.contextWindow = model.contextWindow || 8192
+  customModelForm.type = model.type || 'text'
+  customModelForm.supportsThinking = model.supportsThinking || false
+  customModelForm.supportsWebSearch = model.supportsWebSearch || false
+  customModelForm.supportsTools = model.supportsTools || false
+  showAddCustomModel.value = true
 }
 
 // 别名，用于模板
@@ -898,7 +905,7 @@ const saveCustomModel = () => {
   isEditingCustomModel.value = false
   isEditingApiModel.value = false
   editingModelId.value = null
-  showAddCustomModelDialog.value = false
+  showAddCustomModel.value = false
 
   ElMessage.success('模型已保存')
 }
