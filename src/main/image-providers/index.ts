@@ -14,7 +14,10 @@ import { BaseImageProvider } from './base-image-provider'
 // SDK Provider 导入
 import { OpenAIImageProvider } from './sdk/openai-image.provider'
 
-// 保留旧的实现
+// DashScope Provider（使用 Bearer Token 认证）
+import { DashScopeImageProvider } from './dashscope-image.provider'
+
+// 保留旧的实现（使用阿里云签名认证）
 import { BailianImageProvider } from './bailian-image.provider'
 
 // 导出基类
@@ -23,15 +26,18 @@ export { BaseImageProvider }
 // 导出 SDK Provider
 export * from './sdk'
 
-// 导出旧实现
-export { BailianImageProvider }
+// 导出 Provider 实现
+export { DashScopeImageProvider, BailianImageProvider }
 
 /**
  * Provider 类映射表
- * 注意：百炼平台暂不支持官方 SDK 图像生成，保留手动签名实现
+ * dashscope: 使用 DashScope API（Bearer Token 认证）
+ * bailian: 使用百炼平台 API（阿里云签名认证，需要 AccessKeyId:AccessKeySecret）
  */
 const PROVIDER_CLASSES: Record<string, new (config: ImageProviderConfig) => BaseImageProvider> = {
-  // 百炼平台使用旧的手动签名实现
+  // DashScope 使用 Bearer Token 认证（推荐）
+  dashscope: DashScopeImageProvider,
+  // 百炼平台使用阿里云签名认证
   bailian: BailianImageProvider,
   // OpenAI DALL-E 使用官方 SDK
   openai: OpenAIImageProvider
@@ -46,10 +52,16 @@ export const IMAGE_PROVIDER_DEFINITIONS: Record<ImageProviderType, {
   description: string
   requiresApiKey: boolean
 }> = {
+  dashscope: {
+    type: 'dashscope',
+    name: 'DashScope (通义万相)',
+    description: '阿里云 DashScope 平台，使用 Bearer Token 认证',
+    requiresApiKey: true
+  },
   bailian: {
     type: 'bailian',
     name: '百炼平台',
-    description: '阿里云百炼平台，支持通义万相图像生成模型',
+    description: '阿里云百炼平台，支持通义万相图像生成模型（需要 AccessKey）',
     requiresApiKey: true
   },
   volcengine: {

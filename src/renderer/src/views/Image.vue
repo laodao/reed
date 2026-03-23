@@ -92,9 +92,25 @@ function handleError(error: string): void {
 
 /**
  * 处理重新生成
+ * 将历史图像的参数填充到生成器中
  */
 async function handleRegenerate(image: ImageRecord): Promise<void> {
-  // 重新生成就直接刷新列表
+  // 填充参数到生成器
+  if (generatorRef.value) {
+    generatorRef.value.setParams({
+      prompt: image.prompt,
+      negativePrompt: image.negativePrompt,
+      width: image.width || 1024,
+      height: image.height || 1024,
+      style: image.style,
+      quality: image.quality,
+      seed: image.seed,
+      providerId: image.providerId,
+      modelId: image.modelId
+    })
+  }
+
+  // 刷新列表
   await loadImages()
 }
 

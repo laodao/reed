@@ -24,6 +24,18 @@ const POLL_INTERVAL = 2000
 const MAX_POLL_COUNT = 150
 
 /**
+ * 图像生成事件类型
+ */
+interface ImageGenerationEvent {
+  type: 'generation-started' | 'generation-progress' | 'generation-completed' | 'generation-failed'
+  taskId: string
+  images?: ImageRecord[]
+  status?: string
+  progress?: number
+  error?: string
+}
+
+/**
  * 图像生成功能 Composable
  */
 export function useImage() {
@@ -93,6 +105,11 @@ export function useImage() {
    * 轮询计数器
    */
   let pollCount = 0
+
+  /**
+   * 事件监听器清理函数
+   */
+  let cleanupEventListener: (() => void) | null = null
 
   // ==================== 计算属性 ====================
 
@@ -586,14 +603,117 @@ export function useImage() {
     error.value = null
   }
 
+  /**
+   * 下载图像
+   * @param imageId - 图像 ID
+   * @returns 保存的文件路径或 null
+   */
+  async function downloadImage(imageId: string): Promise<string | null> {
+    try {
+      const response = await window.electronAPI.image.download(imageId)
+
+      if (response.success && response.data) {
+        return response.data
+      }
+      error.value = response.error || '下载失败'
+      return null
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : '未知错误'
+      error.value = errorMessage
+      console.error('下载图像失败:', err)
+      return null
+    }
+  }
+
+  /**
+   * 选择参考图片
+   * @returns 图片信息或 null
+   */
+  async function selectReferenceImage(): Promise<{ path: string; base64: string; name: string } | null> {
+    try {
+      const response = await window.electronAPI.image.selectFile()
+
+      if (response.success && response.data) {
+        return response.data
+      }
+      error.value = response.error || '选择图片失败'
+      return null
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : '未知错误'
+      error.value = errorMessage
+      console.error('选择参考图片失败:', err)
+      return null
+    }
+  }
+
   // ==================== 生命周期 ====================
+
+  /**
+   * 处理图像生成事件
+   */
+  function handleGenerationEvent(event: any, data: ImageGenerationEvent): void {
+    console.log('[useImage] 收到图像生成事件:', data)
+
+    switch (data.type) {
+      case 'generation-started':
+        // 任务开始
+        currentTask.value = {
+          taskId: data.taskId,
+          status: 'pending',
+          progress: 0
+        }
+        break
+
+      case 'generation-progress':
+        // 任务进度更新
+        if (currentTask.value && currentTask.value.taskId === data.taskId) {
+          currentTask.value = {
+            ...currentTask.value,
+            status: data.status as any || 'processing',
+            progress: data.progress || 0
+          }
+        }
+        break
+
+      case 'generation-completed':
+        // 任务完成
+        stopPolling()
+        currentTask.value = {
+          taskId: data.taskId,
+          status: 'completed',
+          progress: 100,
+          images: data.images
+        }
+        // 刷新图像列表
+        loadImages()
+        break
+
+      case 'generation-failed':
+        // 任务失败
+        stopPolling()
+        currentTask.value = {
+          taskId: data.taskId,
+          status: 'failed',
+          error: data.error || '图像生成失败'
+        }
+        error.value = data.error || '图像生成失败'
+        break
+    }
+  }
 
   onMounted(() => {
     initialize()
+    // 注册事件监听器
+    cleanupEventListener = window.electronAPI.image.onGenerationEvent(handleGenerationEvent)
   })
 
   onUnmounted(() => {
     cleanup()
+    // 清理事件监听器
+    if (cleanupEventListener) {
+      cleanupEventListener()
+      cleanupEventListener = null
+    }
   })
 
   return {
@@ -634,6 +754,8 @@ export function useImage() {
     deleteImages,
     getImage,
     testProvider,
+    downloadImage,
+    selectReferenceImage,
     cleanup
   }
 }

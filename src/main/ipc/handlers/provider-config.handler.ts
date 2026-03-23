@@ -184,6 +184,9 @@ async function handleCreateConfig(
       accessKeyId: request.accessKeyId,
       accessKeySecret: encryptedAccessKeySecret,
       baseUrl: request.baseUrl,
+      imageBaseUrl: request.imageBaseUrl,
+      videoBaseUrl: request.videoBaseUrl,
+      audioBaseUrl: request.audioBaseUrl,
       customHeaders: request.customHeaders,
       customParams: request.customParams,
       models: request.models,
@@ -237,6 +240,9 @@ async function handleUpdateConfig(
     if (data.name !== undefined) updates.name = data.name
     if (data.shortId !== undefined) updates.shortId = data.shortId
     if (data.baseUrl !== undefined) updates.baseUrl = data.baseUrl
+    if (data.imageBaseUrl !== undefined) updates.imageBaseUrl = data.imageBaseUrl
+    if (data.videoBaseUrl !== undefined) updates.videoBaseUrl = data.videoBaseUrl
+    if (data.audioBaseUrl !== undefined) updates.audioBaseUrl = data.audioBaseUrl
     if (data.customHeaders !== undefined) updates.customHeaders = data.customHeaders
     if (data.customParams !== undefined) updates.customParams = data.customParams
     if (data.models !== undefined) updates.models = data.models

@@ -4,11 +4,12 @@
  * @description 处理图像生成的核心服务
  */
 
-import { BrowserWindow, app } from 'electron'
+import { BrowserWindow, app, dialog } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import { getDatabaseManager } from '../database'
 import { SecureStorageService } from './secure-storage.service'
+import { PROVIDER_TEMPLATES } from './provider-template.service'
 import {
   createImageProvider,
   getProviderDefinition,
@@ -30,6 +31,17 @@ import type {
  * 正在进行的轮询任务
  */
 const activePollingTasks = new Map<string, NodeJS.Timeout>()
+
+/**
+ * 将本地文件路径转换为可访问的 URL
+ * @param filePath - 本地文件路径
+ * @returns 可访问的 URL
+ */
+function localPathToUrl(filePath: string): string {
+  if (!filePath) return ''
+  // 使用自定义协议 local-image:// 来访问本地图像
+  return `local-image://${encodeURIComponent(filePath)}`
+}
 
 /**
  * 图像生成服务
@@ -99,14 +111,38 @@ export class ImageService {
         return { success: false, error: 'API 密钥解密失败，请重新配置 Provider' }
       }
 
-      // 获取 Provider 类型
-      const providerType = providerConfig.templateId.replace('image-', '') as ImageProviderType
+      // 确定 Provider 类型
+      // 对于 bailian 提供商，根据 API Key 格式选择不同的实现
+      let providerType = providerConfig.templateId.replace('image-', '') as ImageProviderType
+
+      // 特殊处理：bailian 提供商根据 API Key 格式选择实现
+      if (providerType === 'bailian') {
+        // 检查 API Key 格式
+        if (decryptedApiKey.includes(':')) {
+          // AccessKeyId:AccessKeySecret 格式 -> 使用百炼平台签名认证
+          console.log('[ImageService.generateImage] 检测到阿里云 AccessKey 格式，使用百炼平台 API')
+          providerType = 'bailian'
+        } else {
+          // 普通 Bearer Token 格式 -> 使用 DashScope API
+          console.log('[ImageService.generateImage] 检测到 DashScope API Key 格式，使用 DashScope API')
+          providerType = 'dashscope'
+        }
+      }
+
+      // 获取模板中的 imageBaseUrl
+      const template = PROVIDER_TEMPLATES.find(t => t.id === providerConfig.templateId)
+
+      // 优先级：用户配置 > 模板默认
+      const imageBaseUrl = providerConfig.imageBaseUrl ||
+                           template?.apiConfig?.imageBaseUrl
+
+      console.log('[ImageService.generateImage] 使用图像 API URL:', imageBaseUrl)
 
       // 创建 Provider 实例
       const provider = createImageProvider(providerType, {
         id: providerConfig.id,
         apiKey: decryptedApiKey,
-        baseUrl: providerConfig.baseUrl,
+        baseUrl: imageBaseUrl,
         customHeaders: providerConfig.customHeaders,
         customParams: providerConfig.customParams
       })
@@ -120,8 +156,66 @@ export class ImageService {
         return response
       }
 
-      // 创建图像记录
+      // 同步模式：直接返回了图像 URL
+      if (response.images && response.images.length > 0) {
+        console.log('[ImageService.generateImage] 同步模式，直接返回图像')
+
+        const imageRecords: ImageRecord[] = []
+        const tempTaskId = `sync_${Date.now()}`
+
+        // 为每个图像创建记录
+        for (let i = 0; i < response.images.length; i++) {
+          const imageInfo = response.images[i]
+          const imageRecord = await dbManager.images.create({
+            prompt: request.prompt,
+            negativePrompt: request.negativePrompt,
+            style: request.style,
+            quality: request.quality,
+            providerId: provider.id,
+            modelId: request.model,
+            generationParams: {
+              width: request.width,
+              height: request.height,
+              seed: request.seed
+            },
+            seed: request.seed,
+            taskId: tempTaskId,
+            status: 'pending',
+            filePath: ''
+          })
+          imageRecords.push(imageRecord)
+        }
+
+        // 发送任务开始事件
+        this.sendImageEvent(window, {
+          type: 'generation-started',
+          taskId: tempTaskId,
+          imageIds: imageRecords.map(r => r.id)
+        })
+
+        // 直接下载并保存图像
+        const savedImages = await this.saveGeneratedImages(tempTaskId, response.images, imageRecords.map(r => r.id))
+
+        // 发送完成事件
+        this.sendImageEvent(window, {
+          type: 'generation-completed',
+          taskId: tempTaskId,
+          images: savedImages
+        })
+
+        return {
+          success: true,
+          taskId: tempTaskId,
+          images: savedImages
+        }
+      }
+
+      // 异步模式：需要轮询任务状态
       const taskId = response.taskId
+      if (!taskId) {
+        return { success: false, error: '未返回任务 ID 或图像结果' }
+      }
+
       const imageRecords: ImageRecord[] = []
 
       // 创建待处理的图像记录
@@ -309,14 +403,28 @@ export class ImageService {
       const imageId = imageIds[i]
 
       try {
-        // 下载图像
-        const response = await fetch(imageInfo.url)
-        if (!response.ok) {
-          throw new Error(`下载图像失败: ${response.status}`)
-        }
+        let buffer: Buffer
 
-        const arrayBuffer = await response.arrayBuffer()
-        const buffer = Buffer.from(arrayBuffer)
+        // 检查是否是 base64 格式的图像
+        if (imageInfo.url.startsWith('data:')) {
+          // base64 格式：data:image/png;base64,xxxxx
+          const base64Data = imageInfo.url.split(',')[1]
+          if (!base64Data) {
+            throw new Error('无效的 base64 图像数据')
+          }
+          buffer = Buffer.from(base64Data, 'base64')
+          console.log('[ImageService] 从 base64 数据保存图像')
+        } else {
+          // URL 格式：下载图像
+          console.log('[ImageService] 从 URL 下载图像:', imageInfo.url)
+          const response = await fetch(imageInfo.url)
+          if (!response.ok) {
+            throw new Error(`下载图像失败: ${response.status}`)
+          }
+
+          const arrayBuffer = await response.arrayBuffer()
+          buffer = Buffer.from(arrayBuffer)
+        }
 
         // 生成文件名
         const fileName = `${imageId}.png`
@@ -337,7 +445,11 @@ export class ImageService {
         // 获取更新后的记录
         const updatedRecord = await dbManager.images.getById(imageId)
         if (updatedRecord) {
-          savedImages.push(updatedRecord)
+          // 将文件路径转换为可访问的 URL
+          savedImages.push({
+            ...updatedRecord,
+            filePath: localPathToUrl(updatedRecord.filePath)
+          } as ImageRecord)
         }
       } catch (error: any) {
         console.error(`[ImageService] 保存图像失败: ${imageId}`, error)
@@ -380,7 +492,7 @@ export class ImageService {
     return {
       taskId,
       status: firstImage.status as 'pending' | 'processing' | 'completed' | 'failed',
-      images: images.map(img => ({ url: img.filePath })),
+      images: images.map(img => ({ url: localPathToUrl(img.filePath) })),
       error: firstImage.errorMessage
     }
   }
@@ -431,7 +543,12 @@ export class ImageService {
 
     try {
       const result = await dbManager.images.getList(page, pageSize, favoriteOnly, status)
-      return { success: true, data: result }
+      // 转换文件路径为可访问的 URL
+      const images = result.images.map(img => ({
+        ...img,
+        filePath: localPathToUrl(img.filePath)
+      }))
+      return { success: true, data: { ...result, images } }
     } catch (error: any) {
       console.error('[ImageService.getList] 错误:', error)
       return { success: false, error: error.message || '获取列表失败' }
@@ -456,7 +573,8 @@ export class ImageService {
       if (!image) {
         return { success: false, error: '图像不存在' }
       }
-      return { success: true, data: image }
+      // 转换文件路径为可访问的 URL
+      return { success: true, data: { ...image, filePath: localPathToUrl(image.filePath) } }
     } catch (error: any) {
       console.error('[ImageService.getById] 错误:', error)
       return { success: false, error: error.message || '获取图像失败' }
@@ -554,6 +672,7 @@ export class ImageService {
 
   /**
    * 获取可用的 Provider 列表
+   * 从现有的 AI 提供商配置中筛选包含图像模型的提供商
    *
    * @returns Provider 列表
    */
@@ -565,40 +684,64 @@ export class ImageService {
     }
 
     try {
-      // 获取所有已配置的图像类型 Provider
+      // 获取所有已启用的提供商配置
       const enabledConfigs = await dbManager.providerConfigs.getEnabled()
-      const imageConfigs = enabledConfigs.filter(c =>
-        c.templateId.startsWith('image-') ||
-        ['bailian', 'volcengine', 'minimax', 'zhipu'].includes(c.templateId)
-      )
 
       const providers: ImageProvider[] = []
 
-      // 添加已配置的 Provider
-      for (const config of imageConfigs) {
-        const providerType = config.templateId.replace('image-', '') as ImageProviderType
-        const definition = getProviderDefinition(providerType)
+      for (const config of enabledConfigs) {
+        // 检查该提供商是否有图像类型的模型
+        const models = config.models || []
+        const imageModels = models.filter(m =>
+          m.type === 'image' ||
+          m.type === 'multimodal' // 多模态模型也可能支持图像生成
+        )
 
-        if (definition) {
+        // 或者检查提供商模板的能力是否包含 image
+        // 注意：某些提供商可能没有在模型中标注类型，但模板支持图像生成
+        const hasImageCapability = await this.checkImageCapability(config.templateId)
+
+        if (imageModels.length > 0 || hasImageCapability) {
           providers.push({
             id: config.id,
             name: config.name,
             configured: !!config.apiKey,
-            models: [] // 模型列表需要单独调用 getModels 获取
+            models: imageModels.map(m => ({
+              id: m.id,
+              name: m.name || m.id,
+              providerId: config.id,
+              providerName: config.name,
+              features: {
+                textToImage: true,
+                imageToImage: false,
+                imageEdit: false,
+                maxResolution: m.contextWindow ? `${m.contextWindow}x${m.contextWindow}` : '1024x1024',
+                supportedSizes: ['512x512', '1024x1024', '1024x768', '768x1024']
+              }
+            }))
           })
         }
       }
 
-      // 添加可配置但未配置的 Provider
-      for (const [type, definition] of Object.entries(IMAGE_PROVIDER_DEFINITIONS)) {
-        const existingProvider = providers.find(p => p.id === type)
-        if (!existingProvider) {
-          providers.push({
-            id: type,
-            name: definition.name,
-            configured: false,
-            models: []
-          })
+      // 如果没有从现有配置中找到图像提供商，回退到独立的图像提供商配置
+      if (providers.length === 0) {
+        const imageConfigs = enabledConfigs.filter(c =>
+          c.templateId.startsWith('image-') ||
+          ['bailian', 'volcengine', 'minimax', 'zhipu'].includes(c.templateId)
+        )
+
+        for (const config of imageConfigs) {
+          const providerType = config.templateId.replace('image-', '') as ImageProviderType
+          const definition = getProviderDefinition(providerType)
+
+          if (definition) {
+            providers.push({
+              id: config.id,
+              name: config.name,
+              configured: !!config.apiKey,
+              models: []
+            })
+          }
         }
       }
 
@@ -607,6 +750,32 @@ export class ImageService {
       console.error('[ImageService.getProviders] 错误:', error)
       return { success: false, error: error.message || '获取 Provider 列表失败' }
     }
+  }
+
+  /**
+   * 检查模板是否支持图像生成能力
+   *
+   * @param templateId - 模板 ID
+   * @returns 是否支持图像生成
+   */
+  private static async checkImageCapability(templateId: string): Promise<boolean> {
+    // 已知的支持图像生成的模板
+    const imageCapableTemplates = [
+      'openai',        // OpenAI DALL-E
+      'qwen',          // 通义千问（部分模型支持图像生成）
+      'zhipu',         // 智谱 AI
+      'minimax',       // Minimax
+      'volcengine',    // 火山引擎
+      'bailian',       // 百炼平台
+      'siliconflow',   // SiliconFlow
+      'dashscope'      // 阿里云 DashScope
+    ]
+
+    // 移除 'image-' 前缀后再检查
+    const normalizedTemplateId = templateId.replace('image-', '')
+
+    return imageCapableTemplates.includes(normalizedTemplateId) ||
+           imageCapableTemplates.includes(templateId)
   }
 
   /**
@@ -639,6 +808,32 @@ export class ImageService {
         return {
           success: true,
           data: this.getDefaultModels(providerType)
+        }
+      }
+
+      // 从配置的模型列表中筛选图像模型
+      const configModels = config.models || []
+      const imageModels = configModels.filter(m =>
+        m.type === 'image' || m.type === 'multimodal'
+      )
+
+      // 如果配置中有图像模型，直接返回
+      if (imageModels.length > 0) {
+        return {
+          success: true,
+          data: imageModels.map(m => ({
+            id: m.id,
+            name: m.name || m.id,
+            providerId: config.id,
+            providerName: config.name,
+            features: {
+              textToImage: true,
+              imageToImage: m.features?.includes('image-to-image') || false,
+              imageEdit: m.features?.includes('image-edit') || false,
+              maxResolution: m.contextWindow ? `${m.contextWindow}x${m.contextWindow}` : '1024x1024',
+              supportedSizes: ['512x512', '1024x1024', '1024x768', '768x1024']
+            }
+          }))
         }
       }
 
@@ -818,6 +1013,64 @@ export class ImageService {
     } catch (error: any) {
       console.error('[ImageService.testProvider] 错误:', error)
       return { success: false, message: error.message || '测试连接失败' }
+    }
+  }
+
+  /**
+   * 下载图像到本地
+   *
+   * @param window - BrowserWindow 实例
+   * @param imageId - 图像 ID
+   * @returns 下载结果
+   */
+  static async downloadImage(
+    window: BrowserWindow,
+    imageId: string
+  ): Promise<{ success: boolean; path?: string; error?: string }> {
+    const dbManager = getDatabaseManager()
+
+    if (!dbManager.images) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    try {
+      // 获取图像记录
+      const image = await dbManager.images.getById(imageId)
+      if (!image) {
+        return { success: false, error: '图像不存在' }
+      }
+
+      if (!image.filePath || !fs.existsSync(image.filePath)) {
+        return { success: false, error: '图像文件不存在' }
+      }
+
+      // 生成默认文件名
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+      const ext = path.extname(image.filePath) || '.png'
+      const defaultName = `image_${timestamp}${ext}`
+
+      // 弹出保存对话框
+      const result = await dialog.showSaveDialog(window, {
+        title: '保存图像',
+        defaultPath: defaultName,
+        filters: [
+          { name: 'PNG 图像', extensions: ['png'] },
+          { name: 'JPEG 图像', extensions: ['jpg', 'jpeg'] },
+          { name: '所有文件', extensions: ['*'] }
+        ]
+      })
+
+      if (result.canceled || !result.filePath) {
+        return { success: false, error: '用户取消保存' }
+      }
+
+      // 复制文件到目标位置
+      fs.copyFileSync(image.filePath, result.filePath)
+
+      return { success: true, path: result.filePath }
+    } catch (error: any) {
+      console.error('[ImageService.downloadImage] 错误:', error)
+      return { success: false, error: error.message || '下载失败' }
     }
   }
 

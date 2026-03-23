@@ -363,6 +363,17 @@ export class DatabaseManager {
     if (!imageColumnNames.includes('favorite')) {
       this.db.exec('ALTER TABLE images ADD COLUMN favorite INTEGER DEFAULT 0')
     }
+
+    // 添加图像/视频/语音 API URL 字段到 provider_configs
+    if (!providerConfigColumnNames.includes('image_base_url')) {
+      this.db.exec('ALTER TABLE provider_configs ADD COLUMN image_base_url TEXT')
+    }
+    if (!providerConfigColumnNames.includes('video_base_url')) {
+      this.db.exec('ALTER TABLE provider_configs ADD COLUMN video_base_url TEXT')
+    }
+    if (!providerConfigColumnNames.includes('audio_base_url')) {
+      this.db.exec('ALTER TABLE provider_configs ADD COLUMN audio_base_url TEXT')
+    }
   }
 
   /**

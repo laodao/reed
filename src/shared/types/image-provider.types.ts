@@ -97,7 +97,7 @@ export interface ImageGenerationResponse {
 /**
  * 图像 Provider 类型标识
  */
-export type ImageProviderType = 'bailian' | 'volcengine' | 'minimax' | 'zhipu' | 'custom'
+export type ImageProviderType = 'dashscope' | 'bailian' | 'openai' | 'volcengine' | 'minimax' | 'zhipu' | 'custom'
 
 /**
  * 图像 Provider 定义（用于工厂创建）

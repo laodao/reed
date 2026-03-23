@@ -4,7 +4,9 @@
  * @description 处理渲染进程与主进程之间的图像生成相关通信
  */
 
-import { ipcMain, IpcMainInvokeEvent, BrowserWindow } from 'electron'
+import { ipcMain, IpcMainInvokeEvent, BrowserWindow, dialog } from 'electron'
+import * as fs from 'fs'
+import * as path from 'path'
 import { ImageService } from '../../services/image.service'
 import type { IpcResponse } from '../../../shared/types/ipc.types'
 import type {
@@ -35,6 +37,12 @@ export function registerImageHandlers(): void {
   ipcMain.handle('image:providers', handleImageProviders)
   ipcMain.handle('image:models', handleImageModels)
   ipcMain.handle('image:test-provider', handleImageTestProvider)
+
+  // 下载相关
+  ipcMain.handle('image:download', handleImageDownload)
+
+  // 参考图片选择
+  ipcMain.handle('image:select-file', handleImageSelectFile)
 }
 
 /**
@@ -57,6 +65,12 @@ export function unregisterImageHandlers(): void {
   ipcMain.removeHandler('image:providers')
   ipcMain.removeHandler('image:models')
   ipcMain.removeHandler('image:test-provider')
+
+  // 下载相关
+  ipcMain.removeHandler('image:download')
+
+  // 参考图片选择
+  ipcMain.removeHandler('image:select-file')
 }
 
 // ==================== 图像生成处理器 ====================
@@ -253,6 +267,99 @@ async function handleImageTestProvider(
     const result = await ImageService.testProvider(providerId)
     // testProvider 返回的是 { success, message }，需要包装成标准响应格式
     return { success: true, data: result }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '未知错误'
+    return { success: false, error: errorMessage }
+  }
+}
+
+/**
+ * 处理下载图像请求
+ */
+async function handleImageDownload(
+  event: IpcMainInvokeEvent,
+  imageId: string
+): Promise<IpcResponse<string>> {
+  try {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    if (!window) {
+      return { success: false, error: '窗口不存在' }
+    }
+
+    const result = await ImageService.downloadImage(window, imageId)
+    if (result.success && result.path) {
+      return { success: true, data: result.path }
+    }
+    return { success: false, error: result.error || '下载失败' }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '未知错误'
+    return { success: false, error: errorMessage }
+  }
+}
+
+/**
+ * 获取文件的 MIME 类型
+ */
+function getMimeType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase()
+  const mimeTypes: Record<string, string> = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.bmp': 'image/bmp'
+  }
+  return mimeTypes[ext] || 'application/octet-stream'
+}
+
+/**
+ * 处理选择参考图片请求
+ */
+async function handleImageSelectFile(
+  event: IpcMainInvokeEvent
+): Promise<IpcResponse<{ path: string; base64: string; name: string }>> {
+  try {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    if (!window) {
+      return { success: false, error: '窗口不存在' }
+    }
+
+    const result = await dialog.showOpenDialog(window, {
+      title: '选择参考图片',
+      filters: [
+        { name: '图片文件', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }
+      ],
+      properties: ['openFile'],
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, error: '未选择文件' }
+    }
+
+    const filePath = result.filePaths[0]
+
+    // 检查文件大小（最大 10MB）
+    const stats = fs.statSync(filePath)
+    const maxSize = 10 * 1024 * 1024 // 10MB
+    if (stats.size > maxSize) {
+      return { success: false, error: '图片文件过大，最大支持 10MB' }
+    }
+
+    // 读取文件并转为 base64
+    const buffer = fs.readFileSync(filePath)
+    const base64 = buffer.toString('base64')
+    const mimeType = getMimeType(filePath)
+    const fileName = path.basename(filePath)
+
+    return {
+      success: true,
+      data: {
+        path: filePath,
+        base64: `data:${mimeType};base64,${base64}`,
+        name: fileName
+      }
+    }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : '未知错误'
     return { success: false, error: errorMessage }

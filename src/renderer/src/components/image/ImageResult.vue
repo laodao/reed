@@ -273,7 +273,8 @@ const {
   generating,
   taskProgress,
   toggleFavorite,
-  deleteImage
+  deleteImage,
+  downloadImage: downloadImageFromApi
 } = useImage()
 
 // ==================== 状态 ====================
@@ -296,8 +297,15 @@ const currentImage = computed(() => props.image)
  */
 function getImageUrl(image: ImageRecord): string {
   if (image.filePath) {
-    // 使用 file:// 协议加载本地图像
-    return `file://${image.filePath}`
+    // 检查是否已有协议前缀
+    if (image.filePath.startsWith('local-image://') ||
+        image.filePath.startsWith('http://') ||
+        image.filePath.startsWith('https://') ||
+        image.filePath.startsWith('data:')) {
+      return image.filePath
+    }
+    // 使用 local-image:// 协议加载本地图像
+    return `local-image://${encodeURIComponent(image.filePath)}`
   }
   return ''
 }
@@ -324,10 +332,10 @@ async function handleDownload(): Promise<void> {
   if (!currentImage.value) return
 
   try {
-    // TODO: 通过 Electron 的 dialog.showSaveDialog 实现下载
-    // 目前先复制文件路径
-    await navigator.clipboard.writeText(currentImage.value.filePath)
-    ElMessage.success('图像路径已复制到剪贴板')
+    const savedPath = await downloadImageFromApi(currentImage.value.id)
+    if (savedPath) {
+      ElMessage.success(`图像已保存到: ${savedPath}`)
+    }
   } catch (err) {
     ElMessage.error('下载失败')
     console.error('下载图像失败:', err)

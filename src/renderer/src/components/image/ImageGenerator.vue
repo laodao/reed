@@ -294,7 +294,8 @@ const {
   taskProgress,
   selectProvider,
   generateImage,
-  stopGeneration
+  stopGeneration,
+  selectReferenceImage
 } = useImage()
 
 // ==================== 状态 ====================
@@ -444,10 +445,12 @@ async function handleStop(): Promise<void> {
 /**
  * 处理上传参考图片
  */
-function handleUploadReference(): void {
-  // TODO: 实现图片上传功能
-  // 可以通过 Electron 的 dialog.showOpenDialog 实现
-  ElMessage.info('图片上传功能开发中')
+async function handleUploadReference(): Promise<void> {
+  const result = await selectReferenceImage()
+  if (result) {
+    referenceImage.value = result.base64
+    ElMessage.success(`已选择: ${result.name}`)
+  }
 }
 
 /**
@@ -471,6 +474,54 @@ watch(
     }
   }
 )
+
+// ==================== 暴露方法 ====================
+
+/**
+ * 设置生成参数（用于重新生成）
+ * @param params - 生成参数
+ */
+function setParams(params: {
+  prompt: string
+  negativePrompt?: string
+  width: number
+  height: number
+  style?: string
+  quality?: string
+  seed?: number
+  providerId?: string
+  modelId?: string
+}): void {
+  prompt.value = params.prompt
+  negativePrompt.value = params.negativePrompt || ''
+
+  // 设置尺寸
+  const size = `${params.width}x${params.height}`
+  if (sizeOptions.some(opt => opt.value === size)) {
+    selectedSize.value = size
+  }
+
+  selectedStyle.value = params.style || ''
+  selectedQuality.value = params.quality || ''
+  seed.value = params.seed ?? -1
+
+  // 如果有提供商，切换提供商
+  if (params.providerId && params.providerId !== selectedProviderId.value) {
+    selectProvider(params.providerId).then(() => {
+      // 切换后再设置模型
+      if (params.modelId) {
+        selectedModelId.value = params.modelId
+      }
+    })
+  } else if (params.modelId) {
+    selectedModelId.value = params.modelId
+  }
+}
+
+// 暴露方法给父组件
+defineExpose({
+  setParams
+})
 </script>
 
 <style lang="scss" scoped>

@@ -33,6 +33,9 @@ export class ProviderConfigRepository {
       accessKeyId: row.access_key_id || undefined,
       accessKeySecret: row.access_key_secret_encrypted || undefined,
       baseUrl: row.base_url || undefined,
+      imageBaseUrl: row.image_base_url || undefined,
+      videoBaseUrl: row.video_base_url || undefined,
+      audioBaseUrl: row.audio_base_url || undefined,
       customHeaders: row.custom_headers ? JSON.parse(row.custom_headers) : undefined,
       customParams: row.custom_params ? JSON.parse(row.custom_params) : undefined,
       models: row.models ? JSON.parse(row.models) : undefined,
@@ -93,10 +96,11 @@ export class ProviderConfigRepository {
     this.db.prepare(
       `INSERT INTO provider_configs (
         id, short_id, template_id, name, api_key_encrypted, access_key_id, access_key_secret_encrypted, base_url,
+        image_base_url, video_base_url, audio_base_url,
         custom_headers, custom_params, models,
         is_enabled, is_default, last_tested, test_result,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       config.shortId || null,
@@ -106,6 +110,9 @@ export class ProviderConfigRepository {
       config.accessKeyId || null,
       config.accessKeySecret || null,
       config.baseUrl || null,
+      config.imageBaseUrl || null,
+      config.videoBaseUrl || null,
+      config.audioBaseUrl || null,
       config.customHeaders ? JSON.stringify(config.customHeaders) : null,
       config.customParams ? JSON.stringify(config.customParams) : null,
       config.models ? JSON.stringify(config.models) : null,
@@ -172,6 +179,18 @@ export class ProviderConfigRepository {
     if (updates.baseUrl !== undefined) {
       setClauses.push('base_url = ?')
       values.push(updates.baseUrl || null)
+    }
+    if (updates.imageBaseUrl !== undefined) {
+      setClauses.push('image_base_url = ?')
+      values.push(updates.imageBaseUrl || null)
+    }
+    if (updates.videoBaseUrl !== undefined) {
+      setClauses.push('video_base_url = ?')
+      values.push(updates.videoBaseUrl || null)
+    }
+    if (updates.audioBaseUrl !== undefined) {
+      setClauses.push('audio_base_url = ?')
+      values.push(updates.audioBaseUrl || null)
     }
     if (updates.customHeaders !== undefined) {
       setClauses.push('custom_headers = ?')

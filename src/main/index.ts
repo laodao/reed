@@ -3,7 +3,7 @@
  * @module main/index
  */
 
-import { app, BrowserWindow, shell, ipcMain } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, protocol } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { getDatabaseManager } from './database'
@@ -16,8 +16,26 @@ import { registerProviderConfigHandlers } from './ipc/handlers/provider-config.h
 import { registerChatHandlers } from './ipc/handlers/chat.handler'
 import { registerImageHandlers } from './ipc/handlers/image.handler'
 import { registerFileHandlers } from './ipc/handlers/file.handler'
+import * as fs from 'fs'
 
 let mainWindow: BrowserWindow | null = null
+
+/**
+ * 注册自定义协议以访问本地图像文件
+ */
+function registerImageProtocol(): void {
+  protocol.registerFileProtocol('local-image', (request, callback) => {
+    const url = request.url.substr('local-image://'.length)
+    // 解码 URL 编码的路径
+    const filePath = decodeURIComponent(url)
+
+    if (fs.existsSync(filePath)) {
+      callback({ path: filePath })
+    } else {
+      callback({ error: -2 }) // 文件不存在
+    }
+  })
+}
 
 /**
  * 创建主窗口
@@ -35,7 +53,8 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      webSecurity: true
     }
   })
 
@@ -75,6 +94,9 @@ function initIpcHandlers(): void {
 app.whenReady().then(async () => {
   // 设置应用用户模型 ID（Windows）
   electronApp.setAppUserModelId('com.daoge.the_bot')
+
+  // 注册自定义图像协议
+  registerImageProtocol()
 
   // 开发模式下默认通过 F12 打开开发工具
   app.on('browser-window-created', (_, window) => {

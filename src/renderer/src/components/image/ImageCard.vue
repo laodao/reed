@@ -173,7 +173,17 @@ const isHovered = ref(false)
 const imageUrl = computed(() => {
   if (props.customImageUrl) return props.customImageUrl
   if (props.image?.imageUrl) return props.image.imageUrl
-  if (props.image?.filePath) return `file://${props.image.filePath}`
+  if (props.image?.filePath) {
+    // 如果已经是完整 URL（如 local-image:// 或 http），直接使用
+    if (props.image.filePath.startsWith('local-image://') ||
+        props.image.filePath.startsWith('http://') ||
+        props.image.filePath.startsWith('https://') ||
+        props.image.filePath.startsWith('data:')) {
+      return props.image.filePath
+    }
+    // 否则使用 local-image:// 协议
+    return `local-image://${encodeURIComponent(props.image.filePath)}`
+  }
   return ''
 })
 

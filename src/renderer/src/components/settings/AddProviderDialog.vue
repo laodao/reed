@@ -140,11 +140,44 @@
                 <el-form-item label="API 端点">
                   <el-input
                     v-model="form.baseUrl"
-                    :placeholder="defaultBaseUrl || '自定义 API 端点'"
+                    :placeholder="defaultBaseUrl || '自定义 API 端点（用于文本对话）'"
+                  />
+                  <div class="form-hint">用于文本对话的 API 端点</div>
+                </el-form-item>
+
+                <!-- 多模态 API 端点 -->
+                <el-divider content-position="left">多模态 API 端点</el-divider>
+                <div class="multimodal-urls-hint">
+                  <el-icon><InfoFilled /></el-icon>
+                  <span>部分提供商的图像/视频/语音模型使用不同的 API 端点，如需使用请单独配置</span>
+                </div>
+
+                <!-- 图像 API 端点 -->
+                <el-form-item label="图像 API">
+                  <el-input
+                    v-model="form.imageBaseUrl"
+                    :placeholder="defaultImageBaseUrl || '图像生成 API 端点（留空则使用默认）'"
+                  />
+                </el-form-item>
+
+                <!-- 视频 API 端点 -->
+                <el-form-item label="视频 API">
+                  <el-input
+                    v-model="form.videoBaseUrl"
+                    :placeholder="defaultVideoBaseUrl || '视频生成 API 端点（留空则使用默认）'"
+                  />
+                </el-form-item>
+
+                <!-- 语音 API 端点 -->
+                <el-form-item label="语音 API">
+                  <el-input
+                    v-model="form.audioBaseUrl"
+                    :placeholder="defaultAudioBaseUrl || '语音生成 API 端点（留空则使用默认）'"
                   />
                 </el-form-item>
 
                 <!-- 自定义请求头 -->
+                <el-divider content-position="left">自定义设置</el-divider>
                 <el-form-item label="自定义请求头">
                   <div class="custom-headers">
                     <div v-for="(header, index) in customHeadersList" :key="index" class="header-item">
@@ -410,6 +443,9 @@ const form = reactive({
   accessKeyId: '',
   accessKeySecret: '',
   baseUrl: '',
+  imageBaseUrl: '',
+  videoBaseUrl: '',
+  audioBaseUrl: '',
   customHeaders: {} as Record<string, string>,
   models: [] as ModelDefinition[],  // 统一使用 models 存储所有启用的模型
   isDefault: false
@@ -544,6 +580,9 @@ const templateAuthType = computed(() => selectedTemplate.value?.apiConfig.authTy
 
 // 默认基础 URL
 const defaultBaseUrl = computed(() => selectedTemplate.value?.apiConfig.baseUrl)
+const defaultImageBaseUrl = computed(() => selectedTemplate.value?.apiConfig.imageBaseUrl)
+const defaultVideoBaseUrl = computed(() => selectedTemplate.value?.apiConfig.videoBaseUrl)
+const defaultAudioBaseUrl = computed(() => selectedTemplate.value?.apiConfig.audioBaseUrl)
 
 // 表单验证规则
 const rules: FormRules = {
@@ -711,6 +750,9 @@ const handleSave = async () => {
         accessKeyId: form.accessKeyId || undefined,
         accessKeySecret: form.accessKeySecret || undefined,
         baseUrl: form.baseUrl || undefined,
+        imageBaseUrl: form.imageBaseUrl || undefined,
+        videoBaseUrl: form.videoBaseUrl || undefined,
+        audioBaseUrl: form.audioBaseUrl || undefined,
         customHeaders: Object.keys(customHeaders).length > 0 ? customHeaders : undefined,
         models: modelsToSave.length > 0 ? modelsToSave : undefined,
         isDefault: form.isDefault
@@ -733,6 +775,9 @@ const handleSave = async () => {
         accessKeyId: form.accessKeyId || undefined,
         accessKeySecret: form.accessKeySecret || undefined,
         baseUrl: form.baseUrl || undefined,
+        imageBaseUrl: form.imageBaseUrl || undefined,
+        videoBaseUrl: form.videoBaseUrl || undefined,
+        audioBaseUrl: form.audioBaseUrl || undefined,
         customHeaders: Object.keys(customHeaders).length > 0 ? customHeaders : undefined,
         models: modelsToSave.length > 0 ? modelsToSave : undefined,
         isDefault: form.isDefault
@@ -923,6 +968,9 @@ watch(
       form.accessKeyId = config.accessKeyId || ''
       form.accessKeySecret = ''
       form.baseUrl = config.baseUrl || ''
+      form.imageBaseUrl = config.imageBaseUrl || ''
+      form.videoBaseUrl = config.videoBaseUrl || ''
+      form.audioBaseUrl = config.audioBaseUrl || ''
       form.isDefault = config.isDefault
 
       // 从 models 字段初始化
@@ -1124,6 +1172,23 @@ watch(visible, (val) => {
 
   :deep(.el-collapse-item__content) {
     padding: 16px 0 0;
+  }
+}
+
+.multimodal-urls-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--bg-color-page);
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--text-secondary);
+
+  .el-icon {
+    color: var(--color-primary);
+    font-size: 16px;
   }
 }
 

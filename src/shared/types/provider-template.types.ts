@@ -81,10 +81,18 @@ export interface ModelDefinition {
  * API 配置模板
  */
 export interface ApiConfigTemplate {
-  /** 基础 URL */
+  /** 基础 URL（用于文本对话） */
   baseUrl: string
   /** 图像生成基础 URL（如果与对话不同） */
   imageBaseUrl?: string
+  /** 图像生成端点路径（追加到 imageBaseUrl 后面） */
+  imageEndpoint?: string
+  /** 图像任务查询端点路径 */
+  imageTaskEndpoint?: string
+  /** 视频生成基础 URL */
+  videoBaseUrl?: string
+  /** 语音生成基础 URL */
+  audioBaseUrl?: string
   /** 管控面基础 URL（用于模型列表等管理功能，如火山引擎） */
   managementBaseUrl?: string
   /** 认证类型 */
@@ -170,8 +178,14 @@ export interface UserProviderConfig {
   accessKeyId?: string
   /** Access Key Secret（加密存储，用于火山引擎等需要签名认证的平台） */
   accessKeySecret?: string
-  /** 覆盖默认端点 */
+  /** 覆盖默认端点（用于文本对话） */
   baseUrl?: string
+  /** 图像生成 API 端点（如果与文本对话不同） */
+  imageBaseUrl?: string
+  /** 视频生成 API 端点 */
+  videoBaseUrl?: string
+  /** 语音生成 API 端点 */
+  audioBaseUrl?: string
   /** 自定义请求头 */
   customHeaders?: Record<string, string>
   /** 自定义参数 */
@@ -239,6 +253,9 @@ export interface SaveProviderConfigRequest {
   accessKeyId?: string
   accessKeySecret?: string
   baseUrl?: string
+  imageBaseUrl?: string
+  videoBaseUrl?: string
+  audioBaseUrl?: string
   customHeaders?: Record<string, string>
   customParams?: Record<string, unknown>
   /** 用户启用的所有模型 */

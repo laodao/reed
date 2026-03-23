@@ -70,7 +70,9 @@ const IPC_CHANNELS = {
   IMAGE_DELETE_MANY: 'image:delete-many',
   IMAGE_PROVIDERS: 'image:providers',
   IMAGE_MODELS: 'image:models',
-  IMAGE_TEST_PROVIDER: 'image:test-provider'
+  IMAGE_TEST_PROVIDER: 'image:test-provider',
+  IMAGE_DOWNLOAD: 'image:download',
+  IMAGE_SELECT_FILE: 'image:select-file'
 } as const
 
 /**
@@ -109,6 +111,9 @@ const electronAPI = {
       accessKeyId?: string
       accessKeySecret?: string
       baseUrl?: string
+      imageBaseUrl?: string
+      videoBaseUrl?: string
+      audioBaseUrl?: string
       customHeaders?: Record<string, string>
       customParams?: Record<string, unknown>
       models?: Array<{
@@ -134,6 +139,9 @@ const electronAPI = {
         accessKeyId: string
         accessKeySecret: string
         baseUrl: string
+        imageBaseUrl: string
+        videoBaseUrl: string
+        audioBaseUrl: string
         customHeaders: Record<string, string>
         customParams: Record<string, unknown>
         models?: Array<{
@@ -335,7 +343,26 @@ const electronAPI = {
     getModels: (providerId?: string) => ipcRenderer.invoke(IPC_CHANNELS.IMAGE_MODELS, providerId),
     // 测试提供商连接
     testProvider: (providerId: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.IMAGE_TEST_PROVIDER, providerId)
+      ipcRenderer.invoke(IPC_CHANNELS.IMAGE_TEST_PROVIDER, providerId),
+    // 下载图像到本地
+    download: (imageId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.IMAGE_DOWNLOAD, imageId),
+    // 选择参考图片
+    selectFile: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.IMAGE_SELECT_FILE),
+    // 监听图像生成事件
+    onGenerationEvent: (callback: (event: any, data: {
+      type: 'generation-started' | 'generation-progress' | 'generation-completed' | 'generation-failed'
+      taskId: string
+      images?: any[]
+      status?: string
+      progress?: number
+      error?: string
+    }) => void) => {
+      const handler = (event: any, data: any) => callback(event, data)
+      ipcRenderer.on('image:generation-event', handler)
+      return () => ipcRenderer.removeListener('image:generation-event', handler)
+    }
   },
 
   // 文件对话框

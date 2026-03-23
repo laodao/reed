@@ -81,6 +81,9 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     isOfficial: true,
     apiConfig: {
       baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+      // 图像生成使用同一基础 URL，但端点不同
+      imageBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+      imageEndpoint: '/images/generations',
       authType: 'bearer',
       authHeader: 'Authorization',
       authPrefix: 'Bearer ',
@@ -134,15 +137,18 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     icon: '🟠',
     isOfficial: true,
     apiConfig: {
+      // 文本对话使用 OpenAI 兼容模式
       baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-      imageBaseUrl: 'https://bailian.cn-beijing.aliyuncs.com',
+      // 图像生成使用独立的 API（完整 URL，不需要追加端点）
+      imageBaseUrl: 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis',
+      // 图像任务查询端点
+      imageTaskEndpoint: 'https://dashscope.aliyuncs.com/api/v1/tasks',
       authType: 'bearer',
       authHeader: 'Authorization',
       authPrefix: 'Bearer ',
       requestFormat: 'openai',
       chatEndpoint: '/chat/completions',
-      modelsEndpoint: '/models',
-      imageAuthType: 'custom'
+      modelsEndpoint: '/models'
     },
     supportedParams: {
       stream: true,
@@ -228,6 +234,8 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     apiConfig: {
       // 数据面 API（对话）
       baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+      // 图像生成 API（火山引擎图像服务）
+      imageBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3/images/generations',
       // 管控面 API（模型列表等管理功能）
       managementBaseUrl: 'https://ark.cn-beijing.volcengineapi.com',
       authType: 'bearer',
@@ -285,6 +293,8 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     isOfficial: true,
     apiConfig: {
       baseUrl: 'https://api.minimax.chat',
+      // 图像生成 API
+      imageBaseUrl: 'https://api.minimax.chat/v1/images/generations',
       authType: 'bearer',
       authHeader: 'Authorization',
       authPrefix: 'Bearer ',
