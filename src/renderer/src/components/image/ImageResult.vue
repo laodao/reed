@@ -29,27 +29,29 @@
     <!-- 图像展示区域 -->
     <div v-else-if="currentImage" class="image-display">
       <!-- 图像容器 -->
-      <div class="image-container">
-        <el-image
-          :src="getImageUrl(currentImage)"
-          :alt="currentImage.prompt || '生成的图像'"
-          fit="contain"
-          class="main-image"
-          @load="handleImageLoad"
-          @error="handleImageError"
-        >
-          <template #error>
-            <div class="image-error">
-              <el-icon :size="48"><PictureFilled /></el-icon>
-              <p>图像加载失败</p>
-            </div>
-          </template>
-          <template #placeholder>
-            <div class="image-loading">
-              <el-icon class="is-loading" :size="32"><Loading /></el-icon>
-            </div>
-          </template>
-        </el-image>
+      <div class="image-container" @dblclick="handleFullscreen">
+        <div class="image-wrapper">
+          <el-image
+            :src="getImageUrl(currentImage)"
+            :alt="currentImage.prompt || '生成的图像'"
+            fit="contain"
+            class="main-image"
+            @load="handleImageLoad"
+            @error="handleImageError"
+          >
+            <template #error>
+              <div class="image-error">
+                <el-icon :size="48"><PictureFilled /></el-icon>
+                <p>图像加载失败</p>
+              </div>
+            </template>
+            <template #placeholder>
+              <div class="image-loading">
+                <el-icon class="is-loading" :size="32"><Loading /></el-icon>
+              </div>
+            </template>
+          </el-image>
+        </div>
 
         <!-- 状态标记 -->
         <div v-if="currentImage.status === 'pending'" class="status-badge pending">
@@ -60,6 +62,11 @@
           <el-icon><WarningFilled /></el-icon>
           <span>生成失败</span>
         </div>
+      </div>
+
+      <!-- 全屏预览按钮 - 放在 image-container 外部，固定在右上角不随滚动 -->
+      <div class="fullscreen-btn" @click="handleFullscreen">
+        <el-icon><FullScreen /></el-icon>
       </div>
 
       <!-- 操作按钮区域 -->
@@ -161,8 +168,9 @@
         <div class="detail-thumbnail">
           <el-image
             :src="getImageUrl(currentImage)"
-            fit="cover"
+            fit="contain"
             class="thumbnail-image"
+            :preview-src-list="[getImageUrl(currentImage)]"
           />
         </div>
 
@@ -219,6 +227,25 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 全屏预览对话框 -->
+    <el-dialog
+      v-model="showFullscreenDialog"
+      title="图像预览"
+      width="90%"
+      :close-on-click-modal="true"
+      class="fullscreen-dialog"
+      append-to-body
+      destroy-on-close
+    >
+      <div class="fullscreen-image-container">
+        <img
+          v-if="currentImage"
+          :src="getImageUrl(currentImage)"
+          alt="预览图片"
+        />
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -239,7 +266,8 @@ import {
   Brush,
   Medal,
   Key,
-  WarningFilled
+  WarningFilled,
+  FullScreen
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useImage } from '@/composables'
@@ -282,6 +310,9 @@ const {
 /** 是否显示详情对话框 */
 const showDetailDialog = ref(false)
 
+/** 是否显示全屏预览对话框 */
+const showFullscreenDialog = ref(false)
+
 /** 图像加载状态 */
 const imageLoaded = ref(false)
 
@@ -323,6 +354,15 @@ function handleImageLoad(): void {
 function handleImageError(): void {
   imageLoaded.value = false
   ElMessage.error('图像加载失败')
+}
+
+/**
+ * 处理全屏预览
+ */
+function handleFullscreen(): void {
+  if (currentImage.value && currentImage.value.status === 'completed') {
+    showFullscreenDialog.value = true
+  }
 }
 
 /**
@@ -541,6 +581,7 @@ function formatFileSize(bytes: number): string {
 
 // 图像展示区域
 .image-display {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -550,12 +591,39 @@ function formatFileSize(bytes: number): string {
 .image-container {
   position: relative;
   flex: 1;
+  overflow: auto;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e4e7ed 100%);
+  min-height: 300px;
+
+  // 自定义滚动条
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 4px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+
+    &:hover {
+      background: rgba(0, 0, 0, 0.3);
+    }
+  }
+}
+
+.image-wrapper {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #f5f7fa 0%, #e4e7ed 100%);
-  overflow: hidden;
-  min-height: 300px;
+  min-width: 100%;
+  min-height: 100%;
+  padding: 20px;
+  box-sizing: border-box;
 
   .main-image {
     max-width: 100%;
@@ -578,6 +646,36 @@ function formatFileSize(bytes: number): string {
       font-size: 14px;
     }
   }
+}
+
+// 全屏预览按钮 - 相对于 image-display 定位，固定在右上角不随滚动
+.fullscreen-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 8px;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  color: var(--el-text-color-regular);
+  z-index: 10;
+
+  &:hover {
+    background: #ffffff;
+    color: var(--el-color-primary);
+    transform: scale(1.1);
+  }
+}
+
+.image-display:hover .fullscreen-btn {
+  opacity: 1;
 }
 
 .status-badge {
@@ -676,7 +774,7 @@ function formatFileSize(bytes: number): string {
 
     .thumbnail-image {
       max-width: 100%;
-      max-height: 200px;
+      max-height: 300px;
       border-radius: 8px;
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     }
@@ -687,6 +785,67 @@ function formatFileSize(bytes: number): string {
       width: 100px;
       font-weight: 500;
     }
+  }
+}
+
+.fullscreen-image-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  background: #000;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+</style>
+
+<!-- 全屏预览对话框样式 -->
+<style lang="scss">
+// 遮罩层禁止滚动
+.el-overlay {
+  overflow: hidden !important;
+}
+
+// fullscreen-dialog 类直接加在 el-dialog 上
+.el-dialog.fullscreen-dialog {
+  width: 90vw !important;
+  height: 90vh !important;
+  max-width: 90vw !important;
+  max-height: 90vh !important;
+  margin: 0 !important;
+  position: fixed !important;
+  top: 5vh !important;
+  left: 5vw !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+
+  .el-dialog__header {
+    flex-shrink: 0 !important;
+  }
+
+  .el-dialog__body {
+    flex: 1 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+  }
+}
+
+// 图片容器 - 填满 body，图片自适应缩放
+.fullscreen-image-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  overflow: hidden;
+
+  img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
   }
 }
 </style>

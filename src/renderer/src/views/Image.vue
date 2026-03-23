@@ -161,20 +161,58 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  height: 100%;
   overflow: hidden;
 }
 
 .generator-area {
   flex-shrink: 0;
+  max-height: 50%;
   padding: 20px;
   background: #fff;
   border-bottom: 1px solid var(--el-border-color-lighter);
+  overflow-y: auto;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--el-border-color);
+    border-radius: 3px;
+
+    &:hover {
+      background: var(--el-border-color-dark);
+    }
+  }
 }
 
 .result-area {
   flex: 1;
+  min-height: 0;
   padding: 20px;
-  overflow: hidden;
+  overflow-y: auto;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--el-border-color);
+    border-radius: 3px;
+
+    &:hover {
+      background: var(--el-border-color-dark);
+    }
+  }
 
   > :deep(*) {
     height: 100%;

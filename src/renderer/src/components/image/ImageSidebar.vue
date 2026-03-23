@@ -19,192 +19,222 @@
       <template v-if="images.length > 0">
         <!-- 今天 -->
         <div v-if="groupedImages.today.length > 0" class="image-group">
-          <div class="group-title">今天</div>
-          <div
-            v-for="image in groupedImages.today"
-            :key="image.id"
-            class="image-card"
-            :class="{ selected: selectedImageId === image.id }"
-            @click="handleSelectImage(image)"
-          >
-            <!-- 图像缩略图 -->
-            <div class="image-thumbnail">
-              <el-image
-                :src="getImageUrl(image)"
-                :alt="image.prompt"
-                fit="cover"
-                lazy
-              >
-                <template #error>
-                  <div class="image-error">
-                    <el-icon><Picture /></el-icon>
-                  </div>
-                </template>
-                <template #placeholder>
-                  <div class="image-loading">
-                    <el-icon class="is-loading"><Loading /></el-icon>
-                  </div>
-                </template>
-              </el-image>
-              <!-- 收藏标记 -->
-              <div v-if="image.favorite" class="favorite-badge">
-                <el-icon><StarFilled /></el-icon>
+          <div class="group-title" @click="toggleGroup('today')">
+            <el-icon class="collapse-icon" :class="{ collapsed: collapsedGroups.today }">
+              <ArrowRight />
+            </el-icon>
+            <span>今天</span>
+            <span class="group-count">{{ groupedImages.today.length }}</span>
+          </div>
+          <div class="group-content" :class="{ collapsed: collapsedGroups.today }">
+            <div
+              v-for="image in groupedImages.today"
+              :key="image.id"
+              class="image-card"
+              :class="{ selected: selectedImageId === image.id }"
+              @click="handleSelectImage(image)"
+            >
+              <!-- 图像缩略图 -->
+              <div class="image-thumbnail">
+                <el-image
+                  :src="getImageUrl(image)"
+                  :alt="image.prompt"
+                  fit="cover"
+                  lazy
+                >
+                  <template #error>
+                    <div class="image-error">
+                      <el-icon><Picture /></el-icon>
+                    </div>
+                  </template>
+                  <template #placeholder>
+                    <div class="image-loading">
+                      <el-icon class="is-loading"><Loading /></el-icon>
+                    </div>
+                  </template>
+                </el-image>
+                <!-- 收藏标记 -->
+                <div v-if="image.favorite" class="favorite-badge">
+                  <el-icon><StarFilled /></el-icon>
+                </div>
               </div>
-            </div>
 
-            <!-- 图像信息 -->
-            <div class="image-info">
-              <div class="image-prompt" :title="image.prompt">
-                {{ truncatePrompt(image.prompt) }}
+              <!-- 图像信息 -->
+              <div class="image-info">
+                <div class="image-prompt" :title="image.prompt">
+                  {{ truncatePrompt(image.prompt) }}
+                </div>
+                <div class="image-meta">
+                  <span class="image-time">{{ formatTime(image.createdAt) }}</span>
+                  <span class="image-size">{{ image.width }}x{{ image.height }}</span>
+                </div>
               </div>
-              <div class="image-meta">
-                <span class="image-time">{{ formatTime(image.createdAt) }}</span>
-                <span class="image-size">{{ image.width }}x{{ image.height }}</span>
-              </div>
-            </div>
 
-            <!-- 操作按钮 -->
-            <div class="image-actions">
-              <el-button
-                :type="image.favorite ? 'warning' : 'default'"
-                :icon="image.favorite ? StarFilled : Star"
-                circle
-                size="small"
-                @click.stop="handleToggleFavorite(image)"
-              />
-              <el-button
-                type="danger"
-                :icon="Delete"
-                circle
-                size="small"
-                @click.stop="handleDeleteImage(image)"
-              />
+              <!-- 操作按钮 -->
+              <div class="image-actions">
+                <el-button
+                  :type="image.favorite ? 'warning' : 'primary'"
+                  :icon="image.favorite ? StarFilled : Star"
+                  circle
+                  size="small"
+                  plain
+                  @click.stop="handleToggleFavorite(image)"
+                />
+                <el-button
+                  type="danger"
+                  :icon="Delete"
+                  circle
+                  size="small"
+                  plain
+                  @click.stop="handleDeleteImage(image)"
+                />
+              </div>
             </div>
           </div>
         </div>
 
         <!-- 昨天 -->
         <div v-if="groupedImages.yesterday.length > 0" class="image-group">
-          <div class="group-title">昨天</div>
-          <div
-            v-for="image in groupedImages.yesterday"
-            :key="image.id"
-            class="image-card"
-            :class="{ selected: selectedImageId === image.id }"
-            @click="handleSelectImage(image)"
-          >
-            <!-- 图像缩略图 -->
-            <div class="image-thumbnail">
-              <el-image
-                :src="getImageUrl(image)"
-                :alt="image.prompt"
-                fit="cover"
-                lazy
-              >
-                <template #error>
-                  <div class="image-error">
-                    <el-icon><Picture /></el-icon>
-                  </div>
-                </template>
-                <template #placeholder>
-                  <div class="image-loading">
-                    <el-icon class="is-loading"><Loading /></el-icon>
-                  </div>
-                </template>
-              </el-image>
-              <div v-if="image.favorite" class="favorite-badge">
-                <el-icon><StarFilled /></el-icon>
+          <div class="group-title" @click="toggleGroup('yesterday')">
+            <el-icon class="collapse-icon" :class="{ collapsed: collapsedGroups.yesterday }">
+              <ArrowRight />
+            </el-icon>
+            <span>昨天</span>
+            <span class="group-count">{{ groupedImages.yesterday.length }}</span>
+          </div>
+          <div class="group-content" :class="{ collapsed: collapsedGroups.yesterday }">
+            <div
+              v-for="image in groupedImages.yesterday"
+              :key="image.id"
+              class="image-card"
+              :class="{ selected: selectedImageId === image.id }"
+              @click="handleSelectImage(image)"
+            >
+              <!-- 图像缩略图 -->
+              <div class="image-thumbnail">
+                <el-image
+                  :src="getImageUrl(image)"
+                  :alt="image.prompt"
+                  fit="cover"
+                  lazy
+                >
+                  <template #error>
+                    <div class="image-error">
+                      <el-icon><Picture /></el-icon>
+                    </div>
+                  </template>
+                  <template #placeholder>
+                    <div class="image-loading">
+                      <el-icon class="is-loading"><Loading /></el-icon>
+                    </div>
+                  </template>
+                </el-image>
+                <div v-if="image.favorite" class="favorite-badge">
+                  <el-icon><StarFilled /></el-icon>
+                </div>
               </div>
-            </div>
 
-            <div class="image-info">
-              <div class="image-prompt" :title="image.prompt">
-                {{ truncatePrompt(image.prompt) }}
+              <div class="image-info">
+                <div class="image-prompt" :title="image.prompt">
+                  {{ truncatePrompt(image.prompt) }}
+                </div>
+                <div class="image-meta">
+                  <span class="image-time">{{ formatTime(image.createdAt) }}</span>
+                  <span class="image-size">{{ image.width }}x{{ image.height }}</span>
+                </div>
               </div>
-              <div class="image-meta">
-                <span class="image-time">{{ formatTime(image.createdAt) }}</span>
-                <span class="image-size">{{ image.width }}x{{ image.height }}</span>
-              </div>
-            </div>
 
-            <div class="image-actions">
-              <el-button
-                :type="image.favorite ? 'warning' : 'default'"
-                :icon="image.favorite ? StarFilled : Star"
-                circle
-                size="small"
-                @click.stop="handleToggleFavorite(image)"
-              />
-              <el-button
-                type="danger"
-                :icon="Delete"
-                circle
-                size="small"
-                @click.stop="handleDeleteImage(image)"
-              />
+              <div class="image-actions">
+                <el-button
+                  :type="image.favorite ? 'warning' : 'primary'"
+                  :icon="image.favorite ? StarFilled : Star"
+                  circle
+                  size="small"
+                  plain
+                  @click.stop="handleToggleFavorite(image)"
+                />
+                <el-button
+                  type="danger"
+                  :icon="Delete"
+                  circle
+                  size="small"
+                  plain
+                  @click.stop="handleDeleteImage(image)"
+                />
+              </div>
             </div>
           </div>
         </div>
 
         <!-- 更早 -->
         <div v-if="groupedImages.earlier.length > 0" class="image-group">
-          <div class="group-title">更早</div>
-          <div
-            v-for="image in groupedImages.earlier"
-            :key="image.id"
-            class="image-card"
-            :class="{ selected: selectedImageId === image.id }"
-            @click="handleSelectImage(image)"
-          >
-            <!-- 图像缩略图 -->
-            <div class="image-thumbnail">
-              <el-image
-                :src="getImageUrl(image)"
-                :alt="image.prompt"
-                fit="cover"
-                lazy
-              >
-                <template #error>
-                  <div class="image-error">
-                    <el-icon><Picture /></el-icon>
-                  </div>
-                </template>
-                <template #placeholder>
-                  <div class="image-loading">
-                    <el-icon class="is-loading"><Loading /></el-icon>
-                  </div>
-                </template>
-              </el-image>
-              <div v-if="image.favorite" class="favorite-badge">
-                <el-icon><StarFilled /></el-icon>
+          <div class="group-title" @click="toggleGroup('earlier')">
+            <el-icon class="collapse-icon" :class="{ collapsed: collapsedGroups.earlier }">
+              <ArrowRight />
+            </el-icon>
+            <span>更早</span>
+            <span class="group-count">{{ groupedImages.earlier.length }}</span>
+          </div>
+          <div class="group-content" :class="{ collapsed: collapsedGroups.earlier }">
+            <div
+              v-for="image in groupedImages.earlier"
+              :key="image.id"
+              class="image-card"
+              :class="{ selected: selectedImageId === image.id }"
+              @click="handleSelectImage(image)"
+            >
+              <!-- 图像缩略图 -->
+              <div class="image-thumbnail">
+                <el-image
+                  :src="getImageUrl(image)"
+                  :alt="image.prompt"
+                  fit="cover"
+                  lazy
+                >
+                  <template #error>
+                    <div class="image-error">
+                      <el-icon><Picture /></el-icon>
+                    </div>
+                  </template>
+                  <template #placeholder>
+                    <div class="image-loading">
+                      <el-icon class="is-loading"><Loading /></el-icon>
+                    </div>
+                  </template>
+                </el-image>
+                <div v-if="image.favorite" class="favorite-badge">
+                  <el-icon><StarFilled /></el-icon>
+                </div>
               </div>
-            </div>
 
-            <div class="image-info">
-              <div class="image-prompt" :title="image.prompt">
-                {{ truncatePrompt(image.prompt) }}
+              <div class="image-info">
+                <div class="image-prompt" :title="image.prompt">
+                  {{ truncatePrompt(image.prompt) }}
+                </div>
+                <div class="image-meta">
+                  <span class="image-time">{{ formatTime(image.createdAt) }}</span>
+                  <span class="image-size">{{ image.width }}x{{ image.height }}</span>
+                </div>
               </div>
-              <div class="image-meta">
-                <span class="image-time">{{ formatTime(image.createdAt) }}</span>
-                <span class="image-size">{{ image.width }}x{{ image.height }}</span>
-              </div>
-            </div>
 
-            <div class="image-actions">
-              <el-button
-                :type="image.favorite ? 'warning' : 'default'"
-                :icon="image.favorite ? StarFilled : Star"
-                circle
-                size="small"
-                @click.stop="handleToggleFavorite(image)"
-              />
-              <el-button
-                type="danger"
-                :icon="Delete"
-                circle
-                size="small"
-                @click.stop="handleDeleteImage(image)"
-              />
+              <div class="image-actions">
+                <el-button
+                  :type="image.favorite ? 'warning' : 'primary'"
+                  :icon="image.favorite ? StarFilled : Star"
+                  circle
+                  size="small"
+                  plain
+                  @click.stop="handleToggleFavorite(image)"
+                />
+                <el-button
+                  type="danger"
+                  :icon="Delete"
+                  circle
+                  size="small"
+                  plain
+                  @click.stop="handleDeleteImage(image)"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -237,13 +267,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, reactive } from 'vue'
 import {
   Star,
   StarFilled,
   Picture,
   Delete,
-  Loading
+  Loading,
+  ArrowRight
 } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useImage } from '@/composables'
@@ -288,6 +319,13 @@ const selectedImageId = computed({
   set: (value) => emit('update:modelValue', value)
 })
 
+// 折叠状态
+const collapsedGroups = reactive({
+  today: false,
+  yesterday: false,
+  earlier: false
+})
+
 // 分组后的图像列表
 const groupedImages = computed(() => {
   const today: ImageRecord[] = []
@@ -313,6 +351,13 @@ const groupedImages = computed(() => {
 
   return { today, yesterday, earlier }
 })
+
+/**
+ * 切换分组折叠状态
+ */
+function toggleGroup(group: 'today' | 'yesterday' | 'earlier'): void {
+  collapsedGroups[group] = !collapsedGroups[group]
+}
 
 /**
  * 获取图像 URL
@@ -485,14 +530,52 @@ function formatTime(date: Date | string): string {
 }
 
 .group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 8px 4px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--el-text-color-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  margin-bottom: 8px;
+  color: var(--el-text-color-primary);
+  cursor: pointer;
+  user-select: none;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: var(--el-fill-color-light);
+  }
+
+  .collapse-icon {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+    transition: transform 0.2s ease;
+
+    &.collapsed {
+      transform: rotate(90deg);
+    }
+  }
+
+  .group-count {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--el-text-color-secondary);
+    background: var(--el-fill-color);
+    padding: 2px 8px;
+    border-radius: 10px;
+  }
+}
+
+.group-content {
+  overflow: hidden;
+  transition: max-height 0.3s ease, opacity 0.2s ease;
+  max-height: 2000px;
+  opacity: 1;
+
+  &.collapsed {
+    max-height: 0;
+    opacity: 0;
+  }
 }
 
 .image-card {
@@ -593,17 +676,53 @@ function formatTime(date: Date | string): string {
   top: 8px;
   left: 8px;
   display: flex;
-  gap: 4px;
+  gap: 6px;
   opacity: 0;
   transition: opacity 0.2s ease;
 
   .el-button {
-    background: rgba(255, 255, 255, 0.9);
-    border: none;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 
     &:hover {
       background: #ffffff;
+      transform: scale(1.1);
+    }
+
+    // 收藏按钮 - 使用主题色
+    &.el-button--primary {
+      color: var(--el-color-primary);
+      border-color: var(--el-color-primary-light-5);
+
+      &:hover {
+        color: #ffffff;
+        background: var(--el-color-primary);
+        border-color: var(--el-color-primary);
+      }
+    }
+
+    // 已收藏状态 - 黄色
+    &.el-button--warning {
+      color: #ffffff;
+      background: var(--el-color-warning);
+      border-color: var(--el-color-warning);
+
+      &:hover {
+        background: var(--el-color-warning-dark-2);
+        border-color: var(--el-color-warning-dark-2);
+      }
+    }
+
+    // 删除按钮 - 危险色
+    &.el-button--danger {
+      color: var(--el-color-danger);
+      border-color: var(--el-color-danger-light-5);
+
+      &:hover {
+        color: #ffffff;
+        background: var(--el-color-danger);
+        border-color: var(--el-color-danger);
+      }
     }
   }
 }
