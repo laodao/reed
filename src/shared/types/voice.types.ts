@@ -22,15 +22,16 @@ export type ClonedVoiceStatus = 'training' | 'ready' | 'failed'
  * 支持的语言代码
  */
 export type VoiceLanguageCode =
-  | 'zh'      // 中文
+  | 'zh'      // 中文（普通话）
   | 'en'      // 英语
+  | 'fr'      // 法语
+  | 'de'      // 德语
+  | 'ru'      // 俄语
+  | 'it'      // 意大利语
+  | 'es'      // 西班牙语
+  | 'pt'      // 葡萄牙语
   | 'ja'      // 日语
   | 'ko'      // 韩语
-  | 'yue'     // 粤语
-  | 'zh-CN'   // 普通话
-  | 'zh-TW'   // 台湾话
-  | 'en-US'   // 美式英语
-  | 'en-GB'   // 英式英语
 
 /**
  * 语言配置
@@ -204,15 +205,16 @@ export interface VoiceProvider {
  * 支持的语言列表
  */
 export const VOICE_LANGUAGES: VoiceLanguage[] = [
-  { code: 'zh', name: '中文' },
-  { code: 'zh-CN', name: '普通话' },
-  { code: 'zh-TW', name: '台湾话' },
-  { code: 'yue', name: '粤语' },
-  { code: 'en', name: '英语' },
-  { code: 'en-US', name: '美式英语' },
-  { code: 'en-GB', name: '英式英语' },
-  { code: 'ja', name: '日语' },
-  { code: 'ko', name: '韩语' }
+  { code: 'zh', name: 'Chinese' },
+  { code: 'en', name: 'English' },
+  { code: 'fr', name: 'French' },
+  { code: 'de', name: 'German' },
+  { code: 'ru', name: 'Russian' },
+  { code: 'it', name: 'Italian' },
+  { code: 'es', name: 'Spanish' },
+  { code: 'pt', name: 'Portuguese' },
+  { code: 'ja', name: 'Japanese' },
+  { code: 'ko', name: 'Korean' }
 ]
 
 /**

@@ -24,27 +24,20 @@ export class DashScopeTTSProvider extends BaseVoiceProvider {
 
   /**
    * 支持的发音人列表
-   * @see https://help.aliyun.com/zh/model-studio/qwen-tts#bac280ddf5a1u
+   * @see https://help.aliyun.com/zh/model-studio/qwen-tts
    */
   private static VOICES: VoiceSpeaker[] = [
-    // 中文发音人
-    { id: 'Cherry', name: 'Cherry', language: 'zh-CN', gender: 'female' },
-    { id: 'Ethan', name: 'Ethan', language: 'zh-CN', gender: 'male' },
-    { id: 'Luna', name: 'Luna', language: 'zh-CN', gender: 'female' },
-    { id: 'Marcus', name: 'Marcus', language: 'zh-CN', gender: 'male' },
-    { id: 'Monica', name: 'Monica', language: 'zh-CN', gender: 'female' },
-    { id: 'Dylan', name: 'Dylan', language: 'zh-CN', gender: 'male' },
-    { id: 'Evelyn', name: 'Evelyn', language: 'zh-CN', gender: 'female' },
-    { id: 'Liam', name: 'Liam', language: 'zh-CN', gender: 'male' },
-    { id: 'Harmony', name: 'Harmony', language: 'zh-CN', gender: 'female' },
-    { id: 'Noah', name: 'Noah', language: 'zh-CN', gender: 'male' },
-    // 英文发音人
-    { id: 'Echo', name: 'Echo', language: 'en-US', gender: 'neutral' },
-    { id: 'Fable', name: 'Fable', language: 'en-US', gender: 'neutral' },
-    { id: 'Onyx', name: 'Onyx', language: 'en-US', gender: 'male' },
-    { id: 'Nova', name: 'Nova', language: 'en-US', gender: 'female' },
-    { id: 'Shimmer', name: 'Shimmer', language: 'en-US', gender: 'female' },
-    { id: 'Alloy', name: 'Alloy', language: 'en-US', gender: 'neutral' },
+    // DashScope Qwen-TTS 支持的发音人
+    { id: 'Cherry', name: 'Cherry', language: 'zh', gender: 'female' },
+    { id: 'Serena', name: 'Serena', language: 'zh', gender: 'female' },
+    { id: 'Ethan', name: 'Ethan', language: 'zh', gender: 'male' },
+    { id: 'Chelsie', name: 'Chelsie', language: 'zh', gender: 'female' },
+    { id: 'Momo', name: 'Momo', language: 'zh', gender: 'female' },
+    { id: 'Vivian', name: 'Vivian', language: 'zh', gender: 'female' },
+    { id: 'Moon', name: 'Moon', language: 'zh', gender: 'male' },
+    { id: 'Maia', name: 'Maia', language: 'zh', gender: 'female' },
+    { id: 'Kai', name: 'Kai', language: 'zh', gender: 'male' },
+    { id: 'Nofish', name: 'Nofish', language: 'zh', gender: 'male' },
   ]
 
   constructor(config: VoiceProviderConfig) {
@@ -67,15 +60,11 @@ export class DashScopeTTSProvider extends BaseVoiceProvider {
 
   /**
    * 获取支持的发音人列表
+   * 注意：所有发音人都支持多种语言
    */
   async getVoices(language?: string): Promise<VoiceSpeaker[]> {
-    let voices = DashScopeTTSProvider.VOICES
-    if (language) {
-      voices = voices.filter(v =>
-        v.language === language || v.language.startsWith(language.split('-')[0])
-      )
-    }
-    return voices
+    // 所有发音人都支持多种语言，不再按语言过滤
+    return DashScopeTTSProvider.VOICES
   }
 
   /**
@@ -83,19 +72,21 @@ export class DashScopeTTSProvider extends BaseVoiceProvider {
    *
    * @param text - 要转换的文本
    * @param voiceId - 发音人 ID
-   * @param _options - 可选参数（暂不支持）
+   * @param options - 可选参数，包含 language
    * @returns 音频数据（base64）
    */
   async synthesize(
     text: string,
     voiceId: string,
-    _options?: { speed?: number; pitch?: number; volume?: number; format?: string }
+    options?: { speed?: number; pitch?: number; volume?: number; format?: string; language?: string }
   ): Promise<{ success: boolean; audioData?: string; error?: string }> {
     try {
       const url = this.config.baseUrl || DashScopeTTSProvider.DEFAULT_TTS_URL
 
-      // 判断语言类型
-      const languageType = this.detectLanguage(text)
+      // 根据传入的语言或自动检测确定语言类型
+      const languageType = options?.language
+        ? this.getLanguageType(options.language)
+        : this.detectLanguage(text)
 
       // 构建多模态生成 API 格式的请求体
       const body: Record<string, any> = {
@@ -220,13 +211,45 @@ export class DashScopeTTSProvider extends BaseVoiceProvider {
    * 检测文本语言类型
    */
   private detectLanguage(text: string): string {
-    // 简单的语言检测：检查是否包含中文字符
+    // 语言检测
     const chineseRegex = /[\u4e00-\u9fa5]/
+    const japaneseRegex = /[\u3040-\u309f\u30a0-\u30ff]/
+    const koreanRegex = /[\uac00-\ud7af]/
+    const cyrillicRegex = /[\u0400-\u04ff]/
+
     if (chineseRegex.test(text)) {
       return 'Chinese'
     }
-    // 默认英文
+    if (japaneseRegex.test(text)) {
+      return 'Japanese'
+    }
+    if (koreanRegex.test(text)) {
+      return 'Korean'
+    }
+    if (cyrillicRegex.test(text)) {
+      return 'Russian'
+    }
+    // 默认英文（包括法语、德语、意大利语、西班牙语、葡萄牙语等拉丁字母语言）
     return 'English'
+  }
+
+  /**
+   * 将语言代码转换为 DashScope API 语言类型
+   */
+  private getLanguageType(languageCode: string): string {
+    const languageMap: Record<string, string> = {
+      'zh': 'Chinese',
+      'en': 'English',
+      'fr': 'French',
+      'de': 'German',
+      'ru': 'Russian',
+      'it': 'Italian',
+      'es': 'Spanish',
+      'pt': 'Portuguese',
+      'ja': 'Japanese',
+      'ko': 'Korean'
+    }
+    return languageMap[languageCode] || 'English'
   }
 
   /**

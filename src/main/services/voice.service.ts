@@ -126,18 +126,13 @@ export class VoiceService {
           continue
         }
 
-        const template = PROVIDER_TEMPLATES.find(t => t.id === config.templateId)
         const models: Array<{ id: string; name: string }> = []
 
-        // 从配置中获取模型
+        // 从配置中获取模型 - 只保留音频模型
         if (config.models && Array.isArray(config.models)) {
-          // 获取所有对话模型（语音功能可以使用对话模型）
           for (const model of config.models) {
-            // 包含文本模型、多模态模型，或未指定类型的模型
-            if (!model.type ||
-                model.type === 'text' ||
-                model.type === 'multimodal' ||
-                model.type === 'audio') {
+            // 只包含音频类型的模型
+            if (model.type === 'audio') {
               models.push({
                 id: model.id,
                 name: model.name || model.id
@@ -146,20 +141,9 @@ export class VoiceService {
           }
         }
 
-        // 如果没有配置模型，使用默认模型
-        if (models.length === 0 && template?.defaultModel) {
-          models.push({
-            id: template.defaultModel,
-            name: template.defaultModel
-          })
-        }
-
-        // 如果还是没有模型，添加一个占位符
+        // 如果没有音频模型，跳过这个提供商
         if (models.length === 0) {
-          models.push({
-            id: 'default',
-            name: '默认模型'
-          })
+          continue
         }
 
         providers.push({
@@ -294,7 +278,8 @@ export class VoiceService {
       const result = await ttsProvider.synthesize(request.text, request.voiceId, {
         speed: request.speed,
         pitch: request.pitch,
-        volume: request.volume
+        volume: request.volume,
+        language: request.language
       })
 
       if (!result.success) {
@@ -520,6 +505,46 @@ export class VoiceService {
     } catch (error: any) {
       console.error('[VoiceService.toggleFavorite] 错误:', error)
       return { success: false, error: error.message || '操作失败' }
+    }
+  }
+
+  /**
+   * 下载音频文件
+   */
+  static async downloadAudio(
+    window: BrowserWindow,
+    audioPath: string
+  ): Promise<{ success: boolean; data?: { savePath: string }; error?: string }> {
+    try {
+      if (!fs.existsSync(audioPath)) {
+        return { success: false, error: '音频文件不存在' }
+      }
+
+      // 获取文件名
+      const fileName = path.basename(audioPath)
+
+      // 弹出保存对话框
+      const result = await dialog.showSaveDialog(window, {
+        title: '保存音频文件',
+        defaultPath: fileName,
+        filters: [
+          { name: 'WAV 音频', extensions: ['wav'] },
+          { name: 'MP3 音频', extensions: ['mp3'] },
+          { name: '所有文件', extensions: ['*'] }
+        ]
+      })
+
+      if (result.canceled || !result.filePath) {
+        return { success: false, error: '取消保存' }
+      }
+
+      // 复制文件到目标位置
+      fs.copyFileSync(audioPath, result.filePath)
+
+      return { success: true, data: { savePath: result.filePath } }
+    } catch (error: any) {
+      console.error('[VoiceService.downloadAudio] 错误:', error)
+      return { success: false, error: error.message || '下载失败' }
     }
   }
 }

@@ -498,7 +498,9 @@ const electronAPI = {
       const handler = (_event: any, data: any) => callback(data)
       ipcRenderer.on('voice:stt-completed', handler)
       return () => ipcRenderer.removeListener('voice:stt-completed', handler)
-    }
+    },
+    // 下载音频
+    download: (audioPath: string) => ipcRenderer.invoke('voice:download', audioPath)
   }
 }
 

@@ -566,15 +566,20 @@ onMounted(() => {
 }
 
 .history-type {
+  position: absolute;
+  top: 8px;
+  right: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  background: var(--el-fill-color-light);
-  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 50%;
   color: var(--el-color-primary);
-  margin-bottom: 8px;
+  font-size: 14px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  z-index: 1;
 }
 
 .history-content {
@@ -609,7 +614,7 @@ onMounted(() => {
 
 .favorite-badge {
   position: absolute;
-  top: 8px;
+  bottom: 8px;
   right: 8px;
   display: flex;
   align-items: center;
@@ -621,6 +626,7 @@ onMounted(() => {
   color: var(--el-color-warning);
   font-size: 14px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  z-index: 1;
 }
 
 .history-actions {
@@ -631,6 +637,7 @@ onMounted(() => {
   gap: 6px;
   opacity: 0;
   transition: opacity 0.2s ease;
+  z-index: 2;
 
   .el-button {
     background: rgba(255, 255, 255, 0.95);

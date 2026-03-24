@@ -52,6 +52,9 @@ export function registerVoiceHandlers(): void {
   // 删除复刻声音
   ipcMain.handle('voice:cloned-delete', handleDeleteClonedVoice)
 
+  // 下载音频
+  ipcMain.handle('voice:download', handleDownloadAudio)
+
   console.log('[VoiceHandlers] 语音 IPC 处理器已注册')
 }
 
@@ -192,4 +195,20 @@ async function handleDeleteClonedVoice(
 ): Promise<IpcResponse<boolean>> {
   // 暂未实现
   return { success: false, error: '功能暂未实现' }
+}
+
+/**
+ * 处理下载音频
+ */
+async function handleDownloadAudio(
+  event: IpcMainInvokeEvent,
+  audioPath: string
+): Promise<IpcResponse<{ savePath: string }>> {
+  const window = BrowserWindow.fromWebContents(event.sender)
+  if (!window) {
+    return { success: false, error: '窗口不存在' }
+  }
+
+  const response = await VoiceService.downloadAudio(window, audioPath)
+  return response as any
 }

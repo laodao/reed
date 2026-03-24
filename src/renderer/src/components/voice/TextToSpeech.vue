@@ -3,23 +3,8 @@
     <!-- 上部分：配置和输入区域 -->
     <div class="top-section">
       <div class="tts-config">
-        <!-- 提供商选择 -->
+        <!-- 模型选择 -->
         <div class="config-row">
-          <el-select
-            v-model="selectedProviderId"
-            placeholder="选择提供商"
-            style="width: 200px"
-            @change="handleProviderChange"
-          >
-            <el-option
-              v-for="provider in providers"
-              :key="provider.id"
-              :label="provider.name"
-              :value="provider.id"
-              :disabled="!provider.configured"
-            />
-          </el-select>
-
           <el-select
             v-model="selectedModelId"
             placeholder="选择模型"
@@ -53,7 +38,6 @@
             v-model="currentLanguage"
             placeholder="选择语言"
             style="width: 160px"
-            @change="loadVoices"
           >
             <el-option
               v-for="lang in VOICE_LANGUAGES"
@@ -245,13 +229,6 @@ function handleAudioLoaded(): void {
 }
 
 /**
- * 提供商变化处理
- */
-function handleProviderChange(): void {
-  selectedModelId.value = availableModels.value[0]?.id || ''
-}
-
-/**
  * 生成语音
  */
 async function handleGenerate(): Promise<void> {
@@ -268,10 +245,10 @@ async function handleDownload(): Promise<void> {
   if (!outputAudioPath.value) return
 
   try {
-    // 使用 shell 的外部打开功能来下载
-    // 用户可以在打开的文件夹中自行下载
-    const response = await window.electronAPI.translation.openFolder(outputAudioPath.value)
-    if (!response.success) {
+    const response = await window.electronAPI.voice.download(outputAudioPath.value)
+    if (response.success) {
+      ElMessage.success('下载成功')
+    } else {
       ElMessage.error(response.error || '下载失败')
     }
   } catch (error) {
@@ -416,6 +393,7 @@ async function handleOpenFolder(): Promise<void> {
   .audio-player {
     padding: 16px;
     background: #fff;
+    border: 1px solid #e4e7ed;
     border-radius: 8px;
 
     .audio-error {
