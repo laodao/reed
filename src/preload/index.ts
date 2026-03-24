@@ -374,6 +374,61 @@ const electronAPI = {
     }) => ipcRenderer.invoke('file:open-dialog', options),
     // 读取文件内容（用于预览）
     readAsBase64: (filePath: string) => ipcRenderer.invoke('file:read-base64', filePath)
+  },
+
+  // 翻译相关
+  translation: {
+    // 文本翻译
+    text: (request: {
+      text: string
+      sourceLanguage: string
+      targetLanguage: string
+      providerId?: string
+      modelId?: string
+    }) => ipcRenderer.invoke('translation:text', request),
+    // 文件翻译
+    file: (request: {
+      filePath: string
+      sourceLanguage: string
+      targetLanguage: string
+      providerId?: string
+      modelId?: string
+    }) => ipcRenderer.invoke('translation:file', request),
+    // 选择文件
+    selectFile: () => ipcRenderer.invoke('translation:select-file'),
+    // 获取历史
+    history: (query: {
+      page: number
+      pageSize: number
+      type?: 'text' | 'file'
+      favorite?: boolean
+    }) => ipcRenderer.invoke('translation:history', query),
+    // 获取详情
+    get: (id: string) => ipcRenderer.invoke('translation:get', id),
+    // 切换收藏
+    toggleFavorite: (id: string) => ipcRenderer.invoke('translation:toggle-favorite', id),
+    // 删除
+    delete: (id: string) => ipcRenderer.invoke('translation:delete', id),
+    // 下载
+    download: (id: string) => ipcRenderer.invoke('translation:download', id),
+    // 进度监听
+    onProgress: (callback: (data: { translationId: string; progress: number }) => void) => {
+      const handler = (_event: any, data: any) => callback(data)
+      ipcRenderer.on('translation:progress', handler)
+      return () => ipcRenderer.removeListener('translation:progress', handler)
+    },
+    // 完成监听
+    onCompleted: (callback: (data: { translationId: string; targetFile: string }) => void) => {
+      const handler = (_event: any, data: any) => callback(data)
+      ipcRenderer.on('translation:completed', handler)
+      return () => ipcRenderer.removeListener('translation:completed', handler)
+    },
+    // 失败监听
+    onFailed: (callback: (data: { translationId: string; error: string }) => void) => {
+      const handler = (_event: any, data: any) => callback(data)
+      ipcRenderer.on('translation:failed', handler)
+      return () => ipcRenderer.removeListener('translation:failed', handler)
+    }
   }
 }
 

@@ -15,6 +15,7 @@ import { MessageRepository } from './repositories/message.repository'
 import { RoleRepository } from './repositories/role.repository'
 import { ImageRepository } from './repositories/image.repository'
 import { ProviderConfigRepository } from './repositories/provider-config.repository'
+import { TranslationRepository } from './repositories/translation.repository'
 
 /**
  * 数据库管理器
@@ -33,6 +34,7 @@ export class DatabaseManager {
   public roles: RoleRepository | null = null
   public images: ImageRepository | null = null
   public providerConfigs: ProviderConfigRepository | null = null
+  public translations: TranslationRepository | null = null
 
   private constructor() {
     const userDataPath = app.getPath('userData')
@@ -232,6 +234,33 @@ export class DatabaseManager {
       )
     `)
 
+    // 翻译历史表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS translations (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        source_language TEXT NOT NULL,
+        target_language TEXT NOT NULL,
+        source_text TEXT,
+        target_text TEXT,
+        source_file TEXT,
+        source_file_name TEXT,
+        target_file TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        favorite INTEGER NOT NULL DEFAULT 0,
+        word_count INTEGER NOT NULL DEFAULT 0,
+        provider_id TEXT,
+        model_id TEXT,
+        error_message TEXT,
+        created_at TEXT NOT NULL
+      )
+    `)
+
+    // 创建翻译索引
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_translations_created_at ON translations(created_at DESC)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_translations_type ON translations(type)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_translations_favorite ON translations(favorite)`)
+
     // 执行数据库迁移
     this.runMigrations()
   }
@@ -389,6 +418,7 @@ export class DatabaseManager {
     this.roles = new RoleRepository(this.db)
     this.images = new ImageRepository(this.db)
     this.providerConfigs = new ProviderConfigRepository(this.db)
+    this.translations = new TranslationRepository(this.db)
   }
 
   /**

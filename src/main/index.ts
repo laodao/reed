@@ -16,6 +16,7 @@ import { registerProviderConfigHandlers } from './ipc/handlers/provider-config.h
 import { registerChatHandlers } from './ipc/handlers/chat.handler'
 import { registerImageHandlers } from './ipc/handlers/image.handler'
 import { registerFileHandlers } from './ipc/handlers/file.handler'
+import { registerTranslationHandlers } from './ipc/handlers/translation.handler'
 import * as fs from 'fs'
 
 let mainWindow: BrowserWindow | null = null
@@ -88,6 +89,7 @@ function initIpcHandlers(): void {
   registerChatHandlers()
   registerImageHandlers()
   registerFileHandlers()
+  registerTranslationHandlers()
 }
 
 // 应用就绪
