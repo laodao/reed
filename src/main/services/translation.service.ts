@@ -24,6 +24,19 @@ import type {
 import type { ChatContext } from '../../shared/types'
 
 /**
+ * 翻译提供商
+ */
+export interface TranslationProvider {
+  id: string
+  name: string
+  models: Array<{
+    id: string
+    name: string
+  }>
+  configured: boolean
+}
+
+/**
  * 翻译服务
  */
 export class TranslationService {
@@ -41,6 +54,67 @@ export class TranslationService {
       }
     }
     return this.repo
+  }
+
+  /**
+   * 获取可用的翻译提供商列表
+   */
+  static async getProviders(): Promise<{ success: boolean; data?: TranslationProvider[]; error?: string }> {
+    try {
+      const dbManager = getDatabaseManager()
+      if (!dbManager.providerConfigs) {
+        return { success: false, error: '数据库未初始化' }
+      }
+
+      const configs = await dbManager.providerConfigs.getEnabled()
+      const providers: TranslationProvider[] = []
+
+      for (const config of configs) {
+        // 检查是否有 API 密钥
+        const configured = !!config.apiKey
+
+        // 获取模型列表
+        const models: Array<{ id: string; name: string }> = []
+
+        // 从配置中获取模型
+        if (config.models && Array.isArray(config.models)) {
+          for (const model of config.models) {
+            // 筛选文本类型的模型（包括 chat 和 text 类型）
+            if (model.type === 'text' || model.type === 'chat' || !model.type) {
+              models.push({
+                id: model.id,
+                name: model.name || model.id
+              })
+            }
+          }
+        }
+
+        // 如果没有配置模型，从模板获取默认模型
+        if (models.length === 0) {
+          const template = PROVIDER_TEMPLATES.find(t => t.id === config.templateId)
+          if (template && template.defaultModel) {
+            models.push({
+              id: template.defaultModel,
+              name: template.defaultModel
+            })
+          }
+        }
+
+        if (models.length > 0) {
+          providers.push({
+            id: config.id,
+            name: config.name,
+            models,
+            configured
+          })
+        }
+      }
+
+      return { success: true, data: providers }
+    } catch (error: any) {
+      console.error('[TranslationService.getProviders] 错误:', error)
+      return { success: false, error: error.message || '获取提供商列表失败' }
+    }
   }
 
   /**
@@ -132,9 +206,19 @@ export class TranslationService {
         messages: [{ role: 'user', content: prompt }]
       }
 
-      // 调用 AI
-      const result = await provider.chat(context)
-      const translatedText = result.choices[0]?.message?.content || ''
+      // 调用 AI（使用非流式聊天）
+      const result = await provider.chatSync(context)
+
+      // 检查调用结果
+      if (!result.success) {
+        return { success: false, error: result.error || '翻译请求失败' }
+      }
+
+      const translatedText = result.content || ''
+
+      if (!translatedText) {
+        return { success: false, error: '翻译结果为空' }
+      }
 
       // 检测语言
       let detectedLanguage: LanguageCode | undefined

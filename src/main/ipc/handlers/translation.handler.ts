@@ -20,6 +20,9 @@ import type { IpcResponse } from '../../../shared/types/ipc.types'
  * 注册翻译相关 IPC 处理器
  */
 export function registerTranslationHandlers(): void {
+  // 获取翻译提供商列表
+  ipcMain.handle('translation:providers', handleGetProviders)
+
   // 文本翻译
   ipcMain.handle('translation:text', handleTextTranslation)
 
@@ -45,6 +48,16 @@ export function registerTranslationHandlers(): void {
   ipcMain.handle('translation:download', handleDownloadTranslation)
 
   console.log('[TranslationHandlers] 翻译 IPC 处理器已注册')
+}
+
+/**
+ * 处理获取翻译提供商列表
+ */
+async function handleGetProviders(
+  _event: IpcMainInvokeEvent
+): Promise<IpcResponse<any[]>> {
+  const response = await TranslationService.getProviders()
+  return response as any
 }
 
 /**

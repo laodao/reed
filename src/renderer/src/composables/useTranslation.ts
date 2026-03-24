@@ -13,6 +13,19 @@ import type {
 } from '../../../shared/types/translation.types'
 import { LANGUAGES, getLanguageName } from '../../../shared/types/translation.types'
 
+/**
+ * 翻译提供商
+ */
+interface TranslationProvider {
+  id: string
+  name: string
+  models: Array<{
+    id: string
+    name: string
+  }>
+  configured: boolean
+}
+
 export function useTranslation() {
   // ==================== 状态 ====================
 
@@ -24,6 +37,15 @@ export function useTranslation() {
 
   /** 翻译中状态 */
   const translating = ref(false)
+
+  /** 翻译提供商列表 */
+  const providers = ref<TranslationProvider[]>([])
+
+  /** 选中的提供商 ID */
+  const selectedProviderId = ref<string>('')
+
+  /** 选中的模型 ID */
+  const selectedModelId = ref<string>('')
 
   /** 翻译历史列表 */
   const histories = ref<TranslationRecord[]>([])
@@ -60,6 +82,20 @@ export function useTranslation() {
 
   // ==================== 计算属性 ====================
 
+  /** 当前选中的提供商 */
+  const selectedProvider = computed(() =>
+    providers.value.find(p => p.id === selectedProviderId.value)
+  )
+
+  /** 当前提供商的模型列表 */
+  const availableModels = computed(() => {
+    const provider = selectedProvider.value
+    return provider?.models || []
+  })
+
+  /** 是否有可用的提供商 */
+  const hasProviders = computed(() => providers.value.length > 0)
+
   /** 源语言名称 */
   const sourceLanguageName = computed(() => getLanguageName(sourceLanguage.value))
 
@@ -73,6 +109,35 @@ export function useTranslation() {
   const isOverLimit = computed(() => charCount.value > 5000)
 
   // ==================== 方法 ====================
+
+  /**
+   * 加载翻译提供商列表
+   */
+  async function loadProviders(): Promise<void> {
+    try {
+      loading.value = true
+      error.value = null
+
+      const response = await window.electronAPI.translation.getProviders()
+
+      if (response.success && response.data) {
+        providers.value = response.data
+
+        // 自动选择第一个已配置的提供商
+        const configuredProvider = providers.value.find(p => p.configured)
+        if (configuredProvider) {
+          selectedProviderId.value = configuredProvider.id
+          if (configuredProvider.models.length > 0) {
+            selectedModelId.value = configuredProvider.models[0].id
+          }
+        }
+      } else {
+        error.value = response.error || '加载提供商失败'
+      }
+    } finally {
+      loading.value = false
+    }
+  }
 
   /**
    * 加载翻译历史
@@ -113,8 +178,8 @@ export function useTranslation() {
         text: request?.text || sourceText.value,
         sourceLanguage: request?.sourceLanguage || sourceLanguage.value,
         targetLanguage: request?.targetLanguage || targetLanguage.value,
-        providerId: request?.providerId,
-        modelId: request?.modelId
+        providerId: request?.providerId || selectedProviderId.value || undefined,
+        modelId: request?.modelId || selectedModelId.value || undefined
       })
 
       if (response.success && response.data) {
@@ -161,7 +226,9 @@ export function useTranslation() {
       const response = await window.electronAPI.translation.file({
         filePath: selectedFile.value.path,
         sourceLanguage: sourceLanguage.value,
-        targetLanguage: targetLanguage.value
+        targetLanguage: targetLanguage.value,
+        providerId: selectedProviderId.value || undefined,
+        modelId: selectedModelId.value || undefined
       })
 
       if (response.success && response.data) {
@@ -277,7 +344,7 @@ export function useTranslation() {
 
   // ==================== 生命周期 ====================
 
-  onMounted(() => {
+  onMounted(async () => {
     // 监听翻译进度
     const unsubProgress = window.electronAPI.translation.onProgress((data) => {
       fileProgress.value = data.progress
@@ -290,8 +357,9 @@ export function useTranslation() {
     })
     cleanupFns.push(unsubCompleted)
 
-    // 加载历史
-    loadHistories()
+    // 加载提供商和历史
+    await loadProviders()
+    await loadHistories()
   })
 
   onUnmounted(() => {
@@ -304,6 +372,9 @@ export function useTranslation() {
     loading,
     error,
     translating,
+    providers,
+    selectedProviderId,
+    selectedModelId,
     histories,
     totalHistories,
     favoriteOnly,
@@ -315,6 +386,9 @@ export function useTranslation() {
     selectedFile,
 
     // 计算属性
+    selectedProvider,
+    availableModels,
+    hasProviders,
     sourceLanguageName,
     targetLanguageName,
     charCount,
@@ -334,6 +408,7 @@ export function useTranslation() {
     stopRealtimeTranslation,
     clearTranslation,
     copyText,
+    loadProviders,
 
     // 常量
     LANGUAGES

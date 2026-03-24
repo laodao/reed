@@ -378,6 +378,8 @@ const electronAPI = {
 
   // 翻译相关
   translation: {
+    // 获取翻译提供商列表
+    getProviders: () => ipcRenderer.invoke('translation:providers'),
     // 文本翻译
     text: (request: {
       text: string

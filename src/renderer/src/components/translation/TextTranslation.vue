@@ -1,5 +1,47 @@
 <template>
   <div class="text-translation">
+    <!-- 模型选择区域 -->
+    <div class="model-section">
+      <div class="model-selector">
+        <el-select
+          v-model="selectedProviderId"
+          placeholder="选择提供商"
+          class="provider-select"
+          :disabled="translating"
+          @change="handleProviderChange"
+        >
+          <el-option
+            v-for="provider in providers"
+            :key="provider.id"
+            :label="provider.name"
+            :value="provider.id"
+            :disabled="!provider.configured"
+          >
+            <div class="provider-option">
+              <span>{{ provider.name }}</span>
+              <el-tag v-if="!provider.configured" type="info" size="small">
+                未配置
+              </el-tag>
+            </div>
+          </el-option>
+        </el-select>
+
+        <el-select
+          v-model="selectedModelId"
+          placeholder="选择模型"
+          class="model-select"
+          :disabled="!selectedProviderId || translating"
+        >
+          <el-option
+            v-for="model in availableModels"
+            :key="model.id"
+            :label="model.name"
+            :value="model.id"
+          />
+        </el-select>
+      </div>
+    </div>
+
     <!-- 语言选择栏 -->
     <div class="language-bar">
       <el-select
@@ -93,10 +135,10 @@
         type="primary"
         size="large"
         :loading="translating"
-        :disabled="!sourceText.trim() || isOverLimit"
+        :disabled="!sourceText.trim() || isOverLimit || !hasProviders"
         @click="translateText()"
       >
-        翻译
+        {{ hasProviders ? '翻译' : '无可用提供商' }}
       </el-button>
     </div>
 
@@ -120,6 +162,11 @@ import { useTranslation } from '@/composables'
 const {
   translating,
   error,
+  providers,
+  selectedProviderId,
+  selectedModelId,
+  availableModels,
+  hasProviders,
   sourceLanguage,
   targetLanguage,
   sourceText,
@@ -134,6 +181,17 @@ const {
   LANGUAGES
 } = useTranslation()
 
+/**
+ * 处理提供商切换
+ */
+function handleProviderChange(): void {
+  // 切换提供商时，自动选择第一个模型
+  const provider = providers.value.find(p => p.id === selectedProviderId.value)
+  if (provider && provider.models.length > 0) {
+    selectedModelId.value = provider.models[0].id
+  }
+}
+
 // 输入处理（可扩展为实时翻译）
 function handleInput(): void {
   // 可以在这里启用实时翻译
@@ -147,6 +205,30 @@ function handleInput(): void {
   flex-direction: column;
   height: 100%;
   gap: 16px;
+}
+
+.model-section {
+  padding: 16px;
+  background: #fff;
+  border-radius: 12px;
+
+  .model-selector {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .provider-select,
+  .model-select {
+    flex: 1;
+  }
+
+  .provider-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
 }
 
 .language-bar {
