@@ -527,6 +527,12 @@ function formatTime(date: Date | string): string {
 
 .image-group {
   margin-bottom: 16px;
+
+  &:first-child {
+    .group-content {
+      padding-top: 8px;
+    }
+  }
 }
 
 .group-title {
@@ -589,6 +595,7 @@ function formatTime(date: Date | string): string {
   transition: all 0.3s ease;
 
   &:hover {
+    background: var(--el-color-primary-light-9);
     border-color: var(--el-color-primary-light-5);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
     transform: translateY(-2px);
@@ -666,9 +673,20 @@ function formatTime(date: Date | string): string {
 .image-meta {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   margin-top: 6px;
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+
+  .image-time {
+    color: var(--el-text-color-secondary);
+    background: var(--el-fill-color-light);
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+
+  .image-size {
+    color: var(--el-text-color-secondary);
+  }
 }
 
 .image-actions {

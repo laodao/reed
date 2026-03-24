@@ -348,7 +348,8 @@ async function handleOpenFolder(): Promise<void> {
   display: flex;
   flex-direction: column;
   padding: 20px;
-  min-height: 150px;
+  min-height: 0;
+  overflow: hidden;
 
   .input-header {
     display: flex;
@@ -358,6 +359,7 @@ async function handleOpenFolder(): Promise<void> {
     font-size: 14px;
     font-weight: 500;
     color: #303133;
+    flex-shrink: 0;
 
     .char-count {
       font-size: 13px;
@@ -371,6 +373,7 @@ async function handleOpenFolder(): Promise<void> {
 
   :deep(.el-textarea) {
     flex: 1;
+    min-height: 100px;
 
     .el-textarea__inner {
       height: 100% !important;

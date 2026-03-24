@@ -476,6 +476,12 @@ onMounted(() => {
 
 .history-group {
   margin-bottom: 16px;
+
+  &:first-child {
+    .group-content {
+      padding-top: 8px;
+    }
+  }
 }
 
 .group-title {
@@ -538,6 +544,7 @@ onMounted(() => {
   transition: all 0.3s ease;
 
   &:hover {
+    background: var(--el-color-primary-light-9);
     border-color: var(--el-color-primary-light-5);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
     transform: translateY(-2px);
@@ -584,11 +591,18 @@ onMounted(() => {
   .history-meta {
     display: flex;
     justify-content: space-between;
+    align-items: center;
     font-size: 12px;
-    color: var(--el-text-color-secondary);
 
     .history-type-label {
       color: var(--el-color-primary);
+    }
+
+    .history-time {
+      color: var(--el-text-color-secondary);
+      background: var(--el-fill-color-light);
+      padding: 2px 8px;
+      border-radius: 4px;
     }
   }
 }
