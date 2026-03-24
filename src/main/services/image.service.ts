@@ -803,11 +803,10 @@ export class ImageService {
           return { success: false, error: 'Provider 不存在' }
         }
 
-        // 返回默认模型列表
-        // 注意：如果没有 API Key，无法获取真实模型列表
+        // 未配置的 Provider 没有模型可用
         return {
           success: true,
-          data: this.getDefaultModels(providerType)
+          data: []
         }
       }
 
@@ -842,11 +841,11 @@ export class ImageService {
 
       // 检查 Provider 是否已实现
       if (!isProviderImplemented(providerType)) {
-        // 如果未实现，返回默认模型列表
-        console.log(`[ImageService.getModels] Provider ${providerType} 未实现，返回默认模型列表`)
+        // 如果未实现，返回空数组
+        console.log(`[ImageService.getModels] Provider ${providerType} 未实现`)
         return {
           success: true,
-          data: this.getDefaultModels(providerType)
+          data: []
         }
       }
 
@@ -877,83 +876,6 @@ export class ImageService {
     } catch (error: any) {
       console.error('[ImageService.getModels] 错误:', error)
       return { success: false, error: error.message || '获取模型列表失败' }
-    }
-  }
-
-  /**
-   * 获取默认模型列表
-   *
-   * @param providerType - Provider 类型
-   * @returns 默认模型列表
-   */
-  private static getDefaultModels(providerType: ImageProviderType): ImageModel[] {
-    switch (providerType) {
-      case 'bailian':
-        return [
-          {
-            id: 'wanx-v1',
-            name: '通义万相 v1',
-            providerId: 'bailian',
-            providerName: '百炼平台',
-            features: {
-              textToImage: true,
-              imageToImage: true,
-              imageEdit: false,
-              maxResolution: '2048x2048',
-              supportedSizes: ['512x512', '1024x1024', '1024x768', '768x1024']
-            }
-          }
-        ]
-      case 'volcengine':
-        return [
-          {
-            id: 'default',
-            name: '火山引擎图像生成',
-            providerId: 'volcengine',
-            providerName: '火山引擎',
-            features: {
-              textToImage: true,
-              imageToImage: false,
-              imageEdit: false,
-              maxResolution: '1024x1024',
-              supportedSizes: ['512x512', '1024x1024']
-            }
-          }
-        ]
-      case 'minimax':
-        return [
-          {
-            id: 'default',
-            name: 'Minimax 图像生成',
-            providerId: 'minimax',
-            providerName: 'Minimax',
-            features: {
-              textToImage: true,
-              imageToImage: false,
-              imageEdit: false,
-              maxResolution: '1024x1024',
-              supportedSizes: ['512x512', '1024x1024']
-            }
-          }
-        ]
-      case 'zhipu':
-        return [
-          {
-            id: 'default',
-            name: '智谱 CogView',
-            providerId: 'zhipu',
-            providerName: '智谱 AI',
-            features: {
-              textToImage: true,
-              imageToImage: false,
-              imageEdit: false,
-              maxResolution: '1024x1024',
-              supportedSizes: ['512x512', '1024x1024']
-            }
-          }
-        ]
-      default:
-        return []
     }
   }
 
