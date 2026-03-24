@@ -908,7 +908,7 @@ export class ImageService {
         return [
           {
             id: 'default',
-            name: '默认模型',
+            name: '火山引擎图像生成',
             providerId: 'volcengine',
             providerName: '火山引擎',
             features: {
@@ -924,7 +924,7 @@ export class ImageService {
         return [
           {
             id: 'default',
-            name: '默认模型',
+            name: 'Minimax 图像生成',
             providerId: 'minimax',
             providerName: 'Minimax',
             features: {
@@ -940,7 +940,7 @@ export class ImageService {
         return [
           {
             id: 'default',
-            name: '默认模型',
+            name: '智谱 CogView',
             providerId: 'zhipu',
             providerName: '智谱 AI',
             features: {
