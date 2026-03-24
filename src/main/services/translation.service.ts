@@ -121,7 +121,8 @@ export class TranslationService {
    * 文本翻译
    */
   static async translateText(
-    request: TextTranslationRequest
+    request: TextTranslationRequest,
+    saveRecord: boolean = true
   ): Promise<TextTranslationResponse> {
     try {
       // 文本长度检查
@@ -227,25 +228,27 @@ export class TranslationService {
       }
 
       // 保存翻译记录
-      try {
-        const repo = this.getRepository()
-        if (repo) {
-          repo.create({
-            type: 'text',
-            sourceLanguage: request.sourceLanguage,
-            targetLanguage: request.targetLanguage,
-            sourceText: request.text,
-            targetText: translatedText,
-            status: 'completed',
-            favorite: false,
-            wordCount: request.text.length,
-            providerId: providerConfig.id,
-            modelId: modelId
-          })
+      if (saveRecord) {
+        try {
+          const repo = this.getRepository()
+          if (repo) {
+            repo.create({
+              type: 'text',
+              sourceLanguage: request.sourceLanguage,
+              targetLanguage: request.targetLanguage,
+              sourceText: request.text,
+              targetText: translatedText,
+              status: 'completed',
+              favorite: false,
+              wordCount: request.text.length,
+              providerId: providerConfig.id,
+              modelId: modelId
+            })
+          }
+        } catch (saveError) {
+          console.error('[TranslationService.translateText] 保存记录失败:', saveError)
+          // 保存失败不影响翻译结果
         }
-      } catch (saveError) {
-        console.error('[TranslationService.translateText] 保存记录失败:', saveError)
-        // 保存失败不影响翻译结果
       }
 
       return {
@@ -282,10 +285,10 @@ export class TranslationService {
       }
 
       // 创建翻译记录
-      const recordId = randomUUID()
       const repo = this.getRepository()
+      let recordId: string
       if (repo) {
-        repo.create({
+        const record = repo.create({
           type: 'file',
           sourceLanguage: request.sourceLanguage,
           targetLanguage: request.targetLanguage,
@@ -297,6 +300,9 @@ export class TranslationService {
           providerId: request.providerId,
           modelId: request.modelId
         })
+        recordId = record.id
+      } else {
+        return { success: false, error: '数据库未初始化' }
       }
 
       // 异步处理翻译
@@ -340,7 +346,7 @@ export class TranslationService {
           targetLanguage: request.targetLanguage,
           providerId: request.providerId,
           modelId: request.modelId
-        })
+        }, false) // 文件翻译不单独保存每个 chunk 的记录
 
         if (response.success && response.data) {
           translatedChunks.push(response.data.translatedText)
@@ -396,7 +402,7 @@ export class TranslationService {
     const result = await dialog.showOpenDialog(window, {
       title: '选择要翻译的文件',
       filters: [
-        { name: '支持的文件', extensions: ['md', 'txt', 'docx'] }
+        { name: '支持的文件', extensions: ['md', 'txt'] }
       ],
       properties: ['openFile']
     })
@@ -427,16 +433,8 @@ export class TranslationService {
    * 读取文件内容
    */
   private static async readFileContent(filePath: string): Promise<string | null> {
-    const ext = path.extname(filePath).toLowerCase()
-
     try {
-      // 对于 docx 文件，需要使用 mammoth 库
-      if (ext === '.docx') {
-        // 暂时返回提示，后续可以添加 mammoth 依赖
-        return 'Word 文档翻译暂不支持，请将文件另存为 .txt 或 .md 格式后重试'
-      }
-
-      // 对于 txt 和 md 文件
+      // 读取 txt 和 md 文件
       return fs.readFileSync(filePath, 'utf-8')
     } catch (error) {
       console.error('[TranslationService.readFileContent] 错误:', error)

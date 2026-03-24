@@ -47,6 +47,9 @@ export function registerTranslationHandlers(): void {
   // 下载翻译结果
   ipcMain.handle('translation:download', handleDownloadTranslation)
 
+  // 打开文件夹
+  ipcMain.handle('translation:open-folder', handleOpenFolder)
+
   console.log('[TranslationHandlers] 翻译 IPC 处理器已注册')
 }
 
@@ -238,5 +241,22 @@ async function handleDownloadTranslation(
   } catch (error: any) {
     console.error('[handleDownloadTranslation] 错误:', error)
     return { success: false, error: error.message || '下载失败' }
+  }
+}
+
+/**
+ * 处理打开文件夹
+ */
+async function handleOpenFolder(
+  _event: IpcMainInvokeEvent,
+  filePath: string
+): Promise<IpcResponse<boolean>> {
+  try {
+    const { shell } = require('electron')
+    shell.showItemInFolder(filePath)
+    return { success: true, data: true }
+  } catch (error: any) {
+    console.error('[handleOpenFolder] 错误:', error)
+    return { success: false, error: error.message || '打开文件夹失败' }
   }
 }

@@ -430,7 +430,9 @@ const electronAPI = {
       const handler = (_event: any, data: any) => callback(data)
       ipcRenderer.on('translation:failed', handler)
       return () => ipcRenderer.removeListener('translation:failed', handler)
-    }
+    },
+    // 打开文件夹
+    openFolder: (filePath: string) => ipcRenderer.invoke('translation:open-folder', filePath)
   }
 }
 

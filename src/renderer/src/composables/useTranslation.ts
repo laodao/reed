@@ -26,6 +26,11 @@ interface TranslationProvider {
   configured: boolean
 }
 
+// 全局翻译状态（用于跨组件共享）
+const globalTranslating = ref(false)
+const globalFileProgress = ref(0)
+const globalCurrentTranslationId = ref<string | null>(null)
+
 export function useTranslation() {
   // ==================== 状态 ====================
 
@@ -36,7 +41,7 @@ export function useTranslation() {
   const error = ref<string | null>(null)
 
   /** 翻译中状态 */
-  const translating = ref(false)
+  const translating = globalTranslating
 
   /** 翻译提供商列表 */
   const providers = ref<TranslationProvider[]>([])
@@ -69,10 +74,13 @@ export function useTranslation() {
   const targetText = ref('')
 
   /** 文件翻译进度 */
-  const fileProgress = ref(0)
+  const fileProgress = globalFileProgress
 
   /** 选中的文件信息 */
   const selectedFile = ref<{ path: string; name: string; size: number } | null>(null)
+
+  /** 当前翻译任务 ID */
+  const currentTranslationId = globalCurrentTranslationId
 
   /** 实时翻译定时器 */
   let realtimeTimer: ReturnType<typeof setTimeout> | null = null
@@ -214,12 +222,12 @@ export function useTranslation() {
 
   /**
    * 文件翻译
+   * 注意：文件翻译是异步的，translating 状态会在收到完成/失败事件后才重置
    */
   async function translateFile(): Promise<string | null> {
     if (!selectedFile.value) return null
 
     try {
-      translating.value = true
       error.value = null
       fileProgress.value = 0
 
@@ -232,13 +240,56 @@ export function useTranslation() {
       })
 
       if (response.success && response.data) {
+        // 设置翻译中状态，等待完成/失败事件
+        translating.value = true
+        currentTranslationId.value = response.data.translationId
         return response.data.translationId
       } else {
         error.value = response.error || '文件翻译失败'
         return null
       }
-    } finally {
-      translating.value = false
+    } catch (err: any) {
+      error.value = err.message || '文件翻译失败'
+      return null
+    }
+  }
+
+  /**
+   * 取消文件翻译
+   */
+  function cancelFileTranslation(): void {
+    translating.value = false
+    fileProgress.value = 0
+    currentTranslationId.value = null
+  }
+
+  /**
+   * 恢复历史记录到编辑区
+   */
+  function restoreFromHistory(history: TranslationRecord): void {
+    sourceLanguage.value = history.sourceLanguage
+    targetLanguage.value = history.targetLanguage
+
+    if (history.type === 'text') {
+      sourceText.value = history.sourceText || ''
+      targetText.value = history.targetText || ''
+    } else if (history.type === 'file') {
+      if (history.sourceFile) {
+        // 从路径中提取文件名
+        const fileName = history.sourceFileName || history.sourceFile.split(/[/\\]/).pop() || history.sourceFile
+        selectedFile.value = {
+          path: history.sourceFile,
+          name: fileName,
+          size: history.wordCount
+        }
+      }
+    }
+
+    if (history.providerId) {
+      selectedProviderId.value = history.providerId
+    }
+    if (history.modelId) {
+      selectedModelId.value = history.modelId
     }
   }
 
@@ -347,15 +398,48 @@ export function useTranslation() {
   onMounted(async () => {
     // 监听翻译进度
     const unsubProgress = window.electronAPI.translation.onProgress((data) => {
-      fileProgress.value = data.progress
+      // 只处理当前翻译任务的进度
+      if (currentTranslationId.value === data.translationId) {
+        fileProgress.value = data.progress
+      }
     })
     cleanupFns.push(unsubProgress)
 
     // 监听翻译完成
-    const unsubCompleted = window.electronAPI.translation.onCompleted(async () => {
-      await loadHistories()
+    const unsubCompleted = window.electronAPI.translation.onCompleted(async (data) => {
+      // 只处理当前翻译任务
+      if (currentTranslationId.value === data.translationId) {
+        translating.value = false
+        fileProgress.value = 100
+        currentTranslationId.value = null
+
+        // 刷新历史
+        await loadHistories()
+
+        // 发送完成事件（让组件可以显示通知）
+        window.dispatchEvent(new CustomEvent('translation-completed', {
+          detail: { targetFile: data.targetFile }
+        }))
+      }
     })
     cleanupFns.push(unsubCompleted)
+
+    // 监听翻译失败
+    const unsubFailed = window.electronAPI.translation.onFailed((data) => {
+      // 只处理当前翻译任务
+      if (currentTranslationId.value === data.translationId) {
+        translating.value = false
+        fileProgress.value = 0
+        currentTranslationId.value = null
+        error.value = data.error
+
+        // 发送失败事件
+        window.dispatchEvent(new CustomEvent('translation-failed', {
+          detail: { error: data.error }
+        }))
+      }
+    })
+    cleanupFns.push(unsubFailed)
 
     // 加载提供商和历史
     await loadProviders()
@@ -384,6 +468,7 @@ export function useTranslation() {
     targetText,
     fileProgress,
     selectedFile,
+    currentTranslationId,
 
     // 计算属性
     selectedProvider,
@@ -399,6 +484,8 @@ export function useTranslation() {
     translateText,
     selectFile,
     translateFile,
+    cancelFileTranslation,
+    restoreFromHistory,
     toggleFavorite,
     deleteHistory,
     downloadResult,

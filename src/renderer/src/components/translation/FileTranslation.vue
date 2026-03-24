@@ -91,7 +91,7 @@
       >
         <el-icon :size="48"><Upload /></el-icon>
         <p class="upload-text">点击或拖拽上传文件</p>
-        <p class="upload-tip">支持 .md .txt .docx 格式，最大 5MB</p>
+        <p class="upload-tip">支持 .md .txt 格式，最大 5MB</p>
       </div>
 
       <div v-else class="file-info">
@@ -107,7 +107,7 @@
           :icon="Delete"
           circle
           :disabled="translating"
-          @click="clearTranslation"
+          @click="handleClearFile"
         />
       </div>
     </div>
@@ -119,7 +119,36 @@
         :stroke-width="8"
         :show-text="true"
       />
-      <p class="progress-text">正在翻译...</p>
+      <p class="progress-text">正在翻译... {{ fileProgress }}%</p>
+      <el-button
+        type="warning"
+        size="small"
+        @click="handleCancel"
+        style="margin-top: 12px;"
+      >
+        取消翻译
+      </el-button>
+    </div>
+
+    <!-- 翻译结果 -->
+    <div v-if="translationResult && !translating" class="result-area">
+      <div class="result-header">
+        <el-icon class="success-icon"><CircleCheck /></el-icon>
+        <span>翻译完成</span>
+      </div>
+      <div class="result-info">
+        <p><strong>源文件：</strong>{{ selectedFile?.name }}</p>
+        <p><strong>翻译结果：</strong>{{ translationResult }}</p>
+      </div>
+      <div class="result-actions">
+        <el-button type="primary" @click="handleOpenFolder">
+          <el-icon><FolderOpened /></el-icon>
+          打开文件夹
+        </el-button>
+        <el-button @click="handleClearResult">
+          清除结果
+        </el-button>
+      </div>
     </div>
 
     <!-- 操作按钮 -->
@@ -148,7 +177,8 @@
 </template>
 
 <script setup lang="ts">
-import { Upload, Document, Delete, Switch } from '@element-plus/icons-vue'
+import { ref, onMounted, onUnmounted } from 'vue'
+import { Upload, Document, Delete, Switch, CircleCheck, FolderOpened } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useTranslation } from '@/composables'
 
@@ -166,10 +196,14 @@ const {
   fileProgress,
   selectFile,
   translateFile,
+  cancelFileTranslation,
   swapLanguages,
   clearTranslation,
   LANGUAGES
 } = useTranslation()
+
+/** 翻译结果（保存的文件路径） */
+const translationResult = ref<string | null>(null)
 
 /**
  * 处理提供商切换
@@ -188,7 +222,7 @@ function handleProviderChange(): void {
 async function handleSelectFile(): Promise<void> {
   const file = await selectFile()
   if (!file) {
-    ElMessage.error('选择文件失败')
+    // 用户取消选择，不显示错误
   }
 }
 
@@ -201,8 +235,8 @@ async function handleDropFile(event: DragEvent): Promise<void> {
     // 检查文件格式
     const file = files[0]
     const ext = file.name.split('.').pop()?.toLowerCase()
-    if (!['md', 'txt', 'docx'].includes(ext || '')) {
-      ElMessage.error('不支持的文件格式，请上传 .md、.txt 或 .docx 文件')
+    if (!['md', 'txt'].includes(ext || '')) {
+      ElMessage.error('不支持的文件格式，请上传 .md 或 .txt 文件')
       return
     }
     // 检查文件大小
@@ -210,10 +244,8 @@ async function handleDropFile(event: DragEvent): Promise<void> {
       ElMessage.error('文件大小超过限制（最大 5MB）')
       return
     }
-    // 这里需要手动设置 selectedFile
-    // 由于 selectFile 是通过 IPC 的，我们需要直接设置
-    // 暂时使用 IPC 选择文件
-    await handleSelectFile()
+    // 暂时不支持拖拽，提示用户使用点击选择
+    ElMessage.warning('请点击上传区域选择文件')
   }
 }
 
@@ -221,9 +253,49 @@ async function handleDropFile(event: DragEvent): Promise<void> {
  * 开始翻译
  */
 async function handleTranslate(): Promise<void> {
+  // 清除之前的结果
+  translationResult.value = null
+
   const result = await translateFile()
   if (result) {
-    ElMessage.success('翻译任务已创建')
+    ElMessage.info('翻译任务已开始，请等待...')
+  } else if (error.value) {
+    ElMessage.error(error.value)
+  }
+}
+
+/**
+ * 取消翻译
+ */
+function handleCancel(): void {
+  cancelFileTranslation()
+  ElMessage.warning('已取消翻译')
+}
+
+/**
+ * 清除文件
+ */
+function handleClearFile(): void {
+  clearTranslation()
+  translationResult.value = null
+}
+
+/**
+ * 清除结果
+ */
+function handleClearResult(): void {
+  translationResult.value = null
+}
+
+/**
+ * 打开文件夹
+ */
+async function handleOpenFolder(): Promise<void> {
+  if (translationResult.value) {
+    const response = await window.electronAPI.translation.openFolder(translationResult.value)
+    if (!response.success) {
+      ElMessage.error(response.error || '打开文件夹失败')
+    }
   }
 }
 
@@ -235,6 +307,33 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
 }
+
+/**
+ * 监听翻译完成事件
+ */
+function handleTranslationCompleted(event: CustomEvent): void {
+  const { targetFile } = event.detail
+  translationResult.value = targetFile
+  ElMessage.success('翻译完成！')
+}
+
+/**
+ * 监听翻译失败事件
+ */
+function handleTranslationFailed(event: CustomEvent): void {
+  const { error: err } = event.detail
+  ElMessage.error(`翻译失败: ${err}`)
+}
+
+onMounted(() => {
+  window.addEventListener('translation-completed', handleTranslationCompleted as EventListener)
+  window.addEventListener('translation-failed', handleTranslationFailed as EventListener)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('translation-completed', handleTranslationCompleted as EventListener)
+  window.removeEventListener('translation-failed', handleTranslationFailed as EventListener)
+})
 </script>
 
 <style lang="scss" scoped>
@@ -366,12 +465,63 @@ function formatFileSize(bytes: number): string {
   padding: 20px;
   background: #fff;
   border-radius: 12px;
+  text-align: center;
 
   .progress-text {
     margin: 12px 0 0;
-    text-align: center;
     font-size: 14px;
     color: var(--el-text-color-secondary);
+  }
+}
+
+.result-area {
+  padding: 20px;
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid var(--el-color-success-light-5);
+
+  .result-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+
+    .success-icon {
+      font-size: 24px;
+      color: var(--el-color-success);
+    }
+
+    span {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--el-color-success);
+    }
+  }
+
+  .result-info {
+    padding: 12px;
+    background: var(--el-fill-color-light);
+    border-radius: 8px;
+    margin-bottom: 16px;
+
+    p {
+      margin: 0 0 8px;
+      font-size: 14px;
+      color: var(--el-text-color-regular);
+
+      &:last-child {
+        margin-bottom: 0;
+      }
+
+      strong {
+        color: var(--el-text-color-primary);
+      }
+    }
+  }
+
+  .result-actions {
+    display: flex;
+    gap: 12px;
   }
 }
 
