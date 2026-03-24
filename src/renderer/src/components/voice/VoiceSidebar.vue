@@ -61,6 +61,15 @@
               <!-- 操作按钮 -->
               <div class="history-actions">
                 <el-button
+                  v-if="history.type === 'tts' && history.outputAudioPath"
+                  type="success"
+                  :icon="Download"
+                  circle
+                  size="small"
+                  plain
+                  @click.stop="handleDownload(history)"
+                />
+                <el-button
                   :type="history.favorite ? 'warning' : 'primary'"
                   :icon="history.favorite ? StarFilled : Star"
                   circle
@@ -117,6 +126,15 @@
                 <el-icon><StarFilled /></el-icon>
               </div>
               <div class="history-actions">
+                <el-button
+                  v-if="history.type === 'tts' && history.outputAudioPath"
+                  type="success"
+                  :icon="Download"
+                  circle
+                  size="small"
+                  plain
+                  @click.stop="handleDownload(history)"
+                />
                 <el-button
                   :type="history.favorite ? 'warning' : 'primary'"
                   :icon="history.favorite ? StarFilled : Star"
@@ -175,6 +193,15 @@
               </div>
               <div class="history-actions">
                 <el-button
+                  v-if="history.type === 'tts' && history.outputAudioPath"
+                  type="success"
+                  :icon="Download"
+                  circle
+                  size="small"
+                  plain
+                  @click.stop="handleDownload(history)"
+                />
+                <el-button
                   :type="history.favorite ? 'warning' : 'primary'"
                   :icon="history.favorite ? StarFilled : Star"
                   circle
@@ -218,7 +245,8 @@ import {
   Microphone,
   Headset,
   Delete,
-  ArrowRight
+  ArrowRight,
+  Download
 } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import type { VoiceRecord } from '../../../../shared/types/voice.types'
@@ -370,6 +398,23 @@ async function handleDelete(history: VoiceRecord): Promise<void> {
     }
   } catch {
     // 用户取消删除
+  }
+}
+
+/**
+ * 下载语音文件
+ */
+async function handleDownload(history: VoiceRecord): Promise<void> {
+  if (!history.outputAudioPath) {
+    ElMessage.warning('没有可下载的音频文件')
+    return
+  }
+
+  const response = await window.electronAPI.voice.download(history.outputAudioPath)
+  if (response.success && response.data) {
+    ElMessage.success('下载成功')
+  } else {
+    ElMessage.error(response.error || '下载失败')
   }
 }
 
@@ -643,9 +688,49 @@ onMounted(() => {
     background: rgba(255, 255, 255, 0.95);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 
+    :deep(.el-icon) {
+      color: inherit;
+    }
+
     &:hover {
       background: #ffffff;
       transform: scale(1.1);
+    }
+
+    &.el-button--primary {
+      &:hover {
+        background: var(--el-color-primary);
+        :deep(.el-icon) {
+          color: #fff;
+        }
+      }
+    }
+
+    &.el-button--warning {
+      &:hover {
+        background: var(--el-color-warning);
+        :deep(.el-icon) {
+          color: #fff;
+        }
+      }
+    }
+
+    &.el-button--danger {
+      &:hover {
+        background: var(--el-color-danger);
+        :deep(.el-icon) {
+          color: #fff;
+        }
+      }
+    }
+
+    &.el-button--success {
+      &:hover {
+        background: var(--el-color-success);
+        :deep(.el-icon) {
+          color: #fff;
+        }
+      }
     }
   }
 }
