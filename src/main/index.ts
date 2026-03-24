@@ -17,7 +17,31 @@ import { registerChatHandlers } from './ipc/handlers/chat.handler'
 import { registerImageHandlers } from './ipc/handlers/image.handler'
 import { registerFileHandlers } from './ipc/handlers/file.handler'
 import { registerTranslationHandlers } from './ipc/handlers/translation.handler'
+import { registerVoiceHandlers } from './ipc/handlers/voice.handler'
 import * as fs from 'fs'
+
+// 在 app ready 之前注册协议权限（重要！）
+// 必须在 app ready 之前调用，否则协议无法正常工作
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'local-image',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true
+    }
+  },
+  {
+    scheme: 'local-file',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true
+    }
+  }
+])
 
 let mainWindow: BrowserWindow | null = null
 
@@ -30,9 +54,40 @@ function registerImageProtocol(): void {
     // 解码 URL 编码的路径
     const filePath = decodeURIComponent(url)
 
+    console.log('[local-image] 请求文件:', filePath)
+
     if (fs.existsSync(filePath)) {
       callback({ path: filePath })
     } else {
+      console.error('[local-image] 文件不存在:', filePath)
+      callback({ error: -2 }) // 文件不存在
+    }
+  })
+}
+
+/**
+ * 注册自定义协议以访问本地音频文件
+ */
+function registerAudioProtocol(): void {
+  protocol.registerFileProtocol('local-file', (request, callback) => {
+    let url = request.url.substr('local-file://'.length)
+    // 移除开头的斜杠（如果有的话，来自 /// 格式）
+    if (url.startsWith('/')) {
+      url = url.substring(1)
+    }
+    // 解码 URL 编码的路径
+    let filePath = decodeURIComponent(url)
+    // 将正斜杠转换回反斜杠（Windows）
+    if (process.platform === 'win32') {
+      filePath = filePath.replace(/\//g, '\\')
+    }
+
+    console.log('[local-file] 请求文件:', filePath)
+
+    if (fs.existsSync(filePath)) {
+      callback({ path: filePath })
+    } else {
+      console.error('[local-file] 文件不存在:', filePath)
       callback({ error: -2 }) // 文件不存在
     }
   })
@@ -55,7 +110,7 @@ function createWindow(): void {
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
-      webSecurity: true
+      webSecurity: false  // 允许 file:// 协议访问本地文件
     }
   })
 
@@ -90,6 +145,7 @@ function initIpcHandlers(): void {
   registerImageHandlers()
   registerFileHandlers()
   registerTranslationHandlers()
+  registerVoiceHandlers()
 }
 
 // 应用就绪
@@ -99,6 +155,9 @@ app.whenReady().then(async () => {
 
   // 注册自定义图像协议
   registerImageProtocol()
+
+  // 注册自定义音频协议
+  registerAudioProtocol()
 
   // 开发模式下默认通过 F12 打开开发工具
   app.on('browser-window-created', (_, window) => {

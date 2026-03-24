@@ -433,6 +433,72 @@ const electronAPI = {
     },
     // 打开文件夹
     openFolder: (filePath: string) => ipcRenderer.invoke('translation:open-folder', filePath)
+  },
+
+  // 语音相关
+  voice: {
+    // 获取语音提供商列表
+    getProviders: () => ipcRenderer.invoke('voice:providers'),
+    // 获取发音人列表
+    getVoices: (providerId?: string, language?: string) =>
+      ipcRenderer.invoke('voice:voices', providerId, language),
+    // 文本转语音
+    tts: (request: {
+      text: string
+      voiceId: string
+      language?: string
+      speed?: number
+      pitch?: number
+      volume?: number
+      emotion?: string
+      style?: string
+      providerId?: string
+      modelId?: string
+    }) => ipcRenderer.invoke('voice:tts', request),
+    // 语音转文本
+    stt: (request: {
+      audioPath?: string
+      audioData?: string
+      language?: string
+      providerId?: string
+      modelId?: string
+    }) => ipcRenderer.invoke('voice:stt', request),
+    // 语音复刻
+    clone: (request: {
+      name: string
+      sampleAudioPath?: string
+      sampleAudioData?: string
+      providerId?: string
+    }) => ipcRenderer.invoke('voice:clone', request),
+    // 选择音频文件
+    selectFile: () => ipcRenderer.invoke('voice:select-file'),
+    // 获取语音历史
+    history: (query: {
+      page: number
+      pageSize: number
+      type?: 'tts' | 'stt'
+      favorite?: boolean
+    }) => ipcRenderer.invoke('voice:history', query),
+    // 删除语音记录
+    delete: (id: string) => ipcRenderer.invoke('voice:delete', id),
+    // 切换收藏
+    toggleFavorite: (id: string) => ipcRenderer.invoke('voice:toggle-favorite', id),
+    // 获取复刻声音列表
+    getClonedVoices: () => ipcRenderer.invoke('voice:cloned-list'),
+    // 删除复刻声音
+    deleteClonedVoice: (id: string) => ipcRenderer.invoke('voice:cloned-delete', id),
+    // TTS 完成监听
+    onTTSCompleted: (callback: (data: { recordId: string; audioPath: string }) => void) => {
+      const handler = (_event: any, data: any) => callback(data)
+      ipcRenderer.on('voice:tts-completed', handler)
+      return () => ipcRenderer.removeListener('voice:tts-completed', handler)
+    },
+    // STT 完成监听
+    onSTTCompleted: (callback: (data: { recordId: string; text: string }) => void) => {
+      const handler = (_event: any, data: any) => callback(data)
+      ipcRenderer.on('voice:stt-completed', handler)
+      return () => ipcRenderer.removeListener('voice:stt-completed', handler)
+    }
   }
 }
 

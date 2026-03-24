@@ -16,6 +16,8 @@ import { RoleRepository } from './repositories/role.repository'
 import { ImageRepository } from './repositories/image.repository'
 import { ProviderConfigRepository } from './repositories/provider-config.repository'
 import { TranslationRepository } from './repositories/translation.repository'
+import { VoiceRepository } from './repositories/voice.repository'
+import { ClonedVoiceRepository } from './repositories/cloned-voice.repository'
 
 /**
  * 数据库管理器
@@ -35,6 +37,8 @@ export class DatabaseManager {
   public images: ImageRepository | null = null
   public providerConfigs: ProviderConfigRepository | null = null
   public translations: TranslationRepository | null = null
+  public voices: VoiceRepository | null = null
+  public clonedVoices: ClonedVoiceRepository | null = null
 
   private constructor() {
     const userDataPath = app.getPath('userData')
@@ -261,6 +265,59 @@ export class DatabaseManager {
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_translations_type ON translations(type)`)
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_translations_favorite ON translations(favorite)`)
 
+    // 语音记录表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS voice_records (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        input_text TEXT,
+        output_audio_path TEXT,
+        voice_id TEXT,
+        voice_name TEXT,
+        language TEXT,
+        speed REAL DEFAULT 1.0,
+        pitch REAL DEFAULT 0,
+        volume REAL DEFAULT 1.0,
+        emotion TEXT,
+        style TEXT,
+        duration INTEGER,
+        input_audio_path TEXT,
+        output_text TEXT,
+        provider_id TEXT,
+        model_id TEXT,
+        favorite INTEGER NOT NULL DEFAULT 0,
+        error_message TEXT,
+        created_at TEXT NOT NULL
+      )
+    `)
+
+    // 创建语音记录索引
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_voice_records_created_at ON voice_records(created_at DESC)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_voice_records_type ON voice_records(type)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_voice_records_favorite ON voice_records(favorite)`)
+
+    // 复刻声音表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS cloned_voices (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'training',
+        sample_audio_path TEXT,
+        sample_duration INTEGER,
+        voice_id TEXT,
+        preview_audio_path TEXT,
+        provider_id TEXT,
+        error_message TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT
+      )
+    `)
+
+    // 创建复刻声音索引
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_cloned_voices_status ON cloned_voices(status)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_cloned_voices_created_at ON cloned_voices(created_at DESC)`)
+
     // 执行数据库迁移
     this.runMigrations()
   }
@@ -419,6 +476,8 @@ export class DatabaseManager {
     this.images = new ImageRepository(this.db)
     this.providerConfigs = new ProviderConfigRepository(this.db)
     this.translations = new TranslationRepository(this.db)
+    this.voices = new VoiceRepository(this.db)
+    this.clonedVoices = new ClonedVoiceRepository(this.db)
   }
 
   /**
