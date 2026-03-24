@@ -131,11 +131,22 @@ export function useImage() {
   )
 
   /**
-   * 当前提供商的模型列表
+   * 所有提供商的模型列表
    */
   const availableModels = computed(() => {
-    const provider = selectedProvider.value
-    return provider?.models || []
+    const allModels: (ImageModel & { providerId: string; providerName: string })[] = []
+    for (const provider of providers.value) {
+      if (provider.models) {
+        for (const model of provider.models) {
+          allModels.push({
+            ...model,
+            providerId: provider.id,
+            providerName: provider.name
+          })
+        }
+      }
+    }
+    return allModels
   })
 
   /**
@@ -185,16 +196,18 @@ export function useImage() {
       if (response.success && response.data) {
         providers.value = response.data
 
-        // 自动选择第一个已配置的提供商
-        const configuredProvider = providers.value.find(p => p.configured)
-        if (configuredProvider) {
-          selectedProviderId.value = configuredProvider.id
-
-          // 加载该提供商的模型列表
-          const models = await loadModels(configuredProvider.id)
-          if (models.length > 0) {
-            selectedModelId.value = models[0].id
+        // 加载所有提供商的模型
+        for (const provider of providers.value) {
+          if (provider.configured) {
+            await loadModels(provider.id)
           }
+        }
+
+        // 自动选择第一个模型
+        const allModels = availableModels.value
+        if (allModels.length > 0) {
+          selectedModelId.value = allModels[0].id
+          selectedProviderId.value = allModels[0].providerId
         }
       } else {
         error.value = response.error || '加载提供商失败'
@@ -270,9 +283,12 @@ export function useImage() {
       error.value = null
       currentTask.value = null
 
-      // 验证必填参数
-      if (!selectedProviderId.value) {
-        error.value = '请选择提供商'
+      // 从选中的模型中获取提供商 ID
+      const selectedModelInfo = availableModels.value.find(m => m.id === selectedModelId.value)
+      const providerId = selectedModelInfo?.providerId || selectedProviderId.value
+
+      if (!providerId) {
+        error.value = '请选择模型'
         return null
       }
 
@@ -296,7 +312,7 @@ export function useImage() {
       }
 
       const response = await window.electronAPI.image.generate({
-        providerId: selectedProviderId.value,
+        providerId: providerId,
         ...generationRequest
       })
 

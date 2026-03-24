@@ -4,33 +4,10 @@
     <div class="model-section">
       <div class="model-selector">
         <el-select
-          v-model="selectedProviderId"
-          placeholder="选择提供商"
-          class="provider-select"
-          :disabled="translating"
-          @change="handleProviderChange"
-        >
-          <el-option
-            v-for="provider in providers"
-            :key="provider.id"
-            :label="provider.name"
-            :value="provider.id"
-            :disabled="!provider.configured"
-          >
-            <div class="provider-option">
-              <span>{{ provider.name }}</span>
-              <el-tag v-if="!provider.configured" type="info" size="small">
-                未配置
-              </el-tag>
-            </div>
-          </el-option>
-        </el-select>
-
-        <el-select
           v-model="selectedModelId"
           placeholder="选择模型"
           class="model-select"
-          :disabled="!selectedProviderId || translating"
+          :disabled="translating"
         >
           <el-option
             v-for="model in availableModels"
@@ -185,8 +162,6 @@ import { useTranslation } from '@/composables'
 const {
   translating,
   error,
-  providers,
-  selectedProviderId,
   selectedModelId,
   availableModels,
   hasProviders,
@@ -204,17 +179,6 @@ const {
 
 /** 翻译结果（保存的文件路径） */
 const translationResult = ref<string | null>(null)
-
-/**
- * 处理提供商切换
- */
-function handleProviderChange(): void {
-  // 切换提供商时，自动选择第一个模型
-  const provider = providers.value.find(p => p.id === selectedProviderId.value)
-  if (provider && provider.models.length > 0) {
-    selectedModelId.value = provider.models[0].id
-  }
-}
 
 /**
  * 选择文件
@@ -355,16 +319,8 @@ onUnmounted(() => {
     gap: 12px;
   }
 
-  .provider-select,
   .model-select {
     flex: 1;
-  }
-
-  .provider-option {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
   }
 }
 

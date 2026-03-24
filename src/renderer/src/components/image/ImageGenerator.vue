@@ -5,32 +5,9 @@
       <div class="section-label">模型选择</div>
       <div class="model-selector">
         <el-select
-          v-model="selectedProviderId"
-          placeholder="选择提供商"
-          class="provider-select"
-          @change="handleProviderChange"
-        >
-          <el-option
-            v-for="provider in providers"
-            :key="provider.id"
-            :label="provider.name"
-            :value="provider.id"
-            :disabled="!provider.configured"
-          >
-            <div class="provider-option">
-              <span>{{ provider.name }}</span>
-              <el-tag v-if="!provider.configured" type="info" size="small">
-                未配置
-              </el-tag>
-            </div>
-          </el-option>
-        </el-select>
-
-        <el-select
           v-model="selectedModelId"
           placeholder="选择模型"
           class="model-select"
-          :disabled="!selectedProviderId"
         >
           <el-option
             v-for="model in availableModels"
@@ -283,7 +260,6 @@ const emit = defineEmits<Emits>()
 
 // 使用 useImage composable
 const {
-  providers,
   selectedProviderId,
   selectedModelId,
   loading,
@@ -292,7 +268,6 @@ const {
   currentTask,
   availableModels,
   taskProgress,
-  selectProvider,
   generateImage,
   stopGeneration,
   selectReferenceImage
@@ -364,7 +339,6 @@ const qualityOptions = [
 /** 是否可以生成 */
 const canGenerate = computed(() => {
   return (
-    selectedProviderId.value &&
     selectedModelId.value &&
     prompt.value.trim().length > 0 &&
     prompt.value.length <= maxPromptLength &&
@@ -392,13 +366,6 @@ const progressText = computed(() => {
 })
 
 // ==================== 方法 ====================
-
-/**
- * 处理提供商变更
- */
-async function handleProviderChange(providerId: string): Promise<void> {
-  await selectProvider(providerId)
-}
 
 /**
  * 处理生成
@@ -505,15 +472,8 @@ function setParams(params: {
   selectedQuality.value = params.quality || ''
   seed.value = params.seed ?? -1
 
-  // 如果有提供商，切换提供商
-  if (params.providerId && params.providerId !== selectedProviderId.value) {
-    selectProvider(params.providerId).then(() => {
-      // 切换后再设置模型
-      if (params.modelId) {
-        selectedModelId.value = params.modelId
-      }
-    })
-  } else if (params.modelId) {
+  // 设置模型
+  if (params.modelId) {
     selectedModelId.value = params.modelId
   }
 }
@@ -552,12 +512,10 @@ defineExpose({
   gap: 12px;
 }
 
-.provider-select,
 .model-select {
   flex: 1;
 }
 
-.provider-option,
 .model-option {
   display: flex;
   align-items: center;

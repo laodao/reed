@@ -14,8 +14,8 @@ import type {
 import { LANGUAGES, getLanguageName } from '../../../shared/types/translation.types'
 
 /**
- * 翻译提供商
- */
+   * 翻译提供商
+   */
 interface TranslationProvider {
   id: string
   name: string
@@ -24,6 +24,16 @@ interface TranslationProvider {
     name: string
   }>
   configured: boolean
+}
+
+/**
+   * 翻译模型（包含提供商信息）
+   */
+interface TranslationModel {
+  id: string
+  name: string
+  providerId: string
+  providerName: string
 }
 
 // 全局翻译状态（用于跨组件共享）
@@ -95,10 +105,22 @@ export function useTranslation() {
     providers.value.find(p => p.id === selectedProviderId.value)
   )
 
-  /** 当前提供商的模型列表 */
+  /** 所有提供商的模型列表 */
   const availableModels = computed(() => {
-    const provider = selectedProvider.value
-    return provider?.models || []
+    const allModels: TranslationModel[] = []
+    for (const provider of providers.value) {
+      if (provider.models) {
+        for (const model of provider.models) {
+          allModels.push({
+            id: model.id,
+            name: model.name,
+            providerId: provider.id,
+            providerName: provider.name
+          })
+        }
+      }
+    }
+    return allModels
   })
 
   /** 是否有可用的提供商 */
@@ -131,13 +153,11 @@ export function useTranslation() {
       if (response.success && response.data) {
         providers.value = response.data
 
-        // 自动选择第一个已配置的提供商
-        const configuredProvider = providers.value.find(p => p.configured)
-        if (configuredProvider) {
-          selectedProviderId.value = configuredProvider.id
-          if (configuredProvider.models.length > 0) {
-            selectedModelId.value = configuredProvider.models[0].id
-          }
+        // 自动选择第一个模型
+        const allModels = availableModels.value
+        if (allModels.length > 0) {
+          selectedModelId.value = allModels[0].id
+          selectedProviderId.value = allModels[0].providerId
         }
       } else {
         error.value = response.error || '加载提供商失败'
@@ -182,11 +202,15 @@ export function useTranslation() {
       translating.value = true
       error.value = null
 
+      // 从选中的模型中获取提供商 ID
+      const selectedModelInfo = availableModels.value.find(m => m.id === selectedModelId.value)
+      const providerId = request?.providerId || selectedModelInfo?.providerId || selectedProviderId.value
+
       const response = await window.electronAPI.translation.text({
         text: request?.text || sourceText.value,
         sourceLanguage: request?.sourceLanguage || sourceLanguage.value,
         targetLanguage: request?.targetLanguage || targetLanguage.value,
-        providerId: request?.providerId || selectedProviderId.value || undefined,
+        providerId: providerId || undefined,
         modelId: request?.modelId || selectedModelId.value || undefined
       })
 
@@ -231,11 +255,15 @@ export function useTranslation() {
       error.value = null
       fileProgress.value = 0
 
+      // 从选中的模型中获取提供商 ID
+      const selectedModelInfo = availableModels.value.find(m => m.id === selectedModelId.value)
+      const providerId = selectedModelInfo?.providerId || selectedProviderId.value
+
       const response = await window.electronAPI.translation.file({
         filePath: selectedFile.value.path,
         sourceLanguage: sourceLanguage.value,
         targetLanguage: targetLanguage.value,
-        providerId: selectedProviderId.value || undefined,
+        providerId: providerId || undefined,
         modelId: selectedModelId.value || undefined
       })
 
