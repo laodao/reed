@@ -18,6 +18,7 @@ import { ProviderConfigRepository } from './repositories/provider-config.reposit
 import { TranslationRepository } from './repositories/translation.repository'
 import { VoiceRepository } from './repositories/voice.repository'
 import { ClonedVoiceRepository } from './repositories/cloned-voice.repository'
+import { DataPathService } from '../services/data-path.service'
 
 /**
  * 数据库管理器
@@ -41,6 +42,7 @@ export class DatabaseManager {
   public clonedVoices: ClonedVoiceRepository | null = null
 
   private constructor() {
+    // 默认使用 userData 路径，后续会在 initialize 中更新
     const userDataPath = app.getPath('userData')
     this.dbPath = path.join(userDataPath, 'the_bot.db')
   }
@@ -59,6 +61,14 @@ export class DatabaseManager {
    * 初始化数据库
    */
   async initialize(): Promise<void> {
+    // 先初始化 DataPathService，获取自定义数据路径
+    const dataPathService = DataPathService.getInstance()
+    await dataPathService.initialize()
+
+    // 使用 DataPathService 获取数据路径
+    const dataPath = dataPathService.getDataPath()
+    this.dbPath = path.join(dataPath, 'the_bot.db')
+
     // 确保数据目录存在
     const dir = path.dirname(this.dbPath)
     if (!fs.existsSync(dir)) {

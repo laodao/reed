@@ -139,10 +139,12 @@
         <!-- 数据管理 -->
         <el-tab-pane label="数据路径" name="data">
           <div class="settings-section">
-            <h3>数据路径</h3>
+            <h3>数据存储路径</h3>
+            <p class="section-desc">设置应用程序数据的存储位置，包括数据库、生成的图片、语音文件等</p>
+
             <el-form label-width="100px">
-              <el-form-item label="数据存储">
-                <el-input v-model="dataPath" disabled class="path-input">
+              <el-form-item label="当前路径">
+                <el-input v-model="dataPathConfig.dataPath" disabled class="path-input">
                   <template #append>
                     <el-button @click="openDataFolder">
                       <el-icon><FolderOpened /></el-icon>
@@ -150,8 +152,54 @@
                     </el-button>
                   </template>
                 </el-input>
+                <div class="path-info">
+                  <el-tag v-if="dataPathConfig.isDefault" type="info" size="small">默认路径</el-tag>
+                  <el-tag v-else type="success" size="small">自定义路径</el-tag>
+                </div>
+              </el-form-item>
+
+              <el-form-item label="数据大小">
+                <div class="size-info">
+                  <span class="total-size">{{ formatSize(dataSizeInfo.total) }}</span>
+                  <el-popover placement="right" :width="300" trigger="click">
+                    <template #reference>
+                      <el-button text size="small">
+                        <el-icon><InfoFilled /></el-icon>
+                        查看详情
+                      </el-button>
+                    </template>
+                    <div class="size-details">
+                      <div class="size-item">
+                        <span>数据库</span>
+                        <span>{{ formatSize(dataSizeInfo.details.database) }}</span>
+                      </div>
+                      <div class="size-item">
+                        <span>图片</span>
+                        <span>{{ formatSize(dataSizeInfo.details.images) }}</span>
+                      </div>
+                      <div class="size-item">
+                        <span>语音</span>
+                        <span>{{ formatSize(dataSizeInfo.details.voice) }}</span>
+                      </div>
+                      <div class="size-item">
+                        <span>翻译</span>
+                        <span>{{ formatSize(dataSizeInfo.details.translations) }}</span>
+                      </div>
+                    </div>
+                  </el-popover>
+                </div>
               </el-form-item>
             </el-form>
+
+            <div class="path-actions">
+              <el-button type="primary" @click="handleChangePath">
+                <el-icon><Folder /></el-icon>
+                更改路径
+              </el-button>
+              <el-button v-if="!dataPathConfig.isDefault" @click="handleResetPath">
+                恢复默认路径
+              </el-button>
+            </div>
           </div>
 
           <div class="settings-section">
@@ -216,7 +264,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, FolderOpened, Download, Upload, Delete, Plus } from '@element-plus/icons-vue'
+import { Check, FolderOpened, Download, Upload, Delete, Plus, Folder, InfoFilled } from '@element-plus/icons-vue'
 import { useTheme, availableThemes, type ThemeConfig } from '@/composables/useTheme'
 import { useAppSettings, fontSizeConfig, languageConfig, type FontSize, type Language } from '@/composables/useAppSettings'
 import AddProviderDialog from '@/components/settings/AddProviderDialog.vue'
@@ -255,8 +303,23 @@ const settings = reactive({
   fontSize: appSettings.fontSize
 })
 
-// 数据路径
-const dataPath = ref('C:\\Users\\daoge\\AppData\\Roaming\\the_bot')
+// 数据路径配置
+const dataPathConfig = ref({
+  dataPath: '',
+  isDefault: true
+})
+
+// 数据大小信息
+const dataSizeInfo = ref({
+  total: 0,
+  details: {
+    database: 0,
+    images: 0,
+    voice: 0,
+    translations: 0,
+    other: 0
+  }
+})
 
 // 提供商配置
 const providerConfigs = ref<UserProviderConfig[]>([])
@@ -393,8 +456,124 @@ const deleteConfig = async (config: UserProviderConfig) => {
 }
 
 // 打开数据目录
-const openDataFolder = () => {
-  ElMessage.info('功能开发中...')
+const openDataFolder = async () => {
+  try {
+    const result = await window.electronAPI.dataPath.openFolder()
+    if (!result.success) {
+      ElMessage.error(result.error || '打开目录失败')
+    }
+  } catch (error) {
+    console.error('打开目录失败:', error)
+    ElMessage.error('打开目录失败')
+  }
+}
+
+// 加载数据路径配置
+const loadDataPathConfig = async () => {
+  try {
+    const result = await window.electronAPI.dataPath.getConfig()
+    if (result.success && result.data) {
+      dataPathConfig.value = result.data
+    }
+  } catch (error) {
+    console.error('加载数据路径配置失败:', error)
+  }
+}
+
+// 加载数据大小信息
+const loadDataSize = async () => {
+  try {
+    const result = await window.electronAPI.dataPath.calculateSize()
+    if (result.success && result.data) {
+      dataSizeInfo.value = result.data
+    }
+  } catch (error) {
+    console.error('计算数据大小失败:', error)
+  }
+}
+
+// 更改数据路径
+const handleChangePath = async () => {
+  try {
+    // 先选择路径
+    const selectResult = await window.electronAPI.dataPath.select()
+    if (!selectResult.success || !selectResult.path) {
+      return
+    }
+
+    // 确认是否迁移数据
+    const confirmResult = await ElMessageBox.confirm(
+      '是否将现有数据迁移到新路径？选择"迁移"将复制现有数据到新位置，选择"不迁移"则新路径将为空。',
+      '数据迁移',
+      {
+        confirmButtonText: '迁移',
+        cancelButtonText: '不迁移',
+        distinguishCancelAndClose: true,
+        type: 'info'
+      }
+    ).then(() => true)
+      .catch((action) => action === 'cancel')
+
+    // 设置新路径
+    const result = await window.electronAPI.dataPath.set(
+      selectResult.path,
+      confirmResult === true
+    )
+
+    if (result.success) {
+      ElMessage.success(confirmResult === true ? '路径已更改，数据已迁移' : '路径已更改')
+      await loadDataPathConfig()
+      await loadDataSize()
+    } else {
+      ElMessage.error(result.error || '更改路径失败')
+    }
+  } catch (error: any) {
+    if (error !== 'cancel' && error !== 'close') {
+      console.error('更改路径失败:', error)
+      ElMessage.error('更改路径失败')
+    }
+  }
+}
+
+// 重置为默认路径
+const handleResetPath = async () => {
+  try {
+    const confirmResult = await ElMessageBox.confirm(
+      '是否将现有数据迁移到默认路径？',
+      '恢复默认路径',
+      {
+        confirmButtonText: '迁移',
+        cancelButtonText: '不迁移',
+        distinguishCancelAndClose: true,
+        type: 'info'
+      }
+    ).then(() => true)
+      .catch((action) => action === 'cancel')
+
+    const result = await window.electronAPI.dataPath.reset(confirmResult === true)
+
+    if (result.success) {
+      ElMessage.success('已恢复默认路径')
+      await loadDataPathConfig()
+      await loadDataSize()
+    } else {
+      ElMessage.error(result.error || '恢复默认路径失败')
+    }
+  } catch (error: any) {
+    if (error !== 'cancel' && error !== 'close') {
+      console.error('恢复默认路径失败:', error)
+      ElMessage.error('恢复默认路径失败')
+    }
+  }
+}
+
+// 格式化文件大小
+const formatSize = (bytes: number): string => {
+  if (bytes === 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  const k = 1024
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + units[i]
 }
 
 // 导出数据
@@ -441,6 +620,8 @@ onMounted(async () => {
   settings.fontSize = appSettings.fontSize
   await loadTemplates()
   await loadProviderConfigs()
+  await loadDataPathConfig()
+  await loadDataSize()
 })
 </script>
 
@@ -788,6 +969,50 @@ onMounted(async () => {
 
 .path-input {
   width: 400px;
+}
+
+.path-info {
+  margin-top: 8px;
+}
+
+.size-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.total-size {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.size-details {
+  .size-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-color-lighter);
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    span:first-child {
+      color: var(--text-secondary);
+    }
+
+    span:last-child {
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+  }
+}
+
+.path-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
 }
 
 .action-buttons {

@@ -501,6 +501,24 @@ const electronAPI = {
     },
     // 下载音频
     download: (audioPath: string) => ipcRenderer.invoke('voice:download', audioPath)
+  },
+
+  // 数据路径相关
+  dataPath: {
+    // 获取数据路径配置
+    getConfig: () => ipcRenderer.invoke('data-path:get-config'),
+    // 选择数据路径
+    select: () => ipcRenderer.invoke('data-path:select'),
+    // 设置数据路径
+    set: (newPath: string, migrate?: boolean) => ipcRenderer.invoke('data-path:set', newPath, migrate),
+    // 重置为默认路径
+    reset: (migrate?: boolean) => ipcRenderer.invoke('data-path:reset', migrate),
+    // 获取迁移状态
+    getMigrationStatus: () => ipcRenderer.invoke('data-path:migration-status'),
+    // 计算数据大小
+    calculateSize: () => ipcRenderer.invoke('data-path:calculate-size'),
+    // 打开数据目录
+    openFolder: () => ipcRenderer.invoke('data-path:open-folder')
   }
 }
 
