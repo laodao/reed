@@ -10,6 +10,7 @@ import * as fs from 'fs'
 import { getDatabaseManager } from '../database'
 import { SecureStorageService } from './secure-storage.service'
 import { PROVIDER_TEMPLATES } from './provider-template.service'
+import { DataPathService } from './data-path.service'
 import {
   createImageProvider,
   getProviderDefinition,
@@ -38,9 +39,22 @@ const activePollingTasks = new Map<string, NodeJS.Timeout>()
  * @returns 可访问的 URL
  */
 function localPathToUrl(filePath: string): string {
-  if (!filePath) return ''
-  // 使用自定义协议 local-image:// 来访问本地图像
-  return `local-image://${encodeURIComponent(filePath)}`
+  if (!filePath) {
+    console.log('[localPathToUrl] 空路径')
+    return ''
+  }
+
+  // Windows 路径处理：将反斜杠转换为正斜杠
+  let normalizedPath = filePath
+  if (process.platform === 'win32') {
+    normalizedPath = filePath.replace(/\\/g, '/')
+  }
+
+  // 使用三个斜杠格式（标准 file URI 格式）：local-image:///C:/Users/...
+  // 不编码冒号，让盘符成为路径的一部分
+  const url = `local-image:///${normalizedPath}`
+  console.log('[localPathToUrl] 输入:', filePath, '输出:', url)
+  return url
 }
 
 /**
@@ -386,7 +400,9 @@ export class ImageService {
     }
 
     const savedImages: ImageRecord[] = []
-    const userDataPath = app.getPath('userData')
+    // 使用 DataPathService 获取正确的数据路径
+    const dataPathService = DataPathService.getInstance()
+    const userDataPath = dataPathService.getDataPath()
     const now = new Date()
     const year = now.getFullYear()
     const month = String(now.getMonth() + 1).padStart(2, '0')
@@ -543,11 +559,18 @@ export class ImageService {
 
     try {
       const result = await dbManager.images.getList(page, pageSize, favoriteOnly, status)
+      console.log('[ImageService.getList] 数据库返回图片数量:', result.images.length)
+
       // 转换文件路径为可访问的 URL
-      const images = result.images.map(img => ({
-        ...img,
-        filePath: localPathToUrl(img.filePath)
-      }))
+      const images = result.images.map(img => {
+        const originalPath = img.filePath
+        const convertedPath = localPathToUrl(img.filePath)
+        console.log('[ImageService.getList] 图片ID:', img.id, '原始路径:', originalPath, '转换后:', convertedPath)
+        return {
+          ...img,
+          filePath: convertedPath
+        }
+      })
       return { success: true, data: { ...result, images } }
     } catch (error: any) {
       console.error('[ImageService.getList] 错误:', error)

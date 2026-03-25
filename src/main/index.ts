@@ -3,7 +3,7 @@
  * @module main/index
  */
 
-import { app, BrowserWindow, shell, ipcMain, protocol } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, protocol, net } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { getDatabaseManager } from './database'
@@ -18,6 +18,7 @@ import { registerImageHandlers } from './ipc/handlers/image.handler'
 import { registerFileHandlers } from './ipc/handlers/file.handler'
 import { registerTranslationHandlers } from './ipc/handlers/translation.handler'
 import { registerVoiceHandlers } from './ipc/handlers/voice.handler'
+import { registerDataPathHandlers } from './ipc/handlers/data-path.handler'
 import * as fs from 'fs'
 
 // 在 app ready 之前注册协议权限（重要！）
@@ -49,20 +50,54 @@ let mainWindow: BrowserWindow | null = null
  * 注册自定义协议以访问本地图像文件
  */
 function registerImageProtocol(): void {
-  protocol.registerFileProtocol('local-image', (request, callback) => {
-    const url = request.url.substr('local-image://'.length)
-    // 解码 URL 编码的路径
-    const filePath = decodeURIComponent(url)
+  console.log('[local-image] 开始注册协议...')
 
-    console.log('[local-image] 请求文件:', filePath)
+  // 检查协议是否已注册
+  const isRegistered = protocol.isProtocolRegistered('local-image')
+  console.log('[local-image] 协议是否已注册:', isRegistered)
+
+  // 使用 protocol.registerFileProtocol 处理本地文件
+  protocol.registerFileProtocol('local-image', (request, callback) => {
+    console.log('[local-image] 收到请求，完整URL:', request.url)
+
+    // 提取路径部分：local-image://后面的内容
+    let url = request.url.substr('local-image://'.length)
+
+    // 移除开头的斜杠（如果有）
+    while (url.startsWith('/')) {
+      url = url.substring(1)
+    }
+
+    // Windows 路径修复：浏览器会去掉冒号
+    // 例如：c/Users/... -> C:/Users/...
+    if (process.platform === 'win32' && url.length > 1 && url.charAt(1) === '/') {
+      // 检查是否是 Windows 盘符格式（第一个字符是字母，第二个是斜杠）
+      const firstChar = url.charAt(0).toUpperCase()
+      if (firstChar >= 'A' && firstChar <= 'Z') {
+        url = firstChar + ':' + url.substring(1)
+      }
+    }
+
+    // 解码 URL
+    let filePath = decodeURIComponent(url)
+
+    // Windows 上将正斜杠转回反斜杠
+    if (process.platform === 'win32') {
+      filePath = filePath.replace(/\//g, '\\')
+    }
+
+    console.log('[local-image] 解析后文件路径:', filePath)
 
     if (fs.existsSync(filePath)) {
+      console.log('[local-image] 文件存在，返回文件')
       callback({ path: filePath })
     } else {
       console.error('[local-image] 文件不存在:', filePath)
-      callback({ error: -2 }) // 文件不存在
+      callback({ error: -2 })
     }
   })
+
+  console.log('[local-image] 协议注册完成')
 }
 
 /**
@@ -110,8 +145,25 @@ function createWindow(): void {
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
-      webSecurity: false  // 允许 file:// 协议访问本地文件
+      webSecurity: false  // 允许访问本地文件
     }
+  })
+
+  // 修改 CSP 以允许 local-image 协议
+  mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          "default-src 'self'; " +
+          "script-src 'self'; " +
+          "style-src 'self' 'unsafe-inline'; " +
+          "img-src 'self' data: blob: local-image: file:; " +
+          "media-src 'self' file: local-image: local-file:; " +
+          "connect-src 'self' ws://localhost:* http://localhost:*"
+        ]
+      }
+    })
   })
 
   mainWindow.on('ready-to-show', () => {
@@ -146,6 +198,7 @@ function initIpcHandlers(): void {
   registerFileHandlers()
   registerTranslationHandlers()
   registerVoiceHandlers()
+  registerDataPathHandlers()
 }
 
 // 应用就绪

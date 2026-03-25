@@ -313,6 +313,15 @@ const {
   deleteImage
 } = useImage()
 
+// 调试：监控 images 数据变化
+import { watch } from 'vue'
+watch(images, (newImages) => {
+  console.log('[ImageSidebar] images 数组更新，数量:', newImages.length)
+  if (newImages.length > 0) {
+    console.log('[ImageSidebar] 第一张图片:', JSON.stringify(newImages[0], null, 2))
+  }
+}, { immediate: true, deep: true })
+
 // 当前选中的图像 ID
 const selectedImageId = computed({
   get: () => props.modelValue,
@@ -363,17 +372,22 @@ function toggleGroup(group: 'today' | 'yesterday' | 'earlier'): void {
  * 获取图像 URL
  */
 function getImageUrl(image: ImageRecord): string {
-  // 检查 filePath 是否已有协议前缀
+  // 检查 filePath 是否已有协议前缀（后端已转换）
   if (image.filePath) {
-    if (image.filePath.startsWith('local-image://') ||
-        image.filePath.startsWith('http://') ||
-        image.filePath.startsWith('https://') ||
-        image.filePath.startsWith('data:')) {
-      return image.filePath
-    }
-    // 使用 local-image:// 协议
-    return `local-image://${encodeURIComponent(image.filePath)}`
+    console.log('[ImageSidebar] 图片ID:', image.id)
+    console.log('[ImageSidebar] filePath类型:', typeof image.filePath)
+    console.log('[ImageSidebar] filePath值:', image.filePath)
+    console.log('[ImageSidebar] filePath长度:', image.filePath.length)
+
+    // 测试：直接创建一个 Image 对象来测试协议
+    const testImg = new window.Image()
+    testImg.onload = () => console.log('[ImageSidebar] 测试图片加载成功:', image.filePath)
+    testImg.onerror = (e) => console.error('[ImageSidebar] 测试图片加载失败:', e, image.filePath)
+    testImg.src = image.filePath
+
+    return image.filePath
   }
+  console.log('[ImageSidebar] 图片无filePath, image:', JSON.stringify(image))
   return ''
 }
 
