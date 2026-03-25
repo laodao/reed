@@ -334,6 +334,179 @@ CREATE INDEX IF NOT EXISTS idx_image_tasks_created_at ON image_tasks(created_at 
 
 ---
 
+### 2.8 知识库表 (knowledge_bases)
+
+**用途**：存储知识库信息
+
+```sql
+CREATE TABLE IF NOT EXISTS knowledge_bases (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  embedding_model TEXT NOT NULL,
+  embedding_provider TEXT NOT NULL,
+  embedding_dimension INTEGER NOT NULL DEFAULT 1536,
+  document_count INTEGER DEFAULT 0,
+  vector_count INTEGER DEFAULT 0,
+  total_size INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_bases_created_at ON knowledge_bases(created_at)
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | TEXT | UUID |
+| name | TEXT | 知识库名称 |
+| description | TEXT | 描述 |
+| embedding_model | TEXT | Embedding 模型 ID |
+| embedding_provider | TEXT | 提供商类型：cloud/local |
+| embedding_dimension | INTEGER | 向量维度 |
+| document_count | INTEGER | 文档数量 |
+| vector_count | INTEGER | 向量条数 |
+| total_size | INTEGER | 总大小（字节） |
+
+---
+
+### 2.9 知识库文档表 (kb_documents)
+
+**用途**：存储知识库中的文档信息
+
+```sql
+CREATE TABLE IF NOT EXISTS kb_documents (
+  id TEXT PRIMARY KEY,
+  knowledge_base_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  file_type TEXT NOT NULL,
+  file_size INTEGER NOT NULL,
+  status TEXT DEFAULT 'pending',
+  progress INTEGER DEFAULT 0,
+  chunk_count INTEGER DEFAULT 0,
+  error_message TEXT,
+  metadata TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
+)
+
+CREATE INDEX IF NOT EXISTS idx_kb_documents_knowledge_base_id ON kb_documents(knowledge_base_id)
+CREATE INDEX IF NOT EXISTS idx_kb_documents_status ON kb_documents(status)
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | TEXT | UUID |
+| knowledge_base_id | TEXT | 所属知识库 ID |
+| name | TEXT | 文件名 |
+| file_path | TEXT | 本地存储路径 |
+| file_type | TEXT | 文件类型：pdf/docx/txt/md/epub/xlsx |
+| file_size | INTEGER | 文件大小（字节） |
+| status | TEXT | 状态：pending/processing/completed/failed |
+| progress | INTEGER | 处理进度（0-100） |
+| chunk_count | INTEGER | 切片数量 |
+| error_message | TEXT | 错误信息 |
+| metadata | TEXT | 元数据（JSON） |
+
+---
+
+### 2.10 文档切片表 (kb_chunks)
+
+**用途**：存储文档切分后的片段
+
+```sql
+CREATE TABLE IF NOT EXISTS kb_chunks (
+  id TEXT PRIMARY KEY,
+  document_id TEXT NOT NULL,
+  knowledge_base_id TEXT NOT NULL,
+  content TEXT NOT NULL,
+  chunk_index INTEGER NOT NULL,
+  start_offset INTEGER,
+  end_offset INTEGER,
+  metadata TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (document_id) REFERENCES kb_documents(id) ON DELETE CASCADE,
+  FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
+)
+
+CREATE INDEX IF NOT EXISTS idx_kb_chunks_document_id ON kb_chunks(document_id)
+CREATE INDEX IF NOT EXISTS idx_kb_chunks_knowledge_base_id ON kb_chunks(knowledge_base_id)
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | TEXT | UUID |
+| document_id | TEXT | 所属文档 ID |
+| knowledge_base_id | TEXT | 所属知识库 ID |
+| content | TEXT | 切片内容 |
+| chunk_index | INTEGER | 切片序号 |
+| start_offset | INTEGER | 原文起始位置 |
+| end_offset | INTEGER | 原文结束位置 |
+| metadata | TEXT | 元数据（JSON）：页码、章节等 |
+
+---
+
+### 2.11 向量存储表 (kb_vectors)
+
+**用途**：存储文档切片的向量表示
+
+```sql
+CREATE TABLE IF NOT EXISTS kb_vectors (
+  id TEXT PRIMARY KEY,
+  chunk_id TEXT NOT NULL,
+  knowledge_base_id TEXT NOT NULL,
+  vector BLOB NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (chunk_id) REFERENCES kb_chunks(id) ON DELETE CASCADE,
+  FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
+)
+
+CREATE INDEX IF NOT EXISTS idx_kb_vectors_chunk_id ON kb_vectors(chunk_id)
+CREATE INDEX IF NOT EXISTS idx_kb_vectors_knowledge_base_id ON kb_vectors(knowledge_base_id)
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | TEXT | UUID |
+| chunk_id | TEXT | 关联切片 ID |
+| knowledge_base_id | TEXT | 所属知识库 ID |
+| vector | BLOB | 向量数据（Float32 数组） |
+
+---
+
+### 2.12 倒排索引表 (kb_inverted_index)
+
+**用途**：存储 BM25 关键词检索的倒排索引
+
+```sql
+CREATE TABLE IF NOT EXISTS kb_inverted_index (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  term TEXT NOT NULL,
+  chunk_id TEXT NOT NULL,
+  knowledge_base_id TEXT NOT NULL,
+  term_frequency INTEGER DEFAULT 1,
+  positions TEXT,
+  FOREIGN KEY (chunk_id) REFERENCES kb_chunks(id) ON DELETE CASCADE,
+  FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
+)
+
+CREATE INDEX IF NOT EXISTS idx_kb_inverted_index_term ON kb_inverted_index(term)
+CREATE INDEX IF NOT EXISTS idx_kb_inverted_index_chunk_id ON kb_inverted_index(chunk_id)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_kb_inverted_index_unique ON kb_inverted_index(term, chunk_id)
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| term | TEXT | 分词后的词项 |
+| chunk_id | TEXT | 切片 ID |
+| knowledge_base_id | TEXT | 知识库 ID |
+| term_frequency | INTEGER | 词频 |
+| positions | TEXT | 位置信息（JSON） |
+
+---
+
 ## 3. 数据库迁移
 
 ### 3.1 迁移机制
