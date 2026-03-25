@@ -8,10 +8,32 @@
 
 | 组件 | 技术方案 | 说明 |
 |------|----------|------|
-| 向量数据库 | SQLite + 向量扩展 / 独立向量库 | 单机嵌入式方案 |
+| 向量数据库 | LanceDB | 嵌入式向量数据库，支持高效向量索引和元数据过滤 |
+| 关系数据库 | SQLite | 存储知识库、文档、切片元数据 |
 | Embedding | 云端 API + 本地模型 | 双模式支持 |
 | 文档解析 | pdf-parse, mammoth, marked 等 | 多格式支持 |
 | 全文检索 | BM25 算法 | 关键词检索 |
+
+#### LanceDB 选型说明
+
+**选择 LanceDB 的原因：**
+
+1. **嵌入式架构**：类似 SQLite，无需独立服务进程，完美适配 Electron 桌面应用
+2. **高性能向量索引**：内置向量索引，搜索性能远超暴力计算，支持大规模向量检索
+3. **多平台支持**：支持 Windows/macOS/Linux，与 Electron 跨平台特性匹配
+4. **TypeScript 原生支持**：提供 `@lancedb/lancedb` npm 包，与项目技术栈一致
+5. **混合查询能力**：支持向量搜索 + 元数据过滤，满足知识库多条件检索需求
+6. **活跃社区**：成熟稳定，社区活跃，文档完善
+
+**与其他方案对比：**
+
+| 方案 | 优点 | 缺点 | 适用性 |
+|------|------|------|--------|
+| LanceDB | 嵌入式、高性能、多平台、TypeScript 支持 | 相对较新 | ✅ 最佳选择 |
+| Zvec | 轻量级、基于阿里 Proxima | 社区较小、功能较少 | 备选 |
+| SQLite BLOB | 简单、无额外依赖 | 无索引、暴力搜索、性能差 | ❌ 不推荐 |
+| FAISS | 高性能、成熟 | 需要编译原生模块、部署复杂 | ❌ 不适合桌面应用 |
+| Pinecone/Weaviate | 云服务、功能强大 | 需要网络、付费 | ❌ 不适合离线应用 |
 
 ### 1.2 模块架构
 
@@ -44,14 +66,28 @@
 │  │          │              │              │                    │   │
 │  │  ┌─────────────────────────────────────────────────────┐   │   │
 │  │  │              Repository Layer                        │   │   │
-│  │  │  KnowledgeBaseRepo / DocumentRepo / VectorRepo       │   │   │
+│  │  │  KnowledgeBaseRepo / DocumentRepo / ChunkRepo       │   │   │
 │  │  └─────────────────────────────────────────────────────┘   │   │
 │  │                              │                              │   │
 │  │  ┌─────────────────────────────────────────────────────┐   │   │
-│  │  │              SQLite + Vector Storage                 │   │   │
+│  │  │         SQLite (元数据)  +  LanceDB (向量)           │   │   │
 │  │  └─────────────────────────────────────────────────────┘   │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────┘
+```
+
+### 1.3 数据存储架构
+
+```
+{userData}/
+├── the_bot.db                    # SQLite 数据库（元数据）
+├── lancedb/                      # LanceDB 向量数据库
+│   └── vectors/                  # 向量表存储
+│       ├── data.lance
+│       └── ...
+└── knowledge-base/               # 文档文件存储
+    └── {knowledgeBaseId}/
+        └── documents/
 ```
 
 ---
@@ -166,29 +202,90 @@ CREATE INDEX IF NOT EXISTS idx_kb_chunks_knowledge_base_id ON kb_chunks(knowledg
 
 ---
 
-### 2.4 向量存储表 (kb_vectors)
+### 2.4 向量存储 (LanceDB)
 
-```sql
-CREATE TABLE IF NOT EXISTS kb_vectors (
-  id TEXT PRIMARY KEY,
-  chunk_id TEXT NOT NULL,
-  knowledge_base_id TEXT NOT NULL,
-  vector BLOB NOT NULL,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (chunk_id) REFERENCES kb_chunks(id) ON DELETE CASCADE,
-  FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
-)
+> **重要变更**：向量数据不再存储在 SQLite 中，改用 LanceDB 进行专业化向量存储和检索。
 
-CREATE INDEX IF NOT EXISTS idx_kb_vectors_chunk_id ON kb_vectors(chunk_id)
-CREATE INDEX IF NOT EXISTS idx_kb_vectors_knowledge_base_id ON kb_vectors(knowledge_base_id)
+**LanceDB 表结构 (vectors)**
+
+```typescript
+// LanceDB 向量记录结构
+interface VectorRecord {
+  id: string              // 主键 (UUID)
+  chunkId: string         // 关联切片 ID
+  knowledgeBaseId: string // 所属知识库 ID
+  vector: number[]        // 向量数据 (Float32 数组)
+  createdAt: Date         // 创建时间
+}
 ```
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | TEXT | UUID |
-| chunk_id | TEXT | 关联切片 ID |
-| knowledge_base_id | TEXT | 所属知识库 ID |
-| vector | BLOB | 向量数据（Float32 数组） |
+**LanceDB 服务 API**
+
+```typescript
+// main/services/lance-db.service.ts
+export class LanceDBService {
+  /**
+   * 初始化数据库连接
+   */
+  async initialize(dataPath: string): Promise<void>
+
+  /**
+   * 创建向量表
+   */
+  async createTable(tableName: string): Promise<void>
+
+  /**
+   * 插入向量
+   */
+  async insertVectors(records: VectorRecord[]): Promise<void>
+
+  /**
+   * 向量相似度搜索
+   */
+  async searchSimilar(
+    knowledgeBaseId: string,
+    queryVector: number[],
+    topK: number
+  ): Promise<Array<{ chunkId: string; score: number }>>
+
+  /**
+   * 根据条件删除向量
+   */
+  async deleteVectors(filter: string): Promise<void>
+
+  /**
+   * 统计向量数量
+   */
+  async countVectors(knowledgeBaseId: string): Promise<number>
+
+  /**
+   * 关闭数据库连接
+   */
+  async close(): Promise<void>
+}
+```
+
+**向量索引**
+
+LanceDB 自动创建向量索引，支持：
+- IVF-PQ 索引（默认）
+- HNSW 索引
+- 自定义索引参数
+
+**混合查询示例**
+
+```typescript
+// 向量搜索 + 元数据过滤
+const results = await table
+  .search(queryVector)
+  .where(`knowledgeBaseId = '${knowledgeBaseId}'`)
+  .limit(topK)
+  .toArray()
+```
+
+**原 SQLite 向量表 (kb_vectors) 已废弃**
+
+~~kb_vectors 表~~ 不再使用，保留表结构仅用于数据迁移。
 
 ---
 
@@ -712,32 +809,39 @@ export class ChunkRepository {
 }
 ```
 
-### 5.4 VectorRepository
+### 5.4 VectorRepository (LanceDB)
 
 ```typescript
-// main/database/repositories/vector.repository.ts
-export class VectorRepository {
-  constructor(private db: Database) {}
+// main/database/repositories/kb-vector.repository.ts
+import { LanceDBService } from '../services/lance-db.service'
+
+export class KbVectorRepository {
+  private lanceDB: LanceDBService
+
+  constructor(lanceDB: LanceDBService) {
+    this.lanceDB = lanceDB
+  }
 
   // 存储
-  create(data: { chunkId: string; knowledgeBaseId: string; vector: number[] }): void
-  createBatch(vectors: { chunkId: string; knowledgeBaseId: string; vector: number[] }[]): void
+  async create(data: { chunkId: string; knowledgeBaseId: string; vector: number[] }): Promise<void>
+  async createBatch(vectors: { chunkId: string; knowledgeBaseId: string; vector: number[] }[]): Promise<void>
 
   // 删除
-  deleteByChunkId(chunkId: string): void
-  deleteByDocumentId(documentId: string): void
-  deleteByKnowledgeBaseId(knowledgeBaseId: string): void
+  async deleteByChunkId(chunkId: string): Promise<void>
+  async deleteByDocumentId(documentId: string): Promise<void>
+  async deleteByKnowledgeBaseId(knowledgeBaseId: string): Promise<void>
 
-  // 向量相似度搜索（余弦相似度）
-  searchSimilar(
+  // 向量相似度搜索（LanceDB 索引加速）
+  async searchSimilar(
     knowledgeBaseId: string,
     queryVector: number[],
     topK: number
-  ): { chunkId: string; score: number }[]
+  ): Promise<{ chunkId: string; score: number }[]>
 
   // 统计
-  countByKnowledgeBaseId(knowledgeBaseId: string): number
+  async countByKnowledgeBaseId(knowledgeBaseId: string): Promise<number>
 }
+```
 ```
 
 ---
@@ -1083,8 +1187,20 @@ function processResponseWithCitations(
 
 ### 10.1 向量检索优化
 
-- 使用 FAISS 或 hnswlib 进行高效的向量相似度搜索
-- 对于大规模数据，考虑使用 IVF 索引
+**已采用 LanceDB 解决方案：**
+
+LanceDB 内置高效的向量索引，自动优化检索性能：
+- **IVF-PQ 索引**：默认索引类型，平衡精度和速度
+- **HNSW 索引**：高精度近邻搜索
+- **自动索引管理**：数据量达到阈值自动创建索引
+- **元数据过滤下推**：先过滤再搜索，减少计算量
+
+**性能指标（参考）：**
+| 数据量 | 搜索延迟 |
+|--------|----------|
+| 10万向量 | < 10ms |
+| 100万向量 | < 50ms |
+| 1000万向量 | < 100ms |
 
 ### 10.2 批量处理优化
 
@@ -1095,3 +1211,66 @@ function processResponseWithCitations(
 
 - 缓存热门知识库的向量索引
 - 缓存 Embedding 结果，避免重复计算
+
+---
+
+## 11. 依赖说明
+
+### 11.1 LanceDB 依赖
+
+```bash
+npm install @lancedb/lancedb
+```
+
+**版本要求**：`^0.4.0` 或更高
+
+**平台支持**：
+- Windows (x64)
+- macOS (x64, arm64)
+- Linux (x64, arm64)
+
+**官方文档**：https://docs.lancedb.com/
+
+**Node.js API 参考**：
+
+```typescript
+import * as lancedb from '@lancedb/lancedb'
+
+// 连接数据库
+const db = await lancedb.connect('/path/to/database')
+
+// 创建表
+const table = await db.createTable('vectors', [
+  { id: '1', chunkId: 'chunk-1', knowledgeBaseId: 'kb-1', vector: [0.1, 0.2, ...] }
+])
+
+// 向量搜索
+const results = await table
+  .search(queryVector)
+  .where(`knowledgeBaseId = 'kb-1'`)
+  .limit(10)
+  .toArray()
+
+// 添加数据
+await table.add([
+  { id: '2', chunkId: 'chunk-2', knowledgeBaseId: 'kb-1', vector: [0.3, 0.4, ...] }
+])
+
+// 删除数据
+await table.delete(`chunkId = 'chunk-1'`)
+
+// 获取表列表
+const tables = await db.tableNames()
+```
+
+### 11.2 相关依赖
+
+| 依赖 | 版本 | 用途 |
+|------|------|------|
+| @lancedb/lancedb | ^0.4.0 | 向量数据库 |
+| better-sqlite3 | ^11.0.0 | 关系数据库（元数据） |
+| pdf-parse | ^2.4.0 | PDF 解析 |
+| mammoth | ^1.12.0 | Word 解析 |
+| marked | ^17.0.0 | Markdown 解析 |
+| epub-parser | ^0.2.5 | EPUB 解析 |
+| xlsx | ^0.18.5 | Excel 解析 |

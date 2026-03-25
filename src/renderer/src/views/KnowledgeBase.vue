@@ -143,18 +143,22 @@
                 {{ formatFileSize(row.fileSize) }}
               </template>
             </el-table-column>
-            <el-table-column prop="status" label="状态" width="120">
+            <el-table-column prop="status" label="状态" width="160">
               <template #default="{ row }">
                 <div class="status-cell">
                   <el-tag :type="getStatusType(row.status)" size="small">
                     {{ getStatusText(row.status) }}
                   </el-tag>
-                  <el-progress
-                    v-if="row.status === 'processing'"
-                    :percentage="row.progress"
-                    :stroke-width="4"
-                    :show-text="false"
-                  />
+                  <template v-if="row.status === 'processing'">
+                    <el-progress
+                      :percentage="row.progress"
+                      :stroke-width="4"
+                      :show-text="false"
+                    />
+                    <span v-if="getEstimatedTime(row.id)" class="estimated-time">
+                      {{ formatEstimatedTime(getEstimatedTime(row.id)!) }}
+                    </span>
+                  </template>
                 </div>
               </template>
             </el-table-column>
@@ -377,6 +381,7 @@ const {
   embeddingModels,
   hasEmbeddingModels,
   error,
+  documentEstimatedTimes,
 
   // 对话框
   showCreateDialog,
@@ -407,7 +412,9 @@ const {
   formatFileSize,
   formatDate,
   getStatusType,
-  getStatusText
+  getStatusText,
+  formatEstimatedTime,
+  getEstimatedTime
 } = useKnowledgeBase()
 
 // 表单引用
@@ -772,6 +779,11 @@ async function handleSearch(): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.estimated-time {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 /* 检索面板 */

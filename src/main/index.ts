@@ -3,6 +3,10 @@
  * @module main/index
  */
 
+// 增加 V8 堆内存限制，解决 PDF 解析等大内存操作的问题
+import { setFlagsFromString } from 'v8'
+setFlagsFromString('--max-old-space-size=4096')
+
 import { app, BrowserWindow, shell, ipcMain, protocol, net } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -19,6 +23,7 @@ import { registerFileHandlers } from './ipc/handlers/file.handler'
 import { registerTranslationHandlers } from './ipc/handlers/translation.handler'
 import { registerVoiceHandlers } from './ipc/handlers/voice.handler'
 import { registerDataPathHandlers } from './ipc/handlers/data-path.handler'
+import { registerKnowledgeBaseHandlers } from './ipc/handlers/knowledge-base.handler'
 import * as fs from 'fs'
 
 // 在 app ready 之前注册协议权限（重要！）
@@ -199,6 +204,7 @@ function initIpcHandlers(): void {
   registerTranslationHandlers()
   registerVoiceHandlers()
   registerDataPathHandlers()
+  registerKnowledgeBaseHandlers()
 }
 
 // 应用就绪
@@ -252,7 +258,7 @@ app.on('window-all-closed', () => {
 })
 
 // 应用退出前清理
-app.on('before-quit', () => {
+app.on('before-quit', async () => {
   const dbManager = getDatabaseManager()
-  dbManager.close()
+  await dbManager.close()
 })

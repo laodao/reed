@@ -569,7 +569,25 @@ const electronAPI = {
     // 选择文件
     selectFiles: () => ipcRenderer.invoke('knowledge-base:select-files'),
     // 获取文件限制信息
-    getFileLimits: () => ipcRenderer.invoke('knowledge-base:get-file-limits')
+    getFileLimits: () => ipcRenderer.invoke('knowledge-base:get-file-limits'),
+    // 监听文档处理进度
+    onDocumentProgress: (callback: (data: { documentId: string; progress: number; estimatedSeconds?: number }) => void) => {
+      const handler = (_event: any, data: any) => callback(data)
+      ipcRenderer.on('kb:document-progress', handler)
+      return () => ipcRenderer.removeListener('kb:document-progress', handler)
+    },
+    // 监听文档状态变化
+    onDocumentStatus: (callback: (data: { documentId: string; status: string; chunkCount?: number; errorMessage?: string }) => void) => {
+      const handler = (_event: any, data: any) => callback(data)
+      ipcRenderer.on('kb:document-status', handler)
+      return () => ipcRenderer.removeListener('kb:document-status', handler)
+    },
+    // 监听知识库统计更新
+    onStatsUpdate: (callback: (data: { id: string; documentCount: number; vectorCount: number; totalSize: number }) => void) => {
+      const handler = (_event: any, data: any) => callback(data)
+      ipcRenderer.on('kb:stats', handler)
+      return () => ipcRenderer.removeListener('kb:stats', handler)
+    }
   }
 }
 

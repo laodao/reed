@@ -30,7 +30,48 @@ const CHUNK_SIZE = 800
 const OVERLAP = 80
 const BATCH_SIZE = 10
 
+// IPC 事件通道
+const KB_EVENTS = {
+  DOCUMENT_PROGRESS: 'kb:document-progress',
+  DOCUMENT_STATUS: 'kb:document-status',
+  KNOWLEDGE_BASE_STATS: 'kb:stats'
+} as const
+
 export class KnowledgeBaseService {
+  private getMainWindow(): BrowserWindow | null {
+    const windows = BrowserWindow.getAllWindows()
+    return windows.find(w => !w.isDestroyed()) || null
+  }
+
+  private emitProgress(documentId: string, progress: number, estimatedSeconds?: number): void {
+    const win = this.getMainWindow()
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(KB_EVENTS.DOCUMENT_PROGRESS, { documentId, progress, estimatedSeconds })
+    }
+  }
+
+  private emitStatus(documentId: string, status: string, chunkCount?: number, errorMessage?: string): void {
+    const win = this.getMainWindow()
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(KB_EVENTS.DOCUMENT_STATUS, { documentId, status, chunkCount, errorMessage })
+    }
+  }
+
+  private emitKnowledgeBaseStats(kbId: string): void {
+    const win = this.getMainWindow()
+    const db = getDatabaseManager()
+    if (win && !win.isDestroyed() && db.knowledgeBases) {
+      const kb = db.knowledgeBases.findById(kbId)
+      if (kb) {
+        win.webContents.send(KB_EVENTS.KNOWLEDGE_BASE_STATS, {
+          id: kb.id,
+          documentCount: kb.documentCount,
+          vectorCount: kb.vectorCount,
+          totalSize: kb.totalSize
+        })
+      }
+    }
+  }
 
   // ==================== 知识库 CRUD ====================
 
@@ -163,6 +204,9 @@ export class KnowledgeBaseService {
       db.knowledgeBases.incrementDocumentCount(kbId, docs.length)
       db.knowledgeBases.incrementTotalSize(kbId, docs.reduce((s, d) => s + d.fileSize, 0))
 
+      // 发送知识库统计更新事件
+      this.emitKnowledgeBaseStats(kbId)
+
       // 异步处理
       for (const doc of docs) {
         this.processDocument(doc, kb).catch(e => console.error('[KB] 处理失败:', e))
@@ -195,17 +239,26 @@ export class KnowledgeBaseService {
       const doc = db.kbDocuments.findById(docId)
       if (!doc) return { success: false, error: '文档不存在' }
 
+      const kbId = doc.knowledgeBaseId
+
       if (fs.existsSync(doc.filePath)) fs.unlinkSync(doc.filePath)
 
       await db.kbVectors.deleteByDocumentId(docId)
       db.kbInvertedIndex.deleteByDocumentId(docId)
-      const chunkCount = db.kbChunks.countByDocumentId(docId)
       db.kbChunks.deleteByDocumentId(docId)
       db.kbDocuments.delete(docId)
 
-      db.knowledgeBases.incrementDocumentCount(doc.knowledgeBaseId, -1)
-      db.knowledgeBases.incrementVectorCount(doc.knowledgeBaseId, -chunkCount)
-      db.knowledgeBases.incrementTotalSize(doc.knowledgeBaseId, -doc.fileSize)
+      // 使用文档的 chunkCount 字段计算向量数（只有处理完成时才设置）
+      // 避免删除未完成文档时向量数变成负数
+      const vectorCount = doc.chunkCount || 0
+      db.knowledgeBases.incrementDocumentCount(kbId, -1)
+      if (vectorCount > 0) {
+        db.knowledgeBases.incrementVectorCount(kbId, -vectorCount)
+      }
+      db.knowledgeBases.incrementTotalSize(kbId, -doc.fileSize)
+
+      // 发送知识库统计更新事件
+      this.emitKnowledgeBaseStats(kbId)
 
       return { success: true }
     } catch (e: any) {
@@ -246,24 +299,29 @@ export class KnowledgeBaseService {
     }
 
     console.log(`[KB] 开始处理: ${doc.name}`)
+    const startTime = Date.now()
 
     try {
       // 1. 解析
       db.kbDocuments.updateProgress(doc.id, 10)
+      this.emitProgress(doc.id, 10, undefined)
       const content = await this.parseFile(doc.filePath, doc.fileType)
       if (!content?.trim()) {
         db.kbDocuments.markFailed(doc.id, '文档内容为空')
+        this.emitStatus(doc.id, 'failed', undefined, '文档内容为空')
         return
       }
       console.log(`[KB] 解析完成, 长度: ${content.length}`)
 
       // 2. 切分
       db.kbDocuments.updateProgress(doc.id, 20)
+      this.emitProgress(doc.id, 20, undefined)
       const chunks = this.splitText(content)
       console.log(`[KB] 切分完成, 数量: ${chunks.length}`)
 
       // 3. 存储切片
       db.kbDocuments.updateProgress(doc.id, 30)
+      this.emitProgress(doc.id, 30, undefined)
       const chunkRecords = db.kbChunks.createBatch(
         chunks.map(c => ({
           documentId: doc.id,
@@ -277,8 +335,13 @@ export class KnowledgeBaseService {
 
       // 4. 生成向量
       const config: EmbeddingConfig = kb.embeddingConfig ? JSON.parse(kb.embeddingConfig) : {}
+      const totalBatches = Math.ceil(chunkRecords.length / BATCH_SIZE)
+      // 预估每个批次约 2 秒（基于网络延迟和 API 响应）
+      const estimatedBatchTime = 2 // 秒
 
+      let batchIndex = 0
       for (let i = 0; i < chunkRecords.length; i += BATCH_SIZE) {
+        const batchStartTime = Date.now()
         const batch = chunkRecords.slice(i, i + BATCH_SIZE)
         const texts = batch.map(c => c.content)
 
@@ -293,22 +356,36 @@ export class KnowledgeBaseService {
           }))
         )
 
+        batchIndex++
         const progress = 30 + Math.floor((i / chunkRecords.length) * 50)
         db.kbDocuments.updateProgress(doc.id, progress)
+
+        // 计算剩余时间
+        const remainingBatches = totalBatches - batchIndex
+        // 使用实际处理时间来估算剩余时间
+        const avgBatchTime = (Date.now() - startTime - 5000) / batchIndex / 1000 // 减去初始处理时间
+        const estimatedRemaining = Math.max(0, Math.round(remainingBatches * Math.max(avgBatchTime, estimatedBatchTime)))
+
+        this.emitProgress(doc.id, progress, estimatedRemaining)
       }
 
       // 5. 索引
       db.kbDocuments.updateProgress(doc.id, 90)
+      this.emitProgress(doc.id, 90, 3) // 索引阶段约 3 秒
       this.buildIndex(chunkRecords, kb.id)
 
       // 完成
       db.kbDocuments.markCompleted(doc.id, chunks.length)
       db.knowledgeBases.incrementVectorCount(kb.id, chunks.length)
-      console.log(`[KB] 处理完成: ${doc.name}`)
+      this.emitProgress(doc.id, 100, 0)
+      this.emitStatus(doc.id, 'completed', chunks.length)
+      this.emitKnowledgeBaseStats(kb.id)
+      console.log(`[KB] 处理完成: ${doc.name}, 耗时: ${Math.round((Date.now() - startTime) / 1000)}秒`)
 
     } catch (e: any) {
       console.error(`[KB] 处理失败: ${doc.name}`, e)
       db.kbDocuments.markFailed(doc.id, e.message)
+      this.emitStatus(doc.id, 'failed', undefined, e.message)
     }
   }
 

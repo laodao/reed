@@ -84,6 +84,22 @@ function getStatusText(status: string): string {
   return texts[status] || status
 }
 
+/**
+ * 格式化剩余时间
+ */
+function formatEstimatedTime(seconds: number): string {
+  if (seconds <= 0) return '即将完成'
+  if (seconds < 60) return `约 ${seconds} 秒`
+  if (seconds < 3600) {
+    const minutes = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return secs > 0 ? `约 ${minutes} 分 ${secs} 秒` : `约 ${minutes} 分钟`
+  }
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  return minutes > 0 ? `约 ${hours} 小时 ${minutes} 分` : `约 ${hours} 小时`
+}
+
 export function useKnowledgeBase() {
   // ==================== Store ====================
 
@@ -99,7 +115,8 @@ export function useKnowledgeBase() {
     error,
     knowledgeBaseCount,
     hasCurrentKnowledgeBase,
-    documentCount
+    documentCount,
+    documentEstimatedTimes
   } = storeToRefs(store)
 
   // ==================== 本地状态 ====================
@@ -360,6 +377,7 @@ export function useKnowledgeBase() {
     knowledgeBaseCount,
     hasCurrentKnowledgeBase,
     documentCount,
+    documentEstimatedTimes,
 
     // 本地状态
     searchQuery,
@@ -405,6 +423,8 @@ export function useKnowledgeBase() {
     formatDate,
     getFileTypeIcon,
     getStatusType,
-    getStatusText
+    getStatusText,
+    formatEstimatedTime,
+    getEstimatedTime: store.getEstimatedTime
   }
 }

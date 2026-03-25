@@ -4,7 +4,7 @@
  * @description 管理知识库、文档、检索等状态
  */
 
-import { ref, computed, toRaw } from 'vue'
+import { ref, computed, toRaw, onUnmounted } from 'vue'
 import { defineStore } from 'pinia'
 import type {
   KnowledgeBase,
@@ -63,6 +63,16 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
    */
   const error = ref<string | null>(null)
 
+  /**
+   * 文档预估剩余时间（秒）Map<documentId, seconds>
+   */
+  const documentEstimatedTimes = ref<Map<string, number>>(new Map())
+
+  /**
+   * IPC 事件取消订阅函数列表
+   */
+  const unsubscribers: Array<() => void> = []
+
   // ==================== 计算属性 ====================
 
   /**
@@ -79,6 +89,85 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
    * 当前知识库的文档数量
    */
   const documentCount = computed(() => documents.value.length)
+
+  // ==================== IPC 事件监听 ====================
+
+  /**
+   * 设置 IPC 事件监听
+   */
+  function setupEventListeners(): void {
+    // 监听文档处理进度
+    const unsubProgress = window.electronAPI.knowledgeBase.onDocumentProgress(
+      (data: { documentId: string; progress: number; estimatedSeconds?: number }) => {
+        const doc = documents.value.find(d => d.id === data.documentId)
+        if (doc) {
+          doc.progress = data.progress
+          if (doc.status === 'pending') {
+            doc.status = 'processing'
+          }
+          // 更新预估时间
+          if (data.estimatedSeconds !== undefined) {
+            documentEstimatedTimes.value.set(data.documentId, data.estimatedSeconds)
+          }
+        }
+      }
+    )
+    unsubscribers.push(unsubProgress)
+
+    // 监听文档状态变化
+    const unsubStatus = window.electronAPI.knowledgeBase.onDocumentStatus(
+      (data: { documentId: string; status: string; chunkCount?: number; errorMessage?: string }) => {
+        const doc = documents.value.find(d => d.id === data.documentId)
+        if (doc) {
+          doc.status = data.status as any
+          if (data.chunkCount !== undefined) {
+            doc.chunkCount = data.chunkCount
+          }
+          if (data.errorMessage) {
+            doc.errorMessage = data.errorMessage
+          }
+          // 完成或失败时清除预估时间
+          if (data.status === 'completed' || data.status === 'failed') {
+            documentEstimatedTimes.value.delete(data.documentId)
+          }
+        }
+      }
+    )
+    unsubscribers.push(unsubStatus)
+
+    // 监听知识库统计更新
+    const unsubStats = window.electronAPI.knowledgeBase.onStatsUpdate(
+      (data: { id: string; documentCount: number; vectorCount: number; totalSize: number }) => {
+        // 更新列表中的知识库
+        const kb = knowledgeBases.value.find(k => k.id === data.id)
+        if (kb) {
+          kb.documentCount = data.documentCount
+          kb.vectorCount = data.vectorCount
+          kb.totalSize = data.totalSize
+        }
+        // 更新当前选中的知识库
+        if (currentKnowledgeBase.value?.id === data.id) {
+          currentKnowledgeBase.value = {
+            ...currentKnowledgeBase.value,
+            documentCount: data.documentCount,
+            vectorCount: data.vectorCount,
+            totalSize: data.totalSize
+          }
+        }
+      }
+    )
+    unsubscribers.push(unsubStats)
+  }
+
+  /**
+   * 清理 IPC 事件监听
+   */
+  function cleanupEventListeners(): void {
+    for (const unsub of unsubscribers) {
+      unsub()
+    }
+    unsubscribers.length = 0
+  }
 
   // ==================== 知识库管理 ====================
 
@@ -439,6 +528,24 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
     error.value = null
   }
 
+  /**
+   * 销毁 Store（清理事件监听）
+   */
+  function dispose(): void {
+    cleanupEventListeners()
+    reset()
+  }
+
+  // 初始化事件监听
+  setupEventListeners()
+
+  /**
+   * 获取文档的预估剩余时间
+   */
+  function getEstimatedTime(documentId: string): number | undefined {
+    return documentEstimatedTimes.value.get(documentId)
+  }
+
   return {
     // 状态
     knowledgeBases,
@@ -449,6 +556,7 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
     isLoading,
     isSearching,
     error,
+    documentEstimatedTimes,
     // 计算属性
     knowledgeBaseCount,
     hasCurrentKnowledgeBase,
@@ -474,6 +582,8 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
     selectFiles,
     // 工具函数
     clearError,
-    reset
+    reset,
+    dispose,
+    getEstimatedTime
   }
 })
