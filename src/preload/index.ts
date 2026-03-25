@@ -519,6 +519,57 @@ const electronAPI = {
     calculateSize: () => ipcRenderer.invoke('data-path:calculate-size'),
     // 打开数据目录
     openFolder: () => ipcRenderer.invoke('data-path:open-folder')
+  },
+
+  // 知识库相关
+  knowledgeBase: {
+    // 获取知识库列表
+    list: () => ipcRenderer.invoke('knowledge-base:list'),
+    // 获取知识库详情
+    get: (id: string) => ipcRenderer.invoke('knowledge-base:get', id),
+    // 创建知识库
+    create: (data: {
+      name: string
+      description?: string
+      embeddingModel: string
+      embeddingProvider: 'cloud' | 'local'
+      embeddingDimension: number
+      providerConfigId?: string
+      ollamaBaseUrl?: string
+    }) => ipcRenderer.invoke('knowledge-base:create', data),
+    // 更新知识库
+    update: (id: string, data: Partial<{
+      name: string
+      description: string
+    }>) => ipcRenderer.invoke('knowledge-base:update', { id, request: data }),
+    // 删除知识库
+    delete: (id: string) => ipcRenderer.invoke('knowledge-base:delete', id),
+    // 上传文档
+    uploadDocuments: (knowledgeBaseId: string, files: Array<{
+      path: string
+      name: string
+      size: number
+    }>) => ipcRenderer.invoke('knowledge-base:upload-documents', { knowledgeBaseId, files }),
+    // 获取文档列表
+    getDocuments: (knowledgeBaseId: string) => ipcRenderer.invoke('knowledge-base:get-documents', knowledgeBaseId),
+    // 删除文档
+    deleteDocument: (documentId: string) => ipcRenderer.invoke('knowledge-base:delete-document', documentId),
+    // 重新处理文档
+    reprocessDocument: (documentId: string) => ipcRenderer.invoke('knowledge-base:reprocess-document', documentId),
+    // 检索知识库
+    search: (request: {
+      knowledgeBaseId: string
+      query: string
+      topK?: number
+      vectorWeight?: number
+      threshold?: number
+    }) => ipcRenderer.invoke('knowledge-base:search', request),
+    // 获取可用的 Embedding 模型
+    getEmbeddingModels: () => ipcRenderer.invoke('knowledge-base:get-embedding-models'),
+    // 选择文件
+    selectFiles: () => ipcRenderer.invoke('knowledge-base:select-files'),
+    // 获取文件限制信息
+    getFileLimits: () => ipcRenderer.invoke('knowledge-base:get-file-limits')
   }
 }
 

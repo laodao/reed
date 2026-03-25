@@ -32,7 +32,6 @@ export class KnowledgeBaseRepository {
       name: row.name,
       description: row.description || undefined,
       embeddingModel: row.embedding_model,
-      embeddingProvider: row.embedding_provider,
       embeddingDimension: row.embedding_dimension,
       embeddingConfig: row.embedding_config || undefined,
       documentCount: row.document_count,
@@ -81,6 +80,10 @@ export class KnowledgeBaseRepository {
     const id = randomUUID()
     const now = new Date().toISOString()
 
+    // 从 embeddingConfig 中获取 provider 信息
+    const embeddingConfig = request.embeddingConfig
+    const provider = embeddingConfig?.provider || 'cloud'
+
     this.db.prepare(`
       INSERT INTO knowledge_bases (
         id, name, description, embedding_model, embedding_provider,
@@ -92,7 +95,7 @@ export class KnowledgeBaseRepository {
       request.name,
       request.description || null,
       request.embeddingModel,
-      request.embeddingProvider,
+      provider,
       request.embeddingDimension,
       request.embeddingConfig ? JSON.stringify(request.embeddingConfig) : null,
       now,
@@ -104,7 +107,6 @@ export class KnowledgeBaseRepository {
       name: request.name,
       description: request.description,
       embeddingModel: request.embeddingModel,
-      embeddingProvider: request.embeddingProvider,
       embeddingDimension: request.embeddingDimension,
       embeddingConfig: request.embeddingConfig ? JSON.stringify(request.embeddingConfig) : undefined,
       documentCount: 0,

@@ -50,6 +50,14 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/knowledge-base',
+    name: 'KnowledgeBase',
+    component: () => import('@/views/KnowledgeBase.vue'),
+    meta: {
+      title: '知识库'
+    }
+  },
+  {
     path: '/assistant',
     name: 'Assistant',
     component: () => import('@/views/Assistant.vue'),

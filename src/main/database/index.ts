@@ -24,6 +24,7 @@ import { KbChunkRepository } from './repositories/kb-chunk.repository'
 import { KbVectorRepository } from './repositories/kb-vector.repository'
 import { KbInvertedIndexRepository } from './repositories/kb-inverted-index.repository'
 import { DataPathService } from '../services/data-path.service'
+import { LanceDBService } from '../services/lance-db.service'
 
 /**
  * 数据库管理器
@@ -97,10 +98,27 @@ export class DatabaseManager {
     // 初始化仓库
     this.initRepositories()
 
+    // 初始化 LanceDB 向量数据库
+    await this.initializeLanceDB(dataPath)
+
     // 初始化内置角色
     await this.initBuiltinRoles()
 
     console.log('[DatabaseManager] 数据库初始化完成:', this.dbPath)
+  }
+
+  /**
+   * 初始化 LanceDB 向量数据库
+   */
+  private async initializeLanceDB(dataPath: string): Promise<void> {
+    try {
+      const lanceDB = LanceDBService.getInstance()
+      await lanceDB.initialize(dataPath)
+      console.log('[DatabaseManager] LanceDB 初始化完成')
+    } catch (error: any) {
+      console.error('[DatabaseManager] LanceDB 初始化失败:', error)
+      // LanceDB 初始化失败不影响主数据库功能
+    }
   }
 
   /**
@@ -596,7 +614,8 @@ export class DatabaseManager {
     this.knowledgeBases = new KnowledgeBaseRepository(this.db)
     this.kbDocuments = new KbDocumentRepository(this.db)
     this.kbChunks = new KbChunkRepository(this.db)
-    this.kbVectors = new KbVectorRepository(this.db)
+    // KbVectorRepository 使用 LanceDB，不再需要 SQLite 连接
+    this.kbVectors = new KbVectorRepository()
     this.kbInvertedIndex = new KbInvertedIndexRepository(this.db)
   }
 
@@ -611,11 +630,16 @@ export class DatabaseManager {
   /**
    * 关闭数据库连接
    */
-  close(): void {
+  async close(): Promise<void> {
+    // 关闭 SQLite
     if (this.db) {
       this.db.close()
       this.db = null
     }
+
+    // 关闭 LanceDB
+    const lanceDB = LanceDBService.getInstance()
+    await lanceDB.close()
   }
 
   /**
@@ -623,6 +647,20 @@ export class DatabaseManager {
    */
   getDatabase(): Database.Database | null {
     return this.db
+  }
+
+  /**
+   * 获取数据库文件路径
+   */
+  getDbPath(): string {
+    return this.dbPath
+  }
+
+  /**
+   * 获取数据存储路径
+   */
+  getDataPath(): string {
+    return path.dirname(this.dbPath)
   }
 }
 

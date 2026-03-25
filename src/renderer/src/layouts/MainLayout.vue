@@ -120,7 +120,8 @@ import {
   MagicStick,
   Setting,
   Expand,
-  Fold
+  Fold,
+  FolderOpened
 } from '@element-plus/icons-vue'
 import { useTheme } from '@/composables/useTheme'
 
@@ -158,6 +159,11 @@ const mainMenuItems = [
     path: '/voice',
     label: '语音助手',
     icon: markRaw(Microphone)
+  },
+  {
+    path: '/knowledge-base',
+    label: '知识库',
+    icon: markRaw(FolderOpened)
   },
   {
     path: '/assistant',

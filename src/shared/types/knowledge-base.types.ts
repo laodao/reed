@@ -17,8 +17,6 @@ export interface KnowledgeBase {
   description?: string
   /** Embedding 模型 ID */
   embeddingModel: string
-  /** Embedding 提供商类型：cloud / local */
-  embeddingProvider: 'cloud' | 'local'
   /** 向量维度 */
   embeddingDimension: number
   /** Embedding 配置（JSON） */
@@ -45,8 +43,6 @@ export interface CreateKnowledgeBaseRequest {
   description?: string
   /** Embedding 模型 ID */
   embeddingModel: string
-  /** Embedding 提供商类型 */
-  embeddingProvider: 'cloud' | 'local'
   /** 向量维度 */
   embeddingDimension: number
   /** Embedding 配置 */
@@ -67,8 +63,14 @@ export interface UpdateKnowledgeBaseRequest {
  * Embedding 配置
  */
 export interface EmbeddingConfig {
+  /** 提供商类型：云端 或 本地 */
+  provider?: 'cloud' | 'local'
+  /** Embedding 模型 ID */
+  modelId?: string
   /** 云端提供商配置 ID */
   providerConfigId?: string
+  /** 提供商模板 ID */
+  providerTemplateId?: string
   /** Ollama 服务地址（本地模型） */
   ollamaBaseUrl?: string
 }
@@ -184,6 +186,22 @@ export interface ChunkMetadata {
 }
 
 /**
+ * 文档切片（解析时使用的临时结构）
+ */
+export interface Chunk {
+  /** 切片内容 */
+  content: string
+  /** 切片序号 */
+  index: number
+  /** 原文起始位置 */
+  startOffset?: number
+  /** 原文结束位置 */
+  endOffset?: number
+  /** 元数据 */
+  metadata?: ChunkMetadata
+}
+
+/**
  * 创建切片请求
  */
 export interface CreateChunkRequest {
@@ -275,6 +293,8 @@ export interface EmbeddingModel {
   maxTokens: number
   /** 提供商配置 ID（云端模型） */
   providerConfigId?: string
+  /** 提供商模板 ID */
+  providerTemplateId?: string
   /** Ollama 服务地址（本地模型） */
   ollamaBaseUrl?: string
 }

@@ -57,6 +57,26 @@ export class KbChunkRepository {
   }
 
   /**
+   * 根据文档 ID 分页获取切片（用于大文档处理，减少内存占用）
+   */
+  findByDocumentIdPaginated(documentId: string, offset: number, limit: number): KbChunk[] {
+    const rows = this.db.prepare(
+      'SELECT * FROM kb_chunks WHERE document_id = ? ORDER BY chunk_index ASC LIMIT ? OFFSET ?'
+    ).all(documentId, limit, offset) as any[]
+    return rows.map(row => this.rowToEntity(row))
+  }
+
+  /**
+   * 根据文档 ID 获取切片数量
+   */
+  countByDocumentIdPaginated(documentId: string): number {
+    const row = this.db.prepare(
+      'SELECT COUNT(*) as count FROM kb_chunks WHERE document_id = ?'
+    ).get(documentId) as { count: number }
+    return row?.count || 0
+  }
+
+  /**
    * 根据知识库 ID 获取所有切片
    */
   findByKnowledgeBaseId(knowledgeBaseId: string): KbChunk[] {
