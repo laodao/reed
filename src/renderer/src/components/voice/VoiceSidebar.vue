@@ -327,6 +327,7 @@ async function loadHistories(): Promise<void> {
     const response = await window.electronAPI.voice.history({
       page: 1,
       pageSize: 50,
+      type: 'tts', // 只加载 TTS 类型的历史记录
       favorite: favoriteOnly.value || undefined
     })
 

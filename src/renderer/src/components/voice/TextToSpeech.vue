@@ -161,9 +161,7 @@ const audioError = ref<string | null>(null)
 const {
   // 状态
   ttsGenerating,
-  providers,
   voices,
-  selectedProviderId,
   selectedModelId,
   selectedVoiceId,
   currentLanguage,

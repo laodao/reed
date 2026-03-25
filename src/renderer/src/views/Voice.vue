@@ -9,15 +9,7 @@
 
     <!-- 主内容区域 -->
     <div class="page-main">
-      <!-- 标签切换 -->
-      <el-tabs v-model="activeTab" class="voice-tabs">
-        <el-tab-pane label="文本转语音" name="tts">
-          <TextToSpeech />
-        </el-tab-pane>
-        <el-tab-pane label="语音转文本" name="stt">
-          <SpeechToText />
-        </el-tab-pane>
-      </el-tabs>
+      <TextToSpeech />
     </div>
 
     <!-- 历史详情对话框 -->
@@ -113,12 +105,8 @@ import { CopyDocument } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import VoiceSidebar from '@/components/voice/VoiceSidebar.vue'
 import TextToSpeech from '@/components/voice/TextToSpeech.vue'
-import SpeechToText from '@/components/voice/SpeechToText.vue'
 import { getVoiceLanguageName } from '../../../shared/types/voice.types'
 import type { VoiceRecord } from '../../../shared/types/voice.types'
-
-// 当前激活的标签
-const activeTab = ref('tts')
 
 // 选中的历史 ID
 const selectedHistoryId = ref('')
@@ -181,28 +169,6 @@ function formatDateTime(date: Date | string): string {
   height: 100%;
   overflow: hidden;
   padding: 20px;
-}
-
-.voice-tabs {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-
-  :deep(.el-tabs__header) {
-    margin-bottom: 16px;
-    background: #fff;
-    padding: 8px 16px;
-    border-radius: 12px;
-  }
-
-  :deep(.el-tabs__content) {
-    flex: 1;
-    min-height: 0;
-
-    .el-tab-pane {
-      height: 100%;
-    }
-  }
 }
 
 .history-detail {

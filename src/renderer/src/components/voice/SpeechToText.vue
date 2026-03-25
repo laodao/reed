@@ -1,23 +1,8 @@
 <template>
   <div class="speech-to-text">
     <div class="stt-config">
-      <!-- 提供商选择 -->
+      <!-- 模型和语言选择 -->
       <div class="config-row">
-        <el-select
-          v-model="selectedProviderId"
-          placeholder="选择提供商"
-          style="width: 200px"
-          @change="handleProviderChange"
-        >
-          <el-option
-            v-for="provider in providers"
-            :key="provider.id"
-            :label="provider.name"
-            :value="provider.id"
-            :disabled="!provider.configured"
-          />
-        </el-select>
-
         <el-select
           v-model="selectedModelId"
           placeholder="选择模型"
@@ -107,8 +92,6 @@ import { useVoice } from '@/composables'
 const {
   // 状态
   sttProcessing,
-  providers,
-  selectedProviderId,
   selectedModelId,
   currentLanguage,
   selectedAudioFile,
@@ -121,15 +104,11 @@ const {
   selectAudioFile,
   recognizeSpeech,
   clearInput,
-  copyText
-} = useVoice()
+  copyText,
 
-/**
- * 提供商变化处理
- */
-function handleProviderChange(): void {
-  selectedModelId.value = availableModels.value[0]?.id || ''
-}
+  // 常量
+  VOICE_LANGUAGES
+} = useVoice()
 
 /**
  * 选择音频文件

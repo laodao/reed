@@ -12,7 +12,9 @@ import { VoiceRepository } from '../database/repositories/voice.repository'
 import { ClonedVoiceRepository } from '../database/repositories/cloned-voice.repository'
 import { PROVIDER_TEMPLATES } from './provider-template.service'
 import { SecureStorageService } from './secure-storage.service'
+import { DataPathService } from './data-path.service'
 import { DashScopeTTSProvider } from '../voice-providers/dashscope-tts-provider'
+import { DashScopeSTTProvider } from '../voice-providers/dashscope-stt-provider'
 import type {
   TTSRequest,
   TTSResponse,
@@ -61,7 +63,9 @@ export class VoiceService {
    * 获取语音数据目录
    */
   private static getVoiceDataDir(): string {
-    const userDataPath = app.getPath('userData')
+    // 使用 DataPathService 获取正确的数据路径
+    const dataPathService = DataPathService.getInstance()
+    const userDataPath = dataPathService.getDataPath()
     const voiceDir = path.join(userDataPath, 'voice')
 
     // 确保目录存在
@@ -361,7 +365,30 @@ export class VoiceService {
         providerConfig = await dbManager.providerConfigs.getDefault()
       }
       if (!providerConfig) {
-        return { success: false, error: '暂无可用的语音服务' }
+        const enabledConfigs = await dbManager.providerConfigs.getEnabled()
+        if (enabledConfigs.length > 0) {
+          providerConfig = enabledConfigs[0]
+        }
+      }
+
+      if (!providerConfig) {
+        return { success: false, error: '暂无可用的语音服务，请先配置 AI 提供商' }
+      }
+
+      if (!providerConfig.apiKey) {
+        return { success: false, error: `提供商 "${providerConfig.name}" 未配置 API 密钥` }
+      }
+
+      // 解密 API 密钥
+      let decryptedApiKey: string
+      try {
+        const secureStorage = SecureStorageService.getInstance()
+        if (!secureStorage.isInitialized()) {
+          await secureStorage.initialize()
+        }
+        decryptedApiKey = secureStorage.decrypt(providerConfig.apiKey)
+      } catch (decryptError) {
+        return { success: false, error: 'API 密钥解密失败，请重新配置提供商' }
       }
 
       // 创建语音记录
@@ -371,6 +398,7 @@ export class VoiceService {
         status: 'processing',
         inputAudioPath: request.audioPath,
         providerId: providerConfig.id,
+        modelId: request.modelId,
         favorite: false
       })
 
@@ -390,10 +418,26 @@ export class VoiceService {
         return { success: false, error: '无法读取音频数据' }
       }
 
+      // 使用 DashScope STT Provider
+      const sttProvider = new DashScopeSTTProvider({
+        apiKey: decryptedApiKey,
+        baseUrl: undefined // 使用默认 URL
+      })
+
       // 调用 STT API
-      // 注意：这里需要调用实际的 STT API
-      // 目前模拟返回
-      const recognizedText = '这是语音识别的结果（模拟）'
+      const result = await sttProvider.transcribe(audioData, {
+        language: request.language
+      })
+
+      if (!result.success) {
+        voiceRepo.update(record.id, {
+          status: 'failed',
+          errorMessage: result.error || '语音识别失败'
+        })
+        return { success: false, error: result.error || '语音识别失败' }
+      }
+
+      const recognizedText = result.text || ''
 
       // 更新记录
       voiceRepo.update(record.id, {

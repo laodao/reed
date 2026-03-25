@@ -92,10 +92,22 @@ export function useVoice() {
     providers.value.find(p => p.id === selectedProviderId.value)
   )
 
-  /** 当前提供商的模型列表 */
+  /** 所有提供商的模型列表 */
   const availableModels = computed(() => {
-    const provider = selectedProvider.value
-    return provider?.models || []
+    const allModels: Array<{ id: string; name: string; providerId: string; providerName: string }> = []
+    for (const provider of providers.value) {
+      if (provider.models) {
+        for (const model of provider.models) {
+          allModels.push({
+            id: model.id,
+            name: model.name,
+            providerId: provider.id,
+            providerName: provider.name
+          })
+        }
+      }
+    }
+    return allModels
   })
 
   /** 是否有可用的提供商 */
@@ -130,13 +142,11 @@ export function useVoice() {
       if (response.success && response.data) {
         providers.value = response.data
 
-        // 自动选择第一个已配置的提供商
-        const configuredProvider = providers.value.find(p => p.configured)
-        if (configuredProvider) {
-          selectedProviderId.value = configuredProvider.id
-          if (configuredProvider.models.length > 0) {
-            selectedModelId.value = configuredProvider.models[0].id
-          }
+        // 自动选择第一个模型
+        const allModels = availableModels.value
+        if (allModels.length > 0) {
+          selectedModelId.value = allModels[0].id
+          selectedProviderId.value = allModels[0].providerId
         }
       } else {
         error.value = response.error || '加载提供商失败'
@@ -208,6 +218,10 @@ export function useVoice() {
       error.value = null
       outputAudioPath.value = null
 
+      // 从选中的模型中获取提供商 ID
+      const selectedModelInfo = availableModels.value.find(m => m.id === selectedModelId.value)
+      const providerId = selectedModelInfo?.providerId || selectedProviderId.value
+
       const request: TTSRequest = {
         text: text || inputText.value,
         voiceId: selectedVoiceId.value,
@@ -215,7 +229,7 @@ export function useVoice() {
         speed: speed.value,
         pitch: pitch.value,
         volume: volume.value,
-        providerId: selectedProviderId.value || undefined,
+        providerId: providerId || undefined,
         modelId: selectedModelId.value || undefined
       }
 
@@ -257,11 +271,15 @@ export function useVoice() {
       error.value = null
       recognizedText.value = ''
 
+      // 从选中的模型中获取提供商 ID
+      const selectedModelInfo = availableModels.value.find(m => m.id === selectedModelId.value)
+      const providerId = selectedModelInfo?.providerId || selectedProviderId.value
+
       const request: STTRequest = {
         audioPath: audioPath || selectedAudioFile.value?.path,
         audioData,
         language: currentLanguage.value,
-        providerId: selectedProviderId.value || undefined,
+        providerId: providerId || undefined,
         modelId: selectedModelId.value || undefined
       }
 
