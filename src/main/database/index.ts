@@ -18,6 +18,11 @@ import { ProviderConfigRepository } from './repositories/provider-config.reposit
 import { TranslationRepository } from './repositories/translation.repository'
 import { VoiceRepository } from './repositories/voice.repository'
 import { ClonedVoiceRepository } from './repositories/cloned-voice.repository'
+import { KnowledgeBaseRepository } from './repositories/knowledge-base.repository'
+import { KbDocumentRepository } from './repositories/kb-document.repository'
+import { KbChunkRepository } from './repositories/kb-chunk.repository'
+import { KbVectorRepository } from './repositories/kb-vector.repository'
+import { KbInvertedIndexRepository } from './repositories/kb-inverted-index.repository'
 import { DataPathService } from '../services/data-path.service'
 
 /**
@@ -40,6 +45,11 @@ export class DatabaseManager {
   public translations: TranslationRepository | null = null
   public voices: VoiceRepository | null = null
   public clonedVoices: ClonedVoiceRepository | null = null
+  public knowledgeBases: KnowledgeBaseRepository | null = null
+  public kbDocuments: KbDocumentRepository | null = null
+  public kbChunks: KbChunkRepository | null = null
+  public kbVectors: KbVectorRepository | null = null
+  public kbInvertedIndex: KbInvertedIndexRepository | null = null
 
   private constructor() {
     // 默认使用 userData 路径，后续会在 initialize 中更新
@@ -328,6 +338,101 @@ export class DatabaseManager {
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_cloned_voices_status ON cloned_voices(status)`)
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_cloned_voices_created_at ON cloned_voices(created_at DESC)`)
 
+    // ==================== 知识库相关表 ====================
+
+    // 知识库表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS knowledge_bases (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        embedding_model TEXT NOT NULL,
+        embedding_provider TEXT NOT NULL,
+        embedding_dimension INTEGER NOT NULL DEFAULT 1536,
+        embedding_config TEXT,
+        document_count INTEGER DEFAULT 0,
+        vector_count INTEGER DEFAULT 0,
+        total_size INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_bases_created_at ON knowledge_bases(created_at DESC)`)
+
+    // 知识库文档表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS kb_documents (
+        id TEXT PRIMARY KEY,
+        knowledge_base_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        file_type TEXT NOT NULL,
+        file_size INTEGER NOT NULL,
+        status TEXT DEFAULT 'pending',
+        progress INTEGER DEFAULT 0,
+        chunk_count INTEGER DEFAULT 0,
+        error_message TEXT,
+        metadata TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_documents_knowledge_base_id ON kb_documents(knowledge_base_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_documents_status ON kb_documents(status)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_documents_created_at ON kb_documents(created_at DESC)`)
+
+    // 文档切片表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS kb_chunks (
+        id TEXT PRIMARY KEY,
+        document_id TEXT NOT NULL,
+        knowledge_base_id TEXT NOT NULL,
+        content TEXT NOT NULL,
+        chunk_index INTEGER NOT NULL,
+        start_offset INTEGER,
+        end_offset INTEGER,
+        metadata TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (document_id) REFERENCES kb_documents(id) ON DELETE CASCADE,
+        FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_chunks_document_id ON kb_chunks(document_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_chunks_knowledge_base_id ON kb_chunks(knowledge_base_id)`)
+
+    // 向量存储表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS kb_vectors (
+        id TEXT PRIMARY KEY,
+        chunk_id TEXT NOT NULL,
+        knowledge_base_id TEXT NOT NULL,
+        vector BLOB NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (chunk_id) REFERENCES kb_chunks(id) ON DELETE CASCADE,
+        FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_vectors_chunk_id ON kb_vectors(chunk_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_vectors_knowledge_base_id ON kb_vectors(knowledge_base_id)`)
+
+    // 倒排索引表（用于 BM25 关键词检索）
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS kb_inverted_index (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        term TEXT NOT NULL,
+        chunk_id TEXT NOT NULL,
+        knowledge_base_id TEXT NOT NULL,
+        term_frequency INTEGER DEFAULT 1,
+        positions TEXT,
+        FOREIGN KEY (chunk_id) REFERENCES kb_chunks(id) ON DELETE CASCADE,
+        FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_inverted_index_term ON kb_inverted_index(term)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_inverted_index_chunk_id ON kb_inverted_index(chunk_id)`)
+    this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_kb_inverted_index_unique ON kb_inverted_index(term, chunk_id)`)
+
     // 执行数据库迁移
     this.runMigrations()
   }
@@ -488,6 +593,11 @@ export class DatabaseManager {
     this.translations = new TranslationRepository(this.db)
     this.voices = new VoiceRepository(this.db)
     this.clonedVoices = new ClonedVoiceRepository(this.db)
+    this.knowledgeBases = new KnowledgeBaseRepository(this.db)
+    this.kbDocuments = new KbDocumentRepository(this.db)
+    this.kbChunks = new KbChunkRepository(this.db)
+    this.kbVectors = new KbVectorRepository(this.db)
+    this.kbInvertedIndex = new KbInvertedIndexRepository(this.db)
   }
 
   /**
