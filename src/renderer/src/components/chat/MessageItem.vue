@@ -251,11 +251,20 @@
       :content="message.content"
       :thinking-chain="message.metadata?.thinkingChain"
     />
+
+    <!-- 图片导出用的隐藏容器 -->
+    <div
+      ref="imageExportContainer"
+      class="image-export-container"
+      :style="{ position: 'fixed', left: '-9999px', top: '0', width: '600px', background: '#fff', padding: '24px', zIndex: -1 }"
+      v-html="imageExportContent"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick } from 'vue'
+import html2canvas from 'html2canvas'
 import { Document, Edit, CopyDocument, Delete, Refresh, Switch, Coin, Collection, More, Picture, Notebook, ArrowRight } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElImageViewer } from 'element-plus'
 import type { Message, Attachment } from '../../../shared/types'
@@ -297,6 +306,10 @@ const showExportObsidianDialog = ref(false)
 
 // 图片预览缓存
 const imagePreviewUrls = ref<Map<string, string>>(new Map())
+
+// 图片导出相关
+const imageExportContainer = ref<HTMLElement | null>(null)
+const imageExportContent = ref('')
 
 // 获取图片 URL（用于显示）
 function getImageUrl(attachment: Attachment): string {
@@ -583,23 +596,87 @@ async function saveToKnowledgeBase(kbId: string): Promise<void> {
 
 // 导出为图片
 async function exportAsImage(): Promise<void> {
-  try {
-    ElMessage.info('正在生成图片...')
+  if (!props.message.content) {
+    ElMessage.warning('消息内容为空')
+    return
+  }
 
+  try {
+    // 准备渲染内容
+    imageExportContent.value = renderContentForImage(props.message.content)
+
+    // 等待 DOM 更新
+    await nextTick()
+
+    if (!imageExportContainer.value) {
+      ElMessage.error('无法创建图片容器')
+      return
+    }
+
+    // 使用 html2canvas 截图
+    const canvas = await html2canvas(imageExportContainer.value, {
+      backgroundColor: '#ffffff',
+      scale: 2,
+      useCORS: true,
+      logging: false
+    })
+
+    // 转换为 Base64
+    const base64 = canvas.toDataURL('image/png')
+
+    // 调用主进程保存
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
     const response = await window.electronAPI.export.messageAsImage({
-      content: props.message.content,
-      modelId: props.message.modelId
+      imageBase64: base64,
+      fileName: `AI回答_${timestamp}.png`
     })
 
     if (response.success) {
       ElMessage.success('图片已保存')
-    } else {
-      ElMessage.error(response.error || '导出图片失败')
+    } else if (response.error) {
+      ElMessage.error(response.error)
     }
+
+    // 清理
+    imageExportContent.value = ''
   } catch (error) {
     console.error('导出图片失败:', error)
     ElMessage.error('导出图片失败')
   }
+}
+
+// 渲染内容为图片用的 HTML
+function renderContentForImage(content: string): string {
+  let html = content
+
+  // 代码块
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+    return `<pre style="background:#f5f5f5;padding:12px;border-radius:4px;overflow-x:auto;font-family:Consolas,monospace;font-size:13px;line-height:1.5;"><code>${escapeHtml(code.trim())}</code></pre>`
+  })
+
+  // 行内代码
+  html = html.replace(/`([^`]+)`/g, '<code style="background:#f5f5f5;padding:2px 6px;border-radius:3px;font-family:Consolas,monospace;">$1</code>')
+
+  // 标题
+  html = html.replace(/^### (.+)$/gm, '<h3 style="margin:16px 0 8px;font-size:16px;font-weight:600;">$1</h3>')
+  html = html.replace(/^## (.+)$/gm, '<h2 style="margin:20px 0 10px;font-size:18px;font-weight:600;">$1</h2>')
+  html = html.replace(/^# (.+)$/gm, '<h1 style="margin:24px 0 12px;font-size:22px;font-weight:700;">$1</h1>')
+
+  // 粗体和斜体
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
+
+  // 列表
+  html = html.replace(/^- (.+)$/gm, '<li style="margin-left:20px;">$1</li>')
+  html = html.replace(/^\d+\. (.+)$/gm, '<li style="margin-left:20px;">$1</li>')
+
+  // 换行
+  html = html.replace(/\n\n/g, '</p><p style="margin:12px 0;line-height:1.6;">')
+  html = html.replace(/\n/g, '<br>')
+
+  return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#333;line-height:1.6;">
+    <p style="margin:0 0 12px;line-height:1.6;">${html}</p>
+  </div>`
 }
 
 // 导出为 Word

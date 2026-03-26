@@ -393,7 +393,7 @@ const electronAPI = {
   // 导出相关
   export: {
     // 导出消息为图片
-    messageAsImage: (data: { content: string; modelId?: string }) =>
+    messageAsImage: (data: { imageBase64: string; fileName?: string }) =>
       ipcRenderer.invoke('export:message-image', data),
     // 导出消息为 Word
     messageAsWord: (data: { content: string; modelId?: string }) =>

@@ -7,6 +7,7 @@ import { ipcMain, dialog, BrowserWindow, shell, app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
+import { markdownToDocx } from '../../utils/markdown-to-docx'
 
 /**
  * Obsidian 保管库信息
@@ -182,11 +183,13 @@ export function registerExportHandlers(): void {
   /**
    * 导出消息为图片
    */
-  ipcMain.handle('export:message-image', async (_event, data: { content: string; modelId?: string }) => {
+  ipcMain.handle('export:message-image', async (_event, data: {
+    imageBase64: string
+    fileName?: string
+  }) => {
     try {
       // 选择保存路径
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-      const defaultName = `AI回答_${timestamp}.png`
+      const defaultName = data.fileName || `AI回答_${Date.now()}.png`
 
       const result = await dialog.showSaveDialog(BrowserWindow.getFocusedWindow()!, {
         defaultPath: defaultName,
@@ -200,13 +203,14 @@ export function registerExportHandlers(): void {
         return { success: true, message: '用户取消' }
       }
 
-      // TODO: 实现真正的图片生成
-      // 这里需要使用 html2canvas 或类似库将内容渲染为图片
-      // 暂时返回提示信息
-      return {
-        success: false,
-        error: '图片导出功能开发中，敬请期待'
-      }
+      // 解析 Base64 数据
+      const base64Data = data.imageBase64.replace(/^data:image\/\w+;base64,/, '')
+      const buffer = Buffer.from(base64Data, 'base64')
+
+      // 写入文件
+      fs.writeFileSync(result.filePath, buffer)
+
+      return { success: true, filePath: result.filePath }
     } catch (error: any) {
       console.error('[export:message-image] 错误:', error)
       return { success: false, error: error.message }
@@ -233,13 +237,15 @@ export function registerExportHandlers(): void {
         return { success: true, message: '用户取消' }
       }
 
-      // TODO: 实现真正的 Word 文档生成
-      // 这里需要使用 docx 库或其他工具生成 Word 文档
-      // 暂时返回提示信息
-      return {
-        success: false,
-        error: 'Word 导出功能开发中，敬请期待'
-      }
+      // 生成 Word 文档
+      const buffer = await markdownToDocx(data.content, {
+        title: 'AI 回答'
+      })
+
+      // 写入文件
+      fs.writeFileSync(result.filePath, buffer)
+
+      return { success: true, filePath: result.filePath }
     } catch (error: any) {
       console.error('[export:message-word] 错误:', error)
       return { success: false, error: error.message }
