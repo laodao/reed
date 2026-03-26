@@ -59,6 +59,9 @@ export function registerKnowledgeBaseHandlers(): void {
   // 上传文档
   ipcMain.handle('knowledge-base:upload-documents', handleUploadDocuments)
 
+  // 添加文档（直接添加文本内容）
+  ipcMain.handle('knowledge-base:add-document', handleAddDocument)
+
   // 获取文档列表
   ipcMain.handle('knowledge-base:get-documents', handleGetDocuments)
 
@@ -159,6 +162,17 @@ async function handleUploadDocuments(
 ): Promise<IpcResponse<KbDocument[]>> {
   const service = getKnowledgeBaseService()
   return await service.uploadDocuments(data.knowledgeBaseId, data.files)
+}
+
+/**
+ * 处理添加文档（直接添加文本内容）
+ */
+async function handleAddDocument(
+  _event: IpcMainInvokeEvent,
+  data: { knowledgeBaseId: string; data: { name: string; type: 'text'; content: string } }
+): Promise<IpcResponse<KbDocument>> {
+  const service = getKnowledgeBaseService()
+  return await service.addDocument(data.knowledgeBaseId, data.data)
 }
 
 /**

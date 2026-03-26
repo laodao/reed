@@ -114,4 +114,65 @@ export function registerFileHandlers(): void {
       return { success: false, error: error.message }
     }
   })
+
+  /**
+   * 保存文件对话框
+   */
+  ipcMain.handle('file:save-dialog', async (_event, options?: {
+    defaultPath?: string
+    filters?: Array<{ name: string; extensions: string[] }>
+  }) => {
+    try {
+      const result = await dialog.showSaveDialog(BrowserWindow.getFocusedWindow()!, {
+        defaultPath: options?.defaultPath,
+        filters: options?.filters || [
+          { name: 'Markdown 文件', extensions: ['md'] },
+          { name: '文本文件', extensions: ['txt'] },
+          { name: '所有文件', extensions: ['*'] }
+        ]
+      })
+
+      if (result.canceled || !result.filePath) {
+        return { success: true, filePath: null }
+      }
+
+      return { success: true, filePath: result.filePath }
+    } catch (error: any) {
+      console.error('[file:save-dialog] 错误:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 写入文本文件
+   */
+  ipcMain.handle('file:write-text', async (_event, data: { filePath: string; content: string }) => {
+    try {
+      fs.writeFileSync(data.filePath, data.content, 'utf-8')
+      return { success: true }
+    } catch (error: any) {
+      console.error('[file:write-text] 错误:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 打开文件夹选择对话框
+   */
+  ipcMain.handle('file:open-folder-dialog', async () => {
+    try {
+      const result = await dialog.showOpenDialog(BrowserWindow.getFocusedWindow()!, {
+        properties: ['openDirectory', 'createDirectory']
+      })
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return { success: true, filePath: null }
+      }
+
+      return { success: true, filePath: result.filePaths[0] }
+    } catch (error: any) {
+      console.error('[file:open-folder-dialog] 错误:', error)
+      return { success: false, error: error.message }
+    }
+  })
 }

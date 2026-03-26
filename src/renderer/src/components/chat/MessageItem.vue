@@ -167,6 +167,37 @@
                   <el-icon><Delete /></el-icon>
                 </el-button>
               </el-tooltip>
+
+              <!-- 更多操作菜单 -->
+              <el-dropdown trigger="click" placement="top-end">
+                <el-button size="small" text>
+                  <el-icon><More /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item @click="saveAsLocalFile">
+                      <el-icon><Document /></el-icon>
+                      <span>保存为本地文件</span>
+                    </el-dropdown-item>
+                    <el-dropdown-item @click="openKnowledgeBaseDialog">
+                      <el-icon><Collection /></el-icon>
+                      <span>保存到知识库</span>
+                    </el-dropdown-item>
+                    <el-dropdown-item divided @click="exportAsImage">
+                      <el-icon><Picture /></el-icon>
+                      <span>导出为图片</span>
+                    </el-dropdown-item>
+                    <el-dropdown-item @click="exportAsWord">
+                      <el-icon><Document /></el-icon>
+                      <span>导出为 Word</span>
+                    </el-dropdown-item>
+                    <el-dropdown-item @click="exportToObsidian">
+                      <el-icon><Notebook /></el-icon>
+                      <span>导出到 Obsidian</span>
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </template>
           </div>
         </div>
@@ -186,15 +217,50 @@
       :url-list="[currentImageUrl]"
       @close="showImageViewer = false"
     />
+
+    <!-- 知识库选择对话框 -->
+    <el-dialog
+      v-model="showKnowledgeBaseDialog"
+      title="选择知识库"
+      width="500px"
+      :close-on-click-modal="false"
+    >
+      <div class="knowledge-base-list">
+        <div
+          v-for="kb in knowledgeBases"
+          :key="kb.id"
+          class="kb-item"
+          @click="saveToKnowledgeBase(kb.id)"
+        >
+          <el-icon><Collection /></el-icon>
+          <span class="kb-name">{{ kb.name }}</span>
+          <el-icon class="arrow"><ArrowRight /></el-icon>
+        </div>
+        <div v-if="knowledgeBases.length === 0" class="empty-tip">
+          暂无可用的知识库，请先创建知识库
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showKnowledgeBaseDialog = false">取消</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 导出到 Obsidian 对话框 -->
+    <ExportToObsidianDialog
+      v-model="showExportObsidianDialog"
+      :content="message.content"
+      :thinking-chain="message.metadata?.thinkingChain"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { Document, Edit, CopyDocument, Delete, Refresh, Switch, Coin, Collection } from '@element-plus/icons-vue'
+import { Document, Edit, CopyDocument, Delete, Refresh, Switch, Coin, Collection, More, Picture, Notebook, ArrowRight } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElImageViewer } from 'element-plus'
 import type { Message, Attachment } from '../../../shared/types'
 import ModelSelectDialog from './ModelSelectDialog.vue'
+import ExportToObsidianDialog from './ExportToObsidianDialog.vue'
 
 interface ModelOption {
   id: string
@@ -220,6 +286,14 @@ const showActions = ref(false)
 const isEditing = ref(false)
 const editContent = ref('')
 const showModelDialog = ref(false)
+
+// 知识库选择对话框
+const showKnowledgeBaseDialog = ref(false)
+const knowledgeBases = ref<Array<{ id: string; name: string }>>([])
+const savingToKnowledgeBase = ref(false)
+
+// 导出到 Obsidian 对话框
+const showExportObsidianDialog = ref(false)
 
 // 图片预览缓存
 const imagePreviewUrls = ref<Map<string, string>>(new Map())
@@ -430,6 +504,128 @@ function openModelSelectDialog() {
 // 处理模型选择
 function handleModelSelect(model: ModelOption) {
   emit('regenerate', props.message.id, model.id)
+}
+
+// 保存为本地 Markdown 文件
+async function saveAsLocalFile(): Promise<void> {
+  try {
+    // 生成默认文件名（使用时间戳）
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const defaultName = `AI回答_${timestamp}.md`
+
+    const response = await window.electronAPI.file.saveFile({
+      defaultPath: defaultName,
+      filters: [{ name: 'Markdown 文件', extensions: ['md'] }]
+    })
+
+    if (response.success && response.filePath) {
+      // 将消息内容写入文件
+      const writeResponse = await window.electronAPI.file.writeTextFile(
+        response.filePath,
+        props.message.content
+      )
+
+      if (writeResponse.success) {
+        ElMessage.success('保存成功')
+      } else {
+        ElMessage.error(writeResponse.error || '保存失败')
+      }
+    }
+  } catch (error) {
+    console.error('保存文件失败:', error)
+    ElMessage.error('保存文件失败')
+  }
+}
+
+// 打开知识库选择对话框
+async function openKnowledgeBaseDialog(): Promise<void> {
+  try {
+    const response = await window.electronAPI.knowledgeBase.list()
+    if (response.success && response.data) {
+      knowledgeBases.value = response.data
+      showKnowledgeBaseDialog.value = true
+    } else {
+      ElMessage.error('获取知识库列表失败')
+    }
+  } catch (error) {
+    console.error('获取知识库列表失败:', error)
+    ElMessage.error('获取知识库列表失败')
+  }
+}
+
+// 保存到选中的知识库
+async function saveToKnowledgeBase(kbId: string): Promise<void> {
+  savingToKnowledgeBase.value = true
+  try {
+    // 生成文档标题
+    const timestamp = new Date().toLocaleString('zh-CN')
+    const title = `AI回答_${timestamp}`
+
+    const response = await window.electronAPI.knowledgeBase.addDocument(kbId, {
+      name: title,
+      type: 'text',
+      content: props.message.content
+    })
+
+    if (response.success) {
+      ElMessage.success('已保存到知识库')
+      showKnowledgeBaseDialog.value = false
+    } else {
+      ElMessage.error(response.error || '保存失败')
+    }
+  } catch (error) {
+    console.error('保存到知识库失败:', error)
+    ElMessage.error('保存到知识库失败')
+  } finally {
+    savingToKnowledgeBase.value = false
+  }
+}
+
+// 导出为图片
+async function exportAsImage(): Promise<void> {
+  try {
+    ElMessage.info('正在生成图片...')
+
+    const response = await window.electronAPI.export.messageAsImage({
+      content: props.message.content,
+      modelId: props.message.modelId
+    })
+
+    if (response.success) {
+      ElMessage.success('图片已保存')
+    } else {
+      ElMessage.error(response.error || '导出图片失败')
+    }
+  } catch (error) {
+    console.error('导出图片失败:', error)
+    ElMessage.error('导出图片失败')
+  }
+}
+
+// 导出为 Word
+async function exportAsWord(): Promise<void> {
+  try {
+    ElMessage.info('正在生成 Word 文档...')
+
+    const response = await window.electronAPI.export.messageAsWord({
+      content: props.message.content,
+      modelId: props.message.modelId
+    })
+
+    if (response.success) {
+      ElMessage.success('Word 文档已保存')
+    } else {
+      ElMessage.error(response.error || '导出 Word 失败')
+    }
+  } catch (error) {
+    console.error('导出 Word 失败:', error)
+    ElMessage.error('导出 Word 失败')
+  }
+}
+
+// 导出到 Obsidian
+function exportToObsidian(): void {
+  showExportObsidianDialog.value = true
 }
 </script>
 
@@ -681,6 +877,19 @@ function handleModelSelect(model: ModelOption) {
     &:hover {
       color: var(--el-color-primary);
       background: rgba(0, 0, 0, 0.04);
+    }
+  }
+
+  // 下拉菜单按钮样式统一
+  .el-dropdown {
+    .el-button {
+      padding: 4px 6px;
+      color: #64748b;
+
+      &:hover {
+        color: var(--el-color-primary);
+        background: rgba(0, 0, 0, 0.04);
+      }
     }
   }
 }
@@ -936,5 +1145,52 @@ function handleModelSelect(model: ModelOption) {
     padding: 2px 8px;
     border-radius: 4px;
   }
+}
+
+// 知识库选择对话框样式
+.knowledge-base-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.kb-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 8px;
+
+  &:hover {
+    background: #f1f5f9;
+    border-color: var(--el-color-primary);
+  }
+
+  .el-icon {
+    font-size: 20px;
+    color: var(--el-color-primary);
+  }
+
+  .kb-name {
+    flex: 1;
+    font-size: 14px;
+    font-weight: 500;
+    color: #1e293b;
+  }
+
+  .arrow {
+    font-size: 14px;
+    color: #94a3b8;
+  }
+}
+
+.empty-tip {
+  text-align: center;
+  padding: 40px 20px;
+  color: #94a3b8;
+  font-size: 14px;
 }
 </style>

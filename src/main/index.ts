@@ -24,6 +24,7 @@ import { registerTranslationHandlers } from './ipc/handlers/translation.handler'
 import { registerVoiceHandlers } from './ipc/handlers/voice.handler'
 import { registerDataPathHandlers } from './ipc/handlers/data-path.handler'
 import { registerKnowledgeBaseHandlers } from './ipc/handlers/knowledge-base.handler'
+import { registerExportHandlers } from './ipc/handlers/export.handler'
 import * as fs from 'fs'
 
 // 在 app ready 之前注册协议权限（重要！）
@@ -205,6 +206,7 @@ function initIpcHandlers(): void {
   registerVoiceHandlers()
   registerDataPathHandlers()
   registerKnowledgeBaseHandlers()
+  registerExportHandlers()
 }
 
 // 应用就绪

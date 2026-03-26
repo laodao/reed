@@ -377,7 +377,49 @@ const electronAPI = {
       filters?: Array<{ name: string; extensions: string[] }>
     }) => ipcRenderer.invoke('file:open-dialog', options),
     // 读取文件内容（用于预览）
-    readAsBase64: (filePath: string) => ipcRenderer.invoke('file:read-base64', filePath)
+    readAsBase64: (filePath: string) => ipcRenderer.invoke('file:read-base64', filePath),
+    // 保存文件对话框
+    saveFile: (options?: {
+      defaultPath?: string
+      filters?: Array<{ name: string; extensions: string[] }>
+    }) => ipcRenderer.invoke('file:save-dialog', options),
+    // 写入文本文件
+    writeTextFile: (filePath: string, content: string) =>
+      ipcRenderer.invoke('file:write-text', { filePath, content }),
+    // 打开文件夹选择对话框
+    openFolderDialog: () => ipcRenderer.invoke('file:open-folder-dialog')
+  },
+
+  // 导出相关
+  export: {
+    // 导出消息为图片
+    messageAsImage: (data: { content: string; modelId?: string }) =>
+      ipcRenderer.invoke('export:message-image', data),
+    // 导出消息为 Word
+    messageAsWord: (data: { content: string; modelId?: string }) =>
+      ipcRenderer.invoke('export:message-word', data),
+    // 获取 Obsidian 保管库列表
+    getObsidianVaults: () =>
+      ipcRenderer.invoke('export:get-obsidian-vaults'),
+    // 获取保管库目录列表
+    getVaultDirectories: (vaultPath: string) =>
+      ipcRenderer.invoke('export:get-vault-directories', vaultPath),
+    // 获取保管库文件列表
+    getVaultFiles: (vaultPath: string, subPath?: string) =>
+      ipcRenderer.invoke('export:get-vault-files', vaultPath, subPath),
+    // 导出到 Obsidian
+    toObsidian: (data: {
+      content: string
+      thinkingChain?: string
+      title: string
+      vaultPath: string
+      subPath?: string
+      tags?: string[]
+      createdAt?: string
+      source?: string
+      mode: 'new' | 'append'
+      appendFile?: string
+    }) => ipcRenderer.invoke('export:to-obsidian', data)
   },
 
   // 翻译相关
@@ -548,6 +590,12 @@ const electronAPI = {
     }>) => ipcRenderer.invoke('knowledge-base:update', { id, request: data }),
     // 删除知识库
     delete: (id: string) => ipcRenderer.invoke('knowledge-base:delete', id),
+    // 添加文档（直接添加文本内容）
+    addDocument: (knowledgeBaseId: string, data: {
+      name: string
+      type: 'text'
+      content: string
+    }) => ipcRenderer.invoke('knowledge-base:add-document', { knowledgeBaseId, data }),
     // 上传文档
     uploadDocuments: (knowledgeBaseId: string, files: Array<{
       path: string

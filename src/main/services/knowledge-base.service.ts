@@ -220,6 +220,56 @@ export class KnowledgeBaseService {
     }
   }
 
+  /**
+   * 添加文档（直接添加文本内容）
+   */
+  async addDocument(kbId: string, data: { name: string; type: 'text'; content: string }): Promise<{ success: boolean; data?: KbDocument; error?: string }> {
+    try {
+      const db = getDatabaseManager()
+      if (!db.knowledgeBases || !db.kbDocuments) return { success: false, error: '数据库未初始化' }
+
+      const kb = db.knowledgeBases.findById(kbId)
+      if (!kb) return { success: false, error: '知识库不存在' }
+
+      // 准备目录
+      const dataPath = DataPathService.getInstance().getDataPath()
+      const docDir = path.join(dataPath, 'knowledge-base', kbId, 'documents')
+      if (!fs.existsSync(docDir)) fs.mkdirSync(docDir, { recursive: true })
+
+      const docId = randomUUID()
+      const destPath = path.join(docDir, `${docId}.txt`)
+
+      // 写入文本内容到文件
+      const contentBuffer = Buffer.from(data.content, 'utf-8')
+      await fs.promises.writeFile(destPath, contentBuffer)
+
+      const request: CreateDocumentRequest = {
+        knowledgeBaseId: kbId,
+        name: data.name,
+        filePath: destPath,
+        fileType: 'txt',
+        fileSize: contentBuffer.length
+      }
+
+      const doc = db.kbDocuments.create(request)
+
+      // 更新统计
+      db.knowledgeBases.incrementDocumentCount(kbId, 1)
+      db.knowledgeBases.incrementTotalSize(kbId, doc.fileSize)
+
+      // 发送知识库统计更新事件
+      this.emitKnowledgeBaseStats(kbId)
+
+      // 异步处理
+      this.processDocument(doc, kb).catch(e => console.error('[KB] 处理失败:', e))
+
+      return { success: true, data: doc }
+    } catch (e: any) {
+      console.error('[KB] 添加文档失败:', e)
+      return { success: false, error: e.message }
+    }
+  }
+
   async getDocuments(kbId: string): Promise<{ success: boolean; data?: KbDocument[]; error?: string }> {
     try {
       const db = getDatabaseManager()
