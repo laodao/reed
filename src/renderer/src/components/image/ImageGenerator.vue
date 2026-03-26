@@ -1,112 +1,119 @@
 <template>
   <div class="image-generator">
-    <!-- 模型选择区域 -->
-    <div class="generator-section">
-      <div class="section-label">模型选择</div>
-      <div class="model-selector">
-        <el-select
-          v-model="selectedModelId"
-          placeholder="选择模型"
-          class="model-select"
-        >
-          <el-option
-            v-for="model in availableModels"
-            :key="model.id"
-            :label="model.name"
-            :value="model.id"
-          >
-            <div class="model-option">
-              <span>{{ model.name }}</span>
-              <span class="model-size" v-if="model.maxResolution">
-                {{ model.maxResolution }}
-              </span>
-            </div>
-          </el-option>
-        </el-select>
-      </div>
-    </div>
-
-    <!-- 提示词输入区域 -->
-    <div class="generator-section">
-      <div class="section-label">提示词</div>
-      <div class="prompt-input-wrapper">
-        <el-input
-          v-model="prompt"
-          type="textarea"
-          :rows="4"
-          placeholder="描述你想要生成的图像..."
-          resize="none"
-          class="prompt-input"
-          :disabled="generating"
-        />
-        <div class="prompt-counter">
-          {{ prompt.length }} / {{ maxPromptLength }}
-        </div>
-      </div>
-    </div>
-
-    <!-- 负面提示词（高级选项） -->
-    <div v-if="showAdvanced" class="generator-section">
-      <div class="section-label">负面提示词（可选）</div>
-      <el-input
-        v-model="negativePrompt"
-        type="textarea"
-        :rows="2"
-        placeholder="描述不想在图像中出现的内容..."
-        resize="none"
-        class="negative-prompt-input"
+    <!-- 第一行：模型选择 + 参数 + 生成按钮 -->
+    <div class="top-row">
+      <!-- 模型选择 -->
+      <el-select
+        v-model="selectedModelId"
+        placeholder="选择模型"
+        class="model-select"
         :disabled="generating"
-      />
-    </div>
+      >
+        <el-option
+          v-for="model in availableModels"
+          :key="model.id"
+          :label="model.name"
+          :value="model.id"
+        >
+          <div class="model-option">
+            <span>{{ model.name }}</span>
+            <span class="model-size" v-if="model.maxResolution">
+              {{ model.maxResolution }}
+            </span>
+          </div>
+        </el-option>
+      </el-select>
 
-    <!-- 参数设置区域 -->
-    <div class="generator-section">
-      <div class="section-label">参数设置</div>
-      <div class="params-row">
-        <!-- 尺寸选择 -->
-        <div class="param-item">
-          <span class="param-label">尺寸</span>
-          <el-select v-model="selectedSize" class="size-select" :disabled="generating">
-            <el-option
-              v-for="size in sizeOptions"
-              :key="size.value"
-              :label="size.label"
-              :value="size.value"
-            />
-          </el-select>
-        </div>
+      <!-- 尺寸选择 -->
+      <el-select v-model="selectedSize" class="size-select" :disabled="generating">
+        <el-option
+          v-for="size in sizeOptions"
+          :key="size.value"
+          :label="size.label"
+          :value="size.value"
+        />
+      </el-select>
 
-        <!-- 数量选择 -->
-        <div class="param-item">
-          <span class="param-label">数量</span>
-          <el-select v-model="selectedCount" class="count-select" :disabled="generating">
-            <el-option
-              v-for="count in countOptions"
-              :key="count"
-              :label="`${count} 张`"
-              :value="count"
-            />
-          </el-select>
-        </div>
+      <!-- 数量选择 -->
+      <el-select v-model="selectedCount" class="count-select" :disabled="generating">
+        <el-option
+          v-for="count in countOptions"
+          :key="count"
+          :label="`${count}张`"
+          :value="count"
+        />
+      </el-select>
 
-        <!-- 高级选项按钮 -->
+      <!-- 高级选项按钮 -->
+      <el-tooltip content="高级选项" placement="top">
         <el-button
           :type="showAdvanced ? 'primary' : 'default'"
           :icon="Setting"
-          circle
           @click="showAdvanced = !showAdvanced"
+        />
+      </el-tooltip>
+
+      <!-- 生成按钮 -->
+      <el-button
+        v-if="!generating"
+        type="primary"
+        :disabled="!canGenerate"
+        :loading="loading"
+        @click="handleGenerate"
+      >
+        <el-icon><Picture /></el-icon>
+        <span>生成</span>
+      </el-button>
+
+      <el-button
+        v-else
+        type="danger"
+        @click="handleStop"
+      >
+        <el-icon><VideoPause /></el-icon>
+        <span>停止</span>
+      </el-button>
+    </div>
+
+    <!-- 第二行：提示词输入 -->
+    <div class="prompt-row">
+      <el-input
+        v-model="prompt"
+        type="textarea"
+        :rows="2"
+        placeholder="描述你想要生成的图像..."
+        resize="none"
+        class="prompt-input"
+        :disabled="generating"
+      />
+      <span class="prompt-counter">{{ prompt.length }}/{{ maxPromptLength }}</span>
+    </div>
+
+    <!-- 高级选项 -->
+    <template v-if="showAdvanced">
+      <!-- 负面提示词 -->
+      <div class="advanced-row">
+        <span class="advanced-label">负面提示词</span>
+        <el-input
+          v-model="negativePrompt"
+          type="textarea"
+          :rows="1"
+          placeholder="不想出现的内容..."
+          resize="none"
+          class="negative-input"
+          :disabled="generating"
         />
       </div>
 
       <!-- 高级参数 -->
-      <div v-if="showAdvanced" class="advanced-params">
-        <!-- 风格选择 -->
-        <div class="param-item">
+      <div class="advanced-row">
+        <!-- 风格 -->
+        <div class="param-group">
           <span class="param-label">风格</span>
           <el-select
             v-model="selectedStyle"
             placeholder="默认"
-            class="style-select"
+            class="param-select"
             clearable
             :disabled="generating"
           >
@@ -119,13 +126,13 @@
           </el-select>
         </div>
 
-        <!-- 质量选择 -->
-        <div class="param-item">
+        <!-- 质量 -->
+        <div class="param-group">
           <span class="param-label">质量</span>
           <el-select
             v-model="selectedQuality"
             placeholder="标准"
-            class="quality-select"
+            class="param-select"
             clearable
             :disabled="generating"
           >
@@ -138,8 +145,8 @@
           </el-select>
         </div>
 
-        <!-- 种子值 -->
-        <div class="param-item">
+        <!-- 种子 -->
+        <div class="param-group">
           <span class="param-label">种子</span>
           <el-input-number
             v-model="seed"
@@ -148,76 +155,44 @@
             placeholder="随机"
             class="seed-input"
             :disabled="generating"
+            controls-position="right"
           />
         </div>
-      </div>
-    </div>
 
-    <!-- 参考图片（高级选项） -->
-    <div v-if="showAdvanced" class="generator-section">
-      <div class="section-label">参考图片（可选）</div>
-      <div class="reference-image-area">
-        <div v-if="!referenceImage" class="upload-area" @click="handleUploadReference">
-          <el-icon :size="32"><Upload /></el-icon>
-          <span>点击上传参考图片</span>
-        </div>
-        <div v-else class="reference-preview">
-          <el-image :src="referenceImage" fit="cover" class="reference-thumb" />
-          <el-button
-            type="danger"
-            :icon="Delete"
-            circle
-            size="small"
-            class="remove-reference"
-            @click="referenceImage = ''"
-          />
+        <!-- 参考图片 -->
+        <div class="param-group reference-group">
+          <span class="param-label">参考图</span>
+          <div v-if="!referenceImage" class="upload-btn" @click="handleUploadReference">
+            <el-icon><Upload /></el-icon>
+          </div>
+          <div v-else class="reference-preview">
+            <el-image :src="referenceImage" fit="cover" class="reference-thumb" />
+            <el-button
+              type="danger"
+              :icon="Delete"
+              circle
+              size="small"
+              class="remove-btn"
+              @click="referenceImage = ''"
+            />
+          </div>
         </div>
       </div>
-    </div>
+    </template>
 
     <!-- 生成进度 -->
-    <div v-if="generating" class="progress-section">
+    <div v-if="generating" class="progress-row">
       <el-progress
         :percentage="taskProgress"
-        :stroke-width="8"
+        :stroke-width="6"
         :show-text="true"
         :format="progressFormat"
       />
-      <div class="progress-status">
-        <el-icon class="is-loading"><Loading /></el-icon>
-        <span>{{ progressText }}</span>
-      </div>
+      <span class="progress-text">{{ progressText }}</span>
     </div>
 
     <!-- 错误提示 -->
-    <div v-if="error" class="error-section">
-      <el-alert :title="error" type="error" :closable="false" show-icon />
-    </div>
-
-    <!-- 操作按钮区域 -->
-    <div class="action-buttons">
-      <el-button
-        v-if="!generating"
-        type="primary"
-        size="large"
-        :disabled="!canGenerate"
-        :loading="loading"
-        @click="handleGenerate"
-      >
-        <el-icon><Picture /></el-icon>
-        <span>生成图像</span>
-      </el-button>
-
-      <el-button
-        v-else
-        type="danger"
-        size="large"
-        @click="handleStop"
-      >
-        <el-icon><VideoPause /></el-icon>
-        <span>停止生成</span>
-      </el-button>
-    </div>
+    <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon class="error-alert" />
   </div>
 </template>
 
@@ -228,8 +203,7 @@ import {
   Upload,
   Delete,
   Picture,
-  VideoPause,
-  Loading
+  VideoPause
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useImage } from '@/composables'
@@ -488,32 +462,32 @@ defineExpose({
 .image-generator {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding: 24px;
-  background: #ffffff;
-  border-radius: 16px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-}
-
-.generator-section {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.section-label {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-}
-
-.model-selector {
-  display: flex;
   gap: 12px;
+  padding: 16px;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
-.model-select {
-  flex: 1;
+// 第一行：模型 + 参数 + 按钮
+.top-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  .model-select {
+    flex: 1;
+    min-width: 150px;
+  }
+
+  .size-select,
+  .count-select {
+    width: 100px;
+  }
+
+  .el-button {
+    flex-shrink: 0;
+  }
 }
 
 .model-option {
@@ -528,152 +502,139 @@ defineExpose({
   color: var(--el-text-color-secondary);
 }
 
-.prompt-input-wrapper {
+// 第二行：提示词
+.prompt-row {
   position: relative;
-}
 
-.prompt-input,
-.negative-prompt-input {
-  :deep(.el-textarea__inner) {
-    font-size: 14px;
-    line-height: 1.6;
-    padding: 12px;
-    border-radius: 12px;
-    border: 1px solid var(--el-border-color-light);
-    transition: all 0.3s ease;
-
-    &:focus {
-      border-color: var(--el-color-primary);
-      box-shadow: 0 0 0 2px var(--el-color-primary-light-9);
+  .prompt-input {
+    :deep(.el-textarea__inner) {
+      font-size: 14px;
+      line-height: 1.5;
+      padding: 10px 12px;
+      padding-right: 60px;
+      border-radius: 8px;
     }
+  }
+
+  .prompt-counter {
+    position: absolute;
+    bottom: 8px;
+    right: 12px;
+    font-size: 12px;
+    color: var(--el-text-color-placeholder);
   }
 }
 
-.prompt-counter {
-  position: absolute;
-  bottom: 8px;
-  right: 12px;
-  font-size: 12px;
-  color: var(--el-text-color-placeholder);
-}
-
-.params-row {
+// 高级行
+.advanced-row {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--el-fill-color-light);
+  border-radius: 8px;
 }
 
-.param-item {
+.advanced-label {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+}
+
+.negative-input {
+  flex: 1;
+
+  :deep(.el-textarea__inner) {
+    font-size: 13px;
+    padding: 8px 10px;
+    border-radius: 6px;
+  }
+}
+
+.param-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .param-label {
   font-size: 13px;
-  color: var(--el-text-color-regular);
+  color: var(--el-text-color-secondary);
   white-space: nowrap;
 }
 
-.size-select,
-.count-select {
-  width: 120px;
-}
-
-.advanced-params {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--el-border-color-lighter);
-}
-
-.style-select,
-.quality-select {
-  width: 120px;
+.param-select {
+  width: 90px;
 }
 
 .seed-input {
-  width: 150px;
+  width: 110px;
 }
 
-.reference-image-area {
-  width: 100%;
-}
+.reference-group {
+  .upload-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: 1px dashed var(--el-border-color);
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--el-text-color-placeholder);
+    transition: all 0.2s;
 
-.upload-area {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  height: 120px;
-  border: 2px dashed var(--el-border-color);
-  border-radius: 12px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  color: var(--el-text-color-placeholder);
-
-  &:hover {
-    border-color: var(--el-color-primary);
-    color: var(--el-color-primary);
-  }
-}
-
-.reference-preview {
-  position: relative;
-  width: 120px;
-  height: 120px;
-}
-
-.reference-thumb {
-  width: 100%;
-  height: 100%;
-  border-radius: 12px;
-}
-
-.remove-reference {
-  position: absolute;
-  top: -8px;
-  right: -8px;
-}
-
-.progress-section {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 16px;
-  background: var(--el-fill-color-light);
-  border-radius: 12px;
-}
-
-.progress-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  color: var(--el-text-color-regular);
-}
-
-.error-section {
-  margin-top: -8px;
-}
-
-.action-buttons {
-  display: flex;
-  justify-content: center;
-  padding-top: 8px;
-
-  .el-button {
-    min-width: 160px;
-    height: 48px;
-    font-size: 16px;
-    border-radius: 12px;
-
-    .el-icon {
-      margin-right: 8px;
+    &:hover {
+      border-color: var(--el-color-primary);
+      color: var(--el-color-primary);
     }
   }
+
+  .reference-preview {
+    position: relative;
+    width: 32px;
+    height: 32px;
+
+    .reference-thumb {
+      width: 100%;
+      height: 100%;
+      border-radius: 6px;
+      object-fit: cover;
+    }
+
+    .remove-btn {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      width: 16px;
+      height: 16px;
+      padding: 0;
+    }
+  }
+}
+
+// 进度行
+.progress-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--el-fill-color-light);
+  border-radius: 8px;
+
+  .el-progress {
+    flex: 1;
+  }
+
+  .progress-text {
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
+    white-space: nowrap;
+  }
+}
+
+// 错误提示
+.error-alert {
+  border-radius: 8px;
 }
 </style>
