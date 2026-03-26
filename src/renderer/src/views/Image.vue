@@ -10,7 +10,7 @@
     <!-- 主内容区域 -->
     <div class="page-main">
       <!-- 顶部生成器区域 -->
-      <div class="generator-area">
+      <div class="generator-area" :class="{ expanded: isResultCollapsed }" @click="handleGeneratorClick">
         <ImageGenerator
           ref="generatorRef"
           @generated="handleGenerated"
@@ -19,7 +19,7 @@
       </div>
 
       <!-- 底部结果展示区域 -->
-      <div class="result-area">
+      <div class="result-area" :class="{ collapsed: isResultCollapsed }">
         <ImageResult
           :image="selectedImage"
           @regenerate="handleRegenerate"
@@ -57,6 +57,9 @@ const selectedImageId = ref<string>('')
 /** 生成器组件引用 */
 const generatorRef = ref<InstanceType<typeof ImageGenerator> | null>(null)
 
+/** 结果区域是否折叠 */
+const isResultCollapsed = ref(true)
+
 // ==================== 计算属性 ====================
 
 /** 当前选中的图像 */
@@ -72,6 +75,24 @@ const selectedImage = computed<ImageRecord | null>(() => {
  */
 function handleSelectImage(image: ImageRecord): void {
   selectedImageId.value = image.id
+  // 选择图片时展开结果区域
+  isResultCollapsed.value = false
+}
+
+/**
+ * 处理生成器区域点击
+ * 如果结果区域处于展开状态，则折叠
+ */
+function handleGeneratorClick(event: MouseEvent): void {
+  // 检查是否点击的是交互控件（按钮、输入框、选择器等）
+  const target = event.target as HTMLElement
+  const isInteractiveElement = target.closest(
+    'button, input, textarea, select, .el-select, .el-input, .el-button, .el-textarea'
+  )
+
+  if (isInteractiveElement && !isResultCollapsed.value) {
+    isResultCollapsed.value = true
+  }
 }
 
 /**
@@ -81,6 +102,8 @@ function handleGenerated(taskId: string): void {
   console.log('图像生成任务已创建:', taskId)
   // 刷新图像列表
   loadImages()
+  // 图片生成成功时展开结果区域
+  isResultCollapsed.value = false
 }
 
 /**
@@ -167,11 +190,17 @@ onMounted(async () => {
 
 .generator-area {
   flex-shrink: 0;
-  max-height: 50%;
   padding: 20px;
   background: #fff;
   border-bottom: 1px solid var(--el-border-color-lighter);
   overflow-y: auto;
+  transition: flex 0.3s ease, max-height 0.3s ease;
+  max-height: 50%;
+
+  &.expanded {
+    flex: 1;
+    max-height: 100%;
+  }
 
   &::-webkit-scrollbar {
     width: 6px;
@@ -196,6 +225,16 @@ onMounted(async () => {
   min-height: 0;
   padding: 20px;
   overflow-y: auto;
+  transition: flex 0.3s ease, padding 0.3s ease, opacity 0.3s ease;
+
+  &.collapsed {
+    flex: 0;
+    min-height: 0;
+    height: 0;
+    padding: 0 20px;
+    overflow: hidden;
+    opacity: 0;
+  }
 
   &::-webkit-scrollbar {
     width: 6px;
