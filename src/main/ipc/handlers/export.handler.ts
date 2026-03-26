@@ -64,7 +64,7 @@ function getObsidianVaults(): ObsidianVault[] {
     }
 
     const vaults: ObsidianVault[] = []
-    for (const [id, vaultData] of Object.entries(config.vaults)) {
+    for (const [, vaultData] of Object.entries(config.vaults)) {
       const vaultPath = vaultData.path
       if (vaultPath && fs.existsSync(vaultPath)) {
         vaults.push({
