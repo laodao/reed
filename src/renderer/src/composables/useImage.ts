@@ -150,6 +150,33 @@ export function useImage() {
   })
 
   /**
+   * 按提供商分组的模型列表（用于下拉选择）
+   */
+  const providerModels = computed(() => {
+    const result: Array<{
+      id: string
+      name: string
+      models: Array<ImageModel & { providerId: string; providerName: string }>
+    }> = []
+
+    for (const provider of providers.value) {
+      if (provider.models && provider.models.length > 0) {
+        result.push({
+          id: provider.id,
+          name: provider.name,
+          models: provider.models.map(model => ({
+            ...model,
+            providerId: provider.id,
+            providerName: provider.name
+          }))
+        })
+      }
+    }
+
+    return result
+  })
+
+  /**
    * 当前选中的模型
    */
   const selectedModel = computed(() =>
@@ -750,6 +777,7 @@ export function useImage() {
     hasSelectedModel,
     selectedProvider,
     availableModels,
+    providerModels,
     selectedModel,
     taskProgress,
     hasMore,

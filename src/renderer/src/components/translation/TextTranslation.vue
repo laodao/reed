@@ -4,17 +4,25 @@
     <div class="model-section">
       <div class="model-selector">
         <el-select
-          v-model="selectedModelId"
+          v-model="selectedModelKey"
           placeholder="选择模型"
           class="model-select"
           :disabled="translating"
+          filterable
+          :filter-method="filterModels"
         >
-          <el-option
-            v-for="model in availableModels"
-            :key="model.id"
-            :label="model.name"
-            :value="model.id"
-          />
+          <el-option-group
+            v-for="provider in filteredProviderModels"
+            :key="provider.id"
+            :label="provider.name"
+          >
+            <el-option
+              v-for="model in provider.models"
+              :key="`${provider.id}:${model.id}`"
+              :label="model.name"
+              :value="`${provider.id}:${model.id}`"
+            />
+          </el-option-group>
         </el-select>
       </div>
     </div>
@@ -132,15 +140,16 @@
 </template>
 
 <script setup lang="ts">
+import { ref, computed } from 'vue'
 import { Switch, Loading, CopyDocument } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
 import { useTranslation } from '@/composables'
 
 const {
   translating,
   error,
+  selectedProviderId,
   selectedModelId,
-  availableModels,
+  providerModels,
   hasProviders,
   sourceLanguage,
   targetLanguage,
@@ -152,9 +161,55 @@ const {
   swapLanguages,
   clearTranslation,
   copyText,
-  startRealtimeTranslation,
   LANGUAGES
 } = useTranslation()
+
+// 模型搜索关键词
+const modelSearchKeyword = ref('')
+
+// 选中的模型键（格式：providerId:modelId）
+const selectedModelKey = computed({
+  get: () => `${selectedProviderId.value}:${selectedModelId.value}`,
+  set: (val: string) => {
+    const parts = val.split(':')
+    if (parts.length >= 2) {
+      selectedProviderId.value = parts[0]
+      selectedModelId.value = parts.slice(1).join(':')
+    }
+  }
+})
+
+// 过滤后的模型列表
+const filteredProviderModels = computed(() => {
+  if (!modelSearchKeyword.value) {
+    return providerModels.value
+  }
+
+  const keyword = modelSearchKeyword.value.toLowerCase()
+  const result: typeof providerModels.value = []
+
+  for (const provider of providerModels.value) {
+    const filteredModels = provider.models.filter(model =>
+      model.name.toLowerCase().includes(keyword) ||
+      model.id.toLowerCase().includes(keyword) ||
+      provider.name.toLowerCase().includes(keyword)
+    )
+
+    if (filteredModels.length > 0) {
+      result.push({
+        ...provider,
+        models: filteredModels
+      })
+    }
+  }
+
+  return result
+})
+
+// 模型搜索过滤方法
+function filterModels(keyword: string): void {
+  modelSearchKeyword.value = keyword
+}
 
 // 输入处理（可扩展为实时翻译）
 function handleInput(): void {

@@ -6,7 +6,6 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import type {
   LanguageCode,
-  Language,
   TranslationRecord,
   TextTranslationRequest,
   TranslationHistoryQuery
@@ -121,6 +120,32 @@ export function useTranslation() {
       }
     }
     return allModels
+  })
+
+  /** 按提供商分组的模型列表（用于下拉选择） */
+  const providerModels = computed(() => {
+    const result: Array<{
+      id: string
+      name: string
+      models: TranslationModel[]
+    }> = []
+
+    for (const provider of providers.value) {
+      if (provider.models && provider.models.length > 0) {
+        result.push({
+          id: provider.id,
+          name: provider.name,
+          models: provider.models.map(model => ({
+            id: model.id,
+            name: model.name,
+            providerId: provider.id,
+            providerName: provider.name
+          }))
+        })
+      }
+    }
+
+    return result
   })
 
   /** 是否有可用的提供商 */
@@ -501,6 +526,7 @@ export function useTranslation() {
     // 计算属性
     selectedProvider,
     availableModels,
+    providerModels,
     hasProviders,
     sourceLanguageName,
     targetLanguageName,

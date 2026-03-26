@@ -6,9 +6,15 @@
       <!-- 模型选择 -->
       <div class="form-section">
         <label class="section-label">选择模型</label>
-        <el-select v-model="selectedModelKey" placeholder="选择图像生成模型" style="width: 100%">
+        <el-select
+          v-model="selectedModelKey"
+          placeholder="选择图像生成模型"
+          style="width: 100%"
+          filterable
+          :filter-method="filterModels"
+        >
           <el-option-group
-            v-for="group in modelGroups"
+            v-for="group in filteredModelGroups"
             :key="group.providerName"
             :label="group.providerName"
           >
@@ -148,6 +154,7 @@ interface ModelGroup {
 // ==================== 状态 ====================
 
 const modelGroups = ref<ModelGroup[]>([])
+const modelSearchKeyword = ref('')
 const selectedModelKey = ref('')
 const prompt = ref('')
 const referenceImages = ref<string[]>([])
@@ -162,6 +169,33 @@ const canGenerate = computed(() => {
   return prompt.value.trim() && selectedModelKey.value && selectedAngles.value.length > 0
 })
 
+/** 过滤后的模型列表 */
+const filteredModelGroups = computed(() => {
+  if (!modelSearchKeyword.value) {
+    return modelGroups.value
+  }
+
+  const keyword = modelSearchKeyword.value.toLowerCase()
+  const result: ModelGroup[] = []
+
+  for (const group of modelGroups.value) {
+    const filteredModels = group.models.filter(model =>
+      model.name.toLowerCase().includes(keyword) ||
+      model.id.toLowerCase().includes(keyword) ||
+      group.providerName.toLowerCase().includes(keyword)
+    )
+
+    if (filteredModels.length > 0) {
+      result.push({
+        ...group,
+        models: filteredModels
+      })
+    }
+  }
+
+  return result
+})
+
 // ==================== 监听器 ====================
 
 // 监听外部 angles prop 变化，更新内部 selectedAngles
@@ -172,6 +206,11 @@ watch(() => props.angles, (newAngles) => {
 }, { immediate: true })
 
 // ==================== 方法 ====================
+
+/** 模型搜索过滤方法 */
+function filterModels(keyword: string): void {
+  modelSearchKeyword.value = keyword
+}
 
 async function loadAllModels() {
   const result = await window.electronAPI.image.getProviders()

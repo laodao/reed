@@ -2,26 +2,34 @@
   <div class="image-generator">
     <!-- 第一行：模型选择 + 参数 + 生成按钮 -->
     <div class="top-row">
-      <!-- 模型选择 -->
+      <!-- 模型选择（按提供商分组显示） -->
       <el-select
-        v-model="selectedModelId"
+        v-model="selectedModelKey"
         placeholder="选择模型"
         class="model-select"
         :disabled="generating"
+        filterable
+        :filter-method="filterModels"
       >
-        <el-option
-          v-for="model in availableModels"
-          :key="model.id"
-          :label="model.name"
-          :value="model.id"
+        <el-option-group
+          v-for="provider in filteredProviderModels"
+          :key="provider.id"
+          :label="provider.name"
         >
-          <div class="model-option">
-            <span>{{ model.name }}</span>
-            <span class="model-size" v-if="model.maxResolution">
-              {{ model.maxResolution }}
-            </span>
-          </div>
-        </el-option>
+          <el-option
+            v-for="model in provider.models"
+            :key="`${provider.id}:${model.id}`"
+            :label="model.name"
+            :value="`${provider.id}:${model.id}`"
+          >
+            <div class="model-option">
+              <span>{{ model.name }}</span>
+              <span class="model-size" v-if="model.maxResolution">
+                {{ model.maxResolution }}
+              </span>
+            </div>
+          </el-option>
+        </el-option-group>
       </el-select>
 
       <!-- 尺寸选择 -->
@@ -240,7 +248,7 @@ const {
   generating,
   error,
   currentTask,
-  availableModels,
+  providerModels,
   taskProgress,
   generateImage,
   stopGeneration,
@@ -248,6 +256,53 @@ const {
 } = useImage()
 
 // ==================== 状态 ====================
+
+/** 模型搜索关键词 */
+const modelSearchKeyword = ref('')
+
+/** 选中的模型键（格式：providerId:modelId） */
+const selectedModelKey = computed({
+  get: () => `${selectedProviderId.value}:${selectedModelId.value}`,
+  set: (val: string) => {
+    const parts = val.split(':')
+    if (parts.length >= 2) {
+      selectedProviderId.value = parts[0]
+      selectedModelId.value = parts.slice(1).join(':')
+    }
+  }
+})
+
+/** 过滤后的模型列表 */
+const filteredProviderModels = computed(() => {
+  if (!modelSearchKeyword.value) {
+    return providerModels.value
+  }
+
+  const keyword = modelSearchKeyword.value.toLowerCase()
+  const result: typeof providerModels.value = []
+
+  for (const provider of providerModels.value) {
+    const filteredModels = provider.models.filter(model =>
+      model.name.toLowerCase().includes(keyword) ||
+      model.id.toLowerCase().includes(keyword) ||
+      provider.name.toLowerCase().includes(keyword)
+    )
+
+    if (filteredModels.length > 0) {
+      result.push({
+        ...provider,
+        models: filteredModels
+      })
+    }
+  }
+
+  return result
+})
+
+/** 模型搜索过滤方法 */
+function filterModels(keyword: string): void {
+  modelSearchKeyword.value = keyword
+}
 
 /** 提示词 */
 const prompt = ref('')
@@ -446,8 +501,11 @@ function setParams(params: {
   selectedQuality.value = params.quality || ''
   seed.value = params.seed ?? -1
 
-  // 设置模型
-  if (params.modelId) {
+  // 设置模型（使用组合键）
+  if (params.providerId && params.modelId) {
+    selectedProviderId.value = params.providerId
+    selectedModelId.value = params.modelId
+  } else if (params.modelId) {
     selectedModelId.value = params.modelId
   }
 }

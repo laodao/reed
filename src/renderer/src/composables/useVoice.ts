@@ -110,6 +110,32 @@ export function useVoice() {
     return allModels
   })
 
+  /** 按提供商分组的模型列表（用于下拉选择） */
+  const providerModels = computed(() => {
+    const result: Array<{
+      id: string
+      name: string
+      models: Array<{ id: string; name: string; providerId: string; providerName: string }>
+    }> = []
+
+    for (const provider of providers.value) {
+      if (provider.models && provider.models.length > 0) {
+        result.push({
+          id: provider.id,
+          name: provider.name,
+          models: provider.models.map(model => ({
+            id: model.id,
+            name: model.name,
+            providerId: provider.id,
+            providerName: provider.name
+          }))
+        })
+      }
+    }
+
+    return result
+  })
+
   /** 是否有可用的提供商 */
   const hasProviders = computed(() => providers.value.length > 0)
 
@@ -406,6 +432,7 @@ export function useVoice() {
     // 计算属性
     selectedProvider,
     availableModels,
+    providerModels,
     hasProviders,
     currentLanguageName,
     charCount,
