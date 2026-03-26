@@ -3,7 +3,6 @@
  * @module utils/markdown-to-docx
  */
 
-import { Lexer } from 'marked'
 import {
   Document,
   Paragraph,
@@ -16,13 +15,26 @@ import {
   BorderStyle,
   AlignmentType,
   Packer,
-  ExternalHyperlink,
-  convertInchesToTwip
+  convertInchesToTwip,
+  LevelFormat
 } from 'docx'
 
 interface MarkdownToDocxOptions {
   title?: string
   author?: string
+}
+
+// 缓存 marked 模块
+let markedModule: typeof import('marked') | null = null
+
+/**
+ * 动态加载 marked 模块
+ */
+async function getMarked(): Promise<typeof import('marked')> {
+  if (!markedModule) {
+    markedModule = await import('marked')
+  }
+  return markedModule
 }
 
 /**
@@ -32,19 +44,46 @@ export async function markdownToDocx(
   markdown: string,
   options: MarkdownToDocxOptions = {}
 ): Promise<Buffer> {
-  const lexer = new Lexer({})
+  const marked = await getMarked()
+  const lexer = new marked.Lexer({})
   const tokens = lexer.lex(markdown)
 
   const children: (Paragraph | Table)[] = []
 
   for (const token of tokens) {
-    const elements = await tokenToDocxElements(token)
+    const elements = tokenToDocxElements(token)
     children.push(...elements)
   }
 
   const doc = new Document({
     creator: options.author || 'AI Assistant',
     title: options.title || 'AI 回答',
+    numbering: {
+      config: [
+        {
+          reference: 'ordered-list',
+          levels: [
+            {
+              level: 0,
+              format: LevelFormat.DECIMAL,
+              text: '%1.',
+              alignment: AlignmentType.START
+            }
+          ]
+        },
+        {
+          reference: 'unordered-list',
+          levels: [
+            {
+              level: 0,
+              format: LevelFormat.BULLET,
+              text: '•',
+              alignment: AlignmentType.START
+            }
+          ]
+        }
+      ]
+    },
     sections: [{
       properties: {},
       children
@@ -57,7 +96,7 @@ export async function markdownToDocx(
 /**
  * 将 Markdown token 转换为 Word 元素
  */
-async function tokenToDocxElements(token: any): Promise<(Paragraph | Table)[]> {
+function tokenToDocxElements(token: any): (Paragraph | Table)[] {
   switch (token.type) {
     case 'heading':
       return [createHeading(token)]
@@ -171,11 +210,13 @@ function inlineTokenToTextRuns(token: any): TextRun[] {
       })]
 
     case 'link':
+      // 简化链接处理，只显示文本
       const linkText = token.text || token.href
-      return [new ExternalHyperlink({
-        children: [new TextRun({ text: linkText, style: 'Hyperlink' })],
-        link: token.href
-      }) as any]
+      return [new TextRun({
+        text: linkText,
+        color: '0563C1',
+        underline: { type: 'single' }
+      })]
 
     case 'br':
       return [new TextRun({ break: 1 })]
