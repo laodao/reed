@@ -72,6 +72,7 @@ export interface GeneratedImage {
  * 图像生成请求（内部）
  */
 export interface ImageGenerationRequest {
+  providerConfigId?: string  // Provider 配置 ID
   model: string
   prompt: string
   negativePrompt?: string

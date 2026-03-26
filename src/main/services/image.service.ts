@@ -713,6 +713,15 @@ export class ImageService {
       const providers: ImageProvider[] = []
 
       for (const config of enabledConfigs) {
+        // 确定 Provider 类型
+        const providerType = config.templateId.replace('image-', '') as ImageProviderType
+
+        // 检查 Provider 是否已实现
+        if (!isProviderImplemented(providerType)) {
+          console.log(`[ImageService.getProviders] Provider ${providerType} 未实现，跳过`)
+          continue
+        }
+
         // 检查该提供商是否有图像类型的模型
         const models = config.models || []
         const imageModels = models.filter(m =>
@@ -721,7 +730,6 @@ export class ImageService {
         )
 
         // 或者检查提供商模板的能力是否包含 image
-        // 注意：某些提供商可能没有在模型中标注类型，但模板支持图像生成
         const hasImageCapability = await this.checkImageCapability(config.templateId)
 
         if (imageModels.length > 0 || hasImageCapability) {
@@ -755,6 +763,13 @@ export class ImageService {
 
         for (const config of imageConfigs) {
           const providerType = config.templateId.replace('image-', '') as ImageProviderType
+
+          // 检查 Provider 是否已实现
+          if (!isProviderImplemented(providerType)) {
+            console.log(`[ImageService.getProviders] Provider ${providerType} 未实现，跳过`)
+            continue
+          }
+
           const definition = getProviderDefinition(providerType)
 
           if (definition) {

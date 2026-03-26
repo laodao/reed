@@ -642,6 +642,98 @@ const electronAPI = {
       ipcRenderer.on('kb:stats', handler)
       return () => ipcRenderer.removeListener('kb:stats', handler)
     }
+  },
+
+  // 人像设计相关
+  portrait: {
+    // 项目管理
+    createProject: (data: {
+      name: string
+      description?: string
+      prompt: string
+      referenceImages?: string[]
+      providerId: string
+      modelId: string
+      config?: {
+        angles?: ('front' | 'left' | 'right' | 'back')[]
+        backgroundType?: 'solid' | 'transparent'
+        backgroundColor?: string
+      }
+    }) => ipcRenderer.invoke('portrait:create-project', data),
+    listProjects: (page?: number, pageSize?: number) =>
+      ipcRenderer.invoke('portrait:list-projects', page, pageSize),
+    getProject: (id: string) => ipcRenderer.invoke('portrait:get-project', id),
+    updateProject: (data: { id: string; name?: string; description?: string }) =>
+      ipcRenderer.invoke('portrait:update-project', data),
+    deleteProject: (id: string) => ipcRenderer.invoke('portrait:delete-project', id),
+
+    // 生成人物
+    generate: (request: {
+      projectId?: string
+      prompt: string
+      referenceImages?: string[]
+      providerId: string
+      modelId: string
+      config: {
+        angles: ('front' | 'left' | 'right' | 'back')[]
+        backgroundType?: 'solid' | 'transparent'
+        backgroundColor?: string
+        width?: number
+        height?: number
+        seed?: number
+      }
+    }) => ipcRenderer.invoke('portrait:generate', request),
+
+    // 换衣
+    changeClothes: (request: {
+      projectId: string
+      variantId?: string
+      clothesDescription: string
+      angles: ('front' | 'left' | 'right' | 'back')[]
+    }) => ipcRenderer.invoke('portrait:change-clothes', request),
+
+    // 换背景
+    changeBackground: (request: {
+      projectId: string
+      variantId?: string
+      backgroundType: 'solid' | 'preset' | 'custom'
+      backgroundColor?: string
+      presetScene?: string
+      customDescription?: string
+      angles: ('front' | 'left' | 'right' | 'back')[]
+    }) => ipcRenderer.invoke('portrait:change-background', request),
+
+    // 变体管理
+    listVariants: (projectId: string) => ipcRenderer.invoke('portrait:list-variants', projectId),
+    deleteVariant: (id: string) => ipcRenderer.invoke('portrait:delete-variant', id),
+
+    // 生成多角度（第二步）
+    generateAngles: (request: {
+      projectId: string
+      angles: ('front' | 'left' | 'right' | 'back')[]
+    }) => ipcRenderer.invoke('portrait:generate-angles', request),
+
+    // 导出
+    export: (request: {
+      projectId: string
+      variantIds?: string[]
+      type: 'single' | 'grid' | 'zip'
+      gridLayout?: 'horizontal' | 'vertical' | '2x2'
+    }) => ipcRenderer.invoke('portrait:export', request),
+
+    // 监听生成事件
+    onGenerationEvent: (callback: (data: {
+      type: 'generation-started' | 'generation-progress' | 'generation-completed' | 'generation-failed'
+      projectId: string
+      angle?: string
+      progress?: number
+      variants?: any[]
+      error?: string
+    }) => void) => {
+      const handler = (_event: any, data: any) => callback(data)
+      ipcRenderer.on('portrait:generation-event', handler)
+      return () => ipcRenderer.removeListener('portrait:generation-event', handler)
+    }
   }
 }
 

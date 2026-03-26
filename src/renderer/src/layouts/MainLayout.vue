@@ -121,7 +121,8 @@ import {
   Setting,
   Expand,
   Fold,
-  FolderOpened
+  FolderOpened,
+  User
 } from '@element-plus/icons-vue'
 import { useTheme } from '@/composables/useTheme'
 
@@ -149,6 +150,11 @@ const mainMenuItems = [
     path: '/image',
     label: '图像生成',
     icon: markRaw(Picture)
+  },
+  {
+    path: '/portrait',
+    label: '人像设计',
+    icon: markRaw(User)
   },
   {
     path: '/translate',

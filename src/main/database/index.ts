@@ -23,6 +23,8 @@ import { KbDocumentRepository } from './repositories/kb-document.repository'
 import { KbChunkRepository } from './repositories/kb-chunk.repository'
 import { KbVectorRepository } from './repositories/kb-vector.repository'
 import { KbInvertedIndexRepository } from './repositories/kb-inverted-index.repository'
+import { PortraitProjectRepository } from './repositories/portrait-project.repository'
+import { PortraitVariantRepository } from './repositories/portrait-variant.repository'
 import { DataPathService } from '../services/data-path.service'
 import { LanceDBService } from '../services/lance-db.service'
 
@@ -51,6 +53,8 @@ export class DatabaseManager {
   public kbChunks: KbChunkRepository | null = null
   public kbVectors: KbVectorRepository | null = null
   public kbInvertedIndex: KbInvertedIndexRepository | null = null
+  public portraitProjects: PortraitProjectRepository | null = null
+  public portraitVariants: PortraitVariantRepository | null = null
 
   private constructor() {
     // 默认使用 userData 路径，后续会在 initialize 中更新
@@ -451,6 +455,45 @@ export class DatabaseManager {
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_inverted_index_chunk_id ON kb_inverted_index(chunk_id)`)
     this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_kb_inverted_index_unique ON kb_inverted_index(term, chunk_id)`)
 
+    // ==================== 人像设计相关表 ====================
+
+    // 人物项目表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS portrait_projects (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        prompt TEXT NOT NULL,
+        reference_images TEXT,
+        provider_id TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        config TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_portrait_projects_created_at ON portrait_projects(created_at DESC)`)
+
+    // 人物变体表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS portrait_variants (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        parent_id TEXT,
+        angle TEXT NOT NULL,
+        image_path TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        config TEXT,
+        variant_info TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES portrait_projects(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_portrait_variants_project_id ON portrait_variants(project_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_portrait_variants_type ON portrait_variants(type)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_portrait_variants_created_at ON portrait_variants(created_at DESC)`)
+
     // 执行数据库迁移
     this.runMigrations()
   }
@@ -617,6 +660,8 @@ export class DatabaseManager {
     // KbVectorRepository 使用 LanceDB，不再需要 SQLite 连接
     this.kbVectors = new KbVectorRepository()
     this.kbInvertedIndex = new KbInvertedIndexRepository(this.db)
+    this.portraitProjects = new PortraitProjectRepository(this.db)
+    this.portraitVariants = new PortraitVariantRepository(this.db)
   }
 
   /**
