@@ -10,6 +10,7 @@ import { createProvider } from '../providers'
 import { PROVIDER_TEMPLATES } from './provider-template.service'
 import { SecureStorageService } from './secure-storage.service'
 import { FileService } from './file.service'
+import { KnowledgeBaseService } from './knowledge-base.service'
 import type {
   Dialog,
   Message,
@@ -21,7 +22,8 @@ import type {
   WebSearchResult,
   MessageMetadata,
   Attachment,
-  AttachmentContent
+  AttachmentContent,
+  SearchResult
 } from '../../shared/types'
 import { WebSearchService } from './web-search.service'
 
@@ -168,17 +170,83 @@ export class ChatService {
         }
       }
 
+      // 处理知识库检索
+      let knowledgeResults: SearchResult[] = []
+      let knowledgeContext = ''
+
+      // 优先使用请求中传入的知识库配置，否则从角色获取
+      let kbIds = request.knowledgeBaseIds
+      let kbTopK = request.knowledgeRetrieveCount
+      let kbThreshold = request.knowledgeThreshold
+
+      // 如果请求中没有知识库配置，从角色获取
+      if (!kbIds && dialog.roleId && dbManager.roles) {
+        const role = await dbManager.roles.getById(dialog.roleId)
+        if (role?.knowledgeBaseIds?.length) {
+          kbIds = role.knowledgeBaseIds
+          kbTopK = kbTopK ?? role.knowledgeRetrieveCount
+          kbThreshold = kbThreshold ?? role.knowledgeThreshold
+        }
+      }
+
+      // 执行知识库检索
+      if (kbIds && kbIds.length > 0) {
+        console.log('[ChatService.sendMessage] 执行知识库检索, 知识库数量:', kbIds.length)
+        const kbService = new KnowledgeBaseService()
+        const allResults: SearchResult[] = []
+
+        for (const kbId of kbIds) {
+          try {
+            const searchResponse = await kbService.search({
+              knowledgeBaseId: kbId,
+              query: request.content,
+              topK: kbTopK || 5,
+              threshold: kbThreshold || 0.5
+            })
+
+            if (searchResponse.success && searchResponse.data) {
+              allResults.push(...searchResponse.data)
+              console.log('[ChatService.sendMessage] 知识库', kbId, '检索成功, 结果数量:', searchResponse.data.length)
+            }
+          } catch (kbError) {
+            console.error('[ChatService.sendMessage] 知识库检索失败:', kbError)
+            // 单个知识库检索失败不影响其他知识库
+          }
+        }
+
+        // 按相似度排序，取 top N
+        allResults.sort((a, b) => b.score - a.score)
+        knowledgeResults = allResults.slice(0, kbTopK || 5)
+
+        // 构建知识库上下文
+        if (knowledgeResults.length > 0) {
+          knowledgeContext = this.formatKnowledgeContext(knowledgeResults)
+          console.log('[ChatService.sendMessage] 知识库检索完成, 总结果数量:', knowledgeResults.length)
+        }
+      }
+
       // 创建 AbortController
       const abortController = new AbortController()
       activeStreams.set(request.dialogId, abortController)
 
       // 创建 AI 消息（先创建空消息，在发送 start 事件之前）
+      const aiMessageMetadata: MessageMetadata = {}
+      if (webSearchResults.length > 0) {
+        aiMessageMetadata.webSearch = webSearchResults
+      }
+      if (knowledgeResults.length > 0) {
+        aiMessageMetadata.knowledgeBase = knowledgeResults.map(r => ({
+          documentName: r.documentName,
+          score: r.score
+        }))
+      }
+
       const aiMessage = await dbManager.messages.create({
         dialogId: request.dialogId,
         role: 'assistant',
         content: '',
         modelId: effectiveModelId,
-        metadata: webSearchResults.length > 0 ? { webSearch: webSearchResults } : undefined
+        metadata: Object.keys(aiMessageMetadata).length > 0 ? aiMessageMetadata : undefined
       })
 
       // 发送流式开始事件（包含 messageId 和 dialogId）
@@ -191,7 +259,8 @@ export class ChatService {
       // 构建聊天选项
       const chatOptions = {
         enableThinking: request.enableThinkingChain,
-        webSearchContext: webSearchContext || undefined
+        webSearchContext: webSearchContext || undefined,
+        knowledgeContext: knowledgeContext || undefined
       }
 
       // 流式调用 AI
@@ -235,6 +304,12 @@ export class ChatService {
           if (webSearchResults.length > 0) {
             metadata.webSearch = webSearchResults
           }
+          if (knowledgeResults.length > 0) {
+            metadata.knowledgeBase = knowledgeResults.map(r => ({
+              documentName: r.documentName,
+              score: r.score
+            }))
+          }
           await dbManager.messages.updateContent(aiMessage.id, fullContent)
           if (Object.keys(metadata).length > 0) {
             await dbManager.messages.updateMetadata(aiMessage.id, metadata)
@@ -269,6 +344,12 @@ export class ChatService {
       if (webSearchResults.length > 0) {
         metadata.webSearch = webSearchResults
       }
+      if (knowledgeResults.length > 0) {
+        metadata.knowledgeBase = knowledgeResults.map(r => ({
+          documentName: r.documentName,
+          score: r.score
+        }))
+      }
       if (Object.keys(metadata).length > 0) {
         await dbManager.messages.updateMetadata(aiMessage.id, metadata)
       }
@@ -302,6 +383,21 @@ export class ChatService {
       return true
     }
     return false
+  }
+
+  /**
+   * 格式化知识库检索结果为上下文
+   * @param results 检索结果列表
+   * @returns 格式化后的上下文字符串
+   */
+  private static formatKnowledgeContext(results: SearchResult[]): string {
+    if (results.length === 0) return ''
+
+    const sections = results.map((r, i) =>
+      `【${i + 1}】来源: ${r.documentName}\n相关度: ${(r.score * 100).toFixed(1)}%\n\n${r.content}`
+    )
+
+    return sections.join('\n\n---\n\n')
   }
 
   /**

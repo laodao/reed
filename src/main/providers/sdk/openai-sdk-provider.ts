@@ -164,6 +164,13 @@ export class OpenAISdkProvider extends BaseProvider {
     // 添加系统消息
     let systemPrompt = context.systemPrompt || ''
 
+    // 如果有知识库上下文，添加到系统提示
+    if (options?.knowledgeContext) {
+      systemPrompt = systemPrompt
+        ? `${systemPrompt}\n\n以下是从知识库检索到的相关内容，请参考这些信息回答问题：\n${options.knowledgeContext}`
+        : `请参考以下知识库内容回答问题：\n${options.knowledgeContext}`
+    }
+
     // 如果有联网搜索上下文，添加到系统提示
     if (options?.webSearchContext) {
       systemPrompt = systemPrompt

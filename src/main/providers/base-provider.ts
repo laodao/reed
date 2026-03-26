@@ -35,6 +35,8 @@ export interface ChatOptions {
   enableThinking?: boolean
   /** 联网搜索上下文（已格式化的搜索结果） */
   webSearchContext?: string
+  /** 知识库上下文（已格式化的检索结果） */
+  knowledgeContext?: string
 }
 
 /**

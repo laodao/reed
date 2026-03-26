@@ -61,16 +61,48 @@
           </el-button>
         </el-tooltip>
 
-        <el-tooltip content="知识库（开发中）" placement="top">
+        <!-- 知识库下拉菜单 -->
+        <el-dropdown
+          trigger="click"
+          @command="handleKnowledgeBaseCommand"
+        >
           <el-button
             class="tool-btn"
-            :class="{ active: enableKnowledgeBase }"
+            :class="{ active: selectedKnowledgeBaseIds.length > 0 }"
             text
-            @click="enableKnowledgeBase = !enableKnowledgeBase"
           >
             <el-icon><Collection /></el-icon>
           </el-button>
-        </el-tooltip>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <template v-if="!allKnowledgeBases || allKnowledgeBases.length === 0">
+                <el-dropdown-item disabled>
+                  <span style="color: #909399;">暂无可用知识库</span>
+                </el-dropdown-item>
+                <el-dropdown-item divided>
+                  <span style="color: #909399; font-size: 12px;">请先创建知识库</span>
+                </el-dropdown-item>
+              </template>
+              <template v-else>
+                <el-dropdown-item command="clear" :class="{ 'is-active': selectedKnowledgeBaseIds.length === 0 }">
+                  不使用知识库
+                </el-dropdown-item>
+                <el-dropdown-item divided disabled>
+                  <span style="color: #909399; font-size: 12px;">选择知识库（可多选）</span>
+                </el-dropdown-item>
+                <el-dropdown-item
+                  v-for="kb in allKnowledgeBases"
+                  :key="kb.id"
+                  :command="kb.id"
+                  :class="{ 'is-active': selectedKnowledgeBaseIds.includes(kb.id) }"
+                >
+                  <el-icon v-if="selectedKnowledgeBaseIds.includes(kb.id)" style="color: #10b981; margin-right: 4px;"><Check /></el-icon>
+                  {{ kb.name }}
+                </el-dropdown-item>
+              </template>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
       <div class="tool-right">
         <span class="tool-hint">Ctrl + Enter 发送</span>
@@ -148,6 +180,11 @@
             <el-icon><Cpu /></el-icon>
             深度思考
           </span>
+          <!-- 知识库状态指示 -->
+          <span v-if="selectedKnowledgeBaseIds.length > 0" class="status-tag kb-tag">
+            <el-icon><Collection /></el-icon>
+            知识库 ({{ selectedKnowledgeBaseIds.length }})
+          </span>
         </div>
         <div class="action-right">
           <el-button v-if="disabled" type="danger" round @click="$emit('stop')">
@@ -172,7 +209,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { Paperclip, Search, Cpu, Collection, VideoPause, Promotion, Close, Document } from '@element-plus/icons-vue'
+import { Paperclip, Search, Cpu, Collection, VideoPause, Promotion, Close, Document, Check } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { Message, WebSearchEngine, Attachment } from '../../../shared/types'
 
@@ -188,6 +225,11 @@ const props = defineProps<{
     supportsThinking?: boolean
     supportsWebSearch?: boolean
   }
+  /** 所有可用的知识库列表 */
+  allKnowledgeBases?: Array<{
+    id: string
+    name: string
+  }>
 }>()
 
 const emit = defineEmits<{
@@ -198,6 +240,7 @@ const emit = defineEmits<{
       engine: WebSearchEngine
     }
     enableThinkingChain?: boolean
+    knowledgeBaseIds?: string[]
   }): void
   (e: 'stop'): void
 }>()
@@ -211,7 +254,7 @@ const attachments = ref<AttachmentWithPreview[]>([])
 // 工具选项
 const webSearchEngine = ref<WebSearchEngine | null>(null)
 const enableThinkingChain = ref(false)
-const enableKnowledgeBase = ref(false)
+const selectedKnowledgeBaseIds = ref<string[]>([])
 
 // 计算属性：是否可以发送
 const canSend = computed(() => {
@@ -247,6 +290,21 @@ const thinkingTooltip = computed(() => {
   }
   return '深度思考'
 })
+
+// 处理知识库命令
+function handleKnowledgeBaseCommand(command: string): void {
+  if (command === 'clear') {
+    selectedKnowledgeBaseIds.value = []
+  } else {
+    // 切换选中状态
+    const index = selectedKnowledgeBaseIds.value.indexOf(command)
+    if (index > -1) {
+      selectedKnowledgeBaseIds.value.splice(index, 1)
+    } else {
+      selectedKnowledgeBaseIds.value.push(command)
+    }
+  }
+}
 
 // 处理联网搜索命令
 function handleWebSearchCommand(command: string): void {
@@ -328,7 +386,8 @@ function handleSend(): void {
       enabled: true,
       engine: webSearchEngine.value!
     } : undefined,
-    enableThinkingChain: enableThinkingChain.value && !thinkingDisabled.value
+    enableThinkingChain: enableThinkingChain.value && !thinkingDisabled.value,
+    knowledgeBaseIds: selectedKnowledgeBaseIds.value.length > 0 ? selectedKnowledgeBaseIds.value : undefined
   })
 
   // 清空输入
@@ -533,6 +592,11 @@ function handleKeydown(event: KeyboardEvent): void {
     color: var(--el-color-primary);
     background: var(--el-color-primary-light-9);
     border-radius: 4px;
+
+    &.kb-tag {
+      color: #10b981;
+      background: #ecfdf5;
+    }
   }
 }
 

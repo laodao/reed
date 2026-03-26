@@ -297,6 +297,10 @@ const electronAPI = {
       enableThinkingChain?: boolean
       modelId?: string
       providerConfigId?: string
+      // 知识库配置
+      knowledgeBaseIds?: string[]
+      knowledgeRetrieveCount?: number
+      knowledgeThreshold?: number
     }) => ipcRenderer.invoke(IPC_CHANNELS.CHAT_SEND, data),
     stop: (dialogId: string) => ipcRenderer.invoke(IPC_CHANNELS.CHAT_STOP, dialogId),
     onStream: (callback: (event: any, data: any) => void) => {
@@ -556,6 +560,8 @@ const electronAPI = {
     deleteDocument: (documentId: string) => ipcRenderer.invoke('knowledge-base:delete-document', documentId),
     // 重新处理文档
     reprocessDocument: (documentId: string) => ipcRenderer.invoke('knowledge-base:reprocess-document', documentId),
+    // 获取文档分片
+    getDocumentChunks: (documentId: string) => ipcRenderer.invoke('knowledge-base:get-document-chunks', documentId),
     // 检索知识库
     search: (request: {
       knowledgeBaseId: string

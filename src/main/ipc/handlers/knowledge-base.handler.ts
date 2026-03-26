@@ -12,6 +12,7 @@ import type {
   CreateKnowledgeBaseRequest,
   UpdateKnowledgeBaseRequest,
   KbDocument,
+  KbChunk,
   SearchRequest,
   SearchResult,
   EmbeddingModel,
@@ -66,6 +67,9 @@ export function registerKnowledgeBaseHandlers(): void {
 
   // 重新处理文档
   ipcMain.handle('knowledge-base:reprocess-document', handleReprocessDocument)
+
+  // 获取文档分片
+  ipcMain.handle('knowledge-base:get-document-chunks', handleGetDocumentChunks)
 
   // ==================== 检索服务 ====================
 
@@ -188,6 +192,17 @@ async function handleReprocessDocument(
 ): Promise<IpcResponse<void>> {
   const service = getKnowledgeBaseService()
   return await service.reprocessDocument(documentId)
+}
+
+/**
+ * 处理获取文档分片
+ */
+async function handleGetDocumentChunks(
+  _event: IpcMainInvokeEvent,
+  documentId: string
+): Promise<IpcResponse<KbChunk[]>> {
+  const service = getKnowledgeBaseService()
+  return await service.getDocumentChunks(documentId)
 }
 
 // ==================== 检索服务处理器 ====================

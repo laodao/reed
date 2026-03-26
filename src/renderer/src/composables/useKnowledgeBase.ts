@@ -11,6 +11,7 @@ import type {
   CreateKnowledgeBaseRequest,
   UpdateKnowledgeBaseRequest,
   KbDocument,
+  KbChunk,
   SearchRequest,
   SearchResult,
   EmbeddingModel,
@@ -276,6 +277,13 @@ export function useKnowledgeBase() {
     return await store.reprocessDocument(documentId)
   }
 
+  /**
+   * 获取文档分片
+   */
+  async function getDocumentChunks(documentId: string): Promise<KbChunk[]> {
+    return await store.getDocumentChunks(documentId)
+  }
+
   // ==================== 检索服务 ====================
 
   /**
@@ -407,6 +415,7 @@ export function useKnowledgeBase() {
     selectAndUploadFiles,
     deleteDocument,
     reprocessDocument,
+    getDocumentChunks,
 
     // 检索服务
     searchKnowledgeBase,

@@ -11,6 +11,7 @@ import type {
   CreateKnowledgeBaseRequest,
   UpdateKnowledgeBaseRequest,
   KbDocument,
+  KbChunk,
   SearchRequest,
   SearchResult,
   EmbeddingModel,
@@ -435,6 +436,29 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
     }
   }
 
+  /**
+   * 获取文档分片列表
+   */
+  async function getDocumentChunks(documentId: string): Promise<KbChunk[]> {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const response = await window.electronAPI.knowledgeBase.getDocumentChunks(documentId)
+      if (response.success && response.data) {
+        return response.data
+      } else {
+        error.value = response.error || '获取文档分片失败'
+        return []
+      }
+    } catch (err: any) {
+      error.value = err.message || '获取文档分片失败'
+      return []
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   // ==================== 检索服务 ====================
 
   /**
@@ -573,6 +597,7 @@ export const useKnowledgeBaseStore = defineStore('knowledgeBase', () => {
     uploadDocuments,
     deleteDocument,
     reprocessDocument,
+    getDocumentChunks,
     // 检索服务
     search,
     clearSearchResults,

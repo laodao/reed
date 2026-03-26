@@ -22,6 +22,7 @@
     <ChatInput
       :disabled="isGenerating"
       :current-model="currentModelInfo"
+      :all-knowledge-bases="allKnowledgeBases"
       @send="handleSend"
       @stop="$emit('stopGeneration')"
     />
@@ -50,6 +51,7 @@ const emit = defineEmits<{
       engine: WebSearchEngine
     }
     enableThinkingChain?: boolean
+    knowledgeBaseIds?: string[]
   }): void
   (e: 'stopGeneration'): void
   (e: 'clearMessages'): void
@@ -67,6 +69,9 @@ const emit = defineEmits<{
 // 提供商配置列表
 const providerConfigs = ref<UserProviderConfig[]>([])
 
+// 知识库列表缓存
+const knowledgeBasesCache = ref<Map<string, { id: string; name: string }>>(new Map())
+
 // 加载提供商配置
 async function loadProviderConfigs(): Promise<void> {
   try {
@@ -78,6 +83,26 @@ async function loadProviderConfigs(): Promise<void> {
     console.error('加载提供商配置失败:', error)
   }
 }
+
+// 加载知识库列表
+async function loadKnowledgeBases(): Promise<void> {
+  try {
+    const response = await window.electronAPI.knowledgeBase.list()
+    if (response.success && response.data) {
+      knowledgeBasesCache.value.clear()
+      response.data.forEach(kb => {
+        knowledgeBasesCache.value.set(kb.id, { id: kb.id, name: kb.name })
+      })
+    }
+  } catch (error) {
+    console.error('加载知识库列表失败:', error)
+  }
+}
+
+// 计算所有可用的知识库列表
+const allKnowledgeBases = computed(() => {
+  return Array.from(knowledgeBasesCache.value.values())
+})
 
 // 获取模型能力信息
 function getModelCapabilities(providerConfig: UserProviderConfig, modelId: string): { supportsThinking?: boolean; supportsWebSearch?: boolean } | undefined {
@@ -116,6 +141,7 @@ function handleSend(content: string, options?: {
     engine: WebSearchEngine
   }
   enableThinkingChain?: boolean
+  knowledgeBaseIds?: string[]
 }): void {
   emit('sendMessage', content, options)
 }
@@ -238,6 +264,7 @@ watch(
 
 onMounted(() => {
   loadProviderConfigs()
+  loadKnowledgeBases()
 })
 </script>
 

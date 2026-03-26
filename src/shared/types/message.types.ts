@@ -74,12 +74,20 @@ export interface WebSearchResponse {
 }
 
 /**
+ * 知识库引用
+ */
+export interface KnowledgeBaseReference {
+  documentName: string
+  score: number
+}
+
+/**
  * 消息元数据
  */
 export interface MessageMetadata {
   thinkingChain?: string  // 思维链内容
   webSearch?: WebSearchResult[]  // 联网搜索结果
-  knowledgeBase?: string[]  // 知识库引用
+  knowledgeBase?: KnowledgeBaseReference[]  // 知识库引用
 }
 
 /**
@@ -125,6 +133,12 @@ export interface SendMessageRequest {
   modelId?: string
   /** 当前选中的提供商配置ID（使用内存中的值，不从数据库读取） */
   providerConfigId?: string
+  /** 知识库检索配置 - 关联的知识库 ID 列表 */
+  knowledgeBaseIds?: string[]
+  /** 知识库检索数量 */
+  knowledgeRetrieveCount?: number
+  /** 知识库检索相似度阈值 */
+  knowledgeThreshold?: number
 }
 
 /**

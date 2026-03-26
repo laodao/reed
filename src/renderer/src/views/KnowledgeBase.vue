@@ -43,9 +43,9 @@
                   <span>{{ kb.vectorCount }} 向量</span>
                 </div>
               </div>
-              <div class="kb-actions">
+              <div class="kb-actions" @click.stop>
                 <el-dropdown trigger="click" @command="handleKbAction($event, kb)">
-                  <el-button text size="small">
+                  <el-button text size="small" @click.stop>
                     <el-icon><MoreFilled /></el-icon>
                   </el-button>
                   <template #dropdown>
@@ -172,25 +172,36 @@
                 {{ formatDate(row.createdAt) }}
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="150" fixed="right">
+            <el-table-column label="操作" width="200" fixed="right" class-name="action-column">
               <template #default="{ row }">
-                <el-button
-                  v-if="row.status === 'failed'"
-                  text
-                  type="primary"
-                  size="small"
-                  @click="reprocessDocument(row.id)"
-                >
-                  重试
-                </el-button>
-                <el-button
-                  text
-                  type="danger"
-                  size="small"
-                  @click="handleDeleteDocument(row)"
-                >
-                  删除
-                </el-button>
+                <div class="action-buttons">
+                  <el-button
+                    v-if="row.status === 'completed'"
+                    text
+                    type="primary"
+                    size="small"
+                    @click="handleViewChunks(row)"
+                  >
+                    查看
+                  </el-button>
+                  <el-button
+                    v-if="row.status === 'failed'"
+                    text
+                    type="primary"
+                    size="small"
+                    @click="reprocessDocument(row.id)"
+                  >
+                    重试
+                  </el-button>
+                  <el-button
+                    text
+                    type="danger"
+                    size="small"
+                    @click="handleDeleteDocument(row)"
+                  >
+                    删除
+                  </el-button>
+                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -348,6 +359,37 @@
         </div>
       </div>
     </el-drawer>
+
+    <!-- 文档分片查看对话框 -->
+    <el-dialog
+      v-model="showChunksDialog"
+      :title="`文档分片 - ${currentChunkDocument?.name || ''}`"
+      width="800px"
+      destroy-on-close
+    >
+      <div v-loading="chunksLoading" class="chunks-container">
+        <div v-if="currentChunks.length === 0 && !chunksLoading" class="empty-chunks">
+          <el-icon :size="48"><Document /></el-icon>
+          <span>暂无分片数据</span>
+        </div>
+        <div v-else class="chunks-list">
+          <div
+            v-for="chunk in currentChunks"
+            :key="chunk.id"
+            class="chunk-item"
+          >
+            <div class="chunk-header">
+              <span class="chunk-index">分片 #{{ chunk.chunkIndex + 1 }}</span>
+              <span v-if="chunk.metadata?.page" class="chunk-page">第 {{ chunk.metadata.page }} 页</span>
+            </div>
+            <div class="chunk-content">{{ chunk.content }}</div>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showChunksDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -361,11 +403,12 @@ import {
   Search,
   Upload,
   Document,
-  Loading
+  Loading,
+  View
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { useKnowledgeBase } from '@/composables'
-import type { KnowledgeBase, KbDocument } from '../../../shared/types/knowledge-base.types'
+import type { KnowledgeBase, KbDocument, KbChunk } from '../../../shared/types/knowledge-base.types'
 
 // 使用知识库 composable
 const {
@@ -404,6 +447,7 @@ const {
   selectAndUploadFiles,
   deleteDocument,
   reprocessDocument,
+  getDocumentChunks,
   searchKnowledgeBase,
   clearSearchResults,
   selectEmbeddingModel,
@@ -423,6 +467,12 @@ const editFormRef = ref<FormInstance>()
 
 // 检索面板
 const openSearchPanel = ref(false)
+
+// 文档分片查看
+const showChunksDialog = ref(false)
+const chunksLoading = ref(false)
+const currentChunks = ref<KbChunk[]>([])
+const currentChunkDocument = ref<KbDocument | null>(null)
 
 // 编辑的知识库
 const editingKb = ref<KnowledgeBase | null>(null)
@@ -558,6 +608,30 @@ async function handleSearch(): Promise<void> {
   }
 
   await searchKnowledgeBase()
+}
+
+/**
+ * 查看文档分片
+ */
+async function handleViewChunks(doc: KbDocument): Promise<void> {
+  if (doc.status !== 'completed') {
+    ElMessage.warning('文档尚未处理完成，无法查看分片')
+    return
+  }
+
+  currentChunkDocument.value = doc
+  showChunksDialog.value = true
+  chunksLoading.value = true
+  currentChunks.value = []
+
+  try {
+    const chunks = await getDocumentChunks(doc.id)
+    currentChunks.value = chunks
+  } catch (err: any) {
+    ElMessage.error(err.message || '获取文档分片失败')
+  } finally {
+    chunksLoading.value = false
+  }
 }
 </script>
 
@@ -888,5 +962,79 @@ async function handleSearch(): Promise<void> {
 .model-dimension {
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+
+/* 文档表格操作列样式 */
+:deep(.action-column) {
+  .cell {
+    overflow: visible;
+  }
+}
+
+.action-buttons {
+  display: flex;
+  gap: 4px;
+  opacity: 1 !important;
+  background-color: var(--el-bg-color);
+  padding: 4px;
+  border-radius: 4px;
+}
+
+/* 文档分片对话框 */
+.chunks-container {
+  min-height: 200px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.empty-chunks {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  color: var(--el-text-color-secondary);
+  gap: 12px;
+}
+
+.chunks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.chunk-item {
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.chunk-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background-color: var(--el-fill-color-light);
+  border-bottom: 1px solid var(--el-border-color-light);
+}
+
+.chunk-index {
+  font-weight: 500;
+  font-size: 13px;
+}
+
+.chunk-page {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.chunk-content {
+  padding: 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
 }
 </style>

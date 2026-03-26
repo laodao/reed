@@ -71,114 +71,6 @@
             </el-form-item>
           </div>
 
-          <!-- 模型设置 -->
-          <div v-show="activeMenu === 'model'" class="content-section">
-            <div class="section-header">
-              <h3>模型设置</h3>
-              <p>配置助手使用的 AI 模型</p>
-            </div>
-
-            <el-form-item label="默认模型">
-              <el-select
-                v-model="selectedModelKey"
-                placeholder="选择默认模型"
-                clearable
-                filterable
-                :filter-method="filterModels"
-                class="model-select"
-              >
-                <el-option-group
-                  v-for="provider in filteredProviderModels"
-                  :key="provider.id"
-                  :label="provider.name"
-                >
-                  <el-option
-                    v-for="model in provider.models"
-                    :key="`${provider.id}:${model.id}`"
-                    :label="model.name"
-                    :value="`${provider.id}:${model.id}`"
-                  >
-                    <div class="model-option">
-                      <span class="model-name">{{ model.name }}</span>
-                      <span class="model-context">{{ formatContext(model.contextWindow) }}</span>
-                    </div>
-                  </el-option>
-                </el-option-group>
-              </el-select>
-              <div class="field-hint">留空则使用全局默认模型</div>
-            </el-form-item>
-
-            <el-form-item label="自动重置">
-              <el-switch v-model="form.autoResetModel" />
-              <span class="switch-hint">新建话题时重置为助手的默认模型</span>
-            </el-form-item>
-          </div>
-
-          <!-- 知识库设置 -->
-          <div v-show="activeMenu === 'knowledge'" class="content-section">
-            <div class="section-header">
-              <h3>知识库设置</h3>
-              <p>关联知识库以增强助手的回答能力</p>
-            </div>
-
-            <el-form-item label="关联知识库">
-              <el-select
-                v-model="form.knowledgeBaseIds"
-                multiple
-                placeholder="选择要关联的知识库"
-                class="knowledge-select"
-              >
-                <el-option
-                  v-for="kb in knowledgeBases"
-                  :key="kb.id"
-                  :label="kb.name"
-                  :value="kb.id"
-                >
-                  <div class="kb-option">
-                    <span class="kb-name">{{ kb.name }}</span>
-                    <span class="kb-count">{{ kb.documentCount }} 篇文档</span>
-                  </div>
-                </el-option>
-              </el-select>
-              <div class="field-hint">助手将在回答时参考关联的知识库内容</div>
-            </el-form-item>
-
-            <el-form-item label="检索数量">
-              <el-slider
-                v-model="form.knowledgeRetrieveCount"
-                :min="1"
-                :max="10"
-                :step="1"
-                show-input
-                :show-input-controls="false"
-                class="param-slider"
-              />
-              <span class="slider-hint">每次检索返回的相关片段数量</span>
-            </el-form-item>
-
-            <el-form-item label="相似度阈值">
-              <el-slider
-                v-model="form.knowledgeThreshold"
-                :min="0"
-                :max="1"
-                :step="0.05"
-                show-input
-                :show-input-controls="false"
-                class="param-slider"
-              />
-              <span class="slider-hint">只返回相似度高于此阈值的内容</span>
-            </el-form-item>
-
-            <!-- 知识库空状态 -->
-            <div v-if="knowledgeBases.length === 0" class="empty-knowledge">
-              <el-icon :size="48"><FolderOpened /></el-icon>
-              <p>暂无可用的知识库</p>
-              <el-button type="primary" text @click="handleGoToKnowledge">
-                前往创建知识库
-              </el-button>
-            </div>
-          </div>
-
           <!-- 生成参数 -->
           <div v-show="activeMenu === 'params'" class="content-section">
             <div class="section-header">
@@ -268,10 +160,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { User, Cpu, FolderOpened, Setting } from '@element-plus/icons-vue'
-import type { Role, UserProviderConfig, ProviderTemplate, UpdateRoleRequest } from '../../../shared/types'
+import { User, Setting } from '@element-plus/icons-vue'
+import type { Role, UpdateRoleRequest } from '../../../shared/types'
 import type { AssistantLibraryTemplate } from '../../../shared/types/assistant-library.types'
 
 // Props
@@ -290,8 +182,6 @@ const emit = defineEmits<{
 // 菜单项
 const menuItems = [
   { key: 'basic', label: '基本信息', icon: User },
-  { key: 'model', label: '模型设置', icon: Cpu },
-  { key: 'knowledge', label: '知识库设置', icon: FolderOpened },
   { key: 'params', label: '生成参数', icon: Setting }
 ]
 
@@ -302,7 +192,7 @@ const visible = computed({
 })
 
 const isEdit = computed(() => !!props.role)
-const activeMenu = ref<'basic' | 'model' | 'knowledge' | 'params'>('basic')
+const activeMenu = ref<'basic' | 'params'>('basic')
 
 // 表单
 const formRef = ref<FormInstance>()
@@ -311,14 +201,6 @@ const form = reactive({
   description: '',
   systemPrompt: '',
   avatar: '🤖',
-  // 模型配置
-  defaultModelId: '',
-  defaultProviderConfigId: '',
-  autoResetModel: true,
-  // 知识库配置
-  knowledgeBaseIds: [] as string[],
-  knowledgeRetrieveCount: 3,
-  knowledgeThreshold: 0.5,
   // 生成参数
   temperature: 0.7,
   topP: 1.0,
@@ -330,142 +212,12 @@ const form = reactive({
 // 头像选项
 const avatarOptions = ['🤖', '💬', '🌐', '💻', '✍️', '📚', '🎨', '🎵', '🔬', '💼', '🎮', '🏥', '⚖️', '🔧', '📊', '🎯']
 
-// 提供商配置列表
-const providerConfigs = ref<UserProviderConfig[]>([])
-// 提供商模板列表
-const providerTemplates = ref<ProviderTemplate[]>([])
-// 选中的模型键
-const selectedModelKey = ref<string>('')
 // 保存状态
 const saving = ref(false)
-
-// 知识库列表（暂时使用空数组，后续实现知识库功能）
-const knowledgeBases = ref<Array<{ id: string; name: string; documentCount: number }>>([])
 
 // 表单验证规则
 const rules: FormRules = {
   name: [{ required: true, message: '请输入助手名称', trigger: 'blur' }]
-}
-
-// 提供商模型列表
-const providerModels = computed(() => {
-  const result: Array<{ id: string; name: string; models: Array<{ id: string; name: string; contextWindow: number }> }> = []
-
-  for (const config of providerConfigs.value) {
-    if (!config.isEnabled) continue
-
-    const models: Array<{ id: string; name: string; contextWindow: number }> = []
-    const template = providerTemplates.value.find(t => t.id === config.templateId)
-
-    // 只有当模板有预定义模型且不为空时才进行验证
-    // 如果模板 models 为空，说明模型是动态从 API 获取的，不应过滤
-    const templateHasModels = template && template.models && template.models.length > 0
-    const validModelIds = templateHasModels ? new Set(template.models.map(m => m.id)) : null
-
-    // 使用 models 字段
-    if (config.models && config.models.length > 0) {
-      for (const model of config.models) {
-        if (validModelIds && !validModelIds.has(model.id)) continue
-        models.push({
-          id: model.id,
-          name: model.name,
-          contextWindow: model.contextWindow
-        })
-      }
-    }
-
-    // 使用模板默认模型
-    if (models.length === 0 && template && template.models.length > 0) {
-      for (const model of template.models) {
-        models.push({
-          id: model.id,
-          name: model.name || model.id,
-          contextWindow: model.contextWindow || 8192
-        })
-      }
-    }
-
-    if (models.length > 0) {
-      result.push({
-        id: config.id,
-        name: config.name,
-        models
-      })
-    }
-  }
-
-  return result
-})
-
-// 模型搜索关键词
-const modelSearchKeyword = ref('')
-
-// 过滤后的模型列表
-const filteredProviderModels = computed(() => {
-  if (!modelSearchKeyword.value) {
-    return providerModels.value
-  }
-
-  const keyword = modelSearchKeyword.value.toLowerCase()
-  const result: Array<{ id: string; name: string; models: Array<{ id: string; name: string; contextWindow: number }> }> = []
-
-  for (const provider of providerModels.value) {
-    // 过滤模型
-    const filteredModels = provider.models.filter(model =>
-      model.name.toLowerCase().includes(keyword) ||
-      model.id.toLowerCase().includes(keyword) ||
-      provider.name.toLowerCase().includes(keyword)
-    )
-
-    // 如果有匹配的模型或提供商名称匹配，添加到结果
-    if (filteredModels.length > 0) {
-      result.push({
-        ...provider,
-        models: filteredModels
-      })
-    }
-  }
-
-  return result
-})
-
-// 模型搜索过滤方法
-function filterModels(keyword: string): void {
-  modelSearchKeyword.value = keyword
-}
-
-// 加载提供商配置
-async function loadProviderConfigs(): Promise<void> {
-  try {
-    const response = await window.electronAPI.providerConfig.list()
-    if (response.success && response.configs) {
-      providerConfigs.value = response.configs.filter((c: UserProviderConfig) => c.isEnabled)
-    }
-
-    const templatesResponse = await window.electronAPI.providerTemplate.list()
-    if (templatesResponse.success && templatesResponse.templates) {
-      providerTemplates.value = templatesResponse.templates
-    }
-  } catch (error) {
-    console.error('加载提供商配置失败:', error)
-  }
-}
-
-// 加载知识库列表
-async function loadKnowledgeBases(): Promise<void> {
-  // TODO: 实现知识库加载
-  // 暂时为空
-}
-
-// 格式化上下文窗口大小
-function formatContext(contextWindow: number): string {
-  if (contextWindow >= 1000000) {
-    return `${(contextWindow / 1000000).toFixed(1)}M`
-  }
-  if (contextWindow >= 1000) {
-    return `${Math.round(contextWindow / 1000)}K`
-  }
-  return `${contextWindow}`
 }
 
 // 重置参数为默认值
@@ -477,12 +229,6 @@ function resetParams(): void {
   form.enableStream = true
 }
 
-// 前往知识库页面
-function handleGoToKnowledge(): void {
-  // TODO: 跳转到知识库页面
-  ElMessage.info('请前往设置页面创建知识库')
-}
-
 // 关闭对话框
 function handleClose(): void {
   visible.value = false
@@ -492,18 +238,11 @@ function handleClose(): void {
   form.description = ''
   form.systemPrompt = ''
   form.avatar = '🤖'
-  form.defaultModelId = ''
-  form.defaultProviderConfigId = ''
-  form.autoResetModel = true
-  form.knowledgeBaseIds = []
-  form.knowledgeRetrieveCount = 3
-  form.knowledgeThreshold = 0.5
   form.temperature = 0.7
   form.topP = 1.0
   form.maxContextMessages = 20
   form.maxTokens = 4096
   form.enableStream = true
-  selectedModelKey.value = ''
   activeMenu.value = 'basic'
 }
 
@@ -517,18 +256,6 @@ async function handleSave(): Promise<void> {
     return
   }
 
-  // 解析模型选择
-  if (selectedModelKey.value) {
-    const parts = selectedModelKey.value.split(':')
-    if (parts.length >= 2) {
-      form.defaultProviderConfigId = parts[0]
-      form.defaultModelId = parts.slice(1).join(':')
-    }
-  } else {
-    form.defaultProviderConfigId = ''
-    form.defaultModelId = ''
-  }
-
   saving.value = true
   try {
     if (isEdit.value && props.role) {
@@ -538,18 +265,11 @@ async function handleSave(): Promise<void> {
         description: form.description || undefined,
         systemPrompt: form.systemPrompt || undefined,
         avatar: form.avatar,
-        defaultModelId: form.defaultModelId || undefined,
-        defaultProviderConfigId: form.defaultProviderConfigId || undefined,
-        autoResetModel: form.autoResetModel,
         temperature: form.temperature,
         topP: form.topP,
         maxContextMessages: form.maxContextMessages,
         maxTokens: form.maxTokens,
-        enableStream: form.enableStream,
-        // 知识库配置
-        knowledgeBaseIds: form.knowledgeBaseIds.length > 0 ? form.knowledgeBaseIds : undefined,
-        knowledgeRetrieveCount: form.knowledgeRetrieveCount,
-        knowledgeThreshold: form.knowledgeThreshold
+        enableStream: form.enableStream
       }
 
       const response = await window.electronAPI.role.update(props.role.id, updateData)
@@ -573,18 +293,11 @@ async function handleSave(): Promise<void> {
         description: form.description || undefined,
         systemPrompt: form.systemPrompt || undefined,
         avatar: form.avatar,
-        defaultModelId: form.defaultModelId || undefined,
-        defaultProviderConfigId: form.defaultProviderConfigId || undefined,
-        autoResetModel: form.autoResetModel,
         temperature: form.temperature,
         topP: form.topP,
         maxContextMessages: form.maxContextMessages,
         maxTokens: form.maxTokens,
-        enableStream: form.enableStream,
-        // 知识库配置
-        knowledgeBaseIds: form.knowledgeBaseIds.length > 0 ? form.knowledgeBaseIds : undefined,
-        knowledgeRetrieveCount: form.knowledgeRetrieveCount,
-        knowledgeThreshold: form.knowledgeThreshold
+        enableStream: form.enableStream
       })
 
       if (response.success && response.role) {
@@ -612,23 +325,11 @@ watch(
       form.description = role.description || ''
       form.systemPrompt = role.systemPrompt || ''
       form.avatar = role.avatar || '🤖'
-      form.defaultModelId = role.defaultModelId || ''
-      form.defaultProviderConfigId = role.defaultProviderConfigId || ''
-      form.autoResetModel = role.autoResetModel ?? true
       form.temperature = role.temperature ?? 0.7
       form.topP = role.topP ?? 1.0
       form.maxContextMessages = role.maxContextMessages ?? 20
       form.maxTokens = role.maxTokens ?? 4096
       form.enableStream = role.enableStream ?? true
-      // 知识库配置
-      form.knowledgeBaseIds = role.knowledgeBaseIds || []
-      form.knowledgeRetrieveCount = role.knowledgeRetrieveCount ?? 5
-      form.knowledgeThreshold = role.knowledgeThreshold ?? 0.5
-
-      // 设置模型选择
-      if (role.defaultProviderConfigId && role.defaultModelId) {
-        selectedModelKey.value = `${role.defaultProviderConfigId}:${role.defaultModelId}`
-      }
     }
   },
   { immediate: true }
@@ -647,19 +348,6 @@ watch(
   },
   { immediate: true }
 )
-
-// 对话框打开时加载配置
-watch(visible, (val) => {
-  if (val) {
-    loadProviderConfigs()
-    loadKnowledgeBases()
-  }
-})
-
-onMounted(() => {
-  loadProviderConfigs()
-  loadKnowledgeBases()
-})
 </script>
 
 <style lang="scss" scoped>

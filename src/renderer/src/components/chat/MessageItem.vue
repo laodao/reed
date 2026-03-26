@@ -44,6 +44,13 @@
         <!-- 正常显示模式 -->
         <div v-else class="message-text" v-html="formatContent(message.content)"></div>
 
+        <!-- 知识库来源标识（在内容下方，引用详情上方） -->
+        <div v-if="message.metadata?.knowledgeBase && message.metadata.knowledgeBase.length > 0" class="knowledge-source-badge">
+          <el-icon><Collection /></el-icon>
+          <span>基于知识库回答</span>
+          <el-tag size="small" type="success">{{ message.metadata.knowledgeBase.length }} 条引用</el-tag>
+        </div>
+
         <!-- 附件显示 -->
         <div v-if="message.attachments && message.attachments.length > 0" class="attachments">
           <template v-for="attachment in message.attachments" :key="attachment.id">
@@ -80,6 +87,29 @@
                   <div class="result-snippet">{{ result.snippet }}</div>
                   <div class="result-url">{{ result.url }}</div>
                 </a>
+              </div>
+            </el-collapse-item>
+          </el-collapse>
+        </div>
+
+        <!-- 知识库引用显示 -->
+        <div v-if="message.metadata?.knowledgeBase && message.metadata.knowledgeBase.length > 0" class="knowledge-base-refs">
+          <el-collapse>
+            <el-collapse-item title="知识库引用" name="knowledgeBase">
+              <div class="kb-refs-list">
+                <div
+                  v-for="(ref, index) in message.metadata.knowledgeBase"
+                  :key="index"
+                  class="kb-ref-item"
+                >
+                  <div class="ref-title">
+                    <el-icon><Document /></el-icon>
+                    <span>{{ index + 1 }}. {{ ref.documentName }}</span>
+                  </div>
+                  <div class="ref-score">
+                    相关度: {{ (ref.score * 100).toFixed(1) }}%
+                  </div>
+                </div>
               </div>
             </el-collapse-item>
           </el-collapse>
@@ -161,7 +191,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { Document, Edit, CopyDocument, Delete, Refresh, Switch, Coin } from '@element-plus/icons-vue'
+import { Document, Edit, CopyDocument, Delete, Refresh, Switch, Coin, Collection } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElImageViewer } from 'element-plus'
 import type { Message, Attachment } from '../../../shared/types'
 import ModelSelectDialog from './ModelSelectDialog.vue'
@@ -827,6 +857,84 @@ function handleModelSelect(model: ModelOption) {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+}
+
+.knowledge-base-refs {
+  margin-top: 8px;
+
+  :deep(.el-collapse) {
+    border: none;
+  }
+
+  :deep(.el-collapse-item__header) {
+    font-size: 12px;
+    color: #10b981;
+    background: #ecfdf5;
+    border-radius: 6px;
+    padding: 0 12px;
+    height: 32px;
+  }
+
+  :deep(.el-collapse-item__wrap) {
+    border: none;
+    background: #ecfdf5;
+    border-radius: 0 0 6px 6px;
+  }
+}
+
+.knowledge-source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  margin-top: 8px;
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+  border: 1px solid #a7f3d0;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #059669;
+
+  .el-icon {
+    font-size: 14px;
+  }
+}
+
+.kb-refs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.kb-ref-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  background: #fff;
+  border-radius: 6px;
+  border: 1px solid #d1fae5;
+
+  .ref-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #1e293b;
+
+    .el-icon {
+      color: #10b981;
+    }
+  }
+
+  .ref-score {
+    font-size: 11px;
+    color: #10b981;
+    background: #d1fae5;
+    padding: 2px 8px;
+    border-radius: 4px;
   }
 }
 </style>

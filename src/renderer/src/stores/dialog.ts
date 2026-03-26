@@ -14,6 +14,7 @@ import type {
   ContextConfig,
   WebSearchEngine
 } from '../../../shared/types'
+import { useRoleStore } from './role'
 
 /**
  * 流式状态接口
@@ -285,6 +286,8 @@ export const useDialogStore = defineStore('dialog', () => {
         engine: WebSearchEngine
       }
       enableThinkingChain?: boolean
+      // 知识库配置
+      knowledgeBaseIds?: string[]
       // 可选的模型和提供商配置（用于重新生成）
       modelId?: string
       providerConfigId?: string
@@ -299,6 +302,22 @@ export const useDialogStore = defineStore('dialog', () => {
     // 优先使用传入的模型和提供商配置，否则使用当前对话的配置
     const effectiveModelId = options?.modelId || currentDialog.value.modelId
     const effectiveProviderConfigId = options?.providerConfigId || currentDialog.value.providerConfigId
+
+    // 获取角色的知识库配置（仅作为默认值，优先使用传入的配置）
+    let knowledgeBaseIds: string[] | undefined = options?.knowledgeBaseIds
+    let knowledgeRetrieveCount: number | undefined
+    let knowledgeThreshold: number | undefined
+
+    // 如果没有传入知识库配置，则从角色获取默认配置
+    if (!knowledgeBaseIds && currentDialog.value.roleId) {
+      const roleStore = useRoleStore()
+      const role = roleStore.getRoleById(currentDialog.value.roleId)
+      if (role) {
+        knowledgeBaseIds = role.knowledgeBaseIds
+        knowledgeRetrieveCount = role.knowledgeRetrieveCount
+        knowledgeThreshold = role.knowledgeThreshold
+      }
+    }
 
     // 初始化该对话的流式状态
     streamStateCache.value.set(dialogId, {
@@ -336,7 +355,11 @@ export const useDialogStore = defineStore('dialog', () => {
         webSearch: options?.webSearch,
         enableThinkingChain: options?.enableThinkingChain,
         modelId: effectiveModelId,
-        providerConfigId: effectiveProviderConfigId
+        providerConfigId: effectiveProviderConfigId,
+        // 知识库配置
+        knowledgeBaseIds,
+        knowledgeRetrieveCount,
+        knowledgeThreshold
       }))
 
       const response = await window.electronAPI.chat.send(requestData)

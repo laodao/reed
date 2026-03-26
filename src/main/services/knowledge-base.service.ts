@@ -16,6 +16,7 @@ import type {
   CreateKnowledgeBaseRequest,
   UpdateKnowledgeBaseRequest,
   KbDocument,
+  KbChunk,
   CreateDocumentRequest,
   SearchRequest,
   SearchResult,
@@ -395,7 +396,8 @@ export class KnowledgeBaseService {
     switch (fileType) {
       case 'txt':
       case 'md':
-        return buffer.toString('utf-8')
+        // 尝试多种编码解析文本文件
+        return this.decodeTextFile(buffer)
 
       case 'docx': {
         const mammoth = require('mammoth')
@@ -416,6 +418,94 @@ export class KnowledgeBaseService {
       default:
         throw new Error(`不支持的文件类型: ${fileType}`)
     }
+  }
+
+  /**
+   * 尝试多种编码解析文本文件
+   * 优先级：UTF-8 > GBK > GB2312 > Latin1
+   */
+  private decodeTextFile(buffer: Buffer): string {
+    // 尝试 UTF-8（带BOM检测）
+    if (buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) {
+      // UTF-8 with BOM
+      return buffer.slice(3).toString('utf-8')
+    }
+
+    // 尝试 UTF-8
+    try {
+      const utf8Text = buffer.toString('utf-8')
+      // 检查是否有乱码字符（UTF-8 解码错误通常会产生的替换字符）
+      if (!this.hasGarbledChars(utf8Text)) {
+        return utf8Text
+      }
+    } catch {
+      // UTF-8 解码失败，继续尝试其他编码
+    }
+
+    // 尝试 GBK
+    try {
+      const iconv = require('iconv-lite')
+      const gbkText = iconv.decode(buffer, 'gbk')
+      if (!this.hasGarbledChars(gbkText)) {
+        return gbkText
+      }
+    } catch {
+      // iconv-lite 未安装或解码失败
+    }
+
+    // 尝试 GB2312
+    try {
+      const iconv = require('iconv-lite')
+      const gb2312Text = iconv.decode(buffer, 'gb2312')
+      if (!this.hasGarbledChars(gb2312Text)) {
+        return gb2312Text
+      }
+    } catch {
+      // 解码失败
+    }
+
+    // 最后尝试 Latin1（ISO-8859-1），几乎不会失败
+    return buffer.toString('latin1')
+  }
+
+  /**
+   * 检查文本是否包含乱码字符
+   */
+  private hasGarbledChars(text: string): boolean {
+    // 检查常见的乱码模式
+    const garbledPatterns = [
+      /\ufffd/,           // Unicode 替换字符
+      /[\x00-\x08\x0b\x0c\x0e-\x1f]/, // 控制字符（换行、制表符除外）
+    ]
+
+    // 统计非ASCII字符的比例，如果乱码太多可能是编码错误
+    let nonAsciiCount = 0
+    let garbledCount = 0
+
+    for (const char of text) {
+      const code = char.charCodeAt(0)
+      if (code > 127) {
+        nonAsciiCount++
+        // 检测是否为乱码字符
+        if (code === 0xfffd || (code >= 0x80 && code <= 0x9f)) {
+          garbledCount++
+        }
+      }
+    }
+
+    // 如果非ASCII字符中乱码比例超过20%，认为有乱码
+    if (nonAsciiCount > 0 && garbledCount / nonAsciiCount > 0.2) {
+      return true
+    }
+
+    // 检查是否有连续的乱码模式
+    for (const pattern of garbledPatterns) {
+      if (pattern.test(text)) {
+        return true
+      }
+    }
+
+    return false
   }
 
   private splitText(text: string): Array<{ content: string; index: number; start: number; end: number }> {
@@ -556,6 +646,27 @@ export class KnowledgeBaseService {
       return { success: true, data: searchResults }
     } catch (e: any) {
       console.error('[KB] 检索失败:', e)
+      return { success: false, error: e.message }
+    }
+  }
+
+  /**
+   * 获取文档分片列表
+   */
+  async getDocumentChunks(documentId: string): Promise<{ success: boolean; data?: KbChunk[]; error?: string }> {
+    try {
+      const db = getDatabaseManager()
+      if (!db.kbChunks || !db.kbDocuments) {
+        return { success: false, error: '数据库未初始化' }
+      }
+
+      const doc = db.kbDocuments.findById(documentId)
+      if (!doc) return { success: false, error: '文档不存在' }
+
+      const chunks = db.kbChunks.findByDocumentId(documentId)
+      return { success: true, data: chunks }
+    } catch (e: any) {
+      console.error('[KB] 获取文档分片失败:', e)
       return { success: false, error: e.message }
     }
   }
