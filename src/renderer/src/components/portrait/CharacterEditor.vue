@@ -1,25 +1,21 @@
 <template>
   <div class="character-editor">
-    <!-- 头部 -->
+    <!-- 紧凑头部 -->
     <div class="editor-header">
-      <div class="header-left">
-        <el-button link @click="$emit('back')">
-          <el-icon><ArrowLeft /></el-icon>
-          返回人物列表
-        </el-button>
-        <div class="character-title">
-          <h2>{{ character?.name }}</h2>
-          <el-tag v-if="character" size="small" type="info">
-            {{ GENDER_LABELS[character.gender] }} · {{ character.age }}岁
-          </el-tag>
-        </div>
+      <el-button link size="small" @click="$emit('back')">
+        <el-icon><ArrowLeft /></el-icon>
+        返回
+      </el-button>
+      <div class="header-center" v-if="character">
+        <span class="character-name">{{ character.name }}</span>
+        <el-tag size="small" type="info" effect="plain">
+          {{ GENDER_LABELS[character.gender] }} · {{ character.age }}岁
+        </el-tag>
       </div>
-      <div class="header-actions" v-if="hasFrontImage">
-        <el-button type="primary" @click="handleExport">
-          <el-icon><Download /></el-icon>
-          导出
-        </el-button>
-      </div>
+      <el-button v-if="hasFrontImage" type="primary" size="small" @click="handleExport">
+        <el-icon><Download /></el-icon>
+        导出
+      </el-button>
     </div>
 
     <!-- 没有正面形象时显示生成面板 -->
@@ -163,33 +159,29 @@
       <div class="editor-content">
         <!-- 左侧：正面预览 -->
         <div class="preview-section">
-          <div class="preview-header">
-            <h4>正面形象</h4>
-            <div class="variant-tabs" v-if="frontVariants.length > 1">
-              <div
-                v-for="fv in frontVariants"
-                :key="fv.id"
-                class="variant-tab"
-                :class="{ active: selectedFrontVariantId === fv.id }"
-                @click="selectedFrontVariantId = fv.id"
-              >
-                <el-image :src="fv.imagePath" fit="cover" />
-              </div>
-            </div>
-          </div>
           <div class="preview-image-large">
             <el-image :src="currentFrontVariant?.imagePath" fit="contain" @dblclick="handlePreviewImage(currentFrontVariant)" />
+          </div>
+          <!-- 缩略图放到下面 -->
+          <div class="variant-tabs" v-if="frontVariants.length > 1">
+            <div
+              v-for="fv in frontVariants"
+              :key="fv.id"
+              class="variant-tab"
+              :class="{ active: selectedFrontVariantId === fv.id }"
+              @click="selectedFrontVariantId = fv.id"
+            >
+              <el-image :src="fv.imagePath" fit="cover" />
+            </div>
           </div>
           <div class="preview-actions">
             <el-button size="small" @click="handleRegenerateFront" :loading="regenerating">
               重新生成
             </el-button>
             <el-button size="small" @click="showClothesDialog = true">
-              <el-icon><EditPen /></el-icon>
               换衣
             </el-button>
             <el-button size="small" @click="showBackgroundDialog = true">
-              <el-icon><PictureFilled /></el-icon>
               换背景
             </el-button>
           </div>
@@ -197,22 +189,58 @@
 
         <!-- 右侧：操作面板 -->
         <div class="actions-panel">
+          <!-- 生成信息展示 -->
+          <div class="info-section" v-if="currentFrontVariant">
+            <h4>生成信息</h4>
+            <div class="info-item">
+              <span class="info-label">提示词</span>
+              <div class="info-value prompt-text">{{ currentFrontVariant.prompt || '无' }}</div>
+            </div>
+            <div class="info-row">
+              <div class="info-item half">
+                <span class="info-label">尺寸</span>
+                <span class="info-value">
+                  {{ currentFrontVariant.config?.width || '-' }} × {{ currentFrontVariant.config?.height || '-' }}
+                </span>
+              </div>
+              <div class="info-item half">
+                <span class="info-label">角度</span>
+                <span class="info-value">{{ ANGLE_LABELS[currentFrontVariant.angle] }}</span>
+              </div>
+            </div>
+            <div class="info-item" v-if="character?.referenceImages?.length">
+              <span class="info-label">参考图</span>
+              <div class="reference-thumbs">
+                <el-image
+                  v-for="(img, idx) in character.referenceImages"
+                  :key="idx"
+                  :src="img"
+                  fit="cover"
+                  class="ref-thumb"
+                  @click="previewReferenceImage(img)"
+                />
+              </div>
+            </div>
+          </div>
+
+          <el-divider />
+
           <!-- 编辑形象 -->
           <div class="panel-section">
             <h4>编辑形象</h4>
-            <p class="hint-text">使用提示词继续编辑正面形象</p>
             <el-input
               v-model="editPrompt"
               type="textarea"
               :rows="2"
               placeholder="输入编辑指令，如：戴上帽子、改变发型..."
+              resize="none"
             />
             <el-button
               type="primary"
               :disabled="!editPrompt.trim() || editing"
               :loading="editing"
               @click="handleEditFront"
-              style="margin-top: 12px;"
+              class="action-btn"
             >
               编辑形象
             </el-button>
@@ -223,21 +251,21 @@
           <!-- 多角度生成 -->
           <div class="panel-section">
             <h4>生成其他角度</h4>
-            <p class="hint-text">为当前正面形象生成侧面和背面</p>
-            <el-checkbox-group v-model="anglesToGenerate">
-              <el-checkbox value="left">左侧</el-checkbox>
-              <el-checkbox value="right">右侧</el-checkbox>
-              <el-checkbox value="back">背面</el-checkbox>
-            </el-checkbox-group>
-            <el-button
-              type="success"
-              :disabled="anglesToGenerate.length === 0 || generatingAngles"
-              :loading="generatingAngles"
-              @click="handleGenerateAngles"
-              style="margin-top: 12px;"
-            >
-              生成选中的角度
-            </el-button>
+            <div class="angle-row">
+              <el-checkbox-group v-model="anglesToGenerate" class="angle-checkbox-group">
+                <el-checkbox value="left">左侧</el-checkbox>
+                <el-checkbox value="right">右侧</el-checkbox>
+                <el-checkbox value="back">背面</el-checkbox>
+              </el-checkbox-group>
+              <el-button
+                type="primary"
+                :disabled="anglesToGenerate.length === 0 || generatingAngles"
+                :loading="generatingAngles"
+                @click="handleGenerateAngles"
+              >
+                生成
+              </el-button>
+            </div>
           </div>
         </div>
       </div>
@@ -312,6 +340,17 @@
         <img :src="previewVariant.imagePath" alt="预览" />
       </div>
     </el-dialog>
+
+    <!-- 参考图预览 -->
+    <el-dialog
+      v-model="showRefPreviewDialog"
+      title="参考图"
+      width="auto"
+      class="ref-preview-dialog"
+      append-to-body
+    >
+      <el-image :src="previewRefImage" fit="contain" style="max-width: 80vw; max-height: 80vh;" />
+    </el-dialog>
   </div>
 </template>
 
@@ -359,6 +398,10 @@ const showBackgroundDialog = ref(false)
 const showExportDialog = ref(false)
 const showPreviewDialog = ref(false)
 const previewVariant = ref<PortraitVariant | null>(null)
+
+// 参考图预览
+const showRefPreviewDialog = ref(false)
+const previewRefImage = ref('')
 
 // 默认模型配置（从系统配置获取）
 const defaultModel = ref<{ providerId: string; modelId: string } | null>(null)
@@ -786,6 +829,12 @@ function handleExport() {
   showExportDialog.value = true
 }
 
+// 预览参考图
+function previewReferenceImage(img: string) {
+  previewRefImage.value = img
+  showRefPreviewDialog.value = true
+}
+
 // ==================== 监听和生命周期 ====================
 
 watch(() => props.characterId, () => {
@@ -814,25 +863,20 @@ onMounted(() => {
 .editor-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  padding: 16px 20px;
+  align-items: center;
+  padding: 10px 20px;
   border-bottom: 1px solid var(--el-border-color-lighter);
   background: #fff;
+  min-height: 44px;
 
-  .header-left {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .character-title {
+  .header-center {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
 
-    h2 {
-      margin: 0;
-      font-size: 20px;
+    .character-name {
+      font-size: 16px;
+      font-weight: 600;
       color: var(--el-text-color-primary);
     }
   }
@@ -1047,20 +1091,28 @@ onMounted(() => {
 
 .preview-section {
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 
-  .preview-header {
-    margin-bottom: 12px;
+  .preview-image-large {
+    width: 300px;
+    height: 400px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--el-fill-color);
 
-    h4 {
-      margin: 0 0 8px;
-      font-size: 14px;
-      color: var(--el-text-color-primary);
+    .el-image {
+      width: 100%;
+      height: 100%;
+      cursor: pointer;
     }
   }
 
   .variant-tabs {
     display: flex;
     gap: 8px;
+    margin-top: 12px;
 
     .variant-tab {
       width: 60px;
@@ -1086,20 +1138,6 @@ onMounted(() => {
     }
   }
 
-  .preview-image-large {
-    width: 300px;
-    height: 400px;
-    border-radius: 12px;
-    overflow: hidden;
-    background: var(--el-fill-color);
-
-    .el-image {
-      width: 100%;
-      height: 100%;
-      cursor: pointer;
-    }
-  }
-
   .preview-actions {
     margin-top: 12px;
     display: flex;
@@ -1111,13 +1149,105 @@ onMounted(() => {
 .actions-panel {
   flex: 1;
   min-width: 300px;
+
+  .info-section {
+    background: var(--el-fill-color-lighter);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 16px;
+
+    h4 {
+      margin: 0 0 10px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--el-text-color-primary);
+    }
+
+    .info-item {
+      margin-bottom: 8px;
+
+      &:last-child {
+        margin-bottom: 0;
+      }
+
+      .info-label {
+        display: block;
+        font-size: 12px;
+        color: var(--el-text-color-secondary);
+        margin-bottom: 4px;
+      }
+
+      .info-value {
+        font-size: 13px;
+        color: var(--el-text-color-primary);
+
+        &.prompt-text {
+          word-break: break-all;
+          line-height: 1.5;
+          max-height: 60px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          display: -webkit-box;
+          -webkit-line-clamp: 3;
+          -webkit-box-orient: vertical;
+        }
+      }
+
+      &.half {
+        flex: 1;
+        margin-bottom: 0;
+      }
+    }
+
+    .info-row {
+      display: flex;
+      gap: 16px;
+    }
+
+    .reference-thumbs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+
+      .ref-thumb {
+        width: 48px;
+        height: 48px;
+        border-radius: 6px;
+        cursor: pointer;
+        border: 1px solid var(--el-border-color);
+        transition: all 0.2s;
+
+        &:hover {
+          border-color: var(--el-color-primary);
+          transform: scale(1.05);
+        }
+      }
+    }
+  }
+
+  .angle-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    .angle-checkbox-group {
+      display: flex;
+      gap: 12px;
+      flex: 1;
+    }
+  }
+
+  .action-btn {
+    margin-top: 10px;
+    width: 100%;
+  }
 }
 
 .panel-section {
   margin-bottom: 20px;
 
   h4 {
-    margin: 0 0 8px;
+    margin: 0 0 12px;
     font-size: 14px;
     color: var(--el-text-color-primary);
   }
@@ -1126,12 +1256,6 @@ onMounted(() => {
     margin: 0 0 12px;
     font-size: 13px;
     color: var(--el-text-color-secondary);
-  }
-
-  .el-checkbox-group {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
   }
 }
 
@@ -1221,6 +1345,15 @@ onMounted(() => {
     min-height: 0 !important;
     padding: 0 !important;
     overflow: hidden !important;
+  }
+}
+
+.ref-preview-dialog {
+  .el-dialog__body {
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 }
 
