@@ -6,13 +6,13 @@
 
 import type {
   ImageProviderConfig,
-  ImageProvider as IImageProvider,
   ImageProviderType
 } from '../../shared/types/image-provider.types'
 import { BaseImageProvider } from './base-image-provider'
 
 // SDK Provider 导入
 import { OpenAIImageProvider } from './sdk/openai-image.provider'
+import { VolcengineImageProvider } from './sdk/volcengine-image.provider'
 
 // DashScope Provider（使用 Bearer Token 认证）
 import { DashScopeImageProvider } from './dashscope-image.provider'
@@ -27,18 +27,22 @@ export { BaseImageProvider }
 export * from './sdk'
 
 // 导出 Provider 实现
-export { DashScopeImageProvider, BailianImageProvider }
+export { DashScopeImageProvider, BailianImageProvider, VolcengineImageProvider }
 
 /**
  * Provider 类映射表
  * dashscope: 使用 DashScope API（Bearer Token 认证）
  * bailian: 使用百炼平台 API（阿里云签名认证，需要 AccessKeyId:AccessKeySecret）
+ * volcengine: 使用火山引擎方舟平台 API（OpenAI 兼容格式）
+ * openai: 使用 OpenAI DALL-E API
  */
 const PROVIDER_CLASSES: Record<string, new (config: ImageProviderConfig) => BaseImageProvider> = {
   // DashScope 使用 Bearer Token 认证（推荐）
   dashscope: DashScopeImageProvider,
   // 百炼平台使用阿里云签名认证
   bailian: BailianImageProvider,
+  // 火山引擎使用 OpenAI 兼容 API
+  volcengine: VolcengineImageProvider,
   // OpenAI DALL-E 使用官方 SDK
   openai: OpenAIImageProvider
 }
