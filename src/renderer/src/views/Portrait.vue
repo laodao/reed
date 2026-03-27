@@ -267,20 +267,22 @@ function selectCharacter(id: string) {
 }
 
 function getProjectPreview(projectId: string): string {
-  // 查找项目中第一个有图片的角色
+  // 查找项目中第一个有 base 类型正面形象的角色
   const projectCharacters = characters.value.filter(c => c.projectId === projectId)
   for (const char of projectCharacters) {
     const variants = allVariants.value.get(char.id) || []
-    const frontVariant = variants.find(v => v.angle === 'front')
-    if (frontVariant) return frontVariant.imagePath
+    // 只使用 base 类型的正面形象，不使用换衣或换背景的图片
+    const frontBaseVariant = variants.find(v => v.angle === 'front' && v.type === 'base')
+    if (frontBaseVariant) return frontBaseVariant.imagePath
   }
   return ''
 }
 
 function getCharacterPreview(characterId: string): string {
   const variants = allVariants.value.get(characterId) || []
-  const frontVariant = variants.find(v => v.angle === 'front')
-  return frontVariant?.imagePath || ''
+  // 只使用 base 类型的正面形象，不使用换衣或换背景的图片
+  const frontBaseVariant = variants.find(v => v.angle === 'front' && v.type === 'base')
+  return frontBaseVariant?.imagePath || ''
 }
 
 function getVariantCount(characterId: string): number {

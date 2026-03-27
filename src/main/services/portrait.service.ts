@@ -39,15 +39,20 @@ import { randomUUID } from 'crypto'
 
 /**
  * 角度提示词映射
- * 正面必须是全身照片
+ * 所有角度必须是全身照片，这是硬性要求
  * 强调单人肖像，避免生成多人
  */
 const ANGLE_PROMPT_MAP: Record<PortraitAngle, string> = {
-  front: 'front view, facing camera, full face visible, looking at viewer, full body shot, standing pose, showing entire body from head to toe, single person, solo portrait, one person only',
-  left: 'left side view, profile view, left side of face visible, full body shot, single person, solo portrait, one person only',
-  right: 'right side view, profile view, right side of face visible, full body shot, single person, solo portrait, one person only',
-  back: 'back view, from behind, rear view, seen from behind, full body shot, single person, solo portrait, one person only'
+  front: 'front view, facing camera, full face visible, looking at viewer, full body shot, standing pose, showing entire body from head to toe, single person, solo portrait, one person only, symmetrical composition',
+  left: 'left side view, left profile, full body shot from left side, standing pose, showing entire body from head to toe, single person, solo portrait, one person only, same pose as reference',
+  right: 'right side view, right profile, full body shot from right side, standing pose, showing entire body from head to toe, single person, solo portrait, one person only, same pose as reference',
+  back: 'back view, from behind, rear view, seen from behind, full body shot from back, standing pose, showing entire body from head to toe, single person, solo portrait, one person only, same pose as reference'
 }
+
+/**
+ * 全身照片要求的固定后缀
+ */
+const FULL_BODY_SUFFIX = 'full body shot, standing pose, showing entire body from head to toe, must include feet'
 
 /**
  * 将本地文件路径转换为可访问的 URL
@@ -369,7 +374,8 @@ export class PortraitService {
 
         // 构建角度特定的提示词
         const anglePrompt = ANGLE_PROMPT_MAP[angle]
-        const fullPrompt = `${request.prompt}, ${anglePrompt}, consistent character, same person, pure solid background`
+        // 强制添加全身照片要求
+        const fullPrompt = `${request.prompt}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, consistent character, same person, pure solid background`
 
         // 调用图像生成
         const imageWidth = request.config.width || 1024
@@ -467,7 +473,8 @@ export class PortraitService {
 
         // 构建换衣提示词
         const anglePrompt = ANGLE_PROMPT_MAP[angle]
-        let fullPrompt = `${character.prompt}, wearing ${request.clothesDescription}, ${anglePrompt}, consistent character, same person, pure solid background`
+        // 强制添加全身照片要求
+        let fullPrompt = `${character.prompt}, wearing ${request.clothesDescription}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, consistent character, same person, pure solid background`
 
         // 准备参考图像
         let referenceImageBase64: string | undefined = undefined
@@ -587,7 +594,8 @@ export class PortraitService {
         if (!baseVariant) continue
 
         const anglePrompt = ANGLE_PROMPT_MAP[angle]
-        const fullPrompt = `${character.prompt}, ${anglePrompt}, consistent character, same person, ${backgroundDescription}`
+        // 强制添加全身照片要求
+        const fullPrompt = `${character.prompt}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, consistent character, same person, ${backgroundDescription}`
 
         if (!referenceImageBase64 && baseVariant.imagePath && fs.existsSync(baseVariant.imagePath)) {
           const imageBuffer = fs.readFileSync(baseVariant.imagePath)
@@ -741,16 +749,18 @@ export class PortraitService {
         const basePrompt = referenceVariant.prompt || character.prompt
         const anglePrompt = ANGLE_PROMPT_MAP[angle]
 
-        let consistencyPrompt = 'consistent character, same person as reference image'
+        // 强调保持相同姿势的一致性提示词
+        let consistencyPrompt = 'consistent character, same person as reference image, identical pose, same posture, same body position, same stance'
         if (referenceVariant.type === 'clothes') {
-          consistencyPrompt = 'same person, same face, same hairstyle, same pose, same background, same lighting, only viewing angle changed, wearing the same clothes as reference image'
+          consistencyPrompt = 'same person, same face, same hairstyle, identical pose and posture, same body position, same stance, same background, same lighting, only viewing angle changed, wearing the same clothes as reference image'
         } else if (referenceVariant.type === 'background') {
-          consistencyPrompt = 'same person, same face, same hairstyle, same pose, same clothes, same lighting, only viewing angle changed, same background as reference image'
+          consistencyPrompt = 'same person, same face, same hairstyle, identical pose and posture, same body position, same stance, same clothes, same lighting, only viewing angle changed, same background as reference image'
         } else {
-          consistencyPrompt = 'same person, same face, same hairstyle, same pose, same clothes, only viewing angle changed'
+          consistencyPrompt = 'same person, same face, same hairstyle, identical pose and posture, same body position, same stance, same clothes, only viewing angle changed'
         }
 
-        const fullPrompt = `${basePrompt}, ${anglePrompt}, ${consistencyPrompt}, pure solid background`
+        // 强制添加全身照片要求
+        const fullPrompt = `${basePrompt}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, ${consistencyPrompt}, pure solid background`
 
         console.log(`[PortraitService.generateAngles] 角度 ${angle} 提示词:`, fullPrompt)
 
@@ -858,7 +868,8 @@ export class PortraitService {
       }
 
       const basePrompt = character.prompt || ''
-      const editPrompt = `${basePrompt}, ${request.editPrompt}, consistent character, same person, full body shot, pure solid background`
+      // 强制添加全身照片要求
+      const editPrompt = `${basePrompt}, ${request.editPrompt}, consistent character, same person, ${FULL_BODY_SUFFIX}, pure solid background`
 
       const imageWidth = variant.config?.width || 1920
       const imageHeight = variant.config?.height || 1920
