@@ -13,11 +13,14 @@ import { DataPathService } from './data-path.service'
 import { ImageService } from './image.service'
 import type {
   PortraitProject,
+  PortraitCharacter,
   PortraitVariant,
   PortraitAngle,
   PortraitVariantType,
   CreatePortraitProjectRequest,
   UpdatePortraitProjectRequest,
+  CreatePortraitCharacterRequest,
+  UpdatePortraitCharacterRequest,
   GeneratePortraitRequest,
   GeneratePortraitResponse,
   ChangeClothesRequest,
@@ -28,18 +31,22 @@ import type {
   ExportPortraitResponse,
   GenerateAnglesRequest,
   GenerateAnglesResponse,
-  ANGLE_PROMPTS
+  ANGLE_PROMPTS,
+  PortraitGender,
+  PortraitRace
 } from '../../shared/types/portrait.types'
 import { randomUUID } from 'crypto'
 
 /**
  * 角度提示词映射
+ * 正面必须是全身照片
+ * 强调单人肖像，避免生成多人
  */
 const ANGLE_PROMPT_MAP: Record<PortraitAngle, string> = {
-  front: 'front view, facing camera, full face visible, looking at viewer',
-  left: 'left side view, profile view, left side of face visible',
-  right: 'right side view, profile view, right side of face visible',
-  back: 'back view, from behind, rear view, seen from behind'
+  front: 'front view, facing camera, full face visible, looking at viewer, full body shot, standing pose, showing entire body from head to toe, single person, solo portrait, one person only',
+  left: 'left side view, profile view, left side of face visible, full body shot, single person, solo portrait, one person only',
+  right: 'right side view, profile view, right side of face visible, full body shot, single person, solo portrait, one person only',
+  back: 'back view, from behind, rear view, seen from behind, full body shot, single person, solo portrait, one person only'
 }
 
 /**
@@ -58,8 +65,10 @@ function localPathToUrl(filePath: string): string {
  * 人像设计服务
  */
 export class PortraitService {
+  // ==================== 项目管理 ====================
+
   /**
-   * 创建人物项目
+   * 创建项目
    */
   static async createProject(request: CreatePortraitProjectRequest): Promise<{ success: boolean; data?: PortraitProject; error?: string }> {
     const dbManager = getDatabaseManager()
@@ -124,20 +133,23 @@ export class PortraitService {
   static async deleteProject(id: string): Promise<{ success: boolean; error?: string }> {
     const dbManager = getDatabaseManager()
 
-    if (!dbManager.portraitProjects || !dbManager.portraitVariants) {
+    if (!dbManager.portraitProjects || !dbManager.portraitCharacters || !dbManager.portraitVariants) {
       return { success: false, error: '数据库未初始化' }
     }
 
     try {
-      // 获取项目的所有变体，删除图片文件
-      const variants = await dbManager.portraitVariants.getByProjectId(id)
-      for (const variant of variants) {
-        if (variant.imagePath && fs.existsSync(variant.imagePath)) {
-          fs.unlinkSync(variant.imagePath)
+      // 获取项目下所有角色，删除图片文件
+      const characters = await dbManager.portraitCharacters.getByProjectId(id)
+      for (const character of characters) {
+        const variants = await dbManager.portraitVariants.getByCharacterId(character.id)
+        for (const variant of variants) {
+          if (variant.imagePath && fs.existsSync(variant.imagePath)) {
+            fs.unlinkSync(variant.imagePath)
+          }
         }
       }
 
-      // 删除项目（会级联删除变体）
+      // 删除项目（会级联删除角色和变体）
       await dbManager.portraitProjects.delete(id)
       return { success: true }
     } catch (error: any) {
@@ -168,10 +180,124 @@ export class PortraitService {
     }
   }
 
+  // ==================== 角色管理 ====================
+
   /**
-   * 获取项目的变体列表
+   * 创建角色
    */
-  static async listVariants(projectId: string): Promise<{ success: boolean; data?: PortraitVariant[]; error?: string }> {
+  static async createCharacter(request: CreatePortraitCharacterRequest): Promise<{ success: boolean; data?: PortraitCharacter; error?: string }> {
+    const dbManager = getDatabaseManager()
+
+    if (!dbManager.portraitCharacters) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    try {
+      const character = await dbManager.portraitCharacters.create(request)
+      return { success: true, data: character }
+    } catch (error: any) {
+      console.error('[PortraitService.createCharacter] 错误:', error)
+      return { success: false, error: error.message || '创建角色失败' }
+    }
+  }
+
+  /**
+   * 获取项目的角色列表
+   */
+  static async listCharacters(projectId: string): Promise<{ success: boolean; data?: PortraitCharacter[]; error?: string }> {
+    const dbManager = getDatabaseManager()
+
+    if (!dbManager.portraitCharacters) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    try {
+      const characters = await dbManager.portraitCharacters.getByProjectId(projectId)
+      return { success: true, data: characters }
+    } catch (error: any) {
+      console.error('[PortraitService.listCharacters] 错误:', error)
+      return { success: false, error: error.message || '获取角色列表失败' }
+    }
+  }
+
+  /**
+   * 获取角色详情
+   */
+  static async getCharacter(id: string): Promise<{ success: boolean; data?: PortraitCharacter; error?: string }> {
+    const dbManager = getDatabaseManager()
+
+    if (!dbManager.portraitCharacters) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    try {
+      const character = await dbManager.portraitCharacters.getById(id)
+      if (!character) {
+        return { success: false, error: '角色不存在' }
+      }
+      return { success: true, data: character }
+    } catch (error: any) {
+      console.error('[PortraitService.getCharacter] 错误:', error)
+      return { success: false, error: error.message || '获取角色失败' }
+    }
+  }
+
+  /**
+   * 更新角色
+   */
+  static async updateCharacter(request: UpdatePortraitCharacterRequest): Promise<{ success: boolean; data?: PortraitCharacter; error?: string }> {
+    const dbManager = getDatabaseManager()
+
+    if (!dbManager.portraitCharacters) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    try {
+      const character = await dbManager.portraitCharacters.update(request)
+      if (!character) {
+        return { success: false, error: '角色不存在' }
+      }
+      return { success: true, data: character }
+    } catch (error: any) {
+      console.error('[PortraitService.updateCharacter] 错误:', error)
+      return { success: false, error: error.message || '更新角色失败' }
+    }
+  }
+
+  /**
+   * 删除角色
+   */
+  static async deleteCharacter(id: string): Promise<{ success: boolean; error?: string }> {
+    const dbManager = getDatabaseManager()
+
+    if (!dbManager.portraitCharacters || !dbManager.portraitVariants) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    try {
+      // 获取角色的所有变体，删除图片文件
+      const variants = await dbManager.portraitVariants.getByCharacterId(id)
+      for (const variant of variants) {
+        if (variant.imagePath && fs.existsSync(variant.imagePath)) {
+          fs.unlinkSync(variant.imagePath)
+        }
+      }
+
+      // 删除角色（会级联删除变体）
+      await dbManager.portraitCharacters.delete(id)
+      return { success: true }
+    } catch (error: any) {
+      console.error('[PortraitService.deleteCharacter] 错误:', error)
+      return { success: false, error: error.message || '删除角色失败' }
+    }
+  }
+
+  // ==================== 变体管理 ====================
+
+  /**
+   * 获取角色的变体列表
+   */
+  static async listVariants(characterId: string): Promise<{ success: boolean; data?: PortraitVariant[]; error?: string }> {
     const dbManager = getDatabaseManager()
 
     if (!dbManager.portraitVariants) {
@@ -179,7 +305,7 @@ export class PortraitService {
     }
 
     try {
-      const variants = await dbManager.portraitVariants.getByProjectId(projectId)
+      const variants = await dbManager.portraitVariants.getByCharacterId(characterId)
       // 转换图片路径为可访问的 URL
       const result = variants.map(v => ({
         ...v,
@@ -203,38 +329,15 @@ export class PortraitService {
 
     const dbManager = getDatabaseManager()
 
-    if (!dbManager.portraitProjects || !dbManager.portraitVariants) {
+    if (!dbManager.portraitCharacters || !dbManager.portraitVariants) {
       return { success: false, error: '数据库未初始化' }
     }
 
     try {
-      // 创建或获取项目
-      let project: PortraitProject
-      if (request.projectId) {
-        const existing = await dbManager.portraitProjects.getById(request.projectId)
-        if (!existing) {
-          return { success: false, error: '项目不存在' }
-        }
-        // 更新项目的 prompt、providerId、modelId
-        const updated = await dbManager.portraitProjects.update({
-          id: request.projectId,
-          prompt: request.prompt,
-          referenceImages: request.referenceImages,
-          providerId: request.providerId,
-          modelId: request.modelId,
-          config: request.config
-        })
-        project = updated || existing
-      } else {
-        // 创建新项目
-        project = await dbManager.portraitProjects.create({
-          name: `人物 ${new Date().toLocaleString('zh-CN')}`,
-          prompt: request.prompt,
-          referenceImages: request.referenceImages,
-          providerId: request.providerId,
-          modelId: request.modelId,
-          config: request.config
-        })
+      // 获取角色信息
+      const character = await dbManager.portraitCharacters.getById(request.characterId)
+      if (!character) {
+        return { success: false, error: '角色不存在' }
       }
 
       // 生成基础种子，确保四角度一致性
@@ -249,7 +352,7 @@ export class PortraitService {
       // 发送进度事件
       this.sendPortraitEvent(window, {
         type: 'generation-started',
-        projectId: project.id,
+        characterId: character.id,
         angles: angles
       })
 
@@ -259,7 +362,7 @@ export class PortraitService {
         // 发送进度
         this.sendPortraitEvent(window, {
           type: 'generation-progress',
-          projectId: project.id,
+          characterId: character.id,
           angle: angle,
           progress: (i / angles.length) * 100
         })
@@ -269,13 +372,17 @@ export class PortraitService {
         const fullPrompt = `${request.prompt}, ${anglePrompt}, consistent character, same person, pure solid background`
 
         // 调用图像生成
+        const imageWidth = request.config.width || 1024
+        const imageHeight = request.config.height || 1024
         const imageResult = await ImageService.generateImage(window, {
           providerConfigId: request.providerId,
           model: request.modelId,
           prompt: fullPrompt,
-          width: request.config.width || 1024,
-          height: request.config.height || 1024,
-          seed: baseSeed
+          negativePrompt: request.negativePrompt,
+          width: imageWidth,
+          height: imageHeight,
+          seed: baseSeed,
+          skipHistory: true
         })
 
         if (!imageResult.success || !imageResult.images?.length) {
@@ -285,16 +392,18 @@ export class PortraitService {
 
         // 保存变体记录
         const image = imageResult.images[0]
+        const actualImagePath = image.filePath.replace('local-image:///', '')
+
         const variant = await dbManager.portraitVariants.create({
-          projectId: project.id,
+          characterId: character.id,
           type: 'base',
           angle: angle,
-          imagePath: image.filePath.replace('local-image:///', ''),
+          imagePath: actualImagePath,
           prompt: fullPrompt,
           config: {
             seed: baseSeed,
-            width: request.config.width || 1024,
-            height: request.config.height || 1024
+            width: imageWidth,
+            height: imageHeight
           }
         })
 
@@ -307,13 +416,13 @@ export class PortraitService {
       // 发送完成事件
       this.sendPortraitEvent(window, {
         type: 'generation-completed',
-        projectId: project.id,
+        characterId: character.id,
         variants: variants
       })
 
       return {
         success: true,
-        projectId: project.id,
+        characterId: character.id,
         variants: variants
       }
     } catch (error: any) {
@@ -333,18 +442,18 @@ export class PortraitService {
 
     const dbManager = getDatabaseManager()
 
-    if (!dbManager.portraitProjects || !dbManager.portraitVariants) {
+    if (!dbManager.portraitCharacters || !dbManager.portraitVariants) {
       return { success: false, error: '数据库未初始化' }
     }
 
     try {
-      const project = await dbManager.portraitProjects.getById(request.projectId)
-      if (!project) {
-        return { success: false, error: '项目不存在' }
+      const character = await dbManager.portraitCharacters.getById(request.characterId)
+      if (!character) {
+        return { success: false, error: '角色不存在' }
       }
 
       // 获取基础变体作为参考
-      const baseVariants = await dbManager.portraitVariants.getBaseVariants(request.projectId)
+      const baseVariants = await dbManager.portraitVariants.getBaseVariants(request.characterId)
       if (baseVariants.length === 0) {
         return { success: false, error: '没有基础形象可参考' }
       }
@@ -358,16 +467,30 @@ export class PortraitService {
 
         // 构建换衣提示词
         const anglePrompt = ANGLE_PROMPT_MAP[angle]
-        const fullPrompt = `${project.prompt}, wearing ${request.clothesDescription}, ${anglePrompt}, consistent character, same person, pure solid background`
+        let fullPrompt = `${character.prompt}, wearing ${request.clothesDescription}, ${anglePrompt}, consistent character, same person, pure solid background`
 
-        // 调用图像生成
+        // 准备参考图像
+        let referenceImageBase64: string | undefined = undefined
+        if (request.referenceImage) {
+          referenceImageBase64 = request.referenceImage
+          console.log('[PortraitService.changeClothes] 使用服装参考图')
+        } else if (baseVariant.imagePath && fs.existsSync(baseVariant.imagePath)) {
+          const imageBuffer = fs.readFileSync(baseVariant.imagePath)
+          referenceImageBase64 = `data:image/png;base64,${imageBuffer.toString('base64')}`
+        }
+
+        const imageWidth = baseVariant.config?.width || 1920
+        const imageHeight = baseVariant.config?.height || 1920
+
         const imageResult = await ImageService.generateImage(window, {
-          providerConfigId: project.providerId,
-          model: project.modelId,
+          providerConfigId: character.providerId,
+          model: character.modelId,
           prompt: fullPrompt,
-          width: baseVariant.config?.width || 1024,
-          height: baseVariant.config?.height || 1024,
-          seed: baseVariant.config?.seed
+          width: imageWidth,
+          height: imageHeight,
+          seed: baseVariant.config?.seed,
+          referenceImage: referenceImageBase64,
+          skipHistory: true
         })
 
         if (!imageResult.success || !imageResult.images?.length) {
@@ -377,7 +500,7 @@ export class PortraitService {
 
         const image = imageResult.images[0]
         const variant = await dbManager.portraitVariants.create({
-          projectId: request.projectId,
+          characterId: request.characterId,
           type: 'clothes',
           parentId: request.variantId || baseVariant.id,
           angle: angle,
@@ -416,24 +539,26 @@ export class PortraitService {
 
     const dbManager = getDatabaseManager()
 
-    if (!dbManager.portraitProjects || !dbManager.portraitVariants) {
+    if (!dbManager.portraitCharacters || !dbManager.portraitVariants) {
       return { success: false, error: '数据库未初始化' }
     }
 
     try {
-      const project = await dbManager.portraitProjects.getById(request.projectId)
-      if (!project) {
-        return { success: false, error: '项目不存在' }
+      const character = await dbManager.portraitCharacters.getById(request.characterId)
+      if (!character) {
+        return { success: false, error: '角色不存在' }
       }
 
       // 获取基础变体作为参考
-      const baseVariants = await dbManager.portraitVariants.getBaseVariants(request.projectId)
+      const baseVariants = await dbManager.portraitVariants.getBaseVariants(request.characterId)
       if (baseVariants.length === 0) {
         return { success: false, error: '没有基础形象可参考' }
       }
 
       // 构建背景描述
       let backgroundDescription = ''
+      let referenceImageBase64: string | undefined = undefined
+
       if (request.backgroundType === 'solid' && request.backgroundColor) {
         backgroundDescription = `solid ${request.backgroundColor} background`
       } else if (request.backgroundType === 'preset' && request.presetScene) {
@@ -450,6 +575,9 @@ export class PortraitService {
         backgroundDescription = presetNames[request.presetScene] || request.presetScene
       } else if (request.backgroundType === 'custom' && request.customDescription) {
         backgroundDescription = request.customDescription
+      } else if (request.backgroundType === 'image' && request.backgroundImage) {
+        backgroundDescription = 'custom background from uploaded image'
+        referenceImageBase64 = request.backgroundImage
       }
 
       const variants: PortraitVariant[] = []
@@ -459,15 +587,25 @@ export class PortraitService {
         if (!baseVariant) continue
 
         const anglePrompt = ANGLE_PROMPT_MAP[angle]
-        const fullPrompt = `${project.prompt}, ${anglePrompt}, consistent character, same person, ${backgroundDescription}`
+        const fullPrompt = `${character.prompt}, ${anglePrompt}, consistent character, same person, ${backgroundDescription}`
+
+        if (!referenceImageBase64 && baseVariant.imagePath && fs.existsSync(baseVariant.imagePath)) {
+          const imageBuffer = fs.readFileSync(baseVariant.imagePath)
+          referenceImageBase64 = `data:image/png;base64,${imageBuffer.toString('base64')}`
+        }
+
+        const imageWidth = baseVariant.config?.width || 1920
+        const imageHeight = baseVariant.config?.height || 1920
 
         const imageResult = await ImageService.generateImage(window, {
-          provider: project.providerId,
-          model: project.modelId,
+          providerConfigId: character.providerId,
+          model: character.modelId,
           prompt: fullPrompt,
-          width: baseVariant.config?.width || 1024,
-          height: baseVariant.config?.height || 1024,
-          seed: baseVariant.config?.seed
+          width: imageWidth,
+          height: imageHeight,
+          seed: baseVariant.config?.seed,
+          referenceImage: referenceImageBase64,
+          skipHistory: true
         })
 
         if (!imageResult.success || !imageResult.images?.length) {
@@ -477,7 +615,7 @@ export class PortraitService {
 
         const image = imageResult.images[0]
         const variant = await dbManager.portraitVariants.create({
-          projectId: request.projectId,
+          characterId: request.characterId,
           type: 'background',
           parentId: request.variantId || baseVariant.id,
           angle: angle,
@@ -534,7 +672,6 @@ export class PortraitService {
 
   /**
    * 生成多角度（第二步）
-   * 根据已有的正面形象生成其他角度
    */
   static async generateAngles(
     window: BrowserWindow,
@@ -544,70 +681,112 @@ export class PortraitService {
 
     const dbManager = getDatabaseManager()
 
-    if (!dbManager.portraitProjects || !dbManager.portraitVariants) {
+    if (!dbManager.portraitCharacters || !dbManager.portraitVariants) {
       return { success: false, error: '数据库未初始化' }
     }
 
     try {
-      const project = await dbManager.portraitProjects.getById(request.projectId)
-      if (!project) {
-        return { success: false, error: '项目不存在' }
+      const character = await dbManager.portraitCharacters.getById(request.characterId)
+      if (!character) {
+        return { success: false, error: '角色不存在' }
       }
 
-      // 获取正面基础变体作为参考
-      const frontVariant = await dbManager.portraitVariants.getFrontVariant(request.projectId)
-      if (!frontVariant) {
+      // 获取参考变体
+      let referenceVariant: PortraitVariant | null = null
+      if (request.variantId) {
+        console.log('[PortraitService.generateAngles] 收到 variantId:', request.variantId)
+        referenceVariant = await dbManager.portraitVariants.getById(request.variantId)
+      }
+      if (!referenceVariant) {
+        referenceVariant = await dbManager.portraitVariants.getFrontVariant(request.characterId)
+        console.log('[PortraitService.generateAngles] 使用正面基础变体作为参考')
+      }
+
+      if (!referenceVariant) {
         return { success: false, error: '没有正面形象可参考，请先生成正面形象' }
       }
 
       const variants: PortraitVariant[] = []
 
+      // 读取参考图文件
+      let referenceImageBase64: string | undefined = undefined
+      const referenceImagePath = referenceVariant.imagePath
+      if (referenceImagePath && fs.existsSync(referenceImagePath)) {
+        const imageBuffer = fs.readFileSync(referenceImagePath)
+        referenceImageBase64 = `data:image/png;base64,${imageBuffer.toString('base64')}`
+        console.log('[PortraitService.generateAngles] 已加载参考图作为参考图像')
+      }
+
       // 发送进度事件
       this.sendPortraitEvent(window, {
         type: 'generation-started',
-        projectId: request.projectId,
+        characterId: request.characterId,
         angles: request.angles
       })
+
+      // 记录失败的角度
+      const failedAngles: string[] = []
+      const failedErrors: string[] = []
 
       for (let i = 0; i < request.angles.length; i++) {
         const angle = request.angles[i]
 
-        // 发送进度
         this.sendPortraitEvent(window, {
           type: 'generation-progress',
-          projectId: request.projectId,
+          characterId: request.characterId,
           angle: angle,
           progress: (i / request.angles.length) * 100
         })
 
-        // 构建角度特定的提示词
+        const basePrompt = referenceVariant.prompt || character.prompt
         const anglePrompt = ANGLE_PROMPT_MAP[angle]
-        const fullPrompt = `${project.prompt}, ${anglePrompt}, consistent character, same person, pure solid background`
 
-        // 调用图像生成，使用相同的种子保持一致性
+        let consistencyPrompt = 'consistent character, same person as reference image'
+        if (referenceVariant.type === 'clothes') {
+          consistencyPrompt = 'same person, same face, same hairstyle, same pose, same background, same lighting, only viewing angle changed, wearing the same clothes as reference image'
+        } else if (referenceVariant.type === 'background') {
+          consistencyPrompt = 'same person, same face, same hairstyle, same pose, same clothes, same lighting, only viewing angle changed, same background as reference image'
+        } else {
+          consistencyPrompt = 'same person, same face, same hairstyle, same pose, same clothes, only viewing angle changed'
+        }
+
+        const fullPrompt = `${basePrompt}, ${anglePrompt}, ${consistencyPrompt}, pure solid background`
+
+        console.log(`[PortraitService.generateAngles] 角度 ${angle} 提示词:`, fullPrompt)
+
+        const imageWidth = referenceVariant.config?.width || 1920
+        const imageHeight = referenceVariant.config?.height || 1920
+
         const imageResult = await ImageService.generateImage(window, {
-          providerConfigId: project.providerId,
-          model: project.modelId,
+          providerConfigId: character.providerId,
+          model: character.modelId,
           prompt: fullPrompt,
-          width: frontVariant.config?.width || 1024,
-          height: frontVariant.config?.height || 1024,
-          seed: frontVariant.config?.seed
+          width: imageWidth,
+          height: imageHeight,
+          seed: referenceVariant.config?.seed,
+          referenceImage: referenceImageBase64,
+          skipHistory: true
         })
 
         if (!imageResult.success || !imageResult.images?.length) {
           console.error(`[PortraitService] 生成角度 ${angle} 失败:`, imageResult.error)
+          failedAngles.push(angle)
+          failedErrors.push(`角度 ${angle}: ${imageResult.error || '生成失败'}`)
           continue
         }
 
-        // 保存变体记录
         const image = imageResult.images[0]
+        const imagePath = image.filePath.replace('local-image:///', '')
+
         const variant = await dbManager.portraitVariants.create({
-          projectId: request.projectId,
-          type: 'base',
+          characterId: request.characterId,
+          type: referenceVariant.type,
+          parentId: referenceVariant.id,
           angle: angle,
-          imagePath: image.filePath.replace('local-image:///', ''),
+          imagePath: imagePath,
           prompt: fullPrompt,
-          config: frontVariant.config
+          config: referenceVariant.config,
+          variantInfo: referenceVariant.variantInfo
         })
 
         variants.push({
@@ -616,12 +795,19 @@ export class PortraitService {
         })
       }
 
-      // 发送完成事件
       this.sendPortraitEvent(window, {
         type: 'generation-completed',
-        projectId: request.projectId,
+        characterId: request.characterId,
         variants: variants
       })
+
+      if (failedAngles.length > 0) {
+        return {
+          success: true,
+          variants: variants,
+          warning: `部分角度生成失败: ${failedErrors.join('; ')}`
+        }
+      }
 
       return {
         success: true,
@@ -630,6 +816,88 @@ export class PortraitService {
     } catch (error: any) {
       console.error('[PortraitService.generateAngles] 错误:', error)
       return { success: false, error: error.message || '生成失败' }
+    }
+  }
+
+  /**
+   * 编辑图像
+   */
+  static async editImage(
+    window: BrowserWindow,
+    request: {
+      characterId: string
+      variantId: string
+      editPrompt: string
+    }
+  ): Promise<{ success: boolean; variant?: PortraitVariant; error?: string }> {
+    console.log('[PortraitService.editImage] 开始编辑图像')
+
+    const dbManager = getDatabaseManager()
+
+    if (!dbManager.portraitCharacters || !dbManager.portraitVariants) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    try {
+      const character = await dbManager.portraitCharacters.getById(request.characterId)
+      if (!character) {
+        return { success: false, error: '角色不存在' }
+      }
+
+      const variant = await dbManager.portraitVariants.getById(request.variantId)
+      if (!variant) {
+        return { success: false, error: '变体不存在' }
+      }
+
+      // 读取原图作为参考
+      const originalImagePath = variant.imagePath
+      let referenceImageBase64: string | undefined = undefined
+      if (originalImagePath && fs.existsSync(originalImagePath)) {
+        const imageBuffer = fs.readFileSync(originalImagePath)
+        referenceImageBase64 = `data:image/png;base64,${imageBuffer.toString('base64')}`
+      }
+
+      const basePrompt = character.prompt || ''
+      const editPrompt = `${basePrompt}, ${request.editPrompt}, consistent character, same person, full body shot, pure solid background`
+
+      const imageWidth = variant.config?.width || 1920
+      const imageHeight = variant.config?.height || 1920
+
+      const imageResult = await ImageService.generateImage(window, {
+        providerConfigId: character.providerId,
+        model: character.modelId,
+        prompt: editPrompt,
+        width: imageWidth,
+        height: imageHeight,
+        seed: variant.config?.seed,
+        referenceImage: referenceImageBase64,
+        skipHistory: true
+      })
+
+      if (!imageResult.success || !imageResult.images?.length) {
+        return { success: false, error: imageResult.error || '编辑失败' }
+      }
+
+      const image = imageResult.images[0]
+      const updatedVariant = await dbManager.portraitVariants.update(variant.id, {
+        imagePath: image.filePath.replace('local-image:///', ''),
+        prompt: editPrompt
+      })
+
+      if (!updatedVariant) {
+        return { success: false, error: '更新变体失败' }
+      }
+
+      return {
+        success: true,
+        variant: {
+          ...updatedVariant,
+          imagePath: localPathToUrl(updatedVariant.imagePath)
+        }
+      }
+    } catch (error: any) {
+      console.error('[PortraitService.editImage] 错误:', error)
+      return { success: false, error: error.message || '编辑失败' }
     }
   }
 
@@ -646,7 +914,6 @@ export class PortraitService {
     }
 
     try {
-      // 获取要导出的变体
       let variants: PortraitVariant[]
       if (request.variantIds && request.variantIds.length > 0) {
         variants = []
@@ -655,7 +922,7 @@ export class PortraitService {
           if (variant) variants.push(variant)
         }
       } else {
-        variants = await dbManager.portraitVariants.getByProjectId(request.projectId)
+        variants = await dbManager.portraitVariants.getByCharacterId(request.characterId)
       }
 
       if (variants.length === 0) {
@@ -665,7 +932,6 @@ export class PortraitService {
       const dataPathService = DataPathService.getInstance()
       const exportDir = path.join(dataPathService.getDataPath(), 'exports', 'portraits')
 
-      // 确保导出目录存在
       if (!fs.existsSync(exportDir)) {
         fs.mkdirSync(exportDir, { recursive: true })
       }
@@ -673,46 +939,13 @@ export class PortraitService {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
 
       if (request.type === 'single') {
-        // 导出单张图片
         const variant = variants[0]
         const ext = path.extname(variant.imagePath) || '.png'
         const fileName = `portrait_${variant.angle}_${timestamp}${ext}`
         const outputPath = path.join(exportDir, fileName)
         fs.copyFileSync(variant.imagePath, outputPath)
         return { success: true, filePath: outputPath }
-      } else if (request.type === 'grid') {
-        // 导出拼接图（简化版：仅复制文件，实际拼接需要 canvas 库）
-        // 由于 Node.js 没有原生 canvas 支持，这里先导出为 zip
-        const archiver = require('archiver')
-        const fileName = `portrait_grid_${timestamp}.zip`
-        const outputPath = path.join(exportDir, fileName)
-
-        return new Promise((resolve) => {
-          const output = fs.createWriteStream(outputPath)
-          const archive = archiver('zip', { zlib: { level: 9 } })
-
-          output.on('close', () => {
-            resolve({ success: true, filePath: outputPath })
-          })
-
-          archive.on('error', (err: Error) => {
-            resolve({ success: false, error: err.message })
-          })
-
-          archive.pipe(output)
-
-          // 添加所有图片到 zip
-          variants.forEach((variant, index) => {
-            if (fs.existsSync(variant.imagePath)) {
-              const ext = path.extname(variant.imagePath) || '.png'
-              archive.file(variant.imagePath, { name: `${variant.angle}${ext}` })
-            }
-          })
-
-          archive.finalize()
-        })
       } else {
-        // 导出为 zip 压缩包
         const archiver = require('archiver')
         const fileName = `portrait_export_${timestamp}.zip`
         const outputPath = path.join(exportDir, fileName)
@@ -731,7 +964,6 @@ export class PortraitService {
 
           archive.pipe(output)
 
-          // 按类型分组
           const groups: Record<string, PortraitVariant[]> = {}
           variants.forEach(v => {
             const groupKey = v.type
@@ -739,7 +971,6 @@ export class PortraitService {
             groups[groupKey].push(v)
           })
 
-          // 添加所有图片到 zip
           Object.entries(groups).forEach(([type, items]) => {
             items.forEach((variant) => {
               if (fs.existsSync(variant.imagePath)) {

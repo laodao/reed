@@ -42,6 +42,7 @@
           maxlength="2000"
           show-word-limit
         />
+        <p class="hint-text">首次生成将创建<strong>全身正面形象</strong>，之后可基于此生成侧面和背面</p>
       </div>
 
       <!-- 参考图片 -->
@@ -72,19 +73,6 @@
             <el-icon><Plus /></el-icon>
             <span>上传参考图</span>
           </div>
-        </div>
-      </div>
-
-      <!-- 生成角度 -->
-      <div class="form-section">
-        <label class="section-label">生成角度</label>
-        <div class="angle-options">
-          <el-checkbox-group v-model="selectedAngles">
-            <el-checkbox value="front">正面</el-checkbox>
-            <el-checkbox value="left">左侧</el-checkbox>
-            <el-checkbox value="right">右侧</el-checkbox>
-            <el-checkbox value="back">背面</el-checkbox>
-          </el-checkbox-group>
         </div>
       </div>
 
@@ -121,14 +109,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus, Close } from '@element-plus/icons-vue'
-import type { PortraitAngle } from '../../../../shared/types/portrait.types'
+
+// 角度类型
+type PortraitAngle = 'front' | 'left' | 'right' | 'back'
 
 const props = defineProps<{
   projectId?: string
-  angles?: PortraitAngle[]  // 外部控制生成哪些角度
 }>()
 
 const emit = defineEmits<{
@@ -158,7 +147,8 @@ const modelSearchKeyword = ref('')
 const selectedModelKey = ref('')
 const prompt = ref('')
 const referenceImages = ref<string[]>([])
-const selectedAngles = ref<PortraitAngle[]>(['front', 'left', 'right', 'back'])
+// 默认只生成正面形象，侧面和背面在生成后基于正面图生成
+const selectedAngles = ref<PortraitAngle[]>(['front'])
 const backgroundType = ref<'solid' | 'transparent'>('solid')
 const backgroundColor = ref('#FFFFFF')
 const generating = ref(false)
@@ -166,7 +156,7 @@ const generating = ref(false)
 // ==================== 计算属性 ====================
 
 const canGenerate = computed(() => {
-  return prompt.value.trim() && selectedModelKey.value && selectedAngles.value.length > 0
+  return prompt.value.trim() && selectedModelKey.value
 })
 
 /** 过滤后的模型列表 */
@@ -195,15 +185,6 @@ const filteredModelGroups = computed(() => {
 
   return result
 })
-
-// ==================== 监听器 ====================
-
-// 监听外部 angles prop 变化，更新内部 selectedAngles
-watch(() => props.angles, (newAngles) => {
-  if (newAngles && newAngles.length > 0) {
-    selectedAngles.value = [...newAngles]
-  }
-}, { immediate: true })
 
 // ==================== 方法 ====================
 
@@ -340,6 +321,12 @@ onMounted(() => {
   margin-bottom: 8px;
 }
 
+.hint-text {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  margin: 8px 0 0;
+}
+
 .reference-images {
   display: flex;
   gap: 12px;
@@ -386,13 +373,6 @@ onMounted(() => {
   span {
     font-size: 12px;
     margin-top: 4px;
-  }
-}
-
-.angle-options {
-  :deep(.el-checkbox-group) {
-    display: flex;
-    gap: 16px;
   }
 }
 

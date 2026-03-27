@@ -24,6 +24,7 @@ import { KbChunkRepository } from './repositories/kb-chunk.repository'
 import { KbVectorRepository } from './repositories/kb-vector.repository'
 import { KbInvertedIndexRepository } from './repositories/kb-inverted-index.repository'
 import { PortraitProjectRepository } from './repositories/portrait-project.repository'
+import { PortraitCharacterRepository } from './repositories/portrait-character.repository'
 import { PortraitVariantRepository } from './repositories/portrait-variant.repository'
 import { DataPathService } from '../services/data-path.service'
 import { LanceDBService } from '../services/lance-db.service'
@@ -54,6 +55,7 @@ export class DatabaseManager {
   public kbVectors: KbVectorRepository | null = null
   public kbInvertedIndex: KbInvertedIndexRepository | null = null
   public portraitProjects: PortraitProjectRepository | null = null
+  public portraitCharacters: PortraitCharacterRepository | null = null
   public portraitVariants: PortraitVariantRepository | null = null
 
   private constructor() {
@@ -457,28 +459,154 @@ export class DatabaseManager {
 
     // ==================== 人像设计相关表 ====================
 
-    // 人物项目表
+    // 人物项目表（项目仅作为容器）
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS portrait_projects (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         description TEXT,
-        prompt TEXT NOT NULL,
-        reference_images TEXT,
-        provider_id TEXT NOT NULL,
-        model_id TEXT NOT NULL,
-        config TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `)
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_portrait_projects_created_at ON portrait_projects(created_at DESC)`)
 
-    // 人物变体表
+    // 人物角色表（属于项目）- 先检查是否需要迁移
+    // 检查是否存在旧的 portrait_projects 表结构（包含 prompt 字段）
+    const portraitProjectColumns = this.db.prepare("PRAGMA table_info(portrait_projects)").all() as { name: string }[]
+    const portraitProjectColumnNames = portraitProjectColumns.map(col => col.name)
+
+    // 如果旧表存在 prompt 字段，说明需要迁移
+    if (portraitProjectColumnNames.includes('prompt')) {
+      console.log('[DatabaseManager] 检测到旧版 portrait_projects 表，开始迁移...')
+
+      // 先迁移 portrait_variants 表（如果有旧数据）
+      const variantColumns = this.db.prepare("PRAGMA table_info(portrait_variants)").all() as { name: string }[]
+      const variantColumnNames = variantColumns.map(col => col.name)
+
+      if (variantColumnNames.includes('project_id') && !variantColumnNames.includes('character_id')) {
+        // 添加 character_id 列
+        this.db.exec('ALTER TABLE portrait_variants ADD COLUMN character_id TEXT')
+
+        // 创建临时角色数据用于迁移
+        // 为每个旧项目创建临时角色 ID 映射
+        this.db.exec(`
+          UPDATE portrait_variants
+          SET character_id = 'char_' || project_id
+          WHERE character_id IS NULL
+        `)
+
+        console.log('[DatabaseManager] portrait_variants 表迁移完成')
+      }
+
+      // 检查 portrait_characters 表是否存在
+      const characterTableExists = this.db.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='portrait_characters'"
+      ).get()
+
+      if (!characterTableExists) {
+        // 创建新的 portrait_characters 表
+        this.db.exec(`
+          CREATE TABLE portrait_characters (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            gender TEXT NOT NULL DEFAULT 'male',
+            age INTEGER NOT NULL DEFAULT 25,
+            height INTEGER NOT NULL DEFAULT 170,
+            weight INTEGER NOT NULL DEFAULT 65,
+            race TEXT NOT NULL DEFAULT 'asian',
+            description TEXT,
+            prompt TEXT,
+            reference_images TEXT,
+            provider_id TEXT,
+            model_id TEXT,
+            config TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (project_id) REFERENCES portrait_projects(id) ON DELETE CASCADE
+          )
+        `)
+        this.db.exec(`CREATE INDEX IF NOT EXISTS idx_portrait_characters_project_id ON portrait_characters(project_id)`)
+
+        // 迁移数据：为每个旧项目创建一个默认角色
+        this.db.exec(`
+          INSERT INTO portrait_characters (id, project_id, name, gender, age, height, weight, race, prompt, reference_images, provider_id, model_id, config, created_at, updated_at)
+          SELECT
+            'char_' || id as id,
+            id as project_id,
+            name,
+            'male' as gender,
+            25 as age,
+            170 as height,
+            65 as weight,
+            'asian' as race,
+            prompt,
+            reference_images,
+            provider_id,
+            model_id,
+            config,
+            created_at,
+            updated_at
+          FROM portrait_projects
+        `)
+
+        console.log('[DatabaseManager] portrait_characters 表创建并数据迁移完成')
+      }
+
+      // 最后，重建 portrait_projects 表（移除不需要的字段）
+      this.db.exec(`
+        CREATE TABLE portrait_projects_new (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          description TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `)
+
+      this.db.exec(`
+        INSERT INTO portrait_projects_new (id, name, description, created_at, updated_at)
+        SELECT id, name, description, created_at, updated_at FROM portrait_projects
+      `)
+
+      this.db.exec('DROP TABLE portrait_projects')
+      this.db.exec('ALTER TABLE portrait_projects_new RENAME TO portrait_projects')
+      this.db.exec(`CREATE INDEX IF NOT EXISTS idx_portrait_projects_created_at ON portrait_projects(created_at DESC)`)
+
+      console.log('[DatabaseManager] portrait_projects 表重构完成')
+    }
+
+    // 创建 portrait_characters 表（如果不存在）
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS portrait_characters (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        gender TEXT NOT NULL DEFAULT 'male',
+        age INTEGER NOT NULL DEFAULT 25,
+        height INTEGER NOT NULL DEFAULT 170,
+        weight INTEGER NOT NULL DEFAULT 65,
+        race TEXT NOT NULL DEFAULT 'asian',
+        description TEXT,
+        prompt TEXT,
+        reference_images TEXT,
+        provider_id TEXT,
+        model_id TEXT,
+        config TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES portrait_projects(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_portrait_characters_project_id ON portrait_characters(project_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_portrait_characters_created_at ON portrait_characters(created_at DESC)`)
+
+    // 人物变体表（属于角色）
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS portrait_variants (
         id TEXT PRIMARY KEY,
-        project_id TEXT NOT NULL,
+        character_id TEXT NOT NULL,
         type TEXT NOT NULL,
         parent_id TEXT,
         angle TEXT NOT NULL,
@@ -487,15 +615,157 @@ export class DatabaseManager {
         config TEXT,
         variant_info TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (project_id) REFERENCES portrait_projects(id) ON DELETE CASCADE
+        FOREIGN KEY (character_id) REFERENCES portrait_characters(id) ON DELETE CASCADE
       )
     `)
-    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_portrait_variants_project_id ON portrait_variants(project_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_portrait_variants_character_id ON portrait_variants(character_id)`)
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_portrait_variants_type ON portrait_variants(type)`)
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_portrait_variants_created_at ON portrait_variants(created_at DESC)`)
 
-    // 执行数据库迁移
+    // 执行其他数据库迁移
     this.runMigrations()
+
+    // 检查 portrait_characters 表是否需要修改字段约束
+    this.migratePortraitCharactersNullable()
+
+    // 检查 portrait_variants 表是否需要移除 project_id 列
+    this.migratePortraitVariantsRemoveProjectId()
+  }
+
+  /**
+   * 迁移 portrait_characters 表，使 provider_id、model_id、prompt 可为空
+   */
+  private migratePortraitCharactersNullable(): void {
+    if (!this.db) return
+
+    // 检查 portrait_characters 表是否存在
+    const tableExists = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='portrait_characters'").get()
+    if (!tableExists) return
+
+    // 获取表结构
+    const columns = this.db.prepare("PRAGMA table_info(portrait_characters)").all() as { name: string; notnull: number }[]
+    const providerIdCol = columns.find(col => col.name === 'provider_id')
+    const modelIdCol = columns.find(col => col.name === 'model_id')
+    const promptCol = columns.find(col => col.name === 'prompt')
+
+    // 如果字段已经是可空的，则不需要迁移
+    if (providerIdCol && providerIdCol.notnull === 0 && modelIdCol && modelIdCol.notnull === 0) {
+      return
+    }
+
+    console.log('[DatabaseManager] 迁移 portrait_characters 表，使 provider_id、model_id、prompt 可为空...')
+
+    // 重建表
+    this.db.exec(`
+      CREATE TABLE portrait_characters_new (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        gender TEXT NOT NULL DEFAULT 'male',
+        age INTEGER NOT NULL DEFAULT 25,
+        height INTEGER NOT NULL DEFAULT 170,
+        weight INTEGER NOT NULL DEFAULT 65,
+        race TEXT NOT NULL DEFAULT 'asian',
+        description TEXT,
+        prompt TEXT,
+        reference_images TEXT,
+        provider_id TEXT,
+        model_id TEXT,
+        config TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES portrait_projects(id) ON DELETE CASCADE
+      )
+    `)
+
+    // 复制数据
+    this.db.exec(`
+      INSERT INTO portrait_characters_new (id, project_id, name, gender, age, height, weight, race, description, prompt, reference_images, provider_id, model_id, config, created_at, updated_at)
+      SELECT id, project_id, name, gender, age, height, weight, race, description, prompt, reference_images, provider_id, model_id, config, created_at, updated_at
+      FROM portrait_characters
+    `)
+
+    // 删除旧表
+    this.db.exec('DROP TABLE portrait_characters')
+
+    // 重命名新表
+    this.db.exec('ALTER TABLE portrait_characters_new RENAME TO portrait_characters')
+
+    // 重建索引
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_portrait_characters_project_id ON portrait_characters(project_id)')
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_portrait_characters_created_at ON portrait_characters(created_at DESC)')
+
+    console.log('[DatabaseManager] portrait_characters 表迁移完成')
+  }
+
+  /**
+   * 迁移 portrait_variants 表，移除旧的 project_id 列
+   */
+  private migratePortraitVariantsRemoveProjectId(): void {
+    if (!this.db) return
+
+    // 检查 portrait_variants 表是否存在
+    const tableExists = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='portrait_variants'").get()
+    if (!tableExists) return
+
+    // 获取表结构
+    const columns = this.db.prepare("PRAGMA table_info(portrait_variants)").all() as { name: string }[]
+    const columnNames = columns.map(col => col.name)
+
+    // 如果不存在 project_id 列，则不需要迁移
+    if (!columnNames.includes('project_id')) {
+      return
+    }
+
+    console.log('[DatabaseManager] 迁移 portrait_variants 表，移除 project_id 列...')
+
+    // 创建新表（不含 project_id）
+    this.db.exec(`
+      CREATE TABLE portrait_variants_new (
+        id TEXT PRIMARY KEY,
+        character_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        parent_id TEXT,
+        angle TEXT NOT NULL,
+        image_path TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        config TEXT,
+        variant_info TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (character_id) REFERENCES portrait_characters(id) ON DELETE CASCADE
+      )
+    `)
+
+    // 检查是否有 character_id 列来决定数据复制方式
+    if (columnNames.includes('character_id')) {
+      // 复制数据（包含 character_id）
+      this.db.exec(`
+        INSERT INTO portrait_variants_new (id, character_id, type, parent_id, angle, image_path, prompt, config, variant_info, created_at)
+        SELECT id, character_id, type, parent_id, angle, image_path, prompt, config, variant_info, created_at
+        FROM portrait_variants
+      `)
+    } else {
+      // 旧表没有 character_id，这种情况应该不会发生，但以防万一
+      // 需要根据 project_id 创建一个临时 character_id
+      this.db.exec(`
+        INSERT INTO portrait_variants_new (id, character_id, type, parent_id, angle, image_path, prompt, config, variant_info, created_at)
+        SELECT id, 'char_' || project_id, type, parent_id, angle, image_path, prompt, config, variant_info, created_at
+        FROM portrait_variants
+      `)
+    }
+
+    // 删除旧表
+    this.db.exec('DROP TABLE portrait_variants')
+
+    // 重命名新表
+    this.db.exec('ALTER TABLE portrait_variants_new RENAME TO portrait_variants')
+
+    // 重建索引
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_portrait_variants_character_id ON portrait_variants(character_id)')
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_portrait_variants_type ON portrait_variants(type)')
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_portrait_variants_created_at ON portrait_variants(created_at DESC)')
+
+    console.log('[DatabaseManager] portrait_variants 表迁移完成')
   }
 
   /**
@@ -661,6 +931,7 @@ export class DatabaseManager {
     this.kbVectors = new KbVectorRepository()
     this.kbInvertedIndex = new KbInvertedIndexRepository(this.db)
     this.portraitProjects = new PortraitProjectRepository(this.db)
+    this.portraitCharacters = new PortraitCharacterRepository(this.db)
     this.portraitVariants = new PortraitVariantRepository(this.db)
   }
 

@@ -10,6 +10,8 @@ import type { IpcResponse } from '../../../shared/types/ipc.types'
 import type {
   CreatePortraitProjectRequest,
   UpdatePortraitProjectRequest,
+  CreatePortraitCharacterRequest,
+  UpdatePortraitCharacterRequest,
   GeneratePortraitRequest,
   ChangeClothesRequest,
   ChangeBackgroundRequest,
@@ -28,6 +30,13 @@ export function registerPortraitHandlers(): void {
   ipcMain.handle('portrait:update-project', handleUpdateProject)
   ipcMain.handle('portrait:delete-project', handleDeleteProject)
 
+  // 角色管理
+  ipcMain.handle('portrait:create-character', handleCreateCharacter)
+  ipcMain.handle('portrait:list-characters', handleListCharacters)
+  ipcMain.handle('portrait:get-character', handleGetCharacter)
+  ipcMain.handle('portrait:update-character', handleUpdateCharacter)
+  ipcMain.handle('portrait:delete-character', handleDeleteCharacter)
+
   // 图像生成
   ipcMain.handle('portrait:generate', handleGeneratePortrait)
   ipcMain.handle('portrait:change-clothes', handleChangeClothes)
@@ -36,6 +45,7 @@ export function registerPortraitHandlers(): void {
   // 变体管理
   ipcMain.handle('portrait:list-variants', handleListVariants)
   ipcMain.handle('portrait:delete-variant', handleDeleteVariant)
+  ipcMain.handle('portrait:edit-image', handleEditImage)
 
   // 生成多角度（第二步）
   ipcMain.handle('portrait:generate-angles', handleGenerateAngles)
@@ -48,17 +58,34 @@ export function registerPortraitHandlers(): void {
  * 取消注册人像设计相关 IPC 处理器
  */
 export function unregisterPortraitHandlers(): void {
+  // 项目管理
   ipcMain.removeHandler('portrait:create-project')
   ipcMain.removeHandler('portrait:list-projects')
   ipcMain.removeHandler('portrait:get-project')
   ipcMain.removeHandler('portrait:update-project')
   ipcMain.removeHandler('portrait:delete-project')
+
+  // 角色管理
+  ipcMain.removeHandler('portrait:create-character')
+  ipcMain.removeHandler('portrait:list-characters')
+  ipcMain.removeHandler('portrait:get-character')
+  ipcMain.removeHandler('portrait:update-character')
+  ipcMain.removeHandler('portrait:delete-character')
+
+  // 图像生成
   ipcMain.removeHandler('portrait:generate')
   ipcMain.removeHandler('portrait:change-clothes')
   ipcMain.removeHandler('portrait:change-background')
+
+  // 变体管理
   ipcMain.removeHandler('portrait:list-variants')
   ipcMain.removeHandler('portrait:delete-variant')
+  ipcMain.removeHandler('portrait:edit-image')
+
+  // 多角度
   ipcMain.removeHandler('portrait:generate-angles')
+
+  // 导出
   ipcMain.removeHandler('portrait:export')
 }
 
@@ -145,6 +172,88 @@ async function handleUpdateProject(
   }
 }
 
+// ==================== 角色管理处理器 ====================
+
+/**
+ * 处理创建角色请求
+ */
+async function handleCreateCharacter(
+  _event: IpcMainInvokeEvent,
+  request: CreatePortraitCharacterRequest
+): Promise<IpcResponse<any>> {
+  try {
+    const result = await PortraitService.createCharacter(request)
+    return result as IpcResponse<any>
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '未知错误'
+    return { success: false, error: errorMessage }
+  }
+}
+
+/**
+ * 处理获取角色列表请求
+ */
+async function handleListCharacters(
+  _event: IpcMainInvokeEvent,
+  projectId: string
+): Promise<IpcResponse<any[]>> {
+  try {
+    const result = await PortraitService.listCharacters(projectId)
+    return result as IpcResponse<any[]>
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '未知错误'
+    return { success: false, error: errorMessage }
+  }
+}
+
+/**
+ * 处理获取角色详情请求
+ */
+async function handleGetCharacter(
+  _event: IpcMainInvokeEvent,
+  id: string
+): Promise<IpcResponse<any>> {
+  try {
+    const result = await PortraitService.getCharacter(id)
+    return result as IpcResponse<any>
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '未知错误'
+    return { success: false, error: errorMessage }
+  }
+}
+
+/**
+ * 处理更新角色请求
+ */
+async function handleUpdateCharacter(
+  _event: IpcMainInvokeEvent,
+  request: UpdatePortraitCharacterRequest
+): Promise<IpcResponse<any>> {
+  try {
+    const result = await PortraitService.updateCharacter(request)
+    return result as IpcResponse<any>
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '未知错误'
+    return { success: false, error: errorMessage }
+  }
+}
+
+/**
+ * 处理删除角色请求
+ */
+async function handleDeleteCharacter(
+  _event: IpcMainInvokeEvent,
+  id: string
+): Promise<IpcResponse<void>> {
+  try {
+    const result = await PortraitService.deleteCharacter(id)
+    return result as IpcResponse<void>
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '未知错误'
+    return { success: false, error: errorMessage }
+  }
+}
+
 // ==================== 图像生成处理器 ====================
 
 /**
@@ -165,7 +274,7 @@ async function handleGeneratePortrait(
       return {
         success: true,
         data: {
-          projectId: result.projectId,
+          characterId: result.characterId,
           variants: result.variants
         }
       }
@@ -242,10 +351,10 @@ async function handleChangeBackground(
  */
 async function handleListVariants(
   _event: IpcMainInvokeEvent,
-  projectId: string
+  characterId: string
 ): Promise<IpcResponse<any[]>> {
   try {
-    const result = await PortraitService.listVariants(projectId)
+    const result = await PortraitService.listVariants(characterId)
     return result as IpcResponse<any[]>
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : '未知错误'
@@ -263,6 +372,37 @@ async function handleDeleteVariant(
   try {
     const result = await PortraitService.deleteVariant(id)
     return result as IpcResponse<void>
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '未知错误'
+    return { success: false, error: errorMessage }
+  }
+}
+
+/**
+ * 处理编辑图像请求
+ */
+async function handleEditImage(
+  event: IpcMainInvokeEvent,
+  request: {
+    characterId: string
+    variantId: string
+    editPrompt: string
+  }
+): Promise<IpcResponse<any>> {
+  try {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    if (!window) {
+      return { success: false, error: '窗口不存在' }
+    }
+
+    const result = await PortraitService.editImage(window, request)
+    if (result.success) {
+      return {
+        success: true,
+        data: result.variant
+      }
+    }
+    return { success: false, error: result.error }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : '未知错误'
     return { success: false, error: errorMessage }

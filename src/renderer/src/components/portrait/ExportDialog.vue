@@ -58,7 +58,7 @@ import type { PortraitVariant } from '../../../../shared/types/portrait.types'
 
 const props = defineProps<{
   modelValue: boolean
-  projectId: string
+  characterId: string
   variants: PortraitVariant[]
 }>()
 
@@ -88,13 +88,13 @@ function selectNone() {
 }
 
 async function handleSubmit() {
-  if (!canSubmit.value || !props.projectId) return
+  if (!canSubmit.value || !props.characterId) return
 
   loading.value = true
 
   try {
     const result = await window.electronAPI.portrait.export({
-      projectId: props.projectId,
+      characterId: props.characterId,
       variantIds: [...form.value.selectedVariantIds],
       type: form.value.type,
       gridLayout: form.value.gridLayout

@@ -44,6 +44,8 @@ function localPathToUrl(filePath: string): string {
     return ''
   }
 
+  console.log('[localPathToUrl] 输入路径:', filePath)
+
   // Windows 路径处理：将反斜杠转换为正斜杠
   let normalizedPath = filePath
   if (process.platform === 'win32') {
@@ -53,7 +55,7 @@ function localPathToUrl(filePath: string): string {
   // 使用三个斜杠格式（标准 file URI 格式）：local-image:///C:/Users/...
   // 不编码冒号，让盘符成为路径的一部分
   const url = `local-image:///${normalizedPath}`
-  console.log('[localPathToUrl] 输入:', filePath, '输出:', url)
+  console.log('[localPathToUrl] 输出 URL:', url)
   return url
 }
 
@@ -173,6 +175,26 @@ export class ImageService {
       // 同步模式：直接返回了图像 URL
       if (response.images && response.images.length > 0) {
         console.log('[ImageService.generateImage] 同步模式，直接返回图像')
+
+        // 如果跳过历史记录，直接下载保存并返回
+        if (request.skipHistory) {
+          console.log('[ImageService.generateImage] skipHistory=true, 调用 saveImagesWithoutHistory')
+          console.log('[ImageService.generateImage] response.images 数量:', response.images?.length)
+          console.log('[ImageService.generateImage] response.images 内容:', JSON.stringify(response.images?.map(img => ({
+            url: img.url?.substring(0, 150) + '...',
+            hasUrl: !!img.url
+          }))))
+
+          const savedImages = await this.saveImagesWithoutHistory(response.images)
+
+          console.log('[ImageService.generateImage] saveImagesWithoutHistory 返回:', savedImages.length, '张图片')
+          console.log('[ImageService.generateImage] 返回的图片路径:', savedImages.map(img => img.filePath))
+
+          return {
+            success: true,
+            images: savedImages
+          }
+        }
 
         const imageRecords: ImageRecord[] = []
         const tempTaskId = `sync_${Date.now()}`
@@ -473,6 +495,94 @@ export class ImageService {
       }
     }
 
+    return savedImages
+  }
+
+  /**
+   * 保存图像但不记录到历史（用于其他模块调用）
+   *
+   * @param images - 生成的图像列表
+   * @returns 保存后的图像信息
+   */
+  private static async saveImagesWithoutHistory(
+    images: Array<{ url: string }>
+  ): Promise<Array<{ filePath: string }>> {
+    console.log('[saveImagesWithoutHistory] 开始保存图像，数量:', images.length)
+    console.log('[saveImagesWithoutHistory] 图像信息:', images.map(img => ({ url: img.url?.substring(0, 100) + '...' })))
+
+    const dataPathService = DataPathService.getInstance()
+    const userDataPath = dataPathService.getDataPath()
+    const now = new Date()
+    const year = now.getFullYear()
+    const month = String(now.getMonth() + 1).padStart(2, '0')
+    const day = String(now.getDate()).padStart(2, '0')
+    const imagesDir = path.join(userDataPath, 'images', String(year), month, day)
+
+    console.log('[saveImagesWithoutHistory] 图像保存目录:', imagesDir)
+
+    // 确保目录存在
+    if (!fs.existsSync(imagesDir)) {
+      fs.mkdirSync(imagesDir, { recursive: true })
+    }
+
+    const savedImages: Array<{ filePath: string }> = []
+
+    for (let i = 0; i < images.length; i++) {
+      const imageInfo = images[i]
+      const imageId = `img_${Date.now()}_${i}`
+
+      try {
+        let buffer: Buffer
+
+        // 检查是否是 base64 格式的图像
+        if (imageInfo.url.startsWith('data:')) {
+          console.log(`[saveImagesWithoutHistory] 图像 ${i} 是 base64 格式`)
+          const base64Data = imageInfo.url.split(',')[1]
+          if (!base64Data) {
+            throw new Error('无效的 base64 图像数据')
+          }
+          buffer = Buffer.from(base64Data, 'base64')
+        } else {
+          console.log(`[saveImagesWithoutHistory] 图像 ${i} 从 URL 下载:`, imageInfo.url.substring(0, 100) + '...')
+          try {
+            const response = await fetch(imageInfo.url)
+            console.log(`[saveImagesWithoutHistory] 图像 ${i} fetch 响应状态:`, response.status, response.statusText)
+            if (!response.ok) {
+              throw new Error(`下载图像失败: HTTP ${response.status} ${response.statusText}`)
+            }
+            const arrayBuffer = await response.arrayBuffer()
+            buffer = Buffer.from(arrayBuffer)
+            console.log(`[saveImagesWithoutHistory] 图像 ${i} 下载成功，大小:`, buffer.length, 'bytes')
+          } catch (fetchError: any) {
+            console.error(`[saveImagesWithoutHistory] 图像 ${i} fetch 异常:`, fetchError.message)
+            throw fetchError
+          }
+        }
+
+        // 生成文件名
+        const fileName = `${imageId}.png`
+        const filePath = path.join(imagesDir, fileName)
+
+        // 保存文件
+        fs.writeFileSync(filePath, buffer)
+        console.log(`[saveImagesWithoutHistory] 图像 ${i} 保存成功:`, filePath)
+
+        // 验证文件是否真的存在
+        const fileExists = fs.existsSync(filePath)
+        console.log(`[saveImagesWithoutHistory] 图像 ${i} 文件存在验证:`, fileExists)
+        if (!fileExists) {
+          console.error(`[saveImagesWithoutHistory] 图像 ${i} 文件保存后验证失败！`)
+        }
+
+        savedImages.push({
+          filePath: localPathToUrl(filePath)
+        })
+      } catch (error: any) {
+        console.error(`[saveImagesWithoutHistory] 保存图像 ${i} 失败:`, error)
+      }
+    }
+
+    console.log('[saveImagesWithoutHistory] 保存完成，成功数量:', savedImages.length)
     return savedImages
   }
 

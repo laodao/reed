@@ -15,6 +15,7 @@ import { BaseImageProvider } from '../base-image-provider'
 
 /**
  * 火山引擎图像生成响应格式
+ * 火山引擎API返回的格式可能包含 data 数组或 output 字段
  */
 interface VolcengineImageResponse {
   created?: number
@@ -22,11 +23,21 @@ interface VolcengineImageResponse {
     url?: string
     b64_json?: string
   }>
+  // 火山引擎可能使用的格式
+  output?: {
+    data?: Array<{
+      url?: string
+      b64_json?: string
+    }>
+  }
   error?: {
     message: string
     type: string
     code: string
   }
+  // 兼容其他可能的错误格式
+  message?: string
+  code?: string
 }
 
 /**
@@ -114,35 +125,57 @@ export class VolcengineImageProvider extends BaseImageProvider {
       // 发送请求
       const response = await this.sendRequest<VolcengineImageResponse>(url, 'POST', body)
 
-      // 检查错误
+      // 打印完整响应用于调试
+      console.log('[Volcengine] 完整响应:', JSON.stringify(response, null, 2))
+
+      // 检查错误（支持多种错误格式）
       if (response.error) {
         return {
           success: false,
           error: response.error.message || '图像生成失败'
         }
       }
+      if (response.code && response.code !== '200' && response.code !== 'Success') {
+        return {
+          success: false,
+          error: response.message || '图像生成失败'
+        }
+      }
 
-      // 提取图像
+      // 提取图像（支持多种响应格式）
+      const images: GeneratedImage[] = []
+
+      // 格式1: OpenAI格式 - response.data
       if (response.data && response.data.length > 0) {
-        const images: GeneratedImage[] = []
-
         for (const item of response.data) {
           if (item.url) {
             images.push({ url: item.url })
           } else if (item.b64_json) {
-            // Base64 格式
             images.push({ url: `data:image/png;base64,${item.b64_json}` })
-          }
-        }
-
-        if (images.length > 0) {
-          return {
-            success: true,
-            images
           }
         }
       }
 
+      // 格式2: 火山引擎格式 - response.output.data
+      if (images.length === 0 && response.output?.data && response.output.data.length > 0) {
+        for (const item of response.output.data) {
+          if (item.url) {
+            images.push({ url: item.url })
+          } else if (item.b64_json) {
+            images.push({ url: `data:image/png;base64,${item.b64_json}` })
+          }
+        }
+      }
+
+      if (images.length > 0) {
+        console.log('[Volcengine] 成功获取图像数量:', images.length)
+        return {
+          success: true,
+          images
+        }
+      }
+
+      console.log('[Volcengine] 未找到图像数据')
       return {
         success: false,
         error: '未获取到生成结果'

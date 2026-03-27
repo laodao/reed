@@ -83,6 +83,7 @@ export interface ImageGenerationRequest {
   count?: number
   seed?: number
   referenceImage?: string
+  skipHistory?: boolean  // 是否跳过历史记录（用于其他模块调用，如人像设计）
 }
 
 /**

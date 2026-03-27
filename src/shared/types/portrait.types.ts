@@ -19,27 +19,54 @@ export type PortraitVariantType = 'base' | 'clothes' | 'background'
 export type PortraitBackgroundType = 'solid' | 'transparent'
 
 /**
- * 人物项目
+ * 人种类型
+ */
+export type PortraitRace = 'asian' | 'european'
+
+/**
+ * 性别类型
+ */
+export type PortraitGender = 'male' | 'female'
+
+/**
+ * 人物项目（顶层容器）
  */
 export interface PortraitProject {
   id: string
   name: string
   description?: string
-  prompt: string
-  referenceImages: string[]
-  providerId: string
-  modelId: string
-  config: PortraitGenerateConfig
   createdAt: number
   updatedAt: number
 }
 
 /**
- * 人物变体
+ * 人物角色（属于项目，包含基本信息）
+ */
+export interface PortraitCharacter {
+  id: string
+  projectId: string
+  name: string                    // 姓名
+  gender: PortraitGender          // 性别
+  age: number                     // 年龄
+  height: number                  // 身高(cm)
+  weight: number                  // 体重(kg)
+  race: PortraitRace              // 人种
+  description?: string            // 人物简介
+  prompt?: string                 // 生成提示词（生成时设置）
+  referenceImages: string[]       // 参考图片
+  providerId?: string             // AI提供商ID（生成时设置）
+  modelId?: string                // 模型ID（生成时设置）
+  config: PortraitGenerateConfig  // 生成配置
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * 人物变体（属于人物角色）
  */
 export interface PortraitVariant {
   id: string
-  projectId: string
+  characterId: string             // 改为关联人物角色
   type: PortraitVariantType
   parentId?: string
   angle: PortraitAngle
@@ -56,7 +83,7 @@ export interface PortraitVariant {
 export interface PortraitVariantInfo {
   clothesDescription?: string
   backgroundDescription?: string
-  backgroundType?: 'solid' | 'preset' | 'custom'
+  backgroundType?: 'solid' | 'preset' | 'custom' | 'image'
   backgroundColor?: string
   presetScene?: string
 }
@@ -75,17 +102,14 @@ export interface PortraitGenerateConfig {
   height?: number
 }
 
+// ==================== 项目相关请求/响应 ====================
+
 /**
  * 创建项目请求
  */
 export interface CreatePortraitProjectRequest {
   name: string
   description?: string
-  prompt: string
-  referenceImages?: string[]
-  providerId: string
-  modelId: string
-  config?: Partial<PortraitGenerateConfig>
 }
 
 /**
@@ -95,6 +119,41 @@ export interface UpdatePortraitProjectRequest {
   id: string
   name?: string
   description?: string
+}
+
+// ==================== 人物角色相关请求/响应 ====================
+
+/**
+ * 创建人物角色请求
+ */
+export interface CreatePortraitCharacterRequest {
+  projectId: string
+  name: string
+  gender: PortraitGender
+  age: number
+  height: number
+  weight: number
+  race: PortraitRace
+  description?: string
+  prompt?: string                  // 可选，生成时设置
+  referenceImages?: string[]
+  providerId?: string              // 可选，生成时设置
+  modelId?: string                 // 可选，生成时设置
+  config?: Partial<PortraitGenerateConfig>
+}
+
+/**
+ * 更新人物角色请求
+ */
+export interface UpdatePortraitCharacterRequest {
+  id: string
+  name?: string
+  gender?: PortraitGender
+  age?: number
+  height?: number
+  weight?: number
+  race?: PortraitRace
+  description?: string
   prompt?: string
   referenceImages?: string[]
   providerId?: string
@@ -102,12 +161,15 @@ export interface UpdatePortraitProjectRequest {
   config?: Partial<PortraitGenerateConfig>
 }
 
+// ==================== 变体相关请求/响应 ====================
+
 /**
- * 生成人物请求
+ * 生成人物请求（基于人物角色）
  */
 export interface GeneratePortraitRequest {
-  projectId?: string
+  characterId: string              // 改为人物角色ID
   prompt: string
+  negativePrompt?: string          // 反向提示词
   referenceImages?: string[]
   providerId: string
   modelId: string
@@ -119,7 +181,7 @@ export interface GeneratePortraitRequest {
  */
 export interface GeneratePortraitResponse {
   success: boolean
-  projectId?: string
+  characterId?: string
   variants?: PortraitVariant[]
   error?: string
 }
@@ -128,9 +190,10 @@ export interface GeneratePortraitResponse {
  * 换衣请求
  */
 export interface ChangeClothesRequest {
-  projectId: string
+  characterId: string              // 改为人物角色ID
   variantId?: string
   clothesDescription: string
+  referenceImage?: string
   angles: PortraitAngle[]
 }
 
@@ -147,12 +210,13 @@ export interface ChangeClothesResponse {
  * 换背景请求
  */
 export interface ChangeBackgroundRequest {
-  projectId: string
+  characterId: string              // 改为人物角色ID
   variantId?: string
-  backgroundType: 'solid' | 'preset' | 'custom'
+  backgroundType: 'solid' | 'preset' | 'custom' | 'image'
   backgroundColor?: string
   presetScene?: string
   customDescription?: string
+  backgroundImage?: string
   angles: PortraitAngle[]
 }
 
@@ -169,17 +233,18 @@ export interface ChangeBackgroundResponse {
  * 重生成角度请求
  */
 export interface RegenerateAngleRequest {
-  projectId: string
+  characterId: string
   variantId: string
   angle: PortraitAngle
 }
 
 /**
- * 生成多角度请求（第二步）
+ * 生成多角度请求
  */
 export interface GenerateAnglesRequest {
-  projectId: string
+  characterId: string              // 改为人物角色ID
   angles: PortraitAngle[]
+  variantId?: string
 }
 
 /**
@@ -188,6 +253,7 @@ export interface GenerateAnglesRequest {
 export interface GenerateAnglesResponse {
   success: boolean
   variants?: PortraitVariant[]
+  warning?: string
   error?: string
 }
 
@@ -195,7 +261,7 @@ export interface GenerateAnglesResponse {
  * 导出请求
  */
 export interface ExportPortraitRequest {
-  projectId: string
+  characterId: string              // 改为人物角色ID
   variantIds?: string[]
   type: 'single' | 'grid' | 'zip'
   gridLayout?: 'horizontal' | 'vertical' | '2x2'
@@ -210,12 +276,23 @@ export interface ExportPortraitResponse {
   error?: string
 }
 
+// ==================== 列表响应 ====================
+
 /**
  * 项目列表响应
  */
 export interface ListPortraitProjectsResponse {
   success: boolean
   projects: PortraitProject[]
+  total: number
+}
+
+/**
+ * 人物角色列表响应
+ */
+export interface ListPortraitCharactersResponse {
+  success: boolean
+  characters: PortraitCharacter[]
   total: number
 }
 
@@ -227,6 +304,8 @@ export interface ListPortraitVariantsResponse {
   variants: PortraitVariant[]
   total: number
 }
+
+// ==================== 常量 ====================
 
 /**
  * 预设背景场景
@@ -269,6 +348,22 @@ export const VARIANT_TYPE_LABELS: Record<PortraitVariantType, string> = {
   base: '基础形象',
   clothes: '换衣变体',
   background: '换背景变体'
+}
+
+/**
+ * 性别显示名称
+ */
+export const GENDER_LABELS: Record<PortraitGender, string> = {
+  male: '男',
+  female: '女'
+}
+
+/**
+ * 人种显示名称
+ */
+export const RACE_LABELS: Record<PortraitRace, string> = {
+  asian: '亚洲人',
+  european: '欧洲人'
 }
 
 /**

@@ -1,7 +1,7 @@
 /**
  * 人像项目数据访问层
  * @module database/repositories/portrait-project.repository
- * @description 提供人像项目的数据库操作
+ * @description 提供人像项目的数据库操作（项目仅作为容器，包含多个人物角色）
  */
 
 import Database from 'better-sqlite3'
@@ -30,11 +30,6 @@ export class PortraitProjectRepository {
       id: row.id,
       name: row.name,
       description: row.description || undefined,
-      prompt: row.prompt,
-      referenceImages: row.reference_images ? JSON.parse(row.reference_images) : [],
-      providerId: row.provider_id,
-      modelId: row.model_id,
-      config: row.config ? JSON.parse(row.config) : { angles: ['front', 'left', 'right', 'back'], backgroundType: 'solid' },
       createdAt: row.created_at,
       updatedAt: row.updated_at
     }
@@ -76,24 +71,14 @@ export class PortraitProjectRepository {
   async create(request: CreatePortraitProjectRequest): Promise<PortraitProject> {
     const id = randomUUID()
     const now = Date.now()
-    const defaultConfig = {
-      angles: ['front', 'left', 'right', 'back'] as const,
-      backgroundType: 'solid' as const,
-      ...request.config
-    }
 
     this.db.prepare(
-      `INSERT INTO portrait_projects (id, name, description, prompt, reference_images, provider_id, model_id, config, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO portrait_projects (id, name, description, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)`
     ).run(
       id,
       request.name,
       request.description || null,
-      request.prompt,
-      JSON.stringify(request.referenceImages || []),
-      request.providerId,
-      request.modelId,
-      JSON.stringify(defaultConfig),
       now,
       now
     )
@@ -102,11 +87,6 @@ export class PortraitProjectRepository {
       id,
       name: request.name,
       description: request.description,
-      prompt: request.prompt,
-      referenceImages: request.referenceImages || [],
-      providerId: request.providerId,
-      modelId: request.modelId,
-      config: defaultConfig,
       createdAt: now,
       updatedAt: now
     }
@@ -129,26 +109,6 @@ export class PortraitProjectRepository {
     if (request.description !== undefined) {
       fields.push('description = ?')
       values.push(request.description || null)
-    }
-    if (request.prompt !== undefined) {
-      fields.push('prompt = ?')
-      values.push(request.prompt)
-    }
-    if (request.referenceImages !== undefined) {
-      fields.push('reference_images = ?')
-      values.push(JSON.stringify(request.referenceImages))
-    }
-    if (request.providerId !== undefined) {
-      fields.push('provider_id = ?')
-      values.push(request.providerId)
-    }
-    if (request.modelId !== undefined) {
-      fields.push('model_id = ?')
-      values.push(request.modelId)
-    }
-    if (request.config !== undefined) {
-      fields.push('config = ?')
-      values.push(JSON.stringify({ ...project.config, ...request.config }))
     }
 
     values.push(request.id)

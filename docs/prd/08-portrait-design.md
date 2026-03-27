@@ -424,6 +424,8 @@
 
 ### 5.1 人物项目（PortraitProject）
 
+项目作为容器，包含多个人物角色。
+
 ```typescript
 interface PortraitProject {
   id: string                    // 项目 ID
@@ -431,28 +433,51 @@ interface PortraitProject {
   description?: string          // 项目描述
   createdAt: number            // 创建时间
   updatedAt: number            // 更新时间
-
-  // 基础配置
-  prompt: string               // 人物描述
-  referenceImages?: string[]   // 参考图片路径
-  providerId: string           // 提供商 ID
-  modelId: string              // 模型 ID
-
-  // 生成配置
-  config: {
-    angles: ('front' | 'left' | 'right' | 'back')[]  // 生成角度
-    backgroundColor?: string   // 背景颜色
-    backgroundType: 'solid' | 'transparent'  // 背景类型
-  }
 }
 ```
 
-### 5.2 人物变体（PortraitVariant）
+### 5.2 人物角色（PortraitCharacter）
+
+每个角色有独立的基本信息和生成配置。
+
+```typescript
+interface PortraitCharacter {
+  id: string                    // 角色 ID
+  projectId: string             // 所属项目 ID
+  name: string                  // 人物姓名
+  gender: 'male' | 'female'     // 性别
+  age: number                   // 年龄
+  height: number                // 身高(cm)
+  weight: number                // 体重(kg)
+  race: 'asian' | 'european'    // 人种
+  description?: string          // 人物简介
+
+  // 生成配置
+  prompt: string                // 人物描述提示词（可自动生成或手动修改）
+  referenceImages: string[]     // 参考图片路径
+  providerId: string            // 提供商 ID
+  modelId: string               // 模型 ID
+  config: PortraitGenerateConfig  // 生成配置
+
+  createdAt: number             // 创建时间
+  updatedAt: number             // 更新时间
+}
+
+interface PortraitGenerateConfig {
+  angles: ('front' | 'left' | 'right' | 'back')[]  // 生成角度
+  backgroundType: 'solid' | 'transparent'           // 背景类型
+  backgroundColor?: string                          // 背景颜色
+}
+```
+
+### 5.3 人物变体（PortraitVariant）
+
+每个角色可以有多个变体（基础形象、换衣、换背景）。
 
 ```typescript
 interface PortraitVariant {
   id: string                    // 变体 ID
-  projectId: string             // 所属项目 ID
+  characterId: string           // 所属角色 ID
   type: 'base' | 'clothes' | 'background'  // 变体类型
   parentId?: string             // 父变体 ID（用于追溯）
 
@@ -474,7 +499,7 @@ interface PortraitVariant {
 }
 ```
 
-### 5.3 数据库表设计
+### 5.4 数据库表设计
 
 ```sql
 -- 人物项目表
@@ -482,19 +507,35 @@ CREATE TABLE portrait_projects (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   description TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+-- 人物角色表
+CREATE TABLE portrait_characters (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  gender TEXT NOT NULL,
+  age INTEGER NOT NULL,
+  height INTEGER NOT NULL,
+  weight INTEGER NOT NULL,
+  race TEXT NOT NULL,
+  description TEXT,
   prompt TEXT NOT NULL,
   reference_images TEXT,        -- JSON 数组
   provider_id TEXT NOT NULL,
   model_id TEXT NOT NULL,
   config TEXT,                  -- JSON 对象
   created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES portrait_projects(id) ON DELETE CASCADE
 );
 
 -- 人物变体表
 CREATE TABLE portrait_variants (
   id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL,
+  character_id TEXT NOT NULL,
   type TEXT NOT NULL,           -- base/clothes/background
   parent_id TEXT,
   angle TEXT NOT NULL,          -- front/left/right/back
@@ -503,12 +544,32 @@ CREATE TABLE portrait_variants (
   config TEXT,                  -- JSON 对象
   variant_info TEXT,            -- JSON 对象
   created_at INTEGER NOT NULL,
-  FOREIGN KEY (project_id) REFERENCES portrait_projects(id) ON DELETE CASCADE
+  FOREIGN KEY (character_id) REFERENCES portrait_characters(id) ON DELETE CASCADE
 );
 
 -- 索引
-CREATE INDEX idx_variants_project ON portrait_variants(project_id);
+CREATE INDEX idx_characters_project ON portrait_characters(project_id);
+CREATE INDEX idx_variants_character ON portrait_variants(character_id);
 CREATE INDEX idx_variants_type ON portrait_variants(type);
+```
+
+### 5.5 数据层级关系
+
+```
+项目 (PortraitProject)
+├── 角色1 (PortraitCharacter)
+│   ├── 基础形象变体 (type: base)
+│   │   ├── 正面 (angle: front)
+│   │   ├── 左侧 (angle: left)
+│   │   ├── 右侧 (angle: right)
+│   │   └── 背面 (angle: back)
+│   ├── 换衣变体1 (type: clothes)
+│   │   └── 正面...
+│   └── 换背景变体1 (type: background)
+│       └── 正面...
+├── 角色2 (PortraitCharacter)
+│   └── ...
+└── ...
 ```
 
 ---

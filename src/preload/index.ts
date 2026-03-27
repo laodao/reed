@@ -650,15 +650,6 @@ const electronAPI = {
     createProject: (data: {
       name: string
       description?: string
-      prompt: string
-      referenceImages?: string[]
-      providerId: string
-      modelId: string
-      config?: {
-        angles?: ('front' | 'left' | 'right' | 'back')[]
-        backgroundType?: 'solid' | 'transparent'
-        backgroundColor?: string
-      }
     }) => ipcRenderer.invoke('portrait:create-project', data),
     listProjects: (page?: number, pageSize?: number) =>
       ipcRenderer.invoke('portrait:list-projects', page, pageSize),
@@ -667,10 +658,55 @@ const electronAPI = {
       ipcRenderer.invoke('portrait:update-project', data),
     deleteProject: (id: string) => ipcRenderer.invoke('portrait:delete-project', id),
 
+    // 角色管理
+    createCharacter: (data: {
+      projectId: string
+      name: string
+      gender: 'male' | 'female'
+      age: number
+      height: number
+      weight: number
+      race: 'asian' | 'european'
+      description?: string
+      prompt?: string
+      referenceImages?: string[]
+      providerId?: string
+      modelId?: string
+      config?: {
+        angles?: ('front' | 'left' | 'right' | 'back')[]
+        backgroundType?: 'solid' | 'transparent'
+        backgroundColor?: string
+      }
+    }) => ipcRenderer.invoke('portrait:create-character', data),
+    listCharacters: (projectId: string) =>
+      ipcRenderer.invoke('portrait:list-characters', projectId),
+    getCharacter: (id: string) => ipcRenderer.invoke('portrait:get-character', id),
+    updateCharacter: (data: {
+      id: string
+      name?: string
+      gender?: 'male' | 'female'
+      age?: number
+      height?: number
+      weight?: number
+      race?: 'asian' | 'european'
+      description?: string
+      prompt?: string
+      referenceImages?: string[]
+      providerId?: string
+      modelId?: string
+      config?: {
+        angles?: ('front' | 'left' | 'right' | 'back')[]
+        backgroundType?: 'solid' | 'transparent'
+        backgroundColor?: string
+      }
+    }) => ipcRenderer.invoke('portrait:update-character', data),
+    deleteCharacter: (id: string) => ipcRenderer.invoke('portrait:delete-character', id),
+
     // 生成人物
     generate: (request: {
-      projectId?: string
+      characterId?: string
       prompt: string
+      negativePrompt?: string
       referenceImages?: string[]
       providerId: string
       modelId: string
@@ -686,7 +722,7 @@ const electronAPI = {
 
     // 换衣
     changeClothes: (request: {
-      projectId: string
+      characterId: string
       variantId?: string
       clothesDescription: string
       angles: ('front' | 'left' | 'right' | 'back')[]
@@ -694,7 +730,7 @@ const electronAPI = {
 
     // 换背景
     changeBackground: (request: {
-      projectId: string
+      characterId: string
       variantId?: string
       backgroundType: 'solid' | 'preset' | 'custom'
       backgroundColor?: string
@@ -704,18 +740,24 @@ const electronAPI = {
     }) => ipcRenderer.invoke('portrait:change-background', request),
 
     // 变体管理
-    listVariants: (projectId: string) => ipcRenderer.invoke('portrait:list-variants', projectId),
+    listVariants: (characterId: string) => ipcRenderer.invoke('portrait:list-variants', characterId),
     deleteVariant: (id: string) => ipcRenderer.invoke('portrait:delete-variant', id),
+    editImage: (request: {
+      characterId: string
+      variantId: string
+      editPrompt: string
+    }) => ipcRenderer.invoke('portrait:edit-image', request),
 
     // 生成多角度（第二步）
     generateAngles: (request: {
-      projectId: string
+      characterId: string
       angles: ('front' | 'left' | 'right' | 'back')[]
+      variantId?: string // 可选：基于哪个变体生成
     }) => ipcRenderer.invoke('portrait:generate-angles', request),
 
     // 导出
     export: (request: {
-      projectId: string
+      characterId: string
       variantIds?: string[]
       type: 'single' | 'grid' | 'zip'
       gridLayout?: 'horizontal' | 'vertical' | '2x2'
@@ -724,7 +766,7 @@ const electronAPI = {
     // 监听生成事件
     onGenerationEvent: (callback: (data: {
       type: 'generation-started' | 'generation-progress' | 'generation-completed' | 'generation-failed'
-      projectId: string
+      characterId: string
       angle?: string
       progress?: number
       variants?: any[]
