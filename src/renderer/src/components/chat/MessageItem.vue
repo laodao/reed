@@ -42,7 +42,7 @@
         </div>
 
         <!-- 正常显示模式 -->
-        <div v-else class="message-text" v-html="formatContent(message.content)"></div>
+        <div v-else class="message-text" ref="messageContentRef" @click="handleContentClick" v-html="formatContent(message.content)"></div>
 
         <!-- 知识库来源标识（在内容下方，引用详情上方） -->
         <div v-if="message.metadata?.knowledgeBase && message.metadata.knowledgeBase.length > 0" class="knowledge-source-badge">
@@ -263,7 +263,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import html2canvas from 'html2canvas'
 import { Document, Edit, CopyDocument, Delete, Refresh, Switch, Coin, Collection, More, Picture, Notebook, ArrowRight } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElImageViewer } from 'element-plus'
@@ -311,15 +311,26 @@ const imagePreviewUrls = ref<Map<string, string>>(new Map())
 const imageExportContainer = ref<HTMLElement | null>(null)
 const imageExportContent = ref('')
 
-// 定义全局复制函数
-const copyCodeFromBlock = async (button: HTMLElement) => {
-  const wrapper = button.closest('.code-block-wrapper')
-  if (!wrapper) return
+// 消息内容容器引用
+const messageContentRef = ref<HTMLElement | null>(null)
 
-  const codeDataEl = wrapper.querySelector('.code-data') as HTMLElement
-  if (!codeDataEl) return
+// 处理复制按钮点击（事件委托）
+function handleContentClick(event: MouseEvent): void {
+  const target = event.target as HTMLElement
+  const copyBtn = target.closest('.copy-btn') as HTMLElement | null
 
-  const code = codeDataEl.textContent || ''
+  if (copyBtn) {
+    const encodedCode = copyBtn.dataset.codeB64
+    if (encodedCode) {
+      // 解码 base64（支持 UTF-8）
+      const code = decodeURIComponent(escape(atob(encodedCode)))
+      copyCode(code, copyBtn)
+    }
+  }
+}
+
+// 复制代码到剪贴板
+async function copyCode(code: string, button: HTMLElement): Promise<void> {
   try {
     await navigator.clipboard.writeText(code)
     // 更新按钮显示
@@ -338,16 +349,6 @@ const copyCodeFromBlock = async (button: HTMLElement) => {
     ElMessage.error('复制失败')
   }
 }
-
-// 挂载时添加全局函数
-onMounted(() => {
-  ;(window as any).copyCodeFromBlock = copyCodeFromBlock
-})
-
-// 卸载时移除全局函数
-onUnmounted(() => {
-  delete (window as any).copyCodeFromBlock
-})
 
 // 获取图片 URL（用于显示）
 function getImageUrl(attachment: Attachment): string {
@@ -455,11 +456,14 @@ function renderCodeBlock(language: string, code: string): string {
   const lineNumbers = lines.map((_, i) => `<span class="line-number">${i + 1}</span>`).join('')
   const codeLines = lines.map(line => escapeHtml(line)).join('\n')
 
+  // 使用 base64 编码代码内容，避免特殊字符问题
+  const encodedCode = btoa(unescape(encodeURIComponent(code)))
+
   return `
     <div class="code-block-wrapper">
       <div class="code-header">
         <span class="language">${language || 'code'}</span>
-        <button class="copy-btn" onclick="copyCodeFromBlock(this)">
+        <button class="copy-btn" data-code-b64="${encodedCode}">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
           <span>复制</span>
         </button>
@@ -468,7 +472,6 @@ function renderCodeBlock(language: string, code: string): string {
         <div class="line-numbers">${lineNumbers}</div>
         <pre><code>${codeLines}</code></pre>
       </div>
-      <div class="code-data" style="display:none">${escapeHtml(code)}</div>
     </div>
   `
 }
