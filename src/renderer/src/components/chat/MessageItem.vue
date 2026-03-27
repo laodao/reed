@@ -263,7 +263,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import html2canvas from 'html2canvas'
 import { Document, Edit, CopyDocument, Delete, Refresh, Switch, Coin, Collection, More, Picture, Notebook, ArrowRight } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElImageViewer } from 'element-plus'
@@ -310,6 +310,44 @@ const imagePreviewUrls = ref<Map<string, string>>(new Map())
 // 图片导出相关
 const imageExportContainer = ref<HTMLElement | null>(null)
 const imageExportContent = ref('')
+
+// 定义全局复制函数
+const copyCodeFromBlock = async (button: HTMLElement) => {
+  const wrapper = button.closest('.code-block-wrapper')
+  if (!wrapper) return
+
+  const codeDataEl = wrapper.querySelector('.code-data') as HTMLElement
+  if (!codeDataEl) return
+
+  const code = codeDataEl.textContent || ''
+  try {
+    await navigator.clipboard.writeText(code)
+    // 更新按钮显示
+    const span = button.querySelector('span')
+    if (span) {
+      const originalText = span.textContent
+      span.textContent = '已复制'
+      button.style.color = '#10b981'
+      setTimeout(() => {
+        span.textContent = originalText
+        button.style.color = ''
+      }, 2000)
+    }
+  } catch (err) {
+    console.error('复制失败:', err)
+    ElMessage.error('复制失败')
+  }
+}
+
+// 挂载时添加全局函数
+onMounted(() => {
+  ;(window as any).copyCodeFromBlock = copyCodeFromBlock
+})
+
+// 卸载时移除全局函数
+onUnmounted(() => {
+  delete (window as any).copyCodeFromBlock
+})
 
 // 获取图片 URL（用于显示）
 function getImageUrl(attachment: Attachment): string {
@@ -908,7 +946,9 @@ function exportToObsidian(): void {
           font-size: 13px;
           line-height: 1.5;
           color: #e2e8f0;
-          white-space: pre;
+          white-space: pre-wrap;
+          word-wrap: break-word;
+          word-break: break-all;
         }
       }
     }
