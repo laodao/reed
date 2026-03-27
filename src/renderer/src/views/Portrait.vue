@@ -203,6 +203,8 @@ import type { PortraitProject, PortraitCharacter, PortraitVariant } from '../../
 const projects = ref<PortraitProject[]>([])
 const characters = ref<PortraitCharacter[]>([])
 const allVariants = ref<Map<string, PortraitVariant[]>>(new Map())
+// 存储所有项目的角色（用于缩略图预览）
+const allCharacters = ref<Map<string, PortraitCharacter[]>>(new Map())
 
 const selectedProjectId = ref<string>('')
 const selectedCharacterId = ref<string>('')
@@ -231,6 +233,34 @@ async function loadProjects() {
   const result = await window.electronAPI.portrait.listProjects()
   if (result.success && result.data) {
     projects.value = result.data.projects
+    // 预加载所有项目的角色和变体数据（用于显示缩略图）
+    preloadAllProjectData()
+  }
+}
+
+/**
+ * 预加载所有项目的角色和变体数据（用于显示缩略图）
+ * 异步执行，不阻塞界面
+ */
+async function preloadAllProjectData() {
+  for (const project of projects.value) {
+    try {
+      const result = await window.electronAPI.portrait.listCharacters(project.id)
+      if (result.success && result.data && result.data.length > 0) {
+        // 存储该项目的所有角色
+        allCharacters.value.set(project.id, result.data)
+        // 只加载第一个角色的变体数据（用于缩略图）
+        const firstChar = result.data[0]
+        if (!allVariants.value.has(firstChar.id)) {
+          const variantsResult = await window.electronAPI.portrait.listVariants(firstChar.id)
+          if (variantsResult.success && variantsResult.data) {
+            allVariants.value.set(firstChar.id, variantsResult.data)
+          }
+        }
+      }
+    } catch (e) {
+      console.error('预加载项目数据失败:', e)
+    }
   }
 }
 
@@ -242,7 +272,9 @@ async function loadCharacters() {
   const result = await window.electronAPI.portrait.listCharacters(selectedProjectId.value)
   if (result.success && result.data) {
     characters.value = result.data
-    // 预加载每个角色的变体数量
+    // 更新 allCharacters
+    allCharacters.value.set(selectedProjectId.value, result.data)
+    // 预加载每个角色的变体
     for (const char of characters.value) {
       loadVariantsForCharacter(char.id)
     }
@@ -267,8 +299,8 @@ function selectCharacter(id: string) {
 }
 
 function getProjectPreview(projectId: string): string {
-  // 查找项目中第一个有 base 类型正面形象的角色
-  const projectCharacters = characters.value.filter(c => c.projectId === projectId)
+  // 从预加载的数据中查找项目中第一个有 base 类型正面形象的角色
+  const projectCharacters = allCharacters.value.get(projectId) || []
   for (const char of projectCharacters) {
     const variants = allVariants.value.get(char.id) || []
     // 只使用 base 类型的正面形象，不使用换衣或换背景的图片
