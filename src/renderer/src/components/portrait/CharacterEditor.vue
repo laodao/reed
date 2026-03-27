@@ -335,9 +335,24 @@
       class="preview-dialog"
       append-to-body
       destroy-on-close
+      @keydown.left="prevImage"
+      @keydown.right="nextImage"
     >
       <div class="preview-image-container" v-if="previewVariant">
-        <img :src="previewVariant.imagePath" alt="预览" />
+        <!-- 左侧切换按钮 -->
+        <div class="nav-btn nav-prev" @click="prevImage" :class="{ disabled: previewIndex === 0 }">
+          <el-icon :size="32"><ArrowLeft /></el-icon>
+        </div>
+        <!-- 中间图片 -->
+        <img :src="previewVariant.imagePath" alt="预览" @click="nextImage" />
+        <!-- 右侧切换按钮 -->
+        <div class="nav-btn nav-next" @click="nextImage" :class="{ disabled: previewIndex >= allPreviewVariants.length - 1 }">
+          <el-icon :size="32"><ArrowRight /></el-icon>
+        </div>
+      </div>
+      <!-- 图片计数 -->
+      <div class="preview-counter" v-if="allPreviewVariants.length > 1">
+        {{ previewIndex + 1 }} / {{ allPreviewVariants.length }}
       </div>
     </el-dialog>
 
@@ -357,7 +372,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, toRaw } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, User, Download, EditPen, PictureFilled, Delete, Plus, Close, MagicStick } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, User, Download, EditPen, PictureFilled, Delete, Plus, Close, MagicStick } from '@element-plus/icons-vue'
 import ChangeClothesDialog from '@/components/portrait/ChangeClothesDialog.vue'
 import ChangeBackgroundDialog from '@/components/portrait/ChangeBackgroundDialog.vue'
 import ExportDialog from '@/components/portrait/ExportDialog.vue'
@@ -402,6 +417,9 @@ const previewVariant = ref<PortraitVariant | null>(null)
 // 参考图预览
 const showRefPreviewDialog = ref(false)
 const previewRefImage = ref('')
+
+// 图片预览索引（用于左右切换）
+const previewIndex = ref(0)
 
 // 默认模型配置（从系统配置获取）
 const defaultModel = ref<{ providerId: string; modelId: string } | null>(null)
@@ -476,9 +494,17 @@ const hasFrontImage = computed(() =>
 )
 
 // 所有正面形象的变体（base、clothes、background）
-const frontVariants = computed(() =>
-  variants.value.filter(v => v.angle === 'front')
-)
+// 排序规则：base类型在前，其他按时间升序（先生成的在前）
+const frontVariants = computed(() => {
+  const frontList = variants.value.filter(v => v.angle === 'front')
+  return frontList.sort((a, b) => {
+    // base 类型排前面
+    if (a.type === 'base' && b.type !== 'base') return -1
+    if (a.type !== 'base' && b.type === 'base') return 1
+    // 同类型按创建时间升序（早的在前）
+    return a.createdAt - b.createdAt
+  })
+})
 
 // 当前显示的正面形象
 const currentFrontVariant = computed(() => {
@@ -487,6 +513,28 @@ const currentFrontVariant = computed(() => {
   }
   // 默认显示基础正面
   return variants.value.find(v => v.angle === 'front' && v.type === 'base') || frontVariants.value[0]
+})
+
+// 所有可预览的图片列表（用于左右切换）
+// 按分组排序，正面在前
+const allPreviewVariants = computed(() => {
+  const angleOrder: Record<string, number> = { front: 0, left: 1, right: 2, back: 3 }
+  return [...variants.value].sort((a, b) => {
+    // 先按分组排序（base在前，然后按创建时间）
+    const getGroupOrder = (v: PortraitVariant) => {
+      if (v.type === 'base') return 0
+      return v.createdAt
+    }
+    const groupA = getGroupOrder(a)
+    const groupB = getGroupOrder(b)
+    if (groupA !== groupB) return groupA - groupB
+
+    // 同分组内，正面在前，然后按角度，最后按时间
+    if (a.angle === 'front' && b.angle !== 'front') return -1
+    if (a.angle !== 'front' && b.angle === 'front') return 1
+    if (a.angle === b.angle) return a.createdAt - b.createdAt
+    return (angleOrder[a.angle] ?? 99) - (angleOrder[b.angle] ?? 99)
+  })
 })
 
 // 变体分组（按类型和 parentId 分组）
@@ -534,14 +582,32 @@ const variantGroups = computed(() => {
     group.hasAllAngles = angles.has('front') && angles.has('left') && angles.has('right') && angles.has('back')
   }
 
-  // 排序
+  // 排序分组（base在前，其他按创建时间）
   const result = Array.from(groups.values())
   result.sort((a, b) => {
-    const order = { base: 0, clothes: 1, background: 2 }
     const typeA = a.variants[0]?.type || 'base'
     const typeB = b.variants[0]?.type || 'base'
-    return order[typeA] - order[typeB]
+    if (typeA === 'base' && typeB !== 'base') return -1
+    if (typeA !== 'base' && typeB === 'base') return 1
+    // 同类型按最早创建时间排序
+    const timeA = Math.min(...a.variants.map(v => v.createdAt))
+    const timeB = Math.min(...b.variants.map(v => v.createdAt))
+    return timeA - timeB
   })
+
+  // 每个分组内的 variants 排序：正面在前，其他按角度顺序，同角度按时间
+  const angleOrder: Record<string, number> = { front: 0, left: 1, right: 2, back: 3 }
+  for (const group of result) {
+    group.variants.sort((a, b) => {
+      // 正面在前
+      if (a.angle === 'front' && b.angle !== 'front') return -1
+      if (a.angle !== 'front' && b.angle === 'front') return 1
+      // 同角度按创建时间升序
+      if (a.angle === b.angle) return a.createdAt - b.createdAt
+      // 不同角度按固定顺序
+      return (angleOrder[a.angle] ?? 99) - (angleOrder[b.angle] ?? 99)
+    })
+  }
 
   return result
 })
@@ -822,7 +888,26 @@ async function handleDeleteVariant(variant: PortraitVariant) {
 function handlePreviewImage(variant: PortraitVariant | null | undefined) {
   if (!variant) return
   previewVariant.value = variant
+  // 设置当前索引
+  previewIndex.value = allPreviewVariants.value.findIndex(v => v.id === variant.id)
+  if (previewIndex.value < 0) previewIndex.value = 0
   showPreviewDialog.value = true
+}
+
+// 上一张图片
+function prevImage() {
+  if (previewIndex.value > 0) {
+    previewIndex.value--
+    previewVariant.value = allPreviewVariants.value[previewIndex.value]
+  }
+}
+
+// 下一张图片
+function nextImage() {
+  if (previewIndex.value < allPreviewVariants.value.length - 1) {
+    previewIndex.value++
+    previewVariant.value = allPreviewVariants.value[previewIndex.value]
+  }
 }
 
 function handleExport() {
@@ -1365,11 +1450,58 @@ onMounted(() => {
   justify-content: center;
   background: #000;
   overflow: hidden;
+  position: relative;
 
   img {
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
+    cursor: pointer;
   }
+
+  .nav-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 60px;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: rgba(255, 255, 255, 0.7);
+    transition: all 0.2s;
+    z-index: 10;
+
+    &:hover:not(.disabled) {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    &.disabled {
+      color: rgba(255, 255, 255, 0.3);
+      cursor: not-allowed;
+    }
+
+    &.nav-prev {
+      left: 0;
+    }
+
+    &.nav-next {
+      right: 0;
+    }
+  }
+}
+
+.preview-counter {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 13px;
 }
 </style>
