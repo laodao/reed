@@ -25,20 +25,52 @@
           </el-button>
           <template #dropdown>
             <el-dropdown-menu>
+              <!-- 关闭选项 -->
               <el-dropdown-item command="close" :class="{ 'is-active': !webSearchEnabled }">
                 关闭
               </el-dropdown-item>
-              <el-dropdown-item command="model" :class="{ 'is-active': webSearchEnabled && webSearchEngine === 'model' }">
-                模型自带搜索
+
+              <!-- 模型内置搜索 -->
+              <el-dropdown-item
+                v-if="modelBuiltInAvailable"
+                command="model"
+                :class="{ 'is-active': searchEngineSelection?.engine === 'model' }"
+              >
+                模型内置搜索
               </el-dropdown-item>
-              <el-dropdown-item command="baidu" :class="{ 'is-active': webSearchEnabled && webSearchEngine === 'baidu' }">
-                百度
+
+              <!-- 快速搜索（网页抓取型） -->
+              <el-dropdown-item divided disabled>
+                <span style="color: #909399; font-size: 12px;">快速搜索</span>
               </el-dropdown-item>
-              <el-dropdown-item command="bing" :class="{ 'is-active': webSearchEnabled && webSearchEngine === 'bing' }">
-                Bing
+              <el-dropdown-item
+                v-for="engine in quickSearchEngines"
+                :key="engine.id"
+                :command="`quick:${engine.id}`"
+                :class="{ 'is-active': searchEngineSelection?.type === 'quick' && searchEngineSelection?.engine === engine.id }"
+              >
+                {{ engine.icon }} {{ engine.name }}
               </el-dropdown-item>
-              <el-dropdown-item command="google" :class="{ 'is-active': webSearchEnabled && webSearchEngine === 'google' }">
-                Google
+
+              <!-- 已配置的搜索引擎 -->
+              <template v-if="configuredEngines.length > 0">
+                <el-dropdown-item divided disabled>
+                  <span style="color: #909399; font-size: 12px;">已配置</span>
+                </el-dropdown-item>
+                <el-dropdown-item
+                  v-for="config in configuredEngines"
+                  :key="config.id"
+                  :command="`configured:${config.id}`"
+                  :class="{ 'is-active': searchEngineSelection?.configId === config.id }"
+                >
+                  {{ config.name }}
+                </el-dropdown-item>
+              </template>
+
+              <!-- 配置管理入口 -->
+              <el-dropdown-item divided command="settings">
+                <el-icon><Setting /></el-icon>
+                管理搜索引擎
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -208,14 +240,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
-import { Paperclip, Search, Cpu, Collection, VideoPause, Promotion, Close, Document, Check } from '@element-plus/icons-vue'
+import { ref, computed, watch, onMounted } from 'vue'
+import { Paperclip, Search, Cpu, Collection, VideoPause, Promotion, Close, Document, Check, Setting } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import type { Message, WebSearchEngine, Attachment } from '../../../shared/types'
+import type { Message, Attachment, SearchEngineType, SearchEngineConfigId } from '../../../shared/types'
+import type { SearchEngineTemplate, UserSearchEngineConfig } from '../../../shared/types/search-engine.types'
+import type { DialogWebSearchConfig } from '../../../shared/types/dialog.types'
 
 // 扩展的附件类型（包含预览 URL）
 interface AttachmentWithPreview extends Attachment {
   previewUrl?: string
+}
+
+// 搜索引擎选择状态
+interface SearchEngineSelection {
+  type: 'quick' | 'configured'  // 快速搜索或配置型
+  engine: SearchEngineType      // 搜索引擎类型
+  configId?: string             // 配置 ID（配置型需要）
 }
 
 const props = defineProps<{
@@ -232,6 +273,8 @@ const props = defineProps<{
   }>
   /** 已选择的知识库 ID 列表（用于持久化恢复） */
   selectedKnowledgeBaseIds?: string[]
+  /** 当前对话的联网搜索配置（用于持久化恢复） */
+  webSearchConfig?: DialogWebSearchConfig
 }>()
 
 const emit = defineEmits<{
@@ -239,7 +282,8 @@ const emit = defineEmits<{
     attachments?: Message['attachments']
     webSearch?: {
       enabled: boolean
-      engine: WebSearchEngine
+      engine: SearchEngineType
+      configId?: SearchEngineConfigId
     }
     enableThinkingChain?: boolean
     knowledgeBaseIds?: string[]
@@ -247,6 +291,8 @@ const emit = defineEmits<{
   (e: 'stop'): void
   /** 知识库选择变化事件（用于持久化） */
   (e: 'updateKnowledgeBaseIds', ids: string[]): void
+  /** 联网搜索配置变化事件（用于持久化） */
+  (e: 'updateWebSearchConfig', config: DialogWebSearchConfig | undefined): void
 }>()
 
 // 输入内容
@@ -255,10 +301,57 @@ const inputContent = ref('')
 // 附件列表
 const attachments = ref<AttachmentWithPreview[]>([])
 
-// 工具选项
-const webSearchEngine = ref<WebSearchEngine | null>(null)
+// 搜索引擎相关
+const searchEngineSelection = ref<SearchEngineSelection | null>(null)
+const searchEngineTemplates = ref<SearchEngineTemplate[]>([])
+const searchEngineConfigs = ref<UserSearchEngineConfig[]>([])
+const disabledQuickEngines = ref<string[]>([])
 const enableThinkingChain = ref(false)
 const selectedKnowledgeBaseIds = ref<string[]>([])
+
+// 加载搜索引擎模板和配置
+async function loadSearchEngines(): Promise<void> {
+  try {
+    const [templatesRes, configsRes, disabledRes] = await Promise.all([
+      window.electronAPI.searchEngine.getTemplates(),
+      window.electronAPI.searchEngine.list(),
+      window.electronAPI.searchEngine.getDisabledQuickEngines()
+    ])
+    if (templatesRes.success && templatesRes.templates) {
+      searchEngineTemplates.value = templatesRes.templates
+    }
+    if (configsRes.success && configsRes.configs) {
+      searchEngineConfigs.value = configsRes.configs
+    }
+    if (disabledRes.success && disabledRes.disabledEngines) {
+      disabledQuickEngines.value = disabledRes.disabledEngines
+    }
+  } catch (error) {
+    console.error('加载搜索引擎配置失败:', error)
+  }
+}
+
+// 组件挂载时加载搜索引擎配置
+onMounted(() => {
+  loadSearchEngines()
+})
+
+// 计算属性：快速搜索引擎列表（网页抓取型，过滤掉被禁用的）
+const quickSearchEngines = computed(() => {
+  return searchEngineTemplates.value
+    .filter(t => t.category === 'web-scrape' && !disabledQuickEngines.value.includes(t.id))
+    .sort((a, b) => (a.priority || 0) - (b.priority || 0))
+})
+
+// 计算属性：已配置的搜索引擎列表（API 型）
+const configuredEngines = computed(() => {
+  return searchEngineConfigs.value.filter(c => c.isEnabled)
+})
+
+// 计算属性：模型内置搜索是否可用
+const modelBuiltInAvailable = computed(() => {
+  return props.currentModel?.supportsWebSearch ?? false
+})
 
 // 监听外部传入的知识库选择（用于恢复持久化的选择）
 watch(
@@ -272,23 +365,46 @@ watch(
   { immediate: true }
 )
 
+// 监听外部传入的联网搜索配置（用于恢复持久化的选择）
+watch(
+  () => props.webSearchConfig,
+  (newConfig) => {
+    if (newConfig && newConfig.enabled) {
+      searchEngineSelection.value = {
+        type: newConfig.configId ? 'configured' : 'quick',
+        engine: newConfig.engine,
+        configId: newConfig.configId
+      }
+    } else {
+      searchEngineSelection.value = null
+    }
+  },
+  { immediate: true }
+)
+
 // 计算属性：是否可以发送
 const canSend = computed(() => {
   return inputContent.value.trim() || attachments.value.length > 0
 })
 
 // 计算属性：联网搜索是否启用
-const webSearchEnabled = computed(() => webSearchEngine.value !== null)
+const webSearchEnabled = computed(() => searchEngineSelection.value !== null)
 
 // 计算属性：联网搜索引擎标签
 const webSearchEngineLabel = computed(() => {
-  switch (webSearchEngine.value) {
-    case 'model': return '模型搜索'
-    case 'baidu': return '百度搜索'
-    case 'bing': return 'Bing 搜索'
-    case 'google': return 'Google 搜索'
-    default: return ''
+  if (!searchEngineSelection.value) return ''
+
+  const selection = searchEngineSelection.value
+
+  // 配置型搜索引擎，显示配置名称
+  if (selection.type === 'configured' && selection.configId) {
+    const config = searchEngineConfigs.value.find(c => c.id === selection.configId)
+    if (config) return config.name
   }
+
+  // 快速搜索，显示模板名称
+  const template = searchEngineTemplates.value.find(t => t.id === selection.engine)
+  return template?.name || ''
 })
 
 // 计算属性：深度思考是否禁用
@@ -327,9 +443,50 @@ function handleKnowledgeBaseCommand(command: string): void {
 // 处理联网搜索命令
 function handleWebSearchCommand(command: string): void {
   if (command === 'close') {
-    webSearchEngine.value = null
-  } else {
-    webSearchEngine.value = command as WebSearchEngine
+    searchEngineSelection.value = null
+    // 通知父组件保存联网搜索配置（关闭状态）
+    emit('updateWebSearchConfig', undefined)
+    return
+  }
+
+  // 跳转到设置页面
+  if (command === 'settings') {
+    // 使用 router 跳转到设置页面的搜索引擎 Tab
+    window.location.hash = '/settings?tab=search-engine'
+    return
+  }
+
+  // 解析命令格式: "quick:{engineType}" 或 "configured:{configId}" 或 "model"
+  if (command === 'model') {
+    searchEngineSelection.value = {
+      type: 'quick',
+      engine: 'model'
+    }
+  } else if (command.startsWith('quick:')) {
+    const engine = command.substring(6) as SearchEngineType
+    searchEngineSelection.value = {
+      type: 'quick',
+      engine
+    }
+  } else if (command.startsWith('configured:')) {
+    const configId = command.substring(11)
+    const config = searchEngineConfigs.value.find(c => c.id === configId)
+    if (config) {
+      searchEngineSelection.value = {
+        type: 'configured',
+        engine: config.templateId,
+        configId: config.id
+      }
+    }
+  }
+
+  // 通知父组件保存联网搜索配置
+  if (searchEngineSelection.value) {
+    emit('updateWebSearchConfig', {
+      enabled: true,
+      engine: searchEngineSelection.value.engine,
+      configId: searchEngineSelection.value.configId
+    })
   }
 }
 
@@ -400,9 +557,10 @@ function handleSend(): void {
 
   emit('send', content, {
     attachments: messageAttachments.length > 0 ? messageAttachments : undefined,
-    webSearch: webSearchEnabled.value ? {
+    webSearch: webSearchEnabled.value && searchEngineSelection.value ? {
       enabled: true,
-      engine: webSearchEngine.value!
+      engine: searchEngineSelection.value.engine,
+      configId: searchEngineSelection.value.configId
     } : undefined,
     enableThinkingChain: enableThinkingChain.value && !thinkingDisabled.value,
     knowledgeBaseIds: selectedKnowledgeBaseIds.value.length > 0 ? selectedKnowledgeBaseIds.value : undefined

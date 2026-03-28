@@ -11,6 +11,7 @@ import { PROVIDER_TEMPLATES } from './provider-template.service'
 import { SecureStorageService } from './secure-storage.service'
 import { FileService } from './file.service'
 import { KnowledgeBaseService } from './knowledge-base.service'
+import { getSearchEngineService } from './search-engine.service'
 import type {
   Dialog,
   Message,
@@ -25,7 +26,6 @@ import type {
   AttachmentContent,
   SearchResult
 } from '../../shared/types'
-import { WebSearchService } from './web-search.service'
 
 /**
  * 正在进行的流式请求
@@ -152,17 +152,23 @@ export class ChatService {
       let webSearchContext = ''
 
       if (request.webSearch?.enabled && request.webSearch.engine !== 'model') {
-        console.log('[ChatService.sendMessage] 执行联网搜索, engine:', request.webSearch.engine)
-        const searchResponse = await WebSearchService.search(
+        console.log('[ChatService.sendMessage] 执行联网搜索, engine:', request.webSearch.engine, 'configId:', request.webSearch.configId)
+        const searchEngineService = getSearchEngineService()
+        const searchResponse = await searchEngineService.search(
           request.content,
           request.webSearch.engine,
-          undefined, // API Key 需要从配置中获取，暂不实现
+          request.webSearch.configId,
           5
         )
 
         if (searchResponse.success && searchResponse.results.length > 0) {
-          webSearchResults = searchResponse.results
-          webSearchContext = WebSearchService.formatResultsAsContext(searchResponse.results)
+          webSearchResults = searchResponse.results.map(r => ({
+            title: r.title,
+            url: r.url,
+            snippet: r.snippet,
+            source: r.source
+          }))
+          webSearchContext = ChatService.formatSearchResults(webSearchResults)
           console.log('[ChatService.sendMessage] 联网搜索成功, 结果数量:', webSearchResults.length)
         } else if (searchResponse.error) {
           console.log('[ChatService.sendMessage] 联网搜索失败:', searchResponse.error)
@@ -401,6 +407,21 @@ export class ChatService {
 
     const sections = results.map((r, i) =>
       `【${i + 1}】来源: ${r.documentName}\n相关度: ${(r.score * 100).toFixed(1)}%\n\n${r.content}`
+    )
+
+    return sections.join('\n\n---\n\n')
+  }
+
+  /**
+   * 格式化联网搜索结果为上下文
+   * @param results 搜索结果列表
+   * @returns 格式化后的上下文字符串
+   */
+  private static formatSearchResults(results: WebSearchResult[]): string {
+    if (results.length === 0) return ''
+
+    const sections = results.map((r, i) =>
+      `【${i + 1}】标题: ${r.title}\n来源: ${r.sourceName || r.source}\n链接: ${r.url}\n\n${r.snippet}`
     )
 
     return sections.join('\n\n---\n\n')

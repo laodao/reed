@@ -3,6 +3,8 @@
  * @module types/message.types
  */
 
+import type { SearchEngineType, SearchEngineConfigId } from './search-engine.types'
+
 /**
  * 消息角色
  */
@@ -61,7 +63,9 @@ export interface WebSearchResult {
   title: string
   url: string
   snippet: string
-  source: 'baidu' | 'bing' | 'google' | 'model'
+  source: SearchEngineType
+  sourceName?: string
+  score?: number
 }
 
 /**
@@ -108,16 +112,21 @@ export interface Message {
 }
 
 /**
- * 联网搜索引擎类型
+ * 联网搜索引擎类型（兼容旧版）
+ * @deprecated 使用 SearchEngineType 代替
  */
-export type WebSearchEngine = 'model' | 'baidu' | 'bing' | 'google'
+export type WebSearchEngine = SearchEngineType
 
 /**
  * 联网搜索配置
  */
 export interface WebSearchConfig {
+  /** 是否启用联网搜索 */
   enabled: boolean
-  engine: WebSearchEngine
+  /** 搜索引擎类型 */
+  engine: SearchEngineType
+  /** 搜索引擎配置 ID（快速搜索使用模板 ID，配置型使用用户配置 ID） */
+  configId?: SearchEngineConfigId
 }
 
 /**

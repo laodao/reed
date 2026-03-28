@@ -26,6 +26,7 @@ import { KbInvertedIndexRepository } from './repositories/kb-inverted-index.repo
 import { PortraitProjectRepository } from './repositories/portrait-project.repository'
 import { PortraitCharacterRepository } from './repositories/portrait-character.repository'
 import { PortraitVariantRepository } from './repositories/portrait-variant.repository'
+import { SearchEngineConfigRepository } from './repositories/search-engine-config.repository'
 import { DataPathService } from '../services/data-path.service'
 import { LanceDBService } from '../services/lance-db.service'
 
@@ -57,6 +58,7 @@ export class DatabaseManager {
   public portraitProjects: PortraitProjectRepository | null = null
   public portraitCharacters: PortraitCharacterRepository | null = null
   public portraitVariants: PortraitVariantRepository | null = null
+  public searchEngineConfigs: SearchEngineConfigRepository | null = null
 
   private constructor() {
     // 默认使用 userData 路径，后续会在 initialize 中更新
@@ -622,6 +624,28 @@ export class DatabaseManager {
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_portrait_variants_type ON portrait_variants(type)`)
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_portrait_variants_created_at ON portrait_variants(created_at DESC)`)
 
+    // ==================== 搜索引擎配置相关表 ====================
+
+    // 搜索引擎配置表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS search_engine_configs (
+        id TEXT PRIMARY KEY,
+        template_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        api_key_encrypted TEXT,
+        extra_config TEXT,
+        max_results INTEGER DEFAULT 5,
+        is_enabled INTEGER DEFAULT 1,
+        is_default INTEGER DEFAULT 0,
+        last_tested DATETIME,
+        test_result TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_search_engine_configs_template_id ON search_engine_configs(template_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_search_engine_configs_created_at ON search_engine_configs(created_at DESC)`)
+
     // 执行其他数据库迁移
     this.runMigrations()
 
@@ -787,6 +811,9 @@ export class DatabaseManager {
     if (!dialogColumnNames.includes('knowledge_base_ids')) {
       this.db.exec('ALTER TABLE dialogs ADD COLUMN knowledge_base_ids TEXT')
     }
+    if (!dialogColumnNames.includes('web_search_config')) {
+      this.db.exec('ALTER TABLE dialogs ADD COLUMN web_search_config TEXT')
+    }
 
     // 检查 provider_configs 表是否需要添加新字段
     const providerConfigColumns = this.db.prepare("PRAGMA table_info(provider_configs)").all() as { name: string }[]
@@ -936,6 +963,7 @@ export class DatabaseManager {
     this.portraitProjects = new PortraitProjectRepository(this.db)
     this.portraitCharacters = new PortraitCharacterRepository(this.db)
     this.portraitVariants = new PortraitVariantRepository(this.db)
+    this.searchEngineConfigs = new SearchEngineConfigRepository(this.db)
   }
 
   /**

@@ -72,7 +72,21 @@ const IPC_CHANNELS = {
   IMAGE_MODELS: 'image:models',
   IMAGE_TEST_PROVIDER: 'image:test-provider',
   IMAGE_DOWNLOAD: 'image:download',
-  IMAGE_SELECT_FILE: 'image:select-file'
+  IMAGE_SELECT_FILE: 'image:select-file',
+
+  // 搜索引擎相关
+  SEARCH_ENGINE_TEMPLATES: 'search-engine:templates',
+  SEARCH_ENGINE_LIST: 'search-engine:list',
+  SEARCH_ENGINE_GET: 'search-engine:get',
+  SEARCH_ENGINE_CREATE: 'search-engine:create',
+  SEARCH_ENGINE_UPDATE: 'search-engine:update',
+  SEARCH_ENGINE_DELETE: 'search-engine:delete',
+  SEARCH_ENGINE_TEST: 'search-engine:test',
+  SEARCH_ENGINE_SET_DEFAULT: 'search-engine:set-default',
+  SEARCH_ENGINE_SEARCH: 'search-engine:search',
+  SEARCH_ENGINE_GET_DISABLED_QUICK: 'search-engine:get-disabled-quick',
+  SEARCH_ENGINE_SET_QUICK_ENABLED: 'search-engine:set-quick-enabled',
+  SEARCH_ENGINE_CHANGED: 'search-engine:changed'
 } as const
 
 /**
@@ -780,6 +794,64 @@ const electronAPI = {
       const handler = (_event: any, data: any) => callback(data)
       ipcRenderer.on('portrait:generation-event', handler)
       return () => ipcRenderer.removeListener('portrait:generation-event', handler)
+    }
+  },
+
+  // 搜索引擎相关
+  searchEngine: {
+    // 获取模板列表
+    getTemplates: () => ipcRenderer.invoke(IPC_CHANNELS.SEARCH_ENGINE_TEMPLATES),
+    // 获取配置列表
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.SEARCH_ENGINE_LIST),
+    // 获取单个配置
+    get: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.SEARCH_ENGINE_GET, id),
+    // 创建配置
+    create: (data: {
+      templateId: string
+      name: string
+      apiKey?: string
+      extraConfig?: Record<string, unknown>
+      maxResults?: number
+      isEnabled?: boolean
+      isDefault?: boolean
+    }) => ipcRenderer.invoke(IPC_CHANNELS.SEARCH_ENGINE_CREATE, data),
+    // 更新配置
+    update: (id: string, data: Partial<{
+      name: string
+      apiKey: string
+      extraConfig: Record<string, unknown>
+      maxResults: number
+      isEnabled: boolean
+      isDefault: boolean
+    }>) => ipcRenderer.invoke(IPC_CHANNELS.SEARCH_ENGINE_UPDATE, { id, data }),
+    // 删除配置
+    delete: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.SEARCH_ENGINE_DELETE, id),
+    // 测试配置
+    test: (data: {
+      configId?: string
+      templateId?: string
+      apiKey?: string
+      extraConfig?: Record<string, unknown>
+    }) => ipcRenderer.invoke(IPC_CHANNELS.SEARCH_ENGINE_TEST, data),
+    // 设置默认配置
+    setDefault: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.SEARCH_ENGINE_SET_DEFAULT, id),
+    // 执行搜索
+    search: (request: {
+      query: string
+      engine: string
+      configId?: string
+      maxResults?: number
+    }) => ipcRenderer.invoke(IPC_CHANNELS.SEARCH_ENGINE_SEARCH, request),
+    // 获取被禁用的快速搜索引擎列表
+    getDisabledQuickEngines: () => ipcRenderer.invoke(IPC_CHANNELS.SEARCH_ENGINE_GET_DISABLED_QUICK),
+    // 设置快速搜索引擎启用状态
+    setQuickEngineEnabled: (engineId: string, enabled: boolean) =>
+      ipcRenderer.invoke(IPC_CHANNELS.SEARCH_ENGINE_SET_QUICK_ENABLED, { engineId, enabled }),
+    // 监听配置变化
+    onChanged: (callback: () => void) => {
+      const handler = () => callback()
+      ipcRenderer.on(IPC_CHANNELS.SEARCH_ENGINE_CHANGED, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.SEARCH_ENGINE_CHANGED, handler)
     }
   }
 }

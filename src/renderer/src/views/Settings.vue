@@ -221,6 +221,123 @@
           </div>
         </el-tab-pane>
 
+        <!-- 搜索引擎配置 -->
+        <el-tab-pane label="搜索引擎" name="searchEngine">
+          <div class="settings-section">
+            <div class="section-header">
+              <div>
+                <h3>搜索引擎配置</h3>
+                <p class="section-desc">配置联网搜索所需的搜索引擎（智谱 AI、Tavily 需要 API Key）</p>
+              </div>
+              <el-button type="primary" @click="openAddSearchEngineDialog">
+                <el-icon><Plus /></el-icon>
+                添加配置
+              </el-button>
+            </div>
+
+            <!-- 快速搜索引擎（不需要配置） -->
+            <div class="search-engine-group">
+              <h4 class="group-title">快速搜索</h4>
+              <p class="group-desc">以下搜索引擎无需配置，可直接使用</p>
+              <div class="quick-engine-list">
+                <div
+                  v-for="engine in quickSearchEngines"
+                  :key="engine.id"
+                  class="quick-engine-item"
+                  :class="{ disabled: disabledQuickEngines.includes(engine.id) }"
+                >
+                  <div class="engine-icon">{{ engine.icon }}</div>
+                  <div class="engine-info">
+                    <span class="engine-name">{{ engine.name }}</span>
+                    <span class="engine-desc">{{ engine.description }}</span>
+                  </div>
+                  <el-switch
+                    :model-value="!disabledQuickEngines.includes(engine.id)"
+                    @change="(val: boolean) => toggleQuickEngineEnabled(engine.id, val)"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <!-- 已配置的搜索引擎列表 -->
+            <div v-if="searchEngineConfigs.length > 0" class="search-engine-group">
+              <h4 class="group-title">已配置的搜索引擎</h4>
+              <div class="provider-config-list">
+                <div
+                  v-for="config in searchEngineConfigs"
+                  :key="config.id"
+                  class="provider-config-item"
+                  :class="{ disabled: !config.isEnabled, 'is-default': config.isDefault }"
+                >
+                  <div class="config-icon">
+                    {{ getSearchEngineTemplateIcon(config.templateId) }}
+                  </div>
+                  <div class="config-info">
+                    <div class="config-header">
+                      <span class="config-name">{{ config.name }}</span>
+                      <el-tag v-if="config.isDefault" type="success" size="small" effect="plain">
+                        默认
+                      </el-tag>
+                      <el-tag
+                        :type="config.testResult === 'success' ? 'success' : config.testResult === 'failed' ? 'danger' : 'info'"
+                        size="small"
+                        effect="light"
+                      >
+                        {{ config.testResult === 'success' ? '已验证' : config.testResult === 'failed' ? '验证失败' : '未验证' }}
+                      </el-tag>
+                    </div>
+                    <div class="config-details">
+                      <span class="config-template">{{ getSearchEngineTemplateName(config.templateId) }}</span>
+                    </div>
+                  </div>
+                  <div class="config-actions">
+                    <el-switch
+                      v-model="config.isEnabled"
+                      @change="toggleSearchEngineEnabled(config)"
+                    />
+                    <el-button
+                      text
+                      size="small"
+                      @click="testSearchEngineConfig(config)"
+                      :loading="config.testing"
+                    >
+                      测试
+                    </el-button>
+                    <el-button
+                      text
+                      size="small"
+                      @click="setDefaultSearchEngine(config)"
+                      :disabled="config.isDefault"
+                    >
+                      设为默认
+                    </el-button>
+                    <el-dropdown trigger="click">
+                      <el-button text size="small">
+                        <el-icon><MoreFilled /></el-icon>
+                      </el-button>
+                      <template #dropdown>
+                        <el-dropdown-menu>
+                          <el-dropdown-item @click="editSearchEngineConfig(config)">
+                            编辑
+                          </el-dropdown-item>
+                          <el-dropdown-item @click="deleteSearchEngineConfig(config)" divided>
+                            删除
+                          </el-dropdown-item>
+                        </el-dropdown-menu>
+                      </template>
+                    </el-dropdown>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-else class="empty-config">
+              <p>暂无已配置的搜索引擎</p>
+              <p class="hint">智谱 AI、Tavily 等 API 型搜索引擎需要配置 API Key 后才能使用</p>
+            </div>
+          </div>
+        </el-tab-pane>
+
         <!-- 关于 -->
         <el-tab-pane label="关于" name="about">
           <div class="settings-section about-section">
@@ -258,20 +375,39 @@
       :edit-config="editingConfig"
       @saved="loadProviderConfigs"
     />
+
+    <!-- 添加/编辑搜索引擎对话框 -->
+    <AddSearchEngineDialog
+      v-model="showAddSearchEngineDialog"
+      :edit-config="editingSearchEngineConfig"
+      :templates="searchEngineTemplates"
+      :existing-configs="searchEngineConfigs"
+      @saved="loadSearchEngineConfigs"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, FolderOpened, Download, Upload, Delete, Plus, Folder, InfoFilled } from '@element-plus/icons-vue'
+import { Check, FolderOpened, Download, Upload, Delete, Plus, Folder, InfoFilled, MoreFilled } from '@element-plus/icons-vue'
 import { useTheme, availableThemes, type ThemeConfig } from '@/composables/useTheme'
 import { useAppSettings, fontSizeConfig, languageConfig, type FontSize, type Language } from '@/composables/useAppSettings'
 import AddProviderDialog from '@/components/settings/AddProviderDialog.vue'
+import AddSearchEngineDialog from '@/components/settings/AddSearchEngineDialog.vue'
 import type {
   ProviderTemplate,
   UserProviderConfig
 } from '../../../shared/types/provider-template.types'
+import type {
+  SearchEngineTemplate,
+  UserSearchEngineConfig
+} from '../../../shared/types/search-engine.types'
+
+// 扩展搜索引擎配置类型（添加测试状态）
+interface SearchEngineConfigWithState extends UserSearchEngineConfig {
+  testing?: boolean
+}
 
 // 主题名称映射
 const themeNames: Record<string, string> = {
@@ -326,6 +462,14 @@ const providerConfigs = ref<UserProviderConfig[]>([])
 const templates = ref<ProviderTemplate[]>([])
 const showAddDialog = ref(false)
 const editingConfig = ref<UserProviderConfig | undefined>(undefined)
+
+// 搜索引擎配置
+const searchEngineTemplates = ref<SearchEngineTemplate[]>([])
+const searchEngineConfigs = ref<UserSearchEngineConfig[]>([])
+const quickSearchEngines = ref<SearchEngineTemplate[]>([])
+const disabledQuickEngines = ref<string[]>([])
+const showAddSearchEngineDialog = ref(false)
+const editingSearchEngineConfig = ref<UserSearchEngineConfig | undefined>(undefined)
 
 // 切换主题
 const changeTheme = async (themeId: string) => {
@@ -446,6 +590,170 @@ const deleteConfig = async (config: UserProviderConfig) => {
     const result = await window.electronAPI.providerConfig.delete(config.id)
     if (result.success) {
       await loadProviderConfigs()
+      ElMessage.success('已删除')
+    } else {
+      ElMessage.error(result.error || '操作失败')
+    }
+  } catch {
+    // 用户取消
+  }
+}
+
+// ==================== 搜索引擎相关 ====================
+
+// 加载搜索引擎模板
+const loadSearchEngineTemplates = async () => {
+  try {
+    const result = await window.electronAPI.searchEngine.getTemplates()
+    if (result.success && result.templates) {
+      searchEngineTemplates.value = result.templates
+      // 筛选快速搜索引擎（网页抓取型）
+      quickSearchEngines.value = result.templates.filter(
+        (t: SearchEngineTemplate) => t.category === 'web-scrape'
+      )
+    }
+  } catch (error) {
+    console.error('加载搜索引擎模板失败:', error)
+  }
+}
+
+// 加载搜索引擎配置
+const loadSearchEngineConfigs = async () => {
+  try {
+    const result = await window.electronAPI.searchEngine.list()
+    if (result.success && result.configs) {
+      searchEngineConfigs.value = result.configs
+    }
+  } catch (error) {
+    console.error('加载搜索引擎配置失败:', error)
+  }
+}
+
+// 加载被禁用的快速搜索引擎列表
+const loadDisabledQuickEngines = async () => {
+  try {
+    const result = await window.electronAPI.searchEngine.getDisabledQuickEngines()
+    if (result.success && result.disabledEngines) {
+      disabledQuickEngines.value = result.disabledEngines
+    }
+  } catch (error) {
+    console.error('加载被禁用的快速搜索引擎列表失败:', error)
+  }
+}
+
+// 获取搜索引擎模板名称
+const getSearchEngineTemplateName = (templateId: string): string => {
+  const template = searchEngineTemplates.value.find((t) => t.id === templateId)
+  return template?.name || templateId
+}
+
+// 获取搜索引擎模板图标
+const getSearchEngineTemplateIcon = (templateId: string): string => {
+  const template = searchEngineTemplates.value.find((t) => t.id === templateId)
+  return template?.icon || '🔍'
+}
+
+// 打开添加搜索引擎对话框
+const openAddSearchEngineDialog = () => {
+  editingSearchEngineConfig.value = undefined
+  showAddSearchEngineDialog.value = true
+}
+
+// 切换搜索引擎启用状态
+const toggleSearchEngineEnabled = async (config: UserSearchEngineConfig) => {
+  try {
+    await window.electronAPI.searchEngine.update(config.id, {
+      isEnabled: config.isEnabled
+    })
+    ElMessage.success(config.isEnabled ? '已启用' : '已禁用')
+  } catch (error) {
+    console.error('更新搜索引擎配置失败:', error)
+    config.isEnabled = !config.isEnabled // 回滚
+    ElMessage.error('操作失败')
+  }
+}
+
+// 切换快速搜索引擎启用状态
+const toggleQuickEngineEnabled = async (engineId: string, enabled: boolean) => {
+  try {
+    const result = await window.electronAPI.searchEngine.setQuickEngineEnabled(engineId, enabled)
+    if (result.success) {
+      if (enabled) {
+        disabledQuickEngines.value = disabledQuickEngines.value.filter(id => id !== engineId)
+      } else {
+        if (!disabledQuickEngines.value.includes(engineId)) {
+          disabledQuickEngines.value.push(engineId)
+        }
+      }
+      ElMessage.success(enabled ? '已启用' : '已禁用')
+    }
+  } catch (error) {
+    console.error('设置快速搜索引擎启用状态失败:', error)
+    ElMessage.error('操作失败')
+  }
+}
+
+// 设置默认搜索引擎
+const setDefaultSearchEngine = async (config: UserSearchEngineConfig) => {
+  try {
+    const result = await window.electronAPI.searchEngine.setDefault(config.id)
+    if (result.success) {
+      // 更新本地状态
+      searchEngineConfigs.value.forEach((c) => {
+        c.isDefault = c.id === config.id
+      })
+      ElMessage.success('操作成功')
+    }
+  } catch (error) {
+    console.error('设置默认搜索引擎失败:', error)
+    ElMessage.error('操作失败')
+  }
+}
+
+// 测试搜索引擎配置
+const testSearchEngineConfig = async (config: UserSearchEngineConfig) => {
+  config.testing = true
+  try {
+    const result = await window.electronAPI.searchEngine.test({ configId: config.id })
+    if (result.success) {
+      config.testResult = 'success'
+      ElMessage.success('连接测试成功')
+    } else {
+      config.testResult = 'failed'
+      ElMessage.error(result.message || '连接测试失败')
+    }
+    // 重新加载配置以获取最新状态
+    await loadSearchEngineConfigs()
+  } catch (error) {
+    console.error('测试搜索引擎配置失败:', error)
+    ElMessage.error('测试失败')
+  } finally {
+    config.testing = false
+  }
+}
+
+// 编辑搜索引擎配置
+const editSearchEngineConfig = (config: UserSearchEngineConfig) => {
+  editingSearchEngineConfig.value = config
+  showAddSearchEngineDialog.value = true
+}
+
+// 删除搜索引擎配置
+const deleteSearchEngineConfig = async (config: UserSearchEngineConfig) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除该配置吗？ (${config.name})`,
+      '确认删除',
+      {
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    const result = await window.electronAPI.searchEngine.delete(config.id)
+    if (result.success) {
+      await loadSearchEngineConfigs()
       ElMessage.success('已删除')
     } else {
       ElMessage.error(result.error || '操作失败')
@@ -622,6 +930,10 @@ onMounted(async () => {
   await loadProviderConfigs()
   await loadDataPathConfig()
   await loadDataSize()
+  // 加载搜索引擎配置
+  await loadSearchEngineTemplates()
+  await loadSearchEngineConfigs()
+  await loadDisabledQuickEngines()
 })
 </script>
 
@@ -1140,5 +1452,86 @@ onMounted(async () => {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+// 搜索引擎配置样式
+.search-engine-group {
+  margin-bottom: 24px;
+}
+
+.group-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin: 0 0 4px 0;
+}
+
+.group-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0 0 12px 0;
+}
+
+.quick-engine-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quick-engine-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg-color-page);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color-lighter);
+  transition: all var(--transition-normal);
+
+  &.disabled {
+    opacity: 0.6;
+    background: var(--bg-color-disabled);
+  }
+}
+
+.engine-icon {
+  font-size: 20px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.engine-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.engine-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.engine-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.empty-config {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-secondary);
+
+  p {
+    margin: 0 0 8px 0;
+  }
+
+  .hint {
+    font-size: 12px;
+    color: var(--text-placeholder);
+  }
 }
 </style>
