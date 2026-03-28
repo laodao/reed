@@ -262,10 +262,28 @@ export class DashScopeImageProvider extends BaseImageProvider {
 
   /**
    * 使用多模态聊天格式生成图像（qwen-image 模型）
+   * 支持图生图（reference image）功能
    */
   private async generateImageMultimodal(request: ImageGenerationRequest): Promise<ImageGenerationResponse> {
     const model = request.model || 'qwen-image-2.0-pro'
     const url = this.getApiUrl(model)
+
+    // 构建 content 数组
+    const content: Array<{ text?: string; image?: string }> = []
+
+    // 如果有参考图片，先添加图片（图生图）
+    if (request.referenceImage) {
+      // 支持 base64 和 URL 格式
+      content.push({
+        image: request.referenceImage
+      })
+      console.log('[DashScope] 使用参考图片进行图生图')
+    }
+
+    // 添加文本提示词
+    content.push({
+      text: request.prompt
+    })
 
     const body: Record<string, any> = {
       model: model,
@@ -273,11 +291,7 @@ export class DashScopeImageProvider extends BaseImageProvider {
         messages: [
           {
             role: 'user',
-            content: [
-              {
-                text: request.prompt
-              }
-            ]
+            content: content
           }
         ]
       },
@@ -290,6 +304,11 @@ export class DashScopeImageProvider extends BaseImageProvider {
     // 添加负面提示词
     if (request.negativePrompt) {
       body.parameters.negative_prompt = request.negativePrompt
+    }
+
+    // 添加种子（保持一致性）
+    if (request.seed !== undefined && request.seed >= 0) {
+      body.parameters.seed = request.seed
     }
 
     console.log('[DashScope] 使用多模态格式, URL:', url, 'Body:', JSON.stringify(body, null, 2))

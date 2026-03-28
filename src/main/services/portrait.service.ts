@@ -39,20 +39,67 @@ import { randomUUID } from 'crypto'
 
 /**
  * 角度提示词映射
- * 所有角度必须是全身照片，这是硬性要求
- * 强调单人肖像，避免生成多人
  */
 const ANGLE_PROMPT_MAP: Record<PortraitAngle, string> = {
-  front: 'front view, facing camera, full face visible, looking at viewer, full body shot, standing pose, showing entire body from head to toe, single person, solo portrait, one person only, symmetrical composition',
-  left: 'left side view, left profile, full body shot from left side, standing pose, showing entire body from head to toe, single person, solo portrait, one person only, same pose as reference',
-  right: 'right side view, right profile, full body shot from right side, standing pose, showing entire body from head to toe, single person, solo portrait, one person only, same pose as reference',
-  back: 'back view, from behind, rear view, seen from behind, full body shot from back, standing pose, showing entire body from head to toe, single person, solo portrait, one person only, same pose as reference'
+  front: 'front view, facing the camera directly',
+  left: 'left side profile view, showing the left side of the face and body',
+  right: 'right side profile view, showing the right side of the face and body',
+  back: 'back view, showing the back of the person'
 }
 
 /**
  * 全身照片要求的固定后缀
  */
-const FULL_BODY_SUFFIX = 'full body shot, standing pose, showing entire body from head to toe, must include feet'
+const FULL_BODY_SUFFIX = 'full body shot, standing upright, complete figure from head to toe'
+
+/**
+ * 默认负面提示词 - 确保全身照和一致性
+ */
+const DEFAULT_NEGATIVE_PROMPT = 'cropped, half body, close-up, missing feet, missing head, multiple people, different person, different face, different clothes, different hairstyle, low quality, blurry, distorted'
+
+/**
+ * 人物一致性提示词前缀
+ */
+const CONSISTENCY_PREFIX = 'generate the exact same person as shown in the reference image'
+
+/**
+ * 从角色信息提取基本英文描述
+ * 用于多角度生成时提供基本人物特征
+ */
+function extractBasicCharacterInfo(character: PortraitCharacter): string {
+  const parts: string[] = []
+
+  // 性别
+  if (character.gender === 'male') {
+    parts.push('adult male')
+  } else if (character.gender === 'female') {
+    parts.push('adult female')
+  }
+
+  // 年龄范围
+  if (character.age) {
+    if (character.age < 20) {
+      parts.push('young')
+    } else if (character.age < 40) {
+      parts.push('adult')
+    } else if (character.age < 60) {
+      parts.push('middle-aged')
+    } else {
+      parts.push('senior')
+    }
+  }
+
+  // 种族
+  if (character.race === 'asian') {
+    parts.push('Asian')
+  } else if (character.race === 'caucasian') {
+    parts.push('Caucasian')
+  } else if (character.race === 'african') {
+    parts.push('African')
+  }
+
+  return parts.join(' ')
+}
 
 /**
  * 将本地文件路径转换为可访问的 URL
@@ -354,6 +401,10 @@ export class PortraitService {
       const dataPathService = DataPathService.getInstance()
       const userDataPath = dataPathService.getDataPath()
 
+      // 记录失败的角度
+      const failedAngles: string[] = []
+      const failedErrors: string[] = []
+
       // 发送进度事件
       this.sendPortraitEvent(window, {
         type: 'generation-started',
@@ -372,10 +423,14 @@ export class PortraitService {
           progress: (i / angles.length) * 100
         })
 
-        // 构建角度特定的提示词
+        // 构建角度特定的提示词（纯英文避免内容审核）
         const anglePrompt = ANGLE_PROMPT_MAP[angle]
         // 强制添加全身照片要求
-        const fullPrompt = `${request.prompt}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, consistent character, same person, pure solid background`
+        const fullPrompt = `${request.prompt}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, consistent character, same person, solid background`
+        // 组合负面提示词，确保排除半身照
+        const fullNegativePrompt = request.negativePrompt
+          ? `${request.negativePrompt}, ${DEFAULT_NEGATIVE_PROMPT}`
+          : DEFAULT_NEGATIVE_PROMPT
 
         // 调用图像生成
         const imageWidth = request.config.width || 1024
@@ -384,7 +439,7 @@ export class PortraitService {
           providerConfigId: request.providerId,
           model: request.modelId,
           prompt: fullPrompt,
-          negativePrompt: request.negativePrompt,
+          negativePrompt: fullNegativePrompt,
           width: imageWidth,
           height: imageHeight,
           seed: baseSeed,
@@ -393,6 +448,8 @@ export class PortraitService {
 
         if (!imageResult.success || !imageResult.images?.length) {
           console.error(`[PortraitService] 生成角度 ${angle} 失败:`, imageResult.error)
+          failedAngles.push(angle)
+          failedErrors.push(`角度 ${angle}: ${imageResult.error || '生成失败'}`)
           continue
         }
 
@@ -419,12 +476,33 @@ export class PortraitService {
         })
       }
 
+      // 检查是否所有角度都失败
+      if (variants.length === 0) {
+        const errorMessage = failedErrors.length > 0
+          ? `图像生成失败: ${failedErrors.join('; ')}`
+          : '图像生成失败，请检查模型配置或网络连接'
+        return {
+          success: false,
+          error: errorMessage
+        }
+      }
+
       // 发送完成事件
       this.sendPortraitEvent(window, {
         type: 'generation-completed',
         characterId: character.id,
         variants: variants
       })
+
+      // 如果部分成功，返回成功但有警告
+      if (failedAngles.length > 0) {
+        return {
+          success: true,
+          characterId: character.id,
+          variants: variants,
+          warning: `部分角度生成失败: ${failedErrors.join('; ')}`
+        }
+      }
 
       return {
         success: true,
@@ -473,8 +551,8 @@ export class PortraitService {
 
         // 构建换衣提示词
         const anglePrompt = ANGLE_PROMPT_MAP[angle]
-        // 强制添加全身照片要求
-        let fullPrompt = `${character.prompt}, wearing ${request.clothesDescription}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, consistent character, same person, pure solid background`
+        // 换衣提示词：保持人物特征不变，只改变服装（纯英文避免内容审核）
+        let fullPrompt = `${character.prompt}, wearing ${request.clothesDescription}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, same person, solid background`
 
         // 准备参考图像
         let referenceImageBase64: string | undefined = undefined
@@ -493,6 +571,7 @@ export class PortraitService {
           providerConfigId: character.providerId,
           model: character.modelId,
           prompt: fullPrompt,
+          negativePrompt: DEFAULT_NEGATIVE_PROMPT,
           width: imageWidth,
           height: imageHeight,
           seed: baseVariant.config?.seed,
@@ -594,8 +673,8 @@ export class PortraitService {
         if (!baseVariant) continue
 
         const anglePrompt = ANGLE_PROMPT_MAP[angle]
-        // 强制添加全身照片要求
-        const fullPrompt = `${character.prompt}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, consistent character, same person, ${backgroundDescription}`
+        // 换背景提示词：保持人物特征不变，只改变背景（纯英文避免内容审核）
+        const fullPrompt = `${character.prompt}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, same person, ${backgroundDescription}`
 
         if (!referenceImageBase64 && baseVariant.imagePath && fs.existsSync(baseVariant.imagePath)) {
           const imageBuffer = fs.readFileSync(baseVariant.imagePath)
@@ -609,6 +688,7 @@ export class PortraitService {
           providerConfigId: character.providerId,
           model: character.modelId,
           prompt: fullPrompt,
+          negativePrompt: DEFAULT_NEGATIVE_PROMPT,
           width: imageWidth,
           height: imageHeight,
           seed: baseVariant.config?.seed,
@@ -716,13 +796,15 @@ export class PortraitService {
 
       const variants: PortraitVariant[] = []
 
-      // 读取参考图文件
+      // 读取参考图文件 - 这是最重要的参考
       let referenceImageBase64: string | undefined = undefined
       const referenceImagePath = referenceVariant.imagePath
       if (referenceImagePath && fs.existsSync(referenceImagePath)) {
         const imageBuffer = fs.readFileSync(referenceImagePath)
         referenceImageBase64 = `data:image/png;base64,${imageBuffer.toString('base64')}`
         console.log('[PortraitService.generateAngles] 已加载参考图作为参考图像')
+      } else {
+        return { success: false, error: '无法读取参考图片' }
       }
 
       // 发送进度事件
@@ -736,6 +818,10 @@ export class PortraitService {
       const failedAngles: string[] = []
       const failedErrors: string[] = []
 
+      // 提取基本人物特征（用于辅助描述，避免完全无特征）
+      const basicInfo = extractBasicCharacterInfo(character)
+      console.log('[PortraitService.generateAngles] 基本人物特征:', basicInfo)
+
       for (let i = 0; i < request.angles.length; i++) {
         const angle = request.angles[i]
 
@@ -746,31 +832,26 @@ export class PortraitService {
           progress: (i / request.angles.length) * 100
         })
 
-        const basePrompt = referenceVariant.prompt || character.prompt
+        // 角度专用提示词
         const anglePrompt = ANGLE_PROMPT_MAP[angle]
 
-        // 强调保持相同姿势的一致性提示词
-        let consistencyPrompt = 'consistent character, same person as reference image, identical pose, same posture, same body position, same stance'
-        if (referenceVariant.type === 'clothes') {
-          consistencyPrompt = 'same person, same face, same hairstyle, identical pose and posture, same body position, same stance, same background, same lighting, only viewing angle changed, wearing the same clothes as reference image'
-        } else if (referenceVariant.type === 'background') {
-          consistencyPrompt = 'same person, same face, same hairstyle, identical pose and posture, same body position, same stance, same clothes, same lighting, only viewing angle changed, same background as reference image'
-        } else {
-          consistencyPrompt = 'same person, same face, same hairstyle, identical pose and posture, same body position, same stance, same clothes, only viewing angle changed'
-        }
-
-        // 强制添加全身照片要求
-        const fullPrompt = `${basePrompt}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, ${consistencyPrompt}, pure solid background`
+        // 构建完整提示词：
+        // 1. 一致性要求（最重要的）
+        // 2. 基本人物特征（辅助模型理解）
+        // 3. 角度要求
+        // 4. 全身照要求
+        const fullPrompt = `${CONSISTENCY_PREFIX}. ${basicInfo}. ${anglePrompt}. ${FULL_BODY_SUFFIX}. Keep the same facial features, hairstyle, clothing, and posture as in the reference image.`
 
         console.log(`[PortraitService.generateAngles] 角度 ${angle} 提示词:`, fullPrompt)
 
-        const imageWidth = referenceVariant.config?.width || 1920
-        const imageHeight = referenceVariant.config?.height || 1920
+        const imageWidth = referenceVariant.config?.width || 768
+        const imageHeight = referenceVariant.config?.height || 1024
 
         const imageResult = await ImageService.generateImage(window, {
           providerConfigId: character.providerId,
           model: character.modelId,
           prompt: fullPrompt,
+          negativePrompt: DEFAULT_NEGATIVE_PROMPT,
           width: imageWidth,
           height: imageHeight,
           seed: referenceVariant.config?.seed,
@@ -779,9 +860,10 @@ export class PortraitService {
         })
 
         if (!imageResult.success || !imageResult.images?.length) {
-          console.error(`[PortraitService] 生成角度 ${angle} 失败:`, imageResult.error)
+          const errorMsg = imageResult.error || '生成失败'
+          console.error(`[PortraitService] 生成角度 ${angle} 失败:`, errorMsg)
           failedAngles.push(angle)
-          failedErrors.push(`角度 ${angle}: ${imageResult.error || '生成失败'}`)
+          failedErrors.push(`角度 ${angle}: ${errorMsg}`)
           continue
         }
 
@@ -803,6 +885,16 @@ export class PortraitService {
           ...variant,
           imagePath: localPathToUrl(variant.imagePath)
         })
+
+        console.log(`[PortraitService.generateAngles] 角度 ${angle} 生成成功`)
+      }
+
+      // 检查是否所有角度都失败
+      if (variants.length === 0 && failedAngles.length > 0) {
+        return {
+          success: false,
+          error: `所有角度生成失败: ${failedErrors.join('; ')}`
+        }
       }
 
       this.sendPortraitEvent(window, {
@@ -868,8 +960,8 @@ export class PortraitService {
       }
 
       const basePrompt = character.prompt || ''
-      // 强制添加全身照片要求
-      const editPrompt = `${basePrompt}, ${request.editPrompt}, consistent character, same person, ${FULL_BODY_SUFFIX}, pure solid background`
+      // 编辑提示词：在原有基础上添加编辑指令（纯英文避免内容审核）
+      const editPrompt = `${basePrompt}, ${request.editPrompt}, same person, ${FULL_BODY_SUFFIX}, solid background`
 
       const imageWidth = variant.config?.width || 1920
       const imageHeight = variant.config?.height || 1920
@@ -878,6 +970,7 @@ export class PortraitService {
         providerConfigId: character.providerId,
         model: character.modelId,
         prompt: editPrompt,
+        negativePrompt: DEFAULT_NEGATIVE_PROMPT,
         width: imageWidth,
         height: imageHeight,
         seed: variant.config?.seed,

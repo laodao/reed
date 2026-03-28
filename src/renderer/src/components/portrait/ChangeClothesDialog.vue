@@ -14,8 +14,9 @@
             v-model="form.clothesDescription"
             type="textarea"
             :rows="3"
-            placeholder="描述新的服装，例如：红色西装套装，白色衬衫，黑色领带"
+            placeholder="建议使用英文描述，例如：red suit, white shirt, black tie"
           />
+          <p class="input-hint">建议使用英文描述以避免部分云服务的内容审核问题</p>
         </el-form-item>
 
         <el-form-item label="参考图片">
@@ -190,5 +191,11 @@ watch(() => props.modelValue, (val) => {
   font-size: 12px;
   color: var(--el-text-color-placeholder);
   margin-top: 8px;
+}
+
+.input-hint {
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+  margin-top: 4px;
 }
 </style>

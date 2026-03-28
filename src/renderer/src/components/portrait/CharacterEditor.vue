@@ -84,11 +84,11 @@
                 v-model="generateConfig.prompt"
                 type="textarea"
                 :rows="3"
-                :placeholder="defaultPrompt"
+                placeholder="可修改或补充人物描述..."
                 resize="none"
                 class="prompt-input"
               />
-              <div class="prompt-hint">可选，不填写将根据人物信息自动生成</div>
+              <div class="prompt-hint">建议使用英文描述以避免部分云服务的内容审核问题</div>
             </div>
           </div>
 
@@ -459,22 +459,23 @@ const filteredProviderModels = computed(() => {
 // 选中的模型
 const selectedModelKey = ref<string>('')
 
-// 尺寸选项
+// 尺寸选项 - 优先显示适合全身照的竖版尺寸
 const sizeOptions = [
+  { label: '768×1024 (竖版全身)', value: '768x1024' },
+  { label: '896×1152 (竖版全身)', value: '896x1152' },
+  { label: '1024×1792 (竖版全身)', value: '1024x1792' },
+  { label: '1024×1024 (正方形)', value: '1024x1024' },
   { label: '512×512', value: '512x512' },
   { label: '768×768', value: '768x768' },
-  { label: '1024×1024', value: '1024x1024' },
-  { label: '1024×768', value: '1024x768' },
-  { label: '768×1024', value: '768x1024' },
-  { label: '1024×1792', value: '1024x1792' },
-  { label: '1792×1024', value: '1792x1024' }
+  { label: '1024×768 (横版)', value: '1024x768' },
+  { label: '1792×1024 (横版)', value: '1792x1024' }
 ]
 
 // 生成配置
 const generateConfig = ref({
   prompt: '',
   negativePrompt: '',
-  size: '1024x1024',
+  size: '768x1024',  // 默认使用竖版尺寸，更适合全身照
   referenceImages: [] as string[]
 })
 
@@ -702,6 +703,16 @@ async function loadCharacter() {
     if (result.data.referenceImages) {
       generateConfig.value.referenceImages = [...result.data.referenceImages]
     }
+    // 如果没有保存的提示词，则使用人物基本信息生成英文提示词（避免内容审核问题）
+    if (!result.data.prompt) {
+      const c = result.data
+      const genderText = c.gender === 'male' ? 'male' : 'female'
+      const raceText = c.race === 'asian' ? 'Asian' : 'European'
+      // 使用纯英文描述，避免阿里云内容审核对中文敏感词的拦截
+      generateConfig.value.prompt = `portrait of a person, ${genderText}, ${raceText}, age ${c.age}, height ${c.height}cm, weight ${c.weight}kg${c.description ? ', ' + c.description : ''}`
+    } else {
+      generateConfig.value.prompt = result.data.prompt
+    }
   }
 }
 
@@ -752,7 +763,11 @@ async function handleGenerateFront() {
     })
 
     if (result.success) {
-      ElMessage.success('生成成功')
+      if (result.warning) {
+        ElMessage.warning(result.warning)
+      } else {
+        ElMessage.success('生成成功')
+      }
       loadVariants()
       loadCharacter()
     } else {
@@ -847,7 +862,11 @@ async function handleGenerateAngles() {
     })
 
     if (result.success) {
-      ElMessage.success('多角度生成成功')
+      if (result.warning) {
+        ElMessage.warning(result.warning)
+      } else {
+        ElMessage.success('多角度生成成功')
+      }
       loadVariants()
     } else {
       ElMessage.error(result.error || '生成失败')

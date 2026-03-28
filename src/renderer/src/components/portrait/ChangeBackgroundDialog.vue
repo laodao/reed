@@ -45,8 +45,9 @@
             v-model="form.customDescription"
             type="textarea"
             :rows="2"
-            placeholder="描述想要的背景，例如：城市街道夜景，霓虹灯闪烁"
+            placeholder="建议使用英文描述，例如：city street at night with neon lights"
           />
+          <p class="input-hint">建议使用英文描述以避免部分云服务的内容审核问题</p>
         </el-form-item>
 
         <!-- 上传背景图片 -->
@@ -280,5 +281,11 @@ watch(() => props.modelValue, (val) => {
   font-size: 12px;
   color: var(--el-text-color-placeholder);
   margin-top: 8px;
+}
+
+.input-hint {
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+  margin-top: 4px;
 }
 </style>
