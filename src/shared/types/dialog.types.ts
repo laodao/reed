@@ -3,12 +3,26 @@
  * @module types/dialog.types
  */
 
+import type { SearchEngineType, SearchEngineConfigId } from './search-engine.types'
+
 /**
  * 上下文配置
  */
 export interface ContextConfig {
   maxMessages: number
   maxTokens: number
+}
+
+/**
+ * 对话联网搜索配置
+ */
+export interface DialogWebSearchConfig {
+  /** 是否启用联网搜索 */
+  enabled: boolean
+  /** 搜索引擎类型 */
+  engine: SearchEngineType
+  /** 搜索引擎配置 ID（快速搜索使用模板 ID，配置型使用用户配置 ID） */
+  configId?: SearchEngineConfigId
 }
 
 /**
@@ -23,6 +37,7 @@ export interface Dialog {
   systemPrompt?: string
   contextConfig?: ContextConfig  // 上下文配置
   knowledgeBaseIds?: string[]  // 关联的知识库 ID 列表
+  webSearchConfig?: DialogWebSearchConfig  // 联网搜索配置
   createdAt: Date
   updatedAt: Date
   messageCount: number
@@ -50,6 +65,7 @@ export interface UpdateDialogRequest {
   modelId?: string
   providerConfigId?: string
   knowledgeBaseIds?: string[]  // 关联的知识库 ID 列表
+  webSearchConfig?: DialogWebSearchConfig  // 联网搜索配置
 }
 
 /**

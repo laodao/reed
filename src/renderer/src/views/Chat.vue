@@ -57,7 +57,7 @@ import { Plus } from '@element-plus/icons-vue'
 import ChatSidebar from '../components/chat/ChatSidebar.vue'
 import ChatMain from '../components/chat/ChatMain.vue'
 import { useChat } from '../composables/useChat'
-import type { Role, Dialog, Message, ContextConfig } from '../../../shared/types'
+import type { Role, Dialog, Message, ContextConfig, DialogWebSearchConfig } from '../../../shared/types'
 
 // 定义组件名称用于 keep-alive
 defineOptions({
@@ -148,9 +148,11 @@ async function handleSendMessage(
     attachments?: Message['attachments']
     webSearch?: {
       enabled: boolean
-      engine: 'model' | 'baidu' | 'bing' | 'google'
+      engine: string
+      configId?: string
     }
     enableThinkingChain?: boolean
+    knowledgeBaseIds?: string[]
   }
 ): Promise<void> {
   // 检查是否需要自动更新标题
@@ -227,6 +229,7 @@ async function handleUpdateConfig(
     systemPrompt?: string
     contextConfig?: ContextConfig
     knowledgeBaseIds?: string[]
+    webSearchConfig?: DialogWebSearchConfig
   }
 ): Promise<void> {
   console.log('[Chat.handleUpdateConfig] ========== 收到更新请求 ==========')
@@ -235,6 +238,7 @@ async function handleUpdateConfig(
   console.log('[Chat.handleUpdateConfig] config.modelId:', config.modelId)
   console.log('[Chat.handleUpdateConfig] config.providerConfigId:', config.providerConfigId)
   console.log('[Chat.handleUpdateConfig] config.knowledgeBaseIds:', config.knowledgeBaseIds)
+  console.log('[Chat.handleUpdateConfig] config.webSearchConfig:', config.webSearchConfig)
   console.log('[Chat.handleUpdateConfig] 更新前 currentDialog.modelId:', currentDialog.value?.modelId)
   console.log('[Chat.handleUpdateConfig] 更新前 currentDialog.providerConfigId:', currentDialog.value?.providerConfigId)
 
@@ -245,8 +249,8 @@ async function handleUpdateConfig(
   console.log('[Chat.handleUpdateConfig] 更新后 currentDialog.modelId:', currentDialog.value?.modelId)
   console.log('[Chat.handleUpdateConfig] 更新后 currentDialog.providerConfigId:', currentDialog.value?.providerConfigId)
 
-  // 只有非模型选择和非知识库的配置更新才显示提示
-  if (!config.modelId && !config.providerConfigId && !config.knowledgeBaseIds) {
+  // 只有非模型选择、非知识库、非联网搜索的配置更新才显示提示
+  if (!config.modelId && !config.providerConfigId && !config.knowledgeBaseIds && !config.webSearchConfig) {
     if (success) {
       ElMessage.success('配置已更新')
     } else {

@@ -185,14 +185,22 @@ export class ImageService {
             hasUrl: !!img.url
           }))))
 
-          const savedImages = await this.saveImagesWithoutHistory(response.images)
+          try {
+            const savedImages = await this.saveImagesWithoutHistory(response.images)
 
-          console.log('[ImageService.generateImage] saveImagesWithoutHistory 返回:', savedImages.length, '张图片')
-          console.log('[ImageService.generateImage] 返回的图片路径:', savedImages.map(img => img.filePath))
+            console.log('[ImageService.generateImage] saveImagesWithoutHistory 返回:', savedImages.length, '张图片')
+            console.log('[ImageService.generateImage] 返回的图片路径:', savedImages.map(img => img.filePath))
 
-          return {
-            success: true,
-            images: savedImages
+            return {
+              success: true,
+              images: savedImages
+            }
+          } catch (saveError: any) {
+            console.error('[ImageService.generateImage] 保存图像失败:', saveError)
+            return {
+              success: false,
+              error: saveError.message || '保存图像失败'
+            }
           }
         }
 
@@ -510,6 +518,11 @@ export class ImageService {
     console.log('[saveImagesWithoutHistory] 开始保存图像，数量:', images.length)
     console.log('[saveImagesWithoutHistory] 图像信息:', images.map(img => ({ url: img.url?.substring(0, 100) + '...' })))
 
+    if (!images || images.length === 0) {
+      console.error('[saveImagesWithoutHistory] 错误：图像数组为空')
+      throw new Error('没有可保存的图像')
+    }
+
     const dataPathService = DataPathService.getInstance()
     const userDataPath = dataPathService.getDataPath()
     const now = new Date()
@@ -526,12 +539,18 @@ export class ImageService {
     }
 
     const savedImages: Array<{ filePath: string }> = []
+    const errors: string[] = []
 
     for (let i = 0; i < images.length; i++) {
       const imageInfo = images[i]
       const imageId = `img_${Date.now()}_${i}`
 
       try {
+        // 检查 URL 是否存在
+        if (!imageInfo.url) {
+          throw new Error('图像 URL 为空')
+        }
+
         let buffer: Buffer
 
         // 检查是否是 base64 格式的图像
@@ -545,7 +564,11 @@ export class ImageService {
         } else {
           console.log(`[saveImagesWithoutHistory] 图像 ${i} 从 URL 下载:`, imageInfo.url.substring(0, 100) + '...')
           try {
-            const response = await fetch(imageInfo.url)
+            const response = await fetch(imageInfo.url, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+              }
+            })
             console.log(`[saveImagesWithoutHistory] 图像 ${i} fetch 响应状态:`, response.status, response.statusText)
             if (!response.ok) {
               throw new Error(`下载图像失败: HTTP ${response.status} ${response.statusText}`)
@@ -557,6 +580,11 @@ export class ImageService {
             console.error(`[saveImagesWithoutHistory] 图像 ${i} fetch 异常:`, fetchError.message)
             throw fetchError
           }
+        }
+
+        // 检查 buffer 是否有效
+        if (!buffer || buffer.length === 0) {
+          throw new Error('图像数据为空')
         }
 
         // 生成文件名
@@ -571,7 +599,7 @@ export class ImageService {
         const fileExists = fs.existsSync(filePath)
         console.log(`[saveImagesWithoutHistory] 图像 ${i} 文件存在验证:`, fileExists)
         if (!fileExists) {
-          console.error(`[saveImagesWithoutHistory] 图像 ${i} 文件保存后验证失败！`)
+          throw new Error('文件保存后验证失败')
         }
 
         savedImages.push({
@@ -579,10 +607,17 @@ export class ImageService {
         })
       } catch (error: any) {
         console.error(`[saveImagesWithoutHistory] 保存图像 ${i} 失败:`, error)
+        errors.push(`图像 ${i + 1}: ${error.message}`)
       }
     }
 
-    console.log('[saveImagesWithoutHistory] 保存完成，成功数量:', savedImages.length)
+    console.log('[saveImagesWithoutHistory] 保存完成，成功数量:', savedImages.length, '失败数量:', errors.length)
+
+    // 如果所有图片都保存失败，抛出异常
+    if (savedImages.length === 0 && errors.length > 0) {
+      throw new Error(`所有图像保存失败: ${errors.join('; ')}`)
+    }
+
     return savedImages
   }
 

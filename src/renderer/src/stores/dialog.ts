@@ -203,6 +203,7 @@ export const useDialogStore = defineStore('dialog', () => {
           systemPrompt: data.systemPrompt ?? currentDialog.value.systemPrompt,
           contextConfig: data.contextConfig ?? currentDialog.value.contextConfig,
           knowledgeBaseIds: data.knowledgeBaseIds ?? currentDialog.value.knowledgeBaseIds,
+          webSearchConfig: data.webSearchConfig ?? currentDialog.value.webSearchConfig,
           title: data.title ?? currentDialog.value.title
         }
       }
@@ -284,7 +285,8 @@ export const useDialogStore = defineStore('dialog', () => {
       attachments?: Message['attachments']
       webSearch?: {
         enabled: boolean
-        engine: WebSearchEngine
+        engine: string
+        configId?: string
       }
       enableThinkingChain?: boolean
       // 知识库配置

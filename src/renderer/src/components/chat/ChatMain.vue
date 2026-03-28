@@ -24,9 +24,11 @@
       :current-model="currentModelInfo"
       :all-knowledge-bases="allKnowledgeBases"
       :selected-knowledge-base-ids="dialog.knowledgeBaseIds"
+      :web-search-config="dialog.webSearchConfig"
       @send="handleSend"
       @stop="$emit('stopGeneration')"
       @update-knowledge-base-ids="handleUpdateKnowledgeBaseIds"
+      @update-web-search-config="handleUpdateWebSearchConfig"
     />
   </div>
 </template>
@@ -36,7 +38,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import ChatHeader from './ChatHeader.vue'
 import MessageList from './MessageList.vue'
 import ChatInput from './ChatInput.vue'
-import type { Dialog, Message, StreamState, ContextConfig, WebSearchEngine, UserProviderConfig, ModelDefinition } from '../../../shared/types'
+import type { Dialog, Message, StreamState, ContextConfig, WebSearchEngine, UserProviderConfig, ModelDefinition, DialogWebSearchConfig } from '../../../shared/types'
 
 const props = defineProps<{
   dialog: Dialog
@@ -63,6 +65,7 @@ const emit = defineEmits<{
     systemPrompt?: string
     contextConfig?: ContextConfig
     knowledgeBaseIds?: string[]
+    webSearchConfig?: DialogWebSearchConfig
   }): void
   (e: 'editMessage', messageId: string, newContent: string): void
   (e: 'deleteMessage', messageId: string): void
@@ -260,6 +263,11 @@ function handleMessageRegenerate(userMessageId: string, modelId?: string): void 
 // 处理知识库选择变化（用于持久化）
 function handleUpdateKnowledgeBaseIds(ids: string[]): void {
   emit('updateConfig', props.dialog.id, { knowledgeBaseIds: ids })
+}
+
+// 处理联网搜索配置变化（用于持久化）
+function handleUpdateWebSearchConfig(config: DialogWebSearchConfig | undefined): void {
+  emit('updateConfig', props.dialog.id, { webSearchConfig: config })
 }
 
 // 监听 dialog 变化，重新加载配置

@@ -290,9 +290,11 @@ export function useChat() {
       attachments?: Message['attachments']
       webSearch?: {
         enabled: boolean
-        engine: WebSearchEngine
+        engine: string
+        configId?: string
       }
       enableThinkingChain?: boolean
+      knowledgeBaseIds?: string[]
     }
   ): Promise<boolean> {
     return await dialogStore.sendMessage(content, options)
