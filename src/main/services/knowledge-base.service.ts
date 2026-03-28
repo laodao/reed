@@ -8,6 +8,7 @@ import { BrowserWindow, dialog } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
+import nodejieba from 'nodejieba'
 import { getDatabaseManager } from '../database'
 import { DataPathService } from './data-path.service'
 import { SecureStorageService } from './secure-storage.service'
@@ -704,16 +705,37 @@ export class KnowledgeBaseService {
     const db = getDatabaseManager()
     if (!db.kbInvertedIndex) return
 
+    // 中文停用词列表
+    const stopWords = new Set([
+      '的', '了', '和', '是', '就', '都', '而', '及', '与', '着',
+      '或', '一个', '没有', '我们', '你们', '他们', '它们', '这个', '那个',
+      '这些', '那些', '不是', '什么', '怎么', '如何', '为什么', '因为',
+      '所以', '但是', '如果', '虽然', '可以', '可能', '应该', '需要',
+      '会', '能', '要', '有', '在', '上', '下', '里', '外', '中',
+      '很', '太', '更', '最', '非常', '十分', '极其', '相当'
+    ])
+
     const items: Array<{ term: string; chunkId: string; knowledgeBaseId: string; termFrequency: number }> = []
 
     for (const chunk of chunks) {
-      // 简单分词
-      const words = chunk.content.toLowerCase().match(/[a-z]+/g) || []
-      const chars = chunk.content.match(/[\u4e00-\u9fa5]/g) || []
-      const terms = [...new Set([...words, ...chars])].filter(t => t.length > 1 || /[\u4e00-\u9fa5]/.test(t))
+      // 使用 nodejieba 进行中文分词（搜索引擎模式）
+      const chineseText = chunk.content.replace(/[a-zA-Z0-9\s]+/g, ' ')
+      const chineseTerms = nodejieba.cutForSearch(chineseText)
+
+      // 提取英文单词
+      const englishWords = chunk.content.toLowerCase().match(/[a-z]+/g) || []
+
+      // 合并中英文词汇，过滤停用词和单字（中文单字除非是特定字否则过滤）
+      const allTerms = [...chineseTerms, ...englishWords]
+        .map(t => t.trim())
+        .filter(t => {
+          if (t.length < 2) return false // 过滤单字
+          if (stopWords.has(t)) return false // 过滤停用词
+          return true
+        })
 
       const freq = new Map<string, number>()
-      for (const t of terms) freq.set(t, (freq.get(t) || 0) + 1)
+      for (const t of allTerms) freq.set(t, (freq.get(t) || 0) + 1)
 
       for (const [term, count] of freq) {
         items.push({ term, chunkId: chunk.id, knowledgeBaseId: kbId, termFrequency: count })
