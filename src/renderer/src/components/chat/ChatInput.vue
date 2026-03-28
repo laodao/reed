@@ -208,7 +208,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { Paperclip, Search, Cpu, Collection, VideoPause, Promotion, Close, Document, Check } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { Message, WebSearchEngine, Attachment } from '../../../shared/types'
@@ -230,6 +230,8 @@ const props = defineProps<{
     id: string
     name: string
   }>
+  /** 已选择的知识库 ID 列表（用于持久化恢复） */
+  selectedKnowledgeBaseIds?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -243,6 +245,8 @@ const emit = defineEmits<{
     knowledgeBaseIds?: string[]
   }): void
   (e: 'stop'): void
+  /** 知识库选择变化事件（用于持久化） */
+  (e: 'updateKnowledgeBaseIds', ids: string[]): void
 }>()
 
 // 输入内容
@@ -255,6 +259,18 @@ const attachments = ref<AttachmentWithPreview[]>([])
 const webSearchEngine = ref<WebSearchEngine | null>(null)
 const enableThinkingChain = ref(false)
 const selectedKnowledgeBaseIds = ref<string[]>([])
+
+// 监听外部传入的知识库选择（用于恢复持久化的选择）
+watch(
+  () => props.selectedKnowledgeBaseIds,
+  (newIds) => {
+    const normalizedNewIds = newIds || []
+    if (JSON.stringify(normalizedNewIds) !== JSON.stringify(selectedKnowledgeBaseIds.value)) {
+      selectedKnowledgeBaseIds.value = [...normalizedNewIds]
+    }
+  },
+  { immediate: true }
+)
 
 // 计算属性：是否可以发送
 const canSend = computed(() => {
@@ -304,6 +320,8 @@ function handleKnowledgeBaseCommand(command: string): void {
       selectedKnowledgeBaseIds.value.push(command)
     }
   }
+  // 通知父组件保存知识库选择
+  emit('updateKnowledgeBaseIds', [...selectedKnowledgeBaseIds.value])
 }
 
 // 处理联网搜索命令
@@ -594,8 +612,8 @@ function handleKeydown(event: KeyboardEvent): void {
     border-radius: 4px;
 
     &.kb-tag {
-      color: #10b981;
-      background: #ecfdf5;
+      color: var(--el-color-primary);
+      background: var(--el-color-primary-light-9);
     }
   }
 }

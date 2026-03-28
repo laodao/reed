@@ -48,7 +48,7 @@
         <div v-if="message.metadata?.knowledgeBase && message.metadata.knowledgeBase.length > 0" class="knowledge-source-badge">
           <el-icon><Collection /></el-icon>
           <span>基于知识库回答</span>
-          <el-tag size="small" type="success">{{ message.metadata.knowledgeBase.length }} 条引用</el-tag>
+          <el-tag size="small">{{ message.metadata.knowledgeBase.length }} 条引用</el-tag>
         </div>
 
         <!-- 附件显示 -->
@@ -101,6 +101,7 @@
                   v-for="(ref, index) in message.metadata.knowledgeBase"
                   :key="index"
                   class="kb-ref-item"
+                  @click="showKnowledgeBaseSnippet(ref)"
                 >
                   <div class="ref-title">
                     <el-icon><Document /></el-icon>
@@ -252,6 +253,28 @@
       :thinking-chain="message.metadata?.thinkingChain"
     />
 
+    <!-- 知识库片段预览对话框 -->
+    <el-dialog
+      v-model="showKbSnippetDialog"
+      :title="currentKbRef?.documentName || '文档片段'"
+      width="600px"
+      class="kb-snippet-dialog"
+    >
+      <div v-if="currentKbRef" class="kb-snippet-content">
+        <div class="snippet-meta">
+          <el-tag size="small">
+            相关度: {{ ((currentKbRef.score || 0) * 100).toFixed(1) }}%
+          </el-tag>
+        </div>
+        <div class="snippet-text">
+          {{ currentKbRef.snippet || '暂无片段内容' }}
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showKbSnippetDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 图片导出用的隐藏容器 -->
     <div
       ref="imageExportContainer"
@@ -310,6 +333,10 @@ const imagePreviewUrls = ref<Map<string, string>>(new Map())
 // 图片导出相关
 const imageExportContainer = ref<HTMLElement | null>(null)
 const imageExportContent = ref('')
+
+// 知识库片段预览
+const showKbSnippetDialog = ref(false)
+const currentKbRef = ref<{ documentId: string; documentName: string; score: number; snippet?: string } | null>(null)
 
 // 消息内容容器引用
 const messageContentRef = ref<HTMLElement | null>(null)
@@ -745,6 +772,12 @@ async function exportAsWord(): Promise<void> {
 function exportToObsidian(): void {
   showExportObsidianDialog.value = true
 }
+
+// 显示知识库片段预览
+function showKnowledgeBaseSnippet(ref: { documentId: string; documentName: string; score: number; snippet?: string }): void {
+  currentKbRef.value = ref
+  showKbSnippetDialog.value = true
+}
 </script>
 
 <style lang="scss" scoped>
@@ -842,7 +875,7 @@ function exportToObsidian(): void {
   padding: 12px 14px;
   border-radius: 12px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-  border: 1px solid #f1f5f9;
+  border: 1px solid var(--el-color-primary-light-7);
   position: relative;
 }
 
@@ -1198,8 +1231,8 @@ function exportToObsidian(): void {
 
   :deep(.el-collapse-item__header) {
     font-size: 12px;
-    color: #10b981;
-    background: #ecfdf5;
+    color: var(--el-color-primary);
+    background: var(--el-color-primary-light-9);
     border-radius: 6px;
     padding: 0 12px;
     height: 32px;
@@ -1207,7 +1240,7 @@ function exportToObsidian(): void {
 
   :deep(.el-collapse-item__wrap) {
     border: none;
-    background: #ecfdf5;
+    background: var(--el-color-primary-light-9);
     border-radius: 0 0 6px 6px;
   }
 }
@@ -1218,11 +1251,11 @@ function exportToObsidian(): void {
   gap: 6px;
   padding: 4px 10px;
   margin-top: 8px;
-  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
-  border: 1px solid #a7f3d0;
+  background: linear-gradient(135deg, var(--el-color-primary-light-9) 0%, var(--el-color-primary-light-7) 100%);
+  border: 1px solid var(--el-color-primary-light-5);
   border-radius: 6px;
   font-size: 12px;
-  color: #059669;
+  color: var(--el-color-primary-dark-2);
 
   .el-icon {
     font-size: 14px;
@@ -1243,7 +1276,14 @@ function exportToObsidian(): void {
   padding: 8px 10px;
   background: #fff;
   border-radius: 6px;
-  border: 1px solid #d1fae5;
+  border: 1px solid var(--el-color-primary-light-5);
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: var(--el-color-primary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
 
   .ref-title {
     display: flex;
@@ -1254,14 +1294,14 @@ function exportToObsidian(): void {
     color: #1e293b;
 
     .el-icon {
-      color: #10b981;
+      color: var(--el-color-primary);
     }
   }
 
   .ref-score {
     font-size: 11px;
-    color: #10b981;
-    background: #d1fae5;
+    color: var(--el-color-primary);
+    background: var(--el-color-primary-light-7);
     padding: 2px 8px;
     border-radius: 4px;
   }
@@ -1312,5 +1352,32 @@ function exportToObsidian(): void {
   padding: 40px 20px;
   color: #94a3b8;
   font-size: 14px;
+}
+
+// 知识库片段预览对话框样式
+.kb-snippet-dialog {
+  :deep(.el-dialog__body) {
+    padding: 16px 20px;
+  }
+}
+
+.kb-snippet-content {
+  .snippet-meta {
+    margin-bottom: 12px;
+  }
+
+  .snippet-text {
+    font-size: 14px;
+    line-height: 1.8;
+    color: #1e293b;
+    background: #f8fafc;
+    padding: 16px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    max-height: 400px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
 }
 </style>

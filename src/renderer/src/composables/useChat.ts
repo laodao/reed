@@ -372,6 +372,7 @@ export function useChat() {
       providerConfigId?: string
       systemPrompt?: string
       contextConfig?: ContextConfig
+      knowledgeBaseIds?: string[]
     }
   ): Promise<boolean> {
     console.log('[useChat.updateDialogConfig] 开始更新:', { dialogId, config })

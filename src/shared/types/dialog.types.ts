@@ -22,6 +22,7 @@ export interface Dialog {
   roleId: string | null  // 角色 ID，null 表示默认助手
   systemPrompt?: string
   contextConfig?: ContextConfig  // 上下文配置
+  knowledgeBaseIds?: string[]  // 关联的知识库 ID 列表
   createdAt: Date
   updatedAt: Date
   messageCount: number
@@ -48,6 +49,7 @@ export interface UpdateDialogRequest {
   contextConfig?: ContextConfig
   modelId?: string
   providerConfigId?: string
+  knowledgeBaseIds?: string[]  // 关联的知识库 ID 列表
 }
 
 /**

@@ -23,8 +23,10 @@
       :disabled="isGenerating"
       :current-model="currentModelInfo"
       :all-knowledge-bases="allKnowledgeBases"
+      :selected-knowledge-base-ids="dialog.knowledgeBaseIds"
       @send="handleSend"
       @stop="$emit('stopGeneration')"
+      @update-knowledge-base-ids="handleUpdateKnowledgeBaseIds"
     />
   </div>
 </template>
@@ -60,6 +62,7 @@ const emit = defineEmits<{
     providerConfigId?: string
     systemPrompt?: string
     contextConfig?: ContextConfig
+    knowledgeBaseIds?: string[]
   }): void
   (e: 'editMessage', messageId: string, newContent: string): void
   (e: 'deleteMessage', messageId: string): void
@@ -252,6 +255,11 @@ function handleMessageDelete(messageId: string): void {
 // 处理消息重新生成
 function handleMessageRegenerate(userMessageId: string, modelId?: string): void {
   emit('regenerateMessage', userMessageId, modelId)
+}
+
+// 处理知识库选择变化（用于持久化）
+function handleUpdateKnowledgeBaseIds(ids: string[]): void {
+  emit('updateConfig', props.dialog.id, { knowledgeBaseIds: ids })
 }
 
 // 监听 dialog 变化，重新加载配置

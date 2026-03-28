@@ -226,6 +226,7 @@ async function handleUpdateConfig(
     providerConfigId?: string
     systemPrompt?: string
     contextConfig?: ContextConfig
+    knowledgeBaseIds?: string[]
   }
 ): Promise<void> {
   console.log('[Chat.handleUpdateConfig] ========== 收到更新请求 ==========')
@@ -233,6 +234,7 @@ async function handleUpdateConfig(
   console.log('[Chat.handleUpdateConfig] config:', JSON.stringify(config, null, 2))
   console.log('[Chat.handleUpdateConfig] config.modelId:', config.modelId)
   console.log('[Chat.handleUpdateConfig] config.providerConfigId:', config.providerConfigId)
+  console.log('[Chat.handleUpdateConfig] config.knowledgeBaseIds:', config.knowledgeBaseIds)
   console.log('[Chat.handleUpdateConfig] 更新前 currentDialog.modelId:', currentDialog.value?.modelId)
   console.log('[Chat.handleUpdateConfig] 更新前 currentDialog.providerConfigId:', currentDialog.value?.providerConfigId)
 
@@ -243,8 +245,8 @@ async function handleUpdateConfig(
   console.log('[Chat.handleUpdateConfig] 更新后 currentDialog.modelId:', currentDialog.value?.modelId)
   console.log('[Chat.handleUpdateConfig] 更新后 currentDialog.providerConfigId:', currentDialog.value?.providerConfigId)
 
-  // 只有非模型选择的配置更新才显示提示
-  if (!config.modelId && !config.providerConfigId) {
+  // 只有非模型选择和非知识库的配置更新才显示提示
+  if (!config.modelId && !config.providerConfigId && !config.knowledgeBaseIds) {
     if (success) {
       ElMessage.success('配置已更新')
     } else {

@@ -74,6 +74,12 @@ export function registerKnowledgeBaseHandlers(): void {
   // 获取文档分片
   ipcMain.handle('knowledge-base:get-document-chunks', handleGetDocumentChunks)
 
+  // 分页获取文档分片
+  ipcMain.handle('knowledge-base:get-document-chunks-paginated', handleGetDocumentChunksPaginated)
+
+  // 获取单个切片详情
+  ipcMain.handle('knowledge-base:get-chunk', handleGetChunk)
+
   // ==================== 检索服务 ====================
 
   // 检索知识库
@@ -217,6 +223,28 @@ async function handleGetDocumentChunks(
 ): Promise<IpcResponse<KbChunk[]>> {
   const service = getKnowledgeBaseService()
   return await service.getDocumentChunks(documentId)
+}
+
+/**
+ * 处理分页获取文档分片
+ */
+async function handleGetDocumentChunksPaginated(
+  _event: IpcMainInvokeEvent,
+  data: { documentId: string; page: number; pageSize: number }
+): Promise<IpcResponse<{ chunks: KbChunk[]; total: number }>> {
+  const service = getKnowledgeBaseService()
+  return await service.getDocumentChunksPaginated(data.documentId, data.page, data.pageSize)
+}
+
+/**
+ * 处理获取单个切片详情
+ */
+async function handleGetChunk(
+  _event: IpcMainInvokeEvent,
+  chunkId: string
+): Promise<IpcResponse<KbChunk>> {
+  const service = getKnowledgeBaseService()
+  return await service.getChunkById(chunkId)
 }
 
 // ==================== 检索服务处理器 ====================

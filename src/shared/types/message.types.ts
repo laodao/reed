@@ -77,8 +77,10 @@ export interface WebSearchResponse {
  * 知识库引用
  */
 export interface KnowledgeBaseReference {
+  documentId: string
   documentName: string
   score: number
+  snippet?: string  // 引用的文档片段内容
 }
 
 /**

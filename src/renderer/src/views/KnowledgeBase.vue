@@ -364,30 +364,85 @@
     <el-dialog
       v-model="showChunksDialog"
       :title="`文档分片 - ${currentChunkDocument?.name || ''}`"
-      width="800px"
+      width="900px"
       destroy-on-close
     >
       <div v-loading="chunksLoading" class="chunks-container">
-        <div v-if="currentChunks.length === 0 && !chunksLoading" class="empty-chunks">
+        <div v-if="paginatedChunks.length === 0 && !chunksLoading" class="empty-chunks">
           <el-icon :size="48"><Document /></el-icon>
           <span>暂无分片数据</span>
         </div>
         <div v-else class="chunks-list">
-          <div
-            v-for="chunk in currentChunks"
-            :key="chunk.id"
-            class="chunk-item"
+          <div class="chunks-header">
+            <span>共 {{ chunksTotal }} 个切片</span>
+          </div>
+          <el-table
+            :data="paginatedChunks"
+            style="width: 100%"
+            @row-click="handleRowClick"
           >
-            <div class="chunk-header">
-              <span class="chunk-index">分片 #{{ chunk.chunkIndex + 1 }}</span>
-              <span v-if="chunk.metadata?.page" class="chunk-page">第 {{ chunk.metadata.page }} 页</span>
-            </div>
-            <div class="chunk-content">{{ chunk.content }}</div>
+            <el-table-column prop="chunkIndex" label="序号" width="80">
+              <template #default="{ row }">
+                #{{ row.chunkIndex + 1 }}
+              </template>
+            </el-table-column>
+            <el-table-column label="位置信息" width="150">
+              <template #default="{ row }">
+                <span v-if="row.metadata?.page">第 {{ row.metadata.page }} 页</span>
+                <span v-else-if="row.startOffset && row.endOffset">
+                  {{ row.startOffset }} - {{ row.endOffset }}
+                </span>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="创建时间" width="180">
+              <template #default="{ row }">
+                {{ formatDate(row.createdAt) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="100">
+              <template #default="{ row }">
+                <el-button text type="primary" size="small" @click.stop="viewChunkContent(row)">
+                  查看内容
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <!-- 分页 -->
+          <div class="chunks-pagination" v-if="chunksTotal > chunksPageSize">
+            <el-pagination
+              v-model:current-page="chunksCurrentPage"
+              :page-size="chunksPageSize"
+              :total="chunksTotal"
+              layout="prev, pager, next"
+              @current-change="handleChunksPageChange"
+            />
           </div>
         </div>
       </div>
       <template #footer>
         <el-button @click="showChunksDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 单个切片内容查看对话框 -->
+    <el-dialog
+      v-model="showChunkContentDialog"
+      :title="`切片内容 #${currentViewingChunk?.chunkIndex !== undefined ? currentViewingChunk.chunkIndex + 1 : ''}`"
+      width="700px"
+      destroy-on-close
+    >
+      <div v-loading="chunkContentLoading" class="chunk-content-container">
+        <div v-if="chunkContent" class="chunk-content-text">
+          {{ chunkContent }}
+        </div>
+        <div v-else-if="!chunkContentLoading" class="empty-chunk-content">
+          <span>无法加载切片内容</span>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showChunkContentDialog = false">关闭</el-button>
       </template>
     </el-dialog>
   </div>
@@ -471,8 +526,17 @@ const openSearchPanel = ref(false)
 // 文档分片查看
 const showChunksDialog = ref(false)
 const chunksLoading = ref(false)
-const currentChunks = ref<KbChunk[]>([])
+const paginatedChunks = ref<KbChunk[]>([])
 const currentChunkDocument = ref<KbDocument | null>(null)
+const chunksCurrentPage = ref(1)
+const chunksPageSize = 20
+const chunksTotal = ref(0)
+
+// 单个切片内容查看
+const showChunkContentDialog = ref(false)
+const chunkContentLoading = ref(false)
+const chunkContent = ref('')
+const currentViewingChunk = ref<KbChunk | null>(null)
 
 // 编辑的知识库
 const editingKb = ref<KnowledgeBase | null>(null)
@@ -621,16 +685,73 @@ async function handleViewChunks(doc: KbDocument): Promise<void> {
 
   currentChunkDocument.value = doc
   showChunksDialog.value = true
+  chunksCurrentPage.value = 1
+  await loadChunksPage()
+}
+
+/**
+ * 加载分页数据
+ */
+async function loadChunksPage(): Promise<void> {
+  if (!currentChunkDocument.value) return
+
   chunksLoading.value = true
-  currentChunks.value = []
+  paginatedChunks.value = []
 
   try {
-    const chunks = await getDocumentChunks(doc.id)
-    currentChunks.value = chunks
+    const response = await window.electronAPI.knowledgeBase.getDocumentChunksPaginated(
+      currentChunkDocument.value.id,
+      chunksCurrentPage.value,
+      chunksPageSize
+    )
+    if (response.success && response.data) {
+      paginatedChunks.value = response.data.chunks
+      chunksTotal.value = response.data.total
+    } else {
+      ElMessage.error(response.error || '获取文档分片失败')
+    }
   } catch (err: any) {
     ElMessage.error(err.message || '获取文档分片失败')
   } finally {
     chunksLoading.value = false
+  }
+}
+
+/**
+ * 分页变化处理
+ */
+function handleChunksPageChange(page: number): void {
+  chunksCurrentPage.value = page
+  loadChunksPage()
+}
+
+/**
+ * 点击行查看内容
+ */
+function handleRowClick(row: KbChunk): void {
+  viewChunkContent(row)
+}
+
+/**
+ * 查看单个切片内容
+ */
+async function viewChunkContent(chunk: KbChunk): Promise<void> {
+  currentViewingChunk.value = chunk
+  showChunkContentDialog.value = true
+  chunkContentLoading.value = true
+  chunkContent.value = ''
+
+  try {
+    const response = await window.electronAPI.knowledgeBase.getChunk(chunk.id)
+    if (response.success && response.data) {
+      chunkContent.value = response.data.content || ''
+    } else {
+      ElMessage.error(response.error || '获取切片内容失败')
+    }
+  } catch (err: any) {
+    ElMessage.error(err.message || '获取切片内容失败')
+  } finally {
+    chunkContentLoading.value = false
   }
 }
 </script>
@@ -1000,41 +1121,42 @@ async function handleViewChunks(doc: KbDocument): Promise<void> {
 .chunks-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
-.chunk-item {
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.chunk-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  background-color: var(--el-fill-color-light);
-  border-bottom: 1px solid var(--el-border-color-light);
-}
-
-.chunk-index {
-  font-weight: 500;
+.chunks-header {
   font-size: 13px;
-}
-
-.chunk-page {
-  font-size: 12px;
   color: var(--el-text-color-secondary);
 }
 
-.chunk-content {
-  padding: 12px;
-  font-size: 13px;
-  line-height: 1.6;
+.chunks-pagination {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+/* 单个切片内容对话框 */
+.chunk-content-container {
+  min-height: 100px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.chunk-content-text {
+  font-size: 14px;
+  line-height: 1.8;
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 200px;
-  overflow-y: auto;
+  padding: 16px;
+  background: var(--el-fill-color-light);
+  border-radius: 8px;
+}
+
+.empty-chunk-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  color: var(--el-text-color-secondary);
 }
 </style>

@@ -202,6 +202,7 @@ export const useDialogStore = defineStore('dialog', () => {
           providerConfigId: data.providerConfigId ?? currentDialog.value.providerConfigId,
           systemPrompt: data.systemPrompt ?? currentDialog.value.systemPrompt,
           contextConfig: data.contextConfig ?? currentDialog.value.contextConfig,
+          knowledgeBaseIds: data.knowledgeBaseIds ?? currentDialog.value.knowledgeBaseIds,
           title: data.title ?? currentDialog.value.title
         }
       }

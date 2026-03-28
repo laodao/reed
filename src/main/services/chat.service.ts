@@ -236,8 +236,10 @@ export class ChatService {
       }
       if (knowledgeResults.length > 0) {
         aiMessageMetadata.knowledgeBase = knowledgeResults.map(r => ({
+          documentId: r.documentId,
           documentName: r.documentName,
-          score: r.score
+          score: r.score,
+          snippet: r.content
         }))
       }
 
@@ -306,8 +308,10 @@ export class ChatService {
           }
           if (knowledgeResults.length > 0) {
             metadata.knowledgeBase = knowledgeResults.map(r => ({
+              documentId: r.documentId,
               documentName: r.documentName,
-              score: r.score
+              score: r.score,
+              snippet: r.content
             }))
           }
           await dbManager.messages.updateContent(aiMessage.id, fullContent)
@@ -346,8 +350,10 @@ export class ChatService {
       }
       if (knowledgeResults.length > 0) {
         metadata.knowledgeBase = knowledgeResults.map(r => ({
+          documentId: r.documentId,
           documentName: r.documentName,
-          score: r.score
+          score: r.score,
+          snippet: r.content
         }))
       }
       if (Object.keys(metadata).length > 0) {

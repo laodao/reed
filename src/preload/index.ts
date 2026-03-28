@@ -610,6 +610,11 @@ const electronAPI = {
     reprocessDocument: (documentId: string) => ipcRenderer.invoke('knowledge-base:reprocess-document', documentId),
     // 获取文档分片
     getDocumentChunks: (documentId: string) => ipcRenderer.invoke('knowledge-base:get-document-chunks', documentId),
+    // 分页获取文档分片
+    getDocumentChunksPaginated: (documentId: string, page: number, pageSize: number) =>
+      ipcRenderer.invoke('knowledge-base:get-document-chunks-paginated', { documentId, page, pageSize }),
+    // 获取单个切片详情
+    getChunk: (chunkId: string) => ipcRenderer.invoke('knowledge-base:get-chunk', chunkId),
     // 检索知识库
     search: (request: {
       knowledgeBaseId: string

@@ -784,6 +784,9 @@ export class DatabaseManager {
     if (!dialogColumnNames.includes('context_config')) {
       this.db.exec('ALTER TABLE dialogs ADD COLUMN context_config TEXT')
     }
+    if (!dialogColumnNames.includes('knowledge_base_ids')) {
+      this.db.exec('ALTER TABLE dialogs ADD COLUMN knowledge_base_ids TEXT')
+    }
 
     // 检查 provider_configs 表是否需要添加新字段
     const providerConfigColumns = this.db.prepare("PRAGMA table_info(provider_configs)").all() as { name: string }[]

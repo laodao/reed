@@ -449,6 +449,32 @@ export class KnowledgeBaseService {
         // 尝试多种编码解析文本文件
         return this.decodeTextFile(buffer)
 
+      case 'pdf': {
+        const pdfParse = require('pdf-parse')
+        const data = await pdfParse(buffer)
+        return data.text
+      }
+
+      case 'epub': {
+        const EPub = require('epub-parser')
+        const epub = await EPub.parse(filePath)
+        let text = ''
+        for (const section of epub.sections) {
+          if (section.html) {
+            // 简单提取文本，去除 HTML 标签
+            const html = section.html
+            const plainText = html
+              .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+              .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+              .replace(/<[^>]+>/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim()
+            text += plainText + '\n\n'
+          }
+        }
+        return text
+      }
+
       case 'docx': {
         const mammoth = require('mammoth')
         const result = await mammoth.extractRawText({ buffer })
@@ -472,13 +498,61 @@ export class KnowledgeBaseService {
 
   /**
    * 尝试多种编码解析文本文件
-   * 优先级：UTF-8 > GBK > GB2312 > Latin1
+   * 优先级：自动检测 > UTF-8 > GBK > GB2312
    */
   private decodeTextFile(buffer: Buffer): string {
     // 尝试 UTF-8（带BOM检测）
     if (buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) {
       // UTF-8 with BOM
       return buffer.slice(3).toString('utf-8')
+    }
+
+    // 使用 jschardet 自动检测编码
+    try {
+      const jschardet = require('jschardet')
+      const detected = jschardet.detect(buffer)
+
+      if (detected && detected.encoding && detected.confidence > 0.7) {
+        const encoding = detected.encoding.toLowerCase()
+        console.log(`[KB] 检测到编码: ${encoding} (置信度: ${detected.confidence})`)
+
+        // 处理常见的编码名称别名
+        const encodingMap: Record<string, string> = {
+          'utf-8': 'utf-8',
+          'utf8': 'utf-8',
+          'gbk': 'gbk',
+          'gb2312': 'gbk',  // GB2312 是 GBK 的子集，用 GBK 解码更安全
+          'gb18030': 'gbk',
+          'big5': 'big5',
+          'shift_jis': 'shiftjis',
+          'euc-jp': 'eucjp',
+          'iso-8859-1': 'latin1',
+          'ascii': 'utf-8',  // ASCII 兼容 UTF-8
+        }
+
+        const targetEncoding = encodingMap[encoding] || encoding
+
+        if (targetEncoding === 'utf-8') {
+          const text = buffer.toString('utf-8')
+          if (!this.hasGarbledChars(text)) {
+            return text
+          }
+        } else {
+          try {
+            const iconv = require('iconv-lite')
+            if (iconv.encodingExists(targetEncoding)) {
+              const text = iconv.decode(buffer, targetEncoding)
+              if (!this.hasGarbledChars(text)) {
+                return text
+              }
+            }
+          } catch {
+            // iconv 解码失败，继续尝试其他方法
+          }
+        }
+      }
+    } catch (e) {
+      console.log('[KB] 编码检测失败:', e)
     }
 
     // 尝试 UTF-8
@@ -492,7 +566,7 @@ export class KnowledgeBaseService {
       // UTF-8 解码失败，继续尝试其他编码
     }
 
-    // 尝试 GBK
+    // 尝试 GBK（最常见的中文字符编码）
     try {
       const iconv = require('iconv-lite')
       const gbkText = iconv.decode(buffer, 'gbk')
@@ -503,19 +577,9 @@ export class KnowledgeBaseService {
       // iconv-lite 未安装或解码失败
     }
 
-    // 尝试 GB2312
-    try {
-      const iconv = require('iconv-lite')
-      const gb2312Text = iconv.decode(buffer, 'gb2312')
-      if (!this.hasGarbledChars(gb2312Text)) {
-        return gb2312Text
-      }
-    } catch {
-      // 解码失败
-    }
-
-    // 最后尝试 Latin1（ISO-8859-1），几乎不会失败
-    return buffer.toString('latin1')
+    // 最后使用 UTF-8 强制解码（即使有乱码也比 latin1 好，因为 latin1 对中文完全不可读）
+    console.log('[KB] 警告: 无法确定文件编码，使用 UTF-8 强制解码')
+    return buffer.toString('utf-8')
   }
 
   /**
@@ -717,6 +781,66 @@ export class KnowledgeBaseService {
       return { success: true, data: chunks }
     } catch (e: any) {
       console.error('[KB] 获取文档分片失败:', e)
+      return { success: false, error: e.message }
+    }
+  }
+
+  /**
+   * 分页获取文档切片列表（不包含 content 字段，减少内存占用）
+   */
+  async getDocumentChunksPaginated(
+    documentId: string,
+    page: number = 1,
+    pageSize: number = 20
+  ): Promise<{ success: boolean; data?: { chunks: KbChunk[]; total: number }; error?: string }> {
+    try {
+      const db = getDatabaseManager()
+      if (!db.kbChunks || !db.kbDocuments) {
+        return { success: false, error: '数据库未初始化' }
+      }
+
+      const doc = db.kbDocuments.findById(documentId)
+      if (!doc) return { success: false, error: '文档不存在' }
+
+      const offset = (page - 1) * pageSize
+      const chunks = db.kbChunks.findByDocumentIdPaginated(documentId, offset, pageSize)
+      const total = db.kbChunks.countByDocumentIdPaginated(documentId)
+
+      // 移除 content 字段，减少内存占用
+      const lightChunks = chunks.map(chunk => ({
+        id: chunk.id,
+        documentId: chunk.documentId,
+        knowledgeBaseId: chunk.knowledgeBaseId,
+        chunkIndex: chunk.chunkIndex,
+        startOffset: chunk.startOffset,
+        endOffset: chunk.endOffset,
+        metadata: chunk.metadata,
+        createdAt: chunk.createdAt
+      })) as KbChunk[]
+
+      return { success: true, data: { chunks: lightChunks, total } }
+    } catch (e: any) {
+      console.error('[KB] 分页获取文档分片失败:', e)
+      return { success: false, error: e.message }
+    }
+  }
+
+  /**
+   * 获取单个切片详情（包含 content 字段）
+   */
+  async getChunkById(chunkId: string): Promise<{ success: boolean; data?: KbChunk; error?: string }> {
+    try {
+      const db = getDatabaseManager()
+      if (!db.kbChunks) {
+        return { success: false, error: '数据库未初始化' }
+      }
+
+      const chunk = db.kbChunks.findById(chunkId)
+      if (!chunk) return { success: false, error: '切片不存在' }
+
+      return { success: true, data: chunk }
+    } catch (e: any) {
+      console.error('[KB] 获取切片详情失败:', e)
       return { success: false, error: e.message }
     }
   }
