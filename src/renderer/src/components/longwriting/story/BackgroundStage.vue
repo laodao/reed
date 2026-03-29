@@ -9,85 +9,119 @@
       </span>
     </div>
 
-    <el-tabs v-model="activeTab">
+    <el-tabs v-model="activeTab" class="background-tabs">
       <!-- 时代背景 -->
       <el-tab-pane label="时代背景" name="era">
-        <el-form :model="eraForm" label-width="100px" class="content-form">
-          <el-form-item label="时代类型">
-            <el-radio-group v-model="eraForm.eraType">
-              <el-radio value="ancient">古代</el-radio>
-              <el-radio value="modern">现代</el-radio>
-              <el-radio value="future">未来</el-radio>
-              <el-radio value="fictional">架空</el-radio>
+        <div class="era-form">
+          <!-- 时代类型 -->
+          <div class="form-row">
+            <label class="form-label">时代类型</label>
+            <el-radio-group v-model="eraForm.eraType" class="era-type-group">
+              <el-radio-button value="ancient">古代</el-radio-button>
+              <el-radio-button value="modern">现代</el-radio-button>
+              <el-radio-button value="future">未来</el-radio-button>
+              <el-radio-button value="fictional">架空</el-radio-button>
             </el-radio-group>
-          </el-form-item>
-          <el-form-item label="时代描述">
-            <div class="form-item-with-button">
-              <el-input
-                v-model="eraForm.eraDescription"
-                type="textarea"
-                :rows="3"
-                placeholder="描述故事发生的时代背景..."
-              />
-              <el-button
-                type="primary"
-                text
-                :loading="polishingField === 'eraDescription'"
-                :disabled="!eraForm.eraDescription.trim()"
-                @click="polishField('eraDescription')"
-              >
-                <el-icon><MagicStick /></el-icon>
-                AI润色
-              </el-button>
+          </div>
+
+          <!-- 时代描述 -->
+          <div class="form-row">
+            <div class="form-label-row">
+              <label class="form-label">时代描述</label>
+              <el-tooltip content="AI 润色可丰富描述内容" placement="top">
+                <el-button
+                  type="primary"
+                  size="small"
+                  :icon="MagicStick"
+                  :loading="polishingField === 'eraDescription'"
+                  :disabled="!eraForm.eraDescription.trim()"
+                  @click="polishField('eraDescription')"
+                >
+                  润色
+                </el-button>
+              </el-tooltip>
             </div>
-          </el-form-item>
-          <el-form-item label="社会结构">
-            <div class="form-item-with-button">
-              <el-input
-                v-model="eraForm.socialStructure"
-                type="textarea"
-                :rows="2"
-                placeholder="描述社会结构、阶层划分..."
-              />
-              <el-button
-                type="primary"
-                text
-                :loading="polishingField === 'socialStructure'"
-                :disabled="!eraForm.socialStructure.trim()"
-                @click="polishField('socialStructure')"
-              >
-                <el-icon><MagicStick /></el-icon>
-                AI润色
-              </el-button>
+            <el-input
+              v-model="eraForm.eraDescription"
+              type="textarea"
+              :rows="4"
+              placeholder="描述故事发生的时代背景，如朝代、历史时期、虚构纪元等..."
+              resize="none"
+            />
+          </div>
+
+          <!-- 社会结构 -->
+          <div class="form-row">
+            <div class="form-label-row">
+              <label class="form-label">社会结构</label>
+              <el-tooltip content="AI 润色可丰富描述内容" placement="top">
+                <el-button
+                  type="primary"
+                  size="small"
+                  :icon="MagicStick"
+                  :loading="polishingField === 'socialStructure'"
+                  :disabled="!eraForm.socialStructure.trim()"
+                  @click="polishField('socialStructure')"
+                >
+                  润色
+                </el-button>
+              </el-tooltip>
             </div>
-          </el-form-item>
-          <el-form-item label="技术水平">
-            <div class="form-item-with-button">
-              <el-input
-                v-model="eraForm.techLevel"
-                placeholder="描述技术水平、科技程度..."
-              />
-              <el-button
-                type="primary"
-                text
-                :loading="polishingField === 'techLevel'"
-                :disabled="!eraForm.techLevel.trim()"
-                @click="polishField('techLevel')"
-              >
-                <el-icon><MagicStick /></el-icon>
-                AI润色
-              </el-button>
+            <el-input
+              v-model="eraForm.socialStructure"
+              type="textarea"
+              :rows="3"
+              placeholder="描述社会阶层、权力结构、等级制度等..."
+              resize="none"
+            />
+          </div>
+
+          <!-- 技术水平 -->
+          <div class="form-row">
+            <div class="form-label-row">
+              <label class="form-label">技术水平</label>
+              <el-tooltip content="AI 润色可丰富描述内容" placement="top">
+                <el-button
+                  type="primary"
+                  size="small"
+                  :icon="MagicStick"
+                  :loading="polishingField === 'techLevel'"
+                  :disabled="!eraForm.techLevel.trim()"
+                  @click="polishField('techLevel')"
+                >
+                  润色
+                </el-button>
+              </el-tooltip>
             </div>
-          </el-form-item>
-          <el-form-item label="特殊设定">
+            <el-input
+              v-model="eraForm.techLevel"
+              type="textarea"
+              :rows="2"
+              placeholder="描述科技发展水平、生产力状况、特殊技术等..."
+              resize="none"
+            />
+          </div>
+
+          <!-- 特殊设定 -->
+          <div class="form-row">
+            <label class="form-label">特殊设定</label>
             <el-input
               v-model="eraForm.specialRules"
               type="textarea"
-              :rows="2"
-              placeholder="架空世界的特殊规则、设定..."
+              :rows="3"
+              placeholder="架空世界的特殊规则、魔法体系、修仙等级等..."
+              resize="none"
             />
-          </el-form-item>
-        </el-form>
+          </div>
+
+          <!-- 保存按钮 -->
+          <div class="form-actions">
+            <el-button type="primary" :loading="saveStatus === 'saving'" @click="saveBackground">
+              <el-icon><Check /></el-icon>
+              保存设定
+            </el-button>
+          </div>
+        </div>
       </el-tab-pane>
 
       <!-- 地点设定 -->
@@ -96,15 +130,18 @@
           <div v-for="location in locations" :key="location.id" class="location-card">
             <div class="location-info">
               <h4>{{ location.name }}</h4>
-              <span class="location-type">{{ getLocationTypeLabel(location.type) }}</span>
-              <span class="location-importance">{{ getImportanceLabel(location.importance) }}</span>
+              <div class="location-tags">
+                <el-tag size="small" type="info">{{ getLocationTypeLabel(location.type) }}</el-tag>
+                <el-tag size="small">{{ getImportanceLabel(location.importance) }}</el-tag>
+              </div>
+              <p class="location-desc">{{ location.description }}</p>
             </div>
             <div class="location-actions">
               <el-button text @click="editLocation(location)">编辑</el-button>
               <el-button text type="danger" @click="deleteLocation(location.id)">删除</el-button>
             </div>
           </div>
-          <el-button type="primary" plain @click="showLocationDialog = true">
+          <el-button type="primary" plain class="add-location-btn" @click="showLocationDialog = true">
             <el-icon><Plus /></el-icon>
             添加地点
           </el-button>
@@ -155,9 +192,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch, computed } from 'vue'
+import { ref, onMounted, computed, inject, toRaw } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Plus, MagicStick } from '@element-plus/icons-vue'
+import { Plus, MagicStick, Check } from '@element-plus/icons-vue'
+import type { ComputedRef } from 'vue'
 
 const props = defineProps<{
   projectId: string
@@ -166,6 +204,11 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:progress': [progress: number]
 }>()
+
+// 从父组件注入选中的模型（computed ref）
+const selectedModelRef = inject<ComputedRef<{ providerConfigId: string; modelId: string } | null>>('selectedModel')
+// 获取当前选中的模型值
+const selectedModel = computed(() => selectedModelRef?.value)
 
 const activeTab = ref('era')
 
@@ -199,32 +242,11 @@ const locationForm = ref({
 
 // 加载状态
 const loading = ref(false)
-// 数据是否正在加载（用于跳过 watch 触发）
-const isLoading = ref(true)
 // 保存状态
 const saveStatus = ref<'idle' | 'saving' | 'saved'>('idle')
 // 润色状态
 const polishingField = ref<'eraDescription' | 'socialStructure' | 'techLevel' | null>(null)
 const polishingContent = ref('')
-
-// 防抖保存函数
-let saveTimer: ReturnType<typeof setTimeout> | null = null
-const DEBOUNCE_DELAY = 1000 // 1秒防抖
-
-function debouncedSave() {
-  if (saveTimer) {
-    clearTimeout(saveTimer)
-  }
-  saveStatus.value = 'saving'
-  saveTimer = setTimeout(async () => {
-    await saveBackground()
-    saveStatus.value = 'saved'
-    // 3秒后恢复 idle 状态
-    setTimeout(() => {
-      saveStatus.value = 'idle'
-    }, 3000)
-  }, DEBOUNCE_DELAY)
-}
 
 // 保存状态文字
 const saveStatusText = computed(() => {
@@ -262,7 +284,6 @@ function getImportanceLabel(importance: string): string {
 async function loadBackground() {
   if (!props.projectId) return
 
-  isLoading.value = true // 开始加载，跳过 watch
   const result = await window.electronAPI.longwriting.getBackground(props.projectId)
   if (result.success && result.data) {
     eraForm.value = {
@@ -273,16 +294,35 @@ async function loadBackground() {
       specialRules: result.data.specialRules || ''
     }
   }
-  isLoading.value = false // 加载完成，恢复 watch
 }
 
 // 保存背景设定
 async function saveBackground() {
+  console.log('saveBackground 被调用, projectId:', props.projectId)
   if (!props.projectId) return
 
-  const result = await window.electronAPI.longwriting.updateBackground(props.projectId, eraForm.value)
-  if (result.success) {
-    emit('update:progress', 25)
+  saveStatus.value = 'saving'
+  // 使用 toRaw 将响应式对象转换为普通对象，避免 IPC 序列化错误
+  const data = toRaw(eraForm.value)
+  console.log('准备调用 updateBackground, data:', data)
+  try {
+    const result = await window.electronAPI.longwriting.updateBackground(props.projectId, data)
+    console.log('updateBackground 返回结果:', result)
+    if (result.success) {
+      saveStatus.value = 'saved'
+      emit('update:progress', 25)
+      ElMessage.success('背景设定已保存')
+      setTimeout(() => {
+        saveStatus.value = 'idle'
+      }, 2000)
+    } else {
+      saveStatus.value = 'idle'
+      ElMessage.error(result.error || '保存失败')
+    }
+  } catch (error) {
+    console.error('updateBackground 调用出错:', error)
+    saveStatus.value = 'idle'
+    ElMessage.error('保存失败: ' + error)
   }
 }
 
@@ -354,6 +394,12 @@ async function saveLocation() {
 async function polishField(field: 'eraDescription' | 'socialStructure' | 'techLevel') {
   if (!props.projectId) return
 
+  // 检查是否选择了模型
+  if (!selectedModel.value?.providerConfigId || !selectedModel.value?.modelId) {
+    ElMessage.warning('请先在顶部选择 AI 模型')
+    return
+  }
+
   const content = eraForm.value[field]
   if (!content.trim()) {
     ElMessage.warning('请先输入内容')
@@ -390,7 +436,9 @@ async function polishField(field: 'eraDescription' | 'socialStructure' | 'techLe
     props.projectId,
     field,
     eraForm.value.eraType,
-    content
+    content,
+    selectedModel.value.providerConfigId,
+    selectedModel.value.modelId
   )
 
   if (!result.success) {
@@ -400,13 +448,6 @@ async function polishField(field: 'eraDescription' | 'socialStructure' | 'techLe
   }
 }
 
-// 监听背景表单变化自动保存（跳过加载时的触发）
-watch(eraForm, () => {
-  if (!isLoading.value) {
-    debouncedSave()
-  }
-}, { deep: true })
-
 onMounted(() => {
   loadBackground()
   loadLocations()
@@ -415,12 +456,15 @@ onMounted(() => {
 
 <style lang="scss" scoped>
 .background-stage {
-  max-width: 800px;
+  max-width: 900px;
   margin: 0 auto;
 }
 
 .stage-header {
   margin-bottom: 24px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
 
   h2 {
     font-size: 20px;
@@ -436,10 +480,9 @@ onMounted(() => {
   }
 
   .save-status {
-    float: right;
     font-size: 12px;
-    padding: 4px 8px;
-    border-radius: 4px;
+    padding: 4px 12px;
+    border-radius: 16px;
 
     &.saving {
       color: var(--el-color-primary);
@@ -453,21 +496,69 @@ onMounted(() => {
   }
 }
 
-.content-form {
+.background-tabs {
+  :deep(.el-tabs__content) {
+    padding: 20px 0;
+  }
+}
+
+.era-form {
   background: var(--bg-color);
   padding: 24px;
   border-radius: 12px;
   border: 1px solid var(--border-color-light);
 }
 
-.form-item-with-button {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.form-row {
+  margin-bottom: 24px;
 
-  .el-button {
-    align-self: flex-end;
+  &:last-child {
+    margin-bottom: 0;
   }
+}
+
+.form-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-color-regular);
+  margin-bottom: 8px;
+}
+
+.form-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+
+  .form-label {
+    margin-bottom: 0;
+  }
+}
+
+.era-type-group {
+  display: flex;
+  gap: 0;
+
+  :deep(.el-radio-button__inner) {
+    border-radius: 0;
+  }
+
+  :deep(.el-radio-button:first-child .el-radio-button__inner) {
+    border-radius: 8px 0 0 8px;
+  }
+
+  :deep(.el-radio-button:last-child .el-radio-button__inner) {
+    border-radius: 0 8px 8px 0;
+  }
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 16px;
+  margin-top: 8px;
+  border-top: 1px solid var(--border-color-lighter);
 }
 
 .location-list {
@@ -479,24 +570,55 @@ onMounted(() => {
 .location-card {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  padding: 16px;
+  align-items: flex-start;
+  padding: 16px 20px;
   background: var(--bg-color);
-  border-radius: 8px;
+  border-radius: 12px;
   border: 1px solid var(--border-color-light);
+  transition: all 0.2s;
+
+  &:hover {
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  }
 
   .location-info {
+    flex: 1;
+
     h4 {
-      margin: 0 0 4px 0;
-      font-size: 14px;
+      margin: 0 0 8px 0;
+      font-size: 16px;
       font-weight: 500;
+      color: var(--text-color-primary);
     }
 
-    span {
-      font-size: 12px;
+    .location-tags {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .location-desc {
+      margin: 0;
+      font-size: 13px;
       color: var(--text-color-secondary);
-      margin-right: 8px;
+      line-height: 1.6;
     }
   }
+
+  .location-actions {
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  &:hover .location-actions {
+    opacity: 1;
+  }
+}
+
+.add-location-btn {
+  width: 100%;
+  border-style: dashed;
 }
 </style>

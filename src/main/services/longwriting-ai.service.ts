@@ -186,8 +186,6 @@ export class LongWritingAIService {
     providerConfigId?: string,
     modelId?: string
   ): Promise<string> {
-    console.log(`[LongWritingAI] callAIStream 开始, eventId: ${eventId}, maxTokens: ${maxTokens || 4096}`)
-
     const providerInfo = await this.getProviderConfig(providerConfigId)
     if (!providerInfo) {
       throw new Error('未配置 AI 提供商，请先在设置中添加提供商配置')
@@ -197,7 +195,6 @@ export class LongWritingAIService {
 
     // 确定使用的模型：优先使用传入的 modelId，其次使用配置中的默认模型
     const effectiveModelId = modelId || config.defaultModel
-    console.log(`[LongWritingAI] 使用模型: ${effectiveModelId}, 提供商: ${template.id}`)
 
     // 创建 Provider 实例
     const provider = createProvider(
@@ -220,21 +217,18 @@ export class LongWritingAIService {
     }
 
     // 发送开始事件
-    console.log(`[LongWritingAI] 发送 start 事件到频道: longwriting:generate:${eventId}`)
     window.webContents.send(`longwriting:generate:${eventId}`, {
       type: 'start'
     } as GenerationStreamEvent)
 
     // 流式调用 AI
     let fullContent = ''
-    let deltaCount = 0
     try {
       fullContent = await provider.chatStream(
         context,
         (event) => {
           // Provider 发送 delta 事件，转换为 content 事件发送给前端
           if (event.type === 'delta' && event.content) {
-            deltaCount++
             fullContent += event.content
             window.webContents.send(`longwriting:generate:${eventId}`, {
               type: 'content',
@@ -246,16 +240,12 @@ export class LongWritingAIService {
         { maxTokens: maxTokens || 4096 }
       )
 
-      console.log(`[LongWritingAI] chatStream 完成, delta 事件数: ${deltaCount}, 内容长度: ${fullContent.length}`)
-      console.log(`[LongWritingAI] 发送 done 事件到频道: longwriting:generate:${eventId}`)
-
       // 发送完成事件
       window.webContents.send(`longwriting:generate:${eventId}`, {
         type: 'done',
         content: fullContent
       } as GenerationStreamEvent)
     } catch (error: any) {
-      console.error(`[LongWritingAI] chatStream 错误:`, error)
       // 发送错误事件
       window.webContents.send(`longwriting:generate:${eventId}`, {
         type: 'error',
@@ -437,12 +427,15 @@ ${input}
   // ==================== 大纲生成 ====================
 
   /**
-   * 生成故事大纲
+   * 生成故事大纲 - 分步生成，降低JSON解析失败风险
+   * 第一步：只生成卷结构
    */
   async generateOutlineStory(
     window: BrowserWindow,
     eventId: string,
-    projectId: string
+    projectId: string,
+    providerConfigId?: string,
+    modelId?: string
   ): Promise<GenerateResponse> {
     const dbManager = getDatabaseManager()
 
@@ -451,44 +444,171 @@ ${input}
     const characters = await dbManager.lwCharacters?.getByProjectId(projectId) || []
     const background = await dbManager.lwBackgrounds?.getByProjectId(projectId)
 
-    const systemPrompt = `你是一位专业的小说创作顾问。请根据故事概要，生成一个三级大纲结构（卷-章-节）。
-你的回复应该是 JSON 数组格式，表示卷的列表，每个卷包含：
-- name: 卷名
-- summary: 卷概要
-- estimatedWords: 预估字数
-- chapters: 章节列表，每个章包含：name, summary, estimatedWords
-  - sections: 小节列表，每个节包含：name, summary, estimatedWords
-
-注意：根据故事规模，生成1-3卷，每卷3-10章，每章2-5节。预估字数总计应该与故事概要中的目标字数相近。`
-
     const characterInfo = characters.slice(0, 5).map(c =>
       `${c.name}（${c.rolePosition === 'protagonist' ? '主角' : c.rolePosition === 'antagonist' ? '反派' : '配角'}）`
     ).join('、')
 
-    const prompt = `请根据以下故事信息，生成大纲：
+    // 第一步：生成卷结构（不含章节详情）
+    const volumeSystemPrompt = `你是一位专业的小说创作顾问。请根据故事概要，生成卷级别的大纲结构。
+你的回复必须是严格的 JSON 数组格式，只包含卷的信息，不要包含章节详情。
+格式要求：
+[
+  {
+    "name": "卷名",
+    "summary": "卷概要（50-100字）",
+    "estimatedWords": 预估字数（数字）
+  }
+]
 
-故事标题：${overview?.title || '未命名'}
+注意：
+1. 根据故事规模，生成1-3卷
+2. 预估字数总计应该与故事概要中的目标字数相近
+3. 只返回JSON数组，不要有任何其他文字`
+
+    const volumePrompt = `故事标题：${overview?.title || '未命名'}
 核心主题：${overview?.coreTheme || '未指定'}
 故事摘要：${overview?.summary || '未指定'}
 目标字数：${overview?.targetWords || 100000}字
 主要角色：${characterInfo || '暂无'}
 时代背景：${background?.eraDescription || '未指定'}
 
-请直接返回 JSON 数组格式的结果。`
+请生成卷级别的大纲结构（只返回JSON数组）：`
 
     try {
-      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 8192)
+      // 发送进度事件
+      window.webContents.send(`longwriting:generate:${eventId}`, {
+        type: 'progress',
+        content: '正在生成卷结构...'
+      })
 
-      // 尝试解析 JSON 数组
-      const jsonMatch = result.match(/\[[\s\S]*\]/)
-      if (jsonMatch) {
-        const data = JSON.parse(jsonMatch[0])
-        return { success: true, data }
+      const volumeResult = await this.callAIStream(window, eventId, volumePrompt, volumeSystemPrompt, 2048, providerConfigId, modelId)
+      const volumes = this.parseJsonArray(volumeResult)
+
+      if (!volumes || volumes.length === 0) {
+        return { success: false, error: '生成卷结构失败' }
       }
 
-      return { success: false, error: 'AI 返回格式错误' }
+      // 为每个卷生成章节
+      const fullOutline = []
+      for (let i = 0; i < volumes.length; i++) {
+        const volume = volumes[i]
+        window.webContents.send(`longwriting:generate:${eventId}`, {
+          type: 'progress',
+          content: `正在生成第 ${i + 1} 卷「${volume.name}」的章节...`
+        })
+
+        const chapters = await this.generateVolumeChapters(
+          window, eventId, projectId, volume, overview, characterInfo, background, providerConfigId, modelId
+        )
+
+        fullOutline.push({
+          ...volume,
+          chapters: chapters || []
+        })
+      }
+
+      return { success: true, data: fullOutline }
     } catch (error: any) {
       return { success: false, error: error.message }
+    }
+  }
+
+  /**
+   * 为单个卷生成章节
+   */
+  private async generateVolumeChapters(
+    window: BrowserWindow,
+    eventId: string,
+    projectId: string,
+    volume: any,
+    overview: any,
+    characterInfo: string,
+    background: any,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<any[]> {
+    const chapterSystemPrompt = `你是一位专业的小说创作顾问。请为指定的卷生成章节大纲。
+你的回复必须是严格的 JSON 数组格式。
+格式要求：
+[
+  {
+    "name": "章节名",
+    "summary": "章节概要（30-50字）",
+    "estimatedWords": 预估字数（数字）,
+    "sections": [
+      {
+        "name": "小节名",
+        "summary": "小节概要（20-30字）",
+        "estimatedWords": 预估字数（数字）
+      }
+    ]
+  }
+]
+
+注意：
+1. 每卷生成3-10章
+2. 每章2-5节
+3. 只返回JSON数组，不要有任何其他文字`
+
+    const chapterPrompt = `故事标题：${overview?.title || '未命名'}
+卷名：${volume.name}
+卷概要：${volume.summary}
+卷预估字数：${volume.estimatedWords}字
+主要角色：${characterInfo || '暂无'}
+
+请为本卷生成章节大纲（只返回JSON数组）：`
+
+    try {
+      const subEventId = `${eventId}-chapters-${Date.now()}`
+      const result = await this.callAIStream(window, subEventId, chapterPrompt, chapterSystemPrompt, 4096, providerConfigId, modelId)
+      return this.parseJsonArray(result) || []
+    } catch (error) {
+      return []
+    }
+  }
+
+  /**
+   * 解析JSON数组，带容错处理
+   */
+  private parseJsonArray(content: string): any[] | null {
+    try {
+      // 提取JSON数组
+      const jsonMatch = content.match(/\[[\s\S]*\]/)
+      if (!jsonMatch) return null
+
+      let jsonStr = jsonMatch[0]
+
+      // 修复常见的JSON问题
+      // 1. 移除注释
+      jsonStr = jsonStr.replace(/\/\/.*$/gm, '')
+      jsonStr = jsonStr.replace(/\/\*[\s\S]*?\*\//g, '')
+
+      // 2. 移除末尾逗号
+      jsonStr = jsonStr.replace(/,\s*]/g, ']')
+      jsonStr = jsonStr.replace(/,\s*}/g, '}')
+
+      // 3. 尝试找到完整的JSON
+      let depth = 0
+      let endIndex = 0
+      for (let i = 0; i < jsonStr.length; i++) {
+        if (jsonStr[i] === '[' || jsonStr[i] === '{') depth++
+        if (jsonStr[i] === ']' || jsonStr[i] === '}') {
+          depth--
+          if (depth === 0) {
+            endIndex = i + 1
+            break
+          }
+        }
+      }
+
+      if (endIndex > 0) {
+        jsonStr = jsonStr.substring(0, endIndex)
+      }
+
+      const parsed = JSON.parse(jsonStr)
+      return Array.isArray(parsed) ? parsed : null
+    } catch (error) {
+      return null
     }
   }
 
@@ -701,7 +821,9 @@ ${materialContext || '无特定素材'}
   async generatePlots(
     window: BrowserWindow,
     eventId: string,
-    projectId: string
+    projectId: string,
+    providerConfigId?: string,
+    modelId?: string
   ): Promise<GenerateResponse> {
     const dbManager = getDatabaseManager()
 
@@ -742,7 +864,7 @@ ${materialContext || '无特定素材'}
 请生成 10-30 个主要情节，按时间顺序排列。直接返回 JSON 数组格式的结果。`
 
     try {
-      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 8192)
+      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 8192, providerConfigId, modelId)
 
       // 尝试解析 JSON 数组
       const jsonMatch = result.match(/\[[\s\S]*\]/)
@@ -768,7 +890,9 @@ ${materialContext || '无特定素材'}
     projectId: string,
     field: 'eraDescription' | 'socialStructure' | 'techLevel',
     eraType: string,
-    content: string
+    content: string,
+    providerConfigId?: string,
+    modelId?: string
   ): Promise<GenerateResponse> {
     const fieldLabels: Record<string, string> = {
       eraDescription: '时代描述',
@@ -802,7 +926,7 @@ ${materialContext || '无特定素材'}
 请扩展成详细的描述，内容控制在 200-400 字。`
 
     try {
-      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 1024)
+      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 1024, providerConfigId, modelId)
 
       return { success: true, data: { content: result } }
     } catch (error: any) {

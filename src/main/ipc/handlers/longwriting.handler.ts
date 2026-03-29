@@ -306,10 +306,13 @@ export function registerLongWritingHandlers(): void {
   })
 
   ipcMain.handle(CHANNELS.UPDATE_BACKGROUND, async (_event, projectId: string, data: any) => {
+    console.log('[LongWriting] UPDATE_BACKGROUND 被调用, projectId:', projectId, 'data:', data)
     try {
       const background = await service.updateBackground(projectId, data)
+      console.log('[LongWriting] UPDATE_BACKGROUND 成功, result:', background)
       return { success: true, data: background }
     } catch (error: any) {
+      console.error('[LongWriting] UPDATE_BACKGROUND 失败:', error)
       return { success: false, error: error.message }
     }
   })
@@ -781,13 +784,13 @@ export function registerLongWritingHandlers(): void {
 
   ipcMain.handle(
     CHANNELS.GENERATE_PLOTS,
-    async (event, eventId: string, projectId: string) => {
+    async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
       try {
         const window = BrowserWindow.fromWebContents(event.sender)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.generatePlots(window, eventId, projectId)
+        const result = await aiService.generatePlots(window, eventId, projectId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -797,13 +800,13 @@ export function registerLongWritingHandlers(): void {
 
   ipcMain.handle(
     CHANNELS.POLISH_BACKGROUND,
-    async (event, eventId: string, projectId: string, field: 'eraDescription' | 'socialStructure' | 'techLevel', eraType: string, content: string) => {
+    async (event, eventId: string, projectId: string, field: 'eraDescription' | 'socialStructure' | 'techLevel', eraType: string, content: string, providerConfigId?: string, modelId?: string) => {
       try {
         const window = BrowserWindow.fromWebContents(event.sender)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.polishBackground(window, eventId, projectId, field, eraType, content)
+        const result = await aiService.polishBackground(window, eventId, projectId, field, eraType, content, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -845,13 +848,13 @@ export function registerLongWritingHandlers(): void {
 
   ipcMain.handle(
     CHANNELS.GENERATE_OUTLINE_STORY,
-    async (event, eventId: string, projectId: string) => {
+    async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
       try {
         const window = BrowserWindow.fromWebContents(event.sender)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.generateOutlineStory(window, eventId, projectId)
+        const result = await aiService.generateOutlineStory(window, eventId, projectId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }

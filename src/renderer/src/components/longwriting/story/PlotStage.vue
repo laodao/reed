@@ -140,11 +140,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, inject } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, MagicStick, Rank, Document } from '@element-plus/icons-vue'
 import draggable from 'vuedraggable'
 import type { StoryPlot } from '../../../../shared/types/longwriting.types'
+import type { ComputedRef } from 'vue'
 
 const props = defineProps<{
   projectId: string
@@ -153,6 +154,11 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:progress': [progress: number]
 }>()
+
+// 从父组件注入选中的模型（computed ref）
+const selectedModelRef = inject<ComputedRef<{ providerConfigId: string; modelId: string } | null>>('selectedModel')
+// 获取当前选中的模型值
+const selectedModel = computed(() => selectedModelRef?.value)
 
 // 情节列表
 const plots = ref<StoryPlot[]>([])
@@ -216,6 +222,12 @@ function updateProgress() {
 
 // AI 生成情节
 async function generatePlots() {
+  // 检查是否选择了模型
+  if (!selectedModel.value?.providerConfigId || !selectedModel.value?.modelId) {
+    ElMessage.warning('请先在顶部选择 AI 模型')
+    return
+  }
+
   generating.value = true
   generatingContent.value = ''
 
@@ -243,7 +255,9 @@ async function generatePlots() {
 
   const result = await window.electronAPI.longwriting.generatePlots(
     currentEventId.value,
-    props.projectId
+    props.projectId,
+    selectedModel.value.providerConfigId,
+    selectedModel.value.modelId
   )
 
   if (!result.success) {

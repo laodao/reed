@@ -981,16 +981,16 @@ const electronAPI = {
     // AI 生成（eventId 作为第一个参数）
     generateStoryOverview: (eventId: string, projectId: string, input: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generateStoryOverview', eventId, projectId, input, providerConfigId, modelId),
-    generatePlots: (eventId: string, projectId: string) =>
-      ipcRenderer.invoke('longwriting:generatePlots', eventId, projectId),
-    polishBackground: (eventId: string, projectId: string, field: 'eraDescription' | 'socialStructure' | 'techLevel', eraType: string, content: string) =>
-      ipcRenderer.invoke('longwriting:polishBackground', eventId, projectId, field, eraType, content),
+    generatePlots: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:generatePlots', eventId, projectId, providerConfigId, modelId),
+    polishBackground: (eventId: string, projectId: string, field: 'eraDescription' | 'socialStructure' | 'techLevel', eraType: string, content: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:polishBackground', eventId, projectId, field, eraType, content, providerConfigId, modelId),
     generateCharacters: (eventId: string, projectId: string) =>
       ipcRenderer.invoke('longwriting:generateCharacters', eventId, projectId),
     generateSkillsItems: (eventId: string, projectId: string) =>
       ipcRenderer.invoke('longwriting:generateSkillsItems', eventId, projectId),
-    generateOutlineStory: (eventId: string, projectId: string) =>
-      ipcRenderer.invoke('longwriting:generateOutlineStory', eventId, projectId),
+    generateOutlineStory: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:generateOutlineStory', eventId, projectId, providerConfigId, modelId),
     generateOutlineComment: (eventId: string, projectId: string) =>
       ipcRenderer.invoke('longwriting:generateOutlineComment', eventId, projectId),
     generateChapter: (eventId: string, projectId: string, outlineId: string, targetWords?: number) =>

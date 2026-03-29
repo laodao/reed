@@ -237,14 +237,20 @@ export class LongWritingService {
    * 更新背景设定
    */
   async updateBackground(projectId: string, data: any): Promise<any | null> {
+    console.log('[LongWritingService] updateBackground 开始, projectId:', projectId, 'data:', data)
     if (!this.db.lwBackgrounds) {
+      console.error('[LongWritingService] 数据库未初始化')
       throw new Error('数据库未初始化')
     }
     let background = this.db.lwBackgrounds.getByProjectId(projectId)
+    console.log('[LongWritingService] 现有背景:', background)
     if (!background) {
       background = this.db.lwBackgrounds.create(projectId)
+      console.log('[LongWritingService] 创建新背景:', background)
     }
-    return this.db.lwBackgrounds.update(background.id, data)
+    const result = this.db.lwBackgrounds.update(background.id, data)
+    console.log('[LongWritingService] 更新结果:', result)
+    return result
   }
 
   // ==================== 地点管理 ====================
@@ -616,13 +622,14 @@ export class LongWritingService {
   // ==================== 大纲管理 ====================
 
   /**
-   * 获取项目的大纲树
+   * 获取项目的大纲树（返回平铺列表，前端自行构建树）
    */
   async getOutlineTree(projectId: string): Promise<StoryOutline[]> {
     if (!this.db.lwOutlines) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwOutlines.getTreeByProjectId(projectId)
+    // 返回平铺列表，让前端根据 parentId 构建树
+    return this.db.lwOutlines.getByProjectId(projectId)
   }
 
   /**

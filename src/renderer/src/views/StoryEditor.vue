@@ -9,6 +9,35 @@
         </el-button>
         <span class="project-title">{{ project?.name || '加载中...' }}</span>
       </div>
+      <div class="header-center">
+        <!-- 统一模型选择器 -->
+        <el-select
+          v-model="selectedModelKey"
+          size="small"
+          placeholder="选择模型"
+          class="model-select"
+          filterable
+          :filter-method="filterModels"
+        >
+          <el-option-group
+            v-for="provider in filteredProviderModels"
+            :key="provider.id"
+            :label="provider.name"
+          >
+            <el-option
+              v-for="model in provider.models"
+              :key="`${provider.id}:${model.id}`"
+              :label="`${provider.shortId}/${model.name}`"
+              :value="`${provider.id}:${model.id}`"
+            >
+              <div class="model-option">
+                <span class="model-name">{{ provider.shortId }}/{{ model.name }}</span>
+                <span class="model-context">{{ formatContext(model.contextWindow) }}</span>
+              </div>
+            </el-option>
+          </el-option-group>
+        </el-select>
+      </div>
       <div class="header-right">
         <el-button @click="showPreview = true">
           <el-icon><View /></el-icon>
@@ -112,11 +141,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, provide } from 'vue'
+import { ref, computed, onMounted, provide, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, View, Download } from '@element-plus/icons-vue'
 import type { LongWritingProject, StoryStage } from '../../../../shared/types/longwriting.types'
+import type { UserProviderConfig, ProviderTemplate } from '../../../../shared/types'
 
 // 子组件
 import OverviewStage from '@/components/longwriting/story/OverviewStage.vue'
@@ -143,6 +173,154 @@ const currentStage = ref<StoryStage>('overview')
 // 对话框状态
 const showPreview = ref(false)
 const showExport = ref(false)
+
+// ========== 模型选择相关 ==========
+const providerConfigs = ref<UserProviderConfig[]>([])
+const providerTemplates = ref<ProviderTemplate[]>([])
+const selectedModelKey = ref<string>('')
+const modelSearchKeyword = ref('')
+
+// 判断模型是否为文本类型
+function isTextModel(type: string | undefined): boolean {
+  return type === undefined || type === 'text' || type === 'multimodal'
+}
+
+// 提供商模型列表
+const providerModels = computed(() => {
+  const result: Array<{
+    id: string
+    name: string
+    shortId: string
+    models: Array<{
+      id: string
+      name: string
+      contextWindow: number
+      type?: string
+    }>
+  }> = []
+
+  for (const config of providerConfigs.value) {
+    if (!config.isEnabled) continue
+
+    const models: Array<{
+      id: string
+      name: string
+      contextWindow: number
+      type?: string
+    }> = []
+
+    const template = providerTemplates.value.find(t => t.id === config.templateId)
+
+    if (config.models && config.models.length > 0) {
+      for (const model of config.models) {
+        if (!isTextModel(model.type)) continue
+        models.push({
+          id: model.id,
+          name: model.name,
+          contextWindow: model.contextWindow,
+          type: model.type
+        })
+      }
+    } else if (template && template.models.length > 0) {
+      for (const model of template.models) {
+        if (!isTextModel(model.type)) continue
+        models.push({
+          id: model.id,
+          name: model.name || model.id,
+          contextWindow: model.contextWindow || 8192,
+          type: model.type
+        })
+      }
+    }
+
+    if (models.length > 0) {
+      result.push({
+        id: config.id,
+        name: config.name,
+        shortId: config.shortId || config.name,
+        models
+      })
+    }
+  }
+
+  return result
+})
+
+// 过滤后的模型列表
+const filteredProviderModels = computed(() => {
+  if (!modelSearchKeyword.value) {
+    return providerModels.value
+  }
+
+  const keyword = modelSearchKeyword.value.toLowerCase()
+  const result: typeof providerModels.value = []
+
+  for (const provider of providerModels.value) {
+    const filteredModels = provider.models.filter(model =>
+      model.name.toLowerCase().includes(keyword) ||
+      model.id.toLowerCase().includes(keyword) ||
+      provider.name.toLowerCase().includes(keyword) ||
+      provider.shortId.toLowerCase().includes(keyword)
+    )
+
+    if (filteredModels.length > 0) {
+      result.push({ ...provider, models: filteredModels })
+    }
+  }
+
+  return result
+})
+
+// 模型搜索过滤方法
+function filterModels(keyword: string): void {
+  modelSearchKeyword.value = keyword
+}
+
+// 格式化上下文窗口大小
+function formatContext(contextWindow: number): string {
+  if (contextWindow >= 1000000) {
+    return `${(contextWindow / 1000000).toFixed(1)}M`
+  }
+  if (contextWindow >= 1000) {
+    return `${Math.round(contextWindow / 1000)}K`
+  }
+  return `${contextWindow}`
+}
+
+// 加载提供商配置
+async function loadProviderConfigs(): Promise<void> {
+  try {
+    const templatesResponse = await window.electronAPI.providerTemplate.list()
+    if (templatesResponse.success && templatesResponse.templates) {
+      providerTemplates.value = templatesResponse.templates
+    }
+
+    const response = await window.electronAPI.providerConfig.list()
+    if (response.success && response.configs) {
+      providerConfigs.value = response.configs.filter((c: UserProviderConfig) => c.isEnabled)
+
+      // 设置默认模型
+      if (!selectedModelKey.value && providerModels.value.length > 0) {
+        const firstProvider = providerModels.value[0]
+        if (firstProvider.models.length > 0) {
+          selectedModelKey.value = `${firstProvider.id}:${firstProvider.models[0].id}`
+        }
+      }
+    }
+  } catch (error) {
+    console.error('加载提供商配置失败:', error)
+  }
+}
+
+// 解析选中的模型
+const selectedModel = computed(() => {
+  if (!selectedModelKey.value) return null
+  const [providerConfigId, modelId] = selectedModelKey.value.split(':')
+  return { providerConfigId, modelId }
+})
+
+// 提供模型信息给子组件
+provide('selectedModel', selectedModel)
 
 // 故事阶段配置
 const storyStages = [
@@ -200,6 +378,7 @@ async function loadProject() {
 
 onMounted(() => {
   loadProject()
+  loadProviderConfigs()
 })
 </script>
 
@@ -235,6 +414,36 @@ onMounted(() => {
 .header-right {
   display: flex;
   gap: 8px;
+}
+
+.header-center {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  .model-select {
+    width: 220px;
+  }
+
+  .model-option {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+
+    .model-name {
+      font-size: 13px;
+      color: var(--text-color-primary);
+    }
+
+    .model-context {
+      font-size: 11px;
+      color: var(--text-color-secondary);
+      background: var(--fill-color-light);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+  }
 }
 
 .stage-nav {
