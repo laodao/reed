@@ -74,6 +74,30 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/longwriting',
+    name: 'LongWriting',
+    component: () => import('@/views/LongWriting.vue'),
+    meta: {
+      title: '长文写作'
+    }
+  },
+  {
+    path: '/story-editor/:id',
+    name: 'StoryEditor',
+    component: () => import('@/views/StoryEditor.vue'),
+    meta: {
+      title: '故事编辑'
+    }
+  },
+  {
+    path: '/comment-editor/:id',
+    name: 'CommentEditor',
+    component: () => import('@/views/CommentEditor.vue'),
+    meta: {
+      title: '评论编辑'
+    }
+  },
+  {
     path: '/settings',
     name: 'Settings',
     component: () => import('@/views/Settings.vue'),

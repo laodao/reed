@@ -27,6 +27,7 @@ import { registerKnowledgeBaseHandlers } from './ipc/handlers/knowledge-base.han
 import { registerExportHandlers } from './ipc/handlers/export.handler'
 import { registerPortraitHandlers } from './ipc/handlers/portrait.handler'
 import { registerSearchEngineHandlers } from './ipc/handlers/search-engine.handler'
+import { registerLongWritingHandlers } from './ipc/handlers/longwriting.handler'
 import * as fs from 'fs'
 
 // 在 app ready 之前注册协议权限（重要！）
@@ -211,6 +212,7 @@ function initIpcHandlers(): void {
   registerExportHandlers()
   registerPortraitHandlers()
   registerSearchEngineHandlers()
+  registerLongWritingHandlers()
 }
 
 // 应用就绪

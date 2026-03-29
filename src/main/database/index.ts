@@ -27,6 +27,16 @@ import { PortraitProjectRepository } from './repositories/portrait-project.repos
 import { PortraitCharacterRepository } from './repositories/portrait-character.repository'
 import { PortraitVariantRepository } from './repositories/portrait-variant.repository'
 import { SearchEngineConfigRepository } from './repositories/search-engine-config.repository'
+import { LwProjectRepository } from './repositories/lw-project.repository'
+import { LwStoryOverviewRepository } from './repositories/lw-story-overview.repository'
+import { LwCharacterRepository } from './repositories/lw-character.repository'
+import { LwOutlineRepository } from './repositories/lw-outline.repository'
+import { LwChapterRepository } from './repositories/lw-chapter.repository'
+import { LwBackgroundRepository } from './repositories/lw-background.repository'
+import { LwLocationRepository } from './repositories/lw-location.repository'
+import { LwSkillRepository } from './repositories/lw-skill.repository'
+import { LwItemRepository } from './repositories/lw-item.repository'
+import { LwMaterialRepository } from './repositories/lw-material.repository'
 import { DataPathService } from '../services/data-path.service'
 import { LanceDBService } from '../services/lance-db.service'
 
@@ -36,7 +46,7 @@ import { LanceDBService } from '../services/lance-db.service'
  */
 export class DatabaseManager {
   private static instance: DatabaseManager
-  private db: Database.Database | null = null
+  public db: Database.Database | null = null
   private dbPath: string
 
   // 仓库实例
@@ -59,6 +69,16 @@ export class DatabaseManager {
   public portraitCharacters: PortraitCharacterRepository | null = null
   public portraitVariants: PortraitVariantRepository | null = null
   public searchEngineConfigs: SearchEngineConfigRepository | null = null
+  public lwProjects: LwProjectRepository | null = null
+  public lwStoryOverviews: LwStoryOverviewRepository | null = null
+  public lwCharacters: LwCharacterRepository | null = null
+  public lwOutlines: LwOutlineRepository | null = null
+  public lwChapters: LwChapterRepository | null = null
+  public lwBackgrounds: LwBackgroundRepository | null = null
+  public lwLocations: LwLocationRepository | null = null
+  public lwSkills: LwSkillRepository | null = null
+  public lwItems: LwItemRepository | null = null
+  public lwMaterials: LwMaterialRepository | null = null
 
   private constructor() {
     // 默认使用 userData 路径，后续会在 initialize 中更新
@@ -646,6 +666,231 @@ export class DatabaseManager {
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_search_engine_configs_template_id ON search_engine_configs(template_id)`)
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_search_engine_configs_created_at ON search_engine_configs(created_at DESC)`)
 
+    // ==================== 长文写作相关表 ====================
+
+    // 长文写作项目表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_projects (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        stage TEXT NOT NULL,
+        progress INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_projects_created_at ON lw_projects(created_at DESC)`)
+
+    // 故事概要表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_story_overviews (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        story_type TEXT,
+        title TEXT,
+        summary TEXT,
+        core_conflict TEXT,
+        theme TEXT,
+        estimated_chapters INTEGER,
+        is_locked INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE
+      )
+    `)
+
+    // 时代背景表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_story_backgrounds (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        era_type TEXT,
+        era_description TEXT,
+        social_structure TEXT,
+        tech_level TEXT,
+        special_rules TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE
+      )
+    `)
+
+    // 地点表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_story_locations (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        type TEXT,
+        description TEXT,
+        importance TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_locations_project_id ON lw_story_locations(project_id)`)
+
+    // 角色表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_story_characters (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        portrait_id TEXT,
+        name TEXT NOT NULL,
+        gender TEXT,
+        age INTEGER,
+        appearance TEXT,
+        background TEXT,
+        personality TEXT,
+        abilities TEXT,
+        role_position TEXT,
+        major_events TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE,
+        FOREIGN KEY (portrait_id) REFERENCES portrait_variants(id) ON DELETE SET NULL
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_characters_project_id ON lw_story_characters(project_id)`)
+
+    // 角色关系表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_character_relations (
+        id TEXT PRIMARY KEY,
+        character_id TEXT NOT NULL,
+        related_character_id TEXT NOT NULL,
+        relation_type TEXT,
+        relation_description TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (character_id) REFERENCES lw_story_characters(id) ON DELETE CASCADE,
+        FOREIGN KEY (related_character_id) REFERENCES lw_story_characters(id) ON DELETE CASCADE
+      )
+    `)
+
+    // 技能表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_story_skills (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        type TEXT,
+        level TEXT,
+        description TEXT,
+        system TEXT,
+        character_ids TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_skills_project_id ON lw_story_skills(project_id)`)
+
+    // 物品表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_story_items (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        type TEXT,
+        level TEXT,
+        description TEXT,
+        owner_id TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE,
+        FOREIGN KEY (owner_id) REFERENCES lw_story_characters(id) ON DELETE SET NULL
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_items_project_id ON lw_story_items(project_id)`)
+
+    // 大纲表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_story_outlines (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        parent_id TEXT,
+        name TEXT NOT NULL,
+        level INTEGER DEFAULT 1,
+        node_type TEXT,
+        summary TEXT,
+        involved_characters TEXT,
+        involved_locations TEXT,
+        status TEXT DEFAULT 'pending',
+        estimated_words INTEGER,
+        order_index INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE,
+        FOREIGN KEY (parent_id) REFERENCES lw_story_outlines(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_outlines_project_id ON lw_story_outlines(project_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_outlines_parent_id ON lw_story_outlines(parent_id)`)
+
+    // 章节内容表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_story_chapters (
+        id TEXT PRIMARY KEY,
+        outline_id TEXT NOT NULL,
+        content TEXT,
+        word_count INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (outline_id) REFERENCES lw_story_outlines(id) ON DELETE CASCADE
+      )
+    `)
+
+    // 章节版本表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_chapter_versions (
+        id TEXT PRIMARY KEY,
+        chapter_id TEXT NOT NULL,
+        content TEXT NOT NULL,
+        version_type TEXT,
+        word_count INTEGER,
+        is_locked INTEGER DEFAULT 0,
+        version_number INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (chapter_id) REFERENCES lw_story_chapters(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_versions_chapter_id ON lw_chapter_versions(chapter_id)`)
+
+    // 素材表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_story_materials (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        type TEXT,
+        source TEXT,
+        content TEXT,
+        status TEXT DEFAULT 'pending',
+        error_message TEXT,
+        retry_count INTEGER DEFAULT 0,
+        used INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_materials_project_id ON lw_story_materials(project_id)`)
+
+    // 设计对话记录表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_design_conversations (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        stage TEXT NOT NULL,
+        messages TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_conversations_project_id ON lw_design_conversations(project_id)`)
+
     // 执行其他数据库迁移
     this.runMigrations()
 
@@ -964,6 +1209,16 @@ export class DatabaseManager {
     this.portraitCharacters = new PortraitCharacterRepository(this.db)
     this.portraitVariants = new PortraitVariantRepository(this.db)
     this.searchEngineConfigs = new SearchEngineConfigRepository(this.db)
+    this.lwProjects = new LwProjectRepository(this.db)
+    this.lwStoryOverviews = new LwStoryOverviewRepository(this.db)
+    this.lwCharacters = new LwCharacterRepository(this.db)
+    this.lwOutlines = new LwOutlineRepository(this.db)
+    this.lwChapters = new LwChapterRepository(this.db)
+    this.lwBackgrounds = new LwBackgroundRepository(this.db)
+    this.lwLocations = new LwLocationRepository(this.db)
+    this.lwSkills = new LwSkillRepository(this.db)
+    this.lwItems = new LwItemRepository(this.db)
+    this.lwMaterials = new LwMaterialRepository(this.db)
   }
 
   /**

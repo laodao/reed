@@ -122,7 +122,8 @@ import {
   Expand,
   Fold,
   FolderOpened,
-  User
+  User,
+  EditPen
 } from '@element-plus/icons-vue'
 import { useTheme } from '@/composables/useTheme'
 
@@ -155,6 +156,11 @@ const mainMenuItems = [
     path: '/portrait',
     label: '人像设计',
     icon: markRaw(User)
+  },
+  {
+    path: '/longwriting',
+    label: '长文写作',
+    icon: markRaw(EditPen)
   },
   {
     path: '/translate',

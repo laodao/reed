@@ -1,0 +1,699 @@
+/**
+ * 长文写作 AI 服务
+ * @module services/longwriting-ai.service
+ * @description 处理长文写作模块的 AI 生成功能
+ */
+
+import { BrowserWindow } from 'electron'
+import { getDatabaseManager } from '../database'
+import { createProvider } from '../providers'
+import { PROVIDER_TEMPLATES } from './provider-template.service'
+import { SecureStorageService } from './secure-storage.service'
+import type { ProviderTemplate, UserProviderConfig, ChatContext } from '../../shared/types'
+
+/**
+ * 生成任务类型
+ */
+export type GenerationTask =
+  | 'story-overview'    // 故事概要
+  | 'characters'        // 角色建议
+  | 'skills-items'      // 技能物品
+  | 'outline-story'     // 故事大纲
+  | 'outline-comment'   // 评论大纲
+  | 'chapter'           // 章节内容
+  | 'section'           // 段落内容
+
+/**
+ * 生成请求参数
+ */
+export interface GenerateRequest {
+  task: GenerationTask
+  projectId: string
+  prompt?: string
+  targetWords?: number
+  context?: Record<string, any>
+}
+
+/**
+ * 生成响应
+ */
+export interface GenerateResponse {
+  success: boolean
+  data?: any
+  error?: string
+}
+
+/**
+ * 流式生成事件
+ */
+export interface GenerationStreamEvent {
+  type: 'start' | 'content' | 'done' | 'error'
+  content?: string
+  data?: any
+  error?: string
+}
+
+/**
+ * 长文写作 AI 服务
+ */
+export class LongWritingAIService {
+  private static instance: LongWritingAIService
+
+  private constructor() {}
+
+  /**
+   * 获取单例实例
+   */
+  static getInstance(): LongWritingAIService {
+    if (!LongWritingAIService.instance) {
+      LongWritingAIService.instance = new LongWritingAIService()
+    }
+    return LongWritingAIService.instance
+  }
+
+  /**
+   * 获取提供商配置
+   */
+  private async getProviderConfig(providerConfigId?: string): Promise<{
+    config: UserProviderConfig
+    template: ProviderTemplate
+    apiKey: string
+  } | null> {
+    const dbManager = getDatabaseManager()
+    if (!dbManager.providerConfigs) {
+      return null
+    }
+
+    let config: UserProviderConfig | null = null
+
+    // 如果指定了提供商配置 ID，优先使用
+    if (providerConfigId) {
+      config = await dbManager.providerConfigs.getById(providerConfigId)
+    }
+
+    // 如果没有指定或找不到，尝试获取默认提供商
+    if (!config) {
+      config = await dbManager.providerConfigs.getDefault()
+    }
+
+    // 如果没有默认，获取第一个启用的
+    if (!config) {
+      const enabledConfigs = await dbManager.providerConfigs.getEnabled()
+      if (enabledConfigs.length > 0) {
+        config = enabledConfigs[0]
+      }
+    }
+
+    if (!config || !config.apiKey) {
+      return null
+    }
+
+    // 获取模板
+    const template = PROVIDER_TEMPLATES.find(t => t.id === config!.templateId)
+    if (!template) {
+      return null
+    }
+
+    // 解密 API 密钥
+    const secureStorage = SecureStorageService.getInstance()
+    if (!secureStorage.isInitialized()) {
+      await secureStorage.initialize()
+    }
+    const apiKey = secureStorage.decrypt(config.apiKey)
+
+    return { config, template, apiKey }
+  }
+
+  /**
+   * 调用 AI 生成
+   */
+  private async callAI(
+    prompt: string,
+    systemPrompt?: string,
+    maxTokens?: number,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<string> {
+    const providerInfo = await this.getProviderConfig(providerConfigId)
+    if (!providerInfo) {
+      throw new Error('未配置 AI 提供商，请先在设置中添加提供商配置')
+    }
+
+    const { config, template, apiKey } = providerInfo
+
+    // 确定使用的模型
+    const effectiveModelId = modelId || config.defaultModel
+
+    // 创建 Provider 实例
+    const provider = createProvider(
+      template.id,
+      {
+        apiKey,
+        baseUrl: config.baseUrl,
+        defaultModel: effectiveModelId
+      },
+      template,
+      config
+    )
+
+    // 构建消息上下文 - 使用 ChatContext 格式
+    const context: ChatContext = {
+      systemPrompt: systemPrompt,
+      messages: [
+        { role: 'user', content: prompt }
+      ]
+    }
+
+    // 调用 AI（非流式）
+    const result = await provider.chat(context, {
+      maxTokens: maxTokens || 4096
+    })
+
+    return result.content
+  }
+
+  /**
+   * 流式调用 AI 生成
+   */
+  private async callAIStream(
+    window: BrowserWindow,
+    eventId: string,
+    prompt: string,
+    systemPrompt?: string,
+    maxTokens?: number,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<string> {
+    console.log(`[LongWritingAI] callAIStream 开始, eventId: ${eventId}, maxTokens: ${maxTokens || 4096}`)
+
+    const providerInfo = await this.getProviderConfig(providerConfigId)
+    if (!providerInfo) {
+      throw new Error('未配置 AI 提供商，请先在设置中添加提供商配置')
+    }
+
+    const { config, template, apiKey } = providerInfo
+
+    // 确定使用的模型：优先使用传入的 modelId，其次使用配置中的默认模型
+    const effectiveModelId = modelId || config.defaultModel
+    console.log(`[LongWritingAI] 使用模型: ${effectiveModelId}, 提供商: ${template.id}`)
+
+    // 创建 Provider 实例
+    const provider = createProvider(
+      template.id,
+      {
+        apiKey,
+        baseUrl: config.baseUrl,
+        defaultModel: effectiveModelId
+      },
+      template,
+      config
+    )
+
+    // 构建消息上下文 - 使用 ChatContext 格式
+    const context: ChatContext = {
+      systemPrompt: systemPrompt,
+      messages: [
+        { role: 'user', content: prompt }
+      ]
+    }
+
+    // 发送开始事件
+    console.log(`[LongWritingAI] 发送 start 事件到频道: longwriting:generate:${eventId}`)
+    window.webContents.send(`longwriting:generate:${eventId}`, {
+      type: 'start'
+    } as GenerationStreamEvent)
+
+    // 流式调用 AI
+    let fullContent = ''
+    let deltaCount = 0
+    try {
+      fullContent = await provider.chatStream(
+        context,
+        (event) => {
+          // Provider 发送 delta 事件，转换为 content 事件发送给前端
+          if (event.type === 'delta' && event.content) {
+            deltaCount++
+            fullContent += event.content
+            window.webContents.send(`longwriting:generate:${eventId}`, {
+              type: 'content',
+              content: event.content
+            } as GenerationStreamEvent)
+          }
+        },
+        undefined,
+        { maxTokens: maxTokens || 4096 }
+      )
+
+      console.log(`[LongWritingAI] chatStream 完成, delta 事件数: ${deltaCount}, 内容长度: ${fullContent.length}`)
+      console.log(`[LongWritingAI] 发送 done 事件到频道: longwriting:generate:${eventId}`)
+
+      // 发送完成事件
+      window.webContents.send(`longwriting:generate:${eventId}`, {
+        type: 'done',
+        content: fullContent
+      } as GenerationStreamEvent)
+    } catch (error: any) {
+      console.error(`[LongWritingAI] chatStream 错误:`, error)
+      // 发送错误事件
+      window.webContents.send(`longwriting:generate:${eventId}`, {
+        type: 'error',
+        error: error.message || 'AI 生成失败'
+      } as GenerationStreamEvent)
+      throw error
+    }
+
+    return fullContent
+  }
+
+  // ==================== 故事概要生成 ====================
+
+  /**
+   * 生成故事概要
+   */
+  async generateStoryOverview(
+    window: BrowserWindow,
+    eventId: string,
+    projectId: string,
+    input: string,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<GenerateResponse> {
+    const dbManager = getDatabaseManager()
+
+    // 获取项目信息
+    const project = await dbManager.lwProjects?.getById(projectId)
+    if (!project) {
+      return { success: false, error: '项目不存在' }
+    }
+
+    const systemPrompt = `你是一位专业的小说创作顾问。请根据用户的想法，生成一个简洁的故事概要。
+
+**重要**：请控制回复长度，总字数不超过800字。
+
+你的回复必须是纯 JSON 格式（不要包含 \`\`\`json 标记），包含以下字段：
+- title: 故事标题（简洁有力，不超过10个字）
+- storyType: 故事类型（如：xuanxia/kehuan/xuanhuan/lishi/dushi/other）
+- theme: 故事主题（一句话概括，不超过30字）
+- summary: 故事摘要（100-200字，简洁明了）
+- coreConflict: 核心冲突（50-100字）
+- estimatedChapters: 预估章节数（数字）
+
+请直接输出 JSON 对象，不要有任何额外文字。`
+
+    const prompt = `请根据以下想法，生成一个故事概要：
+
+${input}
+
+请直接返回 JSON 格式的结果，不要添加其他说明文字。`
+
+    try {
+      const result = await this.callAIStream(
+        window,
+        eventId,
+        prompt,
+        systemPrompt,
+        undefined,
+        providerConfigId,
+        modelId
+      )
+
+      // 尝试解析 JSON
+      const jsonMatch = result.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0])
+        return { success: true, data }
+      }
+
+      // 如果无法解析为 JSON，返回原始文本
+      return { success: true, data: { summary: result } }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  // ==================== 角色建议生成 ====================
+
+  /**
+   * 生成角色建议
+   */
+  async generateCharacters(
+    window: BrowserWindow,
+    eventId: string,
+    projectId: string
+  ): Promise<GenerateResponse> {
+    const dbManager = getDatabaseManager()
+
+    // 获取故事概要
+    const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
+    if (!overview) {
+      return { success: false, error: '请先创建故事概要' }
+    }
+
+    const systemPrompt = `你是一位专业的小说创作顾问。请根据故事概要，生成3-5个建议的角色。
+你的回复应该是 JSON 数组格式，每个角色包含以下字段：
+- name: 角色名称
+- gender: 性别（male/female/other）
+- age: 年龄
+- rolePosition: 角色定位（protagonist/supporting/antagonist/minor）
+- appearance: 外貌描述
+- background: 背景故事
+- personality: 性格特点
+- abilities: 能力特长`
+
+    const prompt = `请根据以下故事概要，生成建议的角色：
+
+故事标题：${overview.title || '未命名'}
+故事类型：${overview.genre || '未指定'}
+核心主题：${overview.coreTheme || '未指定'}
+故事摘要：${overview.summary || '未指定'}
+
+请直接返回 JSON 数组格式的结果，不要添加其他说明文字。`
+
+    try {
+      const result = await this.callAIStream(window, eventId, prompt, systemPrompt)
+
+      // 尝试解析 JSON 数组
+      const jsonMatch = result.match(/\[[\s\S]*\]/)
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0])
+        return { success: true, data }
+      }
+
+      return { success: false, error: 'AI 返回格式错误' }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  // ==================== 技能物品建议生成 ====================
+
+  /**
+   * 生成技能物品建议
+   */
+  async generateSkillsItems(
+    window: BrowserWindow,
+    eventId: string,
+    projectId: string
+  ): Promise<GenerateResponse> {
+    const dbManager = getDatabaseManager()
+
+    // 获取故事概要和角色
+    const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
+    const characters = await dbManager.lwCharacters?.getByProjectId(projectId) || []
+
+    const systemPrompt = `你是一位专业的小说创作顾问。请根据故事概要，生成建议的技能和物品。
+你的回复应该是 JSON 对象格式，包含两个字段：
+- skills: 技能数组，每个技能包含：name, type(martial/magic/ability/tech/other), level(beginner/intermediate/advanced/master), system, description
+- items: 物品数组，每个物品包含：name, type(weapon/artifact/medicine/manual/token/other), level(common/rare/legendary/divine), description`
+
+    const characterNames = characters.map(c => c.name).join('、')
+    const prompt = `请根据以下故事概要，生成建议的技能体系和物品：
+
+故事标题：${overview?.title || '未命名'}
+故事类型：${overview?.genre || '未指定'}
+故事摘要：${overview?.summary || '未指定'}
+已有角色：${characterNames || '暂无'}
+
+请直接返回 JSON 对象格式的结果，包含 skills 和 items 两个字段。`
+
+    try {
+      const result = await this.callAIStream(window, eventId, prompt, systemPrompt)
+
+      // 尝试解析 JSON
+      const jsonMatch = result.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0])
+        return { success: true, data }
+      }
+
+      return { success: false, error: 'AI 返回格式错误' }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  // ==================== 大纲生成 ====================
+
+  /**
+   * 生成故事大纲
+   */
+  async generateOutlineStory(
+    window: BrowserWindow,
+    eventId: string,
+    projectId: string
+  ): Promise<GenerateResponse> {
+    const dbManager = getDatabaseManager()
+
+    // 获取故事概要、角色、背景
+    const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
+    const characters = await dbManager.lwCharacters?.getByProjectId(projectId) || []
+    const background = await dbManager.lwBackgrounds?.getByProjectId(projectId)
+
+    const systemPrompt = `你是一位专业的小说创作顾问。请根据故事概要，生成一个三级大纲结构（卷-章-节）。
+你的回复应该是 JSON 数组格式，表示卷的列表，每个卷包含：
+- name: 卷名
+- summary: 卷概要
+- estimatedWords: 预估字数
+- chapters: 章节列表，每个章包含：name, summary, estimatedWords
+  - sections: 小节列表，每个节包含：name, summary, estimatedWords
+
+注意：根据故事规模，生成1-3卷，每卷3-10章，每章2-5节。预估字数总计应该与故事概要中的目标字数相近。`
+
+    const characterInfo = characters.slice(0, 5).map(c =>
+      `${c.name}（${c.rolePosition === 'protagonist' ? '主角' : c.rolePosition === 'antagonist' ? '反派' : '配角'}）`
+    ).join('、')
+
+    const prompt = `请根据以下故事信息，生成大纲：
+
+故事标题：${overview?.title || '未命名'}
+核心主题：${overview?.coreTheme || '未指定'}
+故事摘要：${overview?.summary || '未指定'}
+目标字数：${overview?.targetWords || 100000}字
+主要角色：${characterInfo || '暂无'}
+时代背景：${background?.eraDescription || '未指定'}
+
+请直接返回 JSON 数组格式的结果。`
+
+    try {
+      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 8192)
+
+      // 尝试解析 JSON 数组
+      const jsonMatch = result.match(/\[[\s\S]*\]/)
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0])
+        return { success: true, data }
+      }
+
+      return { success: false, error: 'AI 返回格式错误' }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  /**
+   * 生成评论大纲
+   */
+  async generateOutlineComment(
+    window: BrowserWindow,
+    eventId: string,
+    projectId: string
+  ): Promise<GenerateResponse> {
+    const dbManager = getDatabaseManager()
+
+    // 获取故事概要和素材
+    const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
+    const materials = await dbManager.lwMaterials?.getByProjectId(projectId) || []
+
+    const systemPrompt = `你是一位专业的评论写作顾问。请根据主题和素材，生成一个评论文章大纲。
+你的回复应该是 JSON 数组格式，表示段落列表，每个段落包含：
+- name: 段落标题
+- summary: 段落要点
+- estimatedWords: 预估字数
+
+注意：生成4-8个段落，包含引言、主体论证、结论等部分。段落间应该有逻辑递进关系。`
+
+    const materialInfo = materials.slice(0, 5).map(m => m.name).join('、')
+
+    const prompt = `请根据以下信息，生成评论大纲：
+
+评论主题：${overview?.title || '未命名'}
+核心观点：${overview?.coreTheme || '未指定'}
+目标字数：${overview?.targetWords || 5000}字
+已收集素材：${materialInfo || '暂无'}
+
+请直接返回 JSON 数组格式的结果。`
+
+    try {
+      const result = await this.callAIStream(window, eventId, prompt, systemPrompt)
+
+      // 尝试解析 JSON 数组
+      const jsonMatch = result.match(/\[[\s\S]*\]/)
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0])
+        return { success: true, data }
+      }
+
+      return { success: false, error: 'AI 返回格式错误' }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  // ==================== 章节内容生成 ====================
+
+  /**
+   * 生成章节内容
+   */
+  async generateChapter(
+    window: BrowserWindow,
+    eventId: string,
+    projectId: string,
+    outlineId: string,
+    targetWords?: number
+  ): Promise<GenerateResponse> {
+    const dbManager = getDatabaseManager()
+
+    // 获取大纲节点
+    const outline = await dbManager.lwOutlines?.getById(outlineId)
+    if (!outline) {
+      return { success: false, error: '大纲节点不存在' }
+    }
+
+    // 获取故事上下文
+    const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
+    const characters = await dbManager.lwCharacters?.getByProjectId(projectId) || []
+    const locations = await dbManager.lwLocations?.getByProjectId(projectId) || []
+
+    // 获取前置章节内容（作为上下文）
+    const siblings = await dbManager.lwOutlines?.getTreeByProjectId(projectId) || []
+    const currentIndex = siblings.findIndex(s => s.id === outlineId)
+    const previousOutlines = siblings.slice(0, currentIndex).slice(-3) // 最近3个
+
+    const systemPrompt = `你是一位专业的网络小说作家。请根据大纲节点信息，撰写章节内容。
+要求：
+1. 内容要生动有趣，情节紧凑
+2. 注意人物性格的一致性
+3. 场景描写要具体
+4. 对话要符合人物特点
+5. 控制字数在目标范围内
+
+直接输出章节内容，不需要标题、不需要额外说明。`
+
+    const characterInfo = outline.involvedCharacters.map(id => {
+      const char = characters.find(c => c.id === id)
+      return char ? `${char.name}：${char.personality || '性格未设定'}` : ''
+    }).filter(Boolean).join('\n')
+
+    const locationInfo = outline.involvedLocations.map(id => {
+      const loc = locations.find(l => l.id === id)
+      return loc ? `${loc.name}：${loc.description || ''}` : ''
+    }).filter(Boolean).join('\n')
+
+    const previousContext = previousOutlines.map(o => `【${o.name}】${o.summary}`).join('\n')
+
+    const prompt = `请根据以下信息，撰写章节内容：
+
+故事标题：${overview?.title || '未命名'}
+章节名称：${outline.name}
+章节概要：${outline.summary}
+目标字数：${targetWords || outline.estimatedWords || 3000}字
+
+涉及角色：
+${characterInfo || '无特定角色'}
+
+涉及地点：
+${locationInfo || '无特定地点'}
+
+前情提要：
+${previousContext || '这是开篇'}
+
+请开始撰写章节内容：`
+
+    try {
+      const result = await this.callAIStream(
+        window,
+        eventId,
+        prompt,
+        systemPrompt,
+        Math.min((targetWords || outline.estimatedWords || 3000) * 2, 8192)
+      )
+
+      return { success: true, data: { content: result } }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  /**
+   * 生成评论段落内容
+   */
+  async generateSection(
+    window: BrowserWindow,
+    eventId: string,
+    projectId: string,
+    outlineId: string,
+    targetWords?: number
+  ): Promise<GenerateResponse> {
+    const dbManager = getDatabaseManager()
+
+    // 获取大纲节点
+    const outline = await dbManager.lwOutlines?.getById(outlineId)
+    if (!outline) {
+      return { success: false, error: '大纲节点不存在' }
+    }
+
+    // 获取主题和素材
+    const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
+    const materials = await dbManager.lwMaterials?.getByProjectId(projectId) || []
+
+    const systemPrompt = `你是一位专业的评论文章作者。请根据大纲节点信息，撰写段落内容。
+要求：
+1. 观点明确，论证有力
+2. 引用素材时要自然融入
+3. 语言要专业但不晦涩
+4. 控制字数在目标范围内
+
+直接输出段落内容，不需要标题、不需要额外说明。`
+
+    const relevantMaterials = materials.filter(m =>
+      outline.involvedCharacters?.includes(m.id) || materials.indexOf(m) < 3
+    ).slice(0, 3)
+
+    const materialContext = relevantMaterials.map(m =>
+      `【${m.name}】\n${m.content?.slice(0, 500) || '内容未加载'}`
+    ).join('\n\n')
+
+    const prompt = `请根据以下信息，撰写评论段落：
+
+文章主题：${overview?.title || '未命名'}
+核心观点：${overview?.coreTheme || '未指定'}
+段落标题：${outline.name}
+段落要点：${outline.summary}
+目标字数：${targetWords || outline.estimatedWords || 500}字
+
+可用素材：
+${materialContext || '无特定素材'}
+
+请开始撰写段落内容：`
+
+    try {
+      const result = await this.callAIStream(
+        window,
+        eventId,
+        prompt,
+        systemPrompt,
+        Math.min((targetWords || outline.estimatedWords || 500) * 2, 4096)
+      )
+
+      return { success: true, data: { content: result } }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
+}
+
+/**
+ * 获取长文写作 AI 服务实例
+ */
+export const getLongWritingAIService = (): LongWritingAIService =>
+  LongWritingAIService.getInstance()

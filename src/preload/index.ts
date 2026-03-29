@@ -853,6 +853,146 @@ const electronAPI = {
       ipcRenderer.on(IPC_CHANNELS.SEARCH_ENGINE_CHANGED, handler)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.SEARCH_ENGINE_CHANGED, handler)
     }
+  },
+
+  // 长文写作相关
+  longwriting: {
+    // 项目管理
+    getProjects: () => ipcRenderer.invoke('longwriting:getProjects'),
+    getProject: (id: string) => ipcRenderer.invoke('longwriting:getProject', id),
+    createProject: (data: { name: string; type: 'story' | 'comment' }) =>
+      ipcRenderer.invoke('longwriting:createProject', data),
+    updateProject: (id: string, data: { name?: string; stage?: string; progress?: number }) =>
+      ipcRenderer.invoke('longwriting:updateProject', id, data),
+    deleteProject: (id: string) => ipcRenderer.invoke('longwriting:deleteProject', id),
+
+    // 故事概要
+    getStoryOverview: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:getStoryOverview', projectId),
+    updateStoryOverview: (projectId: string, data: any) =>
+      ipcRenderer.invoke('longwriting:updateStoryOverview', projectId, data),
+    lockStoryOverview: (projectId: string, locked: boolean) =>
+      ipcRenderer.invoke('longwriting:lockStoryOverview', projectId, locked),
+
+    // 背景设定
+    getBackground: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:getBackground', projectId),
+    updateBackground: (projectId: string, data: any) =>
+      ipcRenderer.invoke('longwriting:updateBackground', projectId, data),
+
+    // 地点管理
+    getLocations: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:getLocations', projectId),
+    getLocation: (id: string) => ipcRenderer.invoke('longwriting:getLocation', id),
+    createLocation: (data: any) => ipcRenderer.invoke('longwriting:createLocation', data),
+    updateLocation: (id: string, data: any) =>
+      ipcRenderer.invoke('longwriting:updateLocation', id, data),
+    deleteLocation: (id: string) => ipcRenderer.invoke('longwriting:deleteLocation', id),
+
+    // 角色管理
+    getCharacters: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:getCharacters', projectId),
+    getCharacter: (id: string) => ipcRenderer.invoke('longwriting:getCharacter', id),
+    createCharacter: (data: any) => ipcRenderer.invoke('longwriting:createCharacter', data),
+    updateCharacter: (id: string, data: any) =>
+      ipcRenderer.invoke('longwriting:updateCharacter', id, data),
+    deleteCharacter: (id: string) => ipcRenderer.invoke('longwriting:deleteCharacter', id),
+    linkPortrait: (characterId: string, portraitId: string) =>
+      ipcRenderer.invoke('longwriting:linkPortrait', characterId, portraitId),
+    unlinkPortrait: (characterId: string) =>
+      ipcRenderer.invoke('longwriting:unlinkPortrait', characterId),
+
+    // 角色关系
+    getCharacterRelations: (characterId: string) =>
+      ipcRenderer.invoke('longwriting:getCharacterRelations', characterId),
+    createCharacterRelation: (data: any) =>
+      ipcRenderer.invoke('longwriting:createCharacterRelation', data),
+    deleteCharacterRelation: (id: string) =>
+      ipcRenderer.invoke('longwriting:deleteCharacterRelation', id),
+
+    // 技能管理
+    getSkills: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:getSkills', projectId),
+    getSkill: (id: string) => ipcRenderer.invoke('longwriting:getSkill', id),
+    createSkill: (data: any) => ipcRenderer.invoke('longwriting:createSkill', data),
+    updateSkill: (id: string, data: any) =>
+      ipcRenderer.invoke('longwriting:updateSkill', id, data),
+    deleteSkill: (id: string) => ipcRenderer.invoke('longwriting:deleteSkill', id),
+
+    // 物品管理
+    getItems: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:getItems', projectId),
+    getItem: (id: string) => ipcRenderer.invoke('longwriting:getItem', id),
+    createItem: (data: any) => ipcRenderer.invoke('longwriting:createItem', data),
+    updateItem: (id: string, data: any) =>
+      ipcRenderer.invoke('longwriting:updateItem', id, data),
+    deleteItem: (id: string) => ipcRenderer.invoke('longwriting:deleteItem', id),
+
+    // 素材管理
+    getMaterials: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:getMaterials', projectId),
+    getMaterial: (id: string) => ipcRenderer.invoke('longwriting:getMaterial', id),
+    createMaterial: (data: any) => ipcRenderer.invoke('longwriting:createMaterial', data),
+    updateMaterial: (id: string, data: any) =>
+      ipcRenderer.invoke('longwriting:updateMaterial', id, data),
+    updateMaterialStatus: (id: string, status: string, errorMessage?: string) =>
+      ipcRenderer.invoke('longwriting:updateMaterialStatus', id, status, errorMessage),
+    deleteMaterial: (id: string) => ipcRenderer.invoke('longwriting:deleteMaterial', id),
+    processMaterial: (id: string) => ipcRenderer.invoke('longwriting:processMaterial', id),
+
+    // 大纲管理
+    getOutlineTree: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:getOutlineTree', projectId),
+    getOutline: (id: string) => ipcRenderer.invoke('longwriting:getOutline', id),
+    createOutline: (data: any) => ipcRenderer.invoke('longwriting:createOutline', data),
+    updateOutline: (id: string, data: any) =>
+      ipcRenderer.invoke('longwriting:updateOutline', id, data),
+    deleteOutline: (id: string) => ipcRenderer.invoke('longwriting:deleteOutline', id),
+    moveOutline: (id: string, newParentId: string | null) =>
+      ipcRenderer.invoke('longwriting:moveOutline', id, newParentId),
+
+    // 章节管理
+    getChapter: (outlineId: string) => ipcRenderer.invoke('longwriting:getChapter', outlineId),
+    saveChapter: (outlineId: string, content: string) =>
+      ipcRenderer.invoke('longwriting:saveChapter', outlineId, content),
+    getChapterVersions: (chapterId: string) =>
+      ipcRenderer.invoke('longwriting:getChapterVersions', chapterId),
+    restoreChapterVersion: (chapterId: string, versionId: string) =>
+      ipcRenderer.invoke('longwriting:restoreChapterVersion', chapterId, versionId),
+    lockChapterVersion: (versionId: string) =>
+      ipcRenderer.invoke('longwriting:lockChapterVersion', versionId),
+
+    // AI 生成（eventId 作为第一个参数）
+    generateStoryOverview: (eventId: string, projectId: string, input: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:generateStoryOverview', eventId, projectId, input, providerConfigId, modelId),
+    generateCharacters: (eventId: string, projectId: string) =>
+      ipcRenderer.invoke('longwriting:generateCharacters', eventId, projectId),
+    generateSkillsItems: (eventId: string, projectId: string) =>
+      ipcRenderer.invoke('longwriting:generateSkillsItems', eventId, projectId),
+    generateOutlineStory: (eventId: string, projectId: string) =>
+      ipcRenderer.invoke('longwriting:generateOutlineStory', eventId, projectId),
+    generateOutlineComment: (eventId: string, projectId: string) =>
+      ipcRenderer.invoke('longwriting:generateOutlineComment', eventId, projectId),
+    generateChapter: (eventId: string, projectId: string, outlineId: string, targetWords?: number) =>
+      ipcRenderer.invoke('longwriting:generateChapter', eventId, projectId, outlineId, targetWords),
+    generateSection: (eventId: string, projectId: string, outlineId: string, targetWords?: number) =>
+      ipcRenderer.invoke('longwriting:generateSection', eventId, projectId, outlineId, targetWords),
+
+    // AI 生成事件监听
+    onGenerateEvent: (eventId: string, callback: (event: any, data: any) => void) => {
+      const channel = `longwriting:generate:${eventId}`
+      const listener = (_event: any, data: any) => callback(data)
+      ipcRenderer.on(channel, listener)
+      return () => ipcRenderer.removeListener(channel, listener)
+    },
+
+    // 导出功能
+    getExportData: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:getExportData', projectId),
+    exportMarkdown: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:exportMarkdown', projectId),
+    exportWord: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:exportWord', projectId)
   }
 }
 
