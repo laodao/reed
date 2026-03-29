@@ -16,7 +16,9 @@ import {
   CreateCharacterRequest,
   UpdateCharacterRequest,
   CreateOutlineRequest,
-  UpdateOutlineRequest
+  UpdateOutlineRequest,
+  CreatePlotRequest,
+  UpdatePlotRequest
 } from '../../shared/types/longwriting.types'
 
 /**
@@ -45,6 +47,16 @@ const CHANNELS = {
   CREATE_LOCATION: 'longwriting:createLocation',
   UPDATE_LOCATION: 'longwriting:updateLocation',
   DELETE_LOCATION: 'longwriting:deleteLocation',
+
+  // 情节管理
+  GET_PLOTS: 'longwriting:getPlots',
+  GET_PLOT: 'longwriting:getPlot',
+  CREATE_PLOT: 'longwriting:createPlot',
+  BATCH_CREATE_PLOTS: 'longwriting:batchCreatePlots',
+  UPDATE_PLOT: 'longwriting:updatePlot',
+  REORDER_PLOTS: 'longwriting:reorderPlots',
+  DELETE_PLOT: 'longwriting:deletePlot',
+  GET_PLOT_COUNT: 'longwriting:getPlotCount',
 
   // 角色管理
   GET_CHARACTERS: 'longwriting:getCharacters',
@@ -100,6 +112,8 @@ const CHANNELS = {
 
   // AI 生成
   GENERATE_STORY_OVERVIEW: 'longwriting:generateStoryOverview',
+  GENERATE_PLOTS: 'longwriting:generatePlots',
+  POLISH_BACKGROUND: 'longwriting:polishBackground',
   GENERATE_CHARACTERS: 'longwriting:generateCharacters',
   GENERATE_SKILLS_ITEMS: 'longwriting:generateSkillsItems',
   GENERATE_OUTLINE_STORY: 'longwriting:generateOutlineStory',
@@ -292,10 +306,13 @@ export function registerLongWritingHandlers(): void {
   })
 
   ipcMain.handle(CHANNELS.UPDATE_BACKGROUND, async (_event, projectId: string, data: any) => {
+    console.log('[LongWriting] UPDATE_BACKGROUND 被调用, projectId:', projectId, 'data:', data)
     try {
       const background = await service.updateBackground(projectId, data)
+      console.log('[LongWriting] UPDATE_BACKGROUND 成功, result:', background)
       return { success: true, data: background }
     } catch (error: any) {
+      console.error('[LongWriting] UPDATE_BACKGROUND 失败:', error)
       return { success: false, error: error.message }
     }
   })
@@ -342,6 +359,80 @@ export function registerLongWritingHandlers(): void {
     try {
       const result = await service.deleteLocation(id)
       return { success: result }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 情节管理 ====================
+
+  ipcMain.handle(CHANNELS.GET_PLOTS, async (_event, projectId: string) => {
+    try {
+      const plots = await service.getPlots(projectId)
+      return { success: true, data: plots }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.GET_PLOT, async (_event, id: string) => {
+    try {
+      const plot = await service.getPlot(id)
+      return { success: true, data: plot }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.CREATE_PLOT, async (_event, data: CreatePlotRequest) => {
+    try {
+      const plot = await service.createPlot(data)
+      return { success: true, data: plot }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.BATCH_CREATE_PLOTS, async (_event, projectId: string, plots: { title: string; summary: string; involvedCharacters?: string[] }[]) => {
+    try {
+      const result = await service.batchCreatePlots(projectId, plots)
+      return { success: true, data: result }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.UPDATE_PLOT, async (_event, id: string, data: UpdatePlotRequest) => {
+    try {
+      const plot = await service.updatePlot(id, data)
+      return { success: true, data: plot }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.REORDER_PLOTS, async (_event, projectId: string, orderList: { id: string; order: number }[]) => {
+    try {
+      const result = await service.reorderPlots(projectId, orderList)
+      return { success: result }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.DELETE_PLOT, async (_event, id: string) => {
+    try {
+      const result = await service.deletePlot(id)
+      return { success: result }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.GET_PLOT_COUNT, async (_event, projectId: string) => {
+    try {
+      const count = await service.getPlotCount(projectId)
+      return { success: true, data: count }
     } catch (error: any) {
       return { success: false, error: error.message }
     }
@@ -692,6 +783,38 @@ export function registerLongWritingHandlers(): void {
   )
 
   ipcMain.handle(
+    CHANNELS.GENERATE_PLOTS,
+    async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
+      try {
+        const window = BrowserWindow.fromWebContents(event.sender)
+        if (!window) {
+          return { success: false, error: '窗口不存在' }
+        }
+        const result = await aiService.generatePlots(window, eventId, projectId, providerConfigId, modelId)
+        return { ...result, eventId }
+      } catch (error: any) {
+        return { success: false, error: error.message }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    CHANNELS.POLISH_BACKGROUND,
+    async (event, eventId: string, projectId: string, field: 'eraDescription' | 'socialStructure' | 'techLevel', eraType: string, content: string, providerConfigId?: string, modelId?: string) => {
+      try {
+        const window = BrowserWindow.fromWebContents(event.sender)
+        if (!window) {
+          return { success: false, error: '窗口不存在' }
+        }
+        const result = await aiService.polishBackground(window, eventId, projectId, field, eraType, content, providerConfigId, modelId)
+        return { ...result, eventId }
+      } catch (error: any) {
+        return { success: false, error: error.message }
+      }
+    }
+  )
+
+  ipcMain.handle(
     CHANNELS.GENERATE_CHARACTERS,
     async (event, eventId: string, projectId: string) => {
       try {
@@ -725,13 +848,13 @@ export function registerLongWritingHandlers(): void {
 
   ipcMain.handle(
     CHANNELS.GENERATE_OUTLINE_STORY,
-    async (event, eventId: string, projectId: string) => {
+    async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
       try {
         const window = BrowserWindow.fromWebContents(event.sender)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.generateOutlineStory(window, eventId, projectId)
+        const result = await aiService.generateOutlineStory(window, eventId, projectId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }

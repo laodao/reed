@@ -21,7 +21,8 @@ export class LwOutlineRepository {
       SELECT * FROM lw_story_outlines WHERE project_id = ? ORDER BY order_index ASC, created_at ASC
     `)
     const rows = stmt.all(projectId) as any[]
-    return rows.map(this.mapToOutline)
+    // 使用箭头函数保持 this 上下文
+    return rows.map((row) => this.mapToOutline(row))
   }
 
   /**

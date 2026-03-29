@@ -80,7 +80,7 @@
     <el-dialog
       v-model="showCharacterDialog"
       :title="editingCharacter ? '编辑角色' : '添加角色'"
-      width="600px"
+      width="750px"
       destroy-on-close
     >
       <el-form :model="characterForm" label-width="100px" class="character-form">
@@ -105,30 +105,32 @@
         <el-row :gutter="16">
           <el-col :span="8">
             <el-form-item label="性别">
-              <el-radio-group v-model="characterForm.gender">
-                <el-radio value="male">男</el-radio>
-                <el-radio value="female">女</el-radio>
-                <el-radio value="other">其他</el-radio>
-              </el-radio-group>
+              <el-select v-model="characterForm.gender" placeholder="选择性别">
+                <el-option label="男" value="male" />
+                <el-option label="女" value="female" />
+                <el-option label="其他" value="other" />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="8">
             <el-form-item label="年龄">
-              <el-input-number v-model="characterForm.age" :min="0" :max="1000" />
+              <el-input-number v-model="characterForm.age" :min="0" :max="999" controls-position="right" style="width: 100%;" />
             </el-form-item>
           </el-col>
           <el-col :span="8">
             <el-form-item label="人像形象">
-              <el-button @click="showPortraitLinkDialog = true">
-                <el-icon><Picture /></el-icon>
-                {{ characterForm.portraitId ? '更换形象' : '关联形象' }}
-              </el-button>
-              <el-image
-                v-if="characterForm.portraitId && getPortraitPreview(characterForm.portraitId)"
-                :src="getPortraitPreview(characterForm.portraitId)"
-                class="portrait-preview"
-                fit="cover"
-              />
+              <div class="portrait-field">
+                <el-button @click="showPortraitLinkDialog = true">
+                  <el-icon><Picture /></el-icon>
+                  {{ characterForm.portraitId ? '更换形象' : '关联形象' }}
+                </el-button>
+                <el-image
+                  v-if="characterForm.portraitId && getPortraitPreview(characterForm.portraitId)"
+                  :src="getPortraitPreview(characterForm.portraitId)"
+                  class="portrait-preview"
+                  fit="cover"
+                />
+              </div>
             </el-form-item>
           </el-col>
         </el-row>
@@ -841,11 +843,16 @@ onMounted(() => {
 }
 
 .character-form {
+  .portrait-field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
   .portrait-preview {
-    width: 48px;
-    height: 48px;
+    width: 60px;
+    height: 60px;
     border-radius: 4px;
-    margin-top: 8px;
   }
 }
 

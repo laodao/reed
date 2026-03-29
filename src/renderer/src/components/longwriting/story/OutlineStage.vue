@@ -218,10 +218,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, inject } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, MagicStick, ArrowRight, ArrowDown, Close } from '@element-plus/icons-vue'
 import type { StoryOutline, OutlineNodeType, OutlineStatus, StoryCharacter } from '../../../../shared/types/longwriting.types'
+import type { ComputedRef } from 'vue'
 
 const props = defineProps<{
   projectId: string
@@ -230,6 +231,11 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:progress': [progress: number]
 }>()
+
+// 从父组件注入选中的模型（computed ref）
+const selectedModelRef = inject<ComputedRef<{ providerConfigId: string; modelId: string } | null>>('selectedModel')
+// 获取当前选中的模型值
+const selectedModel = computed(() => selectedModelRef?.value)
 
 // 大纲节点列表
 const outlineNodes = ref<StoryOutline[]>([])
@@ -501,24 +507,25 @@ function resetNodeForm() {
 
 // AI 生成大纲
 async function generateOutline() {
+  // 检查是否选择了模型
+  if (!selectedModel.value?.providerConfigId || !selectedModel.value?.modelId) {
+    ElMessage.warning('请先在顶部选择 AI 模型')
+    return
+  }
+
   generating.value = true
-  generatingContent.value = ''
+  generatingContent.value = '准备生成大纲...'
 
   // 生成唯一事件 ID
   currentEventId.value = `outline-${props.projectId}-${Date.now()}`
 
-  // 监听流式生成事件
+  // 监听进度事件
   const unsubscribe = window.electronAPI.longwriting.onGenerateEvent(
     currentEventId.value,
     (event: { type: string; content?: string; error?: string; data?: any }) => {
-      if (event.type === 'content' && event.content) {
-        generatingContent.value += event.content
-      } else if (event.type === 'done') {
-        generating.value = false
-        currentEventId.value = null
-        unsubscribe()
-        // 解析 AI 响应
-        parseOutlineResult(generatingContent.value)
+      if (event.type === 'progress' && event.content) {
+        // 显示进度信息
+        generatingContent.value = event.content
       } else if (event.type === 'error') {
         generating.value = false
         currentEventId.value = null
@@ -528,35 +535,43 @@ async function generateOutline() {
     }
   )
 
-  // 调用 AI API，传递 eventId
-  const result = await window.electronAPI.longwriting.generateOutlineStory(currentEventId.value, props.projectId)
+  try {
+    // 调用 AI API，通过返回值获取最终数据
+    const result = await window.electronAPI.longwriting.generateOutlineStory(
+      currentEventId.value,
+      props.projectId,
+      selectedModel.value.providerConfigId,
+      selectedModel.value.modelId
+    )
 
-  if (!result.success) {
     generating.value = false
     currentEventId.value = null
     unsubscribe()
-    ElMessage.error(result.error || '生成失败')
+
+    if (!result.success) {
+      ElMessage.error(result.error || '生成失败')
+    } else if (result.data && result.data.length > 0) {
+      showOutlineConfirm(result.data)
+    } else {
+      ElMessage.error('生成结果为空')
+    }
+  } catch (error) {
+    generating.value = false
+    currentEventId.value = null
+    unsubscribe()
+    ElMessage.error('生成失败: ' + error)
   }
 }
 
-// 解析 AI 响应
-async function parseOutlineResult(content: string) {
-  try {
-    const jsonMatch = content.match(/\[[\s\S]*\]/)
-    if (!jsonMatch) {
-      ElMessage.warning('AI 返回格式不正确，请重试')
-      return
-    }
+// 显示大纲确认对话框
+async function showOutlineConfirm(suggestedOutline: any[]) {
+  if (!Array.isArray(suggestedOutline) || suggestedOutline.length === 0) {
+    ElMessage.warning('AI 未生成大纲建议')
+    return
+  }
 
-    const suggestedOutline = JSON.parse(jsonMatch[0])
-
-    if (!Array.isArray(suggestedOutline) || suggestedOutline.length === 0) {
-      ElMessage.warning('AI 未生成大纲建议')
-      return
-    }
-
-    // 显示确认对话框
-    ElMessageBox.confirm(
+  // 显示确认对话框
+  ElMessageBox.confirm(
       `AI 建议生成以下大纲结构：\n\n${suggestedOutline.map((o: any) => `- ${o.name}（预估${o.estimatedWords || 0}字）`).join('\n')}`,
       'AI 生成建议',
       {
@@ -565,74 +580,83 @@ async function parseOutlineResult(content: string) {
         type: 'info'
       }
     ).then(async () => {
-      // 创建大纲节点
-      for (let i = 0; i < suggestedOutline.length; i++) {
-        const volume = suggestedOutline[i]
-        // 创建卷
-        const volumeResult = await window.electronAPI.longwriting.createOutline({
-          projectId: props.projectId,
-          name: volume.name,
-          level: 1,
-          nodeType: 'volume',
-          summary: volume.summary || '',
-          estimatedWords: volume.estimatedWords || 0,
-          involvedCharacters: [],
-          involvedLocations: [],
-          status: 'pending',
-          orderIndex: i
-        })
+      console.log('开始创建大纲，建议数据:', suggestedOutline)
+      try {
+        // 创建大纲节点
+        for (let i = 0; i < suggestedOutline.length; i++) {
+          const volume = suggestedOutline[i]
+          console.log('创建卷:', volume.name)
+          // 创建卷
+          const volumeResult = await window.electronAPI.longwriting.createOutline({
+            projectId: props.projectId,
+            name: volume.name,
+            level: 1,
+            nodeType: 'volume',
+            summary: volume.summary || '',
+            estimatedWords: volume.estimatedWords || 0,
+            involvedCharacters: [],
+            involvedLocations: [],
+            status: 'pending',
+            orderIndex: i
+          })
+          console.log('卷创建结果:', volumeResult)
 
-        // 如果有章节，创建章
-        if (volumeResult.success && volume.chapters && Array.isArray(volume.chapters)) {
-          const volumeId = volumeResult.data.id
-          for (let j = 0; j < volume.chapters.length; j++) {
-            const chapter = volume.chapters[j]
-            const chapterResult = await window.electronAPI.longwriting.createOutline({
-              projectId: props.projectId,
-              parentId: volumeId,
-              name: chapter.name,
-              level: 2,
-              nodeType: 'chapter',
-              summary: chapter.summary || '',
-              estimatedWords: chapter.estimatedWords || 0,
-              involvedCharacters: [],
-              involvedLocations: [],
-              status: 'pending',
-              orderIndex: j
-            })
+          // 如果有章节，创建章
+          if (volumeResult.success && volume.chapters && Array.isArray(volume.chapters)) {
+            const volumeId = volumeResult.data.id
+            for (let j = 0; j < volume.chapters.length; j++) {
+              const chapter = volume.chapters[j]
+              const chapterResult = await window.electronAPI.longwriting.createOutline({
+                projectId: props.projectId,
+                parentId: volumeId,
+                name: chapter.name,
+                level: 2,
+                nodeType: 'chapter',
+                summary: chapter.summary || '',
+                estimatedWords: chapter.estimatedWords || 0,
+                involvedCharacters: [],
+                involvedLocations: [],
+                status: 'pending',
+                orderIndex: j
+              })
+              console.log('章创建结果:', chapterResult)
 
-            // 如果有小节，创建节
-            if (chapterResult.success && chapter.sections && Array.isArray(chapter.sections)) {
-              const chapterId = chapterResult.data.id
-              for (let k = 0; k < chapter.sections.length; k++) {
-                const section = chapter.sections[k]
-                await window.electronAPI.longwriting.createOutline({
-                  projectId: props.projectId,
-                  parentId: chapterId,
-                  name: section.name,
-                  level: 3,
-                  nodeType: 'section',
-                  summary: section.summary || '',
-                  estimatedWords: section.estimatedWords || 0,
-                  involvedCharacters: [],
-                  involvedLocations: [],
-                  status: 'pending',
-                  orderIndex: k
-                })
+              // 如果有小节，创建节
+              if (chapterResult.success && chapter.sections && Array.isArray(chapter.sections)) {
+                const chapterId = chapterResult.data.id
+                for (let k = 0; k < chapter.sections.length; k++) {
+                  const section = chapter.sections[k]
+                  await window.electronAPI.longwriting.createOutline({
+                    projectId: props.projectId,
+                    parentId: chapterId,
+                    name: section.name,
+                    level: 3,
+                    nodeType: 'section',
+                    summary: section.summary || '',
+                    estimatedWords: section.estimatedWords || 0,
+                    involvedCharacters: [],
+                    involvedLocations: [],
+                    status: 'pending',
+                    orderIndex: k
+                  })
+                }
               }
             }
           }
         }
-      }
 
-      await loadOutlineTree()
-      updateProgress()
-      ElMessage.success('大纲已生成')
-    }).catch(() => {})
-  } catch (error) {
-    console.error('解析 AI 响应失败:', error)
-    ElMessage.error('解析 AI 响应失败')
-  }
+        console.log('大纲创建完成，重新加载...')
+        await loadOutlineTree()
+        console.log('大纲树加载完成:', outlineNodes.value)
+        updateProgress()
+        ElMessage.success('大纲已生成')
+      } catch (error) {
+        console.error('创建大纲失败:', error)
+        ElMessage.error('创建大纲失败: ' + error)
+      }
+    }).catch((err) => {
+      console.log('用户取消或出错:', err)
+    })
 }
 
 // 取消生成
