@@ -1,0 +1,141 @@
+/**
+ * 标签页状态管理
+ * @module stores/tabs
+ */
+
+import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
+import type { RouteLocationNormalized } from 'vue-router'
+
+export interface TabItem {
+  /** 路由路径 */
+  path: string
+  /** 标签名称 */
+  title: string
+  /** 图标名称 */
+  icon?: string
+  /** 是否可关闭 */
+  closable: boolean
+  /** 是否固定 */
+  affixed?: boolean
+}
+
+export const useTabsStore = defineStore('tabs', () => {
+  // 标签页列表
+  const tabList = ref<TabItem[]>([
+    {
+      path: '/',
+      title: '首页',
+      closable: false,
+      affixed: true
+    }
+  ])
+
+  // 当前激活的标签路径
+  const activeTabPath = ref('/')
+
+  // 计算属性：当前激活的标签
+  const activeTab = computed(() => {
+    return tabList.value.find(tab => tab.path === activeTabPath.value)
+  })
+
+  /**
+   * 添加标签页
+   */
+  function addTab(route: RouteLocationNormalized) {
+    const path = route.path
+    const title = (route.meta?.title as string) || route.name?.toString() || '未命名'
+
+    // 检查是否已存在
+    const exists = tabList.value.some(tab => tab.path === path)
+    if (!exists) {
+      tabList.value.push({
+        path,
+        title,
+        closable: path !== '/' // 首页不可关闭
+      })
+    }
+
+    // 设置为激活状态
+    activeTabPath.value = path
+  }
+
+  /**
+   * 关闭标签页
+   */
+  function closeTab(path: string): string | null {
+    const index = tabList.value.findIndex(tab => tab.path === path)
+    if (index === -1) return null
+
+    const tab = tabList.value[index]
+    if (!tab.closable) return null // 不可关闭
+
+    tabList.value.splice(index, 1)
+
+    // 如果关闭的是当前激活的标签，切换到前一个或后一个
+    if (activeTabPath.value === path) {
+      const newIndex = Math.min(index, tabList.value.length - 1)
+      activeTabPath.value = tabList.value[newIndex]?.path || '/'
+      return activeTabPath.value
+    }
+
+    return null
+  }
+
+  /**
+   * 关闭其他标签页
+   */
+  function closeOtherTabs(path: string) {
+    tabList.value = tabList.value.filter(tab => tab.path === path || !tab.closable)
+    activeTabPath.value = path
+  }
+
+  /**
+   * 关闭右侧标签页
+   */
+  function closeRightTabs(path: string) {
+    const index = tabList.value.findIndex(tab => tab.path === path)
+    if (index === -1) return
+
+    tabList.value = tabList.value.filter((tab, i) => i <= index || !tab.closable)
+  }
+
+  /**
+   * 关闭所有可关闭的标签页
+   */
+  function closeAllTabs(): string {
+    tabList.value = tabList.value.filter(tab => !tab.closable)
+    activeTabPath.value = '/'
+    return '/'
+  }
+
+  /**
+   * 设置当前激活的标签
+   */
+  function setActiveTab(path: string) {
+    activeTabPath.value = path
+  }
+
+  /**
+   * 根据路由更新标签标题
+   */
+  function updateTabTitle(path: string, title: string) {
+    const tab = tabList.value.find(t => t.path === path)
+    if (tab) {
+      tab.title = title
+    }
+  }
+
+  return {
+    tabList,
+    activeTabPath,
+    activeTab,
+    addTab,
+    closeTab,
+    closeOtherTabs,
+    closeRightTabs,
+    closeAllTabs,
+    setActiveTab,
+    updateTabTitle
+  }
+})

@@ -97,19 +97,25 @@
 
     <!-- 主内容区 -->
     <main class="main-content">
-      <router-view v-slot="{ Component, route }">
-        <transition :name="pageTransition" mode="out-in">
-          <keep-alive :include="cachedViews">
-            <component :is="Component" :key="route.path" />
-          </keep-alive>
-        </transition>
-      </router-view>
+      <!-- 标签页栏 -->
+      <TabBar />
+
+      <!-- 页面内容 -->
+      <div class="page-container">
+        <router-view v-slot="{ Component, route }">
+          <transition :name="pageTransition" mode="out-in">
+            <keep-alive :include="cachedViews">
+              <component :is="Component" :key="route.path" />
+            </keep-alive>
+          </transition>
+        </router-view>
+      </div>
     </main>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, markRaw, onMounted } from 'vue'
+import { ref, computed, markRaw, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   HomeFilled,
@@ -126,10 +132,13 @@ import {
   EditPen
 } from '@element-plus/icons-vue'
 import { useTheme } from '@/composables/useTheme'
+import { useTabsStore } from '@/stores/tabs'
+import TabBar from '@/components/common/TabBar.vue'
 
 const route = useRoute()
 const router = useRouter()
 const { currentTheme } = useTheme()
+const tabsStore = useTabsStore()
 
 const isCollapsed = ref(false)
 const pageTransition = ref('slide-fade')
@@ -202,6 +211,40 @@ const toggleCollapse = () => {
 const navigateTo = (path: string) => {
   router.push(path)
 }
+
+// 路由路径到标题的映射
+const pathTitleMap: Record<string, string> = {
+  '/': '首页',
+  '/chat': 'AI 对话',
+  '/image': '图像生成',
+  '/portrait': '人像设计',
+  '/longwriting': '长文写作',
+  '/translate': '文档翻译',
+  '/voice': '语音助手',
+  '/knowledge-base': '知识库',
+  '/assistant': '智能助手',
+  '/settings': '设置'
+}
+
+// 监听路由变化，添加标签页
+watch(
+  () => route.path,
+  (path) => {
+    const title = pathTitleMap[path] || '未命名'
+    tabsStore.addTab({
+      path,
+      name: title,
+      meta: { title },
+      matched: [],
+      fullPath: path,
+      hash: '',
+      params: {},
+      query: {},
+      redirectedFrom: null
+    } as any)
+  },
+  { immediate: true }
+)
 </script>
 
 <style lang="scss" scoped>
@@ -453,6 +496,13 @@ const navigateTo = (path: string) => {
   display: flex;
   flex-direction: column;
   background: var(--bg-color-page);
+}
+
+.page-container {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 // ==================== 过渡动画 ====================
