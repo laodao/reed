@@ -29,7 +29,7 @@
             @node-click="handleNodeClick"
           >
             <template #default="{ node, data }">
-              <div class="tree-node">
+              <div class="tree-node" :class="{ active: data.id === activeOutlineId }">
                 <span class="node-name">{{ data.name }}</span>
                 <span class="node-status" :class="data.status">{{ getStatusName(data.status) }}</span>
               </div>
@@ -38,184 +38,196 @@
           <el-empty v-if="outlineTreeData.length === 0" description="暂无大纲数据" />
         </div>
 
-        <!-- 右侧编辑区 -->
-        <div class="editor-panel">
-          <!-- 未选择大纲时的提示 -->
-          <div v-if="!selectedOutlineId" class="empty-chapter">
-            <el-empty description="请从左侧选择要写作的大纲节点">
+        <!-- 右侧章节列表编辑区 -->
+        <div class="chapters-panel" ref="chaptersPanelRef" @scroll="handleScroll">
+          <div v-if="outlineTreeData.length === 0" class="empty-chapter">
+            <el-empty description="请先在大纲设计阶段创建大纲">
               <el-button type="primary" @click="goToOutline">前往大纲设计</el-button>
             </el-empty>
           </div>
 
-          <!-- 已选择大纲时的编辑区 -->
+          <!-- 所有章节卡片 -->
           <template v-else>
-            <!-- 大纲信息 -->
-            <div class="outline-info">
-              <div class="info-header">
-                <h3>{{ selectedOutline?.name }}</h3>
-                <div class="info-meta">
-                  <span>预估字数：{{ selectedOutline?.estimatedWords || 0 }}字</span>
-                  <span>当前字数：{{ currentWordCount }}字</span>
-                  <el-tag :type="getStatusType(selectedOutline?.status)">
-                    {{ getStatusName(selectedOutline?.status) }}
+            <div
+              v-for="outline in allOutlines"
+              :key="outline.id"
+              :ref="el => setChapterRef(outline.id, el)"
+              class="chapter-card"
+              :class="{ active: outline.id === activeOutlineId }"
+            >
+              <!-- 章节头部信息 -->
+              <div class="chapter-header">
+                <div class="chapter-title-row">
+                  <span class="chapter-type">{{ getNodeTypeName(outline.nodeType) }}</span>
+                  <h3 class="chapter-title">{{ outline.name }}</h3>
+                  <el-tag :type="getStatusType(outline.status)" size="small">
+                    {{ getStatusName(outline.status) }}
                   </el-tag>
                 </div>
-              </div>
-              <!-- 摘要显示 -->
-              <div class="info-summary-box">
-                <div class="summary-label">
-                  <el-icon><Document /></el-icon>
-                  <span>章节摘要</span>
+                <div class="chapter-meta">
+                  <span v-if="outline.estimatedWords">预估 {{ outline.estimatedWords }} 字</span>
+                  <span v-if="getChapterWordCount(outline.id)">
+                    当前 {{ getChapterWordCount(outline.id) }} 字
+                  </span>
                 </div>
-                <p class="info-summary">{{ selectedOutline?.summary || '暂无摘要' }}</p>
+                <p v-if="outline.summary" class="chapter-summary">{{ outline.summary }}</p>
+                <div v-if="outline.involvedCharacters?.length > 0 || outline.involvedLocations?.length > 0" class="chapter-refs">
+                  <span v-if="outline.involvedCharacters?.length > 0">
+                    涉及角色：
+                    <el-tag v-for="id in outline.involvedCharacters" :key="id" size="small">
+                      {{ getCharacterName(id) }}
+                    </el-tag>
+                  </span>
+                  <span v-if="outline.involvedLocations?.length > 0">
+                    涉及地点：
+                    <el-tag v-for="id in outline.involvedLocations" :key="id" size="small" type="info">
+                      {{ getLocationName(id) }}
+                    </el-tag>
+                  </span>
+                </div>
               </div>
-              <div class="info-references">
-                <span v-if="selectedOutline?.involvedCharacters?.length > 0">
-                  涉及角色：
-                  <el-tag v-for="id in selectedOutline?.involvedCharacters" :key="id" size="small">
-                    {{ getCharacterName(id) }}
-                  </el-tag>
-                </span>
-                <span v-if="selectedOutline?.involvedLocations?.length > 0">
-                  涉及地点：
-                  <el-tag v-for="id in selectedOutline?.involvedLocations" :key="id" size="small" type="info">
-                    {{ getLocationName(id) }}
-                  </el-tag>
-                </span>
-              </div>
-            </div>
 
-            <!-- 内容编辑区 -->
-            <div class="editor-container">
-              <div class="editor-toolbar">
-                <el-button v-if="!generating" type="primary" @click="generateChapter">
+              <!-- 章节编辑工具栏 -->
+              <div class="chapter-toolbar">
+                <el-button
+                  v-if="!generatingMap[outline.id]"
+                  type="primary"
+                  size="small"
+                  @click="startGenerate(outline)"
+                >
                   <el-icon><MagicStick /></el-icon>
                   AI 生成
                 </el-button>
-                <el-button v-else type="danger" @click="cancelGeneration">
+                <el-button
+                  v-else
+                  type="danger"
+                  size="small"
+                  @click="cancelGenerate(outline.id)"
+                >
                   <el-icon><Close /></el-icon>
-                  取消生成
+                  取消
                 </el-button>
-                <el-button :loading="generating" @click="showVersionDialog = true">
+                <el-button size="small" @click="showVersions(outline)">
                   <el-icon><Clock /></el-icon>
-                  版本历史
+                  版本
                 </el-button>
-                <el-button :disabled="generating" @click="saveChapter">
+                <el-button
+                  size="small"
+                  :loading="savingMap[outline.id]"
+                  @click="saveChapter(outline.id)"
+                >
                   <el-icon><DocumentChecked /></el-icon>
                   保存
                 </el-button>
-                <div class="toolbar-right">
-                  <span class="word-count">{{ currentWordCount }}字</span>
-                  <el-switch v-model="autoSave" active-text="自动保存" :disabled="generating" />
-                </div>
               </div>
 
+              <!-- 章节内容编辑区 -->
               <el-input
-                v-model="chapterContent"
+                v-model="chapterContentMap[outline.id]"
                 type="textarea"
-                :rows="20"
-                placeholder="在这里编写章节内容，或点击'AI 生成'自动生成..."
+                :rows="12"
+                :placeholder="getEditorPlaceholder(outline)"
                 class="chapter-editor"
-                @input="updateWordCount"
+                @input="updateWordCount(outline.id)"
               />
             </div>
-
-            <!-- AI 生成参数设置 -->
-            <el-dialog
-              v-model="showGenerateDialog"
-              title="AI 生成参数"
-              width="400px"
-            >
-              <el-form :model="generateForm" label-width="80px">
-                <el-form-item label="目标字数">
-                  <el-input-number v-model="generateForm.targetWords" :min="500" :max="50000" :step="500" />
-                </el-form-item>
-                <el-form-item label="写作风格">
-                  <el-select v-model="generateForm.style" placeholder="选择写作风格">
-                    <el-option label="默认" value="" />
-                    <el-option label="轻松幽默" value="light" />
-                    <el-option label="沉重深刻" value="heavy" />
-                    <el-option label="热血激昂" value="passionate" />
-                    <el-option label="冷峻沉稳" value="calm" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item label="附加提示">
-                  <el-input
-                    v-model="generateForm.extraPrompt"
-                    type="textarea"
-                    :rows="2"
-                    placeholder="其他写作要求..."
-                  />
-                </el-form-item>
-              </el-form>
-              <template #footer>
-                <el-button @click="showGenerateDialog = false">取消</el-button>
-                <el-button type="primary" :loading="generating" @click="executeGeneration">
-                  开始生成
-                </el-button>
-              </template>
-            </el-dialog>
-
-            <!-- 版本历史对话框 -->
-            <el-dialog
-              v-model="showVersionDialog"
-              title="版本历史"
-              width="600px"
-            >
-              <div class="version-list">
-                <div v-for="version in versions" :key="version.id" class="version-item">
-                  <div class="version-info">
-                    <span class="version-number">版本 {{ version.versionNumber }}</span>
-                    <span class="version-type" :class="version.versionType">
-                      {{ version.versionType === 'generated' ? 'AI生成' : '手动编辑' }}
-                    </span>
-                    <span class="version-date">{{ formatDate(version.createdAt) }}</span>
-                    <span class="version-words">{{ version.wordCount }}字</span>
-                    <el-tag v-if="version.isLocked" type="warning" size="small">已锁定</el-tag>
-                  </div>
-                  <div class="version-actions">
-                    <el-button text size="small" @click="previewVersion(version)">
-                      <el-icon><View /></el-icon>
-                      预览
-                    </el-button>
-                    <el-button
-                      text
-                      size="small"
-                      :disabled="version.isLocked"
-                      @click="restoreVersion(version)"
-                    >
-                      <el-icon><RefreshLeft /></el-icon>
-                      恢复
-                    </el-button>
-                  </div>
-                </div>
-                <el-empty v-if="versions.length === 0" description="暂无历史版本" />
-              </div>
-            </el-dialog>
-
-            <!-- 版本预览对话框 -->
-            <el-dialog
-              v-model="showPreviewDialog"
-              title="版本预览"
-              width="700px"
-            >
-              <div class="preview-content">
-                <pre>{{ previewContent }}</pre>
-              </div>
-            </el-dialog>
           </template>
         </div>
       </div>
     </div>
+
+    <!-- AI 生成参数设置对话框 -->
+    <el-dialog
+      v-model="showGenerateDialog"
+      title="AI 生成参数"
+      width="400px"
+    >
+      <el-form :model="generateForm" label-width="80px">
+        <el-form-item label="目标字数">
+          <el-input-number v-model="generateForm.targetWords" :min="500" :max="50000" :step="500" />
+        </el-form-item>
+        <el-form-item label="写作风格">
+          <el-select v-model="generateForm.style" placeholder="选择写作风格">
+            <el-option label="默认" value="" />
+            <el-option label="轻松幽默" value="light" />
+            <el-option label="沉重深刻" value="heavy" />
+            <el-option label="热血激昂" value="passionate" />
+            <el-option label="冷峻沉稳" value="calm" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="附加提示">
+          <el-input
+            v-model="generateForm.extraPrompt"
+            type="textarea"
+            :rows="2"
+            placeholder="其他写作要求..."
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showGenerateDialog = false">取消</el-button>
+        <el-button type="primary" @click="executeGeneration">
+          开始生成
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 版本历史对话框 -->
+    <el-dialog
+      v-model="showVersionDialog"
+      title="版本历史"
+      width="600px"
+    >
+      <div class="version-list">
+        <div v-for="version in versions" :key="version.id" class="version-item">
+          <div class="version-info">
+            <span class="version-number">版本 {{ version.versionNumber }}</span>
+            <span class="version-type" :class="version.versionType">
+              {{ version.versionType === 'generated' ? 'AI生成' : '手动编辑' }}
+            </span>
+            <span class="version-date">{{ formatDate(version.createdAt) }}</span>
+            <span class="version-words">{{ version.wordCount }}字</span>
+            <el-tag v-if="version.isLocked" type="warning" size="small">已锁定</el-tag>
+          </div>
+          <div class="version-actions">
+            <el-button text size="small" @click="previewVersion(version)">
+              <el-icon><View /></el-icon>
+              预览
+            </el-button>
+            <el-button
+              text
+              size="small"
+              :disabled="version.isLocked"
+              @click="restoreVersion(version)"
+            >
+              <el-icon><RefreshLeft /></el-icon>
+              恢复
+            </el-button>
+          </div>
+        </div>
+        <el-empty v-if="versions.length === 0" description="暂无历史版本" />
+      </div>
+    </el-dialog>
+
+    <!-- 版本预览对话框 -->
+    <el-dialog
+      v-model="showPreviewDialog"
+      title="版本预览"
+      width="700px"
+    >
+      <div class="preview-content">
+        <pre>{{ previewContent }}</pre>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, inject } from 'vue'
+import { ref, computed, watch, onMounted, inject, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { MagicStick, Clock, DocumentChecked, View, RefreshLeft, Close, Fold, Document } from '@element-plus/icons-vue'
-import type { StoryOutline, StoryChapter, ChapterVersion, OutlineStatus, StoryCharacter } from '../../../../shared/types/longwriting.types'
+import { MagicStick, Clock, DocumentChecked, View, RefreshLeft, Close, Fold } from '@element-plus/icons-vue'
+import type { StoryOutline, StoryChapter, ChapterVersion, OutlineStatus, OutlineNodeType, StoryCharacter } from '../../../../shared/types/longwriting.types'
 import type { ElTree } from 'element-plus'
 
 const props = defineProps<{
@@ -238,25 +250,39 @@ const outlineNodes = ref<StoryOutline[]>([])
 const characters = ref<StoryCharacter[]>([])
 const locations = ref<any[]>([])
 
-// 选中的大纲
-const selectedOutlineId = ref<string>('')
+// 当前激活的大纲 ID（用于高亮左侧树和右侧卡片）
+const activeOutlineId = ref<string>('')
 
-// 章节内容
-const chapterContent = ref('')
-const currentChapterId = ref<string | null>(null)
-const currentWordCount = ref(0)
+// 章节内容映射（outlineId -> content）
+const chapterContentMap = ref<Record<string, string>>({})
+
+// 章节ID映射（outlineId -> chapterId）
+const chapterIdMap = ref<Record<string, string>>({})
+
+// 章节卡片DOM引用
+const chapterRefs = ref<Record<string, HTMLElement | null>>({})
+const chaptersPanelRef = ref<HTMLElement | null>(null)
 
 // 版本列表
 const versions = ref<ChapterVersion[]>([])
 
 // 对话框状态
-const showGenerateDialog = ref(false)
 const showVersionDialog = ref(false)
 const showPreviewDialog = ref(false)
+const showGenerateDialog = ref(false)
 const previewContent = ref('')
 
-// 生成状态
-const generating = ref(false)
+// 当前操作的大纲
+const currentOutlineForAction = ref<StoryOutline | null>(null)
+
+// 生成状态映射
+const generatingMap = ref<Record<string, boolean>>({})
+const generatingEventIdMap = ref<Record<string, string | null>>({})
+
+// 保存状态映射
+const savingMap = ref<Record<string, boolean>>({})
+
+// 自动保存
 const autoSave = ref(true)
 
 // 加载状态
@@ -275,9 +301,19 @@ const treeProps = {
   label: 'name'
 }
 
+// 树引用
+const treeRef = ref<InstanceType<typeof ElTree> | null>(null)
+
 // 构建树形数据
 const outlineTreeData = computed(() => {
   return buildOutlineTree(outlineNodes.value)
+})
+
+// 所有大纲（扁平化，用于渲染右侧卡片）
+const allOutlines = computed(() => {
+  return outlineNodes.value
+    .filter(n => n.nodeType === 'chapter' || n.nodeType === 'section')
+    .sort((a, b) => a.orderIndex - b.orderIndex)
 })
 
 // 构建大纲树结构
@@ -307,6 +343,13 @@ function buildOutlineTree(nodes: StoryOutline[]): any[] {
   return rootNodes
 }
 
+// 设置章节卡片DOM引用
+function setChapterRef(id: string, el: any) {
+  if (el) {
+    chapterRefs.value[id] = el as HTMLElement
+  }
+}
+
 // 折叠所有节点
 function collapseAll() {
   const nodes = treeRef.value?.store?.nodesMap
@@ -317,18 +360,63 @@ function collapseAll() {
   }
 }
 
-// 处理节点点击
+// 处理节点点击 - 滚动到对应章节
 function handleNodeClick(data: StoryOutline) {
-  selectedOutlineId.value = data.id
-  loadChapter(data.id)
+  activeOutlineId.value = data.id
+  scrollToChapter(data.id)
 }
 
-// 选中的大纲节点
-const selectedOutline = computed(() => {
-  return outlineNodes.value.find(n => n.id === selectedOutlineId.value)
-})
+// 滚动到指定章节
+function scrollToChapter(outlineId: string) {
+  const el = chapterRefs.value[outlineId]
+  if (el && chaptersPanelRef.value) {
+    // 计算相对于容器的位置
+    const containerRect = chaptersPanelRef.value.getBoundingClientRect()
+    const elementRect = el.getBoundingClientRect()
+    const scrollTop = chaptersPanelRef.value.scrollTop + elementRect.top - containerRect.top - 20
+
+    chaptersPanelRef.value.scrollTo({
+      top: scrollTop,
+      behavior: 'smooth'
+    })
+  }
+}
+
+// 处理右侧滚动 - 更新左侧高亮
+function handleScroll() {
+  if (!chaptersPanelRef.value) return
+
+  const containerRect = chaptersPanelRef.value.getBoundingClientRect()
+  const containerTop = containerRect.top + 100 // 偏移量，用于确定"可见"区域
+
+  // 找到当前可见的第一个章节
+  for (const outline of allOutlines.value) {
+    const el = chapterRefs.value[outline.id]
+    if (el) {
+      const rect = el.getBoundingClientRect()
+      // 如果章节顶部在可见区域内
+      if (rect.top <= containerTop && rect.bottom > containerTop) {
+        if (activeOutlineId.value !== outline.id) {
+          activeOutlineId.value = outline.id
+          // 同步更新树的高亮
+          treeRef.value?.setCurrentKey(outline.id)
+        }
+        break
+      }
+    }
+  }
+}
 
 // 名称映射
+function getNodeTypeName(type?: OutlineNodeType): string {
+  const names: Record<OutlineNodeType, string> = {
+    volume: '卷',
+    chapter: '章',
+    section: '节'
+  }
+  return type ? names[type] : '节'
+}
+
 function getStatusName(status?: OutlineStatus): string {
   const names: Record<OutlineStatus, string> = {
     pending: '待写',
@@ -361,28 +449,37 @@ function formatDate(timestamp: number): string {
   return new Date(timestamp).toLocaleString('zh-CN')
 }
 
-// 加载章节内容
-async function loadChapter(outlineId: string) {
-  if (!outlineId) {
-    chapterContent.value = ''
-    currentChapterId.value = null
-    versions.value = []
-    return
-  }
+// 获取章节字数
+function getChapterWordCount(outlineId: string): number {
+  return chapterContentMap.value[outlineId]?.length || 0
+}
 
+// 更新字数统计
+function updateWordCount(outlineId: string) {
+  // 字数是实时计算的，不需要额外处理
+}
+
+// 获取编辑器占位符
+function getEditorPlaceholder(outline: StoryOutline): string {
+  return `编写「${outline.name}」的内容，或点击"AI 生成"自动生成...`
+}
+
+// 加载所有章节内容
+async function loadAllChapters() {
+  for (const outline of allOutlines.value) {
+    await loadChapter(outline.id)
+  }
+}
+
+// 加载单个章节内容
+async function loadChapter(outlineId: string) {
   const result = await window.electronAPI.longwriting.getChapter(outlineId)
   if (result.success && result.data) {
-    currentChapterId.value = result.data.id
-    chapterContent.value = result.data.content || ''
-    currentWordCount.value = chapterContent.value.length
-
-    // 加载版本历史
-    await loadVersions(result.data.id)
+    chapterIdMap.value[outlineId] = result.data.id
+    chapterContentMap.value[outlineId] = result.data.content || ''
   } else {
-    currentChapterId.value = null
-    chapterContent.value = ''
-    currentWordCount.value = 0
-    versions.value = []
+    chapterIdMap.value[outlineId] = ''
+    chapterContentMap.value[outlineId] = ''
   }
 }
 
@@ -394,118 +491,127 @@ async function loadVersions(chapterId: string) {
   }
 }
 
-// 更新字数统计
-function updateWordCount() {
-  currentWordCount.value = chapterContent.value.length
-}
-
 // 保存章节
-async function saveChapter() {
-  if (!selectedOutlineId.value) return
+async function saveChapter(outlineId: string) {
+  const content = chapterContentMap.value[outlineId]
+  if (content === undefined) return
 
-  const result = await window.electronAPI.longwriting.saveChapter(selectedOutlineId.value, chapterContent.value)
-  if (result.success) {
-    currentChapterId.value = result.data.id
-    ElMessage.success('章节已保存')
+  savingMap.value[outlineId] = true
+  try {
+    const result = await window.electronAPI.longwriting.saveChapter(outlineId, content)
+    if (result.success) {
+      chapterIdMap.value[outlineId] = result.data.id
+      ElMessage.success('章节已保存')
 
-    // 更新大纲状态为进行中
-    if (selectedOutline.value && selectedOutline.value.status === 'pending') {
-      await window.electronAPI.longwriting.updateOutline(selectedOutline.value.id, { status: 'progressing' })
-      await loadOutlineTree()
+      // 更新大纲状态为进行中
+      const outline = outlineNodes.value.find(n => n.id === outlineId)
+      if (outline && outline.status === 'pending') {
+        await window.electronAPI.longwriting.updateOutline(outlineId, { status: 'progressing' })
+        await loadOutlineTree()
+      }
+
+      updateProgress()
+    } else {
+      ElMessage.error(result.error || '保存失败')
     }
-
-    // 重新加载版本历史
-    if (currentChapterId.value) {
-      await loadVersions(currentChapterId.value)
-    }
-
-    updateProgress()
-  } else {
-    ElMessage.error(result.error || '保存失败')
+  } finally {
+    savingMap.value[outlineId] = false
   }
 }
 
-// AI 生成章节
-function generateChapter() {
-  // 检查是否选择了模型（需要同时检查 providerId 和 modelId）
+// 开始生成 - 显示对话框
+function startGenerate(outline: StoryOutline) {
   if (!selectedModel.value || !selectedModel.value.providerId || !selectedModel.value.modelId) {
     ElMessage.warning('请先在顶部选择 AI 模型')
     return
   }
 
-  if (!selectedOutlineId.value) {
-    ElMessage.warning('请先选择大纲节点')
-    return
-  }
-
-  // 设置默认目标字数
-  generateForm.value.targetWords = selectedOutline.value?.estimatedWords || 3000
+  currentOutlineForAction.value = outline
+  generateForm.value.targetWords = outline.estimatedWords || 3000
   showGenerateDialog.value = true
 }
 
-// 当前生成事件 ID
-const currentEventId = ref<string | null>(null)
-
 // 执行生成
 async function executeGeneration() {
+  if (!currentOutlineForAction.value) return
+
+  const outline = currentOutlineForAction.value
+  const outlineId = outline.id
+
   showGenerateDialog.value = false
-  generating.value = true
-  chapterContent.value = '' // 清空当前内容
+  generatingMap.value[outlineId] = true
+  chapterContentMap.value[outlineId] = '' // 清空当前内容
 
   console.log('[ChapterStage] 生成章节, providerId:', selectedModel.value?.providerId, 'modelId:', selectedModel.value?.modelId)
 
   // 生成唯一事件 ID
-  currentEventId.value = `chapter-${selectedOutlineId.value}-${Date.now()}`
+  const eventId = `chapter-${outlineId}-${Date.now()}`
+  generatingEventIdMap.value[outlineId] = eventId
 
   // 监听流式生成事件
   const unsubscribe = window.electronAPI.longwriting.onGenerateEvent(
-    currentEventId.value,
+    eventId,
     (event: { type: string; content?: string; error?: string }) => {
       if (event.type === 'content' && event.content) {
-        chapterContent.value += event.content
-        currentWordCount.value = chapterContent.value.length
+        chapterContentMap.value[outlineId] += event.content
       } else if (event.type === 'done') {
-        generating.value = false
-        currentEventId.value = null
+        generatingMap.value[outlineId] = false
+        generatingEventIdMap.value[outlineId] = null
         // 自动保存
-        if (autoSave.value && chapterContent.value) {
-          saveChapter()
+        if (autoSave.value && chapterContentMap.value[outlineId]) {
+          saveChapter(outlineId)
         }
         ElMessage.success('章节内容已生成')
         unsubscribe()
       } else if (event.type === 'error') {
-        generating.value = false
-        currentEventId.value = null
+        generatingMap.value[outlineId] = false
+        generatingEventIdMap.value[outlineId] = null
         ElMessage.error(event.error || '生成失败')
         unsubscribe()
       }
     }
   )
 
-  // 调用 AI API，传递 eventId 和模型参数
+  // 调用 AI API
   const result = await window.electronAPI.longwriting.generateChapter(
-    currentEventId.value,
+    eventId,
     props.projectId,
-    selectedOutlineId.value,
+    outlineId,
     generateForm.value.targetWords,
-    selectedModel.value.providerId,
-    selectedModel.value.modelId
+    selectedModel.value!.providerId,
+    selectedModel.value!.modelId
   )
 
   if (!result.success) {
-    generating.value = false
-    currentEventId.value = null
+    generatingMap.value[outlineId] = false
+    generatingEventIdMap.value[outlineId] = null
     unsubscribe()
     ElMessage.error(result.error || '生成失败')
   }
+
+  currentOutlineForAction.value = null
 }
 
 // 取消生成
-function cancelGeneration() {
-  if (!currentEventId.value) return
-  generating.value = false
-  currentEventId.value = null
-  ElMessage.info('已取消生成')
+function cancelGenerate(outlineId: string) {
+  const eventId = generatingEventIdMap.value[outlineId]
+  if (eventId) {
+    generatingMap.value[outlineId] = false
+    generatingEventIdMap.value[outlineId] = null
+    ElMessage.info('已取消生成')
+  }
+}
+
+// 显示版本历史
+async function showVersions(outline: StoryOutline) {
+  currentOutlineForAction.value = outline
+  const chapterId = chapterIdMap.value[outline.id]
+  if (chapterId) {
+    await loadVersions(chapterId)
+  } else {
+    versions.value = []
+  }
+  showVersionDialog.value = true
 }
 
 // 预览版本
@@ -532,13 +638,14 @@ async function restoreVersion(version: ChapterVersion) {
       }
     )
 
-    if (!currentChapterId.value) return
+    if (!currentOutlineForAction.value) return
+    const chapterId = chapterIdMap.value[currentOutlineForAction.value.id]
+    if (!chapterId) return
 
-    const result = await window.electronAPI.longwriting.restoreChapterVersion(currentChapterId.value, version.id)
+    const result = await window.electronAPI.longwriting.restoreChapterVersion(chapterId, version.id)
     if (result.success) {
-      chapterContent.value = result.data.content || ''
-      currentWordCount.value = chapterContent.value.length
-      await loadVersions(currentChapterId.value)
+      chapterContentMap.value[currentOutlineForAction.value.id] = result.data.content || ''
+      await loadVersions(chapterId)
       ElMessage.success(`已恢复到版本 ${version.versionNumber}`)
     } else {
       ElMessage.error(result.error || '恢复失败')
@@ -556,7 +663,7 @@ function goToOutline() {
 // 更新进度
 function updateProgress() {
   const completedNodes = outlineNodes.value.filter(n => n.status === 'completed').length
-  const totalNodes = outlineNodes.value.length
+  const totalNodes = outlineNodes.value.filter(n => n.nodeType === 'chapter' || n.nodeType === 'section').length
   const progress = Math.min(100, 75 + Math.floor((completedNodes / Math.max(totalNodes, 1)) * 25))
   emit('update:progress', progress)
 }
@@ -596,20 +703,32 @@ async function loadData() {
     loadCharacters(),
     loadLocations()
   ])
+  // 加载所有章节内容
+  await loadAllChapters()
   loading.value = false
+
+  // 设置初始激活节点
+  if (allOutlines.value.length > 0) {
+    activeOutlineId.value = allOutlines.value[0].id
+  }
+
   updateProgress()
 }
 
 // 自动保存 - 使用防抖
-let saveTimer: ReturnType<typeof setTimeout> | null = null
-watch(chapterContent, () => {
-  if (autoSave.value && currentChapterId.value) {
-    if (saveTimer) clearTimeout(saveTimer)
-    saveTimer = setTimeout(() => {
-      saveChapter()
-    }, 3000)
+const saveTimers: Record<string, ReturnType<typeof setTimeout>> = {}
+watch(chapterContentMap, (newVal) => {
+  if (!autoSave.value) return
+
+  for (const outlineId in newVal) {
+    if (chapterIdMap.value[outlineId]) {
+      if (saveTimers[outlineId]) clearTimeout(saveTimers[outlineId])
+      saveTimers[outlineId] = setTimeout(() => {
+        saveChapter(outlineId)
+      }, 3000)
+    }
   }
-})
+}, { deep: true })
 
 // 监听 projectId 变化重新加载
 watch(() => props.projectId, () => {
@@ -625,6 +744,9 @@ onMounted(() => {
 .chapter-stage {
   max-width: 1200px;
   margin: 0 auto;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .stage-header {
@@ -649,12 +771,18 @@ onMounted(() => {
   padding: 24px;
   border-radius: 12px;
   border: 1px solid var(--border-color-light);
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .chapter-layout {
   display: flex;
   gap: 24px;
-  min-height: 600px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .outline-tree-panel {
@@ -699,6 +827,13 @@ onMounted(() => {
       width: 100%;
       gap: 8px;
 
+      &.active {
+        .node-name {
+          color: var(--color-primary);
+          font-weight: 500;
+        }
+      }
+
       .node-name {
         flex: 1;
         font-size: 13px;
@@ -733,114 +868,130 @@ onMounted(() => {
   }
 }
 
-.editor-panel {
+// 右侧章节列表面板
+.chapters-panel {
   flex: 1;
   min-width: 0;
+  overflow-y: auto;
+  padding-right: 8px;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--border-color-light);
+    border-radius: 3px;
+
+    &:hover {
+      background: var(--border-color);
+    }
+  }
 }
 
 .empty-chapter {
-  padding: 40px 0;
+  padding: 60px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.outline-info {
-  margin-bottom: 24px;
+// 章节卡片样式
+.chapter-card {
+  background: var(--fill-color-blank);
+  border: 1px solid var(--border-color-lighter);
+  border-radius: 12px;
+  margin-bottom: 20px;
+  transition: all 0.3s ease;
+
+  &:hover {
+    border-color: var(--color-primary-light-5);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  }
+
+  &.active {
+    border-color: var(--color-primary-light-3);
+    box-shadow: 0 4px 16px rgba(var(--color-primary-rgb), 0.15);
+
+    .chapter-header {
+      background: linear-gradient(135deg, var(--color-primary-light-9) 0%, var(--fill-color-lighter) 100%);
+    }
+  }
+}
+
+.chapter-header {
   padding: 16px;
   background: var(--fill-color-lighter);
-  border-radius: 8px;
+  border-radius: 12px 12px 0 0;
+  border-bottom: 1px solid var(--border-color-lighter);
+}
 
-  .info-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
+.chapter-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
 
-    h3 {
-      font-size: 18px;
-      font-weight: 500;
-      color: var(--text-color-primary);
-      margin: 0;
-    }
-
-    .info-meta {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      font-size: 14px;
-      color: var(--text-color-secondary);
-    }
+  .chapter-type {
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--color-primary-light-9);
+    color: var(--color-primary);
   }
 
-  .info-summary-box {
-    background: var(--bg-color);
-    padding: 12px;
-    border-radius: 6px;
-    margin-bottom: 12px;
-    border: 1px solid var(--border-color-extra-light);
-
-    .summary-label {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 12px;
-      color: var(--text-color-secondary);
-      margin-bottom: 8px;
-
-      .el-icon {
-        font-size: 14px;
-      }
-    }
-
-    .info-summary {
-      font-size: 14px;
-      color: var(--text-color-regular);
-      margin: 0;
-      line-height: 1.6;
-    }
-  }
-
-  .info-references {
-    display: flex;
-    gap: 16px;
-    font-size: 13px;
-    color: var(--text-color-secondary);
-
-    .el-tag {
-      margin-left: 4px;
-    }
+  .chapter-title {
+    flex: 1;
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--text-color-primary);
+    margin: 0;
   }
 }
 
-.editor-container {
-  border: 1px solid var(--border-color-lighter);
-  border-radius: 8px;
-  overflow: hidden;
+.chapter-meta {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--text-color-secondary);
+  margin-bottom: 8px;
 }
 
-.editor-toolbar {
+.chapter-summary {
+  font-size: 13px;
+  color: var(--text-color-regular);
+  line-height: 1.6;
+  margin: 0 0 8px 0;
+  padding: 8px 12px;
+  background: var(--bg-color);
+  border-radius: 6px;
+}
+
+.chapter-refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-color-secondary);
+
+  .el-tag {
+    margin-left: 4px;
+  }
+}
+
+.chapter-toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
-  background: var(--fill-color-blank);
+  background: var(--fill-color-light);
   border-bottom: 1px solid var(--border-color-lighter);
-
-  .toolbar-right {
-    margin-left: auto;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-
-    .word-count {
-      font-size: 14px;
-      color: var(--text-color-secondary);
-    }
-  }
 }
 
 .chapter-editor {
   :deep(.el-textarea__inner) {
     border: none;
-    border-radius: 0;
+    border-radius: 0 0 12px 12px;
     font-family: 'Microsoft YaHei', sans-serif;
     font-size: 14px;
     line-height: 1.8;
