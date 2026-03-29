@@ -8,14 +8,20 @@
 // ==================== CSS 变量（动态主题） ====================
 
 :root {
-  // 默认主题色（科技蓝）
-  --color-primary: #3b82f6;
-  --color-primary-light: #60a5fa;
-  --color-primary-dark: #1d4ed8;
-  --color-secondary: #6366f1;
-  --color-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%);
-  --color-glow: rgba(59, 130, 246, 0.5);
+  // 默认主题色（科技蓝 - 柔和版）
+  --color-primary: #4a90d9;
+  --color-primary-light: #6ba8eb;
+  --color-primary-dark: #3a7bc8;
+  --color-primary-rgb: 74, 144, 217;
+  --color-secondary: #7c8db5;
+  --color-gradient: linear-gradient(135deg, #5a9bd4 0%, #7b8fc7 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #4a7ab8 0%, #3a6298 100%);
+  --color-glow: rgba(74, 144, 217, 0.4);
+
+  // 互补色/装饰色 - 用于右侧背景
+  --color-accent: #e8f0f8;
+  --color-accent-light: #f5f8fc;
+  --color-accent-dark: #d4e4f0;
 
   // 功能色
   --color-success: #67c23a;
@@ -33,11 +39,13 @@
   --border-color: #dcdfe6;
   --border-color-light: #e4e7ed;
   --border-color-lighter: #ebeef5;
+  --border-color-extra-light: #f2f5fa;
 
   // 背景颜色
   --bg-color: #ffffff;
-  --bg-color-page: #f5f7fa;
-  --bg-color-hover: #f0f2f5;
+  --bg-color-page: #f8fafc;
+  --bg-color-hover: #f1f5f9;
+  --bg-color-card: #ffffff;
 
   // 阴影
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
@@ -46,6 +54,7 @@
   --shadow-glow: 0 0 30px var(--color-glow);
   --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.08);
   --shadow-card-hover: 0 8px 30px rgba(0, 0, 0, 0.12);
+  --box-shadow-light: 0 2px 12px rgba(0, 0, 0, 0.1);
 
   // 过渡
   --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
@@ -71,123 +80,282 @@
   --line-height-base: 1.6;
 }
 
-// ==================== 主题变量覆盖 ====================
+// ==================== 淡色主题系列（柔和配色） ====================
 
+// 天空蓝 - 清新淡雅
+[data-theme="sky-blue"] {
+  --color-primary: #6ba3d6;
+  --color-primary-light: #8fbde8;
+  --color-primary-dark: #5a8fc4;
+  --color-primary-rgb: 107, 163, 214;
+  --color-secondary: #8fa8c7;
+  --color-gradient: linear-gradient(135deg, #7bb0db 0%, #9ac0e8 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #5a8fc4 0%, #4a7ab0 100%);
+  --color-glow: rgba(107, 163, 214, 0.35);
+  --color-accent: #e8f2fa;
+  --color-accent-light: #f2f7fc;
+  --color-accent-dark: #d4e6f4;
+  --bg-color-page: #f5f9fc;
+}
+
+// 薄荷绿 - 清新自然
+[data-theme="mint-green"] {
+  --color-primary: #5cb88f;
+  --color-primary-light: #7dd4a8;
+  --color-primary-dark: #4a9a78;
+  --color-primary-rgb: 92, 184, 143;
+  --color-secondary: #7ab89a;
+  --color-gradient: linear-gradient(135deg, #68c49a 0%, #8fd4b4 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #4a9a78 0%, #3d8266 100%);
+  --color-glow: rgba(92, 184, 143, 0.35);
+  --color-accent: #e8f6f0;
+  --color-accent-light: #f2faf6;
+  --color-accent-dark: #d4ece2;
+  --bg-color-page: #f5fcf9;
+}
+
+// 淡紫罗兰 - 优雅浪漫
+[data-theme="lavender"] {
+  --color-primary: #9b8dc7;
+  --color-primary-light: #b5a8d8;
+  --color-primary-dark: #8677b3;
+  --color-primary-rgb: 155, 141, 199;
+  --color-secondary: #a89bc4;
+  --color-gradient: linear-gradient(135deg, #a898cd 0%, #c4b8df 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #7a6aa8 0%, #635890 100%);
+  --color-glow: rgba(155, 141, 199, 0.35);
+  --color-accent: #f0ecf8;
+  --color-accent-light: #f6f4fb;
+  --color-accent-dark: #e2dcf0;
+  --bg-color-page: #f9f7fc;
+}
+
+// 珊瑚粉 - 温柔甜美
+[data-theme="coral-pink"] {
+  --color-primary: #e08a8a;
+  --color-primary-light: #efa8a8;
+  --color-primary-dark: #d06c6c;
+  --color-primary-rgb: 224, 138, 138;
+  --color-secondary: #c49999;
+  --color-gradient: linear-gradient(135deg, #e89898 0%, #f0b0b0 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #c06a6a 0%, #a85858 100%);
+  --color-glow: rgba(224, 138, 138, 0.35);
+  --color-accent: #fcf2f2;
+  --color-accent-light: #fdf6f6;
+  --color-accent-dark: #f8e4e4;
+  --bg-color-page: #fdf8f8;
+}
+
+// 杏仁黄 - 温暖舒适
+[data-theme="almond"] {
+  --color-primary: #d4a574;
+  --color-primary-light: #e4bc8c;
+  --color-primary-dark: #c08a5a;
+  --color-primary-rgb: 212, 165, 116;
+  --color-secondary: #c4a882;
+  --color-gradient: linear-gradient(135deg, #dcb07e 0%, #e8c8a0 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #b08050 0%, #906840 100%);
+  --color-glow: rgba(212, 165, 116, 0.35);
+  --color-accent: #faf4ec;
+  --color-accent-light: #fcf8f2;
+  --color-accent-dark: #f4e8d8;
+  --bg-color-page: #fdfaf5;
+}
+
+// 雾霾灰 - 简约高级
+[data-theme="foggy-gray"] {
+  --color-primary: #8899aa;
+  --color-primary-light: #a0b0bf;
+  --color-primary-dark: #708090;
+  --color-primary-rgb: 136, 153, 170;
+  --color-secondary: #99a8b5;
+  --color-gradient: linear-gradient(135deg, #94a5b5 0%, #b0bfcc 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #606d7a 0%, #4a5560 100%);
+  --color-glow: rgba(136, 153, 170, 0.35);
+  --color-accent: #f2f4f6;
+  --color-accent-light: #f6f8fa;
+  --color-accent-dark: #e4e8ec;
+  --bg-color-page: #f8f9fa;
+}
+
+// ==================== 经典主题（调整后的柔和版） ====================
+
+// 科技蓝 - 默认主题（柔和版）
 [data-theme="tech-blue"] {
-  --color-primary: #3b82f6;
-  --color-primary-light: #60a5fa;
-  --color-primary-dark: #1d4ed8;
-  --color-secondary: #6366f1;
-  --color-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%);
-  --color-glow: rgba(59, 130, 246, 0.5);
+  --color-primary: #4a90d9;
+  --color-primary-light: #6ba8eb;
+  --color-primary-dark: #3a7bc8;
+  --color-primary-rgb: 74, 144, 217;
+  --color-secondary: #7c8db5;
+  --color-gradient: linear-gradient(135deg, #5a9bd4 0%, #7b8fc7 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #4a7ab8 0%, #3a6298 100%);
+  --color-glow: rgba(74, 144, 217, 0.4);
+  --color-accent: #e8f0f8;
+  --color-accent-light: #f5f8fc;
+  --color-accent-dark: #d4e4f0;
+  --bg-color-page: #f8fafc;
 }
 
+// 翡翠绿（柔和版）
 [data-theme="emerald"] {
-  --color-primary: #10b981;
-  --color-primary-light: #34d399;
-  --color-primary-dark: #047857;
-  --color-secondary: #059669;
-  --color-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #10b981 0%, #047857 100%);
-  --color-glow: rgba(16, 185, 129, 0.5);
+  --color-primary: #4ab88f;
+  --color-primary-light: #6ad4a8;
+  --color-primary-dark: #3a9a78;
+  --color-primary-rgb: 74, 184, 143;
+  --color-secondary: #5ab89a;
+  --color-gradient: linear-gradient(135deg, #58c49a 0%, #7ad4b4 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #3a9a78 0%, #2d8266 100%);
+  --color-glow: rgba(74, 184, 143, 0.4);
+  --color-accent: #e8f6f0;
+  --color-accent-light: #f2faf6;
+  --color-accent-dark: #d4ece2;
+  --bg-color-page: #f5fcf9;
 }
 
+// 紫罗兰（柔和版）
 [data-theme="purple"] {
-  --color-primary: #9c27b0;
-  --color-primary-light: #ba68c8;
-  --color-primary-dark: #7b1fa2;
-  --color-secondary: #8e24aa;
-  --color-gradient: linear-gradient(135deg, #9c27b0 0%, #ce93d8 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #9c27b0 0%, #7b1fa2 100%);
-  --color-glow: rgba(156, 39, 176, 0.5);
+  --color-primary: #9b7ac4;
+  --color-primary-light: #b598d8;
+  --color-primary-dark: #8660a8;
+  --color-primary-rgb: 155, 122, 196;
+  --color-secondary: #a088c0;
+  --color-gradient: linear-gradient(135deg, #a888cd 0%, #c4a8df 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #7a5a9a 0%, #604880 100%);
+  --color-glow: rgba(155, 122, 196, 0.4);
+  --color-accent: #f0e8f8;
+  --color-accent-light: #f6f2fb;
+  --color-accent-dark: #e2d8f0;
+  --bg-color-page: #f9f7fc;
 }
 
+// 火焰橙（柔和版）
 [data-theme="flame"] {
-  --color-primary: #ff6b35;
-  --color-primary-light: #ff8c42;
-  --color-primary-dark: #e65100;
-  --color-secondary: #ff9500;
-  --color-gradient: linear-gradient(135deg, #ff6b35 0%, #f79f5f 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #ff6b35 0%, #e65100 100%);
-  --color-glow: rgba(255, 107, 53, 0.5);
+  --color-primary: #e08a60;
+  --color-primary-light: #f0a880;
+  --color-primary-dark: #c87048;
+  --color-primary-rgb: 224, 138, 96;
+  --color-secondary: #c49a78;
+  --color-gradient: linear-gradient(135deg, #e89870 0%, #f0b090 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #c07048 0%, #a05838 100%);
+  --color-glow: rgba(224, 138, 96, 0.4);
+  --color-accent: #fcf0e8;
+  --color-accent-light: #fdf6f2;
+  --color-accent-dark: #f8e0d4;
+  --bg-color-page: #fdf8f5;
 }
 
+// 深空紫（柔和版）
 [data-theme="cosmic"] {
-  --color-primary: #7c3aed;
-  --color-primary-light: #a78bfa;
-  --color-primary-dark: #5b21b6;
-  --color-secondary: #8b5cf6;
-  --color-gradient: linear-gradient(135deg, #1a1a2a 0%, #7c3aed 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #5b21b6 0%, #a78bfa 100%);
-  --color-glow: rgba(124, 58, 237, 0.5);
+  --color-primary: #8a6ad4;
+  --color-primary-light: #a888e8;
+  --color-primary-dark: #7050b8;
+  --color-primary-rgb: 138, 106, 212;
+  --color-secondary: #9078c4;
+  --color-gradient: linear-gradient(135deg, #9880d8 0%, #b098ec 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #6050a0 0%, #484080 100%);
+  --color-glow: rgba(138, 106, 212, 0.4);
+  --color-accent: #f0e8fc;
+  --color-accent-light: #f6f2fd;
+  --color-accent-dark: #e2d8f4;
+  --bg-color-page: #f9f7fc;
 }
 
+// 暗夜黑（柔和版）
 [data-theme="midnight"] {
-  --color-primary: #64748b;
-  --color-primary-light: #94a3b8;
-  --color-primary-dark: #334155;
-  --color-secondary: #475569;
-  --color-gradient: linear-gradient(135deg, #1e293b 0%, #485561 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #1e293b 0%, #334155 100%);
-  --color-glow: rgba(100, 116, 139, 0.4);
+  --color-primary: #7a8898;
+  --color-primary-light: #98a8b8;
+  --color-primary-dark: #606878;
+  --color-primary-rgb: 122, 136, 152;
+  --color-secondary: #8090a0;
+  --color-gradient: linear-gradient(135deg, #8898a8 0%, #a0b0c0 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #404850 0%, #303840 100%);
+  --color-glow: rgba(122, 136, 152, 0.35);
+  --color-accent: #f0f2f4;
+  --color-accent-light: #f6f8fa;
+  --color-accent-dark: #e0e4e8;
+  --bg-color-page: #f8f9fa;
 }
 
-// ==================== 国风配色主题 ====================
+// ==================== 国风配色主题（柔和版） ====================
 
-// 朱砂红 - 中国传统红
+// 朱砂红 - 中国传统红（柔和版）
 [data-theme="chinese-red"] {
-  --color-primary: #c0392b;
-  --color-primary-light: #e74c3c;
-  --color-primary-dark: #922b21;
-  --color-secondary: #a93226;
-  --color-gradient: linear-gradient(135deg, #c0392b 0%, #e91e63 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #922b21 0%, #c0392b 100%);
-  --color-glow: rgba(192, 57, 43, 0.5);
+  --color-primary: #c87068;
+  --color-primary-light: #e09088;
+  --color-primary-dark: #a85850;
+  --color-primary-rgb: 200, 112, 104;
+  --color-secondary: #b08078;
+  --color-gradient: linear-gradient(135deg, #d08078 0%, #e09890 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #905048 0%, #703830 100%);
+  --color-glow: rgba(200, 112, 104, 0.4);
+  --color-accent: #fcf0ee;
+  --color-accent-light: #fdf6f5;
+  --color-accent-dark: #f8e0dc;
+  --bg-color-page: #fdf8f7;
 }
 
-// 翡翠青 - 玉石绿
+// 翡翠青 - 玉石绿（柔和版）
 [data-theme="jade-green"] {
-  --color-primary: #2e8b57;
-  --color-primary-light: #3cb371;
-  --color-primary-dark: #1e7d45;
-  --color-secondary: #27ae60;
-  --color-gradient: linear-gradient(135deg, #2e8b57 0%, #3cb371 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #1e7d45 0%, #2e8b57 100%);
-  --color-glow: rgba(46, 139, 87, 0.5);
+  --color-primary: #5aa880;
+  --color-primary-light: #78c498;
+  --color-primary-dark: #489068;
+  --color-primary-rgb: 90, 168, 128;
+  --color-secondary: #68a890;
+  --color-gradient: linear-gradient(135deg, #68b490 0%, #88d0a8 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #388058 0%, #286848 100%);
+  --color-glow: rgba(90, 168, 128, 0.4);
+  --color-accent: #eef8f2;
+  --color-accent-light: #f4fcf6;
+  --color-accent-dark: #d8ece0;
+  --bg-color-page: #f6fcf8;
 }
 
-// 黛蓝 - 传统蓝
+// 黛蓝 - 传统蓝（柔和版）
 [data-theme="ink-blue"] {
-  --color-primary: #3d5a80;
-  --color-primary-light: #5b7db1;
-  --color-primary-dark: #2c3e6f;
-  --color-secondary: #4a69a9;
-  --color-gradient: linear-gradient(135deg, #3d5a80 0%, #5b7db1 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #2c3e6f 0%, #3d5a80 100%);
-  --color-glow: rgba(61, 90, 128, 0.5);
+  --color-primary: #6078a0;
+  --color-primary-light: #8098c0;
+  --color-primary-dark: #486088;
+  --color-primary-rgb: 96, 120, 160;
+  --color-secondary: #6888a8;
+  --color-gradient: linear-gradient(135deg, #7088b0 0%, #90a8c8 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #384868 0%, #283850 100%);
+  --color-glow: rgba(96, 120, 160, 0.4);
+  --color-accent: #eef2f8;
+  --color-accent-light: #f4f6fa;
+  --color-accent-dark: #dce4f0;
+  --bg-color-page: #f6f8fc;
 }
 
-// 琥珀黄 - 传统黄
+// 琥珀黄 - 传统黄（柔和版）
 [data-theme="gold-amber"] {
-  --color-primary: #ca8a04;
-  --color-primary-light: #f5b041;
-  --color-primary-dark: #b8860b;
-  --color-secondary: #d68910;
-  --color-gradient: linear-gradient(135deg, #ca8a04 0%, #f59e0b 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #b8860b 0%, #ca8a04 100%);
-  --color-glow: rgba(202, 138, 4, 0.5);
+  --color-primary: #c8a050;
+  --color-primary-light: #e0b870;
+  --color-primary-dark: #a88840;
+  --color-primary-rgb: 200, 160, 80;
+  --color-secondary: #b8a068;
+  --color-gradient: linear-gradient(135deg, #d0a860 0%, #e8c080 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #906830 0%, #705020 100%);
+  --color-glow: rgba(200, 160, 80, 0.4);
+  --color-accent: #fcf6e8;
+  --color-accent-light: #fdfaf2;
+  --color-accent-dark: #f8ecc8;
+  --bg-color-page: #fdfaf3;
 }
 
-// 梅子青 - 青绿色
+// 梅子青 - 青绿色（柔和版）
 [data-theme="plum-purple"] {
-  --color-primary: #4a5043;
-  --color-primary-light: #6b7f6a;
-  --color-primary-dark: #3b3f35;
-  --color-secondary: #5c6bc0;
-  --color-gradient: linear-gradient(135deg, #4a5043 0%, #6b7f6a 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #3b3f35 0%, #4a5043 100%);
-  --color-glow: rgba(74, 80, 67, 0.5);
+  --color-primary: #788878;
+  --color-primary-light: #98a898;
+  --color-primary-dark: #607060;
+  --color-primary-rgb: 120, 136, 120;
+  --color-secondary: #889088;
+  --color-gradient: linear-gradient(135deg, #889888 0%, #a0b0a0 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #506050 0%, #404840 100%);
+  --color-glow: rgba(120, 136, 120, 0.4);
+  --color-accent: #f0f4f0;
+  --color-accent-light: #f6f8f6;
+  --color-accent-dark: #e0e8e0;
+  --bg-color-page: #f8faf8;
 }
 
 // ==================== 基础重置 ====================

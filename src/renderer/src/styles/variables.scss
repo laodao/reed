@@ -1,73 +1,198 @@
 /**
- * SCSS 变量定义 - 多主题色系统
+ * SCSS 变量定义 - 多主题色系统（柔和配色版）
  */
 
-// ==================== 主题色配置 ====================
+// ==================== 淡雅系列主题色配置 ====================
 
-// 科技蓝 - 默认主题
+// 天空蓝 - 清新淡雅
+$theme-sky-blue: (
+  'primary': #6ba3d6,
+  'primary-light': #8fbde8,
+  'primary-dark': #5a8fc4,
+  'secondary': #8fa8c7,
+  'gradient': linear-gradient(135deg, #7bb0db 0%, #9ac0e8 100%),
+  'sidebar-gradient': linear-gradient(180deg, #5a8fc4 0%, #4a7ab0 100%),
+  'glow': rgba(107, 163, 214, 0.35)
+);
+
+// 薄荷绿 - 清新自然
+$theme-mint-green: (
+  'primary': #5cb88f,
+  'primary-light': #7dd4a8,
+  'primary-dark': #4a9a78,
+  'secondary': #7ab89a,
+  'gradient': linear-gradient(135deg, #68c49a 0%, #8fd4b4 100%),
+  'sidebar-gradient': linear-gradient(180deg, #4a9a78 0%, #3d8266 100%),
+  'glow': rgba(92, 184, 143, 0.35)
+);
+
+// 淡紫罗兰 - 优雅浪漫
+$theme-lavender: (
+  'primary': #9b8dc7,
+  'primary-light': #b5a8d8,
+  'primary-dark': #8677b3,
+  'secondary': #a89bc4,
+  'gradient': linear-gradient(135deg, #a898cd 0%, #c4b8df 100%),
+  'sidebar-gradient': linear-gradient(180deg, #7a6aa8 0%, #635890 100%),
+  'glow': rgba(155, 141, 199, 0.35)
+);
+
+// 珊瑚粉 - 温柔甜美
+$theme-coral-pink: (
+  'primary': #e08a8a,
+  'primary-light': #efa8a8,
+  'primary-dark': #d06c6c,
+  'secondary': #c49999,
+  'gradient': linear-gradient(135deg, #e89898 0%, #f0b0b0 100%),
+  'sidebar-gradient': linear-gradient(180deg, #c06a6a 0%, #a85858 100%),
+  'glow': rgba(224, 138, 138, 0.35)
+);
+
+// 杏仁黄 - 温暖舒适
+$theme-almond: (
+  'primary': #d4a574,
+  'primary-light': #e4bc8c,
+  'primary-dark': #c08a5a,
+  'secondary': #c4a882,
+  'gradient': linear-gradient(135deg, #dcb07e 0%, #e8c8a0 100%),
+  'sidebar-gradient': linear-gradient(180deg, #b08050 0%, #906840 100%),
+  'glow': rgba(212, 165, 116, 0.35)
+);
+
+// 雾霾灰 - 简约高级
+$theme-foggy-gray: (
+  'primary': #8899aa,
+  'primary-light': #a0b0bf,
+  'primary-dark': #708090,
+  'secondary': #99a8b5,
+  'gradient': linear-gradient(135deg, #94a5b5 0%, #b0bfcc 100%),
+  'sidebar-gradient': linear-gradient(180deg, #606d7a 0%, #4a5560 100%),
+  'glow': rgba(136, 153, 170, 0.35)
+);
+
+// ==================== 经典主题（柔和版） ====================
+
+// 科技蓝 - 默认主题（柔和版）
 $theme-tech-blue: (
-  'primary': #3b82f6,
-  'primary-light': #60a5fa,
-  'primary-dark': #1d4ed8,
-  'secondary': #6366f1,
-  'gradient': linear-gradient(135deg, #667eea 0%, #764ba2 100%),
-  'sidebar-gradient': linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%),
-  'glow': rgba(59, 130, 246, 0.5)
+  'primary': #4a90d9,
+  'primary-light': #6ba8eb,
+  'primary-dark': #3a7bc8,
+  'secondary': #7c8db5,
+  'gradient': linear-gradient(135deg, #5a9bd4 0%, #7b8fc7 100%),
+  'sidebar-gradient': linear-gradient(180deg, #4a7ab8 0%, #3a6298 100%),
+  'glow': rgba(74, 144, 217, 0.4)
 );
 
-// 翡翠绿
+// 翡翠绿（柔和版）
 $theme-emerald: (
-  'primary': #10b981,
-  'primary-light': #34d399,
-  'primary-dark': #047857,
-  'secondary': #059669,
-  'gradient': linear-gradient(135deg, #11998e 0%, #38ef7d 100%),
-  'sidebar-gradient': linear-gradient(180deg, #10b981 0%, #047857 100%),
-  'glow': rgba(16, 185, 129, 0.5)
+  'primary': #4ab88f,
+  'primary-light': #6ad4a8,
+  'primary-dark': #3a9a78,
+  'secondary': #5ab89a,
+  'gradient': linear-gradient(135deg, #58c49a 0%, #7ad4b4 100%),
+  'sidebar-gradient': linear-gradient(180deg, #3a9a78 0%, #2d8266 100%),
+  'glow': rgba(74, 184, 143, 0.4)
 );
 
-// 紫罗兰
+// 紫罗兰（柔和版）
 $theme-purple: (
-  'primary': #9c27b0,
-  'primary-light': #ba68c8,
-  'primary-dark': #7b1fa2,
-  'secondary': #8e24aa,
-  'gradient': linear-gradient(135deg, #9c27b0 0%, #ce93d8 100%),
-  'sidebar-gradient': linear-gradient(180deg, #9c27b0 0%, #7b1fa2 100%),
-  'glow': rgba(156, 39, 176, 0.5)
+  'primary': #9b7ac4,
+  'primary-light': #b598d8,
+  'primary-dark': #8660a8,
+  'secondary': #a088c0,
+  'gradient': linear-gradient(135deg, #a888cd 0%, #c4a8df 100%),
+  'sidebar-gradient': linear-gradient(180deg, #7a5a9a 0%, #604880 100%),
+  'glow': rgba(155, 122, 196, 0.4)
 );
 
-// 火焰橙
+// 火焰橙（柔和版）
 $theme-flame: (
-  'primary': #ff6b35,
-  'primary-light': #ff8c42,
-  'primary-dark': #e65100,
-  'secondary': #ff9500,
-  'gradient': linear-gradient(135deg, #ff6b35 0%, #f79f5f 100%),
-  'sidebar-gradient': linear-gradient(180deg, #ff6b35 0%, #e65100 100%),
-  'glow': rgba(255, 107, 53, 0.5)
+  'primary': #e08a60,
+  'primary-light': #f0a880,
+  'primary-dark': #c87048,
+  'secondary': #c49a78,
+  'gradient': linear-gradient(135deg, #e89870 0%, #f0b090 100%),
+  'sidebar-gradient': linear-gradient(180deg, #c07048 0%, #a05838 100%),
+  'glow': rgba(224, 138, 96, 0.4)
 );
 
-// 深空紫
+// 深空紫（柔和版）
 $theme-cosmic: (
-  'primary': #7c3aed,
-  'primary-light': #a78bfa,
-  'primary-dark': #5b21b6,
-  'secondary': #8b5cf6,
-  'gradient': linear-gradient(135deg, #1a1a2a 0%, #7c3aed 100%),
-  'sidebar-gradient': linear-gradient(180deg, #5b21b6 0%, #a78bfa 100%),
-  'glow': rgba(124, 58, 237, 0.5)
+  'primary': #8a6ad4,
+  'primary-light': #a888e8,
+  'primary-dark': #7050b8,
+  'secondary': #9078c4,
+  'gradient': linear-gradient(135deg, #9880d8 0%, #b098ec 100%),
+  'sidebar-gradient': linear-gradient(180deg, #6050a0 0%, #484080 100%),
+  'glow': rgba(138, 106, 212, 0.4)
 );
 
-// 暗夜黑
+// 暗夜黑（柔和版）
 $theme-midnight: (
-  'primary': #64748b,
-  'primary-light': #94a3b8,
-  'primary-dark': #334155,
-  'secondary': #475569,
-  'gradient': linear-gradient(135deg, #1e293b 0%, #485561 100%),
-  'sidebar-gradient': linear-gradient(180deg, #1e293b 0%, #334155 100%),
-  'glow': rgba(100, 116, 139, 0.4)
+  'primary': #7a8898,
+  'primary-light': #98a8b8,
+  'primary-dark': #606878,
+  'secondary': #8090a0,
+  'gradient': linear-gradient(135deg, #8898a8 0%, #a0b0c0 100%),
+  'sidebar-gradient': linear-gradient(180deg, #404850 0%, #303840 100%),
+  'glow': rgba(122, 136, 152, 0.35)
+);
+
+// ==================== 国风配色主题（柔和版） ====================
+
+// 朱砂红
+$theme-chinese-red: (
+  'primary': #c87068,
+  'primary-light': #e09088,
+  'primary-dark': #a85850,
+  'secondary': #b08078,
+  'gradient': linear-gradient(135deg, #d08078 0%, #e09890 100%),
+  'sidebar-gradient': linear-gradient(180deg, #905048 0%, #703830 100%),
+  'glow': rgba(200, 112, 104, 0.4)
+);
+
+// 翡翠青
+$theme-jade-green: (
+  'primary': #5aa880,
+  'primary-light': #78c498,
+  'primary-dark': #489068,
+  'secondary': #68a890,
+  'gradient': linear-gradient(135deg, #68b490 0%, #88d0a8 100%),
+  'sidebar-gradient': linear-gradient(180deg, #388058 0%, #286848 100%),
+  'glow': rgba(90, 168, 128, 0.4)
+);
+
+// 黛蓝
+$theme-ink-blue: (
+  'primary': #6078a0,
+  'primary-light': #8098c0,
+  'primary-dark': #486088,
+  'secondary': #6888a8,
+  'gradient': linear-gradient(135deg, #7088b0 0%, #90a8c8 100%),
+  'sidebar-gradient': linear-gradient(180deg, #384868 0%, #283850 100%),
+  'glow': rgba(96, 120, 160, 0.4)
+);
+
+// 琥珀黄
+$theme-gold-amber: (
+  'primary': #c8a050,
+  'primary-light': #e0b870,
+  'primary-dark': #a88840,
+  'secondary': #b8a068,
+  'gradient': linear-gradient(135deg, #d0a860 0%, #e8c080 100%),
+  'sidebar-gradient': linear-gradient(180deg, #906830 0%, #705020 100%),
+  'glow': rgba(200, 160, 80, 0.4)
+);
+
+// 梅子青
+$theme-plum-purple: (
+  'primary': #788878,
+  'primary-light': #98a898,
+  'primary-dark': #607060,
+  'secondary': #889088,
+  'gradient': linear-gradient(135deg, #889888 0%, #a0b0a0 100%),
+  'sidebar-gradient': linear-gradient(180deg, #506050 0%, #404840 100%),
+  'glow': rgba(120, 136, 120, 0.4)
 );
 
 // ==================== 通用变量 ====================
@@ -112,4 +237,3 @@ $font-size-medium: 14px;
 $font-size-large: 16px;
 $font-size-base: 14px; // 默认字体大小
 $line-height-base: 1.6; // 默认行高
-

@@ -495,7 +495,7 @@ watch(
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  background: var(--bg-color-page);
+  background: linear-gradient(180deg, var(--bg-color-page) 0%, var(--color-accent-light) 100%);
 }
 
 .page-container {
