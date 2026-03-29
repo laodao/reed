@@ -8,20 +8,18 @@
 // ==================== CSS 变量（动态主题） ====================
 
 :root {
-  // 默认主题色（科技蓝 - 柔和版）
-  --color-primary: #4a90d9;
-  --color-primary-light: #6ba8eb;
-  --color-primary-dark: #3a7bc8;
-  --color-primary-rgb: 74, 144, 217;
-  --color-secondary: #7c8db5;
-  --color-gradient: linear-gradient(135deg, #5a9bd4 0%, #7b8fc7 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #4a7ab8 0%, #3a6298 100%);
-  --color-glow: rgba(74, 144, 217, 0.4);
-
-  // 互补色/装饰色 - 用于右侧背景
-  --color-accent: #e8f0f8;
-  --color-accent-light: #f5f8fc;
-  --color-accent-dark: #d4e4f0;
+  // 默认主题色（天青色）
+  --color-primary: #5b8c85;
+  --color-primary-light: #7ba39c;
+  --color-primary-dark: #4a7570;
+  --color-primary-rgb: 91, 140, 133;
+  --color-secondary: #7c9a96;
+  --color-gradient: linear-gradient(135deg, #5b8c85 0%, #7ba39c 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #4a7570 0%, #3a5f5a 100%);
+  --color-glow: rgba(91, 140, 133, 0.4);
+  --color-accent: #f5f0e6;
+  --color-accent-light: #faf8f3;
+  --color-accent-dark: #ebe3d4;
 
   // 功能色
   --color-success: #67c23a;
@@ -43,7 +41,7 @@
 
   // 背景颜色
   --bg-color: #ffffff;
-  --bg-color-page: #f8fafc;
+  --bg-color-page: #faf9f7;
   --bg-color-hover: #f1f5f9;
   --bg-color-card: #ffffff;
 
@@ -80,282 +78,168 @@
   --line-height-base: 1.6;
 }
 
-// ==================== 淡色主题系列（柔和配色） ====================
+// ==================== 惊艳主题系列（中国传统色） ====================
 
-// 天空蓝 - 清新淡雅
-[data-theme="sky-blue"] {
-  --color-primary: #6ba3d6;
-  --color-primary-light: #8fbde8;
-  --color-primary-dark: #5a8fc4;
-  --color-primary-rgb: 107, 163, 214;
-  --color-secondary: #8fa8c7;
-  --color-gradient: linear-gradient(135deg, #7bb0db 0%, #9ac0e8 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #5a8fc4 0%, #4a7ab0 100%);
-  --color-glow: rgba(107, 163, 214, 0.35);
-  --color-accent: #e8f2fa;
-  --color-accent-light: #f2f7fc;
-  --color-accent-dark: #d4e6f4;
-  --bg-color-page: #f5f9fc;
-}
-
-// 薄荷绿 - 清新自然
-[data-theme="mint-green"] {
-  --color-primary: #5cb88f;
-  --color-primary-light: #7dd4a8;
-  --color-primary-dark: #4a9a78;
-  --color-primary-rgb: 92, 184, 143;
-  --color-secondary: #7ab89a;
-  --color-gradient: linear-gradient(135deg, #68c49a 0%, #8fd4b4 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #4a9a78 0%, #3d8266 100%);
-  --color-glow: rgba(92, 184, 143, 0.35);
-  --color-accent: #e8f6f0;
-  --color-accent-light: #f2faf6;
-  --color-accent-dark: #d4ece2;
-  --bg-color-page: #f5fcf9;
-}
-
-// 淡紫罗兰 - 优雅浪漫
-[data-theme="lavender"] {
-  --color-primary: #9b8dc7;
-  --color-primary-light: #b5a8d8;
-  --color-primary-dark: #8677b3;
-  --color-primary-rgb: 155, 141, 199;
-  --color-secondary: #a89bc4;
-  --color-gradient: linear-gradient(135deg, #a898cd 0%, #c4b8df 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #7a6aa8 0%, #635890 100%);
-  --color-glow: rgba(155, 141, 199, 0.35);
-  --color-accent: #f0ecf8;
-  --color-accent-light: #f6f4fb;
-  --color-accent-dark: #e2dcf0;
-  --bg-color-page: #f9f7fc;
-}
-
-// 珊瑚粉 - 温柔甜美
-[data-theme="coral-pink"] {
-  --color-primary: #e08a8a;
-  --color-primary-light: #efa8a8;
-  --color-primary-dark: #d06c6c;
-  --color-primary-rgb: 224, 138, 138;
-  --color-secondary: #c49999;
-  --color-gradient: linear-gradient(135deg, #e89898 0%, #f0b0b0 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #c06a6a 0%, #a85858 100%);
-  --color-glow: rgba(224, 138, 138, 0.35);
-  --color-accent: #fcf2f2;
-  --color-accent-light: #fdf6f6;
-  --color-accent-dark: #f8e4e4;
-  --bg-color-page: #fdf8f8;
-}
-
-// 杏仁黄 - 温暖舒适
-[data-theme="almond"] {
-  --color-primary: #d4a574;
-  --color-primary-light: #e4bc8c;
-  --color-primary-dark: #c08a5a;
-  --color-primary-rgb: 212, 165, 116;
-  --color-secondary: #c4a882;
-  --color-gradient: linear-gradient(135deg, #dcb07e 0%, #e8c8a0 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #b08050 0%, #906840 100%);
-  --color-glow: rgba(212, 165, 116, 0.35);
-  --color-accent: #faf4ec;
-  --color-accent-light: #fcf8f2;
-  --color-accent-dark: #f4e8d8;
+// 【故宫红墙】朱砂配月白 - 大气华贵
+[data-theme="palace-red"] {
+  --color-primary: #c94043;
+  --color-primary-light: #e06567;
+  --color-primary-dark: #a32e31;
+  --color-primary-rgb: 201, 64, 67;
+  --color-secondary: #d4715e;
+  --color-gradient: linear-gradient(135deg, #c94043 0%, #e8886a 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #8a2325 0%, #6b1a1c 100%);
+  --color-glow: rgba(201, 64, 67, 0.35);
+  --color-accent: #fef9f0;
+  --color-accent-light: #fffdf8;
+  --color-accent-dark: #f8ecd4;
   --bg-color-page: #fdfaf5;
 }
 
-// 雾霾灰 - 简约高级
-[data-theme="foggy-gray"] {
-  --color-primary: #8899aa;
-  --color-primary-light: #a0b0bf;
-  --color-primary-dark: #708090;
-  --color-primary-rgb: 136, 153, 170;
-  --color-secondary: #99a8b5;
-  --color-gradient: linear-gradient(135deg, #94a5b5 0%, #b0bfcc 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #606d7a 0%, #4a5560 100%);
-  --color-glow: rgba(136, 153, 170, 0.35);
-  --color-accent: #f2f4f6;
-  --color-accent-light: #f6f8fa;
-  --color-accent-dark: #e4e8ec;
-  --bg-color-page: #f8f9fa;
+// 【青花瓷韵】钴蓝配月白 - 清雅脱俗
+[data-theme="blue-porcelain"] {
+  --color-primary: #2e4a62;
+  --color-primary-light: #4a6a85;
+  --color-primary-dark: #1e3548;
+  --color-primary-rgb: 46, 74, 98;
+  --color-secondary: #4d6b89;
+  --color-gradient: linear-gradient(135deg, #2e4a62 0%, #5a7d9a 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #1e3548 0%, #152738 100%);
+  --color-glow: rgba(46, 74, 98, 0.35);
+  --color-accent: #f0f4f8;
+  --color-accent-light: #f7fafc;
+  --color-accent-dark: #dce5ed;
+  --bg-color-page: #f5f8fa;
 }
 
-// ==================== 经典主题（调整后的柔和版） ====================
+// 【烟雨江南】黛蓝配藕粉 - 温婉诗意
+[data-theme="misty-rain"] {
+  --color-primary: #4a5568;
+  --color-primary-light: #6b7a8f;
+  --color-primary-dark: #374151;
+  --color-primary-rgb: 74, 85, 104;
+  --color-secondary: #6b7a8f;
+  --color-gradient: linear-gradient(135deg, #5a6878 0%, #7a8a9a 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #374151 0%, #262f3a 100%);
+  --color-glow: rgba(74, 85, 104, 0.3);
+  --color-accent: #f8f5f5;
+  --color-accent-light: #fcfafa;
+  --color-accent-dark: #ebe0e0;
+  --bg-color-page: #f9f7f7;
+}
 
-// 科技蓝 - 默认主题（柔和版）
+// 【竹影清风】竹青配米白 - 清新雅致
+[data-theme="bamboo-breeze"] {
+  --color-primary: #5d8a66;
+  --color-primary-light: #7aa384;
+  --color-primary-dark: #4a7052;
+  --color-primary-rgb: 93, 138, 102;
+  --color-secondary: #6b9475;
+  --color-gradient: linear-gradient(135deg, #5d8a66 0%, #7db587 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #3a5640 0%, #2a4030 100%);
+  --color-glow: rgba(93, 138, 102, 0.35);
+  --color-accent: #f5f8f0;
+  --color-accent-light: #fafbf7;
+  --color-accent-dark: #e5edd8;
+  --bg-color-page: #f7f9f2;
+}
+
+// 【紫禁晨曦】紫檀配杏黄 - 高贵典雅
+[data-theme="dawn-purple"] {
+  --color-primary: #7d5a6a;
+  --color-primary-light: #9a7889;
+  --color-primary-dark: #5f4351;
+  --color-primary-rgb: 125, 90, 106;
+  --color-secondary: #8a6b7a;
+  --color-gradient: linear-gradient(135deg, #7d5a6a 0%, #a08090 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #4a3545 0%, #362835 100%);
+  --color-glow: rgba(125, 90, 106, 0.35);
+  --color-accent: #fbf5ef;
+  --color-accent-light: #fdfaf6;
+  --color-accent-dark: #f0e4d4;
+  --bg-color-page: #faf6f2;
+}
+
+// 【金秋银杏】琥珀配墨绿 - 温暖醇厚
+[data-theme="ginkgo-gold"] {
+  --color-primary: #c9a04a;
+  --color-primary-light: #ddb86a;
+  --color-primary-dark: #a88535;
+  --color-primary-rgb: 201, 160, 74;
+  --color-secondary: #b8956a;
+  --color-gradient: linear-gradient(135deg, #c9a04a 0%, #e0c070 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #705520 0%, #524018 100%);
+  --color-glow: rgba(201, 160, 74, 0.35);
+  --color-accent: #fdf8ed;
+  --color-accent-light: #fefbf3;
+  --color-accent-dark: #f2e5c8;
+  --bg-color-page: #fcf9f0;
+}
+
+// 【胭脂桃夭】胭脂配柳绿 - 娇艳动人
+[data-theme="peach-blossom"] {
+  --color-primary: #e07878;
+  --color-primary-light: #f09898;
+  --color-primary-dark: #c85a5a;
+  --color-primary-rgb: 224, 120, 120;
+  --color-secondary: #d89888;
+  --color-gradient: linear-gradient(135deg, #e07878 0%, #f0a8a0 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #a04040 0%, #803030 100%);
+  --color-glow: rgba(224, 120, 120, 0.35);
+  --color-accent: #fdf5f5;
+  --color-accent-light: #fefafa;
+  --color-accent-dark: #f8e0e0;
+  --bg-color-page: #fcf6f6;
+}
+
+// 【松风水月】松绿配月白 - 幽静清远
+[data-theme="pine-moon"] {
+  --color-primary: #4a7570;
+  --color-primary-light: #6a9590;
+  --color-primary-dark: #3a5a56;
+  --color-primary-rgb: 74, 117, 112;
+  --color-secondary: #5a8580;
+  --color-gradient: linear-gradient(135deg, #4a7570 0%, #6a958f 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #2a4542 0%, #1e3532 100%);
+  --color-glow: rgba(74, 117, 112, 0.35);
+  --color-accent: #f0f5f4;
+  --color-accent-light: #f5faf9;
+  --color-accent-dark: #dce5e3;
+  --bg-color-page: #f4f9f8;
+}
+
+// ==================== 经典主题（优化版） ====================
+
+// 【天青色】雨过天青云破处
+[data-theme="sky-cyan"] {
+  --color-primary: #5b8c85;
+  --color-primary-light: #7ba39c;
+  --color-primary-dark: #4a7570;
+  --color-primary-rgb: 91, 140, 133;
+  --color-secondary: #7c9a96;
+  --color-gradient: linear-gradient(135deg, #5b8c85 0%, #7ba39c 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #3a5f5a 0%, #2a4a46 100%);
+  --color-glow: rgba(91, 140, 133, 0.4);
+  --color-accent: #f5f0e6;
+  --color-accent-light: #faf8f3;
+  --color-accent-dark: #ebe3d4;
+  --bg-color-page: #faf9f7;
+}
+
+// 【科技蓝】（优化版）
 [data-theme="tech-blue"] {
-  --color-primary: #4a90d9;
-  --color-primary-light: #6ba8eb;
-  --color-primary-dark: #3a7bc8;
-  --color-primary-rgb: 74, 144, 217;
-  --color-secondary: #7c8db5;
-  --color-gradient: linear-gradient(135deg, #5a9bd4 0%, #7b8fc7 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #4a7ab8 0%, #3a6298 100%);
-  --color-glow: rgba(74, 144, 217, 0.4);
-  --color-accent: #e8f0f8;
+  --color-primary: #4a7cb8;
+  --color-primary-light: #6a9cd8;
+  --color-primary-dark: #3a6ca0;
+  --color-primary-rgb: 74, 124, 184;
+  --color-secondary: #5a8cc8;
+  --color-gradient: linear-gradient(135deg, #4a7cb8 0%, #6a9cd8 100%);
+  --color-sidebar-gradient: linear-gradient(180deg, #2a5080 0%, #1e3a60 100%);
+  --color-glow: rgba(74, 124, 184, 0.4);
+  --color-accent: #eef3f8;
   --color-accent-light: #f5f8fc;
-  --color-accent-dark: #d4e4f0;
-  --bg-color-page: #f8fafc;
-}
-
-// 翡翠绿（柔和版）
-[data-theme="emerald"] {
-  --color-primary: #4ab88f;
-  --color-primary-light: #6ad4a8;
-  --color-primary-dark: #3a9a78;
-  --color-primary-rgb: 74, 184, 143;
-  --color-secondary: #5ab89a;
-  --color-gradient: linear-gradient(135deg, #58c49a 0%, #7ad4b4 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #3a9a78 0%, #2d8266 100%);
-  --color-glow: rgba(74, 184, 143, 0.4);
-  --color-accent: #e8f6f0;
-  --color-accent-light: #f2faf6;
-  --color-accent-dark: #d4ece2;
-  --bg-color-page: #f5fcf9;
-}
-
-// 紫罗兰（柔和版）
-[data-theme="purple"] {
-  --color-primary: #9b7ac4;
-  --color-primary-light: #b598d8;
-  --color-primary-dark: #8660a8;
-  --color-primary-rgb: 155, 122, 196;
-  --color-secondary: #a088c0;
-  --color-gradient: linear-gradient(135deg, #a888cd 0%, #c4a8df 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #7a5a9a 0%, #604880 100%);
-  --color-glow: rgba(155, 122, 196, 0.4);
-  --color-accent: #f0e8f8;
-  --color-accent-light: #f6f2fb;
-  --color-accent-dark: #e2d8f0;
-  --bg-color-page: #f9f7fc;
-}
-
-// 火焰橙（柔和版）
-[data-theme="flame"] {
-  --color-primary: #e08a60;
-  --color-primary-light: #f0a880;
-  --color-primary-dark: #c87048;
-  --color-primary-rgb: 224, 138, 96;
-  --color-secondary: #c49a78;
-  --color-gradient: linear-gradient(135deg, #e89870 0%, #f0b090 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #c07048 0%, #a05838 100%);
-  --color-glow: rgba(224, 138, 96, 0.4);
-  --color-accent: #fcf0e8;
-  --color-accent-light: #fdf6f2;
-  --color-accent-dark: #f8e0d4;
-  --bg-color-page: #fdf8f5;
-}
-
-// 深空紫（柔和版）
-[data-theme="cosmic"] {
-  --color-primary: #8a6ad4;
-  --color-primary-light: #a888e8;
-  --color-primary-dark: #7050b8;
-  --color-primary-rgb: 138, 106, 212;
-  --color-secondary: #9078c4;
-  --color-gradient: linear-gradient(135deg, #9880d8 0%, #b098ec 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #6050a0 0%, #484080 100%);
-  --color-glow: rgba(138, 106, 212, 0.4);
-  --color-accent: #f0e8fc;
-  --color-accent-light: #f6f2fd;
-  --color-accent-dark: #e2d8f4;
-  --bg-color-page: #f9f7fc;
-}
-
-// 暗夜黑（柔和版）
-[data-theme="midnight"] {
-  --color-primary: #7a8898;
-  --color-primary-light: #98a8b8;
-  --color-primary-dark: #606878;
-  --color-primary-rgb: 122, 136, 152;
-  --color-secondary: #8090a0;
-  --color-gradient: linear-gradient(135deg, #8898a8 0%, #a0b0c0 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #404850 0%, #303840 100%);
-  --color-glow: rgba(122, 136, 152, 0.35);
-  --color-accent: #f0f2f4;
-  --color-accent-light: #f6f8fa;
-  --color-accent-dark: #e0e4e8;
-  --bg-color-page: #f8f9fa;
-}
-
-// ==================== 国风配色主题（柔和版） ====================
-
-// 朱砂红 - 中国传统红（柔和版）
-[data-theme="chinese-red"] {
-  --color-primary: #c87068;
-  --color-primary-light: #e09088;
-  --color-primary-dark: #a85850;
-  --color-primary-rgb: 200, 112, 104;
-  --color-secondary: #b08078;
-  --color-gradient: linear-gradient(135deg, #d08078 0%, #e09890 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #905048 0%, #703830 100%);
-  --color-glow: rgba(200, 112, 104, 0.4);
-  --color-accent: #fcf0ee;
-  --color-accent-light: #fdf6f5;
-  --color-accent-dark: #f8e0dc;
-  --bg-color-page: #fdf8f7;
-}
-
-// 翡翠青 - 玉石绿（柔和版）
-[data-theme="jade-green"] {
-  --color-primary: #5aa880;
-  --color-primary-light: #78c498;
-  --color-primary-dark: #489068;
-  --color-primary-rgb: 90, 168, 128;
-  --color-secondary: #68a890;
-  --color-gradient: linear-gradient(135deg, #68b490 0%, #88d0a8 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #388058 0%, #286848 100%);
-  --color-glow: rgba(90, 168, 128, 0.4);
-  --color-accent: #eef8f2;
-  --color-accent-light: #f4fcf6;
-  --color-accent-dark: #d8ece0;
-  --bg-color-page: #f6fcf8;
-}
-
-// 黛蓝 - 传统蓝（柔和版）
-[data-theme="ink-blue"] {
-  --color-primary: #6078a0;
-  --color-primary-light: #8098c0;
-  --color-primary-dark: #486088;
-  --color-primary-rgb: 96, 120, 160;
-  --color-secondary: #6888a8;
-  --color-gradient: linear-gradient(135deg, #7088b0 0%, #90a8c8 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #384868 0%, #283850 100%);
-  --color-glow: rgba(96, 120, 160, 0.4);
-  --color-accent: #eef2f8;
-  --color-accent-light: #f4f6fa;
-  --color-accent-dark: #dce4f0;
-  --bg-color-page: #f6f8fc;
-}
-
-// 琥珀黄 - 传统黄（柔和版）
-[data-theme="gold-amber"] {
-  --color-primary: #c8a050;
-  --color-primary-light: #e0b870;
-  --color-primary-dark: #a88840;
-  --color-primary-rgb: 200, 160, 80;
-  --color-secondary: #b8a068;
-  --color-gradient: linear-gradient(135deg, #d0a860 0%, #e8c080 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #906830 0%, #705020 100%);
-  --color-glow: rgba(200, 160, 80, 0.4);
-  --color-accent: #fcf6e8;
-  --color-accent-light: #fdfaf2;
-  --color-accent-dark: #f8ecc8;
-  --bg-color-page: #fdfaf3;
-}
-
-// 梅子青 - 青绿色（柔和版）
-[data-theme="plum-purple"] {
-  --color-primary: #788878;
-  --color-primary-light: #98a898;
-  --color-primary-dark: #607060;
-  --color-primary-rgb: 120, 136, 120;
-  --color-secondary: #889088;
-  --color-gradient: linear-gradient(135deg, #889888 0%, #a0b0a0 100%);
-  --color-sidebar-gradient: linear-gradient(180deg, #506050 0%, #404840 100%);
-  --color-glow: rgba(120, 136, 120, 0.4);
-  --color-accent: #f0f4f0;
-  --color-accent-light: #f6f8f6;
-  --color-accent-dark: #e0e8e0;
-  --bg-color-page: #f8faf8;
+  --color-accent-dark: #d8e4f0;
+  --bg-color-page: #f5f8fa;
 }
 
 // ==================== 基础重置 ====================
