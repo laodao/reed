@@ -80,7 +80,11 @@
     <el-dialog
       v-model="showCharacterDialog"
       :title="editingCharacter ? '编辑角色' : '添加角色'"
+<<<<<<< HEAD
       width="750px"
+=======
+      width="720px"
+>>>>>>> 06a3853 (提交)
       destroy-on-close
     >
       <el-form :model="characterForm" label-width="100px" class="character-form">
@@ -92,7 +96,7 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="角色定位">
-              <el-select v-model="characterForm.rolePosition" placeholder="选择定位">
+              <el-select v-model="characterForm.rolePosition" placeholder="选择定位" style="width: 100%">
                 <el-option label="主角" value="protagonist" />
                 <el-option label="配角" value="supporting" />
                 <el-option label="反派" value="antagonist" />
@@ -105,7 +109,11 @@
         <el-row :gutter="16">
           <el-col :span="8">
             <el-form-item label="性别">
+<<<<<<< HEAD
               <el-select v-model="characterForm.gender" placeholder="选择性别">
+=======
+              <el-select v-model="characterForm.gender" placeholder="选择性别" style="width: 100%">
+>>>>>>> 06a3853 (提交)
                 <el-option label="男" value="male" />
                 <el-option label="女" value="female" />
                 <el-option label="其他" value="other" />
@@ -114,11 +122,16 @@
           </el-col>
           <el-col :span="8">
             <el-form-item label="年龄">
+<<<<<<< HEAD
               <el-input-number v-model="characterForm.age" :min="0" :max="999" controls-position="right" style="width: 100%;" />
+=======
+              <el-input-number v-model="characterForm.age" :min="0" :max="1000" style="width: 100%" />
+>>>>>>> 06a3853 (提交)
             </el-form-item>
           </el-col>
           <el-col :span="8">
             <el-form-item label="人像形象">
+<<<<<<< HEAD
               <div class="portrait-field">
                 <el-button @click="showPortraitLinkDialog = true">
                   <el-icon><Picture /></el-icon>
@@ -131,9 +144,34 @@
                   fit="cover"
                 />
               </div>
+=======
+              <el-button @click="openPortraitLinkDialog">
+                <el-icon><Picture /></el-icon>
+                {{ characterForm.portraitId ? '更换形象' : '关联形象' }}
+              </el-button>
+>>>>>>> 06a3853 (提交)
             </el-form-item>
           </el-col>
         </el-row>
+
+        <!-- 已关联的人像预览 -->
+        <el-form-item v-if="characterForm.portraitId" label="当前形象">
+          <div class="current-portrait">
+            <el-image
+              v-if="getPortraitPreview(characterForm.portraitId)"
+              :src="getPortraitPreview(characterForm.portraitId)"
+              fit="cover"
+              class="portrait-preview-large"
+            >
+              <template #error>
+                <div class="portrait-placeholder">
+                  <el-icon><Picture /></el-icon>
+                </div>
+              </template>
+            </el-image>
+            <span class="portrait-name">{{ getPortraitName(characterForm.portraitId) }}</span>
+          </div>
+        </el-form-item>
 
         <el-form-item label="外貌描述">
           <el-input
@@ -191,42 +229,131 @@
     <el-dialog
       v-model="showPortraitLinkDialog"
       title="关联人像形象"
-      width="500px"
+      width="700px"
     >
-      <div class="portrait-list">
-        <el-empty v-if="availablePortraits.length === 0" description="暂无人像形象">
-          <el-button type="primary" @click="goToPortraitPage">创建人像形象</el-button>
-        </el-empty>
-        <div v-else class="portrait-grid">
-          <div
-            v-for="portrait in availablePortraits"
-            :key="portrait.id"
-            class="portrait-item"
-            :class="{ selected: selectedPortraitId === portrait.id }"
-            @click="selectedPortraitId = portrait.id"
-          >
-            <el-image
-              v-if="portrait.preview"
-              :src="portrait.preview"
-              fit="cover"
+      <div class="portrait-selector">
+        <!-- 第一步：选择项目 -->
+        <div class="selector-step">
+          <div class="step-header">
+            <span class="step-number">1</span>
+            <span class="step-title">选择人像项目</span>
+          </div>
+          <div class="step-content-with-action">
+            <el-select
+              v-model="selectedPortraitProjectId"
+              placeholder="选择人像项目"
+              style="flex: 1"
+              @change="loadProjectCharacters"
             >
-              <template #error>
-                <div class="portrait-placeholder">
-                  <el-icon><Picture /></el-icon>
-                </div>
-              </template>
-            </el-image>
-            <div v-else class="portrait-placeholder">
-              <el-icon><Picture /></el-icon>
-            </div>
-            <span class="portrait-name">{{ portrait.name }}</span>
+              <el-option
+                v-for="project in portraitProjects"
+                :key="project.id"
+                :label="project.name"
+                :value="project.id"
+              />
+            </el-select>
+            <el-button type="primary" plain @click="showCreateProjectDialog = true">
+              <el-icon><Plus /></el-icon>
+              新建项目
+            </el-button>
           </div>
         </div>
+
+        <!-- 第二步：选择人物形象 -->
+        <div class="selector-step" v-if="selectedPortraitProjectId">
+          <div class="step-header">
+            <span class="step-number">2</span>
+            <span class="step-title">选择人物形象</span>
+            <el-button type="primary" text size="small" @click="showCreateCharacterDialog = true">
+              <el-icon><Plus /></el-icon>
+              新建人物
+            </el-button>
+          </div>
+          <div class="portrait-grid" v-if="projectCharacters.length > 0">
+            <div
+              v-for="portrait in projectCharacters"
+              :key="portrait.id"
+              class="portrait-item"
+              :class="{ selected: selectedPortraitId === portrait.id }"
+              @click="selectedPortraitId = portrait.id"
+            >
+              <el-image
+                v-if="portrait.preview"
+                :src="portrait.preview"
+                fit="cover"
+              >
+                <template #error>
+                  <div class="portrait-placeholder">
+                    <el-icon><Picture /></el-icon>
+                  </div>
+                </template>
+              </el-image>
+              <div v-else class="portrait-placeholder">
+                <el-icon><Picture /></el-icon>
+              </div>
+              <span class="portrait-name">{{ portrait.name }}</span>
+            </div>
+          </div>
+          <el-empty v-else description="该项目暂无人物形象">
+            <el-button type="primary" size="small" @click="showCreateCharacterDialog = true">创建人物形象</el-button>
+          </el-empty>
+        </div>
+
+        <!-- 空状态：没有项目 -->
+        <el-empty v-if="portraitProjects.length === 0" description="暂无人像项目">
+          <el-button type="primary" @click="showCreateProjectDialog = true">创建人像项目</el-button>
+        </el-empty>
       </div>
       <template #footer>
         <el-button @click="showPortraitLinkDialog = false">取消</el-button>
         <el-button type="primary" :disabled="!selectedPortraitId" @click="confirmPortraitLink">
           确认关联
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 新建人像项目对话框 -->
+    <el-dialog
+      v-model="showCreateProjectDialog"
+      title="新建人像项目"
+      width="400px"
+      destroy-on-close
+    >
+      <el-form :model="newProjectForm" label-width="80px">
+        <el-form-item label="项目名称" required>
+          <el-input v-model="newProjectForm.name" placeholder="输入项目名称" />
+        </el-form-item>
+        <el-form-item label="项目描述">
+          <el-input v-model="newProjectForm.description" type="textarea" :rows="2" placeholder="项目描述（可选）" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showCreateProjectDialog = false">取消</el-button>
+        <el-button type="primary" :loading="creatingProject" @click="createPortraitProject">
+          创建
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 新建人物形象对话框 -->
+    <el-dialog
+      v-model="showCreateCharacterDialog"
+      title="新建人物形象"
+      width="400px"
+      destroy-on-close
+    >
+      <el-form :model="newCharacterForm" label-width="80px">
+        <el-form-item label="人物名称" required>
+          <el-input v-model="newCharacterForm.name" placeholder="输入人物名称" />
+        </el-form-item>
+        <el-form-item label="人物描述">
+          <el-input v-model="newCharacterForm.description" type="textarea" :rows="2" placeholder="人物描述（可选）" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showCreateCharacterDialog = false">取消</el-button>
+        <el-button type="primary" :loading="creatingCharacter" @click="createPortraitCharacter">
+          创建
         </el-button>
       </template>
     </el-dialog>
@@ -302,7 +429,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, User, Connection, MagicStick, Picture, Close } from '@element-plus/icons-vue'
@@ -318,11 +445,16 @@ const emit = defineEmits<{
 
 const router = useRouter()
 
+// 从父组件获取选中的模型（是一个 ComputedRef）
+const selectedModel = inject<ReturnType<typeof computed<{ providerId: string; modelId: string } | null>>>('selectedModel', computed(() => null))
+
 // 角色列表
 const characters = ref<StoryCharacter[]>([])
 
-// 人像列表（从人像设计模块获取）
-const availablePortraits = ref<Array<{ id: string; name: string; preview?: string }>>([])
+// 人像项目列表和角色列表（从人像设计模块获取）
+const portraitProjects = ref<Array<{ id: string; name: string }>>([])
+const portraitCharacters = ref<Array<{ id: string; name: string; preview?: string; projectId: string }>>([])
+const selectedPortraitProjectId = ref<string>('')
 
 // 角色关系
 const characterRelations = ref<CharacterRelation[]>([])
@@ -333,6 +465,22 @@ const showCharacterDialog = ref(false)
 const showPortraitLinkDialog = ref(false)
 const showRelationDialog = ref(false)
 const showAddRelationDialog = ref(false)
+const showCreateProjectDialog = ref(false)
+const showCreateCharacterDialog = ref(false)
+
+// 新建人像项目表单
+const newProjectForm = ref({
+  name: '',
+  description: ''
+})
+const creatingProject = ref(false)
+
+// 新建人物形象表单
+const newCharacterForm = ref({
+  name: '',
+  description: ''
+})
+const creatingCharacter = ref(false)
 
 // 编辑状态
 const editingCharacter = ref<StoryCharacter | null>(null)
@@ -390,6 +538,18 @@ function getGenderLabel(gender: string): string {
 function getPortraitPreview(portraitId: string): string | null {
   const portrait = availablePortraits.value.find(p => p.id === portraitId)
   return portrait?.preview || null
+}
+
+// 获取人像名称
+function getPortraitName(portraitId: string): string {
+  const portrait = availablePortraits.value.find(p => p.id === portraitId)
+  return portrait?.name || '未知形象'
+}
+
+// 打开人像关联对话框
+function openPortraitLinkDialog() {
+  selectedPortraitId.value = characterForm.value.portraitId || ''
+  showPortraitLinkDialog.value = true
 }
 
 // 获取角色名称
@@ -548,6 +708,14 @@ const generatingContent = ref('')
 
 // AI 生成角色建议
 async function generateCharacters() {
+  // 检查是否选择了模型（需要同时检查 providerId 和 modelId）
+  if (!selectedModel.value || !selectedModel.value.providerId || !selectedModel.value.modelId) {
+    ElMessage.warning('请先在顶部选择 AI 模型')
+    return
+  }
+
+  console.log('[CharacterStage] 生成角色, providerId:', selectedModel.value.providerId, 'modelId:', selectedModel.value.modelId)
+
   generating.value = true
   generatingContent.value = ''
 
@@ -558,14 +726,29 @@ async function generateCharacters() {
   const unsubscribe = window.electronAPI.longwriting.onGenerateEvent(
     currentEventId.value,
     (event: { type: string; content?: string; error?: string; data?: any }) => {
+      console.log('[CharacterStage] 收到事件:', event.type, event.content?.substring(0, 100))
+
       if (event.type === 'content' && event.content) {
         generatingContent.value += event.content
       } else if (event.type === 'done') {
         generating.value = false
         currentEventId.value = null
         unsubscribe()
+
+        // 优先使用 done 事件中的完整内容
+        const finalContent = event.content || generatingContent.value
+        console.log('[CharacterStage] 生成完成, 累积内容长度:', generatingContent.value.length, 'done内容长度:', event.content?.length || 0)
+
+        if (!finalContent || finalContent.length === 0) {
+          ElMessage.error('AI 未返回任何内容')
+          return
+        }
+
+        // 提示用户正在解析
+        ElMessage.info('正在解析 AI 响应...')
+
         // 解析并显示建议
-        parseAndShowSuggestions(generatingContent.value)
+        parseAndShowSuggestions(finalContent)
       } else if (event.type === 'error') {
         generating.value = false
         currentEventId.value = null
@@ -575,8 +758,13 @@ async function generateCharacters() {
     }
   )
 
-  // 调用 AI API，传递 eventId
-  const result = await window.electronAPI.longwriting.generateCharacters(currentEventId.value, props.projectId)
+  // 调用 AI API，传递 eventId 和模型参数
+  const result = await window.electronAPI.longwriting.generateCharacters(
+    currentEventId.value,
+    props.projectId,
+    selectedModel.value.providerId,
+    selectedModel.value.modelId
+  )
 
   if (!result.success) {
     generating.value = false
@@ -588,15 +776,37 @@ async function generateCharacters() {
 
 // 解析并显示建议
 async function parseAndShowSuggestions(content: string) {
+  console.log('[CharacterStage] 解析 AI 响应, 内容长度:', content.length)
+  console.log('[CharacterStage] AI 响应内容:', content.substring(0, 1000))
+
   try {
     // 尝试解析 JSON
-    const jsonMatch = content.match(/\[[\s\S]*\]/)
+    let jsonStr = content
+
+    // 尝试移除可能的 markdown 代码块标记
+    if (jsonStr.includes('```json')) {
+      jsonStr = jsonStr.replace(/```json\s*/g, '').replace(/```\s*/g, '')
+    } else if (jsonStr.includes('```')) {
+      jsonStr = jsonStr.replace(/```\s*/g, '')
+    }
+
+    // 尝试找到 JSON 数组
+    const jsonMatch = jsonStr.match(/\[[\s\S]*\]/)
     if (!jsonMatch) {
+      console.error('[CharacterStage] 未找到 JSON 数组, 内容:', content)
       ElMessage.warning('AI 返回格式不正确，请重试')
       return
     }
 
-    const suggestedCharacters: Partial<StoryCharacter>[] = JSON.parse(jsonMatch[0])
+    console.log('[CharacterStage] 匹配到的 JSON:', jsonMatch[0].substring(0, 500))
+
+    // 清理 JSON 字符串中的控制字符
+    let cleanJson = jsonMatch[0]
+      .replace(/[\x00-\x1F\x7F]/g, '') // 移除控制字符
+      .replace(/\n/g, ' ') // 将换行替换为空格
+
+    const suggestedCharacters: Partial<StoryCharacter>[] = JSON.parse(cleanJson)
+    console.log('[CharacterStage] 解析到的角色数量:', suggestedCharacters.length)
 
     if (!Array.isArray(suggestedCharacters) || suggestedCharacters.length === 0) {
       ElMessage.warning('AI 未生成角色建议')
@@ -604,8 +814,14 @@ async function parseAndShowSuggestions(content: string) {
     }
 
     // 显示确认对话框
+    const roleList = suggestedCharacters.map(c => `- ${c.name || '未命名'}（${getRoleLabel(c.rolePosition || 'supporting')}）`).join('\n')
+    console.log('[CharacterStage] 角色列表:', roleList)
+
+    // 清除之前的消息
+    ElMessage.closeAll()
+
     ElMessageBox.confirm(
-      `AI 建议添加以下角色：\n${suggestedCharacters.map(c => `- ${c.name}（${getRoleLabel(c.rolePosition!)}）`).join('\n')}`,
+      `AI 建议添加以下 ${suggestedCharacters.length} 个角色：\n\n${roleList}`,
       'AI 生成建议',
       {
         confirmButtonText: '全部添加',
@@ -614,19 +830,56 @@ async function parseAndShowSuggestions(content: string) {
         type: 'info'
       }
     ).then(async () => {
+      console.log('[CharacterStage] 用户确认添加角色')
+      ElMessage.info('正在添加角色...')
+
+      let successCount = 0
+      let failCount = 0
+
       for (const suggested of suggestedCharacters) {
-        await window.electronAPI.longwriting.createCharacter({
-          projectId: props.projectId,
-          ...suggested
-        })
+        console.log('[CharacterStage] 创建角色:', suggested.name)
+        try {
+          const result = await window.electronAPI.longwriting.createCharacter({
+            projectId: props.projectId,
+            name: suggested.name || '未命名角色',
+            gender: suggested.gender || 'other',
+            age: suggested.age || 18,
+            rolePosition: suggested.rolePosition || 'supporting',
+            appearance: suggested.appearance || '',
+            background: suggested.background || '',
+            personality: suggested.personality || '',
+            abilities: suggested.abilities || ''
+          })
+          console.log('[CharacterStage] 创建角色结果:', result)
+          if (result.success) {
+            successCount++
+          } else {
+            failCount++
+            console.error('[CharacterStage] 创建角色失败:', result.error)
+          }
+        } catch (err) {
+          failCount++
+          console.error('[CharacterStage] 创建角色异常:', err)
+        }
       }
+
       await loadCharacters()
       updateProgress()
-      ElMessage.success('角色已添加')
-    }).catch(() => {})
+
+      if (failCount === 0) {
+        ElMessage.success(`已成功添加 ${successCount} 个角色`)
+      } else if (successCount > 0) {
+        ElMessage.warning(`添加完成：成功 ${successCount} 个，失败 ${failCount} 个`)
+      } else {
+        ElMessage.error('添加角色失败')
+      }
+    }).catch((err) => {
+      console.log('[CharacterStage] 用户取消或关闭对话框:', err)
+      ElMessage.info('已取消添加角色')
+    })
   } catch (error) {
-    console.error('解析 AI 响应失败:', error)
-    ElMessage.error('解析 AI 响应失败')
+    console.error('[CharacterStage] 解析 AI 响应失败:', error)
+    ElMessage.error('解析 AI 响应失败: ' + (error instanceof Error ? error.message : '未知错误'))
   }
 }
 
@@ -636,6 +889,79 @@ function cancelGeneration() {
   generating.value = false
   currentEventId.value = null
   ElMessage.info('已取消生成')
+}
+
+// 创建人像项目
+async function createPortraitProject() {
+  if (!newProjectForm.value.name.trim()) {
+    ElMessage.warning('请输入项目名称')
+    return
+  }
+
+  creatingProject.value = true
+  try {
+    const result = await window.electronAPI.portrait.createProject({
+      name: newProjectForm.value.name,
+      description: newProjectForm.value.description
+    })
+
+    if (result.success && result.data) {
+      ElMessage.success('项目创建成功')
+      showCreateProjectDialog.value = false
+      newProjectForm.value = { name: '', description: '' }
+
+      // 刷新项目列表并选中新项目
+      await loadPortraits()
+      selectedPortraitProjectId.value = result.data.id
+      await loadProjectCharacters()
+    } else {
+      ElMessage.error(result.error || '创建失败')
+    }
+  } catch (error) {
+    console.error('创建人像项目失败:', error)
+    ElMessage.error('创建失败')
+  } finally {
+    creatingProject.value = false
+  }
+}
+
+// 创建人物形象
+async function createPortraitCharacter() {
+  if (!selectedPortraitProjectId.value) {
+    ElMessage.warning('请先选择项目')
+    return
+  }
+
+  if (!newCharacterForm.value.name.trim()) {
+    ElMessage.warning('请输入人物名称')
+    return
+  }
+
+  creatingCharacter.value = true
+  try {
+    const result = await window.electronAPI.portrait.createCharacter({
+      projectId: selectedPortraitProjectId.value,
+      name: newCharacterForm.value.name,
+      description: newCharacterForm.value.description
+    })
+
+    if (result.success && result.data) {
+      ElMessage.success('人物形象创建成功')
+      showCreateCharacterDialog.value = false
+      newCharacterForm.value = { name: '', description: '' }
+
+      // 刷新人物列表并选中新人物
+      await loadProjectCharacters()
+      selectedPortraitId.value = result.data.id
+    } else {
+      ElMessage.error(result.error || '创建失败')
+    }
+  } catch (error) {
+    console.error('创建人物形象失败:', error)
+    ElMessage.error('创建失败')
+  } finally {
+    creatingCharacter.value = false
+  }
 }
 
 // 跳转到人像设计页面
@@ -649,47 +975,89 @@ function updateProgress() {
   emit('update:progress', progress)
 }
 
-// 加载人像列表
+// 加载人像项目列表
 async function loadPortraits() {
   try {
     // 获取所有人像项目
     const projectsResult = await window.electronAPI.portrait.listProjects(1, 100)
-    if (!projectsResult.success || !projectsResult.projects?.length) {
-      availablePortraits.value = []
-      return
+    console.log('[CharacterStage] 人像项目列表结果:', projectsResult)
+
+    // API 返回格式: { success: true, data: { projects: [], total } }
+    const projects = projectsResult.data?.projects || []
+    portraitProjects.value = projects.map((p: any) => ({ id: p.id, name: p.name }))
+
+    // 同时加载所有角色用于已关联形象显示
+    await loadAllPortraits(projects)
+  } catch (error) {
+    console.error('加载人像项目失败:', error)
+    portraitProjects.value = []
+  }
+}
+
+// 加载所有人物形象（用于已关联形象显示）
+const availablePortraits = ref<Array<{ id: string; name: string; preview?: string }>>([])
+
+async function loadAllPortraits(projects: any[]) {
+  const allPortraits: Array<{ id: string; name: string; preview?: string; projectId: string }> = []
+
+  for (const project of projects) {
+    const charactersResult = await window.electronAPI.portrait.listCharacters(project.id)
+    const chars = charactersResult.data || []
+    if (charactersResult.success && chars.length) {
+      for (const character of chars) {
+        const variantsResult = await window.electronAPI.portrait.listVariants(character.id)
+        const frontBaseVariant = variantsResult.data?.find(
+          (v: any) => v.angle === 'front' && v.type === 'base'
+        )
+        const previewVariant = frontBaseVariant || variantsResult.data?.[0]
+
+        allPortraits.push({
+          id: character.id,
+          name: character.name,
+          preview: previewVariant?.imagePath,
+          projectId: project.id
+        })
+      }
     }
+  }
 
-    // 收集所有人像角色
-    const allPortraits: Array<{ id: string; name: string; preview?: string; projectId: string }> = []
+  availablePortraits.value = allPortraits
+  console.log('[CharacterStage] 加载的所有人像:', allPortraits)
+}
 
-    for (const project of projectsResult.projects) {
-      // 获取项目下的角色
-      const charactersResult = await window.electronAPI.portrait.listCharacters(project.id)
-      if (charactersResult.success && charactersResult.data?.length) {
-        for (const character of charactersResult.data) {
-          // 获取角色的变体（预览图）
-          const variantsResult = await window.electronAPI.portrait.listVariants(character.id)
-          // 优先使用正面基础形象作为预览
-          const frontBaseVariant = variantsResult.data?.find(
-            (v: any) => v.angle === 'front' && v.type === 'base'
-          )
-          // 如果没有正面基础形象，使用第一个变体
-          const previewVariant = frontBaseVariant || variantsResult.data?.[0]
+// 当前选中项目的人物形象列表
+const projectCharacters = ref<Array<{ id: string; name: string; preview?: string }>>([])
 
-          allPortraits.push({
-            id: character.id,
-            name: character.name,
-            preview: previewVariant?.imagePath,
-            projectId: project.id
-          })
-        }
+// 加载项目下的人物形象
+async function loadProjectCharacters() {
+  selectedPortraitId.value = ''
+  projectCharacters.value = []
+
+  if (!selectedPortraitProjectId.value) return
+
+  try {
+    const charactersResult = await window.electronAPI.portrait.listCharacters(selectedPortraitProjectId.value)
+    const chars = charactersResult.data || []
+
+    if (charactersResult.success && chars.length) {
+      for (const character of chars) {
+        const variantsResult = await window.electronAPI.portrait.listVariants(character.id)
+        const frontBaseVariant = variantsResult.data?.find(
+          (v: any) => v.angle === 'front' && v.type === 'base'
+        )
+        const previewVariant = frontBaseVariant || variantsResult.data?.[0]
+
+        projectCharacters.value.push({
+          id: character.id,
+          name: character.name,
+          preview: previewVariant?.imagePath
+        })
       }
     }
 
-    availablePortraits.value = allPortraits
+    console.log('[CharacterStage] 项目人物形象:', projectCharacters.value)
   } catch (error) {
-    console.error('加载人像列表失败:', error)
-    availablePortraits.value = []
+    console.error('加载项目人物形象失败:', error)
   }
 }
 
@@ -853,6 +1221,124 @@ onMounted(() => {
     width: 60px;
     height: 60px;
     border-radius: 4px;
+  }
+}
+
+.current-portrait {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  .portrait-preview-large {
+    width: 80px;
+    height: 80px;
+    border-radius: 8px;
+  }
+
+  .portrait-name {
+    font-size: 14px;
+    color: var(--text-color-regular);
+  }
+}
+
+.portrait-selector {
+  .selector-step {
+    margin-bottom: 20px;
+
+    .step-content-with-action {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .step-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+
+      // 让标题和按钮分布在两端
+      &:has(.el-button) {
+        justify-content: space-between;
+
+        .step-number, .step-title {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+      }
+
+      .step-number {
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        background: var(--color-primary);
+        color: white;
+        font-size: 12px;
+        font-weight: 500;
+      }
+
+      .step-title {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--text-color-primary);
+      }
+    }
+  }
+
+  .portrait-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-top: 12px;
+  }
+
+  .portrait-item {
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 8px;
+    border: 2px solid var(--border-color-lighter);
+    transition: all 0.2s;
+
+    &:hover {
+      border-color: var(--color-primary-light-5);
+    }
+
+    &.selected {
+      border-color: var(--color-primary);
+      background: var(--color-primary-light-9);
+    }
+
+    .el-image {
+      width: 100%;
+      height: 80px;
+      border-radius: 4px;
+    }
+
+    .portrait-placeholder {
+      width: 100%;
+      height: 80px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--fill-color-light);
+      border-radius: 4px;
+      color: var(--text-color-secondary);
+    }
+
+    .portrait-name {
+      display: block;
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-color-regular);
+      margin-top: 4px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
   }
 }
 

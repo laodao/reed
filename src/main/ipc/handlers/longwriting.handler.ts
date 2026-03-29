@@ -251,9 +251,12 @@ export function registerLongWritingHandlers(): void {
 
   ipcMain.handle(CHANNELS.CREATE_CHARACTER, async (_event, data: CreateCharacterRequest) => {
     try {
+      console.log(`[LongWritingHandler] createCharacter 被调用, data:`, JSON.stringify(data).substring(0, 200))
       const character = await service.createCharacter(data)
+      console.log(`[LongWritingHandler] createCharacter 成功, id: ${character.id}`)
       return { success: true, data: character }
     } catch (error: any) {
+      console.error(`[LongWritingHandler] createCharacter 错误:`, error)
       return { success: false, error: error.message }
     }
   })
@@ -816,15 +819,18 @@ export function registerLongWritingHandlers(): void {
 
   ipcMain.handle(
     CHANNELS.GENERATE_CHARACTERS,
-    async (event, eventId: string, projectId: string) => {
+    async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
       try {
+        console.log(`[LongWritingHandler] generateCharacters 被调用, eventId: ${eventId}, projectId: ${projectId}`)
         const window = BrowserWindow.fromWebContents(event.sender)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.generateCharacters(window, eventId, projectId)
+        const result = await aiService.generateCharacters(window, eventId, projectId, providerConfigId, modelId)
+        console.log(`[LongWritingHandler] generateCharacters 完成, success: ${result.success}, error: ${result.error || 'none'}`)
         return { ...result, eventId }
       } catch (error: any) {
+        console.error(`[LongWritingHandler] generateCharacters 错误:`, error)
         return { success: false, error: error.message }
       }
     }
@@ -832,13 +838,13 @@ export function registerLongWritingHandlers(): void {
 
   ipcMain.handle(
     CHANNELS.GENERATE_SKILLS_ITEMS,
-    async (event, eventId: string, projectId: string) => {
+    async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
       try {
         const window = BrowserWindow.fromWebContents(event.sender)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.generateSkillsItems(window, eventId, projectId)
+        const result = await aiService.generateSkillsItems(window, eventId, projectId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -864,13 +870,13 @@ export function registerLongWritingHandlers(): void {
 
   ipcMain.handle(
     CHANNELS.GENERATE_OUTLINE_COMMENT,
-    async (event, eventId: string, projectId: string) => {
+    async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
       try {
         const window = BrowserWindow.fromWebContents(event.sender)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.generateOutlineComment(window, eventId, projectId)
+        const result = await aiService.generateOutlineComment(window, eventId, projectId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -880,13 +886,13 @@ export function registerLongWritingHandlers(): void {
 
   ipcMain.handle(
     CHANNELS.GENERATE_CHAPTER,
-    async (event, eventId: string, projectId: string, outlineId: string, targetWords?: number) => {
+    async (event, eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string) => {
       try {
         const window = BrowserWindow.fromWebContents(event.sender)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.generateChapter(window, eventId, projectId, outlineId, targetWords)
+        const result = await aiService.generateChapter(window, eventId, projectId, outlineId, targetWords, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -896,13 +902,13 @@ export function registerLongWritingHandlers(): void {
 
   ipcMain.handle(
     CHANNELS.GENERATE_SECTION,
-    async (event, eventId: string, projectId: string, outlineId: string, targetWords?: number) => {
+    async (event, eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string) => {
       try {
         const window = BrowserWindow.fromWebContents(event.sender)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.generateSection(window, eventId, projectId, outlineId, targetWords)
+        const result = await aiService.generateSection(window, eventId, projectId, outlineId, targetWords, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }

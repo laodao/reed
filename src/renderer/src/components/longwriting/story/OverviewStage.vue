@@ -7,48 +7,6 @@
 
     <div class="stage-content">
       <el-form :model="form" label-width="100px" class="overview-form">
-        <!-- 模型选择 -->
-        <el-form-item label="AI 模型">
-          <el-select
-            v-model="selectedModelKey"
-            placeholder="选择模型"
-            class="model-select"
-            filterable
-            :filter-method="filterModels"
-          >
-            <el-option-group
-              v-for="provider in filteredProviderModels"
-              :key="provider.id"
-              :label="provider.name"
-            >
-              <el-option
-                v-for="model in provider.models"
-                :key="`${provider.id}:${model.id}`"
-                :label="`${provider.shortId}/${model.name}`"
-                :value="`${provider.id}:${model.id}`"
-              >
-                <div class="model-option">
-                  <div class="model-info-row">
-                    <span class="model-name">{{ provider.shortId }}/{{ model.name }}</span>
-                    <span class="model-context">{{ formatContext(model.contextWindow) }}</span>
-                  </div>
-                  <div class="model-features" v-if="model.supportsThinking || model.supportsWebSearch || model.supportsTools">
-                    <el-tooltip v-if="model.supportsThinking" content="支持深度思考" placement="top">
-                      <el-icon class="feature-icon thinking"><Cpu /></el-icon>
-                    </el-tooltip>
-                    <el-tooltip v-if="model.supportsWebSearch" content="支持联网搜索" placement="top">
-                      <el-icon class="feature-icon websearch"><Search /></el-icon>
-                    </el-tooltip>
-                    <el-tooltip v-if="model.supportsTools" content="支持工具调用" placement="top">
-                      <el-icon class="feature-icon tools"><SetUp /></el-icon>
-                    </el-tooltip>
-                  </div>
-                </div>
-              </el-option>
-            </el-option-group>
-          </el-select>
-        </el-form-item>
-
         <!-- 故事类型 -->
         <el-form-item label="故事类型">
           <el-select v-model="form.storyType" placeholder="选择故事类型">
@@ -197,10 +155,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, inject } from 'vue'
 import { ElMessage } from 'element-plus'
-import { MagicStick, Close, Cpu, Search, SetUp } from '@element-plus/icons-vue'
-import type { UserProviderConfig, ProviderTemplate } from '../../../../shared/types'
+import { MagicStick, Close } from '@element-plus/icons-vue'
 
 // Props
 const props = defineProps<{
@@ -211,6 +168,10 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:progress': [progress: number]
 }>()
+
+// 从父组件获取选中的模型（是一个 ComputedRef 和一个 Ref）
+const selectedModelKey = inject<ReturnType<typeof ref<string>>>('selectedModelKey', ref(''))
+const selectedModel = inject<ReturnType<typeof computed<{ providerId: string; modelId: string } | null>>>('selectedModel', computed(() => null))
 
 // 故事类型选项
 const storyTypes = [
@@ -236,153 +197,6 @@ const form = ref({
   otherRequirements: ''
 })
 
-// 提供商配置
-const providerConfigs = ref<UserProviderConfig[]>([])
-const providerTemplates = ref<ProviderTemplate[]>([])
-const selectedModelKey = ref<string>('')
-const modelSearchKeyword = ref('')
-
-// 判断模型是否为文本类型
-function isTextModel(type: string | undefined): boolean {
-  return type === undefined || type === 'text' || type === 'multimodal'
-}
-
-// 提供商模型列表
-const providerModels = computed(() => {
-  const result: Array<{
-    id: string
-    name: string
-    shortId: string
-    models: Array<{
-      id: string
-      name: string
-      contextWindow: number
-      type?: string
-      supportsThinking?: boolean
-      supportsWebSearch?: boolean
-      supportsTools?: boolean
-    }>
-  }> = []
-
-  for (const config of providerConfigs.value) {
-    if (!config.isEnabled) continue
-
-    const models: Array<{
-      id: string
-      name: string
-      contextWindow: number
-      type?: string
-      supportsThinking?: boolean
-      supportsWebSearch?: boolean
-      supportsTools?: boolean
-    }> = []
-
-    const template = providerTemplates.value.find(t => t.id === config.templateId)
-
-    if (config.models && config.models.length > 0) {
-      for (const model of config.models) {
-        if (!isTextModel(model.type)) continue
-        models.push({
-          id: model.id,
-          name: model.name,
-          contextWindow: model.contextWindow,
-          type: model.type,
-          supportsThinking: model.supportsThinking,
-          supportsWebSearch: model.supportsWebSearch,
-          supportsTools: model.supportsTools
-        })
-      }
-    } else if (template && template.models.length > 0) {
-      for (const model of template.models) {
-        if (!isTextModel(model.type)) continue
-        models.push({
-          id: model.id,
-          name: model.name || model.id,
-          contextWindow: model.contextWindow || 8192,
-          type: model.type
-        })
-      }
-    }
-
-    if (models.length > 0) {
-      result.push({
-        id: config.id,
-        name: config.name,
-        shortId: config.shortId || config.name,
-        models
-      })
-    }
-  }
-
-  return result
-})
-
-// 过滤后的模型列表
-const filteredProviderModels = computed(() => {
-  if (!modelSearchKeyword.value) {
-    return providerModels.value
-  }
-
-  const keyword = modelSearchKeyword.value.toLowerCase()
-  const result: typeof providerModels.value = []
-
-  for (const provider of providerModels.value) {
-    const filteredModels = provider.models.filter(model =>
-      model.name.toLowerCase().includes(keyword) ||
-      model.id.toLowerCase().includes(keyword) ||
-      provider.name.toLowerCase().includes(keyword) ||
-      provider.shortId.toLowerCase().includes(keyword)
-    )
-
-    if (filteredModels.length > 0) {
-      result.push({ ...provider, models: filteredModels })
-    }
-  }
-
-  return result
-})
-
-// 模型搜索过滤方法
-function filterModels(keyword: string): void {
-  modelSearchKeyword.value = keyword
-}
-
-// 格式化上下文窗口大小
-function formatContext(contextWindow: number): string {
-  if (contextWindow >= 1000000) {
-    return `${(contextWindow / 1000000).toFixed(1)}M`
-  }
-  if (contextWindow >= 1000) {
-    return `${Math.round(contextWindow / 1000)}K`
-  }
-  return `${contextWindow}`
-}
-
-// 加载提供商配置
-async function loadProviderConfigs(): Promise<void> {
-  try {
-    const templatesResponse = await window.electronAPI.providerTemplate.list()
-    if (templatesResponse.success && templatesResponse.templates) {
-      providerTemplates.value = templatesResponse.templates
-    }
-
-    const response = await window.electronAPI.providerConfig.list()
-    if (response.success && response.configs) {
-      providerConfigs.value = response.configs.filter((c: UserProviderConfig) => c.isEnabled)
-
-      // 设置默认模型
-      if (!selectedModelKey.value && providerModels.value.length > 0) {
-        const firstProvider = providerModels.value[0]
-        if (firstProvider.models.length > 0) {
-          selectedModelKey.value = `${firstProvider.id}:${firstProvider.models[0].id}`
-        }
-      }
-    }
-  } catch (error) {
-    console.error('加载提供商配置失败:', error)
-  }
-}
-
 // 生成状态
 const generating = ref(false)
 const currentEventId = ref<string | null>(null)
@@ -405,10 +219,20 @@ async function generateOverview() {
     return
   }
 
-  if (!selectedModelKey.value) {
-    ElMessage.warning('请选择 AI 模型')
+  // 检查是否选择了模型（需要确保 selectedModelKey 包含有效的 providerId:modelId 格式）
+  if (!selectedModelKey.value || !selectedModelKey.value.includes(':')) {
+    ElMessage.warning('请先在顶部选择 AI 模型')
     return
   }
+
+  // 解析选中的模型
+  const [providerConfigId, modelId] = selectedModelKey.value.split(':')
+  if (!providerConfigId || !modelId) {
+    ElMessage.warning('请先在顶部选择 AI 模型')
+    return
+  }
+
+  console.log('[OverviewStage] 生成概要, providerConfigId:', providerConfigId, 'modelId:', modelId)
 
   generating.value = true
   generatingContent.value = ''
@@ -447,10 +271,6 @@ ${form.value.style ? `风格：${form.value.style}` : ''}
 ${form.value.targetReader ? `目标读者：${form.value.targetReader}` : ''}
 ${form.value.estimatedLength ? `预估篇幅：${form.value.estimatedLength}` : ''}
 ${form.value.otherRequirements ? `其他要求：${form.value.otherRequirements}` : ''}`
-
-  // 解析选中的模型
-  const [providerConfigId, modelId] = selectedModelKey.value.split(':')
-  console.log(`[OverviewStage] 调用 API, providerConfigId: ${providerConfigId}, modelId: ${modelId}`)
 
   // 调用 AI API，传递 eventId
   const result = await window.electronAPI.longwriting.generateStoryOverview(
@@ -587,8 +407,6 @@ async function confirmOverview() {
   }
 }
 
-let unsubscribeConfig: (() => void) | null = null
-
 // 加载已保存的故事概要
 async function loadSavedOverview() {
   try {
@@ -615,17 +433,7 @@ async function loadSavedOverview() {
 }
 
 onMounted(() => {
-  loadProviderConfigs()
   loadSavedOverview()
-  unsubscribeConfig = window.electronAPI.providerConfig.onChanged(() => {
-    loadProviderConfigs()
-  })
-})
-
-onUnmounted(() => {
-  if (unsubscribeConfig) {
-    unsubscribeConfig()
-  }
 })
 </script>
 

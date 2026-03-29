@@ -211,7 +211,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { MagicStick, Clock, DocumentChecked, View, RefreshLeft, Close, Fold, Document } from '@element-plus/icons-vue'
@@ -228,10 +228,17 @@ const emit = defineEmits<{
 
 const router = useRouter()
 
+<<<<<<< HEAD
 // 树组件引用
 const treeRef = ref<InstanceType<typeof ElTree> | null>(null)
 
 // 大纲节点列表（平铺）
+=======
+// 从父组件获取选中的模型（是一个 ComputedRef）
+const selectedModel = inject<ReturnType<typeof computed<{ providerId: string; modelId: string } | null>>>('selectedModel', computed(() => null))
+
+// 大纲节点列表
+>>>>>>> 06a3853 (提交)
 const outlineNodes = ref<StoryOutline[]>([])
 
 // 角色和地点列表
@@ -427,6 +434,12 @@ async function saveChapter() {
 
 // AI 生成章节
 function generateChapter() {
+  // 检查是否选择了模型（需要同时检查 providerId 和 modelId）
+  if (!selectedModel.value || !selectedModel.value.providerId || !selectedModel.value.modelId) {
+    ElMessage.warning('请先在顶部选择 AI 模型')
+    return
+  }
+
   if (!selectedOutlineId.value) {
     ElMessage.warning('请先选择大纲节点')
     return
@@ -445,6 +458,8 @@ async function executeGeneration() {
   showGenerateDialog.value = false
   generating.value = true
   chapterContent.value = '' // 清空当前内容
+
+  console.log('[ChapterStage] 生成章节, providerId:', selectedModel.value?.providerId, 'modelId:', selectedModel.value?.modelId)
 
   // 生成唯一事件 ID
   currentEventId.value = `chapter-${selectedOutlineId.value}-${Date.now()}`
@@ -474,12 +489,14 @@ async function executeGeneration() {
     }
   )
 
-  // 调用 AI API，传递 eventId
+  // 调用 AI API，传递 eventId 和模型参数
   const result = await window.electronAPI.longwriting.generateChapter(
     currentEventId.value,
     props.projectId,
     selectedOutlineId.value,
-    generateForm.value.targetWords
+    generateForm.value.targetWords,
+    selectedModel.value.providerId,
+    selectedModel.value.modelId
   )
 
   if (!result.success) {

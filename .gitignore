@@ -47,3 +47,4 @@ _bmad-output/
 # Git worktrees
 .worktrees/
 
+.playwright-mcp

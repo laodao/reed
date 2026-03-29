@@ -981,6 +981,7 @@ const electronAPI = {
     // AI 生成（eventId 作为第一个参数）
     generateStoryOverview: (eventId: string, projectId: string, input: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generateStoryOverview', eventId, projectId, input, providerConfigId, modelId),
+<<<<<<< HEAD
     generatePlots: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generatePlots', eventId, projectId, providerConfigId, modelId),
     polishBackground: (eventId: string, projectId: string, field: 'eraDescription' | 'socialStructure' | 'techLevel', eraType: string, content: string, providerConfigId?: string, modelId?: string) =>
@@ -997,6 +998,20 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:generateChapter', eventId, projectId, outlineId, targetWords),
     generateSection: (eventId: string, projectId: string, outlineId: string, targetWords?: number) =>
       ipcRenderer.invoke('longwriting:generateSection', eventId, projectId, outlineId, targetWords),
+=======
+    generateCharacters: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:generateCharacters', eventId, projectId, providerConfigId, modelId),
+    generateSkillsItems: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:generateSkillsItems', eventId, projectId, providerConfigId, modelId),
+    generateOutlineStory: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:generateOutlineStory', eventId, projectId, providerConfigId, modelId),
+    generateOutlineComment: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:generateOutlineComment', eventId, projectId, providerConfigId, modelId),
+    generateChapter: (eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:generateChapter', eventId, projectId, outlineId, targetWords, providerConfigId, modelId),
+    generateSection: (eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:generateSection', eventId, projectId, outlineId, targetWords, providerConfigId, modelId),
+>>>>>>> 06a3853 (提交)
 
     // AI 生成事件监听
     onGenerateEvent: (eventId: string, callback: (event: any, data: any) => void) => {

@@ -12,6 +12,7 @@
       "Bash(tasklist)",
       "Bash(findstr /i \"electron node\")",
       "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_*",
       "Bash(npx playwright:*)",
       "mcp__playwright__browser_console_messages",
       "Bash(git add:*)",
@@ -26,7 +27,29 @@
       "WebFetch(domain:api-docs.deepseek.com)",
       "WebFetch(domain:platform.openai.com)",
       "WebFetch(domain:docs.anthropic.com)",
-      "WebFetch(domain:ai.google.dev)"
+      "WebFetch(domain:ai.google.dev)",
+      "WebFetch(domain:open.bigmodel.cn)",
+      "WebFetch(domain:zvec.org)",
+      "WebFetch(domain:lancedb.github.io)",
+      "WebFetch(domain:docs.lancedb.com)",
+      "Bash(npm view:*)",
+      "Bash(find C:/Users/daoge/the-bot/knowledge-base -name *.docx)",
+      "WebFetch(domain:help.obsidian.md)",
+      "WebFetch(domain:obsidian.md)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:forum.obsidian.md)",
+      "WebFetch(domain:publish.obsidian.md)",
+      "Bash(git push:*)",
+      "WebFetch(domain:bigmodel.cn)",
+      "WebFetch(domain:docs.bigmodel.cn)",
+      "Bash(curl -s \"https://open.bigmodel.cn/api/paas/v4/tools/web-search-pro\" -X POST -H \"Content-Type: application/json\" -H \"Authorization: Bearer test\" -d '{\"\"\"\"messages\"\"\"\":[{\"\"\"\"role\"\"\"\":\"\"\"\"user\"\"\"\",\"\"\"\"content\"\"\"\":\"\"\"\"hello\"\"\"\"}]}')",
+      "WebFetch(domain:www.reddit.com)",
+      "WebFetch(domain:civitai.com)",
+      "WebFetch(domain:zhuanlan.zhihu.com)",
+      "WebFetch(domain:dashscope.console.aliyun.com)",
+      "WebFetch(domain:www.alibabacloud.com)",
+      "Bash(npx electron-vite:*)",
+      "Bash(npm test:*)"
     ]
   }
 }

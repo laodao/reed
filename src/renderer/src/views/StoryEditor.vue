@@ -10,6 +10,7 @@
         <span class="project-title">{{ project?.name || '加载中...' }}</span>
       </div>
       <div class="header-center">
+<<<<<<< HEAD
         <!-- 统一模型选择器 -->
         <el-select
           v-model="selectedModelKey"
@@ -37,6 +38,38 @@
             </el-option>
           </el-option-group>
         </el-select>
+=======
+        <!-- 统一模型选择 -->
+        <div class="model-selector">
+          <span class="model-label">AI 模型：</span>
+          <el-select
+            v-model="selectedModelKey"
+            placeholder="选择模型"
+            class="model-select"
+            filterable
+            :filter-method="filterModels"
+            :loading="loadingModels"
+          >
+            <el-option-group
+              v-for="provider in filteredProviderModels"
+              :key="provider.id"
+              :label="provider.name"
+            >
+              <el-option
+                v-for="model in provider.models"
+                :key="`${provider.id}:${model.id}`"
+                :label="`${provider.shortId}/${model.name}`"
+                :value="`${provider.id}:${model.id}`"
+              >
+                <div class="model-option">
+                  <span class="model-name">{{ provider.shortId }}/{{ model.name }}</span>
+                  <span class="model-context">{{ formatContext(model.contextWindow) }}</span>
+                </div>
+              </el-option>
+            </el-option-group>
+          </el-select>
+        </div>
+>>>>>>> 06a3853 (提交)
       </div>
       <div class="header-right">
         <el-button @click="showPreview = true">
@@ -146,7 +179,11 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, View, Download } from '@element-plus/icons-vue'
 import type { LongWritingProject, StoryStage } from '../../../../shared/types/longwriting.types'
+<<<<<<< HEAD
 import type { UserProviderConfig, ProviderTemplate } from '../../../../shared/types'
+=======
+import type { UserProviderConfig, ProviderTemplate } from '../../../shared/types'
+>>>>>>> 06a3853 (提交)
 
 // 子组件
 import OverviewStage from '@/components/longwriting/story/OverviewStage.vue'
@@ -174,11 +211,19 @@ const currentStage = ref<StoryStage>('overview')
 const showPreview = ref(false)
 const showExport = ref(false)
 
+<<<<<<< HEAD
 // ========== 模型选择相关 ==========
+=======
+// ==================== 统一模型选择 ====================
+>>>>>>> 06a3853 (提交)
 const providerConfigs = ref<UserProviderConfig[]>([])
 const providerTemplates = ref<ProviderTemplate[]>([])
 const selectedModelKey = ref<string>('')
 const modelSearchKeyword = ref('')
+<<<<<<< HEAD
+=======
+const loadingModels = ref(true)
+>>>>>>> 06a3853 (提交)
 
 // 判断模型是否为文本类型
 function isTextModel(type: string | undefined): boolean {
@@ -289,6 +334,10 @@ function formatContext(contextWindow: number): string {
 
 // 加载提供商配置
 async function loadProviderConfigs(): Promise<void> {
+<<<<<<< HEAD
+=======
+  loadingModels.value = true
+>>>>>>> 06a3853 (提交)
   try {
     const templatesResponse = await window.electronAPI.providerTemplate.list()
     if (templatesResponse.success && templatesResponse.templates) {
@@ -309,18 +358,35 @@ async function loadProviderConfigs(): Promise<void> {
     }
   } catch (error) {
     console.error('加载提供商配置失败:', error)
+<<<<<<< HEAD
+=======
+  } finally {
+    loadingModels.value = false
+>>>>>>> 06a3853 (提交)
   }
 }
 
 // 解析选中的模型
 const selectedModel = computed(() => {
   if (!selectedModelKey.value) return null
+<<<<<<< HEAD
   const [providerConfigId, modelId] = selectedModelKey.value.split(':')
   return { providerConfigId, modelId }
 })
 
 // 提供模型信息给子组件
 provide('selectedModel', selectedModel)
+=======
+  const [providerId, modelId] = selectedModelKey.value.split(':')
+  return { providerId, modelId }
+})
+
+// 提供模型选择给子组件
+provide('selectedModel', selectedModel)
+provide('selectedModelKey', selectedModelKey)
+
+// ==================== 阶段配置 ====================
+>>>>>>> 06a3853 (提交)
 
 // 故事阶段配置
 const storyStages = [
@@ -408,6 +474,44 @@ onMounted(() => {
     font-size: 18px;
     font-weight: 500;
     color: var(--text-color-primary);
+  }
+}
+
+.header-center {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  justify-content: center;
+
+  .model-selector {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .model-label {
+      font-size: 14px;
+      color: var(--text-color-secondary);
+    }
+
+    .model-select {
+      width: 280px;
+    }
+  }
+}
+
+.model-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+
+  .model-name {
+    font-size: 14px;
+  }
+
+  .model-context {
+    font-size: 12px;
+    color: var(--text-color-secondary);
   }
 }
 

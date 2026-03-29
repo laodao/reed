@@ -227,7 +227,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, inject } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, MagicStick, Close } from '@element-plus/icons-vue'
 import type { StorySkill, StoryItem, SkillType, SkillLevel, ItemType, ItemLevel, StoryCharacter } from '../../../../shared/types/longwriting.types'
@@ -239,6 +239,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:progress': [progress: number]
 }>()
+
+// 从父组件获取选中的模型（是一个 ComputedRef）
+const selectedModel = inject<ReturnType<typeof computed<{ providerId: string; modelId: string } | null>>>('selectedModel', computed(() => null))
 
 const activeTab = ref('skills')
 
@@ -266,6 +269,14 @@ const generatingContent = ref('')
 
 // AI 生成技能体系
 async function generateSkills() {
+  // 检查是否选择了模型（需要同时检查 providerId 和 modelId）
+  if (!selectedModel.value || !selectedModel.value.providerId || !selectedModel.value.modelId) {
+    ElMessage.warning('请先在顶部选择 AI 模型')
+    return
+  }
+
+  console.log('[SkillItemStage] 生成技能, providerId:', selectedModel.value.providerId, 'modelId:', selectedModel.value.modelId)
+
   generating.value = true
   generatingContent.value = ''
 
@@ -293,8 +304,13 @@ async function generateSkills() {
     }
   )
 
-  // 调用 AI API，传递 eventId
-  const result = await window.electronAPI.longwriting.generateSkillsItems(currentEventId.value, props.projectId)
+  // 调用 AI API，传递 eventId 和模型参数
+  const result = await window.electronAPI.longwriting.generateSkillsItems(
+    currentEventId.value,
+    props.projectId,
+    selectedModel.value.providerId,
+    selectedModel.value.modelId
+  )
 
   if (!result.success) {
     generating.value = false

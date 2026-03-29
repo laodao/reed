@@ -331,7 +331,9 @@ ${input}
   async generateCharacters(
     window: BrowserWindow,
     eventId: string,
-    projectId: string
+    projectId: string,
+    providerConfigId?: string,
+    modelId?: string
   ): Promise<GenerateResponse> {
     const dbManager = getDatabaseManager()
 
@@ -362,17 +364,27 @@ ${input}
 请直接返回 JSON 数组格式的结果，不要添加其他说明文字。`
 
     try {
-      const result = await this.callAIStream(window, eventId, prompt, systemPrompt)
+      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, undefined, providerConfigId, modelId)
+      console.log(`[LongWritingAI] generateCharacters 内容长度: ${result.length}`)
 
       // 尝试解析 JSON 数组
       const jsonMatch = result.match(/\[[\s\S]*\]/)
       if (jsonMatch) {
-        const data = JSON.parse(jsonMatch[0])
-        return { success: true, data }
+        try {
+          const data = JSON.parse(jsonMatch[0])
+          console.log(`[LongWritingAI] generateCharacters 解析成功, 角色数: ${Array.isArray(data) ? data.length : 0}`)
+          return { success: true, data }
+        } catch (parseError: any) {
+          console.error(`[LongWritingAI] generateCharacters JSON 解析失败:`, parseError.message)
+          // 即使服务端解析失败，前端也可能解析成功，所以返回原始内容
+          return { success: true, data: result }
+        }
       }
 
+      console.log(`[LongWritingAI] generateCharacters 未找到 JSON 数组`)
       return { success: false, error: 'AI 返回格式错误' }
     } catch (error: any) {
+      console.error(`[LongWritingAI] generateCharacters 错误:`, error)
       return { success: false, error: error.message }
     }
   }
@@ -385,7 +397,9 @@ ${input}
   async generateSkillsItems(
     window: BrowserWindow,
     eventId: string,
-    projectId: string
+    projectId: string,
+    providerConfigId?: string,
+    modelId?: string
   ): Promise<GenerateResponse> {
     const dbManager = getDatabaseManager()
 
@@ -409,7 +423,7 @@ ${input}
 请直接返回 JSON 对象格式的结果，包含 skills 和 items 两个字段。`
 
     try {
-      const result = await this.callAIStream(window, eventId, prompt, systemPrompt)
+      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, undefined, providerConfigId, modelId)
 
       // 尝试解析 JSON
       const jsonMatch = result.match(/\{[\s\S]*\}/)
@@ -475,11 +489,15 @@ ${input}
 请生成卷级别的大纲结构（只返回JSON数组）：`
 
     try {
+<<<<<<< HEAD
       // 发送进度事件
       window.webContents.send(`longwriting:generate:${eventId}`, {
         type: 'progress',
         content: '正在生成卷结构...'
       })
+=======
+      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 8192, providerConfigId, modelId)
+>>>>>>> 06a3853 (提交)
 
       const volumeResult = await this.callAIStream(window, eventId, volumePrompt, volumeSystemPrompt, 2048, providerConfigId, modelId)
       const volumes = this.parseJsonArray(volumeResult)
@@ -618,7 +636,9 @@ ${input}
   async generateOutlineComment(
     window: BrowserWindow,
     eventId: string,
-    projectId: string
+    projectId: string,
+    providerConfigId?: string,
+    modelId?: string
   ): Promise<GenerateResponse> {
     const dbManager = getDatabaseManager()
 
@@ -646,7 +666,7 @@ ${input}
 请直接返回 JSON 数组格式的结果。`
 
     try {
-      const result = await this.callAIStream(window, eventId, prompt, systemPrompt)
+      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, undefined, providerConfigId, modelId)
 
       // 尝试解析 JSON 数组
       const jsonMatch = result.match(/\[[\s\S]*\]/)
@@ -671,7 +691,9 @@ ${input}
     eventId: string,
     projectId: string,
     outlineId: string,
-    targetWords?: number
+    targetWords?: number,
+    providerConfigId?: string,
+    modelId?: string
   ): Promise<GenerateResponse> {
     const dbManager = getDatabaseManager()
 
@@ -737,7 +759,9 @@ ${previousContext || '这是开篇'}
         eventId,
         prompt,
         systemPrompt,
-        Math.min((targetWords || outline.estimatedWords || 3000) * 2, 8192)
+        Math.min((targetWords || outline.estimatedWords || 3000) * 2, 8192),
+        providerConfigId,
+        modelId
       )
 
       return { success: true, data: { content: result } }
@@ -754,7 +778,9 @@ ${previousContext || '这是开篇'}
     eventId: string,
     projectId: string,
     outlineId: string,
-    targetWords?: number
+    targetWords?: number,
+    providerConfigId?: string,
+    modelId?: string
   ): Promise<GenerateResponse> {
     const dbManager = getDatabaseManager()
 
@@ -804,7 +830,9 @@ ${materialContext || '无特定素材'}
         eventId,
         prompt,
         systemPrompt,
-        Math.min((targetWords || outline.estimatedWords || 500) * 2, 4096)
+        Math.min((targetWords || outline.estimatedWords || 500) * 2, 4096),
+        providerConfigId,
+        modelId
       )
 
       return { success: true, data: { content: result } }
