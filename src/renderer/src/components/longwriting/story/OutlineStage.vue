@@ -536,12 +536,13 @@ async function generateOutline() {
   )
 
   // 调用 AI API，传递 eventId 和模型参数
-  const result = await window.electronAPI.longwriting.generateOutlineStory(
-    currentEventId.value,
-    props.projectId,
-    selectedModel.value.providerId,
-    selectedModel.value.modelId
-  )
+  try {
+    const result = await window.electronAPI.longwriting.generateOutlineStory(
+      currentEventId.value,
+      props.projectId,
+      selectedModel.value.providerId,
+      selectedModel.value.modelId
+    )
 
     generating.value = false
     currentEventId.value = null
