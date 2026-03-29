@@ -80,11 +80,7 @@
     <el-dialog
       v-model="showCharacterDialog"
       :title="editingCharacter ? '编辑角色' : '添加角色'"
-<<<<<<< HEAD
       width="750px"
-=======
-      width="720px"
->>>>>>> 06a3853 (提交)
       destroy-on-close
     >
       <el-form :model="characterForm" label-width="100px" class="character-form">
@@ -109,11 +105,7 @@
         <el-row :gutter="16">
           <el-col :span="8">
             <el-form-item label="性别">
-<<<<<<< HEAD
-              <el-select v-model="characterForm.gender" placeholder="选择性别">
-=======
               <el-select v-model="characterForm.gender" placeholder="选择性别" style="width: 100%">
->>>>>>> 06a3853 (提交)
                 <el-option label="男" value="male" />
                 <el-option label="女" value="female" />
                 <el-option label="其他" value="other" />
@@ -122,34 +114,15 @@
           </el-col>
           <el-col :span="8">
             <el-form-item label="年龄">
-<<<<<<< HEAD
-              <el-input-number v-model="characterForm.age" :min="0" :max="999" controls-position="right" style="width: 100%;" />
-=======
               <el-input-number v-model="characterForm.age" :min="0" :max="1000" style="width: 100%" />
->>>>>>> 06a3853 (提交)
             </el-form-item>
           </el-col>
           <el-col :span="8">
             <el-form-item label="人像形象">
-<<<<<<< HEAD
-              <div class="portrait-field">
-                <el-button @click="showPortraitLinkDialog = true">
-                  <el-icon><Picture /></el-icon>
-                  {{ characterForm.portraitId ? '更换形象' : '关联形象' }}
-                </el-button>
-                <el-image
-                  v-if="characterForm.portraitId && getPortraitPreview(characterForm.portraitId)"
-                  :src="getPortraitPreview(characterForm.portraitId)"
-                  class="portrait-preview"
-                  fit="cover"
-                />
-              </div>
-=======
               <el-button @click="openPortraitLinkDialog">
                 <el-icon><Picture /></el-icon>
                 {{ characterForm.portraitId ? '更换形象' : '关联形象' }}
               </el-button>
->>>>>>> 06a3853 (提交)
             </el-form-item>
           </el-col>
         </el-row>

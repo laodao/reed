@@ -489,15 +489,7 @@ ${input}
 请生成卷级别的大纲结构（只返回JSON数组）：`
 
     try {
-<<<<<<< HEAD
-      // 发送进度事件
-      window.webContents.send(`longwriting:generate:${eventId}`, {
-        type: 'progress',
-        content: '正在生成卷结构...'
-      })
-=======
       const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 8192, providerConfigId, modelId)
->>>>>>> 06a3853 (提交)
 
       const volumeResult = await this.callAIStream(window, eventId, volumePrompt, volumeSystemPrompt, 2048, providerConfigId, modelId)
       const volumes = this.parseJsonArray(volumeResult)

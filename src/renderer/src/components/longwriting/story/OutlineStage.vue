@@ -232,15 +232,8 @@ const emit = defineEmits<{
   'update:progress': [progress: number]
 }>()
 
-<<<<<<< HEAD
-// 从父组件注入选中的模型（computed ref）
-const selectedModelRef = inject<ComputedRef<{ providerConfigId: string; modelId: string } | null>>('selectedModel')
-// 获取当前选中的模型值
-const selectedModel = computed(() => selectedModelRef?.value)
-=======
 // 从父组件获取选中的模型（是一个 ComputedRef）
 const selectedModel = inject<ReturnType<typeof computed<{ providerId: string; modelId: string } | null>>>('selectedModel', computed(() => null))
->>>>>>> 06a3853 (提交)
 
 // 大纲节点列表
 const outlineNodes = ref<StoryOutline[]>([])
@@ -512,22 +505,14 @@ function resetNodeForm() {
 
 // AI 生成大纲
 async function generateOutline() {
-<<<<<<< HEAD
-  // 检查是否选择了模型
-  if (!selectedModel.value?.providerConfigId || !selectedModel.value?.modelId) {
-=======
   // 检查是否选择了模型（需要同时检查 providerId 和 modelId）
   if (!selectedModel.value || !selectedModel.value.providerId || !selectedModel.value.modelId) {
->>>>>>> 06a3853 (提交)
     ElMessage.warning('请先在顶部选择 AI 模型')
     return
   }
 
-<<<<<<< HEAD
-=======
   console.log('[OutlineStage] 生成大纲, providerId:', selectedModel.value.providerId, 'modelId:', selectedModel.value.modelId)
 
->>>>>>> 06a3853 (提交)
   generating.value = true
   generatingContent.value = '准备生成大纲...'
 
@@ -550,16 +535,6 @@ async function generateOutline() {
     }
   )
 
-<<<<<<< HEAD
-  try {
-    // 调用 AI API，通过返回值获取最终数据
-    const result = await window.electronAPI.longwriting.generateOutlineStory(
-      currentEventId.value,
-      props.projectId,
-      selectedModel.value.providerConfigId,
-      selectedModel.value.modelId
-    )
-=======
   // 调用 AI API，传递 eventId 和模型参数
   const result = await window.electronAPI.longwriting.generateOutlineStory(
     currentEventId.value,
@@ -567,7 +542,6 @@ async function generateOutline() {
     selectedModel.value.providerId,
     selectedModel.value.modelId
   )
->>>>>>> 06a3853 (提交)
 
     generating.value = false
     currentEventId.value = null

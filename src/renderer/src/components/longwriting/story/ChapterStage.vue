@@ -228,17 +228,10 @@ const emit = defineEmits<{
 
 const router = useRouter()
 
-<<<<<<< HEAD
-// 树组件引用
-const treeRef = ref<InstanceType<typeof ElTree> | null>(null)
-
-// 大纲节点列表（平铺）
-=======
 // 从父组件获取选中的模型（是一个 ComputedRef）
 const selectedModel = inject<ReturnType<typeof computed<{ providerId: string; modelId: string } | null>>>('selectedModel', computed(() => null))
 
 // 大纲节点列表
->>>>>>> 06a3853 (提交)
 const outlineNodes = ref<StoryOutline[]>([])
 
 // 角色和地点列表
