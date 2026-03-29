@@ -143,7 +143,6 @@
 import { ref, onMounted, computed, inject } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, MagicStick, Rank, Document } from '@element-plus/icons-vue'
-import draggable from 'vuedraggable'
 import type { StoryPlot } from '../../../../shared/types/longwriting.types'
 import type { ComputedRef } from 'vue'
 
