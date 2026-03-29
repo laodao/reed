@@ -44,3 +44,6 @@ coverage/
 # BMAD output (keep planning artifacts)
 _bmad-output/
 
+# Git worktrees
+.worktrees/
+
