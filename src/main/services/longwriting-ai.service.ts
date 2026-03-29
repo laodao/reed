@@ -16,12 +16,14 @@ import type { ProviderTemplate, UserProviderConfig, ChatContext } from '../../sh
  */
 export type GenerationTask =
   | 'story-overview'    // 故事概要
+  | 'plots'             // 故事情节
   | 'characters'        // 角色建议
   | 'skills-items'      // 技能物品
   | 'outline-story'     // 故事大纲
   | 'outline-comment'   // 评论大纲
   | 'chapter'           // 章节内容
   | 'section'           // 段落内容
+  | 'polish-background' // 润色背景
 
 /**
  * 生成请求参数
@@ -684,6 +686,123 @@ ${materialContext || '无特定素材'}
         systemPrompt,
         Math.min((targetWords || outline.estimatedWords || 500) * 2, 4096)
       )
+
+      return { success: true, data: { content: result } }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  // ==================== 情节生成 ====================
+
+  /**
+   * 生成故事情节
+   */
+  async generatePlots(
+    window: BrowserWindow,
+    eventId: string,
+    projectId: string
+  ): Promise<GenerateResponse> {
+    const dbManager = getDatabaseManager()
+
+    // 获取故事概要
+    const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
+    if (!overview) {
+      return { success: false, error: '请先创建故事概要' }
+    }
+
+    // 获取角色列表
+    const characters = await dbManager.lwCharacters?.getByProjectId(projectId) || []
+
+    const systemPrompt = `你是一位专业的小说创作顾问。请根据故事概要，生成主要的故事情节列表。
+你的回复必须是纯 JSON 数组格式（不要包含 \`\`\`json 标记），每个情节包含以下字段：
+- title: 情节标题（不超过 15 字）
+- summary: 情节概要（50-100 字）
+- involvedCharacters: 涉及的角色名称列表（字符串数组）
+
+要求：
+1. 情节按时间顺序排列，有起承转合
+2. 情节之间要有逻辑关联
+3. 情节数量根据预估章节数合理设置（约 10-30 个）
+4. 每个情节要明确涉及的角色
+
+请直接输出 JSON 数组，不要有任何额外文字。`
+
+    const characterNames = characters.map(c => c.name).join('、')
+
+    const prompt = `请根据以下故事信息生成主要情节：
+
+【故事标题】${overview.title || '未命名'}
+【故事类型】${overview.storyType || '未指定'}
+【故事摘要】${overview.summary || '未指定'}
+【核心冲突】${overview.coreConflict || '未指定'}
+【预估章节】${overview.estimatedChapters || 20} 章
+【主要角色】${characterNames || '暂无'}
+
+请生成 10-30 个主要情节，按时间顺序排列。直接返回 JSON 数组格式的结果。`
+
+    try {
+      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 8192)
+
+      // 尝试解析 JSON 数组
+      const jsonMatch = result.match(/\[[\s\S]*\]/)
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0])
+        return { success: true, data }
+      }
+
+      return { success: false, error: 'AI 返回格式错误' }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  // ==================== 背景润色 ====================
+
+  /**
+   * 润色背景设定
+   */
+  async polishBackground(
+    window: BrowserWindow,
+    eventId: string,
+    projectId: string,
+    field: 'eraDescription' | 'socialStructure' | 'techLevel',
+    eraType: string,
+    content: string
+  ): Promise<GenerateResponse> {
+    const fieldLabels: Record<string, string> = {
+      eraDescription: '时代描述',
+      socialStructure: '社会结构',
+      techLevel: '技术水平'
+    }
+
+    const systemPrompt = `你是一位专业的小说创作顾问，擅长丰富和润色故事背景设定。
+请根据用户提供的简要描述，扩展成更加详细、生动的背景设定。
+
+要求：
+1. 保持原文核心意图，不要偏离主题
+2. 增加细节和氛围感，让设定更加具体
+3. 内容控制在 200-400 字
+4. 语言要有画面感，适合小说创作使用
+
+直接输出润色后的内容，不需要标题、不需要额外说明。`
+
+    const eraTypeLabels: Record<string, string> = {
+      ancient: '古代',
+      modern: '现代',
+      future: '未来',
+      fictional: '架空'
+    }
+
+    const prompt = `请润色以下${fieldLabels[field] || '背景设定'}：
+
+【时代类型】${eraTypeLabels[eraType] || eraType}
+【原始描述】${content}
+
+请扩展成详细的描述，内容控制在 200-400 字。`
+
+    try {
+      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 1024)
 
       return { success: true, data: { content: result } }
     } catch (error: any) {

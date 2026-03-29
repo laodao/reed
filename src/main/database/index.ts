@@ -34,6 +34,7 @@ import { LwOutlineRepository } from './repositories/lw-outline.repository'
 import { LwChapterRepository } from './repositories/lw-chapter.repository'
 import { LwBackgroundRepository } from './repositories/lw-background.repository'
 import { LwLocationRepository } from './repositories/lw-location.repository'
+import { LwPlotRepository } from './repositories/lw-plot.repository'
 import { LwSkillRepository } from './repositories/lw-skill.repository'
 import { LwItemRepository } from './repositories/lw-item.repository'
 import { LwMaterialRepository } from './repositories/lw-material.repository'
@@ -76,6 +77,7 @@ export class DatabaseManager {
   public lwChapters: LwChapterRepository | null = null
   public lwBackgrounds: LwBackgroundRepository | null = null
   public lwLocations: LwLocationRepository | null = null
+  public lwPlots: LwPlotRepository | null = null
   public lwSkills: LwSkillRepository | null = null
   public lwItems: LwItemRepository | null = null
   public lwMaterials: LwMaterialRepository | null = null
@@ -732,6 +734,24 @@ export class DatabaseManager {
     `)
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_locations_project_id ON lw_story_locations(project_id)`)
 
+    // 故事情节表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_story_plots (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        plot_order INTEGER DEFAULT 0,
+        involved_characters TEXT,
+        involved_locations TEXT,
+        notes TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_plots_project_id ON lw_story_plots(project_id)`)
+
     // 角色表
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS lw_story_characters (
@@ -1216,6 +1236,7 @@ export class DatabaseManager {
     this.lwChapters = new LwChapterRepository(this.db)
     this.lwBackgrounds = new LwBackgroundRepository(this.db)
     this.lwLocations = new LwLocationRepository(this.db)
+    this.lwPlots = new LwPlotRepository(this.db)
     this.lwSkills = new LwSkillRepository(this.db)
     this.lwItems = new LwItemRepository(this.db)
     this.lwMaterials = new LwMaterialRepository(this.db)

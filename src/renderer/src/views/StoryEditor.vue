@@ -46,21 +46,28 @@
         @update:progress="updateProgress"
       />
 
-      <!-- 阶段二：背景设定 -->
+      <!-- 阶段二：故事情节 -->
+      <PlotStage
+        v-if="currentStage === 'plot'"
+        :project-id="projectId"
+        @update:progress="updateProgress"
+      />
+
+      <!-- 阶段三：背景设定 -->
       <BackgroundStage
         v-if="currentStage === 'background'"
         :project-id="projectId"
         @update:progress="updateProgress"
       />
 
-      <!-- 阶段三：角色设定 -->
+      <!-- 阶段四：角色设定 -->
       <CharacterStage
         v-if="currentStage === 'characters'"
         :project-id="projectId"
         @update:progress="updateProgress"
       />
 
-      <!-- 阶段四：技能物品 -->
+      <!-- 阶段五：技能物品 -->
       <SkillItemStage
         v-if="currentStage === 'skills'"
         :project-id="projectId"
@@ -68,14 +75,14 @@
         @skip="skipToOutline"
       />
 
-      <!-- 阶段五：大纲设计 -->
+      <!-- 阶段六：大纲设计 -->
       <OutlineStage
         v-if="currentStage === 'outline'"
         :project-id="projectId"
         @update:progress="updateProgress"
       />
 
-      <!-- 阶段六：章节写作 -->
+      <!-- 阶段七：章节写作 -->
       <ChapterStage
         v-if="currentStage === 'chapters'"
         :project-id="projectId"
@@ -113,6 +120,7 @@ import type { LongWritingProject, StoryStage } from '../../../../shared/types/lo
 
 // 子组件
 import OverviewStage from '@/components/longwriting/story/OverviewStage.vue'
+import PlotStage from '@/components/longwriting/story/PlotStage.vue'
 import BackgroundStage from '@/components/longwriting/story/BackgroundStage.vue'
 import CharacterStage from '@/components/longwriting/story/CharacterStage.vue'
 import SkillItemStage from '@/components/longwriting/story/SkillItemStage.vue'
@@ -139,6 +147,7 @@ const showExport = ref(false)
 // 故事阶段配置
 const storyStages = [
   { key: 'overview', label: '故事概要' },
+  { key: 'plot', label: '故事情节' },
   { key: 'background', label: '背景设定' },
   { key: 'characters', label: '角色设定' },
   { key: 'skills', label: '技能物品' },
@@ -161,7 +170,7 @@ function setStage(stage: StoryStage) {
 
 // 判断阶段是否完成
 function isStageCompleted(stage: string): boolean {
-  const stageOrder = ['overview', 'background', 'characters', 'skills', 'outline', 'chapters']
+  const stageOrder = ['overview', 'plot', 'background', 'characters', 'skills', 'outline', 'chapters']
   const currentIndex = stageOrder.indexOf(currentStage.value)
   const stageIndex = stageOrder.indexOf(stage)
   return stageIndex < currentIndex

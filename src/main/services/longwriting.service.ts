@@ -17,7 +17,10 @@ import {
   CreateOutlineRequest,
   UpdateOutlineRequest,
   StoryChapter,
-  ChapterVersion
+  ChapterVersion,
+  StoryPlot,
+  CreatePlotRequest,
+  UpdatePlotRequest
 } from '../../shared/types/longwriting.types'
 
 /**
@@ -294,6 +297,98 @@ export class LongWritingService {
       throw new Error('数据库未初始化')
     }
     return this.db.lwLocations.delete(id)
+  }
+
+  // ==================== 情节管理 ====================
+
+  /**
+   * 获取项目的所有情节
+   */
+  async getPlots(projectId: string): Promise<StoryPlot[]> {
+    if (!this.db.lwPlots) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwPlots.getByProjectId(projectId)
+  }
+
+  /**
+   * 获取情节详情
+   */
+  async getPlot(id: string): Promise<StoryPlot | null> {
+    if (!this.db.lwPlots) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwPlots.getById(id)
+  }
+
+  /**
+   * 创建情节
+   */
+  async createPlot(data: CreatePlotRequest): Promise<StoryPlot> {
+    if (!this.db.lwPlots) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwPlots.create(data)
+  }
+
+  /**
+   * 批量创建情节（用于 AI 生成后批量插入）
+   */
+  async batchCreatePlots(projectId: string, plots: { title: string; summary: string; involvedCharacters?: string[] }[]): Promise<StoryPlot[]> {
+    if (!this.db.lwPlots) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwPlots.batchCreate(projectId, plots)
+  }
+
+  /**
+   * 更新情节
+   */
+  async updatePlot(id: string, data: UpdatePlotRequest): Promise<StoryPlot | null> {
+    if (!this.db.lwPlots) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwPlots.update(id, data)
+  }
+
+  /**
+   * 重排序情节
+   */
+  async reorderPlots(projectId: string, orderList: { id: string; order: number }[]): Promise<boolean> {
+    if (!this.db.lwPlots) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwPlots.reorderPlots(projectId, orderList)
+  }
+
+  /**
+   * 删除情节
+   */
+  async deletePlot(id: string): Promise<boolean> {
+    if (!this.db.lwPlots) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwPlots.delete(id)
+  }
+
+  /**
+   * 删除项目的所有情节
+   */
+  async deletePlotsByProjectId(projectId: string): Promise<boolean> {
+    if (!this.db.lwPlots) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwPlots.deleteByProjectId(projectId)
+  }
+
+  /**
+   * 获取项目的情节数量
+   */
+  async getPlotCount(projectId: string): Promise<number> {
+    if (!this.db.lwPlots) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwPlots.countByProjectId(projectId)
   }
 
   // ==================== 角色关系 ====================

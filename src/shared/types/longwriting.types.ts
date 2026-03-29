@@ -15,6 +15,7 @@ export type LongWritingProjectType = 'story' | 'comment'
  */
 export type StoryStage =
   | 'overview'      // 故事概要
+  | 'plot'          // 故事情节（新增）
   | 'background'    // 时代背景与地点
   | 'characters'    // 角色设定
   | 'skills'        // 技能与物品（可选）
@@ -129,6 +130,82 @@ export interface StoryLocation {
   importance: LocationImportance
   createdAt: number
   updatedAt: number
+}
+
+// ==================== 情节相关类型 ====================
+
+/**
+ * 故事情节
+ */
+export interface StoryPlot {
+  id: string
+  projectId: string
+  title: string
+  summary: string
+  plotOrder: number            // 排序顺序
+  involvedCharacters: string[] // 涉及的角色名称列表
+  involvedLocations: string[]  // 涉及的地点名称列表
+  notes?: string               // 备注
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * 创建情节请求
+ */
+export interface CreatePlotRequest {
+  projectId: string
+  title: string
+  summary: string
+  involvedCharacters?: string[]
+  involvedLocations?: string[]
+  notes?: string
+}
+
+/**
+ * 更新情节请求
+ */
+export interface UpdatePlotRequest {
+  title?: string
+  summary?: string
+  plotOrder?: number
+  involvedCharacters?: string[]
+  involvedLocations?: string[]
+  notes?: string
+}
+
+/**
+ * 重排序情节请求
+ */
+export interface ReorderPlotsRequest {
+  projectId: string
+  orderList: { id: string; order: number }[]
+}
+
+/**
+ * AI 生成情节请求
+ */
+export interface GeneratePlotsRequest {
+  projectId: string
+}
+
+/**
+ * AI 生成的情节项
+ */
+export interface GeneratedPlotItem {
+  title: string
+  summary: string
+  involvedCharacters: string[]
+}
+
+/**
+ * 润色背景请求
+ */
+export interface PolishBackgroundRequest {
+  projectId: string
+  field: 'eraDescription' | 'socialStructure' | 'techLevel' // 要润色的字段
+  eraType: EraType
+  content: string
 }
 
 // ==================== 角色相关类型 ====================

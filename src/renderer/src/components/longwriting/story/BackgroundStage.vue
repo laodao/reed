@@ -3,6 +3,10 @@
     <div class="stage-header">
       <h2>时代背景与地点设定</h2>
       <p class="stage-desc">设定故事发生的时代背景和主要地点场景</p>
+      <!-- 保存状态提示 -->
+      <span v-if="saveStatus !== 'idle'" class="save-status" :class="saveStatus">
+        {{ saveStatusText }}
+      </span>
     </div>
 
     <el-tabs v-model="activeTab">
@@ -18,26 +22,62 @@
             </el-radio-group>
           </el-form-item>
           <el-form-item label="时代描述">
-            <el-input
-              v-model="eraForm.eraDescription"
-              type="textarea"
-              :rows="3"
-              placeholder="描述故事发生的时代背景..."
-            />
+            <div class="form-item-with-button">
+              <el-input
+                v-model="eraForm.eraDescription"
+                type="textarea"
+                :rows="3"
+                placeholder="描述故事发生的时代背景..."
+              />
+              <el-button
+                type="primary"
+                text
+                :loading="polishingField === 'eraDescription'"
+                :disabled="!eraForm.eraDescription.trim()"
+                @click="polishField('eraDescription')"
+              >
+                <el-icon><MagicStick /></el-icon>
+                AI润色
+              </el-button>
+            </div>
           </el-form-item>
           <el-form-item label="社会结构">
-            <el-input
-              v-model="eraForm.socialStructure"
-              type="textarea"
-              :rows="2"
-              placeholder="描述社会结构、阶层划分..."
-            />
+            <div class="form-item-with-button">
+              <el-input
+                v-model="eraForm.socialStructure"
+                type="textarea"
+                :rows="2"
+                placeholder="描述社会结构、阶层划分..."
+              />
+              <el-button
+                type="primary"
+                text
+                :loading="polishingField === 'socialStructure'"
+                :disabled="!eraForm.socialStructure.trim()"
+                @click="polishField('socialStructure')"
+              >
+                <el-icon><MagicStick /></el-icon>
+                AI润色
+              </el-button>
+            </div>
           </el-form-item>
           <el-form-item label="技术水平">
-            <el-input
-              v-model="eraForm.techLevel"
-              placeholder="描述技术水平、科技程度..."
-            />
+            <div class="form-item-with-button">
+              <el-input
+                v-model="eraForm.techLevel"
+                placeholder="描述技术水平、科技程度..."
+              />
+              <el-button
+                type="primary"
+                text
+                :loading="polishingField === 'techLevel'"
+                :disabled="!eraForm.techLevel.trim()"
+                @click="polishField('techLevel')"
+              >
+                <el-icon><MagicStick /></el-icon>
+                AI润色
+              </el-button>
+            </div>
           </el-form-item>
           <el-form-item label="特殊设定">
             <el-input
@@ -115,9 +155,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, MagicStick } from '@element-plus/icons-vue'
 
 const props = defineProps<{
   projectId: string
@@ -159,6 +199,41 @@ const locationForm = ref({
 
 // 加载状态
 const loading = ref(false)
+// 数据是否正在加载（用于跳过 watch 触发）
+const isLoading = ref(true)
+// 保存状态
+const saveStatus = ref<'idle' | 'saving' | 'saved'>('idle')
+// 润色状态
+const polishingField = ref<'eraDescription' | 'socialStructure' | 'techLevel' | null>(null)
+const polishingContent = ref('')
+
+// 防抖保存函数
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+const DEBOUNCE_DELAY = 1000 // 1秒防抖
+
+function debouncedSave() {
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+  }
+  saveStatus.value = 'saving'
+  saveTimer = setTimeout(async () => {
+    await saveBackground()
+    saveStatus.value = 'saved'
+    // 3秒后恢复 idle 状态
+    setTimeout(() => {
+      saveStatus.value = 'idle'
+    }, 3000)
+  }, DEBOUNCE_DELAY)
+}
+
+// 保存状态文字
+const saveStatusText = computed(() => {
+  switch (saveStatus.value) {
+    case 'saving': return '保存中...'
+    case 'saved': return '已保存'
+    default: return ''
+  }
+})
 
 function getLocationTypeLabel(type: string): string {
   const labels: Record<string, string> = {
@@ -187,6 +262,7 @@ function getImportanceLabel(importance: string): string {
 async function loadBackground() {
   if (!props.projectId) return
 
+  isLoading.value = true // 开始加载，跳过 watch
   const result = await window.electronAPI.longwriting.getBackground(props.projectId)
   if (result.success && result.data) {
     eraForm.value = {
@@ -197,6 +273,7 @@ async function loadBackground() {
       specialRules: result.data.specialRules || ''
     }
   }
+  isLoading.value = false // 加载完成，恢复 watch
 }
 
 // 保存背景设定
@@ -273,9 +350,61 @@ async function saveLocation() {
   emit('update:progress', 35)
 }
 
-// 监听背景表单变化自动保存
+// AI 润色功能
+async function polishField(field: 'eraDescription' | 'socialStructure' | 'techLevel') {
+  if (!props.projectId) return
+
+  const content = eraForm.value[field]
+  if (!content.trim()) {
+    ElMessage.warning('请先输入内容')
+    return
+  }
+
+  polishingField.value = field
+  polishingContent.value = ''
+
+  const eventId = `polish-${props.projectId}-${field}-${Date.now()}`
+
+  // 监听流式生成事件
+  const unsubscribe = window.electronAPI.longwriting.onGenerateEvent(
+    eventId,
+    (event: { type: string; content?: string; error?: string }) => {
+      if (event.type === 'content' && event.content) {
+        polishingContent.value += event.content
+      } else if (event.type === 'done') {
+        polishingField.value = null
+        unsubscribe()
+        // 更新表单内容
+        eraForm.value[field] = polishingContent.value.trim()
+        ElMessage.success('润色完成')
+      } else if (event.type === 'error') {
+        polishingField.value = null
+        unsubscribe()
+        ElMessage.error(event.error || '润色失败')
+      }
+    }
+  )
+
+  const result = await window.electronAPI.longwriting.polishBackground(
+    eventId,
+    props.projectId,
+    field,
+    eraForm.value.eraType,
+    content
+  )
+
+  if (!result.success) {
+    polishingField.value = null
+    unsubscribe()
+    ElMessage.error(result.error || '润色失败')
+  }
+}
+
+// 监听背景表单变化自动保存（跳过加载时的触发）
 watch(eraForm, () => {
-  saveBackground()
+  if (!isLoading.value) {
+    debouncedSave()
+  }
 }, { deep: true })
 
 onMounted(() => {
@@ -305,6 +434,23 @@ onMounted(() => {
     color: var(--text-color-secondary);
     margin: 0;
   }
+
+  .save-status {
+    float: right;
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 4px;
+
+    &.saving {
+      color: var(--el-color-primary);
+      background: var(--el-color-primary-light-9);
+    }
+
+    &.saved {
+      color: var(--el-color-success);
+      background: var(--el-color-success-light-9);
+    }
+  }
 }
 
 .content-form {
@@ -312,6 +458,16 @@ onMounted(() => {
   padding: 24px;
   border-radius: 12px;
   border: 1px solid var(--border-color-light);
+}
+
+.form-item-with-button {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  .el-button {
+    align-self: flex-end;
+  }
 }
 
 .location-list {

@@ -889,6 +889,22 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:updateLocation', id, data),
     deleteLocation: (id: string) => ipcRenderer.invoke('longwriting:deleteLocation', id),
 
+    // 情节管理
+    getPlots: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:getPlots', projectId),
+    getPlot: (id: string) => ipcRenderer.invoke('longwriting:getPlot', id),
+    createPlot: (data: { projectId: string; title: string; summary: string; involvedCharacters?: string[]; involvedLocations?: string[]; notes?: string }) =>
+      ipcRenderer.invoke('longwriting:createPlot', data),
+    batchCreatePlots: (projectId: string, plots: { title: string; summary: string; involvedCharacters?: string[] }[]) =>
+      ipcRenderer.invoke('longwriting:batchCreatePlots', projectId, plots),
+    updatePlot: (id: string, data: any) =>
+      ipcRenderer.invoke('longwriting:updatePlot', id, data),
+    reorderPlots: (projectId: string, orderList: { id: string; order: number }[]) =>
+      ipcRenderer.invoke('longwriting:reorderPlots', projectId, orderList),
+    deletePlot: (id: string) => ipcRenderer.invoke('longwriting:deletePlot', id),
+    getPlotCount: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:getPlotCount', projectId),
+
     // 角色管理
     getCharacters: (projectId: string) =>
       ipcRenderer.invoke('longwriting:getCharacters', projectId),
@@ -965,6 +981,10 @@ const electronAPI = {
     // AI 生成（eventId 作为第一个参数）
     generateStoryOverview: (eventId: string, projectId: string, input: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generateStoryOverview', eventId, projectId, input, providerConfigId, modelId),
+    generatePlots: (eventId: string, projectId: string) =>
+      ipcRenderer.invoke('longwriting:generatePlots', eventId, projectId),
+    polishBackground: (eventId: string, projectId: string, field: 'eraDescription' | 'socialStructure' | 'techLevel', eraType: string, content: string) =>
+      ipcRenderer.invoke('longwriting:polishBackground', eventId, projectId, field, eraType, content),
     generateCharacters: (eventId: string, projectId: string) =>
       ipcRenderer.invoke('longwriting:generateCharacters', eventId, projectId),
     generateSkillsItems: (eventId: string, projectId: string) =>
