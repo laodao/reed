@@ -82,6 +82,9 @@
       :title="editingCharacter ? '编辑角色' : '添加角色'"
       width="750px"
       destroy-on-close
+      :append-to-body="false"
+      :modal-append-to-body="false"
+      center
     >
       <el-form :model="characterForm" label-width="100px" class="character-form">
         <el-row :gutter="16">
@@ -203,6 +206,9 @@
       v-model="showPortraitLinkDialog"
       title="关联人像形象"
       width="700px"
+      :append-to-body="false"
+      :modal-append-to-body="false"
+      center
     >
       <div class="portrait-selector">
         <!-- 第一步：选择项目 -->
@@ -291,6 +297,9 @@
       title="新建人像项目"
       width="400px"
       destroy-on-close
+      :append-to-body="false"
+      :modal-append-to-body="false"
+      center
     >
       <el-form :model="newProjectForm" label-width="80px">
         <el-form-item label="项目名称" required>
@@ -320,6 +329,9 @@
       v-model="showRelationDialog"
       title="角色关系管理"
       width="600px"
+      :append-to-body="false"
+      :modal-append-to-body="false"
+      center
     >
       <div class="relation-list">
         <div v-for="relation in characterRelations" :key="relation.id" class="relation-item">
@@ -342,6 +354,9 @@
       v-model="showAddRelationDialog"
       title="添加角色关系"
       width="400px"
+      :append-to-body="false"
+      :modal-append-to-body="false"
+      center
     >
       <el-form :model="relationForm" label-width="80px">
         <el-form-item label="关联角色">

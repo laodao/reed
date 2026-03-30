@@ -504,16 +504,25 @@ watch(
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  position: relative;
 
   // 让 Element Plus 对话框遮罩层点击穿透，使侧边栏和tab栏可操作
-  // 对话框本身仍然可以正常交互
   :deep(.el-overlay) {
+    position: absolute !important;
+    inset: 0;
     pointer-events: none;
 
+    // 对话框、抽屉等需要可交互
     .el-dialog,
     .el-drawer,
     .el-message-box {
       pointer-events: auto;
+      position: absolute !important;
+      margin: 0 !important;
+      // 水平和垂直居中
+      top: 50% !important;
+      left: 50% !important;
+      transform: translate(-50%, -50%);
     }
   }
 }

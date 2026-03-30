@@ -5,6 +5,9 @@
     title="创建人物形象"
     width="650px"
     :close-on-click-modal="false"
+    :append-to-body="false"
+    :modal-append-to-body="false"
+    center
   >
     <el-form
       ref="formRef"
