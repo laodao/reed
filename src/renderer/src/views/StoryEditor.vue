@@ -148,8 +148,14 @@ import { ref, computed, onMounted, provide, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, View, Download } from '@element-plus/icons-vue'
+import { useTabsStore } from '@/stores/tabs'
 import type { LongWritingProject, StoryStage } from '../../../../shared/types/longwriting.types'
 import type { UserProviderConfig, ProviderTemplate } from '../../../shared/types'
+
+// 定义组件名称用于 keep-alive
+defineOptions({
+  name: 'StoryEditor'
+})
 
 // 子组件
 import OverviewStage from '@/components/longwriting/story/OverviewStage.vue'
@@ -163,6 +169,7 @@ import ExportDialog from '@/components/longwriting/ExportDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
+const tabsStore = useTabsStore()
 
 // 项目 ID
 const projectId = computed(() => route.params.id as string)
@@ -381,6 +388,8 @@ async function loadProject() {
   if (result.success && result.data) {
     project.value = result.data
     currentStage.value = result.data.stage as StoryStage
+    // 更新标签页标题为项目名称
+    tabsStore.updateTabTitle(route.path, result.data.name)
   } else {
     ElMessage.error('加载项目失败：' + (result.error || '未知错误'))
   }

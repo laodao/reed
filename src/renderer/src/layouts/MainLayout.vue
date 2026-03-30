@@ -101,7 +101,7 @@
       <TabBar />
 
       <!-- 页面内容 -->
-      <div class="page-container">
+      <div class="page-container" id="page-container">
         <router-view v-slot="{ Component, route }">
           <transition :name="pageTransition" mode="out-in">
             <keep-alive :include="cachedViews">
@@ -142,7 +142,8 @@ const tabsStore = useTabsStore()
 
 const isCollapsed = ref(false)
 const pageTransition = ref('slide-fade')
-const cachedViews = ['Home', 'Chat']
+// 需要缓存的页面组件名称（对应 defineOptions 中的 name）
+const cachedViews = ['Home', 'Chat', 'StoryEditor', 'CommentEditor']
 
 // 主菜单项
 const mainMenuItems = [
@@ -503,6 +504,19 @@ watch(
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  position: relative; // 为对话框遮罩提供定位上下文
+
+  // 限制 Element Plus 对话框遮罩层只覆盖当前页面容器
+  :deep(.el-overlay) {
+    position: absolute !important;
+    // 允许点击穿透，让侧边栏和tab栏可以操作
+    pointer-events: none;
+
+    // 对话框本身需要响应点击
+    .el-dialog {
+      pointer-events: auto;
+    }
+  }
 }
 
 // ==================== 过渡动画 ====================

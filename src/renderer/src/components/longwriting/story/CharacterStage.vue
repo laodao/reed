@@ -82,6 +82,8 @@
       :title="editingCharacter ? '编辑角色' : '添加角色'"
       width="750px"
       destroy-on-close
+      :append-to-body="false"
+      :modal-append-to-body="false"
     >
       <el-form :model="characterForm" label-width="100px" class="character-form">
         <el-row :gutter="16">
@@ -203,6 +205,8 @@
       v-model="showPortraitLinkDialog"
       title="关联人像形象"
       width="700px"
+      :append-to-body="false"
+      :modal-append-to-body="false"
     >
       <div class="portrait-selector">
         <!-- 第一步：选择项目 -->
@@ -291,6 +295,8 @@
       title="新建人像项目"
       width="400px"
       destroy-on-close
+      :append-to-body="false"
+      :modal-append-to-body="false"
     >
       <el-form :model="newProjectForm" label-width="80px">
         <el-form-item label="项目名称" required>
@@ -308,34 +314,20 @@
       </template>
     </el-dialog>
 
-    <!-- 新建人物形象对话框 -->
-    <el-dialog
+    <!-- 新建人物形象对话框（复用人像设计模块的完整界面） -->
+    <CreateCharacterDialog
       v-model="showCreateCharacterDialog"
-      title="新建人物形象"
-      width="400px"
-      destroy-on-close
-    >
-      <el-form :model="newCharacterForm" label-width="80px">
-        <el-form-item label="人物名称" required>
-          <el-input v-model="newCharacterForm.name" placeholder="输入人物名称" />
-        </el-form-item>
-        <el-form-item label="人物描述">
-          <el-input v-model="newCharacterForm.description" type="textarea" :rows="2" placeholder="人物描述（可选）" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showCreateCharacterDialog = false">取消</el-button>
-        <el-button type="primary" :loading="creatingCharacter" @click="createPortraitCharacter">
-          创建
-        </el-button>
-      </template>
-    </el-dialog>
+      :project-id="selectedPortraitProjectId"
+      @success="handleCreateCharacterSuccess"
+    />
 
     <!-- 角色关系对话框 -->
     <el-dialog
       v-model="showRelationDialog"
       title="角色关系管理"
       width="600px"
+      :append-to-body="false"
+      :modal-append-to-body="false"
     >
       <div class="relation-list">
         <div v-for="relation in characterRelations" :key="relation.id" class="relation-item">
@@ -358,6 +350,8 @@
       v-model="showAddRelationDialog"
       title="添加角色关系"
       width="400px"
+      :append-to-body="false"
+      :modal-append-to-body="false"
     >
       <el-form :model="relationForm" label-width="80px">
         <el-form-item label="关联角色">
@@ -407,6 +401,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, User, Connection, MagicStick, Picture, Close } from '@element-plus/icons-vue'
 import type { StoryCharacter, CharacterRelation, CharacterRolePosition } from '../../../../shared/types/longwriting.types'
+import CreateCharacterDialog from '../../portrait/CreateCharacterDialog.vue'
 
 const props = defineProps<{
   projectId: string
@@ -447,13 +442,6 @@ const newProjectForm = ref({
   description: ''
 })
 const creatingProject = ref(false)
-
-// 新建人物形象表单
-const newCharacterForm = ref({
-  name: '',
-  description: ''
-})
-const creatingCharacter = ref(false)
 
 // 编辑状态
 const editingCharacter = ref<StoryCharacter | null>(null)
@@ -898,43 +886,12 @@ async function createPortraitProject() {
   }
 }
 
-// 创建人物形象
-async function createPortraitCharacter() {
-  if (!selectedPortraitProjectId.value) {
-    ElMessage.warning('请先选择项目')
-    return
-  }
-
-  if (!newCharacterForm.value.name.trim()) {
-    ElMessage.warning('请输入人物名称')
-    return
-  }
-
-  creatingCharacter.value = true
-  try {
-    const result = await window.electronAPI.portrait.createCharacter({
-      projectId: selectedPortraitProjectId.value,
-      name: newCharacterForm.value.name,
-      description: newCharacterForm.value.description
-    })
-
-    if (result.success && result.data) {
-      ElMessage.success('人物形象创建成功')
-      showCreateCharacterDialog.value = false
-      newCharacterForm.value = { name: '', description: '' }
-
-      // 刷新人物列表并选中新人物
-      await loadProjectCharacters()
-      selectedPortraitId.value = result.data.id
-    } else {
-      ElMessage.error(result.error || '创建失败')
-    }
-  } catch (error) {
-    console.error('创建人物形象失败:', error)
-    ElMessage.error('创建失败')
-  } finally {
-    creatingCharacter.value = false
-  }
+// 创建人物形象成功后的处理
+function handleCreateCharacterSuccess(characterId: string) {
+  showCreateCharacterDialog.value = false
+  // 刷新人物列表并选中新人物
+  loadProjectCharacters()
+  selectedPortraitId.value = characterId
 }
 
 // 跳转到人像设计页面

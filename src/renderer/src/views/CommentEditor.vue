@@ -72,6 +72,12 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Download } from '@element-plus/icons-vue'
 import type { LongWritingProject, CommentStage } from '../../../../shared/types/longwriting.types'
+import { useTabsStore } from '@/stores/tabs'
+
+// 定义组件名称用于 keep-alive
+defineOptions({
+  name: 'CommentEditor'
+})
 
 // 子组件
 import TopicStage from '@/components/longwriting/comment/TopicStage.vue'
@@ -81,6 +87,7 @@ import ExportDialog from '@/components/longwriting/ExportDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
+const tabsStore = useTabsStore()
 
 // 项目 ID
 const projectId = computed(() => route.params.id as string)
@@ -133,6 +140,8 @@ async function loadProject() {
   if (result.success && result.data) {
     project.value = result.data
     currentStage.value = result.data.stage as CommentStage
+    // 更新标签页标题为项目名称
+    tabsStore.updateTabTitle(route.path, result.data.name)
   } else {
     ElMessage.error('加载项目失败：' + (result.error || '未知错误'))
   }
