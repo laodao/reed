@@ -38,100 +38,113 @@
           <el-empty v-if="outlineTreeData.length === 0" description="暂无大纲数据" />
         </div>
 
-        <!-- 右侧章节列表编辑区 -->
-        <div class="chapters-panel" ref="chaptersPanelRef" @scroll="handleScroll">
+        <!-- 右侧章节编辑区 -->
+        <div class="chapters-panel" ref="chaptersPanelRef">
           <div v-if="outlineTreeData.length === 0" class="empty-chapter">
             <el-empty description="请先在大纲设计阶段创建大纲">
               <el-button type="primary" @click="goToOutline">前往大纲设计</el-button>
             </el-empty>
           </div>
 
-          <!-- 所有章节卡片 -->
-          <template v-else>
-            <div
-              v-for="outline in allOutlines"
-              :key="outline.id"
-              :ref="el => setChapterRef(outline.id, el)"
-              class="chapter-card"
-              :class="{ active: outline.id === activeOutlineId }"
-            >
-              <!-- 章节头部信息 -->
-              <div class="chapter-header">
-                <div class="chapter-title-row">
-                  <span class="chapter-type">{{ getNodeTypeName(outline.nodeType) }}</span>
-                  <h3 class="chapter-title">{{ outline.name }}</h3>
-                  <el-tag :type="getStatusType(outline.status)" size="small">
-                    {{ getStatusName(outline.status) }}
+          <!-- 单章节编辑模式 -->
+          <div v-else class="single-chapter-container">
+            <!-- 章节导航 -->
+            <div class="chapter-nav">
+              <el-button
+                :disabled="currentChapterIndex <= 0"
+                @click="prevChapter"
+              >
+                <el-icon><ArrowLeft /></el-icon>
+                上一章
+              </el-button>
+              <span class="chapter-position">
+                {{ currentChapterIndex + 1 }} / {{ allOutlines.length }}
+              </span>
+              <el-button
+                :disabled="currentChapterIndex >= allOutlines.length - 1"
+                @click="nextChapter"
+              >
+                下一章
+                <el-icon><ArrowRight /></el-icon>
+              </el-button>
+            </div>
+
+            <!-- 当前章节卡片 -->
+            <div v-if="currentChapter" class="chapter-card active">
+              <!-- 章节标题栏 -->
+              <div class="chapter-title-bar">
+                <div class="title-left">
+                  <span class="chapter-type">{{ getNodeTypeName(currentChapter.nodeType) }}</span>
+                  <h3 class="chapter-title">{{ currentChapter.name }}</h3>
+                  <el-tag :type="getStatusType(currentChapter.status)" size="small">
+                    {{ getStatusName(currentChapter.status) }}
                   </el-tag>
-                </div>
-                <div class="chapter-meta">
-                  <span v-if="outline.estimatedWords">预估 {{ outline.estimatedWords }} 字</span>
-                  <span v-if="getChapterWordCount(outline.id)">
-                    当前 {{ getChapterWordCount(outline.id) }} 字
+                  <span class="word-count" v-if="getChapterWordCount(currentChapter.id)">
+                    {{ getChapterWordCount(currentChapter.id) }} 字
                   </span>
                 </div>
-                <p v-if="outline.summary" class="chapter-summary">{{ outline.summary }}</p>
-                <div v-if="outline.involvedCharacters?.length > 0 || outline.involvedLocations?.length > 0" class="chapter-refs">
-                  <span v-if="outline.involvedCharacters?.length > 0">
-                    涉及角色：
-                    <el-tag v-for="id in outline.involvedCharacters" :key="id" size="small">
+                <div class="title-actions">
+                  <el-button
+                    v-if="!generatingMap[currentChapter.id]"
+                    type="primary"
+                    size="small"
+                    @click="startGenerate(currentChapter)"
+                  >
+                    <el-icon><MagicStick /></el-icon>
+                    AI 生成
+                  </el-button>
+                  <el-button
+                    v-else
+                    type="danger"
+                    size="small"
+                    @click="cancelGenerate(currentChapter.id)"
+                  >
+                    <el-icon><Close /></el-icon>
+                    取消
+                  </el-button>
+                  <el-button size="small" @click="showVersions(currentChapter)">
+                    <el-icon><Clock /></el-icon>
+                    版本
+                  </el-button>
+                  <el-button
+                    size="small"
+                    :loading="savingMap[currentChapter.id]"
+                    @click="saveChapter(currentChapter.id)"
+                  >
+                    <el-icon><DocumentChecked /></el-icon>
+                    保存
+                  </el-button>
+                </div>
+              </div>
+
+              <!-- 章节信息 -->
+              <div class="chapter-info" v-if="currentChapter.summary || currentChapter.involvedCharacters?.length || currentChapter.involvedLocations?.length">
+                <p v-if="currentChapter.summary" class="chapter-summary">{{ currentChapter.summary }}</p>
+                <div class="chapter-tags" v-if="currentChapter.involvedCharacters?.length > 0 || currentChapter.involvedLocations?.length > 0">
+                  <template v-if="currentChapter.involvedCharacters?.length > 0">
+                    <el-tag v-for="id in currentChapter.involvedCharacters" :key="id" size="small" type="info">
                       {{ getCharacterName(id) }}
                     </el-tag>
-                  </span>
-                  <span v-if="outline.involvedLocations?.length > 0">
-                    涉及地点：
-                    <el-tag v-for="id in outline.involvedLocations" :key="id" size="small" type="info">
+                  </template>
+                  <template v-if="currentChapter.involvedLocations?.length > 0">
+                    <el-tag v-for="id in currentChapter.involvedLocations" :key="id" size="small" type="warning">
                       {{ getLocationName(id) }}
                     </el-tag>
-                  </span>
+                  </template>
                 </div>
               </div>
 
-              <!-- 章节编辑工具栏 -->
-              <div class="chapter-toolbar">
-                <el-button
-                  v-if="!generatingMap[outline.id]"
-                  type="primary"
-                  size="small"
-                  @click="startGenerate(outline)"
-                >
-                  <el-icon><MagicStick /></el-icon>
-                  AI 生成
-                </el-button>
-                <el-button
-                  v-else
-                  type="danger"
-                  size="small"
-                  @click="cancelGenerate(outline.id)"
-                >
-                  <el-icon><Close /></el-icon>
-                  取消
-                </el-button>
-                <el-button size="small" @click="showVersions(outline)">
-                  <el-icon><Clock /></el-icon>
-                  版本
-                </el-button>
-                <el-button
-                  size="small"
-                  :loading="savingMap[outline.id]"
-                  @click="saveChapter(outline.id)"
-                >
-                  <el-icon><DocumentChecked /></el-icon>
-                  保存
-                </el-button>
+              <!-- Markdown 编辑器 -->
+              <div class="chapter-editor-wrapper">
+                <MarkdownEditor
+                  v-model="chapterContentMap[currentChapter.id]"
+                  :placeholder="getEditorPlaceholder(currentChapter)"
+                  height="calc(100vh - 320px)"
+                  mode="split"
+                />
               </div>
-
-              <!-- 章节内容编辑区 -->
-              <el-input
-                v-model="chapterContentMap[outline.id]"
-                type="textarea"
-                :rows="12"
-                :placeholder="getEditorPlaceholder(outline)"
-                class="chapter-editor"
-                @input="updateWordCount(outline.id)"
-              />
             </div>
-          </template>
+          </div>
         </div>
       </div>
     </div>
@@ -227,6 +240,10 @@ import { ref, computed, watch, onMounted, inject, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { MagicStick, Clock, DocumentChecked, View, RefreshLeft, Close, Fold } from '@element-plus/icons-vue'
+import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
+import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
+import MarkdownEditor from '@/components/common/MarkdownEditor.vue'
+import { ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import type { StoryOutline, StoryChapter, ChapterVersion, OutlineStatus, OutlineNodeType, StoryCharacter } from '../../../../shared/types/longwriting.types'
 import type { ElTree } from 'element-plus'
 
@@ -285,6 +302,10 @@ const savingMap = ref<Record<string, boolean>>({})
 // 自动保存
 const autoSave = ref(true)
 
+// 自动保存相关变量
+const saveTimers: Record<string, ReturnType<typeof setTimeout>> = {}
+const lastSavedContent: Record<string, string> = {}
+
 // 加载状态
 const loading = ref(false)
 
@@ -315,6 +336,35 @@ const allOutlines = computed(() => {
     .filter(n => n.nodeType === 'chapter' || n.nodeType === 'section')
     .sort((a, b) => a.orderIndex - b.orderIndex)
 })
+
+// 当前章节索引
+const currentChapterIndex = computed(() => {
+  if (!activeOutlineId.value) return 0
+  return allOutlines.value.findIndex(o => o.id === activeOutlineId.value)
+})
+
+// 当前章节
+const currentChapter = computed(() => {
+  return allOutlines.value[currentChapterIndex.value] || null
+})
+
+// 上一章
+function prevChapter() {
+  if (currentChapterIndex.value > 0) {
+    const prevOutline = allOutlines.value[currentChapterIndex.value - 1]
+    activeOutlineId.value = prevOutline.id
+    treeRef.value?.setCurrentKey(prevOutline.id)
+  }
+}
+
+// 下一章
+function nextChapter() {
+  if (currentChapterIndex.value < allOutlines.value.length - 1) {
+    const nextOutline = allOutlines.value[currentChapterIndex.value + 1]
+    activeOutlineId.value = nextOutline.id
+    treeRef.value?.setCurrentKey(nextOutline.id)
+  }
+}
 
 // 构建大纲树结构
 function buildOutlineTree(nodes: StoryOutline[]): any[] {
@@ -360,50 +410,12 @@ function collapseAll() {
   }
 }
 
-// 处理节点点击 - 滚动到对应章节
+// 处理节点点击 - 切换到对应章节
 function handleNodeClick(data: StoryOutline) {
-  activeOutlineId.value = data.id
-  scrollToChapter(data.id)
-}
-
-// 滚动到指定章节
-function scrollToChapter(outlineId: string) {
-  const el = chapterRefs.value[outlineId]
-  if (el && chaptersPanelRef.value) {
-    // 计算相对于容器的位置
-    const containerRect = chaptersPanelRef.value.getBoundingClientRect()
-    const elementRect = el.getBoundingClientRect()
-    const scrollTop = chaptersPanelRef.value.scrollTop + elementRect.top - containerRect.top - 20
-
-    chaptersPanelRef.value.scrollTo({
-      top: scrollTop,
-      behavior: 'smooth'
-    })
-  }
-}
-
-// 处理右侧滚动 - 更新左侧高亮
-function handleScroll() {
-  if (!chaptersPanelRef.value) return
-
-  const containerRect = chaptersPanelRef.value.getBoundingClientRect()
-  const containerTop = containerRect.top + 100 // 偏移量，用于确定"可见"区域
-
-  // 找到当前可见的第一个章节
-  for (const outline of allOutlines.value) {
-    const el = chapterRefs.value[outline.id]
-    if (el) {
-      const rect = el.getBoundingClientRect()
-      // 如果章节顶部在可见区域内
-      if (rect.top <= containerTop && rect.bottom > containerTop) {
-        if (activeOutlineId.value !== outline.id) {
-          activeOutlineId.value = outline.id
-          // 同步更新树的高亮
-          treeRef.value?.setCurrentKey(outline.id)
-        }
-        break
-      }
-    }
+  // 只有章节和节类型才能切换
+  if (data.nodeType === 'chapter' || data.nodeType === 'section') {
+    activeOutlineId.value = data.id
+    treeRef.value?.setCurrentKey(data.id)
   }
 }
 
@@ -478,9 +490,12 @@ async function loadAllChapters() {
       if (chapter) {
         chapterIdMap.value[outlineId] = chapter.id
         chapterContentMap.value[outlineId] = chapter.content || ''
+        // 记录从数据库加载的内容，避免触发不必要的自动保存
+        lastSavedContent[outlineId] = chapter.content || ''
       } else {
         chapterIdMap.value[outlineId] = ''
         chapterContentMap.value[outlineId] = ''
+        lastSavedContent[outlineId] = ''
       }
     }
   }
@@ -713,14 +728,24 @@ async function loadLocations() {
 // 加载大纲和引用数据
 async function loadData() {
   loading.value = true
+  // 临时禁用自动保存，避免加载时触发不必要的保存
+  autoSave.value = false
+
   await Promise.all([
     loadOutlineTree(),
     loadCharacters(),
     loadLocations()
   ])
+
   // 加载所有章节内容
   await loadAllChapters()
+
   loading.value = false
+
+  // 加载完成后恢复自动保存
+  nextTick(() => {
+    autoSave.value = true
+  })
 
   // 设置初始激活节点
   if (allOutlines.value.length > 0) {
@@ -730,16 +755,21 @@ async function loadData() {
   updateProgress()
 }
 
-// 自动保存 - 使用防抖
-const saveTimers: Record<string, ReturnType<typeof setTimeout>> = {}
+// 自动保存 - 使用防抖，记录上一次保存的内容以避免重复保存
 watch(chapterContentMap, (newVal) => {
   if (!autoSave.value) return
 
   for (const outlineId in newVal) {
+    // 只保存已有 ID 的章节，且内容有变化
     if (chapterIdMap.value[outlineId]) {
+      const currentContent = newVal[outlineId]
+      // 如果内容与上次保存的内容相同，跳过
+      if (lastSavedContent[outlineId] === currentContent) continue
+
       if (saveTimers[outlineId]) clearTimeout(saveTimers[outlineId])
       saveTimers[outlineId] = setTimeout(() => {
         saveChapter(outlineId)
+        lastSavedContent[outlineId] = currentContent
       }, 3000)
     }
   }
@@ -883,24 +913,39 @@ onMounted(() => {
   }
 }
 
-// 右侧章节列表面板
+// 右侧章节编辑面板
 .chapters-panel {
   flex: 1;
   min-width: 0;
-  overflow-y: auto;
-  padding-right: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
 
-  &::-webkit-scrollbar {
-    width: 6px;
-  }
+// 单章节容器
+.single-chapter-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
 
-  &::-webkit-scrollbar-thumb {
-    background: var(--border-color-light);
-    border-radius: 3px;
+// 章节导航
+.chapter-nav {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+  padding: 12px;
+  background: var(--fill-color-lighter);
+  border-radius: 8px;
+  margin-bottom: 12px;
 
-    &:hover {
-      background: var(--border-color);
-    }
+  .chapter-position {
+    font-size: 14px;
+    color: var(--text-color-secondary);
+    min-width: 80px;
+    text-align: center;
   }
 }
 
@@ -913,106 +958,96 @@ onMounted(() => {
 
 // 章节卡片样式
 .chapter-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   background: var(--fill-color-blank);
   border: 1px solid var(--border-color-lighter);
-  border-radius: 12px;
-  margin-bottom: 20px;
-  transition: all 0.3s ease;
-
-  &:hover {
-    border-color: var(--color-primary-light-5);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  }
+  border-radius: 8px;
+  min-height: 0;
+  transition: all 0.2s ease;
 
   &.active {
     border-color: var(--color-primary-light-3);
-    box-shadow: 0 4px 16px rgba(var(--color-primary-rgb), 0.15);
+    box-shadow: 0 2px 12px rgba(var(--color-primary-rgb), 0.12);
+  }
+}
 
-    .chapter-header {
-      background: linear-gradient(135deg, var(--color-primary-light-9) 0%, var(--fill-color-lighter) 100%);
+// 标题栏（紧凑）
+.chapter-title-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  background: var(--fill-color-lighter);
+  border-radius: 8px 8px 0 0;
+  border-bottom: 1px solid var(--border-color-lighter);
+
+  .title-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+
+    .chapter-type {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      background: var(--color-primary-light-9);
+      color: var(--color-primary);
+      flex-shrink: 0;
+    }
+
+    .chapter-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-color-primary);
+      margin: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .word-count {
+      font-size: 12px;
+      color: var(--text-color-secondary);
+      flex-shrink: 0;
     }
   }
-}
 
-.chapter-header {
-  padding: 16px;
-  background: var(--fill-color-lighter);
-  border-radius: 12px 12px 0 0;
-  border-bottom: 1px solid var(--border-color-lighter);
-}
-
-.chapter-title-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-
-  .chapter-type {
-    font-size: 12px;
-    padding: 2px 8px;
-    border-radius: 4px;
-    background: var(--color-primary-light-9);
-    color: var(--color-primary);
-  }
-
-  .chapter-title {
-    flex: 1;
-    font-size: 16px;
-    font-weight: 500;
-    color: var(--text-color-primary);
-    margin: 0;
+  .title-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
   }
 }
 
-.chapter-meta {
-  display: flex;
-  gap: 16px;
-  font-size: 13px;
-  color: var(--text-color-secondary);
-  margin-bottom: 8px;
-}
-
-.chapter-summary {
-  font-size: 13px;
-  color: var(--text-color-regular);
-  line-height: 1.6;
-  margin: 0 0 8px 0;
-  padding: 8px 12px;
+// 章节信息（可折叠）
+.chapter-info {
+  padding: 8px 16px;
   background: var(--bg-color);
-  border-radius: 6px;
-}
-
-.chapter-refs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  font-size: 12px;
-  color: var(--text-color-secondary);
-
-  .el-tag {
-    margin-left: 4px;
-  }
-}
-
-.chapter-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  background: var(--fill-color-light);
   border-bottom: 1px solid var(--border-color-lighter);
+
+  .chapter-summary {
+    font-size: 12px;
+    color: var(--text-color-secondary);
+    line-height: 1.5;
+    margin: 0 0 6px 0;
+  }
+
+  .chapter-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
 }
 
-.chapter-editor {
-  :deep(.el-textarea__inner) {
-    border: none;
-    border-radius: 0 0 12px 12px;
-    font-family: 'Microsoft YaHei', sans-serif;
-    font-size: 14px;
-    line-height: 1.8;
-    padding: 16px;
-    resize: none;
-  }
+// 编辑器容器
+.chapter-editor-wrapper {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
 }
 
 .version-list {

@@ -856,7 +856,17 @@ ${materialContext || '无特定素材'}
     // 获取角色列表
     const characters = await dbManager.lwCharacters?.getByProjectId(projectId) || []
 
-    const systemPrompt = `你是一位专业的小说创作顾问。请根据故事概要，生成主要的故事情节列表。
+    // 获取背景设定
+    const background = await dbManager.lwBackgrounds?.getByProjectId(projectId)
+
+    // 获取地点列表
+    const locations = await dbManager.lwLocations?.getByProjectId(projectId) || []
+
+    // 获取技能物品
+    const skills = await dbManager.lwSkills?.getByProjectId(projectId) || []
+    const items = await dbManager.lwItems?.getByProjectId(projectId) || []
+
+    const systemPrompt = `你是一位专业的小说创作顾问。请根据故事概要、背景设定、角色等信息，生成主要的故事情节列表。
 你的回复必须是纯 JSON 数组格式（不要包含 \`\`\`json 标记），每个情节包含以下字段：
 - title: 情节标题（不超过 15 字）
 - summary: 情节概要（50-100 字）
@@ -864,13 +874,36 @@ ${materialContext || '无特定素材'}
 
 要求：
 1. 情节按时间顺序排列，有起承转合
-2. 情节之间要有逻辑关联
+2. 情节之间要有逻辑关联，考虑背景设定的世界观
 3. 情节数量根据预估章节数合理设置（约 10-30 个）
 4. 每个情节要明确涉及的角色
+5. 充分利用背景设定中的时代、社会结构等元素
+6. 可以融入技能、物品等元素增加故事丰富度
 
 请直接输出 JSON 数组，不要有任何额外文字。`
 
-    const characterNames = characters.map(c => c.name).join('、')
+    // 构建角色信息
+    const characterInfo = characters.map(c => {
+      let info = `${c.name}`
+      if (c.role) info += `（${c.role}）`
+      if (c.personality) info += `，性格：${c.personality}`
+      return info
+    }).join('\n')
+
+    // 构建背景信息
+    let backgroundInfo = ''
+    if (background) {
+      if (background.eraDescription) backgroundInfo += `时代：${background.eraDescription}\n`
+      if (background.socialStructure) backgroundInfo += `社会结构：${background.socialStructure}\n`
+      if (background.techLevel) backgroundInfo += `技术水平：${background.techLevel}\n`
+    }
+
+    // 构建地点信息
+    const locationInfo = locations.map(l => l.name).join('、')
+
+    // 构建技能物品信息
+    const skillInfo = skills.map(s => s.name).join('、')
+    const itemInfo = items.map(i => `${i.name}${i.ownerId ? `（持有者：${characters.find(c => c.id === i.ownerId)?.name || '未知'}）` : ''}`).join('、')
 
     const prompt = `请根据以下故事信息生成主要情节：
 
@@ -879,9 +912,20 @@ ${materialContext || '无特定素材'}
 【故事摘要】${overview.summary || '未指定'}
 【核心冲突】${overview.coreConflict || '未指定'}
 【预估章节】${overview.estimatedChapters || 20} 章
-【主要角色】${characterNames || '暂无'}
 
-请生成 10-30 个主要情节，按时间顺序排列。直接返回 JSON 数组格式的结果。`
+【主要角色】
+${characterInfo || '暂无'}
+
+【背景设定】
+${backgroundInfo || '暂无'}
+
+【主要地点】${locationInfo || '暂无'}
+
+【技能体系】${skillInfo || '暂无'}
+
+【重要物品】${itemInfo || '暂无'}
+
+请生成 10-30 个主要情节，按时间顺序排列。充分考虑角色性格、背景设定、地点等元素。直接返回 JSON 数组格式的结果。`
 
     try {
       const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 8192, providerConfigId, modelId)

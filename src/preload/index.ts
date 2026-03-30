@@ -987,6 +987,8 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:generateCharacters', eventId, projectId, providerConfigId, modelId),
     generateSkillsItems: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generateSkillsItems', eventId, projectId, providerConfigId, modelId),
+    generatePlots: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:generatePlots', eventId, projectId, providerConfigId, modelId),
     generateOutlineStory: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generateOutlineStory', eventId, projectId, providerConfigId, modelId),
     generateOutlineComment: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>

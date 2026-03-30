@@ -342,10 +342,10 @@ provide('selectedModelKey', selectedModelKey)
 // 故事阶段配置
 const storyStages = [
   { key: 'overview', label: '故事概要' },
-  { key: 'plot', label: '故事情节' },
   { key: 'background', label: '背景设定' },
   { key: 'characters', label: '角色设定' },
   { key: 'skills', label: '技能物品' },
+  { key: 'plot', label: '故事情节' },
   { key: 'outline', label: '大纲设计' },
   { key: 'chapters', label: '章节写作' }
 ]
