@@ -183,10 +183,15 @@ const plotForm = ref({
 // 加载情节列表
 async function loadPlots() {
   try {
+    console.log('[PlotStage] 开始加载情节, projectId:', props.projectId)
     const result = await window.electronAPI.longwriting.getPlots(props.projectId)
+    console.log('[PlotStage] 加载结果:', result)
     if (result.success) {
       plots.value = result.data || []
+      console.log('[PlotStage] 情节列表:', plots.value.length, '条')
       updateProgress()
+    } else {
+      console.error('[PlotStage] 加载失败:', result.error)
     }
   } catch (error) {
     console.error('加载情节失败:', error)
