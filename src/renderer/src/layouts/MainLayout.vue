@@ -143,7 +143,7 @@ const tabsStore = useTabsStore()
 const isCollapsed = ref(false)
 const pageTransition = ref('slide-fade')
 // 需要缓存的页面组件名称（对应 defineOptions 中的 name）
-const cachedViews = ['Home', 'Chat', 'StoryEditor', 'CommentEditor']
+const cachedViews = ['Home', 'Chat', 'StoryEditor', 'CommentEditor', 'Settings']
 
 // 主菜单项
 const mainMenuItems = [

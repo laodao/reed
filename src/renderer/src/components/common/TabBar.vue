@@ -158,13 +158,12 @@ onUnmounted(() => {
   height: 100%;
   padding: 6px 0;
 
-  &::-webkit-scrollbar {
-    height: 4px;
-  }
+  // 隐藏滚动条，但保留滚动功能
+  scrollbar-width: none; // Firefox
+  -ms-overflow-style: none; // IE/Edge
 
-  &::-webkit-scrollbar-thumb {
-    background: var(--border-color);
-    border-radius: 2px;
+  &::-webkit-scrollbar {
+    display: none; // Chrome/Safari
   }
 }
 

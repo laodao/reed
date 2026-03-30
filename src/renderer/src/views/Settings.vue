@@ -404,6 +404,11 @@ import type {
   UserSearchEngineConfig
 } from '../../../shared/types/search-engine.types'
 
+// 定义组件名称用于 keep-alive
+defineOptions({
+  name: 'Settings'
+})
+
 // 扩展搜索引擎配置类型（添加测试状态）
 interface SearchEngineConfigWithState extends UserSearchEngineConfig {
   testing?: boolean
