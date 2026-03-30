@@ -60,6 +60,34 @@ export type StoryType =
   | 'other'       // 其他
 
 /**
+ * 故事风格
+ */
+export type StoryStyle =
+  | 'light'       // 轻松幽默
+  | 'heavy'       // 沉重深刻
+  | 'passionate'  // 热血激昂
+  | 'calm'        // 冷峻沉稳
+  | 'popular'     // 通俗易懂
+  | 'literary'    // 文学性强
+
+/**
+ * 目标读者
+ */
+export type TargetReader =
+  | 'teenager'    // 青少年
+  | 'youth'       // 青年
+  | 'middle'      // 中年
+  | 'all'         // 全年龄
+
+/**
+ * 预估篇幅
+ */
+export type EstimatedLength =
+  | 'short'       // 短篇小说（5万字以下）
+  | 'medium'      // 中篇小说（5-20万字）
+  | 'long'        // 长篇小说（20万字以上）
+
+/**
  * 故事概要
  */
 export interface StoryOverview {
@@ -67,9 +95,13 @@ export interface StoryOverview {
   projectId: string
   storyType: StoryType
   title: string
+  coreIdea: string           // 核心构思
+  style?: StoryStyle         // 故事风格
+  targetReader?: TargetReader // 目标读者
+  estimatedLength?: EstimatedLength // 预估篇幅
+  otherRequirements?: string // 其他要求
   summary: string
   coreConflict: string
-  theme: string
   estimatedChapters: number
   isLocked: boolean
   createdAt: number
@@ -549,3 +581,86 @@ export interface ParsedReference {
   startIndex: number
   endIndex: number
 }
+
+// ==================== 全局配置相关类型 ====================
+
+/**
+ * 长文写作全局配置
+ */
+export interface LongWritingGlobalSettings {
+  id: string
+  // 故事类型选项（可自定义）
+  storyTypes: string[]
+  // 故事风格选项
+  styles: string[]
+  // 目标读者选项
+  targetReaders: string[]
+  // 预估字数选项
+  estimatedLengths: string[]
+  // 技能类型选项
+  skillTypes: string[]
+  // 技能等级选项
+  skillLevels: string[]
+  // 物品类型选项
+  itemTypes: string[]
+  // 物品等级选项
+  itemLevels: string[]
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * 默认的故事类型
+ */
+export const DEFAULT_STORY_TYPES = [
+  '武侠', '仙侠', '玄幻', '科幻', '悬疑', '都市', '言情', '历史', '其他'
+]
+
+/**
+ * 默认的故事风格
+ */
+export const DEFAULT_STYLES = [
+  '轻松幽默', '沉重深刻', '热血激昂', '冷峻沉稳', '通俗易懂', '文学性强'
+]
+
+/**
+ * 默认的目标读者
+ */
+export const DEFAULT_TARGET_READERS = [
+  '青少年', '青年', '中年', '全年龄'
+]
+
+/**
+ * 默认的预估字数
+ */
+export const DEFAULT_ESTIMATED_LENGTHS = [
+  '短篇小说（5万字以下）', '中篇小说（5-20万字）', '长篇小说（20万字以上）'
+]
+
+/**
+ * 默认的技能类型
+ */
+export const DEFAULT_SKILL_TYPES = [
+  '武功', '法术', '天赋', '科技', '其他'
+]
+
+/**
+ * 默认的技能等级
+ */
+export const DEFAULT_SKILL_LEVELS = [
+  '初级', '中级', '高级', '大师'
+]
+
+/**
+ * 默认的物品类型
+ */
+export const DEFAULT_ITEM_TYPES = [
+  '武器', '神器', '丹药', '秘籍', '信物', '其他'
+]
+
+/**
+ * 默认的物品等级
+ */
+export const DEFAULT_ITEM_LEVELS = [
+  '普通', '稀有', '传说', '神级'
+]

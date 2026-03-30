@@ -365,7 +365,8 @@ function setStage(stage: StoryStage) {
 
 // 判断阶段是否完成
 function isStageCompleted(stage: string): boolean {
-  const stageOrder = ['overview', 'plot', 'background', 'characters', 'skills', 'outline', 'chapters']
+  // 使用 storyStages 配置的顺序，确保与界面显示一致
+  const stageOrder = storyStages.map(s => s.key)
   const currentIndex = stageOrder.indexOf(currentStage.value)
   const stageIndex = stageOrder.indexOf(stage)
   return stageIndex < currentIndex

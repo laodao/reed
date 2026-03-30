@@ -285,9 +285,8 @@ export class LongWritingAIService {
 你的回复必须是纯 JSON 格式（不要包含 \`\`\`json 标记），包含以下字段：
 - title: 故事标题（简洁有力，不超过10个字）
 - storyType: 故事类型（如：xuanxia/kehuan/xuanhuan/lishi/dushi/other）
-- theme: 故事主题（一句话概括，不超过30字）
 - summary: 故事摘要（100-200字，简洁明了）
-- coreConflict: 核心冲突（50-100字）
+- coreConflict: 核心冲突（50-100字，必须生成，描述故事的主要矛盾和冲突）
 - estimatedChapters: 预估章节数（数字）
 
 请直接输出 JSON 对象，不要有任何额外文字。`

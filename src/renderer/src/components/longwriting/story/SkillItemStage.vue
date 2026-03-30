@@ -123,19 +123,23 @@
         </el-form-item>
         <el-form-item label="技能类型">
           <el-select v-model="skillForm.type" placeholder="选择技能类型">
-            <el-option label="武功" value="martial" />
-            <el-option label="法术" value="magic" />
-            <el-option label="天赋能力" value="ability" />
-            <el-option label="科技技能" value="tech" />
-            <el-option label="其他" value="other" />
+            <el-option
+              v-for="opt in skillTypeOptions"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="技能等级">
           <el-radio-group v-model="skillForm.level">
-            <el-radio value="beginner">初级</el-radio>
-            <el-radio value="intermediate">中级</el-radio>
-            <el-radio value="advanced">高级</el-radio>
-            <el-radio value="master">大师级</el-radio>
+            <el-radio
+              v-for="opt in skillLevelOptions"
+              :key="opt.value"
+              :value="opt.value"
+            >
+              {{ opt.label }}
+            </el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="所属体系">
@@ -183,20 +187,23 @@
         </el-form-item>
         <el-form-item label="物品类型">
           <el-select v-model="itemForm.type" placeholder="选择物品类型">
-            <el-option label="武器" value="weapon" />
-            <el-option label="神器" value="artifact" />
-            <el-option label="药品丹药" value="medicine" />
-            <el-option label="秘籍" value="manual" />
-            <el-option label="信物" value="token" />
-            <el-option label="其他" value="other" />
+            <el-option
+              v-for="opt in itemTypeOptions"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="物品等级">
           <el-radio-group v-model="itemForm.level">
-            <el-radio value="common">普通</el-radio>
-            <el-radio value="rare">稀有</el-radio>
-            <el-radio value="legendary">传说</el-radio>
-            <el-radio value="divine">神级</el-radio>
+            <el-radio
+              v-for="opt in itemLevelOptions"
+              :key="opt.value"
+              :value="opt.value"
+            >
+              {{ opt.label }}
+            </el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="物品描述">
@@ -230,7 +237,7 @@
 import { ref, computed, onMounted, watch, inject } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, MagicStick, Close } from '@element-plus/icons-vue'
-import type { StorySkill, StoryItem, SkillType, SkillLevel, ItemType, ItemLevel, StoryCharacter } from '../../../../shared/types/longwriting.types'
+import type { StorySkill, StoryItem, StoryCharacter, LongWritingGlobalSettings } from '../../../../shared/types/longwriting.types'
 
 const props = defineProps<{
   projectId: string
@@ -242,6 +249,9 @@ const emit = defineEmits<{
 
 // 从父组件获取选中的模型（是一个 ComputedRef）
 const selectedModel = inject<ReturnType<typeof computed<{ providerId: string; modelId: string } | null>>>('selectedModel', computed(() => null))
+
+// 全局设置
+const globalSettings = ref<LongWritingGlobalSettings | null>(null)
 
 const activeTab = ref('skills')
 
@@ -388,8 +398,8 @@ const loading = ref(false)
 // 技能表单
 const skillForm = ref({
   name: '',
-  type: 'martial' as SkillType,
-  level: 'beginner' as SkillLevel,
+  type: '武功' as string,
+  level: '初级' as string,
   system: '',
   description: '',
   characterIds: [] as string[]
@@ -398,54 +408,82 @@ const skillForm = ref({
 // 物品表单
 const itemForm = ref({
   name: '',
-  type: 'weapon' as ItemType,
-  level: 'common' as ItemLevel,
+  type: '武器' as string,
+  level: '普通' as string,
   description: '',
   ownerId: ''
 })
 
-// 标签映射
-function getSkillTypeLabel(type: SkillType): string {
-  const labels: Record<SkillType, string> = {
-    martial: '武功',
-    magic: '法术',
-    ability: '天赋',
-    tech: '科技',
-    other: '其他'
+// 标签映射（从数据库加载）
+const skillTypeOptions = computed(() => {
+  if (!globalSettings.value?.skillTypes?.length) {
+    return [
+      { label: '武功', value: '武功' },
+      { label: '法术', value: '法术' },
+      { label: '天赋', value: '天赋' },
+      { label: '科技', value: '科技' },
+      { label: '其他', value: '其他' }
+    ]
   }
-  return labels[type] || type
+  return globalSettings.value.skillTypes.map(label => ({ label, value: label }))
+})
+
+const skillLevelOptions = computed(() => {
+  if (!globalSettings.value?.skillLevels?.length) {
+    return [
+      { label: '初级', value: '初级' },
+      { label: '中级', value: '中级' },
+      { label: '高级', value: '高级' },
+      { label: '大师', value: '大师' }
+    ]
+  }
+  return globalSettings.value.skillLevels.map(label => ({ label, value: label }))
+})
+
+const itemTypeOptions = computed(() => {
+  if (!globalSettings.value?.itemTypes?.length) {
+    return [
+      { label: '武器', value: '武器' },
+      { label: '神器', value: '神器' },
+      { label: '丹药', value: '丹药' },
+      { label: '秘籍', value: '秘籍' },
+      { label: '信物', value: '信物' },
+      { label: '其他', value: '其他' }
+    ]
+  }
+  return globalSettings.value.itemTypes.map(label => ({ label, value: label }))
+})
+
+const itemLevelOptions = computed(() => {
+  if (!globalSettings.value?.itemLevels?.length) {
+    return [
+      { label: '普通', value: '普通' },
+      { label: '稀有', value: '稀有' },
+      { label: '传说', value: '传说' },
+      { label: '神级', value: '神级' }
+    ]
+  }
+  return globalSettings.value.itemLevels.map(label => ({ label, value: label }))
+})
+
+function getSkillTypeLabel(type: string): string {
+  const opt = skillTypeOptions.value.find(o => o.value === type)
+  return opt?.label || type
 }
 
-function getSkillLevelLabel(level: SkillLevel): string {
-  const labels: Record<SkillLevel, string> = {
-    beginner: '初级',
-    intermediate: '中级',
-    advanced: '高级',
-    master: '大师'
-  }
-  return labels[level] || level
+function getSkillLevelLabel(level: string): string {
+  const opt = skillLevelOptions.value.find(o => o.value === level)
+  return opt?.label || level
 }
 
-function getItemTypeLabel(type: ItemType): string {
-  const labels: Record<ItemType, string> = {
-    weapon: '武器',
-    artifact: '神器',
-    medicine: '丹药',
-    manual: '秘籍',
-    token: '信物',
-    other: '其他'
-  }
-  return labels[type] || type
+function getItemTypeLabel(type: string): string {
+  const opt = itemTypeOptions.value.find(o => o.value === type)
+  return opt?.label || type
 }
 
-function getItemLevelLabel(level: ItemLevel): string {
-  const labels: Record<ItemLevel, string> = {
-    common: '普通',
-    rare: '稀有',
-    legendary: '传说',
-    divine: '神级'
-  }
-  return labels[level] || level
+function getItemLevelLabel(level: string): string {
+  const opt = itemLevelOptions.value.find(o => o.value === level)
+  return opt?.label || level
 }
 
 function getCharacterName(id: string): string {
@@ -526,8 +564,8 @@ function resetSkillForm() {
   editingSkill.value = null
   skillForm.value = {
     name: '',
-    type: 'martial',
-    level: 'beginner',
+    type: '武功',
+    level: '初级',
     system: '',
     description: '',
     characterIds: []
@@ -611,8 +649,8 @@ function resetItemForm() {
   editingItem.value = null
   itemForm.value = {
     name: '',
-    type: 'weapon',
-    level: 'common',
+    type: '武器',
+    level: '普通',
     description: '',
     ownerId: ''
   }
@@ -652,10 +690,23 @@ async function loadItems() {
   }
 }
 
+// 加载全局设置
+async function loadGlobalSettings() {
+  try {
+    const result = await window.electronAPI.longwriting.getGlobalSettings()
+    if (result.success && result.data) {
+      globalSettings.value = result.data
+    }
+  } catch (error) {
+    console.error('加载全局设置失败:', error)
+  }
+}
+
 // 加载所有数据
 async function loadData() {
   loading.value = true
   await Promise.all([
+    loadGlobalSettings(),
     loadCharacters(),
     loadSkills(),
     loadItems()

@@ -20,7 +20,8 @@ import {
   ChapterVersion,
   StoryPlot,
   CreatePlotRequest,
-  UpdatePlotRequest
+  UpdatePlotRequest,
+  LongWritingGlobalSettings
 } from '../../shared/types/longwriting.types'
 
 /**
@@ -782,6 +783,28 @@ export class LongWritingService {
   async generateChapter(outlineId: string, targetWords?: number): Promise<StoryChapter> {
     // TODO: 调用 AI API 生成章节内容
     throw new Error('AI 生成功能尚未实现')
+  }
+
+  // ==================== 全局配置 ====================
+
+  /**
+   * 获取全局配置
+   */
+  async getGlobalSettings(): Promise<LongWritingGlobalSettings> {
+    if (!this.db.lwGlobalSettings) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwGlobalSettings.getOrCreate()
+  }
+
+  /**
+   * 更新全局配置
+   */
+  async updateGlobalSettings(data: Partial<LongWritingGlobalSettings>): Promise<LongWritingGlobalSettings | null> {
+    if (!this.db.lwGlobalSettings) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwGlobalSettings.update(data)
   }
 }
 

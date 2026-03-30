@@ -765,6 +765,8 @@ watch(() => props.projectId, () => {
 }
 
 .outline-node {
+  position: relative;
+
   .node-header {
     display: flex;
     align-items: center;
@@ -781,8 +783,23 @@ watch(() => props.projectId, () => {
 
     &.expanded {
       border-radius: 8px 8px 0 0;
-      border-bottom-color: transparent;
+      border-bottom: none;
     }
+  }
+
+  // 子节点容器，继承父节点的边框样式
+  .node-children {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px 0 0 0;
+    border-left: 1px solid var(--border-color-lighter);
+    border-right: 1px solid var(--border-color-lighter);
+    border-bottom: 1px solid var(--border-color-lighter);
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    margin-top: -1px; // 与父节点的 header 重叠，避免双边框
+    background: var(--fill-color-blank);
   }
 
   .node-expand {
@@ -867,7 +884,12 @@ watch(() => props.projectId, () => {
 }
 
 .chapter-node {
-  margin-left: 24px;
+  margin-left: 12px;
+  margin-right: 12px;
+
+  &:first-child {
+    margin-top: 0;
+  }
 
   > .node-header {
     background: var(--fill-color-lighter);
@@ -875,7 +897,8 @@ watch(() => props.projectId, () => {
 }
 
 .section-node {
-  margin-left: 48px;
+  margin-left: 12px;
+  margin-right: 12px;
 
   > .node-header {
     background: var(--fill-color);
@@ -885,13 +908,6 @@ watch(() => props.projectId, () => {
       font-size: 13px;
     }
   }
-}
-
-.node-children {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 8px 0 0 0;
 }
 
 .add-btn {

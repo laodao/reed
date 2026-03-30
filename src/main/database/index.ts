@@ -38,6 +38,7 @@ import { LwPlotRepository } from './repositories/lw-plot.repository'
 import { LwSkillRepository } from './repositories/lw-skill.repository'
 import { LwItemRepository } from './repositories/lw-item.repository'
 import { LwMaterialRepository } from './repositories/lw-material.repository'
+import { LwGlobalSettingsRepository } from './repositories/lw-global-settings.repository'
 import { DataPathService } from '../services/data-path.service'
 import { LanceDBService } from '../services/lance-db.service'
 
@@ -81,6 +82,7 @@ export class DatabaseManager {
   public lwSkills: LwSkillRepository | null = null
   public lwItems: LwItemRepository | null = null
   public lwMaterials: LwMaterialRepository | null = null
+  public lwGlobalSettings: LwGlobalSettingsRepository | null = null
 
   private constructor() {
     // 默认使用 userData 路径，后续会在 initialize 中更新
@@ -133,6 +135,9 @@ export class DatabaseManager {
 
     // 初始化内置角色
     await this.initBuiltinRoles()
+
+    // 初始化长文写作全局设置
+    this.initGlobalSettings()
 
     console.log('[DatabaseManager] 数据库初始化完成:', this.dbPath)
   }
@@ -911,6 +916,22 @@ export class DatabaseManager {
     `)
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_conversations_project_id ON lw_design_conversations(project_id)`)
 
+    // 全局配置表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_global_settings (
+        id TEXT PRIMARY KEY,
+        story_types TEXT,
+        styles TEXT,
+        target_readers TEXT,
+        skill_types TEXT,
+        skill_levels TEXT,
+        item_types TEXT,
+        item_levels TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
     // 执行其他数据库迁移
     this.runMigrations()
 
@@ -1201,6 +1222,34 @@ export class DatabaseManager {
     if (!providerConfigColumnNames.includes('audio_base_url')) {
       this.db.exec('ALTER TABLE provider_configs ADD COLUMN audio_base_url TEXT')
     }
+
+    // 检查 lw_story_overviews 表是否需要添加新字段
+    const overviewColumns = this.db.prepare("PRAGMA table_info(lw_story_overviews)").all() as { name: string }[]
+    const overviewColumnNames = overviewColumns.map(col => col.name)
+
+    if (!overviewColumnNames.includes('core_idea')) {
+      this.db.exec('ALTER TABLE lw_story_overviews ADD COLUMN core_idea TEXT')
+    }
+    if (!overviewColumnNames.includes('style')) {
+      this.db.exec('ALTER TABLE lw_story_overviews ADD COLUMN style TEXT')
+    }
+    if (!overviewColumnNames.includes('target_reader')) {
+      this.db.exec('ALTER TABLE lw_story_overviews ADD COLUMN target_reader TEXT')
+    }
+    if (!overviewColumnNames.includes('estimated_length')) {
+      this.db.exec('ALTER TABLE lw_story_overviews ADD COLUMN estimated_length TEXT')
+    }
+    if (!overviewColumnNames.includes('other_requirements')) {
+      this.db.exec('ALTER TABLE lw_story_overviews ADD COLUMN other_requirements TEXT')
+    }
+
+    // 检查 lw_global_settings 表是否需要添加 estimated_lengths 字段
+    const globalSettingsColumns = this.db.prepare("PRAGMA table_info(lw_global_settings)").all() as { name: string }[]
+    const globalSettingsColumnNames = globalSettingsColumns.map(col => col.name)
+
+    if (!globalSettingsColumnNames.includes('estimated_lengths')) {
+      this.db.exec('ALTER TABLE lw_global_settings ADD COLUMN estimated_lengths TEXT')
+    }
   }
 
   /**
@@ -1240,6 +1289,7 @@ export class DatabaseManager {
     this.lwSkills = new LwSkillRepository(this.db)
     this.lwItems = new LwItemRepository(this.db)
     this.lwMaterials = new LwMaterialRepository(this.db)
+    this.lwGlobalSettings = new LwGlobalSettingsRepository(this.db)
   }
 
   /**
@@ -1248,6 +1298,16 @@ export class DatabaseManager {
   private async initBuiltinRoles(): Promise<void> {
     if (!this.roles) return
     await this.roles.initBuiltinRoles()
+  }
+
+  /**
+   * 初始化长文写作全局设置
+   */
+  private initGlobalSettings(): void {
+    if (!this.lwGlobalSettings) return
+    // 获取或创建默认设置，如果不存在则自动创建
+    const settings = this.lwGlobalSettings.getOrCreate()
+    console.log('[DatabaseManager] 全局设置已初始化')
   }
 
   /**

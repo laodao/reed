@@ -51,9 +51,13 @@ export class LwStoryOverviewRepository {
       projectId,
       storyType: 'other',
       title: '',
+      coreIdea: '',
+      style: undefined,
+      targetReader: undefined,
+      estimatedLength: undefined,
+      otherRequirements: undefined,
       summary: '',
       coreConflict: '',
-      theme: '',
       estimatedChapters: 0,
       isLocked: false,
       createdAt: now,
@@ -72,16 +76,21 @@ export class LwStoryOverviewRepository {
     const values: any[] = []
 
     const fields = [
-      'story_type', 'title', 'summary', 'core_conflict',
-      'theme', 'estimated_chapters', 'is_locked'
+      'story_type', 'title', 'core_idea', 'style', 'target_reader',
+      'estimated_length', 'other_requirements', 'summary', 'core_conflict',
+      'estimated_chapters', 'is_locked'
     ]
 
     const dataMap: Record<string, any> = {
       story_type: data.storyType,
       title: data.title,
+      core_idea: data.coreIdea,
+      style: data.style,
+      target_reader: data.targetReader,
+      estimated_length: data.estimatedLength,
+      other_requirements: data.otherRequirements,
       summary: data.summary,
       core_conflict: data.coreConflict,
-      theme: data.theme,
       estimated_chapters: data.estimatedChapters,
       is_locked: data.isLocked ? 1 : 0
     }
@@ -137,9 +146,13 @@ export class LwStoryOverviewRepository {
       projectId: row.project_id,
       storyType: row.story_type || 'other',
       title: row.title || '',
+      coreIdea: row.core_idea || '',
+      style: row.style || undefined,
+      targetReader: row.target_reader || undefined,
+      estimatedLength: row.estimated_length || undefined,
+      otherRequirements: row.other_requirements || undefined,
       summary: row.summary || '',
       coreConflict: row.core_conflict || '',
-      theme: row.theme || '',
       estimatedChapters: row.estimated_chapters || 0,
       isLocked: !!row.is_locked,
       createdAt: row.created_at,

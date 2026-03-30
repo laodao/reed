@@ -143,6 +143,7 @@
 import { ref, onMounted, computed, inject } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, MagicStick, Rank, Document } from '@element-plus/icons-vue'
+import draggable from 'vuedraggable'
 import type { StoryPlot } from '../../../../shared/types/longwriting.types'
 import type { ComputedRef } from 'vue'
 
@@ -155,7 +156,7 @@ const emit = defineEmits<{
 }>()
 
 // 从父组件注入选中的模型（computed ref）
-const selectedModelRef = inject<ComputedRef<{ providerConfigId: string; modelId: string } | null>>('selectedModel')
+const selectedModelRef = inject<ComputedRef<{ providerId: string; modelId: string } | null>>('selectedModel')
 // 获取当前选中的模型值
 const selectedModel = computed(() => selectedModelRef?.value)
 
@@ -182,14 +183,19 @@ const plotForm = ref({
 
 // 加载情节列表
 async function loadPlots() {
+  console.log('[PlotStage] loadPlots 被调用, projectId:', props.projectId)
   try {
     const result = await window.electronAPI.longwriting.getPlots(props.projectId)
+    console.log('[PlotStage] getPlots 结果:', result)
     if (result.success) {
       plots.value = result.data || []
+      console.log('[PlotStage] 加载到情节数量:', plots.value.length)
       updateProgress()
+    } else {
+      console.error('[PlotStage] 加载情节失败:', result.error)
     }
   } catch (error) {
-    console.error('加载情节失败:', error)
+    console.error('[PlotStage] 加载情节失败:', error)
   }
 }
 
@@ -221,11 +227,18 @@ function updateProgress() {
 
 // AI 生成情节
 async function generatePlots() {
+  console.log('[PlotStage] generatePlots 被调用')
+  console.log('[PlotStage] selectedModelRef:', selectedModelRef)
+  console.log('[PlotStage] selectedModel.value:', selectedModel.value)
+
   // 检查是否选择了模型
-  if (!selectedModel.value?.providerConfigId || !selectedModel.value?.modelId) {
+  if (!selectedModel.value?.providerId || !selectedModel.value?.modelId) {
+    console.error('[PlotStage] 未选择模型, providerId:', selectedModel.value?.providerId, 'modelId:', selectedModel.value?.modelId)
     ElMessage.warning('请先在顶部选择 AI 模型')
     return
   }
+
+  console.log('[PlotStage] 开始生成情节, providerId:', selectedModel.value.providerId, 'modelId:', selectedModel.value.modelId)
 
   generating.value = true
   generatingContent.value = ''
@@ -236,14 +249,17 @@ async function generatePlots() {
   const unsubscribe = window.electronAPI.longwriting.onGenerateEvent(
     currentEventId.value,
     (event: { type: string; content?: string; error?: string; data?: any }) => {
+      console.log('[PlotStage] 收到事件:', event.type)
       if (event.type === 'content' && event.content) {
         generatingContent.value += event.content
       } else if (event.type === 'done') {
+        console.log('[PlotStage] 生成完成, 内容长度:', generatingContent.value.length)
         generating.value = false
         currentEventId.value = null
         unsubscribe()
         parsePlotsResult(generatingContent.value)
       } else if (event.type === 'error') {
+        console.error('[PlotStage] 生成错误:', event.error)
         generating.value = false
         currentEventId.value = null
         unsubscribe()
@@ -255,9 +271,11 @@ async function generatePlots() {
   const result = await window.electronAPI.longwriting.generatePlots(
     currentEventId.value,
     props.projectId,
-    selectedModel.value.providerConfigId,
+    selectedModel.value.providerId,
     selectedModel.value.modelId
   )
+
+  console.log('[PlotStage] generatePlots API 返回:', result)
 
   if (!result.success) {
     generating.value = false
@@ -269,6 +287,8 @@ async function generatePlots() {
 
 // 解析 AI 响应
 async function parsePlotsResult(content: string) {
+  console.log('[PlotStage] parsePlotsResult 被调用, 内容长度:', content.length)
+  console.log('[PlotStage] 内容预览:', content.substring(0, 500))
   try {
     // 尝试提取 JSON 数组
     let jsonStr = content
@@ -283,29 +303,38 @@ async function parsePlotsResult(content: string) {
     // 尝试找到 JSON 数组
     const jsonMatch = jsonStr.match(/\[[\s\S]*\]/)
     if (!jsonMatch) {
+      console.error('[PlotStage] 未找到 JSON 数组')
       ElMessage.warning('AI 返回格式不正确，请重试')
       return
     }
 
+    console.log('[PlotStage] 找到 JSON 数组, 长度:', jsonMatch[0].length)
     const data = JSON.parse(jsonMatch[0])
+    console.log('[PlotStage] 解析后的数据:', data)
 
     if (!Array.isArray(data) || data.length === 0) {
+      console.error('[PlotStage] 数据不是数组或为空')
       ElMessage.warning('AI 未生成有效的情节数据')
       return
     }
 
+    console.log('[PlotStage] 准备批量创建情节, 数量:', data.length, 'projectId:', props.projectId)
+
     // 批量创建情节
     const createResult = await window.electronAPI.longwriting.batchCreatePlots(props.projectId, data)
+    console.log('[PlotStage] batchCreatePlots 结果:', createResult)
 
     if (createResult.success) {
       plots.value = createResult.data || []
+      console.log('[PlotStage] 情节创建成功, 数量:', plots.value.length)
       ElMessage.success(`成功生成 ${plots.value.length} 个情节`)
       updateProgress()
     } else {
+      console.error('[PlotStage] 创建情节失败:', createResult.error)
       ElMessage.error(createResult.error || '保存情节失败')
     }
   } catch (error) {
-    console.error('解析 AI 响应失败:', error)
+    console.error('[PlotStage] 解析 AI 响应失败:', error)
     ElMessage.error('解析 AI 响应失败')
   }
 }
@@ -439,6 +468,7 @@ function resetForm() {
 }
 
 onMounted(() => {
+  console.log('[PlotStage] onMounted 被调用, projectId:', props.projectId)
   loadPlots()
   loadCharacterNames()
 })

@@ -2,10 +2,16 @@
   <div class="longwriting-page">
     <div class="page-header">
       <h1>长文写作</h1>
-      <el-button type="primary" @click="showCreateDialog = true">
-        <el-icon><Plus /></el-icon>
-        新建项目
-      </el-button>
+      <div class="header-actions">
+        <el-button @click="showSettingsDialog = true">
+          <el-icon><Setting /></el-icon>
+          设置
+        </el-button>
+        <el-button type="primary" @click="showCreateDialog = true">
+          <el-icon><Plus /></el-icon>
+          新建项目
+        </el-button>
+      </div>
     </div>
 
     <div class="page-content">
@@ -83,6 +89,212 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 设置对话框 -->
+    <el-dialog
+      v-model="showSettingsDialog"
+      title="全局设置"
+      width="600px"
+    >
+      <el-tabs v-model="activeSettingsTab">
+        <el-tab-pane label="故事类型" name="storyTypes">
+          <div class="settings-section">
+            <p class="settings-desc">配置可选的故事类型选项</p>
+            <el-tag
+              v-for="(type, index) in settingsForm.storyTypes"
+              :key="index"
+              closable
+              @close="removeSettingItem('storyTypes', index)"
+              class="settings-tag"
+            >
+              {{ type }}
+            </el-tag>
+            <el-input
+              v-model="newStoryType"
+              placeholder="输入新的故事类型"
+              class="settings-input"
+              @keyup.enter="addSettingItem('storyTypes', newStoryType); newStoryType = ''"
+            >
+              <template #append>
+                <el-button @click="addSettingItem('storyTypes', newStoryType); newStoryType = ''">添加</el-button>
+              </template>
+            </el-input>
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="故事风格" name="styles">
+          <div class="settings-section">
+            <p class="settings-desc">配置可选的故事风格选项</p>
+            <el-tag
+              v-for="(style, index) in settingsForm.styles"
+              :key="index"
+              closable
+              @close="removeSettingItem('styles', index)"
+              class="settings-tag"
+            >
+              {{ style }}
+            </el-tag>
+            <el-input
+              v-model="newStyle"
+              placeholder="输入新的故事风格"
+              class="settings-input"
+              @keyup.enter="addSettingItem('styles', newStyle); newStyle = ''"
+            >
+              <template #append>
+                <el-button @click="addSettingItem('styles', newStyle); newStyle = ''">添加</el-button>
+              </template>
+            </el-input>
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="目标读者" name="targetReaders">
+          <div class="settings-section">
+            <p class="settings-desc">配置可选的目标读者选项</p>
+            <el-tag
+              v-for="(reader, index) in settingsForm.targetReaders"
+              :key="index"
+              closable
+              @close="removeSettingItem('targetReaders', index)"
+              class="settings-tag"
+            >
+              {{ reader }}
+            </el-tag>
+            <el-input
+              v-model="newTargetReader"
+              placeholder="输入新的目标读者"
+              class="settings-input"
+              @keyup.enter="addSettingItem('targetReaders', newTargetReader); newTargetReader = ''"
+            >
+              <template #append>
+                <el-button @click="addSettingItem('targetReaders', newTargetReader); newTargetReader = ''">添加</el-button>
+              </template>
+            </el-input>
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="预估字数" name="estimatedLengths">
+          <div class="settings-section">
+            <p class="settings-desc">配置可选的预估字数选项</p>
+            <el-tag
+              v-for="(length, index) in settingsForm.estimatedLengths"
+              :key="index"
+              closable
+              @close="removeSettingItem('estimatedLengths', index)"
+              class="settings-tag"
+            >
+              {{ length }}
+            </el-tag>
+            <el-input
+              v-model="newEstimatedLength"
+              placeholder="输入新的预估字数"
+              class="settings-input"
+              @keyup.enter="addSettingItem('estimatedLengths', newEstimatedLength); newEstimatedLength = ''"
+            >
+              <template #append>
+                <el-button @click="addSettingItem('estimatedLengths', newEstimatedLength); newEstimatedLength = ''">添加</el-button>
+              </template>
+            </el-input>
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="技能设置" name="skills">
+          <div class="settings-section">
+            <h4>技能类型</h4>
+            <el-tag
+              v-for="(type, index) in settingsForm.skillTypes"
+              :key="index"
+              closable
+              @close="removeSettingItem('skillTypes', index)"
+              class="settings-tag"
+            >
+              {{ type }}
+            </el-tag>
+            <el-input
+              v-model="newSkillType"
+              placeholder="输入新的技能类型"
+              class="settings-input"
+              @keyup.enter="addSettingItem('skillTypes', newSkillType); newSkillType = ''"
+            >
+              <template #append>
+                <el-button @click="addSettingItem('skillTypes', newSkillType); newSkillType = ''">添加</el-button>
+              </template>
+            </el-input>
+
+            <h4 style="margin-top: 16px">技能等级</h4>
+            <el-tag
+              v-for="(level, index) in settingsForm.skillLevels"
+              :key="index"
+              closable
+              @close="removeSettingItem('skillLevels', index)"
+              class="settings-tag"
+            >
+              {{ level }}
+            </el-tag>
+            <el-input
+              v-model="newSkillLevel"
+              placeholder="输入新的技能等级"
+              class="settings-input"
+              @keyup.enter="addSettingItem('skillLevels', newSkillLevel); newSkillLevel = ''"
+            >
+              <template #append>
+                <el-button @click="addSettingItem('skillLevels', newSkillLevel); newSkillLevel = ''">添加</el-button>
+              </template>
+            </el-input>
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="物品设置" name="items">
+          <div class="settings-section">
+            <h4>物品类型</h4>
+            <el-tag
+              v-for="(type, index) in settingsForm.itemTypes"
+              :key="index"
+              closable
+              @close="removeSettingItem('itemTypes', index)"
+              class="settings-tag"
+            >
+              {{ type }}
+            </el-tag>
+            <el-input
+              v-model="newItemType"
+              placeholder="输入新的物品类型"
+              class="settings-input"
+              @keyup.enter="addSettingItem('itemTypes', newItemType); newItemType = ''"
+            >
+              <template #append>
+                <el-button @click="addSettingItem('itemTypes', newItemType); newItemType = ''">添加</el-button>
+              </template>
+            </el-input>
+
+            <h4 style="margin-top: 16px">物品等级</h4>
+            <el-tag
+              v-for="(level, index) in settingsForm.itemLevels"
+              :key="index"
+              closable
+              @close="removeSettingItem('itemLevels', index)"
+              class="settings-tag"
+            >
+              {{ level }}
+            </el-tag>
+            <el-input
+              v-model="newItemLevel"
+              placeholder="输入新的物品等级"
+              class="settings-input"
+              @keyup.enter="addSettingItem('itemLevels', newItemLevel); newItemLevel = ''"
+            >
+              <template #append>
+                <el-button @click="addSettingItem('itemLevels', newItemLevel); newItemLevel = ''">添加</el-button>
+              </template>
+            </el-input>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
+
+      <template #footer>
+        <el-button @click="showSettingsDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveSettings">保存设置</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -90,8 +302,8 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Edit, Delete, Reading, Document } from '@element-plus/icons-vue'
-import type { LongWritingProject } from '../../../../shared/types/longwriting.types'
+import { Plus, Edit, Delete, Reading, Document, Setting } from '@element-plus/icons-vue'
+import type { LongWritingProject, LongWritingGlobalSettings } from '../../../../shared/types/longwriting.types'
 
 const router = useRouter()
 
@@ -104,6 +316,33 @@ const createForm = ref({
   name: '',
   type: 'story' as 'story' | 'comment'
 })
+
+// 设置对话框
+const showSettingsDialog = ref(false)
+const activeSettingsTab = ref('storyTypes')
+const settingsForm = ref<LongWritingGlobalSettings>({
+  id: '',
+  storyTypes: [],
+  styles: [],
+  targetReaders: [],
+  estimatedLengths: [],
+  skillTypes: [],
+  skillLevels: [],
+  itemTypes: [],
+  itemLevels: [],
+  createdAt: 0,
+  updatedAt: 0
+})
+
+// 新增项输入
+const newStoryType = ref('')
+const newStyle = ref('')
+const newTargetReader = ref('')
+const newEstimatedLength = ref('')
+const newSkillType = ref('')
+const newSkillLevel = ref('')
+const newItemType = ref('')
+const newItemLevel = ref('')
 
 // 阶段标签映射
 const stageLabels: Record<string, string> = {
@@ -216,7 +455,59 @@ function confirmDeleteProject(project: LongWritingProject) {
 
 onMounted(() => {
   loadProjects()
+  loadSettings()
 })
+
+// 加载全局设置
+async function loadSettings() {
+  try {
+    const result = await window.electronAPI.longwriting.getGlobalSettings()
+    if (result.success && result.data) {
+      settingsForm.value = result.data
+    }
+  } catch (error) {
+    console.error('加载设置失败:', error)
+  }
+}
+
+// 添加设置项
+function addSettingItem(field: keyof LongWritingGlobalSettings, value: string) {
+  if (!value.trim()) return
+  const arr = settingsForm.value[field] as string[]
+  if (!arr.includes(value.trim())) {
+    arr.push(value.trim())
+  }
+}
+
+// 移除设置项
+function removeSettingItem(field: keyof LongWritingGlobalSettings, index: number) {
+  const arr = settingsForm.value[field] as string[]
+  arr.splice(index, 1)
+}
+
+// 保存设置
+async function saveSettings() {
+  try {
+    const result = await window.electronAPI.longwriting.updateGlobalSettings({
+      storyTypes: settingsForm.value.storyTypes,
+      styles: settingsForm.value.styles,
+      targetReaders: settingsForm.value.targetReaders,
+      estimatedLengths: settingsForm.value.estimatedLengths,
+      skillTypes: settingsForm.value.skillTypes,
+      skillLevels: settingsForm.value.skillLevels,
+      itemTypes: settingsForm.value.itemTypes,
+      itemLevels: settingsForm.value.itemLevels
+    })
+    if (result.success) {
+      ElMessage.success('设置已保存')
+      showSettingsDialog.value = false
+    } else {
+      ElMessage.error('保存失败：' + result.error)
+    }
+  } catch (error: any) {
+    ElMessage.error('保存失败：' + error.message)
+  }
+}
 </script>
 
 <style lang="scss" scoped>
@@ -333,5 +624,37 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   height: 400px;
+}
+
+.header-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.settings-section {
+  padding: 16px 0;
+
+  h4 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-color-primary);
+  }
+}
+
+.settings-desc {
+  font-size: 13px;
+  color: var(--text-color-secondary);
+  margin: 0 0 12px 0;
+}
+
+.settings-tag {
+  margin-right: 8px;
+  margin-bottom: 8px;
+}
+
+.settings-input {
+  margin-top: 12px;
+  max-width: 300px;
 }
 </style>

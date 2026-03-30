@@ -125,7 +125,11 @@ const CHANNELS = {
   // 导出
   EXPORT_MARKDOWN: 'longwriting:exportMarkdown',
   EXPORT_WORD: 'longwriting:exportWord',
-  GET_EXPORT_DATA: 'longwriting:getExportData'
+  GET_EXPORT_DATA: 'longwriting:getExportData',
+
+  // 全局配置
+  GET_GLOBAL_SETTINGS: 'longwriting:getGlobalSettings',
+  UPDATE_GLOBAL_SETTINGS: 'longwriting:updateGlobalSettings'
 }
 
 /**
@@ -1295,6 +1299,32 @@ export function registerLongWritingHandlers(): void {
       shell.showItemInFolder(result.filePath)
 
       return { success: true, filePath: result.filePath }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 全局配置 ====================
+
+  /**
+   * 获取全局配置
+   */
+  ipcMain.handle(CHANNELS.GET_GLOBAL_SETTINGS, async () => {
+    try {
+      const settings = await service.getGlobalSettings()
+      return { success: true, data: settings }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 更新全局配置
+   */
+  ipcMain.handle(CHANNELS.UPDATE_GLOBAL_SETTINGS, async (_event, data: any) => {
+    try {
+      const settings = await service.updateGlobalSettings(data)
+      return { success: true, data: settings }
     } catch (error: any) {
       return { success: false, error: error.message }
     }

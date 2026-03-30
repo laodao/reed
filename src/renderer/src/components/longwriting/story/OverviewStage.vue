@@ -42,31 +42,36 @@
         <!-- 故事风格 -->
         <el-form-item label="故事风格">
           <el-select v-model="form.style" placeholder="选择故事风格（可选）" clearable>
-            <el-option label="轻松幽默" value="light" />
-            <el-option label="沉重深刻" value="heavy" />
-            <el-option label="热血激昂" value="passionate" />
-            <el-option label="冷峻沉稳" value="calm" />
-            <el-option label="通俗易懂" value="popular" />
-            <el-option label="文学性强" value="literary" />
+            <el-option
+              v-for="opt in styleOptions"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
           </el-select>
         </el-form-item>
 
         <!-- 目标读者 -->
         <el-form-item label="目标读者">
           <el-select v-model="form.targetReader" placeholder="选择目标读者群体（可选）" clearable>
-            <el-option label="青少年" value="teenager" />
-            <el-option label="青年" value="youth" />
-            <el-option label="中年" value="middle" />
-            <el-option label="全年龄" value="all" />
+            <el-option
+              v-for="opt in targetReaderOptions"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
           </el-select>
         </el-form-item>
 
         <!-- 预估字数 -->
         <el-form-item label="预估字数">
           <el-select v-model="form.estimatedLength" placeholder="选择预估篇幅（可选）" clearable>
-            <el-option label="短篇小说（5万字以下）" value="short" />
-            <el-option label="中篇小说（5-20万字）" value="medium" />
-            <el-option label="长篇小说（20万字以上）" value="long" />
+            <el-option
+              v-for="opt in estimatedLengthOptions"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
           </el-select>
         </el-form-item>
 
@@ -136,9 +141,6 @@
                 :rows="2"
               />
             </el-form-item>
-            <el-form-item label="故事主题">
-              <el-input v-model="generatedOverview.theme" />
-            </el-form-item>
             <el-form-item label="预估章节">
               <el-input-number v-model="generatedOverview.estimatedChapters" :min="1" :max="1000" />
             </el-form-item>
@@ -158,6 +160,7 @@
 import { ref, computed, onMounted, inject } from 'vue'
 import { ElMessage } from 'element-plus'
 import { MagicStick, Close } from '@element-plus/icons-vue'
+import type { LongWritingGlobalSettings } from '../../../../shared/types/longwriting.types'
 
 // Props
 const props = defineProps<{
@@ -173,22 +176,84 @@ const emit = defineEmits<{
 const selectedModelKey = inject<ReturnType<typeof ref<string>>>('selectedModelKey', ref(''))
 const selectedModel = inject<ReturnType<typeof computed<{ providerId: string; modelId: string } | null>>>('selectedModel', computed(() => null))
 
-// 故事类型选项
-const storyTypes = [
-  { label: '武侠', value: 'wuxia' },
-  { label: '仙侠', value: 'xianxia' },
-  { label: '玄幻', value: 'xuanhuan' },
-  { label: '科幻', value: 'kehuan' },
-  { label: '悬疑', value: 'xuanyi' },
-  { label: '都市', value: 'dushi' },
-  { label: '言情', value: 'yanqing' },
-  { label: '历史', value: 'lishi' },
-  { label: '其他', value: 'other' }
-]
+// 全局设置
+const globalSettings = ref<LongWritingGlobalSettings | null>(null)
+
+// 故事类型选项（从数据库加载）
+const storyTypes = computed(() => {
+  if (!globalSettings.value?.storyTypes?.length) {
+    // 默认值
+    return [
+      { label: '武侠', value: '武侠' },
+      { label: '仙侠', value: '仙侠' },
+      { label: '玄幻', value: '玄幻' },
+      { label: '科幻', value: '科幻' },
+      { label: '悬疑', value: '悬疑' },
+      { label: '都市', value: '都市' },
+      { label: '言情', value: '言情' },
+      { label: '历史', value: '历史' },
+      { label: '其他', value: '其他' }
+    ]
+  }
+  // 将数据库中的中文标签映射到 value
+  return globalSettings.value.storyTypes.map(label => ({
+    label,
+    value: label
+  }))
+})
+
+// 故事风格选项（从数据库加载）
+const styleOptions = computed(() => {
+  if (!globalSettings.value?.styles?.length) {
+    return [
+      { label: '轻松幽默', value: '轻松幽默' },
+      { label: '沉重深刻', value: '沉重深刻' },
+      { label: '热血激昂', value: '热血激昂' },
+      { label: '冷峻沉稳', value: '冷峻沉稳' },
+      { label: '通俗易懂', value: '通俗易懂' },
+      { label: '文学性强', value: '文学性强' }
+    ]
+  }
+  return globalSettings.value.styles.map(label => ({
+    label,
+    value: label
+  }))
+})
+
+// 目标读者选项（从数据库加载）
+const targetReaderOptions = computed(() => {
+  if (!globalSettings.value?.targetReaders?.length) {
+    return [
+      { label: '青少年', value: '青少年' },
+      { label: '青年', value: '青年' },
+      { label: '中年', value: '中年' },
+      { label: '全年龄', value: '全年龄' }
+    ]
+  }
+  return globalSettings.value.targetReaders.map(label => ({
+    label,
+    value: label
+  }))
+})
+
+// 预估字数选项（从数据库加载）
+const estimatedLengthOptions = computed(() => {
+  if (!globalSettings.value?.estimatedLengths?.length) {
+    return [
+      { label: '短篇小说（5万字以下）', value: '短篇小说（5万字以下）' },
+      { label: '中篇小说（5-20万字）', value: '中篇小说（5-20万字）' },
+      { label: '长篇小说（20万字以上）', value: '长篇小说（20万字以上）' }
+    ]
+  }
+  return globalSettings.value.estimatedLengths.map(label => ({
+    label,
+    value: label
+  }))
+})
 
 // 表单数据
 const form = ref({
-  storyType: 'other',
+  storyType: '其他',
   title: '',
   coreIdea: '',
   style: '',
@@ -208,7 +273,6 @@ const generatedOverview = ref<{
   selectedTitle: string
   summary: string
   coreConflict: string
-  theme: string
   estimatedChapters: number
 } | null>(null)
 
@@ -324,7 +388,6 @@ function parseOverviewResult(content: string) {
       selectedTitle: data.title || '',
       summary: data.summary || '',
       coreConflict: data.coreConflict || '',
-      theme: data.theme || '',
       estimatedChapters: data.estimatedChapters || 100
     }
 
@@ -345,7 +408,6 @@ function parseOverviewResult(content: string) {
         selectedTitle: '',
         summary: content.substring(0, 500),
         coreConflict: '',
-        theme: '',
         estimatedChapters: 100
       }
       ElMessage.warning('AI 返回格式不标准，已显示原始内容')
@@ -391,9 +453,13 @@ async function confirmOverview() {
   const overviewData = {
     title: finalTitle,
     storyType: form.value.storyType,
+    coreIdea: form.value.coreIdea,
+    style: form.value.style || undefined,
+    targetReader: form.value.targetReader || undefined,
+    estimatedLength: form.value.estimatedLength || undefined,
+    otherRequirements: form.value.otherRequirements || undefined,
     summary: generatedOverview.value.summary,
     coreConflict: generatedOverview.value.coreConflict,
-    theme: generatedOverview.value.theme,
     estimatedChapters: generatedOverview.value.estimatedChapters
   }
 
@@ -415,7 +481,12 @@ async function loadSavedOverview() {
       const data = result.data
       // 填充表单
       form.value.title = data.title || ''
-      form.value.storyType = data.storyType || 'other'
+      form.value.storyType = data.storyType || '其他'
+      form.value.coreIdea = data.coreIdea || ''
+      form.value.style = data.style || ''
+      form.value.targetReader = data.targetReader || ''
+      form.value.estimatedLength = data.estimatedLength || ''
+      form.value.otherRequirements = data.otherRequirements || ''
 
       // 填充生成结果
       generatedOverview.value = {
@@ -423,7 +494,6 @@ async function loadSavedOverview() {
         selectedTitle: data.title || '',
         summary: data.summary || '',
         coreConflict: data.coreConflict || '',
-        theme: data.theme || '',
         estimatedChapters: data.estimatedChapters || 100
       }
     }
@@ -432,7 +502,20 @@ async function loadSavedOverview() {
   }
 }
 
+// 加载全局设置
+async function loadGlobalSettings() {
+  try {
+    const result = await window.electronAPI.longwriting.getGlobalSettings()
+    if (result.success && result.data) {
+      globalSettings.value = result.data
+    }
+  } catch (error) {
+    console.error('加载全局设置失败:', error)
+  }
+}
+
 onMounted(() => {
+  loadGlobalSettings()
   loadSavedOverview()
 })
 </script>
