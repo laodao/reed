@@ -466,8 +466,23 @@ function getEditorPlaceholder(outline: StoryOutline): string {
 
 // 加载所有章节内容
 async function loadAllChapters() {
-  for (const outline of allOutlines.value) {
-    await loadChapter(outline.id)
+  if (allOutlines.value.length === 0) return
+
+  // 批量获取所有章节内容（一次 API 调用）
+  const outlineIds = allOutlines.value.map(o => o.id)
+  const result = await window.electronAPI.longwriting.getChaptersByOutlineIds(outlineIds)
+
+  if (result.success && result.data) {
+    for (const outlineId of outlineIds) {
+      const chapter = result.data[outlineId]
+      if (chapter) {
+        chapterIdMap.value[outlineId] = chapter.id
+        chapterContentMap.value[outlineId] = chapter.content || ''
+      } else {
+        chapterIdMap.value[outlineId] = ''
+        chapterContentMap.value[outlineId] = ''
+      }
+    }
   }
 }
 

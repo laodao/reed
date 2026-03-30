@@ -695,6 +695,16 @@ export class LongWritingService {
   }
 
   /**
+   * 批量获取章节内容
+   */
+  async getChaptersByOutlineIds(outlineIds: string[]): Promise<Map<string, StoryChapter>> {
+    if (!this.db.lwChapters) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwChapters.getByOutlineIds(outlineIds)
+  }
+
+  /**
    * 保存章节内容
    */
   async saveChapter(outlineId: string, content: string): Promise<StoryChapter> {

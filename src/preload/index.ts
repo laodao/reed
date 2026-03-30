@@ -969,6 +969,8 @@ const electronAPI = {
 
     // 章节管理
     getChapter: (outlineId: string) => ipcRenderer.invoke('longwriting:getChapter', outlineId),
+    getChaptersByOutlineIds: (outlineIds: string[]) =>
+      ipcRenderer.invoke('longwriting:getChaptersByOutlineIds', outlineIds),
     saveChapter: (outlineId: string, content: string) =>
       ipcRenderer.invoke('longwriting:saveChapter', outlineId, content),
     getChapterVersions: (chapterId: string) =>

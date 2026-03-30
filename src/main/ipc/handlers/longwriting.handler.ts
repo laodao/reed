@@ -105,6 +105,7 @@ const CHANNELS = {
 
   // 章节管理
   GET_CHAPTER: 'longwriting:getChapter',
+  GET_CHAPTERS_BY_OUTLINE_IDS: 'longwriting:getChaptersByOutlineIds',
   SAVE_CHAPTER: 'longwriting:saveChapter',
   GET_CHAPTER_VERSIONS: 'longwriting:getChapterVersions',
   RESTORE_CHAPTER_VERSION: 'longwriting:restoreChapterVersion',
@@ -720,6 +721,20 @@ export function registerLongWritingHandlers(): void {
     try {
       const chapter = await service.getChapter(outlineId)
       return { success: true, data: chapter }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.GET_CHAPTERS_BY_OUTLINE_IDS, async (_event, outlineIds: string[]) => {
+    try {
+      const chaptersMap = await service.getChaptersByOutlineIds(outlineIds)
+      // 将 Map 转换为普通对象以便 IPC 传输
+      const chaptersObj: Record<string, any> = {}
+      chaptersMap.forEach((chapter, outlineId) => {
+        chaptersObj[outlineId] = chapter
+      })
+      return { success: true, data: chaptersObj }
     } catch (error: any) {
       return { success: false, error: error.message }
     }

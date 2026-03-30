@@ -29,6 +29,26 @@ export class LwChapterRepository {
   }
 
   /**
+   * 批量根据大纲 ID 获取章节
+   */
+  getByOutlineIds(outlineIds: string[]): Map<string, StoryChapter> {
+    if (outlineIds.length === 0) return new Map()
+
+    const placeholders = outlineIds.map(() => '?').join(',')
+    const stmt = this.db.prepare(`
+      SELECT * FROM lw_story_chapters WHERE outline_id IN (${placeholders})
+    `)
+    const rows = stmt.all(...outlineIds) as any[]
+
+    const result = new Map<string, StoryChapter>()
+    for (const row of rows) {
+      const chapter = this.mapToChapter(row)
+      result.set(chapter.outlineId, chapter)
+    }
+    return result
+  }
+
+  /**
    * 根据 ID 获取章节
    */
   getById(id: string): StoryChapter | null {
