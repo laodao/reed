@@ -504,16 +504,15 @@ watch(
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  position: relative; // 为对话框遮罩提供定位上下文
 
-  // 限制 Element Plus 对话框遮罩层只覆盖当前页面容器
+  // 让 Element Plus 对话框遮罩层点击穿透，使侧边栏和tab栏可操作
+  // 对话框本身仍然可以正常交互
   :deep(.el-overlay) {
-    position: absolute !important;
-    // 允许点击穿透，让侧边栏和tab栏可以操作
     pointer-events: none;
 
-    // 对话框本身需要响应点击
-    .el-dialog {
+    .el-dialog,
+    .el-drawer,
+    .el-message-box {
       pointer-events: auto;
     }
   }
