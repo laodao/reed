@@ -489,13 +489,13 @@ onMounted(() => {
     border-radius: 16px;
 
     &.saving {
-      color: var(--el-color-primary);
-      background: var(--el-color-primary-light-9);
+      color: var(--color-primary);
+      background: var(--color-primary-light-9);
     }
 
     &.saved {
-      color: var(--el-color-success);
-      background: var(--el-color-success-light-9);
+      color: var(--color-success);
+      background: var(--color-success-light-9);
     }
   }
 }

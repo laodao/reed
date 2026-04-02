@@ -27,17 +27,40 @@
   --color-danger: #f56c6c;
   --color-info: #909399;
 
-  // 文字颜色
+  // 功能色浅色版本（Element Plus 风格）
+  --color-success-light-9: #f0f9eb;
+  --color-warning-light-9: #fdf6ec;
+  --color-danger-light-9: #fef0f0;
+  --color-info-light-9: #f4f4f5;
+
+  // 主色浅色版本（Element Plus 风格，默认值，会被 JS 动态更新）
+  --color-primary-light-3: #7ba39c;
+  --color-primary-light-5: #9cb8b3;
+  --color-primary-light-7: #bdcdc9;
+  --color-primary-light-8: #ced9d7;
+  --color-primary-light-9: #e8f0ef;
+
+  // 文字颜色（兼容 Element Plus 风格）
   --text-primary: #303133;
   --text-regular: #606266;
   --text-secondary: #909399;
   --text-placeholder: #c0c4cc;
+  --text-color-primary: var(--text-primary);
+  --text-color-regular: var(--text-regular);
+  --text-color-secondary: var(--text-secondary);
+  --text-color-placeholder: var(--text-placeholder);
 
-  // 边框颜色
+  // 边框颜色（兼容 Element Plus 风格）
   --border-color: #dcdfe6;
   --border-color-light: #e4e7ed;
   --border-color-lighter: #ebeef5;
   --border-color-extra-light: #f2f5fa;
+
+  // 填充颜色（Element Plus 风格）
+  --fill-color: #f0f2f5;
+  --fill-color-light: #f5f7fa;
+  --fill-color-lighter: #fafafa;
+  --fill-color-blank: #ffffff;
 
   // 背景颜色
   --bg-color: #ffffff;

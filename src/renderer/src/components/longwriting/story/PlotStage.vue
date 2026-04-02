@@ -523,7 +523,7 @@ onMounted(() => {
   }
 
   &.editing {
-    border-color: var(--el-color-primary);
+    border-color: var(--color-primary);
   }
 }
 
@@ -548,7 +548,7 @@ onMounted(() => {
   }
 
   .plot-number {
-    background: var(--el-color-primary);
+    background: var(--color-primary);
     color: white;
     font-size: 12px;
     font-weight: 600;

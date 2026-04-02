@@ -515,7 +515,6 @@ async function saveSettings() {
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 24px;
   background: var(--bg-color-page);
 }
 
@@ -523,7 +522,10 @@ async function saveSettings() {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  padding: 16px 24px;
+  background: var(--bg-color);
+  border-bottom: 1px solid var(--border-color-light);
+  flex-shrink: 0;
 
   h1 {
     font-size: 24px;
@@ -535,7 +537,9 @@ async function saveSettings() {
 
 .page-content {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  padding: 24px;
 }
 
 .project-list {

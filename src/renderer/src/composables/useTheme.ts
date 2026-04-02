@@ -134,6 +134,7 @@ const updateElementPlusTheme = (themeId: string) => {
   const root = document.documentElement
   if (!root) return
 
+  // Element Plus 变量
   root.style.setProperty('--el-color-primary', colors.primary)
   root.style.setProperty('--el-color-primary-light-3', colors.light)
   root.style.setProperty('--el-color-primary-light-5', mixColor(colors.primary, '#ffffff', 0.5))
@@ -142,6 +143,13 @@ const updateElementPlusTheme = (themeId: string) => {
   root.style.setProperty('--el-color-primary-light-9', mixColor(colors.primary, '#ffffff', 0.9))
   root.style.setProperty('--el-color-primary-dark-2', colors.dark)
   root.style.setProperty('--el-color-primary-dark-1', colors.primary)
+
+  // 应用风格变量（与 Element Plus 同步）
+  root.style.setProperty('--color-primary-light-3', colors.light)
+  root.style.setProperty('--color-primary-light-5', mixColor(colors.primary, '#ffffff', 0.5))
+  root.style.setProperty('--color-primary-light-7', mixColor(colors.primary, '#ffffff', 0.7))
+  root.style.setProperty('--color-primary-light-8', mixColor(colors.primary, '#ffffff', 0.8))
+  root.style.setProperty('--color-primary-light-9', mixColor(colors.primary, '#ffffff', 0.9))
 }
 
 // 颜色混合辅助函数

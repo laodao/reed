@@ -3,7 +3,7 @@
     <!-- 顶部导航栏 -->
     <div class="editor-header">
       <div class="header-left">
-        <el-button text @click="goBack">
+        <el-button @click="goBack">
           <el-icon><ArrowLeft /></el-icon>
           返回
         </el-button>
@@ -476,17 +476,17 @@ onMounted(() => {
 
 .stage-nav {
   display: flex;
-  padding: 8px 16px;
+  padding: 10px 16px;
   background: var(--bg-color);
   border-bottom: 1px solid var(--border-color-light);
-  gap: 4px;
+  gap: 6px;
 }
 
 .stage-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
+  gap: 8px;
+  padding: 8px 14px;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
@@ -518,20 +518,20 @@ onMounted(() => {
 }
 
 .stage-number {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
   background: var(--fill-color);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--text-color-secondary);
 }
 
 .stage-label {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-color-regular);
 }
 
