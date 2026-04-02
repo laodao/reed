@@ -234,7 +234,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, inject } from 'vue'
+import { ref, computed, onMounted, watch, inject, toRaw } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, MagicStick, Close } from '@element-plus/icons-vue'
 import type { StorySkill, StoryItem, StoryCharacter, LongWritingGlobalSettings } from '../../../../shared/types/longwriting.types'
@@ -534,8 +534,10 @@ async function saveSkill() {
     return
   }
 
+  const skillData = toRaw(skillForm.value)
+
   if (editingSkill.value) {
-    const result = await window.electronAPI.longwriting.updateSkill(editingSkill.value.id, skillForm.value)
+    const result = await window.electronAPI.longwriting.updateSkill(editingSkill.value.id, skillData)
     if (result.success) {
       await loadSkills()
       ElMessage.success('技能已更新')
@@ -545,7 +547,7 @@ async function saveSkill() {
   } else {
     const result = await window.electronAPI.longwriting.createSkill({
       projectId: props.projectId,
-      ...skillForm.value
+      ...skillData
     })
     if (result.success) {
       await loadSkills()
@@ -614,9 +616,10 @@ async function saveItem() {
     return
   }
 
+  const rawForm = toRaw(itemForm.value)
   const itemData = {
-    ...itemForm.value,
-    ownerId: itemForm.value.ownerId || undefined
+    ...rawForm,
+    ownerId: rawForm.ownerId || undefined
   }
 
   if (editingItem.value) {

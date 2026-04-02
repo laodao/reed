@@ -157,7 +157,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, inject } from 'vue'
+import { ref, computed, onMounted, inject, toRaw } from 'vue'
 import { ElMessage } from 'element-plus'
 import { MagicStick, Close } from '@element-plus/icons-vue'
 import type { LongWritingGlobalSettings } from '../../../../shared/types/longwriting.types'
@@ -450,17 +450,21 @@ async function confirmOverview() {
 
   const finalTitle = generatedOverview.value.selectedTitle || generatedOverview.value.titleSuggestions[0]?.replace(/[《》]/g, '') || '未命名故事'
 
+  // 使用 toRaw 将响应式对象转换为普通对象
+  const rawForm = toRaw(form.value)
+  const rawOverview = toRaw(generatedOverview.value)
+
   const overviewData = {
     title: finalTitle,
-    storyType: form.value.storyType,
-    coreIdea: form.value.coreIdea,
-    style: form.value.style || undefined,
-    targetReader: form.value.targetReader || undefined,
-    estimatedLength: form.value.estimatedLength || undefined,
-    otherRequirements: form.value.otherRequirements || undefined,
-    summary: generatedOverview.value.summary,
-    coreConflict: generatedOverview.value.coreConflict,
-    estimatedChapters: generatedOverview.value.estimatedChapters
+    storyType: rawForm.storyType,
+    coreIdea: rawForm.coreIdea,
+    style: rawForm.style || undefined,
+    targetReader: rawForm.targetReader || undefined,
+    estimatedLength: rawForm.estimatedLength || undefined,
+    otherRequirements: rawForm.otherRequirements || undefined,
+    summary: rawOverview.summary,
+    coreConflict: rawOverview.coreConflict,
+    estimatedChapters: rawOverview.estimatedChapters
   }
 
   const result = await window.electronAPI.longwriting.updateStoryOverview(props.projectId, overviewData)

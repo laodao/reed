@@ -79,7 +79,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, toRaw } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Delete, ArrowUp, ArrowDown, MagicStick, Close } from '@element-plus/icons-vue'
 import type { StoryOutline } from '../../../../shared/types/longwriting.types'
@@ -186,10 +186,11 @@ async function moveSection(index: number, direction: number) {
 
 // 更新段落
 async function updateSection(section: StoryOutline) {
-  await window.electronAPI.longwriting.updateOutline(section.id, {
-    name: section.name,
-    summary: section.summary,
-    estimatedWords: section.estimatedWords
+  const rawSection = toRaw(section)
+  await window.electronAPI.longwriting.updateOutline(rawSection.id, {
+    name: rawSection.name,
+    summary: rawSection.summary,
+    estimatedWords: rawSection.estimatedWords
   })
 }
 

@@ -205,7 +205,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, toRaw } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Document, Link, EditPen, View, Delete, RefreshRight, Upload, MagicStick, UploadFilled, Close
@@ -321,11 +321,12 @@ async function addUrlMaterial() {
     return
   }
 
+  const rawUrlForm = toRaw(urlForm.value)
   const result = await window.electronAPI.longwriting.createMaterial({
     projectId: props.projectId,
-    name: urlForm.value.name || urlForm.value.url,
+    name: rawUrlForm.name || rawUrlForm.url,
     type: 'url',
-    source: urlForm.value.url,
+    source: rawUrlForm.url,
     status: 'pending'
   })
 
@@ -349,12 +350,13 @@ async function addManualMaterial() {
     return
   }
 
+  const rawManualForm = toRaw(manualForm.value)
   const result = await window.electronAPI.longwriting.createMaterial({
     projectId: props.projectId,
-    name: manualForm.value.name || `素材 ${materials.value.length + 1}`,
+    name: rawManualForm.name || `素材 ${materials.value.length + 1}`,
     type: 'manual',
     source: '手动输入',
-    content: manualForm.value.content,
+    content: rawManualForm.content,
     status: 'success'
   })
 

@@ -363,9 +363,12 @@ async function saveLocation() {
     return
   }
 
+  // 使用 toRaw 将响应式对象转换为普通对象
+  const formData = toRaw(locationForm.value)
+
   if (editingLocationId.value) {
     // 更新
-    const result = await window.electronAPI.longwriting.updateLocation(editingLocationId.value, locationForm.value)
+    const result = await window.electronAPI.longwriting.updateLocation(editingLocationId.value, formData)
     if (result.success) {
       ElMessage.success('地点已更新')
     }
@@ -373,7 +376,7 @@ async function saveLocation() {
     // 创建
     const result = await window.electronAPI.longwriting.createLocation({
       projectId: props.projectId,
-      ...locationForm.value
+      ...formData
     })
     if (result.success) {
       ElMessage.success('地点已添加')

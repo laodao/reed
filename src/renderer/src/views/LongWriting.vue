@@ -299,7 +299,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, toRaw } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, Reading, Document, Setting } from '@element-plus/icons-vue'
@@ -488,15 +488,16 @@ function removeSettingItem(field: keyof LongWritingGlobalSettings, index: number
 // 保存设置
 async function saveSettings() {
   try {
+    const rawSettings = toRaw(settingsForm.value)
     const result = await window.electronAPI.longwriting.updateGlobalSettings({
-      storyTypes: settingsForm.value.storyTypes,
-      styles: settingsForm.value.styles,
-      targetReaders: settingsForm.value.targetReaders,
-      estimatedLengths: settingsForm.value.estimatedLengths,
-      skillTypes: settingsForm.value.skillTypes,
-      skillLevels: settingsForm.value.skillLevels,
-      itemTypes: settingsForm.value.itemTypes,
-      itemLevels: settingsForm.value.itemLevels
+      storyTypes: rawSettings.storyTypes,
+      styles: rawSettings.styles,
+      targetReaders: rawSettings.targetReaders,
+      estimatedLengths: rawSettings.estimatedLengths,
+      skillTypes: rawSettings.skillTypes,
+      skillLevels: rawSettings.skillLevels,
+      itemTypes: rawSettings.itemTypes,
+      itemLevels: rawSettings.itemLevels
     })
     if (result.success) {
       ElMessage.success('设置已保存')

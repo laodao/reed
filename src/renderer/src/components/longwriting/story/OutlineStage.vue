@@ -228,7 +228,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, inject } from 'vue'
+import { ref, computed, onMounted, watch, inject, toRaw } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, MagicStick, ArrowRight, ArrowDown, Close } from '@element-plus/icons-vue'
 import type { StoryOutline, OutlineNodeType, OutlineStatus, StoryCharacter } from '../../../../shared/types/longwriting.types'
@@ -440,16 +440,19 @@ async function saveNode() {
     return
   }
 
+  // 使用 toRaw 将响应式对象转换为普通对象
+  const formData = toRaw(nodeForm.value)
+
   if (editingNode.value) {
     // 更新现有节点
     const result = await window.electronAPI.longwriting.updateOutline(editingNode.value.id, {
-      name: nodeForm.value.name,
-      nodeType: nodeForm.value.nodeType,
-      summary: nodeForm.value.summary,
-      estimatedWords: nodeForm.value.estimatedWords,
-      involvedCharacters: nodeForm.value.involvedCharacters,
-      involvedLocations: nodeForm.value.involvedLocations,
-      status: nodeForm.value.status
+      name: formData.name,
+      nodeType: formData.nodeType,
+      summary: formData.summary,
+      estimatedWords: formData.estimatedWords,
+      involvedCharacters: formData.involvedCharacters,
+      involvedLocations: formData.involvedLocations,
+      status: formData.status
     })
     if (result.success) {
       await loadOutlineTree()
@@ -470,14 +473,14 @@ async function saveNode() {
     const result = await window.electronAPI.longwriting.createOutline({
       projectId: props.projectId,
       parentId: parentNodeId.value || undefined,
-      name: nodeForm.value.name,
+      name: formData.name,
       level: newLevel,
-      nodeType: nodeForm.value.nodeType,
-      summary: nodeForm.value.summary,
-      involvedCharacters: nodeForm.value.involvedCharacters,
-      involvedLocations: nodeForm.value.involvedLocations,
-      status: nodeForm.value.status,
-      estimatedWords: nodeForm.value.estimatedWords,
+      nodeType: formData.nodeType,
+      summary: formData.summary,
+      involvedCharacters: formData.involvedCharacters,
+      involvedLocations: formData.involvedLocations,
+      status: formData.status,
+      estimatedWords: formData.estimatedWords,
       orderIndex: siblings.length
     })
 

@@ -140,7 +140,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, inject } from 'vue'
+import { ref, onMounted, computed, inject, toRaw } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, MagicStick, Rank, Document } from '@element-plus/icons-vue'
 import draggable from 'vuedraggable'
@@ -362,14 +362,17 @@ async function savePlot() {
     return
   }
 
+  // 使用 toRaw 将响应式对象转换为普通对象
+  const formData = toRaw(plotForm.value)
+
   try {
     if (editingPlotId.value) {
       // 更新
       const result = await window.electronAPI.longwriting.updatePlot(editingPlotId.value, {
-        title: plotForm.value.title,
-        summary: plotForm.value.summary,
-        involvedCharacters: plotForm.value.involvedCharacters,
-        notes: plotForm.value.notes
+        title: formData.title,
+        summary: formData.summary,
+        involvedCharacters: formData.involvedCharacters,
+        notes: formData.notes
       })
       if (result.success) {
         ElMessage.success('情节已更新')
@@ -381,10 +384,10 @@ async function savePlot() {
       // 创建
       const result = await window.electronAPI.longwriting.createPlot({
         projectId: props.projectId,
-        title: plotForm.value.title,
-        summary: plotForm.value.summary,
-        involvedCharacters: plotForm.value.involvedCharacters,
-        notes: plotForm.value.notes
+        title: formData.title,
+        summary: formData.summary,
+        involvedCharacters: formData.involvedCharacters,
+        notes: formData.notes
       })
       if (result.success) {
         ElMessage.success('情节已添加')

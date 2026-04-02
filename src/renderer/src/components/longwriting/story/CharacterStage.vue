@@ -401,7 +401,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, inject } from 'vue'
+import { ref, computed, onMounted, inject, toRaw } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, User, Connection, MagicStick, Picture, Close } from '@element-plus/icons-vue'
@@ -573,9 +573,12 @@ async function saveCharacter() {
     return
   }
 
+  // 使用 toRaw 将响应式对象转换为普通对象
+  const formData = toRaw(characterForm.value)
+
   if (editingCharacter.value) {
     // 更新现有角色
-    const result = await window.electronAPI.longwriting.updateCharacter(editingCharacter.value.id, characterForm.value)
+    const result = await window.electronAPI.longwriting.updateCharacter(editingCharacter.value.id, formData)
     if (result.success) {
       await loadCharacters()
       ElMessage.success('角色已更新')
@@ -584,7 +587,7 @@ async function saveCharacter() {
     // 创建新角色
     const result = await window.electronAPI.longwriting.createCharacter({
       projectId: props.projectId,
-      ...characterForm.value
+      ...formData
     })
     if (result.success) {
       await loadCharacters()
@@ -640,11 +643,12 @@ async function addRelation() {
     return
   }
 
+  const relationData = toRaw(relationForm.value)
   const result = await window.electronAPI.longwriting.createCharacterRelation({
     characterId: currentCharacterId.value,
-    relatedCharacterId: relationForm.value.relatedCharacterId,
-    relationType: relationForm.value.relationType,
-    relationDescription: relationForm.value.relationDescription
+    relatedCharacterId: relationData.relatedCharacterId,
+    relationType: relationData.relationType,
+    relationDescription: relationData.relationDescription
   })
 
   if (result.success) {
@@ -866,9 +870,10 @@ async function createPortraitProject() {
 
   creatingProject.value = true
   try {
+    const projectData = toRaw(newProjectForm.value)
     const result = await window.electronAPI.portrait.createProject({
-      name: newProjectForm.value.name,
-      description: newProjectForm.value.description
+      name: projectData.name,
+      description: projectData.description
     })
 
     if (result.success && result.data) {
