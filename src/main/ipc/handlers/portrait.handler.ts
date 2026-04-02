@@ -449,7 +449,10 @@ async function handleExportPortraits(
 ): Promise<IpcResponse<string>> {
   try {
     const result = await PortraitService.exportPortraits(request)
-    return result as IpcResponse<string>
+    if (result.success && result.filePath) {
+      return { success: true, data: result.filePath }
+    }
+    return { success: false, error: result.error || '导出失败' }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : '未知错误'
     return { success: false, error: errorMessage }

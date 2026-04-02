@@ -36,6 +36,8 @@ import type {
   PortraitRace
 } from '../../shared/types/portrait.types'
 import { randomUUID } from 'crypto'
+import sharp from 'sharp'
+import archiver from 'archiver'
 
 /**
  * 角度提示词映射
@@ -111,6 +113,23 @@ function localPathToUrl(filePath: string): string {
     normalizedPath = filePath.replace(/\\/g, '/')
   }
   return `local-image:///${normalizedPath}`
+}
+
+/**
+ * 将 URL 转换回本地文件路径
+ */
+function urlToLocalPath(url: string): string {
+  if (!url) return ''
+  if (url.startsWith('local-image:///')) {
+    let filePath = url.replace('local-image:///', '')
+    if (process.platform === 'win32') {
+      // Windows 路径：local-image:///C:/Users/... -> C:\Users\...
+      filePath = filePath.replace(/\//g, '\\')
+    }
+    return filePath
+  }
+  // 如果不是 URL 格式，直接返回（兼容旧数据）
+  return url
 }
 
 /**
@@ -544,21 +563,75 @@ export class PortraitService {
 
       const variants: PortraitVariant[] = []
 
-      for (const angle of request.angles) {
-        // 找到对应角度的基础变体
+      // 先生成正面图，获取其 id 作为其他角度的 parentId
+      let frontVariantId: string | undefined
+      const frontAngle = request.angles.find(a => a === 'front')
+      const otherAngles = request.angles.filter(a => a !== 'front')
+
+      // 1. 先生成正面图
+      if (frontAngle) {
+        const baseVariant = baseVariants.find(v => v.angle === 'front')
+        if (baseVariant) {
+          const anglePrompt = ANGLE_PROMPT_MAP['front']
+          let fullPrompt = `${character.prompt}, wearing ${request.clothesDescription}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, same person, solid background`
+
+          let referenceImageBase64: string | undefined = undefined
+          if (request.referenceImage) {
+            referenceImageBase64 = request.referenceImage
+          } else if (baseVariant.imagePath && fs.existsSync(baseVariant.imagePath)) {
+            const imageBuffer = fs.readFileSync(baseVariant.imagePath)
+            referenceImageBase64 = `data:image/png;base64,${imageBuffer.toString('base64')}`
+          }
+
+          const imageWidth = baseVariant.config?.width || 1920
+          const imageHeight = baseVariant.config?.height || 1920
+
+          const imageResult = await ImageService.generateImage(window, {
+            providerConfigId: character.providerId,
+            model: character.modelId,
+            prompt: fullPrompt,
+            negativePrompt: DEFAULT_NEGATIVE_PROMPT,
+            width: imageWidth,
+            height: imageHeight,
+            seed: baseVariant.config?.seed,
+            referenceImage: referenceImageBase64,
+            skipHistory: true
+          })
+
+          if (imageResult.success && imageResult.images?.length) {
+            const image = imageResult.images[0]
+            const variant = await dbManager.portraitVariants.create({
+              characterId: request.characterId,
+              type: 'clothes',
+              parentId: request.variantId || baseVariant.id,
+              angle: 'front',
+              imagePath: image.filePath.replace('local-image:///', ''),
+              prompt: fullPrompt,
+              config: baseVariant.config,
+              variantInfo: {
+                clothesDescription: request.clothesDescription
+              }
+            })
+            frontVariantId = variant.id
+            variants.push({
+              ...variant,
+              imagePath: localPathToUrl(variant.imagePath)
+            })
+          }
+        }
+      }
+
+      // 2. 生成其他角度，parentId 指向正面图的 id
+      for (const angle of otherAngles) {
         const baseVariant = baseVariants.find(v => v.angle === angle)
         if (!baseVariant) continue
 
-        // 构建换衣提示词
         const anglePrompt = ANGLE_PROMPT_MAP[angle]
-        // 换衣提示词：保持人物特征不变，只改变服装（纯英文避免内容审核）
         let fullPrompt = `${character.prompt}, wearing ${request.clothesDescription}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, same person, solid background`
 
-        // 准备参考图像
         let referenceImageBase64: string | undefined = undefined
         if (request.referenceImage) {
           referenceImageBase64 = request.referenceImage
-          console.log('[PortraitService.changeClothes] 使用服装参考图')
         } else if (baseVariant.imagePath && fs.existsSync(baseVariant.imagePath)) {
           const imageBuffer = fs.readFileSync(baseVariant.imagePath)
           referenceImageBase64 = `data:image/png;base64,${imageBuffer.toString('base64')}`
@@ -588,7 +661,7 @@ export class PortraitService {
         const variant = await dbManager.portraitVariants.create({
           characterId: request.characterId,
           type: 'clothes',
-          parentId: request.variantId || baseVariant.id,
+          parentId: frontVariantId || request.variantId || baseVariant.id, // 优先使用正面图 id
           angle: angle,
           imagePath: image.filePath.replace('local-image:///', ''),
           prompt: fullPrompt,
@@ -668,17 +741,77 @@ export class PortraitService {
 
       const variants: PortraitVariant[] = []
 
-      for (const angle of request.angles) {
+      // 先生成正面图，获取其 id 作为其他角度的 parentId
+      let frontVariantId: string | undefined
+      const frontAngle = request.angles.find(a => a === 'front')
+      const otherAngles = request.angles.filter(a => a !== 'front')
+
+      // 1. 先生成正面图
+      if (frontAngle) {
+        const baseVariant = baseVariants.find(v => v.angle === 'front')
+        if (baseVariant) {
+          const anglePrompt = ANGLE_PROMPT_MAP['front']
+          const fullPrompt = `${character.prompt}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, same person, ${backgroundDescription}`
+
+          let refImage = referenceImageBase64
+          if (!refImage && baseVariant.imagePath && fs.existsSync(baseVariant.imagePath)) {
+            const imageBuffer = fs.readFileSync(baseVariant.imagePath)
+            refImage = `data:image/png;base64,${imageBuffer.toString('base64')}`
+          }
+
+          const imageWidth = baseVariant.config?.width || 1920
+          const imageHeight = baseVariant.config?.height || 1920
+
+          const imageResult = await ImageService.generateImage(window, {
+            providerConfigId: character.providerId,
+            model: character.modelId,
+            prompt: fullPrompt,
+            negativePrompt: DEFAULT_NEGATIVE_PROMPT,
+            width: imageWidth,
+            height: imageHeight,
+            seed: baseVariant.config?.seed,
+            referenceImage: refImage,
+            skipHistory: true
+          })
+
+          if (imageResult.success && imageResult.images?.length) {
+            const image = imageResult.images[0]
+            const variant = await dbManager.portraitVariants.create({
+              characterId: request.characterId,
+              type: 'background',
+              parentId: request.variantId || baseVariant.id,
+              angle: 'front',
+              imagePath: image.filePath.replace('local-image:///', ''),
+              prompt: fullPrompt,
+              config: baseVariant.config,
+              variantInfo: {
+                backgroundDescription: backgroundDescription,
+                backgroundType: request.backgroundType,
+                backgroundColor: request.backgroundColor,
+                presetScene: request.presetScene
+              }
+            })
+            frontVariantId = variant.id
+            variants.push({
+              ...variant,
+              imagePath: localPathToUrl(variant.imagePath)
+            })
+          }
+        }
+      }
+
+      // 2. 生成其他角度，parentId 指向正面图的 id
+      for (const angle of otherAngles) {
         const baseVariant = baseVariants.find(v => v.angle === angle)
         if (!baseVariant) continue
 
         const anglePrompt = ANGLE_PROMPT_MAP[angle]
-        // 换背景提示词：保持人物特征不变，只改变背景（纯英文避免内容审核）
         const fullPrompt = `${character.prompt}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, same person, ${backgroundDescription}`
 
-        if (!referenceImageBase64 && baseVariant.imagePath && fs.existsSync(baseVariant.imagePath)) {
+        let refImage = referenceImageBase64
+        if (!refImage && baseVariant.imagePath && fs.existsSync(baseVariant.imagePath)) {
           const imageBuffer = fs.readFileSync(baseVariant.imagePath)
-          referenceImageBase64 = `data:image/png;base64,${imageBuffer.toString('base64')}`
+          refImage = `data:image/png;base64,${imageBuffer.toString('base64')}`
         }
 
         const imageWidth = baseVariant.config?.width || 1920
@@ -692,7 +825,7 @@ export class PortraitService {
           width: imageWidth,
           height: imageHeight,
           seed: baseVariant.config?.seed,
-          referenceImage: referenceImageBase64,
+          referenceImage: refImage,
           skipHistory: true
         })
 
@@ -705,7 +838,7 @@ export class PortraitService {
         const variant = await dbManager.portraitVariants.create({
           characterId: request.characterId,
           type: 'background',
-          parentId: request.variantId || baseVariant.id,
+          parentId: frontVariantId || request.variantId || baseVariant.id, // 优先使用正面图 id
           angle: angle,
           imagePath: image.filePath.replace('local-image:///', ''),
           prompt: fullPrompt,
@@ -1009,8 +1142,6 @@ export class PortraitService {
    * 导出人物形象
    */
   static async exportPortraits(request: ExportPortraitRequest): Promise<ExportPortraitResponse> {
-    console.log('[PortraitService.exportPortraits] 开始导出')
-
     const dbManager = getDatabaseManager()
 
     if (!dbManager.portraitVariants) {
@@ -1044,13 +1175,105 @@ export class PortraitService {
 
       if (request.type === 'single') {
         const variant = variants[0]
-        const ext = path.extname(variant.imagePath) || '.png'
+        const localImagePath = urlToLocalPath(variant.imagePath)
+        if (!fs.existsSync(localImagePath)) {
+          return { success: false, error: `图片文件不存在: ${localImagePath}` }
+        }
+        const ext = path.extname(localImagePath) || '.png'
         const fileName = `portrait_${variant.angle}_${timestamp}${ext}`
         const outputPath = path.join(exportDir, fileName)
-        fs.copyFileSync(variant.imagePath, outputPath)
+        fs.copyFileSync(localImagePath, outputPath)
+        return { success: true, filePath: outputPath }
+      } else if (request.type === 'grid') {
+        // 拼接图导出
+        const localPaths: { path: string; angle: string }[] = []
+
+        for (const variant of variants) {
+          const localPath = urlToLocalPath(variant.imagePath)
+          if (fs.existsSync(localPath)) {
+            localPaths.push({ path: localPath, angle: variant.angle })
+          }
+        }
+
+        if (localPaths.length === 0) {
+          return { success: false, error: '没有有效的图片文件' }
+        }
+
+        // 加载所有图片
+        const images = await Promise.all(
+          localPaths.map(async (item) => ({
+            buffer: await sharp(item.path).png().toBuffer(),
+            metadata: await sharp(item.path).metadata(),
+            angle: item.angle
+          }))
+        )
+
+        // 计算拼接后的尺寸
+        const gridLayout = request.gridLayout || 'horizontal'
+        let outputWidth = 0
+        let outputHeight = 0
+
+        if (gridLayout === 'horizontal') {
+          outputWidth = images.reduce((sum, img) => sum + (img.metadata.width || 0), 0)
+          outputHeight = Math.max(...images.map(img => img.metadata.height || 0))
+        } else if (gridLayout === 'vertical') {
+          outputWidth = Math.max(...images.map(img => img.metadata.width || 0))
+          outputHeight = images.reduce((sum, img) => sum + (img.metadata.height || 0), 0)
+        } else {
+          // 2x2 网格
+          const cols = 2
+          const rows = Math.ceil(images.length / cols)
+          const maxWidth = Math.max(...images.map(img => img.metadata.width || 0))
+          const maxHeight = Math.max(...images.map(img => img.metadata.height || 0))
+          outputWidth = maxWidth * cols
+          outputHeight = maxHeight * rows
+        }
+
+        // 创建拼接图
+        const compositeOps = []
+        let x = 0
+        let y = 0
+        let col = 0
+
+        for (const img of images) {
+          compositeOps.push({
+            input: img.buffer,
+            left: x,
+            top: y
+          })
+
+          if (gridLayout === 'horizontal') {
+            x += img.metadata.width || 0
+          } else if (gridLayout === 'vertical') {
+            y += img.metadata.height || 0
+          } else {
+            // 2x2 网格
+            col++
+            if (col >= 2) {
+              col = 0
+              x = 0
+              y += img.metadata.height || 0
+            } else {
+              x += img.metadata.width || 0
+            }
+          }
+        }
+
+        const outputPath = path.join(exportDir, `portrait_grid_${timestamp}.png`)
+        await sharp({
+          create: {
+            width: outputWidth,
+            height: outputHeight,
+            channels: 4,
+            background: { r: 255, g: 255, b: 255, alpha: 1 }
+          }
+        })
+          .composite(compositeOps)
+          .png()
+          .toFile(outputPath)
+
         return { success: true, filePath: outputPath }
       } else {
-        const archiver = require('archiver')
         const fileName = `portrait_export_${timestamp}.zip`
         const outputPath = path.join(exportDir, fileName)
 
@@ -1068,19 +1291,53 @@ export class PortraitService {
 
           archive.pipe(output)
 
-          const groups: Record<string, PortraitVariant[]> = {}
+          // 按套图分组 - 与前端 variantGroups 逻辑一致
+          // 基础形象所有角度归到 'base' 组，换衣/换背景正面图用自己 id，其他角度用 parentId
+          const groups: Record<string, { variants: PortraitVariant[]; createdAt: Date }> = {}
+
           variants.forEach(v => {
-            const groupKey = v.type
-            if (!groups[groupKey]) groups[groupKey] = []
-            groups[groupKey].push(v)
+            let groupKey: string
+
+            if (v.type === 'base') {
+              // 基础形象所有角度归到同一组
+              groupKey = 'base'
+            } else if (v.angle === 'front') {
+              // 换衣/换背景的正面图用自己 id 作为组标识
+              groupKey = v.id
+            } else {
+              // 其他角度用 parentId
+              groupKey = v.parentId || v.id
+            }
+
+            if (!groups[groupKey]) {
+              groups[groupKey] = { variants: [], createdAt: new Date(v.createdAt || 0) }
+            }
+            groups[groupKey].variants.push(v)
+
+            // 记录最早的创建时间
+            const variantDate = new Date(v.createdAt || 0)
+            if (variantDate < groups[groupKey].createdAt) {
+              groups[groupKey].createdAt = variantDate
+            }
           })
 
-          Object.entries(groups).forEach(([type, items]) => {
-            items.forEach((variant) => {
-              if (fs.existsSync(variant.imagePath)) {
-                const ext = path.extname(variant.imagePath) || '.png'
-                const folder = type === 'base' ? '基础形象' : type === 'clothes' ? '换衣变体' : '换背景变体'
-                archive.file(variant.imagePath, { name: `${folder}/${variant.angle}${ext}` })
+          // 排序：基础形象在前，其他按创建时间
+          const sortedGroups = Object.entries(groups).sort((a, b) => {
+            const typeA = a[1].variants[0]?.type || 'base'
+            const typeB = b[1].variants[0]?.type || 'base'
+            if (typeA === 'base' && typeB !== 'base') return -1
+            if (typeA !== 'base' && typeB === 'base') return 1
+            return a[1].createdAt.getTime() - b[1].createdAt.getTime()
+          })
+
+          // 添加到压缩包，每个套图一个子文件夹，统一命名为"套图"
+          sortedGroups.forEach(([_, group], index) => {
+            const folderName = `${String(index + 1).padStart(2, '0')}_套图`
+            group.variants.forEach((variant) => {
+              const localImagePath = urlToLocalPath(variant.imagePath)
+              if (fs.existsSync(localImagePath)) {
+                const ext = path.extname(localImagePath) || '.png'
+                archive.file(localImagePath, { name: `${folderName}/${variant.angle}${ext}` })
               }
             })
           })

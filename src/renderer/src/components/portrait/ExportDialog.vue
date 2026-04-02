@@ -8,7 +8,6 @@
     <el-form :model="form" label-width="100px">
       <el-form-item label="导出类型">
         <el-radio-group v-model="form.type">
-          <el-radio value="single">单张图片</el-radio>
           <el-radio value="grid">拼接图</el-radio>
           <el-radio value="zip">压缩包</el-radio>
         </el-radio-group>
@@ -68,7 +67,7 @@ const emit = defineEmits<{
 }>()
 
 const form = ref({
-  type: 'zip' as 'single' | 'grid' | 'zip',
+  type: 'zip' as 'grid' | 'zip',
   selectedVariantIds: [] as string[],
   gridLayout: 'horizontal' as 'horizontal' | 'vertical' | '2x2'
 })
@@ -87,12 +86,19 @@ function selectNone() {
   form.value.selectedVariantIds = []
 }
 
+// 从路径中提取文件名
+function getFileName(filePath: string): string {
+  const parts = filePath.replace(/\\/g, '/').split('/')
+  return parts[parts.length - 1] || 'export'
+}
+
 async function handleSubmit() {
   if (!canSubmit.value || !props.characterId) return
 
   loading.value = true
 
   try {
+    // 1. 先导出文件到临时目录
     const result = await window.electronAPI.portrait.export({
       characterId: props.characterId,
       variantIds: [...form.value.selectedVariantIds],
@@ -100,12 +106,42 @@ async function handleSubmit() {
       gridLayout: form.value.gridLayout
     })
 
-    if (result.success && result.data) {
-      ElMessage.success(`导出成功：${result.data}`)
-      emit('update:modelValue', false)
-      emit('success', result.data)
-    } else {
+    if (!result.success || !result.data) {
       ElMessage.error(result.error || '导出失败')
+      return
+    }
+
+    const sourcePath = result.data
+    const fileName = getFileName(sourcePath)
+
+    // 2. 根据导出类型设置保存对话框的过滤器
+    let filters: Array<{ name: string; extensions: string[] }>
+    if (form.value.type === 'zip') {
+      filters = [{ name: 'ZIP 压缩包', extensions: ['zip'] }]
+    } else {
+      filters = [{ name: 'PNG 图片', extensions: ['png'] }]
+    }
+
+    // 3. 弹出保存对话框
+    const saveResult = await window.electronAPI.file.saveFile({
+      defaultPath: fileName,
+      filters
+    })
+
+    if (!saveResult.success || !saveResult.filePath) {
+      // 用户取消了保存
+      return
+    }
+
+    // 4. 复制文件到用户选择的位置
+    const copyResult = await window.electronAPI.file.copyFile(sourcePath, saveResult.filePath)
+
+    if (copyResult.success) {
+      ElMessage.success(`导出成功：${saveResult.filePath}`)
+      emit('update:modelValue', false)
+      emit('success', saveResult.filePath)
+    } else {
+      ElMessage.error(copyResult.error || '保存文件失败')
     }
   } catch (error: any) {
     ElMessage.error(error.message || '导出失败')

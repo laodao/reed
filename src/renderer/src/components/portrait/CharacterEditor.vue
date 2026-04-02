@@ -316,9 +316,14 @@
               <el-image :src="variant.imagePath" fit="contain" @dblclick="handlePreviewImage(variant, 'group')" />
               <div class="variant-info">
                 <span class="variant-angle">{{ ANGLE_LABELS[variant.angle] }}</span>
-                <el-button type="danger" size="small" circle @click="handleDeleteVariant(variant)">
-                  <el-icon><Delete /></el-icon>
-                </el-button>
+                <div class="variant-actions">
+                  <el-button type="primary" size="small" circle title="下载" @click="downloadSingleImage(variant)">
+                    <el-icon><Download /></el-icon>
+                  </el-button>
+                  <el-button type="danger" size="small" circle title="删除" @click="handleDeleteVariant(variant)">
+                    <el-icon><Delete /></el-icon>
+                  </el-button>
+                </div>
               </div>
             </div>
           </div>
@@ -368,6 +373,10 @@
         <!-- 右侧切换按钮 -->
         <div class="nav-btn nav-next" @click.stop="nextImage" :class="{ disabled: previewIndex >= currentPreviewList.length - 1 }">
           <el-icon :size="32"><ArrowRight /></el-icon>
+        </div>
+        <!-- 下载按钮 -->
+        <div class="download-btn" @click.stop="downloadSingleImage(previewVariant)">
+          <el-icon :size="24"><Download /></el-icon>
         </div>
       </div>
       <!-- 图片计数 -->
@@ -998,6 +1007,52 @@ function handleExport() {
   showExportDialog.value = true
 }
 
+// 下载单张图片
+async function downloadSingleImage(variant: PortraitVariant | null | undefined) {
+  if (!variant?.imagePath) {
+    ElMessage.error('图片不存在')
+    return
+  }
+
+  try {
+    // 将 local-image:/// URL 转换为本地路径
+    let imagePath = variant.imagePath
+    if (imagePath.startsWith('local-image:///')) {
+      imagePath = imagePath.replace('local-image:///', '')
+      // Windows 路径修复
+      if (imagePath.includes('/') && !imagePath.includes('\\')) {
+        imagePath = imagePath.replace(/\//g, '\\')
+      }
+    }
+
+    // 提取文件名
+    const parts = imagePath.replace(/\\/g, '/').split('/')
+    const fileName = parts[parts.length - 1] || `portrait_${variant.angle}.png`
+
+    // 弹出保存对话框
+    const saveResult = await window.electronAPI.file.saveFile({
+      defaultPath: fileName,
+      filters: [{ name: 'PNG 图片', extensions: ['png'] }]
+    })
+
+    if (!saveResult.success || !saveResult.filePath) {
+      // 用户取消了保存
+      return
+    }
+
+    // 复制文件到用户选择的位置
+    const copyResult = await window.electronAPI.file.copyFile(imagePath, saveResult.filePath)
+
+    if (copyResult.success) {
+      ElMessage.success(`保存成功：${saveResult.filePath}`)
+    } else {
+      ElMessage.error(copyResult.error || '保存失败')
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '下载失败')
+  }
+}
+
 // 预览参考图
 function previewReferenceImage(img: string) {
   previewRefImage.value = img
@@ -1524,6 +1579,11 @@ onMounted(() => {
     font-size: 13px;
     color: var(--el-text-color-primary);
   }
+
+  .variant-actions {
+    display: flex;
+    gap: 4px;
+  }
 }
 </style>
 
@@ -1612,6 +1672,28 @@ onMounted(() => {
 
     &.nav-next {
       right: 0;
+    }
+  }
+
+  .download-btn {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: rgba(255, 255, 255, 0.7);
+    background: rgba(0, 0, 0, 0.4);
+    border-radius: 50%;
+    transition: all 0.2s;
+    z-index: 10;
+
+    &:hover {
+      color: #fff;
+      background: rgba(0, 0, 0, 0.6);
     }
   }
 }

@@ -401,7 +401,10 @@ const electronAPI = {
     writeTextFile: (filePath: string, content: string) =>
       ipcRenderer.invoke('file:write-text', { filePath, content }),
     // 打开文件夹选择对话框
-    openFolderDialog: () => ipcRenderer.invoke('file:open-folder-dialog')
+    openFolderDialog: () => ipcRenderer.invoke('file:open-folder-dialog'),
+    // 复制文件
+    copyFile: (sourcePath: string, targetPath: string) =>
+      ipcRenderer.invoke('file:copy', { sourcePath, targetPath })
   },
 
   // 导出相关

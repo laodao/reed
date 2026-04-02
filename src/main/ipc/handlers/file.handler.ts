@@ -175,4 +175,17 @@ export function registerFileHandlers(): void {
       return { success: false, error: error.message }
     }
   })
+
+  /**
+   * 复制文件
+   */
+  ipcMain.handle('file:copy', async (_event, data: { sourcePath: string; targetPath: string }) => {
+    try {
+      fs.copyFileSync(data.sourcePath, data.targetPath)
+      return { success: true }
+    } catch (error: any) {
+      console.error('[file:copy] 错误:', error)
+      return { success: false, error: error.message }
+    }
+  })
 }
