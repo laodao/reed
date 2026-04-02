@@ -80,12 +80,16 @@ watch(() => props.modelValue, () => {
 .markdown-editor-wrapper {
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  width: 100%;
   display: flex;
   flex-direction: column;
 
   .editor-component {
     flex: 1;
     min-height: 0;
+    min-width: 0;
+    width: 100%;
     display: flex;
     flex-direction: column;
   }
@@ -93,6 +97,8 @@ watch(() => props.modelValue, () => {
   .bytemd {
     flex: 1;
     min-height: 0;
+    min-width: 0;
+    width: 100%;
     display: flex;
     flex-direction: column;
     border: 1px solid var(--border-color-light);

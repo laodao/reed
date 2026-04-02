@@ -729,6 +729,10 @@ watch(() => props.projectId, () => {
 .skill-item-stage {
   max-width: 900px;
   margin: 0 auto;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
 }
 
 .stage-header {

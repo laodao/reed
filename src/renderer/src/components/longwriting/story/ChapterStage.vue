@@ -49,41 +49,44 @@
           <!-- 单章节编辑模式 -->
           <div v-else class="single-chapter-container">
             <!-- 章节导航 -->
-            <div class="chapter-nav">
+            <div class="chapter-nav" v-if="isEditableNode && currentChapter">
               <el-button
                 :disabled="currentChapterIndex <= 0"
                 @click="prevChapter"
               >
                 <el-icon><ArrowLeft /></el-icon>
-                上一章
+                上一节
               </el-button>
               <span class="chapter-position">
-                {{ currentChapterIndex + 1 }} / {{ allOutlines.length }}
+                {{ currentChapter.name }}
               </span>
               <el-button
                 :disabled="currentChapterIndex >= allOutlines.length - 1"
                 @click="nextChapter"
               >
-                下一章
+                下一节
                 <el-icon><ArrowRight /></el-icon>
               </el-button>
             </div>
 
-            <!-- 当前章节卡片 -->
-            <div v-if="currentChapter" class="chapter-card active">
-              <!-- 章节标题栏 -->
+            <!-- 当前节点卡片 -->
+            <div v-if="currentNode" class="chapter-card" :class="{ active: isEditableNode }">
+              <!-- 节点标题栏 -->
               <div class="chapter-title-bar">
                 <div class="title-left">
-                  <span class="chapter-type">{{ getNodeTypeName(currentChapter.nodeType) }}</span>
-                  <h3 class="chapter-title">{{ currentChapter.name }}</h3>
-                  <el-tag :type="getStatusType(currentChapter.status)" size="small">
-                    {{ getStatusName(currentChapter.status) }}
+                  <span class="chapter-type">{{ getNodeTypeName(currentNode.nodeType) }}</span>
+                  <h3 class="chapter-title">{{ currentNode.name }}</h3>
+                  <el-tag :type="getStatusType(currentNode.status)" size="small">
+                    {{ getStatusName(currentNode.status) }}
                   </el-tag>
-                  <span class="word-count" v-if="getChapterWordCount(currentChapter.id)">
-                    {{ getChapterWordCount(currentChapter.id) }} 字
+                  <span class="word-count" v-if="isEditableNode && getChapterWordCount(currentNode.id)">
+                    {{ getChapterWordCount(currentNode.id) }} 字
+                  </span>
+                  <span class="preview-hint" v-if="!isEditableNode">
+                    预览模式
                   </span>
                 </div>
-                <div class="title-actions">
+                <div class="title-actions" v-if="isEditableNode && currentChapter">
                   <el-button
                     v-if="!generatingMap[currentChapter.id]"
                     type="primary"
@@ -117,25 +120,25 @@
                 </div>
               </div>
 
-              <!-- 章节信息 -->
-              <div class="chapter-info" v-if="currentChapter.summary || currentChapter.involvedCharacters?.length || currentChapter.involvedLocations?.length">
-                <p v-if="currentChapter.summary" class="chapter-summary">{{ currentChapter.summary }}</p>
-                <div class="chapter-tags" v-if="currentChapter.involvedCharacters?.length > 0 || currentChapter.involvedLocations?.length > 0">
-                  <template v-if="currentChapter.involvedCharacters?.length > 0">
-                    <el-tag v-for="id in currentChapter.involvedCharacters" :key="id" size="small" type="info">
+              <!-- 节点信息 -->
+              <div class="chapter-info" v-if="currentNode.summary || currentNode.involvedCharacters?.length || currentNode.involvedLocations?.length">
+                <p v-if="currentNode.summary" class="chapter-summary">{{ currentNode.summary }}</p>
+                <div class="chapter-tags" v-if="currentNode.involvedCharacters?.length > 0 || currentNode.involvedLocations?.length > 0">
+                  <template v-if="currentNode.involvedCharacters?.length > 0">
+                    <el-tag v-for="id in currentNode.involvedCharacters" :key="id" size="small" type="info">
                       {{ getCharacterName(id) }}
                     </el-tag>
                   </template>
-                  <template v-if="currentChapter.involvedLocations?.length > 0">
-                    <el-tag v-for="id in currentChapter.involvedLocations" :key="id" size="small" type="warning">
+                  <template v-if="currentNode.involvedLocations?.length > 0">
+                    <el-tag v-for="id in currentNode.involvedLocations" :key="id" size="small" type="warning">
                       {{ getLocationName(id) }}
                     </el-tag>
                   </template>
                 </div>
               </div>
 
-              <!-- Markdown 编辑器 -->
-              <div class="chapter-editor-wrapper">
+              <!-- 可编辑模式：Markdown 编辑器 -->
+              <div v-if="isEditableNode && currentChapter" class="chapter-editor-wrapper">
                 <MarkdownEditor
                   :key="currentChapter.id"
                   v-model="chapterContentMap[currentChapter.id]"
@@ -143,6 +146,12 @@
                   height="100%"
                   mode="split"
                 />
+              </div>
+
+              <!-- 预览模式：显示所有子节点内容 -->
+              <div v-else class="chapter-preview-wrapper">
+                <div v-if="nodePreviewContent" class="preview-content-area" v-html="renderMarkdown(nodePreviewContent)"></div>
+                <el-empty v-else description="暂无内容，请在左侧选择具体的节进行编辑" />
               </div>
             </div>
           </div>
@@ -245,6 +254,7 @@ import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import MarkdownEditor from '@/components/common/MarkdownEditor.vue'
 import { ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
+import { marked } from 'marked'
 import type { StoryOutline, StoryChapter, ChapterVersion, OutlineStatus, OutlineNodeType, StoryCharacter } from '../../../../shared/types/longwriting.types'
 import type { ElTree } from 'element-plus'
 
@@ -334,9 +344,62 @@ const outlineTreeData = computed(() => {
 // 所有大纲（扁平化，用于渲染右侧卡片）
 const allOutlines = computed(() => {
   return outlineNodes.value
-    .filter(n => n.nodeType === 'chapter' || n.nodeType === 'section')
+    .filter(n => n.nodeType === 'section')
     .sort((a, b) => a.orderIndex - b.orderIndex)
 })
+
+// 判断节点是否是最底层节点（没有子节点）
+function isLeafNode(nodeId: string): boolean {
+  return !outlineNodes.value.some(n => n.parentId === nodeId)
+}
+
+// 获取节点下的所有最底层子节点ID
+function getLeafChildren(nodeId: string): string[] {
+  const result: string[] = []
+  const node = outlineNodes.value.find(n => n.id === nodeId)
+  if (!node) return result
+
+  if (isLeafNode(nodeId)) {
+    result.push(nodeId)
+  } else {
+    // 递归获取所有子节点
+    const children = outlineNodes.value.filter(n => n.parentId === nodeId)
+    for (const child of children) {
+      result.push(...getLeafChildren(child.id))
+    }
+  }
+  return result
+}
+
+// 判断当前选中的节点是否可编辑（只有最底层节点可编辑）
+const isEditableNode = computed(() => {
+  if (!activeOutlineId.value) return false
+  return isLeafNode(activeOutlineId.value)
+})
+
+// 获取预览内容（合并所有子节点的内容）
+const nodePreviewContent = computed(() => {
+  if (!activeOutlineId.value) return ''
+
+  const leafIds = getLeafChildren(activeOutlineId.value)
+  const parts: string[] = []
+
+  for (const leafId of leafIds) {
+    const node = outlineNodes.value.find(n => n.id === leafId)
+    const content = chapterContentMap.value[leafId] || ''
+    if (node && content) {
+      parts.push(`## ${node.name}\n\n${content}`)
+    }
+  }
+
+  return parts.join('\n\n---\n\n')
+})
+
+// 渲染 Markdown 为 HTML
+function renderMarkdown(content: string): string {
+  if (!content) return ''
+  return marked(content) as string
+}
 
 // 当前章节索引
 const currentChapterIndex = computed(() => {
@@ -344,9 +407,21 @@ const currentChapterIndex = computed(() => {
   return allOutlines.value.findIndex(o => o.id === activeOutlineId.value)
 })
 
-// 当前章节
+// 当前选中的节点（可能是卷、章或节）
+const currentNode = computed(() => {
+  if (!activeOutlineId.value) return null
+  return outlineNodes.value.find(n => n.id === activeOutlineId.value) || null
+})
+
+// 当前可编辑的章节（最底层节点）
 const currentChapter = computed(() => {
-  return allOutlines.value[currentChapterIndex.value] || null
+  if (!activeOutlineId.value) return null
+  // 如果当前选中的是最底层节点，直接返回
+  if (isLeafNode(activeOutlineId.value)) {
+    return outlineNodes.value.find(n => n.id === activeOutlineId.value) || null
+  }
+  // 否则返回 null（非可编辑节点）
+  return null
 })
 
 // 上一章
@@ -413,11 +488,8 @@ function collapseAll() {
 
 // 处理节点点击 - 切换到对应章节
 function handleNodeClick(data: StoryOutline) {
-  // 只有章节和节类型才能切换
-  if (data.nodeType === 'chapter' || data.nodeType === 'section') {
-    activeOutlineId.value = data.id
-    treeRef.value?.setCurrentKey(data.id)
-  }
+  activeOutlineId.value = data.id
+  treeRef.value?.setCurrentKey(data.id)
 }
 
 // 名称映射
@@ -792,6 +864,8 @@ onMounted(() => {
   margin: 0 auto;
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  width: 100%;
   display: flex;
   flex-direction: column;
 }
@@ -1057,6 +1131,66 @@ onMounted(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+// 预览模式提示
+.preview-hint {
+  font-size: 12px;
+  color: var(--text-color-secondary);
+  background: var(--color-info-light-9);
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-left: 8px;
+}
+
+// 预览容器
+.chapter-preview-wrapper {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px;
+  background: var(--bg-color);
+
+  .preview-content-area {
+    max-width: 800px;
+    margin: 0 auto;
+    line-height: 1.8;
+    color: var(--text-color-primary);
+
+    :deep(h2) {
+      font-size: 18px;
+      font-weight: 600;
+      margin: 24px 0 16px 0;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border-color-lighter);
+      color: var(--text-color-primary);
+    }
+
+    :deep(h3) {
+      font-size: 16px;
+      font-weight: 500;
+      margin: 20px 0 12px 0;
+      color: var(--text-color-primary);
+    }
+
+    :deep(p) {
+      margin-bottom: 16px;
+      color: var(--text-color-primary);
+    }
+
+    :deep(hr) {
+      border: none;
+      border-top: 1px dashed var(--border-color-light);
+      margin: 32px 0;
+    }
+
+    :deep(blockquote) {
+      border-left: 4px solid var(--color-primary);
+      padding-left: 16px;
+      margin: 16px 0;
+      color: var(--text-color-secondary);
+    }
+  }
 }
 
 .version-list {

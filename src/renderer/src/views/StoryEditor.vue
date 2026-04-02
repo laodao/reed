@@ -568,10 +568,17 @@ onMounted(() => {
 .editor-content {
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  width: 100%;
   overflow: hidden;
   padding: 24px;
   display: flex;
   flex-direction: column;
+
+  > * {
+    min-width: 0;
+    width: 100%;
+  }
 }
 
 .preview-content {
