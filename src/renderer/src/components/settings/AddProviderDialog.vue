@@ -827,6 +827,10 @@ const handleClose = () => {
   customHeadersList.value = []
   apiModels.value = []
   activeCollapse.value = []
+  // 重置加载状态，防止关闭对话框后状态残留
+  loadingModels.value = false
+  saving.value = false
+  testing.value = false
 }
 
 // 添加自定义请求头
