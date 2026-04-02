@@ -16,7 +16,9 @@ import {
   AlignmentType,
   Packer,
   convertInchesToTwip,
-  LevelFormat
+  LevelFormat,
+  ExternalHyperlink,
+  IRunOptions
 } from 'docx'
 
 interface MarkdownToDocxOptions {
@@ -68,6 +70,18 @@ export async function markdownToDocx(
               format: LevelFormat.DECIMAL,
               text: '%1.',
               alignment: AlignmentType.START
+            },
+            {
+              level: 1,
+              format: LevelFormat.DECIMAL,
+              text: '%2.',
+              alignment: AlignmentType.START
+            },
+            {
+              level: 2,
+              format: LevelFormat.DECIMAL,
+              text: '%3.',
+              alignment: AlignmentType.START
             }
           ]
         },
@@ -78,6 +92,18 @@ export async function markdownToDocx(
               level: 0,
               format: LevelFormat.BULLET,
               text: '•',
+              alignment: AlignmentType.START
+            },
+            {
+              level: 1,
+              format: LevelFormat.BULLET,
+              text: '○',
+              alignment: AlignmentType.START
+            },
+            {
+              level: 2,
+              format: LevelFormat.BULLET,
+              text: '■',
               alignment: AlignmentType.START
             }
           ]
@@ -105,22 +131,32 @@ function tokenToDocxElements(token: any): (Paragraph | Table)[] {
       return [createParagraph(token)]
 
     case 'code':
-      return [createCodeBlock(token)]
+      return createCodeBlock(token)
 
     case 'list':
-      return createList(token)
+      return createList(token, 0)
 
     case 'table':
       return [createTable(token)]
 
     case 'blockquote':
-      return [createBlockquote(token)]
+      return createBlockquote(token)
 
     case 'hr':
       return [createHorizontalRule()]
 
     case 'space':
       return []
+
+    case 'image':
+      // 图片暂时用占位符文本
+      return [new Paragraph({
+        children: [new TextRun({
+          text: `[图片: ${token.href || '图片'}]`,
+          italics: true,
+          color: '666666'
+        })]
+      })]
 
     default:
       if (token.text) {
@@ -147,7 +183,7 @@ function createHeading(token: any): Paragraph {
 
   return new Paragraph({
     heading: levelMap[token.depth] || HeadingLevel.HEADING_1,
-    children: parseInlineTokens(token.tokens || [])
+    children: parseInlineTokens(token.tokens || [], {})
   })
 }
 
@@ -156,18 +192,28 @@ function createHeading(token: any): Paragraph {
  */
 function createParagraph(token: any): Paragraph {
   return new Paragraph({
-    children: parseInlineTokens(token.tokens || [])
+    children: parseInlineTokens(token.tokens || [], {})
   })
 }
 
 /**
- * 解析内联 token 为 TextRun 数组
+ * 合并格式属性
  */
-function parseInlineTokens(tokens: any[]): TextRun[] {
+function mergeOptions(base: IRunOptions, extra: IRunOptions): IRunOptions {
+  return { ...base, ...extra }
+}
+
+/**
+ * 解析内联 token 为 TextRun 数组
+ * @param tokens token 列表
+ * @param inheritedOptions 从父级继承的格式选项
+ */
+function parseInlineTokens(tokens: any[], inheritedOptions: IRunOptions = {}): TextRun[] {
   const runs: TextRun[] = []
 
   for (const token of tokens) {
-    runs.push(...inlineTokenToTextRuns(token))
+    const childRuns = inlineTokenToTextRuns(token, inheritedOptions)
+    runs.push(...childRuns)
   }
 
   return runs
@@ -175,67 +221,98 @@ function parseInlineTokens(tokens: any[]): TextRun[] {
 
 /**
  * 将内联 token 转换为 TextRun
+ * @param token 当前 token
+ * @param inheritedOptions 从父级继承的格式选项
  */
-function inlineTokenToTextRuns(token: any): TextRun[] {
+function inlineTokenToTextRuns(token: any, inheritedOptions: IRunOptions = {}): TextRun[] {
   switch (token.type) {
     case 'text':
-      return [new TextRun(token.text)]
+      return [new TextRun(mergeOptions(inheritedOptions, { text: token.text }))]
 
     case 'strong':
-      return token.tokens
-        ? parseInlineTokens(token.tokens).map(run =>
-            new TextRun({ text: (run as any).text || '', bold: true })
-          )
-        : [new TextRun({ text: token.text, bold: true })]
+      // 合并 bold 属性到继承的选项
+      const strongOptions = mergeOptions(inheritedOptions, { bold: true })
+      if (token.tokens && token.tokens.length > 0) {
+        return parseInlineTokens(token.tokens, strongOptions)
+      }
+      return [new TextRun(mergeOptions(strongOptions, { text: token.text || '' }))]
 
     case 'em':
-      return token.tokens
-        ? parseInlineTokens(token.tokens).map(run =>
-            new TextRun({ text: (run as any).text || '', italics: true })
-          )
-        : [new TextRun({ text: token.text, italics: true })]
+      // 合并 italics 属性到继承的选项
+      const emOptions = mergeOptions(inheritedOptions, { italics: true })
+      if (token.tokens && token.tokens.length > 0) {
+        return parseInlineTokens(token.tokens, emOptions)
+      }
+      return [new TextRun(mergeOptions(emOptions, { text: token.text || '' }))]
 
     case 'del':
-      return token.tokens
-        ? parseInlineTokens(token.tokens).map(run =>
-            new TextRun({ text: (run as any).text || '', strike: true })
-          )
-        : [new TextRun({ text: token.text, strike: true })]
+      // 合并 strike 属性
+      const delOptions = mergeOptions(inheritedOptions, { strike: true })
+      if (token.tokens && token.tokens.length > 0) {
+        return parseInlineTokens(token.tokens, delOptions)
+      }
+      return [new TextRun(mergeOptions(delOptions, { text: token.text || '' }))]
 
     case 'codespan':
-      return [new TextRun({
+      return [new TextRun(mergeOptions(inheritedOptions, {
         text: token.text,
         font: 'Consolas',
         shading: { fill: 'F0F0F0' }
-      })]
+      }))]
 
     case 'link':
-      // 简化链接处理，只显示文本
-      const linkText = token.text || token.href
-      return [new TextRun({
+      // 创建超链接
+      const linkText = token.text || token.href || ''
+      return [new TextRun(mergeOptions(inheritedOptions, {
         text: linkText,
         color: '0563C1',
         underline: { type: 'single' }
-      })]
+      }))]
+
+    case 'image':
+      // 图片用占位符
+      const altText = token.text || token.href || '图片'
+      return [new TextRun(mergeOptions(inheritedOptions, {
+        text: `[图片: ${altText}]`,
+        italics: true,
+        color: '666666'
+      }))]
 
     case 'br':
       return [new TextRun({ break: 1 })]
 
-    default:
+    case 'html':
+      // HTML 标签，尝试提取文本内容
       if (token.text) {
-        return [new TextRun(token.text)]
+        // 移除 HTML 标签，只保留文本
+        const plainText = token.text.replace(/<[^>]*>/g, '')
+        if (plainText.trim()) {
+          return [new TextRun(mergeOptions(inheritedOptions, { text: plainText }))]
+        }
+      }
+      return []
+
+    default:
+      // 尝试获取文本内容
+      if (token.text) {
+        return [new TextRun(mergeOptions(inheritedOptions, { text: token.text }))]
+      }
+      // 如果有子 tokens，递归处理
+      if (token.tokens && token.tokens.length > 0) {
+        return parseInlineTokens(token.tokens, inheritedOptions)
       }
       return []
   }
 }
 
 /**
- * 创建代码块
+ * 创建代码块（多段落）
  */
-function createCodeBlock(token: any): Paragraph {
+function createCodeBlock(token: any): Paragraph[] {
   const codeText = token.text || ''
   const lines = codeText.split('\n')
 
+  // 将所有代码行放在一个段落中，保持格式
   const children: TextRun[] = []
   for (let i = 0; i < lines.length; i++) {
     children.push(new TextRun({
@@ -248,7 +325,7 @@ function createCodeBlock(token: any): Paragraph {
     }
   }
 
-  return new Paragraph({
+  return [new Paragraph({
     shading: { fill: 'F5F5F5' },
     border: {
       top: { style: BorderStyle.SINGLE, size: 1, color: 'E0E0E0' },
@@ -257,28 +334,58 @@ function createCodeBlock(token: any): Paragraph {
       right: { style: BorderStyle.SINGLE, size: 1, color: 'E0E0E0' }
     },
     spacing: { before: 200, after: 200 },
+    indent: { left: convertInchesToTwip(0.25) },
     children
-  })
+  })]
 }
 
 /**
- * 创建列表
+ * 创建列表（支持嵌套）
+ * @param token 列表 token
+ * @param level 当前嵌套层级
  */
-function createList(token: any): Paragraph[] {
+function createList(token: any, level: number): Paragraph[] {
   const paragraphs: Paragraph[] = []
 
   for (const item of token.items) {
-    const textRuns = parseInlineTokens(item.tokens?.[0]?.tokens || [])
+    // 处理列表项的所有内容
+    const itemContent: TextRun[] = []
 
-    if (token.ordered) {
+    // 遍历列表项的所有 tokens
+    if (item.tokens && item.tokens.length > 0) {
+      for (const itemToken of item.tokens) {
+        if (itemToken.type === 'list') {
+          // 嵌套列表，先添加当前列表项的内容
+          if (itemContent.length > 0) {
+            paragraphs.push(new Paragraph({
+              numbering: token.ordered
+                ? { reference: 'ordered-list', level }
+                : { reference: 'unordered-list', level },
+              children: itemContent
+            }))
+            itemContent.length = 0
+          }
+          // 递归处理嵌套列表
+          paragraphs.push(...createList(itemToken, Math.min(level + 1, 2)))
+        } else if (itemToken.type === 'text' || itemToken.type === 'paragraph') {
+          // 文本或段落内容
+          const runs = parseInlineTokens(itemToken.tokens || [], {})
+          itemContent.push(...runs)
+        } else {
+          // 其他类型，尝试提取内容
+          const runs = inlineTokenToTextRuns(itemToken, {})
+          itemContent.push(...runs)
+        }
+      }
+    }
+
+    // 添加剩余的内容
+    if (itemContent.length > 0) {
       paragraphs.push(new Paragraph({
-        numbering: { reference: 'ordered-list', level: 0 },
-        children: textRuns
-      }))
-    } else {
-      paragraphs.push(new Paragraph({
-        numbering: { reference: 'unordered-list', level: 0 },
-        children: textRuns
+        numbering: token.ordered
+          ? { reference: 'ordered-list', level }
+          : { reference: 'unordered-list', level },
+        children: itemContent
       }))
     }
   }
@@ -291,14 +398,15 @@ function createList(token: any): Paragraph[] {
  */
 function createTable(token: any): Table {
   const rows: TableRow[] = []
+  const colCount = token.header?.length || token.rows?.[0]?.length || 1
 
   if (token.header) {
     const headerCells = token.header.map((cell: any) =>
       new TableCell({
-        width: { size: 100 / token.header.length, type: WidthType.PERCENTAGE },
+        width: { size: 100 / colCount, type: WidthType.PERCENTAGE },
         shading: { fill: 'F0F0F0' },
         children: [new Paragraph({
-          children: parseInlineTokens(cell.tokens || []),
+          children: parseInlineTokens(cell.tokens || [], {}),
           alignment: AlignmentType.CENTER
         })]
       })
@@ -309,9 +417,9 @@ function createTable(token: any): Table {
   for (const row of token.rows || []) {
     const cells = row.map((cell: any) =>
       new TableCell({
-        width: { size: 100 / row.length, type: WidthType.PERCENTAGE },
+        width: { size: 100 / colCount, type: WidthType.PERCENTAGE },
         children: [new Paragraph({
-          children: parseInlineTokens(cell.tokens || [])
+          children: parseInlineTokens(cell.tokens || [], {})
         })]
       })
     )
@@ -325,17 +433,65 @@ function createTable(token: any): Table {
 }
 
 /**
- * 创建引用块
+ * 创建引用块（支持多段落）
  */
-function createBlockquote(token: any): Paragraph {
-  return new Paragraph({
-    indent: { left: convertInchesToTwip(0.5) },
-    border: {
-      left: { style: BorderStyle.SINGLE, size: 6, color: 'CCCCCC' }
-    },
-    shading: { fill: 'FAFAFA' },
-    children: parseInlineTokens(token.tokens?.[0]?.tokens || [])
-  })
+function createBlockquote(token: any): Paragraph[] {
+  const paragraphs: Paragraph[] = []
+
+  // 处理引用块的所有内容
+  if (token.tokens && token.tokens.length > 0) {
+    for (const childToken of token.tokens) {
+      if (childToken.type === 'paragraph') {
+        paragraphs.push(new Paragraph({
+          indent: { left: convertInchesToTwip(0.5) },
+          border: {
+            left: { style: BorderStyle.SINGLE, size: 6, color: 'CCCCCC' }
+          },
+          shading: { fill: 'FAFAFA' },
+          children: parseInlineTokens(childToken.tokens || [], {})
+        }))
+      } else if (childToken.type === 'text') {
+        paragraphs.push(new Paragraph({
+          indent: { left: convertInchesToTwip(0.5) },
+          border: {
+            left: { style: BorderStyle.SINGLE, size: 6, color: 'CCCCCC' }
+          },
+          shading: { fill: 'FAFAFA' },
+          children: parseInlineTokens(childToken.tokens || [], {})
+        }))
+      } else {
+        // 其他类型，尝试处理
+        const elements = tokenToDocxElements(childToken)
+        for (const elem of elements) {
+          if (elem instanceof Paragraph) {
+            // 为引用块内容添加缩进和边框
+            paragraphs.push(new Paragraph({
+              indent: { left: convertInchesToTwip(0.5) },
+              border: {
+                left: { style: BorderStyle.SINGLE, size: 6, color: 'CCCCCC' }
+              },
+              shading: { fill: 'FAFAFA' },
+              children: (elem as any).children || []
+            }))
+          }
+        }
+      }
+    }
+  }
+
+  // 如果没有生成任何段落，使用原始文本
+  if (paragraphs.length === 0 && token.text) {
+    paragraphs.push(new Paragraph({
+      indent: { left: convertInchesToTwip(0.5) },
+      border: {
+        left: { style: BorderStyle.SINGLE, size: 6, color: 'CCCCCC' }
+      },
+      shading: { fill: 'FAFAFA' },
+      children: [new TextRun(token.text)]
+    }))
+  }
+
+  return paragraphs
 }
 
 /**
