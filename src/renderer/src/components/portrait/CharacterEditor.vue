@@ -160,19 +160,39 @@
         <!-- 左侧：正面预览 -->
         <div class="preview-section">
           <div class="preview-image-large">
-            <el-image :src="currentFrontVariant?.imagePath" fit="contain" @dblclick="handlePreviewImage(currentFrontVariant)" />
+            <el-image :src="currentFrontVariant?.imagePath" fit="contain" @dblclick="handlePreviewImage(currentFrontVariant, 'front')" />
           </div>
           <!-- 缩略图放到下面 -->
-          <div class="variant-tabs" v-if="frontVariants.length > 1">
-            <div
-              v-for="fv in frontVariants"
-              :key="fv.id"
-              class="variant-tab"
-              :class="{ active: selectedFrontVariantId === fv.id }"
-              @click="selectedFrontVariantId = fv.id"
+          <div class="variant-tabs-wrapper" v-if="frontVariants.length > 1">
+            <el-button
+              v-if="frontVariants.length > 4"
+              class="scroll-btn left"
+              size="small"
+              circle
+              @click="scrollThumbnails('left')"
             >
-              <el-image :src="fv.imagePath" fit="cover" />
+              <el-icon><ArrowLeft /></el-icon>
+            </el-button>
+            <div class="variant-tabs" ref="thumbnailContainerRef">
+              <div
+                v-for="fv in frontVariants"
+                :key="fv.id"
+                class="variant-tab"
+                :class="{ active: selectedFrontVariantId === fv.id }"
+                @click="selectedFrontVariantId = fv.id"
+              >
+                <el-image :src="fv.imagePath" fit="cover" />
+              </div>
             </div>
+            <el-button
+              v-if="frontVariants.length > 4"
+              class="scroll-btn right"
+              size="small"
+              circle
+              @click="scrollThumbnails('right')"
+            >
+              <el-icon><ArrowRight /></el-icon>
+            </el-button>
           </div>
           <div class="preview-actions">
             <el-button size="small" @click="handleRegenerateFront" :loading="regenerating">
@@ -293,7 +313,7 @@
               :key="variant.id"
               class="variant-card"
             >
-              <el-image :src="variant.imagePath" fit="contain" @dblclick="handlePreviewImage(variant)" />
+              <el-image :src="variant.imagePath" fit="contain" @dblclick="handlePreviewImage(variant, 'group')" />
               <div class="variant-info">
                 <span class="variant-angle">{{ ANGLE_LABELS[variant.angle] }}</span>
                 <el-button type="danger" size="small" circle @click="handleDeleteVariant(variant)">
@@ -346,13 +366,13 @@
         <!-- 中间图片 -->
         <img :src="previewVariant.imagePath" alt="预览" @click="nextImage" />
         <!-- 右侧切换按钮 -->
-        <div class="nav-btn nav-next" @click="nextImage" :class="{ disabled: previewIndex >= allPreviewVariants.length - 1 }">
+        <div class="nav-btn nav-next" @click="nextImage" :class="{ disabled: previewIndex >= currentPreviewList.length - 1 }">
           <el-icon :size="32"><ArrowRight /></el-icon>
         </div>
       </div>
       <!-- 图片计数 -->
-      <div class="preview-counter" v-if="allPreviewVariants.length > 1">
-        {{ previewIndex + 1 }} / {{ allPreviewVariants.length }}
+      <div class="preview-counter" v-if="currentPreviewList.length > 1">
+        {{ previewIndex + 1 }} / {{ currentPreviewList.length }}
       </div>
     </el-dialog>
 
@@ -407,6 +427,22 @@ const anglesToGenerate = ref<PortraitAngle[]>(['left', 'right', 'back'])
 // 选中的正面变体
 const selectedFrontVariantId = ref<string | null>(null)
 
+// 缩略图容器引用
+const thumbnailContainerRef = ref<HTMLElement | null>(null)
+
+// 缩略图滚动
+function scrollThumbnails(direction: 'left' | 'right') {
+  if (!thumbnailContainerRef.value) return
+  const scrollAmount = 68 * 4 // 每次滚动4个缩略图的宽度
+  const newScrollLeft = direction === 'left'
+    ? thumbnailContainerRef.value.scrollLeft - scrollAmount
+    : thumbnailContainerRef.value.scrollLeft + scrollAmount
+  thumbnailContainerRef.value.scrollTo({
+    left: newScrollLeft,
+    behavior: 'smooth'
+  })
+}
+
 // 对话框
 const showClothesDialog = ref(false)
 const showBackgroundDialog = ref(false)
@@ -420,6 +456,9 @@ const previewRefImage = ref('')
 
 // 图片预览索引（用于左右切换）
 const previewIndex = ref(0)
+
+// 当前预览的图片列表（根据预览来源不同而不同）
+const currentPreviewList = ref<PortraitVariant[]>([])
 
 // 默认模型配置（从系统配置获取）
 const defaultModel = ref<{ providerId: string; modelId: string } | null>(null)
@@ -904,11 +943,37 @@ async function handleDeleteVariant(variant: PortraitVariant) {
   }
 }
 
-function handlePreviewImage(variant: PortraitVariant | null | undefined) {
+function handlePreviewImage(variant: PortraitVariant | null | undefined, type: 'front' | 'group' = 'front') {
   if (!variant) return
   previewVariant.value = variant
+
+  // 根据预览类型设置不同的预览列表
+  if (type === 'front') {
+    // 预览正面人像
+    currentPreviewList.value = frontVariants.value
+  } else {
+    // 预览当前套图 - 找到该图片所属的分组
+    // 分组逻辑与 variantGroups 的计算逻辑一致
+    let groupId: string
+    if (variant.type === 'base') {
+      groupId = 'base'
+    } else if (variant.angle === 'front') {
+      groupId = variant.id
+    } else {
+      groupId = variant.parentId || variant.id
+    }
+
+    const group = variantGroups.value.find(g => g.id === groupId)
+    if (group) {
+      currentPreviewList.value = group.variants
+    } else {
+      // 如果找不到分组，只显示当前图片
+      currentPreviewList.value = [variant]
+    }
+  }
+
   // 设置当前索引
-  previewIndex.value = allPreviewVariants.value.findIndex(v => v.id === variant.id)
+  previewIndex.value = currentPreviewList.value.findIndex(v => v.id === variant.id)
   if (previewIndex.value < 0) previewIndex.value = 0
   showPreviewDialog.value = true
 }
@@ -917,15 +982,15 @@ function handlePreviewImage(variant: PortraitVariant | null | undefined) {
 function prevImage() {
   if (previewIndex.value > 0) {
     previewIndex.value--
-    previewVariant.value = allPreviewVariants.value[previewIndex.value]
+    previewVariant.value = currentPreviewList.value[previewIndex.value]
   }
 }
 
 // 下一张图片
 function nextImage() {
-  if (previewIndex.value < allPreviewVariants.value.length - 1) {
+  if (previewIndex.value < currentPreviewList.value.length - 1) {
     previewIndex.value++
-    previewVariant.value = allPreviewVariants.value[previewIndex.value]
+    previewVariant.value = currentPreviewList.value[previewIndex.value]
   }
 }
 
@@ -1213,12 +1278,45 @@ onMounted(() => {
     }
   }
 
-  .variant-tabs {
+  .variant-tabs-wrapper {
     display: flex;
+    align-items: center;
     gap: 8px;
     margin-top: 12px;
 
+    .scroll-btn {
+      flex-shrink: 0;
+      width: 28px;
+      height: 28px;
+
+      &.left {
+        margin-right: -4px;
+      }
+
+      &.right {
+        margin-left: -4px;
+      }
+    }
+  }
+
+  .variant-tabs {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    scroll-behavior: smooth;
+    // 隐藏滚动条但保留滚动功能
+    scrollbar-width: none; // Firefox
+    -ms-overflow-style: none; // IE/Edge
+
+    &::-webkit-scrollbar {
+      display: none; // Chrome/Safari
+    }
+
+    // 最多显示4张，每张60px + 8px gap
+    max-width: calc(4 * 60px + 3 * 8px);
+
     .variant-tab {
+      flex-shrink: 0;
       width: 60px;
       height: 60px;
       border-radius: 8px;
