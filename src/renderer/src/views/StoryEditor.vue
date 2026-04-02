@@ -70,7 +70,7 @@
     </div>
 
     <!-- 内容区域 -->
-    <div class="editor-content">
+    <div class="editor-content" :class="{ 'no-scroll': currentStage === 'chapters' }">
       <!-- 阶段一：故事概要 -->
       <OverviewStage
         v-if="currentStage === 'overview'"
@@ -414,7 +414,7 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 24px;
+  padding: 8px 16px;
   background: var(--bg-color);
   border-bottom: 1px solid var(--border-color-light);
 }
@@ -422,10 +422,10 @@ onMounted(() => {
 .header-left {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
 
   .project-title {
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 500;
     color: var(--text-color-primary);
   }
@@ -474,50 +474,20 @@ onMounted(() => {
   gap: 8px;
 }
 
-.header-center {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-
-  .model-select {
-    width: 220px;
-  }
-
-  .model-option {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    width: 100%;
-
-    .model-name {
-      font-size: 13px;
-      color: var(--text-color-primary);
-    }
-
-    .model-context {
-      font-size: 11px;
-      color: var(--text-color-secondary);
-      background: var(--fill-color-light);
-      padding: 2px 6px;
-      border-radius: 4px;
-    }
-  }
-}
-
 .stage-nav {
   display: flex;
-  padding: 16px 24px;
+  padding: 8px 16px;
   background: var(--bg-color);
   border-bottom: 1px solid var(--border-color-light);
-  gap: 8px;
+  gap: 4px;
 }
 
 .stage-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border-radius: 8px;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
 
@@ -548,20 +518,20 @@ onMounted(() => {
 }
 
 .stage-number {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
   background: var(--fill-color);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   color: var(--text-color-secondary);
 }
 
 .stage-label {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-color-regular);
 }
 
@@ -570,14 +540,18 @@ onMounted(() => {
   min-height: 0;
   min-width: 0;
   width: 100%;
-  overflow: hidden;
-  padding: 24px;
+  overflow-y: auto;
+  padding: 16px;
   display: flex;
   flex-direction: column;
 
   > * {
     min-width: 0;
     width: 100%;
+  }
+
+  &.no-scroll {
+    overflow: hidden;
   }
 }
 

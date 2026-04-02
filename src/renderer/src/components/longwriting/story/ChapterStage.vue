@@ -341,11 +341,26 @@ const outlineTreeData = computed(() => {
   return buildOutlineTree(outlineNodes.value)
 })
 
-// 所有大纲（扁平化，用于渲染右侧卡片）
+// 所有大纲（扁平化，用于渲染右侧卡片）- 只包含最底层节点
 const allOutlines = computed(() => {
-  return outlineNodes.value
-    .filter(n => n.nodeType === 'section')
-    .sort((a, b) => a.orderIndex - b.orderIndex)
+  // 获取所有最底层节点（没有子节点的节点）
+  const leafNodes = outlineNodes.value.filter(n => isLeafNode(n.id))
+
+  // 按照树的结构顺序排序（先遍历树获取顺序）
+  const orderedIds: string[] = []
+  function collectLeafIds(nodes: any[]) {
+    for (const node of nodes) {
+      if (isLeafNode(node.id)) {
+        orderedIds.push(node.id)
+      } else if (node.children && node.children.length > 0) {
+        collectLeafIds(node.children)
+      }
+    }
+  }
+  collectLeafIds(outlineTreeData.value)
+
+  // 按 orderedIds 的顺序返回
+  return orderedIds.map(id => leafNodes.find(n => n.id === id)).filter(Boolean) as StoryOutline[]
 })
 
 // 判断节点是否是最底层节点（没有子节点）
@@ -871,18 +886,18 @@ onMounted(() => {
 }
 
 .stage-header {
-  margin-bottom: 24px;
+  margin-bottom: 12px;
   flex-shrink: 0;
 
   h2 {
-    font-size: 20px;
+    font-size: 16px;
     font-weight: 600;
     color: var(--text-color-primary);
-    margin: 0 0 8px 0;
+    margin: 0 0 4px 0;
   }
 
   .stage-desc {
-    font-size: 14px;
+    font-size: 13px;
     color: var(--text-color-secondary);
     margin: 0;
   }

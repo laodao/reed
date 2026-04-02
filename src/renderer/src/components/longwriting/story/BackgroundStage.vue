@@ -1,8 +1,10 @@
 <template>
   <div class="background-stage">
     <div class="stage-header">
-      <h2>时代背景与地点设定</h2>
-      <p class="stage-desc">设定故事发生的时代背景和主要地点场景</p>
+      <div class="header-left">
+        <h2>时代背景与地点设定</h2>
+        <p class="stage-desc">设定故事发生的时代背景和主要地点场景</p>
+      </div>
       <!-- 保存状态提示 -->
       <span v-if="saveStatus !== 'idle'" class="save-status" :class="saveStatus">
         {{ saveStatusText }}
@@ -458,29 +460,27 @@ onMounted(() => {
 .background-stage {
   max-width: 900px;
   margin: 0 auto;
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-  width: 100%;
 }
 
 .stage-header {
-  margin-bottom: 24px;
+  margin-bottom: 12px;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
 
-  h2 {
-    font-size: 20px;
-    font-weight: 600;
-    color: var(--text-color-primary);
-    margin: 0 0 8px 0;
-  }
+  .header-left {
+    h2 {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-color-primary);
+      margin: 0 0 4px 0;
+    }
 
-  .stage-desc {
-    font-size: 14px;
-    color: var(--text-color-secondary);
-    margin: 0;
+    .stage-desc {
+      font-size: 13px;
+      color: var(--text-color-secondary);
+      margin: 0;
+    }
   }
 
   .save-status {

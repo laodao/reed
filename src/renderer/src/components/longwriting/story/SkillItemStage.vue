@@ -729,24 +729,20 @@ watch(() => props.projectId, () => {
 .skill-item-stage {
   max-width: 900px;
   margin: 0 auto;
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-  width: 100%;
 }
 
 .stage-header {
-  margin-bottom: 24px;
+  margin-bottom: 12px;
 
   h2 {
-    font-size: 20px;
+    font-size: 16px;
     font-weight: 600;
     color: var(--text-color-primary);
-    margin: 0 0 8px 0;
+    margin: 0 0 4px 0;
   }
 
   .stage-desc {
-    font-size: 14px;
+    font-size: 13px;
     color: var(--text-color-secondary);
     margin: 0;
   }
