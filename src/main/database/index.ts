@@ -39,6 +39,7 @@ import { LwSkillRepository } from './repositories/lw-skill.repository'
 import { LwItemRepository } from './repositories/lw-item.repository'
 import { LwMaterialRepository } from './repositories/lw-material.repository'
 import { LwGlobalSettingsRepository } from './repositories/lw-global-settings.repository'
+import { LwDictionaryRepository } from './repositories/lw-dictionary.repository'
 import { DataPathService } from '../services/data-path.service'
 import { LanceDBService } from '../services/lance-db.service'
 
@@ -83,6 +84,7 @@ export class DatabaseManager {
   public lwItems: LwItemRepository | null = null
   public lwMaterials: LwMaterialRepository | null = null
   public lwGlobalSettings: LwGlobalSettingsRepository | null = null
+  public lwDictionary: LwDictionaryRepository | null = null
 
   private constructor() {
     // 默认使用 userData 路径，后续会在 initialize 中更新
@@ -138,6 +140,9 @@ export class DatabaseManager {
 
     // 初始化长文写作全局设置
     this.initGlobalSettings()
+
+    // 初始化长文写字典
+    this.initDictionary()
 
     console.log('[DatabaseManager] 数据库初始化完成:', this.dbPath)
   }
@@ -932,6 +937,40 @@ export class DatabaseManager {
       )
     `)
 
+    // 长文写字典分类表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_dictionary_category (
+        id TEXT PRIMARY KEY,
+        code TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        sort_order INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
+    // 长文写字典表（独立存储各类配置项）
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_dictionary (
+        id TEXT PRIMARY KEY,
+        category_code TEXT NOT NULL,
+        code TEXT NOT NULL,
+        name TEXT NOT NULL,
+        sort_order INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(category_code, code)
+      )
+    `)
+
+    // 创建索引
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_lw_dictionary_category ON lw_dictionary(category_code)
+    `)
+
+    // 迁移字典表结构
+    this.migrateDictionaryTables()
+
     // 执行其他数据库迁移
     this.runMigrations()
 
@@ -940,6 +979,91 @@ export class DatabaseManager {
 
     // 检查 portrait_variants 表是否需要移除 project_id 列
     this.migratePortraitVariantsRemoveProjectId()
+  }
+
+  /**
+   * 迁移字典表结构（从旧结构迁移到新结构）
+   */
+  private migrateDictionaryTables(): void {
+    if (!this.db) return
+
+    // 检查 lw_dictionary 表是否存在旧结构（有 category 和 value 字段）
+    const dictTableExists = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='lw_dictionary'").get()
+    if (dictTableExists) {
+      const columns = this.db.prepare("PRAGMA table_info(lw_dictionary)").all() as { name: string }[]
+      const hasOldCategory = columns.some(col => col.name === 'category')
+      const hasNewCategoryCode = columns.some(col => col.name === 'category_code')
+
+      // 如果有旧的 category 字段但没有新的 category_code 字段，需要重建表
+      if (hasOldCategory && !hasNewCategoryCode) {
+        console.log('[DatabaseManager] 迁移字典表结构...')
+
+        // 删除旧表
+        this.db.exec('DROP TABLE IF EXISTS lw_dictionary')
+        this.db.exec('DROP TABLE IF EXISTS lw_dictionary_category')
+
+        // 创建新的分类表
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS lw_dictionary_category (
+            id TEXT PRIMARY KEY,
+            code TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            sort_order INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          )
+        `)
+
+        // 创建新的字典表
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS lw_dictionary (
+            id TEXT PRIMARY KEY,
+            category_code TEXT NOT NULL,
+            code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            sort_order INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(category_code, code)
+          )
+        `)
+
+        // 创建索引
+        this.db.exec(`
+          CREATE INDEX IF NOT EXISTS idx_lw_dictionary_category ON lw_dictionary(category_code)
+        `)
+
+        console.log('[DatabaseManager] 字典表结构迁移完成')
+      }
+    }
+
+    // 检查分类数据是否正确（name字段是否为数字，如果是说明之前的插入顺序有误）
+    this.fixDictionaryCategoryData()
+  }
+
+  /**
+   * 修复分类数据（如果 name 是数字，说明之前插入顺序错误）
+   */
+  private fixDictionaryCategoryData(): void {
+    if (!this.db) return
+
+    const categoryTableExists = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='lw_dictionary_category'").get()
+    if (!categoryTableExists) return
+
+    // 检查是否有错误数据（name 是数字或以数字开头）
+    const wrongData = this.db.prepare(`
+      SELECT * FROM lw_dictionary_category WHERE name GLOB '[0-9]*'
+    `).all() as any[]
+
+    if (wrongData.length > 0) {
+      console.log('[DatabaseManager] 检测到分类数据错误，正在修复...', wrongData.length, '条')
+
+      // 删除所有数据重新初始化
+      this.db.exec('DELETE FROM lw_dictionary')
+      this.db.exec('DELETE FROM lw_dictionary_category')
+
+      console.log('[DatabaseManager] 分类数据已清除，将重新初始化')
+    }
   }
 
   /**
@@ -1290,6 +1414,7 @@ export class DatabaseManager {
     this.lwItems = new LwItemRepository(this.db)
     this.lwMaterials = new LwMaterialRepository(this.db)
     this.lwGlobalSettings = new LwGlobalSettingsRepository(this.db)
+    this.lwDictionary = new LwDictionaryRepository(this.db)
   }
 
   /**
@@ -1308,6 +1433,16 @@ export class DatabaseManager {
     // 获取或创建默认设置，如果不存在则自动创建
     const settings = this.lwGlobalSettings.getOrCreate()
     console.log('[DatabaseManager] 全局设置已初始化')
+  }
+
+  /**
+   * 初始化长文写字典
+   */
+  private initDictionary(): void {
+    if (!this.lwDictionary) return
+    // 初始化默认字典数据
+    this.lwDictionary.initializeDefaults()
+    console.log('[DatabaseManager] 字典已初始化')
   }
 
   /**

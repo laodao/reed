@@ -806,6 +806,113 @@ export class LongWritingService {
     }
     return this.db.lwGlobalSettings.update(data)
   }
+
+  // ==================== 字典管理 ====================
+
+  /**
+   * 获取所有字典项
+   */
+  // ==================== 字典管理 ====================
+
+  /**
+   * 获取所有字典分类
+   */
+  async getDictionaryCategories(): Promise<any[]> {
+    if (!this.db.lwDictionary) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwDictionary.getAllCategories()
+  }
+
+  /**
+   * 创建字典分类
+   */
+  async createDictionaryCategory(code: string, name: string): Promise<any> {
+    if (!this.db.lwDictionary) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwDictionary.createCategory(code, name)
+  }
+
+  /**
+   * 更新字典分类
+   */
+  async updateDictionaryCategory(code: string, name: string): Promise<any | null> {
+    if (!this.db.lwDictionary) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwDictionary.updateCategory(code, name)
+  }
+
+  /**
+   * 删除字典分类
+   */
+  async deleteDictionaryCategory(code: string): Promise<boolean> {
+    if (!this.db.lwDictionary) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwDictionary.deleteCategory(code)
+  }
+
+  /**
+   * 获取所有字典项
+   */
+  async getDictionaryAll(): Promise<Record<string, any[]>> {
+    if (!this.db.lwDictionary) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwDictionary.getAll()
+  }
+
+  /**
+   * 获取指定分类的字典项
+   */
+  async getDictionaryByCategory(categoryCode: string): Promise<any[]> {
+    if (!this.db.lwDictionary) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwDictionary.getByCategory(categoryCode)
+  }
+
+  /**
+   * 创建字典项
+   */
+  async createDictionaryItem(categoryCode: string, code: string, name: string): Promise<any> {
+    if (!this.db.lwDictionary) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwDictionary.create(categoryCode, code, name)
+  }
+
+  /**
+   * 更新字典项
+   */
+  async updateDictionaryItem(id: string, data: { code?: string; name?: string }): Promise<any | null> {
+    if (!this.db.lwDictionary) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwDictionary.update(id, data)
+  }
+
+  /**
+   * 删除字典项
+   */
+  async deleteDictionaryItem(id: string): Promise<boolean> {
+    if (!this.db.lwDictionary) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwDictionary.delete(id)
+  }
+
+  /**
+   * 重排序字典项
+   */
+  async reorderDictionary(categoryCode: string, orderedIds: string[]): Promise<void> {
+    if (!this.db.lwDictionary) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwDictionary.reorder(categoryCode, orderedIds)
+  }
 }
 
 // 导出单例获取函数

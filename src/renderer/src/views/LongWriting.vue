@@ -93,221 +93,88 @@
     <!-- 设置对话框 -->
     <el-dialog
       v-model="showSettingsDialog"
-      title="全局设置"
-      width="600px"
+      title="字典设置"
+      width="800px"
     >
-      <el-tabs v-model="activeSettingsTab">
-        <el-tab-pane label="故事类型" name="storyTypes">
-          <div class="settings-section">
-            <p class="settings-desc">配置可选的故事类型选项</p>
-            <el-tag
-              v-for="(type, index) in settingsForm.storyTypes"
-              :key="index"
-              closable
-              @close="removeSettingItem('storyTypes', index)"
-              class="settings-tag"
-            >
-              {{ type }}
-            </el-tag>
-            <el-input
-              v-model="newStoryType"
-              placeholder="输入新的故事类型"
-              class="settings-input"
-              @keyup.enter="addSettingItem('storyTypes', newStoryType); newStoryType = ''"
-            >
-              <template #append>
-                <el-button @click="addSettingItem('storyTypes', newStoryType); newStoryType = ''">添加</el-button>
-              </template>
-            </el-input>
-          </div>
-        </el-tab-pane>
+      <div class="dictionary-settings">
+        <el-tabs v-model="activeSettingsTab" type="border-card" closable @tab-remove="handleRemoveCategory">
+          <el-tab-pane
+            v-for="category in categories"
+            :key="category.code"
+            :label="category.name"
+            :name="category.code"
+          >
+            <div class="category-header">
+              <span class="category-info">分类编码：{{ category.code }}</span>
+              <el-button
+                size="small"
+                text
+                type="primary"
+                @click="showEditCategoryDialog(category)"
+              >
+                编辑分类名称
+              </el-button>
+            </div>
+            <DictionaryEditor
+              :items="dictionary[category.code] || []"
+              :category-code="category.code"
+              @add="addItem"
+              @update="updateItem"
+              @remove="removeItem"
+            />
+          </el-tab-pane>
 
-        <el-tab-pane label="故事风格" name="styles">
-          <div class="settings-section">
-            <p class="settings-desc">配置可选的故事风格选项</p>
-            <el-tag
-              v-for="(style, index) in settingsForm.styles"
-              :key="index"
-              closable
-              @close="removeSettingItem('styles', index)"
-              class="settings-tag"
-            >
-              {{ style }}
-            </el-tag>
-            <el-input
-              v-model="newStyle"
-              placeholder="输入新的故事风格"
-              class="settings-input"
-              @keyup.enter="addSettingItem('styles', newStyle); newStyle = ''"
-            >
-              <template #append>
-                <el-button @click="addSettingItem('styles', newStyle); newStyle = ''">添加</el-button>
-              </template>
-            </el-input>
-          </div>
-        </el-tab-pane>
+          <!-- 添加分类按钮 -->
+          <template #add>
+            <el-button size="small" @click="showAddCategoryDialog">
+              <el-icon><Plus /></el-icon>
+              新增分类
+            </el-button>
+          </template>
+        </el-tabs>
+      </div>
+    </el-dialog>
 
-        <el-tab-pane label="目标读者" name="targetReaders">
-          <div class="settings-section">
-            <p class="settings-desc">配置可选的目标读者选项</p>
-            <el-tag
-              v-for="(reader, index) in settingsForm.targetReaders"
-              :key="index"
-              closable
-              @close="removeSettingItem('targetReaders', index)"
-              class="settings-tag"
-            >
-              {{ reader }}
-            </el-tag>
-            <el-input
-              v-model="newTargetReader"
-              placeholder="输入新的目标读者"
-              class="settings-input"
-              @keyup.enter="addSettingItem('targetReaders', newTargetReader); newTargetReader = ''"
-            >
-              <template #append>
-                <el-button @click="addSettingItem('targetReaders', newTargetReader); newTargetReader = ''">添加</el-button>
-              </template>
-            </el-input>
-          </div>
-        </el-tab-pane>
-
-        <el-tab-pane label="预估字数" name="estimatedLengths">
-          <div class="settings-section">
-            <p class="settings-desc">配置可选的预估字数选项</p>
-            <el-tag
-              v-for="(length, index) in settingsForm.estimatedLengths"
-              :key="index"
-              closable
-              @close="removeSettingItem('estimatedLengths', index)"
-              class="settings-tag"
-            >
-              {{ length }}
-            </el-tag>
-            <el-input
-              v-model="newEstimatedLength"
-              placeholder="输入新的预估字数"
-              class="settings-input"
-              @keyup.enter="addSettingItem('estimatedLengths', newEstimatedLength); newEstimatedLength = ''"
-            >
-              <template #append>
-                <el-button @click="addSettingItem('estimatedLengths', newEstimatedLength); newEstimatedLength = ''">添加</el-button>
-              </template>
-            </el-input>
-          </div>
-        </el-tab-pane>
-
-        <el-tab-pane label="技能设置" name="skills">
-          <div class="settings-section">
-            <h4>技能类型</h4>
-            <el-tag
-              v-for="(type, index) in settingsForm.skillTypes"
-              :key="index"
-              closable
-              @close="removeSettingItem('skillTypes', index)"
-              class="settings-tag"
-            >
-              {{ type }}
-            </el-tag>
-            <el-input
-              v-model="newSkillType"
-              placeholder="输入新的技能类型"
-              class="settings-input"
-              @keyup.enter="addSettingItem('skillTypes', newSkillType); newSkillType = ''"
-            >
-              <template #append>
-                <el-button @click="addSettingItem('skillTypes', newSkillType); newSkillType = ''">添加</el-button>
-              </template>
-            </el-input>
-
-            <h4 style="margin-top: 16px">技能等级</h4>
-            <el-tag
-              v-for="(level, index) in settingsForm.skillLevels"
-              :key="index"
-              closable
-              @close="removeSettingItem('skillLevels', index)"
-              class="settings-tag"
-            >
-              {{ level }}
-            </el-tag>
-            <el-input
-              v-model="newSkillLevel"
-              placeholder="输入新的技能等级"
-              class="settings-input"
-              @keyup.enter="addSettingItem('skillLevels', newSkillLevel); newSkillLevel = ''"
-            >
-              <template #append>
-                <el-button @click="addSettingItem('skillLevels', newSkillLevel); newSkillLevel = ''">添加</el-button>
-              </template>
-            </el-input>
-          </div>
-        </el-tab-pane>
-
-        <el-tab-pane label="物品设置" name="items">
-          <div class="settings-section">
-            <h4>物品类型</h4>
-            <el-tag
-              v-for="(type, index) in settingsForm.itemTypes"
-              :key="index"
-              closable
-              @close="removeSettingItem('itemTypes', index)"
-              class="settings-tag"
-            >
-              {{ type }}
-            </el-tag>
-            <el-input
-              v-model="newItemType"
-              placeholder="输入新的物品类型"
-              class="settings-input"
-              @keyup.enter="addSettingItem('itemTypes', newItemType); newItemType = ''"
-            >
-              <template #append>
-                <el-button @click="addSettingItem('itemTypes', newItemType); newItemType = ''">添加</el-button>
-              </template>
-            </el-input>
-
-            <h4 style="margin-top: 16px">物品等级</h4>
-            <el-tag
-              v-for="(level, index) in settingsForm.itemLevels"
-              :key="index"
-              closable
-              @close="removeSettingItem('itemLevels', index)"
-              class="settings-tag"
-            >
-              {{ level }}
-            </el-tag>
-            <el-input
-              v-model="newItemLevel"
-              placeholder="输入新的物品等级"
-              class="settings-input"
-              @keyup.enter="addSettingItem('itemLevels', newItemLevel); newItemLevel = ''"
-            >
-              <template #append>
-                <el-button @click="addSettingItem('itemLevels', newItemLevel); newItemLevel = ''">添加</el-button>
-              </template>
-            </el-input>
-          </div>
-        </el-tab-pane>
-      </el-tabs>
-
+    <!-- 新增分类对话框 -->
+    <el-dialog
+      v-model="showCategoryDialog"
+      :title="editingCategory ? '编辑分类' : '新增分类'"
+      width="400px"
+    >
+      <el-form :model="categoryForm" label-width="80px">
+        <el-form-item label="分类编码" required>
+          <el-input
+            v-model="categoryForm.code"
+            placeholder="请输入编码（英文）"
+            :disabled="!!editingCategory"
+          />
+        </el-form-item>
+        <el-form-item label="分类名称" required>
+          <el-input v-model="categoryForm.name" placeholder="请输入名称" />
+        </el-form-item>
+      </el-form>
       <template #footer>
-        <el-button @click="showSettingsDialog = false">取消</el-button>
-        <el-button type="primary" @click="saveSettings">保存设置</el-button>
+        <el-button @click="showCategoryDialog = false">取消</el-button>
+        <el-button type="primary" :disabled="!categoryForm.code || !categoryForm.name" @click="saveCategory">
+          保存
+        </el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, toRaw } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, Reading, Document, Setting } from '@element-plus/icons-vue'
-import type { LongWritingProject, LongWritingGlobalSettings } from '../../../../shared/types/longwriting.types'
+import DictionaryEditor from '../components/longwriting/DictionaryEditor.vue'
+import type { LongWritingProject } from '../../../../shared/types/longwriting.types'
+import type { DictionaryCategory, DictionaryItem } from '../../../../shared/types/longwriting.types'
 
 const router = useRouter()
 
-// 项目列表（Mock 数据）
+// 项目列表
 const projects = ref<LongWritingProject[]>([])
 
 // 创建对话框
@@ -319,30 +186,21 @@ const createForm = ref({
 
 // 设置对话框
 const showSettingsDialog = ref(false)
-const activeSettingsTab = ref('storyTypes')
-const settingsForm = ref<LongWritingGlobalSettings>({
-  id: '',
-  storyTypes: [],
-  styles: [],
-  targetReaders: [],
-  estimatedLengths: [],
-  skillTypes: [],
-  skillLevels: [],
-  itemTypes: [],
-  itemLevels: [],
-  createdAt: 0,
-  updatedAt: 0
-})
+const activeSettingsTab = ref('')
 
-// 新增项输入
-const newStoryType = ref('')
-const newStyle = ref('')
-const newTargetReader = ref('')
-const newEstimatedLength = ref('')
-const newSkillType = ref('')
-const newSkillLevel = ref('')
-const newItemType = ref('')
-const newItemLevel = ref('')
+// 字典分类列表
+const categories = ref<DictionaryCategory[]>([])
+
+// 字典数据
+const dictionary = ref<Record<string, DictionaryItem[]>>({})
+
+// 分类对话框
+const showCategoryDialog = ref(false)
+const editingCategory = ref<DictionaryCategory | null>(null)
+const categoryForm = ref({
+  code: '',
+  name: ''
+})
 
 // 阶段标签映射
 const stageLabels: Record<string, string> = {
@@ -453,62 +311,192 @@ function confirmDeleteProject(project: LongWritingProject) {
   })
 }
 
-onMounted(() => {
-  loadProjects()
-  loadSettings()
-})
-
-// 加载全局设置
-async function loadSettings() {
+// 加载字典分类和数据
+async function loadDictionary() {
   try {
-    const result = await window.electronAPI.longwriting.getGlobalSettings()
-    if (result.success && result.data) {
-      settingsForm.value = result.data
+    // 加载分类
+    const categoriesResult = await window.electronAPI.longwriting.getDictionaryCategories()
+    if (categoriesResult.success && categoriesResult.data) {
+      categories.value = categoriesResult.data
+      // 默认选中第一个分类
+      if (categories.value.length > 0 && !activeSettingsTab.value) {
+        activeSettingsTab.value = categories.value[0].code
+      }
+    }
+
+    // 加载字典项
+    const dictResult = await window.electronAPI.longwriting.getDictionaryAll()
+    if (dictResult.success && dictResult.data) {
+      dictionary.value = dictResult.data
     }
   } catch (error) {
-    console.error('加载设置失败:', error)
+    console.error('加载字典失败:', error)
   }
 }
 
-// 添加设置项
-function addSettingItem(field: keyof LongWritingGlobalSettings, value: string) {
-  if (!value.trim()) return
-  const arr = settingsForm.value[field] as string[]
-  if (!arr.includes(value.trim())) {
-    arr.push(value.trim())
+// 显示新增分类对话框
+function showAddCategoryDialog() {
+  editingCategory.value = null
+  categoryForm.value = { code: '', name: '' }
+  showCategoryDialog.value = true
+}
+
+// 显示编辑分类对话框
+function showEditCategoryDialog(category: DictionaryCategory) {
+  editingCategory.value = category
+  categoryForm.value = {
+    code: category.code,
+    name: category.name
   }
+  showCategoryDialog.value = true
 }
 
-// 移除设置项
-function removeSettingItem(field: keyof LongWritingGlobalSettings, index: number) {
-  const arr = settingsForm.value[field] as string[]
-  arr.splice(index, 1)
-}
+// 保存分类
+async function saveCategory() {
+  if (!categoryForm.value.code.trim() || !categoryForm.value.name.trim()) {
+    ElMessage.warning('请输入编码和名称')
+    return
+  }
 
-// 保存设置
-async function saveSettings() {
   try {
-    const rawSettings = toRaw(settingsForm.value)
-    const result = await window.electronAPI.longwriting.updateGlobalSettings({
-      storyTypes: rawSettings.storyTypes,
-      styles: rawSettings.styles,
-      targetReaders: rawSettings.targetReaders,
-      estimatedLengths: rawSettings.estimatedLengths,
-      skillTypes: rawSettings.skillTypes,
-      skillLevels: rawSettings.skillLevels,
-      itemTypes: rawSettings.itemTypes,
-      itemLevels: rawSettings.itemLevels
-    })
-    if (result.success) {
-      ElMessage.success('设置已保存')
-      showSettingsDialog.value = false
+    if (editingCategory.value) {
+      // 更新分类
+      const result = await window.electronAPI.longwriting.updateDictionaryCategory(
+        categoryForm.value.code,
+        categoryForm.value.name
+      )
+      if (result.success) {
+        const index = categories.value.findIndex(c => c.code === categoryForm.value.code)
+        if (index !== -1) {
+          categories.value[index].name = categoryForm.value.name
+        }
+        ElMessage.success('分类已更新')
+        showCategoryDialog.value = false
+      } else {
+        ElMessage.error('更新失败：' + (result.error || '未知错误'))
+      }
     } else {
-      ElMessage.error('保存失败：' + result.error)
+      // 新增分类
+      const result = await window.electronAPI.longwriting.createDictionaryCategory(
+        categoryForm.value.code,
+        categoryForm.value.name
+      )
+      if (result.success && result.data) {
+        categories.value.push(result.data)
+        dictionary.value[result.data.code] = []
+        activeSettingsTab.value = result.data.code
+        ElMessage.success('分类已创建')
+        showCategoryDialog.value = false
+      } else {
+        ElMessage.error('创建失败：' + (result.error || '未知错误'))
+      }
     }
   } catch (error: any) {
-    ElMessage.error('保存失败：' + error.message)
+    ElMessage.error('操作失败：' + error.message)
   }
 }
+
+// 删除分类
+async function handleRemoveCategory(categoryCode: string) {
+  const category = categories.value.find(c => c.code === categoryCode)
+  if (!category) return
+
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除分类「${category.name}」吗？该分类下的所有字典项都会被删除，此操作不可恢复。`,
+      '删除分类',
+      {
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    const result = await window.electronAPI.longwriting.deleteDictionaryCategory(categoryCode)
+    if (result.success) {
+      const index = categories.value.findIndex(c => c.code === categoryCode)
+      if (index !== -1) {
+        categories.value.splice(index, 1)
+      }
+      delete dictionary.value[categoryCode]
+
+      // 重新选中第一个分类
+      if (activeSettingsTab.value === categoryCode && categories.value.length > 0) {
+        activeSettingsTab.value = categories.value[0].code
+      }
+
+      ElMessage.success('分类已删除')
+    } else {
+      ElMessage.error('删除失败：' + (result.error || '未知错误'))
+    }
+  } catch {
+    // 用户取消
+  }
+}
+
+// 添加字典项
+async function addItem(categoryCode: string, code: string, name: string) {
+  if (!code.trim() || !name.trim()) return
+  try {
+    const result = await window.electronAPI.longwriting.createDictionaryItem(categoryCode, code.trim(), name.trim())
+    if (result.success && result.data) {
+      if (!dictionary.value[categoryCode]) {
+        dictionary.value[categoryCode] = []
+      }
+      dictionary.value[categoryCode].push(result.data)
+      ElMessage.success('添加成功')
+    } else {
+      ElMessage.error('添加失败：' + (result.error || '未知错误'))
+    }
+  } catch (error: any) {
+    ElMessage.error('添加失败：' + error.message)
+  }
+}
+
+// 更新字典项
+async function updateItem(id: string, data: { code?: string; name?: string }) {
+  try {
+    const result = await window.electronAPI.longwriting.updateDictionaryItem(id, data)
+    if (result.success && result.data) {
+      // 找到并更新对应的项
+      for (const categoryCode of Object.keys(dictionary.value)) {
+        const index = dictionary.value[categoryCode].findIndex(item => item.id === id)
+        if (index !== -1) {
+          dictionary.value[categoryCode][index] = result.data
+          break
+        }
+      }
+      ElMessage.success('更新成功')
+    } else {
+      ElMessage.error('更新失败：' + (result.error || '未知错误'))
+    }
+  } catch (error: any) {
+    ElMessage.error('更新失败：' + error.message)
+  }
+}
+
+// 删除字典项
+async function removeItem(categoryCode: string, id: string) {
+  try {
+    const result = await window.electronAPI.longwriting.deleteDictionaryItem(id)
+    if (result.success) {
+      const index = dictionary.value[categoryCode]?.findIndex(item => item.id === id)
+      if (index !== undefined && index !== -1) {
+        dictionary.value[categoryCode].splice(index, 1)
+      }
+      ElMessage.success('删除成功')
+    } else {
+      ElMessage.error('删除失败：' + (result.error || '未知错误'))
+    }
+  } catch (error: any) {
+    ElMessage.error('删除失败：' + error.message)
+  }
+}
+
+onMounted(() => {
+  loadProjects()
+  loadDictionary()
+})
 </script>
 
 <style lang="scss" scoped>
@@ -661,5 +649,30 @@ async function saveSettings() {
 .settings-input {
   margin-top: 12px;
   max-width: 300px;
+}
+
+.dictionary-settings {
+  :deep(.el-tabs__header) {
+    margin-bottom: 0;
+  }
+
+  :deep(.el-tabs__content) {
+    padding: 16px;
+  }
+}
+
+.category-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color-lighter);
+
+  .category-info {
+    font-size: 13px;
+    color: var(--text-color-secondary);
+    font-family: monospace;
+  }
 }
 </style>

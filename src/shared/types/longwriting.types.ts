@@ -664,3 +664,30 @@ export const DEFAULT_ITEM_TYPES = [
 export const DEFAULT_ITEM_LEVELS = [
   '普通', '稀有', '传说', '神级'
 ]
+
+// ==================== 字典相关类型 ====================
+
+/**
+ * 字典分类
+ */
+export interface DictionaryCategory {
+  id: string
+  code: string
+  name: string
+  sortOrder: number
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * 字典项
+ */
+export interface DictionaryItem {
+  id: string
+  categoryCode: string
+  code: string
+  name: string
+  sortOrder: number
+  createdAt: number
+  updatedAt: number
+}

@@ -129,7 +129,21 @@ const CHANNELS = {
 
   // 全局配置
   GET_GLOBAL_SETTINGS: 'longwriting:getGlobalSettings',
-  UPDATE_GLOBAL_SETTINGS: 'longwriting:updateGlobalSettings'
+  UPDATE_GLOBAL_SETTINGS: 'longwriting:updateGlobalSettings',
+
+  // 字典分类管理
+  GET_DICTIONARY_CATEGORIES: 'longwriting:getDictionaryCategories',
+  CREATE_DICTIONARY_CATEGORY: 'longwriting:createDictionaryCategory',
+  UPDATE_DICTIONARY_CATEGORY: 'longwriting:updateDictionaryCategory',
+  DELETE_DICTIONARY_CATEGORY: 'longwriting:deleteDictionaryCategory',
+
+  // 字典项管理
+  GET_DICTIONARY_ALL: 'longwriting:getDictionaryAll',
+  GET_DICTIONARY_BY_CATEGORY: 'longwriting:getDictionaryByCategory',
+  CREATE_DICTIONARY_ITEM: 'longwriting:createDictionaryItem',
+  UPDATE_DICTIONARY_ITEM: 'longwriting:updateDictionaryItem',
+  DELETE_DICTIONARY_ITEM: 'longwriting:deleteDictionaryItem',
+  REORDER_DICTIONARY: 'longwriting:reorderDictionary'
 }
 
 /**
@@ -1325,6 +1339,130 @@ export function registerLongWritingHandlers(): void {
     try {
       const settings = await service.updateGlobalSettings(data)
       return { success: true, data: settings }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 字典分类管理 ====================
+
+  /**
+   * 获取所有字典分类
+   */
+  ipcMain.handle(CHANNELS.GET_DICTIONARY_CATEGORIES, async () => {
+    try {
+      const categories = await service.getDictionaryCategories()
+      return { success: true, data: categories }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 创建字典分类
+   */
+  ipcMain.handle(CHANNELS.CREATE_DICTIONARY_CATEGORY, async (_event, code: string, name: string) => {
+    try {
+      const category = await service.createDictionaryCategory(code, name)
+      return { success: true, data: category }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 更新字典分类
+   */
+  ipcMain.handle(CHANNELS.UPDATE_DICTIONARY_CATEGORY, async (_event, code: string, name: string) => {
+    try {
+      const category = await service.updateDictionaryCategory(code, name)
+      return { success: true, data: category }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 删除字典分类
+   */
+  ipcMain.handle(CHANNELS.DELETE_DICTIONARY_CATEGORY, async (_event, code: string) => {
+    try {
+      const result = await service.deleteDictionaryCategory(code)
+      return { success: true, data: result }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 字典项管理 ====================
+
+  /**
+   * 获取所有字典项
+   */
+  ipcMain.handle(CHANNELS.GET_DICTIONARY_ALL, async () => {
+    try {
+      const dictionary = await service.getDictionaryAll()
+      return { success: true, data: dictionary }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 获取指定分类的字典项
+   */
+  ipcMain.handle(CHANNELS.GET_DICTIONARY_BY_CATEGORY, async (_event, categoryCode: string) => {
+    try {
+      const items = await service.getDictionaryByCategory(categoryCode)
+      return { success: true, data: items }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 创建字典项
+   */
+  ipcMain.handle(CHANNELS.CREATE_DICTIONARY_ITEM, async (_event, categoryCode: string, code: string, name: string) => {
+    try {
+      const item = await service.createDictionaryItem(categoryCode, code, name)
+      return { success: true, data: item }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 更新字典项
+   */
+  ipcMain.handle(CHANNELS.UPDATE_DICTIONARY_ITEM, async (_event, id: string, data: { code?: string; name?: string }) => {
+    try {
+      const item = await service.updateDictionaryItem(id, data)
+      return { success: true, data: item }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 删除字典项
+   */
+  ipcMain.handle(CHANNELS.DELETE_DICTIONARY_ITEM, async (_event, id: string) => {
+    try {
+      const result = await service.deleteDictionaryItem(id)
+      return { success: true, data: result }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 重排序字典项
+   */
+  ipcMain.handle(CHANNELS.REORDER_DICTIONARY, async (_event, categoryCode: string, orderedIds: string[]) => {
+    try {
+      await service.reorderDictionary(categoryCode, orderedIds)
+      return { success: true }
     } catch (error: any) {
       return { success: false, error: error.message }
     }

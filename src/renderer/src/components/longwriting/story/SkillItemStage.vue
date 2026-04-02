@@ -237,7 +237,7 @@
 import { ref, computed, onMounted, watch, inject, toRaw } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, MagicStick, Close } from '@element-plus/icons-vue'
-import type { StorySkill, StoryItem, StoryCharacter, LongWritingGlobalSettings } from '../../../../shared/types/longwriting.types'
+import type { StorySkill, StoryItem, StoryCharacter, DictionaryItem } from '../../../../shared/types/longwriting.types'
 
 const props = defineProps<{
   projectId: string
@@ -250,8 +250,13 @@ const emit = defineEmits<{
 // 从父组件获取选中的模型（是一个 ComputedRef）
 const selectedModel = inject<ReturnType<typeof computed<{ providerId: string; modelId: string } | null>>>('selectedModel', computed(() => null))
 
-// 全局设置
-const globalSettings = ref<LongWritingGlobalSettings | null>(null)
+// 字典数据
+const dictionary = ref<Record<string, DictionaryItem[]>>({
+  skill_type: [],
+  skill_level: [],
+  item_type: [],
+  item_level: []
+})
 
 const activeTab = ref('skills')
 
@@ -398,8 +403,8 @@ const loading = ref(false)
 // 技能表单
 const skillForm = ref({
   name: '',
-  type: '武功' as string,
-  level: '初级' as string,
+  type: 'martial' as string,
+  level: 'beginner' as string,
   system: '',
   description: '',
   characterIds: [] as string[]
@@ -408,62 +413,62 @@ const skillForm = ref({
 // 物品表单
 const itemForm = ref({
   name: '',
-  type: '武器' as string,
-  level: '普通' as string,
+  type: 'weapon' as string,
+  level: 'common' as string,
   description: '',
   ownerId: ''
 })
 
-// 标签映射（从数据库加载）
+// 标签映射（从字典加载）
 const skillTypeOptions = computed(() => {
-  if (!globalSettings.value?.skillTypes?.length) {
+  if (!dictionary.value.skill_type?.length) {
     return [
-      { label: '武功', value: '武功' },
-      { label: '法术', value: '法术' },
-      { label: '天赋', value: '天赋' },
-      { label: '科技', value: '科技' },
-      { label: '其他', value: '其他' }
+      { label: '武功', value: 'martial' },
+      { label: '法术', value: 'magic' },
+      { label: '天赋', value: 'talent' },
+      { label: '科技', value: 'tech' },
+      { label: '其他', value: 'other' }
     ]
   }
-  return globalSettings.value.skillTypes.map(label => ({ label, value: label }))
+  return dictionary.value.skill_type.map(item => ({ label: item.name, value: item.code }))
 })
 
 const skillLevelOptions = computed(() => {
-  if (!globalSettings.value?.skillLevels?.length) {
+  if (!dictionary.value.skill_level?.length) {
     return [
-      { label: '初级', value: '初级' },
-      { label: '中级', value: '中级' },
-      { label: '高级', value: '高级' },
-      { label: '大师', value: '大师' }
+      { label: '初级', value: 'beginner' },
+      { label: '中级', value: 'intermediate' },
+      { label: '高级', value: 'advanced' },
+      { label: '大师', value: 'master' }
     ]
   }
-  return globalSettings.value.skillLevels.map(label => ({ label, value: label }))
+  return dictionary.value.skill_level.map(item => ({ label: item.name, value: item.code }))
 })
 
 const itemTypeOptions = computed(() => {
-  if (!globalSettings.value?.itemTypes?.length) {
+  if (!dictionary.value.item_type?.length) {
     return [
-      { label: '武器', value: '武器' },
-      { label: '神器', value: '神器' },
-      { label: '丹药', value: '丹药' },
-      { label: '秘籍', value: '秘籍' },
-      { label: '信物', value: '信物' },
-      { label: '其他', value: '其他' }
+      { label: '武器', value: 'weapon' },
+      { label: '神器', value: 'artifact' },
+      { label: '丹药', value: 'medicine' },
+      { label: '秘籍', value: 'manual' },
+      { label: '信物', value: 'token' },
+      { label: '其他', value: 'other' }
     ]
   }
-  return globalSettings.value.itemTypes.map(label => ({ label, value: label }))
+  return dictionary.value.item_type.map(item => ({ label: item.name, value: item.code }))
 })
 
 const itemLevelOptions = computed(() => {
-  if (!globalSettings.value?.itemLevels?.length) {
+  if (!dictionary.value.item_level?.length) {
     return [
-      { label: '普通', value: '普通' },
-      { label: '稀有', value: '稀有' },
-      { label: '传说', value: '传说' },
-      { label: '神级', value: '神级' }
+      { label: '普通', value: 'common' },
+      { label: '稀有', value: 'rare' },
+      { label: '传说', value: 'legendary' },
+      { label: '神级', value: 'divine' }
     ]
   }
-  return globalSettings.value.itemLevels.map(label => ({ label, value: label }))
+  return dictionary.value.item_level.map(item => ({ label: item.name, value: item.code }))
 })
 
 function getSkillTypeLabel(type: string): string {
@@ -567,8 +572,8 @@ function resetSkillForm() {
   editingSkill.value = null
   skillForm.value = {
     name: '',
-    type: '武功',
-    level: '初级',
+    type: 'martial',
+    level: 'beginner',
     system: '',
     description: '',
     characterIds: []
@@ -654,8 +659,8 @@ function resetItemForm() {
   editingItem.value = null
   itemForm.value = {
     name: '',
-    type: '武器',
-    level: '普通',
+    type: 'weapon',
+    level: 'common',
     description: '',
     ownerId: ''
   }
@@ -695,15 +700,15 @@ async function loadItems() {
   }
 }
 
-// 加载全局设置
-async function loadGlobalSettings() {
+// 加载字典数据
+async function loadDictionary() {
   try {
-    const result = await window.electronAPI.longwriting.getGlobalSettings()
+    const result = await window.electronAPI.longwriting.getDictionaryAll()
     if (result.success && result.data) {
-      globalSettings.value = result.data
+      dictionary.value = result.data
     }
   } catch (error) {
-    console.error('加载全局设置失败:', error)
+    console.error('加载字典失败:', error)
   }
 }
 
@@ -711,7 +716,7 @@ async function loadGlobalSettings() {
 async function loadData() {
   loading.value = true
   await Promise.all([
-    loadGlobalSettings(),
+    loadDictionary(),
     loadCharacters(),
     loadSkills(),
     loadItems()

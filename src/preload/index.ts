@@ -1021,7 +1021,31 @@ const electronAPI = {
     getGlobalSettings: () =>
       ipcRenderer.invoke('longwriting:getGlobalSettings'),
     updateGlobalSettings: (data: any) =>
-      ipcRenderer.invoke('longwriting:updateGlobalSettings', data)
+      ipcRenderer.invoke('longwriting:updateGlobalSettings', data),
+
+    // 字典分类管理
+    getDictionaryCategories: () =>
+      ipcRenderer.invoke('longwriting:getDictionaryCategories'),
+    createDictionaryCategory: (code: string, name: string) =>
+      ipcRenderer.invoke('longwriting:createDictionaryCategory', code, name),
+    updateDictionaryCategory: (code: string, name: string) =>
+      ipcRenderer.invoke('longwriting:updateDictionaryCategory', code, name),
+    deleteDictionaryCategory: (code: string) =>
+      ipcRenderer.invoke('longwriting:deleteDictionaryCategory', code),
+
+    // 字典项管理
+    getDictionaryAll: () =>
+      ipcRenderer.invoke('longwriting:getDictionaryAll'),
+    getDictionaryByCategory: (categoryCode: string) =>
+      ipcRenderer.invoke('longwriting:getDictionaryByCategory', categoryCode),
+    createDictionaryItem: (categoryCode: string, code: string, name: string) =>
+      ipcRenderer.invoke('longwriting:createDictionaryItem', categoryCode, code, name),
+    updateDictionaryItem: (id: string, data: { code?: string; name?: string }) =>
+      ipcRenderer.invoke('longwriting:updateDictionaryItem', id, data),
+    deleteDictionaryItem: (id: string) =>
+      ipcRenderer.invoke('longwriting:deleteDictionaryItem', id),
+    reorderDictionary: (categoryCode: string, orderedIds: string[]) =>
+      ipcRenderer.invoke('longwriting:reorderDictionary', categoryCode, orderedIds)
   }
 }
 

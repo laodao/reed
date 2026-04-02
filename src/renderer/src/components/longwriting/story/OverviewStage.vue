@@ -160,7 +160,7 @@
 import { ref, computed, onMounted, inject, toRaw } from 'vue'
 import { ElMessage } from 'element-plus'
 import { MagicStick, Close } from '@element-plus/icons-vue'
-import type { LongWritingGlobalSettings } from '../../../../shared/types/longwriting.types'
+import type { DictionaryItem } from '../../../../shared/types/longwriting.types'
 
 // Props
 const props = defineProps<{
@@ -176,84 +176,88 @@ const emit = defineEmits<{
 const selectedModelKey = inject<ReturnType<typeof ref<string>>>('selectedModelKey', ref(''))
 const selectedModel = inject<ReturnType<typeof computed<{ providerId: string; modelId: string } | null>>>('selectedModel', computed(() => null))
 
-// 全局设置
-const globalSettings = ref<LongWritingGlobalSettings | null>(null)
+// 字典数据
+const dictionary = ref<Record<string, DictionaryItem[]>>({
+  story_type: [],
+  style: [],
+  target_reader: [],
+  estimated_length: []
+})
 
-// 故事类型选项（从数据库加载）
+// 故事类型选项（从字典加载）
 const storyTypes = computed(() => {
-  if (!globalSettings.value?.storyTypes?.length) {
+  if (!dictionary.value.story_type?.length) {
     // 默认值
     return [
-      { label: '武侠', value: '武侠' },
-      { label: '仙侠', value: '仙侠' },
-      { label: '玄幻', value: '玄幻' },
-      { label: '科幻', value: '科幻' },
-      { label: '悬疑', value: '悬疑' },
-      { label: '都市', value: '都市' },
-      { label: '言情', value: '言情' },
-      { label: '历史', value: '历史' },
-      { label: '其他', value: '其他' }
+      { label: '武侠', value: 'wuxia' },
+      { label: '仙侠', value: 'xianxia' },
+      { label: '玄幻', value: 'xuanhuan' },
+      { label: '科幻', value: 'kehuan' },
+      { label: '悬疑', value: 'xuanyi' },
+      { label: '都市', value: 'dushi' },
+      { label: '言情', value: 'yanqing' },
+      { label: '历史', value: 'lishi' },
+      { label: '其他', value: 'other' }
     ]
   }
-  // 将数据库中的中文标签映射到 value
-  return globalSettings.value.storyTypes.map(label => ({
-    label,
-    value: label
+  return dictionary.value.story_type.map(item => ({
+    label: item.name,
+    value: item.code
   }))
 })
 
-// 故事风格选项（从数据库加载）
+// 故事风格选项（从字典加载）
 const styleOptions = computed(() => {
-  if (!globalSettings.value?.styles?.length) {
+  if (!dictionary.value.style?.length) {
     return [
-      { label: '轻松幽默', value: '轻松幽默' },
-      { label: '沉重深刻', value: '沉重深刻' },
-      { label: '热血激昂', value: '热血激昂' },
-      { label: '冷峻沉稳', value: '冷峻沉稳' },
-      { label: '通俗易懂', value: '通俗易懂' },
-      { label: '文学性强', value: '文学性强' }
+      { label: '轻松幽默', value: 'light' },
+      { label: '沉重深刻', value: 'heavy' },
+      { label: '热血激昂', value: 'passionate' },
+      { label: '冷峻沉稳', value: 'calm' },
+      { label: '通俗易懂', value: 'popular' },
+      { label: '文学性强', value: 'literary' }
     ]
   }
-  return globalSettings.value.styles.map(label => ({
-    label,
-    value: label
+  return dictionary.value.style.map(item => ({
+    label: item.name,
+    value: item.code
   }))
 })
 
-// 目标读者选项（从数据库加载）
+// 目标读者选项（从字典加载）
 const targetReaderOptions = computed(() => {
-  if (!globalSettings.value?.targetReaders?.length) {
+  if (!dictionary.value.target_reader?.length) {
     return [
-      { label: '青少年', value: '青少年' },
-      { label: '青年', value: '青年' },
-      { label: '中年', value: '中年' },
-      { label: '全年龄', value: '全年龄' }
+      { label: '青少年', value: 'teenager' },
+      { label: '青年', value: 'youth' },
+      { label: '中年', value: 'middle' },
+      { label: '全年龄', value: 'all' }
     ]
   }
-  return globalSettings.value.targetReaders.map(label => ({
-    label,
-    value: label
+  return dictionary.value.target_reader.map(item => ({
+    label: item.name,
+    value: item.code
   }))
 })
 
-// 预估字数选项（从数据库加载）
+// 预估字数选项（从字典加载）
 const estimatedLengthOptions = computed(() => {
-  if (!globalSettings.value?.estimatedLengths?.length) {
+  if (!dictionary.value.estimated_length?.length) {
     return [
-      { label: '短篇小说（5万字以下）', value: '短篇小说（5万字以下）' },
-      { label: '中篇小说（5-20万字）', value: '中篇小说（5-20万字）' },
-      { label: '长篇小说（20万字以上）', value: '长篇小说（20万字以上）' }
+      { label: '短篇小说（5万字以下）', value: 'short' },
+      { label: '中篇小说（5-20万字）', value: 'medium' },
+      { label: '长篇小说（20万字以上）', value: 'long' }
     ]
   }
-  return globalSettings.value.estimatedLengths.map(label => ({
-    label,
-    value: label
+  return dictionary.value.estimated_length.map(item => ({
+    label: item.name,
+    value: item.code
   }))
 })
 
 // 表单数据
 const form = ref({
-  storyType: '其他',
+  storyType: 'other',
   title: '',
   coreIdea: '',
   style: '',
@@ -485,7 +489,7 @@ async function loadSavedOverview() {
       const data = result.data
       // 填充表单
       form.value.title = data.title || ''
-      form.value.storyType = data.storyType || '其他'
+      form.value.storyType = data.storyType || 'other'
       form.value.coreIdea = data.coreIdea || ''
       form.value.style = data.style || ''
       form.value.targetReader = data.targetReader || ''
@@ -506,20 +510,20 @@ async function loadSavedOverview() {
   }
 }
 
-// 加载全局设置
-async function loadGlobalSettings() {
+// 加载字典数据
+async function loadDictionary() {
   try {
-    const result = await window.electronAPI.longwriting.getGlobalSettings()
+    const result = await window.electronAPI.longwriting.getDictionaryAll()
     if (result.success && result.data) {
-      globalSettings.value = result.data
+      dictionary.value = result.data
     }
   } catch (error) {
-    console.error('加载全局设置失败:', error)
+    console.error('加载字典失败:', error)
   }
 }
 
 onMounted(() => {
-  loadGlobalSettings()
+  loadDictionary()
   loadSavedOverview()
 })
 </script>
