@@ -534,7 +534,8 @@ async function saveSkill() {
     return
   }
 
-  const skillData = toRaw(skillForm.value)
+  // 使用 JSON 序列化完全去除响应式，确保嵌套数组 characterIds 也是普通对象
+  const skillData = JSON.parse(JSON.stringify(skillForm.value))
 
   if (editingSkill.value) {
     const result = await window.electronAPI.longwriting.updateSkill(editingSkill.value.id, skillData)
@@ -616,7 +617,8 @@ async function saveItem() {
     return
   }
 
-  const rawForm = toRaw(itemForm.value)
+  // 使用 JSON 序列化完全去除响应式
+  const rawForm = JSON.parse(JSON.stringify(itemForm.value))
   const itemData = {
     ...rawForm,
     ownerId: rawForm.ownerId || undefined

@@ -573,8 +573,8 @@ async function saveCharacter() {
     return
   }
 
-  // 使用 toRaw 将响应式对象转换为普通对象
-  const formData = toRaw(characterForm.value)
+  // 使用 JSON 序列化完全去除响应式，确保所有嵌套对象都是普通对象
+  const formData = JSON.parse(JSON.stringify(characterForm.value))
 
   if (editingCharacter.value) {
     // 更新现有角色
@@ -582,6 +582,8 @@ async function saveCharacter() {
     if (result.success) {
       await loadCharacters()
       ElMessage.success('角色已更新')
+    } else {
+      ElMessage.error(result.error || '更新失败')
     }
   } else {
     // 创建新角色
@@ -592,6 +594,8 @@ async function saveCharacter() {
     if (result.success) {
       await loadCharacters()
       ElMessage.success('角色已添加')
+    } else {
+      ElMessage.error(result.error || '添加失败')
     }
   }
 
@@ -643,7 +647,8 @@ async function addRelation() {
     return
   }
 
-  const relationData = toRaw(relationForm.value)
+  // 使用 JSON 序列化完全去除响应式
+  const relationData = JSON.parse(JSON.stringify(relationForm.value))
   const result = await window.electronAPI.longwriting.createCharacterRelation({
     characterId: currentCharacterId.value,
     relatedCharacterId: relationData.relatedCharacterId,
@@ -870,7 +875,8 @@ async function createPortraitProject() {
 
   creatingProject.value = true
   try {
-    const projectData = toRaw(newProjectForm.value)
+    // 使用 JSON 序列化完全去除响应式
+    const projectData = JSON.parse(JSON.stringify(newProjectForm.value))
     const result = await window.electronAPI.portrait.createProject({
       name: projectData.name,
       description: projectData.description

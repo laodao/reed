@@ -440,8 +440,8 @@ async function saveNode() {
     return
   }
 
-  // 使用 toRaw 将响应式对象转换为普通对象
-  const formData = toRaw(nodeForm.value)
+  // 使用 JSON 序列化完全去除响应式，确保嵌套数组 involvedCharacters 和 involvedLocations 也是普通对象
+  const formData = JSON.parse(JSON.stringify(nodeForm.value))
 
   if (editingNode.value) {
     // 更新现有节点
