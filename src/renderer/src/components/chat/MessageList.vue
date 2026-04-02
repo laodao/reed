@@ -273,8 +273,8 @@ onUnmounted(() => {
 }
 
 .messages-container {
-  max-width: 720px;
-  margin: 0 auto;
+  // 自适应宽度，不再限制最大宽度
+  width: 100%;
 }
 
 .message-item.assistant {

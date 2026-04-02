@@ -15,6 +15,17 @@
           {{ message.role === 'user' ? '用户' : modelName }}
         </span>
         <span class="message-time">{{ formatTime(message.createdAt) }}</span>
+        <!-- AI回答：阅读/源码模式切换 -->
+        <el-tooltip v-if="message.role === 'assistant'" :content="isRenderMode ? '切换到源码模式' : '切换到阅读模式'" placement="top">
+          <el-button
+            size="small"
+            text
+            class="view-mode-toggle"
+            @click="isRenderMode = !isRenderMode"
+          >
+            <el-icon><component :is="isRenderMode ? 'Tickets' : 'View'" /></el-icon>
+          </el-button>
+        </el-tooltip>
       </div>
 
       <div class="message-content">
@@ -42,7 +53,19 @@
         </div>
 
         <!-- 正常显示模式 -->
-        <div v-else class="message-text" ref="messageContentRef" @click="handleContentClick" v-html="formatContent(message.content)"></div>
+        <div v-else class="message-text" ref="messageContentRef" @click="handleContentClick">
+          <!-- AI 回答：根据模式切换显示 -->
+          <template v-if="message.role === 'assistant'">
+            <!-- 阅读模式：渲染 markdown -->
+            <div v-if="isRenderMode" v-html="formatContent(message.content)"></div>
+            <!-- 源码模式：保留 markdown 格式字符，但美化代码块和行内代码 -->
+            <div v-else v-html="formatSourceContent(message.content)"></div>
+          </template>
+          <!-- 用户消息：始终渲染显示 -->
+          <template v-else>
+            <div v-html="formatSourceContent(message.content)"></div>
+          </template>
+        </div>
 
         <!-- 知识库来源标识（在内容下方，引用详情上方） -->
         <div v-if="message.metadata?.knowledgeBase && message.metadata.knowledgeBase.length > 0" class="knowledge-source-badge">
@@ -158,11 +181,22 @@
                   <el-icon><Switch /></el-icon>
                 </el-button>
               </el-tooltip>
-              <el-tooltip content="复制" placement="top">
-                <el-button size="small" text @click="copyMessage">
+              <!-- 复制菜单 -->
+              <el-dropdown trigger="click" placement="top">
+                <el-button size="small" text>
                   <el-icon><CopyDocument /></el-icon>
                 </el-button>
-              </el-tooltip>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item @click="copyRenderedContent">
+                      <span>复制内容</span>
+                    </el-dropdown-item>
+                    <el-dropdown-item @click="copyMessage">
+                      <span>复制源码</span>
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
               <el-tooltip content="删除" placement="top">
                 <el-button size="small" text @click="deleteMessage">
                   <el-icon><Delete /></el-icon>
@@ -288,8 +322,9 @@
 <script setup lang="ts">
 import { ref, computed, nextTick } from 'vue'
 import html2canvas from 'html2canvas'
-import { Document, Edit, CopyDocument, Delete, Refresh, Switch, Coin, Collection, More, Picture, Notebook, ArrowRight } from '@element-plus/icons-vue'
+import { Document, Edit, CopyDocument, Delete, Refresh, Switch, Coin, Collection, More, Picture, Notebook, ArrowRight, View, Tickets } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElImageViewer } from 'element-plus'
+import { marked } from 'marked'
 import type { Message, Attachment } from '../../../shared/types'
 import ModelSelectDialog from './ModelSelectDialog.vue'
 import ExportToObsidianDialog from './ExportToObsidianDialog.vue'
@@ -318,6 +353,9 @@ const showActions = ref(false)
 const isEditing = ref(false)
 const editContent = ref('')
 const showModelDialog = ref(false)
+
+// 阅读模式（true = 渲染模式，false = 源码模式）
+const isRenderMode = ref(true)
 
 // 知识库选择对话框
 const showKnowledgeBaseDialog = ref(false)
@@ -441,8 +479,24 @@ const modelName = computed(() => {
   return props.message.modelId || 'AI'
 })
 
-// 格式化内容 - 将代码块替换为 CodeBlock 组件
+// 格式化内容 - 阅读模式，使用 marked 解析 markdown
 function formatContent(content: string): string {
+  if (!content) return ''
+
+  try {
+    // 使用 marked 解析，使用默认渲染器
+    return marked.parse(content, {
+      breaks: true,
+      gfm: true
+    }) as string
+  } catch (error) {
+    console.error('Markdown 解析错误:', error)
+    return escapeHtml(content).replace(/\n/g, '<br>')
+  }
+}
+
+// 格式化源码 - 源码模式，保留 markdown 源码但做基本格式化
+function formatSourceContent(content: string): string {
   if (!content) return ''
 
   // 先处理代码块，用占位符替换
@@ -463,7 +517,7 @@ function formatContent(content: string): string {
     .replace(/>/g, '&gt;')
 
   // 处理行内代码
-  processedContent = processedContent.replace(/`([^`]+)`/g, '<code>$1</code>')
+  processedContent = processedContent.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
 
   // 处理换行
   processedContent = processedContent.replace(/\n/g, '<br>')
@@ -550,11 +604,37 @@ function saveEdit() {
 async function copyMessage() {
   try {
     await navigator.clipboard.writeText(props.message.content)
-    ElMessage.success('已复制到剪贴板')
+    ElMessage.success('已复制源码')
     emit('copy', props.message.content)
   } catch (err) {
     console.error('复制失败:', err)
     ElMessage.error('复制失败')
+  }
+}
+
+// 复制渲染后的内容（带格式）
+async function copyRenderedContent() {
+  try {
+    // 获取渲染后的 HTML 内容
+    const renderedHtml = formatContent(props.message.content)
+
+    // 使用 Clipboard API 写入 HTML 和纯文本
+    const clipboardItem = new ClipboardItem({
+      'text/html': new Blob([renderedHtml], { type: 'text/html' }),
+      'text/plain': new Blob([props.message.content], { type: 'text/plain' })
+    })
+
+    await navigator.clipboard.write([clipboardItem])
+    ElMessage.success('已复制内容')
+  } catch (err) {
+    console.error('复制失败:', err)
+    // 降级：只复制纯文本
+    try {
+      await navigator.clipboard.writeText(props.message.content)
+      ElMessage.success('已复制')
+    } catch {
+      ElMessage.error('复制失败')
+    }
   }
 }
 
@@ -846,7 +926,6 @@ function showKnowledgeBaseSnippet(ref: { documentId: string; documentName: strin
 .message-body {
   flex: 1;
   min-width: 0;
-  max-width: 85%;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -856,6 +935,11 @@ function showKnowledgeBaseSnippet(ref: { documentId: string; documentName: strin
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+// 阅读模式切换按钮
+.view-mode-toggle {
+  margin-left: auto;
 }
 
 .sender-name {
@@ -883,6 +967,101 @@ function showKnowledgeBaseSnippet(ref: { documentId: string; documentName: strin
   font-size: 14px;
   line-height: 1.6;
   word-wrap: break-word;
+
+  // markdown 渲染内容样式
+  :deep(h1), :deep(h2), :deep(h3), :deep(h4), :deep(h5), :deep(h6) {
+    margin: 16px 0 8px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  :deep(h1) { font-size: 22px; }
+  :deep(h2) { font-size: 18px; }
+  :deep(h3) { font-size: 16px; }
+  :deep(h4) { font-size: 15px; }
+  :deep(h5), :deep(h6) { font-size: 14px; }
+
+  :deep(p) {
+    margin: 8px 0;
+    line-height: 1.7;
+  }
+
+  :deep(ul), :deep(ol) {
+    margin: 8px 0;
+    padding-left: 24px;
+  }
+
+  :deep(li) {
+    margin: 4px 0;
+    line-height: 1.6;
+  }
+
+  :deep(blockquote) {
+    margin: 8px 0;
+    padding: 8px 16px;
+    border-left: 4px solid var(--el-color-primary-light-5);
+    background: var(--el-color-primary-light-9);
+    border-radius: 0 4px 4px 0;
+  }
+
+  :deep(blockquote p) {
+    margin: 0;
+  }
+
+  :deep(a) {
+    color: var(--el-color-primary);
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  :deep(strong) {
+    font-weight: 600;
+  }
+
+  :deep(em) {
+    font-style: italic;
+  }
+
+  :deep(hr) {
+    margin: 16px 0;
+    border: none;
+    border-top: 1px solid #e2e8f0;
+  }
+
+  :deep(table) {
+    width: 100%;
+    margin: 8px 0;
+    border-collapse: collapse;
+  }
+
+  :deep(th), :deep(td) {
+    padding: 8px 12px;
+    border: 1px solid #e2e8f0;
+    text-align: left;
+  }
+
+  :deep(th) {
+    background: #f8fafc;
+    font-weight: 600;
+  }
+
+  :deep(img) {
+    max-width: 100%;
+    border-radius: 8px;
+  }
+
+  // 行内代码样式
+  :deep(.inline-code) {
+    background: #f1f5f9;
+    color: var(--el-color-primary);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+    font-size: 13px;
+  }
 
   :deep(pre) {
     margin: 0;
