@@ -360,13 +360,13 @@
     >
       <div class="preview-image-container" v-if="previewVariant">
         <!-- 左侧切换按钮 -->
-        <div class="nav-btn nav-prev" @click="prevImage" :class="{ disabled: previewIndex === 0 }">
+        <div class="nav-btn nav-prev" @click.stop="prevImage" :class="{ disabled: previewIndex === 0 }">
           <el-icon :size="32"><ArrowLeft /></el-icon>
         </div>
         <!-- 中间图片 -->
-        <img :src="previewVariant.imagePath" alt="预览" @click="nextImage" />
+        <img :src="previewVariant.imagePath" alt="预览" @click.stop="nextImage" draggable="false" />
         <!-- 右侧切换按钮 -->
-        <div class="nav-btn nav-next" @click="nextImage" :class="{ disabled: previewIndex >= currentPreviewList.length - 1 }">
+        <div class="nav-btn nav-next" @click.stop="nextImage" :class="{ disabled: previewIndex >= currentPreviewList.length - 1 }">
           <el-icon :size="32"><ArrowRight /></el-icon>
         </div>
       </div>
@@ -1568,12 +1568,18 @@ onMounted(() => {
   background: #000;
   overflow: hidden;
   position: relative;
+  // 禁止选中，防止点击导航按钮时出现选中效果
+  user-select: none;
+  -webkit-user-select: none;
 
   img {
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
     cursor: pointer;
+    // 禁止图片拖拽
+    -webkit-user-drag: none;
+    user-drag: none;
   }
 
   .nav-btn {
