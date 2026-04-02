@@ -567,8 +567,11 @@ onMounted(() => {
 
 .editor-content {
   flex: 1;
-  overflow-y: auto;
+  min-height: 0;
+  overflow: hidden;
   padding: 24px;
+  display: flex;
+  flex-direction: column;
 }
 
 .preview-content {

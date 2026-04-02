@@ -137,9 +137,10 @@
               <!-- Markdown 编辑器 -->
               <div class="chapter-editor-wrapper">
                 <MarkdownEditor
+                  :key="currentChapter.id"
                   v-model="chapterContentMap[currentChapter.id]"
                   :placeholder="getEditorPlaceholder(currentChapter)"
-                  height="calc(100vh - 320px)"
+                  height="100%"
                   mode="split"
                 />
               </div>
@@ -789,13 +790,15 @@ onMounted(() => {
 .chapter-stage {
   max-width: 1200px;
   margin: 0 auto;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
 .stage-header {
   margin-bottom: 24px;
+  flex-shrink: 0;
 
   h2 {
     font-size: 20px;
@@ -817,6 +820,7 @@ onMounted(() => {
   border-radius: 12px;
   border: 1px solid var(--border-color-light);
   flex: 1;
+  min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -936,10 +940,11 @@ onMounted(() => {
   justify-content: center;
   align-items: center;
   gap: 20px;
-  padding: 12px;
+  padding: 8px;
   background: var(--fill-color-lighter);
   border-radius: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
 
   .chapter-position {
     font-size: 14px;
@@ -965,6 +970,7 @@ onMounted(() => {
   border: 1px solid var(--border-color-lighter);
   border-radius: 8px;
   min-height: 0;
+  overflow: hidden;
   transition: all 0.2s ease;
 
   &.active {
@@ -980,8 +986,8 @@ onMounted(() => {
   align-items: center;
   padding: 10px 16px;
   background: var(--fill-color-lighter);
-  border-radius: 8px 8px 0 0;
   border-bottom: 1px solid var(--border-color-lighter);
+  flex-shrink: 0;
 
   .title-left {
     display: flex;
@@ -1028,6 +1034,7 @@ onMounted(() => {
   padding: 8px 16px;
   background: var(--bg-color);
   border-bottom: 1px solid var(--border-color-lighter);
+  flex-shrink: 0;
 
   .chapter-summary {
     font-size: 12px;
@@ -1047,7 +1054,9 @@ onMounted(() => {
 .chapter-editor-wrapper {
   flex: 1;
   min-height: 0;
-  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .version-list {

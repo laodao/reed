@@ -2,6 +2,7 @@
   <div class="markdown-editor-wrapper" ref="wrapperRef">
     <Editor
       ref="editorRef"
+      class="editor-component"
       :value="modelValue"
       :plugins="plugins"
       :locale="locale"
@@ -77,8 +78,23 @@ watch(() => props.modelValue, () => {
 
 <style lang="scss">
 .markdown-editor-wrapper {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+
+  .editor-component {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
   .bytemd {
-    height: v-bind('height || "400px"');
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
     border: 1px solid var(--border-color-light);
     border-radius: 8px;
 
@@ -86,21 +102,30 @@ watch(() => props.modelValue, () => {
       border-bottom: 1px solid var(--border-color-lighter);
       background: var(--fill-color-lighter);
       border-radius: 8px 8px 0 0;
+      flex-shrink: 0;
     }
 
     .bytemd-editor {
       background: var(--bg-color);
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
     }
 
     .bytemd-status {
       border-top: 1px solid var(--border-color-lighter);
       background: var(--fill-color-lighter);
+      flex-shrink: 0;
     }
 
     // 编辑器文本区域
     .CodeMirror {
       background: var(--bg-color);
       color: var(--text-color-primary);
+      height: 100% !important;
+      flex: 1;
+      min-height: 0;
 
       .CodeMirror-gutters {
         background: var(--fill-color-lighter);
@@ -116,6 +141,9 @@ watch(() => props.modelValue, () => {
     .bytemd-preview {
       background: var(--bg-color);
       padding: 16px;
+      overflow-y: auto;
+      flex: 1;
+      min-height: 0;
 
       // Markdown 样式
       h1, h2, h3, h4, h5, h6 {
@@ -212,6 +240,18 @@ watch(() => props.modelValue, () => {
         &:hover {
           text-decoration: underline;
         }
+      }
+    }
+
+    // 确保编辑区域正确填充
+    .bytemd-body {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+
+      > * {
+        flex: 1;
+        min-height: 0;
       }
     }
   }

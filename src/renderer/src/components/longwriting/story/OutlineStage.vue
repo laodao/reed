@@ -17,8 +17,12 @@
         <template v-else>
           <!-- 根节点列表（卷） -->
           <div v-for="node in rootNodes" :key="node.id" class="outline-node volume-node">
-            <div class="node-header" :class="{ expanded: expandedNodes.includes(node.id) }">
-              <div class="node-expand" @click="toggleExpand(node.id)">
+            <div
+              class="node-header"
+              :class="{ expanded: expandedNodes.includes(node.id), clickable: hasChildren(node.id) }"
+              @click="hasChildren(node.id) && toggleExpand(node.id)"
+            >
+              <div class="node-expand" @click.stop="toggleExpand(node.id)">
                 <el-icon v-if="hasChildren(node.id)">
                   <ArrowRight v-if="!expandedNodes.includes(node.id)" />
                   <ArrowDown v-else />
@@ -50,8 +54,12 @@
             <!-- 子节点（章） -->
             <div v-if="expandedNodes.includes(node.id)" class="node-children">
               <div v-for="child in getChildren(node.id)" :key="child.id" class="outline-node chapter-node">
-                <div class="node-header" :class="{ expanded: expandedNodes.includes(child.id) }">
-                  <div class="node-expand" @click="toggleExpand(child.id)">
+                <div
+                  class="node-header"
+                  :class="{ expanded: expandedNodes.includes(child.id), clickable: hasChildren(child.id) }"
+                  @click="hasChildren(child.id) && toggleExpand(child.id)"
+                >
+                  <div class="node-expand" @click.stop="toggleExpand(child.id)">
                     <el-icon v-if="hasChildren(child.id)">
                       <ArrowRight v-if="!expandedNodes.includes(child.id)" />
                       <ArrowDown v-else />
@@ -150,11 +158,12 @@
         </el-form-item>
 
         <el-form-item label="节点类型">
-          <el-radio-group v-model="nodeForm.nodeType">
+          <el-radio-group v-model="nodeForm.nodeType" :disabled="!!editingNode">
             <el-radio value="volume">卷</el-radio>
             <el-radio value="chapter">章</el-radio>
             <el-radio value="section">节</el-radio>
           </el-radio-group>
+          <span v-if="editingNode" class="form-tip">节点类型不可修改</span>
         </el-form-item>
 
         <el-form-item label="节点概要">
@@ -201,11 +210,12 @@
         </el-form-item>
 
         <el-form-item label="状态">
-          <el-radio-group v-model="nodeForm.status">
+          <el-radio-group v-model="nodeForm.status" :disabled="!!editingNode">
             <el-radio value="pending">待写</el-radio>
             <el-radio value="progressing">进行中</el-radio>
             <el-radio value="completed">已完成</el-radio>
           </el-radio-group>
+          <span v-if="editingNode" class="form-tip">状态在章节写作阶段自动更新</span>
         </el-form-item>
       </el-form>
 
@@ -781,6 +791,10 @@ watch(() => props.projectId, () => {
       border-color: var(--color-primary-light-5);
     }
 
+    &.clickable {
+      cursor: pointer;
+    }
+
     &.expanded {
       border-radius: 8px 8px 0 0;
       border-bottom: none;
@@ -792,7 +806,7 @@ watch(() => props.projectId, () => {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    padding: 8px 0 0 0;
+    padding: 8px 0 12px 0;
     border-left: 1px solid var(--border-color-lighter);
     border-right: 1px solid var(--border-color-lighter);
     border-bottom: 1px solid var(--border-color-lighter);
@@ -914,6 +928,12 @@ watch(() => props.projectId, () => {
   width: 100%;
   height: 48px;
   margin-top: 12px;
+}
+
+.form-tip {
+  font-size: 12px;
+  color: var(--text-color-secondary);
+  margin-left: 8px;
 }
 
 .action-buttons {
