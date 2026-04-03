@@ -18,7 +18,15 @@ import {
   CreateOutlineRequest,
   UpdateOutlineRequest,
   CreatePlotRequest,
-  UpdatePlotRequest
+  UpdatePlotRequest,
+  CreateSkillTypeConfigRequest,
+  UpdateSkillTypeConfigRequest,
+  CreateItemTypeConfigRequest,
+  UpdateItemTypeConfigRequest,
+  CreateSkillLevelRequest,
+  UpdateSkillLevelRequest,
+  CreateItemLevelRequest,
+  UpdateItemLevelRequest
 } from '../../shared/types/longwriting.types'
 
 /**
@@ -144,7 +152,34 @@ const CHANNELS = {
   CREATE_DICTIONARY_ITEM: 'longwriting:createDictionaryItem',
   UPDATE_DICTIONARY_ITEM: 'longwriting:updateDictionaryItem',
   DELETE_DICTIONARY_ITEM: 'longwriting:deleteDictionaryItem',
-  REORDER_DICTIONARY: 'longwriting:reorderDictionary'
+  REORDER_DICTIONARY: 'longwriting:reorderDictionary',
+
+  // 项目级别类型配置
+  GET_SKILL_TYPE_CONFIGS: 'longwriting:getSkillTypeConfigs',
+  CREATE_SKILL_TYPE_CONFIG: 'longwriting:createSkillTypeConfig',
+  UPDATE_SKILL_TYPE_CONFIG: 'longwriting:updateSkillTypeConfig',
+  DELETE_SKILL_TYPE_CONFIG: 'longwriting:deleteSkillTypeConfig',
+
+  GET_ITEM_TYPE_CONFIGS: 'longwriting:getItemTypeConfigs',
+  CREATE_ITEM_TYPE_CONFIG: 'longwriting:createItemTypeConfig',
+  UPDATE_ITEM_TYPE_CONFIG: 'longwriting:updateItemTypeConfig',
+  DELETE_ITEM_TYPE_CONFIG: 'longwriting:deleteItemTypeConfig',
+
+  INIT_DEFAULT_TYPE_CONFIGS: 'longwriting:initDefaultTypeConfigs',
+
+  // 技能等级配置
+  GET_SKILL_LEVELS: 'longwriting:getSkillLevels',
+  CREATE_SKILL_LEVEL: 'longwriting:createSkillLevel',
+  UPDATE_SKILL_LEVEL: 'longwriting:updateSkillLevel',
+  DELETE_SKILL_LEVEL: 'longwriting:deleteSkillLevel',
+  REORDER_SKILL_LEVELS: 'longwriting:reorderSkillLevels',
+
+  // 物品等级配置
+  GET_ITEM_LEVELS: 'longwriting:getItemLevels',
+  CREATE_ITEM_LEVEL: 'longwriting:createItemLevel',
+  UPDATE_ITEM_LEVEL: 'longwriting:updateItemLevel',
+  DELETE_ITEM_LEVEL: 'longwriting:deleteItemLevel',
+  REORDER_ITEM_LEVELS: 'longwriting:reorderItemLevels'
 }
 
 /**
@@ -1501,6 +1536,240 @@ export function registerLongWritingHandlers(): void {
   ipcMain.handle(CHANNELS.REORDER_DICTIONARY, async (_event, categoryCode: string, orderedIds: string[]) => {
     try {
       await service.reorderDictionary(categoryCode, orderedIds)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 项目级别类型配置 ====================
+
+  /**
+   * 获取项目的技能类型配置
+   */
+  ipcMain.handle(CHANNELS.GET_SKILL_TYPE_CONFIGS, async (_event, projectId: string) => {
+    try {
+      const configs = await service.getSkillTypeConfigs(projectId)
+      return { success: true, data: configs }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 创建技能类型配置
+   */
+  ipcMain.handle(CHANNELS.CREATE_SKILL_TYPE_CONFIG, async (_event, data: CreateSkillTypeConfigRequest) => {
+    try {
+      const config = await service.createSkillTypeConfig(data)
+      return { success: true, data: config }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 更新技能类型配置
+   */
+  ipcMain.handle(CHANNELS.UPDATE_SKILL_TYPE_CONFIG, async (_event, id: string, data: UpdateSkillTypeConfigRequest) => {
+    try {
+      const config = await service.updateSkillTypeConfig(id, data)
+      return { success: true, data: config }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 删除技能类型配置
+   */
+  ipcMain.handle(CHANNELS.DELETE_SKILL_TYPE_CONFIG, async (_event, id: string) => {
+    try {
+      await service.deleteSkillTypeConfig(id)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 获取项目的物品类型配置
+   */
+  ipcMain.handle(CHANNELS.GET_ITEM_TYPE_CONFIGS, async (_event, projectId: string) => {
+    try {
+      const configs = await service.getItemTypeConfigs(projectId)
+      return { success: true, data: configs }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 创建物品类型配置
+   */
+  ipcMain.handle(CHANNELS.CREATE_ITEM_TYPE_CONFIG, async (_event, data: CreateItemTypeConfigRequest) => {
+    try {
+      const config = await service.createItemTypeConfig(data)
+      return { success: true, data: config }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 更新物品类型配置
+   */
+  ipcMain.handle(CHANNELS.UPDATE_ITEM_TYPE_CONFIG, async (_event, id: string, data: UpdateItemTypeConfigRequest) => {
+    try {
+      const config = await service.updateItemTypeConfig(id, data)
+      return { success: true, data: config }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 删除物品类型配置
+   */
+  ipcMain.handle(CHANNELS.DELETE_ITEM_TYPE_CONFIG, async (_event, id: string) => {
+    try {
+      await service.deleteItemTypeConfig(id)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 初始化项目的默认类型配置
+   */
+  ipcMain.handle(CHANNELS.INIT_DEFAULT_TYPE_CONFIGS, async (_event, projectId: string) => {
+    try {
+      await service.initDefaultTypeConfigs(projectId)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 技能等级配置 ====================
+
+  /**
+   * 获取技能类型的等级列表
+   */
+  ipcMain.handle(CHANNELS.GET_SKILL_LEVELS, async (_event, projectId: string, skillTypeCode: string) => {
+    try {
+      const levels = await service.getSkillLevels(projectId, skillTypeCode)
+      return { success: true, data: levels }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 创建技能等级
+   */
+  ipcMain.handle(CHANNELS.CREATE_SKILL_LEVEL, async (_event, data: CreateSkillLevelRequest) => {
+    try {
+      const level = await service.createSkillLevel(data)
+      return { success: true, data: level }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 更新技能等级
+   */
+  ipcMain.handle(CHANNELS.UPDATE_SKILL_LEVEL, async (_event, id: string, data: UpdateSkillLevelRequest) => {
+    try {
+      const level = await service.updateSkillLevel(id, data)
+      return { success: true, data: level }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 删除技能等级
+   */
+  ipcMain.handle(CHANNELS.DELETE_SKILL_LEVEL, async (_event, id: string) => {
+    try {
+      await service.deleteSkillLevel(id)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 重排序技能等级
+   */
+  ipcMain.handle(CHANNELS.REORDER_SKILL_LEVELS, async (_event, projectId: string, skillTypeCode: string, orderedIds: string[]) => {
+    try {
+      await service.reorderSkillLevels(projectId, skillTypeCode, orderedIds)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 物品等级配置 ====================
+
+  /**
+   * 获取物品类型的等级列表
+   */
+  ipcMain.handle(CHANNELS.GET_ITEM_LEVELS, async (_event, projectId: string, itemTypeCode: string) => {
+    try {
+      const levels = await service.getItemLevels(projectId, itemTypeCode)
+      return { success: true, data: levels }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 创建物品等级
+   */
+  ipcMain.handle(CHANNELS.CREATE_ITEM_LEVEL, async (_event, data: CreateItemLevelRequest) => {
+    try {
+      const level = await service.createItemLevel(data)
+      return { success: true, data: level }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 更新物品等级
+   */
+  ipcMain.handle(CHANNELS.UPDATE_ITEM_LEVEL, async (_event, id: string, data: UpdateItemLevelRequest) => {
+    try {
+      const level = await service.updateItemLevel(id, data)
+      return { success: true, data: level }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 删除物品等级
+   */
+  ipcMain.handle(CHANNELS.DELETE_ITEM_LEVEL, async (_event, id: string) => {
+    try {
+      await service.deleteItemLevel(id)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 重排序物品等级
+   */
+  ipcMain.handle(CHANNELS.REORDER_ITEM_LEVELS, async (_event, projectId: string, itemTypeCode: string, orderedIds: string[]) => {
+    try {
+      await service.reorderItemLevels(projectId, itemTypeCode, orderedIds)
       return { success: true }
     } catch (error: any) {
       return { success: false, error: error.message }

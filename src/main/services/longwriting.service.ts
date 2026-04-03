@@ -21,7 +21,19 @@ import {
   StoryPlot,
   CreatePlotRequest,
   UpdatePlotRequest,
-  LongWritingGlobalSettings
+  LongWritingGlobalSettings,
+  ProjectSkillTypeConfig,
+  ProjectItemTypeConfig,
+  SkillLevelConfig,
+  ItemLevelConfig,
+  CreateSkillTypeConfigRequest,
+  UpdateSkillTypeConfigRequest,
+  CreateItemTypeConfigRequest,
+  UpdateItemTypeConfigRequest,
+  CreateSkillLevelRequest,
+  UpdateSkillLevelRequest,
+  CreateItemLevelRequest,
+  UpdateItemLevelRequest
 } from '../../shared/types/longwriting.types'
 
 /**
@@ -81,6 +93,12 @@ export class LongWritingService {
     // 如果是故事类，创建对应的概要记录
     if (data.type === 'story' && this.db.lwStoryOverviews) {
       this.db.lwStoryOverviews.create(project.id)
+    }
+
+    // 初始化项目的默认类型配置
+    if (this.db.lwTypeConfig) {
+      this.db.lwTypeConfig.initializeDefaultSkillTypes(project.id)
+      this.db.lwTypeConfig.initializeDefaultItemTypes(project.id)
     }
 
     return project
@@ -912,6 +930,203 @@ export class LongWritingService {
       throw new Error('数据库未初始化')
     }
     return this.db.lwDictionary.reorder(categoryCode, orderedIds)
+  }
+
+  // ==================== 项目级别类型配置 ====================
+
+  /**
+   * 获取项目的技能类型配置
+   */
+  async getSkillTypeConfigs(projectId: string): Promise<ProjectSkillTypeConfig[]> {
+    if (!this.db.lwTypeConfig) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwTypeConfig.getSkillTypeConfigs(projectId)
+  }
+
+  /**
+   * 创建技能类型配置
+   */
+  async createSkillTypeConfig(data: CreateSkillTypeConfigRequest): Promise<ProjectSkillTypeConfig> {
+    if (!this.db.lwTypeConfig) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwTypeConfig.createSkillTypeConfig(data)
+  }
+
+  /**
+   * 更新技能类型配置
+   */
+  async updateSkillTypeConfig(id: string, data: UpdateSkillTypeConfigRequest): Promise<ProjectSkillTypeConfig | null> {
+    if (!this.db.lwTypeConfig) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwTypeConfig.updateSkillTypeConfig(id, data)
+  }
+
+  /**
+   * 删除技能类型配置
+   */
+  async deleteSkillTypeConfig(id: string): Promise<void> {
+    if (!this.db.lwTypeConfig) {
+      throw new Error('数据库未初始化')
+    }
+    this.db.lwTypeConfig.deleteSkillTypeConfig(id)
+  }
+
+  /**
+   * 获取项目的物品类型配置
+   */
+  async getItemTypeConfigs(projectId: string): Promise<ProjectItemTypeConfig[]> {
+    if (!this.db.lwTypeConfig) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwTypeConfig.getItemTypeConfigs(projectId)
+  }
+
+  /**
+   * 创建物品类型配置
+   */
+  async createItemTypeConfig(data: CreateItemTypeConfigRequest): Promise<ProjectItemTypeConfig> {
+    if (!this.db.lwTypeConfig) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwTypeConfig.createItemTypeConfig(data)
+  }
+
+  /**
+   * 更新物品类型配置
+   */
+  async updateItemTypeConfig(id: string, data: UpdateItemTypeConfigRequest): Promise<ProjectItemTypeConfig | null> {
+    if (!this.db.lwTypeConfig) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwTypeConfig.updateItemTypeConfig(id, data)
+  }
+
+  /**
+   * 删除物品类型配置
+   */
+  async deleteItemTypeConfig(id: string): Promise<void> {
+    if (!this.db.lwTypeConfig) {
+      throw new Error('数据库未初始化')
+    }
+    this.db.lwTypeConfig.deleteItemTypeConfig(id)
+  }
+
+  /**
+   * 初始化项目的默认类型配置
+   */
+  async initDefaultTypeConfigs(projectId: string): Promise<void> {
+    if (!this.db.lwTypeConfig) {
+      throw new Error('数据库未初始化')
+    }
+    this.db.lwTypeConfig.initializeDefaultSkillTypes(projectId)
+    this.db.lwTypeConfig.initializeDefaultItemTypes(projectId)
+  }
+
+  // ==================== 技能等级配置 ====================
+
+  /**
+   * 获取技能类型的等级列表
+   */
+  async getSkillLevels(projectId: string, skillTypeCode: string): Promise<SkillLevelConfig[]> {
+    if (!this.db.lwTypeConfig) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwTypeConfig.getSkillLevels(projectId, skillTypeCode)
+  }
+
+  /**
+   * 创建技能等级
+   */
+  async createSkillLevel(data: CreateSkillLevelRequest): Promise<SkillLevelConfig> {
+    if (!this.db.lwTypeConfig) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwTypeConfig.createSkillLevel(data)
+  }
+
+  /**
+   * 更新技能等级
+   */
+  async updateSkillLevel(id: string, data: UpdateSkillLevelRequest): Promise<SkillLevelConfig | null> {
+    if (!this.db.lwTypeConfig) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwTypeConfig.updateSkillLevel(id, data)
+  }
+
+  /**
+   * 删除技能等级
+   */
+  async deleteSkillLevel(id: string): Promise<void> {
+    if (!this.db.lwTypeConfig) {
+      throw new Error('数据库未初始化')
+    }
+    this.db.lwTypeConfig.deleteSkillLevel(id)
+  }
+
+  /**
+   * 重排序技能等级
+   */
+  async reorderSkillLevels(projectId: string, skillTypeCode: string, orderedIds: string[]): Promise<void> {
+    if (!this.db.lwTypeConfig) {
+      throw new Error('数据库未初始化')
+    }
+    this.db.lwTypeConfig.reorderSkillLevels(projectId, skillTypeCode, orderedIds)
+  }
+
+  // ==================== 物品等级配置 ====================
+
+  /**
+   * 获取物品类型的等级列表
+   */
+  async getItemLevels(projectId: string, itemTypeCode: string): Promise<ItemLevelConfig[]> {
+    if (!this.db.lwTypeConfig) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwTypeConfig.getItemLevels(projectId, itemTypeCode)
+  }
+
+  /**
+   * 创建物品等级
+   */
+  async createItemLevel(data: CreateItemLevelRequest): Promise<ItemLevelConfig> {
+    if (!this.db.lwTypeConfig) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwTypeConfig.createItemLevel(data)
+  }
+
+  /**
+   * 更新物品等级
+   */
+  async updateItemLevel(id: string, data: UpdateItemLevelRequest): Promise<ItemLevelConfig | null> {
+    if (!this.db.lwTypeConfig) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwTypeConfig.updateItemLevel(id, data)
+  }
+
+  /**
+   * 删除物品等级
+   */
+  async deleteItemLevel(id: string): Promise<void> {
+    if (!this.db.lwTypeConfig) {
+      throw new Error('数据库未初始化')
+    }
+    this.db.lwTypeConfig.deleteItemLevel(id)
+  }
+
+  /**
+   * 重排序物品等级
+   */
+  async reorderItemLevels(projectId: string, itemTypeCode: string, orderedIds: string[]): Promise<void> {
+    if (!this.db.lwTypeConfig) {
+      throw new Error('数据库未初始化')
+    }
+    this.db.lwTypeConfig.reorderItemLevels(projectId, itemTypeCode, orderedIds)
   }
 }
 

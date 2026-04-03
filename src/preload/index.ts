@@ -1047,7 +1047,53 @@ const electronAPI = {
     deleteDictionaryItem: (id: string) =>
       ipcRenderer.invoke('longwriting:deleteDictionaryItem', id),
     reorderDictionary: (categoryCode: string, orderedIds: string[]) =>
-      ipcRenderer.invoke('longwriting:reorderDictionary', categoryCode, orderedIds)
+      ipcRenderer.invoke('longwriting:reorderDictionary', categoryCode, orderedIds),
+
+    // 项目级别类型配置
+    getSkillTypeConfigs: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:getSkillTypeConfigs', projectId),
+    createSkillTypeConfig: (data: any) =>
+      ipcRenderer.invoke('longwriting:createSkillTypeConfig', data),
+    updateSkillTypeConfig: (id: string, data: any) =>
+      ipcRenderer.invoke('longwriting:updateSkillTypeConfig', id, data),
+    deleteSkillTypeConfig: (id: string) =>
+      ipcRenderer.invoke('longwriting:deleteSkillTypeConfig', id),
+
+    getItemTypeConfigs: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:getItemTypeConfigs', projectId),
+    createItemTypeConfig: (data: any) =>
+      ipcRenderer.invoke('longwriting:createItemTypeConfig', data),
+    updateItemTypeConfig: (id: string, data: any) =>
+      ipcRenderer.invoke('longwriting:updateItemTypeConfig', id, data),
+    deleteItemTypeConfig: (id: string) =>
+      ipcRenderer.invoke('longwriting:deleteItemTypeConfig', id),
+
+    initDefaultTypeConfigs: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:initDefaultTypeConfigs', projectId),
+
+    // 技能等级配置
+    getSkillLevels: (projectId: string, skillTypeCode: string) =>
+      ipcRenderer.invoke('longwriting:getSkillLevels', projectId, skillTypeCode),
+    createSkillLevel: (data: any) =>
+      ipcRenderer.invoke('longwriting:createSkillLevel', data),
+    updateSkillLevel: (id: string, data: any) =>
+      ipcRenderer.invoke('longwriting:updateSkillLevel', id, data),
+    deleteSkillLevel: (id: string) =>
+      ipcRenderer.invoke('longwriting:deleteSkillLevel', id),
+    reorderSkillLevels: (projectId: string, skillTypeCode: string, orderedIds: string[]) =>
+      ipcRenderer.invoke('longwriting:reorderSkillLevels', projectId, skillTypeCode, orderedIds),
+
+    // 物品等级配置
+    getItemLevels: (projectId: string, itemTypeCode: string) =>
+      ipcRenderer.invoke('longwriting:getItemLevels', projectId, itemTypeCode),
+    createItemLevel: (data: any) =>
+      ipcRenderer.invoke('longwriting:createItemLevel', data),
+    updateItemLevel: (id: string, data: any) =>
+      ipcRenderer.invoke('longwriting:updateItemLevel', id, data),
+    deleteItemLevel: (id: string) =>
+      ipcRenderer.invoke('longwriting:deleteItemLevel', id),
+    reorderItemLevels: (projectId: string, itemTypeCode: string, orderedIds: string[]) =>
+      ipcRenderer.invoke('longwriting:reorderItemLevels', projectId, itemTypeCode, orderedIds)
   }
 }
 

@@ -691,3 +691,137 @@ export interface DictionaryItem {
   createdAt: number
   updatedAt: number
 }
+
+// ==================== 项目级别类型配置 ====================
+
+/**
+ * 项目技能类型配置
+ */
+export interface ProjectSkillTypeConfig {
+  id: string
+  projectId: string
+  code: string           // 类型编码
+  name: string           // 类型名称
+  description?: string   // 类型描述
+  sortOrder: number
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * 项目物品类型配置
+ */
+export interface ProjectItemTypeConfig {
+  id: string
+  projectId: string
+  code: string           // 类型编码
+  name: string           // 类型名称
+  description?: string   // 类型描述
+  sortOrder: number
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * 技能等级配置（独立存储）
+ */
+export interface SkillLevelConfig {
+  id: string
+  projectId: string
+  skillTypeCode: string  // 所属技能类型编码
+  code: string           // 等级编码
+  name: string           // 等级名称
+  description: string    // 等级描述（如达到此等级可以做什么）
+  sortOrder: number
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * 物品等级配置（独立存储）
+ */
+export interface ItemLevelConfig {
+  id: string
+  projectId: string
+  itemTypeCode: string   // 所属物品类型编码
+  code: string           // 等级编码
+  name: string           // 等级名称
+  description: string    // 等级描述（如此等级的外观、能量特征）
+  sortOrder: number
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * 创建项目技能类型配置请求
+ */
+export interface CreateSkillTypeConfigRequest {
+  projectId: string
+  code: string
+  name: string
+  description?: string
+}
+
+/**
+ * 更新项目技能类型配置请求
+ */
+export interface UpdateSkillTypeConfigRequest {
+  name?: string
+  description?: string
+}
+
+/**
+ * 创建项目物品类型配置请求
+ */
+export interface CreateItemTypeConfigRequest {
+  projectId: string
+  code: string
+  name: string
+  description?: string
+}
+
+/**
+ * 更新项目物品类型配置请求
+ */
+export interface UpdateItemTypeConfigRequest {
+  name?: string
+  description?: string
+}
+
+/**
+ * 创建技能等级配置请求
+ */
+export interface CreateSkillLevelRequest {
+  projectId: string
+  skillTypeCode: string
+  code: string
+  name: string
+  description?: string
+}
+
+/**
+ * 更新技能等级配置请求
+ */
+export interface UpdateSkillLevelRequest {
+  name?: string
+  description?: string
+}
+
+/**
+ * 创建物品等级配置请求
+ */
+export interface CreateItemLevelRequest {
+  projectId: string
+  itemTypeCode: string
+  code: string
+  name: string
+  description?: string
+}
+
+/**
+ * 更新物品等级配置请求
+ */
+export interface UpdateItemLevelRequest {
+  name?: string
+  description?: string
+}

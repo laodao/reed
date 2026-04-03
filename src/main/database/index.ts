@@ -40,6 +40,7 @@ import { LwItemRepository } from './repositories/lw-item.repository'
 import { LwMaterialRepository } from './repositories/lw-material.repository'
 import { LwGlobalSettingsRepository } from './repositories/lw-global-settings.repository'
 import { LwDictionaryRepository } from './repositories/lw-dictionary.repository'
+import { LwTypeConfigRepository } from './repositories/lw-type-config.repository'
 import { DataPathService } from '../services/data-path.service'
 import { LanceDBService } from '../services/lance-db.service'
 
@@ -85,6 +86,7 @@ export class DatabaseManager {
   public lwMaterials: LwMaterialRepository | null = null
   public lwGlobalSettings: LwGlobalSettingsRepository | null = null
   public lwDictionary: LwDictionaryRepository | null = null
+  public lwTypeConfig: LwTypeConfigRepository | null = null
 
   private constructor() {
     // 默认使用 userData 路径，后续会在 initialize 中更新
@@ -968,6 +970,95 @@ export class DatabaseManager {
       CREATE INDEX IF NOT EXISTS idx_lw_dictionary_category ON lw_dictionary(category_code)
     `)
 
+    // 项目级别技能类型配置表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_project_skill_types (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        code TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        sort_order INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(project_id, code),
+        FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE
+      )
+    `)
+
+    // 项目级别物品类型配置表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_project_item_types (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        code TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        sort_order INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(project_id, code),
+        FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE
+      )
+    `)
+
+    // 技能等级配置表（独立存储每个等级的详情）
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_project_skill_levels (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        skill_type_code TEXT NOT NULL,
+        code TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        sort_order INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(project_id, skill_type_code, code),
+        FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE
+      )
+    `)
+
+    // 物品等级配置表（独立存储每个等级的详情）
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_project_item_levels (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        item_type_code TEXT NOT NULL,
+        code TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        sort_order INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(project_id, item_type_code, code),
+        FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE
+      )
+    `)
+
+    // 创建索引
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_lw_project_skill_types_project ON lw_project_skill_types(project_id)
+    `)
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_lw_project_item_types_project ON lw_project_item_types(project_id)
+    `)
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_lw_project_skill_levels_project ON lw_project_skill_levels(project_id)
+    `)
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_lw_project_skill_levels_type ON lw_project_skill_levels(skill_type_code)
+    `)
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_lw_project_item_levels_project ON lw_project_item_levels(project_id)
+    `)
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_lw_project_item_levels_type ON lw_project_item_levels(item_type_code)
+    `)
+
+    // 迁移类型配置表结构
+    this.migrateTypeConfigTables()
+
     // 迁移字典表结构
     this.migrateDictionaryTables()
 
@@ -979,6 +1070,97 @@ export class DatabaseManager {
 
     // 检查 portrait_variants 表是否需要移除 project_id 列
     this.migratePortraitVariantsRemoveProjectId()
+  }
+
+  /**
+   * 迁移类型配置表结构（移除 levels 字段，改用独立的等级表）
+   */
+  private migrateTypeConfigTables(): void {
+    if (!this.db) return
+
+    // 检查技能类型表是否有旧的 levels 字段
+    const skillTypesTable = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='lw_project_skill_types'").get()
+    if (skillTypesTable) {
+      const columns = this.db.prepare("PRAGMA table_info(lw_project_skill_types)").all() as { name: string }[]
+      const hasOldLevelsField = columns.some(col => col.name === 'levels')
+
+      if (hasOldLevelsField) {
+        console.log('[DatabaseManager] 迁移技能类型配置表结构，移除 levels 字段...')
+
+        // 备份数据
+        const oldData = this.db.prepare('SELECT * FROM lw_project_skill_types').all() as any[]
+
+        // 重建表
+        this.db.exec('DROP TABLE lw_project_skill_types')
+        this.db.exec(`
+          CREATE TABLE lw_project_skill_types (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            sort_order INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(project_id, code),
+            FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE
+          )
+        `)
+
+        // 恢复数据（忽略 levels 字段）
+        const insertStmt = this.db.prepare(`
+          INSERT INTO lw_project_skill_types (id, project_id, code, name, description, sort_order, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+        for (const row of oldData) {
+          insertStmt.run(row.id, row.project_id, row.code, row.name, null, row.sort_order, row.created_at, row.updated_at)
+        }
+
+        console.log('[DatabaseManager] 技能类型配置表迁移完成')
+      }
+    }
+
+    // 检查物品类型表是否有旧的 levels 字段
+    const itemTypesTable = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='lw_project_item_types'").get()
+    if (itemTypesTable) {
+      const columns = this.db.prepare("PRAGMA table_info(lw_project_item_types)").all() as { name: string }[]
+      const hasOldLevelsField = columns.some(col => col.name === 'levels')
+
+      if (hasOldLevelsField) {
+        console.log('[DatabaseManager] 迁移物品类型配置表结构，移除 levels 字段...')
+
+        // 备份数据
+        const oldData = this.db.prepare('SELECT * FROM lw_project_item_types').all() as any[]
+
+        // 重建表
+        this.db.exec('DROP TABLE lw_project_item_types')
+        this.db.exec(`
+          CREATE TABLE lw_project_item_types (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            sort_order INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(project_id, code),
+            FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE
+          )
+        `)
+
+        // 恢复数据（忽略 levels 字段）
+        const insertStmt = this.db.prepare(`
+          INSERT INTO lw_project_item_types (id, project_id, code, name, description, sort_order, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+        for (const row of oldData) {
+          insertStmt.run(row.id, row.project_id, row.code, row.name, null, row.sort_order, row.created_at, row.updated_at)
+        }
+
+        console.log('[DatabaseManager] 物品类型配置表迁移完成')
+      }
+    }
   }
 
   /**
@@ -1415,6 +1597,7 @@ export class DatabaseManager {
     this.lwMaterials = new LwMaterialRepository(this.db)
     this.lwGlobalSettings = new LwGlobalSettingsRepository(this.db)
     this.lwDictionary = new LwDictionaryRepository(this.db)
+    this.lwTypeConfig = new LwTypeConfigRepository(this.db)
   }
 
   /**
