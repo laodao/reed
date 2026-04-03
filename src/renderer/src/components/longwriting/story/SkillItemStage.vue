@@ -6,6 +6,121 @@
     </div>
 
     <el-tabs v-model="activeTab">
+      <!-- 类型设定 -->
+      <el-tab-pane label="类型设定" name="types">
+        <div class="type-config-section">
+          <div class="config-header">
+            <h3>技能类型与等级</h3>
+            <el-button size="small" type="primary" @click="showAddSkillTypeDialog = true">
+              <el-icon><Plus /></el-icon>
+              添加类型
+            </el-button>
+          </div>
+          <div class="type-config-container">
+            <div class="type-list-panel">
+              <div
+                v-for="skillType in skillTypes"
+                :key="skillType.id"
+                class="type-item"
+                :class="{ active: selectedSkillType?.id === skillType.id }"
+                @click="selectSkillType(skillType)"
+              >
+                <span class="type-name">{{ skillType.name }}</span>
+                <span class="type-code">{{ skillType.code }}</span>
+                <el-button text size="small" type="danger" @click.stop="deleteSkillType(skillType.id)">
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </div>
+            </div>
+            <div class="level-list-panel">
+              <template v-if="selectedSkillType">
+                <div class="panel-header">
+                  <span>{{ selectedSkillType.name }} - 等级</span>
+                  <el-button size="small" @click="showAddSkillLevelDialog = true">
+                    <el-icon><Plus /></el-icon>
+                  </el-button>
+                </div>
+                <div class="level-cards">
+                  <div v-for="level in skillLevels" :key="level.id" class="level-card-small">
+                    <div class="level-header">
+                      <span class="level-num">{{ level.sortOrder + 1 }}</span>
+                      <el-input v-model="level.name" size="small" @change="updateSkillLevel(level)" />
+                      <el-button text size="small" type="danger" @click="deleteSkillLevel(level.id)">
+                        <el-icon><Delete /></el-icon>
+                      </el-button>
+                    </div>
+                    <el-input
+                      v-model="level.description"
+                      type="textarea"
+                      :rows="2"
+                      size="small"
+                      placeholder="等级描述"
+                      @change="updateSkillLevel(level)"
+                    />
+                  </div>
+                </div>
+              </template>
+              <div v-else class="empty-tip">选择左侧类型查看等级</div>
+            </div>
+          </div>
+
+          <div class="config-header" style="margin-top: 24px;">
+            <h3>物品类型与等级</h3>
+            <el-button size="small" type="primary" @click="showAddItemTypeDialog = true">
+              <el-icon><Plus /></el-icon>
+              添加类型
+            </el-button>
+          </div>
+          <div class="type-config-container">
+            <div class="type-list-panel">
+              <div
+                v-for="itemType in itemTypes"
+                :key="itemType.id"
+                class="type-item"
+                :class="{ active: selectedItemType?.id === itemType.id }"
+                @click="selectItemType(itemType)"
+              >
+                <span class="type-name">{{ itemType.name }}</span>
+                <span class="type-code">{{ itemType.code }}</span>
+                <el-button text size="small" type="danger" @click.stop="deleteItemType(itemType.id)">
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </div>
+            </div>
+            <div class="level-list-panel">
+              <template v-if="selectedItemType">
+                <div class="panel-header">
+                  <span>{{ selectedItemType.name }} - 等级</span>
+                  <el-button size="small" @click="showAddItemLevelDialog = true">
+                    <el-icon><Plus /></el-icon>
+                  </el-button>
+                </div>
+                <div class="level-cards">
+                  <div v-for="level in itemLevels" :key="level.id" class="level-card-small">
+                    <div class="level-header">
+                      <span class="level-num">{{ level.sortOrder + 1 }}</span>
+                      <el-input v-model="level.name" size="small" @change="updateItemLevel(level)" />
+                      <el-button text size="small" type="danger" @click="deleteItemLevel(level.id)">
+                        <el-icon><Delete /></el-icon>
+                      </el-button>
+                    </div>
+                    <el-input
+                      v-model="level.description"
+                      type="textarea"
+                      :rows="2"
+                      size="small"
+                      placeholder="等级描述"
+                      @change="updateItemLevel(level)"
+                    />
+                  </div>
+                </div>
+              </template>
+              <div v-else class="empty-tip">选择左侧类型查看等级</div>
+            </div>
+          </div>
+        </div>
+      </el-tab-pane>
+
       <!-- 技能设定 -->
       <el-tab-pane label="技能设定" name="skills">
         <div class="skill-list">
@@ -14,7 +129,7 @@
               <h4>{{ skill.name }}</h4>
               <div class="skill-tags">
                 <span class="type-tag">{{ getSkillTypeLabel(skill.type) }}</span>
-                <span class="level-tag">{{ getSkillLevelLabel(skill.level) }}</span>
+                <span class="level-tag">{{ getSkillLevelLabel(skill.type, skill.level) }}</span>
               </div>
             </div>
             <div class="skill-content">
@@ -62,7 +177,7 @@
               <h4>{{ item.name }}</h4>
               <div class="item-tags">
                 <span class="type-tag">{{ getItemTypeLabel(item.type) }}</span>
-                <span class="level-tag" :class="item.level">{{ getItemLevelLabel(item.level) }}</span>
+                <span class="level-tag" :class="item.level">{{ getItemLevelLabel(item.type, item.level) }}</span>
               </div>
             </div>
             <div class="item-content">
@@ -110,61 +225,114 @@
       <p class="progress-text">AI 正在生成技能和物品建议...</p>
     </div>
 
+    <!-- 添加技能类型对话框 -->
+    <el-dialog v-model="showAddSkillTypeDialog" title="添加技能类型" width="400px" destroy-on-close>
+      <el-form :model="newSkillTypeForm" label-width="80px">
+        <el-form-item label="类型编码" required>
+          <el-input v-model="newSkillTypeForm.code" placeholder="请输入编码（英文）" />
+        </el-form-item>
+        <el-form-item label="类型名称" required>
+          <el-input v-model="newSkillTypeForm.name" placeholder="请输入名称" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showAddSkillTypeDialog = false">取消</el-button>
+        <el-button type="primary" :disabled="!newSkillTypeForm.code || !newSkillTypeForm.name" @click="createSkillType">
+          创建
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 添加技能等级对话框 -->
+    <el-dialog v-model="showAddSkillLevelDialog" title="添加技能等级" width="450px" destroy-on-close>
+      <el-form :model="newSkillLevelForm" label-width="80px">
+        <el-form-item label="等级编码" required>
+          <el-input v-model="newSkillLevelForm.code" placeholder="请输入编码（英文）" />
+        </el-form-item>
+        <el-form-item label="等级名称" required>
+          <el-input v-model="newSkillLevelForm.name" placeholder="请输入名称" />
+        </el-form-item>
+        <el-form-item label="等级描述">
+          <el-input v-model="newSkillLevelForm.description" type="textarea" :rows="3" placeholder="描述此等级的特征、能力等" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showAddSkillLevelDialog = false">取消</el-button>
+        <el-button type="primary" :disabled="!newSkillLevelForm.code || !newSkillLevelForm.name" @click="createSkillLevel">
+          创建
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 添加物品类型对话框 -->
+    <el-dialog v-model="showAddItemTypeDialog" title="添加物品类型" width="400px" destroy-on-close>
+      <el-form :model="newItemTypeForm" label-width="80px">
+        <el-form-item label="类型编码" required>
+          <el-input v-model="newItemTypeForm.code" placeholder="请输入编码（英文）" />
+        </el-form-item>
+        <el-form-item label="类型名称" required>
+          <el-input v-model="newItemTypeForm.name" placeholder="请输入名称" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showAddItemTypeDialog = false">取消</el-button>
+        <el-button type="primary" :disabled="!newItemTypeForm.code || !newItemTypeForm.name" @click="createItemType">
+          创建
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 添加物品等级对话框 -->
+    <el-dialog v-model="showAddItemLevelDialog" title="添加物品等级" width="450px" destroy-on-close>
+      <el-form :model="newItemLevelForm" label-width="80px">
+        <el-form-item label="等级编码" required>
+          <el-input v-model="newItemLevelForm.code" placeholder="请输入编码（英文）" />
+        </el-form-item>
+        <el-form-item label="等级名称" required>
+          <el-input v-model="newItemLevelForm.name" placeholder="请输入名称" />
+        </el-form-item>
+        <el-form-item label="等级描述">
+          <el-input v-model="newItemLevelForm.description" type="textarea" :rows="3" placeholder="描述此等级的外观、能量特征等" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showAddItemLevelDialog = false">取消</el-button>
+        <el-button type="primary" :disabled="!newItemLevelForm.code || !newItemLevelForm.name" @click="createItemLevel">
+          创建
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 技能编辑对话框 -->
-    <el-dialog
-      v-model="showSkillDialog"
-      :title="editingSkill ? '编辑技能' : '添加技能'"
-      width="500px"
-      destroy-on-close
-    >
+    <el-dialog v-model="showSkillDialog" :title="editingSkill ? '编辑技能' : '添加技能'" width="500px" destroy-on-close>
       <el-form :model="skillForm" label-width="80px">
         <el-form-item label="技能名称" required>
           <el-input v-model="skillForm.name" placeholder="输入技能名称" />
         </el-form-item>
         <el-form-item label="技能类型">
-          <el-select v-model="skillForm.type" placeholder="选择技能类型">
-            <el-option
-              v-for="opt in skillTypeOptions"
-              :key="opt.value"
-              :label="opt.label"
-              :value="opt.value"
-            />
+          <el-select v-model="skillForm.type" placeholder="选择技能类型" @change="onSkillTypeChange">
+            <el-option v-for="opt in skillTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
         </el-form-item>
         <el-form-item label="技能等级">
-          <el-radio-group v-model="skillForm.level">
-            <el-radio
-              v-for="opt in skillLevelOptions"
-              :key="opt.value"
-              :value="opt.value"
-            >
-              {{ opt.label }}
-            </el-radio>
-          </el-radio-group>
+          <el-select v-model="skillForm.level" placeholder="选择等级">
+            <el-option v-for="opt in currentSkillLevelOptions" :key="opt.value" :label="opt.label" :value="opt.value">
+              <div class="level-option">
+                <span>{{ opt.label }}</span>
+                <span class="level-desc">{{ opt.description }}</span>
+              </div>
+            </el-option>
+          </el-select>
         </el-form-item>
         <el-form-item label="所属体系">
           <el-input v-model="skillForm.system" placeholder="门派/体系名称（可选）" />
         </el-form-item>
         <el-form-item label="技能描述">
-          <el-input
-            v-model="skillForm.description"
-            type="textarea"
-            :rows="3"
-            placeholder="描述技能的特点、效果..."
-          />
+          <el-input v-model="skillForm.description" type="textarea" :rows="3" placeholder="描述技能的特点、效果..." />
         </el-form-item>
         <el-form-item label="掌握角色">
-          <el-select
-            v-model="skillForm.characterIds"
-            multiple
-            placeholder="选择掌握此技能的角色"
-          >
-            <el-option
-              v-for="char in characters"
-              :key="char.id"
-              :label="char.name"
-              :value="char.id"
-            />
+          <el-select v-model="skillForm.characterIds" multiple placeholder="选择掌握此技能的角色">
+            <el-option v-for="char in characters" :key="char.id" :label="char.name" :value="char.id" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -175,53 +343,32 @@
     </el-dialog>
 
     <!-- 物品编辑对话框 -->
-    <el-dialog
-      v-model="showItemDialog"
-      :title="editingItem ? '编辑物品' : '添加物品'"
-      width="500px"
-      destroy-on-close
-    >
+    <el-dialog v-model="showItemDialog" :title="editingItem ? '编辑物品' : '添加物品'" width="500px" destroy-on-close>
       <el-form :model="itemForm" label-width="80px">
         <el-form-item label="物品名称" required>
           <el-input v-model="itemForm.name" placeholder="输入物品名称" />
         </el-form-item>
         <el-form-item label="物品类型">
-          <el-select v-model="itemForm.type" placeholder="选择物品类型">
-            <el-option
-              v-for="opt in itemTypeOptions"
-              :key="opt.value"
-              :label="opt.label"
-              :value="opt.value"
-            />
+          <el-select v-model="itemForm.type" placeholder="选择物品类型" @change="onItemTypeChange">
+            <el-option v-for="opt in itemTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
         </el-form-item>
         <el-form-item label="物品等级">
-          <el-radio-group v-model="itemForm.level">
-            <el-radio
-              v-for="opt in itemLevelOptions"
-              :key="opt.value"
-              :value="opt.value"
-            >
-              {{ opt.label }}
-            </el-radio>
-          </el-radio-group>
+          <el-select v-model="itemForm.level" placeholder="选择等级">
+            <el-option v-for="opt in currentItemLevelOptions" :key="opt.value" :label="opt.label" :value="opt.value">
+              <div class="level-option">
+                <span>{{ opt.label }}</span>
+                <span class="level-desc">{{ opt.description }}</span>
+              </div>
+            </el-option>
+          </el-select>
         </el-form-item>
         <el-form-item label="物品描述">
-          <el-input
-            v-model="itemForm.description"
-            type="textarea"
-            :rows="3"
-            placeholder="描述物品的外观、功能、来历..."
-          />
+          <el-input v-model="itemForm.description" type="textarea" :rows="3" placeholder="描述物品的外观、功能、来历..." />
         </el-form-item>
         <el-form-item label="持有者">
           <el-select v-model="itemForm.ownerId" placeholder="选择持有角色（可选）" clearable>
-            <el-option
-              v-for="char in characters"
-              :key="char.id"
-              :label="char.name"
-              :value="char.id"
-            />
+            <el-option v-for="char in characters" :key="char.id" :label="char.name" :value="char.id" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -234,10 +381,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, inject, toRaw } from 'vue'
+import { ref, computed, onMounted, watch, inject } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, MagicStick, Close } from '@element-plus/icons-vue'
-import type { StorySkill, StoryItem, StoryCharacter, DictionaryItem } from '../../../../shared/types/longwriting.types'
+import type { StorySkill, StoryItem, StoryCharacter, ProjectSkillTypeConfig, ProjectItemTypeConfig, SkillLevelConfig, ItemLevelConfig } from '../../../../shared/types/longwriting.types'
 
 const props = defineProps<{
   projectId: string
@@ -247,248 +394,106 @@ const emit = defineEmits<{
   'update:progress': [progress: number]
 }>()
 
-// 从父组件获取选中的模型（是一个 ComputedRef）
 const selectedModel = inject<ReturnType<typeof computed<{ providerId: string; modelId: string } | null>>>('selectedModel', computed(() => null))
 
-// 字典数据
-const dictionary = ref<Record<string, DictionaryItem[]>>({
-  skill_type: [],
-  skill_level: [],
-  item_type: [],
-  item_level: []
-})
-
-const activeTab = ref('skills')
-
-// 角色列表（用于关联选择）
+const activeTab = ref('types')
 const characters = ref<StoryCharacter[]>([])
-
-// 技能列表
 const skills = ref<StorySkill[]>([])
-
-// 物品列表
 const items = ref<StoryItem[]>([])
+
+// 类型配置数据
+const skillTypes = ref<ProjectSkillTypeConfig[]>([])
+const itemTypes = ref<ProjectItemTypeConfig[]>([])
+const selectedSkillType = ref<ProjectSkillTypeConfig | null>(null)
+const selectedItemType = ref<ProjectItemTypeConfig | null>(null)
+const skillLevels = ref<SkillLevelConfig[]>([])
+const itemLevels = ref<ItemLevelConfig[]>([])
 
 // 对话框状态
 const showSkillDialog = ref(false)
 const showItemDialog = ref(false)
+const showAddSkillTypeDialog = ref(false)
+const showAddSkillLevelDialog = ref(false)
+const showAddItemTypeDialog = ref(false)
+const showAddItemLevelDialog = ref(false)
 
-// 编辑状态
 const editingSkill = ref<StorySkill | null>(null)
 const editingItem = ref<StoryItem | null>(null)
 
-// 生成状态
 const generating = ref(false)
 const currentEventId = ref<string | null>(null)
 const generatingContent = ref('')
 
-// AI 生成技能体系
-async function generateSkills() {
-  // 检查是否选择了模型（需要同时检查 providerId 和 modelId）
-  if (!selectedModel.value || !selectedModel.value.providerId || !selectedModel.value.modelId) {
-    ElMessage.warning('请先在顶部选择 AI 模型')
-    return
-  }
-
-  console.log('[SkillItemStage] 生成技能, providerId:', selectedModel.value.providerId, 'modelId:', selectedModel.value.modelId)
-
-  generating.value = true
-  generatingContent.value = ''
-
-  // 生成唯一事件 ID
-  currentEventId.value = `skills-${props.projectId}-${Date.now()}`
-
-  // 监听流式生成事件
-  const unsubscribe = window.electronAPI.longwriting.onGenerateEvent(
-    currentEventId.value,
-    (event: { type: string; content?: string; error?: string; data?: any }) => {
-      if (event.type === 'content' && event.content) {
-        generatingContent.value += event.content
-      } else if (event.type === 'done') {
-        generating.value = false
-        currentEventId.value = null
-        unsubscribe()
-        // 解析 AI 响应
-        parseSkillsItemsResult(generatingContent.value)
-      } else if (event.type === 'error') {
-        generating.value = false
-        currentEventId.value = null
-        unsubscribe()
-        ElMessage.error(event.error || '生成失败')
-      }
-    }
-  )
-
-  // 调用 AI API，传递 eventId 和模型参数
-  const result = await window.electronAPI.longwriting.generateSkillsItems(
-    currentEventId.value,
-    props.projectId,
-    selectedModel.value.providerId,
-    selectedModel.value.modelId
-  )
-
-  if (!result.success) {
-    generating.value = false
-    currentEventId.value = null
-    unsubscribe()
-    ElMessage.error(result.error || '生成失败')
-  }
-}
-
-// 解析 AI 响应
-async function parseSkillsItemsResult(content: string) {
-  try {
-    const jsonMatch = content.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      ElMessage.warning('AI 返回格式不正确，请重试')
-      return
-    }
-
-    const data = JSON.parse(jsonMatch[0])
-    const suggestedSkills: Partial<StorySkill>[] = data.skills || []
-    const suggestedItems: Partial<StoryItem>[] = data.items || []
-
-    if (suggestedSkills.length === 0 && suggestedItems.length === 0) {
-      ElMessage.warning('AI 未生成技能或物品建议')
-      return
-    }
-
-    // 显示确认对话框
-    ElMessageBox.confirm(
-      `AI 建议添加以下内容：\n\n技能：\n${suggestedSkills.map(s => `- ${s.name}（${getSkillTypeLabel(s.type!)}）`).join('\n') || '无'}\n\n物品：\n${suggestedItems.map(i => `- ${i.name}（${getItemTypeLabel(i.type!)}）`).join('\n') || '无'}`,
-      'AI 生成建议',
-      {
-        confirmButtonText: '全部添加',
-        cancelButtonText: '取消',
-        type: 'info'
-      }
-    ).then(async () => {
-      // 添加技能
-      for (const suggested of suggestedSkills) {
-        await window.electronAPI.longwriting.createSkill({
-          projectId: props.projectId,
-          ...suggested,
-          characterIds: []
-        })
-      }
-
-      // 添加物品
-      for (const suggested of suggestedItems) {
-        await window.electronAPI.longwriting.createItem({
-          projectId: props.projectId,
-          ...suggested
-        })
-      }
-
-      await loadData()
-      ElMessage.success('技能和物品已添加')
-    }).catch(() => {})
-  } catch (error) {
-    console.error('解析 AI 响应失败:', error)
-    ElMessage.error('解析 AI 响应失败')
-  }
-}
-
-// 取消生成
-function cancelGeneration() {
-  if (!currentEventId.value) return
-  generating.value = false
-  currentEventId.value = null
-  ElMessage.info('已取消生成')
-}
-
-// 加载状态
-const loading = ref(false)
-
-// 技能表单
+// 表单数据
 const skillForm = ref({
   name: '',
-  type: 'martial' as string,
-  level: 'beginner' as string,
+  type: '' as string,
+  level: '' as string,
   system: '',
   description: '',
   characterIds: [] as string[]
 })
 
-// 物品表单
 const itemForm = ref({
   name: '',
-  type: 'weapon' as string,
-  level: 'common' as string,
+  type: '' as string,
+  level: '' as string,
   description: '',
   ownerId: ''
 })
 
-// 标签映射（从字典加载）
-const skillTypeOptions = computed(() => {
-  if (!dictionary.value.skill_type?.length) {
-    return [
-      { label: '武功', value: 'martial' },
-      { label: '法术', value: 'magic' },
-      { label: '天赋', value: 'talent' },
-      { label: '科技', value: 'tech' },
-      { label: '其他', value: 'other' }
-    ]
-  }
-  return dictionary.value.skill_type.map(item => ({ label: item.name, value: item.code }))
-})
+const newSkillTypeForm = ref({ code: '', name: '' })
+const newSkillLevelForm = ref({ code: '', name: '', description: '' })
+const newItemTypeForm = ref({ code: '', name: '' })
+const newItemLevelForm = ref({ code: '', name: '', description: '' })
 
-const skillLevelOptions = computed(() => {
-  if (!dictionary.value.skill_level?.length) {
-    return [
-      { label: '初级', value: 'beginner' },
-      { label: '中级', value: 'intermediate' },
-      { label: '高级', value: 'advanced' },
-      { label: '大师', value: 'master' }
-    ]
-  }
-  return dictionary.value.skill_level.map(item => ({ label: item.name, value: item.code }))
+// ==================== 类型配置相关 ====================
+
+const skillTypeOptions = computed(() => {
+  return skillTypes.value.map(t => ({ label: t.name, value: t.code }))
 })
 
 const itemTypeOptions = computed(() => {
-  if (!dictionary.value.item_type?.length) {
-    return [
-      { label: '武器', value: 'weapon' },
-      { label: '神器', value: 'artifact' },
-      { label: '丹药', value: 'medicine' },
-      { label: '秘籍', value: 'manual' },
-      { label: '信物', value: 'token' },
-      { label: '其他', value: 'other' }
-    ]
-  }
-  return dictionary.value.item_type.map(item => ({ label: item.name, value: item.code }))
+  return itemTypes.value.map(t => ({ label: t.name, value: t.code }))
 })
 
-const itemLevelOptions = computed(() => {
-  if (!dictionary.value.item_level?.length) {
-    return [
-      { label: '普通', value: 'common' },
-      { label: '稀有', value: 'rare' },
-      { label: '传说', value: 'legendary' },
-      { label: '神级', value: 'divine' }
-    ]
-  }
-  return dictionary.value.item_level.map(item => ({ label: item.name, value: item.code }))
+// 根据选中的类型获取对应的等级选项
+const currentSkillLevelOptions = computed(() => {
+  if (!skillForm.value.type) return []
+  const levels = skillLevelsMap.value[skillForm.value.type] || []
+  return levels.map(l => ({ label: l.name, value: l.code, description: l.description }))
 })
 
-function getSkillTypeLabel(type: string): string {
-  const opt = skillTypeOptions.value.find(o => o.value === type)
-  return opt?.label || type
+const currentItemLevelOptions = computed(() => {
+  if (!itemForm.value.type) return []
+  const levels = itemLevelsMap.value[itemForm.value.type] || []
+  return levels.map(l => ({ label: l.name, value: l.code, description: l.description }))
+})
+
+// 等级映射（类型编码 -> 等级列表）
+const skillLevelsMap = ref<Record<string, SkillLevelConfig[]>>({})
+const itemLevelsMap = ref<Record<string, ItemLevelConfig[]>>({})
+
+function getSkillTypeLabel(code: string): string {
+  const type = skillTypes.value.find(t => t.code === code)
+  return type?.name || code
 }
 
-function getSkillLevelLabel(level: string): string {
-  const opt = skillLevelOptions.value.find(o => o.value === level)
-  return opt?.label || level
+function getSkillLevelLabel(typeCode: string, levelCode: string): string {
+  const levels = skillLevelsMap.value[typeCode] || []
+  const level = levels.find(l => l.code === levelCode)
+  return level?.name || levelCode
 }
 
-function getItemTypeLabel(type: string): string {
-  const opt = itemTypeOptions.value.find(o => o.value === type)
-  return opt?.label || type
+function getItemTypeLabel(code: string): string {
+  const type = itemTypes.value.find(t => t.code === code)
+  return type?.name || code
 }
 
-function getItemLevelLabel(level: string): string {
-  const opt = itemLevelOptions.value.find(o => o.value === level)
-  return opt?.label || level
+function getItemLevelLabel(typeCode: string, levelCode: string): string {
+  const levels = itemLevelsMap.value[typeCode] || []
+  const level = levels.find(l => l.code === levelCode)
+  return level?.name || levelCode
 }
 
 function getCharacterName(id: string): string {
@@ -496,7 +501,220 @@ function getCharacterName(id: string): string {
   return char?.name || '未知角色'
 }
 
-// 编辑技能
+function onSkillTypeChange() {
+  skillForm.value.level = ''
+}
+
+function onItemTypeChange() {
+  itemForm.value.level = ''
+}
+
+// ==================== 类型配置 CRUD ====================
+
+async function loadSkillTypes() {
+  const result = await window.electronAPI.longwriting.getSkillTypeConfigs(props.projectId)
+  if (result.success) {
+    skillTypes.value = result.data || []
+    // 加载所有技能类型的等级
+    for (const type of skillTypes.value) {
+      await loadSkillLevelsForType(type.code)
+    }
+    if (skillTypes.value.length > 0 && !selectedSkillType.value) {
+      selectSkillType(skillTypes.value[0])
+    }
+  }
+}
+
+async function loadSkillLevelsForType(skillTypeCode: string) {
+  const result = await window.electronAPI.longwriting.getSkillLevels(props.projectId, skillTypeCode)
+  if (result.success) {
+    skillLevelsMap.value[skillTypeCode] = result.data || []
+  }
+}
+
+async function selectSkillType(type: ProjectSkillTypeConfig) {
+  selectedSkillType.value = type
+  const result = await window.electronAPI.longwriting.getSkillLevels(props.projectId, type.code)
+  if (result.success) {
+    skillLevels.value = result.data || []
+  }
+}
+
+async function createSkillType() {
+  if (!newSkillTypeForm.value.code || !newSkillTypeForm.value.name) return
+  const result = await window.electronAPI.longwriting.createSkillTypeConfig({
+    projectId: props.projectId,
+    code: newSkillTypeForm.value.code,
+    name: newSkillTypeForm.value.name
+  })
+  if (result.success) {
+    await loadSkillTypes()
+    showAddSkillTypeDialog.value = false
+    newSkillTypeForm.value = { code: '', name: '' }
+    ElMessage.success('创建成功')
+  } else {
+    ElMessage.error('创建失败：' + (result.error || '未知错误'))
+  }
+}
+
+async function deleteSkillType(id: string) {
+  try {
+    await ElMessageBox.confirm('确定要删除该技能类型吗？关联的等级也会被删除。', '删除确认', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    const result = await window.electronAPI.longwriting.deleteSkillTypeConfig(id)
+    if (result.success) {
+      if (selectedSkillType.value?.id === id) {
+        selectedSkillType.value = null
+        skillLevels.value = []
+      }
+      await loadSkillTypes()
+      ElMessage.success('删除成功')
+    }
+  } catch {}
+}
+
+async function createSkillLevel() {
+  if (!selectedSkillType.value || !newSkillLevelForm.value.code || !newSkillLevelForm.value.name) return
+  const result = await window.electronAPI.longwriting.createSkillLevel({
+    projectId: props.projectId,
+    skillTypeCode: selectedSkillType.value.code,
+    code: newSkillLevelForm.value.code,
+    name: newSkillLevelForm.value.name,
+    description: newSkillLevelForm.value.description
+  })
+  if (result.success) {
+    await selectSkillType(selectedSkillType.value)
+    await loadSkillLevelsForType(selectedSkillType.value.code)
+    showAddSkillLevelDialog.value = false
+    newSkillLevelForm.value = { code: '', name: '', description: '' }
+    ElMessage.success('创建成功')
+  } else {
+    ElMessage.error('创建失败：' + (result.error || '未知错误'))
+  }
+}
+
+async function updateSkillLevel(level: SkillLevelConfig) {
+  await window.electronAPI.longwriting.updateSkillLevel(level.id, {
+    name: level.name,
+    description: level.description
+  })
+  await loadSkillLevelsForType(level.skillTypeCode)
+}
+
+async function deleteSkillLevel(id: string) {
+  const result = await window.electronAPI.longwriting.deleteSkillLevel(id)
+  if (result.success && selectedSkillType.value) {
+    await selectSkillType(selectedSkillType.value)
+    await loadSkillLevelsForType(selectedSkillType.value.code)
+  }
+}
+
+// 物品类型相关
+async function loadItemTypes() {
+  const result = await window.electronAPI.longwriting.getItemTypeConfigs(props.projectId)
+  if (result.success) {
+    itemTypes.value = result.data || []
+    for (const type of itemTypes.value) {
+      await loadItemLevelsForType(type.code)
+    }
+    if (itemTypes.value.length > 0 && !selectedItemType.value) {
+      selectItemType(itemTypes.value[0])
+    }
+  }
+}
+
+async function loadItemLevelsForType(itemTypeCode: string) {
+  const result = await window.electronAPI.longwriting.getItemLevels(props.projectId, itemTypeCode)
+  if (result.success) {
+    itemLevelsMap.value[itemTypeCode] = result.data || []
+  }
+}
+
+async function selectItemType(type: ProjectItemTypeConfig) {
+  selectedItemType.value = type
+  const result = await window.electronAPI.longwriting.getItemLevels(props.projectId, type.code)
+  if (result.success) {
+    itemLevels.value = result.data || []
+  }
+}
+
+async function createItemType() {
+  if (!newItemTypeForm.value.code || !newItemTypeForm.value.name) return
+  const result = await window.electronAPI.longwriting.createItemTypeConfig({
+    projectId: props.projectId,
+    code: newItemTypeForm.value.code,
+    name: newItemTypeForm.value.name
+  })
+  if (result.success) {
+    await loadItemTypes()
+    showAddItemTypeDialog.value = false
+    newItemTypeForm.value = { code: '', name: '' }
+    ElMessage.success('创建成功')
+  } else {
+    ElMessage.error('创建失败：' + (result.error || '未知错误'))
+  }
+}
+
+async function deleteItemType(id: string) {
+  try {
+    await ElMessageBox.confirm('确定要删除该物品类型吗？关联的等级也会被删除。', '删除确认', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    const result = await window.electronAPI.longwriting.deleteItemTypeConfig(id)
+    if (result.success) {
+      if (selectedItemType.value?.id === id) {
+        selectedItemType.value = null
+        itemLevels.value = []
+      }
+      await loadItemTypes()
+      ElMessage.success('删除成功')
+    }
+  } catch {}
+}
+
+async function createItemLevel() {
+  if (!selectedItemType.value || !newItemLevelForm.value.code || !newItemLevelForm.value.name) return
+  const result = await window.electronAPI.longwriting.createItemLevel({
+    projectId: props.projectId,
+    itemTypeCode: selectedItemType.value.code,
+    code: newItemLevelForm.value.code,
+    name: newItemLevelForm.value.name,
+    description: newItemLevelForm.value.description
+  })
+  if (result.success) {
+    await selectItemType(selectedItemType.value)
+    await loadItemLevelsForType(selectedItemType.value.code)
+    showAddItemLevelDialog.value = false
+    newItemLevelForm.value = { code: '', name: '', description: '' }
+    ElMessage.success('创建成功')
+  } else {
+    ElMessage.error('创建失败：' + (result.error || '未知错误'))
+  }
+}
+
+async function updateItemLevel(level: ItemLevelConfig) {
+  await window.electronAPI.longwriting.updateItemLevel(level.id, {
+    name: level.name,
+    description: level.description
+  })
+  await loadItemLevelsForType(level.itemTypeCode)
+}
+
+async function deleteItemLevel(id: string) {
+  const result = await window.electronAPI.longwriting.deleteItemLevel(id)
+  if (result.success && selectedItemType.value) {
+    await selectItemType(selectedItemType.value)
+    await loadItemLevelsForType(selectedItemType.value.code)
+  }
+}
+
+// ==================== 技能物品 CRUD ====================
+
 function editSkill(skill: StorySkill) {
   editingSkill.value = skill
   skillForm.value = {
@@ -510,7 +728,6 @@ function editSkill(skill: StorySkill) {
   showSkillDialog.value = true
 }
 
-// 删除技能
 async function deleteSkill(id: string) {
   try {
     await ElMessageBox.confirm('确定要删除该技能吗？', '删除技能', {
@@ -518,37 +735,26 @@ async function deleteSkill(id: string) {
       cancelButtonText: '取消',
       type: 'warning'
     })
-
     const result = await window.electronAPI.longwriting.deleteSkill(id)
     if (result.success) {
       await loadSkills()
       ElMessage.success('技能已删除')
       updateProgress()
-    } else {
-      ElMessage.error(result.error || '删除失败')
     }
-  } catch {
-    // 用户取消
-  }
+  } catch {}
 }
 
-// 保存技能
 async function saveSkill() {
   if (!skillForm.value.name) {
     ElMessage.warning('请输入技能名称')
     return
   }
-
-  // 使用 JSON 序列化完全去除响应式，确保嵌套数组 characterIds 也是普通对象
   const skillData = JSON.parse(JSON.stringify(skillForm.value))
-
   if (editingSkill.value) {
     const result = await window.electronAPI.longwriting.updateSkill(editingSkill.value.id, skillData)
     if (result.success) {
       await loadSkills()
       ElMessage.success('技能已更新')
-    } else {
-      ElMessage.error(result.error || '更新失败')
     }
   } else {
     const result = await window.electronAPI.longwriting.createSkill({
@@ -558,29 +764,14 @@ async function saveSkill() {
     if (result.success) {
       await loadSkills()
       ElMessage.success('技能已添加')
-    } else {
-      ElMessage.error(result.error || '添加失败')
     }
   }
-
   showSkillDialog.value = false
-  resetSkillForm()
+  editingSkill.value = null
+  skillForm.value = { name: '', type: '', level: '', system: '', description: '', characterIds: [] }
   updateProgress()
 }
 
-function resetSkillForm() {
-  editingSkill.value = null
-  skillForm.value = {
-    name: '',
-    type: 'martial',
-    level: 'beginner',
-    system: '',
-    description: '',
-    characterIds: []
-  }
-}
-
-// 编辑物品
 function editItem(item: StoryItem) {
   editingItem.value = item
   itemForm.value = {
@@ -593,7 +784,6 @@ function editItem(item: StoryItem) {
   showItemDialog.value = true
 }
 
-// 删除物品
 async function deleteItem(id: string) {
   try {
     await ElMessageBox.confirm('确定要删除该物品吗？', '删除物品', {
@@ -601,41 +791,27 @@ async function deleteItem(id: string) {
       cancelButtonText: '取消',
       type: 'warning'
     })
-
     const result = await window.electronAPI.longwriting.deleteItem(id)
     if (result.success) {
       await loadItems()
       ElMessage.success('物品已删除')
       updateProgress()
-    } else {
-      ElMessage.error(result.error || '删除失败')
     }
-  } catch {
-    // 用户取消
-  }
+  } catch {}
 }
 
-// 保存物品
 async function saveItem() {
   if (!itemForm.value.name) {
     ElMessage.warning('请输入物品名称')
     return
   }
-
-  // 使用 JSON 序列化完全去除响应式
   const rawForm = JSON.parse(JSON.stringify(itemForm.value))
-  const itemData = {
-    ...rawForm,
-    ownerId: rawForm.ownerId || undefined
-  }
-
+  const itemData = { ...rawForm, ownerId: rawForm.ownerId || undefined }
   if (editingItem.value) {
     const result = await window.electronAPI.longwriting.updateItem(editingItem.value.id, itemData)
     if (result.success) {
       await loadItems()
       ElMessage.success('物品已更新')
-    } else {
-      ElMessage.error(result.error || '更新失败')
     }
   } else {
     const result = await window.electronAPI.longwriting.createItem({
@@ -645,91 +821,159 @@ async function saveItem() {
     if (result.success) {
       await loadItems()
       ElMessage.success('物品已添加')
-    } else {
-      ElMessage.error(result.error || '添加失败')
     }
   }
-
   showItemDialog.value = false
-  resetItemForm()
+  editingItem.value = null
+  itemForm.value = { name: '', type: '', level: '', description: '', ownerId: '' }
   updateProgress()
 }
 
-function resetItemForm() {
-  editingItem.value = null
-  itemForm.value = {
-    name: '',
-    type: 'weapon',
-    level: 'common',
-    description: '',
-    ownerId: ''
+// ==================== AI 生成 ====================
+
+async function generateSkills() {
+  if (!selectedModel.value || !selectedModel.value.providerId || !selectedModel.value.modelId) {
+    ElMessage.warning('请先在顶部选择 AI 模型')
+    return
+  }
+  generating.value = true
+  generatingContent.value = ''
+  currentEventId.value = `skills-${props.projectId}-${Date.now()}`
+
+  const unsubscribe = window.electronAPI.longwriting.onGenerateEvent(
+    currentEventId.value,
+    (event: { type: string; content?: string; error?: string; data?: any }) => {
+      if (event.type === 'content' && event.content) {
+        generatingContent.value += event.content
+      } else if (event.type === 'done') {
+        generating.value = false
+        currentEventId.value = null
+        unsubscribe()
+        parseSkillsItemsResult(generatingContent.value)
+      } else if (event.type === 'error') {
+        generating.value = false
+        currentEventId.value = null
+        unsubscribe()
+        ElMessage.error(event.error || '生成失败')
+      }
+    }
+  )
+
+  const result = await window.electronAPI.longwriting.generateSkillsItems(
+    currentEventId.value,
+    props.projectId,
+    selectedModel.value.providerId,
+    selectedModel.value.modelId
+  )
+  if (!result.success) {
+    generating.value = false
+    currentEventId.value = null
+    unsubscribe()
+    ElMessage.error(result.error || '生成失败')
   }
 }
 
-// 更新进度
+async function parseSkillsItemsResult(content: string) {
+  try {
+    const jsonMatch = content.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) {
+      ElMessage.warning('AI 返回格式不正确，请重试')
+      return
+    }
+    const data = JSON.parse(jsonMatch[0])
+    const suggestedSkills: Partial<StorySkill>[] = data.skills || []
+    const suggestedItems: Partial<StoryItem>[] = data.items || []
+    if (suggestedSkills.length === 0 && suggestedItems.length === 0) {
+      ElMessage.warning('AI 未生成技能或物品建议')
+      return
+    }
+    ElMessageBox.confirm(
+      `AI 建议添加以下内容：\n\n技能：\n${suggestedSkills.map(s => `- ${s.name}`).join('\n') || '无'}\n\n物品：\n${suggestedItems.map(i => `- ${i.name}`).join('\n') || '无'}`,
+      'AI 生成建议',
+      { confirmButtonText: '全部添加', cancelButtonText: '取消', type: 'info' }
+    ).then(async () => {
+      for (const suggested of suggestedSkills) {
+        await window.electronAPI.longwriting.createSkill({
+          projectId: props.projectId,
+          ...suggested,
+          characterIds: []
+        })
+      }
+      for (const suggested of suggestedItems) {
+        await window.electronAPI.longwriting.createItem({
+          projectId: props.projectId,
+          ...suggested
+        })
+      }
+      await loadData()
+      ElMessage.success('技能和物品已添加')
+    }).catch(() => {})
+  } catch (error) {
+    ElMessage.error('解析 AI 响应失败')
+  }
+}
+
+function cancelGeneration() {
+  generating.value = false
+  currentEventId.value = null
+  ElMessage.info('已取消生成')
+}
+
 function updateProgress() {
   const total = skills.value.length + items.value.length
   const progress = Math.min(65, 55 + total * 2)
   emit('update:progress', progress)
 }
 
-// 加载角色列表（用于关联选择）
 async function loadCharacters() {
-  if (!props.projectId) return
   const result = await window.electronAPI.longwriting.getCharacters(props.projectId)
   if (result.success) {
     characters.value = result.data || []
   }
 }
 
-// 加载技能列表
 async function loadSkills() {
-  if (!props.projectId) return
   const result = await window.electronAPI.longwriting.getSkills(props.projectId)
   if (result.success) {
     skills.value = result.data || []
   }
 }
 
-// 加载物品列表
 async function loadItems() {
-  if (!props.projectId) return
   const result = await window.electronAPI.longwriting.getItems(props.projectId)
   if (result.success) {
     items.value = result.data || []
   }
 }
 
-// 加载字典数据
-async function loadDictionary() {
-  try {
-    const result = await window.electronAPI.longwriting.getDictionaryAll()
-    if (result.success && result.data) {
-      dictionary.value = result.data
-    }
-  } catch (error) {
-    console.error('加载字典失败:', error)
-  }
-}
-
-// 加载所有数据
 async function loadData() {
-  loading.value = true
   await Promise.all([
-    loadDictionary(),
+    loadSkillTypes(),
+    loadItemTypes(),
     loadCharacters(),
     loadSkills(),
     loadItems()
   ])
-  loading.value = false
   updateProgress()
 }
 
-onMounted(() => {
-  loadData()
+// 初始化默认配置
+async function initDefaultConfigs() {
+  const result = await window.electronAPI.longwriting.initDefaultTypeConfigs(props.projectId)
+  if (result.success) {
+    await loadSkillTypes()
+    await loadItemTypes()
+  }
+}
+
+onMounted(async () => {
+  await loadData()
+  // 如果没有类型配置，初始化默认
+  if (skillTypes.value.length === 0 && itemTypes.value.length === 0) {
+    await initDefaultConfigs()
+  }
 })
 
-// 监听 projectId 变化重新加载
 watch(() => props.projectId, () => {
   loadData()
 })
@@ -737,7 +981,7 @@ watch(() => props.projectId, () => {
 
 <style lang="scss" scoped>
 .skill-item-stage {
-  max-width: 900px;
+  max-width: 1000px;
   margin: 0 auto;
 }
 
@@ -756,6 +1000,125 @@ watch(() => props.projectId, () => {
     color: var(--text-color-secondary);
     margin: 0;
   }
+}
+
+.type-config-section {
+  padding: 16px 0;
+}
+
+.config-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+
+  h3 {
+    font-size: 14px;
+    font-weight: 500;
+    margin: 0;
+  }
+}
+
+.type-config-container {
+  display: flex;
+  gap: 16px;
+  border: 1px solid var(--border-color-light);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.type-list-panel {
+  width: 200px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-color-light);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.type-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-color-lighter);
+
+  &:hover {
+    background: var(--fill-color-light);
+  }
+
+  &.active {
+    background: var(--color-primary-light-9);
+  }
+
+  .type-name {
+    flex: 1;
+    font-size: 13px;
+  }
+
+  .type-code {
+    font-size: 11px;
+    color: var(--text-color-secondary);
+    margin-right: 8px;
+  }
+}
+
+.level-list-panel {
+  flex: 1;
+  padding: 12px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.level-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.level-card-small {
+  padding: 8px;
+  background: var(--fill-color-lighter);
+  border-radius: 6px;
+}
+
+.level-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+
+  .level-num {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-primary);
+    color: white;
+    border-radius: 50%;
+    font-size: 11px;
+    flex-shrink: 0;
+  }
+
+  .el-input {
+    flex: 1;
+  }
+}
+
+.empty-tip {
+  text-align: center;
+  color: var(--text-color-placeholder);
+  padding: 40px;
+  font-size: 13px;
 }
 
 .skill-list,
@@ -812,16 +1175,6 @@ watch(() => props.projectId, () => {
       border-radius: 4px;
       background: var(--color-primary-light-9);
       color: var(--color-primary);
-
-      &.legendary {
-        background: var(--color-warning-light-9);
-        color: var(--color-warning);
-      }
-
-      &.divine {
-        background: var(--color-danger-light-9);
-        color: var(--color-danger);
-      }
     }
   }
 }
@@ -894,6 +1247,21 @@ watch(() => props.projectId, () => {
     font-size: 14px;
     color: var(--text-color-secondary);
     text-align: center;
+  }
+}
+
+.level-option {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+
+  .level-desc {
+    font-size: 12px;
+    color: var(--text-color-secondary);
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 </style>
