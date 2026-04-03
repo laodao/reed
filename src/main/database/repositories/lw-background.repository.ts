@@ -31,8 +31,8 @@ export class LwBackgroundRepository {
     const now = Date.now()
 
     const stmt = this.db.prepare(`
-      INSERT INTO lw_story_backgrounds (id, project_id, era_type, era_description, social_structure, tech_level, special_rules, created_at, updated_at)
-      VALUES (?, ?, 'ancient', '', '', '', '', ?, ?)
+      INSERT INTO lw_story_backgrounds (id, project_id, era_type, era_description, social_structure, tech_level, special_rules, faction_distribution, geographic_orientation, created_at, updated_at)
+      VALUES (?, ?, 'ancient', '', '', '', '', '', '', ?, ?)
     `)
 
     stmt.run(id, projectId, now, now)
@@ -45,6 +45,8 @@ export class LwBackgroundRepository {
       socialStructure: '',
       techLevel: '',
       specialRules: '',
+      factionDistribution: '',
+      geographicOrientation: '',
       createdAt: now,
       updatedAt: now
     }
@@ -79,6 +81,14 @@ export class LwBackgroundRepository {
     if (data.specialRules !== undefined) {
       updates.push('special_rules = ?')
       values.push(data.specialRules)
+    }
+    if (data.factionDistribution !== undefined) {
+      updates.push('faction_distribution = ?')
+      values.push(data.factionDistribution)
+    }
+    if (data.geographicOrientation !== undefined) {
+      updates.push('geographic_orientation = ?')
+      values.push(data.geographicOrientation)
     }
 
     if (updates.length === 0) return existing
@@ -132,6 +142,8 @@ export class LwBackgroundRepository {
       socialStructure: row.social_structure,
       techLevel: row.tech_level,
       specialRules: row.special_rules,
+      factionDistribution: row.faction_distribution || '',
+      geographicOrientation: row.geographic_orientation || '',
       createdAt: row.created_at,
       updatedAt: row.updated_at
     }

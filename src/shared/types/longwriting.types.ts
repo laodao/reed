@@ -126,6 +126,8 @@ export interface StoryBackground {
   socialStructure: string
   techLevel: string
   specialRules: string
+  factionDistribution: string    // 势力分布描述
+  geographicOrientation: string  // 地理方位描述
   createdAt: number
   updatedAt: number
 }

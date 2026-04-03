@@ -116,6 +116,30 @@
             />
           </div>
 
+          <!-- 势力分布 -->
+          <div class="form-row">
+            <label class="form-label">势力分布</label>
+            <el-input
+              v-model="eraForm.factionDistribution"
+              type="textarea"
+              :rows="3"
+              placeholder="描述世界中的主要势力分布，如各大门派、国家、阵营的地理位置和相互关系，用于辅助地图设定和势力设定的 AI 生成..."
+              resize="none"
+            />
+          </div>
+
+          <!-- 地理方位 -->
+          <div class="form-row">
+            <label class="form-label">地理方位</label>
+            <el-input
+              v-model="eraForm.geographicOrientation"
+              type="textarea"
+              :rows="3"
+              placeholder="描述世界的整体地理格局，如东南西北各区域的特点、气候、地形等，用于辅助地图设定的 AI 生成..."
+              resize="none"
+            />
+          </div>
+
           <!-- 保存按钮 -->
           <div class="form-actions">
             <el-button type="primary" :loading="saveStatus === 'saving'" @click="saveBackground">
@@ -493,7 +517,9 @@ const eraForm = ref({
   eraDescription: '',
   socialStructure: '',
   techLevel: '',
-  specialRules: ''
+  specialRules: '',
+  factionDistribution: '',
+  geographicOrientation: ''
 })
 
 // 地点列表
@@ -928,7 +954,9 @@ async function loadBackground() {
       eraDescription: result.data.eraDescription || '',
       socialStructure: result.data.socialStructure || '',
       techLevel: result.data.techLevel || '',
-      specialRules: result.data.specialRules || ''
+      specialRules: result.data.specialRules || '',
+      factionDistribution: result.data.factionDistribution || '',
+      geographicOrientation: result.data.geographicOrientation || ''
     }
   }
 }

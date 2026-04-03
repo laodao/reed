@@ -728,6 +728,8 @@ export class DatabaseManager {
         social_structure TEXT,
         tech_level TEXT,
         special_rules TEXT,
+        faction_distribution TEXT,
+        geographic_orientation TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE
@@ -1590,6 +1592,17 @@ export class DatabaseManager {
     }
     if (!overviewColumnNames.includes('other_requirements')) {
       this.db.exec('ALTER TABLE lw_story_overviews ADD COLUMN other_requirements TEXT')
+    }
+
+    // 检查 lw_story_backgrounds 表是否需要添加新字段
+    const backgroundColumns = this.db.prepare("PRAGMA table_info(lw_story_backgrounds)").all() as { name: string }[]
+    const backgroundColumnNames = backgroundColumns.map(col => col.name)
+
+    if (!backgroundColumnNames.includes('faction_distribution')) {
+      this.db.exec('ALTER TABLE lw_story_backgrounds ADD COLUMN faction_distribution TEXT')
+    }
+    if (!backgroundColumnNames.includes('geographic_orientation')) {
+      this.db.exec('ALTER TABLE lw_story_backgrounds ADD COLUMN geographic_orientation TEXT')
     }
 
     // 检查 lw_global_settings 表是否需要添加 estimated_lengths 字段
