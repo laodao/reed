@@ -994,6 +994,21 @@ ${plotInfo || '暂无相关情节'}
     // 获取记忆上下文
     const memoryContext = await this.getMemoryContext(projectId, chapterNumber)
 
+    // 获取实体状态上下文
+    const involvedEntities: Array<{ type: string; id: string }> = []
+
+    // 添加涉及的角色
+    for (const charId of outline.involvedCharacters || []) {
+      involvedEntities.push({ type: 'character', id: charId })
+    }
+
+    // 添加涉及的地点
+    for (const locId of outline.involvedLocations || []) {
+      involvedEntities.push({ type: 'location', id: locId })
+    }
+
+    const entityStateContext = await this.getEntityStateContext(projectId, chapterNumber, involvedEntities)
+
     // 获取预写内容（如果存在）
     const prewrite = await dbManager.lwPrewrites?.getByOutlineId(outlineId)
     const prewriteSection = prewrite?.content ? `\n\n【预写提纲】\n${prewrite.content}\n` : ''
@@ -1033,7 +1048,7 @@ ${characterInfo || '无特定角色'}
 ${locationInfo || '无特定地点'}
 
 前情提要：
-${previousContext || '这是开篇'}${prewriteSection}${memoryContext}
+${previousContext || '这是开篇'}${prewriteSection}${memoryContext}${entityStateContext}
 
 请开始撰写章节内容：`
 

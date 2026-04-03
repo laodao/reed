@@ -359,6 +359,7 @@
               <el-option label="物品事件" value="item_event" />
               <el-option label="关系变化" value="relationship_change" />
               <el-option label="势力事件" value="faction_event" />
+              <el-option label="技能事件" value="skill_event" />
               <el-option label="一般事件" value="general" />
             </el-select>
           </div>
