@@ -905,6 +905,18 @@ const electronAPI = {
     reorderFactions: (orderList: { id: string; order: number }[]) =>
       ipcRenderer.invoke('longwriting:reorderFactions', orderList),
 
+    // 地图管理
+    getMaps: (projectId: string) => ipcRenderer.invoke('longwriting:getMaps', projectId),
+    getMap: (id: string) => ipcRenderer.invoke('longwriting:getMap', id),
+    createMap: (data: { projectId: string; name: string; orientation?: string; characteristics?: string }) =>
+      ipcRenderer.invoke('longwriting:createMap', data),
+    updateMap: (id: string, data: any) => ipcRenderer.invoke('longwriting:updateMap', id, data),
+    deleteMap: (id: string) => ipcRenderer.invoke('longwriting:deleteMap', id),
+    generateMapData: (eventId: string, projectId: string, mapId: string, prompt: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:generateMapData', eventId, projectId, mapId, prompt, providerConfigId, modelId),
+    generateMapImage: (projectId: string, mapId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:generateMapImage', projectId, mapId, providerConfigId, modelId),
+
     // 情节管理
     getPlots: (projectId: string) =>
       ipcRenderer.invoke('longwriting:getPlots', projectId),

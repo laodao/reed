@@ -29,7 +29,9 @@ import {
   UpdateItemLevelRequest,
   CreateFactionRequest,
   UpdateFactionRequest,
-  FactionType
+  FactionType,
+  CreateMapRequest,
+  UpdateMapRequest
 } from '../../shared/types/longwriting.types'
 
 /**
@@ -67,6 +69,15 @@ const CHANNELS = {
   UPDATE_FACTION: 'longwriting:updateFaction',
   DELETE_FACTION: 'longwriting:deleteFaction',
   REORDER_FACTIONS: 'longwriting:reorderFactions',
+
+  // 地图管理
+  GET_MAPS: 'longwriting:getMaps',
+  GET_MAP: 'longwriting:getMap',
+  CREATE_MAP: 'longwriting:createMap',
+  UPDATE_MAP: 'longwriting:updateMap',
+  DELETE_MAP: 'longwriting:deleteMap',
+  GENERATE_MAP_DATA: 'longwriting:generateMapData',
+  GENERATE_MAP_IMAGE: 'longwriting:generateMapImage',
 
   // 情节管理
   GET_PLOTS: 'longwriting:getPlots',
@@ -494,6 +505,119 @@ export function registerLongWritingHandlers(): void {
     try {
       const result = await service.reorderFactions(orderList)
       return { success: result }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 地图管理 ====================
+
+  ipcMain.handle(CHANNELS.GET_MAPS, async (_event, projectId: string) => {
+    try {
+      const maps = await service.getMaps(projectId)
+      return { success: true, data: maps }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.GET_MAP, async (_event, id: string) => {
+    try {
+      const map = await service.getMap(id)
+      return { success: true, data: map }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.CREATE_MAP, async (_event, data: CreateMapRequest) => {
+    try {
+      const map = await service.createMap(data)
+      return { success: true, data: map }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.UPDATE_MAP, async (_event, id: string, data: UpdateMapRequest) => {
+    try {
+      const map = await service.updateMap(id, data)
+      return { success: true, data: map }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.DELETE_MAP, async (_event, id: string) => {
+    try {
+      const result = await service.deleteMap(id)
+      return { success: result }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.GENERATE_MAP_DATA, async (event, eventId: string, projectId: string, mapId: string, prompt: string, providerConfigId?: string, modelId?: string) => {
+    try {
+      const window = BrowserWindow.fromWebContents(event.sender)
+      if (!window) {
+        return { success: false, error: '窗口不存在' }
+      }
+
+      const result = await aiService.generateMapData(
+        window,
+        eventId,
+        projectId,
+        mapId,
+        prompt,
+        providerConfigId,
+        modelId
+      )
+      return result
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.GENERATE_MAP_IMAGE, async (event, projectId: string, mapId: string, providerConfigId?: string, modelId?: string) => {
+    try {
+      // 获取地图信息
+      const map = await service.getMap(mapId)
+      if (!map) {
+        return { success: false, error: '地图不存在' }
+      }
+
+      // 获取故事概要
+      const overview = await service.getStoryOverview(projectId)
+
+      // 构建图片生成提示词
+      const prompt = `为小说故事生成地图图片。
+地图名称：${map.name}
+地图方位：${map.orientation || '未指定'}
+地图特点：${map.characteristics || '未指定'}
+故事标题：${overview?.title || '未命名'}
+${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).slice(0, 500)}` : ''}
+
+请生成一张符合以上描述的地图风格插图。`
+
+      // 获取 ImageService
+      const { ImageService } = await import('../../services/image.service')
+      const imageService = ImageService.getInstance()
+
+      // 生成图片
+      const result = await imageService.generateImage({
+        prompt,
+        providerConfigId,
+        modelId,
+        skipHistory: true
+      })
+
+      if (result.success && result.data?.localPath) {
+        // 更新地图图片路径
+        await service.updateMapImage(mapId, result.data.localPath)
+      }
+
+      return result
     } catch (error: any) {
       return { success: false, error: error.message }
     }

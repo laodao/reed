@@ -42,6 +42,7 @@ import { LwGlobalSettingsRepository } from './repositories/lw-global-settings.re
 import { LwDictionaryRepository } from './repositories/lw-dictionary.repository'
 import { LwTypeConfigRepository } from './repositories/lw-type-config.repository'
 import { LwFactionRepository } from './repositories/lw-faction.repository'
+import { LwMapRepository } from './repositories/lw-map.repository'
 import { DataPathService } from '../services/data-path.service'
 import { LanceDBService } from '../services/lance-db.service'
 
@@ -89,6 +90,7 @@ export class DatabaseManager {
   public lwDictionary: LwDictionaryRepository | null = null
   public lwTypeConfig: LwTypeConfigRepository | null = null
   public lwFactions: LwFactionRepository | null = null
+  public lwMaps: LwMapRepository | null = null
 
   private constructor() {
     // 默认使用 userData 路径，后续会在 initialize 中更新
@@ -766,6 +768,24 @@ export class DatabaseManager {
     `)
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_factions_project_id ON lw_project_factions(project_id)`)
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_factions_type ON lw_project_factions(faction_type)`)
+
+    // 地图表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_project_maps (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        orientation TEXT,
+        characteristics TEXT,
+        image_path TEXT,
+        ai_generated_data TEXT,
+        sort_order INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_maps_project_id ON lw_project_maps(project_id)`)
 
     // 故事情节表
     this.db.exec(`
@@ -1620,6 +1640,7 @@ export class DatabaseManager {
     this.lwDictionary = new LwDictionaryRepository(this.db)
     this.lwTypeConfig = new LwTypeConfigRepository(this.db)
     this.lwFactions = new LwFactionRepository(this.db)
+    this.lwMaps = new LwMapRepository(this.db)
   }
 
   /**

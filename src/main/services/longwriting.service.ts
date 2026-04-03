@@ -37,7 +37,11 @@ import {
   StoryFaction,
   FactionType,
   CreateFactionRequest,
-  UpdateFactionRequest
+  UpdateFactionRequest,
+  StoryMap,
+  CreateMapRequest,
+  UpdateMapRequest,
+  MapGeneratedData
 } from '../../shared/types/longwriting.types'
 
 /**
@@ -1209,6 +1213,93 @@ export class LongWritingService {
       throw new Error('数据库未初始化')
     }
     this.db.lwTypeConfig.reorderItemLevels(projectId, itemTypeCode, orderedIds)
+  }
+
+  // ==================== 地图管理 ====================
+
+  /**
+   * 获取项目的所有地图
+   */
+  async getMaps(projectId: string): Promise<StoryMap[]> {
+    if (!this.db.lwMaps) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwMaps.getByProjectId(projectId)
+  }
+
+  /**
+   * 获取地图详情
+   */
+  async getMap(id: string): Promise<StoryMap | null> {
+    if (!this.db.lwMaps) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwMaps.getById(id)
+  }
+
+  /**
+   * 创建地图
+   */
+  async createMap(data: CreateMapRequest): Promise<StoryMap> {
+    if (!this.db.lwMaps) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwMaps.create({
+      projectId: data.projectId,
+      name: data.name,
+      orientation: data.orientation,
+      characteristics: data.characteristics
+    })
+  }
+
+  /**
+   * 更新地图
+   */
+  async updateMap(id: string, data: UpdateMapRequest): Promise<StoryMap | null> {
+    if (!this.db.lwMaps) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwMaps.update(id, data as Partial<StoryMap>)
+  }
+
+  /**
+   * 删除地图
+   */
+  async deleteMap(id: string): Promise<boolean> {
+    if (!this.db.lwMaps) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwMaps.delete(id)
+  }
+
+  /**
+   * 更新地图图片路径
+   */
+  async updateMapImage(id: string, imagePath: string | null): Promise<boolean> {
+    if (!this.db.lwMaps) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwMaps.updateImagePath(id, imagePath)
+  }
+
+  /**
+   * 更新 AI 生成的地图数据
+   */
+  async updateMapAIData(id: string, data: MapGeneratedData | null): Promise<boolean> {
+    if (!this.db.lwMaps) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwMaps.updateAIGeneratedData(id, data)
+  }
+
+  /**
+   * 重排序地图
+   */
+  async reorderMaps(orderList: { id: string; order: number }[]): Promise<boolean> {
+    if (!this.db.lwMaps) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwMaps.updateSortOrder(orderList)
   }
 }
 

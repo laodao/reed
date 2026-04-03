@@ -130,6 +130,114 @@ export interface StoryBackground {
   updatedAt: number
 }
 
+// ==================== 地图相关类型 ====================
+
+/**
+ * 地图方位
+ */
+export type MapOrientation =
+  | 'north'       // 北方
+  | 'south'       // 南方
+  | 'east'        // 东方
+  | 'west'        // 西方
+  | 'central'     // 中央
+  | 'northeast'   // 东北
+  | 'northwest'   // 西北
+  | 'southeast'   // 东南
+  | 'southwest'   // 西南
+  | 'other'       // 其他
+
+/**
+ * 地图方位显示名称
+ */
+export const MAP_ORIENTATION_NAMES: Record<MapOrientation, string> = {
+  north: '北方',
+  south: '南方',
+  east: '东方',
+  west: '西方',
+  central: '中央',
+  northeast: '东北',
+  northwest: '西北',
+  southeast: '东南',
+  southwest: '西南',
+  other: '其他'
+}
+
+/**
+ * AI 生成的地图数据结构
+ */
+export interface MapGeneratedData {
+  regions: Array<{
+    name: string
+    description: string
+    features: string[]
+  }>
+  landmarks: Array<{
+    name: string
+    type: string
+    description: string
+  }>
+  terrain: Array<{
+    type: string
+    description: string
+    area: string
+  }>
+  climate: string
+  resources: string[]
+  conflicts: Array<{
+    type: string
+    description: string
+    parties: string[]
+  }>
+}
+
+/**
+ * 地图设定
+ */
+export interface StoryMap {
+  id: string
+  projectId: string
+  name: string
+  orientation: MapOrientation
+  characteristics: string
+  imagePath?: string
+  aiGeneratedData?: MapGeneratedData
+  sortOrder: number
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * 创建地图请求
+ */
+export interface CreateMapRequest {
+  projectId: string
+  name: string
+  orientation?: MapOrientation
+  characteristics?: string
+}
+
+/**
+ * 更新地图请求
+ */
+export interface UpdateMapRequest {
+  name?: string
+  orientation?: MapOrientation
+  characteristics?: string
+  imagePath?: string
+  aiGeneratedData?: MapGeneratedData
+  sortOrder?: number
+}
+
+/**
+ * AI 生成地图数据请求
+ */
+export interface GenerateMapDataRequest {
+  projectId: string
+  mapId?: string
+  prompt?: string
+}
+
 // ==================== 地点相关类型 ====================
 
 /**

@@ -126,6 +126,56 @@
         </div>
       </el-tab-pane>
 
+      <!-- 地图设定 -->
+      <el-tab-pane label="地图设定" name="maps">
+        <div class="map-list">
+          <div v-for="map in maps" :key="map.id" class="map-card">
+            <div class="map-image" v-if="map.imagePath">
+              <img :src="`file://${map.imagePath}`" alt="地图图片" />
+            </div>
+            <div class="map-image map-image-placeholder" v-else>
+              <el-icon size="40"><Picture /></el-icon>
+              <span>暂无图片</span>
+            </div>
+            <div class="map-info">
+              <h4>{{ map.name }}</h4>
+              <div class="map-tags">
+                <el-tag size="small" type="info">{{ getMapOrientationLabel(map.orientation) }}</el-tag>
+              </div>
+              <p class="map-desc">{{ map.characteristics }}</p>
+              <div v-if="map.aiGeneratedData" class="map-ai-data">
+                <el-collapse>
+                  <el-collapse-item title="AI 生成的详细数据" name="aiData">
+                    <div class="ai-data-content">
+                      <div v-if="map.aiGeneratedData.regions?.length">
+                        <strong>区域：</strong>
+                        <span v-for="region in map.aiGeneratedData.regions" :key="region.name">{{ region.name }}、</span>
+                      </div>
+                      <div v-if="map.aiGeneratedData.landmarks?.length">
+                        <strong>地标：</strong>
+                        <span v-for="landmark in map.aiGeneratedData.landmarks" :key="landmark.name">{{ landmark.name }}、</span>
+                      </div>
+                      <div v-if="map.aiGeneratedData.climate">
+                        <strong>气候：</strong>{{ map.aiGeneratedData.climate }}
+                      </div>
+                    </div>
+                  </el-collapse-item>
+                </el-collapse>
+              </div>
+            </div>
+            <div class="map-actions">
+              <el-button text @click="editMap(map)">编辑</el-button>
+              <el-button text @click="showGenerateMapImageDialog(map)" v-if="!map.imagePath">生成图片</el-button>
+              <el-button text type="danger" @click="deleteMap(map.id)">删除</el-button>
+            </div>
+          </div>
+          <el-button type="primary" plain class="add-map-btn" @click="showMapDialog = true">
+            <el-icon><Plus /></el-icon>
+            添加地图
+          </el-button>
+        </div>
+      </el-tab-pane>
+
       <!-- 地点设定 -->
       <el-tab-pane label="地点设定" name="locations">
         <div class="location-list">
@@ -270,13 +320,114 @@
         <el-button type="primary" @click="saveFaction">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 地图编辑对话框 -->
+    <el-dialog v-model="showMapDialog" :title="editingMapId ? '编辑地图' : '添加地图'" width="550px">
+      <el-form :model="mapForm" label-width="80px">
+        <el-form-item label="地图名称" required>
+          <el-input v-model="mapForm.name" placeholder="输入地图名称" />
+        </el-form-item>
+        <el-form-item label="地图方位">
+          <el-select v-model="mapForm.orientation" placeholder="选择地图方位">
+            <el-option label="北方" value="north" />
+            <el-option label="南方" value="south" />
+            <el-option label="东方" value="east" />
+            <el-option label="西方" value="west" />
+            <el-option label="中央" value="central" />
+            <el-option label="东北" value="northeast" />
+            <el-option label="西北" value="northwest" />
+            <el-option label="东南" value="southeast" />
+            <el-option label="西南" value="southwest" />
+            <el-option label="其他" value="other" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="地图特点">
+          <el-input
+            v-model="mapForm.characteristics"
+            type="textarea"
+            :rows="3"
+            placeholder="描述地图的地形特点、气候、重要地标等..."
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" plain @click="showAIMapDataDialog = true" :disabled="!mapForm.name">
+            <el-icon><MagicStick /></el-icon>
+            AI 生成详细数据
+          </el-button>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showMapDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveMap">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- AI 生成地图数据对话框 -->
+    <el-dialog v-model="showAIMapDataDialog" title="AI 生成地图数据" width="550px">
+      <el-form label-width="80px">
+        <el-form-item label="提示词">
+          <el-input
+            v-model="aiMapDataPrompt"
+            type="textarea"
+            :rows="4"
+            placeholder="描述你想要的地图内容，如：一个以山脉为主的北方区域，有三座主要城市..."
+          />
+        </el-form-item>
+        <el-alert
+          v-if="!selectedModel?.providerConfigId"
+          title="请先在顶部选择 AI 模型"
+          type="warning"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 16px"
+        />
+      </el-form>
+      <template #footer>
+        <el-button @click="showAIMapDataDialog = false">取消</el-button>
+        <el-button
+          type="primary"
+          @click="generateMapData"
+          :loading="generatingMapData"
+          :disabled="!selectedModel?.providerConfigId"
+        >
+          生成
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 生成地图图片对话框 -->
+    <el-dialog v-model="showMapImageDialog" title="生成地图图片" width="450px">
+      <el-alert
+        v-if="!selectedModel?.providerConfigId"
+        title="请先在顶部选择支持图片生成的 AI 模型"
+        type="warning"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 16px"
+      />
+      <p>将为地图「{{ generatingImageMap?.name }}」生成图片。</p>
+      <p style="color: var(--text-color-secondary); font-size: 13px;">
+        注意：需要选择支持图片生成的模型（如 DALL-E、通义万相等）。
+      </p>
+      <template #footer>
+        <el-button @click="showMapImageDialog = false">取消</el-button>
+        <el-button
+          type="primary"
+          @click="generateMapImage"
+          :loading="generatingMapImage"
+          :disabled="!selectedModel?.providerConfigId"
+        >
+          生成图片
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, computed, inject, toRaw } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Plus, MagicStick, Check } from '@element-plus/icons-vue'
+import { Plus, MagicStick, Check, Picture } from '@element-plus/icons-vue'
 import type { ComputedRef } from 'vue'
 
 const props = defineProps<{
@@ -353,6 +504,37 @@ const factionForm = ref({
   locationId: '',
   description: ''
 })
+
+// 地图列表
+const maps = ref<Array<{
+  id: string
+  projectId: string
+  name: string
+  orientation: string
+  characteristics: string
+  imagePath?: string
+  aiGeneratedData?: any
+  sortOrder: number
+}>>([])
+
+// 地图对话框
+const showMapDialog = ref(false)
+const editingMapId = ref<string | null>(null)
+const mapForm = ref({
+  name: '',
+  orientation: 'other',
+  characteristics: ''
+})
+
+// AI 生成地图数据对话框
+const showAIMapDataDialog = ref(false)
+const aiMapDataPrompt = ref('')
+const generatingMapData = ref(false)
+
+// 生成地图图片对话框
+const showMapImageDialog = ref(false)
+const generatingImageMap = ref<{ id: string; name: string } | null>(null)
+const generatingMapImage = ref(false)
 
 // 加载状态
 const loading = ref(false)
@@ -486,6 +668,189 @@ async function saveFaction() {
   }
   await loadFactions()
   emit('update:progress', 35)
+}
+
+// ==================== 地图管理 ====================
+
+function getMapOrientationLabel(orientation: string): string {
+  const labels: Record<string, string> = {
+    north: '北方',
+    south: '南方',
+    east: '东方',
+    west: '西方',
+    central: '中央',
+    northeast: '东北',
+    northwest: '西北',
+    southeast: '东南',
+    southwest: '西南',
+    other: '其他'
+  }
+  return labels[orientation] || orientation
+}
+
+// 加载地图列表
+async function loadMaps() {
+  if (!props.projectId) return
+
+  const result = await window.electronAPI.longwriting.getMaps(props.projectId)
+  if (result.success) {
+    maps.value = result.data || []
+  }
+}
+
+function editMap(map: any) {
+  editingMapId.value = map.id
+  mapForm.value = {
+    name: map.name,
+    orientation: map.orientation || 'other',
+    characteristics: map.characteristics || ''
+  }
+  showMapDialog.value = true
+}
+
+async function deleteMap(id: string) {
+  const result = await window.electronAPI.longwriting.deleteMap(id)
+  if (result.success) {
+    await loadMaps()
+    ElMessage.success('地图已删除')
+  }
+}
+
+async function saveMap() {
+  if (!mapForm.value.name) {
+    ElMessage.warning('请输入地图名称')
+    return
+  }
+
+  const formData = toRaw(mapForm.value)
+
+  if (editingMapId.value) {
+    // 更新
+    const result = await window.electronAPI.longwriting.updateMap(editingMapId.value, formData)
+    if (result.success) {
+      ElMessage.success('地图已更新')
+    } else {
+      ElMessage.error(result.error || '更新失败')
+    }
+  } else {
+    // 创建
+    const result = await window.electronAPI.longwriting.createMap({
+      projectId: props.projectId,
+      ...formData
+    })
+    if (result.success) {
+      ElMessage.success('地图已添加')
+    } else {
+      ElMessage.error(result.error || '添加失败')
+    }
+  }
+
+  showMapDialog.value = false
+  editingMapId.value = null
+  mapForm.value = {
+    name: '',
+    orientation: 'other',
+    characteristics: ''
+  }
+  await loadMaps()
+  emit('update:progress', 30)
+}
+
+// 显示生成地图图片对话框
+function showGenerateMapImageDialog(map: any) {
+  generatingImageMap.value = { id: map.id, name: map.name }
+  showMapImageDialog.value = true
+}
+
+// 生成地图图片
+async function generateMapImage() {
+  if (!generatingImageMap.value || !selectedModel.value?.providerConfigId) return
+
+  generatingMapImage.value = true
+
+  try {
+    const result = await window.electronAPI.longwriting.generateMapImage(
+      props.projectId,
+      generatingImageMap.value.id,
+      selectedModel.value.providerConfigId,
+      selectedModel.value.modelId
+    )
+
+    if (result.success) {
+      ElMessage.success('地图图片已生成')
+      await loadMaps()
+    } else {
+      ElMessage.error(result.error || '生成失败')
+    }
+  } catch (error: any) {
+    ElMessage.error('生成失败: ' + error.message)
+  } finally {
+    generatingMapImage.value = false
+    showMapImageDialog.value = false
+    generatingImageMap.value = null
+  }
+}
+
+// AI 生成地图数据
+async function generateMapData() {
+  if (!selectedModel.value?.providerConfigId) {
+    ElMessage.warning('请先选择 AI 模型')
+    return
+  }
+
+  generatingMapData.value = true
+
+  const eventId = `map-data-${props.projectId}-${Date.now()}`
+
+  // 监听流式生成事件
+  const unsubscribe = window.electronAPI.longwriting.onGenerateEvent(
+    eventId,
+    (event: { type: string; content?: string; data?: any; error?: string }) => {
+      if (event.type === 'done') {
+        generatingMapData.value = false
+        unsubscribe()
+
+        // 更新地图的 AI 生成数据
+        if (event.data || event.content) {
+          try {
+            const data = event.data || (event.content ? JSON.parse(event.content) : null)
+            if (data && editingMapId.value) {
+              window.electronAPI.longwriting.updateMap(editingMapId.value, {
+                aiGeneratedData: data
+              })
+              ElMessage.success('地图数据已生成')
+              loadMaps()
+            }
+          } catch (e) {
+            console.error('解析 AI 生成数据失败:', e)
+          }
+        }
+
+        showAIMapDataDialog.value = false
+        aiMapDataPrompt.value = ''
+      } else if (event.type === 'error') {
+        generatingMapData.value = false
+        unsubscribe()
+        ElMessage.error(event.error || '生成失败')
+      }
+    }
+  )
+
+  // 调用生成接口
+  const result = await window.electronAPI.longwriting.generateMapData(
+    eventId,
+    props.projectId,
+    editingMapId.value || '',
+    aiMapDataPrompt.value,
+    selectedModel.value.providerConfigId,
+    selectedModel.value.modelId
+  )
+
+  if (!result.success) {
+    generatingMapData.value = false
+    unsubscribe()
+    ElMessage.error(result.error || '生成失败')
+  }
 }
 
 // 加载背景设定
@@ -661,6 +1026,7 @@ async function polishField(field: 'eraDescription' | 'socialStructure' | 'techLe
 
 onMounted(() => {
   loadBackground()
+  loadMaps()
   loadLocations()
   loadFactions()
 })
@@ -916,6 +1282,126 @@ onMounted(() => {
 }
 
 .add-faction-btn {
+  width: 100%;
+  border-style: dashed;
+}
+
+// 地图设定样式
+.map-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.map-card {
+  display: flex;
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--bg-color);
+  border-radius: 12px;
+  border: 1px solid var(--border-color-light);
+  transition: all 0.2s;
+
+  &:hover {
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  }
+
+  .map-image {
+    width: 120px;
+    height: 90px;
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    &.map-image-placeholder {
+      background: var(--fill-color-light);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-color-placeholder);
+
+      span {
+        font-size: 12px;
+        margin-top: 4px;
+      }
+    }
+  }
+
+  .map-info {
+    flex: 1;
+    min-width: 0;
+
+    h4 {
+      margin: 0 0 8px 0;
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--text-color-primary);
+    }
+
+    .map-tags {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .map-desc {
+      margin: 0;
+      font-size: 13px;
+      color: var(--text-color-secondary);
+      line-height: 1.6;
+    }
+
+    .map-ai-data {
+      margin-top: 12px;
+
+      :deep(.el-collapse) {
+        border: none;
+      }
+
+      :deep(.el-collapse-item__header) {
+        font-size: 13px;
+        color: var(--color-primary);
+        background: transparent;
+        height: 32px;
+        line-height: 32px;
+      }
+
+      .ai-data-content {
+        font-size: 13px;
+        color: var(--text-color-secondary);
+
+        > div {
+          margin-bottom: 8px;
+
+          strong {
+            color: var(--text-color-regular);
+          }
+        }
+      }
+    }
+  }
+
+  .map-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  &:hover .map-actions {
+    opacity: 1;
+  }
+}
+
+.add-map-btn {
   width: 100%;
   border-style: dashed;
 }

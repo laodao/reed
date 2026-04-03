@@ -996,6 +996,133 @@ ${backgroundInfo || '暂无'}
       return { success: false, error: error.message }
     }
   }
+
+  // ==================== 地图数据生成 ====================
+
+  /**
+   * 生成地图数据
+   */
+  async generateMapData(
+    window: BrowserWindow,
+    eventId: string,
+    projectId: string,
+    mapId: string,
+    userPrompt: string,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<GenerateResponse> {
+    const dbManager = getDatabaseManager()
+
+    // 获取故事概要
+    const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
+    if (!overview) {
+      return { success: false, error: '请先创建故事概要' }
+    }
+
+    // 获取背景设定
+    const background = await dbManager.lwBackgrounds?.getByProjectId(projectId)
+
+    // 获取已有地点
+    const locations = await dbManager.lwLocations?.getByProjectId(projectId) || []
+
+    // 获取已有势力
+    const factions = await dbManager.lwFactions?.getByProjectId(projectId) || []
+
+    // 获取地图信息
+    const map = mapId ? await dbManager.lwMaps?.getById(mapId) : null
+
+    const systemPrompt = `你是一位专业的小说世界观设计师，擅长设计丰富多彩的地图设定。
+请根据用户提供的信息，生成详细的地图数据。
+
+**重要**：请控制回复长度，总字数不超过1000字。
+
+你的回复必须是纯 JSON 格式（不要包含 \`\`\`json 标记），包含以下字段：
+{
+  "regions": [
+    {
+      "name": "区域名称",
+      "description": "区域描述（50-100字）",
+      "features": ["特征1", "特征2"]
+    }
+  ],
+  "landmarks": [
+    {
+      "name": "地标名称",
+      "type": "地标类型（如城市、山脉、河流等）",
+      "description": "地标描述（30-50字）"
+    }
+  ],
+  "terrain": [
+    {
+      "type": "地形类型",
+      "description": "地形描述",
+      "area": "分布区域"
+    }
+  ],
+  "climate": "气候特征描述",
+  "resources": ["资源1", "资源2", "资源3"],
+  "conflicts": [
+    {
+      "type": "冲突类型",
+      "description": "冲突描述",
+      "parties": ["冲突方1", "冲突方2"]
+    }
+  ]
+}
+
+请直接输出 JSON 对象，不要有任何额外文字。`
+
+    // 构建地点信息
+    const locationInfo = locations.map(l => `${l.name}（${l.type}）`).join('、')
+
+    // 构建势力信息
+    const factionInfo = factions.map(f => `${f.name}（${f.factionType === 'country' ? '国别' : f.factionType === 'camp' ? '阵营' : '门派'}）`).join('、')
+
+    // 构建背景信息
+    let backgroundInfo = ''
+    if (background) {
+      if (background.eraDescription) backgroundInfo += `时代：${background.eraDescription}\n`
+      if (background.socialStructure) backgroundInfo += `社会结构：${background.socialStructure}\n`
+      if (background.techLevel) backgroundInfo += `技术水平：${background.techLevel}\n`
+    }
+
+    const prompt = `请根据以下信息生成地图数据：
+
+【故事标题】${overview.title || '未命名'}
+【故事类型】${overview.storyType || '未指定'}
+【故事摘要】${overview.summary || '未指定'}
+
+【背景设定】
+${backgroundInfo || '暂无'}
+
+【已有地点】${locationInfo || '暂无'}
+
+【已有势力】${factionInfo || '暂无'}
+
+${map ? `【地图名称】${map.name}
+【地图方位】${map.orientation || '未指定'}
+【地图特点】${map.characteristics || '未指定'}` : ''}
+
+【用户需求】
+${userPrompt || '请根据故事背景生成合适的地图数据'}
+
+请生成详细的地图数据，包含区域、地标、地形、气候、资源和冲突信息。直接返回 JSON 格式的结果。`
+
+    try {
+      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 2048, providerConfigId, modelId)
+
+      // 尝试解析 JSON
+      const jsonMatch = result.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0])
+        return { success: true, data }
+      }
+
+      return { success: false, error: 'AI 返回格式错误' }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
 }
 
 /**
