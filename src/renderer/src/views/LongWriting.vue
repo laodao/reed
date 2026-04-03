@@ -99,7 +99,7 @@
       <div class="dictionary-settings">
         <el-tabs v-model="activeSettingsTab" type="border-card" closable @tab-remove="handleRemoveCategory">
           <el-tab-pane
-            v-for="category in categories"
+            v-for="category in filteredCategories"
             :key="category.code"
             :label="category.name"
             :name="category.code"
@@ -190,6 +190,12 @@ const activeSettingsTab = ref('')
 
 // 字典分类列表
 const categories = ref<DictionaryCategory[]>([])
+
+// 过滤后的分类列表（设置对话框中显示，排除技能物品相关分类）
+const filteredCategories = computed(() => {
+  const excludedCodes = ['skill_type', 'skill_level', 'item_type', 'item_level']
+  return categories.value.filter(c => !excludedCodes.includes(c.code))
+})
 
 // 字典数据
 const dictionary = ref<Record<string, DictionaryItem[]>>({})
@@ -318,9 +324,9 @@ async function loadDictionary() {
     const categoriesResult = await window.electronAPI.longwriting.getDictionaryCategories()
     if (categoriesResult.success && categoriesResult.data) {
       categories.value = categoriesResult.data
-      // 默认选中第一个分类
-      if (categories.value.length > 0 && !activeSettingsTab.value) {
-        activeSettingsTab.value = categories.value[0].code
+      // 默认选中第一个过滤后的分类
+      if (filteredCategories.value.length > 0 && !activeSettingsTab.value) {
+        activeSettingsTab.value = filteredCategories.value[0].code
       }
     }
 
@@ -420,9 +426,9 @@ async function handleRemoveCategory(categoryCode: string) {
       }
       delete dictionary.value[categoryCode]
 
-      // 重新选中第一个分类
-      if (activeSettingsTab.value === categoryCode && categories.value.length > 0) {
-        activeSettingsTab.value = categories.value[0].code
+      // 重新选中第一个过滤后的分类
+      if (activeSettingsTab.value === categoryCode && filteredCategories.value.length > 0) {
+        activeSettingsTab.value = filteredCategories.value[0].code
       }
 
       ElMessage.success('分类已删除')

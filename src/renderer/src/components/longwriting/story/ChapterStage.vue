@@ -3,6 +3,10 @@
     <div class="stage-header">
       <h2>章节写作</h2>
       <p class="stage-desc">根据大纲生成章节内容，支持手动编辑和版本管理</p>
+      <el-button type="primary" size="small" class="header-export-btn" @click="exportAll">
+        <el-icon><Download /></el-icon>
+        导出全部
+      </el-button>
     </div>
 
     <div class="stage-content">
@@ -86,37 +90,49 @@
                     预览模式
                   </span>
                 </div>
-                <div class="title-actions" v-if="isEditableNode && currentChapter">
-                  <el-button
-                    v-if="!generatingMap[currentChapter.id]"
-                    type="primary"
-                    size="small"
-                    @click="startGenerate(currentChapter)"
-                  >
-                    <el-icon><MagicStick /></el-icon>
-                    AI 生成
-                  </el-button>
-                  <el-button
-                    v-else
-                    type="danger"
-                    size="small"
-                    @click="cancelGenerate(currentChapter.id)"
-                  >
-                    <el-icon><Close /></el-icon>
-                    取消
-                  </el-button>
-                  <el-button size="small" @click="showVersions(currentChapter)">
-                    <el-icon><Clock /></el-icon>
-                    版本
-                  </el-button>
-                  <el-button
-                    size="small"
-                    :loading="savingMap[currentChapter.id]"
-                    @click="saveChapter(currentChapter.id)"
-                  >
-                    <el-icon><DocumentChecked /></el-icon>
-                    保存
-                  </el-button>
+                <div class="title-actions">
+                  <template v-if="isEditableNode && currentChapter">
+                    <el-button
+                      v-if="!generatingMap[currentChapter.id]"
+                      type="primary"
+                      size="small"
+                      @click="startGenerate(currentChapter)"
+                    >
+                      <el-icon><MagicStick /></el-icon>
+                      AI 生成
+                    </el-button>
+                    <el-button
+                      v-else
+                      type="danger"
+                      size="small"
+                      @click="cancelGenerate(currentChapter.id)"
+                    >
+                      <el-icon><Close /></el-icon>
+                      取消
+                    </el-button>
+                    <el-button size="small" @click="showVersions(currentChapter)">
+                      <el-icon><Clock /></el-icon>
+                      版本
+                    </el-button>
+                    <el-button size="small" @click="exportChapter(currentChapter.id)">
+                      <el-icon><Download /></el-icon>
+                      导出
+                    </el-button>
+                    <el-button
+                      size="small"
+                      :loading="savingMap[currentChapter.id]"
+                      @click="saveChapter(currentChapter.id)"
+                    >
+                      <el-icon><DocumentChecked /></el-icon>
+                      保存
+                    </el-button>
+                  </template>
+                  <template v-else-if="!isEditableNode && currentNode">
+                    <el-button size="small" @click="exportNode(currentNode.id)">
+                      <el-icon><Download /></el-icon>
+                      导出
+                    </el-button>
+                  </template>
                 </div>
               </div>
 
@@ -249,7 +265,7 @@
 import { ref, computed, watch, onMounted, inject, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { MagicStick, Clock, DocumentChecked, View, RefreshLeft, Close, Fold } from '@element-plus/icons-vue'
+import { MagicStick, Clock, DocumentChecked, View, RefreshLeft, Close, Fold, Download } from '@element-plus/icons-vue'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import MarkdownEditor from '@/components/common/MarkdownEditor.vue'
@@ -786,6 +802,124 @@ function updateProgress() {
   emit('update:progress', progress)
 }
 
+// ==================== 导出功能 ====================
+
+// 导出单个章节（节）
+async function exportChapter(outlineId: string) {
+  const content = chapterContentMap.value[outlineId]
+  if (!content) {
+    ElMessage.warning('该章节暂无内容')
+    return
+  }
+
+  const node = outlineNodes.value.find(n => n.id === outlineId)
+  const fileName = node ? node.name : `章节_${outlineId}`
+
+  try {
+    const result = await window.electronAPI.longwriting.exportChapter({
+      outlineId,
+      content,
+      fileName,
+      format: 'txt'
+    })
+
+    if (result.success) {
+      ElMessage.success(`已导出：${result.data}`)
+    } else {
+      ElMessage.error(result.error || '导出失败')
+    }
+  } catch (error: any) {
+    ElMessage.error('导出失败：' + error.message)
+  }
+}
+
+// 导出节点（卷或章）
+async function exportNode(nodeId: string) {
+  const leafIds = getLeafChildren(nodeId)
+  if (leafIds.length === 0) {
+    ElMessage.warning('该节点下暂无内容')
+    return
+  }
+
+  const node = outlineNodes.value.find(n => n.id === nodeId)
+  const nodeName = node ? node.name : `节点_${nodeId}`
+
+  // 收集所有子节点内容
+  const parts: string[] = []
+  for (const leafId of leafIds) {
+    const leafNode = outlineNodes.value.find(n => n.id === leafId)
+    const content = chapterContentMap.value[leafId] || ''
+    if (content) {
+      parts.push(`## ${leafNode?.name || '未命名'}\n\n${content}`)
+    }
+  }
+
+  if (parts.length === 0) {
+    ElMessage.warning('该节点下暂无内容')
+    return
+  }
+
+  const fullContent = parts.join('\n\n---\n\n')
+
+  try {
+    const result = await window.electronAPI.longwriting.exportChapter({
+      outlineId: nodeId,
+      content: fullContent,
+      fileName: nodeName,
+      format: 'txt'
+    })
+
+    if (result.success) {
+      ElMessage.success(`已导出：${result.data}`)
+    } else {
+      ElMessage.error(result.error || '导出失败')
+    }
+  } catch (error: any) {
+    ElMessage.error('导出失败：' + error.message)
+  }
+}
+
+// 导出全部章节
+async function exportAll() {
+  if (allOutlines.value.length === 0) {
+    ElMessage.warning('暂无章节内容')
+    return
+  }
+
+  // 收集所有章节内容
+  const parts: string[] = []
+  for (const outline of allOutlines.value) {
+    const content = chapterContentMap.value[outline.id] || ''
+    if (content) {
+      parts.push(`## ${outline.name}\n\n${content}`)
+    }
+  }
+
+  if (parts.length === 0) {
+    ElMessage.warning('暂无章节内容')
+    return
+  }
+
+  const fullContent = parts.join('\n\n---\n\n')
+
+  try {
+    const result = await window.electronAPI.longwriting.exportChapter({
+      outlineId: props.projectId,
+      content: fullContent,
+      fileName: '全部章节',
+      format: 'txt'
+    })
+
+    if (result.success) {
+      ElMessage.success(`已导出：${result.data}`)
+    } else {
+      ElMessage.error(result.error || '导出失败')
+    }
+  } catch (error: any) {
+    ElMessage.error('导出失败：' + error.message)
+  }
+}
+
 // 加载大纲树
 async function loadOutlineTree() {
   if (!props.projectId) return
@@ -888,6 +1022,9 @@ onMounted(() => {
 .stage-header {
   margin-bottom: 12px;
   flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
 
   h2 {
     font-size: 16px;
@@ -900,6 +1037,11 @@ onMounted(() => {
     font-size: 13px;
     color: var(--text-color-secondary);
     margin: 0;
+    flex: 1;
+  }
+
+  .header-export-btn {
+    flex-shrink: 0;
   }
 }
 

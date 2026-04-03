@@ -1016,6 +1016,8 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:exportMarkdown', projectId),
     exportWord: (projectId: string) =>
       ipcRenderer.invoke('longwriting:exportWord', projectId),
+    exportChapter: (data: { outlineId: string; content: string; fileName: string; format: string }) =>
+      ipcRenderer.invoke('longwriting:exportChapter', data),
 
     // 全局配置
     getGlobalSettings: () =>

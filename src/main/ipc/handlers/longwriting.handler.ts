@@ -125,6 +125,7 @@ const CHANNELS = {
   // 导出
   EXPORT_MARKDOWN: 'longwriting:exportMarkdown',
   EXPORT_WORD: 'longwriting:exportWord',
+  EXPORT_CHAPTER: 'longwriting:exportChapter',
   GET_EXPORT_DATA: 'longwriting:getExportData',
 
   // 全局配置
@@ -1313,6 +1314,44 @@ export function registerLongWritingHandlers(): void {
       shell.showItemInFolder(result.filePath)
 
       return { success: true, filePath: result.filePath }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 导出单个章节
+   */
+  ipcMain.handle(CHANNELS.EXPORT_CHAPTER, async (event, data: { outlineId: string; content: string; fileName: string; format: string }) => {
+    try {
+      const window = BrowserWindow.fromWebContents(event.sender)
+      if (!window) {
+        return { success: false, error: '窗口不存在' }
+      }
+
+      const { content, fileName, format } = data
+
+      // 选择保存路径
+      const safeName = fileName.replace(/[\\/:*?"<>|]/g, '_')
+      const extension = format === 'txt' ? 'txt' : 'md'
+      const filterName = format === 'txt' ? '文本文件' : 'Markdown 文件'
+
+      const result = await dialog.showSaveDialog(window, {
+        defaultPath: `${safeName}.${extension}`,
+        filters: [{ name: filterName, extensions: [extension] }]
+      })
+
+      if (result.canceled || !result.filePath) {
+        return { success: true, message: '用户取消' }
+      }
+
+      // 写入文件
+      fs.writeFileSync(result.filePath, content, 'utf-8')
+
+      // 打开文件所在目录
+      shell.showItemInFolder(result.filePath)
+
+      return { success: true, data: result.filePath }
     } catch (error: any) {
       return { success: false, error: error.message }
     }

@@ -7,65 +7,65 @@
           <el-icon><ArrowLeft /></el-icon>
           返回
         </el-button>
-        <span class="project-title">{{ project?.name || '加载中...' }}</span>
       </div>
       <div class="header-center">
-        <!-- 统一模型选择 -->
-        <div class="model-selector">
-          <span class="model-label">AI 模型：</span>
-          <el-select
-            v-model="selectedModelKey"
-            placeholder="选择模型"
-            class="model-select"
-            filterable
-            :filter-method="filterModels"
-            :loading="loadingModels"
-          >
-            <el-option-group
-              v-for="provider in filteredProviderModels"
-              :key="provider.id"
-              :label="provider.name"
-            >
-              <el-option
-                v-for="model in provider.models"
-                :key="`${provider.id}:${model.id}`"
-                :label="`${provider.shortId}/${model.name}`"
-                :value="`${provider.id}:${model.id}`"
-              >
-                <div class="model-option">
-                  <span class="model-name">{{ provider.shortId }}/{{ model.name }}</span>
-                  <span class="model-context">{{ formatContext(model.contextWindow) }}</span>
-                </div>
-              </el-option>
-            </el-option-group>
-          </el-select>
-        </div>
+        <span class="project-title">{{ project?.name || '加载中...' }}</span>
       </div>
       <div class="header-right">
         <el-button @click="showPreview = true">
           <el-icon><View /></el-icon>
           设定集
         </el-button>
-        <el-button type="primary" @click="showExport = true">
-          <el-icon><Download /></el-icon>
-          导出
+        <el-button @click="showSettingsDialog = true">
+          <el-icon><Setting /></el-icon>
+          设定
         </el-button>
       </div>
     </div>
 
     <!-- 阶段导航 -->
     <div class="stage-nav">
-      <div
-        v-for="(stage, index) in storyStages"
-        :key="stage.key"
-        class="stage-item"
-        :class="{ active: currentStage === stage.key, completed: isStageCompleted(stage.key) }"
-        @click="setStage(stage.key)"
-      >
-        <div class="stage-number">{{ index + 1 }}</div>
-        <div class="stage-info">
-          <span class="stage-label">{{ stage.label }}</span>
+      <div class="stage-list">
+        <div
+          v-for="(stage, index) in storyStages"
+          :key="stage.key"
+          class="stage-item"
+          :class="{ active: currentStage === stage.key, completed: isStageCompleted(stage.key) }"
+          @click="setStage(stage.key)"
+        >
+          <div class="stage-number">{{ index + 1 }}</div>
+          <div class="stage-info">
+            <span class="stage-label">{{ stage.label }}</span>
+          </div>
         </div>
+      </div>
+      <div class="nav-model-selector">
+        <el-select
+          v-model="selectedModelKey"
+          placeholder="选择模型"
+          class="model-select"
+          filterable
+          :filter-method="filterModels"
+          :loading="loadingModels"
+        >
+          <el-option-group
+            v-for="provider in filteredProviderModels"
+            :key="provider.id"
+            :label="provider.name"
+          >
+            <el-option
+              v-for="model in provider.models"
+              :key="`${provider.id}:${model.id}`"
+              :label="`${provider.shortId}/${model.name}`"
+              :value="`${provider.id}:${model.id}`"
+            >
+              <div class="model-option">
+                <span class="model-name">{{ provider.shortId }}/{{ model.name }}</span>
+                <span class="model-context">{{ formatContext(model.contextWindow) }}</span>
+              </div>
+            </el-option>
+          </el-option-group>
+        </el-select>
       </div>
     </div>
 
@@ -134,11 +134,10 @@
       </div>
     </el-dialog>
 
-    <!-- 导出对话框 -->
-    <ExportDialog
-      v-model:visible="showExport"
+    <!-- 项目设定对话框 -->
+    <ProjectSettingsDialog
+      v-model:visible="showSettingsDialog"
       :project-id="projectId"
-      :project-name="project?.name || ''"
     />
   </div>
 </template>
@@ -147,7 +146,7 @@
 import { ref, computed, onMounted, provide, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, View, Download } from '@element-plus/icons-vue'
+import { ArrowLeft, View, Download, Setting } from '@element-plus/icons-vue'
 import { useTabsStore } from '@/stores/tabs'
 import type { LongWritingProject, StoryStage } from '../../../../shared/types/longwriting.types'
 import type { UserProviderConfig, ProviderTemplate } from '../../../shared/types'
@@ -166,6 +165,7 @@ import SkillItemStage from '@/components/longwriting/story/SkillItemStage.vue'
 import OutlineStage from '@/components/longwriting/story/OutlineStage.vue'
 import ChapterStage from '@/components/longwriting/story/ChapterStage.vue'
 import ExportDialog from '@/components/longwriting/ExportDialog.vue'
+import ProjectSettingsDialog from '@/components/longwriting/ProjectSettingsDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -182,7 +182,7 @@ const currentStage = ref<StoryStage>('overview')
 
 // 对话框状态
 const showPreview = ref(false)
-const showExport = ref(false)
+const showSettingsDialog = ref(false)
 
 // ==================== 统一模型选择 ====================
 const providerConfigs = ref<UserProviderConfig[]>([])
@@ -423,12 +423,6 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
-
-  .project-title {
-    font-size: 16px;
-    font-weight: 500;
-    color: var(--text-color-primary);
-  }
 }
 
 .header-center {
@@ -437,20 +431,16 @@ onMounted(() => {
   flex: 1;
   justify-content: center;
 
-  .model-selector {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-
-    .model-label {
-      font-size: 14px;
-      color: var(--text-color-secondary);
-    }
-
-    .model-select {
-      width: 280px;
-    }
+  .project-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-color-primary);
   }
+}
+
+.header-right {
+  display: flex;
+  gap: 8px;
 }
 
 .model-option {
@@ -469,17 +459,28 @@ onMounted(() => {
   }
 }
 
-.header-right {
-  display: flex;
-  gap: 8px;
-}
-
 .stage-nav {
   display: flex;
+  justify-content: space-between;
+  align-items: center;
   padding: 10px 16px;
   background: var(--bg-color);
   border-bottom: 1px solid var(--border-color-light);
+  gap: 16px;
+}
+
+.stage-list {
+  display: flex;
   gap: 6px;
+  flex: 1;
+}
+
+.nav-model-selector {
+  flex-shrink: 0;
+
+  .model-select {
+    width: 240px;
+  }
 }
 
 .stage-item {
