@@ -743,9 +743,11 @@ export class DatabaseManager {
         type TEXT,
         description TEXT,
         importance TEXT,
+        map_id TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE
+        FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE,
+        FOREIGN KEY (map_id) REFERENCES lw_project_maps(id) ON DELETE SET NULL
       )
     `)
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_locations_project_id ON lw_story_locations(project_id)`)
@@ -1596,6 +1598,16 @@ export class DatabaseManager {
 
     if (!globalSettingsColumnNames.includes('estimated_lengths')) {
       this.db.exec('ALTER TABLE lw_global_settings ADD COLUMN estimated_lengths TEXT')
+    }
+
+    // 检查 lw_story_locations 表是否需要添加 map_id 字段
+    const locationColumns = this.db.prepare("PRAGMA table_info(lw_story_locations)").all() as { name: string }[]
+    const locationColumnNames = locationColumns.map(col => col.name)
+
+    if (!locationColumnNames.includes('map_id')) {
+      this.db.exec('ALTER TABLE lw_story_locations ADD COLUMN map_id TEXT REFERENCES lw_project_maps(id) ON DELETE SET NULL')
+      // 创建 map_id 列的索引
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_lw_locations_map_id ON lw_story_locations(map_id)')
     }
   }
 

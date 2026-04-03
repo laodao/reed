@@ -196,6 +196,11 @@ function isTextModel(type: string | undefined): boolean {
   return type === undefined || type === 'text' || type === 'multimodal'
 }
 
+// 判断模型是否为图像类型
+function isImageModel(type: string | undefined): boolean {
+  return type === 'image'
+}
+
 // 提供商模型列表
 const providerModels = computed(() => {
   const result: Array<{
@@ -241,6 +246,61 @@ const providerModels = computed(() => {
           contextWindow: model.contextWindow || 8192,
           type: model.type
         })
+      }
+    }
+
+    if (models.length > 0) {
+      result.push({
+        id: config.id,
+        name: config.name,
+        shortId: config.shortId || config.name,
+        models
+      })
+    }
+  }
+
+  return result
+})
+
+// 图像模型列表
+const imageProviderModels = computed(() => {
+  const result: Array<{
+    id: string
+    name: string
+    shortId: string
+    models: Array<{
+      id: string
+      name: string
+    }>
+  }> = []
+
+  for (const config of providerConfigs.value) {
+    if (!config.isEnabled) continue
+
+    const models: Array<{
+      id: string
+      name: string
+    }> = []
+
+    const template = providerTemplates.value.find(t => t.id === config.templateId)
+
+    if (config.models && config.models.length > 0) {
+      for (const model of config.models) {
+        if (isImageModel(model.type)) {
+          models.push({
+            id: model.id,
+            name: model.name
+          })
+        }
+      }
+    } else if (template && template.models.length > 0) {
+      for (const model of template.models) {
+        if (isImageModel(model.type)) {
+          models.push({
+            id: model.id,
+            name: model.name || model.id
+          })
+        }
       }
     }
 
@@ -311,7 +371,7 @@ async function loadProviderConfigs(): Promise<void> {
     if (response.success && response.configs) {
       providerConfigs.value = response.configs.filter((c: UserProviderConfig) => c.isEnabled)
 
-      // 设置默认模型
+      // 设置默认文本模型
       if (!selectedModelKey.value && providerModels.value.length > 0) {
         const firstProvider = providerModels.value[0]
         if (firstProvider.models.length > 0) {
@@ -336,6 +396,9 @@ const selectedModel = computed(() => {
 // 提供模型选择给子组件
 provide('selectedModel', selectedModel)
 provide('selectedModelKey', selectedModelKey)
+
+// 提供图像模型列表给子组件（供地图图片生成等功能使用）
+provide('imageProviderModels', imageProviderModels)
 
 // ==================== 阶段配置 ====================
 
@@ -479,7 +542,7 @@ onMounted(() => {
   flex-shrink: 0;
 
   .model-select {
-    width: 240px;
+    width: 220px;
   }
 }
 

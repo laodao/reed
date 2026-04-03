@@ -268,6 +268,7 @@ export interface StoryLocation {
   type: LocationType
   description: string
   importance: LocationImportance
+  mapId?: string            // 关联地图 ID
   createdAt: number
   updatedAt: number
 }

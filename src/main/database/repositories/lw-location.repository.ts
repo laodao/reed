@@ -41,16 +41,17 @@ export class LwLocationRepository {
     type: LocationType
     importance: LocationImportance
     description: string
+    mapId?: string
   }): StoryLocation {
     const id = this.generateId()
     const now = Date.now()
 
     const stmt = this.db.prepare(`
-      INSERT INTO lw_story_locations (id, project_id, name, type, description, importance, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO lw_story_locations (id, project_id, name, type, description, importance, map_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
-    stmt.run(id, data.projectId, data.name, data.type, data.description, data.importance, now, now)
+    stmt.run(id, data.projectId, data.name, data.type, data.description, data.importance, data.mapId || null, now, now)
 
     return {
       id,
@@ -59,6 +60,7 @@ export class LwLocationRepository {
       type: data.type,
       description: data.description,
       importance: data.importance,
+      mapId: data.mapId,
       createdAt: now,
       updatedAt: now
     }
@@ -89,6 +91,10 @@ export class LwLocationRepository {
     if (data.importance !== undefined) {
       updates.push('importance = ?')
       values.push(data.importance)
+    }
+    if (data.mapId !== undefined) {
+      updates.push('map_id = ?')
+      values.push(data.mapId || null)
     }
 
     if (updates.length === 0) return existing
@@ -132,6 +138,7 @@ export class LwLocationRepository {
       type: row.type as LocationType,
       description: row.description,
       importance: row.importance as LocationImportance,
+      mapId: row.map_id || undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at
     }

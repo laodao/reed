@@ -600,24 +600,33 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
 请生成一张符合以上描述的地图风格插图。`
 
+      // 获取 BrowserWindow
+      const window = BrowserWindow.fromWebContents(event.sender)
+      if (!window) {
+        return { success: false, error: '窗口不存在' }
+      }
+
       // 获取 ImageService
       const { ImageService } = await import('../../services/image.service')
-      const imageService = ImageService.getInstance()
 
       // 生成图片
-      const result = await imageService.generateImage({
-        prompt,
+      const result = await ImageService.generateImage(window, {
         providerConfigId,
-        modelId,
+        model: modelId || '',
+        prompt,
+        width: 1024,
+        height: 1024,
         skipHistory: true
       })
 
-      if (result.success && result.data?.localPath) {
+      if (result.success && result.images?.length) {
+        // 获取图片路径
+        const imagePath = result.images[0].filePath.replace('local-image:///', '')
         // 更新地图图片路径
-        await service.updateMapImage(mapId, result.data.localPath)
+        await service.updateMapImage(mapId, imagePath)
       }
 
-      return result
+      return { success: result.success, error: result.error }
     } catch (error: any) {
       return { success: false, error: error.message }
     }

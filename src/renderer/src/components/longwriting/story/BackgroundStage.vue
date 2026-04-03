@@ -131,7 +131,7 @@
         <div class="map-list">
           <div v-for="map in maps" :key="map.id" class="map-card">
             <div class="map-image" v-if="map.imagePath">
-              <img :src="`file://${map.imagePath}`" alt="地图图片" />
+              <img :src="getMapImageUrl(map.imagePath)" alt="地图图片" />
             </div>
             <div class="map-image map-image-placeholder" v-else>
               <el-icon size="40"><Picture /></el-icon>
@@ -185,6 +185,7 @@
               <div class="location-tags">
                 <el-tag size="small" type="info">{{ getLocationTypeLabel(location.type) }}</el-tag>
                 <el-tag size="small">{{ getImportanceLabel(location.importance) }}</el-tag>
+                <el-tag v-if="location.mapId" size="small" type="warning">{{ getMapName(location.mapId) }}</el-tag>
               </div>
               <p class="location-desc">{{ location.description }}</p>
             </div>
@@ -244,7 +245,7 @@
     </el-tabs>
 
     <!-- 地点编辑对话框 -->
-    <el-dialog v-model="showLocationDialog" title="添加地点" width="500px">
+    <el-dialog v-model="showLocationDialog" :title="editingLocationId ? '编辑地点' : '添加地点'" width="500px">
       <el-form :model="locationForm" label-width="80px">
         <el-form-item label="地点名称" required>
           <el-input v-model="locationForm.name" placeholder="输入地点名称" />
@@ -259,6 +260,16 @@
             <el-option label="海域" value="sea" />
             <el-option label="建筑" value="building" />
             <el-option label="其他" value="other" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="关联地图">
+          <el-select v-model="locationForm.mapId" placeholder="选择关联地图（可选）" clearable>
+            <el-option
+              v-for="map in maps"
+              :key="map.id"
+              :label="map.name"
+              :value="map.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="重要程度">
@@ -374,7 +385,7 @@
           />
         </el-form-item>
         <el-alert
-          v-if="!selectedModel?.providerConfigId"
+          v-if="!selectedModel?.providerId"
           title="请先在顶部选择 AI 模型"
           type="warning"
           :closable="false"
@@ -388,7 +399,7 @@
           type="primary"
           @click="generateMapData"
           :loading="generatingMapData"
-          :disabled="!selectedModel?.providerConfigId"
+          :disabled="!selectedModel?.providerId"
         >
           生成
         </el-button>
@@ -397,17 +408,30 @@
 
     <!-- 生成地图图片对话框 -->
     <el-dialog v-model="showMapImageDialog" title="生成地图图片" width="450px">
-      <el-alert
-        v-if="!selectedModel?.providerConfigId"
-        title="请先在顶部选择支持图片生成的 AI 模型"
-        type="warning"
-        :closable="false"
-        show-icon
-        style="margin-bottom: 16px"
-      />
-      <p>将为地图「{{ generatingImageMap?.name }}」生成图片。</p>
-      <p style="color: var(--text-color-secondary); font-size: 13px;">
-        注意：需要选择支持图片生成的模型（如 DALL-E、通义万相等）。
+      <el-form label-width="80px">
+        <el-form-item label="图像模型">
+          <el-select
+            v-model="selectedImageModelKey"
+            placeholder="选择图像模型"
+            style="width: 100%"
+          >
+            <el-option-group
+              v-for="provider in (imageProviderModels || [])"
+              :key="provider.id"
+              :label="provider.name"
+            >
+              <el-option
+                v-for="model in provider.models"
+                :key="`${provider.id}:${model.id}`"
+                :label="`${provider.shortId}/${model.name}`"
+                :value="`${provider.id}:${model.id}`"
+              />
+            </el-option-group>
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <p style="margin-top: -8px; color: var(--text-color-secondary); font-size: 13px;">
+        将为地图「{{ generatingImageMap?.name }}」生成图片。
       </p>
       <template #footer>
         <el-button @click="showMapImageDialog = false">取消</el-button>
@@ -415,7 +439,7 @@
           type="primary"
           @click="generateMapImage"
           :loading="generatingMapImage"
-          :disabled="!selectedModel?.providerConfigId"
+          :disabled="!selectedImageModel"
         >
           生成图片
         </el-button>
@@ -439,9 +463,27 @@ const emit = defineEmits<{
 }>()
 
 // 从父组件注入选中的模型（computed ref）
-const selectedModelRef = inject<ComputedRef<{ providerConfigId: string; modelId: string } | null>>('selectedModel')
+const selectedModelRef = inject<ComputedRef<{ providerId: string; modelId: string } | null>>('selectedModel')
 // 获取当前选中的模型值
 const selectedModel = computed(() => selectedModelRef?.value)
+
+// 从父组件注入图像模型列表
+const imageProviderModels = inject<ComputedRef<Array<{
+  id: string
+  name: string
+  shortId: string
+  models: Array<{ id: string; name: string }>
+}>>>('imageProviderModels')
+
+// 本地图像模型选择
+const selectedImageModelKey = ref<string>('')
+
+// 解析选中的图像模型
+const selectedImageModel = computed(() => {
+  if (!selectedImageModelKey.value) return null
+  const [providerId, modelId] = selectedImageModelKey.value.split(':')
+  return { providerId, modelId }
+})
 
 const activeTab = ref('era')
 
@@ -461,6 +503,7 @@ const locations = ref<Array<{
   type: string
   importance: string
   description: string
+  mapId?: string
 }>>([])
 
 // 地点对话框
@@ -470,7 +513,8 @@ const locationForm = ref({
   name: '',
   type: 'city',
   importance: 'important',
-  description: ''
+  description: '',
+  mapId: ''
 })
 
 // 势力列表
@@ -598,6 +642,19 @@ function getFactionTagType(type: string): '' | 'success' | 'warning' | 'info' {
 function getLocationName(locationId: string): string {
   const location = locations.value.find(loc => loc.id === locationId)
   return location?.name || '未知'
+}
+
+function getMapName(mapId: string): string {
+  const map = maps.value.find(m => m.id === mapId)
+  return map?.name || '未知'
+}
+
+// 将本地路径转换为 local-image:// URL
+function getMapImageUrl(imagePath: string): string {
+  if (!imagePath) return ''
+  // 将 Windows 反斜杠替换为正斜杠
+  const normalizedPath = imagePath.replace(/\\/g, '/')
+  return `local-image:///${normalizedPath}`
 }
 
 // 加载势力列表
@@ -759,12 +816,19 @@ async function saveMap() {
 // 显示生成地图图片对话框
 function showGenerateMapImageDialog(map: any) {
   generatingImageMap.value = { id: map.id, name: map.name }
+  // 自动选择第一个图像模型（如果还没有选择）
+  if (!selectedImageModelKey.value && imageProviderModels?.value && imageProviderModels.value.length > 0) {
+    const firstProvider = imageProviderModels.value[0]
+    if (firstProvider.models.length > 0) {
+      selectedImageModelKey.value = `${firstProvider.id}:${firstProvider.models[0].id}`
+    }
+  }
   showMapImageDialog.value = true
 }
 
 // 生成地图图片
 async function generateMapImage() {
-  if (!generatingImageMap.value || !selectedModel.value?.providerConfigId) return
+  if (!generatingImageMap.value || !selectedImageModel.value?.providerId) return
 
   generatingMapImage.value = true
 
@@ -772,8 +836,8 @@ async function generateMapImage() {
     const result = await window.electronAPI.longwriting.generateMapImage(
       props.projectId,
       generatingImageMap.value.id,
-      selectedModel.value.providerConfigId,
-      selectedModel.value.modelId
+      selectedImageModel.value.providerId,
+      selectedImageModel.value.modelId
     )
 
     if (result.success) {
@@ -793,7 +857,7 @@ async function generateMapImage() {
 
 // AI 生成地图数据
 async function generateMapData() {
-  if (!selectedModel.value?.providerConfigId) {
+  if (!selectedModel.value?.providerId) {
     ElMessage.warning('请先选择 AI 模型')
     return
   }
@@ -842,7 +906,7 @@ async function generateMapData() {
     props.projectId,
     editingMapId.value || '',
     aiMapDataPrompt.value,
-    selectedModel.value.providerConfigId,
+    selectedModel.value.providerId,
     selectedModel.value.modelId
   )
 
@@ -915,7 +979,8 @@ function editLocation(location: any) {
     name: location.name,
     type: location.type,
     importance: location.importance,
-    description: location.description
+    description: location.description,
+    mapId: location.mapId || ''
   }
   showLocationDialog.value = true
 }
@@ -960,7 +1025,8 @@ async function saveLocation() {
     name: '',
     type: 'city',
     importance: 'important',
-    description: ''
+    description: '',
+    mapId: ''
   }
   await loadLocations()
   emit('update:progress', 35)
@@ -971,7 +1037,7 @@ async function polishField(field: 'eraDescription' | 'socialStructure' | 'techLe
   if (!props.projectId) return
 
   // 检查是否选择了模型
-  if (!selectedModel.value?.providerConfigId || !selectedModel.value?.modelId) {
+  if (!selectedModel.value?.providerId || !selectedModel.value?.modelId) {
     ElMessage.warning('请先在顶部选择 AI 模型')
     return
   }
@@ -1013,7 +1079,7 @@ async function polishField(field: 'eraDescription' | 'socialStructure' | 'techLe
     field,
     eraForm.value.eraType,
     content,
-    selectedModel.value.providerConfigId,
+    selectedModel.value.providerId,
     selectedModel.value.modelId
   )
 
