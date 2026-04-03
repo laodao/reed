@@ -420,14 +420,11 @@ function getLocationName(locationId: string): string {
 
 // 加载势力列表
 async function loadFactions() {
-  console.log('[loadFactions] 加载势力列表, projectId:', props.projectId)
   if (!props.projectId) return
 
   const result = await window.electronAPI.longwriting.getFactions(props.projectId)
-  console.log('[loadFactions] 结果:', result)
   if (result.success) {
     factions.value = result.data || []
-    console.log('[loadFactions] 势力数量:', factions.value.length)
   }
 }
 
@@ -451,20 +448,16 @@ async function deleteFaction(id: string) {
 }
 
 async function saveFaction() {
-  console.log('[saveFaction] 开始保存, projectId:', props.projectId)
   if (!factionForm.value.name) {
     ElMessage.warning('请输入势力名称')
     return
   }
 
   const formData = toRaw(factionForm.value)
-  console.log('[saveFaction] formData:', formData)
 
   if (editingFactionId.value) {
     // 更新
-    console.log('[saveFaction] 更新势力, id:', editingFactionId.value)
     const result = await window.electronAPI.longwriting.updateFaction(editingFactionId.value, formData)
-    console.log('[saveFaction] 更新结果:', result)
     if (result.success) {
       ElMessage.success('势力已更新')
     } else {
@@ -472,13 +465,10 @@ async function saveFaction() {
     }
   } else {
     // 创建
-    const createData = {
+    const result = await window.electronAPI.longwriting.createFaction({
       projectId: props.projectId,
       ...formData
-    }
-    console.log('[saveFaction] 创建势力, data:', createData)
-    const result = await window.electronAPI.longwriting.createFaction(createData)
-    console.log('[saveFaction] 创建结果:', result)
+    })
     if (result.success) {
       ElMessage.success('势力已添加')
     } else {

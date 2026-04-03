@@ -437,13 +437,10 @@ export function registerLongWritingHandlers(): void {
   // ==================== 势力管理 ====================
 
   ipcMain.handle(CHANNELS.GET_FACTIONS, async (_event, projectId: string) => {
-    console.log('[IPC] getFactions 被调用, projectId:', projectId)
     try {
       const factions = await service.getFactions(projectId)
-      console.log('[IPC] getFactions 结果:', factions?.length, '条')
       return { success: true, data: factions }
     } catch (error: any) {
-      console.error('[IPC] getFactions 错误:', error)
       return { success: false, error: error.message }
     }
   })
@@ -467,13 +464,10 @@ export function registerLongWritingHandlers(): void {
   })
 
   ipcMain.handle(CHANNELS.CREATE_FACTION, async (_event, data: CreateFactionRequest) => {
-    console.log('[IPC] createFaction 被调用, data:', JSON.stringify(data))
     try {
       const faction = await service.createFaction(data)
-      console.log('[IPC] createFaction 成功:', JSON.stringify(faction))
       return { success: true, data: faction }
     } catch (error: any) {
-      console.error('[IPC] createFaction 错误:', error)
       return { success: false, error: error.message }
     }
   })

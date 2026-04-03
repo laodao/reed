@@ -16,12 +16,10 @@ export class LwFactionRepository {
    * 根据项目 ID 获取所有势力
    */
   getByProjectId(projectId: string): StoryFaction[] {
-    console.log('[LwFactionRepository] getByProjectId 被调用, projectId:', projectId)
     const stmt = this.db.prepare(`
       SELECT * FROM lw_project_factions WHERE project_id = ? ORDER BY sort_order ASC, created_at DESC
     `)
     const rows = stmt.all(projectId) as any[]
-    console.log('[LwFactionRepository] 查询结果:', rows.length, '条')
     return rows.map(this.mapToFaction)
   }
 
@@ -56,7 +54,6 @@ export class LwFactionRepository {
     description: string
     sortOrder?: number
   }): StoryFaction {
-    console.log('[LwFactionRepository] create 被调用, data:', JSON.stringify(data))
     const id = this.generateId()
     const now = Date.now()
     const sortOrder = data.sortOrder ?? 0
@@ -69,9 +66,7 @@ export class LwFactionRepository {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
-    console.log('[LwFactionRepository] 执行插入, id:', id, ', locationId:', locationId)
     stmt.run(id, data.projectId, data.factionType, data.name, locationId, data.description, sortOrder, now, now)
-    console.log('[LwFactionRepository] 插入成功')
 
     return {
       id,
@@ -90,7 +85,6 @@ export class LwFactionRepository {
    * 更新势力
    */
   update(id: string, data: Partial<StoryFaction>): StoryFaction | null {
-    console.log('[LwFactionRepository] update 被调用, id:', id, ', data:', JSON.stringify(data))
     const existing = this.getById(id)
     if (!existing) return null
 
@@ -130,7 +124,6 @@ export class LwFactionRepository {
       UPDATE lw_project_factions SET ${updates.join(', ')} WHERE id = ?
     `)
     stmt.run(...values)
-    console.log('[LwFactionRepository] 更新成功')
 
     return this.getById(id)
   }

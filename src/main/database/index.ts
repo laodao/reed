@@ -749,7 +749,6 @@ export class DatabaseManager {
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_locations_project_id ON lw_story_locations(project_id)`)
 
     // 势力表（国别/阵营/门派）
-    console.log('[DatabaseManager] 创建势力表...')
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS lw_project_factions (
         id TEXT PRIMARY KEY,
@@ -767,7 +766,6 @@ export class DatabaseManager {
     `)
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_factions_project_id ON lw_project_factions(project_id)`)
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_factions_type ON lw_project_factions(faction_type)`)
-    console.log('[DatabaseManager] 势力表创建完成')
 
     // 故事情节表
     this.db.exec(`
