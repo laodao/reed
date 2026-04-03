@@ -126,6 +126,15 @@
                       <el-icon><DocumentChecked /></el-icon>
                       保存
                     </el-button>
+                    <el-button
+                      size="small"
+                      :loading="extractingStates"
+                      :disabled="!chapterContentMap[currentChapter.id] || chapterContentMap[currentChapter.id].length < 100"
+                      @click="extractEntityStatesFromChapter(currentChapter.id)"
+                    >
+                      <el-icon><Collection /></el-icon>
+                      提取状态
+                    </el-button>
                   </template>
                   <template v-else-if="!isEditableNode && currentNode">
                     <el-button size="small" @click="exportNode(currentNode.id)">
@@ -365,6 +374,47 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 实体状态确认对话框 -->
+    <el-dialog
+      v-model="showStateExtractDialog"
+      title="确认实体状态"
+      width="700px"
+    >
+      <div v-if="extractingStates" class="memory-extracting">
+        <el-icon class="is-loading"><Loading /></el-icon>
+        <span>AI 正在分析章节内容，提取实体状态变化...</span>
+      </div>
+      <div v-else-if="extractedStates.length > 0" class="memory-list">
+        <p class="memory-hint">以下是从章节中提取的实体状态快照，请确认是否保存：</p>
+        <div v-for="(state, index) in extractedStates" :key="index" class="memory-item">
+          <div class="memory-header">
+            <el-tag size="small" :type="state.entityType === 'character' ? 'primary' : state.entityType === 'location' ? 'warning' : 'info'">
+              {{ state.entityType === 'character' ? '角色' : state.entityType === 'location' ? '地点' : state.entityType === 'item' ? '物品' : state.entityType === 'faction' ? '势力' : '技能' }}
+            </el-tag>
+            <span class="entity-name">{{ state.entityName }}</span>
+          </div>
+          <el-input
+            v-model="state.stateSummary"
+            type="textarea"
+            :rows="3"
+            placeholder="状态摘要"
+            style="margin-top: 8px;"
+          />
+          <div v-if="state.keyChanges && state.keyChanges.length > 0" class="key-changes">
+            <span class="key-changes-label">关键变化：</span>
+            <el-tag v-for="(change, i) in state.keyChanges" :key="i" size="small" type="info" style="margin-right: 4px;">{{ change }}</el-tag>
+          </div>
+        </div>
+      </div>
+      <el-empty v-else description="未能检测到实体状态变化" />
+      <template #footer>
+        <el-button @click="showStateExtractDialog = false">取消</el-button>
+        <el-button type="primary" :disabled="extractedStates.length === 0" @click="saveEntityStates">
+          保存状态快照
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -372,7 +422,7 @@
 import { ref, computed, watch, onMounted, inject, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { MagicStick, Clock, DocumentChecked, View, RefreshLeft, Close, Fold, Download, Loading, Document, Refresh, InfoFilled } from '@element-plus/icons-vue'
+import { MagicStick, Clock, DocumentChecked, View, RefreshLeft, Close, Fold, Download, Loading, Document, Refresh, InfoFilled, Collection } from '@element-plus/icons-vue'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import MarkdownEditor from '@/components/common/MarkdownEditor.vue'
@@ -462,6 +512,12 @@ const extractedMemories = ref<ExtractedMemoryData[]>([])
 const showMemoryDialog = ref(false)
 const memoryExtracting = ref(false)
 const memoryStats = ref<{ total: number; active: number } | null>(null)
+
+// 实体状态快照
+const snapshotStats = ref<{ total: number; byEntityType: Record<string, number> } | null>(null)
+const showStateExtractDialog = ref(false)
+const extractingStates = ref(false)
+const extractedStates = ref<any[]>([])
 
 // 树配置
 const treeProps = {
@@ -1002,6 +1058,130 @@ async function loadMemoryStats() {
   }
 }
 
+// 加载状态快照统计
+async function loadSnapshotStats() {
+  try {
+    const result = await window.electronAPI.longwriting.getSnapshotStats(props.projectId)
+    if (result.success && result.data) {
+      snapshotStats.value = {
+        total: result.data.total,
+        byEntityType: result.data.byEntityType
+      }
+    }
+  } catch (error) {
+    console.error('加载快照统计失败:', error)
+  }
+}
+
+// 提取章节实体状态
+async function extractEntityStatesFromChapter(outlineId: string) {
+  if (!selectedModel.value || !selectedModel.value.providerId || !selectedModel.value.modelId) {
+    ElMessage.warning('请先选择 AI 模型')
+    return
+  }
+
+  const content = chapterContentMap.value[outlineId]
+  if (!content || content.length < 100) {
+    ElMessage.warning('章节内容太短，无法提取状态')
+    return
+  }
+
+  const outline = outlineNodes.value.find(n => n.id === outlineId)
+  if (!outline) return
+
+  extractingStates.value = true
+  extractedStates.value = []
+
+  try {
+    const chapterNumber = calculateChapterNumber(outlineId)
+
+    // 构建涉及的实体列表
+    const involvedEntities: Array<{ type: string; id: string; name: string }> = []
+
+    // 添加涉及的角色
+    for (const charId of outline.involvedCharacters || []) {
+      const char = characters.value.find(c => c.id === charId)
+      if (char) {
+        involvedEntities.push({ type: 'character', id: char.id, name: char.name })
+      }
+    }
+
+    // 添加涉及的地点
+    for (const locId of outline.involvedLocations || []) {
+      const loc = locations.value.find(l => l.id === locId)
+      if (loc) {
+        involvedEntities.push({ type: 'location', id: loc.id, name: loc.name })
+      }
+    }
+
+    // 如果没有涉及实体，提示用户
+    if (involvedEntities.length === 0) {
+      ElMessage.warning('该章节没有设置涉及的角色或地点，无法提取状态')
+      extractingStates.value = false
+      return
+    }
+
+    const result = await window.electronAPI.longwriting.extractEntityStates(
+      props.projectId,
+      outlineId,
+      content,
+      chapterNumber,
+      involvedEntities,
+      selectedModel.value.providerId,
+      selectedModel.value.modelId
+    )
+
+    if (result.success && result.data) {
+      extractedStates.value = result.data
+      if (result.data.length > 0) {
+        showStateExtractDialog.value = true
+      } else {
+        ElMessage.info('未检测到实体状态变化')
+      }
+    } else {
+      ElMessage.error(result.error || '提取实体状态失败')
+    }
+  } catch (error: any) {
+    ElMessage.error('提取实体状态失败：' + error.message)
+  } finally {
+    extractingStates.value = false
+  }
+}
+
+// 保存提取的实体状态
+async function saveEntityStates() {
+  if (extractedStates.value.length === 0) return
+
+  try {
+    const outline = currentChapter.value
+    if (!outline) return
+
+    const chapterNumber = calculateChapterNumber(outline.id)
+
+    // 序列化数据
+    const statesToCreate = JSON.parse(JSON.stringify(extractedStates.value.map(s => ({
+      projectId: props.projectId,
+      entityType: s.entityType,
+      entityId: s.entityId,
+      entityName: s.entityName,
+      chapterNumber,
+      stateSummary: s.stateSummary,
+      keyChanges: s.keyChanges || []
+    }))))
+
+    const result = await window.electronAPI.longwriting.batchCreateEntityStateSnapshots(statesToCreate)
+    if (result.success) {
+      ElMessage.success(`已保存 ${result.data?.length || 0} 个实体状态快照`)
+      showStateExtractDialog.value = false
+      await loadSnapshotStats()
+    } else {
+      ElMessage.error(result.error || '保存状态快照失败')
+    }
+  } catch (error: any) {
+    ElMessage.error('保存状态快照失败：' + error.message)
+  }
+}
+
 // 执行生成
 async function executeGeneration() {
   if (!currentOutlineForAction.value) return
@@ -1298,6 +1478,9 @@ async function loadData() {
 
   // 加载所有章节内容
   await loadAllChapters()
+
+  // 加载快照统计
+  await loadSnapshotStats()
 
   loading.value = false
 
@@ -1872,8 +2055,27 @@ onMounted(() => {
 
     .memory-header {
       display: flex;
+      align-items: center;
       gap: 8px;
       margin-bottom: 8px;
+
+      .entity-name {
+        font-weight: 500;
+        font-size: 14px;
+      }
+    }
+
+    .key-changes {
+      margin-top: 8px;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 4px;
+
+      .key-changes-label {
+        font-size: 12px;
+        color: var(--text-color-secondary);
+      }
     }
   }
 }

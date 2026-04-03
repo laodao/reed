@@ -1585,9 +1585,205 @@ ${prewriteContent}
       item_event: '物品',
       relationship_change: '关系',
       faction_event: '势力',
+      skill_event: '技能',
       general: '事件'
     }
     return labels[type] || '事件'
+  }
+
+  // ==================== 实体状态提取 ====================
+
+  /**
+   * 从章节正文中提取实体状态快照
+   */
+  async extractEntityStates(
+    window: BrowserWindow,
+    eventId: string,
+    projectId: string,
+    outlineId: string,
+    chapterContent: string,
+    chapterNumber: number,
+    involvedEntities: Array<{ type: string; id: string; name: string }>,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<GenerateResponse> {
+    const dbManager = getDatabaseManager()
+
+    // 获取每个实体在上一章节的状态
+    const previousStates: Array<{ entity: any; state: any }> = []
+    for (const entity of involvedEntities) {
+      const prevState = await dbManager.lwEntityStates?.getEntityStateAtChapter(
+        projectId,
+        entity.type as any,
+        entity.id,
+        chapterNumber - 1
+      )
+      previousStates.push({
+        entity,
+        state: prevState
+      })
+    }
+
+    const systemPrompt = `你是一位专业的小说创作顾问。请分析章节正文内容，提取涉及实体的最新状态。
+
+**重要**：请控制回复长度，总字数不超过2000字。
+
+## 实体类型说明
+- character（角色）：存活状态、当前位置、掌握技能、持有物品、人际关系、身体状态
+- location（地点）：状态（正常/毁坏/发现中）、归属势力、重要特征变化
+- item（物品）：持有者、状态（完好/损坏/丢失）、当前位置
+- faction（势力）：领导者、状态（兴盛/衰落/覆灭）、控制区域变化
+- skill（技能）：掌握者列表、传承情况、等级分布
+
+## 输出格式
+返回 JSON 数组，每个实体一条记录：
+{
+  "entityType": "character/location/item/faction/skill",
+  "entityId": "实体ID",
+  "entityName": "实体名称",
+  "stateSummary": "完整的状态摘要描述（100-200字，包含所有关键状态信息）",
+  "keyChanges": ["本章节导致的关键变化列表"]
+}
+
+## 状态摘要原则
+1. 状态是"最新结果"，不是"过程描述"——如"已死亡"而非"第2章受伤，第3章死亡"
+2. 状态摘要应完整，包含该实体当前所有关键信息
+3. 如果实体在本章节无变化，但有上一状态，则继承上一状态并补充新变化
+4. 如果实体首次出现且无上一状态，从章节内容和设定信息推断初始状态
+5. keyChanges 只记录本章节新增的变化，便于追溯
+
+请直接输出 JSON 数组，不要有任何额外文字。`
+
+    // 构建上一状态信息
+    const previousStatesInfo = previousStates
+      .filter(s => s.state)
+      .map(s => `【${s.entity.name}】（第${s.state.chapterNumber}章状态）：${s.state.stateSummary}`)
+      .join('\n')
+
+    const prompt = `【章节正文内容】
+${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容已截断)' : ''}
+
+【涉及的实体】
+${involvedEntities.map(e => `- ${e.name}（类型：${e.type}，ID：${e.id}）`).join('\n')}
+
+【实体上一章节状态】
+${previousStatesInfo || '无历史状态'}
+
+请分析以上章节内容，为涉及的实体生成状态快照。如果一个实体在本章节没有变化且没有上一状态，可以不输出该实体。直接返回 JSON 数组格式的结果。`
+
+    try {
+      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 3000, providerConfigId, modelId)
+
+      // 尝试解析 JSON 数组
+      const jsonMatch = result.match(/\[[\s\S]*\]/)
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0])
+        return { success: true, data }
+      }
+
+      // 如果没有匹配到数组，可能没有提取到状态变化
+      return { success: true, data: [] }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  /**
+   * 获取章节生成时的实体状态上下文
+   */
+  async getEntityStateContext(
+    projectId: string,
+    chapterNumber: number,
+    involvedEntities: Array<{ type: string; id: string }>
+  ): Promise<string> {
+    const dbManager = getDatabaseManager()
+
+    if (!involvedEntities || involvedEntities.length === 0) {
+      return ''
+    }
+
+    // 获取每个实体在上一章节的状态
+    const states: Array<{ entity: any; state: any }> = []
+    for (const entity of involvedEntities) {
+      const state = await dbManager.lwEntityStates?.getEntityStateAtChapter(
+        projectId,
+        entity.type as any,
+        entity.id,
+        chapterNumber - 1
+      )
+      if (state) {
+        states.push({ entity, state })
+      }
+    }
+
+    if (states.length === 0) {
+      return ''
+    }
+
+    // 按实体类型分组
+    const byType: Record<string, typeof states> = {
+      character: [],
+      location: [],
+      item: [],
+      faction: [],
+      skill: []
+    }
+
+    for (const item of states) {
+      byType[item.state.entityType]?.push(item)
+    }
+
+    // 构建状态上下文
+    let context = '\n\n【重要：实体状态一致性】请确保以下实体状态在写作中保持一致：\n'
+
+    // 角色状态
+    if (byType.character.length > 0) {
+      context += '\n【角色状态】\n'
+      byType.character.forEach(s => {
+        context += `- ${s.state.entityName}：${s.state.stateSummary}\n`
+      })
+    }
+
+    // 地点状态
+    if (byType.location.length > 0) {
+      context += '\n【地点状态】\n'
+      byType.location.forEach(s => {
+        context += `- ${s.state.entityName}：${s.state.stateSummary}\n`
+      })
+    }
+
+    // 物品状态
+    if (byType.item.length > 0) {
+      context += '\n【物品状态】\n'
+      byType.item.forEach(s => {
+        context += `- ${s.state.entityName}：${s.state.stateSummary}\n`
+      })
+    }
+
+    // 势力状态
+    if (byType.faction.length > 0) {
+      context += '\n【势力状态】\n'
+      byType.faction.forEach(s => {
+        context += `- ${s.state.entityName}：${s.state.stateSummary}\n`
+      })
+    }
+
+    // 技能状态
+    if (byType.skill.length > 0) {
+      context += '\n【技能状态】\n'
+      byType.skill.forEach(s => {
+        context += `- ${s.state.entityName}：${s.state.stateSummary}\n`
+      })
+    }
+
+    context += '\n【注意事项】\n'
+    context += '1. 已死亡的角色不能再出现\n'
+    context += '2. 已学会的技能不能再"初学"\n'
+    context += '3. 已获得的物品不能再"首次获得"\n'
+    context += '4. 已建立的关系不能忽略\n'
+    context += '5. 状态变化需要合乎逻辑\n'
+
+    return context
   }
 }
 

@@ -1038,6 +1038,7 @@ export type MemoryType =
   | 'item_event'        // 物品事件
   | 'relationship_change' // 关系变化
   | 'faction_event'     // 势力事件
+  | 'skill_event'       // 技能事件
   | 'general'           // 一般事件
 
 /**
@@ -1055,7 +1056,7 @@ export interface MemoryEntity {
 }
 
 /**
- * 故事记忆
+ * 故事记忆（事件层）
  */
 export interface StoryMemory {
   id: string
@@ -1124,4 +1125,89 @@ export interface ExtractMemoriesResponse {
   success: boolean
   memories?: ExtractedMemoryData[]
   error?: string
+}
+
+// ==================== 实体状态快照相关类型 ====================
+
+/**
+ * 实体类型
+ */
+export type EntityType = 'character' | 'location' | 'item' | 'faction' | 'skill'
+
+/**
+ * 实体状态快照
+ */
+export interface EntityStateSnapshot {
+  id: string
+  projectId: string
+  entityType: EntityType          // 实体类型
+  entityId: string                // 实体ID
+  entityName: string              // 实体名称
+  chapterNumber: number           // 章节序号（该章节完成时的状态）
+  stateSummary: string            // 状态摘要
+  keyChanges: string[]            // 本章节的关键变化
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * 创建状态快照请求
+ */
+export interface CreateEntityStateSnapshotRequest {
+  projectId: string
+  entityType: EntityType
+  entityId: string
+  entityName: string
+  chapterNumber: number
+  stateSummary: string
+  keyChanges?: string[]
+}
+
+/**
+ * 更新状态快照请求
+ */
+export interface UpdateEntityStateSnapshotRequest {
+  stateSummary?: string
+  keyChanges?: string[]
+}
+
+/**
+ * AI 提取的实体状态数据
+ */
+export interface ExtractedEntityStateData {
+  entityType: EntityType
+  entityId: string
+  entityName: string
+  stateSummary: string
+  keyChanges: string[]
+}
+
+/**
+ * 实体状态提取请求
+ */
+export interface ExtractEntityStatesRequest {
+  projectId: string
+  outlineId: string
+  chapterContent: string
+  chapterNumber: number
+  involvedEntities: MemoryEntity[]
+  previousStates?: EntityStateSnapshot[]
+}
+
+/**
+ * 实体状态提取响应
+ */
+export interface ExtractEntityStatesResponse {
+  success: boolean
+  states?: ExtractedEntityStateData[]
+  error?: string
+}
+
+/**
+ * 状态快照统计
+ */
+export interface SnapshotStats {
+  total: number
+  byEntityType: Record<EntityType, number>
+  byChapter: Record<number, number>
 }

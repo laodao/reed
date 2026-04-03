@@ -1160,7 +1160,37 @@ const electronAPI = {
 
     // AI 记忆提取
     extractMemories: (projectId: string, outlineId: string, prewriteContent: string, chapterNumber: number, providerConfigId?: string, modelId?: string) =>
-      ipcRenderer.invoke('longwriting:extractMemories', projectId, outlineId, prewriteContent, chapterNumber, providerConfigId, modelId)
+      ipcRenderer.invoke('longwriting:extractMemories', projectId, outlineId, prewriteContent, chapterNumber, providerConfigId, modelId),
+
+    // 实体状态快照
+    getEntityStateSnapshots: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:getEntityStateSnapshots', projectId),
+    getEntityStateAtChapter: (projectId: string, entityType: string, entityId: string, chapterNumber: number) =>
+      ipcRenderer.invoke('longwriting:getEntityStateAtChapter', projectId, entityType, entityId, chapterNumber),
+    getEntitiesStatesForChapter: (projectId: string, chapterNumber: number, entities: Array<{ entityType: string; entityId: string }>) =>
+      ipcRenderer.invoke('longwriting:getEntitiesStatesForChapter', projectId, chapterNumber, entities),
+    getEntityStatesByChapter: (projectId: string, chapterNumber: number) =>
+      ipcRenderer.invoke('longwriting:getEntityStatesByChapter', projectId, chapterNumber),
+    getEntityStateSnapshot: (id: string) =>
+      ipcRenderer.invoke('longwriting:getEntityStateSnapshot', id),
+    createEntityStateSnapshot: (data: any) =>
+      ipcRenderer.invoke('longwriting:createEntityStateSnapshot', data),
+    batchCreateEntityStateSnapshots: (dataList: any[]) =>
+      ipcRenderer.invoke('longwriting:batchCreateEntityStateSnapshots', dataList),
+    upsertEntityStateSnapshot: (data: any) =>
+      ipcRenderer.invoke('longwriting:upsertEntityStateSnapshot', data),
+    updateEntityStateSnapshot: (id: string, data: any) =>
+      ipcRenderer.invoke('longwriting:updateEntityStateSnapshot', id, data),
+    deleteEntityStateSnapshot: (id: string) =>
+      ipcRenderer.invoke('longwriting:deleteEntityStateSnapshot', id),
+    deleteEntityStatesByChapter: (projectId: string, chapterNumber: number) =>
+      ipcRenderer.invoke('longwriting:deleteEntityStatesByChapter', projectId, chapterNumber),
+    getSnapshotStats: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:getSnapshotStats', projectId),
+
+    // AI 实体状态提取
+    extractEntityStates: (projectId: string, outlineId: string, chapterContent: string, chapterNumber: number, involvedEntities: Array<{ type: string; id: string; name: string }>, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:extractEntityStates', projectId, outlineId, chapterContent, chapterNumber, involvedEntities, providerConfigId, modelId)
   }
 }
 

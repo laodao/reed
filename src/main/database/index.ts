@@ -45,6 +45,7 @@ import { LwFactionRepository } from './repositories/lw-faction.repository'
 import { LwMapRepository } from './repositories/lw-map.repository'
 import { LwPrewriteRepository } from './repositories/lw-prewrite.repository'
 import { LwMemoryRepository } from './repositories/lw-memory.repository'
+import { LwEntityStateRepository } from './repositories/lw-entity-state.repository'
 import { DataPathService } from '../services/data-path.service'
 import { LanceDBService } from '../services/lance-db.service'
 
@@ -95,6 +96,7 @@ export class DatabaseManager {
   public lwMaps: LwMapRepository | null = null
   public lwPrewrites: LwPrewriteRepository | null = null
   public lwMemories: LwMemoryRepository | null = null
+  public lwEntityStates: LwEntityStateRepository | null = null
 
   private constructor() {
     // 默认使用 userData 路径，后续会在 initialize 中更新
@@ -1119,6 +1121,23 @@ export class DatabaseManager {
       )
     `)
 
+    // 实体状态快照表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_entity_state_snapshots (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        entity_name TEXT NOT NULL,
+        chapter_number INTEGER NOT NULL,
+        state_summary TEXT NOT NULL,
+        key_changes TEXT,
+        created_at INTEGER,
+        updated_at INTEGER,
+        FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE
+      )
+    `)
+
     // 创建索引
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_lw_project_skill_types_project ON lw_project_skill_types(project_id)
@@ -1146,6 +1165,20 @@ export class DatabaseManager {
     `)
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_lw_story_memories_chapter ON lw_story_memories(chapter_number)
+    `)
+
+    // 实体状态快照索引
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_lw_entity_snapshots_project ON lw_entity_state_snapshots(project_id)
+    `)
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_lw_entity_snapshots_entity ON lw_entity_state_snapshots(entity_type, entity_id)
+    `)
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_lw_entity_snapshots_chapter ON lw_entity_state_snapshots(project_id, chapter_number)
+    `)
+    this.db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_lw_entity_snapshots_unique ON lw_entity_state_snapshots(project_id, entity_type, entity_id, chapter_number)
     `)
 
     // 迁移类型配置表结构
@@ -1715,6 +1748,7 @@ export class DatabaseManager {
     this.lwMaps = new LwMapRepository(this.db)
     this.lwPrewrites = new LwPrewriteRepository(this.db)
     this.lwMemories = new LwMemoryRepository(this.db)
+    this.lwEntityStates = new LwEntityStateRepository(this.db)
   }
 
   /**

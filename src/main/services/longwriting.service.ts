@@ -46,7 +46,12 @@ import {
   CreatePrewriteRequest,
   StoryMemory,
   CreateMemoryRequest,
-  UpdateMemoryRequest
+  UpdateMemoryRequest,
+  EntityStateSnapshot,
+  EntityType,
+  CreateEntityStateSnapshotRequest,
+  UpdateEntityStateSnapshotRequest,
+  SnapshotStats
 } from '../../shared/types/longwriting.types'
 
 /**
@@ -1458,6 +1463,142 @@ export class LongWritingService {
       throw new Error('数据库未初始化')
     }
     return this.db.lwMemories.getMemoryStats(projectId)
+  }
+
+  // ==================== 实体状态快照管理 ====================
+
+  /**
+   * 获取项目的所有状态快照
+   */
+  async getEntityStateSnapshots(projectId: string): Promise<EntityStateSnapshot[]> {
+    if (!this.db.lwEntityStates) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwEntityStates.getByProjectId(projectId)
+  }
+
+  /**
+   * 获取实体在指定章节的状态快照
+   */
+  async getEntityStateAtChapter(
+    projectId: string,
+    entityType: EntityType,
+    entityId: string,
+    chapterNumber: number
+  ): Promise<EntityStateSnapshot | null> {
+    if (!this.db.lwEntityStates) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwEntityStates.getEntityStateAtChapter(
+      projectId,
+      entityType,
+      entityId,
+      chapterNumber
+    )
+  }
+
+  /**
+   * 批量获取多个实体在指定章节的状态快照
+   */
+  async getEntitiesStatesForChapter(
+    projectId: string,
+    chapterNumber: number,
+    entities: Array<{ entityType: EntityType; entityId: string }>
+  ): Promise<EntityStateSnapshot[]> {
+    if (!this.db.lwEntityStates) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwEntityStates.getEntitiesStatesForChapter(projectId, chapterNumber, entities)
+  }
+
+  /**
+   * 获取指定章节的所有状态快照
+   */
+  async getEntityStatesByChapter(projectId: string, chapterNumber: number): Promise<EntityStateSnapshot[]> {
+    if (!this.db.lwEntityStates) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwEntityStates.getByChapterNumber(projectId, chapterNumber)
+  }
+
+  /**
+   * 获取单个状态快照
+   */
+  async getEntityStateSnapshot(id: string): Promise<EntityStateSnapshot | null> {
+    if (!this.db.lwEntityStates) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwEntityStates.getById(id)
+  }
+
+  /**
+   * 创建状态快照
+   */
+  async createEntityStateSnapshot(data: CreateEntityStateSnapshotRequest): Promise<EntityStateSnapshot> {
+    if (!this.db.lwEntityStates) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwEntityStates.create(data)
+  }
+
+  /**
+   * 批量创建状态快照
+   */
+  async batchCreateEntityStateSnapshots(dataList: CreateEntityStateSnapshotRequest[]): Promise<EntityStateSnapshot[]> {
+    if (!this.db.lwEntityStates) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwEntityStates.batchCreate(dataList)
+  }
+
+  /**
+   * 更新或创建状态快照（如果已存在则更新，否则创建）
+   */
+  async upsertEntityStateSnapshot(data: CreateEntityStateSnapshotRequest): Promise<EntityStateSnapshot> {
+    if (!this.db.lwEntityStates) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwEntityStates.upsert(data)
+  }
+
+  /**
+   * 更新状态快照
+   */
+  async updateEntityStateSnapshot(id: string, data: UpdateEntityStateSnapshotRequest): Promise<EntityStateSnapshot | null> {
+    if (!this.db.lwEntityStates) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwEntityStates.update(id, data)
+  }
+
+  /**
+   * 删除状态快照
+   */
+  async deleteEntityStateSnapshot(id: string): Promise<boolean> {
+    if (!this.db.lwEntityStates) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwEntityStates.delete(id)
+  }
+
+  /**
+   * 删除指定章节的所有状态快照
+   */
+  async deleteEntityStatesByChapter(projectId: string, chapterNumber: number): Promise<number> {
+    if (!this.db.lwEntityStates) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwEntityStates.deleteByChapterNumber(projectId, chapterNumber)
+  }
+
+  /**
+   * 获取状态快照统计
+   */
+  async getSnapshotStats(projectId: string): Promise<SnapshotStats> {
+    if (!this.db.lwEntityStates) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwEntityStates.getSnapshotStats(projectId)
   }
 }
 

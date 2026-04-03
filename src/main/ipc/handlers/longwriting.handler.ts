@@ -230,7 +230,24 @@ const CHANNELS = {
   GET_MEMORY_STATS: 'longwriting:getMemoryStats',
 
   // AI 记忆提取
-  EXTRACT_MEMORIES: 'longwriting:extractMemories'
+  EXTRACT_MEMORIES: 'longwriting:extractMemories',
+
+  // 实体状态快照
+  GET_ENTITY_STATE_SNAPSHOTS: 'longwriting:getEntityStateSnapshots',
+  GET_ENTITY_STATE_AT_CHAPTER: 'longwriting:getEntityStateAtChapter',
+  GET_ENTITIES_STATES_FOR_CHAPTER: 'longwriting:getEntitiesStatesForChapter',
+  GET_ENTITY_STATES_BY_CHAPTER: 'longwriting:getEntityStatesByChapter',
+  GET_ENTITY_STATE_SNAPSHOT: 'longwriting:getEntityStateSnapshot',
+  CREATE_ENTITY_STATE_SNAPSHOT: 'longwriting:createEntityStateSnapshot',
+  BATCH_CREATE_ENTITY_STATE_SNAPSHOTS: 'longwriting:batchCreateEntityStateSnapshots',
+  UPSERT_ENTITY_STATE_SNAPSHOT: 'longwriting:upsertEntityStateSnapshot',
+  UPDATE_ENTITY_STATE_SNAPSHOT: 'longwriting:updateEntityStateSnapshot',
+  DELETE_ENTITY_STATE_SNAPSHOT: 'longwriting:deleteEntityStateSnapshot',
+  DELETE_ENTITY_STATES_BY_CHAPTER: 'longwriting:deleteEntityStatesByChapter',
+  GET_SNAPSHOT_STATS: 'longwriting:getSnapshotStats',
+
+  // AI 实体状态提取
+  EXTRACT_ENTITY_STATES: 'longwriting:extractEntityStates'
 }
 
 /**
@@ -2259,6 +2276,183 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
         outlineId,
         prewriteContent,
         chapterNumber,
+        providerConfigId,
+        modelId
+      )
+      return result
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 实体状态快照 ====================
+
+  /**
+   * 获取项目的所有状态快照
+   */
+  ipcMain.handle(CHANNELS.GET_ENTITY_STATE_SNAPSHOTS, async (_event, projectId: string) => {
+    try {
+      const snapshots = await service.getEntityStateSnapshots(projectId)
+      return { success: true, data: snapshots }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 获取实体在指定章节的状态快照
+   */
+  ipcMain.handle(CHANNELS.GET_ENTITY_STATE_AT_CHAPTER, async (_event, projectId: string, entityType: string, entityId: string, chapterNumber: number) => {
+    try {
+      const snapshot = await service.getEntityStateAtChapter(projectId, entityType as any, entityId, chapterNumber)
+      return { success: true, data: snapshot }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 批量获取多个实体在指定章节的状态快照
+   */
+  ipcMain.handle(CHANNELS.GET_ENTITIES_STATES_FOR_CHAPTER, async (_event, projectId: string, chapterNumber: number, entities: Array<{ entityType: string; entityId: string }>) => {
+    try {
+      const snapshots = await service.getEntitiesStatesForChapter(projectId, chapterNumber, entities as any)
+      return { success: true, data: snapshots }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 获取指定章节的所有状态快照
+   */
+  ipcMain.handle(CHANNELS.GET_ENTITY_STATES_BY_CHAPTER, async (_event, projectId: string, chapterNumber: number) => {
+    try {
+      const snapshots = await service.getEntityStatesByChapter(projectId, chapterNumber)
+      return { success: true, data: snapshots }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 获取单个状态快照
+   */
+  ipcMain.handle(CHANNELS.GET_ENTITY_STATE_SNAPSHOT, async (_event, id: string) => {
+    try {
+      const snapshot = await service.getEntityStateSnapshot(id)
+      return { success: true, data: snapshot }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 创建状态快照
+   */
+  ipcMain.handle(CHANNELS.CREATE_ENTITY_STATE_SNAPSHOT, async (_event, data: any) => {
+    try {
+      const snapshot = await service.createEntityStateSnapshot(data)
+      return { success: true, data: snapshot }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 批量创建状态快照
+   */
+  ipcMain.handle(CHANNELS.BATCH_CREATE_ENTITY_STATE_SNAPSHOTS, async (_event, dataList: any[]) => {
+    try {
+      const snapshots = await service.batchCreateEntityStateSnapshots(dataList)
+      return { success: true, data: snapshots }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 更新或创建状态快照
+   */
+  ipcMain.handle(CHANNELS.UPSERT_ENTITY_STATE_SNAPSHOT, async (_event, data: any) => {
+    try {
+      const snapshot = await service.upsertEntityStateSnapshot(data)
+      return { success: true, data: snapshot }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 更新状态快照
+   */
+  ipcMain.handle(CHANNELS.UPDATE_ENTITY_STATE_SNAPSHOT, async (_event, id: string, data: any) => {
+    try {
+      const snapshot = await service.updateEntityStateSnapshot(id, data)
+      return { success: true, data: snapshot }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 删除状态快照
+   */
+  ipcMain.handle(CHANNELS.DELETE_ENTITY_STATE_SNAPSHOT, async (_event, id: string) => {
+    try {
+      await service.deleteEntityStateSnapshot(id)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 删除指定章节的所有状态快照
+   */
+  ipcMain.handle(CHANNELS.DELETE_ENTITY_STATES_BY_CHAPTER, async (_event, projectId: string, chapterNumber: number) => {
+    try {
+      const count = await service.deleteEntityStatesByChapter(projectId, chapterNumber)
+      return { success: true, data: count }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 获取状态快照统计
+   */
+  ipcMain.handle(CHANNELS.GET_SNAPSHOT_STATS, async (_event, projectId: string) => {
+    try {
+      const stats = await service.getSnapshotStats(projectId)
+      return { success: true, data: stats }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== AI 实体状态提取 ====================
+
+  /**
+   * AI 提取实体状态
+   */
+  ipcMain.handle(CHANNELS.EXTRACT_ENTITY_STATES, async (event, projectId: string, outlineId: string, chapterContent: string, chapterNumber: number, involvedEntities: Array<{ type: string; id: string; name: string }>, providerConfigId?: string, modelId?: string) => {
+    try {
+      const window = BrowserWindow.fromWebContents(event.sender)
+      if (!window) {
+        return { success: false, error: '窗口不存在' }
+      }
+
+      const eventId = `extract-entity-states-${outlineId}-${Date.now()}`
+      const aiService = LongWritingAIService.getInstance()
+      const result = await aiService.extractEntityStates(
+        window,
+        eventId,
+        projectId,
+        outlineId,
+        chapterContent,
+        chapterNumber,
+        involvedEntities,
         providerConfigId,
         modelId
       )
