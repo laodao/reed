@@ -33,7 +33,11 @@ import {
   CreateSkillLevelRequest,
   UpdateSkillLevelRequest,
   CreateItemLevelRequest,
-  UpdateItemLevelRequest
+  UpdateItemLevelRequest,
+  StoryFaction,
+  FactionType,
+  CreateFactionRequest,
+  UpdateFactionRequest
 } from '../../shared/types/longwriting.types'
 
 /**
@@ -322,6 +326,84 @@ export class LongWritingService {
       throw new Error('数据库未初始化')
     }
     return this.db.lwLocations.delete(id)
+  }
+
+  // ==================== 势力管理 ====================
+
+  /**
+   * 获取项目的所有势力
+   */
+  async getFactions(projectId: string): Promise<StoryFaction[]> {
+    if (!this.db.lwFactions) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwFactions.getByProjectId(projectId)
+  }
+
+  /**
+   * 根据势力类型获取势力
+   */
+  async getFactionsByType(projectId: string, factionType: FactionType): Promise<StoryFaction[]> {
+    if (!this.db.lwFactions) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwFactions.getByProjectIdAndType(projectId, factionType)
+  }
+
+  /**
+   * 获取势力详情
+   */
+  async getFaction(id: string): Promise<StoryFaction | null> {
+    if (!this.db.lwFactions) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwFactions.getById(id)
+  }
+
+  /**
+   * 创建势力
+   */
+  async createFaction(data: CreateFactionRequest): Promise<StoryFaction> {
+    if (!this.db.lwFactions) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwFactions.create({
+      projectId: data.projectId,
+      factionType: data.factionType,
+      name: data.name,
+      locationId: data.locationId,
+      description: data.description ?? ''
+    })
+  }
+
+  /**
+   * 更新势力
+   */
+  async updateFaction(id: string, data: UpdateFactionRequest): Promise<StoryFaction | null> {
+    if (!this.db.lwFactions) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwFactions.update(id, data as Partial<StoryFaction>)
+  }
+
+  /**
+   * 删除势力
+   */
+  async deleteFaction(id: string): Promise<boolean> {
+    if (!this.db.lwFactions) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwFactions.delete(id)
+  }
+
+  /**
+   * 重排序势力
+   */
+  async reorderFactions(orderList: { id: string; order: number }[]): Promise<boolean> {
+    if (!this.db.lwFactions) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwFactions.updateSortOrder(orderList)
   }
 
   // ==================== 情节管理 ====================

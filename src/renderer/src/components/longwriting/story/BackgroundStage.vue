@@ -149,6 +149,48 @@
           </el-button>
         </div>
       </el-tab-pane>
+
+      <!-- 势力设定 -->
+      <el-tab-pane label="势力设定" name="factions">
+        <div class="faction-section">
+          <!-- 势力类型筛选 -->
+          <div class="faction-filter">
+            <el-radio-group v-model="factionFilter" size="small">
+              <el-radio-button value="all">全部</el-radio-button>
+              <el-radio-button value="country">国别</el-radio-button>
+              <el-radio-button value="camp">阵营</el-radio-button>
+              <el-radio-button value="sect">门派</el-radio-button>
+            </el-radio-group>
+          </div>
+
+          <!-- 势力列表 -->
+          <div class="faction-list">
+            <div v-for="faction in filteredFactions" :key="faction.id" class="faction-card">
+              <div class="faction-info">
+                <div class="faction-header">
+                  <h4>{{ faction.name }}</h4>
+                  <el-tag size="small" :type="getFactionTagType(faction.factionType)">
+                    {{ getFactionTypeLabel(faction.factionType) }}
+                  </el-tag>
+                </div>
+                <div v-if="faction.locationId" class="faction-location">
+                  <span class="label">所在地：</span>
+                  <span>{{ getLocationName(faction.locationId) }}</span>
+                </div>
+                <p class="faction-desc">{{ faction.description }}</p>
+              </div>
+              <div class="faction-actions">
+                <el-button text @click="editFaction(faction)">编辑</el-button>
+                <el-button text type="danger" @click="deleteFaction(faction.id)">删除</el-button>
+              </div>
+            </div>
+            <el-button type="primary" plain class="add-faction-btn" @click="showFactionDialog = true">
+              <el-icon><Plus /></el-icon>
+              添加势力
+            </el-button>
+          </div>
+        </div>
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 地点编辑对话框 -->
@@ -188,6 +230,44 @@
       <template #footer>
         <el-button @click="showLocationDialog = false">取消</el-button>
         <el-button type="primary" @click="saveLocation">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 势力编辑对话框 -->
+    <el-dialog v-model="showFactionDialog" :title="editingFactionId ? '编辑势力' : '添加势力'" width="500px">
+      <el-form :model="factionForm" label-width="80px">
+        <el-form-item label="势力类型" required>
+          <el-radio-group v-model="factionForm.factionType">
+            <el-radio value="country">国别</el-radio>
+            <el-radio value="camp">阵营</el-radio>
+            <el-radio value="sect">门派</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="势力名称" required>
+          <el-input v-model="factionForm.name" placeholder="输入势力名称" />
+        </el-form-item>
+        <el-form-item label="所在地">
+          <el-select v-model="factionForm.locationId" placeholder="选择所在地（可选）" clearable>
+            <el-option
+              v-for="loc in locations"
+              :key="loc.id"
+              :label="loc.name"
+              :value="loc.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="主要特点">
+          <el-input
+            v-model="factionForm.description"
+            type="textarea"
+            :rows="4"
+            placeholder="描述势力的主要特点、立场、特色等..."
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showFactionDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveFaction">保存</el-button>
       </template>
     </el-dialog>
   </div>
@@ -242,6 +322,38 @@ const locationForm = ref({
   description: ''
 })
 
+// 势力列表
+const factions = ref<Array<{
+  id: string
+  projectId: string
+  factionType: 'country' | 'camp' | 'sect'
+  name: string
+  locationId?: string
+  description: string
+  sortOrder: number
+}>>([])
+
+// 势力筛选
+const factionFilter = ref<'all' | 'country' | 'camp' | 'sect'>('all')
+
+// 筛选后的势力列表
+const filteredFactions = computed(() => {
+  if (factionFilter.value === 'all') {
+    return factions.value
+  }
+  return factions.value.filter(f => f.factionType === factionFilter.value)
+})
+
+// 势力对话框
+const showFactionDialog = ref(false)
+const editingFactionId = ref<string | null>(null)
+const factionForm = ref({
+  factionType: 'country' as 'country' | 'camp' | 'sect',
+  name: '',
+  locationId: '',
+  description: ''
+})
+
 // 加载状态
 const loading = ref(false)
 // 保存状态
@@ -280,6 +392,110 @@ function getImportanceLabel(importance: string): string {
     auxiliary: '辅助'
   }
   return labels[importance] || importance
+}
+
+// 势力相关函数
+function getFactionTypeLabel(type: string): string {
+  const labels: Record<string, string> = {
+    country: '国别',
+    camp: '阵营',
+    sect: '门派'
+  }
+  return labels[type] || type
+}
+
+function getFactionTagType(type: string): '' | 'success' | 'warning' | 'info' {
+  const types: Record<string, '' | 'success' | 'warning' | 'info'> = {
+    country: '',
+    camp: 'success',
+    sect: 'warning'
+  }
+  return types[type] || 'info'
+}
+
+function getLocationName(locationId: string): string {
+  const location = locations.value.find(loc => loc.id === locationId)
+  return location?.name || '未知'
+}
+
+// 加载势力列表
+async function loadFactions() {
+  console.log('[loadFactions] 加载势力列表, projectId:', props.projectId)
+  if (!props.projectId) return
+
+  const result = await window.electronAPI.longwriting.getFactions(props.projectId)
+  console.log('[loadFactions] 结果:', result)
+  if (result.success) {
+    factions.value = result.data || []
+    console.log('[loadFactions] 势力数量:', factions.value.length)
+  }
+}
+
+function editFaction(faction: any) {
+  editingFactionId.value = faction.id
+  factionForm.value = {
+    factionType: faction.factionType,
+    name: faction.name,
+    locationId: faction.locationId || '',
+    description: faction.description
+  }
+  showFactionDialog.value = true
+}
+
+async function deleteFaction(id: string) {
+  const result = await window.electronAPI.longwriting.deleteFaction(id)
+  if (result.success) {
+    await loadFactions()
+    ElMessage.success('势力已删除')
+  }
+}
+
+async function saveFaction() {
+  console.log('[saveFaction] 开始保存, projectId:', props.projectId)
+  if (!factionForm.value.name) {
+    ElMessage.warning('请输入势力名称')
+    return
+  }
+
+  const formData = toRaw(factionForm.value)
+  console.log('[saveFaction] formData:', formData)
+
+  if (editingFactionId.value) {
+    // 更新
+    console.log('[saveFaction] 更新势力, id:', editingFactionId.value)
+    const result = await window.electronAPI.longwriting.updateFaction(editingFactionId.value, formData)
+    console.log('[saveFaction] 更新结果:', result)
+    if (result.success) {
+      ElMessage.success('势力已更新')
+    } else {
+      ElMessage.error(result.error || '更新失败')
+    }
+  } else {
+    // 创建
+    const createData = {
+      projectId: props.projectId,
+      ...formData
+    }
+    console.log('[saveFaction] 创建势力, data:', createData)
+    const result = await window.electronAPI.longwriting.createFaction(createData)
+    console.log('[saveFaction] 创建结果:', result)
+    if (result.success) {
+      ElMessage.success('势力已添加')
+    } else {
+      ElMessage.error(result.error || '添加失败')
+    }
+  }
+
+  showFactionDialog.value = false
+  editingFactionId.value = null
+  factionForm.value = {
+    factionType: 'country',
+    name: '',
+    locationId: '',
+    description: ''
+  }
+  await loadFactions()
+  emit('update:progress', 35)
 }
 
 // 加载背景设定
@@ -456,6 +672,7 @@ async function polishField(field: 'eraDescription' | 'socialStructure' | 'techLe
 onMounted(() => {
   loadBackground()
   loadLocations()
+  loadFactions()
 })
 </script>
 
@@ -625,6 +842,90 @@ onMounted(() => {
 }
 
 .add-location-btn {
+  width: 100%;
+  border-style: dashed;
+}
+
+// 势力设定样式
+.faction-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.faction-filter {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.faction-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.faction-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 16px 20px;
+  background: var(--bg-color);
+  border-radius: 12px;
+  border: 1px solid var(--border-color-light);
+  transition: all 0.2s;
+
+  &:hover {
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  }
+
+  .faction-info {
+    flex: 1;
+
+    .faction-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+
+      h4 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 500;
+        color: var(--text-color-primary);
+      }
+    }
+
+    .faction-location {
+      font-size: 13px;
+      color: var(--text-color-secondary);
+      margin-bottom: 8px;
+
+      .label {
+        color: var(--text-color-placeholder);
+      }
+    }
+
+    .faction-desc {
+      margin: 0;
+      font-size: 13px;
+      color: var(--text-color-secondary);
+      line-height: 1.6;
+    }
+  }
+
+  .faction-actions {
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  &:hover .faction-actions {
+    opacity: 1;
+  }
+}
+
+.add-faction-btn {
   width: 100%;
   border-style: dashed;
 }

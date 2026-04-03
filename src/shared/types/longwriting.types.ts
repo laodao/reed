@@ -164,6 +164,59 @@ export interface StoryLocation {
   updatedAt: number
 }
 
+// ==================== 势力相关类型 ====================
+
+/**
+ * 势力类型
+ */
+export type FactionType = 'country' | 'camp' | 'sect'
+
+/**
+ * 势力类型显示名称
+ */
+export const FACTION_TYPE_NAMES: Record<FactionType, string> = {
+  country: '国别',
+  camp: '阵营',
+  sect: '门派'
+}
+
+/**
+ * 势力设定
+ */
+export interface StoryFaction {
+  id: string
+  projectId: string
+  factionType: FactionType     // 势力类型
+  name: string                 // 势力名称
+  locationId?: string          // 所在地（关联地点ID）
+  description: string          // 主要特点
+  sortOrder: number            // 排序顺序
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * 创建势力请求
+ */
+export interface CreateFactionRequest {
+  projectId: string
+  factionType: FactionType
+  name: string
+  locationId?: string
+  description?: string
+}
+
+/**
+ * 更新势力请求
+ */
+export interface UpdateFactionRequest {
+  factionType?: FactionType
+  name?: string
+  locationId?: string
+  description?: string
+  sortOrder?: number
+}
+
 // ==================== 情节相关类型 ====================
 
 /**

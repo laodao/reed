@@ -41,6 +41,7 @@ import { LwMaterialRepository } from './repositories/lw-material.repository'
 import { LwGlobalSettingsRepository } from './repositories/lw-global-settings.repository'
 import { LwDictionaryRepository } from './repositories/lw-dictionary.repository'
 import { LwTypeConfigRepository } from './repositories/lw-type-config.repository'
+import { LwFactionRepository } from './repositories/lw-faction.repository'
 import { DataPathService } from '../services/data-path.service'
 import { LanceDBService } from '../services/lance-db.service'
 
@@ -87,6 +88,7 @@ export class DatabaseManager {
   public lwGlobalSettings: LwGlobalSettingsRepository | null = null
   public lwDictionary: LwDictionaryRepository | null = null
   public lwTypeConfig: LwTypeConfigRepository | null = null
+  public lwFactions: LwFactionRepository | null = null
 
   private constructor() {
     // 默认使用 userData 路径，后续会在 initialize 中更新
@@ -745,6 +747,27 @@ export class DatabaseManager {
       )
     `)
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_locations_project_id ON lw_story_locations(project_id)`)
+
+    // 势力表（国别/阵营/门派）
+    console.log('[DatabaseManager] 创建势力表...')
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_project_factions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        faction_type TEXT NOT NULL,
+        name TEXT NOT NULL,
+        location_id TEXT,
+        description TEXT,
+        sort_order INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE,
+        FOREIGN KEY (location_id) REFERENCES lw_story_locations(id) ON DELETE SET NULL
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_factions_project_id ON lw_project_factions(project_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_factions_type ON lw_project_factions(faction_type)`)
+    console.log('[DatabaseManager] 势力表创建完成')
 
     // 故事情节表
     this.db.exec(`
@@ -1598,6 +1621,7 @@ export class DatabaseManager {
     this.lwGlobalSettings = new LwGlobalSettingsRepository(this.db)
     this.lwDictionary = new LwDictionaryRepository(this.db)
     this.lwTypeConfig = new LwTypeConfigRepository(this.db)
+    this.lwFactions = new LwFactionRepository(this.db)
   }
 
   /**

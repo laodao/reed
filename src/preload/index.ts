@@ -892,6 +892,19 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:updateLocation', id, data),
     deleteLocation: (id: string) => ipcRenderer.invoke('longwriting:deleteLocation', id),
 
+    // 势力管理
+    getFactions: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:getFactions', projectId),
+    getFactionsByType: (projectId: string, factionType: string) =>
+      ipcRenderer.invoke('longwriting:getFactionsByType', projectId, factionType),
+    getFaction: (id: string) => ipcRenderer.invoke('longwriting:getFaction', id),
+    createFaction: (data: any) => ipcRenderer.invoke('longwriting:createFaction', data),
+    updateFaction: (id: string, data: any) =>
+      ipcRenderer.invoke('longwriting:updateFaction', id, data),
+    deleteFaction: (id: string) => ipcRenderer.invoke('longwriting:deleteFaction', id),
+    reorderFactions: (orderList: { id: string; order: number }[]) =>
+      ipcRenderer.invoke('longwriting:reorderFactions', orderList),
+
     // 情节管理
     getPlots: (projectId: string) =>
       ipcRenderer.invoke('longwriting:getPlots', projectId),

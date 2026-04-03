@@ -26,7 +26,10 @@ import {
   CreateSkillLevelRequest,
   UpdateSkillLevelRequest,
   CreateItemLevelRequest,
-  UpdateItemLevelRequest
+  UpdateItemLevelRequest,
+  CreateFactionRequest,
+  UpdateFactionRequest,
+  FactionType
 } from '../../shared/types/longwriting.types'
 
 /**
@@ -55,6 +58,15 @@ const CHANNELS = {
   CREATE_LOCATION: 'longwriting:createLocation',
   UPDATE_LOCATION: 'longwriting:updateLocation',
   DELETE_LOCATION: 'longwriting:deleteLocation',
+
+  // 势力管理
+  GET_FACTIONS: 'longwriting:getFactions',
+  GET_FACTIONS_BY_TYPE: 'longwriting:getFactionsByType',
+  GET_FACTION: 'longwriting:getFaction',
+  CREATE_FACTION: 'longwriting:createFaction',
+  UPDATE_FACTION: 'longwriting:updateFaction',
+  DELETE_FACTION: 'longwriting:deleteFaction',
+  REORDER_FACTIONS: 'longwriting:reorderFactions',
 
   // 情节管理
   GET_PLOTS: 'longwriting:getPlots',
@@ -416,6 +428,77 @@ export function registerLongWritingHandlers(): void {
   ipcMain.handle(CHANNELS.DELETE_LOCATION, async (_event, id: string) => {
     try {
       const result = await service.deleteLocation(id)
+      return { success: result }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 势力管理 ====================
+
+  ipcMain.handle(CHANNELS.GET_FACTIONS, async (_event, projectId: string) => {
+    console.log('[IPC] getFactions 被调用, projectId:', projectId)
+    try {
+      const factions = await service.getFactions(projectId)
+      console.log('[IPC] getFactions 结果:', factions?.length, '条')
+      return { success: true, data: factions }
+    } catch (error: any) {
+      console.error('[IPC] getFactions 错误:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.GET_FACTIONS_BY_TYPE, async (_event, projectId: string, factionType: FactionType) => {
+    try {
+      const factions = await service.getFactionsByType(projectId, factionType)
+      return { success: true, data: factions }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.GET_FACTION, async (_event, id: string) => {
+    try {
+      const faction = await service.getFaction(id)
+      return { success: true, data: faction }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.CREATE_FACTION, async (_event, data: CreateFactionRequest) => {
+    console.log('[IPC] createFaction 被调用, data:', JSON.stringify(data))
+    try {
+      const faction = await service.createFaction(data)
+      console.log('[IPC] createFaction 成功:', JSON.stringify(faction))
+      return { success: true, data: faction }
+    } catch (error: any) {
+      console.error('[IPC] createFaction 错误:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.UPDATE_FACTION, async (_event, id: string, data: UpdateFactionRequest) => {
+    try {
+      const faction = await service.updateFaction(id, data)
+      return { success: true, data: faction }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.DELETE_FACTION, async (_event, id: string) => {
+    try {
+      const result = await service.deleteFaction(id)
+      return { success: result }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.REORDER_FACTIONS, async (_event, orderList: { id: string; order: number }[]) => {
+    try {
+      const result = await service.reorderFactions(orderList)
       return { success: result }
     } catch (error: any) {
       return { success: false, error: error.message }
