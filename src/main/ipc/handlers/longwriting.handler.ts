@@ -148,9 +148,13 @@ const CHANNELS = {
   POLISH_BACKGROUND: 'longwriting:polishBackground',
   GENERATE_CHARACTERS: 'longwriting:generateCharacters',
   GENERATE_SKILLS_ITEMS: 'longwriting:generateSkillsItems',
+  GENERATE_SKILL_ITEM_TYPES: 'longwriting:generateSkillItemTypes',
+  GENERATE_SKILLS_ONLY: 'longwriting:generateSkillsOnly',
+  GENERATE_ITEMS_ONLY: 'longwriting:generateItemsOnly',
   GENERATE_OUTLINE_STORY: 'longwriting:generateOutlineStory',
   GENERATE_OUTLINE_COMMENT: 'longwriting:generateOutlineComment',
   GENERATE_CHAPTER: 'longwriting:generateChapter',
+  GENERATE_CHAPTER_PREWRITE: 'longwriting:generateChapterPrewrite',
   GENERATE_SECTION: 'longwriting:generateSection',
 
   // 导出
@@ -1132,6 +1136,54 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   )
 
   ipcMain.handle(
+    CHANNELS.GENERATE_SKILL_ITEM_TYPES,
+    async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
+      try {
+        const window = BrowserWindow.fromWebContents(event.sender)
+        if (!window) {
+          return { success: false, error: '窗口不存在' }
+        }
+        const result = await aiService.generateSkillItemTypes(window, eventId, projectId, providerConfigId, modelId)
+        return { ...result, eventId }
+      } catch (error: any) {
+        return { success: false, error: error.message }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    CHANNELS.GENERATE_SKILLS_ONLY,
+    async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
+      try {
+        const window = BrowserWindow.fromWebContents(event.sender)
+        if (!window) {
+          return { success: false, error: '窗口不存在' }
+        }
+        const result = await aiService.generateSkillsOnly(window, eventId, projectId, providerConfigId, modelId)
+        return { ...result, eventId }
+      } catch (error: any) {
+        return { success: false, error: error.message }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    CHANNELS.GENERATE_ITEMS_ONLY,
+    async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
+      try {
+        const window = BrowserWindow.fromWebContents(event.sender)
+        if (!window) {
+          return { success: false, error: '窗口不存在' }
+        }
+        const result = await aiService.generateItemsOnly(window, eventId, projectId, providerConfigId, modelId)
+        return { ...result, eventId }
+      } catch (error: any) {
+        return { success: false, error: error.message }
+      }
+    }
+  )
+
+  ipcMain.handle(
     CHANNELS.GENERATE_OUTLINE_STORY,
     async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
       try {
@@ -1172,6 +1224,22 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
           return { success: false, error: '窗口不存在' }
         }
         const result = await aiService.generateChapter(window, eventId, projectId, outlineId, targetWords, providerConfigId, modelId)
+        return { ...result, eventId }
+      } catch (error: any) {
+        return { success: false, error: error.message }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    CHANNELS.GENERATE_CHAPTER_PREWRITE,
+    async (event, eventId: string, projectId: string, outlineId: string, providerConfigId?: string, modelId?: string) => {
+      try {
+        const window = BrowserWindow.fromWebContents(event.sender)
+        if (!window) {
+          return { success: false, error: '窗口不存在' }
+        }
+        const result = await aiService.generateChapterPrewrite(window, eventId, projectId, outlineId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }

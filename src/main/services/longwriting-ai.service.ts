@@ -437,6 +437,205 @@ ${input}
     }
   }
 
+  /**
+   * 生成技能和物品类型配置
+   */
+  async generateSkillItemTypes(
+    window: BrowserWindow,
+    eventId: string,
+    projectId: string,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<GenerateResponse> {
+    const dbManager = getDatabaseManager()
+
+    // 获取故事概要
+    const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
+    const storyType = overview?.storyType || 'other'
+
+    const systemPrompt = `你是一位专业的小说世界观设计师。请根据故事类型，生成适合的技能类型和物品类型配置。
+你的回复必须是 JSON 对象格式，包含两个字段：
+- skillTypes: 技能类型数组，每个类型包含 code（英文编码）和 name（中文名称）
+- itemTypes: 物品类型数组，每个类型包含 code（英文编码）和 name（中文名称）
+
+示例：
+{
+  "skillTypes": [
+    {"code": "martial", "name": "武功"},
+    {"code": "magic", "name": "法术"}
+  ],
+  "itemTypes": [
+    {"code": "weapon", "name": "武器"},
+    {"code": "artifact", "name": "神器"}
+  ]
+}
+
+注意：code 使用英文小写，name 使用中文。每种类型生成3-6个即可。`
+
+    const prompt = `故事标题：${overview?.title || '未命名'}
+故事类型：${storyType}
+故事摘要：${overview?.summary || '未指定'}
+
+请根据故事类型和内容，生成适合的技能类型和物品类型配置。`
+
+    try {
+      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, undefined, providerConfigId, modelId)
+
+      const jsonMatch = result.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0])
+        return { success: true, data }
+      }
+
+      return { success: false, error: 'AI 返回格式错误' }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  /**
+   * 只生成技能建议
+   */
+  async generateSkillsOnly(
+    window: BrowserWindow,
+    eventId: string,
+    projectId: string,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<GenerateResponse> {
+    const dbManager = getDatabaseManager()
+
+    // 获取故事概要、角色和已配置的技能类型
+    const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
+    const characters = await dbManager.lwCharacters?.getByProjectId(projectId) || []
+    const skillTypes = dbManager.lwTypeConfig?.getSkillTypeConfigs(projectId) || []
+    const skillLevelsMap: Record<string, any[]> = {}
+
+    for (const type of skillTypes) {
+      const levels = dbManager.lwTypeConfig?.getSkillLevels(projectId, type.code) || []
+      skillLevelsMap[type.code] = levels
+    }
+
+    const skillTypesInfo = skillTypes.map(t => {
+      const levels = skillLevelsMap[t.code] || []
+      return `${t.name}(${t.code}): 等级包括 ${levels.map(l => l.name).join('、') || '未配置'}`
+    }).join('\n')
+
+    const systemPrompt = `你是一位专业的小说创作顾问。请根据故事概要和现有配置，生成具体的技能设定。
+你的回复必须是 JSON 对象格式，包含一个 skills 字段：
+{
+  "skills": [
+    {
+      "name": "技能名称",
+      "type": "类型编码（使用已有类型）",
+      "level": "等级编码（使用已有等级）",
+      "system": "所属体系/门派",
+      "description": "技能描述"
+    }
+  ]
+}
+
+注意：
+1. type 和 level 必须使用已有配置中的编码
+2. 生成5-10个技能即可
+3. 每个技能要有独特的名称和描述`
+
+    const characterNames = characters.map(c => c.name).join('、')
+    const prompt = `故事标题：${overview?.title || '未命名'}
+故事摘要：${overview?.summary || '未指定'}
+已有角色：${characterNames || '暂无'}
+
+已配置的技能类型：
+${skillTypesInfo || '暂无配置'}
+
+请生成适合的技能设定（只返回JSON）：`
+
+    try {
+      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, undefined, providerConfigId, modelId)
+
+      const jsonMatch = result.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0])
+        return { success: true, data }
+      }
+
+      return { success: false, error: 'AI 返回格式错误' }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  /**
+   * 只生成物品建议
+   */
+  async generateItemsOnly(
+    window: BrowserWindow,
+    eventId: string,
+    projectId: string,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<GenerateResponse> {
+    const dbManager = getDatabaseManager()
+
+    // 获取故事概要、角色和已配置的物品类型
+    const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
+    const characters = await dbManager.lwCharacters?.getByProjectId(projectId) || []
+    const itemTypes = dbManager.lwTypeConfig?.getItemTypeConfigs(projectId) || []
+    const itemLevelsMap: Record<string, any[]> = {}
+
+    for (const type of itemTypes) {
+      const levels = dbManager.lwTypeConfig?.getItemLevels(projectId, type.code) || []
+      itemLevelsMap[type.code] = levels
+    }
+
+    const itemTypesInfo = itemTypes.map(t => {
+      const levels = itemLevelsMap[t.code] || []
+      return `${t.name}(${t.code}): 等级包括 ${levels.map(l => l.name).join('、') || '未配置'}`
+    }).join('\n')
+
+    const systemPrompt = `你是一位专业的小说创作顾问。请根据故事概要和现有配置，生成具体的物品设定。
+你的回复必须是 JSON 对象格式，包含一个 items 字段：
+{
+  "items": [
+    {
+      "name": "物品名称",
+      "type": "类型编码（使用已有类型）",
+      "level": "等级编码（使用已有等级）",
+      "description": "物品描述"
+    }
+  ]
+}
+
+注意：
+1. type 和 level 必须使用已有配置中的编码
+2. 生成5-10个物品即可
+3. 每个物品要有独特的名称和描述`
+
+    const characterNames = characters.map(c => c.name).join('、')
+    const prompt = `故事标题：${overview?.title || '未命名'}
+故事摘要：${overview?.summary || '未指定'}
+已有角色：${characterNames || '暂无'}
+
+已配置的物品类型：
+${itemTypesInfo || '暂无配置'}
+
+请生成适合的物品设定（只返回JSON）：`
+
+    try {
+      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, undefined, providerConfigId, modelId)
+
+      const jsonMatch = result.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0])
+        return { success: true, data }
+      }
+
+      return { success: false, error: 'AI 返回格式错误' }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
+
   // ==================== 大纲生成 ====================
 
   /**
@@ -673,6 +872,91 @@ ${input}
   }
 
   // ==================== 章节内容生成 ====================
+
+  /**
+   * 生成章节预写（人物、时间、地点、事件概要）
+   */
+  async generateChapterPrewrite(
+    window: BrowserWindow,
+    eventId: string,
+    projectId: string,
+    outlineId: string,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<GenerateResponse> {
+    const dbManager = getDatabaseManager()
+
+    // 获取相关数据
+    const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
+    const background = await dbManager.lwBackgrounds?.getByProjectId(projectId)
+    const outline = await dbManager.lwOutlines?.getById(outlineId)
+    const characters = await dbManager.lwCharacters?.getByProjectId(projectId) || []
+    const locations = await dbManager.lwLocations?.getByProjectId(projectId) || []
+    const plots = await dbManager.lwPlots?.getByProjectId(projectId) || []
+
+    if (!outline) {
+      return { success: false, error: '大纲节点不存在' }
+    }
+
+    // 获取相关角色和地点信息
+    const involvedCharacters = (outline.involvedCharacters || [])
+      .map(id => characters.find(c => c.id === id))
+      .filter(Boolean)
+
+    const involvedLocations = (outline.involvedLocations || [])
+      .map(id => locations.find(l => l.id === id))
+      .filter(Boolean)
+
+    // 查找相关情节
+    const relevantPlots = plots.filter(p =>
+      p.title?.includes(outline.name) ||
+      outline.summary?.includes(p.title)
+    )
+
+    const systemPrompt = `你是一位专业的小说创作顾问。请根据章节大纲信息，生成章节预写提纲。
+
+预写提纲需要包含：
+1. 【时间】章节发生的时间背景
+2. 【地点】场景设置和地点描述
+3. 【人物】参与的角色及其状态
+4. 【事件】将要发生的核心事件
+5. 【冲突】可能的矛盾或冲突点
+6. 【情感】情感基调和氛围
+
+请用清晰的条目格式输出，不要输出 JSON，直接输出预写内容。`
+
+    const characterInfo = involvedCharacters.map(c =>
+      `${c!.name}（${c!.rolePosition === 'protagonist' ? '主角' : c!.rolePosition === 'antagonist' ? '反派' : '配角'}，${c!.personality || '性格待定'}）`
+    ).join('、')
+
+    const locationInfo = involvedLocations.map(l =>
+      `${l!.name}（${l!.type}，${l!.description || '待描述'}）`
+    ).join('、')
+
+    const plotInfo = relevantPlots.map(p => `${p.title}: ${p.summary}`).join('\n')
+
+    const prompt = `故事标题：${overview?.title || '未命名'}
+故事摘要：${overview?.summary || '未指定'}
+时代背景：${background?.eraDescription || '未指定'}
+
+章节名称：${outline.name}
+章节概要：${outline.summary || '未指定'}
+预估字数：${outline.estimatedWords || 3000}字
+
+涉及角色：${characterInfo || '暂无指定'}
+涉及地点：${locationInfo || '暂无指定'}
+相关情节：
+${plotInfo || '暂无相关情节'}
+
+请为这个章节生成预写提纲：`
+
+    try {
+      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, undefined, providerConfigId, modelId)
+      return { success: true, data: result }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
 
   /**
    * 生成章节内容

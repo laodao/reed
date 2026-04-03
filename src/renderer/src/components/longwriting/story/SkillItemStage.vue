@@ -209,9 +209,9 @@
 
     <!-- 快速生成按钮 -->
     <div class="action-buttons">
-      <el-button v-if="!generating" type="primary" size="large" @click="generateSkills">
+      <el-button v-if="!generating" type="primary" size="large" @click="handleGenerate">
         <el-icon><MagicStick /></el-icon>
-        AI 生成技能体系
+        {{ generateButtonText }}
       </el-button>
       <el-button v-else type="danger" size="large" @click="cancelGeneration">
         <el-icon><Close /></el-icon>
@@ -222,7 +222,7 @@
     <!-- 生成进度 -->
     <div v-if="generating" class="generating-progress">
       <el-progress :percentage="100" :indeterminate="true" />
-      <p class="progress-text">AI 正在生成技能和物品建议...</p>
+      <p class="progress-text">{{ generateProgressText }}</p>
     </div>
 
     <!-- 添加技能类型对话框 -->
@@ -423,6 +423,30 @@ const editingItem = ref<StoryItem | null>(null)
 const generating = ref(false)
 const currentEventId = ref<string | null>(null)
 const generatingContent = ref('')
+
+// 根据 activeTab 显示不同的按钮文本
+const generateButtonText = computed(() => {
+  if (activeTab.value === 'types') {
+    return 'AI 生成技能和物品类型'
+  } else if (activeTab.value === 'skills') {
+    return 'AI 生成技能体系'
+  } else if (activeTab.value === 'items') {
+    return 'AI 生成物品体系'
+  }
+  return 'AI 生成'
+})
+
+// 根据 activeTab 显示不同的进度文本
+const generateProgressText = computed(() => {
+  if (activeTab.value === 'types') {
+    return 'AI 正在生成技能和物品类型建议...'
+  } else if (activeTab.value === 'skills') {
+    return 'AI 正在生成技能体系建议...'
+  } else if (activeTab.value === 'items') {
+    return 'AI 正在生成物品体系建议...'
+  }
+  return 'AI 正在生成...'
+})
 
 // 表单数据
 const skillForm = ref({
@@ -831,6 +855,116 @@ async function saveItem() {
 
 // ==================== AI 生成 ====================
 
+// 根据当前 tab 处理不同的生成
+async function handleGenerate() {
+  if (!selectedModel.value || !selectedModel.value.providerId || !selectedModel.value.modelId) {
+    ElMessage.warning('请先在顶部选择 AI 模型')
+    return
+  }
+
+  if (activeTab.value === 'types') {
+    await generateTypes()
+  } else if (activeTab.value === 'skills') {
+    await generateSkills()
+  } else if (activeTab.value === 'items') {
+    await generateItems()
+  }
+}
+
+// 生成技能和物品类型配置
+async function generateTypes() {
+  generating.value = true
+  generatingContent.value = ''
+  currentEventId.value = `types-${props.projectId}-${Date.now()}`
+
+  const unsubscribe = window.electronAPI.longwriting.onGenerateEvent(
+    currentEventId.value,
+    (event: { type: string; content?: string; error?: string; data?: any }) => {
+      if (event.type === 'content' && event.content) {
+        generatingContent.value += event.content
+      } else if (event.type === 'done') {
+        generating.value = false
+        currentEventId.value = null
+        unsubscribe()
+        parseTypesResult(generatingContent.value)
+      } else if (event.type === 'error') {
+        generating.value = false
+        currentEventId.value = null
+        unsubscribe()
+        ElMessage.error(event.error || '生成失败')
+      }
+    }
+  )
+
+  const result = await window.electronAPI.longwriting.generateSkillItemTypes(
+    currentEventId.value,
+    props.projectId,
+    selectedModel.value.providerId,
+    selectedModel.value.modelId
+  )
+  if (!result.success) {
+    generating.value = false
+    currentEventId.value = null
+    unsubscribe()
+    ElMessage.error(result.error || '生成失败')
+  }
+}
+
+// 解析类型生成结果
+async function parseTypesResult(content: string) {
+  try {
+    const jsonMatch = content.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) {
+      ElMessage.warning('AI 返回格式不正确，请重试')
+      return
+    }
+    const data = JSON.parse(jsonMatch[0])
+    const skillTypes = data.skillTypes || []
+    const itemTypes = data.itemTypes || []
+
+    if (skillTypes.length === 0 && itemTypes.length === 0) {
+      ElMessage.warning('AI 未生成类型建议')
+      return
+    }
+
+    // 显示确认对话框
+    const skillTypeNames = skillTypes.map((t: any) => `- ${t.name} (${t.code})`).join('\n') || '无'
+    const itemTypeNames = itemTypes.map((t: any) => `- ${t.name} (${t.code})`).join('\n') || '无'
+
+    await ElMessageBox.confirm(
+      `AI 建议添加以下类型配置：\n\n技能类型：\n${skillTypeNames}\n\n物品类型：\n${itemTypeNames}`,
+      'AI 生成类型建议',
+      { confirmButtonText: '全部添加', cancelButtonText: '取消', type: 'info' }
+    )
+
+    // 创建技能类型
+    for (const type of skillTypes) {
+      await window.electronAPI.longwriting.createSkillTypeConfig({
+        projectId: props.projectId,
+        code: type.code,
+        name: type.name
+      })
+    }
+
+    // 创建物品类型
+    for (const type of itemTypes) {
+      await window.electronAPI.longwriting.createItemTypeConfig({
+        projectId: props.projectId,
+        code: type.code,
+        name: type.name
+      })
+    }
+
+    await loadData()
+    ElMessage.success('类型配置已添加')
+  } catch (error) {
+    // 用户取消不报错
+    if (error !== 'cancel') {
+      ElMessage.error('解析 AI 响应失败')
+    }
+  }
+}
+
 async function generateSkills() {
   if (!selectedModel.value || !selectedModel.value.providerId || !selectedModel.value.modelId) {
     ElMessage.warning('请先在顶部选择 AI 模型')
@@ -849,7 +983,7 @@ async function generateSkills() {
         generating.value = false
         currentEventId.value = null
         unsubscribe()
-        parseSkillsItemsResult(generatingContent.value)
+        parseSkillsResult(generatingContent.value)
       } else if (event.type === 'error') {
         generating.value = false
         currentEventId.value = null
@@ -859,7 +993,7 @@ async function generateSkills() {
     }
   )
 
-  const result = await window.electronAPI.longwriting.generateSkillsItems(
+  const result = await window.electronAPI.longwriting.generateSkillsOnly(
     currentEventId.value,
     props.projectId,
     selectedModel.value.providerId,
@@ -870,6 +1004,118 @@ async function generateSkills() {
     currentEventId.value = null
     unsubscribe()
     ElMessage.error(result.error || '生成失败')
+  }
+}
+
+// 只解析技能结果
+async function parseSkillsResult(content: string) {
+  try {
+    const jsonMatch = content.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) {
+      ElMessage.warning('AI 返回格式不正确，请重试')
+      return
+    }
+    const data = JSON.parse(jsonMatch[0])
+    const suggestedSkills: Partial<StorySkill>[] = data.skills || []
+    if (suggestedSkills.length === 0) {
+      ElMessage.warning('AI 未生成技能建议')
+      return
+    }
+    await ElMessageBox.confirm(
+      `AI 建议添加以下技能：\n\n${suggestedSkills.map(s => `- ${s.name}`).join('\n')}`,
+      'AI 生成技能建议',
+      { confirmButtonText: '全部添加', cancelButtonText: '取消', type: 'info' }
+    )
+    for (const suggested of suggestedSkills) {
+      await window.electronAPI.longwriting.createSkill({
+        projectId: props.projectId,
+        ...suggested,
+        characterIds: []
+      })
+    }
+    await loadData()
+    ElMessage.success('技能已添加')
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('解析 AI 响应失败')
+    }
+  }
+}
+
+// 生成物品体系
+async function generateItems() {
+  if (!selectedModel.value || !selectedModel.value.providerId || !selectedModel.value.modelId) {
+    ElMessage.warning('请先在顶部选择 AI 模型')
+    return
+  }
+  generating.value = true
+  generatingContent.value = ''
+  currentEventId.value = `items-${props.projectId}-${Date.now()}`
+
+  const unsubscribe = window.electronAPI.longwriting.onGenerateEvent(
+    currentEventId.value,
+    (event: { type: string; content?: string; error?: string; data?: any }) => {
+      if (event.type === 'content' && event.content) {
+        generatingContent.value += event.content
+      } else if (event.type === 'done') {
+        generating.value = false
+        currentEventId.value = null
+        unsubscribe()
+        parseItemsResult(generatingContent.value)
+      } else if (event.type === 'error') {
+        generating.value = false
+        currentEventId.value = null
+        unsubscribe()
+        ElMessage.error(event.error || '生成失败')
+      }
+    }
+  )
+
+  const result = await window.electronAPI.longwriting.generateItemsOnly(
+    currentEventId.value,
+    props.projectId,
+    selectedModel.value.providerId,
+    selectedModel.value.modelId
+  )
+  if (!result.success) {
+    generating.value = false
+    currentEventId.value = null
+    unsubscribe()
+    ElMessage.error(result.error || '生成失败')
+  }
+}
+
+// 只解析物品结果
+async function parseItemsResult(content: string) {
+  try {
+    const jsonMatch = content.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) {
+      ElMessage.warning('AI 返回格式不正确，请重试')
+      return
+    }
+    const data = JSON.parse(jsonMatch[0])
+    const suggestedItems: Partial<StoryItem>[] = data.items || []
+    if (suggestedItems.length === 0) {
+      ElMessage.warning('AI 未生成物品建议')
+      return
+    }
+    await ElMessageBox.confirm(
+      `AI 建议添加以下物品：\n\n${suggestedItems.map(i => `- ${i.name}`).join('\n')}`,
+      'AI 生成物品建议',
+      { confirmButtonText: '全部添加', cancelButtonText: '取消', type: 'info' }
+    )
+    for (const suggested of suggestedItems) {
+      await window.electronAPI.longwriting.createItem({
+        projectId: props.projectId,
+        ...suggested
+      })
+    }
+    await loadData()
+    ElMessage.success('物品已添加')
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('解析 AI 响应失败')
+    }
   }
 }
 

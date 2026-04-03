@@ -1015,6 +1015,12 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:generateCharacters', eventId, projectId, providerConfigId, modelId),
     generateSkillsItems: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generateSkillsItems', eventId, projectId, providerConfigId, modelId),
+    generateSkillItemTypes: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:generateSkillItemTypes', eventId, projectId, providerConfigId, modelId),
+    generateSkillsOnly: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:generateSkillsOnly', eventId, projectId, providerConfigId, modelId),
+    generateItemsOnly: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:generateItemsOnly', eventId, projectId, providerConfigId, modelId),
     generatePlots: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generatePlots', eventId, projectId, providerConfigId, modelId),
     generateOutlineStory: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
@@ -1025,6 +1031,8 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:generateChapter', eventId, projectId, outlineId, targetWords, providerConfigId, modelId),
     generateSection: (eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generateSection', eventId, projectId, outlineId, targetWords, providerConfigId, modelId),
+    generateChapterPrewrite: (eventId: string, projectId: string, outlineId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:generateChapterPrewrite', eventId, projectId, outlineId, providerConfigId, modelId),
 
     // AI 生成事件监听
     onGenerateEvent: (eventId: string, callback: (event: any, data: any) => void) => {

@@ -179,7 +179,7 @@
     <el-dialog
       v-model="showGenerateDialog"
       title="AI 生成参数"
-      width="400px"
+      width="550px"
     >
       <el-form :model="generateForm" label-width="80px">
         <el-form-item label="目标字数">
@@ -203,8 +203,45 @@
           />
         </el-form-item>
       </el-form>
+
+      <!-- 预写内容区域 -->
+      <div v-if="prewriteContent" class="prewrite-section">
+        <div class="prewrite-header">
+          <span class="prewrite-title">AI 预写提纲</span>
+          <el-button text size="small" @click="clearPrewrite">
+            <el-icon><Close /></el-icon>
+            清除
+          </el-button>
+        </div>
+        <div class="prewrite-content">
+          <pre>{{ prewriteContent }}</pre>
+        </div>
+      </div>
+
+      <!-- 预写生成中状态 -->
+      <div v-if="prewriting" class="prewrite-loading">
+        <el-icon class="is-loading"><Loading /></el-icon>
+        <span>AI 正在生成预写提纲...</span>
+      </div>
+
       <template #footer>
         <el-button @click="showGenerateDialog = false">取消</el-button>
+        <el-button
+          v-if="!prewriteContent && !prewriting"
+          type="default"
+          @click="generatePrewrite"
+        >
+          <el-icon><Document /></el-icon>
+          AI 预写
+        </el-button>
+        <el-button
+          v-if="prewriteContent"
+          type="default"
+          @click="generatePrewrite"
+        >
+          <el-icon><Refresh /></el-icon>
+          重新预写
+        </el-button>
         <el-button type="primary" @click="executeGeneration">
           开始生成
         </el-button>
@@ -265,7 +302,7 @@
 import { ref, computed, watch, onMounted, inject, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { MagicStick, Clock, DocumentChecked, View, RefreshLeft, Close, Fold, Download } from '@element-plus/icons-vue'
+import { MagicStick, Clock, DocumentChecked, View, RefreshLeft, Close, Fold, Download, Loading, Document, Refresh } from '@element-plus/icons-vue'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import MarkdownEditor from '@/components/common/MarkdownEditor.vue'
@@ -342,6 +379,10 @@ const generateForm = ref({
   style: '',
   extraPrompt: ''
 })
+
+// 预写相关
+const prewriting = ref(false)
+const prewriteContent = ref('')
 
 // 树配置
 const treeProps = {
@@ -662,7 +703,54 @@ function startGenerate(outline: StoryOutline) {
 
   currentOutlineForAction.value = outline
   generateForm.value.targetWords = outline.estimatedWords || 3000
+  prewriteContent.value = '' // 清空预写内容
   showGenerateDialog.value = true
+}
+
+// 清除预写内容
+function clearPrewrite() {
+  prewriteContent.value = ''
+}
+
+// 生成预写
+async function generatePrewrite() {
+  if (!currentOutlineForAction.value || !selectedModel.value) return
+
+  prewriting.value = true
+  prewriteContent.value = ''
+
+  const outline = currentOutlineForAction.value
+  const eventId = `prewrite-${outline.id}-${Date.now()}`
+
+  const unsubscribe = window.electronAPI.longwriting.onGenerateEvent(
+    eventId,
+    (event: { type: string; content?: string; error?: string }) => {
+      if (event.type === 'content' && event.content) {
+        prewriteContent.value += event.content
+      } else if (event.type === 'done') {
+        prewriting.value = false
+        unsubscribe()
+      } else if (event.type === 'error') {
+        prewriting.value = false
+        ElMessage.error(event.error || '预写生成失败')
+        unsubscribe()
+      }
+    }
+  )
+
+  const result = await window.electronAPI.longwriting.generateChapterPrewrite(
+    eventId,
+    props.projectId,
+    outline.id,
+    selectedModel.value.providerId,
+    selectedModel.value.modelId
+  )
+
+  if (!result.success) {
+    prewriting.value = false
+    unsubscribe()
+    ElMessage.error(result.error || '预写生成失败')
+  }
 }
 
 // 执行生成
@@ -1418,6 +1506,60 @@ onMounted(() => {
     line-height: 1.8;
     white-space: pre-wrap;
     word-wrap: break-word;
+  }
+}
+
+// 预写样式
+.prewrite-section {
+  margin-top: 16px;
+  border: 1px solid var(--border-color-light);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.prewrite-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--fill-color-light);
+  border-bottom: 1px solid var(--border-color-lighter);
+}
+
+.prewrite-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-color-primary);
+}
+
+.prewrite-content {
+  padding: 12px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--fill-color-blank);
+
+  pre {
+    margin: 0;
+    font-family: 'Microsoft YaHei', sans-serif;
+    font-size: 13px;
+    line-height: 1.8;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    color: var(--text-color-regular);
+  }
+}
+
+.prewrite-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px;
+  color: var(--text-color-secondary);
+  font-size: 14px;
+
+  .el-icon {
+    font-size: 18px;
   }
 }
 </style>
