@@ -988,6 +988,16 @@ ${plotInfo || '暂无相关情节'}
     const currentIndex = siblings.findIndex(s => s.id === outlineId)
     const previousOutlines = siblings.slice(0, currentIndex).slice(-3) // 最近3个
 
+    // 计算章节序号（用于获取相关记忆）
+    const chapterNumber = this.calculateChapterNumber(siblings, outlineId)
+
+    // 获取记忆上下文
+    const memoryContext = await this.getMemoryContext(projectId, chapterNumber)
+
+    // 获取预写内容（如果存在）
+    const prewrite = await dbManager.lwPrewrites?.getByOutlineId(outlineId)
+    const prewriteSection = prewrite?.content ? `\n\n【预写提纲】\n${prewrite.content}\n` : ''
+
     const systemPrompt = `你是一位专业的网络小说作家。请根据大纲节点信息，撰写章节内容。
 要求：
 1. 内容要生动有趣，情节紧凑
@@ -995,8 +1005,7 @@ ${plotInfo || '暂无相关情节'}
 3. 场景描写要具体
 4. 对话要符合人物特点
 5. 控制字数在目标范围内
-
-直接输出章节内容，不需要标题、不需要额外说明。`
+${prewrite?.content ? '6. 参考预写提纲，但可以灵活发挥\n' : ''}直接输出章节内容，不需要标题、不需要额外说明。`
 
     const characterInfo = outline.involvedCharacters.map(id => {
       const char = characters.find(c => c.id === id)
@@ -1024,7 +1033,7 @@ ${characterInfo || '无特定角色'}
 ${locationInfo || '无特定地点'}
 
 前情提要：
-${previousContext || '这是开篇'}
+${previousContext || '这是开篇'}${prewriteSection}${memoryContext}
 
 请开始撰写章节内容：`
 
@@ -1043,6 +1052,22 @@ ${previousContext || '这是开篇'}
     } catch (error: any) {
       return { success: false, error: error.message }
     }
+  }
+
+  /**
+   * 计算章节序号
+   */
+  private calculateChapterNumber(outlines: any[], targetId: string): number {
+    let count = 0
+    for (const outline of outlines) {
+      if (outline.nodeType === 'chapter') {
+        count++
+      }
+      if (outline.id === targetId) {
+        return count
+      }
+    }
+    return count || 1
   }
 
   /**
@@ -1406,6 +1431,163 @@ ${userPrompt || '请根据故事背景生成合适的地图数据'}
     } catch (error: any) {
       return { success: false, error: error.message }
     }
+  }
+
+  // ==================== 记忆提取 ====================
+
+  /**
+   * 从预写内容中提取记忆
+   */
+  async extractMemories(
+    window: BrowserWindow,
+    eventId: string,
+    projectId: string,
+    outlineId: string,
+    prewriteContent: string,
+    chapterNumber: number,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<GenerateResponse> {
+    const dbManager = getDatabaseManager()
+
+    // 获取项目中的角色、地点、物品、势力等信息，用于实体匹配
+    const characters = await dbManager.lwCharacters?.getByProjectId(projectId) || []
+    const locations = await dbManager.lwLocations?.getByProjectId(projectId) || []
+    const skills = await dbManager.lwSkills?.getByProjectId(projectId) || []
+    const items = await dbManager.lwItems?.getByProjectId(projectId) || []
+    const factions = await dbManager.lwFactions?.getByProjectId(projectId) || []
+
+    // 构建实体参考列表
+    const entityReference = {
+      characters: characters.map(c => ({ id: c.id, name: c.name })),
+      locations: locations.map(l => ({ id: l.id, name: l.name })),
+      skills: skills.map(s => ({ id: s.id, name: s.name })),
+      items: items.map(i => ({ id: i.id, name: i.name })),
+      factions: factions.map(f => ({ id: f.id, name: f.name }))
+    }
+
+    const systemPrompt = `你是一位专业的小说创作顾问。请从章节预写内容中提取关键记忆信息。
+
+**重要**：请控制回复长度，总字数不超过1500字。
+
+你的回复必须是纯 JSON 数组格式（不要包含 \`\`\`json 标记），每条记忆包含以下字段：
+- memoryType: 记忆类型，可选值：
+  - character_event（角色事件：角色的重要经历、成长、变化）
+  - location_event（地点事件：地点的重要变化、发现）
+  - item_event（物品事件：物品的获得、失去、变化）
+  - relationship_change（关系变化：角色间关系的建立、改变、破裂）
+  - faction_event（势力事件：势力的兴衰、更替、冲突）
+  - general（一般事件：其他重要情节）
+- title: 简短标题（10-20字）
+- description: 详细描述（50-100字，说明事件的来龙去脉）
+- involvedEntities: 涉及的实体数组，格式：[{type, id, name}]
+  - type 可选：character/location/item/skill/faction
+  - id 使用提供的实体列表中的 ID
+  - name 使用实体的名称
+- importance: 重要程度
+  - critical（关键：改变故事走向的重大事件，如主角突破、重要角色死亡、势力覆灭）
+  - normal（重要：有长期影响的情节，如学到新技能、结交盟友、获得重要物品）
+  - minor（次要：有记录价值但影响有限，如日常互动、小冲突）
+
+提取原则：
+1. 只提取有长期影响的信息，不要提取临时性的对话或场景描写
+2. 重点关注：角色成长、关系变化、物品得失、势力变动、重要发现
+3. 每个事件独立成条，避免重复
+4. 如果预写内容中没有值得记录的事件，返回空数组 []
+
+请直接输出 JSON 数组，不要有任何额外文字。`
+
+    const prompt = `【已知实体参考】
+角色：${entityReference.characters.map(c => `${c.name}(${c.id})`).join('、') || '无'}
+地点：${entityReference.locations.map(l => `${l.name}(${l.id})`).join('、') || '无'}
+技能：${entityReference.skills.map(s => `${s.name}(${s.id})`).join('、') || '无'}
+物品：${entityReference.items.map(i => `${i.name}(${i.id})`).join('、') || '无'}
+势力：${entityReference.factions.map(f => `${f.name}(${f.id})`).join('、') || '无'}
+
+【章节预写内容】
+${prewriteContent}
+
+请从以上预写内容中提取关键记忆信息。直接返回 JSON 数组格式的结果。`
+
+    try {
+      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 2048, providerConfigId, modelId)
+
+      // 尝试解析 JSON 数组
+      const jsonMatch = result.match(/\[[\s\S]*\]/)
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0])
+        return { success: true, data }
+      }
+
+      // 如果没有匹配到数组，可能没有提取到记忆
+      return { success: true, data: [] }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  /**
+   * 获取章节生成时的记忆上下文
+   */
+  private async getMemoryContext(projectId: string, chapterNumber: number): Promise<string> {
+    const dbManager = getDatabaseManager()
+    const memories = await dbManager.lwMemories?.getMemoriesBeforeChapter(projectId, chapterNumber) || []
+
+    if (memories.length === 0) {
+      return ''
+    }
+
+    // 按重要程度分组
+    const criticalMemories = memories.filter(m => m.importance === 'critical')
+    const normalMemories = memories.filter(m => m.importance === 'normal')
+    const minorMemories = memories.filter(m => m.importance === 'minor')
+
+    // 构建记忆上下文
+    let context = '\n\n【重要记忆】请确保以下情节要点在写作中保持一致：\n'
+
+    // 关键记忆
+    if (criticalMemories.length > 0) {
+      context += '\n【关键事件】\n'
+      criticalMemories.forEach(m => {
+        context += `- [${this.getMemoryTypeLabel(m.memoryType)}] ${m.title}：${m.description}\n`
+      })
+    }
+
+    // 重要记忆
+    if (normalMemories.length > 0) {
+      context += '\n【重要情节】\n'
+      normalMemories.slice(0, 10).forEach(m => {
+        context += `- [${this.getMemoryTypeLabel(m.memoryType)}] ${m.title}：${m.description}\n`
+      })
+      if (normalMemories.length > 10) {
+        context += `  ... 还有 ${normalMemories.length - 10} 条记忆\n`
+      }
+    }
+
+    // 次要记忆（只显示最近几条）
+    if (minorMemories.length > 0) {
+      context += '\n【其他参考】\n'
+      minorMemories.slice(-5).forEach(m => {
+        context += `- ${m.title}\n`
+      })
+    }
+
+    return context
+  }
+
+  /**
+   * 获取记忆类型标签
+   */
+  private getMemoryTypeLabel(type: string): string {
+    const labels: Record<string, string> = {
+      character_event: '角色',
+      location_event: '地点',
+      item_event: '物品',
+      relationship_change: '关系',
+      faction_event: '势力',
+      general: '事件'
+    }
+    return labels[type] || '事件'
   }
 }
 

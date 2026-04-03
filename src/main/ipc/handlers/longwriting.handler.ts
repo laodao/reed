@@ -31,7 +31,11 @@ import {
   UpdateFactionRequest,
   FactionType,
   CreateMapRequest,
-  UpdateMapRequest
+  UpdateMapRequest,
+  CreatePrewriteRequest,
+  UpdatePrewriteRequest,
+  CreateMemoryRequest,
+  UpdateMemoryRequest
 } from '../../shared/types/longwriting.types'
 
 /**
@@ -206,7 +210,27 @@ const CHANNELS = {
   CREATE_ITEM_LEVEL: 'longwriting:createItemLevel',
   UPDATE_ITEM_LEVEL: 'longwriting:updateItemLevel',
   DELETE_ITEM_LEVEL: 'longwriting:deleteItemLevel',
-  REORDER_ITEM_LEVELS: 'longwriting:reorderItemLevels'
+  REORDER_ITEM_LEVELS: 'longwriting:reorderItemLevels',
+
+  // 章节预写
+  GET_PREWRITE: 'longwriting:getPrewrite',
+  SAVE_PREWRITE: 'longwriting:savePrewrite',
+  CONFIRM_PREWRITE: 'longwriting:confirmPrewrite',
+  DELETE_PREWRITE: 'longwriting:deletePrewrite',
+
+  // 故事记忆
+  GET_MEMORIES: 'longwriting:getMemories',
+  GET_MEMORIES_BEFORE_CHAPTER: 'longwriting:getMemoriesBeforeChapter',
+  GET_MEMORY: 'longwriting:getMemory',
+  CREATE_MEMORY: 'longwriting:createMemory',
+  BATCH_CREATE_MEMORIES: 'longwriting:batchCreateMemories',
+  UPDATE_MEMORY: 'longwriting:updateMemory',
+  DELETE_MEMORY: 'longwriting:deleteMemory',
+  TOGGLE_MEMORY_ACTIVE: 'longwriting:toggleMemoryActive',
+  GET_MEMORY_STATS: 'longwriting:getMemoryStats',
+
+  // AI 记忆提取
+  EXTRACT_MEMORIES: 'longwriting:extractMemories'
 }
 
 /**
@@ -2049,6 +2073,196 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     try {
       await service.reorderItemLevels(projectId, itemTypeCode, orderedIds)
       return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 章节预写 ====================
+
+  /**
+   * 获取预写
+   */
+  ipcMain.handle(CHANNELS.GET_PREWRITE, async (_event, outlineId: string) => {
+    try {
+      const prewrite = await service.getPrewrite(outlineId)
+      return { success: true, data: prewrite }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 保存预写
+   */
+  ipcMain.handle(CHANNELS.SAVE_PREWRITE, async (_event, data: CreatePrewriteRequest) => {
+    try {
+      const prewrite = await service.savePrewrite(data)
+      return { success: true, data: prewrite }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 确认预写
+   */
+  ipcMain.handle(CHANNELS.CONFIRM_PREWRITE, async (_event, outlineId: string) => {
+    try {
+      const prewrite = await service.confirmPrewrite(outlineId)
+      return { success: true, data: prewrite }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 删除预写
+   */
+  ipcMain.handle(CHANNELS.DELETE_PREWRITE, async (_event, outlineId: string) => {
+    try {
+      await service.deletePrewrite(outlineId)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 故事记忆 ====================
+
+  /**
+   * 获取项目的所有记忆
+   */
+  ipcMain.handle(CHANNELS.GET_MEMORIES, async (_event, projectId: string) => {
+    try {
+      const memories = await service.getMemories(projectId)
+      return { success: true, data: memories }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 获取章节之前的记忆
+   */
+  ipcMain.handle(CHANNELS.GET_MEMORIES_BEFORE_CHAPTER, async (_event, projectId: string, chapterNumber: number) => {
+    try {
+      const memories = await service.getMemoriesBeforeChapter(projectId, chapterNumber)
+      return { success: true, data: memories }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 获取单个记忆
+   */
+  ipcMain.handle(CHANNELS.GET_MEMORY, async (_event, id: string) => {
+    try {
+      const memory = await service.getMemory(id)
+      return { success: true, data: memory }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 创建记忆
+   */
+  ipcMain.handle(CHANNELS.CREATE_MEMORY, async (_event, data: CreateMemoryRequest) => {
+    try {
+      const memory = await service.createMemory(data)
+      return { success: true, data: memory }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 批量创建记忆
+   */
+  ipcMain.handle(CHANNELS.BATCH_CREATE_MEMORIES, async (_event, dataList: CreateMemoryRequest[]) => {
+    try {
+      const memories = await service.batchCreateMemories(dataList)
+      return { success: true, data: memories }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 更新记忆
+   */
+  ipcMain.handle(CHANNELS.UPDATE_MEMORY, async (_event, id: string, data: UpdateMemoryRequest) => {
+    try {
+      const memory = await service.updateMemory(id, data)
+      return { success: true, data: memory }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 删除记忆
+   */
+  ipcMain.handle(CHANNELS.DELETE_MEMORY, async (_event, id: string) => {
+    try {
+      await service.deleteMemory(id)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 切换记忆生效状态
+   */
+  ipcMain.handle(CHANNELS.TOGGLE_MEMORY_ACTIVE, async (_event, id: string) => {
+    try {
+      const memory = await service.toggleMemoryActive(id)
+      return { success: true, data: memory }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * 获取记忆统计
+   */
+  ipcMain.handle(CHANNELS.GET_MEMORY_STATS, async (_event, projectId: string) => {
+    try {
+      const stats = await service.getMemoryStats(projectId)
+      return { success: true, data: stats }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== AI 记忆提取 ====================
+
+  /**
+   * AI 提取记忆
+   */
+  ipcMain.handle(CHANNELS.EXTRACT_MEMORIES, async (event, projectId: string, outlineId: string, prewriteContent: string, chapterNumber: number, providerConfigId?: string, modelId?: string) => {
+    try {
+      const window = BrowserWindow.fromWebContents(event.sender)
+      if (!window) {
+        return { success: false, error: '窗口不存在' }
+      }
+
+      const eventId = `extract-memories-${outlineId}-${Date.now()}`
+      const aiService = LongWritingAIService.getInstance()
+      const result = await aiService.extractMemories(
+        window,
+        eventId,
+        projectId,
+        outlineId,
+        prewriteContent,
+        chapterNumber,
+        providerConfigId,
+        modelId
+      )
+      return result
     } catch (error: any) {
       return { success: false, error: error.message }
     }

@@ -205,16 +205,31 @@
       </el-form>
 
       <!-- 预写内容区域 -->
-      <div v-if="prewriteContent" class="prewrite-section">
+      <div v-if="prewriteContent || prewriting" class="prewrite-section">
         <div class="prewrite-header">
           <span class="prewrite-title">AI 预写提纲</span>
-          <el-button text size="small" @click="clearPrewrite">
+          <el-tag v-if="currentPrewrite?.isConfirmed" type="success" size="small">已确认</el-tag>
+          <el-button v-if="!currentPrewrite?.isConfirmed" text size="small" @click="clearPrewrite">
             <el-icon><Close /></el-icon>
             清除
           </el-button>
         </div>
         <div class="prewrite-content">
-          <pre>{{ prewriteContent }}</pre>
+          <el-input
+            v-if="!prewriting"
+            v-model="prewriteContent"
+            type="textarea"
+            :rows="8"
+            :disabled="currentPrewrite?.isConfirmed"
+            placeholder="预写内容..."
+          />
+          <div v-else class="prewrite-streaming">
+            <pre>{{ prewriteContent }}</pre>
+          </div>
+        </div>
+        <div v-if="memoryStats" class="memory-stats-hint">
+          <el-icon><InfoFilled /></el-icon>
+          <span>已加载 {{ memoryStats.active }} 条相关记忆</span>
         </div>
       </div>
 
@@ -226,6 +241,20 @@
 
       <template #footer>
         <el-button @click="showGenerateDialog = false">取消</el-button>
+        <el-button
+          v-if="prewriteContent"
+          :loading="prewriteSaving"
+          @click="savePrewriteOnly"
+        >
+          保存预写
+        </el-button>
+        <el-button
+          v-if="prewriteContent && !currentPrewrite?.isConfirmed"
+          type="success"
+          @click="confirmPrewriteAndExtract"
+        >
+          确认预写
+        </el-button>
         <el-button
           v-if="!prewriteContent && !prewriting"
           type="default"
@@ -295,6 +324,47 @@
         <pre>{{ previewContent }}</pre>
       </div>
     </el-dialog>
+
+    <!-- 记忆确认对话框 -->
+    <el-dialog
+      v-model="showMemoryDialog"
+      title="确认记忆"
+      width="700px"
+    >
+      <div v-if="memoryExtracting" class="memory-extracting">
+        <el-icon class="is-loading"><Loading /></el-icon>
+        <span>AI 正在从预写内容中提取关键记忆...</span>
+      </div>
+      <div v-else-if="extractedMemories.length > 0" class="memory-list">
+        <p class="memory-hint">以下是从预写内容中提取的关键记忆，请确认是否保存：</p>
+        <div v-for="(memory, index) in extractedMemories" :key="index" class="memory-item">
+          <div class="memory-header">
+            <el-select v-model="memory.importance" size="small" style="width: 100px;">
+              <el-option label="关键" value="critical" />
+              <el-option label="重要" value="normal" />
+              <el-option label="次要" value="minor" />
+            </el-select>
+            <el-select v-model="memory.memoryType" size="small" style="width: 120px;">
+              <el-option label="角色事件" value="character_event" />
+              <el-option label="地点事件" value="location_event" />
+              <el-option label="物品事件" value="item_event" />
+              <el-option label="关系变化" value="relationship_change" />
+              <el-option label="势力事件" value="faction_event" />
+              <el-option label="一般事件" value="general" />
+            </el-select>
+          </div>
+          <el-input v-model="memory.title" placeholder="记忆标题" size="small" style="margin-bottom: 8px;" />
+          <el-input v-model="memory.description" type="textarea" :rows="2" placeholder="详细描述" />
+        </div>
+      </div>
+      <el-empty v-else description="未能从预写内容中提取到关键记忆" />
+      <template #footer>
+        <el-button @click="showMemoryDialog = false">取消</el-button>
+        <el-button type="primary" :disabled="extractedMemories.length === 0" @click="saveMemories">
+          保存记忆
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -302,13 +372,13 @@
 import { ref, computed, watch, onMounted, inject, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { MagicStick, Clock, DocumentChecked, View, RefreshLeft, Close, Fold, Download, Loading, Document, Refresh } from '@element-plus/icons-vue'
+import { MagicStick, Clock, DocumentChecked, View, RefreshLeft, Close, Fold, Download, Loading, Document, Refresh, InfoFilled } from '@element-plus/icons-vue'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import MarkdownEditor from '@/components/common/MarkdownEditor.vue'
 import { ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import { marked } from 'marked'
-import type { StoryOutline, StoryChapter, ChapterVersion, OutlineStatus, OutlineNodeType, StoryCharacter } from '../../../../shared/types/longwriting.types'
+import type { StoryOutline, StoryChapter, ChapterVersion, OutlineStatus, OutlineNodeType, StoryCharacter, ChapterPrewrite, StoryMemory, ExtractedMemoryData } from '../../../../shared/types/longwriting.types'
 import type { ElTree } from 'element-plus'
 
 const props = defineProps<{
@@ -383,6 +453,15 @@ const generateForm = ref({
 // 预写相关
 const prewriting = ref(false)
 const prewriteContent = ref('')
+const prewriteSaving = ref(false)
+const currentPrewrite = ref<ChapterPrewrite | null>(null)
+
+// 记忆相关
+const memories = ref<StoryMemory[]>([])
+const extractedMemories = ref<ExtractedMemoryData[]>([])
+const showMemoryDialog = ref(false)
+const memoryExtracting = ref(false)
+const memoryStats = ref<{ total: number; active: number } | null>(null)
 
 // 树配置
 const treeProps = {
@@ -695,7 +774,7 @@ async function saveChapter(outlineId: string) {
 }
 
 // 开始生成 - 显示对话框
-function startGenerate(outline: StoryOutline) {
+async function startGenerate(outline: StoryOutline) {
   if (!selectedModel.value || !selectedModel.value.providerId || !selectedModel.value.modelId) {
     ElMessage.warning('请先在顶部选择 AI 模型')
     return
@@ -704,6 +783,22 @@ function startGenerate(outline: StoryOutline) {
   currentOutlineForAction.value = outline
   generateForm.value.targetWords = outline.estimatedWords || 3000
   prewriteContent.value = '' // 清空预写内容
+  currentPrewrite.value = null
+
+  // 加载已保存的预写
+  try {
+    const result = await window.electronAPI.longwriting.getPrewrite(outline.id)
+    if (result.success && result.data) {
+      currentPrewrite.value = result.data
+      prewriteContent.value = result.data.content || ''
+    }
+  } catch (error) {
+    console.error('加载预写失败:', error)
+  }
+
+  // 加载记忆统计
+  await loadMemoryStats()
+
   showGenerateDialog.value = true
 }
 
@@ -750,6 +845,160 @@ async function generatePrewrite() {
     prewriting.value = false
     unsubscribe()
     ElMessage.error(result.error || '预写生成失败')
+  }
+}
+
+// 保存预写（仅保存，不确认）
+async function savePrewriteOnly() {
+  if (!currentOutlineForAction.value || !prewriteContent.value) return
+
+  prewriteSaving.value = true
+  try {
+    const result = await window.electronAPI.longwriting.savePrewrite({
+      outlineId: currentOutlineForAction.value.id,
+      content: prewriteContent.value
+    })
+    if (result.success) {
+      currentPrewrite.value = result.data
+      ElMessage.success('预写已保存')
+    } else {
+      ElMessage.error(result.error || '保存失败')
+    }
+  } catch (error: any) {
+    ElMessage.error('保存失败：' + error.message)
+  } finally {
+    prewriteSaving.value = false
+  }
+}
+
+// 确认预写并提取记忆
+async function confirmPrewriteAndExtract() {
+  if (!currentOutlineForAction.value || !prewriteContent.value) return
+
+  // 先保存预写
+  prewriteSaving.value = true
+  try {
+    const saveResult = await window.electronAPI.longwriting.savePrewrite({
+      outlineId: currentOutlineForAction.value.id,
+      content: prewriteContent.value
+    })
+    if (!saveResult.success) {
+      ElMessage.error(saveResult.error || '保存预写失败')
+      return
+    }
+    currentPrewrite.value = saveResult.data
+  } catch (error: any) {
+    ElMessage.error('保存预写失败：' + error.message)
+    return
+  } finally {
+    prewriteSaving.value = false
+  }
+
+  // 提取记忆
+  showMemoryDialog.value = true
+  memoryExtracting.value = true
+  extractedMemories.value = []
+
+  try {
+    // 计算章节序号
+    const chapterNumber = calculateChapterNumber(currentOutlineForAction.value.id)
+
+    const result = await window.electronAPI.longwriting.extractMemories(
+      props.projectId,
+      currentOutlineForAction.value.id,
+      prewriteContent.value,
+      chapterNumber,
+      selectedModel.value?.providerId,
+      selectedModel.value?.modelId
+    )
+
+    if (result.success && result.data) {
+      // 验证并规范化记忆数据
+      extractedMemories.value = result.data.map((m: any) => ({
+        memoryType: ['character_event', 'location_event', 'item_event', 'relationship_change', 'faction_event', 'general'].includes(m.memoryType)
+          ? m.memoryType
+          : 'general',
+        title: m.title || '未命名事件',
+        description: m.description || '',
+        involvedEntities: Array.isArray(m.involvedEntities) ? m.involvedEntities : [],
+        importance: ['critical', 'normal', 'minor'].includes(m.importance)
+          ? m.importance
+          : 'normal'
+      }))
+    } else {
+      ElMessage.error(result.error || '提取记忆失败')
+    }
+  } catch (error: any) {
+    ElMessage.error('提取记忆失败：' + error.message)
+  } finally {
+    memoryExtracting.value = false
+  }
+}
+
+// 计算章节序号
+function calculateChapterNumber(outlineId: string): number {
+  let count = 0
+  for (const node of outlineNodes.value) {
+    if (node.nodeType === 'chapter' || node.nodeType === 'section') {
+      count++
+    }
+    if (node.id === outlineId) {
+      return count
+    }
+  }
+  return count || 1
+}
+
+// 保存记忆
+async function saveMemories() {
+  if (!currentOutlineForAction.value || extractedMemories.value.length === 0) return
+
+  try {
+    const chapterNumber = calculateChapterNumber(currentOutlineForAction.value.id)
+
+    // 序列化数据，避免 Vue 响应式对象导致的 IPC 克隆错误
+    const memoriesToCreate = JSON.parse(JSON.stringify(extractedMemories.value.map(m => ({
+      projectId: props.projectId,
+      sourceOutlineId: currentOutlineForAction.value!.id,
+      memoryType: m.memoryType,
+      title: m.title,
+      description: m.description,
+      involvedEntities: m.involvedEntities || [],
+      chapterNumber,
+      importance: m.importance
+    }))))
+
+    const result = await window.electronAPI.longwriting.batchCreateMemories(memoriesToCreate)
+    if (result.success) {
+      // 确认预写
+      await window.electronAPI.longwriting.confirmPrewrite(currentOutlineForAction.value.id)
+      if (currentPrewrite.value) {
+        currentPrewrite.value.isConfirmed = true
+      }
+
+      ElMessage.success(`已保存 ${result.data?.length || 0} 条记忆`)
+      showMemoryDialog.value = false
+      await loadMemoryStats()
+    } else {
+      ElMessage.error(result.error || '保存记忆失败')
+    }
+  } catch (error: any) {
+    ElMessage.error('保存记忆失败：' + error.message)
+  }
+}
+
+// 加载记忆统计
+async function loadMemoryStats() {
+  try {
+    const result = await window.electronAPI.longwriting.getMemoryStats(props.projectId)
+    if (result.success && result.data) {
+      memoryStats.value = {
+        total: result.data.total,
+        active: result.data.active
+      }
+    }
+  } catch (error) {
+    console.error('加载记忆统计失败:', error)
   }
 }
 
@@ -1534,18 +1783,28 @@ onMounted(() => {
 
 .prewrite-content {
   padding: 12px;
-  max-height: 300px;
-  overflow-y: auto;
   background: var(--fill-color-blank);
 
-  pre {
-    margin: 0;
+  .el-textarea__inner {
     font-family: 'Microsoft YaHei', sans-serif;
     font-size: 13px;
     line-height: 1.8;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    color: var(--text-color-regular);
+    border-radius: 4px;
+  }
+
+  .prewrite-streaming {
+    max-height: 300px;
+    overflow-y: auto;
+
+    pre {
+      margin: 0;
+      font-family: 'Microsoft YaHei', sans-serif;
+      font-size: 13px;
+      line-height: 1.8;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      color: var(--text-color-regular);
+    }
   }
 }
 
@@ -1560,6 +1819,62 @@ onMounted(() => {
 
   .el-icon {
     font-size: 18px;
+  }
+}
+
+// 记忆统计提示
+.memory-stats-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--color-info-light-9);
+  border-top: 1px solid var(--border-color-lighter);
+  font-size: 12px;
+  color: var(--color-info);
+
+  .el-icon {
+    font-size: 14px;
+  }
+}
+
+// 记忆提取中
+.memory-extracting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px;
+  color: var(--text-color-secondary);
+  font-size: 14px;
+
+  .el-icon {
+    font-size: 24px;
+    color: var(--color-primary);
+  }
+}
+
+// 记忆列表
+.memory-list {
+  .memory-hint {
+    margin-bottom: 16px;
+    font-size: 14px;
+    color: var(--text-color-secondary);
+  }
+
+  .memory-item {
+    padding: 12px;
+    margin-bottom: 12px;
+    background: var(--fill-color-lighter);
+    border-radius: 8px;
+    border: 1px solid var(--border-color-lighter);
+
+    .memory-header {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
   }
 }
 </style>

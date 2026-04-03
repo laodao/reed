@@ -1126,7 +1126,41 @@ const electronAPI = {
     deleteItemLevel: (id: string) =>
       ipcRenderer.invoke('longwriting:deleteItemLevel', id),
     reorderItemLevels: (projectId: string, itemTypeCode: string, orderedIds: string[]) =>
-      ipcRenderer.invoke('longwriting:reorderItemLevels', projectId, itemTypeCode, orderedIds)
+      ipcRenderer.invoke('longwriting:reorderItemLevels', projectId, itemTypeCode, orderedIds),
+
+    // 章节预写
+    getPrewrite: (outlineId: string) =>
+      ipcRenderer.invoke('longwriting:getPrewrite', outlineId),
+    savePrewrite: (data: any) =>
+      ipcRenderer.invoke('longwriting:savePrewrite', data),
+    confirmPrewrite: (outlineId: string) =>
+      ipcRenderer.invoke('longwriting:confirmPrewrite', outlineId),
+    deletePrewrite: (outlineId: string) =>
+      ipcRenderer.invoke('longwriting:deletePrewrite', outlineId),
+
+    // 故事记忆
+    getMemories: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:getMemories', projectId),
+    getMemoriesBeforeChapter: (projectId: string, chapterNumber: number) =>
+      ipcRenderer.invoke('longwriting:getMemoriesBeforeChapter', projectId, chapterNumber),
+    getMemory: (id: string) =>
+      ipcRenderer.invoke('longwriting:getMemory', id),
+    createMemory: (data: any) =>
+      ipcRenderer.invoke('longwriting:createMemory', data),
+    batchCreateMemories: (dataList: any[]) =>
+      ipcRenderer.invoke('longwriting:batchCreateMemories', dataList),
+    updateMemory: (id: string, data: any) =>
+      ipcRenderer.invoke('longwriting:updateMemory', id, data),
+    deleteMemory: (id: string) =>
+      ipcRenderer.invoke('longwriting:deleteMemory', id),
+    toggleMemoryActive: (id: string) =>
+      ipcRenderer.invoke('longwriting:toggleMemoryActive', id),
+    getMemoryStats: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:getMemoryStats', projectId),
+
+    // AI 记忆提取
+    extractMemories: (projectId: string, outlineId: string, prewriteContent: string, chapterNumber: number, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:extractMemories', projectId, outlineId, prewriteContent, chapterNumber, providerConfigId, modelId)
   }
 }
 

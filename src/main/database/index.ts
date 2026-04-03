@@ -43,6 +43,8 @@ import { LwDictionaryRepository } from './repositories/lw-dictionary.repository'
 import { LwTypeConfigRepository } from './repositories/lw-type-config.repository'
 import { LwFactionRepository } from './repositories/lw-faction.repository'
 import { LwMapRepository } from './repositories/lw-map.repository'
+import { LwPrewriteRepository } from './repositories/lw-prewrite.repository'
+import { LwMemoryRepository } from './repositories/lw-memory.repository'
 import { DataPathService } from '../services/data-path.service'
 import { LanceDBService } from '../services/lance-db.service'
 
@@ -91,6 +93,8 @@ export class DatabaseManager {
   public lwTypeConfig: LwTypeConfigRepository | null = null
   public lwFactions: LwFactionRepository | null = null
   public lwMaps: LwMapRepository | null = null
+  public lwPrewrites: LwPrewriteRepository | null = null
+  public lwMemories: LwMemoryRepository | null = null
 
   private constructor() {
     // 默认使用 userData 路径，后续会在 initialize 中更新
@@ -1081,6 +1085,40 @@ export class DatabaseManager {
       )
     `)
 
+    // 章节预写表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_chapter_prewrites (
+        id TEXT PRIMARY KEY,
+        outline_id TEXT NOT NULL UNIQUE,
+        content TEXT,
+        is_confirmed INTEGER DEFAULT 0,
+        confirmed_at INTEGER,
+        created_at INTEGER,
+        updated_at INTEGER,
+        FOREIGN KEY (outline_id) REFERENCES lw_story_outlines(id) ON DELETE CASCADE
+      )
+    `)
+
+    // 故事记忆表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_story_memories (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        source_outline_id TEXT,
+        memory_type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+        involved_entities TEXT,
+        chapter_number INTEGER,
+        importance TEXT DEFAULT 'normal',
+        is_active INTEGER DEFAULT 1,
+        created_at INTEGER,
+        updated_at INTEGER,
+        FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE,
+        FOREIGN KEY (source_outline_id) REFERENCES lw_story_outlines(id) ON DELETE SET NULL
+      )
+    `)
+
     // 创建索引
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_lw_project_skill_types_project ON lw_project_skill_types(project_id)
@@ -1099,6 +1137,15 @@ export class DatabaseManager {
     `)
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_lw_project_item_levels_type ON lw_project_item_levels(item_type_code)
+    `)
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_lw_chapter_prewrites_outline ON lw_chapter_prewrites(outline_id)
+    `)
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_lw_story_memories_project ON lw_story_memories(project_id)
+    `)
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_lw_story_memories_chapter ON lw_story_memories(chapter_number)
     `)
 
     // 迁移类型配置表结构
@@ -1666,6 +1713,8 @@ export class DatabaseManager {
     this.lwTypeConfig = new LwTypeConfigRepository(this.db)
     this.lwFactions = new LwFactionRepository(this.db)
     this.lwMaps = new LwMapRepository(this.db)
+    this.lwPrewrites = new LwPrewriteRepository(this.db)
+    this.lwMemories = new LwMemoryRepository(this.db)
   }
 
   /**

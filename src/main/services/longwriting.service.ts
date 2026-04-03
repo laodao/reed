@@ -41,7 +41,12 @@ import {
   StoryMap,
   CreateMapRequest,
   UpdateMapRequest,
-  MapGeneratedData
+  MapGeneratedData,
+  ChapterPrewrite,
+  CreatePrewriteRequest,
+  StoryMemory,
+  CreateMemoryRequest,
+  UpdateMemoryRequest
 } from '../../shared/types/longwriting.types'
 
 /**
@@ -1300,6 +1305,159 @@ export class LongWritingService {
       throw new Error('数据库未初始化')
     }
     return this.db.lwMaps.updateSortOrder(orderList)
+  }
+
+  // ==================== 章节预写管理 ====================
+
+  /**
+   * 获取预写
+   */
+  async getPrewrite(outlineId: string): Promise<ChapterPrewrite | null> {
+    if (!this.db.lwPrewrites) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwPrewrites.getByOutlineId(outlineId)
+  }
+
+  /**
+   * 保存预写（创建或更新）
+   */
+  async savePrewrite(data: CreatePrewriteRequest): Promise<ChapterPrewrite> {
+    if (!this.db.lwPrewrites) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwPrewrites.save(data)
+  }
+
+  /**
+   * 确认预写
+   */
+  async confirmPrewrite(outlineId: string): Promise<ChapterPrewrite | null> {
+    if (!this.db.lwPrewrites) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwPrewrites.confirm(outlineId)
+  }
+
+  /**
+   * 取消确认预写
+   */
+  async unconfirmPrewrite(outlineId: string): Promise<ChapterPrewrite | null> {
+    if (!this.db.lwPrewrites) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwPrewrites.unconfirm(outlineId)
+  }
+
+  /**
+   * 删除预写
+   */
+  async deletePrewrite(outlineId: string): Promise<boolean> {
+    if (!this.db.lwPrewrites) {
+      throw new Error('数据库未初始化')
+    }
+    // 同时删除关联的记忆
+    if (this.db.lwMemories) {
+      this.db.lwMemories.deleteBySourceOutlineId(outlineId)
+    }
+    return this.db.lwPrewrites.delete(outlineId)
+  }
+
+  // ==================== 故事记忆管理 ====================
+
+  /**
+   * 获取项目的所有记忆
+   */
+  async getMemories(projectId: string): Promise<StoryMemory[]> {
+    if (!this.db.lwMemories) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwMemories.getByProjectId(projectId)
+  }
+
+  /**
+   * 获取章节之前的记忆
+   */
+  async getMemoriesBeforeChapter(projectId: string, chapterNumber: number): Promise<StoryMemory[]> {
+    if (!this.db.lwMemories) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwMemories.getMemoriesBeforeChapter(projectId, chapterNumber)
+  }
+
+  /**
+   * 获取单个记忆
+   */
+  async getMemory(id: string): Promise<StoryMemory | null> {
+    if (!this.db.lwMemories) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwMemories.getById(id)
+  }
+
+  /**
+   * 创建记忆
+   */
+  async createMemory(data: CreateMemoryRequest): Promise<StoryMemory> {
+    if (!this.db.lwMemories) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwMemories.create(data)
+  }
+
+  /**
+   * 批量创建记忆
+   */
+  async batchCreateMemories(dataList: CreateMemoryRequest[]): Promise<StoryMemory[]> {
+    if (!this.db.lwMemories) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwMemories.batchCreate(dataList)
+  }
+
+  /**
+   * 更新记忆
+   */
+  async updateMemory(id: string, data: UpdateMemoryRequest): Promise<StoryMemory | null> {
+    if (!this.db.lwMemories) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwMemories.update(id, data)
+  }
+
+  /**
+   * 删除记忆
+   */
+  async deleteMemory(id: string): Promise<boolean> {
+    if (!this.db.lwMemories) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwMemories.delete(id)
+  }
+
+  /**
+   * 切换记忆生效状态
+   */
+  async toggleMemoryActive(id: string): Promise<StoryMemory | null> {
+    if (!this.db.lwMemories) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwMemories.toggleActive(id)
+  }
+
+  /**
+   * 获取记忆统计
+   */
+  async getMemoryStats(projectId: string): Promise<{
+    total: number
+    active: number
+    byType: Record<string, number>
+    byImportance: Record<string, number>
+  }> {
+    if (!this.db.lwMemories) {
+      throw new Error('数据库未初始化')
+    }
+    return this.db.lwMemories.getMemoryStats(projectId)
   }
 }
 

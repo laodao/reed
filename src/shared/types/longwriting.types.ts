@@ -989,3 +989,139 @@ export interface UpdateItemLevelRequest {
   name?: string
   description?: string
 }
+
+// ==================== 章节预写相关类型 ====================
+
+/**
+ * 预写内容
+ */
+export interface ChapterPrewrite {
+  id: string
+  outlineId: string          // 关联大纲节点，一对一
+  content: string            // 预写内容
+  isConfirmed: boolean       // 是否已确认（确认后提取记忆）
+  confirmedAt?: number       // 确认时间
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * 创建预写请求
+ */
+export interface CreatePrewriteRequest {
+  outlineId: string
+  content: string
+}
+
+/**
+ * 更新预写请求
+ */
+export interface UpdatePrewriteRequest {
+  content?: string
+}
+
+/**
+ * 确认预写请求
+ */
+export interface ConfirmPrewriteRequest {
+  outlineId: string
+}
+
+// ==================== 故事记忆相关类型 ====================
+
+/**
+ * 记忆类型
+ */
+export type MemoryType =
+  | 'character_event'   // 角色事件
+  | 'location_event'    // 地点事件
+  | 'item_event'        // 物品事件
+  | 'relationship_change' // 关系变化
+  | 'faction_event'     // 势力事件
+  | 'general'           // 一般事件
+
+/**
+ * 记忆重要程度
+ */
+export type MemoryImportance = 'critical' | 'normal' | 'minor'
+
+/**
+ * 记忆实体
+ */
+export interface MemoryEntity {
+  type: 'character' | 'location' | 'item' | 'skill' | 'faction'
+  id: string
+  name: string
+}
+
+/**
+ * 故事记忆
+ */
+export interface StoryMemory {
+  id: string
+  projectId: string
+  sourceOutlineId?: string         // 来源章节（大纲ID）
+  memoryType: MemoryType
+  title: string                   // 记忆标题
+  description: string             // 详细描述
+  involvedEntities: MemoryEntity[] // 涉及实体
+  chapterNumber: number           // 章节序号
+  importance: MemoryImportance
+  isActive: boolean               // 是否生效
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * 创建记忆请求
+ */
+export interface CreateMemoryRequest {
+  projectId: string
+  sourceOutlineId?: string
+  memoryType: MemoryType
+  title: string
+  description: string
+  involvedEntities: MemoryEntity[]
+  chapterNumber: number
+  importance?: MemoryImportance
+}
+
+/**
+ * 更新记忆请求
+ */
+export interface UpdateMemoryRequest {
+  title?: string
+  description?: string
+  involvedEntities?: MemoryEntity[]
+  importance?: MemoryImportance
+  isActive?: boolean
+}
+
+/**
+ * AI 提取的记忆数据
+ */
+export interface ExtractedMemoryData {
+  memoryType: MemoryType
+  title: string
+  description: string
+  involvedEntities: MemoryEntity[]
+  importance: MemoryImportance
+}
+
+/**
+ * 记忆提取请求
+ */
+export interface ExtractMemoriesRequest {
+  projectId: string
+  outlineId: string
+  prewriteContent: string
+}
+
+/**
+ * 记忆提取响应
+ */
+export interface ExtractMemoriesResponse {
+  success: boolean
+  memories?: ExtractedMemoryData[]
+  error?: string
+}
