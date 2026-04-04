@@ -406,44 +406,60 @@ import type { Message, Attachment } from '../../../shared/types'
 import ModelSelectDialog from './ModelSelectDialog.vue'
 import ExportToObsidianDialog from './ExportToObsidianDialog.vue'
 
-// 初始化 Mermaid
+// 初始化 Mermaid（紧凑样式配置）
 mermaid.initialize({
   startOnLoad: false,
   theme: 'default',
   securityLevel: 'loose',
   suppressErrorRendering: true, // 禁用默认错误渲染，我们自己处理
+  // 全局主题变量：设置较小字体
+  themeVariables: {
+    fontSize: '12px',
+    fontFamily: 'system-ui, -apple-system, sans-serif'
+  },
   flowchart: {
-    useMaxWidth: true,
+    useMaxWidth: false, // 不使用 maxWidth，我们手动控制缩放
     htmlLabels: true,
     curve: 'basis',
-    padding: 15
+    padding: 8 // 减小内边距
   },
   sequence: {
-    useMaxWidth: true,
-    diagramMarginX: 10,
-    diagramMarginY: 10,
-    actorMargin: 40,
-    width: 120,
-    height: 50
+    useMaxWidth: false,
+    diagramMarginX: 8,
+    diagramMarginY: 8,
+    actorMargin: 30,
+    width: 100,
+    height: 40,
+    boxMargin: 5,
+    noteMargin: 5,
+    messageMargin: 15
   },
   gantt: {
-    useMaxWidth: true,
-    leftPadding: 50,
-    gridLineStartPadding: 25,
-    fontSize: 12,
-    sectionFontSize: 12
+    useMaxWidth: false,
+    leftPadding: 30,
+    gridLineStartPadding: 15,
+    fontSize: 11,
+    sectionFontSize: 11
   },
   class: {
-    useMaxWidth: true
+    useMaxWidth: false
   },
   state: {
-    useMaxWidth: true
+    useMaxWidth: false
   },
   er: {
-    useMaxWidth: true
+    useMaxWidth: false
   },
   pie: {
-    useMaxWidth: true
+    useMaxWidth: false
+  },
+  mindmap: {
+    useMaxWidth: false,
+    padding: 8
+  },
+  timeline: {
+    useMaxWidth: false,
+    padding: 8
   },
   fontSize: 12
 })
@@ -641,6 +657,9 @@ async function renderMermaidCharts(): Promise<void> {
       const { svg } = await mermaid.render(id, code)
       mermaidElement.innerHTML = svg
       wrapper.setAttribute('data-render-status', 'success')
+
+      // 动态缩放处理：如果图表超出容器宽度，自动缩放
+      adjustMermaidScale(wrapper, mermaidElement)
     } catch (error) {
       // 渲染失败：标记错误状态，显示错误图标
       console.error('Mermaid 渲染错误:', error)
@@ -657,6 +676,31 @@ async function renderMermaidCharts(): Promise<void> {
       // 保持代码显示，添加错误样式
       mermaidElement.classList.add('mermaid-error-code')
     }
+  }
+}
+
+// 调整 Mermaid 图表缩放
+function adjustMermaidScale(wrapper: HTMLElement, mermaidElement: HTMLElement): void {
+  const content = wrapper.querySelector('.mermaid-content') as HTMLElement
+  if (!content) return
+
+  const svg = mermaidElement.querySelector('svg')
+  if (!svg) return
+
+  // 获取 SVG 原始尺寸
+  const svgWidth = svg.getBoundingClientRect().width
+  const containerWidth = content.clientWidth - 32 // 减去 padding
+
+  // 如果图表超出容器，进行缩放
+  if (svgWidth > containerWidth) {
+    const scale = containerWidth / svgWidth
+    // 限制最小缩放比例为 0.3，避免太小看不清
+    const finalScale = Math.max(0.3, scale)
+
+    svg.style.transform = `scale(${finalScale})`
+    svg.style.transformOrigin = 'top left'
+    // 调整容器高度以适应缩放后的内容
+    svg.style.marginBottom = `${(1 - finalScale) * 100}%`
   }
 }
 
@@ -879,13 +923,13 @@ function renderCodeBlock(language: string, code: string): string {
       <div class="mermaid-wrapper" data-render-status="pending">
         <div class="mermaid-header">
           <span class="language">mermaid</span>
-          <span class="error-indicator" style="display:none" title="语法有误无法解析">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="#ef4444"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
-          </span>
           <button class="copy-btn" data-code-b64="${encodedCode}">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
             <span>复制</span>
           </button>
+          <span class="error-indicator" style="display:none" title="语法有误无法解析">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="#ef4444"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+          </span>
         </div>
         <div class="mermaid-content" data-mermaid-code="${encodedCode}">
           <pre class="mermaid">${escapeHtml(code)}</pre>
@@ -1612,9 +1656,9 @@ function showKnowledgeBaseSnippet(ref: { documentId: string; documentName: strin
         line-height: 1.5;
 
         svg {
-          max-width: 100%;
-          height: auto;
           display: block;
+          // 支持动态缩放
+          transition: transform 0.2s ease;
         }
 
         // Mermaid 错误显示样式
