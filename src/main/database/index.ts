@@ -1181,6 +1181,84 @@ export class DatabaseManager {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_lw_entity_snapshots_unique ON lw_entity_state_snapshots(project_id, entity_type, entity_id, chapter_number)
     `)
 
+    // ===================== 日记模块表 =====================
+    // 日记目录表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS diary_folders (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        parent_id TEXT,
+        path TEXT NOT NULL,
+        sort_order INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (parent_id) REFERENCES diary_folders(id) ON DELETE CASCADE
+      )
+    `)
+
+    // 日记条目表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS diary_entries (
+        id TEXT PRIMARY KEY,
+        folder_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        content TEXT,
+        file_path TEXT NOT NULL,
+        word_count INTEGER DEFAULT 0,
+        tags TEXT,
+        frontmatter TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (folder_id) REFERENCES diary_folders(id) ON DELETE CASCADE
+      )
+    `)
+
+    // 双向链接表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS diary_links (
+        id TEXT PRIMARY KEY,
+        source_entry_id TEXT NOT NULL,
+        target_entry_id TEXT,
+        target_title TEXT NOT NULL,
+        link_text TEXT,
+        anchor TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (source_entry_id) REFERENCES diary_entries(id) ON DELETE CASCADE,
+        FOREIGN KEY (target_entry_id) REFERENCES diary_entries(id) ON DELETE CASCADE
+      )
+    `)
+
+    // 附件表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS diary_attachments (
+        id TEXT PRIMARY KEY,
+        entry_id TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        file_size INTEGER,
+        mime_type TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (entry_id) REFERENCES diary_entries(id) ON DELETE CASCADE
+      )
+    `)
+
+    // 日记模块索引
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_diary_folders_parent ON diary_folders(parent_id)
+    `)
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_diary_entries_folder ON diary_entries(folder_id)
+    `)
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_diary_entries_created ON diary_entries(created_at DESC)
+    `)
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_diary_links_source ON diary_links(source_entry_id)
+    `)
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_diary_links_target ON diary_links(target_entry_id)
+    `)
+
     // 迁移类型配置表结构
     this.migrateTypeConfigTables()
 
