@@ -1275,7 +1275,7 @@ ${backgroundInfo || '暂无'}
     window: BrowserWindow,
     eventId: string,
     projectId: string,
-    field: 'eraDescription' | 'socialStructure' | 'techLevel',
+    field: 'eraDescription' | 'socialStructure' | 'techLevel' | 'specialRules' | 'factionDistribution' | 'geographicOrientation',
     eraType: string,
     content: string,
     providerConfigId?: string,
@@ -1284,7 +1284,20 @@ ${backgroundInfo || '暂无'}
     const fieldLabels: Record<string, string> = {
       eraDescription: '时代描述',
       socialStructure: '社会结构',
-      techLevel: '技术水平'
+      techLevel: '技术水平',
+      specialRules: '特殊规则',
+      factionDistribution: '势力分布',
+      geographicOrientation: '地理方位'
+    }
+
+    // 不同字段的润色提示
+    const fieldPrompts: Record<string, string> = {
+      eraDescription: '请扩展成详细的时代背景描述，内容控制在 200-400 字。',
+      socialStructure: '请扩展成详细的社会结构描述，包括阶层划分、社会制度、权力结构等，内容控制在 200-400 字。',
+      techLevel: '请扩展成详细的技术水平描述，包括主要技术特点、科技发展程度、对生活的影响等，内容控制在 200-400 字。',
+      specialRules: '请扩展成详细的世界规则描述，包括具体的等级划分、能力体系、限制条件、特殊法则等，内容控制在 300-500 字。',
+      factionDistribution: '请扩展成详细的势力分布描述，包括各势力的地理位置、势力范围、相互关系、主要冲突等，内容控制在 300-500 字。',
+      geographicOrientation: '请扩展成详细的地理方位描述，包括各区域的气候特点、地形地貌、标志性地理特征等，内容控制在 300-500 字。'
     }
 
     const systemPrompt = `你是一位专业的小说创作顾问，擅长丰富和润色故事背景设定。
@@ -1293,8 +1306,8 @@ ${backgroundInfo || '暂无'}
 要求：
 1. 保持原文核心意图，不要偏离主题
 2. 增加细节和氛围感，让设定更加具体
-3. 内容控制在 200-400 字
-4. 语言要有画面感，适合小说创作使用
+3. 语言要有画面感，适合小说创作使用
+4. 根据不同字段的特点进行针对性扩展
 
 直接输出润色后的内容，不需要标题、不需要额外说明。`
 
@@ -1310,12 +1323,226 @@ ${backgroundInfo || '暂无'}
 【时代类型】${eraTypeLabels[eraType] || eraType}
 【原始描述】${content}
 
-请扩展成详细的描述，内容控制在 200-400 字。`
+${fieldPrompts[field] || '请扩展成详细的描述，内容控制在 200-400 字。'}`
 
     try {
       const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 1024, providerConfigId, modelId)
 
       return { success: true, data: { content: result } }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  // ==================== 地点生成 ====================
+
+  /**
+   * AI 生成地点建议
+   */
+  async generateLocations(
+    window: BrowserWindow,
+    eventId: string,
+    projectId: string,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<GenerateResponse> {
+    const dbManager = getDatabaseManager()
+
+    // 获取故事概要
+    const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
+    if (!overview) {
+      return { success: false, error: '请先创建故事概要' }
+    }
+
+    // 获取背景设定
+    const background = await dbManager.lwBackgrounds?.getByProjectId(projectId)
+
+    // 获取已有地图
+    const maps = await dbManager.lwMaps?.getByProjectId(projectId) || []
+
+    // 获取已有地点
+    const existingLocations = await dbManager.lwLocations?.getByProjectId(projectId) || []
+
+    const systemPrompt = `你是一位专业的小说世界观设计师，擅长设计丰富多彩的地点设定。
+请根据用户提供的信息，生成适合故事背景的地点建议。
+
+**重要**：请控制回复长度，总字数不超过1500字。
+
+你的回复必须是纯 JSON 数组格式（不要包含 \`\`\`json 标记），每个地点包含以下字段：
+{
+  "name": "地点名称",
+  "type": "地点类型，可选值：city/village/mountain/palace/forest/sea/building/other",
+  "importance": "重要程度，可选值：main/important/auxiliary",
+  "description": "地点描述（50-100字，说明地点的特点、氛围、在故事中的作用）",
+  "suggestedMapId": "建议关联的地图ID（从已有地图中选择，如果没有合适的可不填）"
+}
+
+地点类型说明：
+- city: 城市
+- village: 村庄
+- mountain: 山脉
+- palace: 宫殿
+- forest: 森林
+- sea: 海域
+- building: 建筑
+- other: 其他
+
+重要程度说明：
+- main: 主要地点（故事核心场景，多次出现）
+- important: 重要地点（关键情节发生地）
+- auxiliary: 辅助地点（背景或过场场景）
+
+生成原则：
+1. 根据地理方位描述生成符合世界观的地点
+2. 地点应该有明确的功能和故事意义
+3. 不要重复已有地点
+4. 建议生成 3-6 个地点
+5. 如果有地图，尽量为地点匹配合适的地图
+
+请直接输出 JSON 数组，不要有任何额外文字。`
+
+    // 构建地图信息
+    const mapInfo = maps.map(m => `${m.name}(${m.id})-${m.orientation || '方位未指定'}`).join('、')
+
+    // 构建已有地点信息
+    const existingLocationInfo = existingLocations.map(l => `${l.name}(${l.type})`).join('、')
+
+    // 构建背景信息
+    let backgroundInfo = ''
+    if (background) {
+      if (background.eraDescription) backgroundInfo += `时代描述：${background.eraDescription}\n`
+      if (background.geographicOrientation) backgroundInfo += `地理方位：${background.geographicOrientation}\n`
+      if (background.factionDistribution) backgroundInfo += `势力分布：${background.factionDistribution}\n`
+    }
+
+    const prompt = `请根据以下信息生成地点建议：
+
+【故事标题】${overview.title || '未命名'}
+【故事类型】${overview.storyType || '未指定'}
+【故事摘要】${overview.summary || '未指定'}
+
+【背景设定】
+${backgroundInfo || '暂无'}
+
+【已有地图】${mapInfo || '暂无'}
+
+【已有地点】${existingLocationInfo || '暂无'}
+
+请生成适合这个故事的地点建议。如果有地图，请为每个地点建议合适的地图关联。直接返回 JSON 数组格式的结果。`
+
+    try {
+      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 2048, providerConfigId, modelId)
+
+      // 尝试解析 JSON 数组
+      const jsonMatch = result.match(/\[[\s\S]*\]/)
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0])
+        return { success: true, data }
+      }
+
+      return { success: false, error: 'AI 返回格式错误' }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  // ==================== 势力生成 ====================
+
+  /**
+   * AI 生成势力建议
+   */
+  async generateFactions(
+    window: BrowserWindow,
+    eventId: string,
+    projectId: string,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<GenerateResponse> {
+    const dbManager = getDatabaseManager()
+
+    // 获取故事概要
+    const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
+    if (!overview) {
+      return { success: false, error: '请先创建故事概要' }
+    }
+
+    // 获取背景设定
+    const background = await dbManager.lwBackgrounds?.getByProjectId(projectId)
+
+    // 获取已有地点
+    const locations = await dbManager.lwLocations?.getByProjectId(projectId) || []
+
+    // 获取已有势力
+    const existingFactions = await dbManager.lwFactions?.getByProjectId(projectId) || []
+
+    const systemPrompt = `你是一位专业的小说世界观设计师，擅长设计丰富多彩的势力设定。
+请根据用户提供的信息，生成适合故事背景的势力建议。
+
+**重要**：请控制回复长度，总字数不超过1500字。
+
+你的回复必须是纯 JSON 数组格式（不要包含 \`\`\`json 标记），每个势力包含以下字段：
+{
+  "factionType": "势力类型，可选值：country/camp/sect",
+  "name": "势力名称",
+  "suggestedLocationName": "建议关联的地点名称（从已有地点中选择，如果没有合适的可不填）",
+  "description": "势力描述（50-100字，说明势力的特点、主要成员、在故事中的作用）"
+}
+
+势力类型说明：
+- country: 国别（国家、王国、帝国等）
+- camp: 阵营（正派、反派、中立阵营等）
+- sect: 门派（宗门、教派、帮派等）
+
+生成原则：
+1. 根据势力分布描述生成符合世界观的势力
+2. 势力应该有明确的定位和故事意义
+3. 不要重复已有势力
+4. 势力名称要与故事类型匹配
+5. 建议生成 3-6 个势力
+6. 如果有地点，尽量为势力建议合适的所在地
+
+请直接输出 JSON 数组，不要有任何额外文字。`
+
+    // 构建地点信息
+    const locationInfo = locations.map(l => `${l.name}(${l.id})`).join('、')
+
+    // 构建已有势力信息
+    const existingFactionInfo = existingFactions.map(f => `${f.name}(${f.factionType === 'country' ? '国别' : f.factionType === 'camp' ? '阵营' : '门派'})`).join('、')
+
+    // 构建背景信息
+    let backgroundInfo = ''
+    if (background) {
+      if (background.eraDescription) backgroundInfo += `时代描述：${background.eraDescription}\n`
+      if (background.factionDistribution) backgroundInfo += `势力分布：${background.factionDistribution}\n`
+      if (background.specialRules) backgroundInfo += `特殊规则：${background.specialRules}\n`
+    }
+
+    const prompt = `请根据以下信息生成势力建议：
+
+【故事标题】${overview.title || '未命名'}
+【故事类型】${overview.storyType || '未指定'}
+【故事摘要】${overview.summary || '未指定'}
+
+【背景设定】
+${backgroundInfo || '暂无'}
+
+【已有地点】${locationInfo || '暂无'}
+
+【已有势力】${existingFactionInfo || '暂无'}
+
+请生成适合这个故事的势力建议。如果有地点，请为每个势力建议合适的所在地。直接返回 JSON 数组格式的结果。`
+
+    try {
+      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 2048, providerConfigId, modelId)
+
+      // 尝试解析 JSON 数组
+      const jsonMatch = result.match(/\[[\s\S]*\]/)
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0])
+        return { success: true, data }
+      }
+
+      return { success: false, error: 'AI 返回格式错误' }
     } catch (error: any) {
       return { success: false, error: error.message }
     }

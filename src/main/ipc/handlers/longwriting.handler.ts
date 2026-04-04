@@ -83,6 +83,10 @@ const CHANNELS = {
   GENERATE_MAP_DATA: 'longwriting:generateMapData',
   GENERATE_MAP_IMAGE: 'longwriting:generateMapImage',
 
+  // AI 生成地点和势力
+  GENERATE_LOCATIONS: 'longwriting:generateLocations',
+  GENERATE_FACTIONS: 'longwriting:generateFactions',
+
   // 情节管理
   GET_PLOTS: 'longwriting:getPlots',
   GET_PLOT: 'longwriting:getPlot',
@@ -1127,13 +1131,45 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
   ipcMain.handle(
     CHANNELS.POLISH_BACKGROUND,
-    async (event, eventId: string, projectId: string, field: 'eraDescription' | 'socialStructure' | 'techLevel', eraType: string, content: string, providerConfigId?: string, modelId?: string) => {
+    async (event, eventId: string, projectId: string, field: 'eraDescription' | 'socialStructure' | 'techLevel' | 'specialRules' | 'factionDistribution' | 'geographicOrientation', eraType: string, content: string, providerConfigId?: string, modelId?: string) => {
       try {
         const window = BrowserWindow.fromWebContents(event.sender)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
         const result = await aiService.polishBackground(window, eventId, projectId, field, eraType, content, providerConfigId, modelId)
+        return { ...result, eventId }
+      } catch (error: any) {
+        return { success: false, error: error.message }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    CHANNELS.GENERATE_LOCATIONS,
+    async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
+      try {
+        const window = BrowserWindow.fromWebContents(event.sender)
+        if (!window) {
+          return { success: false, error: '窗口不存在' }
+        }
+        const result = await aiService.generateLocations(window, eventId, projectId, providerConfigId, modelId)
+        return { ...result, eventId }
+      } catch (error: any) {
+        return { success: false, error: error.message }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    CHANNELS.GENERATE_FACTIONS,
+    async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
+      try {
+        const window = BrowserWindow.fromWebContents(event.sender)
+        if (!window) {
+          return { success: false, error: '窗口不存在' }
+        }
+        const result = await aiService.generateFactions(window, eventId, projectId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }

@@ -7,6 +7,7 @@
 import { BrowserWindow, app, dialog } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
+import log from 'electron-log'
 import { getDatabaseManager } from '../database'
 import { SecureStorageService } from './secure-storage.service'
 import { PROVIDER_TEMPLATES } from './provider-template.service'
@@ -28,6 +29,10 @@ import type {
   ImageProviderType
 } from '../../shared/types'
 
+// 配置 electron-log：禁用控制台输出，避免 EPIPE 错误
+log.transports.console.level = false
+const logger = log.scope('ImageService')
+
 /**
  * 正在进行的轮询任务
  */
@@ -40,11 +45,11 @@ const activePollingTasks = new Map<string, NodeJS.Timeout>()
  */
 function localPathToUrl(filePath: string): string {
   if (!filePath) {
-    console.log('[localPathToUrl] 空路径')
+    logger.info('[localPathToUrl] 空路径')
     return ''
   }
 
-  console.log('[localPathToUrl] 输入路径:', filePath)
+  logger.info('[localPathToUrl] 输入路径:', filePath)
 
   // Windows 路径处理：将反斜杠转换为正斜杠
   let normalizedPath = filePath
@@ -55,7 +60,7 @@ function localPathToUrl(filePath: string): string {
   // 使用三个斜杠格式（标准 file URI 格式）：local-image:///C:/Users/...
   // 不编码冒号，让盘符成为路径的一部分
   const url = `local-image:///${normalizedPath}`
-  console.log('[localPathToUrl] 输出 URL:', url)
+  logger.info('[localPathToUrl] 输出 URL:', url)
   return url
 }
 
@@ -74,12 +79,12 @@ export class ImageService {
     window: BrowserWindow,
     request: ImageGenerationRequest
   ): Promise<ImageGenerationResponse> {
-    console.log('[ImageService.generateImage] 开始处理请求')
+    logger.info('[ImageService.generateImage] 开始处理请求')
 
     const dbManager = getDatabaseManager()
 
     if (!dbManager.images || !dbManager.providerConfigs) {
-      console.error('[ImageService.generateImage] 错误: 数据库未初始化')
+      logger.error('[ImageService.generateImage] 错误: 数据库未初始化')
       return { success: false, error: '数据库未初始化' }
     }
 
@@ -103,17 +108,17 @@ export class ImageService {
       }
 
       if (!providerConfig) {
-        console.error('[ImageService.generateImage] 错误: 未配置图像生成 Provider')
+        logger.error('[ImageService.generateImage] 错误: 未配置图像生成 Provider')
         return { success: false, error: '未配置图像生成 Provider，请先在设置中添加图像生成服务配置' }
       }
 
       if (!providerConfig.apiKey) {
-        console.error('[ImageService.generateImage] 错误: Provider 未配置 API 密钥')
+        logger.error('[ImageService.generateImage] 错误: Provider 未配置 API 密钥')
         return { success: false, error: `Provider "${providerConfig.name}" 未配置 API 密钥` }
       }
 
       // 解密 API 密钥
-      console.log('[ImageService.generateImage] 开始解密 API 密钥')
+      logger.info('[ImageService.generateImage] 开始解密 API 密钥')
       let decryptedApiKey: string
       try {
         const secureStorage = SecureStorageService.getInstance()
@@ -121,9 +126,9 @@ export class ImageService {
           await secureStorage.initialize()
         }
         decryptedApiKey = secureStorage.decrypt(providerConfig.apiKey)
-        console.log('[ImageService.generateImage] API 密钥解密成功')
+        logger.info('[ImageService.generateImage] API 密钥解密成功')
       } catch (decryptError) {
-        console.error('[ImageService.generateImage] API 密钥解密失败:', decryptError)
+        logger.error('[ImageService.generateImage] API 密钥解密失败:', decryptError)
         return { success: false, error: 'API 密钥解密失败，请重新配置 Provider' }
       }
 
@@ -136,11 +141,11 @@ export class ImageService {
         // 检查 API Key 格式
         if (decryptedApiKey.includes(':')) {
           // AccessKeyId:AccessKeySecret 格式 -> 使用百炼平台签名认证
-          console.log('[ImageService.generateImage] 检测到阿里云 AccessKey 格式，使用百炼平台 API')
+          logger.info('[ImageService.generateImage] 检测到阿里云 AccessKey 格式，使用百炼平台 API')
           providerType = 'bailian'
         } else {
           // 普通 Bearer Token 格式 -> 使用 DashScope API
-          console.log('[ImageService.generateImage] 检测到 DashScope API Key 格式，使用 DashScope API')
+          logger.info('[ImageService.generateImage] 检测到 DashScope API Key 格式，使用 DashScope API')
           providerType = 'dashscope'
         }
       }
@@ -152,7 +157,7 @@ export class ImageService {
       const imageBaseUrl = providerConfig.imageBaseUrl ||
                            template?.apiConfig?.imageBaseUrl
 
-      console.log('[ImageService.generateImage] 使用图像 API URL:', imageBaseUrl)
+      logger.info('[ImageService.generateImage] 使用图像 API URL:', imageBaseUrl)
 
       // 创建 Provider 实例
       const provider = createImageProvider(providerType, {
@@ -164,23 +169,23 @@ export class ImageService {
       })
 
       // 发送生成请求
-      console.log('[ImageService.generateImage] 调用 Provider 生成图像')
+      logger.info('[ImageService.generateImage] 调用 Provider 生成图像')
       const response = await provider.generateImage(request)
 
       if (!response.success) {
-        console.error('[ImageService.generateImage] 生成失败:', response.error)
+        logger.error('[ImageService.generateImage] 生成失败:', response.error)
         return response
       }
 
       // 同步模式：直接返回了图像 URL
       if (response.images && response.images.length > 0) {
-        console.log('[ImageService.generateImage] 同步模式，直接返回图像')
+        logger.info('[ImageService.generateImage] 同步模式，直接返回图像')
 
         // 如果跳过历史记录，直接下载保存并返回
         if (request.skipHistory) {
-          console.log('[ImageService.generateImage] skipHistory=true, 调用 saveImagesWithoutHistory')
-          console.log('[ImageService.generateImage] response.images 数量:', response.images?.length)
-          console.log('[ImageService.generateImage] response.images 内容:', JSON.stringify(response.images?.map(img => ({
+          logger.info('[ImageService.generateImage] skipHistory=true, 调用 saveImagesWithoutHistory')
+          logger.info('[ImageService.generateImage] response.images 数量:', response.images?.length)
+          logger.info('[ImageService.generateImage] response.images 内容:', JSON.stringify(response.images?.map(img => ({
             url: img.url?.substring(0, 150) + '...',
             hasUrl: !!img.url
           }))))
@@ -188,15 +193,15 @@ export class ImageService {
           try {
             const savedImages = await this.saveImagesWithoutHistory(response.images)
 
-            console.log('[ImageService.generateImage] saveImagesWithoutHistory 返回:', savedImages.length, '张图片')
-            console.log('[ImageService.generateImage] 返回的图片路径:', savedImages.map(img => img.filePath))
+            logger.info('[ImageService.generateImage] saveImagesWithoutHistory 返回:', savedImages.length, '张图片')
+            logger.info('[ImageService.generateImage] 返回的图片路径:', savedImages.map(img => img.filePath))
 
             return {
               success: true,
               images: savedImages
             }
           } catch (saveError: any) {
-            console.error('[ImageService.generateImage] 保存图像失败:', saveError)
+            logger.error('[ImageService.generateImage] 保存图像失败:', saveError)
             return {
               success: false,
               error: saveError.message || '保存图像失败'
@@ -300,7 +305,7 @@ export class ImageService {
         images: imageRecords
       }
     } catch (error: any) {
-      console.error('[ImageService.generateImage] 捕获异常:', error)
+      logger.error('[ImageService.generateImage] 捕获异常:', error)
       return { success: false, error: error.message || '生成失败' }
     }
   }
@@ -329,7 +334,7 @@ export class ImageService {
 
     const pollTask = async () => {
       pollCount++
-      console.log(`[ImageService] 轮询任务状态, taskId: ${taskId}, 第 ${pollCount} 次`)
+      logger.info(`[ImageService] 轮询任务状态, taskId: ${taskId}, 第 ${pollCount} 次`)
 
       try {
         const status = await provider.getTaskStatus(taskId)
@@ -399,7 +404,7 @@ export class ImageService {
           })
         }
       } catch (error: any) {
-        console.error('[ImageService] 轮询任务状态失败:', error)
+        logger.error('[ImageService] 轮询任务状态失败:', error)
       }
     }
 
@@ -459,10 +464,10 @@ export class ImageService {
             throw new Error('无效的 base64 图像数据')
           }
           buffer = Buffer.from(base64Data, 'base64')
-          console.log('[ImageService] 从 base64 数据保存图像')
+          logger.info('[ImageService] 从 base64 数据保存图像')
         } else {
           // URL 格式：下载图像
-          console.log('[ImageService] 从 URL 下载图像:', imageInfo.url)
+          logger.info('[ImageService] 从 URL 下载图像:', imageInfo.url)
           const response = await fetch(imageInfo.url)
           if (!response.ok) {
             throw new Error(`下载图像失败: ${response.status}`)
@@ -498,7 +503,7 @@ export class ImageService {
           } as ImageRecord)
         }
       } catch (error: any) {
-        console.error(`[ImageService] 保存图像失败: ${imageId}`, error)
+        logger.error(`[ImageService] 保存图像失败: ${imageId}`, error)
         await dbManager.images.updateStatus(imageId, 'failed', error.message || '保存图像失败')
       }
     }
@@ -515,11 +520,11 @@ export class ImageService {
   private static async saveImagesWithoutHistory(
     images: Array<{ url: string }>
   ): Promise<Array<{ filePath: string }>> {
-    console.log('[saveImagesWithoutHistory] 开始保存图像，数量:', images.length)
-    console.log('[saveImagesWithoutHistory] 图像信息:', images.map(img => ({ url: img.url?.substring(0, 100) + '...' })))
+    logger.info('[saveImagesWithoutHistory] 开始保存图像，数量:', images.length)
+    logger.info('[saveImagesWithoutHistory] 图像信息:', images.map(img => ({ url: img.url?.substring(0, 100) + '...' })))
 
     if (!images || images.length === 0) {
-      console.error('[saveImagesWithoutHistory] 错误：图像数组为空')
+      logger.error('[saveImagesWithoutHistory] 错误：图像数组为空')
       throw new Error('没有可保存的图像')
     }
 
@@ -531,7 +536,7 @@ export class ImageService {
     const day = String(now.getDate()).padStart(2, '0')
     const imagesDir = path.join(userDataPath, 'images', String(year), month, day)
 
-    console.log('[saveImagesWithoutHistory] 图像保存目录:', imagesDir)
+    logger.info('[saveImagesWithoutHistory] 图像保存目录:', imagesDir)
 
     // 确保目录存在
     if (!fs.existsSync(imagesDir)) {
@@ -555,29 +560,29 @@ export class ImageService {
 
         // 检查是否是 base64 格式的图像
         if (imageInfo.url.startsWith('data:')) {
-          console.log(`[saveImagesWithoutHistory] 图像 ${i} 是 base64 格式`)
+          logger.info(`[saveImagesWithoutHistory] 图像 ${i} 是 base64 格式`)
           const base64Data = imageInfo.url.split(',')[1]
           if (!base64Data) {
             throw new Error('无效的 base64 图像数据')
           }
           buffer = Buffer.from(base64Data, 'base64')
         } else {
-          console.log(`[saveImagesWithoutHistory] 图像 ${i} 从 URL 下载:`, imageInfo.url.substring(0, 100) + '...')
+          logger.info(`[saveImagesWithoutHistory] 图像 ${i} 从 URL 下载:`, imageInfo.url.substring(0, 100) + '...')
           try {
             const response = await fetch(imageInfo.url, {
               headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
               }
             })
-            console.log(`[saveImagesWithoutHistory] 图像 ${i} fetch 响应状态:`, response.status, response.statusText)
+            logger.info(`[saveImagesWithoutHistory] 图像 ${i} fetch 响应状态:`, response.status, response.statusText)
             if (!response.ok) {
               throw new Error(`下载图像失败: HTTP ${response.status} ${response.statusText}`)
             }
             const arrayBuffer = await response.arrayBuffer()
             buffer = Buffer.from(arrayBuffer)
-            console.log(`[saveImagesWithoutHistory] 图像 ${i} 下载成功，大小:`, buffer.length, 'bytes')
+            logger.info(`[saveImagesWithoutHistory] 图像 ${i} 下载成功，大小:`, buffer.length, 'bytes')
           } catch (fetchError: any) {
-            console.error(`[saveImagesWithoutHistory] 图像 ${i} fetch 异常:`, fetchError.message)
+            logger.error(`[saveImagesWithoutHistory] 图像 ${i} fetch 异常:`, fetchError.message)
             throw fetchError
           }
         }
@@ -593,11 +598,11 @@ export class ImageService {
 
         // 保存文件
         fs.writeFileSync(filePath, buffer)
-        console.log(`[saveImagesWithoutHistory] 图像 ${i} 保存成功:`, filePath)
+        logger.info(`[saveImagesWithoutHistory] 图像 ${i} 保存成功:`, filePath)
 
         // 验证文件是否真的存在
         const fileExists = fs.existsSync(filePath)
-        console.log(`[saveImagesWithoutHistory] 图像 ${i} 文件存在验证:`, fileExists)
+        logger.info(`[saveImagesWithoutHistory] 图像 ${i} 文件存在验证:`, fileExists)
         if (!fileExists) {
           throw new Error('文件保存后验证失败')
         }
@@ -606,12 +611,12 @@ export class ImageService {
           filePath: localPathToUrl(filePath)
         })
       } catch (error: any) {
-        console.error(`[saveImagesWithoutHistory] 保存图像 ${i} 失败:`, error)
+        logger.error(`[saveImagesWithoutHistory] 保存图像 ${i} 失败:`, error)
         errors.push(`图像 ${i + 1}: ${error.message}`)
       }
     }
 
-    console.log('[saveImagesWithoutHistory] 保存完成，成功数量:', savedImages.length, '失败数量:', errors.length)
+    logger.info('[saveImagesWithoutHistory] 保存完成，成功数量:', savedImages.length, '失败数量:', errors.length)
 
     // 如果所有图片都保存失败，抛出异常
     if (savedImages.length === 0 && errors.length > 0) {
@@ -704,13 +709,13 @@ export class ImageService {
 
     try {
       const result = await dbManager.images.getList(page, pageSize, favoriteOnly, status)
-      console.log('[ImageService.getList] 数据库返回图片数量:', result.images.length)
+      logger.info('[ImageService.getList] 数据库返回图片数量:', result.images.length)
 
       // 转换文件路径为可访问的 URL
       const images = result.images.map(img => {
         const originalPath = img.filePath
         const convertedPath = localPathToUrl(img.filePath)
-        console.log('[ImageService.getList] 图片ID:', img.id, '原始路径:', originalPath, '转换后:', convertedPath)
+        logger.info('[ImageService.getList] 图片ID:', img.id, '原始路径:', originalPath, '转换后:', convertedPath)
         return {
           ...img,
           filePath: convertedPath
@@ -718,7 +723,7 @@ export class ImageService {
       })
       return { success: true, data: { ...result, images } }
     } catch (error: any) {
-      console.error('[ImageService.getList] 错误:', error)
+      logger.error('[ImageService.getList] 错误:', error)
       return { success: false, error: error.message || '获取列表失败' }
     }
   }
@@ -744,7 +749,7 @@ export class ImageService {
       // 转换文件路径为可访问的 URL
       return { success: true, data: { ...image, filePath: localPathToUrl(image.filePath) } }
     } catch (error: any) {
-      console.error('[ImageService.getById] 错误:', error)
+      logger.error('[ImageService.getById] 错误:', error)
       return { success: false, error: error.message || '获取图像失败' }
     }
   }
@@ -766,7 +771,7 @@ export class ImageService {
       const newFavorite = await dbManager.images.toggleFavorite(id)
       return { success: true, data: newFavorite }
     } catch (error: any) {
-      console.error('[ImageService.toggleFavorite] 错误:', error)
+      logger.error('[ImageService.toggleFavorite] 错误:', error)
       return { success: false, error: error.message || '切换收藏失败' }
     }
   }
@@ -801,7 +806,7 @@ export class ImageService {
 
       return { success: true }
     } catch (error: any) {
-      console.error('[ImageService.delete] 错误:', error)
+      logger.error('[ImageService.delete] 错误:', error)
       return { success: false, error: error.message || '删除失败' }
     }
   }
@@ -833,7 +838,7 @@ export class ImageService {
 
       return { success: true, data: count }
     } catch (error: any) {
-      console.error('[ImageService.deleteMany] 错误:', error)
+      logger.error('[ImageService.deleteMany] 错误:', error)
       return { success: false, error: error.message || '批量删除失败' }
     }
   }
@@ -863,7 +868,10 @@ export class ImageService {
 
         // 检查 Provider 是否已实现
         if (!isProviderImplemented(providerType)) {
-          console.log(`[ImageService.getProviders] Provider ${providerType} 未实现，跳过`)
+          // 安全日志：避免 EPIPE 错误
+          try {
+            logger.info(`[ImageService.getProviders] Provider ${providerType} 未实现，跳过`)
+          } catch { /* 忽略 EPIPE 错误 */ }
           continue
         }
 
@@ -911,7 +919,10 @@ export class ImageService {
 
           // 检查 Provider 是否已实现
           if (!isProviderImplemented(providerType)) {
-            console.log(`[ImageService.getProviders] Provider ${providerType} 未实现，跳过`)
+            // 安全日志：避免 EPIPE 错误
+            try {
+              logger.info(`[ImageService.getProviders] Provider ${providerType} 未实现，跳过`)
+            } catch { /* 忽略 EPIPE 错误 */ }
             continue
           }
 
@@ -930,7 +941,7 @@ export class ImageService {
 
       return { success: true, data: providers }
     } catch (error: any) {
-      console.error('[ImageService.getProviders] 错误:', error)
+      logger.error('[ImageService.getProviders] 错误:', error)
       return { success: false, error: error.message || '获取 Provider 列表失败' }
     }
   }
@@ -1025,7 +1036,7 @@ export class ImageService {
       // 检查 Provider 是否已实现
       if (!isProviderImplemented(providerType)) {
         // 如果未实现，返回空数组
-        console.log(`[ImageService.getModels] Provider ${providerType} 未实现`)
+        logger.info(`[ImageService.getModels] Provider ${providerType} 未实现`)
         return {
           success: true,
           data: []
@@ -1057,7 +1068,7 @@ export class ImageService {
 
       return { success: true, data: models }
     } catch (error: any) {
-      console.error('[ImageService.getModels] 错误:', error)
+      logger.error('[ImageService.getModels] 错误:', error)
       return { success: false, error: error.message || '获取模型列表失败' }
     }
   }
@@ -1116,7 +1127,7 @@ export class ImageService {
 
       return result
     } catch (error: any) {
-      console.error('[ImageService.testProvider] 错误:', error)
+      logger.error('[ImageService.testProvider] 错误:', error)
       return { success: false, message: error.message || '测试连接失败' }
     }
   }
@@ -1174,7 +1185,7 @@ export class ImageService {
 
       return { success: true, path: result.filePath }
     } catch (error: any) {
-      console.error('[ImageService.downloadImage] 错误:', error)
+      logger.error('[ImageService.downloadImage] 错误:', error)
       return { success: false, error: error.message || '下载失败' }
     }
   }

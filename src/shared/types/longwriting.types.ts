@@ -399,9 +399,44 @@ export interface GeneratedPlotItem {
  */
 export interface PolishBackgroundRequest {
   projectId: string
-  field: 'eraDescription' | 'socialStructure' | 'techLevel' // 要润色的字段
+  field: 'eraDescription' | 'socialStructure' | 'techLevel' | 'specialRules' | 'factionDistribution' | 'geographicOrientation' // 要润色的字段
   eraType: EraType
   content: string
+}
+
+/**
+ * AI 生成的地点项
+ */
+export interface GeneratedLocationItem {
+  name: string
+  type: LocationType
+  importance: LocationImportance
+  description: string
+  suggestedMapId?: string  // 建议关联的地图ID
+}
+
+/**
+ * AI 生成的势力项
+ */
+export interface GeneratedFactionItem {
+  factionType: FactionType
+  name: string
+  suggestedLocationName?: string  // 建议关联的地点名称（用于自动匹配）
+  description: string
+}
+
+/**
+ * AI 生成地点请求
+ */
+export interface GenerateLocationsRequest {
+  projectId: string
+}
+
+/**
+ * AI 生成势力请求
+ */
+export interface GenerateFactionsRequest {
+  projectId: string
 }
 
 // ==================== 角色相关类型 ====================

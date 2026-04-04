@@ -1023,6 +1023,12 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:generateItemsOnly', eventId, projectId, providerConfigId, modelId),
     generatePlots: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generatePlots', eventId, projectId, providerConfigId, modelId),
+    polishBackground: (eventId: string, projectId: string, field: 'eraDescription' | 'socialStructure' | 'techLevel' | 'specialRules' | 'factionDistribution' | 'geographicOrientation', eraType: string, content: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:polishBackground', eventId, projectId, field, eraType, content, providerConfigId, modelId),
+    generateLocations: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:generateLocations', eventId, projectId, providerConfigId, modelId),
+    generateFactions: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:generateFactions', eventId, projectId, providerConfigId, modelId),
     generateOutlineStory: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generateOutlineStory', eventId, projectId, providerConfigId, modelId),
     generateOutlineComment: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>

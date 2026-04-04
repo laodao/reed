@@ -3,6 +3,42 @@
  * @module main/index
  */
 
+// 全局补丁：处理 EPIPE 错误
+// 当 stdout/stderr 管道断开时，console.log/error 会抛出 EPIPE 错误
+// 这个补丁在进程启动时尽早应用，避免任何 console 调用导致崩溃
+const originalConsoleLog = console.log
+const originalConsoleError = console.error
+const originalConsoleWarn = console.warn
+
+function safeConsoleLog(...args: any[]): void {
+  try {
+    if (process.stdout.writable) {
+      originalConsoleLog.apply(console, args)
+    }
+  } catch { /* 忽略 EPIPE 错误 */ }
+}
+
+function safeConsoleError(...args: any[]): void {
+  try {
+    if (process.stderr.writable) {
+      originalConsoleError.apply(console, args)
+    }
+  } catch { /* 忽略 EPIPE 错误 */ }
+}
+
+function safeConsoleWarn(...args: any[]): void {
+  try {
+    if (process.stderr.writable) {
+      originalConsoleWarn.apply(console, args)
+    }
+  } catch { /* 忽略 EPIPE 错误 */ }
+}
+
+// 替换全局 console 方法
+console.log = safeConsoleLog
+console.error = safeConsoleError
+console.warn = safeConsoleWarn
+
 // 增加 V8 堆内存限制，解决 PDF 解析等大内存操作的问题
 import { setFlagsFromString } from 'v8'
 setFlagsFromString('--max-old-space-size=4096')

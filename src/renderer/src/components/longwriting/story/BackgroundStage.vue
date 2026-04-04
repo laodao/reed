@@ -106,7 +106,21 @@
 
           <!-- 特殊设定 -->
           <div class="form-row">
-            <label class="form-label">特殊设定</label>
+            <div class="form-label-row">
+              <label class="form-label">特殊设定</label>
+              <el-tooltip content="AI 润色可丰富描述内容" placement="top">
+                <el-button
+                  type="primary"
+                  size="small"
+                  :icon="MagicStick"
+                  :loading="polishingField === 'specialRules'"
+                  :disabled="!eraForm.specialRules.trim()"
+                  @click="polishField('specialRules')"
+                >
+                  润色
+                </el-button>
+              </el-tooltip>
+            </div>
             <el-input
               v-model="eraForm.specialRules"
               type="textarea"
@@ -118,7 +132,21 @@
 
           <!-- 势力分布 -->
           <div class="form-row">
-            <label class="form-label">势力分布</label>
+            <div class="form-label-row">
+              <label class="form-label">势力分布</label>
+              <el-tooltip content="AI 润色可丰富描述内容，用于辅助势力设定的 AI 生成" placement="top">
+                <el-button
+                  type="primary"
+                  size="small"
+                  :icon="MagicStick"
+                  :loading="polishingField === 'factionDistribution'"
+                  :disabled="!eraForm.factionDistribution.trim()"
+                  @click="polishField('factionDistribution')"
+                >
+                  润色
+                </el-button>
+              </el-tooltip>
+            </div>
             <el-input
               v-model="eraForm.factionDistribution"
               type="textarea"
@@ -130,7 +158,21 @@
 
           <!-- 地理方位 -->
           <div class="form-row">
-            <label class="form-label">地理方位</label>
+            <div class="form-label-row">
+              <label class="form-label">地理方位</label>
+              <el-tooltip content="AI 润色可丰富描述内容，用于辅助地点设定的 AI 生成" placement="top">
+                <el-button
+                  type="primary"
+                  size="small"
+                  :icon="MagicStick"
+                  :loading="polishingField === 'geographicOrientation'"
+                  :disabled="!eraForm.geographicOrientation.trim()"
+                  @click="polishField('geographicOrientation')"
+                >
+                  润色
+                </el-button>
+              </el-tooltip>
+            </div>
             <el-input
               v-model="eraForm.geographicOrientation"
               type="textarea"
@@ -203,6 +245,26 @@
       <!-- 地点设定 -->
       <el-tab-pane label="地点设定" name="locations">
         <div class="location-list">
+          <div class="tab-actions">
+            <el-button
+              type="primary"
+              plain
+              :icon="MagicStick"
+              :loading="generatingLocations"
+              :disabled="!selectedModel?.providerId"
+              @click="generateLocationsFromAI"
+            >
+              AI 生成地点建议
+            </el-button>
+            <el-alert
+              v-if="!selectedModel?.providerId"
+              title="请先在顶部选择 AI 模型"
+              type="info"
+              :closable="false"
+              show-icon
+              style="margin-left: 12px;"
+            />
+          </div>
           <div v-for="location in locations" :key="location.id" class="location-card">
             <div class="location-info">
               <h4>{{ location.name }}</h4>
@@ -228,6 +290,27 @@
       <!-- 势力设定 -->
       <el-tab-pane label="势力设定" name="factions">
         <div class="faction-section">
+          <!-- 操作按钮 -->
+          <div class="tab-actions">
+            <el-button
+              type="primary"
+              plain
+              :icon="MagicStick"
+              :loading="generatingFactions"
+              :disabled="!selectedModel?.providerId"
+              @click="generateFactionsFromAI"
+            >
+              AI 生成势力建议
+            </el-button>
+            <el-alert
+              v-if="!selectedModel?.providerId"
+              title="请先在顶部选择 AI 模型"
+              type="info"
+              :closable="false"
+              show-icon
+              style="margin-left: 12px;"
+            />
+          </div>
           <!-- 势力类型筛选 -->
           <div class="faction-filter">
             <el-radio-group v-model="factionFilter" size="small">
@@ -469,6 +552,58 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- AI 生成地点结果对话框 -->
+    <el-dialog v-model="showAILocationDialog" title="AI 生成的地点建议" width="650px">
+      <p class="dialog-tip">以下是 AI 根据背景设定生成的地点建议，请勾选要采纳的地点：</p>
+      <div class="ai-result-list">
+        <div v-for="(item, index) in aiLocationResults" :key="index" class="ai-result-item">
+          <el-checkbox v-model="item.selected" />
+          <div class="ai-result-content">
+            <div class="ai-result-header">
+              <span class="ai-result-name">{{ item.name }}</span>
+              <el-tag size="small" type="info">{{ getLocationTypeLabel(item.type) }}</el-tag>
+              <el-tag size="small">{{ getImportanceLabel(item.importance) }}</el-tag>
+            </div>
+            <p class="ai-result-desc">{{ item.description }}</p>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showAILocationDialog = false">取消</el-button>
+        <el-button type="primary" @click="adoptSelectedLocations">
+          采纳选中 ({{ aiLocationResults.filter(i => i.selected).length }})
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- AI 生成势力结果对话框 -->
+    <el-dialog v-model="showAIFactionDialog" title="AI 生成的势力建议" width="650px">
+      <p class="dialog-tip">以下是 AI 根据背景设定生成的势力建议，请勾选要采纳的势力：</p>
+      <div class="ai-result-list">
+        <div v-for="(item, index) in aiFactionResults" :key="index" class="ai-result-item">
+          <el-checkbox v-model="item.selected" />
+          <div class="ai-result-content">
+            <div class="ai-result-header">
+              <span class="ai-result-name">{{ item.name }}</span>
+              <el-tag size="small" :type="getFactionTagType(item.factionType)">
+                {{ getFactionTypeLabel(item.factionType) }}
+              </el-tag>
+              <el-tag v-if="item.suggestedLocationName" size="small" type="warning">
+                {{ item.suggestedLocationName }}
+              </el-tag>
+            </div>
+            <p class="ai-result-desc">{{ item.description }}</p>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showAIFactionDialog = false">取消</el-button>
+        <el-button type="primary" @click="adoptSelectedFactions">
+          采纳选中 ({{ aiFactionResults.filter(i => i.selected).length }})
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -611,8 +746,31 @@ const loading = ref(false)
 // 保存状态
 const saveStatus = ref<'idle' | 'saving' | 'saved'>('idle')
 // 润色状态
-const polishingField = ref<'eraDescription' | 'socialStructure' | 'techLevel' | null>(null)
+const polishingField = ref<'eraDescription' | 'socialStructure' | 'techLevel' | 'specialRules' | 'factionDistribution' | 'geographicOrientation' | null>(null)
 const polishingContent = ref('')
+
+// AI 生成地点相关
+const generatingLocations = ref(false)
+const aiLocationResults = ref<Array<{
+  name: string
+  type: string
+  importance: string
+  description: string
+  suggestedMapId?: string
+  selected?: boolean
+}>>([])
+const showAILocationDialog = ref(false)
+
+// AI 生成势力相关
+const generatingFactions = ref(false)
+const aiFactionResults = ref<Array<{
+  factionType: string
+  name: string
+  suggestedLocationName?: string
+  description: string
+  selected?: boolean
+}>>([])
+const showAIFactionDialog = ref(false)
 
 // 保存状态文字
 const saveStatusText = computed(() => {
@@ -1061,7 +1219,7 @@ async function saveLocation() {
 }
 
 // AI 润色功能
-async function polishField(field: 'eraDescription' | 'socialStructure' | 'techLevel') {
+async function polishField(field: 'eraDescription' | 'socialStructure' | 'techLevel' | 'specialRules' | 'factionDistribution' | 'geographicOrientation') {
   if (!props.projectId) return
 
   // 检查是否选择了模型
@@ -1116,6 +1274,186 @@ async function polishField(field: 'eraDescription' | 'socialStructure' | 'techLe
     unsubscribe()
     ElMessage.error(result.error || '润色失败')
   }
+}
+
+// AI 生成地点建议
+async function generateLocationsFromAI() {
+  if (!props.projectId) return
+
+  if (!selectedModel.value?.providerId || !selectedModel.value?.modelId) {
+    ElMessage.warning('请先在顶部选择 AI 模型')
+    return
+  }
+
+  generatingLocations.value = true
+  aiLocationResults.value = []
+
+  const eventId = `gen-locations-${props.projectId}-${Date.now()}`
+
+  const unsubscribe = window.electronAPI.longwriting.onGenerateEvent(
+    eventId,
+    (event: { type: string; content?: string; data?: any; error?: string }) => {
+      if (event.type === 'done') {
+        generatingLocations.value = false
+        unsubscribe()
+
+        try {
+          const data = event.data || (event.content ? JSON.parse(event.content) : null)
+          if (data && Array.isArray(data)) {
+            aiLocationResults.value = data.map((item: any) => ({ ...item, selected: true }))
+            showAILocationDialog.value = true
+          } else {
+            ElMessage.warning('未生成有效的地点建议')
+          }
+        } catch (e) {
+          console.error('解析地点数据失败:', e)
+          ElMessage.error('解析地点数据失败')
+        }
+      } else if (event.type === 'error') {
+        generatingLocations.value = false
+        unsubscribe()
+        ElMessage.error(event.error || '生成失败')
+      }
+    }
+  )
+
+  const result = await window.electronAPI.longwriting.generateLocations(
+    eventId,
+    props.projectId,
+    selectedModel.value.providerId,
+    selectedModel.value.modelId
+  )
+
+  if (!result.success) {
+    generatingLocations.value = false
+    unsubscribe()
+    ElMessage.error(result.error || '生成失败')
+  }
+}
+
+// 采纳选中的地点
+async function adoptSelectedLocations() {
+  const selectedItems = aiLocationResults.value.filter(item => item.selected)
+  if (selectedItems.length === 0) {
+    ElMessage.warning('请至少选择一个地点')
+    return
+  }
+
+  let successCount = 0
+  for (const item of selectedItems) {
+    const result = await window.electronAPI.longwriting.createLocation({
+      projectId: props.projectId,
+      name: item.name,
+      type: item.type,
+      importance: item.importance,
+      description: item.description,
+      mapId: item.suggestedMapId || undefined
+    })
+    if (result.success) {
+      successCount++
+    }
+  }
+
+  ElMessage.success(`已添加 ${successCount} 个地点`)
+  showAILocationDialog.value = false
+  aiLocationResults.value = []
+  await loadLocations()
+  emit('update:progress', 35)
+}
+
+// AI 生成势力建议
+async function generateFactionsFromAI() {
+  if (!props.projectId) return
+
+  if (!selectedModel.value?.providerId || !selectedModel.value?.modelId) {
+    ElMessage.warning('请先在顶部选择 AI 模型')
+    return
+  }
+
+  generatingFactions.value = true
+  aiFactionResults.value = []
+
+  const eventId = `gen-factions-${props.projectId}-${Date.now()}`
+
+  const unsubscribe = window.electronAPI.longwriting.onGenerateEvent(
+    eventId,
+    (event: { type: string; content?: string; data?: any; error?: string }) => {
+      if (event.type === 'done') {
+        generatingFactions.value = false
+        unsubscribe()
+
+        try {
+          const data = event.data || (event.content ? JSON.parse(event.content) : null)
+          if (data && Array.isArray(data)) {
+            aiFactionResults.value = data.map((item: any) => ({ ...item, selected: true }))
+            showAIFactionDialog.value = true
+          } else {
+            ElMessage.warning('未生成有效的势力建议')
+          }
+        } catch (e) {
+          console.error('解析势力数据失败:', e)
+          ElMessage.error('解析势力数据失败')
+        }
+      } else if (event.type === 'error') {
+        generatingFactions.value = false
+        unsubscribe()
+        ElMessage.error(event.error || '生成失败')
+      }
+    }
+  )
+
+  const result = await window.electronAPI.longwriting.generateFactions(
+    eventId,
+    props.projectId,
+    selectedModel.value.providerId,
+    selectedModel.value.modelId
+  )
+
+  if (!result.success) {
+    generatingFactions.value = false
+    unsubscribe()
+    ElMessage.error(result.error || '生成失败')
+  }
+}
+
+// 采纳选中的势力
+async function adoptSelectedFactions() {
+  const selectedItems = aiFactionResults.value.filter(item => item.selected)
+  if (selectedItems.length === 0) {
+    ElMessage.warning('请至少选择一个势力')
+    return
+  }
+
+  let successCount = 0
+  for (const item of selectedItems) {
+    // 尝试匹配地点ID
+    let locationId: string | undefined = undefined
+    if (item.suggestedLocationName) {
+      const matchedLocation = locations.value.find(
+        loc => loc.name === item.suggestedLocationName
+      )
+      if (matchedLocation) {
+        locationId = matchedLocation.id
+      }
+    }
+
+    const result = await window.electronAPI.longwriting.createFaction({
+      projectId: props.projectId,
+      factionType: item.factionType,
+      name: item.name,
+      locationId: locationId,
+      description: item.description
+    })
+    if (result.success) {
+      successCount++
+    }
+  }
+
+  ElMessage.success(`已添加 ${successCount} 个势力`)
+  showAIFactionDialog.value = false
+  aiFactionResults.value = []
+  await loadFactions()
+  emit('update:progress', 35)
 }
 
 onMounted(() => {
@@ -1498,5 +1836,71 @@ onMounted(() => {
 .add-map-btn {
   width: 100%;
   border-style: dashed;
+}
+
+// Tab 操作按钮区域
+.tab-actions {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  background: var(--bg-color);
+  border-radius: 8px;
+  border: 1px solid var(--border-color-light);
+}
+
+// AI 生成结果对话框样式
+.dialog-tip {
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  color: var(--text-color-secondary);
+}
+
+.ai-result-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.ai-result-item {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  margin-bottom: 8px;
+  background: var(--fill-color-lighter);
+  border-radius: 8px;
+  transition: all 0.2s;
+
+  &:hover {
+    background: var(--fill-color-light);
+  }
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.ai-result-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-result-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.ai-result-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-color-primary);
+}
+
+.ai-result-desc {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-color-secondary);
+  line-height: 1.6;
 }
 </style>

@@ -67,13 +67,11 @@
       <template v-else-if="!selectedCharacterId">
         <div class="character-list-page">
           <div class="page-header">
-            <div class="header-left">
-              <el-button link @click="selectedProjectId = ''">
-                <el-icon><ArrowLeft /></el-icon>
-                返回项目列表
-              </el-button>
-              <h2>{{ selectedProject?.name }}</h2>
-            </div>
+            <el-button @click="selectedProjectId = ''">
+              <el-icon><ArrowLeft /></el-icon>
+              返回
+            </el-button>
+            <h2>{{ selectedProject?.name }}</h2>
             <el-button type="primary" @click="showCreateCharacterDialog = true">
               <el-icon><Plus /></el-icon>
               创建人物形象
@@ -571,26 +569,25 @@ onMounted(async () => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 20px;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  padding: 16px 20px;
+  background: #fff;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  flex-shrink: 0;
 
-  .header-left {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-
-    h2 {
-      margin: 0;
-      font-size: 20px;
-      color: var(--el-text-color-primary);
-    }
+  h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+    flex: 1;
+    text-align: center;
   }
 }
 
@@ -598,6 +595,9 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 20px;
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
 }
 
 .character-card {

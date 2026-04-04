@@ -2,7 +2,7 @@
   <div class="character-editor">
     <!-- 紧凑头部 -->
     <div class="editor-header">
-      <el-button link size="small" @click="$emit('back')">
+      <el-button @click="$emit('back')">
         <el-icon><ArrowLeft /></el-icon>
         返回
       </el-button>
@@ -12,7 +12,7 @@
           {{ GENDER_LABELS[character.gender] }} · {{ character.age }}岁
         </el-tag>
       </div>
-      <el-button v-if="hasFrontImage" type="primary" size="small" @click="handleExport">
+      <el-button v-if="hasFrontImage" type="primary" @click="handleExport">
         <el-icon><Download /></el-icon>
         导出
       </el-button>
