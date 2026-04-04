@@ -807,7 +807,7 @@ function formatContent(content: string): string {
     }
 
     // 自定义行内代码渲染
-    renderer.codespan = (text: string) => {
+    renderer.codespan = ({ text }: { text: string }) => {
       return `<code class="inline-code">${text}</code>`
     }
 
@@ -1249,7 +1249,7 @@ function renderContentForImage(content: string): string {
     }
 
     // 自定义行内代码渲染（带内联样式）
-    renderer.codespan = (text: string) => {
+    renderer.codespan = ({ text }: { text: string }) => {
       return `<code style="background:#f1f5f9;color:#3b82f6;padding:2px 6px;border-radius:4px;font-size:13px;font-family:'SF Mono',Monaco,Menlo,monospace;">${text}</code>`
     }
 
