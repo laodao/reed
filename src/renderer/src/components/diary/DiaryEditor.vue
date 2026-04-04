@@ -9,79 +9,86 @@
         </el-button>
       </div>
       <div class="header-right">
-        <el-button text @click="handleSave">
-          <el-icon><Check /></el-icon>
-          保存
-        </el-button>
+        <el-dropdown @command="handleExport">
+          <el-button>
+            <el-icon><Download /></el-icon>
+            导出
+            <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="html">导出 HTML</el-dropdown-item>
+              <el-dropdown-item command="pdf">导出 PDF</el-dropdown-item>
+              <el-dropdown-item command="docx">导出 Word</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
     </div>
 
     <!-- 标题输入 -->
     <div class="editor-title">
-      <el-input
+      <input
         v-model="title"
-        placeholder="请输入标题..."
-        size="large"
-        @change="handleTitleChange"
+        type="text"
+        placeholder="日记标题"
+        class="title-input"
+        @blur="handleTitleChange"
       />
     </div>
 
     <!-- 编辑器内容 -->
     <div class="editor-content">
-      <div ref="editorRef" class="md-editor"></div>
+      <MarkdownEditor
+        v-model="content"
+        placeholder="开始写日记..."
+        @change="handleContentChange"
+      />
     </div>
 
     <!-- 底部信息栏 -->
     <div class="editor-footer">
-      <div class="footer-left">
-        <span class="word-count">{{ wordCount }} 字</span>
-      </div>
-      <div class="footer-right">
-        <span class="last-update">最后更新: {{ formatTime(entry.updatedAt) }}</span>
-      </div>
+      <span class="word-count">{{ wordCount }} 字</span>
+      <span class="last-saved">最后保存: {{ lastSavedTime }}</span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, Check } from '@element-plus/icons-vue'
+import { ArrowLeft, Download, ArrowDown } from '@element-plus/icons-vue'
+import MarkdownEditor from '@/components/common/MarkdownEditor.vue'
 import type { DiaryEntry } from '@shared/types/diary'
 
-// Props
 const props = defineProps<{
   entry: DiaryEntry
 }>()
 
-// Emits
 const emit = defineEmits<{
   back: []
   updated: []
 }>()
 
-// 编辑器引用
-const editorRef = ref<HTMLDivElement | null>(null)
-let editorInstance: any = null
-
-// 标题
-const title = ref(props.entry.title || '')
-
-// 内容
+const title = ref(props.entry.title)
 const content = ref(props.entry.content || '')
+const lastSavedTime = ref(new Date().toLocaleTimeString())
+const saveTimeout = ref<number | null>(null)
 
-// 字数统计
 const wordCount = computed(() => {
   return content.value.replace(/\s/g, '').length
 })
 
-// 标题变化处理
-async function handleTitleChange() {
-  if (title.value === props.entry.title) return
-  await saveEntry()
-}
+// 自动保存
+watch(content, () => {
+  if (saveTimeout.value) {
+    clearTimeout(saveTimeout.value)
+  }
+  saveTimeout.value = window.setTimeout(() => {
+    saveEntry()
+  }, 1000)
+})
 
-// 保存日记
 async function saveEntry() {
   try {
     const result = await window.electronAPI.diary.updateEntry(props.entry.id, {
@@ -89,67 +96,52 @@ async function saveEntry() {
       content: content.value
     })
     if (result.success) {
+      lastSavedTime.value = new Date().toLocaleTimeString()
       emit('updated')
-      ElMessage.success('保存成功')
-    } else {
-      ElMessage.error(result.error || '保存失败')
     }
   } catch (error) {
-    console.error('保存日记失败:', error)
-    ElMessage.error('保存失败')
+    console.error('保存失败:', error)
   }
 }
 
-// 处理保存按钮点击
-async function handleSave() {
-  await saveEntry()
-}
-
-// 格式化时间
-function formatTime(date: Date | string): string {
-  const d = new Date(date)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
-
-// 初始化编辑器
-async function initEditor() {
-  // 动态导入 ByteMD
-  const { Editor } = await import('@bytemd/vue')
-  const gfm = await import('@bytemd/plugin-gfm')
-  const highlight = await import('@bytemd/plugin-highlight')
-
-  if (editorRef.value) {
-    editorInstance = new Editor({
-      target: editorRef.value,
-      props: {
-        value: content.value,
-        plugins: [gfm.default(), highlight.default()],
-        mode: 'split'
-      }
-    })
-
-    editorInstance.$on('change', (e: { detail: { value: string } }) => {
-      content.value = e.detail.value
-    })
+async function handleTitleChange() {
+  if (title.value !== props.entry.title) {
+    await saveEntry()
   }
 }
 
-// 监听 entry 变化，重置编辑器内容
-watch(() => props.entry, (newEntry) => {
-  title.value = newEntry.title || ''
-  content.value = newEntry.content || ''
-  if (editorInstance) {
-    editorInstance.$set({ value: content.value })
-  }
-})
+function handleContentChange() {
+  // 内容变化由 watch 处理
+}
 
-onMounted(() => {
-  initEditor()
-})
+async function handleExport(format: string) {
+  try {
+    let result
+    switch (format) {
+      case 'html':
+        result = await window.electronAPI.diary.exportHtml(props.entry.id)
+        break
+      case 'pdf':
+        result = await window.electronAPI.diary.exportPdf(props.entry.id)
+        break
+      case 'docx':
+        result = await window.electronAPI.diary.exportDocx(props.entry.id)
+        break
+    }
+    if (result?.success) {
+      ElMessage.success(`导出成功: ${result.data}`)
+    } else {
+      ElMessage.error(result?.error || '导出失败')
+    }
+  } catch (error) {
+    console.error('导出失败:', error)
+    ElMessage.error('导出失败')
+  }
+}
 
 onUnmounted(() => {
-  if (editorInstance) {
-    editorInstance.$destroy()
+  if (saveTimeout.value) {
+    clearTimeout(saveTimeout.value)
   }
 })
 </script>
@@ -174,42 +166,33 @@ onUnmounted(() => {
   padding: 16px 24px;
   border-bottom: 1px solid var(--border-color-lighter);
 
-  :deep(.el-input__wrapper) {
+  .title-input {
+    width: 100%;
+    font-size: 24px;
+    font-weight: 600;
+    border: none;
+    outline: none;
     background: transparent;
-    box-shadow: none;
-    font-size: 20px;
-    font-weight: 500;
-  }
+    color: var(--text-color-primary);
 
-  :deep(.el-input__inner) {
-    font-size: 20px;
-    font-weight: 500;
+    &::placeholder {
+      color: var(--text-color-placeholder);
+    }
   }
 }
 
 .editor-content {
   flex: 1;
   overflow: hidden;
-  padding: 16px 24px;
-
-  .md-editor {
-    height: 100%;
-    border: 1px solid var(--border-color-lighter);
-    border-radius: 8px;
-  }
+  padding: 0 24px;
 }
 
 .editor-footer {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  padding: 12px 24px;
-  border-top: 1px solid var(--border-color-lighter);
+  padding: 8px 24px;
   font-size: 12px;
   color: var(--text-color-secondary);
-
-  .word-count {
-    margin-right: 16px;
-  }
+  border-top: 1px solid var(--border-color-lighter);
 }
 </style>

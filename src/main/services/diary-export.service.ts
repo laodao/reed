@@ -7,18 +7,28 @@ import { BrowserWindow } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
-import { marked } from 'marked'
-import { DiaryEntryRepository } from '../database/repositories/diary-entry.repository'
+import { DiaryService } from './diary.service'
 import { markdownToDocx } from '../utils/markdown-to-docx'
 import type { DiaryIpcResponse } from '../../shared/types/diary.types'
 
-export class DiaryExportService {
-  private diaryEntryRepository: DiaryEntryRepository
-  private rootPath: string
+// 缓存 marked 模块
+let markedModule: typeof import('marked') | null = null
 
-  constructor(diaryEntryRepository: DiaryEntryRepository, rootPath: string) {
-    this.diaryEntryRepository = diaryEntryRepository
-    this.rootPath = rootPath
+/**
+ * 动态加载 marked 模块
+ */
+async function getMarked(): Promise<typeof import('marked')> {
+  if (!markedModule) {
+    markedModule = await import('marked')
+  }
+  return markedModule
+}
+
+export class DiaryExportService {
+  private diaryService: DiaryService
+
+  constructor(diaryService: DiaryService) {
+    this.diaryService = diaryService
   }
 
   /**
@@ -26,12 +36,14 @@ export class DiaryExportService {
    */
   async exportToHtml(entryId: string, outputPath?: string): Promise<DiaryIpcResponse<string>> {
     try {
-      const entry = this.diaryEntryRepository.findById(entryId)
-      if (!entry) {
-        return { success: false, error: '日记条目不存在' }
+      const result = await this.diaryService.getEntry(entryId)
+      if (!result.success || !result.data) {
+        return { success: false, error: result.error || '日记不存在' }
       }
 
-      const htmlContent = await marked(entry.content || '')
+      const entry = result.data
+      const marked = await getMarked()
+      const htmlContent = await marked.marked(entry.content || '')
       const fullHtml = this.wrapHtml(entry.title, htmlContent)
 
       const filePath = outputPath || this.getDefaultExportPath(entry.title, 'html')
@@ -49,16 +61,18 @@ export class DiaryExportService {
    */
   async exportToPdf(entryId: string, window: BrowserWindow): Promise<DiaryIpcResponse<string>> {
     try {
-      const entry = this.diaryEntryRepository.findById(entryId)
-      if (!entry) {
-        return { success: false, error: '日记条目不存在' }
+      const result = await this.diaryService.getEntry(entryId)
+      if (!result.success || !result.data) {
+        return { success: false, error: result.error || '日记不存在' }
       }
 
-      const htmlContent = await marked(entry.content || '')
+      const entry = result.data
+      const marked = await getMarked()
+      const htmlContent = await marked.marked(entry.content || '')
       const fullHtml = this.wrapHtml(entry.title, htmlContent, true)
 
       // 创建临时 HTML 文件
-      const tempPath = path.join(this.rootPath, '.temp-export.html')
+      const tempPath = path.join(this.diaryService.getRootPath(), '.temp-export.html')
       fs.writeFileSync(tempPath, fullHtml, 'utf-8')
 
       // 加载 HTML 并打印
@@ -94,11 +108,12 @@ export class DiaryExportService {
    */
   async exportToDocx(entryId: string, outputPath?: string): Promise<DiaryIpcResponse<string>> {
     try {
-      const entry = this.diaryEntryRepository.findById(entryId)
-      if (!entry) {
-        return { success: false, error: '日记条目不存在' }
+      const result = await this.diaryService.getEntry(entryId)
+      if (!result.success || !result.data) {
+        return { success: false, error: result.error || '日记不存在' }
       }
 
+      const entry = result.data
       const buffer = await markdownToDocx(entry.content || '', {
         title: entry.title
       })
