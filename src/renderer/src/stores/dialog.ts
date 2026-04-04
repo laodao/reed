@@ -257,6 +257,10 @@ export const useDialogStore = defineStore('dialog', () => {
     if (!messagesCache.value.has(dialog.id)) {
       await loadMessages(dialog.id)
     }
+    // 更新对话的 updated_at 字段，使其成为"最近打开"的对话
+    window.electronAPI.dialog.touch(dialog.id).catch(err => {
+      console.error('更新对话时间戳失败:', err)
+    })
   }
 
   // ==================== 消息管理 ====================

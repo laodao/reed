@@ -38,6 +38,7 @@ const IPC_CHANNELS = {
   DIALOG_CREATE: 'dialog:create',
   DIALOG_UPDATE: 'dialog:update',
   DIALOG_DELETE: 'dialog:delete',
+  DIALOG_TOUCH: 'dialog:touch',
 
   // 消息相关
   MESSAGE_LIST: 'message:list',
@@ -232,7 +233,8 @@ const electronAPI = {
         providerConfigId: string
       }>
     ) => ipcRenderer.invoke(IPC_CHANNELS.DIALOG_UPDATE, { id, data }),
-    delete: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.DIALOG_DELETE, id)
+    delete: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.DIALOG_DELETE, id),
+    touch: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.DIALOG_TOUCH, id)
   },
 
   // 消息相关

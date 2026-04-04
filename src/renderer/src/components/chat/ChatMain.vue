@@ -13,6 +13,7 @@
       :stream-state="streamState"
       :is-generating="isGenerating"
       :available-models="availableModels"
+      :dialog-title="dialog.title"
       @edit="handleMessageEdit"
       @delete="handleMessageDelete"
       @regenerate="handleMessageRegenerate"

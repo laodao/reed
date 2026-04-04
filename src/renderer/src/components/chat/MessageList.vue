@@ -2,10 +2,12 @@
   <div class="message-list" ref="listRef" @scroll="handleScroll">
     <div class="messages-container">
       <MessageItem
-        v-for="message in displayMessages"
+        v-for="(message, index) in displayMessages"
         :key="message.id"
         :message="message"
         :available-models="availableModels"
+        :dialog-title="dialogTitle"
+        :answer-index="getAnswerIndex(index)"
         @edit="handleEdit"
         @copy="handleCopy"
         @delete="handleDelete"
@@ -48,6 +50,7 @@ const props = defineProps<{
   streamState: StreamState
   isGenerating: boolean
   availableModels?: ModelOption[]
+  dialogTitle?: string
 }>()
 
 const emit = defineEmits<{
@@ -72,6 +75,22 @@ const displayMessages = computed(() => {
   }
   return props.messages
 })
+
+// 计算 AI 回答的序号（第几次回答）
+function getAnswerIndex(messageIndex: number): number | undefined {
+  const message = displayMessages.value[messageIndex]
+  // 只有 AI 回答才计算序号
+  if (message?.role !== 'assistant') return undefined
+
+  // 计算这是第几个 assistant 消息
+  let count = 0
+  for (let i = 0; i <= messageIndex; i++) {
+    if (displayMessages.value[i]?.role === 'assistant') {
+      count++
+    }
+  }
+  return count
+}
 
 // 格式化流式内容（带代码块）
 function formatStreamContent(content: string): string {

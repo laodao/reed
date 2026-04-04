@@ -303,33 +303,24 @@
           <el-input v-model="exportToDiaryTitle" placeholder="请输入日记标题" />
         </el-form-item>
         <el-form-item label="选择目录">
-          <el-input
-            v-model="diaryFolderSearchKey"
-            placeholder="搜索目录..."
-            clearable
-            style="margin-bottom: 8px"
-          />
-          <div class="diary-folder-tree">
-            <el-scrollbar height="200px">
-              <div v-if="filteredDiaryFolders.length === 0" class="empty-folders">
-                暂无目录
+          <el-select
+            v-model="selectedDiaryFolderId"
+            filterable
+            placeholder="请选择或搜索目录"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="folder in allDiaryFolders"
+              :key="folder.id"
+              :label="folder.fullName || folder.name"
+              :value="folder.id"
+            >
+              <div :style="{ paddingLeft: `${folder.level * 16}px` }">
+                <el-icon style="vertical-align: middle; margin-right: 4px;"><Folder /></el-icon>
+                <span>{{ folder.name }}</span>
               </div>
-              <div v-else>
-                <div
-                  v-for="folder in filteredDiaryFolders"
-                  :key="folder.id"
-                  class="folder-option"
-                  :class="{ selected: selectedDiaryFolderId === folder.id }"
-                  :style="{ paddingLeft: `${folder.level * 16 + 12}px` }"
-                  @click="selectedDiaryFolderId = folder.id"
-                >
-                  <el-icon class="folder-icon"><Folder /></el-icon>
-                  <span class="folder-name">{{ folder.name }}</span>
-                  <el-icon v-if="selectedDiaryFolderId === folder.id" class="check-icon"><Check /></el-icon>
-                </div>
-              </div>
-            </el-scrollbar>
-          </div>
+            </el-option>
+          </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -371,14 +362,43 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, watch, onMounted } from 'vue'
 import html2canvas from 'html2canvas'
 import { Document, Edit, CopyDocument, Delete, Refresh, Switch, Coin, Collection, More, Picture, Notebook, ArrowRight, View, Tickets, Folder, Check } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElImageViewer } from 'element-plus'
 import { marked } from 'marked'
+import mermaid from 'mermaid'
 import type { Message, Attachment } from '../../../shared/types'
 import ModelSelectDialog from './ModelSelectDialog.vue'
 import ExportToObsidianDialog from './ExportToObsidianDialog.vue'
+
+// 初始化 Mermaid
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'default',
+  securityLevel: 'loose',
+  flowchart: {
+    useMaxWidth: false,
+    htmlLabels: true,
+    curve: 'basis'
+  },
+  sequence: {
+    useMaxWidth: false,
+    diagramMarginX: 10,
+    diagramMarginY: 10,
+    actorMargin: 50,
+    width: 150,
+    height: 65
+  },
+  gantt: {
+    useMaxWidth: false,
+    leftPadding: 75,
+    gridLineStartPadding: 35,
+    fontSize: 14,
+    sectionFontSize: 14
+  },
+  fontSize: 16
+})
 
 interface ModelOption {
   id: string
@@ -391,6 +411,8 @@ interface ModelOption {
 const props = defineProps<{
   message: Message
   availableModels?: ModelOption[]
+  dialogTitle?: string
+  answerIndex?: number
 }>()
 
 const emit = defineEmits<{
@@ -421,54 +443,50 @@ const showExportToDiaryDialog = ref(false)
 const exportToDiaryLoading = ref(false)
 const exportToDiaryTitle = ref('')
 const selectedDiaryFolderId = ref('')
-const diaryFolderSearchKey = ref('')
-const allDiaryFolders = ref<Array<{ id: string; name: string; parentId?: string; level: number }>>([])
-
-// 过滤后的目录列表
-const filteredDiaryFolders = computed(() => {
-  if (!diaryFolderSearchKey.value) {
-    return allDiaryFolders.value
-  }
-  const keyword = diaryFolderSearchKey.value.toLowerCase()
-  return allDiaryFolders.value.filter(f => f.name.toLowerCase().includes(keyword))
-})
+const allDiaryFolders = ref<Array<{ id: string; name: string; parentId?: string; level: number; fullName: string }>>([])
 
 // 打开导出到日记对话框
 async function openExportToDiaryDialog() {
-  // 设置默认标题
-  exportToDiaryTitle.value = `AI回答 - ${new Date().toLocaleDateString()}`
+  // 设置默认标题：对话标题-回答序号
+  if (props.dialogTitle && props.answerIndex) {
+    exportToDiaryTitle.value = `${props.dialogTitle}-${props.answerIndex}`
+  } else if (props.dialogTitle) {
+    exportToDiaryTitle.value = props.dialogTitle
+  } else {
+    exportToDiaryTitle.value = `AI回答 - ${new Date().toLocaleDateString()}`
+  }
   selectedDiaryFolderId.value = ''
-  diaryFolderSearchKey.value = ''
 
   // 加载目录列表
   try {
     const result = await window.electronAPI.diary.getAllFolders()
     if (result.success && result.data) {
-      // 构建树形结构并计算层级
+      // 构建树形结构并计算层级和完整路径
       const folders = result.data
-      const folderMap = new Map(folders.map(f => [f.id, { ...f, level: 0 }]))
-      const rootFolders: Array<{ id: string; name: string; parentId?: string; level: number }> = []
+      const folderMap = new Map(folders.map(f => [f.id, { ...f, level: 0, fullName: f.name }]))
 
-      // 递归计算层级并排序
-      function getLevel(folderId: string): number {
+      // 递归计算层级和完整路径
+      function getLevelAndPath(folderId: string): { level: number; fullName: string } {
         const folder = folderMap.get(folderId)
-        if (!folder) return 0
-        if (folder.level > 0) return folder.level
+        if (!folder) return { level: 0, fullName: '' }
+        if (folder.level > 0) return { level: folder.level, fullName: folder.fullName }
         if (!folder.parentId) {
           folder.level = 0
+          folder.fullName = folder.name
         } else {
-          folder.level = getLevel(folder.parentId) + 1
+          const parent = getLevelAndPath(folder.parentId)
+          folder.level = parent.level + 1
+          folder.fullName = `${parent.fullName} / ${folder.name}`
         }
-        return folder.level
+        return { level: folder.level, fullName: folder.fullName }
       }
 
-      // 计算每个目录的层级
-      folders.forEach(f => getLevel(f.id))
+      // 计算每个目录的层级和完整路径
+      folders.forEach(f => getLevelAndPath(f.id))
 
-      // 按层级排序
+      // 按完整路径排序
       allDiaryFolders.value = Array.from(folderMap.values()).sort((a, b) => {
-        if (a.level !== b.level) return a.level - b.level
-        return a.name.localeCompare(b.name)
+        return a.fullName.localeCompare(b.fullName)
       })
 
       // 默认选择第一个目录
@@ -533,6 +551,49 @@ const currentKbRef = ref<{ documentId: string; documentName: string; score: numb
 
 // 消息内容容器引用
 const messageContentRef = ref<HTMLElement | null>(null)
+
+// 渲染 Mermaid 图表
+async function renderMermaidCharts(): Promise<void> {
+  if (!messageContentRef.value) return
+
+  const mermaidElements = messageContentRef.value.querySelectorAll('.mermaid')
+  if (mermaidElements.length === 0) return
+
+  try {
+    // 为每个 mermaid 元素生成唯一 ID 并渲染
+    for (let i = 0; i < mermaidElements.length; i++) {
+      const element = mermaidElements[i] as HTMLElement
+      if (element.getAttribute('data-processed')) continue
+
+      const id = `mermaid-${Date.now()}-${i}`
+      const code = element.textContent || ''
+
+      const { svg } = await mermaid.render(id, code)
+      element.innerHTML = svg
+      element.setAttribute('data-processed', 'true')
+    }
+  } catch (error) {
+    console.error('Mermaid 渲染错误:', error)
+  }
+}
+
+// 监听内容变化，渲染 mermaid 图表
+watch(
+  () => props.message.content,
+  () => {
+    nextTick(() => {
+      renderMermaidCharts()
+    })
+  },
+  { immediate: true }
+)
+
+// 监听渲染模式变化，重新渲染 mermaid
+watch(isRenderMode, () => {
+  nextTick(() => {
+    renderMermaidCharts()
+  })
+})
 
 // 处理复制按钮点击（事件委托）
 function handleContentClick(event: MouseEvent): void {
@@ -639,10 +700,25 @@ function formatContent(content: string): string {
   if (!content) return ''
 
   try {
-    // 使用 marked 解析，使用默认渲染器
+    // 自定义渲染器，让代码块使用自定义样式
+    const renderer = new marked.Renderer()
+
+    // 自定义代码块渲染
+    renderer.code = ({ text, lang }: { text: string; lang?: string }) => {
+      const language = lang || ''
+      const code = text
+      return renderCodeBlock(language, code)
+    }
+
+    // 自定义行内代码渲染
+    renderer.codespan = (text: string) => {
+      return `<code class="inline-code">${text}</code>`
+    }
+
     return marked.parse(content, {
       breaks: true,
-      gfm: true
+      gfm: true,
+      renderer
     }) as string
   } catch (error) {
     console.error('Markdown 解析错误:', error)
@@ -688,6 +764,26 @@ function formatSourceContent(content: string): string {
 
 // 渲染代码块 HTML（使用纯 HTML 模拟 CodeBlock 组件）
 function renderCodeBlock(language: string, code: string): string {
+  // Mermaid 图表特殊处理
+  if (language === 'mermaid') {
+    // 使用 base64 编码代码内容
+    const encodedCode = btoa(unescape(encodeURIComponent(code)))
+    return `
+      <div class="mermaid-wrapper">
+        <div class="mermaid-header">
+          <span class="language">mermaid</span>
+          <button class="copy-btn" data-code-b64="${encodedCode}">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+            <span>复制</span>
+          </button>
+        </div>
+        <div class="mermaid-content" data-mermaid-code="${encodedCode}">
+          <pre class="mermaid">${escapeHtml(code)}</pre>
+        </div>
+      </div>
+    `
+  }
+
   const lines = code.split('\n')
   const lineNumbers = lines.map((_, i) => `<span class="line-number">${i + 1}</span>`).join('')
   const codeLines = lines.map(line => escapeHtml(line)).join('\n')
@@ -1323,6 +1419,73 @@ function showKnowledgeBaseSnippet(ref: { documentId: string; documentName: strin
       }
     }
   }
+
+  // Mermaid 图表样式
+  :deep(.mermaid-wrapper) {
+    background: #f8fafc;
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 10px 0;
+    border: 1px solid #e2e8f0;
+
+    .mermaid-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      background: #f1f5f9;
+      border-bottom: 1px solid #e2e8f0;
+
+      .language {
+        font-size: 12px;
+        color: #64748b;
+        text-transform: lowercase;
+      }
+
+      .copy-btn {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        background: transparent;
+        border: none;
+        color: #64748b;
+        cursor: pointer;
+        font-size: 12px;
+        padding: 4px 8px;
+        border-radius: 4px;
+        transition: all 0.2s;
+
+        &:hover {
+          background: #e2e8f0;
+          color: #334155;
+        }
+      }
+    }
+
+    .mermaid-content {
+      padding: 20px;
+      overflow-x: auto;
+      display: flex;
+      justify-content: flex-start;
+      min-height: 100px;
+
+      pre.mermaid {
+        margin: 0;
+        background: transparent;
+        font-family: inherit;
+        display: inline-block;
+
+        svg {
+          /* 让 SVG 根据内容自适应大小 */
+          width: auto;
+          min-width: 100%;
+          height: auto;
+          /* 保证最小字体可读 */
+          font-size: 14px;
+        }
+      }
+    }
+  }
 }
 
 // 消息底部：Token 数和操作按钮
@@ -1712,48 +1875,6 @@ function showKnowledgeBaseSnippet(ref: { documentId: string; documentName: strin
     overflow-y: auto;
     white-space: pre-wrap;
     word-break: break-word;
-  }
-}
-
-.diary-folder-tree {
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 8px;
-  overflow: hidden;
-
-  .empty-folders {
-    padding: 24px;
-    text-align: center;
-    color: var(--el-text-color-placeholder);
-  }
-}
-
-.folder-option {
-  display: flex;
-  align-items: center;
-  padding: 10px 12px;
-  cursor: pointer;
-  transition: all 0.2s;
-
-  &:hover {
-    background: var(--el-fill-color-light);
-  }
-
-  &.selected {
-    background: var(--el-color-primary-light-9);
-  }
-
-  .folder-icon {
-    margin-right: 8px;
-    color: var(--el-color-primary);
-  }
-
-  .folder-name {
-    flex: 1;
-    font-size: 14px;
-  }
-
-  .check-icon {
-    color: var(--el-color-primary);
   }
 }
 </style>

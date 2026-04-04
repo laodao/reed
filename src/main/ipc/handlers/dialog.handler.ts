@@ -18,6 +18,7 @@ export function registerDialogHandlers(): void {
   ipcMain.handle('dialog:create', handleCreateDialog)
   ipcMain.handle('dialog:update', handleUpdateDialog)
   ipcMain.handle('dialog:delete', handleDeleteDialog)
+  ipcMain.handle('dialog:touch', handleTouchDialog)
 }
 
 /**
@@ -177,6 +178,27 @@ async function handleDeleteDialog(
 }
 
 /**
+ * 处理更新对话时间戳（用于记录最后访问的对话）
+ */
+async function handleTouchDialog(
+  event: IpcMainInvokeEvent,
+  dialogId: string
+): Promise<{ success: boolean }> {
+  try {
+    const dbManager = getDatabaseManager()
+    if (!dbManager.dialogs) {
+      return { success: false }
+    }
+
+    await dbManager.dialogs.touch(dialogId)
+    return { success: true }
+  } catch (error) {
+    console.error('更新对话时间戳失败:', error)
+    return { success: false }
+  }
+}
+
+/**
  * 注销对话相关IPC处理器
  */
 export function unregisterDialogHandlers(): void {
@@ -186,4 +208,5 @@ export function unregisterDialogHandlers(): void {
   ipcMain.removeHandler('dialog:create')
   ipcMain.removeHandler('dialog:update')
   ipcMain.removeHandler('dialog:delete')
+  ipcMain.removeHandler('dialog:touch')
 }
