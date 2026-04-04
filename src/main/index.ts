@@ -64,6 +64,7 @@ import { registerExportHandlers } from './ipc/handlers/export.handler'
 import { registerPortraitHandlers } from './ipc/handlers/portrait.handler'
 import { registerSearchEngineHandlers } from './ipc/handlers/search-engine.handler'
 import { registerLongWritingHandlers } from './ipc/handlers/longwriting.handler'
+import { registerDiaryHandlers } from './ipc/handlers/diary.handler'
 import * as fs from 'fs'
 
 // 在 app ready 之前注册协议权限（重要！）
@@ -249,6 +250,7 @@ function initIpcHandlers(): void {
   registerPortraitHandlers()
   registerSearchEngineHandlers()
   registerLongWritingHandlers()
+  registerDiaryHandlers()
 }
 
 // 应用就绪
