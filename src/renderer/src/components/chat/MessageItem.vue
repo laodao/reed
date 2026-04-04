@@ -634,6 +634,9 @@ async function renderMermaidCharts(): Promise<void> {
     if (!mermaidElement) continue
 
     const code = mermaidElement.textContent || ''
+    // 如果代码为空，跳过（可能 DOM 还没准备好）
+    if (!code.trim()) continue
+
     const id = `mermaid-${Date.now()}-${i}`
 
     try {
@@ -649,8 +652,6 @@ async function renderMermaidCharts(): Promise<void> {
       const errorIndicator = wrapper.querySelector('.error-indicator') as HTMLElement
       if (errorIndicator) {
         errorIndicator.style.display = 'inline-flex'
-        errorIndicator.style.alignItems = 'center'
-        errorIndicator.style.marginLeft = '8px'
       }
 
       // 保持代码显示，添加错误样式
@@ -659,33 +660,35 @@ async function renderMermaidCharts(): Promise<void> {
   }
 }
 
+// 使用 requestAnimationFrame 确保在浏览器渲染后执行
+function scheduleMermaidRender(): void {
+  requestAnimationFrame(() => {
+    nextTick(() => {
+      renderMermaidCharts()
+    })
+  })
+}
+
 // 监听内容变化，渲染 mermaid 图表
 watch(
   () => props.message.content,
   () => {
-    // 使用 setTimeout 确保 DOM 完全更新后再渲染
-    setTimeout(() => {
-      nextTick(() => {
-        renderMermaidCharts()
-      })
-    }, 0)
+    scheduleMermaidRender()
   },
   { immediate: true }
 )
 
 // 监听渲染模式变化，重新渲染 mermaid
 watch(isRenderMode, () => {
-  nextTick(() => {
-    renderMermaidCharts()
-  })
+  scheduleMermaidRender()
 })
 
 // 组件挂载后渲染 Mermaid 图表
 onMounted(() => {
-  // 延迟渲染，确保 DOM 完全准备好
-  setTimeout(() => {
-    renderMermaidCharts()
-  }, 100)
+  // 多次尝试渲染，确保复杂内容也能正确渲染
+  scheduleMermaidRender()
+  setTimeout(scheduleMermaidRender, 50)
+  setTimeout(scheduleMermaidRender, 200)
 })
 
 // 处理复制按钮点击（事件委托）
@@ -889,13 +892,15 @@ function renderCodeBlock(language: string, code: string): string {
       <div class="mermaid-wrapper" data-render-status="pending">
         <div class="mermaid-header">
           <span class="language">mermaid</span>
-          <button class="copy-btn" data-code-b64="${encodedCode}">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
-            <span>复制</span>
-          </button>
-          <span class="error-indicator" style="display:none" title="语法有误无法解析">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="#ef4444"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
-          </span>
+          <div class="header-actions">
+            <span class="error-indicator" style="display:none" title="语法有误无法解析">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="#ef4444"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+            </span>
+            <button class="copy-btn" data-code-b64="${encodedCode}">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+              <span>复制</span>
+            </button>
+          </div>
         </div>
         <div class="mermaid-content" data-mermaid-code="${encodedCode}">
           <pre class="mermaid">${escapeHtml(code)}</pre>
@@ -1121,7 +1126,7 @@ async function exportAsImage(): Promise<void> {
   }
 
   try {
-    // 准备渲染内容
+    // 准备渲染内容（使用与阅读模式相同的渲染逻辑）
     imageExportContent.value = renderContentForImage(props.message.content)
 
     // 等待 DOM 更新
@@ -1131,6 +1136,9 @@ async function exportAsImage(): Promise<void> {
       ElMessage.error('无法创建图片容器')
       return
     }
+
+    // 渲染 Mermaid 图表
+    await renderMermaidInExportContainer()
 
     // 使用 html2canvas 截图
     const canvas = await html2canvas(imageExportContainer.value, {
@@ -1164,38 +1172,131 @@ async function exportAsImage(): Promise<void> {
   }
 }
 
-// 渲染内容为图片用的 HTML
+// 在导出容器中渲染 Mermaid 图表
+async function renderMermaidInExportContainer(): Promise<void> {
+  if (!imageExportContainer.value) return
+
+  const mermaidWrappers = imageExportContainer.value.querySelectorAll('.mermaid-wrapper')
+  if (mermaidWrappers.length === 0) return
+
+  for (let i = 0; i < mermaidWrappers.length; i++) {
+    const wrapper = mermaidWrappers[i] as HTMLElement
+    const mermaidElement = wrapper.querySelector('.mermaid') as HTMLElement
+    if (!mermaidElement) continue
+
+    const code = mermaidElement.textContent || ''
+    if (!code.trim()) continue
+
+    const id = `mermaid-export-${Date.now()}-${i}`
+
+    try {
+      const { svg } = await mermaid.render(id, code)
+      mermaidElement.innerHTML = svg
+    } catch (error) {
+      console.error('Mermaid 渲染错误:', error)
+      // 渲染失败时保持代码显示
+    }
+  }
+
+  // 等待渲染完成
+  await new Promise(resolve => setTimeout(resolve, 100))
+}
+
+// 渲染内容为图片用的 HTML（使用与阅读模式相同的逻辑）
 function renderContentForImage(content: string): string {
-  let html = content
+  if (!content) return ''
 
-  // 代码块
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
-    return `<pre style="background:#f5f5f5;padding:12px;border-radius:4px;overflow-x:auto;font-family:Consolas,monospace;font-size:13px;line-height:1.5;"><code>${escapeHtml(code.trim())}</code></pre>`
-  })
+  try {
+    // 使用与阅读模式相同的渲染器
+    const renderer = new marked.Renderer()
 
-  // 行内代码
-  html = html.replace(/`([^`]+)`/g, '<code style="background:#f5f5f5;padding:2px 6px;border-radius:3px;font-family:Consolas,monospace;">$1</code>')
+    // 自定义代码块渲染（带内联样式）
+    renderer.code = ({ text, lang }: { text: string; lang?: string }) => {
+      const language = lang || ''
+      const code = text
 
-  // 标题
-  html = html.replace(/^### (.+)$/gm, '<h3 style="margin:16px 0 8px;font-size:16px;font-weight:600;">$1</h3>')
-  html = html.replace(/^## (.+)$/gm, '<h2 style="margin:20px 0 10px;font-size:18px;font-weight:600;">$1</h2>')
-  html = html.replace(/^# (.+)$/gm, '<h1 style="margin:24px 0 12px;font-size:22px;font-weight:700;">$1</h1>')
+      if (language === 'mermaid') {
+        const encodedCode = btoa(unescape(encodeURIComponent(code)))
+        return `
+          <div class="mermaid-wrapper" style="background:#f8fafc;border-radius:8px;overflow:hidden;margin:10px 0;border:1px solid #e2e8f0;">
+            <div class="mermaid-header" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#f1f5f9;border-bottom:1px solid #e2e8f0;">
+              <span class="language" style="font-size:12px;color:#64748b;text-transform:lowercase;">mermaid</span>
+            </div>
+            <div class="mermaid-content" style="padding:16px;overflow-x:auto;">
+              <pre class="mermaid" style="margin:0;background:transparent;font-family:inherit;line-height:1.5;">${escapeHtml(code)}</pre>
+            </div>
+          </div>
+        `
+      }
 
-  // 粗体和斜体
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
+      const lines = code.split('\n')
+      const lineNumbers = lines.map((_, i) => `<span style="display:block;text-align:right;padding:0 8px;font-size:13px;line-height:1.5;color:#64748b;">${i + 1}</span>`).join('')
+      const codeLines = lines.map(line => escapeHtml(line)).join('\n')
 
-  // 列表
-  html = html.replace(/^- (.+)$/gm, '<li style="margin-left:20px;">$1</li>')
-  html = html.replace(/^\d+\. (.+)$/gm, '<li style="margin-left:20px;">$1</li>')
+      return `
+        <div style="background:#1e293b;border-radius:8px;overflow:hidden;margin:10px 0;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#334155;border-bottom:1px solid #475569;">
+            <span style="font-size:12px;color:#94a3b8;text-transform:lowercase;">${language || 'code'}</span>
+          </div>
+          <div style="display:flex;overflow-x:auto;">
+            <div style="padding:12px 0;min-width:40px;text-align:right;background:#1e293b;border-right:1px solid #475569;">
+              ${lineNumbers}
+            </div>
+            <pre style="margin:0;padding:12px 14px;flex:1;overflow-x:auto;"><code style="font-family:'SF Mono',Monaco,Menlo,monospace;font-size:13px;line-height:1.5;color:#e2e8f0;white-space:pre;">${codeLines}</code></pre>
+          </div>
+        </div>
+      `
+    }
 
-  // 换行
-  html = html.replace(/\n\n/g, '</p><p style="margin:12px 0;line-height:1.6;">')
-  html = html.replace(/\n/g, '<br>')
+    // 自定义行内代码渲染
+    renderer.codespan = (text: string) => {
+      return `<code style="background:#f1f5f9;color:#3b82f6;padding:2px 6px;border-radius:4px;font-size:13px;font-family:'SF Mono',Monaco,Menlo,monospace;">${text}</code>`
+    }
 
-  return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#333;line-height:1.6;">
-    <p style="margin:0 0 12px;line-height:1.6;">${html}</p>
-  </div>`
+    // 自定义标题渲染
+    renderer.heading = ({ text, depth }: { text: string; depth: number }) => {
+      const sizes = { 1: '22px', 2: '18px', 3: '16px', 4: '14px', 5: '13px', 6: '12px' }
+      const margins = { 1: '24px 0 12px', 2: '20px 0 10px', 3: '16px 0 8px', 4: '14px 0 7px', 5: '12px 0 6px', 6: '10px 0 5px' }
+      return `<h${depth} style="margin:${margins[depth as keyof typeof margins]};font-size:${sizes[depth as keyof typeof sizes]};font-weight:600;color:#1e293b;">${text}</h${depth}>`
+    }
+
+    // 自定义段落渲染
+    renderer.paragraph = (text: string) => {
+      return `<p style="margin:0 0 12px;line-height:1.7;color:#334155;">${text}</p>`
+    }
+
+    // 自定义列表渲染
+    renderer.list = ({ items, ordered }: { items: string[]; ordered: boolean }) => {
+      const tag = ordered ? 'ol' : 'ul'
+      const listItems = items.map(item => `<li style="margin:4px 0;line-height:1.6;color:#334155;">${item}</li>`).join('')
+      return `<${tag} style="margin:8px 0;padding-left:24px;color:#334155;">${listItems}</${tag}>`
+    }
+
+    // 自定义链接渲染
+    renderer.link = ({ href, text }: { href: string; text: string }) => {
+      return `<a href="${href}" style="color:#3b82f6;text-decoration:none;">${text}</a>`
+    }
+
+    // 自定义引用渲染
+    renderer.blockquote = ({ text }: { text: string }) => {
+      return `<blockquote style="margin:12px 0;padding:8px 16px;border-left:4px solid #e2e8f0;background:#f8fafc;color:#64748b;">${text}</blockquote>`
+    }
+
+    const html = marked.parse(content, {
+      breaks: true,
+      gfm: true,
+      renderer
+    }) as string
+
+    return `
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#334155;line-height:1.7;max-width:100%;">
+        ${html}
+      </div>
+    `
+  } catch (error) {
+    console.error('渲染内容失败:', error)
+    return `<div style="font-family:sans-serif;font-size:14px;color:#334155;white-space:pre-wrap;">${escapeHtml(content)}</div>`
+  }
 }
 
 // 导出为 Word
@@ -1588,6 +1689,18 @@ function showKnowledgeBaseSnippet(ref: { documentId: string; documentName: strin
         font-size: 12px;
         color: #64748b;
         text-transform: lowercase;
+      }
+
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .error-indicator {
+        display: none;
+        align-items: center;
+        justify-content: center;
       }
 
       .copy-btn {
