@@ -62,6 +62,9 @@ export function registerKnowledgeBaseHandlers(): void {
   // 添加文档（直接添加文本内容）
   ipcMain.handle('knowledge-base:add-document', handleAddDocument)
 
+  // 添加网页
+  ipcMain.handle('knowledge-base:add-webpage', handleAddWebpage)
+
   // 获取文档列表
   ipcMain.handle('knowledge-base:get-documents', handleGetDocuments)
 
@@ -179,6 +182,17 @@ async function handleAddDocument(
 ): Promise<IpcResponse<KbDocument>> {
   const service = getKnowledgeBaseService()
   return await service.addDocument(data.knowledgeBaseId, data.data)
+}
+
+/**
+ * 处理添加网页
+ */
+async function handleAddWebpage(
+  _event: IpcMainInvokeEvent,
+  data: { knowledgeBaseId: string; url: string }
+): Promise<IpcResponse<KbDocument>> {
+  const service = getKnowledgeBaseService()
+  return await service.addWebpage(data.knowledgeBaseId, data.url)
 }
 
 /**

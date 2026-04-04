@@ -613,6 +613,9 @@ const electronAPI = {
       type: 'text'
       content: string
     }) => ipcRenderer.invoke('knowledge-base:add-document', { knowledgeBaseId, data }),
+    // 添加网页
+    addWebpage: (knowledgeBaseId: string, url: string) =>
+      ipcRenderer.invoke('knowledge-base:add-webpage', { knowledgeBaseId, url }),
     // 上传文档
     uploadDocuments: (knowledgeBaseId: string, files: Array<{
       path: string

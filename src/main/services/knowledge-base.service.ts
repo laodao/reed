@@ -9,6 +9,7 @@ import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import nodejieba from 'nodejieba'
+import { parse } from 'node-html-parser'
 import { getDatabaseManager } from '../database'
 import { DataPathService } from './data-path.service'
 import { SecureStorageService } from './secure-storage.service'
@@ -447,6 +448,7 @@ export class KnowledgeBaseService {
     switch (fileType) {
       case 'txt':
       case 'md':
+      case 'webpage':  // 网页内容存储为 txt 格式
         // 尝试多种编码解析文本文件
         return this.decodeTextFile(buffer)
 
@@ -927,6 +929,164 @@ export class KnowledgeBaseService {
       maxFilesPerUpload: 20,
       supportedTypes: ['docx', 'doc', 'txt', 'md', 'xlsx', 'xls']
     }
+  }
+
+  /**
+   * 添加网页文档
+   * 抓取网页内容并添加到知识库
+   */
+  async addWebpage(kbId: string, url: string): Promise<{ success: boolean; data?: KbDocument; error?: string }> {
+    try {
+      const db = getDatabaseManager()
+      if (!db.knowledgeBases || !db.kbDocuments) return { success: false, error: '数据库未初始化' }
+
+      const kb = db.knowledgeBases.findById(kbId)
+      if (!kb) return { success: false, error: '知识库不存在' }
+
+      // 验证 URL
+      let parsedUrl: URL
+      try {
+        parsedUrl = new URL(url)
+        if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+          return { success: false, error: '仅支持 HTTP/HTTPS 协议' }
+        }
+      } catch {
+        return { success: false, error: '无效的 URL 格式' }
+      }
+
+      // 抓取网页内容
+      console.log(`[KB] 开始抓取网页: ${url}`)
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+        },
+        signal: AbortSignal.timeout(30000) // 30秒超时
+      })
+
+      if (!response.ok) {
+        return { success: false, error: `请求失败: ${response.status} ${response.statusText}` }
+      }
+
+      const contentType = response.headers.get('content-type') || ''
+      if (!contentType.includes('text/html') && !contentType.includes('application/xhtml+xml')) {
+        return { success: false, error: '不支持的内容类型，仅支持 HTML 页面' }
+      }
+
+      const html = await response.text()
+
+      // 解析 HTML 提取正文
+      const { title, content } = this.extractWebpageContent(html, url)
+
+      if (!content?.trim()) {
+        return { success: false, error: '网页内容为空或无法提取' }
+      }
+
+      // 准备目录
+      const dataPath = DataPathService.getInstance().getDataPath()
+      const docDir = path.join(dataPath, 'knowledge-base', kbId, 'documents')
+      if (!fs.existsSync(docDir)) fs.mkdirSync(docDir, { recursive: true })
+
+      const docId = randomUUID()
+      const destPath = path.join(docDir, `${docId}.txt`)
+
+      // 写入文本内容到文件
+      const contentBuffer = Buffer.from(content, 'utf-8')
+      await fs.promises.writeFile(destPath, contentBuffer)
+
+      // 使用网页标题或 URL 作为文档名称
+      const docName = title || parsedUrl.hostname + parsedUrl.pathname
+
+      const request: CreateDocumentRequest = {
+        knowledgeBaseId: kbId,
+        name: docName,
+        filePath: destPath,
+        fileType: 'webpage',
+        fileSize: contentBuffer.length
+      }
+
+      const doc = db.kbDocuments.create(request)
+
+      // 更新统计
+      db.knowledgeBases.incrementDocumentCount(kbId, 1)
+      db.knowledgeBases.incrementTotalSize(kbId, doc.fileSize)
+
+      // 发送知识库统计更新事件
+      this.emitKnowledgeBaseStats(kbId)
+
+      // 异步处理
+      this.processDocument(doc, kb).catch(e => console.error('[KB] 处理失败:', e))
+
+      console.log(`[KB] 网页添加成功: ${url}`)
+      return { success: true, data: doc }
+    } catch (e: any) {
+      console.error('[KB] 添加网页失败:', e)
+      if (e.name === 'AbortError' || e.name === 'TimeoutError') {
+        return { success: false, error: '请求超时，请检查网址是否可访问' }
+      }
+      return { success: false, error: e.message || '添加网页失败' }
+    }
+  }
+
+  /**
+   * 从 HTML 中提取正文内容
+   */
+  private extractWebpageContent(html: string, url: string): { title: string; content: string } {
+    const root = parse(html)
+
+    // 获取标题
+    let title = ''
+    // 优先使用 og:title
+    const ogTitleMeta = root.querySelector('meta[property="og:title"]')
+    if (ogTitleMeta) {
+      title = ogTitleMeta.getAttribute('content') || ''
+    }
+    if (!title) {
+      const titleEl = root.querySelector('title')
+      title = titleEl ? titleEl.text.trim() : ''
+    }
+
+    // 移除不需要的元素
+    const removeSelectors = [
+      'script', 'style', 'noscript', 'iframe', 'header', 'footer', 'nav', 'aside',
+      '[role="navigation"]', '[role="banner"]', '[role="complementary"]',
+      '.sidebar', '.navigation', '.menu', '.advertisement', '.ad', '.ads', '.comment', '.comments'
+    ]
+    for (const selector of removeSelectors) {
+      for (const el of root.querySelectorAll(selector)) {
+        el.remove()
+      }
+    }
+
+    // 尝试找到主要内容区域
+    const contentSelectors = [
+      'article', 'main', '[role="main"]', '#content', '#main',
+      '.content', '.main', '.post', '.article', 'body'
+    ]
+    let contentEl = null
+    for (const selector of contentSelectors) {
+      contentEl = root.querySelector(selector)
+      if (contentEl) break
+    }
+
+    if (!contentEl) {
+      contentEl = root
+    }
+
+    // 提取文本
+    let content = contentEl.text
+
+    // 清理文本
+    content = content
+      .replace(/\s+/g, ' ')  // 合并空白字符
+      .replace(/\n\s*\n/g, '\n\n')  // 合并多余空行
+      .trim()
+
+    // 添加来源信息
+    content = `标题: ${title}\n来源: ${url}\n\n${content}`
+
+    return { title, content }
   }
 
   private getFileType(name: string): FileType | null {

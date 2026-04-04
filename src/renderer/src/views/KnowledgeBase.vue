@@ -90,6 +90,10 @@
               <el-icon><Search /></el-icon>
               检索知识库
             </el-button>
+            <el-button @click="showAddWebpageDialog = true">
+              <el-icon><Link /></el-icon>
+              添加网页
+            </el-button>
             <el-button type="primary" @click="selectAndUploadFiles">
               <el-icon><Upload /></el-icon>
               上传文档
@@ -445,6 +449,38 @@
         <el-button @click="showChunkContentDialog = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <!-- 添加网页对话框 -->
+    <el-dialog
+      v-model="showAddWebpageDialog"
+      title="添加网页"
+      width="500px"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <el-form label-width="80px">
+        <el-form-item label="网页地址">
+          <el-input
+            v-model="webpageUrl"
+            placeholder="请输入网页 URL，如 https://example.com/article"
+            clearable
+            @keyup.enter="handleAddWebpage"
+          />
+        </el-form-item>
+        <el-form-item>
+          <div class="webpage-tips">
+            <p>支持 HTTP/HTTPS 协议的网页链接</p>
+            <p>系统将自动提取网页正文内容并添加到知识库</p>
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showAddWebpageDialog = false">取消</el-button>
+        <el-button type="primary" :loading="addingWebpage" @click="handleAddWebpage">
+          添加
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -459,7 +495,8 @@ import {
   Upload,
   Document,
   Loading,
-  View
+  View,
+  Link
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { useKnowledgeBase } from '@/composables'
@@ -537,6 +574,11 @@ const showChunkContentDialog = ref(false)
 const chunkContentLoading = ref(false)
 const chunkContent = ref('')
 const currentViewingChunk = ref<KbChunk | null>(null)
+
+// 添加网页
+const showAddWebpageDialog = ref(false)
+const webpageUrl = ref('')
+const addingWebpage = ref(false)
 
 // 编辑的知识库
 const editingKb = ref<KnowledgeBase | null>(null)
@@ -752,6 +794,50 @@ async function viewChunkContent(chunk: KbChunk): Promise<void> {
     ElMessage.error(err.message || '获取切片内容失败')
   } finally {
     chunkContentLoading.value = false
+  }
+}
+
+/**
+ * 添加网页
+ */
+async function handleAddWebpage(): Promise<void> {
+  const url = webpageUrl.value.trim()
+  if (!url) {
+    ElMessage.warning('请输入网页地址')
+    return
+  }
+
+  // 验证 URL 格式
+  try {
+    const parsedUrl = new URL(url)
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      ElMessage.warning('仅支持 HTTP/HTTPS 协议')
+      return
+    }
+  } catch {
+    ElMessage.warning('请输入有效的网页地址')
+    return
+  }
+
+  addingWebpage.value = true
+  try {
+    const response = await window.electronAPI.knowledgeBase.addWebpage(
+      currentKnowledgeBase.value!.id,
+      url
+    )
+    if (response.success && response.data) {
+      ElMessage.success('网页添加成功，正在处理中...')
+      showAddWebpageDialog.value = false
+      webpageUrl.value = ''
+      // 刷新文档列表
+      documents.value = [...documents.value, response.data]
+    } else {
+      ElMessage.error(response.error || '添加网页失败')
+    }
+  } catch (err: any) {
+    ElMessage.error(err.message || '添加网页失败')
+  } finally {
+    addingWebpage.value = false
   }
 }
 </script>
@@ -1158,5 +1244,15 @@ async function viewChunkContent(chunk: KbChunk): Promise<void> {
   justify-content: center;
   padding: 40px;
   color: var(--el-text-color-secondary);
+}
+
+/* 添加网页提示 */
+.webpage-tips {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.webpage-tips p {
+  margin: 4px 0;
 }
 </style>
