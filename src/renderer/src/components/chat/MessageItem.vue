@@ -406,62 +406,45 @@ import type { Message, Attachment } from '../../../shared/types'
 import ModelSelectDialog from './ModelSelectDialog.vue'
 import ExportToObsidianDialog from './ExportToObsidianDialog.vue'
 
-// 初始化 Mermaid（紧凑样式配置）
+// 初始化 Mermaid
 mermaid.initialize({
   startOnLoad: false,
   theme: 'default',
   securityLevel: 'loose',
   suppressErrorRendering: true, // 禁用默认错误渲染，我们自己处理
-  // 全局主题变量：设置较小字体
-  themeVariables: {
-    fontSize: '12px',
-    fontFamily: 'system-ui, -apple-system, sans-serif'
-  },
   flowchart: {
-    useMaxWidth: false, // 不使用 maxWidth，我们手动控制缩放
+    useMaxWidth: true,
     htmlLabels: true,
     curve: 'basis',
-    padding: 8 // 减小内边距
+    padding: 15
   },
   sequence: {
-    useMaxWidth: false,
-    diagramMarginX: 8,
-    diagramMarginY: 8,
-    actorMargin: 30,
-    width: 100,
-    height: 40,
-    boxMargin: 5,
-    noteMargin: 5,
-    messageMargin: 15
+    useMaxWidth: true,
+    diagramMarginX: 10,
+    diagramMarginY: 10,
+    actorMargin: 40,
+    width: 120,
+    height: 50
   },
   gantt: {
-    useMaxWidth: false,
-    leftPadding: 30,
-    gridLineStartPadding: 15,
-    fontSize: 11,
-    sectionFontSize: 11
+    useMaxWidth: true,
+    leftPadding: 50,
+    gridLineStartPadding: 25,
+    fontSize: 12,
+    sectionFontSize: 12
   },
   class: {
-    useMaxWidth: false
+    useMaxWidth: true
   },
   state: {
-    useMaxWidth: false
+    useMaxWidth: true
   },
   er: {
-    useMaxWidth: false
+    useMaxWidth: true
   },
   pie: {
-    useMaxWidth: false
-  },
-  mindmap: {
-    useMaxWidth: false,
-    padding: 8
-  },
-  timeline: {
-    useMaxWidth: false,
-    padding: 8
-  },
-  fontSize: 12
+    useMaxWidth: true
+  }
 })
 
 interface ModelOption {
@@ -657,9 +640,6 @@ async function renderMermaidCharts(): Promise<void> {
       const { svg } = await mermaid.render(id, code)
       mermaidElement.innerHTML = svg
       wrapper.setAttribute('data-render-status', 'success')
-
-      // 动态缩放处理：如果图表超出容器宽度，自动缩放
-      adjustMermaidScale(wrapper, mermaidElement)
     } catch (error) {
       // 渲染失败：标记错误状态，显示错误图标
       console.error('Mermaid 渲染错误:', error)
@@ -679,38 +659,16 @@ async function renderMermaidCharts(): Promise<void> {
   }
 }
 
-// 调整 Mermaid 图表缩放
-function adjustMermaidScale(wrapper: HTMLElement, mermaidElement: HTMLElement): void {
-  const content = wrapper.querySelector('.mermaid-content') as HTMLElement
-  if (!content) return
-
-  const svg = mermaidElement.querySelector('svg')
-  if (!svg) return
-
-  // 获取 SVG 原始尺寸
-  const svgWidth = svg.getBoundingClientRect().width
-  const containerWidth = content.clientWidth - 32 // 减去 padding
-
-  // 如果图表超出容器，进行缩放
-  if (svgWidth > containerWidth) {
-    const scale = containerWidth / svgWidth
-    // 限制最小缩放比例为 0.3，避免太小看不清
-    const finalScale = Math.max(0.3, scale)
-
-    svg.style.transform = `scale(${finalScale})`
-    svg.style.transformOrigin = 'top left'
-    // 调整容器高度以适应缩放后的内容
-    svg.style.marginBottom = `${(1 - finalScale) * 100}%`
-  }
-}
-
 // 监听内容变化，渲染 mermaid 图表
 watch(
   () => props.message.content,
   () => {
-    nextTick(() => {
-      renderMermaidCharts()
-    })
+    // 使用 setTimeout 确保 DOM 完全更新后再渲染
+    setTimeout(() => {
+      nextTick(() => {
+        renderMermaidCharts()
+      })
+    }, 0)
   },
   { immediate: true }
 )
@@ -720,6 +678,14 @@ watch(isRenderMode, () => {
   nextTick(() => {
     renderMermaidCharts()
   })
+})
+
+// 组件挂载后渲染 Mermaid 图表
+onMounted(() => {
+  // 延迟渲染，确保 DOM 完全准备好
+  setTimeout(() => {
+    renderMermaidCharts()
+  }, 100)
 })
 
 // 处理复制按钮点击（事件委托）
@@ -1656,9 +1622,9 @@ function showKnowledgeBaseSnippet(ref: { documentId: string; documentName: strin
         line-height: 1.5;
 
         svg {
+          max-width: 100%;
+          height: auto;
           display: block;
-          // 支持动态缩放
-          transition: transform 0.2s ease;
         }
 
         // Mermaid 错误显示样式
