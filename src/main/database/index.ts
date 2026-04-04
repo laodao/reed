@@ -46,6 +46,10 @@ import { LwMapRepository } from './repositories/lw-map.repository'
 import { LwPrewriteRepository } from './repositories/lw-prewrite.repository'
 import { LwMemoryRepository } from './repositories/lw-memory.repository'
 import { LwEntityStateRepository } from './repositories/lw-entity-state.repository'
+import { DiaryFolderRepository } from './repositories/diary-folder.repository'
+import { DiaryEntryRepository } from './repositories/diary-entry.repository'
+import { DiaryLinkRepository } from './repositories/diary-link.repository'
+import { DiaryAttachmentRepository } from './repositories/diary-attachment.repository'
 import { DataPathService } from '../services/data-path.service'
 import { LanceDBService } from '../services/lance-db.service'
 
@@ -97,6 +101,10 @@ export class DatabaseManager {
   public lwPrewrites: LwPrewriteRepository | null = null
   public lwMemories: LwMemoryRepository | null = null
   public lwEntityStates: LwEntityStateRepository | null = null
+  public diaryFolders: DiaryFolderRepository | null = null
+  public diaryEntries: DiaryEntryRepository | null = null
+  public diaryLinks: DiaryLinkRepository | null = null
+  public diaryAttachments: DiaryAttachmentRepository | null = null
 
   private constructor() {
     // 默认使用 userData 路径，后续会在 initialize 中更新
@@ -1827,6 +1835,10 @@ export class DatabaseManager {
     this.lwPrewrites = new LwPrewriteRepository(this.db)
     this.lwMemories = new LwMemoryRepository(this.db)
     this.lwEntityStates = new LwEntityStateRepository(this.db)
+    this.diaryFolders = new DiaryFolderRepository(this.db)
+    this.diaryEntries = new DiaryEntryRepository(this.db)
+    this.diaryLinks = new DiaryLinkRepository(this.db)
+    this.diaryAttachments = new DiaryAttachmentRepository(this.db)
   }
 
   /**
