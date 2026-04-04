@@ -177,7 +177,7 @@
 
           <!-- AI回答：回到顶部按钮 -->
           <el-tooltip v-if="message.role === 'assistant'" content="回到顶部" placement="top">
-            <el-button size="small" text class="back-to-top-btn" @click="scrollToTop">
+            <el-button size="small" text class="back-to-top-btn" :class="{ visible: showActions }" @click="scrollToTop">
               <el-icon><Top /></el-icon>
             </el-button>
           </el-tooltip>
@@ -1248,48 +1248,34 @@ function renderContentForImage(content: string): string {
       `
     }
 
-    // 自定义行内代码渲染
+    // 自定义行内代码渲染（带内联样式）
     renderer.codespan = (text: string) => {
       return `<code style="background:#f1f5f9;color:#3b82f6;padding:2px 6px;border-radius:4px;font-size:13px;font-family:'SF Mono',Monaco,Menlo,monospace;">${text}</code>`
     }
 
-    // 自定义标题渲染
-    renderer.heading = ({ text, depth }: { text: string; depth: number }) => {
-      const sizes = { 1: '22px', 2: '18px', 3: '16px', 4: '14px', 5: '13px', 6: '12px' }
-      const margins = { 1: '24px 0 12px', 2: '20px 0 10px', 3: '16px 0 8px', 4: '14px 0 7px', 5: '12px 0 6px', 6: '10px 0 5px' }
-      return `<h${depth} style="margin:${margins[depth as keyof typeof margins]};font-size:${sizes[depth as keyof typeof sizes]};font-weight:600;color:#1e293b;">${text}</h${depth}>`
-    }
-
-    // 自定义段落渲染
-    renderer.paragraph = (text: string) => {
-      return `<p style="margin:0 0 12px;line-height:1.7;color:#334155;">${text}</p>`
-    }
-
-    // 自定义列表渲染
-    renderer.list = ({ items, ordered }: { items: string[]; ordered: boolean }) => {
-      const tag = ordered ? 'ol' : 'ul'
-      const listItems = items.map(item => `<li style="margin:4px 0;line-height:1.6;color:#334155;">${item}</li>`).join('')
-      return `<${tag} style="margin:8px 0;padding-left:24px;color:#334155;">${listItems}</${tag}>`
-    }
-
-    // 自定义链接渲染
-    renderer.link = ({ href, text }: { href: string; text: string }) => {
-      return `<a href="${href}" style="color:#3b82f6;text-decoration:none;">${text}</a>`
-    }
-
-    // 自定义引用渲染
-    renderer.blockquote = ({ text }: { text: string }) => {
-      return `<blockquote style="margin:12px 0;padding:8px 16px;border-left:4px solid #e2e8f0;background:#f8fafc;color:#64748b;">${text}</blockquote>`
-    }
-
+    // 其他元素使用默认渲染器，然后通过 CSS 样式包装
     const html = marked.parse(content, {
       breaks: true,
       gfm: true,
       renderer
     }) as string
 
+    // 包装一层带样式的容器
     return `
       <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#334155;line-height:1.7;max-width:100%;">
+        <style>
+          p { margin: 0 0 12px; line-height: 1.7; color: #334155; }
+          h1 { margin: 24px 0 12px; font-size: 22px; font-weight: 600; color: #1e293b; }
+          h2 { margin: 20px 0 10px; font-size: 18px; font-weight: 600; color: #1e293b; }
+          h3 { margin: 16px 0 8px; font-size: 16px; font-weight: 600; color: #1e293b; }
+          h4 { margin: 14px 0 7px; font-size: 14px; font-weight: 600; color: #1e293b; }
+          ul, ol { margin: 8px 0; padding-left: 24px; color: #334155; }
+          li { margin: 4px 0; line-height: 1.6; }
+          a { color: #3b82f6; text-decoration: none; }
+          blockquote { margin: 12px 0; padding: 8px 16px; border-left: 4px solid #e2e8f0; background: #f8fafc; color: #64748b; }
+          strong { font-weight: 600; }
+          em { font-style: italic; }
+        </style>
         ${html}
       </div>
     `
@@ -1805,9 +1791,15 @@ function showKnowledgeBaseSnippet(ref: { documentId: string; documentName: strin
 .back-to-top-btn {
   padding: 4px 6px;
   color: #94a3b8;
+  opacity: 0;
+  transition: opacity 0.2s;
 
   &:hover {
     color: var(--el-color-primary);
+  }
+
+  &.visible {
+    opacity: 1;
   }
 }
 
