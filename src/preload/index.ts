@@ -86,7 +86,25 @@ const IPC_CHANNELS = {
   SEARCH_ENGINE_SEARCH: 'search-engine:search',
   SEARCH_ENGINE_GET_DISABLED_QUICK: 'search-engine:get-disabled-quick',
   SEARCH_ENGINE_SET_QUICK_ENABLED: 'search-engine:set-quick-enabled',
-  SEARCH_ENGINE_CHANGED: 'search-engine:changed'
+  SEARCH_ENGINE_CHANGED: 'search-engine:changed',
+
+  // 日记相关
+  DIARY_LIST_FOLDERS: 'diary:list-folders',
+  DIARY_GET_ALL_FOLDERS: 'diary:get-all-folders',
+  DIARY_CREATE_FOLDER: 'diary:create-folder',
+  DIARY_UPDATE_FOLDER: 'diary:update-folder',
+  DIARY_DELETE_FOLDER: 'diary:delete-folder',
+  DIARY_LIST_ENTRIES: 'diary:list-entries',
+  DIARY_GET_ENTRY: 'diary:get-entry',
+  DIARY_CREATE_ENTRY: 'diary:create-entry',
+  DIARY_UPDATE_ENTRY: 'diary:update-entry',
+  DIARY_DELETE_ENTRY: 'diary:delete-entry',
+  DIARY_MOVE_ENTRY: 'diary:move-entry',
+  DIARY_SEARCH: 'diary:search',
+  DIARY_GET_BACKLINKS: 'diary:get-backlinks',
+  DIARY_EXPORT_HTML: 'diary:export-html',
+  DIARY_EXPORT_PDF: 'diary:export-pdf',
+  DIARY_EXPORT_DOCX: 'diary:export-docx'
 } as const
 
 /**
@@ -1200,6 +1218,46 @@ const electronAPI = {
     // AI 实体状态提取
     extractEntityStates: (projectId: string, outlineId: string, chapterContent: string, chapterNumber: number, involvedEntities: Array<{ type: string; id: string; name: string }>, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:extractEntityStates', projectId, outlineId, chapterContent, chapterNumber, involvedEntities, providerConfigId, modelId)
+  },
+
+  // 日记相关
+  diary: {
+    listFolders: (parentId?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_LIST_FOLDERS, parentId),
+    getAllFolders: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_GET_ALL_FOLDERS),
+    createFolder: (data: { name: string; parentId?: string }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_CREATE_FOLDER, data),
+    updateFolder: (id: string, data: { name?: string }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_UPDATE_FOLDER, { id, request: data }),
+    deleteFolder: (id: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_DELETE_FOLDER, id),
+
+    listEntries: (folderId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_LIST_ENTRIES, folderId),
+    getEntry: (id: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_GET_ENTRY, id),
+    createEntry: (data: { folderId: string; title?: string; content?: string }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_CREATE_ENTRY, data),
+    updateEntry: (id: string, data: { title?: string; content?: string; tags?: string[] }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_UPDATE_ENTRY, { id, request: data }),
+    deleteEntry: (id: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_DELETE_ENTRY, id),
+    moveEntry: (id: string, targetFolderId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_MOVE_ENTRY, { id, targetFolderId }),
+
+    search: (keyword: string, folderId?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_SEARCH, { keyword, folderId }),
+
+    getBacklinks: (entryId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_GET_BACKLINKS, entryId),
+
+    exportHtml: (entryId: string, outputPath?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_EXPORT_HTML, { entryId, outputPath }),
+    exportPdf: (entryId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_EXPORT_PDF, { entryId }),
+    exportDocx: (entryId: string, outputPath?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_EXPORT_DOCX, { entryId, outputPath })
   }
 }
 
