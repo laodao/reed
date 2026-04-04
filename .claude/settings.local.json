@@ -49,7 +49,8 @@
       "WebFetch(domain:dashscope.console.aliyun.com)",
       "WebFetch(domain:www.alibabacloud.com)",
       "Bash(npx electron-vite:*)",
-      "Bash(npm test:*)"
+      "Bash(npm test:*)",
+      "Bash(sqlite3:*)"
     ]
   }
 }
