@@ -98,6 +98,14 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/diary',
+    name: 'Diary',
+    component: () => import('@/views/Diary.vue'),
+    meta: {
+      title: '日记'
+    }
+  },
+  {
     path: '/settings',
     name: 'Settings',
     component: () => import('@/views/Settings.vue'),
