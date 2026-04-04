@@ -1,5 +1,6 @@
 <template>
   <div
+    ref="messageItemRef"
     class="message-item"
     :class="message.role"
     @mouseenter="showActions = true"
@@ -11,21 +12,47 @@
     <div class="message-body">
       <!-- 顶部：发送者名称和时间 -->
       <div class="message-header">
-        <span class="sender-name">
-          {{ message.role === 'user' ? '用户' : modelName }}
-        </span>
-        <span class="message-time">{{ formatTime(message.createdAt) }}</span>
-        <!-- AI回答：阅读/源码模式切换 -->
-        <el-tooltip v-if="message.role === 'assistant'" :content="isRenderMode ? '切换到源码模式' : '切换到阅读模式'" placement="top">
-          <el-button
-            size="small"
-            text
-            class="view-mode-toggle"
-            @click="isRenderMode = !isRenderMode"
-          >
-            <el-icon><component :is="isRenderMode ? 'Tickets' : 'View'" /></el-icon>
-          </el-button>
-        </el-tooltip>
+        <div class="header-left">
+          <span class="sender-name">
+            {{ message.role === 'user' ? '用户' : modelName }}
+          </span>
+          <span class="message-time">{{ formatTime(message.createdAt) }}</span>
+        </div>
+        <!-- AI回答：右侧操作按钮 -->
+        <div v-if="message.role === 'assistant'" class="header-right">
+          <el-tooltip content="上一个回答" placement="top">
+            <el-button
+              size="small"
+              text
+              class="nav-btn"
+              :disabled="!hasPrevAnswer"
+              @click="$emit('navigateAnswer', 'prev')"
+            >
+              <el-icon><ArrowUp /></el-icon>
+            </el-button>
+          </el-tooltip>
+          <el-tooltip content="下一个回答" placement="top">
+            <el-button
+              size="small"
+              text
+              class="nav-btn"
+              :disabled="!hasNextAnswer"
+              @click="$emit('navigateAnswer', 'next')"
+            >
+              <el-icon><ArrowDown /></el-icon>
+            </el-button>
+          </el-tooltip>
+          <el-tooltip :content="isRenderMode ? '切换到源码模式' : '切换到阅读模式'" placement="top">
+            <el-button
+              size="small"
+              text
+              class="view-mode-toggle"
+              @click="isRenderMode = !isRenderMode"
+            >
+              <el-icon><component :is="isRenderMode ? 'Tickets' : 'View'" /></el-icon>
+            </el-button>
+          </el-tooltip>
+        </div>
       </div>
 
       <div class="message-content">
@@ -147,6 +174,13 @@
             <span>{{ message.tokensUsed }} tokens</span>
           </span> -->
           <span class="token-placeholder"></span>
+
+          <!-- AI回答：回到顶部按钮 -->
+          <el-tooltip v-if="message.role === 'assistant'" content="回到顶部" placement="top">
+            <el-button size="small" text class="back-to-top-btn" @click="scrollToTop">
+              <el-icon><Top /></el-icon>
+            </el-button>
+          </el-tooltip>
 
           <!-- 消息操作工具栏 -->
           <div v-if="!isEditing" class="message-actions" :class="{ visible: showActions }">
@@ -364,7 +398,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, watch, onMounted } from 'vue'
 import html2canvas from 'html2canvas'
-import { Document, Edit, CopyDocument, Delete, Refresh, Switch, Coin, Collection, More, Picture, Notebook, ArrowRight, View, Tickets, Folder, Check } from '@element-plus/icons-vue'
+import { Document, Edit, CopyDocument, Delete, Refresh, Switch, Coin, Collection, More, Picture, Notebook, ArrowRight, View, Tickets, Folder, Check, ArrowUp, ArrowDown, Top } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElImageViewer } from 'element-plus'
 import { marked } from 'marked'
 import mermaid from 'mermaid'
@@ -377,27 +411,41 @@ mermaid.initialize({
   startOnLoad: false,
   theme: 'default',
   securityLevel: 'loose',
+  suppressErrorRendering: true, // 禁用默认错误渲染，我们自己处理
   flowchart: {
-    useMaxWidth: false,
+    useMaxWidth: true,
     htmlLabels: true,
-    curve: 'basis'
+    curve: 'basis',
+    padding: 15
   },
   sequence: {
-    useMaxWidth: false,
+    useMaxWidth: true,
     diagramMarginX: 10,
     diagramMarginY: 10,
-    actorMargin: 50,
-    width: 150,
-    height: 65
+    actorMargin: 40,
+    width: 120,
+    height: 50
   },
   gantt: {
-    useMaxWidth: false,
-    leftPadding: 75,
-    gridLineStartPadding: 35,
-    fontSize: 14,
-    sectionFontSize: 14
+    useMaxWidth: true,
+    leftPadding: 50,
+    gridLineStartPadding: 25,
+    fontSize: 12,
+    sectionFontSize: 12
   },
-  fontSize: 16
+  class: {
+    useMaxWidth: true
+  },
+  state: {
+    useMaxWidth: true
+  },
+  er: {
+    useMaxWidth: true
+  },
+  pie: {
+    useMaxWidth: true
+  },
+  fontSize: 12
 })
 
 interface ModelOption {
@@ -413,11 +461,14 @@ const props = defineProps<{
   availableModels?: ModelOption[]
   dialogTitle?: string
   answerIndex?: number
+  hasPrevAnswer?: boolean
+  hasNextAnswer?: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'edit', messageId: string, newContent: string): void
   (e: 'copy', content: string): void
+  (e: 'navigateAnswer', direction: 'prev' | 'next'): void
   (e: 'delete', messageId: string): void
   (e: 'regenerate', messageId: string, modelId?: string): void
 }>()
@@ -427,8 +478,18 @@ const isEditing = ref(false)
 const editContent = ref('')
 const showModelDialog = ref(false)
 
+// 消息元素引用
+const messageItemRef = ref<HTMLElement | null>(null)
+
 // 阅读模式（true = 渲染模式，false = 源码模式）
 const isRenderMode = ref(true)
+
+// 回到顶部
+function scrollToTop(): void {
+  if (messageItemRef.value) {
+    messageItemRef.value.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
 
 // 知识库选择对话框
 const showKnowledgeBaseDialog = ref(false)
@@ -556,24 +617,46 @@ const messageContentRef = ref<HTMLElement | null>(null)
 async function renderMermaidCharts(): Promise<void> {
   if (!messageContentRef.value) return
 
-  const mermaidElements = messageContentRef.value.querySelectorAll('.mermaid')
-  if (mermaidElements.length === 0) return
+  // 源码模式下不渲染 mermaid 图表，保持代码形式
+  if (!isRenderMode.value) return
 
-  try {
-    // 为每个 mermaid 元素生成唯一 ID 并渲染
-    for (let i = 0; i < mermaidElements.length; i++) {
-      const element = mermaidElements[i] as HTMLElement
-      if (element.getAttribute('data-processed')) continue
+  const mermaidWrappers = messageContentRef.value.querySelectorAll('.mermaid-wrapper')
+  if (mermaidWrappers.length === 0) return
 
-      const id = `mermaid-${Date.now()}-${i}`
-      const code = element.textContent || ''
+  // 为每个 mermaid wrapper 处理渲染
+  for (let i = 0; i < mermaidWrappers.length; i++) {
+    const wrapper = mermaidWrappers[i] as HTMLElement
+    const status = wrapper.getAttribute('data-render-status')
 
+    // 已处理过的跳过
+    if (status === 'success' || status === 'error') continue
+
+    const mermaidElement = wrapper.querySelector('.mermaid') as HTMLElement
+    if (!mermaidElement) continue
+
+    const code = mermaidElement.textContent || ''
+    const id = `mermaid-${Date.now()}-${i}`
+
+    try {
       const { svg } = await mermaid.render(id, code)
-      element.innerHTML = svg
-      element.setAttribute('data-processed', 'true')
+      mermaidElement.innerHTML = svg
+      wrapper.setAttribute('data-render-status', 'success')
+    } catch (error) {
+      // 渲染失败：标记错误状态，显示错误图标
+      console.error('Mermaid 渲染错误:', error)
+      wrapper.setAttribute('data-render-status', 'error')
+
+      // 显示错误图标
+      const errorIndicator = wrapper.querySelector('.error-indicator') as HTMLElement
+      if (errorIndicator) {
+        errorIndicator.style.display = 'inline-flex'
+        errorIndicator.style.alignItems = 'center'
+        errorIndicator.style.marginLeft = '8px'
+      }
+
+      // 保持代码显示，添加错误样式
+      mermaidElement.classList.add('mermaid-error-code')
     }
-  } catch (error) {
-    console.error('Mermaid 渲染错误:', error)
   }
 }
 
@@ -753,13 +836,37 @@ function formatSourceContent(content: string): string {
   // 处理换行
   processedContent = processedContent.replace(/\n/g, '<br>')
 
-  // 还原代码块为组件渲染
+  // 还原代码块 - 源码模式下所有代码块都用普通样式显示
   codeBlocks.forEach((block, index) => {
-    const codeBlockHtml = renderCodeBlock(block.language, block.code)
+    const codeBlockHtml = renderSourceCodeBlock(block.language, block.code)
     processedContent = processedContent.replace(`__CODE_BLOCK_${index}__`, codeBlockHtml)
   })
 
   return processedContent
+}
+
+// 渲染源码模式的代码块（mermaid不渲染，显示为普通代码）
+function renderSourceCodeBlock(language: string, code: string): string {
+  const lines = code.split('\n')
+  const lineNumbers = lines.map((_, i) => `<span class="line-number">${i + 1}</span>`).join('')
+  const codeLines = lines.map(line => escapeHtml(line)).join('\n')
+  const encodedCode = btoa(unescape(encodeURIComponent(code)))
+
+  return `
+    <div class="code-block-wrapper">
+      <div class="code-header">
+        <span class="language">${language || 'code'}</span>
+        <button class="copy-btn" data-code-b64="${encodedCode}">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+          <span>复制</span>
+        </button>
+      </div>
+      <div class="code-content">
+        <div class="line-numbers">${lineNumbers}</div>
+        <pre><code>${codeLines}</code></pre>
+      </div>
+    </div>
+  `
 }
 
 // 渲染代码块 HTML（使用纯 HTML 模拟 CodeBlock 组件）
@@ -769,9 +876,12 @@ function renderCodeBlock(language: string, code: string): string {
     // 使用 base64 编码代码内容
     const encodedCode = btoa(unescape(encodeURIComponent(code)))
     return `
-      <div class="mermaid-wrapper">
+      <div class="mermaid-wrapper" data-render-status="pending">
         <div class="mermaid-header">
           <span class="language">mermaid</span>
+          <span class="error-indicator" style="display:none" title="语法有误无法解析">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="#ef4444"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+          </span>
           <button class="copy-btn" data-code-b64="${encodedCode}">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
             <span>复制</span>
@@ -1185,12 +1295,40 @@ function showKnowledgeBaseSnippet(ref: { documentId: string; documentName: strin
 .message-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+// 导航按钮（上一个/下一个回答）
+.nav-btn {
+  padding: 4px 6px;
+
+  &:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  &:not(:disabled):hover {
+    color: var(--el-color-primary);
+  }
 }
 
 // 阅读模式切换按钮
 .view-mode-toggle {
-  margin-left: auto;
+  padding: 4px 6px;
 }
 
 .sender-name {
@@ -1463,25 +1601,68 @@ function showKnowledgeBaseSnippet(ref: { documentId: string; documentName: strin
     }
 
     .mermaid-content {
-      padding: 20px;
+      padding: 16px;
       overflow-x: auto;
-      display: flex;
-      justify-content: flex-start;
-      min-height: 100px;
+      overflow-y: visible;
 
       pre.mermaid {
         margin: 0;
         background: transparent;
         font-family: inherit;
-        display: inline-block;
+        line-height: 1.5;
 
         svg {
-          /* 让 SVG 根据内容自适应大小 */
-          width: auto;
-          min-width: 100%;
+          max-width: 100%;
           height: auto;
-          /* 保证最小字体可读 */
-          font-size: 14px;
+          display: block;
+        }
+
+        // Mermaid 错误显示样式
+        .mermaid-error {
+          background: #fef2f2;
+          border: 1px solid #fecaca;
+          border-radius: 6px;
+          padding: 12px;
+
+          .error-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+
+            .error-icon {
+              font-size: 16px;
+            }
+
+            .error-text {
+              font-size: 14px;
+              font-weight: 500;
+              color: #dc2626;
+            }
+          }
+
+          .error-detail {
+            font-size: 12px;
+            color: #ef4444;
+            background: #fee2e2;
+            padding: 6px 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+          }
+
+          .error-code {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 12px;
+            border-radius: 6px;
+            font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            overflow-x: auto;
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-all;
+          }
         }
       }
     }
@@ -1495,6 +1676,16 @@ function showKnowledgeBaseSnippet(ref: { documentId: string; documentName: strin
   justify-content: space-between;
   margin-top: 8px;
   gap: 12px;
+}
+
+// 回到顶部按钮
+.back-to-top-btn {
+  padding: 4px 6px;
+  color: #94a3b8;
+
+  &:hover {
+    color: var(--el-color-primary);
+  }
 }
 
 .token-info {

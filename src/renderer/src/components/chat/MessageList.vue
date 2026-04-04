@@ -4,14 +4,18 @@
       <MessageItem
         v-for="(message, index) in displayMessages"
         :key="message.id"
+        :ref="el => setMessageRef(el, message.id)"
         :message="message"
         :available-models="availableModels"
         :dialog-title="dialogTitle"
         :answer-index="getAnswerIndex(index)"
+        :has-prev-answer="hasPrevAnswer(index)"
+        :has-next-answer="hasNextAnswer(index)"
         @edit="handleEdit"
         @copy="handleCopy"
         @delete="handleDelete"
         @regenerate="handleRegenerate"
+        @navigate-answer="handleNavigateAnswer(index, $event)"
       />
 
       <!-- 流式消息占位 -->
@@ -76,6 +80,15 @@ const displayMessages = computed(() => {
   return props.messages
 })
 
+// 消息组件引用存储
+const messageRefs = new Map<string, any>()
+
+function setMessageRef(el: any, messageId: string) {
+  if (el) {
+    messageRefs.set(messageId, el)
+  }
+}
+
 // 计算 AI 回答的序号（第几次回答）
 function getAnswerIndex(messageIndex: number): number | undefined {
   const message = displayMessages.value[messageIndex]
@@ -90,6 +103,63 @@ function getAnswerIndex(messageIndex: number): number | undefined {
     }
   }
   return count
+}
+
+// 判断是否有上一个 AI 回答
+function hasPrevAnswer(messageIndex: number): boolean {
+  // 向前查找 assistant 消息
+  for (let i = messageIndex - 1; i >= 0; i--) {
+    if (displayMessages.value[i]?.role === 'assistant') {
+      return true
+    }
+  }
+  return false
+}
+
+// 判断是否有下一个 AI 回答
+function hasNextAnswer(messageIndex: number): boolean {
+  // 向后查找 assistant 消息
+  for (let i = messageIndex + 1; i < displayMessages.value.length; i++) {
+    if (displayMessages.value[i]?.role === 'assistant') {
+      return true
+    }
+  }
+  return false
+}
+
+// 处理导航到上一个/下一个回答
+function handleNavigateAnswer(currentIndex: number, direction: 'prev' | 'next'): void {
+  const targetIndex = direction === 'prev'
+    ? findPrevAnswerIndex(currentIndex)
+    : findNextAnswerIndex(currentIndex)
+
+  if (targetIndex !== -1) {
+    const targetMessage = displayMessages.value[targetIndex]
+    const targetEl = messageRefs.get(targetMessage.id)
+    if (targetEl?.$el) {
+      targetEl.$el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }
+}
+
+// 查找上一个回答的索引
+function findPrevAnswerIndex(currentIndex: number): number {
+  for (let i = currentIndex - 1; i >= 0; i--) {
+    if (displayMessages.value[i]?.role === 'assistant') {
+      return i
+    }
+  }
+  return -1
+}
+
+// 查找下一个回答的索引
+function findNextAnswerIndex(currentIndex: number): number {
+  for (let i = currentIndex + 1; i < displayMessages.value.length; i++) {
+    if (displayMessages.value[i]?.role === 'assistant') {
+      return i
+    }
+  }
+  return -1
 }
 
 // 格式化流式内容（带代码块）
