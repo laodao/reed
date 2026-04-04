@@ -634,8 +634,11 @@ async function renderMermaidCharts(): Promise<void> {
     if (!mermaidElement) continue
 
     const code = mermaidElement.textContent || ''
-    // 如果代码为空，跳过（可能 DOM 还没准备好）
-    if (!code.trim()) continue
+    // 如果代码为空，标记为 pending，等待下次重试
+    if (!code.trim()) {
+      wrapper.setAttribute('data-render-status', 'pending')
+      continue
+    }
 
     const id = `mermaid-${Date.now()}-${i}`
 
@@ -669,6 +672,19 @@ function scheduleMermaidRender(): void {
   })
 }
 
+// 强制重新渲染所有 Mermaid 图表
+function forceRerenderMermaid(): void {
+  if (!messageContentRef.value) return
+
+  // 重置所有 mermaid-wrapper 的状态
+  const mermaidWrappers = messageContentRef.value.querySelectorAll('.mermaid-wrapper')
+  mermaidWrappers.forEach(wrapper => {
+    wrapper.removeAttribute('data-render-status')
+  })
+
+  scheduleMermaidRender()
+}
+
 // 监听内容变化，渲染 mermaid 图表
 watch(
   () => props.message.content,
@@ -689,6 +705,7 @@ onMounted(() => {
   scheduleMermaidRender()
   setTimeout(scheduleMermaidRender, 50)
   setTimeout(scheduleMermaidRender, 200)
+  setTimeout(forceRerenderMermaid, 500)
 })
 
 // 处理复制按钮点击（事件委托）
