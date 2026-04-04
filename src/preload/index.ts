@@ -1254,8 +1254,8 @@ const electronAPI = {
 
     exportHtml: (entryId: string, outputPath?: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.DIARY_EXPORT_HTML, { entryId, outputPath }),
-    exportPdf: (entryId: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.DIARY_EXPORT_PDF, { entryId }),
+    exportPdf: (entryId: string, outputPath?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIARY_EXPORT_PDF, { entryId, outputPath }),
     exportDocx: (entryId: string, outputPath?: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.DIARY_EXPORT_DOCX, { entryId, outputPath })
   }

@@ -26,34 +26,18 @@
           </div>
 
           <div v-else class="folder-tree">
-            <div
-              v-for="folder in folders"
+            <FolderTreeItem
+              v-for="folder in rootFolders"
               :key="folder.id"
-              class="folder-item"
-              :class="{ active: currentFolder?.id === folder.id }"
-              @click="selectFolder(folder)"
-            >
-              <div class="folder-icon">
-                <el-icon><Folder /></el-icon>
-              </div>
-              <div class="folder-info">
-                <div class="folder-name">{{ folder.name }}</div>
-                <div class="folder-stats">{{ folder.entryCount || 0 }} 篇日记</div>
-              </div>
-              <div class="folder-actions" @click.stop>
-                <el-dropdown trigger="click" @command="handleFolderAction($event, folder)">
-                  <el-button text size="small">
-                    <el-icon><MoreFilled /></el-icon>
-                  </el-button>
-                  <template #dropdown>
-                    <el-dropdown-menu>
-                      <el-dropdown-item command="rename">重命名</el-dropdown-item>
-                      <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
-                    </el-dropdown-menu>
-                  </template>
-                </el-dropdown>
-              </div>
-            </div>
+              :folder="folder"
+              :all-folders="folders"
+              :current-folder="currentFolder"
+              :expanded-folders="expandedFolders"
+              @select="selectFolder"
+              @toggle="toggleFolderExpand"
+              @action="handleFolderAction"
+              @create-subfolder="openCreateSubfolderDialog"
+            />
           </div>
         </el-scrollbar>
       </div>
@@ -113,11 +97,18 @@
                 class="entry-item"
                 @click="selectEntry(entry)"
               >
-                <div class="entry-date">{{ formatDate(entry.createdAt) }}</div>
-                <div class="entry-title">{{ entry.title }}</div>
-                <div class="entry-preview">{{ entry.preview }}</div>
-                <div class="entry-meta">
-                  <span>{{ entry.wordCount }} 字</span>
+                <div class="entry-content">
+                  <div class="entry-date">{{ formatDate(entry.createdAt) }}</div>
+                  <div class="entry-title">{{ entry.title }}</div>
+                  <div class="entry-preview">{{ entry.preview }}</div>
+                  <div class="entry-meta">
+                    <span>{{ entry.wordCount }} 字</span>
+                  </div>
+                </div>
+                <div class="entry-actions" @click.stop>
+                  <el-button text size="small" @click="handleDeleteEntry(entry)">
+                    <el-icon><Delete /></el-icon>
+                  </el-button>
                 </div>
               </div>
             </div>
@@ -138,12 +129,16 @@
     <!-- 创建目录对话框 -->
     <el-dialog
       v-model="showCreateFolderDialog"
-      title="新建目录"
+      :title="newFolderForm.parentId ? '新建子目录' : '新建目录'"
       width="400px"
+      @closed="newFolderForm.parentId = ''"
     >
       <el-form :model="newFolderForm" label-width="80px">
+        <el-form-item v-if="newFolderForm.parentId" label="父目录">
+          <span>{{ getParentFolderName(newFolderForm.parentId) }}</span>
+        </el-form-item>
         <el-form-item label="目录名称">
-          <el-input v-model="newFolderForm.name" placeholder="请输入目录名称" />
+          <el-input v-model="newFolderForm.name" placeholder="请输入目录名称" @keyup.enter="handleCreateFolder" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -155,10 +150,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Folder, FolderOpened, Document, Loading, MoreFilled } from '@element-plus/icons-vue'
+import { Plus, FolderOpened, Document, Loading, MoreFilled, Delete } from '@element-plus/icons-vue'
 import DiaryEditor from '@/components/diary/DiaryEditor.vue'
+import FolderTreeItem from '@/components/diary/FolderTreeItem.vue'
 import type { DiaryFolder, DiaryEntryListItem, DiaryEntry } from '@shared/types/diary'
 
 // 目录相关
@@ -166,7 +162,8 @@ const folders = ref<DiaryFolder[]>([])
 const currentFolder = ref<DiaryFolder | null>(null)
 const isLoadingFolders = ref(false)
 const showCreateFolderDialog = ref(false)
-const newFolderForm = ref({ name: '' })
+const newFolderForm = ref({ name: '', parentId: '' })
+const expandedFolders = ref<Set<string>>(new Set())
 
 // 日记相关
 const entries = ref<DiaryEntryListItem[]>([])
@@ -190,6 +187,37 @@ async function loadFolders() {
   } finally {
     isLoadingFolders.value = false
   }
+}
+
+// 根目录列表
+const rootFolders = computed(() => {
+  return folders.value.filter(f => !f.parentId)
+})
+
+// 获取子目录
+function getFolderChildren(parentId: string): DiaryFolder[] {
+  return folders.value.filter(f => f.parentId === parentId)
+}
+
+// 切换目录展开状态
+function toggleFolderExpand(folderId: string) {
+  if (expandedFolders.value.has(folderId)) {
+    expandedFolders.value.delete(folderId)
+  } else {
+    expandedFolders.value.add(folderId)
+  }
+}
+
+// 打开创建子目录对话框
+function openCreateSubfolderDialog(parentFolder: DiaryFolder) {
+  newFolderForm.value.parentId = parentFolder.id
+  showCreateFolderDialog.value = true
+}
+
+// 获取父目录名称
+function getParentFolderName(parentId: string): string {
+  const parent = folders.value.find(f => f.id === parentId)
+  return parent?.name || ''
 }
 
 // 选择目录
@@ -254,11 +282,17 @@ async function handleCreateFolder() {
   }
   try {
     const result = await window.electronAPI.diary.createFolder({
-      name: newFolderForm.value.name.trim()
+      name: newFolderForm.value.name.trim(),
+      parentId: newFolderForm.value.parentId || undefined
     })
     if (result.success) {
       showCreateFolderDialog.value = false
+      // 如果是在子目录下创建，展开父目录
+      if (newFolderForm.value.parentId) {
+        expandedFolders.value.add(newFolderForm.value.parentId)
+      }
       newFolderForm.value.name = ''
+      newFolderForm.value.parentId = ''
       await loadFolders()
       ElMessage.success('目录创建成功')
     } else {
@@ -313,6 +347,30 @@ async function handleEntryUpdated() {
   await loadEntries()
 }
 
+// 删除日记
+async function handleDeleteEntry(entry: DiaryEntryListItem) {
+  try {
+    await ElMessageBox.confirm(`确定删除日记「${entry.title}」吗？`, '删除确认', { type: 'warning' })
+    const result = await window.electronAPI.diary.deleteEntry(entry.id)
+    if (result.success) {
+      // 如果当前正在编辑这篇日记，关闭编辑器
+      if (currentEntry.value?.id === entry.id) {
+        currentEntry.value = null
+      }
+      await loadEntries()
+      ElMessage.success('删除成功')
+    } else {
+      ElMessage.error(result.error || '删除失败')
+    }
+  } catch (error) {
+    // 用户取消不显示错误
+    if (error !== 'cancel') {
+      console.error('删除日记失败:', error)
+      ElMessage.error('删除失败')
+    }
+  }
+}
+
 // 格式化日期
 function formatDate(date: Date | string): string {
   const d = new Date(date)
@@ -357,38 +415,8 @@ onMounted(() => {
   }
 }
 
-.folder-item {
-  display: flex;
-  align-items: center;
-  padding: 12px 16px;
-  cursor: pointer;
-  transition: background 0.2s;
-
-  &:hover {
-    background: var(--fill-color-light);
-  }
-
-  &.active {
-    background: var(--color-primary-light-9);
-  }
-
-  .folder-icon {
-    margin-right: 12px;
-    color: var(--color-primary);
-  }
-
-  .folder-info {
-    flex: 1;
-
-    .folder-name {
-      font-size: 14px;
-    }
-
-    .folder-stats {
-      font-size: 12px;
-      color: var(--text-color-secondary);
-    }
-  }
+.folder-tree {
+  padding: 8px 0;
 }
 
 .page-main {
@@ -433,6 +461,21 @@ onMounted(() => {
 .main-content {
   flex: 1;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.empty-entries {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-color-secondary);
+
+  p {
+    margin: 16px 0;
+  }
 }
 
 .entry-list {
@@ -447,10 +490,28 @@ onMounted(() => {
   cursor: pointer;
   border: 1px solid var(--border-color-lighter);
   transition: all 0.2s;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
 
   &:hover {
     border-color: var(--color-primary-light-5);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+
+    .entry-actions {
+      opacity: 1;
+    }
+  }
+
+  .entry-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .entry-actions {
+    opacity: 0;
+    transition: opacity 0.2s;
+    flex-shrink: 0;
   }
 
   .entry-date {

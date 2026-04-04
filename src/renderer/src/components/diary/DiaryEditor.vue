@@ -116,20 +116,54 @@ function handleContentChange() {
 
 async function handleExport(format: string) {
   try {
+    // 定义文件过滤器
+    const filters: Array<{ name: string; extensions: string[] }> = []
+    let ext = ''
+
+    switch (format) {
+      case 'html':
+        filters.push({ name: 'HTML 文件', extensions: ['html', 'htm'] })
+        ext = 'html'
+        break
+      case 'pdf':
+        filters.push({ name: 'PDF 文件', extensions: ['pdf'] })
+        ext = 'pdf'
+        break
+      case 'docx':
+        filters.push({ name: 'Word 文档', extensions: ['docx'] })
+        ext = 'docx'
+        break
+    }
+
+    // 弹出保存对话框
+    const dialogResult = await window.electronAPI.file.saveFile({
+      defaultPath: `${props.entry.title}.${ext}`,
+      filters
+    })
+
+    // 用户取消
+    if (!dialogResult.success || !dialogResult.filePath) {
+      return
+    }
+
+    const savePath = dialogResult.filePath
+
+    // 执行导出
     let result
     switch (format) {
       case 'html':
-        result = await window.electronAPI.diary.exportHtml(props.entry.id)
+        result = await window.electronAPI.diary.exportHtml(props.entry.id, savePath)
         break
       case 'pdf':
-        result = await window.electronAPI.diary.exportPdf(props.entry.id)
+        result = await window.electronAPI.diary.exportPdf(props.entry.id, savePath)
         break
       case 'docx':
-        result = await window.electronAPI.diary.exportDocx(props.entry.id)
+        result = await window.electronAPI.diary.exportDocx(props.entry.id, savePath)
         break
     }
+
     if (result?.success) {
-      ElMessage.success(`导出成功: ${result.data}`)
+      ElMessage.success(`导出成功`)
     } else {
       ElMessage.error(result?.error || '导出失败')
     }
@@ -151,6 +185,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
   background: var(--bg-color);
 }
 
@@ -183,8 +218,11 @@ onUnmounted(() => {
 
 .editor-content {
   flex: 1;
+  min-height: 0;
   overflow: hidden;
   padding: 0 24px;
+  display: flex;
+  flex-direction: column;
 }
 
 .editor-footer {

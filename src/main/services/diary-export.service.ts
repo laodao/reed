@@ -59,7 +59,8 @@ export class DiaryExportService {
   /**
    * 导出为 PDF
    */
-  async exportToPdf(entryId: string, window: BrowserWindow): Promise<DiaryIpcResponse<string>> {
+  async exportToPdf(entryId: string, outputPath?: string): Promise<DiaryIpcResponse<string>> {
+    let pdfWindow: BrowserWindow | null = null
     try {
       const result = await this.diaryService.getEntry(entryId)
       if (!result.success || !result.data) {
@@ -75,10 +76,21 @@ export class DiaryExportService {
       const tempPath = path.join(this.diaryService.getRootPath(), '.temp-export.html')
       fs.writeFileSync(tempPath, fullHtml, 'utf-8')
 
-      // 加载 HTML 并打印
-      await window.loadFile(tempPath)
+      // 创建隐藏窗口用于生成 PDF
+      pdfWindow = new BrowserWindow({
+        width: 800,
+        height: 600,
+        show: false,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true
+        }
+      })
 
-      const pdfData = await window.webContents.printToPDF({
+      // 加载 HTML 并生成 PDF
+      await pdfWindow.loadFile(tempPath)
+
+      const pdfData = await pdfWindow.webContents.printToPDF({
         pageSize: 'A4',
         printBackground: true,
         margins: {
@@ -89,16 +101,24 @@ export class DiaryExportService {
         }
       })
 
+      // 关闭隐藏窗口
+      pdfWindow.close()
+      pdfWindow = null
+
       // 清理临时文件
       fs.unlinkSync(tempPath)
 
       // 保存 PDF
-      const outputPath = this.getDefaultExportPath(entry.title, 'pdf')
-      fs.writeFileSync(outputPath, pdfData)
+      const filePath = outputPath || this.getDefaultExportPath(entry.title, 'pdf')
+      fs.writeFileSync(filePath, pdfData)
 
-      return { success: true, data: outputPath }
+      return { success: true, data: filePath }
     } catch (error) {
       console.error('[DiaryExportService] exportToPdf error:', error)
+      // 确保窗口被关闭
+      if (pdfWindow) {
+        pdfWindow.close()
+      }
       return { success: false, error: String(error) }
     }
   }
@@ -151,6 +171,9 @@ export class DiaryExportService {
       margin-top: 24px;
       margin-bottom: 16px;
     }
+    h1:first-child {
+      margin-top: 0;
+    }
     pre {
       background: #f6f8fa;
       padding: 16px;
@@ -174,7 +197,6 @@ export class DiaryExportService {
   </style>
 </head>
 <body>
-  <h1>${title}</h1>
   ${content}
 </body>
 </html>`

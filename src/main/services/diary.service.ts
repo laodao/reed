@@ -242,6 +242,12 @@ export class DiaryService {
       const relativePath = path.join(folder.path, fileName)
       const fullPath = path.join(this.diaryRootPath, relativePath)
 
+      // 确保目录存在
+      const dirPath = path.dirname(fullPath)
+      if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true })
+      }
+
       // 创建 Markdown 文件
       const content = request.content || `# ${title}\n\n`
       fs.writeFileSync(fullPath, content, 'utf-8')

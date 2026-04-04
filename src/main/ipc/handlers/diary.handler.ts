@@ -3,7 +3,7 @@
  * @module ipc/handlers/diary.handler
  */
 
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import { DiaryService } from '../../services/diary.service'
 import { DiaryExportService } from '../../services/diary-export.service'
@@ -167,14 +167,10 @@ async function handleExportHtml(
 }
 
 async function handleExportPdf(
-  event: IpcMainInvokeEvent,
-  data: { entryId: string }
+  _event: IpcMainInvokeEvent,
+  data: { entryId: string; outputPath?: string }
 ) {
-  const window = BrowserWindow.fromWebContents(event.sender)
-  if (!window) {
-    return { success: false, error: '窗口不存在' }
-  }
-  return await getDiaryExportService().exportToPdf(data.entryId, window)
+  return await getDiaryExportService().exportToPdf(data.entryId, data.outputPath)
 }
 
 async function handleExportDocx(

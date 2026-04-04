@@ -137,6 +137,12 @@ watch(() => props.modelValue, () => {
       height: 100% !important;
       flex: 1;
       min-height: 0;
+      overflow: hidden;
+
+      .CodeMirror-scroll {
+        overflow-y: auto !important;
+        overflow-x: auto !important;
+      }
 
       .CodeMirror-gutters {
         background: var(--fill-color-lighter);

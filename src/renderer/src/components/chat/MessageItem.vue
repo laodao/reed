@@ -230,6 +230,10 @@
                       <el-icon><Notebook /></el-icon>
                       <span>导出到 Obsidian</span>
                     </el-dropdown-item>
+                    <el-dropdown-item @click="openExportToDiaryDialog">
+                      <el-icon><Notebook /></el-icon>
+                      <span>导出到日记</span>
+                    </el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
@@ -287,6 +291,53 @@
       :thinking-chain="message.metadata?.thinkingChain"
     />
 
+    <!-- 导出到日记对话框 -->
+    <el-dialog
+      v-model="showExportToDiaryDialog"
+      title="导出到日记"
+      width="500px"
+      :close-on-click-modal="false"
+    >
+      <el-form label-width="80px">
+        <el-form-item label="日记标题">
+          <el-input v-model="exportToDiaryTitle" placeholder="请输入日记标题" />
+        </el-form-item>
+        <el-form-item label="选择目录">
+          <el-input
+            v-model="diaryFolderSearchKey"
+            placeholder="搜索目录..."
+            clearable
+            style="margin-bottom: 8px"
+          />
+          <div class="diary-folder-tree">
+            <el-scrollbar height="200px">
+              <div v-if="filteredDiaryFolders.length === 0" class="empty-folders">
+                暂无目录
+              </div>
+              <div v-else>
+                <div
+                  v-for="folder in filteredDiaryFolders"
+                  :key="folder.id"
+                  class="folder-option"
+                  :class="{ selected: selectedDiaryFolderId === folder.id }"
+                  :style="{ paddingLeft: `${folder.level * 16 + 12}px` }"
+                  @click="selectedDiaryFolderId = folder.id"
+                >
+                  <el-icon class="folder-icon"><Folder /></el-icon>
+                  <span class="folder-name">{{ folder.name }}</span>
+                  <el-icon v-if="selectedDiaryFolderId === folder.id" class="check-icon"><Check /></el-icon>
+                </div>
+              </div>
+            </el-scrollbar>
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showExportToDiaryDialog = false">取消</el-button>
+        <el-button type="primary" :loading="exportToDiaryLoading" @click="handleExportToDiary">导出</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 知识库片段预览对话框 -->
     <el-dialog
       v-model="showKbSnippetDialog"
@@ -322,7 +373,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick } from 'vue'
 import html2canvas from 'html2canvas'
-import { Document, Edit, CopyDocument, Delete, Refresh, Switch, Coin, Collection, More, Picture, Notebook, ArrowRight, View, Tickets } from '@element-plus/icons-vue'
+import { Document, Edit, CopyDocument, Delete, Refresh, Switch, Coin, Collection, More, Picture, Notebook, ArrowRight, View, Tickets, Folder, Check } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElImageViewer } from 'element-plus'
 import { marked } from 'marked'
 import type { Message, Attachment } from '../../../shared/types'
@@ -364,6 +415,110 @@ const savingToKnowledgeBase = ref(false)
 
 // 导出到 Obsidian 对话框
 const showExportObsidianDialog = ref(false)
+
+// 导出到日记相关
+const showExportToDiaryDialog = ref(false)
+const exportToDiaryLoading = ref(false)
+const exportToDiaryTitle = ref('')
+const selectedDiaryFolderId = ref('')
+const diaryFolderSearchKey = ref('')
+const allDiaryFolders = ref<Array<{ id: string; name: string; parentId?: string; level: number }>>([])
+
+// 过滤后的目录列表
+const filteredDiaryFolders = computed(() => {
+  if (!diaryFolderSearchKey.value) {
+    return allDiaryFolders.value
+  }
+  const keyword = diaryFolderSearchKey.value.toLowerCase()
+  return allDiaryFolders.value.filter(f => f.name.toLowerCase().includes(keyword))
+})
+
+// 打开导出到日记对话框
+async function openExportToDiaryDialog() {
+  // 设置默认标题
+  exportToDiaryTitle.value = `AI回答 - ${new Date().toLocaleDateString()}`
+  selectedDiaryFolderId.value = ''
+  diaryFolderSearchKey.value = ''
+
+  // 加载目录列表
+  try {
+    const result = await window.electronAPI.diary.getAllFolders()
+    if (result.success && result.data) {
+      // 构建树形结构并计算层级
+      const folders = result.data
+      const folderMap = new Map(folders.map(f => [f.id, { ...f, level: 0 }]))
+      const rootFolders: Array<{ id: string; name: string; parentId?: string; level: number }> = []
+
+      // 递归计算层级并排序
+      function getLevel(folderId: string): number {
+        const folder = folderMap.get(folderId)
+        if (!folder) return 0
+        if (folder.level > 0) return folder.level
+        if (!folder.parentId) {
+          folder.level = 0
+        } else {
+          folder.level = getLevel(folder.parentId) + 1
+        }
+        return folder.level
+      }
+
+      // 计算每个目录的层级
+      folders.forEach(f => getLevel(f.id))
+
+      // 按层级排序
+      allDiaryFolders.value = Array.from(folderMap.values()).sort((a, b) => {
+        if (a.level !== b.level) return a.level - b.level
+        return a.name.localeCompare(b.name)
+      })
+
+      // 默认选择第一个目录
+      if (allDiaryFolders.value.length > 0) {
+        selectedDiaryFolderId.value = allDiaryFolders.value[0].id
+      }
+    }
+  } catch (error) {
+    console.error('加载日记目录失败:', error)
+  }
+
+  showExportToDiaryDialog.value = true
+}
+
+// 导出到日记
+async function handleExportToDiary() {
+  if (!selectedDiaryFolderId.value) {
+    ElMessage.warning('请选择日记目录')
+    return
+  }
+
+  if (!exportToDiaryTitle.value.trim()) {
+    ElMessage.warning('请输入日记标题')
+    return
+  }
+
+  exportToDiaryLoading.value = true
+  try {
+    // 构建内容
+    const content = `# ${exportToDiaryTitle.value}\n\n> 导出自 AI 对话，时间：${new Date().toLocaleString()}\n\n${props.message.content}`
+
+    const result = await window.electronAPI.diary.createEntry({
+      folderId: selectedDiaryFolderId.value,
+      title: exportToDiaryTitle.value.trim(),
+      content
+    })
+
+    if (result.success) {
+      ElMessage.success('导出到日记成功')
+      showExportToDiaryDialog.value = false
+    } else {
+      ElMessage.error(result.error || '导出失败')
+    }
+  } catch (error) {
+    console.error('导出到日记失败:', error)
+    ElMessage.error('导出失败')
+  } finally {
+    exportToDiaryLoading.value = false
+  }
+}
 
 // 图片预览缓存
 const imagePreviewUrls = ref<Map<string, string>>(new Map())
@@ -1557,6 +1712,48 @@ function showKnowledgeBaseSnippet(ref: { documentId: string; documentName: strin
     overflow-y: auto;
     white-space: pre-wrap;
     word-break: break-word;
+  }
+}
+
+.diary-folder-tree {
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 8px;
+  overflow: hidden;
+
+  .empty-folders {
+    padding: 24px;
+    text-align: center;
+    color: var(--el-text-color-placeholder);
+  }
+}
+
+.folder-option {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    background: var(--el-fill-color-light);
+  }
+
+  &.selected {
+    background: var(--el-color-primary-light-9);
+  }
+
+  .folder-icon {
+    margin-right: 8px;
+    color: var(--el-color-primary);
+  }
+
+  .folder-name {
+    flex: 1;
+    font-size: 14px;
+  }
+
+  .check-icon {
+    color: var(--el-color-primary);
   }
 }
 </style>
