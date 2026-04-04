@@ -129,7 +129,8 @@ import {
   Fold,
   FolderOpened,
   User,
-  EditPen
+  EditPen,
+  Notebook
 } from '@element-plus/icons-vue'
 import { useTheme } from '@/composables/useTheme'
 import { useTabsStore } from '@/stores/tabs'
@@ -171,6 +172,11 @@ const mainMenuItems = [
     path: '/longwriting',
     label: '长文写作',
     icon: markRaw(EditPen)
+  },
+  {
+    path: '/diary',
+    label: '日记',
+    icon: markRaw(Notebook)
   },
   {
     path: '/translate',
@@ -220,6 +226,7 @@ const pathTitleMap: Record<string, string> = {
   '/image': '图像生成',
   '/portrait': '人像设计',
   '/longwriting': '长文写作',
+  '/diary': '日记',
   '/translate': '文档翻译',
   '/voice': '语音助手',
   '/knowledge-base': '知识库',
