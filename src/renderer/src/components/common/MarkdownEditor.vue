@@ -19,8 +19,11 @@ import { Editor } from '@bytemd/vue-next'
 import gfm from '@bytemd/plugin-gfm'
 import highlight from '@bytemd/plugin-highlight'
 import frontmatter from '@bytemd/plugin-frontmatter'
+import math from '@bytemd/plugin-math'
+import mermaid from '@bytemd/plugin-mermaid'
 import 'bytemd/dist/index.css'
 import 'highlight.js/styles/github.css'
+import 'katex/dist/katex.css'
 
 const props = defineProps<{
   modelValue: string
@@ -40,7 +43,9 @@ const editorRef = ref<any>(null)
 const plugins = [
   gfm(),
   highlight(),
-  frontmatter()
+  frontmatter(),
+  math(),
+  mermaid()
 ]
 
 // 中文语言包
