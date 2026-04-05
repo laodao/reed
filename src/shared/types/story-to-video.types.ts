@@ -561,3 +561,157 @@ export interface CharacterBindingRecord {
   created_at: number
   updated_at: number
 }
+
+// ==================== 新增：符合第三范式的子表记录类型 ====================
+
+/**
+ * 场景角色记录
+ */
+export interface SceneCharacterRecord {
+  id: string
+  scene_script_id: string
+  character_id: string
+  character_name: string
+  position: string | null
+  expression: string | null
+  action: string | null
+  outfit: string | null
+  sort_order: number
+}
+
+/**
+ * 场景道具记录
+ */
+export interface ScenePropRecord {
+  id: string
+  scene_character_id: string
+  prop_name: string
+}
+
+/**
+ * 场景对话记录
+ */
+export interface SceneDialogueRecord {
+  id: string
+  scene_script_id: string
+  character_id: string
+  character_name: string
+  text: string
+  emotion: string | null
+  volume: string
+  pace: string
+  pause: number
+  voice_id: string | null
+  audio_asset_id: string | null
+  sort_order: number
+}
+
+/**
+ * 场景动作记录
+ */
+export interface SceneActionRecord {
+  id: string
+  scene_script_id: string
+  character_id: string | null
+  description: string
+  timing: string
+  duration: number | null
+  sort_order: number
+}
+
+/**
+ * 分镜角色记录
+ */
+export interface StoryboardCharacterRecord {
+  id: string
+  storyboard_id: string
+  character_id: string
+  position_x: number
+  position_y: number
+  position_scale: number
+  expression: string | null
+  action: string | null
+  facing: string
+  sort_order: number
+}
+
+/**
+ * 分镜对话关联记录
+ */
+export interface StoryboardDialogueLinkRecord {
+  id: string
+  storyboard_id: string
+  dialogue_id: string
+  sort_order: number
+}
+
+/**
+ * 分镜动作关联记录
+ */
+export interface StoryboardActionLinkRecord {
+  id: string
+  storyboard_id: string
+  action_id: string
+  sort_order: number
+}
+
+/**
+ * 图像资产记录
+ */
+export interface ImageAssetRecord {
+  id: string
+  project_id: string
+  type: string
+  provider: string | null
+  model: string | null
+  prompt: string
+  negative_prompt: string | null
+  image_path: string
+  thumbnail_path: string | null
+  width: number
+  height: number
+  metadata: string | null
+  created_at: number
+}
+
+/**
+ * 音频资产记录
+ */
+export interface AudioAssetRecord {
+  id: string
+  project_id: string
+  type: string
+  text: string | null
+  voice_id: string | null
+  audio_path: string
+  duration: number
+  volume: number
+  fade_in: number | null
+  fade_out: number | null
+  created_at: number
+}
+
+/**
+ * 音轨记录
+ */
+export interface AudioTrackRecord {
+  id: string
+  episode_id: string
+  type: string
+  name: string
+  volume: number
+  muted: number
+  solo: number
+  sort_order: number
+}
+
+/**
+ * 音轨音频关联记录
+ */
+export interface AudioTrackItemRecord {
+  id: string
+  track_id: string
+  audio_asset_id: string
+  start_time: number
+  sort_order: number
+}

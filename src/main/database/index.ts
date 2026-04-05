@@ -56,6 +56,11 @@ import { EpisodeScriptRepository } from './repositories/episode-script.repositor
 import { SceneScriptRepository } from './repositories/scene-script.repository'
 import { StoryboardRepository } from './repositories/storyboard.repository'
 import { CharacterBindingRepository } from './repositories/character-binding.repository'
+import { SceneCharacterRepository } from './repositories/scene-character.repository'
+import { SceneDialogueRepository } from './repositories/scene-dialogue.repository'
+import { SceneActionRepository } from './repositories/scene-action.repository'
+import { StoryboardCharacterRepository } from './repositories/storyboard-character.repository'
+import { ImageAssetRepository } from './repositories/image-asset.repository'
 import { DataPathService } from '../services/data-path.service'
 import { LanceDBService } from '../services/lance-db.service'
 
@@ -67,6 +72,7 @@ export class DatabaseManager {
   private static instance: DatabaseManager
   public db: Database.Database | null = null
   private dbPath: string
+  private lastBackupPath: string | null = null
 
   // 仓库实例
   public settings: SettingsRepository | null = null
@@ -119,6 +125,13 @@ export class DatabaseManager {
   public sceneScripts: SceneScriptRepository | null = null
   public storyboards: StoryboardRepository | null = null
   public characterBindings: CharacterBindingRepository | null = null
+
+  // 新增：符合第三范式的子表仓库
+  public sceneCharacters: SceneCharacterRepository | null = null
+  public sceneDialogues: SceneDialogueRepository | null = null
+  public sceneActions: SceneActionRepository | null = null
+  public storyboardCharacters: StoryboardCharacterRepository | null = null
+  public imageAssets: ImageAssetRepository | null = null
 
   private constructor() {
     // 默认使用 userData 路径，后续会在 initialize 中更新
@@ -1415,11 +1428,199 @@ export class DatabaseManager {
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_storyboards_shot_number ON storyboards(scene_script_id, shot_number)`)
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_storyboards_status ON storyboards(status)`)
 
+    // ==================== 符合第三范式的新增子表 ====================
+
+    // 图像资产表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS image_assets (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        provider TEXT,
+        model TEXT,
+        prompt TEXT NOT NULL,
+        negative_prompt TEXT,
+        image_path TEXT NOT NULL,
+        thumbnail_path TEXT,
+        width INTEGER NOT NULL,
+        height INTEGER NOT NULL,
+        metadata TEXT,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES video_projects(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_image_assets_project_id ON image_assets(project_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_image_assets_type ON image_assets(type)`)
+
+    // 音频资产表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS audio_assets (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        text TEXT,
+        voice_id TEXT,
+        audio_path TEXT NOT NULL,
+        duration INTEGER NOT NULL,
+        volume INTEGER DEFAULT 100,
+        fade_in INTEGER,
+        fade_out INTEGER,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (project_id) REFERENCES video_projects(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_audio_assets_project_id ON audio_assets(project_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_audio_assets_type ON audio_assets(type)`)
+
+    // 场景角色关联表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS scene_characters (
+        id TEXT PRIMARY KEY,
+        scene_script_id TEXT NOT NULL,
+        character_id TEXT NOT NULL,
+        character_name TEXT NOT NULL,
+        position TEXT DEFAULT 'center',
+        expression TEXT,
+        action TEXT,
+        outfit TEXT,
+        sort_order INTEGER DEFAULT 0,
+        FOREIGN KEY (scene_script_id) REFERENCES scene_scripts(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_scene_characters_scene_id ON scene_characters(scene_script_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_scene_characters_character_id ON scene_characters(character_id)`)
+
+    // 场景道具关联表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS scene_props (
+        id TEXT PRIMARY KEY,
+        scene_character_id TEXT NOT NULL,
+        prop_name TEXT NOT NULL,
+        FOREIGN KEY (scene_character_id) REFERENCES scene_characters(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_scene_props_character_id ON scene_props(scene_character_id)`)
+
+    // 场景对话表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS scene_dialogues (
+        id TEXT PRIMARY KEY,
+        scene_script_id TEXT NOT NULL,
+        character_id TEXT NOT NULL,
+        character_name TEXT NOT NULL,
+        text TEXT NOT NULL,
+        emotion TEXT,
+        volume TEXT DEFAULT 'normal',
+        pace TEXT DEFAULT 'normal',
+        pause INTEGER DEFAULT 0,
+        voice_id TEXT,
+        audio_asset_id TEXT,
+        sort_order INTEGER NOT NULL,
+        FOREIGN KEY (scene_script_id) REFERENCES scene_scripts(id) ON DELETE CASCADE,
+        FOREIGN KEY (audio_asset_id) REFERENCES audio_assets(id) ON DELETE SET NULL
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_scene_dialogues_scene_id ON scene_dialogues(scene_script_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_scene_dialogues_character_id ON scene_dialogues(character_id)`)
+
+    // 场景动作表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS scene_actions (
+        id TEXT PRIMARY KEY,
+        scene_script_id TEXT NOT NULL,
+        character_id TEXT,
+        description TEXT NOT NULL,
+        timing TEXT NOT NULL DEFAULT 'during',
+        duration REAL,
+        sort_order INTEGER NOT NULL,
+        FOREIGN KEY (scene_script_id) REFERENCES scene_scripts(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_scene_actions_scene_id ON scene_actions(scene_script_id)`)
+
+    // 分镜角色关联表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS storyboard_characters (
+        id TEXT PRIMARY KEY,
+        storyboard_id TEXT NOT NULL,
+        character_id TEXT NOT NULL,
+        position_x REAL NOT NULL DEFAULT 50,
+        position_y REAL NOT NULL DEFAULT 50,
+        position_scale REAL NOT NULL DEFAULT 1.0,
+        expression TEXT,
+        action TEXT,
+        facing TEXT DEFAULT 'front',
+        sort_order INTEGER DEFAULT 0,
+        FOREIGN KEY (storyboard_id) REFERENCES storyboards(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_storyboard_characters_storyboard_id ON storyboard_characters(storyboard_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_storyboard_characters_character_id ON storyboard_characters(character_id)`)
+
+    // 分镜对话关联表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS storyboard_dialogue_links (
+        id TEXT PRIMARY KEY,
+        storyboard_id TEXT NOT NULL,
+        dialogue_id TEXT NOT NULL,
+        sort_order INTEGER DEFAULT 0,
+        FOREIGN KEY (storyboard_id) REFERENCES storyboards(id) ON DELETE CASCADE,
+        FOREIGN KEY (dialogue_id) REFERENCES scene_dialogues(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_storyboard_dialogue_links_storyboard_id ON storyboard_dialogue_links(storyboard_id)`)
+
+    // 分镜动作关联表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS storyboard_action_links (
+        id TEXT PRIMARY KEY,
+        storyboard_id TEXT NOT NULL,
+        action_id TEXT NOT NULL,
+        sort_order INTEGER DEFAULT 0,
+        FOREIGN KEY (storyboard_id) REFERENCES storyboards(id) ON DELETE CASCADE,
+        FOREIGN KEY (action_id) REFERENCES scene_actions(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_storyboard_action_links_storyboard_id ON storyboard_action_links(storyboard_id)`)
+
+    // 音轨表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS audio_tracks (
+        id TEXT PRIMARY KEY,
+        episode_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        name TEXT NOT NULL,
+        volume INTEGER DEFAULT 100,
+        muted INTEGER DEFAULT 0,
+        solo INTEGER DEFAULT 0,
+        sort_order INTEGER DEFAULT 0,
+        FOREIGN KEY (episode_id) REFERENCES video_episodes(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_audio_tracks_episode_id ON audio_tracks(episode_id)`)
+
+    // 音轨音频关联表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS audio_track_items (
+        id TEXT PRIMARY KEY,
+        track_id TEXT NOT NULL,
+        audio_asset_id TEXT NOT NULL,
+        start_time INTEGER NOT NULL,
+        sort_order INTEGER DEFAULT 0,
+        FOREIGN KEY (track_id) REFERENCES audio_tracks(id) ON DELETE CASCADE,
+        FOREIGN KEY (audio_asset_id) REFERENCES audio_assets(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_audio_track_items_track_id ON audio_track_items(track_id)`)
+
     // 迁移类型配置表结构
     this.migrateTypeConfigTables()
 
     // 迁移字典表结构
     this.migrateDictionaryTables()
+
+    // 迁移剧集制作模块JSON字段到子表
+    this.migrateStoryToVideoJsonFields()
 
     // 执行其他数据库迁移
     this.runMigrations()
@@ -1429,6 +1630,287 @@ export class DatabaseManager {
 
     // 检查 portrait_variants 表是否需要移除 project_id 列
     this.migratePortraitVariantsRemoveProjectId()
+  }
+
+  /**
+   * 迁移剧集制作模块JSON字段到子表（符合第三范式）
+   */
+  private migrateStoryToVideoJsonFields(): void {
+    if (!this.db) return
+
+    // 检查是否已迁移（通过检查新表是否有数据来判断）
+    const migrationKey = 'story_to_video_json_migration_v1'
+    const migrationRecord = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(migrationKey)
+    if (migrationRecord) {
+      return // 已迁移
+    }
+
+    console.log('[DatabaseManager] 开始迁移剧集制作模块JSON字段到子表...')
+
+    try {
+      // 备份数据库
+      this.backupDatabase()
+
+      // 迁移场景剧本中的 characters、dialogues、actions 字段
+      this.migrateSceneScriptJsonFields()
+
+      // 迁移分镜中的 characters、dialogue_ids、action_ids 字段
+      this.migrateStoryboardJsonFields()
+
+      // 标记迁移完成
+      this.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(migrationKey, Date.now().toString())
+
+      console.log('[DatabaseManager] 剧集制作模块JSON字段迁移完成')
+    } catch (error) {
+      console.error('[DatabaseManager] 剧集制作模块JSON字段迁移失败:', error)
+      // 尝试恢复备份
+      this.restoreDatabaseFromBackup()
+      throw error
+    }
+  }
+
+  /**
+   * 备份数据库
+   */
+  private backupDatabase(): void {
+    if (!this.db || !this.dbPath) return
+
+    const backupPath = `${this.dbPath}.backup_${Date.now()}`
+    console.log(`[DatabaseManager] 备份数据库到: ${backupPath}`)
+
+    try {
+      // 使用 SQLite 的备份 API
+      this.db.backup(backupPath)
+      this.lastBackupPath = backupPath
+      console.log('[DatabaseManager] 数据库备份完成')
+    } catch (error) {
+      console.error('[DatabaseManager] 数据库备份失败:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 从备份恢复数据库
+   */
+  private restoreDatabaseFromBackup(): void {
+    if (!this.lastBackupPath) {
+      console.warn('[DatabaseManager] 没有可用的备份文件')
+      return
+    }
+
+    console.log(`[DatabaseManager] 尝试从备份恢复: ${this.lastBackupPath}`)
+
+    try {
+      // 关闭当前数据库连接
+      this.db?.close()
+
+      // 复制备份文件覆盖原文件
+      const fs = require('fs')
+      fs.copyFileSync(this.lastBackupPath, this.dbPath!)
+
+      // 重新打开数据库
+      this.db = new Database(this.dbPath!)
+      console.log('[DatabaseManager] 数据库恢复完成')
+    } catch (error) {
+      console.error('[DatabaseManager] 数据库恢复失败:', error)
+    }
+  }
+
+  /**
+   * 迁移场景剧本的JSON字段
+   */
+  private migrateSceneScriptJsonFields(): void {
+    if (!this.db) return
+
+    // 获取所有场景剧本
+    const scenes = this.db.prepare('SELECT id, characters, dialogues, actions FROM scene_scripts').all() as any[]
+
+    for (const scene of scenes) {
+      // 迁移 characters
+      if (scene.characters) {
+        try {
+          const characters = JSON.parse(scene.characters)
+          if (Array.isArray(characters)) {
+            for (let i = 0; i < characters.length; i++) {
+              const char = characters[i]
+              const charId = `sc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+              this.db.prepare(`
+                INSERT OR IGNORE INTO scene_characters (id, scene_script_id, character_id, character_name, position, expression, action, outfit, sort_order)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+              `).run(
+                charId,
+                scene.id,
+                char.characterId || '',
+                char.characterName || '',
+                char.position || 'center',
+                char.expression || null,
+                char.action || null,
+                char.outfit || null,
+                i
+              )
+
+              // 迁移道具
+              if (char.props && Array.isArray(char.props)) {
+                for (const prop of char.props) {
+                  const propId = `sp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+                  this.db.prepare(`
+                    INSERT OR IGNORE INTO scene_props (id, scene_character_id, prop_name)
+                    VALUES (?, ?, ?)
+                  `).run(propId, charId, prop)
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[DatabaseManager] 解析场景角色JSON失败:', e)
+        }
+      }
+
+      // 迁移 dialogues
+      if (scene.dialogues) {
+        try {
+          const dialogues = JSON.parse(scene.dialogues)
+          if (Array.isArray(dialogues)) {
+            for (let i = 0; i < dialogues.length; i++) {
+              const dlg = dialogues[i]
+              const dlgId = dlg.id || `dlg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+              this.db.prepare(`
+                INSERT OR IGNORE INTO scene_dialogues (id, scene_script_id, character_id, character_name, text, emotion, volume, pace, pause, voice_id, sort_order)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              `).run(
+                dlgId,
+                scene.id,
+                dlg.characterId || '',
+                dlg.characterName || '',
+                dlg.text || '',
+                dlg.emotion || null,
+                dlg.volume || 'normal',
+                dlg.pace || 'normal',
+                dlg.pause || 0,
+                dlg.voiceId || null,
+                i
+              )
+            }
+          }
+        } catch (e) {
+          console.warn('[DatabaseManager] 解析场景对话JSON失败:', e)
+        }
+      }
+
+      // 迁移 actions
+      if (scene.actions) {
+        try {
+          const actions = JSON.parse(scene.actions)
+          if (Array.isArray(actions)) {
+            for (let i = 0; i < actions.length; i++) {
+              const act = actions[i]
+              const actId = act.id || `act_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+              this.db.prepare(`
+                INSERT OR IGNORE INTO scene_actions (id, scene_script_id, character_id, description, timing, duration, sort_order)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+              `).run(
+                actId,
+                scene.id,
+                act.characterId || null,
+                act.description || '',
+                act.timing || 'during',
+                act.duration || null,
+                i
+              )
+            }
+          }
+        } catch (e) {
+          console.warn('[DatabaseManager] 解析场景动作JSON失败:', e)
+        }
+      }
+    }
+  }
+
+  /**
+   * 迁移分镜的JSON字段
+   */
+  private migrateStoryboardJsonFields(): void {
+    if (!this.db) return
+
+    // 获取所有分镜
+    const storyboards = this.db.prepare('SELECT id, characters, dialogue_ids, action_ids FROM storyboards').all() as any[]
+
+    for (const storyboard of storyboards) {
+      // 迁移 characters
+      if (storyboard.characters) {
+        try {
+          const characters = JSON.parse(storyboard.characters)
+          if (Array.isArray(characters)) {
+            for (let i = 0; i < characters.length; i++) {
+              const char = characters[i]
+              this.db.prepare(`
+                INSERT OR IGNORE INTO storyboard_characters (id, storyboard_id, character_id, position_x, position_y, position_scale, expression, action, facing, sort_order)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              `).run(
+                `stc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                storyboard.id,
+                char.characterId || '',
+                char.position?.x || 50,
+                char.position?.y || 50,
+                char.position?.scale || 1.0,
+                char.expression || null,
+                char.action || null,
+                char.facing || 'front',
+                i
+              )
+            }
+          }
+        } catch (e) {
+          console.warn('[DatabaseManager] 解析分镜角色JSON失败:', e)
+        }
+      }
+
+      // 迁移 dialogue_ids
+      if (storyboard.dialogue_ids) {
+        try {
+          const dialogueIds = JSON.parse(storyboard.dialogue_ids)
+          if (Array.isArray(dialogueIds)) {
+            for (let i = 0; i < dialogueIds.length; i++) {
+              const dialogueId = dialogueIds[i]
+              this.db.prepare(`
+                INSERT OR IGNORE INTO storyboard_dialogue_links (id, storyboard_id, dialogue_id, sort_order)
+                VALUES (?, ?, ?, ?)
+              `).run(
+                `sdl_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                storyboard.id,
+                dialogueId,
+                i
+              )
+            }
+          }
+        } catch (e) {
+          console.warn('[DatabaseManager] 解析分镜对话ID JSON失败:', e)
+        }
+      }
+
+      // 迁移 action_ids
+      if (storyboard.action_ids) {
+        try {
+          const actionIds = JSON.parse(storyboard.action_ids)
+          if (Array.isArray(actionIds)) {
+            for (let i = 0; i < actionIds.length; i++) {
+              const actionId = actionIds[i]
+              this.db.prepare(`
+                INSERT OR IGNORE INTO storyboard_action_links (id, storyboard_id, action_id, sort_order)
+                VALUES (?, ?, ?, ?)
+              `).run(
+                `sal_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                storyboard.id,
+                actionId,
+                i
+              )
+            }
+          }
+        } catch (e) {
+          console.warn('[DatabaseManager] 解析分镜动作ID JSON失败:', e)
+        }
+      }
+    }
   }
 
   /**
@@ -2003,6 +2485,13 @@ export class DatabaseManager {
     this.sceneScripts = new SceneScriptRepository(this.db)
     this.storyboards = new StoryboardRepository(this.db)
     this.characterBindings = new CharacterBindingRepository(this.db)
+
+    // 初始化新的子表仓库
+    this.sceneCharacters = new SceneCharacterRepository(this.db)
+    this.sceneDialogues = new SceneDialogueRepository(this.db)
+    this.sceneActions = new SceneActionRepository(this.db)
+    this.storyboardCharacters = new StoryboardCharacterRepository(this.db)
+    this.imageAssets = new ImageAssetRepository(this.db)
   }
 
   /**
