@@ -441,6 +441,8 @@ async function handleUpdateScript(
   scriptId: string,
   data: {
     synopsis?: string
+    scriptContent?: string // 完整剧本正文
+    scriptFormat?: string // 剧本格式类型
     scenes?: SceneScript[]
     totalDuration?: number
     characterAppearances?: string[]
@@ -671,9 +673,9 @@ async function handleGenerateScript(
       }
     }
 
-    // 调用 AI 生成剧本
+    // 调用 AI 生成剧本（完整剧本模式）
     const aiService = StoryToVideoAIService.getInstance()
-    const result = await aiService.generateScript(
+    const result = await aiService.generateFullScript(
       chapterContent,
       characters,
       providerConfigId,
@@ -694,6 +696,8 @@ async function handleGenerateScript(
       // 更新现有剧本
       script = db.episodeScripts.update(existingScript.id, {
         synopsis: result.synopsis,
+        scriptContent: result.scriptContent,
+        scriptFormat: 'standard',
         status: 'reviewing'
       })
     } else {
@@ -702,7 +706,9 @@ async function handleGenerateScript(
         projectId,
         episodeId: episode.id,
         outlineId,
-        synopsis: result.synopsis
+        synopsis: result.synopsis,
+        scriptContent: result.scriptContent,
+        scriptFormat: 'standard'
       })
 
       // 更新剧本状态

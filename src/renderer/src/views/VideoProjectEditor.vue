@@ -92,59 +92,110 @@
           <el-tabs v-model="activeTab" class="editor-tabs">
             <!-- 剧本标签页 -->
             <el-tab-pane label="剧本" name="script">
-              <div class="script-editor">
-                <div class="script-header">
-                  <h4>剧本概要</h4>
-                  <el-button
-                    size="small"
-                    :loading="store.generating"
-                    :disabled="store.generating"
-                    @click="generateScript"
-                  >
-                    <el-icon><MagicStick /></el-icon>
-                    AI 生成剧本
-                  </el-button>
-                </div>
-                <el-input
-                  v-model="scriptSynopsis"
-                  type="textarea"
-                  :rows="4"
-                  placeholder="输入或生成剧本概要..."
-                  @blur="saveScriptSynopsis"
-                />
-
-                <div class="scene-section">
-                  <div class="section-header">
-                    <h4>场景列表 ({{ store.scenes.length }})</h4>
+              <div class="script-editor-new">
+                <!-- 左侧场景导航 -->
+                <div class="scene-nav-sidebar">
+                  <div class="sidebar-header">
+                    <h4>场景导航</h4>
                     <el-button
-                    size="small"
-                    :loading="store.generating"
-                    :disabled="store.generating"
-                    @click="generateScenes"
-                  >
-                    <el-icon><MagicStick /></el-icon>
-                    拆分场景
-                  </el-button>
-                  </div>
-
-                  <div class="scene-list">
-                    <div
-                      v-for="scene in store.scenes"
-                      :key="scene.id"
-                      class="scene-item"
-                      :class="{ active: store.currentScene?.id === scene.id }"
-                      @click="selectScene(scene)"
+                      size="small"
+                      :loading="store.generating"
+                      :disabled="store.generating"
+                      @click="generateScript"
                     >
-                      <div class="scene-number">场景 {{ scene.sceneNumber }}</div>
-                      <div class="scene-location">{{ scene.location }}</div>
-                      <div class="scene-info">
-                        <el-tag size="small" type="info">{{ scene.timeOfDay }}</el-tag>
-                        <span class="scene-duration">{{ scene.narration.length }} 字</span>
+                      <el-icon><MagicStick /></el-icon>
+                      AI 生成剧本
+                    </el-button>
+                  </div>
+                  <div class="scene-nav-list">
+                    <div
+                      v-for="(scene, index) in store.scenes"
+                      :key="scene.id"
+                      class="scene-nav-item"
+                      :class="{ active: currentSceneIndex === index }"
+                      @click="scrollToScene(index)"
+                    >
+                      <div class="scene-nav-number">场景 {{ scene.sceneNumber }}</div>
+                      <div class="scene-nav-location">{{ scene.location }}</div>
+                      <div class="scene-nav-time">
+                        <el-tag size="small" type="info">{{ getLocationTypeLabel(scene.locationType) }}</el-tag>
+                        <el-tag size="small">{{ getTimeOfDayLabel(scene.timeOfDay) }}</el-tag>
                       </div>
                     </div>
+                    <el-empty v-if="store.scenes.length === 0" description="暂无场景" :image-size="60" />
+                  </div>
+                </div>
+
+                <!-- 右侧剧本正文显示区 -->
+                <div class="script-content-area" ref="scriptContentRef">
+                  <div class="content-header">
+                    <h4>剧本正文</h4>
+                    <div class="header-actions">
+                      <el-button
+                        size="small"
+                        :loading="store.generating"
+                        :disabled="store.generating"
+                        @click="generateScenes"
+                        v-if="store.currentScript && !store.currentScript.scriptContent"
+                      >
+                        <el-icon><MagicStick /></el-icon>
+                        拆分场景
+                      </el-button>
+                    </div>
+                  </div>
+
+                  <div class="script-content-body">
+                    <template v-if="store.currentScript?.scriptContent">
+                      <div
+                        v-for="(scene, index) in store.scenes"
+                        :key="scene.id"
+                        :id="`scene-${index}`"
+                        class="scene-block"
+                        :class="{ active: currentSceneIndex === index }"
+                      >
+                        <div class="scene-header-line">
+                          {{ formatSceneHeader(scene) }}
+                        </div>
+                        <div
+                          class="scene-script-content"
+                          v-html="formatSceneScriptContent(scene, index)"
+                        ></div>
+                      </div>
+                    </template>
+                    <template v-else-if="store.currentScript">
+                      <div class="no-script-content">
+                        <el-empty description="剧本正文尚未生成" :image-size="120">
+                          <el-button type="primary" @click="generateScript" :loading="store.generating">
+                            生成完整剧本
+                          </el-button>
+                        </el-empty>
+                      </div>
+                    </template>
+                    <template v-else>
+                      <div class="no-script-content">
+                        <el-empty description="请先生成剧本" :image-size="120">
+                          <el-button type="primary" @click="generateScript" :loading="store.generating">
+                            AI 生成剧本
+                          </el-button>
+                        </el-empty>
+                      </div>
+                    </template>
                   </div>
                 </div>
               </div>
+
+              <!-- 底部折叠：章节梗概 -->
+              <el-collapse class="script-synopsis-collapse">
+                <el-collapse-item title="章节梗概" name="synopsis">
+                  <el-input
+                    v-model="scriptSynopsis"
+                    type="textarea"
+                    :rows="3"
+                    placeholder="输入或生成剧本概要..."
+                    @blur="saveScriptSynopsis"
+                  />
+                </el-collapse-item>
+              </el-collapse>
             </el-tab-pane>
 
             <!-- 角色绑定标签页 -->
@@ -507,6 +558,12 @@ const activeTab = ref('script')
 
 // 剧本概要
 const scriptSynopsis = ref('')
+
+// 当前选中的场景索引（用于场景导航）
+const currentSceneIndex = ref(0)
+
+// 剧本内容区域引用
+const scriptContentRef = ref<HTMLElement | null>(null)
 
 // 章节列表（用于关联剧集）- 原始数据
 const chapters = ref<Array<{ id: string; order: number; title: string }>>([])
@@ -1240,6 +1297,209 @@ async function saveScriptSynopsis() {
 }
 
 /**
+ * 获取地点类型标签
+ */
+function getLocationTypeLabel(type: string): string {
+  const labels: Record<string, string> = {
+    interior: '内景',
+    exterior: '外景',
+    mixed: '混合'
+  }
+  return labels[type] || type
+}
+
+/**
+ * 获取时间标签
+ */
+function getTimeOfDayLabel(time: string): string {
+  const labels: Record<string, string> = {
+    morning: '早晨',
+    noon: '中午',
+    afternoon: '下午',
+    evening: '傍晚',
+    night: '夜晚',
+    dawn: '黎明',
+    dusk: '黄昏'
+  }
+  return labels[time] || time
+}
+
+/**
+ * 格式化场景标题
+ */
+function formatSceneHeader(scene: SceneScript): string {
+  const typeLabel = scene.locationType === 'interior' ? 'INT.' : scene.locationType === 'exterior' ? 'EXT.' : 'INT./EXT.'
+  const timeLabel = getTimeOfDayLabel(scene.timeOfDay)
+  return `${typeLabel} ${scene.location} - ${timeLabel}`
+}
+
+/**
+ * 格式化场景剧本内容（从剧本正文中提取对应场景的内容）
+ */
+function formatSceneScriptContent(scene: SceneScript, index: number): string {
+  if (!store.currentScript?.scriptContent) {
+    return `<p class="no-content">场景内容尚未生成</p>`
+  }
+
+  // 获取完整剧本内容
+  const fullContent = store.currentScript.scriptContent
+
+  // 尝试根据场景标题分割
+  const sceneHeader = formatSceneHeader(scene)
+  const nextSceneIndex = index + 1
+  let nextSceneHeader = ''
+  if (nextSceneIndex < store.scenes.length) {
+    nextSceneHeader = formatSceneHeader(store.scenes[nextSceneIndex])
+  }
+
+  // 查找当前场景的内容
+  const headerIndex = fullContent.indexOf(sceneHeader)
+  if (headerIndex === -1) {
+    // 如果找不到精确匹配，尝试使用备用标题格式
+    const altHeader = scene.locationType === 'interior'
+      ? `INT. ${scene.location}`
+      : scene.locationType === 'exterior'
+        ? `EXT. ${scene.location}`
+        : `INT./EXT. ${scene.location}`
+
+    const altHeaderIndex = fullContent.indexOf(altHeader)
+    if (altHeaderIndex !== -1) {
+      // 找到备用格式，提取内容
+      let endIndex = fullContent.length
+      if (nextSceneIndex < store.scenes.length) {
+        const nextAltHeader = store.scenes[nextSceneIndex].locationType === 'interior'
+          ? `INT. ${store.scenes[nextSceneIndex].location}`
+          : store.scenes[nextSceneIndex].locationType === 'exterior'
+            ? `EXT. ${store.scenes[nextSceneIndex].location}`
+            : `INT./EXT. ${store.scenes[nextSceneIndex].location}`
+        const nextIndex = fullContent.indexOf(nextAltHeader, altHeaderIndex + altHeader.length)
+        if (nextIndex !== -1) {
+          endIndex = nextIndex
+        }
+      }
+      const content = fullContent.substring(altHeaderIndex, endIndex)
+      return formatScriptToHtml(content)
+    }
+
+    // 实在找不到，显示旁白作为备用
+    return `<div class="fallback-content">
+      <p class="narration">${scene.narration}</p>
+      ${scene.dialogues.map(d => `
+        <div class="dialogue">
+          <span class="character-name">${d.characterName}</span>
+          <span class="parenthetical">${d.emotion || ''}</span>
+          <p class="text">${d.text}</p>
+        </div>
+      `).join('')}
+    </div>`
+  }
+
+  // 找到了精确匹配，提取内容
+  let endIndex = fullContent.length
+  if (nextSceneHeader && nextSceneIndex < store.scenes.length) {
+    const nextIndex = fullContent.indexOf(nextSceneHeader, headerIndex + sceneHeader.length)
+    if (nextIndex !== -1) {
+      endIndex = nextIndex
+    }
+  }
+
+  const content = fullContent.substring(headerIndex, endIndex)
+  return formatScriptToHtml(content)
+}
+
+/**
+ * 将剧本文本格式化为 HTML
+ */
+function formatScriptToHtml(text: string): string {
+  if (!text) return ''
+
+  // 按行处理
+  const lines = text.split('\n')
+  const htmlLines: string[] = []
+  let lastLineWasEmpty = false
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim()
+
+    // 处理空行：连续空行只保留一个
+    if (!line) {
+      if (!lastLineWasEmpty) {
+        htmlLines.push('<div class="empty-line"></div>')
+        lastLineWasEmpty = true
+      }
+      continue
+    }
+
+    lastLineWasEmpty = false
+
+    // 场景标题：INT./EXT. 开头
+    if (line.match(/^(INT\.|EXT\.|INT\.\/EXT\.)/i)) {
+      htmlLines.push(`<div class="scene-header-line">${escapeHtml(line)}</div>`)
+      continue
+    }
+
+    // 转场标记：CUT TO:, FADE OUT. 等
+    if (line.match(/^(CUT TO:|FADE OUT\.|FADE IN:|SMASH CUT TO:|DISSOLVE TO:)/i)) {
+      htmlLines.push(`<div class="transition-line">${escapeHtml(line)}</div>`)
+      continue
+    }
+
+    // 角色名检测（全大写，居中）
+    // 前面有多个空格缩进，内容是全大写字母和标点
+    if (line.match(/^\s{10,}[A-Z\u4e00-\u9fa5]+/)) {
+      // 可能是角色名
+      const charMatch = line.match(/^\s+(.+)$/)
+      if (charMatch && charMatch[1].length < 20) {
+        htmlLines.push(`<div class="character-name-line">${escapeHtml(charMatch[1])}</div>`)
+        continue
+      }
+    }
+
+    // 括号提示：(xxx) 格式，居中缩进
+    if (line.match(/^\s{5,}\([^)]+\)\s*$/)) {
+      htmlLines.push(`<div class="parenthetical-line">${escapeHtml(line.trim())}</div>`)
+      continue
+    }
+
+    // 对白：有缩进的文本
+    if (line.match(/^\s{5,}/)) {
+      // 检查是否是对白（前面有角色名的情况）
+      if (i > 0 && lines[i - 1].match(/^\s{10,}[A-Z\u4e00-\u9fa5]+/)) {
+        htmlLines.push(`<div class="dialogue-line">${escapeHtml(line.trim())}</div>`)
+        continue
+      }
+    }
+
+    // 动作描述：普通文本
+    if (line.length > 0) {
+      htmlLines.push(`<p class="action-line">${escapeHtml(line)}</p>`)
+    }
+  }
+
+  return htmlLines.join('\n')
+}
+
+/**
+ * HTML 转义
+ */
+function escapeHtml(text: string): string {
+  const div = document.createElement('div')
+  div.textContent = text
+  return div.innerHTML
+}
+
+/**
+ * 滚动到指定场景
+ */
+function scrollToScene(index: number) {
+  currentSceneIndex.value = index
+  const element = document.getElementById(`scene-${index}`)
+  if (element) {
+    element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
+
+/**
  * 生成剧本（AI）
  */
 async function generateScript() {
@@ -1803,6 +2063,233 @@ watch(outlineSearchText, (val) => {
         font-weight: 500;
       }
     }
+  }
+}
+
+// 新的剧本编辑器样式
+.script-editor-new {
+  display: flex;
+  height: 100%;
+  gap: 16px;
+
+  .scene-nav-sidebar {
+    width: 240px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--el-border-color-light);
+    background: var(--el-fill-color-blank);
+
+    .sidebar-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--el-border-color-light);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+
+      h4 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 500;
+      }
+    }
+
+    .scene-nav-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    .scene-nav-item {
+      padding: 10px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-bottom: 4px;
+      transition: all 0.2s;
+      border: 1px solid transparent;
+
+      &:hover {
+        background: var(--el-fill-color-light);
+      }
+
+      &.active {
+        background: var(--el-color-primary-light-9);
+        border-color: var(--el-color-primary-light-5);
+      }
+
+      .scene-nav-number {
+        font-size: 12px;
+        color: var(--el-text-color-secondary);
+        margin-bottom: 2px;
+      }
+
+      .scene-nav-location {
+        font-size: 13px;
+        font-weight: 500;
+        margin-bottom: 4px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .scene-nav-time {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+      }
+    }
+  }
+
+  .script-content-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+
+    .content-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--el-border-color-light);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+
+      h4 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 500;
+      }
+    }
+
+    .script-content-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 24px;
+      font-family: 'Courier New', monospace;
+      line-height: 1.6;
+
+      .scene-block {
+        margin-bottom: 32px;
+        padding: 16px;
+        border-radius: 8px;
+        border: 1px solid transparent;
+        transition: all 0.2s;
+
+        &.active {
+          border-color: var(--el-color-primary-light-5);
+          background: var(--el-fill-color-lighter);
+        }
+
+        .scene-header-line {
+          font-weight: bold;
+          font-size: 14px;
+          margin-bottom: 16px;
+          padding-bottom: 8px;
+          border-bottom: 1px solid var(--el-border-color-light);
+        }
+
+        .scene-script-content {
+          font-size: 13px;
+          line-height: 1.8;
+
+          .empty-line {
+            height: 8px;
+          }
+
+          .scene-header-line {
+            font-weight: bold;
+            color: var(--el-text-color-primary);
+            margin-bottom: 12px;
+          }
+
+          .transition-line {
+            text-align: right;
+            color: var(--el-text-color-secondary);
+            margin: 16px 0;
+          }
+
+          .character-name-line {
+            text-align: center;
+            margin: 12px 0 4px;
+            font-weight: 500;
+          }
+
+          .parenthetical-line {
+            text-align: center;
+            color: var(--el-text-color-secondary);
+            font-size: 12px;
+            margin: 4px 0;
+          }
+
+          .dialogue-line {
+            text-align: center;
+            margin: 4px 0;
+            padding: 0 60px;
+          }
+
+          .action-line {
+            margin: 12px 0;
+            text-align: justify;
+          }
+
+          .no-content {
+            color: var(--el-text-color-placeholder);
+            text-align: center;
+            padding: 24px;
+          }
+
+          .fallback-content {
+            .narration {
+              color: var(--el-text-color-secondary);
+              font-style: italic;
+              margin-bottom: 16px;
+            }
+
+            .dialogue {
+              margin: 12px 0;
+              text-align: center;
+
+              .character-name {
+                font-weight: 500;
+                display: block;
+              }
+
+              .parenthetical {
+                color: var(--el-text-color-secondary);
+                font-size: 12px;
+              }
+
+              .text {
+                margin: 4px 0;
+              }
+            }
+          }
+        }
+      }
+
+      .no-script-content {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100%;
+        min-height: 300px;
+      }
+    }
+  }
+}
+
+// 剧本梗概折叠面板
+.script-synopsis-collapse {
+  margin-top: 16px;
+  border-top: 1px solid var(--el-border-color-light);
+
+  :deep(.el-collapse-item__header) {
+    padding: 12px 16px;
+    font-weight: 500;
+  }
+
+  :deep(.el-collapse-item__content) {
+    padding: 16px;
   }
 }
 

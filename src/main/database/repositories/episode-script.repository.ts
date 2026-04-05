@@ -19,6 +19,8 @@ export interface CreateEpisodeScriptRequest {
   episodeId: string
   outlineId: string
   synopsis?: string
+  scriptContent?: string // 完整剧本正文
+  scriptFormat?: string // 剧本格式类型
 }
 
 /**
@@ -26,6 +28,8 @@ export interface CreateEpisodeScriptRequest {
  */
 export interface UpdateEpisodeScriptRequest {
   synopsis?: string
+  scriptContent?: string // 完整剧本正文
+  scriptFormat?: string // 剧本格式类型
   scenes?: SceneScript[]
   totalDuration?: number
   characterAppearances?: string[]
@@ -79,8 +83,8 @@ export class EpisodeScriptRepository {
     const now = Date.now()
 
     const stmt = this.db.prepare(`
-      INSERT INTO episode_scripts (id, project_id, episode_id, outline_id, status, synopsis, scenes, total_duration, character_appearances, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO episode_scripts (id, project_id, episode_id, outline_id, status, synopsis, script_content, script_format, scenes, total_duration, character_appearances, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     stmt.run(
@@ -90,6 +94,8 @@ export class EpisodeScriptRepository {
       data.outlineId,
       'pending',
       data.synopsis || '',
+      data.scriptContent || null,
+      data.scriptFormat || 'standard',
       JSON.stringify([]),
       0,
       JSON.stringify([]),
@@ -104,6 +110,8 @@ export class EpisodeScriptRepository {
       outlineId: data.outlineId,
       status: 'pending',
       synopsis: data.synopsis || '',
+      scriptContent: data.scriptContent,
+      scriptFormat: data.scriptFormat || 'standard',
       scenes: [],
       totalDuration: 0,
       characterAppearances: [],
@@ -125,6 +133,14 @@ export class EpisodeScriptRepository {
     if (data.synopsis !== undefined) {
       updates.push('synopsis = ?')
       values.push(data.synopsis)
+    }
+    if (data.scriptContent !== undefined) {
+      updates.push('script_content = ?')
+      values.push(data.scriptContent)
+    }
+    if (data.scriptFormat !== undefined) {
+      updates.push('script_format = ?')
+      values.push(data.scriptFormat)
     }
     if (data.scenes !== undefined) {
       updates.push('scenes = ?')
@@ -184,6 +200,8 @@ export class EpisodeScriptRepository {
       outlineId: row.outline_id,
       status: row.status as ScriptStatus,
       synopsis: row.synopsis,
+      scriptContent: row.script_content,
+      scriptFormat: row.script_format || 'standard',
       scenes: JSON.parse(row.scenes) as SceneScript[],
       totalDuration: row.total_duration,
       characterAppearances: JSON.parse(row.character_appearances) as string[],

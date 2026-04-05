@@ -1633,6 +1633,9 @@ export class DatabaseManager {
 
     // 检查 portrait_variants 表是否需要移除 project_id 列
     this.migratePortraitVariantsRemoveProjectId()
+
+    // 为 episode_scripts 表添加 script_content 和 script_format 字段
+    this.migrateEpisodeScriptsAddScriptContent()
   }
 
   /**
@@ -2247,6 +2250,43 @@ export class DatabaseManager {
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_portrait_variants_created_at ON portrait_variants(created_at DESC)')
 
     console.log('[DatabaseManager] portrait_variants 表迁移完成')
+  }
+
+  /**
+   * 为 episode_scripts 表添加 script_content 和 script_format 字段
+   */
+  private migrateEpisodeScriptsAddScriptContent(): void {
+    if (!this.db) return
+
+    // 检查 episode_scripts 表是否存在
+    const tableExists = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='episode_scripts'").get()
+    if (!tableExists) return
+
+    // 获取表结构
+    const columns = this.db.prepare("PRAGMA table_info(episode_scripts)").all() as { name: string }[]
+    const columnNames = columns.map(col => col.name)
+
+    // 添加 script_content 字段
+    if (!columnNames.includes('script_content')) {
+      console.log('[DatabaseManager] 为 episode_scripts 表添加 script_content 字段...')
+      try {
+        this.db.exec('ALTER TABLE episode_scripts ADD COLUMN script_content TEXT')
+        console.log('[DatabaseManager] episode_scripts 表添加 script_content 字段完成')
+      } catch (e) {
+        console.error('[DatabaseManager] 添加 script_content 字段失败:', e)
+      }
+    }
+
+    // 添加 script_format 字段
+    if (!columnNames.includes('script_format')) {
+      console.log('[DatabaseManager] 为 episode_scripts 表添加 script_format 字段...')
+      try {
+        this.db.exec('ALTER TABLE episode_scripts ADD COLUMN script_format TEXT DEFAULT \'standard\'')
+        console.log('[DatabaseManager] episode_scripts 表添加 script_format 字段完成')
+      } catch (e) {
+        console.error('[DatabaseManager] 添加 script_format 字段失败:', e)
+      }
+    }
   }
 
   /**

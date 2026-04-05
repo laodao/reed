@@ -342,6 +342,8 @@ export interface EpisodeScript {
 
   // 剧本内容
   synopsis: string // 章节梗概
+  scriptContent?: string // 完整剧本正文（标准格式）
+  scriptFormat?: string // 剧本格式类型
   scenes: SceneScript[] // 场景剧本列表
 
   // 元信息
@@ -492,6 +494,8 @@ export interface EpisodeScriptRecord {
   outline_id: string
   status: ScriptStatus
   synopsis: string
+  script_content: string | null // 完整剧本正文
+  script_format: string | null // 剧本格式类型
   scenes: string // JSON
   total_duration: number
   character_appearances: string // JSON
@@ -714,4 +718,73 @@ export interface AudioTrackItemRecord {
   audio_asset_id: string
   start_time: number
   sort_order: number
+}
+
+// ==================== AI 生成结果类型 ====================
+
+/**
+ * AI 生成的场景角色
+ */
+export interface GeneratedSceneCharacter {
+  characterId: string // 角色ID
+  characterName: string // 角色名称
+  portraitId?: string // 人像ID
+  position?: 'left' | 'center' | 'right' | 'foreground' | 'background'
+  expression?: string // 表情
+  action?: string // 动作
+  outfit?: string // 服装描述
+  props?: string[] // 道具
+}
+
+/**
+ * AI 生成的对话
+ */
+export interface GeneratedDialogue {
+  id: string
+  characterId: string
+  characterName: string
+  text: string // 对话内容
+  emotion?: string // 情感
+  volume?: 'normal' | 'loud' | 'whisper' // 音量
+  pace?: 'normal' | 'fast' | 'slow' // 语速
+  pause?: number // 停顿（毫秒）
+}
+
+/**
+ * AI 生成的动作
+ */
+export interface GeneratedAction {
+  id: string
+  characterId?: string // 执行动作的角色（空表示群像动作）
+  description: string // 动作描述
+  timing: 'before' | 'during' | 'after' // 动作时机（相对于对话）
+  duration?: number // 预计时长（秒）
+}
+
+/**
+ * AI 生成的场景数据
+ */
+export interface GeneratedScene {
+  sceneNumber: number
+  location: string // 地点名称
+  locationType: LocationType // 内景/外景
+  timeOfDay: TimeOfDay
+  weather?: WeatherType
+  sceneDescription: string // 场景视觉描述
+  mood: string // 氛围
+  lighting?: string // 光线描述
+  characters: GeneratedSceneCharacter[] // 出场角色
+  originalText: string // 原文片段
+  narration: string // 旁白文本
+  dialogues: GeneratedDialogue[] // 对话列表
+  actions: GeneratedAction[] // 动作描述
+}
+
+/**
+ * AI 剧本生成结果
+ */
+export interface FullScriptGenerationResult {
+  synopsis: string // 章节梗概（50-100字）
+  scriptContent: string // 完整剧本正文（标准格式）
+  scenes: GeneratedScene[] // 结构化场景数据（用于系统处理）
 }
