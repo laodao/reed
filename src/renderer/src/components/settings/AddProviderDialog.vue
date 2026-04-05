@@ -333,6 +333,13 @@
         <el-button @click="handleClose">取消</el-button>
         <el-button
           v-if="selectedTemplate || isEdit"
+          :loading="testing"
+          @click="handleTest"
+        >
+          测试连接
+        </el-button>
+        <el-button
+          v-if="selectedTemplate || isEdit"
           type="primary"
           :loading="saving"
           @click="handleSave"

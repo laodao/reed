@@ -535,6 +535,14 @@ export class ProviderTemplateService {
 
       const models = await provider.getModels()
 
+      // 检查模型列表是否为空
+      if (!models || models.length === 0) {
+        return {
+          success: false,
+          message: '连接成功但未获取到任何模型，请检查 API 地址是否正确'
+        }
+      }
+
       // 转换为 ModelDefinition 格式，并自动识别模型能力
       const modelDefinitions: ModelDefinition[] = models
         .filter((m) => m && m.id)  // 过滤掉无效的模型

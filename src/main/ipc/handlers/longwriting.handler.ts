@@ -251,7 +251,10 @@ const CHANNELS = {
   GET_SNAPSHOT_STATS: 'longwriting:getSnapshotStats',
 
   // AI 实体状态提取
-  EXTRACT_ENTITY_STATES: 'longwriting:extractEntityStates'
+  EXTRACT_ENTITY_STATES: 'longwriting:extractEntityStates',
+
+  // AI 章节实体识别
+  RECOGNIZE_CHAPTER_ENTITIES: 'longwriting:recognizeChapterEntities'
 }
 
 /**
@@ -2489,6 +2492,32 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
         chapterContent,
         chapterNumber,
         involvedEntities,
+        providerConfigId,
+        modelId
+      )
+      return result
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  /**
+   * AI 识别章节涉及的实体（角色、地点等）
+   */
+  ipcMain.handle(CHANNELS.RECOGNIZE_CHAPTER_ENTITIES, async (event, projectId: string, chapterContent: string, providerConfigId?: string, modelId?: string) => {
+    try {
+      const window = BrowserWindow.fromWebContents(event.sender)
+      if (!window) {
+        return { success: false, error: '窗口不存在' }
+      }
+
+      const eventId = `recognize-chapter-entities-${projectId}-${Date.now()}`
+      const aiService = LongWritingAIService.getInstance()
+      const result = await aiService.recognizeChapterEntities(
+        window,
+        eventId,
+        projectId,
+        chapterContent,
         providerConfigId,
         modelId
       )

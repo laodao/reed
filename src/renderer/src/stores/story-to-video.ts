@@ -73,9 +73,24 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
   const loading = ref(false)
 
   /**
+   * AI 生成中状态
+   */
+  const generating = ref(false)
+
+  /**
    * 错误信息
    */
   const error = ref<string | null>(null)
+
+  /**
+   * 当前选中的模型配置ID
+   */
+  const selectedProviderConfigId = ref<string | null>(null)
+
+  /**
+   * 当前选中的模型ID
+   */
+  const selectedModelId = ref<string | null>(null)
 
   // ==================== 项目管理 ====================
 
@@ -664,7 +679,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     providerConfigId?: string,
     modelId?: string
   ): Promise<{ script: EpisodeScript; scenes: SceneScript[] } | null> {
-    loading.value = true
+    generating.value = true
     error.value = null
     try {
       const response = await window.electronAPI.storyToVideo.generateScript(
@@ -686,7 +701,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
       error.value = e.message || '生成剧本失败'
       return null
     } finally {
-      loading.value = false
+      generating.value = false
     }
   }
 
@@ -698,7 +713,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     providerConfigId?: string,
     modelId?: string
   ): Promise<SceneScript[] | null> {
-    loading.value = true
+    generating.value = true
     error.value = null
     try {
       const response = await window.electronAPI.storyToVideo.generateScenes(
@@ -718,7 +733,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
       error.value = e.message || '拆分场景失败'
       return null
     } finally {
-      loading.value = false
+      generating.value = false
     }
   }
 
@@ -730,7 +745,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     providerConfigId?: string,
     modelId?: string
   ): Promise<Storyboard[] | null> {
-    loading.value = true
+    generating.value = true
     error.value = null
     try {
       const response = await window.electronAPI.storyToVideo.generateStoryboard(
@@ -750,7 +765,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
       error.value = e.message || '生成分镜失败'
       return null
     } finally {
-      loading.value = false
+      generating.value = false
     }
   }
 
@@ -762,7 +777,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     providerConfigId?: string,
     modelId?: string
   ): Promise<Storyboard[] | null> {
-    loading.value = true
+    generating.value = true
     error.value = null
     try {
       const response = await window.electronAPI.storyToVideo.generateStoryboards(
@@ -785,7 +800,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
       error.value = e.message || '批量生成分镜失败'
       return null
     } finally {
-      loading.value = false
+      generating.value = false
     }
   }
 
@@ -1034,6 +1049,16 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     }
   }
 
+  // ==================== 模型选择 ====================
+
+  /**
+   * 更新选中的模型
+   */
+  function updateSelectedModel(providerConfigId: string, modelId: string): void {
+    selectedProviderConfigId.value = providerConfigId
+    selectedModelId.value = modelId
+  }
+
   return {
     // 状态
     projects,
@@ -1046,7 +1071,12 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     storyboards,
     characterBindings,
     loading,
+    generating,
     error,
+    // 模型选择状态
+    selectedProviderConfigId,
+    selectedModelId,
+    updateSelectedModel,
     // 计算属性
     projectStats,
     episodeProgress,

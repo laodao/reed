@@ -135,6 +135,13 @@
                       <el-icon><Collection /></el-icon>
                       提取状态
                     </el-button>
+                    <el-button
+                      size="small"
+                      @click="viewChapterStates(currentChapter.id)"
+                    >
+                      <el-icon><View /></el-icon>
+                      查看状态
+                    </el-button>
                   </template>
                   <template v-else-if="!isEditableNode && currentNode">
                     <el-button size="small" @click="exportNode(currentNode.id)">
@@ -381,39 +388,87 @@
       v-model="showStateExtractDialog"
       title="确认实体状态"
       width="700px"
+      :style="{ maxHeight: '80vh' }"
+      class="state-dialog"
     >
-      <div v-if="extractingStates" class="memory-extracting">
-        <el-icon class="is-loading"><Loading /></el-icon>
-        <span>AI 正在分析章节内容，提取实体状态变化...</span>
-      </div>
-      <div v-else-if="extractedStates.length > 0" class="memory-list">
-        <p class="memory-hint">以下是从章节中提取的实体状态快照，请确认是否保存：</p>
-        <div v-for="(state, index) in extractedStates" :key="index" class="memory-item">
-          <div class="memory-header">
-            <el-tag size="small" :type="state.entityType === 'character' ? 'primary' : state.entityType === 'location' ? 'warning' : 'info'">
-              {{ state.entityType === 'character' ? '角色' : state.entityType === 'location' ? '地点' : state.entityType === 'item' ? '物品' : state.entityType === 'faction' ? '势力' : '技能' }}
-            </el-tag>
-            <span class="entity-name">{{ state.entityName }}</span>
-          </div>
-          <el-input
-            v-model="state.stateSummary"
-            type="textarea"
-            :rows="3"
-            placeholder="状态摘要"
-            style="margin-top: 8px;"
-          />
-          <div v-if="state.keyChanges && state.keyChanges.length > 0" class="key-changes">
-            <span class="key-changes-label">关键变化：</span>
-            <el-tag v-for="(change, i) in state.keyChanges" :key="i" size="small" type="info" style="margin-right: 4px;">{{ change }}</el-tag>
+      <div class="dialog-content-scroll">
+        <div v-if="extractingStates" class="memory-extracting">
+          <el-icon class="is-loading"><Loading /></el-icon>
+          <span>AI 正在分析章节内容，提取实体状态变化...</span>
+        </div>
+        <div v-else-if="extractedStates.length > 0" class="memory-list">
+          <p class="memory-hint">以下是从章节中提取的实体状态快照，请确认是否保存：</p>
+          <div v-for="(state, index) in extractedStates" :key="index" class="memory-item">
+            <div class="memory-header">
+              <el-tag size="small" :type="state.entityType === 'character' ? 'primary' : state.entityType === 'location' ? 'warning' : 'info'">
+                {{ state.entityType === 'character' ? '角色' : state.entityType === 'location' ? '地点' : state.entityType === 'item' ? '物品' : state.entityType === 'faction' ? '势力' : '技能' }}
+              </el-tag>
+              <span class="entity-name">{{ state.entityName }}</span>
+            </div>
+            <el-input
+              v-model="state.stateSummary"
+              type="textarea"
+              :rows="3"
+              placeholder="状态摘要"
+              style="margin-top: 8px;"
+            />
+            <div v-if="state.keyChanges && state.keyChanges.length > 0" class="key-changes">
+              <span class="key-changes-label">关键变化：</span>
+              <el-tag v-for="(change, i) in state.keyChanges" :key="i" size="small" type="info" style="margin-right: 4px;">{{ change }}</el-tag>
+            </div>
           </div>
         </div>
+        <el-empty v-else description="未能检测到实体状态变化" />
       </div>
-      <el-empty v-else description="未能检测到实体状态变化" />
       <template #footer>
         <el-button @click="showStateExtractDialog = false">取消</el-button>
         <el-button type="primary" :disabled="extractedStates.length === 0" @click="saveEntityStates">
           保存状态快照
         </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 查看章节状态对话框 -->
+    <el-dialog
+      v-model="showViewStateDialog"
+      title="章节实体状态"
+      width="700px"
+      class="state-dialog"
+    >
+      <div class="dialog-content-scroll">
+        <div v-if="loadingChapterStates" class="memory-extracting">
+          <el-icon class="is-loading"><Loading /></el-icon>
+          <span>正在加载章节状态...</span>
+        </div>
+        <div v-else-if="chapterStates.length > 0" class="memory-list">
+          <p class="memory-hint">以下是当前章节已保存的实体状态快照：</p>
+          <div v-for="(state, index) in chapterStates" :key="index" class="memory-item">
+            <div class="memory-header">
+              <el-tag size="small" :type="state.entityType === 'character' ? 'primary' : state.entityType === 'location' ? 'warning' : 'info'">
+                {{ state.entityType === 'character' ? '角色' : state.entityType === 'location' ? '地点' : state.entityType === 'item' ? '物品' : state.entityType === 'faction' ? '势力' : '技能' }}
+              </el-tag>
+              <span class="entity-name">{{ state.entityName }}</span>
+              <el-button
+                type="danger"
+                size="small"
+                text
+                @click="deleteState(state.id)"
+                style="margin-left: auto;"
+              >
+                删除
+              </el-button>
+            </div>
+            <div class="state-summary-display">{{ state.stateSummary }}</div>
+            <div v-if="state.keyChanges && state.keyChanges.length > 0" class="key-changes">
+              <span class="key-changes-label">关键变化：</span>
+              <el-tag v-for="(change, i) in state.keyChanges" :key="i" size="small" type="info" style="margin-right: 4px;">{{ change }}</el-tag>
+            </div>
+          </div>
+        </div>
+        <el-empty v-else description="该章节暂无已保存的实体状态" />
+      </div>
+      <template #footer>
+        <el-button @click="showViewStateDialog = false">关闭</el-button>
       </template>
     </el-dialog>
   </div>
@@ -519,6 +574,12 @@ const snapshotStats = ref<{ total: number; byEntityType: Record<string, number> 
 const showStateExtractDialog = ref(false)
 const extractingStates = ref(false)
 const extractedStates = ref<any[]>([])
+
+// 查看章节状态
+const showViewStateDialog = ref(false)
+const loadingChapterStates = ref(false)
+const chapterStates = ref<any[]>([])
+const currentViewStateOutlineId = ref<string>('')
 
 // 树配置
 const treeProps = {
@@ -1115,11 +1176,56 @@ async function extractEntityStatesFromChapter(outlineId: string) {
       }
     }
 
-    // 如果没有涉及实体，提示用户
+    // 如果没有涉及实体，先自动识别
     if (involvedEntities.length === 0) {
-      ElMessage.warning('该章节没有设置涉及的角色或地点，无法提取状态')
-      extractingStates.value = false
-      return
+      ElMessage.info('正在识别章节涉及的实体...')
+
+      const recognizeResult = await window.electronAPI.longwriting.recognizeChapterEntities(
+        props.projectId,
+        content,
+        selectedModel.value.providerId,
+        selectedModel.value.modelId
+      )
+
+      if (!recognizeResult.success || !recognizeResult.data) {
+        ElMessage.error(recognizeResult.error || '识别实体失败')
+        extractingStates.value = false
+        return
+      }
+
+      const recognizedData = recognizeResult.data
+      const recognizedChars = recognizedData.characters || []
+      const recognizedLocs = recognizedData.locations || []
+
+      // 如果没有识别到任何实体
+      if (recognizedChars.length === 0 && recognizedLocs.length === 0) {
+        ElMessage.warning('未识别到章节涉及的角色或地点')
+        extractingStates.value = false
+        return
+      }
+
+      // 自动更新大纲的涉及实体
+      const charIds = recognizedChars.map((c: any) => c.id)
+      const locIds = recognizedLocs.map((l: any) => l.id)
+
+      await window.electronAPI.longwriting.updateOutline(outlineId, {
+        involvedCharacters: charIds,
+        involvedLocations: locIds
+      })
+
+      // 更新本地状态
+      outline.involvedCharacters = charIds
+      outline.involvedLocations = locIds
+
+      // 重新构建 involvedEntities
+      for (const char of recognizedChars) {
+        involvedEntities.push({ type: 'character', id: char.id, name: char.name })
+      }
+      for (const loc of recognizedLocs) {
+        involvedEntities.push({ type: 'location', id: loc.id, name: loc.name })
+      }
+
+      ElMessage.success(`已识别 ${recognizedChars.length} 个角色，${recognizedLocs.length} 个地点`)
     }
 
     const result = await window.electronAPI.longwriting.extractEntityStates(
@@ -1180,6 +1286,51 @@ async function saveEntityStates() {
     }
   } catch (error: any) {
     ElMessage.error('保存状态快照失败：' + error.message)
+  }
+}
+
+// 查看章节已保存的状态
+async function viewChapterStates(outlineId: string) {
+  currentViewStateOutlineId.value = outlineId
+  loadingChapterStates.value = true
+  chapterStates.value = []
+  showViewStateDialog.value = true
+
+  try {
+    const chapterNumber = calculateChapterNumber(outlineId)
+    const result = await window.electronAPI.longwriting.getEntityStatesByChapter(props.projectId, chapterNumber)
+
+    if (result.success && result.data) {
+      chapterStates.value = result.data
+    } else {
+      ElMessage.error(result.error || '加载状态快照失败')
+    }
+  } catch (error: any) {
+    ElMessage.error('加载状态快照失败：' + error.message)
+  } finally {
+    loadingChapterStates.value = false
+  }
+}
+
+// 删除状态快照
+async function deleteState(stateId: string) {
+  try {
+    await ElMessageBox.confirm('确定要删除该状态快照吗？', '确认删除', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+
+    const result = await window.electronAPI.longwriting.deleteEntityStateSnapshot(stateId)
+    if (result.success) {
+      chapterStates.value = chapterStates.value.filter(s => s.id !== stateId)
+      ElMessage.success('删除成功')
+      await loadSnapshotStats()
+    } else {
+      ElMessage.error(result.error || '删除失败')
+    }
+  } catch {
+    // 用户取消
   }
 }
 
@@ -2078,6 +2229,45 @@ onMounted(() => {
         color: var(--text-color-secondary);
       }
     }
+
+    .state-summary-display {
+      margin-top: 8px;
+      padding: 8px 12px;
+      background: var(--bg-color);
+      border-radius: 6px;
+      font-size: 13px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      color: var(--text-color-primary);
+    }
+  }
+}
+
+// 状态对话框样式
+.state-dialog {
+  :deep(.el-dialog__body) {
+    padding: 16px 20px;
+    max-height: 60vh;
+    overflow: hidden;
+  }
+}
+
+.dialog-content-scroll {
+  max-height: calc(60vh - 20px);
+  overflow-y: auto;
+  padding-right: 4px;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 3px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
   }
 }
 </style>

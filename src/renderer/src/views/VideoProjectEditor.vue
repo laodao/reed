@@ -10,6 +10,36 @@
         <el-divider direction="vertical" />
         <h2 class="project-title">{{ store.currentProject?.name || '加载中...' }}</h2>
       </div>
+      <div class="header-center">
+        <!-- 模型选择（按提供商分组显示） -->
+        <el-select
+          v-model="selectedModelKey"
+          size="small"
+          placeholder="选择模型"
+          class="model-select"
+          filterable
+          :filter-method="filterModels"
+          @change="handleModelChange"
+        >
+          <el-option-group
+            v-for="provider in filteredProviderModels"
+            :key="provider.id"
+            :label="provider.name"
+          >
+            <el-option
+              v-for="model in provider.models"
+              :key="`${provider.id}:${model.id}`"
+              :label="`${provider.shortId}/${model.name}`"
+              :value="`${provider.id}:${model.id}`"
+            >
+              <div class="model-option">
+                <span class="model-name">{{ provider.shortId }}/{{ model.name }}</span>
+                <span class="model-context">{{ formatContext(model.contextWindow) }}</span>
+              </div>
+            </el-option>
+          </el-option-group>
+        </el-select>
+      </div>
       <div class="header-right">
         <el-button @click="showSettingsDialog = true">
           <el-icon><Setting /></el-icon>
@@ -24,7 +54,7 @@
       <div class="left-panel">
         <div class="panel-header">
           <h3>剧集列表</h3>
-          <el-button type="primary" size="small" @click="showCreateEpisodeDialog = true">
+          <el-button type="primary" size="small" @click="openCreateEpisodeDialog">
             <el-icon><Plus /></el-icon>
             添加剧集
           </el-button>
@@ -65,7 +95,12 @@
               <div class="script-editor">
                 <div class="script-header">
                   <h4>剧本概要</h4>
-                  <el-button size="small" @click="generateScript">
+                  <el-button
+                    size="small"
+                    :loading="store.generating"
+                    :disabled="store.generating"
+                    @click="generateScript"
+                  >
                     <el-icon><MagicStick /></el-icon>
                     AI 生成剧本
                   </el-button>
@@ -81,10 +116,15 @@
                 <div class="scene-section">
                   <div class="section-header">
                     <h4>场景列表 ({{ store.scenes.length }})</h4>
-                    <el-button size="small" @click="generateScenes">
-                      <el-icon><MagicStick /></el-icon>
-                      拆分场景
-                    </el-button>
+                    <el-button
+                    size="small"
+                    :loading="store.generating"
+                    :disabled="store.generating"
+                    @click="generateScenes"
+                  >
+                    <el-icon><MagicStick /></el-icon>
+                    拆分场景
+                  </el-button>
                   </div>
 
                   <div class="scene-list">
@@ -161,7 +201,12 @@
           <div class="panel-header">
             <h3>分镜列表</h3>
             <div class="panel-actions">
-              <el-button size="small" @click="generateStoryboards">
+              <el-button
+                size="small"
+                :loading="store.generating"
+                :disabled="store.generating"
+                @click="generateStoryboards"
+              >
                 <el-icon><MagicStick /></el-icon>
                 生成分镜
               </el-button>
@@ -264,24 +309,30 @@
     <el-dialog
       v-model="showCreateEpisodeDialog"
       title="创建剧集"
-      width="500px"
+      width="600px"
     >
       <el-form :model="episodeForm" label-width="80px">
         <el-form-item label="剧集序号">
           <el-input-number v-model="episodeForm.episodeNumber" :min="1" :max="999" />
         </el-form-item>
         <el-form-item label="剧集标题">
-          <el-input v-model="episodeForm.title" placeholder="请输入剧集标题" />
+          <el-input v-model="episodeForm.title" placeholder="选择章节后自动生成，或手动输入" />
         </el-form-item>
         <el-form-item label="关联章节">
-          <el-select v-model="episodeForm.outlineId" placeholder="选择关联的章节（可选）" clearable style="width: 100%">
-            <el-option
-              v-for="chapter in chapters"
-              :key="chapter.id"
-              :label="`第${chapter.order}章: ${chapter.title}`"
-              :value="chapter.id"
-            />
-          </el-select>
+          <el-cascader
+            v-model="episodeForm.outlineId"
+            :options="outlineCascaderData"
+            :props="outlineCascaderProps"
+            placeholder="请选择章节（卷/章/节）"
+            filterable
+            clearable
+            style="width: 100%"
+            @change="handleOutlineCascaderChange"
+          />
+          <div class="outline-hint">
+            <el-icon><InfoFilled /></el-icon>
+            <span>选择"节"级别的章节创建剧集</span>
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -436,12 +487,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Setting, Plus, MagicStick, Picture, VideoPlay, Delete } from '@element-plus/icons-vue'
+import { ArrowLeft, Setting, Plus, MagicStick, Picture, VideoPlay, Delete, InfoFilled } from '@element-plus/icons-vue'
 import { useStoryToVideoStore } from '@/stores/story-to-video'
 import type { VideoEpisode, VideoProject, SceneScript, CharacterBinding } from '../../../shared/types/story-to-video.types'
+import type { UserProviderConfig, ProviderTemplate } from '../../../shared/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -456,8 +508,81 @@ const activeTab = ref('script')
 // 剧本概要
 const scriptSynopsis = ref('')
 
-// 章节列表（用于关联剧集）
+// 章节列表（用于关联剧集）- 原始数据
 const chapters = ref<Array<{ id: string; order: number; title: string }>>([])
+
+// 大纲树形数据
+interface OutlineTreeNode {
+  id: string
+  name: string
+  nodeType: 'volume' | 'chapter' | 'section'
+  orderIndex: number
+  children?: OutlineTreeNode[]
+  // 用于生成标题的路径信息（使用位置序号）
+  volumeOrder?: number // 卷的位置序号（从1开始）
+  volumeName?: string
+  volumePosition?: number // 卷的位置序号
+  chapterOrder?: number // 章节的位置序号（从1开始）
+  chapterName?: string
+  chapterPosition?: number // 章节的位置序号
+  sectionPosition?: number // 节的位置序号
+}
+
+const outlineTreeRef = ref<any>(null)
+const outlineSearchText = ref('')
+const outlineTreeData = ref<OutlineTreeNode[]>([])
+const outlineTreeProps = {
+  children: 'children',
+  label: 'name'
+}
+
+// 级联选择器配置
+const outlineCascaderProps = {
+  value: 'id',
+  label: 'name',
+  children: 'children',
+  checkStrictly: false, // 只能选择最后一级
+  emitPath: false // 只返回最后选中的值
+}
+
+// 级联选择器数据（只包含节级别的选项）
+const outlineCascaderData = computed(() => {
+  // 转换树数据为级联选择器格式
+  return outlineTreeData.value.map(volume => ({
+    id: volume.id,
+    name: volume.name,
+    nodeType: volume.nodeType,
+    children: volume.children?.map(chapter => ({
+      id: chapter.id,
+      name: chapter.name,
+      nodeType: chapter.nodeType,
+      // 只保留节级别的children
+      children: chapter.children?.filter(section => section.nodeType === 'section')
+        .map(section => ({
+          id: section.id,
+          name: section.name,
+          nodeType: section.nodeType,
+          // 保存路径信息用于生成标题
+          volumeOrder: section.volumeOrder,
+          volumeName: section.volumeName,
+          chapterOrder: section.chapterOrder,
+          chapterName: section.chapterName,
+          sectionPosition: section.sectionPosition
+        }))
+    }))
+  }))
+})
+
+// 选中的节点的完整路径信息
+const selectedOutlineInfo = ref<{
+  id: string
+  volumeOrder: number
+  volumeName: string
+  chapterOrder: number
+  chapterName: string
+  sectionOrder: number
+  sectionName: string
+} | null>(null)
 
 // 对话框状态
 const showCreateEpisodeDialog = ref(false)
@@ -518,6 +643,158 @@ const projectSettings = reactive({
 // 长文角色列表
 const longWritingCharacters = ref<Array<{ id: string; name: string }>>([])
 
+// ========== 模型选择相关 ==========
+// 提供商配置列表
+const providerConfigs = ref<UserProviderConfig[]>([])
+// 提供商模板列表
+const providerTemplates = ref<ProviderTemplate[]>([])
+// 选中的模型键：格式为 "providerConfigId:modelId"
+const selectedModelKey = ref<string>('')
+// 模型搜索关键词
+const modelSearchKeyword = ref('')
+
+// 辅助函数：判断模型是否为文本类型
+function isTextModel(type: string | undefined): boolean {
+  return type === undefined || type === 'text' || type === 'multimodal'
+}
+
+// 提供商模型列表（用于显示）
+const providerModels = computed(() => {
+  const result: Array<{ id: string; name: string; shortId: string; models: Array<{ id: string; name: string; contextWindow: number; type?: string }> }> = []
+
+  for (const config of providerConfigs.value) {
+    if (!config.isEnabled) continue
+
+    const models: Array<{ id: string; name: string; contextWindow: number; type?: string }> = []
+    const template = providerTemplates.value.find(t => t.id === config.templateId)
+
+    // 使用 models 字段
+    if (config.models && config.models.length > 0) {
+      for (const model of config.models) {
+        if (!isTextModel(model.type)) continue
+        models.push({
+          id: model.id,
+          name: model.name,
+          contextWindow: model.contextWindow,
+          type: model.type
+        })
+      }
+    }
+    // 如果 models 为空，使用模板的默认模型列表
+    else if (template && template.models.length > 0) {
+      for (const model of template.models) {
+        if (!isTextModel(model.type)) continue
+        models.push({
+          id: model.id,
+          name: model.name || model.id,
+          contextWindow: model.contextWindow || 8192,
+          type: model.type
+        })
+      }
+    }
+
+    if (models.length > 0) {
+      const displayShortId = config.shortId || config.name
+      result.push({
+        id: config.id,
+        name: config.name,
+        shortId: displayShortId,
+        models
+      })
+    }
+  }
+
+  return result
+})
+
+// 过滤后的模型列表
+const filteredProviderModels = computed(() => {
+  if (!modelSearchKeyword.value) {
+    return providerModels.value
+  }
+
+  const keyword = modelSearchKeyword.value.toLowerCase()
+  const result: Array<{ id: string; name: string; shortId: string; models: Array<{ id: string; name: string; contextWindow: number; type?: string }> }> = []
+
+  for (const provider of providerModels.value) {
+    const filteredModels = provider.models.filter(model =>
+      model.name.toLowerCase().includes(keyword) ||
+      model.id.toLowerCase().includes(keyword) ||
+      provider.name.toLowerCase().includes(keyword) ||
+      provider.shortId.toLowerCase().includes(keyword)
+    )
+
+    if (filteredModels.length > 0) {
+      result.push({
+        ...provider,
+        models: filteredModels
+      })
+    }
+  }
+
+  return result
+})
+
+// 模型搜索过滤方法
+function filterModels(keyword: string): void {
+  modelSearchKeyword.value = keyword
+}
+
+// 格式化上下文窗口大小
+function formatContext(contextWindow: number): string {
+  if (contextWindow >= 1000000) {
+    return `${(contextWindow / 1000000).toFixed(1)}M`
+  }
+  if (contextWindow >= 1000) {
+    return `${Math.round(contextWindow / 1000)}K`
+  }
+  return `${contextWindow}`
+}
+
+// 加载提供商配置
+async function loadProviderConfigs(): Promise<void> {
+  try {
+    // 先加载提供商模板
+    const templatesResponse = await window.electronAPI.providerTemplate.list()
+    if (templatesResponse.success && templatesResponse.templates) {
+      providerTemplates.value = templatesResponse.templates
+    }
+
+    // 然后加载提供商配置
+    const response = await window.electronAPI.providerConfig.list()
+    if (response.success && response.configs) {
+      providerConfigs.value = response.configs.filter((c: UserProviderConfig) => c.isEnabled)
+
+      // 设置默认模型
+      if (!selectedModelKey.value && providerModels.value.length > 0) {
+        const firstProvider = providerModels.value[0]
+        const firstModel = firstProvider.models[0]
+        selectedModelKey.value = `${firstProvider.id}:${firstModel.id}`
+        // 同时更新 store
+        store.updateSelectedModel(firstProvider.id, firstModel.id)
+      }
+    }
+  } catch (error) {
+    console.error('加载提供商配置失败:', error)
+  }
+}
+
+// 处理模型变更
+function handleModelChange(modelKey: string): void {
+  if (!modelKey) return
+
+  const parts = modelKey.split(':')
+  if (parts.length < 2) return
+
+  const providerConfigId = parts[0]
+  const modelId = parts.slice(1).join(':')
+
+  // 更新到 store
+  store.updateSelectedModel(providerConfigId, modelId)
+}
+
+// ========== 模型选择相关结束 ==========
+
 // 计算属性：检查是否所有分镜都有图片
 const hasAllImages = computed(() => {
   return store.storyboards.length > 0 && store.storyboards.every(sb => sb.frameImage)
@@ -527,6 +804,9 @@ const hasAllImages = computed(() => {
  * 加载项目数据
  */
 async function loadProject() {
+  // 加载提供商配置（用于模型选择）
+  await loadProviderConfigs()
+
   await store.loadProject(projectId.value)
   if (store.currentProject) {
     // 加载剧集列表
@@ -552,11 +832,15 @@ async function loadLongWritingData(longWritingProjectId: string) {
     const outlineResponse = await window.electronAPI.longwriting.getOutlineTree(longWritingProjectId)
     console.log('章节响应:', outlineResponse)
     if (outlineResponse.success && outlineResponse.data) {
+      // 保存原始数据
       chapters.value = outlineResponse.data.map((o: any) => ({
         id: o.id,
         order: o.orderIndex,
         title: o.name
       }))
+
+      // 构建树形结构
+      buildOutlineTree(outlineResponse.data)
     }
 
     // 加载角色列表
@@ -571,6 +855,224 @@ async function loadLongWritingData(longWritingProjectId: string) {
   } catch (error) {
     console.error('加载长文数据失败:', error)
   }
+}
+
+/**
+ * 构建大纲树形结构
+ * 使用位置序号（从1开始）而非数据库 orderIndex
+ */
+function buildOutlineTree(outlines: any[]) {
+  // 按层级和排序分组，使用 orderIndex 排序
+  const volumes: any[] = outlines.filter(o => o.nodeType === 'volume').sort((a, b) => a.orderIndex - b.orderIndex)
+  const chaptersData: any[] = outlines.filter(o => o.nodeType === 'chapter').sort((a, b) => a.orderIndex - b.orderIndex)
+  const sections: any[] = outlines.filter(o => o.nodeType === 'section').sort((a, b) => a.orderIndex - b.orderIndex)
+
+  // 构建树
+  const tree: OutlineTreeNode[] = []
+
+  // 使用位置序号（从1开始）
+  let volumeNumber = 0
+  for (const volume of volumes) {
+    volumeNumber++
+    const volumeNode: OutlineTreeNode = {
+      id: volume.id,
+      name: volume.name,
+      nodeType: 'volume',
+      orderIndex: volume.orderIndex,
+      volumePosition: volumeNumber, // 位置序号
+      children: []
+    }
+
+    // 找到该卷下的章节
+    const volumeChapters = chaptersData.filter(c => c.parentId === volume.id)
+    let chapterNumber = 0
+    for (const chapter of volumeChapters) {
+      chapterNumber++
+      const chapterNode: OutlineTreeNode = {
+        id: chapter.id,
+        name: chapter.name,
+        nodeType: 'chapter',
+        orderIndex: chapter.orderIndex,
+        volumeOrder: volumeNumber, // 使用卷的位置序号
+        volumeName: volume.name,
+        chapterPosition: chapterNumber, // 章节位置序号
+        children: []
+      }
+
+      // 找到该章下的节
+      const chapterSections = sections.filter(s => s.parentId === chapter.id)
+      let sectionNumber = 0
+      for (const section of chapterSections) {
+        sectionNumber++
+        const sectionNode: OutlineTreeNode = {
+          id: section.id,
+          name: section.name,
+          nodeType: 'section',
+          orderIndex: section.orderIndex,
+          volumeOrder: volumeNumber, // 使用卷的位置序号
+          volumeName: volume.name,
+          chapterOrder: chapterNumber, // 使用章节的位置序号
+          chapterName: chapter.name,
+          sectionPosition: sectionNumber // 节的位置序号
+        }
+        chapterNode.children!.push(sectionNode)
+      }
+
+      volumeNode.children!.push(chapterNode)
+    }
+
+    tree.push(volumeNode)
+  }
+
+  // 处理没有卷的情况，直接是章节
+  if (volumes.length === 0 && chaptersData.length > 0) {
+    let chapterNumber = 0
+    for (const chapter of chaptersData) {
+      chapterNumber++
+      const chapterNode: OutlineTreeNode = {
+        id: chapter.id,
+        name: chapter.name,
+        nodeType: 'chapter',
+        orderIndex: chapter.orderIndex,
+        chapterPosition: chapterNumber,
+        children: []
+      }
+
+      const chapterSections = sections.filter(s => s.parentId === chapter.id)
+      let sectionNumber = 0
+      for (const section of chapterSections) {
+        sectionNumber++
+        const sectionNode: OutlineTreeNode = {
+          id: section.id,
+          name: section.name,
+          nodeType: 'section',
+          orderIndex: section.orderIndex,
+          chapterOrder: chapterNumber,
+          chapterName: chapter.name,
+          sectionPosition: sectionNumber
+        }
+        chapterNode.children!.push(sectionNode)
+      }
+
+      tree.push(chapterNode)
+    }
+  }
+
+  outlineTreeData.value = tree
+}
+
+/**
+ * 过滤大纲节点
+ */
+function filterOutlineNode(value: string, data: OutlineTreeNode): boolean {
+  if (!value) return true
+  return data.name.toLowerCase().includes(value.toLowerCase())
+}
+
+/**
+ * 处理大纲节点选择
+ */
+function handleOutlineSelect(data: OutlineTreeNode) {
+  // 只有节级别可以选中
+  if (data.nodeType !== 'section') {
+    ElMessage.warning('请选择"节"级别的章节')
+    // 清除选择
+    outlineTreeRef.value?.setCurrentKey(null)
+    episodeForm.outlineId = ''
+    selectedOutlineInfo.value = null
+    return
+  }
+
+  episodeForm.outlineId = data.id
+
+  // 使用位置序号保存选中的完整信息
+  const volumeNum = data.volumeOrder || 0
+  const chapterNum = data.chapterOrder || 0
+  const sectionNum = data.sectionPosition || 1
+
+  selectedOutlineInfo.value = {
+    id: data.id,
+    volumeOrder: volumeNum,
+    volumeName: data.volumeName || '',
+    chapterOrder: chapterNum,
+    chapterName: data.chapterName || '',
+    sectionOrder: sectionNum,
+    sectionName: data.name
+  }
+
+  // 自动生成标题（使用位置序号）
+  const parts: string[] = []
+  if (volumeNum > 0) {
+    parts.push(`第${volumeNum}卷`)
+  }
+  if (chapterNum > 0) {
+    parts.push(`第${chapterNum}章`)
+  }
+  parts.push(`第${sectionNum}节`)
+  parts.push(data.name)
+
+  episodeForm.title = parts.join(' ')
+}
+
+/**
+ * 处理级联选择器选择
+ */
+function handleOutlineCascaderChange(value: string) {
+  if (!value) {
+    episodeForm.outlineId = ''
+    selectedOutlineInfo.value = null
+    episodeForm.title = ''
+    return
+  }
+
+  // 在树数据中查找选中的节点
+  const findNode = (nodes: OutlineTreeNode[], id: string): OutlineTreeNode | null => {
+    for (const node of nodes) {
+      if (node.id === id) return node
+      if (node.children) {
+        const found = findNode(node.children, id)
+        if (found) return found
+      }
+    }
+    return null
+  }
+
+  const selectedNode = findNode(outlineTreeData.value, value)
+  if (!selectedNode || selectedNode.nodeType !== 'section') {
+    ElMessage.warning('请选择"节"级别的章节')
+    episodeForm.outlineId = ''
+    return
+  }
+
+  episodeForm.outlineId = selectedNode.id
+
+  // 使用位置序号保存选中的完整信息
+  const volumeNum = selectedNode.volumeOrder || 0
+  const chapterNum = selectedNode.chapterOrder || 0
+  const sectionNum = selectedNode.sectionPosition || 1
+
+  selectedOutlineInfo.value = {
+    id: selectedNode.id,
+    volumeOrder: volumeNum,
+    volumeName: selectedNode.volumeName || '',
+    chapterOrder: chapterNum,
+    chapterName: selectedNode.chapterName || '',
+    sectionOrder: sectionNum,
+    sectionName: selectedNode.name
+  }
+
+  // 自动生成标题（使用位置序号）
+  const parts: string[] = []
+  if (volumeNum > 0) {
+    parts.push(`第${volumeNum}卷`)
+  }
+  if (chapterNum > 0) {
+    parts.push(`第${chapterNum}章`)
+  }
+  parts.push(`第${sectionNum}节`)
+  parts.push(selectedNode.name)
+
+  episodeForm.title = parts.join(' ')
 }
 
 /**
@@ -617,6 +1119,21 @@ async function confirmDeleteEpisode(episode: VideoEpisode) {
 }
 
 /**
+ * 打开创建剧集对话框
+ */
+function openCreateEpisodeDialog() {
+  // 重置表单
+  episodeForm.episodeNumber = store.episodes.length + 1
+  episodeForm.title = ''
+  episodeForm.outlineId = ''
+  selectedOutlineInfo.value = null
+  outlineSearchText.value = ''
+  // 清除树的选择
+  outlineTreeRef.value?.setCurrentKey(null)
+  showCreateEpisodeDialog.value = true
+}
+
+/**
  * 创建剧集
  */
 async function createEpisode() {
@@ -639,10 +1156,65 @@ async function createEpisode() {
     episodeForm.episodeNumber = store.episodes.length + 1
     episodeForm.title = ''
     episodeForm.outlineId = ''
+    selectedOutlineInfo.value = null
+    outlineSearchText.value = ''
+    outlineTreeRef.value?.setCurrentKey(null)
     // 选中新创建的剧集
     await selectEpisode(episode)
+
+    // 自动绑定章节涉及的角色
+    if (episodeForm.outlineId) {
+      await autoBindCharactersFromOutline(episodeForm.outlineId)
+    }
   } else {
     ElMessage.error(store.error || '创建失败')
+  }
+}
+
+/**
+ * 自动绑定章节涉及的角色到视频项目
+ */
+async function autoBindCharactersFromOutline(outlineId: string) {
+  try {
+    // 获取大纲节点信息
+    const outlineResponse = await window.electronAPI.longwriting.getOutline(outlineId)
+    if (!outlineResponse.success || !outlineResponse.data) return
+
+    const outline = outlineResponse.data
+    const involvedCharacterIds = outline.involvedCharacters || []
+
+    if (involvedCharacterIds.length === 0) return
+
+    // 绑定这些角色
+    let boundCount = 0
+    for (const charId of involvedCharacterIds) {
+      // 检查是否已绑定
+      const existingBinding = store.getBindingByCharacterId(charId)
+      if (existingBinding) continue
+
+      // 获取角色信息
+      const charInfo = longWritingCharacters.value.find(c => c.id === charId)
+      if (!charInfo) continue
+
+      // 绑定角色
+      const binding = await store.bindCharacter(
+        projectId.value,
+        charId,
+        'female_gentle', // 默认声音
+        1.0, // 默认语速
+        '' // 描述
+      )
+
+      if (binding) {
+        boundCount++
+      }
+    }
+
+    if (boundCount > 0) {
+      ElMessage.success(`已自动绑定 ${boundCount} 个角色`)
+    }
+  } catch (error) {
+    console.error('自动绑定角色失败:', error)
   }
 }
 
@@ -676,12 +1248,20 @@ async function generateScript() {
     return
   }
 
+  // 检查是否选择了模型
+  if (!store.selectedProviderConfigId || !store.selectedModelId) {
+    ElMessage.warning('请先在顶部选择 AI 模型')
+    return
+  }
+
   try {
     ElMessage.info('正在生成剧本，请稍候...')
 
     const result = await store.generateScript(
       store.currentProject.id,
-      store.currentEpisode.outlineId
+      store.currentEpisode.outlineId,
+      store.selectedProviderConfigId,
+      store.selectedModelId
     )
 
     if (result) {
@@ -704,10 +1284,20 @@ async function generateScenes() {
     return
   }
 
+  // 检查是否选择了模型
+  if (!store.selectedProviderConfigId || !store.selectedModelId) {
+    ElMessage.warning('请先在顶部选择 AI 模型')
+    return
+  }
+
   try {
     ElMessage.info('正在拆分场景，请稍候...')
 
-    const result = await store.generateScenes(store.currentScript.id)
+    const result = await store.generateScenes(
+      store.currentScript.id,
+      store.selectedProviderConfigId,
+      store.selectedModelId
+    )
 
     if (result) {
       ElMessage.success(`场景拆分成功，共 ${result.length} 个场景`)
@@ -733,6 +1323,12 @@ async function generateStoryboards() {
     return
   }
 
+  // 检查是否选择了模型
+  if (!store.selectedProviderConfigId || !store.selectedModelId) {
+    ElMessage.warning('请先在顶部选择 AI 模型')
+    return
+  }
+
   try {
     const confirm = await ElMessageBox.confirm(
       `将为 ${store.scenes.length} 个场景生成分镜，是否继续？`,
@@ -744,7 +1340,11 @@ async function generateStoryboards() {
 
     ElMessage.info('正在生成分镜，请稍候...')
 
-    const result = await store.generateStoryboards(store.currentScript.id)
+    const result = await store.generateStoryboards(
+      store.currentScript.id,
+      store.selectedProviderConfigId,
+      store.selectedModelId
+    )
 
     if (result) {
       ElMessage.success(`分镜生成成功，共 ${result.length} 个镜头`)
@@ -968,6 +1568,11 @@ watch(projectId, () => {
 watch(() => store.episodes.length, (length) => {
   episodeForm.episodeNumber = length + 1
 })
+
+// 监听搜索文本，过滤树
+watch(outlineSearchText, (val) => {
+  outlineTreeRef.value?.filter(val)
+})
 </script>
 
 <style scoped lang="scss">
@@ -990,6 +1595,40 @@ watch(() => store.episodes.length, (length) => {
     display: flex;
     align-items: center;
     gap: 12px;
+  }
+
+  .header-center {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .model-select {
+      width: 200px;
+
+      :deep(.el-input__wrapper) {
+        border-radius: 8px;
+      }
+    }
+
+    .model-option {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+
+      .model-name {
+        font-size: 13px;
+        color: #334155;
+      }
+
+      .model-context {
+        font-size: 11px;
+        color: #94a3b8;
+        background: #f1f5f9;
+        padding: 2px 6px;
+        border-radius: 4px;
+      }
+    }
   }
 
   .project-title {
@@ -1334,5 +1973,33 @@ watch(() => store.episodes.length, (length) => {
     display: flex;
     gap: 4px;
   }
+}
+
+.outline-tree-container {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.outline-tree-node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+
+  .node-label {
+    flex: 1;
+  }
+}
+
+.outline-hint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 </style>

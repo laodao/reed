@@ -2027,6 +2027,94 @@ ${previousStatesInfo || '无历史状态'}
 
     return context
   }
+
+  // ==================== 章节实体识别 ====================
+
+  /**
+   * 从章节正文中自动识别涉及的实体（角色、地点等）
+   * 用于在没有手动设置涉及实体时自动识别
+   */
+  async recognizeChapterEntities(
+    window: BrowserWindow,
+    eventId: string,
+    projectId: string,
+    chapterContent: string,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<GenerateResponse> {
+    const dbManager = getDatabaseManager()
+
+    // 获取项目中的所有角色和地点
+    const characters = dbManager.lwCharacters?.getByProjectId(projectId) || []
+    const locations = dbManager.lwLocations?.getByProjectId(projectId) || []
+
+    const systemPrompt = `你是一位专业的小说内容分析师。请分析章节正文，识别其中涉及的角色和地点。
+
+**重要**：请控制回复长度，总字数不超过500字。
+
+## 任务说明
+1. 对照项目角色库和地点库，识别章节中出现的角色和地点
+2. 即使角色/地点只是被提及（没有实际出场），只要章节内容中有提及就应该列出
+3. 使用精确匹配：只识别确实存在于项目库中的角色和地点
+
+## 输出格式
+返回 JSON 对象：
+{
+  "characters": ["角色ID1", "角色ID2", ...],
+  "locations": ["地点ID1", "地点ID2", ...],
+  "events": ["事件1简述", "事件2简述", ...]
+}
+
+如果某个类别没有识别到，返回空数组即可。请直接输出 JSON，不要有任何额外文字。`
+
+    // 构建角色和地点列表
+    const characterList = characters.map(c => `- ${c.name}（ID: ${c.id}）`).join('\n')
+    const locationList = locations.map(l => `- ${l.name}（ID: ${l.id}）`).join('\n')
+
+    const prompt = `【项目角色库】
+${characterList || '无'}
+
+【项目地点库】
+${locationList || '无'}
+
+【章节正文内容】
+${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容已截断)' : ''}
+
+请分析以上章节内容，识别其中涉及的角色和地点，并简要列出发生的事件。直接返回 JSON 格式的结果。`
+
+    try {
+      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 1500, providerConfigId, modelId)
+
+      // 尝试解析 JSON
+      const jsonMatch = result.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0])
+        // 转换为完整的实体信息
+        const recognizedCharacters = (data.characters || []).map((id: string) => {
+          const char = characters.find(c => c.id === id)
+          return char ? { id: char.id, name: char.name } : null
+        }).filter(Boolean)
+
+        const recognizedLocations = (data.locations || []).map((id: string) => {
+          const loc = locations.find(l => l.id === id)
+          return loc ? { id: loc.id, name: loc.name } : null
+        }).filter(Boolean)
+
+        return {
+          success: true,
+          data: {
+            characters: recognizedCharacters,
+            locations: recognizedLocations,
+            events: data.events || []
+          }
+        }
+      }
+
+      return { success: true, data: { characters: [], locations: [], events: [] } }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
 }
 
 /**

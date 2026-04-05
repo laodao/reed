@@ -452,11 +452,13 @@ export class StoryToVideoAIService {
     }
 
     // 调用 AI（非流式）
-    const result = await provider.chat(context, {
-      maxTokens
-    })
+    const result = await provider.chatSync(context)
 
-    return result.content
+    if (!result.success) {
+      throw new Error(result.error || 'AI 调用失败')
+    }
+
+    return result.content || ''
   }
 
   /**

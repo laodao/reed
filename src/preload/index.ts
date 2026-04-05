@@ -1263,7 +1263,11 @@ const electronAPI = {
 
     // AI 实体状态提取
     extractEntityStates: (projectId: string, outlineId: string, chapterContent: string, chapterNumber: number, involvedEntities: Array<{ type: string; id: string; name: string }>, providerConfigId?: string, modelId?: string) =>
-      ipcRenderer.invoke('longwriting:extractEntityStates', projectId, outlineId, chapterContent, chapterNumber, involvedEntities, providerConfigId, modelId)
+      ipcRenderer.invoke('longwriting:extractEntityStates', projectId, outlineId, chapterContent, chapterNumber, involvedEntities, providerConfigId, modelId),
+
+    // AI 章节实体识别
+    recognizeChapterEntities: (projectId: string, chapterContent: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:recognizeChapterEntities', projectId, chapterContent, providerConfigId, modelId)
   },
 
   // 日记相关

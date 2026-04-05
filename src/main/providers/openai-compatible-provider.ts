@@ -46,37 +46,33 @@ export class OpenAICompatibleProvider extends BaseProvider {
    * 获取模型列表
    */
   async getModels(): Promise<Array<{ id: string; name: string; maxTokens: number; contextWindow: number }>> {
-    try {
-      const modelsEndpoint = this.template?.apiConfig.modelsEndpoint || '/v1/models'
-      const url = this.buildUrl(modelsEndpoint)
-      const headers = this.buildHeaders()
+    const modelsEndpoint = this.template?.apiConfig.modelsEndpoint || '/v1/models'
+    const url = this.buildUrl(modelsEndpoint)
+    const headers = this.buildHeaders()
 
-      const response = await fetch(url, {
-        method: 'GET',
-        headers
-      })
+    const response = await fetch(url, {
+      method: 'GET',
+      headers
+    })
 
-      if (!response.ok) {
-        throw new Error(`获取模型列表失败: ${response.status}`)
-      }
-
-      const data = await response.json()
-
-      // OpenAI 格式的模型列表响应
-      if (data.data && Array.isArray(data.data)) {
-        return data.data.map((model: any) => ({
-          id: model.id,
-          name: model.name || model.id, // 使用 API 返回的 name，如果没有则使用 id
-          maxTokens: model.max_output_tokens || 4096,
-          contextWindow: model.context_window || 8192
-        }))
-      }
-
-      return []
-    } catch (error) {
-      console.error('获取模型列表失败:', error)
-      return []
+    if (!response.ok) {
+      throw new Error(`获取模型列表失败: HTTP ${response.status}`)
     }
+
+    const data = await response.json()
+
+    // OpenAI 格式的模型列表响应
+    if (data.data && Array.isArray(data.data)) {
+      return data.data.map((model: any) => ({
+        id: model.id,
+        name: model.name || model.id, // 使用 API 返回的 name，如果没有则使用 id
+        maxTokens: model.max_output_tokens || 4096,
+        contextWindow: model.context_window || 8192
+      }))
+    }
+
+    // 如果返回的不是标准格式，抛出错误
+    throw new Error('API 返回的数据格式不正确')
   }
 
   /**
