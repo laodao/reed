@@ -187,7 +187,10 @@ const createForm = reactive<{
  * 加载数据
  */
 async function loadData() {
+  console.log('[StoryToVideo] 开始加载数据...')
   await store.loadProjects()
+  console.log('[StoryToVideo] 加载项目完成, 项目数量:', store.projects.length)
+  console.log('[StoryToVideo] 项目列表:', store.projects)
   // 加载长文项目列表
   await loadLongWritingProjects()
 }

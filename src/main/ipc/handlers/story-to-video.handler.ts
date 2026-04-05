@@ -86,8 +86,10 @@ async function handleListProjects(
   longWritingProjectId?: string
 ): Promise<IpcResponse> {
   try {
+    console.log('[StoryToVideoHandler] handleListProjects 被调用, longWritingProjectId:', longWritingProjectId)
     const db = DatabaseManager.getInstance()
     if (!db.videoProjects) {
+      console.error('[StoryToVideoHandler] videoProjects 仓库未初始化')
       return { success: false, error: '数据库未初始化' }
     }
 
@@ -95,8 +97,12 @@ async function handleListProjects(
       ? db.videoProjects.getByLongWritingProjectId(longWritingProjectId)
       : db.videoProjects.getAll()
 
+    console.log('[StoryToVideoHandler] 查询到的项目数量:', projects.length)
+    console.log('[StoryToVideoHandler] 项目列表:', JSON.stringify(projects, null, 2))
+
     return { success: true, data: projects }
   } catch (error: any) {
+    console.error('[StoryToVideoHandler] 错误:', error)
     return { success: false, error: error.message || '获取项目列表失败' }
   }
 }

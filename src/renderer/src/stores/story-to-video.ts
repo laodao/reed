@@ -101,14 +101,19 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     loading.value = true
     error.value = null
     try {
+      console.log('[StoryToVideoStore] 调用 listProjects API, longWritingProjectId:', longWritingProjectId)
       const response = await window.electronAPI.storyToVideo.listProjects(longWritingProjectId)
+      console.log('[StoryToVideoStore] API 响应:', response)
       if (response.success && response.data) {
         projects.value = response.data as VideoProject[]
+        console.log('[StoryToVideoStore] 设置 projects.value, 数量:', projects.value.length)
       } else {
         error.value = response.error || '加载项目列表失败'
+        console.error('[StoryToVideoStore] 加载失败:', error.value)
       }
     } catch (e: any) {
       error.value = e.message || '加载项目列表失败'
+      console.error('[StoryToVideoStore] 异常:', e)
     } finally {
       loading.value = false
     }

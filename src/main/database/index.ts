@@ -1622,6 +1622,9 @@ export class DatabaseManager {
     // 迁移剧集制作模块JSON字段到子表
     this.migrateStoryToVideoJsonFields()
 
+    // 为 video_episodes 表添加 deleted_at 列（如果不存在）
+    this.migrateVideoEpisodesAddDeletedAt()
+
     // 执行其他数据库迁移
     this.runMigrations()
 
@@ -1909,6 +1912,27 @@ export class DatabaseManager {
         } catch (e) {
           console.warn('[DatabaseManager] 解析分镜动作ID JSON失败:', e)
         }
+      }
+    }
+  }
+
+  /**
+   * 为 video_episodes 表添加 deleted_at 列（如果不存在）
+   */
+  private migrateVideoEpisodesAddDeletedAt(): void {
+    if (!this.db) return
+
+    // 检查是否存在 deleted_at 列
+    const columns = this.db.prepare("PRAGMA table_info(video_episodes)").all() as { name: string }[]
+    const hasDeletedAt = columns.some(col => col.name === 'deleted_at')
+
+    if (!hasDeletedAt) {
+      console.log('[DatabaseManager] 为 video_episodes 表添加 deleted_at 列...')
+      try {
+        this.db.exec('ALTER TABLE video_episodes ADD COLUMN deleted_at INTEGER DEFAULT NULL')
+        console.log('[DatabaseManager] video_episodes 表添加 deleted_at 列完成')
+      } catch (e) {
+        console.error('[DatabaseManager] 添加 deleted_at 列失败:', e)
       }
     }
   }
