@@ -820,6 +820,12 @@ async function loadProject() {
     // 更新项目设置表单
     projectSettings.name = store.currentProject.name
     projectSettings.config = { ...store.currentProject.config }
+
+    // 如果只有一个剧集，自动选中
+    if (store.episodes.length === 1) {
+      console.log('[VideoProjectEditor] 自动选中唯一的剧集')
+      await selectEpisode(store.episodes[0])
+    }
   }
 }
 
@@ -1237,8 +1243,17 @@ async function saveScriptSynopsis() {
  * 生成剧本（AI）
  */
 async function generateScript() {
-  if (!store.currentProject || !store.currentEpisode) {
-    ElMessage.warning('请先选择剧集')
+  if (!store.currentProject) {
+    ElMessage.warning('项目数据加载中，请稍候')
+    return
+  }
+
+  if (!store.currentEpisode) {
+    if (store.episodes.length === 0) {
+      ElMessage.warning('请先在左侧面板添加剧集')
+    } else {
+      ElMessage.warning('请在左侧面板选择要生成剧本的剧集')
+    }
     return
   }
 

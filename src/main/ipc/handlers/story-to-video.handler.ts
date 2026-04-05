@@ -305,14 +305,19 @@ async function handleListEpisodes(
   projectId: string
 ): Promise<IpcResponse> {
   try {
+    console.log('[StoryToVideoHandler] handleListEpisodes 被调用, projectId:', projectId)
     const db = DatabaseManager.getInstance()
     if (!db.videoEpisodes) {
+      console.error('[StoryToVideoHandler] videoEpisodes 仓库未初始化')
       return { success: false, error: '数据库未初始化' }
     }
 
     const episodes = db.videoEpisodes.getByProjectId(projectId)
+    console.log('[StoryToVideoHandler] 查询到的剧集数量:', episodes.length)
+    console.log('[StoryToVideoHandler] 剧集列表:', JSON.stringify(episodes, null, 2))
     return { success: true, data: episodes }
   } catch (error: any) {
+    console.error('[StoryToVideoHandler] 错误:', error)
     return { success: false, error: error.message || '获取剧集列表失败' }
   }
 }

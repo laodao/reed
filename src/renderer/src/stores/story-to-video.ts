@@ -259,14 +259,19 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     loading.value = true
     error.value = null
     try {
+      console.log('[StoryToVideoStore] 加载剧集列表, projectId:', projectId)
       const response = await window.electronAPI.storyToVideo.listEpisodes(projectId)
+      console.log('[StoryToVideoStore] 剧集列表响应:', response)
       if (response.success && response.data) {
         episodes.value = response.data as VideoEpisode[]
+        console.log('[StoryToVideoStore] 剧集数量:', episodes.value.length)
       } else {
         error.value = response.error || '加载剧集列表失败'
+        console.error('[StoryToVideoStore] 加载剧集失败:', error.value)
       }
     } catch (e: any) {
       error.value = e.message || '加载剧集列表失败'
+      console.error('[StoryToVideoStore] 异常:', e)
     } finally {
       loading.value = false
     }
