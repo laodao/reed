@@ -5,7 +5,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
-import { BaseProvider, ProviderConfig, StreamCallback } from '../base-provider'
+import { BaseProvider, ProviderConfig, StreamCallback, ChatOptions } from '../base-provider'
 import type {
   ChatContext,
   ChatCompletionResponse,
@@ -225,14 +225,14 @@ export class AnthropicSdkProvider extends BaseProvider {
   /**
    * 非流式聊天
    */
-  async chatSync(context: ChatContext): Promise<ChatCompletionResponse> {
+  async chatSync(context: ChatContext, options?: ChatOptions): Promise<ChatCompletionResponse> {
     const model = this.getDefaultModel()
     const messages = this.buildMessages(context)
 
     try {
       const response = await this.client.messages.create({
         model,
-        max_tokens: this.template?.models?.find((m) => m.id === model)?.maxOutputTokens || 4096,
+        max_tokens: options?.maxTokens || this.template?.models?.find((m) => m.id === model)?.maxOutputTokens || 8192,
         messages,
         system: context.systemPrompt
       })

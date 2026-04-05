@@ -5,7 +5,7 @@
  */
 
 import { GoogleGenerativeAI, GenerativeModel, Content, Part } from '@google/generative-ai'
-import { BaseProvider, ProviderConfig, StreamCallback } from '../base-provider'
+import { BaseProvider, ProviderConfig, StreamCallback, ChatOptions } from '../base-provider'
 import type {
   ChatContext,
   ChatCompletionResponse,
@@ -212,7 +212,7 @@ export class GoogleSdkProvider extends BaseProvider {
   /**
    * 非流式聊天
    */
-  async chatSync(context: ChatContext): Promise<ChatCompletionResponse> {
+  async chatSync(context: ChatContext, options?: ChatOptions): Promise<ChatCompletionResponse> {
     const model = this.getModel()
     const history = this.buildHistory(context)
 
@@ -221,7 +221,7 @@ export class GoogleSdkProvider extends BaseProvider {
       const chat = model.startChat({
         history: history.length > 1 ? history.slice(0, -1) : [],
         generationConfig: {
-          maxOutputTokens: 8192,
+          maxOutputTokens: options?.maxTokens || 8192,
           temperature: 0.7
         }
       })

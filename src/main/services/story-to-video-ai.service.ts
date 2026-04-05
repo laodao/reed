@@ -452,7 +452,9 @@ export class StoryToVideoAIService {
     }
 
     // 调用 AI（非流式）
-    const result = await provider.chatSync(context)
+    const result = await provider.chatSync(context, { maxTokens })
+
+    console.log('[StoryToVideoAI] AI 调用完成, maxTokens:', maxTokens)
 
     if (!result.success) {
       throw new Error(result.error || 'AI 调用失败')
@@ -465,42 +467,73 @@ export class StoryToVideoAIService {
    * 从 AI 响应中提取 JSON
    */
   private extractJsonFromResponse(response: string): any {
+    console.log('[StoryToVideoAI] AI 响应长度:', response.length)
+    console.log('[StoryToVideoAI] AI 响应前500字符:', response.substring(0, 500))
+
+    // 清理响应内容
+    let cleanedResponse = response.trim()
+
     // 尝试提取 ```json ... ``` 中的内容
-    const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/)
+    const jsonMatch = cleanedResponse.match(/```json\s*([\s\S]*?)\s*```/)
     if (jsonMatch) {
       try {
-        return JSON.parse(jsonMatch[1])
-      } catch {
-        // 继续尝试其他方式
+        return this.parseJsonString(jsonMatch[1].trim())
+      } catch (e) {
+        console.warn('[StoryToVideoAI] 解析 ```json``` 块失败:', e)
       }
     }
 
     // 尝试提取 ``` ... ``` 中的内容
-    const codeMatch = response.match(/```\s*([\s\S]*?)\s*```/)
+    const codeMatch = cleanedResponse.match(/```\s*([\s\S]*?)\s*```/)
     if (codeMatch) {
       try {
-        return JSON.parse(codeMatch[1])
-      } catch {
-        // 继续尝试其他方式
+        return this.parseJsonString(codeMatch[1].trim())
+      } catch (e) {
+        console.warn('[StoryToVideoAI] 解析 ``` 块失败:', e)
       }
     }
 
     // 尝试直接解析整个响应
     try {
-      return JSON.parse(response)
-    } catch {
+      return this.parseJsonString(cleanedResponse)
+    } catch (e) {
       // 尝试找到第一个 { 和最后一个 }
-      const start = response.indexOf('{')
-      const end = response.lastIndexOf('}')
-      if (start !== -1 && end !== -1) {
+      const start = cleanedResponse.indexOf('{')
+      const end = cleanedResponse.lastIndexOf('}')
+      if (start !== -1 && end !== -1 && end > start) {
         try {
-          return JSON.parse(response.substring(start, end + 1))
-        } catch {
-          throw new Error('无法解析 AI 响应为 JSON 格式')
+          const jsonStr = cleanedResponse.substring(start, end + 1)
+          console.log('[StoryToVideoAI] 尝试解析提取的 JSON，长度:', jsonStr.length)
+          return this.parseJsonString(jsonStr)
+        } catch (e2) {
+          console.error('[StoryToVideoAI] 解析提取的 JSON 失败:', e2)
+          console.error('[StoryToVideoAI] 提取的 JSON 前1000字符:', cleanedResponse.substring(start, Math.min(start + 1000, end + 1)))
         }
       }
-      throw new Error('无法解析 AI 响应为 JSON 格式')
+
+      // 输出更详细的错误信息
+      console.error('[StoryToVideoAI] 无法解析 AI 响应为 JSON 格式')
+      console.error('[StoryToVideoAI] 响应内容（前2000字符）:', cleanedResponse.substring(0, 2000))
+      throw new Error('无法解析 AI 响应为 JSON 格式，请检查 AI 模型是否支持 JSON 输出')
     }
+  }
+
+  /**
+   * 解析 JSON 字符串，处理常见格式问题
+   */
+  private parseJsonString(jsonStr: string): any {
+    // 移除可能存在的注释（JSON 不支持注释，但有些 AI 会添加）
+    let cleaned = jsonStr
+      // 移除单行注释
+      .replace(/\/\/.*$/gm, '')
+      // 移除多行注释
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      // 移除尾随逗号（JSON 不支持）
+      .replace(/,(\s*[}\]])/g, '$1')
+      // 修复可能被转义的引号问题
+      .replace(/\\'/g, "'")
+
+    return JSON.parse(cleaned)
   }
 
   /**

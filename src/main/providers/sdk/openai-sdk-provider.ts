@@ -465,16 +465,16 @@ export class OpenAISdkProvider extends BaseProvider {
   /**
    * 非流式聊天
    */
-  async chatSync(context: ChatContext): Promise<ChatCompletionResponse> {
+  async chatSync(context: ChatContext, options?: ChatOptions): Promise<ChatCompletionResponse> {
     const model = this.getDefaultModel()
-    const messages = this.buildMessages(context)
+    const messages = this.buildMessages(context, options)
 
     try {
       const response = await this.client.chat.completions.create({
         model,
         messages,
         stream: false,
-        max_tokens: this.template?.supportedParams?.maxTokens ? 4096 : undefined,
+        max_tokens: this.template?.supportedParams?.maxTokens ? (options?.maxTokens || 8192) : undefined,
         temperature: this.template?.supportedParams?.temperature ? 0.7 : undefined
       })
 

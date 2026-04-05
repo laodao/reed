@@ -304,7 +304,8 @@ export class OpenAICompatibleProvider extends BaseProvider {
     // 添加支持的参数
     if (this.template?.supportedParams) {
       if (this.template.supportedParams.maxTokens) {
-        body.max_tokens = 4096
+        // 使用传入的 maxTokens 或默认 8192
+        body.max_tokens = options?.maxTokens || 8192
       }
       if (this.template.supportedParams.temperature) {
         body.temperature = 0.7
@@ -499,11 +500,13 @@ export class OpenAICompatibleProvider extends BaseProvider {
   /**
    * 非流式聊天
    */
-  async chatSync(context: ChatContext): Promise<ChatCompletionResponse> {
+  async chatSync(context: ChatContext, options?: ChatOptions): Promise<ChatCompletionResponse> {
     const model = this.getDefaultModel()
     const url = this.buildUrl(this.getChatEndpoint())
     const headers = this.buildHeaders()
-    const body = this.buildRequestBody(context, model, false)
+    const body = this.buildRequestBody(context, model, false, options)
+
+    console.log('[OpenAICompatibleProvider.chatSync] max_tokens:', body.max_tokens)
 
     try {
       const response = await fetch(url, {

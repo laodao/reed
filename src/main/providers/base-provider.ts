@@ -37,6 +37,8 @@ export interface ChatOptions {
   webSearchContext?: string
   /** 知识库上下文（已格式化的检索结果） */
   knowledgeContext?: string
+  /** 最大生成 token 数 */
+  maxTokens?: number
 }
 
 /**
