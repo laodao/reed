@@ -680,10 +680,14 @@ async function handleGenerateScript(
       modelId
     )
 
+    // 查找关联的剧集
+    const episode = db.videoEpisodes.getByOutlineId(projectId, outlineId)
+    if (!episode) {
+      return { success: false, error: '未找到关联的剧集，请先在剧集列表中选择或创建剧集' }
+    }
+
     // 创建或更新剧本
-    const existingScript = db.episodeScripts.getByEpisodeId(
-      db.videoEpisodes.getByOutlineId(outlineId)?.id || ''
-    )
+    const existingScript = db.episodeScripts.getByEpisodeId(episode.id)
 
     let script: any
     if (existingScript) {
@@ -693,8 +697,24 @@ async function handleGenerateScript(
         status: 'reviewing'
       })
     } else {
-      // 创建新剧本（需要先创建 episode）
-      return { success: false, error: '请先创建剧集' }
+      // 创建新剧本
+      script = db.episodeScripts.create({
+        projectId,
+        episodeId: episode.id,
+        outlineId,
+        synopsis: result.synopsis
+      })
+
+      // 更新剧本状态
+      script = db.episodeScripts.update(script.id, { status: 'reviewing' })
+
+      // 更新剧集的 scriptId
+      db.videoEpisodes.update(episode.id, { scriptId: script.id })
+    }
+
+    // 删除旧场景（如果有）
+    if (existingScript) {
+      db.sceneScripts.deleteByEpisodeScriptId(existingScript.id)
     }
 
     // 创建场景
