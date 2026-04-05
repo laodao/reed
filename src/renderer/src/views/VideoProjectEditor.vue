@@ -1282,6 +1282,15 @@ async function generateScript() {
     if (result) {
       ElMessage.success(`剧本生成成功，共 ${result.scenes.length} 个场景`)
       scriptSynopsis.value = result.script.synopsis
+
+      // 刷新剧集列表以获取更新后的 scriptId
+      await store.loadEpisodes(store.currentProject.id)
+
+      // 重新选中当前剧集以更新数据
+      const updatedEpisode = store.episodes.find(e => e.id === store.currentEpisode?.id)
+      if (updatedEpisode) {
+        await store.selectEpisode(updatedEpisode)
+      }
     } else {
       ElMessage.error(store.error || '生成剧本失败')
     }
