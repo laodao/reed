@@ -50,6 +50,12 @@ import { DiaryFolderRepository } from './repositories/diary-folder.repository'
 import { DiaryEntryRepository } from './repositories/diary-entry.repository'
 import { DiaryLinkRepository } from './repositories/diary-link.repository'
 import { DiaryAttachmentRepository } from './repositories/diary-attachment.repository'
+import { VideoProjectRepository } from './repositories/video-project.repository'
+import { VideoEpisodeRepository } from './repositories/video-episode.repository'
+import { EpisodeScriptRepository } from './repositories/episode-script.repository'
+import { SceneScriptRepository } from './repositories/scene-script.repository'
+import { StoryboardRepository } from './repositories/storyboard.repository'
+import { CharacterBindingRepository } from './repositories/character-binding.repository'
 import { DataPathService } from '../services/data-path.service'
 import { LanceDBService } from '../services/lance-db.service'
 
@@ -105,6 +111,14 @@ export class DatabaseManager {
   public diaryEntries: DiaryEntryRepository | null = null
   public diaryLinks: DiaryLinkRepository | null = null
   public diaryAttachments: DiaryAttachmentRepository | null = null
+
+  // 剧集制作相关
+  public videoProjects: VideoProjectRepository | null = null
+  public videoEpisodes: VideoEpisodeRepository | null = null
+  public episodeScripts: EpisodeScriptRepository | null = null
+  public sceneScripts: SceneScriptRepository | null = null
+  public storyboards: StoryboardRepository | null = null
+  public characterBindings: CharacterBindingRepository | null = null
 
   private constructor() {
     // 默认使用 userData 路径，后续会在 initialize 中更新
@@ -1267,6 +1281,140 @@ export class DatabaseManager {
       CREATE INDEX IF NOT EXISTS idx_diary_links_target ON diary_links(target_entry_id)
     `)
 
+    // ===================== 剧集制作模块表 =====================
+
+    // 剧集项目表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS video_projects (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        long_writing_project_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'draft',
+        config TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (long_writing_project_id) REFERENCES lw_projects(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_video_projects_lw_project_id ON video_projects(long_writing_project_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_video_projects_status ON video_projects(status)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_video_projects_created_at ON video_projects(created_at DESC)`)
+
+    // 角色形象绑定表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS character_bindings (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        long_writing_character_id TEXT NOT NULL,
+        portrait_id TEXT,
+        generate_config TEXT,
+        voice_config TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES video_projects(id) ON DELETE CASCADE,
+        FOREIGN KEY (portrait_id) REFERENCES portrait_characters(id) ON DELETE SET NULL
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_character_bindings_project_id ON character_bindings(project_id)`)
+
+    // 剧集表（对应章节）
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS video_episodes (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        outline_id TEXT NOT NULL,
+        episode_number INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        duration INTEGER DEFAULT 0,
+        script_id TEXT,
+        audio_tracks TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES video_projects(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_video_episodes_project_id ON video_episodes(project_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_video_episodes_outline_id ON video_episodes(outline_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_video_episodes_status ON video_episodes(status)`)
+
+    // 剧本表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS episode_scripts (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        episode_id TEXT NOT NULL,
+        outline_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        synopsis TEXT,
+        scenes TEXT,
+        total_duration INTEGER DEFAULT 0,
+        character_appearances TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES video_projects(id) ON DELETE CASCADE,
+        FOREIGN KEY (episode_id) REFERENCES video_episodes(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_episode_scripts_episode_id ON episode_scripts(episode_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_episode_scripts_status ON episode_scripts(status)`)
+
+    // 场景剧本表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS scene_scripts (
+        id TEXT PRIMARY KEY,
+        episode_script_id TEXT NOT NULL,
+        scene_number INTEGER NOT NULL,
+        location TEXT NOT NULL,
+        location_type TEXT NOT NULL DEFAULT 'exterior',
+        time_of_day TEXT NOT NULL DEFAULT 'morning',
+        weather TEXT,
+        scene_description TEXT NOT NULL,
+        mood TEXT,
+        lighting TEXT,
+        characters TEXT,
+        original_text TEXT,
+        narration TEXT,
+        dialogues TEXT,
+        actions TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (episode_script_id) REFERENCES episode_scripts(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_scene_scripts_episode_script_id ON scene_scripts(episode_script_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_scene_scripts_scene_number ON scene_scripts(episode_script_id, scene_number)`)
+
+    // 分镜表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS storyboards (
+        id TEXT PRIMARY KEY,
+        scene_script_id TEXT NOT NULL,
+        shot_number INTEGER NOT NULL,
+        shot_type TEXT NOT NULL DEFAULT 'medium',
+        camera_angle TEXT NOT NULL DEFAULT 'eye_level',
+        camera_movement TEXT NOT NULL DEFAULT 'static',
+        movement_duration REAL,
+        frame_description TEXT NOT NULL,
+        subject TEXT,
+        composition TEXT,
+        characters TEXT,
+        narration_id TEXT,
+        dialogue_ids TEXT,
+        action_ids TEXT,
+        frame_image TEXT,
+        duration REAL NOT NULL DEFAULT 3,
+        transition TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (scene_script_id) REFERENCES scene_scripts(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_storyboards_scene_script_id ON storyboards(scene_script_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_storyboards_shot_number ON storyboards(scene_script_id, shot_number)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_storyboards_status ON storyboards(status)`)
+
     // 迁移类型配置表结构
     this.migrateTypeConfigTables()
 
@@ -1777,6 +1925,14 @@ export class DatabaseManager {
 
     if (!globalSettingsColumnNames.includes('estimated_lengths')) {
       this.db.exec('ALTER TABLE lw_global_settings ADD COLUMN estimated_lengths TEXT')
+
+    // 检查 video_episodes 表是否需要添加 deleted_at 字段（逻辑删除）
+    const videoEpisodeColumns = this.db.prepare("PRAGMA table_info(video_episodes)").all() as { name: string }[]
+    const videoEpisodeColumnNames = videoEpisodeColumns.map(col => col.name)
+
+    if (!videoEpisodeColumnNames.includes('deleted_at')) {
+      this.db.exec('ALTER TABLE video_episodes ADD COLUMN deleted_at INTEGER DEFAULT NULL')
+    }
     }
 
     // 检查 lw_story_locations 表是否需要添加 map_id 字段
@@ -1839,6 +1995,14 @@ export class DatabaseManager {
     this.diaryEntries = new DiaryEntryRepository(this.db)
     this.diaryLinks = new DiaryLinkRepository(this.db)
     this.diaryAttachments = new DiaryAttachmentRepository(this.db)
+
+    // 剧集制作相关
+    this.videoProjects = new VideoProjectRepository(this.db)
+    this.videoEpisodes = new VideoEpisodeRepository(this.db)
+    this.episodeScripts = new EpisodeScriptRepository(this.db)
+    this.sceneScripts = new SceneScriptRepository(this.db)
+    this.storyboards = new StoryboardRepository(this.db)
+    this.characterBindings = new CharacterBindingRepository(this.db)
   }
 
   /**

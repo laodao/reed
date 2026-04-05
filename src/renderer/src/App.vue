@@ -2,6 +2,7 @@
   <div class="app-container">
     <el-config-provider :locale="zhCn">
       <MainLayout />
+      <ErrorToast />
     </el-config-provider>
   </div>
 </template>
@@ -10,6 +11,7 @@
 import { ElConfigProvider } from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import MainLayout from '@/layouts/MainLayout.vue'
+import ErrorToast from '@/components/common/ErrorToast.vue'
 </script>
 
 <style lang="scss">

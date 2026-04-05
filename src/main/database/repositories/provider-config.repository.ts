@@ -100,7 +100,7 @@ export class ProviderConfigRepository {
         custom_headers, custom_params, models,
         is_enabled, is_default, last_tested, test_result,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       config.shortId || null,

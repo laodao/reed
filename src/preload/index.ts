@@ -105,7 +105,51 @@ const IPC_CHANNELS = {
   DIARY_GET_BACKLINKS: 'diary:get-backlinks',
   DIARY_EXPORT_HTML: 'diary:export-html',
   DIARY_EXPORT_PDF: 'diary:export-pdf',
-  DIARY_EXPORT_DOCX: 'diary:export-docx'
+  DIARY_EXPORT_DOCX: 'diary:export-docx',
+
+  // 剧集制作相关
+  STV_LIST_PROJECTS: 'stv:list-projects',
+  STV_GET_PROJECT: 'stv:get-project',
+  STV_CREATE_PROJECT: 'stv:create-project',
+  STV_UPDATE_PROJECT: 'stv:update-project',
+  STV_DELETE_PROJECT: 'stv:delete-project',
+
+  STV_GET_CHARACTER_BINDINGS: 'stv:get-character-bindings',
+  STV_BIND_CHARACTER: 'stv:bind-character',
+  STV_UPDATE_CHARACTER_BINDING: 'stv:update-character-binding',
+  STV_DELETE_CHARACTER_BINDING: 'stv:delete-character-binding',
+
+  STV_LIST_EPISODES: 'stv:list-episodes',
+  STV_GET_EPISODE: 'stv:get-episode',
+  STV_CREATE_EPISODE: 'stv:create-episode',
+  STV_UPDATE_EPISODE: 'stv:update-episode',
+  STV_DELETE_EPISODE: 'stv:delete-episode',
+
+  STV_GET_SCRIPT: 'stv:get-script',
+  STV_UPDATE_SCRIPT: 'stv:update-script',
+
+  STV_LIST_SCENES: 'stv:list-scenes',
+  STV_GET_SCENE: 'stv:get-scene',
+  STV_UPDATE_SCENE: 'stv:update-scene',
+
+  STV_LIST_STORYBOARDS: 'stv:list-storyboards',
+  STV_GET_STORYBOARD: 'stv:get-storyboard',
+  STV_UPDATE_STORYBOARD: 'stv:update-storyboard',
+
+  STV_GENERATE_SCRIPT: 'stv:generate-script',
+  STV_GENERATE_SCENES: 'stv:generate-scenes',
+  STV_GENERATE_STORYBOARD: 'stv:generate-storyboard',
+  STV_GENERATE_STORYBOARDS: 'stv:generate-storyboards',
+
+  STV_GET_STYLE_PRESETS: 'stv:get-style-presets',
+  STV_GENERATE_STORYBOARD_IMAGE: 'stv:generate-storyboard-image',
+  STV_GENERATE_SCENE_IMAGES: 'stv:generate-scene-images',
+  STV_GENERATE_AUDIO: 'stv:generate-audio',
+
+  // 视频合成相关
+  STV_GET_VIDEO_PRESETS: 'stv:get-video-presets',
+  STV_SYNTHESIZE_SCENE_VIDEO: 'stv:synthesize-scene-video',
+  STV_EXPORT_VIDEO: 'stv:export-video'
 } as const
 
 /**
@@ -1260,6 +1304,133 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.DIARY_EXPORT_PDF, { entryId, outputPath }),
     exportDocx: (entryId: string, outputPath?: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.DIARY_EXPORT_DOCX, { entryId, outputPath })
+  },
+
+  // 剧集制作相关
+  storyToVideo: {
+    // 项目管理
+    listProjects: (longWritingProjectId?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_LIST_PROJECTS, longWritingProjectId),
+    getProject: (projectId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_GET_PROJECT, projectId),
+    createProject: (name: string, longWritingProjectId: string, config: any) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_CREATE_PROJECT, name, longWritingProjectId, config),
+    updateProject: (projectId: string, data: { name?: string; status?: string; config?: any }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_UPDATE_PROJECT, projectId, data),
+    deleteProject: (projectId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_DELETE_PROJECT, projectId),
+
+    // 角色绑定
+    getCharacterBindings: (projectId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_GET_CHARACTER_BINDINGS, projectId),
+    bindCharacter: (projectId: string, longWritingCharacterId: string, portraitId?: string, voiceConfig?: any, generateConfig?: any) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_BIND_CHARACTER, projectId, longWritingCharacterId, portraitId, voiceConfig, generateConfig),
+    updateCharacterBinding: (bindingId: string, data: { portraitId?: string | null; voiceConfig?: any; generateConfig?: any | null }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_UPDATE_CHARACTER_BINDING, bindingId, data),
+    deleteCharacterBinding: (bindingId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_DELETE_CHARACTER_BINDING, bindingId),
+
+    // 剧集管理
+    listEpisodes: (projectId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_LIST_EPISODES, projectId),
+    getEpisode: (episodeId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_GET_EPISODE, episodeId),
+    createEpisode: (projectId: string, outlineId: string, episodeNumber: number, title: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_CREATE_EPISODE, projectId, outlineId, episodeNumber, title),
+    updateEpisode: (episodeId: string, data: { title?: string; status?: string; duration?: number; scriptId?: string }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_UPDATE_EPISODE, episodeId, data),
+    deleteEpisode: (episodeId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_DELETE_EPISODE, episodeId),
+
+    // 剧本管理
+    getScript: (scriptId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_GET_SCRIPT, scriptId),
+    updateScript: (scriptId: string, data: { synopsis?: string; scenes?: any[]; totalDuration?: number; characterAppearances?: string[]; status?: string }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_UPDATE_SCRIPT, scriptId, data),
+
+    // 场景管理
+    listScenes: (episodeScriptId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_LIST_SCENES, episodeScriptId),
+    getScene: (sceneId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_GET_SCENE, sceneId),
+    updateScene: (sceneId: string, data: any) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_UPDATE_SCENE, sceneId, data),
+
+    // 分镜管理
+    listStoryboards: (sceneScriptId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_LIST_STORYBOARDS, sceneScriptId),
+    getStoryboard: (storyboardId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_GET_STORYBOARD, storyboardId),
+    updateStoryboard: (storyboardId: string, data: any) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_UPDATE_STORYBOARD, storyboardId, data),
+
+    // AI 生成
+    generateScript: (projectId: string, outlineId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_GENERATE_SCRIPT, projectId, outlineId, providerConfigId, modelId),
+    generateScenes: (scriptId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_GENERATE_SCENES, scriptId, providerConfigId, modelId),
+    generateStoryboard: (sceneId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_GENERATE_STORYBOARD, sceneId, providerConfigId, modelId),
+    generateStoryboards: (scriptId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_GENERATE_STORYBOARDS, scriptId, providerConfigId, modelId),
+
+    // 资源生成
+    getStylePresets: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_GET_STYLE_PRESETS),
+    generateStoryboardImage: (storyboardId: string, styleName: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_GENERATE_STORYBOARD_IMAGE, storyboardId, styleName, providerConfigId, modelId),
+    generateSceneImages: (sceneId: string, styleName: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_GENERATE_SCENE_IMAGES, sceneId, styleName, providerConfigId, modelId),
+    generateAudio: (sceneId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_GENERATE_AUDIO, sceneId),
+
+    // 进度事件监听
+    onImageProgress: (callback: (event: any, data: { sceneId: string; index: number; total: number }) => void) => {
+      const handler = (_event: any, data: any) => callback(_event, data)
+      ipcRenderer.on('stv:image-progress', handler)
+      return () => ipcRenderer.removeListener('stv:image-progress', handler)
+    },
+    onAudioProgress: (callback: (event: any, data: { sceneId: string; type: string; index: number; total: number }) => void) => {
+      const handler = (_event: any, data: any) => callback(_event, data)
+      ipcRenderer.on('stv:audio-progress', handler)
+      return () => ipcRenderer.removeListener('stv:audio-progress', handler)
+    },
+
+    // 视频合成
+    getVideoPresets: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_GET_VIDEO_PRESETS),
+    synthesizeSceneVideo: (sceneId: string, quality?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_SYNTHESIZE_SCENE_VIDEO, sceneId, quality),
+    exportVideo: (sourcePath: string, outputPath: string, quality?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_EXPORT_VIDEO, sourcePath, outputPath, quality),
+
+    // 视频合成进度事件监听
+    onSynthesisProgress: (callback: (event: any, data: { sceneId: string; phase: string; progress: number }) => void) => {
+      const handler = (_event: any, data: any) => callback(_event, data)
+      ipcRenderer.on('stv:synthesis-progress', handler)
+      return () => ipcRenderer.removeListener('stv:synthesis-progress', handler)
+    }
+  },
+
+  // 错误处理
+  onError: (callback: (event: any, data: any) => void) => {
+    const handler = (_event: any, data: any) => callback(_event, data)
+    ipcRenderer.on('error:show', handler)
+    return () => ipcRenderer.removeListener('error:show', handler)
+  },
+
+  // 自动保存状态
+  onAutoSaveStatus: (callback: (event: any, data: { id: string; status: string }) => void) => {
+    const handler = (_event: any, data: any) => callback(_event, data)
+    ipcRenderer.on('autosave:status', handler)
+    return () => ipcRenderer.removeListener('autosave:status', handler)
+  },
+
+  // 快捷键触发
+  onShortcut: (callback: (event: any, id: string) => void) => {
+    const handler = (_event: any, id: string) => callback(_event, id)
+    ipcRenderer.on('shortcut:triggered', handler)
+    return () => ipcRenderer.removeListener('shortcut:triggered', handler)
   }
 }
 

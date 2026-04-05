@@ -130,7 +130,8 @@ import {
   FolderOpened,
   User,
   EditPen,
-  Notebook
+  Notebook,
+  VideoCamera
 } from '@element-plus/icons-vue'
 import { useTheme } from '@/composables/useTheme'
 import { useTabsStore } from '@/stores/tabs'
@@ -177,6 +178,11 @@ const mainMenuItems = [
     path: '/diary',
     label: '日记',
     icon: markRaw(Notebook)
+  },
+  {
+    path: '/story-to-video',
+    label: '剧集制作',
+    icon: markRaw(VideoCamera)
   },
   {
     path: '/translate',
@@ -227,6 +233,7 @@ const pathTitleMap: Record<string, string> = {
   '/portrait': '人像设计',
   '/longwriting': '长文写作',
   '/diary': '日记',
+  '/story-to-video': '剧集制作',
   '/translate': '文档翻译',
   '/voice': '语音助手',
   '/knowledge-base': '知识库',

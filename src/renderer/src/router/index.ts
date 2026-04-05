@@ -106,6 +106,22 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/story-to-video',
+    name: 'StoryToVideo',
+    component: () => import('@/views/StoryToVideo.vue'),
+    meta: {
+      title: '剧集制作'
+    }
+  },
+  {
+    path: '/story-to-video/:projectId',
+    name: 'VideoProjectEditor',
+    component: () => import('@/views/VideoProjectEditor.vue'),
+    meta: {
+      title: '项目编辑'
+    }
+  },
+  {
     path: '/settings',
     name: 'Settings',
     component: () => import('@/views/Settings.vue'),
