@@ -532,6 +532,9 @@ export class StoryToVideoAIService {
       .replace(/,(\s*[}\]])/g, '$1')
       // 修复可能被转义的引号问题
       .replace(/\\'/g, "'")
+      // 将中文引号转换为标准双引号（AI 经常在内容中使用中文引号）
+      .replace(/"/g, '"')
+      .replace(/"/g, '"')
 
     return JSON.parse(cleaned)
   }
