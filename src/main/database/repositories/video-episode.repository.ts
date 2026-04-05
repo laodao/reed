@@ -50,22 +50,22 @@ export class VideoEpisodeRepository {
   }
 
   /**
-   * 根据 ID 获取剧集
+   * 根据 ID 获取剧集（排除已删除的）
    */
   getById(id: string): VideoEpisode | null {
     const stmt = this.db.prepare(`
-      SELECT * FROM video_episodes WHERE id = ?
+      SELECT * FROM video_episodes WHERE id = ? AND deleted_at IS NULL
     `)
     const row = stmt.get(id) as VideoEpisodeRecord | undefined
     return row ? this.mapToEpisode(row) : null
   }
 
   /**
-   * 根据大纲 ID 获取剧集
+   * 根据大纲 ID 获取剧集（排除已删除的）
    */
   getByOutlineId(projectId: string, outlineId: string): VideoEpisode | null {
     const stmt = this.db.prepare(`
-      SELECT * FROM video_episodes WHERE project_id = ? AND outline_id = ?
+      SELECT * FROM video_episodes WHERE project_id = ? AND outline_id = ? AND deleted_at IS NULL
     `)
     const row = stmt.get(projectId, outlineId) as VideoEpisodeRecord | undefined
     return row ? this.mapToEpisode(row) : null
