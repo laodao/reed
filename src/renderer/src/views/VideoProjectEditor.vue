@@ -2071,6 +2071,8 @@ async function generateSingleStoryboardImage() {
     return
   }
 
+  console.log('[generateSingleStoryboardImage] 使用模型:', imageModel)
+
   try {
     generatingImage.value = true
     showGenerateImagesDialog.value = false
@@ -2088,9 +2090,13 @@ async function generateSingleStoryboardImage() {
       // 更新选中的分镜引用
       selectedStoryboard.value = result
     } else {
-      ElMessage.error(store.error || '生成画面失败')
+      // 显示具体错误信息
+      const errorMsg = store.error || '生成画面失败'
+      console.error('[generateSingleStoryboardImage] 错误:', errorMsg)
+      ElMessage.error(errorMsg)
     }
   } catch (error: any) {
+    console.error('[generateSingleStoryboardImage] 异常:', error)
     ElMessage.error(error.message || '生成画面失败')
   } finally {
     generatingImage.value = false

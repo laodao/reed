@@ -201,6 +201,15 @@ export class StoryToVideoResourceService {
     width: number = 1920,
     height: number = 1080
   ): Promise<ImageAsset | null> {
+    console.log('[StoryToVideoResource] generateStoryboardImage 参数:', {
+      storyboardId: storyboard.id,
+      styleName,
+      providerConfigId,
+      modelId,
+      width,
+      height
+    })
+
     // 获取风格配置
     const styleConfig = PRESET_STYLES[styleName] || PRESET_STYLES.cinematic
 
@@ -211,6 +220,8 @@ export class StoryToVideoResourceService {
       characterBindings,
       styleConfig
     )
+
+    console.log('[StoryToVideoResource] 生成的 prompt:', prompt.substring(0, 200) + '...')
 
     // 构建请求
     const request: ImageGenerationRequest = {
@@ -224,9 +235,21 @@ export class StoryToVideoResourceService {
       skipHistory: true  // 不保存到图像历史
     }
 
+    console.log('[StoryToVideoResource] 图像生成请求:', {
+      model: request.model,
+      providerConfigId: request.providerConfigId,
+      promptLength: prompt.length
+    })
+
     try {
       // 调用图像生成服务
       const response = await ImageService.generateImage(window, request)
+
+      console.log('[StoryToVideoResource] 图像生成响应:', {
+        success: response.success,
+        error: response.error,
+        imageCount: response.images?.length
+      })
 
       if (response.success && response.images && response.images.length > 0) {
         const imageInfo = response.images[0]
@@ -242,9 +265,10 @@ export class StoryToVideoResourceService {
         }
       }
 
+      console.error('[StoryToVideoResource] 图像生成失败:', response.error)
       return null
-    } catch (error) {
-      console.error('生成分镜画面失败:', error)
+    } catch (error: any) {
+      console.error('[StoryToVideoResource] 生成分镜画面异常:', error)
       return null
     }
   }

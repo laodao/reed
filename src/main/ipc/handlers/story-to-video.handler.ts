@@ -999,6 +999,13 @@ async function handleGenerateStoryboardImage(
   modelId?: string
 ): Promise<IpcResponse> {
   try {
+    console.log('[handleGenerateStoryboardImage] 参数:', {
+      storyboardId,
+      styleName,
+      providerConfigId,
+      modelId
+    })
+
     const db = DatabaseManager.getInstance()
     if (!db.storyboards || !db.sceneScripts || !db.characterBindings) {
       return { success: false, error: '数据库未初始化' }
@@ -1057,8 +1064,10 @@ async function handleGenerateStoryboardImage(
       return { success: true, data: updatedStoryboard }
     }
 
-    return { success: false, error: '生成图像失败' }
+    console.error('[handleGenerateStoryboardImage] 图像生成返回空结果')
+    return { success: false, error: '生成图像失败，请检查模型配置是否正确' }
   } catch (error: any) {
+    console.error('[handleGenerateStoryboardImage] 异常:', error)
     return { success: false, error: error.message || '生成分镜图像失败' }
   }
 }
