@@ -160,6 +160,23 @@ export interface VideoProjectConfig {
   backgroundMusicEnabled: boolean
   backgroundMusicVolume: number // 0-100
 
+  // 模型设置（各环节独立配置）
+  // 剧本生成模型
+  scriptModel?: {
+    providerConfigId: string
+    modelId: string
+  }
+  // 分镜生成模型
+  storyboardModel?: {
+    providerConfigId: string
+    modelId: string
+  }
+  // 画面生成模型
+  imageModel?: {
+    providerConfigId: string
+    modelId: string
+  }
+
   // 图像设置
   imageProviderId: string // 图像生成提供商
   imageModelId: string // 图像模型

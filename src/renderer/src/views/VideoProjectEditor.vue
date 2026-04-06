@@ -10,36 +10,6 @@
         <el-divider direction="vertical" />
         <h2 class="project-title">{{ store.currentProject?.name || '加载中...' }}</h2>
       </div>
-      <div class="header-center">
-        <!-- 模型选择（按提供商分组显示） -->
-        <el-select
-          v-model="selectedModelKey"
-          size="small"
-          placeholder="选择模型"
-          class="model-select"
-          filterable
-          :filter-method="filterModels"
-          @change="handleModelChange"
-        >
-          <el-option-group
-            v-for="provider in filteredProviderModels"
-            :key="provider.id"
-            :label="provider.name"
-          >
-            <el-option
-              v-for="model in provider.models"
-              :key="`${provider.id}:${model.id}`"
-              :label="`${provider.shortId}/${model.name}`"
-              :value="`${provider.id}:${model.id}`"
-            >
-              <div class="model-option">
-                <span class="model-name">{{ provider.shortId }}/{{ model.name }}</span>
-                <span class="model-context">{{ formatContext(model.contextWindow) }}</span>
-              </div>
-            </el-option>
-          </el-option-group>
-        </el-select>
-      </div>
       <div class="header-right">
         <el-button @click="showSettingsDialog = true">
           <el-icon><Setting /></el-icon>
@@ -466,9 +436,10 @@
     <el-dialog
       v-model="showSettingsDialog"
       title="项目设置"
-      width="600px"
+      width="700px"
     >
       <el-form v-if="store.currentProject" label-width="100px">
+        <el-divider content-position="left">基本设置</el-divider>
         <el-form-item label="项目名称">
           <el-input v-model="projectSettings.name" />
         </el-form-item>
@@ -496,6 +467,77 @@
             <el-option label="30 fps" :value="30" />
             <el-option label="60 fps" :value="60" />
           </el-select>
+        </el-form-item>
+
+        <el-divider content-position="left">模型设置</el-divider>
+        <el-form-item label="剧本生成">
+          <el-select
+            v-model="projectSettings.config.scriptModel"
+            placeholder="选择剧本生成模型"
+            style="width: 100%"
+            value-key="providerConfigId"
+            clearable
+          >
+            <el-option-group
+              v-for="provider in textProviderModels"
+              :key="provider.id"
+              :label="provider.name"
+            >
+              <el-option
+                v-for="model in provider.models"
+                :key="`${provider.id}:${model.id}`"
+                :label="`${provider.shortId}/${model.name}`"
+                :value="{ providerConfigId: provider.id, modelId: model.id }"
+              />
+            </el-option-group>
+          </el-select>
+          <div class="model-hint">用于AI生成剧本和场景拆分</div>
+        </el-form-item>
+        <el-form-item label="分镜生成">
+          <el-select
+            v-model="projectSettings.config.storyboardModel"
+            placeholder="选择分镜生成模型"
+            style="width: 100%"
+            value-key="providerConfigId"
+            clearable
+          >
+            <el-option-group
+              v-for="provider in textProviderModels"
+              :key="provider.id"
+              :label="provider.name"
+            >
+              <el-option
+                v-for="model in provider.models"
+                :key="`${provider.id}:${model.id}`"
+                :label="`${provider.shortId}/${model.name}`"
+                :value="{ providerConfigId: provider.id, modelId: model.id }"
+              />
+            </el-option-group>
+          </el-select>
+          <div class="model-hint">用于AI生成分镜设计</div>
+        </el-form-item>
+        <el-form-item label="画面生成">
+          <el-select
+            v-model="projectSettings.config.imageModel"
+            placeholder="选择画面生成模型"
+            style="width: 100%"
+            value-key="providerConfigId"
+            clearable
+          >
+            <el-option-group
+              v-for="provider in imageProviderModels"
+              :key="provider.id"
+              :label="provider.name"
+            >
+              <el-option
+                v-for="model in provider.models"
+                :key="`${provider.id}:${model.id}`"
+                :label="`${provider.shortId}/${model.name}`"
+                :value="{ providerConfigId: provider.id, modelId: model.id }"
+              />
+            </el-option-group>
+          </el-select>
+          <div class="model-hint">用于生成分镜画面图像</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -876,7 +918,11 @@ const projectSettings = reactive({
     resolution: 1080,
     fps: 30,
     defaultTransition: 'fade' as const,
-    stylePrompt: ''
+    stylePrompt: '',
+    // 模型配置
+    scriptModel: null as { providerConfigId: string; modelId: string } | null,
+    storyboardModel: null as { providerConfigId: string; modelId: string } | null,
+    imageModel: null as { providerConfigId: string; modelId: string } | null
   }
 })
 
@@ -990,6 +1036,105 @@ function formatContext(contextWindow: number): string {
   }
   return `${contextWindow}`
 }
+
+// 图像模型列表（用于画面生成）
+const imageProviderModels = computed(() => {
+  const result: Array<{ id: string; name: string; shortId: string; models: Array<{ id: string; name: string; type?: string }> }> = []
+
+  for (const config of providerConfigs.value) {
+    if (!config.isEnabled) continue
+
+    const models: Array<{ id: string; name: string; type?: string }> = []
+    const template = providerTemplates.value.find(t => t.id === config.templateId)
+
+    // 使用 models 字段
+    if (config.models && config.models.length > 0) {
+      for (const model of config.models) {
+        // 只选择图像模型
+        if (model.type === 'image' || model.type === 'multimodal') {
+          models.push({
+            id: model.id,
+            name: model.name,
+            type: model.type
+          })
+        }
+      }
+    }
+    // 如果 models 为空，使用模板的默认模型列表
+    else if (template && template.models.length > 0) {
+      for (const model of template.models) {
+        if (model.type === 'image' || model.type === 'multimodal') {
+          models.push({
+            id: model.id,
+            name: model.name || model.id,
+            type: model.type
+          })
+        }
+      }
+    }
+
+    if (models.length > 0) {
+      const displayShortId = config.shortId || config.name
+      result.push({
+        id: config.id,
+        name: config.name,
+        shortId: displayShortId,
+        models
+      })
+    }
+  }
+
+  return result
+})
+
+// 文本模型列表（用于剧本和分镜生成）
+const textProviderModels = computed(() => {
+  const result: Array<{ id: string; name: string; shortId: string; models: Array<{ id: string; name: string; contextWindow: number; type?: string }> }> = []
+
+  for (const config of providerConfigs.value) {
+    if (!config.isEnabled) continue
+
+    const models: Array<{ id: string; name: string; contextWindow: number; type?: string }> = []
+    const template = providerTemplates.value.find(t => t.id === config.templateId)
+
+    if (config.models && config.models.length > 0) {
+      for (const model of config.models) {
+        if (!model.type || model.type === 'text' || model.type === 'multimodal') {
+          models.push({
+            id: model.id,
+            name: model.name,
+            contextWindow: model.contextWindow,
+            type: model.type
+          })
+        }
+      }
+    }
+    else if (template && template.models.length > 0) {
+      for (const model of template.models) {
+        if (!model.type || model.type === 'text' || model.type === 'multimodal') {
+          models.push({
+            id: model.id,
+            name: model.name || model.id,
+            contextWindow: model.contextWindow || 8192,
+            type: model.type
+          })
+        }
+      }
+    }
+
+    if (models.length > 0) {
+      const displayShortId = config.shortId || config.name
+      result.push({
+        id: config.id,
+        name: config.name,
+        shortId: displayShortId,
+        models
+      })
+    }
+  }
+
+  return result
+})
 
 // 加载提供商配置
 async function loadProviderConfigs(): Promise<void> {
@@ -1717,9 +1862,10 @@ async function generateScript() {
     return
   }
 
-  // 检查是否选择了模型
-  if (!store.selectedProviderConfigId || !store.selectedModelId) {
-    ElMessage.warning('请先在顶部选择 AI 模型')
+  // 使用项目配置中的模型
+  const scriptModel = store.currentProject.config?.scriptModel
+  if (!scriptModel?.providerConfigId || !scriptModel?.modelId) {
+    ElMessage.warning('请先在项目设置中配置剧本生成模型')
     return
   }
 
@@ -1729,8 +1875,8 @@ async function generateScript() {
     const result = await store.generateScript(
       store.currentProject.id,
       store.currentEpisode.outlineId,
-      store.selectedProviderConfigId,
-      store.selectedModelId
+      scriptModel.providerConfigId,
+      scriptModel.modelId
     )
 
     if (result) {
@@ -1863,9 +2009,10 @@ async function generateStoryboards() {
     return
   }
 
-  // 检查是否选择了模型
-  if (!store.selectedProviderConfigId || !store.selectedModelId) {
-    ElMessage.warning('请先在顶部选择 AI 模型')
+  // 使用项目配置中的模型
+  const storyboardModel = store.currentProject?.config?.storyboardModel
+  if (!storyboardModel?.providerConfigId || !storyboardModel?.modelId) {
+    ElMessage.warning('请先在项目设置中配置分镜生成模型')
     return
   }
 
@@ -1882,8 +2029,8 @@ async function generateStoryboards() {
 
     const result = await store.generateStoryboards(
       store.currentScript.id,
-      store.selectedProviderConfigId,
-      store.selectedModelId
+      storyboardModel.providerConfigId,
+      storyboardModel.modelId
     )
 
     if (result) {
@@ -1905,6 +2052,13 @@ async function generateSingleStoryboardImage() {
     return
   }
 
+  // 使用项目配置中的模型
+  const imageModel = store.currentProject?.config?.imageModel
+  if (!imageModel?.providerConfigId || !imageModel?.modelId) {
+    ElMessage.warning('请先在项目设置中配置画面生成模型')
+    return
+  }
+
   try {
     generatingImage.value = true
     showGenerateImagesDialog.value = false
@@ -1912,7 +2066,9 @@ async function generateSingleStoryboardImage() {
 
     const result = await store.generateStoryboardImage(
       selectedStoryboard.value.id,
-      imageGenerateForm.styleName
+      imageGenerateForm.styleName,
+      imageModel.providerConfigId,
+      imageModel.modelId
     )
 
     if (result) {
@@ -2260,6 +2416,12 @@ watch(outlineSearchText, (val) => {
         padding: 2px 6px;
         border-radius: 4px;
       }
+    }
+
+    .model-hint {
+      font-size: 11px;
+      color: var(--el-text-color-placeholder);
+      margin-top: 4px;
     }
   }
 
