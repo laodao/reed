@@ -275,8 +275,11 @@
               @dblclick="openStoryboardEdit(storyboard)"
             >
               <!-- 画面预览 -->
-              <div v-if="storyboard.frameImage" class="storyboard-preview">
+              <div v-if="storyboard.frameImage" class="storyboard-preview" @click.stop="openImagePreview(storyboard.frameImage.filePath || storyboard.frameImage.url)">
                 <img :src="storyboard.frameImage.filePath || storyboard.frameImage.url" :alt="`镜头${storyboard.shotNumber}`" />
+                <div class="preview-overlay">
+                  <el-icon size="20"><ZoomIn /></el-icon>
+                </div>
               </div>
               <div v-else class="storyboard-preview placeholder">
                 <el-icon size="32"><Picture /></el-icon>
@@ -729,6 +732,20 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 图片预览对话框 -->
+    <el-dialog
+      v-model="showImagePreview"
+      title="画面预览"
+      width="90%"
+      top="5vh"
+      class="image-preview-dialog"
+      destroy-on-close
+    >
+      <div class="preview-container">
+        <img :src="previewImageUrl" alt="预览图片" class="preview-image" />
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -736,7 +753,7 @@
 import { ref, reactive, computed, onMounted, watch, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Setting, Plus, MagicStick, Picture, VideoPlay, Delete, InfoFilled, Headset } from '@element-plus/icons-vue'
+import { ArrowLeft, Setting, Plus, MagicStick, Picture, VideoPlay, Delete, InfoFilled, Headset, ZoomIn } from '@element-plus/icons-vue'
 import { useStoryToVideoStore } from '@/stores/story-to-video'
 import type { VideoEpisode, VideoProject, SceneScript, CharacterBinding } from '../../../shared/types/story-to-video.types'
 import type { UserProviderConfig, ProviderTemplate } from '../../../shared/types'
@@ -848,6 +865,18 @@ const showStoryboardEditDialog = ref(false)
 const selectedStoryboard = ref<import('../../../shared/types/story-to-video.types').Storyboard | null>(null)
 // 正在编辑的分镜
 const editingStoryboard = ref<import('../../../shared/types/story-to-video.types').Storyboard | null>(null)
+
+// 图片预览
+const showImagePreview = ref(false)
+const previewImageUrl = ref('')
+
+// 打开图片预览
+const openImagePreview = (url: string) => {
+  if (url) {
+    previewImageUrl.value = url
+    showImagePreview.value = true
+  }
+}
 
 // 分镜编辑表单
 const storyboardEditForm = reactive({
@@ -2981,6 +3010,12 @@ watch(outlineSearchText, (val) => {
     border-radius: 4px;
     overflow: hidden;
     flex-shrink: 0;
+    position: relative;
+    cursor: pointer;
+
+    &:hover .preview-overlay {
+      opacity: 1;
+    }
 
     &.placeholder {
       display: flex;
@@ -2991,12 +3026,28 @@ watch(outlineSearchText, (val) => {
       color: var(--el-text-color-placeholder);
       font-size: 10px;
       gap: 2px;
+      cursor: default;
     }
 
     img {
       width: 100%;
       height: 100%;
       object-fit: cover;
+    }
+
+    .preview-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      opacity: 0;
+      transition: opacity 0.2s;
     }
   }
 
@@ -3176,5 +3227,29 @@ watch(outlineSearchText, (val) => {
   margin-left: 8px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+// 图片预览对话框样式
+.image-preview-dialog {
+  .el-dialog__body {
+    padding: 0;
+  }
+}
+
+.preview-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  max-height: 80vh;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.preview-image {
+  max-width: 100%;
+  max-height: 80vh;
+  object-fit: contain;
 }
 </style>
