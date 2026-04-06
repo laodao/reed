@@ -114,11 +114,19 @@ export class DashScopeImageProvider extends BaseImageProvider {
   private static DEFAULT_TASK_BASE_URL = 'https://dashscope.aliyuncs.com/api/v1/tasks'
 
   /**
-   * 判断是否使用多模态图像生成格式（qwen-image 模型）
+   * 判断是否使用多模态图像生成格式
+   * qwen-image 系列和 wan2.7-image 系列模型使用多模态聊天格式
    */
   private isMultimodalImageModel(model: string): boolean {
     // qwen-image 系列模型使用多模态聊天格式
-    return model.startsWith('qwen-image')
+    if (model.startsWith('qwen-image')) {
+      return true
+    }
+    // wan2.7-image 系列是新一代模型，也使用多模态格式
+    if (model.startsWith('wan2.7-image') || model.startsWith('wan2-7-image') || model.startsWith('wan27-image')) {
+      return true
+    }
+    return false
   }
 
   /**
@@ -127,6 +135,15 @@ export class DashScopeImageProvider extends BaseImageProvider {
   private isOpenAIFormat(model: string): boolean {
     // 其他以 qwen- 开头的模型使用 OpenAI 兼容格式
     return model.startsWith('qwen-') && !this.isMultimodalImageModel(model)
+  }
+
+  /**
+   * 判断是否使用原生格式（旧版 wanx-* 模型）
+   */
+  private isNativeFormat(model: string): boolean {
+    // 只有 wanx-v1 和 wanx-sketch-to-image-v1 使用原生格式
+    // 新版 wan2.7-image 系列使用多模态格式
+    return model.startsWith('wanx-') && !this.isMultimodalImageModel(model)
   }
 
   /**
@@ -201,6 +218,19 @@ export class DashScopeImageProvider extends BaseImageProvider {
         }
       },
       {
+        id: 'wan2.7-image-pro',
+        name: '万相 2.7 Pro',
+        providerId: 'dashscope',
+        providerName: this.name,
+        features: {
+          textToImage: true,
+          imageToImage: true,
+          imageEdit: false,
+          maxResolution: '2048x2048',
+          supportedSizes: ['512x512', '1024x1024', '1024x768', '768x1024', '1920x1080', '1080x1920']
+        }
+      },
+      {
         id: 'qwen-image',
         name: 'Qwen Image',
         providerId: 'dashscope',
@@ -244,12 +274,21 @@ export class DashScopeImageProvider extends BaseImageProvider {
     try {
       const model = request.model || 'wanx-v1'
 
+      console.log('[DashScope] generateImage 模型:', model,
+        'isMultimodal:', this.isMultimodalImageModel(model),
+        'isOpenAI:', this.isOpenAIFormat(model),
+        'isNative:', this.isNativeFormat(model))
+
       if (this.isMultimodalImageModel(model)) {
         return await this.generateImageMultimodal(request)
       } else if (this.isOpenAIFormat(model)) {
         return await this.generateImageOpenAI(request)
-      } else {
+      } else if (this.isNativeFormat(model)) {
         return await this.generateImageNative(request)
+      } else {
+        // 未知模型类型，尝试使用多模态格式（适用于新模型）
+        console.log('[DashScope] 未知模型类型，尝试使用多模态格式')
+        return await this.generateImageMultimodal(request)
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '未知错误'
