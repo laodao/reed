@@ -1044,33 +1044,45 @@ const imageProviderModels = computed(() => {
   for (const config of providerConfigs.value) {
     if (!config.isEnabled) continue
 
-    const models: Array<{ id: string; name: string; type?: string }> = []
     const template = providerTemplates.value.find(t => t.id === config.templateId)
+
+    // 检查 Provider 是否支持图像生成（通过 capabilities 判断）
+    const supportsImage = template?.capabilities?.includes('image')
+    if (!supportsImage) continue
+
+    const models: Array<{ id: string; name: string; type?: string }> = []
 
     // 使用 models 字段
     if (config.models && config.models.length > 0) {
       for (const model of config.models) {
-        // 只选择图像模型
-        if (model.type === 'image' || model.type === 'multimodal') {
-          models.push({
-            id: model.id,
-            name: model.name,
-            type: model.type
-          })
-        }
+        // 如果模型明确是文本类型，跳过
+        if (model.type === 'text' || model.type === 'embedding') continue
+        // 包含图像类型、多模态类型，或未指定类型（假设支持图像）
+        models.push({
+          id: model.id,
+          name: model.name,
+          type: model.type
+        })
       }
     }
     // 如果 models 为空，使用模板的默认模型列表
     else if (template && template.models.length > 0) {
       for (const model of template.models) {
-        if (model.type === 'image' || model.type === 'multimodal') {
-          models.push({
-            id: model.id,
-            name: model.name || model.id,
-            type: model.type
-          })
-        }
+        if (model.type === 'text' || model.type === 'embedding') continue
+        models.push({
+          id: model.id,
+          name: model.name || model.id,
+          type: model.type
+        })
       }
+    }
+    // 如果模板也没有模型列表，添加一个默认选项
+    else {
+      models.push({
+        id: 'default',
+        name: '默认模型',
+        type: 'image'
+      })
     }
 
     if (models.length > 0) {

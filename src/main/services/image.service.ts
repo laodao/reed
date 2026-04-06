@@ -95,6 +95,7 @@ export class ImageService {
       // 尝试从 providerConfigs 获取配置
       if (request.providerConfigId) {
         providerConfig = await dbManager.providerConfigs.getById(request.providerConfigId)
+        logger.info('[ImageService.generateImage] 使用指定的 Provider:', request.providerConfigId, providerConfig?.name)
       }
 
       // 如果没有指定，尝试获取图像类型的默认 Provider
@@ -103,8 +104,9 @@ export class ImageService {
         // 查找图像类型的 Provider（template_id 以 'image-' 开头或者是已知的图像 provider）
         providerConfig = enabledConfigs.find(c =>
           c.templateId.startsWith('image-') ||
-          ['bailian', 'volcengine', 'minimax', 'zhipu'].includes(c.templateId)
+          ['bailian', 'volcengine', 'minimax', 'zhipu', 'openai'].includes(c.templateId)
         )
+        logger.info('[ImageService.generateImage] 使用默认 Provider:', providerConfig?.name)
       }
 
       if (!providerConfig) {
@@ -133,7 +135,6 @@ export class ImageService {
       }
 
       // 确定 Provider 类型
-      // 对于 bailian 提供商，根据 API Key 格式选择不同的实现
       let providerType = providerConfig.templateId.replace('image-', '') as ImageProviderType
 
       // 特殊处理：bailian 提供商根据 API Key 格式选择实现
@@ -150,12 +151,20 @@ export class ImageService {
         }
       }
 
+      // 特殊处理：zhipu 和 minimax 使用 OpenAI 兼容格式
+      // 这些 Provider 的图像生成 API 与 OpenAI 格式兼容
+      if (providerType === 'zhipu' || providerType === 'minimax') {
+        logger.info(`[ImageService.generateImage] ${providerType} 使用 OpenAI 兼容格式`)
+        providerType = 'openai'
+      }
+
       // 获取模板中的 imageBaseUrl
       const template = PROVIDER_TEMPLATES.find(t => t.id === providerConfig.templateId)
 
       // 优先级：用户配置 > 模板默认
       const imageBaseUrl = providerConfig.imageBaseUrl ||
-                           template?.apiConfig?.imageBaseUrl
+                           template?.apiConfig?.imageBaseUrl ||
+                           template?.apiConfig?.baseUrl
 
       logger.info('[ImageService.generateImage] 使用图像 API URL:', imageBaseUrl)
 
