@@ -540,13 +540,20 @@ export interface StoryboardRecord {
   frame_description: string
   subject: string | null
   composition: string | null
-  characters: string // JSON
+  characters: string // JSON（保留兼容，推荐使用 storyboard_characters 表）
   narration_id: string | null
-  dialogue_ids: string // JSON
-  action_ids: string // JSON
-  frame_image: string | null // JSON
+  dialogue_ids: string // JSON（保留兼容，推荐使用 storyboard_dialogue_links 表）
+  action_ids: string // JSON（保留兼容，推荐使用 storyboard_action_links 表）
+  frame_image: string | null // JSON（保留兼容，推荐使用 frame_image_id）
+  frame_image_id: string | null // 外键关联图像资产
   duration: number
-  transition: string // JSON
+  // 转场配置（规范化字段）
+  transition: string // JSON（保留兼容）
+  transition_type: string | null
+  transition_duration_ms: number | null
+  transition_direction: string | null
+  transition_easing: string | null
+  transition_color: string | null
   status: StoryboardStatus
   created_at: number
   updated_at: number
@@ -560,8 +567,17 @@ export interface CharacterBindingRecord {
   project_id: string
   long_writing_character_id: string
   portrait_id: string | null
+  // 旧JSON字段（保留兼容）
   generate_config: string | null // JSON
-  voice_config: string // JSON
+  voice_config: string | null // JSON
+  // 规范化字段：声音配置
+  voice_id: string | null
+  voice_speed: number | null
+  voice_pitch: number | null
+  // 规范化字段：生成配置
+  base_description: string | null
+  style_reference: string | null
+  additional_prompts: string | null
   created_at: number
   updated_at: number
 }

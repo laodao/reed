@@ -74,14 +74,21 @@ export class CharacterBindingRepository {
 
   /**
    * 创建角色绑定
+   * 同时写入JSON字段和规范化字段
    */
   create(data: CreateCharacterBindingRequest): CharacterBinding {
     const id = this.generateId()
     const now = Date.now()
 
     const stmt = this.db.prepare(`
-      INSERT INTO character_bindings (id, project_id, long_writing_character_id, portrait_id, generate_config, voice_config, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO character_bindings (
+        id, project_id, long_writing_character_id, portrait_id,
+        generate_config, voice_config,
+        voice_id, voice_speed, voice_pitch,
+        base_description, style_reference, additional_prompts,
+        created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     stmt.run(
@@ -91,6 +98,13 @@ export class CharacterBindingRepository {
       data.portraitId || null,
       data.generateConfig ? JSON.stringify(data.generateConfig) : null,
       JSON.stringify(data.voiceConfig),
+      // 规范化字段
+      data.voiceConfig?.voiceId || null,
+      data.voiceConfig?.speed || 1.0,
+      data.voiceConfig?.pitch || 1.0,
+      data.generateConfig?.baseDescription || null,
+      data.generateConfig?.styleReference || null,
+      data.generateConfig?.additionalPrompts || null,
       now,
       now
     )
@@ -109,6 +123,7 @@ export class CharacterBindingRepository {
 
   /**
    * 更新角色绑定
+   * 同时更新JSON字段和规范化字段
    */
   update(id: string, data: UpdateCharacterBindingRequest): CharacterBinding | null {
     const binding = this.getById(id)
@@ -124,10 +139,24 @@ export class CharacterBindingRepository {
     if (data.generateConfig !== undefined) {
       updates.push('generate_config = ?')
       values.push(data.generateConfig ? JSON.stringify(data.generateConfig) : null)
+      // 同时更新规范化字段
+      updates.push('base_description = ?')
+      values.push(data.generateConfig?.baseDescription || null)
+      updates.push('style_reference = ?')
+      values.push(data.generateConfig?.styleReference || null)
+      updates.push('additional_prompts = ?')
+      values.push(data.generateConfig?.additionalPrompts || null)
     }
     if (data.voiceConfig !== undefined) {
       updates.push('voice_config = ?')
       values.push(JSON.stringify(data.voiceConfig))
+      // 同时更新规范化字段
+      updates.push('voice_id = ?')
+      values.push(data.voiceConfig?.voiceId || null)
+      updates.push('voice_speed = ?')
+      values.push(data.voiceConfig?.speed || 1.0)
+      updates.push('voice_pitch = ?')
+      values.push(data.voiceConfig?.pitch || 1.0)
     }
 
     if (updates.length === 0) return binding
@@ -171,15 +200,42 @@ export class CharacterBindingRepository {
 
   /**
    * 映射数据库行到角色绑定对象
+   * 优先使用规范化字段，回退到JSON字段
    */
   private mapToBinding(row: CharacterBindingRecord): CharacterBinding {
+    // 构建声音配置：优先使用规范化字段
+    let voiceConfig: CharacterBinding['voiceConfig']
+    if (row.voice_id || row.voice_speed || row.voice_pitch) {
+      voiceConfig = {
+        voiceId: row.voice_id || '',
+        speed: row.voice_speed ?? 1.0,
+        pitch: row.voice_pitch ?? 1.0
+      }
+    } else if (row.voice_config) {
+      voiceConfig = JSON.parse(row.voice_config)
+    } else {
+      voiceConfig = { voiceId: '', speed: 1.0, pitch: 1.0 }
+    }
+
+    // 构建生成配置：优先使用规范化字段
+    let generateConfig: CharacterBinding['generateConfig'] | undefined
+    if (row.base_description || row.style_reference || row.additional_prompts) {
+      generateConfig = {
+        baseDescription: row.base_description || '',
+        styleReference: row.style_reference || undefined,
+        additionalPrompts: row.additional_prompts || undefined
+      }
+    } else if (row.generate_config) {
+      generateConfig = JSON.parse(row.generate_config)
+    }
+
     return {
       id: row.id,
       projectId: row.project_id,
       longWritingCharacterId: row.long_writing_character_id,
       portraitId: row.portrait_id || undefined,
-      generateConfig: row.generate_config ? JSON.parse(row.generate_config) : undefined,
-      voiceConfig: JSON.parse(row.voice_config),
+      generateConfig,
+      voiceConfig,
       createdAt: row.created_at,
       updatedAt: row.updated_at
     }

@@ -273,6 +273,15 @@
               <el-button
                 v-if="hasAllImages"
                 size="small"
+                @click="generateAudio"
+                :loading="generatingAudio"
+              >
+                <el-icon><Headset /></el-icon>
+                生成音频
+              </el-button>
+              <el-button
+                v-if="hasAllImages"
+                size="small"
                 type="success"
                 @click="showSynthesisDialog = true"
               >
@@ -288,6 +297,7 @@
               :key="storyboard.id"
               class="storyboard-item"
               :class="{ 'has-image': storyboard.frameImage }"
+              @click="openStoryboardEdit(storyboard)"
             >
               <!-- 画面预览 -->
               <div v-if="storyboard.frameImage" class="storyboard-preview">
@@ -482,6 +492,135 @@
       </template>
     </el-dialog>
 
+    <!-- 分镜编辑对话框 -->
+    <el-dialog
+      v-model="showStoryboardEditDialog"
+      title="编辑分镜"
+      width="650px"
+      :close-on-click-modal="false"
+    >
+      <el-form v-if="editingStoryboard" :model="storyboardEditForm" label-width="100px">
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="镜头号">
+              <el-input-number v-model="storyboardEditForm.shotNumber" :min="1" :max="100" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="时长(秒)">
+              <el-input-number v-model="storyboardEditForm.duration" :min="0.5" :max="60" :step="0.5" :precision="1" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-divider content-position="left">镜头参数</el-divider>
+
+        <el-row :gutter="20">
+          <el-col :span="8">
+            <el-form-item label="景别">
+              <el-select v-model="storyboardEditForm.shotType" style="width: 100%">
+                <el-option label="大远景" value="extreme_long" />
+                <el-option label="远景" value="long" />
+                <el-option label="全景" value="full" />
+                <el-option label="中景" value="medium" />
+                <el-option label="中近景" value="medium_close" />
+                <el-option label="近景" value="close" />
+                <el-option label="特写" value="extreme_close" />
+                <el-option label="大特写" value="detail" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="角度">
+              <el-select v-model="storyboardEditForm.cameraAngle" style="width: 100%">
+                <el-option label="平视" value="eye_level" />
+                <el-option label="俯拍" value="high" />
+                <el-option label="仰拍" value="low" />
+                <el-option label="荷兰角" value="dutch" />
+                <el-option label="鸟瞰" value="birds_eye" />
+                <el-option label="虫视" value="worms_eye" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="运镜">
+              <el-select v-model="storyboardEditForm.cameraMovement" style="width: 100%">
+                <el-option label="固定" value="static" />
+                <el-option label="左摇" value="pan_left" />
+                <el-option label="右摇" value="pan_right" />
+                <el-option label="上仰" value="tilt_up" />
+                <el-option label="下俯" value="tilt_down" />
+                <el-option label="推镜" value="dolly_in" />
+                <el-option label="拉镜" value="dolly_out" />
+                <el-option label="左移" value="truck_left" />
+                <el-option label="右移" value="truck_right" />
+                <el-option label="变焦推进" value="zoom_in" />
+                <el-option label="变焦拉远" value="zoom_out" />
+                <el-option label="升镜" value="crane_up" />
+                <el-option label="降镜" value="crane_down" />
+                <el-option label="手持" value="handheld" />
+                <el-option label="环绕" value="orbit" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-form-item label="画面描述">
+          <el-input
+            v-model="storyboardEditForm.frameDescription"
+            type="textarea"
+            :rows="3"
+            placeholder="描述画面内容、构图、角色位置等"
+          />
+        </el-form-item>
+
+        <el-divider content-position="left">转场设置</el-divider>
+
+        <el-row :gutter="20">
+          <el-col :span="8">
+            <el-form-item label="转场类型">
+              <el-select v-model="storyboardEditForm.transitionType" style="width: 100%">
+                <el-option label="硬切" value="cut" />
+                <el-option label="淡入淡出" value="fade" />
+                <el-option label="溶解" value="dissolve" />
+                <el-option label="擦除" value="wipe" />
+                <el-option label="滑动" value="slide" />
+                <el-option label="缩放" value="zoom" />
+                <el-option label="光圈" value="iris" />
+                <el-option label="甩镜" value="whip" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="转场时长">
+              <el-input-number v-model="storyboardEditForm.transitionDuration" :min="0" :max="3000" :step="100" />
+              <span class="form-hint">ms</span>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="滑动方向">
+              <el-select
+                v-model="storyboardEditForm.transitionDirection"
+                style="width: 100%"
+                :disabled="!['slide', 'wipe'].includes(storyboardEditForm.transitionType)"
+              >
+                <el-option label="向左" value="left" />
+                <el-option label="向右" value="right" />
+                <el-option label="向上" value="up" />
+                <el-option label="向下" value="down" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+      </el-form>
+      <template #footer>
+        <el-button @click="showStoryboardEditDialog = false">取消</el-button>
+        <el-button type="primary" :loading="store.loading" @click="saveStoryboardEdit">
+          保存
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 绑定角色对话框 -->
     <el-dialog
       v-model="showBindCharacterDialog"
@@ -541,7 +680,7 @@
 import { ref, reactive, computed, onMounted, watch, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Setting, Plus, MagicStick, Picture, VideoPlay, Delete, InfoFilled } from '@element-plus/icons-vue'
+import { ArrowLeft, Setting, Plus, MagicStick, Picture, VideoPlay, Delete, InfoFilled, Headset } from '@element-plus/icons-vue'
 import { useStoryToVideoStore } from '@/stores/story-to-video'
 import type { VideoEpisode, VideoProject, SceneScript, CharacterBinding } from '../../../shared/types/story-to-video.types'
 import type { UserProviderConfig, ProviderTemplate } from '../../../shared/types'
@@ -647,6 +786,23 @@ const showSettingsDialog = ref(false)
 const showBindCharacterDialog = ref(false)
 const showGenerateImagesDialog = ref(false)
 const showSynthesisDialog = ref(false)
+const showStoryboardEditDialog = ref(false)
+
+// 正在编辑的分镜
+const editingStoryboard = ref<import('../../../shared/types/story-to-video.types').Storyboard | null>(null)
+
+// 分镜编辑表单
+const storyboardEditForm = reactive({
+  shotNumber: 1,
+  shotType: 'medium' as const,
+  cameraAngle: 'eye_level' as const,
+  cameraMovement: 'static' as const,
+  duration: 3,
+  frameDescription: '',
+  transitionType: 'cut' as const,
+  transitionDuration: 500,
+  transitionDirection: undefined as 'left' | 'right' | 'up' | 'down' | undefined
+})
 
 // 绑定角色表单
 const bindCharacterForm = reactive({
@@ -676,6 +832,14 @@ const synthesisForm = reactive({
 const synthesisProgress = reactive({
   phase: '',
   progress: 0
+})
+
+// 音频生成状态
+const generatingAudio = ref(false)
+const audioProgress = reactive({
+  type: '',
+  index: 0,
+  total: 0
 })
 
 // 创建剧集表单
@@ -1497,6 +1661,10 @@ function scrollToScene(index: number) {
   if (element) {
     element.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
+  // 同时选择场景，更新右侧分镜面板
+  if (store.scenes[index]) {
+    store.selectScene(store.scenes[index])
+  }
 }
 
 /**
@@ -1594,6 +1762,56 @@ async function generateScenes() {
 }
 
 /**
+ * 打开分镜编辑对话框
+ */
+function openStoryboardEdit(storyboard: import('../../../shared/types/story-to-video.types').Storyboard) {
+  editingStoryboard.value = storyboard
+
+  // 填充表单
+  storyboardEditForm.shotNumber = storyboard.shotNumber
+  storyboardEditForm.shotType = storyboard.shotType as any
+  storyboardEditForm.cameraAngle = storyboard.cameraAngle as any
+  storyboardEditForm.cameraMovement = storyboard.cameraMovement as any
+  storyboardEditForm.duration = storyboard.duration
+  storyboardEditForm.frameDescription = storyboard.frameDescription
+  storyboardEditForm.transitionType = storyboard.transition.type as any
+  storyboardEditForm.transitionDuration = storyboard.transition.duration
+  storyboardEditForm.transitionDirection = storyboard.transition.direction
+
+  showStoryboardEditDialog.value = true
+}
+
+/**
+ * 保存分镜编辑
+ */
+async function saveStoryboardEdit() {
+  if (!editingStoryboard.value) return
+
+  const success = await store.updateStoryboard(editingStoryboard.value.id, {
+    shotNumber: storyboardEditForm.shotNumber,
+    shotType: storyboardEditForm.shotType as any,
+    cameraAngle: storyboardEditForm.cameraAngle as any,
+    cameraMovement: storyboardEditForm.cameraMovement as any,
+    duration: storyboardEditForm.duration,
+    frameDescription: storyboardEditForm.frameDescription,
+    transition: {
+      type: storyboardEditForm.transitionType,
+      duration: storyboardEditForm.transitionDuration,
+      direction: storyboardEditForm.transitionDirection,
+      easing: 'ease_out'
+    }
+  })
+
+  if (success) {
+    ElMessage.success('分镜已更新')
+    showStoryboardEditDialog.value = false
+    editingStoryboard.value = null
+  } else {
+    ElMessage.error(store.error || '保存失败')
+  }
+}
+
+/**
  * 生成分镜（AI）
  */
 async function generateStoryboards() {
@@ -1677,6 +1895,60 @@ async function generateSceneImages() {
     }
   } catch (error: any) {
     ElMessage.error(error.message || '生成画面失败')
+  }
+}
+
+/**
+ * 生成场景音频（旁白 + 对话）
+ */
+async function generateAudio() {
+  if (!store.currentScene) {
+    ElMessage.warning('请先选择场景')
+    return
+  }
+
+  // 检查场景是否有旁白或对话
+  const hasNarration = store.currentScene.narration && store.currentScene.narration.trim()
+  const hasDialogues = store.currentScene.dialogues && store.currentScene.dialogues.length > 0
+
+  if (!hasNarration && !hasDialogues) {
+    ElMessage.warning('当前场景没有旁白或对话内容')
+    return
+  }
+
+  try {
+    generatingAudio.value = true
+    audioProgress.type = ''
+    audioProgress.index = 0
+    audioProgress.total = 0
+
+    ElMessage.info('正在生成音频，请稍候...')
+
+    const result = await store.generateSceneAudio(
+      store.currentScene.id,
+      (type, index, total) => {
+        audioProgress.type = type
+        audioProgress.index = index
+        audioProgress.total = total
+      }
+    )
+
+    if (result) {
+      const messages: string[] = []
+      if (result.narrationPath) {
+        messages.push('旁白已生成')
+      }
+      if (result.dialogueCount > 0) {
+        messages.push(`${result.dialogueCount} 段对话已生成`)
+      }
+      ElMessage.success(messages.join('，') || '音频生成完成')
+    } else {
+      ElMessage.error(store.error || '生成音频失败')
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '生成音频失败')
+  } finally {
+    generatingAudio.value = false
   }
 }
 
@@ -2353,6 +2625,13 @@ watch(outlineSearchText, (val) => {
   margin-bottom: 8px;
   display: flex;
   gap: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: var(--el-color-primary-light-5);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  }
 
   &.has-image {
     flex-direction: column;
@@ -2510,6 +2789,12 @@ watch(outlineSearchText, (val) => {
   align-items: center;
   gap: 4px;
   margin-top: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.form-hint {
+  margin-left: 8px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }

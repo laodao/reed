@@ -292,8 +292,27 @@ export class StoryboardRepository {
 
   /**
    * 映射数据库行到分镜对象
+   * 支持规范化字段，兼容旧的JSON字段
    */
   private mapToStoryboard(row: StoryboardRecord): Storyboard {
+    // 解析转场配置：优先使用规范化字段，否则回退到JSON
+    let transition: TransitionConfig
+    if (row.transition_type) {
+      // 使用规范化字段
+      transition = {
+        type: row.transition_type as TransitionType,
+        duration: row.transition_duration_ms || 500,
+        direction: row.transition_direction as 'left' | 'right' | 'up' | 'down' || undefined,
+        easing: row.transition_easing as 'linear' | 'ease_in' | 'ease_out' | 'ease_in_out' || 'ease_out',
+        color: row.transition_color || undefined
+      }
+    } else if (row.transition) {
+      // 回退到JSON字段
+      transition = JSON.parse(row.transition) as TransitionConfig
+    } else {
+      transition = { type: 'cut', duration: 500 }
+    }
+
     return {
       id: row.id,
       sceneScriptId: row.scene_script_id,
@@ -305,13 +324,13 @@ export class StoryboardRepository {
       frameDescription: row.frame_description,
       subject: row.subject || undefined,
       composition: row.composition || undefined,
-      characters: JSON.parse(row.characters) as StoryboardCharacter[],
+      characters: row.characters ? JSON.parse(row.characters) as StoryboardCharacter[] : [],
       narrationId: row.narration_id || undefined,
-      dialogueIds: JSON.parse(row.dialogue_ids) as string[],
-      actionIds: JSON.parse(row.action_ids) as string[],
+      dialogueIds: row.dialogue_ids ? JSON.parse(row.dialogue_ids) as string[] : [],
+      actionIds: row.action_ids ? JSON.parse(row.action_ids) as string[] : [],
       frameImage: row.frame_image ? JSON.parse(row.frame_image) as ImageAsset : undefined,
       duration: row.duration,
-      transition: JSON.parse(row.transition) as TransitionConfig,
+      transition,
       status: row.status as StoryboardStatus,
       createdAt: row.created_at,
       updatedAt: row.updated_at

@@ -1636,6 +1636,190 @@ export class DatabaseManager {
 
     // 为 episode_scripts 表添加 script_content 和 script_format 字段
     this.migrateEpisodeScriptsAddScriptContent()
+
+    // 数据库规范化迁移（符合第三范式）
+    this.normalizeDatabaseSchema()
+  }
+
+  /**
+   * 数据库规范化迁移（符合第三范式）
+   * 将JSON字段拆分为独立的表列
+   */
+  private normalizeDatabaseSchema(): void {
+    if (!this.db) return
+
+    const migrationKey = 'database_normalization_v1'
+    const migrationRecord = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(migrationKey)
+    if (migrationRecord) {
+      return // 已迁移
+    }
+
+    console.log('[DatabaseManager] 开始数据库规范化迁移...')
+
+    try {
+      // 1. 规范化 storyboards 表
+      this.normalizeStoryboardsTable()
+
+      // 2. 规范化 character_bindings 表
+      this.normalizeCharacterBindingsTable()
+
+      // 标记迁移完成
+      this.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(migrationKey, Date.now().toString())
+      console.log('[DatabaseManager] 数据库规范化迁移完成')
+    } catch (error) {
+      console.error('[DatabaseManager] 数据库规范化迁移失败:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 规范化 storyboards 表
+   * 将 transition JSON 拆分为独立字段，添加 frame_image_id 外键
+   */
+  private normalizeStoryboardsTable(): void {
+    if (!this.db) return
+
+    // 检查表是否存在
+    const tableExists = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='storyboards'").get()
+    if (!tableExists) return
+
+    // 获取当前表结构
+    const columns = this.db.prepare("PRAGMA table_info(storyboards)").all() as { name: string }[]
+    const columnNames = columns.map(col => col.name)
+
+    // 添加新字段
+    const newColumns = [
+      { name: 'transition_type', sql: 'ALTER TABLE storyboards ADD COLUMN transition_type TEXT DEFAULT \'cut\'' },
+      { name: 'transition_duration_ms', sql: 'ALTER TABLE storyboards ADD COLUMN transition_duration_ms INTEGER DEFAULT 500' },
+      { name: 'transition_direction', sql: 'ALTER TABLE storyboards ADD COLUMN transition_direction TEXT' },
+      { name: 'transition_easing', sql: 'ALTER TABLE storyboards ADD COLUMN transition_easing TEXT DEFAULT \'ease_out\'' },
+      { name: 'transition_color', sql: 'ALTER TABLE storyboards ADD COLUMN transition_color TEXT' },
+      { name: 'frame_image_id', sql: 'ALTER TABLE storyboards ADD COLUMN frame_image_id TEXT REFERENCES image_assets(id) ON DELETE SET NULL' }
+    ]
+
+    for (const col of newColumns) {
+      if (!columnNames.includes(col.name)) {
+        console.log(`[DatabaseManager] 为 storyboards 表添加 ${col.name} 字段...`)
+        try {
+          this.db.exec(col.sql)
+          console.log(`[DatabaseManager] storyboards 表添加 ${col.name} 字段完成`)
+        } catch (e) {
+          console.error(`[DatabaseManager] 添加 ${col.name} 字段失败:`, e)
+        }
+      }
+    }
+
+    // 迁移现有 transition JSON 数据到新字段
+    const storyboards = this.db.prepare('SELECT id, transition FROM storyboards WHERE transition IS NOT NULL').all() as any[]
+
+    for (const sb of storyboards) {
+      if (sb.transition) {
+        try {
+          const transition = JSON.parse(sb.transition)
+          this.db.prepare(`
+            UPDATE storyboards
+            SET transition_type = ?, transition_duration_ms = ?, transition_direction = ?, transition_easing = ?, transition_color = ?
+            WHERE id = ?
+          `).run(
+            transition.type || 'cut',
+            transition.duration || 500,
+            transition.direction || null,
+            transition.easing || 'ease_out',
+            transition.color || null,
+            sb.id
+          )
+        } catch (e) {
+          console.warn('[DatabaseManager] 迁移 storyboards.transition 失败:', sb.id, e)
+        }
+      }
+    }
+
+    console.log(`[DatabaseManager] storyboards 表规范化完成，已迁移 ${storyboards.length} 条记录`)
+  }
+
+  /**
+   * 规范化 character_bindings 表
+   * 将 voice_config 和 generate_config JSON 拆分为独立字段
+   */
+  private normalizeCharacterBindingsTable(): void {
+    if (!this.db) return
+
+    // 检查表是否存在
+    const tableExists = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='character_bindings'").get()
+    if (!tableExists) return
+
+    // 获取当前表结构
+    const columns = this.db.prepare("PRAGMA table_info(character_bindings)").all() as { name: string }[]
+    const columnNames = columns.map(col => col.name)
+
+    // 添加新字段
+    const newColumns = [
+      // 声音配置
+      { name: 'voice_id', sql: 'ALTER TABLE character_bindings ADD COLUMN voice_id TEXT' },
+      { name: 'voice_speed', sql: 'ALTER TABLE character_bindings ADD COLUMN voice_speed REAL DEFAULT 1.0' },
+      { name: 'voice_pitch', sql: 'ALTER TABLE character_bindings ADD COLUMN voice_pitch REAL DEFAULT 1.0' },
+      // 生成配置
+      { name: 'base_description', sql: 'ALTER TABLE character_bindings ADD COLUMN base_description TEXT' },
+      { name: 'style_reference', sql: 'ALTER TABLE character_bindings ADD COLUMN style_reference TEXT' },
+      { name: 'additional_prompts', sql: 'ALTER TABLE character_bindings ADD COLUMN additional_prompts TEXT' }
+    ]
+
+    for (const col of newColumns) {
+      if (!columnNames.includes(col.name)) {
+        console.log(`[DatabaseManager] 为 character_bindings 表添加 ${col.name} 字段...`)
+        try {
+          this.db.exec(col.sql)
+          console.log(`[DatabaseManager] character_bindings 表添加 ${col.name} 字段完成`)
+        } catch (e) {
+          console.error(`[DatabaseManager] 添加 ${col.name} 字段失败:`, e)
+        }
+      }
+    }
+
+    // 迁移现有 voice_config JSON 数据
+    const bindings = this.db.prepare('SELECT id, voice_config, generate_config FROM character_bindings').all() as any[]
+
+    for (const binding of bindings) {
+      // 迁移 voice_config
+      if (binding.voice_config) {
+        try {
+          const voiceConfig = JSON.parse(binding.voice_config)
+          this.db.prepare(`
+            UPDATE character_bindings
+            SET voice_id = ?, voice_speed = ?, voice_pitch = ?
+            WHERE id = ?
+          `).run(
+            voiceConfig.voiceId || null,
+            voiceConfig.speed || 1.0,
+            voiceConfig.pitch || 1.0,
+            binding.id
+          )
+        } catch (e) {
+          console.warn('[DatabaseManager] 迁移 character_bindings.voice_config 失败:', binding.id, e)
+        }
+      }
+
+      // 迁移 generate_config
+      if (binding.generate_config) {
+        try {
+          const genConfig = JSON.parse(binding.generate_config)
+          this.db.prepare(`
+            UPDATE character_bindings
+            SET base_description = ?, style_reference = ?, additional_prompts = ?
+            WHERE id = ?
+          `).run(
+            genConfig.baseDescription || null,
+            genConfig.styleReference || null,
+            genConfig.additionalPrompts || null,
+            binding.id
+          )
+        } catch (e) {
+          console.warn('[DatabaseManager] 迁移 character_bindings.generate_config 失败:', binding.id, e)
+        }
+      }
+    }
+
+    console.log(`[DatabaseManager] character_bindings 表规范化完成，已迁移 ${bindings.length} 条记录`)
   }
 
   /**
