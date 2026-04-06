@@ -122,6 +122,14 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/story-to-video/:projectId/production/:sceneId',
+    name: 'VideoProduction',
+    component: () => import('@/views/VideoProductionPage.vue'),
+    meta: {
+      title: '视频制作'
+    }
+  },
+  {
     path: '/settings',
     name: 'Settings',
     component: () => import('@/views/Settings.vue'),

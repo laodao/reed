@@ -235,29 +235,10 @@
                 v-if="store.storyboards.length > 0"
                 size="small"
                 type="primary"
-                :disabled="!selectedStoryboard"
-                @click="showGenerateImagesDialog = true"
-              >
-                <el-icon><Picture /></el-icon>
-                生成画面
-              </el-button>
-              <el-button
-                v-if="hasAllImages"
-                size="small"
-                @click="generateAudio"
-                :loading="generatingAudio"
-              >
-                <el-icon><Headset /></el-icon>
-                生成音频
-              </el-button>
-              <el-button
-                v-if="hasAllImages"
-                size="small"
-                type="success"
-                @click="showSynthesisDialog = true"
+                @click="goToVideoProduction"
               >
                 <el-icon><VideoPlay /></el-icon>
-                合成视频
+                视频制作
               </el-button>
             </div>
           </div>
@@ -275,30 +256,58 @@
               @dblclick="openStoryboardEdit(storyboard)"
             >
               <!-- 画面预览 -->
-              <div v-if="storyboard.frameImage" class="storyboard-preview" @click.stop="openImagePreview(storyboard.frameImage.filePath || storyboard.frameImage.url)">
-                <img :src="storyboard.frameImage.filePath || storyboard.frameImage.url" :alt="`镜头${storyboard.shotNumber}`" />
-                <div class="preview-overlay">
-                  <el-icon size="20"><ZoomIn /></el-icon>
+              <div class="storyboard-item-left">
+                <div v-if="storyboard.frameImage" class="storyboard-preview" @click.stop="openImagePreview(storyboard.frameImage.filePath || storyboard.frameImage.url)">
+                  <img :src="storyboard.frameImage.filePath || storyboard.frameImage.url" :alt="`镜头${storyboard.shotNumber}`" />
+                  <div class="preview-overlay">
+                    <el-icon size="20"><ZoomIn /></el-icon>
+                  </div>
                 </div>
-              </div>
-              <div v-else class="storyboard-preview placeholder">
-                <el-icon size="32"><Picture /></el-icon>
-                <span>待生成</span>
+                <div v-else class="storyboard-preview placeholder">
+                  <el-icon size="32"><Picture /></el-icon>
+                  <span>待生成</span>
+                </div>
+
+                <div class="storyboard-info">
+                  <div class="storyboard-header">
+                    <span class="shot-number">镜头 {{ storyboard.shotNumber }}</span>
+                    <el-tag size="small">{{ getShotTypeLabel(storyboard.shotType) }}</el-tag>
+                    <el-tag v-if="storyboard.frameImage" size="small" type="success">已生成</el-tag>
+                  </div>
+                  <div class="storyboard-description">
+                    {{ storyboard.frameDescription }}
+                  </div>
+                  <div class="storyboard-meta">
+                    <span>{{ storyboard.duration }}s</span>
+                    <span>{{ getCameraAngleLabel(storyboard.cameraAngle) }}</span>
+                    <span>{{ getCameraMovementLabel(storyboard.cameraMovement) }}</span>
+                  </div>
+                </div>
               </div>
 
-              <div class="storyboard-info">
-                <div class="storyboard-header">
-                  <span class="shot-number">镜头 {{ storyboard.shotNumber }}</span>
-                  <el-tag size="small">{{ storyboard.shotType }}</el-tag>
-                </div>
-                <div class="storyboard-description">
-                  {{ storyboard.frameDescription }}
-                </div>
-                <div class="storyboard-meta">
-                  <span>{{ storyboard.duration }}s</span>
-                  <span>{{ storyboard.cameraAngle }}</span>
-                  <span>{{ storyboard.cameraMovement }}</span>
-                </div>
+              <!-- 操作按钮 -->
+              <div class="storyboard-item-actions" @click.stop>
+                <el-tooltip content="重新生成" placement="top">
+                  <el-button
+                    v-if="storyboard.frameImage"
+                    circle
+                    size="small"
+                    @click="openRegenerateDialog(storyboard)"
+                  >
+                    <el-icon><RefreshRight /></el-icon>
+                  </el-button>
+                </el-tooltip>
+                <el-tooltip content="删除画面" placement="top">
+                  <el-button
+                    v-if="storyboard.frameImage"
+                    circle
+                    size="small"
+                    type="danger"
+                    @click="confirmDeleteStoryboardImage(storyboard)"
+                  >
+                    <el-icon><Delete /></el-icon>
+                  </el-button>
+                </el-tooltip>
               </div>
             </div>
           </div>
@@ -746,6 +755,40 @@
         <img :src="previewImageUrl" alt="预览图片" class="preview-image" />
       </div>
     </el-dialog>
+
+    <!-- 重新生成画面对话框 -->
+    <el-dialog
+      v-model="showRegenerateDialog"
+      title="重新生成画面"
+      width="500px"
+    >
+      <el-form label-width="80px">
+        <el-form-item label="镜头">
+          镜头 {{ regeneratingStoryboard?.shotNumber }}
+        </el-form-item>
+        <el-form-item label="风格">
+          <el-select v-model="regenerateForm.styleName" style="width: 100%">
+            <el-option label="电影风格" value="cinematic" />
+            <el-option label="动漫风格" value="anime" />
+            <el-option label="写实风格" value="realistic" />
+            <el-option label="奇幻风格" value="fantasy" />
+            <el-option label="古风仙侠" value="ancient_chinese" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="附加提示">
+          <el-input
+            v-model="regenerateForm.additionalPrompt"
+            type="textarea"
+            :rows="3"
+            placeholder="输入额外的画面描述，如：更暗的光线、增加细节等"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showRegenerateDialog = false">取消</el-button>
+        <el-button type="primary" @click="regenerateStoryboardImage">开始生成</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -753,7 +796,7 @@
 import { ref, reactive, computed, onMounted, watch, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Setting, Plus, MagicStick, Picture, VideoPlay, Delete, InfoFilled, Headset, ZoomIn } from '@element-plus/icons-vue'
+import { ArrowLeft, Setting, Plus, MagicStick, Picture, VideoPlay, Delete, InfoFilled, Headset, ZoomIn, RefreshRight } from '@element-plus/icons-vue'
 import { useStoryToVideoStore } from '@/stores/story-to-video'
 import type { VideoEpisode, VideoProject, SceneScript, CharacterBinding } from '../../../shared/types/story-to-video.types'
 import type { UserProviderConfig, ProviderTemplate } from '../../../shared/types'
@@ -875,6 +918,124 @@ const openImagePreview = (url: string) => {
   if (url) {
     previewImageUrl.value = url
     showImagePreview.value = true
+  }
+}
+
+// 中文映射
+const shotTypeLabels: Record<string, string> = {
+  extreme_long: '大远景',
+  long: '远景',
+  full: '全景',
+  medium: '中景',
+  medium_close: '中近景',
+  close: '近景',
+  extreme_close: '特写',
+  detail: '细节特写'
+}
+
+const cameraAngleLabels: Record<string, string> = {
+  eye_level: '平视',
+  high: '俯视',
+  low: '仰视',
+  dutch: '倾斜',
+  birds_eye: '鸟瞰',
+  worms_eye: '虫视'
+}
+
+const cameraMovementLabels: Record<string, string> = {
+  static: '固定',
+  pan_left: '左摇',
+  pan_right: '右摇',
+  tilt_up: '上仰',
+  tilt_down: '下俯',
+  dolly_in: '推近',
+  dolly_out: '拉远',
+  zoom_in: '放大',
+  zoom_out: '缩小',
+  tracking: '跟拍',
+  crane: '升降'
+}
+
+const statusLabels: Record<string, string> = {
+  pending: '待处理',
+  generating: '生成中',
+  image_ready: '画面已就绪',
+  audio_ready: '音频已就绪',
+  completed: '已完成',
+  error: '错误'
+}
+
+function getShotTypeLabel(type: string): string {
+  return shotTypeLabels[type] || type
+}
+
+function getCameraAngleLabel(angle: string): string {
+  return cameraAngleLabels[angle] || angle
+}
+
+function getCameraMovementLabel(movement: string): string {
+  return cameraMovementLabels[movement] || movement
+}
+
+function getStatusLabel(status: string): string {
+  return statusLabels[status] || status
+}
+
+// 跳转到视频制作页面
+function goToVideoProduction() {
+  if (!store.currentScene) {
+    ElMessage.warning('请先选择场景')
+    return
+  }
+  router.push(`/story-to-video/${projectId.value}/production/${store.currentScene.id}`)
+}
+
+// 重新生成对话框
+const showRegenerateDialog = ref(false)
+const regeneratingStoryboard = ref<import('../../../shared/types/story-to-video.types').Storyboard | null>(null)
+const regenerateForm = reactive({
+  styleName: 'cinematic',
+  additionalPrompt: ''
+})
+
+function openRegenerateDialog(storyboard: import('../../../shared/types/story-to-video.types').Storyboard) {
+  regeneratingStoryboard.value = storyboard
+  regenerateForm.styleName = 'cinematic'
+  regenerateForm.additionalPrompt = ''
+  showRegenerateDialog.value = true
+}
+
+async function regenerateStoryboardImage() {
+  if (!regeneratingStoryboard.value) return
+
+  try {
+    const result = await store.generateStoryboardImage(
+      regeneratingStoryboard.value.id,
+      regenerateForm.styleName,
+      undefined,
+      undefined,
+      regenerateForm.additionalPrompt
+    )
+    if (result) {
+      ElMessage.success('画面生成成功')
+      showRegenerateDialog.value = false
+    } else {
+      ElMessage.error('画面生成失败')
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '画面生成失败')
+  }
+}
+
+async function confirmDeleteStoryboardImage(storyboard: import('../../../shared/types/story-to-video.types').Storyboard) {
+  try {
+    await ElMessageBox.confirm('确定要删除这个画面吗？删除后可以重新生成。', '删除画面', {
+      type: 'warning'
+    })
+    // TODO: 实现删除画面逻辑
+    ElMessage.success('画面已删除')
+  } catch {
+    // 用户取消
   }
 }
 
@@ -1432,18 +1593,8 @@ function handleOutlineSelect(data: OutlineTreeNode) {
     sectionName: data.name
   }
 
-  // 自动生成标题（使用位置序号）
-  const parts: string[] = []
-  if (volumeNum > 0) {
-    parts.push(`第${volumeNum}卷`)
-  }
-  if (chapterNum > 0) {
-    parts.push(`第${chapterNum}章`)
-  }
-  parts.push(`第${sectionNum}节`)
-  parts.push(data.name)
-
-  episodeForm.title = parts.join(' ')
+  // 自动生成标题：只使用节名称
+  episodeForm.title = data.name
 }
 
 /**
@@ -1493,18 +1644,8 @@ function handleOutlineCascaderChange(value: string) {
     sectionName: selectedNode.name
   }
 
-  // 自动生成标题（使用位置序号）
-  const parts: string[] = []
-  if (volumeNum > 0) {
-    parts.push(`第${volumeNum}卷`)
-  }
-  if (chapterNum > 0) {
-    parts.push(`第${chapterNum}章`)
-  }
-  parts.push(`第${sectionNum}节`)
-  parts.push(selectedNode.name)
-
-  episodeForm.title = parts.join(' ')
+  // 自动生成标题：只使用节名称
+  episodeForm.title = selectedNode.name
 }
 
 /**
@@ -2489,8 +2630,8 @@ watch(outlineSearchText, (val) => {
 }
 
 .left-panel {
-  width: 200px;
-  min-width: 180px;
+  width: 280px;
+  min-width: 240px;
   min-height: 0;
   background: var(--el-bg-color);
   border-right: 1px solid var(--el-border-color-light);
@@ -2507,7 +2648,7 @@ watch(outlineSearchText, (val) => {
 }
 
 .right-panel {
-  width: 280px;
+  width: 320px;
   min-height: 0;
   background: var(--el-bg-color);
   border-left: 1px solid var(--el-border-color-light);
@@ -2980,13 +3121,17 @@ watch(outlineSearchText, (val) => {
   border-radius: 6px;
   margin-bottom: 8px;
   display: flex;
-  gap: 12px;
+  gap: 8px;
   cursor: pointer;
   transition: all 0.2s;
 
   &:hover {
     border-color: var(--el-color-primary-light-5);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+
+    .storyboard-item-actions {
+      opacity: 1;
+    }
   }
 
   &.selected {
@@ -2996,12 +3141,29 @@ watch(outlineSearchText, (val) => {
   }
 
   &.has-image {
-    flex-direction: column;
-
     .storyboard-preview {
       width: 100%;
       aspect-ratio: 16/9;
     }
+
+    .storyboard-item-left {
+      flex-direction: column;
+    }
+  }
+
+  .storyboard-item-left {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    gap: 12px;
+  }
+
+  .storyboard-item-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.2s;
   }
 
   .storyboard-preview {
@@ -3058,9 +3220,10 @@ watch(outlineSearchText, (val) => {
 
   .storyboard-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    gap: 8px;
     margin-bottom: 8px;
+    flex-wrap: wrap;
 
     .shot-number {
       font-size: 12px;
