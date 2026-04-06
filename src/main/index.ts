@@ -10,34 +10,69 @@ const originalConsoleLog = console.log
 const originalConsoleError = console.error
 const originalConsoleWarn = console.warn
 
+// 使用更健壮的错误处理
 function safeConsoleLog(...args: any[]): void {
   try {
-    if (process.stdout.writable) {
-      originalConsoleLog.apply(console, args)
+    // 直接尝试写入，不预先检查 writable（因为检查和写入之间可能有竞态）
+    originalConsoleLog.apply(console, args)
+  } catch (err: any) {
+    // EPIPE 错误时尝试写入到 stderr 作为备用
+    if (err?.code === 'EPIPE') {
+      try {
+        originalConsoleError.apply(console, ['[EPIPE suppressed]', ...args])
+      } catch { /* 完全忽略 */ }
     }
-  } catch { /* 忽略 EPIPE 错误 */ }
+  }
 }
 
 function safeConsoleError(...args: any[]): void {
   try {
-    if (process.stderr.writable) {
-      originalConsoleError.apply(console, args)
+    originalConsoleError.apply(console, args)
+  } catch (err: any) {
+    // EPIPE 错误完全忽略
+    if (err?.code !== 'EPIPE') {
+      // 其他错误尝试用 process.stderr.write 直接写入
+      try {
+        process.stderr.write(`[Console Error Fallback]: ${args.map(a => String(a)).join(' ')}\n`)
+      } catch { /* 完全忽略 */ }
     }
-  } catch { /* 忽略 EPIPE 错误 */ }
+  }
 }
 
 function safeConsoleWarn(...args: any[]): void {
   try {
-    if (process.stderr.writable) {
-      originalConsoleWarn.apply(console, args)
+    originalConsoleWarn.apply(console, args)
+  } catch (err: any) {
+    // EPIPE 错误完全忽略
+    if (err?.code !== 'EPIPE') {
+      try {
+        process.stderr.write(`[Console Warn Fallback]: ${args.map(a => String(a)).join(' ')}\n`)
+      } catch { /* 完全忽略 */ }
     }
-  } catch { /* 忽略 EPIPE 错误 */ }
+  }
 }
 
 // 替换全局 console 方法
 console.log = safeConsoleLog
 console.error = safeConsoleError
 console.warn = safeConsoleWarn
+
+// 立即注册 EPIPE 处理器，在任何其他代码执行之前
+// 这必须在模块加载的最早期设置，防止任何异步错误导致崩溃
+process.on('uncaughtException', (err: any) => {
+  // 对于 EPIPE 错误，直接忽略不弹出对话框
+  if (err?.code === 'EPIPE' || err?.errno === -4047) {
+    // 使用原始 console.error 避免递归
+    try {
+      originalConsoleError.call(console, '[EPIPE] 忽略管道断开错误')
+    } catch { /* 完全忽略 */ }
+    return
+  }
+  // 其他未捕获的错误记录到控制台
+  try {
+    originalConsoleError.call(console, '[Uncaught Exception]', err)
+  } catch { /* 完全忽略 */ }
+})
 
 // 增加 V8 堆内存限制，解决 PDF 解析等大内存操作的问题
 import { setFlagsFromString } from 'v8'

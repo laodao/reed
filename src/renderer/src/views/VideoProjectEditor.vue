@@ -496,7 +496,7 @@
     <el-dialog
       v-model="showStoryboardEditDialog"
       title="编辑分镜"
-      width="650px"
+      width="800px"
       :close-on-click-modal="false"
     >
       <el-form v-if="editingStoryboard" :model="storyboardEditForm" label-width="100px">
@@ -1658,8 +1658,13 @@ function escapeHtml(text: string): string {
 function scrollToScene(index: number) {
   currentSceneIndex.value = index
   const element = document.getElementById(`scene-${index}`)
-  if (element) {
-    element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  const container = document.querySelector('.script-content-body')
+  if (element && container) {
+    // 手动滚动容器，避免整页滚动
+    container.scrollTo({
+      top: element.offsetTop - 16,
+      behavior: 'smooth'
+    })
   }
   // 同时选择场景，更新右侧分镜面板
   if (store.scenes[index]) {
@@ -2134,8 +2139,10 @@ watch(outlineSearchText, (val) => {
 <style scoped lang="scss">
 .video-project-editor {
   height: 100vh;
+  max-height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: var(--el-bg-color-page);
 }
 
@@ -2143,14 +2150,17 @@ watch(outlineSearchText, (val) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 24px;
+  padding: 0 16px;
+  height: 48px;
+  min-height: 48px;
+  flex-shrink: 0;
   background: var(--el-bg-color);
   border-bottom: 1px solid var(--el-border-color-light);
 
   .header-left {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
   }
 
   .header-center {
@@ -2162,7 +2172,7 @@ watch(outlineSearchText, (val) => {
       width: 200px;
 
       :deep(.el-input__wrapper) {
-        border-radius: 8px;
+        border-radius: 6px;
       }
     }
 
@@ -2196,49 +2206,64 @@ watch(outlineSearchText, (val) => {
 
 .editor-content {
   flex: 1;
+  height: 0;
+  min-height: 0;
   display: flex;
   overflow: hidden;
+  box-sizing: border-box;
 }
 
-.left-panel,
-.right-panel {
-  width: 280px;
+.left-panel {
+  width: 200px;
+  min-width: 180px;
+  min-height: 0;
   background: var(--el-bg-color);
   border-right: 1px solid var(--el-border-color-light);
   display: flex;
   flex-direction: column;
-}
-
-.right-panel {
-  border-right: none;
-  border-left: 1px solid var(--el-border-color-light);
-}
-
-.center-panel {
-  flex: 1;
   overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px;
-  border-bottom: 1px solid var(--el-border-color-light);
-
-  h3 {
-    margin: 0;
-    font-size: 14px;
-    font-weight: 500;
-  }
 }
 
 .episode-list {
   flex: 1;
   overflow: auto;
   padding: 8px;
+  min-height: 0;
+}
+
+.right-panel {
+  width: 280px;
+  min-height: 0;
+  background: var(--el-bg-color);
+  border-left: 1px solid var(--el-border-color-light);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.center-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--el-border-color-light);
+  height: 44px;
+  flex-shrink: 0;
+
+  h3 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 500;
+  }
 }
 
 .episode-item {
@@ -2290,19 +2315,51 @@ watch(outlineSearchText, (val) => {
 
 .editor-tabs {
   height: 100%;
+  max-height: 100%;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 
   :deep(.el-tabs__header) {
     margin: 0;
-    padding: 0 16px;
+    padding: 0 12px;
     background: var(--el-bg-color);
+    height: 40px;
+    min-height: 40px;
+    flex-shrink: 0;
+  }
+
+  :deep(.el-tabs__nav-wrap) {
+    height: 40px;
+  }
+
+  :deep(.el-tabs__nav-scroll) {
+    height: 40px;
+  }
+
+  :deep(.el-tabs__nav) {
+    height: 40px;
+  }
+
+  :deep(.el-tabs__item) {
+    height: 40px;
+    line-height: 40px;
+    font-size: 13px;
   }
 
   :deep(.el-tabs__content) {
     flex: 1;
-    overflow: auto;
-    padding: 16px;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0;
+  }
+
+  :deep(.el-tab-pane) {
+    height: 100%;
+    max-height: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 }
 
@@ -2341,43 +2398,55 @@ watch(outlineSearchText, (val) => {
 // 新的剧本编辑器样式
 .script-editor-new {
   display: flex;
-  height: 100%;
-  gap: 16px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
 
   .scene-nav-sidebar {
-    width: 240px;
+    width: 200px;
+    min-width: 180px;
+    height: 100%;
+    max-height: 100%;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
     border-right: 1px solid var(--el-border-color-light);
     background: var(--el-fill-color-blank);
+    overflow: hidden;
+    box-sizing: border-box;
 
     .sidebar-header {
-      padding: 12px 16px;
+      padding: 0 12px;
+      height: 44px;
+      min-height: 44px;
       border-bottom: 1px solid var(--el-border-color-light);
       display: flex;
-      flex-direction: column;
-      gap: 8px;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      box-sizing: border-box;
 
       h4 {
         margin: 0;
-        font-size: 14px;
+        font-size: 13px;
         font-weight: 500;
       }
     }
 
     .scene-nav-list {
       flex: 1;
+      min-height: 0;
       overflow-y: auto;
-      padding: 8px;
+      padding: 6px;
     }
 
     .scene-nav-item {
-      padding: 10px 12px;
-      border-radius: 6px;
+      padding: 8px 10px;
+      border-radius: 4px;
       cursor: pointer;
       margin-bottom: 4px;
-      transition: all 0.2s;
+      transition: all 0.15s;
       border: 1px solid transparent;
 
       &:hover {
@@ -2390,13 +2459,13 @@ watch(outlineSearchText, (val) => {
       }
 
       .scene-nav-number {
-        font-size: 12px;
+        font-size: 11px;
         color: var(--el-text-color-secondary);
         margin-bottom: 2px;
       }
 
       .scene-nav-location {
-        font-size: 13px;
+        font-size: 12px;
         font-weight: 500;
         margin-bottom: 4px;
         white-space: nowrap;
@@ -2414,38 +2483,48 @@ watch(outlineSearchText, (val) => {
 
   .script-content-area {
     flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     min-width: 0;
     overflow: hidden;
+    box-sizing: border-box;
 
     .content-header {
-      padding: 12px 16px;
+      padding: 0 12px;
+      height: 44px;
+      min-height: 44px;
       border-bottom: 1px solid var(--el-border-color-light);
       display: flex;
       justify-content: space-between;
       align-items: center;
+      background: var(--el-fill-color-blank);
+      flex-shrink: 0;
+      box-sizing: border-box;
 
       h4 {
         margin: 0;
-        font-size: 14px;
+        font-size: 13px;
         font-weight: 500;
       }
     }
 
     .script-content-body {
       flex: 1;
+      min-height: 0;
       overflow-y: auto;
-      padding: 16px 24px;
+      padding: 12px 16px;
       font-family: 'Courier New', monospace;
-      line-height: 1.6;
+      font-size: 13px;
+      line-height: 1.5;
 
       .scene-block {
-        margin-bottom: 32px;
-        padding: 16px;
-        border-radius: 8px;
+        margin-bottom: 16px;
+        padding: 12px;
+        border-radius: 6px;
         border: 1px solid transparent;
-        transition: all 0.2s;
+        transition: all 0.15s;
+        scroll-margin-top: 8px;
 
         &.active {
           border-color: var(--el-color-primary-light-5);
@@ -2454,60 +2533,60 @@ watch(outlineSearchText, (val) => {
 
         .scene-header-line {
           font-weight: bold;
-          font-size: 14px;
-          margin-bottom: 16px;
-          padding-bottom: 8px;
-          border-bottom: 1px solid var(--el-border-color-light);
+          font-size: 12px;
+          margin-bottom: 10px;
+          padding-bottom: 6px;
+          border-bottom: 1px solid var(--el-border-color-lighter);
         }
 
         .scene-script-content {
-          font-size: 13px;
-          line-height: 1.8;
+          font-size: 12px;
+          line-height: 1.6;
 
           .empty-line {
-            height: 8px;
+            height: 6px;
           }
 
           .scene-header-line {
             font-weight: bold;
             color: var(--el-text-color-primary);
-            margin-bottom: 12px;
+            margin-bottom: 8px;
           }
 
           .transition-line {
             text-align: right;
             color: var(--el-text-color-secondary);
-            margin: 16px 0;
+            margin: 10px 0;
           }
 
           .character-name-line {
             text-align: center;
-            margin: 12px 0 4px;
+            margin: 8px 0 2px;
             font-weight: 500;
           }
 
           .parenthetical-line {
             text-align: center;
             color: var(--el-text-color-secondary);
-            font-size: 12px;
-            margin: 4px 0;
+            font-size: 11px;
+            margin: 2px 0;
           }
 
           .dialogue-line {
             text-align: center;
-            margin: 4px 0;
-            padding: 0 60px;
+            margin: 2px 0;
+            padding: 0 40px;
           }
 
           .action-line {
-            margin: 12px 0;
+            margin: 8px 0;
             text-align: justify;
           }
 
           .no-content {
             color: var(--el-text-color-placeholder);
             text-align: center;
-            padding: 24px;
+            padding: 16px;
           }
 
           .fallback-content {
@@ -2552,16 +2631,17 @@ watch(outlineSearchText, (val) => {
 
 // 剧本梗概折叠面板
 .script-synopsis-collapse {
-  margin-top: 16px;
+  flex-shrink: 0;
   border-top: 1px solid var(--el-border-color-light);
 
   :deep(.el-collapse-item__header) {
-    padding: 12px 16px;
+    padding: 8px 12px;
     font-weight: 500;
+    font-size: 13px;
   }
 
   :deep(.el-collapse-item__content) {
-    padding: 16px;
+    padding: 12px;
   }
 }
 
@@ -2615,6 +2695,7 @@ watch(outlineSearchText, (val) => {
   flex: 1;
   overflow: auto;
   padding: 8px;
+  min-height: 0;
 }
 
 .storyboard-item {
@@ -2726,21 +2807,35 @@ watch(outlineSearchText, (val) => {
 }
 
 .character-bindings {
+  height: 100%;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+
   .bindings-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
+    padding: 0 12px;
+    height: 44px;
+    border-bottom: 1px solid var(--el-border-color-light);
+    flex-shrink: 0;
 
     h4 {
       margin: 0;
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 500;
     }
   }
 }
 
 .bindings-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
