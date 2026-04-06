@@ -435,6 +435,26 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
   }
 
   /**
+   * 加载单个场景
+   */
+  async function loadScene(sceneId: string): Promise<void> {
+    loading.value = true
+    error.value = null
+    try {
+      const response = await window.electronAPI.storyToVideo.getScene(sceneId)
+      if (response.success && response.data) {
+        currentScene.value = response.data as SceneScript
+      } else {
+        error.value = response.error || '加载场景失败'
+      }
+    } catch (e: any) {
+      error.value = e.message || '加载场景失败'
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
    * 选择场景
    */
   async function selectScene(scene: SceneScript): Promise<void> {
@@ -1109,6 +1129,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     updateScript,
     // 场景管理
     loadScenes,
+    loadScene,
     selectScene,
     updateScene,
     clearCurrentScene,

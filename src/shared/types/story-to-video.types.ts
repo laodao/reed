@@ -176,6 +176,16 @@ export interface VideoProjectConfig {
     providerConfigId: string
     modelId: string
   }
+  // 视频合成模型
+  videoModel?: {
+    providerConfigId: string
+    modelId: string
+  }
+  // 音频生成模型
+  audioModel?: {
+    providerConfigId: string
+    modelId: string
+  }
 
   // 图像设置
   imageProviderId: string // 图像生成提供商

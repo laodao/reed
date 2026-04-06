@@ -487,8 +487,8 @@
             v-model="projectSettings.config.scriptModel"
             placeholder="选择剧本生成模型"
             style="width: 100%"
-            value-key="providerConfigId"
             clearable
+            filterable
           >
             <el-option-group
               v-for="provider in textProviderModels"
@@ -499,7 +499,7 @@
                 v-for="model in provider.models"
                 :key="`${provider.id}:${model.id}`"
                 :label="`${provider.shortId}/${model.name}`"
-                :value="{ providerConfigId: provider.id, modelId: model.id }"
+                :value="`${provider.id}:${model.id}`"
               />
             </el-option-group>
           </el-select>
@@ -510,8 +510,8 @@
             v-model="projectSettings.config.storyboardModel"
             placeholder="选择分镜生成模型"
             style="width: 100%"
-            value-key="providerConfigId"
             clearable
+            filterable
           >
             <el-option-group
               v-for="provider in textProviderModels"
@@ -522,7 +522,7 @@
                 v-for="model in provider.models"
                 :key="`${provider.id}:${model.id}`"
                 :label="`${provider.shortId}/${model.name}`"
-                :value="{ providerConfigId: provider.id, modelId: model.id }"
+                :value="`${provider.id}:${model.id}`"
               />
             </el-option-group>
           </el-select>
@@ -533,8 +533,8 @@
             v-model="projectSettings.config.imageModel"
             placeholder="选择画面生成模型"
             style="width: 100%"
-            value-key="providerConfigId"
             clearable
+            filterable
           >
             <el-option-group
               v-for="provider in imageProviderModels"
@@ -545,11 +545,57 @@
                 v-for="model in provider.models"
                 :key="`${provider.id}:${model.id}`"
                 :label="`${provider.shortId}/${model.name}`"
-                :value="{ providerConfigId: provider.id, modelId: model.id }"
+                :value="`${provider.id}:${model.id}`"
               />
             </el-option-group>
           </el-select>
           <div class="model-hint">用于生成分镜画面图像</div>
+        </el-form-item>
+        <el-form-item label="视频合成">
+          <el-select
+            v-model="projectSettings.config.videoModel"
+            placeholder="选择视频合成模型"
+            style="width: 100%"
+            clearable
+            filterable
+          >
+            <el-option-group
+              v-for="provider in videoProviderModels"
+              :key="provider.id"
+              :label="provider.name"
+            >
+              <el-option
+                v-for="model in provider.models"
+                :key="`${provider.id}:${model.id}`"
+                :label="`${provider.shortId}/${model.name}`"
+                :value="`${provider.id}:${model.id}`"
+              />
+            </el-option-group>
+          </el-select>
+          <div class="model-hint">用于合成场景视频（可选）</div>
+        </el-form-item>
+        <el-form-item label="音频生成">
+          <el-select
+            v-model="projectSettings.config.audioModel"
+            placeholder="选择音频生成模型"
+            style="width: 100%"
+            clearable
+            filterable
+          >
+            <el-option-group
+              v-for="provider in audioProviderModels"
+              :key="provider.id"
+              :label="provider.name"
+            >
+              <el-option
+                v-for="model in provider.models"
+                :key="`${provider.id}:${model.id}`"
+                :label="`${provider.shortId}/${model.name}`"
+                :value="`${provider.id}:${model.id}`"
+              />
+            </el-option-group>
+          </el-select>
+          <div class="model-hint">用于生成角色配音（可选）</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -798,12 +844,41 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Setting, Plus, MagicStick, Picture, VideoPlay, Delete, InfoFilled, Headset, ZoomIn, RefreshRight } from '@element-plus/icons-vue'
 import { useStoryToVideoStore } from '@/stores/story-to-video'
+import { useTabsStore } from '@/stores/tabs'
 import type { VideoEpisode, VideoProject, SceneScript, CharacterBinding } from '../../../shared/types/story-to-video.types'
 import type { UserProviderConfig, ProviderTemplate } from '../../../shared/types'
 
 const route = useRoute()
 const router = useRouter()
 const store = useStoryToVideoStore()
+const tabsStore = useTabsStore()
+
+/**
+ * 截断标题（最多 maxLength 个字 + 省略号）
+ */
+function truncateTitle(title: string, maxLength = 5): string {
+  if (!title) return ''
+  if (title.length <= maxLength) return title
+  return title.substring(0, maxLength) + '...'
+}
+
+/**
+ * 模型配置转换：对象转字符串
+ */
+function modelToString(model: { providerConfigId: string; modelId: string } | null | undefined): string {
+  if (!model) return ''
+  return `${model.providerConfigId}:${model.modelId}`
+}
+
+/**
+ * 模型配置转换：字符串转对象
+ */
+function stringToModel(str: string): { providerConfigId: string; modelId: string } | null {
+  if (!str) return null
+  const parts = str.split(':')
+  if (parts.length !== 2) return null
+  return { providerConfigId: parts[0], modelId: parts[1] }
+}
 
 // 项目ID
 const projectId = computed(() => route.params.projectId as string)
@@ -1109,10 +1184,12 @@ const projectSettings = reactive({
     fps: 30,
     defaultTransition: 'fade' as const,
     stylePrompt: '',
-    // 模型配置
-    scriptModel: null as { providerConfigId: string; modelId: string } | null,
-    storyboardModel: null as { providerConfigId: string; modelId: string } | null,
-    imageModel: null as { providerConfigId: string; modelId: string } | null
+    // 模型配置（使用字符串格式 "providerConfigId:modelId"）
+    scriptModel: '' as string,
+    storyboardModel: '' as string,
+    imageModel: '' as string,
+    videoModel: '' as string,
+    audioModel: '' as string
   }
 })
 
@@ -1289,6 +1366,111 @@ const imageProviderModels = computed(() => {
   return result
 })
 
+// 视频模型列表（用于视频合成）
+const videoProviderModels = computed(() => {
+  const result: Array<{ id: string; name: string; shortId: string; models: Array<{ id: string; name: string; type?: string }> }> = []
+
+  for (const config of providerConfigs.value) {
+    if (!config.isEnabled) continue
+
+    const template = providerTemplates.value.find(t => t.id === config.templateId)
+    const models: Array<{ id: string; name: string; type?: string }> = []
+
+    // 使用 models 字段筛选视频类型模型
+    if (config.models && config.models.length > 0) {
+      for (const model of config.models) {
+        // 视频类型或支持视频的多模态模型
+        if (model.type === 'video' || model.type === 'multimodal') {
+          models.push({
+            id: model.id,
+            name: model.name,
+            type: model.type
+          })
+        }
+      }
+    }
+    // 如果 models 为空，使用模板的默认模型列表
+    else if (template && template.models.length > 0) {
+      for (const model of template.models) {
+        if (model.type === 'video' || model.type === 'multimodal') {
+          models.push({
+            id: model.id,
+            name: model.name || model.id,
+            type: model.type
+          })
+        }
+      }
+    }
+
+    if (models.length > 0) {
+      const displayShortId = config.shortId || config.name
+      result.push({
+        id: config.id,
+        name: config.name,
+        shortId: displayShortId,
+        models
+      })
+    }
+  }
+
+  // 如果没有专门的视频模型，返回文本模型作为备选
+  if (result.length === 0) {
+    return textProviderModels.value
+  }
+
+  return result
+})
+
+// 音频模型列表（用于音频生成）
+const audioProviderModels = computed(() => {
+  const result: Array<{ id: string; name: string; shortId: string; models: Array<{ id: string; name: string; type?: string }> }> = []
+
+  for (const config of providerConfigs.value) {
+    if (!config.isEnabled) continue
+
+    const template = providerTemplates.value.find(t => t.id === config.templateId)
+    const models: Array<{ id: string; name: string; type?: string }> = []
+
+    // 使用 models 字段筛选音频类型模型
+    if (config.models && config.models.length > 0) {
+      for (const model of config.models) {
+        // 音频类型（TTS、语音合成等）
+        if (model.type === 'audio') {
+          models.push({
+            id: model.id,
+            name: model.name,
+            type: model.type
+          })
+        }
+      }
+    }
+    // 如果 models 为空，使用模板的默认模型列表
+    else if (template && template.models.length > 0) {
+      for (const model of template.models) {
+        if (model.type === 'audio') {
+          models.push({
+            id: model.id,
+            name: model.name || model.id,
+            type: model.type
+          })
+        }
+      }
+    }
+
+    if (models.length > 0) {
+      const displayShortId = config.shortId || config.name
+      result.push({
+        id: config.id,
+        name: config.name,
+        shortId: displayShortId,
+        models
+      })
+    }
+  }
+
+  return result
+})
+
 // 文本模型列表（用于剧本和分镜生成）
 const textProviderModels = computed(() => {
   const result: Array<{ id: string; name: string; shortId: string; models: Array<{ id: string; name: string; contextWindow: number; type?: string }> }> = []
@@ -1396,6 +1578,10 @@ async function loadProject() {
 
   await store.loadProject(projectId.value)
   if (store.currentProject) {
+    // 更新 Tab 标题为项目名称
+    const projectName = truncateTitle(store.currentProject.name)
+    tabsStore.updateTabTitle(route.path, projectName)
+
     // 加载剧集列表
     await store.loadEpisodes(projectId.value)
     // 加载角色绑定
@@ -1406,7 +1592,16 @@ async function loadProject() {
     }
     // 更新项目设置表单
     projectSettings.name = store.currentProject.name
-    projectSettings.config = { ...store.currentProject.config }
+    // 转换模型配置格式（对象 -> 字符串）
+    const config = store.currentProject.config
+    projectSettings.config = {
+      ...config,
+      scriptModel: modelToString(config.scriptModel),
+      storyboardModel: modelToString(config.storyboardModel),
+      imageModel: modelToString(config.imageModel),
+      videoModel: modelToString(config.videoModel),
+      audioModel: modelToString(config.audioModel)
+    }
 
     // 如果只有一个剧集，自动选中
     if (store.episodes.length === 1) {
@@ -1663,6 +1858,7 @@ async function selectEpisode(episode: VideoEpisode) {
   if (store.currentScript) {
     scriptSynopsis.value = store.currentScript.synopsis
   }
+  // Tab 标题保持项目名称，不随剧集选择变化
 }
 
 /**
@@ -1919,14 +2115,24 @@ function formatSceneScriptContent(scene: SceneScript, index: number): string {
 
 /**
  * 将剧本文本格式化为 HTML
+ * 功能增强：人名加粗、场景描述词（镜头术语）加粗、对白人名后加冒号
  */
 function formatScriptToHtml(text: string): string {
   if (!text) return ''
+
+  // 场景描述词（镜头术语）列表
+  const shotTerms = [
+    '特写', '远景', '全景', '中景', '近景', '大远景', '大特写',
+    '细节特写', '中近景', '主观镜头', '跟拍', '摇镜头', '移镜头',
+    '俯拍', '仰拍', '侧拍', '正面镜头', '背面镜头', '过肩镜头',
+    '双人镜头', '三人镜头', '群像镜头', '定格', '慢动作', '快切'
+  ]
 
   // 按行处理
   const lines = text.split('\n')
   const htmlLines: string[] = []
   let lastLineWasEmpty = false
+  let lastLineWasCharacterName = false
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim()
@@ -1937,6 +2143,7 @@ function formatScriptToHtml(text: string): string {
         htmlLines.push('<div class="empty-line"></div>')
         lastLineWasEmpty = true
       }
+      lastLineWasCharacterName = false
       continue
     }
 
@@ -1945,12 +2152,14 @@ function formatScriptToHtml(text: string): string {
     // 场景标题：INT./EXT. 开头
     if (line.match(/^(INT\.|EXT\.|INT\.\/EXT\.)/i)) {
       htmlLines.push(`<div class="scene-header-line">${escapeHtml(line)}</div>`)
+      lastLineWasCharacterName = false
       continue
     }
 
     // 转场标记：CUT TO:, FADE OUT. 等
     if (line.match(/^(CUT TO:|FADE OUT\.|FADE IN:|SMASH CUT TO:|DISSOLVE TO:)/i)) {
       htmlLines.push(`<div class="transition-line">${escapeHtml(line)}</div>`)
+      lastLineWasCharacterName = false
       continue
     }
 
@@ -1960,7 +2169,10 @@ function formatScriptToHtml(text: string): string {
       // 可能是角色名
       const charMatch = line.match(/^\s+(.+)$/)
       if (charMatch && charMatch[1].length < 20) {
-        htmlLines.push(`<div class="character-name-line">${escapeHtml(charMatch[1])}</div>`)
+        // 人名加粗并在后面加冒号
+        const characterName = charMatch[1]
+        htmlLines.push(`<div class="character-name-line"><strong>${escapeHtml(characterName)}</strong>：</div>`)
+        lastLineWasCharacterName = true
         continue
       }
     }
@@ -1968,22 +2180,32 @@ function formatScriptToHtml(text: string): string {
     // 括号提示：(xxx) 格式，居中缩进
     if (line.match(/^\s{5,}\([^)]+\)\s*$/)) {
       htmlLines.push(`<div class="parenthetical-line">${escapeHtml(line.trim())}</div>`)
+      lastLineWasCharacterName = false
       continue
     }
 
     // 对白：有缩进的文本
     if (line.match(/^\s{5,}/)) {
       // 检查是否是对白（前面有角色名的情况）
-      if (i > 0 && lines[i - 1].match(/^\s{10,}[A-Z\u4e00-\u9fa5]+/)) {
+      if (lastLineWasCharacterName) {
         htmlLines.push(`<div class="dialogue-line">${escapeHtml(line.trim())}</div>`)
         continue
       }
     }
 
-    // 动作描述：普通文本
+    // 动作描述：普通文本，检测并加粗镜头术语
     if (line.length > 0) {
-      htmlLines.push(`<p class="action-line">${escapeHtml(line)}</p>`)
+      let processedLine = escapeHtml(line)
+      // 加粗镜头术语
+      shotTerms.forEach(term => {
+        // 使用正则替换，保留原有位置
+        const regex = new RegExp(`(${term})`, 'g')
+        processedLine = processedLine.replace(regex, '<strong>$1</strong>')
+      })
+      htmlLines.push(`<p class="action-line">${processedLine}</p>`)
     }
+
+    lastLineWasCharacterName = false
   }
 
   return htmlLines.join('\n')
@@ -2373,9 +2595,19 @@ async function generateAudio() {
 async function saveProjectSettings() {
   if (!store.currentProject) return
 
+  // 转换模型配置格式（字符串 -> 对象）
+  const configToSave = {
+    ...projectSettings.config,
+    scriptModel: stringToModel(projectSettings.config.scriptModel),
+    storyboardModel: stringToModel(projectSettings.config.storyboardModel),
+    imageModel: stringToModel(projectSettings.config.imageModel),
+    videoModel: stringToModel(projectSettings.config.videoModel),
+    audioModel: stringToModel(projectSettings.config.audioModel)
+  }
+
   const success = await store.updateProject(store.currentProject.id, {
     name: projectSettings.name,
-    config: projectSettings.config
+    config: configToSave
   })
 
   if (success) {
@@ -2630,8 +2862,8 @@ watch(outlineSearchText, (val) => {
 }
 
 .left-panel {
-  width: 280px;
-  min-width: 240px;
+  width: 180px;
+  min-width: 140px;
   min-height: 0;
   background: var(--el-bg-color);
   border-right: 1px solid var(--el-border-color-light);
@@ -2978,7 +3210,11 @@ watch(outlineSearchText, (val) => {
           .character-name-line {
             text-align: center;
             margin: 8px 0 2px;
-            font-weight: 500;
+            font-weight: 600;
+
+            strong {
+              color: var(--el-text-color-primary);
+            }
           }
 
           .parenthetical-line {
@@ -2997,6 +3233,11 @@ watch(outlineSearchText, (val) => {
           .action-line {
             margin: 8px 0;
             text-align: justify;
+
+            strong {
+              color: var(--el-color-primary);
+              font-weight: 600;
+            }
           }
 
           .no-content {
@@ -3124,6 +3365,7 @@ watch(outlineSearchText, (val) => {
   gap: 8px;
   cursor: pointer;
   transition: all 0.2s;
+  position: relative;
 
   &:hover {
     border-color: var(--el-color-primary-light-5);
@@ -3159,8 +3401,11 @@ watch(outlineSearchText, (val) => {
   }
 
   .storyboard-item-actions {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     gap: 4px;
     opacity: 0;
     transition: opacity 0.2s;

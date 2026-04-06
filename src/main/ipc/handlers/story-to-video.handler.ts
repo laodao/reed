@@ -1213,6 +1213,28 @@ async function handleGenerateAudio(
       }
     )
 
+    // 更新数据库中的 dialogues，将音频资产信息写入
+    if (result.dialoguePaths.size > 0 || result.narrationPath) {
+      // 深拷贝 dialogues 避免修改原对象
+      const updatedDialogues = JSON.parse(JSON.stringify(scene.dialogues))
+
+      // 更新每个对话的 audioAsset
+      for (const [dialogueId, audioPath] of result.dialoguePaths) {
+        const dialogueIndex = updatedDialogues.findIndex((d: any) => d.id === dialogueId)
+        if (dialogueIndex !== -1) {
+          updatedDialogues[dialogueIndex].audioAsset = {
+            id: `audio_${dialogueId}_${Date.now()}`,
+            type: 'dialogue',
+            text: updatedDialogues[dialogueIndex].text,
+            audioPath: audioPath
+          }
+        }
+      }
+
+      // 更新场景的 dialogues 字段
+      db.sceneScripts.update(sceneId, { dialogues: updatedDialogues })
+    }
+
     return {
       success: true,
       data: {

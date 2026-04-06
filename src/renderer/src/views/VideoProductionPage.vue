@@ -9,7 +9,7 @@
         </el-button>
         <el-divider direction="vertical" />
         <h2 class="page-title">视频制作</h2>
-        <span class="scene-name">{{ store.currentScene?.sceneName || '加载中...' }}</span>
+        <span class="scene-name">{{ store.currentScene?.location || '加载中...' }}</span>
       </div>
       <div class="header-right">
         <el-tag type="info">共 {{ store.storyboards.length }} 个镜头</el-tag>
@@ -90,41 +90,77 @@
 
       <!-- 右侧：操作面板 -->
       <div class="operation-panel">
-        <!-- 选中的分镜详情 -->
-        <div class="detail-section" v-if="selectedStoryboard">
+        <!-- 固定标题栏 -->
+        <div class="panel-header-fixed" v-if="selectedStoryboard">
           <h3>镜头 {{ selectedStoryboard.shotNumber }} 详情</h3>
-          <el-descriptions :column="1" border size="small">
-            <el-descriptions-item label="景别">{{ getShotTypeLabel(selectedStoryboard.shotType) }}</el-descriptions-item>
-            <el-descriptions-item label="角度">{{ getCameraAngleLabel(selectedStoryboard.cameraAngle) }}</el-descriptions-item>
-            <el-descriptions-item label="运镜">{{ getCameraMovementLabel(selectedStoryboard.cameraMovement) }}</el-descriptions-item>
-            <el-descriptions-item label="时长">{{ selectedStoryboard.duration }}秒</el-descriptions-item>
-            <el-descriptions-item label="画面描述">
-              <div class="description-text">{{ selectedStoryboard.frameDescription }}</div>
-            </el-descriptions-item>
-          </el-descriptions>
+        </div>
 
-          <!-- 预览大图 -->
-          <div v-if="selectedStoryboard.frameImage" class="detail-preview">
-            <img :src="selectedStoryboard.frameImage.filePath || selectedStoryboard.frameImage.url" alt="预览" />
+        <!-- 可滚动内容区域 -->
+        <div class="panel-content">
+          <!-- 选中的分镜详情 -->
+          <div class="detail-section" v-if="selectedStoryboard">
+            <el-descriptions :column="1" border size="small">
+              <el-descriptions-item label="景别">{{ getShotTypeLabel(selectedStoryboard.shotType) }}</el-descriptions-item>
+              <el-descriptions-item label="角度">{{ getCameraAngleLabel(selectedStoryboard.cameraAngle) }}</el-descriptions-item>
+              <el-descriptions-item label="运镜">{{ getCameraMovementLabel(selectedStoryboard.cameraMovement) }}</el-descriptions-item>
+              <el-descriptions-item label="时长">{{ selectedStoryboard.duration }}秒</el-descriptions-item>
+              <el-descriptions-item label="画面描述">
+                <div class="description-text">{{ selectedStoryboard.frameDescription }}</div>
+              </el-descriptions-item>
+            </el-descriptions>
+
+            <!-- 预览大图 -->
+            <div v-if="selectedStoryboard.frameImage" class="detail-preview">
+              <img :src="selectedStoryboard.frameImage.filePath || selectedStoryboard.frameImage.url" alt="预览" />
+            </div>
+
+            <!-- 操作按钮 -->
+            <div class="detail-actions">
+              <el-button type="primary" @click="openRegenerateDialog(selectedStoryboard)" :loading="generatingSingle">
+                {{ selectedStoryboard.frameImage ? '重新生成画面' : '生成画面' }}
+              </el-button>
+              <el-button v-if="selectedStoryboard.frameImage" @click="openImagePreview(selectedStoryboard)">
+                查看大图
+              </el-button>
+            </div>
           </div>
 
-          <!-- 操作按钮 -->
-          <div class="detail-actions">
-            <el-button type="primary" @click="openRegenerateDialog(selectedStoryboard)" :loading="generatingSingle">
-              {{ selectedStoryboard.frameImage ? '重新生成画面' : '生成画面' }}
-            </el-button>
-            <el-button v-if="selectedStoryboard.frameImage" @click="openImagePreview(selectedStoryboard)">
-              查看大图
-            </el-button>
+          <el-empty v-else description="请选择一个分镜" :image-size="80" />
+
+          <!-- 音频播放区域 -->
+          <div class="audio-section" v-if="store.currentScene">
+            <h4>音频播放</h4>
+            <div v-if="sceneDialoguesWithAudio.length > 0" class="audio-list">
+              <div
+                v-for="(dialogue, index) in sceneDialoguesWithAudio"
+                :key="dialogue.id"
+                class="audio-item"
+              >
+                <div class="audio-info">
+                  <span class="audio-character">{{ dialogue.characterName }}</span>
+                  <span class="audio-text">{{ dialogue.text }}</span>
+                </div>
+                <div class="audio-controls">
+                  <el-button
+                    circle
+                    size="small"
+                    :type="currentPlayingId === dialogue.id ? 'primary' : 'default'"
+                    @click="toggleAudioPlay(dialogue)"
+                  >
+                    <el-icon>
+                      <VideoPause v-if="currentPlayingId === dialogue.id && isPlaying" />
+                      <VideoPlay v-else />
+                    </el-icon>
+                  </el-button>
+                </div>
+              </div>
+            </div>
+            <div v-else class="audio-empty">暂无音频</div>
           </div>
         </div>
 
-        <el-empty v-else description="请选择一个分镜" :image-size="80" />
-
-        <!-- 底部操作栏 -->
-        <div class="bottom-actions" v-if="store.storyboards.length > 0">
-          <el-divider />
-          <h3>制作视频</h3>
+        <!-- 固定底部操作栏 -->
+        <div class="bottom-actions-fixed" v-if="store.storyboards.length > 0">
           <div class="action-buttons">
             <el-button @click="generateAudio" :loading="generatingAudio" :disabled="!hasAllImages">
               <el-icon><Headset /></el-icon>
@@ -212,18 +248,29 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  ArrowLeft, Picture, ZoomIn, RefreshRight, Delete, Headset, VideoPlay, InfoFilled
+  ArrowLeft, Picture, ZoomIn, RefreshRight, Delete, Headset, VideoPlay, InfoFilled, VideoPause
 } from '@element-plus/icons-vue'
 import { useStoryToVideoStore } from '@/stores/story-to-video'
-import type { Storyboard } from '../../../shared/types/story-to-video.types'
+import { useTabsStore } from '@/stores/tabs'
+import type { Storyboard, Dialogue, AudioAsset } from '../../../shared/types/story-to-video.types'
 
 const route = useRoute()
 const router = useRouter()
 const store = useStoryToVideoStore()
+const tabsStore = useTabsStore()
+
+/**
+ * 截断标题（最多 maxLength 个字 + 省略号）
+ */
+function truncateTitle(title: string, maxLength = 5): string {
+  if (!title) return ''
+  if (title.length <= maxLength) return title
+  return title.substring(0, maxLength) + '...'
+}
 
 // 路由参数
 const projectId = computed(() => route.params.projectId as string)
@@ -261,9 +308,78 @@ const synthesisProgress = reactive({
   progress: 0
 })
 
+// 音频播放状态
+const currentPlayingId = ref<string | null>(null)
+const isPlaying = ref(false)
+const audioElements = new Map<string, HTMLAudioElement>()
+
 // 计算属性
 const completedCount = computed(() => store.storyboards.filter(s => s.frameImage).length)
 const hasAllImages = computed(() => store.storyboards.length > 0 && store.storyboards.every(s => s.frameImage))
+
+// 过滤有音频的对白
+const sceneDialoguesWithAudio = computed(() => {
+  if (!store.currentScene || !store.currentScene.dialogues) return []
+  return store.currentScene.dialogues.filter(d => d.audioAsset)
+})
+
+// 获取音频 URL
+function getAudioSrc(audioAsset: AudioAsset): string {
+  // AudioAsset 类型使用 audioPath 字段
+  if (audioAsset.audioPath) {
+    // Electron 环境下，使用自定义协议访问本地文件
+    return `file://${audioAsset.audioPath}`
+  }
+  return ''
+}
+
+// 播放/暂停音频
+function toggleAudioPlay(dialogue: Dialogue) {
+  if (!dialogue.audioAsset) return
+
+  const audioId = dialogue.id
+
+  // 如果正在播放同一个音频，则暂停
+  if (currentPlayingId.value === audioId && isPlaying.value) {
+    const audio = audioElements.get(audioId)
+    if (audio) {
+      audio.pause()
+      isPlaying.value = false
+    }
+    return
+  }
+
+  // 停止其他正在播放的音频
+  audioElements.forEach((audio, id) => {
+    if (id !== audioId) {
+      audio.pause()
+      audio.currentTime = 0
+    }
+  })
+
+  // 播放当前音频
+  let audio = audioElements.get(audioId)
+  if (!audio) {
+    audio = new Audio(getAudioSrc(dialogue.audioAsset))
+    audio.onended = () => {
+      if (currentPlayingId.value === audioId) {
+        currentPlayingId.value = null
+        isPlaying.value = false
+      }
+    }
+    audio.onerror = () => {
+      ElMessage.error('音频加载失败')
+      currentPlayingId.value = null
+      isPlaying.value = false
+    }
+    audioElements.set(audioId, audio)
+  }
+
+  audio.currentTime = 0
+  audio.play()
+  currentPlayingId.value = audioId
+  isPlaying.value = true
+}
 
 // 中文映射
 const shotTypeLabels: Record<string, string> = {
@@ -429,6 +545,8 @@ async function generateAudio() {
     const result = await store.generateSceneAudio(store.currentScene.id)
     if (result) {
       ElMessage.success('音频生成完成')
+      // 重新加载场景以获取更新后的音频数据
+      await store.loadScene(store.currentScene.id)
     } else {
       ElMessage.error(store.error || '生成音频失败')
     }
@@ -474,8 +592,25 @@ async function synthesizeVideo() {
 onMounted(async () => {
   await store.loadProject(projectId.value)
   await store.loadEpisodes(projectId.value)
-  await store.loadSceneStoryboards(sceneId.value)
+  // 加载场景并设置当前场景
+  await store.loadScene(sceneId.value)
+  // 加载分镜列表
+  await store.loadStoryboards(sceneId.value)
+  // 更新 Tab 标题为场景地点名称
+  if (store.currentScene?.location) {
+    tabsStore.updateTabTitle(route.path, truncateTitle(store.currentScene.location))
+  }
 })
+
+// 监听场景变化更新 Tab 标题
+watch(
+  () => store.currentScene?.location,
+  (location) => {
+    if (location) {
+      tabsStore.updateTabTitle(route.path, truncateTitle(location))
+    }
+  }
+)
 </script>
 
 <style scoped lang="scss">
@@ -671,25 +806,36 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   background: var(--el-bg-color);
-  overflow-y: auto;
 
-  .detail-section {
-    padding: 16px;
+  .panel-header-fixed {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--el-border-color-light);
+    flex-shrink: 0;
 
     h3 {
-      margin: 0 0 16px 0;
+      margin: 0;
       font-size: 16px;
     }
+  }
+
+  .panel-content {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+  }
+
+  .detail-section {
+    padding: 12px;
 
     .description-text {
-      max-height: 100px;
+      max-height: 80px;
       overflow-y: auto;
       font-size: 13px;
       line-height: 1.5;
     }
 
     .detail-preview {
-      margin-top: 16px;
+      margin-top: 12px;
       border-radius: 8px;
       overflow: hidden;
       background: #000;
@@ -701,20 +847,17 @@ onMounted(async () => {
     }
 
     .detail-actions {
-      margin-top: 16px;
+      margin-top: 12px;
       display: flex;
       gap: 12px;
     }
   }
 
-  .bottom-actions {
-    padding: 16px;
-    margin-top: auto;
-
-    h3 {
-      margin: 16px 0 12px 0;
-      font-size: 16px;
-    }
+  .bottom-actions-fixed {
+    padding: 12px 16px;
+    border-top: 1px solid var(--el-border-color-light);
+    background: var(--el-bg-color);
+    flex-shrink: 0;
 
     .action-buttons {
       display: flex;
@@ -725,7 +868,7 @@ onMounted(async () => {
       display: flex;
       align-items: center;
       gap: 4px;
-      margin-top: 12px;
+      margin-top: 8px;
       font-size: 12px;
       color: var(--el-text-color-secondary);
     }
@@ -761,5 +904,70 @@ onMounted(async () => {
 .generate-info {
   font-size: 13px;
   color: var(--el-text-color-secondary);
+}
+
+.audio-section {
+  padding: 8px 12px;
+
+  h4 {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    color: var(--el-text-color-secondary);
+  }
+
+  .audio-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 150px;
+    overflow-y: auto;
+  }
+
+  .audio-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 8px;
+    background: var(--el-fill-color-light);
+    border-radius: 6px;
+    transition: background 0.2s;
+
+    &:hover {
+      background: var(--el-fill-color);
+    }
+
+    .audio-info {
+      flex: 1;
+      min-width: 0;
+
+      .audio-character {
+        display: block;
+        font-weight: 500;
+        font-size: 12px;
+        color: var(--el-text-color-primary);
+      }
+
+      .audio-text {
+        display: block;
+        font-size: 11px;
+        color: var(--el-text-color-secondary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+    }
+
+    .audio-controls {
+      flex-shrink: 0;
+      margin-left: 8px;
+    }
+  }
+
+  .audio-empty {
+    font-size: 12px;
+    color: var(--el-text-color-placeholder);
+    text-align: center;
+    padding: 8px;
+  }
 }
 </style>

@@ -358,7 +358,7 @@ export class StoryToVideoResourceService {
       // 构建 TTS 请求
       const ttsRequest: TTSRequest = {
         text: text.trim(),
-        voiceId: voiceConfig.voiceId || 'zhitian_emo',
+        voiceId: voiceConfig.voiceId || 'Cherry',
         speed: voiceConfig.speed || 1.0,
         pitch: voiceConfig.pitch || 0,
         language: 'zh'
@@ -416,7 +416,7 @@ export class StoryToVideoResourceService {
       )
 
       // 构建语音配置
-      const voiceId = binding?.voiceConfig?.voiceId || 'zhitian_emo'
+      const voiceId = binding?.voiceConfig?.voiceId || 'Cherry'
       const speed = binding?.voiceConfig?.speed || 1.0
       const pitch = binding?.voiceConfig?.pitch || 0
 
@@ -487,7 +487,7 @@ export class StoryToVideoResourceService {
       const narrationPath = await this.generateNarrationAudio(
         window,
         scene.narration,
-        { voiceId: 'zhitian_emo', speed: 1.0, pitch: 0 },
+        { voiceId: 'Cherry', speed: 1.0, pitch: 0 },
         outputDir
       )
 
