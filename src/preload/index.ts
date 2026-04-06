@@ -1399,6 +1399,18 @@ const electronAPI = {
       ipcRenderer.on('stv:audio-progress', handler)
       return () => ipcRenderer.removeListener('stv:audio-progress', handler)
     },
+    // 分镜生成进度（单个场景）
+    onStoryboardProgress: (callback: (event: any, data: { sceneId: string; shotNumber: number; total: number; storyboard: any }) => void) => {
+      const handler = (_event: any, data: any) => callback(_event, data)
+      ipcRenderer.on('stv:storyboard-progress', handler)
+      return () => ipcRenderer.removeListener('stv:storyboard-progress', handler)
+    },
+    // 分镜批量生成进度（多个场景）
+    onStoryboardsProgress: (callback: (event: any, data: { scriptId: string; sceneIndex: number; total: number; shotProgress: { current: number; total: number } | null }) => void) => {
+      const handler = (_event: any, data: any) => callback(_event, data)
+      ipcRenderer.on('stv:storyboards-progress', handler)
+      return () => ipcRenderer.removeListener('stv:storyboards-progress', handler)
+    },
 
     // 视频合成
     getVideoPresets: () =>

@@ -822,7 +822,7 @@ async function handleGenerateScenes(
 }
 
 async function handleGenerateStoryboard(
-  _event: IpcMainInvokeEvent,
+  event: IpcMainInvokeEvent,
   sceneId: string,
   providerConfigId?: string,
   modelId?: string
@@ -839,9 +839,27 @@ async function handleGenerateStoryboard(
       return { success: false, error: '场景不存在' }
     }
 
-    // 调用 AI 生成分镜
+    // 获取窗口用于发送进度事件
+    const window = BrowserWindow.fromWebContents(event.sender)
+
+    // 调用 AI 生成分镜（使用逐个生成模式）
     const aiService = StoryToVideoAIService.getInstance()
-    const result = await aiService.generateStoryboard(scene, providerConfigId, modelId)
+    const result = await aiService.generateStoryboardsIncremental(
+      scene,
+      providerConfigId,
+      modelId,
+      (shotNumber, total, storyboard) => {
+        // 发送进度事件
+        if (window) {
+          window.webContents.send('stv:storyboard-progress', {
+            sceneId,
+            shotNumber,
+            total,
+            storyboard: storyboard || null
+          })
+        }
+      }
+    )
 
     // 创建分镜记录
     const storyboardRecords: Storyboard[] = []
@@ -873,7 +891,7 @@ async function handleGenerateStoryboard(
 }
 
 async function handleGenerateStoryboards(
-  _event: IpcMainInvokeEvent,
+  event: IpcMainInvokeEvent,
   scriptId: string,
   providerConfigId?: string,
   modelId?: string
@@ -890,12 +908,26 @@ async function handleGenerateStoryboards(
       return { success: false, error: '没有场景，请先生成场景' }
     }
 
-    // 调用 AI 批量生成分镜
+    // 获取窗口用于发送进度事件
+    const window = BrowserWindow.fromWebContents(event.sender)
+
+    // 调用 AI 批量生成分镜（使用逐个分镜生成模式）
     const aiService = StoryToVideoAIService.getInstance()
     const results = await aiService.generateStoryboards(
       scenes,
       providerConfigId,
-      modelId
+      modelId,
+      (sceneIndex, total, shotProgress) => {
+        // 发送进度事件
+        if (window) {
+          window.webContents.send('stv:storyboards-progress', {
+            scriptId,
+            sceneIndex,
+            total,
+            shotProgress: shotProgress || null
+          })
+        }
+      }
     )
 
     // 创建分镜记录

@@ -265,6 +265,7 @@
                 v-if="store.storyboards.length > 0"
                 size="small"
                 type="primary"
+                :disabled="!selectedStoryboard"
                 @click="showGenerateImagesDialog = true"
               >
                 <el-icon><Picture /></el-icon>
@@ -296,8 +297,12 @@
               v-for="storyboard in store.storyboards"
               :key="storyboard.id"
               class="storyboard-item"
-              :class="{ 'has-image': storyboard.frameImage }"
-              @click="openStoryboardEdit(storyboard)"
+              :class="{
+                'has-image': storyboard.frameImage,
+                'selected': selectedStoryboard?.id === storyboard.id
+              }"
+              @click="selectStoryboard(storyboard)"
+              @dblclick="openStoryboardEdit(storyboard)"
             >
               <!-- 画面预览 -->
               <div v-if="storyboard.frameImage" class="storyboard-preview">
@@ -339,6 +344,15 @@
       width="500px"
     >
       <el-form :model="imageGenerateForm" label-width="80px">
+        <el-form-item label="选中分镜">
+          <div v-if="selectedStoryboard" class="selected-storyboard-info">
+            <span class="shot-label">镜头 {{ selectedStoryboard.shotNumber }}</span>
+            <span class="shot-type">{{ selectedStoryboard.shotType }}</span>
+            <el-tag v-if="selectedStoryboard.frameImage" type="success" size="small">已有画面</el-tag>
+            <el-tag v-else type="info" size="small">待生成</el-tag>
+          </div>
+          <div v-else class="no-selection-hint">请先选择一个分镜</div>
+        </el-form-item>
         <el-form-item label="图像风格">
           <el-select v-model="imageGenerateForm.styleName" style="width: 100%">
             <el-option label="电影风格" value="cinematic" />
@@ -348,9 +362,9 @@
             <el-option label="古风仙侠" value="ancient_chinese" />
           </el-select>
         </el-form-item>
-        <el-form-item label="说明">
-          <div class="generate-info">
-            将为当前场景的 {{ store.storyboards.length }} 个分镜生成画面
+        <el-form-item label="画面描述">
+          <div class="frame-description-preview">
+            {{ selectedStoryboard?.frameDescription || '暂无描述' }}
           </div>
         </el-form-item>
       </el-form>
@@ -358,8 +372,8 @@
         <el-button @click="showGenerateImagesDialog = false">取消</el-button>
         <el-button
           type="primary"
-          :loading="store.loading"
-          @click="generateSceneImages"
+          :loading="generatingImage"
+          @click="generateSingleStoryboardImage"
         >
           开始生成
         </el-button>
@@ -788,6 +802,8 @@ const showGenerateImagesDialog = ref(false)
 const showSynthesisDialog = ref(false)
 const showStoryboardEditDialog = ref(false)
 
+// 选中的分镜（用于生成画面）
+const selectedStoryboard = ref<import('../../../shared/types/story-to-video.types').Storyboard | null>(null)
 // 正在编辑的分镜
 const editingStoryboard = ref<import('../../../shared/types/story-to-video.types').Storyboard | null>(null)
 
@@ -841,6 +857,9 @@ const audioProgress = reactive({
   index: 0,
   total: 0
 })
+
+// 图像生成状态
+const generatingImage = ref(false)
 
 // 创建剧集表单
 const episodeForm = reactive({
@@ -1670,6 +1689,8 @@ function scrollToScene(index: number) {
   if (store.scenes[index]) {
     store.selectScene(store.scenes[index])
   }
+  // 切换场景时清空选中的分镜
+  selectedStoryboard.value = null
 }
 
 /**
@@ -1787,6 +1808,18 @@ function openStoryboardEdit(storyboard: import('../../../shared/types/story-to-v
 }
 
 /**
+ * 选中分镜（单击选中，双击编辑）
+ */
+function selectStoryboard(storyboard: import('../../../shared/types/story-to-video.types').Storyboard) {
+  // 切换选中状态（点击已选中的则取消选中）
+  if (selectedStoryboard.value?.id === storyboard.id) {
+    selectedStoryboard.value = null
+  } else {
+    selectedStoryboard.value = storyboard
+  }
+}
+
+/**
  * 保存分镜编辑
  */
 async function saveStoryboardEdit() {
@@ -1864,7 +1897,40 @@ async function generateStoryboards() {
 }
 
 /**
- * 生成场景画面
+ * 生成单个分镜画面
+ */
+async function generateSingleStoryboardImage() {
+  if (!selectedStoryboard.value) {
+    ElMessage.warning('请先选择一个分镜')
+    return
+  }
+
+  try {
+    generatingImage.value = true
+    showGenerateImagesDialog.value = false
+    ElMessage.info(`正在生成镜头 ${selectedStoryboard.value.shotNumber} 的画面，请稍候...`)
+
+    const result = await store.generateStoryboardImage(
+      selectedStoryboard.value.id,
+      imageGenerateForm.styleName
+    )
+
+    if (result) {
+      ElMessage.success('画面生成成功')
+      // 更新选中的分镜引用
+      selectedStoryboard.value = result
+    } else {
+      ElMessage.error(store.error || '生成画面失败')
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '生成画面失败')
+  } finally {
+    generatingImage.value = false
+  }
+}
+
+/**
+ * 生成场景画面（批量，保留备用）
  */
 async function generateSceneImages() {
   if (!store.currentScene) {
@@ -2714,6 +2780,12 @@ watch(outlineSearchText, (val) => {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   }
 
+  &.selected {
+    border-color: var(--el-color-primary);
+    background: var(--el-color-primary-light-9);
+    box-shadow: 0 0 0 2px var(--el-color-primary-light-7);
+  }
+
   &.has-image {
     flex-direction: column;
 
@@ -2793,6 +2865,38 @@ watch(outlineSearchText, (val) => {
 .generate-info {
   font-size: 13px;
   color: var(--el-text-color-secondary);
+}
+
+.selected-storyboard-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  .shot-label {
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+  }
+
+  .shot-type {
+    color: var(--el-text-color-secondary);
+    font-size: 13px;
+  }
+}
+
+.no-selection-hint {
+  color: var(--el-text-color-placeholder);
+  font-size: 13px;
+}
+
+.frame-description-preview {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color-light);
+  padding: 8px 12px;
+  border-radius: 4px;
+  max-height: 120px;
+  overflow-y: auto;
+  line-height: 1.5;
 }
 
 .synthesis-progress {
