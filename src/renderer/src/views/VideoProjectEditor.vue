@@ -276,7 +276,7 @@
             >
               <!-- 画面预览 -->
               <div v-if="storyboard.frameImage" class="storyboard-preview">
-                <img :src="storyboard.frameImage.url" :alt="`镜头${storyboard.shotNumber}`" />
+                <img :src="storyboard.frameImage.filePath || storyboard.frameImage.url" :alt="`镜头${storyboard.shotNumber}`" />
               </div>
               <div v-else class="storyboard-preview placeholder">
                 <el-icon size="32"><Picture /></el-icon>
