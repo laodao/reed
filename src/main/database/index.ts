@@ -46,6 +46,15 @@ import { LwMapRepository } from './repositories/lw-map.repository'
 import { LwPrewriteRepository } from './repositories/lw-prewrite.repository'
 import { LwMemoryRepository } from './repositories/lw-memory.repository'
 import { LwEntityStateRepository } from './repositories/lw-entity-state.repository'
+import { LwPlotCharacterRepository } from './repositories/lw-plot-character.repository'
+import { LwPlotLocationRepository } from './repositories/lw-plot-location.repository'
+import { LwOutlineCharacterRepository } from './repositories/lw-outline-character.repository'
+import { LwOutlineLocationRepository } from './repositories/lw-outline-location.repository'
+import { LwSkillCharacterRepository } from './repositories/lw-skill-character.repository'
+import { LwDesignMessageRepository } from './repositories/lw-design-message.repository'
+import { LwMemoryEntityRepository } from './repositories/lw-memory-entity.repository'
+import { LwTempCharacterTemplateRepository } from './repositories/lw-temp-character-template.repository'
+import { LwTempLocationTemplateRepository } from './repositories/lw-temp-location-template.repository'
 import { DiaryFolderRepository } from './repositories/diary-folder.repository'
 import { DiaryEntryRepository } from './repositories/diary-entry.repository'
 import { DiaryLinkRepository } from './repositories/diary-link.repository'
@@ -56,6 +65,8 @@ import { EpisodeScriptRepository } from './repositories/episode-script.repositor
 import { SceneScriptRepository } from './repositories/scene-script.repository'
 import { StoryboardRepository } from './repositories/storyboard.repository'
 import { CharacterBindingRepository } from './repositories/character-binding.repository'
+import { LocationBindingRepository } from './repositories/location-binding.repository'
+import { ItemBindingRepository } from './repositories/item-binding.repository'
 import { SceneCharacterRepository } from './repositories/scene-character.repository'
 import { SceneDialogueRepository } from './repositories/scene-dialogue.repository'
 import { SceneActionRepository } from './repositories/scene-action.repository'
@@ -113,6 +124,20 @@ export class DatabaseManager {
   public lwPrewrites: LwPrewriteRepository | null = null
   public lwMemories: LwMemoryRepository | null = null
   public lwEntityStates: LwEntityStateRepository | null = null
+
+  // 新增：符合第三范式的长文写作关联表仓库
+  public lwPlotCharacters: LwPlotCharacterRepository | null = null
+  public lwPlotLocations: LwPlotLocationRepository | null = null
+  public lwOutlineCharacters: LwOutlineCharacterRepository | null = null
+  public lwOutlineLocations: LwOutlineLocationRepository | null = null
+  public lwSkillCharacters: LwSkillCharacterRepository | null = null
+  public lwDesignMessages: LwDesignMessageRepository | null = null
+  public lwMemoryEntities: LwMemoryEntityRepository | null = null
+
+  // 临时实体模板仓库
+  public lwTempCharacterTemplates: LwTempCharacterTemplateRepository | null = null
+  public lwTempLocationTemplates: LwTempLocationTemplateRepository | null = null
+
   public diaryFolders: DiaryFolderRepository | null = null
   public diaryEntries: DiaryEntryRepository | null = null
   public diaryLinks: DiaryLinkRepository | null = null
@@ -125,6 +150,8 @@ export class DatabaseManager {
   public sceneScripts: SceneScriptRepository | null = null
   public storyboards: StoryboardRepository | null = null
   public characterBindings: CharacterBindingRepository | null = null
+  public locationBindings: LocationBindingRepository | null = null
+  public itemBindings: ItemBindingRepository | null = null
 
   // 新增：符合第三范式的子表仓库
   public sceneCharacters: SceneCharacterRepository | null = null
@@ -1216,6 +1243,152 @@ export class DatabaseManager {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_lw_entity_snapshots_unique ON lw_entity_state_snapshots(project_id, entity_type, entity_id, chapter_number)
     `)
 
+    // ===================== 长文写作第三范式关联表 =====================
+    // 情节角色关联表（符合第三范式，替代JSON存储）
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_plot_characters (
+        id TEXT PRIMARY KEY,
+        plot_id TEXT NOT NULL,
+        character_id TEXT NOT NULL,
+        created_at INTEGER,
+        UNIQUE(plot_id, character_id),
+        FOREIGN KEY (plot_id) REFERENCES lw_story_plots(id) ON DELETE CASCADE,
+        FOREIGN KEY (character_id) REFERENCES lw_story_characters(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_plot_characters_plot ON lw_plot_characters(plot_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_plot_characters_character ON lw_plot_characters(character_id)`)
+
+    // 情节地点关联表（符合第三范式）
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_plot_locations (
+        id TEXT PRIMARY KEY,
+        plot_id TEXT NOT NULL,
+        location_id TEXT NOT NULL,
+        created_at INTEGER,
+        UNIQUE(plot_id, location_id),
+        FOREIGN KEY (plot_id) REFERENCES lw_story_plots(id) ON DELETE CASCADE,
+        FOREIGN KEY (location_id) REFERENCES lw_story_locations(id) ON DELETE SET NULL
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_plot_locations_plot ON lw_plot_locations(plot_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_plot_locations_location ON lw_plot_locations(location_id)`)
+
+    // 大纲角色关联表（符合第三范式，替代JSON存储）
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_outline_characters (
+        id TEXT PRIMARY KEY,
+        outline_id TEXT NOT NULL,
+        character_id TEXT NOT NULL,
+        created_at INTEGER,
+        UNIQUE(outline_id, character_id),
+        FOREIGN KEY (outline_id) REFERENCES lw_story_outlines(id) ON DELETE CASCADE,
+        FOREIGN KEY (character_id) REFERENCES lw_story_characters(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_outline_characters_outline ON lw_outline_characters(outline_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_outline_characters_character ON lw_outline_characters(character_id)`)
+
+    // 大纲地点关联表（符合第三范式）
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_outline_locations (
+        id TEXT PRIMARY KEY,
+        outline_id TEXT NOT NULL,
+        location_id TEXT NOT NULL,
+        created_at INTEGER,
+        UNIQUE(outline_id, location_id),
+        FOREIGN KEY (outline_id) REFERENCES lw_story_outlines(id) ON DELETE CASCADE,
+        FOREIGN KEY (location_id) REFERENCES lw_story_locations(id) ON DELETE SET NULL
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_outline_locations_outline ON lw_outline_locations(outline_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_outline_locations_location ON lw_outline_locations(location_id)`)
+
+    // 技能角色关联表（符合第三范式，替代JSON存储）
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_skill_characters (
+        id TEXT PRIMARY KEY,
+        skill_id TEXT NOT NULL,
+        character_id TEXT NOT NULL,
+        created_at INTEGER,
+        UNIQUE(skill_id, character_id),
+        FOREIGN KEY (skill_id) REFERENCES lw_story_skills(id) ON DELETE CASCADE,
+        FOREIGN KEY (character_id) REFERENCES lw_story_characters(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_skill_characters_skill ON lw_skill_characters(skill_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_skill_characters_character ON lw_skill_characters(character_id)`)
+
+    // 设计对话消息表（符合第三范式，替代JSON存储）
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_design_messages (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        sort_order INTEGER DEFAULT 0,
+        FOREIGN KEY (conversation_id) REFERENCES lw_design_conversations(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_design_messages_conversation ON lw_design_messages(conversation_id)`)
+
+    // 记忆实体关联表（符合第三范式，替代JSON存储）
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_memory_entities (
+        id TEXT PRIMARY KEY,
+        memory_id TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        entity_name TEXT NOT NULL,
+        created_at INTEGER,
+        UNIQUE(memory_id, entity_type, entity_id),
+        FOREIGN KEY (memory_id) REFERENCES lw_story_memories(id) ON DELETE CASCADE
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_memory_entities_memory ON lw_memory_entities(memory_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_memory_entities_entity ON lw_memory_entities(entity_type, entity_id)`)
+
+    // ===================== 临时实体模板表 =====================
+    // 临时角色模板表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_temp_character_templates (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        gender TEXT NOT NULL DEFAULT 'other',
+        age_min INTEGER DEFAULT 20,
+        age_max INTEGER DEFAULT 50,
+        base_prompt TEXT NOT NULL,
+        style_variants TEXT DEFAULT '[]',
+        negative_prompt TEXT,
+        match_keywords TEXT DEFAULT '[]',
+        sort_order INTEGER DEFAULT 0,
+        is_default INTEGER DEFAULT 0,
+        created_at INTEGER,
+        updated_at INTEGER
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_temp_char_templates_type ON lw_temp_character_templates(type)`)
+
+    // 临时地点模板表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_temp_location_templates (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        base_prompt TEXT NOT NULL,
+        style_variants TEXT DEFAULT '[]',
+        negative_prompt TEXT,
+        match_keywords TEXT DEFAULT '[]',
+        sort_order INTEGER DEFAULT 0,
+        is_default INTEGER DEFAULT 0,
+        created_at INTEGER,
+        updated_at INTEGER
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_temp_loc_templates_type ON lw_temp_location_templates(type)`)
+
     // ===================== 日记模块表 =====================
     // 日记目录表
     this.db.exec(`
@@ -1329,6 +1502,52 @@ export class DatabaseManager {
       )
     `)
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_character_bindings_project_id ON character_bindings(project_id)`)
+
+    // 地点绑定表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS location_bindings (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        long_writing_location_id TEXT NOT NULL,
+        location_name TEXT NOT NULL,
+        image_paths TEXT DEFAULT '[]',
+        thumbnail_path TEXT,
+        generate_config TEXT,
+        base_description TEXT,
+        style_reference TEXT,
+        additional_prompts TEXT,
+        time_of_day TEXT,
+        weather TEXT,
+        generate_images INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES video_projects(id) ON DELETE CASCADE,
+        UNIQUE(project_id, long_writing_location_id)
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_location_bindings_project_id ON location_bindings(project_id)`)
+
+    // 物品绑定表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS item_bindings (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        long_writing_item_id TEXT NOT NULL,
+        item_name TEXT NOT NULL,
+        image_paths TEXT DEFAULT '[]',
+        thumbnail_path TEXT,
+        generate_config TEXT,
+        base_description TEXT,
+        style_reference TEXT,
+        additional_prompts TEXT,
+        generate_images INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES video_projects(id) ON DELETE CASCADE,
+        UNIQUE(project_id, long_writing_item_id)
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_item_bindings_project_id ON item_bindings(project_id)`)
 
     // 剧集表（对应章节）
     this.db.exec(`
@@ -2637,6 +2856,15 @@ export class DatabaseManager {
     if (!overviewColumnNames.includes('other_requirements')) {
       this.db.exec('ALTER TABLE lw_story_overviews ADD COLUMN other_requirements TEXT')
     }
+    if (!overviewColumnNames.includes('key_characters')) {
+      this.db.exec('ALTER TABLE lw_story_overviews ADD COLUMN key_characters TEXT DEFAULT \'[]\'')
+    }
+    if (!overviewColumnNames.includes('key_locations')) {
+      this.db.exec('ALTER TABLE lw_story_overviews ADD COLUMN key_locations TEXT DEFAULT \'[]\'')
+    }
+    if (!overviewColumnNames.includes('is_saved')) {
+      this.db.exec('ALTER TABLE lw_story_overviews ADD COLUMN is_saved INTEGER DEFAULT 0')
+    }
 
     // 检查 lw_story_backgrounds 表是否需要添加新字段
     const backgroundColumns = this.db.prepare("PRAGMA table_info(lw_story_backgrounds)").all() as { name: string }[]
@@ -2673,6 +2901,103 @@ export class DatabaseManager {
       this.db.exec('ALTER TABLE lw_story_locations ADD COLUMN map_id TEXT REFERENCES lw_project_maps(id) ON DELETE SET NULL')
       // 创建 map_id 列的索引
       this.db.exec('CREATE INDEX IF NOT EXISTS idx_lw_locations_map_id ON lw_story_locations(map_id)')
+    }
+
+    // 检查 lw_story_characters 表是否需要添加 importance 字段
+    const characterColumns = this.db.prepare("PRAGMA table_info(lw_story_characters)").all() as { name: string }[]
+    const characterColumnNames = characterColumns.map(col => col.name)
+
+    if (!characterColumnNames.includes('importance')) {
+      this.db.exec('ALTER TABLE lw_story_characters ADD COLUMN importance TEXT DEFAULT \'secondary\'')
+    }
+
+    // 检查 lw_story_characters 表是否需要添加 template_type 和 generated_image_id 字段
+    if (!characterColumnNames.includes('template_type')) {
+      this.db.exec('ALTER TABLE lw_story_characters ADD COLUMN template_type TEXT')
+    }
+    if (!characterColumnNames.includes('generated_image_id')) {
+      this.db.exec('ALTER TABLE lw_story_characters ADD COLUMN generated_image_id TEXT')
+    }
+
+    // 检查 lw_story_locations 表是否需要添加 entity_importance 字段
+    if (!locationColumnNames.includes('entity_importance')) {
+      this.db.exec('ALTER TABLE lw_story_locations ADD COLUMN entity_importance TEXT DEFAULT \'secondary\'')
+    }
+
+    // 检查 lw_story_locations 表是否需要添加 template_type 和 generated_image_id 字段
+    if (!locationColumnNames.includes('template_type')) {
+      this.db.exec('ALTER TABLE lw_story_locations ADD COLUMN template_type TEXT')
+    }
+    if (!locationColumnNames.includes('generated_image_id')) {
+      this.db.exec('ALTER TABLE lw_story_locations ADD COLUMN generated_image_id TEXT')
+    }
+
+    // 检查 lw_story_items 表是否需要添加 importance 字段
+    const itemColumns = this.db.prepare("PRAGMA table_info(lw_story_items)").all() as { name: string }[]
+    const itemColumnNames = itemColumns.map(col => col.name)
+
+    if (!itemColumnNames.includes('importance')) {
+      this.db.exec('ALTER TABLE lw_story_items ADD COLUMN importance TEXT DEFAULT \'secondary\'')
+    }
+
+    // 检查临时实体模板表是否存在，不存在则创建
+    const tempCharTemplateExists = this.db.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='lw_temp_character_templates'"
+    ).get()
+    if (!tempCharTemplateExists) {
+      console.log('[DatabaseManager] 创建 lw_temp_character_templates 表...')
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS lw_temp_character_templates (
+          id TEXT PRIMARY KEY,
+          type TEXT NOT NULL UNIQUE,
+          name TEXT NOT NULL,
+          gender TEXT NOT NULL DEFAULT 'other',
+          age_min INTEGER DEFAULT 20,
+          age_max INTEGER DEFAULT 50,
+          base_prompt TEXT NOT NULL,
+          style_variants TEXT DEFAULT '[]',
+          negative_prompt TEXT,
+          match_keywords TEXT DEFAULT '[]',
+          sort_order INTEGER DEFAULT 0,
+          is_default INTEGER DEFAULT 0,
+          created_at INTEGER,
+          updated_at INTEGER
+        )
+      `)
+      this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_temp_char_templates_type ON lw_temp_character_templates(type)`)
+      console.log('[DatabaseManager] lw_temp_character_templates 表创建完成')
+    }
+
+    const tempLocTemplateExists = this.db.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='lw_temp_location_templates'"
+    ).get()
+    if (!tempLocTemplateExists) {
+      console.log('[DatabaseManager] 创建 lw_temp_location_templates 表...')
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS lw_temp_location_templates (
+          id TEXT PRIMARY KEY,
+          type TEXT NOT NULL UNIQUE,
+          name TEXT NOT NULL,
+          base_prompt TEXT NOT NULL,
+          style_variants TEXT DEFAULT '[]',
+          negative_prompt TEXT,
+          match_keywords TEXT DEFAULT '[]',
+          sort_order INTEGER DEFAULT 0,
+          is_default INTEGER DEFAULT 0,
+          created_at INTEGER,
+          updated_at INTEGER
+        )
+      `)
+      this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_temp_loc_templates_type ON lw_temp_location_templates(type)`)
+      console.log('[DatabaseManager] lw_temp_location_templates 表创建完成')
+    }
+
+    // 初始化默认临时实体模板数据（在表创建后调用）
+    if (this.lwTempCharacterTemplates) {
+      this.lwTempCharacterTemplates.initializeDefaultData()
+    }
+    if (this.lwTempLocationTemplates) {
+      this.lwTempLocationTemplates.initializeDefaultData()
     }
   }
 
@@ -2721,6 +3046,20 @@ export class DatabaseManager {
     this.lwPrewrites = new LwPrewriteRepository(this.db)
     this.lwMemories = new LwMemoryRepository(this.db)
     this.lwEntityStates = new LwEntityStateRepository(this.db)
+
+    // 初始化符合第三范式的长文写作关联表仓库
+    this.lwPlotCharacters = new LwPlotCharacterRepository(this.db)
+    this.lwPlotLocations = new LwPlotLocationRepository(this.db)
+    this.lwOutlineCharacters = new LwOutlineCharacterRepository(this.db)
+    this.lwOutlineLocations = new LwOutlineLocationRepository(this.db)
+    this.lwSkillCharacters = new LwSkillCharacterRepository(this.db)
+    this.lwDesignMessages = new LwDesignMessageRepository(this.db)
+    this.lwMemoryEntities = new LwMemoryEntityRepository(this.db)
+
+    // 初始化临时实体模板仓库
+    this.lwTempCharacterTemplates = new LwTempCharacterTemplateRepository(this.db)
+    this.lwTempLocationTemplates = new LwTempLocationTemplateRepository(this.db)
+
     this.diaryFolders = new DiaryFolderRepository(this.db)
     this.diaryEntries = new DiaryEntryRepository(this.db)
     this.diaryLinks = new DiaryLinkRepository(this.db)
@@ -2733,6 +3072,8 @@ export class DatabaseManager {
     this.sceneScripts = new SceneScriptRepository(this.db)
     this.storyboards = new StoryboardRepository(this.db)
     this.characterBindings = new CharacterBindingRepository(this.db)
+    this.locationBindings = new LocationBindingRepository(this.db)
+    this.itemBindings = new ItemBindingRepository(this.db)
 
     // 初始化新的子表仓库
     this.sceneCharacters = new SceneCharacterRepository(this.db)

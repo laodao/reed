@@ -278,16 +278,30 @@ export class LongWritingAIService {
       return { success: false, error: '项目不存在' }
     }
 
-    const systemPrompt = `你是一位专业的小说创作顾问。请根据用户的想法，生成一个简洁的故事概要。
+    const systemPrompt = `你是一位专业的小说创作顾问。请根据用户的想法，生成一个完整的故事概要。
 
-**重要**：请控制回复长度，总字数不超过800字。
+**重要**：请控制回复长度，总字数不超过1200字。
 
 你的回复必须是纯 JSON 格式（不要包含 \`\`\`json 标记），包含以下字段：
 - title: 故事标题（简洁有力，不超过10个字）
-- storyType: 故事类型（如：xuanxia/kehuan/xuanhuan/lishi/dushi/other）
-- summary: 故事摘要（100-200字，简洁明了）
-- coreConflict: 核心冲突（50-100字，必须生成，描述故事的主要矛盾和冲突）
+- storyType: 故事类型（如：xianxia/kehuan/xuanhuan/lishi/dushi/other）
+- summary: 故事摘要（200-300字，包含故事的主要脉络和结局走向）
+- coreConflict: 核心冲突（100-150字，描述故事的主要矛盾和冲突）
+- keyCharacters: 关键角色数组，每个角色包含：
+  - name: 角色名称
+  - role: 角色定位（主角/配角/反派等）
+  - brief: 简要描述（50字以内）
+  - importance: 重要性（main/secondary/minor）
+  需要生成3-5个主要角色，这些角色将作为后续角色设定的基础
+- keyLocations: 主要场景数组，每个场景包含：
+  - name: 场景名称
+  - type: 场景类型（如：城市/山林/宫殿/村落等）
+  - brief: 简要描述（50字以内）
+  - importance: 重要性（main/secondary/minor）
+  需要生成2-4个主要场景，这些场景将作为后续地点设定的基础
 - estimatedChapters: 预估章节数（数字）
+
+故事概要中的关键角色和主要场景将作为后续生成角色设定、技能设定、物品设定、故事情节的依据，请务必认真生成。
 
 请直接输出 JSON 对象，不要有任何额外文字。`
 
@@ -2044,9 +2058,10 @@ ${previousStatesInfo || '无历史状态'}
   ): Promise<GenerateResponse> {
     const dbManager = getDatabaseManager()
 
-    // 获取项目中的所有角色和地点
+    // 获取项目中的所有角色、地点和物品
     const characters = dbManager.lwCharacters?.getByProjectId(projectId) || []
     const locations = dbManager.lwLocations?.getByProjectId(projectId) || []
+    const items = dbManager.lwItems?.getByProjectId(projectId) || []
 
     const systemPrompt = `你是一位专业的小说内容分析师。请分析章节正文，识别其中涉及的角色和地点。
 
@@ -2087,30 +2102,66 @@ ${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容
 
       // 尝试解析 JSON
       const jsonMatch = result.match(/\{[\s\S]*\}/)
+      let recognizedCharacters: any[] = []
+      let recognizedLocations: any[] = []
+      let events: string[] = []
+
       if (jsonMatch) {
         const data = JSON.parse(jsonMatch[0])
         // 转换为完整的实体信息
-        const recognizedCharacters = (data.characters || []).map((id: string) => {
+        recognizedCharacters = (data.characters || []).map((id: string) => {
           const char = characters.find(c => c.id === id)
           return char ? { id: char.id, name: char.name } : null
         }).filter(Boolean)
 
-        const recognizedLocations = (data.locations || []).map((id: string) => {
+        recognizedLocations = (data.locations || []).map((id: string) => {
           const loc = locations.find(l => l.id === id)
           return loc ? { id: loc.id, name: loc.name } : null
         }).filter(Boolean)
 
-        return {
-          success: true,
-          data: {
-            characters: recognizedCharacters,
-            locations: recognizedLocations,
-            events: data.events || []
-          }
-        }
+        events = data.events || []
       }
 
-      return { success: true, data: { characters: [], locations: [], events: [] } }
+      // 检测新实体
+      let newEntities = null
+      try {
+        const { LwEntityDetectionService } = await import('./lw-entity-detection.service')
+        newEntities = await LwEntityDetectionService.detectNewEntities(
+          projectId,
+          chapterContent,
+          undefined, // sourceOutlineId - 暂时不知道，可以后续补充
+          undefined  // chapterNumber - 暂时不知道
+        )
+
+        // 如果检测到新实体，发送事件通知前端
+        if (newEntities && (
+          newEntities.newCharacters.length > 0 ||
+          newEntities.newLocations.length > 0 ||
+          newEntities.newItems.length > 0
+        )) {
+          window.webContents.send(`longwriting:new-entities-detected:${eventId}`, {
+            type: 'new_entities',
+            newEntities
+          })
+        }
+      } catch (err) {
+        console.error('[LongWritingAI] 新实体检测失败:', err)
+        // 新实体检测失败不影响主流程
+      }
+
+      return {
+        success: true,
+        data: {
+          characters: recognizedCharacters,
+          locations: recognizedLocations,
+          events,
+          newEntities: newEntities ? {
+            newCharacters: newEntities.newCharacters,
+            newLocations: newEntities.newLocations,
+            newItems: newEntities.newItems
+          } : null
+        }
+      }
     } catch (error: any) {
       return { success: false, error: error.message }
     }

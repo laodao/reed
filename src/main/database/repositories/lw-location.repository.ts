@@ -4,7 +4,13 @@
  */
 
 import Database from 'better-sqlite3'
-import { StoryLocation, LocationType, LocationImportance } from '../../../shared/types/longwriting.types'
+import {
+  StoryLocation,
+  LocationType,
+  LocationImportance,
+  EntityImportance,
+  TemporaryLocationTemplateType
+} from '../../../shared/types/longwriting.types'
 
 /**
  * 地点仓库
@@ -18,6 +24,17 @@ export class LwLocationRepository {
   getByProjectId(projectId: string): StoryLocation[] {
     const stmt = this.db.prepare(`
       SELECT * FROM lw_story_locations WHERE project_id = ? ORDER BY created_at DESC
+    `)
+    const rows = stmt.all(projectId) as any[]
+    return rows.map(this.mapToLocation)
+  }
+
+  /**
+   * 根据项目 ID 获取所有临时地点
+   */
+  getTemporaryByProjectId(projectId: string): StoryLocation[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM lw_story_locations WHERE project_id = ? AND entity_importance = 'temporary' ORDER BY created_at DESC
     `)
     const rows = stmt.all(projectId) as any[]
     return rows.map(this.mapToLocation)
@@ -40,6 +57,9 @@ export class LwLocationRepository {
     name: string
     type: LocationType
     importance: LocationImportance
+    entityImportance?: EntityImportance
+    templateType?: TemporaryLocationTemplateType
+    generatedImageId?: string
     description: string
     mapId?: string
   }): StoryLocation {
@@ -47,11 +67,16 @@ export class LwLocationRepository {
     const now = Date.now()
 
     const stmt = this.db.prepare(`
-      INSERT INTO lw_story_locations (id, project_id, name, type, description, importance, map_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO lw_story_locations (id, project_id, name, type, description, importance, entity_importance, template_type, generated_image_id, map_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
-    stmt.run(id, data.projectId, data.name, data.type, data.description, data.importance, data.mapId || null, now, now)
+    stmt.run(
+      id, data.projectId, data.name, data.type, data.description,
+      data.importance, data.entityImportance || 'secondary',
+      data.templateType || null, data.generatedImageId || null,
+      data.mapId || null, now, now
+    )
 
     return {
       id,
@@ -60,6 +85,9 @@ export class LwLocationRepository {
       type: data.type,
       description: data.description,
       importance: data.importance,
+      entityImportance: data.entityImportance || 'secondary' as EntityImportance,
+      templateType: data.templateType,
+      generatedImageId: data.generatedImageId,
       mapId: data.mapId,
       createdAt: now,
       updatedAt: now
@@ -91,6 +119,18 @@ export class LwLocationRepository {
     if (data.importance !== undefined) {
       updates.push('importance = ?')
       values.push(data.importance)
+    }
+    if (data.entityImportance !== undefined) {
+      updates.push('entity_importance = ?')
+      values.push(data.entityImportance)
+    }
+    if (data.templateType !== undefined) {
+      updates.push('template_type = ?')
+      values.push(data.templateType)
+    }
+    if (data.generatedImageId !== undefined) {
+      updates.push('generated_image_id = ?')
+      values.push(data.generatedImageId)
     }
     if (data.mapId !== undefined) {
       updates.push('map_id = ?')
@@ -138,6 +178,9 @@ export class LwLocationRepository {
       type: row.type as LocationType,
       description: row.description,
       importance: row.importance as LocationImportance,
+      entityImportance: row.entity_importance || 'secondary' as EntityImportance,
+      templateType: row.template_type as TemporaryLocationTemplateType | undefined,
+      generatedImageId: row.generated_image_id,
       mapId: row.map_id || undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at

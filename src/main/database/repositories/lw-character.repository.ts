@@ -8,7 +8,9 @@ import {
   StoryCharacter,
   CreateCharacterRequest,
   UpdateCharacterRequest,
-  CharacterRelation
+  CharacterRelation,
+  EntityImportance,
+  TemporaryCharacterTemplateType
 } from '../../../shared/types/longwriting.types'
 
 export class LwCharacterRepository {
@@ -20,6 +22,17 @@ export class LwCharacterRepository {
   getByProjectId(projectId: string): StoryCharacter[] {
     const stmt = this.db.prepare(`
       SELECT * FROM lw_story_characters WHERE project_id = ? ORDER BY created_at ASC
+    `)
+    const rows = stmt.all(projectId) as any[]
+    return rows.map(this.mapToCharacter)
+  }
+
+  /**
+   * 根据项目 ID 获取所有临时角色
+   */
+  getTemporaryByProjectId(projectId: string): StoryCharacter[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM lw_story_characters WHERE project_id = ? AND importance = 'temporary' ORDER BY created_at ASC
     `)
     const rows = stmt.all(projectId) as any[]
     return rows.map(this.mapToCharacter)
@@ -46,16 +59,17 @@ export class LwCharacterRepository {
     const stmt = this.db.prepare(`
       INSERT INTO lw_story_characters (
         id, project_id, portrait_id, name, gender, age, appearance,
-        background, personality, abilities, role_position, major_events,
+        background, personality, abilities, role_position, importance, template_type, generated_image_id, major_events,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     stmt.run(
       id, data.projectId, data.portraitId || null, data.name,
       data.gender || 'male', data.age || 25, data.appearance || '',
       data.background || '', data.personality || '', data.abilities || '',
-      data.rolePosition || 'supporting', data.majorEvents || '',
+      data.rolePosition || 'supporting', data.importance || 'secondary',
+      data.templateType || null, data.generatedImageId || null, data.majorEvents || '',
       now, now
     )
 
@@ -71,6 +85,9 @@ export class LwCharacterRepository {
       personality: data.personality || '',
       abilities: data.abilities || '',
       rolePosition: data.rolePosition || 'supporting',
+      importance: data.importance || 'secondary' as EntityImportance,
+      templateType: data.templateType,
+      generatedImageId: data.generatedImageId,
       majorEvents: data.majorEvents || '',
       createdAt: now,
       updatedAt: now
@@ -97,6 +114,9 @@ export class LwCharacterRepository {
       personality: data.personality,
       abilities: data.abilities,
       role_position: data.rolePosition,
+      importance: data.importance,
+      template_type: data.templateType,
+      generated_image_id: data.generatedImageId,
       major_events: data.majorEvents
     }
 
@@ -199,6 +219,9 @@ export class LwCharacterRepository {
       personality: row.personality || '',
       abilities: row.abilities || '',
       rolePosition: row.role_position,
+      importance: row.importance || 'secondary' as EntityImportance,
+      templateType: row.template_type as TemporaryCharacterTemplateType | undefined,
+      generatedImageId: row.generated_image_id,
       majorEvents: row.major_events || '',
       createdAt: row.created_at,
       updatedAt: row.updated_at

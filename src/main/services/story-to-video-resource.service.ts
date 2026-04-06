@@ -14,6 +14,8 @@ import type {
   Storyboard,
   SceneScript,
   CharacterBinding,
+  LocationBinding,
+  ItemBinding,
   ImageAsset
 } from '../../shared/types/story-to-video.types'
 import type { ImageGenerationRequest, TTSRequest } from '../../shared/types'
@@ -85,6 +87,7 @@ export class StoryToVideoResourceService {
     storyboard: Storyboard,
     scene: SceneScript,
     characterBindings: CharacterBinding[],
+    locationBindings: LocationBinding[],
     styleConfig: StyleConfig
   ): string {
     const parts: string[] = []
@@ -95,17 +98,26 @@ export class StoryToVideoResourceService {
     // 2. 场景描述
     parts.push(scene.sceneDescription)
 
-    // 3. 分镜画面描述
+    // 3. 地点描述（新增）
+    // 从场景的 location 字段匹配地点绑定
+    const locationBinding = locationBindings.find(
+      b => b.locationName === scene.location
+    )
+    if (locationBinding?.generateConfig?.baseDescription) {
+      parts.push(`location: ${locationBinding.generateConfig.baseDescription}`)
+    }
+
+    // 4. 分镜画面描述
     if (storyboard.frameDescription) {
       parts.push(storyboard.frameDescription)
     }
 
-    // 4. 主体描述
+    // 5. 主体描述
     if (storyboard.subject) {
       parts.push(`main subject: ${storyboard.subject}`)
     }
 
-    // 5. 角色描述
+    // 6. 角色描述
     for (const char of storyboard.characters) {
       const binding = characterBindings.find(
         b => b.longWritingCharacterId === char.characterId
@@ -127,12 +139,12 @@ export class StoryToVideoResourceService {
       }
     }
 
-    // 6. 氛围和光线
+    // 7. 氛围和光线
     if (scene.mood) {
       parts.push(`${scene.mood} atmosphere`)
     }
 
-    // 7. 时间和天气
+    // 8. 时间和天气
     if (scene.timeOfDay) {
       parts.push(`${scene.timeOfDay} lighting`)
     }
@@ -140,16 +152,16 @@ export class StoryToVideoResourceService {
       parts.push(scene.weather)
     }
 
-    // 8. 构图
+    // 9. 构图
     if (storyboard.composition) {
       parts.push(storyboard.composition)
     }
 
-    // 9. 镜头语言
+    // 10. 镜头语言
     parts.push(this.getShotTypePrompt(storyboard.shotType))
     parts.push(this.getCameraAnglePrompt(storyboard.cameraAngle))
 
-    // 10. 质量后缀
+    // 11. 质量后缀
     parts.push(styleConfig.qualitySuffix)
 
     return parts.join(', ')
@@ -195,6 +207,7 @@ export class StoryToVideoResourceService {
     storyboard: Storyboard,
     scene: SceneScript,
     characterBindings: CharacterBinding[],
+    locationBindings: LocationBinding[],
     styleName: string,
     providerConfigId?: string,
     modelId?: string,
@@ -218,6 +231,7 @@ export class StoryToVideoResourceService {
       storyboard,
       scene,
       characterBindings,
+      locationBindings,
       styleConfig
     )
 
@@ -281,6 +295,7 @@ export class StoryToVideoResourceService {
     storyboards: Storyboard[],
     scene: SceneScript,
     characterBindings: CharacterBinding[],
+    locationBindings: LocationBinding[],
     styleName: string,
     providerConfigId?: string,
     modelId?: string,
@@ -311,6 +326,7 @@ export class StoryToVideoResourceService {
           storyboard,
           scene,
           characterBindings,
+          locationBindings,
           styleName,
           providerConfigId,
           modelId,
@@ -520,5 +536,466 @@ export class StoryToVideoResourceService {
     }
 
     return result
+  }
+
+  // ==================== 地点和物品绑定 ====================
+
+  /**
+   * 自动创建地点绑定
+   * 从长文写作项目中的地点列表创建视频项目的地点绑定
+   */
+  autoCreateLocationBindings(
+    projectId: string,
+    locations: Array<{ id: string; name: string; description: string }>
+  ): LocationBinding[] {
+    const db = getDatabaseManager()
+    if (!db.locationBindings) return []
+
+    const bindings: LocationBinding[] = []
+
+    for (const location of locations) {
+      // 检查是否已存在绑定
+      const existing = db.locationBindings.getByLongWritingLocationId(projectId, location.id)
+      if (existing) {
+        bindings.push(existing)
+        continue
+      }
+
+      // 创建新绑定
+      const binding = db.locationBindings.create({
+        projectId,
+        longWritingLocationId: location.id,
+        locationName: location.name,
+        imagePaths: [],
+        generateConfig: {
+          baseDescription: location.description
+        },
+        generateImages: true
+      })
+      bindings.push(binding)
+    }
+
+    console.log(`[StoryToVideoResource] 自动创建 ${bindings.length} 个地点绑定`)
+    return bindings
+  }
+
+  /**
+   * 自动创建物品绑定
+   * 从长文写作项目中的物品列表创建视频项目的物品绑定
+   */
+  autoCreateItemBindings(
+    projectId: string,
+    items: Array<{ id: string; name: string; description: string }>
+  ): ItemBinding[] {
+    const db = getDatabaseManager()
+    if (!db.itemBindings) return []
+
+    const bindings: ItemBinding[] = []
+
+    for (const item of items) {
+      // 检查是否已存在绑定
+      const existing = db.itemBindings.getByLongWritingItemId(projectId, item.id)
+      if (existing) {
+        bindings.push(existing)
+        continue
+      }
+
+      // 创建新绑定
+      const binding = db.itemBindings.create({
+        projectId,
+        longWritingItemId: item.id,
+        itemName: item.name,
+        imagePaths: [],
+        generateConfig: {
+          baseDescription: item.description
+        },
+        generateImages: true
+      })
+      bindings.push(binding)
+    }
+
+    console.log(`[StoryToVideoResource] 自动创建 ${bindings.length} 个物品绑定`)
+    return bindings
+  }
+
+  /**
+   * 获取项目的地点绑定列表
+   */
+  getLocationBindings(projectId: string): LocationBinding[] {
+    const db = getDatabaseManager()
+    return db.locationBindings?.getByProjectId(projectId) || []
+  }
+
+  /**
+   * 获取项目的物品绑定列表
+   */
+  getItemBindings(projectId: string): ItemBinding[] {
+    const db = getDatabaseManager()
+    return db.itemBindings?.getByProjectId(projectId) || []
+  }
+
+  /**
+   * 更新地点绑定的图片
+   */
+  updateLocationBindingImages(
+    locationBindingId: string,
+    imagePaths: string[]
+  ): LocationBinding | null {
+    const db = getDatabaseManager()
+    if (!db.locationBindings) return null
+
+    return db.locationBindings.update(locationBindingId, { imagePaths })
+  }
+
+  /**
+   * 更新物品绑定的图片
+   */
+  updateItemBindingImages(
+    itemBindingId: string,
+    imagePaths: string[]
+  ): ItemBinding | null {
+    const db = getDatabaseManager()
+    if (!db.itemBindings) return null
+
+    return db.itemBindings.update(itemBindingId, { imagePaths })
+  }
+
+  // ==================== 临时实体图片生成 ====================
+
+  /**
+   * 为临时角色生成形象图片
+   * 使用模板生成固定形象，保持视频一致性
+   */
+  async generateTemporaryCharacterImage(
+    window: BrowserWindow,
+    characterId: string,
+    styleName: string = 'cinematic',
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<{ success: boolean; imageId?: string; error?: string }> {
+    const db = getDatabaseManager()
+    if (!db.lwCharacters) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    const character = db.lwCharacters.getById(characterId)
+    if (!character) {
+      return { success: false, error: '角色不存在' }
+    }
+
+    if (character.importance !== 'temporary') {
+      return { success: false, error: '只能为临时角色生成模板图片' }
+    }
+
+    // 导入临时实体模板服务
+    const { TemporaryEntityTemplateService } = await import('./temporary-entity-template.service')
+    const templateService = TemporaryEntityTemplateService.getInstance()
+
+    // 获取模板类型，如果没有则匹配
+    const templateType = character.templateType ||
+      templateService.matchCharacterTemplate(character.name, character.appearance).templateType
+
+    // 生成图片提示词
+    const prompt = templateService.generateCharacterImagePrompt(
+      templateType as any,
+      styleName,
+      character.appearance
+    )
+    const negativePrompt = templateService.getCharacterNegativePrompt(templateType as any)
+
+    console.log(`[StoryToVideoResource] 为临时角色 "${character.name}" 生成图片`)
+    console.log(`[StoryToVideoResource] 模板类型: ${templateType}`)
+    console.log(`[StoryToVideoResource] Prompt: ${prompt.substring(0, 100)}...`)
+
+    try {
+      // 调用图像生成服务
+      const request: ImageGenerationRequest = {
+        prompt,
+        negativePrompt,
+        width: 512,
+        height: 768,
+        model: modelId,
+        providerConfigId,
+        count: 1,
+        skipHistory: true
+      }
+
+      const response = await ImageService.generateImage(window, request)
+
+      if (response.success && response.images && response.images.length > 0) {
+        const imageInfo = response.images[0]
+
+        // 更新角色的 generatedImageId
+        const updated = db.lwCharacters.update(characterId, {
+          generatedImageId: imageInfo.id || imageInfo.filePath
+        })
+
+        console.log(`[StoryToVideoResource] 临时角色图片生成成功: ${imageInfo.filePath}`)
+
+        return {
+          success: true,
+          imageId: imageInfo.id || imageInfo.filePath
+        }
+      }
+
+      return {
+        success: false,
+        error: response.error || '图片生成失败'
+      }
+    } catch (error: any) {
+      console.error('[StoryToVideoResource] 生成临时角色图片失败:', error)
+      return { success: false, error: error.message }
+    }
+  }
+
+  /**
+   * 为临时地点生成形象图片
+   */
+  async generateTemporaryLocationImage(
+    window: BrowserWindow,
+    locationId: string,
+    styleName: string = 'cinematic',
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<{ success: boolean; imageId?: string; error?: string }> {
+    const db = getDatabaseManager()
+    if (!db.lwLocations) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    const location = db.lwLocations.getById(locationId)
+    if (!location) {
+      return { success: false, error: '地点不存在' }
+    }
+
+    if (location.entityImportance !== 'temporary') {
+      return { success: false, error: '只能为临时地点生成模板图片' }
+    }
+
+    // 导入临时实体模板服务
+    const { TemporaryEntityTemplateService } = await import('./temporary-entity-template.service')
+    const templateService = TemporaryEntityTemplateService.getInstance()
+
+    // 获取模板类型，如果没有则匹配
+    const templateType = location.templateType ||
+      templateService.matchLocationTemplate(location.name, location.description).templateType
+
+    // 生成图片提示词
+    const prompt = templateService.generateLocationImagePrompt(
+      templateType as any,
+      styleName,
+      location.description
+    )
+    const negativePrompt = templateService.getLocationNegativePrompt(templateType as any)
+
+    console.log(`[StoryToVideoResource] 为临时地点 "${location.name}" 生成图片`)
+
+    try {
+      // 调用图像生成服务
+      const request: ImageGenerationRequest = {
+        prompt,
+        negativePrompt,
+        width: 1920,
+        height: 1080,
+        model: modelId,
+        providerConfigId,
+        count: 1,
+        skipHistory: true
+      }
+
+      const response = await ImageService.generateImage(window, request)
+
+      if (response.success && response.images && response.images.length > 0) {
+        const imageInfo = response.images[0]
+
+        // 更新地点的 generatedImageId
+        const updated = db.lwLocations.update(locationId, {
+          generatedImageId: imageInfo.id || imageInfo.filePath
+        })
+
+        return {
+          success: true,
+          imageId: imageInfo.id || imageInfo.filePath
+        }
+      }
+
+      return {
+        success: false,
+        error: response.error || '图片生成失败'
+      }
+    } catch (error: any) {
+      console.error('[StoryToVideoResource] 生成临时地点图片失败:', error)
+      return { success: false, error: error.message }
+    }
+  }
+
+  /**
+   * 批量为项目的临时实体生成图片
+   */
+  async batchGenerateTemporaryEntityImages(
+    window: BrowserWindow,
+    projectId: string,
+    styleName: string = 'cinematic',
+    providerConfigId?: string,
+    modelId?: string,
+    onProgress?: (type: string, current: number, total: number) => void
+  ): Promise<{
+    characters: { id: string; success: boolean; imageId?: string }[]
+    locations: { id: string; success: boolean; imageId?: string }[]
+  }> {
+    const db = getDatabaseManager()
+    const result = {
+      characters: [] as { id: string; success: boolean; imageId?: string }[],
+      locations: [] as { id: string; success: boolean; imageId?: string }[]
+    }
+
+    // 获取所有临时角色
+    const tempCharacters = db.lwCharacters?.getTemporaryByProjectId(projectId) || []
+    console.log(`[StoryToVideoResource] 找到 ${tempCharacters.length} 个临时角色需要生成图片`)
+
+    for (let i = 0; i < tempCharacters.length; i++) {
+      const char = tempCharacters[i]
+
+      // 跳过已有图片的角色
+      if (char.generatedImageId || char.portraitId) {
+        result.characters.push({ id: char.id, success: true, imageId: char.generatedImageId || char.portraitId })
+        continue
+      }
+
+      if (onProgress) onProgress('character', i, tempCharacters.length)
+
+      const genResult = await this.generateTemporaryCharacterImage(
+        window,
+        char.id,
+        styleName,
+        providerConfigId,
+        modelId
+      )
+
+      result.characters.push({
+        id: char.id,
+        success: genResult.success,
+        imageId: genResult.imageId
+      })
+
+      // 添加延迟避免 API 限流
+      if (i < tempCharacters.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+    }
+
+    // 获取所有临时地点
+    const tempLocations = db.lwLocations?.getTemporaryByProjectId(projectId) || []
+    console.log(`[StoryToVideoResource] 找到 ${tempLocations.length} 个临时地点需要生成图片`)
+
+    for (let i = 0; i < tempLocations.length; i++) {
+      const loc = tempLocations[i]
+
+      // 跳过已有图片的地点
+      if (loc.generatedImageId) {
+        result.locations.push({ id: loc.id, success: true, imageId: loc.generatedImageId })
+        continue
+      }
+
+      if (onProgress) onProgress('location', i, tempLocations.length)
+
+      const genResult = await this.generateTemporaryLocationImage(
+        window,
+        loc.id,
+        styleName,
+        providerConfigId,
+        modelId
+      )
+
+      result.locations.push({
+        id: loc.id,
+        success: genResult.success,
+        imageId: genResult.imageId
+      })
+
+      // 添加延迟避免 API 限流
+      if (i < tempLocations.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+    }
+
+    console.log('[StoryToVideoResource] 批量生成临时实体图片完成:', result)
+    return result
+  }
+
+  /**
+   * 获取临时实体的图片路径（用于视频制作）
+   * 如果是临时实体且没有图片，返回模板生成的提示词
+   */
+  getTemporaryEntityImagePrompt(
+    entityId: string,
+    entityType: 'character' | 'location',
+    styleName: string = 'cinematic'
+  ): { hasImage: boolean; imagePath?: string; prompt?: string } {
+    const db = getDatabaseManager()
+
+    if (entityType === 'character') {
+      const character = db.lwCharacters?.getById(entityId)
+      if (!character) {
+        return { hasImage: false }
+      }
+
+      // 如果有图片，返回图片路径
+      if (character.generatedImageId || character.portraitId) {
+        return {
+          hasImage: true,
+          imagePath: character.generatedImageId || character.portraitId
+        }
+      }
+
+      // 如果是临时角色但没有图片，返回模板提示词
+      if (character.importance === 'temporary') {
+        const { TemporaryEntityTemplateService } = require('./temporary-entity-template.service')
+        const templateService = TemporaryEntityTemplateService.getInstance()
+
+        const templateType = character.templateType ||
+          templateService.matchCharacterTemplate(character.name, character.appearance).templateType
+
+        const prompt = templateService.generateCharacterImagePrompt(
+          templateType as any,
+          styleName,
+          character.appearance
+        )
+
+        return { hasImage: false, prompt }
+      }
+    } else if (entityType === 'location') {
+      const location = db.lwLocations?.getById(entityId)
+      if (!location) {
+        return { hasImage: false }
+      }
+
+      // 如果有图片，返回图片路径
+      if (location.generatedImageId) {
+        return {
+          hasImage: true,
+          imagePath: location.generatedImageId
+        }
+      }
+
+      // 如果是临时地点但没有图片，返回模板提示词
+      if (location.entityImportance === 'temporary') {
+        const { TemporaryEntityTemplateService } = require('./temporary-entity-template.service')
+        const templateService = TemporaryEntityTemplateService.getInstance()
+
+        const templateType = location.templateType ||
+          templateService.matchLocationTemplate(location.name, location.description).templateType
+
+        const prompt = templateService.generateLocationImagePrompt(
+          templateType as any,
+          styleName,
+          location.description
+        )
+
+        return { hasImage: false, prompt }
+      }
+    }
+
+    return { hasImage: false }
   }
 }

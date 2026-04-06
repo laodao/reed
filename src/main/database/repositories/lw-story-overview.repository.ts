@@ -58,8 +58,11 @@ export class LwStoryOverviewRepository {
       otherRequirements: undefined,
       summary: '',
       coreConflict: '',
+      keyCharacters: [],
+      keyLocations: [],
       estimatedChapters: 0,
       isLocked: false,
+      isSaved: false,
       createdAt: now,
       updatedAt: now
     }
@@ -78,7 +81,7 @@ export class LwStoryOverviewRepository {
     const fields = [
       'story_type', 'title', 'core_idea', 'style', 'target_reader',
       'estimated_length', 'other_requirements', 'summary', 'core_conflict',
-      'estimated_chapters', 'is_locked'
+      'key_characters', 'key_locations', 'estimated_chapters', 'is_locked', 'is_saved'
     ]
 
     const dataMap: Record<string, any> = {
@@ -91,8 +94,11 @@ export class LwStoryOverviewRepository {
       other_requirements: data.otherRequirements,
       summary: data.summary,
       core_conflict: data.coreConflict,
+      key_characters: data.keyCharacters ? JSON.stringify(data.keyCharacters) : undefined,
+      key_locations: data.keyLocations ? JSON.stringify(data.keyLocations) : undefined,
       estimated_chapters: data.estimatedChapters,
-      is_locked: data.isLocked ? 1 : 0
+      is_locked: data.isLocked ? 1 : 0,
+      is_saved: data.isSaved ? 1 : 0
     }
 
     for (const field of fields) {
@@ -153,8 +159,11 @@ export class LwStoryOverviewRepository {
       otherRequirements: row.other_requirements || undefined,
       summary: row.summary || '',
       coreConflict: row.core_conflict || '',
+      keyCharacters: JSON.parse(row.key_characters || '[]'),
+      keyLocations: JSON.parse(row.key_locations || '[]'),
       estimatedChapters: row.estimated_chapters || 0,
       isLocked: !!row.is_locked,
+      isSaved: !!row.is_saved,
       createdAt: row.created_at,
       updatedAt: row.updated_at
     }

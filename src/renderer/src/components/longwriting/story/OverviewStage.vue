@@ -88,14 +88,47 @@
 
       <!-- 操作按钮 -->
       <div class="action-buttons">
-        <el-button v-if="!generating" type="primary" size="large" @click="generateOverview">
+        <!-- 保存按钮 -->
+        <el-button
+          type="success"
+          size="large"
+          @click="saveForm"
+          :disabled="!form.coreIdea.trim()"
+        >
+          <el-icon><DocumentChecked /></el-icon>
+          保存表单
+        </el-button>
+
+        <!-- 生成概要按钮 - 只有保存后才能点击 -->
+        <el-button
+          v-if="!generating"
+          type="primary"
+          size="large"
+          @click="generateOverview"
+          :disabled="!isFormSaved"
+        >
           <el-icon><MagicStick /></el-icon>
           生成概要
+          <span v-if="!isFormSaved" class="btn-tip">（请先保存表单）</span>
         </el-button>
         <el-button v-else type="danger" size="large" @click="cancelGeneration">
           <el-icon><Close /></el-icon>
           取消生成
         </el-button>
+      </div>
+
+      <!-- 保存状态提示 -->
+      <div v-if="isFormSaved" class="save-status">
+        <el-tag type="success" effect="plain">
+          <el-icon><Check /></el-icon>
+          表单已保存，可生成概要
+        </el-tag>
+      </div>
+      <div v-else-if="form.coreIdea.trim()" class="save-status">
+        <el-tag type="warning" effect="plain">
+          <el-icon><WarningFilled /></el-icon>
+          请先保存表单后再生成概要
+        </el-tag>
       </div>
 
       <!-- 生成进度 -->
@@ -141,6 +174,54 @@
                 :rows="2"
               />
             </el-form-item>
+
+            <!-- 关键角色 -->
+            <el-form-item label="关键角色">
+              <div class="key-characters-list">
+                <div v-for="(character, index) in generatedOverview.keyCharacters" :key="index" class="key-entity-item">
+                  <el-input v-model="character.name" placeholder="角色名" style="width: 120px" />
+                  <el-select v-model="character.role" placeholder="定位" style="width: 100px">
+                    <el-option label="主角" value="主角" />
+                    <el-option label="配角" value="配角" />
+                    <el-option label="反派" value="反派" />
+                    <el-option label="中立" value="中立" />
+                  </el-select>
+                  <el-input v-model="character.brief" placeholder="简要描述" style="width: 200px" />
+                  <el-select v-model="character.importance" placeholder="重要性" style="width: 80px">
+                    <el-option label="主要" value="main" />
+                    <el-option label="次要" value="secondary" />
+                    <el-option label="边缘" value="minor" />
+                  </el-select>
+                  <el-button type="danger" size="small" @click="removeKeyCharacter(index)" :icon="Delete" circle />
+                </div>
+                <el-button type="primary" size="small" @click="addKeyCharacter">
+                  <el-icon><Plus /></el-icon>
+                  添加角色
+                </el-button>
+              </div>
+            </el-form-item>
+
+            <!-- 主要场景 -->
+            <el-form-item label="主要场景">
+              <div class="key-locations-list">
+                <div v-for="(location, index) in generatedOverview.keyLocations" :key="index" class="key-entity-item">
+                  <el-input v-model="location.name" placeholder="场景名" style="width: 120px" />
+                  <el-input v-model="location.type" placeholder="类型" style="width: 100px" />
+                  <el-input v-model="location.brief" placeholder="简要描述" style="width: 200px" />
+                  <el-select v-model="location.importance" placeholder="重要性" style="width: 80px">
+                    <el-option label="主要" value="main" />
+                    <el-option label="次要" value="secondary" />
+                    <el-option label="边缘" value="minor" />
+                  </el-select>
+                  <el-button type="danger" size="small" @click="removeKeyLocation(index)" :icon="Delete" circle />
+                </div>
+                <el-button type="primary" size="small" @click="addKeyLocation">
+                  <el-icon><Plus /></el-icon>
+                  添加场景
+                </el-button>
+              </div>
+            </el-form-item>
+
             <el-form-item label="预估章节">
               <el-input-number v-model="generatedOverview.estimatedChapters" :min="1" :max="1000" />
             </el-form-item>
@@ -159,8 +240,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, inject, toRaw } from 'vue'
 import { ElMessage } from 'element-plus'
-import { MagicStick, Close } from '@element-plus/icons-vue'
-import type { DictionaryItem } from '../../../../shared/types/longwriting.types'
+import { MagicStick, Close, DocumentChecked, Check, WarningFilled, Plus, Delete } from '@element-plus/icons-vue'
+import type { DictionaryItem, KeyCharacter, KeyLocation } from '../../../../shared/types/longwriting.types'
 
 // Props
 const props = defineProps<{
@@ -266,24 +347,35 @@ const form = ref({
   otherRequirements: ''
 })
 
+// 表单是否已保存
+const isFormSaved = ref(false)
+
 // 生成状态
 const generating = ref(false)
 const currentEventId = ref<string | null>(null)
 const generatingContent = ref('')
 
 // 生成结果
-const generatedOverview = ref<{
+interface GeneratedOverviewResult {
   titleSuggestions: string[]
   selectedTitle: string
   summary: string
   coreConflict: string
+  keyCharacters: KeyCharacter[]
+  keyLocations: KeyLocation[]
   estimatedChapters: number
-} | null>(null)
+}
+const generatedOverview = ref<GeneratedOverviewResult | null>(null)
 
 // 生成概要
 async function generateOverview() {
   if (!form.value.coreIdea.trim()) {
     ElMessage.warning('请输入核心构思')
+    return
+  }
+
+  if (!isFormSaved.value) {
+    ElMessage.warning('请先保存表单后再生成概要')
     return
   }
 
@@ -392,6 +484,8 @@ function parseOverviewResult(content: string) {
       selectedTitle: data.title || '',
       summary: data.summary || '',
       coreConflict: data.coreConflict || '',
+      keyCharacters: data.keyCharacters || [],
+      keyLocations: data.keyLocations || [],
       estimatedChapters: data.estimatedChapters || 100
     }
 
@@ -412,6 +506,8 @@ function parseOverviewResult(content: string) {
         selectedTitle: '',
         summary: content.substring(0, 500),
         coreConflict: '',
+        keyCharacters: [],
+        keyLocations: [],
         estimatedChapters: 100
       }
       ElMessage.warning('AI 返回格式不标准，已显示原始内容')
@@ -448,6 +544,69 @@ function regenerate() {
   generatedOverview.value = null
 }
 
+// 保存表单
+async function saveForm() {
+  if (!form.value.coreIdea.trim()) {
+    ElMessage.warning('请输入核心构思')
+    return
+  }
+
+  const rawForm = toRaw(form.value)
+  const overviewData = {
+    storyType: rawForm.storyType,
+    title: rawForm.title || undefined,
+    coreIdea: rawForm.coreIdea,
+    style: rawForm.style || undefined,
+    targetReader: rawForm.targetReader || undefined,
+    estimatedLength: rawForm.estimatedLength || undefined,
+    otherRequirements: rawForm.otherRequirements || undefined,
+    isSaved: true
+  }
+
+  const result = await window.electronAPI.longwriting.updateStoryOverview(props.projectId, overviewData)
+
+  if (result.success) {
+    isFormSaved.value = true
+    ElMessage.success('表单已保存')
+  } else {
+    ElMessage.error(result.error || '保存失败')
+  }
+}
+
+// 添加关键角色
+function addKeyCharacter() {
+  if (!generatedOverview.value) return
+  generatedOverview.value.keyCharacters.push({
+    name: '',
+    role: '配角',
+    brief: '',
+    importance: 'secondary'
+  })
+}
+
+// 移除关键角色
+function removeKeyCharacter(index: number) {
+  if (!generatedOverview.value) return
+  generatedOverview.value.keyCharacters.splice(index, 1)
+}
+
+// 添加主要场景
+function addKeyLocation() {
+  if (!generatedOverview.value) return
+  generatedOverview.value.keyLocations.push({
+    name: '',
+    type: '',
+    brief: '',
+    importance: 'secondary'
+  })
+}
+
+// 移除主要场景
+function removeKeyLocation(index: number) {
+  if (!generatedOverview.value) return
+  generatedOverview.value.keyLocations.splice(index, 1)
+}
+
 // 确认概要
 async function confirmOverview() {
   if (!generatedOverview.value) return
@@ -468,6 +627,8 @@ async function confirmOverview() {
     otherRequirements: rawForm.otherRequirements || undefined,
     summary: rawOverview.summary,
     coreConflict: rawOverview.coreConflict,
+    keyCharacters: rawOverview.keyCharacters,
+    keyLocations: rawOverview.keyLocations,
     estimatedChapters: rawOverview.estimatedChapters
   }
 
@@ -496,13 +657,20 @@ async function loadSavedOverview() {
       form.value.estimatedLength = data.estimatedLength || ''
       form.value.otherRequirements = data.otherRequirements || ''
 
-      // 填充生成结果
-      generatedOverview.value = {
-        titleSuggestions: data.title ? [data.title] : [],
-        selectedTitle: data.title || '',
-        summary: data.summary || '',
-        coreConflict: data.coreConflict || '',
-        estimatedChapters: data.estimatedChapters || 100
+      // 设置表单保存状态
+      isFormSaved.value = !!data.isSaved
+
+      // 如果已有生成结果，填充生成结果
+      if (data.summary || data.keyCharacters?.length || data.keyLocations?.length) {
+        generatedOverview.value = {
+          titleSuggestions: data.title ? [data.title] : [],
+          selectedTitle: data.title || '',
+          summary: data.summary || '',
+          coreConflict: data.coreConflict || '',
+          keyCharacters: data.keyCharacters || [],
+          keyLocations: data.keyLocations || [],
+          estimatedChapters: data.estimatedChapters || 100
+        }
       }
     }
   } catch (error) {
@@ -661,5 +829,43 @@ onMounted(() => {
   justify-content: center;
   gap: 12px;
   margin-top: 24px;
+}
+
+.btn-tip {
+  font-size: 12px;
+  color: var(--text-color-secondary);
+  margin-left: 4px;
+}
+
+.save-status {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+
+  .el-tag {
+    .el-icon {
+      margin-right: 4px;
+    }
+  }
+}
+
+.key-characters-list,
+.key-locations-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.key-entity-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+
+  .el-input,
+  .el-select {
+    flex-shrink: 0;
+  }
 }
 </style>

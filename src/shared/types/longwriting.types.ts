@@ -102,10 +102,33 @@ export interface StoryOverview {
   otherRequirements?: string // 其他要求
   summary: string
   coreConflict: string
+  keyCharacters: KeyCharacter[]   // 关键角色（AI生成）
+  keyLocations: KeyLocation[]     // 主要场景（AI生成）
   estimatedChapters: number
   isLocked: boolean
+  isSaved: boolean           // 表单是否已保存
   createdAt: number
   updatedAt: number
+}
+
+/**
+ * 关键角色（故事概要中的角色摘要）
+ */
+export interface KeyCharacter {
+  name: string               // 角色名称
+  role: string               // 角色定位（主角/配角/反派等）
+  brief: string              // 简要描述
+  importance: 'main' | 'secondary' | 'minor'  // 重要性
+}
+
+/**
+ * 主要场景（故事概要中的地点摘要）
+ */
+export interface KeyLocation {
+  name: string               // 场景名称
+  type: string               // 场景类型
+  brief: string              // 简要描述
+  importance: 'main' | 'secondary' | 'minor'  // 重要性
 }
 
 // ==================== 时代背景相关类型 ====================
@@ -270,6 +293,9 @@ export interface StoryLocation {
   type: LocationType
   description: string
   importance: LocationImportance
+  entityImportance: EntityImportance    // 实体重要性分类
+  templateType?: TemporaryLocationTemplateType  // 临时实体模板类型
+  generatedImageId?: string  // 自动生成的形象图片ID
   mapId?: string            // 关联地图 ID
   createdAt: number
   updatedAt: number
@@ -439,6 +465,178 @@ export interface GenerateFactionsRequest {
   projectId: string
 }
 
+// ==================== 实体重要性类型 ====================
+
+/**
+ * 实体重要性分类
+ * 用于区分角色、地点、物品的重要程度
+ */
+export type EntityImportance = 'main' | 'secondary' | 'temporary'
+
+/**
+ * 实体重要性显示名称
+ */
+export const ENTITY_IMPORTANCE_NAMES: Record<EntityImportance, string> = {
+  main: '主要',
+  secondary: '次要',
+  temporary: '临时'
+}
+
+// ==================== 临时实体模板相关类型 ====================
+
+/**
+ * 临时角色模板类型
+ * 用于为临时角色生成固定形象
+ */
+export type TemporaryCharacterTemplateType =
+  | 'male_passerby'        // 男性路人
+  | 'female_passerby'      // 女性路人
+  | 'elderly_male'         // 老年男性
+  | 'elderly_female'       // 老年女性
+  | 'child'                // 儿童
+  | 'shopkeeper'           // 店家
+  | 'servant'              // 仆人
+  | 'guard'                // 守卫
+  | 'soldier'              // 士兵
+  | 'merchant'             // 商人
+  | 'beggar'               // 乞丐
+  | 'traveler'             // 旅行者
+  | 'villager_male'        // 男性村民
+  | 'villager_female'      // 女性村民
+  | 'noble_male'           // 男性贵族
+  | 'noble_female'         // 女性贵族
+  | 'custom'               // 自定义
+
+/**
+ * 临时地点模板类型
+ */
+export type TemporaryLocationTemplateType =
+  | 'street'               // 街道
+  | 'room'                 // 房间
+  | 'courtyard'            // 院子
+  | 'forest_edge'          // 森林边缘
+  | 'mountain_path'        // 山路
+  | 'riverbank'            // 河岸
+  | 'market'               // 市场
+  | 'inn'                  // 客栈
+  | 'temple'               // 庙宇
+  | 'custom'
+
+/**
+ * 临时角色模板（数据库存储）
+ */
+export interface TemporaryCharacterTemplateRecord {
+  id: string
+  type: TemporaryCharacterTemplateType
+  name: string                    // 模板显示名称
+  gender: 'male' | 'female' | 'other'
+  ageMin: number                  // 最小年龄
+  ageMax: number                  // 最大年龄
+  basePrompt: string              // 基础提示词
+  styleVariants: string           // 风格变体（JSON数组）
+  negativePrompt: string          // 负面提示词
+  matchKeywords: string           // 匹配关键词（JSON数组）
+  sortOrder: number               // 排序
+  isDefault: number               // 是否默认
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * 临时地点模板（数据库存储）
+ */
+export interface TemporaryLocationTemplateRecord {
+  id: string
+  type: TemporaryLocationTemplateType
+  name: string
+  basePrompt: string
+  styleVariants: string           // 风格变体（JSON数组）
+  negativePrompt: string
+  matchKeywords: string           // 匹配关键词（JSON数组）
+  sortOrder: number
+  isDefault: number
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * 临时实体模板匹配结果
+ */
+export interface TemporaryEntityTemplateMatch {
+  templateType: TemporaryCharacterTemplateType | TemporaryLocationTemplateType
+  confidence: number           // 匹配置信度 0-1
+  matchedKeywords: string[]    // 匹配的关键词
+}
+
+// ==================== 新实体检测相关类型 ====================
+
+/**
+ * 检测到的新角色信息
+ */
+export interface NewCharacterInfo {
+  name: string
+  description: string
+  suggestedImportance: EntityImportance
+  reason?: string                    // 建议重要性的理由
+}
+
+/**
+ * 检测到的新地点信息
+ */
+export interface NewLocationInfo {
+  name: string
+  description: string
+  suggestedImportance: EntityImportance
+  suggestedType?: LocationType
+  reason?: string
+}
+
+/**
+ * 检测到的新物品信息
+ */
+export interface NewItemInfo {
+  name: string
+  description: string
+  suggestedImportance: EntityImportance
+  suggestedType?: ItemType
+  reason?: string
+}
+
+/**
+ * 新实体检测结果
+ */
+export interface NewEntityDetectionResult {
+  projectId: string
+  sourceOutlineId?: string            // 来源大纲ID
+  chapterNumber?: number              // 章节序号
+  newCharacters: NewCharacterInfo[]
+  newLocations: NewLocationInfo[]
+  newItems: NewItemInfo[]
+  detectedAt: number
+}
+
+/**
+ * 自动添加实体请求
+ */
+export interface AutoAddEntitiesRequest {
+  projectId: string
+  characters?: NewCharacterInfo[]
+  locations?: NewLocationInfo[]
+  items?: NewItemInfo[]
+  autoConfirm?: boolean              // 是否自动确认（不弹出确认框）
+}
+
+/**
+ * 自动添加实体响应
+ */
+export interface AutoAddEntitiesResponse {
+  success: boolean
+  addedCharacters?: StoryCharacter[]
+  addedLocations?: StoryLocation[]
+  addedItems?: StoryItem[]
+  errors?: string[]
+}
+
 // ==================== 角色相关类型 ====================
 
 /**
@@ -461,6 +659,9 @@ export interface StoryCharacter {
   personality: string        // 性格特点
   abilities: string          // 能力特长
   rolePosition: CharacterRolePosition
+  importance: EntityImportance  // 重要性分类
+  templateType?: TemporaryCharacterTemplateType  // 临时实体模板类型
+  generatedImageId?: string  // 自动生成的形象图片ID
   majorEvents: string        // 主要事件
   createdAt: number
   updatedAt: number
@@ -526,6 +727,7 @@ export interface StoryItem {
   type: ItemType
   level: ItemLevel
   description: string
+  importance: EntityImportance    // 实体重要性分类
   ownerId?: string           // 持有者角色 ID
   createdAt: number
   updatedAt: number
@@ -680,6 +882,9 @@ export interface CreateCharacterRequest {
   personality?: string
   abilities?: string
   rolePosition?: CharacterRolePosition
+  importance?: EntityImportance      // 重要性分类
+  templateType?: TemporaryCharacterTemplateType  // 临时实体模板类型
+  generatedImageId?: string         // 自动生成的形象图片ID
   majorEvents?: string
   portraitId?: string
 }
@@ -696,6 +901,9 @@ export interface UpdateCharacterRequest {
   personality?: string
   abilities?: string
   rolePosition?: CharacterRolePosition
+  importance?: EntityImportance      // 重要性分类
+  templateType?: TemporaryCharacterTemplateType  // 临时实体模板类型
+  generatedImageId?: string         // 自动生成的形象图片ID
   majorEvents?: string
   portraitId?: string
 }
