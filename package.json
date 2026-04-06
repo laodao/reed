@@ -8,6 +8,7 @@
   "homepage": "https://github.com/daoge/the_bot",
   "scripts": {
     "dev": "electron-vite dev",
+    "dev:debug": "electron-vite dev -- --remote-debugging-port=9222",
     "build": "electron-vite build",
     "postinstall": "electron-builder install-app-deps",
     "package": "electron-vite build && electron-builder",
@@ -20,6 +21,9 @@
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:debug": "playwright test --debug",
     "fix-encoding": "electron scripts/fix-chunk-encoding.js"
   },
   "dependencies": {
@@ -72,6 +76,7 @@
     "@electron-toolkit/utils": "^3.0.0",
     "@element-plus/icons-vue": "^2.3.1",
     "@intlify/unplugin-vue-i18n": "^11.0.7",
+    "@playwright/test": "^1.59.1",
     "@types/better-sqlite3": "^7.6.12",
     "@types/fluent-ffmpeg": "^2.1.28",
     "@types/node": "^20.11.19",
