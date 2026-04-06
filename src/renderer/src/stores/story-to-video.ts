@@ -312,6 +312,41 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
   }
 
   /**
+   * 更新剧集
+   */
+  async function updateEpisode(
+    episodeId: string,
+    data: { episodeNumber?: number; title?: string }
+  ): Promise<VideoEpisode | null> {
+    loading.value = true
+    error.value = null
+    try {
+      const response = await window.electronAPI.storyToVideo.updateEpisode(episodeId, data)
+      if (response.success && response.data) {
+        const episode = response.data as VideoEpisode
+        // 更新列表中的剧集
+        const index = episodes.value.findIndex(e => e.id === episodeId)
+        if (index !== -1) {
+          episodes.value[index] = episode
+        }
+        // 如果是当前剧集，也更新
+        if (currentEpisode.value?.id === episodeId) {
+          currentEpisode.value = episode
+        }
+        return episode
+      } else {
+        error.value = response.error || '更新剧集失败'
+        return null
+      }
+    } catch (e: any) {
+      error.value = e.message || '更新剧集失败'
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
    * 选择剧集
    */
   async function selectEpisode(episode: VideoEpisode): Promise<void> {
@@ -1121,6 +1156,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     // 剧集管理
     loadEpisodes,
     createEpisode,
+    updateEpisode,
     selectEpisode,
     clearCurrentEpisode,
     deleteEpisode,

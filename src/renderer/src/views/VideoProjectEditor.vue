@@ -7,7 +7,8 @@
           <el-icon><ArrowLeft /></el-icon>
           返回
         </el-button>
-        <el-divider direction="vertical" />
+      </div>
+      <div class="header-center">
         <h2 class="project-title">{{ store.currentProject?.name || '加载中...' }}</h2>
       </div>
       <div class="header-right">
@@ -24,9 +25,8 @@
       <div class="left-panel">
         <div class="panel-header">
           <h3>剧集列表</h3>
-          <el-button type="primary" size="small" @click="openCreateEpisodeDialog">
+          <el-button type="primary" size="small" @click="openCreateEpisodeDialog" circle>
             <el-icon><Plus /></el-icon>
-            添加剧集
           </el-button>
         </div>
 
@@ -46,6 +46,9 @@
               </el-tag>
             </div>
             <div class="episode-actions" @click.stop>
+              <el-button text type="primary" size="small" @click="openEditEpisodeDialog(episode)">
+                <el-icon><Edit /></el-icon>
+              </el-button>
               <el-button text type="danger" size="small" @click="confirmDeleteEpisode(episode)">
                 <el-icon><Delete /></el-icon>
               </el-button>
@@ -396,6 +399,28 @@
         <el-button @click="showCreateEpisodeDialog = false">取消</el-button>
         <el-button type="primary" :loading="store.loading" @click="createEpisode">
           创建
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 编辑剧集对话框 -->
+    <el-dialog
+      v-model="showEditEpisodeDialog"
+      title="编辑剧集"
+      width="500px"
+    >
+      <el-form :model="episodeForm" label-width="80px">
+        <el-form-item label="剧集序号">
+          <el-input-number v-model="episodeForm.episodeNumber" :min="1" :max="999" />
+        </el-form-item>
+        <el-form-item label="剧集标题">
+          <el-input v-model="episodeForm.title" placeholder="请输入剧集标题" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showEditEpisodeDialog = false">取消</el-button>
+        <el-button type="primary" :loading="store.loading" @click="updateEpisode">
+          保存
         </el-button>
       </template>
     </el-dialog>
@@ -973,6 +998,8 @@ const selectedOutlineInfo = ref<{
 
 // 对话框状态
 const showCreateEpisodeDialog = ref(false)
+const showEditEpisodeDialog = ref(false)
+const editingEpisodeId = ref('')
 const showSettingsDialog = ref(false)
 const showBindCharacterDialog = ref(false)
 const showGenerateImagesDialog = ref(false)
@@ -1941,6 +1968,41 @@ async function createEpisode() {
 }
 
 /**
+ * 打开编辑剧集对话框
+ */
+function openEditEpisodeDialog(episode: VideoEpisode) {
+  editingEpisodeId.value = episode.id
+  episodeForm.episodeNumber = episode.episodeNumber
+  episodeForm.title = episode.title
+  showEditEpisodeDialog.value = true
+}
+
+/**
+ * 更新剧集
+ */
+async function updateEpisode() {
+  if (!episodeForm.title.trim()) {
+    ElMessage.warning('请输入剧集标题')
+    return
+  }
+
+  const episode = await store.updateEpisode(
+    editingEpisodeId.value,
+    {
+      episodeNumber: episodeForm.episodeNumber,
+      title: episodeForm.title
+    }
+  )
+
+  if (episode) {
+    ElMessage.success('保存成功')
+    showEditEpisodeDialog.value = false
+  } else {
+    ElMessage.error(store.error || '保存失败')
+  }
+}
+
+/**
  * 自动绑定章节涉及的角色到视频项目
  */
 async function autoBindCharactersFromOutline(outlineId: string) {
@@ -2624,6 +2686,7 @@ async function saveProjectSettings() {
 function getEpisodeStatusLabel(status: string): string {
   const labels: Record<string, string> = {
     draft: '草稿',
+    pending: '待处理',
     script_completed: '剧本完成',
     storyboard_completed: '分镜完成',
     production: '制作中',
@@ -2793,8 +2856,8 @@ watch(outlineSearchText, (val) => {
   justify-content: space-between;
   align-items: center;
   padding: 0 16px;
-  height: 48px;
-  min-height: 48px;
+  height: 40px;
+  min-height: 40px;
   flex-shrink: 0;
   background: var(--el-bg-color);
   border-bottom: 1px solid var(--el-border-color-light);
@@ -2802,53 +2865,28 @@ watch(outlineSearchText, (val) => {
   .header-left {
     display: flex;
     align-items: center;
-    gap: 8px;
+    min-width: 100px;
   }
 
   .header-center {
     display: flex;
     align-items: center;
-    gap: 8px;
+    justify-content: center;
+    flex: 1;
+  }
 
-    .model-select {
-      width: 200px;
-
-      :deep(.el-input__wrapper) {
-        border-radius: 6px;
-      }
-    }
-
-    .model-option {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      width: 100%;
-
-      .model-name {
-        font-size: 13px;
-        color: #334155;
-      }
-
-      .model-context {
-        font-size: 11px;
-        color: #94a3b8;
-        background: #f1f5f9;
-        padding: 2px 6px;
-        border-radius: 4px;
-      }
-    }
-
-    .model-hint {
-      font-size: 11px;
-      color: var(--el-text-color-placeholder);
-      margin-top: 4px;
-    }
+  .header-right {
+    display: flex;
+    align-items: center;
+    min-width: 100px;
+    justify-content: flex-end;
   }
 
   .project-title {
     margin: 0;
     font-size: 16px;
-    font-weight: 500;
+    font-weight: 600;
+    color: var(--el-text-color-primary);
   }
 }
 
