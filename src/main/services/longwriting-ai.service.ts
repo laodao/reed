@@ -285,11 +285,15 @@ export class LongWritingAIService {
 - storyType: 故事类型（wuxia/xianxia/xuanhuan/kehuan/xuanyi/dushi/yanqing/lishi/other）
 - summary: 故事摘要（500字左右）
 - coreConflict: 核心冲突（300字左右）
-- keyCharacters: 关键角色数组（必须包含至少2个角色，不能为空数组！）
-- keyLocations: 主要场景数组（必须包含至少2个场景，不能为空数组！）
+- keyCharacters: 关键角色数组（必须包含主角、重要配角、反派等关键人物，不能为空数组！）
+- keyLocations: 主要场景数组（必须包含故事发生的主要地点，不能为空数组！）
 - estimatedChapters: 预估章节数
 
-**特别重要**：keyCharacters 和 keyLocations 是必填字段，必须生成真实内容！
+**关于角色生成**：
+- 仔细阅读故事内容，识别所有重要人物
+- 必须包含：主角、重要配角、反派/对立角色
+- 反派/对立角色是推动剧情的关键，必须包含在角色列表中
+- 角色数量根据故事需要确定，确保覆盖故事的主要人物
 
 每个角色必须包含：name(姓名), role(主角/配角/反派/中立), brief(150字内描述), importance(main/secondary/minor)
 每个场景必须包含：name(名称), type(类型), brief(150字内描述), importance(main/secondary/minor)
@@ -302,7 +306,8 @@ export class LongWritingAIService {
   "coreConflict": "核心冲突内容...",
   "keyCharacters": [
     {"name": "林锋", "role": "主角", "brief": "前警员，因坚持调查真相被迫离职，六年后重启调查", "importance": "main"},
-    {"name": "陈雪", "role": "配角", "brief": "警局法医，暗中协助林锋，提供关键证据分析", "importance": "secondary"}
+    {"name": "陈雪", "role": "配角", "brief": "警局法医，暗中协助林锋，提供关键证据分析", "importance": "secondary"},
+    {"name": "老局长", "role": "反派", "brief": "警局高层，暗中操控案件，是六年前的真凶", "importance": "main"}
   ],
   "keyLocations": [
     {"name": "0714案发现场", "type": "城市", "brief": "六年前的凶杀案发生地，遗留关键线索", "importance": "main"},
