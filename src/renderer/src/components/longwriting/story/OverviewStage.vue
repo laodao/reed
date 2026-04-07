@@ -240,6 +240,7 @@ import { ref, computed, onMounted, inject, toRaw } from 'vue'
 import { ElMessage } from 'element-plus'
 import { MagicStick, Close, DocumentChecked, Plus, Delete } from '@element-plus/icons-vue'
 import type { DictionaryItem, KeyCharacter, KeyLocation } from '../../../../shared/types/longwriting.types'
+import type { Ref } from 'vue'
 
 // Props
 const props = defineProps<{
@@ -254,6 +255,9 @@ const emit = defineEmits<{
 // 从父组件获取选中的模型（是一个 ComputedRef 和一个 Ref）
 const selectedModelKey = inject<ReturnType<typeof ref<string>>>('selectedModelKey', ref(''))
 const selectedModel = inject<ReturnType<typeof computed<{ providerId: string; modelId: string } | null>>>('selectedModel', computed(() => null))
+
+// 从父组件注入功能开关 ref（用于同步更新）
+const enabledFeaturesRef = inject<Ref<string[]>>('enabledFeatures', ref([]))
 
 // 字典数据
 const dictionary = ref<Record<string, DictionaryItem[]>>({
@@ -702,6 +706,8 @@ async function saveForm() {
 
   if (result.success) {
     isFormSaved.value = true
+    // 同步更新父组件中的功能开关
+    enabledFeaturesRef.value = [...rawForm.enabledFeatures]
     ElMessage.success('表单已保存')
   } else {
     ElMessage.error(result.error || '保存失败')
@@ -771,6 +777,8 @@ async function confirmOverview() {
   const result = await window.electronAPI.longwriting.updateStoryOverview(props.projectId, overviewData)
 
   if (result.success) {
+    // 同步更新父组件中的功能开关
+    enabledFeaturesRef.value = [...rawForm.enabledFeatures]
     ElMessage.success('故事概要已保存')
     emit('update:progress', 20)
   } else {
