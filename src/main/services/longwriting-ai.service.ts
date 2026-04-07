@@ -295,12 +295,12 @@ export class LongWritingAIService {
   "summary": "故事摘要内容，500字左右",
   "coreConflict": "核心冲突内容，300字左右",
   "keyCharacters": [
-    {"name": "张三", "role": "主角", "brief": "一个普通的少年，意外获得神秘力量", "importance": "main"},
-    {"name": "李四", "role": "配角", "brief": "主角的好友，性格开朗", "importance": "secondary"}
+    {"name": "张三", "role": "主角", "brief": "一个普通的少年，在一次意外中获得神秘力量，从此踏上修仙之路", "importance": "main"},
+    {"name": "李四", "role": "配角", "brief": "主角的好友，性格开朗乐观，一直在主角身边支持他", "importance": "secondary"}
   ],
   "keyLocations": [
-    {"name": "青云山", "type": "山脉", "brief": "故事开始的地方，隐藏着古老的秘密", "importance": "main"},
-    {"name": "玄天城", "type": "城市", "brief": "繁华的修仙城市，各方势力汇聚", "importance": "secondary"}
+    {"name": "青云山", "type": "山脉", "brief": "故事开始的地方，山中有古老的门派遗迹，隐藏着惊天秘密", "importance": "main"},
+    {"name": "玄天城", "type": "城市", "brief": "繁华的修仙城市，各方势力汇聚于此，是故事的重要舞台", "importance": "secondary"}
   ],
   "estimatedChapters": 100
 }
@@ -313,12 +313,12 @@ export class LongWritingAIService {
 - keyCharacters: 关键角色数组，必须生成有名字的角色，每个角色包含：
   - name: 角色名称（真实的中文姓名）
   - role: 角色定位（主角/配角/反派/中立）
-  - brief: 简要描述（30字以内）
+  - brief: 简要描述（150字以内）
   - importance: 重要性（main/secondary/minor）
 - keyLocations: 主要场景数组，必须生成有名字的场景，每个场景包含：
   - name: 场景名称（真实的地点名称）
   - type: 场景类型（城市/山脉/海域/宫殿/村落/秘境等）
-  - brief: 简要描述（30字以内）
+  - brief: 简要描述（150字以内）
   - importance: 重要性（main/secondary/minor）
 - estimatedChapters: 预估章节数（数字）
 
