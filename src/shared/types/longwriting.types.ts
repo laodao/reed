@@ -103,7 +103,7 @@ export type EstimatedLength =
 /**
  * 功能开关类型
  */
-export type FeatureToggle = 'country' | 'faction' | 'sect' | 'skill' | 'item'
+export type FeatureToggle = 'country' | 'faction' | 'sect' | 'map' | 'skill' | 'item'
 
 /**
  * 故事概要

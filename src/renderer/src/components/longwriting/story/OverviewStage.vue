@@ -91,6 +91,7 @@
             <el-checkbox value="country">国别</el-checkbox>
             <el-checkbox value="faction">阵营</el-checkbox>
             <el-checkbox value="sect">门派</el-checkbox>
+            <el-checkbox value="map">地图</el-checkbox>
             <el-checkbox value="skill">技能</el-checkbox>
             <el-checkbox value="item">物品</el-checkbox>
           </el-checkbox-group>

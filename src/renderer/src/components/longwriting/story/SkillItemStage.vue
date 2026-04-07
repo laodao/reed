@@ -7,16 +7,19 @@
 
     <el-tabs v-model="activeTab" :before-leave="handleTabLeave">
       <!-- 类型设定 -->
-      <el-tab-pane label="类型设定" name="types">
+      <el-tab-pane name="types">
+        <template #label>
+          <span :class="{ 'disabled-tab': !isFeatureEnabled('skill') && !isFeatureEnabled('item') }">类型设定</span>
+        </template>
         <div class="type-config-section">
-          <div class="config-header">
+          <div class="config-header" :class="{ 'disabled-section': !isFeatureEnabled('skill') }">
             <h3>技能类型与等级</h3>
-            <el-button size="small" type="primary" @click="showAddSkillTypeDialog = true">
+            <el-button size="small" type="primary" :disabled="!isFeatureEnabled('skill')" @click="showAddSkillTypeDialog = true">
               <el-icon><Plus /></el-icon>
               添加类型
             </el-button>
           </div>
-          <div class="type-config-container">
+          <div class="type-config-container" :class="{ 'disabled-section': !isFeatureEnabled('skill') }">
             <div class="type-list-panel">
               <div
                 v-for="skillType in skillTypes"
@@ -64,14 +67,14 @@
             </div>
           </div>
 
-          <div class="config-header" style="margin-top: 24px;">
+          <div class="config-header" style="margin-top: 24px;" :class="{ 'disabled-section': !isFeatureEnabled('item') }">
             <h3>物品类型与等级</h3>
-            <el-button size="small" type="primary" @click="showAddItemTypeDialog = true">
+            <el-button size="small" type="primary" :disabled="!isFeatureEnabled('item')" @click="showAddItemTypeDialog = true">
               <el-icon><Plus /></el-icon>
               添加类型
             </el-button>
           </div>
-          <div class="type-config-container">
+          <div class="type-config-container" :class="{ 'disabled-section': !isFeatureEnabled('item') }">
             <div class="type-list-panel">
               <div
                 v-for="itemType in itemTypes"
@@ -215,7 +218,7 @@
 
     <!-- 快速生成按钮 -->
     <div class="action-buttons">
-      <el-button v-if="!generating" type="primary" size="large" @click="handleGenerate">
+      <el-button v-if="!generating" type="primary" size="large" :disabled="!canGenerate" @click="handleGenerate">
         <el-icon><MagicStick /></el-icon>
         {{ generateButtonText }}
       </el-button>
@@ -418,6 +421,10 @@ const items = ref<StoryItem[]>([])
 
 // Tab 切换前检查功能是否启用
 function handleTabLeave(activeName: string, oldActiveName: string): boolean {
+  if (activeName === 'types' && !isFeatureEnabled('skill') && !isFeatureEnabled('item')) {
+    ElMessage.warning('类型设定功能未启用，请在故事概要中开启"技能"或"物品"选项')
+    return false
+  }
   if (activeName === 'skills' && !isFeatureEnabled('skill')) {
     ElMessage.warning('技能功能未启用，请在故事概要中开启"技能"选项')
     return false
@@ -451,6 +458,19 @@ const editingItem = ref<StoryItem | null>(null)
 const generating = ref(false)
 const currentEventId = ref<string | null>(null)
 const generatingContent = ref('')
+
+// 根据当前标签页和功能开关判断是否可以生成
+const canGenerate = computed(() => {
+  if (activeTab.value === 'types') {
+    // 类型设定需要技能或物品至少一个启用
+    return isFeatureEnabled('skill') || isFeatureEnabled('item')
+  } else if (activeTab.value === 'skills') {
+    return isFeatureEnabled('skill')
+  } else if (activeTab.value === 'items') {
+    return isFeatureEnabled('item')
+  }
+  return true
+})
 
 // 根据 activeTab 显示不同的按钮文本
 const generateButtonText = computed(() => {
@@ -1542,5 +1562,10 @@ watch(() => props.projectId, () => {
 .disabled-tab {
   color: var(--text-color-placeholder);
   cursor: not-allowed;
+}
+
+.disabled-section {
+  opacity: 0.5;
+  pointer-events: none;
 }
 </style>

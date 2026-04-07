@@ -11,7 +11,7 @@
       </span>
     </div>
 
-    <el-tabs v-model="activeTab" class="background-tabs">
+    <el-tabs v-model="activeTab" class="background-tabs" :before-leave="handleTabLeave">
       <!-- 时代背景 -->
       <el-tab-pane label="时代背景" name="era">
         <div class="era-form">
@@ -193,7 +193,10 @@
       </el-tab-pane>
 
       <!-- 地图设定 -->
-      <el-tab-pane label="地图设定" name="maps">
+      <el-tab-pane name="maps">
+        <template #label>
+          <span :class="{ 'disabled-tab': !isFeatureEnabled('map') }">地图设定</span>
+        </template>
         <div class="map-list">
           <div v-for="map in maps" :key="map.id" class="map-card">
             <div class="map-image" v-if="map.imagePath">
@@ -288,7 +291,10 @@
       </el-tab-pane>
 
       <!-- 势力设定 -->
-      <el-tab-pane label="势力设定" name="factions">
+      <el-tab-pane name="factions">
+        <template #label>
+          <span :class="{ 'disabled-tab': !isFeatureEnabled('country') && !isFeatureEnabled('faction') && !isFeatureEnabled('sect') }">势力设定</span>
+        </template>
         <div class="faction-section">
           <!-- 操作按钮 -->
           <div class="tab-actions">
@@ -297,7 +303,7 @@
               plain
               :icon="MagicStick"
               :loading="generatingFactions"
-              :disabled="!selectedModel?.providerId"
+              :disabled="!selectedModel?.providerId || (!isFeatureEnabled('country') && !isFeatureEnabled('faction') && !isFeatureEnabled('sect'))"
               @click="generateFactionsFromAI"
             >
               AI 生成势力建议
@@ -627,6 +633,19 @@ const enabledFeatures = inject<Ref<string[]>>('enabledFeatures', ref([]))
 // 检查功能是否启用
 function isFeatureEnabled(feature: string): boolean {
   return enabledFeatures.value.includes(feature)
+}
+
+// Tab 切换前检查功能是否启用
+function handleTabLeave(activeName: string, oldActiveName: string): boolean {
+  if (activeName === 'maps' && !isFeatureEnabled('map')) {
+    ElMessage.warning('地图功能未启用，请在故事概要中开启"地图"选项')
+    return false
+  }
+  if (activeName === 'factions' && !isFeatureEnabled('country') && !isFeatureEnabled('faction') && !isFeatureEnabled('sect')) {
+    ElMessage.warning('势力功能未启用，请在故事概要中开启国别/阵营/门派选项')
+    return false
+  }
+  return true
 }
 
 // 从父组件注入选中的模型（computed ref）
@@ -1910,5 +1929,10 @@ onMounted(() => {
   font-size: 13px;
   color: var(--text-color-secondary);
   line-height: 1.6;
+}
+
+.disabled-tab {
+  color: var(--text-color-placeholder);
+  cursor: not-allowed;
 }
 </style>
