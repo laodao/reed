@@ -406,30 +406,26 @@ ${input}
 
     const systemPrompt = `你是一位专业的小说创作顾问。请根据故事概要，生成3-5个建议的角色。
 
-请严格按照以下 JSON 数组格式返回，每个角色必须包含所有字段：
+你必须返回 JSON 数组格式，每个角色必须严格按照以下顺序包含所有字段，不得遗漏任何字段：
+1. name - 角色名称
+2. gender - 性别（male/female/other）
+3. age - 年龄
+4. height - 身高(cm)
+5. weight - 体重(kg)
+6. race - 人种（asian/european/other）
+7. occupation - 职业
+8. position - 职务
+9. rolePosition - 角色定位（protagonist/supporting/antagonist/minor）
+10. appearance - 外貌描述（必须包含脸型、肤色描述）
+11. background - 背景故事
+12. personality - 性格特点
+13. abilities - 能力特长
+14. majorEvents - 角色在故事中的主要事件（这是必需字段，描述该角色参与的关键剧情）
 
-\`\`\`json
-[
-  {
-    "name": "角色名称",
-    "gender": "male/female/other",
-    "age": 25,
-    "height": 175,
-    "weight": 70,
-    "race": "asian/european/other",
-    "occupation": "职业",
-    "position": "职务",
-    "rolePosition": "protagonist/supporting/antagonist/minor",
-    "appearance": "外貌描述，必须包含脸型、肤色描述",
-    "background": "背景故事",
-    "personality": "性格特点",
-    "abilities": "能力特长",
-    "majorEvents": "角色在故事中的主要事件，描述该角色参与的关键剧情"
-  }
-]
-\`\`\`
+示例返回格式：
+[{"name":"张三","gender":"male","age":28,"height":175,"weight":70,"race":"asian","occupation":"剑客","position":"掌门弟子","rolePosition":"protagonist","appearance":"瓜子脸，小麦色皮肤，剑眉星目","background":"出身寒门，自幼被掌门收养","personality":"沉稳内敛，重情重义","abilities":"剑法高超，轻功卓越","majorEvents":"在门派大比中击败宿敌，揭开身世之谜"}]
 
-注意：所有字段都必须返回，不能遗漏。`
+请确保每个角色都包含全部14个字段，尤其是majorEvents字段不能遗漏。`
 
     // 构建提示词上下文
     const storyTypeNames: Record<string, string> = {
