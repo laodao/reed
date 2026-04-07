@@ -562,16 +562,59 @@ function extractFieldsManually(jsonStr: string): any {
     return match ? parseInt(match[1]) : null
   }
 
-  // 提取数组字段（简化版）
+  // 提取数组字段（使用括号计数法，正确处理嵌套对象）
   const extractArray = (field: string): any[] => {
-    const regex = new RegExp(`"${field}"\\s*:\\s*\\[([\\s\\S]*?)\\](?=\\s*[,}]|\\s*$)`)
-    const match = jsonStr.match(regex)
-    if (!match) return []
+    // 找到字段名和起始位置
+    const startPattern = new RegExp(`"${field}"\\s*:\\s*\\[`)
+    const startMatch = jsonStr.match(startPattern)
+    if (!startMatch) {
+      console.log(`[extractArray] 未找到字段: ${field}`)
+      return []
+    }
+
+    // 找到 [ 的位置
+    const startIndex = startMatch.index! + startMatch[0].length - 1
+
+    // 使用括号计数找到匹配的 ]
+    let depth = 1
+    let i = startIndex + 1
+    let inString = false
+    let escapeNext = false
+
+    while (i < jsonStr.length && depth > 0) {
+      const char = jsonStr[i]
+
+      if (escapeNext) {
+        escapeNext = false
+        i++
+        continue
+      }
+
+      if (char === '\\' && inString) {
+        escapeNext = true
+        i++
+        continue
+      }
+
+      if (char === '"') {
+        inString = !inString
+      } else if (!inString) {
+        if (char === '[') {
+          depth++
+        } else if (char === ']') {
+          depth--
+        }
+      }
+      i++
+    }
+
+    const arrayContent = jsonStr.substring(startIndex, i)
+    console.log(`[extractArray] ${field} 提取内容:`, arrayContent)
 
     try {
-      // 尝试解析数组
-      return JSON.parse('[' + match[1] + ']')
-    } catch {
+      return JSON.parse(arrayContent)
+    } catch (e) {
+      console.log(`[extractArray] ${field} 解析失败:`, e)
       return []
     }
   }
