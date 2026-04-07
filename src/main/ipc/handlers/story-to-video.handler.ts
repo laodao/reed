@@ -22,6 +22,19 @@ import {
 import { StoryToVideoAIService } from '../../services/story-to-video-ai.service'
 import { StoryToVideoResourceService, PRESET_STYLES } from '../../services/story-to-video-resource.service'
 import { VideoSynthesisService, PRESET_VIDEO_CONFIGS } from '../../services/video-synthesis.service'
+import { VideoService } from '../../services/video.service'
+import { SecureStorageService } from '../../services/secure-storage.service'
+import { createVideoProvider } from '../../video-providers'
+
+/**
+ * 将本地路径转换为 local-image URL
+ */
+function localPathToUrl(filePath: string): string {
+  if (!filePath) return ''
+  // 统一使用正斜杠
+  const normalizedPath = filePath.replace(/\\/g, '/')
+  return `local-image:///${normalizedPath}`
+}
 
 /**
  * 注册剧集制作相关 IPC 处理器
@@ -76,6 +89,7 @@ export function registerStoryToVideoHandlers(): void {
   // ==================== 视频合成 ====================
   ipcMain.handle('stv:get-video-presets', handleGetVideoPresets)
   ipcMain.handle('stv:synthesize-scene-video', handleSynthesizeSceneVideo)
+  ipcMain.handle('stv:synthesize-storyboard-video', handleSynthesizeStoryboardVideo)
   ipcMain.handle('stv:export-video', handleExportVideo)
 }
 
@@ -346,9 +360,13 @@ async function handleGetEpisode(
 async function handleCreateEpisode(
   _event: IpcMainInvokeEvent,
   projectId: string,
-  outlineId: string,
-  episodeNumber: number,
-  title: string
+  data: {
+    sourceType: 'outline' | 'uploaded'
+    outlineId?: string
+    uploadedContent?: string
+    episodeNumber: number
+    title: string
+  }
 ): Promise<IpcResponse> {
   try {
     const db = DatabaseManager.getInstance()
@@ -356,11 +374,32 @@ async function handleCreateEpisode(
       return { success: false, error: '数据库未初始化' }
     }
 
+    // 验证参数
+    if (data.sourceType === 'outline') {
+      if (!data.outlineId) {
+        return { success: false, error: '关联章节模式必须提供大纲ID' }
+      }
+    } else if (data.sourceType === 'uploaded') {
+      if (!data.uploadedContent) {
+        return { success: false, error: '上传长文模式必须提供内容' }
+      }
+      // 字数验证
+      const wordCount = data.uploadedContent.length
+      if (wordCount < 500) {
+        return { success: false, error: `字数不足，当前 ${wordCount} 字，最少需要 500 字` }
+      }
+      if (wordCount > 15000) {
+        return { success: false, error: `字数超出限制，当前 ${wordCount} 字，最多允许 15000 字` }
+      }
+    }
+
     const episode = db.videoEpisodes.create({
       projectId,
-      outlineId,
-      episodeNumber,
-      title
+      sourceType: data.sourceType,
+      outlineId: data.outlineId,
+      uploadedContent: data.uploadedContent,
+      episodeNumber: data.episodeNumber,
+      title: data.title
     })
 
     return { success: true, data: episode }
@@ -594,8 +633,7 @@ async function handleUpdateStoryboard(
 
 async function handleGenerateScript(
   _event: IpcMainInvokeEvent,
-  projectId: string,
-  outlineId: string,
+  episodeId: string,
   providerConfigId?: string,
   modelId?: string
 ): Promise<IpcResponse> {
@@ -605,71 +643,110 @@ async function handleGenerateScript(
       return { success: false, error: '数据库未初始化' }
     }
 
+    // 获取剧集信息
+    const episode = db.videoEpisodes.getById(episodeId)
+    if (!episode) {
+      return { success: false, error: '剧集不存在' }
+    }
+
     // 获取项目信息
-    const project = db.videoProjects.getById(projectId)
+    const project = db.videoProjects.getById(episode.projectId)
     if (!project) {
       return { success: false, error: '项目不存在' }
     }
 
-    // 获取章节内容
     let chapterContent = ''
-    if (project.longWritingProjectId) {
-      const outline = db.lwOutlines?.getById(outlineId)
-      if (outline) {
-        // 根据节点类型获取内容
-        if (outline.nodeType === 'section') {
-          // 节级别：直接获取内容
-          const chapter = db.lwChapters?.getByOutlineId(outlineId)
-          if (chapter && chapter.content) {
-            chapterContent = chapter.content
-          }
-        } else if (outline.nodeType === 'chapter') {
-          // 章级别：获取所有子节的内容
-          const sections = db.lwOutlines?.getChildren(outlineId) || []
-          const contents: string[] = []
-          for (const section of sections) {
-            if (section.nodeType === 'section') {
-              const chapter = db.lwChapters?.getByOutlineId(section.id)
-              if (chapter && chapter.content) {
-                contents.push(`【${section.name}】\n${chapter.content}`)
-              }
+    let characters: Array<{ id: string; name: string; description?: string }> = []
+
+    // 根据来源类型获取内容和角色
+    if (episode.sourceType === 'uploaded') {
+      // 上传长文模式：使用上传的内容
+      chapterContent = episode.uploadedContent || ''
+
+      // 如果还没有识别角色，先识别
+      if (!episode.uploadedCharacters || episode.uploadedCharacters.length === 0) {
+        const aiService = StoryToVideoAIService.getInstance()
+        const identifiedChars = await aiService.identifyCharacters(
+          chapterContent,
+          providerConfigId,
+          modelId
+        )
+
+        // 更新剧集的角色信息
+        db.videoEpisodes.update(episodeId, { uploadedCharacters: identifiedChars })
+        episode.uploadedCharacters = identifiedChars
+      }
+
+      // 使用识别的角色
+      characters = (episode.uploadedCharacters || []).map((char, index) => ({
+        id: `uploaded_char_${index}`,
+        name: char.name,
+        description: char.description || ''
+      }))
+    } else {
+      // 关联章节模式：从长文项目中获取内容
+      const outlineId = episode.outlineId
+      if (!outlineId) {
+        return { success: false, error: '剧集未关联大纲节点' }
+      }
+
+      if (project.longWritingProjectId) {
+        const outline = db.lwOutlines?.getById(outlineId)
+        if (outline) {
+          // 根据节点类型获取内容
+          if (outline.nodeType === 'section') {
+            // 节级别：直接获取内容
+            const chapter = db.lwChapters?.getByOutlineId(outlineId)
+            if (chapter && chapter.content) {
+              chapterContent = chapter.content
             }
-          }
-          chapterContent = contents.join('\n\n')
-        } else if (outline.nodeType === 'volume') {
-          // 卷级别：获取所有章和节的内容
-          const chapters = db.lwOutlines?.getChildren(outlineId) || []
-          const contents: string[] = []
-          for (const chapterNode of chapters) {
-            const sections = db.lwOutlines?.getChildren(chapterNode.id) || []
+          } else if (outline.nodeType === 'chapter') {
+            // 章级别：获取所有子节的内容
+            const sections = db.lwOutlines?.getChildren(outlineId) || []
+            const contents: string[] = []
             for (const section of sections) {
               if (section.nodeType === 'section') {
                 const chapter = db.lwChapters?.getByOutlineId(section.id)
                 if (chapter && chapter.content) {
-                  contents.push(`【${chapterNode.name} - ${section.name}】\n${chapter.content}`)
+                  contents.push(`【${section.name}】\n${chapter.content}`)
                 }
               }
             }
+            chapterContent = contents.join('\n\n')
+          } else if (outline.nodeType === 'volume') {
+            // 卷级别：获取所有章和节的内容
+            const chapters = db.lwOutlines?.getChildren(outlineId) || []
+            const contents: string[] = []
+            for (const chapterNode of chapters) {
+              const sections = db.lwOutlines?.getChildren(chapterNode.id) || []
+              for (const section of sections) {
+                if (section.nodeType === 'section') {
+                  const chapter = db.lwChapters?.getByOutlineId(section.id)
+                  if (chapter && chapter.content) {
+                    contents.push(`【${chapterNode.name} - ${section.name}】\n${chapter.content}`)
+                  }
+                }
+              }
+            }
+            chapterContent = contents.join('\n\n')
           }
-          chapterContent = contents.join('\n\n')
         }
       }
-    }
 
-    if (!chapterContent) {
-      return { success: false, error: '未找到章节内容，请先在长文写作中完成章节内容' }
-    }
+      if (!chapterContent) {
+        return { success: false, error: '未找到章节内容，请先在长文写作中完成章节内容' }
+      }
 
-    // 获取角色列表
-    const characters: Array<{ id: string; name: string; description?: string }> = []
-    if (project.longWritingProjectId) {
-      const chars = db.characters?.getByProjectId(project.longWritingProjectId) || []
-      for (const char of chars) {
-        characters.push({
-          id: char.id,
-          name: char.name,
-          description: char.description || char.appearance
-        })
+      // 获取角色列表
+      if (project.longWritingProjectId) {
+        const chars = db.characters?.getByProjectId(project.longWritingProjectId) || []
+        for (const char of chars) {
+          characters.push({
+            id: char.id,
+            name: char.name,
+            description: char.description || char.appearance
+          })
+        }
       }
     }
 
@@ -681,12 +758,6 @@ async function handleGenerateScript(
       providerConfigId,
       modelId
     )
-
-    // 查找关联的剧集
-    const episode = db.videoEpisodes.getByOutlineId(projectId, outlineId)
-    if (!episode) {
-      return { success: false, error: '未找到关联的剧集，请先在剧集列表中选择或创建剧集' }
-    }
 
     // 创建或更新剧本
     const existingScript = db.episodeScripts.getByEpisodeId(episode.id)
@@ -703,9 +774,9 @@ async function handleGenerateScript(
     } else {
       // 创建新剧本
       script = db.episodeScripts.create({
-        projectId,
+        projectId: episode.projectId,
         episodeId: episode.id,
-        outlineId,
+        outlineId: episode.outlineId,
         synopsis: result.synopsis,
         scriptContent: result.scriptContent,
         scriptFormat: 'standard'
@@ -864,6 +935,9 @@ async function handleGenerateStoryboard(
     // 创建分镜记录
     const storyboardRecords: Storyboard[] = []
     for (const sb of result.storyboards) {
+      // 调试日志
+      console.log(`[Handler] 分镜 ${sb.shotNumber} dialogueIds:`, sb.dialogueIds)
+
       const storyboard = db.storyboards.create({
         sceneScriptId: sceneId,
         shotNumber: sb.shotNumber,
@@ -1398,6 +1472,197 @@ async function handleSynthesizeSceneVideo(
     return { success: false, error: result.error || '视频合成失败' }
   } catch (error: any) {
     return { success: false, error: error.message || '视频合成失败' }
+  }
+}
+
+/**
+ * 处理合成单个分镜视频
+ * 使用 AI 视频生成（图生视频）
+ */
+async function handleSynthesizeStoryboardVideo(
+  event: IpcMainInvokeEvent,
+  storyboardId: string,
+  quality: string = 'standard'
+): Promise<IpcResponse> {
+  try {
+    // 获取窗口
+    const window = BrowserWindow.fromWebContents(event.sender)
+    if (!window) {
+      return { success: false, error: '窗口不存在' }
+    }
+
+    const db = DatabaseManager.getInstance()
+
+    // 获取分镜信息
+    if (!db.storyboards) {
+      return { success: false, error: '数据库未初始化' }
+    }
+    const storyboard = db.storyboards.getById(storyboardId)
+    if (!storyboard) {
+      return { success: false, error: '分镜不存在' }
+    }
+
+    // 检查分镜是否有画面
+    if (!storyboard.frameImage) {
+      return { success: false, error: '分镜没有画面，请先生成画面' }
+    }
+
+    // 获取场景信息以获取项目ID
+    if (!db.sceneScripts) {
+      return { success: false, error: '数据库未初始化' }
+    }
+    const scene = db.sceneScripts.getById(storyboard.sceneScriptId)
+    if (!scene) {
+      return { success: false, error: '场景不存在' }
+    }
+
+    // 获取剧本信息以获取项目ID
+    if (!db.episodeScripts) {
+      return { success: false, error: '数据库未初始化' }
+    }
+    const script = db.episodeScripts.getById(scene.episodeScriptId)
+    if (!script) {
+      return { success: false, error: '剧本不存在' }
+    }
+    const projectId = script.projectId
+
+    // 获取项目配置
+    if (!db.videoProjects) {
+      return { success: false, error: '数据库未初始化' }
+    }
+    const project = db.videoProjects.getById(projectId)
+    if (!project) {
+      return { success: false, error: '项目不存在' }
+    }
+
+    // 解析项目配置
+    let projectConfig: VideoProjectConfig
+    try {
+      projectConfig = typeof project.config === 'string'
+        ? JSON.parse(project.config)
+        : project.config
+    } catch {
+      return { success: false, error: '项目配置解析失败' }
+    }
+
+    // 检查是否配置了视频模型
+    if (!projectConfig.videoModel || !projectConfig.videoModel.providerConfigId) {
+      return { success: false, error: '未配置视频生成模型，请在项目设置中选择视频模型' }
+    }
+
+    // 获取分镜图片路径
+    const imagePath = storyboard.frameImage.filePath || storyboard.frameImage.url
+
+    // 构建视频生成请求
+    const videoRequest: any = {
+      providerConfigId: projectConfig.videoModel.providerConfigId,
+      model: projectConfig.videoModel.modelId,
+      prompt: storyboard.frameDescription || `镜头 ${storyboard.shotNumber} 的动态画面`,
+      duration: storyboard.duration || 5,
+      aspectRatio: projectConfig.aspectRatio || '16:9'
+    }
+
+    // 如果有图片，传递给视频服务（百炼 Provider 会自动处理本地文件上传）
+    if (imagePath) {
+      videoRequest.image = imagePath
+      console.log('[handleSynthesizeStoryboardVideo] 传递图片路径给视频服务:', imagePath.substring(0, 100))
+    }
+
+    console.log('[handleSynthesizeStoryboardVideo] 调用 AI 视频生成:', {
+      storyboardId,
+      model: videoRequest.model,
+      duration: videoRequest.duration,
+      hasImage: !!imagePath
+    })
+
+    // 获取 Provider 配置
+    const providerConfig = await db.providerConfigs.getById(projectConfig.videoModel.providerConfigId)
+    if (!providerConfig) {
+      return { success: false, error: '视频模型配置不存在' }
+    }
+
+    // 解密 API 密钥
+    const secureStorage = SecureStorageService.getInstance()
+    if (!secureStorage.isInitialized()) {
+      await secureStorage.initialize()
+    }
+    const decryptedApiKey = secureStorage.decrypt(providerConfig.apiKey)
+
+    // 确定 Provider 类型
+    let providerType = providerConfig.templateId.replace('video-', '') as string
+    if (providerType === 'bailian' || providerType === 'dashscope' || providerType === 'qwen') {
+      providerType = 'bailian'
+    }
+
+    // 创建 Provider 实例
+    const provider = createVideoProvider(providerType as any, {
+      id: providerConfig.id,
+      apiKey: decryptedApiKey,
+      baseUrl: providerConfig.baseUrl,
+      customHeaders: providerConfig.customHeaders,
+      customParams: providerConfig.customParams
+    })
+
+    // 调用 AI 视频生成服务
+    const result = await VideoService.generateVideo(window, videoRequest)
+
+    if (result.success) {
+      // 同步模式：直接返回了视频
+      if (result.video?.localPath || result.video?.url) {
+        return {
+          success: true,
+          data: {
+            outputPath: result.video.localPath || result.video.url,
+            duration: result.video.duration || storyboard.duration
+          }
+        }
+      }
+
+      // 异步模式：等待任务完成
+      if (result.taskId) {
+        console.log('[handleSynthesizeStoryboardVideo] 异步任务已创建，等待完成:', result.taskId)
+
+        // 等待任务完成（最多 5 分钟）
+        const taskStatus = await VideoService.waitForTaskCompletion(provider, result.taskId, 5 * 60 * 1000)
+
+        if (taskStatus.status === 'completed' && taskStatus.video?.url) {
+          console.log('[handleSynthesizeStoryboardVideo] 视频生成成功，下载中...')
+
+          // 下载视频到本地
+          const savedPath = await VideoService['saveVideoFromUrl'](taskStatus.video.url, videoRequest.model || 'unknown')
+
+          if (savedPath) {
+            const localUrl = localPathToUrl(savedPath)
+            console.log('[handleSynthesizeStoryboardVideo] 视频保存成功:', savedPath)
+
+            return {
+              success: true,
+              data: {
+                outputPath: localUrl,
+                duration: taskStatus.video.duration || storyboard.duration
+              }
+            }
+          } else {
+            // 下载失败，返回远程 URL
+            return {
+              success: true,
+              data: {
+                outputPath: taskStatus.video.url,
+                duration: taskStatus.video.duration || storyboard.duration
+              }
+            }
+          }
+        } else {
+          // 任务失败
+          return { success: false, error: taskStatus.error || '视频生成失败' }
+        }
+      }
+    }
+
+    return { success: false, error: result.error || '视频生成失败' }
+  } catch (error: any) {
+    console.error('[handleSynthesizeStoryboardVideo] 错误:', error)
+    return { success: false, error: error.message || '视频生成失败' }
   }
 }
 

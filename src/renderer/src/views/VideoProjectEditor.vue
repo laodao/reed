@@ -369,16 +369,24 @@
     <el-dialog
       v-model="showCreateEpisodeDialog"
       title="创建剧集"
-      width="600px"
+      width="700px"
     >
-      <el-form :model="episodeForm" label-width="80px">
+      <el-form :model="episodeForm" label-width="90px">
         <el-form-item label="剧集序号">
           <el-input-number v-model="episodeForm.episodeNumber" :min="1" :max="999" />
         </el-form-item>
         <el-form-item label="剧集标题">
           <el-input v-model="episodeForm.title" placeholder="选择章节后自动生成，或手动输入" />
         </el-form-item>
-        <el-form-item label="关联章节">
+        <el-form-item label="内容来源">
+          <el-radio-group v-model="episodeForm.sourceType" @change="handleSourceTypeChange">
+            <el-radio value="outline">关联长文章节</el-radio>
+            <el-radio value="uploaded">上传长文</el-radio>
+          </el-radio-group>
+        </el-form-item>
+
+        <!-- 关联章节模式 -->
+        <el-form-item v-if="episodeForm.sourceType === 'outline'" label="关联章节">
           <el-cascader
             v-model="episodeForm.outlineId"
             :options="outlineCascaderData"
@@ -394,10 +402,35 @@
             <span>选择"节"级别的章节创建剧集</span>
           </div>
         </el-form-item>
+
+        <!-- 上传长文模式 -->
+        <template v-if="episodeForm.sourceType === 'uploaded'">
+          <el-form-item label="长文内容">
+            <el-input
+              v-model="episodeForm.uploadedContent"
+              type="textarea"
+              :rows="10"
+              placeholder="请粘贴长文内容（500-15000字）"
+              style="width: 100%"
+            />
+            <div class="word-count-hint">
+              <span :class="{ 'word-count-warning': uploadedWordCount < 500 || uploadedWordCount > 15000 }">
+                当前字数：{{ uploadedWordCount }} 字
+              </span>
+              <span class="word-count-limit">（限制：500-15000字）</span>
+            </div>
+          </el-form-item>
+          <el-form-item v-if="uploadedWordCount < 500 && uploadedWordCount > 0">
+            <div class="form-error">字数不足，至少需要 500 字，当前 {{ uploadedWordCount }} 字</div>
+          </el-form-item>
+          <el-form-item v-if="uploadedWordCount > 15000">
+            <div class="form-error">字数超出限制，最多允许 15000 字，当前 {{ uploadedWordCount }} 字</div>
+          </el-form-item>
+        </template>
       </el-form>
       <template #footer>
         <el-button @click="showCreateEpisodeDialog = false">取消</el-button>
-        <el-button type="primary" :loading="store.loading" @click="createEpisode">
+        <el-button type="primary" :loading="store.loading" :disabled="!isEpisodeFormValid" @click="createEpisode">
           创建
         </el-button>
       </template>
@@ -597,7 +630,7 @@
               />
             </el-option-group>
           </el-select>
-          <div class="model-hint">用于合成场景视频（可选）</div>
+          <div class="model-hint">请选择图生视频模型，当前支持阿里百炼、火山方舟平台</div>
         </el-form-item>
         <el-form-item label="音频生成">
           <el-select
@@ -1199,7 +1232,26 @@ const generatingImage = ref(false)
 const episodeForm = reactive({
   episodeNumber: 1,
   title: '',
-  outlineId: ''
+  sourceType: 'outline' as 'outline' | 'uploaded',
+  outlineId: '',
+  uploadedContent: ''
+})
+
+// 上传长文字数统计
+const uploadedWordCount = computed(() => {
+  return episodeForm.uploadedContent.length
+})
+
+// 剧集表单验证
+const isEpisodeFormValid = computed(() => {
+  if (!episodeForm.title.trim()) return false
+
+  if (episodeForm.sourceType === 'outline') {
+    return !!episodeForm.outlineId
+  } else {
+    const wordCount = uploadedWordCount.value
+    return wordCount >= 500 && wordCount <= 15000
+  }
 })
 
 // 项目设置表单
@@ -1921,12 +1973,28 @@ function openCreateEpisodeDialog() {
   // 重置表单
   episodeForm.episodeNumber = store.episodes.length + 1
   episodeForm.title = ''
+  episodeForm.sourceType = 'outline'
   episodeForm.outlineId = ''
+  episodeForm.uploadedContent = ''
   selectedOutlineInfo.value = null
   outlineSearchText.value = ''
   // 清除树的选择
   outlineTreeRef.value?.setCurrentKey(null)
   showCreateEpisodeDialog.value = true
+}
+
+/**
+ * 处理内容来源切换
+ */
+function handleSourceTypeChange() {
+  // 切换模式时清空对应字段
+  if (episodeForm.sourceType === 'outline') {
+    episodeForm.uploadedContent = ''
+  } else {
+    episodeForm.outlineId = ''
+    selectedOutlineInfo.value = null
+    outlineTreeRef.value?.setCurrentKey(null)
+  }
 }
 
 /**
@@ -1940,9 +2008,13 @@ async function createEpisode() {
 
   const episode = await store.createEpisode(
     projectId.value,
-    episodeForm.outlineId || '',
-    episodeForm.episodeNumber,
-    episodeForm.title
+    {
+      sourceType: episodeForm.sourceType,
+      outlineId: episodeForm.sourceType === 'outline' ? episodeForm.outlineId : undefined,
+      uploadedContent: episodeForm.sourceType === 'uploaded' ? episodeForm.uploadedContent : undefined,
+      episodeNumber: episodeForm.episodeNumber,
+      title: episodeForm.title
+    }
   )
 
   if (episode) {
@@ -1951,15 +2023,17 @@ async function createEpisode() {
     // 重置表单
     episodeForm.episodeNumber = store.episodes.length + 1
     episodeForm.title = ''
+    episodeForm.sourceType = 'outline'
     episodeForm.outlineId = ''
+    episodeForm.uploadedContent = ''
     selectedOutlineInfo.value = null
     outlineSearchText.value = ''
     outlineTreeRef.value?.setCurrentKey(null)
     // 选中新创建的剧集
     await selectEpisode(episode)
 
-    // 自动绑定章节涉及的角色
-    if (episodeForm.outlineId) {
+    // 自动绑定章节涉及的角色（仅关联章节模式）
+    if (episodeForm.sourceType === 'outline' && episodeForm.outlineId) {
       await autoBindCharactersFromOutline(episodeForm.outlineId)
     }
   } else {
@@ -2323,11 +2397,6 @@ async function generateScript() {
   }
 
   // 检查是否有关联的章节
-  if (!store.currentEpisode.outlineId) {
-    ElMessage.warning('该剧集未关联章节，无法生成剧本')
-    return
-  }
-
   // 使用项目配置中的模型
   const scriptModel = store.currentProject.config?.scriptModel
   if (!scriptModel?.providerConfigId || !scriptModel?.modelId) {
@@ -2335,12 +2404,21 @@ async function generateScript() {
     return
   }
 
+  // 验证内容来源
+  if (store.currentEpisode.sourceType === 'outline' && !store.currentEpisode.outlineId) {
+    ElMessage.warning('该剧集未关联章节，无法生成剧本')
+    return
+  }
+  if (store.currentEpisode.sourceType === 'uploaded' && !store.currentEpisode.uploadedContent) {
+    ElMessage.warning('该剧集没有上传长文内容，无法生成剧本')
+    return
+  }
+
   try {
     ElMessage.info('正在生成剧本，请稍候...')
 
     const result = await store.generateScript(
-      store.currentProject.id,
-      store.currentEpisode.outlineId,
+      store.currentEpisode.id,
       scriptModel.providerConfigId,
       scriptModel.modelId
     )
@@ -3667,6 +3745,27 @@ watch(outlineSearchText, (val) => {
   margin-top: 8px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+.word-count-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+
+  .word-count-warning {
+    color: var(--el-color-warning);
+  }
+
+  .word-count-limit {
+    color: var(--el-text-color-secondary);
+  }
+}
+
+.form-error {
+  color: var(--el-color-danger);
+  font-size: 12px;
 }
 
 .form-hint {

@@ -338,6 +338,103 @@
           </div>
         </el-tab-pane>
 
+        <!-- 图床设置 -->
+        <el-tab-pane label="图床设置" name="oss">
+          <div class="settings-section">
+            <div class="section-header">
+              <div>
+                <h3>图床/OSS 配置</h3>
+                <p class="section-desc">
+                  配置图床服务，用于将本地图片上传到云端获取公网 URL。
+                  <el-tag type="info" size="small" class="hint-tag">
+                    视频生成功能需要公网图片地址
+                  </el-tag>
+                </p>
+              </div>
+              <el-button type="primary" @click="openAddOSSDialog">
+                <el-icon><Plus /></el-icon>
+                添加配置
+              </el-button>
+            </div>
+
+            <!-- 已配置的 OSS 列表 -->
+            <div v-if="ossConfigs.length > 0" class="oss-config-list">
+              <div
+                v-for="config in ossConfigs"
+                :key="config.id"
+                class="provider-config-item"
+                :class="{ disabled: !config.isEnabled, 'is-default': config.isDefault }"
+              >
+                <div class="config-icon">
+                  <span class="icon-text">{{ config.provider === 'aliyun' ? '阿里' : '火山' }}</span>
+                </div>
+                <div class="config-info">
+                  <div class="config-name">
+                    {{ config.name }}
+                    <el-tag v-if="config.isDefault" type="success" size="small">默认</el-tag>
+                    <el-tag v-if="!config.isEnabled" type="info" size="small">已禁用</el-tag>
+                  </div>
+                  <div class="config-details">
+                    <span>{{ config.provider === 'aliyun' ? '阿里云 OSS' : '火山引擎 TOS' }}</span>
+                    <span class="detail-separator">|</span>
+                    <span>{{ config.region }}</span>
+                    <span class="detail-separator">|</span>
+                    <span>{{ config.bucket }}</span>
+                  </div>
+                </div>
+                <div class="config-actions">
+                  <el-switch
+                    v-model="config.isEnabled"
+                    size="small"
+                    @change="toggleOSSEnabled(config)"
+                  />
+                  <el-button
+                    type="primary"
+                    size="small"
+                    text
+                    :loading="config.testing"
+                    @click="testOSSConnection(config)"
+                  >
+                    测试
+                  </el-button>
+                  <el-button
+                    v-if="!config.isDefault"
+                    type="warning"
+                    size="small"
+                    text
+                    @click="setDefaultOSS(config)"
+                  >
+                    设为默认
+                  </el-button>
+                  <el-dropdown trigger="click">
+                    <el-button type="primary" size="small" text>
+                      <el-icon><MoreFilled /></el-icon>
+                    </el-button>
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item @click="editOSSConfig(config)">
+                          编辑
+                        </el-dropdown-item>
+                        <el-dropdown-item @click="deleteOSSConfig(config)" divided>
+                          删除
+                        </el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
+                </div>
+              </div>
+            </div>
+
+            <div v-else class="empty-config">
+              <p>暂无已配置的图床</p>
+              <p class="hint">
+                <el-icon><InfoFilled /></el-icon>
+                视频生成会自动使用百炼临时上传（有效期 48 小时）。配置自己的 OSS 可获得更稳定的服务。
+              </p>
+            </div>
+          </div>
+        </el-tab-pane>
+
         <!-- 关于 -->
         <el-tab-pane label="关于" name="about">
           <div class="settings-section about-section">
@@ -384,6 +481,71 @@
       :existing-configs="searchEngineConfigs"
       @saved="loadSearchEngineConfigs"
     />
+
+    <!-- 添加/编辑 OSS 配置对话框 -->
+    <el-dialog
+      v-model="showAddOSSDialog"
+      :title="editingOSSConfig ? '编辑图床配置' : '添加图床配置'"
+      width="500px"
+      :close-on-click-modal="false"
+    >
+      <el-form
+        ref="ossFormRef"
+        :model="ossForm"
+        :rules="ossFormRules"
+        label-width="120px"
+        label-position="left"
+      >
+        <el-form-item label="配置名称" prop="name">
+          <el-input v-model="ossForm.name" placeholder="请输入配置名称" />
+        </el-form-item>
+
+        <el-form-item label="提供商" prop="provider">
+          <el-select v-model="ossForm.provider" placeholder="选择提供商">
+            <el-option label="阿里云 OSS" value="aliyun" />
+            <el-option label="火山引擎 TOS" value="volcengine" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="AccessKey ID" prop="accessKeyId">
+          <el-input v-model="ossForm.accessKeyId" placeholder="请输入 AccessKey ID" />
+        </el-form-item>
+
+        <el-form-item label="AccessKey Secret" prop="accessKeySecret">
+          <el-input
+            v-model="ossForm.accessKeySecret"
+            type="password"
+            placeholder="请输入 AccessKey Secret"
+            show-password
+          />
+        </el-form-item>
+
+        <el-form-item label="地域 (Region)" prop="region">
+          <el-input v-model="ossForm.region" placeholder="如: oss-cn-hangzhou 或 cn-beijing" />
+        </el-form-item>
+
+        <el-form-item label="Bucket 名称" prop="bucket">
+          <el-input v-model="ossForm.bucket" placeholder="请输入 Bucket 名称" />
+        </el-form-item>
+
+        <el-form-item label="Endpoint">
+          <el-input v-model="ossForm.endpoint" placeholder="可选，自定义 Endpoint" />
+        </el-form-item>
+
+        <el-form-item label="自定义域名">
+          <el-input v-model="ossForm.customDomain" placeholder="可选，CDN 加速域名" />
+        </el-form-item>
+
+        <el-form-item label="路径前缀">
+          <el-input v-model="ossForm.pathPrefix" placeholder="可选，如 images/" />
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="showAddOSSDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveOSSConfig" :loading="ossSaving">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -403,6 +565,7 @@ import type {
   SearchEngineTemplate,
   UserSearchEngineConfig
 } from '../../../shared/types/search-engine.types'
+import type { OSSConfig } from '../../../shared/types/oss.types'
 
 // 定义组件名称用于 keep-alive
 defineOptions({
@@ -475,6 +638,39 @@ const quickSearchEngines = ref<SearchEngineTemplate[]>([])
 const disabledQuickEngines = ref<string[]>([])
 const showAddSearchEngineDialog = ref(false)
 const editingSearchEngineConfig = ref<UserSearchEngineConfig | undefined>(undefined)
+
+// OSS 配置
+interface OSSConfigWithState extends OSSConfig {
+  testing?: boolean
+}
+const ossConfigs = ref<OSSConfigWithState[]>([])
+const showAddOSSDialog = ref(false)
+const editingOSSConfig = ref<OSSConfig | undefined>(undefined)
+const ossSaving = ref(false)
+const ossFormRef = ref()
+
+// OSS 表单
+const ossForm = reactive({
+  name: '',
+  provider: 'aliyun' as 'aliyun' | 'volcengine',
+  accessKeyId: '',
+  accessKeySecret: '',
+  region: '',
+  bucket: '',
+  endpoint: '',
+  customDomain: '',
+  pathPrefix: ''
+})
+
+// OSS 表单验证规则
+const ossFormRules = {
+  name: [{ required: true, message: '请输入配置名称', trigger: 'blur' }],
+  provider: [{ required: true, message: '请选择提供商', trigger: 'change' }],
+  accessKeyId: [{ required: true, message: '请输入 AccessKey ID', trigger: 'blur' }],
+  accessKeySecret: [{ required: true, message: '请输入 AccessKey Secret', trigger: 'blur' }],
+  region: [{ required: true, message: '请输入地域', trigger: 'blur' }],
+  bucket: [{ required: true, message: '请输入 Bucket 名称', trigger: 'blur' }]
+}
 
 // 切换主题
 const changeTheme = async (themeId: string) => {
@@ -768,6 +964,184 @@ const deleteSearchEngineConfig = async (config: UserSearchEngineConfig) => {
   }
 }
 
+// 加载 OSS 配置
+const loadOSSConfigs = async () => {
+  try {
+    const result = await window.electronAPI.oss.listConfigs()
+    if (result.success && result.data) {
+      ossConfigs.value = result.data as OSSConfigWithState[]
+    }
+  } catch (error) {
+    console.error('加载 OSS 配置失败:', error)
+  }
+}
+
+// 打开添加 OSS 配置对话框
+const openAddOSSDialog = () => {
+  editingOSSConfig.value = undefined
+  resetOSSForm()
+  showAddOSSDialog.value = true
+}
+
+// 重置 OSS 表单
+const resetOSSForm = () => {
+  ossForm.name = ''
+  ossForm.provider = 'aliyun'
+  ossForm.accessKeyId = ''
+  ossForm.accessKeySecret = ''
+  ossForm.region = ''
+  ossForm.bucket = ''
+  ossForm.endpoint = ''
+  ossForm.customDomain = ''
+  ossForm.pathPrefix = ''
+}
+
+// 保存 OSS 配置
+const saveOSSConfig = async () => {
+  try {
+    await ossFormRef.value?.validate()
+    ossSaving.value = true
+
+    if (editingOSSConfig.value) {
+      // 编辑模式
+      const updateData = {
+        name: ossForm.name,
+        accessKeyId: ossForm.accessKeyId,
+        accessKeySecret: ossForm.accessKeySecret,
+        region: ossForm.region,
+        bucket: ossForm.bucket,
+        endpoint: ossForm.endpoint || undefined,
+        customDomain: ossForm.customDomain || undefined,
+        pathPrefix: ossForm.pathPrefix || undefined
+      }
+      const result = await window.electronAPI.oss.updateConfig(editingOSSConfig.value.id, updateData)
+      if (result.success) {
+        await loadOSSConfigs()
+        showAddOSSDialog.value = false
+        ElMessage.success('配置已更新')
+      } else {
+        ElMessage.error(result.error || '更新失败')
+      }
+    } else {
+      // 新增模式
+      const result = await window.electronAPI.oss.createConfig({
+        name: ossForm.name,
+        provider: ossForm.provider,
+        accessKeyId: ossForm.accessKeyId,
+        accessKeySecret: ossForm.accessKeySecret,
+        region: ossForm.region,
+        bucket: ossForm.bucket,
+        endpoint: ossForm.endpoint || undefined,
+        customDomain: ossForm.customDomain || undefined,
+        pathPrefix: ossForm.pathPrefix || undefined
+      })
+      if (result.success) {
+        await loadOSSConfigs()
+        showAddOSSDialog.value = false
+        ElMessage.success('配置已创建')
+      } else {
+        ElMessage.error(result.error || '创建失败')
+      }
+    }
+  } catch (error) {
+    console.error('保存 OSS 配置失败:', error)
+  } finally {
+    ossSaving.value = false
+  }
+}
+
+// 切换 OSS 启用状态
+const toggleOSSEnabled = async (config: OSSConfigWithState) => {
+  try {
+    const result = await window.electronAPI.oss.toggleEnabled(config.id)
+    if (result.success) {
+      ElMessage.success(config.isEnabled ? '已启用' : '已禁用')
+    } else {
+      config.isEnabled = !config.isEnabled // 回滚
+      ElMessage.error('操作失败')
+    }
+  } catch (error) {
+    console.error('切换 OSS 启用状态失败:', error)
+    config.isEnabled = !config.isEnabled // 回滚
+    ElMessage.error('操作失败')
+  }
+}
+
+// 设置默认 OSS
+const setDefaultOSS = async (config: OSSConfig) => {
+  try {
+    const result = await window.electronAPI.oss.setDefault(config.id)
+    if (result.success) {
+      // 更新本地状态
+      ossConfigs.value.forEach((c) => {
+        c.isDefault = c.id === config.id
+      })
+      ElMessage.success('已设为默认')
+    }
+  } catch (error) {
+    console.error('设置默认 OSS 失败:', error)
+    ElMessage.error('操作失败')
+  }
+}
+
+// 测试 OSS 连接
+const testOSSConnection = async (config: OSSConfigWithState) => {
+  config.testing = true
+  try {
+    const result = await window.electronAPI.oss.testConnection(config.id)
+    if (result.success && result.data?.success) {
+      ElMessage.success(result.data.message || '连接成功')
+    } else {
+      ElMessage.error(result.data?.message || result.error || '连接失败')
+    }
+  } catch (error) {
+    console.error('测试 OSS 连接失败:', error)
+    ElMessage.error('测试失败')
+  } finally {
+    config.testing = false
+  }
+}
+
+// 编辑 OSS 配置
+const editOSSConfig = (config: OSSConfig) => {
+  editingOSSConfig.value = config
+  ossForm.name = config.name
+  ossForm.provider = config.provider
+  ossForm.accessKeyId = config.accessKeyId
+  ossForm.accessKeySecret = '' // 密钥不返回，用户需要重新输入或保持原样
+  ossForm.region = config.region
+  ossForm.bucket = config.bucket
+  ossForm.endpoint = config.endpoint || ''
+  ossForm.customDomain = config.customDomain || ''
+  ossForm.pathPrefix = config.pathPrefix || ''
+  showAddOSSDialog.value = true
+}
+
+// 删除 OSS 配置
+const deleteOSSConfig = async (config: OSSConfig) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除该配置吗？ (${config.name})`,
+      '确认删除',
+      {
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    const result = await window.electronAPI.oss.deleteConfig(config.id)
+    if (result.success) {
+      await loadOSSConfigs()
+      ElMessage.success('已删除')
+    } else {
+      ElMessage.error(result.error || '操作失败')
+    }
+  } catch {
+    // 用户取消
+  }
+}
+
 // 打开数据目录
 const openDataFolder = async () => {
   try {
@@ -939,6 +1313,8 @@ onMounted(async () => {
   await loadSearchEngineTemplates()
   await loadSearchEngineConfigs()
   await loadDisabledQuickEngines()
+  // 加载 OSS 配置
+  await loadOSSConfigs()
 })
 </script>
 
@@ -1469,6 +1845,15 @@ onMounted(async () => {
   font-weight: 500;
   color: var(--text-primary);
   margin: 0 0 4px 0;
+}
+
+// OSS 配置列表样式
+.oss-config-list {
+  margin-top: 16px;
+}
+
+.hint-tag {
+  margin-left: 8px;
 }
 
 .group-desc {

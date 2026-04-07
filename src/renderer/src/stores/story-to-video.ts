@@ -282,18 +282,20 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
    */
   async function createEpisode(
     projectId: string,
-    outlineId: string,
-    episodeNumber: number,
-    title: string
+    data: {
+      sourceType: 'outline' | 'uploaded'
+      outlineId?: string
+      uploadedContent?: string
+      episodeNumber: number
+      title: string
+    }
   ): Promise<VideoEpisode | null> {
     loading.value = true
     error.value = null
     try {
       const response = await window.electronAPI.storyToVideo.createEpisode(
         projectId,
-        outlineId,
-        episodeNumber,
-        title
+        data
       )
       if (response.success && response.data) {
         const episode = response.data as VideoEpisode
@@ -739,8 +741,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
    * 生成剧本
    */
   async function generateScript(
-    projectId: string,
-    outlineId: string,
+    episodeId: string,
     providerConfigId?: string,
     modelId?: string
   ): Promise<{ script: EpisodeScript; scenes: SceneScript[] } | null> {
@@ -748,8 +749,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     error.value = null
     try {
       const response = await window.electronAPI.storyToVideo.generateScript(
-        projectId,
-        outlineId,
+        episodeId,
         providerConfigId,
         modelId
       )
@@ -1084,6 +1084,32 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
   }
 
   /**
+   * 合成单个分镜视频
+   */
+  async function synthesizeStoryboardVideo(
+    storyboardId: string,
+    quality: string = 'standard'
+  ): Promise<{ outputPath: string; duration: number } | null> {
+    loading.value = true
+    error.value = null
+
+    try {
+      const response = await window.electronAPI.storyToVideo.synthesizeStoryboardVideo(storyboardId, quality)
+      if (response.success && response.data) {
+        return response.data as { outputPath: string; duration: number }
+      } else {
+        error.value = response.error || '视频合成失败'
+        return null
+      }
+    } catch (e: any) {
+      error.value = e.message || '视频合成失败'
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
    * 导出视频
    */
   async function exportVideo(
@@ -1191,6 +1217,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     // 视频合成
     getVideoPresets,
     synthesizeSceneVideo,
+    synthesizeStoryboardVideo,
     exportVideo
   }
 })

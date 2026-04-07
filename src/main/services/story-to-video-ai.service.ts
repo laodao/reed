@@ -22,7 +22,8 @@ import type {
   TransitionConfig,
   StoryboardCharacter,
   FullScriptGenerationResult,
-  GeneratedScene
+  GeneratedScene,
+  UploadedCharacter
 } from '../../shared/types/story-to-video.types'
 
 /**
@@ -329,6 +330,41 @@ INT. 走廊 - 夜
   ]
 }
 ===SCENES_JSON_END===`
+
+/**
+ * 角色识别提示词（从上传的长文中识别角色）
+ */
+const CHARACTER_IDENTIFICATION_PROMPT = `你是一位专业的文学分析师和剧本编剧，擅长从文本中识别和分析角色。请从以下文本中识别出所有重要的角色。
+
+## 输出要求
+
+请输出 JSON 格式的角色列表，严格遵循以下格式：
+
+{
+  "characters": [
+    {
+      "name": "角色名称",
+      "description": "角色的简要描述，包括外貌、性格特点、身份等",
+      "role": "角色定位，可选值：protagonist（主角）、supporting（配角）、antagonist（反派）、minor（次要角色）"
+    }
+  ]
+}
+
+## 识别原则
+
+1. **主角识别**：故事的核心人物，推动主要情节发展，出场频率最高
+2. **配角识别**：与主角有重要互动，对情节有显著影响但非核心
+3. **反派识别**：与主角对立的角色，制造冲突或障碍
+4. **次要角色识别**：短暂出场但有名字或特定身份的角色
+5. **忽略**：无名无姓的路人、群体描述（如"村民们"）不计入
+
+## 分析文本
+
+{textContent}
+
+## 输出
+
+请直接输出 JSON 格式的结果，不要添加任何额外的文字说明。`
 
 /**
  * 场景拆分提示词
@@ -1175,6 +1211,24 @@ ${sceneScript.actions.map(a => `- ID: ${a.id}, 描述: ${a.description}`).join('
     // 确保 shotNumber 正确
     result.shotNumber = shotNumber
 
+    // 验证并修正 dialogueIds
+    // 如果 dialogueIds 为空或包含占位符文本，尝试从场景对话中匹配
+    if (!result.dialogueIds || !Array.isArray(result.dialogueIds) || result.dialogueIds.length === 0) {
+      result.dialogueIds = []
+    } else {
+      // 过滤掉占位符文本，只保留实际的对话 ID
+      const validDialogueIds = sceneScript.dialogues.map(d => d.id)
+      result.dialogueIds = result.dialogueIds.filter((id: string) => validDialogueIds.includes(id))
+    }
+
+    // 验证并修正 actionIds
+    if (!result.actionIds || !Array.isArray(result.actionIds)) {
+      result.actionIds = []
+    } else {
+      const validActionIds = sceneScript.actions.map(a => a.id)
+      result.actionIds = result.actionIds.filter((id: string) => validActionIds.includes(id))
+    }
+
     return result as StoryboardResult
   }
 
@@ -1231,7 +1285,45 @@ ${sceneScript.actions.map(a => `- ID: ${a.id}, 描述: ${a.description}`).join('
       return await this.generateStoryboard(sceneScript, providerConfigId, modelId)
     }
 
+    // 后处理：智能分配对话到各个分镜
+    // 如果 AI 没有正确分配对话，我们根据分镜数量平均分配
+    this.distributeDialoguesToStoryboards(sceneScript, storyboards)
+
     return { storyboards }
+  }
+
+  /**
+   * 智能分配对话到各个分镜
+   * 如果分镜的 dialogueIds 为空，则根据对话数量平均分配
+   */
+  private distributeDialoguesToStoryboards(sceneScript: SceneScript, storyboards: StoryboardResult[]): void {
+    const dialogues = sceneScript.dialogues
+    console.log(`[StoryToVideoAI] distributeDialoguesToStoryboards: 对话数=${dialogues.length}, 分镜数=${storyboards.length}`)
+
+    if (dialogues.length === 0 || storyboards.length === 0) return
+
+    // 检查是否所有分镜的 dialogueIds 都为空
+    const totalAssigned = storyboards.reduce((sum, sb) => sum + (sb.dialogueIds?.length || 0), 0)
+    console.log(`[StoryToVideoAI] totalAssigned=${totalAssigned}`)
+
+    if (totalAssigned === 0 && dialogues.length > 0) {
+      console.log('[StoryToVideoAI] AI 未分配对话，进行智能分配')
+
+      // 计算每个分镜应该分配的对话数量
+      const dialoguesPerShot = Math.ceil(dialogues.length / storyboards.length)
+
+      let dialogueIndex = 0
+      for (let i = 0; i < storyboards.length && dialogueIndex < dialogues.length; i++) {
+        const count = Math.min(dialoguesPerShot, dialogues.length - dialogueIndex)
+        storyboards[i].dialogueIds = dialogues
+          .slice(dialogueIndex, dialogueIndex + count)
+          .map(d => d.id)
+        dialogueIndex += count
+        console.log(`[StoryToVideoAI] 分镜 ${i + 1} 分配了 ${count} 条对话:`, storyboards[i].dialogueIds)
+      }
+
+      console.log(`[StoryToVideoAI] 已将 ${dialogues.length} 条对话分配到 ${storyboards.length} 个分镜`)
+    }
   }
 
   /**
@@ -1273,5 +1365,45 @@ ${sceneScript.actions.map(a => `- ID: ${a.id}, 描述: ${a.description}`).join('
     }
 
     return results
+  }
+
+  /**
+   * 从上传的长文中识别角色
+   * @param textContent 上传的长文内容（仅分析前 5000 字以提高效率）
+   * @param providerConfigId AI 提供商配置 ID
+   * @param modelId 模型 ID
+   * @returns 识别的角色列表
+   */
+  async identifyCharacters(
+    textContent: string,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<UploadedCharacter[]> {
+    // 仅分析前 5000 字以提高效率
+    const textToAnalyze = textContent.substring(0, 5000)
+
+    // 替换提示词中的变量
+    const prompt = CHARACTER_IDENTIFICATION_PROMPT.replace('{textContent}', textToAnalyze)
+
+    const systemPrompt = '你是一位专业的文学分析师。请从文本中识别角色，严格按照 JSON 格式输出，不要添加任何额外的文字说明。'
+
+    const response = await this.callAI(prompt, systemPrompt, 2048, providerConfigId, modelId)
+    const result = this.extractJsonFromResponse(response)
+
+    // 验证结果格式
+    if (!result.characters || !Array.isArray(result.characters)) {
+      console.warn('[StoryToVideoAI] 角色识别结果格式不正确，返回空数组')
+      return []
+    }
+
+    // 转换为 UploadedCharacter 格式
+    const characters: UploadedCharacter[] = result.characters.map((char: any) => ({
+      name: char.name || '未知角色',
+      description: char.description,
+      role: char.role
+    }))
+
+    console.log(`[StoryToVideoAI] 从上传长文中识别了 ${characters.length} 个角色`)
+    return characters
   }
 }

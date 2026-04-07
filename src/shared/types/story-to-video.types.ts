@@ -108,6 +108,20 @@ export type EpisodeStatus =
   | 'completed'
 
 /**
+ * 剧集内容来源类型
+ */
+export type EpisodeSourceType = 'outline' | 'uploaded'
+
+/**
+ * 上传长文识别的角色
+ */
+export interface UploadedCharacter {
+  name: string
+  description?: string
+  role?: string // 主角、配角、反派等
+}
+
+/**
  * 剧本状态
  */
 export type ScriptStatus = 'pending' | 'generating' | 'reviewing' | 'approved'
@@ -424,7 +438,7 @@ export interface EpisodeScript {
   id: string
   projectId: string
   episodeId: string
-  outlineId: string // 关联的长文大纲节点
+  outlineId?: string // 关联的长文大纲节点（可空）
   status: ScriptStatus
 
   // 剧本内容
@@ -518,12 +532,15 @@ export interface AudioTrack {
 }
 
 /**
- * 剧集（对应一个章节）
+ * 剧集（对应一个章节或上传的长文）
  */
 export interface VideoEpisode {
   id: string
   projectId: string
-  outlineId: string // 关联的长文大纲节点
+  sourceType: EpisodeSourceType // 内容来源类型
+  outlineId?: string // 关联的长文大纲节点（outline 模式时有值）
+  uploadedContent?: string // 上传的长文内容（uploaded 模式时有值）
+  uploadedCharacters?: UploadedCharacter[] // 识别的角色（uploaded 模式时有值）
   episodeNumber: number // 剧集序号
   title: string
   status: EpisodeStatus
@@ -560,13 +577,17 @@ export interface VideoProjectRecord {
 export interface VideoEpisodeRecord {
   id: string
   project_id: string
-  outline_id: string
+  source_type: string // 内容来源类型
+  outline_id: string | null // 关联的大纲ID（可空）
+  uploaded_content: string | null // 上传的长文内容
+  uploaded_characters: string | null // 识别的角色（JSON）
   episode_number: number
   title: string
   status: EpisodeStatus
   duration: number
   script_id: string | null
   audio_tracks: string // JSON
+  deleted_at: number | null
   created_at: number
   updated_at: number
 }
@@ -578,7 +599,7 @@ export interface EpisodeScriptRecord {
   id: string
   project_id: string
   episode_id: string
-  outline_id: string
+  outline_id: string | null // 关联的大纲ID（可空）
   status: ScriptStatus
   synopsis: string
   script_content: string | null // 完整剧本正文

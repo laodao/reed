@@ -110,17 +110,27 @@
             </el-descriptions>
 
             <!-- 预览大图 -->
-            <div v-if="selectedStoryboard.frameImage" class="detail-preview">
+            <div v-if="selectedStoryboard.frameImage" class="detail-preview" @click="openImagePreview(selectedStoryboard)">
               <img :src="selectedStoryboard.frameImage.filePath || selectedStoryboard.frameImage.url" alt="预览" />
+              <div class="preview-overlay">
+                <el-icon size="24"><ZoomIn /></el-icon>
+                <span>点击查看大图</span>
+              </div>
             </div>
 
             <!-- 操作按钮 -->
             <div class="detail-actions">
-              <el-button type="primary" @click="openRegenerateDialog(selectedStoryboard)" :loading="generatingSingle">
-                {{ selectedStoryboard.frameImage ? '重新生成画面' : '生成画面' }}
+              <el-button type="primary" size="small" @click="openRegenerateDialog(selectedStoryboard)" :loading="generatingSingle">
+                <el-icon><RefreshRight /></el-icon>
+                {{ selectedStoryboard.frameImage ? '重新生成' : '生成画面' }}
               </el-button>
-              <el-button v-if="selectedStoryboard.frameImage" @click="openImagePreview(selectedStoryboard)">
-                查看大图
+              <el-button v-if="selectedStoryboard.frameImage" type="warning" size="small" @click="generateStoryboardAudio" :loading="generatingAudio">
+                <el-icon><Headset /></el-icon>
+                生成音频
+              </el-button>
+              <el-button v-if="storyboardDialogues.length > 0" size="small" @click="showDialogueDialog = true">
+                <el-icon><ChatDotRound /></el-icon>
+                查看对白
               </el-button>
             </div>
           </div>
@@ -128,11 +138,11 @@
           <el-empty v-else description="请选择一个分镜" :image-size="80" />
 
           <!-- 音频播放区域 -->
-          <div class="audio-section" v-if="store.currentScene">
-            <h4>音频播放</h4>
-            <div v-if="sceneDialoguesWithAudio.length > 0" class="audio-list">
+          <div class="audio-section" v-if="selectedStoryboard">
+            <h4>本镜头音频</h4>
+            <div v-if="storyboardDialoguesWithAudio.length > 0" class="audio-list">
               <div
-                v-for="(dialogue, index) in sceneDialoguesWithAudio"
+                v-for="(dialogue, index) in storyboardDialoguesWithAudio"
                 :key="dialogue.id"
                 class="audio-item"
               >
@@ -162,13 +172,18 @@
         <!-- 固定底部操作栏 -->
         <div class="bottom-actions-fixed" v-if="store.storyboards.length > 0">
           <div class="action-buttons">
-            <el-button @click="generateAudio" :loading="generatingAudio" :disabled="!hasAllImages">
-              <el-icon><Headset /></el-icon>
-              生成音频
+            <el-button
+              v-if="selectedStoryboard?.frameImage"
+              type="warning"
+              @click="synthesizeSingleStoryboard"
+              :loading="synthesizingSingle"
+            >
+              <el-icon><VideoPlay /></el-icon>
+              合成当前镜头
             </el-button>
             <el-button type="success" @click="showSynthesisDialog = true" :disabled="!hasAllImages">
               <el-icon><VideoPlay /></el-icon>
-              合成视频
+              合成全部视频
             </el-button>
           </div>
           <div class="action-hint" v-if="!hasAllImages">
@@ -207,6 +222,34 @@
         <el-button @click="showRegenerateDialog = false">取消</el-button>
         <el-button type="primary" @click="regenerateImage" :loading="generatingSingle">开始生成</el-button>
       </template>
+    </el-dialog>
+
+    <!-- 对白查看对话框 -->
+    <el-dialog v-model="showDialogueDialog" title="镜头对白" width="500px">
+      <div v-if="selectedStoryboard" class="dialogue-dialog-content">
+        <div class="dialogue-header">
+          <el-tag>镜头 {{ selectedStoryboard.shotNumber }}</el-tag>
+          <span class="dialogue-count">共 {{ storyboardDialogues.length }} 条对白</span>
+        </div>
+        <div class="dialogue-list-dialog">
+          <div
+            v-for="dialogue in storyboardDialogues"
+            :key="dialogue.id"
+            class="dialogue-item-dialog"
+          >
+            <div class="dialogue-character">
+              <el-tag size="small" type="info">{{ dialogue.characterName }}</el-tag>
+              <el-tag v-if="dialogue.emotion" size="small" effect="plain">{{ dialogue.emotion }}</el-tag>
+            </div>
+            <div class="dialogue-text">{{ dialogue.text }}</div>
+            <div class="dialogue-meta" v-if="dialogue.volume || dialogue.pace">
+              <span v-if="dialogue.volume !== 'normal'">{{ dialogue.volume === 'loud' ? '大声' : '低语' }}</span>
+              <span v-if="dialogue.pace !== 'normal'">{{ dialogue.pace === 'fast' ? '快语速' : '慢语速' }}</span>
+            </div>
+          </div>
+        </div>
+        <el-empty v-if="storyboardDialogues.length === 0" description="暂无对白" :image-size="60" />
+      </div>
     </el-dialog>
 
     <!-- 图片预览对话框 -->
@@ -252,7 +295,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  ArrowLeft, Picture, ZoomIn, RefreshRight, Delete, Headset, VideoPlay, InfoFilled, VideoPause
+  ArrowLeft, Picture, ZoomIn, RefreshRight, Delete, Headset, VideoPlay, InfoFilled, VideoPause, ChatDotRound
 } from '@element-plus/icons-vue'
 import { useStoryToVideoStore } from '@/stores/story-to-video'
 import { useTabsStore } from '@/stores/tabs'
@@ -283,11 +326,13 @@ const selectedStoryboard = ref<Storyboard | null>(null)
 const generatingAll = ref(false)
 const generatingSingle = ref(false)
 const generatingAudio = ref(false)
+const synthesizingSingle = ref(false)
 
 // 对话框状态
 const showRegenerateDialog = ref(false)
 const showImagePreview = ref(false)
 const showSynthesisDialog = ref(false)
+const showDialogueDialog = ref(false)
 const previewImageUrl = ref('')
 const regeneratingStoryboard = ref<Storyboard | null>(null)
 
@@ -317,10 +362,65 @@ const audioElements = new Map<string, HTMLAudioElement>()
 const completedCount = computed(() => store.storyboards.filter(s => s.frameImage).length)
 const hasAllImages = computed(() => store.storyboards.length > 0 && store.storyboards.every(s => s.frameImage))
 
-// 过滤有音频的对白
-const sceneDialoguesWithAudio = computed(() => {
+// 过滤选中分镜的对白（有音频的）
+const storyboardDialoguesWithAudio = computed(() => {
+  if (!selectedStoryboard.value || !store.currentScene || !store.currentScene.dialogues) return []
+
+  const dialogueIds = selectedStoryboard.value.dialogueIds || []
+  const allDialogues = store.currentScene.dialogues
+
+  // 调试日志
+  console.log('[AudioDebug] 分镜 dialogueIds:', dialogueIds)
+  console.log('[AudioDebug] 场景对话 IDs:', allDialogues.map(d => d.id))
+
+  // 如果有 dialogueIds 且能匹配到对白，则过滤显示
+  if (dialogueIds.length > 0) {
+    const filtered = allDialogues.filter(d => dialogueIds.includes(d.id) && d.audioAsset)
+    if (filtered.length > 0) return filtered
+  }
+
+  // 兜底：当 dialogueIds 为空时，根据分镜序号智能分配对话
+  // 按分镜数量平均分配对话
+  const storyboardList = store.storyboards
+  const currentIndex = storyboardList.findIndex(s => s.id === selectedStoryboard.value?.id)
+  if (currentIndex >= 0 && storyboardList.length > 0) {
+    const dialoguesPerShot = Math.ceil(allDialogues.length / storyboardList.length)
+    const startIndex = currentIndex * dialoguesPerShot
+    const endIndex = Math.min(startIndex + dialoguesPerShot, allDialogues.length)
+    const assignedDialogues = allDialogues.slice(startIndex, endIndex).filter(d => d.audioAsset)
+    console.log(`[AudioDebug] 兜底分配: 分镜 ${currentIndex + 1}, 对话 ${startIndex}-${endIndex}`)
+    return assignedDialogues
+  }
+
+  return allDialogues.filter(d => d.audioAsset)
+})
+
+// 获取选中分镜的所有对白（包括没有音频的）
+const storyboardDialogues = computed(() => {
   if (!store.currentScene || !store.currentScene.dialogues) return []
-  return store.currentScene.dialogues.filter(d => d.audioAsset)
+
+  const allDialogues = store.currentScene.dialogues
+
+  // 如果有选中的分镜且有 dialogueIds，尝试过滤
+  if (selectedStoryboard.value) {
+    const dialogueIds = selectedStoryboard.value.dialogueIds || []
+    if (dialogueIds.length > 0) {
+      const filtered = allDialogues.filter(d => dialogueIds.includes(d.id))
+      if (filtered.length > 0) return filtered
+    }
+
+    // 兜底：根据分镜序号智能分配
+    const storyboardList = store.storyboards
+    const currentIndex = storyboardList.findIndex(s => s.id === selectedStoryboard.value?.id)
+    if (currentIndex >= 0 && storyboardList.length > 0) {
+      const dialoguesPerShot = Math.ceil(allDialogues.length / storyboardList.length)
+      const startIndex = currentIndex * dialoguesPerShot
+      const endIndex = Math.min(startIndex + dialoguesPerShot, allDialogues.length)
+      return allDialogues.slice(startIndex, endIndex)
+    }
+  }
+
+  return allDialogues
 })
 
 // 获取音频 URL
@@ -557,6 +657,28 @@ async function generateAudio() {
   }
 }
 
+// 生成当前分镜的音频
+async function generateStoryboardAudio() {
+  if (!selectedStoryboard.value || !store.currentScene) return
+
+  try {
+    generatingAudio.value = true
+    // 生成整个场景的音频（目前没有单独生成分镜音频的接口）
+    const result = await store.generateSceneAudio(store.currentScene.id)
+    if (result) {
+      ElMessage.success(`镜头 ${selectedStoryboard.value.shotNumber} 音频生成完成`)
+      // 重新加载场景以获取更新后的音频数据
+      await store.loadScene(store.currentScene.id)
+    } else {
+      ElMessage.error(store.error || '生成音频失败')
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '生成音频失败')
+  } finally {
+    generatingAudio.value = false
+  }
+}
+
 // 合成视频
 async function synthesizeVideo() {
   if (!store.currentScene) return
@@ -585,6 +707,32 @@ async function synthesizeVideo() {
   } finally {
     synthesisProgress.phase = ''
     synthesisProgress.progress = 0
+  }
+}
+
+// 合成单个分镜视频
+async function synthesizeSingleStoryboard() {
+  if (!selectedStoryboard.value || !selectedStoryboard.value.frameImage) {
+    ElMessage.warning('请先选择一个有画面的分镜')
+    return
+  }
+
+  try {
+    synthesizingSingle.value = true
+    const result = await store.synthesizeStoryboardVideo(
+      selectedStoryboard.value.id,
+      synthesisForm.quality
+    )
+
+    if (result) {
+      ElMessage.success(`镜头 ${selectedStoryboard.value.shotNumber} 视频合成成功`)
+    } else {
+      ElMessage.error(store.error || '视频合成失败')
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '视频合成失败')
+  } finally {
+    synthesizingSingle.value = false
   }
 }
 
@@ -839,17 +987,39 @@ watch(
       border-radius: 8px;
       overflow: hidden;
       background: #000;
+      position: relative;
+      cursor: pointer;
 
       img {
         width: 100%;
         display: block;
+      }
+
+      .preview-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        color: white;
+        opacity: 0;
+        transition: opacity 0.2s;
+      }
+
+      &:hover .preview-overlay {
+        opacity: 1;
       }
     }
 
     .detail-actions {
       margin-top: 12px;
       display: flex;
-      gap: 12px;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
     }
   }
 
@@ -968,6 +1138,56 @@ watch(
     color: var(--el-text-color-placeholder);
     text-align: center;
     padding: 8px;
+  }
+}
+
+// 对白弹出对话框样式
+.dialogue-dialog-content {
+  .dialogue-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+
+    .dialogue-count {
+      font-size: 13px;
+      color: var(--el-text-color-secondary);
+    }
+  }
+
+  .dialogue-list-dialog {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .dialogue-item-dialog {
+    padding: 12px;
+    background: var(--el-fill-color-light);
+    border-radius: 8px;
+
+    .dialogue-character {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .dialogue-text {
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--el-text-color-primary);
+    }
+
+    .dialogue-meta {
+      display: flex;
+      gap: 12px;
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+    }
   }
 }
 </style>

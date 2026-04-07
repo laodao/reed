@@ -149,7 +149,19 @@ const IPC_CHANNELS = {
   // 视频合成相关
   STV_GET_VIDEO_PRESETS: 'stv:get-video-presets',
   STV_SYNTHESIZE_SCENE_VIDEO: 'stv:synthesize-scene-video',
-  STV_EXPORT_VIDEO: 'stv:export-video'
+  STV_SYNTHESIZE_STORYBOARD_VIDEO: 'stv:synthesize-storyboard-video',
+  STV_EXPORT_VIDEO: 'stv:export-video',
+
+  // OSS 配置相关
+  OSS_LIST_CONFIGS: 'oss:list-configs',
+  OSS_GET_CONFIG: 'oss:get-config',
+  OSS_CREATE_CONFIG: 'oss:create-config',
+  OSS_UPDATE_CONFIG: 'oss:update-config',
+  OSS_DELETE_CONFIG: 'oss:delete-config',
+  OSS_SET_DEFAULT: 'oss:set-default',
+  OSS_TOGGLE_ENABLED: 'oss:toggle-enabled',
+  OSS_TEST_CONNECTION: 'oss:test-connection',
+  OSS_UPLOAD_FILE: 'oss:upload-file'
 } as const
 
 /**
@@ -1381,8 +1393,14 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.STV_LIST_EPISODES, projectId),
     getEpisode: (episodeId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.STV_GET_EPISODE, episodeId),
-    createEpisode: (projectId: string, outlineId: string, episodeNumber: number, title: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.STV_CREATE_EPISODE, projectId, outlineId, episodeNumber, title),
+    createEpisode: (projectId: string, data: {
+      sourceType: 'outline' | 'uploaded'
+      outlineId?: string
+      uploadedContent?: string
+      episodeNumber: number
+      title: string
+    }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_CREATE_EPISODE, projectId, data),
     updateEpisode: (episodeId: string, data: { title?: string; status?: string; duration?: number; scriptId?: string }) =>
       ipcRenderer.invoke(IPC_CHANNELS.STV_UPDATE_EPISODE, episodeId, data),
     deleteEpisode: (episodeId: string) =>
@@ -1411,8 +1429,8 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.STV_UPDATE_STORYBOARD, storyboardId, data),
 
     // AI 生成
-    generateScript: (projectId: string, outlineId: string, providerConfigId?: string, modelId?: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.STV_GENERATE_SCRIPT, projectId, outlineId, providerConfigId, modelId),
+    generateScript: (episodeId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_GENERATE_SCRIPT, episodeId, providerConfigId, modelId),
     generateScenes: (scriptId: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.STV_GENERATE_SCENES, scriptId, providerConfigId, modelId),
     generateStoryboard: (sceneId: string, providerConfigId?: string, modelId?: string) =>
@@ -1459,6 +1477,8 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.STV_GET_VIDEO_PRESETS),
     synthesizeSceneVideo: (sceneId: string, quality?: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.STV_SYNTHESIZE_SCENE_VIDEO, sceneId, quality),
+    synthesizeStoryboardVideo: (storyboardId: string, quality?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_SYNTHESIZE_STORYBOARD_VIDEO, storyboardId, quality),
     exportVideo: (sourcePath: string, outputPath: string, quality?: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.STV_EXPORT_VIDEO, sourcePath, outputPath, quality),
 
@@ -1468,6 +1488,54 @@ const electronAPI = {
       ipcRenderer.on('stv:synthesis-progress', handler)
       return () => ipcRenderer.removeListener('stv:synthesis-progress', handler)
     }
+  },
+
+  // OSS 图床配置相关
+  oss: {
+    listConfigs: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.OSS_LIST_CONFIGS),
+    getConfig: (id: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.OSS_GET_CONFIG, id),
+    createConfig: (data: {
+      name: string
+      provider: 'aliyun' | 'volcengine'
+      accessKeyId: string
+      accessKeySecret: string
+      region: string
+      bucket: string
+      endpoint?: string
+      customDomain?: string
+      pathPrefix?: string
+    }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.OSS_CREATE_CONFIG, data),
+    updateConfig: (id: string, data: {
+      name?: string
+      accessKeyId?: string
+      accessKeySecret?: string
+      region?: string
+      bucket?: string
+      endpoint?: string
+      customDomain?: string
+      pathPrefix?: string
+      isEnabled?: boolean
+      isDefault?: boolean
+    }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.OSS_UPDATE_CONFIG, { id, ...data }),
+    deleteConfig: (id: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.OSS_DELETE_CONFIG, id),
+    setDefault: (id: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.OSS_SET_DEFAULT, id),
+    toggleEnabled: (id: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.OSS_TOGGLE_ENABLED, id),
+    testConnection: (id: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.OSS_TEST_CONNECTION, id),
+    uploadFile: (request: {
+      configId?: string
+      localPath: string
+      customPath?: string
+      fileName?: string
+    }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.OSS_UPLOAD_FILE, request)
   },
 
   // 错误处理

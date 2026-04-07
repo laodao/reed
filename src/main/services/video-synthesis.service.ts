@@ -212,10 +212,10 @@ export class VideoSynthesisService {
       command
         .videoCodec('libx264')
         .videoBitrate(config.videoBitrate)
-        .preset(config.preset)
         .outputOptions([
           `-crf ${config.crf}`,
-          `-pix_fmt yuv420p`
+          `-pix_fmt yuv420p`,
+          `-preset ${config.preset}`
         ])
 
       // 如果有音频
@@ -234,6 +234,49 @@ export class VideoSynthesisService {
     } catch (error: any) {
       console.error('[VideoSynthesis] 创建镜头视频失败:', error)
       return { success: false, error: error.message || '创建镜头视频失败' }
+    }
+  }
+
+  /**
+   * 合成单个分镜视频
+   */
+  async synthesizeStoryboardVideo(
+    storyboard: Storyboard,
+    projectId: string,
+    config: VideoSynthesisConfig = PRESET_VIDEO_CONFIGS.standard
+  ): Promise<SynthesisResult> {
+    try {
+      const outputDir = this.getVideoOutputDir(projectId)
+
+      // 检查分镜是否有图片
+      if (!storyboard.frameImage?.filePath && !storyboard.frameImage?.url) {
+        return { success: false, error: '分镜没有图片' }
+      }
+
+      // 输出文件名
+      const outputFileName = `storyboard_${storyboard.shotNumber}_${storyboard.id}.mp4`
+      const outputPath = path.join(outputDir, outputFileName)
+
+      // 调用 createShotVideo 方法合成视频
+      const result = await this.createShotVideo(
+        storyboard,
+        outputPath,
+        undefined, // 暂时不处理音频
+        config
+      )
+
+      if (result.success) {
+        return {
+          success: true,
+          outputPath,
+          duration: storyboard.duration || 3
+        }
+      }
+
+      return result
+    } catch (error: any) {
+      console.error('[VideoSynthesis] 合成分镜视频失败:', error)
+      return { success: false, error: error.message || '合成分镜视频失败' }
     }
   }
 
@@ -426,12 +469,12 @@ export class VideoSynthesisService {
     command
       .videoCodec('libx264')
       .videoBitrate(config.videoBitrate)
-      .preset(config.preset)
       .audioCodec('aac')
       .audioBitrate(config.audioBitrate)
       .outputOptions([
         `-crf ${config.crf}`,
-        `-pix_fmt yuv420p`
+        `-pix_fmt yuv420p`,
+        `-preset ${config.preset}`
       ])
       .output(outputPath)
 
@@ -736,13 +779,13 @@ export class VideoSynthesisService {
       command
         .videoCodec('libx264')
         .videoBitrate(config.videoBitrate)
-        .preset(config.preset)
         .audioCodec('aac')
         .audioBitrate(config.audioBitrate)
         .outputOptions([
           `-crf ${config.crf}`,
           `-pix_fmt yuv420p`,
-          `-movflags +faststart` // 优化网络播放
+          `-movflags +faststart`,
+          `-preset ${config.preset}`
         ])
         .output(outputPath)
 

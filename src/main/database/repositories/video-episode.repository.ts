@@ -8,7 +8,9 @@ import {
   VideoEpisode,
   VideoEpisodeRecord,
   AudioTrack,
-  EpisodeStatus
+  EpisodeStatus,
+  EpisodeSourceType,
+  UploadedCharacter
 } from '../../../shared/types/story-to-video.types'
 
 /**
@@ -16,7 +18,10 @@ import {
  */
 export interface CreateVideoEpisodeRequest {
   projectId: string
-  outlineId: string
+  sourceType: EpisodeSourceType // 内容来源类型
+  outlineId?: string // 关联的大纲ID（outline 模式时必填）
+  uploadedContent?: string // 上传的长文内容（uploaded 模式时必填）
+  uploadedCharacters?: UploadedCharacter[] // 识别的角色（uploaded 模式时可选）
   episodeNumber: number
   title: string
 }
@@ -30,6 +35,7 @@ export interface UpdateVideoEpisodeRequest {
   duration?: number
   scriptId?: string
   audioTracks?: AudioTrack[]
+  uploadedCharacters?: UploadedCharacter[] // 更新识别的角色
 }
 
 /**
@@ -79,14 +85,17 @@ export class VideoEpisodeRepository {
     const now = Date.now()
 
     const stmt = this.db.prepare(`
-      INSERT INTO video_episodes (id, project_id, outline_id, episode_number, title, status, duration, script_id, audio_tracks, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO video_episodes (id, project_id, source_type, outline_id, uploaded_content, uploaded_characters, episode_number, title, status, duration, script_id, audio_tracks, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     stmt.run(
       id,
       data.projectId,
-      data.outlineId,
+      data.sourceType,
+      data.outlineId || null,
+      data.uploadedContent || null,
+      data.uploadedCharacters ? JSON.stringify(data.uploadedCharacters) : null,
       data.episodeNumber,
       data.title,
       'pending',
@@ -100,7 +109,10 @@ export class VideoEpisodeRepository {
     return {
       id,
       projectId: data.projectId,
+      sourceType: data.sourceType,
       outlineId: data.outlineId,
+      uploadedContent: data.uploadedContent,
+      uploadedCharacters: data.uploadedCharacters,
       episodeNumber: data.episodeNumber,
       title: data.title,
       status: 'pending',
@@ -154,6 +166,10 @@ export class VideoEpisodeRepository {
     if (data.audioTracks !== undefined) {
       updates.push('audio_tracks = ?')
       values.push(JSON.stringify(data.audioTracks))
+    }
+    if (data.uploadedCharacters !== undefined) {
+      updates.push('uploaded_characters = ?')
+      values.push(JSON.stringify(data.uploadedCharacters))
     }
 
     if (updates.length === 0) return episode
@@ -224,7 +240,10 @@ export class VideoEpisodeRepository {
     return {
       id: row.id,
       projectId: row.project_id,
-      outlineId: row.outline_id,
+      sourceType: row.source_type as EpisodeSourceType,
+      outlineId: row.outline_id || undefined,
+      uploadedContent: row.uploaded_content || undefined,
+      uploadedCharacters: row.uploaded_characters ? JSON.parse(row.uploaded_characters) as UploadedCharacter[] : undefined,
       episodeNumber: row.episode_number,
       title: row.title,
       status: row.status as EpisodeStatus,

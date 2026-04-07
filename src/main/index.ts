@@ -101,6 +101,7 @@ import { registerSearchEngineHandlers } from './ipc/handlers/search-engine.handl
 import { registerLongWritingHandlers } from './ipc/handlers/longwriting.handler'
 import { registerDiaryHandlers } from './ipc/handlers/diary.handler'
 import { registerStoryToVideoHandlers } from './ipc/handlers/story-to-video.handler'
+import { registerOSSHandlers } from './ipc/handlers/oss.handler'
 import * as fs from 'fs'
 
 // 在 app ready 之前注册协议权限（重要！）
@@ -288,6 +289,7 @@ function initIpcHandlers(): void {
   registerLongWritingHandlers()
   registerDiaryHandlers()
   registerStoryToVideoHandlers()
+  registerOSSHandlers()
 }
 
 // 应用就绪

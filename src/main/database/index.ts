@@ -73,6 +73,7 @@ import { SceneDialogueRepository } from './repositories/scene-dialogue.repositor
 import { SceneActionRepository } from './repositories/scene-action.repository'
 import { StoryboardCharacterRepository } from './repositories/storyboard-character.repository'
 import { ImageAssetRepository } from './repositories/image-asset.repository'
+import { OSSConfigRepository } from './repositories/oss-config.repository'
 import { DataPathService } from '../services/data-path.service'
 import { LanceDBService } from '../services/lance-db.service'
 
@@ -163,6 +164,9 @@ export class DatabaseManager {
   public sceneActions: SceneActionRepository | null = null
   public storyboardCharacters: StoryboardCharacterRepository | null = null
   public imageAssets: ImageAssetRepository | null = null
+
+  // OSS 配置仓库
+  public ossConfigs: OSSConfigRepository | null = null
 
   private constructor() {
     // 默认使用 userData 路径，后续会在 initialize 中更新
@@ -1871,6 +1875,9 @@ export class DatabaseManager {
     // 为 video_episodes 表添加 deleted_at 列（如果不存在）
     this.migrateVideoEpisodesAddDeletedAt()
 
+    // 为 video_episodes 表添加上传长文相关字段
+    this.migrateVideoEpisodesAddUploadFields()
+
     // 执行其他数据库迁移
     this.runMigrations()
 
@@ -2366,6 +2373,32 @@ export class DatabaseManager {
         console.log('[DatabaseManager] video_episodes 表添加 deleted_at 列完成')
       } catch (e) {
         console.error('[DatabaseManager] 添加 deleted_at 列失败:', e)
+      }
+    }
+  }
+
+  /**
+   * 为 video_episodes 表添加上传长文相关字段
+   */
+  private migrateVideoEpisodesAddUploadFields(): void {
+    if (!this.db) return
+
+    // 检查是否存在 source_type 列
+    const columns = this.db.prepare("PRAGMA table_info(video_episodes)").all() as { name: string }[]
+    const hasSourceType = columns.some(col => col.name === 'source_type')
+
+    if (!hasSourceType) {
+      console.log('[DatabaseManager] 为 video_episodes 表添加上传长文相关字段...')
+      try {
+        // 添加 source_type 列，默认值为 'outline'
+        this.db.exec('ALTER TABLE video_episodes ADD COLUMN source_type TEXT NOT NULL DEFAULT \'outline\'')
+        // 添加 uploaded_content 列
+        this.db.exec('ALTER TABLE video_episodes ADD COLUMN uploaded_content TEXT DEFAULT NULL')
+        // 添加 uploaded_characters 列
+        this.db.exec('ALTER TABLE video_episodes ADD COLUMN uploaded_characters TEXT DEFAULT NULL')
+        console.log('[DatabaseManager] video_episodes 表添加上传长文相关字段完成')
+      } catch (e) {
+        console.error('[DatabaseManager] 添加上传长文相关字段失败:', e)
       }
     }
   }
@@ -2923,6 +2956,17 @@ export class DatabaseManager {
       this.db.exec('ALTER TABLE video_episodes ADD COLUMN deleted_at INTEGER DEFAULT NULL')
     }
 
+    // 检查 video_episodes 表是否需要添加上传长文相关字段
+    if (!videoEpisodeColumnNames.includes('source_type')) {
+      this.db.exec('ALTER TABLE video_episodes ADD COLUMN source_type TEXT NOT NULL DEFAULT \'outline\'')
+    }
+    if (!videoEpisodeColumnNames.includes('uploaded_content')) {
+      this.db.exec('ALTER TABLE video_episodes ADD COLUMN uploaded_content TEXT DEFAULT NULL')
+    }
+    if (!videoEpisodeColumnNames.includes('uploaded_characters')) {
+      this.db.exec('ALTER TABLE video_episodes ADD COLUMN uploaded_characters TEXT DEFAULT NULL')
+    }
+
     // 检查 lw_story_locations 表是否需要添加 map_id 字段
     const locationColumns = this.db.prepare("PRAGMA table_info(lw_story_locations)").all() as { name: string }[]
     const locationColumnNames = locationColumns.map(col => col.name)
@@ -3129,6 +3173,11 @@ export class DatabaseManager {
     this.sceneActions = new SceneActionRepository(this.db)
     this.storyboardCharacters = new StoryboardCharacterRepository(this.db)
     this.imageAssets = new ImageAssetRepository(this.db)
+
+    // 初始化 OSS 配置仓库
+    this.ossConfigs = new OSSConfigRepository(this.db)
+    this.ossConfigs.initTable()
+    console.log('[DatabaseManager] OSS 配置仓库已初始化')
   }
 
   /**
