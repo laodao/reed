@@ -283,21 +283,24 @@ export class LongWritingAIService {
 **重要**：
 1. 必须严格按照下面的 JSON 格式模板返回，不要修改字段名，不要添加或删除字段
 2. 所有字段都必须填写，不能省略
-3. JSON 字符串值中不要包含换行符，使用空格代替
-4. 确保 JSON 格式完整，所有引号、括号都要成对出现
-5. 不要在 JSON 外添加任何说明文字，不要使用 \`\`\`json 标记
+3. keyCharacters 和 keyLocations 是必填字段，必须生成真实内容，不能为空数组，数量根据故事需要确定
+4. JSON 字符串值中不要包含换行符，使用空格代替
+5. 确保 JSON 格式完整，所有引号、括号都要成对出现
+6. 不要在 JSON 外添加任何说明文字，不要使用 \`\`\`json 标记
 
 **JSON 格式模板**：
 {
   "title": "故事标题",
   "storyType": "xianxia",
-  "summary": "故事摘要内容，200-300字",
-  "coreConflict": "核心冲突内容，100-150字",
+  "summary": "故事摘要内容，500字左右",
+  "coreConflict": "核心冲突内容，300字左右",
   "keyCharacters": [
-    {"name": "角色名", "role": "主角", "brief": "简要描述", "importance": "main"}
+    {"name": "张三", "role": "主角", "brief": "一个普通的少年，意外获得神秘力量", "importance": "main"},
+    {"name": "李四", "role": "配角", "brief": "主角的好友，性格开朗", "importance": "secondary"}
   ],
   "keyLocations": [
-    {"name": "场景名", "type": "城市", "brief": "简要描述", "importance": "main"}
+    {"name": "青云山", "type": "山脉", "brief": "故事开始的地方，隐藏着古老的秘密", "importance": "main"},
+    {"name": "玄天城", "type": "城市", "brief": "繁华的修仙城市，各方势力汇聚", "importance": "secondary"}
   ],
   "estimatedChapters": 100
 }
@@ -305,13 +308,19 @@ export class LongWritingAIService {
 **字段说明**：
 - title: 故事标题（不超过10个字）
 - storyType: 故事类型，可选值：wuxia/xianxia/xuanhuan/kehuan/xuanyi/dushi/yanqing/lishi/other
-- summary: 故事摘要（200-300字）
-- coreConflict: 核心冲突（100-150字）
-- keyCharacters: 关键角色数组（3-5个），每个角色包含 name/role/brief/importance
-- keyLocations: 主要场景数组（2-4个），每个场景包含 name/type/brief/importance
+- summary: 故事摘要（500字左右，详细描述故事的起承转合）
+- coreConflict: 核心冲突（300字左右，描述故事的主要矛盾和冲突）
+- keyCharacters: 关键角色数组，必须生成有名字的角色，每个角色包含：
+  - name: 角色名称（真实的中文姓名）
+  - role: 角色定位（主角/配角/反派/中立）
+  - brief: 简要描述（30字以内）
+  - importance: 重要性（main/secondary/minor）
+- keyLocations: 主要场景数组，必须生成有名字的场景，每个场景包含：
+  - name: 场景名称（真实的地点名称）
+  - type: 场景类型（城市/山脉/海域/宫殿/村落/秘境等）
+  - brief: 简要描述（30字以内）
+  - importance: 重要性（main/secondary/minor）
 - estimatedChapters: 预估章节数（数字）
-- role 可选值：主角/配角/反派/中立
-- importance 可选值：main/secondary/minor
 
 请严格按照上述格式返回完整的 JSON 对象。`
 
@@ -332,6 +341,10 @@ ${input}
         modelId
       )
 
+      // 打印AI返回的原始内容
+      console.log('[LongWritingAIService] AI返回原始内容长度:', result.length)
+      console.log('[LongWritingAIService] AI返回原始内容:', result)
+
       // 尝试解析 JSON
       try {
         // 先清理可能的多余内容
@@ -350,7 +363,11 @@ ${input}
 
         if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
           const jsonContent = jsonStr.substring(firstBrace, lastBrace + 1)
+          console.log('[LongWritingAIService] 提取的JSON内容:', jsonContent)
           const data = JSON.parse(jsonContent)
+          console.log('[LongWritingAIService] 解析后的数据:', JSON.stringify(data, null, 2))
+          console.log('[LongWritingAIService] keyCharacters:', data.keyCharacters)
+          console.log('[LongWritingAIService] keyLocations:', data.keyLocations)
           return { success: true, data }
         }
 
