@@ -128,7 +128,7 @@
 
       <!-- 快速生成按钮 -->
       <div class="action-buttons">
-        <el-button v-if="!generating" type="primary" size="large" @click="generateOutline">
+        <el-button v-if="!generating" type="primary" size="large" @click="showStructureDialog = true">
           <el-icon><MagicStick /></el-icon>
           AI 生成大纲建议
         </el-button>
@@ -224,6 +224,41 @@
         <el-button type="primary" @click="saveNode">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 大纲结构选择对话框 -->
+    <el-dialog
+      v-model="showStructureDialog"
+      title="选择大纲结构"
+      width="500px"
+      destroy-on-close
+      center
+    >
+      <div class="structure-options">
+        <p class="structure-tip">请选择大纲的结构级别：</p>
+        <div class="structure-list">
+          <div
+            v-for="option in structureOptions"
+            :key="option.value"
+            :class="['structure-item', { active: selectedStructureLevel === option.value }]"
+            @click="selectedStructureLevel = option.value"
+          >
+            <div class="item-radio">
+              <el-radio :value="option.value" :label="option.value">
+                &nbsp;
+              </el-radio>
+            </div>
+            <div class="item-content">
+              <span class="item-title">{{ option.title }}</span>
+              <span class="item-desc">{{ option.desc }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showStructureDialog = false">取消</el-button>
+        <el-button type="primary" @click="confirmStructure">确认生成</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -268,6 +303,15 @@ const parentNodeId = ref<string | null>(null)
 const generating = ref(false)
 const currentEventId = ref<string | null>(null)
 const generatingContent = ref('')
+
+// 大纲结构选择
+const showStructureDialog = ref(false)
+const selectedStructureLevel = ref<'1' | '2' | '3'>('3')
+const structureOptions = [
+  { value: '3', title: '三级结构', desc: '卷 → 章 → 节' },
+  { value: '2', title: '二级结构', desc: '章 → 节' },
+  { value: '1', title: '一级结构', desc: '仅章' }
+]
 
 // 加载状态
 const loading = ref(false)
@@ -516,15 +560,21 @@ function resetNodeForm() {
   }
 }
 
+// 确认结构选择
+function confirmStructure() {
+  showStructureDialog.value = false
+  generateOutline(parseInt(selectedStructureLevel.value))
+}
+
 // AI 生成大纲
-async function generateOutline() {
+async function generateOutline(structureLevel: number) {
   // 检查是否选择了模型（需要同时检查 providerId 和 modelId）
   if (!selectedModel.value || !selectedModel.value.providerId || !selectedModel.value.modelId) {
     ElMessage.warning('请先在顶部选择 AI 模型')
     return
   }
 
-  console.log('[OutlineStage] 生成大纲, providerId:', selectedModel.value.providerId, 'modelId:', selectedModel.value.modelId)
+  console.log('[OutlineStage] 生成大纲, providerId:', selectedModel.value.providerId, 'modelId:', selectedModel.value.modelId, 'structureLevel:', structureLevel)
 
   generating.value = true
   generatingContent.value = '准备生成大纲...'
@@ -548,13 +598,14 @@ async function generateOutline() {
     }
   )
 
-  // 调用 AI API，传递 eventId 和模型参数
+  // 调用 AI API，传递 eventId、模型参数和结构级别
   try {
     const result = await window.electronAPI.longwriting.generateOutlineStory(
       currentEventId.value,
       props.projectId,
       selectedModel.value.providerId,
-      selectedModel.value.modelId
+      selectedModel.value.modelId,
+      structureLevel
     )
 
     generating.value = false
@@ -583,9 +634,30 @@ async function showOutlineConfirm(suggestedOutline: any[]) {
     return
   }
 
+  const structureLevel = parseInt(selectedStructureLevel.value)
+
+  // 根据结构级别生成预览文本
+  let previewText = ''
+  if (structureLevel === 3) {
+    // 三级结构：卷 → 章 → 节
+    previewText = suggestedOutline.map((vol: any) => {
+      const chapters = vol.chapters ? `（${vol.chapters.length}章）` : ''
+      return `- ${vol.name}${chapters}`
+    }).join('\n')
+  } else if (structureLevel === 2) {
+    // 二级结构：章 → 节
+    previewText = suggestedOutline.map((ch: any) => {
+      const sections = ch.sections ? `（${ch.sections.length}节）` : ''
+      return `- ${ch.name}${sections}`
+    }).join('\n')
+  } else {
+    // 一级结构：仅章
+    previewText = suggestedOutline.map((ch: any) => `- ${ch.name}（预估${ch.estimatedWords || 0}字）`).join('\n')
+  }
+
   // 显示确认对话框
   ElMessageBox.confirm(
-      `AI 建议生成以下大纲结构：\n\n${suggestedOutline.map((o: any) => `- ${o.name}（预估${o.estimatedWords || 0}字）`).join('\n')}`,
+      `AI 建议生成以下大纲结构：\n\n${previewText}`,
       'AI 生成建议',
       {
         confirmButtonText: '采纳建议',
@@ -593,69 +665,17 @@ async function showOutlineConfirm(suggestedOutline: any[]) {
         type: 'info'
       }
     ).then(async () => {
-      console.log('开始创建大纲，建议数据:', suggestedOutline)
+      console.log('开始创建大纲，建议数据:', suggestedOutline, '结构级别:', structureLevel)
       try {
-        // 创建大纲节点
-        for (let i = 0; i < suggestedOutline.length; i++) {
-          const volume = suggestedOutline[i]
-          console.log('创建卷:', volume.name)
-          // 创建卷
-          const volumeResult = await window.electronAPI.longwriting.createOutline({
-            projectId: props.projectId,
-            name: volume.name,
-            level: 1,
-            nodeType: 'volume',
-            summary: volume.summary || '',
-            estimatedWords: volume.estimatedWords || 0,
-            involvedCharacters: [],
-            involvedLocations: [],
-            status: 'pending',
-            orderIndex: i
-          })
-          console.log('卷创建结果:', volumeResult)
-
-          // 如果有章节，创建章
-          if (volumeResult.success && volume.chapters && Array.isArray(volume.chapters)) {
-            const volumeId = volumeResult.data.id
-            for (let j = 0; j < volume.chapters.length; j++) {
-              const chapter = volume.chapters[j]
-              const chapterResult = await window.electronAPI.longwriting.createOutline({
-                projectId: props.projectId,
-                parentId: volumeId,
-                name: chapter.name,
-                level: 2,
-                nodeType: 'chapter',
-                summary: chapter.summary || '',
-                estimatedWords: chapter.estimatedWords || 0,
-                involvedCharacters: [],
-                involvedLocations: [],
-                status: 'pending',
-                orderIndex: j
-              })
-              console.log('章创建结果:', chapterResult)
-
-              // 如果有小节，创建节
-              if (chapterResult.success && chapter.sections && Array.isArray(chapter.sections)) {
-                const chapterId = chapterResult.data.id
-                for (let k = 0; k < chapter.sections.length; k++) {
-                  const section = chapter.sections[k]
-                  await window.electronAPI.longwriting.createOutline({
-                    projectId: props.projectId,
-                    parentId: chapterId,
-                    name: section.name,
-                    level: 3,
-                    nodeType: 'section',
-                    summary: section.summary || '',
-                    estimatedWords: section.estimatedWords || 0,
-                    involvedCharacters: [],
-                    involvedLocations: [],
-                    status: 'pending',
-                    orderIndex: k
-                  })
-                }
-              }
-            }
-          }
+        if (structureLevel === 3) {
+          // 三级结构：卷 → 章 → 节
+          await createThreeLevelOutline(suggestedOutline)
+        } else if (structureLevel === 2) {
+          // 二级结构：章 → 节
+          await createTwoLevelOutline(suggestedOutline)
+        } else {
+          // 一级结构：仅章
+          await createOneLevelOutline(suggestedOutline)
         }
 
         console.log('大纲创建完成，重新加载...')
@@ -670,6 +690,135 @@ async function showOutlineConfirm(suggestedOutline: any[]) {
     }).catch((err) => {
       console.log('用户取消或出错:', err)
     })
+}
+
+// 创建三级结构大纲（卷 → 章 → 节）
+async function createThreeLevelOutline(suggestedOutline: any[]) {
+  for (let i = 0; i < suggestedOutline.length; i++) {
+    const volume = suggestedOutline[i]
+    console.log('创建卷:', volume.name)
+    // 创建卷
+    const volumeResult = await window.electronAPI.longwriting.createOutline({
+      projectId: props.projectId,
+      name: volume.name,
+      level: 1,
+      nodeType: 'volume',
+      summary: volume.summary || '',
+      estimatedWords: volume.estimatedWords || 0,
+      involvedCharacters: [],
+      involvedLocations: [],
+      status: 'pending',
+      orderIndex: i
+    })
+    console.log('卷创建结果:', volumeResult)
+
+    // 如果有章节，创建章
+    if (volumeResult.success && volume.chapters && Array.isArray(volume.chapters)) {
+      const volumeId = volumeResult.data.id
+      for (let j = 0; j < volume.chapters.length; j++) {
+        const chapter = volume.chapters[j]
+        const chapterResult = await window.electronAPI.longwriting.createOutline({
+          projectId: props.projectId,
+          parentId: volumeId,
+          name: chapter.name,
+          level: 2,
+          nodeType: 'chapter',
+          summary: chapter.summary || '',
+          estimatedWords: chapter.estimatedWords || 0,
+          involvedCharacters: [],
+          involvedLocations: [],
+          status: 'pending',
+          orderIndex: j
+        })
+        console.log('章创建结果:', chapterResult)
+
+        // 如果有小节，创建节
+        if (chapterResult.success && chapter.sections && Array.isArray(chapter.sections)) {
+          const chapterId = chapterResult.data.id
+          for (let k = 0; k < chapter.sections.length; k++) {
+            const section = chapter.sections[k]
+            await window.electronAPI.longwriting.createOutline({
+              projectId: props.projectId,
+              parentId: chapterId,
+              name: section.name,
+              level: 3,
+              nodeType: 'section',
+              summary: section.summary || '',
+              estimatedWords: section.estimatedWords || 0,
+              involvedCharacters: [],
+              involvedLocations: [],
+              status: 'pending',
+              orderIndex: k
+            })
+          }
+        }
+      }
+    }
+  }
+}
+
+// 创建二级结构大纲（章 → 节）
+async function createTwoLevelOutline(suggestedOutline: any[]) {
+  for (let i = 0; i < suggestedOutline.length; i++) {
+    const chapter = suggestedOutline[i]
+    console.log('创建章:', chapter.name)
+    // 创建章（作为根节点）
+    const chapterResult = await window.electronAPI.longwriting.createOutline({
+      projectId: props.projectId,
+      name: chapter.name,
+      level: 1,
+      nodeType: 'chapter',
+      summary: chapter.summary || '',
+      estimatedWords: chapter.estimatedWords || 0,
+      involvedCharacters: [],
+      involvedLocations: [],
+      status: 'pending',
+      orderIndex: i
+    })
+    console.log('章创建结果:', chapterResult)
+
+    // 如果有小节，创建节
+    if (chapterResult.success && chapter.sections && Array.isArray(chapter.sections)) {
+      const chapterId = chapterResult.data.id
+      for (let j = 0; j < chapter.sections.length; j++) {
+        const section = chapter.sections[j]
+        await window.electronAPI.longwriting.createOutline({
+          projectId: props.projectId,
+          parentId: chapterId,
+          name: section.name,
+          level: 2,
+          nodeType: 'section',
+          summary: section.summary || '',
+          estimatedWords: section.estimatedWords || 0,
+          involvedCharacters: [],
+          involvedLocations: [],
+          status: 'pending',
+          orderIndex: j
+        })
+      }
+    }
+  }
+}
+
+// 创建一级结构大纲（仅章）
+async function createOneLevelOutline(suggestedOutline: any[]) {
+  for (let i = 0; i < suggestedOutline.length; i++) {
+    const chapter = suggestedOutline[i]
+    console.log('创建章:', chapter.name)
+    // 创建章（作为根节点）
+    await window.electronAPI.longwriting.createOutline({
+      projectId: props.projectId,
+      name: chapter.name,
+      level: 1,
+      nodeType: 'chapter',
+      summary: chapter.summary || '',
+      estimatedWords: chapter.estimatedWords || 0,
+      involvedCharacters: [],
+      involvedLocations: [],
+      status: 'pending',
+      orderIndex: i
+    })
+  }
 }
 
 // 取消生成
@@ -956,6 +1105,62 @@ watch(() => props.projectId, () => {
     font-size: 14px;
     color: var(--text-color-secondary);
     text-align: center;
+  }
+}
+
+.structure-options {
+  .structure-tip {
+    margin-bottom: 16px;
+    font-size: 14px;
+    color: var(--text-color-regular);
+  }
+
+  .structure-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .structure-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    border: 1px solid var(--border-color-light);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+
+    &:hover {
+      border-color: var(--color-primary-light-5);
+      background: var(--fill-color-light);
+    }
+
+    &.active {
+      border-color: var(--color-primary);
+      background: var(--color-primary-light-9);
+    }
+
+    .item-radio {
+      flex-shrink: 0;
+    }
+
+    .item-content {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-left: 8px;
+
+      .item-title {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--text-color-primary);
+      }
+
+      .item-desc {
+        font-size: 12px;
+        color: var(--text-color-secondary);
+      }
+    }
   }
 }
 </style>

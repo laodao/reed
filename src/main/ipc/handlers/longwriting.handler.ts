@@ -1365,13 +1365,13 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
   ipcMain.handle(
     CHANNELS.GENERATE_OUTLINE_STORY,
-    async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
+    async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string, structureLevel?: number) => {
       try {
         const window = BrowserWindow.fromWebContents(event.sender)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.generateOutlineStory(window, eventId, projectId, providerConfigId, modelId)
+        const result = await aiService.generateOutlineStory(window, eventId, projectId, providerConfigId, modelId, structureLevel)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }

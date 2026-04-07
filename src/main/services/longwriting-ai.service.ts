@@ -758,9 +758,12 @@ ${itemTypesInfo || '暂无配置'}
     eventId: string,
     projectId: string,
     providerConfigId?: string,
-    modelId?: string
+    modelId?: string,
+    structureLevel?: number
   ): Promise<GenerateResponse> {
     const dbManager = getDatabaseManager()
+    // 默认使用三级结构
+    const level = structureLevel || 3
 
     // 获取故事概要、角色、背景
     const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
@@ -771,6 +774,42 @@ ${itemTypesInfo || '暂无配置'}
       `${c.name}（${c.rolePosition === 'protagonist' ? '主角' : c.rolePosition === 'antagonist' ? '反派' : '配角'}）`
     ).join('、')
 
+    const storyInfo = {
+      title: overview?.title || '未命名',
+      coreTheme: overview?.coreTheme || '未指定',
+      summary: overview?.summary || '未指定',
+      targetWords: overview?.targetWords || 100000,
+      characterInfo: characterInfo || '暂无',
+      eraDescription: background?.eraDescription || '未指定'
+    }
+
+    try {
+      if (level === 3) {
+        // 三级结构：卷 → 章 → 节
+        return await this.generateThreeLevelOutline(window, eventId, projectId, storyInfo, providerConfigId, modelId)
+      } else if (level === 2) {
+        // 二级结构：章 → 节
+        return await this.generateTwoLevelOutline(window, eventId, projectId, storyInfo, providerConfigId, modelId)
+      } else {
+        // 一级结构：仅章
+        return await this.generateOneLevelOutline(window, eventId, projectId, storyInfo, providerConfigId, modelId)
+      }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  /**
+   * 生成三级结构大纲：卷 → 章 → 节
+   */
+  private async generateThreeLevelOutline(
+    window: BrowserWindow,
+    eventId: string,
+    projectId: string,
+    storyInfo: any,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<GenerateResponse> {
     // 第一步：生成卷结构（不含章节详情）
     const volumeSystemPrompt = `你是一位专业的小说创作顾问。请根据故事概要，生成卷级别的大纲结构。
 你的回复必须是严格的 JSON 数组格式，只包含卷的信息，不要包含章节详情。
@@ -788,48 +827,154 @@ ${itemTypesInfo || '暂无配置'}
 2. 预估字数总计应该与故事概要中的目标字数相近
 3. 只返回JSON数组，不要有任何其他文字`
 
-    const volumePrompt = `故事标题：${overview?.title || '未命名'}
-核心主题：${overview?.coreTheme || '未指定'}
-故事摘要：${overview?.summary || '未指定'}
-目标字数：${overview?.targetWords || 100000}字
-主要角色：${characterInfo || '暂无'}
-时代背景：${background?.eraDescription || '未指定'}
+    const volumePrompt = `故事标题：${storyInfo.title}
+核心主题：${storyInfo.coreTheme}
+故事摘要：${storyInfo.summary}
+目标字数：${storyInfo.targetWords}字
+主要角色：${storyInfo.characterInfo}
+时代背景：${storyInfo.eraDescription}
 
 请生成卷级别的大纲结构（只返回JSON数组）：`
 
-    try {
-      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 8192, providerConfigId, modelId)
+    const volumeResult = await this.callAIStream(window, eventId, volumePrompt, volumeSystemPrompt, 2048, providerConfigId, modelId)
+    const volumes = this.parseJsonArray(volumeResult)
 
-      const volumeResult = await this.callAIStream(window, eventId, volumePrompt, volumeSystemPrompt, 2048, providerConfigId, modelId)
-      const volumes = this.parseJsonArray(volumeResult)
-
-      if (!volumes || volumes.length === 0) {
-        return { success: false, error: '生成卷结构失败' }
-      }
-
-      // 为每个卷生成章节
-      const fullOutline = []
-      for (let i = 0; i < volumes.length; i++) {
-        const volume = volumes[i]
-        window.webContents.send(`longwriting:generate:${eventId}`, {
-          type: 'progress',
-          content: `正在生成第 ${i + 1} 卷「${volume.name}」的章节...`
-        })
-
-        const chapters = await this.generateVolumeChapters(
-          window, eventId, projectId, volume, overview, characterInfo, background, providerConfigId, modelId
-        )
-
-        fullOutline.push({
-          ...volume,
-          chapters: chapters || []
-        })
-      }
-
-      return { success: true, data: fullOutline }
-    } catch (error: any) {
-      return { success: false, error: error.message }
+    if (!volumes || volumes.length === 0) {
+      return { success: false, error: '生成卷结构失败' }
     }
+
+    // 为每个卷生成章节
+    const fullOutline = []
+    for (let i = 0; i < volumes.length; i++) {
+      const volume = volumes[i]
+      window.webContents.send(`longwriting:generate:${eventId}`, {
+        type: 'progress',
+        content: `正在生成第 ${i + 1} 卷「${volume.name}」的章节...`
+      })
+
+      const chapters = await this.generateVolumeChapters(
+        window, eventId, projectId, volume, storyInfo, providerConfigId, modelId
+      )
+
+      fullOutline.push({
+        ...volume,
+        chapters: chapters || []
+      })
+    }
+
+    return { success: true, data: fullOutline }
+  }
+
+  /**
+   * 生成二级结构大纲：章 → 节
+   */
+  private async generateTwoLevelOutline(
+    window: BrowserWindow,
+    eventId: string,
+    projectId: string,
+    storyInfo: any,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<GenerateResponse> {
+    // 直接生成章（带节）
+    const chapterSystemPrompt = `你是一位专业的小说创作顾问。请根据故事概要，直接生成章级别的大纲结构。
+你的回复必须是严格的 JSON 数组格式，每章包含小节信息。
+格式要求：
+[
+  {
+    "name": "章节名",
+    "summary": "章节概要（30-50字）",
+    "estimatedWords": 预估字数（数字）,
+    "sections": [
+      {
+        "name": "小节名",
+        "summary": "小节概要（20-30字）",
+        "estimatedWords": 预估字数（数字）
+      }
+    ]
+  }
+]
+
+注意：
+1. 根据故事规模，生成5-15章
+2. 每章2-5节
+3. 预估字数总计应该与故事概要中的目标字数相近
+4. 只返回JSON数组，不要有任何其他文字`
+
+    const chapterPrompt = `故事标题：${storyInfo.title}
+核心主题：${storyInfo.coreTheme}
+故事摘要：${storyInfo.summary}
+目标字数：${storyInfo.targetWords}字
+主要角色：${storyInfo.characterInfo}
+时代背景：${storyInfo.eraDescription}
+
+请生成章级别的大纲结构（只返回JSON数组）：`
+
+    window.webContents.send(`longwriting:generate:${eventId}`, {
+      type: 'progress',
+      content: '正在生成章节大纲...'
+    })
+
+    const chapterResult = await this.callAIStream(window, eventId, chapterPrompt, chapterSystemPrompt, 8192, providerConfigId, modelId)
+    const chapters = this.parseJsonArray(chapterResult)
+
+    if (!chapters || chapters.length === 0) {
+      return { success: false, error: '生成章节结构失败' }
+    }
+
+    return { success: true, data: chapters }
+  }
+
+  /**
+   * 生成一级结构大纲：仅章
+   */
+  private async generateOneLevelOutline(
+    window: BrowserWindow,
+    eventId: string,
+    projectId: string,
+    storyInfo: any,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<GenerateResponse> {
+    // 仅生成章（无节）
+    const chapterSystemPrompt = `你是一位专业的小说创作顾问。请根据故事概要，生成章级别的大纲结构。
+你的回复必须是严格的 JSON 数组格式，只包含章的信息，不要包含小节。
+格式要求：
+[
+  {
+    "name": "章节名",
+    "summary": "章节概要（50-100字）",
+    "estimatedWords": 预估字数（数字）
+  }
+]
+
+注意：
+1. 根据故事规模，生成5-15章
+2. 预估字数总计应该与故事概要中的目标字数相近
+3. 只返回JSON数组，不要有任何其他文字`
+
+    const chapterPrompt = `故事标题：${storyInfo.title}
+核心主题：${storyInfo.coreTheme}
+故事摘要：${storyInfo.summary}
+目标字数：${storyInfo.targetWords}字
+主要角色：${storyInfo.characterInfo}
+时代背景：${storyInfo.eraDescription}
+
+请生成章级别的大纲结构（只返回JSON数组）：`
+
+    window.webContents.send(`longwriting:generate:${eventId}`, {
+      type: 'progress',
+      content: '正在生成章节大纲...'
+    })
+
+    const chapterResult = await this.callAIStream(window, eventId, chapterPrompt, chapterSystemPrompt, 4096, providerConfigId, modelId)
+    const chapters = this.parseJsonArray(chapterResult)
+
+    if (!chapters || chapters.length === 0) {
+      return { success: false, error: '生成章节结构失败' }
+    }
+
+    return { success: true, data: chapters }
   }
 
   /**
@@ -840,9 +985,7 @@ ${itemTypesInfo || '暂无配置'}
     eventId: string,
     projectId: string,
     volume: any,
-    overview: any,
-    characterInfo: string,
-    background: any,
+    storyInfo: any,
     providerConfigId?: string,
     modelId?: string
   ): Promise<any[]> {
@@ -869,11 +1012,11 @@ ${itemTypesInfo || '暂无配置'}
 2. 每章2-5节
 3. 只返回JSON数组，不要有任何其他文字`
 
-    const chapterPrompt = `故事标题：${overview?.title || '未命名'}
+    const chapterPrompt = `故事标题：${storyInfo.title}
 卷名：${volume.name}
 卷概要：${volume.summary}
 卷预估字数：${volume.estimatedWords}字
-主要角色：${characterInfo || '暂无'}
+主要角色：${storyInfo.characterInfo}
 
 请为本卷生成章节大纲（只返回JSON数组）：`
 
