@@ -504,7 +504,7 @@ function parseOverviewResult(content: string) {
 
 // 获取故事类型标签
 function getStoryTypeLabel(value: string): string {
-  const type = storyTypes.find(t => t.value === value)
+  const type = storyTypes.value.find(t => t.value === value)
   return type?.label || value
 }
 
