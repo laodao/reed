@@ -96,7 +96,7 @@
           :disabled="!form.coreIdea.trim()"
         >
           <el-icon><DocumentChecked /></el-icon>
-          保存表单
+          保存
         </el-button>
 
         <!-- 生成概要按钮 - 只有保存后才能点击 -->
@@ -109,7 +109,6 @@
         >
           <el-icon><MagicStick /></el-icon>
           生成概要
-          <span v-if="!isFormSaved" class="btn-tip">（请先保存表单）</span>
         </el-button>
         <el-button v-else type="danger" size="large" @click="cancelGeneration">
           <el-icon><Close /></el-icon>
@@ -121,13 +120,7 @@
       <div v-if="isFormSaved" class="save-status">
         <el-tag type="success" effect="plain">
           <el-icon><Check /></el-icon>
-          表单已保存，可生成概要
-        </el-tag>
-      </div>
-      <div v-else-if="form.coreIdea.trim()" class="save-status">
-        <el-tag type="warning" effect="plain">
-          <el-icon><WarningFilled /></el-icon>
-          请先保存表单后再生成概要
+          已保存
         </el-tag>
       </div>
 
@@ -240,7 +233,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, inject, toRaw } from 'vue'
 import { ElMessage } from 'element-plus'
-import { MagicStick, Close, DocumentChecked, Check, WarningFilled, Plus, Delete } from '@element-plus/icons-vue'
+import { MagicStick, Close, DocumentChecked, Check, Plus, Delete } from '@element-plus/icons-vue'
 import type { DictionaryItem, KeyCharacter, KeyLocation } from '../../../../shared/types/longwriting.types'
 
 // Props
@@ -829,12 +822,6 @@ onMounted(() => {
   justify-content: center;
   gap: 12px;
   margin-top: 24px;
-}
-
-.btn-tip {
-  font-size: 12px;
-  color: var(--text-color-secondary);
-  margin-left: 4px;
 }
 
 .save-status {
