@@ -405,21 +405,31 @@ ${input}
     }
 
     const systemPrompt = `你是一位专业的小说创作顾问。请根据故事概要，生成3-5个建议的角色。
-你的回复应该是 JSON 数组格式，每个角色包含以下字段：
-- name: 角色名称
-- gender: 性别（male/female/other）
-- age: 年龄
-- height: 身高(cm)
-- weight: 体重(kg)
-- race: 人种（asian/european/other）
-- occupation: 职业
-- position: 职务
-- rolePosition: 角色定位（protagonist/supporting/antagonist/minor）
-- appearance: 外貌描述（必须包含脸型、肤色描述）
-- background: 背景故事
-- personality: 性格特点
-- abilities: 能力特长
-- majorEvents: 角色在故事中的主要事件`
+
+请严格按照以下 JSON 数组格式返回，每个角色必须包含所有字段：
+
+\`\`\`json
+[
+  {
+    "name": "角色名称",
+    "gender": "male/female/other",
+    "age": 25,
+    "height": 175,
+    "weight": 70,
+    "race": "asian/european/other",
+    "occupation": "职业",
+    "position": "职务",
+    "rolePosition": "protagonist/supporting/antagonist/minor",
+    "appearance": "外貌描述，必须包含脸型、肤色描述",
+    "background": "背景故事",
+    "personality": "性格特点",
+    "abilities": "能力特长",
+    "majorEvents": "角色在故事中的主要事件，描述该角色参与的关键剧情"
+  }
+]
+\`\`\`
+
+注意：所有字段都必须返回，不能遗漏。`
 
     // 构建提示词上下文
     const storyTypeNames: Record<string, string> = {
@@ -454,7 +464,7 @@ ${input}
 ${keyCharactersInfo ? `关键角色：${keyCharactersInfo}` : ''}
 ${keyLocationsInfo ? `主要场景：${keyLocationsInfo}` : ''}
 
-请直接返回 JSON 数组格式的结果，不要添加其他说明文字。`
+请返回 JSON 数组，确保每个角色都包含所有必需字段。`
 
     try {
       const result = await this.callAIStream(window, eventId, prompt, systemPrompt, undefined, providerConfigId, modelId)
