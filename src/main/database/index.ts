@@ -910,6 +910,9 @@ export class DatabaseManager {
         personality TEXT,
         abilities TEXT,
         role_position TEXT,
+        importance TEXT DEFAULT 'secondary',
+        template_type TEXT,
+        generated_image_id TEXT,
         major_events TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -2902,6 +2905,7 @@ export class DatabaseManager {
 
     if (!globalSettingsColumnNames.includes('estimated_lengths')) {
       this.db.exec('ALTER TABLE lw_global_settings ADD COLUMN estimated_lengths TEXT')
+    }
 
     // 检查 video_episodes 表是否需要添加 deleted_at 字段（逻辑删除）
     const videoEpisodeColumns = this.db.prepare("PRAGMA table_info(video_episodes)").all() as { name: string }[]
@@ -2909,7 +2913,6 @@ export class DatabaseManager {
 
     if (!videoEpisodeColumnNames.includes('deleted_at')) {
       this.db.exec('ALTER TABLE video_episodes ADD COLUMN deleted_at INTEGER DEFAULT NULL')
-    }
     }
 
     // 检查 lw_story_locations 表是否需要添加 map_id 字段

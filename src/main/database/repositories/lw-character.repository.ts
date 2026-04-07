@@ -59,18 +59,37 @@ export class LwCharacterRepository {
     const stmt = this.db.prepare(`
       INSERT INTO lw_story_characters (
         id, project_id, portrait_id, name, gender, age, appearance,
-        background, personality, abilities, role_position, importance, template_type, generated_image_id, major_events,
-        created_at, updated_at
+        background, personality, abilities, role_position, major_events,
+        created_at, updated_at, importance, template_type, generated_image_id
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
+    // 确保所有参数都是原始类型，数组需要转换为字符串
+    const normalizeValue = (value: any): string => {
+      if (value === null || value === undefined) return ''
+      if (Array.isArray(value)) return value.join('、')
+      if (typeof value === 'object') return JSON.stringify(value)
+      return String(value)
+    }
+
     stmt.run(
-      id, data.projectId, data.portraitId || null, data.name,
-      data.gender || 'male', data.age || 25, data.appearance || '',
-      data.background || '', data.personality || '', data.abilities || '',
-      data.rolePosition || 'supporting', data.importance || 'secondary',
-      data.templateType || null, data.generatedImageId || null, data.majorEvents || '',
-      now, now
+      id,
+      data.projectId,
+      data.portraitId || null,
+      normalizeValue(data.name),
+      data.gender || 'male',
+      data.age || 25,
+      normalizeValue(data.appearance),
+      normalizeValue(data.background),
+      normalizeValue(data.personality),
+      normalizeValue(data.abilities),
+      data.rolePosition || 'supporting',
+      normalizeValue(data.majorEvents),
+      now,
+      now,
+      data.importance || 'secondary',
+      data.templateType || null,
+      data.generatedImageId || null
     )
 
     return {
