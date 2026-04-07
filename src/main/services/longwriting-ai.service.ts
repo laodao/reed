@@ -1343,6 +1343,11 @@ ${backgroundInfo || '暂无'}
     providerConfigId?: string,
     modelId?: string
   ): Promise<GenerateResponse> {
+    const dbManager = getDatabaseManager()
+
+    // 获取故事概要作为上下文
+    const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
+
     const fieldLabels: Record<string, string> = {
       eraDescription: '时代描述',
       socialStructure: '社会结构',
@@ -1363,13 +1368,14 @@ ${backgroundInfo || '暂无'}
     }
 
     const systemPrompt = `你是一位专业的小说创作顾问，擅长丰富和润色故事背景设定。
-请根据用户提供的简要描述，扩展成更加详细、生动的背景设定。
+请根据用户提供的故事概要和简要描述，扩展成更加详细、生动的背景设定。
 
 要求：
-1. 保持原文核心意图，不要偏离主题
-2. 增加细节和氛围感，让设定更加具体
-3. 语言要有画面感，适合小说创作使用
-4. 根据不同字段的特点进行针对性扩展
+1. 背景设定必须与故事概要紧密相关，为故事服务
+2. 保持原文核心意图，不要偏离主题
+3. 增加细节和氛围感，让设定更加具体
+4. 语言要有画面感，适合小说创作使用
+5. 根据不同字段的特点进行针对性扩展
 
 直接输出润色后的内容，不需要标题、不需要额外说明。`
 
@@ -1380,12 +1386,25 @@ ${backgroundInfo || '暂无'}
       fictional: '架空'
     }
 
-    const prompt = `请润色以下${fieldLabels[field] || '背景设定'}：
+    // 构建故事概要上下文
+    const overviewContext = overview ? `
+【故事标题】${overview.title || '未命名'}
+【故事类型】${overview.storyType || '未指定'}
+【故事摘要】${overview.summary || '未指定'}
+【核心冲突】${overview.coreConflict || '未指定'}
+${overview.keyCharacters?.length ? `【关键角色】${overview.keyCharacters.map((c: any) => c.name).join('、')}` : ''}
+${overview.keyLocations?.length ? `【主要场景】${overview.keyLocations.map((l: any) => l.name).join('、')}` : ''}
+` : ''
 
+    const prompt = `请根据以下故事信息，润色${fieldLabels[field] || '背景设定'}：
+
+${overviewContext}
 【时代类型】${eraTypeLabels[eraType] || eraType}
 【原始描述】${content}
 
-${fieldPrompts[field] || '请扩展成详细的描述，内容控制在 200-400 字。'}`
+${fieldPrompts[field] || '请扩展成详细的描述，内容控制在 200-400 字。'}
+
+注意：背景设定要与故事内容相呼应，为故事发展提供支撑。`
 
     try {
       const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 1024, providerConfigId, modelId)
