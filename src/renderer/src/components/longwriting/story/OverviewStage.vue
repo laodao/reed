@@ -116,14 +116,6 @@
         </el-button>
       </div>
 
-      <!-- 保存状态提示 -->
-      <div v-if="isFormSaved" class="save-status">
-        <el-tag type="success" effect="plain">
-          <el-icon><Check /></el-icon>
-          已保存
-        </el-tag>
-      </div>
-
       <!-- 生成进度 -->
       <div v-if="generating" class="generating-progress">
         <el-progress :percentage="100" :indeterminate="true" />
@@ -233,7 +225,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, inject, toRaw } from 'vue'
 import { ElMessage } from 'element-plus'
-import { MagicStick, Close, DocumentChecked, Check, Plus, Delete } from '@element-plus/icons-vue'
+import { MagicStick, Close, DocumentChecked, Plus, Delete } from '@element-plus/icons-vue'
 import type { DictionaryItem, KeyCharacter, KeyLocation } from '../../../../shared/types/longwriting.types'
 
 // Props
@@ -650,8 +642,8 @@ async function loadSavedOverview() {
       form.value.estimatedLength = data.estimatedLength || ''
       form.value.otherRequirements = data.otherRequirements || ''
 
-      // 设置表单保存状态
-      isFormSaved.value = !!data.isSaved
+      // 设置表单保存状态：只要有核心构思就认为表单有效，可以生成概要
+      isFormSaved.value = !!(data.coreIdea && data.coreIdea.trim())
 
       // 如果已有生成结果，填充生成结果
       if (data.summary || data.keyCharacters?.length || data.keyLocations?.length) {
@@ -822,18 +814,6 @@ onMounted(() => {
   justify-content: center;
   gap: 12px;
   margin-top: 24px;
-}
-
-.save-status {
-  display: flex;
-  justify-content: center;
-  margin-top: 12px;
-
-  .el-tag {
-    .el-icon {
-      margin-right: 4px;
-    }
-  }
 }
 
 .key-characters-list,

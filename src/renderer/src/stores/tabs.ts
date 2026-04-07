@@ -126,6 +126,31 @@ export const useTabsStore = defineStore('tabs', () => {
     }
   }
 
+  /**
+   * 预先添加标签页（带指定标题）
+   * 用于在路由跳转前设置正确的标题
+   */
+  function preloadTab(path: string, title: string) {
+    // 检查是否已存在
+    const exists = tabList.value.some(tab => tab.path === path)
+    if (!exists) {
+      tabList.value.push({
+        path,
+        title,
+        closable: path !== '/'
+      })
+    } else {
+      // 如果已存在，更新标题
+      const tab = tabList.value.find(t => t.path === path)
+      if (tab) {
+        tab.title = title
+      }
+    }
+
+    // 设置为激活状态
+    activeTabPath.value = path
+  }
+
   return {
     tabList,
     activeTabPath,
@@ -136,6 +161,7 @@ export const useTabsStore = defineStore('tabs', () => {
     closeRightTabs,
     closeAllTabs,
     setActiveTab,
-    updateTabTitle
+    updateTabTitle,
+    preloadTab
   }
 })

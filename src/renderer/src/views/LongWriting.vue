@@ -169,10 +169,12 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, Reading, Document, Setting } from '@element-plus/icons-vue'
 import DictionaryEditor from '../components/longwriting/DictionaryEditor.vue'
+import { useTabsStore } from '@/stores/tabs'
 import type { LongWritingProject } from '../../../../shared/types/longwriting.types'
 import type { DictionaryCategory, DictionaryItem } from '../../../../shared/types/longwriting.types'
 
 const router = useRouter()
+const tabsStore = useTabsStore()
 
 // 项目列表
 const projects = ref<LongWritingProject[]>([])
@@ -265,6 +267,10 @@ async function createProject() {
 
 // 打开项目
 function openProject(project: LongWritingProject) {
+  // 预先设置 tab 标题为项目名称
+  const path = project.type === 'story' ? `/story-editor/${project.id}` : `/comment-editor/${project.id}`
+  tabsStore.preloadTab(path, project.name)
+
   if (project.type === 'story') {
     router.push(`/story-editor/${project.id}`)
   } else {
