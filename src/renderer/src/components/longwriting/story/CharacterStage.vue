@@ -907,7 +907,8 @@ async function parseAndShowSuggestions(content: string) {
             appearance: suggested.appearance || '',
             background: suggested.background || '',
             personality: suggested.personality || '',
-            abilities: suggested.abilities || ''
+            abilities: suggested.abilities || '',
+            majorEvents: suggested.majorEvents || ''
           })
           console.log('[CharacterStage] 创建角色结果:', result)
           if (result.success) {

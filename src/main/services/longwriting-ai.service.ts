@@ -418,7 +418,8 @@ ${input}
 - appearance: 外貌描述（必须包含脸型、肤色描述）
 - background: 背景故事
 - personality: 性格特点
-- abilities: 能力特长`
+- abilities: 能力特长
+- majorEvents: 角色在故事中的主要事件`
 
     // 构建提示词上下文
     const storyTypeNames: Record<string, string> = {
