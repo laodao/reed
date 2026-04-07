@@ -280,49 +280,38 @@ export class LongWritingAIService {
 
     const systemPrompt = `你是一位专业的小说创作顾问。请根据用户的想法，生成一个完整的故事概要。
 
-**重要**：
-1. 必须严格按照下面的 JSON 格式模板返回，不要修改字段名，不要添加或删除字段
-2. 所有字段都必须填写，不能省略
-3. keyCharacters 和 keyLocations 是必填字段，必须生成真实内容，不能为空数组，数量根据故事需要确定
-4. JSON 字符串值中不要包含换行符，使用空格代替
-5. 确保 JSON 格式完整，所有引号、括号都要成对出现
-6. 不要在 JSON 外添加任何说明文字，不要使用 \`\`\`json 标记
+你必须返回一个完整的 JSON 对象，包含以下所有字段（一个都不能少）：
+- title: 故事标题
+- storyType: 故事类型（wuxia/xianxia/xuanhuan/kehuan/xuanyi/dushi/yanqing/lishi/other）
+- summary: 故事摘要（500字左右）
+- coreConflict: 核心冲突（300字左右）
+- keyCharacters: 关键角色数组（必须包含至少2个角色，不能为空数组！）
+- keyLocations: 主要场景数组（必须包含至少2个场景，不能为空数组！）
+- estimatedChapters: 预估章节数
 
-**JSON 格式模板**：
+**特别重要**：keyCharacters 和 keyLocations 是必填字段，必须生成真实内容！
+
+每个角色必须包含：name(姓名), role(主角/配角/反派/中立), brief(150字内描述), importance(main/secondary/minor)
+每个场景必须包含：name(名称), type(类型), brief(150字内描述), importance(main/secondary/minor)
+
+**JSON 格式示例**：
 {
-  "title": "故事标题",
-  "storyType": "xianxia",
-  "summary": "故事摘要内容，500字左右",
-  "coreConflict": "核心冲突内容，300字左右",
+  "title": "暗线追凶",
+  "storyType": "other",
+  "summary": "故事摘要内容...",
+  "coreConflict": "核心冲突内容...",
   "keyCharacters": [
-    {"name": "张三", "role": "主角", "brief": "一个普通的少年，在一次意外中获得神秘力量，从此踏上修仙之路", "importance": "main"},
-    {"name": "李四", "role": "配角", "brief": "主角的好友，性格开朗乐观，一直在主角身边支持他", "importance": "secondary"}
+    {"name": "林锋", "role": "主角", "brief": "前警员，因坚持调查真相被迫离职，六年后重启调查", "importance": "main"},
+    {"name": "陈雪", "role": "配角", "brief": "警局法医，暗中协助林锋，提供关键证据分析", "importance": "secondary"}
   ],
   "keyLocations": [
-    {"name": "青云山", "type": "山脉", "brief": "故事开始的地方，山中有古老的门派遗迹，隐藏着惊天秘密", "importance": "main"},
-    {"name": "玄天城", "type": "城市", "brief": "繁华的修仙城市，各方势力汇聚于此，是故事的重要舞台", "importance": "secondary"}
+    {"name": "0714案发现场", "type": "城市", "brief": "六年前的凶杀案发生地，遗留关键线索", "importance": "main"},
+    {"name": "警局档案室", "type": "建筑", "brief": "存放旧案卷宗，林锋在此发现矛盾细节", "importance": "secondary"}
   ],
-  "estimatedChapters": 100
+  "estimatedChapters": 24
 }
 
-**字段说明**：
-- title: 故事标题（不超过10个字）
-- storyType: 故事类型，可选值：wuxia/xianxia/xuanhuan/kehuan/xuanyi/dushi/yanqing/lishi/other
-- summary: 故事摘要（500字左右，详细描述故事的起承转合）
-- coreConflict: 核心冲突（300字左右，描述故事的主要矛盾和冲突）
-- keyCharacters: 关键角色数组，必须生成有名字的角色，每个角色包含：
-  - name: 角色名称（真实的中文姓名）
-  - role: 角色定位（主角/配角/反派/中立）
-  - brief: 简要描述（150字以内）
-  - importance: 重要性（main/secondary/minor）
-- keyLocations: 主要场景数组，必须生成有名字的场景，每个场景包含：
-  - name: 场景名称（真实的地点名称）
-  - type: 场景类型（城市/山脉/海域/宫殿/村落/秘境等）
-  - brief: 简要描述（150字以内）
-  - importance: 重要性（main/secondary/minor）
-- estimatedChapters: 预估章节数（数字）
-
-请严格按照上述格式返回完整的 JSON 对象。`
+请直接输出 JSON，不要有任何其他文字。`
 
     const prompt = `请根据以下想法，生成一个故事概要：
 
