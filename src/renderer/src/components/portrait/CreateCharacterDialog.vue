@@ -82,9 +82,21 @@ import { ref, watch } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import type { PortraitGender, PortraitRace } from '../../../shared/types/portrait.types'
 
+// 初始数据类型
+interface InitialData {
+  name?: string
+  gender?: PortraitGender
+  race?: PortraitRace | 'other'
+  age?: number
+  height?: number
+  weight?: number
+  description?: string
+}
+
 const props = defineProps<{
   modelValue: boolean
   projectId: string
+  initialData?: InitialData  // 初始数据，用于从长文角色带入
 }>()
 
 const emit = defineEmits<{
@@ -167,10 +179,31 @@ function resetForm() {
   }
 }
 
+// 应用初始数据到表单
+function applyInitialData() {
+  if (!props.initialData) return
+
+  const data = props.initialData
+  if (data.name) form.value.name = data.name
+  // 性别：人像只有 male/female，角色有 other，若为 other 则不带入
+  if (data.gender && data.gender !== 'other') {
+    form.value.gender = data.gender
+  }
+  // 人种：人像只有 asian/european，角色有 other，若为 other 则不带入
+  if (data.race && data.race !== 'other') {
+    form.value.race = data.race as PortraitRace
+  }
+  if (data.age) form.value.age = data.age
+  if (data.height) form.value.height = data.height
+  if (data.weight) form.value.weight = data.weight
+  if (data.description) form.value.description = data.description
+}
+
 // 监听对话框打开
 watch(() => props.modelValue, (val) => {
   if (val) {
     resetForm()
+    applyInitialData()
   }
 })
 </script>

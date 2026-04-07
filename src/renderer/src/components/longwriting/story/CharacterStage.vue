@@ -356,6 +356,7 @@
     <CreateCharacterDialog
       v-model="showCreateCharacterDialog"
       :project-id="selectedPortraitProjectId"
+      :initial-data="portraitInitialData"
       @success="handleCreateCharacterSuccess"
     />
 
@@ -518,6 +519,31 @@ const relationForm = ref({
 // 计算属性：除当前角色外的其他角色
 const otherCharacters = computed(() => {
   return characters.value.filter(c => c.id !== currentCharacterId.value)
+})
+
+// 计算属性：创建人像时的初始数据（从当前角色表单带入）
+const portraitInitialData = computed(() => {
+  // 合并描述：外貌描述 + 性格特点 + 能力特长
+  const descriptionParts: string[] = []
+  if (characterForm.value.appearance) {
+    descriptionParts.push(characterForm.value.appearance)
+  }
+  if (characterForm.value.personality) {
+    descriptionParts.push('性格：' + characterForm.value.personality)
+  }
+  if (characterForm.value.abilities) {
+    descriptionParts.push('能力：' + characterForm.value.abilities)
+  }
+
+  return {
+    name: characterForm.value.name,
+    gender: characterForm.value.gender,
+    race: characterForm.value.race,
+    age: characterForm.value.age,
+    height: characterForm.value.height,
+    weight: characterForm.value.weight,
+    description: descriptionParts.length > 0 ? descriptionParts.join('。') : undefined
+  }
 })
 
 // 标签映射
