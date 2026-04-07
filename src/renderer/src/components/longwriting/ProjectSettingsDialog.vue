@@ -830,11 +830,8 @@ async function loadData() {
   await loadStageModelConfigs()
   await loadSkillTypes()
   await loadItemTypes()
-
-  // 如果没有数据，初始化默认配置
-  if (skillTypes.value.length === 0 && itemTypes.value.length === 0) {
-    await initDefaultConfigs()
-  }
+  // 注意：默认类型配置已在项目创建时初始化，这里不再自动初始化
+  // 用户删除的类型不应该在页面重新打开时自动恢复
 }
 
 // 监听 visible 变化

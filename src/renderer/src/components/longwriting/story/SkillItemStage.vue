@@ -644,8 +644,12 @@ async function deleteSkillType(id: string) {
       }
       await loadSkillTypes()
       ElMessage.success('删除成功')
+    } else {
+      ElMessage.error('删除失败：' + (result.error || '未知错误'))
     }
-  } catch {}
+  } catch {
+    // 用户取消不报错
+  }
 }
 
 async function createSkillLevel() {
@@ -745,8 +749,12 @@ async function deleteItemType(id: string) {
       }
       await loadItemTypes()
       ElMessage.success('删除成功')
+    } else {
+      ElMessage.error('删除失败：' + (result.error || '未知错误'))
     }
-  } catch {}
+  } catch {
+    // 用户取消不报错
+  }
 }
 
 async function createItemLevel() {
@@ -1262,10 +1270,8 @@ async function initDefaultConfigs() {
 
 onMounted(async () => {
   await loadData()
-  // 如果没有类型配置，初始化默认
-  if (skillTypes.value.length === 0 && itemTypes.value.length === 0) {
-    await initDefaultConfigs()
-  }
+  // 注意：默认类型配置已在项目创建时初始化，这里不再自动初始化
+  // 用户删除的类型不应该在页面重新打开时自动恢复
 })
 
 watch(() => props.projectId, () => {

@@ -2043,8 +2043,8 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
    */
   ipcMain.handle(CHANNELS.DELETE_SKILL_TYPE_CONFIG, async (_event, id: string) => {
     try {
-      await service.deleteSkillTypeConfig(id)
-      return { success: true }
+      const result = await service.deleteSkillTypeConfig(id)
+      return { success: result }
     } catch (error: any) {
       return { success: false, error: error.message }
     }
@@ -2091,8 +2091,8 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
    */
   ipcMain.handle(CHANNELS.DELETE_ITEM_TYPE_CONFIG, async (_event, id: string) => {
     try {
-      await service.deleteItemTypeConfig(id)
-      return { success: true }
+      const result = await service.deleteItemTypeConfig(id)
+      return { success: result }
     } catch (error: any) {
       return { success: false, error: error.message }
     }

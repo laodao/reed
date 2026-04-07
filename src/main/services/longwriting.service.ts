@@ -1062,12 +1062,13 @@ export class LongWritingService {
 
   /**
    * 删除技能类型配置
+   * @returns 删除是否成功
    */
-  async deleteSkillTypeConfig(id: string): Promise<void> {
+  async deleteSkillTypeConfig(id: string): Promise<boolean> {
     if (!this.db.lwTypeConfig) {
       throw new Error('数据库未初始化')
     }
-    this.db.lwTypeConfig.deleteSkillTypeConfig(id)
+    return this.db.lwTypeConfig.deleteSkillTypeConfig(id)
   }
 
   /**
@@ -1102,12 +1103,13 @@ export class LongWritingService {
 
   /**
    * 删除物品类型配置
+   * @returns 删除是否成功
    */
-  async deleteItemTypeConfig(id: string): Promise<void> {
+  async deleteItemTypeConfig(id: string): Promise<boolean> {
     if (!this.db.lwTypeConfig) {
       throw new Error('数据库未初始化')
     }
-    this.db.lwTypeConfig.deleteItemTypeConfig(id)
+    return this.db.lwTypeConfig.deleteItemTypeConfig(id)
   }
 
   /**
