@@ -55,6 +55,7 @@ import { LwDesignMessageRepository } from './repositories/lw-design-message.repo
 import { LwMemoryEntityRepository } from './repositories/lw-memory-entity.repository'
 import { LwTempCharacterTemplateRepository } from './repositories/lw-temp-character-template.repository'
 import { LwTempLocationTemplateRepository } from './repositories/lw-temp-location-template.repository'
+import { LwProjectModelConfigRepository } from './repositories/lw-project-model-config.repository'
 import { DiaryFolderRepository } from './repositories/diary-folder.repository'
 import { DiaryEntryRepository } from './repositories/diary-entry.repository'
 import { DiaryLinkRepository } from './repositories/diary-link.repository'
@@ -137,6 +138,9 @@ export class DatabaseManager {
   // 临时实体模板仓库
   public lwTempCharacterTemplates: LwTempCharacterTemplateRepository | null = null
   public lwTempLocationTemplates: LwTempLocationTemplateRepository | null = null
+
+  // 项目步骤模型配置仓库
+  public lwProjectModelConfigs: LwProjectModelConfigRepository | null = null
 
   public diaryFolders: DiaryFolderRepository | null = null
   public diaryEntries: DiaryEntryRepository | null = null
@@ -767,6 +771,21 @@ export class DatabaseManager {
       )
     `)
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_projects_created_at ON lw_projects(created_at DESC)`)
+
+    // 项目步骤模型配置表
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_project_model_configs (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        stage TEXT NOT NULL,
+        provider_config_id TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        created_at INTEGER,
+        updated_at INTEGER,
+        UNIQUE(project_id, stage),
+        FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE
+      )
+    `)
 
     // 故事概要表
     this.db.exec(`
@@ -3059,6 +3078,7 @@ export class DatabaseManager {
     // 初始化临时实体模板仓库
     this.lwTempCharacterTemplates = new LwTempCharacterTemplateRepository(this.db)
     this.lwTempLocationTemplates = new LwTempLocationTemplateRepository(this.db)
+    this.lwProjectModelConfigs = new LwProjectModelConfigRepository(this.db)
 
     this.diaryFolders = new DiaryFolderRepository(this.db)
     this.diaryEntries = new DiaryEntryRepository(this.db)

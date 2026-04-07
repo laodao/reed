@@ -197,6 +197,52 @@
           </div>
         </div>
       </el-tab-pane>
+
+      <!-- 模型设定 -->
+      <el-tab-pane label="模型设定" name="models">
+        <div class="model-config-container">
+          <div class="model-config-header">
+            <span>为每个步骤设置AI模型，不同步骤可使用不同模型</span>
+          </div>
+          <div class="model-config-list">
+            <div
+              v-for="stage in storyStages"
+              :key="stage.key"
+              class="model-config-item"
+            >
+              <div class="stage-label">{{ stage.label }}</div>
+              <div class="model-select-wrapper">
+                <el-select
+                  v-model="stageModelConfigs[stage.key]"
+                  placeholder="选择模型"
+                  class="model-select"
+                  filterable
+                  :loading="loadingModels"
+                  @change="(val: string) => onModelChange(stage.key, val)"
+                >
+                  <el-option-group
+                    v-for="provider in filteredProviderModels"
+                    :key="provider.id"
+                    :label="provider.name"
+                  >
+                    <el-option
+                      v-for="model in provider.models"
+                      :key="`${provider.id}:${model.id}`"
+                      :label="`${provider.shortId}/${model.name}`"
+                      :value="`${provider.id}:${model.id}`"
+                    >
+                      <div class="model-option">
+                        <span class="model-name">{{ provider.shortId }}/{{ model.name }}</span>
+                        <span class="model-context">{{ formatContext(model.contextWindow) }}</span>
+                      </div>
+                    </el-option>
+                  </el-option-group>
+                </el-select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 添加技能类型对话框 -->
@@ -314,10 +360,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Delete } from '@element-plus/icons-vue'
-import type { ProjectSkillTypeConfig, ProjectItemTypeConfig, SkillLevelConfig, ItemLevelConfig } from '../../../../shared/types/longwriting.types'
+import type { ProjectSkillTypeConfig, ProjectItemTypeConfig, SkillLevelConfig, ItemLevelConfig, StoryStage } from '../../../../shared/types/longwriting.types'
+import type { UserProviderConfig, ProviderTemplate } from '../../../shared/types'
 
 const props = defineProps<{
   visible: boolean
@@ -326,9 +373,163 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:visible': [value: boolean]
+  'model-configs-changed': []
 }>()
 
-const activeTab = ref('skills')
+const activeTab = ref('models')
+
+// ==================== 模型设定相关 ====================
+const providerConfigs = ref<UserProviderConfig[]>([])
+const providerTemplates = ref<ProviderTemplate[]>([])
+const loadingModels = ref(true)
+const stageModelConfigs = ref<Record<string, string>>({})
+
+// 故事步骤配置
+const storyStages = [
+  { key: 'overview', label: '故事概要' },
+  { key: 'background', label: '背景设定' },
+  { key: 'characters', label: '角色设定' },
+  { key: 'skills', label: '技能物品' },
+  { key: 'plot', label: '故事情节' },
+  { key: 'outline', label: '大纲设计' },
+  { key: 'chapters', label: '章节写作' }
+]
+
+// 判断模型是否为文本类型
+function isTextModel(type: string | undefined): boolean {
+  return type === undefined || type === 'text' || type === 'multimodal'
+}
+
+// 提供商模型列表
+const providerModels = computed(() => {
+  const result: Array<{
+    id: string
+    name: string
+    shortId: string
+    models: Array<{
+      id: string
+      name: string
+      contextWindow: number
+      type?: string
+    }>
+  }> = []
+
+  for (const config of providerConfigs.value) {
+    if (!config.isEnabled) continue
+
+    const models: Array<{
+      id: string
+      name: string
+      contextWindow: number
+      type?: string
+    }> = []
+
+    const template = providerTemplates.value.find(t => t.id === config.templateId)
+
+    if (config.models && config.models.length > 0) {
+      for (const model of config.models) {
+        if (!isTextModel(model.type)) continue
+        models.push({
+          id: model.id,
+          name: model.name,
+          contextWindow: model.contextWindow,
+          type: model.type
+        })
+      }
+    } else if (template && template.models.length > 0) {
+      for (const model of template.models) {
+        if (!isTextModel(model.type)) continue
+        models.push({
+          id: model.id,
+          name: model.name || model.id,
+          contextWindow: model.contextWindow || 8192,
+          type: model.type
+        })
+      }
+    }
+
+    if (models.length > 0) {
+      result.push({
+        id: config.id,
+        name: config.name,
+        shortId: config.shortId || config.name,
+        models
+      })
+    }
+  }
+
+  return result
+})
+
+// 过滤后的模型列表（与 StoryEditor 中相同）
+const filteredProviderModels = computed(() => providerModels.value)
+
+// 格式化上下文窗口大小
+function formatContext(contextWindow: number): string {
+  if (contextWindow >= 1000000) {
+    return `${(contextWindow / 1000000).toFixed(1)}M`
+  }
+  if (contextWindow >= 1000) {
+    return `${Math.round(contextWindow / 1000)}K`
+  }
+  return `${contextWindow}`
+}
+
+// 加载提供商配置
+async function loadProviderConfigs(): Promise<void> {
+  loadingModels.value = true
+  try {
+    const templatesResponse = await window.electronAPI.providerTemplate.list()
+    if (templatesResponse.success && templatesResponse.templates) {
+      providerTemplates.value = templatesResponse.templates
+    }
+
+    const response = await window.electronAPI.providerConfig.list()
+    if (response.success && response.configs) {
+      providerConfigs.value = response.configs.filter((c: UserProviderConfig) => c.isEnabled)
+    }
+  } catch (error) {
+    console.error('加载提供商配置失败:', error)
+  } finally {
+    loadingModels.value = false
+  }
+}
+
+// 加载步骤模型配置
+async function loadStageModelConfigs(): Promise<void> {
+  if (!props.projectId) return
+  const result = await window.electronAPI.longwriting.getStageModelConfigs(props.projectId)
+  if (result.success && result.data) {
+    // 将配置转换为 Record 格式
+    const configs: Record<string, string> = {}
+    for (const config of result.data) {
+      configs[config.stage] = `${config.providerConfigId}:${config.modelId}`
+    }
+    stageModelConfigs.value = configs
+  }
+}
+
+// 模型变化处理
+async function onModelChange(stage: string, value: string): Promise<void> {
+  if (!value || !props.projectId) return
+  const [providerConfigId, modelId] = value.split(':')
+  if (!providerConfigId || !modelId) return
+
+  const result = await window.electronAPI.longwriting.setStageModelConfig(
+    props.projectId,
+    stage,
+    providerConfigId,
+    modelId
+  )
+  if (result.success) {
+    ElMessage.success('模型配置已保存')
+    emit('model-configs-changed')
+  } else {
+    ElMessage.error('保存失败：' + (result.error || '未知错误'))
+  }
+}
+
+// ==================== 技能类型相关 ====================
 
 // 技能类型列表
 const skillTypes = ref<ProjectSkillTypeConfig[]>([])
@@ -625,6 +826,8 @@ async function initDefaultConfigs() {
 
 // 加载所有数据
 async function loadData() {
+  await loadProviderConfigs()
+  await loadStageModelConfigs()
   await loadSkillTypes()
   await loadItemTypes()
 
@@ -803,5 +1006,71 @@ onMounted(() => {
   justify-content: center;
   color: var(--text-color-placeholder);
   font-size: 14px;
+}
+
+// 模型设定样式
+.model-config-container {
+  height: 60vh;
+  overflow-y: auto;
+}
+
+.model-config-header {
+  padding: 12px 0;
+  color: var(--text-color-secondary);
+  font-size: 13px;
+  border-bottom: 1px solid var(--border-color-light);
+  margin-bottom: 16px;
+}
+
+.model-config-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.model-config-item {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--fill-color-blank);
+  border: 1px solid var(--border-color-light);
+  border-radius: 8px;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: var(--color-primary-light-5);
+  }
+}
+
+.stage-label {
+  width: 100px;
+  font-weight: 500;
+  color: var(--text-color-primary);
+  flex-shrink: 0;
+}
+
+.model-select-wrapper {
+  flex: 1;
+}
+
+.model-select {
+  width: 100%;
+}
+
+.model-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+
+  .model-name {
+    flex: 1;
+  }
+
+  .model-context {
+    font-size: 12px;
+    color: var(--text-color-secondary);
+    margin-left: 8px;
+  }
 }
 </style>

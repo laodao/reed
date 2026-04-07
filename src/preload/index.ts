@@ -1293,7 +1293,17 @@ const electronAPI = {
       characters?: any[],
       locations?: any[],
       items?: any[]
-    ) => ipcRenderer.invoke('longwriting:autoAddEntities', projectId, characters, locations, items)
+    ) => ipcRenderer.invoke('longwriting:autoAddEntities', projectId, characters, locations, items),
+
+    // 项目步骤模型配置
+    getStageModelConfigs: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:getStageModelConfigs', projectId),
+    getStageModelConfig: (projectId: string, stage: string) =>
+      ipcRenderer.invoke('longwriting:getStageModelConfig', projectId, stage),
+    setStageModelConfig: (projectId: string, stage: string, providerConfigId: string, modelId: string) =>
+      ipcRenderer.invoke('longwriting:setStageModelConfig', projectId, stage, providerConfigId, modelId),
+    setStageModelConfigs: (projectId: string, configs: Array<{ stage: string; providerConfigId: string; modelId: string }>) =>
+      ipcRenderer.invoke('longwriting:setStageModelConfigs', projectId, configs)
   },
 
   // 日记相关

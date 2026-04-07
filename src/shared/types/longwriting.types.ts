@@ -31,6 +31,19 @@ export type CommentStage =
   | 'chapters'      // 章节写作
 
 /**
+ * 步骤模型配置
+ */
+export interface StageModelConfig {
+  id: string
+  projectId: string
+  stage: StoryStage | CommentStage
+  providerConfigId: string
+  modelId: string
+  createdAt: number
+  updatedAt: number
+}
+
+/**
  * 长文写作项目
  */
 export interface LongWritingProject {

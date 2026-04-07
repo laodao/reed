@@ -39,34 +39,6 @@
           </div>
         </div>
       </div>
-      <div class="nav-model-selector">
-        <el-select
-          v-model="selectedModelKey"
-          placeholder="选择模型"
-          class="model-select"
-          filterable
-          :filter-method="filterModels"
-          :loading="loadingModels"
-        >
-          <el-option-group
-            v-for="provider in filteredProviderModels"
-            :key="provider.id"
-            :label="provider.name"
-          >
-            <el-option
-              v-for="model in provider.models"
-              :key="`${provider.id}:${model.id}`"
-              :label="`${provider.shortId}/${model.name}`"
-              :value="`${provider.id}:${model.id}`"
-            >
-              <div class="model-option">
-                <span class="model-name">{{ provider.shortId }}/{{ model.name }}</span>
-                <span class="model-context">{{ formatContext(model.contextWindow) }}</span>
-              </div>
-            </el-option>
-          </el-option-group>
-        </el-select>
-      </div>
     </div>
 
     <!-- 内容区域 -->
@@ -138,6 +110,7 @@
     <ProjectSettingsDialog
       v-model:visible="showSettingsDialog"
       :project-id="projectId"
+      @model-configs-changed="loadStageModelConfigs"
     />
   </div>
 </template>
@@ -187,9 +160,10 @@ const showSettingsDialog = ref(false)
 // ==================== 统一模型选择 ====================
 const providerConfigs = ref<UserProviderConfig[]>([])
 const providerTemplates = ref<ProviderTemplate[]>([])
-const selectedModelKey = ref<string>('')
-const modelSearchKeyword = ref('')
 const loadingModels = ref(true)
+
+// 步骤模型配置
+const stageModelConfigs = ref<Record<string, string>>({})
 
 // 判断模型是否为文本类型
 function isTextModel(type: string | undefined): boolean {
@@ -317,36 +291,6 @@ const imageProviderModels = computed(() => {
   return result
 })
 
-// 过滤后的模型列表
-const filteredProviderModels = computed(() => {
-  if (!modelSearchKeyword.value) {
-    return providerModels.value
-  }
-
-  const keyword = modelSearchKeyword.value.toLowerCase()
-  const result: typeof providerModels.value = []
-
-  for (const provider of providerModels.value) {
-    const filteredModels = provider.models.filter(model =>
-      model.name.toLowerCase().includes(keyword) ||
-      model.id.toLowerCase().includes(keyword) ||
-      provider.name.toLowerCase().includes(keyword) ||
-      provider.shortId.toLowerCase().includes(keyword)
-    )
-
-    if (filteredModels.length > 0) {
-      result.push({ ...provider, models: filteredModels })
-    }
-  }
-
-  return result
-})
-
-// 模型搜索过滤方法
-function filterModels(keyword: string): void {
-  modelSearchKeyword.value = keyword
-}
-
 // 格式化上下文窗口大小
 function formatContext(contextWindow: number): string {
   if (contextWindow >= 1000000) {
@@ -370,14 +314,6 @@ async function loadProviderConfigs(): Promise<void> {
     const response = await window.electronAPI.providerConfig.list()
     if (response.success && response.configs) {
       providerConfigs.value = response.configs.filter((c: UserProviderConfig) => c.isEnabled)
-
-      // 设置默认文本模型
-      if (!selectedModelKey.value && providerModels.value.length > 0) {
-        const firstProvider = providerModels.value[0]
-        if (firstProvider.models.length > 0) {
-          selectedModelKey.value = `${firstProvider.id}:${firstProvider.models[0].id}`
-        }
-      }
     }
   } catch (error) {
     console.error('加载提供商配置失败:', error)
@@ -386,16 +322,45 @@ async function loadProviderConfigs(): Promise<void> {
   }
 }
 
-// 解析选中的模型
+// 加载步骤模型配置
+async function loadStageModelConfigs(): Promise<void> {
+  if (!projectId.value) return
+  const result = await window.electronAPI.longwriting.getStageModelConfigs(projectId.value)
+  if (result.success && result.data) {
+    const configs: Record<string, string> = {}
+    for (const config of result.data) {
+      configs[config.stage] = `${config.providerConfigId}:${config.modelId}`
+    }
+    stageModelConfigs.value = configs
+  }
+}
+
+// 获取当前步骤的模型配置
+const currentStageModelKey = computed(() => {
+  const stage = currentStage.value
+  const configKey = stageModelConfigs.value[stage]
+  if (configKey) return configKey
+
+  // 如果当前步骤没有配置，返回第一个可用模型
+  if (providerModels.value.length > 0) {
+    const firstProvider = providerModels.value[0]
+    if (firstProvider.models.length > 0) {
+      return `${firstProvider.id}:${firstProvider.models[0].id}`
+    }
+  }
+  return ''
+})
+
+// 解析当前步骤的模型
 const selectedModel = computed(() => {
-  if (!selectedModelKey.value) return null
-  const [providerId, modelId] = selectedModelKey.value.split(':')
+  if (!currentStageModelKey.value) return null
+  const [providerId, modelId] = currentStageModelKey.value.split(':')
   return { providerId, modelId }
 })
 
 // 提供模型选择给子组件
 provide('selectedModel', selectedModel)
-provide('selectedModelKey', selectedModelKey)
+provide('selectedModelKey', currentStageModelKey)
 
 // 提供图像模型列表给子组件（供地图图片生成等功能使用）
 provide('imageProviderModels', imageProviderModels)
@@ -461,7 +426,9 @@ async function loadProject() {
 
 onMounted(() => {
   loadProject()
-  loadProviderConfigs()
+  loadProviderConfigs().then(() => {
+    loadStageModelConfigs()
+  })
 })
 </script>
 
@@ -524,26 +491,16 @@ onMounted(() => {
 
 .stage-nav {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
   padding: 10px 16px;
   background: var(--bg-color);
   border-bottom: 1px solid var(--border-color-light);
-  gap: 16px;
 }
 
 .stage-list {
   display: flex;
   gap: 6px;
-  flex: 1;
-}
-
-.nav-model-selector {
-  flex-shrink: 0;
-
-  .model-select {
-    width: 220px;
-  }
 }
 
 .stage-item {

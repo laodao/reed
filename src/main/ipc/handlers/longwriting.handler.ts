@@ -6,6 +6,7 @@
 import { ipcMain, BrowserWindow, dialog, shell } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
+import { getDatabaseManager } from '../../database'
 import { LongWritingService } from '../../services/longwriting.service'
 import { LongWritingAIService } from '../../services/longwriting-ai.service'
 import { MaterialProcessorService } from '../../services/material-processor.service'
@@ -265,7 +266,13 @@ const CHANNELS = {
 
   // 新实体检测
   DETECT_NEW_ENTITIES: 'longwriting:detectNewEntities',
-  AUTO_ADD_ENTITIES: 'longwriting:autoAddEntities'
+  AUTO_ADD_ENTITIES: 'longwriting:autoAddEntities',
+
+  // 项目步骤模型配置
+  GET_STAGE_MODEL_CONFIGS: 'longwriting:getStageModelConfigs',
+  GET_STAGE_MODEL_CONFIG: 'longwriting:getStageModelConfig',
+  SET_STAGE_MODEL_CONFIG: 'longwriting:setStageModelConfig',
+  SET_STAGE_MODEL_CONFIGS: 'longwriting:setStageModelConfigs'
 }
 
 /**
@@ -2638,6 +2645,84 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       return { success: true, data: result }
     } catch (error: any) {
       console.error('[IPC] 自动添加实体失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 项目步骤模型配置 ====================
+
+  // 获取项目的所有步骤模型配置
+  ipcMain.handle(CHANNELS.GET_STAGE_MODEL_CONFIGS, async (_event, projectId: string) => {
+    try {
+      const dbManager = getDatabaseManager()
+      if (!dbManager.lwProjectModelConfigs) {
+        return { success: false, error: '数据库未初始化' }
+      }
+      const configs = dbManager.lwProjectModelConfigs.getByProjectId(projectId)
+      return { success: true, data: configs }
+    } catch (error: any) {
+      console.error('[IPC] 获取步骤模型配置失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 获取单个步骤的模型配置
+  ipcMain.handle(CHANNELS.GET_STAGE_MODEL_CONFIG, async (_event, projectId: string, stage: string) => {
+    try {
+      const dbManager = getDatabaseManager()
+      if (!dbManager.lwProjectModelConfigs) {
+        return { success: false, error: '数据库未初始化' }
+      }
+      const config = dbManager.lwProjectModelConfigs.getByProjectAndStage(projectId, stage as any)
+      return { success: true, data: config }
+    } catch (error: any) {
+      console.error('[IPC] 获取步骤模型配置失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 设置单个步骤的模型配置
+  ipcMain.handle(CHANNELS.SET_STAGE_MODEL_CONFIG, async (
+    _event,
+    projectId: string,
+    stage: string,
+    providerConfigId: string,
+    modelId: string
+  ) => {
+    try {
+      const dbManager = getDatabaseManager()
+      if (!dbManager.lwProjectModelConfigs) {
+        return { success: false, error: '数据库未初始化' }
+      }
+      const config = dbManager.lwProjectModelConfigs.upsert(projectId, stage as any, providerConfigId, modelId)
+      return { success: true, data: config }
+    } catch (error: any) {
+      console.error('[IPC] 设置步骤模型配置失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 批量设置步骤模型配置
+  ipcMain.handle(CHANNELS.SET_STAGE_MODEL_CONFIGS, async (
+    _event,
+    projectId: string,
+    configs: Array<{ stage: string; providerConfigId: string; modelId: string }>
+  ) => {
+    try {
+      const dbManager = getDatabaseManager()
+      if (!dbManager.lwProjectModelConfigs) {
+        return { success: false, error: '数据库未初始化' }
+      }
+      dbManager.lwProjectModelConfigs.upsertMany(configs.map(c => ({
+        projectId,
+        stage: c.stage as any,
+        providerConfigId: c.providerConfigId,
+        modelId: c.modelId
+      })))
+      const result = dbManager.lwProjectModelConfigs.getByProjectId(projectId)
+      return { success: true, data: result }
+    } catch (error: any) {
+      console.error('[IPC] 批量设置步骤模型配置失败:', error)
       return { success: false, error: error.message }
     }
   })
