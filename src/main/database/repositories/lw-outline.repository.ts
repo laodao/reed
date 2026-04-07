@@ -9,9 +9,17 @@ import {
   CreateOutlineRequest,
   UpdateOutlineRequest
 } from '../../../shared/types/longwriting.types'
+import { LwOutlineCharacterRepository } from './lw-outline-character.repository'
+import { LwOutlineLocationRepository } from './lw-outline-location.repository'
 
 export class LwOutlineRepository {
-  constructor(private db: Database.Database) {}
+  private outlineCharacterRepo: LwOutlineCharacterRepository
+  private outlineLocationRepo: LwOutlineLocationRepository
+
+  constructor(private db: Database.Database) {
+    this.outlineCharacterRepo = new LwOutlineCharacterRepository(db)
+    this.outlineLocationRepo = new LwOutlineLocationRepository(db)
+  }
 
   /**
    * 根据项目 ID 获取所有大纲节点
@@ -72,12 +80,22 @@ export class LwOutlineRepository {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
     `)
 
+    // 保留JSON字段以兼容
     stmt.run(
       id, data.projectId, data.parentId || null, data.name, level,
       data.nodeType, data.summary || '', JSON.stringify(data.involvedCharacters || []),
       JSON.stringify(data.involvedLocations || []), data.estimatedWords || 0, orderIndex,
       now, now
     )
+
+    // 同时写入关联表
+    if (data.involvedCharacters && data.involvedCharacters.length > 0) {
+      this.outlineCharacterRepo.batchAdd(id, data.involvedCharacters)
+    }
+
+    if (data.involvedLocations && data.involvedLocations.length > 0) {
+      this.outlineLocationRepo.batchAdd(id, data.involvedLocations)
+    }
 
     return {
       id,
@@ -134,6 +152,15 @@ export class LwOutlineRepository {
     `)
     stmt.run(...values)
 
+    // 更新关联表
+    if (data.involvedCharacters !== undefined) {
+      this.outlineCharacterRepo.replaceAll(id, data.involvedCharacters)
+    }
+
+    if (data.involvedLocations !== undefined) {
+      this.outlineLocationRepo.replaceAll(id, data.involvedLocations)
+    }
+
     return this.getById(id)
   }
 
@@ -174,6 +201,10 @@ export class LwOutlineRepository {
     for (const child of children) {
       this.delete(child.id)
     }
+
+    // 删除关联数据
+    this.outlineCharacterRepo.deleteByOutlineId(id)
+    this.outlineLocationRepo.deleteByOutlineId(id)
 
     // 删除当前节点
     const stmt = this.db.prepare('DELETE FROM lw_story_outlines WHERE id = ?')
@@ -228,6 +259,61 @@ export class LwOutlineRepository {
     }
 
     return rootNodes
+  }
+
+  /**
+   * 获取大纲涉及的角色ID列表（从关联表）
+   */
+  getCharacterIds(outlineId: string): string[] {
+    return this.outlineCharacterRepo.getCharacterIdsByOutlineId(outlineId)
+  }
+
+  /**
+   * 获取大纲涉及的地点ID列表（从关联表）
+   */
+  getLocationIds(outlineId: string): string[] {
+    return this.outlineLocationRepo.getLocationIdsByOutlineId(outlineId)
+  }
+
+  /**
+   * 更新大纲的角色关联
+   */
+  updateCharacterRelations(outlineId: string, characterIds: string[]): void {
+    this.outlineCharacterRepo.replaceAll(outlineId, characterIds)
+  }
+
+  /**
+   * 更新大纲的地点关联
+   */
+  updateLocationRelations(outlineId: string, locationIds: string[]): void {
+    this.outlineLocationRepo.replaceAll(outlineId, locationIds)
+  }
+
+  /**
+   * 批量获取大纲的角色ID映射
+   */
+  getCharacterIdsByOutlineIds(outlineIds: string[]): Map<string, string[]> {
+    return this.outlineCharacterRepo.getCharacterIdsByOutlineIds(outlineIds)
+  }
+
+  /**
+   * 批量获取大纲的地点ID映射
+   */
+  getLocationIdsByOutlineIds(outlineIds: string[]): Map<string, string[]> {
+    return this.outlineLocationRepo.getLocationIdsByOutlineIds(outlineIds)
+  }
+
+  /**
+   * 迁移现有数据到关联表
+   */
+  migrateToRelationTables(projectId: string): { characters: number; locations: number } {
+    const charactersMigrated = this.outlineCharacterRepo.migrateFromJson(projectId)
+    const locationsMigrated = this.outlineLocationRepo.migrateFromJson(projectId)
+
+    return {
+      characters: charactersMigrated,
+      locations: locationsMigrated
+    }
   }
 
   private generateId(): string {

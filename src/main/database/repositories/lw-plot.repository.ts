@@ -5,12 +5,20 @@
 
 import Database from 'better-sqlite3'
 import { StoryPlot, CreatePlotRequest, UpdatePlotRequest } from '../../../shared/types/longwriting.types'
+import { LwPlotCharacterRepository } from './lw-plot-character.repository'
+import { LwPlotLocationRepository } from './lw-plot-location.repository'
 
 /**
  * 情节仓库
  */
 export class LwPlotRepository {
-  constructor(private db: Database.Database) {}
+  private plotCharacterRepo: LwPlotCharacterRepository
+  private plotLocationRepo: LwPlotLocationRepository
+
+  constructor(private db: Database.Database) {
+    this.plotCharacterRepo = new LwPlotCharacterRepository(db)
+    this.plotLocationRepo = new LwPlotLocationRepository(db)
+  }
 
   /**
    * 根据项目 ID 获取所有情节（按 plot_order 排序）
@@ -20,7 +28,7 @@ export class LwPlotRepository {
       SELECT * FROM lw_story_plots WHERE project_id = ? ORDER BY plot_order ASC, created_at ASC
     `)
     const rows = stmt.all(projectId) as any[]
-    return rows.map(this.mapToPlot)
+    return rows.map(row => this.mapToPlot(row))
   }
 
   /**
@@ -51,6 +59,7 @@ export class LwPlotRepository {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
+    // 保留JSON字段以兼容，同时写入关联表
     const involvedCharacters = JSON.stringify(data.involvedCharacters || [])
     const involvedLocations = JSON.stringify(data.involvedLocations || [])
 
@@ -66,6 +75,22 @@ export class LwPlotRepository {
       now,
       now
     )
+
+    // 同时写入关联表（如果提供的是角色ID）
+    if (data.involvedCharacters && data.involvedCharacters.length > 0) {
+      // 检查是否是有效的角色ID（以 char_ 开头或是UUID格式）
+      const isIdFormat = data.involvedCharacters.some(c => c.startsWith('char_') || c.includes('-'))
+      if (isIdFormat) {
+        this.plotCharacterRepo.batchAdd(id, data.involvedCharacters)
+      }
+    }
+
+    if (data.involvedLocations && data.involvedLocations.length > 0) {
+      const isIdFormat = data.involvedLocations.some(l => l.startsWith('loc_') || l.includes('-'))
+      if (isIdFormat) {
+        this.plotLocationRepo.batchAdd(id, data.involvedLocations)
+      }
+    }
 
     return {
       id,
@@ -112,6 +137,14 @@ export class LwPlotRepository {
           now,
           now
         )
+
+        // 写入关联表
+        if (plot.involvedCharacters && plot.involvedCharacters.length > 0) {
+          const isIdFormat = plot.involvedCharacters.some(c => c.startsWith('char_') || c.includes('-'))
+          if (isIdFormat) {
+            this.plotCharacterRepo.batchAdd(id, plot.involvedCharacters)
+          }
+        }
 
         results.push({
           id,
@@ -178,6 +211,21 @@ export class LwPlotRepository {
     `)
     stmt.run(...values)
 
+    // 更新关联表
+    if (data.involvedCharacters !== undefined) {
+      const isIdFormat = data.involvedCharacters.some(c => c.startsWith('char_') || c.includes('-'))
+      if (isIdFormat) {
+        this.plotCharacterRepo.replaceAll(id, data.involvedCharacters)
+      }
+    }
+
+    if (data.involvedLocations !== undefined) {
+      const isIdFormat = data.involvedLocations.some(l => l.startsWith('loc_') || l.includes('-'))
+      if (isIdFormat) {
+        this.plotLocationRepo.replaceAll(id, data.involvedLocations)
+      }
+    }
+
     return this.getById(id)
   }
 
@@ -203,6 +251,10 @@ export class LwPlotRepository {
    * 删除情节
    */
   delete(id: string): boolean {
+    // 先删除关联数据
+    this.plotCharacterRepo.deleteByPlotId(id)
+    this.plotLocationRepo.deleteByPlotId(id)
+
     const stmt = this.db.prepare('DELETE FROM lw_story_plots WHERE id = ?')
     const result = stmt.run(id)
     return result.changes > 0
@@ -212,6 +264,13 @@ export class LwPlotRepository {
    * 删除项目的所有情节
    */
   deleteByProjectId(projectId: string): boolean {
+    // 获取所有情节ID并删除关联数据
+    const plots = this.getByProjectId(projectId)
+    for (const plot of plots) {
+      this.plotCharacterRepo.deleteByPlotId(plot.id)
+      this.plotLocationRepo.deleteByPlotId(plot.id)
+    }
+
     const stmt = this.db.prepare('DELETE FROM lw_story_plots WHERE project_id = ?')
     const result = stmt.run(projectId)
     return result.changes > 0
@@ -224,6 +283,49 @@ export class LwPlotRepository {
     const stmt = this.db.prepare('SELECT COUNT(*) as count FROM lw_story_plots WHERE project_id = ?')
     const result = stmt.get(projectId) as any
     return result?.count ?? 0
+  }
+
+  /**
+   * 获取情节涉及的角色ID列表（从关联表）
+   */
+  getCharacterIds(plotId: string): string[] {
+    return this.plotCharacterRepo.getCharacterIdsByPlotId(plotId)
+  }
+
+  /**
+   * 获取情节涉及的地点ID列表（从关联表）
+   */
+  getLocationIds(plotId: string): string[] {
+    return this.plotLocationRepo.getLocationIdsByPlotId(plotId)
+  }
+
+  /**
+   * 更新情节的角色关联
+   */
+  updateCharacterRelations(plotId: string, characterIds: string[]): void {
+    this.plotCharacterRepo.replaceAll(plotId, characterIds)
+  }
+
+  /**
+   * 更新情节的地点关联
+   */
+  updateLocationRelations(plotId: string, locationIds: string[]): void {
+    this.plotLocationRepo.replaceAll(plotId, locationIds)
+  }
+
+  /**
+   * 迁移现有数据到关联表
+   */
+  migrateToRelationTables(projectId: string): { characters: number; locations: number } {
+    // 迁移角色关联
+    const charactersMigrated = this.plotCharacterRepo.migrateFromJson(projectId)
+    // 迁移地点关联
+    const locationsMigrated = this.plotLocationRepo.migrateFromJson(projectId)
+
+    return {
+      characters: charactersMigrated,
+      locations: locationsMigrated
+    }
   }
 
   /**

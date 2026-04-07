@@ -471,6 +471,69 @@
         <el-button @click="showViewStateDialog = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <!-- 新实体确认对话框 -->
+    <el-dialog
+      v-model="showNewEntitiesDialog"
+      title="检测到新实体"
+      width="700px"
+      class="state-dialog"
+    >
+      <div class="dialog-content-scroll">
+        <p class="memory-hint">以下是从章节中检测到的新实体，请选择是否添加到项目：</p>
+
+        <!-- 新角色 -->
+        <div v-if="detectedNewEntities?.newCharacters?.length > 0" class="entity-section">
+          <h4 class="section-title">新角色</h4>
+          <div v-for="(char, index) in detectedNewEntities.newCharacters" :key="'char-' + index" class="new-entity-item">
+            <div class="entity-header">
+              <span class="entity-name">{{ char.name }}</span>
+              <el-tag :type="getImportanceTagType(char.suggestedImportance)" size="small">
+                {{ getImportanceName(char.suggestedImportance) }}
+              </el-tag>
+            </div>
+            <div class="entity-description">{{ char.description }}</div>
+            <div v-if="char.reason" class="entity-reason">{{ char.reason }}</div>
+          </div>
+        </div>
+
+        <!-- 新地点 -->
+        <div v-if="detectedNewEntities?.newLocations?.length > 0" class="entity-section">
+          <h4 class="section-title">新地点</h4>
+          <div v-for="(loc, index) in detectedNewEntities.newLocations" :key="'loc-' + index" class="new-entity-item">
+            <div class="entity-header">
+              <span class="entity-name">{{ loc.name }}</span>
+              <el-tag :type="getImportanceTagType(loc.suggestedImportance)" size="small">
+                {{ getImportanceName(loc.suggestedImportance) }}
+              </el-tag>
+            </div>
+            <div class="entity-description">{{ loc.description }}</div>
+            <div v-if="loc.reason" class="entity-reason">{{ loc.reason }}</div>
+          </div>
+        </div>
+
+        <!-- 新物品 -->
+        <div v-if="detectedNewEntities?.newItems?.length > 0" class="entity-section">
+          <h4 class="section-title">新物品</h4>
+          <div v-for="(item, index) in detectedNewEntities.newItems" :key="'item-' + index" class="new-entity-item">
+            <div class="entity-header">
+              <span class="entity-name">{{ item.name }}</span>
+              <el-tag :type="getImportanceTagType(item.suggestedImportance)" size="small">
+                {{ getImportanceName(item.suggestedImportance) }}
+              </el-tag>
+            </div>
+            <div class="entity-description">{{ item.description }}</div>
+            <div v-if="item.reason" class="entity-reason">{{ item.reason }}</div>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="handleIgnoreNewEntities">忽略</el-button>
+        <el-button type="primary" :loading="addingEntities" @click="handleAddNewEntities">
+          添加到项目
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -580,6 +643,15 @@ const showViewStateDialog = ref(false)
 const loadingChapterStates = ref(false)
 const chapterStates = ref<any[]>([])
 const currentViewStateOutlineId = ref<string>('')
+
+// 新实体检测
+const showNewEntitiesDialog = ref(false)
+const detectedNewEntities = ref<{
+  newCharacters: any[]
+  newLocations: any[]
+  newItems: any[]
+} | null>(null)
+const addingEntities = ref(false)
 
 // 树配置
 const treeProps = {
@@ -1197,8 +1269,18 @@ async function extractEntityStatesFromChapter(outlineId: string) {
       const recognizedChars = recognizedData.characters || []
       const recognizedLocs = recognizedData.locations || []
 
-      // 如果没有识别到任何实体
-      if (recognizedChars.length === 0 && recognizedLocs.length === 0) {
+      // 检查是否有新检测到的实体
+      if (recognizedData.newEntities && (
+        recognizedData.newEntities.newCharacters?.length > 0 ||
+        recognizedData.newEntities.newLocations?.length > 0 ||
+        recognizedData.newEntities.newItems?.length > 0
+      )) {
+        detectedNewEntities.value = recognizedData.newEntities
+        showNewEntitiesDialog.value = true
+      }
+
+      // 如果没有识别到任何实体且没有新实体
+      if (recognizedChars.length === 0 && recognizedLocs.length === 0 && !detectedNewEntities.value) {
         ElMessage.warning('未识别到章节涉及的角色或地点')
         extractingStates.value = false
         return
@@ -1287,6 +1369,77 @@ async function saveEntityStates() {
   } catch (error: any) {
     ElMessage.error('保存状态快照失败：' + error.message)
   }
+}
+
+// 处理检测到的新实体
+async function handleAddNewEntities() {
+  if (!detectedNewEntities.value) return
+
+  addingEntities.value = true
+  try {
+    const result = await window.electronAPI.longwriting.autoAddEntities(
+      props.projectId,
+      detectedNewEntities.value.newCharacters,
+      detectedNewEntities.value.newLocations,
+      detectedNewEntities.value.newItems
+    )
+
+    if (result.success) {
+      const added = result.data
+      const totalAdded =
+        (added.addedCharacters?.length || 0) +
+        (added.addedLocations?.length || 0) +
+        (added.addedItems?.length || 0)
+
+      if (totalAdded > 0) {
+        ElMessage.success(`已添加 ${totalAdded} 个新实体到项目`)
+
+        // 刷新角色和地点列表
+        await loadCharacters()
+        await loadLocations()
+
+        // 如果有错误，也显示
+        if (added.errors && added.errors.length > 0) {
+          ElMessage.warning(added.errors.join('; '))
+        }
+      }
+
+      showNewEntitiesDialog.value = false
+      detectedNewEntities.value = null
+    } else {
+      ElMessage.error(result.error || '添加新实体失败')
+    }
+  } catch (error: any) {
+    ElMessage.error('添加新实体失败：' + error.message)
+  } finally {
+    addingEntities.value = false
+  }
+}
+
+// 忽略新实体
+function handleIgnoreNewEntities() {
+  showNewEntitiesDialog.value = false
+  detectedNewEntities.value = null
+}
+
+// 获取重要性标签类型
+function getImportanceTagType(importance: string): '' | 'success' | 'warning' | 'info' | 'danger' {
+  switch (importance) {
+    case 'main': return 'danger'
+    case 'secondary': return 'warning'
+    case 'temporary': return 'info'
+    default: return ''
+  }
+}
+
+// 获取重要性显示名称
+function getImportanceName(importance: string): string {
+  const names: Record<string, string> = {
+    main: '主要',
+    secondary: '次要',
+    temporary: '临时'
+  }
+  return names[importance] || importance
 }
 
 // 查看章节已保存的状态
@@ -2268,6 +2421,52 @@ onMounted(() => {
 
   &::-webkit-scrollbar-track {
     background: transparent;
+  }
+}
+
+// 新实体确认对话框样式
+.entity-section {
+  margin-bottom: 20px;
+
+  .section-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-color-primary);
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-color-lighter);
+  }
+}
+
+.new-entity-item {
+  padding: 12px;
+  margin-bottom: 10px;
+  background: var(--fill-color-lighter);
+  border-radius: 8px;
+  border: 1px solid var(--border-color-lighter);
+
+  .entity-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+
+    .entity-name {
+      font-weight: 500;
+      font-size: 14px;
+    }
+  }
+
+  .entity-description {
+    font-size: 13px;
+    color: var(--text-color-regular);
+    line-height: 1.5;
+  }
+
+  .entity-reason {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--text-color-secondary);
   }
 }
 </style>

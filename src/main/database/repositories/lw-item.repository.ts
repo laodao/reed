@@ -4,7 +4,7 @@
  */
 
 import Database from 'better-sqlite3'
-import { StoryItem, ItemType, ItemLevel } from '../../../shared/types/longwriting.types'
+import { StoryItem, ItemType, ItemLevel, EntityImportance } from '../../../shared/types/longwriting.types'
 
 /**
  * 物品仓库
@@ -40,6 +40,7 @@ export class LwItemRepository {
     name: string
     type: ItemType
     level: ItemLevel
+    importance?: EntityImportance
     description: string
     ownerId?: string
   }): StoryItem {
@@ -47,11 +48,11 @@ export class LwItemRepository {
     const now = Date.now()
 
     const stmt = this.db.prepare(`
-      INSERT INTO lw_story_items (id, project_id, name, type, level, description, owner_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO lw_story_items (id, project_id, name, type, level, importance, description, owner_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
-    stmt.run(id, data.projectId, data.name, data.type, data.level, data.description, data.ownerId || null, now, now)
+    stmt.run(id, data.projectId, data.name, data.type, data.level, data.importance || 'secondary', data.description, data.ownerId || null, now, now)
 
     return {
       id,
@@ -59,6 +60,7 @@ export class LwItemRepository {
       name: data.name,
       type: data.type,
       level: data.level,
+      importance: data.importance || 'secondary' as EntityImportance,
       description: data.description,
       ownerId: data.ownerId,
       createdAt: now,
@@ -87,6 +89,10 @@ export class LwItemRepository {
     if (data.level !== undefined) {
       updates.push('level = ?')
       values.push(data.level)
+    }
+    if (data.importance !== undefined) {
+      updates.push('importance = ?')
+      values.push(data.importance)
     }
     if (data.description !== undefined) {
       updates.push('description = ?')
@@ -137,6 +143,7 @@ export class LwItemRepository {
       name: row.name,
       type: row.type as ItemType,
       level: row.level as ItemLevel,
+      importance: row.importance || 'secondary' as EntityImportance,
       description: row.description,
       ownerId: row.owner_id || undefined,
       createdAt: row.created_at,

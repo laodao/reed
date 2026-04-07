@@ -449,39 +449,52 @@ function parseOverviewResult(content: string) {
       jsonStr = jsonStr.replace(/```\s*/g, '')
     }
 
-    // 尝试找到 JSON 对象
-    const jsonMatch = jsonStr.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
+    // 尝试找到 JSON 对象 - 使用更精确的匹配
+    // 找到第一个 { 和最后一个 } 的位置
+    const firstBrace = jsonStr.indexOf('{')
+    const lastBrace = jsonStr.lastIndexOf('}')
+
+    if (firstBrace === -1 || lastBrace === -1 || lastBrace < firstBrace) {
       ElMessage.warning('AI 返回格式不正确，请重试')
       return
     }
 
-    // 清理 JSON 字符串中的控制字符
-    let cleanJson = jsonMatch[0]
-      .replace(/[\x00-\x1F\x7F]/g, '') // 移除控制字符
-      .replace(/\n/g, ' ') // 将换行替换为空格
+    let jsonContent = jsonStr.substring(firstBrace, lastBrace + 1)
 
-    const data = JSON.parse(cleanJson)
-
-    const titles = data.title ? [data.title, `${data.title}传`, `${data.title}录`] : ['《未命名故事》']
-    generatedOverview.value = {
-      titleSuggestions: titles,
-      selectedTitle: data.title || '',
-      summary: data.summary || '',
-      coreConflict: data.coreConflict || '',
-      keyCharacters: data.keyCharacters || [],
-      keyLocations: data.keyLocations || [],
-      estimatedChapters: data.estimatedChapters || 100
+    // 尝试直接解析
+    try {
+      const data = JSON.parse(jsonContent)
+      setGeneratedOverview(data)
+      return
+    } catch (e) {
+      console.log('[OverviewStage] 直接解析失败，尝试修复JSON')
     }
 
-    if (data.title) {
-      form.value.title = data.title
-    }
-    if (data.storyType) {
-      form.value.storyType = data.storyType
+    // 如果直接解析失败，尝试修复常见问题
+    // 1. 移除控制字符但保留换行（JSON字符串内可能有换行）
+    let cleanJson = jsonContent
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // 移除控制字符，但保留 \t \n \r
+
+    // 2. 尝试修复未转义的引号和换行
+    // 这个比较复杂，我们尝试逐步解析
+    try {
+      const data = JSON.parse(cleanJson)
+      setGeneratedOverview(data)
+      return
+    } catch (e) {
+      console.log('[OverviewStage] 清理后解析仍失败:', e)
     }
 
-    emit('update:progress', 15)
+    // 3. 最后尝试：使用正则提取各字段
+    const extractedData = extractFieldsManually(jsonContent)
+    if (extractedData) {
+      setGeneratedOverview(extractedData)
+      ElMessage.warning('AI 返回格式部分不标准，已尝试提取关键信息')
+      return
+    }
+
+    ElMessage.warning('AI 返回格式不正确，请重试')
+
   } catch (error) {
     console.error('解析 AI 响应失败:', error)
     // 如果 JSON 解析失败，尝试直接显示内容
@@ -500,6 +513,79 @@ function parseOverviewResult(content: string) {
       ElMessage.error('解析 AI 响应失败')
     }
   }
+}
+
+// 设置生成结果
+function setGeneratedOverview(data: any) {
+  const titles = data.title ? [data.title, `${data.title}传`, `${data.title}录`] : ['《未命名故事》']
+  generatedOverview.value = {
+    titleSuggestions: titles,
+    selectedTitle: data.title || '',
+    summary: data.summary || '',
+    coreConflict: data.coreConflict || '',
+    keyCharacters: data.keyCharacters || [],
+    keyLocations: data.keyLocations || [],
+    estimatedChapters: data.estimatedChapters || 100
+  }
+
+  if (data.title) {
+    form.value.title = data.title
+  }
+  if (data.storyType) {
+    form.value.storyType = data.storyType
+  }
+
+  emit('update:progress', 15)
+}
+
+// 手动提取字段（备用方案）
+function extractFieldsManually(jsonStr: string): any {
+  const result: any = {}
+
+  // 提取简单字符串字段
+  const extractString = (field: string): string | null => {
+    const regex = new RegExp(`"${field}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`, 's')
+    const match = jsonStr.match(regex)
+    return match ? match[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\') : null
+  }
+
+  // 提取数字字段
+  const extractNumber = (field: string): number | null => {
+    const regex = new RegExp(`"${field}"\\s*:\\s*(\\d+)`)
+    const match = jsonStr.match(regex)
+    return match ? parseInt(match[1]) : null
+  }
+
+  // 提取数组字段（简化版）
+  const extractArray = (field: string): any[] => {
+    const regex = new RegExp(`"${field}"\\s*:\\s*\\[([\\s\\S]*?)\\](?=\\s*[,}]|\\s*$)`)
+    const match = jsonStr.match(regex)
+    if (!match) return []
+
+    try {
+      // 尝试解析数组
+      return JSON.parse('[' + match[1] + ']')
+    } catch {
+      return []
+    }
+  }
+
+  result.title = extractString('title')
+  result.summary = extractString('summary')
+  result.coreConflict = extractString('coreConflict')
+  result.storyType = extractString('storyType')
+  result.estimatedChapters = extractNumber('estimatedChapters') || 100
+
+  // 尝试提取数组
+  result.keyCharacters = extractArray('keyCharacters')
+  result.keyLocations = extractArray('keyLocations')
+
+  // 至少要有标题或概要才认为提取成功
+  if (result.title || result.summary) {
+    return result
+  }
+
+  return null
 }
 
 // 获取故事类型标签

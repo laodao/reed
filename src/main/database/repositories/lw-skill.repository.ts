@@ -5,12 +5,17 @@
 
 import Database from 'better-sqlite3'
 import { StorySkill, SkillType, SkillLevel } from '../../../shared/types/longwriting.types'
+import { LwSkillCharacterRepository } from './lw-skill-character.repository'
 
 /**
  * 技能仓库
  */
 export class LwSkillRepository {
-  constructor(private db: Database.Database) {}
+  private skillCharacterRepo: LwSkillCharacterRepository
+
+  constructor(private db: Database.Database) {
+    this.skillCharacterRepo = new LwSkillCharacterRepository(db)
+  }
 
   /**
    * 根据项目 ID 获取所有技能
@@ -52,7 +57,13 @@ export class LwSkillRepository {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
+    // 保留JSON字段以兼容
     stmt.run(id, data.projectId, data.name, data.type, data.level, data.description, data.system, JSON.stringify(data.characterIds), now, now)
+
+    // 同时写入关联表
+    if (data.characterIds && data.characterIds.length > 0) {
+      this.skillCharacterRepo.batchAdd(id, data.characterIds)
+    }
 
     return {
       id,
@@ -114,6 +125,11 @@ export class LwSkillRepository {
     `)
     stmt.run(...values)
 
+    // 更新关联表
+    if (data.characterIds !== undefined) {
+      this.skillCharacterRepo.replaceAll(id, data.characterIds)
+    }
+
     return this.getById(id)
   }
 
@@ -121,9 +137,68 @@ export class LwSkillRepository {
    * 删除技能
    */
   delete(id: string): boolean {
+    // 先删除关联数据
+    this.skillCharacterRepo.deleteBySkillId(id)
+
     const stmt = this.db.prepare('DELETE FROM lw_story_skills WHERE id = ?')
     const result = stmt.run(id)
     return result.changes > 0
+  }
+
+  /**
+   * 删除项目的所有技能
+   */
+  deleteByProjectId(projectId: string): number {
+    // 获取所有技能ID并删除关联数据
+    const skills = this.getByProjectId(projectId)
+    for (const skill of skills) {
+      this.skillCharacterRepo.deleteBySkillId(skill.id)
+    }
+
+    const stmt = this.db.prepare('DELETE FROM lw_story_skills WHERE project_id = ?')
+    const result = stmt.run(projectId)
+    return result.changes
+  }
+
+  /**
+   * 获取技能涉及的角色ID列表（从关联表）
+   */
+  getCharacterIds(skillId: string): string[] {
+    return this.skillCharacterRepo.getCharacterIdsBySkillId(skillId)
+  }
+
+  /**
+   * 更新技能的角色关联
+   */
+  updateCharacterRelations(skillId: string, characterIds: string[]): void {
+    this.skillCharacterRepo.replaceAll(skillId, characterIds)
+  }
+
+  /**
+   * 根据角色ID获取所有技能
+   */
+  getSkillsByCharacterId(characterId: string): StorySkill[] {
+    const skillIds = this.skillCharacterRepo.getSkillIdsByCharacterId(characterId)
+    if (skillIds.length === 0) return []
+
+    const placeholders = skillIds.map(() => '?').join(',')
+    const stmt = this.db.prepare(`SELECT * FROM lw_story_skills WHERE id IN (${placeholders})`)
+    const rows = stmt.all(...skillIds) as any[]
+    return rows.map(this.mapToSkill)
+  }
+
+  /**
+   * 批量获取技能的角色ID映射
+   */
+  getCharacterIdsBySkillIds(skillIds: string[]): Map<string, string[]> {
+    return this.skillCharacterRepo.getCharacterIdsBySkillIds(skillIds)
+  }
+
+  /**
+   * 迁移现有数据到关联表
+   */
+  migrateToRelationTables(projectId: string): number {
+    return this.skillCharacterRepo.migrateFromJson(projectId)
   }
 
   /**

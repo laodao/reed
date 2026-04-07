@@ -1,0 +1,628 @@
+@charset "UTF-8";
+/**
+ * SCSS 变量定义 - 多主题色系统（柔和配色版）
+ */
+.topic-stage[data-v-74437fb7] {
+  max-width: 900px;
+  margin: 0 auto;
+}
+.stage-header[data-v-74437fb7] {
+  margin-bottom: 24px;
+}
+.stage-header h2[data-v-74437fb7] {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-color-primary);
+  margin: 0 0 8px 0;
+}
+.stage-header .stage-desc[data-v-74437fb7] {
+  font-size: 14px;
+  color: var(--text-color-secondary);
+  margin: 0;
+}
+.stage-content[data-v-74437fb7] {
+  background: var(--bg-color);
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color-light);
+}
+.section-block[data-v-74437fb7] {
+  margin-bottom: 32px;
+}
+.section-block[data-v-74437fb7]:last-child {
+  margin-bottom: 0;
+}
+.section-block h3[data-v-74437fb7] {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-color-primary);
+  margin: 0 0 16px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-color-lighter);
+}
+.topic-form[data-v-74437fb7] {
+  background: var(--fill-color-blank);
+  padding: 20px;
+  border-radius: 8px;
+}
+.material-list[data-v-74437fb7] {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.material-card[data-v-74437fb7] {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  background: var(--fill-color-blank);
+  border-radius: 8px;
+  border: 1px solid var(--border-color-lighter);
+}
+.material-icon[data-v-74437fb7] {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--fill-color-light);
+  border-radius: 8px;
+  color: var(--text-color-secondary);
+}
+.material-info[data-v-74437fb7] {
+  flex: 1;
+  min-width: 0;
+}
+.material-info h4[data-v-74437fb7] {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-color-primary);
+  margin: 0 0 8px 0;
+}
+.material-info .material-meta[data-v-74437fb7] {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.material-info .material-meta span[data-v-74437fb7] {
+  font-size: 12px;
+}
+.material-info .material-meta .material-type[data-v-74437fb7] {
+  color: var(--text-color-secondary);
+}
+.material-info .material-meta .material-status.pending[data-v-74437fb7] {
+  color: var(--color-warning);
+}
+.material-info .material-meta .material-status.success[data-v-74437fb7] {
+  color: var(--color-success);
+}
+.material-info .material-meta .material-status.failed[data-v-74437fb7] {
+  color: var(--color-danger);
+}
+.material-info .material-meta .retry-count[data-v-74437fb7] {
+  color: var(--text-color-secondary);
+}
+.material-info .material-source[data-v-74437fb7] {
+  font-size: 12px;
+  color: var(--text-color-secondary);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.material-actions[data-v-74437fb7] {
+  display: flex;
+  gap: 4px;
+}
+.add-material-buttons[data-v-74437fb7] {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.action-buttons[data-v-74437fb7] {
+  display: flex;
+  justify-content: center;
+  margin-top: 24px;
+}
+.generating-progress[data-v-74437fb7] {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--fill-color-lighter);
+  border-radius: 8px;
+}
+.generating-progress .progress-text[data-v-74437fb7] {
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--text-color-secondary);
+  text-align: center;
+}
+.preview-content[data-v-74437fb7] {
+  background: var(--fill-color-lighter);
+  padding: 16px;
+  border-radius: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+.preview-content pre[data-v-74437fb7] {
+  margin: 0;
+  font-family: "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+/**
+ * SCSS 变量定义 - 多主题色系统（柔和配色版）
+ */
+.outline-stage[data-v-3dbc28cc] {
+  max-width: 900px;
+  margin: 0 auto;
+}
+.stage-header[data-v-3dbc28cc] {
+  margin-bottom: 24px;
+}
+.stage-header h2[data-v-3dbc28cc] {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-color-primary);
+  margin: 0 0 8px 0;
+}
+.stage-header .stage-desc[data-v-3dbc28cc] {
+  font-size: 14px;
+  color: var(--text-color-secondary);
+  margin: 0;
+}
+.stage-content[data-v-3dbc28cc] {
+  background: var(--bg-color);
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color-light);
+}
+.outline-list[data-v-3dbc28cc] {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.outline-item[data-v-3dbc28cc] {
+  padding: 16px;
+  background: var(--fill-color-blank);
+  border-radius: 8px;
+  border: 1px solid var(--border-color-lighter);
+}
+.outline-item .item-header[data-v-3dbc28cc] {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.outline-item .item-header .item-number[data-v-3dbc28cc] {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-primary-light-9);
+  color: var(--color-primary);
+  border-radius: 50%;
+  font-weight: 500;
+}
+.outline-item .item-header .item-title-input[data-v-3dbc28cc] {
+  flex: 1;
+}
+.outline-item .item-header .item-actions[data-v-3dbc28cc] {
+  display: flex;
+  gap: 4px;
+}
+.outline-item .item-content[data-v-3dbc28cc] {
+  margin-bottom: 12px;
+}
+.outline-item .item-meta[data-v-3dbc28cc] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.outline-item .item-meta .words-label[data-v-3dbc28cc] {
+  font-size: 13px;
+  color: var(--text-color-secondary);
+}
+.add-btn[data-v-3dbc28cc] {
+  width: 100%;
+  height: 48px;
+}
+.action-buttons[data-v-3dbc28cc] {
+  display: flex;
+  justify-content: center;
+  margin-top: 24px;
+}
+.generating-progress[data-v-3dbc28cc] {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--fill-color-lighter);
+  border-radius: 8px;
+}
+.generating-progress .progress-text[data-v-3dbc28cc] {
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--text-color-secondary);
+  text-align: center;
+}
+.outline-stats[data-v-3dbc28cc] {
+  display: flex;
+  justify-content: space-around;
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border-color-lighter);
+}
+/**
+ * SCSS 变量定义 - 多主题色系统（柔和配色版）
+ */
+.chapter-stage[data-v-fda9ff3b] {
+  max-width: 900px;
+  margin: 0 auto;
+}
+.stage-header[data-v-fda9ff3b] {
+  margin-bottom: 24px;
+}
+.stage-header h2[data-v-fda9ff3b] {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-color-primary);
+  margin: 0 0 8px 0;
+}
+.stage-header .stage-desc[data-v-fda9ff3b] {
+  font-size: 14px;
+  color: var(--text-color-secondary);
+  margin: 0;
+}
+.stage-content[data-v-fda9ff3b] {
+  background: var(--bg-color);
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color-light);
+}
+.section-selector[data-v-fda9ff3b] {
+  margin-bottom: 24px;
+}
+.section-selector .el-select[data-v-fda9ff3b] {
+  width: 100%;
+}
+.section-selector .status-tag[data-v-fda9ff3b] {
+  margin-left: 8px;
+}
+.empty-section[data-v-fda9ff3b] {
+  padding: 40px 0;
+}
+.section-info[data-v-fda9ff3b] {
+  margin-bottom: 24px;
+  padding: 16px;
+  background: var(--fill-color-lighter);
+  border-radius: 8px;
+}
+.section-info .info-header[data-v-fda9ff3b] {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.section-info .info-header h3[data-v-fda9ff3b] {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-color-primary);
+  margin: 0;
+}
+.section-info .info-header .info-meta[data-v-fda9ff3b] {
+  font-size: 13px;
+  color: var(--text-color-secondary);
+}
+.section-info .info-header .info-meta span[data-v-fda9ff3b] {
+  margin-left: 16px;
+}
+.section-info .info-summary[data-v-fda9ff3b] {
+  font-size: 14px;
+  color: var(--text-color-regular);
+  margin: 0;
+}
+.material-reference[data-v-fda9ff3b] {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--fill-color-blank);
+  border-radius: 8px;
+  border: 1px solid var(--border-color-lighter);
+}
+.material-reference .reference-header[data-v-fda9ff3b] {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--text-color-secondary);
+}
+.material-reference .reference-list[data-v-fda9ff3b] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.material-reference .reference-list .no-reference[data-v-fda9ff3b] {
+  font-size: 12px;
+  color: var(--text-color-placeholder);
+}
+.editor-container[data-v-fda9ff3b] {
+  border: 1px solid var(--border-color-lighter);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.editor-toolbar[data-v-fda9ff3b] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--fill-color-blank);
+  border-bottom: 1px solid var(--border-color-lighter);
+}
+.editor-toolbar .toolbar-right[data-v-fda9ff3b] {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.editor-toolbar .toolbar-right .word-count[data-v-fda9ff3b] {
+  font-size: 14px;
+  color: var(--text-color-secondary);
+}
+.editor-toolbar .toolbar-right .progress-bar[data-v-fda9ff3b] {
+  width: 100px;
+}
+.section-editor[data-v-fda9ff3b] .el-textarea__inner {
+  border: none;
+  border-radius: 0;
+  font-family: "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  line-height: 1.8;
+  padding: 16px;
+  resize: none;
+}
+.version-list[data-v-fda9ff3b] {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.version-item[data-v-fda9ff3b] {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--fill-color-blank);
+  border-radius: 6px;
+  border: 1px solid var(--border-color-lighter);
+}
+.version-item .version-info[data-v-fda9ff3b] {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.version-item .version-info .version-number[data-v-fda9ff3b] {
+  font-weight: 500;
+  color: var(--text-color-primary);
+}
+.version-item .version-info .version-type[data-v-fda9ff3b] {
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.version-item .version-info .version-type.generated[data-v-fda9ff3b] {
+  background: var(--color-primary-light-9);
+  color: var(--color-primary);
+}
+.version-item .version-info .version-type.manual[data-v-fda9ff3b] {
+  background: var(--color-success-light-9);
+  color: var(--color-success);
+}
+.version-item .version-info .version-date[data-v-fda9ff3b],
+.version-item .version-info .version-words[data-v-fda9ff3b] {
+  font-size: 12px;
+  color: var(--text-color-secondary);
+}
+.material-select-list[data-v-fda9ff3b] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+.material-select-item[data-v-fda9ff3b] {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--fill-color-blank);
+  border-radius: 6px;
+  border: 1px solid var(--border-color-lighter);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.material-select-item[data-v-fda9ff3b]:hover {
+  border-color: var(--color-primary-light-5);
+}
+.material-select-item.selected[data-v-fda9ff3b] {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light-9);
+}
+.material-select-item .material-name[data-v-fda9ff3b] {
+  flex: 1;
+  font-size: 14px;
+  color: var(--text-color-primary);
+}
+.material-select-item .material-type[data-v-fda9ff3b] {
+  font-size: 12px;
+  color: var(--text-color-secondary);
+}
+.preview-content[data-v-fda9ff3b] {
+  background: var(--fill-color-lighter);
+  padding: 16px;
+  border-radius: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+.preview-content pre[data-v-fda9ff3b] {
+  margin: 0;
+  font-family: "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+/**
+ * SCSS 变量定义 - 多主题色系统（柔和配色版）
+ */
+.export-dialog[data-v-6e13e406] {
+  padding: 8px 0;
+}
+.export-info[data-v-6e13e406] {
+  margin-bottom: 20px;
+}
+.export-info .info-text[data-v-6e13e406] {
+  font-size: 14px;
+  color: var(--text-color-secondary);
+  margin: 0;
+}
+.export-options[data-v-6e13e406] {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.export-option[data-v-6e13e406] {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--border-color-light);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.export-option[data-v-6e13e406]:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light-9);
+}
+.option-icon[data-v-6e13e406] {
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--fill-color-light);
+  border-radius: 8px;
+  color: var(--color-primary);
+}
+.option-info[data-v-6e13e406] {
+  flex: 1;
+}
+.option-info h4[data-v-6e13e406] {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-color-primary);
+  margin: 0 0 4px 0;
+}
+.option-info p[data-v-6e13e406] {
+  font-size: 13px;
+  color: var(--text-color-secondary);
+  margin: 0;
+}
+.export-progress[data-v-6e13e406] {
+  margin-top: 20px;
+  padding: 16px;
+  background: var(--fill-color-lighter);
+  border-radius: 8px;
+  text-align: center;
+}
+.export-progress p[data-v-6e13e406] {
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--text-color-secondary);
+}
+/**
+ * SCSS 变量定义 - 多主题色系统（柔和配色版）
+ */
+.comment-editor[data-v-ef0ea7fd] {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-color-page);
+}
+.editor-header[data-v-ef0ea7fd] {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 24px;
+  background: var(--bg-color);
+  border-bottom: 1px solid var(--border-color-light);
+}
+.header-left[data-v-ef0ea7fd] {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.header-left .project-title[data-v-ef0ea7fd] {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--text-color-primary);
+}
+.header-right[data-v-ef0ea7fd] {
+  display: flex;
+  gap: 8px;
+}
+.stage-nav[data-v-ef0ea7fd] {
+  display: flex;
+  padding: 16px 24px;
+  background: var(--bg-color);
+  border-bottom: 1px solid var(--border-color-light);
+  gap: 8px;
+}
+.stage-item[data-v-ef0ea7fd] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.stage-item[data-v-ef0ea7fd]:hover {
+  background: var(--fill-color-light);
+}
+.stage-item.active[data-v-ef0ea7fd] {
+  background: var(--color-primary-light-9);
+}
+.stage-item.active .stage-number[data-v-ef0ea7fd] {
+  background: var(--color-primary);
+  color: white;
+}
+.stage-item.active .stage-label[data-v-ef0ea7fd] {
+  color: var(--color-primary);
+  font-weight: 500;
+}
+.stage-item.completed .stage-number[data-v-ef0ea7fd] {
+  background: var(--color-success);
+  color: white;
+}
+.stage-number[data-v-ef0ea7fd] {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--fill-color);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-color-secondary);
+}
+.stage-label[data-v-ef0ea7fd] {
+  font-size: 14px;
+  color: var(--text-color-regular);
+}
+.editor-content[data-v-ef0ea7fd] {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}

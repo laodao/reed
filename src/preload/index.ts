@@ -1267,7 +1267,33 @@ const electronAPI = {
 
     // AI 章节实体识别
     recognizeChapterEntities: (projectId: string, chapterContent: string, providerConfigId?: string, modelId?: string) =>
-      ipcRenderer.invoke('longwriting:recognizeChapterEntities', projectId, chapterContent, providerConfigId, modelId)
+      ipcRenderer.invoke('longwriting:recognizeChapterEntities', projectId, chapterContent, providerConfigId, modelId),
+
+    // 数据迁移
+    backupDatabase: () => ipcRenderer.invoke('longwriting:backupDatabase'),
+    migrateProject: (projectId: string, autoBackup?: boolean) =>
+      ipcRenderer.invoke('longwriting:migrateProject', projectId, autoBackup),
+    migrateAllProjects: (autoBackup?: boolean) =>
+      ipcRenderer.invoke('longwriting:migrateAllProjects', autoBackup),
+    checkNeedsMigration: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:checkNeedsMigration', projectId),
+    getMigrationStats: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:getMigrationStats', projectId),
+
+    // 新实体检测
+    detectNewEntities: (
+      projectId: string,
+      text: string,
+      sourceOutlineId?: string,
+      chapterNumber?: number
+    ) => ipcRenderer.invoke('longwriting:detectNewEntities', projectId, text, sourceOutlineId, chapterNumber),
+
+    autoAddEntities: (
+      projectId: string,
+      characters?: any[],
+      locations?: any[],
+      items?: any[]
+    ) => ipcRenderer.invoke('longwriting:autoAddEntities', projectId, characters, locations, items)
   },
 
   // 日记相关

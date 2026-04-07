@@ -280,36 +280,46 @@ export class LongWritingAIService {
 
     const systemPrompt = `你是一位专业的小说创作顾问。请根据用户的想法，生成一个完整的故事概要。
 
-**重要**：请控制回复长度，总字数不超过1200字。
+**重要**：
+1. 必须严格按照下面的 JSON 格式模板返回，不要修改字段名，不要添加或删除字段
+2. 所有字段都必须填写，不能省略
+3. JSON 字符串值中不要包含换行符，使用空格代替
+4. 确保 JSON 格式完整，所有引号、括号都要成对出现
+5. 不要在 JSON 外添加任何说明文字，不要使用 \`\`\`json 标记
 
-你的回复必须是纯 JSON 格式（不要包含 \`\`\`json 标记），包含以下字段：
-- title: 故事标题（简洁有力，不超过10个字）
-- storyType: 故事类型（如：xianxia/kehuan/xuanhuan/lishi/dushi/other）
-- summary: 故事摘要（200-300字，包含故事的主要脉络和结局走向）
-- coreConflict: 核心冲突（100-150字，描述故事的主要矛盾和冲突）
-- keyCharacters: 关键角色数组，每个角色包含：
-  - name: 角色名称
-  - role: 角色定位（主角/配角/反派等）
-  - brief: 简要描述（50字以内）
-  - importance: 重要性（main/secondary/minor）
-  需要生成3-5个主要角色，这些角色将作为后续角色设定的基础
-- keyLocations: 主要场景数组，每个场景包含：
-  - name: 场景名称
-  - type: 场景类型（如：城市/山林/宫殿/村落等）
-  - brief: 简要描述（50字以内）
-  - importance: 重要性（main/secondary/minor）
-  需要生成2-4个主要场景，这些场景将作为后续地点设定的基础
+**JSON 格式模板**：
+{
+  "title": "故事标题",
+  "storyType": "xianxia",
+  "summary": "故事摘要内容，200-300字",
+  "coreConflict": "核心冲突内容，100-150字",
+  "keyCharacters": [
+    {"name": "角色名", "role": "主角", "brief": "简要描述", "importance": "main"}
+  ],
+  "keyLocations": [
+    {"name": "场景名", "type": "城市", "brief": "简要描述", "importance": "main"}
+  ],
+  "estimatedChapters": 100
+}
+
+**字段说明**：
+- title: 故事标题（不超过10个字）
+- storyType: 故事类型，可选值：wuxia/xianxia/xuanhuan/kehuan/xuanyi/dushi/yanqing/lishi/other
+- summary: 故事摘要（200-300字）
+- coreConflict: 核心冲突（100-150字）
+- keyCharacters: 关键角色数组（3-5个），每个角色包含 name/role/brief/importance
+- keyLocations: 主要场景数组（2-4个），每个场景包含 name/type/brief/importance
 - estimatedChapters: 预估章节数（数字）
+- role 可选值：主角/配角/反派/中立
+- importance 可选值：main/secondary/minor
 
-故事概要中的关键角色和主要场景将作为后续生成角色设定、技能设定、物品设定、故事情节的依据，请务必认真生成。
-
-请直接输出 JSON 对象，不要有任何额外文字。`
+请严格按照上述格式返回完整的 JSON 对象。`
 
     const prompt = `请根据以下想法，生成一个故事概要：
 
 ${input}
 
-请直接返回 JSON 格式的结果，不要添加其他说明文字。`
+请严格按照 JSON 格式模板返回，确保所有字段都填写完整。`
 
     try {
       const result = await this.callAIStream(
@@ -323,14 +333,41 @@ ${input}
       )
 
       // 尝试解析 JSON
-      const jsonMatch = result.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        const data = JSON.parse(jsonMatch[0])
-        return { success: true, data }
-      }
+      try {
+        // 先清理可能的多余内容
+        let jsonStr = result.trim()
 
-      // 如果无法解析为 JSON，返回原始文本
-      return { success: true, data: { summary: result } }
+        // 移除可能的 markdown 代码块标记
+        if (jsonStr.includes('```json')) {
+          jsonStr = jsonStr.replace(/```json\s*/g, '').replace(/```\s*/g, '')
+        } else if (jsonStr.includes('```')) {
+          jsonStr = jsonStr.replace(/```\s*/g, '')
+        }
+
+        // 找到第一个 { 和最后一个 } 的位置
+        const firstBrace = jsonStr.indexOf('{')
+        const lastBrace = jsonStr.lastIndexOf('}')
+
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+          const jsonContent = jsonStr.substring(firstBrace, lastBrace + 1)
+          const data = JSON.parse(jsonContent)
+          return { success: true, data }
+        }
+
+        // 如果找不到完整JSON，尝试正则匹配
+        const jsonMatch = jsonStr.match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
+          const data = JSON.parse(jsonMatch[0])
+          return { success: true, data }
+        }
+
+        // 如果无法解析为 JSON，返回原始文本
+        return { success: true, data: { summary: result } }
+      } catch (parseError: any) {
+        console.error('[LongWritingAIService] JSON 解析失败:', parseError.message)
+        // 解析失败，返回原始内容
+        return { success: true, data: { summary: result, parseError: parseError.message } }
+      }
     } catch (error: any) {
       return { success: false, error: error.message }
     }

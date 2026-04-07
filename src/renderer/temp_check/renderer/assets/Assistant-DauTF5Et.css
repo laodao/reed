@@ -1,0 +1,32 @@
+@charset "UTF-8";
+/**
+ * SCSS 变量定义 - 多主题色系统（柔和配色版）
+ */
+.assistant-page[data-v-d4f4deba] {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #f5f7fa;
+}
+.page-header[data-v-d4f4deba] {
+  padding: 24px;
+  background: #fff;
+  border-bottom: 1px solid #e4e7ed;
+}
+.page-header h2[data-v-d4f4deba] {
+  margin: 0 0 8px 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: #303133;
+}
+.page-header p[data-v-d4f4deba] {
+  margin: 0;
+  color: #909399;
+  font-size: 14px;
+}
+.assistant-container[data-v-d4f4deba] {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

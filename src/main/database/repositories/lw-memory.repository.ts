@@ -12,9 +12,14 @@ import {
   CreateMemoryRequest,
   UpdateMemoryRequest
 } from '../../../shared/types/longwriting.types'
+import { LwMemoryEntityRepository } from './lw-memory-entity.repository'
 
 export class LwMemoryRepository {
-  constructor(private db: Database.Database) {}
+  private memoryEntityRepo: LwMemoryEntityRepository
+
+  constructor(private db: Database.Database) {
+    this.memoryEntityRepo = new LwMemoryEntityRepository(db)
+  }
 
   /**
    * 根据项目 ID 获取所有记忆
@@ -76,6 +81,23 @@ export class LwMemoryRepository {
   }
 
   /**
+   * 根据实体查询记忆
+   */
+  getMemoriesByEntity(projectId: string, entityType: MemoryEntity['type'], entityId: string): StoryMemory[] {
+    const memoryIds = this.memoryEntityRepo.getMemoryIdsByEntity(entityType, entityId)
+    if (memoryIds.length === 0) return []
+
+    const placeholders = memoryIds.map(() => '?').join(',')
+    const stmt = this.db.prepare(`
+      SELECT * FROM lw_story_memories
+      WHERE project_id = ? AND id IN (${placeholders})
+      ORDER BY chapter_number ASC, created_at ASC
+    `)
+    const rows = stmt.all(projectId, ...memoryIds) as any[]
+    return rows.map(row => this.mapToMemory(row))
+  }
+
+  /**
    * 创建记忆
    */
   create(data: CreateMemoryRequest): StoryMemory {
@@ -89,6 +111,7 @@ export class LwMemoryRepository {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
     `)
 
+    // 保留JSON字段以兼容
     stmt.run(
       id,
       data.projectId,
@@ -102,6 +125,11 @@ export class LwMemoryRepository {
       now,
       now
     )
+
+    // 同时写入关联表
+    if (data.involvedEntities && data.involvedEntities.length > 0) {
+      this.memoryEntityRepo.batchAdd(id, data.involvedEntities)
+    }
 
     return {
       id,
@@ -177,6 +205,11 @@ export class LwMemoryRepository {
     `)
     stmt.run(...values)
 
+    // 更新关联表
+    if (data.involvedEntities !== undefined) {
+      this.memoryEntityRepo.replaceAll(id, data.involvedEntities)
+    }
+
     return this.getById(id)
   }
 
@@ -200,6 +233,9 @@ export class LwMemoryRepository {
    * 删除记忆
    */
   delete(id: string): boolean {
+    // 先删除关联数据
+    this.memoryEntityRepo.deleteByMemoryId(id)
+
     const stmt = this.db.prepare('DELETE FROM lw_story_memories WHERE id = ?')
     const result = stmt.run(id)
     return result.changes > 0
@@ -209,9 +245,51 @@ export class LwMemoryRepository {
    * 根据来源大纲 ID 删除记忆
    */
   deleteBySourceOutlineId(outlineId: string): number {
+    // 获取所有记忆ID
+    const memories = this.getBySourceOutlineId(outlineId)
+    for (const memory of memories) {
+      this.memoryEntityRepo.deleteByMemoryId(memory.id)
+    }
+
     const stmt = this.db.prepare('DELETE FROM lw_story_memories WHERE source_outline_id = ?')
     const result = stmt.run(outlineId)
     return result.changes
+  }
+
+  /**
+   * 删除项目的所有记忆
+   */
+  deleteByProjectId(projectId: string): number {
+    // 获取所有记忆ID并删除关联数据
+    const memories = this.getByProjectId(projectId)
+    for (const memory of memories) {
+      this.memoryEntityRepo.deleteByMemoryId(memory.id)
+    }
+
+    const stmt = this.db.prepare('DELETE FROM lw_story_memories WHERE project_id = ?')
+    const result = stmt.run(projectId)
+    return result.changes
+  }
+
+  /**
+   * 获取记忆涉及的实体列表（从关联表）
+   */
+  getEntities(memoryId: string): MemoryEntity[] {
+    return this.memoryEntityRepo.getEntitiesByMemoryId(memoryId)
+  }
+
+  /**
+   * 更新记忆的实体关联
+   */
+  updateEntityRelations(memoryId: string, entities: MemoryEntity[]): void {
+    this.memoryEntityRepo.replaceAll(memoryId, entities)
+  }
+
+  /**
+   * 批量获取记忆的实体映射
+   */
+  getEntitiesByMemoryIds(memoryIds: string[]): Map<string, MemoryEntity[]> {
+    return this.memoryEntityRepo.getEntitiesByMemoryIds(memoryIds)
   }
 
   /**
@@ -234,6 +312,7 @@ export class LwMemoryRepository {
         item_event: 0,
         relationship_change: 0,
         faction_event: 0,
+        skill_event: 0,
         general: 0
       } as Record<MemoryType, number>,
       byImportance: {
@@ -249,6 +328,23 @@ export class LwMemoryRepository {
     }
 
     return stats
+  }
+
+  /**
+   * 迁移现有数据到关联表
+   */
+  migrateToRelationTables(projectId: string): number {
+    const memories = this.getByProjectId(projectId)
+    let migratedCount = 0
+
+    for (const memory of memories) {
+      if (memory.involvedEntities && memory.involvedEntities.length > 0) {
+        this.memoryEntityRepo.replaceAll(memory.id, memory.involvedEntities)
+        migratedCount += memory.involvedEntities.length
+      }
+    }
+
+    return migratedCount
   }
 
   private generateId(): string {

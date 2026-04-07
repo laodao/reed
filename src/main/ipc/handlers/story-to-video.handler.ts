@@ -1025,14 +1025,21 @@ async function handleGenerateStoryboardImage(
 
     // 获取角色绑定（需要从项目获取）
     const characterBindings: CharacterBinding[] = []
+    const locationBindings: any[] = []
     // 通过 episodeScript -> episode -> project 获取
     if (db.episodeScripts) {
       const script = db.episodeScripts.getById(scene.episodeScriptId)
       if (script && db.videoEpisodes) {
         const episode = db.videoEpisodes.getById(script.episodeId)
         if (episode) {
-          const bindings = db.characterBindings.getByProjectId(episode.projectId)
-          characterBindings.push(...bindings)
+          const charBindings = db.characterBindings.getByProjectId(episode.projectId)
+          characterBindings.push(...charBindings)
+
+          // 获取地点绑定
+          if (db.locationBindings) {
+            const locBindings = db.locationBindings.getByProjectId(episode.projectId)
+            locationBindings.push(...locBindings)
+          }
         }
       }
     }
@@ -1050,6 +1057,7 @@ async function handleGenerateStoryboardImage(
       storyboard,
       scene,
       characterBindings,
+      locationBindings,
       styleName,
       providerConfigId,
       modelId
@@ -1097,15 +1105,22 @@ async function handleGenerateSceneImages(
       return { success: false, error: '该场景没有分镜' }
     }
 
-    // 获取角色绑定
+    // 获取角色绑定和地点绑定
     const characterBindings: CharacterBinding[] = []
+    const locationBindings: any[] = []
     if (db.episodeScripts) {
       const script = db.episodeScripts.getById(scene.episodeScriptId)
       if (script && db.videoEpisodes) {
         const episode = db.videoEpisodes.getById(script.episodeId)
         if (episode) {
-          const bindings = db.characterBindings.getByProjectId(episode.projectId)
-          characterBindings.push(...bindings)
+          const charBindings = db.characterBindings.getByProjectId(episode.projectId)
+          characterBindings.push(...charBindings)
+
+          // 获取地点绑定
+          if (db.locationBindings) {
+            const locBindings = db.locationBindings.getByProjectId(episode.projectId)
+            locationBindings.push(...locBindings)
+          }
         }
       }
     }
@@ -1123,6 +1138,7 @@ async function handleGenerateSceneImages(
       storyboards,
       scene,
       characterBindings,
+      locationBindings,
       styleName,
       providerConfigId,
       modelId,

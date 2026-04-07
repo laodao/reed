@@ -254,7 +254,18 @@ const CHANNELS = {
   EXTRACT_ENTITY_STATES: 'longwriting:extractEntityStates',
 
   // AI 章节实体识别
-  RECOGNIZE_CHAPTER_ENTITIES: 'longwriting:recognizeChapterEntities'
+  RECOGNIZE_CHAPTER_ENTITIES: 'longwriting:recognizeChapterEntities',
+
+  // 数据迁移
+  BACKUP_DATABASE: 'longwriting:backupDatabase',
+  MIGRATE_PROJECT: 'longwriting:migrateProject',
+  MIGRATE_ALL_PROJECTS: 'longwriting:migrateAllProjects',
+  CHECK_NEEDS_MIGRATION: 'longwriting:checkNeedsMigration',
+  GET_MIGRATION_STATS: 'longwriting:getMigrationStats',
+
+  // 新实体检测
+  DETECT_NEW_ENTITIES: 'longwriting:detectNewEntities',
+  AUTO_ADD_ENTITIES: 'longwriting:autoAddEntities'
 }
 
 /**
@@ -2523,6 +2534,110 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       )
       return result
     } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 数据迁移 ====================
+  ipcMain.handle(CHANNELS.BACKUP_DATABASE, async () => {
+    try {
+      const { LwMigrationService } = await import('../../services/lw-migration.service')
+      const backupPath = LwMigrationService.backupDatabase()
+      return { success: !!backupPath, data: backupPath }
+    } catch (error: any) {
+      console.error('[IPC] 备份数据库失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.MIGRATE_PROJECT, async (_event, projectId: string, autoBackup: boolean = true) => {
+    try {
+      const { LwMigrationService } = await import('../../services/lw-migration.service')
+      const result = LwMigrationService.migrateProject(projectId, autoBackup)
+      return { success: result.success, data: result }
+    } catch (error: any) {
+      console.error('[IPC] 迁移项目失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.MIGRATE_ALL_PROJECTS, async (_event, autoBackup: boolean = true) => {
+    try {
+      const { LwMigrationService } = await import('../../services/lw-migration.service')
+      const results = LwMigrationService.migrateAllProjects(autoBackup)
+      return { success: true, data: results }
+    } catch (error: any) {
+      console.error('[IPC] 迁移所有项目失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.CHECK_NEEDS_MIGRATION, async (_event, projectId: string) => {
+    try {
+      const { LwMigrationService } = await import('../../services/lw-migration.service')
+      const needsMigration = LwMigrationService.checkNeedsMigration(projectId)
+      return { success: true, data: needsMigration }
+    } catch (error: any) {
+      console.error('[IPC] 检查迁移需求失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.GET_MIGRATION_STATS, async (_event, projectId: string) => {
+    try {
+      const { LwMigrationService } = await import('../../services/lw-migration.service')
+      const stats = LwMigrationService.getMigrationStats(projectId)
+      return { success: true, data: stats }
+    } catch (error: any) {
+      console.error('[IPC] 获取迁移统计失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 新实体检测 ====================
+
+  // 检测文本中的新实体
+  ipcMain.handle(CHANNELS.DETECT_NEW_ENTITIES, async (
+    _event,
+    projectId: string,
+    text: string,
+    sourceOutlineId?: string,
+    chapterNumber?: number
+  ) => {
+    try {
+      const { LwEntityDetectionService } = await import('../../services/lw-entity-detection.service')
+      const result = await LwEntityDetectionService.detectNewEntities(
+        projectId,
+        text,
+        sourceOutlineId,
+        chapterNumber
+      )
+      return { success: true, data: result }
+    } catch (error: any) {
+      console.error('[IPC] 检测新实体失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 自动添加实体
+  ipcMain.handle(CHANNELS.AUTO_ADD_ENTITIES, async (
+    _event,
+    projectId: string,
+    characters?: any[],
+    locations?: any[],
+    items?: any[]
+  ) => {
+    try {
+      const { LwEntityDetectionService } = await import('../../services/lw-entity-detection.service')
+      const result = LwEntityDetectionService.autoAddEntities(
+        projectId,
+        characters,
+        locations,
+        items
+      )
+      return { success: true, data: result }
+    } catch (error: any) {
+      console.error('[IPC] 自动添加实体失败:', error)
       return { success: false, error: error.message }
     }
   })

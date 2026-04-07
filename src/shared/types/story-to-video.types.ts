@@ -278,6 +278,66 @@ export interface CharacterBinding {
   updatedAt: number
 }
 
+// ==================== 地点绑定 ====================
+
+/**
+ * 地点形象绑定
+ */
+export interface LocationBinding {
+  id: string
+  projectId: string
+  longWritingLocationId: string // 长文写作地点ID
+  locationName: string // 地点名称
+
+  // 图片资产
+  imagePaths: string[] // 地点图片路径列表
+  thumbnailPath?: string // 缩略图路径
+
+  // 图片生成配置
+  generateConfig?: {
+    baseDescription: string // 基础描述（从地点设定提取）
+    styleReference?: string // 风格参考图
+    additionalPrompts?: string // 额外提示词
+    timeOfDay?: TimeOfDay // 时间段
+    weather?: WeatherType // 天气
+  }
+
+  // 是否自动生成图片
+  generateImages: boolean
+
+  createdAt: number
+  updatedAt: number
+}
+
+// ==================== 物品绑定 ====================
+
+/**
+ * 物品形象绑定
+ */
+export interface ItemBinding {
+  id: string
+  projectId: string
+  longWritingItemId: string // 长文写作物品ID
+  itemName: string // 物品名称
+
+  // 图片资产
+  imagePaths: string[] // 物品图片路径列表
+  thumbnailPath?: string // 缩略图路径
+
+  // 图片生成配置
+  generateConfig?: {
+    baseDescription: string // 基础描述（从物品设定提取）
+    styleReference?: string // 风格参考图
+    additionalPrompts?: string // 额外提示词
+  }
+
+  // 是否自动生成图片
+  generateImages: boolean
+
+  createdAt: number
+  updatedAt: number
+}
+
 // ==================== 剧本相关 ====================
 
 /**
@@ -605,6 +665,48 @@ export interface CharacterBindingRecord {
   base_description: string | null
   style_reference: string | null
   additional_prompts: string | null
+  created_at: number
+  updated_at: number
+}
+
+/**
+ * 数据库中的地点绑定记录
+ */
+export interface LocationBindingRecord {
+  id: string
+  project_id: string
+  long_writing_location_id: string
+  location_name: string
+  image_paths: string // JSON 数组
+  thumbnail_path: string | null
+  // 生成配置
+  generate_config: string | null // JSON
+  base_description: string | null
+  style_reference: string | null
+  additional_prompts: string | null
+  time_of_day: string | null
+  weather: string | null
+  generate_images: number // 0 或 1
+  created_at: number
+  updated_at: number
+}
+
+/**
+ * 数据库中的物品绑定记录
+ */
+export interface ItemBindingRecord {
+  id: string
+  project_id: string
+  long_writing_item_id: string
+  item_name: string
+  image_paths: string // JSON 数组
+  thumbnail_path: string | null
+  // 生成配置
+  generate_config: string | null // JSON
+  base_description: string | null
+  style_reference: string | null
+  additional_prompts: string | null
+  generate_images: number // 0 或 1
   created_at: number
   updated_at: number
 }
