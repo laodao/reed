@@ -381,6 +381,10 @@ const storyStages = [
 // 提供项目 ID 给子组件
 provide('projectId', projectId)
 
+// 功能开关（从故事概要加载）
+const enabledFeatures = ref<string[]>([])
+provide('enabledFeatures', enabledFeatures)
+
 // 返回项目列表
 function goBack() {
   router.push('/longwriting')
@@ -419,6 +423,12 @@ async function loadProject() {
     currentStage.value = result.data.stage as StoryStage
     // 更新标签页标题为项目名称
     tabsStore.updateTabTitle(route.path, result.data.name)
+
+    // 加载功能开关
+    const overviewResult = await window.electronAPI.longwriting.getStoryOverview(projectId.value)
+    if (overviewResult.success && overviewResult.data) {
+      enabledFeatures.value = overviewResult.data.enabledFeatures || []
+    }
   } else {
     ElMessage.error('加载项目失败：' + (result.error || '未知错误'))
   }

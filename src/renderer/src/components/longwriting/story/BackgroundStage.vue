@@ -315,9 +315,9 @@
           <div class="faction-filter">
             <el-radio-group v-model="factionFilter" size="small">
               <el-radio-button value="all">全部</el-radio-button>
-              <el-radio-button value="country">国别</el-radio-button>
-              <el-radio-button value="camp">阵营</el-radio-button>
-              <el-radio-button value="sect">门派</el-radio-button>
+              <el-radio-button value="country" :disabled="!isFeatureEnabled('country')">国别</el-radio-button>
+              <el-radio-button value="camp" :disabled="!isFeatureEnabled('faction')">阵营</el-radio-button>
+              <el-radio-button value="sect" :disabled="!isFeatureEnabled('sect')">门派</el-radio-button>
             </el-radio-group>
           </div>
 
@@ -406,9 +406,9 @@
       <el-form :model="factionForm" label-width="80px">
         <el-form-item label="势力类型" required>
           <el-radio-group v-model="factionForm.factionType">
-            <el-radio value="country">国别</el-radio>
-            <el-radio value="camp">阵营</el-radio>
-            <el-radio value="sect">门派</el-radio>
+            <el-radio value="country" :disabled="!isFeatureEnabled('country')">国别</el-radio>
+            <el-radio value="camp" :disabled="!isFeatureEnabled('faction')">阵营</el-radio>
+            <el-radio value="sect" :disabled="!isFeatureEnabled('sect')">门派</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="势力名称" required>
@@ -611,7 +611,7 @@
 import { ref, onMounted, computed, inject, toRaw } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus, MagicStick, Check, Picture } from '@element-plus/icons-vue'
-import type { ComputedRef } from 'vue'
+import type { ComputedRef, Ref } from 'vue'
 
 const props = defineProps<{
   projectId: string
@@ -620,6 +620,14 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:progress': [progress: number]
 }>()
+
+// 从父组件注入功能开关
+const enabledFeatures = inject<Ref<string[]>>('enabledFeatures', ref([]))
+
+// 检查功能是否启用
+function isFeatureEnabled(feature: string): boolean {
+  return enabledFeatures.value.includes(feature)
+}
 
 // 从父组件注入选中的模型（computed ref）
 const selectedModelRef = inject<ComputedRef<{ providerId: string; modelId: string } | null>>('selectedModel')

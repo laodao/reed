@@ -101,6 +101,11 @@ export type EstimatedLength =
   | 'long'        // 长篇小说（20万字以上）
 
 /**
+ * 功能开关类型
+ */
+export type FeatureToggle = 'country' | 'faction' | 'sect' | 'skill' | 'item'
+
+/**
  * 故事概要
  */
 export interface StoryOverview {
@@ -118,6 +123,7 @@ export interface StoryOverview {
   keyCharacters: KeyCharacter[]   // 关键角色（AI生成）
   keyLocations: KeyLocation[]     // 主要场景（AI生成）
   estimatedChapters: number
+  enabledFeatures?: FeatureToggle[] // 启用的功能（国别、阵营、门派、技能、物品）
   isLocked: boolean
   isSaved: boolean           // 表单是否已保存
   createdAt: number

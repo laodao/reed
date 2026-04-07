@@ -84,6 +84,18 @@
             placeholder="其他特殊要求或限制（可选）"
           />
         </el-form-item>
+
+        <!-- 功能开关 -->
+        <el-form-item label="启用功能">
+          <el-checkbox-group v-model="form.enabledFeatures">
+            <el-checkbox value="country">国别</el-checkbox>
+            <el-checkbox value="faction">阵营</el-checkbox>
+            <el-checkbox value="sect">门派</el-checkbox>
+            <el-checkbox value="skill">技能</el-checkbox>
+            <el-checkbox value="item">物品</el-checkbox>
+          </el-checkbox-group>
+          <div class="feature-hint">选择故事中需要的设定模块，未选中的功能后续将不可用</div>
+        </el-form-item>
       </el-form>
 
       <!-- 操作按钮 -->
@@ -329,7 +341,8 @@ const form = ref({
   style: '',
   targetReader: '',
   estimatedLength: '',
-  otherRequirements: ''
+  otherRequirements: '',
+  enabledFeatures: [] as string[]
 })
 
 // 表单是否已保存
@@ -680,6 +693,7 @@ async function saveForm() {
     targetReader: rawForm.targetReader || undefined,
     estimatedLength: rawForm.estimatedLength || undefined,
     otherRequirements: rawForm.otherRequirements || undefined,
+    enabledFeatures: rawForm.enabledFeatures,
     isSaved: true
   }
 
@@ -745,6 +759,7 @@ async function confirmOverview() {
     targetReader: rawForm.targetReader || undefined,
     estimatedLength: rawForm.estimatedLength || undefined,
     otherRequirements: rawForm.otherRequirements || undefined,
+    enabledFeatures: rawForm.enabledFeatures,
     summary: rawOverview.summary,
     coreConflict: rawOverview.coreConflict,
     keyCharacters: rawOverview.keyCharacters,
@@ -776,6 +791,7 @@ async function loadSavedOverview() {
       form.value.targetReader = data.targetReader || ''
       form.value.estimatedLength = data.estimatedLength || ''
       form.value.otherRequirements = data.otherRequirements || ''
+      form.value.enabledFeatures = data.enabledFeatures || []
 
       // 设置表单保存状态：只要有核心构思就认为表单有效，可以生成概要
       isFormSaved.value = !!(data.coreIdea && data.coreIdea.trim())
@@ -969,5 +985,11 @@ onMounted(() => {
   .el-select {
     flex-shrink: 0;
   }
+}
+
+.feature-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-color-secondary);
 }
 </style>

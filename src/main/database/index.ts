@@ -2892,6 +2892,9 @@ export class DatabaseManager {
     if (!overviewColumnNames.includes('is_saved')) {
       this.db.exec('ALTER TABLE lw_story_overviews ADD COLUMN is_saved INTEGER DEFAULT 0')
     }
+    if (!overviewColumnNames.includes('enabled_features')) {
+      this.db.exec('ALTER TABLE lw_story_overviews ADD COLUMN enabled_features TEXT DEFAULT \'[]\'')
+    }
 
     // 检查 lw_story_backgrounds 表是否需要添加新字段
     const backgroundColumns = this.db.prepare("PRAGMA table_info(lw_story_backgrounds)").all() as { name: string }[]

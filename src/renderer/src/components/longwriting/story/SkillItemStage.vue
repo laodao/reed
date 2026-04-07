@@ -5,7 +5,7 @@
       <p class="stage-desc">设定故事中的技能体系和重要物品（可选阶段）</p>
     </div>
 
-    <el-tabs v-model="activeTab">
+    <el-tabs v-model="activeTab" :before-leave="handleTabLeave">
       <!-- 类型设定 -->
       <el-tab-pane label="类型设定" name="types">
         <div class="type-config-section">
@@ -122,7 +122,10 @@
       </el-tab-pane>
 
       <!-- 技能设定 -->
-      <el-tab-pane label="技能设定" name="skills">
+      <el-tab-pane name="skills">
+        <template #label>
+          <span :class="{ 'disabled-tab': !isFeatureEnabled('skill') }">技能设定</span>
+        </template>
         <div class="skill-list">
           <div v-for="skill in skills" :key="skill.id" class="skill-card">
             <div class="skill-header">
@@ -170,7 +173,10 @@
       </el-tab-pane>
 
       <!-- 物品设定 -->
-      <el-tab-pane label="物品设定" name="items">
+      <el-tab-pane name="items">
+        <template #label>
+          <span :class="{ 'disabled-tab': !isFeatureEnabled('item') }">物品设定</span>
+        </template>
         <div class="item-list">
           <div v-for="item in items" :key="item.id" class="item-card">
             <div class="item-header">
@@ -385,6 +391,7 @@ import { ref, computed, onMounted, watch, inject } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, MagicStick, Close } from '@element-plus/icons-vue'
 import type { StorySkill, StoryItem, StoryCharacter, ProjectSkillTypeConfig, ProjectItemTypeConfig, SkillLevelConfig, ItemLevelConfig } from '../../../../shared/types/longwriting.types'
+import type { Ref } from 'vue'
 
 const props = defineProps<{
   projectId: string
@@ -394,12 +401,33 @@ const emit = defineEmits<{
   'update:progress': [progress: number]
 }>()
 
+// 从父组件注入功能开关
+const enabledFeatures = inject<Ref<string[]>>('enabledFeatures', ref([]))
+
+// 检查功能是否启用
+function isFeatureEnabled(feature: string): boolean {
+  return enabledFeatures.value.includes(feature)
+}
+
 const selectedModel = inject<ReturnType<typeof computed<{ providerId: string; modelId: string } | null>>>('selectedModel', computed(() => null))
 
 const activeTab = ref('types')
 const characters = ref<StoryCharacter[]>([])
 const skills = ref<StorySkill[]>([])
 const items = ref<StoryItem[]>([])
+
+// Tab 切换前检查功能是否启用
+function handleTabLeave(activeName: string, oldActiveName: string): boolean {
+  if (activeName === 'skills' && !isFeatureEnabled('skill')) {
+    ElMessage.warning('技能功能未启用，请在故事概要中开启"技能"选项')
+    return false
+  }
+  if (activeName === 'items' && !isFeatureEnabled('item')) {
+    ElMessage.warning('物品功能未启用，请在故事概要中开启"物品"选项')
+    return false
+  }
+  return true
+}
 
 // 类型配置数据
 const skillTypes = ref<ProjectSkillTypeConfig[]>([])
@@ -1509,5 +1537,10 @@ watch(() => props.projectId, () => {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+}
+
+.disabled-tab {
+  color: var(--text-color-placeholder);
+  cursor: not-allowed;
 }
 </style>
