@@ -394,7 +394,8 @@ ${input}
     eventId: string,
     projectId: string,
     providerConfigId?: string,
-    modelId?: string
+    modelId?: string,
+    requirements?: string  // 额外的角色要求
   ): Promise<GenerateResponse> {
     const dbManager = getDatabaseManager()
 
@@ -404,7 +405,7 @@ ${input}
       return { success: false, error: '请先创建故事概要' }
     }
 
-    const systemPrompt = `你是一位专业的小说创作顾问。请根据故事概要，生成3-5个建议的角色。
+    const systemPrompt = `你是一位专业的小说创作顾问。请根据故事概要，生成角色。
 
 你必须返回 JSON 数组格式，每个角色必须严格按照以下顺序包含所有字段，不得遗漏任何字段：
 1. name - 角色名称
@@ -450,7 +451,8 @@ ${input}
       ).join('、')
     }
 
-    const prompt = `请根据以下故事概要，生成建议的角色：
+    // 构建基础提示词
+    let prompt = `请根据以下故事概要，生成建议的角色：
 
 故事标题：${overview.title || '未命名'}
 故事类型：${storyTypeName}
@@ -458,7 +460,16 @@ ${input}
 故事摘要：${overview.summary || '未指定'}
 核心冲突：${overview.coreConflict || '未指定'}
 ${keyCharactersInfo ? `关键角色：${keyCharactersInfo}` : ''}
-${keyLocationsInfo ? `主要场景：${keyLocationsInfo}` : ''}
+${keyLocationsInfo ? `主要场景：${keyLocationsInfo}` : ''}`
+
+    // 如果有额外要求，添加到提示词中
+    if (requirements && requirements.trim()) {
+      prompt += `
+
+用户要求：${requirements.trim()}`
+    }
+
+    prompt += `
 
 请返回 JSON 数组，确保每个角色都包含所有必需字段。`
 

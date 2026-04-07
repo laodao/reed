@@ -1282,14 +1282,14 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
   ipcMain.handle(
     CHANNELS.GENERATE_CHARACTERS,
-    async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
+    async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string, requirements?: string) => {
       try {
         console.log(`[LongWritingHandler] generateCharacters 被调用, eventId: ${eventId}, projectId: ${projectId}`)
         const window = BrowserWindow.fromWebContents(event.sender)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.generateCharacters(window, eventId, projectId, providerConfigId, modelId)
+        const result = await aiService.generateCharacters(window, eventId, projectId, providerConfigId, modelId, requirements)
         console.log(`[LongWritingHandler] generateCharacters 完成, success: ${result.success}, error: ${result.error || 'none'}`)
         return { ...result, eventId }
       } catch (error: any) {

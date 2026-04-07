@@ -39,6 +39,10 @@
               <el-icon><Edit /></el-icon>
               编辑
             </el-button>
+            <el-button text @click="regenerateCharacter(character)">
+              <el-icon><Refresh /></el-icon>
+              重新生成
+            </el-button>
             <el-button text @click="showRelationsDialog(character)">
               <el-icon><Connection /></el-icon>
               关系
@@ -59,9 +63,9 @@
 
       <!-- 快速生成按钮 -->
       <div class="action-buttons">
-        <el-button v-if="!generating" type="primary" size="large" @click="generateCharacters">
+        <el-button v-if="!generating" type="primary" size="large" @click="showNewCharacterDialog = true">
           <el-icon><MagicStick /></el-icon>
-          AI 生成角色建议
+          生成新角色
         </el-button>
         <el-button v-else type="danger" size="large" @click="cancelGeneration">
           <el-icon><Close /></el-icon>
@@ -72,7 +76,7 @@
       <!-- 生成进度显示 -->
       <div v-if="generating" class="generating-progress">
         <el-progress :percentage="100" :indeterminate="true" />
-        <p class="progress-text">AI 正在生成角色建议...</p>
+        <p class="progress-text">{{ generatingMessage }}</p>
       </div>
     </div>
 
@@ -233,6 +237,34 @@
       <template #footer>
         <el-button @click="showCharacterDialog = false">取消</el-button>
         <el-button type="primary" @click="saveCharacter">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 生成新角色对话框 -->
+    <el-dialog
+      v-model="showNewCharacterDialog"
+      title="生成新角色"
+      width="500px"
+      :append-to-body="false"
+      :modal-append-to-body="false"
+      center
+    >
+      <el-form :model="newCharacterRequest" label-width="100px">
+        <el-form-item label="角色要求">
+          <el-input
+            v-model="newCharacterRequest.requirements"
+            type="textarea"
+            :rows="4"
+            placeholder="请输入新角色的要求，例如：&#10;- 男性主角，剑客，性格刚毅&#10;- 女性配角，医者，温柔善良&#10;- 反派角色，神秘莫测"
+          />
+        </el-form-item>
+        <el-form-item label="生成数量">
+          <el-input-number v-model="newCharacterRequest.count" :min="1" :max="5" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showNewCharacterDialog = false">取消</el-button>
+        <el-button type="primary" :loading="generating" @click="generateNewCharacters">生成</el-button>
       </template>
     </el-dialog>
 
@@ -440,7 +472,7 @@
 import { ref, computed, onMounted, inject, toRaw } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Edit, Delete, User, Connection, MagicStick, Picture, Close } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, User, Connection, MagicStick, Picture, Close, Refresh } from '@element-plus/icons-vue'
 import type { StoryCharacter, CharacterRelation, CharacterRolePosition, StoryCharacterRace } from '../../../../shared/types/longwriting.types'
 import CreateCharacterDialog from '../../portrait/CreateCharacterDialog.vue'
 
@@ -476,6 +508,20 @@ const showRelationDialog = ref(false)
 const showAddRelationDialog = ref(false)
 const showCreateProjectDialog = ref(false)
 const showCreateCharacterDialog = ref(false)
+const showNewCharacterDialog = ref(false)
+
+// 生成状态
+const generating = ref(false)
+const generatingMessage = ref('AI 正在生成角色...')
+
+// 新角色生成请求
+const newCharacterRequest = ref({
+  requirements: '',
+  count: 1
+})
+
+// 重新生成的角色ID（用于替换）
+const regeneratingCharacterId = ref<string | null>(null)
 
 // 新建人像项目表单
 const newProjectForm = ref({
@@ -487,9 +533,6 @@ const creatingProject = ref(false)
 // 编辑状态
 const editingCharacter = ref<StoryCharacter | null>(null)
 const selectedPortraitId = ref<string>('')
-
-// 生成状态
-const generating = ref(false)
 
 // 表单数据
 const characterForm = ref({
@@ -786,8 +829,8 @@ async function deleteRelation(id: string) {
 const currentEventId = ref<string | null>(null)
 const generatingContent = ref('')
 
-// AI 生成角色建议
-async function generateCharacters() {
+// AI 生成角色（核心函数）
+async function generateCharacters(requirements?: string, replaceCharacterId?: string) {
   // 检查是否选择了模型（需要同时检查 providerId 和 modelId）
   if (!selectedModel.value || !selectedModel.value.providerId || !selectedModel.value.modelId) {
     ElMessage.warning('请先在顶部选择 AI 模型')
@@ -798,9 +841,11 @@ async function generateCharacters() {
 
   generating.value = true
   generatingContent.value = ''
+  generatingMessage.value = replaceCharacterId ? 'AI 正在重新生成角色...' : 'AI 正在生成角色...'
 
   // 生成唯一事件 ID
   currentEventId.value = `characters-${props.projectId}-${Date.now()}`
+  regeneratingCharacterId.value = replaceCharacterId || null
 
   // 监听流式生成事件
   const unsubscribe = window.electronAPI.longwriting.onGenerateEvent(
@@ -821,41 +866,76 @@ async function generateCharacters() {
 
         if (!finalContent || finalContent.length === 0) {
           ElMessage.error('AI 未返回任何内容')
+          regeneratingCharacterId.value = null
           return
         }
 
         // 提示用户正在解析
         ElMessage.info('正在解析 AI 响应...')
 
-        // 解析并显示建议
-        parseAndShowSuggestions(finalContent)
+        // 解析并处理结果
+        parseAndHandleSuggestions(finalContent)
       } else if (event.type === 'error') {
         generating.value = false
         currentEventId.value = null
+        regeneratingCharacterId.value = null
         unsubscribe()
         ElMessage.error(event.error || '生成失败')
       }
     }
   )
 
-  // 调用 AI API，传递 eventId 和模型参数
+  // 调用 AI API，传递 eventId、模型参数和额外要求
   const result = await window.electronAPI.longwriting.generateCharacters(
     currentEventId.value,
     props.projectId,
     selectedModel.value.providerId,
-    selectedModel.value.modelId
+    selectedModel.value.modelId,
+    requirements
   )
 
   if (!result.success) {
     generating.value = false
     currentEventId.value = null
+    regeneratingCharacterId.value = null
     unsubscribe()
     ElMessage.error(result.error || '生成失败')
   }
 }
 
-// 解析并显示建议
-async function parseAndShowSuggestions(content: string) {
+// 生成新角色（从对话框触发）
+async function generateNewCharacters() {
+  if (!newCharacterRequest.value.requirements.trim()) {
+    ElMessage.warning('请输入角色要求')
+    return
+  }
+
+  showNewCharacterDialog.value = false
+  await generateCharacters(newCharacterRequest.value.requirements)
+
+  // 重置表单
+  newCharacterRequest.value = {
+    requirements: '',
+    count: 1
+  }
+}
+
+// 重新生成角色
+async function regenerateCharacter(character: StoryCharacter) {
+  // 构建基于现有角色的要求
+  const requirements = `请根据以下现有角色信息，重新生成该角色的详细设定：
+- 角色名称：${character.name}
+- 角色定位：${getRoleLabel(character.rolePosition)}
+- 性别：${getGenderLabel(character.gender)}
+- 年龄：${character.age}岁
+
+请保持角色基本信息一致，但重新生成更详细的外貌描述、背景故事、性格特点、能力特长和主要事件。`
+
+  await generateCharacters(requirements, character.id)
+}
+
+// 解析并处理 AI 建议结果
+async function parseAndHandleSuggestions(content: string) {
   console.log('[CharacterStage] 解析 AI 响应, 内容长度:', content.length)
   console.log('[CharacterStage] AI 响应内容:', content.substring(0, 1000))
 
@@ -875,6 +955,7 @@ async function parseAndShowSuggestions(content: string) {
     if (!jsonMatch) {
       console.error('[CharacterStage] 未找到 JSON 数组, 内容:', content)
       ElMessage.warning('AI 返回格式不正确，请重试')
+      regeneratingCharacterId.value = null
       return
     }
 
@@ -890,6 +971,37 @@ async function parseAndShowSuggestions(content: string) {
 
     if (!Array.isArray(suggestedCharacters) || suggestedCharacters.length === 0) {
       ElMessage.warning('AI 未生成角色建议')
+      regeneratingCharacterId.value = null
+      return
+    }
+
+    // 如果是重新生成模式，直接更新角色
+    if (regeneratingCharacterId.value) {
+      const suggested = suggestedCharacters[0]
+      const result = await window.electronAPI.longwriting.updateCharacter(regeneratingCharacterId.value, {
+        name: suggested.name,
+        gender: suggested.gender,
+        age: suggested.age,
+        height: suggested.height,
+        weight: suggested.weight,
+        race: suggested.race,
+        occupation: suggested.occupation,
+        position: suggested.position,
+        rolePosition: suggested.rolePosition,
+        appearance: suggested.appearance,
+        background: suggested.background,
+        personality: suggested.personality,
+        abilities: suggested.abilities,
+        majorEvents: suggested.majorEvents
+      })
+
+      if (result.success) {
+        await loadCharacters()
+        ElMessage.success('角色已重新生成')
+      } else {
+        ElMessage.error(result.error || '更新失败')
+      }
+      regeneratingCharacterId.value = null
       return
     }
 

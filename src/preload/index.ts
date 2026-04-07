@@ -1084,8 +1084,8 @@ const electronAPI = {
     // AI 生成（eventId 作为第一个参数）
     generateStoryOverview: (eventId: string, projectId: string, input: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generateStoryOverview', eventId, projectId, input, providerConfigId, modelId),
-    generateCharacters: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
-      ipcRenderer.invoke('longwriting:generateCharacters', eventId, projectId, providerConfigId, modelId),
+    generateCharacters: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string, requirements?: string) =>
+      ipcRenderer.invoke('longwriting:generateCharacters', eventId, projectId, providerConfigId, modelId, requirements),
     generateSkillsItems: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generateSkillsItems', eventId, projectId, providerConfigId, modelId),
     generateSkillItemTypes: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
