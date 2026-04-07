@@ -287,6 +287,28 @@
               </el-button>
             </div>
           </div>
+
+          <!-- 同步长文角色信息 -->
+          <template v-if="linkedStoryCharacter">
+            <el-divider />
+            <div class="panel-section">
+              <h4>长文角色关联</h4>
+              <div class="linked-character-info">
+                <span class="linked-name">{{ linkedStoryCharacter.name }}</span>
+                <el-tag size="small" type="info">{{ linkedStoryCharacter.projectId ? '已关联' : '' }}</el-tag>
+              </div>
+              <el-button
+                type="primary"
+                plain
+                :loading="syncingFromStory"
+                @click="syncFromStoryCharacter"
+                class="action-btn"
+              >
+                同步角色信息
+              </el-button>
+              <div class="sync-hint">将长文角色信息同步到人像</div>
+            </div>
+          </template>
         </div>
       </div>
 
@@ -407,6 +429,7 @@ import ChangeBackgroundDialog from '@/components/portrait/ChangeBackgroundDialog
 import ExportDialog from '@/components/portrait/ExportDialog.vue'
 import { ANGLE_LABELS, GENDER_LABELS, RACE_LABELS } from '../../../../shared/types/portrait.types'
 import type { PortraitProject, PortraitCharacter, PortraitVariant, PortraitAngle } from '../../../../shared/types/portrait.types'
+import type { StoryCharacter } from '../../../../shared/types/longwriting.types'
 
 const props = defineProps<{
   characterId: string
@@ -422,6 +445,10 @@ const emit = defineEmits<{
 
 const character = ref<PortraitCharacter | null>(null)
 const variants = ref<PortraitVariant[]>([])
+
+// 关联的长文角色
+const linkedStoryCharacter = ref<StoryCharacter | null>(null)
+const syncingFromStory = ref(false)
 
 // 生成状态
 const generating = ref(false)
@@ -761,6 +788,93 @@ async function loadCharacter() {
     } else {
       generateConfig.value.prompt = result.data.prompt
     }
+    // 加载关联的长文角色
+    loadLinkedStoryCharacter()
+  }
+}
+
+// 加载关联的长文角色
+async function loadLinkedStoryCharacter() {
+  try {
+    const result = await window.electronAPI.longwriting.getCharacterByPortraitId(props.characterId)
+    if (result.success && result.data) {
+      linkedStoryCharacter.value = result.data
+    } else {
+      linkedStoryCharacter.value = null
+    }
+  } catch (error) {
+    console.error('[CharacterEditor] 加载关联角色失败:', error)
+    linkedStoryCharacter.value = null
+  }
+}
+
+// 从长文角色同步信息
+async function syncFromStoryCharacter() {
+  if (!linkedStoryCharacter.value) return
+
+  syncingFromStory.value = true
+  try {
+    const storyChar = linkedStoryCharacter.value
+
+    // 准备更新数据
+    const updateData: any = {
+      id: props.characterId
+    }
+
+    // 同步性别（注意：人像只有 male/female，角色有 other）
+    if (storyChar.gender && storyChar.gender !== 'other') {
+      updateData.gender = storyChar.gender
+    }
+
+    // 同步年龄
+    if (storyChar.age) {
+      updateData.age = storyChar.age
+    }
+
+    // 同步身高
+    if (storyChar.height) {
+      updateData.height = storyChar.height
+    }
+
+    // 同步体重
+    if (storyChar.weight) {
+      updateData.weight = storyChar.weight
+    }
+
+    // 同步人种（注意：若角色 race 为 'other' 则不同步）
+    if (storyChar.race && storyChar.race !== 'other') {
+      updateData.race = storyChar.race
+    }
+
+    // 合并描述：外貌描述 + 性格特点 + 能力特长
+    const descriptionParts: string[] = []
+    if (storyChar.appearance) {
+      descriptionParts.push(storyChar.appearance)
+    }
+    if (storyChar.personality) {
+      descriptionParts.push('性格：' + storyChar.personality)
+    }
+    if (storyChar.abilities) {
+      descriptionParts.push('能力：' + storyChar.abilities)
+    }
+    if (descriptionParts.length > 0) {
+      updateData.description = descriptionParts.join('。')
+    }
+
+    // 更新人像
+    const result = await window.electronAPI.portrait.updateCharacter(updateData)
+    if (result.success) {
+      ElMessage.success('同步成功')
+      // 重新加载人像信息
+      await loadCharacter()
+    } else {
+      ElMessage.error(result.error || '同步失败')
+    }
+  } catch (error: any) {
+    console.error('[CharacterEditor] 同步失败:', error)
+    ElMessage.error(error.message || '同步失败')
+  } finally {
+    syncingFromStory.value = false
   }
 }
 
@@ -1512,6 +1626,24 @@ onMounted(() => {
   .hint-text {
     margin: 0 0 12px;
     font-size: 13px;
+    color: var(--el-text-color-secondary);
+  }
+
+  .linked-character-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+
+    .linked-name {
+      font-weight: 500;
+      color: var(--el-text-color-primary);
+    }
+  }
+
+  .sync-hint {
+    margin-top: 8px;
+    font-size: 12px;
     color: var(--el-text-color-secondary);
   }
 }

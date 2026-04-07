@@ -658,6 +658,20 @@ export interface AutoAddEntitiesResponse {
 export type CharacterRolePosition = 'protagonist' | 'supporting' | 'antagonist' | 'minor'
 
 /**
+ * 角色人种类型（与人像兼容，增加 other 以兼容更多情况）
+ */
+export type StoryCharacterRace = 'asian' | 'european' | 'other'
+
+/**
+ * 角色人种显示名称
+ */
+export const STORY_CHARACTER_RACE_NAMES: Record<StoryCharacterRace, string> = {
+  asian: '亚洲人',
+  european: '欧洲人',
+  other: '其他'
+}
+
+/**
  * 角色设定
  */
 export interface StoryCharacter {
@@ -667,6 +681,11 @@ export interface StoryCharacter {
   name: string
   gender: 'male' | 'female' | 'other'
   age: number
+  height?: number            // 身高(cm)
+  weight?: number            // 体重(kg)
+  race?: StoryCharacterRace  // 人种
+  occupation?: string        // 职业
+  position?: string          // 职务
   appearance: string         // 外貌描述
   background: string         // 背景故事
   personality: string        // 性格特点
@@ -890,6 +909,11 @@ export interface CreateCharacterRequest {
   name: string
   gender: 'male' | 'female' | 'other'
   age: number
+  height?: number
+  weight?: number
+  race?: StoryCharacterRace
+  occupation?: string
+  position?: string
   appearance?: string
   background?: string
   personality?: string
@@ -909,6 +933,11 @@ export interface UpdateCharacterRequest {
   name?: string
   gender?: 'male' | 'female' | 'other'
   age?: number
+  height?: number
+  weight?: number
+  race?: StoryCharacterRace
+  occupation?: string
+  position?: string
   appearance?: string
   background?: string
   personality?: string

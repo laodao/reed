@@ -1021,6 +1021,12 @@ const electronAPI = {
     deleteCharacterRelation: (id: string) =>
       ipcRenderer.invoke('longwriting:deleteCharacterRelation', id),
 
+    // 角色与人像同步
+    getCharacterByPortraitId: (portraitId: string) =>
+      ipcRenderer.invoke('longwriting:getCharacterByPortraitId', portraitId),
+    syncCharacterToPortrait: (portraitId: string, characterData: any) =>
+      ipcRenderer.invoke('longwriting:syncCharacterToPortrait', portraitId, characterData),
+
     // 技能管理
     getSkills: (projectId: string) =>
       ipcRenderer.invoke('longwriting:getSkills', projectId),

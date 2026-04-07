@@ -905,6 +905,11 @@ export class DatabaseManager {
         name TEXT NOT NULL,
         gender TEXT,
         age INTEGER,
+        height INTEGER,
+        weight INTEGER,
+        race TEXT,
+        occupation TEXT,
+        position TEXT,
         appearance TEXT,
         background TEXT,
         personality TEXT,
@@ -2939,6 +2944,23 @@ export class DatabaseManager {
     }
     if (!characterColumnNames.includes('generated_image_id')) {
       this.db.exec('ALTER TABLE lw_story_characters ADD COLUMN generated_image_id TEXT')
+    }
+
+    // 检查 lw_story_characters 表是否需要添加新字段（身高、体重、人种、职业、职务）
+    if (!characterColumnNames.includes('height')) {
+      this.db.exec('ALTER TABLE lw_story_characters ADD COLUMN height INTEGER')
+    }
+    if (!characterColumnNames.includes('weight')) {
+      this.db.exec('ALTER TABLE lw_story_characters ADD COLUMN weight INTEGER')
+    }
+    if (!characterColumnNames.includes('race')) {
+      this.db.exec('ALTER TABLE lw_story_characters ADD COLUMN race TEXT')
+    }
+    if (!characterColumnNames.includes('occupation')) {
+      this.db.exec('ALTER TABLE lw_story_characters ADD COLUMN occupation TEXT')
+    }
+    if (!characterColumnNames.includes('position')) {
+      this.db.exec('ALTER TABLE lw_story_characters ADD COLUMN position TEXT')
     }
 
     // 检查 lw_story_locations 表是否需要添加 entity_importance 字段

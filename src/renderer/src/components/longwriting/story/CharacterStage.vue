@@ -130,6 +130,41 @@
           </el-col>
         </el-row>
 
+        <el-row :gutter="16">
+          <el-col :span="8">
+            <el-form-item label="身高(cm)">
+              <el-input-number v-model="characterForm.height" :min="0" :max="300" :precision="0" placeholder="身高" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="体重(kg)">
+              <el-input-number v-model="characterForm.weight" :min="0" :max="500" :precision="0" placeholder="体重" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="人种">
+              <el-select v-model="characterForm.race" placeholder="选择人种" style="width: 100%" clearable>
+                <el-option label="亚洲人" value="asian" />
+                <el-option label="欧洲人" value="european" />
+                <el-option label="其他" value="other" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="职业">
+              <el-input v-model="characterForm.occupation" placeholder="输入职业" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="职务">
+              <el-input v-model="characterForm.position" placeholder="输入职务" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
         <!-- 已关联的人像预览 -->
         <el-form-item v-if="characterForm.portraitId" label="当前形象">
           <div class="current-portrait">
@@ -405,7 +440,7 @@ import { ref, computed, onMounted, inject, toRaw } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, User, Connection, MagicStick, Picture, Close } from '@element-plus/icons-vue'
-import type { StoryCharacter, CharacterRelation, CharacterRolePosition } from '../../../../shared/types/longwriting.types'
+import type { StoryCharacter, CharacterRelation, CharacterRolePosition, StoryCharacterRace } from '../../../../shared/types/longwriting.types'
 import CreateCharacterDialog from '../../portrait/CreateCharacterDialog.vue'
 
 const props = defineProps<{
@@ -460,6 +495,11 @@ const characterForm = ref({
   name: '',
   gender: 'male' as 'male' | 'female' | 'other',
   age: 18,
+  height: undefined as number | undefined,
+  weight: undefined as number | undefined,
+  race: undefined as StoryCharacterRace | undefined,
+  occupation: '',
+  position: '',
   appearance: '',
   background: '',
   personality: '',
@@ -539,6 +579,11 @@ function editCharacter(character: StoryCharacter) {
     name: character.name,
     gender: character.gender,
     age: character.age,
+    height: character.height,
+    weight: character.weight,
+    race: character.race,
+    occupation: character.occupation || '',
+    position: character.position || '',
     appearance: character.appearance,
     background: character.background,
     personality: character.personality,
@@ -611,6 +656,11 @@ function resetCharacterForm() {
     name: '',
     gender: 'male',
     age: 18,
+    height: undefined,
+    weight: undefined,
+    race: undefined,
+    occupation: '',
+    position: '',
     appearance: '',
     background: '',
     personality: '',
@@ -622,10 +672,39 @@ function resetCharacterForm() {
 }
 
 // 确认人像关联
-function confirmPortraitLink() {
+async function confirmPortraitLink() {
   if (selectedPortraitId.value) {
     characterForm.value.portraitId = selectedPortraitId.value
     showPortraitLinkDialog.value = false
+
+    // 同步角色信息到人像
+    const characterData = {
+      gender: characterForm.value.gender,
+      age: characterForm.value.age,
+      height: characterForm.value.height,
+      weight: characterForm.value.weight,
+      race: characterForm.value.race,
+      appearance: characterForm.value.appearance,
+      personality: characterForm.value.personality,
+      abilities: characterForm.value.abilities
+    }
+
+    try {
+      // 调用同步接口
+      const result = await window.electronAPI.longwriting.syncCharacterToPortrait(
+        selectedPortraitId.value,
+        characterData
+      )
+      if (result.success) {
+        ElMessage.success('人像关联成功，已同步角色信息')
+      } else {
+        ElMessage.warning('人像关联成功，但同步信息失败')
+      }
+    } catch (error) {
+      console.error('[CharacterStage] 同步角色信息失败:', error)
+      ElMessage.warning('人像关联成功，但同步信息失败')
+    }
+
     selectedPortraitId.value = ''
   }
 }
@@ -819,6 +898,11 @@ async function parseAndShowSuggestions(content: string) {
             name: suggested.name || '未命名角色',
             gender: suggested.gender || 'other',
             age: suggested.age || 18,
+            height: suggested.height,
+            weight: suggested.weight,
+            race: suggested.race,
+            occupation: suggested.occupation,
+            position: suggested.position,
             rolePosition: suggested.rolePosition || 'supporting',
             appearance: suggested.appearance || '',
             background: suggested.background || '',

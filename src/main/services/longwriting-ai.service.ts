@@ -409,8 +409,13 @@ ${input}
 - name: 角色名称
 - gender: 性别（male/female/other）
 - age: 年龄
+- height: 身高(cm)
+- weight: 体重(kg)
+- race: 人种（asian/european/other）
+- occupation: 职业
+- position: 职务
 - rolePosition: 角色定位（protagonist/supporting/antagonist/minor）
-- appearance: 外貌描述
+- appearance: 外貌描述（必须包含脸型、肤色描述）
 - background: 背景故事
 - personality: 性格特点
 - abilities: 能力特长`

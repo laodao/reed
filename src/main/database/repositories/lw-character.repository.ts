@@ -10,7 +10,8 @@ import {
   UpdateCharacterRequest,
   CharacterRelation,
   EntityImportance,
-  TemporaryCharacterTemplateType
+  TemporaryCharacterTemplateType,
+  StoryCharacterRace
 } from '../../../shared/types/longwriting.types'
 
 export class LwCharacterRepository {
@@ -50,6 +51,17 @@ export class LwCharacterRepository {
   }
 
   /**
+   * 根据人像ID获取关联的角色
+   */
+  getByPortraitId(portraitId: string): StoryCharacter[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM lw_story_characters WHERE portrait_id = ?
+    `)
+    const rows = stmt.all(portraitId) as any[]
+    return rows.map(this.mapToCharacter)
+  }
+
+  /**
    * 创建角色
    */
   create(data: CreateCharacterRequest): StoryCharacter {
@@ -58,10 +70,11 @@ export class LwCharacterRepository {
 
     const stmt = this.db.prepare(`
       INSERT INTO lw_story_characters (
-        id, project_id, portrait_id, name, gender, age, appearance,
-        background, personality, abilities, role_position, major_events,
-        created_at, updated_at, importance, template_type, generated_image_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, project_id, portrait_id, name, gender, age, height, weight, race,
+        occupation, position, appearance, background, personality, abilities,
+        role_position, major_events, created_at, updated_at, importance,
+        template_type, generated_image_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     // 确保所有参数都是原始类型，数组需要转换为字符串
@@ -79,6 +92,11 @@ export class LwCharacterRepository {
       normalizeValue(data.name),
       data.gender || 'male',
       data.age || 25,
+      data.height || null,
+      data.weight || null,
+      data.race || null,
+      data.occupation || null,
+      data.position || null,
       normalizeValue(data.appearance),
       normalizeValue(data.background),
       normalizeValue(data.personality),
@@ -99,6 +117,11 @@ export class LwCharacterRepository {
       name: data.name,
       gender: data.gender || 'male',
       age: data.age || 25,
+      height: data.height,
+      weight: data.weight,
+      race: data.race,
+      occupation: data.occupation,
+      position: data.position,
       appearance: data.appearance || '',
       background: data.background || '',
       personality: data.personality || '',
@@ -128,6 +151,11 @@ export class LwCharacterRepository {
       name: data.name,
       gender: data.gender,
       age: data.age,
+      height: data.height,
+      weight: data.weight,
+      race: data.race,
+      occupation: data.occupation,
+      position: data.position,
       appearance: data.appearance,
       background: data.background,
       personality: data.personality,
@@ -233,6 +261,11 @@ export class LwCharacterRepository {
       name: row.name,
       gender: row.gender,
       age: row.age,
+      height: row.height,
+      weight: row.weight,
+      race: row.race,
+      occupation: row.occupation,
+      position: row.position,
       appearance: row.appearance || '',
       background: row.background || '',
       personality: row.personality || '',

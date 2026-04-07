@@ -112,6 +112,10 @@ const CHANNELS = {
   CREATE_CHARACTER_RELATION: 'longwriting:createCharacterRelation',
   DELETE_CHARACTER_RELATION: 'longwriting:deleteCharacterRelation',
 
+  // 角色与人像同步
+  GET_CHARACTER_BY_PORTRAIT_ID: 'longwriting:getCharacterByPortraitId',
+  SYNC_CHARACTER_TO_PORTRAIT: 'longwriting:syncCharacterToPortrait',
+
   // 技能管理
   GET_SKILLS: 'longwriting:getSkills',
   GET_SKILL: 'longwriting:getSkill',
@@ -800,6 +804,84 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     try {
       const result = await service.deleteCharacterRelation(id)
       return { success: result }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 角色与人像同步 ====================
+
+  // 根据人像ID获取关联的长文角色
+  ipcMain.handle(CHANNELS.GET_CHARACTER_BY_PORTRAIT_ID, async (_event, portraitId: string) => {
+    try {
+      const dbManager = getDatabaseManager()
+      const characters = dbManager.lwCharacters?.getByPortraitId(portraitId)
+      return { success: true, data: characters?.[0] || null }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 同步角色信息到人像
+  ipcMain.handle(CHANNELS.SYNC_CHARACTER_TO_PORTRAIT, async (_event, portraitId: string, characterData: any) => {
+    try {
+      const dbManager = getDatabaseManager()
+
+      // 获取人像角色信息
+      const portrait = dbManager.portraitCharacters?.getById(portraitId)
+      if (!portrait) {
+        return { success: false, error: '人像不存在' }
+      }
+
+      // 准备更新数据
+      const updateData: any = {
+        id: portraitId
+      }
+
+      // 同步性别（注意：人像只有 male/female，角色有 other）
+      if (characterData.gender && characterData.gender !== 'other') {
+        updateData.gender = characterData.gender
+      }
+
+      // 同步年龄
+      if (characterData.age) {
+        updateData.age = characterData.age
+      }
+
+      // 同步身高
+      if (characterData.height) {
+        updateData.height = characterData.height
+      }
+
+      // 同步体重
+      if (characterData.weight) {
+        updateData.weight = characterData.weight
+      }
+
+      // 同步人种（注意：若角色 race 为 'other' 则不同步）
+      if (characterData.race && characterData.race !== 'other') {
+        updateData.race = characterData.race
+      }
+
+      // 合并描述：外貌描述 + 性格特点 + 能力特长
+      const descriptionParts: string[] = []
+      if (characterData.appearance) {
+        descriptionParts.push(characterData.appearance)
+      }
+      if (characterData.personality) {
+        descriptionParts.push('性格：' + characterData.personality)
+      }
+      if (characterData.abilities) {
+        descriptionParts.push('能力：' + characterData.abilities)
+      }
+      if (descriptionParts.length > 0) {
+        updateData.description = descriptionParts.join('。')
+      }
+
+      // 更新人像
+      dbManager.portraitCharacters?.update(updateData)
+
+      return { success: true }
     } catch (error: any) {
       return { success: false, error: error.message }
     }
