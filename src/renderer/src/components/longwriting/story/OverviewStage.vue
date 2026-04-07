@@ -437,7 +437,8 @@ ${form.value.otherRequirements ? `其他要求：${form.value.otherRequirements}
 
 // 解析 AI 响应
 function parseOverviewResult(content: string) {
-  console.log(`[OverviewStage] 解析内容:`, content.substring(0, 500))
+  console.log(`[OverviewStage] 解析内容长度: ${content.length}`)
+  console.log(`[OverviewStage] 原始内容:`, content)
   try {
     // 尝试提取 JSON
     let jsonStr = content
@@ -517,6 +518,11 @@ function parseOverviewResult(content: string) {
 
 // 设置生成结果
 function setGeneratedOverview(data: any) {
+  // 调试日志：打印解析后的数据
+  console.log('[OverviewStage] 解析后的数据:', JSON.stringify(data, null, 2))
+  console.log('[OverviewStage] keyCharacters:', data.keyCharacters)
+  console.log('[OverviewStage] keyLocations:', data.keyLocations)
+
   const titles = data.title ? [data.title, `${data.title}传`, `${data.title}录`] : ['《未命名故事》']
   generatedOverview.value = {
     titleSuggestions: titles,
