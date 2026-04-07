@@ -420,12 +420,38 @@ ${input}
 - personality: 性格特点
 - abilities: 能力特长`
 
+    // 构建提示词上下文
+    const storyTypeNames: Record<string, string> = {
+      wuxia: '武侠', xianxia: '仙侠', xuanhuan: '玄幻', kehuan: '科幻',
+      xuanyi: '悬疑', dushi: '都市', yanqing: '言情', lishi: '历史', other: '其他'
+    }
+    const storyTypeName = storyTypeNames[overview.storyType] || overview.storyType || '未指定'
+
+    // 构建关键角色信息
+    let keyCharactersInfo = ''
+    if (overview.keyCharacters && overview.keyCharacters.length > 0) {
+      keyCharactersInfo = overview.keyCharacters.map(c =>
+        `${c.name}（${c.role}，${c.brief}）`
+      ).join('、')
+    }
+
+    // 构建主要场景信息
+    let keyLocationsInfo = ''
+    if (overview.keyLocations && overview.keyLocations.length > 0) {
+      keyLocationsInfo = overview.keyLocations.map(l =>
+        `${l.name}（${l.brief}）`
+      ).join('、')
+    }
+
     const prompt = `请根据以下故事概要，生成建议的角色：
 
 故事标题：${overview.title || '未命名'}
-故事类型：${overview.genre || '未指定'}
-核心主题：${overview.coreTheme || '未指定'}
+故事类型：${storyTypeName}
+核心构思：${overview.coreIdea || '未指定'}
 故事摘要：${overview.summary || '未指定'}
+核心冲突：${overview.coreConflict || '未指定'}
+${keyCharactersInfo ? `关键角色：${keyCharactersInfo}` : ''}
+${keyLocationsInfo ? `主要场景：${keyLocationsInfo}` : ''}
 
 请直接返回 JSON 数组格式的结果，不要添加其他说明文字。`
 
