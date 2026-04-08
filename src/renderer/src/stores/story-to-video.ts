@@ -13,6 +13,8 @@ import type {
   SceneScript,
   Storyboard,
   CharacterBinding,
+  LocationBinding,
+  ItemBinding,
   VideoProjectConfig
 } from '../../../shared/types/story-to-video.types'
 
@@ -66,6 +68,16 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
    * 当前项目的角色绑定列表
    */
   const characterBindings = ref<CharacterBinding[]>([])
+
+  /**
+   * 当前项目的地点绑定列表
+   */
+  const locationBindings = ref<LocationBinding[]>([])
+
+  /**
+   * 当前项目的物品绑定列表
+   */
+  const itemBindings = ref<ItemBinding[]>([])
 
   /**
    * 加载状态
@@ -234,6 +246,8 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     currentProject.value = project
     await loadEpisodes(project.id)
     await loadCharacterBindings(project.id)
+    await loadLocationBindings(project.id)
+    await loadItemBindings(project.id)
   }
 
   /**
@@ -248,6 +262,8 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     currentScene.value = null
     storyboards.value = []
     characterBindings.value = []
+    locationBindings.value = []
+    itemBindings.value = []
   }
 
   // ==================== 剧集管理 ====================
@@ -708,6 +724,250 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
    */
   function getBindingByCharacterId(longWritingCharacterId: string): CharacterBinding | undefined {
     return characterBindings.value.find(b => b.longWritingCharacterId === longWritingCharacterId)
+  }
+
+  // ==================== 地点绑定管理 ====================
+
+  /**
+   * 加载地点绑定列表
+   */
+  async function loadLocationBindings(projectId: string): Promise<void> {
+    loading.value = true
+    error.value = null
+    try {
+      const response = await window.electronAPI.storyToVideo.getLocationBindings(projectId)
+      if (response.success && response.data) {
+        locationBindings.value = response.data as LocationBinding[]
+      } else {
+        error.value = response.error || '加载地点绑定失败'
+      }
+    } catch (e: any) {
+      error.value = e.message || '加载地点绑定失败'
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
+   * 绑定地点
+   */
+  async function bindLocation(
+    projectId: string,
+    longWritingLocationId: string,
+    locationName: string,
+    imagePaths?: string[],
+    generateConfig?: LocationBinding['generateConfig'],
+    generateImages?: boolean
+  ): Promise<LocationBinding | null> {
+    loading.value = true
+    error.value = null
+    try {
+      const response = await window.electronAPI.storyToVideo.bindLocation(
+        projectId,
+        longWritingLocationId,
+        locationName,
+        imagePaths,
+        generateConfig ? JSON.parse(JSON.stringify(generateConfig)) : undefined,
+        generateImages
+      )
+      if (response.success && response.data) {
+        const binding = response.data as LocationBinding
+        const index = locationBindings.value.findIndex(b => b.id === binding.id)
+        if (index !== -1) {
+          locationBindings.value[index] = binding
+        } else {
+          locationBindings.value.push(binding)
+        }
+        return binding
+      } else {
+        error.value = response.error || '绑定地点失败'
+        return null
+      }
+    } catch (e: any) {
+      error.value = e.message || '绑定地点失败'
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
+   * 更新地点绑定
+   */
+  async function updateLocationBinding(
+    bindingId: string,
+    data: Partial<LocationBinding>
+  ): Promise<boolean> {
+    error.value = null
+    try {
+      const response = await window.electronAPI.storyToVideo.updateLocationBinding(
+        bindingId,
+        JSON.parse(JSON.stringify(data))
+      )
+      if (response.success && response.data) {
+        const updatedBinding = response.data as LocationBinding
+        const index = locationBindings.value.findIndex(b => b.id === bindingId)
+        if (index !== -1) {
+          locationBindings.value[index] = updatedBinding
+        }
+        return true
+      } else {
+        error.value = response.error || '更新地点绑定失败'
+        return false
+      }
+    } catch (e: any) {
+      error.value = e.message || '更新地点绑定失败'
+      return false
+    }
+  }
+
+  /**
+   * 删除地点绑定
+   */
+  async function deleteLocationBinding(bindingId: string): Promise<boolean> {
+    error.value = null
+    try {
+      const response = await window.electronAPI.storyToVideo.deleteLocationBinding(bindingId)
+      if (response.success) {
+        locationBindings.value = locationBindings.value.filter(b => b.id !== bindingId)
+        return true
+      } else {
+        error.value = response.error || '删除地点绑定失败'
+        return false
+      }
+    } catch (e: any) {
+      error.value = e.message || '删除地点绑定失败'
+      return false
+    }
+  }
+
+  /**
+   * 根据长文地点ID获取绑定
+   */
+  function getBindingByLocationId(longWritingLocationId: string): LocationBinding | undefined {
+    return locationBindings.value.find(b => b.longWritingLocationId === longWritingLocationId)
+  }
+
+  // ==================== 物品绑定管理 ====================
+
+  /**
+   * 加载物品绑定列表
+   */
+  async function loadItemBindings(projectId: string): Promise<void> {
+    loading.value = true
+    error.value = null
+    try {
+      const response = await window.electronAPI.storyToVideo.getItemBindings(projectId)
+      if (response.success && response.data) {
+        itemBindings.value = response.data as ItemBinding[]
+      } else {
+        error.value = response.error || '加载物品绑定失败'
+      }
+    } catch (e: any) {
+      error.value = e.message || '加载物品绑定失败'
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
+   * 绑定物品
+   */
+  async function bindItem(
+    projectId: string,
+    longWritingItemId: string,
+    itemName: string,
+    imagePaths?: string[],
+    generateConfig?: ItemBinding['generateConfig'],
+    generateImages?: boolean
+  ): Promise<ItemBinding | null> {
+    loading.value = true
+    error.value = null
+    try {
+      const response = await window.electronAPI.storyToVideo.bindItem(
+        projectId,
+        longWritingItemId,
+        itemName,
+        imagePaths,
+        generateConfig ? JSON.parse(JSON.stringify(generateConfig)) : undefined,
+        generateImages
+      )
+      if (response.success && response.data) {
+        const binding = response.data as ItemBinding
+        const index = itemBindings.value.findIndex(b => b.id === binding.id)
+        if (index !== -1) {
+          itemBindings.value[index] = binding
+        } else {
+          itemBindings.value.push(binding)
+        }
+        return binding
+      } else {
+        error.value = response.error || '绑定物品失败'
+        return null
+      }
+    } catch (e: any) {
+      error.value = e.message || '绑定物品失败'
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
+   * 更新物品绑定
+   */
+  async function updateItemBinding(
+    bindingId: string,
+    data: Partial<ItemBinding>
+  ): Promise<boolean> {
+    error.value = null
+    try {
+      const response = await window.electronAPI.storyToVideo.updateItemBinding(
+        bindingId,
+        JSON.parse(JSON.stringify(data))
+      )
+      if (response.success && response.data) {
+        const updatedBinding = response.data as ItemBinding
+        const index = itemBindings.value.findIndex(b => b.id === bindingId)
+        if (index !== -1) {
+          itemBindings.value[index] = updatedBinding
+        }
+        return true
+      } else {
+        error.value = response.error || '更新物品绑定失败'
+        return false
+      }
+    } catch (e: any) {
+      error.value = e.message || '更新物品绑定失败'
+      return false
+    }
+  }
+
+  /**
+   * 删除物品绑定
+   */
+  async function deleteItemBinding(bindingId: string): Promise<boolean> {
+    error.value = null
+    try {
+      const response = await window.electronAPI.storyToVideo.deleteItemBinding(bindingId)
+      if (response.success) {
+        itemBindings.value = itemBindings.value.filter(b => b.id !== bindingId)
+        return true
+      } else {
+        error.value = response.error || '删除物品绑定失败'
+        return false
+      }
+    } catch (e: any) {
+      error.value = e.message || '删除物品绑定失败'
+      return false
+    }
+  }
+
+  /**
+   * 根据长文物品ID获取绑定
+   */
+  function getBindingByItemId(longWritingItemId: string): ItemBinding | undefined {
+    return itemBindings.value.find(b => b.longWritingItemId === longWritingItemId)
   }
 
   // ==================== 计算属性 ====================
@@ -1204,6 +1464,20 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     updateCharacterBinding,
     deleteCharacterBinding,
     getBindingByCharacterId,
+    // 地点绑定管理
+    locationBindings,
+    loadLocationBindings,
+    bindLocation,
+    updateLocationBinding,
+    deleteLocationBinding,
+    getBindingByLocationId,
+    // 物品绑定管理
+    itemBindings,
+    loadItemBindings,
+    bindItem,
+    updateItemBinding,
+    deleteItemBinding,
+    getBindingByItemId,
     // AI 生成
     generateScript,
     generateScenes,

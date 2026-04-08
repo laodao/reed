@@ -53,6 +53,18 @@ export function registerStoryToVideoHandlers(): void {
   ipcMain.handle('stv:update-character-binding', handleUpdateCharacterBinding)
   ipcMain.handle('stv:delete-character-binding', handleDeleteCharacterBinding)
 
+  // ==================== 地点绑定 ====================
+  ipcMain.handle('stv:get-location-bindings', handleGetLocationBindings)
+  ipcMain.handle('stv:bind-location', handleBindLocation)
+  ipcMain.handle('stv:update-location-binding', handleUpdateLocationBinding)
+  ipcMain.handle('stv:delete-location-binding', handleDeleteLocationBinding)
+
+  // ==================== 物品绑定 ====================
+  ipcMain.handle('stv:get-item-bindings', handleGetItemBindings)
+  ipcMain.handle('stv:bind-item', handleBindItem)
+  ipcMain.handle('stv:update-item-binding', handleUpdateItemBinding)
+  ipcMain.handle('stv:delete-item-binding', handleDeleteItemBinding)
+
   // ==================== 剧集管理 ====================
   ipcMain.handle('stv:list-episodes', handleListEpisodes)
   ipcMain.handle('stv:get-episode', handleGetEpisode)
@@ -309,6 +321,206 @@ async function handleDeleteCharacterBinding(
     return { success, data: { deleted: success } }
   } catch (error: any) {
     return { success: false, error: error.message || '删除角色绑定失败' }
+  }
+}
+
+// ==================== 地点绑定处理器 ====================
+
+async function handleGetLocationBindings(
+  _event: IpcMainInvokeEvent,
+  projectId: string
+): Promise<IpcResponse> {
+  try {
+    const db = DatabaseManager.getInstance()
+    if (!db.locationBindings) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    const bindings = db.locationBindings.getByProjectId(projectId)
+    return { success: true, data: bindings }
+  } catch (error: any) {
+    return { success: false, error: error.message || '获取地点绑定列表失败' }
+  }
+}
+
+async function handleBindLocation(
+  _event: IpcMainInvokeEvent,
+  projectId: string,
+  longWritingLocationId: string,
+  locationName: string,
+  imagePaths?: string[],
+  generateConfig?: any,
+  generateImages?: boolean
+): Promise<IpcResponse> {
+  try {
+    const db = DatabaseManager.getInstance()
+    if (!db.locationBindings) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    // 检查是否已存在绑定
+    const existing = db.locationBindings.getByLongWritingLocationId(projectId, longWritingLocationId)
+
+    if (existing) {
+      // 更新现有绑定
+      const updated = db.locationBindings.update(existing.id, {
+        imagePaths,
+        generateConfig,
+        generateImages
+      })
+      return { success: true, data: updated }
+    }
+
+    // 创建新绑定
+    const binding = db.locationBindings.create({
+      projectId,
+      longWritingLocationId,
+      locationName,
+      imagePaths,
+      generateConfig,
+      generateImages
+    })
+    return { success: true, data: binding }
+  } catch (error: any) {
+    return { success: false, error: error.message || '绑定地点失败' }
+  }
+}
+
+async function handleUpdateLocationBinding(
+  _event: IpcMainInvokeEvent,
+  bindingId: string,
+  data: { imagePaths?: string[]; thumbnailPath?: string | null; generateConfig?: any | null; generateImages?: boolean }
+): Promise<IpcResponse> {
+  try {
+    const db = DatabaseManager.getInstance()
+    if (!db.locationBindings) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    const updated = db.locationBindings.update(bindingId, data)
+    if (!updated) {
+      return { success: false, error: '地点绑定不存在' }
+    }
+    return { success: true, data: updated }
+  } catch (error: any) {
+    return { success: false, error: error.message || '更新地点绑定失败' }
+  }
+}
+
+async function handleDeleteLocationBinding(
+  _event: IpcMainInvokeEvent,
+  bindingId: string
+): Promise<IpcResponse> {
+  try {
+    const db = DatabaseManager.getInstance()
+    if (!db.locationBindings) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    const success = db.locationBindings.delete(bindingId)
+    return { success, data: { deleted: success } }
+  } catch (error: any) {
+    return { success: false, error: error.message || '删除地点绑定失败' }
+  }
+}
+
+// ==================== 物品绑定处理器 ====================
+
+async function handleGetItemBindings(
+  _event: IpcMainInvokeEvent,
+  projectId: string
+): Promise<IpcResponse> {
+  try {
+    const db = DatabaseManager.getInstance()
+    if (!db.itemBindings) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    const bindings = db.itemBindings.getByProjectId(projectId)
+    return { success: true, data: bindings }
+  } catch (error: any) {
+    return { success: false, error: error.message || '获取物品绑定列表失败' }
+  }
+}
+
+async function handleBindItem(
+  _event: IpcMainInvokeEvent,
+  projectId: string,
+  longWritingItemId: string,
+  itemName: string,
+  imagePaths?: string[],
+  generateConfig?: any,
+  generateImages?: boolean
+): Promise<IpcResponse> {
+  try {
+    const db = DatabaseManager.getInstance()
+    if (!db.itemBindings) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    // 检查是否已存在绑定
+    const existing = db.itemBindings.getByLongWritingItemId(projectId, longWritingItemId)
+
+    if (existing) {
+      // 更新现有绑定
+      const updated = db.itemBindings.update(existing.id, {
+        imagePaths,
+        generateConfig,
+        generateImages
+      })
+      return { success: true, data: updated }
+    }
+
+    // 创建新绑定
+    const binding = db.itemBindings.create({
+      projectId,
+      longWritingItemId,
+      itemName,
+      imagePaths,
+      generateConfig,
+      generateImages
+    })
+    return { success: true, data: binding }
+  } catch (error: any) {
+    return { success: false, error: error.message || '绑定物品失败' }
+  }
+}
+
+async function handleUpdateItemBinding(
+  _event: IpcMainInvokeEvent,
+  bindingId: string,
+  data: { imagePaths?: string[]; thumbnailPath?: string | null; generateConfig?: any | null; generateImages?: boolean }
+): Promise<IpcResponse> {
+  try {
+    const db = DatabaseManager.getInstance()
+    if (!db.itemBindings) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    const updated = db.itemBindings.update(bindingId, data)
+    if (!updated) {
+      return { success: false, error: '物品绑定不存在' }
+    }
+    return { success: true, data: updated }
+  } catch (error: any) {
+    return { success: false, error: error.message || '更新物品绑定失败' }
+  }
+}
+
+async function handleDeleteItemBinding(
+  _event: IpcMainInvokeEvent,
+  bindingId: string
+): Promise<IpcResponse> {
+  try {
+    const db = DatabaseManager.getInstance()
+    if (!db.itemBindings) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    const success = db.itemBindings.delete(bindingId)
+    return { success, data: { deleted: success } }
+  } catch (error: any) {
+    return { success: false, error: error.message || '删除物品绑定失败' }
   }
 }
 
@@ -1609,10 +1821,14 @@ async function handleSynthesizeStoryboardVideo(
     if (result.success) {
       // 同步模式：直接返回了视频
       if (result.video?.localPath || result.video?.url) {
+        const videoPath = result.video.localPath || result.video.url
+        // 更新分镜的 videoPath
+        db.storyboards.update(storyboardId, { videoPath })
+
         return {
           success: true,
           data: {
-            outputPath: result.video.localPath || result.video.url,
+            outputPath: videoPath,
             duration: result.video.duration || storyboard.duration
           }
         }
@@ -1634,6 +1850,8 @@ async function handleSynthesizeStoryboardVideo(
           if (savedPath) {
             const localUrl = localPathToUrl(savedPath)
             console.log('[handleSynthesizeStoryboardVideo] 视频保存成功:', savedPath)
+            // 更新分镜的 videoPath
+            db.storyboards.update(storyboardId, { videoPath: savedPath })
 
             return {
               success: true,
@@ -1644,6 +1862,9 @@ async function handleSynthesizeStoryboardVideo(
             }
           } else {
             // 下载失败，返回远程 URL
+            // 更新分镜的 videoPath
+            db.storyboards.update(storyboardId, { videoPath: taskStatus.video.url })
+
             return {
               success: true,
               data: {

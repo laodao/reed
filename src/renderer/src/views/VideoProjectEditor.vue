@@ -188,7 +188,7 @@
                     :key="binding.id"
                     class="binding-item"
                   >
-                    <div class="binding-character">
+                    <div class="binding-name">
                       {{ getCharacterName(binding.longWritingCharacterId) }}
                     </div>
                     <div class="binding-config">
@@ -210,6 +210,92 @@
                   </div>
 
                   <el-empty v-if="store.characterBindings.length === 0" description="暂无角色绑定" :image-size="60" />
+                </div>
+              </div>
+            </el-tab-pane>
+
+            <!-- 物品绑定标签页 -->
+            <el-tab-pane label="物品绑定" name="items">
+              <div class="item-bindings">
+                <div class="bindings-header">
+                  <h4>物品绑定配置</h4>
+                  <el-button size="small" @click="showBindItemDialog = true">
+                    <el-icon><Plus /></el-icon>
+                    绑定物品
+                  </el-button>
+                </div>
+
+                <div class="bindings-list">
+                  <div
+                    v-for="binding in store.itemBindings"
+                    :key="binding.id"
+                    class="binding-item"
+                  >
+                    <div class="binding-name">
+                      {{ binding.itemName }}
+                    </div>
+                    <div class="binding-config">
+                      <el-tag v-if="binding.imagePaths && binding.imagePaths.length > 0" size="small" type="success">
+                        {{ binding.imagePaths.length }} 张图片
+                      </el-tag>
+                      <el-tag v-else size="small" type="info">
+                        未绑定图片
+                      </el-tag>
+                    </div>
+                    <div class="binding-actions">
+                      <el-button text size="small" @click="editItemBinding(binding)">
+                        编辑
+                      </el-button>
+                      <el-button text size="small" type="danger" @click="removeItemBinding(binding)">
+                        移除
+                      </el-button>
+                    </div>
+                  </div>
+
+                  <el-empty v-if="store.itemBindings.length === 0" description="暂无物品绑定" :image-size="60" />
+                </div>
+              </div>
+            </el-tab-pane>
+
+            <!-- 地点绑定标签页 -->
+            <el-tab-pane label="地点绑定" name="locations">
+              <div class="location-bindings">
+                <div class="bindings-header">
+                  <h4>地点绑定配置</h4>
+                  <el-button size="small" @click="showBindLocationDialog = true">
+                    <el-icon><Plus /></el-icon>
+                    绑定地点
+                  </el-button>
+                </div>
+
+                <div class="bindings-list">
+                  <div
+                    v-for="binding in store.locationBindings"
+                    :key="binding.id"
+                    class="binding-item"
+                  >
+                    <div class="binding-name">
+                      {{ binding.locationName }}
+                    </div>
+                    <div class="binding-config">
+                      <el-tag v-if="binding.imagePaths && binding.imagePaths.length > 0" size="small" type="success">
+                        {{ binding.imagePaths.length }} 张图片
+                      </el-tag>
+                      <el-tag v-else size="small" type="info">
+                        未绑定图片
+                      </el-tag>
+                    </div>
+                    <div class="binding-actions">
+                      <el-button text size="small" @click="editLocationBinding(binding)">
+                        编辑
+                      </el-button>
+                      <el-button text size="small" type="danger" @click="removeLocationBinding(binding)">
+                        移除
+                      </el-button>
+                    </div>
+                  </div>
+
+                  <el-empty v-if="store.locationBindings.length === 0" description="暂无地点绑定" :image-size="60" />
                 </div>
               </div>
             </el-tab-pane>
@@ -846,6 +932,90 @@
       </template>
     </el-dialog>
 
+    <!-- 绑定物品对话框 -->
+    <el-dialog
+      v-model="showBindItemDialog"
+      title="绑定物品"
+      width="500px"
+    >
+      <el-form :model="bindItemForm" label-width="100px">
+        <el-form-item label="选择物品">
+          <el-select v-model="bindItemForm.itemId" placeholder="请选择物品" style="width: 100%">
+            <el-option
+              v-for="item in availableItems"
+              :key="item.id"
+              :label="item.name"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="物品描述">
+          <el-input
+            v-model="bindItemForm.description"
+            type="textarea"
+            :rows="3"
+            placeholder="输入物品描述，用于生成图片（可选）"
+          />
+        </el-form-item>
+        <el-form-item label="自动生成图片">
+          <el-switch v-model="bindItemForm.generateImages" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showBindItemDialog = false">取消</el-button>
+        <el-button
+          type="primary"
+          :disabled="!bindItemForm.itemId"
+          :loading="store.loading"
+          @click="handleBindItem"
+        >
+          绑定
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 绑定地点对话框 -->
+    <el-dialog
+      v-model="showBindLocationDialog"
+      title="绑定地点"
+      width="500px"
+    >
+      <el-form :model="bindLocationForm" label-width="100px">
+        <el-form-item label="选择地点">
+          <el-select v-model="bindLocationForm.locationId" placeholder="请选择地点" style="width: 100%">
+            <el-option
+              v-for="location in availableLocations"
+              :key="location.id"
+              :label="location.name"
+              :value="location.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="地点描述">
+          <el-input
+            v-model="bindLocationForm.description"
+            type="textarea"
+            :rows="3"
+            placeholder="输入地点描述，用于生成图片（可选）"
+          />
+        </el-form-item>
+        <el-form-item label="自动生成图片">
+          <el-switch v-model="bindLocationForm.generateImages" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showBindLocationDialog = false">取消</el-button>
+        <el-button
+          type="primary"
+          :disabled="!bindLocationForm.locationId"
+          :loading="store.loading"
+          @click="handleBindLocation"
+        >
+          绑定
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 图片预览对话框 -->
     <el-dialog
       v-model="showImagePreview"
@@ -903,7 +1073,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Setting, Plus, MagicStick, Picture, VideoPlay, Delete, InfoFilled, Headset, ZoomIn, RefreshRight } from '@element-plus/icons-vue'
 import { useStoryToVideoStore } from '@/stores/story-to-video'
 import { useTabsStore } from '@/stores/tabs'
-import type { VideoEpisode, VideoProject, SceneScript, CharacterBinding } from '../../../shared/types/story-to-video.types'
+import type { VideoEpisode, VideoProject, SceneScript, CharacterBinding, ItemBinding, LocationBinding } from '../../../shared/types/story-to-video.types'
 import type { UserProviderConfig, ProviderTemplate } from '../../../shared/types'
 
 const route = useRoute()
@@ -1035,6 +1205,8 @@ const showEditEpisodeDialog = ref(false)
 const editingEpisodeId = ref('')
 const showSettingsDialog = ref(false)
 const showBindCharacterDialog = ref(false)
+const showBindItemDialog = ref(false)
+const showBindLocationDialog = ref(false)
 const showGenerateImagesDialog = ref(false)
 const showSynthesisDialog = ref(false)
 const showStoryboardEditDialog = ref(false)
@@ -1195,10 +1367,36 @@ const bindCharacterForm = reactive({
   description: ''
 })
 
+// 物品绑定表单
+const bindItemForm = reactive({
+  itemId: '',
+  description: '',
+  generateImages: true
+})
+
+// 地点绑定表单
+const bindLocationForm = reactive({
+  locationId: '',
+  description: '',
+  generateImages: true
+})
+
 // 计算属性：可绑定的角色（排除已绑定的）
 const availableCharacters = computed(() => {
   const boundIds = store.characterBindings.map(b => b.longWritingCharacterId)
   return longWritingCharacters.value.filter(c => !boundIds.includes(c.id))
+})
+
+// 计算属性：可绑定的物品（排除已绑定的）
+const availableItems = computed(() => {
+  const boundIds = store.itemBindings.map(b => b.longWritingItemId)
+  return longWritingItems.value.filter(item => !boundIds.includes(item.id))
+})
+
+// 计算属性：可绑定的地点（排除已绑定的）
+const availableLocations = computed(() => {
+  const boundIds = store.locationBindings.map(b => b.longWritingLocationId)
+  return longWritingLocations.value.filter(loc => !boundIds.includes(loc.id))
 })
 
 // 图像生成表单
@@ -1274,6 +1472,8 @@ const projectSettings = reactive({
 
 // 长文角色列表
 const longWritingCharacters = ref<Array<{ id: string; name: string }>>([])
+const longWritingItems = ref<Array<{ id: string; name: string }>>([])
+const longWritingLocations = ref<Array<{ id: string; name: string }>>([])
 
 // ========== 模型选择相关 ==========
 // 提供商配置列表
@@ -1717,6 +1917,26 @@ async function loadLongWritingData(longWritingProjectId: string) {
       longWritingCharacters.value = charResponse.data.map((c: any) => ({
         id: c.id,
         name: c.name
+      }))
+    }
+
+    // 加载物品列表
+    const itemResponse = await window.electronAPI.longwriting.getItems(longWritingProjectId)
+    console.log('物品响应:', itemResponse)
+    if (itemResponse.success && itemResponse.data) {
+      longWritingItems.value = itemResponse.data.map((item: any) => ({
+        id: item.id,
+        name: item.name
+      }))
+    }
+
+    // 加载地点列表
+    const locationResponse = await window.electronAPI.longwriting.getLocations(longWritingProjectId)
+    console.log('地点响应:', locationResponse)
+    if (locationResponse.success && locationResponse.data) {
+      longWritingLocations.value = locationResponse.data.map((loc: any) => ({
+        id: loc.id,
+        name: loc.name
       }))
     }
   } catch (error) {
@@ -2638,6 +2858,7 @@ async function generateSingleStoryboardImage() {
 /**
  * 生成场景画面（批量，保留备用）
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function generateSceneImages() {
   if (!store.currentScene) {
     ElMessage.warning('请先选择场景')
@@ -2678,6 +2899,7 @@ async function generateSceneImages() {
 /**
  * 生成场景音频（旁白 + 对话）
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function generateAudio() {
   if (!store.currentScene) {
     ElMessage.warning('请先选择场景')
@@ -2831,10 +3053,116 @@ async function handleBindCharacter() {
   }
 }
 
+// ==================== 物品绑定相关 ====================
+
+async function handleBindItem() {
+  if (!bindItemForm.itemId || !store.currentProject) {
+    ElMessage.warning('请选择物品')
+    return
+  }
+
+  const item = longWritingItems.value.find(i => i.id === bindItemForm.itemId)
+  if (!item) {
+    ElMessage.warning('物品不存在')
+    return
+  }
+
+  const result = await store.bindItem(
+    store.currentProject.id,
+    bindItemForm.itemId,
+    item.name,
+    [],
+    bindItemForm.description ? {
+      baseDescription: bindItemForm.description
+    } : undefined,
+    bindItemForm.generateImages
+  )
+
+  if (result) {
+    ElMessage.success('物品绑定成功')
+    showBindItemDialog.value = false
+    // 重置表单
+    bindItemForm.itemId = ''
+    bindItemForm.description = ''
+    bindItemForm.generateImages = true
+  } else {
+    ElMessage.error(store.error || '绑定失败')
+  }
+}
+
+function editItemBinding(_binding: ItemBinding) {
+  ElMessage.info('编辑物品绑定功能开发中...')
+}
+
+async function removeItemBinding(binding: ItemBinding) {
+  try {
+    await ElMessageBox.confirm('确定要移除该物品绑定吗？', '确认', {
+      type: 'warning'
+    })
+    await store.deleteItemBinding(binding.id)
+    ElMessage.success('移除成功')
+  } catch {
+    // 用户取消
+  }
+}
+
+// ==================== 地点绑定相关 ====================
+
+async function handleBindLocation() {
+  if (!bindLocationForm.locationId || !store.currentProject) {
+    ElMessage.warning('请选择地点')
+    return
+  }
+
+  const location = longWritingLocations.value.find(l => l.id === bindLocationForm.locationId)
+  if (!location) {
+    ElMessage.warning('地点不存在')
+    return
+  }
+
+  const result = await store.bindLocation(
+    store.currentProject.id,
+    bindLocationForm.locationId,
+    location.name,
+    [],
+    bindLocationForm.description ? {
+      baseDescription: bindLocationForm.description
+    } : undefined,
+    bindLocationForm.generateImages
+  )
+
+  if (result) {
+    ElMessage.success('地点绑定成功')
+    showBindLocationDialog.value = false
+    // 重置表单
+    bindLocationForm.locationId = ''
+    bindLocationForm.description = ''
+    bindLocationForm.generateImages = true
+  } else {
+    ElMessage.error(store.error || '绑定失败')
+  }
+}
+
+function editLocationBinding(_binding: LocationBinding) {
+  ElMessage.info('编辑地点绑定功能开发中...')
+}
+
+async function removeLocationBinding(binding: LocationBinding) {
+  try {
+    await ElMessageBox.confirm('确定要移除该地点绑定吗？', '确认', {
+      type: 'warning'
+    })
+    await store.deleteLocationBinding(binding.id)
+    ElMessage.success('移除成功')
+  } catch {
+    // 用户取消
+  }
+}
+
 /**
  * 编辑绑定
  */
-function editBinding(binding: CharacterBinding) {
+function editBinding(_binding: CharacterBinding) {
   ElMessage.info('编辑角色绑定功能开发中...')
 }
 
@@ -3665,7 +3993,10 @@ watch(outlineSearchText, (val) => {
   }
 }
 
-.character-bindings {
+// 绑定配置通用样式（角色、物品、地点）
+.character-bindings,
+.item-bindings,
+.location-bindings {
   height: 100%;
   max-height: 100%;
   display: flex;
@@ -3709,7 +4040,7 @@ watch(outlineSearchText, (val) => {
   border: 1px solid var(--el-border-color-light);
   border-radius: 6px;
 
-  .binding-character {
+  .binding-name {
     font-weight: 500;
   }
 

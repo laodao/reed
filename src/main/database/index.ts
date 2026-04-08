@@ -1666,8 +1666,15 @@ export class DatabaseManager {
         dialogue_ids TEXT,
         action_ids TEXT,
         frame_image TEXT,
+        frame_image_id TEXT,
+        video_path TEXT,
         duration REAL NOT NULL DEFAULT 3,
         transition TEXT NOT NULL,
+        transition_type TEXT,
+        transition_duration_ms REAL,
+        transition_direction TEXT,
+        transition_easing TEXT,
+        transition_color TEXT,
         status TEXT NOT NULL DEFAULT 'pending',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -1677,6 +1684,18 @@ export class DatabaseManager {
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_storyboards_scene_script_id ON storyboards(scene_script_id)`)
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_storyboards_shot_number ON storyboards(scene_script_id, shot_number)`)
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_storyboards_status ON storyboards(status)`)
+
+    // 数据库迁移：为现有的 storyboards 表添加 video_path 字段（如果不存在）
+    try {
+      const columns = this.db.prepare(`PRAGMA table_info(storyboards)`).all() as { name: string }[]
+      const columnNames = columns.map(c => c.name)
+      if (!columnNames.includes('video_path')) {
+        this.db.exec(`ALTER TABLE storyboards ADD COLUMN video_path TEXT`)
+        console.log('[DatabaseManager] 已为 storyboards 表添加 video_path 字段')
+      }
+    } catch (e) {
+      console.error('[DatabaseManager] 添加 video_path 字段失败:', e)
+    }
 
     // ==================== 符合第三范式的新增子表 ====================
 

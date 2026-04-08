@@ -53,6 +53,7 @@ export interface UpdateStoryboardRequest {
   dialogueIds?: string[]
   actionIds?: string[]
   frameImage?: ImageAsset
+  videoPath?: string // 生成的视频路径
   duration?: number
   transition?: TransitionConfig
   status?: StoryboardStatus
@@ -216,6 +217,10 @@ export class StoryboardRepository {
       updates.push('frame_image = ?')
       values.push(data.frameImage ? JSON.stringify(data.frameImage) : null)
     }
+    if (data.videoPath !== undefined) {
+      updates.push('video_path = ?')
+      values.push(data.videoPath || null)
+    }
     if (data.duration !== undefined) {
       updates.push('duration = ?')
       values.push(data.duration)
@@ -329,6 +334,7 @@ export class StoryboardRepository {
       dialogueIds: row.dialogue_ids ? JSON.parse(row.dialogue_ids) as string[] : [],
       actionIds: row.action_ids ? JSON.parse(row.action_ids) as string[] : [],
       frameImage: row.frame_image ? JSON.parse(row.frame_image) as ImageAsset : undefined,
+      videoPath: row.video_path || undefined,
       duration: row.duration,
       transition,
       status: row.status as StoryboardStatus,

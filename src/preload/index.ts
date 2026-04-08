@@ -119,6 +119,18 @@ const IPC_CHANNELS = {
   STV_UPDATE_CHARACTER_BINDING: 'stv:update-character-binding',
   STV_DELETE_CHARACTER_BINDING: 'stv:delete-character-binding',
 
+  // 地点绑定
+  STV_GET_LOCATION_BINDINGS: 'stv:get-location-bindings',
+  STV_BIND_LOCATION: 'stv:bind-location',
+  STV_UPDATE_LOCATION_BINDING: 'stv:update-location-binding',
+  STV_DELETE_LOCATION_BINDING: 'stv:delete-location-binding',
+
+  // 物品绑定
+  STV_GET_ITEM_BINDINGS: 'stv:get-item-bindings',
+  STV_BIND_ITEM: 'stv:bind-item',
+  STV_UPDATE_ITEM_BINDING: 'stv:update-item-binding',
+  STV_DELETE_ITEM_BINDING: 'stv:delete-item-binding',
+
   STV_LIST_EPISODES: 'stv:list-episodes',
   STV_GET_EPISODE: 'stv:get-episode',
   STV_CREATE_EPISODE: 'stv:create-episode',
@@ -1387,6 +1399,26 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.STV_UPDATE_CHARACTER_BINDING, bindingId, data),
     deleteCharacterBinding: (bindingId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.STV_DELETE_CHARACTER_BINDING, bindingId),
+
+    // 地点绑定
+    getLocationBindings: (projectId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_GET_LOCATION_BINDINGS, projectId),
+    bindLocation: (projectId: string, longWritingLocationId: string, locationName: string, imagePaths?: string[], generateConfig?: any, generateImages?: boolean) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_BIND_LOCATION, projectId, longWritingLocationId, locationName, imagePaths, generateConfig, generateImages),
+    updateLocationBinding: (bindingId: string, data: { imagePaths?: string[]; thumbnailPath?: string | null; generateConfig?: any | null; generateImages?: boolean }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_UPDATE_LOCATION_BINDING, bindingId, data),
+    deleteLocationBinding: (bindingId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_DELETE_LOCATION_BINDING, bindingId),
+
+    // 物品绑定
+    getItemBindings: (projectId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_GET_ITEM_BINDINGS, projectId),
+    bindItem: (projectId: string, longWritingItemId: string, itemName: string, imagePaths?: string[], generateConfig?: any, generateImages?: boolean) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_BIND_ITEM, projectId, longWritingItemId, itemName, imagePaths, generateConfig, generateImages),
+    updateItemBinding: (bindingId: string, data: { imagePaths?: string[]; thumbnailPath?: string | null; generateConfig?: any | null; generateImages?: boolean }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_UPDATE_ITEM_BINDING, bindingId, data),
+    deleteItemBinding: (bindingId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_DELETE_ITEM_BINDING, bindingId),
 
     // 剧集管理
     listEpisodes: (projectId: string) =>

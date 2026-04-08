@@ -54,6 +54,12 @@
 
               <!-- 操作按钮 -->
               <div class="card-actions">
+                <!-- 播放视频按钮 -->
+                <el-tooltip content="播放视频" placement="top" v-if="storyboard.videoPath">
+                  <el-button circle size="small" type="primary" @click.stop="playVideo(storyboard)">
+                    <el-icon><VideoPlay /></el-icon>
+                  </el-button>
+                </el-tooltip>
                 <el-tooltip content="重新生成" placement="top" v-if="storyboard.frameImage">
                   <el-button circle size="small" @click.stop="openRegenerateDialog(storyboard)">
                     <el-icon><RefreshRight /></el-icon>
@@ -128,9 +134,9 @@
                 <el-icon><Headset /></el-icon>
                 生成音频
               </el-button>
-              <el-button v-if="storyboardDialogues.length > 0" size="small" @click="showDialogueDialog = true">
-                <el-icon><ChatDotRound /></el-icon>
-                查看对白
+              <el-button v-if="store.currentScene" size="small" @click="showScriptDialog = true">
+                <el-icon><Document /></el-icon>
+                查看剧本
               </el-button>
             </div>
           </div>
@@ -174,12 +180,13 @@
           <div class="action-buttons">
             <el-button
               v-if="selectedStoryboard?.frameImage"
-              type="warning"
+              :type="selectedStoryboard?.videoPath ? 'primary' : 'warning'"
               @click="synthesizeSingleStoryboard"
               :loading="synthesizingSingle"
+              :disabled="synthesizingSingle"
             >
               <el-icon><VideoPlay /></el-icon>
-              合成当前镜头
+              {{ selectedStoryboard?.videoPath ? '重新合成' : '合成当前镜头' }}
             </el-button>
             <el-button type="success" @click="showSynthesisDialog = true" :disabled="!hasAllImages">
               <el-icon><VideoPlay /></el-icon>
@@ -224,38 +231,117 @@
       </template>
     </el-dialog>
 
-    <!-- 对白查看对话框 -->
-    <el-dialog v-model="showDialogueDialog" title="镜头对白" width="500px">
-      <div v-if="selectedStoryboard" class="dialogue-dialog-content">
-        <div class="dialogue-header">
-          <el-tag>镜头 {{ selectedStoryboard.shotNumber }}</el-tag>
-          <span class="dialogue-count">共 {{ storyboardDialogues.length }} 条对白</span>
+    <!-- 剧本查看对话框 -->
+    <el-dialog v-model="showScriptDialog" title="镜头剧本" width="600px">
+      <div v-if="store.currentScene" class="script-dialog-content">
+        <!-- 场景信息 -->
+        <div class="scene-info-section">
+          <div class="scene-header">
+            <el-tag type="primary">场景 {{ store.currentScene.sceneNumber }}</el-tag>
+            <el-tag>{{ store.currentScene.location }}</el-tag>
+            <el-tag type="info">{{ getLocationTypeLabel(store.currentScene.locationType) }}</el-tag>
+            <el-tag>{{ getTimeOfDayLabel(store.currentScene.timeOfDay) }}</el-tag>
+          </div>
+          <div class="scene-meta" v-if="store.currentScene.weather">
+            <span>天气：{{ getWeatherLabel(store.currentScene.weather) }}</span>
+          </div>
         </div>
-        <div class="dialogue-list-dialog">
-          <div
-            v-for="dialogue in storyboardDialogues"
-            :key="dialogue.id"
-            class="dialogue-item-dialog"
-          >
-            <div class="dialogue-character">
-              <el-tag size="small" type="info">{{ dialogue.characterName }}</el-tag>
-              <el-tag v-if="dialogue.emotion" size="small" effect="plain">{{ dialogue.emotion }}</el-tag>
-            </div>
-            <div class="dialogue-text">{{ dialogue.text }}</div>
-            <div class="dialogue-meta" v-if="dialogue.volume || dialogue.pace">
-              <span v-if="dialogue.volume !== 'normal'">{{ dialogue.volume === 'loud' ? '大声' : '低语' }}</span>
-              <span v-if="dialogue.pace !== 'normal'">{{ dialogue.pace === 'fast' ? '快语速' : '慢语速' }}</span>
+
+        <!-- 场景描述 -->
+        <div class="script-section" v-if="store.currentScene.sceneDescription">
+          <h4>场景描述</h4>
+          <div class="section-content">{{ store.currentScene.sceneDescription }}</div>
+        </div>
+
+        <!-- 氛围与光线 -->
+        <div class="script-section" v-if="store.currentScene.mood || store.currentScene.lighting">
+          <h4>氛围与光线</h4>
+          <div class="section-content">
+            <p v-if="store.currentScene.mood"><strong>氛围：</strong>{{ store.currentScene.mood }}</p>
+            <p v-if="store.currentScene.lighting"><strong>光线：</strong>{{ store.currentScene.lighting }}</p>
+          </div>
+        </div>
+
+        <!-- 旁白 -->
+        <div class="script-section" v-if="store.currentScene.narration">
+          <h4>旁白</h4>
+          <div class="section-content narration">{{ store.currentScene.narration }}</div>
+        </div>
+
+        <!-- 对话列表 -->
+        <div class="script-section" v-if="store.currentScene.dialogues && store.currentScene.dialogues.length > 0">
+          <h4>对话 ({{ store.currentScene.dialogues.length }} 条)</h4>
+          <div class="dialogue-list">
+            <div
+              v-for="dialogue in store.currentScene.dialogues"
+              :key="dialogue.id"
+              class="dialogue-item"
+            >
+              <div class="dialogue-character">
+                <el-tag size="small" type="info">{{ dialogue.characterName }}</el-tag>
+                <el-tag v-if="dialogue.emotion" size="small" effect="plain">{{ dialogue.emotion }}</el-tag>
+              </div>
+              <div class="dialogue-text">{{ dialogue.text }}</div>
+              <div class="dialogue-meta" v-if="dialogue.volume !== 'normal' || dialogue.pace !== 'normal'">
+                <span v-if="dialogue.volume !== 'normal'">{{ dialogue.volume === 'loud' ? '大声' : '低语' }}</span>
+                <span v-if="dialogue.pace !== 'normal'">{{ dialogue.pace === 'fast' ? '快语速' : '慢语速' }}</span>
+              </div>
             </div>
           </div>
         </div>
-        <el-empty v-if="storyboardDialogues.length === 0" description="暂无对白" :image-size="60" />
+
+        <!-- 动作描述 -->
+        <div class="script-section" v-if="store.currentScene.actions && store.currentScene.actions.length > 0">
+          <h4>动作描述 ({{ store.currentScene.actions.length }} 条)</h4>
+          <div class="action-list">
+            <div
+              v-for="action in store.currentScene.actions"
+              :key="action.id"
+              class="action-item"
+            >
+              <el-tag v-if="action.characterId" size="small">{{ getCharacterName(action.characterId) }}</el-tag>
+              <el-tag v-else size="small" type="info">群像动作</el-tag>
+              <span class="action-timing">({{ getTimingLabel(action.timing) }})</span>
+              <span class="action-description">{{ action.description }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 出场角色 -->
+        <div class="script-section" v-if="store.currentScene.characters && store.currentScene.characters.length > 0">
+          <h4>出场角色</h4>
+          <div class="character-list">
+            <el-tag
+              v-for="character in store.currentScene.characters"
+              :key="character.characterId"
+              class="character-tag"
+            >
+              {{ character.characterName }}
+              <span v-if="character.expression"> - {{ character.expression }}</span>
+            </el-tag>
+          </div>
+        </div>
       </div>
+      <el-empty v-else description="暂无剧本数据" :image-size="60" />
     </el-dialog>
 
     <!-- 图片预览对话框 -->
     <el-dialog v-model="showImagePreview" title="画面预览" width="90%" top="5vh" destroy-on-close>
       <div class="preview-container">
         <img :src="previewImageUrl" alt="预览图片" class="preview-image-large" />
+      </div>
+    </el-dialog>
+
+    <!-- 视频播放对话框 -->
+    <el-dialog v-model="showVideoDialog" title="视频播放" width="800px" destroy-on-close>
+      <div class="video-player-container">
+        <video
+          v-if="playingVideoPath"
+          :src="playingVideoPath"
+          controls
+          autoplay
+          class="video-player"
+        />
       </div>
     </el-dialog>
 
@@ -295,7 +381,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  ArrowLeft, Picture, ZoomIn, RefreshRight, Delete, Headset, VideoPlay, InfoFilled, VideoPause, ChatDotRound
+  ArrowLeft, Picture, ZoomIn, RefreshRight, Delete, Headset, VideoPlay, InfoFilled, VideoPause, Document
 } from '@element-plus/icons-vue'
 import { useStoryToVideoStore } from '@/stores/story-to-video'
 import { useTabsStore } from '@/stores/tabs'
@@ -332,8 +418,10 @@ const synthesizingSingle = ref(false)
 const showRegenerateDialog = ref(false)
 const showImagePreview = ref(false)
 const showSynthesisDialog = ref(false)
-const showDialogueDialog = ref(false)
+const showScriptDialog = ref(false)
+const showVideoDialog = ref(false)
 const previewImageUrl = ref('')
+const playingVideoPath = ref('')
 const regeneratingStoryboard = ref<Storyboard | null>(null)
 
 // 重新生成表单
@@ -538,6 +626,75 @@ function getSynthesisPhaseLabel(phase: string): string {
   return labels[phase] || phase
 }
 
+// 场景类型标签
+const locationTypeLabels: Record<string, string> = {
+  interior: '内景',
+  exterior: '外景',
+  mixed: '混合'
+}
+
+// 时间段标签
+const timeOfDayLabels: Record<string, string> = {
+  morning: '早晨',
+  noon: '正午',
+  afternoon: '下午',
+  evening: '傍晚',
+  night: '夜晚',
+  dawn: '黎明',
+  dusk: '黄昏'
+}
+
+// 天气标签
+const weatherLabels: Record<string, string> = {
+  sunny: '晴天',
+  cloudy: '多云',
+  rainy: '雨天',
+  snowy: '雪天',
+  foggy: '雾天',
+  stormy: '暴风雨'
+}
+
+// 动作时机标签
+const timingLabels: Record<string, string> = {
+  before: '对话前',
+  during: '对话中',
+  after: '对话后'
+}
+
+function getLocationTypeLabel(type: string): string {
+  return locationTypeLabels[type] || type
+}
+
+function getTimeOfDayLabel(time: string): string {
+  return timeOfDayLabels[time] || time
+}
+
+function getWeatherLabel(weather: string): string {
+  return weatherLabels[weather] || weather
+}
+
+function getTimingLabel(timing: string): string {
+  return timingLabels[timing] || timing
+}
+
+// 根据角色ID获取角色名称
+function getCharacterName(characterId: string): string {
+  if (!store.currentScene || !store.currentScene.characters) return characterId
+  const character = store.currentScene.characters.find(c => c.characterId === characterId)
+  return character?.characterName || characterId
+}
+
+// 播放视频
+function playVideo(storyboard: Storyboard) {
+  if (storyboard.videoPath) {
+    // 本地文件路径需要转换为可访问的 URL
+    playingVideoPath.value = storyboard.videoPath.startsWith('http')
+      ? storyboard.videoPath
+      : `local-video:///${storyboard.videoPath.replace(/\\/g, '/')}`
+    showVideoDialog.value = true
+  }
+}
+
 // 返回项目页
 function goBack() {
   router.push(`/story-to-video/${projectId.value}`)
@@ -726,6 +883,15 @@ async function synthesizeSingleStoryboard() {
 
     if (result) {
       ElMessage.success(`镜头 ${selectedStoryboard.value.shotNumber} 视频合成成功`)
+      // 重新加载分镜列表以更新 videoPath
+      if (store.currentScene) {
+        await store.loadStoryboards(store.currentScene.id)
+        // 重新选中当前分镜
+        const updated = store.storyboards.find(s => s.id === selectedStoryboard.value?.id)
+        if (updated) {
+          selectedStoryboard.value = updated
+        }
+      }
     } else {
       ElMessage.error(store.error || '视频合成失败')
     }
@@ -1062,6 +1228,23 @@ watch(
   object-fit: contain;
 }
 
+// 视频播放器样式
+.video-player-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.video-player {
+  max-width: 100%;
+  max-height: 70vh;
+  outline: none;
+}
+
 .synthesis-progress {
   .progress-label {
     font-size: 12px;
@@ -1187,6 +1370,108 @@ watch(
       margin-top: 8px;
       font-size: 12px;
       color: var(--el-text-color-secondary);
+    }
+  }
+}
+
+// 剧本对话框样式
+.script-dialog-content {
+  .scene-info-section {
+    margin-bottom: 20px;
+    padding: 12px;
+    background: var(--el-fill-color-light);
+    border-radius: 8px;
+
+    .scene-header {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .scene-meta {
+      font-size: 13px;
+      color: var(--el-text-color-secondary);
+    }
+  }
+
+  .script-section {
+    margin-bottom: 16px;
+
+    h4 {
+      margin: 0 0 8px 0;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--el-text-color-primary);
+      border-left: 3px solid var(--el-color-primary);
+      padding-left: 8px;
+    }
+
+    .section-content {
+      padding: 12px;
+      background: var(--el-fill-color-lighter);
+      border-radius: 6px;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--el-text-color-regular);
+
+      &.narration {
+        font-style: italic;
+        color: var(--el-text-color-secondary);
+      }
+
+      p {
+        margin: 4px 0;
+      }
+    }
+  }
+
+  .dialogue-list, .action-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .dialogue-item, .action-item {
+    padding: 10px 12px;
+    background: var(--el-fill-color-lighter);
+    border-radius: 6px;
+
+    .dialogue-character, .action-item > .el-tag {
+      margin-bottom: 6px;
+    }
+
+    .dialogue-text {
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .dialogue-meta {
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+      margin-top: 4px;
+    }
+
+    .action-timing {
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+      margin: 0 8px;
+    }
+
+    .action-description {
+      font-size: 13px;
+    }
+  }
+
+  .character-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+
+    .character-tag {
+      cursor: default;
     }
   }
 }

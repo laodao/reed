@@ -502,6 +502,9 @@ export interface Storyboard {
   // 画面资产
   frameImage?: ImageAsset // 帧画面图片
 
+  // 生成的视频路径
+  videoPath?: string // 生成的视频路径
+
   // 时长
   duration: number // 分镜时长（秒）
 
@@ -654,6 +657,7 @@ export interface StoryboardRecord {
   action_ids: string // JSON（保留兼容，推荐使用 storyboard_action_links 表）
   frame_image: string | null // JSON（保留兼容，推荐使用 frame_image_id）
   frame_image_id: string | null // 外键关联图像资产
+  video_path: string | null // 生成的视频路径
   duration: number
   // 转场配置（规范化字段）
   transition: string // JSON（保留兼容）
