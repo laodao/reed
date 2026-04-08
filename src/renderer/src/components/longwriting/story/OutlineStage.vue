@@ -15,8 +15,8 @@
         </div>
 
         <template v-else>
-          <!-- 根节点列表（卷） -->
-          <div v-for="node in rootNodes" :key="node.id" class="outline-node volume-node">
+          <!-- 根节点列表 -->
+          <div v-for="node in rootNodes" :key="node.id" class="outline-node" :class="node.nodeType + '-node'">
             <div
               class="node-header"
               :class="{ expanded: expandedNodes.includes(node.id), clickable: hasChildren(node.id) }"
@@ -32,14 +32,30 @@
                 <span class="node-type-tag">{{ getNodeTypeName(node.nodeType) }}</span>
                 <h4>{{ node.name }}</h4>
                 <span class="node-status" :class="node.status">{{ getStatusName(node.status) }}</span>
+                <!-- 节级别显示预写标签 -->
+                <el-tag v-if="node.nodeType === 'section' && node.prewriteConfirmed" type="success" size="small" class="prewrite-tag">已预写</el-tag>
               </div>
               <div class="node-meta">
                 <span v-if="node.estimatedWords">{{ node.estimatedWords }}字</span>
+                <el-tag v-if="node.involvedCharacters.length > 0" size="small" class="char-tag">
+                  {{ node.involvedCharacters.length }}角色
+                </el-tag>
               </div>
               <div class="node-actions">
-                <el-button text size="small" @click="addChildNode(node)">
+                <!-- 节级别显示预写按钮 -->
+                <el-button
+                  v-if="node.nodeType === 'section'"
+                  text
+                  size="small"
+                  :type="node.prewriteConfirmed ? 'success' : 'primary'"
+                  @click="startPrewrite(node)"
+                >
+                  <el-icon><Document /></el-icon>
+                  预写
+                </el-button>
+                <el-button v-if="node.nodeType !== 'section'" text size="small" @click="addChildNode(node)">
                   <el-icon><Plus /></el-icon>
-                  添加子节点
+                  {{ node.nodeType === 'volume' ? '添加子节点' : '添加小节' }}
                 </el-button>
                 <el-button text size="small" @click="editNode(node)">
                   <el-icon><Edit /></el-icon>
@@ -51,9 +67,9 @@
               </div>
             </div>
 
-            <!-- 子节点（章） -->
+            <!-- 子节点 -->
             <div v-if="expandedNodes.includes(node.id)" class="node-children">
-              <div v-for="child in getChildren(node.id)" :key="child.id" class="outline-node chapter-node">
+              <div v-for="child in getChildren(node.id)" :key="child.id" class="outline-node" :class="child.nodeType + '-node'">
                 <div
                   class="node-header"
                   :class="{ expanded: expandedNodes.includes(child.id), clickable: hasChildren(child.id) }"
@@ -69,6 +85,8 @@
                     <span class="node-type-tag">{{ getNodeTypeName(child.nodeType) }}</span>
                     <h4>{{ child.name }}</h4>
                     <span class="node-status" :class="child.status">{{ getStatusName(child.status) }}</span>
+                    <!-- 节级别显示预写标签 -->
+                    <el-tag v-if="child.nodeType === 'section' && child.prewriteConfirmed" type="success" size="small" class="prewrite-tag">已预写</el-tag>
                   </div>
                   <div class="node-meta">
                     <span v-if="child.estimatedWords">{{ child.estimatedWords }}字</span>
@@ -77,7 +95,18 @@
                     </el-tag>
                   </div>
                   <div class="node-actions">
-                    <el-button text size="small" @click="addChildNode(child)">
+                    <!-- 节级别显示预写按钮 -->
+                    <el-button
+                      v-if="child.nodeType === 'section'"
+                      text
+                      size="small"
+                      :type="child.prewriteConfirmed ? 'success' : 'primary'"
+                      @click="startPrewrite(child)"
+                    >
+                      <el-icon><Document /></el-icon>
+                      预写
+                    </el-button>
+                    <el-button v-if="child.nodeType !== 'section'" text size="small" @click="addChildNode(child)">
                       <el-icon><Plus /></el-icon>
                       添加小节
                     </el-button>
@@ -90,22 +119,25 @@
                   </div>
                 </div>
 
-                <!-- 第三层节点（节） -->
+                <!-- 第三层节点 -->
                 <div v-if="expandedNodes.includes(child.id)" class="node-children">
-                  <div v-for="section in getChildren(child.id)" :key="section.id" class="outline-node section-node">
+                  <div v-for="section in getChildren(child.id)" :key="section.id" class="outline-node" :class="section.nodeType + '-node'">
                     <div class="node-header">
                       <div class="node-expand"></div>
                       <div class="node-title">
                         <span class="node-type-tag">{{ getNodeTypeName(section.nodeType) }}</span>
                         <h4>{{ section.name }}</h4>
                         <span class="node-status" :class="section.status">{{ getStatusName(section.status) }}</span>
-                        <el-tag v-if="section.prewriteConfirmed" type="success" size="small" class="prewrite-tag">已预写</el-tag>
+                        <!-- 节级别显示预写标签 -->
+                        <el-tag v-if="section.nodeType === 'section' && section.prewriteConfirmed" type="success" size="small" class="prewrite-tag">已预写</el-tag>
                       </div>
                       <div class="node-meta">
                         <span v-if="section.estimatedWords">{{ section.estimatedWords }}字</span>
                       </div>
                       <div class="node-actions">
+                        <!-- 节级别显示预写按钮 -->
                         <el-button
+                          v-if="section.nodeType === 'section'"
                           text
                           size="small"
                           :type="section.prewriteConfirmed ? 'success' : 'primary'"
@@ -113,6 +145,9 @@
                         >
                           <el-icon><Document /></el-icon>
                           预写
+                        </el-button>
+                        <el-button v-if="section.nodeType !== 'section'" text size="small" @click="addChildNode(section)">
+                          <el-icon><Plus /></el-icon>
                         </el-button>
                         <el-button text size="small" @click="editNode(section)">
                           <el-icon><Edit /></el-icon>
