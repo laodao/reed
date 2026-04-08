@@ -182,7 +182,7 @@ async function handleCreateProject(
 async function handleUpdateProject(
   _event: IpcMainInvokeEvent,
   projectId: string,
-  data: { name?: string; status?: string; config?: VideoProjectConfig }
+  data: { name?: string; status?: string; config?: VideoProjectConfig; longWritingProjectId?: string }
 ): Promise<IpcResponse> {
   try {
     const db = DatabaseManager.getInstance()

@@ -26,6 +26,7 @@ export interface UpdateVideoProjectRequest {
   name?: string
   status?: VideoProject['status']
   config?: VideoProjectConfig
+  longWritingProjectId?: string
 }
 
 /**
@@ -121,6 +122,10 @@ export class VideoProjectRepository {
     if (data.config !== undefined) {
       updates.push('config = ?')
       values.push(JSON.stringify(data.config))
+    }
+    if (data.longWritingProjectId !== undefined) {
+      updates.push('long_writing_project_id = ?')
+      values.push(data.longWritingProjectId)
     }
 
     if (updates.length === 0) return project

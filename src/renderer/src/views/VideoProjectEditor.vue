@@ -467,8 +467,12 @@
         <el-form-item label="内容来源">
           <el-radio-group v-model="episodeForm.sourceType" @change="handleSourceTypeChange">
             <el-radio value="outline">关联长文章节</el-radio>
-            <el-radio value="uploaded">上传长文</el-radio>
+            <el-radio v-if="!hasLinkedLongWriting" value="uploaded">上传长文</el-radio>
           </el-radio-group>
+          <div v-if="hasLinkedLongWriting" class="form-hint">
+            <el-icon><InfoFilled /></el-icon>
+            <span>项目已关联长文，只能选择关联长文章节</span>
+          </div>
         </el-form-item>
 
         <!-- 关联章节模式 -->
@@ -593,11 +597,29 @@
       v-model="showSettingsDialog"
       title="项目设置"
       width="700px"
+      class="settings-dialog"
     >
-      <el-form v-if="store.currentProject" label-width="100px">
+      <el-form v-if="store.currentProject" label-width="100px" class="settings-form">
         <el-divider content-position="left">基本设置</el-divider>
         <el-form-item label="项目名称">
           <el-input v-model="projectSettings.name" />
+        </el-form-item>
+        <el-form-item label="关联长文">
+          <el-select
+            v-model="projectSettings.longWritingProjectId"
+            placeholder="选择关联的长文项目"
+            style="width: 100%"
+            clearable
+            filterable
+          >
+            <el-option
+              v-for="project in allLwProjects"
+              :key="project.id"
+              :label="project.name"
+              :value="project.id"
+            />
+          </el-select>
+          <div class="form-hint">关联长文后，添加剧集时可选择关联长文章节</div>
         </el-form-item>
         <el-form-item label="画幅比例">
           <el-select v-model="projectSettings.config.aspectRatio" style="width: 100%">
@@ -1435,6 +1457,11 @@ const episodeForm = reactive({
   uploadedContent: ''
 })
 
+// 是否关联了长文项目（用于控制添加剧集时的选项）
+const hasLinkedLongWriting = computed(() => {
+  return !!store.currentProject?.longWritingProjectId
+})
+
 // 上传长文字数统计
 const uploadedWordCount = computed(() => {
   return episodeForm.uploadedContent.length
@@ -1455,6 +1482,7 @@ const isEpisodeFormValid = computed(() => {
 // 项目设置表单
 const projectSettings = reactive({
   name: '',
+  longWritingProjectId: '',
   config: {
     aspectRatio: '16:9' as const,
     resolution: 1080,
@@ -1469,6 +1497,9 @@ const projectSettings = reactive({
     audioModel: '' as string
   }
 })
+
+// 所有长文项目列表（用于项目设置中选择关联长文）
+const allLwProjects = ref<Array<{ id: string; name: string }>>([])
 
 // 长文角色列表
 const longWritingCharacters = ref<Array<{ id: string; name: string }>>([])
@@ -1855,6 +1886,9 @@ async function loadProject() {
   // 加载提供商配置（用于模型选择）
   await loadProviderConfigs()
 
+  // 加载所有长文项目列表（用于项目设置中选择关联长文）
+  await loadAllLwProjects()
+
   await store.loadProject(projectId.value)
   if (store.currentProject) {
     // 更新 Tab 标题为项目名称
@@ -1871,6 +1905,7 @@ async function loadProject() {
     }
     // 更新项目设置表单
     projectSettings.name = store.currentProject.name
+    projectSettings.longWritingProjectId = store.currentProject.longWritingProjectId || ''
     // 转换模型配置格式（对象 -> 字符串）
     const config = store.currentProject.config
     projectSettings.config = {
@@ -1887,6 +1922,23 @@ async function loadProject() {
       console.log('[VideoProjectEditor] 自动选中唯一的剧集')
       await selectEpisode(store.episodes[0])
     }
+  }
+}
+
+/**
+ * 加载所有长文项目列表
+ */
+async function loadAllLwProjects() {
+  try {
+    const response = await window.electronAPI.longwriting.getProjects()
+    if (response.success && response.data) {
+      allLwProjects.value = response.data.map((p: any) => ({
+        id: p.id,
+        name: p.name
+      }))
+    }
+  } catch (error) {
+    console.error('加载长文项目列表失败:', error)
   }
 }
 
@@ -2968,12 +3020,30 @@ async function saveProjectSettings() {
     audioModel: stringToModel(projectSettings.config.audioModel)
   }
 
+  // 检查是否修改了关联长文项目
+  const oldLwProjectId = store.currentProject.longWritingProjectId
+  const newLwProjectId = projectSettings.longWritingProjectId || ''
+
   const success = await store.updateProject(store.currentProject.id, {
     name: projectSettings.name,
-    config: configToSave
+    config: configToSave,
+    longWritingProjectId: newLwProjectId
   })
 
   if (success) {
+    // 如果关联的长文项目发生变化，重新加载长文数据
+    if (newLwProjectId !== oldLwProjectId) {
+      if (newLwProjectId) {
+        await loadLongWritingData(newLwProjectId)
+      } else {
+        // 清空长文数据
+        chapters.value = []
+        outlineTreeData.value = []
+        longWritingCharacters.value = []
+        longWritingItems.value = []
+        longWritingLocations.value = []
+      }
+    }
     ElMessage.success('保存成功')
     showSettingsDialog.value = false
   } else {
@@ -4128,5 +4198,27 @@ watch(outlineSearchText, (val) => {
   max-width: 100%;
   max-height: 80vh;
   object-fit: contain;
+}
+
+// 项目设置对话框样式
+:deep(.settings-dialog) {
+  .el-dialog__body {
+    max-height: calc(100vh - 200px);
+    overflow-y: auto;
+    padding: 20px;
+  }
+}
+
+.settings-form {
+  // 确保表单内容可以正常滚动
+}
+
+.form-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 </style>

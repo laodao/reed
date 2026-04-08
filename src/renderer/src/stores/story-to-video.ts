@@ -188,7 +188,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
    */
   async function updateProject(
     projectId: string,
-    data: { name?: string; status?: string; config?: VideoProjectConfig }
+    data: { name?: string; status?: string; config?: VideoProjectConfig; longWritingProjectId?: string }
   ): Promise<boolean> {
     error.value = null
     try {
