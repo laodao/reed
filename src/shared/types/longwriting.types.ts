@@ -1514,3 +1514,85 @@ export interface SnapshotStats {
   byEntityType: Record<EntityType, number>
   byChapter: Record<number, number>
 }
+
+// ==================== 章节状态摘要相关类型 ====================
+
+/**
+ * 章节状态摘要
+ * 用于记录章节结束时的故事状态，传递给下一章写作
+ */
+export interface ChapterStateSummary {
+  id: string
+  projectId: string
+  outlineId: string           // 关联的大纲节点ID
+  chapterNumber: number       // 章节序号
+  storyTime: string           // 故事内时间（如：第一年春三月十五日傍晚）
+  currentLocation: string     // 当前地点
+  characterStates: string     // 角色状态概要
+  pendingEvents: string       // 待处理事件/伏笔
+  keyChanges: string          // 本章关键变化
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * 数据库中的章节状态摘要记录
+ */
+export interface ChapterStateSummaryRecord {
+  id: string
+  project_id: string
+  outline_id: string
+  chapter_number: number
+  story_time: string
+  current_location: string
+  character_states: string
+  pending_events: string
+  key_changes: string
+  created_at: number
+  updated_at: number
+}
+
+/**
+ * 创建章节状态摘要请求
+ */
+export interface CreateChapterStateSummaryRequest {
+  projectId: string
+  outlineId: string
+  chapterNumber: number
+  storyTime: string
+  currentLocation: string
+  characterStates: string
+  pendingEvents: string
+  keyChanges: string
+}
+
+/**
+ * AI 提取的章节状态摘要数据
+ */
+export interface ExtractedChapterStateData {
+  storyTime: string           // 故事内时间
+  currentLocation: string     // 当前地点
+  characterStates: string     // 角色状态概要
+  pendingEvents: string       // 待处理事件/伏笔
+  keyChanges: string          // 本章关键变化
+}
+
+/**
+ * 提取章节状态摘要请求
+ */
+export interface ExtractChapterStateSummaryRequest {
+  projectId: string
+  outlineId: string
+  chapterNumber: number
+  chapterContent: string
+  previousSummary?: ChapterStateSummary   // 上一章的摘要（可选）
+}
+
+/**
+ * 提取章节状态摘要响应
+ */
+export interface ExtractChapterStateSummaryResponse {
+  success: boolean
+  summary?: ExtractedChapterStateData
+  error?: string
+}

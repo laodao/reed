@@ -1333,7 +1333,37 @@ const electronAPI = {
     setStageModelConfig: (projectId: string, stage: string, providerConfigId: string, modelId: string) =>
       ipcRenderer.invoke('longwriting:setStageModelConfig', projectId, stage, providerConfigId, modelId),
     setStageModelConfigs: (projectId: string, configs: Array<{ stage: string; providerConfigId: string; modelId: string }>) =>
-      ipcRenderer.invoke('longwriting:setStageModelConfigs', projectId, configs)
+      ipcRenderer.invoke('longwriting:setStageModelConfigs', projectId, configs),
+
+    // 章节状态摘要
+    getChapterStateSummaries: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:getChapterStateSummaries', projectId),
+    getChapterStateSummary: (id: string) =>
+      ipcRenderer.invoke('longwriting:getChapterStateSummary', id),
+    getChapterStateSummaryByOutline: (outlineId: string) =>
+      ipcRenderer.invoke('longwriting:getChapterStateSummaryByOutline', outlineId),
+    getLatestChapterStateSummary: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:getLatestChapterStateSummary', projectId),
+    extractChapterStateSummary: (
+      projectId: string,
+      outlineId: string,
+      chapterNumber: number,
+      chapterContent: string,
+      providerConfigId?: string,
+      modelId?: string
+    ) =>
+      ipcRenderer.invoke('longwriting:extractChapterStateSummary', projectId, outlineId, chapterNumber, chapterContent, providerConfigId, modelId),
+    saveChapterStateSummary: (data: {
+      projectId: string
+      outlineId: string
+      chapterNumber: number
+      storyTime: string
+      currentLocation: string
+      characterStates: string
+      pendingEvents: string
+      keyChanges: string
+    }) =>
+      ipcRenderer.invoke('longwriting:saveChapterStateSummary', data)
   },
 
   // 日记相关

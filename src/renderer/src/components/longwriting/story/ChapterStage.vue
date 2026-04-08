@@ -872,6 +872,59 @@ async function saveChapter(outlineId: string) {
   }
 }
 
+// 处理章节生成完成后的自动保存和状态摘要提取
+async function handleChapterGenerated(outlineId: string) {
+  try {
+    // 先保存章节
+    await saveChapter(outlineId)
+
+    // 获取章节内容和计算章节序号
+    const content = chapterContentMap.value[outlineId]
+    if (!content || content.length < 100) {
+      console.log('[ChapterStage] 内容太短，跳过状态摘要提取')
+      return
+    }
+
+    const chapterNumber = calculateChapterNumber(outlineId)
+    console.log('[ChapterStage] 开始提取章节状态摘要，章节序号:', chapterNumber)
+
+    // 调用 AI 提取章节状态摘要
+    const extractResult = await window.electronAPI.longwriting.extractChapterStateSummary(
+      props.projectId,
+      outlineId,
+      chapterNumber,
+      content,
+      selectedModel.value?.providerId,
+      selectedModel.value?.modelId
+    )
+
+    if (extractResult.success && extractResult.data) {
+      // 保存提取的状态摘要
+      const saveResult = await window.electronAPI.longwriting.saveChapterStateSummary({
+        projectId: props.projectId,
+        outlineId: outlineId,
+        chapterNumber: chapterNumber,
+        storyTime: extractResult.data.storyTime,
+        currentLocation: extractResult.data.currentLocation,
+        characterStates: extractResult.data.characterStates,
+        pendingEvents: extractResult.data.pendingEvents,
+        keyChanges: extractResult.data.keyChanges
+      })
+
+      if (saveResult.success) {
+        console.log('[ChapterStage] 章节状态摘要已保存:', saveResult.data)
+        ElMessage.success('已提取并保存章节状态摘要')
+      } else {
+        console.error('[ChapterStage] 保存状态摘要失败:', saveResult.error)
+      }
+    } else {
+      console.error('[ChapterStage] 提取状态摘要失败:', extractResult.error)
+    }
+  } catch (error) {
+    console.error('[ChapterStage] 处理生成完成后发生错误:', error)
+  }
+}
+
 // 开始生成 - 显示对话框
 async function startGenerate(outline: StoryOutline) {
   if (!selectedModel.value || !selectedModel.value.providerId || !selectedModel.value.modelId) {
@@ -1251,9 +1304,9 @@ async function executeGeneration() {
       } else if (event.type === 'done') {
         generatingMap.value[outlineId] = false
         generatingEventIdMap.value[outlineId] = null
-        // 自动保存
+        // 自动保存并提取状态摘要
         if (autoSave.value && chapterContentMap.value[outlineId]) {
-          saveChapter(outlineId)
+          handleChapterGenerated(outlineId)
         }
         ElMessage.success('章节内容已生成')
         unsubscribe()

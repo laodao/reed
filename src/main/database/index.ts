@@ -57,6 +57,7 @@ import { LwMemoryEntityRepository } from './repositories/lw-memory-entity.reposi
 import { LwTempCharacterTemplateRepository } from './repositories/lw-temp-character-template.repository'
 import { LwTempLocationTemplateRepository } from './repositories/lw-temp-location-template.repository'
 import { LwProjectModelConfigRepository } from './repositories/lw-project-model-config.repository'
+import { LwChapterStateSummaryRepository } from './repositories/lw-chapter-state-summary.repository'
 import { DiaryFolderRepository } from './repositories/diary-folder.repository'
 import { DiaryEntryRepository } from './repositories/diary-entry.repository'
 import { DiaryLinkRepository } from './repositories/diary-link.repository'
@@ -127,6 +128,7 @@ export class DatabaseManager {
   public lwPrewrites: LwPrewriteRepository | null = null
   public lwMemories: LwMemoryRepository | null = null
   public lwEntityStates: LwEntityStateRepository | null = null
+  public lwChapterStateSummaries: LwChapterStateSummaryRepository | null = null
 
   // 新增：符合第三范式的长文写作关联表仓库
   public lwPlotCharacters: LwPlotCharacterRepository | null = null
@@ -1276,6 +1278,28 @@ export class DatabaseManager {
     this.db.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_lw_entity_snapshots_unique ON lw_entity_state_snapshots(project_id, entity_type, entity_id, chapter_number)
     `)
+
+    // 章节状态摘要表（记录章节结束时的故事状态）
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_chapter_state_summaries (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        outline_id TEXT NOT NULL,
+        chapter_number INTEGER NOT NULL,
+        story_time TEXT NOT NULL,
+        current_location TEXT,
+        character_states TEXT,
+        pending_events TEXT,
+        key_changes TEXT,
+        created_at INTEGER,
+        updated_at INTEGER,
+        FOREIGN KEY (project_id) REFERENCES lw_projects(id) ON DELETE CASCADE,
+        FOREIGN KEY (outline_id) REFERENCES lw_story_outlines(id) ON DELETE CASCADE,
+        UNIQUE(project_id, outline_id)
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_chapter_summaries_project ON lw_chapter_state_summaries(project_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_chapter_summaries_chapter ON lw_chapter_state_summaries(project_id, chapter_number)`)
 
     // ===================== 长文写作第三范式关联表 =====================
     // 情节角色关联表（符合第三范式，替代JSON存储）
@@ -3184,6 +3208,7 @@ export class DatabaseManager {
     this.lwPrewrites = new LwPrewriteRepository(this.db)
     this.lwMemories = new LwMemoryRepository(this.db)
     this.lwEntityStates = new LwEntityStateRepository(this.db)
+    this.lwChapterStateSummaries = new LwChapterStateSummaryRepository(this.db)
 
     // 初始化符合第三范式的长文写作关联表仓库
     this.lwPlotCharacters = new LwPlotCharacterRepository(this.db)

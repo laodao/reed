@@ -1248,6 +1248,9 @@ ${plotInfo || '暂无相关情节'}
     // 获取记忆上下文
     const memoryContext = await this.getMemoryContext(projectId, chapterNumber)
 
+    // 获取章节状态摘要上下文（上一章结束时的状态）
+    const chapterStateSummaryContext = await this.getChapterStateSummaryContext(projectId, chapterNumber)
+
     // 获取实体状态上下文
     const involvedEntities: Array<{ type: string; id: string }> = []
 
@@ -1302,7 +1305,7 @@ ${characterInfo || '无特定角色'}
 ${locationInfo || '无特定地点'}
 
 前情提要：
-${previousContext || '这是开篇'}${prewriteSection}${memoryContext}${entityStateContext}
+${previousContext || '这是开篇'}${prewriteSection}${memoryContext}${entityStateContext}${chapterStateSummaryContext}
 
 请开始撰写章节内容：`
 
@@ -2424,6 +2427,138 @@ ${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容
     } catch (error: any) {
       return { success: false, error: error.message }
     }
+  }
+
+  // ==================== 章节状态摘要 ====================
+
+  /**
+   * 从章节正文中提取章节状态摘要
+   * 包括：故事时间、当前位置、角色状态、待处理事件
+   */
+  async extractChapterStateSummary(
+    window: BrowserWindow,
+    eventId: string,
+    projectId: string,
+    outlineId: string,
+    chapterContent: string,
+    chapterNumber: number,
+    previousSummary?: {
+      storyTime: string
+      currentLocation: string
+      characterStates: string
+      pendingEvents: string
+    },
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<GenerateResponse> {
+    const systemPrompt = `你是一位专业的小说内容分析师。请分析章节正文，提取章节结束时的故事状态摘要。
+
+## 任务说明
+1. 确定章节结束时的"故事内时间"（如：第一年春三月十五日傍晚）
+2. 确定章节结束时的"当前位置"（主要场景或主角所在位置）
+3. 总结"角色状态"：各主要角色在章节结束时的状态、位置、心情等
+4. 列出"待处理事件"：未解决的伏笔、悬念、待发生的事件
+5. 总结"关键变化"：本章发生的重要变化
+
+## 时间确定原则
+- 如果是第一章，时间从故事开始算起
+- 如果有上一章的时间信息，要确保时间连续性
+- 时间格式要符合小说世界观设定
+
+## 输出格式
+返回 JSON 对象：
+{
+  "storyTime": "故事内时间",
+  "currentLocation": "当前地点",
+  "characterStates": "角色状态概要（简洁描述各主要角色状态）",
+  "pendingEvents": "待处理事件/伏笔（如果没有则为空字符串）",
+  "keyChanges": "本章关键变化"
+}
+
+请直接输出 JSON，不要有任何额外文字。`
+
+    // 构建上一章信息（如果有）
+    const previousInfo = previousSummary
+      ? `\n【上一章结束状态】
+故事时间：${previousSummary.storyTime}
+当前位置：${previousSummary.currentLocation}
+角色状态：${previousSummary.characterStates}
+待处理事件：${previousSummary.pendingEvents || '无'}`
+      : '\n【说明】这是第一章，没有上一章信息。'
+
+    const prompt = `【章节正文内容】
+${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容已截断)' : ''}
+
+【章节序号】第${chapterNumber}章
+${previousInfo}
+
+请分析以上章节内容，提取章节结束时的故事状态摘要。直接返回 JSON 格式的结果。`
+
+    try {
+      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 1500, providerConfigId, modelId)
+
+      // 尝试解析 JSON
+      const jsonMatch = result.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0])
+        return {
+          success: true,
+          data: {
+            storyTime: data.storyTime || '',
+            currentLocation: data.currentLocation || '',
+            characterStates: data.characterStates || '',
+            pendingEvents: data.pendingEvents || '',
+            keyChanges: data.keyChanges || ''
+          }
+        }
+      }
+
+      return { success: false, error: 'AI 返回格式错误' }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  /**
+   * 获取章节生成时的状态摘要上下文
+   * 用于将上一章的结束状态传递给当前章的写作
+   */
+  async getChapterStateSummaryContext(
+    projectId: string,
+    chapterNumber: number
+  ): Promise<string> {
+    const dbManager = getDatabaseManager()
+
+    // 获取上一章的状态摘要
+    const previousSummary = await dbManager.lwChapterStateSummaries?.getLatestBeforeChapter(projectId, chapterNumber)
+
+    if (!previousSummary) {
+      return ''
+    }
+
+    // 构建状态摘要上下文
+    let context = '\n\n【重要：前文状态】请确保与上一章结束状态保持一致：\n'
+    context += `\n【故事时间】${previousSummary.storyTime}\n`
+    context += `\n【当前地点】${previousSummary.currentLocation || '未指定'}\n`
+
+    if (previousSummary.characterStates) {
+      context += `\n【角色状态】\n${previousSummary.characterStates}\n`
+    }
+
+    if (previousSummary.pendingEvents) {
+      context += `\n【待处理事件/伏笔】\n${previousSummary.pendingEvents}\n`
+    }
+
+    if (previousSummary.keyChanges) {
+      context += `\n【上一章关键变化】\n${previousSummary.keyChanges}\n`
+    }
+
+    context += '\n【注意事项】\n'
+    context += '1. 时间线要连续，本章开始时间应从上一章结束时间之后开始\n'
+    context += '2. 角色状态要与上一章结束状态一致\n'
+    context += '3. 待处理事件可在本章继续发展或解决\n'
+
+    return context
   }
 }
 

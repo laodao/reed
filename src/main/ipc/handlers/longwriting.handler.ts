@@ -276,7 +276,15 @@ const CHANNELS = {
   GET_STAGE_MODEL_CONFIGS: 'longwriting:getStageModelConfigs',
   GET_STAGE_MODEL_CONFIG: 'longwriting:getStageModelConfig',
   SET_STAGE_MODEL_CONFIG: 'longwriting:setStageModelConfig',
-  SET_STAGE_MODEL_CONFIGS: 'longwriting:setStageModelConfigs'
+  SET_STAGE_MODEL_CONFIGS: 'longwriting:setStageModelConfigs',
+
+  // 章节状态摘要
+  GET_CHAPTER_STATE_SUMMARIES: 'longwriting:getChapterStateSummaries',
+  GET_CHAPTER_STATE_SUMMARY: 'longwriting:getChapterStateSummary',
+  GET_CHAPTER_STATE_SUMMARY_BY_OUTLINE: 'longwriting:getChapterStateSummaryByOutline',
+  GET_LATEST_CHAPTER_STATE_SUMMARY: 'longwriting:getLatestChapterStateSummary',
+  EXTRACT_CHAPTER_STATE_SUMMARY: 'longwriting:extractChapterStateSummary',
+  SAVE_CHAPTER_STATE_SUMMARY: 'longwriting:saveChapterStateSummary'
 }
 
 /**
@@ -2805,6 +2813,138 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       return { success: true, data: result }
     } catch (error: any) {
       console.error('[IPC] 批量设置步骤模型配置失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 章节状态摘要 ====================
+
+  // 获取项目的所有章节状态摘要
+  ipcMain.handle(CHANNELS.GET_CHAPTER_STATE_SUMMARIES, async (_event, projectId: string) => {
+    try {
+      const dbManager = getDatabaseManager()
+      if (!dbManager.lwChapterStateSummaries) {
+        return { success: false, error: '数据库未初始化' }
+      }
+      const summaries = dbManager.lwChapterStateSummaries.getByProjectId(projectId)
+      return { success: true, data: summaries }
+    } catch (error: any) {
+      console.error('[IPC] 获取章节状态摘要列表失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 获取单个章节状态摘要
+  ipcMain.handle(CHANNELS.GET_CHAPTER_STATE_SUMMARY, async (_event, id: string) => {
+    try {
+      const dbManager = getDatabaseManager()
+      if (!dbManager.lwChapterStateSummaries) {
+        return { success: false, error: '数据库未初始化' }
+      }
+      const summary = dbManager.lwChapterStateSummaries.getById(id)
+      return { success: true, data: summary }
+    } catch (error: any) {
+      console.error('[IPC] 获取章节状态摘要失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 根据大纲 ID 获取章节状态摘要
+  ipcMain.handle(CHANNELS.GET_CHAPTER_STATE_SUMMARY_BY_OUTLINE, async (_event, outlineId: string) => {
+    try {
+      const dbManager = getDatabaseManager()
+      if (!dbManager.lwChapterStateSummaries) {
+        return { success: false, error: '数据库未初始化' }
+      }
+      const summary = dbManager.lwChapterStateSummaries.getByOutlineId(outlineId)
+      return { success: true, data: summary }
+    } catch (error: any) {
+      console.error('[IPC] 根据大纲获取章节状态摘要失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 获取项目的最新章节状态摘要
+  ipcMain.handle(CHANNELS.GET_LATEST_CHAPTER_STATE_SUMMARY, async (_event, projectId: string) => {
+    try {
+      const dbManager = getDatabaseManager()
+      if (!dbManager.lwChapterStateSummaries) {
+        return { success: false, error: '数据库未初始化' }
+      }
+      const summary = dbManager.lwChapterStateSummaries.getLatest(projectId)
+      return { success: true, data: summary }
+    } catch (error: any) {
+      console.error('[IPC] 获取最新章节状态摘要失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  // AI 提取章节状态摘要
+  ipcMain.handle(CHANNELS.EXTRACT_CHAPTER_STATE_SUMMARY, async (
+    event,
+    projectId: string,
+    outlineId: string,
+    chapterNumber: number,
+    chapterContent: string,
+    providerConfigId?: string,
+    modelId?: string
+  ) => {
+    try {
+      const dbManager = getDatabaseManager()
+      if (!dbManager.lwChapterStateSummaries) {
+        return { success: false, error: '数据库未初始化' }
+      }
+
+      // 获取上一章的状态摘要（用于传递给 AI）
+      const previousSummary = dbManager.lwChapterStateSummaries.getLatestBeforeChapter(projectId, chapterNumber)
+
+      const aiService = LongWritingAIService.getInstance()
+      const result = await aiService.extractChapterStateSummary(
+        BrowserWindow.fromWebContents(event.sender)!,
+        `extract-state-${Date.now()}`,
+        projectId,
+        outlineId,
+        chapterContent,
+        chapterNumber,
+        previousSummary ? {
+          storyTime: previousSummary.storyTime,
+          currentLocation: previousSummary.currentLocation,
+          characterStates: previousSummary.characterStates,
+          pendingEvents: previousSummary.pendingEvents
+        } : undefined,
+        providerConfigId,
+        modelId
+      )
+      return result
+    } catch (error: any) {
+      console.error('[IPC] AI 提取章节状态摘要失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 保存章节状态摘要
+  ipcMain.handle(CHANNELS.SAVE_CHAPTER_STATE_SUMMARY, async (
+    _event,
+    data: {
+      projectId: string
+      outlineId: string
+      chapterNumber: number
+      storyTime: string
+      currentLocation: string
+      characterStates: string
+      pendingEvents: string
+      keyChanges: string
+    }
+  ) => {
+    try {
+      const dbManager = getDatabaseManager()
+      if (!dbManager.lwChapterStateSummaries) {
+        return { success: false, error: '数据库未初始化' }
+      }
+      const summary = dbManager.lwChapterStateSummaries.upsert(data)
+      return { success: true, data: summary }
+    } catch (error: any) {
+      console.error('[IPC] 保存章节状态摘要失败:', error)
       return { success: false, error: error.message }
     }
   })
