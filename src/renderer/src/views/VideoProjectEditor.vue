@@ -186,24 +186,39 @@
                   <div
                     v-for="binding in store.characterBindings"
                     :key="binding.id"
-                    class="binding-item"
+                    class="binding-card character-card"
+                    @click="showCharacterDetail(binding.longWritingCharacterId)"
                   >
-                    <div class="binding-name">
-                      {{ getCharacterName(binding.longWritingCharacterId) }}
+                    <div class="card-header">
+                      <div class="card-icon character-icon">
+                        <el-icon size="24"><User /></el-icon>
+                      </div>
+                      <div class="card-title">
+                        <div class="binding-name">{{ getCharacterName(binding.longWritingCharacterId) }}</div>
+                        <el-tag size="small" type="primary" v-if="getCharacterRolePosition(binding.longWritingCharacterId)">
+                          {{ getRolePositionLabel(getCharacterRolePosition(binding.longWritingCharacterId)) }}
+                        </el-tag>
+                      </div>
                     </div>
-                    <div class="binding-config">
-                      <el-tag v-if="binding.portraitId" size="small" type="success">
-                        已绑定人像
-                      </el-tag>
-                      <el-tag v-else size="small" type="info">
-                        未绑定人像
-                      </el-tag>
+                    <div class="card-body">
+                      <div class="binding-status">
+                        <el-tag v-if="binding.portraitId" size="small" type="success">
+                          <el-icon><Check /></el-icon>
+                          已绑定人像
+                        </el-tag>
+                        <el-tag v-else size="small" type="warning">
+                          <el-icon><Warning /></el-icon>
+                          未绑定人像
+                        </el-tag>
+                      </div>
                     </div>
-                    <div class="binding-actions">
-                      <el-button text size="small" @click="editBinding(binding)">
+                    <div class="card-footer">
+                      <el-button text size="small" @click.stop="editBinding(binding)">
+                        <el-icon><Edit /></el-icon>
                         编辑
                       </el-button>
-                      <el-button text size="small" type="danger" @click="removeBinding(binding)">
+                      <el-button text size="small" type="danger" @click.stop="removeBinding(binding)">
+                        <el-icon><Delete /></el-icon>
                         移除
                       </el-button>
                     </div>
@@ -229,24 +244,39 @@
                   <div
                     v-for="binding in store.itemBindings"
                     :key="binding.id"
-                    class="binding-item"
+                    class="binding-card item-card"
+                    @click="showItemDetail(binding.longWritingItemId)"
                   >
-                    <div class="binding-name">
-                      {{ binding.itemName }}
+                    <div class="card-header">
+                      <div class="card-icon item-icon">
+                        <el-icon size="24"><Box /></el-icon>
+                      </div>
+                      <div class="card-title">
+                        <div class="binding-name">{{ binding.itemName }}</div>
+                        <el-tag size="small" type="warning" v-if="getItemImportance(binding.longWritingItemId)">
+                          {{ getEntityImportanceLabel(getItemImportance(binding.longWritingItemId)) }}
+                        </el-tag>
+                      </div>
                     </div>
-                    <div class="binding-config">
-                      <el-tag v-if="binding.imagePaths && binding.imagePaths.length > 0" size="small" type="success">
-                        {{ binding.imagePaths.length }} 张图片
-                      </el-tag>
-                      <el-tag v-else size="small" type="info">
-                        未绑定图片
-                      </el-tag>
+                    <div class="card-body">
+                      <div class="binding-status">
+                        <el-tag v-if="binding.imagePaths && binding.imagePaths.length > 0" size="small" type="success">
+                          <el-icon><Picture /></el-icon>
+                          {{ binding.imagePaths.length }} 张图片
+                        </el-tag>
+                        <el-tag v-else size="small" type="warning">
+                          <el-icon><Warning /></el-icon>
+                          未绑定图片
+                        </el-tag>
+                      </div>
                     </div>
-                    <div class="binding-actions">
-                      <el-button text size="small" @click="editItemBinding(binding)">
+                    <div class="card-footer">
+                      <el-button text size="small" @click.stop="editItemBinding(binding)">
+                        <el-icon><Edit /></el-icon>
                         编辑
                       </el-button>
-                      <el-button text size="small" type="danger" @click="removeItemBinding(binding)">
+                      <el-button text size="small" type="danger" @click.stop="removeItemBinding(binding)">
+                        <el-icon><Delete /></el-icon>
                         移除
                       </el-button>
                     </div>
@@ -272,24 +302,39 @@
                   <div
                     v-for="binding in store.locationBindings"
                     :key="binding.id"
-                    class="binding-item"
+                    class="binding-card location-card"
+                    @click="showLocationDetail(binding.longWritingLocationId)"
                   >
-                    <div class="binding-name">
-                      {{ binding.locationName }}
+                    <div class="card-header">
+                      <div class="card-icon location-icon">
+                        <el-icon size="24"><Location /></el-icon>
+                      </div>
+                      <div class="card-title">
+                        <div class="binding-name">{{ binding.locationName }}</div>
+                        <el-tag size="small" type="info" v-if="getLocationImportance(binding.longWritingLocationId)">
+                          {{ getEntityImportanceLabel(getLocationImportance(binding.longWritingLocationId)) }}
+                        </el-tag>
+                      </div>
                     </div>
-                    <div class="binding-config">
-                      <el-tag v-if="binding.imagePaths && binding.imagePaths.length > 0" size="small" type="success">
-                        {{ binding.imagePaths.length }} 张图片
-                      </el-tag>
-                      <el-tag v-else size="small" type="info">
-                        未绑定图片
-                      </el-tag>
+                    <div class="card-body">
+                      <div class="binding-status">
+                        <el-tag v-if="binding.imagePaths && binding.imagePaths.length > 0" size="small" type="success">
+                          <el-icon><Picture /></el-icon>
+                          {{ binding.imagePaths.length }} 张图片
+                        </el-tag>
+                        <el-tag v-else size="small" type="warning">
+                          <el-icon><Warning /></el-icon>
+                          未绑定图片
+                        </el-tag>
+                      </div>
                     </div>
-                    <div class="binding-actions">
-                      <el-button text size="small" @click="editLocationBinding(binding)">
+                    <div class="card-footer">
+                      <el-button text size="small" @click.stop="editLocationBinding(binding)">
+                        <el-icon><Edit /></el-icon>
                         编辑
                       </el-button>
-                      <el-button text size="small" type="danger" @click="removeLocationBinding(binding)">
+                      <el-button text size="small" type="danger" @click.stop="removeLocationBinding(binding)">
+                        <el-icon><Delete /></el-icon>
                         移除
                       </el-button>
                     </div>
@@ -1038,6 +1083,203 @@
       </template>
     </el-dialog>
 
+    <!-- 角色详情对话框 -->
+    <el-dialog
+      v-model="showCharacterDetailDialog"
+      title="角色详情"
+      width="700px"
+      class="entity-detail-dialog"
+      destroy-on-close
+    >
+      <div v-loading="characterDetailLoading" class="detail-content">
+        <template v-if="characterDetail">
+          <!-- 基本信息 -->
+          <div class="detail-section">
+            <div class="section-title">基本信息</div>
+            <div class="section-content">
+              <el-descriptions :column="3" border>
+                <el-descriptions-item label="名称">{{ characterDetail.name }}</el-descriptions-item>
+                <el-descriptions-item label="性别">{{ getGenderLabel(characterDetail.gender) }}</el-descriptions-item>
+                <el-descriptions-item label="年龄">{{ characterDetail.age }} 岁</el-descriptions-item>
+                <el-descriptions-item label="身高">{{ characterDetail.height ? `${characterDetail.height} cm` : '-' }}</el-descriptions-item>
+                <el-descriptions-item label="体重">{{ characterDetail.weight ? `${characterDetail.weight} kg` : '-' }}</el-descriptions-item>
+                <el-descriptions-item label="人种">{{ characterDetail.race ? getRaceLabel(characterDetail.race) : '-' }}</el-descriptions-item>
+                <el-descriptions-item label="职业">{{ characterDetail.occupation || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="职务">{{ characterDetail.position || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="角色定位">
+                  <el-tag size="small" type="primary">{{ getRolePositionLabel(characterDetail.rolePosition) }}</el-tag>
+                </el-descriptions-item>
+                <el-descriptions-item label="重要性">
+                  <el-tag size="small" :type="getImportanceType(characterDetail.importance)">
+                    {{ getEntityImportanceLabel(characterDetail.importance) }}
+                  </el-tag>
+                </el-descriptions-item>
+              </el-descriptions>
+            </div>
+          </div>
+
+          <!-- 详细设定 -->
+          <div class="detail-section">
+            <div class="section-title">详细设定</div>
+            <div class="section-content">
+              <el-descriptions :column="1" border>
+                <el-descriptions-item label="外貌描述">
+                  <div class="description-text">{{ characterDetail.appearance || '-' }}</div>
+                </el-descriptions-item>
+                <el-descriptions-item label="性格特点">
+                  <div class="description-text">{{ characterDetail.personality || '-' }}</div>
+                </el-descriptions-item>
+                <el-descriptions-item label="背景故事">
+                  <div class="description-text">{{ characterDetail.background || '-' }}</div>
+                </el-descriptions-item>
+                <el-descriptions-item label="能力特长">
+                  <div class="description-text">{{ characterDetail.abilities || '-' }}</div>
+                </el-descriptions-item>
+                <el-descriptions-item label="主要事件">
+                  <div class="description-text">{{ characterDetail.majorEvents || '-' }}</div>
+                </el-descriptions-item>
+              </el-descriptions>
+            </div>
+          </div>
+
+          <!-- AI 可见信息 -->
+          <div class="detail-section ai-section">
+            <div class="section-title">
+              <el-icon><InfoFilled /></el-icon>
+              AI 可见信息
+            </div>
+            <div class="section-content">
+              <div class="ai-info-box">
+                <div class="ai-info-hint">以下信息将提交给 AI 用于剧本和分镜生成：</div>
+                <pre class="ai-info-code">{{ formatCharacterAIInfo(characterDetail) }}</pre>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+      <template #footer>
+        <el-button @click="showCharacterDetailDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 物品详情对话框 -->
+    <el-dialog
+      v-model="showItemDetailDialog"
+      title="物品详情"
+      width="600px"
+      class="entity-detail-dialog"
+      destroy-on-close
+    >
+      <div v-loading="itemDetailLoading" class="detail-content">
+        <template v-if="itemDetail">
+          <!-- 基本信息 -->
+          <div class="detail-section">
+            <div class="section-title">基本信息</div>
+            <div class="section-content">
+              <el-descriptions :column="2" border>
+                <el-descriptions-item label="名称">{{ itemDetail.name }}</el-descriptions-item>
+                <el-descriptions-item label="类型">
+                  <el-tag size="small">{{ getItemTypeLabel(itemDetail.type) }}</el-tag>
+                </el-descriptions-item>
+                <el-descriptions-item label="等级">
+                  <el-tag size="small" type="warning">{{ getItemLevelLabel(itemDetail.level) }}</el-tag>
+                </el-descriptions-item>
+                <el-descriptions-item label="重要性">
+                  <el-tag size="small" :type="getImportanceType(itemDetail.importance)">
+                    {{ getEntityImportanceLabel(itemDetail.importance) }}
+                  </el-tag>
+                </el-descriptions-item>
+                <el-descriptions-item label="持有者" :span="2">
+                  {{ itemDetail.ownerId ? getCharacterName(itemDetail.ownerId) : '-' }}
+                </el-descriptions-item>
+              </el-descriptions>
+            </div>
+          </div>
+
+          <!-- 详细描述 -->
+          <div class="detail-section">
+            <div class="section-title">详细描述</div>
+            <div class="section-content">
+              <div class="description-text">{{ itemDetail.description || '-' }}</div>
+            </div>
+          </div>
+
+          <!-- AI 可见信息 -->
+          <div class="detail-section ai-section">
+            <div class="section-title">
+              <el-icon><InfoFilled /></el-icon>
+              AI 可见信息
+            </div>
+            <div class="section-content">
+              <div class="ai-info-box">
+                <div class="ai-info-hint">以下信息将提交给 AI 用于剧本和分镜生成：</div>
+                <pre class="ai-info-code">{{ formatItemAIInfo(itemDetail) }}</pre>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+      <template #footer>
+        <el-button @click="showItemDetailDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 地点详情对话框 -->
+    <el-dialog
+      v-model="showLocationDetailDialog"
+      title="地点详情"
+      width="600px"
+      class="entity-detail-dialog"
+      destroy-on-close
+    >
+      <div v-loading="locationDetailLoading" class="detail-content">
+        <template v-if="locationDetail">
+          <!-- 基本信息 -->
+          <div class="detail-section">
+            <div class="section-title">基本信息</div>
+            <div class="section-content">
+              <el-descriptions :column="2" border>
+                <el-descriptions-item label="名称">{{ locationDetail.name }}</el-descriptions-item>
+                <el-descriptions-item label="类型">
+                  <el-tag size="small" type="info">{{ getLocationTypeLabel(locationDetail.type) }}</el-tag>
+                </el-descriptions-item>
+                <el-descriptions-item label="重要性">
+                  <el-tag size="small" :type="getImportanceType(locationDetail.importance)">
+                    {{ getEntityImportanceLabel(locationDetail.importance) }}
+                  </el-tag>
+                </el-descriptions-item>
+              </el-descriptions>
+            </div>
+          </div>
+
+          <!-- 详细描述 -->
+          <div class="detail-section">
+            <div class="section-title">详细描述</div>
+            <div class="section-content">
+              <div class="description-text">{{ locationDetail.description || '-' }}</div>
+            </div>
+          </div>
+
+          <!-- AI 可见信息 -->
+          <div class="detail-section ai-section">
+            <div class="section-title">
+              <el-icon><InfoFilled /></el-icon>
+              AI 可见信息
+            </div>
+            <div class="section-content">
+              <div class="ai-info-box">
+                <div class="ai-info-hint">以下信息将提交给 AI 用于剧本和分镜生成：</div>
+                <pre class="ai-info-code">{{ formatLocationAIInfo(locationDetail) }}</pre>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+      <template #footer>
+        <el-button @click="showLocationDetailDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 图片预览对话框 -->
     <el-dialog
       v-model="showImagePreview"
@@ -1092,7 +1334,7 @@
 import { ref, reactive, computed, onMounted, watch, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Setting, Plus, MagicStick, Picture, VideoPlay, Delete, InfoFilled, Headset, ZoomIn, RefreshRight } from '@element-plus/icons-vue'
+import { ArrowLeft, Setting, Plus, MagicStick, Picture, VideoPlay, Delete, InfoFilled, Headset, ZoomIn, RefreshRight, User, Box, Location, Edit, Check, Warning } from '@element-plus/icons-vue'
 import { useStoryToVideoStore } from '@/stores/story-to-video'
 import { useTabsStore } from '@/stores/tabs'
 import type { VideoEpisode, VideoProject, SceneScript, CharacterBinding, ItemBinding, LocationBinding } from '../../../shared/types/story-to-video.types'
@@ -1232,6 +1474,21 @@ const showBindLocationDialog = ref(false)
 const showGenerateImagesDialog = ref(false)
 const showSynthesisDialog = ref(false)
 const showStoryboardEditDialog = ref(false)
+
+// 详情对话框状态
+const showCharacterDetailDialog = ref(false)
+const showItemDetailDialog = ref(false)
+const showLocationDetailDialog = ref(false)
+
+// 详情数据
+const characterDetail = ref<import('../../../shared/types/longwriting.types').StoryCharacter | null>(null)
+const itemDetail = ref<import('../../../shared/types/longwriting.types').StoryItem | null>(null)
+const locationDetail = ref<import('../../../shared/types/longwriting.types').StoryLocation | null>(null)
+
+// 详情加载状态
+const characterDetailLoading = ref(false)
+const itemDetailLoading = ref(false)
+const locationDetailLoading = ref(false)
 
 // 选中的分镜（用于生成画面）
 const selectedStoryboard = ref<import('../../../shared/types/story-to-video.types').Storyboard | null>(null)
@@ -3088,6 +3345,236 @@ function getCharacterName(characterId: string): string {
   return char?.name || characterId
 }
 
+// ==================== 详情显示相关 ====================
+
+/**
+ * 显示角色详情
+ */
+async function showCharacterDetail(characterId: string) {
+  characterDetailLoading.value = true
+  showCharacterDetailDialog.value = true
+  characterDetail.value = null
+
+  try {
+    const result = await window.electronAPI.longwriting.getCharacter(characterId)
+    if (result.success && result.data) {
+      characterDetail.value = result.data
+    } else {
+      ElMessage.error('获取角色详情失败')
+      showCharacterDetailDialog.value = false
+    }
+  } catch (error) {
+    console.error('获取角色详情失败:', error)
+    ElMessage.error('获取角色详情失败')
+    showCharacterDetailDialog.value = false
+  } finally {
+    characterDetailLoading.value = false
+  }
+}
+
+/**
+ * 显示物品详情
+ */
+async function showItemDetail(itemId: string) {
+  itemDetailLoading.value = true
+  showItemDetailDialog.value = true
+  itemDetail.value = null
+
+  try {
+    const result = await window.electronAPI.longwriting.getItem(itemId)
+    if (result.success && result.data) {
+      itemDetail.value = result.data
+    } else {
+      ElMessage.error('获取物品详情失败')
+      showItemDetailDialog.value = false
+    }
+  } catch (error) {
+    console.error('获取物品详情失败:', error)
+    ElMessage.error('获取物品详情失败')
+    showItemDetailDialog.value = false
+  } finally {
+    itemDetailLoading.value = false
+  }
+}
+
+/**
+ * 显示地点详情
+ */
+async function showLocationDetail(locationId: string) {
+  locationDetailLoading.value = true
+  showLocationDetailDialog.value = true
+  locationDetail.value = null
+
+  try {
+    const result = await window.electronAPI.longwriting.getLocation(locationId)
+    if (result.success && result.data) {
+      locationDetail.value = result.data
+    } else {
+      ElMessage.error('获取地点详情失败')
+      showLocationDetailDialog.value = false
+    }
+  } catch (error) {
+    console.error('获取地点详情失败:', error)
+    ElMessage.error('获取地点详情失败')
+    showLocationDetailDialog.value = false
+  } finally {
+    locationDetailLoading.value = false
+  }
+}
+
+// ==================== 辅助方法：标签转换 ====================
+
+/**
+ * 获取角色定位标签
+ */
+function getRolePositionLabel(rolePosition: string): string {
+  const labels: Record<string, string> = {
+    protagonist: '主角',
+    supporting: '配角',
+    antagonist: '反派',
+    minor: '龙套'
+  }
+  return labels[rolePosition] || rolePosition
+}
+
+/**
+ * 获取性别标签
+ */
+function getGenderLabel(gender: string): string {
+  const labels: Record<string, string> = {
+    male: '男',
+    female: '女',
+    other: '其他'
+  }
+  return labels[gender] || gender
+}
+
+/**
+ * 获取人种标签
+ */
+function getRaceLabel(race: string): string {
+  const labels: Record<string, string> = {
+    asian: '亚洲人',
+    european: '欧洲人',
+    other: '其他'
+  }
+  return labels[race] || race
+}
+
+/**
+ * 获取实体重要性标签
+ */
+function getEntityImportanceLabel(importance: string): string {
+  const labels: Record<string, string> = {
+    main: '主要',
+    secondary: '次要',
+    temporary: '临时'
+  }
+  return labels[importance] || importance
+}
+
+/**
+ * 获取重要性类型（用于标签颜色）
+ */
+function getImportanceType(importance: string): string {
+  const types: Record<string, string> = {
+    main: 'danger',
+    secondary: 'warning',
+    temporary: 'info'
+  }
+  return types[importance] || 'info'
+}
+
+/**
+ * 获取物品类型标签
+ */
+function getItemTypeLabel(type: string): string {
+  const labels: Record<string, string> = {
+    weapon: '武器',
+    artifact: '神器',
+    medicine: '丹药',
+    manual: '秘籍',
+    token: '信物',
+    other: '其他'
+  }
+  return labels[type] || type
+}
+
+/**
+ * 获取物品等级标签
+ */
+function getItemLevelLabel(level: string): string {
+  const labels: Record<string, string> = {
+    common: '普通',
+    rare: '稀有',
+    legendary: '传说',
+    divine: '神级'
+  }
+  return labels[level] || level
+}
+
+/**
+ * 获取角色角色定位（从缓存中获取）
+ */
+function getCharacterRolePosition(characterId: string): string | undefined {
+  // 这里需要从已加载的角色数据中获取，由于当前缓存只有id和name，返回undefined
+  // 实际使用时需要在 showCharacterDetail 中已加载完整数据
+  return undefined
+}
+
+/**
+ * 获取物品重要性（从缓存中获取）
+ */
+function getItemImportance(itemId: string): string | undefined {
+  return undefined
+}
+
+/**
+ * 获取地点重要性（从缓存中获取）
+ */
+function getLocationImportance(locationId: string): string | undefined {
+  return undefined
+}
+
+/**
+ * 格式化角色 AI 信息
+ */
+function formatCharacterAIInfo(character: import('../../../shared/types/longwriting.types').StoryCharacter): string {
+  const parts = [
+    `【角色】${character.name}`,
+    `角色定位：${getRolePositionLabel(character.rolePosition)}`,
+    character.personality ? `性格特点：${character.personality}` : null,
+    character.appearance ? `外貌描述：${character.appearance}` : null,
+    character.abilities ? `能力特长：${character.abilities}` : null
+  ].filter(Boolean)
+  return parts.join('\n')
+}
+
+/**
+ * 格式化物品 AI 信息
+ */
+function formatItemAIInfo(item: import('../../../shared/types/longwriting.types').StoryItem): string {
+  const parts = [
+    `【物品】${item.name}`,
+    `类型：${getItemTypeLabel(item.type)}`,
+    `等级：${getItemLevelLabel(item.level)}`,
+    item.description ? `描述：${item.description}` : null
+  ].filter(Boolean)
+  return parts.join('\n')
+}
+
+/**
+ * 格式化地点 AI 信息
+ */
+function formatLocationAIInfo(location: import('../../../shared/types/longwriting.types').StoryLocation): string {
+  const parts = [
+    `【地点】${location.name}`,
+    `类型：${getLocationTypeLabel(location.type)}`,
+    location.description ? `描述：${location.description}` : null
+  ].filter(Boolean)
+  return parts.join('\n')
+}
+
 /**
  * 绑定角色
  */
@@ -4099,25 +4586,181 @@ watch(outlineSearchText, (val) => {
   padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
-.binding-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px;
+// 卡片式绑定项样式
+.binding-card {
   background: var(--el-fill-color-blank);
   border: 1px solid var(--el-border-color-light);
-  border-radius: 6px;
+  border-radius: 12px;
+  padding: 16px;
+  cursor: pointer;
+  transition: all 0.3s ease;
 
-  .binding-name {
-    font-weight: 500;
+  &:hover {
+    border-color: var(--el-color-primary-light-5);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    transform: translateY(-2px);
   }
 
-  .binding-actions {
+  .card-header {
     display: flex;
-    gap: 4px;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .card-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+
+    &.character-icon {
+      background: linear-gradient(135deg, var(--el-color-primary-light-8), var(--el-color-primary-light-5));
+      color: var(--el-color-primary);
+    }
+
+    &.item-icon {
+      background: linear-gradient(135deg, var(--el-color-warning-light-8), var(--el-color-warning-light-5));
+      color: var(--el-color-warning);
+    }
+
+    &.location-icon {
+      background: linear-gradient(135deg, var(--el-color-info-light-8), var(--el-color-info-light-5));
+      color: var(--el-color-info);
+    }
+  }
+
+  .card-title {
+    flex: 1;
+    min-width: 0;
+
+    .binding-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--el-text-color-primary);
+      margin-bottom: 6px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .el-tag {
+      margin-right: 4px;
+    }
+  }
+
+  .card-body {
+    margin-bottom: 12px;
+
+    .binding-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+
+      .el-tag {
+        .el-icon {
+          margin-right: 4px;
+        }
+      }
+    }
+  }
+
+  .card-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--el-border-color-lighter);
+
+    .el-button {
+      .el-icon {
+        margin-right: 4px;
+      }
+    }
+  }
+}
+
+// 详情对话框样式
+.entity-detail-dialog {
+  .detail-content {
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+
+  .detail-section {
+    margin-bottom: 20px;
+    border: 1px solid var(--el-border-color-light);
+    border-radius: 8px;
+    overflow: hidden;
+
+    &.ai-section {
+      border-color: var(--el-color-warning-light-5);
+      background: var(--el-color-warning-light-9);
+    }
+
+    .section-title {
+      padding: 12px 16px;
+      font-weight: 600;
+      font-size: 14px;
+      background: var(--el-fill-color-light);
+      border-bottom: 1px solid var(--el-border-color-light);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+
+      .el-icon {
+        color: var(--el-color-warning);
+      }
+    }
+
+    .section-content {
+      padding: 16px;
+    }
+  }
+
+  .description-text {
+    white-space: pre-wrap;
+    line-height: 1.6;
+    color: var(--el-text-color-regular);
+  }
+
+  .ai-info-box {
+    .ai-info-hint {
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+      margin-bottom: 12px;
+    }
+
+    .ai-info-code {
+      background: var(--el-color-primary-light-9);
+      border: 1px solid var(--el-color-primary-light-7);
+      border-radius: 6px;
+      padding: 12px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin: 0;
+      color: var(--el-text-color-primary);
+    }
+  }
+
+  :deep(.el-descriptions) {
+    .el-descriptions__label {
+      width: 100px;
+      font-weight: 500;
+    }
+
+    .el-descriptions__content {
+      word-break: break-word;
+    }
   }
 }
 
