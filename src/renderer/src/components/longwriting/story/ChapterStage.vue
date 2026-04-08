@@ -1020,87 +1020,106 @@ async function extractEntityStatesFromChapter(outlineId: string) {
   try {
     const chapterNumber = calculateChapterNumber(outlineId)
 
-    // 构建涉及的实体列表
+    // 第一步：检测章节中出现的所有实体（包括新实体）
+    ElMessage.info('正在检测章节中的实体...')
+
+    const detectResult = await window.electronAPI.longwriting.detectNewEntities(
+      props.projectId,
+      content,
+      outlineId,
+      chapterNumber
+    )
+
+    // 第二步：如果有新实体，自动添加到数据库
+    let addedCount = { characters: 0, locations: 0, items: 0 }
+    if (detectResult.success && detectResult.data) {
+      const newEntities = detectResult.data
+      const hasNewEntities = newEntities.newCharacters?.length > 0 ||
+                            newEntities.newLocations?.length > 0 ||
+                            newEntities.newItems?.length > 0
+
+      if (hasNewEntities) {
+        ElMessage.info(`发现新实体：${newEntities.newCharacters?.length || 0} 个角色，${newEntities.newLocations?.length || 0} 个地点，${newEntities.newItems?.length || 0} 个物品，正在添加...`)
+
+        const addResult = await window.electronAPI.longwriting.autoAddEntities(
+          props.projectId,
+          newEntities.newCharacters,
+          newEntities.newLocations,
+          newEntities.newItems
+        )
+
+        if (addResult.success && addResult.data) {
+          addedCount.characters = addResult.data.addedCharacters?.length || 0
+          addedCount.locations = addResult.data.addedLocations?.length || 0
+          addedCount.items = addResult.data.addedItems?.length || 0
+          ElMessage.success(`已添加 ${addedCount.characters} 个角色，${addedCount.locations} 个地点，${addedCount.items} 个物品`)
+
+          // 刷新本地角色、地点、物品列表
+          await loadCharacters()
+          await loadLocations()
+        }
+      }
+    }
+
+    // 第三步：构建涉及的实体列表（包括已有和新添加的）
     const involvedEntities: Array<{ type: string; id: string; name: string }> = []
 
-    // 添加涉及的角色
-    for (const charId of outline.involvedCharacters || []) {
-      const char = characters.value.find(c => c.id === charId)
-      if (char) {
+    // 重新获取最新的角色和地点列表（包含新添加的）
+    const latestCharactersResult = await window.electronAPI.longwriting.getCharacters(props.projectId)
+    const latestLocationsResult = await window.electronAPI.longwriting.getLocations(props.projectId)
+    const latestItemsResult = await window.electronAPI.longwriting.getItems(props.projectId)
+
+    const latestCharacters = latestCharactersResult.success ? latestCharactersResult.data || [] : []
+    const latestLocations = latestLocationsResult.success ? latestLocationsResult.data || [] : []
+    const latestItems = latestItemsResult.success ? latestItemsResult.data || [] : []
+
+    // 识别章节中涉及的所有实体（通过名称匹配）
+    const recognizedEntityNames = new Set<string>()
+
+    // 检查每个角色是否在章节中出现
+    for (const char of latestCharacters) {
+      if (content.includes(char.name)) {
         involvedEntities.push({ type: 'character', id: char.id, name: char.name })
+        recognizedEntityNames.add(char.name)
       }
     }
 
-    // 添加涉及的地点
-    for (const locId of outline.involvedLocations || []) {
-      const loc = locations.value.find(l => l.id === locId)
-      if (loc) {
+    // 检查每个地点是否在章节中出现
+    for (const loc of latestLocations) {
+      if (content.includes(loc.name)) {
         involvedEntities.push({ type: 'location', id: loc.id, name: loc.name })
+        recognizedEntityNames.add(loc.name)
       }
     }
 
-    // 如果没有涉及实体，先自动识别
+    // 检查每个物品是否在章节中出现
+    for (const item of latestItems) {
+      if (content.includes(item.name)) {
+        involvedEntities.push({ type: 'item', id: item.id, name: item.name })
+        recognizedEntityNames.add(item.name)
+      }
+    }
+
+    // 更新大纲的涉及实体（同步更新）
+    const charIds = involvedEntities.filter(e => e.type === 'character').map(e => e.id)
+    const locIds = involvedEntities.filter(e => e.type === 'location').map(e => e.id)
+    await window.electronAPI.longwriting.updateOutline(outlineId, {
+      involvedCharacters: charIds,
+      involvedLocations: locIds
+    })
+    outline.involvedCharacters = charIds
+    outline.involvedLocations = locIds
+
+    // 如果没有识别到任何实体
     if (involvedEntities.length === 0) {
-      ElMessage.info('正在识别章节涉及的实体...')
-
-      const recognizeResult = await window.electronAPI.longwriting.recognizeChapterEntities(
-        props.projectId,
-        content,
-        selectedModel.value.providerId,
-        selectedModel.value.modelId
-      )
-
-      if (!recognizeResult.success || !recognizeResult.data) {
-        ElMessage.error(recognizeResult.error || '识别实体失败')
-        extractingStates.value = false
-        return
-      }
-
-      const recognizedData = recognizeResult.data
-      const recognizedChars = recognizedData.characters || []
-      const recognizedLocs = recognizedData.locations || []
-
-      // 检查是否有新检测到的实体
-      if (recognizedData.newEntities && (
-        recognizedData.newEntities.newCharacters?.length > 0 ||
-        recognizedData.newEntities.newLocations?.length > 0 ||
-        recognizedData.newEntities.newItems?.length > 0
-      )) {
-        detectedNewEntities.value = recognizedData.newEntities
-        showNewEntitiesDialog.value = true
-      }
-
-      // 如果没有识别到任何实体且没有新实体
-      if (recognizedChars.length === 0 && recognizedLocs.length === 0 && !detectedNewEntities.value) {
-        ElMessage.warning('未识别到章节涉及的角色或地点')
-        extractingStates.value = false
-        return
-      }
-
-      // 自动更新大纲的涉及实体
-      const charIds = recognizedChars.map((c: any) => c.id)
-      const locIds = recognizedLocs.map((l: any) => l.id)
-
-      await window.electronAPI.longwriting.updateOutline(outlineId, {
-        involvedCharacters: charIds,
-        involvedLocations: locIds
-      })
-
-      // 更新本地状态
-      outline.involvedCharacters = charIds
-      outline.involvedLocations = locIds
-
-      // 重新构建 involvedEntities
-      for (const char of recognizedChars) {
-        involvedEntities.push({ type: 'character', id: char.id, name: char.name })
-      }
-      for (const loc of recognizedLocs) {
-        involvedEntities.push({ type: 'location', id: loc.id, name: loc.name })
-      }
-
-      ElMessage.success(`已识别 ${recognizedChars.length} 个角色，${recognizedLocs.length} 个地点`)
+      ElMessage.warning('未识别到章节涉及的角色、地点或物品')
+      extractingStates.value = false
+      return
     }
 
+    ElMessage.info(`识别到 ${involvedEntities.filter(e => e.type === 'character').length} 个角色，${involvedEntities.filter(e => e.type === 'location').length} 个地点，${involvedEntities.filter(e => e.type === 'item').length} 个物品，正在提取状态...`)
+
+    // 第四步：提取所有实体的状态
     const result = await window.electronAPI.longwriting.extractEntityStates(
       props.projectId,
       outlineId,
