@@ -25,6 +25,7 @@ import { VideoSynthesisService, PRESET_VIDEO_CONFIGS } from '../../services/vide
 import { VideoService } from '../../services/video.service'
 import { SecureStorageService } from '../../services/secure-storage.service'
 import { createVideoProvider } from '../../video-providers'
+import { EpisodeAutoBindingService } from '../../services/episode-auto-binding.service'
 
 /**
  * 将本地路径转换为 local-image URL
@@ -580,6 +581,7 @@ async function handleCreateEpisode(
     title: string
   }
 ): Promise<IpcResponse> {
+  console.log('[handleCreateEpisode] 收到请求:', { projectId, data })
   try {
     const db = DatabaseManager.getInstance()
     if (!db.videoEpisodes) {
@@ -605,6 +607,7 @@ async function handleCreateEpisode(
       }
     }
 
+    console.log('[handleCreateEpisode] 创建剧集...')
     const episode = db.videoEpisodes.create({
       projectId,
       sourceType: data.sourceType,
@@ -613,9 +616,21 @@ async function handleCreateEpisode(
       episodeNumber: data.episodeNumber,
       title: data.title
     })
+    console.log('[handleCreateEpisode] 剧集创建成功:', episode.id)
+
+    // 如果是关联章节模式，自动绑定实体
+    console.log('[handleCreateEpisode] 检查是否需要自动绑定:', { sourceType: data.sourceType, outlineId: data.outlineId })
+    if (data.sourceType === 'outline' && data.outlineId) {
+      console.log('[handleCreateEpisode] 开始自动绑定...')
+      const bindingResult = EpisodeAutoBindingService.autoBindEntities(projectId, data.outlineId)
+      console.log('[handleCreateEpisode] 自动绑定结果:', bindingResult)
+    } else {
+      console.log('[handleCreateEpisode] 跳过自动绑定')
+    }
 
     return { success: true, data: episode }
   } catch (error: any) {
+    console.error('[handleCreateEpisode] 创建剧集失败:', error)
     return { success: false, error: error.message || '创建剧集失败' }
   }
 }

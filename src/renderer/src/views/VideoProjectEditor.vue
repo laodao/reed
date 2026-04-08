@@ -2249,13 +2249,14 @@ async function createEpisode() {
     selectedOutlineInfo.value = null
     outlineSearchText.value = ''
     outlineTreeRef.value?.setCurrentKey(null)
+
+    // 刷新绑定数据（主进程已经自动绑定了角色、地点、物品）
+    await store.loadCharacterBindings(projectId.value)
+    await store.loadLocationBindings(projectId.value)
+    await store.loadItemBindings(projectId.value)
+
     // 选中新创建的剧集
     await selectEpisode(episode)
-
-    // 自动绑定章节涉及的角色（仅关联章节模式）
-    if (episodeForm.sourceType === 'outline' && episodeForm.outlineId) {
-      await autoBindCharactersFromOutline(episodeForm.outlineId)
-    }
   } else {
     ElMessage.error(store.error || '创建失败')
   }

@@ -160,13 +160,14 @@ export class LwEntityStateRepository {
   }
 
   /**
-   * 批量创建状态快照
+   * 批量创建状态快照（使用 upsert 逻辑，避免重复）
    */
   batchCreate(dataList: CreateEntityStateSnapshotRequest[]): EntityStateSnapshot[] {
     const results: EntityStateSnapshot[] = []
     const transaction = this.db.transaction(() => {
       for (const data of dataList) {
-        const snapshot = this.create(data)
+        // 使用 upsert 避免重复
+        const snapshot = this.upsert(data)
         results.push(snapshot)
       }
     })

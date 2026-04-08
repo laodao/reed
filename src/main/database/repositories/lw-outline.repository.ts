@@ -11,14 +11,17 @@ import {
 } from '../../../shared/types/longwriting.types'
 import { LwOutlineCharacterRepository } from './lw-outline-character.repository'
 import { LwOutlineLocationRepository } from './lw-outline-location.repository'
+import { LwOutlineItemRepository } from './lw-outline-item.repository'
 
 export class LwOutlineRepository {
   private outlineCharacterRepo: LwOutlineCharacterRepository
   private outlineLocationRepo: LwOutlineLocationRepository
+  private outlineItemRepo: LwOutlineItemRepository
 
   constructor(private db: Database.Database) {
     this.outlineCharacterRepo = new LwOutlineCharacterRepository(db)
     this.outlineLocationRepo = new LwOutlineLocationRepository(db)
+    this.outlineItemRepo = new LwOutlineItemRepository(db)
   }
 
   /**
@@ -75,16 +78,17 @@ export class LwOutlineRepository {
     const stmt = this.db.prepare(`
       INSERT INTO lw_story_outlines (
         id, project_id, parent_id, name, level, node_type, summary,
-        involved_characters, involved_locations, status, estimated_words, order_index,
+        involved_characters, involved_locations, involved_items, status, estimated_words, order_index,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
     `)
 
     // 保留JSON字段以兼容
     stmt.run(
       id, data.projectId, data.parentId || null, data.name, level,
       data.nodeType, data.summary || '', JSON.stringify(data.involvedCharacters || []),
-      JSON.stringify(data.involvedLocations || []), data.estimatedWords || 0, orderIndex,
+      JSON.stringify(data.involvedLocations || []), JSON.stringify(data.involvedItems || []),
+      data.estimatedWords || 0, orderIndex,
       now, now
     )
 
@@ -97,6 +101,10 @@ export class LwOutlineRepository {
       this.outlineLocationRepo.batchAdd(id, data.involvedLocations)
     }
 
+    if (data.involvedItems && data.involvedItems.length > 0) {
+      this.outlineItemRepo.batchAdd(id, data.involvedItems)
+    }
+
     return {
       id,
       projectId: data.projectId,
@@ -107,6 +115,7 @@ export class LwOutlineRepository {
       summary: data.summary || '',
       involvedCharacters: data.involvedCharacters || [],
       involvedLocations: data.involvedLocations || [],
+      involvedItems: data.involvedItems || [],
       status: 'pending',
       estimatedWords: data.estimatedWords || 0,
       orderIndex,
@@ -130,6 +139,7 @@ export class LwOutlineRepository {
       summary: data.summary,
       involved_characters: data.involvedCharacters ? JSON.stringify(data.involvedCharacters) : undefined,
       involved_locations: data.involvedLocations ? JSON.stringify(data.involvedLocations) : undefined,
+      involved_items: data.involvedItems ? JSON.stringify(data.involvedItems) : undefined,
       status: data.status,
       estimated_words: data.estimatedWords
     }
@@ -159,6 +169,10 @@ export class LwOutlineRepository {
 
     if (data.involvedLocations !== undefined) {
       this.outlineLocationRepo.replaceAll(id, data.involvedLocations)
+    }
+
+    if (data.involvedItems !== undefined) {
+      this.outlineItemRepo.replaceAll(id, data.involvedItems)
     }
 
     return this.getById(id)
@@ -205,6 +219,7 @@ export class LwOutlineRepository {
     // 删除关联数据
     this.outlineCharacterRepo.deleteByOutlineId(id)
     this.outlineLocationRepo.deleteByOutlineId(id)
+    this.outlineItemRepo.deleteByOutlineId(id)
 
     // 删除当前节点
     const stmt = this.db.prepare('DELETE FROM lw_story_outlines WHERE id = ?')
@@ -276,6 +291,13 @@ export class LwOutlineRepository {
   }
 
   /**
+   * 获取大纲涉及的物品ID列表（从关联表）
+   */
+  getItemIds(outlineId: string): string[] {
+    return this.outlineItemRepo.getItemIdsByOutlineId(outlineId)
+  }
+
+  /**
    * 更新大纲的角色关联
    */
   updateCharacterRelations(outlineId: string, characterIds: string[]): void {
@@ -290,6 +312,13 @@ export class LwOutlineRepository {
   }
 
   /**
+   * 更新大纲的物品关联
+   */
+  updateItemRelations(outlineId: string, itemIds: string[]): void {
+    this.outlineItemRepo.replaceAll(outlineId, itemIds)
+  }
+
+  /**
    * 批量获取大纲的角色ID映射
    */
   getCharacterIdsByOutlineIds(outlineIds: string[]): Map<string, string[]> {
@@ -301,6 +330,13 @@ export class LwOutlineRepository {
    */
   getLocationIdsByOutlineIds(outlineIds: string[]): Map<string, string[]> {
     return this.outlineLocationRepo.getLocationIdsByOutlineIds(outlineIds)
+  }
+
+  /**
+   * 批量获取大纲的物品ID映射
+   */
+  getItemIdsByOutlineIds(outlineIds: string[]): Map<string, string[]> {
+    return this.outlineItemRepo.getItemIdsByOutlineIds(outlineIds)
   }
 
   /**
@@ -331,6 +367,7 @@ export class LwOutlineRepository {
       summary: row.summary || '',
       involvedCharacters: this.parseJsonArray(row.involved_characters),
       involvedLocations: this.parseJsonArray(row.involved_locations),
+      involvedItems: this.parseJsonArray(row.involved_items),
       status: row.status,
       estimatedWords: row.estimated_words || 0,
       orderIndex: row.order_index || 0,

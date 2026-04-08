@@ -597,6 +597,15 @@ export interface NewCharacterInfo {
   description: string
   suggestedImportance: EntityImportance
   reason?: string                    // 建议重要性的理由
+  // AI 提取的完整角色信息
+  gender?: 'male' | 'female' | 'other'
+  age?: number
+  appearance?: string                // 外貌描述
+  background?: string                // 背景故事
+  personality?: string               // 性格特点
+  abilities?: string                 // 能力特长
+  occupation?: string                // 职业
+  rolePosition?: CharacterRolePosition  // 角色定位
 }
 
 /**
@@ -796,6 +805,7 @@ export interface StoryOutline {
   summary: string            // 节点概要
   involvedCharacters: string[]  // 涉及角色 ID 列表
   involvedLocations: string[]   // 涉及地点 ID 列表
+  involvedItems: string[]       // 涉及物品 ID 列表
   status: OutlineStatus
   estimatedWords: number
   orderIndex: number         // 排序索引
@@ -967,6 +977,7 @@ export interface CreateOutlineRequest {
   summary?: string
   involvedCharacters?: string[]
   involvedLocations?: string[]
+  involvedItems?: string[]
   estimatedWords?: number
 }
 
@@ -978,6 +989,7 @@ export interface UpdateOutlineRequest {
   summary?: string
   involvedCharacters?: string[]
   involvedLocations?: string[]
+  involvedItems?: string[]
   status?: OutlineStatus
   estimatedWords?: number
 }

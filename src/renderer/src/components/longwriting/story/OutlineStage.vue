@@ -209,6 +209,21 @@
           </el-select>
         </el-form-item>
 
+        <el-form-item label="涉及物品">
+          <el-select
+            v-model="nodeForm.involvedItems"
+            multiple
+            placeholder="选择涉及的物品"
+          >
+            <el-option
+              v-for="item in items"
+              :key="item.id"
+              :label="item.name"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+
         <el-form-item label="状态">
           <el-radio-group v-model="nodeForm.status" :disabled="!!editingNode">
             <el-radio value="pending">待写</el-radio>
@@ -292,6 +307,9 @@ const characters = ref<StoryCharacter[]>([])
 // 地点列表（用于关联选择）
 const locations = ref<any[]>([])
 
+// 物品列表（用于关联选择）
+const items = ref<any[]>([])
+
 // 对话框状态
 const showNodeDialog = ref(false)
 
@@ -324,6 +342,7 @@ const nodeForm = ref({
   estimatedWords: 0,
   involvedCharacters: [] as string[],
   involvedLocations: [] as string[],
+  involvedItems: [] as string[],
   status: 'pending' as OutlineStatus
 })
 
@@ -386,6 +405,7 @@ function addRootNode() {
     estimatedWords: 0,
     involvedCharacters: [],
     involvedLocations: [],
+    involvedItems: [],
     status: 'pending'
   }
   showNodeDialog.value = true
@@ -409,6 +429,7 @@ function addChildNode(parent: StoryOutline) {
     estimatedWords: 0,
     involvedCharacters: [],
     involvedLocations: [],
+    involvedItems: [],
     status: 'pending'
   }
   showNodeDialog.value = true
@@ -425,6 +446,7 @@ function editNode(node: StoryOutline) {
     estimatedWords: node.estimatedWords,
     involvedCharacters: node.involvedCharacters,
     involvedLocations: node.involvedLocations,
+    involvedItems: node.involvedItems || [],
     status: node.status
   }
   showNodeDialog.value = true
@@ -496,6 +518,7 @@ async function saveNode() {
       estimatedWords: formData.estimatedWords,
       involvedCharacters: formData.involvedCharacters,
       involvedLocations: formData.involvedLocations,
+      involvedItems: formData.involvedItems,
       status: formData.status
     })
     if (result.success) {
@@ -523,6 +546,7 @@ async function saveNode() {
       summary: formData.summary,
       involvedCharacters: formData.involvedCharacters,
       involvedLocations: formData.involvedLocations,
+      involvedItems: formData.involvedItems,
       status: formData.status,
       estimatedWords: formData.estimatedWords,
       orderIndex: siblings.length
@@ -864,13 +888,23 @@ async function loadLocations() {
   }
 }
 
-// 加载角色和地点列表
+// 加载物品列表
+async function loadItems() {
+  if (!props.projectId) return
+  const result = await window.electronAPI.longwriting.getItems(props.projectId)
+  if (result.success) {
+    items.value = result.data || []
+  }
+}
+
+// 加载角色、地点和物品列表
 async function loadReferences() {
   loading.value = true
   await Promise.all([
     loadOutlineTree(),
     loadCharacters(),
-    loadLocations()
+    loadLocations(),
+    loadItems()
   ])
   loading.value = false
   updateProgress()

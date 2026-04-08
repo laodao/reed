@@ -18,7 +18,8 @@ import {
   LocationType,
   ItemType,
   TemporaryCharacterTemplateType,
-  TemporaryLocationTemplateType
+  TemporaryLocationTemplateType,
+  CharacterRolePosition
 } from '../../shared/types/longwriting.types'
 import { TemporaryEntityTemplateService } from './temporary-entity-template.service'
 
@@ -26,7 +27,15 @@ import { TemporaryEntityTemplateService } from './temporary-entity-template.serv
  * AI 提取实体结果
  */
 interface AiExtractedEntities {
-  characters: Array<{ name: string; description: string }>
+  characters: Array<{
+    name: string
+    description: string
+    gender?: 'male' | 'female' | 'other'
+    age?: number
+    appearance?: string
+    personality?: string
+    occupation?: string
+  }>
   locations: Array<{ name: string; description: string }>
   items: Array<{ name: string; description: string }>
 }
@@ -68,7 +77,14 @@ export class LwEntityDetectionService {
         name: c.name,
         description: c.description,
         suggestedImportance: this.classifyCharacterImportance(c.name, c.description, text),
-        reason: this.getImportanceReason(c.name, c.description, text)
+        reason: this.getImportanceReason(c.name, c.description, text),
+        // 传递 AI 提取的完整信息
+        gender: c.gender,
+        age: c.age,
+        appearance: c.appearance || c.description,
+        personality: c.personality,
+        occupation: c.occupation,
+        rolePosition: this.mapImportanceToRolePosition(this.classifyCharacterImportance(c.name, c.description, text))
       }))
 
     const newLocations: NewLocationInfo[] = allEntities.locations
@@ -150,13 +166,15 @@ export class LwEntityDetectionService {
             const created = db.lwCharacters.create({
               projectId,
               name: char.name,
-              gender: 'other',
-              age: 25,
-              appearance: char.description,
-              background: '',
-              personality: '',
-              abilities: '',
-              rolePosition: this.mapImportanceToRolePosition(char.suggestedImportance),
+              // 使用 AI 提取的完整信息，未提供时使用默认值
+              gender: char.gender || 'other',
+              age: char.age || 25,
+              appearance: char.appearance || char.description,
+              background: char.background || '',
+              personality: char.personality || '',
+              abilities: char.abilities || '',
+              occupation: char.occupation,
+              rolePosition: char.rolePosition || this.mapImportanceToRolePosition(char.suggestedImportance),
               importance: char.suggestedImportance,
               templateType,
               majorEvents: ''
@@ -232,32 +250,50 @@ export class LwEntityDetectionService {
       // 获取 AI 配置
       const { SecureStorageService } = await import('./secure-storage.service')
       const { PROVIDER_TEMPLATES } = await import('./provider-template.service')
+      const { getDatabaseManager } = await import('../database')
 
-      const secureStorage = SecureStorageService.getInstance()
-      const activeProviderId = secureStorage.getActiveProvider()
-
-      if (!activeProviderId) {
-        console.warn('[LwEntityDetectionService] 无活跃的 AI Provider，返回空结果')
+      const dbManager = getDatabaseManager()
+      if (!dbManager.providerConfigs) {
+        console.warn('[LwEntityDetectionService] 数据库未初始化，返回空结果')
         return { characters: [], locations: [], items: [] }
       }
 
-      const apiKey = secureStorage.getApiKey(activeProviderId)
-      if (!apiKey) {
-        console.warn('[LwEntityDetectionService] 未找到 API Key，返回空结果')
+      // 获取默认提供商配置
+      let config = await dbManager.providerConfigs.getDefault()
+      if (!config) {
+        const enabledConfigs = await dbManager.providerConfigs.getEnabled()
+        if (enabledConfigs.length > 0) {
+          config = enabledConfigs[0]
+        }
+      }
+
+      if (!config || !config.apiKey) {
+        console.warn('[LwEntityDetectionService] 未找到可用的 AI Provider，返回空结果')
         return { characters: [], locations: [], items: [] }
       }
 
-      const template = PROVIDER_TEMPLATES.find(t => t.id === activeProviderId)
+      const template = PROVIDER_TEMPLATES.find(t => t.id === config!.templateId)
       if (!template) {
         console.warn('[LwEntityDetectionService] 未找到 Provider 模板，返回空结果')
         return { characters: [], locations: [], items: [] }
       }
 
+      // 解密 API 密钥
+      const secureStorage = SecureStorageService.getInstance()
+      if (!secureStorage.isInitialized()) {
+        await secureStorage.initialize()
+      }
+      const apiKey = secureStorage.decrypt(config.apiKey)
+
       const provider = createProvider(
         template.id,
-        { apiKey },
+        {
+          apiKey,
+          baseUrl: config.baseUrl,
+          defaultModel: config.defaultModel
+        },
         template,
-        {}
+        config
       )
 
       const prompt = `请分析以下小说文本，提取其中提到的所有角色、地点和物品。
@@ -270,7 +306,15 @@ ${text.substring(0, 4000)}
 请以 JSON 格式返回提取结果，格式如下：
 {
   "characters": [
-    { "name": "角色名称", "description": "简要描述" }
+    {
+      "name": "角色名称",
+      "description": "简要描述",
+      "gender": "性别（male/female/other，根据上下文推断）",
+      "age": 年龄（数字，根据上下文推断，不确定时可省略）,
+      "appearance": "外貌描述（从文本中提取，如无则省略）",
+      "personality": "性格特点（从文本中提取，如无则省略）",
+      "occupation": "职业/身份（如无则省略）"
+    }
   ],
   "locations": [
     { "name": "地点名称", "description": "简要描述" }
@@ -282,9 +326,11 @@ ${text.substring(0, 4000)}
 
 注意：
 1. 只提取在文本中明确出现或被提及的实体
-2. 描述应简短，不超过50字
+2. 角色描述应简短，不超过50字
 3. 不要遗漏任何实体，包括临时角色
-4. 只返回 JSON，不要其他解释`
+4. 尽可能从文本中推断角色的性别、年龄、外貌、性格、职业等信息
+5. 性别使用 male（男）、female（女）、other（其他/未知）
+6. 只返回 JSON，不要其他解释`
 
       const context = {
         systemPrompt: '你是一个专业的小说分析助手，擅长从文本中提取角色、地点和物品等实体信息。',

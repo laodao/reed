@@ -3,6 +3,17 @@
  * @module main/index
  */
 
+// Windows 终端编码设置：解决中文乱码问题
+if (process.platform === 'win32') {
+  // 设置 stdout 和 stderr 编码为 UTF-8
+  if (process.stdout && process.stdout.isTTY) {
+    process.stdout.setDefaultEncoding?.('utf8')
+  }
+  if (process.stderr && process.stderr.isTTY) {
+    process.stderr.setDefaultEncoding?.('utf8')
+  }
+}
+
 // 全局补丁：处理 EPIPE 错误
 // 当 stdout/stderr 管道断开时，console.log/error 会抛出 EPIPE 错误
 // 这个补丁在进程启动时尽早应用，避免任何 console 调用导致崩溃

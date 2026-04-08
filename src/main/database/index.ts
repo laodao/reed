@@ -50,6 +50,7 @@ import { LwPlotCharacterRepository } from './repositories/lw-plot-character.repo
 import { LwPlotLocationRepository } from './repositories/lw-plot-location.repository'
 import { LwOutlineCharacterRepository } from './repositories/lw-outline-character.repository'
 import { LwOutlineLocationRepository } from './repositories/lw-outline-location.repository'
+import { LwOutlineItemRepository } from './repositories/lw-outline-item.repository'
 import { LwSkillCharacterRepository } from './repositories/lw-skill-character.repository'
 import { LwDesignMessageRepository } from './repositories/lw-design-message.repository'
 import { LwMemoryEntityRepository } from './repositories/lw-memory-entity.repository'
@@ -132,6 +133,7 @@ export class DatabaseManager {
   public lwPlotLocations: LwPlotLocationRepository | null = null
   public lwOutlineCharacters: LwOutlineCharacterRepository | null = null
   public lwOutlineLocations: LwOutlineLocationRepository | null = null
+  public lwOutlineItems: LwOutlineItemRepository | null = null
   public lwSkillCharacters: LwSkillCharacterRepository | null = null
   public lwDesignMessages: LwDesignMessageRepository | null = null
   public lwMemoryEntities: LwMemoryEntityRepository | null = null
@@ -993,6 +995,7 @@ export class DatabaseManager {
         summary TEXT,
         involved_characters TEXT,
         involved_locations TEXT,
+        involved_items TEXT,
         status TEXT DEFAULT 'pending',
         estimated_words INTEGER,
         order_index INTEGER,
@@ -1334,6 +1337,21 @@ export class DatabaseManager {
     `)
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_outline_locations_outline ON lw_outline_locations(outline_id)`)
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_outline_locations_location ON lw_outline_locations(location_id)`)
+
+    // 大纲物品关联表（符合第三范式）
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS lw_outline_items (
+        id TEXT PRIMARY KEY,
+        outline_id TEXT NOT NULL,
+        item_id TEXT NOT NULL,
+        created_at INTEGER,
+        UNIQUE(outline_id, item_id),
+        FOREIGN KEY (outline_id) REFERENCES lw_story_outlines(id) ON DELETE CASCADE,
+        FOREIGN KEY (item_id) REFERENCES lw_story_items(id) ON DELETE SET NULL
+      )
+    `)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_outline_items_outline ON lw_outline_items(outline_id)`)
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_lw_outline_items_item ON lw_outline_items(item_id)`)
 
     // 技能角色关联表（符合第三范式，替代JSON存储）
     this.db.exec(`
@@ -3109,6 +3127,16 @@ export class DatabaseManager {
     if (this.lwTempLocationTemplates) {
       this.lwTempLocationTemplates.initializeDefaultData()
     }
+
+    // 检查并添加 lw_story_outlines 表的 involved_items 列
+    const outlineColumns = this.db.prepare("PRAGMA table_info(lw_story_outlines)").all() as any[]
+    const outlineColumnNames = outlineColumns.map(col => col.name)
+
+    if (!outlineColumnNames.includes('involved_items')) {
+      console.log('[DatabaseManager] 添加 lw_story_outlines.involved_items 列...')
+      this.db.exec('ALTER TABLE lw_story_outlines ADD COLUMN involved_items TEXT DEFAULT \'[]\'')
+      console.log('[DatabaseManager] lw_story_outlines.involved_items 列添加完成')
+    }
   }
 
   /**
@@ -3162,6 +3190,7 @@ export class DatabaseManager {
     this.lwPlotLocations = new LwPlotLocationRepository(this.db)
     this.lwOutlineCharacters = new LwOutlineCharacterRepository(this.db)
     this.lwOutlineLocations = new LwOutlineLocationRepository(this.db)
+    this.lwOutlineItems = new LwOutlineItemRepository(this.db)
     this.lwSkillCharacters = new LwSkillCharacterRepository(this.db)
     this.lwDesignMessages = new LwDesignMessageRepository(this.db)
     this.lwMemoryEntities = new LwMemoryEntityRepository(this.db)
