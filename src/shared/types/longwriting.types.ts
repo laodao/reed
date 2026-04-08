@@ -809,6 +809,7 @@ export interface StoryOutline {
   status: OutlineStatus
   estimatedWords: number
   orderIndex: number         // 排序索引
+  prewriteConfirmed?: boolean // 是否已确认预写（附加字段，不在数据库中）
   createdAt: number
   updatedAt: number
 }

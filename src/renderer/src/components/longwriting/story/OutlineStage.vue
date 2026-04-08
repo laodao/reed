@@ -105,7 +105,12 @@
                         <span v-if="section.estimatedWords">{{ section.estimatedWords }}字</span>
                       </div>
                       <div class="node-actions">
-                        <el-button text size="small" type="primary" @click="startPrewrite(section)">
+                        <el-button
+                          text
+                          size="small"
+                          :type="section.prewriteConfirmed ? 'success' : 'primary'"
+                          @click="startPrewrite(section)"
+                        >
                           <el-icon><Document /></el-icon>
                           预写
                         </el-button>
@@ -1284,6 +1289,9 @@ async function saveMemories() {
 
       ElMessage.success(`已保存 ${result.data?.length || 0} 条记忆`)
       showMemoryDialog.value = false
+      showPrewriteDialog.value = false
+      // 刷新大纲树以更新预写按钮状态
+      await loadOutlineTree()
       await loadMemoryStats()
     } else {
       ElMessage.error(result.error || '保存记忆失败')

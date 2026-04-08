@@ -738,13 +738,28 @@ export class LongWritingService {
 
   /**
    * 获取项目的大纲树（返回平铺列表，前端自行构建树）
+   * 同时附加预写确认状态
    */
   async getOutlineTree(projectId: string): Promise<StoryOutline[]> {
     if (!this.db.lwOutlines) {
       throw new Error('数据库未初始化')
     }
-    // 返回平铺列表，让前端根据 parentId 构建树
-    return this.db.lwOutlines.getByProjectId(projectId)
+    // 获取大纲列表
+    const outlines = this.db.lwOutlines.getByProjectId(projectId)
+
+    // 批量获取预写状态
+    if (this.db.lwPrewrites && outlines.length > 0) {
+      const outlineIds = outlines.map(o => o.id)
+      const prewrites = this.db.lwPrewrites.getByOutlineIds(outlineIds)
+
+      // 附加预写确认状态到大纲节点
+      for (const outline of outlines) {
+        const prewrite = prewrites.get(outline.id)
+        outline.prewriteConfirmed = prewrite?.isConfirmed ?? false
+      }
+    }
+
+    return outlines
   }
 
   /**
