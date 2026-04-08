@@ -328,6 +328,20 @@ ${text.substring(0, 4000)}
 1. 只提取在文本中明确出现或被提及的实体
 2. 角色描述应简短，不超过50字
 3. 不要遗漏任何实体，包括临时角色
+
+【重要】地点提取规则（必须提取以下地点）：
+- 主要活动场所：如办公室、住所、安全屋、常驻地等（这些地点后续章节很可能再次出现）
+- 重要场景：案件发生地、会面地点、藏身处等
+- 具名建筑：如"公安局"、"医院"、"银行"等机构场所
+- 哪怕只是短暂提及的地点，如果可能再次出现，也要提取
+
+【重要】物品提取规则（必须提取以下物品）：
+- 关键证物：如文件、U盘、录音、照片等（对剧情有推动作用）
+- 重要道具：如电脑、手机、武器、钥匙、车辆等（后续可能再次使用）
+- 贵重物品：如珠宝、现金、证件等
+- 特殊物品：具有特殊意义或功能的物品
+- 哪怕只是短暂提及的物品，如果可能再次出现，也要提取
+
 4. 尽可能从文本中推断角色的性别、年龄、外貌、性格、职业等信息
 5. 性别使用 male（男）、female（女）、other（其他/未知）
 6. 只返回 JSON，不要其他解释`
@@ -385,11 +399,30 @@ ${text.substring(0, 4000)}
   private static classifyLocationImportance(name: string, description: string, text: string): EntityImportance {
     const occurrences = (text.match(new RegExp(name, 'g')) || []).length
 
-    if (occurrences > 5) {
+    // 检查是否是重要地点类型（后续可能再次出现）
+    const importantLocationKeywords = [
+      '办公室', '住所', '家', '房间', '安全屋', '基地', '常驻',
+      '公安局', '警察局', '医院', '银行', '公司', '学校',
+      '店', '馆', '所', '局', '院', '站', '场'
+    ]
+    const isImportantType = importantLocationKeywords.some(kw => name.includes(kw) || description.includes(kw))
+
+    // 检查是否是主要活动场所
+    const mainLocationKeywords = ['住在', '住处', '常去', '固定', '据点', '老窝', '总部']
+    const isMainLocation = mainLocationKeywords.some(kw => text.includes(kw + name) || text.includes(name + kw))
+
+    if (occurrences > 5 || isMainLocation) {
       return 'main'
-    } else if (occurrences > 2) {
+    } else if (occurrences > 2 || isImportantType) {
       return 'secondary'
     } else {
+      // 即使只出现一次，如果名称暗示是固定场所，也标记为次要
+      if (name.length >= 2 && (
+        name.endsWith('室') || name.endsWith('屋') || name.endsWith('房') ||
+        name.endsWith('楼') || name.endsWith('厅') || name.endsWith('区')
+      )) {
+        return 'secondary'
+      }
       return 'temporary'
     }
   }
@@ -400,14 +433,34 @@ ${text.substring(0, 4000)}
   private static classifyItemImportance(name: string, description: string, text: string): EntityImportance {
     const occurrences = (text.match(new RegExp(name, 'g')) || []).length
 
-    // 检查是否是关键物品（神器、宝物等）
-    const isImportant = description.includes('神器') || description.includes('宝物') || description.includes('珍贵')
+    // 检查是否是重要物品（后续可能再次出现）
+    const importantItemKeywords = [
+      '电脑', '手机', '电话', 'U盘', '硬盘', '文件', '档案',
+      '钥匙', '车', '枪', '刀', '武器',
+      '证物', '证据', '线索', '记录', '录音', '照片',
+      '证件', '护照', '身份证', '银行卡',
+      '神器', '宝物', '法宝', '秘籍'
+    ]
+    const isImportantType = importantItemKeywords.some(kw =>
+      name.includes(kw) || description.includes(kw) ||
+      description.includes('重要') || description.includes('关键') ||
+      description.includes('珍贵') || description.includes('贵重')
+    )
 
-    if (isImportant || occurrences > 5) {
+    // 检查是否是持有物品
+    const holdKeywords = ['拿着', '带着', '持有', '拥有', '取出', '拿出', '使用']
+    const isHeld = holdKeywords.some(kw => text.includes(kw + name))
+
+    if (occurrences > 5 || isImportantType) {
       return 'main'
-    } else if (occurrences > 2) {
+    } else if (occurrences > 2 || isHeld) {
       return 'secondary'
     } else {
+      // 证物类物品即使只出现一次也要标记为次要
+      if (name.includes('证') || name.includes('据') || name.includes('盘') ||
+          name.includes('文件') || name.includes('记录')) {
+        return 'secondary'
+      }
       return 'temporary'
     }
   }
