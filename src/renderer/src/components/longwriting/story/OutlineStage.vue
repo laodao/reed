@@ -99,11 +99,16 @@
                         <span class="node-type-tag">{{ getNodeTypeName(section.nodeType) }}</span>
                         <h4>{{ section.name }}</h4>
                         <span class="node-status" :class="section.status">{{ getStatusName(section.status) }}</span>
+                        <el-tag v-if="section.prewriteConfirmed" type="success" size="small" class="prewrite-tag">已预写</el-tag>
                       </div>
                       <div class="node-meta">
                         <span v-if="section.estimatedWords">{{ section.estimatedWords }}字</span>
                       </div>
                       <div class="node-actions">
+                        <el-button text size="small" type="primary" @click="startPrewrite(section)">
+                          <el-icon><Document /></el-icon>
+                          预写
+                        </el-button>
                         <el-button text size="small" @click="editNode(section)">
                           <el-icon><Edit /></el-icon>
                         </el-button>
@@ -274,14 +279,136 @@
         <el-button type="primary" @click="confirmStructure">确认生成</el-button>
       </template>
     </el-dialog>
+
+    <!-- 预写对话框 -->
+    <el-dialog
+      v-model="showPrewriteDialog"
+      title="AI 预写提纲"
+      width="600px"
+      destroy-on-close
+    >
+      <div class="prewrite-dialog-content">
+        <div v-if="currentPrewriteOutline" class="prewrite-info">
+          <span class="prewrite-node-name">{{ currentPrewriteOutline.name }}</span>
+          <span class="prewrite-node-summary" v-if="currentPrewriteOutline.summary">{{ currentPrewriteOutline.summary }}</span>
+        </div>
+
+        <div v-if="prewriteContent || prewriting" class="prewrite-section">
+          <div class="prewrite-header">
+            <span class="prewrite-title">预写内容</span>
+            <el-tag v-if="currentPrewrite?.isConfirmed" type="success" size="small">已确认</el-tag>
+            <el-button v-if="!currentPrewrite?.isConfirmed" text size="small" @click="clearPrewrite">
+              <el-icon><Close /></el-icon>
+              清除
+            </el-button>
+          </div>
+          <div class="prewrite-content">
+            <el-input
+              v-if="!prewriting"
+              v-model="prewriteContent"
+              type="textarea"
+              :rows="12"
+              :disabled="currentPrewrite?.isConfirmed"
+              placeholder="预写内容..."
+            />
+            <div v-else class="prewrite-streaming">
+              <el-icon class="is-loading"><Loading /></el-icon>
+              <pre>{{ prewriteContent }}</pre>
+            </div>
+          </div>
+          <div v-if="memoryStats" class="memory-stats-hint">
+            <el-icon><InfoFilled /></el-icon>
+            <span>已加载 {{ memoryStats.active }} 条相关记忆</span>
+          </div>
+        </div>
+
+        <div v-else class="prewrite-empty">
+          <el-empty description="点击下方按钮生成预写提纲" />
+        </div>
+      </div>
+
+      <template #footer>
+        <el-button @click="showPrewriteDialog = false">取消</el-button>
+        <el-button
+          v-if="prewriteContent"
+          :loading="prewriteSaving"
+          @click="savePrewriteOnly"
+        >
+          保存预写
+        </el-button>
+        <el-button
+          v-if="prewriteContent && !currentPrewrite?.isConfirmed"
+          type="success"
+          @click="confirmPrewriteAndExtract"
+        >
+          确认预写
+        </el-button>
+        <el-button
+          v-if="!prewriteContent && !prewriting"
+          type="primary"
+          @click="generatePrewrite"
+        >
+          <el-icon><MagicStick /></el-icon>
+          生成预写
+        </el-button>
+        <el-button
+          v-if="prewriteContent"
+          @click="generatePrewrite"
+        >
+          <el-icon><Refresh /></el-icon>
+          重新生成
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 记忆确认对话框 -->
+    <el-dialog
+      v-model="showMemoryDialog"
+      title="确认记忆"
+      width="700px"
+    >
+      <div v-if="memoryExtracting" class="memory-extracting">
+        <el-icon class="is-loading"><Loading /></el-icon>
+        <span>AI 正在从预写内容中提取关键记忆...</span>
+      </div>
+      <div v-else-if="extractedMemories.length > 0" class="memory-list">
+        <p class="memory-hint">以下是从预写内容中提取的关键记忆，请确认是否保存：</p>
+        <div v-for="(memory, index) in extractedMemories" :key="index" class="memory-item">
+          <div class="memory-header">
+            <el-select v-model="memory.importance" size="small" style="width: 100px;">
+              <el-option label="关键" value="critical" />
+              <el-option label="重要" value="normal" />
+              <el-option label="次要" value="minor" />
+            </el-select>
+            <el-select v-model="memory.memoryType" size="small" style="width: 120px;">
+              <el-option label="角色事件" value="character_event" />
+              <el-option label="地点事件" value="location_event" />
+              <el-option label="物品事件" value="item_event" />
+              <el-option label="关系变化" value="relationship_change" />
+              <el-option label="势力事件" value="faction_event" />
+              <el-option label="一般事件" value="general" />
+            </el-select>
+          </div>
+          <el-input v-model="memory.title" placeholder="记忆标题" size="small" style="margin-bottom: 8px;" />
+          <el-input v-model="memory.description" type="textarea" :rows="2" placeholder="详细描述" />
+        </div>
+      </div>
+      <el-empty v-else description="未能从预写内容中提取到关键记忆" />
+      <template #footer>
+        <el-button @click="showMemoryDialog = false">取消</el-button>
+        <el-button type="primary" :disabled="extractedMemories.length === 0" @click="saveMemories">
+          保存记忆
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, inject, toRaw } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Edit, Delete, MagicStick, ArrowRight, ArrowDown, Close } from '@element-plus/icons-vue'
-import type { StoryOutline, OutlineNodeType, OutlineStatus, StoryCharacter } from '../../../../shared/types/longwriting.types'
+import { Plus, Edit, Delete, MagicStick, ArrowRight, ArrowDown, Close, Document, Refresh, InfoFilled, Loading } from '@element-plus/icons-vue'
+import type { StoryOutline, OutlineNodeType, OutlineStatus, StoryCharacter, ChapterPrewrite, StoryMemory, ExtractedMemoryData } from '../../../../shared/types/longwriting.types'
 import type { ComputedRef } from 'vue'
 
 const props = defineProps<{
@@ -333,6 +460,20 @@ const structureOptions = [
 
 // 加载状态
 const loading = ref(false)
+
+// 预写相关状态
+const showPrewriteDialog = ref(false)
+const prewriting = ref(false)
+const prewriteContent = ref('')
+const prewriteSaving = ref(false)
+const currentPrewriteOutline = ref<StoryOutline | null>(null)
+const currentPrewrite = ref<ChapterPrewrite | null>(null)
+const memoryStats = ref<{ total: number; active: number } | null>(null)
+
+// 记忆相关（预写确认后提取）
+const showMemoryDialog = ref(false)
+const memoryExtracting = ref(false)
+const extractedMemories = ref<ExtractedMemoryData[]>([])
 
 // 表单数据
 const nodeForm = ref({
@@ -918,6 +1059,256 @@ onMounted(() => {
 watch(() => props.projectId, () => {
   loadReferences()
 })
+
+// ==================== 预写功能 ====================
+
+/**
+ * 开始预写（打开对话框）
+ */
+async function startPrewrite(node: StoryOutline) {
+  // 只有章节节点（section）才能预写
+  if (node.nodeType !== 'section') {
+    ElMessage.warning('只有节级别的节点才能进行预写')
+    return
+  }
+
+  if (!selectedModel.value || !selectedModel.value.providerId || !selectedModel.value.modelId) {
+    ElMessage.warning('请先在顶部选择 AI 模型')
+    return
+  }
+
+  currentPrewriteOutline.value = node
+  prewriteContent.value = ''
+  currentPrewrite.value = null
+
+  // 加载已保存的预写
+  try {
+    const result = await window.electronAPI.longwriting.getPrewrite(node.id)
+    if (result.success && result.data) {
+      currentPrewrite.value = result.data
+      prewriteContent.value = result.data.content || ''
+    }
+  } catch (error) {
+    console.error('加载预写失败:', error)
+  }
+
+  // 加载记忆统计
+  await loadMemoryStats()
+
+  showPrewriteDialog.value = true
+}
+
+/**
+ * 清除预写内容
+ */
+function clearPrewrite() {
+  prewriteContent.value = ''
+}
+
+/**
+ * 生成预写
+ */
+async function generatePrewrite() {
+  if (!currentPrewriteOutline.value || !selectedModel.value) return
+
+  prewriting.value = true
+  prewriteContent.value = ''
+
+  const outline = currentPrewriteOutline.value
+  const eventId = `prewrite-${outline.id}-${Date.now()}`
+
+  const unsubscribe = window.electronAPI.longwriting.onGenerateEvent(
+    eventId,
+    (event: { type: string; content?: string; error?: string }) => {
+      if (event.type === 'content' && event.content) {
+        prewriteContent.value += event.content
+      } else if (event.type === 'done') {
+        prewriting.value = false
+        unsubscribe()
+      } else if (event.type === 'error') {
+        prewriting.value = false
+        ElMessage.error(event.error || '预写生成失败')
+        unsubscribe()
+      }
+    }
+  )
+
+  const result = await window.electronAPI.longwriting.generateChapterPrewrite(
+    eventId,
+    props.projectId,
+    outline.id,
+    selectedModel.value.providerId,
+    selectedModel.value.modelId
+  )
+
+  if (!result.success) {
+    prewriting.value = false
+    unsubscribe()
+    ElMessage.error(result.error || '预写生成失败')
+  }
+}
+
+/**
+ * 仅保存预写
+ */
+async function savePrewriteOnly() {
+  if (!currentPrewriteOutline.value || !prewriteContent.value) return
+
+  prewriteSaving.value = true
+  try {
+    const result = await window.electronAPI.longwriting.savePrewrite({
+      outlineId: currentPrewriteOutline.value.id,
+      content: prewriteContent.value
+    })
+    if (result.success) {
+      currentPrewrite.value = result.data
+      ElMessage.success('预写已保存')
+    } else {
+      ElMessage.error(result.error || '保存失败')
+    }
+  } catch (error: any) {
+    ElMessage.error('保存失败：' + error.message)
+  } finally {
+    prewriteSaving.value = false
+  }
+}
+
+/**
+ * 确认预写并提取记忆
+ */
+async function confirmPrewriteAndExtract() {
+  if (!currentPrewriteOutline.value || !prewriteContent.value) return
+
+  // 先保存预写
+  prewriteSaving.value = true
+  try {
+    const saveResult = await window.electronAPI.longwriting.savePrewrite({
+      outlineId: currentPrewriteOutline.value.id,
+      content: prewriteContent.value
+    })
+    if (!saveResult.success) {
+      ElMessage.error(saveResult.error || '保存预写失败')
+      return
+    }
+    currentPrewrite.value = saveResult.data
+  } catch (error: any) {
+    ElMessage.error('保存预写失败：' + error.message)
+    return
+  } finally {
+    prewriteSaving.value = false
+  }
+
+  // 提取记忆
+  showMemoryDialog.value = true
+  memoryExtracting.value = true
+  extractedMemories.value = []
+
+  try {
+    // 计算章节序号
+    const chapterNumber = calculateChapterNumber(currentPrewriteOutline.value.id)
+
+    const result = await window.electronAPI.longwriting.extractMemories(
+      props.projectId,
+      currentPrewriteOutline.value.id,
+      prewriteContent.value,
+      chapterNumber,
+      selectedModel.value?.providerId,
+      selectedModel.value?.modelId
+    )
+
+    if (result.success && result.data) {
+      extractedMemories.value = result.data.map((m: any) => ({
+        memoryType: ['character_event', 'location_event', 'item_event', 'relationship_change', 'faction_event', 'general'].includes(m.memoryType)
+          ? m.memoryType
+          : 'general',
+        title: m.title || '未命名事件',
+        description: m.description || '',
+        involvedEntities: Array.isArray(m.involvedEntities) ? m.involvedEntities : [],
+        importance: ['critical', 'normal', 'minor'].includes(m.importance)
+          ? m.importance
+          : 'normal'
+      }))
+    } else {
+      ElMessage.error(result.error || '提取记忆失败')
+    }
+  } catch (error: any) {
+    ElMessage.error('提取记忆失败：' + error.message)
+  } finally {
+    memoryExtracting.value = false
+  }
+}
+
+/**
+ * 计算章节序号
+ */
+function calculateChapterNumber(outlineId: string): number {
+  let count = 0
+  for (const node of outlineNodes.value) {
+    if (node.nodeType === 'chapter' || node.nodeType === 'section') {
+      count++
+    }
+    if (node.id === outlineId) {
+      return count
+    }
+  }
+  return count || 1
+}
+
+/**
+ * 保存记忆
+ */
+async function saveMemories() {
+  if (!currentPrewriteOutline.value || extractedMemories.value.length === 0) return
+
+  try {
+    const chapterNumber = calculateChapterNumber(currentPrewriteOutline.value.id)
+
+    const memoriesToCreate = JSON.parse(JSON.stringify(extractedMemories.value.map(m => ({
+      projectId: props.projectId,
+      sourceOutlineId: currentPrewriteOutline.value!.id,
+      memoryType: m.memoryType,
+      title: m.title,
+      description: m.description,
+      involvedEntities: m.involvedEntities || [],
+      chapterNumber,
+      importance: m.importance
+    }))))
+
+    const result = await window.electronAPI.longwriting.batchCreateMemories(memoriesToCreate)
+    if (result.success) {
+      // 确认预写
+      await window.electronAPI.longwriting.confirmPrewrite(currentPrewriteOutline.value.id)
+      if (currentPrewrite.value) {
+        currentPrewrite.value.isConfirmed = true
+      }
+
+      ElMessage.success(`已保存 ${result.data?.length || 0} 条记忆`)
+      showMemoryDialog.value = false
+      await loadMemoryStats()
+    } else {
+      ElMessage.error(result.error || '保存记忆失败')
+    }
+  } catch (error: any) {
+    ElMessage.error('保存记忆失败：' + error.message)
+  }
+}
+
+/**
+ * 加载记忆统计
+ */
+async function loadMemoryStats() {
+  try {
+    const result = await window.electronAPI.longwriting.getMemoryStats(props.projectId)
+    if (result.success && result.data) {
+      memoryStats.value = {
+        total: result.data.total,
+        active: result.data.active
+      }
+    }
+  } catch (error) {
+    console.error('加载记忆统计失败:', error)
+  }
+}
 </script>
 
 <style lang="scss" scoped>
@@ -1194,6 +1585,119 @@ watch(() => props.projectId, () => {
         font-size: 12px;
         color: var(--text-color-secondary);
       }
+    }
+  }
+}
+
+// 预写相关样式
+.prewrite-tag {
+  margin-left: 4px;
+}
+
+.prewrite-dialog-content {
+  .prewrite-info {
+    margin-bottom: 16px;
+    padding: 12px;
+    background: var(--fill-color-light);
+    border-radius: 8px;
+
+    .prewrite-node-name {
+      font-weight: 500;
+      font-size: 16px;
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .prewrite-node-summary {
+      font-size: 13px;
+      color: var(--text-color-secondary);
+    }
+  }
+
+  .prewrite-section {
+    .prewrite-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+
+      .prewrite-title {
+        font-weight: 500;
+        font-size: 14px;
+      }
+    }
+
+    .prewrite-content {
+      .prewrite-streaming {
+        position: relative;
+        padding: 12px;
+        background: var(--fill-color-blank);
+        border: 1px solid var(--border-color-light);
+        border-radius: 4px;
+        min-height: 200px;
+
+        .is-loading {
+          position: absolute;
+          top: 12px;
+          right: 12px;
+          color: var(--color-primary);
+        }
+
+        pre {
+          margin: 0;
+          white-space: pre-wrap;
+          word-break: break-word;
+          font-size: 13px;
+          line-height: 1.6;
+        }
+      }
+    }
+  }
+
+  .memory-stats-hint {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--text-color-secondary);
+  }
+
+  .prewrite-empty {
+    padding: 40px 0;
+  }
+}
+
+.memory-extracting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 40px;
+
+  .is-loading {
+    font-size: 24px;
+    color: var(--color-primary);
+  }
+}
+
+.memory-list {
+  .memory-hint {
+    margin-bottom: 16px;
+    font-size: 14px;
+    color: var(--text-color-regular);
+  }
+
+  .memory-item {
+    padding: 12px;
+    margin-bottom: 12px;
+    background: var(--fill-color-lighter);
+    border-radius: 8px;
+
+    .memory-header {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
     }
   }
 }
