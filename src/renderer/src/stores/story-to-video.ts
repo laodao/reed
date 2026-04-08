@@ -372,8 +372,11 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     if (episode.scriptId) {
       await loadScript(episode.scriptId)
     } else {
+      // 清空剧本相关数据
       currentScript.value = null
       scenes.value = []
+      currentScene.value = null
+      storyboards.value = []
     }
   }
 
@@ -477,6 +480,15 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
       const response = await window.electronAPI.storyToVideo.listScenes(episodeScriptId)
       if (response.success && response.data) {
         scenes.value = response.data as SceneScript[]
+        // 如果有场景，自动选中第一个并加载分镜
+        if (scenes.value.length > 0) {
+          currentScene.value = scenes.value[0]
+          await loadStoryboards(scenes.value[0].id)
+        } else {
+          // 没有场景，清空当前场景和分镜
+          currentScene.value = null
+          storyboards.value = []
+        }
       } else {
         error.value = response.error || '加载场景列表失败'
       }
