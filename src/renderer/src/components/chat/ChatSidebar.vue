@@ -21,23 +21,26 @@
     </div>
 
     <!-- 助手列表 -->
-    <div v-if="currentTab === 'assistants'" class="sidebar-content">
-      <!-- 只显示用户的助手（包含默认助手和自定义助手） -->
-      <AssistantCard
-        v-for="role in userRoles"
-        :key="role.id"
-        :role="role"
-        :selected="isRoleSelected(role)"
-        :deletable="!isDefaultAssistant(role)"
-        :editable="true"
-        @click="$emit('selectRole', role)"
-        @edit="handleEditRole(role)"
-        @delete="handleDeleteRole(role)"
-      />
-
-      <div class="add-assistant" @click="showLibraryPicker = true">
+    <div v-if="currentTab === 'assistants'" class="sidebar-content-wrapper">
+      <!-- 固定的添加助手按钮 -->
+      <div class="add-assistant-fixed" @click="showLibraryPicker = true">
         <el-icon><Plus /></el-icon>
         <span>添加助手</span>
+      </div>
+      <!-- 可滚动的助手列表 -->
+      <div class="sidebar-content">
+        <!-- 只显示用户的助手（包含默认助手和自定义助手） -->
+        <AssistantCard
+          v-for="role in userRoles"
+          :key="role.id"
+          :role="role"
+          :selected="isRoleSelected(role)"
+          :deletable="!isDefaultAssistant(role)"
+          :editable="true"
+          @click="$emit('selectRole', role)"
+          @edit="handleEditRole(role)"
+          @delete="handleDeleteRole(role)"
+        />
       </div>
     </div>
 
@@ -301,19 +304,62 @@ async function confirmDeleteRole(): Promise<void> {
   flex: 1;
   overflow-y: auto;
   padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.section-header {
-  margin-bottom: 8px;
-  padding: 0 4px;
+.sidebar-content-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-.section-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: #94a3b8;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+.add-assistant-fixed {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px;
+  margin: 12px 12px 0;
+  border: 2px dashed #cbd5e1;
+  border-radius: 10px;
+  cursor: pointer;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 500;
+  background: #fff;
+  transition: all 0.2s ease;
+
+  &:hover {
+    border-color: var(--el-color-primary);
+    color: var(--el-color-primary);
+    background: var(--el-color-primary-light-9);
+  }
+}
+
+.add-assistant {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px;
+  margin-top: 12px;
+  border: 2px dashed #cbd5e1;
+  border-radius: 10px;
+  cursor: pointer;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+
+  &:hover {
+    border-color: var(--el-color-primary);
+    color: var(--el-color-primary);
+    background: var(--el-color-primary-light-9);
+  }
 }
 
 .sidebar-header {
@@ -347,28 +393,6 @@ async function confirmDeleteRole(): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-.add-assistant {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 12px;
-  margin-top: 12px;
-  border: 2px dashed #cbd5e1;
-  border-radius: 10px;
-  cursor: pointer;
-  color: #64748b;
-  font-size: 13px;
-  font-weight: 500;
-  transition: all 0.2s ease;
-
-  &:hover {
-    border-color: var(--el-color-primary);
-    color: var(--el-color-primary);
-    background: var(--el-color-primary-light-9);
-  }
 }
 
 .delete-confirm {
