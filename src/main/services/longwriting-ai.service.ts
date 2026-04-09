@@ -1237,6 +1237,9 @@ ${plotInfo || '暂无相关情节'}
     const characters = await dbManager.lwCharacters?.getByProjectId(projectId) || []
     const locations = await dbManager.lwLocations?.getByProjectId(projectId) || []
 
+    // 新增：获取背景设定
+    const background = await dbManager.lwBackgrounds?.getByProjectId(projectId)
+
     // 获取前置章节内容（作为上下文）
     const siblings = await dbManager.lwOutlines?.getTreeByProjectId(projectId) || []
     const currentIndex = siblings.findIndex(s => s.id === outlineId)
@@ -1244,6 +1247,18 @@ ${plotInfo || '暂无相关情节'}
 
     // 计算章节序号（用于获取相关记忆）
     const chapterNumber = this.calculateChapterNumber(siblings, outlineId)
+
+    // 新增：获取上一章正文结尾
+    const previousChapterOutlines = previousOutlines.filter(o => o.nodeType === 'chapter')
+    const lastChapterOutline = previousChapterOutlines[previousChapterOutlines.length - 1]
+
+    let previousChapterEnding = ''
+    if (lastChapterOutline) {
+      const lastChapter = await dbManager.lwChapters?.getByOutlineId(lastChapterOutline.id)
+      if (lastChapter?.content) {
+        previousChapterEnding = this.extractEndingContentByParagraph(lastChapter.content)
+      }
+    }
 
     // 获取记忆上下文
     const memoryContext = await this.getMemoryContext(projectId, chapterNumber)
@@ -1268,46 +1283,152 @@ ${plotInfo || '暂无相关情节'}
 
     // 获取预写内容（如果存在）
     const prewrite = await dbManager.lwPrewrites?.getByOutlineId(outlineId)
-    const prewriteSection = prewrite?.content ? `\n\n【预写提纲】\n${prewrite.content}\n` : ''
 
-    const systemPrompt = `你是一位专业的网络小说作家。请根据大纲节点信息，撰写章节内容。
-要求：
-1. 内容要生动有趣，情节紧凑
-2. 注意人物性格的一致性
-3. 场景描写要具体
-4. 对话要符合人物特点
-5. 控制字数在目标范围内
-${prewrite?.content ? '6. 参考预写提纲，但可以灵活发挥\n' : ''}直接输出章节内容，不需要标题、不需要额外说明。`
+    // 新增：构建背景设定上下文
+    const backgroundContext = this.buildBackgroundContext(background)
 
-    const characterInfo = outline.involvedCharacters.map(id => {
-      const char = characters.find(c => c.id === id)
-      return char ? `${char.name}：${char.personality || '性格未设定'}` : ''
-    }).filter(Boolean).join('\n')
+    // 新增：计算故事进度阶段
+    const totalChapters = overview?.estimatedChapters || 30
+    const progressStage = this.calculateStoryProgressStage(chapterNumber, totalChapters)
 
-    const locationInfo = outline.involvedLocations.map(id => {
-      const loc = locations.find(l => l.id === id)
-      return loc ? `${loc.name}：${loc.description || ''}` : ''
-    }).filter(Boolean).join('\n')
+    // 新增：获取故事类型名称
+    const storyTypeName = this.getStoryTypeName(overview?.storyType || '')
 
-    const previousContext = previousOutlines.map(o => `【${o.name}】${o.summary}`).join('\n')
+    // 新增：构建角色完整信息
+    const characterFullInfoSections: string[] = []
+    for (const charId of outline.involvedCharacters || []) {
+      const char = characters.find(c => c.id === charId)
+      if (char) {
+        // 获取该角色的实体状态
+        const charState = await dbManager.lwEntityStates?.getEntityStateAtChapter(
+          projectId,
+          'character',
+          charId,
+          chapterNumber - 1
+        )
+        characterFullInfoSections.push(this.buildCharacterFullInfo(char, charState))
+      }
+    }
+    const characterFullInfoSection = characterFullInfoSections.length > 0
+      ? characterFullInfoSections.join('\n')
+      : '无特定涉及角色'
 
-    const prompt = `请根据以下信息，撰写章节内容：
+    // 新增：构建地点完整信息
+    const locationFullInfoSections: string[] = []
+    for (const locId of outline.involvedLocations || []) {
+      const loc = locations.find(l => l.id === locId)
+      if (loc) {
+        // 获取该地点的实体状态
+        const locState = await dbManager.lwEntityStates?.getEntityStateAtChapter(
+          projectId,
+          'location',
+          locId,
+          chapterNumber - 1
+        )
+        locationFullInfoSections.push(this.buildLocationFullInfo(loc, locState))
+      }
+    }
+    const locationFullInfoSection = locationFullInfoSections.length > 0
+      ? locationFullInfoSections.join('\n')
+      : '无特定涉及地点'
 
-故事标题：${overview?.title || '未命名'}
-章节名称：${outline.name}
-章节概要：${outline.summary}
-目标字数：${targetWords || outline.estimatedWords || 3000}字
+    // 新系统提示词
+    const systemPrompt = `你是一位资深的网络小说作家，擅长创作情节紧凑、人物生动、场景细腻的章节内容。
 
-涉及角色：
-${characterInfo || '无特定角色'}
+## 写作核心原则
 
-涉及地点：
-${locationInfo || '无特定地点'}
+### 1. 章节衔接技巧
+- **开头衔接**：从上一章结尾自然过渡，避免突兀跳跃
+- **时间连贯**：本章开始时间应从上一章结束时间之后自然延续
+- **场景过渡**：如果场景转换，需要合理的过渡描写
+- **情绪承接**：保持上一章结尾的情绪氛围，或自然转换情绪
 
-前情提要：
-${previousContext || '这是开篇'}${prewriteSection}${memoryContext}${entityStateContext}${chapterStateSummaryContext}
+### 2. 人物塑造要求
+- 对话要符合人物性格特点
+- 行为举止要符合人物背景和能力设定
+- 外貌描写要与设定保持一致
+- 注意人物当前状态
 
-请开始撰写章节内容：`
+### 3. 场景描写原则
+- 场景要具体可感，调动读者的感官体验
+- 环境要与时代背景设定一致
+- 重要场景要突出独特特征
+
+### 4. 情节推进技巧
+- 本章要有明确的推进目标
+- 情节要紧凑，避免拖沓和冗余
+- 注意呼应前文伏笔
+- 适当铺垫后续情节
+
+### 5. 写作禁忌
+- **禁止**：已死亡的角色再次出现
+- **禁止**：已学会的技能再次"初学"
+- **禁止**：已获得的物品再次"首次获得"
+- **禁止**：忽略已建立的人物关系
+- **禁止**：与世界观设定冲突的内容
+
+### 6. 输出要求
+直接输出章节正文内容，不需要标题，不需要额外说明。`
+
+    // 构建预写部分
+    const prewriteSection = prewrite?.content
+      ? `\n## 七、预写提纲\n\n${prewrite.content}\n`
+      : ''
+
+    // 新用户提示词结构
+    const prompt = `# 章节写作任务
+
+## 一、故事宏观背景
+
+**故事标题**：${overview?.title || '未命名'}
+**故事类型**：${storyTypeName}
+**核心冲突**：${overview?.coreConflict || '未指定'}
+
+${backgroundContext || '暂无世界观设定'}
+
+**预估总章节数**：${totalChapters}章
+**当前进度**：第${chapterNumber}章（${progressStage}）
+
+---
+
+## 二、当前章节任务
+
+**章节名称**：${outline.name}
+**章节概要**：${outline.summary}
+**目标字数**：${targetWords || outline.estimatedWords || 3000}字
+
+---
+
+## 三、涉及角色完整信息
+
+${characterFullInfoSection}
+
+---
+
+## 四、涉及场景环境
+
+${locationFullInfoSection}
+
+---
+
+## 五、前文衔接信息
+
+### 上一章结尾原文（请仔细阅读，确保自然衔接）
+${previousChapterEnding || '这是开篇章节'}
+
+### 衔接建议
+- 时间线应从上一章结束时间之后开始
+- 如果上一章有悬念或冲突，本章应有所呼应
+- 注意角色位置和状态与上一章结束时的衔接
+
+---
+
+## 六、关键约束
+${memoryContext}${entityStateContext}${chapterStateSummaryContext}
+${prewriteSection}
+---
+
+请根据以上所有信息，撰写章节正文内容。直接开始写作，不需要标题。`
 
     try {
       const result = await this.callAIStream(
@@ -1340,6 +1461,205 @@ ${previousContext || '这是开篇'}${prewriteSection}${memoryContext}${entitySt
       }
     }
     return count || 1
+  }
+
+  // ==================== 章节写作辅助函数 ====================
+
+  /**
+   * 计算中文字数
+   * 中文字符按字符计算，英文按单词计算
+   */
+  private countChineseChars(text: string): number {
+    if (!text) return 0
+    const chineseChars = (text.match(/[\u4e00-\u9fa5]/g) || []).length
+    const englishWords = (text.match(/[a-zA-Z]+/g) || []).length
+    return chineseChars + englishWords
+  }
+
+  /**
+   * 从上一章正文结尾按段落截取指定字数的内容
+   * @param content 章节正文内容
+   * @param targetChars 目标字数（默认550字）
+   */
+  private extractEndingContentByParagraph(
+    content: string,
+    targetChars: number = 550
+  ): string {
+    if (!content || content.length <= targetChars) {
+      return content || ''
+    }
+
+    // 按段落分割（处理换行符）
+    const paragraphs = content.split(/\n+/).filter(p => p.trim().length > 0)
+
+    // 从末尾向前累加段落，确保段落完整
+    const resultParagraphs: string[] = []
+    let totalChars = 0
+
+    for (let i = paragraphs.length - 1; i >= 0; i--) {
+      const paragraph = paragraphs[i]
+      const paragraphChars = this.countChineseChars(paragraph)
+
+      // 如果已经达到目标字数且当前段落会导致超出太多，则停止
+      if (totalChars + paragraphChars > targetChars + 50 && totalChars >= 500) {
+        break
+      }
+
+      resultParagraphs.unshift(paragraph)
+      totalChars += paragraphChars
+
+      // 达到目标字数的下限即可停止
+      if (totalChars >= targetChars - 50) {
+        break
+      }
+    }
+
+    return resultParagraphs.join('\n')
+  }
+
+  /**
+   * 构建角色完整信息
+   * @param character 角色信息
+   * @param entityState 实体状态（可选）
+   */
+  private buildCharacterFullInfo(
+    character: any,
+    entityState?: { stateSummary: string } | null
+  ): string {
+    const genderMap: Record<string, string> = { male: '男', female: '女', other: '其他' }
+    const rolePositionMap: Record<string, string> = {
+      protagonist: '主角',
+      supporting: '配角',
+      antagonist: '反派',
+      minor: '小角色'
+    }
+
+    let info = `【${character.name}】\n`
+    info += `- 基本信息：${genderMap[character.gender] || '未知'}，${character.age}岁`
+    if (character.occupation) info += `，职业：${character.occupation}`
+    info += '\n'
+
+    if (character.appearance) info += `- 外貌特征：${character.appearance}\n`
+    if (character.personality) info += `- 性格特点：${character.personality}\n`
+    if (character.background) info += `- 背景故事：${character.background}\n`
+    if (character.abilities) info += `- 能力特长：${character.abilities}\n`
+
+    info += `- 角色定位：${rolePositionMap[character.rolePosition] || '未指定'}\n`
+
+    if (entityState?.stateSummary) {
+      info += `- 当前状态：${entityState.stateSummary}\n`
+    }
+
+    return info
+  }
+
+  /**
+   * 构建地点完整信息
+   * @param location 地点信息
+   * @param entityState 实体状态（可选）
+   */
+  private buildLocationFullInfo(
+    location: any,
+    entityState?: { stateSummary: string } | null
+  ): string {
+    const typeMap: Record<string, string> = {
+      city: '城市',
+      village: '村庄',
+      mountain: '山脉',
+      palace: '宫殿',
+      forest: '森林',
+      sea: '海域',
+      building: '建筑',
+      other: '其他'
+    }
+    const importanceMap: Record<string, string> = {
+      main: '主要场景',
+      important: '重要场景',
+      auxiliary: '辅助场景'
+    }
+
+    let info = `【${location.name}】\n`
+    info += `- 地点类型：${typeMap[location.type] || '其他'}\n`
+    info += `- 重要程度：${importanceMap[location.importance] || '一般'}\n`
+
+    if (location.description) {
+      info += `- 详细描述：${location.description}\n`
+    }
+
+    if (entityState?.stateSummary) {
+      info += `- 当前状态：${entityState.stateSummary}\n`
+    }
+
+    return info
+  }
+
+  /**
+   * 构建背景设定上下文
+   * @param background 背景设定
+   */
+  private buildBackgroundContext(background: any | null): string {
+    if (!background) return ''
+
+    const eraTypeMap: Record<string, string> = {
+      ancient: '古代',
+      modern: '现代',
+      future: '未来',
+      fictional: '虚构世界'
+    }
+
+    let context = '【世界观设定】\n'
+    context += `- 时代背景：${eraTypeMap[background.eraType] || '未知'}\n`
+
+    if (background.eraDescription) {
+      context += `- 时代描述：${background.eraDescription}\n`
+    }
+    if (background.socialStructure) {
+      context += `- 社会结构：${background.socialStructure}\n`
+    }
+    if (background.specialRules) {
+      context += `- 特殊规则：${background.specialRules}\n`
+    }
+
+    return context
+  }
+
+  /**
+   * 计算故事进度阶段
+   * @param chapterNumber 当前章节序号
+   * @param totalChapters 预估总章节数
+   */
+  private calculateStoryProgressStage(
+    chapterNumber: number,
+    totalChapters: number
+  ): string {
+    if (totalChapters <= 0) return '故事展开阶段'
+
+    const progress = chapterNumber / totalChapters
+
+    if (progress <= 0.1) return '故事开端阶段'
+    if (progress <= 0.3) return '故事展开阶段'
+    if (progress <= 0.5) return '故事深化阶段'
+    if (progress <= 0.7) return '故事高潮铺垫阶段'
+    if (progress <= 0.9) return '故事高潮阶段'
+    return '故事收尾阶段'
+  }
+
+  /**
+   * 获取故事类型名称
+   */
+  private getStoryTypeName(storyType: string): string {
+    const typeNames: Record<string, string> = {
+      wuxia: '武侠',
+      xianxia: '仙侠',
+      xuanhuan: '玄幻',
+      kehuan: '科幻',
+      xuanyi: '悬疑',
+      dushi: '都市',
+      yanqing: '言情',
+      lishi: '历史',
+      other: '其他'
+    }
+    return typeNames[storyType] || storyType || '未指定'
   }
 
   /**
