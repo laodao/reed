@@ -62,7 +62,6 @@ import {
   Picture,
   Document,
   Microphone,
-  MagicStick,
   Setting,
   ArrowRight
 } from '@element-plus/icons-vue'
@@ -95,12 +94,6 @@ const features = [
     title: '语音助手',
     description: '语音识别与语音合成',
     icon: markRaw(Microphone)
-  },
-  {
-    path: '/assistant',
-    title: '智能助手',
-    description: '自动化任务与智能推荐',
-    icon: markRaw(MagicStick)
   },
   {
     path: '/settings',

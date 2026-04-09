@@ -198,11 +198,6 @@ const mainMenuItems = [
     path: '/knowledge-base',
     label: '知识库',
     icon: markRaw(FolderOpened)
-  },
-  {
-    path: '/assistant',
-    label: '智能助手',
-    icon: markRaw(MagicStick)
   }
 ]
 
