@@ -60,9 +60,13 @@ import { useRouter } from 'vue-router'
 import {
   ChatDotRound,
   Picture,
+  User,
+  EditPen,
+  Notebook,
+  VideoCamera,
   Document,
   Microphone,
-  Setting,
+  FolderOpened,
   ArrowRight
 } from '@element-plus/icons-vue'
 
@@ -84,6 +88,30 @@ const features = [
     icon: markRaw(Picture)
   },
   {
+    path: '/portrait',
+    title: '人像设计',
+    description: 'AI 角色人像设计与生成',
+    icon: markRaw(User)
+  },
+  {
+    path: '/longwriting',
+    title: '长文写作',
+    description: 'AI 辅助长篇小说创作',
+    icon: markRaw(EditPen)
+  },
+  {
+    path: '/diary',
+    title: '日记',
+    description: '智能日记记录与管理',
+    icon: markRaw(Notebook)
+  },
+  {
+    path: '/story-to-video',
+    title: '剧集制作',
+    description: '剧本生成与视频制作',
+    icon: markRaw(VideoCamera)
+  },
+  {
     path: '/translate',
     title: '文档翻译',
     description: '智能翻译多种语言文档',
@@ -96,10 +124,10 @@ const features = [
     icon: markRaw(Microphone)
   },
   {
-    path: '/settings',
-    title: '系统设置',
-    description: '配置 API 密钥、主题和语言',
-    icon: markRaw(Setting)
+    path: '/knowledge-base',
+    title: '知识库',
+    description: '个人知识管理与检索',
+    icon: markRaw(FolderOpened)
   }
 ]
 
