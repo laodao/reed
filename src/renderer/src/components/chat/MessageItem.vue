@@ -813,14 +813,47 @@ function formatContent(content: string): string {
   if (!content) return ''
 
   try {
+    // 处理未闭合的代码块（流式输出时）
+    // marked 会将未闭合的代码块当作普通文本，我们提前处理
+    let processedContent = content
+    const openCodeBlockMatch = processedContent.match(/```(\w*)\n([\s\S]*?)$/)
+    if (openCodeBlockMatch && !processedContent.endsWith('```')) {
+      // 存在未闭合的代码块，先用占位符替换
+      const language = openCodeBlockMatch[1] || ''
+      const code = openCodeBlockMatch[2] || ''
+      const placeholder = `__OPEN_CODE_BLOCK__`
+      processedContent = processedContent.replace(/```(\w*)\n([\s\S]*)$/, placeholder)
+
+      // 使用 marked 解析
+      const renderer = new marked.Renderer()
+      renderer.code = ({ text, lang }: { text: string; lang?: string }) => {
+        const langValue = lang || ''
+        return renderCodeBlock(langValue, text, false)
+      }
+      renderer.codespan = ({ text }: { text: string }) => {
+        return `<code class="inline-code">${text}</code>`
+      }
+
+      let result = marked.parse(processedContent, {
+        breaks: true,
+        gfm: true,
+        renderer
+      }) as string
+
+      // 还原未闭合的代码块
+      const openCodeBlockHtml = renderCodeBlock(language, code.trim(), true)
+      result = result.replace(placeholder, openCodeBlockHtml)
+
+      return result
+    }
+
     // 自定义渲染器，让代码块使用自定义样式
     const renderer = new marked.Renderer()
 
     // 自定义代码块渲染
     renderer.code = ({ text, lang }: { text: string; lang?: string }) => {
       const language = lang || ''
-      const code = text
-      return renderCodeBlock(language, code)
+      return renderCodeBlock(language, text)
     }
 
     // 自定义行内代码渲染
@@ -843,13 +876,24 @@ function formatContent(content: string): string {
 function formatSourceContent(content: string): string {
   if (!content) return ''
 
-  // 先处理代码块，用占位符替换
-  const codeBlocks: { language: string; code: string }[] = []
+  // 先处理完整的代码块，用占位符替换
+  const codeBlocks: { language: string; code: string; closed: boolean }[] = []
   let processedContent = content.replace(
     /```(\w*)\n([\s\S]*?)```/g,
     (match, language, code) => {
       const index = codeBlocks.length
-      codeBlocks.push({ language, code: code.trim() })
+      codeBlocks.push({ language, code: code.trim(), closed: true })
+      return `__CODE_BLOCK_${index}__`
+    }
+  )
+
+  // 处理未闭合的代码块（流式输出时）
+  // 匹配 ```lang\ncode 但没有闭合的情况
+  processedContent = processedContent.replace(
+    /```(\w*)\n([\s\S]*)$/g,
+    (match, language, code) => {
+      const index = codeBlocks.length
+      codeBlocks.push({ language, code: code.trim(), closed: false })
       return `__CODE_BLOCK_${index}__`
     }
   )
@@ -868,7 +912,7 @@ function formatSourceContent(content: string): string {
 
   // 还原代码块 - 源码模式下所有代码块都用普通样式显示
   codeBlocks.forEach((block, index) => {
-    const codeBlockHtml = renderSourceCodeBlock(block.language, block.code)
+    const codeBlockHtml = renderSourceCodeBlock(block.language, block.code, !block.closed)
     processedContent = processedContent.replace(`__CODE_BLOCK_${index}__`, codeBlockHtml)
   })
 
@@ -876,17 +920,18 @@ function formatSourceContent(content: string): string {
 }
 
 // 渲染源码模式的代码块（mermaid不渲染，显示为普通代码）
-function renderSourceCodeBlock(language: string, code: string): string {
+function renderSourceCodeBlock(language: string, code: string, isOpen: boolean = false): string {
   const lines = code.split('\n')
   const lineNumbers = lines.map((_, i) => `<span class="line-number">${i + 1}</span>`).join('')
   const codeLines = lines.map(line => escapeHtml(line)).join('\n')
   const encodedCode = btoa(unescape(encodeURIComponent(code)))
+  const openClass = isOpen ? 'code-block-open' : ''
 
   return `
-    <div class="code-block-wrapper">
+    <div class="code-block-wrapper ${openClass}">
       <div class="code-header">
-        <span class="language">${language || 'code'}</span>
-        <button class="copy-btn" data-code-b64="${encodedCode}">
+        <span class="language">${language || 'code'}${isOpen ? ' (输出中...)' : ''}</span>
+        <button class="copy-btn" data-code-b64="${encodedCode}" ${isOpen ? 'disabled title="代码块尚未完成"' : ''}>
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
           <span>复制</span>
         </button>
@@ -900,9 +945,11 @@ function renderSourceCodeBlock(language: string, code: string): string {
 }
 
 // 渲染代码块 HTML（使用纯 HTML 模拟 CodeBlock 组件）
-function renderCodeBlock(language: string, code: string): string {
-  // Mermaid 图表特殊处理
-  if (language === 'mermaid') {
+function renderCodeBlock(language: string, code: string, isOpen: boolean = false): string {
+  const openClass = isOpen ? 'code-block-open' : ''
+
+  // Mermaid 图表特殊处理（但未闭合时不渲染图表）
+  if (language === 'mermaid' && !isOpen) {
     // 使用 base64 编码代码内容
     const encodedCode = btoa(unescape(encodeURIComponent(code)))
     return `
@@ -934,10 +981,10 @@ function renderCodeBlock(language: string, code: string): string {
   const encodedCode = btoa(unescape(encodeURIComponent(code)))
 
   return `
-    <div class="code-block-wrapper">
+    <div class="code-block-wrapper ${openClass}">
       <div class="code-header">
-        <span class="language">${language || 'code'}</span>
-        <button class="copy-btn" data-code-b64="${encodedCode}">
+        <span class="language">${language || 'code'}${isOpen ? ' (输出中...)' : ''}</span>
+        <button class="copy-btn" data-code-b64="${encodedCode}" ${isOpen ? 'disabled title="代码块尚未完成"' : ''}>
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
           <span>复制</span>
         </button>
@@ -1669,6 +1716,24 @@ function showKnowledgeBaseSnippet(ref: { documentId: string; documentName: strin
           word-break: break-all;
         }
       }
+    }
+  }
+
+  // 未闭合代码块样式（流式输出中）
+  :deep(.code-block-open) {
+    border: 1px dashed #475569;
+
+    .code-header {
+      background: #2d3a4f;
+
+      .language {
+        color: #94a3b8;
+      }
+    }
+
+    .copy-btn {
+      opacity: 0.5;
+      cursor: not-allowed;
     }
   }
 
