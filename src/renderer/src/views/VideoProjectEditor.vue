@@ -421,9 +421,8 @@
 
               <!-- 操作按钮 -->
               <div class="storyboard-item-actions" @click.stop>
-                <el-tooltip content="重新生成" placement="top">
+                <el-tooltip v-if="storyboard.frameImage" content="重新生成" placement="top">
                   <el-button
-                    v-if="storyboard.frameImage"
                     circle
                     size="small"
                     @click="openRegenerateDialog(storyboard)"
@@ -431,9 +430,8 @@
                     <el-icon><RefreshRight /></el-icon>
                   </el-button>
                 </el-tooltip>
-                <el-tooltip content="删除画面" placement="top">
+                <el-tooltip v-if="storyboard.frameImage" content="删除画面" placement="top">
                   <el-button
-                    v-if="storyboard.frameImage"
                     circle
                     size="small"
                     type="danger"
@@ -2706,6 +2704,36 @@ function formatSceneHeader(scene: SceneScript): string {
 }
 
 /**
+ * 构建分镜与剧本元素的映射关系
+ */
+function buildStoryboardMapping(sceneId: string): Map<string, number> {
+  const mapping = new Map<string, number>()
+  const sceneStoryboards = store.storyboards.filter(s => s.sceneScriptId === sceneId)
+
+  for (const storyboard of sceneStoryboards) {
+    for (const dialogueId of storyboard.dialogueIds) {
+      mapping.set(dialogueId, storyboard.shotNumber)
+    }
+    for (const actionId of storyboard.actionIds) {
+      mapping.set(actionId, storyboard.shotNumber)
+    }
+    if (storyboard.narrationId) {
+      mapping.set(storyboard.narrationId, storyboard.shotNumber)
+    }
+  }
+
+  return mapping
+}
+
+/**
+ * 渲染分镜标签
+ */
+function renderStoryboardTag(shotNumber: number | undefined | null): string {
+  if (!shotNumber) return ''
+  return `<span class="storyboard-tag" data-shot="${shotNumber}">镜头 ${shotNumber}</span>`
+}
+
+/**
  * 格式化场景剧本内容（从剧本正文中提取对应场景的内容）
  */
 function formatSceneScriptContent(scene: SceneScript, index: number): string {
@@ -2754,13 +2782,29 @@ function formatSceneScriptContent(scene: SceneScript, index: number): string {
     }
 
     // 实在找不到，显示旁白作为备用
+    // 构建分镜映射
+    const storyboardMapping = buildStoryboardMapping(scene.id)
+
     return `<div class="fallback-content">
-      <p class="narration">${scene.narration}</p>
+      ${scene.narration ? `
+        <p class="narration">
+          ${scene.narration}
+          ${renderStoryboardTag(storyboardMapping.get('narration-' + scene.id))}
+        </p>
+      ` : ''}
       ${scene.dialogues.map(d => `
-        <div class="dialogue">
+        <div class="dialogue" data-dialogue-id="${d.id}">
           <span class="character-name">${d.characterName}</span>
           <span class="parenthetical">${d.emotion || ''}</span>
           <p class="text">${d.text}</p>
+          ${renderStoryboardTag(storyboardMapping.get(d.id))}
+        </div>
+      `).join('')}
+      ${scene.actions.map(a => `
+        <div class="action" data-action-id="${a.id}">
+          <span class="action-character">${a.characterId ? getCharacterName(a.characterId) : '群像'}</span>
+          <p class="description">${a.description}</p>
+          ${renderStoryboardTag(storyboardMapping.get(a.id))}
         </div>
       `).join('')}
     </div>`
@@ -4272,6 +4316,58 @@ watch(outlineSearchText, (val) => {
               .text {
                 margin: 4px 0;
               }
+            }
+
+            .action {
+              margin: 12px 0;
+
+              .action-character {
+                font-weight: 500;
+                display: block;
+                color: var(--el-text-color-primary);
+              }
+
+              .description {
+                margin: 4px 0;
+                color: var(--el-text-color-regular);
+              }
+            }
+          }
+
+          // 分镜标签样式
+          .storyboard-tag {
+            display: inline-block;
+            margin-left: 8px;
+            padding: 2px 8px;
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--el-color-primary);
+            background: var(--el-color-primary-light-9);
+            border-radius: 4px;
+            vertical-align: middle;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: all 0.2s;
+
+            &:hover {
+              background: var(--el-color-primary-light-8);
+              transform: scale(1.05);
+            }
+          }
+
+          .dialogue, .action {
+            position: relative;
+
+            .storyboard-tag {
+              float: right;
+              margin-top: 4px;
+            }
+          }
+
+          .narration {
+            .storyboard-tag {
+              display: inline-block;
+              margin-left: 8px;
             }
           }
         }

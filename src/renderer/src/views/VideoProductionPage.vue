@@ -232,7 +232,14 @@
     </el-dialog>
 
     <!-- 剧本查看对话框 -->
-    <el-dialog v-model="showScriptDialog" title="镜头剧本" width="600px">
+    <el-dialog
+      v-model="showScriptDialog"
+      title="镜头剧本"
+      width="70%"
+      top="8vh"
+      custom-class="script-view-dialog"
+      destroy-on-close
+    >
       <div v-if="store.currentScene" class="script-dialog-content">
         <!-- 场景信息 -->
         <div class="scene-info-section">
@@ -1375,7 +1382,29 @@ watch(
 }
 
 // 剧本对话框样式
+.script-view-dialog {
+  max-width: 900px;
+  min-width: 500px;
+}
+
 .script-dialog-content {
+  max-height: 65vh;
+  overflow-y: auto;
+  padding-right: 4px;
+
+  // 自定义滚动条
+  scrollbar-width: thin;
+  scrollbar-color: var(--el-border-color-darker) transparent;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--el-border-color-darker);
+    border-radius: 3px;
+  }
+
   .scene-info-section {
     margin-bottom: 20px;
     padding: 12px;
@@ -1430,7 +1459,7 @@ watch(
     display: flex;
     flex-direction: column;
     gap: 8px;
-    max-height: 200px;
+    max-height: 150px;
     overflow-y: auto;
   }
 
@@ -1472,6 +1501,17 @@ watch(
 
     .character-tag {
       cursor: default;
+    }
+  }
+}
+
+// 响应式样式
+@media (max-width: 768px) {
+  .script-view-dialog {
+    width: 95% !important;
+
+    .script-dialog-content {
+      max-height: 55vh;
     }
   }
 }
