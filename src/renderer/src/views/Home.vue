@@ -100,12 +100,6 @@ const features = [
     icon: markRaw(EditPen)
   },
   {
-    path: '/diary',
-    title: '日记',
-    description: '智能日记记录与管理',
-    icon: markRaw(Notebook)
-  },
-  {
     path: '/story-to-video',
     title: '剧集制作',
     description: '剧本生成与视频制作',
@@ -128,6 +122,12 @@ const features = [
     title: '知识库',
     description: '个人知识管理与检索',
     icon: markRaw(FolderOpened)
+  },
+  {
+    path: '/diary',
+    title: '日记',
+    description: '智能日记记录与管理',
+    icon: markRaw(Notebook)
   }
 ]
 

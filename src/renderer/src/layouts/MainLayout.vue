@@ -175,11 +175,6 @@ const mainMenuItems = [
     icon: markRaw(EditPen)
   },
   {
-    path: '/diary',
-    label: '日记',
-    icon: markRaw(Notebook)
-  },
-  {
     path: '/story-to-video',
     label: '剧集制作',
     icon: markRaw(VideoCamera)
@@ -198,6 +193,11 @@ const mainMenuItems = [
     path: '/knowledge-base',
     label: '知识库',
     icon: markRaw(FolderOpened)
+  },
+  {
+    path: '/diary',
+    label: '日记',
+    icon: markRaw(Notebook)
   }
 ]
 
