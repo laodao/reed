@@ -351,6 +351,11 @@ onMounted(() => {
 onUnmounted(() => {
   delete (window as any).copyCodeFromBlock
 })
+
+// 暴露 DOM 元素给父组件
+defineExpose({
+  el: listRef
+})
 </script>
 
 <style lang="scss" scoped>

@@ -598,7 +598,10 @@ async function exportToImage(): Promise<void> {
     return
   }
 
-  if (!props.messageListRef) {
+  // 获取消息列表元素
+  const messageListEl = props.messageListRef
+  if (!messageListEl) {
+    console.error('无法获取消息列表区域，messageListRef:', messageListEl)
     ElMessage.warning('无法获取消息列表区域')
     return
   }
@@ -606,36 +609,41 @@ async function exportToImage(): Promise<void> {
   isExportingImage.value = true
 
   try {
-    // 克隆消息列表元素以避免影响原始界面
-    const clone = props.messageListRef.cloneNode(true) as HTMLElement
+    // 获取内部消息容器（实际内容区域）
+    const messagesContainer = messageListEl.querySelector('.messages-container') as HTMLElement || messageListEl
 
-    // 创建临时容器
-    const container = document.createElement('div')
-    container.style.cssText = `
-      position: fixed;
-      left: -9999px;
-      top: 0;
-      width: ${props.messageListRef.scrollWidth}px;
-      background: #f8fafc;
-      padding: 24px;
-    `
-    container.appendChild(clone)
-    document.body.appendChild(container)
+    // 临时移除滚动限制，显示全部内容
+    const originalOverflow = messageListEl.style.overflow
+    const originalHeight = messageListEl.style.height
+    const originalMaxHeight = messageListEl.style.maxHeight
+
+    // 设置为自动高度以显示所有内容
+    messageListEl.style.overflow = 'visible'
+    messageListEl.style.height = 'auto'
+    messageListEl.style.maxHeight = 'none'
+
+    // 等待 DOM 更新
+    await new Promise(resolve => setTimeout(resolve, 100))
 
     // 使用 html2canvas 截图
-    const canvas = await html2canvas(container, {
+    const canvas = await html2canvas(messageListEl, {
       backgroundColor: '#f8fafc',
       scale: 2,
       useCORS: true,
       logging: false,
-      windowWidth: props.messageListRef.scrollWidth + 48,
-      windowHeight: container.scrollHeight
+      width: messageListEl.scrollWidth,
+      height: messageListEl.scrollHeight,
+      windowWidth: messageListEl.scrollWidth,
+      windowHeight: messageListEl.scrollHeight
     })
 
-    // 移除临时容器
-    document.body.removeChild(container)
+    // 恢复原始样式
+    messageListEl.style.overflow = originalOverflow
+    messageListEl.style.height = originalHeight
+    messageListEl.style.maxHeight = originalMaxHeight
 
     // 转换为图片并下载
+    const title = props.dialog.title || '对话记录'
     canvas.toBlob((blob) => {
       if (!blob) {
         ElMessage.error('生成图片失败')
@@ -645,7 +653,6 @@ async function exportToImage(): Promise<void> {
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      const title = props.dialog.title || '对话记录'
       link.download = `${title}_${formatFileName(new Date())}.png`
       document.body.appendChild(link)
       link.click()
@@ -656,7 +663,7 @@ async function exportToImage(): Promise<void> {
     }, 'image/png')
   } catch (error) {
     console.error('导出长图失败:', error)
-    ElMessage.error('导出失败')
+    ElMessage.error('导出失败: ' + (error instanceof Error ? error.message : '未知错误'))
   } finally {
     isExportingImage.value = false
   }

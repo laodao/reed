@@ -83,11 +83,11 @@ const providerConfigs = ref<UserProviderConfig[]>([])
 const knowledgeBasesCache = ref<Map<string, { id: string; name: string }>>(new Map())
 
 // MessageList 组件引用
-const messageListRef = ref<{ $el: HTMLElement } | null>(null)
+const messageListRef = ref<{ el: HTMLElement } | null>(null)
 
 // 获取 MessageList 的 DOM 元素
 const messageListElement = computed(() => {
-  return messageListRef.value?.$el || null
+  return messageListRef.value?.el || null
 })
 
 // 加载提供商配置
