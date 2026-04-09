@@ -336,7 +336,7 @@
         <el-empty v-else description="未能检测到实体状态变化" />
       </div>
       <template #footer>
-        <el-button @click="showStateExtractDialog = false">取消</el-button>
+        <el-button @click="cancelStateExtractDialog">取消</el-button>
         <el-button type="primary" :disabled="extractedStates.length === 0" @click="saveEntityStates">
           保存状态快照
         </el-button>
@@ -546,6 +546,7 @@ const snapshotStats = ref<{ total: number; byEntityType: Record<string, number> 
 const showStateExtractDialog = ref(false)
 const extractingStates = ref(false)
 const extractedStates = ref<any[]>([])
+const extractingOutlineId = ref<string>('')  // 记录正在提取状态的章节 ID
 
 // 查看章节状态
 const showViewStateDialog = ref(false)
@@ -1016,6 +1017,7 @@ async function extractEntityStatesFromChapter(outlineId: string) {
 
   extractingStates.value = true
   extractedStates.value = []
+  extractingOutlineId.value = outlineId  // 记录当前正在提取状态的章节 ID
 
   try {
     const chapterNumber = calculateChapterNumber(outlineId)
@@ -1136,15 +1138,25 @@ async function extractEntityStatesFromChapter(outlineId: string) {
         showStateExtractDialog.value = true
       } else {
         ElMessage.info('未检测到实体状态变化')
+        extractingOutlineId.value = ''  // 清除章节 ID
       }
     } else {
       ElMessage.error(result.error || '提取实体状态失败')
+      extractingOutlineId.value = ''  // 清除章节 ID
     }
   } catch (error: any) {
     ElMessage.error('提取实体状态失败：' + error.message)
+    extractingOutlineId.value = ''  // 清除章节 ID
   } finally {
     extractingStates.value = false
   }
+}
+
+// 取消状态提取对话框
+function cancelStateExtractDialog() {
+  showStateExtractDialog.value = false
+  extractingOutlineId.value = ''  // 清除章节 ID
+  extractedStates.value = []  // 清除提取的状态
 }
 
 // 保存提取的实体状态
@@ -1152,10 +1164,20 @@ async function saveEntityStates() {
   if (extractedStates.value.length === 0) return
 
   try {
-    const outline = currentChapter.value
-    if (!outline) return
+    // 使用提取时记录的章节 ID，而不是当前选中的章节
+    const outlineId = extractingOutlineId.value
+    if (!outlineId) {
+      ElMessage.error('章节信息丢失，请重新提取状态')
+      return
+    }
 
-    const chapterNumber = calculateChapterNumber(outline.id)
+    const outline = outlineNodes.value.find(n => n.id === outlineId)
+    if (!outline) {
+      ElMessage.error('章节不存在，请重新提取状态')
+      return
+    }
+
+    const chapterNumber = calculateChapterNumber(outlineId)
 
     // 序列化数据
     const statesToCreate = JSON.parse(JSON.stringify(extractedStates.value.map(s => ({
@@ -1172,6 +1194,7 @@ async function saveEntityStates() {
     if (result.success) {
       ElMessage.success(`已保存 ${result.data?.length || 0} 个实体状态快照`)
       showStateExtractDialog.value = false
+      extractingOutlineId.value = ''  // 清除章节 ID
       await loadSnapshotStats()
     } else {
       ElMessage.error(result.error || '保存状态快照失败')
