@@ -813,41 +813,65 @@ function formatContent(content: string): string {
   if (!content) return ''
 
   try {
-    // 处理未闭合的代码块（流式输出时）
-    // marked 会将未闭合的代码块当作普通文本，我们提前处理
-    let processedContent = content
-    const openCodeBlockMatch = processedContent.match(/```(\w*)\n([\s\S]*?)$/)
-    if (openCodeBlockMatch && !processedContent.endsWith('```')) {
-      // 存在未闭合的代码块，先用占位符替换
-      const language = openCodeBlockMatch[1] || ''
-      const code = openCodeBlockMatch[2] || ''
-      const placeholder = `__OPEN_CODE_BLOCK__`
-      processedContent = processedContent.replace(/```(\w*)\n([\s\S]*)$/, placeholder)
+    // 检查是否存在未闭合的代码块
+    // 通过统计 ``` 的数量来判断（成对则为偶数）
+    const codeBlockMarkers = content.match(/```/g)
+    const hasOpenCodeBlock = codeBlockMarkers && codeBlockMarkers.length % 2 === 1
 
-      // 使用 marked 解析
-      const renderer = new marked.Renderer()
-      renderer.code = ({ text, lang }: { text: string; lang?: string }) => {
-        const langValue = lang || ''
-        return renderCodeBlock(langValue, text, false)
+    if (hasOpenCodeBlock) {
+      // 找到最后一个未闭合的代码块
+      // 先处理已闭合的代码块，用占位符替换
+      const closedBlocks: { language: string; code: string }[] = []
+      let processedContent = content.replace(
+        /```(\w*)\n([\s\S]*?)```/g,
+        (match, language, code) => {
+          const index = closedBlocks.length
+          closedBlocks.push({ language, code: code.trim() })
+          return `__CLOSED_CODE_BLOCK_${index}__`
+        }
+      )
+
+      // 现在处理剩余的未闭合代码块（如果有）
+      const openMatch = processedContent.match(/```(\w*)\n([\s\S]*)$/)
+      if (openMatch) {
+        const language = openMatch[1] || ''
+        const code = openMatch[2] || ''
+
+        // 使用占位符替换未闭合的代码块部分
+        const placeholder = `__OPEN_CODE_BLOCK__`
+        processedContent = processedContent.replace(/```(\w*)\n[\s\S]*$/, placeholder)
+
+        // 使用 marked 解析
+        const renderer = new marked.Renderer()
+        renderer.code = ({ text, lang }: { text: string; lang?: string }) => {
+          const langValue = lang || ''
+          return renderCodeBlock(langValue, text, false)
+        }
+        renderer.codespan = ({ text }: { text: string }) => {
+          return `<code class="inline-code">${text}</code>`
+        }
+
+        let result = marked.parse(processedContent, {
+          breaks: true,
+          gfm: true,
+          renderer
+        }) as string
+
+        // 还原已闭合的代码块
+        closedBlocks.forEach((block, index) => {
+          const blockHtml = renderCodeBlock(block.language, block.code, false)
+          result = result.replace(`__CLOSED_CODE_BLOCK_${index}__`, blockHtml)
+        })
+
+        // 还原未闭合的代码块
+        const openCodeBlockHtml = renderCodeBlock(language, code.trim(), true)
+        result = result.replace(placeholder, openCodeBlockHtml)
+
+        return result
       }
-      renderer.codespan = ({ text }: { text: string }) => {
-        return `<code class="inline-code">${text}</code>`
-      }
-
-      let result = marked.parse(processedContent, {
-        breaks: true,
-        gfm: true,
-        renderer
-      }) as string
-
-      // 还原未闭合的代码块
-      const openCodeBlockHtml = renderCodeBlock(language, code.trim(), true)
-      result = result.replace(placeholder, openCodeBlockHtml)
-
-      return result
     }
 
-    // 自定义渲染器，让代码块使用自定义样式
+    // 没有未闭合的代码块，直接解析
     const renderer = new marked.Renderer()
 
     // 自定义代码块渲染
