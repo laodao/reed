@@ -324,7 +324,9 @@
     <el-dialog
       v-model="showPrewriteDialog"
       title="AI 预写提纲"
-      width="600px"
+      width="70%"
+      top="6vh"
+      custom-class="prewrite-dialog"
       destroy-on-close
     >
       <div class="prewrite-dialog-content">
@@ -1637,7 +1639,30 @@ async function loadMemoryStats() {
   margin-left: 4px;
 }
 
+// 预写对话框样式
+.prewrite-dialog {
+  max-width: 900px;
+  min-width: 500px;
+}
+
 .prewrite-dialog-content {
+  max-height: 70vh;
+  overflow-y: auto;
+  padding-right: 4px;
+
+  // 自定义滚动条
+  scrollbar-width: thin;
+  scrollbar-color: var(--el-border-color-darker) transparent;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--el-border-color-darker);
+    border-radius: 3px;
+  }
+
   .prewrite-info {
     margin-bottom: 16px;
     padding: 12px;
@@ -1741,6 +1766,19 @@ async function loadMemoryStats() {
       display: flex;
       gap: 8px;
       margin-bottom: 8px;
+    }
+  }
+}
+
+// 响应式样式
+@media (max-width: 768px) {
+  .prewrite-dialog {
+    width: 95% !important;
+    max-width: none;
+    min-width: auto;
+
+    .prewrite-dialog-content {
+      max-height: 60vh;
     }
   }
 }
