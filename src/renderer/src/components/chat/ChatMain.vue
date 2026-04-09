@@ -3,12 +3,15 @@
     <!-- 顶部标题栏 -->
     <ChatHeader
       :dialog="dialog"
+      :messages="messages"
+      :message-list-ref="messageListElement"
       @update-config="(dialogId, config) => $emit('updateConfig', dialogId, config)"
       @clear-messages="$emit('clearMessages')"
     />
 
     <!-- 消息列表 -->
     <MessageList
+      ref="messageListRef"
       :messages="messages"
       :stream-state="streamState"
       :is-generating="isGenerating"
@@ -78,6 +81,14 @@ const providerConfigs = ref<UserProviderConfig[]>([])
 
 // 知识库列表缓存
 const knowledgeBasesCache = ref<Map<string, { id: string; name: string }>>(new Map())
+
+// MessageList 组件引用
+const messageListRef = ref<{ $el: HTMLElement } | null>(null)
+
+// 获取 MessageList 的 DOM 元素
+const messageListElement = computed(() => {
+  return messageListRef.value?.$el || null
+})
 
 // 加载提供商配置
 async function loadProviderConfigs(): Promise<void> {

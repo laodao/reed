@@ -48,6 +48,23 @@
       </el-select>
     </div>
     <div class="header-right">
+      <el-dropdown trigger="click" @command="handleExportCommand">
+        <el-button text size="small">
+          <el-icon><Download /></el-icon>
+        </el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="markdown">
+              <el-icon><Document /></el-icon>
+              <span>导出为 Markdown</span>
+            </el-dropdown-item>
+            <el-dropdown-item command="image" :disabled="isExportingImage">
+              <el-icon><Picture /></el-icon>
+              <span>{{ isExportingImage ? '导出中...' : '导出为长图' }}</span>
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
       <el-button text size="small" @click="showSettingsDialog = true">
         <el-icon><Setting /></el-icon>
       </el-button>
@@ -92,12 +109,16 @@
 
 <script setup lang="ts">
 import { ref, reactive, watch, computed, onMounted, onUnmounted } from 'vue'
-import { Setting, Delete, Cpu, Search, SetUp } from '@element-plus/icons-vue'
-import type { Dialog, ContextConfig, UserProviderConfig, ModelDefinition, ProviderTemplate } from '../../../shared/types'
+import { Setting, Delete, Cpu, Search, SetUp, Download, Document, Picture } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import html2canvas from 'html2canvas'
+import type { Dialog, ContextConfig, UserProviderConfig, ModelDefinition, ProviderTemplate, Message } from '../../../shared/types'
 import { useDialogStore } from '../../stores/dialog'
 
 const props = defineProps<{
   dialog: Dialog
+  messages?: Message[]
+  messageListRef?: HTMLElement | null
 }>()
 
 // 直接获取 dialogStore，用于立即更新 currentDialog
@@ -493,6 +514,172 @@ function handleSaveSettings(): void {
     }
   })
   showSettingsDialog.value = false
+}
+
+// 导出状态
+const isExportingImage = ref(false)
+
+// 处理导出命令
+function handleExportCommand(command: string): void {
+  if (command === 'markdown') {
+    exportToMarkdown()
+  } else if (command === 'image') {
+    exportToImage()
+  }
+}
+
+// 导出为 Markdown
+function exportToMarkdown(): void {
+  if (!props.messages || props.messages.length === 0) {
+    ElMessage.warning('没有消息可以导出')
+    return
+  }
+
+  try {
+    const title = props.dialog.title || '对话记录'
+    let markdown = `# ${title}\n\n`
+    markdown += `> 导出时间：${formatDateTime(new Date())}\n\n`
+    markdown += '---\n\n'
+
+    for (const message of props.messages) {
+      const sender = message.role === 'user' ? '👤 用户' : '🤖 助手'
+      const time = formatDateTime(new Date(message.createdAt))
+
+      markdown += `## ${sender}\n\n`
+      markdown += `*${time}*\n\n`
+
+      // 处理内容
+      const content = message.content.trim()
+
+      // 如果内容已经包含代码块，直接保留
+      // 否则根据内容类型处理
+      if (content.includes('```')) {
+        // 包含代码块，直接输出
+        markdown += `${content}\n\n`
+      } else {
+        // 纯文本，直接输出
+        markdown += `${content}\n\n`
+      }
+
+      // 如果有附件信息
+      if (message.attachments && message.attachments.length > 0) {
+        markdown += `**附件：**\n`
+        for (const attachment of message.attachments) {
+          markdown += `- ${attachment.fileName}\n`
+        }
+        markdown += '\n'
+      }
+
+      markdown += '---\n\n'
+    }
+
+    // 创建并下载文件
+    const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${title}_${formatFileName(new Date())}.md`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+
+    ElMessage.success('Markdown 文件已导出')
+  } catch (error) {
+    console.error('导出 Markdown 失败:', error)
+    ElMessage.error('导出失败')
+  }
+}
+
+// 导出为长图
+async function exportToImage(): Promise<void> {
+  if (!props.messages || props.messages.length === 0) {
+    ElMessage.warning('没有消息可以导出')
+    return
+  }
+
+  if (!props.messageListRef) {
+    ElMessage.warning('无法获取消息列表区域')
+    return
+  }
+
+  isExportingImage.value = true
+
+  try {
+    // 克隆消息列表元素以避免影响原始界面
+    const clone = props.messageListRef.cloneNode(true) as HTMLElement
+
+    // 创建临时容器
+    const container = document.createElement('div')
+    container.style.cssText = `
+      position: fixed;
+      left: -9999px;
+      top: 0;
+      width: ${props.messageListRef.scrollWidth}px;
+      background: #f8fafc;
+      padding: 24px;
+    `
+    container.appendChild(clone)
+    document.body.appendChild(container)
+
+    // 使用 html2canvas 截图
+    const canvas = await html2canvas(container, {
+      backgroundColor: '#f8fafc',
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      windowWidth: props.messageListRef.scrollWidth + 48,
+      windowHeight: container.scrollHeight
+    })
+
+    // 移除临时容器
+    document.body.removeChild(container)
+
+    // 转换为图片并下载
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        ElMessage.error('生成图片失败')
+        return
+      }
+
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      const title = props.dialog.title || '对话记录'
+      link.download = `${title}_${formatFileName(new Date())}.png`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+
+      ElMessage.success('长图已导出')
+    }, 'image/png')
+  } catch (error) {
+    console.error('导出长图失败:', error)
+    ElMessage.error('导出失败')
+  } finally {
+    isExportingImage.value = false
+  }
+}
+
+// 格式化日期时间
+function formatDateTime(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day} ${hours}:${minutes}`
+}
+
+// 格式化文件名日期
+function formatFileName(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${year}${month}${day}_${hours}${minutes}`
 }
 
 onMounted(() => {
