@@ -30,6 +30,11 @@ export class KbChunkRepository {
       chunkIndex: row.chunk_index,
       startOffset: row.start_offset ?? undefined,
       endOffset: row.end_offset ?? undefined,
+      title: row.title ?? undefined,
+      level: row.level ?? undefined,
+      parentChunkId: row.parent_chunk_id ?? undefined,
+      splitMethod: row.split_method ?? undefined,
+      sectionPath: row.section_path ?? undefined,
       metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
       createdAt: new Date(row.created_at)
     }
@@ -96,8 +101,9 @@ export class KbChunkRepository {
     this.db.prepare(`
       INSERT INTO kb_chunks (
         id, document_id, knowledge_base_id, content, chunk_index,
-        start_offset, end_offset, metadata, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        start_offset, end_offset, title, level, parent_chunk_id,
+        split_method, section_path, metadata, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       request.documentId,
@@ -106,6 +112,11 @@ export class KbChunkRepository {
       request.chunkIndex,
       request.startOffset ?? null,
       request.endOffset ?? null,
+      request.title ?? null,
+      request.level ?? null,
+      request.parentChunkId ?? null,
+      request.splitMethod ?? null,
+      request.sectionPath ? JSON.stringify(request.sectionPath) : null,
       request.metadata ? JSON.stringify(request.metadata) : null,
       now
     )
@@ -118,6 +129,11 @@ export class KbChunkRepository {
       chunkIndex: request.chunkIndex,
       startOffset: request.startOffset,
       endOffset: request.endOffset,
+      title: request.title,
+      level: request.level,
+      parentChunkId: request.parentChunkId,
+      splitMethod: request.splitMethod,
+      sectionPath: request.sectionPath ? JSON.stringify(request.sectionPath) : undefined,
       metadata: request.metadata,
       createdAt: new Date(now)
     }
@@ -130,8 +146,9 @@ export class KbChunkRepository {
     const insert = this.db.prepare(`
       INSERT INTO kb_chunks (
         id, document_id, knowledge_base_id, content, chunk_index,
-        start_offset, end_offset, metadata, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        start_offset, end_offset, title, level, parent_chunk_id,
+        split_method, section_path, metadata, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     const now = new Date().toISOString()
@@ -148,6 +165,11 @@ export class KbChunkRepository {
           request.chunkIndex,
           request.startOffset ?? null,
           request.endOffset ?? null,
+          request.title ?? null,
+          request.level ?? null,
+          request.parentChunkId ?? null,
+          request.splitMethod ?? null,
+          request.sectionPath ? JSON.stringify(request.sectionPath) : null,
           request.metadata ? JSON.stringify(request.metadata) : null,
           now
         )
@@ -159,6 +181,11 @@ export class KbChunkRepository {
           chunkIndex: request.chunkIndex,
           startOffset: request.startOffset,
           endOffset: request.endOffset,
+          title: request.title,
+          level: request.level,
+          parentChunkId: request.parentChunkId,
+          splitMethod: request.splitMethod,
+          sectionPath: request.sectionPath ? JSON.stringify(request.sectionPath) : undefined,
           metadata: request.metadata,
           createdAt: new Date(now)
         })
@@ -227,5 +254,16 @@ export class KbChunkRepository {
       `SELECT * FROM kb_chunks WHERE id IN (${placeholders})`
     ).all(...ids) as any[]
     return rows.map(row => this.rowToEntity(row))
+  }
+
+  /**
+   * 根据标题查找切片
+   */
+  findByTitle(documentId: string, title: string): KbChunk | null {
+    const row = this.db.prepare(
+      'SELECT * FROM kb_chunks WHERE document_id = ? AND title = ?'
+    ).get(documentId, title) as any
+    if (!row) return null
+    return this.rowToEntity(row)
   }
 }

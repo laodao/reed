@@ -3,6 +3,29 @@
  * @module shared/types/knowledge-base.types
  */
 
+// ==================== 切分策略 ====================
+
+/**
+ * 切分策略枚举
+ */
+export type SplitStrategy = 'hybrid' | 'structure' | 'semantic' | 'fixed'
+
+/**
+ * 切分配置
+ */
+export interface SplitConfig {
+  /** 切分策略 */
+  strategy: SplitStrategy
+  /** 语义切分相似度阈值（低于此值时切分），默认 0.5 */
+  similarityThreshold?: number
+  /** 最小 chunk 大小（字符数），默认 200 */
+  minChunkSize?: number
+  /** 最大 chunk 大小（字符数），默认 1500 */
+  maxChunkSize?: number
+  /** 仅结构切分，不做语义切分 */
+  structureOnly?: boolean
+}
+
 // ==================== 知识库 ====================
 
 /**
@@ -21,6 +44,10 @@ export interface KnowledgeBase {
   embeddingDimension: number
   /** Embedding 配置（JSON） */
   embeddingConfig?: string
+  /** 切分策略 */
+  splitStrategy?: SplitStrategy
+  /** 切分配置（JSON） */
+  splitConfig?: string
   /** 文档数量 */
   documentCount: number
   /** 向量条数 */
@@ -169,6 +196,16 @@ export interface KbChunk {
   startOffset?: number
   /** 原文结束位置 */
   endOffset?: number
+  /** 章节标题 */
+  title?: string
+  /** 层级深度（1=章，2=节，3=段） */
+  level?: number
+  /** 父 chunk ID（用于层级导航） */
+  parentChunkId?: string
+  /** 切分方法 */
+  splitMethod?: string
+  /** 层级路径（JSON 数组） */
+  sectionPath?: string
   /** 元数据 */
   metadata?: ChunkMetadata
   /** 创建时间 */
@@ -217,6 +254,16 @@ export interface CreateChunkRequest {
   startOffset?: number
   /** 原文结束位置 */
   endOffset?: number
+  /** 章节标题 */
+  title?: string
+  /** 层级深度 */
+  level?: number
+  /** 父 chunk ID */
+  parentChunkId?: string
+  /** 切分方法 */
+  splitMethod?: string
+  /** 层级路径（JSON 数组） */
+  sectionPath?: string[]
   /** 元数据 */
   metadata?: ChunkMetadata
 }

@@ -3496,6 +3496,47 @@ export class DatabaseManager {
       this.db.exec('ALTER TABLE lw_story_outlines ADD COLUMN involved_items TEXT DEFAULT \'[]\'')
       console.log('[DatabaseManager] lw_story_outlines.involved_items 列添加完成')
     }
+
+    // ==================== 知识库切分策略优化相关迁移 ====================
+
+    // 检查 kb_chunks 表是否需要添加新字段（层级信息）
+    const kbChunkColumns = this.db.prepare("PRAGMA table_info(kb_chunks)").all() as any[]
+    const kbChunkColumnNames = kbChunkColumns.map(col => col.name)
+
+    if (!kbChunkColumnNames.includes('title')) {
+      console.log('[DatabaseManager] 添加 kb_chunks.title 列...')
+      this.db.exec('ALTER TABLE kb_chunks ADD COLUMN title TEXT')
+    }
+    if (!kbChunkColumnNames.includes('level')) {
+      console.log('[DatabaseManager] 添加 kb_chunks.level 列...')
+      this.db.exec('ALTER TABLE kb_chunks ADD COLUMN level INTEGER DEFAULT 1')
+    }
+    if (!kbChunkColumnNames.includes('parent_chunk_id')) {
+      console.log('[DatabaseManager] 添加 kb_chunks.parent_chunk_id 列...')
+      this.db.exec('ALTER TABLE kb_chunks ADD COLUMN parent_chunk_id TEXT')
+    }
+    if (!kbChunkColumnNames.includes('split_method')) {
+      console.log('[DatabaseManager] 添加 kb_chunks.split_method 列...')
+      this.db.exec('ALTER TABLE kb_chunks ADD COLUMN split_method TEXT')
+    }
+    if (!kbChunkColumnNames.includes('section_path')) {
+      console.log('[DatabaseManager] 添加 kb_chunks.section_path 列...')
+      this.db.exec('ALTER TABLE kb_chunks ADD COLUMN section_path TEXT')
+    }
+
+    // 检查 knowledge_bases 表是否需要添加新字段（切分策略配置）
+    const kbColumns = this.db.prepare("PRAGMA table_info(knowledge_bases)").all() as any[]
+    const kbColumnNames = kbColumns.map(col => col.name)
+
+    if (!kbColumnNames.includes('split_strategy')) {
+      console.log('[DatabaseManager] 添加 knowledge_bases.split_strategy 列...')
+      this.db.exec('ALTER TABLE knowledge_bases ADD COLUMN split_strategy TEXT DEFAULT \'hybrid\'')
+    }
+    if (!kbColumnNames.includes('split_config')) {
+      console.log('[DatabaseManager] 添加 knowledge_bases.split_config 列...')
+      this.db.exec('ALTER TABLE knowledge_bases ADD COLUMN split_config TEXT')
+    }
+    console.log('[DatabaseManager] 知识库切分策略优化迁移完成')
   }
 
   /**

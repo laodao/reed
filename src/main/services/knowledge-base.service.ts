@@ -13,6 +13,7 @@ import { parse } from 'node-html-parser'
 import { getDatabaseManager } from '../database'
 import { DataPathService } from './data-path.service'
 import { SecureStorageService } from './secure-storage.service'
+import { HybridSplitter, EmbeddingService, SplitConfig, DEFAULT_SPLIT_CONFIG, SplitChunk } from './chunk-splitter'
 import type {
   KnowledgeBase,
   CreateKnowledgeBaseRequest,
@@ -20,12 +21,14 @@ import type {
   KbDocument,
   KbChunk,
   CreateDocumentRequest,
+  CreateChunkRequest,
   SearchRequest,
   SearchResult,
   EmbeddingModel,
   FileInfo,
   FileType,
-  EmbeddingConfig
+  EmbeddingConfig,
+  SplitStrategy
 } from '../../shared/types/knowledge-base.types'
 
 // 常量配置
@@ -39,6 +42,28 @@ const KB_EVENTS = {
   DOCUMENT_STATUS: 'kb:document-status',
   KNOWLEDGE_BASE_STATS: 'kb:stats'
 } as const
+
+/**
+ * Embedding 服务适配器
+ * 将 KnowledgeBaseService 的 getEmbeddingVectors 方法适配到 EmbeddingService 接口
+ */
+class EmbeddingServiceAdapter implements EmbeddingService {
+  private service: KnowledgeBaseService
+  private config: EmbeddingConfig
+
+  constructor(service: KnowledgeBaseService, config: EmbeddingConfig) {
+    this.service = service
+    this.config = config
+  }
+
+  async getBatchEmbeddings(texts: string[]): Promise<number[][]> {
+    const vectors = await this.service.getEmbeddingVectors(texts, this.config)
+    if (!vectors) {
+      throw new Error('Embedding API 调用失败')
+    }
+    return vectors
+  }
+}
 
 export class KnowledgeBaseService {
   private getMainWindow(): BrowserWindow | null {
@@ -366,39 +391,81 @@ export class KnowledgeBaseService {
       }
       console.log(`[KB] 解析完成, 长度: ${content.length}`)
 
-      // 2. 切分
+      // 2. 切分配置
+      const embeddingConfig: EmbeddingConfig = kb.embeddingConfig ? JSON.parse(kb.embeddingConfig) : {}
+      const splitConfig: SplitConfig = kb.splitConfig
+        ? JSON.parse(kb.splitConfig)
+        : { ...DEFAULT_SPLIT_CONFIG, strategy: (kb.splitStrategy || 'hybrid') as SplitStrategy }
+
+      // 3. 切分（使用新的 HybridSplitter）
       db.kbDocuments.updateProgress(doc.id, 20)
       this.emitProgress(doc.id, 20, undefined)
-      const chunks = this.splitText(content)
-      console.log(`[KB] 切分完成, 数量: ${chunks.length}`)
 
-      // 3. 存储切片
+      const embeddingService = new EmbeddingServiceAdapter(this, embeddingConfig)
+      const hybridSplitter = new HybridSplitter(embeddingService)
+
+      const splitChunks: SplitChunk[] = []
+      try {
+        splitChunks.push(...await hybridSplitter.split(content, splitConfig))
+        console.log(`[KB] 切分完成, 数量: ${splitChunks.length}, 策略: ${splitConfig.strategy}`)
+      } catch (splitError: any) {
+        // 切分失败（可能是 Embedding API 失败），标记文档失败
+        console.error(`[KB] 切分失败: ${splitError.message}`)
+        db.kbDocuments.markFailed(doc.id, splitError.message)
+        this.emitStatus(doc.id, 'failed', undefined, splitError.message)
+        return
+      }
+
+      // 4. 存储切片（包含层级信息）
       db.kbDocuments.updateProgress(doc.id, 30)
       this.emitProgress(doc.id, 30, undefined)
-      const chunkRecords = db.kbChunks.createBatch(
-        chunks.map(c => ({
+
+      // 构建父 chunk ID 映射
+      const chunkIdMap = new Map<string, string>()
+
+      const chunkRequests: CreateChunkRequest[] = splitChunks.map(chunk => {
+        // 生成临时 ID 用于映射
+        const tempId = chunk.parentChunkId || ''
+        return {
           documentId: doc.id,
           knowledgeBaseId: kb.id,
-          content: c.content,
-          chunkIndex: c.index,
-          startOffset: c.start,
-          endOffset: c.end
-        }))
-      )
+          content: chunk.content,
+          chunkIndex: chunk.index,
+          startOffset: chunk.startOffset,
+          endOffset: chunk.endOffset,
+          title: chunk.title,
+          level: chunk.level,
+          parentChunkId: chunk.parentChunkId,
+          splitMethod: chunk.splitMethod,
+          sectionPath: chunk.sectionPath
+        }
+      })
 
-      // 4. 生成向量
-      const config: EmbeddingConfig = kb.embeddingConfig ? JSON.parse(kb.embeddingConfig) : {}
+      const chunkRecords = db.kbChunks.createBatch(chunkRequests)
+
+      // 构建真实 ID 映射
+      for (let i = 0; i < splitChunks.length; i++) {
+        if (splitChunks[i].parentChunkId) {
+          // 查找父 chunk 的真实 ID
+          const parentIndex = splitChunks.findIndex(
+            c => c.startOffset === splitChunks[i].startOffset && c.index < splitChunks[i].index
+          )
+          if (parentIndex >= 0 && chunkRecords[parentIndex]) {
+            chunkIdMap.set(splitChunks[i].parentChunkId!, chunkRecords[parentIndex].id)
+          }
+        }
+      }
+
+      // 5. 生成向量
       const totalBatches = Math.ceil(chunkRecords.length / BATCH_SIZE)
-      // 预估每个批次约 2 秒（基于网络延迟和 API 响应）
       const estimatedBatchTime = 2 // 秒
 
       let batchIndex = 0
       for (let i = 0; i < chunkRecords.length; i += BATCH_SIZE) {
-        const batchStartTime = Date.now()
         const batch = chunkRecords.slice(i, i + BATCH_SIZE)
         const texts = batch.map(c => c.content)
 
-        const vectors = await this.getEmbeddingVectors(texts, config)
+        const vectors = await this.getEmbeddingVectors(texts, embeddingConfig)
         if (!vectors) throw new Error('向量生成失败')
 
         await db.kbVectors.createBatch(
@@ -413,25 +480,23 @@ export class KnowledgeBaseService {
         const progress = 30 + Math.floor((i / chunkRecords.length) * 50)
         db.kbDocuments.updateProgress(doc.id, progress)
 
-        // 计算剩余时间
         const remainingBatches = totalBatches - batchIndex
-        // 使用实际处理时间来估算剩余时间
-        const avgBatchTime = (Date.now() - startTime - 5000) / batchIndex / 1000 // 减去初始处理时间
+        const avgBatchTime = (Date.now() - startTime - 5000) / batchIndex / 1000
         const estimatedRemaining = Math.max(0, Math.round(remainingBatches * Math.max(avgBatchTime, estimatedBatchTime)))
 
         this.emitProgress(doc.id, progress, estimatedRemaining)
       }
 
-      // 5. 索引
+      // 6. 索引
       db.kbDocuments.updateProgress(doc.id, 90)
-      this.emitProgress(doc.id, 90, 3) // 索引阶段约 3 秒
+      this.emitProgress(doc.id, 90, 3)
       this.buildIndex(chunkRecords, kb.id)
 
       // 完成
-      db.kbDocuments.markCompleted(doc.id, chunks.length)
-      db.knowledgeBases.incrementVectorCount(kb.id, chunks.length)
+      db.kbDocuments.markCompleted(doc.id, splitChunks.length)
+      db.knowledgeBases.incrementVectorCount(kb.id, splitChunks.length)
       this.emitProgress(doc.id, 100, 0)
-      this.emitStatus(doc.id, 'completed', chunks.length)
+      this.emitStatus(doc.id, 'completed', splitChunks.length)
       this.emitKnowledgeBaseStats(kb.id)
       console.log(`[KB] 处理完成: ${doc.name}, 耗时: ${Math.round((Date.now() - startTime) / 1000)}秒`)
 
@@ -653,7 +718,7 @@ export class KnowledgeBaseService {
     return result
   }
 
-  private async getEmbeddingVectors(texts: string[], config: EmbeddingConfig): Promise<number[][] | null> {
+  async getEmbeddingVectors(texts: string[], config: EmbeddingConfig): Promise<number[][] | null> {
     try {
       if (!config.providerConfigId) throw new Error('未配置 Embedding 提供商')
 
