@@ -256,7 +256,7 @@ export interface AudioAsset {
 export interface VideoProject {
   id: string
   name: string
-  longWritingProjectId: string // 关联的长文项目
+  longWritingProjectId?: string // 关联的长文项目（可选）
   status: ProjectStatus
   config: VideoProjectConfig
   createdAt: number
@@ -567,7 +567,7 @@ export interface VideoEpisode {
 export interface VideoProjectRecord {
   id: string
   name: string
-  long_writing_project_id: string
+  long_writing_project_id: string | null  // 可能为空
   status: ProjectStatus
   config: string // JSON
   created_at: number

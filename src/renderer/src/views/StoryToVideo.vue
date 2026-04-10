@@ -224,7 +224,7 @@ async function createProject() {
 
   const project = await store.createProject(
     createForm.name,
-    createForm.longWritingProjectId || '',
+    createForm.longWritingProjectId || undefined,  // 空字符串转为 undefined
     createForm.config
   )
 

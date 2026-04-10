@@ -509,12 +509,12 @@
         </el-form-item>
         <el-form-item label="内容来源">
           <el-radio-group v-model="episodeForm.sourceType" @change="handleSourceTypeChange">
-            <el-radio value="outline">关联长文章节</el-radio>
-            <el-radio v-if="!hasLinkedLongWriting" value="uploaded">上传长文</el-radio>
+            <el-radio v-if="hasLinkedLongWriting" value="outline">关联长文章节</el-radio>
+            <el-radio value="uploaded">上传长文</el-radio>
           </el-radio-group>
           <div v-if="hasLinkedLongWriting" class="form-hint">
             <el-icon><InfoFilled /></el-icon>
-            <span>项目已关联长文，只能选择关联长文章节</span>
+            <span>推荐关联长文章节，也可直接上传长文内容</span>
           </div>
         </el-form-item>
 
@@ -2500,7 +2500,8 @@ function openCreateEpisodeDialog() {
   // 重置表单
   episodeForm.episodeNumber = store.episodes.length + 1
   episodeForm.title = ''
-  episodeForm.sourceType = 'outline'
+  // 根据是否关联长文项目设置默认来源
+  episodeForm.sourceType = hasLinkedLongWriting.value ? 'outline' : 'uploaded'
   episodeForm.outlineId = ''
   episodeForm.uploadedContent = ''
   selectedOutlineInfo.value = null

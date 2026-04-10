@@ -1413,7 +1413,7 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.STV_LIST_PROJECTS, longWritingProjectId),
     getProject: (projectId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.STV_GET_PROJECT, projectId),
-    createProject: (name: string, longWritingProjectId: string, config: any) =>
+    createProject: (name: string, longWritingProjectId?: string, config?: any) =>
       ipcRenderer.invoke(IPC_CHANNELS.STV_CREATE_PROJECT, name, longWritingProjectId, config),
     updateProject: (projectId: string, data: { name?: string; status?: string; config?: any }) =>
       ipcRenderer.invoke(IPC_CHANNELS.STV_UPDATE_PROJECT, projectId, data),

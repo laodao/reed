@@ -1547,12 +1547,12 @@ export class DatabaseManager {
       CREATE TABLE IF NOT EXISTS video_projects (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
-        long_writing_project_id TEXT NOT NULL,
+        long_writing_project_id TEXT,
         status TEXT NOT NULL DEFAULT 'draft',
         config TEXT NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (long_writing_project_id) REFERENCES lw_projects(id) ON DELETE CASCADE
+        FOREIGN KEY (long_writing_project_id) REFERENCES lw_projects(id) ON DELETE SET NULL
       )
     `)
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_video_projects_lw_project_id ON video_projects(long_writing_project_id)`)
@@ -1950,6 +1950,9 @@ export class DatabaseManager {
 
     // 为 episode_scripts 表添加 script_content 和 script_format 字段
     this.migrateEpisodeScriptsAddScriptContent()
+
+    // 迁移 video_projects 表，使 long_writing_project_id 可为空
+    this.migrateVideoProjectsNullableLongWritingId()
 
     // 数据库规范化迁移（符合第三范式）
     this.normalizeDatabaseSchema()
@@ -2809,6 +2812,338 @@ export class DatabaseManager {
         console.log('[DatabaseManager] episode_scripts 表添加 script_format 字段完成')
       } catch (e) {
         console.error('[DatabaseManager] 添加 script_format 字段失败:', e)
+      }
+    }
+  }
+
+  /**
+   * 迁移 video_projects 表，使 long_writing_project_id 可为空
+   */
+  private migrateVideoProjectsNullableLongWritingId(): void {
+    if (!this.db) return
+
+    // 检查 video_projects 表是否存在
+    const tableExists = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='video_projects'").get()
+    if (!tableExists) return
+
+    // 使用 settings 表检查是否已经迁移
+    const migrationKey = 'video_projects_nullable_lw_id_v1'
+    try {
+      const migrationRecord = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(migrationKey)
+      if (migrationRecord) {
+        return // 已迁移
+      }
+    } catch (e) {
+      // settings 表可能不存在，继续执行迁移
+      console.log('[DatabaseManager] settings 表检查跳过，继续迁移')
+    }
+
+    // 检查 long_writing_project_id 字段是否已经是可空的
+    const columns = this.db.prepare("PRAGMA table_info(video_projects)").all() as { name: string; notnull: number }[]
+    const longWritingProjectIdCol = columns.find(col => col.name === 'long_writing_project_id')
+
+    // 如果字段不存在或已经是可空的，标记迁移完成
+    if (!longWritingProjectIdCol || longWritingProjectIdCol.notnull === 0) {
+      // 标记迁移完成
+      try {
+        this.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(migrationKey, Date.now().toString())
+      } catch (e) {
+        // 忽略 settings 表可能不存在的情况
+      }
+      return
+    }
+
+    console.log('[DatabaseManager] 迁移 video_projects 表，使 long_writing_project_id 可为空...')
+
+    // 临时禁用外键约束
+    this.db.exec('PRAGMA foreign_keys = OFF')
+
+    try {
+      // 保存所有依赖表的数据
+      const dependentTables = [
+        'character_bindings',
+        'location_bindings',
+        'item_bindings',
+        'video_episodes',
+        'episode_scripts',
+        'image_assets',
+        'audio_assets'
+      ]
+
+      const savedData: Map<string, any[]> = new Map()
+      for (const table of dependentTables) {
+        try {
+          const tableExists = this.db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='${table}'`).get()
+          if (tableExists) {
+            const rows = this.db.prepare(`SELECT * FROM ${table}`).all()
+            savedData.set(table, rows)
+            console.log(`[DatabaseManager] 保存 ${table} 数据: ${rows.length} 条`)
+          }
+        } catch (e) {
+          console.log(`[DatabaseManager] 跳过表 ${table}`)
+        }
+      }
+
+      // 删除依赖表
+      for (const table of dependentTables) {
+        try {
+          this.db.exec(`DROP TABLE IF EXISTS ${table}`)
+        } catch (e) {
+          // 忽略
+        }
+      }
+
+      // 删除旧表
+      this.db.exec('DROP TABLE video_projects')
+
+      // 创建新表（long_writing_project_id 可为空）
+      this.db.exec(`
+        CREATE TABLE video_projects (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          long_writing_project_id TEXT,
+          status TEXT NOT NULL DEFAULT 'draft',
+          config TEXT NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (long_writing_project_id) REFERENCES lw_projects(id) ON DELETE SET NULL
+        )
+      `)
+
+      // 重建索引
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_video_projects_lw_project_id ON video_projects(long_writing_project_id)')
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_video_projects_status ON video_projects(status)')
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_video_projects_created_at ON video_projects(created_at DESC)')
+
+      // 重建依赖表（从之前保存的数据恢复）
+      this.recreateDependentTablesWithData(savedData)
+
+      // 标记迁移完成
+      try {
+        this.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(migrationKey, Date.now().toString())
+      } catch (e) {
+        // 忽略
+      }
+
+      console.log('[DatabaseManager] video_projects 表迁移完成')
+    } catch (error) {
+      console.error('[DatabaseManager] video_projects 表迁移失败:', error)
+      throw error
+    } finally {
+      // 重新启用外键约束
+      this.db.exec('PRAGMA foreign_keys = ON')
+    }
+  }
+
+  /**
+   * 重建依赖表并恢复数据
+   */
+  private recreateDependentTablesWithData(savedData: Map<string, any[]>): void {
+    // character_bindings 表
+    if (savedData.has('character_bindings') && savedData.get('character_bindings')!.length > 0) {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS character_bindings (
+          id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL,
+          long_writing_character_id TEXT NOT NULL,
+          portrait_id TEXT,
+          generate_config TEXT,
+          voice_config TEXT NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (project_id) REFERENCES video_projects(id) ON DELETE CASCADE,
+          FOREIGN KEY (portrait_id) REFERENCES portrait_characters(id) ON DELETE SET NULL
+        )
+      `)
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_character_bindings_project_id ON character_bindings(project_id)')
+
+      const data = savedData.get('character_bindings')!
+      for (const row of data) {
+        const cols = Object.keys(row).join(', ')
+        const placeholders = Object.keys(row).map(() => '?').join(', ')
+        const values = Object.values(row)
+        this.db.prepare(`INSERT INTO character_bindings (${cols}) VALUES (${placeholders})`).run(...values)
+      }
+    }
+
+    // location_bindings 表
+    if (savedData.has('location_bindings') && savedData.get('location_bindings')!.length > 0) {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS location_bindings (
+          id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL,
+          long_writing_location_id TEXT NOT NULL,
+          location_name TEXT NOT NULL,
+          image_paths TEXT DEFAULT '[]',
+          thumbnail_path TEXT,
+          generate_config TEXT,
+          base_description TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (project_id) REFERENCES video_projects(id) ON DELETE CASCADE,
+          UNIQUE(project_id, long_writing_location_id)
+        )
+      `)
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_location_bindings_project_id ON location_bindings(project_id)')
+
+      const data = savedData.get('location_bindings')!
+      for (const row of data) {
+        const cols = Object.keys(row).join(', ')
+        const placeholders = Object.keys(row).map(() => '?').join(', ')
+        const values = Object.values(row)
+        this.db.prepare(`INSERT INTO location_bindings (${cols}) VALUES (${placeholders})`).run(...values)
+      }
+    }
+
+    // item_bindings 表
+    if (savedData.has('item_bindings') && savedData.get('item_bindings')!.length > 0) {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS item_bindings (
+          id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL,
+          long_writing_item_id TEXT NOT NULL,
+          item_name TEXT NOT NULL,
+          image_paths TEXT DEFAULT '[]',
+          thumbnail_path TEXT,
+          generate_config TEXT,
+          base_description TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (project_id) REFERENCES video_projects(id) ON DELETE CASCADE,
+          UNIQUE(project_id, long_writing_item_id)
+        )
+      `)
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_item_bindings_project_id ON item_bindings(project_id)')
+
+      const data = savedData.get('item_bindings')!
+      for (const row of data) {
+        const cols = Object.keys(row).join(', ')
+        const placeholders = Object.keys(row).map(() => '?').join(', ')
+        const values = Object.values(row)
+        this.db.prepare(`INSERT INTO item_bindings (${cols}) VALUES (${placeholders})`).run(...values)
+      }
+    }
+
+    // video_episodes 表
+    if (savedData.has('video_episodes') && savedData.get('video_episodes')!.length > 0) {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS video_episodes (
+          id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL,
+          source_type TEXT NOT NULL DEFAULT 'outline',
+          outline_id TEXT,
+          uploaded_content TEXT,
+          uploaded_characters TEXT,
+          episode_number INTEGER NOT NULL,
+          title TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          duration INTEGER DEFAULT 0,
+          script_id TEXT,
+          audio_tracks TEXT DEFAULT '[]',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          deleted_at DATETIME,
+          FOREIGN KEY (project_id) REFERENCES video_projects(id) ON DELETE CASCADE
+        )
+      `)
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_video_episodes_project_id ON video_episodes(project_id)')
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_video_episodes_outline_id ON video_episodes(outline_id)')
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_video_episodes_status ON video_episodes(status)')
+
+      const data = savedData.get('video_episodes')!
+      for (const row of data) {
+        const cols = Object.keys(row).join(', ')
+        const placeholders = Object.keys(row).map(() => '?').join(', ')
+        const values = Object.values(row)
+        this.db.prepare(`INSERT INTO video_episodes (${cols}) VALUES (${placeholders})`).run(...values)
+      }
+    }
+
+    // episode_scripts 表
+    if (savedData.has('episode_scripts') && savedData.get('episode_scripts')!.length > 0) {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS episode_scripts (
+          id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL,
+          episode_id TEXT NOT NULL,
+          outline_id TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          synopsis TEXT,
+          script_content TEXT,
+          script_format TEXT DEFAULT 'standard',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (project_id) REFERENCES video_projects(id) ON DELETE CASCADE,
+          FOREIGN KEY (episode_id) REFERENCES video_episodes(id) ON DELETE CASCADE
+        )
+      `)
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_episode_scripts_episode_id ON episode_scripts(episode_id)')
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_episode_scripts_status ON episode_scripts(status)')
+
+      const data = savedData.get('episode_scripts')!
+      for (const row of data) {
+        const cols = Object.keys(row).join(', ')
+        const placeholders = Object.keys(row).map(() => '?').join(', ')
+        const values = Object.values(row)
+        this.db.prepare(`INSERT INTO episode_scripts (${cols}) VALUES (${placeholders})`).run(...values)
+      }
+    }
+
+    // image_assets 表
+    if (savedData.has('image_assets') && savedData.get('image_assets')!.length > 0) {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS image_assets (
+          id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL,
+          type TEXT NOT NULL,
+          reference_id TEXT,
+          prompt TEXT,
+          negative_prompt TEXT,
+          file_path TEXT NOT NULL,
+          width INTEGER DEFAULT 0,
+          height INTEGER DEFAULT 0,
+          metadata TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (project_id) REFERENCES video_projects(id) ON DELETE CASCADE
+        )
+      `)
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_image_assets_project_id ON image_assets(project_id)')
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_image_assets_type ON image_assets(type)')
+
+      const data = savedData.get('image_assets')!
+      for (const row of data) {
+        const cols = Object.keys(row).join(', ')
+        const placeholders = Object.keys(row).map(() => '?').join(', ')
+        const values = Object.values(row)
+        this.db.prepare(`INSERT INTO image_assets (${cols}) VALUES (${placeholders})`).run(...values)
+      }
+    }
+
+    // audio_assets 表
+    if (savedData.has('audio_assets') && savedData.get('audio_assets')!.length > 0) {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS audio_assets (
+          id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL,
+          type TEXT NOT NULL,
+          text TEXT,
+          voice_id TEXT,
+          audio_path TEXT NOT NULL,
+          duration INTEGER NOT NULL,
+          metadata TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (project_id) REFERENCES video_projects(id) ON DELETE CASCADE
+        )
+      `)
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_audio_assets_project_id ON audio_assets(project_id)')
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_audio_assets_type ON audio_assets(type)')
+
+      const data = savedData.get('audio_assets')!
+      for (const row of data) {
+        const cols = Object.keys(row).join(', ')
+        const placeholders = Object.keys(row).map(() => '?').join(', ')
+        const values = Object.values(row)
+        this.db.prepare(`INSERT INTO audio_assets (${cols}) VALUES (${placeholders})`).run(...values)
       }
     }
   }

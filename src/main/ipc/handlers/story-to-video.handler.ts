@@ -158,7 +158,7 @@ async function handleGetProject(
 async function handleCreateProject(
   _event: IpcMainInvokeEvent,
   name: string,
-  longWritingProjectId: string,
+  longWritingProjectId: string | undefined,
   config: VideoProjectConfig
 ): Promise<IpcResponse> {
   try {
@@ -169,7 +169,7 @@ async function handleCreateProject(
 
     const project = db.videoProjects.create({
       name,
-      longWritingProjectId,
+      longWritingProjectId: longWritingProjectId || undefined,  // 空字符串转为 undefined
       config
     })
 

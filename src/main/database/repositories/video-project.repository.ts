@@ -15,7 +15,7 @@ import {
  */
 export interface CreateVideoProjectRequest {
   name: string
-  longWritingProjectId: string
+  longWritingProjectId?: string  // 可选，不关联长文项目时可不传
   config: VideoProjectConfig
 }
 
@@ -83,7 +83,7 @@ export class VideoProjectRepository {
     stmt.run(
       id,
       data.name,
-      data.longWritingProjectId,
+      data.longWritingProjectId || null,  // 如果没有关联长文项目，则存储 NULL
       'draft',
       JSON.stringify(data.config),
       now,
@@ -93,7 +93,7 @@ export class VideoProjectRepository {
     return {
       id,
       name: data.name,
-      longWritingProjectId: data.longWritingProjectId,
+      longWritingProjectId: data.longWritingProjectId,  // 保持可选
       status: 'draft',
       config: data.config,
       createdAt: now,
@@ -173,7 +173,7 @@ export class VideoProjectRepository {
     return {
       id: row.id,
       name: row.name,
-      longWritingProjectId: row.long_writing_project_id,
+      longWritingProjectId: row.long_writing_project_id || undefined,  // null 转为 undefined
       status: row.status as VideoProject['status'],
       config: JSON.parse(row.config) as VideoProjectConfig,
       createdAt: row.created_at,

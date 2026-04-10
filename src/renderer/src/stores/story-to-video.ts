@@ -104,6 +104,27 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
    */
   const selectedModelId = ref<string | null>(null)
 
+  /**
+   * 默认项目配置
+   */
+  const defaultConfig: VideoProjectConfig = {
+    aspectRatio: '16:9',
+    resolution: 1080 as any,
+    fps: 30,
+    defaultTransition: 'fade' as any,
+    stylePrompt: '',
+    defaultNarratorVoice: '',
+    defaultCharacterVoice: '',
+    backgroundMusicEnabled: true,
+    backgroundMusicVolume: 50,
+    imageProviderId: '',
+    imageModelId: '',
+    imageStyle: '',
+    defaultShotDuration: 5,
+    defaultTransitionType: 'fade',
+    defaultTransitionDuration: 500
+  }
+
   // ==================== 项目管理 ====================
 
   /**
@@ -156,16 +177,16 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
    */
   async function createProject(
     name: string,
-    longWritingProjectId: string,
-    config: VideoProjectConfig
+    longWritingProjectId?: string,
+    config?: VideoProjectConfig
   ): Promise<VideoProject | null> {
     loading.value = true
     error.value = null
     try {
       const response = await window.electronAPI.storyToVideo.createProject(
         name,
-        longWritingProjectId,
-        JSON.parse(JSON.stringify(config))
+        longWritingProjectId || undefined,  // 空字符串转为 undefined
+        JSON.parse(JSON.stringify(config || defaultConfig))
       )
       if (response.success && response.data) {
         const project = response.data as VideoProject
