@@ -647,8 +647,8 @@ async function renderMermaidCharts(): Promise<void> {
       mermaidElement.innerHTML = svg
       wrapper.setAttribute('data-render-status', 'success')
     } catch (error) {
-      // 渲染失败：标记错误状态，显示错误图标
-      console.error('Mermaid 渲染错误:', error)
+      // 渲染失败：标记错误状态，显示错误提示
+      console.warn('Mermaid 图表语法错误，已保持代码形式显示:', (error as Error).message?.split('\n')[0])
       wrapper.setAttribute('data-render-status', 'error')
 
       // 显示错误图标
@@ -1281,8 +1281,17 @@ async function renderMermaidInExportContainer(): Promise<void> {
       const { svg } = await mermaid.render(id, code)
       mermaidElement.innerHTML = svg
     } catch (error) {
-      console.error('Mermaid 渲染错误:', error)
-      // 渲染失败时保持代码显示
+      console.warn('Mermaid 渲染错误（导出时）:', error)
+      // 渲染失败时显示错误占位符，保持代码显示
+      mermaidElement.innerHTML = `
+        <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:12px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;color:#dc2626;">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+            <span style="font-weight:500;">图表语法错误</span>
+          </div>
+          <pre style="margin:0;background:transparent;font-size:12px;color:#7f1d1d;white-space:pre-wrap;">${escapeHtml(code)}</pre>
+        </div>
+      `
     }
   }
 

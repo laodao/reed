@@ -87,7 +87,16 @@ const messageListRef = ref<{ el: HTMLElement } | null>(null)
 
 // 获取 MessageList 的 DOM 元素
 const messageListElement = computed(() => {
-  return messageListRef.value?.el || null
+  // 注意：defineExpose 暴露的 el 是一个 ref，需要访问 .value 获取实际 DOM
+  const exposed = messageListRef.value
+  if (!exposed) return null
+
+  // 如果 el 是 ref 对象，获取其 value
+  const el = exposed.el
+  if (el && typeof el === 'object' && 'value' in el) {
+    return (el as { value: HTMLElement | null }).value
+  }
+  return el as HTMLElement | null
 })
 
 // 加载提供商配置
