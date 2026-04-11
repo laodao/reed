@@ -28,8 +28,20 @@ export class StructureDetector {
   // 代码块正则：匹配 ``` 包围的内容
   private readonly codeBlockRegex = /```[\s\S]*?```/g
 
+  // 需要排除的标题模式（这些不是真正的章节标题）
+  private readonly excludedTitlePatterns = [
+    /^===\s*.+\s*===$/,           // === xxx === 格式（代码注释风格）
+    /^👤\s*用户$/,                 // 👤 用户（聊天记录）
+    /^🤖\s*助手$/,                 // 🤖 助手（聊天记录）
+    /^---+$/,                     // --- 分隔线
+    /^\*\d{4}-\d{2}-\d{2}/,       // *2026-03-26 时间戳
+  ]
+
   // 最小章节数（少于此数量认为无结构）
   private readonly minSectionsCount = 2
+
+  // 最小章节内容长度（少于此值的章节将被过滤）
+  private readonly minSectionContentLength = 20
 
   /**
    * 检测文档结构
@@ -93,6 +105,20 @@ export class StructureDetector {
   }
 
   /**
+   * 检查标题是否应该被排除（不是真正的章节标题）
+   * @param title 标题文本
+   * @returns 是否应该排除
+   */
+  private shouldExcludeTitle(title: string): boolean {
+    for (const pattern of this.excludedTitlePatterns) {
+      if (pattern.test(title)) {
+        return true
+      }
+    }
+    return false
+  }
+
+  /**
    * 检测 Markdown 标题结构
    */
   private detectMarkdownStructure(content: string): StructureInfo {
@@ -108,11 +134,15 @@ export class StructureDetector {
     while ((match = this.markdownHeadingRegex.exec(content)) !== null) {
       // 排除代码块内的标题
       if (!this.isInCodeBlock(match.index, codeBlockRanges)) {
-        headings.push({
-          level: match[1].length, // # 的数量决定层级
-          title: match[2].trim(),
-          startIndex: match.index
-        })
+        const title = match[2].trim()
+        // 排除不符合条件的标题（如聊天记录、分隔线等）
+        if (!this.shouldExcludeTitle(title)) {
+          headings.push({
+            level: match[1].length, // # 的数量决定层级
+            title: title,
+            startIndex: match.index
+          })
+        }
       }
     }
 
