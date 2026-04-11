@@ -1185,8 +1185,9 @@ async function loadAllPortraits(projects: any[]) {
         )
         const previewVariant = frontBaseVariant || variantsResult.data?.[0]
 
+        // 注意：id 使用 portrait_variants.id（人像变体ID），因为 lw_story_characters.portrait_id 外键引用的是它
         allPortraits.push({
-          id: character.id,
+          id: previewVariant?.id || character.id,  // 使用人像变体 ID
           name: character.name,
           preview: previewVariant?.imagePath,
           projectId: project.id

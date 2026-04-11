@@ -594,6 +594,7 @@ onMounted(async () => {
 .character-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-rows: auto;  /* 行高度自适应内容 */
   gap: 20px;
   padding: 20px;
   overflow-y: auto;
@@ -608,6 +609,8 @@ onMounted(async () => {
   cursor: pointer;
   transition: all 0.2s;
   border: 2px solid transparent;
+  height: auto;  /* 卡片高度自适应内容，不会被grid拉伸 */
+  min-height: 320px;  /* 设置最小高度保持一致的外观 */
 
   &:hover {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
