@@ -375,7 +375,7 @@ export const RACE_LABELS: Record<PortraitRace, string> = {
  */
 export const ANGLE_PROMPTS: Record<PortraitAngle, string> = {
   front: 'front view, facing camera, full face visible, looking at viewer',
-  left: 'left side view, profile view, left side of face visible',
-  right: 'right side view, profile view, right side of face visible',
-  back: 'back view, from behind, rear view, seen from behind'
+  left: 'left side view, profile from the left, left ear visible, facing left',
+  right: 'right side view, profile from the right, right ear visible, facing right',
+  back: 'back view, from behind, rear view, full back visible'
 }

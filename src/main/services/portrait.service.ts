@@ -44,8 +44,8 @@ import archiver from 'archiver'
  */
 const ANGLE_PROMPT_MAP: Record<PortraitAngle, string> = {
   front: 'front view, facing the camera directly',
-  left: 'left side profile view, showing the left side of the face and body',
-  right: 'right side profile view, showing the right side of the face and body',
+  left: 'left side view, profile from the left, viewer sees the left side of the face, the left ear and left cheek are visible, facing left direction',
+  right: 'right side view, profile from the right, viewer sees the right side of the face, the right ear and right cheek are visible, facing right direction',
   back: 'back view, showing the back of the person, full back visible'
 }
 
