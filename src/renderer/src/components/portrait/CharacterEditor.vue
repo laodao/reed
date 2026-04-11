@@ -12,10 +12,33 @@
           {{ GENDER_LABELS[character.gender] }} · {{ character.age }}岁
         </el-tag>
       </div>
-      <el-button v-if="hasFrontImage" type="primary" @click="handleExport">
-        <el-icon><Download /></el-icon>
-        导出
-      </el-button>
+      <div class="header-actions">
+        <el-select
+          v-model="selectedModelKey"
+          placeholder="选择模型"
+          class="model-select-header"
+          filterable
+          :filter-method="filterModels"
+          @change="onModelChange"
+        >
+          <el-option-group
+            v-for="provider in filteredProviderModels"
+            :key="provider.id"
+            :label="provider.name"
+          >
+            <el-option
+              v-for="model in provider.models"
+              :key="`${provider.id}:${model.id}`"
+              :label="model.name"
+              :value="`${provider.id}:${model.id}`"
+            />
+          </el-option-group>
+        </el-select>
+        <el-button v-if="hasFrontImage" type="primary" @click="handleExport">
+          <el-icon><Download /></el-icon>
+          导出
+        </el-button>
+      </div>
     </div>
 
     <!-- 没有正面形象时显示生成面板 -->
@@ -763,6 +786,19 @@ function onModelChange(key: string) {
       providerId: model.providerId,
       modelId: model.modelId
     }
+
+    // 保存为项目默认模型
+    if (props.project?.id) {
+      window.electronAPI.portrait.updateProject({
+        id: props.project.id,
+        defaultProviderId: model.providerId,
+        defaultModelId: model.modelId
+      }).then(result => {
+        if (!result.success) {
+          console.error('保存模型设置失败:', result.error)
+        }
+      })
+    }
   }
 }
 
@@ -1231,6 +1267,16 @@ onMounted(() => {
       font-weight: 600;
       color: var(--el-text-color-primary);
     }
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .model-select-header {
+    width: 180px;
   }
 }
 
