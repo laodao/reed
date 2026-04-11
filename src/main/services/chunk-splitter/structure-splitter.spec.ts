@@ -78,6 +78,34 @@ describe('StructureSplitter', () => {
       expect(filtered[0].content).toBe('这是足够长的内容超过十个字符')
       expect(filtered[0].index).toBe(0) // 重新编号
     })
+
+    it('应过滤分隔线等无意义内容', () => {
+      const chunks: SplitChunk[] = [
+        { content: '这是有效内容长度超过十个字符以上', index: 0, level: 1, splitMethod: 'structure', sectionPath: [], startOffset: 0, endOffset: 20 },
+        { content: '---', index: 1, level: 1, splitMethod: 'structure', sectionPath: [], startOffset: 20, endOffset: 23 },
+        { content: '***', index: 2, level: 1, splitMethod: 'structure', sectionPath: [], startOffset: 23, endOffset: 26 },
+        { content: '___', index: 3, level: 1, splitMethod: 'structure', sectionPath: [], startOffset: 26, endOffset: 29 },
+        { content: '====', index: 4, level: 1, splitMethod: 'structure', sectionPath: [], startOffset: 29, endOffset: 33 },
+        { content: '另一个有效内容长度也超过十个字符', index: 5, level: 1, splitMethod: 'structure', sectionPath: [], startOffset: 33, endOffset: 60 }
+      ]
+
+      const filtered = splitter.filterEmptySections(chunks, 10)
+
+      expect(filtered.length).toBe(2)
+      expect(filtered[0].content).toBe('这是有效内容长度超过十个字符以上')
+      expect(filtered[1].content).toBe('另一个有效内容长度也超过十个字符')
+    })
+
+    it('应保留有标题的短内容', () => {
+      const chunks: SplitChunk[] = [
+        { content: '短', index: 0, level: 1, splitMethod: 'structure', sectionPath: [], title: '短标题', startOffset: 0, endOffset: 1 }
+      ]
+
+      const filtered = splitter.filterEmptySections(chunks, 50)
+
+      expect(filtered.length).toBe(1)
+      expect(filtered[0].title).toBe('短标题')
+    })
   })
 
   describe('查找过长章节', () => {

@@ -161,8 +161,14 @@ export class HybridSplitter {
     const maxSize = config.maxChunkSize ?? DEFAULT_SPLIT_CONFIG.maxChunkSize!
     structureChunks = this.mergeSmallSections(structureChunks, minSize, maxSize)
 
-    // 再次过滤空切片
-    structureChunks = structureChunks.filter(c => c.content.trim().length > 0)
+    // 再次过滤空切片和极短无意义切片（如分隔线）
+    structureChunks = structureChunks.filter(c => {
+      const trimmed = c.content.trim()
+      if (trimmed.length === 0) return false
+      // 有标题的保留，无标题且极短（<20字符）的过滤
+      if (!c.title && trimmed.length < 20) return false
+      return true
+    })
     structureChunks = structureChunks.map((c, i) => ({ ...c, index: i }))
 
     // 检查是否需要对过长章节进行内部语义切分
@@ -189,11 +195,21 @@ export class HybridSplitter {
       }
     }
 
-    // 重新编号
-    return finalChunks.map((chunk, index) => ({
-      ...chunk,
-      index
-    }))
+    // 最终过滤并重新编号
+    return finalChunks
+      .filter(chunk => {
+        const trimmed = chunk.content.trim()
+        if (trimmed.length === 0) return false
+        // 有标题的保留
+        if (chunk.title) return true
+        // 无标题但极短（<20字符）的过滤掉
+        if (trimmed.length < 20) return false
+        return true
+      })
+      .map((chunk, index) => ({
+        ...chunk,
+        index
+      }))
   }
 
   /**

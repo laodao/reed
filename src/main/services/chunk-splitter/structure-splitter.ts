@@ -84,23 +84,42 @@ export class StructureSplitter {
   }
 
   /**
-   * 过滤空白章节
+   * 过滤空白章节和无效内容
    * @param chunks 切分结果
    * @param minSize 最小大小（字符数）
    * @returns 过滤后的结果
    */
   filterEmptySections(chunks: SplitChunk[], minSize: number = 50): SplitChunk[] {
+    // 需要排除的无意义内容模式（分隔线等）
+    const excludedContentPatterns = [
+      /^---+$/,           // --- 分隔线
+      /^\*\*\*+$/,        // *** 分隔线
+      /^___+$/,           // ___ 分隔线
+      /^====+$/,          // ==== 分隔线
+      /^~+$/,             // ~ 分隔线
+    ]
+
     return chunks
       .filter(chunk => {
-        // 内容为空的章节一律过滤（即使有标题）
         const trimmedContent = chunk.content.trim()
+
+        // 内容为空的章节一律过滤（即使有标题）
         if (trimmedContent.length === 0) {
           return false
         }
-        // 有标题的章节保留（即使内容短，但不是空的）
+
+        // 检查是否是纯分隔线等无意义内容
+        for (const pattern of excludedContentPatterns) {
+          if (pattern.test(trimmedContent)) {
+            return false
+          }
+        }
+
+        // 有标题的章节保留（内容有效且不是分隔线）
         if (chunk.title) {
           return true
         }
+
         // 无标题的章节：内容至少要有 minSize 字符
         return trimmedContent.length >= minSize
       })
