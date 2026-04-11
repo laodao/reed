@@ -50,9 +50,9 @@ export class SemanticSplitter {
     parentInfo?: { title?: string; level: number; sectionPath: string[]; sectionIndex?: number }
   ): Promise<SplitChunk[]> {
     // 1. 按段落分割
-    const paragraphs = this.extractParagraphs(content)
+    const rawParagraphs = this.extractParagraphs(content)
 
-    if (paragraphs.length === 0) {
+    if (rawParagraphs.length === 0) {
       return [{
         content: content.trim(),
         index: 0,
@@ -66,7 +66,11 @@ export class SemanticSplitter {
       }]
     }
 
-    // 2. 分批获取 Embedding（API 限制每次最多 10 个）
+    // 2. 预合并过短段落（减少 Embedding API 调用，提升语义质量）
+    const minParagraphSize = config.minChunkSize ?? DEFAULT_SPLIT_CONFIG.minChunkSize! / 2 // 约一半的 minChunkSize
+    const paragraphs = this.mergeShortParagraphs(rawParagraphs, minParagraphSize)
+
+    // 3. 分批获取 Embedding（API 限制每次最多 10 个）
     const EMBEDDING_BATCH_SIZE = 10
     try {
       let embeddings: number[][] = []
@@ -79,20 +83,20 @@ export class SemanticSplitter {
         embeddings.push(...batchEmbeddings)
       }
 
-      // 3. 计算相邻段落相似度
+      // 4. 计算相邻段落相似度
       const similarities = this.calculateSimilarities(paragraphs, embeddings)
 
-      // 4. 在低相似度边界切分
+      // 5. 在低相似度边界切分
       const threshold = config.similarityThreshold ?? DEFAULT_SPLIT_CONFIG.similarityThreshold!
       const boundaryIndices = this.findBoundaries(similarities, threshold)
 
-      // 5. 根据边界切分段落
+      // 6. 根据边界切分段落
       const chunks = this.splitByBoundaries(paragraphs, boundaryIndices, parentInfo)
 
-      // 6. 合并过小的 chunk
+      // 7. 合并过小的 chunk（二次合并）
       const mergedChunks = this.chunkMerger.merge(chunks, config)
 
-      // 7. 分割过大的 chunk（Embedding API 限制 8192 字符）
+      // 8. 分割过大的 chunk（Embedding API 限制 8192 字符）
       const EMBEDDING_MAX_LENGTH = 8000 // 留一点余量
       const finalChunks = this.chunkMerger.splitLarge(mergedChunks, EMBEDDING_MAX_LENGTH)
 
@@ -105,35 +109,130 @@ export class SemanticSplitter {
   }
 
   /**
-   * 提取段落
+   * 提取段落（长段落会被分割）
    */
   private extractParagraphs(content: string): ParagraphInfo[] {
     // 按连续换行分割段落
-    const paragraphTexts = content
+    const rawParagraphs = content
       .split(/\n\s*\n/)
       .map(p => p.trim())
       .filter(p => p.length > 0)
 
-    // 计算每个段落的起始位置
+    // 如果没有段落分隔，按单换行分割
+    if (rawParagraphs.length === 1 && rawParagraphs[0].length > 8000) {
+      rawParagraphs.splice(0, 1)
+      const lines = content.split(/\n/).map(p => p.trim()).filter(p => p.length > 0)
+      rawParagraphs.push(...lines)
+    }
+
+    // 分割过长段落（Embedding API 限制约 8000 字符）
+    const MAX_PARAGRAPH_LENGTH = 8000
     const paragraphs: ParagraphInfo[] = []
     let currentOffset = 0
 
-    for (const text of paragraphTexts) {
-      // 在原文中查找段落位置
-      const startIndex = content.indexOf(text, currentOffset)
-      const endIndex = startIndex + text.length
-
-      paragraphs.push({
-        content: text,
-        index: paragraphs.length,
-        startOffset: startIndex !== -1 ? startIndex : currentOffset,
-        endOffset: endIndex
-      })
-
-      currentOffset = endIndex
+    for (const text of rawParagraphs) {
+      if (text.length > MAX_PARAGRAPH_LENGTH) {
+        // 分割过长段落
+        const subParagraphs = this.splitLongParagraph(text, MAX_PARAGRAPH_LENGTH)
+        for (const subText of subParagraphs) {
+          const startIndex = content.indexOf(subText, currentOffset)
+          const endIndex = startIndex !== -1 ? startIndex + subText.length : currentOffset + subText.length
+          paragraphs.push({
+            content: subText,
+            index: paragraphs.length,
+            startOffset: startIndex !== -1 ? startIndex : currentOffset,
+            endOffset: endIndex
+          })
+          currentOffset = endIndex
+        }
+      } else {
+        // 正常段落
+        const startIndex = content.indexOf(text, currentOffset)
+        const endIndex = startIndex !== -1 ? startIndex + text.length : currentOffset + text.length
+        paragraphs.push({
+          content: text,
+          index: paragraphs.length,
+          startOffset: startIndex !== -1 ? startIndex : currentOffset,
+          endOffset: endIndex
+        })
+        currentOffset = endIndex
+      }
     }
 
     return paragraphs
+  }
+
+  /**
+   * 分割过长段落
+   */
+  private splitLongParagraph(text: string, maxLength: number): string[] {
+    const result: string[] = []
+    let start = 0
+
+    while (start < text.length) {
+      let end = Math.min(start + maxLength, text.length)
+
+      // 尝试在句子边界分割
+      if (end < text.length) {
+        const segment = text.slice(start, end)
+        const boundaries = ['。', '！', '？', '\n', '.', '!', '?']
+        let lastBoundary = -1
+        for (const boundary of boundaries) {
+          const index = segment.lastIndexOf(boundary)
+          if (index > lastBoundary) {
+            lastBoundary = index
+          }
+        }
+        if (lastBoundary > start + 100) { // 至少保留 100 字符
+          end = start + lastBoundary + 1
+        }
+      }
+
+      result.push(text.slice(start, end).trim())
+      start = end
+    }
+
+    return result
+  }
+
+  /**
+   * 预合并过短段落
+   * 在 Embedding API 调用之前合并，减少 API 调用次数并提升语义质量
+   */
+  private mergeShortParagraphs(paragraphs: ParagraphInfo[], minSize: number): ParagraphInfo[] {
+    if (paragraphs.length === 0) return []
+
+    const result: ParagraphInfo[] = []
+    let current: ParagraphInfo | null = null
+
+    for (const para of paragraphs) {
+      if (!current) {
+        current = { ...para }
+        continue
+      }
+
+      // 如果当前段落过短，与下一个段落合并
+      if (current.content.length < minSize) {
+        current = {
+          content: current.content + '\n' + para.content,
+          index: current.index,
+          startOffset: current.startOffset,
+          endOffset: para.endOffset
+        }
+      } else {
+        // 当前段落够长，保存并开始新段落
+        result.push(current)
+        current = { ...para }
+      }
+    }
+
+    // 保存最后一个段落
+    if (current) {
+      result.push(current)
+    }
+
+    // 重新编号
+    return result.map((p, i) => ({ ...p, index: i }))
   }
 
   /**
