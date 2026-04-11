@@ -151,7 +151,15 @@ export class HybridSplitter {
     config: SplitConfig
   ): Promise<SplitChunk[]> {
     // 首先按结构切分
-    const structureChunks = this.structureSplitter.split(content, structure, config)
+    let structureChunks = this.structureSplitter.split(content, structure, config)
+
+    // 过滤空白章节（内容少于20字符且没有标题）
+    structureChunks = this.structureSplitter.filterEmptySections(structureChunks, 20)
+
+    // 合并过小的章节（少于 minChunkSize 且同一层级，但有标题的章节不合并）
+    const minSize = (config.minChunkSize ?? DEFAULT_SPLIT_CONFIG.minChunkSize!) / 2 // 使用一半的阈值
+    const maxSize = config.maxChunkSize ?? DEFAULT_SPLIT_CONFIG.maxChunkSize!
+    structureChunks = this.mergeSmallSectionsPreservingTitles(structureChunks, minSize, maxSize)
 
     // 检查是否需要对过长章节进行内部语义切分
     if (config.structureOnly) {
@@ -179,6 +187,55 @@ export class HybridSplitter {
 
     // 重新编号
     return finalChunks.map((chunk, index) => ({
+      ...chunk,
+      index
+    }))
+  }
+
+  /**
+   * 合并过小的章节（保留有标题的章节）
+   */
+  private mergeSmallSectionsPreservingTitles(
+    chunks: SplitChunk[],
+    minSize: number,
+    maxSize: number
+  ): SplitChunk[] {
+    const result: SplitChunk[] = []
+    let currentChunk: SplitChunk | null = null
+
+    for (const chunk of chunks) {
+      if (!currentChunk) {
+        currentChunk = { ...chunk }
+        continue
+      }
+
+      // 有标题的章节不合并（保留结构）
+      if (chunk.title) {
+        result.push(currentChunk)
+        currentChunk = { ...chunk }
+        continue
+      }
+
+      // 如果当前 chunk 太小且无标题，与下一个合并
+      if (!currentChunk.title && currentChunk.content.length < minSize &&
+          currentChunk.content.length + chunk.content.length <= maxSize) {
+        currentChunk = {
+          ...currentChunk,
+          content: currentChunk.content + '\n\n' + chunk.content,
+          endOffset: chunk.endOffset
+        }
+      } else {
+        result.push(currentChunk)
+        currentChunk = { ...chunk }
+      }
+    }
+
+    if (currentChunk) {
+      result.push(currentChunk)
+    }
+
+    // 重新编号
+    return result.map((chunk, index) => ({
       ...chunk,
       index
     }))

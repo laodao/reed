@@ -188,7 +188,8 @@ The story reaches its climax.
 
       expect(result.sections[0].content).toContain('内容A第一行')
       expect(result.sections[0].content).toContain('内容A第二行')
-      expect(result.sections[0].content).not.toContain('# 标题')
+      // 标题应该保留在内容中（用于检索和显示）
+      expect(result.sections[0].content).toContain('# 标题A')
     })
 
     it('应正确计算章节位置', () => {

@@ -91,7 +91,14 @@ export class StructureSplitter {
    */
   filterEmptySections(chunks: SplitChunk[], minSize: number = 50): SplitChunk[] {
     return chunks
-      .filter(chunk => chunk.content.trim().length >= minSize)
+      .filter(chunk => {
+        // 有标题的章节保留（即使内容短）
+        if (chunk.title) {
+          return true
+        }
+        // 无标题的章节：内容至少要有 minSize 字符
+        return chunk.content.trim().length >= minSize
+      })
       .map((chunk, index) => ({
         ...chunk,
         index // 重新编号

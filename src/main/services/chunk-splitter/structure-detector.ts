@@ -25,6 +25,9 @@ export class StructureDetector {
   // 小说章节正则（英文）：匹配 Chapter 1, Chapter 2 等
   private readonly novelChapterEnglishRegex = /^Chapter\s+(\d+)[：:\s]*(.*)$/gm
 
+  // 代码块正则：匹配 ``` 包围的内容
+  private readonly codeBlockRegex = /```[\s\S]*?```/g
+
   // 最小章节数（少于此数量认为无结构）
   private readonly minSectionsCount = 2
 
@@ -55,21 +58,62 @@ export class StructureDetector {
   }
 
   /**
+   * 提取代码块位置（用于排除代码块内的标题检测）
+   * @param content 文档内容
+   * @returns 代码块的起始和结束位置数组
+   */
+  private extractCodeBlockRanges(content: string): Array<{ start: number; end: number }> {
+    const ranges: Array<{ start: number; end: number }> = []
+    this.codeBlockRegex.lastIndex = 0
+    let match: RegExpExecArray | null
+
+    while ((match = this.codeBlockRegex.exec(content)) !== null) {
+      ranges.push({
+        start: match.index,
+        end: match.index + match[0].length
+      })
+    }
+
+    return ranges
+  }
+
+  /**
+   * 检查位置是否在代码块内
+   * @param position 位置
+   * @param codeBlockRanges 代码块范围数组
+   * @returns 是否在代码块内
+   */
+  private isInCodeBlock(position: number, codeBlockRanges: Array<{ start: number; end: number }>): boolean {
+    for (const range of codeBlockRanges) {
+      if (position >= range.start && position <= range.end) {
+        return true
+      }
+    }
+    return false
+  }
+
+  /**
    * 检测 Markdown 标题结构
    */
   private detectMarkdownStructure(content: string): StructureInfo {
     const headings: MarkdownHeading[] = []
     let match: RegExpExecArray | null
 
+    // 提取代码块范围，用于排除代码块内的标题
+    const codeBlockRanges = this.extractCodeBlockRanges(content)
+
     // 重置正则状态
     this.markdownHeadingRegex.lastIndex = 0
 
     while ((match = this.markdownHeadingRegex.exec(content)) !== null) {
-      headings.push({
-        level: match[1].length, // # 的数量决定层级
-        title: match[2].trim(),
-        startIndex: match.index
-      })
+      // 排除代码块内的标题
+      if (!this.isInCodeBlock(match.index, codeBlockRanges)) {
+        headings.push({
+          level: match[1].length, // # 的数量决定层级
+          title: match[2].trim(),
+          startIndex: match.index
+        })
+      }
     }
 
     if (headings.length < this.minSectionsCount) {
@@ -101,10 +145,8 @@ export class StructureDetector {
       const startIndex = heading.startIndex
       const endIndex = i < headings.length - 1 ? headings[i + 1].startIndex : content.length
 
-      // 提取章节内容（不包含标题行）
-      const titleLineEnd = content.indexOf('\n', startIndex)
-      const contentStart = titleLineEnd !== -1 ? titleLineEnd + 1 : startIndex + heading.title.length + heading.level + 1
-      const sectionContent = content.slice(contentStart, endIndex).trim()
+      // 提取章节内容（包含标题行）
+      const sectionContent = content.slice(startIndex, endIndex).trim()
 
       // 计算父章节标题
       const parentTitle = this.findParentTitle(headings, i)
