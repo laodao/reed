@@ -46,7 +46,7 @@ const ANGLE_PROMPT_MAP: Record<PortraitAngle, string> = {
   front: 'front view, facing the camera directly',
   left: 'left side profile view, showing the left side of the face and body',
   right: 'right side profile view, showing the right side of the face and body',
-  back: 'back view, showing the back of the person'
+  back: 'back view, showing the back of the person, full back visible'
 }
 
 /**
@@ -57,12 +57,17 @@ const FULL_BODY_SUFFIX = 'full body shot, standing upright, complete figure from
 /**
  * 默认负面提示词 - 确保全身照和一致性
  */
-const DEFAULT_NEGATIVE_PROMPT = 'cropped, half body, close-up, missing feet, missing head, multiple people, different person, different face, different clothes, different hairstyle, low quality, blurry, distorted'
+const DEFAULT_NEGATIVE_PROMPT = 'cropped, half body, close-up, missing feet, missing head, multiple people, different person, different face, different clothes, different hairstyle, different background, low quality, blurry, distorted'
 
 /**
  * 人物一致性提示词前缀
  */
 const CONSISTENCY_PREFIX = 'generate the exact same person as shown in the reference image'
+
+/**
+ * 背景一致性提示词
+ */
+const BACKGROUND_CONSISTENCY_SUFFIX = 'Keep the exact same background as in the reference image, same background color, same background style, no background change'
 
 /**
  * 从角色信息提取基本英文描述
@@ -955,6 +960,9 @@ export class PortraitService {
       const basicInfo = extractBasicCharacterInfo(character)
       console.log('[PortraitService.generateAngles] 基本人物特征:', basicInfo)
 
+      // 最大重试次数
+      const MAX_RETRIES = 2
+
       for (let i = 0; i < request.angles.length; i++) {
         const angle = request.angles[i]
 
@@ -973,28 +981,49 @@ export class PortraitService {
         // 2. 基本人物特征（辅助模型理解）
         // 3. 角度要求
         // 4. 全身照要求
-        const fullPrompt = `${CONSISTENCY_PREFIX}. ${basicInfo}. ${anglePrompt}. ${FULL_BODY_SUFFIX}. Keep the same facial features, hairstyle, clothing, and posture as in the reference image.`
+        // 5. 背景一致性（确保背景不变）
+        // 6. 人物特征一致性
+        const fullPrompt = `${CONSISTENCY_PREFIX}. ${basicInfo}. ${anglePrompt}. ${FULL_BODY_SUFFIX}. ${BACKGROUND_CONSISTENCY_SUFFIX}. Keep the same facial features, hairstyle, clothing, and posture as in the reference image.`
 
         console.log(`[PortraitService.generateAngles] 角度 ${angle} 提示词:`, fullPrompt)
 
         const imageWidth = referenceVariant.config?.width || 768
         const imageHeight = referenceVariant.config?.height || 1024
 
-        const imageResult = await ImageService.generateImage(window, {
-          providerConfigId: character.providerId,
-          model: character.modelId,
-          prompt: fullPrompt,
-          negativePrompt: DEFAULT_NEGATIVE_PROMPT,
-          width: imageWidth,
-          height: imageHeight,
-          seed: referenceVariant.config?.seed,
-          referenceImage: referenceImageBase64,
-          skipHistory: true
-        })
+        // 添加重试机制
+        let imageResult: any = null
+        let retryCount = 0
+        let lastError = ''
 
-        if (!imageResult.success || !imageResult.images?.length) {
-          const errorMsg = imageResult.error || '生成失败'
-          console.error(`[PortraitService] 生成角度 ${angle} 失败:`, errorMsg)
+        while (retryCount <= MAX_RETRIES) {
+          imageResult = await ImageService.generateImage(window, {
+            providerConfigId: character.providerId,
+            model: character.modelId,
+            prompt: fullPrompt,
+            negativePrompt: DEFAULT_NEGATIVE_PROMPT,
+            width: imageWidth,
+            height: imageHeight,
+            seed: referenceVariant.config?.seed,
+            referenceImage: referenceImageBase64,
+            skipHistory: true
+          })
+
+          if (imageResult.success && imageResult.images?.length) {
+            break  // 成功则跳出重试循环
+          }
+
+          lastError = imageResult.error || '生成失败'
+          retryCount++
+          if (retryCount <= MAX_RETRIES) {
+            console.log(`[PortraitService] 角度 ${angle} 第 ${retryCount} 次生成失败，准备重试...`)
+            // 等待一段时间再重试
+            await new Promise(resolve => setTimeout(resolve, 1000))
+          }
+        }
+
+        if (!imageResult?.success || !imageResult?.images?.length) {
+          const errorMsg = lastError || '生成失败'
+          console.error(`[PortraitService] 角度 ${angle} 经过 ${MAX_RETRIES} 次重试后仍失败:`, errorMsg)
           failedAngles.push(angle)
           failedErrors.push(`角度 ${angle}: ${errorMsg}`)
           continue
