@@ -202,6 +202,7 @@ export class SemanticSplitter {
   private mergeShortParagraphs(paragraphs: ParagraphInfo[], minSize: number): ParagraphInfo[] {
     if (paragraphs.length === 0) return []
 
+    const MAX_MERGE_LENGTH = 8000 // Embedding API 限制
     const result: ParagraphInfo[] = []
     let current: ParagraphInfo | null = null
 
@@ -211,13 +212,21 @@ export class SemanticSplitter {
         continue
       }
 
-      // 如果当前段落过短，与下一个段落合并
+      // 如果当前段落过短，尝试与下一个段落合并
       if (current.content.length < minSize) {
-        current = {
-          content: current.content + '\n' + para.content,
-          index: current.index,
-          startOffset: current.startOffset,
-          endOffset: para.endOffset
+        const mergedLength = current.content.length + para.content.length + 1 // +1 for '\n'
+        // 只有合并后不超过最大长度才合并
+        if (mergedLength <= MAX_MERGE_LENGTH) {
+          current = {
+            content: current.content + '\n' + para.content,
+            index: current.index,
+            startOffset: current.startOffset,
+            endOffset: para.endOffset
+          }
+        } else {
+          // 合并后超长，保存当前并开始新段落
+          result.push(current)
+          current = { ...para }
         }
       } else {
         // 当前段落够长，保存并开始新段落
