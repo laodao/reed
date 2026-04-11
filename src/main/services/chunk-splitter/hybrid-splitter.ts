@@ -153,17 +153,15 @@ export class HybridSplitter {
     // 首先按结构切分
     let structureChunks = this.structureSplitter.split(content, structure, config)
 
-    // 过滤空白章节（内容少于20字符且没有标题）
+    // 过滤空白章节（内容为空的一律过滤）
     structureChunks = this.structureSplitter.filterEmptySections(structureChunks, 20)
-
-    // 合并过小的章节（少于 minChunkSize 且同一层级，但有标题的章节不合并）
-    const minSize = (config.minChunkSize ?? DEFAULT_SPLIT_CONFIG.minChunkSize!) / 2 // 使用一半的阈值
-    const maxSize = config.maxChunkSize ?? DEFAULT_SPLIT_CONFIG.maxChunkSize!
-    structureChunks = this.mergeSmallSectionsPreservingTitles(structureChunks, minSize, maxSize)
 
     // 检查是否需要对过长章节进行内部语义切分
     if (config.structureOnly) {
+      // 过滤空切片并重新编号
       return structureChunks
+        .filter(c => c.content.trim().length > 0)
+        .map((c, i) => ({ ...c, index: i }))
     }
 
     const finalChunks: SplitChunk[] = []
@@ -193,7 +191,7 @@ export class HybridSplitter {
   }
 
   /**
-   * 合并过小的章节（保留有标题的章节）
+   * 合并过小的章节（保留有标题的章节，但极短标题章节可合并）
    */
   private mergeSmallSectionsPreservingTitles(
     chunks: SplitChunk[],
@@ -209,22 +207,26 @@ export class HybridSplitter {
         continue
       }
 
-      // 有标题的章节不合并（保留结构）
-      if (chunk.title) {
-        result.push(currentChunk)
-        currentChunk = { ...chunk }
-        continue
-      }
+      // 当前 chunk 内容太短（即使是标题章节，如果内容极短也应该合并）
+      const currentContentLen = currentChunk.content.trim().length
+      const shouldMergeCurrent = currentContentLen < minSize
 
-      // 如果当前 chunk 太小且无标题，与下一个合并
-      if (!currentChunk.title && currentChunk.content.length < minSize &&
-          currentChunk.content.length + chunk.content.length <= maxSize) {
+      // 如果当前 chunk 需要合并，且合并后不超过最大大小
+      if (shouldMergeCurrent && currentContentLen + chunk.content.length <= maxSize) {
+        // 合并：将当前 chunk 内容追加到下一个，保留标题（如果有的话）
         currentChunk = {
           ...currentChunk,
           content: currentChunk.content + '\n\n' + chunk.content,
           endOffset: chunk.endOffset
         }
+        // 如果下一个 chunk 有标题且当前没有，继承标题
+        if (!currentChunk.title && chunk.title) {
+          currentChunk.title = chunk.title
+          currentChunk.level = chunk.level
+          currentChunk.sectionPath = chunk.sectionPath
+        }
       } else {
+        // 当前 chunk 不需要合并，保存它
         result.push(currentChunk)
         currentChunk = { ...chunk }
       }

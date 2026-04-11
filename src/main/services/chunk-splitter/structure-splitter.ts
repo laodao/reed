@@ -92,12 +92,17 @@ export class StructureSplitter {
   filterEmptySections(chunks: SplitChunk[], minSize: number = 50): SplitChunk[] {
     return chunks
       .filter(chunk => {
-        // 有标题的章节保留（即使内容短）
+        // 内容为空的章节一律过滤（即使有标题）
+        const trimmedContent = chunk.content.trim()
+        if (trimmedContent.length === 0) {
+          return false
+        }
+        // 有标题的章节保留（即使内容短，但不是空的）
         if (chunk.title) {
           return true
         }
         // 无标题的章节：内容至少要有 minSize 字符
-        return chunk.content.trim().length >= minSize
+        return trimmedContent.length >= minSize
       })
       .map((chunk, index) => ({
         ...chunk,

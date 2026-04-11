@@ -67,7 +67,7 @@ export class SemanticSplitter {
     }
 
     // 2. 预合并过短段落（减少 Embedding API 调用，提升语义质量）
-    const minParagraphSize = config.minChunkSize ?? DEFAULT_SPLIT_CONFIG.minChunkSize! / 2 // 约一半的 minChunkSize
+    const minParagraphSize = (config.minChunkSize ?? DEFAULT_SPLIT_CONFIG.minChunkSize!) / 2 // 约一半的 minChunkSize
     const paragraphs = this.mergeShortParagraphs(rawParagraphs, minParagraphSize)
 
     // 3. 分批获取 Embedding（API 限制每次最多 10 个）
