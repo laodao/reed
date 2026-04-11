@@ -156,8 +156,8 @@ export class HybridSplitter {
     // 过滤空白章节（内容为空的一律过滤）
     structureChunks = this.structureSplitter.filterEmptySections(structureChunks, 20)
 
-    // 合并短章节（少于 50 字符的极短章节与相邻章节合并）
-    const minSize = 50 // 只合并极短切片（比如只有标题行）
+    // 合并短章节（少于 400 字符的章节与相邻章节合并）
+    const minSize = 400 // 合并阈值
     const maxSize = config.maxChunkSize ?? DEFAULT_SPLIT_CONFIG.maxChunkSize!
     structureChunks = this.mergeSmallSections(structureChunks, minSize, maxSize)
 
