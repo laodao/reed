@@ -156,12 +156,18 @@ export class HybridSplitter {
     // 过滤空白章节（内容为空的一律过滤）
     structureChunks = this.structureSplitter.filterEmptySections(structureChunks, 20)
 
+    // 合并短章节（少于 50 字符的极短章节与相邻章节合并）
+    const minSize = 50 // 只合并极短切片（比如只有标题行）
+    const maxSize = config.maxChunkSize ?? DEFAULT_SPLIT_CONFIG.maxChunkSize!
+    structureChunks = this.mergeSmallSections(structureChunks, minSize, maxSize)
+
+    // 再次过滤空切片
+    structureChunks = structureChunks.filter(c => c.content.trim().length > 0)
+    structureChunks = structureChunks.map((c, i) => ({ ...c, index: i }))
+
     // 检查是否需要对过长章节进行内部语义切分
     if (config.structureOnly) {
-      // 过滤空切片并重新编号
       return structureChunks
-        .filter(c => c.content.trim().length > 0)
-        .map((c, i) => ({ ...c, index: i }))
     }
 
     const finalChunks: SplitChunk[] = []
@@ -191,9 +197,9 @@ export class HybridSplitter {
   }
 
   /**
-   * 合并过小的章节（保留有标题的章节，但极短标题章节可合并）
+   * 合并短章节（相邻的短章节合并成一个）
    */
-  private mergeSmallSectionsPreservingTitles(
+  private mergeSmallSections(
     chunks: SplitChunk[],
     minSize: number,
     maxSize: number
@@ -207,26 +213,29 @@ export class HybridSplitter {
         continue
       }
 
-      // 当前 chunk 内容太短（即使是标题章节，如果内容极短也应该合并）
-      const currentContentLen = currentChunk.content.trim().length
-      const shouldMergeCurrent = currentContentLen < minSize
-
-      // 如果当前 chunk 需要合并，且合并后不超过最大大小
-      if (shouldMergeCurrent && currentContentLen + chunk.content.length <= maxSize) {
-        // 合并：将当前 chunk 内容追加到下一个，保留标题（如果有的话）
-        currentChunk = {
-          ...currentChunk,
-          content: currentChunk.content + '\n\n' + chunk.content,
-          endOffset: chunk.endOffset
-        }
-        // 如果下一个 chunk 有标题且当前没有，继承标题
-        if (!currentChunk.title && chunk.title) {
-          currentChunk.title = chunk.title
-          currentChunk.level = chunk.level
-          currentChunk.sectionPath = chunk.sectionPath
+      // 如果当前 chunk 内容太短，与下一个合并
+      if (currentChunk.content.length < minSize) {
+        const mergedLength = currentChunk.content.length + chunk.content.length + 2
+        if (mergedLength <= maxSize) {
+          // 合并
+          currentChunk = {
+            ...currentChunk,
+            content: currentChunk.content + '\n\n' + chunk.content,
+            endOffset: chunk.endOffset
+          }
+          // 如果下一个有标题且当前没有，使用下一个的标题
+          if (!currentChunk.title && chunk.title) {
+            currentChunk.title = chunk.title
+            currentChunk.level = chunk.level
+            currentChunk.sectionPath = chunk.sectionPath
+          }
+        } else {
+          // 合并后超长，保存当前，开始新的
+          result.push(currentChunk)
+          currentChunk = { ...chunk }
         }
       } else {
-        // 当前 chunk 不需要合并，保存它
+        // 当前 chunk 够长，保存它
         result.push(currentChunk)
         currentChunk = { ...chunk }
       }
@@ -236,10 +245,6 @@ export class HybridSplitter {
       result.push(currentChunk)
     }
 
-    // 重新编号
-    return result.map((chunk, index) => ({
-      ...chunk,
-      index
-    }))
+    return result.map((chunk, index) => ({ ...chunk, index }))
   }
 }
