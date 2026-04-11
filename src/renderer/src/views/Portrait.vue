@@ -44,7 +44,6 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="rename">重命名</el-dropdown-item>
-                <el-dropdown-item command="settings">设置</el-dropdown-item>
                 <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -73,10 +72,33 @@
               返回
             </el-button>
             <h2>{{ selectedProject?.name }}</h2>
-            <el-button type="primary" @click="showCreateCharacterDialog = true">
-              <el-icon><Plus /></el-icon>
-              创建人物形象
-            </el-button>
+            <div class="header-actions">
+              <el-select
+                v-model="selectedModelKey"
+                placeholder="选择模型"
+                class="model-select"
+                filterable
+                :filter-method="filterModels"
+                @change="onModelChange"
+              >
+                <el-option-group
+                  v-for="group in filteredModelGroups"
+                  :key="group.providerId"
+                  :label="group.providerName"
+                >
+                  <el-option
+                    v-for="model in group.models"
+                    :key="model.key"
+                    :label="model.name"
+                    :value="model.key"
+                  />
+                </el-option-group>
+              </el-select>
+              <el-button type="primary" @click="showCreateCharacterDialog = true">
+                <el-icon><Plus /></el-icon>
+                创建人物形象
+              </el-button>
+            </div>
           </div>
 
           <div class="character-grid" v-if="characters.length > 0">
@@ -184,13 +206,6 @@
       :character="editingCharacter"
       @success="handleCharacterUpdated"
     />
-
-    <!-- 项目设置对话框 -->
-    <ProjectSettingsDialog
-      v-model="showSettingsDialog"
-      :project="selectedProject"
-      @success="loadProjects"
-    />
   </div>
 </template>
 
@@ -201,7 +216,6 @@ import { Plus, Folder, MoreFilled, User, Delete, ArrowLeft, Edit } from '@elemen
 import CreateCharacterDialog from '@/components/portrait/CreateCharacterDialog.vue'
 import EditCharacterDialog from '@/components/portrait/EditCharacterDialog.vue'
 import CharacterEditor from '@/components/portrait/CharacterEditor.vue'
-import ProjectSettingsDialog from '@/components/portrait/ProjectSettingsDialog.vue'
 import { GENDER_LABELS, RACE_LABELS } from '../../../shared/types/portrait.types'
 import type { PortraitProject, PortraitCharacter, PortraitVariant } from '../../../shared/types/portrait.types'
 
@@ -220,10 +234,29 @@ const selectedCharacterId = ref<string>('')
 const showCreateDialog = ref(false)
 const showCreateCharacterDialog = ref(false)
 const showEditCharacterDialog = ref(false)
-const showSettingsDialog = ref(false)
 const editingCharacter = ref<PortraitCharacter | null>(null)
 const newProjectForm = ref({ name: '' })
 const creating = ref(false)
+
+// ==================== 模型选择状态 ====================
+
+interface ModelItem {
+  key: string
+  id: string
+  name: string
+  providerId: string
+  providerName: string
+}
+
+interface ModelGroup {
+  providerId: string
+  providerName: string
+  models: ModelItem[]
+}
+
+const modelGroups = ref<ModelGroup[]>([])
+const modelSearchKeyword = ref('')
+const selectedModelKey = ref('')
 
 // ==================== 计算属性 ====================
 
@@ -234,6 +267,33 @@ const selectedProject = computed(() =>
 const selectedCharacter = computed(() =>
   characters.value.find(c => c.id === selectedCharacterId.value)
 )
+
+/** 过滤后的模型列表 */
+const filteredModelGroups = computed(() => {
+  if (!modelSearchKeyword.value) {
+    return modelGroups.value
+  }
+
+  const keyword = modelSearchKeyword.value.toLowerCase()
+  const result: ModelGroup[] = []
+
+  for (const group of modelGroups.value) {
+    const filteredModels = group.models.filter(model =>
+      model.name.toLowerCase().includes(keyword) ||
+      model.id.toLowerCase().includes(keyword) ||
+      group.providerName.toLowerCase().includes(keyword)
+    )
+
+    if (filteredModels.length > 0) {
+      result.push({
+        ...group,
+        models: filteredModels
+      })
+    }
+  }
+
+  return result
+})
 
 // ==================== 方法 ====================
 
@@ -300,10 +360,88 @@ function selectProject(id: string) {
   selectedProjectId.value = id
   selectedCharacterId.value = ''
   loadCharacters()
+  // 初始化模型选择
+  initModelSelection()
 }
 
 function selectCharacter(id: string) {
   selectedCharacterId.value = id
+}
+
+// ==================== 模型选择方法 ====================
+
+/** 模型搜索过滤方法 */
+function filterModels(keyword: string): void {
+  modelSearchKeyword.value = keyword
+}
+
+/** 加载可用模型列表 */
+async function loadAllModels() {
+  const result = await window.electronAPI.image.getProviders()
+  if (!result.success || !result.data) return
+
+  const providers = result.data
+  const groups: ModelGroup[] = []
+
+  for (const provider of providers) {
+    const modelsResult = await window.electronAPI.image.getModels(provider.id)
+    if (modelsResult.success && modelsResult.data && modelsResult.data.length > 0) {
+      const models: ModelItem[] = modelsResult.data.map((model: any) => ({
+        key: `${provider.id}:${model.id}`,
+        id: model.id,
+        name: model.name || model.id,
+        providerId: provider.id,
+        providerName: provider.name
+      }))
+      groups.push({
+        providerId: provider.id,
+        providerName: provider.name,
+        models
+      })
+    }
+  }
+
+  modelGroups.value = groups
+}
+
+/** 初始化模型选择（使用项目默认模型） */
+function initModelSelection() {
+  if (selectedProject.value?.defaultProviderId && selectedProject.value?.defaultModelId) {
+    const defaultKey = `${selectedProject.value.defaultProviderId}:${selectedProject.value.defaultModelId}`
+    const exists = modelGroups.value.some(g => g.models.some(m => m.key === defaultKey))
+    if (exists) {
+      selectedModelKey.value = defaultKey
+      return
+    }
+  }
+
+  // 默认选中第一个模型
+  if (modelGroups.value.length > 0 && modelGroups.value[0].models.length > 0) {
+    selectedModelKey.value = modelGroups.value[0].models[0].key
+  }
+}
+
+/** 模型变更时更新项目默认模型 */
+async function onModelChange(key: string) {
+  if (!selectedProjectId.value || !key) return
+
+  const [providerId, modelId] = key.split(':')
+  const result = await window.electronAPI.portrait.updateProject({
+    id: selectedProjectId.value,
+    defaultProviderId: providerId,
+    defaultModelId: modelId
+  })
+
+  if (result.success) {
+    // 更新本地项目数据
+    const project = projects.value.find(p => p.id === selectedProjectId.value)
+    if (project) {
+      project.defaultProviderId = providerId
+      project.defaultModelId = modelId
+    }
+  } else {
+    ElMessage.error(result.error || '保存模型设置失败')
+  }
 }
 
 function getProjectPreview(projectId: string): string {
@@ -401,10 +539,6 @@ async function handleProjectCommand(command: string, project: PortraitProject) {
         ElMessage.error(result.error || '重命名失败')
       }
     }
-  } else if (command === 'settings') {
-    // 先选中该项目
-    selectProject(project.id)
-    showSettingsDialog.value = true
   }
 }
 
@@ -448,6 +582,7 @@ function handleCharacterDeleted() {
 
 onMounted(async () => {
   await loadProjects()
+  await loadAllModels()
   window.electronAPI.portrait.onGenerationEvent((data) => {
     if (data.type === 'generation-completed') {
       // 刷新相关角色的变体
@@ -603,6 +738,16 @@ onMounted(async () => {
     flex: 1;
     text-align: center;
   }
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.model-select {
+  width: 200px;
 }
 
 .character-grid {
