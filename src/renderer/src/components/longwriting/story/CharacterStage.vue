@@ -743,10 +743,13 @@ function resetCharacterForm() {
 // 确认人像关联
 async function confirmPortraitLink() {
   if (selectedPortraitId.value) {
-    characterForm.value.portraitId = selectedPortraitId.value
+    // 找到选中的人像变体对应的 characterId
+    const selectedPortrait = projectCharacters.value.find(p => p.id === selectedPortraitId.value)
+
+    characterForm.value.portraitId = selectedPortraitId.value  // portrait_variants.id
     showPortraitLinkDialog.value = false
 
-    // 同步角色信息到人像
+    // 同步角色信息到人像（使用 portrait_characters.id）
     const characterData = {
       gender: characterForm.value.gender,
       age: characterForm.value.age,
@@ -759,15 +762,17 @@ async function confirmPortraitLink() {
     }
 
     try {
-      // 调用同步接口
-      const result = await window.electronAPI.longwriting.syncCharacterToPortrait(
-        selectedPortraitId.value,
-        characterData
-      )
-      if (result.success) {
-        ElMessage.success('人像关联成功，已同步角色信息')
-      } else {
-        ElMessage.warning('人像关联成功，但同步信息失败')
+      // 调用同步接口，使用 characterId（portrait_characters.id）
+      if (selectedPortrait?.characterId) {
+        const result = await window.electronAPI.longwriting.syncCharacterToPortrait(
+          selectedPortrait.characterId,
+          characterData
+        )
+        if (result.success) {
+          ElMessage.success('人像关联成功，已同步角色信息')
+        } else {
+          ElMessage.warning('人像关联成功，但同步信息失败')
+        }
       }
     } catch (error) {
       console.error('[CharacterStage] 同步角色信息失败:', error)
@@ -1195,7 +1200,7 @@ async function loadAllPortraits(projects: any[]) {
 }
 
 // 当前选中项目的人物形象列表
-const projectCharacters = ref<Array<{ id: string; name: string; preview?: string }>>([])
+const projectCharacters = ref<Array<{ id: string; characterId: string; name: string; preview?: string }>>([])
 
 // 加载项目下的人物形象
 async function loadProjectCharacters() {
@@ -1216,8 +1221,11 @@ async function loadProjectCharacters() {
         )
         const previewVariant = frontBaseVariant || variantsResult.data?.[0]
 
+        // 注意：portraitId 应该是 portrait_variants.id，而不是 portrait_characters.id
+        // 因为 lw_story_characters.portrait_id 外键引用的是 portrait_variants.id
         projectCharacters.value.push({
-          id: character.id,
+          id: previewVariant?.id || character.id,  // 使用人像变体 ID
+          characterId: character.id,  // 保留人物角色 ID，用于同步信息
           name: character.name,
           preview: previewVariant?.imagePath
         })
