@@ -4919,8 +4919,12 @@ watch(outlineSearchText, (val) => {
       gap: 8px;
 
       .el-tag {
+        display: inline-flex;
+        align-items: center;
+
         .el-icon {
           margin-right: 4px;
+          vertical-align: middle;
         }
       }
     }

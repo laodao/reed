@@ -162,8 +162,9 @@ export class LwCharacterRepository {
     const updates: string[] = []
     const values: any[] = []
 
+    // 处理外键约束字段：空字符串转换为 null
     const fieldMap: Record<string, any> = {
-      portrait_id: data.portraitId,
+      portrait_id: data.portraitId === '' ? null : data.portraitId,
       name: data.name,
       gender: data.gender,
       age: data.age,
@@ -179,10 +180,10 @@ export class LwCharacterRepository {
       role_position: data.rolePosition,
       importance: data.importance,
       template_type: data.templateType,
-      generated_image_id: data.generatedImageId,
+      generated_image_id: data.generatedImageId === '' ? null : data.generatedImageId,
       major_events: data.majorEvents,
       source_type: data.sourceType,
-      source_episode_id: data.sourceEpisodeId
+      source_episode_id: data.sourceEpisodeId === '' ? null : data.sourceEpisodeId
     }
 
     for (const [field, value] of Object.entries(fieldMap)) {
