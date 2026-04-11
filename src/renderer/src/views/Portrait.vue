@@ -44,6 +44,7 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="rename">重命名</el-dropdown-item>
+                <el-dropdown-item command="settings">设置</el-dropdown-item>
                 <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -183,6 +184,13 @@
       :character="editingCharacter"
       @success="handleCharacterUpdated"
     />
+
+    <!-- 项目设置对话框 -->
+    <ProjectSettingsDialog
+      v-model="showSettingsDialog"
+      :project="selectedProject"
+      @success="loadProjects"
+    />
   </div>
 </template>
 
@@ -193,6 +201,7 @@ import { Plus, Folder, MoreFilled, User, Delete, ArrowLeft, Edit } from '@elemen
 import CreateCharacterDialog from '@/components/portrait/CreateCharacterDialog.vue'
 import EditCharacterDialog from '@/components/portrait/EditCharacterDialog.vue'
 import CharacterEditor from '@/components/portrait/CharacterEditor.vue'
+import ProjectSettingsDialog from '@/components/portrait/ProjectSettingsDialog.vue'
 import { GENDER_LABELS, RACE_LABELS } from '../../../shared/types/portrait.types'
 import type { PortraitProject, PortraitCharacter, PortraitVariant } from '../../../shared/types/portrait.types'
 
@@ -211,6 +220,7 @@ const selectedCharacterId = ref<string>('')
 const showCreateDialog = ref(false)
 const showCreateCharacterDialog = ref(false)
 const showEditCharacterDialog = ref(false)
+const showSettingsDialog = ref(false)
 const editingCharacter = ref<PortraitCharacter | null>(null)
 const newProjectForm = ref({ name: '' })
 const creating = ref(false)
@@ -391,6 +401,10 @@ async function handleProjectCommand(command: string, project: PortraitProject) {
         ElMessage.error(result.error || '重命名失败')
       }
     }
+  } else if (command === 'settings') {
+    // 先选中该项目
+    selectProject(project.id)
+    showSettingsDialog.value = true
   }
 }
 
@@ -595,6 +609,7 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   grid-template-rows: auto;  /* 行高度自适应内容 */
+  align-content: start;  /* 防止行被拉伸填满容器 */
   gap: 20px;
   padding: 20px;
   overflow-y: auto;
@@ -609,8 +624,7 @@ onMounted(async () => {
   cursor: pointer;
   transition: all 0.2s;
   border: 2px solid transparent;
-  height: auto;  /* 卡片高度自适应内容，不会被grid拉伸 */
-  min-height: 320px;  /* 设置最小高度保持一致的外观 */
+  /* 不设置 height，让卡片根据内容自然确定高度 */
 
   &:hover {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);

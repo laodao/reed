@@ -3465,6 +3465,18 @@ export class DatabaseManager {
       this.db.exec('ALTER TABLE video_episodes ADD COLUMN uploaded_items TEXT')
     }
 
+    // 为 portrait_projects 表添加默认模型配置字段
+    const portraitProjectColumns = this.db.prepare("PRAGMA table_info(portrait_projects)").all() as { name: string }[]
+    const portraitProjectColumnNames = portraitProjectColumns.map(col => col.name)
+    if (!portraitProjectColumnNames.includes('default_provider_id')) {
+      console.log('[DatabaseManager] 为 portrait_projects 表添加默认模型配置字段...')
+      this.db.exec('ALTER TABLE portrait_projects ADD COLUMN default_provider_id TEXT')
+    }
+    if (!portraitProjectColumnNames.includes('default_model_id')) {
+      this.db.exec('ALTER TABLE portrait_projects ADD COLUMN default_model_id TEXT')
+      console.log('[DatabaseManager] portrait_projects 表添加默认模型配置字段完成')
+    }
+
     // 检查临时实体模板表是否存在，不存在则创建
     const tempCharTemplateExists = this.db.prepare(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='lw_temp_character_templates'"

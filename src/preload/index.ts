@@ -773,7 +773,7 @@ const electronAPI = {
     listProjects: (page?: number, pageSize?: number) =>
       ipcRenderer.invoke('portrait:list-projects', page, pageSize),
     getProject: (id: string) => ipcRenderer.invoke('portrait:get-project', id),
-    updateProject: (data: { id: string; name?: string; description?: string }) =>
+    updateProject: (data: { id: string; name?: string; description?: string; defaultProviderId?: string; defaultModelId?: string }) =>
       ipcRenderer.invoke('portrait:update-project', data),
     deleteProject: (id: string) => ipcRenderer.invoke('portrait:delete-project', id),
 

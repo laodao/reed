@@ -721,6 +721,20 @@ async function loadDefaultModel() {
         }
       }
 
+      // 优先使用项目配置的默认模型
+      if (props.project?.defaultProviderId && props.project?.defaultModelId) {
+        const projectDefaultKey = `${props.project.defaultProviderId}:${props.project.defaultModelId}`
+        const exists = availableModels.value.some(m => m.key === projectDefaultKey)
+        if (exists) {
+          defaultModel.value = {
+            providerId: props.project.defaultProviderId,
+            modelId: props.project.defaultModelId
+          }
+          selectedModelKey.value = projectDefaultKey
+          return
+        }
+      }
+
       // 默认选中第一个模型
       if (availableModels.value.length > 0) {
         const first = availableModels.value[0]

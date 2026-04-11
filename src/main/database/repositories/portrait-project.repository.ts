@@ -30,6 +30,8 @@ export class PortraitProjectRepository {
       id: row.id,
       name: row.name,
       description: row.description || undefined,
+      defaultProviderId: row.default_provider_id || undefined,
+      defaultModelId: row.default_model_id || undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at
     }
@@ -109,6 +111,14 @@ export class PortraitProjectRepository {
     if (request.description !== undefined) {
       fields.push('description = ?')
       values.push(request.description || null)
+    }
+    if (request.defaultProviderId !== undefined) {
+      fields.push('default_provider_id = ?')
+      values.push(request.defaultProviderId || null)
+    }
+    if (request.defaultModelId !== undefined) {
+      fields.push('default_model_id = ?')
+      values.push(request.defaultModelId || null)
     }
 
     values.push(request.id)

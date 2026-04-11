@@ -118,6 +118,7 @@ type PortraitAngle = 'front' | 'left' | 'right' | 'back'
 
 const props = defineProps<{
   projectId?: string
+  project?: any  // PortraitProject 类型，包含 defaultProviderId 和 defaultModelId
 }>()
 
 const emit = defineEmits<{
@@ -219,6 +220,17 @@ async function loadAllModels() {
   }
 
   modelGroups.value = groups
+
+  // 优先使用项目配置的默认模型
+  if (props.project?.defaultProviderId && props.project?.defaultModelId) {
+    const defaultKey = `${props.project.defaultProviderId}:${props.project.defaultModelId}`
+    // 检查该模型是否存在于列表中
+    const exists = groups.some(g => g.models.some(m => m.key === defaultKey))
+    if (exists) {
+      selectedModelKey.value = defaultKey
+      return
+    }
+  }
 
   // 默认选中第一个模型
   if (groups.length > 0 && groups[0].models.length > 0) {

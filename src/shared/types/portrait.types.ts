@@ -35,6 +35,8 @@ export interface PortraitProject {
   id: string
   name: string
   description?: string
+  defaultProviderId?: string    // 默认AI提供商ID
+  defaultModelId?: string       // 默认模型ID
   createdAt: number
   updatedAt: number
 }
@@ -119,6 +121,8 @@ export interface UpdatePortraitProjectRequest {
   id: string
   name?: string
   description?: string
+  defaultProviderId?: string    // 默认AI提供商ID
+  defaultModelId?: string       // 默认模型ID
 }
 
 // ==================== 人物角色相关请求/响应 ====================
