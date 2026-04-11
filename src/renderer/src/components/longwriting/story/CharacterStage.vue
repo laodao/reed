@@ -85,10 +85,12 @@
       v-model="showCharacterDialog"
       :title="editingCharacter ? '编辑角色' : '添加角色'"
       width="750px"
+      top="5vh"
       destroy-on-close
       :append-to-body="false"
       :modal-append-to-body="false"
       center
+      class="character-edit-dialog"
     >
       <el-form :model="characterForm" label-width="100px" class="character-form">
         <el-row :gutter="16">
@@ -1608,5 +1610,14 @@ onMounted(() => {
     overflow: hidden;
     text-overflow: ellipsis;
   }
+}
+</style>
+
+<!-- 非 scoped 样式，用于控制 el-dialog 内部滚动 -->
+<style lang="scss">
+.character-edit-dialog .el-dialog__body {
+  max-height: calc(90vh - 120px);  /* 减去 header 和 footer 高度 */
+  overflow-y: auto;
+  padding: 20px;
 }
 </style>
