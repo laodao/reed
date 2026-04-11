@@ -1064,9 +1064,20 @@ async function handleEditFront() {
 
 async function handleGenerateAngles() {
   if (anglesToGenerate.value.length === 0) return
+  if (!defaultModel.value) {
+    ElMessage.warning('请先选择生成模型')
+    return
+  }
 
   generatingAngles.value = true
   try {
+    // 先更新角色的模型配置，确保使用当前选择的模型
+    await window.electronAPI.portrait.updateCharacter({
+      id: props.characterId,
+      providerId: defaultModel.value.providerId,
+      modelId: defaultModel.value.modelId
+    })
+
     const result = await window.electronAPI.portrait.generateAngles({
       characterId: props.characterId,
       angles: toRaw(anglesToGenerate.value),
