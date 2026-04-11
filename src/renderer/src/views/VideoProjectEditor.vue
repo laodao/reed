@@ -1325,6 +1325,16 @@
         <el-button type="primary" @click="regenerateStoryboardImage">开始生成</el-button>
       </template>
     </el-dialog>
+
+    <!-- 实体编辑对话框 -->
+    <EntityEditDialog
+      v-model:visible="showEntityEditDialog"
+      :entity-type="editingEntityType"
+      :entity-id="editingEntityId"
+      :entity-data="editingEntityData"
+      :project-id="projectId"
+      @saved="onEntitySaved"
+    />
   </div>
 </template>
 
@@ -1337,6 +1347,8 @@ import { useStoryToVideoStore } from '@/stores/story-to-video'
 import { useTabsStore } from '@/stores/tabs'
 import type { VideoEpisode, VideoProject, SceneScript, CharacterBinding, ItemBinding, LocationBinding } from '../../../shared/types/story-to-video.types'
 import type { UserProviderConfig, ProviderTemplate } from '../../../shared/types'
+import type { StoryCharacter, StoryLocation, StoryItem } from '../../../shared/types/longwriting.types'
+import EntityEditDialog from '@/components/video-project/EntityEditDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -1487,6 +1499,12 @@ const locationDetail = ref<import('../../../shared/types/longwriting.types').Sto
 const characterDetailLoading = ref(false)
 const itemDetailLoading = ref(false)
 const locationDetailLoading = ref(false)
+
+// 编辑实体对话框状态
+const showEntityEditDialog = ref(false)
+const editingEntityType = ref<'character' | 'location' | 'item'>('character')
+const editingEntityId = ref('')
+const editingEntityData = ref<StoryCharacter | StoryLocation | StoryItem | null>(null)
 
 // 选中的分镜（用于生成画面）
 const selectedStoryboard = ref<import('../../../shared/types/story-to-video.types').Storyboard | null>(null)
@@ -3693,21 +3711,6 @@ async function handleBindItem() {
   }
 }
 
-function editItemBinding(_binding: ItemBinding) {
-  ElMessage.info('编辑物品绑定功能开发中...')
-}
-
-async function removeItemBinding(binding: ItemBinding) {
-  try {
-    await ElMessageBox.confirm('确定要移除该物品绑定吗？', '确认', {
-      type: 'warning'
-    })
-    await store.deleteItemBinding(binding.id)
-    ElMessage.success('移除成功')
-  } catch {
-    // 用户取消
-  }
-}
 
 // ==================== 地点绑定相关 ====================
 
@@ -3746,27 +3749,108 @@ async function handleBindLocation() {
   }
 }
 
-function editLocationBinding(_binding: LocationBinding) {
-  ElMessage.info('编辑地点绑定功能开发中...')
-}
 
-async function removeLocationBinding(binding: LocationBinding) {
+/**
+ * 判断绑定是否来源于长文项目
+ */
+async function isBindingFromLongWriting(binding: CharacterBinding | LocationBinding | ItemBinding): Promise<boolean> {
   try {
-    await ElMessageBox.confirm('确定要移除该地点绑定吗？', '确认', {
-      type: 'warning'
+    const result = await window.electronAPI.storyToVideo.isBindingFromLongWriting({
+      longWritingCharacterId: (binding as CharacterBinding).longWritingCharacterId,
+      longWritingLocationId: (binding as LocationBinding).longWritingLocationId,
+      longWritingItemId: (binding as ItemBinding).longWritingItemId
     })
-    await store.deleteLocationBinding(binding.id)
-    ElMessage.success('移除成功')
-  } catch {
-    // 用户取消
+    return result.success && result.data.isFromLongWriting
+  } catch (error) {
+    console.error('[VideoProjectEditor] 判断绑定来源失败:', error)
+    return true // 默认认为是来自长文，不允许编辑
   }
 }
 
 /**
  * 编辑绑定
  */
-function editBinding(_binding: CharacterBinding) {
-  ElMessage.info('编辑角色绑定功能开发中...')
+async function editBinding(binding: CharacterBinding) {
+  // 判断是否来源于长文项目
+  const fromLongWriting = await isBindingFromLongWriting(binding)
+  if (fromLongWriting) {
+    ElMessage.info('该角色来源于长文项目，请前往长文项目编辑角色信息')
+    return
+  }
+
+  // 获取实体详情
+  try {
+    const result = await window.electronAPI.storyToVideo.getUploadedEntity(
+      binding.longWritingCharacterId,
+      'character'
+    )
+    if (result.success && result.data) {
+      editingEntityType.value = 'character'
+      editingEntityId.value = binding.longWritingCharacterId
+      editingEntityData.value = result.data as StoryCharacter
+      showEntityEditDialog.value = true
+    } else {
+      ElMessage.error('获取角色信息失败')
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '获取角色信息失败')
+  }
+}
+
+/**
+ * 编辑地点绑定
+ */
+async function editLocationBinding(binding: LocationBinding) {
+  const fromLongWriting = await isBindingFromLongWriting(binding)
+  if (fromLongWriting) {
+    ElMessage.info('该地点来源于长文项目，请前往长文项目编辑地点信息')
+    return
+  }
+
+  try {
+    const result = await window.electronAPI.storyToVideo.getUploadedEntity(
+      binding.longWritingLocationId,
+      'location'
+    )
+    if (result.success && result.data) {
+      editingEntityType.value = 'location'
+      editingEntityId.value = binding.longWritingLocationId
+      editingEntityData.value = result.data as StoryLocation
+      showEntityEditDialog.value = true
+    } else {
+      ElMessage.error('获取地点信息失败')
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '获取地点信息失败')
+  }
+}
+
+/**
+ * 编辑物品绑定
+ */
+async function editItemBinding(binding: ItemBinding) {
+  const fromLongWriting = await isBindingFromLongWriting(binding)
+  if (fromLongWriting) {
+    ElMessage.info('该物品来源于长文项目，请前往长文项目编辑物品信息')
+    return
+  }
+
+  try {
+    const result = await window.electronAPI.storyToVideo.getUploadedEntity(
+      binding.longWritingItemId,
+      'item'
+    )
+    if (result.success && result.data) {
+      editingEntityType.value = 'item'
+      editingEntityId.value = binding.longWritingItemId
+      editingEntityData.value = result.data as StoryItem
+      showEntityEditDialog.value = true
+    } else {
+      ElMessage.error('获取物品信息失败')
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '获取物品信息失败')
+  }
 }
 
 /**
@@ -3777,10 +3861,84 @@ async function removeBinding(binding: CharacterBinding) {
     await ElMessageBox.confirm('确定要移除该角色绑定吗？', '确认', {
       type: 'warning'
     })
+
+    // 判断是否来源于长文项目
+    const fromLongWriting = await isBindingFromLongWriting(binding)
+    if (!fromLongWriting) {
+      // 上传模式的实体，同时删除实体记录
+      await window.electronAPI.storyToVideo.deleteUploadedEntity(
+        binding.longWritingCharacterId,
+        'character',
+        projectId.value
+      )
+    }
+
     await store.deleteCharacterBinding(binding.id)
     ElMessage.success('移除成功')
   } catch {
     // 用户取消
+  }
+}
+
+/**
+ * 移除地点绑定
+ */
+async function removeLocationBinding(binding: LocationBinding) {
+  try {
+    await ElMessageBox.confirm('确定要移除该地点绑定吗？', '确认', {
+      type: 'warning'
+    })
+
+    const fromLongWriting = await isBindingFromLongWriting(binding)
+    if (!fromLongWriting) {
+      await window.electronAPI.storyToVideo.deleteUploadedEntity(
+        binding.longWritingLocationId,
+        'location',
+        projectId.value
+      )
+    }
+
+    await store.deleteLocationBinding(binding.id)
+    ElMessage.success('移除成功')
+  } catch {
+    // 用户取消
+  }
+}
+
+/**
+ * 移除物品绑定
+ */
+async function removeItemBinding(binding: ItemBinding) {
+  try {
+    await ElMessageBox.confirm('确定要移除该物品绑定吗？', '确认', {
+      type: 'warning'
+    })
+
+    const fromLongWriting = await isBindingFromLongWriting(binding)
+    if (!fromLongWriting) {
+      await window.electronAPI.storyToVideo.deleteUploadedEntity(
+        binding.longWritingItemId,
+        'item',
+        projectId.value
+      )
+    }
+
+    await store.deleteItemBinding(binding.id)
+    ElMessage.success('移除成功')
+  } catch {
+    // 用户取消
+  }
+}
+
+/**
+ * 编辑实体保存后刷新
+ */
+async function onEntitySaved() {
+  // 刷新绑定列表
+  if (projectId.value) {
+    await store.loadCharacterBindings(projectId.value)
+    await store.loadLocationBindings(projectId.value)
+    await store.loadItemBindings(projectId.value)
   }
 }
 

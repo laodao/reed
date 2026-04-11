@@ -9,7 +9,8 @@ import {
   LocationType,
   LocationImportance,
   EntityImportance,
-  TemporaryLocationTemplateType
+  TemporaryLocationTemplateType,
+  EntitySourceType
 } from '../../../shared/types/longwriting.types'
 
 /**
@@ -50,6 +51,17 @@ export class LwLocationRepository {
   }
 
   /**
+   * 根据来源剧集ID获取地点
+   */
+  getBySourceEpisodeId(episodeId: string): StoryLocation[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM lw_story_locations WHERE source_episode_id = ? ORDER BY created_at DESC
+    `)
+    const rows = stmt.all(episodeId) as any[]
+    return rows.map(this.mapToLocation)
+  }
+
+  /**
    * 创建地点
    */
   create(data: {
@@ -62,20 +74,23 @@ export class LwLocationRepository {
     generatedImageId?: string
     description: string
     mapId?: string
+    sourceType?: EntitySourceType
+    sourceEpisodeId?: string
   }): StoryLocation {
     const id = this.generateId()
     const now = Date.now()
 
     const stmt = this.db.prepare(`
-      INSERT INTO lw_story_locations (id, project_id, name, type, description, importance, entity_importance, template_type, generated_image_id, map_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO lw_story_locations (id, project_id, name, type, description, importance, entity_importance, template_type, generated_image_id, map_id, source_type, source_episode_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     stmt.run(
       id, data.projectId, data.name, data.type, data.description,
       data.importance, data.entityImportance || 'secondary',
       data.templateType || null, data.generatedImageId || null,
-      data.mapId || null, now, now
+      data.mapId || null, data.sourceType || 'longwriting', data.sourceEpisodeId || null,
+      now, now
     )
 
     return {
@@ -89,6 +104,8 @@ export class LwLocationRepository {
       templateType: data.templateType,
       generatedImageId: data.generatedImageId,
       mapId: data.mapId,
+      sourceType: data.sourceType || 'longwriting' as EntitySourceType,
+      sourceEpisodeId: data.sourceEpisodeId,
       createdAt: now,
       updatedAt: now
     }
@@ -136,6 +153,14 @@ export class LwLocationRepository {
       updates.push('map_id = ?')
       values.push(data.mapId || null)
     }
+    if (data.sourceType !== undefined) {
+      updates.push('source_type = ?')
+      values.push(data.sourceType)
+    }
+    if (data.sourceEpisodeId !== undefined) {
+      updates.push('source_episode_id = ?')
+      values.push(data.sourceEpisodeId || null)
+    }
 
     if (updates.length === 0) return existing
 
@@ -182,6 +207,8 @@ export class LwLocationRepository {
       templateType: row.template_type as TemporaryLocationTemplateType | undefined,
       generatedImageId: row.generated_image_id,
       mapId: row.map_id || undefined,
+      sourceType: row.source_type || 'longwriting' as EntitySourceType,
+      sourceEpisodeId: row.source_episode_id || undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at
     }

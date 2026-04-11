@@ -4,7 +4,7 @@
  */
 
 import Database from 'better-sqlite3'
-import { StoryItem, ItemType, ItemLevel, EntityImportance } from '../../../shared/types/longwriting.types'
+import { StoryItem, ItemType, ItemLevel, EntityImportance, EntitySourceType } from '../../../shared/types/longwriting.types'
 
 /**
  * 物品仓库
@@ -33,6 +33,17 @@ export class LwItemRepository {
   }
 
   /**
+   * 根据来源剧集ID获取物品
+   */
+  getBySourceEpisodeId(episodeId: string): StoryItem[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM lw_story_items WHERE source_episode_id = ? ORDER BY created_at DESC
+    `)
+    const rows = stmt.all(episodeId) as any[]
+    return rows.map(this.mapToItem)
+  }
+
+  /**
    * 创建物品
    */
   create(data: {
@@ -43,16 +54,23 @@ export class LwItemRepository {
     importance?: EntityImportance
     description: string
     ownerId?: string
+    sourceType?: EntitySourceType
+    sourceEpisodeId?: string
   }): StoryItem {
     const id = this.generateId()
     const now = Date.now()
 
     const stmt = this.db.prepare(`
-      INSERT INTO lw_story_items (id, project_id, name, type, level, importance, description, owner_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO lw_story_items (id, project_id, name, type, level, importance, description, owner_id, source_type, source_episode_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
-    stmt.run(id, data.projectId, data.name, data.type, data.level, data.importance || 'secondary', data.description, data.ownerId || null, now, now)
+    stmt.run(
+      id, data.projectId, data.name, data.type, data.level,
+      data.importance || 'secondary', data.description, data.ownerId || null,
+      data.sourceType || 'longwriting', data.sourceEpisodeId || null,
+      now, now
+    )
 
     return {
       id,
@@ -63,6 +81,8 @@ export class LwItemRepository {
       importance: data.importance || 'secondary' as EntityImportance,
       description: data.description,
       ownerId: data.ownerId,
+      sourceType: data.sourceType || 'longwriting' as EntitySourceType,
+      sourceEpisodeId: data.sourceEpisodeId,
       createdAt: now,
       updatedAt: now
     }
@@ -101,6 +121,14 @@ export class LwItemRepository {
     if (data.ownerId !== undefined) {
       updates.push('owner_id = ?')
       values.push(data.ownerId || null)
+    }
+    if (data.sourceType !== undefined) {
+      updates.push('source_type = ?')
+      values.push(data.sourceType)
+    }
+    if (data.sourceEpisodeId !== undefined) {
+      updates.push('source_episode_id = ?')
+      values.push(data.sourceEpisodeId || null)
     }
 
     if (updates.length === 0) return existing
@@ -146,6 +174,8 @@ export class LwItemRepository {
       importance: row.importance || 'secondary' as EntityImportance,
       description: row.description,
       ownerId: row.owner_id || undefined,
+      sourceType: row.source_type || 'longwriting' as EntitySourceType,
+      sourceEpisodeId: row.source_episode_id || undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at
     }

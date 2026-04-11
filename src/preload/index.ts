@@ -164,6 +164,12 @@ const IPC_CHANNELS = {
   STV_SYNTHESIZE_STORYBOARD_VIDEO: 'stv:synthesize-storyboard-video',
   STV_EXPORT_VIDEO: 'stv:export-video',
 
+  // 上传模式实体管理
+  STV_GET_UPLOADED_ENTITY: 'stv:get-uploaded-entity',
+  STV_UPDATE_UPLOADED_ENTITY: 'stv:update-uploaded-entity',
+  STV_DELETE_UPLOADED_ENTITY: 'stv:delete-uploaded-entity',
+  STV_IS_BINDING_FROM_LONGWRITING: 'stv:is-binding-from-longwriting',
+
   // OSS 配置相关
   OSS_LIST_CONFIGS: 'oss:list-configs',
   OSS_GET_CONFIG: 'oss:get-config',
@@ -1461,6 +1467,8 @@ const electronAPI = {
       uploadedContent?: string
       episodeNumber: number
       title: string
+      providerConfigId?: string
+      modelId?: string
     }) =>
       ipcRenderer.invoke(IPC_CHANNELS.STV_CREATE_EPISODE, projectId, data),
     updateEpisode: (episodeId: string, data: { title?: string; status?: string; duration?: number; scriptId?: string }) =>
@@ -1543,6 +1551,16 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.STV_SYNTHESIZE_STORYBOARD_VIDEO, storyboardId, quality),
     exportVideo: (sourcePath: string, outputPath: string, quality?: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.STV_EXPORT_VIDEO, sourcePath, outputPath, quality),
+
+    // 上传模式实体管理
+    getUploadedEntity: (entityId: string, entityType: 'character' | 'location' | 'item') =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_GET_UPLOADED_ENTITY, entityId, entityType),
+    updateUploadedEntity: (entityId: string, entityType: 'character' | 'location' | 'item', data: any) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_UPDATE_UPLOADED_ENTITY, entityId, entityType, data),
+    deleteUploadedEntity: (entityId: string, entityType: 'character' | 'location' | 'item', projectId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_DELETE_UPLOADED_ENTITY, entityId, entityType, projectId),
+    isBindingFromLongWriting: (binding: { longWritingCharacterId?: string; longWritingLocationId?: string; longWritingItemId?: string }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.STV_IS_BINDING_FROM_LONGWRITING, binding),
 
     // 视频合成进度事件监听
     onSynthesisProgress: (callback: (event: any, data: { sceneId: string; phase: string; progress: number }) => void) => {

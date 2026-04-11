@@ -122,6 +122,24 @@ export interface UploadedCharacter {
 }
 
 /**
+ * 上传长文识别的地点
+ */
+export interface UploadedLocation {
+  name: string
+  description?: string
+  type?: string // 地点类型
+}
+
+/**
+ * 上传长文识别的物品
+ */
+export interface UploadedItem {
+  name: string
+  description?: string
+  type?: string // 物品类型
+}
+
+/**
  * 剧本状态
  */
 export type ScriptStatus = 'pending' | 'generating' | 'reviewing' | 'approved'
@@ -544,6 +562,8 @@ export interface VideoEpisode {
   outlineId?: string // 关联的长文大纲节点（outline 模式时有值）
   uploadedContent?: string // 上传的长文内容（uploaded 模式时有值）
   uploadedCharacters?: UploadedCharacter[] // 识别的角色（uploaded 模式时有值）
+  uploadedLocations?: UploadedLocation[] // 识别的地点（uploaded 模式时有值）
+  uploadedItems?: UploadedItem[] // 识别的物品（uploaded 模式时有值）
   episodeNumber: number // 剧集序号
   title: string
   status: EpisodeStatus
@@ -584,6 +604,8 @@ export interface VideoEpisodeRecord {
   outline_id: string | null // 关联的大纲ID（可空）
   uploaded_content: string | null // 上传的长文内容
   uploaded_characters: string | null // 识别的角色（JSON）
+  uploaded_locations: string | null // 识别的地点（JSON）
+  uploaded_items: string | null // 识别的物品（JSON）
   episode_number: number
   title: string
   status: EpisodeStatus

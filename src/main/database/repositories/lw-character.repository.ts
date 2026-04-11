@@ -11,7 +11,8 @@ import {
   CharacterRelation,
   EntityImportance,
   TemporaryCharacterTemplateType,
-  StoryCharacterRace
+  StoryCharacterRace,
+  EntitySourceType
 } from '../../../shared/types/longwriting.types'
 
 export class LwCharacterRepository {
@@ -51,6 +52,17 @@ export class LwCharacterRepository {
   }
 
   /**
+   * 根据来源剧集ID获取角色
+   */
+  getBySourceEpisodeId(episodeId: string): StoryCharacter[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM lw_story_characters WHERE source_episode_id = ? ORDER BY created_at ASC
+    `)
+    const rows = stmt.all(episodeId) as any[]
+    return rows.map(this.mapToCharacter)
+  }
+
+  /**
    * 根据人像ID获取关联的角色
    */
   getByPortraitId(portraitId: string): StoryCharacter[] {
@@ -73,8 +85,8 @@ export class LwCharacterRepository {
         id, project_id, portrait_id, name, gender, age, height, weight, race,
         occupation, position, appearance, background, personality, abilities,
         role_position, major_events, created_at, updated_at, importance,
-        template_type, generated_image_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        template_type, generated_image_id, source_type, source_episode_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     // 确保所有参数都是原始类型，数组需要转换为字符串
@@ -107,7 +119,9 @@ export class LwCharacterRepository {
       now,
       data.importance || 'secondary',
       data.templateType || null,
-      data.generatedImageId || null
+      data.generatedImageId || null,
+      data.sourceType || 'longwriting',
+      data.sourceEpisodeId || null
     )
 
     return {
@@ -131,6 +145,8 @@ export class LwCharacterRepository {
       templateType: data.templateType,
       generatedImageId: data.generatedImageId,
       majorEvents: data.majorEvents || '',
+      sourceType: data.sourceType || 'longwriting' as EntitySourceType,
+      sourceEpisodeId: data.sourceEpisodeId,
       createdAt: now,
       updatedAt: now
     }
@@ -164,7 +180,9 @@ export class LwCharacterRepository {
       importance: data.importance,
       template_type: data.templateType,
       generated_image_id: data.generatedImageId,
-      major_events: data.majorEvents
+      major_events: data.majorEvents,
+      source_type: data.sourceType,
+      source_episode_id: data.sourceEpisodeId
     }
 
     for (const [field, value] of Object.entries(fieldMap)) {
@@ -275,6 +293,8 @@ export class LwCharacterRepository {
       templateType: row.template_type as TemporaryCharacterTemplateType | undefined,
       generatedImageId: row.generated_image_id,
       majorEvents: row.major_events || '',
+      sourceType: row.source_type || 'longwriting' as EntitySourceType,
+      sourceEpisodeId: row.source_episode_id || undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at
     }

@@ -3034,6 +3034,8 @@ export class DatabaseManager {
           outline_id TEXT,
           uploaded_content TEXT,
           uploaded_characters TEXT,
+          uploaded_locations TEXT,
+          uploaded_items TEXT,
           episode_number INTEGER NOT NULL,
           title TEXT NOT NULL,
           status TEXT NOT NULL DEFAULT 'pending',
@@ -3425,6 +3427,42 @@ export class DatabaseManager {
 
     if (!itemColumnNames.includes('importance')) {
       this.db.exec('ALTER TABLE lw_story_items ADD COLUMN importance TEXT DEFAULT \'secondary\'')
+    }
+
+    // ==================== 剧集上传模式实体来源字段迁移 ====================
+    // 为角色表添加 source_type 和 source_episode_id 字段
+    if (!characterColumnNames.includes('source_type')) {
+      this.db.exec('ALTER TABLE lw_story_characters ADD COLUMN source_type TEXT DEFAULT \'longwriting\'')
+    }
+    if (!characterColumnNames.includes('source_episode_id')) {
+      this.db.exec('ALTER TABLE lw_story_characters ADD COLUMN source_episode_id TEXT')
+    }
+
+    // 为地点表添加 source_type 和 source_episode_id 字段
+    if (!locationColumnNames.includes('source_type')) {
+      this.db.exec('ALTER TABLE lw_story_locations ADD COLUMN source_type TEXT DEFAULT \'longwriting\'')
+    }
+    if (!locationColumnNames.includes('source_episode_id')) {
+      this.db.exec('ALTER TABLE lw_story_locations ADD COLUMN source_episode_id TEXT')
+    }
+
+    // 为物品表添加 source_type 和 source_episode_id 字段
+    if (!itemColumnNames.includes('source_type')) {
+      this.db.exec('ALTER TABLE lw_story_items ADD COLUMN source_type TEXT DEFAULT \'longwriting\'')
+    }
+    if (!itemColumnNames.includes('source_episode_id')) {
+      this.db.exec('ALTER TABLE lw_story_items ADD COLUMN source_episode_id TEXT')
+    }
+
+    // 为剧集表添加 uploaded_locations 和 uploaded_items 字段
+    const episodeColumns = this.db.prepare("PRAGMA table_info(video_episodes)").all() as { name: string }[]
+    const episodeColumnNames = episodeColumns.map(col => col.name)
+
+    if (!episodeColumnNames.includes('uploaded_locations')) {
+      this.db.exec('ALTER TABLE video_episodes ADD COLUMN uploaded_locations TEXT')
+    }
+    if (!episodeColumnNames.includes('uploaded_items')) {
+      this.db.exec('ALTER TABLE video_episodes ADD COLUMN uploaded_items TEXT')
     }
 
     // 检查临时实体模板表是否存在，不存在则创建

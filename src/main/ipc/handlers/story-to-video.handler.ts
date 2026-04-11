@@ -26,6 +26,12 @@ import { VideoService } from '../../services/video.service'
 import { SecureStorageService } from '../../services/secure-storage.service'
 import { createVideoProvider } from '../../video-providers'
 import { EpisodeAutoBindingService } from '../../services/episode-auto-binding.service'
+import { UploadedEntityService } from '../../services/uploaded-entity.service'
+import type {
+  UploadedCharacter,
+  UploadedLocation,
+  UploadedItem
+} from '../../shared/types/story-to-video.types'
 
 /**
  * 将本地路径转换为 local-image URL
@@ -104,6 +110,12 @@ export function registerStoryToVideoHandlers(): void {
   ipcMain.handle('stv:synthesize-scene-video', handleSynthesizeSceneVideo)
   ipcMain.handle('stv:synthesize-storyboard-video', handleSynthesizeStoryboardVideo)
   ipcMain.handle('stv:export-video', handleExportVideo)
+
+  // ==================== 上传模式实体管理 ====================
+  ipcMain.handle('stv:get-uploaded-entity', handleGetUploadedEntity)
+  ipcMain.handle('stv:update-uploaded-entity', handleUpdateUploadedEntity)
+  ipcMain.handle('stv:delete-uploaded-entity', handleDeleteUploadedEntity)
+  ipcMain.handle('stv:is-binding-from-longwriting', handleIsBindingFromLongWriting)
 }
 
 // ==================== 项目管理处理器 ====================
@@ -579,6 +591,8 @@ async function handleCreateEpisode(
     uploadedContent?: string
     episodeNumber: number
     title: string
+    providerConfigId?: string
+    modelId?: string
   }
 ): Promise<IpcResponse> {
   console.log('[handleCreateEpisode] 收到请求:', { projectId, data })
@@ -624,6 +638,55 @@ async function handleCreateEpisode(
       console.log('[handleCreateEpisode] 开始自动绑定...')
       const bindingResult = EpisodeAutoBindingService.autoBindEntities(projectId, data.outlineId)
       console.log('[handleCreateEpisode] 自动绑定结果:', bindingResult)
+    } else if (data.sourceType === 'uploaded' && data.uploadedContent) {
+      // 上传模式：AI识别实体并创建绑定
+      console.log('[handleCreateEpisode] 开始AI识别实体...')
+      try {
+        const aiService = StoryToVideoAIService.getInstance()
+
+        // 识别角色、地点、物品
+        const characters = await aiService.identifyCharacters(
+          data.uploadedContent,
+          data.providerConfigId,
+          data.modelId
+        )
+        const locations = await aiService.identifyLocations(
+          data.uploadedContent,
+          data.providerConfigId,
+          data.modelId
+        )
+        const items = await aiService.identifyItems(
+          data.uploadedContent,
+          data.providerConfigId,
+          data.modelId
+        )
+
+        console.log('[handleCreateEpisode] AI识别完成:', {
+          characters: characters.length,
+          locations: locations.length,
+          items: items.length
+        })
+
+        // 创建实体并绑定
+        const entityResult = UploadedEntityService.createAndBindUploadedEntities(
+          projectId,
+          episode.id,
+          characters,
+          locations,
+          items
+        )
+        console.log('[handleCreateEpisode] 实体创建完成:', entityResult)
+
+        // 更新剧集记录，保存识别的实体信息
+        db.videoEpisodes.update(episode.id, {
+          uploadedCharacters: characters,
+          uploadedLocations: locations,
+          uploadedItems: items
+        })
+      } catch (aiError: any) {
+        console.error('[handleCreateEpisode] AI识别失败:', aiError)
+        // AI识别失败不影响剧集创建，只记录日志
+      }
     } else {
       console.log('[handleCreateEpisode] 跳过自动绑定')
     }
@@ -1931,5 +1994,91 @@ async function handleExportVideo(
     return { success: false, error: result.error || '导出视频失败' }
   } catch (error: any) {
     return { success: false, error: error.message || '导出视频失败' }
+  }
+}
+
+// ==================== 上传模式实体管理处理器 ====================
+
+/**
+ * 获取上传模式的实体详情
+ */
+async function handleGetUploadedEntity(
+  _event: IpcMainInvokeEvent,
+  entityId: string,
+  entityType: 'character' | 'location' | 'item'
+): Promise<IpcResponse> {
+  try {
+    const entity = UploadedEntityService.getUploadedEntity(entityId, entityType)
+    if (!entity) {
+      return { success: false, error: '实体不存在' }
+    }
+    return { success: true, data: entity }
+  } catch (error: any) {
+    console.error('[handleGetUploadedEntity] 错误:', error)
+    return { success: false, error: error.message || '获取实体失败' }
+  }
+}
+
+/**
+ * 更新上传模式的实体
+ */
+async function handleUpdateUploadedEntity(
+  _event: IpcMainInvokeEvent,
+  entityId: string,
+  entityType: 'character' | 'location' | 'item',
+  data: any
+): Promise<IpcResponse> {
+  try {
+    console.log('[handleUpdateUploadedEntity] 更新实体:', { entityId, entityType, data })
+    const entity = UploadedEntityService.updateUploadedEntity(entityId, entityType, data)
+    if (!entity) {
+      return { success: false, error: '更新失败，实体不存在或不是上传模式' }
+    }
+    return { success: true, data: entity }
+  } catch (error: any) {
+    console.error('[handleUpdateUploadedEntity] 错误:', error)
+    return { success: false, error: error.message || '更新实体失败' }
+  }
+}
+
+/**
+ * 删除上传模式的实体
+ */
+async function handleDeleteUploadedEntity(
+  _event: IpcMainInvokeEvent,
+  entityId: string,
+  entityType: 'character' | 'location' | 'item',
+  projectId: string
+): Promise<IpcResponse> {
+  try {
+    console.log('[handleDeleteUploadedEntity] 删除实体:', { entityId, entityType, projectId })
+    const success = UploadedEntityService.deleteUploadedEntity(entityId, entityType, projectId)
+    if (!success) {
+      return { success: false, error: '删除失败，实体不存在或不是上传模式' }
+    }
+    return { success: true, data: { deleted: true } }
+  } catch (error: any) {
+    console.error('[handleDeleteUploadedEntity] 错误:', error)
+    return { success: false, error: error.message || '删除实体失败' }
+  }
+}
+
+/**
+ * 判断绑定是否来源于长文项目
+ */
+async function handleIsBindingFromLongWriting(
+  _event: IpcMainInvokeEvent,
+  binding: {
+    longWritingCharacterId?: string
+    longWritingLocationId?: string
+    longWritingItemId?: string
+  }
+): Promise<IpcResponse> {
+  try {
+    const isFromLongWriting = UploadedEntityService.isBindingFromLongWriting(binding)
+    return { success: true, data: { isFromLongWriting } }
+  } catch (error: any) {
+    console.error('[handleIsBindingFromLongWriting] 错误:', error)
+    return { success: false, error: error.message || '判断绑定来源失败' }
   }
 }

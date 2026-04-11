@@ -316,6 +316,8 @@ export interface StoryLocation {
   templateType?: TemporaryLocationTemplateType  // 临时实体模板类型
   generatedImageId?: string  // 自动生成的形象图片ID
   mapId?: string            // 关联地图 ID
+  sourceType?: EntitySourceType  // 来源类型：longwriting 或 uploaded
+  sourceEpisodeId?: string      // 来源剧集ID（uploaded模式时使用）
   createdAt: number
   updatedAt: number
 }
@@ -485,6 +487,12 @@ export interface GenerateFactionsRequest {
 }
 
 // ==================== 实体重要性类型 ====================
+
+/**
+ * 实体来源类型
+ * 用于区分实体来源于长文项目还是上传的剧本
+ */
+export type EntitySourceType = 'longwriting' | 'uploaded'
 
 /**
  * 实体重要性分类
@@ -710,6 +718,8 @@ export interface StoryCharacter {
   templateType?: TemporaryCharacterTemplateType  // 临时实体模板类型
   generatedImageId?: string  // 自动生成的形象图片ID
   majorEvents: string        // 主要事件
+  sourceType?: EntitySourceType  // 来源类型：longwriting 或 uploaded
+  sourceEpisodeId?: string      // 来源剧集ID（uploaded模式时使用）
   createdAt: number
   updatedAt: number
 }
@@ -776,6 +786,8 @@ export interface StoryItem {
   description: string
   importance: EntityImportance    // 实体重要性分类
   ownerId?: string           // 持有者角色 ID
+  sourceType?: EntitySourceType  // 来源类型：longwriting 或 uploaded
+  sourceEpisodeId?: string      // 来源剧集ID（uploaded模式时使用）
   createdAt: number
   updatedAt: number
 }
@@ -941,6 +953,8 @@ export interface CreateCharacterRequest {
   generatedImageId?: string         // 自动生成的形象图片ID
   majorEvents?: string
   portraitId?: string
+  sourceType?: EntitySourceType     // 来源类型（uploaded模式时使用）
+  sourceEpisodeId?: string          // 来源剧集ID（uploaded模式时使用）
 }
 
 /**
@@ -965,6 +979,8 @@ export interface UpdateCharacterRequest {
   generatedImageId?: string         // 自动生成的形象图片ID
   majorEvents?: string
   portraitId?: string
+  sourceType?: EntitySourceType     // 来源类型
+  sourceEpisodeId?: string          // 来源剧集ID
 }
 
 /**
