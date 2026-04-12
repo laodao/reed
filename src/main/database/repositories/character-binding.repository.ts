@@ -37,13 +37,19 @@ export class CharacterBindingRepository {
 
   /**
    * 根据项目 ID 获取所有角色绑定
+   * 同时从 lw_story_characters 表同步 portrait_id（如果绑定的 portrait_id 为空）
    */
   getByProjectId(projectId: string): CharacterBinding[] {
     const stmt = this.db.prepare(`
-      SELECT * FROM character_bindings WHERE project_id = ?
+      SELECT
+        cb.*,
+        COALESCE(cb.portrait_id, c.portrait_id) as synced_portrait_id
+      FROM character_bindings cb
+      LEFT JOIN lw_story_characters c ON cb.long_writing_character_id = c.id
+      WHERE cb.project_id = ?
     `)
-    const rows = stmt.all(projectId) as CharacterBindingRecord[]
-    return rows.map(this.mapToBinding)
+    const rows = stmt.all(projectId) as (CharacterBindingRecord & { synced_portrait_id: string | null })[]
+    return rows.map(row => this.mapToBindingWithSync(row))
   }
 
   /**
@@ -203,6 +209,17 @@ export class CharacterBindingRepository {
    * 优先使用规范化字段，回退到JSON字段
    */
   private mapToBinding(row: CharacterBindingRecord): CharacterBinding {
+    return this.mapToBindingWithSync(row)
+  }
+
+  /**
+   * 映射数据库行到角色绑定对象（带同步的 portrait_id）
+   * 优先使用规范化字段，回退到JSON字段
+   * 使用 synced_portrait_id（从长文角色同步的值）作为 portraitId
+   */
+  private mapToBindingWithSync(
+    row: CharacterBindingRecord & { synced_portrait_id?: string | null }
+  ): CharacterBinding {
     // 构建声音配置：优先使用规范化字段
     let voiceConfig: CharacterBinding['voiceConfig']
     if (row.voice_id || row.voice_speed || row.voice_pitch) {
@@ -229,11 +246,14 @@ export class CharacterBindingRepository {
       generateConfig = JSON.parse(row.generate_config)
     }
 
+    // 使用 synced_portrait_id（如果绑定的 portrait_id 为空，则从长文角色同步）
+    const portraitId = row.synced_portrait_id || row.portrait_id || undefined
+
     return {
       id: row.id,
       projectId: row.project_id,
       longWritingCharacterId: row.long_writing_character_id,
-      portraitId: row.portrait_id || undefined,
+      portraitId,
       generateConfig,
       voiceConfig,
       createdAt: row.created_at,

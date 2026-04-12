@@ -173,20 +173,47 @@
 
         <!-- 已关联的人像预览 -->
         <el-form-item v-if="characterForm.portraitId" label="当前形象">
-          <div class="current-portrait">
-            <el-image
-              v-if="getPortraitPreview(characterForm.portraitId)"
-              :src="getPortraitPreview(characterForm.portraitId)"
-              fit="cover"
-              class="portrait-preview-large"
-            >
-              <template #error>
-                <div class="portrait-placeholder">
-                  <el-icon><Picture /></el-icon>
-                </div>
-              </template>
-            </el-image>
-            <span class="portrait-name">{{ getPortraitName(characterForm.portraitId) }}</span>
+          <div class="current-portrait-wrapper">
+            <div class="portrait-variants-grid" v-if="currentPortraitVariants.length > 0">
+              <div
+                v-for="variant in currentPortraitVariants"
+                :key="variant.id"
+                class="variant-thumbnail"
+                @click="openImagePreview(variant.imagePath)"
+              >
+                <el-image
+                  :src="variant.imagePath"
+                  fit="cover"
+                >
+                  <template #error>
+                    <div class="portrait-placeholder-small">
+                      <el-icon><Picture /></el-icon>
+                    </div>
+                  </template>
+                </el-image>
+              </div>
+            </div>
+            <div v-else class="single-portrait">
+              <el-image
+                v-if="getPortraitPreview(characterForm.portraitId)"
+                :src="getPortraitPreview(characterForm.portraitId)"
+                fit="cover"
+                class="portrait-preview-large"
+                @click="openImagePreview(getPortraitPreview(characterForm.portraitId)!)"
+              >
+                <template #error>
+                  <div class="portrait-placeholder">
+                    <el-icon><Picture /></el-icon>
+                  </div>
+                </template>
+              </el-image>
+            </div>
+            <div class="portrait-info">
+              <span class="portrait-name">{{ getPortraitName(characterForm.portraitId) }}</span>
+              <span class="portrait-count" v-if="currentPortraitVariants.length > 1">
+                共 {{ currentPortraitVariants.length }} 张正面形象
+              </span>
+            </div>
           </div>
         </el-form-item>
 
@@ -467,6 +494,31 @@
         <el-button type="primary" @click="addRelation">添加</el-button>
       </template>
     </el-dialog>
+
+    <!-- 图片预览对话框 -->
+    <el-dialog
+      v-model="showImagePreview"
+      title="形象预览"
+      width="90%"
+      top="5vh"
+      class="portrait-preview-dialog"
+      destroy-on-close
+    >
+      <div class="image-preview-container">
+        <el-image
+          :src="previewImageUrl"
+          fit="contain"
+          class="preview-image-large"
+        >
+          <template #error>
+            <div class="preview-error">
+              <el-icon><Picture /></el-icon>
+              <span>图片加载失败</span>
+            </div>
+          </template>
+        </el-image>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -662,6 +714,12 @@ function editCharacter(character: StoryCharacter) {
     rolePosition: character.rolePosition,
     majorEvents: character.majorEvents,
     portraitId: character.portraitId || ''
+  }
+  // 加载当前人像的所有正面变体
+  if (character.portraitId) {
+    loadCurrentPortraitVariants(character.portraitId)
+  } else {
+    currentPortraitVariants.value = []
   }
   showCharacterDialog.value = true
 }
@@ -1173,8 +1231,15 @@ async function loadPortraits() {
 // 加载所有人物形象（用于已关联形象显示）
 const availablePortraits = ref<Array<{ id: string; name: string; preview?: string }>>([])
 
+// 当前选中人像的所有正面变体（用于显示缩略图列表）
+const currentPortraitVariants = ref<Array<{ id: string; imagePath: string; angle: string }>>([])
+
+// 当前预览的图片URL
+const previewImageUrl = ref('')
+const showImagePreview = ref(false)
+
 async function loadAllPortraits(projects: any[]) {
-  const allPortraits: Array<{ id: string; name: string; preview?: string; projectId: string }> = []
+  const allPortraits: Array<{ id: string; name: string; preview?: string; projectId: string; characterId?: string }> = []
 
   for (const project of projects) {
     const charactersResult = await window.electronAPI.portrait.listCharacters(project.id)
@@ -1192,7 +1257,8 @@ async function loadAllPortraits(projects: any[]) {
           id: previewVariant?.id || character.id,  // 使用人像变体 ID
           name: character.name,
           preview: previewVariant?.imagePath,
-          projectId: project.id
+          projectId: project.id,
+          characterId: character.id  // 保存人物角色ID，用于获取所有变体
         })
       }
     }
@@ -1200,6 +1266,39 @@ async function loadAllPortraits(projects: any[]) {
 
   availablePortraits.value = allPortraits
   console.log('[CharacterStage] 加载的所有人像:', allPortraits)
+}
+
+// 加载当前人像的所有正面变体
+async function loadCurrentPortraitVariants(portraitId: string) {
+  currentPortraitVariants.value = []
+
+  // 从 availablePortraits 或 projectCharacters 中找到对应的 characterId
+  const portrait = availablePortraits.value.find(p => p.id === portraitId) ||
+                   projectCharacters.value.find(p => p.id === portraitId)
+
+  if (!portrait || !(portrait as any).characterId) return
+
+  try {
+    const variantsResult = await window.electronAPI.portrait.listVariants((portrait as any).characterId)
+    if (variantsResult.success && variantsResult.data) {
+      // 只获取正面变体
+      currentPortraitVariants.value = variantsResult.data
+        .filter((v: any) => v.angle === 'front')
+        .map((v: any) => ({
+          id: v.id,
+          imagePath: v.imagePath,
+          angle: v.angle
+        }))
+    }
+  } catch (error) {
+    console.error('加载人像变体失败:', error)
+  }
+}
+
+// 打开图片预览
+function openImagePreview(url: string) {
+  previewImageUrl.value = url
+  showImagePreview.value = true
 }
 
 // 当前选中项目的人物形象列表
@@ -1404,6 +1503,71 @@ onMounted(() => {
   }
 }
 
+.current-portrait-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  .portrait-variants-grid {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+
+    .variant-thumbnail {
+      width: 60px;
+      height: 60px;
+      border-radius: 6px;
+      overflow: hidden;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: all 0.2s;
+
+      &:hover {
+        border-color: var(--color-primary);
+        transform: scale(1.05);
+      }
+
+      .el-image {
+        width: 100%;
+        height: 100%;
+      }
+    }
+  }
+
+  .single-portrait {
+    .portrait-preview-large {
+      width: 80px;
+      height: 80px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+
+      &:hover {
+        transform: scale(1.05);
+      }
+    }
+  }
+
+  .portrait-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .portrait-name {
+      font-size: 14px;
+      color: var(--text-color-regular);
+    }
+
+    .portrait-count {
+      font-size: 12px;
+      color: var(--text-color-secondary);
+      background: var(--fill-color-light);
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+  }
+}
+
 .current-portrait {
   display: flex;
   align-items: center;
@@ -1418,6 +1582,56 @@ onMounted(() => {
   .portrait-name {
     font-size: 14px;
     color: var(--text-color-regular);
+  }
+}
+
+.portrait-placeholder-small {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--fill-color-light);
+  color: var(--text-color-secondary);
+}
+
+.image-preview-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: calc(90vh - 120px);  /* 自适应窗口高度 */
+
+  .preview-image-large {
+    max-width: 100%;
+    max-height: 100%;  /* 自适应容器高度 */
+    object-fit: contain;
+
+    // 确保 el-image 内部的 img 也正确显示
+    img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+  }
+
+  .preview-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-color-secondary);
+  }
+}
+
+// 预览对话框样式
+.portrait-preview-dialog {
+  .el-dialog__body {
+    padding: 10px;
+    overflow: hidden;
+    height: calc(90vh - 120px);  /* 对话框内容区域高度 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 }
 

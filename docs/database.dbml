@@ -1,0 +1,1129 @@
+// ===========================================
+// AI 工具箱数据库结构文档 (DBML)
+// 生成时间: 2026-04-07
+// 可在 https://dbdiagram.io/d 中打开查看可视化图表
+// ===========================================
+
+// ==================== 基础配置表 ====================
+
+Table settings {
+  key string [pk] // 配置键名
+  value string [not null] // 配置值
+  updated_at datetime [default: `CURRENT_TIMESTAMP`] // 更新时间
+}
+
+Table api_keys {
+  provider string [pk] // 提供商标识
+  encrypted_key string [not null] // 加密后的API密钥
+  endpoint string // 自定义端点URL
+  created_at datetime [default: `CURRENT_TIMESTAMP`] // 创建时间
+  updated_at datetime [default: `CURRENT_TIMESTAMP`] // 更新时间
+}
+
+// ==================== 角色与对话表 ====================
+
+Table roles {
+  id string [pk] // 角色ID
+  name string [not null] // 角色名称
+  description string // 角色描述
+  system_prompt string // 系统提示词
+  avatar string // 头像路径
+  is_builtin integer [default: 0] // 是否内置角色 (0=否, 1=是)
+  default_model_id string // 默认模型ID
+  default_provider_config_id string // 默认提供商配置ID
+  auto_reset_model integer [default: 1] // 自动重置模型
+  temperature real [default: 0.7] // 温度参数
+  top_p real [default: 1.0] // Top-P参数
+  max_context_messages integer [default: 20] // 最大上下文消息数
+  max_tokens integer [default: 4096] // 最大Token数
+  enable_stream integer [default: 1] // 启用流式输出
+  custom_params string // 自定义参数 (JSON)
+  knowledge_base_ids string // 关联的知识库ID列表 (JSON)
+  knowledge_retrieve_count integer [default: 5] // 知识检索数量
+  knowledge_threshold real [default: 0.5] // 知识检索阈值
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table dialogs {
+  id string [pk] // 对话ID
+  title string [not null] // 对话标题
+  model_id string [not null] // 使用的模型ID
+  provider_config_id string // 提供商配置ID
+  role_id string [ref: > roles.id] // 关联的角色ID
+  system_prompt string // 系统提示词
+  context_config string // 上下文配置 (JSON)
+  message_count integer [default: 0] // 消息数量
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table messages {
+  id string [pk] // 消息ID
+  dialog_id string [not null, ref: > dialogs.id] // 所属对话ID
+  role string [not null] // 消息角色 (user/assistant/system)
+  content string [not null] // 消息内容
+  model_id string // 使用的模型ID
+  tokens_used integer // 消耗的Token数
+  attachments string // 附件列表 (JSON)
+  metadata string // 元数据 (JSON)
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table attachments {
+  id string [pk] // 附件ID
+  message_id string [not null, ref: > messages.id] // 所属消息ID
+  type string [not null] // 附件类型
+  file_name string // 文件名
+  file_path string [not null] // 文件路径
+  file_size integer // 文件大小
+  mime_type string // MIME类型
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table images {
+  id string [pk] // 图片ID
+  dialog_id string [ref: > dialogs.id] // 所属对话ID
+  message_id string [ref: > messages.id] // 关联消息ID
+  file_path string [not null] // 文件路径
+  file_name string // 文件名
+  file_size integer // 文件大小
+  mime_type string // MIME类型
+  width integer // 图片宽度
+  height integer // 图片高度
+  prompt string // 生成提示词
+  negative_prompt string // 负面提示词
+  style string // 风格
+  quality string // 质量
+  provider_id string // 提供商ID
+  model_id string // 模型ID
+  generation_params string // 生成参数 (JSON)
+  seed integer // 随机种子
+  task_id string // 任务ID
+  status string [default: 'completed'] // 状态
+  error_message string // 错误信息
+  favorite integer [default: 0] // 是否收藏
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+// ==================== 提供商配置表 ====================
+
+Table provider_configs {
+  id string [pk] // 配置ID
+  short_id string // 短ID
+  template_id string [not null] // 模板ID
+  name string [not null] // 配置名称
+  api_key_encrypted string // 加密后的API密钥
+  access_key_id string // Access Key ID (云服务商)
+  access_key_secret_encrypted string // 加密后的Access Key Secret
+  base_url string // 自定义基础URL
+  custom_headers string // 自定义请求头 (JSON)
+  custom_params string // 自定义参数 (JSON)
+  custom_models string // 自定义模型列表 (JSON)
+  enabled_models string // 启用的模型列表 (JSON)
+  api_models string // API返回的模型列表 (JSON)
+  is_enabled integer [default: 1] // 是否启用
+  is_default integer [default: 0] // 是否默认
+  last_tested datetime // 最后测试时间
+  test_result string // 测试结果
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table search_engine_configs {
+  id string [pk] // 配置ID
+  template_id string [not null] // 模板ID
+  name string [not null] // 配置名称
+  api_key_encrypted string // 加密后的API密钥
+  extra_config string // 额外配置 (JSON)
+  max_results integer [default: 5] // 最大结果数
+  is_enabled integer [default: 1] // 是否启用
+  is_default integer [default: 0] // 是否默认
+  last_tested datetime // 最后测试时间
+  test_result string // 测试结果
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+// ==================== 翻译表 ====================
+
+Table translations {
+  id string [pk] // 翻译ID
+  type string [not null] // 翻译类型 (text/file)
+  source_language string [not null] // 源语言
+  target_language string [not null] // 目标语言
+  source_text string // 源文本
+  target_text string // 翻译结果
+  source_file string // 源文件路径
+  source_file_name string // 源文件名
+  target_file string // 翻译文件路径
+  status string [default: 'pending'] // 状态
+  favorite integer [default: 0] // 是否收藏
+  word_count integer [default: 0] // 字数
+  provider_id string // 提供商ID
+  model_id string // 模型ID
+  error_message string // 错误信息
+  created_at string [not null] // 创建时间
+}
+
+// ==================== 语音表 ====================
+
+Table voice_records {
+  id string [pk] // 记录ID
+  type string [not null] // 类型 (tts/stt)
+  status string [default: 'pending'] // 状态
+  input_text string // 输入文本 (TTS)
+  output_audio_path string // 输出音频路径 (TTS)
+  voice_id string // 声音ID
+  voice_name string // 声音名称
+  language string // 语言
+  speed real [default: 1.0] // 语速
+  pitch real [default: 0] // 音调
+  volume real [default: 1.0] // 音量
+  emotion string // 情感
+  style string // 风格
+  duration integer // 时长(毫秒)
+  input_audio_path string // 输入音频路径 (STT)
+  output_text string // 识别结果 (STT)
+  provider_id string // 提供商ID
+  model_id string // 模型ID
+  favorite integer [default: 0] // 是否收藏
+  error_message string // 错误信息
+  created_at string [not null] // 创建时间
+}
+
+Table cloned_voices {
+  id string [pk] // 复刻声音ID
+  name string [not null] // 声音名称
+  status string [default: 'training'] // 状态
+  sample_audio_path string // 样本音频路径
+  sample_duration integer // 样本时长
+  voice_id string // 生成的声音ID
+  preview_audio_path string // 预览音频路径
+  provider_id string // 提供商ID
+  error_message string // 错误信息
+  created_at string [not null] // 创建时间
+  updated_at string // 更新时间
+}
+
+// ==================== 知识库表 ====================
+
+Table knowledge_bases {
+  id string [pk] // 知识库ID
+  name string [not null] // 知识库名称
+  description string // 描述
+  embedding_model string [not null] // 嵌入模型
+  embedding_provider string [not null] // 嵌入提供商
+  embedding_dimension integer [default: 1536] // 嵌入维度
+  embedding_config string // 嵌入配置 (JSON)
+  document_count integer [default: 0] // 文档数量
+  vector_count integer [default: 0] // 向量数量
+  total_size integer [default: 0] // 总大小
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table kb_documents {
+  id string [pk] // 文档ID
+  knowledge_base_id string [not null, ref: > knowledge_bases.id] // 所属知识库
+  name string [not null] // 文档名称
+  file_path string [not null] // 文件路径
+  file_type string [not null] // 文件类型
+  file_size integer [not null] // 文件大小
+  status string [default: 'pending'] // 状态
+  progress integer [default: 0] // 处理进度
+  chunk_count integer [default: 0] // 切片数量
+  error_message string // 错误信息
+  metadata string // 元数据 (JSON)
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table kb_chunks {
+  id string [pk] // 切片ID
+  document_id string [not null, ref: > kb_documents.id] // 所属文档
+  knowledge_base_id string [not null, ref: > knowledge_bases.id] // 所属知识库
+  content string [not null] // 切片内容
+  chunk_index integer [not null] // 切片索引
+  start_offset integer // 起始偏移
+  end_offset integer // 结束偏移
+  metadata string // 元数据 (JSON)
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table kb_vectors {
+  id string [pk] // 向量ID
+  chunk_id string [not null, ref: > kb_chunks.id] // 关联切片
+  knowledge_base_id string [not null, ref: > knowledge_bases.id] // 所属知识库
+  vector blob [not null] // 向量数据
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table kb_inverted_index {
+  id integer [pk, increment] // 索引ID
+  term string [not null] // 词条
+  chunk_id string [not null, ref: > kb_chunks.id] // 关联切片
+  knowledge_base_id string [not null, ref: > knowledge_bases.id] // 所属知识库
+  term_frequency integer [default: 1] // 词频
+  positions string // 位置信息 (JSON)
+}
+
+// ==================== 人像设计表 ====================
+
+Table portrait_projects {
+  id string [pk] // 项目ID
+  name string [not null] // 项目名称
+  description string // 项目描述
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table portrait_characters {
+  id string [pk] // 角色ID
+  project_id string [not null, ref: > portrait_projects.id] // 所属项目
+  name string [not null] // 角色名称
+  gender string [default: 'male'] // 性别 (male/female)
+  age integer [default: 25] // 年龄
+  height integer [default: 170] // 身高(cm)
+  weight integer [default: 65] // 体重(kg)
+  race string [default: 'asian'] // 种族
+  description string // 描述
+  prompt string // 生成提示词
+  reference_images string // 参考图片 (JSON)
+  provider_id string // 提供商ID
+  model_id string // 模型ID
+  config string // 配置 (JSON)
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table portrait_variants {
+  id string [pk] // 变体ID
+  character_id string [not null, ref: > portrait_characters.id] // 所属角色
+  type string [not null] // 变体类型
+  parent_id string [ref: > portrait_variants.id] // 父变体ID
+  angle string [not null] // 角度
+  image_path string [not null] // 图片路径
+  prompt string [not null] // 生成提示词
+  config string // 配置 (JSON)
+  variant_info string // 变体信息 (JSON)
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+// ==================== 长文写作表 ====================
+
+Table lw_projects {
+  id string [pk] // 项目ID
+  name string [not null] // 项目名称
+  type string [not null] // 项目类型
+  stage string [not null] // 当前阶段
+  progress integer [default: 0] // 进度
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table lw_project_model_configs {
+  id string [pk] // 配置ID
+  project_id string [not null, ref: > lw_projects.id] // 所属项目
+  stage string [not null] // 阶段
+  provider_config_id string [not null] // 提供商配置ID
+  model_id string [not null] // 模型ID
+  created_at integer // 创建时间
+  updated_at integer // 更新时间
+  Note: '每个阶段使用不同的模型配置'
+}
+
+Table lw_story_overviews {
+  id string [pk] // 概要ID
+  project_id string [not null, ref: > lw_projects.id] // 所属项目
+  story_type string // 故事类型
+  title string // 故事标题
+  summary string // 故事概要
+  core_conflict string // 核心冲突
+  theme string // 主题
+  estimated_chapters integer // 预计章节数
+  is_locked integer [default: 0] // 是否锁定
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table lw_story_backgrounds {
+  id string [pk] // 背景ID
+  project_id string [not null, ref: > lw_projects.id] // 所属项目
+  era_type string // 时代类型
+  era_description string // 时代描述
+  social_structure string // 社会结构
+  tech_level string // 科技水平
+  special_rules string // 特殊规则
+  faction_distribution string // 势力分布
+  geographic_orientation string // 地理方位
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table lw_project_maps {
+  id string [pk] // 地图ID
+  project_id string [not null, ref: > lw_projects.id] // 所属项目
+  name string [not null] // 地图名称
+  orientation string // 方位
+  characteristics string // 特征
+  image_path string // 图片路径
+  ai_generated_data string // AI生成的数据 (JSON)
+  sort_order integer [default: 0] // 排序
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table lw_story_locations {
+  id string [pk] // 地点ID
+  project_id string [not null, ref: > lw_projects.id] // 所属项目
+  name string [not null] // 地点名称
+  type string // 地点类型
+  description string // 描述
+  importance string // 重要程度
+  map_id string [ref: > lw_project_maps.id] // 所属地图
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table lw_project_factions {
+  id string [pk] // 势力ID
+  project_id string [not null, ref: > lw_projects.id] // 所属项目
+  faction_type string [not null] // 势力类型 (国别/阵营/门派)
+  name string [not null] // 势力名称
+  location_id string [ref: > lw_story_locations.id] // 所在地点
+  description string // 描述
+  sort_order integer [default: 0] // 排序
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table lw_story_characters {
+  id string [pk] // 角色ID
+  project_id string [not null, ref: > lw_projects.id] // 所属项目
+  portrait_id string [ref: > portrait_variants.id] // 关联人像
+  name string [not null] // 角色名称
+  gender string // 性别
+  age integer // 年龄
+  height integer // 身高
+  weight integer // 体重
+  race string // 种族
+  occupation string // 职业
+  position string // 职位
+  appearance string // 外貌描述
+  background string // 背景故事
+  personality string // 性格特点
+  abilities string // 能力
+  role_position string // 角色定位
+  importance string [default: 'secondary'] // 重要程度 (protagonist/secondary/minor)
+  template_type string // 模板类型
+  generated_image_id string // 生成的图片ID
+  major_events string // 重大事件 (JSON)
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table lw_character_relations {
+  id string [pk] // 关系ID
+  character_id string [not null, ref: > lw_story_characters.id] // 角色ID
+  related_character_id string [not null, ref: > lw_story_characters.id] // 关联角色ID
+  relation_type string // 关系类型
+  relation_description string // 关系描述
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table lw_story_skills {
+  id string [pk] // 技能ID
+  project_id string [not null, ref: > lw_projects.id] // 所属项目
+  name string [not null] // 技能名称
+  type string // 技能类型
+  level string // 技能等级
+  description string // 描述
+  system string // 所属体系
+  character_ids string // 拥有者ID列表 (JSON)
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table lw_story_items {
+  id string [pk] // 物品ID
+  project_id string [not null, ref: > lw_projects.id] // 所属项目
+  name string [not null] // 物品名称
+  type string // 物品类型
+  level string // 物品等级
+  description string // 描述
+  owner_id string [ref: > lw_story_characters.id] // 拥有者ID
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table lw_story_outlines {
+  id string [pk] // 大纲节点ID
+  project_id string [not null, ref: > lw_projects.id] // 所属项目
+  parent_id string [ref: > lw_story_outlines.id] // 父节点ID
+  name string [not null] // 节点名称
+  level integer [default: 1] // 节点层级
+  node_type string // 节点类型 (volume/chapter/section)
+  summary string // 概要
+  involved_characters string // 涉及角色 (JSON)
+  involved_locations string // 涉及地点 (JSON)
+  status string [default: 'pending'] // 状态
+  estimated_words integer // 预计字数
+  order_index integer // 排序索引
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table lw_story_chapters {
+  id string [pk] // 章节ID
+  outline_id string [not null, ref: > lw_story_outlines.id] // 关联大纲节点
+  content string // 章节内容
+  word_count integer // 字数
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table lw_chapter_versions {
+  id string [pk] // 版本ID
+  chapter_id string [not null, ref: > lw_story_chapters.id] // 所属章节
+  content string [not null] // 版本内容
+  version_type string // 版本类型
+  word_count integer // 字数
+  is_locked integer [default: 0] // 是否锁定
+  version_number integer // 版本号
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table lw_story_materials {
+  id string [pk] // 素材ID
+  project_id string [not null, ref: > lw_projects.id] // 所属项目
+  name string [not null] // 素材名称
+  type string // 素材类型
+  source string // 来源
+  content string // 内容
+  status string [default: 'pending'] // 状态
+  error_message string // 错误信息
+  retry_count integer [default: 0] // 重试次数
+  used integer [default: 0] // 是否已使用
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table lw_design_conversations {
+  id string [pk] // 对话ID
+  project_id string [not null, ref: > lw_projects.id] // 所属项目
+  stage string [not null] // 阶段
+  messages string // 消息列表 (JSON)
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table lw_global_settings {
+  id string [pk] // 设置ID
+  story_types string // 故事类型列表 (JSON)
+  styles string // 风格列表 (JSON)
+  target_readers string // 目标读者列表 (JSON)
+  skill_types string // 技能类型列表 (JSON)
+  skill_levels string // 技能等级列表 (JSON)
+  item_types string // 物品类型列表 (JSON)
+  item_levels string // 物品等级列表 (JSON)
+  estimated_lengths string // 预计长度列表 (JSON)
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table lw_dictionary_category {
+  id string [pk] // 分类ID
+  code string [unique, not null] // 分类代码
+  name string [not null] // 分类名称
+  sort_order integer [default: 0] // 排序
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table lw_dictionary {
+  id string [pk] // 字典项ID
+  category_code string [not null] // 分类代码
+  code string [not null] // 字典项代码
+  name string [not null] // 字典项名称
+  sort_order integer [default: 0] // 排序
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+  Note: 'category_code + code 唯一'
+}
+
+Table lw_project_skill_types {
+  id string [pk] // 技能类型ID
+  project_id string [not null, ref: > lw_projects.id] // 所属项目
+  code string [not null] // 类型代码
+  name string [not null] // 类型名称
+  description string // 描述
+  sort_order integer [default: 0] // 排序
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table lw_project_item_types {
+  id string [pk] // 物品类型ID
+  project_id string [not null, ref: > lw_projects.id] // 所属项目
+  code string [not null] // 类型代码
+  name string [not null] // 类型名称
+  description string // 描述
+  sort_order integer [default: 0] // 排序
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table lw_project_skill_levels {
+  id string [pk] // 技能等级ID
+  project_id string [not null, ref: > lw_projects.id] // 所属项目
+  skill_type_code string [not null] // 技能类型代码
+  code string [not null] // 等级代码
+  name string [not null] // 等级名称
+  description string // 描述
+  sort_order integer [default: 0] // 排序
+}
+
+Table lw_project_item_levels {
+  id string [pk] // 物品等级ID
+  project_id string [not null, ref: > lw_projects.id] // 所属项目
+  item_type_code string [not null] // 物品类型代码
+  code string [not null] // 等级代码
+  name string [not null] // 等级名称
+  description string // 描述
+  sort_order integer [default: 0] // 排序
+}
+
+Table lw_chapter_prewrites {
+  id string [pk] // 预写ID
+  chapter_id string [not null, ref: > lw_story_chapters.id] // 所属章节
+  content string [not null] // 预写内容
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table lw_story_memories {
+  id string [pk] // 记忆ID
+  project_id string [not null, ref: > lw_projects.id] // 所属项目
+  chapter_id string [ref: > lw_story_chapters.id] // 关联章节
+  entity_type string [not null] // 实体类型
+  entity_id string [not null] // 实体ID
+  memory_type string [not null] // 记忆类型
+  content string [not null] // 记忆内容
+  importance integer [default: 1] // 重要程度
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table lw_entity_state_snapshots {
+  id string [pk] // 快照ID
+  project_id string [not null, ref: > lw_projects.id] // 所属项目
+  entity_type string [not null] // 实体类型
+  entity_id string [not null] // 实体ID
+  chapter_id string [ref: > lw_story_chapters.id] // 关联章节
+  state_data string [not null] // 状态数据 (JSON)
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+// 关联表
+Table lw_plot_characters {
+  id string [pk] // 关联ID
+  plot_id string [not null, ref: > lw_story_plots.id] // 情节ID
+  character_id string [not null, ref: > lw_story_characters.id] // 角色ID
+}
+
+Table lw_plot_locations {
+  id string [pk] // 关联ID
+  plot_id string [not null, ref: > lw_story_plots.id] // 情节ID
+  location_id string [not null, ref: > lw_story_locations.id] // 地点ID
+}
+
+Table lw_outline_characters {
+  id string [pk] // 关联ID
+  outline_id string [not null, ref: > lw_story_outlines.id] // 大纲ID
+  character_id string [not null, ref: > lw_story_characters.id] // 角色ID
+}
+
+Table lw_outline_locations {
+  id string [pk] // 关联ID
+  outline_id string [not null, ref: > lw_story_outlines.id] // 大纲ID
+  location_id string [not null, ref: > lw_story_locations.id] // 地点ID
+}
+
+Table lw_skill_characters {
+  id string [pk] // 关联ID
+  skill_id string [not null, ref: > lw_story_skills.id] // 技能ID
+  character_id string [not null, ref: > lw_story_characters.id] // 角色ID
+}
+
+Table lw_design_messages {
+  id string [pk] // 消息ID
+  conversation_id string [not null, ref: > lw_design_conversations.id] // 对话ID
+  role string [not null] // 角色
+  content string [not null] // 内容
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table lw_memory_entities {
+  id string [pk] // 实体ID
+  memory_id string [not null, ref: > lw_story_memories.id] // 记忆ID
+  entity_type string [not null] // 实体类型
+  entity_id string [not null] // 实体ID
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table lw_temp_character_templates {
+  id string [pk] // 模板ID
+  project_id string [not null, ref: > lw_projects.id] // 所属项目
+  name string [not null] // 模板名称
+  gender string // 性别
+  age_range string // 年龄范围
+  appearance_template string // 外貌模板
+  personality_template string // 性格模板
+  background_template string // 背景模板
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table lw_temp_location_templates {
+  id string [pk] // 模板ID
+  project_id string [not null, ref: > lw_projects.id] // 所属项目
+  name string [not null] // 模板名称
+  type string // 地点类型
+  description_template string // 描述模板
+  features_template string // 特征模板
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+// ==================== 日记表 ====================
+
+Table diary_folders {
+  id string [pk] // 文件夹ID
+  name string [not null] // 文件夹名称
+  parent_id string [ref: > diary_folders.id] // 父文件夹ID
+  sort_order integer [default: 0] // 排序
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table diary_entries {
+  id string [pk] // 日记ID
+  folder_id string [ref: > diary_folders.id] // 所属文件夹
+  title string [not null] // 标题
+  content string [not null] // 内容
+  mood string // 心情
+  weather string // 天气
+  location string // 地点
+  tags string // 标签 (JSON)
+  is_favorite integer [default: 0] // 是否收藏
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table diary_links {
+  id string [pk] // 链接ID
+  source_entry_id string [not null, ref: > diary_entries.id] // 源日记ID
+  target_entry_id string [not null, ref: > diary_entries.id] // 目标日记ID
+  link_type string // 链接类型
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table diary_attachments {
+  id string [pk] // 附件ID
+  entry_id string [not null, ref: > diary_entries.id] // 所属日记
+  file_name string [not null] // 文件名
+  file_path string [not null] // 文件路径
+  file_type string [not null] // 文件类型
+  file_size integer // 文件大小
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+// ==================== 剧集制作模块表 ====================
+
+Table video_projects {
+  id string [pk] // 项目ID
+  name string [not null] // 项目名称
+  long_writing_project_id string [not null, ref: > lw_projects.id] // 关联的长文项目
+  status string [default: 'draft'] // 状态 (draft/producing/completed)
+  config string [not null] // 项目配置 (JSON)
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+  Note: '剧集制作项目，关联长文写作项目'
+}
+
+Table character_bindings {
+  id string [pk] // 绑定ID
+  project_id string [not null, ref: > video_projects.id] // 所属项目
+  long_writing_character_id string [not null] // 长文写作角色ID
+  portrait_id string [ref: > portrait_characters.id] // 关联人像
+  // 生成配置 (JSON)
+  base_description string // 基础描述
+  style_reference string // 风格参考
+  additional_prompts string // 额外提示词
+  // 声音配置 (JSON)
+  voice_id string // 声音ID
+  voice_speed real // 语速
+  voice_pitch real // 音调
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+  Note: '角色形象绑定，将长文角色与人像/声音关联'
+}
+
+Table location_bindings {
+  id string [pk] // 绑定ID
+  project_id string [not null, ref: > video_projects.id] // 所属项目
+  long_writing_location_id string [not null] // 长文写作地点ID
+  location_name string [not null] // 地点名称
+  image_paths string [default: '[]'] // 图片路径列表 (JSON)
+  thumbnail_path string // 缩略图路径
+  // 生成配置
+  base_description string // 基础描述
+  style_reference string // 风格参考
+  additional_prompts string // 额外提示词
+  time_of_day string // 时间段
+  weather string // 天气
+  generate_images integer [default: 0] // 是否自动生成图片
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+  Note: '地点形象绑定'
+}
+
+Table item_bindings {
+  id string [pk] // 绑定ID
+  project_id string [not null, ref: > video_projects.id] // 所属项目
+  long_writing_item_id string [not null] // 长文写作物品ID
+  item_name string [not null] // 物品名称
+  image_paths string [default: '[]'] // 图片路径列表 (JSON)
+  thumbnail_path string // 缩略图路径
+  // 生成配置
+  base_description string // 基础描述
+  style_reference string // 风格参考
+  additional_prompts string // 额外提示词
+  generate_images integer [default: 0] // 是否自动生成图片
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+  Note: '物品形象绑定'
+}
+
+Table video_episodes {
+  id string [pk] // 剧集ID
+  project_id string [not null, ref: > video_projects.id] // 所属项目
+  source_type string [default: 'outline'] // 内容来源类型 (outline/uploaded)
+  outline_id string // 关联的大纲ID (outline模式)
+  uploaded_content string // 上传的长文内容 (uploaded模式)
+  uploaded_characters string // 识别的角色列表 (JSON, uploaded模式)
+  episode_number integer [not null] // 剧集序号
+  title string [not null] // 剧集标题
+  status string [default: 'pending'] // 状态
+  duration integer [default: 0] // 时长(秒)
+  script_id string // 关联剧本ID
+  audio_tracks string // 音轨 (JSON)
+  deleted_at integer // 删除时间戳 (逻辑删除)
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+  Note: '剧集：对应一个章节或上传的长文'
+}
+
+Table episode_scripts {
+  id string [pk] // 剧本ID
+  project_id string [not null, ref: > video_projects.id] // 所属项目
+  episode_id string [not null, ref: > video_episodes.id] // 所属剧集
+  outline_id string // 关联的大纲ID (可空)
+  status string [default: 'pending'] // 状态
+  synopsis string // 章节梗概
+  script_content string // 完整剧本正文
+  script_format string // 剧本格式类型
+  scenes string // 场景列表 (JSON, 旧字段)
+  total_duration integer [default: 0] // 总时长(秒)
+  character_appearances string // 出场角色 (JSON)
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+  Note: '剧本：由AI根据章节内容或上传长文生成'
+}
+
+Table scene_scripts {
+  id string [pk] // 场景ID
+  episode_script_id string [not null, ref: > episode_scripts.id] // 所属剧本
+  scene_number integer [not null] // 场景序号
+  location string [not null] // 地点名称
+  location_type string [default: 'exterior'] // 地点类型 (interior/exterior/mixed)
+  time_of_day string [default: 'morning'] // 时间段
+  weather string // 天气
+  scene_description string [not null] // 场景描述
+  mood string // 氛围
+  lighting string // 光线
+  characters string // 出场角色 (JSON, 旧字段)
+  original_text string // 原文片段
+  narration string // 旁白
+  dialogues string // 对话列表 (JSON, 旧字段)
+  actions string // 动作列表 (JSON, 旧字段)
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+  Note: '场景剧本：包含地点、时间、角色、对话等'
+}
+
+Table storyboards {
+  id string [pk] // 分镜ID
+  scene_script_id string [not null, ref: > scene_scripts.id] // 所属场景
+  shot_number integer [not null] // 分镜序号
+  shot_type string [default: 'medium'] // 景别 (extreme_long/long/full/medium/medium_close/close/extreme_close/detail)
+  camera_angle string [default: 'eye_level'] // 角度 (eye_level/high/low/dutch/birds_eye/worms_eye)
+  camera_movement string [default: 'static'] // 运动 (static/pan_left/pan_right/tilt_up/tilt_down/dolly_in/dolly_out/zoom_in/zoom_out/crane_up/crane_down/handheld/orbit)
+  movement_duration real // 运动时长(秒)
+  frame_description string [not null] // 画面描述
+  subject string // 主体
+  composition string // 构图
+  characters string // 分镜角色 (JSON, 旧字段)
+  narration_id string // 关联旁白ID
+  dialogue_ids string // 关联对话ID列表 (JSON, 旧字段)
+  action_ids string // 关联动作ID列表 (JSON, 旧字段)
+  frame_image string // 帧画面 (JSON, 旧字段)
+  frame_image_id string [ref: > image_assets.id] // 关联图像资产
+  duration real [default: 3] // 时长(秒)
+  // 转场配置 (规范化字段)
+  transition string // 转场配置 (JSON, 旧字段)
+  transition_type string // 转场类型
+  transition_duration_ms integer // 转场时长(毫秒)
+  transition_direction string // 转场方向
+  transition_easing string // 转场缓动
+  transition_color string // 转场颜色
+  status string [default: 'pending'] // 状态
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+  Note: '分镜：具体的镜头设计'
+}
+
+// ==================== 剧集制作子表（符合第三范式）====================
+
+Table image_assets {
+  id string [pk] // 图像资产ID
+  project_id string [not null, ref: > video_projects.id] // 所属项目
+  type string [not null] // 类型 (generated/uploaded)
+  provider string // 生成提供商
+  model string // 生成模型
+  prompt string [not null] // 生成提示词
+  negative_prompt string // 负面提示词
+  image_path string [not null] // 图片路径
+  thumbnail_path string // 缩略图路径
+  width integer [not null] // 宽度
+  height integer [not null] // 高度
+  metadata string // 元数据 (JSON)
+  created_at integer [not null] // 创建时间
+  Note: '图像资产：用于分镜画面、角色立绘等'
+}
+
+Table audio_assets {
+  id string [pk] // 音频资产ID
+  project_id string [not null, ref: > video_projects.id] // 所属项目
+  type string [not null] // 类型 (narration/dialogue/music/sfx/ambient)
+  text string // 文本内容 (TTS用)
+  voice_id string // 声音ID
+  audio_path string [not null] // 音频路径
+  duration integer [not null] // 时长(毫秒)
+  volume integer [default: 100] // 音量 (0-100)
+  fade_in integer // 淡入(毫秒)
+  fade_out integer // 淡出(毫秒)
+  created_at integer [not null] // 创建时间
+  Note: '音频资产：用于配音、音效、背景音乐等'
+}
+
+Table scene_characters {
+  id string [pk] // 场景角色ID
+  scene_script_id string [not null, ref: > scene_scripts.id] // 所属场景
+  character_id string [not null] // 角色ID
+  character_name string [not null] // 角色名称
+  position string [default: 'center'] // 位置 (left/center/right/foreground/background)
+  expression string // 表情
+  action string // 动作
+  outfit string // 服装
+  sort_order integer [default: 0] // 排序
+  Note: '场景角色：出场角色在场景中的状态'
+}
+
+Table scene_props {
+  id string [pk] // 场景道具ID
+  scene_character_id string [not null, ref: > scene_characters.id] // 所属场景角色
+  prop_name string [not null] // 道具名称
+  Note: '场景道具：角色持有的道具'
+}
+
+Table scene_dialogues {
+  id string [pk] // 场景对话ID
+  scene_script_id string [not null, ref: > scene_scripts.id] // 所属场景
+  character_id string [not null] // 角色ID
+  character_name string [not null] // 角色名称
+  text string [not null] // 对话内容
+  emotion string // 情感
+  volume string [default: 'normal'] // 音量 (normal/loud/whisper)
+  pace string [default: 'normal'] // 语速 (normal/fast/slow)
+  pause integer [default: 0] // 停顿(毫秒)
+  voice_id string // 指定声音ID
+  audio_asset_id string [ref: > audio_assets.id] // 关联音频资产
+  sort_order integer [not null] // 排序
+  Note: '场景对话：角色的对话内容'
+}
+
+Table scene_actions {
+  id string [pk] // 场景动作ID
+  scene_script_id string [not null, ref: > scene_scripts.id] // 所属场景
+  character_id string // 执行动作的角色ID (空表示群像动作)
+  description string [not null] // 动作描述
+  timing string [default: 'during'] // 时机 (before/during/after)
+  duration real // 预计时长(秒)
+  sort_order integer [not null] // 排序
+  Note: '场景动作：角色的动作描述'
+}
+
+Table storyboard_characters {
+  id string [pk] // 分镜角色ID
+  storyboard_id string [not null, ref: > storyboards.id] // 所属分镜
+  character_id string [not null] // 角色ID
+  position_x real [default: 50] // X位置 (0-100)
+  position_y real [default: 50] // Y位置 (0-100)
+  position_scale real [default: 1.0] // 缩放
+  expression string // 表情
+  action string // 动作
+  facing string [default: 'front'] // 朝向 (front/left/right/back/three_quarter_left/three_quarter_right)
+  sort_order integer [default: 0] // 排序
+  Note: '分镜角色：角色在分镜中的位置和状态'
+}
+
+Table storyboard_dialogue_links {
+  id string [pk] // 分镜对话关联ID
+  storyboard_id string [not null, ref: > storyboards.id] // 所属分镜
+  dialogue_id string [not null, ref: > scene_dialogues.id] // 对话ID
+  sort_order integer [default: 0] // 排序
+  Note: '分镜对话关联：分镜中展示的对话'
+}
+
+Table storyboard_action_links {
+  id string [pk] // 分镜动作关联ID
+  storyboard_id string [not null, ref: > storyboards.id] // 所属分镜
+  action_id string [not null, ref: > scene_actions.id] // 动作ID
+  sort_order integer [default: 0] // 排序
+  Note: '分镜动作关联：分镜中展示的动作'
+}
+
+Table audio_tracks {
+  id string [pk] // 音轨ID
+  episode_id string [not null, ref: > video_episodes.id] // 所属剧集
+  type string [not null] // 类型 (narration/dialogue/music/sfx/ambient)
+  name string [not null] // 音轨名称
+  volume integer [default: 100] // 音量 (0-100)
+  muted integer [default: 0] // 是否静音
+  solo integer [default: 0] // 是否独奏
+  sort_order integer [default: 0] // 排序
+  Note: '音轨：用于管理剧集的音频层'
+}
+
+Table audio_track_items {
+  id string [pk] // 音轨项ID
+  track_id string [not null, ref: > audio_tracks.id] // 所属音轨
+  audio_asset_id string [not null, ref: > audio_assets.id] // 音频资产ID
+  start_time integer [not null] // 开始时间(毫秒)
+  sort_order integer [default: 0] // 排序
+  Note: '音轨项：音轨上的音频片段'
+}
+
+// ==================== 表分组注释 ====================
+
+TableGroup base "基础配置" {
+  settings
+  api_keys
+  provider_configs
+  search_engine_configs
+}
+
+TableGroup chat "对话系统" {
+  roles
+  dialogs
+  messages
+  attachments
+  images
+}
+
+TableGroup voice "语音功能" {
+  voice_records
+  cloned_voices
+  translations
+}
+
+TableGroup knowledge "知识库" {
+  knowledge_bases
+  kb_documents
+  kb_chunks
+  kb_vectors
+  kb_inverted_index
+}
+
+TableGroup portrait "人像设计" {
+  portrait_projects
+  portrait_characters
+  portrait_variants
+}
+
+TableGroup longwriting "长文写作" {
+  lw_projects
+  lw_project_model_configs
+  lw_story_overviews
+  lw_story_backgrounds
+  lw_project_maps
+  lw_story_locations
+  lw_project_factions
+  lw_story_characters
+  lw_character_relations
+  lw_story_skills
+  lw_story_items
+  lw_story_outlines
+  lw_story_chapters
+  lw_chapter_versions
+  lw_story_materials
+  lw_design_conversations
+  lw_global_settings
+  lw_dictionary_category
+  lw_dictionary
+  lw_project_skill_types
+  lw_project_item_types
+  lw_project_skill_levels
+  lw_project_item_levels
+  lw_chapter_prewrites
+  lw_story_memories
+  lw_entity_state_snapshots
+  lw_plot_characters
+  lw_plot_locations
+  lw_outline_characters
+  lw_outline_locations
+  lw_skill_characters
+  lw_design_messages
+  lw_memory_entities
+  lw_temp_character_templates
+  lw_temp_location_templates
+}
+
+TableGroup diary "日记功能" {
+  diary_folders
+  diary_entries
+  diary_links
+  diary_attachments
+}
+
+TableGroup video "剧集制作" {
+  video_projects
+  character_bindings
+  location_bindings
+  item_bindings
+  video_episodes
+  episode_scripts
+  scene_scripts
+  storyboards
+  image_assets
+  audio_assets
+  scene_characters
+  scene_props
+  scene_dialogues
+  scene_actions
+  storyboard_characters
+  storyboard_dialogue_links
+  storyboard_action_links
+  audio_tracks
+  audio_track_items
+}

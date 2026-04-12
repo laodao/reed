@@ -28,6 +28,10 @@
               <el-icon><Picture /></el-icon>
               {{ generatingAll ? '批量生成中...' : '批量生成画面' }}
             </el-button>
+            <el-button size="small" type="success" @click="showSynthesisDialog = true" :disabled="!hasAllImages">
+              <el-icon><VideoPlay /></el-icon>
+              合成全部视频
+            </el-button>
           </div>
         </div>
 
@@ -188,14 +192,18 @@
               <el-icon><VideoPlay /></el-icon>
               {{ selectedStoryboard?.videoPath ? '重新合成' : '合成当前镜头' }}
             </el-button>
-            <el-button type="success" @click="showSynthesisDialog = true" :disabled="!hasAllImages">
+            <el-button
+              v-if="selectedStoryboard?.videoPath"
+              type="success"
+              @click="playVideo(selectedStoryboard)"
+            >
               <el-icon><VideoPlay /></el-icon>
-              合成全部视频
+              播放视频
             </el-button>
           </div>
-          <div class="action-hint" v-if="!hasAllImages">
+          <div class="action-hint" v-if="!selectedStoryboard?.frameImage">
             <el-icon><InfoFilled /></el-icon>
-            请先为所有分镜生成画面
+            请先选择一个有画面的分镜
           </div>
         </div>
       </div>

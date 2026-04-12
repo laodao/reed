@@ -7,7 +7,7 @@
   "license": "MIT",
   "homepage": "https://github.com/daoge/the_bot",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "set LANG=en_US.UTF-8 && set PYTHONIOENCODING=utf-8 && electron-vite dev",
     "dev:debug": "electron-vite dev -- --remote-debugging-port=9222",
     "build": "electron-vite build",
     "postinstall": "electron-builder install-app-deps",
@@ -62,6 +62,7 @@
     "nodejieba": "^3.5.8",
     "openai": "^6.32.0",
     "pdf-parse": "^1.1.1",
+    "pdfjs-dist": "^4.0.379",
     "pinia": "^2.1.7",
     "sharp": "^0.34.5",
     "tesseract.js": "^7.0.0",

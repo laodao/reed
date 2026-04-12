@@ -6,6 +6,7 @@
 
 import { ipcMain, IpcMainInvokeEvent, BrowserWindow } from 'electron'
 import { PortraitService } from '../../services/portrait.service'
+import { DatabaseManager } from '../../database/index'
 import type { IpcResponse } from '../../../shared/types/ipc.types'
 import type {
   CreatePortraitProjectRequest,
@@ -43,6 +44,7 @@ export function registerPortraitHandlers(): void {
   ipcMain.handle('portrait:change-background', handleChangeBackground)
 
   // 变体管理
+  ipcMain.handle('portrait:get-variant', handleGetVariant)
   ipcMain.handle('portrait:list-variants', handleListVariants)
   ipcMain.handle('portrait:delete-variant', handleDeleteVariant)
   ipcMain.handle('portrait:edit-image', handleEditImage)
@@ -78,6 +80,7 @@ export function unregisterPortraitHandlers(): void {
   ipcMain.removeHandler('portrait:change-background')
 
   // 变体管理
+  ipcMain.removeHandler('portrait:get-variant')
   ipcMain.removeHandler('portrait:list-variants')
   ipcMain.removeHandler('portrait:delete-variant')
   ipcMain.removeHandler('portrait:edit-image')
@@ -345,6 +348,29 @@ async function handleChangeBackground(
 }
 
 // ==================== 变体管理处理器 ====================
+
+/**
+ * 处理获取单个变体请求
+ */
+async function handleGetVariant(
+  _event: IpcMainInvokeEvent,
+  variantId: string
+): Promise<IpcResponse<any>> {
+  try {
+    const dbManager = DatabaseManager.getInstance()
+    if (!dbManager.portraitVariants) {
+      return { success: false, error: '数据库未初始化' }
+    }
+    const variant = await dbManager.portraitVariants.getById(variantId)
+    if (!variant) {
+      return { success: false, error: '变体不存在' }
+    }
+    return { success: true, data: variant }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '未知错误'
+    return { success: false, error: errorMessage }
+  }
+}
 
 /**
  * 处理获取变体列表请求

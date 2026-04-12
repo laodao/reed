@@ -135,6 +135,17 @@ protocol.registerSchemesAsPrivileged([
       supportFetchAPI: true,
       corsEnabled: true
     }
+  },
+  {
+    scheme: 'local-video',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      // 允许媒体流访问
+      stream: true
+    }
   }
 ])
 
@@ -223,6 +234,53 @@ function registerAudioProtocol(): void {
 }
 
 /**
+ * 注册自定义协议以访问本地视频文件
+ */
+function registerVideoProtocol(): void {
+  console.log('[local-video] 开始注册视频协议...')
+
+  protocol.registerFileProtocol('local-video', (request, callback) => {
+    console.log('[local-video] 收到请求，完整URL:', request.url)
+
+    // 提取路径部分：local-video://后面的内容
+    let url = request.url.substr('local-video://'.length)
+
+    // 移除开头的斜杠（如果有）
+    while (url.startsWith('/')) {
+      url = url.substring(1)
+    }
+
+    // Windows 路径修复
+    if (process.platform === 'win32' && url.length > 1 && url.charAt(1) === '/') {
+      const firstChar = url.charAt(0).toUpperCase()
+      if (firstChar >= 'A' && firstChar <= 'Z') {
+        url = firstChar + ':' + url.substring(1)
+      }
+    }
+
+    // 解码 URL
+    let filePath = decodeURIComponent(url)
+
+    // Windows 上将正斜杠转回反斜杠
+    if (process.platform === 'win32') {
+      filePath = filePath.replace(/\//g, '\\')
+    }
+
+    console.log('[local-video] 解析后文件路径:', filePath)
+
+    if (fs.existsSync(filePath)) {
+      console.log('[local-video] 文件存在，返回文件')
+      callback({ path: filePath })
+    } else {
+      console.error('[local-video] 文件不存在:', filePath)
+      callback({ error: -2 })
+    }
+  })
+
+  console.log('[local-video] 协议注册完成')
+}
+
+/**
  * 创建主窗口
  */
 function createWindow(): void {
@@ -253,7 +311,7 @@ function createWindow(): void {
           "script-src 'self'; " +
           "style-src 'self' 'unsafe-inline'; " +
           "img-src 'self' data: blob: local-image: file:; " +
-          "media-src 'self' file: local-image: local-file:; " +
+          "media-src 'self' file: local-image: local-file: local-video:; " +
           "connect-src 'self' ws://localhost:* http://localhost:*"
         ]
       }
@@ -313,6 +371,9 @@ app.whenReady().then(async () => {
 
   // 注册自定义音频协议
   registerAudioProtocol()
+
+  // 注册自定义视频协议
+  registerVideoProtocol()
 
   // 开发模式下默认通过 F12 打开开发工具
   app.on('browser-window-created', (_, window) => {

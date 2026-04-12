@@ -859,6 +859,7 @@ const electronAPI = {
     }) => ipcRenderer.invoke('portrait:change-background', request),
 
     // 变体管理
+    getVariant: (variantId: string) => ipcRenderer.invoke('portrait:get-variant', variantId),
     listVariants: (characterId: string) => ipcRenderer.invoke('portrait:list-variants', characterId),
     deleteVariant: (id: string) => ipcRenderer.invoke('portrait:delete-variant', id),
     editImage: (request: {

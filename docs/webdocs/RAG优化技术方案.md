@@ -54,88 +54,172 @@
 
 ---
 
-## 三、阶段一：语义切分优化
+## 三、阶段一：分层级智能切分
 
-### 3.1 目标
+### 3.1 设计理念
 
-将固定窗口切分改为**混合切分策略**：
-- 结构化文档：按标题层级切分
-- 非结构化文档：按语义漂移切分
+采用**分层级处理**策略，优先保留文档原有结构，仅在必要时进行语义切分：
 
-### 3.2 技术实现
+```
+文档输入
+    │
+    ▼
+┌─────────────────────┐
+│ 第一层：结构检测     │
+│ 是否有章节格式？     │
+└──────────┬──────────┘
+           │
+     ┌─────┴─────┐
+     ▼           ▼
+   有章节      无章节
+     │           │
+     ▼           ▼
+┌───────────┐ ┌───────────┐
+│ 按章节切分 │ │ 段落语义  │
+│           │ │ 切分      │
+└─────┬─────┘ └───────────┘
+      │
+      ▼
+┌───────────────────┐
+│ 第二层：长度检测   │
+│ 章节是否过长？     │
+│ (>1000字符)       │
+└──────────┬──────────┘
+           │
+     ┌─────┴─────┐
+     ▼           ▼
+   过长       正常
+     │           │
+     ▼           ▼
+┌───────────┐ ┌───────────┐
+│ 章节内部   │ │ 直接使用  │
+│ 语义切分   │ │ 该章节    │
+└───────────┘ └───────────┘
+```
 
-#### 3.2.1 结构化切分（Markdown/PDF标题识别）
+### 3.2 核心优势
 
-**核心思路**：利用文档自身的标题结构进行切分，保留语义完整性。
+| 优势 | 说明 |
+|-----|------|
+| **保留结构完整性** | 优先按章节切分，不破坏文档原有结构 |
+| **成本可控** | 只有过长章节才调用 Embedding API，大幅降低成本 |
+| **效果更好** | 章节本身就是作者划分的语义边界，比算法切分更准确 |
+| **灵活适应** | 自动适应不同类型文档（结构化/非结构化） |
+
+### 3.3 技术实现
+
+#### 3.3.1 分层级混合切分器
 
 ```typescript
-// 新增：结构化切分器
-interface DocumentSection {
-  level: number       // 标题级别 (1-6)
-  title: string       // 标题内容
-  content: string     // 该章节下的正文
-  parentId?: string   // 父章节ID
-  children: string[]  // 子章节ID列表
-}
+/**
+ * 分层级混合切分器
+ * 核心逻辑：结构优先 → 长度检测 → 段落级语义切分
+ */
+class LayeredHybridSplitter {
+  private maxSectionLength = 1000  // 章节最大长度阈值
+  private similarityThreshold = 0.5  // 语义相似度阈值
 
-class StructuredSplitter {
   /**
-   * 从 Markdown 中提取标题结构
+   * 主切分入口
    */
-  parseMarkdownStructure(content: string): DocumentSection[] {
-    const lines = content.split('\n')
-    const sections: DocumentSection[] = []
-    let currentSection: DocumentSection | null = null
-    let contentBuffer: string[] = []
+  async split(content: string, fileType: FileType, options?: SplitOptions): Promise<Chunk[]> {
+    // 1. 检测文档结构
+    const structure = this.detectStructure(content, fileType)
 
-    for (const line of lines) {
-      const headerMatch = line.match(/^(#{1,6})\s+(.+)$/)
-      if (headerMatch) {
-        // 遇到新标题，保存之前的内容
-        if (currentSection) {
-          currentSection.content = contentBuffer.join('\n').trim()
-          sections.push(currentSection)
-        }
-
-        currentSection = {
-          level: headerMatch[1].length,
-          title: headerMatch[2].trim(),
-          content: '',
-          children: []
-        }
-        contentBuffer = []
-      } else if (currentSection) {
-        contentBuffer.push(line)
-      }
+    if (structure.hasSections) {
+      // 有章节结构 → 按章节切分（可能需要二级切分）
+      return this.splitBySections(content, structure.sections, options)
+    } else {
+      // 无章节结构 → 直接段落级语义切分
+      return this.splitBySemantic(content)
     }
-
-    // 保存最后一个章节
-    if (currentSection) {
-      currentSection.content = contentBuffer.join('\n').trim()
-      sections.push(currentSection)
-    }
-
-    return this.buildHierarchy(sections)
   }
 
   /**
-   * 构建层级关系
+   * 检测文档结构
    */
-  private buildHierarchy(sections: DocumentSection[]): DocumentSection[] {
-    const stack: DocumentSection[] = []
+  private detectStructure(content: string, fileType: FileType): DocumentStructure {
+    const sections: Section[] = []
 
-    for (const section of sections) {
-      // 找到父节点
-      while (stack.length > 0 && stack[stack.length - 1].level >= section.level) {
-        stack.pop()
+    switch (fileType) {
+      case 'md':
+        // Markdown：检测 # 标题
+        sections.push(...this.detectMarkdownHeaders(content))
+        break
+
+      case 'pdf':
+        // PDF：使用 pdfjs-dist 的 getOutline() 或字体大小判断
+        // 假设已有结构信息传入
+        break
+
+      case 'txt':
+        // 纯文本：尝试检测章节模式
+        sections.push(...this.detectTextSections(content))
+        break
+
+      default:
+        // 其他格式默认无结构，走语义切分
+        break
+    }
+
+    return {
+      hasSections: sections.length > 1,  // 至少有2个章节才算有结构
+      sections
+    }
+  }
+
+  /**
+   * 检测 Markdown 标题结构
+   */
+  private detectMarkdownHeaders(content: string): Section[] {
+    const lines = content.split('\n')
+    const sections: Section[] = []
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+      const match = line.match(/^(#{1,6})\s+(.+)$/)
+      if (match) {
+        sections.push({
+          title: match[2].trim(),
+          level: match[1].length,
+          startLine: i,
+          startOffset: this.getLineOffset(content, i)
+        })
       }
+    }
 
-      if (stack.length > 0) {
-        section.parentId = stack[stack.length - 1].title
-        stack[stack.length - 1].children.push(section.title)
+    return sections
+  }
+
+  /**
+   * 检测纯文本的章节模式
+   * 匹配常见的章节格式：第一章、Chapter 1、一、等
+   */
+  private detectTextSections(content: string): Section[] {
+    const patterns = [
+      /^第[一二三四五六七八九十百零]+[章节篇部]/gm,   // 中文章节
+      /^Chapter\s+\d+/gim,                        // 英文章节
+      /^[一二三四五六七八九十]+[、.．:：]/gm,      // 中文序号
+      /^\d+[、.．:：]\s+.+/gm                     // 数字编号
+    ]
+
+    const sections: Section[] = []
+    const lines = content.split('\n')
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+      for (const pattern of patterns) {
+        const regex = new RegExp(pattern.source, pattern.flags)
+        if (regex.test(line)) {
+          sections.push({
+            title: line.trim(),
+            level: 1,
+            startLine: i,
+            startOffset: this.getLineOffset(content, i)
+          })
+          break
+        }
       }
-
-      stack.push(section)
     }
 
     return sections
@@ -143,138 +227,205 @@ class StructuredSplitter {
 }
 ```
 
-#### 3.2.2 语义漂移切分（非结构化文本）
-
-**核心思路**：计算相邻句子/段落的语义相似度，在相似度骤降处切分。
+#### 3.3.2 按章节切分（含二级处理）
 
 ```typescript
-interface SemanticSplitter {
-  embeddingService: EmbeddingService
-  similarityThreshold: number  // 相似度阈值，默认 0.5
+/**
+ * 按章节切分，过长章节进行二级语义切分
+ */
+private async splitBySections(
+  content: string,
+  sections: Section[],
+  options?: SplitOptions
+): Promise<Chunk[]> {
+  const chunks: Chunk[] = []
 
-  /**
-   * 基于语义漂移的切分
-   */
-  async splitBySemanticDrift(text: string): Promise<Chunk[]> {
-    // 1. 分句/分段
-    const sentences = this.splitSentences(text)
+  for (let i = 0; i < sections.length; i++) {
+    const section = sections[i]
+    const nextSection = sections[i + 1]
 
-    if (sentences.length <= 1) {
-      return [{ content: text, index: 0 }]
-    }
+    // 提取该章节的内容
+    const sectionContent = this.extractSectionContent(
+      content,
+      section,
+      nextSection
+    )
 
-    // 2. 计算相邻句子的嵌入向量
-    const embeddings = await this.embeddingService.batchEmbed(sentences)
+    // 检查章节长度
+    if (sectionContent.length > this.maxSectionLength) {
+      // 过长 → 章节内部进行段落级语义切分
+      const subChunks = await this.splitBySemantic(sectionContent)
 
-    // 3. 计算相似度序列
-    const similarities: number[] = []
-    for (let i = 0; i < embeddings.length - 1; i++) {
-      similarities.push(this.cosineSimilarity(embeddings[i], embeddings[i + 1]))
-    }
-
-    // 4. 寻找切分点（相似度低于阈值处）
-    const chunks: Chunk[] = []
-    let currentStart = 0
-    let chunkIndex = 0
-
-    for (let i = 0; i < similarities.length; i++) {
-      if (similarities[i] < this.similarityThreshold) {
-        // 触发切分
-        const chunkContent = sentences.slice(currentStart, i + 1).join('')
-        if (chunkContent.trim()) {
-          chunks.push({
-            content: chunkContent,
-            index: chunkIndex++,
-            metadata: {
-              splitReason: 'semantic_drift',
-              avgSimilarity: this.average(similarities.slice(currentStart, i))
-            }
-          })
+      // 标注层级信息
+      for (const sub of subChunks) {
+        sub.metadata = {
+          ...sub.metadata,
+          sectionTitle: section.title,
+          sectionLevel: section.level,
+          splitMethod: 'section_semantic'
         }
-        currentStart = i + 1
+        chunks.push(sub)
       }
+    } else {
+      // 正常长度 → 直接作为一个 chunk
+      chunks.push({
+        content: sectionContent,
+        index: chunks.length,
+        metadata: {
+          sectionTitle: section.title,
+          sectionLevel: section.level,
+          splitMethod: 'section'
+        }
+      })
     }
+  }
 
-    // 处理剩余部分
-    if (currentStart < sentences.length) {
-      const chunkContent = sentences.slice(currentStart).join('')
+  return chunks
+}
+
+/**
+ * 提取章节内容
+ */
+private extractSectionContent(
+  content: string,
+  section: Section,
+  nextSection?: Section
+): string {
+  const startOffset = section.startOffset
+  const endOffset = nextSection ? nextSection.startOffset : content.length
+
+  return content.slice(startOffset, endOffset).trim()
+}
+```
+
+#### 3.3.3 段落级语义切分
+
+```typescript
+/**
+ * 段落级语义切分
+ * 关键优化：按段落切分，而非按句子，大幅降低成本
+ */
+private async splitBySemantic(content: string): Promise<Chunk[]> {
+  // 1. 按段落切分（双换行分隔）
+  const paragraphs = content.split(/\n\n+/).filter(p => p.trim())
+
+  if (paragraphs.length <= 1) {
+    return [{
+      content,
+      index: 0,
+      metadata: { splitMethod: 'single' }
+    }]
+  }
+
+  // 2. 批量计算所有段落的 Embedding（一次API调用）
+  const embeddings = await this.embeddingService.batchEmbed(paragraphs)
+
+  // 3. 计算相邻段落相似度
+  const similarities = this.calculateSimilarities(embeddings)
+
+  // 4. 在相似度骤降处切分
+  return this.splitAtBoundaries(paragraphs, similarities)
+}
+
+/**
+ * 计算相邻段落的余弦相似度
+ */
+private calculateSimilarities(embeddings: number[][]): number[] {
+  const similarities: number[] = []
+
+  for (let i = 0; i < embeddings.length - 1; i++) {
+    similarities.push(this.cosineSimilarity(embeddings[i], embeddings[i + 1]))
+  }
+
+  return similarities
+}
+
+/**
+ * 余弦相似度计算
+ */
+private cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0, normA = 0, normB = 0
+
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i]
+    normA += a[i] * a[i]
+    normB += b[i] * b[i]
+  }
+
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB))
+}
+
+/**
+ * 在相似度边界处切分
+ */
+private splitAtBoundaries(
+  paragraphs: string[],
+  similarities: number[]
+): Chunk[] {
+  const chunks: Chunk[] = []
+  let currentBuffer = [paragraphs[0]]
+  let chunkIndex = 0
+
+  for (let i = 0; i < similarities.length; i++) {
+    if (similarities[i] < this.similarityThreshold) {
+      // 相似度低于阈值 → 触发切分
+      const chunkContent = currentBuffer.join('\n\n')
       if (chunkContent.trim()) {
         chunks.push({
           content: chunkContent,
-          index: chunkIndex,
-          metadata: { splitReason: 'tail' }
+          index: chunkIndex++,
+          metadata: {
+            splitMethod: 'semantic',
+            boundarySimilarity: similarities[i]
+          }
         })
       }
+      currentBuffer = [paragraphs[i + 1]]
+    } else {
+      // 相似度高于阈值 → 继续合并
+      currentBuffer.push(paragraphs[i + 1])
     }
-
-    return chunks
   }
 
-  private cosineSimilarity(a: number[], b: number[]): number {
-    let dot = 0, normA = 0, normB = 0
-    for (let i = 0; i < a.length; i++) {
-      dot += a[i] * b[i]
-      normA += a[i] * a[i]
-      normB += b[i] * b[i]
+  // 处理剩余内容
+  if (currentBuffer.length > 0) {
+    const chunkContent = currentBuffer.join('\n\n')
+    if (chunkContent.trim()) {
+      chunks.push({
+        content: chunkContent,
+        index: chunkIndex,
+        metadata: { splitMethod: 'semantic_tail' }
+      })
     }
-    return dot / (Math.sqrt(normA) * Math.sqrt(normB))
   }
+
+  return chunks
 }
 ```
 
-#### 3.2.3 混合切分策略
+### 3.4 成本分析
 
-```typescript
-class HybridSplitter {
-  structuredSplitter: StructuredSplitter
-  semanticSplitter: SemanticSplitter
-  maxChunkSize: number = 1000  // 最大块大小
+#### 成本对比
 
-  async split(content: string, fileType: FileType): Promise<Chunk[]> {
-    // 1. 结构化文档优先使用结构切分
-    if (this.isStructured(fileType)) {
-      const sections = this.structuredSplitter.parseStructure(content, fileType)
-      const chunks: Chunk[] = []
+| 切分策略 | 示例文档 | API调用次数 | 成本 |
+|---------|---------|------------|------|
+| **按句子切分** | 10页 ~500句 | 500次 | ❌ 过高 |
+| **按段落切分** | 10页 ~50段 | 1次批量 | ✅ 合理 |
+| **分层级策略** | 10页 + 10章节 | 0-2次批量 | ✅ 最优 |
 
-      for (const section of sections) {
-        // 2. 检查章节是否过长
-        if (section.content.length > this.maxChunkSize * 1.5) {
-          // 过长章节进行二次语义切分
-          const subChunks = await this.semanticSplitter.splitBySemanticDrift(section.content)
-          for (const sub of subChunks) {
-            sub.metadata = {
-              ...sub.metadata,
-              parentTitle: section.title,
-              level: section.level
-            }
-            chunks.push(sub)
-          }
-        } else {
-          chunks.push({
-            content: section.content,
-            metadata: {
-              title: section.title,
-              level: section.level,
-              parentId: section.parentId
-            }
-          })
-        }
-      }
+#### 实际场景估算
 
-      return chunks
-    }
+**一篇 20 页的技术文档：**
 
-    // 3. 非结构化文档直接语义切分
-    return this.semanticSplitter.splitBySemanticDrift(content)
-  }
+| 场景 | 章节情况 | Embedding调用 |
+|-----|---------|--------------|
+| 有10个章节，每个章节正常长度 | 10章节，无过长 | 0次（无需语义切分） |
+| 有10个章节，2个过长 | 10章节 + 2个需处理 | ~20段落×2 = 1次批量调用 |
+| 无章节结构 | ~100段落 | 1次批量调用 |
 
-  private isStructured(fileType: FileType): boolean {
-    return ['md', 'docx', 'pdf'].includes(fileType)
-  }
-}
-```
+**结论**：分层级策略将 API 成本控制在 0-2 次批量调用，相比原方案降低 **95%以上**。
 
-### 3.3 数据库修改
+### 3.5 数据库修改
 
 需要在 `kb_chunks` 表中增加字段以存储层级信息：
 
@@ -283,17 +434,18 @@ class HybridSplitter {
 ALTER TABLE kb_chunks ADD COLUMN title TEXT;
 ALTER TABLE kb_chunks ADD COLUMN level INTEGER DEFAULT 0;
 ALTER TABLE kb_chunks ADD COLUMN parent_id TEXT;
-ALTER TABLE kb_chunks ADD COLUMN split_method TEXT DEFAULT 'fixed'; -- 'fixed' | 'structure' | 'semantic'
+ALTER TABLE kb_chunks ADD COLUMN split_method TEXT DEFAULT 'fixed';
+-- split_method 取值: 'fixed' | 'section' | 'section_semantic' | 'semantic'
 ```
 
-### 3.4 实施成本评估
+### 3.6 实施成本评估
 
 | 项目 | 成本 | 说明 |
 |-----|-----|-----|
-| 代码开发 | 中 | 需新增约 300 行代码 |
-| API 调用成本 | 低 | 仅语义切分时需额外调用 Embedding API |
+| 代码开发 | 中 | 需新增约 400 行代码 |
+| API 调用成本 | 极低 | 分层级策略，最多 1-2 次批量调用 |
 | 兼容性 | 高 | 已有文档可保留，新文档使用新策略 |
-| 预期效果 | 高 | 显著改善检索准确率 |
+| 预期效果 | 高 | 显著改善检索准确率，保留结构完整性 |
 
 ---
 

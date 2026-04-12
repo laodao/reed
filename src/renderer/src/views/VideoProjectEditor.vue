@@ -189,38 +189,42 @@
                     class="binding-card character-card"
                     @click="showCharacterDetail(binding.longWritingCharacterId)"
                   >
-                    <div class="card-header">
-                      <div class="card-icon character-icon">
-                        <el-icon size="24"><User /></el-icon>
+                    <div class="card-row">
+                      <!-- 人像预览图 -->
+                      <div class="card-portrait-preview" v-if="binding.portraitId">
+                        <el-image
+                          :src="getBindingPortraitPreview(binding.portraitId)"
+                          fit="cover"
+                        >
+                          <template #error>
+                            <div class="portrait-placeholder">
+                              <el-icon><User /></el-icon>
+                            </div>
+                          </template>
+                        </el-image>
                       </div>
-                      <div class="card-title">
-                        <div class="binding-name">{{ getCharacterName(binding.longWritingCharacterId) }}</div>
-                        <el-tag size="small" type="primary" v-if="getCharacterRolePosition(binding.longWritingCharacterId)">
-                          {{ getRolePositionLabel(getCharacterRolePosition(binding.longWritingCharacterId)) }}
-                        </el-tag>
+                      <!-- 无人像时显示图标 -->
+                      <div class="card-icon character-icon" v-else>
+                        <el-icon size="20"><User /></el-icon>
                       </div>
-                    </div>
-                    <div class="card-body">
-                      <div class="binding-status">
-                        <el-tag v-if="binding.portraitId" size="small" type="success">
-                          <el-icon><Check /></el-icon>
-                          已绑定人像
-                        </el-tag>
-                        <el-tag v-else size="small" type="warning">
-                          <el-icon><Warning /></el-icon>
-                          未绑定人像
-                        </el-tag>
+                      <!-- 名称 -->
+                      <div class="card-name">{{ getCharacterName(binding.longWritingCharacterId) }}</div>
+                      <!-- 状态 -->
+                      <el-tag v-if="binding.portraitId" size="small" type="success">
+                        已绑定人像
+                      </el-tag>
+                      <el-tag v-else size="small" type="warning">
+                        未绑定人像
+                      </el-tag>
+                      <!-- 操作按钮 -->
+                      <div class="card-actions">
+                        <el-button text size="small" @click.stop="editBinding(binding)">
+                          <el-icon><Edit /></el-icon>
+                        </el-button>
+                        <el-button text size="small" type="danger" @click.stop="removeBinding(binding)">
+                          <el-icon><Delete /></el-icon>
+                        </el-button>
                       </div>
-                    </div>
-                    <div class="card-footer">
-                      <el-button text size="small" @click.stop="editBinding(binding)">
-                        <el-icon><Edit /></el-icon>
-                        编辑
-                      </el-button>
-                      <el-button text size="small" type="danger" @click.stop="removeBinding(binding)">
-                        <el-icon><Delete /></el-icon>
-                        移除
-                      </el-button>
                     </div>
                   </div>
 
@@ -1774,10 +1778,37 @@ const projectSettings = reactive({
 // 所有长文项目列表（用于项目设置中选择关联长文）
 const allLwProjects = ref<Array<{ id: string; name: string }>>([])
 
-// 长文角色列表
-const longWritingCharacters = ref<Array<{ id: string; name: string }>>([])
+// 长文角色列表（包含portraitId用于显示人像预览）
+const longWritingCharacters = ref<Array<{ id: string; name: string; portraitId?: string }>>([])
 const longWritingItems = ref<Array<{ id: string; name: string }>>([])
 const longWritingLocations = ref<Array<{ id: string; name: string }>>([])
+
+// 人像预览图映射（portraitId -> imagePath）
+const portraitPreviews = ref<Map<string, string>>(new Map())
+
+// 获取人像预览图
+function getBindingPortraitPreview(portraitId: string): string {
+  return portraitPreviews.value.get(portraitId) || ''
+}
+
+// 加载人像预览图（从角色列表中获取portraitId对应的预览图）
+async function loadPortraitPreviews(characters: Array<{ id: string; name: string; portraitId?: string }>) {
+  portraitPreviews.value.clear()
+  for (const char of characters) {
+    if (char.portraitId) {
+      try {
+        // portraitId 是 portrait_variants.id，需要获取对应的人物角色ID
+        // 直接获取变体信息
+        const variantResult = await window.electronAPI.portrait.getVariant(char.portraitId)
+        if (variantResult.success && variantResult.data) {
+          portraitPreviews.value.set(char.portraitId, variantResult.data.imagePath)
+        }
+      } catch (e) {
+        console.error('加载人像预览失败:', e)
+      }
+    }
+  }
+}
 
 // ========== 模型选择相关 ==========
 // 提供商配置列表
@@ -2241,8 +2272,11 @@ async function loadLongWritingData(longWritingProjectId: string) {
     if (charResponse.success && charResponse.data) {
       longWritingCharacters.value = charResponse.data.map((c: any) => ({
         id: c.id,
-        name: c.name
+        name: c.name,
+        portraitId: c.portraitId
       }))
+      // 加载人像预览图
+      await loadPortraitPreviews(charResponse.data)
     }
 
     // 加载物品列表
@@ -4844,103 +4878,102 @@ watch(outlineSearchText, (val) => {
   gap: 12px;
 }
 
-// 卡片式绑定项样式
+// 卡片式绑定项样式 - 单行紧凑布局
 .binding-card {
   background: var(--el-fill-color-blank);
   border: 1px solid var(--el-border-color-light);
-  border-radius: 12px;
-  padding: 16px;
+  border-radius: 8px;
+  padding: 12px;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
 
   &:hover {
     border-color: var(--el-color-primary-light-5);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-    transform: translateY(-2px);
+    background: var(--el-fill-color-light);
   }
 
-  .card-header {
+  // 单行布局
+  .card-row {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 12px;
-    margin-bottom: 12px;
   }
 
   .card-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 10px;
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
 
     &.character-icon {
-      background: linear-gradient(135deg, var(--el-color-primary-light-8), var(--el-color-primary-light-5));
+      background: var(--el-color-primary-light-8);
       color: var(--el-color-primary);
     }
 
     &.item-icon {
-      background: linear-gradient(135deg, var(--el-color-warning-light-8), var(--el-color-warning-light-5));
+      background: var(--el-color-warning-light-8);
       color: var(--el-color-warning);
     }
 
     &.location-icon {
-      background: linear-gradient(135deg, var(--el-color-info-light-8), var(--el-color-info-light-5));
+      background: var(--el-color-info-light-8);
       color: var(--el-color-info);
     }
   }
 
-  .card-title {
-    flex: 1;
-    min-width: 0;
+  // 人像预览图样式
+  .card-portrait-preview {
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    overflow: hidden;
+    border: 1px solid var(--el-color-primary-light-5);
 
-    .binding-name {
-      font-size: 15px;
-      font-weight: 600;
-      color: var(--el-text-color-primary);
-      margin-bottom: 6px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+    .el-image {
+      width: 100%;
+      height: 100%;
     }
 
-    .el-tag {
-      margin-right: 4px;
-    }
-  }
-
-  .card-body {
-    margin-bottom: 12px;
-
-    .binding-status {
+    .portrait-placeholder {
+      width: 100%;
+      height: 100%;
       display: flex;
       align-items: center;
-      gap: 8px;
-
-      .el-tag {
-        display: inline-flex;
-        align-items: center;
-
-        .el-icon {
-          margin-right: 4px;
-          vertical-align: middle;
-        }
-      }
+      justify-content: center;
+      background: var(--el-color-primary-light-8);
+      color: var(--el-color-primary);
     }
   }
 
-  .card-footer {
+  // 名称
+  .card-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--el-text-color-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  // 状态标签
+  .el-tag {
+    flex-shrink: 0;
+  }
+
+  // 操作按钮
+  .card-actions {
     display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    padding-top: 12px;
-    border-top: 1px solid var(--el-border-color-lighter);
+    gap: 4px;
+    flex-shrink: 0;
 
     .el-button {
-      .el-icon {
-        margin-right: 4px;
-      }
+      padding: 4px 8px;
     }
   }
 }
