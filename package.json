@@ -1,6 +1,6 @@
 {
   "name": "the_bot",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "description": "The Bot - 集成多种AI能力的跨平台桌面应用",
   "main": "./out/main/index.js",
   "author": "Daoge",
