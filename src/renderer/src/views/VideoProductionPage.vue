@@ -740,18 +740,20 @@ function openRegenerateDialog(storyboard: Storyboard) {
 async function generateSingleImage(storyboard: Storyboard) {
   try {
     generatingSingle.value = true
+    // 从项目配置中获取图像模型配置
+    const imageModelConfig = store.currentProject?.config?.imageModel
     const result = await store.generateStoryboardImage(
       storyboard.id,
       regenerateForm.styleName,
-      undefined,
-      undefined,
+      imageModelConfig?.providerConfigId,
+      imageModelConfig?.modelId,
       regenerateForm.additionalPrompt
     )
     if (result) {
       ElMessage.success('画面生成成功')
       showRegenerateDialog.value = false
     } else {
-      ElMessage.error('画面生成失败')
+      ElMessage.error(store.error || '画面生成失败')
     }
   } catch (error: any) {
     ElMessage.error(error.message || '画面生成失败')
@@ -774,12 +776,20 @@ async function generateAllImages() {
     return
   }
 
+  // 从项目配置中获取图像模型配置
+  const imageModelConfig = store.currentProject?.config?.imageModel
+
   try {
     generatingAll.value = true
     let successCount = 0
 
     for (const storyboard of pendingStoryboards) {
-      const result = await store.generateStoryboardImage(storyboard.id, 'cinematic')
+      const result = await store.generateStoryboardImage(
+        storyboard.id,
+        'cinematic',
+        imageModelConfig?.providerConfigId,
+        imageModelConfig?.modelId
+      )
       if (result) {
         successCount++
       }

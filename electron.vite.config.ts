@@ -5,15 +5,21 @@ import vue from '@vitejs/plugin-vue'
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
+    resolve: {
+      alias: {
+        '@core': resolve(__dirname, 'src/core'),
+        '@shared': resolve(__dirname, 'src/shared'),
+        '@electron': resolve(__dirname, 'src/electron')
+      }
+    },
     build: {
       rollupOptions: {
         input: {
-          index: resolve(__dirname, 'src/main/index.ts')
+          index: resolve(__dirname, 'src/electron/index.ts')
         }
       },
-      copyPublicDir: true
-    },
-    publicDir: resolve(__dirname, 'src/main/database/migrations')
+      copyPublicDir: false
+    }
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
