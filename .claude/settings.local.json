@@ -68,7 +68,8 @@
       "Bash(npx vue-tsc:*)",
       "Bash(curl -s http://localhost:9222/json/version)",
       "Bash(node -e \":*)",
-      "Skill(update-config)"
+      "Skill(update-config)",
+      "Skill(commit-commands:commit)"
     ]
   }
 }
