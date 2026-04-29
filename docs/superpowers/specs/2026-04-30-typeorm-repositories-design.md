@@ -17,10 +17,21 @@
 
 ### 1.2 不变量（硬性要求）
 
-- **公共 API 完全不变**：调用方仍写 `dbManager.dialogs.getAll()` / `dbManager.apiKeys.save(...)`，方法名 / 参数名 / 参数顺序 / 参数类型 / 返回类型 / 返回字段名 0 改动。
+- **公共 API 完全不变**：调用方仍写 `dbManager.dialogs.getAll()` / `dbManager.apiKeys.save(...)`，方法名 / 参数名 / 参数顺序 / 参数类型 / 返回字段名 0 改动。
 - **现有用户数据保留**：Entity 必须严格对齐现有 SQLite schema，使 `synchronize` 在已有库上是 no-op；启动前做 schema 漂移检查，失败先备份再终止。
 - **应用层级联与兼容行为保留**：`dialog.delete` 仍同时删 `messages`；`role_id = 'default-assistant'` 仍等同 `null`；其他类似细节逐 Repository 保留。
 - **不引入新框架**：仅新增 `typeorm` + `pg`；不引入 migrations 框架（YAGNI）；不引入 DI 容器；不重构 IPC / Service 层。
+
+### 1.3 已知例外：同步 Repo 改为异步
+
+现有 Repository 中部分方法签名为同步（如 `SettingsRepository.get(): any | null`、`OSSConfigRepository.getById(): OSSConfig | null`），TypeORM 只提供异步 API，无法保留同步签名。
+
+**统一规则**：所有同步签名一律改为 `Promise<T>` 异步签名；同时**修改所有调用站点**加 `await`。这是 §1.2 "返回类型 0 改动" 的唯一已知例外。
+
+每个改造同步签名的 Repo 必须：
+1. `grep -rn "dbManager.<repoName>\." src/` 全量列出调用点；
+2. 在 Repo 改造同一 commit 中更新所有调用点（加 `await` + 必要时把所在函数标 `async`）；
+3. 测试覆盖确保异步语义正确（避免漏 `await` 导致的 race）。
 
 ## 2. 架构
 
