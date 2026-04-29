@@ -14,6 +14,11 @@
     "noEmit": true,
     "jsx": "preserve",
 
+    /* TypeORM */
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "strictPropertyInitialization": false,
+
     /* Linting */
     "strict": true,
     "noUnusedLocals": true,
