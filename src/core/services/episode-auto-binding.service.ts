@@ -27,7 +27,7 @@ export class EpisodeAutoBindingService {
    * @param outlineId 长文章节ID（大纲ID）
    * @returns 绑定结果
    */
-  static autoBindEntities(videoProjectId: string, outlineId: string): AutoBindResult {
+  static async autoBindEntities(videoProjectId: string, outlineId: string): Promise<AutoBindResult> {
     console.log(`[EpisodeAutoBindingService] 开始自动绑定: videoProjectId=${videoProjectId}, outlineId=${outlineId}`)
 
     const db = getCoreDatabaseManager()
@@ -53,7 +53,7 @@ export class EpisodeAutoBindingService {
 
     try {
       // 0. 获取大纲信息，确定长文项目 ID
-      const outline = db.lwOutlines?.getById(outlineId)
+      const outline = await db.lwOutlines?.getById(outlineId)
       if (!outline) {
         console.error(`[EpisodeAutoBindingService] 大纲 ${outlineId} 不存在`)
         return {
@@ -67,7 +67,7 @@ export class EpisodeAutoBindingService {
       console.log(`[EpisodeAutoBindingService] 大纲原始数据: involvedCharacters=${JSON.stringify(outline.involvedCharacters)}, involvedLocations=${JSON.stringify(outline.involvedLocations)}`)
 
       // 1. 获取大纲关联的角色ID列表（优先从关联表获取，如果没有则从JSON字段获取）
-      let characterIds = db.lwOutlineCharacters?.getCharacterIdsByOutlineId(outlineId) || []
+      let characterIds = await db.lwOutlineCharacters?.getCharacterIdsByOutlineId(outlineId) || []
 
       // 如果关联表没有数据，尝试从大纲的 JSON 字段获取
       if (characterIds.length === 0 && outline.involvedCharacters && outline.involvedCharacters.length > 0) {
@@ -76,7 +76,7 @@ export class EpisodeAutoBindingService {
 
         // 同时更新关联表（数据迁移）
         try {
-          db.lwOutlineCharacters?.replaceAll(outlineId, characterIds)
+          await db.lwOutlineCharacters?.replaceAll(outlineId, characterIds)
         } catch (e) {
           console.warn('[EpisodeAutoBindingService] 更新角色关联表失败:', e)
         }
@@ -84,7 +84,7 @@ export class EpisodeAutoBindingService {
       console.log(`[EpisodeAutoBindingService] 大纲 ${outlineId} 关联角色: ${characterIds.length} 个`)
 
       // 2. 获取大纲关联的地点ID列表
-      let locationIds = db.lwOutlineLocations?.getLocationIdsByOutlineId(outlineId) || []
+      let locationIds = await db.lwOutlineLocations?.getLocationIdsByOutlineId(outlineId) || []
 
       if (locationIds.length === 0 && outline.involvedLocations && outline.involvedLocations.length > 0) {
         locationIds = outline.involvedLocations
@@ -92,7 +92,7 @@ export class EpisodeAutoBindingService {
 
         // 同时更新关联表（数据迁移）
         try {
-          db.lwOutlineLocations?.replaceAll(outlineId, locationIds)
+          await db.lwOutlineLocations?.replaceAll(outlineId, locationIds)
         } catch (e) {
           console.warn('[EpisodeAutoBindingService] 更新地点关联表失败:', e)
         }
@@ -100,7 +100,7 @@ export class EpisodeAutoBindingService {
       console.log(`[EpisodeAutoBindingService] 大纲 ${outlineId} 关联地点: ${locationIds.length} 个`)
 
       // 3. 获取大纲关联的物品ID列表
-      let itemIds = db.lwOutlineItems?.getItemIdsByOutlineId(outlineId) || []
+      let itemIds = await db.lwOutlineItems?.getItemIdsByOutlineId(outlineId) || []
 
       if (itemIds.length === 0 && outline.involvedItems && outline.involvedItems.length > 0) {
         itemIds = outline.involvedItems
@@ -108,7 +108,7 @@ export class EpisodeAutoBindingService {
 
         // 同时更新关联表（数据迁移）
         try {
-          db.lwOutlineItems?.replaceAll(outlineId, itemIds)
+          await db.lwOutlineItems?.replaceAll(outlineId, itemIds)
         } catch (e) {
           console.warn('[EpisodeAutoBindingService] 更新物品关联表失败:', e)
         }
@@ -121,14 +121,14 @@ export class EpisodeAutoBindingService {
         console.log(`[EpisodeAutoBindingService] 处理角色: ${characterId}`)
         try {
           // 检查是否已存在绑定
-          const existingBinding = db.characterBindings?.getByLongWritingCharacterId(videoProjectId, characterId)
+          const existingBinding = await db.characterBindings?.getByLongWritingCharacterId(videoProjectId, characterId)
           if (existingBinding) {
             console.log(`[EpisodeAutoBindingService] 角色 ${characterId} 已绑定，跳过`)
             continue
           }
 
           // 获取角色信息（验证角色存在于长文项目中）
-          const character = db.lwCharacters?.getById(characterId)
+          const character = await db.lwCharacters?.getById(characterId)
           if (!character) {
             console.warn(`[EpisodeAutoBindingService] 角色 ${characterId} 不存在`)
             result.errors.push(`角色 ${characterId} 不存在`)
@@ -144,7 +144,7 @@ export class EpisodeAutoBindingService {
 
           // 创建角色绑定（绑定到视频项目）
           console.log(`[EpisodeAutoBindingService] 创建角色绑定: videoProjectId=${videoProjectId}, characterId=${characterId}`)
-          const createdBinding = db.characterBindings?.create({
+          const createdBinding = await db.characterBindings?.create({
             projectId: videoProjectId,
             longWritingCharacterId: characterId,
             voiceConfig: {
@@ -170,14 +170,14 @@ export class EpisodeAutoBindingService {
         console.log(`[EpisodeAutoBindingService] 处理地点: ${locationId}`)
         try {
           // 检查是否已存在绑定
-          const existingBinding = db.locationBindings?.getByLongWritingLocationId(videoProjectId, locationId)
+          const existingBinding = await db.locationBindings?.getByLongWritingLocationId(videoProjectId, locationId)
           if (existingBinding) {
             console.log(`[EpisodeAutoBindingService] 地点 ${locationId} 已绑定，跳过`)
             continue
           }
 
           // 获取地点信息
-          const location = db.lwLocations?.getById(locationId)
+          const location = await db.lwLocations?.getById(locationId)
           if (!location) {
             console.warn(`[EpisodeAutoBindingService] 地点 ${locationId} 不存在`)
             result.errors.push(`地点 ${locationId} 不存在`)
@@ -193,7 +193,7 @@ export class EpisodeAutoBindingService {
 
           // 创建地点绑定（绑定到视频项目）
           console.log(`[EpisodeAutoBindingService] 创建地点绑定: videoProjectId=${videoProjectId}, locationId=${locationId}`)
-          const createdBinding = db.locationBindings?.create({
+          const createdBinding = await db.locationBindings?.create({
             projectId: videoProjectId,
             longWritingLocationId: locationId,
             locationName: location.name,
@@ -216,14 +216,14 @@ export class EpisodeAutoBindingService {
         console.log(`[EpisodeAutoBindingService] 处理物品: ${itemId}`)
         try {
           // 检查是否已存在绑定
-          const existingBinding = db.itemBindings?.getByLongWritingItemId(videoProjectId, itemId)
+          const existingBinding = await db.itemBindings?.getByLongWritingItemId(videoProjectId, itemId)
           if (existingBinding) {
             console.log(`[EpisodeAutoBindingService] 物品 ${itemId} 已绑定，跳过`)
             continue
           }
 
           // 获取物品信息
-          const item = db.lwItems?.getById(itemId)
+          const item = await db.lwItems?.getById(itemId)
           if (!item) {
             console.warn(`[EpisodeAutoBindingService] 物品 ${itemId} 不存在`)
             result.errors.push(`物品 ${itemId} 不存在`)
@@ -233,7 +233,7 @@ export class EpisodeAutoBindingService {
 
           // 创建物品绑定（绑定到视频项目）
           console.log(`[EpisodeAutoBindingService] 创建物品绑定: videoProjectId=${videoProjectId}, itemId=${itemId}`)
-          const createdBinding = db.itemBindings?.create({
+          const createdBinding = await db.itemBindings?.create({
             projectId: videoProjectId,
             longWritingItemId: itemId,
             itemName: item.name,

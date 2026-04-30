@@ -21,7 +21,7 @@ import { ClonedVoiceRepository } from '@core/database/repositories/cloned-voice.
 import { KnowledgeBaseRepository } from '@core/database/repositories/knowledge-base.repository'
 import { KbDocumentRepository } from '@core/database/repositories/kb-document.repository'
 import { KbChunkRepository } from '@core/database/repositories/kb-chunk.repository'
-import { KbVectorRepository } from './repositories/kb-vector.repository'
+import { KbVectorRepository } from '@core/database/repositories/kb-vector.repository'
 import { KbInvertedIndexRepository } from '@core/database/repositories/kb-inverted-index.repository'
 import { PortraitProjectRepository } from '@core/database/repositories/portrait-project.repository'
 import { PortraitCharacterRepository } from '@core/database/repositories/portrait-character.repository'

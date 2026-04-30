@@ -7,8 +7,8 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
-import type {
 import { getPathProvider } from '@core/interfaces/path.interface'
+import type {
   DiaryFolder,
   DiaryEntry,
   DiaryEntryListItem,
@@ -257,7 +257,7 @@ export class DiaryService {
 
       // 解析并存储链接
       if (content) {
-        this.parseAndStoreLinks(entry.id, content)
+        await this.parseAndStoreLinks(entry.id, content)
       }
 
       return { success: true, data: entry }
@@ -285,7 +285,7 @@ export class DiaryService {
 
         // 更新链接
         await db.diaryLinks!.deleteBySource(id)
-        this.parseAndStoreLinks(id, request.content)
+        await this.parseAndStoreLinks(id, request.content)
       }
 
       // 更新标题时重命名文件
@@ -410,7 +410,7 @@ export class DiaryService {
   /**
    * 解析内容中的双向链接
    */
-  private parseAndStoreLinks(entryId: string, content: string): void {
+  private async parseAndStoreLinks(entryId: string, content: string): Promise<void> {
     const db = getCoreDatabaseManager()
 
     // 匹配 [[标题]] 或 [[标题#锚点]] 或 [[标题|显示文本]]
@@ -433,7 +433,7 @@ export class DiaryService {
     if (links.length === 0) return
 
     // 查找目标日记是否存在
-    const linkData = links.map(link => {
+    const linkData = await Promise.all(links.map(async link => {
       const targetEntry = await db.diaryEntries!.findByTitle(link.targetTitle)
       return {
         sourceEntryId: entryId,
@@ -442,7 +442,7 @@ export class DiaryService {
         linkText: link.linkText,
         anchor: link.anchor
       }
-    })
+    }))
 
     await db.diaryLinks!.createMany(linkData)
   }

@@ -68,9 +68,9 @@ export class OSSService {
       // 获取配置
       let config: OSSConfig | null = null
       if (request.configId) {
-        config = repo.getById(request.configId)
+        config = await repo.getById(request.configId)
       } else {
-        config = repo.getDefault()
+        config = await repo.getDefault()
       }
 
       if (!config) {
@@ -364,7 +364,7 @@ export class OSSService {
   async testConnection(configId: string): Promise<OSSTestResult> {
     try {
       const repo = this.getRepository()
-      const config = repo.getById(configId)
+      const config = await repo.getById(configId)
 
       if (!config) {
         return { success: false, message: '配置不存在' }

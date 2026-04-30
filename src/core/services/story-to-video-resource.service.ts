@@ -607,17 +607,17 @@ export class StoryToVideoResourceService {
   /**
    * 获取项目的地点绑定列表
    */
-  getLocationBindings(projectId: string): LocationBinding[] {
+  async getLocationBindings(projectId: string): Promise<LocationBinding[]> {
     const db = getCoreDatabaseManager()
-    return db.locationBindings?.getByProjectId(projectId) || []
+    return (await db.locationBindings?.getByProjectId(projectId)) || []
   }
 
   /**
    * 获取项目的物品绑定列表
    */
-  getItemBindings(projectId: string): ItemBinding[] {
+  async getItemBindings(projectId: string): Promise<ItemBinding[]> {
     const db = getCoreDatabaseManager()
-    return db.itemBindings?.getByProjectId(projectId) || []
+    return (await db.itemBindings?.getByProjectId(projectId)) || []
   }
 
   /**

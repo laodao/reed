@@ -5,7 +5,7 @@
  */
 
 import { LanceDBService, VectorRecord } from '@core/services/lance-db.service'
-import { getDatabaseManager } from '../index'
+import { getCoreDatabaseManager } from '../database-manager.interface'
 import { randomUUID } from 'crypto'
 
 /**
@@ -119,10 +119,10 @@ export class KbVectorRepository {
    */
   async deleteByDocumentId(documentId: string): Promise<void> {
     // 需要先从 SQLite 查询该文档的所有切片 ID
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.kbChunks) return
 
-    const chunks = dbManager.kbChunks.findByDocumentId(documentId)
+    const chunks = await dbManager.kbChunks.findByDocumentId(documentId)
     const chunkIds = chunks.map(c => c.id)
 
     if (chunkIds.length > 0) {

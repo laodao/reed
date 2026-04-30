@@ -115,7 +115,6 @@ export class ChatService {
       console.log('  - providerConfig.templateId:', providerConfig.templateId)
       console.log('  - effectiveModelId:', effectiveModelId)
       console.log('  - template.id:', template.id)
-      console.log('  - template.sdkProvider:', template.sdkProvider)
 
       // 创建 Provider 实例
       const provider = createProvider(

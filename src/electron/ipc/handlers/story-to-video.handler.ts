@@ -636,7 +636,7 @@ async function handleCreateEpisode(
     console.log('[handleCreateEpisode] 检查是否需要自动绑定:', { sourceType: data.sourceType, outlineId: data.outlineId })
     if (data.sourceType === 'outline' && data.outlineId) {
       console.log('[handleCreateEpisode] 开始自动绑定...')
-      const bindingResult = EpisodeAutoBindingService.autoBindEntities(projectId, data.outlineId)
+      const bindingResult = await EpisodeAutoBindingService.autoBindEntities(projectId, data.outlineId)
       console.log('[handleCreateEpisode] 自动绑定结果:', bindingResult)
     } else if (data.sourceType === 'uploaded' && data.uploadedContent) {
       // 上传模式：AI识别实体并创建绑定
@@ -668,7 +668,7 @@ async function handleCreateEpisode(
         })
 
         // 创建实体并绑定
-        const entityResult = UploadedEntityService.createAndBindUploadedEntities(
+        const entityResult = await UploadedEntityService.createAndBindUploadedEntities(
           projectId,
           episode.id,
           characters,
@@ -2004,7 +2004,7 @@ async function handleGetUploadedEntity(
   entityType: 'character' | 'location' | 'item'
 ): Promise<IpcResponse> {
   try {
-    const entity = UploadedEntityService.getUploadedEntity(entityId, entityType)
+    const entity = await UploadedEntityService.getUploadedEntity(entityId, entityType)
     if (!entity) {
       return { success: false, error: '实体不存在' }
     }
@@ -2026,7 +2026,7 @@ async function handleUpdateUploadedEntity(
 ): Promise<IpcResponse> {
   try {
     console.log('[handleUpdateUploadedEntity] 更新实体:', { entityId, entityType, data })
-    const entity = UploadedEntityService.updateUploadedEntity(entityId, entityType, data)
+    const entity = await UploadedEntityService.updateUploadedEntity(entityId, entityType, data)
     if (!entity) {
       return { success: false, error: '更新失败，实体不存在或不是上传模式' }
     }
@@ -2048,7 +2048,7 @@ async function handleDeleteUploadedEntity(
 ): Promise<IpcResponse> {
   try {
     console.log('[handleDeleteUploadedEntity] 删除实体:', { entityId, entityType, projectId })
-    const success = UploadedEntityService.deleteUploadedEntity(entityId, entityType, projectId)
+    const success = await UploadedEntityService.deleteUploadedEntity(entityId, entityType, projectId)
     if (!success) {
       return { success: false, error: '删除失败，实体不存在或不是上传模式' }
     }

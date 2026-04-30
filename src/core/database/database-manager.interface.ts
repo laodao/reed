@@ -23,6 +23,7 @@ import type { ItemBindingRepository } from './repositories/item-binding.reposito
 import type { KbChunkRepository } from './repositories/kb-chunk.repository'
 import type { KbDocumentRepository } from './repositories/kb-document.repository'
 import type { KbInvertedIndexRepository } from './repositories/kb-inverted-index.repository'
+import type { KbVectorRepository } from './repositories/kb-vector.repository'
 import type { KnowledgeBaseRepository } from './repositories/knowledge-base.repository'
 import type { LocationBindingRepository } from './repositories/location-binding.repository'
 import type { LwBackgroundRepository } from './repositories/lw-background.repository'
@@ -111,6 +112,7 @@ export interface ICoreDatabaseManager {
   kbDocuments: KbDocumentRepository | null
   kbChunks: KbChunkRepository | null
   kbInvertedIndex: KbInvertedIndexRepository | null
+  kbVectors: KbVectorRepository | null
 
   // ---- 人像 ----
   portraitProjects: PortraitProjectRepository | null

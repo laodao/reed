@@ -612,11 +612,11 @@ ${keyLocationsInfo ? `主要场景：${keyLocationsInfo}` : ''}`
     // 获取故事概要、角色和已配置的技能类型
     const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
     const characters = await dbManager.lwCharacters?.getByProjectId(projectId) || []
-    const skillTypes = dbManager.lwTypeConfig?.getSkillTypeConfigs(projectId) || []
+    const skillTypes = await dbManager.lwTypeConfig?.getSkillTypeConfigs(projectId) || []
     const skillLevelsMap: Record<string, any[]> = {}
 
     for (const type of skillTypes) {
-      const levels = dbManager.lwTypeConfig?.getSkillLevels(projectId, type.code) || []
+      const levels = await dbManager.lwTypeConfig?.getSkillLevels(projectId, type.code) || []
       skillLevelsMap[type.code] = levels
     }
 
@@ -683,11 +683,11 @@ ${skillTypesInfo || '暂无配置'}
     // 获取故事概要、角色和已配置的物品类型
     const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
     const characters = await dbManager.lwCharacters?.getByProjectId(projectId) || []
-    const itemTypes = dbManager.lwTypeConfig?.getItemTypeConfigs(projectId) || []
+    const itemTypes = await dbManager.lwTypeConfig?.getItemTypeConfigs(projectId) || []
     const itemLevelsMap: Record<string, any[]> = {}
 
     for (const type of itemTypes) {
-      const levels = dbManager.lwTypeConfig?.getItemLevels(projectId, type.code) || []
+      const levels = await dbManager.lwTypeConfig?.getItemLevels(projectId, type.code) || []
       itemLevelsMap[type.code] = levels
     }
 
@@ -2614,9 +2614,9 @@ ${previousStatesInfo || '无历史状态'}
     const dbManager = getCoreDatabaseManager()
 
     // 获取项目中的所有角色、地点和物品
-    const characters = dbManager.lwCharacters?.getByProjectId(projectId) || []
-    const locations = dbManager.lwLocations?.getByProjectId(projectId) || []
-    const items = dbManager.lwItems?.getByProjectId(projectId) || []
+    const characters = (await dbManager.lwCharacters?.getByProjectId(projectId)) || []
+    const locations = (await dbManager.lwLocations?.getByProjectId(projectId)) || []
+    const items = (await dbManager.lwItems?.getByProjectId(projectId)) || []
 
     const systemPrompt = `你是一位专业的小说内容分析师。请分析章节正文，识别其中涉及的角色和地点。
 

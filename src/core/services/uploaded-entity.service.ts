@@ -36,17 +36,17 @@ export class UploadedEntityService {
    * @param items AI识别的物品列表
    * @returns 创建的实体信息
    */
-  static createAndBindUploadedEntities(
+  static async createAndBindUploadedEntities(
     projectId: string,
     episodeId: string,
     characters: UploadedCharacter[],
     locations: UploadedLocation[],
     items: UploadedItem[]
-  ): {
+  ): Promise<{
     characters: StoryCharacter[]
     locations: StoryLocation[]
     items: StoryItem[]
-  } {
+  }> {
     const db = getCoreDatabaseManager()
 
     console.log('[UploadedEntityService] 开始创建上传模式实体...')
@@ -169,19 +169,19 @@ export class UploadedEntityService {
    * @param entityType 实体类型：character, location, item
    * @returns 实体信息或null
    */
-  static getUploadedEntity(
+  static async getUploadedEntity(
     entityId: string,
     entityType: 'character' | 'location' | 'item'
-  ): StoryCharacter | StoryLocation | StoryItem | null {
+  ): Promise<StoryCharacter | StoryLocation | StoryItem | null> {
     const db = getCoreDatabaseManager()
 
     switch (entityType) {
       case 'character':
-        return await db.lwCharacters.getById(entityId)
+        return (await db.lwCharacters?.getById(entityId)) ?? null
       case 'location':
-        return await db.lwLocations.getById(entityId)
+        return (await db.lwLocations?.getById(entityId)) ?? null
       case 'item':
-        return await db.lwItems.getById(entityId)
+        return (await db.lwItems?.getById(entityId)) ?? null
       default:
         return null
     }
@@ -194,15 +194,15 @@ export class UploadedEntityService {
    * @param data 更新数据
    * @returns 更新后的实体或null
    */
-  static updateUploadedEntity(
+  static async updateUploadedEntity(
     entityId: string,
     entityType: 'character' | 'location' | 'item',
     data: Partial<StoryCharacter> | Partial<StoryLocation> | Partial<StoryItem>
-  ): StoryCharacter | StoryLocation | StoryItem | null {
+  ): Promise<StoryCharacter | StoryLocation | StoryItem | null> {
     const db = getCoreDatabaseManager()
 
     // 先验证实体是否是 uploaded 模式
-    const existing = this.getUploadedEntity(entityId, entityType)
+    const existing = await this.getUploadedEntity(entityId, entityType)
     if (!existing) {
       console.warn('[UploadedEntityService] 实体不存在:', entityId)
       return null
@@ -217,11 +217,11 @@ export class UploadedEntityService {
 
     switch (entityType) {
       case 'character':
-        return await db.lwCharacters.update(entityId, data as Partial<StoryCharacter>)
+        return (await db.lwCharacters?.update(entityId, data as Partial<StoryCharacter>)) ?? null
       case 'location':
-        return await db.lwLocations.update(entityId, data as Partial<StoryLocation>)
+        return (await db.lwLocations?.update(entityId, data as Partial<StoryLocation>)) ?? null
       case 'item':
-        return await db.lwItems.update(entityId, data as Partial<StoryItem>)
+        return (await db.lwItems?.update(entityId, data as Partial<StoryItem>)) ?? null
       default:
         return null
     }
@@ -234,15 +234,15 @@ export class UploadedEntityService {
    * @param projectId 项目ID
    * @returns 是否删除成功
    */
-  static deleteUploadedEntity(
+  static async deleteUploadedEntity(
     entityId: string,
     entityType: 'character' | 'location' | 'item',
     projectId: string
-  ): boolean {
+  ): Promise<boolean> {
     const db = getCoreDatabaseManager()
 
     // 先验证实体是否是 uploaded 模式
-    const existing = this.getUploadedEntity(entityId, entityType)
+    const existing = await this.getUploadedEntity(entityId, entityType)
     if (!existing) {
       console.warn('[UploadedEntityService] 实体不存在:', entityId)
       return false
@@ -264,7 +264,7 @@ export class UploadedEntityService {
             await db.characterBindings.delete(binding.id)
           }
         }
-        return await db.lwCharacters.delete(entityId)
+        return (await db.lwCharacters?.delete(entityId)) ?? false
       case 'location':
         if (db.locationBindings) {
           const binding = await db.locationBindings.getByLongWritingLocationId(projectId, entityId)
@@ -272,7 +272,7 @@ export class UploadedEntityService {
             await db.locationBindings.delete(binding.id)
           }
         }
-        return await db.lwLocations.delete(entityId)
+        return (await db.lwLocations?.delete(entityId)) ?? false
       case 'item':
         if (db.itemBindings) {
           const binding = await db.itemBindings.getByLongWritingItemId(projectId, entityId)
@@ -280,7 +280,7 @@ export class UploadedEntityService {
             await db.itemBindings.delete(binding.id)
           }
         }
-        return await db.lwItems.delete(entityId)
+        return (await db.lwItems?.delete(entityId)) ?? false
       default:
         return false
     }
