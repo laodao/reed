@@ -3667,7 +3667,7 @@ export class DatabaseManager {
     this.kbVectors = new KbVectorRepository()
     this.kbInvertedIndex = new KbInvertedIndexRepository(this.db)
     this.portraitProjects = new PortraitProjectRepository(this.dataSource)
-    this.portraitCharacters = new PortraitCharacterRepository(this.db)
+    this.portraitCharacters = new PortraitCharacterRepository(this.dataSource)
     this.portraitVariants = new PortraitVariantRepository(this.db)
     this.searchEngineConfigs = new SearchEngineConfigRepository(this.dataSource)
     this.lwProjects = new LwProjectRepository(this.db)
