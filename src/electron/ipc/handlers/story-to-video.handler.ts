@@ -19,8 +19,8 @@ import {
   Storyboard,
   CharacterBinding
 } from '@shared/types/story-to-video.types'
-import { StoryToVideoAIService } from '../../services/story-to-video-ai.service'
-import { StoryToVideoResourceService, PRESET_STYLES } from '../../services/story-to-video-resource.service'
+import { StoryToVideoAIService } from '@core/services/story-to-video-ai.service'
+import { StoryToVideoResourceService, PRESET_STYLES } from '@core/services/story-to-video-resource.service'
 import { VideoSynthesisService, PRESET_VIDEO_CONFIGS } from '../../services/video-synthesis.service'
 import { VideoService } from '../../services/video.service'
 import { SecureStorageService } from '../../services/secure-storage.service'
@@ -1417,7 +1417,6 @@ async function handleGenerateStoryboardImage(
     // 调用资源生成服务
     const resourceService = StoryToVideoResourceService.getInstance()
     const imageAsset = await resourceService.generateStoryboardImage(
-      window,
       storyboard,
       scene,
       characterBindings,
@@ -1498,7 +1497,6 @@ async function handleGenerateSceneImages(
     // 调用资源生成服务批量生成
     const resourceService = StoryToVideoResourceService.getInstance()
     const results = await resourceService.generateStoryboardImages(
-      window,
       storyboards,
       scene,
       characterBindings,
@@ -1578,7 +1576,6 @@ async function handleGenerateAudio(
     // 调用资源生成服务
     const resourceService = StoryToVideoResourceService.getInstance()
     const result = await resourceService.generateSceneAudio(
-      window,
       scene,
       characterBindings,
       outputDir,

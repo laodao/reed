@@ -4,11 +4,10 @@
  * @description 处理剧集制作模块的 AI 生成功能
  */
 
-import { BrowserWindow } from 'electron'
-import { getDatabaseManager } from '../database'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { createProvider } from '@core/providers'
 import { PROVIDER_TEMPLATES } from '@core/services/provider-template.service'
-import { SecureStorageService } from './secure-storage.service'
+import { getSecureStorage } from '@core/interfaces/storage.interface'
 import type { ProviderTemplate, UserProviderConfig, ChatContext } from '@shared/types'
 import type {
   SceneScript,
@@ -715,7 +714,7 @@ export class StoryToVideoAIService {
     template: ProviderTemplate
     apiKey: string
   } | null> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.providerConfigs) {
       return null
     }
@@ -751,7 +750,7 @@ export class StoryToVideoAIService {
     }
 
     // 解密 API 密钥
-    const secureStorage = SecureStorageService.getInstance()
+    const secureStorage = getSecureStorage()
     if (!secureStorage.isInitialized()) {
       await secureStorage.initialize()
     }

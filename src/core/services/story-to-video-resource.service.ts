@@ -4,10 +4,9 @@
  * @description 处理剧集制作中的图像和音频资源生成
  */
 
-import { BrowserWindow } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
-import { getDatabaseManager } from '../database'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { ImageService } from '@core/services/image.service'
 import { VoiceService } from '@core/services/voice.service'
 import type {
@@ -202,9 +201,7 @@ export class StoryToVideoResourceService {
   /**
    * 生成分镜画面
    */
-  async generateStoryboardImage(
-    window: BrowserWindow,
-    storyboard: Storyboard,
+  async generateStoryboardImage(    storyboard: Storyboard,
     scene: SceneScript,
     characterBindings: CharacterBinding[],
     locationBindings: LocationBinding[],
@@ -290,9 +287,7 @@ export class StoryToVideoResourceService {
   /**
    * 批量生成分镜画面
    */
-  async generateStoryboardImages(
-    window: BrowserWindow,
-    storyboards: Storyboard[],
+  async generateStoryboardImages(    storyboards: Storyboard[],
     scene: SceneScript,
     characterBindings: CharacterBinding[],
     locationBindings: LocationBinding[],
@@ -304,7 +299,7 @@ export class StoryToVideoResourceService {
     const results = new Map<string, ImageAsset>()
 
     // 获取项目配置的分辨率
-    const db = getDatabaseManager()
+    const db = getCoreDatabaseManager()
     let width = 1920
     let height = 1080
 
@@ -322,7 +317,6 @@ export class StoryToVideoResourceService {
 
       try {
         const imageAsset = await this.generateStoryboardImage(
-          window,
           storyboard,
           scene,
           characterBindings,
@@ -355,9 +349,7 @@ export class StoryToVideoResourceService {
   /**
    * 生成旁白音频
    */
-  async generateNarrationAudio(
-    window: BrowserWindow,
-    text: string,
+  async generateNarrationAudio(    text: string,
     voiceConfig: {
       voiceId: string
       speed?: number
@@ -414,9 +406,7 @@ export class StoryToVideoResourceService {
   /**
    * 生成对话音频
    */
-  async generateDialogueAudio(
-    window: BrowserWindow,
-    text: string,
+  async generateDialogueAudio(    text: string,
     characterId: string,
     characterBindings: CharacterBinding[],
     outputDir: string
@@ -479,9 +469,7 @@ export class StoryToVideoResourceService {
   /**
    * 批量生成场景音频
    */
-  async generateSceneAudio(
-    window: BrowserWindow,
-    scene: SceneScript,
+  async generateSceneAudio(    scene: SceneScript,
     characterBindings: CharacterBinding[],
     outputDir: string,
     onProgress?: (type: string, index: number, total: number) => void
@@ -501,7 +489,6 @@ export class StoryToVideoResourceService {
       if (onProgress) onProgress('narration', 0, 1)
 
       const narrationPath = await this.generateNarrationAudio(
-        window,
         scene.narration,
         { voiceId: 'Cherry', speed: 1.0, pitch: 0 },
         outputDir
@@ -518,7 +505,6 @@ export class StoryToVideoResourceService {
       if (onProgress) onProgress('dialogue', i, scene.dialogues.length)
 
       const dialoguePath = await this.generateDialogueAudio(
-        window,
         dialogue.text,
         dialogue.characterId,
         characterBindings,
@@ -548,7 +534,7 @@ export class StoryToVideoResourceService {
     projectId: string,
     locations: Array<{ id: string; name: string; description: string }>
   ): LocationBinding[] {
-    const db = getDatabaseManager()
+    const db = getCoreDatabaseManager()
     if (!db.locationBindings) return []
 
     const bindings: LocationBinding[] = []
@@ -587,7 +573,7 @@ export class StoryToVideoResourceService {
     projectId: string,
     items: Array<{ id: string; name: string; description: string }>
   ): ItemBinding[] {
-    const db = getDatabaseManager()
+    const db = getCoreDatabaseManager()
     if (!db.itemBindings) return []
 
     const bindings: ItemBinding[] = []
@@ -622,7 +608,7 @@ export class StoryToVideoResourceService {
    * 获取项目的地点绑定列表
    */
   getLocationBindings(projectId: string): LocationBinding[] {
-    const db = getDatabaseManager()
+    const db = getCoreDatabaseManager()
     return db.locationBindings?.getByProjectId(projectId) || []
   }
 
@@ -630,7 +616,7 @@ export class StoryToVideoResourceService {
    * 获取项目的物品绑定列表
    */
   getItemBindings(projectId: string): ItemBinding[] {
-    const db = getDatabaseManager()
+    const db = getCoreDatabaseManager()
     return db.itemBindings?.getByProjectId(projectId) || []
   }
 
@@ -641,7 +627,7 @@ export class StoryToVideoResourceService {
     locationBindingId: string,
     imagePaths: string[]
   ): LocationBinding | null {
-    const db = getDatabaseManager()
+    const db = getCoreDatabaseManager()
     if (!db.locationBindings) return null
 
     return await db.locationBindings.update(locationBindingId, { imagePaths })
@@ -654,7 +640,7 @@ export class StoryToVideoResourceService {
     itemBindingId: string,
     imagePaths: string[]
   ): ItemBinding | null {
-    const db = getDatabaseManager()
+    const db = getCoreDatabaseManager()
     if (!db.itemBindings) return null
 
     return await db.itemBindings.update(itemBindingId, { imagePaths })
@@ -666,14 +652,12 @@ export class StoryToVideoResourceService {
    * 为临时角色生成形象图片
    * 使用模板生成固定形象，保持视频一致性
    */
-  async generateTemporaryCharacterImage(
-    window: BrowserWindow,
-    characterId: string,
+  async generateTemporaryCharacterImage(    characterId: string,
     styleName: string = 'cinematic',
     providerConfigId?: string,
     modelId?: string
   ): Promise<{ success: boolean; imageId?: string; error?: string }> {
-    const db = getDatabaseManager()
+    const db = getCoreDatabaseManager()
     if (!db.lwCharacters) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -751,14 +735,12 @@ export class StoryToVideoResourceService {
   /**
    * 为临时地点生成形象图片
    */
-  async generateTemporaryLocationImage(
-    window: BrowserWindow,
-    locationId: string,
+  async generateTemporaryLocationImage(    locationId: string,
     styleName: string = 'cinematic',
     providerConfigId?: string,
     modelId?: string
   ): Promise<{ success: boolean; imageId?: string; error?: string }> {
-    const db = getDatabaseManager()
+    const db = getCoreDatabaseManager()
     if (!db.lwLocations) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -832,9 +814,7 @@ export class StoryToVideoResourceService {
   /**
    * 批量为项目的临时实体生成图片
    */
-  async batchGenerateTemporaryEntityImages(
-    window: BrowserWindow,
-    projectId: string,
+  async batchGenerateTemporaryEntityImages(    projectId: string,
     styleName: string = 'cinematic',
     providerConfigId?: string,
     modelId?: string,
@@ -843,7 +823,7 @@ export class StoryToVideoResourceService {
     characters: { id: string; success: boolean; imageId?: string }[]
     locations: { id: string; success: boolean; imageId?: string }[]
   }> {
-    const db = getDatabaseManager()
+    const db = getCoreDatabaseManager()
     const result = {
       characters: [] as { id: string; success: boolean; imageId?: string }[],
       locations: [] as { id: string; success: boolean; imageId?: string }[]
@@ -865,7 +845,6 @@ export class StoryToVideoResourceService {
       if (onProgress) onProgress('character', i, tempCharacters.length)
 
       const genResult = await this.generateTemporaryCharacterImage(
-        window,
         char.id,
         styleName,
         providerConfigId,
@@ -900,7 +879,6 @@ export class StoryToVideoResourceService {
       if (onProgress) onProgress('location', i, tempLocations.length)
 
       const genResult = await this.generateTemporaryLocationImage(
-        window,
         loc.id,
         styleName,
         providerConfigId,
@@ -932,7 +910,7 @@ export class StoryToVideoResourceService {
     entityType: 'character' | 'location',
     styleName: string = 'cinematic'
   ): Promise<{ hasImage: boolean; imagePath?: string; prompt?: string }> {
-    const db = getDatabaseManager()
+    const db = getCoreDatabaseManager()
 
     if (entityType === 'character') {
       const character = await db.lwCharacters?.getById(entityId)
