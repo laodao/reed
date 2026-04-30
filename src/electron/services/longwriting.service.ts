@@ -671,7 +671,7 @@ export class LongWritingService {
     if (!this.db.lwMaterials) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwMaterials.getByProjectId(projectId)
+    return await this.db.lwMaterials.getByProjectId(projectId)
   }
 
   /**
@@ -681,7 +681,7 @@ export class LongWritingService {
     if (!this.db.lwMaterials) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwMaterials.getById(id)
+    return await this.db.lwMaterials.getById(id)
   }
 
   /**
@@ -691,7 +691,7 @@ export class LongWritingService {
     if (!this.db.lwMaterials) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwMaterials.create(data as any)
+    return await this.db.lwMaterials.create(data as any)
   }
 
   /**
@@ -701,7 +701,7 @@ export class LongWritingService {
     if (!this.db.lwMaterials) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwMaterials.update(id, data)
+    return await this.db.lwMaterials.update(id, data)
   }
 
   /**
@@ -711,7 +711,7 @@ export class LongWritingService {
     if (!this.db.lwMaterials) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwMaterials.updateStatus(id, status as any, errorMessage)
+    return await this.db.lwMaterials.updateStatus(id, status as any, errorMessage)
   }
 
   /**
@@ -721,7 +721,7 @@ export class LongWritingService {
     if (!this.db.lwMaterials) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwMaterials.incrementRetryCount(id)
+    return await this.db.lwMaterials.incrementRetryCount(id)
   }
 
   /**
@@ -731,7 +731,7 @@ export class LongWritingService {
     if (!this.db.lwMaterials) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwMaterials.delete(id)
+    return await this.db.lwMaterials.delete(id)
   }
 
   // ==================== 大纲管理 ====================

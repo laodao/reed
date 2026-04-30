@@ -37,7 +37,7 @@ import { LwLocationRepository } from '@core/database/repositories/lw-location.re
 import { LwPlotRepository } from '@core/database/repositories/lw-plot.repository'
 import { LwSkillRepository } from '@core/database/repositories/lw-skill.repository'
 import { LwItemRepository } from '@core/database/repositories/lw-item.repository'
-import { LwMaterialRepository } from './repositories/lw-material.repository'
+import { LwMaterialRepository } from '@core/database/repositories/lw-material.repository'
 import { LwGlobalSettingsRepository } from '@core/database/repositories/lw-global-settings.repository'
 import { LwDictionaryRepository } from '@core/database/repositories/lw-dictionary.repository'
 import { LwTypeConfigRepository } from '@core/database/repositories/lw-type-config.repository'
@@ -3674,7 +3674,7 @@ export class DatabaseManager {
     this.lwPlots = new LwPlotRepository(this.dataSource)
     this.lwSkills = new LwSkillRepository(this.dataSource)
     this.lwItems = new LwItemRepository(this.dataSource)
-    this.lwMaterials = new LwMaterialRepository(this.db)
+    this.lwMaterials = new LwMaterialRepository(this.dataSource)
     this.lwGlobalSettings = new LwGlobalSettingsRepository(this.dataSource)
     this.lwDictionary = new LwDictionaryRepository(this.dataSource)
     this.lwTypeConfig = new LwTypeConfigRepository(this.dataSource)
