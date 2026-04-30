@@ -5,7 +5,7 @@
  */
 
 import { ipcMain, IpcMainInvokeEvent, BrowserWindow } from 'electron'
-import { ChatService } from '../../services/chat.service'
+import { ChatService } from '@core/services/chat.service'
 
 /**
  * 注册聊天相关 IPC 处理器
@@ -36,12 +36,7 @@ async function handleChatSend(
   }
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const window = BrowserWindow.fromWebContents(event.sender)
-    if (!window) {
-      return { success: false, error: '窗口不存在' }
-    }
-
-    const result = await ChatService.sendMessage(window, request)
+    const result = await ChatService.sendMessage(request)
     return result
   } catch (error: any) {
     console.error('[handleChatSend] 错误:', error.message)

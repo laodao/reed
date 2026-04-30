@@ -4,13 +4,13 @@
  * @description 处理 AI 对话的核心服务
  */
 
-import { BrowserWindow } from 'electron'
-import { getDatabaseManager } from '../database'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { getEventEmitter } from '@core/interfaces/event.interface'
 import { createProvider } from '@core/providers'
 import { PROVIDER_TEMPLATES } from '@core/services/provider-template.service'
-import { SecureStorageService } from './secure-storage.service'
+import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { FileService } from '@core/services/file.service'
-import { KnowledgeBaseService } from './knowledge-base.service'
+import { KnowledgeBaseService } from '@core/services/knowledge-base.service'
 import { getSearchEngineService } from '@core/services/search-engine.service'
 import type {
   Dialog,
@@ -40,10 +40,9 @@ export class ChatService {
    * 发送消息并获取流式响应
    */
   static async sendMessage(
-    window: BrowserWindow,
-    request: SendMessageRequest
+        request: SendMessageRequest
   ): Promise<{ success: boolean; error?: string }> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.dialogs || !dbManager.messages || !dbManager.providerConfigs) {
       return { success: false, error: '数据库未初始化' }
@@ -94,7 +93,7 @@ export class ChatService {
       // 解密 API 密钥
       let decryptedApiKey: string
       try {
-        const secureStorage = SecureStorageService.getInstance()
+        const secureStorage = getSecureStorage()
         if (!secureStorage.isInitialized()) {
           await secureStorage.initialize()
         }
@@ -258,7 +257,7 @@ export class ChatService {
       })
 
       // 发送流式开始事件（包含 messageId 和 dialogId）
-      this.sendStreamEvent(window, {
+      this.sendStreamEvent({
         type: 'start',
         messageId: aiMessage.id,
         dialogId: request.dialogId
@@ -291,7 +290,7 @@ export class ChatService {
             }
 
             // 转发事件到渲染进程
-            this.sendStreamEvent(window, {
+            this.sendStreamEvent({
               ...event,
               messageId: aiMessage.id,
               dialogId: request.dialogId
@@ -327,7 +326,7 @@ export class ChatService {
         }
 
         // 发送错误事件
-        this.sendStreamEvent(window, {
+        this.sendStreamEvent({
           type: 'error',
           messageId: aiMessage.id,
           dialogId: request.dialogId,
@@ -367,7 +366,7 @@ export class ChatService {
       }
 
       // 发送完成事件（包含 token 使用信息）
-      this.sendStreamEvent(window, {
+      this.sendStreamEvent({
         type: 'done',
         messageId: aiMessage.id,
         dialogId: request.dialogId,
@@ -542,7 +541,7 @@ export class ChatService {
   /**
    * 发送流式事件到渲染进程
    */
-  private static sendStreamEvent(window: BrowserWindow, event: StreamEvent): void {
-    window.webContents.send('chat:stream', event)
+  private static sendStreamEvent(event: StreamEvent): void {
+    getEventEmitter().emit('chat:stream', event)
   }
 }

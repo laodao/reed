@@ -4,16 +4,16 @@
  * @description 知识库核心业务服务
  */
 
-import { BrowserWindow, dialog } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import nodejieba from 'nodejieba'
 import { parse } from 'node-html-parser'
-import { getDatabaseManager } from '../database'
-import { DataPathService } from './data-path.service'
-import { SecureStorageService } from './secure-storage.service'
-import { HybridSplitter, EmbeddingService, SplitConfig, DEFAULT_SPLIT_CONFIG, SplitChunk } from './chunk-splitter'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { getEventEmitter } from '@core/interfaces/event.interface'
+import { getPathProvider } from '@core/interfaces/path.interface'
+import { getSecureStorage } from '@core/interfaces/storage.interface'
+import { HybridSplitter, EmbeddingService, SplitConfig, DEFAULT_SPLIT_CONFIG, SplitChunk } from '@core/services/chunk-splitter'
 import type {
   KnowledgeBase,
   CreateKnowledgeBaseRequest,
@@ -66,38 +66,25 @@ class EmbeddingServiceAdapter implements EmbeddingService {
 }
 
 export class KnowledgeBaseService {
-  private getMainWindow(): BrowserWindow | null {
-    const windows = BrowserWindow.getAllWindows()
-    return windows.find(w => !w.isDestroyed()) || null
-  }
-
   private emitProgress(documentId: string, progress: number, estimatedSeconds?: number): void {
-    const win = this.getMainWindow()
-    if (win && !win.isDestroyed()) {
-      win.webContents.send(KB_EVENTS.DOCUMENT_PROGRESS, { documentId, progress, estimatedSeconds })
-    }
+    getEventEmitter().emit(KB_EVENTS.DOCUMENT_PROGRESS, { documentId, progress, estimatedSeconds })
   }
 
   private emitStatus(documentId: string, status: string, chunkCount?: number, errorMessage?: string): void {
-    const win = this.getMainWindow()
-    if (win && !win.isDestroyed()) {
-      win.webContents.send(KB_EVENTS.DOCUMENT_STATUS, { documentId, status, chunkCount, errorMessage })
-    }
+    getEventEmitter().emit(KB_EVENTS.DOCUMENT_STATUS, { documentId, status, chunkCount, errorMessage })
   }
 
-  private emitKnowledgeBaseStats(kbId: string): void {
-    const win = this.getMainWindow()
-    const db = getDatabaseManager()
-    if (win && !win.isDestroyed() && db.knowledgeBases) {
-      const kb = await db.knowledgeBases.findById(kbId)
-      if (kb) {
-        win.webContents.send(KB_EVENTS.KNOWLEDGE_BASE_STATS, {
-          id: kb.id,
-          documentCount: kb.documentCount,
-          vectorCount: kb.vectorCount,
-          totalSize: kb.totalSize
-        })
-      }
+  private async emitKnowledgeBaseStats(kbId: string): Promise<void> {
+    const db = getCoreDatabaseManager()
+    if (!db.knowledgeBases) return
+    const kb = await db.knowledgeBases.findById(kbId)
+    if (kb) {
+      getEventEmitter().emit(KB_EVENTS.KNOWLEDGE_BASE_STATS, {
+        id: kb.id,
+        documentCount: kb.documentCount,
+        vectorCount: kb.vectorCount,
+        totalSize: kb.totalSize,
+      })
     }
   }
 
@@ -105,7 +92,7 @@ export class KnowledgeBaseService {
 
   async getKnowledgeBases(): Promise<{ success: boolean; data?: KnowledgeBase[]; error?: string }> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       if (!db.knowledgeBases) return { success: false, error: '数据库未初始化' }
       return { success: true, data: await db.knowledgeBases.findAll() }
     } catch (e: any) {
@@ -115,7 +102,7 @@ export class KnowledgeBaseService {
 
   async getKnowledgeBase(id: string): Promise<{ success: boolean; data?: KnowledgeBase; error?: string }> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       if (!db.knowledgeBases) return { success: false, error: '数据库未初始化' }
       const kb = await db.knowledgeBases.findById(id)
       return kb ? { success: true, data: kb } : { success: false, error: '知识库不存在' }
@@ -126,7 +113,7 @@ export class KnowledgeBaseService {
 
   async createKnowledgeBase(req: CreateKnowledgeBaseRequest): Promise<{ success: boolean; data?: KnowledgeBase; error?: string }> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       if (!db.knowledgeBases) return { success: false, error: '数据库未初始化' }
 
       if (await db.knowledgeBases.existsByName(req.name)) {
@@ -144,7 +131,7 @@ export class KnowledgeBaseService {
 
   async updateKnowledgeBase(id: string, req: UpdateKnowledgeBaseRequest): Promise<{ success: boolean; error?: string }> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       if (!db.knowledgeBases) return { success: false, error: '数据库未初始化' }
 
       const kb = await db.knowledgeBases.findById(id)
@@ -163,13 +150,13 @@ export class KnowledgeBaseService {
 
   async deleteKnowledgeBase(id: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       if (!db.knowledgeBases || !db.kbDocuments || !db.kbChunks || !db.kbVectors || !db.kbInvertedIndex) {
         return { success: false, error: '数据库未初始化' }
       }
 
       // 删除文件
-      const dataPath = DataPathService.getInstance().getDataPath()
+      const dataPath = getPathProvider().getDataPath()
       const kbDir = path.join(dataPath, 'knowledge-base', id)
       if (fs.existsSync(kbDir)) fs.rmSync(kbDir, { recursive: true, force: true })
 
@@ -193,7 +180,7 @@ export class KnowledgeBaseService {
 
   async uploadDocuments(kbId: string, files: FileInfo[]): Promise<{ success: boolean; data?: KbDocument[]; error?: string }> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       if (!db.knowledgeBases || !db.kbDocuments) return { success: false, error: '数据库未初始化' }
 
       const kb = await db.knowledgeBases.findById(kbId)
@@ -201,7 +188,7 @@ export class KnowledgeBaseService {
       if (files.length > 20) return { success: false, error: '单次最多上传 20 个文件' }
 
       // 准备目录
-      const dataPath = DataPathService.getInstance().getDataPath()
+      const dataPath = getPathProvider().getDataPath()
       const docDir = path.join(dataPath, 'knowledge-base', kbId, 'documents')
       if (!fs.existsSync(docDir)) fs.mkdirSync(docDir, { recursive: true })
 
@@ -252,14 +239,14 @@ export class KnowledgeBaseService {
    */
   async addDocument(kbId: string, data: { name: string; type: 'text'; content: string }): Promise<{ success: boolean; data?: KbDocument; error?: string }> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       if (!db.knowledgeBases || !db.kbDocuments) return { success: false, error: '数据库未初始化' }
 
       const kb = await db.knowledgeBases.findById(kbId)
       if (!kb) return { success: false, error: '知识库不存在' }
 
       // 准备目录
-      const dataPath = DataPathService.getInstance().getDataPath()
+      const dataPath = getPathProvider().getDataPath()
       const docDir = path.join(dataPath, 'knowledge-base', kbId, 'documents')
       if (!fs.existsSync(docDir)) fs.mkdirSync(docDir, { recursive: true })
 
@@ -299,7 +286,7 @@ export class KnowledgeBaseService {
 
   async getDocuments(kbId: string): Promise<{ success: boolean; data?: KbDocument[]; error?: string }> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       if (!db.kbDocuments) return { success: false, error: '数据库未初始化' }
       return { success: true, data: await db.kbDocuments.findByKnowledgeBaseId(kbId) }
     } catch (e: any) {
@@ -309,7 +296,7 @@ export class KnowledgeBaseService {
 
   async deleteDocument(docId: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       if (!db.kbDocuments || !db.kbChunks || !db.kbVectors || !db.kbInvertedIndex || !db.knowledgeBases) {
         return { success: false, error: '数据库未初始化' }
       }
@@ -346,7 +333,7 @@ export class KnowledgeBaseService {
 
   async reprocessDocument(docId: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       if (!db.kbDocuments || !db.knowledgeBases) return { success: false, error: '数据库未初始化' }
 
       const doc = await db.kbDocuments.findById(docId)
@@ -370,7 +357,7 @@ export class KnowledgeBaseService {
   // ==================== 文档处理 ====================
 
   private async processDocument(doc: KbDocument, kb: KnowledgeBase): Promise<void> {
-    const db = getDatabaseManager()
+    const db = getCoreDatabaseManager()
     if (!db.kbDocuments || !db.kbChunks || !db.kbVectors || !db.kbInvertedIndex || !db.knowledgeBases) {
       db.kbDocuments?.markFailed(doc.id, '数据库未初始化')
       return
@@ -722,11 +709,11 @@ export class KnowledgeBaseService {
     try {
       if (!config.providerConfigId) throw new Error('未配置 Embedding 提供商')
 
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       const provider = await db.providerConfigs?.getById(config.providerConfigId)
       if (!provider) throw new Error('提供商配置不存在')
 
-      const storage = SecureStorageService.getInstance()
+      const storage = getSecureStorage()
       if (!storage.isInitialized()) await storage.initialize()
       const apiKey = storage.decrypt(provider.apiKey || '')
 
@@ -769,7 +756,7 @@ export class KnowledgeBaseService {
   }
 
   private buildIndex(chunks: any[], kbId: string): void {
-    const db = getDatabaseManager()
+    const db = getCoreDatabaseManager()
     if (!db.kbInvertedIndex) return
 
     // 中文停用词列表
@@ -816,7 +803,7 @@ export class KnowledgeBaseService {
 
   async search(req: SearchRequest): Promise<{ success: boolean; data?: SearchResult[]; error?: string }> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       if (!db.kbChunks || !db.kbDocuments || !db.kbVectors || !db.knowledgeBases) {
         return { success: false, error: '数据库未初始化' }
       }
@@ -858,7 +845,7 @@ export class KnowledgeBaseService {
    */
   async getDocumentChunks(documentId: string): Promise<{ success: boolean; data?: KbChunk[]; error?: string }> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       if (!db.kbChunks || !db.kbDocuments) {
         return { success: false, error: '数据库未初始化' }
       }
@@ -883,7 +870,7 @@ export class KnowledgeBaseService {
     pageSize: number = 20
   ): Promise<{ success: boolean; data?: { chunks: KbChunk[]; total: number }; error?: string }> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       if (!db.kbChunks || !db.kbDocuments) {
         return { success: false, error: '数据库未初始化' }
       }
@@ -919,7 +906,7 @@ export class KnowledgeBaseService {
    */
   async getChunkById(chunkId: string): Promise<{ success: boolean; data?: KbChunk; error?: string }> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       if (!db.kbChunks) {
         return { success: false, error: '数据库未初始化' }
       }
@@ -938,7 +925,7 @@ export class KnowledgeBaseService {
 
   async getEmbeddingModels(): Promise<{ success: boolean; data?: EmbeddingModel[]; error?: string }> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       if (!db.providerConfigs) return { success: false, error: '数据库未初始化' }
 
       const configs = await db.providerConfigs.getEnabled()
@@ -967,26 +954,7 @@ export class KnowledgeBaseService {
     }
   }
 
-  async selectFiles(window: BrowserWindow): Promise<{ success: boolean; data?: FileInfo[]; error?: string }> {
-    const result = await dialog.showOpenDialog(window, {
-      title: '选择文档',
-      filters: [{ name: '文档', extensions: ['docx', 'doc', 'txt', 'md', 'xlsx', 'xls'] }],
-      properties: ['multiSelections', 'openFile']
-    })
-
-    if (result.canceled || result.filePaths.length === 0) {
-      return { success: false, error: '未选择文件' }
-    }
-
-    return {
-      success: true,
-      data: result.filePaths.map(p => ({
-        path: p,
-        name: path.basename(p),
-        size: fs.statSync(p).size
-      }))
-    }
-  }
+  // selectFiles 已移到 IPC handler（dialog.showOpenDialog 是 Electron 平台特性）
 
   getFileLimits() {
     return {
@@ -1002,7 +970,7 @@ export class KnowledgeBaseService {
    */
   async addWebpage(kbId: string, url: string): Promise<{ success: boolean; data?: KbDocument; error?: string }> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       if (!db.knowledgeBases || !db.kbDocuments) return { success: false, error: '数据库未初始化' }
 
       const kb = await db.knowledgeBases.findById(kbId)
@@ -1049,7 +1017,7 @@ export class KnowledgeBaseService {
       }
 
       // 准备目录
-      const dataPath = DataPathService.getInstance().getDataPath()
+      const dataPath = getPathProvider().getDataPath()
       const docDir = path.join(dataPath, 'knowledge-base', kbId, 'documents')
       if (!fs.existsSync(docDir)) fs.mkdirSync(docDir, { recursive: true })
 

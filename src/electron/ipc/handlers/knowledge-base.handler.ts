@@ -4,9 +4,11 @@
  * @description 处理知识库相关的 IPC 请求
  */
 
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain, BrowserWindow, dialog } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
-import { KnowledgeBaseService } from '../../services/knowledge-base.service'
+import * as fs from 'fs'
+import * as path from 'path'
+import { KnowledgeBaseService } from '@core/services/knowledge-base.service'
 import type {
   KnowledgeBase,
   CreateKnowledgeBaseRequest,
@@ -299,8 +301,24 @@ async function handleSelectFiles(
     return { success: false, error: '窗口不存在' }
   }
 
-  const service = getKnowledgeBaseService()
-  return await service.selectFiles(window)
+  const result = await dialog.showOpenDialog(window, {
+    title: '选择文档',
+    filters: [{ name: '文档', extensions: ['docx', 'doc', 'txt', 'md', 'xlsx', 'xls'] }],
+    properties: ['multiSelections', 'openFile'],
+  })
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return { success: false, error: '未选择文件' }
+  }
+
+  return {
+    success: true,
+    data: result.filePaths.map(p => ({
+      path: p,
+      name: path.basename(p),
+      size: fs.statSync(p).size,
+    })),
+  }
 }
 
 // ==================== 文件限制信息 ====================
