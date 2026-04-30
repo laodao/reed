@@ -1,14 +1,15 @@
 /**
  * 大纲物品关联仓库
  * @module database/repositories/lw-outline-item.repository
- * 符合第三范式，替代JSON存储
+ * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import Database from 'better-sqlite3'
+import { In, type DataSource } from 'typeorm'
+import { LwOutlineItemEntity } from '../entities/lw-outline-item.entity'
+import { LwOutlineEntity } from '../entities/lw-outline.entity'
+import { LwItemEntity } from '../entities/lw-item.entity'
+import { BaseRepository } from '../base-repository'
 
-/**
- * 大纲物品关联
- */
 export interface OutlineItemRelation {
   id: string
   outlineId: string
@@ -16,151 +17,114 @@ export interface OutlineItemRelation {
   createdAt: number
 }
 
-/**
- * 大纲物品关联仓库
- */
-export class LwOutlineItemRepository {
-  constructor(private db: Database.Database) {}
-
-  /**
-   * 根据大纲ID获取所有关联的物品ID
-   */
-  getItemIdsByOutlineId(outlineId: string): string[] {
-    const stmt = this.db.prepare(`
-      SELECT item_id FROM lw_outline_items WHERE outline_id = ?
-    `)
-    const rows = stmt.all(outlineId) as any[]
-    return rows.map(row => row.item_id)
+export class LwOutlineItemRepository extends BaseRepository<
+  LwOutlineItemEntity,
+  OutlineItemRelation
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, LwOutlineItemEntity)
   }
 
-  /**
-   * 根据物品ID获取所有关联的大纲ID
-   */
-  getOutlineIdsByItemId(itemId: string): string[] {
-    const stmt = this.db.prepare(`
-      SELECT outline_id FROM lw_outline_items WHERE item_id = ?
-    `)
-    const rows = stmt.all(itemId) as any[]
-    return rows.map(row => row.outline_id)
+  protected toDto(e: LwOutlineItemEntity): OutlineItemRelation {
+    return { id: e.id, outlineId: e.outlineId, itemId: e.itemId, createdAt: e.createdAt }
   }
 
-  /**
-   * 批量获取大纲的物品ID映射
-   * @param outlineIds 大纲ID列表
-   * @returns Map<outlineId, itemId[]>
-   */
-  getItemIdsByOutlineIds(outlineIds: string[]): Map<string, string[]> {
+  async getItemIdsByOutlineId(outlineId: string): Promise<string[]> {
+    const rows = await this.repo.find({ where: { outlineId } as any, select: ['itemId'] })
+    return rows.map(r => r.itemId)
+  }
+
+  async getOutlineIdsByItemId(itemId: string): Promise<string[]> {
+    const rows = await this.repo.find({ where: { itemId } as any, select: ['outlineId'] })
+    return rows.map(r => r.outlineId)
+  }
+
+  async getItemIdsByOutlineIds(outlineIds: string[]): Promise<Map<string, string[]>> {
     const result = new Map<string, string[]>()
-
     if (outlineIds.length === 0) return result
-
-    const placeholders = outlineIds.map(() => '?').join(',')
-    const stmt = this.db.prepare(`
-      SELECT outline_id, item_id FROM lw_outline_items WHERE outline_id IN (${placeholders})
-    `)
-    const rows = stmt.all(...outlineIds) as any[]
-
+    const rows = await this.repo.find({
+      where: { outlineId: In(outlineIds) } as any,
+      select: ['outlineId', 'itemId'],
+    })
     for (const row of rows) {
-      if (!result.has(row.outline_id)) {
-        result.set(row.outline_id, [])
-      }
-      result.get(row.outline_id)!.push(row.item_id)
+      if (!result.has(row.outlineId)) result.set(row.outlineId, [])
+      result.get(row.outlineId)!.push(row.itemId)
     }
-
-    // 确保所有大纲都有条目
-    for (const outlineId of outlineIds) {
-      if (!result.has(outlineId)) {
-        result.set(outlineId, [])
-      }
-    }
-
+    for (const id of outlineIds) if (!result.has(id)) result.set(id, [])
     return result
   }
 
-  /**
-   * 添加大纲物品关联
-   */
-  add(outlineId: string, itemId: string): OutlineItemRelation {
+  async add(outlineId: string, itemId: string): Promise<OutlineItemRelation> {
     const id = this.generateId()
     const now = Date.now()
-
-    const stmt = this.db.prepare(`
-      INSERT OR IGNORE INTO lw_outline_items (id, outline_id, item_id, created_at)
-      VALUES (?, ?, ?, ?)
-    `)
-    stmt.run(id, outlineId, itemId, now)
-
-    return { id, outlineId, itemId, createdAt: now }
+    const existing = await this.repo.findOne({ where: { outlineId, itemId } as any })
+    if (existing) return this.toDto(existing)
+    const saved = await this.repo.save(this.repo.create({ id, outlineId, itemId, createdAt: now }))
+    return this.toDto(saved)
   }
 
-  /**
-   * 批量添加大纲物品关联（事务）
-   */
-  batchAdd(outlineId: string, itemIds: string[]): void {
+  async batchAdd(outlineId: string, itemIds: string[]): Promise<void> {
     if (itemIds.length === 0) return
+    await this.dataSource.transaction(async () => {
+      for (const iid of itemIds) await this.add(outlineId, iid)
+    })
+  }
 
-    const now = Date.now()
-    const stmt = this.db.prepare(`
-      INSERT OR IGNORE INTO lw_outline_items (id, outline_id, item_id, created_at)
-      VALUES (?, ?, ?, ?)
-    `)
-
-    const transaction = this.db.transaction(() => {
-      for (const itemId of itemIds) {
-        const id = this.generateId()
-        stmt.run(id, outlineId, itemId, now)
+  async replaceAll(outlineId: string, itemIds: string[]): Promise<void> {
+    await this.dataSource.transaction(async manager => {
+      const repo = manager.getRepository(LwOutlineItemEntity)
+      await repo.delete({ outlineId } as any)
+      const now = Date.now()
+      for (const iid of itemIds) {
+        await repo.save(repo.create({ id: this.generateId(), outlineId, itemId: iid, createdAt: now }))
       }
     })
-
-    transaction()
   }
 
-  /**
-   * 替换大纲的所有物品关联
-   */
-  replaceAll(outlineId: string, itemIds: string[]): void {
-    const transaction = this.db.transaction(() => {
-      // 先删除现有关联
-      this.deleteByOutlineId(outlineId)
-      // 再添加新关联
-      this.batchAdd(outlineId, itemIds)
+  async delete(outlineId: string, itemId: string): Promise<boolean> {
+    const result = await this.repo.delete({ outlineId, itemId } as any)
+    return (result.affected ?? 0) > 0
+  }
+
+  async deleteByOutlineId(outlineId: string): Promise<number> {
+    const result = await this.repo.delete({ outlineId } as any)
+    return result.affected ?? 0
+  }
+
+  async deleteByItemId(itemId: string): Promise<number> {
+    const result = await this.repo.delete({ itemId } as any)
+    return result.affected ?? 0
+  }
+
+  async migrateFromJson(projectId: string): Promise<number> {
+    const outlineRepo = this.dataSource.getRepository(LwOutlineEntity)
+    const itemRepo = this.dataSource.getRepository(LwItemEntity)
+    const outlines = await outlineRepo.find({ where: { projectId } as any, select: ['id', 'involvedItems'] })
+    const items = await itemRepo.find({ where: { projectId } as any, select: ['id', 'name'] })
+    const nameToId = new Map<string, string>()
+    for (const i of items) nameToId.set(i.name, i.id)
+
+    let migrated = 0
+    await this.dataSource.transaction(async manager => {
+      const repo = manager.getRepository(LwOutlineItemEntity)
+      const now = Date.now()
+      for (const outline of outlines) {
+        const names = (outline.involvedItems as string[] | null) ?? []
+        for (const name of names) {
+          const iid = nameToId.get(name)
+          if (!iid) continue
+          const existing = await repo.findOne({ where: { outlineId: outline.id, itemId: iid } as any })
+          if (!existing) {
+            await repo.save(repo.create({ id: this.generateId(), outlineId: outline.id, itemId: iid, createdAt: now }))
+            migrated++
+          }
+        }
+      }
     })
-    transaction()
+    return migrated
   }
 
-  /**
-   * 删除大纲物品关联
-   */
-  delete(outlineId: string, itemId: string): boolean {
-    const stmt = this.db.prepare(`
-      DELETE FROM lw_outline_items WHERE outline_id = ? AND item_id = ?
-    `)
-    const result = stmt.run(outlineId, itemId)
-    return result.changes > 0
-  }
-
-  /**
-   * 删除大纲的所有物品关联
-   */
-  deleteByOutlineId(outlineId: string): number {
-    const stmt = this.db.prepare('DELETE FROM lw_outline_items WHERE outline_id = ?')
-    const result = stmt.run(outlineId)
-    return result.changes
-  }
-
-  /**
-   * 删除物品的所有大纲关联
-   */
-  deleteByItemId(itemId: string): number {
-    const stmt = this.db.prepare('DELETE FROM lw_outline_items WHERE item_id = ?')
-    const result = stmt.run(itemId)
-    return result.changes
-  }
-
-  /**
-   * 生成唯一ID
-   */
   private generateId(): string {
-    return `oi_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    return `oi_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }
 }

@@ -1,387 +1,312 @@
 /**
  * 长文写作大纲仓库
  * @module database/repositories/lw-outline.repository
+ * @description 基于 TypeORM 实现，所有方法异步。含树形结构 + 3 个关联子表。
  */
 
-import Database from 'better-sqlite3'
+import { IsNull, type DataSource } from 'typeorm'
 import {
   StoryOutline,
   CreateOutlineRequest,
-  UpdateOutlineRequest
+  UpdateOutlineRequest,
 } from '@shared/types/longwriting.types'
+import { LwOutlineEntity } from '../entities/lw-outline.entity'
 import { LwOutlineCharacterRepository } from './lw-outline-character.repository'
 import { LwOutlineLocationRepository } from './lw-outline-location.repository'
 import { LwOutlineItemRepository } from './lw-outline-item.repository'
+import { BaseRepository } from '../base-repository'
 
-export class LwOutlineRepository {
+export class LwOutlineRepository extends BaseRepository<
+  LwOutlineEntity,
+  StoryOutline
+> {
   private outlineCharacterRepo: LwOutlineCharacterRepository
   private outlineLocationRepo: LwOutlineLocationRepository
   private outlineItemRepo: LwOutlineItemRepository
 
-  constructor(private db: Database.Database) {
-    this.outlineCharacterRepo = new LwOutlineCharacterRepository(db)
-    this.outlineLocationRepo = new LwOutlineLocationRepository(db)
-    this.outlineItemRepo = new LwOutlineItemRepository(db)
+  constructor(dataSource: DataSource) {
+    super(dataSource, LwOutlineEntity)
+    this.outlineCharacterRepo = new LwOutlineCharacterRepository(dataSource)
+    this.outlineLocationRepo = new LwOutlineLocationRepository(dataSource)
+    this.outlineItemRepo = new LwOutlineItemRepository(dataSource)
   }
 
-  /**
-   * 根据项目 ID 获取所有大纲节点
-   */
-  getByProjectId(projectId: string): StoryOutline[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_story_outlines WHERE project_id = ? ORDER BY order_index ASC, created_at ASC
-    `)
-    const rows = stmt.all(projectId) as any[]
-    // 使用箭头函数保持 this 上下文
-    return rows.map((row) => this.mapToOutline(row))
+  private toEpochMs(v: Date | number | string | null | undefined): number {
+    if (v === null || v === undefined) return 0
+    if (v instanceof Date) return v.getTime()
+    if (typeof v === 'number') return v
+    return new Date(v).getTime()
   }
 
-  /**
-   * 获取树形大纲结构
-   */
-  getTreeByProjectId(projectId: string): StoryOutline[] {
-    const allNodes = this.getByProjectId(projectId)
-    return this.buildTree(allNodes)
-  }
-
-  /**
-   * 根据 ID 获取大纲节点
-   */
-  getById(id: string): StoryOutline | null {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_story_outlines WHERE id = ?
-    `)
-    const row = stmt.get(id) as any
-    return row ? this.mapToOutline(row) : null
-  }
-
-  /**
-   * 获取子节点
-   */
-  getChildren(parentId: string): StoryOutline[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_story_outlines WHERE parent_id = ? ORDER BY order_index ASC
-    `)
-    const rows = stmt.all(parentId) as any[]
-    return rows.map(this.mapToOutline)
-  }
-
-  /**
-   * 创建大纲节点
-   */
-  create(data: CreateOutlineRequest): StoryOutline {
-    const id = this.generateId()
-    const now = Date.now()
-    const level = data.parentId ? this.calculateLevel(data.parentId) : 1
-    const orderIndex = this.getNextOrderIndex(data.projectId, data.parentId)
-
-    const stmt = this.db.prepare(`
-      INSERT INTO lw_story_outlines (
-        id, project_id, parent_id, name, level, node_type, summary,
-        involved_characters, involved_locations, involved_items, status, estimated_words, order_index,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
-    `)
-
-    // 保留JSON字段以兼容
-    stmt.run(
-      id, data.projectId, data.parentId || null, data.name, level,
-      data.nodeType, data.summary || '', JSON.stringify(data.involvedCharacters || []),
-      JSON.stringify(data.involvedLocations || []), JSON.stringify(data.involvedItems || []),
-      data.estimatedWords || 0, orderIndex,
-      now, now
-    )
-
-    // 同时写入关联表
-    if (data.involvedCharacters && data.involvedCharacters.length > 0) {
-      this.outlineCharacterRepo.batchAdd(id, data.involvedCharacters)
-    }
-
-    if (data.involvedLocations && data.involvedLocations.length > 0) {
-      this.outlineLocationRepo.batchAdd(id, data.involvedLocations)
-    }
-
-    if (data.involvedItems && data.involvedItems.length > 0) {
-      this.outlineItemRepo.batchAdd(id, data.involvedItems)
-    }
-
+  protected toDto(e: LwOutlineEntity): StoryOutline {
     return {
+      id: e.id,
+      projectId: e.projectId,
+      parentId: e.parentId ?? undefined,
+      name: e.name,
+      level: e.level,
+      nodeType: e.nodeType as StoryOutline['nodeType'],
+      summary: e.summary ?? '',
+      involvedCharacters: ((e.involvedCharacters as string[] | null) ?? []) as string[],
+      involvedLocations: ((e.involvedLocations as string[] | null) ?? []) as string[],
+      involvedItems: ((e.involvedItems as string[] | null) ?? []) as string[],
+      status: e.status as StoryOutline['status'],
+      estimatedWords: e.estimatedWords ?? 0,
+      orderIndex: e.orderIndex ?? 0,
+      createdAt: this.toEpochMs(e.createdAt),
+      updatedAt: this.toEpochMs(e.updatedAt),
+    } as StoryOutline
+  }
+
+  async getByProjectId(projectId: string): Promise<StoryOutline[]> {
+    const entities = await this.repo
+      .createQueryBuilder('o')
+      .where('o.project_id = :pid', { pid: projectId })
+      .orderBy('o.order_index', 'ASC')
+      .addOrderBy('o.created_at', 'ASC')
+      .getMany()
+    return this.toDtoList(entities)
+  }
+
+  async getTreeByProjectId(projectId: string): Promise<StoryOutline[]> {
+    const all = await this.getByProjectId(projectId)
+    return this.buildTree(all)
+  }
+
+  async getById(id: string): Promise<StoryOutline | null> {
+    return this.findOneByWhere({ id } as any)
+  }
+
+  async getChildren(parentId: string): Promise<StoryOutline[]> {
+    return this.findManyByWhere({ parentId } as any, { orderIndex: 'ASC' })
+  }
+
+  async create(data: CreateOutlineRequest): Promise<StoryOutline> {
+    const id = this.generateId()
+    const now = new Date()
+    const level = data.parentId ? await this.calculateLevel(data.parentId) : 1
+    const orderIndex = await this.getNextOrderIndex(data.projectId, data.parentId ?? null)
+
+    const entity = this.repo.create({
       id,
       projectId: data.projectId,
-      parentId: data.parentId,
+      parentId: data.parentId ?? null,
       name: data.name,
       level,
       nodeType: data.nodeType,
-      summary: data.summary || '',
+      summary: data.summary ?? '',
       involvedCharacters: data.involvedCharacters || [],
       involvedLocations: data.involvedLocations || [],
       involvedItems: data.involvedItems || [],
       status: 'pending',
-      estimatedWords: data.estimatedWords || 0,
+      estimatedWords: data.estimatedWords ?? 0,
       orderIndex,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+    })
+    const saved = await this.repo.save(entity)
+
+    if (data.involvedCharacters?.length) {
+      await this.outlineCharacterRepo.batchAdd(id, data.involvedCharacters)
     }
+    if (data.involvedLocations?.length) {
+      await this.outlineLocationRepo.batchAdd(id, data.involvedLocations)
+    }
+    if (data.involvedItems?.length) {
+      await this.outlineItemRepo.batchAdd(id, data.involvedItems)
+    }
+
+    return this.toDto(saved)
   }
 
-  /**
-   * 更新大纲节点
-   */
-  update(id: string, data: UpdateOutlineRequest): StoryOutline | null {
-    const outline = this.getById(id)
-    if (!outline) return null
+  async update(
+    id: string,
+    data: UpdateOutlineRequest,
+  ): Promise<StoryOutline | null> {
+    const existing = await this.repo.findOne({ where: { id } as any })
+    if (!existing) return null
 
-    const updates: string[] = []
-    const values: any[] = []
-
-    const fieldMap: Record<string, any> = {
-      name: data.name,
-      summary: data.summary,
-      involved_characters: data.involvedCharacters ? JSON.stringify(data.involvedCharacters) : undefined,
-      involved_locations: data.involvedLocations ? JSON.stringify(data.involvedLocations) : undefined,
-      involved_items: data.involvedItems ? JSON.stringify(data.involvedItems) : undefined,
-      status: data.status,
-      estimated_words: data.estimatedWords
-    }
-
-    for (const [field, value] of Object.entries(fieldMap)) {
-      if (value !== undefined) {
-        updates.push(`${field} = ?`)
-        values.push(value)
-      }
-    }
-
-    if (updates.length === 0) return outline
-
-    updates.push('updated_at = ?')
-    values.push(Date.now())
-    values.push(id)
-
-    const stmt = this.db.prepare(`
-      UPDATE lw_story_outlines SET ${updates.join(', ')} WHERE id = ?
-    `)
-    stmt.run(...values)
-
-    // 更新关联表
+    let changed = false
+    if (data.name !== undefined) { existing.name = data.name; changed = true }
+    if (data.summary !== undefined) { existing.summary = data.summary; changed = true }
     if (data.involvedCharacters !== undefined) {
-      this.outlineCharacterRepo.replaceAll(id, data.involvedCharacters)
+      existing.involvedCharacters = data.involvedCharacters
+      changed = true
     }
-
     if (data.involvedLocations !== undefined) {
-      this.outlineLocationRepo.replaceAll(id, data.involvedLocations)
+      existing.involvedLocations = data.involvedLocations
+      changed = true
     }
-
     if (data.involvedItems !== undefined) {
-      this.outlineItemRepo.replaceAll(id, data.involvedItems)
+      existing.involvedItems = data.involvedItems
+      changed = true
+    }
+    if (data.status !== undefined) { existing.status = data.status; changed = true }
+    if (data.estimatedWords !== undefined) { existing.estimatedWords = data.estimatedWords; changed = true }
+
+    if (!changed) return this.toDto(existing)
+
+    existing.updatedAt = new Date()
+    const saved = await this.repo.save(existing)
+
+    if (data.involvedCharacters !== undefined) {
+      await this.outlineCharacterRepo.replaceAll(id, data.involvedCharacters)
+    }
+    if (data.involvedLocations !== undefined) {
+      await this.outlineLocationRepo.replaceAll(id, data.involvedLocations)
+    }
+    if (data.involvedItems !== undefined) {
+      await this.outlineItemRepo.replaceAll(id, data.involvedItems)
     }
 
-    return this.getById(id)
+    return this.toDto(saved)
   }
 
-  /**
-   * 更新排序索引
-   */
-  updateOrder(id: string, orderIndex: number): boolean {
-    const stmt = this.db.prepare(`
-      UPDATE lw_story_outlines SET order_index = ?, updated_at = ? WHERE id = ?
-    `)
-    const result = stmt.run(orderIndex, Date.now(), id)
-    return result.changes > 0
+  async updateOrder(id: string, orderIndex: number): Promise<boolean> {
+    const result = await this.repo.update({ id } as any, {
+      orderIndex,
+      updatedAt: new Date(),
+    })
+    return (result.affected ?? 0) > 0
   }
 
-  /**
-   * 移动节点（更改父节点）
-   */
-  moveTo(id: string, newParentId: string | null): boolean {
-    const outline = this.getById(id)
-    if (!outline) return false
-
-    const newLevel = newParentId ? this.calculateLevel(newParentId) + 1 : 1
-    const newOrderIndex = this.getNextOrderIndex(outline.projectId, newParentId)
-
-    const stmt = this.db.prepare(`
-      UPDATE lw_story_outlines SET parent_id = ?, level = ?, order_index = ?, updated_at = ? WHERE id = ?
-    `)
-    const result = stmt.run(newParentId, newLevel, newOrderIndex, Date.now(), id)
-    return result.changes > 0
+  async moveTo(id: string, newParentId: string | null): Promise<boolean> {
+    const existing = await this.repo.findOne({ where: { id } as any })
+    if (!existing) return false
+    const newLevel = newParentId ? (await this.calculateLevel(newParentId)) + 1 : 1
+    const newOrderIndex = await this.getNextOrderIndex(
+      existing.projectId,
+      newParentId,
+    )
+    const result = await this.repo.update({ id } as any, {
+      parentId: newParentId,
+      level: newLevel,
+      orderIndex: newOrderIndex,
+      updatedAt: new Date(),
+    })
+    return (result.affected ?? 0) > 0
   }
 
-  /**
-   * 删除大纲节点（及其子节点）
-   */
-  delete(id: string): boolean {
-    // 先删除子节点
-    const children = this.getChildren(id)
-    for (const child of children) {
-      this.delete(child.id)
+  async delete(id: string): Promise<boolean> {
+    // 递归删除子节点
+    const children = await this.repo.find({
+      where: { parentId: id } as any,
+      select: ['id'],
+    })
+    for (const c of children) {
+      await this.delete(c.id)
     }
 
-    // 删除关联数据
-    this.outlineCharacterRepo.deleteByOutlineId(id)
-    this.outlineLocationRepo.deleteByOutlineId(id)
-    this.outlineItemRepo.deleteByOutlineId(id)
+    await this.outlineCharacterRepo.deleteByOutlineId(id)
+    await this.outlineLocationRepo.deleteByOutlineId(id)
+    await this.outlineItemRepo.deleteByOutlineId(id)
 
-    // 删除当前节点
-    const stmt = this.db.prepare('DELETE FROM lw_story_outlines WHERE id = ?')
-    const result = stmt.run(id)
-    return result.changes > 0
+    const result = await this.repo.delete({ id } as any)
+    return (result.affected ?? 0) > 0
   }
 
-  /**
-   * 计算节点层级
-   */
-  private calculateLevel(parentId: string): number {
-    const parent = this.getById(parentId)
-    return parent ? parent.level : 0
-  }
-
-  /**
-   * 获取下一个排序索引
-   */
-  private getNextOrderIndex(projectId: string, parentId: string | null): number {
-    const stmt = this.db.prepare(`
-      SELECT MAX(order_index) as max_index FROM lw_story_outlines
-      WHERE project_id = ? AND parent_id ${parentId ? '= ?' : 'IS NULL'}
-    `)
-    const result = parentId
-      ? stmt.get(projectId, parentId) as any
-      : stmt.get(projectId) as any
-    return (result?.max_index || 0) + 1
-  }
-
-  /**
-   * 构建树形结构
-   */
-  private buildTree(nodes: StoryOutline[]): StoryOutline[] {
-    const nodeMap = new Map<string, StoryOutline>()
-    const rootNodes: StoryOutline[] = []
-
-    // 先创建映射
-    for (const node of nodes) {
-      nodeMap.set(node.id, { ...node, children: [] } as any)
-    }
-
-    // 构建树
-    for (const node of nodes) {
-      const currentNode = nodeMap.get(node.id)!
-      if (node.parentId && nodeMap.has(node.parentId)) {
-        const parent = nodeMap.get(node.parentId)! as any
-        if (!parent.children) parent.children = []
-        parent.children.push(currentNode)
-      } else {
-        rootNodes.push(currentNode)
-      }
-    }
-
-    return rootNodes
-  }
-
-  /**
-   * 获取大纲涉及的角色ID列表（从关联表）
-   */
-  getCharacterIds(outlineId: string): string[] {
+  async getCharacterIds(outlineId: string): Promise<string[]> {
     return this.outlineCharacterRepo.getCharacterIdsByOutlineId(outlineId)
   }
 
-  /**
-   * 获取大纲涉及的地点ID列表（从关联表）
-   */
-  getLocationIds(outlineId: string): string[] {
+  async getLocationIds(outlineId: string): Promise<string[]> {
     return this.outlineLocationRepo.getLocationIdsByOutlineId(outlineId)
   }
 
-  /**
-   * 获取大纲涉及的物品ID列表（从关联表）
-   */
-  getItemIds(outlineId: string): string[] {
+  async getItemIds(outlineId: string): Promise<string[]> {
     return this.outlineItemRepo.getItemIdsByOutlineId(outlineId)
   }
 
-  /**
-   * 更新大纲的角色关联
-   */
-  updateCharacterRelations(outlineId: string, characterIds: string[]): void {
-    this.outlineCharacterRepo.replaceAll(outlineId, characterIds)
+  async updateCharacterRelations(
+    outlineId: string,
+    characterIds: string[],
+  ): Promise<void> {
+    await this.outlineCharacterRepo.replaceAll(outlineId, characterIds)
   }
 
-  /**
-   * 更新大纲的地点关联
-   */
-  updateLocationRelations(outlineId: string, locationIds: string[]): void {
-    this.outlineLocationRepo.replaceAll(outlineId, locationIds)
+  async updateLocationRelations(
+    outlineId: string,
+    locationIds: string[],
+  ): Promise<void> {
+    await this.outlineLocationRepo.replaceAll(outlineId, locationIds)
   }
 
-  /**
-   * 更新大纲的物品关联
-   */
-  updateItemRelations(outlineId: string, itemIds: string[]): void {
-    this.outlineItemRepo.replaceAll(outlineId, itemIds)
+  async updateItemRelations(
+    outlineId: string,
+    itemIds: string[],
+  ): Promise<void> {
+    await this.outlineItemRepo.replaceAll(outlineId, itemIds)
   }
 
-  /**
-   * 批量获取大纲的角色ID映射
-   */
-  getCharacterIdsByOutlineIds(outlineIds: string[]): Map<string, string[]> {
+  async getCharacterIdsByOutlineIds(
+    outlineIds: string[],
+  ): Promise<Map<string, string[]>> {
     return this.outlineCharacterRepo.getCharacterIdsByOutlineIds(outlineIds)
   }
 
-  /**
-   * 批量获取大纲的地点ID映射
-   */
-  getLocationIdsByOutlineIds(outlineIds: string[]): Map<string, string[]> {
+  async getLocationIdsByOutlineIds(
+    outlineIds: string[],
+  ): Promise<Map<string, string[]>> {
     return this.outlineLocationRepo.getLocationIdsByOutlineIds(outlineIds)
   }
 
-  /**
-   * 批量获取大纲的物品ID映射
-   */
-  getItemIdsByOutlineIds(outlineIds: string[]): Map<string, string[]> {
+  async getItemIdsByOutlineIds(
+    outlineIds: string[],
+  ): Promise<Map<string, string[]>> {
     return this.outlineItemRepo.getItemIdsByOutlineIds(outlineIds)
   }
 
-  /**
-   * 迁移现有数据到关联表
-   */
-  migrateToRelationTables(projectId: string): { characters: number; locations: number } {
-    const charactersMigrated = this.outlineCharacterRepo.migrateFromJson(projectId)
-    const locationsMigrated = this.outlineLocationRepo.migrateFromJson(projectId)
+  async migrateToRelationTables(
+    projectId: string,
+  ): Promise<{ characters: number; locations: number }> {
+    const characters = await this.outlineCharacterRepo.migrateFromJson(projectId)
+    const locations = await this.outlineLocationRepo.migrateFromJson(projectId)
+    return { characters, locations }
+  }
 
-    return {
-      characters: charactersMigrated,
-      locations: locationsMigrated
+  private async calculateLevel(parentId: string): Promise<number> {
+    const parent = await this.repo.findOne({ where: { id: parentId } as any })
+    return parent ? parent.level : 0
+  }
+
+  private async getNextOrderIndex(
+    projectId: string,
+    parentId: string | null,
+  ): Promise<number> {
+    const where = parentId
+      ? { projectId, parentId }
+      : { projectId, parentId: IsNull() }
+    const row = await this.repo
+      .createQueryBuilder('o')
+      .select('MAX(o.order_index)', 'max')
+      .where(parentId
+        ? 'o.project_id = :pid AND o.parent_id = :ppid'
+        : 'o.project_id = :pid AND o.parent_id IS NULL',
+        { pid: projectId, ppid: parentId })
+      .getRawOne()
+    return (Number(row?.max) || 0) + 1
+  }
+
+  private buildTree(nodes: StoryOutline[]): StoryOutline[] {
+    const nodeMap = new Map<string, StoryOutline & { children?: StoryOutline[] }>()
+    const rootNodes: StoryOutline[] = []
+    for (const node of nodes) {
+      nodeMap.set(node.id, { ...node, children: [] } as any)
     }
+    for (const node of nodes) {
+      const current = nodeMap.get(node.id)!
+      if (node.parentId && nodeMap.has(node.parentId)) {
+        const parent = nodeMap.get(node.parentId)!
+        if (!parent.children) parent.children = []
+        parent.children.push(current)
+      } else {
+        rootNodes.push(current)
+      }
+    }
+    return rootNodes
   }
 
   private generateId(): string {
-    return `outline_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  private mapToOutline(row: any): StoryOutline {
-    return {
-      id: row.id,
-      projectId: row.project_id,
-      parentId: row.parent_id,
-      name: row.name,
-      level: row.level,
-      nodeType: row.node_type,
-      summary: row.summary || '',
-      involvedCharacters: this.parseJsonArray(row.involved_characters),
-      involvedLocations: this.parseJsonArray(row.involved_locations),
-      involvedItems: this.parseJsonArray(row.involved_items),
-      status: row.status,
-      estimatedWords: row.estimated_words || 0,
-      orderIndex: row.order_index || 0,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }
-  }
-
-  private parseJsonArray(jsonStr: string | null): string[] {
-    if (!jsonStr) return []
-    try {
-      return JSON.parse(jsonStr)
-    } catch {
-      return []
-    }
+    return `outline_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }
 }

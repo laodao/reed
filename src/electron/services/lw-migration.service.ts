@@ -107,22 +107,22 @@ export class LwMigrationService {
 
       // 1. 迁移情节角色关联
       if (db.lwPlotCharacters) {
-        result.plotCharacters = db.lwPlotCharacters.migrateFromJson(projectId)
+        result.plotCharacters = await db.lwPlotCharacters.migrateFromJson(projectId)
       }
 
       // 2. 迁移情节地点关联
       if (db.lwPlotLocations) {
-        result.plotLocations = db.lwPlotLocations.migrateFromJson(projectId)
+        result.plotLocations = await db.lwPlotLocations.migrateFromJson(projectId)
       }
 
       // 3. 迁移大纲角色关联
       if (db.lwOutlineCharacters) {
-        result.outlineCharacters = db.lwOutlineCharacters.migrateFromJson(projectId)
+        result.outlineCharacters = await db.lwOutlineCharacters.migrateFromJson(projectId)
       }
 
       // 4. 迁移大纲地点关联
       if (db.lwOutlineLocations) {
-        result.outlineLocations = db.lwOutlineLocations.migrateFromJson(projectId)
+        result.outlineLocations = await db.lwOutlineLocations.migrateFromJson(projectId)
       }
 
       // 5. 迁移技能角色关联

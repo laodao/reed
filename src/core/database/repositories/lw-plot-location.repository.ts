@@ -1,14 +1,15 @@
 /**
  * 情节地点关联仓库
  * @module database/repositories/lw-plot-location.repository
- * 符合第三范式，替代JSON存储
+ * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import Database from 'better-sqlite3'
+import { In, type DataSource } from 'typeorm'
+import { LwPlotLocationEntity } from '../entities/lw-plot-location.entity'
+import { LwPlotEntity } from '../entities/lw-plot.entity'
+import { LwLocationEntity } from '../entities/lw-location.entity'
+import { BaseRepository } from '../base-repository'
 
-/**
- * 情节地点关联
- */
 export interface PlotLocationRelation {
   id: string
   plotId: string
@@ -16,210 +17,114 @@ export interface PlotLocationRelation {
   createdAt: number
 }
 
-/**
- * 情节地点关联仓库
- */
-export class LwPlotLocationRepository {
-  constructor(private db: Database.Database) {}
-
-  /**
-   * 根据情节ID获取所有关联的地点ID
-   */
-  getLocationIdsByPlotId(plotId: string): string[] {
-    const stmt = this.db.prepare(`
-      SELECT location_id FROM lw_plot_locations WHERE plot_id = ?
-    `)
-    const rows = stmt.all(plotId) as any[]
-    return rows.map(row => row.location_id)
+export class LwPlotLocationRepository extends BaseRepository<
+  LwPlotLocationEntity,
+  PlotLocationRelation
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, LwPlotLocationEntity)
   }
 
-  /**
-   * 根据地点ID获取所有关联的情节ID
-   */
-  getPlotIdsByLocationId(locationId: string): string[] {
-    const stmt = this.db.prepare(`
-      SELECT plot_id FROM lw_plot_locations WHERE location_id = ?
-    `)
-    const rows = stmt.all(locationId) as any[]
-    return rows.map(row => row.plot_id)
+  protected toDto(e: LwPlotLocationEntity): PlotLocationRelation {
+    return { id: e.id, plotId: e.plotId, locationId: e.locationId, createdAt: e.createdAt }
   }
 
-  /**
-   * 批量获取情节的地点ID映射
-   * @param plotIds 情节ID列表
-   * @returns Map<plotId, locationId[]>
-   */
-  getLocationIdsByPlotIds(plotIds: string[]): Map<string, string[]> {
+  async getLocationIdsByPlotId(plotId: string): Promise<string[]> {
+    const rows = await this.repo.find({ where: { plotId } as any, select: ['locationId'] })
+    return rows.map(r => r.locationId)
+  }
+
+  async getPlotIdsByLocationId(locationId: string): Promise<string[]> {
+    const rows = await this.repo.find({ where: { locationId } as any, select: ['plotId'] })
+    return rows.map(r => r.plotId)
+  }
+
+  async getLocationIdsByPlotIds(plotIds: string[]): Promise<Map<string, string[]>> {
     const result = new Map<string, string[]>()
-
     if (plotIds.length === 0) return result
-
-    const placeholders = plotIds.map(() => '?').join(',')
-    const stmt = this.db.prepare(`
-      SELECT plot_id, location_id FROM lw_plot_locations WHERE plot_id IN (${placeholders})
-    `)
-    const rows = stmt.all(...plotIds) as any[]
-
+    const rows = await this.repo.find({
+      where: { plotId: In(plotIds) } as any,
+      select: ['plotId', 'locationId'],
+    })
     for (const row of rows) {
-      if (!result.has(row.plot_id)) {
-        result.set(row.plot_id, [])
-      }
-      result.get(row.plot_id)!.push(row.location_id)
+      if (!result.has(row.plotId)) result.set(row.plotId, [])
+      result.get(row.plotId)!.push(row.locationId)
     }
-
-    // 确保所有情节都有条目
-    for (const plotId of plotIds) {
-      if (!result.has(plotId)) {
-        result.set(plotId, [])
-      }
-    }
-
+    for (const id of plotIds) if (!result.has(id)) result.set(id, [])
     return result
   }
 
-  /**
-   * 添加情节地点关联
-   */
-  add(plotId: string, locationId: string): PlotLocationRelation {
+  async add(plotId: string, locationId: string): Promise<PlotLocationRelation> {
     const id = this.generateId()
     const now = Date.now()
-
-    const stmt = this.db.prepare(`
-      INSERT OR IGNORE INTO lw_plot_locations (id, plot_id, location_id, created_at)
-      VALUES (?, ?, ?, ?)
-    `)
-    stmt.run(id, plotId, locationId, now)
-
-    return { id, plotId, locationId, createdAt: now }
+    const existing = await this.repo.findOne({ where: { plotId, locationId } as any })
+    if (existing) return this.toDto(existing)
+    const saved = await this.repo.save(this.repo.create({ id, plotId, locationId, createdAt: now }))
+    return this.toDto(saved)
   }
 
-  /**
-   * 批量添加情节地点关联（事务）
-   */
-  batchAdd(plotId: string, locationIds: string[]): void {
+  async batchAdd(plotId: string, locationIds: string[]): Promise<void> {
     if (locationIds.length === 0) return
+    await this.dataSource.transaction(async () => {
+      for (const lid of locationIds) await this.add(plotId, lid)
+    })
+  }
 
-    const now = Date.now()
-    const stmt = this.db.prepare(`
-      INSERT OR IGNORE INTO lw_plot_locations (id, plot_id, location_id, created_at)
-      VALUES (?, ?, ?, ?)
-    `)
-
-    const transaction = this.db.transaction(() => {
-      for (const locationId of locationIds) {
-        const id = this.generateId()
-        stmt.run(id, plotId, locationId, now)
+  async replaceAll(plotId: string, locationIds: string[]): Promise<void> {
+    await this.dataSource.transaction(async manager => {
+      const repo = manager.getRepository(LwPlotLocationEntity)
+      await repo.delete({ plotId } as any)
+      const now = Date.now()
+      for (const lid of locationIds) {
+        await repo.save(repo.create({ id: this.generateId(), plotId, locationId: lid, createdAt: now }))
       }
     })
-
-    transaction()
   }
 
-  /**
-   * 替换情节的所有地点关联
-   */
-  replaceAll(plotId: string, locationIds: string[]): void {
-    const transaction = this.db.transaction(() => {
-      // 先删除现有关联
-      this.deleteByPlotId(plotId)
-      // 再添加新关联
-      this.batchAdd(plotId, locationIds)
-    })
-    transaction()
+  async delete(plotId: string, locationId: string): Promise<boolean> {
+    const result = await this.repo.delete({ plotId, locationId } as any)
+    return (result.affected ?? 0) > 0
   }
 
-  /**
-   * 删除情节地点关联
-   */
-  delete(plotId: string, locationId: string): boolean {
-    const stmt = this.db.prepare(`
-      DELETE FROM lw_plot_locations WHERE plot_id = ? AND location_id = ?
-    `)
-    const result = stmt.run(plotId, locationId)
-    return result.changes > 0
+  async deleteByPlotId(plotId: string): Promise<number> {
+    const result = await this.repo.delete({ plotId } as any)
+    return result.affected ?? 0
   }
 
-  /**
-   * 删除情节的所有地点关联
-   */
-  deleteByPlotId(plotId: string): number {
-    const stmt = this.db.prepare('DELETE FROM lw_plot_locations WHERE plot_id = ?')
-    const result = stmt.run(plotId)
-    return result.changes
+  async deleteByLocationId(locationId: string): Promise<number> {
+    const result = await this.repo.delete({ locationId } as any)
+    return result.affected ?? 0
   }
 
-  /**
-   * 删除地点的所有情节关联
-   */
-  deleteByLocationId(locationId: string): number {
-    const stmt = this.db.prepare('DELETE FROM lw_plot_locations WHERE location_id = ?')
-    const result = stmt.run(locationId)
-    return result.changes
-  }
-
-  /**
-   * 迁移：从JSON字段迁移到关联表
-   * 将情节表中存储的地点名称转换为地点ID并存入关联表
-   */
-  migrateFromJson(projectId: string): number {
-    // 获取项目的所有情节和地点
-    const plotsStmt = this.db.prepare(`
-      SELECT id, involved_locations FROM lw_story_plots WHERE project_id = ?
-    `)
-    const plots = plotsStmt.all(projectId) as any[]
-
-    const locationsStmt = this.db.prepare(`
-      SELECT id, name FROM lw_story_locations WHERE project_id = ?
-    `)
-    const locations = locationsStmt.all(projectId) as any[]
-
-    // 建立地点名称到ID的映射
+  async migrateFromJson(projectId: string): Promise<number> {
+    const plotRepo = this.dataSource.getRepository(LwPlotEntity)
+    const locRepo = this.dataSource.getRepository(LwLocationEntity)
+    const plots = await plotRepo.find({ where: { projectId } as any, select: ['id', 'involvedLocations'] })
+    const locs = await locRepo.find({ where: { projectId } as any, select: ['id', 'name'] })
     const nameToId = new Map<string, string>()
-    for (const loc of locations) {
-      nameToId.set(loc.name, loc.id)
-    }
+    for (const l of locs) nameToId.set(l.name, l.id)
 
-    let migratedCount = 0
-    const now = Date.now()
-    const insertStmt = this.db.prepare(`
-      INSERT OR IGNORE INTO lw_plot_locations (id, plot_id, location_id, created_at)
-      VALUES (?, ?, ?, ?)
-    `)
-
-    const transaction = this.db.transaction(() => {
+    let migrated = 0
+    await this.dataSource.transaction(async manager => {
+      const repo = manager.getRepository(LwPlotLocationEntity)
+      const now = Date.now()
       for (const plot of plots) {
-        const names: string[] = this.parseJsonArray(plot.involved_locations)
+        const names = (plot.involvedLocations as string[] | null) ?? []
         for (const name of names) {
-          const locationId = nameToId.get(name)
-          if (locationId) {
-            const id = this.generateId()
-            insertStmt.run(id, plot.id, locationId, now)
-            migratedCount++
+          const lid = nameToId.get(name)
+          if (!lid) continue
+          const existing = await repo.findOne({ where: { plotId: plot.id, locationId: lid } as any })
+          if (!existing) {
+            await repo.save(repo.create({ id: this.generateId(), plotId: plot.id, locationId: lid, createdAt: now }))
+            migrated++
           }
         }
       }
     })
-
-    transaction()
-    return migratedCount
+    return migrated
   }
 
-  /**
-   * 生成唯一ID
-   */
   private generateId(): string {
-    return `pl_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  /**
-   * 解析JSON数组
-   */
-  private parseJsonArray(jsonStr: string | null): string[] {
-    if (!jsonStr) return []
-    try {
-      return JSON.parse(jsonStr)
-    } catch {
-      return []
-    }
+    return `pl_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }
 }
