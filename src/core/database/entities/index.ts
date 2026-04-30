@@ -74,3 +74,7 @@ export { LwTempCharacterTemplateEntity } from './lw-temp-character-template.enti
 export { LwTempLocationTemplateEntity } from './lw-temp-location-template.entity'
 export { LwDictionaryCategoryEntity } from './lw-dictionary-category.entity'
 export { LwDictionaryEntity } from './lw-dictionary.entity'
+export { LwProjectSkillTypeEntity } from './lw-project-skill-type.entity'
+export { LwProjectItemTypeEntity } from './lw-project-item-type.entity'
+export { LwProjectSkillLevelEntity } from './lw-project-skill-level.entity'
+export { LwProjectItemLevelEntity } from './lw-project-item-level.entity'

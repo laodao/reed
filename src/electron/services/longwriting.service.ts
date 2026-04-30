@@ -115,8 +115,8 @@ export class LongWritingService {
 
     // 初始化项目的默认类型配置
     if (this.db.lwTypeConfig) {
-      this.db.lwTypeConfig.initializeDefaultSkillTypes(project.id)
-      this.db.lwTypeConfig.initializeDefaultItemTypes(project.id)
+      await this.db.lwTypeConfig.initializeDefaultSkillTypes(project.id)
+      await this.db.lwTypeConfig.initializeDefaultItemTypes(project.id)
     }
 
     return project
@@ -1052,7 +1052,7 @@ export class LongWritingService {
     if (!this.db.lwTypeConfig) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwTypeConfig.getSkillTypeConfigs(projectId)
+    return await this.db.lwTypeConfig.getSkillTypeConfigs(projectId)
   }
 
   /**
@@ -1062,7 +1062,7 @@ export class LongWritingService {
     if (!this.db.lwTypeConfig) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwTypeConfig.createSkillTypeConfig(data)
+    return await this.db.lwTypeConfig.createSkillTypeConfig(data)
   }
 
   /**
@@ -1072,7 +1072,7 @@ export class LongWritingService {
     if (!this.db.lwTypeConfig) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwTypeConfig.updateSkillTypeConfig(id, data)
+    return await this.db.lwTypeConfig.updateSkillTypeConfig(id, data)
   }
 
   /**
@@ -1083,7 +1083,7 @@ export class LongWritingService {
     if (!this.db.lwTypeConfig) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwTypeConfig.deleteSkillTypeConfig(id)
+    return await this.db.lwTypeConfig.deleteSkillTypeConfig(id)
   }
 
   /**
@@ -1093,7 +1093,7 @@ export class LongWritingService {
     if (!this.db.lwTypeConfig) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwTypeConfig.getItemTypeConfigs(projectId)
+    return await this.db.lwTypeConfig.getItemTypeConfigs(projectId)
   }
 
   /**
@@ -1103,7 +1103,7 @@ export class LongWritingService {
     if (!this.db.lwTypeConfig) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwTypeConfig.createItemTypeConfig(data)
+    return await this.db.lwTypeConfig.createItemTypeConfig(data)
   }
 
   /**
@@ -1113,7 +1113,7 @@ export class LongWritingService {
     if (!this.db.lwTypeConfig) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwTypeConfig.updateItemTypeConfig(id, data)
+    return await this.db.lwTypeConfig.updateItemTypeConfig(id, data)
   }
 
   /**
@@ -1124,7 +1124,7 @@ export class LongWritingService {
     if (!this.db.lwTypeConfig) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwTypeConfig.deleteItemTypeConfig(id)
+    return await this.db.lwTypeConfig.deleteItemTypeConfig(id)
   }
 
   /**
@@ -1134,8 +1134,8 @@ export class LongWritingService {
     if (!this.db.lwTypeConfig) {
       throw new Error('数据库未初始化')
     }
-    this.db.lwTypeConfig.initializeDefaultSkillTypes(projectId)
-    this.db.lwTypeConfig.initializeDefaultItemTypes(projectId)
+    await this.db.lwTypeConfig.initializeDefaultSkillTypes(projectId)
+    await this.db.lwTypeConfig.initializeDefaultItemTypes(projectId)
   }
 
   // ==================== 技能等级配置 ====================
@@ -1147,7 +1147,7 @@ export class LongWritingService {
     if (!this.db.lwTypeConfig) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwTypeConfig.getSkillLevels(projectId, skillTypeCode)
+    return await this.db.lwTypeConfig.getSkillLevels(projectId, skillTypeCode)
   }
 
   /**
@@ -1157,7 +1157,7 @@ export class LongWritingService {
     if (!this.db.lwTypeConfig) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwTypeConfig.createSkillLevel(data)
+    return await this.db.lwTypeConfig.createSkillLevel(data)
   }
 
   /**
@@ -1167,7 +1167,7 @@ export class LongWritingService {
     if (!this.db.lwTypeConfig) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwTypeConfig.updateSkillLevel(id, data)
+    return await this.db.lwTypeConfig.updateSkillLevel(id, data)
   }
 
   /**
@@ -1177,7 +1177,7 @@ export class LongWritingService {
     if (!this.db.lwTypeConfig) {
       throw new Error('数据库未初始化')
     }
-    this.db.lwTypeConfig.deleteSkillLevel(id)
+    await this.db.lwTypeConfig.deleteSkillLevel(id)
   }
 
   /**
@@ -1187,7 +1187,7 @@ export class LongWritingService {
     if (!this.db.lwTypeConfig) {
       throw new Error('数据库未初始化')
     }
-    this.db.lwTypeConfig.reorderSkillLevels(projectId, skillTypeCode, orderedIds)
+    await this.db.lwTypeConfig.reorderSkillLevels(projectId, skillTypeCode, orderedIds)
   }
 
   // ==================== 物品等级配置 ====================
@@ -1199,7 +1199,7 @@ export class LongWritingService {
     if (!this.db.lwTypeConfig) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwTypeConfig.getItemLevels(projectId, itemTypeCode)
+    return await this.db.lwTypeConfig.getItemLevels(projectId, itemTypeCode)
   }
 
   /**
@@ -1209,7 +1209,7 @@ export class LongWritingService {
     if (!this.db.lwTypeConfig) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwTypeConfig.createItemLevel(data)
+    return await this.db.lwTypeConfig.createItemLevel(data)
   }
 
   /**
@@ -1219,7 +1219,7 @@ export class LongWritingService {
     if (!this.db.lwTypeConfig) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwTypeConfig.updateItemLevel(id, data)
+    return await this.db.lwTypeConfig.updateItemLevel(id, data)
   }
 
   /**
@@ -1229,7 +1229,7 @@ export class LongWritingService {
     if (!this.db.lwTypeConfig) {
       throw new Error('数据库未初始化')
     }
-    this.db.lwTypeConfig.deleteItemLevel(id)
+    await this.db.lwTypeConfig.deleteItemLevel(id)
   }
 
   /**
@@ -1239,7 +1239,7 @@ export class LongWritingService {
     if (!this.db.lwTypeConfig) {
       throw new Error('数据库未初始化')
     }
-    this.db.lwTypeConfig.reorderItemLevels(projectId, itemTypeCode, orderedIds)
+    await this.db.lwTypeConfig.reorderItemLevels(projectId, itemTypeCode, orderedIds)
   }
 
   // ==================== 地图管理 ====================

@@ -3677,7 +3677,7 @@ export class DatabaseManager {
     this.lwMaterials = new LwMaterialRepository(this.db)
     this.lwGlobalSettings = new LwGlobalSettingsRepository(this.dataSource)
     this.lwDictionary = new LwDictionaryRepository(this.dataSource)
-    this.lwTypeConfig = new LwTypeConfigRepository(this.db)
+    this.lwTypeConfig = new LwTypeConfigRepository(this.dataSource)
     this.lwFactions = new LwFactionRepository(this.dataSource)
     this.lwMaps = new LwMapRepository(this.dataSource)
     this.lwPrewrites = new LwPrewriteRepository(this.dataSource)
