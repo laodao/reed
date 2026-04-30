@@ -1,7 +1,7 @@
 import { Column, Entity, Index, PrimaryColumn } from 'typeorm'
 
 /**
- * LW 地点 Entity。
+ * LW 地点 Entity（含 ALTER 后扩展列）。
  */
 @Entity({ name: 'lw_story_locations' })
 @Index('idx_lw_locations_project_id', ['projectId'])
@@ -26,6 +26,22 @@ export class LwLocationEntity {
 
   @Column({ name: 'map_id', type: 'text', nullable: true })
   mapId!: string | null
+
+  // ALTER 后扩展列
+  @Column({ name: 'entity_importance', type: 'text', default: 'secondary', nullable: true })
+  entityImportance!: string | null
+
+  @Column({ name: 'template_type', type: 'text', nullable: true })
+  templateType!: string | null
+
+  @Column({ name: 'generated_image_id', type: 'text', nullable: true })
+  generatedImageId!: string | null
+
+  @Column({ name: 'source_type', type: 'text', default: 'longwriting', nullable: true })
+  sourceType!: string | null
+
+  @Column({ name: 'source_episode_id', type: 'text', nullable: true })
+  sourceEpisodeId!: string | null
 
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date

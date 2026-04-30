@@ -1,14 +1,15 @@
 /**
  * 技能角色关联仓库
  * @module database/repositories/lw-skill-character.repository
- * 符合第三范式，替代JSON存储
+ * @description 基于 TypeORM 实现，所有方法异步。
+ *              UNIQUE(skill_id, character_id) + INSERT OR IGNORE 模拟。
  */
 
-import Database from 'better-sqlite3'
+import { In, type DataSource } from 'typeorm'
+import { LwSkillCharacterEntity } from '../entities/lw-skill-character.entity'
+import { LwSkillEntity } from '../entities/lw-skill.entity'
+import { BaseRepository } from '../base-repository'
 
-/**
- * 技能角色关联
- */
 export interface SkillCharacterRelation {
   id: string
   skillId: string
@@ -16,196 +17,156 @@ export interface SkillCharacterRelation {
   createdAt: number
 }
 
-/**
- * 技能角色关联仓库
- */
-export class LwSkillCharacterRepository {
-  constructor(private db: Database.Database) {}
-
-  /**
-   * 根据技能ID获取所有关联的角色ID
-   */
-  getCharacterIdsBySkillId(skillId: string): string[] {
-    const stmt = this.db.prepare(`
-      SELECT character_id FROM lw_skill_characters WHERE skill_id = ?
-    `)
-    const rows = stmt.all(skillId) as any[]
-    return rows.map(row => row.character_id)
+export class LwSkillCharacterRepository extends BaseRepository<
+  LwSkillCharacterEntity,
+  SkillCharacterRelation
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, LwSkillCharacterEntity)
   }
 
-  /**
-   * 根据角色ID获取所有关联的技能ID
-   */
-  getSkillIdsByCharacterId(characterId: string): string[] {
-    const stmt = this.db.prepare(`
-      SELECT skill_id FROM lw_skill_characters WHERE character_id = ?
-    `)
-    const rows = stmt.all(characterId) as any[]
-    return rows.map(row => row.skill_id)
+  protected toDto(e: LwSkillCharacterEntity): SkillCharacterRelation {
+    return {
+      id: e.id,
+      skillId: e.skillId,
+      characterId: e.characterId,
+      createdAt: e.createdAt,
+    }
   }
 
-  /**
-   * 批量获取技能的角色ID映射
-   * @param skillIds 技能ID列表
-   * @returns Map<skillId, characterId[]>
-   */
-  getCharacterIdsBySkillIds(skillIds: string[]): Map<string, string[]> {
+  async getCharacterIdsBySkillId(skillId: string): Promise<string[]> {
+    const rows = await this.repo.find({
+      where: { skillId } as any,
+      select: ['characterId'],
+    })
+    return rows.map(r => r.characterId)
+  }
+
+  async getSkillIdsByCharacterId(characterId: string): Promise<string[]> {
+    const rows = await this.repo.find({
+      where: { characterId } as any,
+      select: ['skillId'],
+    })
+    return rows.map(r => r.skillId)
+  }
+
+  async getCharacterIdsBySkillIds(
+    skillIds: string[],
+  ): Promise<Map<string, string[]>> {
     const result = new Map<string, string[]>()
-
     if (skillIds.length === 0) return result
 
-    const placeholders = skillIds.map(() => '?').join(',')
-    const stmt = this.db.prepare(`
-      SELECT skill_id, character_id FROM lw_skill_characters WHERE skill_id IN (${placeholders})
-    `)
-    const rows = stmt.all(...skillIds) as any[]
-
+    const rows = await this.repo.find({
+      where: { skillId: In(skillIds) } as any,
+      select: ['skillId', 'characterId'],
+    })
     for (const row of rows) {
-      if (!result.has(row.skill_id)) {
-        result.set(row.skill_id, [])
-      }
-      result.get(row.skill_id)!.push(row.character_id)
+      if (!result.has(row.skillId)) result.set(row.skillId, [])
+      result.get(row.skillId)!.push(row.characterId)
     }
-
-    // 确保所有技能都有条目
     for (const skillId of skillIds) {
-      if (!result.has(skillId)) {
-        result.set(skillId, [])
-      }
+      if (!result.has(skillId)) result.set(skillId, [])
     }
-
     return result
   }
 
-  /**
-   * 添加技能角色关联
-   */
-  add(skillId: string, characterId: string): SkillCharacterRelation {
+  /** INSERT OR IGNORE 语义：UNIQUE(skill_id, character_id) 命中时跳过 */
+  async add(
+    skillId: string,
+    characterId: string,
+  ): Promise<SkillCharacterRelation> {
     const id = this.generateId()
     const now = Date.now()
-
-    const stmt = this.db.prepare(`
-      INSERT OR IGNORE INTO lw_skill_characters (id, skill_id, character_id, created_at)
-      VALUES (?, ?, ?, ?)
-    `)
-    stmt.run(id, skillId, characterId, now)
-
-    return { id, skillId, characterId, createdAt: now }
+    const existing = await this.repo.findOne({
+      where: { skillId, characterId } as any,
+    })
+    if (existing) {
+      return this.toDto(existing)
+    }
+    const saved = await this.repo.save(
+      this.repo.create({ id, skillId, characterId, createdAt: now }),
+    )
+    return this.toDto(saved)
   }
 
-  /**
-   * 批量添加技能角色关联（事务）
-   */
-  batchAdd(skillId: string, characterIds: string[]): void {
+  async batchAdd(skillId: string, characterIds: string[]): Promise<void> {
     if (characterIds.length === 0) return
-
-    const now = Date.now()
-    const stmt = this.db.prepare(`
-      INSERT OR IGNORE INTO lw_skill_characters (id, skill_id, character_id, created_at)
-      VALUES (?, ?, ?, ?)
-    `)
-
-    const transaction = this.db.transaction(() => {
-      for (const characterId of characterIds) {
-        const id = this.generateId()
-        stmt.run(id, skillId, characterId, now)
+    await this.dataSource.transaction(async () => {
+      for (const cid of characterIds) {
+        await this.add(skillId, cid)
       }
     })
-
-    transaction()
   }
 
-  /**
-   * 替换技能的所有角色关联
-   */
-  replaceAll(skillId: string, characterIds: string[]): void {
-    const transaction = this.db.transaction(() => {
-      // 先删除现有关联
-      this.deleteBySkillId(skillId)
-      // 再添加新关联
-      this.batchAdd(skillId, characterIds)
+  async replaceAll(skillId: string, characterIds: string[]): Promise<void> {
+    await this.dataSource.transaction(async manager => {
+      const repo = manager.getRepository(LwSkillCharacterEntity)
+      await repo.delete({ skillId } as any)
+      const now = Date.now()
+      for (const cid of characterIds) {
+        await repo.save(
+          repo.create({
+            id: this.generateId(),
+            skillId,
+            characterId: cid,
+            createdAt: now,
+          }),
+        )
+      }
     })
-    transaction()
   }
 
-  /**
-   * 删除技能角色关联
-   */
-  delete(skillId: string, characterId: string): boolean {
-    const stmt = this.db.prepare(`
-      DELETE FROM lw_skill_characters WHERE skill_id = ? AND character_id = ?
-    `)
-    const result = stmt.run(skillId, characterId)
-    return result.changes > 0
+  async delete(skillId: string, characterId: string): Promise<boolean> {
+    const result = await this.repo.delete({ skillId, characterId } as any)
+    return (result.affected ?? 0) > 0
   }
 
-  /**
-   * 删除技能的所有角色关联
-   */
-  deleteBySkillId(skillId: string): number {
-    const stmt = this.db.prepare('DELETE FROM lw_skill_characters WHERE skill_id = ?')
-    const result = stmt.run(skillId)
-    return result.changes
+  async deleteBySkillId(skillId: string): Promise<number> {
+    const result = await this.repo.delete({ skillId } as any)
+    return result.affected ?? 0
   }
 
-  /**
-   * 删除角色的所有技能关联
-   */
-  deleteByCharacterId(characterId: string): number {
-    const stmt = this.db.prepare('DELETE FROM lw_skill_characters WHERE character_id = ?')
-    const result = stmt.run(characterId)
-    return result.changes
+  async deleteByCharacterId(characterId: string): Promise<number> {
+    const result = await this.repo.delete({ characterId } as any)
+    return result.affected ?? 0
   }
 
-  /**
-   * 迁移：从JSON字段迁移到关联表
-   * 技能表中存储的是角色ID数组，直接迁移即可
-   */
-  migrateFromJson(projectId: string): number {
-    // 获取项目的所有技能
-    const stmt = this.db.prepare(`
-      SELECT id, character_ids FROM lw_story_skills WHERE project_id = ?
-    `)
-    const skills = stmt.all(projectId) as any[]
+  /** 从 JSON 字段迁移到关联表 */
+  async migrateFromJson(projectId: string): Promise<number> {
+    const skillRepo = this.dataSource.getRepository(LwSkillEntity)
+    const skills = await skillRepo.find({
+      where: { projectId } as any,
+      select: ['id', 'characterIds'],
+    })
 
-    let migratedCount = 0
-    const now = Date.now()
-    const insertStmt = this.db.prepare(`
-      INSERT OR IGNORE INTO lw_skill_characters (id, skill_id, character_id, created_at)
-      VALUES (?, ?, ?, ?)
-    `)
-
-    const transaction = this.db.transaction(() => {
+    let migrated = 0
+    await this.dataSource.transaction(async manager => {
+      const repo = manager.getRepository(LwSkillCharacterEntity)
+      const now = Date.now()
       for (const skill of skills) {
-        const characterIds: string[] = this.parseJsonArray(skill.character_ids)
-        for (const characterId of characterIds) {
-          const id = this.generateId()
-          insertStmt.run(id, skill.id, characterId, now)
-          migratedCount++
+        const cids = (skill.characterIds as string[] | null) ?? []
+        for (const cid of cids) {
+          const existing = await repo.findOne({
+            where: { skillId: skill.id, characterId: cid } as any,
+          })
+          if (!existing) {
+            await repo.save(
+              repo.create({
+                id: this.generateId(),
+                skillId: skill.id,
+                characterId: cid,
+                createdAt: now,
+              }),
+            )
+            migrated++
+          }
         }
       }
     })
-
-    transaction()
-    return migratedCount
+    return migrated
   }
 
-  /**
-   * 生成唯一ID
-   */
   private generateId(): string {
-    return `sc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  /**
-   * 解析JSON数组
-   */
-  private parseJsonArray(jsonStr: string | null): string[] {
-    if (!jsonStr) return []
-    try {
-      return JSON.parse(jsonStr)
-    } catch {
-      return []
-    }
+    return `sc_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }
 }

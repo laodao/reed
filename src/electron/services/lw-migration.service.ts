@@ -127,7 +127,7 @@ export class LwMigrationService {
 
       // 5. 迁移技能角色关联
       if (db.lwSkillCharacters) {
-        result.skillCharacters = db.lwSkillCharacters.migrateFromJson(projectId)
+        result.skillCharacters = await db.lwSkillCharacters.migrateFromJson(projectId)
       }
 
       // 6. 迁移设计对话消息

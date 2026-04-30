@@ -1,52 +1,65 @@
 /**
  * 物品仓库
  * @module database/repositories/lw-item.repository
+ * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import Database from 'better-sqlite3'
-import { StoryItem, ItemType, ItemLevel, EntityImportance, EntitySourceType } from '@shared/types/longwriting.types'
+import type { DataSource } from 'typeorm'
+import {
+  StoryItem,
+  ItemType,
+  ItemLevel,
+  EntityImportance,
+  EntitySourceType,
+} from '@shared/types/longwriting.types'
+import { LwItemEntity } from '../entities/lw-item.entity'
+import { BaseRepository } from '../base-repository'
 
-/**
- * 物品仓库
- */
-export class LwItemRepository {
-  constructor(private db: Database.Database) {}
-
-  /**
-   * 根据项目 ID 获取所有物品
-   */
-  getByProjectId(projectId: string): StoryItem[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_story_items WHERE project_id = ? ORDER BY created_at DESC
-    `)
-    const rows = stmt.all(projectId) as any[]
-    return rows.map(this.mapToItem)
+export class LwItemRepository extends BaseRepository<LwItemEntity, StoryItem> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, LwItemEntity)
   }
 
-  /**
-   * 根据 ID 获取物品
-   */
-  getById(id: string): StoryItem | null {
-    const stmt = this.db.prepare(`SELECT * FROM lw_story_items WHERE id = ?`)
-    const row = stmt.get(id) as any
-    return row ? this.mapToItem(row) : null
+  private toEpochMs(v: Date | number | string | null | undefined): number {
+    if (v === null || v === undefined) return 0
+    if (v instanceof Date) return v.getTime()
+    if (typeof v === 'number') return v
+    return new Date(v).getTime()
   }
 
-  /**
-   * 根据来源剧集ID获取物品
-   */
-  getBySourceEpisodeId(episodeId: string): StoryItem[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_story_items WHERE source_episode_id = ? ORDER BY created_at DESC
-    `)
-    const rows = stmt.all(episodeId) as any[]
-    return rows.map(this.mapToItem)
+  protected toDto(e: LwItemEntity): StoryItem {
+    return {
+      id: e.id,
+      projectId: e.projectId,
+      name: e.name,
+      type: e.type as ItemType,
+      level: e.level as ItemLevel,
+      importance: (e.importance as EntityImportance) || 'secondary',
+      description: e.description ?? '',
+      ownerId: e.ownerId ?? undefined,
+      sourceType: (e.sourceType as EntitySourceType) || 'longwriting',
+      sourceEpisodeId: e.sourceEpisodeId ?? undefined,
+      createdAt: this.toEpochMs(e.createdAt),
+      updatedAt: this.toEpochMs(e.updatedAt),
+    } as StoryItem
   }
 
-  /**
-   * 创建物品
-   */
-  create(data: {
+  async getByProjectId(projectId: string): Promise<StoryItem[]> {
+    return this.findManyByWhere({ projectId } as any, { createdAt: 'DESC' })
+  }
+
+  async getById(id: string): Promise<StoryItem | null> {
+    return this.findOneByWhere({ id } as any)
+  }
+
+  async getBySourceEpisodeId(episodeId: string): Promise<StoryItem[]> {
+    return this.findManyByWhere(
+      { sourceEpisodeId: episodeId } as any,
+      { createdAt: 'DESC' },
+    )
+  }
+
+  async create(data: {
     projectId: string
     name: string
     type: ItemType
@@ -56,128 +69,57 @@ export class LwItemRepository {
     ownerId?: string
     sourceType?: EntitySourceType
     sourceEpisodeId?: string
-  }): StoryItem {
+  }): Promise<StoryItem> {
     const id = this.generateId()
-    const now = Date.now()
-
-    const stmt = this.db.prepare(`
-      INSERT INTO lw_story_items (id, project_id, name, type, level, importance, description, owner_id, source_type, source_episode_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-
-    stmt.run(
-      id, data.projectId, data.name, data.type, data.level,
-      data.importance || 'secondary', data.description, data.ownerId || null,
-      data.sourceType || 'longwriting', data.sourceEpisodeId || null,
-      now, now
-    )
-
-    return {
+    const now = new Date()
+    const entity = this.repo.create({
       id,
       projectId: data.projectId,
       name: data.name,
       type: data.type,
       level: data.level,
-      importance: data.importance || 'secondary' as EntityImportance,
+      importance: data.importance || 'secondary',
       description: data.description,
-      ownerId: data.ownerId,
-      sourceType: data.sourceType || 'longwriting' as EntitySourceType,
-      sourceEpisodeId: data.sourceEpisodeId,
+      ownerId: data.ownerId ?? null,
+      sourceType: data.sourceType || 'longwriting',
+      sourceEpisodeId: data.sourceEpisodeId ?? null,
       createdAt: now,
-      updatedAt: now
-    }
+      updatedAt: now,
+    })
+    const saved = await this.repo.save(entity)
+    return this.toDto(saved)
   }
 
-  /**
-   * 更新物品
-   */
-  update(id: string, data: Partial<StoryItem>): StoryItem | null {
-    const existing = this.getById(id)
+  async update(
+    id: string,
+    data: Partial<StoryItem>,
+  ): Promise<StoryItem | null> {
+    const existing = await this.repo.findOne({ where: { id } as any })
     if (!existing) return null
 
-    const updates: string[] = []
-    const values: any[] = []
+    let changed = false
+    if (data.name !== undefined) { existing.name = data.name; changed = true }
+    if (data.type !== undefined) { existing.type = data.type; changed = true }
+    if (data.level !== undefined) { existing.level = data.level; changed = true }
+    if (data.importance !== undefined) { existing.importance = data.importance; changed = true }
+    if (data.description !== undefined) { existing.description = data.description; changed = true }
+    if (data.ownerId !== undefined) { existing.ownerId = data.ownerId ?? null; changed = true }
+    if (data.sourceType !== undefined) { existing.sourceType = data.sourceType; changed = true }
+    if (data.sourceEpisodeId !== undefined) { existing.sourceEpisodeId = data.sourceEpisodeId ?? null; changed = true }
 
-    if (data.name !== undefined) {
-      updates.push('name = ?')
-      values.push(data.name)
-    }
-    if (data.type !== undefined) {
-      updates.push('type = ?')
-      values.push(data.type)
-    }
-    if (data.level !== undefined) {
-      updates.push('level = ?')
-      values.push(data.level)
-    }
-    if (data.importance !== undefined) {
-      updates.push('importance = ?')
-      values.push(data.importance)
-    }
-    if (data.description !== undefined) {
-      updates.push('description = ?')
-      values.push(data.description)
-    }
-    if (data.ownerId !== undefined) {
-      updates.push('owner_id = ?')
-      values.push(data.ownerId || null)
-    }
-    if (data.sourceType !== undefined) {
-      updates.push('source_type = ?')
-      values.push(data.sourceType)
-    }
-    if (data.sourceEpisodeId !== undefined) {
-      updates.push('source_episode_id = ?')
-      values.push(data.sourceEpisodeId || null)
-    }
+    if (!changed) return this.toDto(existing)
 
-    if (updates.length === 0) return existing
-
-    updates.push('updated_at = ?')
-    values.push(Date.now())
-    values.push(id)
-
-    const stmt = this.db.prepare(`
-      UPDATE lw_story_items SET ${updates.join(', ')} WHERE id = ?
-    `)
-    stmt.run(...values)
-
-    return this.getById(id)
+    existing.updatedAt = new Date()
+    const saved = await this.repo.save(existing)
+    return this.toDto(saved)
   }
 
-  /**
-   * 删除物品
-   */
-  delete(id: string): boolean {
-    const stmt = this.db.prepare('DELETE FROM lw_story_items WHERE id = ?')
-    const result = stmt.run(id)
-    return result.changes > 0
+  async delete(id: string): Promise<boolean> {
+    const result = await this.repo.delete({ id } as any)
+    return (result.affected ?? 0) > 0
   }
 
-  /**
-   * 生成唯一 ID
-   */
   private generateId(): string {
-    return `item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  /**
-   * 映射数据库行到对象
-   */
-  private mapToItem(row: any): StoryItem {
-    return {
-      id: row.id,
-      projectId: row.project_id,
-      name: row.name,
-      type: row.type as ItemType,
-      level: row.level as ItemLevel,
-      importance: row.importance || 'secondary' as EntityImportance,
-      description: row.description,
-      ownerId: row.owner_id || undefined,
-      sourceType: row.source_type || 'longwriting' as EntitySourceType,
-      sourceEpisodeId: row.source_episode_id || undefined,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }
+    return `item_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }
 }

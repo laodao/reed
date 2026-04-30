@@ -97,7 +97,7 @@ export class UploadedEntityService {
       const type: LocationType = this.mapLocationType(loc.type)
       const importance: LocationImportance = 'important'
 
-      const location = db.lwLocations.create({
+      const location = await db.lwLocations.create({
         projectId,
         name: loc.name,
         type,
@@ -127,7 +127,7 @@ export class UploadedEntityService {
       const type: ItemType = this.mapItemType(item.type)
       const level: ItemLevel = 'common'
 
-      const storyItem = db.lwItems.create({
+      const storyItem = await db.lwItems.create({
         projectId,
         name: item.name,
         type,
@@ -179,9 +179,9 @@ export class UploadedEntityService {
       case 'character':
         return db.lwCharacters.getById(entityId)
       case 'location':
-        return db.lwLocations.getById(entityId)
+        return await db.lwLocations.getById(entityId)
       case 'item':
-        return db.lwItems.getById(entityId)
+        return await db.lwItems.getById(entityId)
       default:
         return null
     }
@@ -219,9 +219,9 @@ export class UploadedEntityService {
       case 'character':
         return db.lwCharacters.update(entityId, data as Partial<StoryCharacter>)
       case 'location':
-        return db.lwLocations.update(entityId, data as Partial<StoryLocation>)
+        return await db.lwLocations.update(entityId, data as Partial<StoryLocation>)
       case 'item':
-        return db.lwItems.update(entityId, data as Partial<StoryItem>)
+        return await db.lwItems.update(entityId, data as Partial<StoryItem>)
       default:
         return null
     }
@@ -272,7 +272,7 @@ export class UploadedEntityService {
             await db.locationBindings.delete(binding.id)
           }
         }
-        return db.lwLocations.delete(entityId)
+        return await db.lwLocations.delete(entityId)
       case 'item':
         if (db.itemBindings) {
           const binding = await db.itemBindings.getByLongWritingItemId(projectId, entityId)
@@ -280,7 +280,7 @@ export class UploadedEntityService {
             await db.itemBindings.delete(binding.id)
           }
         }
-        return db.lwItems.delete(entityId)
+        return await db.lwItems.delete(entityId)
       default:
         return false
     }
@@ -304,7 +304,7 @@ export class UploadedEntityService {
 
     // 检查地点绑定的来源
     if (binding.longWritingLocationId) {
-      const location = db.lwLocations.getById(binding.longWritingLocationId)
+      const location = await db.lwLocations.getById(binding.longWritingLocationId)
       if (location && location.sourceType === 'longwriting') {
         return true
       }
@@ -312,7 +312,7 @@ export class UploadedEntityService {
 
     // 检查物品绑定的来源
     if (binding.longWritingItemId) {
-      const item = db.lwItems.getById(binding.longWritingItemId)
+      const item = await db.lwItems.getById(binding.longWritingItemId)
       if (item && item.sourceType === 'longwriting') {
         return true
       }

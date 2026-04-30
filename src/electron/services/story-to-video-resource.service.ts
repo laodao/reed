@@ -763,7 +763,7 @@ export class StoryToVideoResourceService {
       return { success: false, error: '数据库未初始化' }
     }
 
-    const location = db.lwLocations.getById(locationId)
+    const location = await db.lwLocations.getById(locationId)
     if (!location) {
       return { success: false, error: '地点不存在' }
     }
@@ -809,7 +809,7 @@ export class StoryToVideoResourceService {
         const imageInfo = response.images[0]
 
         // 更新地点的 generatedImageId
-        const updated = db.lwLocations.update(locationId, {
+        const updated = await db.lwLocations.update(locationId, {
           generatedImageId: imageInfo.id || imageInfo.filePath
         })
 

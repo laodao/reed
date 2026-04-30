@@ -198,7 +198,7 @@ export class LwEntityDetectionService {
               console.log(`[LwEntityDetectionService] 临时地点 "${loc.name}" 匹配模板: ${templateType}, 置信度: ${match.confidence.toFixed(2)}`)
             }
 
-            const created = db.lwLocations.create({
+            const created = await db.lwLocations.create({
               projectId,
               name: loc.name,
               type: loc.suggestedType || 'other',
@@ -218,7 +218,7 @@ export class LwEntityDetectionService {
       if (items && items.length > 0 && db.lwItems) {
         for (const item of items) {
           try {
-            const created = db.lwItems.create({
+            const created = await db.lwItems.create({
               projectId,
               name: item.name,
               type: item.suggestedType || 'other',

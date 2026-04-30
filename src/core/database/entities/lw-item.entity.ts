@@ -1,7 +1,7 @@
 import { Column, Entity, Index, PrimaryColumn } from 'typeorm'
 
 /**
- * LW 物品 Entity。
+ * LW 物品 Entity（含 ALTER 后扩展列）。
  */
 @Entity({ name: 'lw_story_items' })
 @Index('idx_lw_items_project_id', ['projectId'])
@@ -26,6 +26,16 @@ export class LwItemEntity {
 
   @Column({ name: 'owner_id', type: 'text', nullable: true })
   ownerId!: string | null
+
+  // ALTER 后扩展列
+  @Column({ name: 'importance', type: 'text', default: 'secondary', nullable: true })
+  importance!: string | null
+
+  @Column({ name: 'source_type', type: 'text', default: 'longwriting', nullable: true })
+  sourceType!: string | null
+
+  @Column({ name: 'source_episode_id', type: 'text', nullable: true })
+  sourceEpisodeId!: string | null
 
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
