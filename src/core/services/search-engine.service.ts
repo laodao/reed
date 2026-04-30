@@ -4,8 +4,8 @@
  * @description 提供搜索引擎配置管理和搜索执行功能
  */
 
-import { getDatabaseManager } from '../database/index'
-import { SecureStorageService } from './secure-storage.service'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { getSecureStorage, type ISecureStorage } from '@core/interfaces/storage.interface'
 import {
   SEARCH_ENGINE_TEMPLATES,
   getSearchEngineTemplate,
@@ -27,10 +27,10 @@ import type {
  */
 export class SearchEngineService {
   private static instance: SearchEngineService
-  private secureStorage: SecureStorageService
+  private secureStorage: ISecureStorage
 
   private constructor() {
-    this.secureStorage = SecureStorageService.getInstance()
+    this.secureStorage = getSecureStorage()
   }
 
   /**
@@ -63,7 +63,7 @@ export class SearchEngineService {
    * 获取所有用户配置
    */
   async getConfigs(): Promise<UserSearchEngineConfig[]> {
-    const db = getDatabaseManager()
+    const db = getCoreDatabaseManager()
     if (!db.searchEngineConfigs) {
       return []
     }
@@ -74,7 +74,7 @@ export class SearchEngineService {
    * 获取单个配置
    */
   async getConfig(id: string): Promise<UserSearchEngineConfig | null> {
-    const db = getDatabaseManager()
+    const db = getCoreDatabaseManager()
     if (!db.searchEngineConfigs) {
       return null
     }
@@ -85,7 +85,7 @@ export class SearchEngineService {
    * 获取默认配置
    */
   async getDefaultConfig(): Promise<UserSearchEngineConfig | null> {
-    const db = getDatabaseManager()
+    const db = getCoreDatabaseManager()
     if (!db.searchEngineConfigs) {
       return null
     }
@@ -96,7 +96,7 @@ export class SearchEngineService {
    * 保存配置（创建或更新）
    */
   async saveConfig(id: string | undefined, data: SaveSearchEngineConfigRequest): Promise<UserSearchEngineConfig> {
-    const db = getDatabaseManager()
+    const db = getCoreDatabaseManager()
     if (!db.searchEngineConfigs) {
       throw new Error('数据库未初始化')
     }
@@ -150,7 +150,7 @@ export class SearchEngineService {
    * 删除配置
    */
   async deleteConfig(id: string): Promise<boolean> {
-    const db = getDatabaseManager()
+    const db = getCoreDatabaseManager()
     if (!db.searchEngineConfigs) {
       return false
     }
@@ -161,7 +161,7 @@ export class SearchEngineService {
    * 设置默认配置
    */
   async setDefaultConfig(id: string): Promise<boolean> {
-    const db = getDatabaseManager()
+    const db = getCoreDatabaseManager()
     if (!db.searchEngineConfigs) {
       return false
     }
@@ -242,7 +242,7 @@ export class SearchEngineService {
    * 更新测试结果
    */
   private async updateTestResult(id: string, result: 'success' | 'failed' | 'unknown'): Promise<void> {
-    const db = getDatabaseManager()
+    const db = getCoreDatabaseManager()
     if (db.searchEngineConfigs) {
       await db.searchEngineConfigs.updateTestResult(id, result)
     }
@@ -271,7 +271,7 @@ export class SearchEngineService {
 
       // 如果提供了配置 ID，获取配置并解密 API Key
       if (configId) {
-        const db = getDatabaseManager()
+        const db = getCoreDatabaseManager()
         if (db.searchEngineConfigs) {
           const storedConfig = await db.searchEngineConfigs.getById(configId)
           if (storedConfig) {
@@ -308,7 +308,7 @@ export class SearchEngineService {
    * 获取已配置的搜索引擎列表
    */
   async getConfiguredEngines(): Promise<UserSearchEngineConfig[]> {
-    const db = getDatabaseManager()
+    const db = getCoreDatabaseManager()
     if (!db.searchEngineConfigs) {
       return []
     }
@@ -323,7 +323,7 @@ export class SearchEngineService {
    * 获取被禁用的快速搜索引擎 ID 列表
    */
   getDisabledQuickEngines(): string[] {
-    const db = getDatabaseManager()
+    const db = getCoreDatabaseManager()
     if (!db.settings) {
       return []
     }
@@ -336,7 +336,7 @@ export class SearchEngineService {
    * @param enabled - 是否启用
    */
   setQuickEngineEnabled(engineId: string, enabled: boolean): void {
-    const db = getDatabaseManager()
+    const db = getCoreDatabaseManager()
     if (!db.settings) {
       throw new Error('数据库未初始化')
     }

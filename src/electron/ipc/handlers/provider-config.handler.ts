@@ -9,7 +9,7 @@ import { getDatabaseManager } from '../../database'
 import {
   providerTemplateService,
   PROVIDER_TEMPLATES
-} from '../../services/provider-template.service'
+} from '@core/services/provider-template.service'
 import { SecureStorageService } from '../../services/secure-storage.service'
 import type {
   ProviderTemplateListResponse,

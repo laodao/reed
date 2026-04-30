@@ -5,7 +5,7 @@
  */
 
 import { ipcMain, IpcMainInvokeEvent, BrowserWindow } from 'electron'
-import { getSearchEngineService } from '../../services/search-engine.service'
+import { getSearchEngineService } from '@core/services/search-engine.service'
 import type {
   SearchEngineTemplateListResponse,
   SearchEngineConfigListResponse,

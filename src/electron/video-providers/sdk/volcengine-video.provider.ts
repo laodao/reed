@@ -14,7 +14,7 @@ import type {
   GeneratedVideo
 } from '@shared/types/video-provider.types'
 import { BaseVideoProvider } from '../base-video-provider'
-import { OSSService } from '../../services/oss.service'
+import { OSSService } from '@core/services/oss.service'
 
 /**
  * 火山引擎视频生成响应格式

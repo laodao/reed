@@ -10,7 +10,7 @@ import * as fs from 'fs'
 import log from 'electron-log'
 import { getDatabaseManager } from '../database'
 import { SecureStorageService } from './secure-storage.service'
-import { PROVIDER_TEMPLATES } from './provider-template.service'
+import { PROVIDER_TEMPLATES } from '@core/services/provider-template.service'
 import { DataPathService } from './data-path.service'
 import {
   createImageProvider,

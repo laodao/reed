@@ -7,7 +7,7 @@
 import { ipcMain } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import { DatabaseManager } from '../../database/index'
-import { OSSService } from '../../services/oss.service'
+import { OSSService } from '@core/services/oss.service'
 import { SecureStorageService } from '../../services/secure-storage.service'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type {

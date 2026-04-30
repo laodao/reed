@@ -38,3 +38,24 @@ export interface ISecureStorage {
    */
   isEncryptionAvailable(): boolean
 }
+
+/**
+ * 全局 SecureStorage 访问器：core 服务通过此访问器获取实例。
+ * 各运行环境（electron/web）需在初始化时调用 registerSecureStorage 注册具体实现。
+ */
+export type SecureStorageAccessor = () => ISecureStorage
+
+let _secureStorageAccessor: SecureStorageAccessor | null = null
+
+export function registerSecureStorage(accessor: SecureStorageAccessor): void {
+  _secureStorageAccessor = accessor
+}
+
+export function getSecureStorage(): ISecureStorage {
+  if (!_secureStorageAccessor) {
+    throw new Error(
+      '[ISecureStorage] 未注册访问器：请在运行环境初始化时调用 registerSecureStorage()',
+    )
+  }
+  return _secureStorageAccessor()
+}

@@ -6,12 +6,17 @@
 
 import { safeStorage } from 'electron'
 import crypto from 'crypto'
+import type { ISecureStorage } from '@core/interfaces/storage.interface'
+import { registerSecureStorage } from '@core/interfaces/storage.interface'
 
 /**
  * 安全存储服务类
  * 用于管理加密密钥和加密解密操作
+ *
+ * 同时实现 ISecureStorage 接口；首次构造时注册到全局访问器，
+ * core 层服务通过 getSecureStorage() 获取实例。
  */
-export class SecureStorageService {
+export class SecureStorageService implements ISecureStorage {
   private static instance: SecureStorageService
   private masterKey: Buffer | null = null
   private initialized: boolean = false
@@ -24,6 +29,7 @@ export class SecureStorageService {
   static getInstance(): SecureStorageService {
     if (!SecureStorageService.instance) {
       SecureStorageService.instance = new SecureStorageService()
+      registerSecureStorage(() => SecureStorageService.instance)
     }
     return SecureStorageService.instance
   }

@@ -7,9 +7,10 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import * as crypto from 'crypto'
-import log from 'electron-log'
-import { getDatabaseManager } from '../database'
-import { SecureStorageService } from './secure-storage.service'
+// electron-log replaced by console for cross-platform compatibility
+const log = console
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { OSSConfigRepository } from '@core/database/repositories/oss-config.repository'
 import type {
   OSSConfig,
@@ -45,11 +46,11 @@ export class OSSService {
    */
   private getRepository(): OSSConfigRepository {
     if (!this.repository) {
-      const db = getDatabaseManager()
-      if (!db.db) {
+      const db = getCoreDatabaseManager()
+      if (!db.ossConfigs) {
         throw new Error('数据库未初始化')
       }
-      this.repository = new OSSConfigRepository(db.db)
+      this.repository = db.ossConfigs
     }
     return this.repository
   }
@@ -92,7 +93,7 @@ export class OSSService {
       }
 
       // 解密密钥
-      const secureStorage = SecureStorageService.getInstance()
+      const secureStorage = getSecureStorage()
       if (!secureStorage.isInitialized()) {
         await secureStorage.initialize()
       }
@@ -367,7 +368,7 @@ export class OSSService {
       }
 
       // 解密密钥
-      const secureStorage = SecureStorageService.getInstance()
+      const secureStorage = getSecureStorage()
       if (!secureStorage.isInitialized()) {
         await secureStorage.initialize()
       }

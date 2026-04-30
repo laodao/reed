@@ -7,11 +7,11 @@
 import { BrowserWindow } from 'electron'
 import { getDatabaseManager } from '../database'
 import { createProvider } from '@core/providers'
-import { PROVIDER_TEMPLATES } from './provider-template.service'
+import { PROVIDER_TEMPLATES } from '@core/services/provider-template.service'
 import { SecureStorageService } from './secure-storage.service'
 import { FileService } from './file.service'
 import { KnowledgeBaseService } from './knowledge-base.service'
-import { getSearchEngineService } from './search-engine.service'
+import { getSearchEngineService } from '@core/services/search-engine.service'
 import type {
   Dialog,
   Message,

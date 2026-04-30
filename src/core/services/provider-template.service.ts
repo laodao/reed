@@ -5,8 +5,8 @@
  */
 
 import type { ProviderTemplate, ModelDefinition, ModelType } from '@shared/types/provider-template.types'
-import { getDatabaseManager } from '../database/index'
-import { SecureStorageService } from './secure-storage.service'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { getSecureStorage, type ISecureStorage } from '@core/interfaces/storage.interface'
 import { createProvider } from '@core/providers'
 
 /**
@@ -449,10 +449,10 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
  * 提供商模板服务
  */
 export class ProviderTemplateService {
-  private secureStorage: SecureStorageService
+  private secureStorage: ISecureStorage
 
   constructor() {
-    this.secureStorage = new SecureStorageService()
+    this.secureStorage = getSecureStorage()
   }
 
   /**

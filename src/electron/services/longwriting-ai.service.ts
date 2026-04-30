@@ -7,7 +7,7 @@
 import { BrowserWindow } from 'electron'
 import { getDatabaseManager } from '../database'
 import { createProvider } from '@core/providers'
-import { PROVIDER_TEMPLATES } from './provider-template.service'
+import { PROVIDER_TEMPLATES } from '@core/services/provider-template.service'
 import { SecureStorageService } from './secure-storage.service'
 import type { ProviderTemplate, UserProviderConfig, ChatContext } from '@shared/types'
 

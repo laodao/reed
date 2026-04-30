@@ -11,7 +11,7 @@ import path from 'path'
 import { getDatabaseManager } from '../database'
 import { TranslationRepository } from '@core/database/repositories/translation.repository'
 import { createProvider } from '@core/providers'
-import { PROVIDER_TEMPLATES } from './provider-template.service'
+import { PROVIDER_TEMPLATES } from '@core/services/provider-template.service'
 import { SecureStorageService } from './secure-storage.service'
 import type {
   TextTranslationRequest,

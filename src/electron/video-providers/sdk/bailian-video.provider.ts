@@ -13,7 +13,7 @@ import type {
   VideoTaskStatus
 } from '@shared/types/video-provider.types'
 import { BaseVideoProvider } from '../base-video-provider'
-import { OSSService } from '../../services/oss.service'
+import { OSSService } from '@core/services/oss.service'
 
 /**
  * 百炼文件上传响应
