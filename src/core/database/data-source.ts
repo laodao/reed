@@ -28,11 +28,13 @@ export async function createDataSource(opts: CreateDataSourceOptions): Promise<D
   return ds
 }
 
+type EntityCtor = new (...args: unknown[]) => object
+
 function buildDataSourceOptions(opts: CreateDataSourceOptions): DataSourceOptions {
   const cfg = opts.config
   const allEntities = Object.values(entities).filter(
     v => typeof v === 'function',
-  ) as Function[]
+  ) as EntityCtor[]
 
   if (cfg.type === 'sqlite') {
     return {
