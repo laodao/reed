@@ -12,7 +12,6 @@ import type {
   DiaryFolder,
   DiaryEntry,
   DiaryEntryListItem,
-  DiaryLink,
   BacklinkInfo,
   CreateDiaryFolderRequest,
   UpdateDiaryFolderRequest,

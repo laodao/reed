@@ -14,12 +14,9 @@ import { KnowledgeBaseService } from '@core/services/knowledge-base.service'
 import { getSearchEngineService } from '@core/services/search-engine.service'
 import type {
   Dialog,
-  Message,
   ChatContext,
   SendMessageRequest,
   StreamEvent,
-  ProviderTemplate,
-  UserProviderConfig,
   WebSearchResult,
   MessageMetadata,
   Attachment,
