@@ -3,6 +3,7 @@ import { Column, Entity, Index, PrimaryColumn } from 'typeorm'
 /**
  * 长文写作角色 Entity
  * 对齐 lw_story_characters DDL（FK CASCADE 到 lw_projects；FK SET NULL 到 portrait_variants）。
+ * 含 ALTER 后扩展列：importance / template_type / generated_image_id / source_type / source_episode_id。
  */
 @Entity({ name: 'lw_story_characters' })
 @Index('idx_lw_characters_project_id', ['projectId'])
@@ -66,6 +67,12 @@ export class LwCharacterEntity {
 
   @Column({ name: 'major_events', type: 'text', nullable: true })
   majorEvents!: string | null
+
+  @Column({ name: 'source_type', type: 'text', default: 'longwriting', nullable: true })
+  sourceType!: string | null
+
+  @Column({ name: 'source_episode_id', type: 'text', nullable: true })
+  sourceEpisodeId!: string | null
 
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date

@@ -163,7 +163,7 @@ export class LwEntityDetectionService {
               console.log(`[LwEntityDetectionService] 临时角色 "${char.name}" 匹配模板: ${templateType}, 置信度: ${match.confidence.toFixed(2)}`)
             }
 
-            const created = db.lwCharacters.create({
+            const created = await db.lwCharacters.create({
               projectId,
               name: char.name,
               // 使用 AI 提取的完整信息，未提供时使用默认值

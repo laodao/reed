@@ -197,7 +197,7 @@ export class LongWritingService {
     if (!this.db.lwCharacters) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwCharacters.getByProjectId(projectId)
+    return this.await db.lwCharacters.getByProjectId(projectId)
   }
 
   /**
@@ -207,7 +207,7 @@ export class LongWritingService {
     if (!this.db.lwCharacters) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwCharacters.getById(id)
+    return this.await db.lwCharacters.getById(id)
   }
 
   /**
@@ -217,7 +217,7 @@ export class LongWritingService {
     if (!this.db.lwCharacters) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwCharacters.create(data)
+    return this.await db.lwCharacters.create(data)
   }
 
   /**
@@ -227,7 +227,7 @@ export class LongWritingService {
     if (!this.db.lwCharacters) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwCharacters.update(id, data)
+    return this.await db.lwCharacters.update(id, data)
   }
 
   /**
@@ -237,7 +237,7 @@ export class LongWritingService {
     if (!this.db.lwCharacters) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwCharacters.delete(id)
+    return this.await db.lwCharacters.delete(id)
   }
 
   /**
@@ -821,7 +821,7 @@ export class LongWritingService {
     if (!this.db.lwChapters) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwChapters.getByOutlineId(outlineId)
+    return this.await db.lwChapters.getByOutlineId(outlineId)
   }
 
   /**
@@ -831,7 +831,7 @@ export class LongWritingService {
     if (!this.db.lwChapters) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwChapters.getByOutlineIds(outlineIds)
+    return this.await db.lwChapters.getByOutlineIds(outlineIds)
   }
 
   /**
@@ -844,13 +844,13 @@ export class LongWritingService {
 
     let chapter = await this.getChapter(outlineId)
     if (!chapter) {
-      chapter = this.db.lwChapters.create(outlineId, content)
+      chapter = this.await db.lwChapters.create(outlineId, content)
     } else {
-      chapter = this.db.lwChapters.updateContent(chapter.id, content)!
+      chapter = this.await db.lwChapters.updateContent(chapter.id, content)!
     }
 
     // 创建版本记录
-    this.db.lwChapters.createVersion(chapter.id, content, 'manual')
+    this.await db.lwChapters.createVersion(chapter.id, content, 'manual')
 
     return chapter
   }
@@ -862,7 +862,7 @@ export class LongWritingService {
     if (!this.db.lwChapters) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwChapters.getVersions(chapterId)
+    return this.await db.lwChapters.getVersions(chapterId)
   }
 
   /**
@@ -872,7 +872,7 @@ export class LongWritingService {
     if (!this.db.lwChapters) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwChapters.restoreVersion(chapterId, versionId)
+    return this.await db.lwChapters.restoreVersion(chapterId, versionId)
   }
 
   /**
@@ -882,7 +882,7 @@ export class LongWritingService {
     if (!this.db.lwChapters) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwChapters.lockVersion(versionId)
+    return this.await db.lwChapters.lockVersion(versionId)
   }
 
   // ==================== AI 生成相关 ====================

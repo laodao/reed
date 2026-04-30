@@ -61,7 +61,7 @@ export class UploadedEntityService {
         rolePosition === 'antagonist' ? 'main' :
         rolePosition === 'supporting' ? 'secondary' : 'temporary'
 
-      const character = db.lwCharacters.create({
+      const character = await db.lwCharacters.create({
         projectId,
         name: char.name,
         gender: 'other', // 上传模式默认值，用户可后续编辑
@@ -177,7 +177,7 @@ export class UploadedEntityService {
 
     switch (entityType) {
       case 'character':
-        return db.lwCharacters.getById(entityId)
+        return await db.lwCharacters.getById(entityId)
       case 'location':
         return await db.lwLocations.getById(entityId)
       case 'item':
@@ -217,7 +217,7 @@ export class UploadedEntityService {
 
     switch (entityType) {
       case 'character':
-        return db.lwCharacters.update(entityId, data as Partial<StoryCharacter>)
+        return await db.lwCharacters.update(entityId, data as Partial<StoryCharacter>)
       case 'location':
         return await db.lwLocations.update(entityId, data as Partial<StoryLocation>)
       case 'item':
@@ -264,7 +264,7 @@ export class UploadedEntityService {
             await db.characterBindings.delete(binding.id)
           }
         }
-        return db.lwCharacters.delete(entityId)
+        return await db.lwCharacters.delete(entityId)
       case 'location':
         if (db.locationBindings) {
           const binding = await db.locationBindings.getByLongWritingLocationId(projectId, entityId)
@@ -296,7 +296,7 @@ export class UploadedEntityService {
 
     // 检查角色绑定的来源
     if (binding.longWritingCharacterId) {
-      const character = db.lwCharacters.getById(binding.longWritingCharacterId)
+      const character = await db.lwCharacters.getById(binding.longWritingCharacterId)
       if (character && character.sourceType === 'longwriting') {
         return true
       }

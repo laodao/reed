@@ -1,9 +1,10 @@
 /**
  * 长文写作角色仓库
  * @module database/repositories/lw-character.repository
+ * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import Database from 'better-sqlite3'
+import type { DataSource } from 'typeorm'
 import {
   StoryCharacter,
   CreateCharacterRequest,
@@ -11,304 +12,240 @@ import {
   CharacterRelation,
   EntityImportance,
   TemporaryCharacterTemplateType,
-  StoryCharacterRace,
-  EntitySourceType
+  EntitySourceType,
 } from '@shared/types/longwriting.types'
+import { LwCharacterEntity } from '../entities/lw-character.entity'
+import { LwCharacterRelationEntity } from '../entities/lw-character-relation.entity'
+import { BaseRepository } from '../base-repository'
 
-export class LwCharacterRepository {
-  constructor(private db: Database.Database) {}
-
-  /**
-   * 根据项目 ID 获取所有角色
-   */
-  getByProjectId(projectId: string): StoryCharacter[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_story_characters WHERE project_id = ? ORDER BY created_at ASC
-    `)
-    const rows = stmt.all(projectId) as any[]
-    return rows.map(this.mapToCharacter)
+export class LwCharacterRepository extends BaseRepository<
+  LwCharacterEntity,
+  StoryCharacter
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, LwCharacterEntity)
   }
 
-  /**
-   * 根据项目 ID 获取所有临时角色
-   */
-  getTemporaryByProjectId(projectId: string): StoryCharacter[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_story_characters WHERE project_id = ? AND importance = 'temporary' ORDER BY created_at ASC
-    `)
-    const rows = stmt.all(projectId) as any[]
-    return rows.map(this.mapToCharacter)
+  private toEpochMs(v: Date | number | string | null | undefined): number {
+    if (v === null || v === undefined) return 0
+    if (v instanceof Date) return v.getTime()
+    if (typeof v === 'number') return v
+    return new Date(v).getTime()
   }
 
-  /**
-   * 根据 ID 获取角色
-   */
-  getById(id: string): StoryCharacter | null {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_story_characters WHERE id = ?
-    `)
-    const row = stmt.get(id) as any
-    return row ? this.mapToCharacter(row) : null
-  }
-
-  /**
-   * 根据来源剧集ID获取角色
-   */
-  getBySourceEpisodeId(episodeId: string): StoryCharacter[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_story_characters WHERE source_episode_id = ? ORDER BY created_at ASC
-    `)
-    const rows = stmt.all(episodeId) as any[]
-    return rows.map(this.mapToCharacter)
-  }
-
-  /**
-   * 根据人像ID获取关联的角色
-   */
-  getByPortraitId(portraitId: string): StoryCharacter[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_story_characters WHERE portrait_id = ?
-    `)
-    const rows = stmt.all(portraitId) as any[]
-    return rows.map(this.mapToCharacter)
-  }
-
-  /**
-   * 创建角色
-   */
-  create(data: CreateCharacterRequest): StoryCharacter {
-    const id = this.generateId()
-    const now = Date.now()
-
-    const stmt = this.db.prepare(`
-      INSERT INTO lw_story_characters (
-        id, project_id, portrait_id, name, gender, age, height, weight, race,
-        occupation, position, appearance, background, personality, abilities,
-        role_position, major_events, created_at, updated_at, importance,
-        template_type, generated_image_id, source_type, source_episode_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-
-    // 确保所有参数都是原始类型，数组需要转换为字符串
-    const normalizeValue = (value: any): string => {
-      if (value === null || value === undefined) return ''
-      if (Array.isArray(value)) return value.join('、')
-      if (typeof value === 'object') return JSON.stringify(value)
-      return String(value)
-    }
-
-    stmt.run(
-      id,
-      data.projectId,
-      data.portraitId || null,
-      normalizeValue(data.name),
-      data.gender || 'male',
-      data.age || 25,
-      data.height || null,
-      data.weight || null,
-      data.race || null,
-      data.occupation || null,
-      data.position || null,
-      normalizeValue(data.appearance),
-      normalizeValue(data.background),
-      normalizeValue(data.personality),
-      normalizeValue(data.abilities),
-      data.rolePosition || 'supporting',
-      normalizeValue(data.majorEvents),
-      now,
-      now,
-      data.importance || 'secondary',
-      data.templateType || null,
-      data.generatedImageId || null,
-      data.sourceType || 'longwriting',
-      data.sourceEpisodeId || null
-    )
-
+  protected toDto(e: LwCharacterEntity): StoryCharacter {
     return {
+      id: e.id,
+      projectId: e.projectId,
+      portraitId: e.portraitId ?? undefined,
+      name: e.name,
+      gender: e.gender as any,
+      age: e.age ?? undefined,
+      height: e.height ?? undefined,
+      weight: e.weight ?? undefined,
+      race: e.race as any,
+      occupation: e.occupation ?? undefined,
+      position: e.position ?? undefined,
+      appearance: e.appearance ?? '',
+      background: e.background ?? '',
+      personality: e.personality ?? '',
+      abilities: e.abilities ?? '',
+      rolePosition: e.rolePosition as any,
+      importance: (e.importance as EntityImportance) || 'secondary',
+      templateType: (e.templateType as TemporaryCharacterTemplateType | null) ?? undefined,
+      generatedImageId: e.generatedImageId ?? undefined,
+      majorEvents: e.majorEvents ?? '',
+      sourceType: (e.sourceType as EntitySourceType) || 'longwriting',
+      sourceEpisodeId: e.sourceEpisodeId ?? undefined,
+      createdAt: this.toEpochMs(e.createdAt),
+      updatedAt: this.toEpochMs(e.updatedAt),
+    } as StoryCharacter
+  }
+
+  async getByProjectId(projectId: string): Promise<StoryCharacter[]> {
+    return this.findManyByWhere({ projectId } as any, { createdAt: 'ASC' })
+  }
+
+  async getTemporaryByProjectId(projectId: string): Promise<StoryCharacter[]> {
+    return this.findManyByWhere(
+      { projectId, importance: 'temporary' } as any,
+      { createdAt: 'ASC' },
+    )
+  }
+
+  async getById(id: string): Promise<StoryCharacter | null> {
+    return this.findOneByWhere({ id } as any)
+  }
+
+  async getBySourceEpisodeId(episodeId: string): Promise<StoryCharacter[]> {
+    return this.findManyByWhere(
+      { sourceEpisodeId: episodeId } as any,
+      { createdAt: 'ASC' },
+    )
+  }
+
+  async getByPortraitId(portraitId: string): Promise<StoryCharacter[]> {
+    return this.findManyByWhere({ portraitId } as any)
+  }
+
+  /** 数组转字符串，对象 JSON 序列化（保留原行为） */
+  private normalizeValue(value: any): string {
+    if (value === null || value === undefined) return ''
+    if (Array.isArray(value)) return value.join('、')
+    if (typeof value === 'object') return JSON.stringify(value)
+    return String(value)
+  }
+
+  async create(data: CreateCharacterRequest): Promise<StoryCharacter> {
+    const id = this.generateId()
+    const now = new Date()
+    const entity = this.repo.create({
       id,
       projectId: data.projectId,
-      portraitId: data.portraitId,
-      name: data.name,
+      portraitId: data.portraitId ?? null,
+      name: this.normalizeValue(data.name),
       gender: data.gender || 'male',
-      age: data.age || 25,
-      height: data.height,
-      weight: data.weight,
-      race: data.race,
-      occupation: data.occupation,
-      position: data.position,
-      appearance: data.appearance || '',
-      background: data.background || '',
-      personality: data.personality || '',
-      abilities: data.abilities || '',
+      age: data.age ?? 25,
+      height: data.height ?? null,
+      weight: data.weight ?? null,
+      race: data.race ?? null,
+      occupation: data.occupation ?? null,
+      position: data.position ?? null,
+      appearance: this.normalizeValue(data.appearance),
+      background: this.normalizeValue(data.background),
+      personality: this.normalizeValue(data.personality),
+      abilities: this.normalizeValue(data.abilities),
       rolePosition: data.rolePosition || 'supporting',
-      importance: data.importance || 'secondary' as EntityImportance,
-      templateType: data.templateType,
-      generatedImageId: data.generatedImageId,
-      majorEvents: data.majorEvents || '',
-      sourceType: data.sourceType || 'longwriting' as EntitySourceType,
-      sourceEpisodeId: data.sourceEpisodeId,
+      majorEvents: this.normalizeValue(data.majorEvents),
+      importance: data.importance || 'secondary',
+      templateType: data.templateType ?? null,
+      generatedImageId: data.generatedImageId ?? null,
+      sourceType: data.sourceType || 'longwriting',
+      sourceEpisodeId: data.sourceEpisodeId ?? null,
       createdAt: now,
-      updatedAt: now
-    }
+      updatedAt: now,
+    })
+    const saved = await this.repo.save(entity)
+    return this.toDto(saved)
   }
 
-  /**
-   * 更新角色
-   */
-  update(id: string, data: UpdateCharacterRequest): StoryCharacter | null {
-    const character = this.getById(id)
-    if (!character) return null
+  async update(
+    id: string,
+    data: UpdateCharacterRequest,
+  ): Promise<StoryCharacter | null> {
+    const existing = await this.repo.findOne({ where: { id } as any })
+    if (!existing) return null
 
-    const updates: string[] = []
-    const values: any[] = []
-
-    // 处理外键约束字段：空字符串转换为 null
-    const fieldMap: Record<string, any> = {
-      portrait_id: data.portraitId === '' ? null : data.portraitId,
-      name: data.name,
-      gender: data.gender,
-      age: data.age,
-      height: data.height,
-      weight: data.weight,
-      race: data.race,
-      occupation: data.occupation,
-      position: data.position,
-      appearance: data.appearance,
-      background: data.background,
-      personality: data.personality,
-      abilities: data.abilities,
-      role_position: data.rolePosition,
-      importance: data.importance,
-      template_type: data.templateType,
-      generated_image_id: data.generatedImageId === '' ? null : data.generatedImageId,
-      major_events: data.majorEvents,
-      source_type: data.sourceType,
-      source_episode_id: data.sourceEpisodeId === '' ? null : data.sourceEpisodeId
-    }
-
-    for (const [field, value] of Object.entries(fieldMap)) {
+    let changed = false
+    const apply = <T extends keyof LwCharacterEntity>(
+      field: T,
+      value: LwCharacterEntity[T] | undefined,
+    ) => {
       if (value !== undefined) {
-        updates.push(`${field} = ?`)
-        values.push(value)
+        (existing as any)[field] = value
+        changed = true
       }
     }
 
-    if (updates.length === 0) return character
+    if (data.portraitId !== undefined) {
+      existing.portraitId = data.portraitId === '' ? null : data.portraitId
+      changed = true
+    }
+    apply('name', data.name as any)
+    apply('gender', data.gender as any)
+    apply('age', data.age as any)
+    apply('height', data.height as any)
+    apply('weight', data.weight as any)
+    apply('race', data.race as any)
+    apply('occupation', data.occupation as any)
+    apply('position', data.position as any)
+    apply('appearance', data.appearance as any)
+    apply('background', data.background as any)
+    apply('personality', data.personality as any)
+    apply('abilities', data.abilities as any)
+    apply('rolePosition', data.rolePosition as any)
+    apply('importance', data.importance as any)
+    apply('templateType', data.templateType as any)
+    if (data.generatedImageId !== undefined) {
+      existing.generatedImageId = data.generatedImageId === '' ? null : data.generatedImageId
+      changed = true
+    }
+    apply('majorEvents', data.majorEvents as any)
+    apply('sourceType', data.sourceType as any)
+    if (data.sourceEpisodeId !== undefined) {
+      existing.sourceEpisodeId = data.sourceEpisodeId === '' ? null : data.sourceEpisodeId
+      changed = true
+    }
 
-    updates.push('updated_at = ?')
-    values.push(Date.now())
-    values.push(id)
+    if (!changed) return this.toDto(existing)
 
-    const stmt = this.db.prepare(`
-      UPDATE lw_story_characters SET ${updates.join(', ')} WHERE id = ?
-    `)
-    stmt.run(...values)
-
-    return this.getById(id)
+    existing.updatedAt = new Date()
+    const saved = await this.repo.save(existing)
+    return this.toDto(saved)
   }
 
-  /**
-   * 删除角色
-   */
-  delete(id: string): boolean {
-    const stmt = this.db.prepare('DELETE FROM lw_story_characters WHERE id = ?')
-    const result = stmt.run(id)
-    return result.changes > 0
+  async delete(id: string): Promise<boolean> {
+    const result = await this.repo.delete({ id } as any)
+    return (result.affected ?? 0) > 0
   }
 
-  /**
-   * 获取角色的所有关系
-   */
-  getRelations(characterId: string): CharacterRelation[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_character_relations WHERE character_id = ?
-    `)
-    const rows = stmt.all(characterId) as any[]
-    return rows.map(this.mapToRelation)
+  async getRelations(characterId: string): Promise<CharacterRelation[]> {
+    const repo = this.dataSource.getRepository(LwCharacterRelationEntity)
+    const rows = await repo.find({ where: { characterId } as any })
+    return rows.map(r => ({
+      id: r.id,
+      characterId: r.characterId,
+      relatedCharacterId: r.relatedCharacterId,
+      relationType: r.relationType ?? '',
+      relationDescription: r.relationDescription ?? '',
+      createdAt:
+        r.createdAt instanceof Date ? r.createdAt.getTime() : Number(r.createdAt),
+    }))
   }
 
-  /**
-   * 添加角色关系
-   */
-  addRelation(
+  async addRelation(
     characterId: string,
     relatedCharacterId: string,
     relationType: string,
-    relationDescription: string
-  ): CharacterRelation {
+    relationDescription: string,
+  ): Promise<CharacterRelation> {
     const id = this.generateRelationId()
-
-    const stmt = this.db.prepare(`
-      INSERT INTO lw_character_relations (
-        id, character_id, related_character_id, relation_type, relation_description, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?)
-    `)
-    stmt.run(id, characterId, relatedCharacterId, relationType, relationDescription, Date.now())
-
+    const now = new Date()
+    const repo = this.dataSource.getRepository(LwCharacterRelationEntity)
+    const saved = await repo.save(
+      repo.create({
+        id,
+        characterId,
+        relatedCharacterId,
+        relationType,
+        relationDescription,
+        createdAt: now,
+      }),
+    )
     return {
-      id,
-      characterId,
-      relatedCharacterId,
-      relationType,
-      relationDescription,
-      createdAt: Date.now()
+      id: saved.id,
+      characterId: saved.characterId,
+      relatedCharacterId: saved.relatedCharacterId,
+      relationType: saved.relationType ?? '',
+      relationDescription: saved.relationDescription ?? '',
+      createdAt:
+        saved.createdAt instanceof Date
+          ? saved.createdAt.getTime()
+          : Number(saved.createdAt),
     }
   }
 
-  /**
-   * 删除角色关系
-   */
-  deleteRelation(id: string): boolean {
-    const stmt = this.db.prepare('DELETE FROM lw_character_relations WHERE id = ?')
-    const result = stmt.run(id)
-    return result.changes > 0
+  async deleteRelation(id: string): Promise<boolean> {
+    const repo = this.dataSource.getRepository(LwCharacterRelationEntity)
+    const result = await repo.delete({ id } as any)
+    return (result.affected ?? 0) > 0
   }
 
   private generateId(): string {
-    return `char_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    return `char_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }
 
   private generateRelationId(): string {
-    return `rel_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  private mapToCharacter(row: any): StoryCharacter {
-    return {
-      id: row.id,
-      projectId: row.project_id,
-      portraitId: row.portrait_id,
-      name: row.name,
-      gender: row.gender,
-      age: row.age,
-      height: row.height,
-      weight: row.weight,
-      race: row.race,
-      occupation: row.occupation,
-      position: row.position,
-      appearance: row.appearance || '',
-      background: row.background || '',
-      personality: row.personality || '',
-      abilities: row.abilities || '',
-      rolePosition: row.role_position,
-      importance: row.importance || 'secondary' as EntityImportance,
-      templateType: row.template_type as TemporaryCharacterTemplateType | undefined,
-      generatedImageId: row.generated_image_id,
-      majorEvents: row.major_events || '',
-      sourceType: row.source_type || 'longwriting' as EntitySourceType,
-      sourceEpisodeId: row.source_episode_id || undefined,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }
-  }
-
-  private mapToRelation(row: any): CharacterRelation {
-    return {
-      id: row.id,
-      characterId: row.character_id,
-      relatedCharacterId: row.related_character_id,
-      relationType: row.relation_type,
-      relationDescription: row.relation_description,
-      createdAt: row.created_at
-    }
+    return `rel_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }
 }

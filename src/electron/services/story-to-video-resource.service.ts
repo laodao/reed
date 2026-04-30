@@ -678,7 +678,7 @@ export class StoryToVideoResourceService {
       return { success: false, error: '数据库未初始化' }
     }
 
-    const character = db.lwCharacters.getById(characterId)
+    const character = await db.lwCharacters.getById(characterId)
     if (!character) {
       return { success: false, error: '角色不存在' }
     }
@@ -726,7 +726,7 @@ export class StoryToVideoResourceService {
         const imageInfo = response.images[0]
 
         // 更新角色的 generatedImageId
-        const updated = db.lwCharacters.update(characterId, {
+        const updated = await db.lwCharacters.update(characterId, {
           generatedImageId: imageInfo.id || imageInfo.filePath
         })
 
