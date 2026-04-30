@@ -8,7 +8,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { getDatabaseManager } from '../../database'
 import { LongWritingService } from '@core/services/longwriting.service'
-import { LongWritingAIService } from '../../services/longwriting-ai.service'
+import { LongWritingAIService } from '@core/services/longwriting-ai.service'
 import { MaterialProcessorService } from '@core/services/material-processor.service'
 import { markdownToDocx } from '@core/utils/markdown-to-docx'
 import {
@@ -1214,7 +1214,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.generateStoryOverview(window, eventId, projectId, input, providerConfigId, modelId)
+        const result = await aiService.generateStoryOverview(eventId, projectId, input, providerConfigId, modelId)
         console.log(`[LongWritingHandler] generateStoryOverview 完成, success: ${result.success}`)
         return { ...result, eventId }
       } catch (error: any) {
@@ -1232,7 +1232,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.generatePlots(window, eventId, projectId, providerConfigId, modelId)
+        const result = await aiService.generatePlots(eventId, projectId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -1248,7 +1248,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.polishBackground(window, eventId, projectId, field, eraType, content, providerConfigId, modelId)
+        const result = await aiService.polishBackground(eventId, projectId, field, eraType, content, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -1264,7 +1264,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.generateLocations(window, eventId, projectId, providerConfigId, modelId)
+        const result = await aiService.generateLocations(eventId, projectId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -1280,7 +1280,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.generateFactions(window, eventId, projectId, providerConfigId, modelId)
+        const result = await aiService.generateFactions(eventId, projectId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -1297,7 +1297,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.generateCharacters(window, eventId, projectId, providerConfigId, modelId, requirements)
+        const result = await aiService.generateCharacters(eventId, projectId, providerConfigId, modelId, requirements)
         console.log(`[LongWritingHandler] generateCharacters 完成, success: ${result.success}, error: ${result.error || 'none'}`)
         return { ...result, eventId }
       } catch (error: any) {
@@ -1315,7 +1315,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.generateSkillsItems(window, eventId, projectId, providerConfigId, modelId)
+        const result = await aiService.generateSkillsItems(eventId, projectId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -1331,7 +1331,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.generateSkillItemTypes(window, eventId, projectId, providerConfigId, modelId)
+        const result = await aiService.generateSkillItemTypes(eventId, projectId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -1347,7 +1347,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.generateSkillsOnly(window, eventId, projectId, providerConfigId, modelId)
+        const result = await aiService.generateSkillsOnly(eventId, projectId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -1363,7 +1363,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.generateItemsOnly(window, eventId, projectId, providerConfigId, modelId)
+        const result = await aiService.generateItemsOnly(eventId, projectId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -1379,7 +1379,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.generateOutlineStory(window, eventId, projectId, providerConfigId, modelId, structureLevel)
+        const result = await aiService.generateOutlineStory(eventId, projectId, providerConfigId, modelId, structureLevel)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -1395,7 +1395,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.generateOutlineComment(window, eventId, projectId, providerConfigId, modelId)
+        const result = await aiService.generateOutlineComment(eventId, projectId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -1411,7 +1411,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.generateChapter(window, eventId, projectId, outlineId, targetWords, providerConfigId, modelId)
+        const result = await aiService.generateChapter(eventId, projectId, outlineId, targetWords, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -1427,7 +1427,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.generateChapterPrewrite(window, eventId, projectId, outlineId, providerConfigId, modelId)
+        const result = await aiService.generateChapterPrewrite(eventId, projectId, outlineId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -1443,7 +1443,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
-        const result = await aiService.generateSection(window, eventId, projectId, outlineId, targetWords, providerConfigId, modelId)
+        const result = await aiService.generateSection(eventId, projectId, outlineId, targetWords, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }

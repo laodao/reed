@@ -4,11 +4,11 @@
  * @description 处理长文写作模块的 AI 生成功能
  */
 
-import { BrowserWindow } from 'electron'
-import { getDatabaseManager } from '../database'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { getEventEmitter } from '@core/interfaces/event.interface'
 import { createProvider } from '@core/providers'
 import { PROVIDER_TEMPLATES } from '@core/services/provider-template.service'
-import { SecureStorageService } from './secure-storage.service'
+import { getSecureStorage } from '@core/interfaces/storage.interface'
 import type { ProviderTemplate, UserProviderConfig, ChatContext } from '@shared/types'
 
 /**
@@ -81,7 +81,7 @@ export class LongWritingAIService {
     template: ProviderTemplate
     apiKey: string
   } | null> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.providerConfigs) {
       return null
     }
@@ -117,7 +117,7 @@ export class LongWritingAIService {
     }
 
     // 解密 API 密钥
-    const secureStorage = SecureStorageService.getInstance()
+    const secureStorage = getSecureStorage()
     if (!secureStorage.isInitialized()) {
       await secureStorage.initialize()
     }
@@ -178,8 +178,7 @@ export class LongWritingAIService {
    * 流式调用 AI 生成
    */
   private async callAIStream(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     prompt: string,
     systemPrompt?: string,
     maxTokens?: number,
@@ -217,7 +216,7 @@ export class LongWritingAIService {
     }
 
     // 发送开始事件
-    window.webContents.send(`longwriting:generate:${eventId}`, {
+    getEventEmitter().emit(`longwriting:generate:${eventId}`, {
       type: 'start'
     } as GenerationStreamEvent)
 
@@ -230,7 +229,7 @@ export class LongWritingAIService {
           // Provider 发送 delta 事件，转换为 content 事件发送给前端
           if (event.type === 'delta' && event.content) {
             fullContent += event.content
-            window.webContents.send(`longwriting:generate:${eventId}`, {
+            getEventEmitter().emit(`longwriting:generate:${eventId}`, {
               type: 'content',
               content: event.content
             } as GenerationStreamEvent)
@@ -241,13 +240,13 @@ export class LongWritingAIService {
       )
 
       // 发送完成事件
-      window.webContents.send(`longwriting:generate:${eventId}`, {
+      getEventEmitter().emit(`longwriting:generate:${eventId}`, {
         type: 'done',
         content: fullContent
       } as GenerationStreamEvent)
     } catch (error: any) {
       // 发送错误事件
-      window.webContents.send(`longwriting:generate:${eventId}`, {
+      getEventEmitter().emit(`longwriting:generate:${eventId}`, {
         type: 'error',
         error: error.message || 'AI 生成失败'
       } as GenerationStreamEvent)
@@ -263,14 +262,13 @@ export class LongWritingAIService {
    * 生成故事概要
    */
   async generateStoryOverview(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     projectId: string,
     input: string,
     providerConfigId?: string,
     modelId?: string
   ): Promise<GenerateResponse> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     // 获取项目信息
     const project = await dbManager.lwProjects?.getById(projectId)
@@ -326,7 +324,6 @@ ${input}
 
     try {
       const result = await this.callAIStream(
-        window,
         eventId,
         prompt,
         systemPrompt,
@@ -390,14 +387,13 @@ ${input}
    * 生成角色建议
    */
   async generateCharacters(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     projectId: string,
     providerConfigId?: string,
     modelId?: string,
     requirements?: string  // 额外的角色要求
   ): Promise<GenerateResponse> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     // 获取故事概要
     const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
@@ -474,7 +470,7 @@ ${keyLocationsInfo ? `主要场景：${keyLocationsInfo}` : ''}`
 请返回 JSON 数组，确保每个角色都包含所有必需字段。`
 
     try {
-      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, undefined, providerConfigId, modelId)
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, undefined, providerConfigId, modelId)
       console.log(`[LongWritingAI] generateCharacters 内容长度: ${result.length}`)
 
       // 尝试解析 JSON 数组
@@ -505,13 +501,12 @@ ${keyLocationsInfo ? `主要场景：${keyLocationsInfo}` : ''}`
    * 生成技能物品建议
    */
   async generateSkillsItems(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     projectId: string,
     providerConfigId?: string,
     modelId?: string
   ): Promise<GenerateResponse> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     // 获取故事概要和角色
     const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
@@ -533,7 +528,7 @@ ${keyLocationsInfo ? `主要场景：${keyLocationsInfo}` : ''}`
 请直接返回 JSON 对象格式的结果，包含 skills 和 items 两个字段。`
 
     try {
-      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, undefined, providerConfigId, modelId)
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, undefined, providerConfigId, modelId)
 
       // 尝试解析 JSON
       const jsonMatch = result.match(/\{[\s\S]*\}/)
@@ -552,13 +547,12 @@ ${keyLocationsInfo ? `主要场景：${keyLocationsInfo}` : ''}`
    * 生成技能和物品类型配置
    */
   async generateSkillItemTypes(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     projectId: string,
     providerConfigId?: string,
     modelId?: string
   ): Promise<GenerateResponse> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     // 获取故事概要
     const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
@@ -590,7 +584,7 @@ ${keyLocationsInfo ? `主要场景：${keyLocationsInfo}` : ''}`
 请根据故事类型和内容，生成适合的技能类型和物品类型配置。`
 
     try {
-      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, undefined, providerConfigId, modelId)
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, undefined, providerConfigId, modelId)
 
       const jsonMatch = result.match(/\{[\s\S]*\}/)
       if (jsonMatch) {
@@ -608,13 +602,12 @@ ${keyLocationsInfo ? `主要场景：${keyLocationsInfo}` : ''}`
    * 只生成技能建议
    */
   async generateSkillsOnly(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     projectId: string,
     providerConfigId?: string,
     modelId?: string
   ): Promise<GenerateResponse> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     // 获取故事概要、角色和已配置的技能类型
     const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
@@ -662,7 +655,7 @@ ${skillTypesInfo || '暂无配置'}
 请生成适合的技能设定（只返回JSON）：`
 
     try {
-      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, undefined, providerConfigId, modelId)
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, undefined, providerConfigId, modelId)
 
       const jsonMatch = result.match(/\{[\s\S]*\}/)
       if (jsonMatch) {
@@ -680,13 +673,12 @@ ${skillTypesInfo || '暂无配置'}
    * 只生成物品建议
    */
   async generateItemsOnly(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     projectId: string,
     providerConfigId?: string,
     modelId?: string
   ): Promise<GenerateResponse> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     // 获取故事概要、角色和已配置的物品类型
     const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
@@ -733,7 +725,7 @@ ${itemTypesInfo || '暂无配置'}
 请生成适合的物品设定（只返回JSON）：`
 
     try {
-      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, undefined, providerConfigId, modelId)
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, undefined, providerConfigId, modelId)
 
       const jsonMatch = result.match(/\{[\s\S]*\}/)
       if (jsonMatch) {
@@ -754,14 +746,13 @@ ${itemTypesInfo || '暂无配置'}
    * 第一步：只生成卷结构
    */
   async generateOutlineStory(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     projectId: string,
     providerConfigId?: string,
     modelId?: string,
     structureLevel?: number
   ): Promise<GenerateResponse> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     // 默认使用三级结构
     const level = structureLevel || 3
 
@@ -786,13 +777,13 @@ ${itemTypesInfo || '暂无配置'}
     try {
       if (level === 3) {
         // 三级结构：卷 → 章 → 节
-        return await this.generateThreeLevelOutline(window, eventId, projectId, storyInfo, providerConfigId, modelId)
+        return await this.generateThreeLevelOutline(eventId, projectId, storyInfo, providerConfigId, modelId)
       } else if (level === 2) {
         // 二级结构：章 → 节
-        return await this.generateTwoLevelOutline(window, eventId, projectId, storyInfo, providerConfigId, modelId)
+        return await this.generateTwoLevelOutline(eventId, projectId, storyInfo, providerConfigId, modelId)
       } else {
         // 一级结构：仅章
-        return await this.generateOneLevelOutline(window, eventId, projectId, storyInfo, providerConfigId, modelId)
+        return await this.generateOneLevelOutline(eventId, projectId, storyInfo, providerConfigId, modelId)
       }
     } catch (error: any) {
       return { success: false, error: error.message }
@@ -803,8 +794,7 @@ ${itemTypesInfo || '暂无配置'}
    * 生成三级结构大纲：卷 → 章 → 节
    */
   private async generateThreeLevelOutline(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     projectId: string,
     storyInfo: any,
     providerConfigId?: string,
@@ -836,7 +826,7 @@ ${itemTypesInfo || '暂无配置'}
 
 请生成卷级别的大纲结构（只返回JSON数组）：`
 
-    const volumeResult = await this.callAIStream(window, eventId, volumePrompt, volumeSystemPrompt, 2048, providerConfigId, modelId)
+    const volumeResult = await this.callAIStream(eventId, volumePrompt, volumeSystemPrompt, 2048, providerConfigId, modelId)
     const volumes = this.parseJsonArray(volumeResult)
 
     if (!volumes || volumes.length === 0) {
@@ -847,13 +837,13 @@ ${itemTypesInfo || '暂无配置'}
     const fullOutline = []
     for (let i = 0; i < volumes.length; i++) {
       const volume = volumes[i]
-      window.webContents.send(`longwriting:generate:${eventId}`, {
+      getEventEmitter().emit(`longwriting:generate:${eventId}`, {
         type: 'progress',
         content: `正在生成第 ${i + 1} 卷「${volume.name}」的章节...`
       })
 
       const chapters = await this.generateVolumeChapters(
-        window, eventId, projectId, volume, storyInfo, providerConfigId, modelId
+        eventId, projectId, volume, storyInfo, providerConfigId, modelId
       )
 
       fullOutline.push({
@@ -869,8 +859,7 @@ ${itemTypesInfo || '暂无配置'}
    * 生成二级结构大纲：章 → 节
    */
   private async generateTwoLevelOutline(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     projectId: string,
     storyInfo: any,
     providerConfigId?: string,
@@ -910,12 +899,12 @@ ${itemTypesInfo || '暂无配置'}
 
 请生成章级别的大纲结构（只返回JSON数组）：`
 
-    window.webContents.send(`longwriting:generate:${eventId}`, {
+    getEventEmitter().emit(`longwriting:generate:${eventId}`, {
       type: 'progress',
       content: '正在生成章节大纲...'
     })
 
-    const chapterResult = await this.callAIStream(window, eventId, chapterPrompt, chapterSystemPrompt, 8192, providerConfigId, modelId)
+    const chapterResult = await this.callAIStream(eventId, chapterPrompt, chapterSystemPrompt, 8192, providerConfigId, modelId)
     const chapters = this.parseJsonArray(chapterResult)
 
     if (!chapters || chapters.length === 0) {
@@ -929,8 +918,7 @@ ${itemTypesInfo || '暂无配置'}
    * 生成一级结构大纲：仅章
    */
   private async generateOneLevelOutline(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     projectId: string,
     storyInfo: any,
     providerConfigId?: string,
@@ -962,12 +950,12 @@ ${itemTypesInfo || '暂无配置'}
 
 请生成章级别的大纲结构（只返回JSON数组）：`
 
-    window.webContents.send(`longwriting:generate:${eventId}`, {
+    getEventEmitter().emit(`longwriting:generate:${eventId}`, {
       type: 'progress',
       content: '正在生成章节大纲...'
     })
 
-    const chapterResult = await this.callAIStream(window, eventId, chapterPrompt, chapterSystemPrompt, 4096, providerConfigId, modelId)
+    const chapterResult = await this.callAIStream(eventId, chapterPrompt, chapterSystemPrompt, 4096, providerConfigId, modelId)
     const chapters = this.parseJsonArray(chapterResult)
 
     if (!chapters || chapters.length === 0) {
@@ -981,8 +969,7 @@ ${itemTypesInfo || '暂无配置'}
    * 为单个卷生成章节
    */
   private async generateVolumeChapters(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     projectId: string,
     volume: any,
     storyInfo: any,
@@ -1022,7 +1009,7 @@ ${itemTypesInfo || '暂无配置'}
 
     try {
       const subEventId = `${eventId}-chapters-${Date.now()}`
-      const result = await this.callAIStream(window, subEventId, chapterPrompt, chapterSystemPrompt, 4096, providerConfigId, modelId)
+      const result = await this.callAIStream(subEventId, chapterPrompt, chapterSystemPrompt, 4096, providerConfigId, modelId)
       return this.parseJsonArray(result) || []
     } catch (error) {
       return []
@@ -1078,13 +1065,12 @@ ${itemTypesInfo || '暂无配置'}
    * 生成评论大纲
    */
   async generateOutlineComment(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     projectId: string,
     providerConfigId?: string,
     modelId?: string
   ): Promise<GenerateResponse> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     // 获取故事概要和素材
     const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
@@ -1110,7 +1096,7 @@ ${itemTypesInfo || '暂无配置'}
 请直接返回 JSON 数组格式的结果。`
 
     try {
-      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, undefined, providerConfigId, modelId)
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, undefined, providerConfigId, modelId)
 
       // 尝试解析 JSON 数组
       const jsonMatch = result.match(/\[[\s\S]*\]/)
@@ -1131,14 +1117,13 @@ ${itemTypesInfo || '暂无配置'}
    * 生成章节预写（人物、时间、地点、事件概要）
    */
   async generateChapterPrewrite(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     projectId: string,
     outlineId: string,
     providerConfigId?: string,
     modelId?: string
   ): Promise<GenerateResponse> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     // 获取相关数据
     const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
@@ -1205,7 +1190,7 @@ ${plotInfo || '暂无相关情节'}
 请为这个章节生成预写提纲：`
 
     try {
-      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, undefined, providerConfigId, modelId)
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, undefined, providerConfigId, modelId)
       return { success: true, data: result }
     } catch (error: any) {
       return { success: false, error: error.message }
@@ -1216,15 +1201,14 @@ ${plotInfo || '暂无相关情节'}
    * 生成章节内容
    */
   async generateChapter(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     projectId: string,
     outlineId: string,
     targetWords?: number,
     providerConfigId?: string,
     modelId?: string
   ): Promise<GenerateResponse> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     // 获取大纲节点
     const outline = await dbManager.lwOutlines?.getById(outlineId)
@@ -1432,7 +1416,6 @@ ${prewriteSection}
 
     try {
       const result = await this.callAIStream(
-        window,
         eventId,
         prompt,
         systemPrompt,
@@ -1666,15 +1649,14 @@ ${prewriteSection}
    * 生成评论段落内容
    */
   async generateSection(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     projectId: string,
     outlineId: string,
     targetWords?: number,
     providerConfigId?: string,
     modelId?: string
   ): Promise<GenerateResponse> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     // 获取大纲节点
     const outline = await dbManager.lwOutlines?.getById(outlineId)
@@ -1718,7 +1700,6 @@ ${materialContext || '无特定素材'}
 
     try {
       const result = await this.callAIStream(
-        window,
         eventId,
         prompt,
         systemPrompt,
@@ -1739,13 +1720,12 @@ ${materialContext || '无特定素材'}
    * 生成故事情节
    */
   async generatePlots(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     projectId: string,
     providerConfigId?: string,
     modelId?: string
   ): Promise<GenerateResponse> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     // 获取故事概要
     const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
@@ -1828,7 +1808,7 @@ ${backgroundInfo || '暂无'}
 请生成 10-30 个主要情节，按时间顺序排列。充分考虑角色性格、背景设定、地点等元素。直接返回 JSON 数组格式的结果。`
 
     try {
-      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 8192, providerConfigId, modelId)
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, 8192, providerConfigId, modelId)
 
       // 尝试解析 JSON 数组
       const jsonMatch = result.match(/\[[\s\S]*\]/)
@@ -1849,8 +1829,7 @@ ${backgroundInfo || '暂无'}
    * 润色背景设定
    */
   async polishBackground(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     projectId: string,
     field: 'eraDescription' | 'socialStructure' | 'techLevel' | 'specialRules' | 'factionDistribution' | 'geographicOrientation',
     eraType: string,
@@ -1858,7 +1837,7 @@ ${backgroundInfo || '暂无'}
     providerConfigId?: string,
     modelId?: string
   ): Promise<GenerateResponse> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     // 获取故事概要作为上下文
     const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
@@ -1922,7 +1901,7 @@ ${fieldPrompts[field] || '请扩展成详细的描述，内容控制在 200-400 
 注意：背景设定要与故事内容相呼应，为故事发展提供支撑。`
 
     try {
-      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 1024, providerConfigId, modelId)
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, 1024, providerConfigId, modelId)
 
       return { success: true, data: { content: result } }
     } catch (error: any) {
@@ -1936,13 +1915,12 @@ ${fieldPrompts[field] || '请扩展成详细的描述，内容控制在 200-400 
    * AI 生成地点建议
    */
   async generateLocations(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     projectId: string,
     providerConfigId?: string,
     modelId?: string
   ): Promise<GenerateResponse> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     // 获取故事概要
     const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
@@ -2027,7 +2005,7 @@ ${backgroundInfo || '暂无'}
 请生成适合这个故事的地点建议。如果有地图，请为每个地点建议合适的地图关联。直接返回 JSON 数组格式的结果。`
 
     try {
-      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 2048, providerConfigId, modelId)
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, 2048, providerConfigId, modelId)
 
       // 尝试解析 JSON 数组
       const jsonMatch = result.match(/\[[\s\S]*\]/)
@@ -2048,13 +2026,12 @@ ${backgroundInfo || '暂无'}
    * AI 生成势力建议
    */
   async generateFactions(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     projectId: string,
     providerConfigId?: string,
     modelId?: string
   ): Promise<GenerateResponse> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     // 获取故事概要
     const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
@@ -2129,7 +2106,7 @@ ${backgroundInfo || '暂无'}
 请生成适合这个故事的势力建议。如果有地点，请为每个势力建议合适的所在地。直接返回 JSON 数组格式的结果。`
 
     try {
-      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 2048, providerConfigId, modelId)
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, 2048, providerConfigId, modelId)
 
       // 尝试解析 JSON 数组
       const jsonMatch = result.match(/\[[\s\S]*\]/)
@@ -2150,15 +2127,14 @@ ${backgroundInfo || '暂无'}
    * 生成地图数据
    */
   async generateMapData(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     projectId: string,
     mapId: string,
     userPrompt: string,
     providerConfigId?: string,
     modelId?: string
   ): Promise<GenerateResponse> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     // 获取故事概要
     const overview = await dbManager.lwStoryOverviews?.getByProjectId(projectId)
@@ -2256,7 +2232,7 @@ ${userPrompt || '请根据故事背景生成合适的地图数据'}
 请生成详细的地图数据，包含区域、地标、地形、气候、资源和冲突信息。直接返回 JSON 格式的结果。`
 
     try {
-      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 2048, providerConfigId, modelId)
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, 2048, providerConfigId, modelId)
 
       // 尝试解析 JSON
       const jsonMatch = result.match(/\{[\s\S]*\}/)
@@ -2277,8 +2253,7 @@ ${userPrompt || '请根据故事背景生成合适的地图数据'}
    * 从预写内容中提取记忆
    */
   async extractMemories(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     projectId: string,
     outlineId: string,
     prewriteContent: string,
@@ -2286,7 +2261,7 @@ ${userPrompt || '请根据故事背景生成合适的地图数据'}
     providerConfigId?: string,
     modelId?: string
   ): Promise<GenerateResponse> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     // 获取项目中的角色、地点、物品、势力等信息，用于实体匹配
     const characters = await dbManager.lwCharacters?.getByProjectId(projectId) || []
@@ -2348,7 +2323,7 @@ ${prewriteContent}
 请从以上预写内容中提取关键记忆信息。直接返回 JSON 数组格式的结果。`
 
     try {
-      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 2048, providerConfigId, modelId)
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, 2048, providerConfigId, modelId)
 
       // 尝试解析 JSON 数组
       const jsonMatch = result.match(/\[[\s\S]*\]/)
@@ -2368,7 +2343,7 @@ ${prewriteContent}
    * 获取章节生成时的记忆上下文
    */
   private async getMemoryContext(projectId: string, chapterNumber: number): Promise<string> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     const memories = await dbManager.lwMemories?.getMemoriesBeforeChapter(projectId, chapterNumber) || []
 
     if (memories.length === 0) {
@@ -2435,8 +2410,7 @@ ${prewriteContent}
    * 从章节正文中提取实体状态快照
    */
   async extractEntityStates(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     projectId: string,
     outlineId: string,
     chapterContent: string,
@@ -2445,7 +2419,7 @@ ${prewriteContent}
     providerConfigId?: string,
     modelId?: string
   ): Promise<GenerateResponse> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     // 获取每个实体在上一章节的状态
     const previousStates: Array<{ entity: any; state: any }> = []
@@ -2510,7 +2484,7 @@ ${previousStatesInfo || '无历史状态'}
 请分析以上章节内容，为涉及的实体生成状态快照。如果一个实体在本章节没有变化且没有上一状态，可以不输出该实体。直接返回 JSON 数组格式的结果。`
 
     try {
-      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 3000, providerConfigId, modelId)
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, 3000, providerConfigId, modelId)
 
       // 尝试解析 JSON 数组
       const jsonMatch = result.match(/\[[\s\S]*\]/)
@@ -2534,7 +2508,7 @@ ${previousStatesInfo || '无历史状态'}
     chapterNumber: number,
     involvedEntities: Array<{ type: string; id: string }>
   ): Promise<string> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!involvedEntities || involvedEntities.length === 0) {
       return ''
@@ -2631,14 +2605,13 @@ ${previousStatesInfo || '无历史状态'}
    * 用于在没有手动设置涉及实体时自动识别
    */
   async recognizeChapterEntities(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     projectId: string,
     chapterContent: string,
     providerConfigId?: string,
     modelId?: string
   ): Promise<GenerateResponse> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     // 获取项目中的所有角色、地点和物品
     const characters = dbManager.lwCharacters?.getByProjectId(projectId) || []
@@ -2680,7 +2653,7 @@ ${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容
 请分析以上章节内容，识别其中涉及的角色和地点，并简要列出发生的事件。直接返回 JSON 格式的结果。`
 
     try {
-      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 1500, providerConfigId, modelId)
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, 1500, providerConfigId, modelId)
 
       // 尝试解析 JSON
       const jsonMatch = result.match(/\{[\s\S]*\}/)
@@ -2721,7 +2694,7 @@ ${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容
           newEntities.newLocations.length > 0 ||
           newEntities.newItems.length > 0
         )) {
-          window.webContents.send(`longwriting:new-entities-detected:${eventId}`, {
+          getEventEmitter().emit(`longwriting:new-entities-detected:${eventId}`, {
             type: 'new_entities',
             newEntities
           })
@@ -2756,8 +2729,7 @@ ${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容
    * 包括：故事时间、当前位置、角色状态、待处理事件
    */
   async extractChapterStateSummary(
-    window: BrowserWindow,
-    eventId: string,
+        eventId: string,
     projectId: string,
     outlineId: string,
     chapterContent: string,
@@ -2815,7 +2787,7 @@ ${previousInfo}
 请分析以上章节内容，提取章节结束时的故事状态摘要。直接返回 JSON 格式的结果。`
 
     try {
-      const result = await this.callAIStream(window, eventId, prompt, systemPrompt, 1500, providerConfigId, modelId)
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, 1500, providerConfigId, modelId)
 
       // 尝试解析 JSON
       const jsonMatch = result.match(/\{[\s\S]*\}/)
@@ -2847,7 +2819,7 @@ ${previousInfo}
     projectId: string,
     chapterNumber: number
   ): Promise<string> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     // 获取上一章的状态摘要
     const previousSummary = await dbManager.lwChapterStateSummaries?.getLatestBeforeChapter(projectId, chapterNumber)
