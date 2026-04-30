@@ -3653,7 +3653,7 @@ export class DatabaseManager {
     this.settings = new SettingsRepository(this.dataSource)
     this.apiKeys = new ApiKeyRepository(this.dataSource)
     this.dialogs = new DialogRepository(this.dataSource)
-    this.messages = new MessageRepository(this.db)
+    this.messages = new MessageRepository(this.dataSource)
     this.roles = new RoleRepository(this.dataSource)
     this.images = new ImageRepository(this.db)
     this.providerConfigs = new ProviderConfigRepository(this.db)
