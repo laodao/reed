@@ -3706,10 +3706,10 @@ export class DatabaseManager {
     this.lwTempLocationTemplates = new LwTempLocationTemplateRepository(this.db)
     this.lwProjectModelConfigs = new LwProjectModelConfigRepository(this.db)
 
-    this.diaryFolders = new DiaryFolderRepository(this.db)
-    this.diaryEntries = new DiaryEntryRepository(this.db)
-    this.diaryLinks = new DiaryLinkRepository(this.db)
-    this.diaryAttachments = new DiaryAttachmentRepository(this.db)
+    this.diaryFolders = new DiaryFolderRepository(this.dataSource)
+    this.diaryEntries = new DiaryEntryRepository(this.dataSource)
+    this.diaryLinks = new DiaryLinkRepository(this.dataSource)
+    this.diaryAttachments = new DiaryAttachmentRepository(this.dataSource)
 
     // 剧集制作相关
     this.videoProjects = new VideoProjectRepository(this.db)

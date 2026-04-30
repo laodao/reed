@@ -1,208 +1,230 @@
 /**
  * 日记目录数据访问层
  * @module database/repositories/diary-folder.repository
+ * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import Database from 'better-sqlite3'
+import { IsNull, type DataSource } from 'typeorm'
 import { randomUUID } from 'crypto'
 import type {
   DiaryFolder,
   CreateDiaryFolderRequest,
-  UpdateDiaryFolderRequest
+  UpdateDiaryFolderRequest,
 } from '@shared/types/diary.types'
+import { DiaryFolderEntity } from '../entities/diary-folder.entity'
+import { DiaryEntryEntity } from '../entities/diary-entry.entity'
+import { BaseRepository } from '../base-repository'
 
-export class DiaryFolderRepository {
-  private db: Database.Database
-
-  constructor(db: Database.Database) {
-    this.db = db
+export class DiaryFolderRepository extends BaseRepository<
+  DiaryFolderEntity,
+  DiaryFolder
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, DiaryFolderEntity)
   }
 
-  /**
-   * 将数据库行转换为 DiaryFolder 对象
-   */
-  private rowToEntity(row: any): DiaryFolder {
+  protected toDto(e: DiaryFolderEntity): DiaryFolder {
     return {
-      id: row.id,
-      name: row.name,
-      parentId: row.parent_id || undefined,
-      path: row.path,
-      sortOrder: row.sort_order,
-      childCount: row.child_count || 0,
-      entryCount: row.entry_count || 0,
-      createdAt: new Date(row.created_at),
-      updatedAt: new Date(row.updated_at)
-    }
-  }
-
-  /**
-   * 获取所有根目录
-   */
-  findRootFolders(): DiaryFolder[] {
-    const rows = this.db.prepare(`
-      SELECT f.*,
-        (SELECT COUNT(*) FROM diary_folders WHERE parent_id = f.id) as child_count,
-        (SELECT COUNT(*) FROM diary_entries WHERE folder_id = f.id) as entry_count
-      FROM diary_folders f
-      WHERE f.parent_id IS NULL
-      ORDER BY f.sort_order, f.created_at DESC
-    `).all() as any[]
-    return rows.map(row => this.rowToEntity(row))
-  }
-
-  /**
-   * 获取指定父目录下的子目录
-   */
-  findChildren(parentId: string): DiaryFolder[] {
-    const rows = this.db.prepare(`
-      SELECT f.*,
-        (SELECT COUNT(*) FROM diary_folders WHERE parent_id = f.id) as child_count,
-        (SELECT COUNT(*) FROM diary_entries WHERE folder_id = f.id) as entry_count
-      FROM diary_folders f
-      WHERE f.parent_id = ?
-      ORDER BY f.sort_order, f.created_at DESC
-    `).all(parentId) as any[]
-    return rows.map(row => this.rowToEntity(row))
-  }
-
-  /**
-   * 获取目录树（递归获取所有目录）
-   */
-  findAll(): DiaryFolder[] {
-    const rows = this.db.prepare(`
-      SELECT f.*,
-        (SELECT COUNT(*) FROM diary_folders WHERE parent_id = f.id) as child_count,
-        (SELECT COUNT(*) FROM diary_entries WHERE folder_id = f.id) as entry_count
-      FROM diary_folders f
-      ORDER BY f.sort_order, f.created_at DESC
-    `).all() as any[]
-    return rows.map(row => this.rowToEntity(row))
-  }
-
-  /**
-   * 根据 ID 获取目录
-   */
-  findById(id: string): DiaryFolder | null {
-    const row = this.db.prepare(`
-      SELECT f.*,
-        (SELECT COUNT(*) FROM diary_folders WHERE parent_id = f.id) as child_count,
-        (SELECT COUNT(*) FROM diary_entries WHERE folder_id = f.id) as entry_count
-      FROM diary_folders f
-      WHERE f.id = ?
-    `).get(id) as any
-    if (!row) return null
-    return this.rowToEntity(row)
-  }
-
-  /**
-   * 根据路径获取目录
-   */
-  findByPath(path: string): DiaryFolder | null {
-    const row = this.db.prepare(`
-      SELECT f.*,
-        (SELECT COUNT(*) FROM diary_folders WHERE parent_id = f.id) as child_count,
-        (SELECT COUNT(*) FROM diary_entries WHERE folder_id = f.id) as entry_count
-      FROM diary_folders f
-      WHERE f.path = ?
-    `).get(path) as any
-    if (!row) return null
-    return this.rowToEntity(row)
-  }
-
-  /**
-   * 检查同名目录是否存在
-   */
-  existsByName(name: string, parentId?: string): boolean {
-    const sql = parentId
-      ? 'SELECT id FROM diary_folders WHERE name = ? AND parent_id = ?'
-      : 'SELECT id FROM diary_folders WHERE name = ? AND parent_id IS NULL'
-    const params = parentId ? [name, parentId] : [name]
-    const row = this.db.prepare(sql).get(...params) as any
-    return !!row
-  }
-
-  /**
-   * 创建目录
-   */
-  create(request: CreateDiaryFolderRequest, fullPath: string): DiaryFolder {
-    const id = randomUUID()
-    const now = new Date().toISOString()
-
-    this.db.prepare(`
-      INSERT INTO diary_folders (id, name, parent_id, path, sort_order, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 0, ?, ?)
-    `).run(
-      id,
-      request.name,
-      request.parentId || null,
-      fullPath,
-      now,
-      now
-    )
-
-    return {
-      id,
-      name: request.name,
-      parentId: request.parentId,
-      path: fullPath,
-      sortOrder: 0,
+      id: e.id,
+      name: e.name,
+      parentId: e.parentId || undefined,
+      path: e.path,
+      sortOrder: e.sortOrder,
       childCount: 0,
       entryCount: 0,
-      createdAt: new Date(now),
-      updatedAt: new Date(now)
+      createdAt: e.createdAt instanceof Date ? e.createdAt : new Date(e.createdAt),
+      updatedAt: e.updatedAt instanceof Date ? e.updatedAt : new Date(e.updatedAt),
     }
   }
 
   /**
-   * 更新目录
+   * 用 QueryBuilder + 子查询补充 child_count / entry_count，再合并到 DTO。
    */
-  update(id: string, request: UpdateDiaryFolderRequest, newPath?: string): boolean {
-    const fields: string[] = []
-    const values: any[] = []
+  private async findWithCounts(
+    where: 'root' | { parentId?: string; id?: string; path?: string },
+    orderBySort = true,
+  ): Promise<DiaryFolder[]> {
+    const qb = this.repo.createQueryBuilder('f')
+    if (where === 'root') {
+      qb.where('f.parent_id IS NULL')
+    } else {
+      if (where.parentId !== undefined) {
+        qb.where('f.parent_id = :pid', { pid: where.parentId })
+      }
+      if (where.id !== undefined) {
+        qb.andWhere('f.id = :id', { id: where.id })
+      }
+      if (where.path !== undefined) {
+        qb.andWhere('f.path = :p', { p: where.path })
+      }
+    }
+    if (orderBySort) {
+      qb.orderBy('f.sort_order', 'ASC').addOrderBy('f.created_at', 'DESC')
+    }
+    const folders = await qb.getMany()
+    if (folders.length === 0) return []
 
+    const ids = folders.map(f => f.id)
+    const childCounts = new Map<string, number>()
+    const entryCounts = new Map<string, number>()
+
+    // 子目录数
+    const childRows = await this.repo
+      .createQueryBuilder('f')
+      .select('f.parent_id', 'parent_id')
+      .addSelect('COUNT(*)', 'cnt')
+      .where('f.parent_id IN (:...ids)', { ids })
+      .groupBy('f.parent_id')
+      .getRawMany()
+    for (const row of childRows) {
+      childCounts.set(row.parent_id, Number(row.cnt))
+    }
+
+    // 条目数
+    const entryRepo = this.dataSource.getRepository(DiaryEntryEntity)
+    const entryRows = await entryRepo
+      .createQueryBuilder('e')
+      .select('e.folder_id', 'folder_id')
+      .addSelect('COUNT(*)', 'cnt')
+      .where('e.folder_id IN (:...ids)', { ids })
+      .groupBy('e.folder_id')
+      .getRawMany()
+    for (const row of entryRows) {
+      entryCounts.set(row.folder_id, Number(row.cnt))
+    }
+
+    return folders.map(f => ({
+      ...this.toDto(f),
+      childCount: childCounts.get(f.id) ?? 0,
+      entryCount: entryCounts.get(f.id) ?? 0,
+    }))
+  }
+
+  async findRootFolders(): Promise<DiaryFolder[]> {
+    return this.findWithCounts('root')
+  }
+
+  async findChildren(parentId: string): Promise<DiaryFolder[]> {
+    return this.findWithCounts({ parentId })
+  }
+
+  async findAll(): Promise<DiaryFolder[]> {
+    const qb = this.repo
+      .createQueryBuilder('f')
+      .orderBy('f.sort_order', 'ASC')
+      .addOrderBy('f.created_at', 'DESC')
+    const folders = await qb.getMany()
+    if (folders.length === 0) return []
+
+    const ids = folders.map(f => f.id)
+    const childCounts = new Map<string, number>()
+    const entryCounts = new Map<string, number>()
+
+    const childRows = await this.repo
+      .createQueryBuilder('f')
+      .select('f.parent_id', 'parent_id')
+      .addSelect('COUNT(*)', 'cnt')
+      .where('f.parent_id IN (:...ids)', { ids })
+      .groupBy('f.parent_id')
+      .getRawMany()
+    for (const row of childRows) {
+      childCounts.set(row.parent_id, Number(row.cnt))
+    }
+
+    const entryRepo = this.dataSource.getRepository(DiaryEntryEntity)
+    const entryRows = await entryRepo
+      .createQueryBuilder('e')
+      .select('e.folder_id', 'folder_id')
+      .addSelect('COUNT(*)', 'cnt')
+      .where('e.folder_id IN (:...ids)', { ids })
+      .groupBy('e.folder_id')
+      .getRawMany()
+    for (const row of entryRows) {
+      entryCounts.set(row.folder_id, Number(row.cnt))
+    }
+
+    return folders.map(f => ({
+      ...this.toDto(f),
+      childCount: childCounts.get(f.id) ?? 0,
+      entryCount: entryCounts.get(f.id) ?? 0,
+    }))
+  }
+
+  async findById(id: string): Promise<DiaryFolder | null> {
+    const list = await this.findWithCounts({ id }, false)
+    return list[0] ?? null
+  }
+
+  async findByPath(path: string): Promise<DiaryFolder | null> {
+    const list = await this.findWithCounts({ path }, false)
+    return list[0] ?? null
+  }
+
+  async existsByName(name: string, parentId?: string): Promise<boolean> {
+    const where: any = parentId
+      ? { name, parentId }
+      : { name, parentId: IsNull() }
+    return this.existsByWhere(where)
+  }
+
+  async create(
+    request: CreateDiaryFolderRequest,
+    fullPath: string,
+  ): Promise<DiaryFolder> {
+    const id = randomUUID()
+    const now = new Date()
+    const entity = this.repo.create({
+      id,
+      name: request.name,
+      parentId: request.parentId ?? null,
+      path: fullPath,
+      sortOrder: 0,
+      createdAt: now,
+      updatedAt: now,
+    })
+    const saved = await this.repo.save(entity)
+    return {
+      ...this.toDto(saved),
+      childCount: 0,
+      entryCount: 0,
+    }
+  }
+
+  async update(
+    id: string,
+    request: UpdateDiaryFolderRequest,
+    newPath?: string,
+  ): Promise<boolean> {
+    const existing = await this.repo.findOne({ where: { id } as any })
+    if (!existing) return false
+
+    let changed = false
     if (request.name !== undefined) {
-      fields.push('name = ?')
-      values.push(request.name)
+      existing.name = request.name
+      changed = true
     }
     if (request.sortOrder !== undefined) {
-      fields.push('sort_order = ?')
-      values.push(request.sortOrder)
+      existing.sortOrder = request.sortOrder
+      changed = true
     }
     if (newPath !== undefined) {
-      fields.push('path = ?')
-      values.push(newPath)
+      existing.path = newPath
+      changed = true
     }
 
-    if (fields.length === 0) return false
+    if (!changed) return false
 
-    fields.push('updated_at = ?')
-    values.push(new Date().toISOString())
-    values.push(id)
-
-    const result = this.db.prepare(
-      `UPDATE diary_folders SET ${fields.join(', ')} WHERE id = ?`
-    ).run(...values)
-
-    return result.changes > 0
+    existing.updatedAt = new Date()
+    await this.repo.save(existing)
+    return true
   }
 
-  /**
-   * 删除目录（级联删除子目录和日记）
-   */
-  delete(id: string): boolean {
-    const result = this.db.prepare(
-      'DELETE FROM diary_folders WHERE id = ?'
-    ).run(id)
-    return result.changes > 0
+  async delete(id: string): Promise<boolean> {
+    const result = await this.repo.delete({ id } as any)
+    return (result.affected ?? 0) > 0
   }
 
-  /**
-   * 统计目录数量
-   */
-  count(): number {
-    const row = this.db.prepare(
-      'SELECT COUNT(*) as count FROM diary_folders'
-    ).get() as { count: number }
-    return row?.count || 0
+  async count(): Promise<number> {
+    return this.repo.count()
   }
 }
