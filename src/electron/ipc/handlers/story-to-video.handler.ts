@@ -21,10 +21,10 @@ import {
 } from '@shared/types/story-to-video.types'
 import { StoryToVideoAIService } from '@core/services/story-to-video-ai.service'
 import { StoryToVideoResourceService, PRESET_STYLES } from '@core/services/story-to-video-resource.service'
-import { VideoSynthesisService, PRESET_VIDEO_CONFIGS } from '../../services/video-synthesis.service'
-import { VideoService } from '../../services/video.service'
+import { VideoSynthesisService, PRESET_VIDEO_CONFIGS } from '@core/services/video-synthesis.service'
+import { VideoService } from '@core/services/video.service'
 import { SecureStorageService } from '../../services/secure-storage.service'
-import { createVideoProvider } from '../../video-providers'
+import { createVideoProvider } from '@core/video-providers'
 import { EpisodeAutoBindingService } from '@core/services/episode-auto-binding.service'
 import { UploadedEntityService } from '@core/services/uploaded-entity.service'
 import type {
@@ -1729,7 +1729,6 @@ async function handleSynthesizeSceneVideo(
     // 调用视频合成服务
     const synthesisService = VideoSynthesisService.getInstance()
     const result = await synthesisService.synthesizeSceneVideo(
-      window,
       storyboards,
       scene,
       projectId,
@@ -1891,7 +1890,7 @@ async function handleSynthesizeStoryboardVideo(
     })
 
     // 调用 AI 视频生成服务
-    const result = await VideoService.generateVideo(window, videoRequest)
+    const result = await VideoService.generateVideo(videoRequest)
 
     if (result.success) {
       // 同步模式：直接返回了视频

@@ -4,9 +4,10 @@
  * @description 使用 FFmpeg 合成视频，包括图片转视频、音频合成、字幕叠加、转场效果
  */
 
-import { BrowserWindow, app } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
+import { getEventEmitter } from '@core/interfaces/event.interface'
+import { getPathProvider } from '@core/interfaces/path.interface'
 import ffmpeg from 'fluent-ffmpeg'
 import ffmpegPath from '@ffmpeg-installer/ffmpeg'
 import ffprobePath from '@ffprobe-installer/ffprobe'
@@ -137,7 +138,7 @@ export class VideoSynthesisService {
    * 获取视频输出目录
    */
   private getVideoOutputDir(projectId: string): string {
-    const userDataPath = app.getPath('userData')
+    const userDataPath = getPathProvider().getUserDataPath()
     const outputDir = path.join(userDataPath, 'story-to-video', projectId, 'videos')
 
     if (!fs.existsSync(outputDir)) {
@@ -151,7 +152,7 @@ export class VideoSynthesisService {
    * 获取临时文件目录
    */
   private getTempDir(projectId: string): string {
-    const userDataPath = app.getPath('userData')
+    const userDataPath = getPathProvider().getUserDataPath()
     const tempDir = path.join(userDataPath, 'story-to-video', projectId, 'temp')
 
     if (!fs.existsSync(tempDir)) {
@@ -284,8 +285,7 @@ export class VideoSynthesisService {
    * 批量创建场景镜头视频
    */
   async createSceneShotVideos(
-    window: BrowserWindow,
-    storyboards: Storyboard[],
+        storyboards: Storyboard[],
     projectId: string,
     sceneId: string,
     audioAssets: Map<string, string>,
@@ -301,7 +301,7 @@ export class VideoSynthesisService {
       if (onProgress) {
         onProgress(i, storyboards.length)
         // 通知前端进度
-        window.webContents.send('stv:synthesis-progress', {
+        getEventEmitter().emit('stv:synthesis-progress', {
           sceneId,
           type: 'shot',
           index: i,
@@ -544,8 +544,7 @@ export class VideoSynthesisService {
    * 合成完整的场景视频
    */
   async synthesizeSceneVideo(
-    window: BrowserWindow,
-    storyboards: Storyboard[],
+        storyboards: Storyboard[],
     scene: SceneScript,
     projectId: string,
     sceneId: string,
@@ -561,7 +560,6 @@ export class VideoSynthesisService {
       if (onProgress) onProgress('shots', 0)
 
       const shotVideoPaths = await this.createSceneShotVideos(
-        window,
         storyboards,
         projectId,
         sceneId,

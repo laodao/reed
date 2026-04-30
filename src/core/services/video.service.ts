@@ -4,20 +4,21 @@
  * @description 处理 AI 视频生成的核心服务
  */
 
-import { BrowserWindow, app } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
-import log from 'electron-log'
-import { getDatabaseManager } from '../database'
-import { SecureStorageService } from './secure-storage.service'
-import { DataPathService } from './data-path.service'
+// electron-log replaced by console for cross-platform compatibility
+const log = console
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { getEventEmitter } from '@core/interfaces/event.interface'
+import { getSecureStorage } from '@core/interfaces/storage.interface'
+import { getPathProvider } from '@core/interfaces/path.interface'
 import {
   createVideoProvider,
   getProviderDefinition,
   VIDEO_PROVIDER_DEFINITIONS,
   isProviderImplemented
-} from '../video-providers'
-import type { BaseVideoProvider } from '../video-providers'
+} from '@core/video-providers'
+import type { BaseVideoProvider } from '@core/video-providers'
 import type {
   VideoProvider,
   VideoModel,
@@ -70,12 +71,11 @@ export class VideoService {
    * @returns 生成响应
    */
   static async generateVideo(
-    window: BrowserWindow,
-    request: VideoGenerationRequest
+        request: VideoGenerationRequest
   ): Promise<VideoGenerationResponse> {
     logger.info('[VideoService.generateVideo] 开始处理请求')
 
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.providerConfigs) {
       logger.error('[VideoService.generateVideo] 错误: 数据库未初始化')
@@ -117,7 +117,7 @@ export class VideoService {
       logger.info('[VideoService.generateVideo] 开始解密 API 密钥')
       let decryptedApiKey: string
       try {
-        const secureStorage = SecureStorageService.getInstance()
+        const secureStorage = getSecureStorage()
         if (!secureStorage.isInitialized()) {
           await secureStorage.initialize()
         }
@@ -184,13 +184,13 @@ export class VideoService {
       }
 
       // 发送任务开始事件
-      this.sendVideoEvent(window, {
+      this.sendVideoEvent({
         type: 'generation-started',
         taskId: taskId
       })
 
       // 启动异步轮询任务
-      this.startPollingTask(window, provider, taskId)
+      this.startPollingTask(provider, taskId)
 
       return {
         success: true,
@@ -210,8 +210,7 @@ export class VideoService {
    * @param taskId - 任务 ID
    */
   private static startPollingTask(
-    window: BrowserWindow,
-    provider: BaseVideoProvider,
+        provider: BaseVideoProvider,
     taskId: string
   ): void {
     // 如果已有相同任务的轮询，先停止
@@ -230,7 +229,7 @@ export class VideoService {
         const status = await provider.getTaskStatus(taskId)
 
         // 发送进度事件
-        this.sendVideoEvent(window, {
+        this.sendVideoEvent({
           type: 'generation-progress',
           taskId: taskId,
           status: status.status,
@@ -255,7 +254,7 @@ export class VideoService {
           }
 
           // 发送完成事件
-          this.sendVideoEvent(window, {
+          this.sendVideoEvent({
             type: 'generation-completed',
             taskId: taskId,
             video: status.video
@@ -269,7 +268,7 @@ export class VideoService {
           }
 
           // 发送失败事件
-          this.sendVideoEvent(window, {
+          this.sendVideoEvent({
             type: 'generation-failed',
             taskId: taskId,
             error: status.error || '视频生成失败'
@@ -282,7 +281,7 @@ export class VideoService {
             activePollingTasks.delete(taskId)
           }
 
-          this.sendVideoEvent(window, {
+          this.sendVideoEvent({
             type: 'generation-failed',
             taskId: taskId,
             error: '任务超时，请重试'
@@ -436,7 +435,7 @@ export class VideoService {
    * @returns Provider 列表
    */
   static async getProviders(): Promise<{ success: boolean; data?: VideoProvider[]; error?: string }> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.providerConfigs) {
       return { success: false, error: '数据库未初始化' }
@@ -478,7 +477,7 @@ export class VideoService {
   static async testProvider(
     providerConfigId: string
   ): Promise<{ success: boolean; message: string }> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.providerConfigs) {
       return { success: false, message: '数据库未初始化' }
@@ -495,7 +494,7 @@ export class VideoService {
       }
 
       // 解密 API 密钥
-      const secureStorage = SecureStorageService.getInstance()
+      const secureStorage = getSecureStorage()
       if (!secureStorage.isInitialized()) {
         await secureStorage.initialize()
       }
@@ -533,12 +532,11 @@ export class VideoService {
    * @param event - 事件数据
    */
   private static sendVideoEvent(
-    window: BrowserWindow,
-    event: {
+        event: {
       type: string
       [key: string]: any
     }
   ): void {
-    window.webContents.send('video:generation-event', event)
+    getEventEmitter().emit('video:generation-event', event)
   }
 }
