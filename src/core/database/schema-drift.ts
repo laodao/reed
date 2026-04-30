@@ -103,15 +103,34 @@ function checkTableColumns(
       })
       continue
     }
-    if (!affinityEquivalent(col.type as string, got.type)) {
+    const expectedType = entityColumnTypeToString(col.type)
+    if (!affinityEquivalent(expectedType, got.type)) {
       report.typeMismatches.push({
         table: meta.tableName,
         column: col.databaseName,
-        expected: String(col.type),
+        expected: expectedType,
         actual: got.type,
       })
     }
   }
+}
+
+/**
+ * Entity column.type 可能是字符串（"varchar"、"datetime" 等）
+ * 也可能是 JS 类构造函数（Date、String、Number、Boolean）。
+ * 统一规整为字符串供 affinity 比对。
+ */
+function entityColumnTypeToString(t: unknown): string {
+  if (typeof t === 'string') return t
+  if (typeof t === 'function') {
+    const name = (t as { name?: string }).name
+    if (name === 'Date') return 'datetime'
+    if (name === 'String') return 'varchar'
+    if (name === 'Number') return 'integer'
+    if (name === 'Boolean') return 'boolean'
+    return name ?? ''
+  }
+  return String(t ?? '')
 }
 
 /**

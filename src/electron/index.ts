@@ -3,6 +3,9 @@
  * @module main/index
  */
 
+// TypeORM Entity 装饰器元数据所需，必须在任何 Entity 导入前加载
+import 'reflect-metadata'
+
 // Windows 终端编码设置：解决中文乱码问题
 if (process.platform === 'win32') {
   // 设置 stdout 和 stderr 编码为 UTF-8

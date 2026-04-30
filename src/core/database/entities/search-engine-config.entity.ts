@@ -49,15 +49,19 @@ export class SearchEngineConfigEntity {
   @Column({ name: 'is_default', type: 'integer', default: 0 })
   isDefault!: number
 
-  @Column({ name: 'last_tested', type: 'datetime', nullable: true })
+  /**
+   * datetime 列：用 type: Date 让 TypeORM 按方言选具体 SQL 类型
+   * （sqlite → datetime, postgres → timestamp without time zone）
+   */
+  @Column({ name: 'last_tested', type: Date, nullable: true })
   lastTested!: Date | null
 
   @Column({ name: 'test_result', type: 'text', nullable: true })
   testResult!: string | null
 
-  @Column({ name: 'created_at', type: 'datetime' })
+  @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 
-  @Column({ name: 'updated_at', type: 'datetime' })
+  @Column({ name: 'updated_at', type: Date })
   updatedAt!: Date
 }
