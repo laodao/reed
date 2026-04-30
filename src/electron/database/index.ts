@@ -30,6 +30,7 @@ import { SearchEngineConfigRepository } from '@core/database/repositories/search
 import { LwProjectRepository } from '@core/database/repositories/lw-project.repository'
 import { LwStoryOverviewRepository } from '@core/database/repositories/lw-story-overview.repository'
 import { LwCharacterRepository } from '@core/database/repositories/lw-character.repository'
+import { LwCharacterRelationRepository } from '@core/database/repositories/lw-character-relation.repository'
 import { LwOutlineRepository } from '@core/database/repositories/lw-outline.repository'
 import { LwChapterRepository } from '@core/database/repositories/lw-chapter.repository'
 import { LwBackgroundRepository } from '@core/database/repositories/lw-background.repository'
@@ -125,6 +126,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public lwProjects: LwProjectRepository | null = null
   public lwStoryOverviews: LwStoryOverviewRepository | null = null
   public lwCharacters: LwCharacterRepository | null = null
+  public lwCharacterRelations: LwCharacterRelationRepository | null = null
   public lwOutlines: LwOutlineRepository | null = null
   public lwChapters: LwChapterRepository | null = null
   public lwBackgrounds: LwBackgroundRepository | null = null
@@ -3674,6 +3676,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.lwProjects = new LwProjectRepository(this.dataSource)
     this.lwStoryOverviews = new LwStoryOverviewRepository(this.dataSource)
     this.lwCharacters = new LwCharacterRepository(this.dataSource)
+    this.lwCharacterRelations = new LwCharacterRelationRepository(this.dataSource)
     this.lwOutlines = new LwOutlineRepository(this.dataSource)
     this.lwChapters = new LwChapterRepository(this.dataSource)
     this.lwBackgrounds = new LwBackgroundRepository(this.dataSource)

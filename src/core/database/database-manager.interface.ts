@@ -29,6 +29,7 @@ import type { LwBackgroundRepository } from './repositories/lw-background.reposi
 import type { LwChapterRepository } from './repositories/lw-chapter.repository'
 import type { LwChapterStateSummaryRepository } from './repositories/lw-chapter-state-summary.repository'
 import type { LwCharacterRepository } from './repositories/lw-character.repository'
+import type { LwCharacterRelationRepository } from './repositories/lw-character-relation.repository'
 import type { LwDesignMessageRepository } from './repositories/lw-design-message.repository'
 import type { LwDictionaryRepository } from './repositories/lw-dictionary.repository'
 import type { LwEntityStateRepository } from './repositories/lw-entity-state.repository'
@@ -120,6 +121,7 @@ export interface ICoreDatabaseManager {
   lwProjects: LwProjectRepository | null
   lwStoryOverviews: LwStoryOverviewRepository | null
   lwCharacters: LwCharacterRepository | null
+  lwCharacterRelations: LwCharacterRelationRepository | null
   lwOutlines: LwOutlineRepository | null
   lwChapters: LwChapterRepository | null
   lwBackgrounds: LwBackgroundRepository | null

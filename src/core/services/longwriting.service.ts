@@ -518,44 +518,30 @@ export class LongWritingService {
    * 获取角色的所有关系
    */
   async getCharacterRelations(characterId: string): Promise<any[]> {
-    if (!this.db.db) {
+    if (!this.db.lwCharacterRelations) {
       throw new Error('数据库未初始化')
     }
-    const stmt = this.db.db.prepare(`
-      SELECT * FROM lw_character_relations WHERE character_id = ?
-    `)
-    return stmt.all(characterId) as any[]
+    return this.db.lwCharacterRelations.getByCharacterId(characterId)
   }
 
   /**
    * 创建角色关系
    */
   async createCharacterRelation(data: { characterId: string; relatedCharacterId: string; relationType: string; relationDescription: string }): Promise<any> {
-    if (!this.db.db) {
+    if (!this.db.lwCharacterRelations) {
       throw new Error('数据库未初始化')
     }
-    const id = `rel_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-    const now = Date.now()
-
-    const stmt = this.db.db.prepare(`
-      INSERT INTO lw_character_relations (id, character_id, related_character_id, relation_type, relation_description, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `)
-    stmt.run(id, data.characterId, data.relatedCharacterId, data.relationType, data.relationDescription, now)
-
-    return { id, ...data, createdAt: now }
+    return this.db.lwCharacterRelations.create(data)
   }
 
   /**
    * 删除角色关系
    */
   async deleteCharacterRelation(id: string): Promise<boolean> {
-    if (!this.db.db) {
+    if (!this.db.lwCharacterRelations) {
       throw new Error('数据库未初始化')
     }
-    const stmt = this.db.db.prepare('DELETE FROM lw_character_relations WHERE id = ?')
-    const result = stmt.run(id)
-    return result.changes > 0
+    return this.db.lwCharacterRelations.delete(id)
   }
 
   // ==================== 技能管理 ====================

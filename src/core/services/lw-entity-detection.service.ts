@@ -58,14 +58,14 @@ export class LwEntityDetectionService {
     chapterNumber?: number
   ): Promise<NewEntityDetectionResult> {
     const db = getCoreDatabaseManager()
-    if (!db.db) {
+    if (!db.dataSource) {
       throw new Error('数据库未初始化')
     }
 
     // 获取项目已有实体
-    const existingCharacters = db.lwCharacters?.getByProjectId(projectId) || []
-    const existingLocations = db.lwLocations?.getByProjectId(projectId) || []
-    const existingItems = db.lwItems?.getByProjectId(projectId) || []
+    const existingCharacters = (await db.lwCharacters?.getByProjectId(projectId)) || []
+    const existingLocations = (await db.lwLocations?.getByProjectId(projectId)) || []
+    const existingItems = (await db.lwItems?.getByProjectId(projectId)) || []
 
     // 通过 AI 分析文本，提取所有实体
     const allEntities = await this.extractEntitiesWithAI(text)
@@ -137,7 +137,7 @@ export class LwEntityDetectionService {
     errors: string[]
   }> {
     const db = getCoreDatabaseManager()
-    if (!db.db) {
+    if (!db.dataSource) {
       throw new Error('数据库未初始化')
     }
 
@@ -248,11 +248,10 @@ export class LwEntityDetectionService {
   private static async extractEntitiesWithAI(text: string): Promise<AiExtractedEntities> {
     try {
       // 获取 AI 配置
-      const { SecureStorageService } = await import('./secure-storage.service')
+      const { getSecureStorage } = await import('@core/interfaces/storage.interface')
       const { PROVIDER_TEMPLATES } = await import('./provider-template.service')
-      const { getDatabaseManager } = await import('../database')
 
-      const dbManager = getDatabaseManager()
+      const dbManager = getCoreDatabaseManager()
       if (!dbManager.providerConfigs) {
         console.warn('[LwEntityDetectionService] 数据库未初始化，返回空结果')
         return { characters: [], locations: [], items: [] }
@@ -279,7 +278,7 @@ export class LwEntityDetectionService {
       }
 
       // 解密 API 密钥
-      const secureStorage = SecureStorageService.getInstance()
+      const secureStorage = getSecureStorage()
       if (!secureStorage.isInitialized()) {
         await secureStorage.initialize()
       }

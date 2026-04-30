@@ -31,7 +31,7 @@ export class EpisodeAutoBindingService {
     console.log(`[EpisodeAutoBindingService] 开始自动绑定: videoProjectId=${videoProjectId}, outlineId=${outlineId}`)
 
     const db = getCoreDatabaseManager()
-    if (!db.db) {
+    if (!db.dataSource) {
       console.error('[EpisodeAutoBindingService] 数据库实例为 null')
       return {
         boundCharacters: 0,
