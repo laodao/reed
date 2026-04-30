@@ -227,7 +227,7 @@ export class DatabaseManager {
     await this.initTypeOrmDataSource()
 
     // 初始化仓库
-    this.initRepositories()
+    await this.initRepositories()
 
     // 初始化 LanceDB 向量数据库
     await this.initializeLanceDB(dataPath)
@@ -3643,7 +3643,7 @@ export class DatabaseManager {
   /**
    * 初始化仓库
    */
-  private initRepositories(): void {
+  private async initRepositories(): Promise<void> {
     if (!this.db) return
     if (!this.dataSource) {
       throw new Error('[DatabaseManager] dataSource 未初始化')
@@ -3728,9 +3728,9 @@ export class DatabaseManager {
     this.storyboardCharacters = new StoryboardCharacterRepository(this.dataSource)
     this.imageAssets = new ImageAssetRepository(this.dataSource)
 
-    // 初始化 OSS 配置仓库
-    this.ossConfigs = new OSSConfigRepository(this.db)
-    this.ossConfigs.initTable()
+    // 初始化 OSS 配置仓库（表通过 Repository.initTable 创建，非 initTables 流程）
+    this.ossConfigs = new OSSConfigRepository(this.dataSource)
+    await this.ossConfigs.initTable()
     console.log('[DatabaseManager] OSS 配置仓库已初始化')
   }
 

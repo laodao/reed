@@ -47,7 +47,7 @@ async function handleListConfigs(_event: IpcMainInvokeEvent): Promise<IpcRespons
       return { success: false, error: '数据库未初始化' }
     }
 
-    const configs = db.ossConfigs.getAll()
+    const configs = await db.ossConfigs.getAll()
 
     // 隐藏敏感信息
     const safeConfigs = configs.map(config => ({
@@ -74,7 +74,7 @@ async function handleGetConfig(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const config = db.ossConfigs.getById(id)
+    const config = await db.ossConfigs.getById(id)
     if (!config) {
       return { success: false, error: '配置不存在' }
     }
@@ -115,7 +115,7 @@ async function handleCreateConfig(
     const id = `oss_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
 
     // 创建配置
-    const config = db.ossConfigs.create({
+    const config = await db.ossConfigs.create({
       id,
       ...request,
       accessKeySecret: encryptedSecret
@@ -156,7 +156,7 @@ async function handleUpdateConfig(
       updateData.accessKeySecret = secureStorage.encrypt(request.accessKeySecret)
     }
 
-    const success = db.ossConfigs.update(request.id, updateData)
+    const success = await db.ossConfigs.update(request.id, updateData)
     if (!success) {
       return { success: false, error: '更新配置失败' }
     }
@@ -180,7 +180,7 @@ async function handleDeleteConfig(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const success = db.ossConfigs.delete(id)
+    const success = await db.ossConfigs.delete(id)
     if (!success) {
       return { success: false, error: '删除配置失败' }
     }
@@ -204,7 +204,7 @@ async function handleSetDefault(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const success = db.ossConfigs.setDefault(id)
+    const success = await db.ossConfigs.setDefault(id)
     if (!success) {
       return { success: false, error: '设置默认配置失败' }
     }
@@ -228,7 +228,7 @@ async function handleToggleEnabled(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const success = db.ossConfigs.toggleEnabled(id)
+    const success = await db.ossConfigs.toggleEnabled(id)
     if (!success) {
       return { success: false, error: '切换状态失败' }
     }
