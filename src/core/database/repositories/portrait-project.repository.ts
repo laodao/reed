@@ -1,144 +1,113 @@
 /**
- * 人像项目数据访问层
+ * 立绘项目数据访问层
  * @module database/repositories/portrait-project.repository
- * @description 提供人像项目的数据库操作（项目仅作为容器，包含多个人物角色）
+ * @description 提供立绘项目的数据库操作（项目作为容器，包含多个角色）。
+ *              基于 TypeORM 实现，支持 sqlite / postgres 双方言。
  */
 
-import Database from 'better-sqlite3'
+import type { DataSource } from 'typeorm'
 import type {
   PortraitProject,
   CreatePortraitProjectRequest,
-  UpdatePortraitProjectRequest
+  UpdatePortraitProjectRequest,
 } from '@shared/types/portrait.types'
 import { randomUUID } from 'crypto'
+import { PortraitProjectEntity } from '../entities/portrait-project.entity'
+import { BaseRepository } from '../base-repository'
 
-/**
- * 人像项目数据仓库
- */
-export class PortraitProjectRepository {
-  private db: Database.Database
-
-  constructor(db: Database.Database) {
-    this.db = db
+export class PortraitProjectRepository extends BaseRepository<
+  PortraitProjectEntity,
+  PortraitProject
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, PortraitProjectEntity)
   }
 
   /**
-   * 将数据库行转换为 PortraitProject 对象
+   * Quirk：Entity createdAt/updatedAt 是 Date 类型，DTO 是 number（epoch ms）。
+   * 历史数据可能是 Date 对象、ISO 字符串、epoch ms 数字 三种形式之一，统一转 number。
    */
-  private rowToProject(row: any): PortraitProject {
+  private toEpochMs(v: Date | number | string | null | undefined): number {
+    if (v === null || v === undefined) return 0
+    if (v instanceof Date) return v.getTime()
+    if (typeof v === 'number') return v
+    return new Date(v).getTime()
+  }
+
+  protected toDto(e: PortraitProjectEntity): PortraitProject {
     return {
-      id: row.id,
-      name: row.name,
-      description: row.description || undefined,
-      defaultProviderId: row.default_provider_id || undefined,
-      defaultModelId: row.default_model_id || undefined,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
+      id: e.id,
+      name: e.name,
+      description: e.description || undefined,
+      defaultProviderId: e.defaultProviderId || undefined,
+      defaultModelId: e.defaultModelId || undefined,
+      createdAt: this.toEpochMs(e.createdAt),
+      updatedAt: this.toEpochMs(e.updatedAt),
     }
   }
 
-  /**
-   * 获取项目列表
-   */
-  async getList(page: number = 1, pageSize: number = 20): Promise<{ projects: PortraitProject[]; total: number }> {
+  async getList(
+    page: number = 1,
+    pageSize: number = 20,
+  ): Promise<{ projects: PortraitProject[]; total: number }> {
     const offset = (page - 1) * pageSize
-
-    // 获取总数
-    const countRow = this.db.prepare('SELECT COUNT(*) as count FROM portrait_projects').get() as { count: number }
-    const total = countRow?.count || 0
-
-    // 获取列表
-    const rows = this.db.prepare(
-      `SELECT * FROM portrait_projects ORDER BY created_at DESC LIMIT ? OFFSET ?`
-    ).all(pageSize, offset) as any[]
-
-    return {
-      projects: rows.map(row => this.rowToProject(row)),
-      total
-    }
+    const [entities, total] = await this.repo.findAndCount({
+      order: { createdAt: 'DESC' } as any,
+      skip: offset,
+      take: pageSize,
+    })
+    return { projects: this.toDtoList(entities), total }
   }
 
-  /**
-   * 根据ID获取项目
-   */
   async getById(id: string): Promise<PortraitProject | null> {
-    const row = this.db.prepare('SELECT * FROM portrait_projects WHERE id = ?').get(id) as any
-    if (!row) return null
-    return this.rowToProject(row)
+    return this.findOneByWhere({ id } as any)
   }
 
-  /**
-   * 创建项目
-   */
-  async create(request: CreatePortraitProjectRequest): Promise<PortraitProject> {
+  async create(
+    request: CreatePortraitProjectRequest,
+  ): Promise<PortraitProject> {
     const id = randomUUID()
-    const now = Date.now()
-
-    this.db.prepare(
-      `INSERT INTO portrait_projects (id, name, description, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?)`
-    ).run(
-      id,
-      request.name,
-      request.description || null,
-      now,
-      now
-    )
-
-    return {
+    const now = new Date()
+    const entity = this.repo.create({
       id,
       name: request.name,
-      description: request.description,
+      description: request.description ?? null,
+      defaultProviderId: null,
+      defaultModelId: null,
       createdAt: now,
-      updatedAt: now
-    }
+      updatedAt: now,
+    })
+    const saved = await this.repo.save(entity)
+    return this.toDto(saved)
   }
 
-  /**
-   * 更新项目
-   */
-  async update(request: UpdatePortraitProjectRequest): Promise<PortraitProject | null> {
-    const project = await this.getById(request.id)
-    if (!project) return null
+  async update(
+    request: UpdatePortraitProjectRequest,
+  ): Promise<PortraitProject | null> {
+    const existing = await this.repo.findOne({ where: { id: request.id } as any })
+    if (!existing) return null
 
-    const fields: string[] = ['updated_at = ?']
-    const values: any[] = [Date.now()]
-
-    if (request.name !== undefined) {
-      fields.push('name = ?')
-      values.push(request.name)
-    }
+    if (request.name !== undefined) existing.name = request.name
     if (request.description !== undefined) {
-      fields.push('description = ?')
-      values.push(request.description || null)
+      existing.description = request.description || null
     }
     if (request.defaultProviderId !== undefined) {
-      fields.push('default_provider_id = ?')
-      values.push(request.defaultProviderId || null)
+      existing.defaultProviderId = request.defaultProviderId || null
     }
     if (request.defaultModelId !== undefined) {
-      fields.push('default_model_id = ?')
-      values.push(request.defaultModelId || null)
+      existing.defaultModelId = request.defaultModelId || null
     }
+    existing.updatedAt = new Date()
 
-    values.push(request.id)
-    this.db.prepare(`UPDATE portrait_projects SET ${fields.join(', ')} WHERE id = ?`).run(...values)
-
-    return this.getById(request.id)
+    const saved = await this.repo.save(existing)
+    return this.toDto(saved)
   }
 
-  /**
-   * 删除项目
-   */
   async delete(id: string): Promise<void> {
-    this.db.prepare('DELETE FROM portrait_projects WHERE id = ?').run(id)
+    await this.repo.delete({ id } as any)
   }
 
-  /**
-   * 统计项目数量
-   */
   async count(): Promise<number> {
-    const row = this.db.prepare('SELECT COUNT(*) as count FROM portrait_projects').get() as { count: number }
-    return row?.count || 0
+    return this.repo.count()
   }
 }

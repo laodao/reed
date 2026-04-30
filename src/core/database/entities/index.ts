@@ -7,3 +7,4 @@
 export { ApiKeyEntity } from './api-key.entity'
 export { SettingsEntity } from './settings.entity'
 export { SearchEngineConfigEntity } from './search-engine-config.entity'
+export { PortraitProjectEntity } from './portrait-project.entity'

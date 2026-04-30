@@ -3666,7 +3666,7 @@ export class DatabaseManager {
     // KbVectorRepository 使用 LanceDB，不再需要 SQLite 连接
     this.kbVectors = new KbVectorRepository()
     this.kbInvertedIndex = new KbInvertedIndexRepository(this.db)
-    this.portraitProjects = new PortraitProjectRepository(this.db)
+    this.portraitProjects = new PortraitProjectRepository(this.dataSource)
     this.portraitCharacters = new PortraitCharacterRepository(this.db)
     this.portraitVariants = new PortraitVariantRepository(this.db)
     this.searchEngineConfigs = new SearchEngineConfigRepository(this.dataSource)
