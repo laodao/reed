@@ -4,7 +4,7 @@
  * @description 处理聊天相关的 IPC 请求
  */
 
-import { ipcMain, IpcMainInvokeEvent, BrowserWindow } from 'electron'
+import { ipcMain, IpcMainInvokeEvent } from 'electron'
 import { ChatService } from '@core/services/chat.service'
 
 /**
@@ -19,7 +19,7 @@ export function registerChatHandlers(): void {
  * 处理发送聊天消息
  */
 async function handleChatSend(
-  event: IpcMainInvokeEvent,
+  _event: IpcMainInvokeEvent,
   request: {
     dialogId: string
     content: string
@@ -48,7 +48,7 @@ async function handleChatSend(
  * 处理停止流式响应
  */
 async function handleChatStop(
-  event: IpcMainInvokeEvent,
+  _event: IpcMainInvokeEvent,
   dialogId: string
 ): Promise<{ success: boolean }> {
   try {

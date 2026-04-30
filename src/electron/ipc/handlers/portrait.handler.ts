@@ -4,7 +4,7 @@
  * @description 处理渲染进程与主进程之间的人像设计相关通信
  */
 
-import { ipcMain, IpcMainInvokeEvent, BrowserWindow } from 'electron'
+import { ipcMain, IpcMainInvokeEvent } from 'electron'
 import { PortraitService } from '@core/services/portrait.service'
 import { DatabaseManager } from '../../database/index'
 import type { IpcResponse } from '@shared/types/ipc.types'

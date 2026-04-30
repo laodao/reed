@@ -5,7 +5,6 @@
 
 import { ipcMain, BrowserWindow, dialog, shell } from 'electron'
 import * as fs from 'fs'
-import * as path from 'path'
 import { getDatabaseManager } from '../../database'
 import { LongWritingService } from '@core/services/longwriting.service'
 import { LongWritingAIService } from '@core/services/longwriting-ai.service'
