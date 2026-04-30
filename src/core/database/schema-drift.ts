@@ -127,7 +127,9 @@ function affinityEquivalent(expected: string, actual: string): boolean {
 function normalize(t: string): string {
   const s = t.toUpperCase().trim()
   if (/^(INT|INTEGER|BIGINT|SMALLINT)$/.test(s)) return 'INT'
-  if (/^(VARCHAR|TEXT|CHARACTER VARYING|CHAR)$/.test(s)) return 'TEXT'
+  // simple-json / simple-array 在所有方言都存为 TEXT
+  if (/^(VARCHAR|TEXT|CHARACTER VARYING|CHAR|SIMPLE-JSON|SIMPLE-ARRAY|JSON)$/.test(s))
+    return 'TEXT'
   if (/^(REAL|DOUBLE|FLOAT|NUMERIC|DECIMAL|DOUBLE PRECISION)$/.test(s))
     return 'REAL'
   if (/^(DATETIME|TIMESTAMP|TIMESTAMP WITHOUT TIME ZONE)$/.test(s)) return 'TIME'

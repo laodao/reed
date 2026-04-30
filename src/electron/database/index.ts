@@ -3669,7 +3669,7 @@ export class DatabaseManager {
     this.portraitProjects = new PortraitProjectRepository(this.db)
     this.portraitCharacters = new PortraitCharacterRepository(this.db)
     this.portraitVariants = new PortraitVariantRepository(this.db)
-    this.searchEngineConfigs = new SearchEngineConfigRepository(this.db)
+    this.searchEngineConfigs = new SearchEngineConfigRepository(this.dataSource)
     this.lwProjects = new LwProjectRepository(this.db)
     this.lwStoryOverviews = new LwStoryOverviewRepository(this.db)
     this.lwCharacters = new LwCharacterRepository(this.db)

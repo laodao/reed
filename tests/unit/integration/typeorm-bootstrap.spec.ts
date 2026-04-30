@@ -128,6 +128,40 @@ describe('TypeORM bootstrap 集成（带 raw DDL 的 sqlite 文件）', () => {
     }
   })
 
+  it('search_engine_configs raw DDL 与 SearchEngineConfigEntity 0 漂移', async () => {
+    const rawDb = new Database(dbPath)
+    rawDb.prepare(`
+      CREATE TABLE IF NOT EXISTS search_engine_configs (
+        id TEXT PRIMARY KEY,
+        template_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        api_key_encrypted TEXT,
+        extra_config TEXT,
+        max_results INTEGER DEFAULT 5,
+        is_enabled INTEGER DEFAULT 1,
+        is_default INTEGER DEFAULT 0,
+        last_tested DATETIME,
+        test_result TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `).run()
+    rawDb.close()
+
+    const ds = await createDataSource({
+      config: { type: 'sqlite', database: dbPath, enableWal: true },
+    })
+
+    try {
+      const report = await checkSchemaDrift(ds)
+      expect(report.missingColumns).toEqual([])
+      expect(report.typeMismatches).toEqual([])
+      expect(report.ok).toBe(true)
+    } finally {
+      await ds.destroy()
+    }
+  })
+
   it('表不存在场景（新装用户）漂移检查放行（让 synchronize 建表）', async () => {
     const ds = await createDataSource({
       config: { type: 'sqlite', database: dbPath, enableWal: false },
