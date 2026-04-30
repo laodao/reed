@@ -74,7 +74,7 @@ export class LwMigrationService {
    * @param projectId 项目ID
    * @param autoBackup 是否自动备份（默认true）
    */
-  static migrateProject(projectId: string, autoBackup: boolean = true): MigrationResult {
+  static async migrateProject(projectId: string, autoBackup: boolean = true): Promise<MigrationResult> {
     const result: MigrationResult = {
       success: true,
       plotCharacters: 0,
@@ -132,12 +132,12 @@ export class LwMigrationService {
 
       // 6. 迁移设计对话消息
       if (db.lwDesignMessages) {
-        result.designMessages = this.migrateDesignMessages(projectId)
+        result.designMessages = await this.migrateDesignMessages(projectId)
       }
 
       // 7. 迁移记忆实体关联
       if (db.lwMemoryEntities && db.lwMemories) {
-        result.memoryEntities = this.migrateMemoryEntities(projectId)
+        result.memoryEntities = await this.migrateMemoryEntities(projectId)
       }
 
       console.log('[LwMigrationService] 迁移完成:', result)
@@ -154,7 +154,7 @@ export class LwMigrationService {
    * 迁移所有项目
    * @param autoBackup 是否自动备份（默认true）
    */
-  static migrateAllProjects(autoBackup: boolean = true): MigrationResult[] {
+  static async migrateAllProjects(autoBackup: boolean = true): Promise<MigrationResult[]> {
     const db = DatabaseManager.getInstance()
     if (!db.db || !db.lwProjects) {
       return []
@@ -170,7 +170,7 @@ export class LwMigrationService {
 
     for (const project of projects) {
       // 后续项目迁移不再重复备份
-      const result = this.migrateProject(project.id, false)
+      const result = await this.migrateProject(project.id, false)
       results.push(result)
     }
 
@@ -297,7 +297,7 @@ export class LwMigrationService {
   /**
    * 迁移设计对话消息
    */
-  private static migrateDesignMessages(projectId: string): number {
+  private static async migrateDesignMessages(projectId: string): Promise<number> {
     const db = DatabaseManager.getInstance()
     if (!db.db || !db.lwDesignMessages) return 0
 
@@ -320,16 +320,16 @@ export class LwMigrationService {
   /**
    * 迁移记忆实体关联
    */
-  private static migrateMemoryEntities(projectId: string): number {
+  private static async migrateMemoryEntities(projectId: string): Promise<number> {
     const db = DatabaseManager.getInstance()
     if (!db.db || !db.lwMemoryEntities || !db.lwMemories) return 0
 
-    const memories = db.lwMemories.getByProjectId(projectId)
+    const memories = await db.lwMemories.getByProjectId(projectId)
     let migratedCount = 0
 
     for (const memory of memories) {
       if (memory.involvedEntities && memory.involvedEntities.length > 0) {
-        db.lwMemoryEntities.replaceAll(memory.id, memory.involvedEntities)
+        await db.lwMemoryEntities.replaceAll(memory.id, memory.involvedEntities)
         migratedCount += memory.involvedEntities.length
       }
     }

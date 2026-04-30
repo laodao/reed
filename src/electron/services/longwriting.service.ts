@@ -84,7 +84,7 @@ export class LongWritingService {
     if (!this.db.lwProjects) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwProjects.getAll()
+    return await this.db.lwProjects.getAll()
   }
 
   /**
@@ -94,7 +94,7 @@ export class LongWritingService {
     if (!this.db.lwProjects) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwProjects.getById(id)
+    return await this.db.lwProjects.getById(id)
   }
 
   /**
@@ -106,11 +106,11 @@ export class LongWritingService {
     }
 
     // 创建项目
-    const project = this.await db.lwProjects.create(data)
+    const project = await this.db.lwProjects.create(data)
 
     // 如果是故事类，创建对应的概要记录
     if (data.type === 'story' && this.db.lwStoryOverviews) {
-      this.await db.lwStoryOverviews.create(project.id)
+      await this.db.lwStoryOverviews.create(project.id)
     }
 
     // 初始化项目的默认类型配置
@@ -129,7 +129,7 @@ export class LongWritingService {
     if (!this.db.lwProjects) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwProjects.update(id, data)
+    return await this.db.lwProjects.update(id, data)
   }
 
   /**
@@ -139,7 +139,7 @@ export class LongWritingService {
     if (!this.db.lwProjects) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwProjects.delete(id)
+    return await this.db.lwProjects.delete(id)
   }
 
   // ==================== 故事概要 ====================
@@ -151,7 +151,7 @@ export class LongWritingService {
     if (!this.db.lwStoryOverviews) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwStoryOverviews.getByProjectId(projectId)
+    return await this.db.lwStoryOverviews.getByProjectId(projectId)
   }
 
   /**
@@ -168,10 +168,10 @@ export class LongWritingService {
     let overview = await this.getStoryOverview(projectId)
     if (!overview) {
       // 如果不存在，创建新的
-      overview = this.await db.lwStoryOverviews.create(projectId)
+      overview = await this.db.lwStoryOverviews.create(projectId)
     }
 
-    return this.await db.lwStoryOverviews.update(overview.id, data)
+    return await this.db.lwStoryOverviews.update(overview.id, data)
   }
 
   /**
@@ -185,7 +185,7 @@ export class LongWritingService {
     const overview = await this.getStoryOverview(projectId)
     if (!overview) return false
 
-    return this.await db.lwStoryOverviews.setLocked(overview.id, locked)
+    return await this.db.lwStoryOverviews.setLocked(overview.id, locked)
   }
 
   // ==================== 角色管理 ====================
@@ -197,7 +197,7 @@ export class LongWritingService {
     if (!this.db.lwCharacters) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwCharacters.getByProjectId(projectId)
+    return await this.db.lwCharacters.getByProjectId(projectId)
   }
 
   /**
@@ -207,7 +207,7 @@ export class LongWritingService {
     if (!this.db.lwCharacters) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwCharacters.getById(id)
+    return await this.db.lwCharacters.getById(id)
   }
 
   /**
@@ -217,7 +217,7 @@ export class LongWritingService {
     if (!this.db.lwCharacters) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwCharacters.create(data)
+    return await this.db.lwCharacters.create(data)
   }
 
   /**
@@ -227,7 +227,7 @@ export class LongWritingService {
     if (!this.db.lwCharacters) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwCharacters.update(id, data)
+    return await this.db.lwCharacters.update(id, data)
   }
 
   /**
@@ -237,7 +237,7 @@ export class LongWritingService {
     if (!this.db.lwCharacters) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwCharacters.delete(id)
+    return await this.db.lwCharacters.delete(id)
   }
 
   /**
@@ -263,9 +263,9 @@ export class LongWritingService {
     if (!this.db.lwBackgrounds) {
       throw new Error('数据库未初始化')
     }
-    let background = this.await db.lwBackgrounds.getByProjectId(projectId)
+    let background = await this.db.lwBackgrounds.getByProjectId(projectId)
     if (!background) {
-      background = this.await db.lwBackgrounds.create(projectId)
+      background = await this.db.lwBackgrounds.create(projectId)
     }
     return background
   }
@@ -279,13 +279,13 @@ export class LongWritingService {
       console.error('[LongWritingService] 数据库未初始化')
       throw new Error('数据库未初始化')
     }
-    let background = this.await db.lwBackgrounds.getByProjectId(projectId)
+    let background = await this.db.lwBackgrounds.getByProjectId(projectId)
     console.log('[LongWritingService] 现有背景:', background)
     if (!background) {
-      background = this.await db.lwBackgrounds.create(projectId)
+      background = await this.db.lwBackgrounds.create(projectId)
       console.log('[LongWritingService] 创建新背景:', background)
     }
-    const result = this.await db.lwBackgrounds.update(background.id, data)
+    const result = await this.db.lwBackgrounds.update(background.id, data)
     console.log('[LongWritingService] 更新结果:', result)
     return result
   }
@@ -299,7 +299,7 @@ export class LongWritingService {
     if (!this.db.lwLocations) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwLocations.getByProjectId(projectId)
+    return await this.db.lwLocations.getByProjectId(projectId)
   }
 
   /**
@@ -309,7 +309,7 @@ export class LongWritingService {
     if (!this.db.lwLocations) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwLocations.getById(id)
+    return await this.db.lwLocations.getById(id)
   }
 
   /**
@@ -319,7 +319,7 @@ export class LongWritingService {
     if (!this.db.lwLocations) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwLocations.create(data)
+    return await this.db.lwLocations.create(data)
   }
 
   /**
@@ -329,7 +329,7 @@ export class LongWritingService {
     if (!this.db.lwLocations) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwLocations.update(id, data)
+    return await this.db.lwLocations.update(id, data)
   }
 
   /**
@@ -339,7 +339,7 @@ export class LongWritingService {
     if (!this.db.lwLocations) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwLocations.delete(id)
+    return await this.db.lwLocations.delete(id)
   }
 
   // ==================== 势力管理 ====================
@@ -351,7 +351,7 @@ export class LongWritingService {
     if (!this.db.lwFactions) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwFactions.getByProjectId(projectId)
+    return await this.db.lwFactions.getByProjectId(projectId)
   }
 
   /**
@@ -361,7 +361,7 @@ export class LongWritingService {
     if (!this.db.lwFactions) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwFactions.getByProjectIdAndType(projectId, factionType)
+    return await this.db.lwFactions.getByProjectIdAndType(projectId, factionType)
   }
 
   /**
@@ -371,7 +371,7 @@ export class LongWritingService {
     if (!this.db.lwFactions) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwFactions.getById(id)
+    return await this.db.lwFactions.getById(id)
   }
 
   /**
@@ -381,7 +381,7 @@ export class LongWritingService {
     if (!this.db.lwFactions) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwFactions.create({
+    return await this.db.lwFactions.create({
       projectId: data.projectId,
       factionType: data.factionType,
       name: data.name,
@@ -397,7 +397,7 @@ export class LongWritingService {
     if (!this.db.lwFactions) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwFactions.update(id, data as Partial<StoryFaction>)
+    return await this.db.lwFactions.update(id, data as Partial<StoryFaction>)
   }
 
   /**
@@ -407,7 +407,7 @@ export class LongWritingService {
     if (!this.db.lwFactions) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwFactions.delete(id)
+    return await this.db.lwFactions.delete(id)
   }
 
   /**
@@ -417,7 +417,7 @@ export class LongWritingService {
     if (!this.db.lwFactions) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwFactions.updateSortOrder(orderList)
+    return await this.db.lwFactions.updateSortOrder(orderList)
   }
 
   // ==================== 情节管理 ====================
@@ -429,7 +429,7 @@ export class LongWritingService {
     if (!this.db.lwPlots) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwPlots.getByProjectId(projectId)
+    return await this.db.lwPlots.getByProjectId(projectId)
   }
 
   /**
@@ -439,7 +439,7 @@ export class LongWritingService {
     if (!this.db.lwPlots) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwPlots.getById(id)
+    return await this.db.lwPlots.getById(id)
   }
 
   /**
@@ -449,7 +449,7 @@ export class LongWritingService {
     if (!this.db.lwPlots) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwPlots.create(data)
+    return await this.db.lwPlots.create(data)
   }
 
   /**
@@ -459,7 +459,7 @@ export class LongWritingService {
     if (!this.db.lwPlots) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwPlots.batchCreate(projectId, plots)
+    return await this.db.lwPlots.batchCreate(projectId, plots)
   }
 
   /**
@@ -469,7 +469,7 @@ export class LongWritingService {
     if (!this.db.lwPlots) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwPlots.update(id, data)
+    return await this.db.lwPlots.update(id, data)
   }
 
   /**
@@ -479,7 +479,7 @@ export class LongWritingService {
     if (!this.db.lwPlots) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwPlots.reorderPlots(projectId, orderList)
+    return await this.db.lwPlots.reorderPlots(projectId, orderList)
   }
 
   /**
@@ -489,7 +489,7 @@ export class LongWritingService {
     if (!this.db.lwPlots) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwPlots.delete(id)
+    return await this.db.lwPlots.delete(id)
   }
 
   /**
@@ -499,7 +499,7 @@ export class LongWritingService {
     if (!this.db.lwPlots) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwPlots.deleteByProjectId(projectId)
+    return await this.db.lwPlots.deleteByProjectId(projectId)
   }
 
   /**
@@ -509,7 +509,7 @@ export class LongWritingService {
     if (!this.db.lwPlots) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwPlots.countByProjectId(projectId)
+    return await this.db.lwPlots.countByProjectId(projectId)
   }
 
   // ==================== 角色关系 ====================
@@ -567,7 +567,7 @@ export class LongWritingService {
     if (!this.db.lwSkills) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwSkills.getByProjectId(projectId)
+    return await this.db.lwSkills.getByProjectId(projectId)
   }
 
   /**
@@ -577,7 +577,7 @@ export class LongWritingService {
     if (!this.db.lwSkills) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwSkills.getById(id)
+    return await this.db.lwSkills.getById(id)
   }
 
   /**
@@ -587,7 +587,7 @@ export class LongWritingService {
     if (!this.db.lwSkills) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwSkills.create(data)
+    return await this.db.lwSkills.create(data)
   }
 
   /**
@@ -597,7 +597,7 @@ export class LongWritingService {
     if (!this.db.lwSkills) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwSkills.update(id, data)
+    return await this.db.lwSkills.update(id, data)
   }
 
   /**
@@ -607,7 +607,7 @@ export class LongWritingService {
     if (!this.db.lwSkills) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwSkills.delete(id)
+    return await this.db.lwSkills.delete(id)
   }
 
   // ==================== 物品管理 ====================
@@ -619,7 +619,7 @@ export class LongWritingService {
     if (!this.db.lwItems) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwItems.getByProjectId(projectId)
+    return await this.db.lwItems.getByProjectId(projectId)
   }
 
   /**
@@ -629,7 +629,7 @@ export class LongWritingService {
     if (!this.db.lwItems) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwItems.getById(id)
+    return await this.db.lwItems.getById(id)
   }
 
   /**
@@ -639,7 +639,7 @@ export class LongWritingService {
     if (!this.db.lwItems) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwItems.create(data)
+    return await this.db.lwItems.create(data)
   }
 
   /**
@@ -649,7 +649,7 @@ export class LongWritingService {
     if (!this.db.lwItems) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwItems.update(id, data)
+    return await this.db.lwItems.update(id, data)
   }
 
   /**
@@ -659,7 +659,7 @@ export class LongWritingService {
     if (!this.db.lwItems) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwItems.delete(id)
+    return await this.db.lwItems.delete(id)
   }
 
   // ==================== 素材管理 ====================
@@ -745,12 +745,12 @@ export class LongWritingService {
       throw new Error('数据库未初始化')
     }
     // 获取大纲列表
-    const outlines = this.await db.lwOutlines.getByProjectId(projectId)
+    const outlines = await this.db.lwOutlines.getByProjectId(projectId)
 
     // 批量获取预写状态
     if (this.db.lwPrewrites && outlines.length > 0) {
       const outlineIds = outlines.map(o => o.id)
-      const prewrites = this.await db.lwPrewrites.getByOutlineIds(outlineIds)
+      const prewrites = await this.db.lwPrewrites.getByOutlineIds(outlineIds)
 
       // 附加预写确认状态到大纲节点
       for (const outline of outlines) {
@@ -769,7 +769,7 @@ export class LongWritingService {
     if (!this.db.lwOutlines) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwOutlines.getById(id)
+    return await this.db.lwOutlines.getById(id)
   }
 
   /**
@@ -779,7 +779,7 @@ export class LongWritingService {
     if (!this.db.lwOutlines) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwOutlines.create(data)
+    return await this.db.lwOutlines.create(data)
   }
 
   /**
@@ -789,7 +789,7 @@ export class LongWritingService {
     if (!this.db.lwOutlines) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwOutlines.update(id, data)
+    return await this.db.lwOutlines.update(id, data)
   }
 
   /**
@@ -799,7 +799,7 @@ export class LongWritingService {
     if (!this.db.lwOutlines) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwOutlines.delete(id)
+    return await this.db.lwOutlines.delete(id)
   }
 
   /**
@@ -809,7 +809,7 @@ export class LongWritingService {
     if (!this.db.lwOutlines) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwOutlines.moveTo(id, newParentId)
+    return await this.db.lwOutlines.moveTo(id, newParentId)
   }
 
   // ==================== 章节管理 ====================
@@ -821,7 +821,7 @@ export class LongWritingService {
     if (!this.db.lwChapters) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwChapters.getByOutlineId(outlineId)
+    return await this.db.lwChapters.getByOutlineId(outlineId)
   }
 
   /**
@@ -831,7 +831,7 @@ export class LongWritingService {
     if (!this.db.lwChapters) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwChapters.getByOutlineIds(outlineIds)
+    return await this.db.lwChapters.getByOutlineIds(outlineIds)
   }
 
   /**
@@ -844,13 +844,13 @@ export class LongWritingService {
 
     let chapter = await this.getChapter(outlineId)
     if (!chapter) {
-      chapter = this.await db.lwChapters.create(outlineId, content)
+      chapter = await this.db.lwChapters.create(outlineId, content)
     } else {
-      chapter = this.await db.lwChapters.updateContent(chapter.id, content)!
+      chapter = await this.db.lwChapters.updateContent(chapter.id, content)!
     }
 
     // 创建版本记录
-    this.await db.lwChapters.createVersion(chapter.id, content, 'manual')
+    await this.db.lwChapters.createVersion(chapter.id, content, 'manual')
 
     return chapter
   }
@@ -862,7 +862,7 @@ export class LongWritingService {
     if (!this.db.lwChapters) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwChapters.getVersions(chapterId)
+    return await this.db.lwChapters.getVersions(chapterId)
   }
 
   /**
@@ -872,7 +872,7 @@ export class LongWritingService {
     if (!this.db.lwChapters) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwChapters.restoreVersion(chapterId, versionId)
+    return await this.db.lwChapters.restoreVersion(chapterId, versionId)
   }
 
   /**
@@ -882,7 +882,7 @@ export class LongWritingService {
     if (!this.db.lwChapters) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwChapters.lockVersion(versionId)
+    return await this.db.lwChapters.lockVersion(versionId)
   }
 
   // ==================== AI 生成相关 ====================
@@ -923,7 +923,7 @@ export class LongWritingService {
     if (!this.db.lwGlobalSettings) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwGlobalSettings.getOrCreate()
+    return await this.db.lwGlobalSettings.getOrCreate()
   }
 
   /**
@@ -933,7 +933,7 @@ export class LongWritingService {
     if (!this.db.lwGlobalSettings) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwGlobalSettings.update(data)
+    return await this.db.lwGlobalSettings.update(data)
   }
 
   // ==================== 字典管理 ====================
@@ -1251,7 +1251,7 @@ export class LongWritingService {
     if (!this.db.lwMaps) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwMaps.getByProjectId(projectId)
+    return await this.db.lwMaps.getByProjectId(projectId)
   }
 
   /**
@@ -1261,7 +1261,7 @@ export class LongWritingService {
     if (!this.db.lwMaps) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwMaps.getById(id)
+    return await this.db.lwMaps.getById(id)
   }
 
   /**
@@ -1271,7 +1271,7 @@ export class LongWritingService {
     if (!this.db.lwMaps) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwMaps.create({
+    return await this.db.lwMaps.create({
       projectId: data.projectId,
       name: data.name,
       orientation: data.orientation,
@@ -1286,7 +1286,7 @@ export class LongWritingService {
     if (!this.db.lwMaps) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwMaps.update(id, data as Partial<StoryMap>)
+    return await this.db.lwMaps.update(id, data as Partial<StoryMap>)
   }
 
   /**
@@ -1296,7 +1296,7 @@ export class LongWritingService {
     if (!this.db.lwMaps) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwMaps.delete(id)
+    return await this.db.lwMaps.delete(id)
   }
 
   /**
@@ -1306,7 +1306,7 @@ export class LongWritingService {
     if (!this.db.lwMaps) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwMaps.updateImagePath(id, imagePath)
+    return await this.db.lwMaps.updateImagePath(id, imagePath)
   }
 
   /**
@@ -1316,7 +1316,7 @@ export class LongWritingService {
     if (!this.db.lwMaps) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwMaps.updateAIGeneratedData(id, data)
+    return await this.db.lwMaps.updateAIGeneratedData(id, data)
   }
 
   /**
@@ -1326,7 +1326,7 @@ export class LongWritingService {
     if (!this.db.lwMaps) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwMaps.updateSortOrder(orderList)
+    return await this.db.lwMaps.updateSortOrder(orderList)
   }
 
   // ==================== 章节预写管理 ====================
@@ -1338,7 +1338,7 @@ export class LongWritingService {
     if (!this.db.lwPrewrites) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwPrewrites.getByOutlineId(outlineId)
+    return await this.db.lwPrewrites.getByOutlineId(outlineId)
   }
 
   /**
@@ -1348,7 +1348,7 @@ export class LongWritingService {
     if (!this.db.lwPrewrites) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwPrewrites.save(data)
+    return await this.db.lwPrewrites.save(data)
   }
 
   /**
@@ -1358,7 +1358,7 @@ export class LongWritingService {
     if (!this.db.lwPrewrites) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwPrewrites.confirm(outlineId)
+    return await this.db.lwPrewrites.confirm(outlineId)
   }
 
   /**
@@ -1368,7 +1368,7 @@ export class LongWritingService {
     if (!this.db.lwPrewrites) {
       throw new Error('数据库未初始化')
     }
-    return this.await db.lwPrewrites.unconfirm(outlineId)
+    return await this.db.lwPrewrites.unconfirm(outlineId)
   }
 
   /**
@@ -1380,9 +1380,9 @@ export class LongWritingService {
     }
     // 同时删除关联的记忆
     if (this.db.lwMemories) {
-      this.db.lwMemories.deleteBySourceOutlineId(outlineId)
+      await this.db.lwMemories.deleteBySourceOutlineId(outlineId)
     }
-    return this.await db.lwPrewrites.delete(outlineId)
+    return await this.db.lwPrewrites.delete(outlineId)
   }
 
   // ==================== 故事记忆管理 ====================
@@ -1394,7 +1394,7 @@ export class LongWritingService {
     if (!this.db.lwMemories) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwMemories.getByProjectId(projectId)
+    return await this.db.lwMemories.getByProjectId(projectId)
   }
 
   /**
@@ -1404,7 +1404,7 @@ export class LongWritingService {
     if (!this.db.lwMemories) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwMemories.getMemoriesBeforeChapter(projectId, chapterNumber)
+    return await this.db.lwMemories.getMemoriesBeforeChapter(projectId, chapterNumber)
   }
 
   /**
@@ -1414,7 +1414,7 @@ export class LongWritingService {
     if (!this.db.lwMemories) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwMemories.getById(id)
+    return await this.db.lwMemories.getById(id)
   }
 
   /**
@@ -1424,7 +1424,7 @@ export class LongWritingService {
     if (!this.db.lwMemories) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwMemories.create(data)
+    return await this.db.lwMemories.create(data)
   }
 
   /**
@@ -1434,7 +1434,7 @@ export class LongWritingService {
     if (!this.db.lwMemories) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwMemories.batchCreate(dataList)
+    return await this.db.lwMemories.batchCreate(dataList)
   }
 
   /**
@@ -1444,7 +1444,7 @@ export class LongWritingService {
     if (!this.db.lwMemories) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwMemories.update(id, data)
+    return await this.db.lwMemories.update(id, data)
   }
 
   /**
@@ -1454,7 +1454,7 @@ export class LongWritingService {
     if (!this.db.lwMemories) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwMemories.delete(id)
+    return await this.db.lwMemories.delete(id)
   }
 
   /**
@@ -1464,7 +1464,7 @@ export class LongWritingService {
     if (!this.db.lwMemories) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwMemories.toggleActive(id)
+    return await this.db.lwMemories.toggleActive(id)
   }
 
   /**
@@ -1479,7 +1479,7 @@ export class LongWritingService {
     if (!this.db.lwMemories) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwMemories.getMemoryStats(projectId)
+    return await this.db.lwMemories.getMemoryStats(projectId)
   }
 
   // ==================== 实体状态快照管理 ====================

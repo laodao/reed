@@ -1,134 +1,134 @@
 /**
  * 长文写作故事记忆仓库
  * @module database/repositories/lw-memory.repository
+ * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import Database from 'better-sqlite3'
+import { In, type DataSource } from 'typeorm'
 import {
   StoryMemory,
   MemoryEntity,
   MemoryType,
   MemoryImportance,
   CreateMemoryRequest,
-  UpdateMemoryRequest
+  UpdateMemoryRequest,
 } from '@shared/types/longwriting.types'
+import { LwMemoryEntity } from '../entities/lw-memory.entity'
 import { LwMemoryEntityRepository } from './lw-memory-entity.repository'
+import { BaseRepository } from '../base-repository'
 
-export class LwMemoryRepository {
+export class LwMemoryRepository extends BaseRepository<LwMemoryEntity, StoryMemory> {
   private memoryEntityRepo: LwMemoryEntityRepository
 
-  constructor(private db: Database.Database) {
-    this.memoryEntityRepo = new LwMemoryEntityRepository(db)
+  constructor(dataSource: DataSource) {
+    super(dataSource, LwMemoryEntity)
+    this.memoryEntityRepo = new LwMemoryEntityRepository(dataSource)
   }
 
-  /**
-   * 根据项目 ID 获取所有记忆
-   */
-  getByProjectId(projectId: string): StoryMemory[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_story_memories WHERE project_id = ? ORDER BY chapter_number ASC, created_at ASC
-    `)
-    const rows = stmt.all(projectId) as any[]
-    return rows.map(row => this.mapToMemory(row))
+  protected toDto(e: LwMemoryEntity): StoryMemory {
+    return {
+      id: e.id,
+      projectId: e.projectId,
+      sourceOutlineId: e.sourceOutlineId ?? undefined,
+      memoryType: e.memoryType as MemoryType,
+      title: e.title,
+      description: e.description ?? '',
+      involvedEntities: this.parseEntities(e.involvedEntities),
+      chapterNumber: e.chapterNumber ?? 0,
+      importance: (e.importance || 'normal') as MemoryImportance,
+      isActive: e.isActive === 1,
+      createdAt: e.createdAt,
+      updatedAt: e.updatedAt,
+    }
   }
 
-  /**
-   * 获取项目指定章节之前的所有生效记忆
-   */
-  getMemoriesBeforeChapter(projectId: string, chapterNumber: number): StoryMemory[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_story_memories
-      WHERE project_id = ? AND chapter_number < ? AND is_active = 1
-      ORDER BY chapter_number ASC, importance DESC, created_at ASC
-    `)
-    const rows = stmt.all(projectId, chapterNumber) as any[]
-    return rows.map(row => this.mapToMemory(row))
+  async getByProjectId(projectId: string): Promise<StoryMemory[]> {
+    const rows = await this.repo
+      .createQueryBuilder('m')
+      .where('m.project_id = :pid', { pid: projectId })
+      .orderBy('m.chapter_number', 'ASC')
+      .addOrderBy('m.created_at', 'ASC')
+      .getMany()
+    return this.toDtoList(rows)
   }
 
-  /**
-   * 获取指定章节的记忆
-   */
-  getMemoriesByChapter(projectId: string, chapterNumber: number): StoryMemory[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_story_memories
-      WHERE project_id = ? AND chapter_number = ?
-      ORDER BY importance DESC, created_at ASC
-    `)
-    const rows = stmt.all(projectId, chapterNumber) as any[]
-    return rows.map(row => this.mapToMemory(row))
+  async getMemoriesBeforeChapter(
+    projectId: string,
+    chapterNumber: number,
+  ): Promise<StoryMemory[]> {
+    const rows = await this.repo
+      .createQueryBuilder('m')
+      .where('m.project_id = :pid', { pid: projectId })
+      .andWhere('m.chapter_number < :cn', { cn: chapterNumber })
+      .andWhere('m.is_active = 1')
+      .orderBy('m.chapter_number', 'ASC')
+      .addOrderBy('m.importance', 'DESC')
+      .addOrderBy('m.created_at', 'ASC')
+      .getMany()
+    return this.toDtoList(rows)
   }
 
-  /**
-   * 根据 ID 获取记忆
-   */
-  getById(id: string): StoryMemory | null {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_story_memories WHERE id = ?
-    `)
-    const row = stmt.get(id) as any
-    return row ? this.mapToMemory(row) : null
+  async getMemoriesByChapter(
+    projectId: string,
+    chapterNumber: number,
+  ): Promise<StoryMemory[]> {
+    const rows = await this.repo
+      .createQueryBuilder('m')
+      .where('m.project_id = :pid', { pid: projectId })
+      .andWhere('m.chapter_number = :cn', { cn: chapterNumber })
+      .orderBy('m.importance', 'DESC')
+      .addOrderBy('m.created_at', 'ASC')
+      .getMany()
+    return this.toDtoList(rows)
   }
 
-  /**
-   * 根据来源大纲 ID 获取记忆
-   */
-  getBySourceOutlineId(outlineId: string): StoryMemory[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_story_memories WHERE source_outline_id = ?
-    `)
-    const rows = stmt.all(outlineId) as any[]
-    return rows.map(row => this.mapToMemory(row))
+  async getById(id: string): Promise<StoryMemory | null> {
+    return this.findOneByWhere({ id } as any)
   }
 
-  /**
-   * 根据实体查询记忆
-   */
-  getMemoriesByEntity(projectId: string, entityType: MemoryEntity['type'], entityId: string): StoryMemory[] {
-    const memoryIds = this.memoryEntityRepo.getMemoryIdsByEntity(entityType, entityId)
+  async getBySourceOutlineId(outlineId: string): Promise<StoryMemory[]> {
+    return this.findManyByWhere({ sourceOutlineId: outlineId } as any)
+  }
+
+  async getMemoriesByEntity(
+    projectId: string,
+    entityType: MemoryEntity['type'],
+    entityId: string,
+  ): Promise<StoryMemory[]> {
+    const memoryIds = await this.memoryEntityRepo.getMemoryIdsByEntity(entityType, entityId)
     if (memoryIds.length === 0) return []
-
-    const placeholders = memoryIds.map(() => '?').join(',')
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_story_memories
-      WHERE project_id = ? AND id IN (${placeholders})
-      ORDER BY chapter_number ASC, created_at ASC
-    `)
-    const rows = stmt.all(projectId, ...memoryIds) as any[]
-    return rows.map(row => this.mapToMemory(row))
+    const rows = await this.repo
+      .createQueryBuilder('m')
+      .where('m.project_id = :pid', { pid: projectId })
+      .andWhere('m.id IN (:...ids)', { ids: memoryIds })
+      .orderBy('m.chapter_number', 'ASC')
+      .addOrderBy('m.created_at', 'ASC')
+      .getMany()
+    return this.toDtoList(rows)
   }
 
-  /**
-   * 创建记忆
-   */
-  create(data: CreateMemoryRequest): StoryMemory {
+  async create(data: CreateMemoryRequest): Promise<StoryMemory> {
     const id = this.generateId()
     const now = Date.now()
 
-    const stmt = this.db.prepare(`
-      INSERT INTO lw_story_memories (
-        id, project_id, source_outline_id, memory_type, title, description,
-        involved_entities, chapter_number, importance, is_active, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-    `)
-
-    // 保留JSON字段以兼容
-    stmt.run(
+    const entity = this.repo.create({
       id,
-      data.projectId,
-      data.sourceOutlineId || null,
-      data.memoryType,
-      data.title,
-      data.description,
-      JSON.stringify(data.involvedEntities || []),
-      data.chapterNumber,
-      data.importance || 'normal',
-      now,
-      now
-    )
+      projectId: data.projectId,
+      sourceOutlineId: data.sourceOutlineId ?? null,
+      memoryType: data.memoryType,
+      title: data.title,
+      description: data.description,
+      involvedEntities: JSON.stringify(data.involvedEntities || []),
+      chapterNumber: data.chapterNumber,
+      importance: data.importance || 'normal',
+      isActive: 1,
+      createdAt: now,
+      updatedAt: now,
+    })
+    await this.repo.save(entity)
 
-    // 同时写入关联表
     if (data.involvedEntities && data.involvedEntities.length > 0) {
-      this.memoryEntityRepo.batchAdd(id, data.involvedEntities)
+      await this.memoryEntityRepo.batchAdd(id, data.involvedEntities)
     }
 
     return {
@@ -143,165 +143,122 @@ export class LwMemoryRepository {
       importance: data.importance || 'normal',
       isActive: true,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
     }
   }
 
-  /**
-   * 批量创建记忆
-   */
-  batchCreate(dataList: CreateMemoryRequest[]): StoryMemory[] {
+  async batchCreate(dataList: CreateMemoryRequest[]): Promise<StoryMemory[]> {
+    if (dataList.length === 0) return []
     const results: StoryMemory[] = []
-    const transaction = this.db.transaction(() => {
+    await this.dataSource.transaction(async () => {
       for (const data of dataList) {
-        const memory = this.create(data)
-        results.push(memory)
+        results.push(await this.create(data))
       }
     })
-    transaction()
     return results
   }
 
-  /**
-   * 更新记忆
-   */
-  update(id: string, data: UpdateMemoryRequest): StoryMemory | null {
-    const memory = this.getById(id)
-    if (!memory) return null
+  async update(id: string, data: UpdateMemoryRequest): Promise<StoryMemory | null> {
+    const existing = await this.repo.findOne({ where: { id } as any })
+    if (!existing) return null
 
-    const now = Date.now()
-    const updates: string[] = []
-    const values: any[] = []
-
+    let changed = false
     if (data.title !== undefined) {
-      updates.push('title = ?')
-      values.push(data.title)
+      existing.title = data.title
+      changed = true
     }
     if (data.description !== undefined) {
-      updates.push('description = ?')
-      values.push(data.description)
+      existing.description = data.description
+      changed = true
     }
     if (data.involvedEntities !== undefined) {
-      updates.push('involved_entities = ?')
-      values.push(JSON.stringify(data.involvedEntities))
+      existing.involvedEntities = JSON.stringify(data.involvedEntities)
+      changed = true
     }
     if (data.importance !== undefined) {
-      updates.push('importance = ?')
-      values.push(data.importance)
+      existing.importance = data.importance
+      changed = true
     }
     if (data.isActive !== undefined) {
-      updates.push('is_active = ?')
-      values.push(data.isActive ? 1 : 0)
+      existing.isActive = data.isActive ? 1 : 0
+      changed = true
     }
 
-    if (updates.length === 0) return memory
+    if (!changed) return this.toDto(existing)
 
-    updates.push('updated_at = ?')
-    values.push(now)
-    values.push(id)
+    existing.updatedAt = Date.now()
+    await this.repo.save(existing)
 
-    const stmt = this.db.prepare(`
-      UPDATE lw_story_memories SET ${updates.join(', ')} WHERE id = ?
-    `)
-    stmt.run(...values)
-
-    // 更新关联表
     if (data.involvedEntities !== undefined) {
-      this.memoryEntityRepo.replaceAll(id, data.involvedEntities)
+      await this.memoryEntityRepo.replaceAll(id, data.involvedEntities)
     }
 
     return this.getById(id)
   }
 
-  /**
-   * 切换记忆生效状态
-   */
-  toggleActive(id: string): StoryMemory | null {
-    const memory = this.getById(id)
-    if (!memory) return null
-
-    const now = Date.now()
-    const stmt = this.db.prepare(`
-      UPDATE lw_story_memories SET is_active = ?, updated_at = ? WHERE id = ?
-    `)
-    stmt.run(memory.isActive ? 0 : 1, now, id)
-
-    return this.getById(id)
+  async toggleActive(id: string): Promise<StoryMemory | null> {
+    const existing = await this.repo.findOne({ where: { id } as any })
+    if (!existing) return null
+    existing.isActive = existing.isActive === 1 ? 0 : 1
+    existing.updatedAt = Date.now()
+    await this.repo.save(existing)
+    return this.toDto(existing)
   }
 
-  /**
-   * 删除记忆
-   */
-  delete(id: string): boolean {
-    // 先删除关联数据
-    this.memoryEntityRepo.deleteByMemoryId(id)
-
-    const stmt = this.db.prepare('DELETE FROM lw_story_memories WHERE id = ?')
-    const result = stmt.run(id)
-    return result.changes > 0
+  async delete(id: string): Promise<boolean> {
+    await this.memoryEntityRepo.deleteByMemoryId(id)
+    const result = await this.repo.delete({ id } as any)
+    return (result.affected ?? 0) > 0
   }
 
-  /**
-   * 根据来源大纲 ID 删除记忆
-   */
-  deleteBySourceOutlineId(outlineId: string): number {
-    // 获取所有记忆ID
-    const memories = this.getBySourceOutlineId(outlineId)
-    for (const memory of memories) {
-      this.memoryEntityRepo.deleteByMemoryId(memory.id)
+  async deleteBySourceOutlineId(outlineId: string): Promise<number> {
+    const rows = await this.repo.find({
+      where: { sourceOutlineId: outlineId } as any,
+      select: ['id'],
+    })
+    for (const r of rows) {
+      await this.memoryEntityRepo.deleteByMemoryId(r.id)
     }
-
-    const stmt = this.db.prepare('DELETE FROM lw_story_memories WHERE source_outline_id = ?')
-    const result = stmt.run(outlineId)
-    return result.changes
+    const result = await this.repo.delete({ sourceOutlineId: outlineId } as any)
+    return result.affected ?? 0
   }
 
-  /**
-   * 删除项目的所有记忆
-   */
-  deleteByProjectId(projectId: string): number {
-    // 获取所有记忆ID并删除关联数据
-    const memories = this.getByProjectId(projectId)
-    for (const memory of memories) {
-      this.memoryEntityRepo.deleteByMemoryId(memory.id)
+  async deleteByProjectId(projectId: string): Promise<number> {
+    const rows = await this.repo.find({
+      where: { projectId } as any,
+      select: ['id'],
+    })
+    for (const r of rows) {
+      await this.memoryEntityRepo.deleteByMemoryId(r.id)
     }
-
-    const stmt = this.db.prepare('DELETE FROM lw_story_memories WHERE project_id = ?')
-    const result = stmt.run(projectId)
-    return result.changes
+    const result = await this.repo.delete({ projectId } as any)
+    return result.affected ?? 0
   }
 
-  /**
-   * 获取记忆涉及的实体列表（从关联表）
-   */
-  getEntities(memoryId: string): MemoryEntity[] {
+  async getEntities(memoryId: string): Promise<MemoryEntity[]> {
     return this.memoryEntityRepo.getEntitiesByMemoryId(memoryId)
   }
 
-  /**
-   * 更新记忆的实体关联
-   */
-  updateEntityRelations(memoryId: string, entities: MemoryEntity[]): void {
-    this.memoryEntityRepo.replaceAll(memoryId, entities)
+  async updateEntityRelations(
+    memoryId: string,
+    entities: MemoryEntity[],
+  ): Promise<void> {
+    await this.memoryEntityRepo.replaceAll(memoryId, entities)
   }
 
-  /**
-   * 批量获取记忆的实体映射
-   */
-  getEntitiesByMemoryIds(memoryIds: string[]): Map<string, MemoryEntity[]> {
+  async getEntitiesByMemoryIds(
+    memoryIds: string[],
+  ): Promise<Map<string, MemoryEntity[]>> {
     return this.memoryEntityRepo.getEntitiesByMemoryIds(memoryIds)
   }
 
-  /**
-   * 获取项目的记忆统计
-   */
-  getMemoryStats(projectId: string): {
+  async getMemoryStats(projectId: string): Promise<{
     total: number
     active: number
     byType: Record<MemoryType, number>
     byImportance: Record<MemoryImportance, number>
-  } {
-    const memories = this.getByProjectId(projectId)
+  }> {
+    const memories = await this.getByProjectId(projectId)
 
     const stats = {
       total: memories.length,
@@ -313,13 +270,13 @@ export class LwMemoryRepository {
         relationship_change: 0,
         faction_event: 0,
         skill_event: 0,
-        general: 0
+        general: 0,
       } as Record<MemoryType, number>,
       byImportance: {
         critical: 0,
         normal: 0,
-        minor: 0
-      } as Record<MemoryImportance, number>
+        minor: 0,
+      } as Record<MemoryImportance, number>,
     }
 
     for (const memory of memories) {
@@ -330,42 +287,20 @@ export class LwMemoryRepository {
     return stats
   }
 
-  /**
-   * 迁移现有数据到关联表
-   */
-  migrateToRelationTables(projectId: string): number {
-    const memories = this.getByProjectId(projectId)
+  async migrateToRelationTables(projectId: string): Promise<number> {
+    const memories = await this.getByProjectId(projectId)
     let migratedCount = 0
-
     for (const memory of memories) {
       if (memory.involvedEntities && memory.involvedEntities.length > 0) {
-        this.memoryEntityRepo.replaceAll(memory.id, memory.involvedEntities)
+        await this.memoryEntityRepo.replaceAll(memory.id, memory.involvedEntities)
         migratedCount += memory.involvedEntities.length
       }
     }
-
     return migratedCount
   }
 
   private generateId(): string {
-    return `memory_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  private mapToMemory(row: any): StoryMemory {
-    return {
-      id: row.id,
-      projectId: row.project_id,
-      sourceOutlineId: row.source_outline_id || undefined,
-      memoryType: row.memory_type as MemoryType,
-      title: row.title,
-      description: row.description || '',
-      involvedEntities: this.parseEntities(row.involved_entities),
-      chapterNumber: row.chapter_number || 0,
-      importance: (row.importance || 'normal') as MemoryImportance,
-      isActive: !!row.is_active,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }
+    return `memory_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }
 
   private parseEntities(jsonStr: string | null): MemoryEntity[] {

@@ -3687,7 +3687,7 @@ export class DatabaseManager {
     this.lwFactions = new LwFactionRepository(this.dataSource)
     this.lwMaps = new LwMapRepository(this.dataSource)
     this.lwPrewrites = new LwPrewriteRepository(this.dataSource)
-    this.lwMemories = new LwMemoryRepository(this.db)
+    this.lwMemories = new LwMemoryRepository(this.dataSource)
     this.lwEntityStates = new LwEntityStateRepository(this.db)
     this.lwChapterStateSummaries = new LwChapterStateSummaryRepository(this.db)
 
@@ -3699,7 +3699,7 @@ export class DatabaseManager {
     this.lwOutlineItems = new LwOutlineItemRepository(this.dataSource)
     this.lwSkillCharacters = new LwSkillCharacterRepository(this.dataSource)
     this.lwDesignMessages = new LwDesignMessageRepository(this.dataSource)
-    this.lwMemoryEntities = new LwMemoryEntityRepository(this.db)
+    this.lwMemoryEntities = new LwMemoryEntityRepository(this.dataSource)
 
     // 初始化临时实体模板仓库
     this.lwTempCharacterTemplates = new LwTempCharacterTemplateRepository(this.db)

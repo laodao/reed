@@ -2650,7 +2650,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   ipcMain.handle(CHANNELS.MIGRATE_PROJECT, async (_event, projectId: string, autoBackup: boolean = true) => {
     try {
       const { LwMigrationService } = await import('../../services/lw-migration.service')
-      const result = LwMigrationService.migrateProject(projectId, autoBackup)
+      const result = await LwMigrationService.migrateProject(projectId, autoBackup)
       return { success: result.success, data: result }
     } catch (error: any) {
       console.error('[IPC] 迁移项目失败:', error)
@@ -2661,7 +2661,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   ipcMain.handle(CHANNELS.MIGRATE_ALL_PROJECTS, async (_event, autoBackup: boolean = true) => {
     try {
       const { LwMigrationService } = await import('../../services/lw-migration.service')
-      const results = LwMigrationService.migrateAllProjects(autoBackup)
+      const results = await LwMigrationService.migrateAllProjects(autoBackup)
       return { success: true, data: results }
     } catch (error: any) {
       console.error('[IPC] 迁移所有项目失败:', error)
