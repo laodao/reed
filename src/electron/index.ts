@@ -97,6 +97,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { getDatabaseManager } from './database'
 import { ElectronPathProvider } from './services/electron-path.provider'
+import { ElectronBroadcastEventEmitter } from './services/electron-event-emitter'
 import { registerSettingsHandlers } from './ipc/handlers/settings.handler'
 import { registerApiKeyHandlers } from './ipc/handlers/api-key.handler'
 import { registerDialogHandlers } from './ipc/handlers/dialog.handler'
@@ -384,8 +385,9 @@ app.whenReady().then(async () => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // 初始化平台抽象层（PathProvider）—— 必须早于数据库初始化
+  // 初始化平台抽象层（PathProvider / EventEmitter）—— 必须早于数据库初始化
   ElectronPathProvider.getInstance()
+  ElectronBroadcastEventEmitter.getInstance()
 
   // 初始化数据库
   try {
