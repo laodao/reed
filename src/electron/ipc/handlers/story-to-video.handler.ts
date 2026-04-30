@@ -2071,7 +2071,7 @@ async function handleIsBindingFromLongWriting(
   }
 ): Promise<IpcResponse> {
   try {
-    const isFromLongWriting = UploadedEntityService.isBindingFromLongWriting(binding)
+    const isFromLongWriting = await UploadedEntityService.isBindingFromLongWriting(binding)
     return { success: true, data: { isFromLongWriting } }
   } catch (error: any) {
     console.error('[handleIsBindingFromLongWriting] 错误:', error)

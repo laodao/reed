@@ -48,6 +48,9 @@ export class UploadedEntityService {
     items: StoryItem[]
   }> {
     const db = getCoreDatabaseManager()
+    if (!db.lwCharacters || !db.lwLocations || !db.lwItems) {
+      throw new Error('数据库未初始化')
+    }
 
     console.log('[UploadedEntityService] 开始创建上传模式实体...')
     console.log('[UploadedEntityService] 角色:', characters.length, '地点:', locations.length, '物品:', items.length)
@@ -291,11 +294,11 @@ export class UploadedEntityService {
    * @param binding 绑定信息（包含 longWritingCharacterId/locationId/itemId）
    * @returns 是否来源于长文项目
    */
-  static isBindingFromLongWriting(binding: { longWritingCharacterId?: string; longWritingLocationId?: string; longWritingItemId?: string }): boolean {
+  static async isBindingFromLongWriting(binding: { longWritingCharacterId?: string; longWritingLocationId?: string; longWritingItemId?: string }): Promise<boolean> {
     const db = getCoreDatabaseManager()
 
     // 检查角色绑定的来源
-    if (binding.longWritingCharacterId) {
+    if (binding.longWritingCharacterId && db.lwCharacters) {
       const character = await db.lwCharacters.getById(binding.longWritingCharacterId)
       if (character && character.sourceType === 'longwriting') {
         return true
@@ -303,7 +306,7 @@ export class UploadedEntityService {
     }
 
     // 检查地点绑定的来源
-    if (binding.longWritingLocationId) {
+    if (binding.longWritingLocationId && db.lwLocations) {
       const location = await db.lwLocations.getById(binding.longWritingLocationId)
       if (location && location.sourceType === 'longwriting') {
         return true
@@ -311,7 +314,7 @@ export class UploadedEntityService {
     }
 
     // 检查物品绑定的来源
-    if (binding.longWritingItemId) {
+    if (binding.longWritingItemId && db.lwItems) {
       const item = await db.lwItems.getById(binding.longWritingItemId)
       if (item && item.sourceType === 'longwriting') {
         return true

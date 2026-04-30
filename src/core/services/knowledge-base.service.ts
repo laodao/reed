@@ -477,7 +477,7 @@ export class KnowledgeBaseService {
       // 6. 索引
       await db.kbDocuments.updateProgress(doc.id, 90)
       this.emitProgress(doc.id, 90, 3)
-      this.buildIndex(chunkRecords, kb.id)
+      await this.buildIndex(chunkRecords, kb.id)
 
       // 完成
       await db.kbDocuments.markCompleted(doc.id, splitChunks.length)
@@ -755,7 +755,7 @@ export class KnowledgeBaseService {
     }
   }
 
-  private buildIndex(chunks: any[], kbId: string): void {
+  private async buildIndex(chunks: any[], kbId: string): Promise<void> {
     const db = getCoreDatabaseManager()
     if (!db.kbInvertedIndex) return
 
