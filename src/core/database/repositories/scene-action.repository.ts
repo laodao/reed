@@ -1,17 +1,14 @@
 /**
  * 场景动作仓库
  * @module database/repositories/scene-action.repository
+ * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import Database from 'better-sqlite3'
-import {
-  ActionDescription,
-  SceneActionRecord
-} from '@shared/types/story-to-video.types'
+import type { DataSource } from 'typeorm'
+import { ActionDescription } from '@shared/types/story-to-video.types'
+import { SceneActionEntity } from '../entities/scene-action.entity'
+import { BaseRepository } from '../base-repository'
 
-/**
- * 创建场景动作请求
- */
 export interface CreateSceneActionRequest {
   sceneScriptId: string
   characterId?: string
@@ -21,9 +18,6 @@ export interface CreateSceneActionRequest {
   sortOrder: number
 }
 
-/**
- * 更新场景动作请求
- */
 export interface UpdateSceneActionRequest {
   characterId?: string
   description?: string
@@ -32,160 +26,110 @@ export interface UpdateSceneActionRequest {
   sortOrder?: number
 }
 
-/**
- * 场景动作仓库
- */
-export class SceneActionRepository {
-  constructor(private db: Database.Database) {}
-
-  /**
-   * 根据场景ID获取所有动作
-   */
-  getBySceneScriptId(sceneScriptId: string): ActionDescription[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM scene_actions WHERE scene_script_id = ? ORDER BY sort_order ASC
-    `)
-    const rows = stmt.all(sceneScriptId) as SceneActionRecord[]
-    return rows.map(this.mapToAction)
+export class SceneActionRepository extends BaseRepository<
+  SceneActionEntity,
+  ActionDescription
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, SceneActionEntity)
   }
 
-  /**
-   * 根据ID获取动作
-   */
-  getById(id: string): ActionDescription | null {
-    const stmt = this.db.prepare('SELECT * FROM scene_actions WHERE id = ?')
-    const row = stmt.get(id) as SceneActionRecord | undefined
-    return row ? this.mapToAction(row) : null
-  }
-
-  /**
-   * 创建动作
-   */
-  create(data: CreateSceneActionRequest): ActionDescription {
-    const id = this.generateId()
-
-    const stmt = this.db.prepare(`
-      INSERT INTO scene_actions (id, scene_script_id, character_id, description, timing, duration, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `)
-
-    stmt.run(
-      id,
-      data.sceneScriptId,
-      data.characterId || null,
-      data.description,
-      data.timing || 'during',
-      data.duration || null,
-      data.sortOrder
-    )
-
+  protected toDto(e: SceneActionEntity): ActionDescription {
     return {
+      characterId: e.characterId || undefined,
+      description: e.description,
+      timing: (e.timing as 'before' | 'during' | 'after') || 'during',
+      duration: e.duration ?? undefined,
+    } as ActionDescription
+  }
+
+  async getBySceneScriptId(sceneScriptId: string): Promise<ActionDescription[]> {
+    return this.findManyByWhere(
+      { sceneScriptId } as any,
+      { sortOrder: 'ASC' },
+    )
+  }
+
+  async getById(id: string): Promise<ActionDescription | null> {
+    return this.findOneByWhere({ id } as any)
+  }
+
+  async create(data: CreateSceneActionRequest): Promise<ActionDescription> {
+    const id = this.generateId()
+    const entity = this.repo.create({
       id,
-      characterId: data.characterId,
+      sceneScriptId: data.sceneScriptId,
+      characterId: data.characterId ?? null,
       description: data.description,
       timing: data.timing || 'during',
-      duration: data.duration
-    }
-  }
-
-  /**
-   * 批量创建动作
-   */
-  createMany(actions: CreateSceneActionRequest[]): ActionDescription[] {
-    const results: ActionDescription[] = []
-    const transaction = this.db.transaction(() => {
-      for (const data of actions) {
-        results.push(this.create(data))
-      }
+      duration: data.duration ?? null,
+      sortOrder: data.sortOrder,
     })
-    transaction()
-    return results
+    const saved = await this.repo.save(entity)
+    return this.toDto(saved)
   }
 
-  /**
-   * 更新动作
-   */
-  update(id: string, data: UpdateSceneActionRequest): ActionDescription | null {
-    const action = this.getById(id)
-    if (!action) return null
-
-    const updates: string[] = []
-    const values: any[] = []
-
-    if (data.characterId !== undefined) {
-      updates.push('character_id = ?')
-      values.push(data.characterId || null)
-    }
-    if (data.description !== undefined) {
-      updates.push('description = ?')
-      values.push(data.description)
-    }
-    if (data.timing !== undefined) {
-      updates.push('timing = ?')
-      values.push(data.timing)
-    }
-    if (data.duration !== undefined) {
-      updates.push('duration = ?')
-      values.push(data.duration || null)
-    }
-    if (data.sortOrder !== undefined) {
-      updates.push('sort_order = ?')
-      values.push(data.sortOrder)
-    }
-
-    if (updates.length === 0) return action
-
-    values.push(id)
-    const stmt = this.db.prepare(`UPDATE scene_actions SET ${updates.join(', ')} WHERE id = ?`)
-    stmt.run(...values)
-
-    return this.getById(id)
+  async createMany(
+    actions: CreateSceneActionRequest[],
+  ): Promise<ActionDescription[]> {
+    if (actions.length === 0) return []
+    return this.dataSource.transaction(async manager => {
+      const repo = manager.getRepository(SceneActionEntity)
+      const result: ActionDescription[] = []
+      for (const data of actions) {
+        const id = this.generateId()
+        const saved = await repo.save(
+          repo.create({
+            id,
+            sceneScriptId: data.sceneScriptId,
+            characterId: data.characterId ?? null,
+            description: data.description,
+            timing: data.timing || 'during',
+            duration: data.duration ?? null,
+            sortOrder: data.sortOrder,
+          }),
+        )
+        result.push(this.toDto(saved))
+      }
+      return result
+    })
   }
 
-  /**
-   * 删除动作
-   */
-  delete(id: string): boolean {
-    const stmt = this.db.prepare('DELETE FROM scene_actions WHERE id = ?')
-    const result = stmt.run(id)
-    return result.changes > 0
+  async update(
+    id: string,
+    data: UpdateSceneActionRequest,
+  ): Promise<ActionDescription | null> {
+    const existing = await this.repo.findOne({ where: { id } as any })
+    if (!existing) return null
+
+    let changed = false
+    if (data.characterId !== undefined) { existing.characterId = data.characterId ?? null; changed = true }
+    if (data.description !== undefined) { existing.description = data.description; changed = true }
+    if (data.timing !== undefined) { existing.timing = data.timing; changed = true }
+    if (data.duration !== undefined) { existing.duration = data.duration ?? null; changed = true }
+    if (data.sortOrder !== undefined) { existing.sortOrder = data.sortOrder; changed = true }
+
+    if (!changed) return this.toDto(existing)
+
+    const saved = await this.repo.save(existing)
+    return this.toDto(saved)
   }
 
-  /**
-   * 根据场景ID删除所有动作
-   */
-  deleteBySceneScriptId(sceneScriptId: string): number {
-    const stmt = this.db.prepare('DELETE FROM scene_actions WHERE scene_script_id = ?')
-    const result = stmt.run(sceneScriptId)
-    return result.changes
+  async delete(id: string): Promise<boolean> {
+    const result = await this.repo.delete({ id } as any)
+    return (result.affected ?? 0) > 0
   }
 
-  /**
-   * 获取动作数量
-   */
-  countBySceneScriptId(sceneScriptId: string): number {
-    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM scene_actions WHERE scene_script_id = ?')
-    const row = stmt.get(sceneScriptId) as { count: number }
-    return row.count
+  async deleteBySceneScriptId(sceneScriptId: string): Promise<number> {
+    const result = await this.repo.delete({ sceneScriptId } as any)
+    return result.affected ?? 0
   }
 
-  /**
-   * 生成唯一ID
-   */
+  async countBySceneScriptId(sceneScriptId: string): Promise<number> {
+    return this.repo.count({ where: { sceneScriptId } as any })
+  }
+
   private generateId(): string {
-    return `act_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  /**
-   * 映射数据库行到动作对象
-   */
-  private mapToAction(row: SceneActionRecord): ActionDescription {
-    return {
-      id: row.id,
-      characterId: row.character_id || undefined,
-      description: row.description,
-      timing: row.timing as 'before' | 'during' | 'after',
-      duration: row.duration || undefined
-    }
+    return `act_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }
 }

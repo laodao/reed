@@ -3714,19 +3714,19 @@ export class DatabaseManager {
     // 剧集制作相关
     this.videoProjects = new VideoProjectRepository(this.dataSource)
     this.videoEpisodes = new VideoEpisodeRepository(this.dataSource)
-    this.episodeScripts = new EpisodeScriptRepository(this.db)
-    this.sceneScripts = new SceneScriptRepository(this.db)
-    this.storyboards = new StoryboardRepository(this.db)
-    this.characterBindings = new CharacterBindingRepository(this.db)
-    this.locationBindings = new LocationBindingRepository(this.db)
-    this.itemBindings = new ItemBindingRepository(this.db)
+    this.episodeScripts = new EpisodeScriptRepository(this.dataSource)
+    this.sceneScripts = new SceneScriptRepository(this.dataSource)
+    this.storyboards = new StoryboardRepository(this.dataSource)
+    this.characterBindings = new CharacterBindingRepository(this.dataSource)
+    this.locationBindings = new LocationBindingRepository(this.dataSource)
+    this.itemBindings = new ItemBindingRepository(this.dataSource)
 
     // 初始化新的子表仓库
-    this.sceneCharacters = new SceneCharacterRepository(this.db)
-    this.sceneDialogues = new SceneDialogueRepository(this.db)
-    this.sceneActions = new SceneActionRepository(this.db)
-    this.storyboardCharacters = new StoryboardCharacterRepository(this.db)
-    this.imageAssets = new ImageAssetRepository(this.db)
+    this.sceneCharacters = new SceneCharacterRepository(this.dataSource)
+    this.sceneDialogues = new SceneDialogueRepository(this.dataSource)
+    this.sceneActions = new SceneActionRepository(this.dataSource)
+    this.storyboardCharacters = new StoryboardCharacterRepository(this.dataSource)
+    this.imageAssets = new ImageAssetRepository(this.dataSource)
 
     // 初始化 OSS 配置仓库
     this.ossConfigs = new OSSConfigRepository(this.db)

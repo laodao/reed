@@ -1,18 +1,18 @@
 /**
  * 图像资产仓库
  * @module database/repositories/image-asset.repository
+ * @description 基于 TypeORM 实现，所有方法异步。
+ *              created_at 是 INTEGER（epoch ms），不同于其他表。
  */
 
-import Database from 'better-sqlite3'
+import type { DataSource } from 'typeorm'
 import {
   ImageAsset,
-  ImageAssetRecord,
-  ImageAssetType
+  ImageAssetType,
 } from '@shared/types/story-to-video.types'
+import { ImageAssetEntity } from '../entities/image-asset.entity'
+import { BaseRepository } from '../base-repository'
 
-/**
- * 创建图像资产请求
- */
 export interface CreateImageAssetRequest {
   projectId: string
   type: ImageAssetType
@@ -27,9 +27,6 @@ export interface CreateImageAssetRequest {
   metadata?: Record<string, any>
 }
 
-/**
- * 更新图像资产请求
- */
 export interface UpdateImageAssetRequest {
   provider?: string
   model?: string
@@ -42,194 +39,113 @@ export interface UpdateImageAssetRequest {
   metadata?: Record<string, any>
 }
 
-/**
- * 图像资产仓库
- */
-export class ImageAssetRepository {
-  constructor(private db: Database.Database) {}
-
-  /**
-   * 根据项目ID获取所有图像资产
-   */
-  getByProjectId(projectId: string): ImageAsset[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM image_assets WHERE project_id = ? ORDER BY created_at DESC
-    `)
-    const rows = stmt.all(projectId) as ImageAssetRecord[]
-    return rows.map(this.mapToImageAsset)
+export class ImageAssetRepository extends BaseRepository<
+  ImageAssetEntity,
+  ImageAsset
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, ImageAssetEntity)
   }
 
-  /**
-   * 根据ID获取图像资产
-   */
-  getById(id: string): ImageAsset | null {
-    const stmt = this.db.prepare('SELECT * FROM image_assets WHERE id = ?')
-    const row = stmt.get(id) as ImageAssetRecord | undefined
-    return row ? this.mapToImageAsset(row) : null
+  protected toDto(e: ImageAssetEntity): ImageAsset {
+    return {
+      id: e.id,
+      type: e.type as ImageAssetType,
+      provider: e.provider || undefined,
+      model: e.model || undefined,
+      prompt: e.prompt,
+      negativePrompt: e.negativePrompt || undefined,
+      imagePath: e.imagePath,
+      thumbnailPath: e.thumbnailPath || undefined,
+      width: e.width,
+      height: e.height,
+      metadata: (e.metadata as Record<string, unknown> | null) ?? undefined,
+      createdAt: e.createdAt,
+    }
   }
 
-  /**
-   * 根据类型获取图像资产
-   */
-  getByType(projectId: string, type: ImageAssetType): ImageAsset[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM image_assets WHERE project_id = ? AND type = ? ORDER BY created_at DESC
-    `)
-    const rows = stmt.all(projectId, type) as ImageAssetRecord[]
-    return rows.map(this.mapToImageAsset)
+  async getByProjectId(projectId: string): Promise<ImageAsset[]> {
+    return this.findManyByWhere({ projectId } as any, { createdAt: 'DESC' })
   }
 
-  /**
-   * 创建图像资产
-   */
-  create(data: CreateImageAssetRequest): ImageAsset {
+  async getById(id: string): Promise<ImageAsset | null> {
+    return this.findOneByWhere({ id } as any)
+  }
+
+  async getByType(
+    projectId: string,
+    type: ImageAssetType,
+  ): Promise<ImageAsset[]> {
+    return this.findManyByWhere(
+      { projectId, type } as any,
+      { createdAt: 'DESC' },
+    )
+  }
+
+  async create(data: CreateImageAssetRequest): Promise<ImageAsset> {
     const id = this.generateId()
     const now = Date.now()
-
-    const stmt = this.db.prepare(`
-      INSERT INTO image_assets (id, project_id, type, provider, model, prompt, negative_prompt, image_path, thumbnail_path, width, height, metadata, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-
-    stmt.run(
+    const entity = this.repo.create({
       id,
-      data.projectId,
-      data.type,
-      data.provider || null,
-      data.model || null,
-      data.prompt,
-      data.negativePrompt || null,
-      data.imagePath,
-      data.thumbnailPath || null,
-      data.width,
-      data.height,
-      data.metadata ? JSON.stringify(data.metadata) : null,
-      now
-    )
-
-    return {
-      id,
+      projectId: data.projectId,
       type: data.type,
-      provider: data.provider,
-      model: data.model,
+      provider: data.provider ?? null,
+      model: data.model ?? null,
       prompt: data.prompt,
-      negativePrompt: data.negativePrompt,
+      negativePrompt: data.negativePrompt ?? null,
       imagePath: data.imagePath,
-      thumbnailPath: data.thumbnailPath,
+      thumbnailPath: data.thumbnailPath ?? null,
       width: data.width,
       height: data.height,
-      metadata: data.metadata,
-      createdAt: now
-    }
+      metadata: (data.metadata as Record<string, unknown> | undefined) ?? null,
+      createdAt: now,
+    })
+    const saved = await this.repo.save(entity)
+    return this.toDto(saved)
   }
 
-  /**
-   * 更新图像资产
-   */
-  update(id: string, data: UpdateImageAssetRequest): ImageAsset | null {
-    const asset = this.getById(id)
-    if (!asset) return null
+  async update(
+    id: string,
+    data: UpdateImageAssetRequest,
+  ): Promise<ImageAsset | null> {
+    const existing = await this.repo.findOne({ where: { id } as any })
+    if (!existing) return null
 
-    const updates: string[] = []
-    const values: any[] = []
-
-    if (data.provider !== undefined) {
-      updates.push('provider = ?')
-      values.push(data.provider || null)
-    }
-    if (data.model !== undefined) {
-      updates.push('model = ?')
-      values.push(data.model || null)
-    }
-    if (data.prompt !== undefined) {
-      updates.push('prompt = ?')
-      values.push(data.prompt)
-    }
-    if (data.negativePrompt !== undefined) {
-      updates.push('negative_prompt = ?')
-      values.push(data.negativePrompt || null)
-    }
-    if (data.imagePath !== undefined) {
-      updates.push('image_path = ?')
-      values.push(data.imagePath)
-    }
-    if (data.thumbnailPath !== undefined) {
-      updates.push('thumbnail_path = ?')
-      values.push(data.thumbnailPath || null)
-    }
-    if (data.width !== undefined) {
-      updates.push('width = ?')
-      values.push(data.width)
-    }
-    if (data.height !== undefined) {
-      updates.push('height = ?')
-      values.push(data.height)
-    }
+    let changed = false
+    if (data.provider !== undefined) { existing.provider = data.provider ?? null; changed = true }
+    if (data.model !== undefined) { existing.model = data.model ?? null; changed = true }
+    if (data.prompt !== undefined) { existing.prompt = data.prompt; changed = true }
+    if (data.negativePrompt !== undefined) { existing.negativePrompt = data.negativePrompt ?? null; changed = true }
+    if (data.imagePath !== undefined) { existing.imagePath = data.imagePath; changed = true }
+    if (data.thumbnailPath !== undefined) { existing.thumbnailPath = data.thumbnailPath ?? null; changed = true }
+    if (data.width !== undefined) { existing.width = data.width; changed = true }
+    if (data.height !== undefined) { existing.height = data.height; changed = true }
     if (data.metadata !== undefined) {
-      updates.push('metadata = ?')
-      values.push(data.metadata ? JSON.stringify(data.metadata) : null)
+      existing.metadata = (data.metadata as Record<string, unknown>) ?? null
+      changed = true
     }
 
-    if (updates.length === 0) return asset
+    if (!changed) return this.toDto(existing)
 
-    values.push(id)
-    const stmt = this.db.prepare(`UPDATE image_assets SET ${updates.join(', ')} WHERE id = ?`)
-    stmt.run(...values)
-
-    return this.getById(id)
+    const saved = await this.repo.save(existing)
+    return this.toDto(saved)
   }
 
-  /**
-   * 删除图像资产
-   */
-  delete(id: string): boolean {
-    const stmt = this.db.prepare('DELETE FROM image_assets WHERE id = ?')
-    const result = stmt.run(id)
-    return result.changes > 0
+  async delete(id: string): Promise<boolean> {
+    const result = await this.repo.delete({ id } as any)
+    return (result.affected ?? 0) > 0
   }
 
-  /**
-   * 根据项目ID删除所有图像资产
-   */
-  deleteByProjectId(projectId: string): number {
-    const stmt = this.db.prepare('DELETE FROM image_assets WHERE project_id = ?')
-    const result = stmt.run(projectId)
-    return result.changes
+  async deleteByProjectId(projectId: string): Promise<number> {
+    const result = await this.repo.delete({ projectId } as any)
+    return result.affected ?? 0
   }
 
-  /**
-   * 获取图像资产数量
-   */
-  countByProjectId(projectId: string): number {
-    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM image_assets WHERE project_id = ?')
-    const row = stmt.get(projectId) as { count: number }
-    return row.count
+  async countByProjectId(projectId: string): Promise<number> {
+    return this.repo.count({ where: { projectId } as any })
   }
 
-  /**
-   * 生成唯一ID
-   */
   private generateId(): string {
-    return `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  /**
-   * 映射数据库行到图像资产对象
-   */
-  private mapToImageAsset(row: ImageAssetRecord): ImageAsset {
-    return {
-      id: row.id,
-      type: row.type as ImageAssetType,
-      provider: row.provider || undefined,
-      model: row.model || undefined,
-      prompt: row.prompt,
-      negativePrompt: row.negative_prompt || undefined,
-      imagePath: row.image_path,
-      thumbnailPath: row.thumbnail_path || undefined,
-      width: row.width,
-      height: row.height,
-      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
-      createdAt: row.created_at
-    }
+    return `img_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }
 }

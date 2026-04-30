@@ -242,7 +242,7 @@ async function handleGetCharacterBindings(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const bindings = db.characterBindings.getByProjectId(projectId)
+    const bindings = await db.characterBindings.getByProjectId(projectId)
     return { success: true, data: bindings }
   } catch (error: any) {
     return { success: false, error: error.message || '获取角色绑定失败' }
@@ -264,14 +264,14 @@ async function handleBindCharacter(
     }
 
     // 检查是否已存在绑定
-    const existing = db.characterBindings.getByLongWritingCharacterId(
+    const existing = await db.characterBindings.getByLongWritingCharacterId(
       projectId,
       longWritingCharacterId
     )
 
     if (existing) {
       // 更新现有绑定
-      const updated = db.characterBindings.update(existing.id, {
+      const updated = await db.characterBindings.update(existing.id, {
         portraitId,
         voiceConfig,
         generateConfig
@@ -280,7 +280,7 @@ async function handleBindCharacter(
     }
 
     // 创建新绑定
-    const binding = db.characterBindings.create({
+    const binding = await db.characterBindings.create({
       projectId,
       longWritingCharacterId,
       portraitId,
@@ -309,7 +309,7 @@ async function handleUpdateCharacterBinding(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const binding = db.characterBindings.update(bindingId, data)
+    const binding = await db.characterBindings.update(bindingId, data)
     if (!binding) {
       return { success: false, error: '绑定不存在' }
     }
@@ -330,7 +330,7 @@ async function handleDeleteCharacterBinding(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const success = db.characterBindings.delete(bindingId)
+    const success = await db.characterBindings.delete(bindingId)
     return { success, data: { deleted: success } }
   } catch (error: any) {
     return { success: false, error: error.message || '删除角色绑定失败' }
@@ -349,7 +349,7 @@ async function handleGetLocationBindings(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const bindings = db.locationBindings.getByProjectId(projectId)
+    const bindings = await db.locationBindings.getByProjectId(projectId)
     return { success: true, data: bindings }
   } catch (error: any) {
     return { success: false, error: error.message || '获取地点绑定列表失败' }
@@ -372,11 +372,11 @@ async function handleBindLocation(
     }
 
     // 检查是否已存在绑定
-    const existing = db.locationBindings.getByLongWritingLocationId(projectId, longWritingLocationId)
+    const existing = await db.locationBindings.getByLongWritingLocationId(projectId, longWritingLocationId)
 
     if (existing) {
       // 更新现有绑定
-      const updated = db.locationBindings.update(existing.id, {
+      const updated = await db.locationBindings.update(existing.id, {
         imagePaths,
         generateConfig,
         generateImages
@@ -385,7 +385,7 @@ async function handleBindLocation(
     }
 
     // 创建新绑定
-    const binding = db.locationBindings.create({
+    const binding = await db.locationBindings.create({
       projectId,
       longWritingLocationId,
       locationName,
@@ -410,7 +410,7 @@ async function handleUpdateLocationBinding(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const updated = db.locationBindings.update(bindingId, data)
+    const updated = await db.locationBindings.update(bindingId, data)
     if (!updated) {
       return { success: false, error: '地点绑定不存在' }
     }
@@ -430,7 +430,7 @@ async function handleDeleteLocationBinding(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const success = db.locationBindings.delete(bindingId)
+    const success = await db.locationBindings.delete(bindingId)
     return { success, data: { deleted: success } }
   } catch (error: any) {
     return { success: false, error: error.message || '删除地点绑定失败' }
@@ -449,7 +449,7 @@ async function handleGetItemBindings(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const bindings = db.itemBindings.getByProjectId(projectId)
+    const bindings = await db.itemBindings.getByProjectId(projectId)
     return { success: true, data: bindings }
   } catch (error: any) {
     return { success: false, error: error.message || '获取物品绑定列表失败' }
@@ -472,11 +472,11 @@ async function handleBindItem(
     }
 
     // 检查是否已存在绑定
-    const existing = db.itemBindings.getByLongWritingItemId(projectId, longWritingItemId)
+    const existing = await db.itemBindings.getByLongWritingItemId(projectId, longWritingItemId)
 
     if (existing) {
       // 更新现有绑定
-      const updated = db.itemBindings.update(existing.id, {
+      const updated = await db.itemBindings.update(existing.id, {
         imagePaths,
         generateConfig,
         generateImages
@@ -485,7 +485,7 @@ async function handleBindItem(
     }
 
     // 创建新绑定
-    const binding = db.itemBindings.create({
+    const binding = await db.itemBindings.create({
       projectId,
       longWritingItemId,
       itemName,
@@ -510,7 +510,7 @@ async function handleUpdateItemBinding(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const updated = db.itemBindings.update(bindingId, data)
+    const updated = await db.itemBindings.update(bindingId, data)
     if (!updated) {
       return { success: false, error: '物品绑定不存在' }
     }
@@ -530,7 +530,7 @@ async function handleDeleteItemBinding(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const success = db.itemBindings.delete(bindingId)
+    const success = await db.itemBindings.delete(bindingId)
     return { success, data: { deleted: success } }
   } catch (error: any) {
     return { success: false, error: error.message || '删除物品绑定失败' }
@@ -754,7 +754,7 @@ async function handleGetScript(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const script = db.episodeScripts.getById(scriptId)
+    const script = await db.episodeScripts.getById(scriptId)
     if (!script) {
       return { success: false, error: '剧本不存在' }
     }
@@ -784,7 +784,7 @@ async function handleUpdateScript(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const script = db.episodeScripts.update(scriptId, data)
+    const script = await db.episodeScripts.update(scriptId, data)
     if (!script) {
       return { success: false, error: '剧本不存在' }
     }
@@ -807,7 +807,7 @@ async function handleListScenes(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const scenes = db.sceneScripts.getByEpisodeScriptId(episodeScriptId)
+    const scenes = await db.sceneScripts.getByEpisodeScriptId(episodeScriptId)
     return { success: true, data: scenes }
   } catch (error: any) {
     return { success: false, error: error.message || '获取场景列表失败' }
@@ -824,7 +824,7 @@ async function handleGetScene(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const scene = db.sceneScripts.getById(sceneId)
+    const scene = await db.sceneScripts.getById(sceneId)
     if (!scene) {
       return { success: false, error: '场景不存在' }
     }
@@ -846,7 +846,7 @@ async function handleUpdateScene(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const scene = db.sceneScripts.update(sceneId, data)
+    const scene = await db.sceneScripts.update(sceneId, data)
     if (!scene) {
       return { success: false, error: '场景不存在' }
     }
@@ -869,7 +869,7 @@ async function handleListStoryboards(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const storyboards = db.storyboards.getBySceneScriptId(sceneScriptId)
+    const storyboards = await db.storyboards.getBySceneScriptId(sceneScriptId)
     return { success: true, data: storyboards }
   } catch (error: any) {
     return { success: false, error: error.message || '获取分镜列表失败' }
@@ -886,7 +886,7 @@ async function handleGetStoryboard(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const storyboard = db.storyboards.getById(storyboardId)
+    const storyboard = await db.storyboards.getById(storyboardId)
     if (!storyboard) {
       return { success: false, error: '分镜不存在' }
     }
@@ -908,7 +908,7 @@ async function handleUpdateStoryboard(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const storyboard = db.storyboards.update(storyboardId, data)
+    const storyboard = await db.storyboards.update(storyboardId, data)
     if (!storyboard) {
       return { success: false, error: '分镜不存在' }
     }
@@ -1050,12 +1050,12 @@ async function handleGenerateScript(
     )
 
     // 创建或更新剧本
-    const existingScript = db.episodeScripts.getByEpisodeId(episode.id)
+    const existingScript = await db.episodeScripts.getByEpisodeId(episode.id)
 
     let script: any
     if (existingScript) {
       // 更新现有剧本
-      script = db.episodeScripts.update(existingScript.id, {
+      script = await db.episodeScripts.update(existingScript.id, {
         synopsis: result.synopsis,
         scriptContent: result.scriptContent,
         scriptFormat: 'standard',
@@ -1063,7 +1063,7 @@ async function handleGenerateScript(
       })
     } else {
       // 创建新剧本
-      script = db.episodeScripts.create({
+      script = await db.episodeScripts.create({
         projectId: episode.projectId,
         episodeId: episode.id,
         outlineId: episode.outlineId,
@@ -1073,7 +1073,7 @@ async function handleGenerateScript(
       })
 
       // 更新剧本状态
-      script = db.episodeScripts.update(script.id, { status: 'reviewing' })
+      script = await db.episodeScripts.update(script.id, { status: 'reviewing' })
 
       // 更新剧集的 scriptId
       await db.videoEpisodes.update(episode.id, { scriptId: script.id })
@@ -1081,13 +1081,13 @@ async function handleGenerateScript(
 
     // 删除旧场景（如果有）
     if (existingScript) {
-      db.sceneScripts.deleteByEpisodeScriptId(existingScript.id)
+      await db.sceneScripts.deleteByEpisodeScriptId(existingScript.id)
     }
 
     // 创建场景
     const sceneRecords: SceneScript[] = []
     for (const sceneData of result.scenes) {
-      const sceneRecord = db.sceneScripts.create({
+      const sceneRecord = await db.sceneScripts.create({
         episodeScriptId: script.id,
         sceneNumber: sceneData.sceneNumber,
         location: sceneData.location,
@@ -1131,7 +1131,7 @@ async function handleGenerateScenes(
     }
 
     // 获取剧本
-    const script = db.episodeScripts.getById(scriptId)
+    const script = await db.episodeScripts.getById(scriptId)
     if (!script) {
       return { success: false, error: '剧本不存在' }
     }
@@ -1149,7 +1149,7 @@ async function handleGenerateScenes(
     // 创建场景记录
     const sceneRecords: SceneScript[] = []
     for (const sceneData of result.scenes) {
-      const sceneRecord = db.sceneScripts.create({
+      const sceneRecord = await db.sceneScripts.create({
         episodeScriptId: scriptId,
         sceneNumber: sceneData.sceneNumber,
         location: sceneData.location,
@@ -1195,7 +1195,7 @@ async function handleGenerateStoryboard(
     }
 
     // 获取场景
-    const scene = db.sceneScripts.getById(sceneId)
+    const scene = await db.sceneScripts.getById(sceneId)
     if (!scene) {
       return { success: false, error: '场景不存在' }
     }
@@ -1228,7 +1228,7 @@ async function handleGenerateStoryboard(
       // 调试日志
       console.log(`[Handler] 分镜 ${sb.shotNumber} dialogueIds:`, sb.dialogueIds)
 
-      const storyboard = db.storyboards.create({
+      const storyboard = await db.storyboards.create({
         sceneScriptId: sceneId,
         shotNumber: sb.shotNumber,
         shotType: sb.shotType,
@@ -1267,7 +1267,7 @@ async function handleGenerateStoryboards(
     }
 
     // 获取所有场景
-    const scenes = db.sceneScripts.getByEpisodeScriptId(scriptId)
+    const scenes = await db.sceneScripts.getByEpisodeScriptId(scriptId)
     if (scenes.length === 0) {
       return { success: false, error: '没有场景，请先生成场景' }
     }
@@ -1298,11 +1298,11 @@ async function handleGenerateStoryboards(
     const allStoryboards: Storyboard[] = []
     for (const [sceneId, result] of results) {
       // 删除该场景的旧分镜
-      db.storyboards.deleteBySceneScriptId(sceneId)
+      await db.storyboards.deleteBySceneScriptId(sceneId)
 
       // 创建新分镜
       for (const sb of result.storyboards) {
-        const storyboard = db.storyboards.create({
+        const storyboard = await db.storyboards.create({
           sceneScriptId: sceneId,
           shotNumber: sb.shotNumber,
           shotType: sb.shotType,
@@ -1376,13 +1376,13 @@ async function handleGenerateStoryboardImage(
     }
 
     // 获取分镜
-    const storyboard = db.storyboards.getById(storyboardId)
+    const storyboard = await db.storyboards.getById(storyboardId)
     if (!storyboard) {
       return { success: false, error: '分镜不存在' }
     }
 
     // 获取场景
-    const scene = db.sceneScripts.getById(storyboard.sceneScriptId)
+    const scene = await db.sceneScripts.getById(storyboard.sceneScriptId)
     if (!scene) {
       return { success: false, error: '场景不存在' }
     }
@@ -1392,16 +1392,16 @@ async function handleGenerateStoryboardImage(
     const locationBindings: any[] = []
     // 通过 episodeScript -> episode -> project 获取
     if (db.episodeScripts) {
-      const script = db.episodeScripts.getById(scene.episodeScriptId)
+      const script = await db.episodeScripts.getById(scene.episodeScriptId)
       if (script && db.videoEpisodes) {
         const episode = await db.videoEpisodes.getById(script.episodeId)
         if (episode) {
-          const charBindings = db.characterBindings.getByProjectId(episode.projectId)
+          const charBindings = await db.characterBindings.getByProjectId(episode.projectId)
           characterBindings.push(...charBindings)
 
           // 获取地点绑定
           if (db.locationBindings) {
-            const locBindings = db.locationBindings.getByProjectId(episode.projectId)
+            const locBindings = await db.locationBindings.getByProjectId(episode.projectId)
             locationBindings.push(...locBindings)
           }
         }
@@ -1429,7 +1429,7 @@ async function handleGenerateStoryboardImage(
 
     if (imageAsset) {
       // 更新分镜的图片
-      const updatedStoryboard = db.storyboards.update(storyboardId, {
+      const updatedStoryboard = await db.storyboards.update(storyboardId, {
         frameImage: imageAsset,
         status: 'image_ready'
       })
@@ -1458,13 +1458,13 @@ async function handleGenerateSceneImages(
     }
 
     // 获取场景
-    const scene = db.sceneScripts.getById(sceneId)
+    const scene = await db.sceneScripts.getById(sceneId)
     if (!scene) {
       return { success: false, error: '场景不存在' }
     }
 
     // 获取分镜列表
-    const storyboards = db.storyboards.getBySceneScriptId(sceneId)
+    const storyboards = await db.storyboards.getBySceneScriptId(sceneId)
     if (storyboards.length === 0) {
       return { success: false, error: '该场景没有分镜' }
     }
@@ -1473,16 +1473,16 @@ async function handleGenerateSceneImages(
     const characterBindings: CharacterBinding[] = []
     const locationBindings: any[] = []
     if (db.episodeScripts) {
-      const script = db.episodeScripts.getById(scene.episodeScriptId)
+      const script = await db.episodeScripts.getById(scene.episodeScriptId)
       if (script && db.videoEpisodes) {
         const episode = await db.videoEpisodes.getById(script.episodeId)
         if (episode) {
-          const charBindings = db.characterBindings.getByProjectId(episode.projectId)
+          const charBindings = await db.characterBindings.getByProjectId(episode.projectId)
           characterBindings.push(...charBindings)
 
           // 获取地点绑定
           if (db.locationBindings) {
-            const locBindings = db.locationBindings.getByProjectId(episode.projectId)
+            const locBindings = await db.locationBindings.getByProjectId(episode.projectId)
             locationBindings.push(...locBindings)
           }
         }
@@ -1519,7 +1519,7 @@ async function handleGenerateSceneImages(
     // 更新分镜记录
     const updatedStoryboards: Storyboard[] = []
     for (const [storyboardId, imageAsset] of results) {
-      const updated = db.storyboards.update(storyboardId, {
+      const updated = await db.storyboards.update(storyboardId, {
         frameImage: imageAsset,
         status: 'image_ready'
       })
@@ -1551,7 +1551,7 @@ async function handleGenerateAudio(
     }
 
     // 获取场景
-    const scene = db.sceneScripts.getById(sceneId)
+    const scene = await db.sceneScripts.getById(sceneId)
     if (!scene) {
       return { success: false, error: '场景不存在' }
     }
@@ -1560,12 +1560,12 @@ async function handleGenerateAudio(
     const characterBindings: CharacterBinding[] = []
     let projectId = ''
     if (db.episodeScripts) {
-      const script = db.episodeScripts.getById(scene.episodeScriptId)
+      const script = await db.episodeScripts.getById(scene.episodeScriptId)
       if (script && db.videoEpisodes) {
         const episode = await db.videoEpisodes.getById(script.episodeId)
         if (episode) {
           projectId = episode.projectId
-          const bindings = db.characterBindings.getByProjectId(projectId)
+          const bindings = await db.characterBindings.getByProjectId(projectId)
           characterBindings.push(...bindings)
         }
       }
@@ -1612,7 +1612,7 @@ async function handleGenerateAudio(
       }
 
       // 更新场景的 dialogues 字段
-      db.sceneScripts.update(sceneId, { dialogues: updatedDialogues })
+      await db.sceneScripts.update(sceneId, { dialogues: updatedDialogues })
     }
 
     return {
@@ -1670,13 +1670,13 @@ async function handleSynthesizeSceneVideo(
     }
 
     // 获取场景
-    const scene = db.sceneScripts.getById(sceneId)
+    const scene = await db.sceneScripts.getById(sceneId)
     if (!scene) {
       return { success: false, error: '场景不存在' }
     }
 
     // 获取分镜
-    const storyboards = db.storyboards.getBySceneScriptId(sceneId)
+    const storyboards = await db.storyboards.getBySceneScriptId(sceneId)
     if (storyboards.length === 0) {
       return { success: false, error: '场景没有分镜' }
     }
@@ -1690,7 +1690,7 @@ async function handleSynthesizeSceneVideo(
     // 获取项目 ID
     let projectId = ''
     if (db.episodeScripts) {
-      const script = db.episodeScripts.getById(scene.episodeScriptId)
+      const script = await db.episodeScripts.getById(scene.episodeScriptId)
       if (script && db.videoEpisodes) {
         const episode = await db.videoEpisodes.getById(script.episodeId)
         if (episode) {
@@ -1787,7 +1787,7 @@ async function handleSynthesizeStoryboardVideo(
     if (!db.storyboards) {
       return { success: false, error: '数据库未初始化' }
     }
-    const storyboard = db.storyboards.getById(storyboardId)
+    const storyboard = await db.storyboards.getById(storyboardId)
     if (!storyboard) {
       return { success: false, error: '分镜不存在' }
     }
@@ -1801,7 +1801,7 @@ async function handleSynthesizeStoryboardVideo(
     if (!db.sceneScripts) {
       return { success: false, error: '数据库未初始化' }
     }
-    const scene = db.sceneScripts.getById(storyboard.sceneScriptId)
+    const scene = await db.sceneScripts.getById(storyboard.sceneScriptId)
     if (!scene) {
       return { success: false, error: '场景不存在' }
     }
@@ -1810,7 +1810,7 @@ async function handleSynthesizeStoryboardVideo(
     if (!db.episodeScripts) {
       return { success: false, error: '数据库未初始化' }
     }
-    const script = db.episodeScripts.getById(scene.episodeScriptId)
+    const script = await db.episodeScripts.getById(scene.episodeScriptId)
     if (!script) {
       return { success: false, error: '剧本不存在' }
     }
@@ -1901,7 +1901,7 @@ async function handleSynthesizeStoryboardVideo(
       if (result.video?.localPath || result.video?.url) {
         const videoPath = result.video.localPath || result.video.url
         // 更新分镜的 videoPath
-        db.storyboards.update(storyboardId, { videoPath })
+        await db.storyboards.update(storyboardId, { videoPath })
 
         return {
           success: true,
@@ -1929,7 +1929,7 @@ async function handleSynthesizeStoryboardVideo(
             const localUrl = localPathToUrl(savedPath)
             console.log('[handleSynthesizeStoryboardVideo] 视频保存成功:', savedPath)
             // 更新分镜的 videoPath
-            db.storyboards.update(storyboardId, { videoPath: savedPath })
+            await db.storyboards.update(storyboardId, { videoPath: savedPath })
 
             return {
               success: true,
@@ -1941,7 +1941,7 @@ async function handleSynthesizeStoryboardVideo(
           } else {
             // 下载失败，返回远程 URL
             // 更新分镜的 videoPath
-            db.storyboards.update(storyboardId, { videoPath: taskStatus.video.url })
+            await db.storyboards.update(storyboardId, { videoPath: taskStatus.video.url })
 
             return {
               success: true,

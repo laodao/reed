@@ -1,17 +1,14 @@
 /**
  * 场景对话仓库
  * @module database/repositories/scene-dialogue.repository
+ * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import Database from 'better-sqlite3'
-import {
-  Dialogue,
-  SceneDialogueRecord
-} from '@shared/types/story-to-video.types'
+import type { DataSource } from 'typeorm'
+import { Dialogue } from '@shared/types/story-to-video.types'
+import { SceneDialogueEntity } from '../entities/scene-dialogue.entity'
+import { BaseRepository } from '../base-repository'
 
-/**
- * 创建场景对话请求
- */
 export interface CreateSceneDialogueRequest {
   sceneScriptId: string
   characterId: string
@@ -26,9 +23,6 @@ export interface CreateSceneDialogueRequest {
   sortOrder: number
 }
 
-/**
- * 更新场景对话请求
- */
 export interface UpdateSceneDialogueRequest {
   characterId?: string
   characterName?: string
@@ -42,193 +36,130 @@ export interface UpdateSceneDialogueRequest {
   sortOrder?: number
 }
 
-/**
- * 场景对话仓库
- */
-export class SceneDialogueRepository {
-  constructor(private db: Database.Database) {}
-
-  /**
-   * 根据场景ID获取所有对话
-   */
-  getBySceneScriptId(sceneScriptId: string): Dialogue[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM scene_dialogues WHERE scene_script_id = ? ORDER BY sort_order ASC
-    `)
-    const rows = stmt.all(sceneScriptId) as SceneDialogueRecord[]
-    return rows.map(this.mapToDialogue)
+export class SceneDialogueRepository extends BaseRepository<
+  SceneDialogueEntity,
+  Dialogue
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, SceneDialogueEntity)
   }
 
-  /**
-   * 根据ID获取对话
-   */
-  getById(id: string): Dialogue | null {
-    const stmt = this.db.prepare('SELECT * FROM scene_dialogues WHERE id = ?')
-    const row = stmt.get(id) as SceneDialogueRecord | undefined
-    return row ? this.mapToDialogue(row) : null
-  }
-
-  /**
-   * 创建对话
-   */
-  create(data: CreateSceneDialogueRequest): Dialogue {
-    const id = this.generateId()
-
-    const stmt = this.db.prepare(`
-      INSERT INTO scene_dialogues (id, scene_script_id, character_id, character_name, text, emotion, volume, pace, pause, voice_id, audio_asset_id, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-
-    stmt.run(
-      id,
-      data.sceneScriptId,
-      data.characterId,
-      data.characterName,
-      data.text,
-      data.emotion || null,
-      data.volume || 'normal',
-      data.pace || 'normal',
-      data.pause || 0,
-      data.voiceId || null,
-      data.audioAssetId || null,
-      data.sortOrder
-    )
-
+  protected toDto(e: SceneDialogueEntity): Dialogue {
     return {
+      id: e.id,
+      characterId: e.characterId,
+      characterName: e.characterName,
+      text: e.text,
+      emotion: e.emotion || undefined,
+      volume: (e.volume as 'normal' | 'loud' | 'whisper') || 'normal',
+      pace: (e.pace as 'normal' | 'fast' | 'slow') || 'normal',
+      pause: e.pause || 0,
+      voiceId: e.voiceId || undefined,
+    }
+  }
+
+  async getBySceneScriptId(sceneScriptId: string): Promise<Dialogue[]> {
+    return this.findManyByWhere(
+      { sceneScriptId } as any,
+      { sortOrder: 'ASC' },
+    )
+  }
+
+  async getById(id: string): Promise<Dialogue | null> {
+    return this.findOneByWhere({ id } as any)
+  }
+
+  async create(data: CreateSceneDialogueRequest): Promise<Dialogue> {
+    const id = this.generateId()
+    const entity = this.repo.create({
       id,
+      sceneScriptId: data.sceneScriptId,
       characterId: data.characterId,
       characterName: data.characterName,
       text: data.text,
-      emotion: data.emotion,
+      emotion: data.emotion ?? null,
       volume: data.volume || 'normal',
       pace: data.pace || 'normal',
       pause: data.pause || 0,
-      voiceId: data.voiceId
-    }
-  }
-
-  /**
-   * 批量创建对话
-   */
-  createMany(dialogues: CreateSceneDialogueRequest[]): Dialogue[] {
-    const results: Dialogue[] = []
-    const transaction = this.db.transaction(() => {
-      for (const data of dialogues) {
-        results.push(this.create(data))
-      }
+      voiceId: data.voiceId ?? null,
+      audioAssetId: data.audioAssetId ?? null,
+      sortOrder: data.sortOrder,
     })
-    transaction()
-    return results
+    const saved = await this.repo.save(entity)
+    return this.toDto(saved)
   }
 
-  /**
-   * 更新对话
-   */
-  update(id: string, data: UpdateSceneDialogueRequest): Dialogue | null {
-    const dialogue = this.getById(id)
-    if (!dialogue) return null
-
-    const updates: string[] = []
-    const values: any[] = []
-
-    if (data.characterId !== undefined) {
-      updates.push('character_id = ?')
-      values.push(data.characterId)
-    }
-    if (data.characterName !== undefined) {
-      updates.push('character_name = ?')
-      values.push(data.characterName)
-    }
-    if (data.text !== undefined) {
-      updates.push('text = ?')
-      values.push(data.text)
-    }
-    if (data.emotion !== undefined) {
-      updates.push('emotion = ?')
-      values.push(data.emotion || null)
-    }
-    if (data.volume !== undefined) {
-      updates.push('volume = ?')
-      values.push(data.volume)
-    }
-    if (data.pace !== undefined) {
-      updates.push('pace = ?')
-      values.push(data.pace)
-    }
-    if (data.pause !== undefined) {
-      updates.push('pause = ?')
-      values.push(data.pause)
-    }
-    if (data.voiceId !== undefined) {
-      updates.push('voice_id = ?')
-      values.push(data.voiceId || null)
-    }
-    if (data.audioAssetId !== undefined) {
-      updates.push('audio_asset_id = ?')
-      values.push(data.audioAssetId || null)
-    }
-    if (data.sortOrder !== undefined) {
-      updates.push('sort_order = ?')
-      values.push(data.sortOrder)
-    }
-
-    if (updates.length === 0) return dialogue
-
-    values.push(id)
-    const stmt = this.db.prepare(`UPDATE scene_dialogues SET ${updates.join(', ')} WHERE id = ?`)
-    stmt.run(...values)
-
-    return this.getById(id)
+  async createMany(
+    dialogues: CreateSceneDialogueRequest[],
+  ): Promise<Dialogue[]> {
+    if (dialogues.length === 0) return []
+    return this.dataSource.transaction(async manager => {
+      const repo = manager.getRepository(SceneDialogueEntity)
+      const result: Dialogue[] = []
+      for (const data of dialogues) {
+        const id = this.generateId()
+        const saved = await repo.save(
+          repo.create({
+            id,
+            sceneScriptId: data.sceneScriptId,
+            characterId: data.characterId,
+            characterName: data.characterName,
+            text: data.text,
+            emotion: data.emotion ?? null,
+            volume: data.volume || 'normal',
+            pace: data.pace || 'normal',
+            pause: data.pause || 0,
+            voiceId: data.voiceId ?? null,
+            audioAssetId: data.audioAssetId ?? null,
+            sortOrder: data.sortOrder,
+          }),
+        )
+        result.push(this.toDto(saved))
+      }
+      return result
+    })
   }
 
-  /**
-   * 删除对话
-   */
-  delete(id: string): boolean {
-    const stmt = this.db.prepare('DELETE FROM scene_dialogues WHERE id = ?')
-    const result = stmt.run(id)
-    return result.changes > 0
+  async update(
+    id: string,
+    data: UpdateSceneDialogueRequest,
+  ): Promise<Dialogue | null> {
+    const existing = await this.repo.findOne({ where: { id } as any })
+    if (!existing) return null
+
+    let changed = false
+    if (data.characterId !== undefined) { existing.characterId = data.characterId; changed = true }
+    if (data.characterName !== undefined) { existing.characterName = data.characterName; changed = true }
+    if (data.text !== undefined) { existing.text = data.text; changed = true }
+    if (data.emotion !== undefined) { existing.emotion = data.emotion ?? null; changed = true }
+    if (data.volume !== undefined) { existing.volume = data.volume; changed = true }
+    if (data.pace !== undefined) { existing.pace = data.pace; changed = true }
+    if (data.pause !== undefined) { existing.pause = data.pause; changed = true }
+    if (data.voiceId !== undefined) { existing.voiceId = data.voiceId ?? null; changed = true }
+    if (data.audioAssetId !== undefined) { existing.audioAssetId = data.audioAssetId ?? null; changed = true }
+    if (data.sortOrder !== undefined) { existing.sortOrder = data.sortOrder; changed = true }
+
+    if (!changed) return this.toDto(existing)
+
+    const saved = await this.repo.save(existing)
+    return this.toDto(saved)
   }
 
-  /**
-   * 根据场景ID删除所有对话
-   */
-  deleteBySceneScriptId(sceneScriptId: string): number {
-    const stmt = this.db.prepare('DELETE FROM scene_dialogues WHERE scene_script_id = ?')
-    const result = stmt.run(sceneScriptId)
-    return result.changes
+  async delete(id: string): Promise<boolean> {
+    const result = await this.repo.delete({ id } as any)
+    return (result.affected ?? 0) > 0
   }
 
-  /**
-   * 获取对话数量
-   */
-  countBySceneScriptId(sceneScriptId: string): number {
-    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM scene_dialogues WHERE scene_script_id = ?')
-    const row = stmt.get(sceneScriptId) as { count: number }
-    return row.count
+  async deleteBySceneScriptId(sceneScriptId: string): Promise<number> {
+    const result = await this.repo.delete({ sceneScriptId } as any)
+    return result.affected ?? 0
   }
 
-  /**
-   * 生成唯一ID
-   */
+  async countBySceneScriptId(sceneScriptId: string): Promise<number> {
+    return this.repo.count({ where: { sceneScriptId } as any })
+  }
+
   private generateId(): string {
-    return `dlg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  /**
-   * 映射数据库行到对话对象
-   */
-  private mapToDialogue(row: SceneDialogueRecord): Dialogue {
-    return {
-      id: row.id,
-      characterId: row.character_id,
-      characterName: row.character_name,
-      text: row.text,
-      emotion: row.emotion || undefined,
-      volume: (row.volume as 'normal' | 'loud' | 'whisper') || 'normal',
-      pace: (row.pace as 'normal' | 'fast' | 'slow') || 'normal',
-      pause: row.pause || 0,
-      voiceId: row.voice_id || undefined
-    }
+    return `dlg_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }
 }

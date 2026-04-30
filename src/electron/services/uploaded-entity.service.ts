@@ -79,7 +79,7 @@ export class UploadedEntityService {
 
       // 创建角色绑定
       if (db.characterBindings) {
-        db.characterBindings.create({
+        await db.characterBindings.create({
           projectId,
           longWritingCharacterId: character.id,
           voiceConfig: {
@@ -111,7 +111,7 @@ export class UploadedEntityService {
 
       // 创建地点绑定
       if (db.locationBindings) {
-        db.locationBindings.create({
+        await db.locationBindings.create({
           projectId,
           longWritingLocationId: location.id,
           locationName: location.name,
@@ -141,7 +141,7 @@ export class UploadedEntityService {
 
       // 创建物品绑定
       if (db.itemBindings) {
-        db.itemBindings.create({
+        await db.itemBindings.create({
           projectId,
           longWritingItemId: storyItem.id,
           itemName: storyItem.name,
@@ -259,25 +259,25 @@ export class UploadedEntityService {
     switch (entityType) {
       case 'character':
         if (db.characterBindings) {
-          const binding = db.characterBindings.getByLongWritingCharacterId(projectId, entityId)
+          const binding = await db.characterBindings.getByLongWritingCharacterId(projectId, entityId)
           if (binding) {
-            db.characterBindings.delete(binding.id)
+            await db.characterBindings.delete(binding.id)
           }
         }
         return db.lwCharacters.delete(entityId)
       case 'location':
         if (db.locationBindings) {
-          const binding = db.locationBindings.getByLongWritingLocationId(projectId, entityId)
+          const binding = await db.locationBindings.getByLongWritingLocationId(projectId, entityId)
           if (binding) {
-            db.locationBindings.delete(binding.id)
+            await db.locationBindings.delete(binding.id)
           }
         }
         return db.lwLocations.delete(entityId)
       case 'item':
         if (db.itemBindings) {
-          const binding = db.itemBindings.getByLongWritingItemId(projectId, entityId)
+          const binding = await db.itemBindings.getByLongWritingItemId(projectId, entityId)
           if (binding) {
-            db.itemBindings.delete(binding.id)
+            await db.itemBindings.delete(binding.id)
           }
         }
         return db.lwItems.delete(entityId)

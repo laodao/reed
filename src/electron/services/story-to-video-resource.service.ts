@@ -555,14 +555,14 @@ export class StoryToVideoResourceService {
 
     for (const location of locations) {
       // 检查是否已存在绑定
-      const existing = db.locationBindings.getByLongWritingLocationId(projectId, location.id)
+      const existing = await db.locationBindings.getByLongWritingLocationId(projectId, location.id)
       if (existing) {
         bindings.push(existing)
         continue
       }
 
       // 创建新绑定
-      const binding = db.locationBindings.create({
+      const binding = await db.locationBindings.create({
         projectId,
         longWritingLocationId: location.id,
         locationName: location.name,
@@ -594,14 +594,14 @@ export class StoryToVideoResourceService {
 
     for (const item of items) {
       // 检查是否已存在绑定
-      const existing = db.itemBindings.getByLongWritingItemId(projectId, item.id)
+      const existing = await db.itemBindings.getByLongWritingItemId(projectId, item.id)
       if (existing) {
         bindings.push(existing)
         continue
       }
 
       // 创建新绑定
-      const binding = db.itemBindings.create({
+      const binding = await db.itemBindings.create({
         projectId,
         longWritingItemId: item.id,
         itemName: item.name,
@@ -644,7 +644,7 @@ export class StoryToVideoResourceService {
     const db = getDatabaseManager()
     if (!db.locationBindings) return null
 
-    return db.locationBindings.update(locationBindingId, { imagePaths })
+    return await db.locationBindings.update(locationBindingId, { imagePaths })
   }
 
   /**
@@ -657,7 +657,7 @@ export class StoryToVideoResourceService {
     const db = getDatabaseManager()
     if (!db.itemBindings) return null
 
-    return db.itemBindings.update(itemBindingId, { imagePaths })
+    return await db.itemBindings.update(itemBindingId, { imagePaths })
   }
 
   // ==================== 临时实体图片生成 ====================

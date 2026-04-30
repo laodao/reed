@@ -1,17 +1,17 @@
 /**
  * 场景角色仓库
  * @module database/repositories/scene-character.repository
+ * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import Database from 'better-sqlite3'
+import type { DataSource } from 'typeorm'
 import {
   SceneCharacter,
-  SceneCharacterRecord
 } from '@shared/types/story-to-video.types'
+import { SceneCharacterEntity } from '../entities/scene-character.entity'
+import { ScenePropEntity } from '../entities/scene-prop.entity'
+import { BaseRepository } from '../base-repository'
 
-/**
- * 创建场景角色请求
- */
 export interface CreateSceneCharacterRequest {
   sceneScriptId: string
   characterId: string
@@ -24,9 +24,6 @@ export interface CreateSceneCharacterRequest {
   sortOrder: number
 }
 
-/**
- * 更新场景角色请求
- */
 export interface UpdateSceneCharacterRequest {
   characterId?: string
   characterName?: string
@@ -38,225 +35,189 @@ export interface UpdateSceneCharacterRequest {
   sortOrder?: number
 }
 
-/**
- * 场景角色仓库
- */
-export class SceneCharacterRepository {
-  constructor(private db: Database.Database) {}
-
-  /**
-   * 根据场景ID获取所有角色
-   */
-  getBySceneScriptId(sceneScriptId: string): SceneCharacter[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM scene_characters WHERE scene_script_id = ? ORDER BY sort_order ASC
-    `)
-    const rows = stmt.all(sceneScriptId) as SceneCharacterRecord[]
-    return rows.map(row => this.mapToSceneCharacter(row, this.getPropsByCharacterId(row.id)))
+export class SceneCharacterRepository extends BaseRepository<
+  SceneCharacterEntity,
+  SceneCharacter
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, SceneCharacterEntity)
   }
 
-  /**
-   * 根据ID获取角色
-   */
-  getById(id: string): SceneCharacter | null {
-    const stmt = this.db.prepare('SELECT * FROM scene_characters WHERE id = ?')
-    const row = stmt.get(id) as SceneCharacterRecord | undefined
-    if (!row) return null
-    return this.mapToSceneCharacter(row, this.getPropsByCharacterId(row.id))
+  protected toDto(_e: SceneCharacterEntity): SceneCharacter {
+    throw new Error('use mapToDto with props injection')
   }
 
-  /**
-   * 获取角色的道具
-   */
-  private getPropsByCharacterId(characterId: string): string[] {
-    const stmt = this.db.prepare('SELECT prop_name FROM scene_props WHERE scene_character_id = ?')
-    const rows = stmt.all(characterId) as { prop_name: string }[]
-    return rows.map(r => r.prop_name)
-  }
-
-  /**
-   * 创建角色
-   */
-  create(data: CreateSceneCharacterRequest): SceneCharacter {
-    const id = this.generateId()
-
-    const stmt = this.db.prepare(`
-      INSERT INTO scene_characters (id, scene_script_id, character_id, character_name, position, expression, action, outfit, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-
-    stmt.run(
-      id,
-      data.sceneScriptId,
-      data.characterId,
-      data.characterName,
-      data.position || 'center',
-      data.expression || null,
-      data.action || null,
-      data.outfit || null,
-      data.sortOrder
-    )
-
-    // 插入道具
-    if (data.props && data.props.length > 0) {
-      const propStmt = this.db.prepare(`
-        INSERT INTO scene_props (id, scene_character_id, prop_name)
-        VALUES (?, ?, ?)
-      `)
-      for (const prop of data.props) {
-        propStmt.run(`sp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, id, prop)
-      }
-    }
-
+  private mapToDto(
+    e: SceneCharacterEntity,
+    props: string[],
+  ): SceneCharacter {
     return {
-      characterId: data.characterId,
-      characterName: data.characterName,
-      position: data.position,
-      expression: data.expression,
-      action: data.action,
-      outfit: data.outfit,
-      props: data.props || []
+      characterId: e.characterId,
+      characterName: e.characterName,
+      position: (e.position as
+        | 'left'
+        | 'center'
+        | 'right'
+        | 'foreground'
+        | 'background'
+        | undefined) || undefined,
+      expression: e.expression || undefined,
+      action: e.action || undefined,
+      outfit: e.outfit || undefined,
+      props: props.length > 0 ? props : undefined,
     }
   }
 
-  /**
-   * 批量创建角色
-   */
-  createMany(characters: CreateSceneCharacterRequest[]): SceneCharacter[] {
-    const results: SceneCharacter[] = []
-    const transaction = this.db.transaction(() => {
-      for (const data of characters) {
-        results.push(this.create(data))
-      }
+  private async getProps(characterId: string): Promise<string[]> {
+    const propRepo = this.dataSource.getRepository(ScenePropEntity)
+    const rows = await propRepo.find({
+      where: { sceneCharacterId: characterId } as any,
+      select: ['propName'],
     })
-    transaction()
-    return results
+    return rows.map(r => r.propName)
   }
 
-  /**
-   * 更新角色
-   */
-  update(id: string, data: UpdateSceneCharacterRequest): SceneCharacter | null {
-    const character = this.getById(id)
-    if (!character) return null
+  async getBySceneScriptId(sceneScriptId: string): Promise<SceneCharacter[]> {
+    const entities = await this.repo.find({
+      where: { sceneScriptId } as any,
+      order: { sortOrder: 'ASC' } as any,
+    })
+    const result: SceneCharacter[] = []
+    for (const e of entities) {
+      result.push(this.mapToDto(e, await this.getProps(e.id)))
+    }
+    return result
+  }
 
-    const updates: string[] = []
-    const values: any[] = []
+  async getById(id: string): Promise<SceneCharacter | null> {
+    const e = await this.repo.findOne({ where: { id } as any })
+    if (!e) return null
+    return this.mapToDto(e, await this.getProps(e.id))
+  }
 
-    if (data.characterId !== undefined) {
-      updates.push('character_id = ?')
-      values.push(data.characterId)
-    }
-    if (data.characterName !== undefined) {
-      updates.push('character_name = ?')
-      values.push(data.characterName)
-    }
-    if (data.position !== undefined) {
-      updates.push('position = ?')
-      values.push(data.position)
-    }
-    if (data.expression !== undefined) {
-      updates.push('expression = ?')
-      values.push(data.expression || null)
-    }
-    if (data.action !== undefined) {
-      updates.push('action = ?')
-      values.push(data.action || null)
-    }
-    if (data.outfit !== undefined) {
-      updates.push('outfit = ?')
-      values.push(data.outfit || null)
-    }
-    if (data.sortOrder !== undefined) {
-      updates.push('sort_order = ?')
-      values.push(data.sortOrder)
-    }
-
-    if (updates.length > 0) {
-      values.push(id)
-      const stmt = this.db.prepare(`UPDATE scene_characters SET ${updates.join(', ')} WHERE id = ?`)
-      stmt.run(...values)
-    }
-
-    // 更新道具
-    if (data.props !== undefined) {
-      // 删除旧道具
-      this.db.prepare('DELETE FROM scene_props WHERE scene_character_id = ?').run(id)
-
-      // 插入新道具
-      if (data.props.length > 0) {
-        const propStmt = this.db.prepare(`
-          INSERT INTO scene_props (id, scene_character_id, prop_name)
-          VALUES (?, ?, ?)
-        `)
+  async create(data: CreateSceneCharacterRequest): Promise<SceneCharacter> {
+    const id = this.generateId()
+    return this.dataSource.transaction(async manager => {
+      const charRepo = manager.getRepository(SceneCharacterEntity)
+      const propRepo = manager.getRepository(ScenePropEntity)
+      await charRepo.save(
+        charRepo.create({
+          id,
+          sceneScriptId: data.sceneScriptId,
+          characterId: data.characterId,
+          characterName: data.characterName,
+          position: data.position || 'center',
+          expression: data.expression ?? null,
+          action: data.action ?? null,
+          outfit: data.outfit ?? null,
+          sortOrder: data.sortOrder,
+        }),
+      )
+      if (data.props && data.props.length > 0) {
         for (const prop of data.props) {
-          propStmt.run(`sp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, id, prop)
+          await propRepo.save(
+            propRepo.create({
+              id: `sp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+              sceneCharacterId: id,
+              propName: prop,
+            }),
+          )
         }
       }
-    }
-
-    return this.getById(id)
+      return {
+        characterId: data.characterId,
+        characterName: data.characterName,
+        position: data.position,
+        expression: data.expression,
+        action: data.action,
+        outfit: data.outfit,
+        props: data.props || [],
+      }
+    })
   }
 
-  /**
-   * 删除角色
-   */
-  delete(id: string): boolean {
-    // 先删除道具
-    this.db.prepare('DELETE FROM scene_props WHERE scene_character_id = ?').run(id)
-
-    const stmt = this.db.prepare('DELETE FROM scene_characters WHERE id = ?')
-    const result = stmt.run(id)
-    return result.changes > 0
+  async createMany(
+    characters: CreateSceneCharacterRequest[],
+  ): Promise<SceneCharacter[]> {
+    if (characters.length === 0) return []
+    return this.dataSource.transaction(async () => {
+      const result: SceneCharacter[] = []
+      for (const data of characters) {
+        result.push(await this.create(data))
+      }
+      return result
+    })
   }
 
-  /**
-   * 根据场景ID删除所有角色
-   */
-  deleteBySceneScriptId(sceneScriptId: string): number {
-    // 获取所有角色ID
-    const stmt = this.db.prepare('SELECT id FROM scene_characters WHERE scene_script_id = ?')
-    const rows = stmt.all(sceneScriptId) as { id: string }[]
+  async update(
+    id: string,
+    data: UpdateSceneCharacterRequest,
+  ): Promise<SceneCharacter | null> {
+    const existing = await this.repo.findOne({ where: { id } as any })
+    if (!existing) return null
 
-    // 删除所有道具
-    for (const row of rows) {
-      this.db.prepare('DELETE FROM scene_props WHERE scene_character_id = ?').run(row.id)
-    }
+    return this.dataSource.transaction(async manager => {
+      const charRepo = manager.getRepository(SceneCharacterEntity)
+      const propRepo = manager.getRepository(ScenePropEntity)
 
-    // 删除角色
-    const deleteStmt = this.db.prepare('DELETE FROM scene_characters WHERE scene_script_id = ?')
-    const result = deleteStmt.run(sceneScriptId)
-    return result.changes
+      let changed = false
+      if (data.characterId !== undefined) { existing.characterId = data.characterId; changed = true }
+      if (data.characterName !== undefined) { existing.characterName = data.characterName; changed = true }
+      if (data.position !== undefined) { existing.position = data.position; changed = true }
+      if (data.expression !== undefined) { existing.expression = data.expression ?? null; changed = true }
+      if (data.action !== undefined) { existing.action = data.action ?? null; changed = true }
+      if (data.outfit !== undefined) { existing.outfit = data.outfit ?? null; changed = true }
+      if (data.sortOrder !== undefined) { existing.sortOrder = data.sortOrder; changed = true }
+
+      if (changed) await charRepo.save(existing)
+
+      if (data.props !== undefined) {
+        await propRepo.delete({ sceneCharacterId: id } as any)
+        for (const prop of data.props) {
+          await propRepo.save(
+            propRepo.create({
+              id: `sp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+              sceneCharacterId: id,
+              propName: prop,
+            }),
+          )
+        }
+      }
+
+      const props = await this.getProps(id)
+      return this.mapToDto(existing, props)
+    })
   }
 
-  /**
-   * 获取角色数量
-   */
-  countBySceneScriptId(sceneScriptId: string): number {
-    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM scene_characters WHERE scene_script_id = ?')
-    const row = stmt.get(sceneScriptId) as { count: number }
-    return row.count
+  async delete(id: string): Promise<boolean> {
+    return this.dataSource.transaction(async manager => {
+      await manager.delete(ScenePropEntity, { sceneCharacterId: id })
+      const result = await manager.delete(SceneCharacterEntity, { id })
+      return (result.affected ?? 0) > 0
+    })
   }
 
-  /**
-   * 生成唯一ID
-   */
+  async deleteBySceneScriptId(sceneScriptId: string): Promise<number> {
+    return this.dataSource.transaction(async manager => {
+      const charRepo = manager.getRepository(SceneCharacterEntity)
+      const propRepo = manager.getRepository(ScenePropEntity)
+      const characters = await charRepo.find({
+        where: { sceneScriptId } as any,
+        select: ['id'],
+      })
+      for (const c of characters) {
+        await propRepo.delete({ sceneCharacterId: c.id } as any)
+      }
+      const result = await charRepo.delete({ sceneScriptId } as any)
+      return result.affected ?? 0
+    })
+  }
+
+  async countBySceneScriptId(sceneScriptId: string): Promise<number> {
+    return this.repo.count({ where: { sceneScriptId } as any })
+  }
+
   private generateId(): string {
-    return `sc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  /**
-   * 映射数据库行到场景角色对象
-   */
-  private mapToSceneCharacter(row: SceneCharacterRecord, props: string[]): SceneCharacter {
-    return {
-      characterId: row.character_id,
-      characterName: row.character_name,
-      position: row.position as 'left' | 'center' | 'right' | 'foreground' | 'background' | undefined,
-      expression: row.expression || undefined,
-      action: row.action || undefined,
-      outfit: row.outfit || undefined,
-      props: props.length > 0 ? props : undefined
-    }
+    return `sc_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }
 }

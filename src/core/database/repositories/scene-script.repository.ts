@@ -1,23 +1,22 @@
 /**
  * 场景剧本仓库
  * @module database/repositories/scene-script.repository
+ * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import Database from 'better-sqlite3'
+import type { DataSource } from 'typeorm'
 import {
   SceneScript,
-  SceneScriptRecord,
   SceneCharacter,
   Dialogue,
   ActionDescription,
   LocationType,
   TimeOfDay,
-  WeatherType
+  WeatherType,
 } from '@shared/types/story-to-video.types'
+import { SceneScriptEntity } from '../entities/scene-script.entity'
+import { BaseRepository } from '../base-repository'
 
-/**
- * 创建场景剧本请求
- */
 export interface CreateSceneScriptRequest {
   episodeScriptId: string
   sceneNumber: number
@@ -35,9 +34,6 @@ export interface CreateSceneScriptRequest {
   actions: ActionDescription[]
 }
 
-/**
- * 更新场景剧本请求
- */
 export interface UpdateSceneScriptRequest {
   location?: string
   locationType?: LocationType
@@ -53,232 +49,164 @@ export interface UpdateSceneScriptRequest {
   actions?: ActionDescription[]
 }
 
-/**
- * 场景剧本仓库
- */
-export class SceneScriptRepository {
-  constructor(private db: Database.Database) {}
-
-  /**
-   * 根据剧本 ID 获取所有场景
-   */
-  getByEpisodeScriptId(episodeScriptId: string): SceneScript[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM scene_scripts WHERE episode_script_id = ? ORDER BY scene_number ASC
-    `)
-    const rows = stmt.all(episodeScriptId) as SceneScriptRecord[]
-    return rows.map(this.mapToSceneScript)
+export class SceneScriptRepository extends BaseRepository<
+  SceneScriptEntity,
+  SceneScript
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, SceneScriptEntity)
   }
 
-  /**
-   * 根据 ID 获取场景剧本
-   */
-  getById(id: string): SceneScript | null {
-    const stmt = this.db.prepare(`
-      SELECT * FROM scene_scripts WHERE id = ?
-    `)
-    const row = stmt.get(id) as SceneScriptRecord | undefined
-    return row ? this.mapToSceneScript(row) : null
+  private toEpochMs(v: Date | number | string | null | undefined): number {
+    if (v === null || v === undefined) return 0
+    if (v instanceof Date) return v.getTime()
+    if (typeof v === 'number') return v
+    return new Date(v).getTime()
   }
 
-  /**
-   * 创建场景剧本
-   */
-  create(data: CreateSceneScriptRequest): SceneScript {
-    const id = this.generateId()
-    const now = Date.now()
-
-    const stmt = this.db.prepare(`
-      INSERT INTO scene_scripts (id, episode_script_id, scene_number, location, location_type, time_of_day, weather, scene_description, mood, lighting, characters, original_text, narration, dialogues, actions, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-
-    stmt.run(
-      id,
-      data.episodeScriptId,
-      data.sceneNumber,
-      data.location,
-      data.locationType,
-      data.timeOfDay,
-      data.weather || null,
-      data.sceneDescription,
-      data.mood,
-      data.lighting || null,
-      JSON.stringify(data.characters),
-      data.originalText,
-      data.narration,
-      JSON.stringify(data.dialogues),
-      JSON.stringify(data.actions),
-      now,
-      now
-    )
-
+  protected toDto(e: SceneScriptEntity): SceneScript {
     return {
+      id: e.id,
+      episodeScriptId: e.episodeScriptId,
+      sceneNumber: e.sceneNumber,
+      location: e.location,
+      locationType: e.locationType as LocationType,
+      timeOfDay: e.timeOfDay as TimeOfDay,
+      weather: (e.weather as WeatherType | null) ?? undefined,
+      sceneDescription: e.sceneDescription,
+      mood: e.mood ?? '',
+      lighting: e.lighting ?? undefined,
+      characters: ((e.characters as SceneCharacter[] | null) ?? []) as SceneCharacter[],
+      originalText: e.originalText ?? '',
+      narration: e.narration ?? '',
+      dialogues: ((e.dialogues as Dialogue[] | null) ?? []) as Dialogue[],
+      actions: ((e.actions as ActionDescription[] | null) ?? []) as ActionDescription[],
+      createdAt: this.toEpochMs(e.createdAt),
+      updatedAt: this.toEpochMs(e.updatedAt),
+    }
+  }
+
+  async getByEpisodeScriptId(episodeScriptId: string): Promise<SceneScript[]> {
+    return this.findManyByWhere(
+      { episodeScriptId } as any,
+      { sceneNumber: 'ASC' },
+    )
+  }
+
+  async getById(id: string): Promise<SceneScript | null> {
+    return this.findOneByWhere({ id } as any)
+  }
+
+  async create(data: CreateSceneScriptRequest): Promise<SceneScript> {
+    const id = this.generateId()
+    const now = new Date()
+    const entity = this.repo.create({
       id,
       episodeScriptId: data.episodeScriptId,
       sceneNumber: data.sceneNumber,
       location: data.location,
       locationType: data.locationType,
       timeOfDay: data.timeOfDay,
-      weather: data.weather,
+      weather: data.weather ?? null,
       sceneDescription: data.sceneDescription,
       mood: data.mood,
-      lighting: data.lighting,
-      characters: data.characters,
+      lighting: data.lighting ?? null,
+      characters: data.characters as unknown[],
       originalText: data.originalText,
       narration: data.narration,
-      dialogues: data.dialogues,
-      actions: data.actions,
+      dialogues: data.dialogues as unknown[],
+      actions: data.actions as unknown[],
       createdAt: now,
-      updatedAt: now
-    }
-  }
-
-  /**
-   * 批量创建场景剧本
-   */
-  createMany(scenes: CreateSceneScriptRequest[]): SceneScript[] {
-    const results: SceneScript[] = []
-    const transaction = this.db.transaction(() => {
-      for (const data of scenes) {
-        results.push(this.create(data))
-      }
+      updatedAt: now,
     })
-    transaction()
-    return results
+    const saved = await this.repo.save(entity)
+    return this.toDto(saved)
   }
 
-  /**
-   * 更新场景剧本
-   */
-  update(id: string, data: UpdateSceneScriptRequest): SceneScript | null {
-    const scene = this.getById(id)
-    if (!scene) return null
+  async createMany(scenes: CreateSceneScriptRequest[]): Promise<SceneScript[]> {
+    if (scenes.length === 0) return []
+    return this.dataSource.transaction(async manager => {
+      const repo = manager.getRepository(SceneScriptEntity)
+      const result: SceneScript[] = []
+      const now = new Date()
+      for (const data of scenes) {
+        const id = this.generateId()
+        const saved = await repo.save(
+          repo.create({
+            id,
+            episodeScriptId: data.episodeScriptId,
+            sceneNumber: data.sceneNumber,
+            location: data.location,
+            locationType: data.locationType,
+            timeOfDay: data.timeOfDay,
+            weather: data.weather ?? null,
+            sceneDescription: data.sceneDescription,
+            mood: data.mood,
+            lighting: data.lighting ?? null,
+            characters: data.characters as unknown[],
+            originalText: data.originalText,
+            narration: data.narration,
+            dialogues: data.dialogues as unknown[],
+            actions: data.actions as unknown[],
+            createdAt: now,
+            updatedAt: now,
+          }),
+        )
+        result.push(this.toDto(saved))
+      }
+      return result
+    })
+  }
 
-    const updates: string[] = []
-    const values: any[] = []
+  async update(
+    id: string,
+    data: UpdateSceneScriptRequest,
+  ): Promise<SceneScript | null> {
+    const existing = await this.repo.findOne({ where: { id } as any })
+    if (!existing) return null
 
-    if (data.location !== undefined) {
-      updates.push('location = ?')
-      values.push(data.location)
-    }
-    if (data.locationType !== undefined) {
-      updates.push('location_type = ?')
-      values.push(data.locationType)
-    }
-    if (data.timeOfDay !== undefined) {
-      updates.push('time_of_day = ?')
-      values.push(data.timeOfDay)
-    }
-    if (data.weather !== undefined) {
-      updates.push('weather = ?')
-      values.push(data.weather || null)
-    }
-    if (data.sceneDescription !== undefined) {
-      updates.push('scene_description = ?')
-      values.push(data.sceneDescription)
-    }
-    if (data.mood !== undefined) {
-      updates.push('mood = ?')
-      values.push(data.mood)
-    }
-    if (data.lighting !== undefined) {
-      updates.push('lighting = ?')
-      values.push(data.lighting || null)
-    }
+    let changed = false
+    if (data.location !== undefined) { existing.location = data.location; changed = true }
+    if (data.locationType !== undefined) { existing.locationType = data.locationType; changed = true }
+    if (data.timeOfDay !== undefined) { existing.timeOfDay = data.timeOfDay; changed = true }
+    if (data.weather !== undefined) { existing.weather = data.weather ?? null; changed = true }
+    if (data.sceneDescription !== undefined) { existing.sceneDescription = data.sceneDescription; changed = true }
+    if (data.mood !== undefined) { existing.mood = data.mood; changed = true }
+    if (data.lighting !== undefined) { existing.lighting = data.lighting ?? null; changed = true }
     if (data.characters !== undefined) {
-      updates.push('characters = ?')
-      values.push(JSON.stringify(data.characters))
+      existing.characters = data.characters as unknown[]; changed = true
     }
-    if (data.originalText !== undefined) {
-      updates.push('original_text = ?')
-      values.push(data.originalText)
-    }
-    if (data.narration !== undefined) {
-      updates.push('narration = ?')
-      values.push(data.narration)
-    }
+    if (data.originalText !== undefined) { existing.originalText = data.originalText; changed = true }
+    if (data.narration !== undefined) { existing.narration = data.narration; changed = true }
     if (data.dialogues !== undefined) {
-      updates.push('dialogues = ?')
-      values.push(JSON.stringify(data.dialogues))
+      existing.dialogues = data.dialogues as unknown[]; changed = true
     }
     if (data.actions !== undefined) {
-      updates.push('actions = ?')
-      values.push(JSON.stringify(data.actions))
+      existing.actions = data.actions as unknown[]; changed = true
     }
 
-    if (updates.length === 0) return scene
+    if (!changed) return this.toDto(existing)
 
-    updates.push('updated_at = ?')
-    values.push(Date.now())
-    values.push(id)
-
-    const stmt = this.db.prepare(`
-      UPDATE scene_scripts SET ${updates.join(', ')} WHERE id = ?
-    `)
-    stmt.run(...values)
-
-    return this.getById(id)
+    existing.updatedAt = new Date()
+    const saved = await this.repo.save(existing)
+    return this.toDto(saved)
   }
 
-  /**
-   * 删除场景剧本
-   */
-  delete(id: string): boolean {
-    const stmt = this.db.prepare('DELETE FROM scene_scripts WHERE id = ?')
-    const result = stmt.run(id)
-    return result.changes > 0
+  async delete(id: string): Promise<boolean> {
+    const result = await this.repo.delete({ id } as any)
+    return (result.affected ?? 0) > 0
   }
 
-  /**
-   * 根据剧本 ID 删除所有场景
-   */
-  deleteByEpisodeScriptId(episodeScriptId: string): number {
-    const stmt = this.db.prepare('DELETE FROM scene_scripts WHERE episode_script_id = ?')
-    const result = stmt.run(episodeScriptId)
-    return result.changes
+  async deleteByEpisodeScriptId(episodeScriptId: string): Promise<number> {
+    const result = await this.repo.delete({ episodeScriptId } as any)
+    return result.affected ?? 0
   }
 
-  /**
-   * 获取场景数量
-   */
-  countByEpisodeScriptId(episodeScriptId: string): number {
-    const stmt = this.db.prepare(`
-      SELECT COUNT(*) as count FROM scene_scripts WHERE episode_script_id = ?
-    `)
-    const row = stmt.get(episodeScriptId) as { count: number }
-    return row.count
+  async countByEpisodeScriptId(episodeScriptId: string): Promise<number> {
+    return this.repo.count({ where: { episodeScriptId } as any })
   }
 
-  /**
-   * 生成唯一 ID
-   */
   private generateId(): string {
-    return `ss_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  /**
-   * 映射数据库行到场景剧本对象
-   */
-  private mapToSceneScript(row: SceneScriptRecord): SceneScript {
-    return {
-      id: row.id,
-      episodeScriptId: row.episode_script_id,
-      sceneNumber: row.scene_number,
-      location: row.location,
-      locationType: row.location_type as LocationType,
-      timeOfDay: row.time_of_day as TimeOfDay,
-      weather: row.weather as WeatherType | undefined,
-      sceneDescription: row.scene_description,
-      mood: row.mood,
-      lighting: row.lighting || undefined,
-      characters: JSON.parse(row.characters) as SceneCharacter[],
-      originalText: row.original_text,
-      narration: row.narration,
-      dialogues: JSON.parse(row.dialogues) as Dialogue[],
-      actions: JSON.parse(row.actions) as ActionDescription[],
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }
+    return `ss_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }
 }

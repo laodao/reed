@@ -1,17 +1,19 @@
 /**
  * 角色形象绑定仓库
  * @module database/repositories/character-binding.repository
+ * @description 基于 TypeORM 实现，所有方法异步。
+ *              规范化字段优先 + 旧 JSON 字段兼容；
+ *              getByProjectId 用 LEFT JOIN 同步 lw_story_characters.portrait_id。
  */
 
-import Database from 'better-sqlite3'
+import type { DataSource } from 'typeorm'
 import {
   CharacterBinding,
-  CharacterBindingRecord
 } from '@shared/types/story-to-video.types'
+import { CharacterBindingEntity } from '../entities/character-binding.entity'
+import { LwCharacterEntity } from '../entities/lw-character.entity'
+import { BaseRepository } from '../base-repository'
 
-/**
- * 创建角色绑定请求
- */
 export interface CreateCharacterBindingRequest {
   projectId: string
   longWritingCharacterId: string
@@ -20,244 +22,178 @@ export interface CreateCharacterBindingRequest {
   voiceConfig: CharacterBinding['voiceConfig']
 }
 
-/**
- * 更新角色绑定请求
- */
 export interface UpdateCharacterBindingRequest {
   portraitId?: string | null
   generateConfig?: CharacterBinding['generateConfig'] | null
   voiceConfig?: CharacterBinding['voiceConfig']
 }
 
-/**
- * 角色形象绑定仓库
- */
-export class CharacterBindingRepository {
-  constructor(private db: Database.Database) {}
-
-  /**
-   * 根据项目 ID 获取所有角色绑定
-   * 同时从 lw_story_characters 表同步 portrait_id（如果绑定的 portrait_id 为空）
-   */
-  getByProjectId(projectId: string): CharacterBinding[] {
-    const stmt = this.db.prepare(`
-      SELECT
-        cb.*,
-        COALESCE(cb.portrait_id, c.portrait_id) as synced_portrait_id
-      FROM character_bindings cb
-      LEFT JOIN lw_story_characters c ON cb.long_writing_character_id = c.id
-      WHERE cb.project_id = ?
-    `)
-    const rows = stmt.all(projectId) as (CharacterBindingRecord & { synced_portrait_id: string | null })[]
-    return rows.map(row => this.mapToBindingWithSync(row))
+export class CharacterBindingRepository extends BaseRepository<
+  CharacterBindingEntity,
+  CharacterBinding
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, CharacterBindingEntity)
   }
 
-  /**
-   * 根据 ID 获取角色绑定
-   */
-  getById(id: string): CharacterBinding | null {
-    const stmt = this.db.prepare(`
-      SELECT * FROM character_bindings WHERE id = ?
-    `)
-    const row = stmt.get(id) as CharacterBindingRecord | undefined
-    return row ? this.mapToBinding(row) : null
+  private toEpochMs(v: Date | number | string | null | undefined): number {
+    if (v === null || v === undefined) return 0
+    if (v instanceof Date) return v.getTime()
+    if (typeof v === 'number') return v
+    return new Date(v).getTime()
   }
 
-  /**
-   * 根据长文角色 ID 获取绑定
-   */
-  getByLongWritingCharacterId(
-    projectId: string,
-    longWritingCharacterId: string
-  ): CharacterBinding | null {
-    const stmt = this.db.prepare(`
-      SELECT * FROM character_bindings
-      WHERE project_id = ? AND long_writing_character_id = ?
-    `)
-    const row = stmt.get(projectId, longWritingCharacterId) as CharacterBindingRecord | undefined
-    return row ? this.mapToBinding(row) : null
+  private buildVoiceConfig(e: CharacterBindingEntity): CharacterBinding['voiceConfig'] {
+    if (e.voiceId || e.voiceSpeed != null || e.voicePitch != null) {
+      return {
+        voiceId: e.voiceId || '',
+        speed: e.voiceSpeed ?? 1.0,
+        pitch: e.voicePitch ?? 1.0,
+      }
+    }
+    if (e.voiceConfig) {
+      return e.voiceConfig as CharacterBinding['voiceConfig']
+    }
+    return { voiceId: '', speed: 1.0, pitch: 1.0 }
   }
 
-  /**
-   * 创建角色绑定
-   * 同时写入JSON字段和规范化字段
-   */
-  create(data: CreateCharacterBindingRequest): CharacterBinding {
-    const id = this.generateId()
-    const now = Date.now()
+  private buildGenerateConfig(
+    e: CharacterBindingEntity,
+  ): CharacterBinding['generateConfig'] | undefined {
+    if (e.baseDescription || e.styleReference || e.additionalPrompts) {
+      return {
+        baseDescription: e.baseDescription || '',
+        styleReference: e.styleReference || undefined,
+        additionalPrompts: e.additionalPrompts || undefined,
+      }
+    }
+    if (e.generateConfig) {
+      return e.generateConfig as CharacterBinding['generateConfig']
+    }
+    return undefined
+  }
 
-    const stmt = this.db.prepare(`
-      INSERT INTO character_bindings (
-        id, project_id, long_writing_character_id, portrait_id,
-        generate_config, voice_config,
-        voice_id, voice_speed, voice_pitch,
-        base_description, style_reference, additional_prompts,
-        created_at, updated_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-
-    stmt.run(
-      id,
-      data.projectId,
-      data.longWritingCharacterId,
-      data.portraitId || null,
-      data.generateConfig ? JSON.stringify(data.generateConfig) : null,
-      JSON.stringify(data.voiceConfig),
-      // 规范化字段
-      data.voiceConfig?.voiceId || null,
-      data.voiceConfig?.speed || 1.0,
-      data.voiceConfig?.pitch || 1.0,
-      data.generateConfig?.baseDescription || null,
-      data.generateConfig?.styleReference || null,
-      data.generateConfig?.additionalPrompts || null,
-      now,
-      now
-    )
-
+  protected toDto(e: CharacterBindingEntity): CharacterBinding {
     return {
+      id: e.id,
+      projectId: e.projectId,
+      longWritingCharacterId: e.longWritingCharacterId,
+      portraitId: e.portraitId || undefined,
+      generateConfig: this.buildGenerateConfig(e),
+      voiceConfig: this.buildVoiceConfig(e),
+      createdAt: this.toEpochMs(e.createdAt),
+      updatedAt: this.toEpochMs(e.updatedAt),
+    }
+  }
+
+  async getByProjectId(projectId: string): Promise<CharacterBinding[]> {
+    // LEFT JOIN lw_story_characters 同步 portrait_id（绑定为空时从长文角色取）
+    const rows = await this.repo
+      .createQueryBuilder('cb')
+      .leftJoin(LwCharacterEntity, 'c', 'cb.long_writing_character_id = c.id')
+      .select('cb')
+      .addSelect(
+        'COALESCE(cb.portrait_id, c.portrait_id)',
+        'cb_synced_portrait_id',
+      )
+      .where('cb.project_id = :pid', { pid: projectId })
+      .getRawAndEntities()
+
+    return rows.entities.map((entity, idx) => {
+      const dto = this.toDto(entity)
+      const syncedRaw = rows.raw[idx]?.cb_synced_portrait_id
+      if (!dto.portraitId && syncedRaw) {
+        dto.portraitId = syncedRaw
+      }
+      return dto
+    })
+  }
+
+  async getById(id: string): Promise<CharacterBinding | null> {
+    return this.findOneByWhere({ id } as any)
+  }
+
+  async getByLongWritingCharacterId(
+    projectId: string,
+    longWritingCharacterId: string,
+  ): Promise<CharacterBinding | null> {
+    return this.findOneByWhere(
+      { projectId, longWritingCharacterId } as any,
+    )
+  }
+
+  async create(
+    data: CreateCharacterBindingRequest,
+  ): Promise<CharacterBinding> {
+    const id = this.generateId()
+    const now = new Date()
+    const entity = this.repo.create({
       id,
       projectId: data.projectId,
       longWritingCharacterId: data.longWritingCharacterId,
-      portraitId: data.portraitId,
-      generateConfig: data.generateConfig,
-      voiceConfig: data.voiceConfig,
+      portraitId: data.portraitId ?? null,
+      generateConfig:
+        (data.generateConfig as Record<string, unknown> | undefined) ?? null,
+      voiceConfig: data.voiceConfig as Record<string, unknown>,
+      voiceId: data.voiceConfig?.voiceId ?? null,
+      voiceSpeed: data.voiceConfig?.speed ?? 1.0,
+      voicePitch: data.voiceConfig?.pitch ?? 1.0,
+      baseDescription: data.generateConfig?.baseDescription ?? null,
+      styleReference: data.generateConfig?.styleReference ?? null,
+      additionalPrompts: data.generateConfig?.additionalPrompts ?? null,
       createdAt: now,
-      updatedAt: now
-    }
+      updatedAt: now,
+    })
+    const saved = await this.repo.save(entity)
+    return this.toDto(saved)
   }
 
-  /**
-   * 更新角色绑定
-   * 同时更新JSON字段和规范化字段
-   */
-  update(id: string, data: UpdateCharacterBindingRequest): CharacterBinding | null {
-    const binding = this.getById(id)
-    if (!binding) return null
+  async update(
+    id: string,
+    data: UpdateCharacterBindingRequest,
+  ): Promise<CharacterBinding | null> {
+    const existing = await this.repo.findOne({ where: { id } as any })
+    if (!existing) return null
 
-    const updates: string[] = []
-    const values: any[] = []
-
+    let changed = false
     if (data.portraitId !== undefined) {
-      updates.push('portrait_id = ?')
-      values.push(data.portraitId || null)
+      existing.portraitId = data.portraitId || null
+      changed = true
     }
     if (data.generateConfig !== undefined) {
-      updates.push('generate_config = ?')
-      values.push(data.generateConfig ? JSON.stringify(data.generateConfig) : null)
-      // 同时更新规范化字段
-      updates.push('base_description = ?')
-      values.push(data.generateConfig?.baseDescription || null)
-      updates.push('style_reference = ?')
-      values.push(data.generateConfig?.styleReference || null)
-      updates.push('additional_prompts = ?')
-      values.push(data.generateConfig?.additionalPrompts || null)
+      existing.generateConfig =
+        (data.generateConfig as Record<string, unknown> | null) ?? null
+      existing.baseDescription = data.generateConfig?.baseDescription ?? null
+      existing.styleReference = data.generateConfig?.styleReference ?? null
+      existing.additionalPrompts = data.generateConfig?.additionalPrompts ?? null
+      changed = true
     }
     if (data.voiceConfig !== undefined) {
-      updates.push('voice_config = ?')
-      values.push(JSON.stringify(data.voiceConfig))
-      // 同时更新规范化字段
-      updates.push('voice_id = ?')
-      values.push(data.voiceConfig?.voiceId || null)
-      updates.push('voice_speed = ?')
-      values.push(data.voiceConfig?.speed || 1.0)
-      updates.push('voice_pitch = ?')
-      values.push(data.voiceConfig?.pitch || 1.0)
+      existing.voiceConfig = data.voiceConfig as Record<string, unknown>
+      existing.voiceId = data.voiceConfig?.voiceId ?? null
+      existing.voiceSpeed = data.voiceConfig?.speed ?? 1.0
+      existing.voicePitch = data.voiceConfig?.pitch ?? 1.0
+      changed = true
     }
 
-    if (updates.length === 0) return binding
+    if (!changed) return this.toDto(existing)
 
-    updates.push('updated_at = ?')
-    values.push(Date.now())
-    values.push(id)
-
-    const stmt = this.db.prepare(`
-      UPDATE character_bindings SET ${updates.join(', ')} WHERE id = ?
-    `)
-    stmt.run(...values)
-
-    return this.getById(id)
+    existing.updatedAt = new Date()
+    const saved = await this.repo.save(existing)
+    return this.toDto(saved)
   }
 
-  /**
-   * 删除角色绑定
-   */
-  delete(id: string): boolean {
-    const stmt = this.db.prepare('DELETE FROM character_bindings WHERE id = ?')
-    const result = stmt.run(id)
-    return result.changes > 0
+  async delete(id: string): Promise<boolean> {
+    const result = await this.repo.delete({ id } as any)
+    return (result.affected ?? 0) > 0
   }
 
-  /**
-   * 根据项目 ID 删除所有角色绑定
-   */
-  deleteByProjectId(projectId: string): number {
-    const stmt = this.db.prepare('DELETE FROM character_bindings WHERE project_id = ?')
-    const result = stmt.run(projectId)
-    return result.changes
+  async deleteByProjectId(projectId: string): Promise<number> {
+    const result = await this.repo.delete({ projectId } as any)
+    return result.affected ?? 0
   }
 
-  /**
-   * 生成唯一 ID
-   */
   private generateId(): string {
-    return `cb_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  /**
-   * 映射数据库行到角色绑定对象
-   * 优先使用规范化字段，回退到JSON字段
-   */
-  private mapToBinding(row: CharacterBindingRecord): CharacterBinding {
-    return this.mapToBindingWithSync(row)
-  }
-
-  /**
-   * 映射数据库行到角色绑定对象（带同步的 portrait_id）
-   * 优先使用规范化字段，回退到JSON字段
-   * 使用 synced_portrait_id（从长文角色同步的值）作为 portraitId
-   */
-  private mapToBindingWithSync(
-    row: CharacterBindingRecord & { synced_portrait_id?: string | null }
-  ): CharacterBinding {
-    // 构建声音配置：优先使用规范化字段
-    let voiceConfig: CharacterBinding['voiceConfig']
-    if (row.voice_id || row.voice_speed || row.voice_pitch) {
-      voiceConfig = {
-        voiceId: row.voice_id || '',
-        speed: row.voice_speed ?? 1.0,
-        pitch: row.voice_pitch ?? 1.0
-      }
-    } else if (row.voice_config) {
-      voiceConfig = JSON.parse(row.voice_config)
-    } else {
-      voiceConfig = { voiceId: '', speed: 1.0, pitch: 1.0 }
-    }
-
-    // 构建生成配置：优先使用规范化字段
-    let generateConfig: CharacterBinding['generateConfig'] | undefined
-    if (row.base_description || row.style_reference || row.additional_prompts) {
-      generateConfig = {
-        baseDescription: row.base_description || '',
-        styleReference: row.style_reference || undefined,
-        additionalPrompts: row.additional_prompts || undefined
-      }
-    } else if (row.generate_config) {
-      generateConfig = JSON.parse(row.generate_config)
-    }
-
-    // 使用 synced_portrait_id（如果绑定的 portrait_id 为空，则从长文角色同步）
-    const portraitId = row.synced_portrait_id || row.portrait_id || undefined
-
-    return {
-      id: row.id,
-      projectId: row.project_id,
-      longWritingCharacterId: row.long_writing_character_id,
-      portraitId,
-      generateConfig,
-      voiceConfig,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }
+    return `cb_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }
 }

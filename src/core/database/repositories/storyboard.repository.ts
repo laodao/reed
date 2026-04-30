@@ -1,24 +1,25 @@
 /**
  * 分镜仓库
  * @module database/repositories/storyboard.repository
+ * @description 基于 TypeORM 实现，所有方法异步。
+ *              支持 transition_* 规范化字段优先 + 旧 transition JSON 字段兼容。
  */
 
-import Database from 'better-sqlite3'
+import type { DataSource } from 'typeorm'
 import {
   Storyboard,
-  StoryboardRecord,
   StoryboardCharacter,
   StoryboardStatus,
   ShotType,
   CameraAngle,
   CameraMovement,
   TransitionConfig,
-  ImageAsset
+  TransitionType,
+  ImageAsset,
 } from '@shared/types/story-to-video.types'
+import { StoryboardEntity } from '../entities/storyboard.entity'
+import { BaseRepository } from '../base-repository'
 
-/**
- * 创建分镜请求
- */
 export interface CreateStoryboardRequest {
   sceneScriptId: string
   shotNumber: number
@@ -37,9 +38,6 @@ export interface CreateStoryboardRequest {
   transition: TransitionConfig
 }
 
-/**
- * 更新分镜请求
- */
 export interface UpdateStoryboardRequest {
   shotType?: ShotType
   cameraAngle?: CameraAngle
@@ -53,293 +51,236 @@ export interface UpdateStoryboardRequest {
   dialogueIds?: string[]
   actionIds?: string[]
   frameImage?: ImageAsset
-  videoPath?: string // 生成的视频路径
+  videoPath?: string
   duration?: number
   transition?: TransitionConfig
   status?: StoryboardStatus
 }
 
-/**
- * 分镜仓库
- */
-export class StoryboardRepository {
-  constructor(private db: Database.Database) {}
-
-  /**
-   * 根据场景剧本 ID 获取所有分镜
-   */
-  getBySceneScriptId(sceneScriptId: string): Storyboard[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM storyboards WHERE scene_script_id = ? ORDER BY shot_number ASC
-    `)
-    const rows = stmt.all(sceneScriptId) as StoryboardRecord[]
-    return rows.map(this.mapToStoryboard)
+export class StoryboardRepository extends BaseRepository<
+  StoryboardEntity,
+  Storyboard
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, StoryboardEntity)
   }
 
-  /**
-   * 根据 ID 获取分镜
-   */
-  getById(id: string): Storyboard | null {
-    const stmt = this.db.prepare(`
-      SELECT * FROM storyboards WHERE id = ?
-    `)
-    const row = stmt.get(id) as StoryboardRecord | undefined
-    return row ? this.mapToStoryboard(row) : null
+  private toEpochMs(v: Date | number | string | null | undefined): number {
+    if (v === null || v === undefined) return 0
+    if (v instanceof Date) return v.getTime()
+    if (typeof v === 'number') return v
+    return new Date(v).getTime()
   }
 
-  /**
-   * 创建分镜
-   */
-  create(data: CreateStoryboardRequest): Storyboard {
-    const id = this.generateId()
-    const now = Date.now()
+  /** 解析转场配置：优先用规范化字段，回退到旧 JSON 字段 */
+  private parseTransition(e: StoryboardEntity): TransitionConfig {
+    if (e.transitionType) {
+      return {
+        type: e.transitionType as TransitionType,
+        duration: e.transitionDurationMs || 500,
+        direction: (e.transitionDirection as 'left' | 'right' | 'up' | 'down') || undefined,
+        easing:
+          (e.transitionEasing as 'linear' | 'ease_in' | 'ease_out' | 'ease_in_out') ||
+          'ease_out',
+        color: e.transitionColor || undefined,
+      }
+    }
+    if (e.transition) {
+      try {
+        return JSON.parse(e.transition) as TransitionConfig
+      } catch {
+        return { type: 'cut', duration: 500 }
+      }
+    }
+    return { type: 'cut', duration: 500 }
+  }
 
-    const stmt = this.db.prepare(`
-      INSERT INTO storyboards (id, scene_script_id, shot_number, shot_type, camera_angle, camera_movement, movement_duration, frame_description, subject, composition, characters, narration_id, dialogue_ids, action_ids, frame_image, duration, transition, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-
-    stmt.run(
-      id,
-      data.sceneScriptId,
-      data.shotNumber,
-      data.shotType,
-      data.cameraAngle,
-      data.cameraMovement,
-      data.movementDuration || null,
-      data.frameDescription,
-      data.subject || null,
-      data.composition || null,
-      JSON.stringify(data.characters),
-      data.narrationId || null,
-      JSON.stringify(data.dialogueIds),
-      JSON.stringify(data.actionIds),
-      null,
-      data.duration,
-      JSON.stringify(data.transition),
-      'pending',
-      now,
-      now
-    )
-
+  protected toDto(e: StoryboardEntity): Storyboard {
     return {
+      id: e.id,
+      sceneScriptId: e.sceneScriptId,
+      shotNumber: e.shotNumber,
+      shotType: e.shotType as ShotType,
+      cameraAngle: e.cameraAngle as CameraAngle,
+      cameraMovement: e.cameraMovement as CameraMovement,
+      movementDuration: e.movementDuration ?? undefined,
+      frameDescription: e.frameDescription,
+      subject: e.subject ?? undefined,
+      composition: e.composition ?? undefined,
+      characters: ((e.characters as StoryboardCharacter[] | null) ?? []) as StoryboardCharacter[],
+      narrationId: e.narrationId ?? undefined,
+      dialogueIds: (e.dialogueIds as string[] | null) ?? [],
+      actionIds: (e.actionIds as string[] | null) ?? [],
+      frameImage: (e.frameImage as ImageAsset | null) ?? undefined,
+      videoPath: e.videoPath ?? undefined,
+      duration: e.duration,
+      transition: this.parseTransition(e),
+      status: e.status as StoryboardStatus,
+      createdAt: this.toEpochMs(e.createdAt),
+      updatedAt: this.toEpochMs(e.updatedAt),
+    }
+  }
+
+  async getBySceneScriptId(sceneScriptId: string): Promise<Storyboard[]> {
+    return this.findManyByWhere(
+      { sceneScriptId } as any,
+      { shotNumber: 'ASC' },
+    )
+  }
+
+  async getById(id: string): Promise<Storyboard | null> {
+    return this.findOneByWhere({ id } as any)
+  }
+
+  async create(data: CreateStoryboardRequest): Promise<Storyboard> {
+    const id = this.generateId()
+    const now = new Date()
+    const entity = this.repo.create({
       id,
       sceneScriptId: data.sceneScriptId,
       shotNumber: data.shotNumber,
       shotType: data.shotType,
       cameraAngle: data.cameraAngle,
       cameraMovement: data.cameraMovement,
-      movementDuration: data.movementDuration,
+      movementDuration: data.movementDuration ?? null,
       frameDescription: data.frameDescription,
-      subject: data.subject,
-      composition: data.composition,
-      characters: data.characters,
-      narrationId: data.narrationId,
+      subject: data.subject ?? null,
+      composition: data.composition ?? null,
+      characters: data.characters as unknown[],
+      narrationId: data.narrationId ?? null,
       dialogueIds: data.dialogueIds,
       actionIds: data.actionIds,
+      frameImage: null,
+      frameImageId: null,
+      videoPath: null,
       duration: data.duration,
-      transition: data.transition,
+      transition: JSON.stringify(data.transition),
+      transitionType: null,
+      transitionDurationMs: null,
+      transitionDirection: null,
+      transitionEasing: null,
+      transitionColor: null,
       status: 'pending',
       createdAt: now,
-      updatedAt: now
-    }
-  }
-
-  /**
-   * 批量创建分镜
-   */
-  createMany(storyboards: CreateStoryboardRequest[]): Storyboard[] {
-    const results: Storyboard[] = []
-    const transaction = this.db.transaction(() => {
-      for (const data of storyboards) {
-        results.push(this.create(data))
-      }
+      updatedAt: now,
     })
-    transaction()
-    return results
+    const saved = await this.repo.save(entity)
+    return this.toDto(saved)
   }
 
-  /**
-   * 更新分镜
-   */
-  update(id: string, data: UpdateStoryboardRequest): Storyboard | null {
-    const storyboard = this.getById(id)
-    if (!storyboard) return null
-
-    const updates: string[] = []
-    const values: any[] = []
-
-    if (data.shotType !== undefined) {
-      updates.push('shot_type = ?')
-      values.push(data.shotType)
-    }
-    if (data.cameraAngle !== undefined) {
-      updates.push('camera_angle = ?')
-      values.push(data.cameraAngle)
-    }
-    if (data.cameraMovement !== undefined) {
-      updates.push('camera_movement = ?')
-      values.push(data.cameraMovement)
-    }
-    if (data.movementDuration !== undefined) {
-      updates.push('movement_duration = ?')
-      values.push(data.movementDuration || null)
-    }
-    if (data.frameDescription !== undefined) {
-      updates.push('frame_description = ?')
-      values.push(data.frameDescription)
-    }
-    if (data.subject !== undefined) {
-      updates.push('subject = ?')
-      values.push(data.subject || null)
-    }
-    if (data.composition !== undefined) {
-      updates.push('composition = ?')
-      values.push(data.composition || null)
-    }
-    if (data.characters !== undefined) {
-      updates.push('characters = ?')
-      values.push(JSON.stringify(data.characters))
-    }
-    if (data.narrationId !== undefined) {
-      updates.push('narration_id = ?')
-      values.push(data.narrationId || null)
-    }
-    if (data.dialogueIds !== undefined) {
-      updates.push('dialogue_ids = ?')
-      values.push(JSON.stringify(data.dialogueIds))
-    }
-    if (data.actionIds !== undefined) {
-      updates.push('action_ids = ?')
-      values.push(JSON.stringify(data.actionIds))
-    }
-    if (data.frameImage !== undefined) {
-      updates.push('frame_image = ?')
-      values.push(data.frameImage ? JSON.stringify(data.frameImage) : null)
-    }
-    if (data.videoPath !== undefined) {
-      updates.push('video_path = ?')
-      values.push(data.videoPath || null)
-    }
-    if (data.duration !== undefined) {
-      updates.push('duration = ?')
-      values.push(data.duration)
-    }
-    if (data.transition !== undefined) {
-      updates.push('transition = ?')
-      values.push(JSON.stringify(data.transition))
-    }
-    if (data.status !== undefined) {
-      updates.push('status = ?')
-      values.push(data.status)
-    }
-
-    if (updates.length === 0) return storyboard
-
-    updates.push('updated_at = ?')
-    values.push(Date.now())
-    values.push(id)
-
-    const stmt = this.db.prepare(`
-      UPDATE storyboards SET ${updates.join(', ')} WHERE id = ?
-    `)
-    stmt.run(...values)
-
-    return this.getById(id)
-  }
-
-  /**
-   * 删除分镜
-   */
-  delete(id: string): boolean {
-    const stmt = this.db.prepare('DELETE FROM storyboards WHERE id = ?')
-    const result = stmt.run(id)
-    return result.changes > 0
-  }
-
-  /**
-   * 根据场景剧本 ID 删除所有分镜
-   */
-  deleteBySceneScriptId(sceneScriptId: string): number {
-    const stmt = this.db.prepare('DELETE FROM storyboards WHERE scene_script_id = ?')
-    const result = stmt.run(sceneScriptId)
-    return result.changes
-  }
-
-  /**
-   * 获取分镜数量
-   */
-  countBySceneScriptId(sceneScriptId: string): number {
-    const stmt = this.db.prepare(`
-      SELECT COUNT(*) as count FROM storyboards WHERE scene_script_id = ?
-    `)
-    const row = stmt.get(sceneScriptId) as { count: number }
-    return row.count
-  }
-
-  /**
-   * 批量更新分镜状态
-   */
-  updateStatusBySceneScriptId(sceneScriptId: string, status: StoryboardStatus): number {
-    const stmt = this.db.prepare(`
-      UPDATE storyboards SET status = ?, updated_at = ? WHERE scene_script_id = ?
-    `)
-    const result = stmt.run(status, Date.now(), sceneScriptId)
-    return result.changes
-  }
-
-  /**
-   * 生成唯一 ID
-   */
-  private generateId(): string {
-    return `sb_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  /**
-   * 映射数据库行到分镜对象
-   * 支持规范化字段，兼容旧的JSON字段
-   */
-  private mapToStoryboard(row: StoryboardRecord): Storyboard {
-    // 解析转场配置：优先使用规范化字段，否则回退到JSON
-    let transition: TransitionConfig
-    if (row.transition_type) {
-      // 使用规范化字段
-      transition = {
-        type: row.transition_type as TransitionType,
-        duration: row.transition_duration_ms || 500,
-        direction: row.transition_direction as 'left' | 'right' | 'up' | 'down' || undefined,
-        easing: row.transition_easing as 'linear' | 'ease_in' | 'ease_out' | 'ease_in_out' || 'ease_out',
-        color: row.transition_color || undefined
+  async createMany(
+    storyboards: CreateStoryboardRequest[],
+  ): Promise<Storyboard[]> {
+    if (storyboards.length === 0) return []
+    return this.dataSource.transaction(async manager => {
+      const repo = manager.getRepository(StoryboardEntity)
+      const result: Storyboard[] = []
+      const now = new Date()
+      for (const data of storyboards) {
+        const id = this.generateId()
+        const saved = await repo.save(
+          repo.create({
+            id,
+            sceneScriptId: data.sceneScriptId,
+            shotNumber: data.shotNumber,
+            shotType: data.shotType,
+            cameraAngle: data.cameraAngle,
+            cameraMovement: data.cameraMovement,
+            movementDuration: data.movementDuration ?? null,
+            frameDescription: data.frameDescription,
+            subject: data.subject ?? null,
+            composition: data.composition ?? null,
+            characters: data.characters as unknown[],
+            narrationId: data.narrationId ?? null,
+            dialogueIds: data.dialogueIds,
+            actionIds: data.actionIds,
+            frameImage: null,
+            frameImageId: null,
+            videoPath: null,
+            duration: data.duration,
+            transition: JSON.stringify(data.transition),
+            transitionType: null,
+            transitionDurationMs: null,
+            transitionDirection: null,
+            transitionEasing: null,
+            transitionColor: null,
+            status: 'pending',
+            createdAt: now,
+            updatedAt: now,
+          }),
+        )
+        result.push(this.toDto(saved))
       }
-    } else if (row.transition) {
-      // 回退到JSON字段
-      transition = JSON.parse(row.transition) as TransitionConfig
-    } else {
-      transition = { type: 'cut', duration: 500 }
-    }
+      return result
+    })
+  }
 
-    return {
-      id: row.id,
-      sceneScriptId: row.scene_script_id,
-      shotNumber: row.shot_number,
-      shotType: row.shot_type as ShotType,
-      cameraAngle: row.camera_angle as CameraAngle,
-      cameraMovement: row.camera_movement as CameraMovement,
-      movementDuration: row.movement_duration || undefined,
-      frameDescription: row.frame_description,
-      subject: row.subject || undefined,
-      composition: row.composition || undefined,
-      characters: row.characters ? JSON.parse(row.characters) as StoryboardCharacter[] : [],
-      narrationId: row.narration_id || undefined,
-      dialogueIds: row.dialogue_ids ? JSON.parse(row.dialogue_ids) as string[] : [],
-      actionIds: row.action_ids ? JSON.parse(row.action_ids) as string[] : [],
-      frameImage: row.frame_image ? JSON.parse(row.frame_image) as ImageAsset : undefined,
-      videoPath: row.video_path || undefined,
-      duration: row.duration,
-      transition,
-      status: row.status as StoryboardStatus,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
+  async update(
+    id: string,
+    data: UpdateStoryboardRequest,
+  ): Promise<Storyboard | null> {
+    const existing = await this.repo.findOne({ where: { id } as any })
+    if (!existing) return null
+
+    let changed = false
+    if (data.shotType !== undefined) { existing.shotType = data.shotType; changed = true }
+    if (data.cameraAngle !== undefined) { existing.cameraAngle = data.cameraAngle; changed = true }
+    if (data.cameraMovement !== undefined) { existing.cameraMovement = data.cameraMovement; changed = true }
+    if (data.movementDuration !== undefined) { existing.movementDuration = data.movementDuration ?? null; changed = true }
+    if (data.frameDescription !== undefined) { existing.frameDescription = data.frameDescription; changed = true }
+    if (data.subject !== undefined) { existing.subject = data.subject ?? null; changed = true }
+    if (data.composition !== undefined) { existing.composition = data.composition ?? null; changed = true }
+    if (data.characters !== undefined) { existing.characters = data.characters as unknown[]; changed = true }
+    if (data.narrationId !== undefined) { existing.narrationId = data.narrationId ?? null; changed = true }
+    if (data.dialogueIds !== undefined) { existing.dialogueIds = data.dialogueIds; changed = true }
+    if (data.actionIds !== undefined) { existing.actionIds = data.actionIds; changed = true }
+    if (data.frameImage !== undefined) {
+      existing.frameImage = data.frameImage
+        ? (data.frameImage as Record<string, unknown>)
+        : null
+      changed = true
     }
+    if (data.videoPath !== undefined) { existing.videoPath = data.videoPath ?? null; changed = true }
+    if (data.duration !== undefined) { existing.duration = data.duration; changed = true }
+    if (data.transition !== undefined) {
+      existing.transition = JSON.stringify(data.transition)
+      changed = true
+    }
+    if (data.status !== undefined) { existing.status = data.status; changed = true }
+
+    if (!changed) return this.toDto(existing)
+
+    existing.updatedAt = new Date()
+    const saved = await this.repo.save(existing)
+    return this.toDto(saved)
+  }
+
+  async delete(id: string): Promise<boolean> {
+    const result = await this.repo.delete({ id } as any)
+    return (result.affected ?? 0) > 0
+  }
+
+  async deleteBySceneScriptId(sceneScriptId: string): Promise<number> {
+    const result = await this.repo.delete({ sceneScriptId } as any)
+    return result.affected ?? 0
+  }
+
+  async countBySceneScriptId(sceneScriptId: string): Promise<number> {
+    return this.repo.count({ where: { sceneScriptId } as any })
+  }
+
+  async updateStatusBySceneScriptId(
+    sceneScriptId: string,
+    status: StoryboardStatus,
+  ): Promise<number> {
+    const result = await this.repo.update({ sceneScriptId } as any, {
+      status,
+      updatedAt: new Date(),
+    })
+    return result.affected ?? 0
+  }
+
+  private generateId(): string {
+    return `sb_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }
 }
