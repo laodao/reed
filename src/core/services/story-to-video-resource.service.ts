@@ -530,10 +530,10 @@ export class StoryToVideoResourceService {
    * 自动创建地点绑定
    * 从长文写作项目中的地点列表创建视频项目的地点绑定
    */
-  autoCreateLocationBindings(
+  async autoCreateLocationBindings(
     projectId: string,
     locations: Array<{ id: string; name: string; description: string }>
-  ): LocationBinding[] {
+  ): Promise<LocationBinding[]> {
     const db = getCoreDatabaseManager()
     if (!db.locationBindings) return []
 
@@ -569,10 +569,10 @@ export class StoryToVideoResourceService {
    * 自动创建物品绑定
    * 从长文写作项目中的物品列表创建视频项目的物品绑定
    */
-  autoCreateItemBindings(
+  async autoCreateItemBindings(
     projectId: string,
     items: Array<{ id: string; name: string; description: string }>
-  ): ItemBinding[] {
+  ): Promise<ItemBinding[]> {
     const db = getCoreDatabaseManager()
     if (!db.itemBindings) return []
 
@@ -623,10 +623,10 @@ export class StoryToVideoResourceService {
   /**
    * 更新地点绑定的图片
    */
-  updateLocationBindingImages(
+  async updateLocationBindingImages(
     locationBindingId: string,
     imagePaths: string[]
-  ): LocationBinding | null {
+  ): Promise<LocationBinding | null> {
     const db = getCoreDatabaseManager()
     if (!db.locationBindings) return null
 
@@ -636,10 +636,10 @@ export class StoryToVideoResourceService {
   /**
    * 更新物品绑定的图片
    */
-  updateItemBindingImages(
+  async updateItemBindingImages(
     itemBindingId: string,
     imagePaths: string[]
-  ): ItemBinding | null {
+  ): Promise<ItemBinding | null> {
     const db = getCoreDatabaseManager()
     if (!db.itemBindings) return null
 

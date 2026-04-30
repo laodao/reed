@@ -639,15 +639,9 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.GENERATE_MAP_DATA, async (event, eventId: string, projectId: string, mapId: string, prompt: string, providerConfigId?: string, modelId?: string) => {
+  ipcMain.handle(CHANNELS.GENERATE_MAP_DATA, async (_event, eventId: string, projectId: string, mapId: string, prompt: string, providerConfigId?: string, modelId?: string) => {
     try {
-      const window = BrowserWindow.fromWebContents(event.sender)
-      if (!window) {
-        return { success: false, error: '窗口不存在' }
-      }
-
       const result = await aiService.generateMapData(
-        window,
         eventId,
         projectId,
         mapId,
@@ -689,10 +683,10 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       }
 
       // 获取 ImageService
-      const { ImageService } = await import('../../services/image.service')
+      const { ImageService } = await import('@core/services/image.service')
 
       // 生成图片
-      const result = await ImageService.generateImage(window, {
+      const result = await ImageService.generateImage({
         providerConfigId,
         model: modelId || '',
         prompt,
@@ -823,7 +817,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   ipcMain.handle(CHANNELS.GET_CHARACTER_BY_PORTRAIT_ID, async (_event, portraitId: string) => {
     try {
       const dbManager = getDatabaseManager()
-      const characters = dbManager.lwCharacters?.getByPortraitId(portraitId)
+      const characters = await dbManager.lwCharacters?.getByPortraitId(portraitId)
       return { success: true, data: characters?.[0] || null }
     } catch (error: any) {
       return { success: false, error: error.message }
@@ -2407,17 +2401,11 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * AI 提取记忆
    */
-  ipcMain.handle(CHANNELS.EXTRACT_MEMORIES, async (event, projectId: string, outlineId: string, prewriteContent: string, chapterNumber: number, providerConfigId?: string, modelId?: string) => {
+  ipcMain.handle(CHANNELS.EXTRACT_MEMORIES, async (_event, projectId: string, outlineId: string, prewriteContent: string, chapterNumber: number, providerConfigId?: string, modelId?: string) => {
     try {
-      const window = BrowserWindow.fromWebContents(event.sender)
-      if (!window) {
-        return { success: false, error: '窗口不存在' }
-      }
-
       const eventId = `extract-memories-${outlineId}-${Date.now()}`
       const aiService = LongWritingAIService.getInstance()
       const result = await aiService.extractMemories(
-        window,
         eventId,
         projectId,
         outlineId,
@@ -2583,17 +2571,11 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * AI 提取实体状态
    */
-  ipcMain.handle(CHANNELS.EXTRACT_ENTITY_STATES, async (event, projectId: string, outlineId: string, chapterContent: string, chapterNumber: number, involvedEntities: Array<{ type: string; id: string; name: string }>, providerConfigId?: string, modelId?: string) => {
+  ipcMain.handle(CHANNELS.EXTRACT_ENTITY_STATES, async (_event, projectId: string, outlineId: string, chapterContent: string, chapterNumber: number, involvedEntities: Array<{ type: string; id: string; name: string }>, providerConfigId?: string, modelId?: string) => {
     try {
-      const window = BrowserWindow.fromWebContents(event.sender)
-      if (!window) {
-        return { success: false, error: '窗口不存在' }
-      }
-
       const eventId = `extract-entity-states-${outlineId}-${Date.now()}`
       const aiService = LongWritingAIService.getInstance()
       const result = await aiService.extractEntityStates(
-        window,
         eventId,
         projectId,
         outlineId,
@@ -2612,17 +2594,11 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * AI 识别章节涉及的实体（角色、地点等）
    */
-  ipcMain.handle(CHANNELS.RECOGNIZE_CHAPTER_ENTITIES, async (event, projectId: string, chapterContent: string, providerConfigId?: string, modelId?: string) => {
+  ipcMain.handle(CHANNELS.RECOGNIZE_CHAPTER_ENTITIES, async (_event, projectId: string, chapterContent: string, providerConfigId?: string, modelId?: string) => {
     try {
-      const window = BrowserWindow.fromWebContents(event.sender)
-      if (!window) {
-        return { success: false, error: '窗口不存在' }
-      }
-
       const eventId = `recognize-chapter-entities-${projectId}-${Date.now()}`
       const aiService = LongWritingAIService.getInstance()
       const result = await aiService.recognizeChapterEntities(
-        window,
         eventId,
         projectId,
         chapterContent,
@@ -2881,7 +2857,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
   // AI 提取章节状态摘要
   ipcMain.handle(CHANNELS.EXTRACT_CHAPTER_STATE_SUMMARY, async (
-    event,
+    _event,
     projectId: string,
     outlineId: string,
     chapterNumber: number,
@@ -2900,7 +2876,6 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
       const aiService = LongWritingAIService.getInstance()
       const result = await aiService.extractChapterStateSummary(
-        BrowserWindow.fromWebContents(event.sender)!,
         `extract-state-${Date.now()}`,
         projectId,
         outlineId,
