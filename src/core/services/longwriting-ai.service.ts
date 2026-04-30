@@ -144,7 +144,7 @@ export class LongWritingAIService {
     const { config, template, apiKey } = providerInfo
 
     // 确定使用的模型
-    const effectiveModelId = modelId || config.defaultModel
+    const effectiveModelId = modelId || config.models?.[0]?.id || ''
 
     // 创建 Provider 实例
     const provider = createProvider(
@@ -167,11 +167,9 @@ export class LongWritingAIService {
     }
 
     // 调用 AI（非流式）
-    const result = await provider.chat(context, {
-      maxTokens: maxTokens || 4096
-    })
+    const result = await provider.chatSync(context)
 
-    return result.content
+    return result.content || ''
   }
 
   /**
@@ -193,7 +191,7 @@ export class LongWritingAIService {
     const { config, template, apiKey } = providerInfo
 
     // 确定使用的模型：优先使用传入的 modelId，其次使用配置中的默认模型
-    const effectiveModelId = modelId || config.defaultModel
+    const effectiveModelId = modelId || config.models?.[0]?.id || ''
 
     // 创建 Provider 实例
     const provider = createProvider(
@@ -521,7 +519,7 @@ ${keyLocationsInfo ? `主要场景：${keyLocationsInfo}` : ''}`
     const prompt = `请根据以下故事概要，生成建议的技能体系和物品：
 
 故事标题：${overview?.title || '未命名'}
-故事类型：${overview?.genre || '未指定'}
+故事类型：${overview?.storyType || '未指定'}
 故事摘要：${overview?.summary || '未指定'}
 已有角色：${characterNames || '暂无'}
 
@@ -767,9 +765,9 @@ ${itemTypesInfo || '暂无配置'}
 
     const storyInfo = {
       title: overview?.title || '未命名',
-      coreTheme: overview?.coreTheme || '未指定',
+      coreTheme: overview?.coreIdea || '未指定',
       summary: overview?.summary || '未指定',
-      targetWords: overview?.targetWords || 100000,
+      targetWords: (overview?.estimatedChapters || 20) * 5000,
       characterInfo: characterInfo || '暂无',
       eraDescription: background?.eraDescription || '未指定'
     }
@@ -1089,8 +1087,8 @@ ${itemTypesInfo || '暂无配置'}
     const prompt = `请根据以下信息，生成评论大纲：
 
 评论主题：${overview?.title || '未命名'}
-核心观点：${overview?.coreTheme || '未指定'}
-目标字数：${overview?.targetWords || 5000}字
+核心观点：${overview?.coreIdea || '未指定'}
+目标字数：${0 || 5000}字
 已收集素材：${materialInfo || '暂无'}
 
 请直接返回 JSON 数组格式的结果。`
@@ -1688,7 +1686,7 @@ ${prewriteSection}
     const prompt = `请根据以下信息，撰写评论段落：
 
 文章主题：${overview?.title || '未命名'}
-核心观点：${overview?.coreTheme || '未指定'}
+核心观点：${overview?.coreIdea || '未指定'}
 段落标题：${outline.name}
 段落要点：${outline.summary}
 目标字数：${targetWords || outline.estimatedWords || 500}字
@@ -1765,7 +1763,7 @@ ${materialContext || '无特定素材'}
     // 构建角色信息
     const characterInfo = characters.map(c => {
       let info = `${c.name}`
-      if (c.role) info += `（${c.role}）`
+      if (c.rolePosition) info += `（${c.rolePosition}）`
       if (c.personality) info += `，性格：${c.personality}`
       return info
     }).join('\n')
