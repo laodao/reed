@@ -1491,7 +1491,7 @@ export class LongWritingService {
     if (!this.db.lwEntityStates) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwEntityStates.getByProjectId(projectId)
+    return await this.db.lwEntityStates.getByProjectId(projectId)
   }
 
   /**
@@ -1506,7 +1506,7 @@ export class LongWritingService {
     if (!this.db.lwEntityStates) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwEntityStates.getEntityStateAtChapter(
+    return await this.db.lwEntityStates.getEntityStateAtChapter(
       projectId,
       entityType,
       entityId,
@@ -1525,7 +1525,7 @@ export class LongWritingService {
     if (!this.db.lwEntityStates) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwEntityStates.getEntitiesStatesForChapter(projectId, chapterNumber, entities)
+    return await this.db.lwEntityStates.getEntitiesStatesForChapter(projectId, chapterNumber, entities)
   }
 
   /**
@@ -1535,7 +1535,7 @@ export class LongWritingService {
     if (!this.db.lwEntityStates) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwEntityStates.getByChapterNumber(projectId, chapterNumber)
+    return await this.db.lwEntityStates.getByChapterNumber(projectId, chapterNumber)
   }
 
   /**
@@ -1545,7 +1545,7 @@ export class LongWritingService {
     if (!this.db.lwEntityStates) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwEntityStates.getById(id)
+    return await this.db.lwEntityStates.getById(id)
   }
 
   /**
@@ -1555,7 +1555,7 @@ export class LongWritingService {
     if (!this.db.lwEntityStates) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwEntityStates.create(data)
+    return await this.db.lwEntityStates.create(data)
   }
 
   /**
@@ -1565,7 +1565,7 @@ export class LongWritingService {
     if (!this.db.lwEntityStates) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwEntityStates.batchCreate(dataList)
+    return await this.db.lwEntityStates.batchCreate(dataList)
   }
 
   /**
@@ -1575,7 +1575,7 @@ export class LongWritingService {
     if (!this.db.lwEntityStates) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwEntityStates.upsert(data)
+    return await this.db.lwEntityStates.upsert(data)
   }
 
   /**
@@ -1585,7 +1585,7 @@ export class LongWritingService {
     if (!this.db.lwEntityStates) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwEntityStates.update(id, data)
+    return await this.db.lwEntityStates.update(id, data)
   }
 
   /**
@@ -1595,7 +1595,7 @@ export class LongWritingService {
     if (!this.db.lwEntityStates) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwEntityStates.delete(id)
+    return await this.db.lwEntityStates.delete(id)
   }
 
   /**
@@ -1605,7 +1605,7 @@ export class LongWritingService {
     if (!this.db.lwEntityStates) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwEntityStates.deleteByChapterNumber(projectId, chapterNumber)
+    return await this.db.lwEntityStates.deleteByChapterNumber(projectId, chapterNumber)
   }
 
   /**
@@ -1615,7 +1615,7 @@ export class LongWritingService {
     if (!this.db.lwEntityStates) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwEntityStates.getSnapshotStats(projectId)
+    return await this.db.lwEntityStates.getSnapshotStats(projectId)
   }
 }
 

@@ -1,121 +1,107 @@
 /**
  * 章节状态摘要仓库
  * @module database/repositories/lw-chapter-state-summary.repository
- * @description 管理章节结束时的故事状态摘要
+ * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import Database from 'better-sqlite3'
+import type { DataSource } from 'typeorm'
 import {
   ChapterStateSummary,
-  ChapterStateSummaryRecord,
-  CreateChapterStateSummaryRequest
+  CreateChapterStateSummaryRequest,
 } from '@shared/types/longwriting.types'
+import { LwChapterStateSummaryEntity } from '../entities/lw-chapter-state-summary.entity'
+import { BaseRepository } from '../base-repository'
 
-export class LwChapterStateSummaryRepository {
-  constructor(private db: Database.Database) {}
-
-  /**
-   * 根据项目 ID 获取所有章节状态摘要
-   */
-  getByProjectId(projectId: string): ChapterStateSummary[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_chapter_state_summaries
-      WHERE project_id = ?
-      ORDER BY chapter_number ASC
-    `)
-    const rows = stmt.all(projectId) as ChapterStateSummaryRecord[]
-    return rows.map(row => this.mapToSummary(row))
+export class LwChapterStateSummaryRepository extends BaseRepository<
+  LwChapterStateSummaryEntity,
+  ChapterStateSummary
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, LwChapterStateSummaryEntity)
   }
 
-  /**
-   * 根据大纲 ID 获取章节状态摘要
-   */
-  getByOutlineId(outlineId: string): ChapterStateSummary | null {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_chapter_state_summaries WHERE outline_id = ?
-    `)
-    const row = stmt.get(outlineId) as ChapterStateSummaryRecord | undefined
-    return row ? this.mapToSummary(row) : null
+  protected toDto(e: LwChapterStateSummaryEntity): ChapterStateSummary {
+    return {
+      id: e.id,
+      projectId: e.projectId,
+      outlineId: e.outlineId,
+      chapterNumber: e.chapterNumber,
+      storyTime: e.storyTime,
+      currentLocation: e.currentLocation ?? '',
+      characterStates: e.characterStates ?? '',
+      pendingEvents: e.pendingEvents ?? '',
+      keyChanges: e.keyChanges ?? '',
+      createdAt: e.createdAt,
+      updatedAt: e.updatedAt,
+    }
   }
 
-  /**
-   * 获取指定章节的状态摘要
-   */
-  getByChapterNumber(projectId: string, chapterNumber: number): ChapterStateSummary | null {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_chapter_state_summaries
-      WHERE project_id = ? AND chapter_number = ?
-    `)
-    const row = stmt.get(projectId, chapterNumber) as ChapterStateSummaryRecord | undefined
-    return row ? this.mapToSummary(row) : null
+  async getByProjectId(projectId: string): Promise<ChapterStateSummary[]> {
+    const rows = await this.repo
+      .createQueryBuilder('s')
+      .where('s.project_id = :pid', { pid: projectId })
+      .orderBy('s.chapter_number', 'ASC')
+      .getMany()
+    return this.toDtoList(rows)
   }
 
-  /**
-   * 获取指定章节之前的最新状态摘要
-   */
-  getLatestBeforeChapter(projectId: string, chapterNumber: number): ChapterStateSummary | null {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_chapter_state_summaries
-      WHERE project_id = ? AND chapter_number < ?
-      ORDER BY chapter_number DESC
-      LIMIT 1
-    `)
-    const row = stmt.get(projectId, chapterNumber) as ChapterStateSummaryRecord | undefined
-    return row ? this.mapToSummary(row) : null
+  async getByOutlineId(outlineId: string): Promise<ChapterStateSummary | null> {
+    return this.findOneByWhere({ outlineId } as any)
   }
 
-  /**
-   * 获取项目的最新章节状态摘要
-   */
-  getLatest(projectId: string): ChapterStateSummary | null {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_chapter_state_summaries
-      WHERE project_id = ?
-      ORDER BY chapter_number DESC
-      LIMIT 1
-    `)
-    const row = stmt.get(projectId) as ChapterStateSummaryRecord | undefined
-    return row ? this.mapToSummary(row) : null
+  async getByChapterNumber(
+    projectId: string,
+    chapterNumber: number,
+  ): Promise<ChapterStateSummary | null> {
+    return this.findOneByWhere({ projectId, chapterNumber } as any)
   }
 
-  /**
-   * 根据 ID 获取章节状态摘要
-   */
-  getById(id: string): ChapterStateSummary | null {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_chapter_state_summaries WHERE id = ?
-    `)
-    const row = stmt.get(id) as ChapterStateSummaryRecord | undefined
-    return row ? this.mapToSummary(row) : null
+  async getLatestBeforeChapter(
+    projectId: string,
+    chapterNumber: number,
+  ): Promise<ChapterStateSummary | null> {
+    const row = await this.repo
+      .createQueryBuilder('s')
+      .where('s.project_id = :pid', { pid: projectId })
+      .andWhere('s.chapter_number < :cn', { cn: chapterNumber })
+      .orderBy('s.chapter_number', 'DESC')
+      .limit(1)
+      .getOne()
+    return row ? this.toDto(row) : null
   }
 
-  /**
-   * 创建章节状态摘要
-   */
-  create(data: CreateChapterStateSummaryRequest): ChapterStateSummary {
+  async getLatest(projectId: string): Promise<ChapterStateSummary | null> {
+    const row = await this.repo
+      .createQueryBuilder('s')
+      .where('s.project_id = :pid', { pid: projectId })
+      .orderBy('s.chapter_number', 'DESC')
+      .limit(1)
+      .getOne()
+    return row ? this.toDto(row) : null
+  }
+
+  async getById(id: string): Promise<ChapterStateSummary | null> {
+    return this.findOneByWhere({ id } as any)
+  }
+
+  async create(data: CreateChapterStateSummaryRequest): Promise<ChapterStateSummary> {
     const id = this.generateId()
     const now = Date.now()
 
-    const stmt = this.db.prepare(`
-      INSERT INTO lw_chapter_state_summaries (
-        id, project_id, outline_id, chapter_number,
-        story_time, current_location, character_states,
-        pending_events, key_changes, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-
-    stmt.run(
-      id,
-      data.projectId,
-      data.outlineId,
-      data.chapterNumber,
-      data.storyTime,
-      data.currentLocation,
-      data.characterStates,
-      data.pendingEvents,
-      data.keyChanges,
-      now,
-      now
+    await this.repo.save(
+      this.repo.create({
+        id,
+        projectId: data.projectId,
+        outlineId: data.outlineId,
+        chapterNumber: data.chapterNumber,
+        storyTime: data.storyTime,
+        currentLocation: data.currentLocation,
+        characterStates: data.characterStates,
+        pendingEvents: data.pendingEvents,
+        keyChanges: data.keyChanges,
+        createdAt: now,
+        updatedAt: now,
+      }),
     )
 
     return {
@@ -129,93 +115,42 @@ export class LwChapterStateSummaryRepository {
       pendingEvents: data.pendingEvents,
       keyChanges: data.keyChanges,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
     }
   }
 
-  /**
-   * 更新或创建章节状态摘要（upsert）
-   */
-  upsert(data: CreateChapterStateSummaryRequest): ChapterStateSummary {
-    // 检查是否已存在
-    const existing = this.getByOutlineId(data.outlineId)
-
+  async upsert(data: CreateChapterStateSummaryRequest): Promise<ChapterStateSummary> {
+    const existing = await this.repo.findOne({ where: { outlineId: data.outlineId } as any })
     if (existing) {
-      // 更新已存在的摘要
-      const now = Date.now()
-      const stmt = this.db.prepare(`
-        UPDATE lw_chapter_state_summaries
-        SET story_time = ?, current_location = ?, character_states = ?,
-            pending_events = ?, key_changes = ?, chapter_number = ?, updated_at = ?
-        WHERE id = ?
-      `)
-      stmt.run(
-        data.storyTime,
-        data.currentLocation,
-        data.characterStates,
-        data.pendingEvents,
-        data.keyChanges,
-        data.chapterNumber,
-        now,
-        existing.id
-      )
-      return this.getById(existing.id)!
-    } else {
-      // 创建新摘要
-      return this.create(data)
+      existing.storyTime = data.storyTime
+      existing.currentLocation = data.currentLocation
+      existing.characterStates = data.characterStates
+      existing.pendingEvents = data.pendingEvents
+      existing.keyChanges = data.keyChanges
+      existing.chapterNumber = data.chapterNumber
+      existing.updatedAt = Date.now()
+      await this.repo.save(existing)
+      return this.toDto(existing)
     }
+    return this.create(data)
   }
 
-  /**
-   * 删除章节状态摘要
-   */
-  delete(id: string): boolean {
-    const stmt = this.db.prepare('DELETE FROM lw_chapter_state_summaries WHERE id = ?')
-    const result = stmt.run(id)
-    return result.changes > 0
+  async delete(id: string): Promise<boolean> {
+    const result = await this.repo.delete({ id } as any)
+    return (result.affected ?? 0) > 0
   }
 
-  /**
-   * 根据大纲 ID 删除章节状态摘要
-   */
-  deleteByOutlineId(outlineId: string): boolean {
-    const stmt = this.db.prepare('DELETE FROM lw_chapter_state_summaries WHERE outline_id = ?')
-    const result = stmt.run(outlineId)
-    return result.changes > 0
+  async deleteByOutlineId(outlineId: string): Promise<boolean> {
+    const result = await this.repo.delete({ outlineId } as any)
+    return (result.affected ?? 0) > 0
   }
 
-  /**
-   * 删除项目的所有章节状态摘要
-   */
-  deleteByProjectId(projectId: string): number {
-    const stmt = this.db.prepare('DELETE FROM lw_chapter_state_summaries WHERE project_id = ?')
-    const result = stmt.run(projectId)
-    return result.changes
+  async deleteByProjectId(projectId: string): Promise<number> {
+    const result = await this.repo.delete({ projectId } as any)
+    return result.affected ?? 0
   }
 
-  /**
-   * 生成唯一 ID
-   */
   private generateId(): string {
-    return `ch_summary_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  /**
-   * 映射数据库行到摘要对象
-   */
-  private mapToSummary(row: ChapterStateSummaryRecord): ChapterStateSummary {
-    return {
-      id: row.id,
-      projectId: row.project_id,
-      outlineId: row.outline_id,
-      chapterNumber: row.chapter_number,
-      storyTime: row.story_time,
-      currentLocation: row.current_location,
-      characterStates: row.character_states,
-      pendingEvents: row.pending_events,
-      keyChanges: row.key_changes,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }
+    return `ch_summary_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }
 }

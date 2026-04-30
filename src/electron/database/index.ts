@@ -3688,8 +3688,8 @@ export class DatabaseManager {
     this.lwMaps = new LwMapRepository(this.dataSource)
     this.lwPrewrites = new LwPrewriteRepository(this.dataSource)
     this.lwMemories = new LwMemoryRepository(this.dataSource)
-    this.lwEntityStates = new LwEntityStateRepository(this.db)
-    this.lwChapterStateSummaries = new LwChapterStateSummaryRepository(this.db)
+    this.lwEntityStates = new LwEntityStateRepository(this.dataSource)
+    this.lwChapterStateSummaries = new LwChapterStateSummaryRepository(this.dataSource)
 
     // 初始化符合第三范式的长文写作关联表仓库
     this.lwPlotCharacters = new LwPlotCharacterRepository(this.dataSource)

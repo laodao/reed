@@ -1,148 +1,141 @@
 /**
  * 长文写作实体状态快照仓库
  * @module database/repositories/lw-entity-state.repository
+ * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import Database from 'better-sqlite3'
+import type { DataSource } from 'typeorm'
 import {
   EntityStateSnapshot,
   EntityType,
   CreateEntityStateSnapshotRequest,
   UpdateEntityStateSnapshotRequest,
-  SnapshotStats
+  SnapshotStats,
 } from '@shared/types/longwriting.types'
+import { LwEntityStateEntity } from '../entities/lw-entity-state.entity'
+import { BaseRepository } from '../base-repository'
 
-export class LwEntityStateRepository {
-  constructor(private db: Database.Database) {}
-
-  /**
-   * 根据项目 ID 获取所有状态快照
-   */
-  getByProjectId(projectId: string): EntityStateSnapshot[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_entity_state_snapshots
-      WHERE project_id = ?
-      ORDER BY chapter_number ASC, entity_type ASC, created_at ASC
-    `)
-    const rows = stmt.all(projectId) as any[]
-    return rows.map(row => this.mapToSnapshot(row))
+export class LwEntityStateRepository extends BaseRepository<
+  LwEntityStateEntity,
+  EntityStateSnapshot
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, LwEntityStateEntity)
   }
 
-  /**
-   * 获取实体在指定章节的状态快照
-   * 返回该章节或之前最近的状态快照
-   */
-  getEntityStateAtChapter(
+  protected toDto(e: LwEntityStateEntity): EntityStateSnapshot {
+    return {
+      id: e.id,
+      projectId: e.projectId,
+      entityType: e.entityType as EntityType,
+      entityId: e.entityId,
+      entityName: e.entityName,
+      chapterNumber: e.chapterNumber,
+      stateSummary: e.stateSummary,
+      keyChanges: this.parseKeyChanges(e.keyChanges),
+      createdAt: e.createdAt,
+      updatedAt: e.updatedAt,
+    }
+  }
+
+  async getByProjectId(projectId: string): Promise<EntityStateSnapshot[]> {
+    const rows = await this.repo
+      .createQueryBuilder('s')
+      .where('s.project_id = :pid', { pid: projectId })
+      .orderBy('s.chapter_number', 'ASC')
+      .addOrderBy('s.entity_type', 'ASC')
+      .addOrderBy('s.created_at', 'ASC')
+      .getMany()
+    return this.toDtoList(rows)
+  }
+
+  async getEntityStateAtChapter(
     projectId: string,
     entityType: EntityType,
     entityId: string,
-    chapterNumber: number
-  ): EntityStateSnapshot | null {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_entity_state_snapshots
-      WHERE project_id = ?
-        AND entity_type = ?
-        AND entity_id = ?
-        AND chapter_number <= ?
-      ORDER BY chapter_number DESC
-      LIMIT 1
-    `)
-    const row = stmt.get(projectId, entityType, entityId, chapterNumber) as any
-    return row ? this.mapToSnapshot(row) : null
+    chapterNumber: number,
+  ): Promise<EntityStateSnapshot | null> {
+    const row = await this.repo
+      .createQueryBuilder('s')
+      .where('s.project_id = :pid', { pid: projectId })
+      .andWhere('s.entity_type = :et', { et: entityType })
+      .andWhere('s.entity_id = :eid', { eid: entityId })
+      .andWhere('s.chapter_number <= :cn', { cn: chapterNumber })
+      .orderBy('s.chapter_number', 'DESC')
+      .limit(1)
+      .getOne()
+    return row ? this.toDto(row) : null
   }
 
-  /**
-   * 批量获取多个实体在指定章节的状态快照
-   */
-  getEntitiesStatesForChapter(
+  async getEntitiesStatesForChapter(
     projectId: string,
     chapterNumber: number,
-    entities: Array<{ entityType: EntityType; entityId: string }>
-  ): EntityStateSnapshot[] {
+    entities: Array<{ entityType: EntityType; entityId: string }>,
+  ): Promise<EntityStateSnapshot[]> {
     const results: EntityStateSnapshot[] = []
-
     for (const entity of entities) {
-      const state = this.getEntityStateAtChapter(
+      const state = await this.getEntityStateAtChapter(
         projectId,
         entity.entityType,
         entity.entityId,
-        chapterNumber
+        chapterNumber,
       )
-      if (state) {
-        results.push(state)
-      }
+      if (state) results.push(state)
     }
-
     return results
   }
 
-  /**
-   * 获取指定章节的所有状态快照
-   */
-  getByChapterNumber(projectId: string, chapterNumber: number): EntityStateSnapshot[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_entity_state_snapshots
-      WHERE project_id = ? AND chapter_number = ?
-      ORDER BY entity_type ASC, created_at ASC
-    `)
-    const rows = stmt.all(projectId, chapterNumber) as any[]
-    return rows.map(row => this.mapToSnapshot(row))
+  async getByChapterNumber(
+    projectId: string,
+    chapterNumber: number,
+  ): Promise<EntityStateSnapshot[]> {
+    const rows = await this.repo
+      .createQueryBuilder('s')
+      .where('s.project_id = :pid', { pid: projectId })
+      .andWhere('s.chapter_number = :cn', { cn: chapterNumber })
+      .orderBy('s.entity_type', 'ASC')
+      .addOrderBy('s.created_at', 'ASC')
+      .getMany()
+    return this.toDtoList(rows)
   }
 
-  /**
-   * 根据 ID 获取状态快照
-   */
-  getById(id: string): EntityStateSnapshot | null {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_entity_state_snapshots WHERE id = ?
-    `)
-    const row = stmt.get(id) as any
-    return row ? this.mapToSnapshot(row) : null
+  async getById(id: string): Promise<EntityStateSnapshot | null> {
+    return this.findOneByWhere({ id } as any)
   }
 
-  /**
-   * 获取实体的最新状态快照
-   */
-  getLatestEntityState(
+  async getLatestEntityState(
     projectId: string,
     entityType: EntityType,
-    entityId: string
-  ): EntityStateSnapshot | null {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_entity_state_snapshots
-      WHERE project_id = ? AND entity_type = ? AND entity_id = ?
-      ORDER BY chapter_number DESC
-      LIMIT 1
-    `)
-    const row = stmt.get(projectId, entityType, entityId) as any
-    return row ? this.mapToSnapshot(row) : null
+    entityId: string,
+  ): Promise<EntityStateSnapshot | null> {
+    const row = await this.repo
+      .createQueryBuilder('s')
+      .where('s.project_id = :pid', { pid: projectId })
+      .andWhere('s.entity_type = :et', { et: entityType })
+      .andWhere('s.entity_id = :eid', { eid: entityId })
+      .orderBy('s.chapter_number', 'DESC')
+      .limit(1)
+      .getOne()
+    return row ? this.toDto(row) : null
   }
 
-  /**
-   * 创建状态快照
-   */
-  create(data: CreateEntityStateSnapshotRequest): EntityStateSnapshot {
+  async create(data: CreateEntityStateSnapshotRequest): Promise<EntityStateSnapshot> {
     const id = this.generateId()
     const now = Date.now()
 
-    const stmt = this.db.prepare(`
-      INSERT INTO lw_entity_state_snapshots (
-        id, project_id, entity_type, entity_id, entity_name,
-        chapter_number, state_summary, key_changes, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-
-    stmt.run(
-      id,
-      data.projectId,
-      data.entityType,
-      data.entityId,
-      data.entityName,
-      data.chapterNumber,
-      data.stateSummary,
-      JSON.stringify(data.keyChanges || []),
-      now,
-      now
+    await this.repo.save(
+      this.repo.create({
+        id,
+        projectId: data.projectId,
+        entityType: data.entityType,
+        entityId: data.entityId,
+        entityName: data.entityName,
+        chapterNumber: data.chapterNumber,
+        stateSummary: data.stateSummary,
+        keyChanges: JSON.stringify(data.keyChanges || []),
+        createdAt: now,
+        updatedAt: now,
+      }),
     )
 
     return {
@@ -155,96 +148,64 @@ export class LwEntityStateRepository {
       stateSummary: data.stateSummary,
       keyChanges: data.keyChanges || [],
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
     }
   }
 
-  /**
-   * 批量创建状态快照（使用 upsert 逻辑，避免重复）
-   */
-  batchCreate(dataList: CreateEntityStateSnapshotRequest[]): EntityStateSnapshot[] {
+  async batchCreate(
+    dataList: CreateEntityStateSnapshotRequest[],
+  ): Promise<EntityStateSnapshot[]> {
+    if (dataList.length === 0) return []
     const results: EntityStateSnapshot[] = []
-    const transaction = this.db.transaction(() => {
+    await this.dataSource.transaction(async () => {
       for (const data of dataList) {
-        // 使用 upsert 避免重复
-        const snapshot = this.upsert(data)
-        results.push(snapshot)
+        results.push(await this.upsert(data))
       }
     })
-    transaction()
     return results
   }
 
-  /**
-   * 更新状态快照
-   */
-  update(id: string, data: UpdateEntityStateSnapshotRequest): EntityStateSnapshot | null {
-    const snapshot = this.getById(id)
-    if (!snapshot) return null
+  async update(
+    id: string,
+    data: UpdateEntityStateSnapshotRequest,
+  ): Promise<EntityStateSnapshot | null> {
+    const existing = await this.repo.findOne({ where: { id } as any })
+    if (!existing) return null
 
-    const now = Date.now()
-    const updates: string[] = []
-    const values: any[] = []
-
+    let changed = false
     if (data.stateSummary !== undefined) {
-      updates.push('state_summary = ?')
-      values.push(data.stateSummary)
+      existing.stateSummary = data.stateSummary
+      changed = true
     }
     if (data.keyChanges !== undefined) {
-      updates.push('key_changes = ?')
-      values.push(JSON.stringify(data.keyChanges))
+      existing.keyChanges = JSON.stringify(data.keyChanges)
+      changed = true
     }
 
-    if (updates.length === 0) return snapshot
+    if (!changed) return this.toDto(existing)
 
-    updates.push('updated_at = ?')
-    values.push(now)
-    values.push(id)
-
-    const stmt = this.db.prepare(`
-      UPDATE lw_entity_state_snapshots SET ${updates.join(', ')} WHERE id = ?
-    `)
-    stmt.run(...values)
-
-    return this.getById(id)
+    existing.updatedAt = Date.now()
+    await this.repo.save(existing)
+    return this.toDto(existing)
   }
 
-  /**
-   * 删除状态快照
-   */
-  delete(id: string): boolean {
-    const stmt = this.db.prepare('DELETE FROM lw_entity_state_snapshots WHERE id = ?')
-    const result = stmt.run(id)
-    return result.changes > 0
+  async delete(id: string): Promise<boolean> {
+    const result = await this.repo.delete({ id } as any)
+    return (result.affected ?? 0) > 0
   }
 
-  /**
-   * 删除指定章节的所有状态快照
-   */
-  deleteByChapterNumber(projectId: string, chapterNumber: number): number {
-    const stmt = this.db.prepare(`
-      DELETE FROM lw_entity_state_snapshots
-      WHERE project_id = ? AND chapter_number = ?
-    `)
-    const result = stmt.run(projectId, chapterNumber)
-    return result.changes
+  async deleteByChapterNumber(projectId: string, chapterNumber: number): Promise<number> {
+    const result = await this.repo.delete({ projectId, chapterNumber } as any)
+    return result.affected ?? 0
   }
 
-  /**
-   * 删除项目的所有状态快照
-   */
-  deleteByProjectId(projectId: string): number {
-    const stmt = this.db.prepare('DELETE FROM lw_entity_state_snapshots WHERE project_id = ?')
-    const result = stmt.run(projectId)
-    return result.changes
+  async deleteByProjectId(projectId: string): Promise<number> {
+    const result = await this.repo.delete({ projectId } as any)
+    return result.affected ?? 0
   }
 
-  /**
-   * 获取项目的状态快照统计
-   */
-  getSnapshotStats(projectId: string): SnapshotStats {
-    const snapshots = this.getByProjectId(projectId)
-
+  async getSnapshotStats(projectId: string): Promise<SnapshotStats> {
+    const snapshots = await this.getByProjectId(projectId)
     const stats: SnapshotStats = {
       total: snapshots.length,
       byEntityType: {
@@ -252,72 +213,41 @@ export class LwEntityStateRepository {
         location: 0,
         item: 0,
         faction: 0,
-        skill: 0
+        skill: 0,
       },
-      byChapter: {}
+      byChapter: {},
     }
-
-    for (const snapshot of snapshots) {
-      stats.byEntityType[snapshot.entityType]++
-      if (!stats.byChapter[snapshot.chapterNumber]) {
-        stats.byChapter[snapshot.chapterNumber] = 0
-      }
-      stats.byChapter[snapshot.chapterNumber]++
+    for (const s of snapshots) {
+      stats.byEntityType[s.entityType]++
+      if (!stats.byChapter[s.chapterNumber]) stats.byChapter[s.chapterNumber] = 0
+      stats.byChapter[s.chapterNumber]++
     }
-
     return stats
   }
 
-  /**
-   * 更新或创建状态快照（如果已存在则更新，否则创建）
-   */
-  upsert(data: CreateEntityStateSnapshotRequest): EntityStateSnapshot {
-    // 检查是否已存在相同实体在相同章节的快照
-    const existingStmt = this.db.prepare(`
-      SELECT id FROM lw_entity_state_snapshots
-      WHERE project_id = ? AND entity_type = ? AND entity_id = ? AND chapter_number = ?
-    `)
-    const existing = existingStmt.get(data.projectId, data.entityType, data.entityId, data.chapterNumber) as any
+  async upsert(data: CreateEntityStateSnapshotRequest): Promise<EntityStateSnapshot> {
+    const existing = await this.repo.findOne({
+      where: {
+        projectId: data.projectId,
+        entityType: data.entityType,
+        entityId: data.entityId,
+        chapterNumber: data.chapterNumber,
+      } as any,
+    })
 
     if (existing) {
-      // 更新已存在的快照
-      const now = Date.now()
-      const updateStmt = this.db.prepare(`
-        UPDATE lw_entity_state_snapshots
-        SET state_summary = ?, key_changes = ?, entity_name = ?, updated_at = ?
-        WHERE id = ?
-      `)
-      updateStmt.run(
-        data.stateSummary,
-        JSON.stringify(data.keyChanges || []),
-        data.entityName,
-        now,
-        existing.id
-      )
-      return this.getById(existing.id)!
-    } else {
-      // 创建新快照
-      return this.create(data)
+      existing.stateSummary = data.stateSummary
+      existing.keyChanges = JSON.stringify(data.keyChanges || [])
+      existing.entityName = data.entityName
+      existing.updatedAt = Date.now()
+      await this.repo.save(existing)
+      return this.toDto(existing)
     }
+    return this.create(data)
   }
 
   private generateId(): string {
-    return `entity_state_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  private mapToSnapshot(row: any): EntityStateSnapshot {
-    return {
-      id: row.id,
-      projectId: row.project_id,
-      entityType: row.entity_type as EntityType,
-      entityId: row.entity_id,
-      entityName: row.entity_name,
-      chapterNumber: row.chapter_number,
-      stateSummary: row.state_summary,
-      keyChanges: this.parseKeyChanges(row.key_changes),
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }
+    return `entity_state_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }
 
   private parseKeyChanges(jsonStr: string | null): string[] {

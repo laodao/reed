@@ -2826,7 +2826,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       if (!dbManager.lwChapterStateSummaries) {
         return { success: false, error: '数据库未初始化' }
       }
-      const summaries = dbManager.lwChapterStateSummaries.getByProjectId(projectId)
+      const summaries = await dbManager.lwChapterStateSummaries.getByProjectId(projectId)
       return { success: true, data: summaries }
     } catch (error: any) {
       console.error('[IPC] 获取章节状态摘要列表失败:', error)
@@ -2841,7 +2841,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       if (!dbManager.lwChapterStateSummaries) {
         return { success: false, error: '数据库未初始化' }
       }
-      const summary = dbManager.lwChapterStateSummaries.getById(id)
+      const summary = await dbManager.lwChapterStateSummaries.getById(id)
       return { success: true, data: summary }
     } catch (error: any) {
       console.error('[IPC] 获取章节状态摘要失败:', error)
@@ -2856,7 +2856,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       if (!dbManager.lwChapterStateSummaries) {
         return { success: false, error: '数据库未初始化' }
       }
-      const summary = dbManager.lwChapterStateSummaries.getByOutlineId(outlineId)
+      const summary = await dbManager.lwChapterStateSummaries.getByOutlineId(outlineId)
       return { success: true, data: summary }
     } catch (error: any) {
       console.error('[IPC] 根据大纲获取章节状态摘要失败:', error)
@@ -2871,7 +2871,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       if (!dbManager.lwChapterStateSummaries) {
         return { success: false, error: '数据库未初始化' }
       }
-      const summary = dbManager.lwChapterStateSummaries.getLatest(projectId)
+      const summary = await dbManager.lwChapterStateSummaries.getLatest(projectId)
       return { success: true, data: summary }
     } catch (error: any) {
       console.error('[IPC] 获取最新章节状态摘要失败:', error)
@@ -2896,7 +2896,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       }
 
       // 获取上一章的状态摘要（用于传递给 AI）
-      const previousSummary = dbManager.lwChapterStateSummaries.getLatestBeforeChapter(projectId, chapterNumber)
+      const previousSummary = await dbManager.lwChapterStateSummaries.getLatestBeforeChapter(projectId, chapterNumber)
 
       const aiService = LongWritingAIService.getInstance()
       const result = await aiService.extractChapterStateSummary(
@@ -2941,7 +2941,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       if (!dbManager.lwChapterStateSummaries) {
         return { success: false, error: '数据库未初始化' }
       }
-      const summary = dbManager.lwChapterStateSummaries.upsert(data)
+      const summary = await dbManager.lwChapterStateSummaries.upsert(data)
       return { success: true, data: summary }
     } catch (error: any) {
       console.error('[IPC] 保存章节状态摘要失败:', error)
