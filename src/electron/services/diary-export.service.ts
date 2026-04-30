@@ -7,7 +7,7 @@ import { BrowserWindow } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
-import { DiaryService } from './diary.service'
+import { DiaryService } from '@core/services/diary.service'
 import { markdownToDocx } from '@core/utils/markdown-to-docx'
 import type { DiaryIpcResponse } from '@shared/types/diary.types'
 

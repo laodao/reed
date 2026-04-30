@@ -4,7 +4,6 @@
  * @description 处理文件上传、内容提取、网页抓取等功能
  */
 
-import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as https from 'https'

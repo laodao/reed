@@ -6,7 +6,7 @@
 
 import * as fs from 'fs'
 import * as path from 'path'
-import { app } from 'electron'
+import { getPathProvider } from '@core/interfaces/path.interface'
 
 /**
  * 缓存项
@@ -53,7 +53,7 @@ export class CacheService {
 
   private constructor(config: Partial<CacheConfig> = {}) {
     this.config = { ...DEFAULT_CACHE_CONFIG, ...config }
-    this.diskCachePath = config.diskCachePath || path.join(app.getPath('userData'), 'cache')
+    this.diskCachePath = config.diskCachePath || path.join(getPathProvider().getUserDataPath(), 'cache')
 
     // 确保磁盘缓存目录存在
     if (!fs.existsSync(this.diskCachePath)) {

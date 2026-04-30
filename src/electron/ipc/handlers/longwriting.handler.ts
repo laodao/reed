@@ -9,7 +9,7 @@ import * as path from 'path'
 import { getDatabaseManager } from '../../database'
 import { LongWritingService } from '@core/services/longwriting.service'
 import { LongWritingAIService } from '../../services/longwriting-ai.service'
-import { MaterialProcessorService } from '../../services/material-processor.service'
+import { MaterialProcessorService } from '@core/services/material-processor.service'
 import { markdownToDocx } from '@core/utils/markdown-to-docx'
 import {
   CreateProjectRequest,

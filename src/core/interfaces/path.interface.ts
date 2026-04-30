@@ -62,3 +62,24 @@ export interface IPathProvider {
    */
   getSubDirectoryPath(name: keyof SubDirectories): string
 }
+
+/**
+ * 全局 PathProvider 访问器：core 服务通过此访问器获取实例。
+ * 各运行环境（electron/web/node）需在初始化时调用 registerPathProvider 注册具体实现。
+ */
+export type PathProviderAccessor = () => IPathProvider
+
+let _pathProviderAccessor: PathProviderAccessor | null = null
+
+export function registerPathProvider(accessor: PathProviderAccessor): void {
+  _pathProviderAccessor = accessor
+}
+
+export function getPathProvider(): IPathProvider {
+  if (!_pathProviderAccessor) {
+    throw new Error(
+      '[IPathProvider] 未注册访问器：请在运行环境初始化时调用 registerPathProvider()',
+    )
+  }
+  return _pathProviderAccessor()
+}

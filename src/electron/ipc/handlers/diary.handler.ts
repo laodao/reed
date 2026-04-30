@@ -5,7 +5,7 @@
 
 import { ipcMain } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
-import { DiaryService } from '../../services/diary.service'
+import { DiaryService } from '@core/services/diary.service'
 import { DiaryExportService } from '../../services/diary-export.service'
 import type {
   CreateDiaryFolderRequest,

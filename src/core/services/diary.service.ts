@@ -4,11 +4,11 @@
  * @description 处理日记的核心业务逻辑，包括文件系统操作
  */
 
-import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
-import { getDatabaseManager } from '../database'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type {
+import { getPathProvider } from '@core/interfaces/path.interface'
   DiaryFolder,
   DiaryEntry,
   DiaryEntryListItem,
@@ -29,7 +29,7 @@ export class DiaryService {
 
   constructor() {
     // 日记根目录位于 userData 下
-    this.diaryRootPath = path.join(app.getPath('userData'), 'diary')
+    this.diaryRootPath = path.join(getPathProvider().getUserDataPath(), 'diary')
     this.ensureRootDirectory()
   }
 
@@ -49,7 +49,7 @@ export class DiaryService {
    */
   async getFolders(parentId?: string): Promise<DiaryIpcResponse<DiaryFolder[]>> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       const folders = parentId
         ? await db.diaryFolders!.findChildren(parentId)
         : await db.diaryFolders!.findRootFolders()
@@ -65,7 +65,7 @@ export class DiaryService {
    */
   async getAllFolders(): Promise<DiaryIpcResponse<DiaryFolder[]>> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       const folders = await db.diaryFolders!.findAll()
       return { success: true, data: folders }
     } catch (error) {
@@ -79,7 +79,7 @@ export class DiaryService {
    */
   async createFolder(request: CreateDiaryFolderRequest): Promise<DiaryIpcResponse<DiaryFolder>> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
 
       // 检查同名目录是否存在
       if (await db.diaryFolders!.existsByName(request.name, request.parentId)) {
@@ -125,7 +125,7 @@ export class DiaryService {
    */
   async updateFolder(id: string, request: UpdateDiaryFolderRequest): Promise<DiaryIpcResponse<void>> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       const folder = await db.diaryFolders!.findById(id)
       if (!folder) {
         return { success: false, error: '目录不存在' }
@@ -163,7 +163,7 @@ export class DiaryService {
    */
   async deleteFolder(id: string): Promise<DiaryIpcResponse<void>> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       const folder = await db.diaryFolders!.findById(id)
       if (!folder) {
         return { success: false, error: '目录不存在' }
@@ -190,7 +190,7 @@ export class DiaryService {
    */
   async getEntries(folderId: string): Promise<DiaryIpcResponse<DiaryEntryListItem[]>> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       const entries = await db.diaryEntries!.findByFolder(folderId)
       return { success: true, data: entries }
     } catch (error) {
@@ -204,7 +204,7 @@ export class DiaryService {
    */
   async getEntry(id: string): Promise<DiaryIpcResponse<DiaryEntry>> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       const entry = await db.diaryEntries!.findById(id)
       if (!entry) {
         return { success: false, error: '日记不存在' }
@@ -228,7 +228,7 @@ export class DiaryService {
    */
   async createEntry(request: CreateDiaryEntryRequest): Promise<DiaryIpcResponse<DiaryEntry>> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
 
       // 验证目录存在
       const folder = await db.diaryFolders!.findById(request.folderId)
@@ -272,7 +272,7 @@ export class DiaryService {
    */
   async updateEntry(id: string, request: UpdateDiaryEntryRequest): Promise<DiaryIpcResponse<void>> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       const entry = await db.diaryEntries!.findById(id)
       if (!entry) {
         return { success: false, error: '日记不存在' }
@@ -318,7 +318,7 @@ export class DiaryService {
    */
   async deleteEntry(id: string): Promise<DiaryIpcResponse<void>> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       const entry = await db.diaryEntries!.findById(id)
       if (!entry) {
         return { success: false, error: '日记不存在' }
@@ -345,7 +345,7 @@ export class DiaryService {
    */
   async moveEntry(id: string, targetFolderId: string): Promise<DiaryIpcResponse<void>> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       const entry = await db.diaryEntries!.findById(id)
       if (!entry) {
         return { success: false, error: '日记不存在' }
@@ -382,7 +382,7 @@ export class DiaryService {
    */
   async search(keyword: string, folderId?: string): Promise<DiaryIpcResponse<DiaryEntryListItem[]>> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       const entries = await db.diaryEntries!.search(keyword, folderId)
       return { success: true, data: entries }
     } catch (error) {
@@ -398,7 +398,7 @@ export class DiaryService {
    */
   async getBacklinks(entryId: string): Promise<DiaryIpcResponse<BacklinkInfo[]>> {
     try {
-      const db = getDatabaseManager()
+      const db = getCoreDatabaseManager()
       const backlinks = await db.diaryLinks!.findIncomingLinks(entryId)
       return { success: true, data: backlinks }
     } catch (error) {
@@ -411,7 +411,7 @@ export class DiaryService {
    * 解析内容中的双向链接
    */
   private parseAndStoreLinks(entryId: string, content: string): void {
-    const db = getDatabaseManager()
+    const db = getCoreDatabaseManager()
 
     // 匹配 [[标题]] 或 [[标题#锚点]] 或 [[标题|显示文本]]
     const linkRegex = /\[\[([^\]|#]+)(?:#([^\]|]+))?(?:\|([^\]]+))?\]\]/g
