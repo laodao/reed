@@ -4,7 +4,7 @@
  * @description 管理后台任务的执行队列，支持并发控制、优先级、重试
  */
 
-import { BrowserWindow } from 'electron'
+import { getEventEmitter } from '@core/interfaces/event.interface'
 
 /**
  * 任务状态
@@ -72,7 +72,6 @@ export class TaskQueueService {
   private runningTasks: Map<string, Task> = new Map()
   private config: QueueConfig
   private taskIdCounter: number = 0
-  private window: BrowserWindow | null = null
 
   private constructor(config: Partial<QueueConfig> = {}) {
     this.config = { ...DEFAULT_QUEUE_CONFIG, ...config }
@@ -86,13 +85,6 @@ export class TaskQueueService {
       TaskQueueService.instance = new TaskQueueService(config)
     }
     return TaskQueueService.instance
-  }
-
-  /**
-   * 设置窗口引用（用于发送事件）
-   */
-  setWindow(window: BrowserWindow): void {
-    this.window = window
   }
 
   /**
@@ -365,15 +357,17 @@ export class TaskQueueService {
    * 通知前端任务更新
    */
   private notifyTaskUpdate(event: string, task: Task): void {
-    if (this.window && !this.window.isDestroyed()) {
-      this.window.webContents.send(event, {
+    try {
+      getEventEmitter().emit(event, {
         id: task.id,
         type: task.type,
         status: task.status,
         progress: task.progress,
         error: task.error,
-        result: task.result
+        result: task.result,
       })
+    } catch (err) {
+      // EventEmitter 未注册时静默忽略（如单元测试场景）
     }
   }
 
