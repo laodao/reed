@@ -7,8 +7,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import * as crypto from 'crypto'
-// electron-log replaced by console for cross-platform compatibility
-const log = console
+// electron-log 已被替换为跨平台 console wrapper（见下方 logger 常量）
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { OSSConfigRepository } from '@core/database/repositories/oss-config.repository'
@@ -21,9 +20,13 @@ import type {
   VolcengineTOSConfig
 } from '@shared/types/oss.types'
 
-// 配置 electron-log
-log.transports.console.level = false
-const logger = log.scope('OSSService')
+// 跨平台 logger：包装 console，简单实现 electron-log 风格的 .scope/.info/.error API
+const logger = {
+  info: (...args: any[]) => console.log('[OSSService]', ...args),
+  warn: (...args: any[]) => console.warn('[OSSService]', ...args),
+  error: (...args: any[]) => console.error('[OSSService]', ...args),
+  debug: (...args: any[]) => console.debug('[OSSService]', ...args),
+}
 
 /**
  * OSS 上传服务

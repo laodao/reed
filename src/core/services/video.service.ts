@@ -6,8 +6,7 @@
 
 import * as path from 'path'
 import * as fs from 'fs'
-// electron-log replaced by console for cross-platform compatibility
-const log = console
+// electron-log 已被替换为跨平台 console wrapper（见下方 logger 常量）
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
@@ -28,9 +27,13 @@ import type {
   VideoProviderType
 } from '@shared/types/video-provider.types'
 
-// 配置 electron-log：禁用控制台输出，避免 EPIPE 错误
-log.transports.console.level = false
-const logger = log.scope('VideoService')
+// 跨平台 logger：包装 console，简单实现 electron-log 风格的 .scope/.info/.error API
+const logger = {
+  info: (...args: any[]) => console.log('[VideoService]', ...args),
+  warn: (...args: any[]) => console.warn('[VideoService]', ...args),
+  error: (...args: any[]) => console.error('[VideoService]', ...args),
+  debug: (...args: any[]) => console.debug('[VideoService]', ...args),
+}
 
 /**
  * 正在进行的轮询任务
