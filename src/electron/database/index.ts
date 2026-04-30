@@ -3649,8 +3649,8 @@ export class DatabaseManager {
       throw new Error('[DatabaseManager] dataSource 未初始化')
     }
 
-    this.settings = new SettingsRepository(this.db)
-    // Phase 1 试点：apiKeys 已切到 TypeORM
+    // Phase 1 试点：settings / apiKeys 已切到 TypeORM
+    this.settings = new SettingsRepository(this.dataSource)
     this.apiKeys = new ApiKeyRepository(this.dataSource)
     this.dialogs = new DialogRepository(this.db)
     this.messages = new MessageRepository(this.db)

@@ -1,77 +1,80 @@
 /**
  * 设置数据访问层
  * @module database/repositories/settings
- * @description 提供设置的数据库操作
+ * @description 键值对设置存储，value 列以 JSON 字符串保存。
+ *              基于 TypeORM 实现，支持 sqlite / postgres 双方言。
+ *
+ * 注意：v2 起方法签名从同步改为异步（返回 Promise）。
+ *      所有调用点必须加 await。详见 Spec §1.3。
  */
 
-import Database from 'better-sqlite3'
-import type { ThemeMode, Language, FontSize } from '@shared/types'
+import type { DataSource } from 'typeorm'
+import { SettingsEntity } from '../entities/settings.entity'
+import { BaseRepository } from '../base-repository'
 
-/**
- * 设置数据仓库
- */
-export class SettingsRepository {
-  private db: Database.Database
+interface SettingsDto {
+  key: string
+  value: unknown
+}
 
-  constructor(db: Database.Database) {
-    this.db = db
+export class SettingsRepository extends BaseRepository<
+  SettingsEntity,
+  SettingsDto
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, SettingsEntity)
   }
 
-  /**
-   * 获取设置值
-   * @param key - 设置键名
-   * @returns any | null - 设置值
-   * @description 从数据库获取单个设置值
-   */
-  get(key: string): any | null {
-    const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined
-    if (row) {
-      try {
-        return JSON.parse(row.value)
-      } catch {
-        return row.value
-      }
+  protected toDto(e: SettingsEntity): SettingsDto {
+    return { key: e.key, value: this.parseValue(e.value) }
+  }
+
+  private parseValue(raw: string): unknown {
+    try {
+      return JSON.parse(raw)
+    } catch {
+      return raw
     }
-    return null
   }
 
   /**
-   * 设置值
-   * @param key - 设置键名
-   * @param value - 设置值
-   * @returns void
-   * @description 保存设置值到数据库
+   * 获取设置值。返回 JSON 反序列化的值；不存在返回 null。
    */
-  set(key: string, value: any): void {
-    const jsonValue = JSON.stringify(value)
-    this.db.prepare(
-      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))"
-    ).run(key, jsonValue)
+  async get(key: string): Promise<unknown> {
+    const entity = await this.repo.findOne({
+      where: { key } as any,
+      select: ['value'],
+    })
+    if (!entity) return null
+    return this.parseValue(entity.value)
   }
 
   /**
-   * 获取所有设置
-   * @returns Record<string, any> - 设置键值对
+   * 保存设置值（upsert，value 以 JSON 字符串存储）。
    */
-  getAll(): Record<string, any> {
-    const rows = this.db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[]
-    const settings: Record<string, any> = {}
-    for (const row of rows) {
-      try {
-        settings[row.key] = JSON.parse(row.value)
-      } catch {
-        settings[row.key] = row.value
-      }
+  async set(key: string, value: unknown): Promise<void> {
+    await this.repo.save({
+      key,
+      value: JSON.stringify(value),
+    })
+  }
+
+  /**
+   * 获取所有设置（值已反序列化）。
+   */
+  async getAll(): Promise<Record<string, unknown>> {
+    const entities = await this.repo.find({ select: ['key', 'value'] })
+    const out: Record<string, unknown> = {}
+    for (const e of entities) {
+      out[e.key] = this.parseValue(e.value)
     }
-    return settings
+    return out
   }
 
   /**
-   * 删除设置
-   * @param key - 设置键名
-   * @returns void
+   * 删除设置。
    */
-  delete(key: string): void {
-    this.db.prepare('DELETE FROM settings WHERE key = ?').run(key)
+  async delete(key: string): Promise<void> {
+    await this.deleteByWhere({ key } as any)
   }
 }

@@ -5,3 +5,4 @@
  */
 
 export { ApiKeyEntity } from './api-key.entity'
+export { SettingsEntity } from './settings.entity'

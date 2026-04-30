@@ -32,10 +32,10 @@ async function handleGetSettings(
     }
 
     if (key) {
-      const value = dbManager.settings.get(key)
+      const value = await dbManager.settings.get(key)
       return { success: true, data: value }
     } else {
-      const allSettings = dbManager.settings.getAll()
+      const allSettings = await dbManager.settings.getAll()
       return { success: true, data: allSettings }
     }
   } catch (error) {
@@ -60,7 +60,7 @@ async function handleSetSettings(
       return { success: false }
     }
 
-    dbManager.settings.set(payload.key, payload.value)
+    await dbManager.settings.set(payload.key, payload.value)
     return { success: true }
   } catch (error) {
     console.error('保存设置失败:', error)

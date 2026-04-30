@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createDataSource } from '@core/database/data-source'
 import { checkSchemaDrift } from '@core/database/schema-drift'
 import { ApiKeyRepository } from '@core/database/repositories/api-key.repository'
+import { SettingsRepository } from '@core/database/repositories/settings.repository'
 
 const RAW_DDL_API_KEYS = `
   CREATE TABLE IF NOT EXISTS api_keys (
@@ -23,6 +24,14 @@ const RAW_DDL_API_KEYS = `
     encrypted_key TEXT NOT NULL,
     endpoint TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`
+
+const RAW_DDL_SETTINGS = `
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `
@@ -65,6 +74,55 @@ describe('TypeORM bootstrap 集成（带 raw DDL 的 sqlite 文件）', () => {
       expect(await repo.exists('openai')).toBe(true)
       await repo.delete('openai')
       expect(await repo.exists('openai')).toBe(false)
+    } finally {
+      await ds.destroy()
+    }
+  })
+
+  it('现有 raw DDL 创建的 settings 表与 SettingsEntity 0 漂移，且能读写 JSON', async () => {
+    const rawDb = new Database(dbPath)
+    rawDb.prepare(RAW_DDL_SETTINGS).run()
+    rawDb.close()
+
+    const ds = await createDataSource({
+      config: { type: 'sqlite', database: dbPath, enableWal: true },
+    })
+
+    try {
+      const report = await checkSchemaDrift(ds)
+      expect(report.missingColumns).toEqual([])
+      expect(report.typeMismatches).toEqual([])
+      expect(report.ok).toBe(true)
+
+      const repo = new SettingsRepository(ds)
+      await repo.set('theme', 'dark')
+      await repo.set('cfg', { font: 'noto', size: 14 })
+      expect(await repo.get('theme')).toBe('dark')
+      expect(await repo.get('cfg')).toEqual({ font: 'noto', size: 14 })
+      expect(await repo.getAll()).toEqual({
+        theme: 'dark',
+        cfg: { font: 'noto', size: 14 },
+      })
+    } finally {
+      await ds.destroy()
+    }
+  })
+
+  it('两张表共存场景（api_keys + settings）漂移检查全 ok', async () => {
+    const rawDb = new Database(dbPath)
+    rawDb.prepare(RAW_DDL_API_KEYS).run()
+    rawDb.prepare(RAW_DDL_SETTINGS).run()
+    rawDb.close()
+
+    const ds = await createDataSource({
+      config: { type: 'sqlite', database: dbPath, enableWal: true },
+    })
+
+    try {
+      const report = await checkSchemaDrift(ds)
+      expect(report.ok).toBe(true)
+      expect(report.missingColumns).toEqual([])
+      expect(report.typeMismatches).toEqual([])
     } finally {
       await ds.destroy()
     }
