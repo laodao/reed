@@ -2748,7 +2748,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       if (!dbManager.lwProjectModelConfigs) {
         return { success: false, error: '数据库未初始化' }
       }
-      const configs = dbManager.lwProjectModelConfigs.getByProjectId(projectId)
+      const configs = await dbManager.lwProjectModelConfigs.getByProjectId(projectId)
       return { success: true, data: configs }
     } catch (error: any) {
       console.error('[IPC] 获取步骤模型配置失败:', error)
@@ -2763,7 +2763,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       if (!dbManager.lwProjectModelConfigs) {
         return { success: false, error: '数据库未初始化' }
       }
-      const config = dbManager.lwProjectModelConfigs.getByProjectAndStage(projectId, stage as any)
+      const config = await dbManager.lwProjectModelConfigs.getByProjectAndStage(projectId, stage as any)
       return { success: true, data: config }
     } catch (error: any) {
       console.error('[IPC] 获取步骤模型配置失败:', error)
@@ -2784,7 +2784,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       if (!dbManager.lwProjectModelConfigs) {
         return { success: false, error: '数据库未初始化' }
       }
-      const config = dbManager.lwProjectModelConfigs.upsert(projectId, stage as any, providerConfigId, modelId)
+      const config = await dbManager.lwProjectModelConfigs.upsert(projectId, stage as any, providerConfigId, modelId)
       return { success: true, data: config }
     } catch (error: any) {
       console.error('[IPC] 设置步骤模型配置失败:', error)
@@ -2803,13 +2803,13 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       if (!dbManager.lwProjectModelConfigs) {
         return { success: false, error: '数据库未初始化' }
       }
-      dbManager.lwProjectModelConfigs.upsertMany(configs.map(c => ({
+      await dbManager.lwProjectModelConfigs.upsertMany(configs.map(c => ({
         projectId,
         stage: c.stage as any,
         providerConfigId: c.providerConfigId,
         modelId: c.modelId
       })))
-      const result = dbManager.lwProjectModelConfigs.getByProjectId(projectId)
+      const result = await dbManager.lwProjectModelConfigs.getByProjectId(projectId)
       return { success: true, data: result }
     } catch (error: any) {
       console.error('[IPC] 批量设置步骤模型配置失败:', error)

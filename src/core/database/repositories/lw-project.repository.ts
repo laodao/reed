@@ -1,153 +1,105 @@
 /**
  * 长文写作项目仓库
  * @module database/repositories/lw-project.repository
+ * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import Database from 'better-sqlite3'
+import type { DataSource } from 'typeorm'
 import {
   LongWritingProject,
   CreateProjectRequest,
-  UpdateProjectRequest
+  UpdateProjectRequest,
 } from '@shared/types/longwriting.types'
+import { LwProjectEntity } from '../entities/lw-project.entity'
+import { BaseRepository } from '../base-repository'
 
-/**
- * 长文写作项目仓库
- */
-export class LwProjectRepository {
-  constructor(private db: Database.Database) {}
-
-  /**
-   * 获取所有项目
-   */
-  getAll(): LongWritingProject[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_projects ORDER BY created_at DESC
-    `)
-    const rows = stmt.all() as any[]
-    return rows.map(this.mapToProject)
+export class LwProjectRepository extends BaseRepository<
+  LwProjectEntity,
+  LongWritingProject
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, LwProjectEntity)
   }
 
-  /**
-   * 根据 ID 获取项目
-   */
-  getById(id: string): LongWritingProject | null {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_projects WHERE id = ?
-    `)
-    const row = stmt.get(id) as any
-    return row ? this.mapToProject(row) : null
+  private toEpochMs(v: Date | number | string | null | undefined): number {
+    if (v === null || v === undefined) return 0
+    if (v instanceof Date) return v.getTime()
+    if (typeof v === 'number') return v
+    return new Date(v).getTime()
   }
 
-  /**
-   * 根据类型获取项目
-   */
-  getByType(type: 'story' | 'comment'): LongWritingProject[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_projects WHERE type = ? ORDER BY created_at DESC
-    `)
-    const rows = stmt.all(type) as any[]
-    return rows.map(this.mapToProject)
-  }
-
-  /**
-   * 创建项目
-   */
-  create(data: CreateProjectRequest): LongWritingProject {
-    const id = this.generateId()
-    const now = Date.now()
-    const initialStage = data.type === 'story' ? 'overview' : 'topic'
-
-    const stmt = this.db.prepare(`
-      INSERT INTO lw_projects (id, name, type, stage, progress, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 0, ?, ?)
-    `)
-
-    stmt.run(id, data.name, data.type, initialStage, now, now)
-
+  protected toDto(e: LwProjectEntity): LongWritingProject {
     return {
+      id: e.id,
+      name: e.name,
+      type: e.type as LongWritingProject['type'],
+      stage: e.stage as LongWritingProject['stage'],
+      progress: e.progress,
+      createdAt: this.toEpochMs(e.createdAt),
+      updatedAt: this.toEpochMs(e.updatedAt),
+    }
+  }
+
+  async getAll(): Promise<LongWritingProject[]> {
+    return this.findManyByWhere({} as any, { createdAt: 'DESC' })
+  }
+
+  async getById(id: string): Promise<LongWritingProject | null> {
+    return this.findOneByWhere({ id } as any)
+  }
+
+  async getByType(
+    type: 'story' | 'comment',
+  ): Promise<LongWritingProject[]> {
+    return this.findManyByWhere({ type } as any, { createdAt: 'DESC' })
+  }
+
+  async create(data: CreateProjectRequest): Promise<LongWritingProject> {
+    const id = this.generateId()
+    const now = new Date()
+    const initialStage = data.type === 'story' ? 'overview' : 'topic'
+    const entity = this.repo.create({
       id,
       name: data.name,
       type: data.type,
       stage: initialStage,
       progress: 0,
       createdAt: now,
-      updatedAt: now
-    }
+      updatedAt: now,
+    })
+    const saved = await this.repo.save(entity)
+    return this.toDto(saved)
   }
 
-  /**
-   * 更新项目
-   */
-  update(id: string, data: UpdateProjectRequest): LongWritingProject | null {
-    const project = this.getById(id)
-    if (!project) return null
+  async update(
+    id: string,
+    data: UpdateProjectRequest,
+  ): Promise<LongWritingProject | null> {
+    const existing = await this.repo.findOne({ where: { id } as any })
+    if (!existing) return null
 
-    const updates: string[] = []
-    const values: any[] = []
+    let changed = false
+    if (data.name !== undefined) { existing.name = data.name; changed = true }
+    if (data.stage !== undefined) { existing.stage = data.stage; changed = true }
+    if (data.progress !== undefined) { existing.progress = data.progress; changed = true }
 
-    if (data.name !== undefined) {
-      updates.push('name = ?')
-      values.push(data.name)
-    }
-    if (data.stage !== undefined) {
-      updates.push('stage = ?')
-      values.push(data.stage)
-    }
-    if (data.progress !== undefined) {
-      updates.push('progress = ?')
-      values.push(data.progress)
-    }
+    if (!changed) return this.toDto(existing)
 
-    if (updates.length === 0) return project
-
-    updates.push('updated_at = ?')
-    values.push(Date.now())
-    values.push(id)
-
-    const stmt = this.db.prepare(`
-      UPDATE lw_projects SET ${updates.join(', ')} WHERE id = ?
-    `)
-    stmt.run(...values)
-
-    return this.getById(id)
+    existing.updatedAt = new Date()
+    const saved = await this.repo.save(existing)
+    return this.toDto(saved)
   }
 
-  /**
-   * 删除项目
-   */
-  delete(id: string): boolean {
-    const stmt = this.db.prepare('DELETE FROM lw_projects WHERE id = ?')
-    const result = stmt.run(id)
-    return result.changes > 0
+  async delete(id: string): Promise<boolean> {
+    const result = await this.repo.delete({ id } as any)
+    return (result.affected ?? 0) > 0
   }
 
-  /**
-   * 检查项目是否存在
-   */
-  exists(id: string): boolean {
-    const stmt = this.db.prepare('SELECT 1 FROM lw_projects WHERE id = ?')
-    return !!stmt.get(id)
+  async exists(id: string): Promise<boolean> {
+    return this.existsByWhere({ id } as any)
   }
 
-  /**
-   * 生成唯一 ID
-   */
   private generateId(): string {
-    return `lw_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  /**
-   * 映射数据库行到项目对象
-   */
-  private mapToProject(row: any): LongWritingProject {
-    return {
-      id: row.id,
-      name: row.name,
-      type: row.type,
-      stage: row.stage,
-      progress: row.progress,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }
+    return `lw_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }
 }

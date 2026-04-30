@@ -3670,8 +3670,8 @@ export class DatabaseManager {
     this.portraitCharacters = new PortraitCharacterRepository(this.dataSource)
     this.portraitVariants = new PortraitVariantRepository(this.dataSource)
     this.searchEngineConfigs = new SearchEngineConfigRepository(this.dataSource)
-    this.lwProjects = new LwProjectRepository(this.db)
-    this.lwStoryOverviews = new LwStoryOverviewRepository(this.db)
+    this.lwProjects = new LwProjectRepository(this.dataSource)
+    this.lwStoryOverviews = new LwStoryOverviewRepository(this.dataSource)
     this.lwCharacters = new LwCharacterRepository(this.db)
     this.lwOutlines = new LwOutlineRepository(this.db)
     this.lwChapters = new LwChapterRepository(this.db)
@@ -3704,7 +3704,7 @@ export class DatabaseManager {
     // 初始化临时实体模板仓库
     this.lwTempCharacterTemplates = new LwTempCharacterTemplateRepository(this.db)
     this.lwTempLocationTemplates = new LwTempLocationTemplateRepository(this.db)
-    this.lwProjectModelConfigs = new LwProjectModelConfigRepository(this.db)
+    this.lwProjectModelConfigs = new LwProjectModelConfigRepository(this.dataSource)
 
     this.diaryFolders = new DiaryFolderRepository(this.dataSource)
     this.diaryEntries = new DiaryEntryRepository(this.dataSource)

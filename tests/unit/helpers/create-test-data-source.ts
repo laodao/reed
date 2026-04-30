@@ -1,11 +1,14 @@
 /**
  * 双方言测试 DataSource fixture
  * @description sqlite 用 :memory:，postgres 用 Docker 容器（独立 schema 隔离）。
+ *              PG 路径用 DataSource.schema 选项保证连接池所有连接都使用测试 schema，
+ *              避免 SET search_path 在不同连接上失效的问题。
  */
 
 import { DataSource } from 'typeorm'
 import { createDataSource } from '@core/database/data-source'
 import type { DbDialect } from '@core/database/config'
+import * as entities from '@core/database/entities'
 
 export interface TestDataSource {
   ds: DataSource
@@ -18,7 +21,7 @@ export interface TestDataSource {
 /**
  * 创建测试 DataSource。
  * - sqlite: :memory: + synchronize:true 自动建 schema
- * - postgres: 创建独立 schema（test_<ts>_<rand>），结束 DROP SCHEMA
+ * - postgres: 创建独立 schema（test_<ts>_<rand>），通过 DataSource.schema 绑定
  */
 export async function createTestDataSource(
   dialect: DbDialect,
@@ -32,22 +35,58 @@ export async function createTestDataSource(
   }
 
   const schemaName = `test_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-  const ds = await createDataSource({
-    config: {
-      type: 'postgres',
-      host: process.env.PGHOST ?? 'localhost',
-      port: Number(process.env.PGPORT ?? 5432),
-      username: process.env.PGUSER ?? 'postgres',
-      password: process.env.PGPASSWORD ?? 'postgres',
-      database: process.env.PGDATABASE ?? 'the_bot_test',
-    },
-    synchronizeOnInit: false,
+  const host = process.env.PGHOST ?? 'localhost'
+  const port = Number(process.env.PGPORT ?? 5432)
+  const username = process.env.PGUSER ?? 'postgres'
+  const password = process.env.PGPASSWORD ?? 'postgres'
+  const database = process.env.PGDATABASE ?? 'the_bot_test'
+
+  // 第一步：用 public schema 连接创建 schema
+  const adminDs = new DataSource({
+    type: 'postgres',
+    host,
+    port,
+    username,
+    password,
+    database,
+    synchronize: false,
   })
-  await ds.query(`CREATE SCHEMA "${schemaName}"`)
-  await ds.query(`SET search_path TO "${schemaName}"`)
+  await adminDs.initialize()
+  await adminDs.query(`CREATE SCHEMA "${schemaName}"`)
+  await adminDs.destroy()
+
+  // 第二步：用绑定到测试 schema 的 DataSource，连接池每个连接默认使用此 schema
+  const allEntities = Object.values(entities).filter(
+    v => typeof v === 'function',
+  ) as Function[]
+  const ds = new DataSource({
+    type: 'postgres',
+    host,
+    port,
+    username,
+    password,
+    database,
+    schema: schemaName,
+    entities: allEntities as any,
+    synchronize: false,
+  })
+  await ds.initialize()
   await ds.synchronize()
+
   return wrap(ds, async () => {
-    await ds.query(`DROP SCHEMA "${schemaName}" CASCADE`)
+    // 关闭测试 DS 后再用 admin 连接 DROP
+    const cleanupDs = new DataSource({
+      type: 'postgres',
+      host,
+      port,
+      username,
+      password,
+      database,
+      synchronize: false,
+    })
+    await cleanupDs.initialize()
+    await cleanupDs.query(`DROP SCHEMA "${schemaName}" CASCADE`)
+    await cleanupDs.destroy()
   })
 }
 
@@ -65,9 +104,9 @@ function wrap(
     },
     async close() {
       try {
-        if (beforeClose) await beforeClose()
-      } finally {
         await ds.destroy()
+      } finally {
+        if (beforeClose) await beforeClose()
       }
     },
   }

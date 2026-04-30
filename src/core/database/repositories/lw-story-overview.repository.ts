@@ -1,174 +1,135 @@
 /**
  * 故事概要仓库
  * @module database/repositories/lw-story-overview.repository
+ * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import Database from 'better-sqlite3'
-import {
+import type { DataSource } from 'typeorm'
+import { StoryOverview } from '@shared/types/longwriting.types'
+import { LwStoryOverviewEntity } from '../entities/lw-story-overview.entity'
+import { BaseRepository } from '../base-repository'
+
+export class LwStoryOverviewRepository extends BaseRepository<
+  LwStoryOverviewEntity,
   StoryOverview
-} from '@shared/types/longwriting.types'
-
-export class LwStoryOverviewRepository {
-  constructor(private db: Database.Database) {}
-
-  /**
-   * 根据项目 ID 获取概要
-   */
-  getByProjectId(projectId: string): StoryOverview | null {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_story_overviews WHERE project_id = ?
-    `)
-    const row = stmt.get(projectId) as any
-    return row ? this.mapToOverview(row) : null
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, LwStoryOverviewEntity)
   }
 
-  /**
-   * 根据 ID 获取概要
-   */
-  getById(id: string): StoryOverview | null {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_story_overviews WHERE id = ?
-    `)
-    const row = stmt.get(id) as any
-    return row ? this.mapToOverview(row) : null
+  private toEpochMs(v: Date | number | string | null | undefined): number {
+    if (v === null || v === undefined) return 0
+    if (v instanceof Date) return v.getTime()
+    if (typeof v === 'number') return v
+    return new Date(v).getTime()
   }
 
-  /**
-   * 创建概要
-   */
-  create(projectId: string): StoryOverview {
-    const id = this.generateId()
-    const now = Date.now()
-
-    const stmt = this.db.prepare(`
-      INSERT INTO lw_story_overviews (id, project_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?)
-    `)
-    stmt.run(id, projectId, now, now)
-
+  protected toDto(e: LwStoryOverviewEntity): StoryOverview {
     return {
+      id: e.id,
+      projectId: e.projectId,
+      storyType: (e.storyType as StoryOverview['storyType']) || 'other',
+      title: e.title || '',
+      coreIdea: e.coreIdea || '',
+      style: e.style || undefined,
+      targetReader: e.targetReader || undefined,
+      estimatedLength: e.estimatedLength || undefined,
+      otherRequirements: e.otherRequirements || undefined,
+      summary: e.summary || '',
+      coreConflict: e.coreConflict || '',
+      keyCharacters: ((e.keyCharacters as string[] | null) ?? []) as string[],
+      keyLocations: ((e.keyLocations as string[] | null) ?? []) as string[],
+      estimatedChapters: e.estimatedChapters || 0,
+      enabledFeatures: ((e.enabledFeatures as string[] | null) ?? []) as string[],
+      isLocked: e.isLocked === 1,
+      isSaved: e.isSaved === 1,
+      createdAt: this.toEpochMs(e.createdAt),
+      updatedAt: this.toEpochMs(e.updatedAt),
+    } as StoryOverview
+  }
+
+  async getByProjectId(projectId: string): Promise<StoryOverview | null> {
+    return this.findOneByWhere({ projectId } as any)
+  }
+
+  async getById(id: string): Promise<StoryOverview | null> {
+    return this.findOneByWhere({ id } as any)
+  }
+
+  async create(projectId: string): Promise<StoryOverview> {
+    const id = this.generateId()
+    const now = new Date()
+    const entity = this.repo.create({
       id,
       projectId,
-      storyType: 'other',
-      title: '',
-      coreIdea: '',
-      style: undefined,
-      targetReader: undefined,
-      estimatedLength: undefined,
-      otherRequirements: undefined,
-      summary: '',
-      coreConflict: '',
-      keyCharacters: [],
-      keyLocations: [],
-      estimatedChapters: 0,
-      enabledFeatures: [],
-      isLocked: false,
-      isSaved: false,
+      storyType: null,
+      title: null,
+      summary: null,
+      coreConflict: null,
+      theme: null,
+      estimatedChapters: null,
+      isLocked: 0,
+      coreIdea: null,
+      style: null,
+      targetReader: null,
+      estimatedLength: null,
+      otherRequirements: null,
+      keyCharacters: [] as string[],
+      keyLocations: [] as string[],
+      isSaved: 0,
+      enabledFeatures: [] as string[],
       createdAt: now,
-      updatedAt: now
-    }
+      updatedAt: now,
+    })
+    const saved = await this.repo.save(entity)
+    return this.toDto(saved)
   }
 
-  /**
-   * 更新概要
-   */
-  update(id: string, data: Partial<StoryOverview>): StoryOverview | null {
-    const overview = this.getById(id)
-    if (!overview) return null
+  async update(
+    id: string,
+    data: Partial<StoryOverview>,
+  ): Promise<StoryOverview | null> {
+    const existing = await this.repo.findOne({ where: { id } as any })
+    if (!existing) return null
 
-    const updates: string[] = []
-    const values: any[] = []
+    let changed = false
+    if (data.storyType !== undefined) { existing.storyType = data.storyType ?? null; changed = true }
+    if (data.title !== undefined) { existing.title = data.title ?? null; changed = true }
+    if (data.coreIdea !== undefined) { existing.coreIdea = data.coreIdea ?? null; changed = true }
+    if (data.style !== undefined) { existing.style = data.style ?? null; changed = true }
+    if (data.targetReader !== undefined) { existing.targetReader = data.targetReader ?? null; changed = true }
+    if (data.estimatedLength !== undefined) { existing.estimatedLength = data.estimatedLength ?? null; changed = true }
+    if (data.otherRequirements !== undefined) { existing.otherRequirements = data.otherRequirements ?? null; changed = true }
+    if (data.summary !== undefined) { existing.summary = data.summary ?? null; changed = true }
+    if (data.coreConflict !== undefined) { existing.coreConflict = data.coreConflict ?? null; changed = true }
+    if (data.keyCharacters !== undefined) { existing.keyCharacters = data.keyCharacters ?? []; changed = true }
+    if (data.keyLocations !== undefined) { existing.keyLocations = data.keyLocations ?? []; changed = true }
+    if (data.estimatedChapters !== undefined) { existing.estimatedChapters = data.estimatedChapters ?? null; changed = true }
+    if (data.enabledFeatures !== undefined) { existing.enabledFeatures = data.enabledFeatures ?? []; changed = true }
+    if (data.isLocked !== undefined) { existing.isLocked = data.isLocked ? 1 : 0; changed = true }
+    if (data.isSaved !== undefined) { existing.isSaved = data.isSaved ? 1 : 0; changed = true }
 
-    const fields = [
-      'story_type', 'title', 'core_idea', 'style', 'target_reader',
-      'estimated_length', 'other_requirements', 'summary', 'core_conflict',
-      'key_characters', 'key_locations', 'estimated_chapters', 'enabled_features', 'is_locked', 'is_saved'
-    ]
+    if (!changed) return this.toDto(existing)
 
-    const dataMap: Record<string, any> = {
-      story_type: data.storyType,
-      title: data.title,
-      core_idea: data.coreIdea,
-      style: data.style,
-      target_reader: data.targetReader,
-      estimated_length: data.estimatedLength,
-      other_requirements: data.otherRequirements,
-      summary: data.summary,
-      core_conflict: data.coreConflict,
-      key_characters: data.keyCharacters ? JSON.stringify(data.keyCharacters) : undefined,
-      key_locations: data.keyLocations ? JSON.stringify(data.keyLocations) : undefined,
-      estimated_chapters: data.estimatedChapters,
-      enabled_features: data.enabledFeatures ? JSON.stringify(data.enabledFeatures) : undefined,
-      is_locked: data.isLocked ? 1 : 0,
-      is_saved: data.isSaved ? 1 : 0
-    }
-
-    for (const field of fields) {
-      if (dataMap[field] !== undefined) {
-        updates.push(`${field} = ?`)
-        values.push(dataMap[field])
-      }
-    }
-
-    if (updates.length === 0) return overview
-
-    updates.push('updated_at = ?')
-    values.push(Date.now())
-    values.push(id)
-
-    const stmt = this.db.prepare(`
-      UPDATE lw_story_overviews SET ${updates.join(', ')} WHERE id = ?
-    `)
-    stmt.run(...values)
-
-    return this.getById(id)
+    existing.updatedAt = new Date()
+    const saved = await this.repo.save(existing)
+    return this.toDto(saved)
   }
 
-  /**
-   * 删除概要
-   */
-  delete(id: string): boolean {
-    const stmt = this.db.prepare('DELETE FROM lw_story_overviews WHERE id = ?')
-    const result = stmt.run(id)
-    return result.changes > 0
+  async delete(id: string): Promise<boolean> {
+    const result = await this.repo.delete({ id } as any)
+    return (result.affected ?? 0) > 0
   }
 
-  /**
-   * 锁定/解锁概要
-   */
-  setLocked(id: string, locked: boolean): boolean {
-    const stmt = this.db.prepare(`
-      UPDATE lw_story_overviews SET is_locked = ?, updated_at = ? WHERE id = ?
-    `)
-    const result = stmt.run(locked ? 1 : 0, Date.now(), id)
-    return result.changes > 0
+  async setLocked(id: string, locked: boolean): Promise<boolean> {
+    const result = await this.repo.update({ id } as any, {
+      isLocked: locked ? 1 : 0,
+      updatedAt: new Date(),
+    })
+    return (result.affected ?? 0) > 0
   }
 
   private generateId(): string {
-    return `overview_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  private mapToOverview(row: any): StoryOverview {
-    return {
-      id: row.id,
-      projectId: row.project_id,
-      storyType: row.story_type || 'other',
-      title: row.title || '',
-      coreIdea: row.core_idea || '',
-      style: row.style || undefined,
-      targetReader: row.target_reader || undefined,
-      estimatedLength: row.estimated_length || undefined,
-      otherRequirements: row.other_requirements || undefined,
-      summary: row.summary || '',
-      coreConflict: row.core_conflict || '',
-      keyCharacters: JSON.parse(row.key_characters || '[]'),
-      keyLocations: JSON.parse(row.key_locations || '[]'),
-      estimatedChapters: row.estimated_chapters || 0,
-      enabledFeatures: JSON.parse(row.enabled_features || '[]'),
-      isLocked: !!row.is_locked,
-      isSaved: !!row.is_saved,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }
+    return `overview_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }
 }

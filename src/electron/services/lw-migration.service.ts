@@ -165,7 +165,7 @@ export class LwMigrationService {
       this.backupDatabase()
     }
 
-    const projects = db.lwProjects.getAll()
+    const projects = await db.lwProjects.getAll()
     const results: MigrationResult[] = []
 
     for (const project of projects) {

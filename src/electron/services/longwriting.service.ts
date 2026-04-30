@@ -84,7 +84,7 @@ export class LongWritingService {
     if (!this.db.lwProjects) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwProjects.getAll()
+    return this.await db.lwProjects.getAll()
   }
 
   /**
@@ -94,7 +94,7 @@ export class LongWritingService {
     if (!this.db.lwProjects) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwProjects.getById(id)
+    return this.await db.lwProjects.getById(id)
   }
 
   /**
@@ -106,11 +106,11 @@ export class LongWritingService {
     }
 
     // 创建项目
-    const project = this.db.lwProjects.create(data)
+    const project = this.await db.lwProjects.create(data)
 
     // 如果是故事类，创建对应的概要记录
     if (data.type === 'story' && this.db.lwStoryOverviews) {
-      this.db.lwStoryOverviews.create(project.id)
+      this.await db.lwStoryOverviews.create(project.id)
     }
 
     // 初始化项目的默认类型配置
@@ -129,7 +129,7 @@ export class LongWritingService {
     if (!this.db.lwProjects) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwProjects.update(id, data)
+    return this.await db.lwProjects.update(id, data)
   }
 
   /**
@@ -139,7 +139,7 @@ export class LongWritingService {
     if (!this.db.lwProjects) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwProjects.delete(id)
+    return this.await db.lwProjects.delete(id)
   }
 
   // ==================== 故事概要 ====================
@@ -151,7 +151,7 @@ export class LongWritingService {
     if (!this.db.lwStoryOverviews) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwStoryOverviews.getByProjectId(projectId)
+    return this.await db.lwStoryOverviews.getByProjectId(projectId)
   }
 
   /**
@@ -168,10 +168,10 @@ export class LongWritingService {
     let overview = await this.getStoryOverview(projectId)
     if (!overview) {
       // 如果不存在，创建新的
-      overview = this.db.lwStoryOverviews.create(projectId)
+      overview = this.await db.lwStoryOverviews.create(projectId)
     }
 
-    return this.db.lwStoryOverviews.update(overview.id, data)
+    return this.await db.lwStoryOverviews.update(overview.id, data)
   }
 
   /**
@@ -185,7 +185,7 @@ export class LongWritingService {
     const overview = await this.getStoryOverview(projectId)
     if (!overview) return false
 
-    return this.db.lwStoryOverviews.setLocked(overview.id, locked)
+    return this.await db.lwStoryOverviews.setLocked(overview.id, locked)
   }
 
   // ==================== 角色管理 ====================

@@ -1,125 +1,106 @@
 /**
  * 项目步骤模型配置仓库
  * @module database/repositories/lw-project-model-config.repository
+ * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import Database from 'better-sqlite3'
-import { StageModelConfig, StoryStage, CommentStage } from '@shared/types/longwriting.types'
+import type { DataSource } from 'typeorm'
+import {
+  StageModelConfig,
+  StoryStage,
+  CommentStage,
+} from '@shared/types/longwriting.types'
+import { LwProjectModelConfigEntity } from '../entities/lw-project-model-config.entity'
+import { BaseRepository } from '../base-repository'
 
-export class LwProjectModelConfigRepository {
-  constructor(private db: Database.Database) {}
-
-  /**
-   * 根据项目ID获取所有步骤模型配置
-   */
-  getByProjectId(projectId: string): StageModelConfig[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_project_model_configs WHERE project_id = ?
-    `)
-    const rows = stmt.all(projectId) as any[]
-    return rows.map(row => this.mapToConfig(row))
+export class LwProjectModelConfigRepository extends BaseRepository<
+  LwProjectModelConfigEntity,
+  StageModelConfig
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, LwProjectModelConfigEntity)
   }
 
-  /**
-   * 根据项目和步骤获取模型配置
-   */
-  getByProjectAndStage(projectId: string, stage: StoryStage | CommentStage): StageModelConfig | null {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_project_model_configs WHERE project_id = ? AND stage = ?
-    `)
-    const row = stmt.get(projectId, stage) as any
-    return row ? this.mapToConfig(row) : null
+  protected toDto(e: LwProjectModelConfigEntity): StageModelConfig {
+    return {
+      id: e.id,
+      projectId: e.projectId,
+      stage: e.stage as StoryStage | CommentStage,
+      providerConfigId: e.providerConfigId,
+      modelId: e.modelId,
+      createdAt: e.createdAt,
+      updatedAt: e.updatedAt,
+    }
   }
 
-  /**
-   * 设置步骤模型配置（存在则更新，不存在则创建）
-   */
-  upsert(projectId: string, stage: StoryStage | CommentStage, providerConfigId: string, modelId: string): StageModelConfig {
+  async getByProjectId(projectId: string): Promise<StageModelConfig[]> {
+    return this.findManyByWhere({ projectId } as any)
+  }
+
+  async getByProjectAndStage(
+    projectId: string,
+    stage: StoryStage | CommentStage,
+  ): Promise<StageModelConfig | null> {
+    return this.findOneByWhere({ projectId, stage } as any)
+  }
+
+  async upsert(
+    projectId: string,
+    stage: StoryStage | CommentStage,
+    providerConfigId: string,
+    modelId: string,
+  ): Promise<StageModelConfig> {
     const now = Date.now()
     const id = `modelconfig_${projectId}_${stage}`
-
-    const stmt = this.db.prepare(`
-      INSERT INTO lw_project_model_configs (id, project_id, stage, provider_config_id, model_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(project_id, stage) DO UPDATE SET
-        provider_config_id = excluded.provider_config_id,
-        model_id = excluded.model_id,
-        updated_at = excluded.updated_at
-    `)
-
-    stmt.run(id, projectId, stage, providerConfigId, modelId, now, now)
-
-    return {
+    const existing = await this.repo.findOne({
+      where: { projectId, stage } as any,
+    })
+    if (existing) {
+      existing.providerConfigId = providerConfigId
+      existing.modelId = modelId
+      existing.updatedAt = now
+      const saved = await this.repo.save(existing)
+      return this.toDto(saved)
+    }
+    const entity = this.repo.create({
       id,
       projectId,
       stage,
       providerConfigId,
       modelId,
       createdAt: now,
-      updatedAt: now
-    }
+      updatedAt: now,
+    })
+    const saved = await this.repo.save(entity)
+    return this.toDto(saved)
   }
 
-  /**
-   * 批量设置步骤模型配置
-   */
-  upsertMany(configs: Array<{
-    projectId: string
-    stage: StoryStage | CommentStage
-    providerConfigId: string
-    modelId: string
-  }>): void {
-    const now = Date.now()
-    const stmt = this.db.prepare(`
-      INSERT INTO lw_project_model_configs (id, project_id, stage, provider_config_id, model_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(project_id, stage) DO UPDATE SET
-        provider_config_id = excluded.provider_config_id,
-        model_id = excluded.model_id,
-        updated_at = excluded.updated_at
-    `)
-
-    const transaction = this.db.transaction(() => {
-      for (const config of configs) {
-        const id = `modelconfig_${config.projectId}_${config.stage}`
-        stmt.run(id, config.projectId, config.stage, config.providerConfigId, config.modelId, now, now)
+  async upsertMany(
+    configs: Array<{
+      projectId: string
+      stage: StoryStage | CommentStage
+      providerConfigId: string
+      modelId: string
+    }>,
+  ): Promise<void> {
+    if (configs.length === 0) return
+    await this.dataSource.transaction(async () => {
+      for (const c of configs) {
+        await this.upsert(c.projectId, c.stage, c.providerConfigId, c.modelId)
       }
     })
-
-    transaction()
   }
 
-  /**
-   * 删除步骤模型配置
-   */
-  delete(projectId: string, stage: StoryStage | CommentStage): boolean {
-    const stmt = this.db.prepare(`
-      DELETE FROM lw_project_model_configs WHERE project_id = ? AND stage = ?
-    `)
-    const result = stmt.run(projectId, stage)
-    return result.changes > 0
+  async delete(
+    projectId: string,
+    stage: StoryStage | CommentStage,
+  ): Promise<boolean> {
+    const result = await this.repo.delete({ projectId, stage } as any)
+    return (result.affected ?? 0) > 0
   }
 
-  /**
-   * 删除项目的所有模型配置
-   */
-  deleteByProjectId(projectId: string): boolean {
-    const stmt = this.db.prepare(`
-      DELETE FROM lw_project_model_configs WHERE project_id = ?
-    `)
-    const result = stmt.run(projectId)
-    return result.changes > 0
-  }
-
-  private mapToConfig(row: any): StageModelConfig {
-    return {
-      id: row.id,
-      projectId: row.project_id,
-      stage: row.stage,
-      providerConfigId: row.provider_config_id,
-      modelId: row.model_id,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }
+  async deleteByProjectId(projectId: string): Promise<boolean> {
+    const result = await this.repo.delete({ projectId } as any)
+    return (result.affected ?? 0) > 0
   }
 }
