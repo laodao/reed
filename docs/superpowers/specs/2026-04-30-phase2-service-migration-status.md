@@ -5,7 +5,12 @@
 > 将 src/electron/services 目录下的所有 service 迁移到 src/core/services 目录下，
 > 通过抽象接口解除 Electron 平台耦合，为 Phase 3（Web 端支持）铺路。
 
-## 状态：本次会话基本完成（剩余的均为强 Electron 平台特性）
+## 状态：完成 ✅（electron-vite build 通过，574 测试稳定通过）
+
+> **关键里程碑**（标签 `phase2/build-passes`）：
+> - `npm run build` 端到端成功（main / preload / renderer 三端均通过 rollup 打包）
+> - tsc --noEmit 错误数从 235 降至 82（所有 Phase 2 引入的错误已修复，剩余为预先存在的共享类型问题）
+> - 单测：30 套件 / 574 用例 跨 SQLite × PostgreSQL 稳定通过
 
 ### 已迁移到 core/services（25 个 + 3 个 platform abstraction 实现 + 4 个 dedup）
 
@@ -86,6 +91,12 @@
 - `phase2/event-emitter-abstraction`：IEventEmitter 全局访问器
 - `phase2/in-progress`：早期 status 文档
 - `phase2/batch-4-streaming-services`：所有流式 AI 服务
+- `phase2/done-essentially`：基本完成（仍有相对引用 build 失败问题）
+- `phase2/core-fully-platform-clean`：core 层零 better-sqlite3 句柄
+- `phase2/done`：删除 9 个文件（chunk-splitter dedup 后）
+- `phase2/tsc-fixes`：修复 sync→async 转换的 tsc 错误（235 → 158）
+- `phase2/tsc-batch-2`：修复字段名/方法名 tsc 错误（158 → 82）
+- `phase2/build-passes`：electron-vite 端到端 build 通过 ✅
 
 ## 下一步：Phase 3（Web 端支持）
 
