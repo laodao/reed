@@ -79,6 +79,12 @@ import { OSSConfigRepository } from '@core/database/repositories/oss-config.repo
 import { DataPathService } from '../services/data-path.service'
 import { LanceDBService } from '../services/lance-db.service'
 
+// === Phase 1: TypeORM 双方言迁移 ===
+import type { DataSource } from 'typeorm'
+import { createDataSource } from '@core/database/data-source'
+import { loadDbConfigFromEnv, type DbConfig } from '@core/database/config'
+import { checkSchemaDrift } from '@core/database/schema-drift'
+
 /**
  * 数据库管理器
  * 使用 better-sqlite3 实现，每次写入都实时持久化到磁盘
@@ -86,6 +92,8 @@ import { LanceDBService } from '../services/lance-db.service'
 export class DatabaseManager {
   private static instance: DatabaseManager
   public db: Database.Database | null = null
+  /** TypeORM DataSource —— 已迁移到 TypeORM 的 Repository 用此连接（迁移期与 db 并存） */
+  public dataSource: DataSource | null = null
   private dbPath: string
   private lastBackupPath: string | null = null
 
@@ -215,6 +223,9 @@ export class DatabaseManager {
     // 初始化表结构
     this.initTables()
 
+    // === Phase 1: 建立 TypeORM DataSource（与 better-sqlite3 并存）===
+    await this.initTypeOrmDataSource()
+
     // 初始化仓库
     this.initRepositories()
 
@@ -231,6 +242,46 @@ export class DatabaseManager {
     this.initDictionary()
 
     console.log('[DatabaseManager] 数据库初始化完成:', this.dbPath)
+  }
+
+  /**
+   * 初始化 TypeORM DataSource（Phase 1 迁移期与 better-sqlite3 并存）
+   *
+   * 流程：
+   * 1. 从环境变量加载配置；未设则用本地 sqlite 文件（路径已由 initTables 阶段建好）。
+   * 2. 创建 DataSource。
+   * 3. 漂移检查（仅 sqlite + 已存在文件场景）：发现差异时备份并抛错，绝不让 synchronize 偷改用户库。
+   * 4. **不**调用 synchronize：本期 schema 由现有 raw DDL（initTables）负责；
+   *    Phase 1 收尾批次（删除 raw DDL）时再切换到 synchronize 接管。
+   */
+  private async initTypeOrmDataSource(): Promise<void> {
+    const cfg: DbConfig = loadDbConfigFromEnv() ?? {
+      type: 'sqlite' as const,
+      database: this.dbPath,
+      enableWal: true,
+    }
+
+    this.dataSource = await createDataSource({ config: cfg })
+
+    if (cfg.type === 'sqlite' && fs.existsSync(cfg.database)) {
+      const report = await checkSchemaDrift(this.dataSource)
+      if (!report.ok) {
+        const backupPath = `${cfg.database}.bak.${Date.now()}`
+        try {
+          fs.copyFileSync(cfg.database, backupPath)
+          this.lastBackupPath = backupPath
+        } catch (e) {
+          console.error('[DatabaseManager] 备份失败:', e)
+        }
+        console.error('[DatabaseManager] Schema 漂移检测:', report)
+        console.error('[DatabaseManager] DB 备份路径:', backupPath)
+        throw new Error(
+          `Schema drift detected (backup: ${backupPath}): ${JSON.stringify(report)}`,
+        )
+      }
+    }
+
+    console.log('[DatabaseManager] TypeORM DataSource 初始化完成')
   }
 
   /**
@@ -3594,9 +3645,13 @@ export class DatabaseManager {
    */
   private initRepositories(): void {
     if (!this.db) return
+    if (!this.dataSource) {
+      throw new Error('[DatabaseManager] dataSource 未初始化')
+    }
 
     this.settings = new SettingsRepository(this.db)
-    this.apiKeys = new ApiKeyRepository(this.db)
+    // Phase 1 试点：apiKeys 已切到 TypeORM
+    this.apiKeys = new ApiKeyRepository(this.dataSource)
     this.dialogs = new DialogRepository(this.db)
     this.messages = new MessageRepository(this.db)
     this.roles = new RoleRepository(this.db)
@@ -3711,6 +3766,12 @@ export class DatabaseManager {
    * 关闭数据库连接
    */
   async close(): Promise<void> {
+    // 关闭 TypeORM DataSource
+    if (this.dataSource && this.dataSource.isInitialized) {
+      await this.dataSource.destroy()
+      this.dataSource = null
+    }
+
     // 关闭 SQLite
     if (this.db) {
       this.db.close()

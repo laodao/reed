@@ -1,85 +1,75 @@
 /**
- * API密钥数据访问层
+ * API 密钥数据访问层
  * @module database/repositories/api-key
- * @description 提供API密钥的数据库操作，密钥以加密形式存储
+ * @description 提供 API 密钥的数据库操作，密钥以加密形式存储。
+ *              基于 TypeORM 实现，支持 sqlite / postgres 双方言。
  */
 
-import Database from 'better-sqlite3'
-import type { ApiKeyInfo } from '@shared/types'
+import type { DataSource } from 'typeorm'
+import { ApiKeyEntity } from '../entities/api-key.entity'
+import { BaseRepository } from '../base-repository'
 
-/**
- * API密钥数据仓库
- */
-export class ApiKeyRepository {
-  private db: Database.Database
+interface ApiKeyDto {
+  encryptedKey: string
+  endpoint?: string
+}
 
-  constructor(db: Database.Database) {
-    this.db = db
+export class ApiKeyRepository extends BaseRepository<ApiKeyEntity, ApiKeyDto> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, ApiKeyEntity)
+  }
+
+  protected toDto(e: ApiKeyEntity): ApiKeyDto {
+    return {
+      encryptedKey: e.encryptedKey,
+      endpoint: e.endpoint || undefined,
+    }
   }
 
   /**
-   * 获取所有已配置的密钥
-   * @returns Promise<Array<{ provider: string, hasEndpoint: boolean }>>
+   * 获取所有已配置的密钥摘要
    */
   async getAll(): Promise<Array<{ provider: string; hasEndpoint: boolean }>> {
-    const rows = this.db.prepare('SELECT provider, endpoint FROM api_keys').all() as { provider: string; endpoint: string | null }[]
-    return rows.map(row => ({
-      provider: row.provider,
-      hasEndpoint: !!row.endpoint
+    const entities = await this.repo.find({ select: ['provider', 'endpoint'] })
+    return entities.map(e => ({
+      provider: e.provider,
+      hasEndpoint: !!e.endpoint,
     }))
   }
 
   /**
-   * 保存密钥
-   * @param provider - 提供商标识
-   * @param encryptedKey - 加密后的密钥
-   * @param endpoint - 自定义端点（可选）
-   * @returns Promise<void>
+   * 保存（upsert）密钥
    */
-  async save(provider: string, encryptedKey: string, endpoint?: string): Promise<void> {
-    this.db.prepare(
-      `INSERT OR REPLACE INTO api_keys (provider, encrypted_key, endpoint, updated_at)
-       VALUES (?, ?, ?, datetime('now'))`
-    ).run(provider, encryptedKey, endpoint || null)
+  async save(
+    provider: string,
+    encryptedKey: string,
+    endpoint?: string,
+  ): Promise<void> {
+    await this.repo.save({
+      provider,
+      encryptedKey,
+      endpoint: endpoint ?? null,
+    })
   }
 
   /**
    * 获取密钥
-   * @param provider - 提供商标识
-   * @returns Promise<{ encryptedKey: string, endpoint?: string } | null>
    */
-  async get(provider: string): Promise<{ encryptedKey: string; endpoint?: string } | null> {
-    const row = this.db.prepare(
-      'SELECT encrypted_key, endpoint FROM api_keys WHERE provider = ?'
-    ).get(provider) as { encrypted_key: string; endpoint: string | null } | undefined
-
-    if (row) {
-      return {
-        encryptedKey: row.encrypted_key,
-        endpoint: row.endpoint || undefined
-      }
-    }
-    return null
+  async get(provider: string): Promise<ApiKeyDto | null> {
+    return this.findOneByWhere({ provider } as any)
   }
 
   /**
    * 删除密钥
-   * @param provider - 提供商标识
-   * @returns Promise<void>
    */
   async delete(provider: string): Promise<void> {
-    this.db.prepare('DELETE FROM api_keys WHERE provider = ?').run(provider)
+    await this.deleteByWhere({ provider } as any)
   }
 
   /**
    * 检查密钥是否存在
-   * @param provider - 提供商标识
-   * @returns Promise<boolean>
    */
   async exists(provider: string): Promise<boolean> {
-    const row = this.db.prepare(
-      'SELECT COUNT(*) as count FROM api_keys WHERE provider = ?'
-    ).get(provider) as { count: number } | undefined
-    return (row?.count || 0) > 0
+    return this.existsByWhere({ provider } as any)
   }
 }
