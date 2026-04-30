@@ -133,8 +133,8 @@ async function handleListProjects(
     }
 
     const projects = longWritingProjectId
-      ? db.videoProjects.getByLongWritingProjectId(longWritingProjectId)
-      : db.videoProjects.getAll()
+      ? await db.videoProjects.getByLongWritingProjectId(longWritingProjectId)
+      : await db.videoProjects.getAll()
 
     console.log('[StoryToVideoHandler] 查询到的项目数量:', projects.length)
     console.log('[StoryToVideoHandler] 项目列表:', JSON.stringify(projects, null, 2))
@@ -156,7 +156,7 @@ async function handleGetProject(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const project = db.videoProjects.getById(projectId)
+    const project = await db.videoProjects.getById(projectId)
     if (!project) {
       return { success: false, error: '项目不存在' }
     }
@@ -179,7 +179,7 @@ async function handleCreateProject(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const project = db.videoProjects.create({
+    const project = await db.videoProjects.create({
       name,
       longWritingProjectId: longWritingProjectId || undefined,  // 空字符串转为 undefined
       config
@@ -202,7 +202,7 @@ async function handleUpdateProject(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const project = db.videoProjects.update(projectId, data)
+    const project = await db.videoProjects.update(projectId, data)
     if (!project) {
       return { success: false, error: '项目不存在' }
     }
@@ -223,7 +223,7 @@ async function handleDeleteProject(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const success = db.videoProjects.delete(projectId)
+    const success = await db.videoProjects.delete(projectId)
     return { success, data: { deleted: success } }
   } catch (error: any) {
     return { success: false, error: error.message || '删除项目失败' }
@@ -551,7 +551,7 @@ async function handleListEpisodes(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const episodes = db.videoEpisodes.getByProjectId(projectId)
+    const episodes = await db.videoEpisodes.getByProjectId(projectId)
     console.log('[StoryToVideoHandler] 查询到的剧集数量:', episodes.length)
     console.log('[StoryToVideoHandler] 剧集列表:', JSON.stringify(episodes, null, 2))
     return { success: true, data: episodes }
@@ -571,7 +571,7 @@ async function handleGetEpisode(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const episode = db.videoEpisodes.getById(episodeId)
+    const episode = await db.videoEpisodes.getById(episodeId)
     if (!episode) {
       return { success: false, error: '剧集不存在' }
     }
@@ -622,7 +622,7 @@ async function handleCreateEpisode(
     }
 
     console.log('[handleCreateEpisode] 创建剧集...')
-    const episode = db.videoEpisodes.create({
+    const episode = await db.videoEpisodes.create({
       projectId,
       sourceType: data.sourceType,
       outlineId: data.outlineId,
@@ -678,7 +678,7 @@ async function handleCreateEpisode(
         console.log('[handleCreateEpisode] 实体创建完成:', entityResult)
 
         // 更新剧集记录，保存识别的实体信息
-        db.videoEpisodes.update(episode.id, {
+        await db.videoEpisodes.update(episode.id, {
           uploadedCharacters: characters,
           uploadedLocations: locations,
           uploadedItems: items
@@ -714,7 +714,7 @@ async function handleUpdateEpisode(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const episode = db.videoEpisodes.update(episodeId, data)
+    const episode = await db.videoEpisodes.update(episodeId, data)
     if (!episode) {
       return { success: false, error: '剧集不存在' }
     }
@@ -735,7 +735,7 @@ async function handleDeleteEpisode(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const success = db.videoEpisodes.delete(episodeId)
+    const success = await db.videoEpisodes.delete(episodeId)
     return { success, data: { deleted: success } }
   } catch (error: any) {
     return { success: false, error: error.message || '删除剧集失败' }
@@ -934,13 +934,13 @@ async function handleGenerateScript(
     }
 
     // 获取剧集信息
-    const episode = db.videoEpisodes.getById(episodeId)
+    const episode = await db.videoEpisodes.getById(episodeId)
     if (!episode) {
       return { success: false, error: '剧集不存在' }
     }
 
     // 获取项目信息
-    const project = db.videoProjects.getById(episode.projectId)
+    const project = await db.videoProjects.getById(episode.projectId)
     if (!project) {
       return { success: false, error: '项目不存在' }
     }
@@ -963,7 +963,7 @@ async function handleGenerateScript(
         )
 
         // 更新剧集的角色信息
-        db.videoEpisodes.update(episodeId, { uploadedCharacters: identifiedChars })
+        await db.videoEpisodes.update(episodeId, { uploadedCharacters: identifiedChars })
         episode.uploadedCharacters = identifiedChars
       }
 
@@ -1076,7 +1076,7 @@ async function handleGenerateScript(
       script = db.episodeScripts.update(script.id, { status: 'reviewing' })
 
       // 更新剧集的 scriptId
-      db.videoEpisodes.update(episode.id, { scriptId: script.id })
+      await db.videoEpisodes.update(episode.id, { scriptId: script.id })
     }
 
     // 删除旧场景（如果有）
@@ -1394,7 +1394,7 @@ async function handleGenerateStoryboardImage(
     if (db.episodeScripts) {
       const script = db.episodeScripts.getById(scene.episodeScriptId)
       if (script && db.videoEpisodes) {
-        const episode = db.videoEpisodes.getById(script.episodeId)
+        const episode = await db.videoEpisodes.getById(script.episodeId)
         if (episode) {
           const charBindings = db.characterBindings.getByProjectId(episode.projectId)
           characterBindings.push(...charBindings)
@@ -1475,7 +1475,7 @@ async function handleGenerateSceneImages(
     if (db.episodeScripts) {
       const script = db.episodeScripts.getById(scene.episodeScriptId)
       if (script && db.videoEpisodes) {
-        const episode = db.videoEpisodes.getById(script.episodeId)
+        const episode = await db.videoEpisodes.getById(script.episodeId)
         if (episode) {
           const charBindings = db.characterBindings.getByProjectId(episode.projectId)
           characterBindings.push(...charBindings)
@@ -1562,7 +1562,7 @@ async function handleGenerateAudio(
     if (db.episodeScripts) {
       const script = db.episodeScripts.getById(scene.episodeScriptId)
       if (script && db.videoEpisodes) {
-        const episode = db.videoEpisodes.getById(script.episodeId)
+        const episode = await db.videoEpisodes.getById(script.episodeId)
         if (episode) {
           projectId = episode.projectId
           const bindings = db.characterBindings.getByProjectId(projectId)
@@ -1692,7 +1692,7 @@ async function handleSynthesizeSceneVideo(
     if (db.episodeScripts) {
       const script = db.episodeScripts.getById(scene.episodeScriptId)
       if (script && db.videoEpisodes) {
-        const episode = db.videoEpisodes.getById(script.episodeId)
+        const episode = await db.videoEpisodes.getById(script.episodeId)
         if (episode) {
           projectId = episode.projectId
         }
@@ -1820,7 +1820,7 @@ async function handleSynthesizeStoryboardVideo(
     if (!db.videoProjects) {
       return { success: false, error: '数据库未初始化' }
     }
-    const project = db.videoProjects.getById(projectId)
+    const project = await db.videoProjects.getById(projectId)
     if (!project) {
       return { success: false, error: '项目不存在' }
     }

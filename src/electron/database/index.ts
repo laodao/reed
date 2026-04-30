@@ -3712,8 +3712,8 @@ export class DatabaseManager {
     this.diaryAttachments = new DiaryAttachmentRepository(this.dataSource)
 
     // 剧集制作相关
-    this.videoProjects = new VideoProjectRepository(this.db)
-    this.videoEpisodes = new VideoEpisodeRepository(this.db)
+    this.videoProjects = new VideoProjectRepository(this.dataSource)
+    this.videoEpisodes = new VideoEpisodeRepository(this.dataSource)
     this.episodeScripts = new EpisodeScriptRepository(this.db)
     this.sceneScripts = new SceneScriptRepository(this.db)
     this.storyboards = new StoryboardRepository(this.db)

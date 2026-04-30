@@ -1,27 +1,23 @@
 /**
  * 剧集项目仓库
  * @module database/repositories/video-project.repository
+ * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import Database from 'better-sqlite3'
+import type { DataSource } from 'typeorm'
 import {
   VideoProject,
   VideoProjectConfig,
-  VideoProjectRecord
 } from '@shared/types/story-to-video.types'
+import { VideoProjectEntity } from '../entities/video-project.entity'
+import { BaseRepository } from '../base-repository'
 
-/**
- * 创建剧集项目请求
- */
 export interface CreateVideoProjectRequest {
   name: string
-  longWritingProjectId?: string  // 可选，不关联长文项目时可不传
+  longWritingProjectId?: string
   config: VideoProjectConfig
 }
 
-/**
- * 更新剧集项目请求
- */
 export interface UpdateVideoProjectRequest {
   name?: string
   status?: VideoProject['status']
@@ -29,155 +25,102 @@ export interface UpdateVideoProjectRequest {
   longWritingProjectId?: string
 }
 
-/**
- * 剧集项目仓库
- */
-export class VideoProjectRepository {
-  constructor(private db: Database.Database) {}
-
-  /**
-   * 获取所有项目
-   */
-  getAll(): VideoProject[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM video_projects ORDER BY created_at DESC
-    `)
-    const rows = stmt.all() as VideoProjectRecord[]
-    return rows.map(this.mapToProject)
+export class VideoProjectRepository extends BaseRepository<
+  VideoProjectEntity,
+  VideoProject
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, VideoProjectEntity)
   }
 
-  /**
-   * 根据长文项目 ID 获取剧集项目列表
-   */
-  getByLongWritingProjectId(longWritingProjectId: string): VideoProject[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM video_projects WHERE long_writing_project_id = ? ORDER BY created_at DESC
-    `)
-    const rows = stmt.all(longWritingProjectId) as VideoProjectRecord[]
-    return rows.map(this.mapToProject)
+  private toEpochMs(v: Date | number | string | null | undefined): number {
+    if (v === null || v === undefined) return 0
+    if (v instanceof Date) return v.getTime()
+    if (typeof v === 'number') return v
+    return new Date(v).getTime()
   }
 
-  /**
-   * 根据 ID 获取项目
-   */
-  getById(id: string): VideoProject | null {
-    const stmt = this.db.prepare(`
-      SELECT * FROM video_projects WHERE id = ?
-    `)
-    const row = stmt.get(id) as VideoProjectRecord | undefined
-    return row ? this.mapToProject(row) : null
-  }
-
-  /**
-   * 创建项目
-   */
-  create(data: CreateVideoProjectRequest): VideoProject {
-    const id = this.generateId()
-    const now = Date.now()
-
-    const stmt = this.db.prepare(`
-      INSERT INTO video_projects (id, name, long_writing_project_id, status, config, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `)
-
-    stmt.run(
-      id,
-      data.name,
-      data.longWritingProjectId || null,  // 如果没有关联长文项目，则存储 NULL
-      'draft',
-      JSON.stringify(data.config),
-      now,
-      now
-    )
-
+  protected toDto(e: VideoProjectEntity): VideoProject {
     return {
+      id: e.id,
+      name: e.name,
+      longWritingProjectId: e.longWritingProjectId || undefined,
+      status: e.status as VideoProject['status'],
+      config: e.config as VideoProjectConfig,
+      createdAt: this.toEpochMs(e.createdAt),
+      updatedAt: this.toEpochMs(e.updatedAt),
+    }
+  }
+
+  async getAll(): Promise<VideoProject[]> {
+    return this.findManyByWhere({} as any, { createdAt: 'DESC' })
+  }
+
+  async getByLongWritingProjectId(
+    longWritingProjectId: string,
+  ): Promise<VideoProject[]> {
+    return this.findManyByWhere(
+      { longWritingProjectId } as any,
+      { createdAt: 'DESC' },
+    )
+  }
+
+  async getById(id: string): Promise<VideoProject | null> {
+    return this.findOneByWhere({ id } as any)
+  }
+
+  async create(data: CreateVideoProjectRequest): Promise<VideoProject> {
+    const id = this.generateId()
+    const now = new Date()
+    const entity = this.repo.create({
       id,
       name: data.name,
-      longWritingProjectId: data.longWritingProjectId,  // 保持可选
+      longWritingProjectId: data.longWritingProjectId ?? null,
       status: 'draft',
-      config: data.config,
+      config: data.config as Record<string, unknown>,
       createdAt: now,
-      updatedAt: now
-    }
+      updatedAt: now,
+    })
+    const saved = await this.repo.save(entity)
+    return this.toDto(saved)
   }
 
-  /**
-   * 更新项目
-   */
-  update(id: string, data: UpdateVideoProjectRequest): VideoProject | null {
-    const project = this.getById(id)
-    if (!project) return null
+  async update(
+    id: string,
+    data: UpdateVideoProjectRequest,
+  ): Promise<VideoProject | null> {
+    const existing = await this.repo.findOne({ where: { id } as any })
+    if (!existing) return null
 
-    const updates: string[] = []
-    const values: any[] = []
-
-    if (data.name !== undefined) {
-      updates.push('name = ?')
-      values.push(data.name)
-    }
-    if (data.status !== undefined) {
-      updates.push('status = ?')
-      values.push(data.status)
-    }
+    let changed = false
+    if (data.name !== undefined) { existing.name = data.name; changed = true }
+    if (data.status !== undefined) { existing.status = data.status; changed = true }
     if (data.config !== undefined) {
-      updates.push('config = ?')
-      values.push(JSON.stringify(data.config))
+      existing.config = data.config as Record<string, unknown>
+      changed = true
     }
     if (data.longWritingProjectId !== undefined) {
-      updates.push('long_writing_project_id = ?')
-      values.push(data.longWritingProjectId)
+      existing.longWritingProjectId = data.longWritingProjectId
+      changed = true
     }
 
-    if (updates.length === 0) return project
+    if (!changed) return this.toDto(existing)
 
-    updates.push('updated_at = ?')
-    values.push(Date.now())
-    values.push(id)
-
-    const stmt = this.db.prepare(`
-      UPDATE video_projects SET ${updates.join(', ')} WHERE id = ?
-    `)
-    stmt.run(...values)
-
-    return this.getById(id)
+    existing.updatedAt = new Date()
+    const saved = await this.repo.save(existing)
+    return this.toDto(saved)
   }
 
-  /**
-   * 删除项目
-   */
-  delete(id: string): boolean {
-    const stmt = this.db.prepare('DELETE FROM video_projects WHERE id = ?')
-    const result = stmt.run(id)
-    return result.changes > 0
+  async delete(id: string): Promise<boolean> {
+    const result = await this.repo.delete({ id } as any)
+    return (result.affected ?? 0) > 0
   }
 
-  /**
-   * 检查项目是否存在
-   */
-  exists(id: string): boolean {
-    const stmt = this.db.prepare('SELECT 1 FROM video_projects WHERE id = ?')
-    return !!stmt.get(id)
+  async exists(id: string): Promise<boolean> {
+    return this.existsByWhere({ id } as any)
   }
 
-  /**
-   * 生成唯一 ID
-   */
   private generateId(): string {
-    return `vp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  /**
-   * 映射数据库行到项目对象
-   */
-  private mapToProject(row: VideoProjectRecord): VideoProject {
-    return {
-      id: row.id,
-      name: row.name,
-      longWritingProjectId: row.long_writing_project_id || undefined,  // null 转为 undefined
-      status: row.status as VideoProject['status'],
-      config: JSON.parse(row.config) as VideoProjectConfig,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }
+    return `vp_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }
 }
