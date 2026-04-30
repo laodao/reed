@@ -4,13 +4,13 @@
  * @description 处理人像设计的核心服务
  */
 
-import { BrowserWindow } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
-import { getDatabaseManager } from '../database'
-import { SecureStorageService } from './secure-storage.service'
-import { DataPathService } from './data-path.service'
-import { ImageService } from './image.service'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { getEventEmitter } from '@core/interfaces/event.interface'
+import { getSecureStorage } from '@core/interfaces/storage.interface'
+import { getPathProvider } from '@core/interfaces/path.interface'
+import { ImageService } from '@core/services/image.service'
 import type {
   PortraitProject,
   PortraitCharacter,
@@ -147,7 +147,7 @@ export class PortraitService {
    * 创建项目
    */
   static async createProject(request: CreatePortraitProjectRequest): Promise<{ success: boolean; data?: PortraitProject; error?: string }> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.portraitProjects) {
       return { success: false, error: '数据库未初始化' }
@@ -166,7 +166,7 @@ export class PortraitService {
    * 获取项目列表
    */
   static async listProjects(page: number = 1, pageSize: number = 20): Promise<{ success: boolean; data?: { projects: PortraitProject[]; total: number }; error?: string }> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.portraitProjects) {
       return { success: false, error: '数据库未初始化' }
@@ -185,7 +185,7 @@ export class PortraitService {
    * 获取项目详情
    */
   static async getProject(id: string): Promise<{ success: boolean; data?: PortraitProject; error?: string }> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.portraitProjects) {
       return { success: false, error: '数据库未初始化' }
@@ -207,7 +207,7 @@ export class PortraitService {
    * 删除项目
    */
   static async deleteProject(id: string): Promise<{ success: boolean; error?: string }> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.portraitProjects || !dbManager.portraitCharacters || !dbManager.portraitVariants) {
       return { success: false, error: '数据库未初始化' }
@@ -238,7 +238,7 @@ export class PortraitService {
    * 更新项目（重命名等）
    */
   static async updateProject(request: UpdatePortraitProjectRequest): Promise<{ success: boolean; data?: PortraitProject; error?: string }> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.portraitProjects) {
       return { success: false, error: '数据库未初始化' }
@@ -262,7 +262,7 @@ export class PortraitService {
    * 创建角色
    */
   static async createCharacter(request: CreatePortraitCharacterRequest): Promise<{ success: boolean; data?: PortraitCharacter; error?: string }> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.portraitCharacters) {
       return { success: false, error: '数据库未初始化' }
@@ -281,7 +281,7 @@ export class PortraitService {
    * 获取项目的角色列表
    */
   static async listCharacters(projectId: string): Promise<{ success: boolean; data?: PortraitCharacter[]; error?: string }> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.portraitCharacters) {
       return { success: false, error: '数据库未初始化' }
@@ -300,7 +300,7 @@ export class PortraitService {
    * 获取角色详情
    */
   static async getCharacter(id: string): Promise<{ success: boolean; data?: PortraitCharacter; error?: string }> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.portraitCharacters) {
       return { success: false, error: '数据库未初始化' }
@@ -322,7 +322,7 @@ export class PortraitService {
    * 更新角色
    */
   static async updateCharacter(request: UpdatePortraitCharacterRequest): Promise<{ success: boolean; data?: PortraitCharacter; error?: string }> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.portraitCharacters) {
       return { success: false, error: '数据库未初始化' }
@@ -344,7 +344,7 @@ export class PortraitService {
    * 删除角色
    */
   static async deleteCharacter(id: string): Promise<{ success: boolean; error?: string }> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.portraitCharacters || !dbManager.portraitVariants) {
       return { success: false, error: '数据库未初始化' }
@@ -374,7 +374,7 @@ export class PortraitService {
    * 获取角色的变体列表
    */
   static async listVariants(characterId: string): Promise<{ success: boolean; data?: PortraitVariant[]; error?: string }> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.portraitVariants) {
       return { success: false, error: '数据库未初始化' }
@@ -397,13 +397,11 @@ export class PortraitService {
   /**
    * 生成人物形象
    */
-  static async generatePortrait(
-    window: BrowserWindow,
-    request: GeneratePortraitRequest
+  static async generatePortrait(    request: GeneratePortraitRequest
   ): Promise<GeneratePortraitResponse> {
     console.log('[PortraitService.generatePortrait] 开始生成人物')
 
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.portraitCharacters || !dbManager.portraitVariants) {
       return { success: false, error: '数据库未初始化' }
@@ -422,15 +420,15 @@ export class PortraitService {
       // 为每个角度生成图像
       const angles = request.config.angles
       const variants: PortraitVariant[] = []
-      const dataPathService = DataPathService.getInstance()
-      const userDataPath = dataPathService.getDataPath()
+      const __pp = getPathProvider()
+      const userDataPath = __pp.getDataPath()
 
       // 记录失败的角度
       const failedAngles: string[] = []
       const failedErrors: string[] = []
 
       // 发送进度事件
-      this.sendPortraitEvent(window, {
+      this.sendPortraitEvent({
         type: 'generation-started',
         characterId: character.id,
         angles: angles
@@ -440,7 +438,7 @@ export class PortraitService {
         const angle = angles[i]
 
         // 发送进度
-        this.sendPortraitEvent(window, {
+        this.sendPortraitEvent({
           type: 'generation-progress',
           characterId: character.id,
           angle: angle,
@@ -459,7 +457,7 @@ export class PortraitService {
         // 调用图像生成
         const imageWidth = request.config.width || 1024
         const imageHeight = request.config.height || 1024
-        const imageResult = await ImageService.generateImage(window, {
+        const imageResult = await ImageService.generateImage({
           providerConfigId: request.providerId,
           model: request.modelId,
           prompt: fullPrompt,
@@ -512,7 +510,7 @@ export class PortraitService {
       }
 
       // 发送完成事件
-      this.sendPortraitEvent(window, {
+      this.sendPortraitEvent({
         type: 'generation-completed',
         characterId: character.id,
         variants: variants
@@ -542,13 +540,11 @@ export class PortraitService {
   /**
    * 换衣功能
    */
-  static async changeClothes(
-    window: BrowserWindow,
-    request: ChangeClothesRequest
+  static async changeClothes(    request: ChangeClothesRequest
   ): Promise<ChangeClothesResponse> {
     console.log('[PortraitService.changeClothes] 开始换衣')
 
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.portraitCharacters || !dbManager.portraitVariants) {
       return { success: false, error: '数据库未初始化' }
@@ -591,7 +587,7 @@ export class PortraitService {
           const imageWidth = baseVariant.config?.width || 1920
           const imageHeight = baseVariant.config?.height || 1920
 
-          const imageResult = await ImageService.generateImage(window, {
+          const imageResult = await ImageService.generateImage({
             providerConfigId: character.providerId,
             model: character.modelId,
             prompt: fullPrompt,
@@ -645,7 +641,7 @@ export class PortraitService {
         const imageWidth = baseVariant.config?.width || 1920
         const imageHeight = baseVariant.config?.height || 1920
 
-        const imageResult = await ImageService.generateImage(window, {
+        const imageResult = await ImageService.generateImage({
           providerConfigId: character.providerId,
           model: character.modelId,
           prompt: fullPrompt,
@@ -695,13 +691,11 @@ export class PortraitService {
   /**
    * 换背景功能
    */
-  static async changeBackground(
-    window: BrowserWindow,
-    request: ChangeBackgroundRequest
+  static async changeBackground(    request: ChangeBackgroundRequest
   ): Promise<ChangeBackgroundResponse> {
     console.log('[PortraitService.changeBackground] 开始换背景')
 
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.portraitCharacters || !dbManager.portraitVariants) {
       return { success: false, error: '数据库未初始化' }
@@ -767,7 +761,7 @@ export class PortraitService {
           const imageWidth = baseVariant.config?.width || 1920
           const imageHeight = baseVariant.config?.height || 1920
 
-          const imageResult = await ImageService.generateImage(window, {
+          const imageResult = await ImageService.generateImage({
             providerConfigId: character.providerId,
             model: character.modelId,
             prompt: fullPrompt,
@@ -822,7 +816,7 @@ export class PortraitService {
         const imageWidth = baseVariant.config?.width || 1920
         const imageHeight = baseVariant.config?.height || 1920
 
-        const imageResult = await ImageService.generateImage(window, {
+        const imageResult = await ImageService.generateImage({
           providerConfigId: character.providerId,
           model: character.modelId,
           prompt: fullPrompt,
@@ -876,7 +870,7 @@ export class PortraitService {
    * 删除变体
    */
   static async deleteVariant(id: string): Promise<{ success: boolean; error?: string }> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.portraitVariants) {
       return { success: false, error: '数据库未初始化' }
@@ -899,13 +893,11 @@ export class PortraitService {
   /**
    * 生成多角度（第二步）
    */
-  static async generateAngles(
-    window: BrowserWindow,
-    request: GenerateAnglesRequest
+  static async generateAngles(    request: GenerateAnglesRequest
   ): Promise<GenerateAnglesResponse> {
     console.log('[PortraitService.generateAngles] 开始生成多角度')
 
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.portraitCharacters || !dbManager.portraitVariants) {
       return { success: false, error: '数据库未初始化' }
@@ -946,7 +938,7 @@ export class PortraitService {
       }
 
       // 发送进度事件
-      this.sendPortraitEvent(window, {
+      this.sendPortraitEvent({
         type: 'generation-started',
         characterId: request.characterId,
         angles: request.angles
@@ -966,7 +958,7 @@ export class PortraitService {
       for (let i = 0; i < request.angles.length; i++) {
         const angle = request.angles[i]
 
-        this.sendPortraitEvent(window, {
+        this.sendPortraitEvent({
           type: 'generation-progress',
           characterId: request.characterId,
           angle: angle,
@@ -996,7 +988,7 @@ export class PortraitService {
         let lastError = ''
 
         while (retryCount <= MAX_RETRIES) {
-          imageResult = await ImageService.generateImage(window, {
+          imageResult = await ImageService.generateImage({
             providerConfigId: character.providerId,
             model: character.modelId,
             prompt: fullPrompt,
@@ -1059,7 +1051,7 @@ export class PortraitService {
         }
       }
 
-      this.sendPortraitEvent(window, {
+      this.sendPortraitEvent({
         type: 'generation-completed',
         characterId: request.characterId,
         variants: variants
@@ -1086,9 +1078,7 @@ export class PortraitService {
   /**
    * 编辑图像
    */
-  static async editImage(
-    window: BrowserWindow,
-    request: {
+  static async editImage(    request: {
       characterId: string
       variantId: string
       editPrompt: string
@@ -1096,7 +1086,7 @@ export class PortraitService {
   ): Promise<{ success: boolean; variant?: PortraitVariant; error?: string }> {
     console.log('[PortraitService.editImage] 开始编辑图像')
 
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.portraitCharacters || !dbManager.portraitVariants) {
       return { success: false, error: '数据库未初始化' }
@@ -1128,7 +1118,7 @@ export class PortraitService {
       const imageWidth = variant.config?.width || 1920
       const imageHeight = variant.config?.height || 1920
 
-      const imageResult = await ImageService.generateImage(window, {
+      const imageResult = await ImageService.generateImage({
         providerConfigId: character.providerId,
         model: character.modelId,
         prompt: editPrompt,
@@ -1171,7 +1161,7 @@ export class PortraitService {
    * 导出人物形象
    */
   static async exportPortraits(request: ExportPortraitRequest): Promise<ExportPortraitResponse> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.portraitVariants) {
       return { success: false, error: '数据库未初始化' }
@@ -1193,8 +1183,8 @@ export class PortraitService {
         return { success: false, error: '没有可导出的图片' }
       }
 
-      const dataPathService = DataPathService.getInstance()
-      const exportDir = path.join(dataPathService.getDataPath(), 'exports', 'portraits')
+      const __pp = getPathProvider()
+      const exportDir = path.join(__pp.getDataPath(), 'exports', 'portraits')
 
       if (!fs.existsSync(exportDir)) {
         fs.mkdirSync(exportDir, { recursive: true })
@@ -1384,12 +1374,11 @@ export class PortraitService {
    * 发送人像设计事件到渲染进程
    */
   private static sendPortraitEvent(
-    window: BrowserWindow,
     event: {
       type: string
       [key: string]: any
     }
   ): void {
-    window.webContents.send('portrait:generation-event', event)
+    getEventEmitter().emit('portrait:generation-event', event)
   }
 }

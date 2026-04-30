@@ -5,7 +5,7 @@
  */
 
 import { ipcMain, IpcMainInvokeEvent, BrowserWindow } from 'electron'
-import { PortraitService } from '../../services/portrait.service'
+import { PortraitService } from '@core/services/portrait.service'
 import { DatabaseManager } from '../../database/index'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type {
@@ -263,16 +263,11 @@ async function handleDeleteCharacter(
  * 处理生成人物请求
  */
 async function handleGeneratePortrait(
-  event: IpcMainInvokeEvent,
+  _event: IpcMainInvokeEvent,
   request: GeneratePortraitRequest
 ): Promise<IpcResponse<any>> {
   try {
-    const window = BrowserWindow.fromWebContents(event.sender)
-    if (!window) {
-      return { success: false, error: '窗口不存在' }
-    }
-
-    const result = await PortraitService.generatePortrait(window, request)
+    const result = await PortraitService.generatePortrait(request)
     if (result.success) {
       return {
         success: true,
@@ -293,16 +288,11 @@ async function handleGeneratePortrait(
  * 处理换衣请求
  */
 async function handleChangeClothes(
-  event: IpcMainInvokeEvent,
+  _event: IpcMainInvokeEvent,
   request: ChangeClothesRequest
 ): Promise<IpcResponse<any>> {
   try {
-    const window = BrowserWindow.fromWebContents(event.sender)
-    if (!window) {
-      return { success: false, error: '窗口不存在' }
-    }
-
-    const result = await PortraitService.changeClothes(window, request)
+    const result = await PortraitService.changeClothes(request)
     if (result.success) {
       return {
         success: true,
@@ -322,16 +312,11 @@ async function handleChangeClothes(
  * 处理换背景请求
  */
 async function handleChangeBackground(
-  event: IpcMainInvokeEvent,
+  _event: IpcMainInvokeEvent,
   request: ChangeBackgroundRequest
 ): Promise<IpcResponse<any>> {
   try {
-    const window = BrowserWindow.fromWebContents(event.sender)
-    if (!window) {
-      return { success: false, error: '窗口不存在' }
-    }
-
-    const result = await PortraitService.changeBackground(window, request)
+    const result = await PortraitService.changeBackground(request)
     if (result.success) {
       return {
         success: true,
@@ -408,7 +393,7 @@ async function handleDeleteVariant(
  * 处理编辑图像请求
  */
 async function handleEditImage(
-  event: IpcMainInvokeEvent,
+  _event: IpcMainInvokeEvent,
   request: {
     characterId: string
     variantId: string
@@ -416,12 +401,7 @@ async function handleEditImage(
   }
 ): Promise<IpcResponse<any>> {
   try {
-    const window = BrowserWindow.fromWebContents(event.sender)
-    if (!window) {
-      return { success: false, error: '窗口不存在' }
-    }
-
-    const result = await PortraitService.editImage(window, request)
+    const result = await PortraitService.editImage(request)
     if (result.success) {
       return {
         success: true,
@@ -439,16 +419,11 @@ async function handleEditImage(
  * 处理生成多角度请求（第二步）
  */
 async function handleGenerateAngles(
-  event: IpcMainInvokeEvent,
+  _event: IpcMainInvokeEvent,
   request: GenerateAnglesRequest
 ): Promise<IpcResponse<any>> {
   try {
-    const window = BrowserWindow.fromWebContents(event.sender)
-    if (!window) {
-      return { success: false, error: '窗口不存在' }
-    }
-
-    const result = await PortraitService.generateAngles(window, request)
+    const result = await PortraitService.generateAngles(request)
     if (result.success) {
       return {
         success: true,
