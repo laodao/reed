@@ -20,10 +20,15 @@
     "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx,vue,json,css,scss}\"",
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest",
+    "test:unit": "vitest run tests/unit",
+    "test:unit:sqlite": "SKIP_PG_TESTS=1 vitest run tests/unit",
+    "test:unit:pg": "vitest run tests/unit",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
+    "pg:up": "bash scripts/test-pg-up.sh",
+    "pg:down": "bash scripts/test-pg-down.sh",
     "fix-encoding": "electron scripts/fix-chunk-encoding.js"
   },
   "dependencies": {
