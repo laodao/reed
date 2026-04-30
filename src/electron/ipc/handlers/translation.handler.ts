@@ -4,9 +4,11 @@
  * @description 处理翻译相关的 IPC 请求
  */
 
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain, BrowserWindow, dialog } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
-import { TranslationService } from '../../services/translation.service'
+import * as fs from 'fs'
+import * as path from 'path'
+import { TranslationService } from '@core/services/translation.service'
 import { getDatabaseManager } from '../../database'
 import type {
   TextTranslationRequest,
@@ -77,20 +79,15 @@ async function handleTextTranslation(
  * 处理文件翻译
  */
 async function handleFileTranslation(
-  event: IpcMainInvokeEvent,
+  _event: IpcMainInvokeEvent,
   request: FileTranslationRequest
 ): Promise<IpcResponse<FileTranslationRequest['data']>> {
-  const window = BrowserWindow.fromWebContents(event.sender)
-  if (!window) {
-    return { success: false, error: '窗口不存在' }
-  }
-
-  const response = await TranslationService.translateFile(window, request)
+  const response = await TranslationService.translateFile(request)
   return response as any
 }
 
 /**
- * 处理选择文件
+ * 处理选择文件（dialog 是 Electron 平台特性，保留在 handler 中）
  */
 async function handleSelectFile(
   event: IpcMainInvokeEvent
@@ -100,8 +97,33 @@ async function handleSelectFile(
     return { success: false, error: '窗口不存在' }
   }
 
-  const response = await TranslationService.selectFile(window)
-  return response
+  const result = await dialog.showOpenDialog(window, {
+    title: '选择要翻译的文件',
+    filters: [
+      { name: '支持的文件', extensions: ['md', 'txt'] },
+    ],
+    properties: ['openFile'],
+  })
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return { success: false, error: '未选择文件' }
+  }
+
+  const filePath = result.filePaths[0]
+  const stats = fs.statSync(filePath)
+
+  if (stats.size > 5 * 1024 * 1024) {
+    return { success: false, error: '文件大小超过限制（最大 5MB）' }
+  }
+
+  return {
+    success: true,
+    data: {
+      path: filePath,
+      name: path.basename(filePath),
+      size: stats.size,
+    },
+  }
 }
 
 /**

@@ -4,14 +4,14 @@
  * @description 处理文本转语音、语音转文本、语音复刻等核心功能
  */
 
-import { BrowserWindow, dialog, app } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { getDatabaseManager } from '../database'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { getEventEmitter } from '@core/interfaces/event.interface'
 import { VoiceRepository } from '@core/database/repositories/voice.repository'
 import { ClonedVoiceRepository } from '@core/database/repositories/cloned-voice.repository'
 import { PROVIDER_TEMPLATES } from '@core/services/provider-template.service'
-import { SecureStorageService } from './secure-storage.service'
+import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { DataPathService } from './data-path.service'
 import { DashScopeTTSProvider } from '@core/voice-providers/dashscope-tts-provider'
 import { DashScopeSTTProvider } from '@core/voice-providers/dashscope-stt-provider'
@@ -32,7 +32,7 @@ export class VoiceService {
    * 获取语音仓库（复用 DatabaseManager 集中管理的实例）
    */
   private static getVoiceRepository(): VoiceRepository {
-    const repo = getDatabaseManager().voices
+    const repo = getCoreDatabaseManager().voices
     if (!repo) throw new Error('VoiceRepository not initialized')
     return repo
   }
@@ -41,7 +41,7 @@ export class VoiceService {
    * 获取复刻声音仓库（复用 DatabaseManager 集中管理的实例）
    */
   private static getClonedVoiceRepository(): ClonedVoiceRepository {
-    const repo = getDatabaseManager().clonedVoices
+    const repo = getCoreDatabaseManager().clonedVoices
     if (!repo) throw new Error('ClonedVoiceRepository not initialized')
     return repo
   }
@@ -102,7 +102,7 @@ export class VoiceService {
    */
   static async getProviders(): Promise<{ success: boolean; data?: VoiceProvider[]; error?: string }> {
     try {
-      const dbManager = getDatabaseManager()
+      const dbManager = getCoreDatabaseManager()
       if (!dbManager.providerConfigs) {
         return { success: false, error: '数据库未初始化' }
       }
@@ -187,7 +187,6 @@ export class VoiceService {
    * 文本转语音
    */
   static async generateSpeech(
-    window: BrowserWindow,
     request: TTSRequest
   ): Promise<TTSResponse> {
     try {
@@ -199,7 +198,7 @@ export class VoiceService {
         return { success: false, error: '文本超过 5000 字符限制' }
       }
 
-      const dbManager = getDatabaseManager()
+      const dbManager = getCoreDatabaseManager()
       if (!dbManager.providerConfigs) {
         return { success: false, error: '数据库未初始化' }
       }
@@ -230,7 +229,7 @@ export class VoiceService {
       // 解密 API 密钥
       let decryptedApiKey: string
       try {
-        const secureStorage = SecureStorageService.getInstance()
+        const secureStorage = getSecureStorage()
         if (!secureStorage.isInitialized()) {
           await secureStorage.initialize()
         }
@@ -312,7 +311,7 @@ export class VoiceService {
       })
 
       // 通知前端完成
-      window.webContents.send('voice:tts-completed', {
+      getEventEmitter().emit('voice:tts-completed', {
         recordId: record.id,
         audioPath
       })
@@ -334,11 +333,10 @@ export class VoiceService {
    * 语音转文本
    */
   static async recognizeSpeech(
-    window: BrowserWindow,
     request: STTRequest
   ): Promise<STTResponse> {
     try {
-      const dbManager = getDatabaseManager()
+      const dbManager = getCoreDatabaseManager()
       if (!dbManager.providerConfigs) {
         return { success: false, error: '数据库未初始化' }
       }
@@ -369,7 +367,7 @@ export class VoiceService {
       // 解密 API 密钥
       let decryptedApiKey: string
       try {
-        const secureStorage = SecureStorageService.getInstance()
+        const secureStorage = getSecureStorage()
         if (!secureStorage.isInitialized()) {
           await secureStorage.initialize()
         }
@@ -433,7 +431,7 @@ export class VoiceService {
       })
 
       // 通知前端完成
-      window.webContents.send('voice:stt-completed', {
+      getEventEmitter().emit('voice:stt-completed', {
         recordId: record.id,
         text: recognizedText
       })
@@ -449,42 +447,6 @@ export class VoiceService {
     } catch (error: any) {
       console.error('[VoiceService.recognizeSpeech] 错误:', error)
       return { success: false, error: error.message || '语音识别失败' }
-    }
-  }
-
-  /**
-   * 选择音频文件
-   */
-  static async selectAudioFile(
-    window: BrowserWindow
-  ): Promise<{ success: boolean; data?: { path: string; name: string; size: number }; error?: string }> {
-    const result = await dialog.showOpenDialog(window, {
-      title: '选择音频文件',
-      filters: [
-        { name: '音频文件', extensions: ['mp3', 'wav', 'm4a', 'ogg', 'webm'] }
-      ],
-      properties: ['openFile']
-    })
-
-    if (result.canceled || result.filePaths.length === 0) {
-      return { success: false, error: '未选择文件' }
-    }
-
-    const filePath = result.filePaths[0]
-    const stats = fs.statSync(filePath)
-
-    // 检查文件大小（100MB 限制）
-    if (stats.size > 100 * 1024 * 1024) {
-      return { success: false, error: '文件大小超过限制（最大 100MB）' }
-    }
-
-    return {
-      success: true,
-      data: {
-        path: filePath,
-        name: path.basename(filePath),
-        size: stats.size
-      }
     }
   }
 
@@ -540,42 +502,21 @@ export class VoiceService {
   }
 
   /**
-   * 下载音频文件
+   * 复制音频文件到目标路径（dialog 由 IPC handler 选择，此处仅做 fs.copy）
    */
-  static async downloadAudio(
-    window: BrowserWindow,
-    audioPath: string
+  static async copyAudio(
+    audioPath: string,
+    targetPath: string,
   ): Promise<{ success: boolean; data?: { savePath: string }; error?: string }> {
     try {
       if (!fs.existsSync(audioPath)) {
         return { success: false, error: '音频文件不存在' }
       }
-
-      // 获取文件名
-      const fileName = path.basename(audioPath)
-
-      // 弹出保存对话框
-      const result = await dialog.showSaveDialog(window, {
-        title: '保存音频文件',
-        defaultPath: fileName,
-        filters: [
-          { name: 'WAV 音频', extensions: ['wav'] },
-          { name: 'MP3 音频', extensions: ['mp3'] },
-          { name: '所有文件', extensions: ['*'] }
-        ]
-      })
-
-      if (result.canceled || !result.filePath) {
-        return { success: false, error: '取消保存' }
-      }
-
-      // 复制文件到目标位置
-      fs.copyFileSync(audioPath, result.filePath)
-
-      return { success: true, data: { savePath: result.filePath } }
+      fs.copyFileSync(audioPath, targetPath)
+      return { success: true, data: { savePath: targetPath } }
     } catch (error: any) {
-      console.error('[VoiceService.downloadAudio] 错误:', error)
-      return { success: false, error: error.message || '下载失败' }
+      console.error('[VoiceService.copyAudio] 错误:', error)
+      return { success: false, error: error.message || '保存失败' }
     }
   }
 }

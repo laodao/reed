@@ -4,15 +4,14 @@
  * @description 处理文本和文件翻译的核心服务
  */
 
-import { BrowserWindow, dialog } from 'electron'
-import { randomUUID } from 'crypto'
 import fs from 'fs'
 import path from 'path'
-import { getDatabaseManager } from '../database'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { TranslationRepository } from '@core/database/repositories/translation.repository'
 import { createProvider } from '@core/providers'
 import { PROVIDER_TEMPLATES } from '@core/services/provider-template.service'
-import { SecureStorageService } from './secure-storage.service'
+import { getSecureStorage } from '@core/interfaces/storage.interface'
+import { getEventEmitter } from '@core/interfaces/event.interface'
 import type {
   TextTranslationRequest,
   TextTranslationResponse,
@@ -47,7 +46,7 @@ export class TranslationService {
    */
   private static getRepository(): TranslationRepository {
     // 复用 DatabaseManager 集中管理的实例（已切到 TypeORM DataSource）
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.translations) {
       throw new Error('TranslationRepository not initialized')
     }
@@ -59,7 +58,7 @@ export class TranslationService {
    */
   static async getProviders(): Promise<{ success: boolean; data?: TranslationProvider[]; error?: string }> {
     try {
-      const dbManager = getDatabaseManager()
+      const dbManager = getCoreDatabaseManager()
       if (!dbManager.providerConfigs) {
         return { success: false, error: '数据库未初始化' }
       }
@@ -128,7 +127,7 @@ export class TranslationService {
         return { success: false, error: '文本超过 5000 字符限制' }
       }
 
-      const dbManager = getDatabaseManager()
+      const dbManager = getCoreDatabaseManager()
       if (!dbManager.providerConfigs) {
         return { success: false, error: '数据库未初始化' }
       }
@@ -159,7 +158,7 @@ export class TranslationService {
       // 解密 API 密钥
       let decryptedApiKey: string
       try {
-        const secureStorage = SecureStorageService.getInstance()
+        const secureStorage = getSecureStorage()
         if (!secureStorage.isInitialized()) {
           await secureStorage.initialize()
         }
@@ -266,7 +265,6 @@ export class TranslationService {
    * 文件翻译
    */
   static async translateFile(
-    window: BrowserWindow,
     request: FileTranslationRequest
   ): Promise<FileTranslationResponse> {
     try {
@@ -304,7 +302,7 @@ export class TranslationService {
       }
 
       // 异步处理翻译
-      this.processFileTranslation(window, recordId, content, request)
+      this.processFileTranslation(recordId, content, request)
 
       return {
         success: true,
@@ -320,7 +318,6 @@ export class TranslationService {
    * 处理文件翻译
    */
   private static async processFileTranslation(
-    window: BrowserWindow,
     recordId: string,
     content: string,
     request: FileTranslationRequest
@@ -333,7 +330,7 @@ export class TranslationService {
 
       for (let i = 0; i < chunks.length; i++) {
         // 发送进度
-        window.webContents.send('translation:progress', {
+        getEventEmitter().emit('translation:progress', {
           translationId: recordId,
           progress: Math.round((i / chunks.length) * 100)
         })
@@ -371,7 +368,7 @@ export class TranslationService {
       }
 
       // 通知完成
-      window.webContents.send('translation:completed', {
+      getEventEmitter().emit('translation:completed', {
         translationId: recordId,
         targetFile: targetPath
       })
@@ -384,46 +381,10 @@ export class TranslationService {
         })
       }
 
-      window.webContents.send('translation:failed', {
+      getEventEmitter().emit('translation:failed', {
         translationId: recordId,
         error: error.message
       })
-    }
-  }
-
-  /**
-   * 选择文件
-   */
-  static async selectFile(
-    window: BrowserWindow
-  ): Promise<{ success: boolean; data?: { path: string; name: string; size: number }; error?: string }> {
-    const result = await dialog.showOpenDialog(window, {
-      title: '选择要翻译的文件',
-      filters: [
-        { name: '支持的文件', extensions: ['md', 'txt'] }
-      ],
-      properties: ['openFile']
-    })
-
-    if (result.canceled || result.filePaths.length === 0) {
-      return { success: false, error: '未选择文件' }
-    }
-
-    const filePath = result.filePaths[0]
-    const stats = fs.statSync(filePath)
-
-    // 检查文件大小（5MB 限制）
-    if (stats.size > 5 * 1024 * 1024) {
-      return { success: false, error: '文件大小超过限制（最大 5MB）' }
-    }
-
-    return {
-      success: true,
-      data: {
-        path: filePath,
-        name: path.basename(filePath),
-        size: stats.size
-      }
     }
   }
 

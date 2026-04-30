@@ -4,9 +4,11 @@
  * @description 处理语音相关的 IPC 请求
  */
 
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain, BrowserWindow, dialog } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
-import { VoiceService } from '../../services/voice.service'
+import * as fs from 'fs'
+import * as path from 'path'
+import { VoiceService } from '@core/services/voice.service'
 import type {
   TTSRequest,
   STTRequest,
@@ -84,15 +86,10 @@ async function handleGetVoices(
  * 处理文本转语音
  */
 async function handleTTS(
-  event: IpcMainInvokeEvent,
+  _event: IpcMainInvokeEvent,
   request: TTSRequest
 ): Promise<IpcResponse<any>> {
-  const window = BrowserWindow.fromWebContents(event.sender)
-  if (!window) {
-    return { success: false, error: '窗口不存在' }
-  }
-
-  const response = await VoiceService.generateSpeech(window, request)
+  const response = await VoiceService.generateSpeech(request)
   return response as any
 }
 
@@ -100,15 +97,10 @@ async function handleTTS(
  * 处理语音转文本
  */
 async function handleSTT(
-  event: IpcMainInvokeEvent,
+  _event: IpcMainInvokeEvent,
   request: STTRequest
 ): Promise<IpcResponse<any>> {
-  const window = BrowserWindow.fromWebContents(event.sender)
-  if (!window) {
-    return { success: false, error: '窗口不存在' }
-  }
-
-  const response = await VoiceService.recognizeSpeech(window, request)
+  const response = await VoiceService.recognizeSpeech(request)
   return response as any
 }
 
@@ -139,8 +131,32 @@ async function handleSelectFile(
     return { success: false, error: '窗口不存在' }
   }
 
-  const response = await VoiceService.selectAudioFile(window)
-  return response
+  const result = await dialog.showOpenDialog(window, {
+    title: '选择音频文件',
+    filters: [
+      { name: '音频文件', extensions: ['mp3', 'wav', 'm4a', 'ogg', 'webm'] },
+    ],
+    properties: ['openFile'],
+  })
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return { success: false, error: '未选择文件' }
+  }
+
+  const filePath = result.filePaths[0]
+  const stats = fs.statSync(filePath)
+  if (stats.size > 100 * 1024 * 1024) {
+    return { success: false, error: '文件大小超过限制（最大 100MB）' }
+  }
+
+  return {
+    success: true,
+    data: {
+      path: filePath,
+      name: path.basename(filePath),
+      size: stats.size,
+    },
+  }
 }
 
 /**
@@ -209,6 +225,25 @@ async function handleDownloadAudio(
     return { success: false, error: '窗口不存在' }
   }
 
-  const response = await VoiceService.downloadAudio(window, audioPath)
+  if (!fs.existsSync(audioPath)) {
+    return { success: false, error: '音频文件不存在' }
+  }
+  const fileName = path.basename(audioPath)
+
+  const result = await dialog.showSaveDialog(window, {
+    title: '保存音频文件',
+    defaultPath: fileName,
+    filters: [
+      { name: 'WAV 音频', extensions: ['wav'] },
+      { name: 'MP3 音频', extensions: ['mp3'] },
+      { name: '所有文件', extensions: ['*'] },
+    ],
+  })
+
+  if (result.canceled || !result.filePath) {
+    return { success: false, error: '取消保存' }
+  }
+
+  const response = await VoiceService.copyAudio(audioPath, result.filePath)
   return response as any
 }

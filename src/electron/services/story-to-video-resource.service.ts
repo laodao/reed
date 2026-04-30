@@ -9,7 +9,7 @@ import * as path from 'path'
 import * as fs from 'fs'
 import { getDatabaseManager } from '../database'
 import { ImageService } from './image.service'
-import { VoiceService } from './voice.service'
+import { VoiceService } from '@core/services/voice.service'
 import type {
   Storyboard,
   SceneScript,
@@ -381,7 +381,7 @@ export class StoryToVideoResourceService {
       }
 
       // 调用 VoiceService 生成语音
-      const response = await VoiceService.generateSpeech(window, ttsRequest)
+      const response = await VoiceService.generateSpeech(ttsRequest)
 
       if (!response.success || !response.data?.audioPath) {
         console.error('[StoryToVideoResource] 生成旁白音频失败:', response.error)
@@ -446,7 +446,7 @@ export class StoryToVideoResourceService {
       }
 
       // 调用 VoiceService 生成语音
-      const response = await VoiceService.generateSpeech(window, ttsRequest)
+      const response = await VoiceService.generateSpeech(ttsRequest)
 
       if (!response.success || !response.data?.audioPath) {
         console.error('[StoryToVideoResource] 生成对话音频失败:', response.error)
