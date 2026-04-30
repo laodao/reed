@@ -3655,7 +3655,7 @@ export class DatabaseManager {
     this.dialogs = new DialogRepository(this.dataSource)
     this.messages = new MessageRepository(this.dataSource)
     this.roles = new RoleRepository(this.dataSource)
-    this.images = new ImageRepository(this.db)
+    this.images = new ImageRepository(this.dataSource)
     this.providerConfigs = new ProviderConfigRepository(this.dataSource)
     this.translations = new TranslationRepository(this.dataSource)
     this.voices = new VoiceRepository(this.dataSource)
