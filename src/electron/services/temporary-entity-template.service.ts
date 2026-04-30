@@ -32,43 +32,50 @@ export class TemporaryEntityTemplateService {
   /**
    * 获取所有角色模板
    */
-  getAllCharacterTemplates(): TemporaryCharacterTemplateRecord[] {
+  async getAllCharacterTemplates(): Promise<TemporaryCharacterTemplateRecord[]> {
     const db = DatabaseManager.getInstance()
-    return db.lwTempCharacterTemplates?.getAll() || []
+    return (await db.lwTempCharacterTemplates?.getAll()) || []
   }
 
   /**
    * 获取所有地点模板
    */
-  getAllLocationTemplates(): TemporaryLocationTemplateRecord[] {
+  async getAllLocationTemplates(): Promise<TemporaryLocationTemplateRecord[]> {
     const db = DatabaseManager.getInstance()
-    return db.lwTempLocationTemplates?.getAll() || []
+    return (await db.lwTempLocationTemplates?.getAll()) || []
   }
 
   /**
    * 获取指定角色模板
    */
-  getCharacterTemplate(type: TemporaryCharacterTemplateType): TemporaryCharacterTemplateRecord | null {
+  async getCharacterTemplate(
+    type: TemporaryCharacterTemplateType,
+  ): Promise<TemporaryCharacterTemplateRecord | null> {
     const db = DatabaseManager.getInstance()
-    return db.lwTempCharacterTemplates?.getByType(type) || null
+    return (await db.lwTempCharacterTemplates?.getByType(type)) || null
   }
 
   /**
    * 获取指定地点模板
    */
-  getLocationTemplate(type: TemporaryLocationTemplateType): TemporaryLocationTemplateRecord | null {
+  async getLocationTemplate(
+    type: TemporaryLocationTemplateType,
+  ): Promise<TemporaryLocationTemplateRecord | null> {
     const db = DatabaseManager.getInstance()
-    return db.lwTempLocationTemplates?.getByType(type) || null
+    return (await db.lwTempLocationTemplates?.getByType(type)) || null
   }
 
   /**
    * 根据描述匹配角色模板
    */
-  matchCharacterTemplate(name: string, description: string): TemporaryEntityTemplateMatch {
+  async matchCharacterTemplate(
+    name: string,
+    description: string,
+  ): Promise<TemporaryEntityTemplateMatch> {
     const db = DatabaseManager.getInstance()
     const combinedText = `${name} ${description}`.toLowerCase()
 
-    const matchResult = db.lwTempCharacterTemplates?.matchByKeywords(combinedText)
+    const matchResult = await db.lwTempCharacterTemplates?.matchByKeywords(combinedText)
 
     if (matchResult) {
       return {
@@ -79,7 +86,7 @@ export class TemporaryEntityTemplateService {
     }
 
     // 如果没有匹配到，返回默认模板
-    const defaultTemplate = db.lwTempCharacterTemplates?.getDefault()
+    const defaultTemplate = await db.lwTempCharacterTemplates?.getDefault()
     return {
       templateType: defaultTemplate?.type || 'male_passerby',
       confidence: 0.5,
@@ -90,11 +97,14 @@ export class TemporaryEntityTemplateService {
   /**
    * 根据描述匹配地点模板
    */
-  matchLocationTemplate(name: string, description: string): TemporaryEntityTemplateMatch {
+  async matchLocationTemplate(
+    name: string,
+    description: string,
+  ): Promise<TemporaryEntityTemplateMatch> {
     const db = DatabaseManager.getInstance()
     const combinedText = `${name} ${description}`.toLowerCase()
 
-    const matchResult = db.lwTempLocationTemplates?.matchByKeywords(combinedText)
+    const matchResult = await db.lwTempLocationTemplates?.matchByKeywords(combinedText)
 
     if (matchResult) {
       return {
@@ -105,7 +115,7 @@ export class TemporaryEntityTemplateService {
     }
 
     // 如果没有匹配到，返回默认模板
-    const defaultTemplate = db.lwTempLocationTemplates?.getDefault()
+    const defaultTemplate = await db.lwTempLocationTemplates?.getDefault()
     return {
       templateType: defaultTemplate?.type || 'street',
       confidence: 0.5,
@@ -119,12 +129,12 @@ export class TemporaryEntityTemplateService {
    * @param styleName 视频风格名称
    * @param customDescription 自定义描述（可选）
    */
-  generateCharacterImagePrompt(
+  async generateCharacterImagePrompt(
     templateType: TemporaryCharacterTemplateType,
     styleName: string = 'cinematic',
     customDescription?: string
-  ): string {
-    const template = this.getCharacterTemplate(templateType)
+  ): Promise<string> {
+    const template = await this.getCharacterTemplate(templateType)
 
     if (!template) {
       return customDescription || 'person, general appearance'
@@ -160,12 +170,12 @@ export class TemporaryEntityTemplateService {
   /**
    * 生成地点形象的图片提示词
    */
-  generateLocationImagePrompt(
+  async generateLocationImagePrompt(
     templateType: TemporaryLocationTemplateType,
     styleName: string = 'cinematic',
     customDescription?: string
-  ): string {
-    const template = this.getLocationTemplate(templateType)
+  ): Promise<string> {
+    const template = await this.getLocationTemplate(templateType)
 
     if (!template) {
       return customDescription || 'location, general scenery'
@@ -215,8 +225,10 @@ export class TemporaryEntityTemplateService {
   /**
    * 获取角色的负面提示词
    */
-  getCharacterNegativePrompt(templateType: TemporaryCharacterTemplateType): string {
-    const template = this.getCharacterTemplate(templateType)
+  async getCharacterNegativePrompt(
+    templateType: TemporaryCharacterTemplateType,
+  ): Promise<string> {
+    const template = await this.getCharacterTemplate(templateType)
     const baseNegative = 'low quality, blurry, distorted, ugly, bad anatomy, watermark, signature'
     if (template?.negativePrompt) {
       return `${baseNegative}, ${template.negativePrompt}`
@@ -227,8 +239,10 @@ export class TemporaryEntityTemplateService {
   /**
    * 获取地点的负面提示词
    */
-  getLocationNegativePrompt(templateType: TemporaryLocationTemplateType): string {
-    const template = this.getLocationTemplate(templateType)
+  async getLocationNegativePrompt(
+    templateType: TemporaryLocationTemplateType,
+  ): Promise<string> {
+    const template = await this.getLocationTemplate(templateType)
     const baseNegative = 'low quality, blurry, distorted, watermark, signature'
     if (template?.negativePrompt) {
       return `${baseNegative}, ${template.negativePrompt}`
@@ -239,37 +253,41 @@ export class TemporaryEntityTemplateService {
   /**
    * 批量为临时实体生成模板匹配
    */
-  batchMatchTemplates(
+  async batchMatchTemplates(
     characters: Array<{ name: string; description: string }>,
     locations: Array<{ name: string; description: string }>
-  ): {
+  ): Promise<{
     characters: Array<{ name: string; match: TemporaryEntityTemplateMatch }>
     locations: Array<{ name: string; match: TemporaryEntityTemplateMatch }>
-  } {
+  }> {
     return {
-      characters: characters.map(c => ({
-        name: c.name,
-        match: this.matchCharacterTemplate(c.name, c.description)
-      })),
-      locations: locations.map(l => ({
-        name: l.name,
-        match: this.matchLocationTemplate(l.name, l.description)
-      }))
+      characters: await Promise.all(
+        characters.map(async c => ({
+          name: c.name,
+          match: await this.matchCharacterTemplate(c.name, c.description),
+        })),
+      ),
+      locations: await Promise.all(
+        locations.map(async l => ({
+          name: l.name,
+          match: await this.matchLocationTemplate(l.name, l.description),
+        })),
+      ),
     }
   }
 
   /**
    * 更新角色模板
    */
-  updateCharacterTemplate(
+  async updateCharacterTemplate(
     type: TemporaryCharacterTemplateType,
     data: Partial<Omit<TemporaryCharacterTemplateRecord, 'id' | 'type' | 'createdAt' | 'updatedAt'>>
-  ): TemporaryCharacterTemplateRecord | null {
+  ): Promise<TemporaryCharacterTemplateRecord | null> {
     const db = DatabaseManager.getInstance()
-    const existing = this.getCharacterTemplate(type)
+    const existing = await this.getCharacterTemplate(type)
     if (!existing) return null
 
-    return db.lwTempCharacterTemplates?.upsert({
+    return (await db.lwTempCharacterTemplates?.upsert({
       type,
       name: data.name || existing.name,
       gender: data.gender || existing.gender,
@@ -281,21 +299,21 @@ export class TemporaryEntityTemplateService {
       matchKeywords: data.matchKeywords || existing.matchKeywords,
       sortOrder: data.sortOrder ?? existing.sortOrder,
       isDefault: data.isDefault ?? existing.isDefault
-    }) || null
+    })) || null
   }
 
   /**
    * 更新地点模板
    */
-  updateLocationTemplate(
+  async updateLocationTemplate(
     type: TemporaryLocationTemplateType,
     data: Partial<Omit<TemporaryLocationTemplateRecord, 'id' | 'type' | 'createdAt' | 'updatedAt'>>
-  ): TemporaryLocationTemplateRecord | null {
+  ): Promise<TemporaryLocationTemplateRecord | null> {
     const db = DatabaseManager.getInstance()
-    const existing = this.getLocationTemplate(type)
+    const existing = await this.getLocationTemplate(type)
     if (!existing) return null
 
-    return db.lwTempLocationTemplates?.upsert({
+    return (await db.lwTempLocationTemplates?.upsert({
       type,
       name: data.name || existing.name,
       basePrompt: data.basePrompt || existing.basePrompt,
@@ -304,6 +322,6 @@ export class TemporaryEntityTemplateService {
       matchKeywords: data.matchKeywords || existing.matchKeywords,
       sortOrder: data.sortOrder ?? existing.sortOrder,
       isDefault: data.isDefault ?? existing.isDefault
-    }) || null
+    })) || null
   }
 }

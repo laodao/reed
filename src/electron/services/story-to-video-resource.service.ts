@@ -693,15 +693,15 @@ export class StoryToVideoResourceService {
 
     // 获取模板类型，如果没有则匹配
     const templateType = character.templateType ||
-      templateService.matchCharacterTemplate(character.name, character.appearance).templateType
+      (await templateService.matchCharacterTemplate(character.name, character.appearance)).templateType
 
     // 生成图片提示词
-    const prompt = templateService.generateCharacterImagePrompt(
+    const prompt = await templateService.generateCharacterImagePrompt(
       templateType as any,
       styleName,
       character.appearance
     )
-    const negativePrompt = templateService.getCharacterNegativePrompt(templateType as any)
+    const negativePrompt = await templateService.getCharacterNegativePrompt(templateType as any)
 
     console.log(`[StoryToVideoResource] 为临时角色 "${character.name}" 生成图片`)
     console.log(`[StoryToVideoResource] 模板类型: ${templateType}`)
@@ -778,15 +778,15 @@ export class StoryToVideoResourceService {
 
     // 获取模板类型，如果没有则匹配
     const templateType = location.templateType ||
-      templateService.matchLocationTemplate(location.name, location.description).templateType
+      (await templateService.matchLocationTemplate(location.name, location.description)).templateType
 
     // 生成图片提示词
-    const prompt = templateService.generateLocationImagePrompt(
+    const prompt = await templateService.generateLocationImagePrompt(
       templateType as any,
       styleName,
       location.description
     )
-    const negativePrompt = templateService.getLocationNegativePrompt(templateType as any)
+    const negativePrompt = await templateService.getLocationNegativePrompt(templateType as any)
 
     console.log(`[StoryToVideoResource] 为临时地点 "${location.name}" 生成图片`)
 
@@ -927,15 +927,15 @@ export class StoryToVideoResourceService {
    * 获取临时实体的图片路径（用于视频制作）
    * 如果是临时实体且没有图片，返回模板生成的提示词
    */
-  getTemporaryEntityImagePrompt(
+  async getTemporaryEntityImagePrompt(
     entityId: string,
     entityType: 'character' | 'location',
     styleName: string = 'cinematic'
-  ): { hasImage: boolean; imagePath?: string; prompt?: string } {
+  ): Promise<{ hasImage: boolean; imagePath?: string; prompt?: string }> {
     const db = getDatabaseManager()
 
     if (entityType === 'character') {
-      const character = db.lwCharacters?.getById(entityId)
+      const character = await db.lwCharacters?.getById(entityId)
       if (!character) {
         return { hasImage: false }
       }
@@ -954,9 +954,9 @@ export class StoryToVideoResourceService {
         const templateService = TemporaryEntityTemplateService.getInstance()
 
         const templateType = character.templateType ||
-          templateService.matchCharacterTemplate(character.name, character.appearance).templateType
+          (await templateService.matchCharacterTemplate(character.name, character.appearance)).templateType
 
-        const prompt = templateService.generateCharacterImagePrompt(
+        const prompt = await templateService.generateCharacterImagePrompt(
           templateType as any,
           styleName,
           character.appearance
@@ -965,7 +965,7 @@ export class StoryToVideoResourceService {
         return { hasImage: false, prompt }
       }
     } else if (entityType === 'location') {
-      const location = db.lwLocations?.getById(entityId)
+      const location = await db.lwLocations?.getById(entityId)
       if (!location) {
         return { hasImage: false }
       }
@@ -984,9 +984,9 @@ export class StoryToVideoResourceService {
         const templateService = TemporaryEntityTemplateService.getInstance()
 
         const templateType = location.templateType ||
-          templateService.matchLocationTemplate(location.name, location.description).templateType
+          (await templateService.matchLocationTemplate(location.name, location.description)).templateType
 
-        const prompt = templateService.generateLocationImagePrompt(
+        const prompt = await templateService.generateLocationImagePrompt(
           templateType as any,
           styleName,
           location.description

@@ -2726,7 +2726,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   ) => {
     try {
       const { LwEntityDetectionService } = await import('../../services/lw-entity-detection.service')
-      const result = LwEntityDetectionService.autoAddEntities(
+      const result = await LwEntityDetectionService.autoAddEntities(
         projectId,
         characters,
         locations,

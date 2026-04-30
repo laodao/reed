@@ -125,17 +125,17 @@ export class LwEntityDetectionService {
    * @param locations 新地点列表
    * @param items 新物品列表
    */
-  static autoAddEntities(
+  static async autoAddEntities(
     projectId: string,
     characters?: NewCharacterInfo[],
     locations?: NewLocationInfo[],
     items?: NewItemInfo[]
-  ): {
+  ): Promise<{
     addedCharacters: StoryCharacter[]
     addedLocations: StoryLocation[]
     addedItems: StoryItem[]
     errors: string[]
-  } {
+  }> {
     const db = DatabaseManager.getInstance()
     if (!db.db) {
       throw new Error('数据库未初始化')
@@ -158,7 +158,7 @@ export class LwEntityDetectionService {
             // 为临时角色匹配模板类型
             let templateType: TemporaryCharacterTemplateType | undefined
             if (char.suggestedImportance === 'temporary') {
-              const match = templateService.matchCharacterTemplate(char.name, char.description)
+              const match = await templateService.matchCharacterTemplate(char.name, char.description)
               templateType = match.templateType as TemporaryCharacterTemplateType
               console.log(`[LwEntityDetectionService] 临时角色 "${char.name}" 匹配模板: ${templateType}, 置信度: ${match.confidence.toFixed(2)}`)
             }
@@ -193,7 +193,7 @@ export class LwEntityDetectionService {
             // 为临时地点匹配模板类型
             let templateType: TemporaryLocationTemplateType | undefined
             if (loc.suggestedImportance === 'temporary') {
-              const match = templateService.matchLocationTemplate(loc.name, loc.description)
+              const match = await templateService.matchLocationTemplate(loc.name, loc.description)
               templateType = match.templateType as TemporaryLocationTemplateType
               console.log(`[LwEntityDetectionService] 临时地点 "${loc.name}" 匹配模板: ${templateType}, 置信度: ${match.confidence.toFixed(2)}`)
             }

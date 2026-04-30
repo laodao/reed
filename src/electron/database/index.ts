@@ -3580,13 +3580,7 @@ export class DatabaseManager {
       console.log('[DatabaseManager] lw_temp_location_templates 表创建完成')
     }
 
-    // 初始化默认临时实体模板数据（在表创建后调用）
-    if (this.lwTempCharacterTemplates) {
-      this.lwTempCharacterTemplates.initializeDefaultData()
-    }
-    if (this.lwTempLocationTemplates) {
-      this.lwTempLocationTemplates.initializeDefaultData()
-    }
+    // 临时实体模板默认数据初始化已迁移至 initRepositories（异步）
 
     // 检查并添加 lw_story_outlines 表的 involved_items 列
     const outlineColumns = this.db.prepare("PRAGMA table_info(lw_story_outlines)").all() as any[]
@@ -3702,8 +3696,10 @@ export class DatabaseManager {
     this.lwMemoryEntities = new LwMemoryEntityRepository(this.dataSource)
 
     // 初始化临时实体模板仓库
-    this.lwTempCharacterTemplates = new LwTempCharacterTemplateRepository(this.db)
-    this.lwTempLocationTemplates = new LwTempLocationTemplateRepository(this.db)
+    this.lwTempCharacterTemplates = new LwTempCharacterTemplateRepository(this.dataSource)
+    this.lwTempLocationTemplates = new LwTempLocationTemplateRepository(this.dataSource)
+    await this.lwTempCharacterTemplates.initializeDefaultData()
+    await this.lwTempLocationTemplates.initializeDefaultData()
     this.lwProjectModelConfigs = new LwProjectModelConfigRepository(this.dataSource)
 
     this.diaryFolders = new DiaryFolderRepository(this.dataSource)
