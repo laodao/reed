@@ -77,7 +77,7 @@ import { StoryboardCharacterRepository } from '@core/database/repositories/story
 import { ImageAssetRepository } from '@core/database/repositories/image-asset.repository'
 import { OSSConfigRepository } from '@core/database/repositories/oss-config.repository'
 import { DataPathService } from '../services/data-path.service'
-import { LanceDBService } from '../services/lance-db.service'
+import { LanceDBService } from '@core/services/lance-db.service'
 
 // === Phase 1: TypeORM 双方言迁移 ===
 import type { DataSource } from 'typeorm'

@@ -4,7 +4,7 @@
  * @description 使用 LanceDB 提供高效的向量存储和检索操作
  */
 
-import { LanceDBService, VectorRecord } from '../../services/lance-db.service'
+import { LanceDBService, VectorRecord } from '@core/services/lance-db.service'
 import { getDatabaseManager } from '../index'
 import { randomUUID } from 'crypto'
 
