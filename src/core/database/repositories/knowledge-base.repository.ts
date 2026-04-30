@@ -1,212 +1,154 @@
 /**
  * 知识库数据访问层
  * @module database/repositories/knowledge-base.repository
- * @description 提供知识库的数据库操作
+ * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import Database from 'better-sqlite3'
+import type { DataSource } from 'typeorm'
 import { randomUUID } from 'crypto'
 import type {
   KnowledgeBase,
   CreateKnowledgeBaseRequest,
   UpdateKnowledgeBaseRequest,
-  KnowledgeBaseStats
+  KnowledgeBaseStats,
 } from '@shared/types/knowledge-base.types'
+import { KnowledgeBaseEntity } from '../entities/knowledge-base.entity'
+import { BaseRepository } from '../base-repository'
 
-/**
- * 知识库数据仓库
- */
-export class KnowledgeBaseRepository {
-  private db: Database.Database
-
-  constructor(db: Database.Database) {
-    this.db = db
+export class KnowledgeBaseRepository extends BaseRepository<
+  KnowledgeBaseEntity,
+  KnowledgeBase
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, KnowledgeBaseEntity)
   }
 
-  /**
-   * 将数据库行转换为 KnowledgeBase 对象
-   */
-  private rowToEntity(row: any): KnowledgeBase {
+  protected toDto(e: KnowledgeBaseEntity): KnowledgeBase {
     return {
-      id: row.id,
-      name: row.name,
-      description: row.description || undefined,
-      embeddingModel: row.embedding_model,
-      embeddingDimension: row.embedding_dimension,
-      embeddingConfig: row.embedding_config || undefined,
-      documentCount: row.document_count,
-      vectorCount: row.vector_count,
-      totalSize: row.total_size,
-      createdAt: new Date(row.created_at),
-      updatedAt: new Date(row.updated_at)
+      id: e.id,
+      name: e.name,
+      description: e.description || undefined,
+      embeddingModel: e.embeddingModel,
+      embeddingDimension: e.embeddingDimension,
+      embeddingConfig: e.embeddingConfig || undefined,
+      documentCount: e.documentCount,
+      vectorCount: e.vectorCount,
+      totalSize: e.totalSize,
+      createdAt: e.createdAt instanceof Date ? e.createdAt : new Date(e.createdAt),
+      updatedAt: e.updatedAt instanceof Date ? e.updatedAt : new Date(e.updatedAt),
     }
   }
 
-  /**
-   * 获取所有知识库
-   */
-  findAll(): KnowledgeBase[] {
-    const rows = this.db.prepare(
-      'SELECT * FROM knowledge_bases ORDER BY created_at DESC'
-    ).all() as any[]
-    return rows.map(row => this.rowToEntity(row))
+  async findAll(): Promise<KnowledgeBase[]> {
+    return this.findManyByWhere({} as any, { createdAt: 'DESC' })
   }
 
-  /**
-   * 根据 ID 获取知识库
-   */
-  findById(id: string): KnowledgeBase | null {
-    const row = this.db.prepare(
-      'SELECT * FROM knowledge_bases WHERE id = ?'
-    ).get(id) as any
-    if (!row) return null
-    return this.rowToEntity(row)
+  async findById(id: string): Promise<KnowledgeBase | null> {
+    return this.findOneByWhere({ id } as any)
   }
 
-  /**
-   * 根据名称检查是否存在
-   */
-  existsByName(name: string): boolean {
-    const row = this.db.prepare(
-      'SELECT id FROM knowledge_bases WHERE name = ?'
-    ).get(name) as any
-    return !!row
+  async existsByName(name: string): Promise<boolean> {
+    return this.existsByWhere({ name } as any)
   }
 
-  /**
-   * 创建知识库
-   */
-  create(request: CreateKnowledgeBaseRequest): KnowledgeBase {
+  async create(request: CreateKnowledgeBaseRequest): Promise<KnowledgeBase> {
     const id = randomUUID()
-    const now = new Date().toISOString()
+    const now = new Date()
+    const provider = request.embeddingConfig?.provider || 'cloud'
+    const configString = request.embeddingConfig
+      ? JSON.stringify(request.embeddingConfig)
+      : null
 
-    // 从 embeddingConfig 中获取 provider 信息
-    const embeddingConfig = request.embeddingConfig
-    const provider = embeddingConfig?.provider || 'cloud'
-
-    this.db.prepare(`
-      INSERT INTO knowledge_bases (
-        id, name, description, embedding_model, embedding_provider,
-        embedding_dimension, embedding_config, document_count, vector_count, total_size,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?)
-    `).run(
-      id,
-      request.name,
-      request.description || null,
-      request.embeddingModel,
-      provider,
-      request.embeddingDimension,
-      request.embeddingConfig ? JSON.stringify(request.embeddingConfig) : null,
-      now,
-      now
-    )
-
-    return {
+    const entity = this.repo.create({
       id,
       name: request.name,
-      description: request.description,
+      description: request.description ?? null,
       embeddingModel: request.embeddingModel,
+      embeddingProvider: provider,
       embeddingDimension: request.embeddingDimension,
-      embeddingConfig: request.embeddingConfig ? JSON.stringify(request.embeddingConfig) : undefined,
+      embeddingConfig: configString,
       documentCount: 0,
       vectorCount: 0,
       totalSize: 0,
-      createdAt: new Date(now),
-      updatedAt: new Date(now)
-    }
+      createdAt: now,
+      updatedAt: now,
+    })
+    const saved = await this.repo.save(entity)
+    return this.toDto(saved)
   }
 
-  /**
-   * 更新知识库
-   */
-  update(id: string, request: UpdateKnowledgeBaseRequest): boolean {
-    const fields: string[] = []
-    const values: any[] = []
+  async update(
+    id: string,
+    request: UpdateKnowledgeBaseRequest,
+  ): Promise<boolean> {
+    const existing = await this.repo.findOne({ where: { id } as any })
+    if (!existing) return false
 
+    let changed = false
     if (request.name !== undefined) {
-      fields.push('name = ?')
-      values.push(request.name)
+      existing.name = request.name
+      changed = true
     }
     if (request.description !== undefined) {
-      fields.push('description = ?')
-      values.push(request.description || null)
+      existing.description = request.description ?? null
+      changed = true
     }
 
-    if (fields.length === 0) return false
+    if (!changed) return false
 
-    fields.push('updated_at = ?')
-    values.push(new Date().toISOString())
-    values.push(id)
-
-    const result = this.db.prepare(
-      `UPDATE knowledge_bases SET ${fields.join(', ')} WHERE id = ?`
-    ).run(...values)
-
-    return result.changes > 0
+    existing.updatedAt = new Date()
+    await this.repo.save(existing)
+    return true
   }
 
-  /**
-   * 删除知识库
-   */
-  delete(id: string): boolean {
-    const result = this.db.prepare(
-      'DELETE FROM knowledge_bases WHERE id = ?'
-    ).run(id)
-    return result.changes > 0
+  async delete(id: string): Promise<boolean> {
+    const result = await this.repo.delete({ id } as any)
+    return (result.affected ?? 0) > 0
   }
 
-  /**
-   * 更新统计信息
-   */
-  updateStats(id: string, stats: KnowledgeBaseStats): void {
-    this.db.prepare(`
-      UPDATE knowledge_bases
-      SET document_count = ?, vector_count = ?, total_size = ?, updated_at = ?
-      WHERE id = ?
-    `).run(stats.documentCount, stats.vectorCount, stats.totalSize, new Date().toISOString(), id)
+  async updateStats(id: string, stats: KnowledgeBaseStats): Promise<void> {
+    await this.repo.update({ id } as any, {
+      documentCount: stats.documentCount,
+      vectorCount: stats.vectorCount,
+      totalSize: stats.totalSize,
+      updatedAt: new Date(),
+    })
   }
 
-  /**
-   * 增加文档计数
-   */
-  incrementDocumentCount(id: string, delta: number = 1): void {
-    this.db.prepare(`
-      UPDATE knowledge_bases
-      SET document_count = document_count + ?, updated_at = ?
-      WHERE id = ?
-    `).run(delta, new Date().toISOString(), id)
+  async incrementDocumentCount(id: string, delta: number = 1): Promise<void> {
+    await this.dataSource.transaction(async manager => {
+      const repo = manager.getRepository(KnowledgeBaseEntity)
+      await repo.increment({ id } as any, 'documentCount', delta)
+      await repo.update({ id } as any, { updatedAt: new Date() })
+    })
   }
 
-  /**
-   * 增加向量计数
-   */
-  incrementVectorCount(id: string, delta: number): void {
-    this.db.prepare(`
-      UPDATE knowledge_bases
-      SET vector_count = vector_count + ?, updated_at = ?
-      WHERE id = ?
-    `).run(delta, new Date().toISOString(), id)
+  async incrementVectorCount(id: string, delta: number): Promise<void> {
+    await this.dataSource.transaction(async manager => {
+      const repo = manager.getRepository(KnowledgeBaseEntity)
+      // increment 不支持负数（typeorm 限制），统一改用算术
+      if (delta >= 0) {
+        await repo.increment({ id } as any, 'vectorCount', delta)
+      } else {
+        await repo.decrement({ id } as any, 'vectorCount', -delta)
+      }
+      await repo.update({ id } as any, { updatedAt: new Date() })
+    })
   }
 
-  /**
-   * 增加总大小
-   */
-  incrementTotalSize(id: string, delta: number): void {
-    this.db.prepare(`
-      UPDATE knowledge_bases
-      SET total_size = total_size + ?, updated_at = ?
-      WHERE id = ?
-    `).run(delta, new Date().toISOString(), id)
+  async incrementTotalSize(id: string, delta: number): Promise<void> {
+    await this.dataSource.transaction(async manager => {
+      const repo = manager.getRepository(KnowledgeBaseEntity)
+      if (delta >= 0) {
+        await repo.increment({ id } as any, 'totalSize', delta)
+      } else {
+        await repo.decrement({ id } as any, 'totalSize', -delta)
+      }
+      await repo.update({ id } as any, { updatedAt: new Date() })
+    })
   }
 
-  /**
-   * 统计知识库数量
-   */
-  count(): number {
-    const row = this.db.prepare(
-      'SELECT COUNT(*) as count FROM knowledge_bases'
-    ).get() as { count: number }
-    return row?.count || 0
+  async count(): Promise<number> {
+    return this.repo.count()
   }
 }

@@ -89,7 +89,7 @@ export class KnowledgeBaseService {
     const win = this.getMainWindow()
     const db = getDatabaseManager()
     if (win && !win.isDestroyed() && db.knowledgeBases) {
-      const kb = db.knowledgeBases.findById(kbId)
+      const kb = await db.knowledgeBases.findById(kbId)
       if (kb) {
         win.webContents.send(KB_EVENTS.KNOWLEDGE_BASE_STATS, {
           id: kb.id,
@@ -107,7 +107,7 @@ export class KnowledgeBaseService {
     try {
       const db = getDatabaseManager()
       if (!db.knowledgeBases) return { success: false, error: '数据库未初始化' }
-      return { success: true, data: db.knowledgeBases.findAll() }
+      return { success: true, data: await db.knowledgeBases.findAll() }
     } catch (e: any) {
       return { success: false, error: e.message }
     }
@@ -117,7 +117,7 @@ export class KnowledgeBaseService {
     try {
       const db = getDatabaseManager()
       if (!db.knowledgeBases) return { success: false, error: '数据库未初始化' }
-      const kb = db.knowledgeBases.findById(id)
+      const kb = await db.knowledgeBases.findById(id)
       return kb ? { success: true, data: kb } : { success: false, error: '知识库不存在' }
     } catch (e: any) {
       return { success: false, error: e.message }
@@ -129,14 +129,14 @@ export class KnowledgeBaseService {
       const db = getDatabaseManager()
       if (!db.knowledgeBases) return { success: false, error: '数据库未初始化' }
 
-      if (db.knowledgeBases.existsByName(req.name)) {
+      if (await db.knowledgeBases.existsByName(req.name)) {
         return { success: false, error: '知识库名称已存在' }
       }
-      if (db.knowledgeBases.count() >= 20) {
+      if (await db.knowledgeBases.count() >= 20) {
         return { success: false, error: '已达到知识库数量上限' }
       }
 
-      return { success: true, data: db.knowledgeBases.create(req) }
+      return { success: true, data: await db.knowledgeBases.create(req) }
     } catch (e: any) {
       return { success: false, error: e.message }
     }
@@ -147,14 +147,14 @@ export class KnowledgeBaseService {
       const db = getDatabaseManager()
       if (!db.knowledgeBases) return { success: false, error: '数据库未初始化' }
 
-      const kb = db.knowledgeBases.findById(id)
+      const kb = await db.knowledgeBases.findById(id)
       if (!kb) return { success: false, error: '知识库不存在' }
 
-      if (req.name && req.name !== kb.name && db.knowledgeBases.existsByName(req.name)) {
+      if (req.name && req.name !== kb.name && await db.knowledgeBases.existsByName(req.name)) {
         return { success: false, error: '知识库名称已存在' }
       }
 
-      db.knowledgeBases.update(id, req)
+      await db.knowledgeBases.update(id, req)
       return { success: true }
     } catch (e: any) {
       return { success: false, error: e.message }
@@ -174,14 +174,14 @@ export class KnowledgeBaseService {
       if (fs.existsSync(kbDir)) fs.rmSync(kbDir, { recursive: true, force: true })
 
       // 删除数据库记录
-      const docs = db.kbDocuments.findByKnowledgeBaseId(id)
+      const docs = await db.kbDocuments.findByKnowledgeBaseId(id)
       for (const doc of docs) {
         await db.kbVectors.deleteByDocumentId(doc.id)
-        db.kbInvertedIndex.deleteByDocumentId(doc.id)
+        await db.kbInvertedIndex.deleteByDocumentId(doc.id)
       }
-      db.kbChunks.deleteByKnowledgeBaseId(id)
-      db.kbDocuments.deleteByKnowledgeBaseId(id)
-      db.knowledgeBases.delete(id)
+      await db.kbChunks.deleteByKnowledgeBaseId(id)
+      await db.kbDocuments.deleteByKnowledgeBaseId(id)
+      await db.knowledgeBases.delete(id)
 
       return { success: true }
     } catch (e: any) {
@@ -196,7 +196,7 @@ export class KnowledgeBaseService {
       const db = getDatabaseManager()
       if (!db.knowledgeBases || !db.kbDocuments) return { success: false, error: '数据库未初始化' }
 
-      const kb = db.knowledgeBases.findById(kbId)
+      const kb = await db.knowledgeBases.findById(kbId)
       if (!kb) return { success: false, error: '知识库不存在' }
       if (files.length > 20) return { success: false, error: '单次最多上传 20 个文件' }
 
@@ -226,11 +226,11 @@ export class KnowledgeBaseService {
         })
       }
 
-      const docs = db.kbDocuments.createBatch(requests)
+      const docs = await db.kbDocuments.createBatch(requests)
 
       // 更新统计
-      db.knowledgeBases.incrementDocumentCount(kbId, docs.length)
-      db.knowledgeBases.incrementTotalSize(kbId, docs.reduce((s, d) => s + d.fileSize, 0))
+      await db.knowledgeBases.incrementDocumentCount(kbId, docs.length)
+      await db.knowledgeBases.incrementTotalSize(kbId, docs.reduce((s, d) => s + d.fileSize, 0))
 
       // 发送知识库统计更新事件
       this.emitKnowledgeBaseStats(kbId)
@@ -255,7 +255,7 @@ export class KnowledgeBaseService {
       const db = getDatabaseManager()
       if (!db.knowledgeBases || !db.kbDocuments) return { success: false, error: '数据库未初始化' }
 
-      const kb = db.knowledgeBases.findById(kbId)
+      const kb = await db.knowledgeBases.findById(kbId)
       if (!kb) return { success: false, error: '知识库不存在' }
 
       // 准备目录
@@ -278,11 +278,11 @@ export class KnowledgeBaseService {
         fileSize: contentBuffer.length
       }
 
-      const doc = db.kbDocuments.create(request)
+      const doc = await db.kbDocuments.create(request)
 
       // 更新统计
-      db.knowledgeBases.incrementDocumentCount(kbId, 1)
-      db.knowledgeBases.incrementTotalSize(kbId, doc.fileSize)
+      await db.knowledgeBases.incrementDocumentCount(kbId, 1)
+      await db.knowledgeBases.incrementTotalSize(kbId, doc.fileSize)
 
       // 发送知识库统计更新事件
       this.emitKnowledgeBaseStats(kbId)
@@ -301,7 +301,7 @@ export class KnowledgeBaseService {
     try {
       const db = getDatabaseManager()
       if (!db.kbDocuments) return { success: false, error: '数据库未初始化' }
-      return { success: true, data: db.kbDocuments.findByKnowledgeBaseId(kbId) }
+      return { success: true, data: await db.kbDocuments.findByKnowledgeBaseId(kbId) }
     } catch (e: any) {
       return { success: false, error: e.message }
     }
@@ -314,7 +314,7 @@ export class KnowledgeBaseService {
         return { success: false, error: '数据库未初始化' }
       }
 
-      const doc = db.kbDocuments.findById(docId)
+      const doc = await db.kbDocuments.findById(docId)
       if (!doc) return { success: false, error: '文档不存在' }
 
       const kbId = doc.knowledgeBaseId
@@ -322,18 +322,18 @@ export class KnowledgeBaseService {
       if (fs.existsSync(doc.filePath)) fs.unlinkSync(doc.filePath)
 
       await db.kbVectors.deleteByDocumentId(docId)
-      db.kbInvertedIndex.deleteByDocumentId(docId)
-      db.kbChunks.deleteByDocumentId(docId)
-      db.kbDocuments.delete(docId)
+      await db.kbInvertedIndex.deleteByDocumentId(docId)
+      await db.kbChunks.deleteByDocumentId(docId)
+      await db.kbDocuments.delete(docId)
 
       // 使用文档的 chunkCount 字段计算向量数（只有处理完成时才设置）
       // 避免删除未完成文档时向量数变成负数
       const vectorCount = doc.chunkCount || 0
-      db.knowledgeBases.incrementDocumentCount(kbId, -1)
+      await db.knowledgeBases.incrementDocumentCount(kbId, -1)
       if (vectorCount > 0) {
-        db.knowledgeBases.incrementVectorCount(kbId, -vectorCount)
+        await db.knowledgeBases.incrementVectorCount(kbId, -vectorCount)
       }
-      db.knowledgeBases.incrementTotalSize(kbId, -doc.fileSize)
+      await db.knowledgeBases.incrementTotalSize(kbId, -doc.fileSize)
 
       // 发送知识库统计更新事件
       this.emitKnowledgeBaseStats(kbId)
@@ -349,16 +349,16 @@ export class KnowledgeBaseService {
       const db = getDatabaseManager()
       if (!db.kbDocuments || !db.knowledgeBases) return { success: false, error: '数据库未初始化' }
 
-      const doc = db.kbDocuments.findById(docId)
+      const doc = await db.kbDocuments.findById(docId)
       if (!doc) return { success: false, error: '文档不存在' }
 
-      const kb = db.knowledgeBases.findById(doc.knowledgeBaseId)
+      const kb = await db.knowledgeBases.findById(doc.knowledgeBaseId)
       if (!kb) return { success: false, error: '知识库不存在' }
 
-      db.kbDocuments.updateProgress(docId, 0)
+      await db.kbDocuments.updateProgress(docId, 0)
       await db.kbVectors.deleteByDocumentId(docId)
-      db.kbInvertedIndex.deleteByDocumentId(docId)
-      db.kbChunks.deleteByDocumentId(docId)
+      await db.kbInvertedIndex.deleteByDocumentId(docId)
+      await db.kbChunks.deleteByDocumentId(docId)
 
       await this.processDocument(doc, kb)
       return { success: true }
@@ -381,11 +381,11 @@ export class KnowledgeBaseService {
 
     try {
       // 1. 解析
-      db.kbDocuments.updateProgress(doc.id, 10)
+      await db.kbDocuments.updateProgress(doc.id, 10)
       this.emitProgress(doc.id, 10, undefined)
       const content = await this.parseFile(doc.filePath, doc.fileType)
       if (!content?.trim()) {
-        db.kbDocuments.markFailed(doc.id, '文档内容为空')
+        await db.kbDocuments.markFailed(doc.id, '文档内容为空')
         this.emitStatus(doc.id, 'failed', undefined, '文档内容为空')
         return
       }
@@ -398,7 +398,7 @@ export class KnowledgeBaseService {
         : { ...DEFAULT_SPLIT_CONFIG, strategy: (kb.splitStrategy || 'hybrid') as SplitStrategy }
 
       // 3. 切分（使用新的 HybridSplitter）
-      db.kbDocuments.updateProgress(doc.id, 20)
+      await db.kbDocuments.updateProgress(doc.id, 20)
       this.emitProgress(doc.id, 20, undefined)
 
       const embeddingService = new EmbeddingServiceAdapter(this, embeddingConfig)
@@ -411,13 +411,13 @@ export class KnowledgeBaseService {
       } catch (splitError: any) {
         // 切分失败（可能是 Embedding API 失败），标记文档失败
         console.error(`[KB] 切分失败: ${splitError.message}`)
-        db.kbDocuments.markFailed(doc.id, splitError.message)
+        await db.kbDocuments.markFailed(doc.id, splitError.message)
         this.emitStatus(doc.id, 'failed', undefined, splitError.message)
         return
       }
 
       // 4. 存储切片（包含层级信息）
-      db.kbDocuments.updateProgress(doc.id, 30)
+      await db.kbDocuments.updateProgress(doc.id, 30)
       this.emitProgress(doc.id, 30, undefined)
 
       // 构建父 chunk ID 映射
@@ -441,7 +441,7 @@ export class KnowledgeBaseService {
         }
       })
 
-      const chunkRecords = db.kbChunks.createBatch(chunkRequests)
+      const chunkRecords = await db.kbChunks.createBatch(chunkRequests)
 
       // 构建真实 ID 映射
       for (let i = 0; i < splitChunks.length; i++) {
@@ -478,7 +478,7 @@ export class KnowledgeBaseService {
 
         batchIndex++
         const progress = 30 + Math.floor((i / chunkRecords.length) * 50)
-        db.kbDocuments.updateProgress(doc.id, progress)
+        await db.kbDocuments.updateProgress(doc.id, progress)
 
         const remainingBatches = totalBatches - batchIndex
         const avgBatchTime = (Date.now() - startTime - 5000) / batchIndex / 1000
@@ -488,13 +488,13 @@ export class KnowledgeBaseService {
       }
 
       // 6. 索引
-      db.kbDocuments.updateProgress(doc.id, 90)
+      await db.kbDocuments.updateProgress(doc.id, 90)
       this.emitProgress(doc.id, 90, 3)
       this.buildIndex(chunkRecords, kb.id)
 
       // 完成
-      db.kbDocuments.markCompleted(doc.id, splitChunks.length)
-      db.knowledgeBases.incrementVectorCount(kb.id, splitChunks.length)
+      await db.kbDocuments.markCompleted(doc.id, splitChunks.length)
+      await db.knowledgeBases.incrementVectorCount(kb.id, splitChunks.length)
       this.emitProgress(doc.id, 100, 0)
       this.emitStatus(doc.id, 'completed', splitChunks.length)
       this.emitKnowledgeBaseStats(kb.id)
@@ -502,7 +502,7 @@ export class KnowledgeBaseService {
 
     } catch (e: any) {
       console.error(`[KB] 处理失败: ${doc.name}`, e)
-      db.kbDocuments.markFailed(doc.id, e.message)
+      await db.kbDocuments.markFailed(doc.id, e.message)
       this.emitStatus(doc.id, 'failed', undefined, e.message)
     }
   }
@@ -809,7 +809,7 @@ export class KnowledgeBaseService {
       }
     }
 
-    db.kbInvertedIndex.insertBatch(items)
+    await db.kbInvertedIndex.insertBatch(items)
   }
 
   // ==================== 检索 ====================
@@ -821,7 +821,7 @@ export class KnowledgeBaseService {
         return { success: false, error: '数据库未初始化' }
       }
 
-      const kb = db.knowledgeBases.findById(req.knowledgeBaseId)
+      const kb = await db.knowledgeBases.findById(req.knowledgeBaseId)
       if (!kb) return { success: false, error: '知识库不存在' }
 
       const config: EmbeddingConfig = kb.embeddingConfig ? JSON.parse(kb.embeddingConfig) : {}
@@ -832,9 +832,9 @@ export class KnowledgeBaseService {
 
       const searchResults: SearchResult[] = []
       for (const r of results) {
-        const chunk = db.kbChunks.findById(r.chunkId)
+        const chunk = await db.kbChunks.findById(r.chunkId)
         if (!chunk) continue
-        const doc = db.kbDocuments.findById(chunk.documentId)
+        const doc = await db.kbDocuments.findById(chunk.documentId)
         if (!doc) continue
 
         searchResults.push({
@@ -863,10 +863,10 @@ export class KnowledgeBaseService {
         return { success: false, error: '数据库未初始化' }
       }
 
-      const doc = db.kbDocuments.findById(documentId)
+      const doc = await db.kbDocuments.findById(documentId)
       if (!doc) return { success: false, error: '文档不存在' }
 
-      const chunks = db.kbChunks.findByDocumentId(documentId)
+      const chunks = await db.kbChunks.findByDocumentId(documentId)
       return { success: true, data: chunks }
     } catch (e: any) {
       console.error('[KB] 获取文档分片失败:', e)
@@ -888,12 +888,12 @@ export class KnowledgeBaseService {
         return { success: false, error: '数据库未初始化' }
       }
 
-      const doc = db.kbDocuments.findById(documentId)
+      const doc = await db.kbDocuments.findById(documentId)
       if (!doc) return { success: false, error: '文档不存在' }
 
       const offset = (page - 1) * pageSize
-      const chunks = db.kbChunks.findByDocumentIdPaginated(documentId, offset, pageSize)
-      const total = db.kbChunks.countByDocumentIdPaginated(documentId)
+      const chunks = await db.kbChunks.findByDocumentIdPaginated(documentId, offset, pageSize)
+      const total = await db.kbChunks.countByDocumentIdPaginated(documentId)
 
       // 移除 content 字段，减少内存占用
       const lightChunks = chunks.map(chunk => ({
@@ -924,7 +924,7 @@ export class KnowledgeBaseService {
         return { success: false, error: '数据库未初始化' }
       }
 
-      const chunk = db.kbChunks.findById(chunkId)
+      const chunk = await db.kbChunks.findById(chunkId)
       if (!chunk) return { success: false, error: '切片不存在' }
 
       return { success: true, data: chunk }
@@ -1005,7 +1005,7 @@ export class KnowledgeBaseService {
       const db = getDatabaseManager()
       if (!db.knowledgeBases || !db.kbDocuments) return { success: false, error: '数据库未初始化' }
 
-      const kb = db.knowledgeBases.findById(kbId)
+      const kb = await db.knowledgeBases.findById(kbId)
       if (!kb) return { success: false, error: '知识库不存在' }
 
       // 验证 URL
@@ -1071,11 +1071,11 @@ export class KnowledgeBaseService {
         fileSize: contentBuffer.length
       }
 
-      const doc = db.kbDocuments.create(request)
+      const doc = await db.kbDocuments.create(request)
 
       // 更新统计
-      db.knowledgeBases.incrementDocumentCount(kbId, 1)
-      db.knowledgeBases.incrementTotalSize(kbId, doc.fileSize)
+      await db.knowledgeBases.incrementDocumentCount(kbId, 1)
+      await db.knowledgeBases.incrementTotalSize(kbId, doc.fileSize)
 
       // 发送知识库统计更新事件
       this.emitKnowledgeBaseStats(kbId)

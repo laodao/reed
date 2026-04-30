@@ -1,14 +1,14 @@
 /**
  * 倒排索引数据访问层
  * @module database/repositories/kb-inverted-index.repository
- * @description 提供 BM25 关键词检索的倒排索引数据库操作
+ * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import Database from 'better-sqlite3'
+import { In, type DataSource } from 'typeorm'
+import { KbInvertedIndexEntity } from '../entities/kb-inverted-index.entity'
+import { KbChunkEntity } from '../entities/kb-chunk.entity'
+import { BaseRepository } from '../base-repository'
 
-/**
- * 倒排索引项
- */
 interface InvertedIndexItem {
   id: number
   term: string
@@ -18,91 +18,114 @@ interface InvertedIndexItem {
   positions?: number[]
 }
 
-/**
- * 倒排索引数据仓库
- */
-export class KbInvertedIndexRepository {
-  private db: Database.Database
+interface UpsertInput {
+  term: string
+  chunkId: string
+  knowledgeBaseId: string
+  termFrequency: number
+  positions?: number[]
+}
 
-  constructor(db: Database.Database) {
-    this.db = db
+export class KbInvertedIndexRepository extends BaseRepository<
+  KbInvertedIndexEntity,
+  InvertedIndexItem
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, KbInvertedIndexEntity)
+  }
+
+  protected toDto(e: KbInvertedIndexEntity): InvertedIndexItem {
+    return {
+      id: e.id,
+      term: e.term,
+      chunkId: e.chunkId,
+      knowledgeBaseId: e.knowledgeBaseId,
+      termFrequency: e.termFrequency,
+      positions: e.positions ? (JSON.parse(e.positions) as number[]) : undefined,
+    }
   }
 
   /**
-   * 插入或更新索引项
+   * 模拟 INSERT OR REPLACE：unique(term, chunk_id) 命中则更新；否则插入。
    */
-  upsert(data: {
-    term: string
-    chunkId: string
-    knowledgeBaseId: string
-    termFrequency: number
-    positions?: number[]
-  }): void {
+  async upsert(data: UpsertInput): Promise<void> {
     const positionsJson = data.positions ? JSON.stringify(data.positions) : null
-
-    // 使用 INSERT OR REPLACE
-    this.db.prepare(`
-      INSERT OR REPLACE INTO kb_inverted_index (
-        term, chunk_id, knowledge_base_id, term_frequency, positions
-      ) VALUES (?, ?, ?, ?, ?)
-    `).run(data.term, data.chunkId, data.knowledgeBaseId, data.termFrequency, positionsJson)
-  }
-
-  /**
-   * 批量插入索引项
-   */
-  insertBatch(items: Array<{
-    term: string
-    chunkId: string
-    knowledgeBaseId: string
-    termFrequency: number
-    positions?: number[]
-  }>): void {
-    const insert = this.db.prepare(`
-      INSERT OR REPLACE INTO kb_inverted_index (
-        term, chunk_id, knowledge_base_id, term_frequency, positions
-      ) VALUES (?, ?, ?, ?, ?)
-    `)
-
-    const insertMany = this.db.transaction((data: typeof items) => {
-      for (const item of data) {
-        const positionsJson = item.positions ? JSON.stringify(item.positions) : null
-        insert.run(item.term, item.chunkId, item.knowledgeBaseId, item.termFrequency, positionsJson)
+    await this.dataSource.transaction(async manager => {
+      const repo = manager.getRepository(KbInvertedIndexEntity)
+      const existing = await repo.findOne({
+        where: { term: data.term, chunkId: data.chunkId } as any,
+      })
+      if (existing) {
+        existing.knowledgeBaseId = data.knowledgeBaseId
+        existing.termFrequency = data.termFrequency
+        existing.positions = positionsJson
+        await repo.save(existing)
+      } else {
+        await repo.save(
+          repo.create({
+            term: data.term,
+            chunkId: data.chunkId,
+            knowledgeBaseId: data.knowledgeBaseId,
+            termFrequency: data.termFrequency,
+            positions: positionsJson,
+          }),
+        )
       }
     })
-
-    insertMany(items)
   }
 
-  /**
-   * 根据词项和知识库查询
-   */
-  findByTerm(knowledgeBaseId: string, term: string): InvertedIndexItem[] {
-    const rows = this.db.prepare(`
-      SELECT id, term, chunk_id, knowledge_base_id, term_frequency, positions
-      FROM kb_inverted_index
-      WHERE knowledge_base_id = ? AND term = ?
-    `).all(knowledgeBaseId, term) as any[]
-
-    return rows.map(row => this.rowToEntity(row))
+  async insertBatch(items: UpsertInput[]): Promise<void> {
+    if (items.length === 0) return
+    await this.dataSource.transaction(async manager => {
+      const repo = manager.getRepository(KbInvertedIndexEntity)
+      for (const item of items) {
+        const positionsJson = item.positions
+          ? JSON.stringify(item.positions)
+          : null
+        const existing = await repo.findOne({
+          where: { term: item.term, chunkId: item.chunkId } as any,
+        })
+        if (existing) {
+          existing.knowledgeBaseId = item.knowledgeBaseId
+          existing.termFrequency = item.termFrequency
+          existing.positions = positionsJson
+          await repo.save(existing)
+        } else {
+          await repo.save(
+            repo.create({
+              term: item.term,
+              chunkId: item.chunkId,
+              knowledgeBaseId: item.knowledgeBaseId,
+              termFrequency: item.termFrequency,
+              positions: positionsJson,
+            }),
+          )
+        }
+      }
+    })
   }
 
-  /**
-   * 根据多个词项查询
-   */
-  findByTerms(knowledgeBaseId: string, terms: string[]): Map<string, InvertedIndexItem[]> {
+  async findByTerm(
+    knowledgeBaseId: string,
+    term: string,
+  ): Promise<InvertedIndexItem[]> {
+    const entities = await this.repo.find({
+      where: { knowledgeBaseId, term } as any,
+    })
+    return this.toDtoList(entities)
+  }
+
+  async findByTerms(
+    knowledgeBaseId: string,
+    terms: string[],
+  ): Promise<Map<string, InvertedIndexItem[]>> {
     if (terms.length === 0) return new Map()
-
-    const placeholders = terms.map(() => '?').join(',')
-    const rows = this.db.prepare(`
-      SELECT id, term, chunk_id, knowledge_base_id, term_frequency, positions
-      FROM kb_inverted_index
-      WHERE knowledge_base_id = ? AND term IN (${placeholders})
-    `).all(knowledgeBaseId, ...terms) as any[]
-
+    const entities = await this.repo.find({
+      where: { knowledgeBaseId, term: In(terms) } as any,
+    })
     const result = new Map<string, InvertedIndexItem[]>()
-    for (const row of rows) {
-      const item = this.rowToEntity(row)
+    for (const e of entities) {
+      const item = this.toDto(e)
       const existing = result.get(item.term) || []
       existing.push(item)
       result.set(item.term, existing)
@@ -110,91 +133,65 @@ export class KbInvertedIndexRepository {
     return result
   }
 
-  /**
-   * 根据切片 ID 删除索引
-   */
-  deleteByChunkId(chunkId: string): void {
-    this.db.prepare(
-      'DELETE FROM kb_inverted_index WHERE chunk_id = ?'
-    ).run(chunkId)
+  async deleteByChunkId(chunkId: string): Promise<void> {
+    await this.repo.delete({ chunkId } as any)
   }
 
-  /**
-   * 根据文档 ID 删除索引（通过关联切片）
-   */
-  deleteByDocumentId(documentId: string): void {
-    this.db.prepare(`
-      DELETE FROM kb_inverted_index
-      WHERE chunk_id IN (SELECT id FROM kb_chunks WHERE document_id = ?)
-    `).run(documentId)
+  async deleteByDocumentId(documentId: string): Promise<void> {
+    // SELECT chunk ids of document, then delete by IN
+    const chunkRepo = this.dataSource.getRepository(KbChunkEntity)
+    const chunks = await chunkRepo.find({
+      where: { documentId } as any,
+      select: ['id'],
+    })
+    if (chunks.length === 0) return
+    await this.repo
+      .createQueryBuilder()
+      .delete()
+      .from(KbInvertedIndexEntity)
+      .where('chunk_id IN (:...ids)', { ids: chunks.map(c => c.id) })
+      .execute()
   }
 
-  /**
-   * 根据知识库 ID 删除所有索引
-   */
-  deleteByKnowledgeBaseId(knowledgeBaseId: string): void {
-    this.db.prepare(
-      'DELETE FROM kb_inverted_index WHERE knowledge_base_id = ?'
-    ).run(knowledgeBaseId)
+  async deleteByKnowledgeBaseId(knowledgeBaseId: string): Promise<void> {
+    await this.repo.delete({ knowledgeBaseId } as any)
   }
 
-  /**
-   * 获取知识库的文档频率统计（每个词出现在多少文档中）
-   */
-  getDocumentFrequencies(knowledgeBaseId: string): Map<string, number> {
-    const rows = this.db.prepare(`
-      SELECT term, COUNT(DISTINCT chunk_id) as df
-      FROM kb_inverted_index
-      WHERE knowledge_base_id = ?
-      GROUP BY term
-    `).all(knowledgeBaseId) as any[]
+  async getDocumentFrequencies(
+    knowledgeBaseId: string,
+  ): Promise<Map<string, number>> {
+    const rows = await this.repo
+      .createQueryBuilder('i')
+      .select('i.term', 'term')
+      .addSelect('COUNT(DISTINCT i.chunk_id)', 'df')
+      .where('i.knowledge_base_id = :kbId', { kbId: knowledgeBaseId })
+      .groupBy('i.term')
+      .getRawMany()
 
     const result = new Map<string, number>()
     for (const row of rows) {
-      result.set(row.term, row.df)
+      result.set(row.term, Number(row.df))
     }
     return result
   }
 
-  /**
-   * 获取知识库的总切片数
-   */
-  getChunkCount(knowledgeBaseId: string): number {
-    const row = this.db.prepare(`
-      SELECT COUNT(DISTINCT chunk_id) as count
-      FROM kb_inverted_index
-      WHERE knowledge_base_id = ?
-    `).get(knowledgeBaseId) as { count: number }
-    return row?.count || 0
+  async getChunkCount(knowledgeBaseId: string): Promise<number> {
+    const row = await this.repo
+      .createQueryBuilder('i')
+      .select('COUNT(DISTINCT i.chunk_id)', 'count')
+      .where('i.knowledge_base_id = :kbId', { kbId: knowledgeBaseId })
+      .getRawOne()
+    return Number(row?.count) || 0
   }
 
-  /**
-   * 获取切片的平均长度（词项总数 / 切片数）
-   */
-  getAverageChunkLength(knowledgeBaseId: string): number {
-    const row = this.db.prepare(`
-      SELECT
-        SUM(term_frequency) as total_terms,
-        COUNT(DISTINCT chunk_id) as chunk_count
-      FROM kb_inverted_index
-      WHERE knowledge_base_id = ?
-    `).get(knowledgeBaseId) as { total_terms: number; chunk_count: number } | undefined
-
-    if (!row || row.chunk_count === 0) return 0
-    return row.total_terms / row.chunk_count
-  }
-
-  /**
-   * 将数据库行转换为实体
-   */
-  private rowToEntity(row: any): InvertedIndexItem {
-    return {
-      id: row.id,
-      term: row.term,
-      chunkId: row.chunk_id,
-      knowledgeBaseId: row.knowledge_base_id,
-      termFrequency: row.term_frequency,
-      positions: row.positions ? JSON.parse(row.positions) : undefined
-    }
+  async getAverageChunkLength(knowledgeBaseId: string): Promise<number> {
+    const row = await this.repo
+      .createQueryBuilder('i')
+      .select('SUM(i.term_frequency)', 'total_terms')
+      .addSelect('COUNT(DISTINCT i.chunk_id)', 'chunk_count')
+      .where('i.knowledge_base_id = :kbId', { kbId: knowledgeBaseId })
+      .getRawOne()
+    if (!row || Number(row.chunk_count) === 0) return 0
+    return Number(row.total_terms) / Number(row.chunk_count)
   }
 }

@@ -1,104 +1,62 @@
 /**
  * 知识库文档数据访问层
  * @module database/repositories/kb-document.repository
- * @description 提供知识库文档的数据库操作
+ * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import Database from 'better-sqlite3'
+import type { DataSource } from 'typeorm'
 import { randomUUID } from 'crypto'
 import type {
   KbDocument,
   CreateDocumentRequest,
   DocumentStatus,
-  DocumentMetadata
+  DocumentMetadata,
 } from '@shared/types/knowledge-base.types'
+import { KbDocumentEntity } from '../entities/kb-document.entity'
+import { BaseRepository } from '../base-repository'
 
-/**
- * 知识库文档数据仓库
- */
-export class KbDocumentRepository {
-  private db: Database.Database
-
-  constructor(db: Database.Database) {
-    this.db = db
+export class KbDocumentRepository extends BaseRepository<
+  KbDocumentEntity,
+  KbDocument
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, KbDocumentEntity)
   }
 
-  /**
-   * 将数据库行转换为 KbDocument 对象
-   */
-  private rowToEntity(row: any): KbDocument {
+  protected toDto(e: KbDocumentEntity): KbDocument {
     return {
-      id: row.id,
-      knowledgeBaseId: row.knowledge_base_id,
-      name: row.name,
-      filePath: row.file_path,
-      fileType: row.file_type,
-      fileSize: row.file_size,
-      status: row.status,
-      progress: row.progress,
-      chunkCount: row.chunk_count,
-      errorMessage: row.error_message || undefined,
-      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
-      createdAt: new Date(row.created_at),
-      updatedAt: new Date(row.updated_at)
+      id: e.id,
+      knowledgeBaseId: e.knowledgeBaseId,
+      name: e.name,
+      filePath: e.filePath,
+      fileType: e.fileType,
+      fileSize: e.fileSize,
+      status: e.status as DocumentStatus,
+      progress: e.progress,
+      chunkCount: e.chunkCount,
+      errorMessage: e.errorMessage || undefined,
+      metadata: (e.metadata as DocumentMetadata | null) ?? undefined,
+      createdAt: e.createdAt instanceof Date ? e.createdAt : new Date(e.createdAt),
+      updatedAt: e.updatedAt instanceof Date ? e.updatedAt : new Date(e.updatedAt),
     }
   }
 
-  /**
-   * 获取知识库的所有文档
-   */
-  findByKnowledgeBaseId(knowledgeBaseId: string): KbDocument[] {
-    const rows = this.db.prepare(
-      'SELECT * FROM kb_documents WHERE knowledge_base_id = ? ORDER BY created_at DESC'
-    ).all(knowledgeBaseId) as any[]
-    return rows.map(row => this.rowToEntity(row))
+  async findByKnowledgeBaseId(knowledgeBaseId: string): Promise<KbDocument[]> {
+    return this.findManyByWhere({ knowledgeBaseId } as any, { createdAt: 'DESC' })
   }
 
-  /**
-   * 根据 ID 获取文档
-   */
-  findById(id: string): KbDocument | null {
-    const row = this.db.prepare(
-      'SELECT * FROM kb_documents WHERE id = ?'
-    ).get(id) as any
-    if (!row) return null
-    return this.rowToEntity(row)
+  async findById(id: string): Promise<KbDocument | null> {
+    return this.findOneByWhere({ id } as any)
   }
 
-  /**
-   * 根据状态获取文档
-   */
-  findByStatus(status: DocumentStatus): KbDocument[] {
-    const rows = this.db.prepare(
-      'SELECT * FROM kb_documents WHERE status = ? ORDER BY created_at ASC'
-    ).all(status) as any[]
-    return rows.map(row => this.rowToEntity(row))
+  async findByStatus(status: DocumentStatus): Promise<KbDocument[]> {
+    return this.findManyByWhere({ status } as any, { createdAt: 'ASC' })
   }
 
-  /**
-   * 创建文档
-   */
-  create(request: CreateDocumentRequest): KbDocument {
+  async create(request: CreateDocumentRequest): Promise<KbDocument> {
     const id = randomUUID()
-    const now = new Date().toISOString()
-
-    this.db.prepare(`
-      INSERT INTO kb_documents (
-        id, knowledge_base_id, name, file_path, file_type, file_size,
-        status, progress, chunk_count, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, 0, ?, ?)
-    `).run(
-      id,
-      request.knowledgeBaseId,
-      request.name,
-      request.filePath,
-      request.fileType,
-      request.fileSize,
-      now,
-      now
-    )
-
-    return {
+    const now = new Date()
+    const entity = this.repo.create({
       id,
       knowledgeBaseId: request.knowledgeBaseId,
       name: request.name,
@@ -108,138 +66,99 @@ export class KbDocumentRepository {
       status: 'pending',
       progress: 0,
       chunkCount: 0,
-      createdAt: new Date(now),
-      updatedAt: new Date(now)
-    }
-  }
-
-  /**
-   * 批量创建文档
-   */
-  createBatch(requests: CreateDocumentRequest[]): KbDocument[] {
-    const insert = this.db.prepare(`
-      INSERT INTO kb_documents (
-        id, knowledge_base_id, name, file_path, file_type, file_size,
-        status, progress, chunk_count, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, 0, ?, ?)
-    `)
-
-    const now = new Date().toISOString()
-    const documents: KbDocument[] = []
-
-    const insertMany = this.db.transaction((items: CreateDocumentRequest[]) => {
-      for (const request of items) {
-        const id = randomUUID()
-        insert.run(
-          id,
-          request.knowledgeBaseId,
-          request.name,
-          request.filePath,
-          request.fileType,
-          request.fileSize,
-          now,
-          now
-        )
-        documents.push({
-          id,
-          knowledgeBaseId: request.knowledgeBaseId,
-          name: request.name,
-          filePath: request.filePath,
-          fileType: request.fileType,
-          fileSize: request.fileSize,
-          status: 'pending',
-          progress: 0,
-          chunkCount: 0,
-          createdAt: new Date(now),
-          updatedAt: new Date(now)
-        })
-      }
+      errorMessage: null,
+      metadata: null,
+      createdAt: now,
+      updatedAt: now,
     })
-
-    insertMany(requests)
-    return documents
+    const saved = await this.repo.save(entity)
+    return this.toDto(saved)
   }
 
-  /**
-   * 更新处理进度
-   */
-  updateProgress(id: string, progress: number): void {
-    this.db.prepare(`
-      UPDATE kb_documents
-      SET progress = ?, status = 'processing', updated_at = ?
-      WHERE id = ?
-    `).run(progress, new Date().toISOString(), id)
+  async createBatch(
+    requests: CreateDocumentRequest[],
+  ): Promise<KbDocument[]> {
+    if (requests.length === 0) return []
+    const now = new Date()
+    return this.dataSource.transaction(async manager => {
+      const repo = manager.getRepository(KbDocumentEntity)
+      const documents: KbDocument[] = []
+      for (const request of requests) {
+        const id = randomUUID()
+        const saved = await repo.save(
+          repo.create({
+            id,
+            knowledgeBaseId: request.knowledgeBaseId,
+            name: request.name,
+            filePath: request.filePath,
+            fileType: request.fileType,
+            fileSize: request.fileSize,
+            status: 'pending',
+            progress: 0,
+            chunkCount: 0,
+            errorMessage: null,
+            metadata: null,
+            createdAt: now,
+            updatedAt: now,
+          }),
+        )
+        documents.push(this.toDto(saved))
+      }
+      return documents
+    })
   }
 
-  /**
-   * 标记为处理完成
-   */
-  markCompleted(id: string, chunkCount: number): void {
-    this.db.prepare(`
-      UPDATE kb_documents
-      SET status = 'completed', progress = 100, chunk_count = ?, updated_at = ?
-      WHERE id = ?
-    `).run(chunkCount, new Date().toISOString(), id)
+  async updateProgress(id: string, progress: number): Promise<void> {
+    await this.repo.update({ id } as any, {
+      progress,
+      status: 'processing',
+      updatedAt: new Date(),
+    })
   }
 
-  /**
-   * 标记为处理失败
-   */
-  markFailed(id: string, errorMessage: string): void {
-    this.db.prepare(`
-      UPDATE kb_documents
-      SET status = 'failed', error_message = ?, updated_at = ?
-      WHERE id = ?
-    `).run(errorMessage, new Date().toISOString(), id)
+  async markCompleted(id: string, chunkCount: number): Promise<void> {
+    await this.repo.update({ id } as any, {
+      status: 'completed',
+      progress: 100,
+      chunkCount,
+      updatedAt: new Date(),
+    })
   }
 
-  /**
-   * 更新元数据
-   */
-  updateMetadata(id: string, metadata: DocumentMetadata): void {
-    this.db.prepare(`
-      UPDATE kb_documents
-      SET metadata = ?, updated_at = ?
-      WHERE id = ?
-    `).run(JSON.stringify(metadata), new Date().toISOString(), id)
+  async markFailed(id: string, errorMessage: string): Promise<void> {
+    await this.repo.update({ id } as any, {
+      status: 'failed',
+      errorMessage,
+      updatedAt: new Date(),
+    })
   }
 
-  /**
-   * 删除文档
-   */
-  delete(id: string): boolean {
-    const result = this.db.prepare(
-      'DELETE FROM kb_documents WHERE id = ?'
-    ).run(id)
-    return result.changes > 0
+  async updateMetadata(id: string, metadata: DocumentMetadata): Promise<void> {
+    await this.repo.update({ id } as any, {
+      metadata: metadata as Record<string, unknown>,
+      updatedAt: new Date(),
+    })
   }
 
-  /**
-   * 删除知识库的所有文档
-   */
-  deleteByKnowledgeBaseId(knowledgeBaseId: string): void {
-    this.db.prepare(
-      'DELETE FROM kb_documents WHERE knowledge_base_id = ?'
-    ).run(knowledgeBaseId)
+  async delete(id: string): Promise<boolean> {
+    const result = await this.repo.delete({ id } as any)
+    return (result.affected ?? 0) > 0
   }
 
-  /**
-   * 统计知识库的文档数量
-   */
-  countByKnowledgeBaseId(knowledgeBaseId: string): number {
-    const row = this.db.prepare(
-      'SELECT COUNT(*) as count FROM kb_documents WHERE knowledge_base_id = ?'
-    ).get(knowledgeBaseId) as { count: number }
-    return row?.count || 0
+  async deleteByKnowledgeBaseId(knowledgeBaseId: string): Promise<void> {
+    await this.repo.delete({ knowledgeBaseId } as any)
   }
 
-  /**
-   * 统计知识库的总大小
-   */
-  sumSizeByKnowledgeBaseId(knowledgeBaseId: string): number {
-    const row = this.db.prepare(
-      'SELECT SUM(file_size) as total FROM kb_documents WHERE knowledge_base_id = ?'
-    ).get(knowledgeBaseId) as { total: number | null }
-    return row?.total || 0
+  async countByKnowledgeBaseId(knowledgeBaseId: string): Promise<number> {
+    return this.repo.count({ where: { knowledgeBaseId } as any })
+  }
+
+  async sumSizeByKnowledgeBaseId(knowledgeBaseId: string): Promise<number> {
+    const row = await this.repo
+      .createQueryBuilder('d')
+      .select('SUM(d.file_size)', 'total')
+      .where('d.knowledge_base_id = :kbId', { kbId: knowledgeBaseId })
+      .getRawOne()
+    return Number(row?.total) || 0
   }
 }
