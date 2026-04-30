@@ -266,13 +266,13 @@ export class StoryToVideoResourceService {
         const imageInfo = response.images[0]
 
         return {
-          type: 'generated',
-          url: imageInfo.url || '',
-          filePath: imageInfo.filePath || '',
+          id: `imgasset_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+          type: 'generated' as const,
+          imagePath: imageInfo.url || '',
+          prompt,
           width,
           height,
-          prompt,
-          generatedAt: Date.now()
+          createdAt: Date.now(),
         }
       }
 
@@ -708,17 +708,18 @@ export class StoryToVideoResourceService {
 
       if (response.success && response.images && response.images.length > 0) {
         const imageInfo = response.images[0]
+        const imageRef = imageInfo.url || ''
 
         // 更新角色的 generatedImageId
-        const updated = await db.lwCharacters.update(characterId, {
-          generatedImageId: imageInfo.id || imageInfo.filePath
+        await db.lwCharacters?.update(characterId, {
+          generatedImageId: imageRef,
         })
 
-        console.log(`[StoryToVideoResource] 临时角色图片生成成功: ${imageInfo.filePath}`)
+        console.log(`[StoryToVideoResource] 临时角色图片生成成功: ${imageRef}`)
 
         return {
           success: true,
-          imageId: imageInfo.id || imageInfo.filePath
+          imageId: imageRef,
         }
       }
 
@@ -789,15 +790,16 @@ export class StoryToVideoResourceService {
 
       if (response.success && response.images && response.images.length > 0) {
         const imageInfo = response.images[0]
+        const imageRef = imageInfo.url || ''
 
         // 更新地点的 generatedImageId
-        const updated = await db.lwLocations.update(locationId, {
-          generatedImageId: imageInfo.id || imageInfo.filePath
+        await db.lwLocations?.update(locationId, {
+          generatedImageId: imageRef,
         })
 
         return {
           success: true,
-          imageId: imageInfo.id || imageInfo.filePath
+          imageId: imageRef,
         }
       }
 
@@ -830,7 +832,7 @@ export class StoryToVideoResourceService {
     }
 
     // 获取所有临时角色
-    const tempCharacters = db.lwCharacters?.getTemporaryByProjectId(projectId) || []
+    const tempCharacters = (await db.lwCharacters?.getTemporaryByProjectId(projectId)) || []
     console.log(`[StoryToVideoResource] 找到 ${tempCharacters.length} 个临时角色需要生成图片`)
 
     for (let i = 0; i < tempCharacters.length; i++) {
@@ -864,7 +866,7 @@ export class StoryToVideoResourceService {
     }
 
     // 获取所有临时地点
-    const tempLocations = db.lwLocations?.getTemporaryByProjectId(projectId) || []
+    const tempLocations = (await db.lwLocations?.getTemporaryByProjectId(projectId)) || []
     console.log(`[StoryToVideoResource] 找到 ${tempLocations.length} 个临时地点需要生成图片`)
 
     for (let i = 0; i < tempLocations.length; i++) {

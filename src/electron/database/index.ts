@@ -2999,6 +2999,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
    * 重建依赖表并恢复数据
    */
   private recreateDependentTablesWithData(savedData: Map<string, any[]>): void {
+    if (!this.db) return
     // character_bindings 表
     if (savedData.has('character_bindings') && savedData.get('character_bindings')!.length > 0) {
       this.db.exec(`

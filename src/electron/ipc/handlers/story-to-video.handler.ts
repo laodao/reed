@@ -981,22 +981,22 @@ async function handleGenerateScript(
       }
 
       if (project.longWritingProjectId) {
-        const outline = db.lwOutlines?.getById(outlineId)
+        const outline = await db.lwOutlines?.getById(outlineId)
         if (outline) {
           // 根据节点类型获取内容
           if (outline.nodeType === 'section') {
             // 节级别：直接获取内容
-            const chapter = db.lwChapters?.getByOutlineId(outlineId)
+            const chapter = await db.lwChapters?.getByOutlineId(outlineId)
             if (chapter && chapter.content) {
               chapterContent = chapter.content
             }
           } else if (outline.nodeType === 'chapter') {
             // 章级别：获取所有子节的内容
-            const sections = db.lwOutlines?.getChildren(outlineId) || []
+            const sections = (await db.lwOutlines?.getChildren(outlineId)) || []
             const contents: string[] = []
             for (const section of sections) {
               if (section.nodeType === 'section') {
-                const chapter = db.lwChapters?.getByOutlineId(section.id)
+                const chapter = await db.lwChapters?.getByOutlineId(section.id)
                 if (chapter && chapter.content) {
                   contents.push(`【${section.name}】\n${chapter.content}`)
                 }
@@ -1005,13 +1005,13 @@ async function handleGenerateScript(
             chapterContent = contents.join('\n\n')
           } else if (outline.nodeType === 'volume') {
             // 卷级别：获取所有章和节的内容
-            const chapters = db.lwOutlines?.getChildren(outlineId) || []
+            const chapters = (await db.lwOutlines?.getChildren(outlineId)) || []
             const contents: string[] = []
             for (const chapterNode of chapters) {
-              const sections = db.lwOutlines?.getChildren(chapterNode.id) || []
+              const sections = (await db.lwOutlines?.getChildren(chapterNode.id)) || []
               for (const section of sections) {
                 if (section.nodeType === 'section') {
-                  const chapter = db.lwChapters?.getByOutlineId(section.id)
+                  const chapter = await db.lwChapters?.getByOutlineId(section.id)
                   if (chapter && chapter.content) {
                     contents.push(`【${chapterNode.name} - ${section.name}】\n${chapter.content}`)
                   }
@@ -1029,12 +1029,12 @@ async function handleGenerateScript(
 
       // 获取角色列表
       if (project.longWritingProjectId) {
-        const chars = db.characters?.getByProjectId(project.longWritingProjectId) || []
+        const chars = (await db.lwCharacters?.getByProjectId(project.longWritingProjectId)) || []
         for (const char of chars) {
           characters.push({
             id: char.id,
             name: char.name,
-            description: char.description || char.appearance
+            description: char.appearance
           })
         }
       }
