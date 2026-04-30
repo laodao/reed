@@ -46,14 +46,12 @@ export class TranslationService {
    * 获取翻译仓库
    */
   private static getRepository(): TranslationRepository {
-    if (!this.repo) {
-      const dbManager = getDatabaseManager()
-      const db = dbManager.getDatabase()
-      if (db) {
-        this.repo = new TranslationRepository(db)
-      }
+    // 复用 DatabaseManager 集中管理的实例（已切到 TypeORM DataSource）
+    const dbManager = getDatabaseManager()
+    if (!dbManager.translations) {
+      throw new Error('TranslationRepository not initialized')
     }
-    return this.repo
+    return dbManager.translations
   }
 
   /**
@@ -232,7 +230,7 @@ export class TranslationService {
         try {
           const repo = this.getRepository()
           if (repo) {
-            repo.create({
+            await repo.create({
               type: 'text',
               sourceLanguage: request.sourceLanguage,
               targetLanguage: request.targetLanguage,
@@ -288,7 +286,7 @@ export class TranslationService {
       const repo = this.getRepository()
       let recordId: string
       if (repo) {
-        const record = repo.create({
+        const record = await repo.create({
           type: 'file',
           sourceLanguage: request.sourceLanguage,
           targetLanguage: request.targetLanguage,
@@ -366,7 +364,7 @@ export class TranslationService {
 
       // 更新记录
       if (repo) {
-        repo.update(recordId, {
+        await repo.update(recordId, {
           targetFile: targetPath,
           status: 'completed'
         })
@@ -380,7 +378,7 @@ export class TranslationService {
     } catch (error: any) {
       // 更新失败状态
       if (repo) {
-        repo.update(recordId, {
+        await repo.update(recordId, {
           status: 'failed',
           errorMessage: error.message
         })

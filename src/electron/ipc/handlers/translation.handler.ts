@@ -8,7 +8,6 @@ import { ipcMain, BrowserWindow } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import { TranslationService } from '../../services/translation.service'
 import { getDatabaseManager } from '../../database'
-import { TranslationRepository } from '@core/database/repositories/translation.repository'
 import type {
   TextTranslationRequest,
   FileTranslationRequest,
@@ -113,13 +112,11 @@ async function handleGetHistory(
   query: TranslationHistoryQuery
 ): Promise<IpcResponse<{ list: any[]; total: number }>> {
   try {
-    const db = getDatabaseManager().getDatabase()
-    if (!db) {
+    const repo = getDatabaseManager().translations
+    if (!repo) {
       return { success: false, error: '数据库未初始化' }
     }
-
-    const repo = new TranslationRepository(db)
-    const result = repo.getList(query)
+    const result = await repo.getList(query)
     return { success: true, data: result }
   } catch (error: any) {
     console.error('[handleGetHistory] 错误:', error)
@@ -135,13 +132,11 @@ async function handleGetTranslation(
   id: string
 ): Promise<IpcResponse<any>> {
   try {
-    const db = getDatabaseManager().getDatabase()
-    if (!db) {
+    const repo = getDatabaseManager().translations
+    if (!repo) {
       return { success: false, error: '数据库未初始化' }
     }
-
-    const repo = new TranslationRepository(db)
-    const record = repo.getById(id)
+    const record = await repo.getById(id)
     return { success: true, data: record }
   } catch (error: any) {
     console.error('[handleGetTranslation] 错误:', error)
@@ -157,13 +152,11 @@ async function handleToggleFavorite(
   id: string
 ): Promise<IpcResponse<boolean>> {
   try {
-    const db = getDatabaseManager().getDatabase()
-    if (!db) {
+    const repo = getDatabaseManager().translations
+    if (!repo) {
       return { success: false, error: '数据库未初始化' }
     }
-
-    const repo = new TranslationRepository(db)
-    const newFavorite = repo.toggleFavorite(id)
+    const newFavorite = await repo.toggleFavorite(id)
     return { success: true, data: newFavorite }
   } catch (error: any) {
     console.error('[handleToggleFavorite] 错误:', error)
@@ -179,13 +172,11 @@ async function handleDeleteTranslation(
   id: string
 ): Promise<IpcResponse<boolean>> {
   try {
-    const db = getDatabaseManager().getDatabase()
-    if (!db) {
+    const repo = getDatabaseManager().translations
+    if (!repo) {
       return { success: false, error: '数据库未初始化' }
     }
-
-    const repo = new TranslationRepository(db)
-    repo.delete(id)
+    await repo.delete(id)
     return { success: true, data: true }
   } catch (error: any) {
     console.error('[handleDeleteTranslation] 错误:', error)
@@ -201,13 +192,11 @@ async function handleDownloadTranslation(
   id: string
 ): Promise<IpcResponse<string>> {
   try {
-    const db = getDatabaseManager().getDatabase()
-    if (!db) {
+    const repo = getDatabaseManager().translations
+    if (!repo) {
       return { success: false, error: '数据库未初始化' }
     }
-
-    const repo = new TranslationRepository(db)
-    const record = repo.getById(id)
+    const record = await repo.getById(id)
 
     if (!record || !record.targetFile) {
       return { success: false, error: '翻译结果不存在' }
