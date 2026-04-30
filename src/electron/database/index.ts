@@ -3652,7 +3652,7 @@ export class DatabaseManager {
     // Phase 1 试点：settings / apiKeys 已切到 TypeORM
     this.settings = new SettingsRepository(this.dataSource)
     this.apiKeys = new ApiKeyRepository(this.dataSource)
-    this.dialogs = new DialogRepository(this.db)
+    this.dialogs = new DialogRepository(this.dataSource)
     this.messages = new MessageRepository(this.db)
     this.roles = new RoleRepository(this.dataSource)
     this.images = new ImageRepository(this.db)
