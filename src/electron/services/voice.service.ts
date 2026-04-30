@@ -28,35 +28,22 @@ import type {
  * 语音服务
  */
 export class VoiceService {
-  private static voiceRepo: VoiceRepository
-  private static clonedVoiceRepo: ClonedVoiceRepository
-
   /**
-   * 获取语音仓库
+   * 获取语音仓库（复用 DatabaseManager 集中管理的实例）
    */
   private static getVoiceRepository(): VoiceRepository {
-    if (!this.voiceRepo) {
-      const dbManager = getDatabaseManager()
-      const db = dbManager.getDatabase()
-      if (db) {
-        this.voiceRepo = new VoiceRepository(db)
-      }
-    }
-    return this.voiceRepo
+    const repo = getDatabaseManager().voices
+    if (!repo) throw new Error('VoiceRepository not initialized')
+    return repo
   }
 
   /**
-   * 获取复刻声音仓库
+   * 获取复刻声音仓库（复用 DatabaseManager 集中管理的实例）
    */
   private static getClonedVoiceRepository(): ClonedVoiceRepository {
-    if (!this.clonedVoiceRepo) {
-      const dbManager = getDatabaseManager()
-      const db = dbManager.getDatabase()
-      if (db) {
-        this.clonedVoiceRepo = new ClonedVoiceRepository(db)
-      }
-    }
-    return this.clonedVoiceRepo
+    const repo = getDatabaseManager().clonedVoices
+    if (!repo) throw new Error('ClonedVoiceRepository not initialized')
+    return repo
   }
 
   /**
@@ -177,7 +164,7 @@ export class VoiceService {
 
       // 获取用户复刻的声音
       const clonedVoiceRepo = this.getClonedVoiceRepository()
-      const clonedVoices = clonedVoiceRepo.getByStatus('ready')
+      const clonedVoices = await clonedVoiceRepo.getByStatus('ready')
 
       const clonedSpeakers: VoiceSpeaker[] = clonedVoices.map(v => ({
         id: v.voiceId || v.id,
@@ -254,7 +241,7 @@ export class VoiceService {
 
       // 创建语音记录
       const voiceRepo = this.getVoiceRepository()
-      const record = voiceRepo.create({
+      const record = await voiceRepo.create({
         type: 'tts',
         status: 'processing',
         inputText: request.text,
@@ -287,7 +274,7 @@ export class VoiceService {
       })
 
       if (!result.success) {
-        voiceRepo.update(record.id, {
+        await voiceRepo.update(record.id, {
           status: 'failed',
           errorMessage: result.error || '语音生成失败'
         })
@@ -311,7 +298,7 @@ export class VoiceService {
         const audioBuffer = Buffer.from(audioBase64, 'base64')
         fs.writeFileSync(audioPath, audioBuffer)
       } else {
-        voiceRepo.update(record.id, {
+        await voiceRepo.update(record.id, {
           status: 'failed',
           errorMessage: '未获取到音频数据'
         })
@@ -319,7 +306,7 @@ export class VoiceService {
       }
 
       // 更新记录
-      voiceRepo.update(record.id, {
+      await voiceRepo.update(record.id, {
         status: 'completed',
         outputAudioPath: audioPath
       })
@@ -393,7 +380,7 @@ export class VoiceService {
 
       // 创建语音记录
       const voiceRepo = this.getVoiceRepository()
-      const record = voiceRepo.create({
+      const record = await voiceRepo.create({
         type: 'stt',
         status: 'processing',
         inputAudioPath: request.audioPath,
@@ -411,7 +398,7 @@ export class VoiceService {
       }
 
       if (!audioData) {
-        voiceRepo.update(record.id, {
+        await voiceRepo.update(record.id, {
           status: 'failed',
           errorMessage: '无法读取音频数据'
         })
@@ -430,7 +417,7 @@ export class VoiceService {
       })
 
       if (!result.success) {
-        voiceRepo.update(record.id, {
+        await voiceRepo.update(record.id, {
           status: 'failed',
           errorMessage: result.error || '语音识别失败'
         })
@@ -440,7 +427,7 @@ export class VoiceService {
       const recognizedText = result.text || ''
 
       // 更新记录
-      voiceRepo.update(record.id, {
+      await voiceRepo.update(record.id, {
         status: 'completed',
         outputText: recognizedText
       })
@@ -507,7 +494,7 @@ export class VoiceService {
   static async getHistory(query: { page: number; pageSize: number; type?: string; favorite?: boolean }) {
     try {
       const voiceRepo = this.getVoiceRepository()
-      const result = voiceRepo.getList(query)
+      const result = await voiceRepo.getList(query)
       return { success: true, data: result }
     } catch (error: any) {
       console.error('[VoiceService.getHistory] 错误:', error)
@@ -521,7 +508,7 @@ export class VoiceService {
   static async deleteRecord(id: string): Promise<{ success: boolean; error?: string }> {
     try {
       const voiceRepo = this.getVoiceRepository()
-      const record = voiceRepo.getById(id)
+      const record = await voiceRepo.getById(id)
 
       if (record?.outputAudioPath && fs.existsSync(record.outputAudioPath)) {
         fs.unlinkSync(record.outputAudioPath)
@@ -530,7 +517,7 @@ export class VoiceService {
         fs.unlinkSync(record.inputAudioPath)
       }
 
-      voiceRepo.delete(id)
+      await voiceRepo.delete(id)
       return { success: true }
     } catch (error: any) {
       console.error('[VoiceService.deleteRecord] 错误:', error)
@@ -544,7 +531,7 @@ export class VoiceService {
   static async toggleFavorite(id: string): Promise<{ success: boolean; data?: boolean; error?: string }> {
     try {
       const voiceRepo = this.getVoiceRepository()
-      const newFavorite = voiceRepo.toggleFavorite(id)
+      const newFavorite = await voiceRepo.toggleFavorite(id)
       return { success: true, data: newFavorite }
     } catch (error: any) {
       console.error('[VoiceService.toggleFavorite] 错误:', error)

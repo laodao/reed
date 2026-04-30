@@ -1,182 +1,102 @@
 /**
  * 复刻声音数据访问层
  * @module database/repositories/cloned-voice
- * @description 提供复刻声音的数据库操作
+ * @description 基于 TypeORM 实现，支持 sqlite / postgres 双方言。
+ *              所有方法已从同步签名迁移为 Promise<T>。
  */
 
-import Database from 'better-sqlite3'
-import type { ClonedVoice, ClonedVoiceStatus } from '@shared/types/voice.types'
+import type { DataSource } from 'typeorm'
+import type {
+  ClonedVoice,
+  ClonedVoiceStatus,
+} from '@shared/types/voice.types'
 import { randomUUID } from 'crypto'
+import { ClonedVoiceEntity } from '../entities/cloned-voice.entity'
+import { BaseRepository } from '../base-repository'
 
-/**
- * 复刻声音数据仓库
- */
-export class ClonedVoiceRepository {
-  private db: Database.Database
-
-  constructor(db: Database.Database) {
-    this.db = db
+export class ClonedVoiceRepository extends BaseRepository<
+  ClonedVoiceEntity,
+  ClonedVoice
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, ClonedVoiceEntity)
   }
 
-  /**
-   * 初始化表结构
-   */
-  static initTable(db: Database.Database): void {
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS cloned_voices (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'training',
-        sample_audio_path TEXT,
-        sample_duration INTEGER,
-        voice_id TEXT,
-        preview_audio_path TEXT,
-        provider_id TEXT,
-        error_message TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT
-      )
-    `)
-
-    // 创建索引
-    db.exec(`CREATE INDEX IF NOT EXISTS idx_cloned_voices_status ON cloned_voices(status)`)
-    db.exec(`CREATE INDEX IF NOT EXISTS idx_cloned_voices_created_at ON cloned_voices(created_at DESC)`)
-  }
-
-  /**
-   * 将数据库行转换为 ClonedVoice 对象
-   */
-  private rowToRecord(row: any): ClonedVoice {
+  protected toDto(e: ClonedVoiceEntity): ClonedVoice {
     return {
-      id: row.id,
-      name: row.name,
-      status: row.status as ClonedVoiceStatus,
-      sampleAudioPath: row.sample_audio_path || undefined,
-      sampleDuration: row.sample_duration ?? undefined,
-      voiceId: row.voice_id || undefined,
-      previewAudioPath: row.preview_audio_path || undefined,
-      providerId: row.provider_id || undefined,
-      errorMessage: row.error_message || undefined,
-      createdAt: new Date(row.created_at),
-      updatedAt: row.updated_at ? new Date(row.updated_at) : undefined
+      id: e.id,
+      name: e.name,
+      status: e.status as ClonedVoiceStatus,
+      sampleAudioPath: e.sampleAudioPath || undefined,
+      sampleDuration: e.sampleDuration ?? undefined,
+      voiceId: e.voiceId || undefined,
+      previewAudioPath: e.previewAudioPath || undefined,
+      providerId: e.providerId || undefined,
+      errorMessage: e.errorMessage || undefined,
+      createdAt: new Date(e.createdAt),
+      updatedAt: e.updatedAt ? new Date(e.updatedAt) : undefined,
     }
   }
 
-  /**
-   * 获取所有复刻声音
-   */
-  getAll(): ClonedVoice[] {
-    const rows = this.db.prepare(
-      `SELECT * FROM cloned_voices ORDER BY created_at DESC`
-    ).all() as any[]
-    return rows.map(row => this.rowToRecord(row))
+  async getAll(): Promise<ClonedVoice[]> {
+    return this.findManyByWhere({} as any, { createdAt: 'DESC' })
   }
 
-  /**
-   * 获取指定状态的复刻声音
-   */
-  getByStatus(status: ClonedVoiceStatus): ClonedVoice[] {
-    const rows = this.db.prepare(
-      `SELECT * FROM cloned_voices WHERE status = ? ORDER BY created_at DESC`
-    ).all(status) as any[]
-    return rows.map(row => this.rowToRecord(row))
+  async getByStatus(status: ClonedVoiceStatus): Promise<ClonedVoice[]> {
+    return this.findManyByWhere({ status } as any, { createdAt: 'DESC' })
   }
 
-  /**
-   * 根据 ID 获取复刻声音
-   */
-  getById(id: string): ClonedVoice | null {
-    const row = this.db.prepare('SELECT * FROM cloned_voices WHERE id = ?').get(id) as any
-    if (!row) return null
-    return this.rowToRecord(row)
+  async getById(id: string): Promise<ClonedVoice | null> {
+    return this.findOneByWhere({ id } as any)
   }
 
-  /**
-   * 根据 voiceId 获取复刻声音
-   */
-  getByVoiceId(voiceId: string): ClonedVoice | null {
-    const row = this.db.prepare('SELECT * FROM cloned_voices WHERE voice_id = ?').get(voiceId) as any
-    if (!row) return null
-    return this.rowToRecord(row)
+  async getByVoiceId(voiceId: string): Promise<ClonedVoice | null> {
+    return this.findOneByWhere({ voiceId } as any)
   }
 
-  /**
-   * 创建复刻声音
-   */
-  create(record: Omit<ClonedVoice, 'id' | 'createdAt'>): ClonedVoice {
+  async create(
+    record: Omit<ClonedVoice, 'id' | 'createdAt'>,
+  ): Promise<ClonedVoice> {
     const id = randomUUID()
-    const now = new Date().toISOString()
-
-    this.db.prepare(`
-      INSERT INTO cloned_voices (
-        id, name, status, sample_audio_path, sample_duration,
-        voice_id, preview_audio_path, provider_id, error_message, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    const nowIso = new Date().toISOString()
+    const entity = this.repo.create({
       id,
-      record.name,
-      record.status,
-      record.sampleAudioPath || null,
-      record.sampleDuration || null,
-      record.voiceId || null,
-      record.previewAudioPath || null,
-      record.providerId || null,
-      record.errorMessage || null,
-      now,
-      record.updatedAt?.toISOString() || null
-    )
-
-    return {
-      id,
-      ...record,
-      createdAt: new Date(now)
-    }
+      name: record.name,
+      status: record.status,
+      sampleAudioPath: record.sampleAudioPath ?? null,
+      sampleDuration: record.sampleDuration ?? null,
+      voiceId: record.voiceId ?? null,
+      previewAudioPath: record.previewAudioPath ?? null,
+      providerId: record.providerId ?? null,
+      errorMessage: record.errorMessage ?? null,
+      createdAt: nowIso,
+      updatedAt: record.updatedAt?.toISOString() ?? null,
+    })
+    const saved = await this.repo.save(entity)
+    return this.toDto(saved)
   }
 
-  /**
-   * 更新复刻声音
-   */
-  update(id: string, data: Partial<ClonedVoice>): void {
-    const fields: string[] = []
-    const values: any[] = []
+  async update(id: string, data: Partial<ClonedVoice>): Promise<void> {
+    const existing = await this.repo.findOne({ where: { id } as any })
+    if (!existing) return
 
-    if (data.status !== undefined) {
-      fields.push('status = ?')
-      values.push(data.status)
-    }
-    if (data.voiceId !== undefined) {
-      fields.push('voice_id = ?')
-      values.push(data.voiceId || null)
-    }
+    if (data.status !== undefined) existing.status = data.status
+    if (data.voiceId !== undefined) existing.voiceId = data.voiceId ?? null
     if (data.previewAudioPath !== undefined) {
-      fields.push('preview_audio_path = ?')
-      values.push(data.previewAudioPath || null)
+      existing.previewAudioPath = data.previewAudioPath ?? null
     }
     if (data.errorMessage !== undefined) {
-      fields.push('error_message = ?')
-      values.push(data.errorMessage || null)
+      existing.errorMessage = data.errorMessage ?? null
     }
-
-    if (fields.length > 0) {
-      fields.push('updated_at = ?')
-      values.push(new Date().toISOString())
-      values.push(id)
-      this.db.prepare(`UPDATE cloned_voices SET ${fields.join(', ')} WHERE id = ?`).run(...values)
-    }
+    existing.updatedAt = new Date().toISOString()
+    await this.repo.save(existing)
   }
 
-  /**
-   * 删除复刻声音
-   */
-  delete(id: string): void {
-    this.db.prepare('DELETE FROM cloned_voices WHERE id = ?').run(id)
+  async delete(id: string): Promise<void> {
+    await this.repo.delete({ id } as any)
   }
 
-  /**
-   * 统计复刻声音数量
-   */
-  count(): number {
-    const row = this.db.prepare(`SELECT COUNT(*) as count FROM cloned_voices`).get() as { count: number }
-    return row?.count || 0
+  async count(): Promise<number> {
+    return this.repo.count()
   }
 }

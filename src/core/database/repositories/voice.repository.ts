@@ -1,240 +1,134 @@
 /**
  * 语音记录数据访问层
  * @module database/repositories/voice
- * @description 提供语音记录的数据库操作
+ * @description 基于 TypeORM 实现，支持 sqlite / postgres 双方言。
+ *              所有方法已从同步签名迁移为 Promise<T>。
  */
 
-import Database from 'better-sqlite3'
-import type { VoiceRecord, VoiceHistoryQuery } from '@shared/types/voice.types'
+import type { DataSource } from 'typeorm'
+import type {
+  VoiceRecord,
+  VoiceHistoryQuery,
+} from '@shared/types/voice.types'
 import { randomUUID } from 'crypto'
+import { VoiceRecordEntity } from '../entities/voice-record.entity'
+import { BaseRepository } from '../base-repository'
 
-/**
- * 语音数据仓库
- */
-export class VoiceRepository {
-  private db: Database.Database
-
-  constructor(db: Database.Database) {
-    this.db = db
+export class VoiceRepository extends BaseRepository<
+  VoiceRecordEntity,
+  VoiceRecord
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, VoiceRecordEntity)
   }
 
-  /**
-   * 初始化表结构
-   */
-  static initTable(db: Database.Database): void {
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS voice_records (
-        id TEXT PRIMARY KEY,
-        type TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending',
-
-        -- TTS 相关
-        input_text TEXT,
-        output_audio_path TEXT,
-        voice_id TEXT,
-        voice_name TEXT,
-        language TEXT,
-        speed REAL DEFAULT 1.0,
-        pitch REAL DEFAULT 0,
-        volume REAL DEFAULT 1.0,
-        emotion TEXT,
-        style TEXT,
-        duration INTEGER,
-
-        -- STT 相关
-        input_audio_path TEXT,
-        output_text TEXT,
-
-        -- 通用
-        provider_id TEXT,
-        model_id TEXT,
-        favorite INTEGER NOT NULL DEFAULT 0,
-        error_message TEXT,
-        created_at TEXT NOT NULL
-      )
-    `)
-
-    // 创建索引
-    db.exec(`CREATE INDEX IF NOT EXISTS idx_voice_records_created_at ON voice_records(created_at DESC)`)
-    db.exec(`CREATE INDEX IF NOT EXISTS idx_voice_records_type ON voice_records(type)`)
-    db.exec(`CREATE INDEX IF NOT EXISTS idx_voice_records_favorite ON voice_records(favorite)`)
-  }
-
-  /**
-   * 将数据库行转换为 VoiceRecord 对象
-   */
-  private rowToRecord(row: any): VoiceRecord {
+  protected toDto(e: VoiceRecordEntity): VoiceRecord {
     return {
-      id: row.id,
-      type: row.type,
-      status: row.status,
-      inputText: row.input_text || undefined,
-      outputAudioPath: row.output_audio_path || undefined,
-      voiceId: row.voice_id || undefined,
-      voiceName: row.voice_name || undefined,
-      language: row.language || undefined,
-      speed: row.speed ?? undefined,
-      pitch: row.pitch ?? undefined,
-      volume: row.volume ?? undefined,
-      emotion: row.emotion || undefined,
-      style: row.style || undefined,
-      duration: row.duration ?? undefined,
-      inputAudioPath: row.input_audio_path || undefined,
-      outputText: row.output_text || undefined,
-      providerId: row.provider_id || undefined,
-      modelId: row.model_id || undefined,
-      favorite: row.favorite === 1,
-      errorMessage: row.error_message || undefined,
-      createdAt: new Date(row.created_at)
+      id: e.id,
+      type: e.type as VoiceRecord['type'],
+      status: e.status as VoiceRecord['status'],
+      inputText: e.inputText || undefined,
+      outputAudioPath: e.outputAudioPath || undefined,
+      voiceId: e.voiceId || undefined,
+      voiceName: e.voiceName || undefined,
+      language: e.language || undefined,
+      speed: e.speed ?? undefined,
+      pitch: e.pitch ?? undefined,
+      volume: e.volume ?? undefined,
+      emotion: e.emotion || undefined,
+      style: e.style || undefined,
+      duration: e.duration ?? undefined,
+      inputAudioPath: e.inputAudioPath || undefined,
+      outputText: e.outputText || undefined,
+      providerId: e.providerId || undefined,
+      modelId: e.modelId || undefined,
+      favorite: e.favorite === 1,
+      errorMessage: e.errorMessage || undefined,
+      createdAt: new Date(e.createdAt),
     }
   }
 
-  /**
-   * 获取语音历史列表
-   */
-  getList(query: VoiceHistoryQuery): { list: VoiceRecord[]; total: number } {
+  async getList(
+    query: VoiceHistoryQuery,
+  ): Promise<{ list: VoiceRecord[]; total: number }> {
     const { page, pageSize, type, favorite } = query
     const offset = (page - 1) * pageSize
-    const conditions: string[] = []
-    const params: any[] = []
 
-    if (type) {
-      conditions.push('type = ?')
-      params.push(type)
-    }
+    const qb = this.repo.createQueryBuilder('v')
+    if (type) qb.andWhere('v.type = :type', { type })
     if (favorite !== undefined) {
-      conditions.push('favorite = ?')
-      params.push(favorite ? 1 : 0)
+      qb.andWhere('v.favorite = :fav', { fav: favorite ? 1 : 0 })
     }
+    qb.orderBy('v.created_at', 'DESC').skip(offset).take(pageSize)
 
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
-
-    // 获取总数
-    const countRow = this.db.prepare(
-      `SELECT COUNT(*) as count FROM voice_records ${whereClause}`
-    ).get(...params) as { count: number }
-    const total = countRow?.count || 0
-
-    // 获取列表
-    const rows = this.db.prepare(
-      `SELECT * FROM voice_records ${whereClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`
-    ).all(...params, pageSize, offset) as any[]
-
-    const list = rows.map(row => this.rowToRecord(row))
-
-    return { list, total }
+    const [entities, total] = await qb.getManyAndCount()
+    return { list: this.toDtoList(entities), total }
   }
 
-  /**
-   * 根据 ID 获取语音记录
-   */
-  getById(id: string): VoiceRecord | null {
-    const row = this.db.prepare('SELECT * FROM voice_records WHERE id = ?').get(id) as any
-    if (!row) return null
-    return this.rowToRecord(row)
+  async getById(id: string): Promise<VoiceRecord | null> {
+    return this.findOneByWhere({ id } as any)
   }
 
-  /**
-   * 创建语音记录
-   */
-  create(record: Omit<VoiceRecord, 'id' | 'createdAt'>): VoiceRecord {
+  async create(
+    record: Omit<VoiceRecord, 'id' | 'createdAt'>,
+  ): Promise<VoiceRecord> {
     const id = randomUUID()
-    const now = new Date().toISOString()
-
-    this.db.prepare(`
-      INSERT INTO voice_records (
-        id, type, status,
-        input_text, output_audio_path, voice_id, voice_name, language,
-        speed, pitch, volume, emotion, style, duration,
-        input_audio_path, output_text,
-        provider_id, model_id, favorite, error_message, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    const nowIso = new Date().toISOString()
+    const entity = this.repo.create({
       id,
-      record.type,
-      record.status,
-      record.inputText || null,
-      record.outputAudioPath || null,
-      record.voiceId || null,
-      record.voiceName || null,
-      record.language || null,
-      record.speed ?? 1.0,
-      record.pitch ?? 0,
-      record.volume ?? 1.0,
-      record.emotion || null,
-      record.style || null,
-      record.duration || null,
-      record.inputAudioPath || null,
-      record.outputText || null,
-      record.providerId || null,
-      record.modelId || null,
-      record.favorite ? 1 : 0,
-      record.errorMessage || null,
-      now
-    )
-
-    return {
-      id,
-      ...record,
-      createdAt: new Date(now)
-    }
+      type: record.type,
+      status: record.status,
+      inputText: record.inputText ?? null,
+      outputAudioPath: record.outputAudioPath ?? null,
+      voiceId: record.voiceId ?? null,
+      voiceName: record.voiceName ?? null,
+      language: record.language ?? null,
+      speed: record.speed ?? 1.0,
+      pitch: record.pitch ?? 0,
+      volume: record.volume ?? 1.0,
+      emotion: record.emotion ?? null,
+      style: record.style ?? null,
+      duration: record.duration ?? null,
+      inputAudioPath: record.inputAudioPath ?? null,
+      outputText: record.outputText ?? null,
+      providerId: record.providerId ?? null,
+      modelId: record.modelId ?? null,
+      favorite: record.favorite ? 1 : 0,
+      errorMessage: record.errorMessage ?? null,
+      createdAt: nowIso,
+    })
+    const saved = await this.repo.save(entity)
+    return this.toDto(saved)
   }
 
-  /**
-   * 更新语音记录
-   */
-  update(id: string, data: Partial<VoiceRecord>): void {
-    const fields: string[] = []
-    const values: any[] = []
+  async update(id: string, data: Partial<VoiceRecord>): Promise<void> {
+    const existing = await this.repo.findOne({ where: { id } as any })
+    if (!existing) return
 
-    if (data.status !== undefined) {
-      fields.push('status = ?')
-      values.push(data.status)
-    }
+    if (data.status !== undefined) existing.status = data.status
     if (data.outputAudioPath !== undefined) {
-      fields.push('output_audio_path = ?')
-      values.push(data.outputAudioPath || null)
+      existing.outputAudioPath = data.outputAudioPath ?? null
     }
-    if (data.outputText !== undefined) {
-      fields.push('output_text = ?')
-      values.push(data.outputText || null)
-    }
-    if (data.duration !== undefined) {
-      fields.push('duration = ?')
-      values.push(data.duration)
-    }
-    if (data.favorite !== undefined) {
-      fields.push('favorite = ?')
-      values.push(data.favorite ? 1 : 0)
-    }
+    if (data.outputText !== undefined) existing.outputText = data.outputText ?? null
+    if (data.duration !== undefined) existing.duration = data.duration ?? null
+    if (data.favorite !== undefined) existing.favorite = data.favorite ? 1 : 0
     if (data.errorMessage !== undefined) {
-      fields.push('error_message = ?')
-      values.push(data.errorMessage || null)
+      existing.errorMessage = data.errorMessage ?? null
     }
-
-    if (fields.length > 0) {
-      values.push(id)
-      this.db.prepare(`UPDATE voice_records SET ${fields.join(', ')} WHERE id = ?`).run(...values)
-    }
+    await this.repo.save(existing)
   }
 
-  /**
-   * 删除语音记录
-   */
-  delete(id: string): void {
-    this.db.prepare('DELETE FROM voice_records WHERE id = ?').run(id)
+  async delete(id: string): Promise<void> {
+    await this.repo.delete({ id } as any)
   }
 
-  /**
-   * 切换收藏状态
-   */
-  toggleFavorite(id: string): boolean {
-    const record = this.getById(id)
+  async toggleFavorite(id: string): Promise<boolean> {
+    const record = await this.getById(id)
     if (!record) {
       throw new Error('Voice record not found')
     }
     const newFavorite = !record.favorite
-    this.update(id, { favorite: newFavorite })
+    await this.update(id, { favorite: newFavorite })
     return newFavorite
   }
 }
