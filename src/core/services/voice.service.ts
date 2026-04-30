@@ -12,7 +12,7 @@ import { VoiceRepository } from '@core/database/repositories/voice.repository'
 import { ClonedVoiceRepository } from '@core/database/repositories/cloned-voice.repository'
 import { PROVIDER_TEMPLATES } from '@core/services/provider-template.service'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
-import { DataPathService } from './data-path.service'
+import { getPathProvider } from '@core/interfaces/path.interface'
 import { DashScopeTTSProvider } from '@core/voice-providers/dashscope-tts-provider'
 import { DashScopeSTTProvider } from '@core/voice-providers/dashscope-stt-provider'
 import type {
@@ -50,9 +50,8 @@ export class VoiceService {
    * 获取语音数据目录
    */
   private static getVoiceDataDir(): string {
-    // 使用 DataPathService 获取正确的数据路径
-    const dataPathService = DataPathService.getInstance()
-    const userDataPath = dataPathService.getDataPath()
+    // 使用 IPathProvider 获取正确的数据路径
+    const userDataPath = getPathProvider().getDataPath()
     const voiceDir = path.join(userDataPath, 'voice')
 
     // 确保目录存在
