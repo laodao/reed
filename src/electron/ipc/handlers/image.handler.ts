@@ -7,7 +7,8 @@
 import { ipcMain, IpcMainInvokeEvent, BrowserWindow, dialog } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
-import { ImageService } from '../../services/image.service'
+import { ImageService } from '@core/services/image.service'
+import { getDatabaseManager } from '../../database'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type {
   ImageGenerationRequest,
@@ -79,16 +80,11 @@ export function unregisterImageHandlers(): void {
  * 处理图像生成请求
  */
 async function handleImageGenerate(
-  event: IpcMainInvokeEvent,
+  _event: IpcMainInvokeEvent,
   request: ImageGenerationRequest
 ): Promise<IpcResponse<{ taskId: string }>> {
   try {
-    const window = BrowserWindow.fromWebContents(event.sender)
-    if (!window) {
-      return { success: false, error: '窗口不存在' }
-    }
-
-    const result = await ImageService.generateImage(window, request)
+    const result = await ImageService.generateImage(request)
     if (result.success && result.taskId) {
       return { success: true, data: { taskId: result.taskId } }
     }
@@ -286,11 +282,36 @@ async function handleImageDownload(
       return { success: false, error: '窗口不存在' }
     }
 
-    const result = await ImageService.downloadImage(window, imageId)
-    if (result.success && result.path) {
-      return { success: true, data: result.path }
+    const dbManager = getDatabaseManager()
+    if (!dbManager.images) {
+      return { success: false, error: '数据库未初始化' }
     }
-    return { success: false, error: result.error || '下载失败' }
+    const image = await dbManager.images.getById(imageId)
+    if (!image) return { success: false, error: '图像不存在' }
+    if (!image.filePath || !fs.existsSync(image.filePath)) {
+      return { success: false, error: '图像文件不存在' }
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const ext = path.extname(image.filePath) || '.png'
+    const defaultName = `image_${timestamp}${ext}`
+
+    const result = await dialog.showSaveDialog(window, {
+      title: '保存图像',
+      defaultPath: defaultName,
+      filters: [
+        { name: 'PNG 图像', extensions: ['png'] },
+        { name: 'JPEG 图像', extensions: ['jpg', 'jpeg'] },
+        { name: '所有文件', extensions: ['*'] },
+      ],
+    })
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, error: '用户取消保存' }
+    }
+
+    fs.copyFileSync(image.filePath, result.filePath)
+    return { success: true, data: result.filePath }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : '未知错误'
     return { success: false, error: errorMessage }

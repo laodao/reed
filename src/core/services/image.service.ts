@@ -4,14 +4,15 @@
  * @description 处理图像生成的核心服务
  */
 
-import { BrowserWindow, app, dialog } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
-import log from 'electron-log'
-import { getDatabaseManager } from '../database'
-import { SecureStorageService } from './secure-storage.service'
+// electron-log replaced by console for cross-platform compatibility
+const log = console
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { getEventEmitter } from '@core/interfaces/event.interface'
+import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { PROVIDER_TEMPLATES } from '@core/services/provider-template.service'
-import { DataPathService } from './data-path.service'
+import { getPathProvider } from '@core/interfaces/path.interface'
 import {
   createImageProvider,
   getProviderDefinition,
@@ -76,12 +77,11 @@ export class ImageService {
    * @returns 生成响应
    */
   static async generateImage(
-    window: BrowserWindow,
     request: ImageGenerationRequest
   ): Promise<ImageGenerationResponse> {
     logger.info('[ImageService.generateImage] 开始处理请求')
 
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.images || !dbManager.providerConfigs) {
       logger.error('[ImageService.generateImage] 错误: 数据库未初始化')
@@ -123,7 +123,7 @@ export class ImageService {
       logger.info('[ImageService.generateImage] 开始解密 API 密钥')
       let decryptedApiKey: string
       try {
-        const secureStorage = SecureStorageService.getInstance()
+        const secureStorage = getSecureStorage()
         if (!secureStorage.isInitialized()) {
           await secureStorage.initialize()
         }
@@ -245,7 +245,7 @@ export class ImageService {
         }
 
         // 发送任务开始事件
-        this.sendImageEvent(window, {
+        this.sendImageEvent({
           type: 'generation-started',
           taskId: tempTaskId,
           imageIds: imageRecords.map(r => r.id)
@@ -255,7 +255,7 @@ export class ImageService {
         const savedImages = await this.saveGeneratedImages(tempTaskId, response.images, imageRecords.map(r => r.id))
 
         // 发送完成事件
-        this.sendImageEvent(window, {
+        this.sendImageEvent({
           type: 'generation-completed',
           taskId: tempTaskId,
           images: savedImages
@@ -299,14 +299,14 @@ export class ImageService {
       }
 
       // 发送任务开始事件
-      this.sendImageEvent(window, {
+      this.sendImageEvent({
         type: 'generation-started',
         taskId: taskId,
         imageIds: imageRecords.map(r => r.id)
       })
 
       // 启动异步轮询任务
-      this.startPollingTask(window, provider, taskId, imageRecords.map(r => r.id))
+      this.startPollingTask(provider, taskId, imageRecords.map(r => r.id))
 
       return {
         success: true,
@@ -328,10 +328,9 @@ export class ImageService {
    * @param imageIds - 图像 ID 列表
    */
   private static startPollingTask(
-    window: BrowserWindow,
     provider: BaseImageProvider,
     taskId: string,
-    imageIds: string[]
+    imageIds: string[],
   ): void {
     // 如果已有相同任务的轮询，先停止
     if (activePollingTasks.has(taskId)) {
@@ -349,7 +348,7 @@ export class ImageService {
         const status = await provider.getTaskStatus(taskId)
 
         // 发送进度事件
-        this.sendImageEvent(window, {
+        this.sendImageEvent({
           type: 'generation-progress',
           taskId: taskId,
           status: status.status,
@@ -368,7 +367,7 @@ export class ImageService {
           const savedImages = await this.saveGeneratedImages(taskId, status.images || [], imageIds)
 
           // 发送完成事件
-          this.sendImageEvent(window, {
+          this.sendImageEvent({
             type: 'generation-completed',
             taskId: taskId,
             images: savedImages
@@ -382,13 +381,13 @@ export class ImageService {
           }
 
           // 更新数据库状态
-          const dbManager = getDatabaseManager()
+          const dbManager = getCoreDatabaseManager()
           if (dbManager.images) {
             await dbManager.images.updateStatusByTaskId(taskId, 'failed', status.error)
           }
 
           // 发送失败事件
-          this.sendImageEvent(window, {
+          this.sendImageEvent({
             type: 'generation-failed',
             taskId: taskId,
             error: status.error || '图像生成失败'
@@ -401,12 +400,12 @@ export class ImageService {
             activePollingTasks.delete(taskId)
           }
 
-          const dbManager = getDatabaseManager()
+          const dbManager = getCoreDatabaseManager()
           if (dbManager.images) {
             await dbManager.images.updateStatusByTaskId(taskId, 'failed', '任务超时')
           }
 
-          this.sendImageEvent(window, {
+          this.sendImageEvent({
             type: 'generation-failed',
             taskId: taskId,
             error: '任务超时，请重试'
@@ -438,15 +437,14 @@ export class ImageService {
     images: Array<{ url: string }>,
     imageIds: string[]
   ): Promise<ImageRecord[]> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.images) {
       return []
     }
 
     const savedImages: ImageRecord[] = []
     // 使用 DataPathService 获取正确的数据路径
-    const dataPathService = DataPathService.getInstance()
-    const userDataPath = dataPathService.getDataPath()
+    const userDataPath = getPathProvider().getDataPath()
     const now = new Date()
     const year = now.getFullYear()
     const month = String(now.getMonth() + 1).padStart(2, '0')
@@ -537,8 +535,7 @@ export class ImageService {
       throw new Error('没有可保存的图像')
     }
 
-    const dataPathService = DataPathService.getInstance()
-    const userDataPath = dataPathService.getDataPath()
+    const userDataPath = getPathProvider().getDataPath()
     const now = new Date()
     const year = now.getFullYear()
     const month = String(now.getMonth() + 1).padStart(2, '0')
@@ -642,7 +639,7 @@ export class ImageService {
    * @returns 任务状态
    */
   static async getTaskStatus(taskId: string): Promise<ImageTaskStatus> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.images) {
       return {
@@ -685,7 +682,7 @@ export class ImageService {
       activePollingTasks.delete(taskId)
 
       // 更新数据库状态
-      const dbManager = getDatabaseManager()
+      const dbManager = getCoreDatabaseManager()
       if (dbManager.images) {
         dbManager.images.updateStatusByTaskId(taskId, 'failed', '用户取消')
       }
@@ -710,7 +707,7 @@ export class ImageService {
     favoriteOnly: boolean = false,
     status?: string
   ): Promise<{ success: boolean; data?: { images: ImageRecord[]; total: number; hasMore: boolean }; error?: string }> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.images) {
       return { success: false, error: '数据库未初始化' }
@@ -744,7 +741,7 @@ export class ImageService {
    * @returns 图像记录
    */
   static async getById(id: string): Promise<{ success: boolean; data?: ImageRecord; error?: string }> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.images) {
       return { success: false, error: '数据库未初始化' }
@@ -770,7 +767,7 @@ export class ImageService {
    * @returns 新的收藏状态
    */
   static async toggleFavorite(id: string): Promise<{ success: boolean; data?: boolean; error?: string }> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.images) {
       return { success: false, error: '数据库未初始化' }
@@ -792,7 +789,7 @@ export class ImageService {
    * @returns 是否成功
    */
   static async delete(id: string): Promise<{ success: boolean; error?: string }> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.images) {
       return { success: false, error: '数据库未初始化' }
@@ -827,7 +824,7 @@ export class ImageService {
    * @returns 删除的数量
    */
   static async deleteMany(ids: string[]): Promise<{ success: boolean; data?: number; error?: string }> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.images) {
       return { success: false, error: '数据库未初始化' }
@@ -859,7 +856,7 @@ export class ImageService {
    * @returns Provider 列表
    */
   static async getProviders(): Promise<{ success: boolean; data?: ImageProvider[]; error?: string }> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.providerConfigs) {
       return { success: false, error: '数据库未初始化' }
@@ -988,7 +985,7 @@ export class ImageService {
    * @returns 模型列表
    */
   static async getModels(providerId: string): Promise<{ success: boolean; data?: ImageModel[]; error?: string }> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.providerConfigs) {
       return { success: false, error: '数据库未初始化' }
@@ -1057,7 +1054,7 @@ export class ImageService {
         return { success: false, error: 'Provider 未配置 API 密钥' }
       }
 
-      const secureStorage = SecureStorageService.getInstance()
+      const secureStorage = getSecureStorage()
       if (!secureStorage.isInitialized()) {
         await secureStorage.initialize()
       }
@@ -1091,7 +1088,7 @@ export class ImageService {
   static async testProvider(
     providerConfigId: string
   ): Promise<{ success: boolean; message: string }> {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
 
     if (!dbManager.providerConfigs) {
       return { success: false, message: '数据库未初始化' }
@@ -1108,7 +1105,7 @@ export class ImageService {
       }
 
       // 解密 API 密钥
-      const secureStorage = SecureStorageService.getInstance()
+      const secureStorage = getSecureStorage()
       if (!secureStorage.isInitialized()) {
         await secureStorage.initialize()
       }
@@ -1142,76 +1139,17 @@ export class ImageService {
   }
 
   /**
-   * 下载图像到本地
-   *
-   * @param window - BrowserWindow 实例
-   * @param imageId - 图像 ID
-   * @returns 下载结果
-   */
-  static async downloadImage(
-    window: BrowserWindow,
-    imageId: string
-  ): Promise<{ success: boolean; path?: string; error?: string }> {
-    const dbManager = getDatabaseManager()
-
-    if (!dbManager.images) {
-      return { success: false, error: '数据库未初始化' }
-    }
-
-    try {
-      // 获取图像记录
-      const image = await dbManager.images.getById(imageId)
-      if (!image) {
-        return { success: false, error: '图像不存在' }
-      }
-
-      if (!image.filePath || !fs.existsSync(image.filePath)) {
-        return { success: false, error: '图像文件不存在' }
-      }
-
-      // 生成默认文件名
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-      const ext = path.extname(image.filePath) || '.png'
-      const defaultName = `image_${timestamp}${ext}`
-
-      // 弹出保存对话框
-      const result = await dialog.showSaveDialog(window, {
-        title: '保存图像',
-        defaultPath: defaultName,
-        filters: [
-          { name: 'PNG 图像', extensions: ['png'] },
-          { name: 'JPEG 图像', extensions: ['jpg', 'jpeg'] },
-          { name: '所有文件', extensions: ['*'] }
-        ]
-      })
-
-      if (result.canceled || !result.filePath) {
-        return { success: false, error: '用户取消保存' }
-      }
-
-      // 复制文件到目标位置
-      fs.copyFileSync(image.filePath, result.filePath)
-
-      return { success: true, path: result.filePath }
-    } catch (error: any) {
-      logger.error('[ImageService.downloadImage] 错误:', error)
-      return { success: false, error: error.message || '下载失败' }
-    }
-  }
-
-  /**
    * 发送图像事件到渲染进程
    *
    * @param window - BrowserWindow 实例
    * @param event - 事件数据
    */
   private static sendImageEvent(
-    window: BrowserWindow,
     event: {
       type: string
       [key: string]: any
     }
   ): void {
-    window.webContents.send('image:generation-event', event)
+    getEventEmitter().emit('image:generation-event', event)
   }
 }

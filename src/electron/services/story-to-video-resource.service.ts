@@ -8,7 +8,7 @@ import { BrowserWindow } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import { getDatabaseManager } from '../database'
-import { ImageService } from './image.service'
+import { ImageService } from '@core/services/image.service'
 import { VoiceService } from '@core/services/voice.service'
 import type {
   Storyboard,
@@ -257,7 +257,7 @@ export class StoryToVideoResourceService {
 
     try {
       // 调用图像生成服务
-      const response = await ImageService.generateImage(window, request)
+      const response = await ImageService.generateImage(request)
 
       console.log('[StoryToVideoResource] 图像生成响应:', {
         success: response.success,
@@ -720,7 +720,7 @@ export class StoryToVideoResourceService {
         skipHistory: true
       }
 
-      const response = await ImageService.generateImage(window, request)
+      const response = await ImageService.generateImage(request)
 
       if (response.success && response.images && response.images.length > 0) {
         const imageInfo = response.images[0]
@@ -803,7 +803,7 @@ export class StoryToVideoResourceService {
         skipHistory: true
       }
 
-      const response = await ImageService.generateImage(window, request)
+      const response = await ImageService.generateImage(request)
 
       if (response.success && response.images && response.images.length > 0) {
         const imageInfo = response.images[0]
