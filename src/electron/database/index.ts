@@ -239,7 +239,7 @@ export class DatabaseManager {
     this.initGlobalSettings()
 
     // 初始化长文写字典
-    this.initDictionary()
+    await this.initDictionary()
 
     console.log('[DatabaseManager] 数据库初始化完成:', this.dbPath)
   }
@@ -3676,7 +3676,7 @@ export class DatabaseManager {
     this.lwItems = new LwItemRepository(this.dataSource)
     this.lwMaterials = new LwMaterialRepository(this.db)
     this.lwGlobalSettings = new LwGlobalSettingsRepository(this.dataSource)
-    this.lwDictionary = new LwDictionaryRepository(this.db)
+    this.lwDictionary = new LwDictionaryRepository(this.dataSource)
     this.lwTypeConfig = new LwTypeConfigRepository(this.db)
     this.lwFactions = new LwFactionRepository(this.dataSource)
     this.lwMaps = new LwMapRepository(this.dataSource)
@@ -3751,10 +3751,10 @@ export class DatabaseManager {
   /**
    * 初始化长文写字典
    */
-  private initDictionary(): void {
+  private async initDictionary(): Promise<void> {
     if (!this.lwDictionary) return
     // 初始化默认字典数据
-    this.lwDictionary.initializeDefaults()
+    await this.lwDictionary.initializeDefaults()
     console.log('[DatabaseManager] 字典已初始化')
   }
 

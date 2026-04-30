@@ -950,7 +950,7 @@ export class LongWritingService {
     if (!this.db.lwDictionary) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwDictionary.getAllCategories()
+    return await this.db.lwDictionary.getAllCategories()
   }
 
   /**
@@ -960,7 +960,7 @@ export class LongWritingService {
     if (!this.db.lwDictionary) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwDictionary.createCategory(code, name)
+    return await this.db.lwDictionary.createCategory(code, name)
   }
 
   /**
@@ -970,7 +970,7 @@ export class LongWritingService {
     if (!this.db.lwDictionary) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwDictionary.updateCategory(code, name)
+    return await this.db.lwDictionary.updateCategory(code, name)
   }
 
   /**
@@ -980,7 +980,7 @@ export class LongWritingService {
     if (!this.db.lwDictionary) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwDictionary.deleteCategory(code)
+    return await this.db.lwDictionary.deleteCategory(code)
   }
 
   /**
@@ -990,7 +990,7 @@ export class LongWritingService {
     if (!this.db.lwDictionary) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwDictionary.getAll()
+    return await this.db.lwDictionary.getAll()
   }
 
   /**
@@ -1000,7 +1000,7 @@ export class LongWritingService {
     if (!this.db.lwDictionary) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwDictionary.getByCategory(categoryCode)
+    return await this.db.lwDictionary.getByCategory(categoryCode)
   }
 
   /**
@@ -1010,7 +1010,7 @@ export class LongWritingService {
     if (!this.db.lwDictionary) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwDictionary.create(categoryCode, code, name)
+    return await this.db.lwDictionary.create(categoryCode, code, name)
   }
 
   /**
@@ -1020,7 +1020,7 @@ export class LongWritingService {
     if (!this.db.lwDictionary) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwDictionary.update(id, data)
+    return await this.db.lwDictionary.update(id, data)
   }
 
   /**
@@ -1030,7 +1030,7 @@ export class LongWritingService {
     if (!this.db.lwDictionary) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwDictionary.delete(id)
+    return await this.db.lwDictionary.delete(id)
   }
 
   /**
@@ -1040,7 +1040,7 @@ export class LongWritingService {
     if (!this.db.lwDictionary) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwDictionary.reorder(categoryCode, orderedIds)
+    return await this.db.lwDictionary.reorder(categoryCode, orderedIds)
   }
 
   // ==================== 项目级别类型配置 ====================
