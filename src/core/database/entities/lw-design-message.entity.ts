@@ -1,26 +1,34 @@
 import { Column, Entity, Index, PrimaryColumn } from 'typeorm'
 
 /**
- * LW 设计对话 Entity。
+ * LW 设计消息 Entity（FK CASCADE 到 lw_design_conversations）。
+ * timestamp 是 INTEGER（epoch ms）。
  */
-@Entity({ name: 'lw_design_conversations' })
-@Index('idx_lw_conversations_project_id', ['projectId'])
+@Entity({ name: 'lw_design_messages' })
+@Index('idx_lw_design_messages_conversation', ['conversationId'])
 export class LwDesignMessageEntity {
   @PrimaryColumn({ name: 'id', type: 'varchar' })
   id!: string
 
-  @Column({ name: 'project_id', type: 'varchar' })
-  projectId!: string
+  @Column({ name: 'conversation_id', type: 'varchar' })
+  conversationId!: string
 
-  @Column({ name: 'stage', type: 'varchar' })
-  stage!: string
+  @Column({ name: 'role', type: 'varchar' })
+  role!: string
 
-  @Column({ name: 'messages', type: 'simple-json', nullable: true })
-  messages!: unknown[] | null
+  @Column({ name: 'content', type: 'text' })
+  content!: string
 
-  @Column({ name: 'created_at', type: Date })
-  createdAt!: Date
+  @Column({
+    name: 'timestamp',
+    type: 'bigint',
+    transformer: {
+      to: (v: number | string) => v,
+      from: (v: number | string | null) => (v == null ? 0 : Number(v)),
+    },
+  })
+  timestamp!: number
 
-  @Column({ name: 'updated_at', type: Date })
-  updatedAt!: Date
+  @Column({ name: 'sort_order', type: 'integer', default: 0 })
+  sortOrder!: number
 }

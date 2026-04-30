@@ -750,7 +750,7 @@ export class LongWritingService {
     // 批量获取预写状态
     if (this.db.lwPrewrites && outlines.length > 0) {
       const outlineIds = outlines.map(o => o.id)
-      const prewrites = this.db.lwPrewrites.getByOutlineIds(outlineIds)
+      const prewrites = this.await db.lwPrewrites.getByOutlineIds(outlineIds)
 
       // 附加预写确认状态到大纲节点
       for (const outline of outlines) {
@@ -923,7 +923,7 @@ export class LongWritingService {
     if (!this.db.lwGlobalSettings) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwGlobalSettings.getOrCreate()
+    return this.await db.lwGlobalSettings.getOrCreate()
   }
 
   /**
@@ -933,7 +933,7 @@ export class LongWritingService {
     if (!this.db.lwGlobalSettings) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwGlobalSettings.update(data)
+    return this.await db.lwGlobalSettings.update(data)
   }
 
   // ==================== 字典管理 ====================
@@ -1338,7 +1338,7 @@ export class LongWritingService {
     if (!this.db.lwPrewrites) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwPrewrites.getByOutlineId(outlineId)
+    return this.await db.lwPrewrites.getByOutlineId(outlineId)
   }
 
   /**
@@ -1348,7 +1348,7 @@ export class LongWritingService {
     if (!this.db.lwPrewrites) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwPrewrites.save(data)
+    return this.await db.lwPrewrites.save(data)
   }
 
   /**
@@ -1358,7 +1358,7 @@ export class LongWritingService {
     if (!this.db.lwPrewrites) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwPrewrites.confirm(outlineId)
+    return this.await db.lwPrewrites.confirm(outlineId)
   }
 
   /**
@@ -1368,7 +1368,7 @@ export class LongWritingService {
     if (!this.db.lwPrewrites) {
       throw new Error('数据库未初始化')
     }
-    return this.db.lwPrewrites.unconfirm(outlineId)
+    return this.await db.lwPrewrites.unconfirm(outlineId)
   }
 
   /**
@@ -1382,7 +1382,7 @@ export class LongWritingService {
     if (this.db.lwMemories) {
       this.db.lwMemories.deleteBySourceOutlineId(outlineId)
     }
-    return this.db.lwPrewrites.delete(outlineId)
+    return this.await db.lwPrewrites.delete(outlineId)
   }
 
   // ==================== 故事记忆管理 ====================

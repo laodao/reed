@@ -3681,12 +3681,12 @@ export class DatabaseManager {
     this.lwSkills = new LwSkillRepository(this.dataSource)
     this.lwItems = new LwItemRepository(this.dataSource)
     this.lwMaterials = new LwMaterialRepository(this.db)
-    this.lwGlobalSettings = new LwGlobalSettingsRepository(this.db)
+    this.lwGlobalSettings = new LwGlobalSettingsRepository(this.dataSource)
     this.lwDictionary = new LwDictionaryRepository(this.db)
     this.lwTypeConfig = new LwTypeConfigRepository(this.db)
     this.lwFactions = new LwFactionRepository(this.dataSource)
     this.lwMaps = new LwMapRepository(this.dataSource)
-    this.lwPrewrites = new LwPrewriteRepository(this.db)
+    this.lwPrewrites = new LwPrewriteRepository(this.dataSource)
     this.lwMemories = new LwMemoryRepository(this.db)
     this.lwEntityStates = new LwEntityStateRepository(this.db)
     this.lwChapterStateSummaries = new LwChapterStateSummaryRepository(this.db)
@@ -3698,7 +3698,7 @@ export class DatabaseManager {
     this.lwOutlineLocations = new LwOutlineLocationRepository(this.db)
     this.lwOutlineItems = new LwOutlineItemRepository(this.db)
     this.lwSkillCharacters = new LwSkillCharacterRepository(this.dataSource)
-    this.lwDesignMessages = new LwDesignMessageRepository(this.db)
+    this.lwDesignMessages = new LwDesignMessageRepository(this.dataSource)
     this.lwMemoryEntities = new LwMemoryEntityRepository(this.db)
 
     // 初始化临时实体模板仓库

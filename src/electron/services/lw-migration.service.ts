@@ -310,7 +310,7 @@ export class LwMigrationService {
 
     for (const conv of conversations) {
       if (conv.messages) {
-        migratedCount += db.lwDesignMessages.migrateFromJson(conv.id)
+        migratedCount += await db.lwDesignMessages.migrateFromJson(conv.id)
       }
     }
 

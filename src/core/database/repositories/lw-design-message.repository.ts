@@ -1,175 +1,158 @@
 /**
  * 设计对话消息仓库
  * @module database/repositories/lw-design-message.repository
- * 符合第三范式，替代JSON存储
+ * @description 基于 TypeORM 实现，所有方法异步。
+ *              第三范式：消息独立表存储，旧 lw_design_conversations.messages JSON 兼容迁移。
  */
 
-import Database from 'better-sqlite3'
+import type { DataSource } from 'typeorm'
 import { DesignMessage } from '@shared/types/longwriting.types'
+import { LwDesignMessageEntity } from '../entities/lw-design-message.entity'
+import { LwDesignConversationEntity } from '../entities/lw-design-conversation.entity'
+import { BaseRepository } from '../base-repository'
 
-/**
- * 设计对话消息仓库
- */
-export class LwDesignMessageRepository {
-  constructor(private db: Database.Database) {}
-
-  /**
-   * 根据对话ID获取所有消息
-   */
-  getByConversationId(conversationId: string): DesignMessage[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM lw_design_messages WHERE conversation_id = ? ORDER BY sort_order ASC, timestamp ASC
-    `)
-    const rows = stmt.all(conversationId) as any[]
-    return rows.map(this.mapToMessage)
+export class LwDesignMessageRepository extends BaseRepository<
+  LwDesignMessageEntity,
+  DesignMessage
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, LwDesignMessageEntity)
   }
 
-  /**
-   * 根据ID获取消息
-   */
-  getById(id: string): DesignMessage | null {
-    const stmt = this.db.prepare(`SELECT * FROM lw_design_messages WHERE id = ?`)
-    const row = stmt.get(id) as any
-    return row ? this.mapToMessage(row) : null
+  protected toDto(e: LwDesignMessageEntity): DesignMessage {
+    return {
+      role: e.role as 'user' | 'assistant',
+      content: e.content,
+      timestamp: e.timestamp,
+    }
   }
 
-  /**
-   * 获取对话的消息数量
-   */
-  countByConversationId(conversationId: string): number {
-    const stmt = this.db.prepare(`
-      SELECT COUNT(*) as count FROM lw_design_messages WHERE conversation_id = ?
-    `)
-    const result = stmt.get(conversationId) as any
-    return result?.count || 0
+  async getByConversationId(conversationId: string): Promise<DesignMessage[]> {
+    const entities = await this.repo
+      .createQueryBuilder('m')
+      .where('m.conversation_id = :cid', { cid: conversationId })
+      .orderBy('m.sort_order', 'ASC')
+      .addOrderBy('m.timestamp', 'ASC')
+      .getMany()
+    return this.toDtoList(entities)
   }
 
-  /**
-   * 添加消息
-   */
-  add(conversationId: string, message: Omit<DesignMessage, 'timestamp'> & { timestamp?: number }): DesignMessage {
+  async getById(id: string): Promise<DesignMessage | null> {
+    return this.findOneByWhere({ id } as any)
+  }
+
+  async countByConversationId(conversationId: string): Promise<number> {
+    return this.repo.count({ where: { conversationId } as any })
+  }
+
+  async add(
+    conversationId: string,
+    message: Omit<DesignMessage, 'timestamp'> & { timestamp?: number },
+  ): Promise<DesignMessage> {
     const id = this.generateId()
     const now = Date.now()
     const timestamp = message.timestamp || now
 
-    // 获取当前最大排序号
-    const maxOrderStmt = this.db.prepare(`
-      SELECT MAX(sort_order) as max_order FROM lw_design_messages WHERE conversation_id = ?
-    `)
-    const maxOrderResult = maxOrderStmt.get(conversationId) as any
-    const sortOrder = (maxOrderResult?.max_order ?? -1) + 1
+    const maxOrder = await this.repo
+      .createQueryBuilder('m')
+      .select('MAX(m.sort_order)', 'max')
+      .where('m.conversation_id = :cid', { cid: conversationId })
+      .getRawOne()
+    const sortOrder = (Number(maxOrder?.max) || -1) + 1
 
-    const stmt = this.db.prepare(`
-      INSERT INTO lw_design_messages (id, conversation_id, role, content, timestamp, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `)
-    stmt.run(id, conversationId, message.role, message.content, timestamp, sortOrder)
-
+    await this.repo.save(
+      this.repo.create({
+        id,
+        conversationId,
+        role: message.role,
+        content: message.content,
+        timestamp,
+        sortOrder,
+      }),
+    )
     return {
       role: message.role as 'user' | 'assistant',
       content: message.content,
-      timestamp
+      timestamp,
     }
   }
 
-  /**
-   * 批量添加消息（事务）
-   */
-  batchAdd(conversationId: string, messages: DesignMessage[]): void {
+  async batchAdd(
+    conversationId: string,
+    messages: DesignMessage[],
+  ): Promise<void> {
     if (messages.length === 0) return
-
-    const stmt = this.db.prepare(`
-      INSERT INTO lw_design_messages (id, conversation_id, role, content, timestamp, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `)
-
-    const transaction = this.db.transaction(() => {
-      messages.forEach((msg, index) => {
-        const id = this.generateId()
-        stmt.run(id, conversationId, msg.role, msg.content, msg.timestamp, index)
-      })
+    await this.dataSource.transaction(async manager => {
+      const repo = manager.getRepository(LwDesignMessageEntity)
+      for (let i = 0; i < messages.length; i++) {
+        const msg = messages[i]
+        await repo.save(
+          repo.create({
+            id: this.generateId(),
+            conversationId,
+            role: msg.role,
+            content: msg.content,
+            timestamp: msg.timestamp,
+            sortOrder: i,
+          }),
+        )
+      }
     })
-
-    transaction()
   }
 
-  /**
-   * 替换对话的所有消息
-   */
-  replaceAll(conversationId: string, messages: DesignMessage[]): void {
-    const transaction = this.db.transaction(() => {
-      // 先删除现有消息
-      this.deleteByConversationId(conversationId)
-      // 再添加新消息
-      this.batchAdd(conversationId, messages)
+  async replaceAll(
+    conversationId: string,
+    messages: DesignMessage[],
+  ): Promise<void> {
+    await this.dataSource.transaction(async manager => {
+      const repo = manager.getRepository(LwDesignMessageEntity)
+      await repo.delete({ conversationId } as any)
+      for (let i = 0; i < messages.length; i++) {
+        const msg = messages[i]
+        await repo.save(
+          repo.create({
+            id: this.generateId(),
+            conversationId,
+            role: msg.role,
+            content: msg.content,
+            timestamp: msg.timestamp,
+            sortOrder: i,
+          }),
+        )
+      }
     })
-    transaction()
   }
 
-  /**
-   * 删除消息
-   */
-  delete(id: string): boolean {
-    const stmt = this.db.prepare('DELETE FROM lw_design_messages WHERE id = ?')
-    const result = stmt.run(id)
-    return result.changes > 0
+  async delete(id: string): Promise<boolean> {
+    const result = await this.repo.delete({ id } as any)
+    return (result.affected ?? 0) > 0
   }
 
-  /**
-   * 删除对话的所有消息
-   */
-  deleteByConversationId(conversationId: string): number {
-    const stmt = this.db.prepare('DELETE FROM lw_design_messages WHERE conversation_id = ?')
-    const result = stmt.run(conversationId)
-    return result.changes
+  async deleteByConversationId(conversationId: string): Promise<number> {
+    const result = await this.repo.delete({ conversationId } as any)
+    return result.affected ?? 0
   }
 
-  /**
-   * 迁移：从JSON字段迁移到关联表
-   */
-  migrateFromJson(conversationId: string): number {
-    // 获取对话的消息JSON
-    const stmt = this.db.prepare(`
-      SELECT messages FROM lw_design_conversations WHERE id = ?
-    `)
-    const result = stmt.get(conversationId) as any
+  async migrateFromJson(conversationId: string): Promise<number> {
+    const conversationRepo = this.dataSource.getRepository(LwDesignConversationEntity)
+    const conversation = await conversationRepo.findOne({
+      where: { id: conversationId } as any,
+    })
+    if (!conversation?.messages) return 0
 
-    if (!result?.messages) return 0
-
-    const messages: DesignMessage[] = this.parseJsonArray(result.messages)
+    let messages: DesignMessage[]
+    try {
+      messages = JSON.parse(conversation.messages)
+    } catch {
+      return 0
+    }
     if (messages.length === 0) return 0
 
-    this.batchAdd(conversationId, messages)
+    await this.batchAdd(conversationId, messages)
     return messages.length
   }
 
-  /**
-   * 生成唯一ID
-   */
   private generateId(): string {
-    return `dm_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  /**
-   * 映射数据库行到消息对象
-   */
-  private mapToMessage(row: any): DesignMessage {
-    return {
-      role: row.role as 'user' | 'assistant',
-      content: row.content,
-      timestamp: row.timestamp
-    }
-  }
-
-  /**
-   * 解析JSON数组
-   */
-  private parseJsonArray(jsonStr: string | null): DesignMessage[] {
-    if (!jsonStr) return []
-    try {
-      return JSON.parse(jsonStr)
-    } catch {
-      return []
-    }
+    return `dm_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }
 }
