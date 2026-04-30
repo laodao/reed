@@ -4,7 +4,7 @@
  * @description 处理上传剧本模式的角色/地点/物品实体创建和绑定
  */
 
-import { DatabaseManager } from '../database'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import {
   StoryCharacter,
   StoryLocation,
@@ -47,7 +47,7 @@ export class UploadedEntityService {
     locations: StoryLocation[]
     items: StoryItem[]
   } {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
 
     console.log('[UploadedEntityService] 开始创建上传模式实体...')
     console.log('[UploadedEntityService] 角色:', characters.length, '地点:', locations.length, '物品:', items.length)
@@ -173,7 +173,7 @@ export class UploadedEntityService {
     entityId: string,
     entityType: 'character' | 'location' | 'item'
   ): StoryCharacter | StoryLocation | StoryItem | null {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
 
     switch (entityType) {
       case 'character':
@@ -199,7 +199,7 @@ export class UploadedEntityService {
     entityType: 'character' | 'location' | 'item',
     data: Partial<StoryCharacter> | Partial<StoryLocation> | Partial<StoryItem>
   ): StoryCharacter | StoryLocation | StoryItem | null {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
 
     // 先验证实体是否是 uploaded 模式
     const existing = this.getUploadedEntity(entityId, entityType)
@@ -239,7 +239,7 @@ export class UploadedEntityService {
     entityType: 'character' | 'location' | 'item',
     projectId: string
   ): boolean {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
 
     // 先验证实体是否是 uploaded 模式
     const existing = this.getUploadedEntity(entityId, entityType)
@@ -292,7 +292,7 @@ export class UploadedEntityService {
    * @returns 是否来源于长文项目
    */
   static isBindingFromLongWriting(binding: { longWritingCharacterId?: string; longWritingLocationId?: string; longWritingItemId?: string }): boolean {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
 
     // 检查角色绑定的来源
     if (binding.longWritingCharacterId) {

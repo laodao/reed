@@ -4,7 +4,7 @@
  * @description 长文写作业务逻辑服务
  */
 
-import { DatabaseManager } from '../database'
+import { getCoreDatabaseManager, type ICoreDatabaseManager } from '@core/database/database-manager.interface'
 import {
   LongWritingProject,
   CreateProjectRequest,
@@ -59,10 +59,10 @@ import {
  */
 export class LongWritingService {
   private static instance: LongWritingService
-  private db: DatabaseManager
+  private db: ICoreDatabaseManager
 
   private constructor() {
-    this.db = DatabaseManager.getInstance()
+    this.db = getCoreDatabaseManager()
   }
 
   /**

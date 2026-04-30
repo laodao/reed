@@ -4,7 +4,7 @@
  * 用于检测 AI 生成的文本中出现的新实体（角色、地点、物品）
  */
 
-import { DatabaseManager } from '../database/index'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { createProvider } from '@core/providers'
 import {
   NewCharacterInfo,
@@ -21,7 +21,7 @@ import {
   TemporaryLocationTemplateType,
   CharacterRolePosition
 } from '@shared/types/longwriting.types'
-import { TemporaryEntityTemplateService } from './temporary-entity-template.service'
+import { TemporaryEntityTemplateService } from '@core/services/temporary-entity-template.service'
 
 /**
  * AI 提取实体结果
@@ -57,7 +57,7 @@ export class LwEntityDetectionService {
     sourceOutlineId?: string,
     chapterNumber?: number
   ): Promise<NewEntityDetectionResult> {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.db) {
       throw new Error('数据库未初始化')
     }
@@ -136,7 +136,7 @@ export class LwEntityDetectionService {
     addedItems: StoryItem[]
     errors: string[]
   }> {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.db) {
       throw new Error('数据库未初始化')
     }

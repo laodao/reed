@@ -688,7 +688,7 @@ export class StoryToVideoResourceService {
     }
 
     // 导入临时实体模板服务
-    const { TemporaryEntityTemplateService } = await import('./temporary-entity-template.service')
+    const { TemporaryEntityTemplateService } = await import('@core/services/temporary-entity-template.service')
     const templateService = TemporaryEntityTemplateService.getInstance()
 
     // 获取模板类型，如果没有则匹配
@@ -773,7 +773,7 @@ export class StoryToVideoResourceService {
     }
 
     // 导入临时实体模板服务
-    const { TemporaryEntityTemplateService } = await import('./temporary-entity-template.service')
+    const { TemporaryEntityTemplateService } = await import('@core/services/temporary-entity-template.service')
     const templateService = TemporaryEntityTemplateService.getInstance()
 
     // 获取模板类型，如果没有则匹配
@@ -950,7 +950,7 @@ export class StoryToVideoResourceService {
 
       // 如果是临时角色但没有图片，返回模板提示词
       if (character.importance === 'temporary') {
-        const { TemporaryEntityTemplateService } = require('./temporary-entity-template.service')
+        const { TemporaryEntityTemplateService } = require('@core/services/temporary-entity-template.service')
         const templateService = TemporaryEntityTemplateService.getInstance()
 
         const templateType = character.templateType ||
@@ -980,7 +980,7 @@ export class StoryToVideoResourceService {
 
       // 如果是临时地点但没有图片，返回模板提示词
       if (location.entityImportance === 'temporary') {
-        const { TemporaryEntityTemplateService } = require('./temporary-entity-template.service')
+        const { TemporaryEntityTemplateService } = require('@core/services/temporary-entity-template.service')
         const templateService = TemporaryEntityTemplateService.getInstance()
 
         const templateType = location.templateType ||

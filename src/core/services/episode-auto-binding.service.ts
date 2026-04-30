@@ -4,7 +4,7 @@
  * @description 创建剧集时自动绑定长文章节中的角色、地点、物品
  */
 
-import { DatabaseManager } from '../database/index'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 
 /**
  * 自动绑定结果
@@ -30,7 +30,7 @@ export class EpisodeAutoBindingService {
   static autoBindEntities(videoProjectId: string, outlineId: string): AutoBindResult {
     console.log(`[EpisodeAutoBindingService] 开始自动绑定: videoProjectId=${videoProjectId}, outlineId=${outlineId}`)
 
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.db) {
       console.error('[EpisodeAutoBindingService] 数据库实例为 null')
       return {

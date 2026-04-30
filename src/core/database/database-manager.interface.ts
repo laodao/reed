@@ -1,0 +1,204 @@
+/**
+ * 核心数据库管理器接口
+ * @module core/database/database-manager.interface
+ * @description 平台无关的数据库管理器抽象，core 层服务依赖此接口而非 electron 实现。
+ *              Electron / Web / Node 等运行环境各自提供具体实现，组装 DataSource 与所有
+ *              Repository 实例后由该接口暴露给上层服务。
+ */
+
+import type { DataSource } from 'typeorm'
+
+import type { ApiKeyRepository } from './repositories/api-key.repository'
+import type { CharacterBindingRepository } from './repositories/character-binding.repository'
+import type { ClonedVoiceRepository } from './repositories/cloned-voice.repository'
+import type { DialogRepository } from './repositories/dialog.repository'
+import type { DiaryAttachmentRepository } from './repositories/diary-attachment.repository'
+import type { DiaryEntryRepository } from './repositories/diary-entry.repository'
+import type { DiaryFolderRepository } from './repositories/diary-folder.repository'
+import type { DiaryLinkRepository } from './repositories/diary-link.repository'
+import type { EpisodeScriptRepository } from './repositories/episode-script.repository'
+import type { ImageAssetRepository } from './repositories/image-asset.repository'
+import type { ImageRepository } from './repositories/image.repository'
+import type { ItemBindingRepository } from './repositories/item-binding.repository'
+import type { KbChunkRepository } from './repositories/kb-chunk.repository'
+import type { KbDocumentRepository } from './repositories/kb-document.repository'
+import type { KbInvertedIndexRepository } from './repositories/kb-inverted-index.repository'
+import type { KnowledgeBaseRepository } from './repositories/knowledge-base.repository'
+import type { LocationBindingRepository } from './repositories/location-binding.repository'
+import type { LwBackgroundRepository } from './repositories/lw-background.repository'
+import type { LwChapterRepository } from './repositories/lw-chapter.repository'
+import type { LwChapterStateSummaryRepository } from './repositories/lw-chapter-state-summary.repository'
+import type { LwCharacterRepository } from './repositories/lw-character.repository'
+import type { LwDesignMessageRepository } from './repositories/lw-design-message.repository'
+import type { LwDictionaryRepository } from './repositories/lw-dictionary.repository'
+import type { LwEntityStateRepository } from './repositories/lw-entity-state.repository'
+import type { LwFactionRepository } from './repositories/lw-faction.repository'
+import type { LwGlobalSettingsRepository } from './repositories/lw-global-settings.repository'
+import type { LwItemRepository } from './repositories/lw-item.repository'
+import type { LwLocationRepository } from './repositories/lw-location.repository'
+import type { LwMapRepository } from './repositories/lw-map.repository'
+import type { LwMaterialRepository } from './repositories/lw-material.repository'
+import type { LwMemoryEntityRepository } from './repositories/lw-memory-entity.repository'
+import type { LwMemoryRepository } from './repositories/lw-memory.repository'
+import type { LwOutlineCharacterRepository } from './repositories/lw-outline-character.repository'
+import type { LwOutlineItemRepository } from './repositories/lw-outline-item.repository'
+import type { LwOutlineLocationRepository } from './repositories/lw-outline-location.repository'
+import type { LwOutlineRepository } from './repositories/lw-outline.repository'
+import type { LwPlotCharacterRepository } from './repositories/lw-plot-character.repository'
+import type { LwPlotLocationRepository } from './repositories/lw-plot-location.repository'
+import type { LwPlotRepository } from './repositories/lw-plot.repository'
+import type { LwPrewriteRepository } from './repositories/lw-prewrite.repository'
+import type { LwProjectModelConfigRepository } from './repositories/lw-project-model-config.repository'
+import type { LwProjectRepository } from './repositories/lw-project.repository'
+import type { LwSkillCharacterRepository } from './repositories/lw-skill-character.repository'
+import type { LwSkillRepository } from './repositories/lw-skill.repository'
+import type { LwStoryOverviewRepository } from './repositories/lw-story-overview.repository'
+import type { LwTempCharacterTemplateRepository } from './repositories/lw-temp-character-template.repository'
+import type { LwTempLocationTemplateRepository } from './repositories/lw-temp-location-template.repository'
+import type { LwTypeConfigRepository } from './repositories/lw-type-config.repository'
+import type { MessageRepository } from './repositories/message.repository'
+import type { OSSConfigRepository } from './repositories/oss-config.repository'
+import type { PortraitCharacterRepository } from './repositories/portrait-character.repository'
+import type { PortraitProjectRepository } from './repositories/portrait-project.repository'
+import type { PortraitVariantRepository } from './repositories/portrait-variant.repository'
+import type { ProviderConfigRepository } from './repositories/provider-config.repository'
+import type { RoleRepository } from './repositories/role.repository'
+import type { SceneActionRepository } from './repositories/scene-action.repository'
+import type { SceneCharacterRepository } from './repositories/scene-character.repository'
+import type { SceneDialogueRepository } from './repositories/scene-dialogue.repository'
+import type { SceneScriptRepository } from './repositories/scene-script.repository'
+import type { SearchEngineConfigRepository } from './repositories/search-engine-config.repository'
+import type { SettingsRepository } from './repositories/settings.repository'
+import type { StoryboardCharacterRepository } from './repositories/storyboard-character.repository'
+import type { StoryboardRepository } from './repositories/storyboard.repository'
+import type { TranslationRepository } from './repositories/translation.repository'
+import type { VideoEpisodeRepository } from './repositories/video-episode.repository'
+import type { VideoProjectRepository } from './repositories/video-project.repository'
+import type { VoiceRepository } from './repositories/voice.repository'
+
+/**
+ * 核心数据库管理器接口
+ *
+ * 设计原则：
+ * 1. 仅暴露 Repository 与 DataSource，不含任何 Electron / 文件系统 / 进程控制 API。
+ * 2. 字段默认 nullable：实现可在 init 之前留空；调用方需要做好 null 检查。
+ * 3. core 层服务参数约束到此接口，避免编译期反向依赖 electron。
+ */
+export interface ICoreDatabaseManager {
+  readonly dataSource: DataSource | null
+
+  // ---- 通用模块 ----
+  settings: SettingsRepository | null
+  apiKeys: ApiKeyRepository | null
+  providerConfigs: ProviderConfigRepository | null
+  searchEngineConfigs: SearchEngineConfigRepository | null
+  ossConfigs: OSSConfigRepository | null
+
+  // ---- 对话 / 角色 ----
+  dialogs: DialogRepository | null
+  messages: MessageRepository | null
+  roles: RoleRepository | null
+  translations: TranslationRepository | null
+
+  // ---- 多媒体 ----
+  images: ImageRepository | null
+  voices: VoiceRepository | null
+  clonedVoices: ClonedVoiceRepository | null
+
+  // ---- 知识库 ----
+  knowledgeBases: KnowledgeBaseRepository | null
+  kbDocuments: KbDocumentRepository | null
+  kbChunks: KbChunkRepository | null
+  kbInvertedIndex: KbInvertedIndexRepository | null
+
+  // ---- 人像 ----
+  portraitProjects: PortraitProjectRepository | null
+  portraitCharacters: PortraitCharacterRepository | null
+  portraitVariants: PortraitVariantRepository | null
+
+  // ---- 长文写作主表 ----
+  lwProjects: LwProjectRepository | null
+  lwStoryOverviews: LwStoryOverviewRepository | null
+  lwCharacters: LwCharacterRepository | null
+  lwOutlines: LwOutlineRepository | null
+  lwChapters: LwChapterRepository | null
+  lwBackgrounds: LwBackgroundRepository | null
+  lwLocations: LwLocationRepository | null
+  lwPlots: LwPlotRepository | null
+  lwSkills: LwSkillRepository | null
+  lwItems: LwItemRepository | null
+  lwMaterials: LwMaterialRepository | null
+  lwGlobalSettings: LwGlobalSettingsRepository | null
+  lwDictionary: LwDictionaryRepository | null
+  lwTypeConfig: LwTypeConfigRepository | null
+  lwFactions: LwFactionRepository | null
+  lwMaps: LwMapRepository | null
+  lwPrewrites: LwPrewriteRepository | null
+  lwMemories: LwMemoryRepository | null
+  lwEntityStates: LwEntityStateRepository | null
+  lwChapterStateSummaries: LwChapterStateSummaryRepository | null
+  lwProjectModelConfigs: LwProjectModelConfigRepository | null
+
+  // ---- 长文写作关联表（第三范式） ----
+  lwPlotCharacters: LwPlotCharacterRepository | null
+  lwPlotLocations: LwPlotLocationRepository | null
+  lwOutlineCharacters: LwOutlineCharacterRepository | null
+  lwOutlineLocations: LwOutlineLocationRepository | null
+  lwOutlineItems: LwOutlineItemRepository | null
+  lwSkillCharacters: LwSkillCharacterRepository | null
+  lwDesignMessages: LwDesignMessageRepository | null
+  lwMemoryEntities: LwMemoryEntityRepository | null
+
+  // ---- 临时实体模板 ----
+  lwTempCharacterTemplates: LwTempCharacterTemplateRepository | null
+  lwTempLocationTemplates: LwTempLocationTemplateRepository | null
+
+  // ---- 日记 ----
+  diaryFolders: DiaryFolderRepository | null
+  diaryEntries: DiaryEntryRepository | null
+  diaryLinks: DiaryLinkRepository | null
+  diaryAttachments: DiaryAttachmentRepository | null
+
+  // ---- 视频/剧集 ----
+  videoProjects: VideoProjectRepository | null
+  videoEpisodes: VideoEpisodeRepository | null
+  episodeScripts: EpisodeScriptRepository | null
+  sceneScripts: SceneScriptRepository | null
+  storyboards: StoryboardRepository | null
+  characterBindings: CharacterBindingRepository | null
+  locationBindings: LocationBindingRepository | null
+  itemBindings: ItemBindingRepository | null
+  sceneCharacters: SceneCharacterRepository | null
+  sceneDialogues: SceneDialogueRepository | null
+  sceneActions: SceneActionRepository | null
+  storyboardCharacters: StoryboardCharacterRepository | null
+  imageAssets: ImageAssetRepository | null
+}
+
+/**
+ * core 层服务用于获取数据库管理器单例的访问器签名
+ * 各运行环境（electron / web）需在初始化时注册具体实现
+ */
+export type CoreDatabaseManagerAccessor = () => ICoreDatabaseManager
+
+let _accessor: CoreDatabaseManagerAccessor | null = null
+
+/**
+ * 由运行环境调用，注册全局 DatabaseManager 访问器
+ */
+export function registerCoreDatabaseManager(accessor: CoreDatabaseManagerAccessor): void {
+  _accessor = accessor
+}
+
+/**
+ * core 层服务调用此方法获取已初始化的 DatabaseManager
+ * @throws 如果尚未注册访问器
+ */
+export function getCoreDatabaseManager(): ICoreDatabaseManager {
+  if (!_accessor) {
+    throw new Error(
+      '[ICoreDatabaseManager] 未注册访问器：请在运行环境初始化时调用 registerCoreDatabaseManager()',
+    )
+  }
+  return _accessor()
+}

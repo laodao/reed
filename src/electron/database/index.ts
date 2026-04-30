@@ -85,11 +85,16 @@ import { createDataSource } from '@core/database/data-source'
 import { loadDbConfigFromEnv, type DbConfig } from '@core/database/config'
 import { checkSchemaDrift } from '@core/database/schema-drift'
 
+import type { ICoreDatabaseManager } from '@core/database/database-manager.interface'
+import { registerCoreDatabaseManager } from '@core/database/database-manager.interface'
+
 /**
  * 数据库管理器
  * 使用 better-sqlite3 实现，每次写入都实时持久化到磁盘
+ *
+ * 同时实现 ICoreDatabaseManager 接口，向 core 层暴露与平台无关的 Repository 集合。
  */
-export class DatabaseManager {
+export class DatabaseManager implements ICoreDatabaseManager {
   private static instance: DatabaseManager
   public db: Database.Database | null = null
   /** TypeORM DataSource —— 已迁移到 TypeORM 的 Repository 用此连接（迁移期与 db 并存） */
@@ -192,6 +197,8 @@ export class DatabaseManager {
   static getInstance(): DatabaseManager {
     if (!DatabaseManager.instance) {
       DatabaseManager.instance = new DatabaseManager()
+      // 注册到 core 层访问器，使 core/services 能够无 Electron 依赖地获取 DatabaseManager
+      registerCoreDatabaseManager(() => DatabaseManager.instance)
     }
     return DatabaseManager.instance
   }

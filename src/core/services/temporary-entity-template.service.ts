@@ -5,7 +5,7 @@
  * 所有模板数据存储在数据库中
  */
 
-import { DatabaseManager } from '../database'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import {
   TemporaryCharacterTemplateType,
   TemporaryLocationTemplateType,
@@ -33,7 +33,7 @@ export class TemporaryEntityTemplateService {
    * 获取所有角色模板
    */
   async getAllCharacterTemplates(): Promise<TemporaryCharacterTemplateRecord[]> {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     return (await db.lwTempCharacterTemplates?.getAll()) || []
   }
 
@@ -41,7 +41,7 @@ export class TemporaryEntityTemplateService {
    * 获取所有地点模板
    */
   async getAllLocationTemplates(): Promise<TemporaryLocationTemplateRecord[]> {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     return (await db.lwTempLocationTemplates?.getAll()) || []
   }
 
@@ -51,7 +51,7 @@ export class TemporaryEntityTemplateService {
   async getCharacterTemplate(
     type: TemporaryCharacterTemplateType,
   ): Promise<TemporaryCharacterTemplateRecord | null> {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     return (await db.lwTempCharacterTemplates?.getByType(type)) || null
   }
 
@@ -61,7 +61,7 @@ export class TemporaryEntityTemplateService {
   async getLocationTemplate(
     type: TemporaryLocationTemplateType,
   ): Promise<TemporaryLocationTemplateRecord | null> {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     return (await db.lwTempLocationTemplates?.getByType(type)) || null
   }
 
@@ -72,7 +72,7 @@ export class TemporaryEntityTemplateService {
     name: string,
     description: string,
   ): Promise<TemporaryEntityTemplateMatch> {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     const combinedText = `${name} ${description}`.toLowerCase()
 
     const matchResult = await db.lwTempCharacterTemplates?.matchByKeywords(combinedText)
@@ -101,7 +101,7 @@ export class TemporaryEntityTemplateService {
     name: string,
     description: string,
   ): Promise<TemporaryEntityTemplateMatch> {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     const combinedText = `${name} ${description}`.toLowerCase()
 
     const matchResult = await db.lwTempLocationTemplates?.matchByKeywords(combinedText)
@@ -283,7 +283,7 @@ export class TemporaryEntityTemplateService {
     type: TemporaryCharacterTemplateType,
     data: Partial<Omit<TemporaryCharacterTemplateRecord, 'id' | 'type' | 'createdAt' | 'updatedAt'>>
   ): Promise<TemporaryCharacterTemplateRecord | null> {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     const existing = await this.getCharacterTemplate(type)
     if (!existing) return null
 
@@ -309,7 +309,7 @@ export class TemporaryEntityTemplateService {
     type: TemporaryLocationTemplateType,
     data: Partial<Omit<TemporaryLocationTemplateRecord, 'id' | 'type' | 'createdAt' | 'updatedAt'>>
   ): Promise<TemporaryLocationTemplateRecord | null> {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     const existing = await this.getLocationTemplate(type)
     if (!existing) return null
 

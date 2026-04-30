@@ -25,8 +25,8 @@ import { VideoSynthesisService, PRESET_VIDEO_CONFIGS } from '../../services/vide
 import { VideoService } from '../../services/video.service'
 import { SecureStorageService } from '../../services/secure-storage.service'
 import { createVideoProvider } from '../../video-providers'
-import { EpisodeAutoBindingService } from '../../services/episode-auto-binding.service'
-import { UploadedEntityService } from '../../services/uploaded-entity.service'
+import { EpisodeAutoBindingService } from '@core/services/episode-auto-binding.service'
+import { UploadedEntityService } from '@core/services/uploaded-entity.service'
 import type {
   UploadedCharacter,
   UploadedLocation,

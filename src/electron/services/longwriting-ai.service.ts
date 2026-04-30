@@ -2707,7 +2707,7 @@ ${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容
       // 检测新实体
       let newEntities = null
       try {
-        const { LwEntityDetectionService } = await import('./lw-entity-detection.service')
+        const { LwEntityDetectionService } = await import('@core/services/lw-entity-detection.service')
         newEntities = await LwEntityDetectionService.detectNewEntities(
           projectId,
           chapterContent,

@@ -7,7 +7,7 @@ import { ipcMain, BrowserWindow, dialog, shell } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import { getDatabaseManager } from '../../database'
-import { LongWritingService } from '../../services/longwriting.service'
+import { LongWritingService } from '@core/services/longwriting.service'
 import { LongWritingAIService } from '../../services/longwriting-ai.service'
 import { MaterialProcessorService } from '../../services/material-processor.service'
 import { markdownToDocx } from '@core/utils/markdown-to-docx'
@@ -2702,7 +2702,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     chapterNumber?: number
   ) => {
     try {
-      const { LwEntityDetectionService } = await import('../../services/lw-entity-detection.service')
+      const { LwEntityDetectionService } = await import('@core/services/lw-entity-detection.service')
       const result = await LwEntityDetectionService.detectNewEntities(
         projectId,
         text,
@@ -2725,7 +2725,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     items?: any[]
   ) => {
     try {
-      const { LwEntityDetectionService } = await import('../../services/lw-entity-detection.service')
+      const { LwEntityDetectionService } = await import('@core/services/lw-entity-detection.service')
       const result = await LwEntityDetectionService.autoAddEntities(
         projectId,
         characters,
