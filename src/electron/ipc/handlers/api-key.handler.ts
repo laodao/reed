@@ -6,8 +6,8 @@
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { getSecureStorage } from '@core/interfaces/storage.interface'
 import type { SetApiKeyResponse, ListApiKeysResponse, TestApiKeyResponse, ApiKeyInfo } from '@shared/types'
-import { SecureStorageService } from '../../services/secure-storage.service'
 
 /**
  * 预定义的提供商列表
@@ -78,7 +78,7 @@ async function handleSetApiKey(
     }
 
     // 初始化安全存储
-    const secureStorage = SecureStorageService.getInstance()
+    const secureStorage = getSecureStorage()
     if (!secureStorage.isInitialized()) {
       await secureStorage.initialize()
     }

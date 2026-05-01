@@ -171,7 +171,7 @@ export class SecureStorageService implements ISecureStorage {
   }
 }
 
-/**
- * 安全存储服务实例
- */
-export const secureStorage = SecureStorageService.getInstance()
+// 注意：曾在此处导出 `secureStorage = SecureStorageService.getInstance()` 单例，
+// 这会在模块被 import 时立即调用 registerSecureStorage，从而在 Web 端运行时
+// 覆盖 WebSecureStorage 的注册，触发 safeStorage 的 ReferenceError。
+// 现已移除该副作用：实例在 Electron 主进程入口显式调用 getInstance() 即可。
