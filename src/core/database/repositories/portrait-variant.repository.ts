@@ -2,6 +2,7 @@
  * 立绘变体数据访问层
  * @module database/repositories/portrait-variant.repository
  * @description 基于 TypeORM 实现，支持 sqlite / postgres 双方言。
+ *              所有读写都走 BaseRepository.scoped.* 实现 user_id 多租户隔离。
  */
 
 import type { DataSource } from 'typeorm'
@@ -15,6 +16,7 @@ import { randomUUID } from 'crypto'
 import { PortraitVariantEntity } from '../entities/portrait-variant.entity'
 import { PortraitCharacterEntity } from '../entities/portrait-character.entity'
 import { BaseRepository } from '../base-repository'
+import { getCurrentUserId } from '@core/context/user-context'
 
 interface CreateVariantInput {
   characterId: string
@@ -61,11 +63,16 @@ export class PortraitVariantRepository extends BaseRepository<
   }
 
   async getByCharacterId(characterId: string): Promise<PortraitVariant[]> {
-    return this.findManyByWhere({ characterId } as any, { createdAt: 'DESC' })
+    const es = await this.scoped.find({
+      where: { characterId } as any,
+      order: { createdAt: 'DESC' } as any,
+    })
+    return this.toDtoList(es)
   }
 
   async getById(id: string): Promise<PortraitVariant | null> {
-    return this.findOneByWhere({ id } as any)
+    const e = await this.scoped.findOne({ id } as any)
+    return e ? this.toDto(e) : null
   }
 
   async getByCharacterAndAngle(
@@ -73,13 +80,14 @@ export class PortraitVariantRepository extends BaseRepository<
     type: PortraitVariantType,
     angle: PortraitAngle,
   ): Promise<PortraitVariant | null> {
-    return this.findOneByWhere({ characterId, type, angle } as any)
+    const e = await this.scoped.findOne({ characterId, type, angle } as any)
+    return e ? this.toDto(e) : null
   }
 
   async create(data: CreateVariantInput): Promise<PortraitVariant> {
     const id = randomUUID()
     const now = new Date()
-    const entity = this.repo.create({
+    const saved = await this.scoped.save({
       id,
       characterId: data.characterId,
       type: data.type,
@@ -90,13 +98,13 @@ export class PortraitVariantRepository extends BaseRepository<
       config: data.config ?? {},
       variantInfo: (data.variantInfo as Record<string, unknown> | undefined) ?? null,
       createdAt: now,
-    })
-    const saved = await this.repo.save(entity)
+    } as Partial<PortraitVariantEntity>)
     return this.toDto(saved)
   }
 
   async createBatch(variants: CreateVariantInput[]): Promise<PortraitVariant[]> {
     const now = new Date()
+    const userId = getCurrentUserId()
     return this.dataSource.transaction(async manager => {
       const repo = manager.getRepository(PortraitVariantEntity)
       const result: PortraitVariant[] = []
@@ -115,6 +123,7 @@ export class PortraitVariantRepository extends BaseRepository<
             variantInfo:
               (data.variantInfo as Record<string, unknown> | undefined) ?? null,
             createdAt: now,
+            userId,  // 事务内手工注入 user_id
           }),
         )
         result.push(this.toDto(saved))
@@ -127,7 +136,7 @@ export class PortraitVariantRepository extends BaseRepository<
     id: string,
     data: Partial<Omit<PortraitVariant, 'id' | 'characterId' | 'createdAt'>>,
   ): Promise<PortraitVariant | null> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return null
 
     if (data.imagePath !== undefined) existing.imagePath = data.imagePath
@@ -139,43 +148,44 @@ export class PortraitVariantRepository extends BaseRepository<
       existing.variantInfo = data.variantInfo as Record<string, unknown>
     }
 
-    const saved = await this.repo.save(existing)
+    const saved = await this.scoped.save(existing)
     return this.toDto(saved)
   }
 
   async delete(id: string): Promise<void> {
-    await this.repo.delete({ id } as any)
+    await this.scoped.delete({ id } as any)
   }
 
   async deleteByCharacterId(characterId: string): Promise<void> {
-    await this.repo.delete({ characterId } as any)
+    await this.scoped.delete({ characterId } as any)
   }
 
   async countByCharacterId(characterId: string): Promise<number> {
-    return this.repo.count({ where: { characterId } as any })
+    return this.scoped.count({ characterId } as any)
   }
 
   async getBaseVariants(characterId: string): Promise<PortraitVariant[]> {
-    const entities = await this.repo
-      .createQueryBuilder('v')
-      .where('v.character_id = :cid AND v.type = :t', { cid: characterId, t: 'base' })
+    const entities = await this.scoped
+      .qb('v')
+      .andWhere('v.character_id = :cid AND v.type = :t', { cid: characterId, t: 'base' })
       .orderBy('v.angle', 'ASC')
       .getMany()
     return this.toDtoList(entities)
   }
 
   async getFrontVariant(characterId: string): Promise<PortraitVariant | null> {
-    return this.findOneByWhere({
+    const e = await this.scoped.findOne({
       characterId,
       type: 'base',
       angle: 'front',
     } as any)
+    return e ? this.toDto(e) : null
   }
 
   async getClothesVariants(characterId: string): Promise<PortraitVariant[]> {
-    const entities = await this.repo
-      .createQueryBuilder('v')
-      .where('v.character_id = :cid AND v.type = :t AND v.angle = :a', {
+    const entities = await this.scoped
+      .qb('v')
+      .andWhere('v.character_id = :cid AND v.type = :t AND v.angle = :a', {
         cid: characterId,
         t: 'clothes',
         a: 'front',
@@ -186,9 +196,9 @@ export class PortraitVariantRepository extends BaseRepository<
   }
 
   async getBackgroundVariants(characterId: string): Promise<PortraitVariant[]> {
-    const entities = await this.repo
-      .createQueryBuilder('v')
-      .where('v.character_id = :cid AND v.type = :t AND v.angle = :a', {
+    const entities = await this.scoped
+      .qb('v')
+      .andWhere('v.character_id = :cid AND v.type = :t AND v.angle = :a', {
         cid: characterId,
         t: 'background',
         a: 'front',
@@ -202,44 +212,51 @@ export class PortraitVariantRepository extends BaseRepository<
 
   /** @deprecated 使用 getByCharacterId 替代 */
   async getByProjectId(projectId: string): Promise<PortraitVariant[]> {
-    const entities = await this.repo
+    // JOIN 查询：v 和 c 都按 user_id 限定（同一用户的 variant 才能 join 到同一用户的 character）
+    const userId = getCurrentUserId()
+    const qb = this.repo
       .createQueryBuilder('v')
-      .innerJoin(
-        PortraitCharacterEntity,
-        'c',
-        'c.id = v.character_id',
-      )
+      .innerJoin(PortraitCharacterEntity, 'c', 'c.id = v.character_id')
       .where('c.project_id = :pid', { pid: projectId })
       .orderBy('v.created_at', 'DESC')
-      .getMany()
-    return this.toDtoList(entities)
+    if (userId) {
+      qb.andWhere('v.user_id = :uid AND c.user_id = :uid', { uid: userId })
+    }
+    return this.toDtoList(await qb.getMany())
   }
 
   /** @deprecated 使用 deleteByCharacterId 替代 */
   async deleteByProjectId(projectId: string): Promise<void> {
-    const characterIds = await this.dataSource
+    // 先按 user_id 限定查 character ids，再删 variants
+    const userId = getCurrentUserId()
+    const charQb = this.dataSource
       .getRepository(PortraitCharacterEntity)
-      .find({ where: { projectId } as any, select: ['id'] })
+      .createQueryBuilder('c')
+      .select('c.id', 'id')
+      .where('c.project_id = :pid', { pid: projectId })
+    if (userId) charQb.andWhere('c.user_id = :uid', { uid: userId })
+    const characterIds = await charQb.getRawMany<{ id: string }>()
     if (characterIds.length === 0) return
-    await this.repo
+
+    const delQb = this.repo
       .createQueryBuilder()
       .delete()
       .from(PortraitVariantEntity)
       .where('character_id IN (:...ids)', { ids: characterIds.map(c => c.id) })
-      .execute()
+    if (userId) delQb.andWhere('user_id = :uid', { uid: userId })
+    await delQb.execute()
   }
 
   /** @deprecated 使用 countByCharacterId 替代 */
   async countByProjectId(projectId: string): Promise<number> {
-    const result = await this.repo
+    const userId = getCurrentUserId()
+    const qb = this.repo
       .createQueryBuilder('v')
-      .innerJoin(
-        PortraitCharacterEntity,
-        'c',
-        'c.id = v.character_id',
-      )
+      .innerJoin(PortraitCharacterEntity, 'c', 'c.id = v.character_id')
       .where('c.project_id = :pid', { pid: projectId })
-      .getCount()
-    return result
+    if (userId) {
+      qb.andWhere('v.user_id = :uid AND c.user_id = :uid', { uid: userId })
+    }
+    return qb.getCount()
   }
 }

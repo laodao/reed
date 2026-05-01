@@ -18,6 +18,9 @@ import { RoleRepository } from '@core/database/repositories/role.repository'
 import { UserRepository } from '@core/database/repositories/user.repository'
 import { ImageRepository } from '@core/database/repositories/image.repository'
 import { ImageAssetRepository } from '@core/database/repositories/image-asset.repository'
+import { PortraitProjectRepository } from '@core/database/repositories/portrait-project.repository'
+import { PortraitCharacterRepository } from '@core/database/repositories/portrait-character.repository'
+import { PortraitVariantRepository } from '@core/database/repositories/portrait-variant.repository'
 import { ensureUsersTable } from '@core/database/migrations/ensure-users-table'
 import {
   createTestDataSource,
@@ -35,6 +38,9 @@ describe.each(getTestDialects())('multi-tenant scoped repository (%s)', dialect 
   let userRepo: UserRepository
   let imageRepo: ImageRepository
   let imageAssetRepo: ImageAssetRepository
+  let portraitProjectRepo: PortraitProjectRepository
+  let portraitCharRepo: PortraitCharacterRepository
+  let portraitVariantRepo: PortraitVariantRepository
 
   beforeAll(async () => {
     testDs = await createTestDataSource(dialect)
@@ -44,6 +50,9 @@ describe.each(getTestDialects())('multi-tenant scoped repository (%s)', dialect 
     userRepo = new UserRepository(testDs.ds)
     imageRepo = new ImageRepository(testDs.ds)
     imageAssetRepo = new ImageAssetRepository(testDs.ds)
+    portraitProjectRepo = new PortraitProjectRepository(testDs.ds)
+    portraitCharRepo = new PortraitCharacterRepository(testDs.ds)
+    portraitVariantRepo = new PortraitVariantRepository(testDs.ds)
   })
 
   afterAll(async () => {
@@ -484,6 +493,206 @@ describe.each(getTestDialects())('multi-tenant scoped repository (%s)', dialect 
 
       const aStill = await runWithUserAsync(USER_A, () =>
         imageAssetRepo.getByProjectId('shared-proj'),
+      )
+      expect(aStill.length).toBe(1)
+    })
+  })
+
+  // ========================================================================
+  // 8. 人像设计模块（PortraitProject / PortraitCharacter / PortraitVariant）
+  // ========================================================================
+  describe('人像设计模块隔离', () => {
+    it('A 创建的 portrait project 在 B 看不到', async () => {
+      await runWithUserAsync(USER_A, () =>
+        portraitProjectRepo.create({ name: 'A 的项目' }),
+      )
+
+      const aList = await runWithUserAsync(USER_A, () =>
+        portraitProjectRepo.getList(),
+      )
+      const bList = await runWithUserAsync(USER_B, () =>
+        portraitProjectRepo.getList(),
+      )
+
+      expect(aList.projects.length).toBe(1)
+      expect(aList.total).toBe(1)
+      expect(bList.projects.length).toBe(0)
+      expect(bList.total).toBe(0)
+    })
+
+    it('B 不能 update 或 delete A 的 portrait project', async () => {
+      const projA = await runWithUserAsync(USER_A, () =>
+        portraitProjectRepo.create({ name: 'A 的项目' }),
+      )
+
+      const updResult = await runWithUserAsync(USER_B, () =>
+        portraitProjectRepo.update({ id: projA.id, name: 'B 篡改' } as any),
+      )
+      expect(updResult).toBeNull() // findOne 返回 null
+
+      await runWithUserAsync(USER_B, () => portraitProjectRepo.delete(projA.id))
+
+      const stillA = await runWithUserAsync(USER_A, () =>
+        portraitProjectRepo.getById(projA.id),
+      )
+      expect(stillA?.name).toBe('A 的项目')
+    })
+
+    it('PortraitCharacter 按 user_id 隔离', async () => {
+      const projA = await runWithUserAsync(USER_A, () =>
+        portraitProjectRepo.create({ name: 'A 的项目' }),
+      )
+
+      await runWithUserAsync(USER_A, () =>
+        portraitCharRepo.create({
+          projectId: projA.id,
+          name: 'A 的角色',
+          gender: 'male' as any,
+          age: 25,
+          height: 180,
+          weight: 70,
+          race: 'asian' as any,
+        }),
+      )
+
+      const aChars = await runWithUserAsync(USER_A, () =>
+        portraitCharRepo.getByProjectId(projA.id),
+      )
+      const bChars = await runWithUserAsync(USER_B, () =>
+        portraitCharRepo.getByProjectId(projA.id),
+      )
+
+      expect(aChars.length).toBe(1)
+      expect(bChars.length).toBe(0)
+    })
+
+    it('PortraitVariant 按 user_id 隔离 + JOIN 查询不跨用户', async () => {
+      const projA = await runWithUserAsync(USER_A, () =>
+        portraitProjectRepo.create({ name: 'A 的项目' }),
+      )
+      const charA = await runWithUserAsync(USER_A, () =>
+        portraitCharRepo.create({
+          projectId: projA.id,
+          name: 'A 的角色',
+          gender: 'male' as any,
+          age: 25,
+          height: 180,
+          weight: 70,
+          race: 'asian' as any,
+        }),
+      )
+
+      await runWithUserAsync(USER_A, () =>
+        portraitVariantRepo.create({
+          characterId: charA.id,
+          type: 'base' as any,
+          angle: 'front' as any,
+          imagePath: 'a-front.png',
+          prompt: 'a',
+        }),
+      )
+
+      // A 用 getByCharacterId / getByProjectId / getFrontVariant 都能看到
+      expect(
+        (await runWithUserAsync(USER_A, () => portraitVariantRepo.getByCharacterId(charA.id))).length,
+      ).toBe(1)
+      expect(
+        (await runWithUserAsync(USER_A, () => portraitVariantRepo.getByProjectId(projA.id))).length,
+      ).toBe(1)
+      expect(
+        await runWithUserAsync(USER_A, () => portraitVariantRepo.getFrontVariant(charA.id)),
+      ).not.toBeNull()
+
+      // B 用同样 ID 都看不到
+      expect(
+        (await runWithUserAsync(USER_B, () => portraitVariantRepo.getByCharacterId(charA.id))).length,
+      ).toBe(0)
+      expect(
+        (await runWithUserAsync(USER_B, () => portraitVariantRepo.getByProjectId(projA.id))).length,
+      ).toBe(0)
+      expect(
+        await runWithUserAsync(USER_B, () => portraitVariantRepo.getFrontVariant(charA.id)),
+      ).toBeNull()
+    })
+
+    it('createBatch 在事务里给所有 variant 都打上当前 user_id', async () => {
+      const projA = await runWithUserAsync(USER_A, () =>
+        portraitProjectRepo.create({ name: 'A 的项目' }),
+      )
+      const charA = await runWithUserAsync(USER_A, () =>
+        portraitCharRepo.create({
+          projectId: projA.id,
+          name: 'A 的角色',
+          gender: 'male' as any,
+          age: 25,
+          height: 180,
+          weight: 70,
+          race: 'asian' as any,
+        }),
+      )
+
+      await runWithUserAsync(USER_A, () =>
+        portraitVariantRepo.createBatch([
+          {
+            characterId: charA.id,
+            type: 'base' as any,
+            angle: 'front' as any,
+            imagePath: 'f.png',
+            prompt: 'f',
+          },
+          {
+            characterId: charA.id,
+            type: 'base' as any,
+            angle: 'left' as any,
+            imagePath: 'l.png',
+            prompt: 'l',
+          },
+        ]),
+      )
+
+      const aVariants = await runWithUserAsync(USER_A, () =>
+        portraitVariantRepo.getByCharacterId(charA.id),
+      )
+      expect(aVariants.length).toBe(2)
+
+      const bVariants = await runWithUserAsync(USER_B, () =>
+        portraitVariantRepo.getByCharacterId(charA.id),
+      )
+      expect(bVariants.length).toBe(0)
+    })
+
+    it('B 调 deleteByProjectId（A 的 projectId）不会删 A 的 variants', async () => {
+      const projA = await runWithUserAsync(USER_A, () =>
+        portraitProjectRepo.create({ name: 'A 的项目' }),
+      )
+      const charA = await runWithUserAsync(USER_A, () =>
+        portraitCharRepo.create({
+          projectId: projA.id,
+          name: 'A 的角色',
+          gender: 'male' as any,
+          age: 25,
+          height: 180,
+          weight: 70,
+          race: 'asian' as any,
+        }),
+      )
+      await runWithUserAsync(USER_A, () =>
+        portraitVariantRepo.create({
+          characterId: charA.id,
+          type: 'base' as any,
+          angle: 'front' as any,
+          imagePath: 'a.png',
+          prompt: 'a',
+        }),
+      )
+
+      // B 用 A 的 projectId 调 deleteByProjectId
+      await runWithUserAsync(USER_B, () =>
+        portraitVariantRepo.deleteByProjectId(projA.id),
+      )
+
+      const aStill = await runWithUserAsync(USER_A, () =>
+        portraitVariantRepo.getByCharacterId(charA.id),
       )
       expect(aStill.length).toBe(1)
     })

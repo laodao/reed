@@ -2,6 +2,7 @@
  * 立绘角色数据访问层
  * @module database/repositories/portrait-character.repository
  * @description 基于 TypeORM 实现，支持 sqlite / postgres 双方言。
+ *              所有读写都走 BaseRepository.scoped.* 实现 user_id 多租户隔离。
  */
 
 import type { DataSource } from 'typeorm'
@@ -59,7 +60,7 @@ export class PortraitCharacterRepository extends BaseRepository<
   }
 
   async getByProjectId(projectId: string): Promise<PortraitCharacter[]> {
-    const entities = await this.repo.find({
+    const entities = await this.scoped.find({
       where: { projectId } as any,
       order: { createdAt: 'DESC' } as any,
     })
@@ -67,7 +68,8 @@ export class PortraitCharacterRepository extends BaseRepository<
   }
 
   async getById(id: string): Promise<PortraitCharacter | null> {
-    return this.findOneByWhere({ id } as any)
+    const e = await this.scoped.findOne({ id } as any)
+    return e ? this.toDto(e) : null
   }
 
   async create(
@@ -76,7 +78,7 @@ export class PortraitCharacterRepository extends BaseRepository<
     const id = randomUUID()
     const now = new Date()
     const config = { ...DEFAULT_CONFIG, ...(request.config ?? {}) } as PortraitGenerateConfig
-    const entity = this.repo.create({
+    const saved = await this.scoped.save({
       id,
       projectId: request.projectId,
       name: request.name,
@@ -93,17 +95,14 @@ export class PortraitCharacterRepository extends BaseRepository<
       config,
       createdAt: now,
       updatedAt: now,
-    })
-    const saved = await this.repo.save(entity)
+    } as Partial<PortraitCharacterEntity>)
     return this.toDto(saved)
   }
 
   async update(
     request: UpdatePortraitCharacterRequest,
   ): Promise<PortraitCharacter | null> {
-    const existing = await this.repo.findOne({
-      where: { id: request.id } as any,
-    })
+    const existing = await this.scoped.findOne({ id: request.id } as any)
     if (!existing) return null
 
     if (request.name !== undefined) existing.name = request.name
@@ -130,19 +129,19 @@ export class PortraitCharacterRepository extends BaseRepository<
     }
     existing.updatedAt = new Date()
 
-    const saved = await this.repo.save(existing)
+    const saved = await this.scoped.save(existing)
     return this.toDto(saved)
   }
 
   async delete(id: string): Promise<void> {
-    await this.repo.delete({ id } as any)
+    await this.scoped.delete({ id } as any)
   }
 
   async deleteByProjectId(projectId: string): Promise<void> {
-    await this.repo.delete({ projectId } as any)
+    await this.scoped.delete({ projectId } as any)
   }
 
   async countByProjectId(projectId: string): Promise<number> {
-    return this.repo.count({ where: { projectId } as any })
+    return this.scoped.count({ projectId } as any)
   }
 }

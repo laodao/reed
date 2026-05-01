@@ -3,6 +3,7 @@
  * @module database/repositories/portrait-project.repository
  * @description 提供立绘项目的数据库操作（项目作为容器，包含多个角色）。
  *              基于 TypeORM 实现，支持 sqlite / postgres 双方言。
+ *              所有读写都走 BaseRepository.scoped.* 实现 user_id 多租户隔离。
  */
 
 import type { DataSource } from 'typeorm'
@@ -51,7 +52,7 @@ export class PortraitProjectRepository extends BaseRepository<
     pageSize: number = 20,
   ): Promise<{ projects: PortraitProject[]; total: number }> {
     const offset = (page - 1) * pageSize
-    const [entities, total] = await this.repo.findAndCount({
+    const [entities, total] = await this.scoped.findAndCount({
       order: { createdAt: 'DESC' } as any,
       skip: offset,
       take: pageSize,
@@ -60,7 +61,8 @@ export class PortraitProjectRepository extends BaseRepository<
   }
 
   async getById(id: string): Promise<PortraitProject | null> {
-    return this.findOneByWhere({ id } as any)
+    const e = await this.scoped.findOne({ id } as any)
+    return e ? this.toDto(e) : null
   }
 
   async create(
@@ -68,7 +70,7 @@ export class PortraitProjectRepository extends BaseRepository<
   ): Promise<PortraitProject> {
     const id = randomUUID()
     const now = new Date()
-    const entity = this.repo.create({
+    const saved = await this.scoped.save({
       id,
       name: request.name,
       description: request.description ?? null,
@@ -76,15 +78,14 @@ export class PortraitProjectRepository extends BaseRepository<
       defaultModelId: null,
       createdAt: now,
       updatedAt: now,
-    })
-    const saved = await this.repo.save(entity)
+    } as Partial<PortraitProjectEntity>)
     return this.toDto(saved)
   }
 
   async update(
     request: UpdatePortraitProjectRequest,
   ): Promise<PortraitProject | null> {
-    const existing = await this.repo.findOne({ where: { id: request.id } as any })
+    const existing = await this.scoped.findOne({ id: request.id } as any)
     if (!existing) return null
 
     if (request.name !== undefined) existing.name = request.name
@@ -99,15 +100,15 @@ export class PortraitProjectRepository extends BaseRepository<
     }
     existing.updatedAt = new Date()
 
-    const saved = await this.repo.save(existing)
+    const saved = await this.scoped.save(existing)
     return this.toDto(saved)
   }
 
   async delete(id: string): Promise<void> {
-    await this.repo.delete({ id } as any)
+    await this.scoped.delete({ id } as any)
   }
 
   async count(): Promise<number> {
-    return this.repo.count()
+    return this.scoped.count()
   }
 }
