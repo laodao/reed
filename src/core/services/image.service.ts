@@ -12,6 +12,7 @@ import { getEventEmitter } from '@core/interfaces/event.interface'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { PROVIDER_TEMPLATES } from '@core/services/provider-template.service'
 import { getPathProvider } from '@core/interfaces/path.interface'
+import { toAssetUrl } from '@core/utils/asset-path'
 import {
   createImageProvider,
   getProviderDefinition,
@@ -44,21 +45,13 @@ const logger = {
 const activePollingTasks = new Map<string, NodeJS.Timeout>()
 
 /**
- * 将本地文件路径（相对或绝对）转换为可访问的 URL（local-image://）。
- * - 相对路径：local-image://images/2026/03/x.png（protocol handler 会拼 dataPath）
- * - 绝对路径：local-image:///<absolute-path>（兼容旧链接）
+ * 将本地文件路径（相对或绝对）转换为渲染端可加载的 URL。
+ * 实际协议由 PathProvider 决定（Electron: local-image://，Web: /assets/...），
+ * 保证 service 返回的契约不依赖某一端的 protocol。
  */
 function localPathToUrl(filePath: string): string {
   if (!filePath) return ''
-  const normalized = filePath.replace(/\\/g, '/')
-  // 已是 URL：原样返回
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(normalized)) return normalized
-  // 绝对路径（POSIX 或 Windows 盘符）：保留绝对，加三斜杠
-  if (normalized.startsWith('/') || /^[A-Za-z]:\//.test(normalized)) {
-    return `local-image:///${normalized}`
-  }
-  // 相对路径：直接拼协议（protocol handler 会基于 dataPath 解析）
-  return `local-image://${normalized}`
+  return toAssetUrl(filePath, 'image')
 }
 
 /**
@@ -614,12 +607,14 @@ export class ImageService {
           throw new Error('文件保存后验证失败')
         }
 
-        // 返回相对路径（供调用方写入 DB），同时通过 localPathToUrl 转 URL 供 UI 使用
+        // filePath 字段约定：返回相对路径（供调用方直接写入 DB，与 image_records 表一致）。
+        // 旧代码错误地写成 URL 形式（local-image://...），调用方又用 string.replace 反向剥协议，
+        // 在 Web 端协议不同会失效。这里恢复为契约文档原义：filePath = 相对路径。
         const relativePath = path
           .relative(userDataPath, filePath)
           .replace(/\\/g, '/')
         savedImages.push({
-          filePath: localPathToUrl(relativePath)
+          filePath: relativePath
         })
       } catch (error: any) {
         logger.error(`[saveImagesWithoutHistory] 保存图像 ${i} 失败:`, error)

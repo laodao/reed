@@ -696,10 +696,8 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       })
 
       if (result.success && result.images?.length) {
-        // 获取图片路径
-        const imagePath = result.images[0].filePath.replace('local-image:///', '')
-        // 更新地图图片路径
-        await service.updateMapImage(mapId, imagePath)
+        // saveImagesWithoutHistory 已经返回相对路径，直接落库
+        await service.updateMapImage(mapId, result.images[0].filePath)
       }
 
       return { success: result.success, error: result.error }

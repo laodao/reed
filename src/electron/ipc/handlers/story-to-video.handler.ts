@@ -9,6 +9,7 @@ import { isElectron, loadElectronModules, getBrowserWindowFromEvent } from './_p
 import * as path from 'path'
 import * as fs from 'fs'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { toAssetUrl } from '@core/utils/asset-path'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import {
@@ -35,13 +36,11 @@ import type {
 } from '@shared/types/story-to-video.types'
 
 /**
- * 将本地路径转换为 local-image URL
+ * 将本地路径转换为渲染端可加载的图像 URL（双端协议自适配）
  */
 function localPathToUrl(filePath: string): string {
   if (!filePath) return ''
-  // 统一使用正斜杠
-  const normalizedPath = filePath.replace(/\\/g, '/')
-  return `local-image:///${normalizedPath}`
+  return toAssetUrl(filePath, 'image')
 }
 
 /**

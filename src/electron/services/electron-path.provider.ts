@@ -6,7 +6,7 @@
 
 import { app } from 'electron'
 import * as path from 'path'
-import type { IPathProvider, SubDirectories } from '@core/interfaces/path.interface'
+import type { AssetScheme, IPathProvider, SubDirectories } from '@core/interfaces/path.interface'
 import { registerPathProvider } from '@core/interfaces/path.interface'
 import { DataPathService } from './data-path.service'
 
@@ -58,5 +58,21 @@ export class ElectronPathProvider implements IPathProvider {
 
   getSubDirectoryPath(name: keyof SubDirectories): string {
     return path.join(this.getDataPath(), DEFAULT_SUB_DIRS[name])
+  }
+
+  /**
+   * Electron 端把相对/绝对路径转为自定义 protocol URL，由 protocol handler 解析。
+   * 已是 URL（含 'http://' / 'local-image://'）原样返回。
+   */
+  toAssetUrl(relOrAbsPath: string, scheme: AssetScheme = 'image'): string {
+    if (!relOrAbsPath) return ''
+    const normalized = relOrAbsPath.replace(/\\/g, '/')
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(normalized)) return normalized
+    const protocol = `local-${scheme}`
+    // POSIX 绝对路径或 Windows 盘符路径：三斜杠 protocol；相对路径：双斜杠
+    if (normalized.startsWith('/') || /^[A-Za-z]:\//.test(normalized)) {
+      return `${protocol}:///${normalized}`
+    }
+    return `${protocol}://${normalized}`
   }
 }

@@ -4,7 +4,7 @@
  * @description 封装图像生成相关的状态和逻辑
  */
 
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed } from 'vue'
 import type {
   ImageProvider,
   ImageModel,
@@ -36,9 +36,27 @@ interface ImageGenerationEvent {
 }
 
 /**
+ * Singleton 缓存：useImage 是跨组件共享的状态——多个组件（ImageView /
+ * ImageGenerator / ImageSidebar）同时使用，必须看到同一份 images / providers /
+ * currentTask 等 state，否则任意组件刷新列表后其他组件不会跟着更新。
+ *
+ * 第一次调用 useImage() 进入 useImageImpl 创建 state 并注册 lifecycle；
+ * 后续调用直接返回缓存，不再重复注册 lifecycle，state 也不会被任意组件
+ * unmount 清空。
+ */
+let _useImageCached: ReturnType<typeof useImageImpl> | null = null
+
+export function useImage() {
+  if (!_useImageCached) {
+    _useImageCached = useImageImpl()
+  }
+  return _useImageCached
+}
+
+/**
  * 图像生成功能 Composable
  */
-export function useImage() {
+function useImageImpl() {
   // ==================== 状态 ====================
 
   /**
@@ -744,20 +762,13 @@ export function useImage() {
     }
   }
 
-  onMounted(() => {
-    initialize()
-    // 注册事件监听器
+  // Singleton 模式：composable 创建时立即初始化一次，不依赖任何具体组件的
+  // lifecycle —— 否则首个组件 unmount 会清空 state 影响其他还在挂载的组件。
+  // 事件监听器为浏览器/IPC 级，整个 SPA 生命周期内活着即可。
+  initialize()
+  if (window.electronAPI?.image?.onGenerationEvent) {
     cleanupEventListener = window.electronAPI.image.onGenerationEvent(handleGenerationEvent)
-  })
-
-  onUnmounted(() => {
-    cleanup()
-    // 清理事件监听器
-    if (cleanupEventListener) {
-      cleanupEventListener()
-      cleanupEventListener = null
-    }
-  })
+  }
 
   return {
     // 状态

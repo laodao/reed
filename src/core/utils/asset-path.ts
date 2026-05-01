@@ -63,27 +63,19 @@ export function resolveAssetPath(relOrAbs: string): string {
 }
 
 /**
- * 构造可在渲染端使用的 asset URL，例如：
- *   toAssetUrl('images/2026/03/x.png', 'local-image')
- *   → 'local-image:///<dataPath>/images/2026/03/x.png'
+ * 构造可在渲染端使用的 asset URL。委托给当前注册的 PathProvider，
+ * 由各运行环境（Electron / Web）决定 protocol：
+ *   - Electron：'local-image://...'（自定义 protocol handler）
+ *   - Web：'/assets/...'（HTTP 路由，按 cookie userId 隔离）
  *
- * 注：渲染端 <img src> 不能直接用相对路径（没有基址），所以拼成自定义协议 URL。
+ * 调用方一律传相对路径（业务库存的形式），不要自己拼协议。
  */
 export function toAssetUrl(
   relOrAbs: string,
-  scheme: 'local-image' | 'local-file' | 'local-video' = 'local-image',
+  scheme: 'image' | 'file' | 'video' = 'image',
 ): string {
   if (!relOrAbs) return ''
-  // 已经是 URL：原样返回
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(relOrAbs)) return relOrAbs
-  const abs = resolveAssetPath(relOrAbs)
-  // file URL 必须 forward slash + 三斜杠（兼容 Windows 盘符）
-  const normalized = abs.replace(/\\/g, '/')
-  if (normalized.startsWith('/')) {
-    return `${scheme}://${normalized}`
-  }
-  // Windows 'C:/...' → 'local-image:///C:/...'
-  return `${scheme}:///${normalized}`
+  return getPathProvider().toAssetUrl(relOrAbs, scheme)
 }
 
 function safeGetDataPath(): string | null {

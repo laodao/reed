@@ -11,6 +11,7 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { getPathProvider } from '@core/interfaces/path.interface'
+import { toAssetUrl } from '@core/utils/asset-path'
 import {
   createVideoProvider,
   getProviderDefinition,
@@ -41,25 +42,12 @@ const logger = {
 const activePollingTasks = new Map<string, NodeJS.Timeout>()
 
 /**
- * 将本地文件路径转换为可访问的 URL
- * @param filePath - 本地文件路径
- * @returns 可访问的 URL
+ * 将本地文件路径转换为渲染端可加载的 URL。
+ * 协议由 PathProvider 决定（Electron: local-video://，Web: /assets/...）。
  */
 function localPathToUrl(filePath: string): string {
-  if (!filePath) {
-    logger.info('[localPathToUrl] 空路径')
-    return ''
-  }
-
-  // Windows 路径处理：将反斜杠转换为正斜杠
-  let normalizedPath = filePath
-  if (process.platform === 'win32') {
-    normalizedPath = filePath.replace(/\\/g, '/')
-  }
-
-  // 使用三个斜杠格式（标准 file URI 格式）
-  const url = `local-video:///${normalizedPath}`
-  return url
+  if (!filePath) return ''
+  return toAssetUrl(filePath, 'video')
 }
 
 /**

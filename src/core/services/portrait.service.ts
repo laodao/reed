@@ -10,6 +10,7 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { getPathProvider } from '@core/interfaces/path.interface'
+import { toAssetUrl } from '@core/utils/asset-path'
 import { ImageService } from '@core/services/image.service'
 import type {
   PortraitProject,
@@ -109,35 +110,33 @@ function extractBasicCharacterInfo(character: PortraitCharacter): string {
 }
 
 /**
- * 将本地文件路径（绝对或相对）转换为可访问的 URL（local-image://）。
- * - 已是 URL：原样返回
- * - 绝对路径：local-image:///<abs>
- * - 相对路径：local-image://<rel>（protocol handler 基于 dataPath 解析）
+ * 将本地文件路径（绝对或相对）转换为渲染端可加载的 URL。
+ * 实际协议由 PathProvider 决定（Electron: local-image://，Web: /assets/...）。
  */
 function localPathToUrl(filePath: string): string {
   if (!filePath) return ''
-  const normalized = filePath.replace(/\\/g, '/')
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(normalized)) return normalized
-  if (normalized.startsWith('/') || /^[A-Za-z]:\//.test(normalized)) {
-    return `local-image:///${normalized}`
-  }
-  return `local-image://${normalized}`
+  return toAssetUrl(filePath, 'image')
 }
 
 /**
- * 将 URL 转换回本地文件路径
+ * 将 URL 转换回本地文件路径（兼容历史数据中带协议的字段）。
+ * 业务侧不应再产生带协议的存储值；本函数仅作旧数据读取兼容。
  */
 function urlToLocalPath(url: string): string {
   if (!url) return ''
-  if (url.startsWith('local-image:///')) {
-    let filePath = url.replace('local-image:///', '')
+  // local-image://abs 或 local-image:///abs：剥协议
+  const m = url.match(/^local-(?:image|video|file):\/\/(\/?.+)$/i)
+  if (m) {
+    let filePath = m[1]
     if (process.platform === 'win32') {
-      // Windows 路径：local-image:///C:/Users/... -> C:\Users\...
       filePath = filePath.replace(/\//g, '\\')
     }
     return filePath
   }
-  // 如果不是 URL 格式，直接返回（兼容旧数据）
+  // /assets/<rel>：剥前缀，得到相对路径
+  if (url.startsWith('/assets/')) {
+    return url.slice('/assets/'.length)
+  }
   return url
 }
 

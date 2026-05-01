@@ -21,6 +21,14 @@ export interface SubDirectories {
 }
 
 /**
+ * 资源 URL 类型 - 决定前端用哪种协议加载
+ *
+ * Electron：image → local-image:// ；video → local-video:// ；file → local-file://
+ * Web：所有类型都走 HTTP /assets 路由（web-server 按 cookie userId 隔离）
+ */
+export type AssetScheme = 'image' | 'video' | 'file'
+
+/**
  * 路径提供者接口
  * 用于获取应用所需的各类路径
  */
@@ -61,6 +69,17 @@ export interface IPathProvider {
    * @param name - 子目录名称
    */
   getSubDirectoryPath(name: keyof SubDirectories): string
+
+  /**
+   * 把数据库存储的相对路径（或兼容的绝对路径）转为前端可加载的 URL。
+   * 不同运行环境返回不同协议（详见 AssetScheme 注释）。
+   *
+   * 输入若已是 URL（含 'http://' / 'local-image://' 等），原样返回。
+   *
+   * @param relOrAbsPath - 相对 dataPath 的路径（推荐），或兼容的绝对路径
+   * @param scheme - 资源类型；Electron 端决定 protocol；Web 端忽略（统一 /assets）
+   */
+  toAssetUrl(relOrAbsPath: string, scheme?: AssetScheme): string
 }
 
 /**
