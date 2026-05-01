@@ -108,6 +108,10 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   },
 
   // --- searchEngine ---
+  // preload 的 method 名（getTemplates / getDisabledQuickEngines 等）与后端
+  // ipcBridge 注册的 channel 名不是简单的 kebab 化，需要显式映射。
+  'searchEngine.getTemplates': { channel: 'search-engine:templates' },
+  'searchEngine.getDisabledQuickEngines': { channel: 'search-engine:get-disabled-quick' },
   'searchEngine.update': { channel: 'search-engine:update', wrap: wrapIdData },
   'searchEngine.setQuickEnabled': {
     channel: 'search-engine:set-quick-enabled',

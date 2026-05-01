@@ -11,11 +11,24 @@ import type { IpcResponse } from '@shared/types/ipc.types'
 const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
 
 /**
- * 注册数据路径相关 IPC 处理器（仅在 Electron 端注册）
+ * 注册数据路径相关 IPC 处理器
+ *
+ * - Electron：注册真实 handler（DataPathService 走 app/dialog/shell）
+ * - Web：注册 stub，返回"该功能仅在桌面端可用"。这样前端 Settings 组件
+ *   总是调用本组 channel 时不会报"未注册"错误，UI 也能优雅降级。
  */
 export function registerDataPathHandlers(): void {
   if (!isElectron) {
-    console.log('[DataPathHandlers] 跳过注册：当前运行在 Web 端')
+    const webStub = async () => ({ success: false, error: '该功能仅在桌面端可用' })
+    const webStubData = async () => ({ success: true, data: null })
+    ipcBridge.handle('data-path:get-config', webStubData)
+    ipcBridge.handle('data-path:select', webStub)
+    ipcBridge.handle('data-path:set', webStub)
+    ipcBridge.handle('data-path:reset', webStub)
+    ipcBridge.handle('data-path:migration-status', webStubData)
+    ipcBridge.handle('data-path:calculate-size', webStubData)
+    ipcBridge.handle('data-path:open-folder', webStub)
+    console.log('[DataPathHandlers] Web 端注册 stub（仅桌面端可用）')
     return
   }
 

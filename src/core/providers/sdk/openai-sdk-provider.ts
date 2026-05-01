@@ -39,11 +39,34 @@ export class OpenAISdkProvider extends BaseProvider {
     this.providerName = providerName
     this.defaultBaseUrl = defaultBaseUrl
 
-    // 初始化 OpenAI SDK 客户端
+    // OpenAI SDK 期望 baseURL 不含 /chat/completions、/embeddings 等子路径，
+    // 否则调 /models 时会拼出 /v1/chat/completions/models 这种无效路径。
+    // 用户配置/模板 endpoint 字段历史上偶尔会带子路径，这里统一规整。
+    const rawBase = config.baseUrl || defaultBaseUrl
+    const normalizedBase = OpenAISdkProvider.normalizeBaseUrl(rawBase)
+
     this.client = new OpenAI({
       apiKey: config.apiKey,
-      baseURL: config.baseUrl || defaultBaseUrl
+      baseURL: normalizedBase
     })
+  }
+
+  private static normalizeBaseUrl(url: string): string {
+    if (!url) return url
+    let s = url.trim().replace(/\/+$/, '')
+    const stripSuffixes = [
+      '/chat/completions',
+      '/completions',
+      '/embeddings',
+      '/responses',
+    ]
+    for (const suffix of stripSuffixes) {
+      if (s.toLowerCase().endsWith(suffix)) {
+        s = s.slice(0, s.length - suffix.length)
+        break
+      }
+    }
+    return s.replace(/\/+$/, '')
   }
 
   get id(): string {
@@ -75,11 +98,12 @@ export class OpenAISdkProvider extends BaseProvider {
       }))
     } catch (error) {
       console.error('获取模型列表失败:', error)
-      // 鉴权 / 权限 / 资源不存在 等明确错误必须冒泡到上层，避免被
-      // "回退到模板预置模型" 掩盖成 "连接成功但模型为空" 的误导信息。
+      // 任何 4xx 都是 API 端明确告诉调用方"请求有问题"（鉴权失败、URL 错、
+      // 模型不支持 list 等），都必须冒泡到上层，避免被"回退到模板预置模型"
+      // 掩盖成"连接成功但模型为空"的误导信息。
       const status = (error as { status?: number; response?: { status?: number } })?.status
         ?? (error as { response?: { status?: number } })?.response?.status
-      if (status === 401 || status === 403 || status === 404) {
+      if (status && status >= 400 && status < 500) {
         throw error
       }
       // 网络错误 / 5xx / endpoint 不支持 list models 时，回退到模板预定义模型
