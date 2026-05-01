@@ -8,8 +8,21 @@
  */
 
 import { resolve } from 'path'
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
+
+/**
+ * 把 index.html 中的入口脚本从 main.ts 替换为 main-web.ts，让 web 端
+ * 走包含登录门 + 桥接安装的 Web bootstrap，而 Electron 仍用默认的 main.ts。
+ */
+function replaceEntryToWebMain(): Plugin {
+  return {
+    name: 'replace-entry-to-web-main',
+    transformIndexHtml(html) {
+      return html.replace('/src/main.ts', '/src/main-web.ts')
+    },
+  }
+}
 
 export default defineConfig({
   root: resolve(__dirname, 'src/renderer'),
@@ -43,7 +56,7 @@ export default defineConfig({
       },
     },
   },
-  plugins: [vue()],
+  plugins: [vue(), replaceEntryToWebMain()],
   server: {
     port: 5174,
     proxy: {

@@ -449,10 +449,14 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
  * 提供商模板服务
  */
 export class ProviderTemplateService {
-  private secureStorage: ISecureStorage
-
-  constructor() {
-    this.secureStorage = getSecureStorage()
+  // 懒加载：模块顶层 new ProviderTemplateService() 时 SecureStorage 尚未注册，
+  // 改为首次访问时再解析全局 accessor。避免启动顺序耦合。
+  private _secureStorage: ISecureStorage | null = null
+  private get secureStorage(): ISecureStorage {
+    if (!this._secureStorage) {
+      this._secureStorage = getSecureStorage()
+    }
+    return this._secureStorage
   }
 
   /**

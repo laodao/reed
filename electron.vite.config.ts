@@ -45,8 +45,9 @@ export default defineConfig({
       alias: {
         '@renderer': resolve(__dirname, 'src/renderer'),
         '@shared': resolve(__dirname, 'src/shared'),
-        '@web-client': resolve(__dirname, 'src/web/client'),
         '@': resolve(__dirname, 'src/renderer/src')
+        // 注：不再需要 @web-client alias —— Electron entry 是 main.ts，
+        // 已通过 main/main-web 拆分把 @web-client 完全隔离到 Web 端。
       }
     },
     css: {
