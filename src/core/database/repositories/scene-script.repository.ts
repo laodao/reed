@@ -119,7 +119,7 @@ export class SceneScriptRepository extends BaseRepository<
       createdAt: now,
       updatedAt: now,
     })
-    const saved = await this.repo.save(entity)
+    const saved = await this.scoped.save(entity)
     return this.toDto(saved)
   }
 
@@ -162,7 +162,7 @@ export class SceneScriptRepository extends BaseRepository<
     id: string,
     data: UpdateSceneScriptRequest,
   ): Promise<SceneScript | null> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return null
 
     let changed = false
@@ -188,18 +188,17 @@ export class SceneScriptRepository extends BaseRepository<
     if (!changed) return this.toDto(existing)
 
     existing.updatedAt = new Date()
-    const saved = await this.repo.save(existing)
+    const saved = await this.scoped.save(existing)
     return this.toDto(saved)
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.repo.delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ id } as any)
+    return affected > 0
   }
 
   async deleteByEpisodeScriptId(episodeScriptId: string): Promise<number> {
-    const result = await this.repo.delete({ episodeScriptId } as any)
-    return result.affected ?? 0
+    return this.scoped.delete({ episodeScriptId } as any)
   }
 
   async countByEpisodeScriptId(episodeScriptId: string): Promise<number> {

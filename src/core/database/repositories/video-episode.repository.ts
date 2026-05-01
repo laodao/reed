@@ -71,7 +71,7 @@ export class VideoEpisodeRepository extends BaseRepository<
   }
 
   async getByProjectId(projectId: string): Promise<VideoEpisode[]> {
-    const entities = await this.repo.find({
+    const entities = await this.scoped.find({
       where: { projectId, deletedAt: IsNull() } as any,
       order: { episodeNumber: 'ASC' } as any,
     })
@@ -116,7 +116,7 @@ export class VideoEpisodeRepository extends BaseRepository<
       updatedAt: now,
       deletedAt: null,
     })
-    const saved = await this.repo.save(entity)
+    const saved = await this.scoped.save(entity)
     return this.toDto(saved)
   }
 
@@ -182,35 +182,34 @@ export class VideoEpisodeRepository extends BaseRepository<
     if (!changed) return this.toDto(existing)
 
     existing.updatedAt = new Date()
-    const saved = await this.repo.save(existing)
+    const saved = await this.scoped.save(existing)
     return this.toDto(saved)
   }
 
   /** 逻辑删除 */
   async delete(id: string): Promise<boolean> {
     const now = new Date()
-    const result = await this.repo.update({ id } as any, {
+    const affected = await this.scoped.update({ id } as any, {
       deletedAt: now,
       updatedAt: now,
     })
-    return (result.affected ?? 0) > 0
+    return affected > 0
   }
 
   async deleteByProjectId(projectId: string): Promise<number> {
     const now = new Date()
-    const result = await this.repo.update({ projectId } as any, {
+    return this.scoped.update({ projectId } as any, {
       deletedAt: now,
       updatedAt: now,
-    })
-    return result.affected ?? 0
+    } as any)
   }
 
   async restore(id: string): Promise<boolean> {
-    const result = await this.repo.update({ id } as any, {
+    const affected = await this.scoped.update({ id } as any, {
       deletedAt: null,
       updatedAt: new Date(),
     })
-    return (result.affected ?? 0) > 0
+    return affected > 0
   }
 
   async countByProjectId(projectId: string): Promise<number> {

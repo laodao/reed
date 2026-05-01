@@ -11,6 +11,7 @@ import {
 import { SceneCharacterEntity } from '../entities/scene-character.entity'
 import { ScenePropEntity } from '../entities/scene-prop.entity'
 import { BaseRepository } from '../base-repository'
+import { getCurrentUserId } from '@core/context/user-context'
 
 export interface CreateSceneCharacterRequest {
   sceneScriptId: string
@@ -78,7 +79,7 @@ export class SceneCharacterRepository extends BaseRepository<
   }
 
   async getBySceneScriptId(sceneScriptId: string): Promise<SceneCharacter[]> {
-    const entities = await this.repo.find({
+    const entities = await this.scoped.find({
       where: { sceneScriptId } as any,
       order: { sortOrder: 'ASC' } as any,
     })
@@ -90,7 +91,7 @@ export class SceneCharacterRepository extends BaseRepository<
   }
 
   async getById(id: string): Promise<SceneCharacter | null> {
-    const e = await this.repo.findOne({ where: { id } as any })
+    const e = await this.scoped.findOne({ id } as any)
     if (!e) return null
     return this.mapToDto(e, await this.getProps(e.id))
   }
@@ -153,7 +154,7 @@ export class SceneCharacterRepository extends BaseRepository<
     id: string,
     data: UpdateSceneCharacterRequest,
   ): Promise<SceneCharacter | null> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return null
 
     return this.dataSource.transaction(async manager => {
@@ -190,31 +191,35 @@ export class SceneCharacterRepository extends BaseRepository<
   }
 
   async delete(id: string): Promise<boolean> {
+    const userId = getCurrentUserId()
+    const userScope = userId ? { userId } : {}
     return this.dataSource.transaction(async manager => {
-      await manager.delete(ScenePropEntity, { sceneCharacterId: id })
-      const result = await manager.delete(SceneCharacterEntity, { id })
+      await manager.delete(ScenePropEntity, { sceneCharacterId: id, ...userScope } as any)
+      const result = await manager.delete(SceneCharacterEntity, { id, ...userScope } as any)
       return (result.affected ?? 0) > 0
     })
   }
 
   async deleteBySceneScriptId(sceneScriptId: string): Promise<number> {
+    const userId = getCurrentUserId()
+    const userScope = userId ? { userId } : {}
     return this.dataSource.transaction(async manager => {
       const charRepo = manager.getRepository(SceneCharacterEntity)
       const propRepo = manager.getRepository(ScenePropEntity)
       const characters = await charRepo.find({
-        where: { sceneScriptId } as any,
+        where: { sceneScriptId, ...userScope } as any,
         select: ['id'],
       })
       for (const c of characters) {
-        await propRepo.delete({ sceneCharacterId: c.id } as any)
+        await propRepo.delete({ sceneCharacterId: c.id, ...userScope } as any)
       }
-      const result = await charRepo.delete({ sceneScriptId } as any)
+      const result = await charRepo.delete({ sceneScriptId, ...userScope } as any)
       return result.affected ?? 0
     })
   }
 
   async countBySceneScriptId(sceneScriptId: string): Promise<number> {
-    return this.repo.count({ where: { sceneScriptId } as any })
+    return this.scoped.count({ sceneScriptId } as any)
   }
 
   private generateId(): string {

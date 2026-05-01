@@ -88,16 +88,17 @@ export class CharacterBindingRepository extends BaseRepository<
 
   async getByProjectId(projectId: string): Promise<CharacterBinding[]> {
     // LEFT JOIN lw_story_characters 同步 portrait_id（绑定为空时从长文角色取）
-    const rows = await this.repo
-      .createQueryBuilder('cb')
+    // scoped.qb 已自动按 user_id 过滤 cb；c 的 user_id 由 ON 条件兼容自动匹配
+    const qb = this.scoped
+      .qb('cb')
       .leftJoin(LwCharacterEntity, 'c', 'cb.long_writing_character_id = c.id')
       .select('cb')
       .addSelect(
         'COALESCE(cb.portrait_id, c.portrait_id)',
         'cb_synced_portrait_id',
       )
-      .where('cb.project_id = :pid', { pid: projectId })
-      .getRawAndEntities()
+      .andWhere('cb.project_id = :pid', { pid: projectId })
+    const rows = await qb.getRawAndEntities()
 
     return rows.entities.map((entity, idx) => {
       const dto = this.toDto(entity)
@@ -144,7 +145,7 @@ export class CharacterBindingRepository extends BaseRepository<
       createdAt: now,
       updatedAt: now,
     })
-    const saved = await this.repo.save(entity)
+    const saved = await this.scoped.save(entity)
     return this.toDto(saved)
   }
 
@@ -152,7 +153,7 @@ export class CharacterBindingRepository extends BaseRepository<
     id: string,
     data: UpdateCharacterBindingRequest,
   ): Promise<CharacterBinding | null> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return null
 
     let changed = false
@@ -179,18 +180,17 @@ export class CharacterBindingRepository extends BaseRepository<
     if (!changed) return this.toDto(existing)
 
     existing.updatedAt = new Date()
-    const saved = await this.repo.save(existing)
+    const saved = await this.scoped.save(existing)
     return this.toDto(saved)
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.repo.delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ id } as any)
+    return affected > 0
   }
 
   async deleteByProjectId(projectId: string): Promise<number> {
-    const result = await this.repo.delete({ projectId } as any)
-    return result.affected ?? 0
+    return this.scoped.delete({ projectId } as any)
   }
 
   private generateId(): string {

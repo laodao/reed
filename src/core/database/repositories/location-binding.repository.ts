@@ -117,7 +117,7 @@ export class LocationBindingRepository extends BaseRepository<
       createdAt: now,
       updatedAt: now,
     })
-    const saved = await this.repo.save(entity)
+    const saved = await this.scoped.save(entity)
     return this.toDto(saved)
   }
 
@@ -125,7 +125,7 @@ export class LocationBindingRepository extends BaseRepository<
     id: string,
     data: UpdateLocationBindingRequest,
   ): Promise<LocationBinding | null> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return null
 
     let changed = false
@@ -152,27 +152,26 @@ export class LocationBindingRepository extends BaseRepository<
     if (!changed) return this.toDto(existing)
 
     existing.updatedAt = new Date()
-    const saved = await this.repo.save(existing)
+    const saved = await this.scoped.save(existing)
     return this.toDto(saved)
   }
 
   async addImage(id: string, imagePath: string): Promise<boolean> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return false
     existing.imagePaths = [...((existing.imagePaths as string[] | null) ?? []), imagePath]
     existing.updatedAt = new Date()
-    await this.repo.save(existing)
+    await this.scoped.save(existing)
     return true
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.repo.delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ id } as any)
+    return affected > 0
   }
 
   async deleteByProjectId(projectId: string): Promise<number> {
-    const result = await this.repo.delete({ projectId } as any)
-    return result.affected ?? 0
+    return this.scoped.delete({ projectId } as any)
   }
 
   private generateId(): string {

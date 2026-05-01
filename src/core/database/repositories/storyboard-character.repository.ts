@@ -91,7 +91,7 @@ export class StoryboardCharacterRepository extends BaseRepository<
       facing: data.facing || 'front',
       sortOrder: data.sortOrder,
     })
-    const saved = await this.repo.save(entity)
+    const saved = await this.scoped.save(entity)
     return this.toDto(saved)
   }
 
@@ -128,7 +128,7 @@ export class StoryboardCharacterRepository extends BaseRepository<
     id: string,
     data: UpdateStoryboardCharacterRequest,
   ): Promise<StoryboardCharacter | null> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return null
 
     let changed = false
@@ -143,18 +143,17 @@ export class StoryboardCharacterRepository extends BaseRepository<
 
     if (!changed) return this.toDto(existing)
 
-    const saved = await this.repo.save(existing)
+    const saved = await this.scoped.save(existing)
     return this.toDto(saved)
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.repo.delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ id } as any)
+    return affected > 0
   }
 
   async deleteByStoryboardId(storyboardId: string): Promise<number> {
-    const result = await this.repo.delete({ storyboardId } as any)
-    return result.affected ?? 0
+    return this.scoped.delete({ storyboardId } as any)
   }
 
   async countByStoryboardId(storyboardId: string): Promise<number> {

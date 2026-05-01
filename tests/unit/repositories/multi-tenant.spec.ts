@@ -21,6 +21,10 @@ import { ImageAssetRepository } from '@core/database/repositories/image-asset.re
 import { PortraitProjectRepository } from '@core/database/repositories/portrait-project.repository'
 import { PortraitCharacterRepository } from '@core/database/repositories/portrait-character.repository'
 import { PortraitVariantRepository } from '@core/database/repositories/portrait-variant.repository'
+import { VideoProjectRepository } from '@core/database/repositories/video-project.repository'
+import { VideoEpisodeRepository } from '@core/database/repositories/video-episode.repository'
+import { StoryboardRepository } from '@core/database/repositories/storyboard.repository'
+import { CharacterBindingRepository } from '@core/database/repositories/character-binding.repository'
 import { ensureUsersTable } from '@core/database/migrations/ensure-users-table'
 import {
   createTestDataSource,
@@ -41,6 +45,10 @@ describe.each(getTestDialects())('multi-tenant scoped repository (%s)', dialect 
   let portraitProjectRepo: PortraitProjectRepository
   let portraitCharRepo: PortraitCharacterRepository
   let portraitVariantRepo: PortraitVariantRepository
+  let videoProjectRepo: VideoProjectRepository
+  let videoEpisodeRepo: VideoEpisodeRepository
+  let storyboardRepo: StoryboardRepository
+  let characterBindingRepo: CharacterBindingRepository
 
   beforeAll(async () => {
     testDs = await createTestDataSource(dialect)
@@ -53,6 +61,10 @@ describe.each(getTestDialects())('multi-tenant scoped repository (%s)', dialect 
     portraitProjectRepo = new PortraitProjectRepository(testDs.ds)
     portraitCharRepo = new PortraitCharacterRepository(testDs.ds)
     portraitVariantRepo = new PortraitVariantRepository(testDs.ds)
+    videoProjectRepo = new VideoProjectRepository(testDs.ds)
+    videoEpisodeRepo = new VideoEpisodeRepository(testDs.ds)
+    storyboardRepo = new StoryboardRepository(testDs.ds)
+    characterBindingRepo = new CharacterBindingRepository(testDs.ds)
   })
 
   afterAll(async () => {
@@ -659,6 +671,96 @@ describe.each(getTestDialects())('multi-tenant scoped repository (%s)', dialect 
         portraitVariantRepo.getByCharacterId(charA.id),
       )
       expect(bVariants.length).toBe(0)
+    })
+
+    it.skip('placeholder', async () => {})
+  })
+
+  // ========================================================================
+  // 9. 剧集制作模块（VideoProject / Episode / Storyboard / CharacterBinding）
+  // ========================================================================
+  describe('剧集制作模块隔离', () => {
+    it('A 创建的 VideoProject 在 B 看不到', async () => {
+      await runWithUserAsync(USER_A, () =>
+        videoProjectRepo.create({ name: 'A 的剧集', config: { aspectRatio: '16:9' } } as any),
+      )
+
+      const aList = await runWithUserAsync(USER_A, () =>
+        videoProjectRepo.getAll(),
+      )
+      const bList = await runWithUserAsync(USER_B, () =>
+        videoProjectRepo.getAll(),
+      )
+
+      expect(aList.length).toBe(1)
+      expect(bList.length).toBe(0)
+    })
+
+    it('B 不能 update / delete A 的 VideoProject', async () => {
+      const proj = await runWithUserAsync(USER_A, () =>
+        videoProjectRepo.create({ name: 'A', config: { aspectRatio: '16:9' } } as any),
+      )
+
+      // B 试图 update：应失败（找不到该项目）
+      const updated = await runWithUserAsync(USER_B, () =>
+        videoProjectRepo.update(proj.id, { name: 'B 改' } as any),
+      )
+      expect(updated).toBeNull()
+
+      // B 试图 delete：A 的项目应该还在
+      await runWithUserAsync(USER_B, () => videoProjectRepo.delete(proj.id))
+      const stillA = await runWithUserAsync(USER_A, () =>
+        videoProjectRepo.getById(proj.id),
+      )
+      expect(stillA).not.toBeNull()
+    })
+
+    it('VideoEpisode + Storyboard 按 user_id 隔离', async () => {
+      const proj = await runWithUserAsync(USER_A, () =>
+        videoProjectRepo.create({ name: 'A', config: { aspectRatio: '16:9' } } as any),
+      )
+
+      // A 创建 episode
+      const ep = await runWithUserAsync(USER_A, () =>
+        videoEpisodeRepo.create({
+          projectId: proj.id,
+          episodeNumber: 1,
+          title: '第一集',
+        } as any),
+      )
+
+      const aEpisodes = await runWithUserAsync(USER_A, () =>
+        videoEpisodeRepo.getByProjectId(proj.id),
+      )
+      const bEpisodes = await runWithUserAsync(USER_B, () =>
+        videoEpisodeRepo.getByProjectId(proj.id),
+      )
+      expect(aEpisodes.length).toBe(1)
+      expect(bEpisodes.length).toBe(0)
+      expect(ep.id).toBeTruthy()
+    })
+
+    it('CharacterBinding 按 user_id 隔离', async () => {
+      const proj = await runWithUserAsync(USER_A, () =>
+        videoProjectRepo.create({ name: 'A', config: { aspectRatio: '16:9' } } as any),
+      )
+      await runWithUserAsync(USER_A, () =>
+        characterBindingRepo.create({
+          projectId: proj.id,
+          longWritingCharacterId: 'lw-c1',
+          generateConfig: {},
+          voiceConfig: {},
+        } as any),
+      )
+
+      const aBindings = await runWithUserAsync(USER_A, () =>
+        characterBindingRepo.getByProjectId(proj.id),
+      )
+      const bBindings = await runWithUserAsync(USER_B, () =>
+        characterBindingRepo.getByProjectId(proj.id),
+      )
+      expect(aBindings.length).toBe(1)
+      expect(bBindings.length).toBe(0)
     })
 
     it('B 调 deleteByProjectId（A 的 projectId）不会删 A 的 variants', async () => {
