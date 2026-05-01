@@ -33,7 +33,8 @@
       "@renderer/*": ["src/renderer/*"],
       "@shared/*": ["src/shared/*"],
       "@core/*": ["src/core/*"],
-      "@electron/*": ["src/electron/*"]
+      "@electron/*": ["src/electron/*"],
+      "@web-client/*": ["src/web/client/*"]
     }
   },
   "include": [

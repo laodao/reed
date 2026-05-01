@@ -21,6 +21,8 @@
     "typecheck": "vue-tsc --noEmit",
     "web:dev": "tsx watch -r tsconfig-paths/register src/web/server/index.ts",
     "web:start": "tsx -r tsconfig-paths/register src/web/server/index.ts",
+    "web:client:dev": "vite --config vite.config.web.ts",
+    "web:client:build": "vite build --config vite.config.web.ts",
     "test": "vitest",
     "test:unit": "vitest run tests/unit",
     "test:unit:sqlite": "SKIP_PG_TESTS=1 vitest run tests/unit",

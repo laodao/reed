@@ -90,6 +90,10 @@ async function bootstrap(): Promise<void> {
   //    用户专属文件目录由 PathProvider 隔离。
   await initWebDatabase()
 
+  // 2.5 注册 IPC channel 处理器（与 Electron handler 等价的逻辑）
+  const { registerAllWebChannels } = await import('./api/register-channels')
+  await registerAllWebChannels()
+
   // 3. Express
   const app = express()
   app.use(express.json({ limit: '50mb' }))
@@ -156,6 +160,10 @@ async function initWebDatabase(): Promise<void> {
   }
 
   const ds = await createDataSource({ config: cfg })
+  // Web 端首次启动用 synchronize 让 TypeORM 按 entity metadata 建全表（幂等）。
+  // 与 Electron 不同：Electron 由 initTables() raw SQL 建表，drift check 把关；
+  // Web 端不维护两份 DDL，统一走 TypeORM 自身的 schema 同步。
+  await ds.synchronize()
   await ensureUsersTable(ds)
 
   // 注册 DatabaseManager（生成所有 Repository 实例）
