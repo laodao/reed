@@ -480,7 +480,7 @@ export class PortraitService {
 
         // 保存变体记录
         const image = imageResult.images[0]
-        const actualImagePath = (image.url || '').replace(/^local-image:\/\/\/?/, '')
+        const actualImagePath = (image.filePath || '')
 
         const variant = await dbManager.portraitVariants.create({
           characterId: character.id,
@@ -609,7 +609,7 @@ export class PortraitService {
               type: 'clothes',
               parentId: request.variantId || baseVariant.id,
               angle: 'front',
-              imagePath: (image.url || '').replace(/^local-image:\/\/\/?/, ''),
+              imagePath: (image.filePath || ''),
               prompt: fullPrompt,
               config: baseVariant.config,
               variantInfo: {
@@ -667,7 +667,7 @@ export class PortraitService {
           type: 'clothes',
           parentId: frontVariantId || request.variantId || baseVariant.id, // 优先使用正面图 id
           angle: angle,
-          imagePath: (image.url || '').replace(/^local-image:\/\/\/?/, ''),
+          imagePath: (image.filePath || ''),
           prompt: fullPrompt,
           config: baseVariant.config,
           variantInfo: {
@@ -783,7 +783,7 @@ export class PortraitService {
               type: 'background',
               parentId: request.variantId || baseVariant.id,
               angle: 'front',
-              imagePath: (image.url || '').replace(/^local-image:\/\/\/?/, ''),
+              imagePath: (image.filePath || ''),
               prompt: fullPrompt,
               config: baseVariant.config,
               variantInfo: {
@@ -842,7 +842,7 @@ export class PortraitService {
           type: 'background',
           parentId: frontVariantId || request.variantId || baseVariant.id, // 优先使用正面图 id
           angle: angle,
-          imagePath: (image.url || '').replace(/^local-image:\/\/\/?/, ''),
+          imagePath: (image.filePath || ''),
           prompt: fullPrompt,
           config: baseVariant.config,
           variantInfo: {
@@ -1025,7 +1025,7 @@ export class PortraitService {
         }
 
         const image = imageResult.images[0]
-        const imagePath = (image.url || '').replace(/^local-image:\/\/\/?/, '')
+        const imagePath = (image.filePath || '')
 
         const variant = await dbManager.portraitVariants.create({
           characterId: request.characterId,
@@ -1139,7 +1139,7 @@ export class PortraitService {
 
       const image = imageResult.images[0]
       const updatedVariant = await dbManager.portraitVariants.update(variant.id, {
-        imagePath: (image.url || '').replace(/^local-image:\/\/\/?/, ''),
+        imagePath: (image.filePath || ''),
         prompt: editPrompt
       })
 

@@ -160,6 +160,7 @@ import { computed, ref } from 'vue'
 import { FolderOpened, Download } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useVoice } from '@/composables'
+import { toFileUrl } from '@/utils/asset-url'
 
 // 音频元素引用
 const audioRef = ref<HTMLAudioElement | null>(null)
@@ -237,13 +238,11 @@ function filterModels(keyword: string): void {
 }
 
 /**
- * 音频源 URL
+ * 音频源 URL（双端：Electron 走 local-file://，Web 走 /assets/）
  */
 const audioSrc = computed(() => {
   if (!outputAudioPath.value) return ''
-  // 使用 file:// 协议，Windows 路径需要特殊处理
-  const normalizedPath = outputAudioPath.value.replace(/\\/g, '/')
-  return 'file:///' + normalizedPath
+  return toFileUrl(outputAudioPath.value.replace(/\\/g, '/'))
 })
 
 /**

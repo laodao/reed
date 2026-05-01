@@ -13,6 +13,7 @@ import { ClonedVoiceRepository } from '@core/database/repositories/cloned-voice.
 import { PROVIDER_TEMPLATES } from '@core/services/provider-template.service'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { getPathProvider } from '@core/interfaces/path.interface'
+import { toAssetUrl, toRelativeAssetPath } from '@core/utils/asset-path'
 import { DashScopeTTSProvider } from '@core/voice-providers/dashscope-tts-provider'
 import { DashScopeSTTProvider } from '@core/voice-providers/dashscope-stt-provider'
 import type {
@@ -281,7 +282,8 @@ export class VoiceService {
 
       // 保存音频文件（WAV 格式）
       const audioFileName = `${record.id}.wav`
-      const audioPath = path.join(this.getTTSDir(), audioFileName)
+      const ttsDir = this.getTTSDir()
+      const audioPath = path.join(ttsDir, audioFileName)
 
       if (result.audioData) {
         // 确保 audioData 是字符串
@@ -303,22 +305,25 @@ export class VoiceService {
         return { success: false, error: '未获取到音频数据' }
       }
 
-      // 更新记录
+      // DB 存相对路径（与 image_records 等保持一致）；返回给前端的是平台 URL
+      const relativeAudioPath = toRelativeAssetPath(audioPath)
       await voiceRepo.update(record.id, {
         status: 'completed',
-        outputAudioPath: audioPath
+        outputAudioPath: relativeAudioPath
       })
+
+      const audioUrl = toAssetUrl(relativeAudioPath, 'file')
 
       // 通知前端完成
       getEventEmitter().emit('voice:tts-completed', {
         recordId: record.id,
-        audioPath
+        audioPath: audioUrl
       })
 
       return {
         success: true,
         data: {
-          audioPath,
+          audioPath: audioUrl,
           duration: 0 // TODO: 计算音频时长
         }
       }

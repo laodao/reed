@@ -401,6 +401,7 @@ import {
 import { useStoryToVideoStore } from '@/stores/story-to-video'
 import { useTabsStore } from '@/stores/tabs'
 import type { Storyboard, Dialogue, AudioAsset } from '../../../shared/types/story-to-video.types'
+import { toVideoUrl } from '@/utils/asset-url'
 
 const route = useRoute()
 const router = useRouter()
@@ -699,13 +700,10 @@ function getCharacterName(characterId: string): string {
   return character?.characterName || characterId
 }
 
-// 播放视频
+// 播放视频（双端：Electron→local-video://；Web→/assets/）
 function playVideo(storyboard: Storyboard) {
   if (storyboard.videoPath) {
-    // 本地文件路径需要转换为可访问的 URL
-    playingVideoPath.value = storyboard.videoPath.startsWith('http')
-      ? storyboard.videoPath
-      : `local-video:///${storyboard.videoPath.replace(/\\/g, '/')}`
+    playingVideoPath.value = toVideoUrl(storyboard.videoPath.replace(/\\/g, '/'))
     showVideoDialog.value = true
   }
 }

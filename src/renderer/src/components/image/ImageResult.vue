@@ -271,6 +271,7 @@ import {
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useImage } from '@/composables'
+import { toImageUrl } from '@/utils/asset-url'
 import type { ImageRecord } from '../../../shared/types/image.types'
 
 /**
@@ -324,21 +325,10 @@ const currentImage = computed(() => props.image)
 // ==================== 方法 ====================
 
 /**
- * 获取图像 URL
+ * 获取图像 URL（使用统一的 asset-url 工具：双端各自走自己的协议/路由）
  */
 function getImageUrl(image: ImageRecord): string {
-  if (image.filePath) {
-    // 检查是否已有协议前缀
-    if (image.filePath.startsWith('local-image://') ||
-        image.filePath.startsWith('http://') ||
-        image.filePath.startsWith('https://') ||
-        image.filePath.startsWith('data:')) {
-      return image.filePath
-    }
-    // 使用 local-image:// 协议加载本地图像
-    return `local-image://${encodeURIComponent(image.filePath)}`
-  }
-  return ''
+  return toImageUrl(image.filePath)
 }
 
 /**

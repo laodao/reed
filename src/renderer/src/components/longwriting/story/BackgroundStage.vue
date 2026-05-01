@@ -618,6 +618,7 @@ import { ref, onMounted, computed, inject, toRaw } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus, MagicStick, Check, Picture } from '@element-plus/icons-vue'
 import type { ComputedRef, Ref } from 'vue'
+import { toImageUrl } from '@/utils/asset-url'
 
 const props = defineProps<{
   projectId: string
@@ -860,12 +861,9 @@ function getMapName(mapId: string): string {
   return map?.name || '未知'
 }
 
-// 将本地路径转换为 local-image:// URL
+// 将本地路径转换为图像 URL（双端自适配）
 function getMapImageUrl(imagePath: string): string {
-  if (!imagePath) return ''
-  // 将 Windows 反斜杠替换为正斜杠
-  const normalizedPath = imagePath.replace(/\\/g, '/')
-  return `local-image:///${normalizedPath}`
+  return toImageUrl(imagePath?.replace(/\\/g, '/'))
 }
 
 // 加载势力列表

@@ -677,10 +677,6 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 请生成一张符合以上描述的地图风格插图。`
 
       // 获取 BrowserWindow
-      const window = getBrowserWindowFromEvent(event)
-      if (!window) {
-        return { success: false, error: '窗口不存在' }
-      }
 
       // 获取 ImageService
       const { ImageService } = await import('@core/services/image.service')
@@ -1202,10 +1198,6 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       console.log(`[LongWritingHandler] generateStoryOverview 被调用, eventId: ${eventId}, projectId: ${projectId}`)
       console.log(`[LongWritingHandler] providerConfigId: ${providerConfigId}, modelId: ${modelId}`)
       try {
-        const window = getBrowserWindowFromEvent(event)
-        if (!window) {
-          return { success: false, error: '窗口不存在' }
-        }
         const result = await aiService.generateStoryOverview(eventId, projectId, input, providerConfigId, modelId)
         console.log(`[LongWritingHandler] generateStoryOverview 完成, success: ${result.success}`)
         return { ...result, eventId }
@@ -1220,10 +1212,6 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     CHANNELS.GENERATE_PLOTS,
     async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
       try {
-        const window = getBrowserWindowFromEvent(event)
-        if (!window) {
-          return { success: false, error: '窗口不存在' }
-        }
         const result = await aiService.generatePlots(eventId, projectId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
@@ -1236,10 +1224,6 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     CHANNELS.POLISH_BACKGROUND,
     async (event, eventId: string, projectId: string, field: 'eraDescription' | 'socialStructure' | 'techLevel' | 'specialRules' | 'factionDistribution' | 'geographicOrientation', eraType: string, content: string, providerConfigId?: string, modelId?: string) => {
       try {
-        const window = getBrowserWindowFromEvent(event)
-        if (!window) {
-          return { success: false, error: '窗口不存在' }
-        }
         const result = await aiService.polishBackground(eventId, projectId, field, eraType, content, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
@@ -1252,10 +1236,6 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     CHANNELS.GENERATE_LOCATIONS,
     async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
       try {
-        const window = getBrowserWindowFromEvent(event)
-        if (!window) {
-          return { success: false, error: '窗口不存在' }
-        }
         const result = await aiService.generateLocations(eventId, projectId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
@@ -1268,10 +1248,6 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     CHANNELS.GENERATE_FACTIONS,
     async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
       try {
-        const window = getBrowserWindowFromEvent(event)
-        if (!window) {
-          return { success: false, error: '窗口不存在' }
-        }
         const result = await aiService.generateFactions(eventId, projectId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
@@ -1285,10 +1261,6 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string, requirements?: string) => {
       try {
         console.log(`[LongWritingHandler] generateCharacters 被调用, eventId: ${eventId}, projectId: ${projectId}`)
-        const window = getBrowserWindowFromEvent(event)
-        if (!window) {
-          return { success: false, error: '窗口不存在' }
-        }
         const result = await aiService.generateCharacters(eventId, projectId, providerConfigId, modelId, requirements)
         console.log(`[LongWritingHandler] generateCharacters 完成, success: ${result.success}, error: ${result.error || 'none'}`)
         return { ...result, eventId }
@@ -1303,10 +1275,6 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     CHANNELS.GENERATE_SKILLS_ITEMS,
     async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
       try {
-        const window = getBrowserWindowFromEvent(event)
-        if (!window) {
-          return { success: false, error: '窗口不存在' }
-        }
         const result = await aiService.generateSkillsItems(eventId, projectId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
@@ -1319,10 +1287,6 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     CHANNELS.GENERATE_SKILL_ITEM_TYPES,
     async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
       try {
-        const window = getBrowserWindowFromEvent(event)
-        if (!window) {
-          return { success: false, error: '窗口不存在' }
-        }
         const result = await aiService.generateSkillItemTypes(eventId, projectId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
@@ -1335,10 +1299,6 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     CHANNELS.GENERATE_SKILLS_ONLY,
     async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
       try {
-        const window = getBrowserWindowFromEvent(event)
-        if (!window) {
-          return { success: false, error: '窗口不存在' }
-        }
         const result = await aiService.generateSkillsOnly(eventId, projectId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
@@ -1351,10 +1311,6 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     CHANNELS.GENERATE_ITEMS_ONLY,
     async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
       try {
-        const window = getBrowserWindowFromEvent(event)
-        if (!window) {
-          return { success: false, error: '窗口不存在' }
-        }
         const result = await aiService.generateItemsOnly(eventId, projectId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
@@ -1367,10 +1323,6 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     CHANNELS.GENERATE_OUTLINE_STORY,
     async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string, structureLevel?: number) => {
       try {
-        const window = getBrowserWindowFromEvent(event)
-        if (!window) {
-          return { success: false, error: '窗口不存在' }
-        }
         const result = await aiService.generateOutlineStory(eventId, projectId, providerConfigId, modelId, structureLevel)
         return { ...result, eventId }
       } catch (error: any) {
@@ -1383,10 +1335,6 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     CHANNELS.GENERATE_OUTLINE_COMMENT,
     async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
       try {
-        const window = getBrowserWindowFromEvent(event)
-        if (!window) {
-          return { success: false, error: '窗口不存在' }
-        }
         const result = await aiService.generateOutlineComment(eventId, projectId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
@@ -1399,10 +1347,6 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     CHANNELS.GENERATE_CHAPTER,
     async (event, eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string) => {
       try {
-        const window = getBrowserWindowFromEvent(event)
-        if (!window) {
-          return { success: false, error: '窗口不存在' }
-        }
         const result = await aiService.generateChapter(eventId, projectId, outlineId, targetWords, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
@@ -1415,10 +1359,6 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     CHANNELS.GENERATE_CHAPTER_PREWRITE,
     async (event, eventId: string, projectId: string, outlineId: string, providerConfigId?: string, modelId?: string) => {
       try {
-        const window = getBrowserWindowFromEvent(event)
-        if (!window) {
-          return { success: false, error: '窗口不存在' }
-        }
         const result = await aiService.generateChapterPrewrite(eventId, projectId, outlineId, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
@@ -1431,10 +1371,6 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     CHANNELS.GENERATE_SECTION,
     async (event, eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string) => {
       try {
-        const window = getBrowserWindowFromEvent(event)
-        if (!window) {
-          return { success: false, error: '窗口不存在' }
-        }
         const result = await aiService.generateSection(eventId, projectId, outlineId, targetWords, providerConfigId, modelId)
         return { ...result, eventId }
       } catch (error: any) {
@@ -1667,10 +1603,6 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       if (!isElectron) {
         return { success: false, error: '该功能仅在桌面端可用' }
       }
-      const window = getBrowserWindowFromEvent(event)
-      if (!window) {
-        return { success: false, error: '窗口不存在' }
-      }
       const { dialog, shell } = loadElectronModules()
 
       // 获取导出数据
@@ -1714,7 +1646,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
       // 选择保存路径
       const safeName = dataResult.name.replace(/[\\/:*?"<>|]/g, '_')
-      const result = await dialog.showSaveDialog(window, {
+      const result = await dialog.showSaveDialog(getBrowserWindowFromEvent(event), {
         defaultPath: `${safeName}.md`,
         filters: [{ name: 'Markdown 文件', extensions: ['md'] }]
       })
@@ -1742,10 +1674,6 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     try {
       if (!isElectron) {
         return { success: false, error: '该功能仅在桌面端可用' }
-      }
-      const window = getBrowserWindowFromEvent(event)
-      if (!window) {
-        return { success: false, error: '窗口不存在' }
       }
       const { dialog, shell } = loadElectronModules()
 
@@ -1790,7 +1718,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
       // 选择保存路径
       const safeName = dataResult.name.replace(/[\\/:*?"<>|]/g, '_')
-      const result = await dialog.showSaveDialog(window, {
+      const result = await dialog.showSaveDialog(getBrowserWindowFromEvent(event), {
         defaultPath: `${safeName}.docx`,
         filters: [{ name: 'Word 文档', extensions: ['docx'] }]
       })
@@ -1824,10 +1752,6 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       if (!isElectron) {
         return { success: false, error: '该功能仅在桌面端可用' }
       }
-      const window = getBrowserWindowFromEvent(event)
-      if (!window) {
-        return { success: false, error: '窗口不存在' }
-      }
       const { dialog, shell } = loadElectronModules()
 
       const { content, fileName, format } = data
@@ -1837,7 +1761,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       const extension = format === 'txt' ? 'txt' : 'md'
       const filterName = format === 'txt' ? '文本文件' : 'Markdown 文件'
 
-      const result = await dialog.showSaveDialog(window, {
+      const result = await dialog.showSaveDialog(getBrowserWindowFromEvent(event), {
         defaultPath: `${safeName}.${extension}`,
         filters: [{ name: filterName, extensions: [extension] }]
       })

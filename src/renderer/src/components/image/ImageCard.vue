@@ -113,6 +113,7 @@ import {
   CircleCheckFilled
 } from '@element-plus/icons-vue'
 import type { ImageRecord } from '../../../shared/types/image.types'
+import { toImageUrl } from '@/utils/asset-url'
 
 /**
  * Props 定义
@@ -169,22 +170,11 @@ const isHovered = ref(false)
 
 // ==================== 计算属性 ====================
 
-/** 图像 URL */
+/** 图像 URL（统一通过 asset-url helper 适配双端） */
 const imageUrl = computed(() => {
   if (props.customImageUrl) return props.customImageUrl
   if (props.image?.imageUrl) return props.image.imageUrl
-  if (props.image?.filePath) {
-    // 如果已经是完整 URL（如 local-image:// 或 http），直接使用
-    if (props.image.filePath.startsWith('local-image://') ||
-        props.image.filePath.startsWith('http://') ||
-        props.image.filePath.startsWith('https://') ||
-        props.image.filePath.startsWith('data:')) {
-      return props.image.filePath
-    }
-    // 否则使用 local-image:// 协议
-    return `local-image://${encodeURIComponent(props.image.filePath)}`
-  }
-  return ''
+  return toImageUrl(props.image?.filePath)
 })
 
 /** 是否显示悬停遮罩 */
