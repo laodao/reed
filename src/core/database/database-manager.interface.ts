@@ -9,6 +9,7 @@
 import type { DataSource } from 'typeorm'
 
 import type { ApiKeyRepository } from './repositories/api-key.repository'
+import type { UserRepository } from './repositories/user.repository'
 import type { CharacterBindingRepository } from './repositories/character-binding.repository'
 import type { ClonedVoiceRepository } from './repositories/cloned-voice.repository'
 import type { DialogRepository } from './repositories/dialog.repository'
@@ -88,6 +89,9 @@ import type { VoiceRepository } from './repositories/voice.repository'
  */
 export interface ICoreDatabaseManager {
   readonly dataSource: DataSource | null
+
+  // ---- 用户系统（多租户基础）----
+  users: UserRepository | null
 
   // ---- 通用模块 ----
   settings: SettingsRepository | null

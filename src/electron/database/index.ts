@@ -10,6 +10,7 @@ import * as path from 'path'
 import * as fs from 'fs'
 import { SettingsRepository } from '@core/database/repositories/settings.repository'
 import { ApiKeyRepository } from '@core/database/repositories/api-key.repository'
+import { UserRepository } from '@core/database/repositories/user.repository'
 import { DialogRepository } from '@core/database/repositories/dialog.repository'
 import { MessageRepository } from '@core/database/repositories/message.repository'
 import { RoleRepository } from '@core/database/repositories/role.repository'
@@ -106,6 +107,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
   // 仓库实例
   public settings: SettingsRepository | null = null
   public apiKeys: ApiKeyRepository | null = null
+  public users: UserRepository | null = null
   public dialogs: DialogRepository | null = null
   public messages: MessageRepository | null = null
   public roles: RoleRepository | null = null
@@ -235,8 +237,33 @@ export class DatabaseManager implements ICoreDatabaseManager {
     // === Phase 1: 建立 TypeORM DataSource（与 better-sqlite3 并存）===
     await this.initTypeOrmDataSource()
 
+    // 多用户基础：确保 users 表存在（幂等）+ 为 Electron 注入本地默认用户
+    if (this.dataSource) {
+      const { ensureUsersTable } = await import(
+        '@core/database/migrations/ensure-users-table'
+      )
+      await ensureUsersTable(this.dataSource)
+    }
+
     // 初始化仓库
     await this.initRepositories()
+
+    // Electron 单用户：写入并设置默认 userId 供 ALS 在没有显式上下文时回退
+    if (this.users) {
+      const { LOCAL_DEFAULT_USER_ID, setDefaultUser } = await import(
+        '@core/context/user-context'
+      )
+      const existing = await this.users.getById(LOCAL_DEFAULT_USER_ID)
+      if (!existing) {
+        await this.users.create({
+          id: LOCAL_DEFAULT_USER_ID,
+          email: 'local@local',
+          displayName: '本地用户',
+          role: 'admin',
+        })
+      }
+      setDefaultUser(LOCAL_DEFAULT_USER_ID)
+    }
 
     // 初始化 LanceDB 向量数据库
     await this.initializeLanceDB(dataPath)
@@ -3670,6 +3697,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     // Phase 1 试点：settings / apiKeys 已切到 TypeORM
     this.settings = new SettingsRepository(this.dataSource)
     this.apiKeys = new ApiKeyRepository(this.dataSource)
+    this.users = new UserRepository(this.dataSource)
     this.dialogs = new DialogRepository(this.dataSource)
     this.messages = new MessageRepository(this.dataSource)
     this.roles = new RoleRepository(this.dataSource)
