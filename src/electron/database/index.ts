@@ -243,6 +243,14 @@ export class DatabaseManager implements ICoreDatabaseManager {
         '@core/database/migrations/ensure-users-table'
       )
       await ensureUsersTable(this.dataSource)
+
+      // 多租户隔离：给所有声明了 userId 字段的 entity 表加 user_id 列；
+      // PC 端旧数据全部回填为 LOCAL_DEFAULT_USER_ID。
+      const { ensureUserIdColumns } = await import(
+        '@core/database/migrations/ensure-user-id-columns'
+      )
+      const { LOCAL_DEFAULT_USER_ID } = await import('@core/context/user-context')
+      await ensureUserIdColumns(this.dataSource, LOCAL_DEFAULT_USER_ID)
     }
 
     // 初始化仓库

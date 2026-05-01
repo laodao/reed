@@ -21,21 +21,51 @@ import type {
   Repository,
 } from 'typeorm'
 import { getCurrentUserId } from '@core/context/user-context'
+import { createScopedRepository } from './scoped-repository'
 
 export abstract class BaseRepository<TEntity extends object, TDto> {
+  /**
+   * 暴露给子类的 Repository，已经被 user_id 多租户隔离 Proxy 包过。
+   * 子类的 `this.repo.find/save/update/delete` 都会自动注入当前 ALS userId。
+   *
+   * 若 entity 没声明 userId 列（如 user / settings），proxy 内部会直接透传，
+   * 等价于裸 typeorm Repository。
+   */
   protected readonly repo: Repository<TEntity>
   protected readonly dataSource: DataSource
   /**
-   * 是否对当前 entity 应用 user_id 多租户过滤。
-   * 共享配置类（user / settings / api-key / provider-config / oss-config / search-engine-config /
-   * lw-dictionary-category / lw-global-settings 等）应在子类构造里设为 false。
-   * 默认 true。
+   * 是否对当前 entity 应用 user_id 多租户过滤。默认 true。
+   * 共享配置类（user / settings / api-key / provider-config / oss-config /
+   * search-engine-config / lw-dictionary-category / lw-global-settings 等）
+   * 应在子类构造里设为 false——会拿到不带 user_id 注入的裸 Repository。
    */
   protected scopedToUser = true
 
   constructor(dataSource: DataSource, target: EntityTarget<TEntity>) {
     this.dataSource = dataSource
-    this.repo = dataSource.getRepository(target)
+    const rawRepo = dataSource.getRepository(target)
+    // 默认 wrap scoped；scopedToUser=false 的子类会在构造结束后改 this.scopedToUser，
+    // 这里先 wrap，等子类构造结束如果发现关闭了再切回 raw 也行——但成本是子类需要在构造里
+    // 写 `this.scopedToUser = false; this.repo = rawRepo`。简化：
+    // 我们把 scoped 切换交给 createScopedRepository 自己——它读 entity metadata，
+    // 没 userId 列直接透传；scopedToUser=false 的子类必须自己 disable Proxy，方法见下。
+    this.repo = createScopedRepository(rawRepo) as Repository<TEntity>
+  }
+
+  /**
+   * scopedToUser=false 的子类在构造里调一次：拿到不带 user_id 注入的裸 Repository。
+   * 用法：
+   *   constructor(ds: DataSource) {
+   *     super(ds, UserEntity)
+   *     this.scopedToUser = false
+   *     this.useRawRepo()
+   *   }
+   */
+  protected useRawRepo(): void {
+    this.scopedToUser = false
+    ;(this as { repo: Repository<TEntity> }).repo = this.dataSource.getRepository(
+      this.repo.metadata.target,
+    )
   }
 
   /** 子类必须实现：Entity → DTO */

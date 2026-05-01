@@ -26,7 +26,7 @@ export class UserRepository extends BaseRepository<UserEntity, User> {
   constructor(dataSource: DataSource) {
     super(dataSource, UserEntity)
     // 用户表本身不做 user_id 过滤（注册/登录之前 ALS 还没有 userId）
-    this.scopedToUser = false
+    this.useRawRepo()
   }
 
   protected toDto(e: UserEntity): User {
