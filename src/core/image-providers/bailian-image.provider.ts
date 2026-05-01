@@ -233,12 +233,24 @@ export class BailianImageProvider extends BaseImageProvider {
   /**
    * 构建 API URL
    *
+   * 用户/模板配置的 baseUrl 可能是 host base（如 https://bailian.cn-beijing.aliyuncs.com）
+   * 也可能是某个完整 endpoint（如 .../services/aigc/text2image/image-synthesis）。
+   * 这里只取其 host 部分，再与传入的 endpoint 拼接，避免出现 endpoint 重复拼接。
+   *
    * @param endpoint - API 端点路径
    * @returns 完整的 API URL
    */
   protected buildUrl(endpoint: string): string {
-    const baseUrl = this.config.baseUrl || BailianImageProvider.API_BASE_URL
-    return `${baseUrl}${endpoint}`
+    let host = BailianImageProvider.API_BASE_URL
+    if (this.config.baseUrl) {
+      try {
+        const u = new URL(this.config.baseUrl)
+        host = `${u.protocol}//${u.host}`
+      } catch {
+        // baseUrl 非合法 URL，回退到默认 host
+      }
+    }
+    return `${host}${endpoint}`
   }
 
   /**

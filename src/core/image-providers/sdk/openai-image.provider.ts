@@ -35,11 +35,34 @@ export class OpenAIImageProvider extends BaseImageProvider {
   constructor(config: ImageProviderConfig) {
     super(config)
 
-    // 初始化 OpenAI SDK 客户端
+    // OpenAI SDK 期望 baseURL 是 base path（如 /v1），它自己拼接 /images/generations
+    // 等子路径。模板/用户偶尔会把完整 endpoint 当作 baseUrl 配置（如 .../images/generations），
+    // 这里统一剥除已知子路径后缀，避免拼出 .../images/generations/images/generations。
+    const rawBase = config.baseUrl || 'https://api.openai.com/v1'
     this.client = new OpenAI({
       apiKey: config.apiKey,
-      baseURL: config.baseUrl || 'https://api.openai.com/v1'
+      baseURL: OpenAIImageProvider.normalizeBaseUrl(rawBase)
     })
+  }
+
+  private static normalizeBaseUrl(url: string): string {
+    if (!url) return url
+    let s = url.trim().replace(/\/+$/, '')
+    const stripSuffixes = [
+      '/images/generations',
+      '/images/edits',
+      '/images/variations',
+      '/chat/completions',
+      '/completions',
+      '/embeddings',
+    ]
+    for (const suffix of stripSuffixes) {
+      if (s.toLowerCase().endsWith(suffix)) {
+        s = s.slice(0, s.length - suffix.length)
+        break
+      }
+    }
+    return s.replace(/\/+$/, '')
   }
 
   /**
@@ -165,7 +188,9 @@ export class OpenAIImageProvider extends BaseImageProvider {
    * 构建 API URL（SDK 不需要手动构建）
    */
   protected buildUrl(endpoint: string): string {
-    const baseUrl = this.config.baseUrl || 'https://api.openai.com/v1'
+    const baseUrl = OpenAIImageProvider.normalizeBaseUrl(
+      this.config.baseUrl || 'https://api.openai.com/v1'
+    )
     return `${baseUrl}${endpoint}`
   }
 

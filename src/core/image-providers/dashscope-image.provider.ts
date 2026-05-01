@@ -94,24 +94,19 @@ interface OpenAIImageResponse {
  */
 export class DashScopeImageProvider extends BaseImageProvider {
   /**
-   * DashScope 原生 API 基础 URL（默认值）
+   * DashScope 默认 host
    */
-  private static DEFAULT_NATIVE_API_URL = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis'
+  private static DEFAULT_HOST = 'https://dashscope.aliyuncs.com'
 
   /**
-   * DashScope 多模态图像生成 API URL（qwen-image 模型）
+   * 各类 API 的 endpoint path（host 之外的部分）。getApiUrl 根据模型类型挑选，
+   * 再与 host 拼接。这样无论用户/模板传入的 baseUrl 是 host 还是完整 endpoint，
+   * 都能解析出正确 host 后拼出对应模型该用的 endpoint。
    */
-  private static DEFAULT_MULTIMODAL_API_URL = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation'
-
-  /**
-   * DashScope OpenAI 兼容 API 基础 URL（默认值）
-   */
-  private static DEFAULT_OPENAI_API_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1/images/generations'
-
-  /**
-   * DashScope 任务查询基础 URL（默认值）
-   */
-  private static DEFAULT_TASK_BASE_URL = 'https://dashscope.aliyuncs.com/api/v1/tasks'
+  private static NATIVE_PATH = '/api/v1/services/aigc/text2image/image-synthesis'
+  private static MULTIMODAL_PATH = '/api/v1/services/aigc/multimodal-generation/generation'
+  private static OPENAI_PATH = '/compatible-mode/v1/images/generations'
+  private static TASK_PATH = '/api/v1/tasks'
 
   /**
    * 判断是否使用多模态图像生成格式
@@ -147,28 +142,46 @@ export class DashScopeImageProvider extends BaseImageProvider {
   }
 
   /**
-   * 获取实际使用的 API URL
+   * 从 config.baseUrl 中解析出 host（如 https://dashscope.aliyuncs.com）。
+   * 用户/模板传进来的可能是 host base、完整 endpoint，甚至是 chat 端点，
+   * 都统一只取 protocol+host，不沿用其 path。
    */
-  private getApiUrl(model: string): string {
-    // 如果用户配置了自定义 baseUrl，使用用户的配置
-    if (this.config.baseUrl) {
-      return this.config.baseUrl
+  private resolveHost(): string {
+    const raw = this.config.baseUrl
+    if (raw) {
+      try {
+        const u = new URL(raw)
+        return `${u.protocol}//${u.host}`
+      } catch {
+        // baseUrl 不是合法 URL，回退到默认 host
+      }
     }
-    // 根据模型类型选择默认 URL
-    if (this.isMultimodalImageModel(model)) {
-      return DashScopeImageProvider.DEFAULT_MULTIMODAL_API_URL
-    }
-    if (this.isOpenAIFormat(model)) {
-      return DashScopeImageProvider.DEFAULT_OPENAI_API_URL
-    }
-    return DashScopeImageProvider.DEFAULT_NATIVE_API_URL
+    return DashScopeImageProvider.DEFAULT_HOST
   }
 
   /**
-   * 获取任务查询 URL 基础路径
+   * 根据模型类型选择 endpoint，再与解析出的 host 拼接。
+   * 旧实现"用户配了 baseUrl 就直接用"会让 wanx 端点被 qwen-image 多模态模型误用，
+   * 导致请求到错误端点而失败。
+   */
+  private getApiUrl(model: string): string {
+    const host = this.resolveHost()
+    let endpointPath: string
+    if (this.isMultimodalImageModel(model)) {
+      endpointPath = DashScopeImageProvider.MULTIMODAL_PATH
+    } else if (this.isOpenAIFormat(model)) {
+      endpointPath = DashScopeImageProvider.OPENAI_PATH
+    } else {
+      endpointPath = DashScopeImageProvider.NATIVE_PATH
+    }
+    return host + endpointPath
+  }
+
+  /**
+   * 获取任务查询 URL 基础路径（同样基于解析后的 host）
    */
   private get taskBaseUrl(): string {
-    return DashScopeImageProvider.DEFAULT_TASK_BASE_URL
+    return this.resolveHost() + DashScopeImageProvider.TASK_PATH
   }
 
   /**
