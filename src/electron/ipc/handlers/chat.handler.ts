@@ -4,22 +4,22 @@
  * @description 处理聊天相关的 IPC 请求
  */
 
-import { ipcMain, IpcMainInvokeEvent } from 'electron'
+import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { ChatService } from '@core/services/chat.service'
 
 /**
  * 注册聊天相关 IPC 处理器
  */
 export function registerChatHandlers(): void {
-  ipcMain.handle('chat:send', handleChatSend)
-  ipcMain.handle('chat:stop', handleChatStop)
+  ipcBridge.handle('chat:send', handleChatSend)
+  ipcBridge.handle('chat:stop', handleChatStop)
 }
 
 /**
  * 处理发送聊天消息
  */
 async function handleChatSend(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   request: {
     dialogId: string
     content: string
@@ -48,7 +48,7 @@ async function handleChatSend(
  * 处理停止流式响应
  */
 async function handleChatStop(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   dialogId: string
 ): Promise<{ success: boolean }> {
   try {
@@ -64,6 +64,6 @@ async function handleChatStop(
  * 注销聊天相关 IPC 处理器
  */
 export function unregisterChatHandlers(): void {
-  ipcMain.removeHandler('chat:send')
-  ipcMain.removeHandler('chat:stop')
+  ipcBridge.removeHandler('chat:send')
+  ipcBridge.removeHandler('chat:stop')
 }

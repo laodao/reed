@@ -4,11 +4,12 @@
  * @description 处理剧集制作相关的 IPC 请求
  */
 
-import { ipcMain, BrowserWindow, app } from 'electron'
-import type { IpcMainInvokeEvent } from 'electron'
+import { ipcBridge } from '@core/ipc/bridge-adapter'
+import { isElectron, loadElectronModules, getBrowserWindowFromEvent } from './_platform'
 import * as path from 'path'
 import * as fs from 'fs'
-import { DatabaseManager } from '../../database/index'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { getPathProvider } from '@core/interfaces/path.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import {
   VideoProject,
@@ -23,7 +24,7 @@ import { StoryToVideoAIService } from '@core/services/story-to-video-ai.service'
 import { StoryToVideoResourceService, PRESET_STYLES } from '@core/services/story-to-video-resource.service'
 import { VideoSynthesisService, PRESET_VIDEO_CONFIGS } from '@core/services/video-synthesis.service'
 import { VideoService } from '@core/services/video.service'
-import { SecureStorageService } from '../../services/secure-storage.service'
+import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { createVideoProvider } from '@core/video-providers'
 import { EpisodeAutoBindingService } from '@core/services/episode-auto-binding.service'
 import { UploadedEntityService } from '@core/services/uploaded-entity.service'
@@ -48,85 +49,85 @@ function localPathToUrl(filePath: string): string {
  */
 export function registerStoryToVideoHandlers(): void {
   // ==================== 项目管理 ====================
-  ipcMain.handle('stv:list-projects', handleListProjects)
-  ipcMain.handle('stv:get-project', handleGetProject)
-  ipcMain.handle('stv:create-project', handleCreateProject)
-  ipcMain.handle('stv:update-project', handleUpdateProject)
-  ipcMain.handle('stv:delete-project', handleDeleteProject)
+  ipcBridge.handle('stv:list-projects', handleListProjects)
+  ipcBridge.handle('stv:get-project', handleGetProject)
+  ipcBridge.handle('stv:create-project', handleCreateProject)
+  ipcBridge.handle('stv:update-project', handleUpdateProject)
+  ipcBridge.handle('stv:delete-project', handleDeleteProject)
 
   // ==================== 角色绑定 ====================
-  ipcMain.handle('stv:get-character-bindings', handleGetCharacterBindings)
-  ipcMain.handle('stv:bind-character', handleBindCharacter)
-  ipcMain.handle('stv:update-character-binding', handleUpdateCharacterBinding)
-  ipcMain.handle('stv:delete-character-binding', handleDeleteCharacterBinding)
+  ipcBridge.handle('stv:get-character-bindings', handleGetCharacterBindings)
+  ipcBridge.handle('stv:bind-character', handleBindCharacter)
+  ipcBridge.handle('stv:update-character-binding', handleUpdateCharacterBinding)
+  ipcBridge.handle('stv:delete-character-binding', handleDeleteCharacterBinding)
 
   // ==================== 地点绑定 ====================
-  ipcMain.handle('stv:get-location-bindings', handleGetLocationBindings)
-  ipcMain.handle('stv:bind-location', handleBindLocation)
-  ipcMain.handle('stv:update-location-binding', handleUpdateLocationBinding)
-  ipcMain.handle('stv:delete-location-binding', handleDeleteLocationBinding)
+  ipcBridge.handle('stv:get-location-bindings', handleGetLocationBindings)
+  ipcBridge.handle('stv:bind-location', handleBindLocation)
+  ipcBridge.handle('stv:update-location-binding', handleUpdateLocationBinding)
+  ipcBridge.handle('stv:delete-location-binding', handleDeleteLocationBinding)
 
   // ==================== 物品绑定 ====================
-  ipcMain.handle('stv:get-item-bindings', handleGetItemBindings)
-  ipcMain.handle('stv:bind-item', handleBindItem)
-  ipcMain.handle('stv:update-item-binding', handleUpdateItemBinding)
-  ipcMain.handle('stv:delete-item-binding', handleDeleteItemBinding)
+  ipcBridge.handle('stv:get-item-bindings', handleGetItemBindings)
+  ipcBridge.handle('stv:bind-item', handleBindItem)
+  ipcBridge.handle('stv:update-item-binding', handleUpdateItemBinding)
+  ipcBridge.handle('stv:delete-item-binding', handleDeleteItemBinding)
 
   // ==================== 剧集管理 ====================
-  ipcMain.handle('stv:list-episodes', handleListEpisodes)
-  ipcMain.handle('stv:get-episode', handleGetEpisode)
-  ipcMain.handle('stv:create-episode', handleCreateEpisode)
-  ipcMain.handle('stv:update-episode', handleUpdateEpisode)
-  ipcMain.handle('stv:delete-episode', handleDeleteEpisode)
+  ipcBridge.handle('stv:list-episodes', handleListEpisodes)
+  ipcBridge.handle('stv:get-episode', handleGetEpisode)
+  ipcBridge.handle('stv:create-episode', handleCreateEpisode)
+  ipcBridge.handle('stv:update-episode', handleUpdateEpisode)
+  ipcBridge.handle('stv:delete-episode', handleDeleteEpisode)
 
   // ==================== 剧本管理 ====================
-  ipcMain.handle('stv:get-script', handleGetScript)
-  ipcMain.handle('stv:update-script', handleUpdateScript)
+  ipcBridge.handle('stv:get-script', handleGetScript)
+  ipcBridge.handle('stv:update-script', handleUpdateScript)
 
   // ==================== 场景管理 ====================
-  ipcMain.handle('stv:list-scenes', handleListScenes)
-  ipcMain.handle('stv:get-scene', handleGetScene)
-  ipcMain.handle('stv:update-scene', handleUpdateScene)
+  ipcBridge.handle('stv:list-scenes', handleListScenes)
+  ipcBridge.handle('stv:get-scene', handleGetScene)
+  ipcBridge.handle('stv:update-scene', handleUpdateScene)
 
   // ==================== 分镜管理 ====================
-  ipcMain.handle('stv:list-storyboards', handleListStoryboards)
-  ipcMain.handle('stv:get-storyboard', handleGetStoryboard)
-  ipcMain.handle('stv:update-storyboard', handleUpdateStoryboard)
+  ipcBridge.handle('stv:list-storyboards', handleListStoryboards)
+  ipcBridge.handle('stv:get-storyboard', handleGetStoryboard)
+  ipcBridge.handle('stv:update-storyboard', handleUpdateStoryboard)
 
   // ==================== AI 生成 ====================
-  ipcMain.handle('stv:generate-script', handleGenerateScript)
-  ipcMain.handle('stv:generate-scenes', handleGenerateScenes)
-  ipcMain.handle('stv:generate-storyboard', handleGenerateStoryboard)
-  ipcMain.handle('stv:generate-storyboards', handleGenerateStoryboards)
+  ipcBridge.handle('stv:generate-script', handleGenerateScript)
+  ipcBridge.handle('stv:generate-scenes', handleGenerateScenes)
+  ipcBridge.handle('stv:generate-storyboard', handleGenerateStoryboard)
+  ipcBridge.handle('stv:generate-storyboards', handleGenerateStoryboards)
 
   // ==================== 资源生成 ====================
-  ipcMain.handle('stv:get-style-presets', handleGetStylePresets)
-  ipcMain.handle('stv:generate-storyboard-image', handleGenerateStoryboardImage)
-  ipcMain.handle('stv:generate-scene-images', handleGenerateSceneImages)
-  ipcMain.handle('stv:generate-audio', handleGenerateAudio)
+  ipcBridge.handle('stv:get-style-presets', handleGetStylePresets)
+  ipcBridge.handle('stv:generate-storyboard-image', handleGenerateStoryboardImage)
+  ipcBridge.handle('stv:generate-scene-images', handleGenerateSceneImages)
+  ipcBridge.handle('stv:generate-audio', handleGenerateAudio)
 
   // ==================== 视频合成 ====================
-  ipcMain.handle('stv:get-video-presets', handleGetVideoPresets)
-  ipcMain.handle('stv:synthesize-scene-video', handleSynthesizeSceneVideo)
-  ipcMain.handle('stv:synthesize-storyboard-video', handleSynthesizeStoryboardVideo)
-  ipcMain.handle('stv:export-video', handleExportVideo)
+  ipcBridge.handle('stv:get-video-presets', handleGetVideoPresets)
+  ipcBridge.handle('stv:synthesize-scene-video', handleSynthesizeSceneVideo)
+  ipcBridge.handle('stv:synthesize-storyboard-video', handleSynthesizeStoryboardVideo)
+  ipcBridge.handle('stv:export-video', handleExportVideo)
 
   // ==================== 上传模式实体管理 ====================
-  ipcMain.handle('stv:get-uploaded-entity', handleGetUploadedEntity)
-  ipcMain.handle('stv:update-uploaded-entity', handleUpdateUploadedEntity)
-  ipcMain.handle('stv:delete-uploaded-entity', handleDeleteUploadedEntity)
-  ipcMain.handle('stv:is-binding-from-longwriting', handleIsBindingFromLongWriting)
+  ipcBridge.handle('stv:get-uploaded-entity', handleGetUploadedEntity)
+  ipcBridge.handle('stv:update-uploaded-entity', handleUpdateUploadedEntity)
+  ipcBridge.handle('stv:delete-uploaded-entity', handleDeleteUploadedEntity)
+  ipcBridge.handle('stv:is-binding-from-longwriting', handleIsBindingFromLongWriting)
 }
 
 // ==================== 项目管理处理器 ====================
 
 async function handleListProjects(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   longWritingProjectId?: string
 ): Promise<IpcResponse> {
   try {
     console.log('[StoryToVideoHandler] handleListProjects 被调用, longWritingProjectId:', longWritingProjectId)
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.videoProjects) {
       console.error('[StoryToVideoHandler] videoProjects 仓库未初始化')
       return { success: false, error: '数据库未初始化' }
@@ -147,11 +148,11 @@ async function handleListProjects(
 }
 
 async function handleGetProject(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   projectId: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.videoProjects) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -168,13 +169,13 @@ async function handleGetProject(
 }
 
 async function handleCreateProject(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   name: string,
   longWritingProjectId: string | undefined,
   config: VideoProjectConfig
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.videoProjects) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -192,12 +193,12 @@ async function handleCreateProject(
 }
 
 async function handleUpdateProject(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   projectId: string,
   data: { name?: string; status?: string; config?: VideoProjectConfig; longWritingProjectId?: string }
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.videoProjects) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -214,11 +215,11 @@ async function handleUpdateProject(
 }
 
 async function handleDeleteProject(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   projectId: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.videoProjects) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -233,11 +234,11 @@ async function handleDeleteProject(
 // ==================== 角色绑定处理器 ====================
 
 async function handleGetCharacterBindings(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   projectId: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.characterBindings) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -250,7 +251,7 @@ async function handleGetCharacterBindings(
 }
 
 async function handleBindCharacter(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   projectId: string,
   longWritingCharacterId: string,
   portraitId: string | undefined,
@@ -258,7 +259,7 @@ async function handleBindCharacter(
   generateConfig?: CharacterBinding['generateConfig']
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.characterBindings) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -295,7 +296,7 @@ async function handleBindCharacter(
 }
 
 async function handleUpdateCharacterBinding(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   bindingId: string,
   data: {
     portraitId?: string | null
@@ -304,7 +305,7 @@ async function handleUpdateCharacterBinding(
   }
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.characterBindings) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -321,11 +322,11 @@ async function handleUpdateCharacterBinding(
 }
 
 async function handleDeleteCharacterBinding(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   bindingId: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.characterBindings) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -340,11 +341,11 @@ async function handleDeleteCharacterBinding(
 // ==================== 地点绑定处理器 ====================
 
 async function handleGetLocationBindings(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   projectId: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.locationBindings) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -357,7 +358,7 @@ async function handleGetLocationBindings(
 }
 
 async function handleBindLocation(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   projectId: string,
   longWritingLocationId: string,
   locationName: string,
@@ -366,7 +367,7 @@ async function handleBindLocation(
   generateImages?: boolean
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.locationBindings) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -400,12 +401,12 @@ async function handleBindLocation(
 }
 
 async function handleUpdateLocationBinding(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   bindingId: string,
   data: { imagePaths?: string[]; thumbnailPath?: string | null; generateConfig?: any | null; generateImages?: boolean }
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.locationBindings) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -421,11 +422,11 @@ async function handleUpdateLocationBinding(
 }
 
 async function handleDeleteLocationBinding(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   bindingId: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.locationBindings) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -440,11 +441,11 @@ async function handleDeleteLocationBinding(
 // ==================== 物品绑定处理器 ====================
 
 async function handleGetItemBindings(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   projectId: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.itemBindings) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -457,7 +458,7 @@ async function handleGetItemBindings(
 }
 
 async function handleBindItem(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   projectId: string,
   longWritingItemId: string,
   itemName: string,
@@ -466,7 +467,7 @@ async function handleBindItem(
   generateImages?: boolean
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.itemBindings) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -500,12 +501,12 @@ async function handleBindItem(
 }
 
 async function handleUpdateItemBinding(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   bindingId: string,
   data: { imagePaths?: string[]; thumbnailPath?: string | null; generateConfig?: any | null; generateImages?: boolean }
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.itemBindings) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -521,11 +522,11 @@ async function handleUpdateItemBinding(
 }
 
 async function handleDeleteItemBinding(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   bindingId: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.itemBindings) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -540,12 +541,12 @@ async function handleDeleteItemBinding(
 // ==================== 剧集管理处理器 ====================
 
 async function handleListEpisodes(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   projectId: string
 ): Promise<IpcResponse> {
   try {
     console.log('[StoryToVideoHandler] handleListEpisodes 被调用, projectId:', projectId)
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.videoEpisodes) {
       console.error('[StoryToVideoHandler] videoEpisodes 仓库未初始化')
       return { success: false, error: '数据库未初始化' }
@@ -562,11 +563,11 @@ async function handleListEpisodes(
 }
 
 async function handleGetEpisode(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   episodeId: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.videoEpisodes) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -583,7 +584,7 @@ async function handleGetEpisode(
 }
 
 async function handleCreateEpisode(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   projectId: string,
   data: {
     sourceType: 'outline' | 'uploaded'
@@ -597,7 +598,7 @@ async function handleCreateEpisode(
 ): Promise<IpcResponse> {
   console.log('[handleCreateEpisode] 收到请求:', { projectId, data })
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.videoEpisodes) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -699,7 +700,7 @@ async function handleCreateEpisode(
 }
 
 async function handleUpdateEpisode(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   episodeId: string,
   data: {
     title?: string
@@ -709,7 +710,7 @@ async function handleUpdateEpisode(
   }
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.videoEpisodes) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -726,11 +727,11 @@ async function handleUpdateEpisode(
 }
 
 async function handleDeleteEpisode(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   episodeId: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.videoEpisodes) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -745,11 +746,11 @@ async function handleDeleteEpisode(
 // ==================== 剧本管理处理器 ====================
 
 async function handleGetScript(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   scriptId: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.episodeScripts) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -766,7 +767,7 @@ async function handleGetScript(
 }
 
 async function handleUpdateScript(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   scriptId: string,
   data: {
     synopsis?: string
@@ -779,7 +780,7 @@ async function handleUpdateScript(
   }
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.episodeScripts) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -798,11 +799,11 @@ async function handleUpdateScript(
 // ==================== 场景管理处理器 ====================
 
 async function handleListScenes(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   episodeScriptId: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.sceneScripts) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -815,11 +816,11 @@ async function handleListScenes(
 }
 
 async function handleGetScene(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   sceneId: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.sceneScripts) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -836,12 +837,12 @@ async function handleGetScene(
 }
 
 async function handleUpdateScene(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   sceneId: string,
   data: Partial<SceneScript>
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.sceneScripts) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -860,11 +861,11 @@ async function handleUpdateScene(
 // ==================== 分镜管理处理器 ====================
 
 async function handleListStoryboards(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   sceneScriptId: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.storyboards) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -877,11 +878,11 @@ async function handleListStoryboards(
 }
 
 async function handleGetStoryboard(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   storyboardId: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.storyboards) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -898,12 +899,12 @@ async function handleGetStoryboard(
 }
 
 async function handleUpdateStoryboard(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   storyboardId: string,
   data: Partial<Storyboard>
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.storyboards) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -922,13 +923,13 @@ async function handleUpdateStoryboard(
 // ==================== AI 生成处理器 ====================
 
 async function handleGenerateScript(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   episodeId: string,
   providerConfigId?: string,
   modelId?: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.videoProjects || !db.videoEpisodes || !db.episodeScripts || !db.sceneScripts) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -1119,13 +1120,13 @@ async function handleGenerateScript(
 }
 
 async function handleGenerateScenes(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   scriptId: string,
   providerConfigId?: string,
   modelId?: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.episodeScripts || !db.sceneScripts) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -1183,13 +1184,13 @@ async function handleGenerateScenes(
 }
 
 async function handleGenerateStoryboard(
-  event: IpcMainInvokeEvent,
+  event: any,
   sceneId: string,
   providerConfigId?: string,
   modelId?: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.sceneScripts || !db.storyboards) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -1201,7 +1202,7 @@ async function handleGenerateStoryboard(
     }
 
     // 获取窗口用于发送进度事件
-    const window = BrowserWindow.fromWebContents(event.sender)
+    const window = getBrowserWindowFromEvent(event)
 
     // 调用 AI 生成分镜（使用逐个生成模式）
     const aiService = StoryToVideoAIService.getInstance()
@@ -1255,13 +1256,13 @@ async function handleGenerateStoryboard(
 }
 
 async function handleGenerateStoryboards(
-  event: IpcMainInvokeEvent,
+  event: any,
   scriptId: string,
   providerConfigId?: string,
   modelId?: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.sceneScripts || !db.storyboards) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -1273,7 +1274,7 @@ async function handleGenerateStoryboards(
     }
 
     // 获取窗口用于发送进度事件
-    const window = BrowserWindow.fromWebContents(event.sender)
+    const window = getBrowserWindowFromEvent(event)
 
     // 调用 AI 批量生成分镜（使用逐个分镜生成模式）
     const aiService = StoryToVideoAIService.getInstance()
@@ -1356,7 +1357,7 @@ function getStyleName(key: string): string {
 }
 
 async function handleGenerateStoryboardImage(
-  event: IpcMainInvokeEvent,
+  event: any,
   storyboardId: string,
   styleName: string,
   providerConfigId?: string,
@@ -1370,7 +1371,7 @@ async function handleGenerateStoryboardImage(
       modelId
     })
 
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.storyboards || !db.sceneScripts || !db.characterBindings) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -1409,7 +1410,7 @@ async function handleGenerateStoryboardImage(
     }
 
     // 获取窗口
-    const window = BrowserWindow.fromWebContents(event.sender)
+    const window = getBrowserWindowFromEvent(event)
     if (!window) {
       return { success: false, error: '窗口不存在' }
     }
@@ -1444,14 +1445,14 @@ async function handleGenerateStoryboardImage(
 }
 
 async function handleGenerateSceneImages(
-  event: IpcMainInvokeEvent,
+  event: any,
   sceneId: string,
   styleName: string,
   providerConfigId?: string,
   modelId?: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.storyboards || !db.sceneScripts || !db.characterBindings) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -1489,7 +1490,7 @@ async function handleGenerateSceneImages(
     }
 
     // 获取窗口
-    const window = BrowserWindow.fromWebContents(event.sender)
+    const window = getBrowserWindowFromEvent(event)
     if (!window) {
       return { success: false, error: '窗口不存在' }
     }
@@ -1533,17 +1534,17 @@ async function handleGenerateSceneImages(
 }
 
 async function handleGenerateAudio(
-  event: IpcMainInvokeEvent,
+  event: any,
   sceneId: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.sceneScripts || !db.characterBindings) {
       return { success: false, error: '数据库未初始化' }
     }
 
     // 获取窗口
-    const window = BrowserWindow.fromWebContents(event.sender)
+    const window = getBrowserWindowFromEvent(event)
     if (!window) {
       return { success: false, error: '窗口不存在' }
     }
@@ -1570,7 +1571,7 @@ async function handleGenerateAudio(
     }
 
     // 获取项目资源目录
-    const userDataPath = app.getPath('userData')
+    const userDataPath = getPathProvider().getUserDataPath()
     const outputDir = path.join(userDataPath, 'story-to-video', projectId, 'audio')
 
     // 调用资源生成服务
@@ -1650,18 +1651,18 @@ function getVideoPresetName(key: string): string {
 }
 
 async function handleSynthesizeSceneVideo(
-  event: IpcMainInvokeEvent,
+  event: any,
   sceneId: string,
   quality: string = 'standard'
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.sceneScripts || !db.storyboards || !db.characterBindings) {
       return { success: false, error: '数据库未初始化' }
     }
 
     // 获取窗口
-    const window = BrowserWindow.fromWebContents(event.sender)
+    const window = getBrowserWindowFromEvent(event)
     if (!window) {
       return { success: false, error: '窗口不存在' }
     }
@@ -1701,7 +1702,7 @@ async function handleSynthesizeSceneVideo(
     }
 
     // 获取音频资产
-    const userDataPath = app.getPath('userData')
+    const userDataPath = getPathProvider().getUserDataPath()
     const audioDir = path.join(userDataPath, 'story-to-video', projectId, 'audio')
     const audioAssets = new Map<string, string>()
 
@@ -1766,18 +1767,18 @@ async function handleSynthesizeSceneVideo(
  * 使用 AI 视频生成（图生视频）
  */
 async function handleSynthesizeStoryboardVideo(
-  event: IpcMainInvokeEvent,
+  event: any,
   storyboardId: string,
   quality: string = 'standard'
 ): Promise<IpcResponse> {
   try {
     // 获取窗口
-    const window = BrowserWindow.fromWebContents(event.sender)
+    const window = getBrowserWindowFromEvent(event)
     if (!window) {
       return { success: false, error: '窗口不存在' }
     }
 
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
 
     // 获取分镜信息
     if (!db.storyboards) {
@@ -1868,7 +1869,7 @@ async function handleSynthesizeStoryboardVideo(
     }
 
     // 解密 API 密钥
-    const secureStorage = SecureStorageService.getInstance()
+    const secureStorage = getSecureStorage()
     if (!secureStorage.isInitialized()) {
       await secureStorage.initialize()
     }
@@ -1962,14 +1963,14 @@ async function handleSynthesizeStoryboardVideo(
 }
 
 async function handleExportVideo(
-  event: IpcMainInvokeEvent,
+  event: any,
   sourcePath: string,
   outputPath: string,
   quality: string = 'standard'
 ): Promise<IpcResponse> {
   try {
     // 获取窗口
-    const window = BrowserWindow.fromWebContents(event.sender)
+    const window = getBrowserWindowFromEvent(event)
     if (!window) {
       return { success: false, error: '窗口不存在' }
     }
@@ -1999,7 +2000,7 @@ async function handleExportVideo(
  * 获取上传模式的实体详情
  */
 async function handleGetUploadedEntity(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   entityId: string,
   entityType: 'character' | 'location' | 'item'
 ): Promise<IpcResponse> {
@@ -2019,7 +2020,7 @@ async function handleGetUploadedEntity(
  * 更新上传模式的实体
  */
 async function handleUpdateUploadedEntity(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   entityId: string,
   entityType: 'character' | 'location' | 'item',
   data: any
@@ -2041,7 +2042,7 @@ async function handleUpdateUploadedEntity(
  * 删除上传模式的实体
  */
 async function handleDeleteUploadedEntity(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   entityId: string,
   entityType: 'character' | 'location' | 'item',
   projectId: string
@@ -2063,7 +2064,7 @@ async function handleDeleteUploadedEntity(
  * 判断绑定是否来源于长文项目
  */
 async function handleIsBindingFromLongWriting(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   binding: {
     longWritingCharacterId?: string
     longWritingLocationId?: string

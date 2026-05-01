@@ -4,12 +4,11 @@
  * @description 处理翻译相关的 IPC 请求
  */
 
-import { ipcMain, BrowserWindow, dialog } from 'electron'
-import type { IpcMainInvokeEvent } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
+import { ipcBridge } from '@core/ipc/bridge-adapter'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { TranslationService } from '@core/services/translation.service'
-import { getDatabaseManager } from '../../database'
 import type {
   TextTranslationRequest,
   FileTranslationRequest,
@@ -17,39 +16,33 @@ import type {
 } from '@shared/types/translation.types'
 import type { IpcResponse } from '@shared/types/ipc.types'
 
+const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
+
+function loadElectron(): {
+  BrowserWindow?: any
+  dialog?: any
+  shell?: any
+} {
+  if (!isElectron) return {}
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const e = require('electron')
+  return { BrowserWindow: e.BrowserWindow, dialog: e.dialog, shell: e.shell }
+}
+
 /**
  * 注册翻译相关 IPC 处理器
  */
 export function registerTranslationHandlers(): void {
-  // 获取翻译提供商列表
-  ipcMain.handle('translation:providers', handleGetProviders)
-
-  // 文本翻译
-  ipcMain.handle('translation:text', handleTextTranslation)
-
-  // 文件翻译
-  ipcMain.handle('translation:file', handleFileTranslation)
-
-  // 选择文件
-  ipcMain.handle('translation:select-file', handleSelectFile)
-
-  // 获取翻译历史
-  ipcMain.handle('translation:history', handleGetHistory)
-
-  // 获取翻译详情
-  ipcMain.handle('translation:get', handleGetTranslation)
-
-  // 切换收藏
-  ipcMain.handle('translation:toggle-favorite', handleToggleFavorite)
-
-  // 删除翻译记录
-  ipcMain.handle('translation:delete', handleDeleteTranslation)
-
-  // 下载翻译结果
-  ipcMain.handle('translation:download', handleDownloadTranslation)
-
-  // 打开文件夹
-  ipcMain.handle('translation:open-folder', handleOpenFolder)
+  ipcBridge.handle('translation:providers', handleGetProviders)
+  ipcBridge.handle('translation:text', handleTextTranslation)
+  ipcBridge.handle('translation:file', handleFileTranslation)
+  ipcBridge.handle('translation:select-file', handleSelectFile)
+  ipcBridge.handle('translation:history', handleGetHistory)
+  ipcBridge.handle('translation:get', handleGetTranslation)
+  ipcBridge.handle('translation:toggle-favorite', handleToggleFavorite)
+  ipcBridge.handle('translation:delete', handleDeleteTranslation)
+  ipcBridge.handle('translation:download', handleDownloadTranslation)
+  ipcBridge.handle('translation:open-folder', handleOpenFolder)
 
   console.log('[TranslationHandlers] 翻译 IPC 处理器已注册')
 }
@@ -58,7 +51,7 @@ export function registerTranslationHandlers(): void {
  * 处理获取翻译提供商列表
  */
 async function handleGetProviders(
-  _event: IpcMainInvokeEvent
+  _event: any
 ): Promise<IpcResponse<any[]>> {
   const response = await TranslationService.getProviders()
   return response as any
@@ -68,9 +61,9 @@ async function handleGetProviders(
  * 处理文本翻译
  */
 async function handleTextTranslation(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   request: TextTranslationRequest
-): Promise<IpcResponse<TextTranslationResponse['data']>> {
+): Promise<IpcResponse<any>> {
   const response = await TranslationService.translateText(request)
   return response
 }
@@ -79,29 +72,31 @@ async function handleTextTranslation(
  * 处理文件翻译
  */
 async function handleFileTranslation(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   request: FileTranslationRequest
-): Promise<IpcResponse<FileTranslationRequest['data']>> {
+): Promise<IpcResponse<any>> {
   const response = await TranslationService.translateFile(request)
   return response as any
 }
 
 /**
- * 处理选择文件（dialog 是 Electron 平台特性，保留在 handler 中）
+ * 处理选择文件（dialog 仅在 Electron 端可用）
  */
 async function handleSelectFile(
-  event: IpcMainInvokeEvent
+  event: any
 ): Promise<IpcResponse<{ path: string; name: string; size: number }>> {
-  const window = BrowserWindow.fromWebContents(event.sender)
+  if (!isElectron) {
+    return { success: false, error: '该功能仅在桌面端可用' }
+  }
+  const { BrowserWindow, dialog } = loadElectron()
+  const window = BrowserWindow?.fromWebContents(event?.sender)
   if (!window) {
     return { success: false, error: '窗口不存在' }
   }
 
   const result = await dialog.showOpenDialog(window, {
     title: '选择要翻译的文件',
-    filters: [
-      { name: '支持的文件', extensions: ['md', 'txt'] },
-    ],
+    filters: [{ name: '支持的文件', extensions: ['md', 'txt'] }],
     properties: ['openFile'],
   })
 
@@ -130,11 +125,11 @@ async function handleSelectFile(
  * 处理获取翻译历史
  */
 async function handleGetHistory(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   query: TranslationHistoryQuery
 ): Promise<IpcResponse<{ list: any[]; total: number }>> {
   try {
-    const repo = getDatabaseManager().translations
+    const repo = getCoreDatabaseManager().translations
     if (!repo) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -150,11 +145,11 @@ async function handleGetHistory(
  * 处理获取翻译详情
  */
 async function handleGetTranslation(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   id: string
 ): Promise<IpcResponse<any>> {
   try {
-    const repo = getDatabaseManager().translations
+    const repo = getCoreDatabaseManager().translations
     if (!repo) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -170,11 +165,11 @@ async function handleGetTranslation(
  * 处理切换收藏
  */
 async function handleToggleFavorite(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   id: string
 ): Promise<IpcResponse<boolean>> {
   try {
-    const repo = getDatabaseManager().translations
+    const repo = getCoreDatabaseManager().translations
     if (!repo) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -190,11 +185,11 @@ async function handleToggleFavorite(
  * 处理删除翻译记录
  */
 async function handleDeleteTranslation(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   id: string
 ): Promise<IpcResponse<boolean>> {
   try {
-    const repo = getDatabaseManager().translations
+    const repo = getCoreDatabaseManager().translations
     if (!repo) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -207,14 +202,14 @@ async function handleDeleteTranslation(
 }
 
 /**
- * 处理下载翻译结果
+ * 处理下载翻译结果（Electron 端通过 dialog；Web 端直接返回原文件路径，由前端走 /assets 下载）
  */
 async function handleDownloadTranslation(
-  event: IpcMainInvokeEvent,
+  event: any,
   id: string
 ): Promise<IpcResponse<string>> {
   try {
-    const repo = getDatabaseManager().translations
+    const repo = getCoreDatabaseManager().translations
     if (!repo) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -224,14 +219,16 @@ async function handleDownloadTranslation(
       return { success: false, error: '翻译结果不存在' }
     }
 
-    const window = BrowserWindow.fromWebContents(event.sender)
+    if (!isElectron) {
+      // Web 端：返回 targetFile 相对路径，前端通过 /assets 下载
+      return { success: true, data: record.targetFile }
+    }
+
+    const { BrowserWindow, dialog } = loadElectron()
+    const window = BrowserWindow?.fromWebContents(event?.sender)
     if (!window) {
       return { success: false, error: '窗口不存在' }
     }
-
-    const { dialog } = require('electron')
-    const path = require('path')
-    const fs = require('fs')
 
     const result = await dialog.showSaveDialog(window, {
       title: '保存翻译结果',
@@ -256,14 +253,17 @@ async function handleDownloadTranslation(
 }
 
 /**
- * 处理打开文件夹
+ * 处理打开文件夹（仅 Electron 端可用）
  */
 async function handleOpenFolder(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   filePath: string
 ): Promise<IpcResponse<boolean>> {
+  if (!isElectron) {
+    return { success: false, error: '该功能仅在桌面端可用' }
+  }
   try {
-    const { shell } = require('electron')
+    const { shell } = loadElectron()
     shell.showItemInFolder(filePath)
     return { success: true, data: true }
   } catch (error: any) {

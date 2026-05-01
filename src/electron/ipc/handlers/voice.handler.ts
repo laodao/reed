@@ -4,10 +4,9 @@
  * @description 处理语音相关的 IPC 请求
  */
 
-import { ipcMain, BrowserWindow, dialog } from 'electron'
-import type { IpcMainInvokeEvent } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
+import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { VoiceService } from '@core/services/voice.service'
 import type {
   TTSRequest,
@@ -17,64 +16,42 @@ import type {
 } from '@shared/types/voice.types'
 import type { IpcResponse } from '@shared/types/ipc.types'
 
+const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
+
+function loadElectron(): { BrowserWindow?: any; dialog?: any } {
+  if (!isElectron) return {}
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const e = require('electron')
+  return { BrowserWindow: e.BrowserWindow, dialog: e.dialog }
+}
+
 /**
  * 注册语音相关 IPC 处理器
  */
 export function registerVoiceHandlers(): void {
-  // 获取语音提供商列表
-  ipcMain.handle('voice:providers', handleGetProviders)
-
-  // 获取发音人列表
-  ipcMain.handle('voice:voices', handleGetVoices)
-
-  // 文本转语音
-  ipcMain.handle('voice:tts', handleTTS)
-
-  // 语音转文本
-  ipcMain.handle('voice:stt', handleSTT)
-
-  // 语音复刻
-  ipcMain.handle('voice:clone', handleVoiceClone)
-
-  // 选择音频文件
-  ipcMain.handle('voice:select-file', handleSelectFile)
-
-  // 获取语音历史
-  ipcMain.handle('voice:history', handleGetHistory)
-
-  // 删除语音记录
-  ipcMain.handle('voice:delete', handleDeleteRecord)
-
-  // 切换收藏
-  ipcMain.handle('voice:toggle-favorite', handleToggleFavorite)
-
-  // 获取复刻声音列表
-  ipcMain.handle('voice:cloned-list', handleGetClonedVoices)
-
-  // 删除复刻声音
-  ipcMain.handle('voice:cloned-delete', handleDeleteClonedVoice)
-
-  // 下载音频
-  ipcMain.handle('voice:download', handleDownloadAudio)
+  ipcBridge.handle('voice:providers', handleGetProviders)
+  ipcBridge.handle('voice:voices', handleGetVoices)
+  ipcBridge.handle('voice:tts', handleTTS)
+  ipcBridge.handle('voice:stt', handleSTT)
+  ipcBridge.handle('voice:clone', handleVoiceClone)
+  ipcBridge.handle('voice:select-file', handleSelectFile)
+  ipcBridge.handle('voice:history', handleGetHistory)
+  ipcBridge.handle('voice:delete', handleDeleteRecord)
+  ipcBridge.handle('voice:toggle-favorite', handleToggleFavorite)
+  ipcBridge.handle('voice:cloned-list', handleGetClonedVoices)
+  ipcBridge.handle('voice:cloned-delete', handleDeleteClonedVoice)
+  ipcBridge.handle('voice:download', handleDownloadAudio)
 
   console.log('[VoiceHandlers] 语音 IPC 处理器已注册')
 }
 
-/**
- * 处理获取语音提供商列表
- */
-async function handleGetProviders(
-  _event: IpcMainInvokeEvent
-): Promise<IpcResponse<any[]>> {
+async function handleGetProviders(_event: any): Promise<IpcResponse<any[]>> {
   const response = await VoiceService.getProviders()
   return response as any
 }
 
-/**
- * 处理获取发音人列表
- */
 async function handleGetVoices(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   providerId?: string,
   language?: string
 ): Promise<IpcResponse<any[]>> {
@@ -82,60 +59,38 @@ async function handleGetVoices(
   return response as any
 }
 
-/**
- * 处理文本转语音
- */
-async function handleTTS(
-  _event: IpcMainInvokeEvent,
-  request: TTSRequest
-): Promise<IpcResponse<any>> {
+async function handleTTS(_event: any, request: TTSRequest): Promise<IpcResponse<any>> {
   const response = await VoiceService.generateSpeech(request)
   return response as any
 }
 
-/**
- * 处理语音转文本
- */
-async function handleSTT(
-  _event: IpcMainInvokeEvent,
-  request: STTRequest
-): Promise<IpcResponse<any>> {
+async function handleSTT(_event: any, request: STTRequest): Promise<IpcResponse<any>> {
   const response = await VoiceService.recognizeSpeech(request)
   return response as any
 }
 
-/**
- * 处理语音复刻
- */
 async function handleVoiceClone(
-  event: IpcMainInvokeEvent,
-  request: VoiceCloneRequest
+  _event: any,
+  _request: VoiceCloneRequest
 ): Promise<IpcResponse<any>> {
-  const window = BrowserWindow.fromWebContents(event.sender)
-  if (!window) {
-    return { success: false, error: '窗口不存在' }
-  }
-
-  // 语音复刻功能暂未实现
   return { success: false, error: '语音复刻功能暂未实现' }
 }
 
-/**
- * 处理选择音频文件
- */
 async function handleSelectFile(
-  event: IpcMainInvokeEvent
+  event: any
 ): Promise<IpcResponse<{ path: string; name: string; size: number }>> {
-  const window = BrowserWindow.fromWebContents(event.sender)
+  if (!isElectron) {
+    return { success: false, error: '该功能仅在桌面端可用' }
+  }
+  const { BrowserWindow, dialog } = loadElectron()
+  const window = BrowserWindow?.fromWebContents(event?.sender)
   if (!window) {
     return { success: false, error: '窗口不存在' }
   }
 
   const result = await dialog.showOpenDialog(window, {
     title: '选择音频文件',
-    filters: [
-      { name: '音频文件', extensions: ['mp3', 'wav', 'm4a', 'ogg', 'webm'] },
-    ],
+    filters: [{ name: '音频文件', extensions: ['mp3', 'wav', 'm4a', 'ogg', 'webm'] }],
     properties: ['openFile'],
   })
 
@@ -159,68 +114,45 @@ async function handleSelectFile(
   }
 }
 
-/**
- * 处理获取语音历史
- */
 async function handleGetHistory(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   query: VoiceHistoryQuery
 ): Promise<IpcResponse<{ list: any[]; total: number }>> {
   const response = await VoiceService.getHistory(query)
   return response as any
 }
 
-/**
- * 处理删除语音记录
- */
-async function handleDeleteRecord(
-  _event: IpcMainInvokeEvent,
-  id: string
-): Promise<IpcResponse<boolean>> {
+async function handleDeleteRecord(_event: any, id: string): Promise<IpcResponse<boolean>> {
   const response = await VoiceService.deleteRecord(id)
   return response as any
 }
 
-/**
- * 处理切换收藏
- */
-async function handleToggleFavorite(
-  _event: IpcMainInvokeEvent,
-  id: string
-): Promise<IpcResponse<boolean>> {
+async function handleToggleFavorite(_event: any, id: string): Promise<IpcResponse<boolean>> {
   const response = await VoiceService.toggleFavorite(id)
   return response as any
 }
 
-/**
- * 处理获取复刻声音列表
- */
-async function handleGetClonedVoices(
-  _event: IpcMainInvokeEvent
-): Promise<IpcResponse<any[]>> {
-  // 暂未实现
+async function handleGetClonedVoices(_event: any): Promise<IpcResponse<any[]>> {
   return { success: true, data: [] }
 }
 
-/**
- * 处理删除复刻声音
- */
 async function handleDeleteClonedVoice(
-  _event: IpcMainInvokeEvent,
-  id: string
+  _event: any,
+  _id: string
 ): Promise<IpcResponse<boolean>> {
-  // 暂未实现
   return { success: false, error: '功能暂未实现' }
 }
 
-/**
- * 处理下载音频
- */
 async function handleDownloadAudio(
-  event: IpcMainInvokeEvent,
+  event: any,
   audioPath: string
 ): Promise<IpcResponse<{ savePath: string }>> {
-  const window = BrowserWindow.fromWebContents(event.sender)
+  if (!isElectron) {
+    // Web 端：直接返回相对路径，前端走 /assets 下载
+    return { success: true, data: { savePath: audioPath } }
+  }
+  const { BrowserWindow, dialog } = loadElectron()
+  const window = BrowserWindow?.fromWebContents(event?.sender)
   if (!window) {
     return { success: false, error: '窗口不存在' }
   }

@@ -3,11 +3,20 @@
  * @module ipc/handlers/export
  */
 
-import { ipcMain, dialog, BrowserWindow, shell, app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
+import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { markdownToDocx } from '@core/utils/markdown-to-docx'
+
+const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
+
+function loadElectron(): { app?: any; dialog?: any; BrowserWindow?: any; shell?: any } {
+  if (!isElectron) return {}
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const e = require('electron')
+  return { app: e.app, dialog: e.dialog, BrowserWindow: e.BrowserWindow, shell: e.shell }
+}
 
 /**
  * Obsidian 保管库信息
@@ -30,17 +39,18 @@ interface ObsidianConfig {
  */
 function getObsidianConfigPath(): string {
   const platform = os.platform()
-  const homeDir = app.getPath('home')
+  const { app } = loadElectron()
+  const homeDir = app?.getPath('home') ?? os.homedir()
 
   switch (platform) {
     case 'win32':
-      return path.join(app.getPath('appData'), 'obsidian', 'obsidian.json')
+      return path.join(app?.getPath('appData') ?? path.join(homeDir, 'AppData', 'Roaming'), 'obsidian', 'obsidian.json')
     case 'darwin':
       return path.join(homeDir, 'Library', 'Application Support', 'obsidian', 'obsidian.json')
     case 'linux':
       return path.join(homeDir, '.config', 'obsidian', 'obsidian.json')
     default:
-      return path.join(app.getPath('appData'), 'obsidian', 'obsidian.json')
+      return path.join(app?.getPath('appData') ?? path.join(homeDir, '.config'), 'obsidian', 'obsidian.json')
   }
 }
 
@@ -145,7 +155,7 @@ export function registerExportHandlers(): void {
   /**
    * 获取 Obsidian 保管库列表
    */
-  ipcMain.handle('export:get-obsidian-vaults', async () => {
+  ipcBridge.handle('export:get-obsidian-vaults', async () => {
     try {
       const vaults = getObsidianVaults()
       return { success: true, data: vaults }
@@ -158,7 +168,7 @@ export function registerExportHandlers(): void {
   /**
    * 获取保管库目录列表
    */
-  ipcMain.handle('export:get-vault-directories', async (_event, vaultPath: string) => {
+  ipcBridge.handle('export:get-vault-directories', async (_event: any, vaultPath: string) => {
     try {
       const dirs = getVaultDirectories(vaultPath)
       return { success: true, data: dirs }
@@ -171,7 +181,7 @@ export function registerExportHandlers(): void {
   /**
    * 获取保管库文件列表
    */
-  ipcMain.handle('export:get-vault-files', async (_event, vaultPath: string, subPath?: string) => {
+  ipcBridge.handle('export:get-vault-files', async (_event: any, vaultPath: string, subPath?: string) => {
     try {
       const result = getVaultFiles(vaultPath, subPath)
       return { success: true, data: result }
@@ -183,12 +193,15 @@ export function registerExportHandlers(): void {
   /**
    * 导出消息为图片
    */
-  ipcMain.handle('export:message-image', async (_event, data: {
+  ipcBridge.handle('export:message-image', async (_event: any, data: {
     imageBase64: string
     fileName?: string
   }) => {
     try {
-      // 选择保存路径
+      if (!isElectron) {
+        return { success: false, error: '该功能仅在桌面端可用' }
+      }
+      const { dialog, BrowserWindow } = loadElectron()
       const defaultName = data.fileName || `AI回答_${Date.now()}.png`
 
       const result = await dialog.showSaveDialog(BrowserWindow.getFocusedWindow()!, {
@@ -203,11 +216,9 @@ export function registerExportHandlers(): void {
         return { success: true, message: '用户取消' }
       }
 
-      // 解析 Base64 数据
       const base64Data = data.imageBase64.replace(/^data:image\/\w+;base64,/, '')
       const buffer = Buffer.from(base64Data, 'base64')
 
-      // 写入文件
       fs.writeFileSync(result.filePath, buffer)
 
       return { success: true, filePath: result.filePath }
@@ -220,29 +231,25 @@ export function registerExportHandlers(): void {
   /**
    * 导出消息为 Word 文档
    */
-  ipcMain.handle('export:message-word', async (_event, data: { content: string; modelId?: string }) => {
+  ipcBridge.handle('export:message-word', async (_event: any, data: { content: string; modelId?: string }) => {
     try {
-      // 选择保存路径
+      if (!isElectron) {
+        return { success: false, error: '该功能仅在桌面端可用' }
+      }
+      const { dialog, BrowserWindow } = loadElectron()
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
       const defaultName = `AI回答_${timestamp}.docx`
 
       const result = await dialog.showSaveDialog(BrowserWindow.getFocusedWindow()!, {
         defaultPath: defaultName,
-        filters: [
-          { name: 'Word 文档', extensions: ['docx'] }
-        ]
+        filters: [{ name: 'Word 文档', extensions: ['docx'] }]
       })
 
       if (result.canceled || !result.filePath) {
         return { success: true, message: '用户取消' }
       }
 
-      // 生成 Word 文档
-      const buffer = await markdownToDocx(data.content, {
-        title: 'AI 回答'
-      })
-
-      // 写入文件
+      const buffer = await markdownToDocx(data.content, { title: 'AI 回答' })
       fs.writeFileSync(result.filePath, buffer)
 
       return { success: true, filePath: result.filePath }
@@ -255,7 +262,7 @@ export function registerExportHandlers(): void {
   /**
    * 导出到 Obsidian
    */
-  ipcMain.handle('export:to-obsidian', async (_event, data: {
+  ipcBridge.handle('export:to-obsidian', async (_event: any, data: {
     content: string
     thinkingChain?: string
     title: string
@@ -346,14 +353,15 @@ export function registerExportHandlers(): void {
       // 写入文件
       fs.writeFileSync(filePath, fileContent, 'utf-8')
 
-      // 使用 Obsidian URI 打开文件
-      const relativePath = path.relative(vaultPath, filePath).replace(/\\/g, '/')
-      const encodedVault = encodeURIComponent(vaultName)
-      const encodedFile = encodeURIComponent(relativePath)
-      const obsidianUri = `obsidian://open?vault=${encodedVault}&file=${encodedFile}`
-
-      // 打开 Obsidian
-      await shell.openExternal(obsidianUri)
+      // 使用 Obsidian URI 打开文件（仅 Electron 端）
+      if (isElectron) {
+        const { shell } = loadElectron()
+        const relativePath = path.relative(vaultPath, filePath).replace(/\\/g, '/')
+        const encodedVault = encodeURIComponent(vaultName)
+        const encodedFile = encodeURIComponent(relativePath)
+        const obsidianUri = `obsidian://open?vault=${encodedVault}&file=${encodedFile}`
+        await shell?.openExternal(obsidianUri)
+      }
 
       return { success: true, filePath }
     } catch (error: any) {

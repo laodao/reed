@@ -4,9 +4,9 @@
  * @description 处理渲染进程与主进程之间的人像设计相关通信
  */
 
-import { ipcMain, IpcMainInvokeEvent } from 'electron'
+import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { PortraitService } from '@core/services/portrait.service'
-import { DatabaseManager } from '../../database/index'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type {
   CreatePortraitProjectRequest,
@@ -25,35 +25,35 @@ import type {
  */
 export function registerPortraitHandlers(): void {
   // 项目管理
-  ipcMain.handle('portrait:create-project', handleCreateProject)
-  ipcMain.handle('portrait:list-projects', handleListProjects)
-  ipcMain.handle('portrait:get-project', handleGetProject)
-  ipcMain.handle('portrait:update-project', handleUpdateProject)
-  ipcMain.handle('portrait:delete-project', handleDeleteProject)
+  ipcBridge.handle('portrait:create-project', handleCreateProject)
+  ipcBridge.handle('portrait:list-projects', handleListProjects)
+  ipcBridge.handle('portrait:get-project', handleGetProject)
+  ipcBridge.handle('portrait:update-project', handleUpdateProject)
+  ipcBridge.handle('portrait:delete-project', handleDeleteProject)
 
   // 角色管理
-  ipcMain.handle('portrait:create-character', handleCreateCharacter)
-  ipcMain.handle('portrait:list-characters', handleListCharacters)
-  ipcMain.handle('portrait:get-character', handleGetCharacter)
-  ipcMain.handle('portrait:update-character', handleUpdateCharacter)
-  ipcMain.handle('portrait:delete-character', handleDeleteCharacter)
+  ipcBridge.handle('portrait:create-character', handleCreateCharacter)
+  ipcBridge.handle('portrait:list-characters', handleListCharacters)
+  ipcBridge.handle('portrait:get-character', handleGetCharacter)
+  ipcBridge.handle('portrait:update-character', handleUpdateCharacter)
+  ipcBridge.handle('portrait:delete-character', handleDeleteCharacter)
 
   // 图像生成
-  ipcMain.handle('portrait:generate', handleGeneratePortrait)
-  ipcMain.handle('portrait:change-clothes', handleChangeClothes)
-  ipcMain.handle('portrait:change-background', handleChangeBackground)
+  ipcBridge.handle('portrait:generate', handleGeneratePortrait)
+  ipcBridge.handle('portrait:change-clothes', handleChangeClothes)
+  ipcBridge.handle('portrait:change-background', handleChangeBackground)
 
   // 变体管理
-  ipcMain.handle('portrait:get-variant', handleGetVariant)
-  ipcMain.handle('portrait:list-variants', handleListVariants)
-  ipcMain.handle('portrait:delete-variant', handleDeleteVariant)
-  ipcMain.handle('portrait:edit-image', handleEditImage)
+  ipcBridge.handle('portrait:get-variant', handleGetVariant)
+  ipcBridge.handle('portrait:list-variants', handleListVariants)
+  ipcBridge.handle('portrait:delete-variant', handleDeleteVariant)
+  ipcBridge.handle('portrait:edit-image', handleEditImage)
 
   // 生成多角度（第二步）
-  ipcMain.handle('portrait:generate-angles', handleGenerateAngles)
+  ipcBridge.handle('portrait:generate-angles', handleGenerateAngles)
 
   // 导出
-  ipcMain.handle('portrait:export', handleExportPortraits)
+  ipcBridge.handle('portrait:export', handleExportPortraits)
 }
 
 /**
@@ -61,35 +61,35 @@ export function registerPortraitHandlers(): void {
  */
 export function unregisterPortraitHandlers(): void {
   // 项目管理
-  ipcMain.removeHandler('portrait:create-project')
-  ipcMain.removeHandler('portrait:list-projects')
-  ipcMain.removeHandler('portrait:get-project')
-  ipcMain.removeHandler('portrait:update-project')
-  ipcMain.removeHandler('portrait:delete-project')
+  ipcBridge.removeHandler('portrait:create-project')
+  ipcBridge.removeHandler('portrait:list-projects')
+  ipcBridge.removeHandler('portrait:get-project')
+  ipcBridge.removeHandler('portrait:update-project')
+  ipcBridge.removeHandler('portrait:delete-project')
 
   // 角色管理
-  ipcMain.removeHandler('portrait:create-character')
-  ipcMain.removeHandler('portrait:list-characters')
-  ipcMain.removeHandler('portrait:get-character')
-  ipcMain.removeHandler('portrait:update-character')
-  ipcMain.removeHandler('portrait:delete-character')
+  ipcBridge.removeHandler('portrait:create-character')
+  ipcBridge.removeHandler('portrait:list-characters')
+  ipcBridge.removeHandler('portrait:get-character')
+  ipcBridge.removeHandler('portrait:update-character')
+  ipcBridge.removeHandler('portrait:delete-character')
 
   // 图像生成
-  ipcMain.removeHandler('portrait:generate')
-  ipcMain.removeHandler('portrait:change-clothes')
-  ipcMain.removeHandler('portrait:change-background')
+  ipcBridge.removeHandler('portrait:generate')
+  ipcBridge.removeHandler('portrait:change-clothes')
+  ipcBridge.removeHandler('portrait:change-background')
 
   // 变体管理
-  ipcMain.removeHandler('portrait:get-variant')
-  ipcMain.removeHandler('portrait:list-variants')
-  ipcMain.removeHandler('portrait:delete-variant')
-  ipcMain.removeHandler('portrait:edit-image')
+  ipcBridge.removeHandler('portrait:get-variant')
+  ipcBridge.removeHandler('portrait:list-variants')
+  ipcBridge.removeHandler('portrait:delete-variant')
+  ipcBridge.removeHandler('portrait:edit-image')
 
   // 多角度
-  ipcMain.removeHandler('portrait:generate-angles')
+  ipcBridge.removeHandler('portrait:generate-angles')
 
   // 导出
-  ipcMain.removeHandler('portrait:export')
+  ipcBridge.removeHandler('portrait:export')
 }
 
 // ==================== 项目管理处理器 ====================
@@ -98,7 +98,7 @@ export function unregisterPortraitHandlers(): void {
  * 处理创建项目请求
  */
 async function handleCreateProject(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   request: CreatePortraitProjectRequest
 ): Promise<IpcResponse<any>> {
   try {
@@ -114,7 +114,7 @@ async function handleCreateProject(
  * 处理获取项目列表请求
  */
 async function handleListProjects(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   page?: number,
   pageSize?: number
 ): Promise<IpcResponse<{ projects: any[]; total: number }>> {
@@ -131,7 +131,7 @@ async function handleListProjects(
  * 处理获取项目详情请求
  */
 async function handleGetProject(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   id: string
 ): Promise<IpcResponse<any>> {
   try {
@@ -147,7 +147,7 @@ async function handleGetProject(
  * 处理删除项目请求
  */
 async function handleDeleteProject(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   id: string
 ): Promise<IpcResponse<void>> {
   try {
@@ -163,7 +163,7 @@ async function handleDeleteProject(
  * 处理更新项目请求
  */
 async function handleUpdateProject(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   request: UpdatePortraitProjectRequest
 ): Promise<IpcResponse<any>> {
   try {
@@ -181,7 +181,7 @@ async function handleUpdateProject(
  * 处理创建角色请求
  */
 async function handleCreateCharacter(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   request: CreatePortraitCharacterRequest
 ): Promise<IpcResponse<any>> {
   try {
@@ -197,7 +197,7 @@ async function handleCreateCharacter(
  * 处理获取角色列表请求
  */
 async function handleListCharacters(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   projectId: string
 ): Promise<IpcResponse<any[]>> {
   try {
@@ -213,7 +213,7 @@ async function handleListCharacters(
  * 处理获取角色详情请求
  */
 async function handleGetCharacter(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   id: string
 ): Promise<IpcResponse<any>> {
   try {
@@ -229,7 +229,7 @@ async function handleGetCharacter(
  * 处理更新角色请求
  */
 async function handleUpdateCharacter(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   request: UpdatePortraitCharacterRequest
 ): Promise<IpcResponse<any>> {
   try {
@@ -245,7 +245,7 @@ async function handleUpdateCharacter(
  * 处理删除角色请求
  */
 async function handleDeleteCharacter(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   id: string
 ): Promise<IpcResponse<void>> {
   try {
@@ -263,7 +263,7 @@ async function handleDeleteCharacter(
  * 处理生成人物请求
  */
 async function handleGeneratePortrait(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   request: GeneratePortraitRequest
 ): Promise<IpcResponse<any>> {
   try {
@@ -288,7 +288,7 @@ async function handleGeneratePortrait(
  * 处理换衣请求
  */
 async function handleChangeClothes(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   request: ChangeClothesRequest
 ): Promise<IpcResponse<any>> {
   try {
@@ -312,7 +312,7 @@ async function handleChangeClothes(
  * 处理换背景请求
  */
 async function handleChangeBackground(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   request: ChangeBackgroundRequest
 ): Promise<IpcResponse<any>> {
   try {
@@ -338,11 +338,11 @@ async function handleChangeBackground(
  * 处理获取单个变体请求
  */
 async function handleGetVariant(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   variantId: string
 ): Promise<IpcResponse<any>> {
   try {
-    const dbManager = DatabaseManager.getInstance()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.portraitVariants) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -361,7 +361,7 @@ async function handleGetVariant(
  * 处理获取变体列表请求
  */
 async function handleListVariants(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   characterId: string
 ): Promise<IpcResponse<any[]>> {
   try {
@@ -377,7 +377,7 @@ async function handleListVariants(
  * 处理删除变体请求
  */
 async function handleDeleteVariant(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   id: string
 ): Promise<IpcResponse<void>> {
   try {
@@ -393,7 +393,7 @@ async function handleDeleteVariant(
  * 处理编辑图像请求
  */
 async function handleEditImage(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   request: {
     characterId: string
     variantId: string
@@ -419,7 +419,7 @@ async function handleEditImage(
  * 处理生成多角度请求（第二步）
  */
 async function handleGenerateAngles(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   request: GenerateAnglesRequest
 ): Promise<IpcResponse<any>> {
   try {
@@ -445,7 +445,7 @@ async function handleGenerateAngles(
  * 处理导出请求
  */
 async function handleExportPortraits(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   request: ExportPortraitRequest
 ): Promise<IpcResponse<string>> {
   try {

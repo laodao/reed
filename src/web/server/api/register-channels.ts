@@ -18,6 +18,18 @@ import { registerDialogHandlers } from '@electron/ipc/handlers/dialog.handler'
 import { registerOSSHandlers } from '@electron/ipc/handlers/oss.handler'
 import { registerProviderConfigHandlers } from '@electron/ipc/handlers/provider-config.handler'
 import { registerSearchEngineHandlers } from '@electron/ipc/handlers/search-engine.handler'
+import { registerTranslationHandlers } from '@electron/ipc/handlers/translation.handler'
+import { registerVoiceHandlers } from '@electron/ipc/handlers/voice.handler'
+import { registerImageHandlers } from '@electron/ipc/handlers/image.handler'
+import { registerChatHandlers } from '@electron/ipc/handlers/chat.handler'
+import { registerKnowledgeBaseHandlers } from '@electron/ipc/handlers/knowledge-base.handler'
+import { registerLongWritingHandlers } from '@electron/ipc/handlers/longwriting.handler'
+import { registerDiaryHandlers } from '@electron/ipc/handlers/diary.handler'
+import { registerPortraitHandlers } from '@electron/ipc/handlers/portrait.handler'
+import { registerStoryToVideoHandlers } from '@electron/ipc/handlers/story-to-video.handler'
+import { registerFileHandlers } from '@electron/ipc/handlers/file.handler'
+import { registerExportHandlers } from '@electron/ipc/handlers/export.handler'
+import { registerDataPathHandlers } from '@electron/ipc/handlers/data-path.handler'
 
 export async function registerAllWebChannels(): Promise<void> {
   // 已迁移到 ipcBridge 的 handler：导入即注册（在 Web 端运行时
@@ -30,7 +42,17 @@ export async function registerAllWebChannels(): Promise<void> {
   registerOSSHandlers()
   registerProviderConfigHandlers()
   registerSearchEngineHandlers()
-
-  // TODO 待迁移：image / voice / chat / knowledge-base / longwriting / diary /
-  //              portrait / story-to-video / translation / file / export / data-path
+  registerTranslationHandlers()
+  registerVoiceHandlers()
+  registerImageHandlers()
+  registerChatHandlers()
+  registerKnowledgeBaseHandlers()
+  registerLongWritingHandlers()
+  registerDiaryHandlers()
+  registerPortraitHandlers()
+  registerStoryToVideoHandlers()
+  registerFileHandlers()
+  registerExportHandlers()
+  // data-path 仅在 Electron 端有意义，函数内部已 isElectron 判断
+  registerDataPathHandlers()
 }

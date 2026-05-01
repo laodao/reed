@@ -4,11 +4,11 @@
  * @description 处理渲染进程与主进程之间的图像生成相关通信
  */
 
-import { ipcMain, IpcMainInvokeEvent, BrowserWindow, dialog } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
+import { ipcBridge } from '@core/ipc/bridge-adapter'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { ImageService } from '@core/services/image.service'
-import { getDatabaseManager } from '../../database'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type {
   ImageGenerationRequest,
@@ -18,60 +18,54 @@ import type {
 } from '@shared/types/image-provider.types'
 import type { ImageRecord } from '@shared/types'
 
+const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
+
+function loadElectron(): { BrowserWindow?: any; dialog?: any } {
+  if (!isElectron) return {}
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const e = require('electron')
+  return { BrowserWindow: e.BrowserWindow, dialog: e.dialog }
+}
+
 /**
  * 注册图像生成相关 IPC 处理器
  */
 export function registerImageHandlers(): void {
-  // 图像生成相关
-  ipcMain.handle('image:generate', handleImageGenerate)
-  ipcMain.handle('image:task-status', handleImageTaskStatus)
-  ipcMain.handle('image:stop', handleImageStop)
+  ipcBridge.handle('image:generate', handleImageGenerate)
+  ipcBridge.handle('image:task-status', handleImageTaskStatus)
+  ipcBridge.handle('image:stop', handleImageStop)
 
-  // 图像管理相关
-  ipcMain.handle('image:list', handleImageList)
-  ipcMain.handle('image:get', handleImageGet)
-  ipcMain.handle('image:toggle-favorite', handleImageToggleFavorite)
-  ipcMain.handle('image:delete', handleImageDelete)
-  ipcMain.handle('image:delete-many', handleImageDeleteMany)
+  ipcBridge.handle('image:list', handleImageList)
+  ipcBridge.handle('image:get', handleImageGet)
+  ipcBridge.handle('image:toggle-favorite', handleImageToggleFavorite)
+  ipcBridge.handle('image:delete', handleImageDelete)
+  ipcBridge.handle('image:delete-many', handleImageDeleteMany)
 
-  // Provider 相关
-  ipcMain.handle('image:providers', handleImageProviders)
-  ipcMain.handle('image:models', handleImageModels)
-  ipcMain.handle('image:test-provider', handleImageTestProvider)
+  ipcBridge.handle('image:providers', handleImageProviders)
+  ipcBridge.handle('image:models', handleImageModels)
+  ipcBridge.handle('image:test-provider', handleImageTestProvider)
 
-  // 下载相关
-  ipcMain.handle('image:download', handleImageDownload)
-
-  // 参考图片选择
-  ipcMain.handle('image:select-file', handleImageSelectFile)
+  ipcBridge.handle('image:download', handleImageDownload)
+  ipcBridge.handle('image:select-file', handleImageSelectFile)
 }
 
 /**
  * 取消注册图像生成相关 IPC 处理器
  */
 export function unregisterImageHandlers(): void {
-  // 图像生成相关
-  ipcMain.removeHandler('image:generate')
-  ipcMain.removeHandler('image:task-status')
-  ipcMain.removeHandler('image:stop')
-
-  // 图像管理相关
-  ipcMain.removeHandler('image:list')
-  ipcMain.removeHandler('image:get')
-  ipcMain.removeHandler('image:toggle-favorite')
-  ipcMain.removeHandler('image:delete')
-  ipcMain.removeHandler('image:delete-many')
-
-  // Provider 相关
-  ipcMain.removeHandler('image:providers')
-  ipcMain.removeHandler('image:models')
-  ipcMain.removeHandler('image:test-provider')
-
-  // 下载相关
-  ipcMain.removeHandler('image:download')
-
-  // 参考图片选择
-  ipcMain.removeHandler('image:select-file')
+  ipcBridge.removeHandler('image:generate')
+  ipcBridge.removeHandler('image:task-status')
+  ipcBridge.removeHandler('image:stop')
+  ipcBridge.removeHandler('image:list')
+  ipcBridge.removeHandler('image:get')
+  ipcBridge.removeHandler('image:toggle-favorite')
+  ipcBridge.removeHandler('image:delete')
+  ipcBridge.removeHandler('image:delete-many')
+  ipcBridge.removeHandler('image:providers')
+  ipcBridge.removeHandler('image:models')
+  ipcBridge.removeHandler('image:test-provider')
+  ipcBridge.removeHandler('image:download')
+  ipcBridge.removeHandler('image:select-file')
 }
 
 // ==================== 图像生成处理器 ====================
@@ -80,7 +74,7 @@ export function unregisterImageHandlers(): void {
  * 处理图像生成请求
  */
 async function handleImageGenerate(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   request: ImageGenerationRequest
 ): Promise<IpcResponse<{ taskId: string }>> {
   try {
@@ -99,7 +93,7 @@ async function handleImageGenerate(
  * 处理查询任务状态请求
  */
 async function handleImageTaskStatus(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   taskId: string
 ): Promise<IpcResponse<ImageTaskStatus>> {
   try {
@@ -115,7 +109,7 @@ async function handleImageTaskStatus(
  * 处理停止生成请求
  */
 async function handleImageStop(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   taskId: string
 ): Promise<IpcResponse<boolean>> {
   try {
@@ -133,7 +127,7 @@ async function handleImageStop(
  * 处理获取图像列表请求
  */
 async function handleImageList(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   page?: number,
   pageSize?: number,
   favoriteOnly?: boolean,
@@ -153,7 +147,7 @@ async function handleImageList(
  * 处理获取单个图像请求
  */
 async function handleImageGet(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   id: string
 ): Promise<IpcResponse<ImageRecord>> {
   try {
@@ -170,7 +164,7 @@ async function handleImageGet(
  * 处理切换收藏状态请求
  */
 async function handleImageToggleFavorite(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   id: string
 ): Promise<IpcResponse<boolean>> {
   try {
@@ -187,7 +181,7 @@ async function handleImageToggleFavorite(
  * 处理删除图像请求
  */
 async function handleImageDelete(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   id: string
 ): Promise<IpcResponse<void>> {
   try {
@@ -204,7 +198,7 @@ async function handleImageDelete(
  * 处理批量删除图像请求
  */
 async function handleImageDeleteMany(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   ids: string[]
 ): Promise<IpcResponse<number>> {
   try {
@@ -223,7 +217,7 @@ async function handleImageDeleteMany(
  * 处理获取 Provider 列表请求
  */
 async function handleImageProviders(
-  _event: IpcMainInvokeEvent
+  _event: any
 ): Promise<IpcResponse<ImageProvider[]>> {
   try {
     const result = await ImageService.getProviders()
@@ -239,7 +233,7 @@ async function handleImageProviders(
  * 处理获取模型列表请求
  */
 async function handleImageModels(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   providerId?: string
 ): Promise<IpcResponse<ImageModel[]>> {
   try {
@@ -256,7 +250,7 @@ async function handleImageModels(
  * 处理测试 Provider 连接请求
  */
 async function handleImageTestProvider(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   providerId: string
 ): Promise<IpcResponse<{ success: boolean; message: string }>> {
   try {
@@ -273,21 +267,28 @@ async function handleImageTestProvider(
  * 处理下载图像请求
  */
 async function handleImageDownload(
-  event: IpcMainInvokeEvent,
+  event: any,
   imageId: string
 ): Promise<IpcResponse<string>> {
   try {
-    const window = BrowserWindow.fromWebContents(event.sender)
-    if (!window) {
-      return { success: false, error: '窗口不存在' }
-    }
-
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.images) {
       return { success: false, error: '数据库未初始化' }
     }
     const image = await dbManager.images.getById(imageId)
     if (!image) return { success: false, error: '图像不存在' }
+
+    if (!isElectron) {
+      // Web 端：返回相对路径，前端通过 /assets 下载
+      return { success: true, data: image.filePath }
+    }
+
+    const { BrowserWindow, dialog } = loadElectron()
+    const window = BrowserWindow?.fromWebContents(event?.sender)
+    if (!window) {
+      return { success: false, error: '窗口不存在' }
+    }
+
     if (!image.filePath || !fs.existsSync(image.filePath)) {
       return { success: false, error: '图像文件不存在' }
     }
@@ -338,10 +339,14 @@ function getMimeType(filePath: string): string {
  * 处理选择参考图片请求
  */
 async function handleImageSelectFile(
-  event: IpcMainInvokeEvent
+  event: any
 ): Promise<IpcResponse<{ path: string; base64: string; name: string }>> {
+  if (!isElectron) {
+    return { success: false, error: '该功能仅在桌面端可用' }
+  }
   try {
-    const window = BrowserWindow.fromWebContents(event.sender)
+    const { BrowserWindow, dialog } = loadElectron()
+    const window = BrowserWindow?.fromWebContents(event?.sender)
     if (!window) {
       return { success: false, error: '窗口不存在' }
     }

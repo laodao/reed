@@ -3,9 +3,10 @@
  * @module ipc/handlers/longwriting.handler
  */
 
-import { ipcMain, BrowserWindow, dialog, shell } from 'electron'
+import { ipcBridge } from '@core/ipc/bridge-adapter'
+import { isElectron, loadElectronModules, getBrowserWindowFromEvent } from './_platform'
 import * as fs from 'fs'
-import { getDatabaseManager } from '../../database'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { LongWritingService } from '@core/services/longwriting.service'
 import { LongWritingAIService } from '@core/services/longwriting-ai.service'
 import { MaterialProcessorService } from '@core/services/material-processor.service'
@@ -306,7 +307,7 @@ export function registerLongWritingHandlers(): void {
     updatedAt: project.updatedAt
   })
 
-  ipcMain.handle(CHANNELS.GET_PROJECTS, async () => {
+  ipcBridge.handle(CHANNELS.GET_PROJECTS, async () => {
     try {
       const projects = await service.getProjects()
       // 序列化所有项目
@@ -317,7 +318,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.GET_PROJECT, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.GET_PROJECT, async (_event, id: string) => {
     try {
       const project = await service.getProject(id)
       if (!project) {
@@ -329,7 +330,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.CREATE_PROJECT, async (_event, data: CreateProjectRequest) => {
+  ipcBridge.handle(CHANNELS.CREATE_PROJECT, async (_event, data: CreateProjectRequest) => {
     try {
       const project = await service.createProject(data)
       return { success: true, data: serializeProject(project) }
@@ -338,7 +339,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.UPDATE_PROJECT, async (_event, id: string, data: UpdateProjectRequest) => {
+  ipcBridge.handle(CHANNELS.UPDATE_PROJECT, async (_event, id: string, data: UpdateProjectRequest) => {
     try {
       const project = await service.updateProject(id, data)
       if (!project) {
@@ -350,7 +351,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.DELETE_PROJECT, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.DELETE_PROJECT, async (_event, id: string) => {
     try {
       const result = await service.deleteProject(id)
       return { success: result }
@@ -361,7 +362,7 @@ export function registerLongWritingHandlers(): void {
 
   // ==================== 故事概要 ====================
 
-  ipcMain.handle(CHANNELS.GET_STORY_OVERVIEW, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.GET_STORY_OVERVIEW, async (_event, projectId: string) => {
     try {
       const overview = await service.getStoryOverview(projectId)
       return { success: true, data: overview }
@@ -370,7 +371,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.UPDATE_STORY_OVERVIEW, async (_event, projectId: string, data: any) => {
+  ipcBridge.handle(CHANNELS.UPDATE_STORY_OVERVIEW, async (_event, projectId: string, data: any) => {
     try {
       const overview = await service.updateStoryOverview(projectId, data)
       return { success: true, data: overview }
@@ -379,7 +380,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.LOCK_STORY_OVERVIEW, async (_event, projectId: string, locked: boolean) => {
+  ipcBridge.handle(CHANNELS.LOCK_STORY_OVERVIEW, async (_event, projectId: string, locked: boolean) => {
     try {
       const result = await service.lockStoryOverview(projectId, locked)
       return { success: result }
@@ -390,7 +391,7 @@ export function registerLongWritingHandlers(): void {
 
   // ==================== 角色管理 ====================
 
-  ipcMain.handle(CHANNELS.GET_CHARACTERS, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.GET_CHARACTERS, async (_event, projectId: string) => {
     try {
       const characters = await service.getCharacters(projectId)
       return { success: true, data: characters }
@@ -399,7 +400,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.GET_CHARACTER, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.GET_CHARACTER, async (_event, id: string) => {
     try {
       const character = await service.getCharacter(id)
       return { success: true, data: character }
@@ -408,7 +409,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.CREATE_CHARACTER, async (_event, data: CreateCharacterRequest) => {
+  ipcBridge.handle(CHANNELS.CREATE_CHARACTER, async (_event, data: CreateCharacterRequest) => {
     try {
       console.log(`[LongWritingHandler] createCharacter 被调用, data:`, JSON.stringify(data).substring(0, 200))
       const character = await service.createCharacter(data)
@@ -420,7 +421,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.UPDATE_CHARACTER, async (_event, id: string, data: UpdateCharacterRequest) => {
+  ipcBridge.handle(CHANNELS.UPDATE_CHARACTER, async (_event, id: string, data: UpdateCharacterRequest) => {
     try {
       const character = await service.updateCharacter(id, data)
       return { success: true, data: character }
@@ -429,7 +430,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.DELETE_CHARACTER, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.DELETE_CHARACTER, async (_event, id: string) => {
     try {
       const result = await service.deleteCharacter(id)
       return { success: result }
@@ -438,7 +439,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.LINK_PORTRAIT, async (_event, characterId: string, portraitId: string) => {
+  ipcBridge.handle(CHANNELS.LINK_PORTRAIT, async (_event, characterId: string, portraitId: string) => {
     try {
       const character = await service.linkPortrait(characterId, portraitId)
       return { success: true, data: character }
@@ -447,7 +448,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.UNLINK_PORTRAIT, async (_event, characterId: string) => {
+  ipcBridge.handle(CHANNELS.UNLINK_PORTRAIT, async (_event, characterId: string) => {
     try {
       const character = await service.unlinkPortrait(characterId)
       return { success: true, data: character }
@@ -458,7 +459,7 @@ export function registerLongWritingHandlers(): void {
 
   // ==================== 背景设定 ====================
 
-  ipcMain.handle(CHANNELS.GET_BACKGROUND, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.GET_BACKGROUND, async (_event, projectId: string) => {
     try {
       const background = await service.getBackground(projectId)
       return { success: true, data: background }
@@ -467,7 +468,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.UPDATE_BACKGROUND, async (_event, projectId: string, data: any) => {
+  ipcBridge.handle(CHANNELS.UPDATE_BACKGROUND, async (_event, projectId: string, data: any) => {
     console.log('[LongWriting] UPDATE_BACKGROUND 被调用, projectId:', projectId, 'data:', data)
     try {
       const background = await service.updateBackground(projectId, data)
@@ -481,7 +482,7 @@ export function registerLongWritingHandlers(): void {
 
   // ==================== 地点管理 ====================
 
-  ipcMain.handle(CHANNELS.GET_LOCATIONS, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.GET_LOCATIONS, async (_event, projectId: string) => {
     try {
       const locations = await service.getLocations(projectId)
       return { success: true, data: locations }
@@ -490,7 +491,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.GET_LOCATION, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.GET_LOCATION, async (_event, id: string) => {
     try {
       const location = await service.getLocation(id)
       return { success: true, data: location }
@@ -499,7 +500,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.CREATE_LOCATION, async (_event, data: any) => {
+  ipcBridge.handle(CHANNELS.CREATE_LOCATION, async (_event, data: any) => {
     try {
       const location = await service.createLocation(data)
       return { success: true, data: location }
@@ -508,7 +509,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.UPDATE_LOCATION, async (_event, id: string, data: any) => {
+  ipcBridge.handle(CHANNELS.UPDATE_LOCATION, async (_event, id: string, data: any) => {
     try {
       const location = await service.updateLocation(id, data)
       return { success: true, data: location }
@@ -517,7 +518,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.DELETE_LOCATION, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.DELETE_LOCATION, async (_event, id: string) => {
     try {
       const result = await service.deleteLocation(id)
       return { success: result }
@@ -528,7 +529,7 @@ export function registerLongWritingHandlers(): void {
 
   // ==================== 势力管理 ====================
 
-  ipcMain.handle(CHANNELS.GET_FACTIONS, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.GET_FACTIONS, async (_event, projectId: string) => {
     try {
       const factions = await service.getFactions(projectId)
       return { success: true, data: factions }
@@ -537,7 +538,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.GET_FACTIONS_BY_TYPE, async (_event, projectId: string, factionType: FactionType) => {
+  ipcBridge.handle(CHANNELS.GET_FACTIONS_BY_TYPE, async (_event, projectId: string, factionType: FactionType) => {
     try {
       const factions = await service.getFactionsByType(projectId, factionType)
       return { success: true, data: factions }
@@ -546,7 +547,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.GET_FACTION, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.GET_FACTION, async (_event, id: string) => {
     try {
       const faction = await service.getFaction(id)
       return { success: true, data: faction }
@@ -555,7 +556,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.CREATE_FACTION, async (_event, data: CreateFactionRequest) => {
+  ipcBridge.handle(CHANNELS.CREATE_FACTION, async (_event, data: CreateFactionRequest) => {
     try {
       const faction = await service.createFaction(data)
       return { success: true, data: faction }
@@ -564,7 +565,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.UPDATE_FACTION, async (_event, id: string, data: UpdateFactionRequest) => {
+  ipcBridge.handle(CHANNELS.UPDATE_FACTION, async (_event, id: string, data: UpdateFactionRequest) => {
     try {
       const faction = await service.updateFaction(id, data)
       return { success: true, data: faction }
@@ -573,7 +574,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.DELETE_FACTION, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.DELETE_FACTION, async (_event, id: string) => {
     try {
       const result = await service.deleteFaction(id)
       return { success: result }
@@ -582,7 +583,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.REORDER_FACTIONS, async (_event, orderList: { id: string; order: number }[]) => {
+  ipcBridge.handle(CHANNELS.REORDER_FACTIONS, async (_event, orderList: { id: string; order: number }[]) => {
     try {
       const result = await service.reorderFactions(orderList)
       return { success: result }
@@ -593,7 +594,7 @@ export function registerLongWritingHandlers(): void {
 
   // ==================== 地图管理 ====================
 
-  ipcMain.handle(CHANNELS.GET_MAPS, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.GET_MAPS, async (_event, projectId: string) => {
     try {
       const maps = await service.getMaps(projectId)
       return { success: true, data: maps }
@@ -602,7 +603,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.GET_MAP, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.GET_MAP, async (_event, id: string) => {
     try {
       const map = await service.getMap(id)
       return { success: true, data: map }
@@ -611,7 +612,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.CREATE_MAP, async (_event, data: CreateMapRequest) => {
+  ipcBridge.handle(CHANNELS.CREATE_MAP, async (_event, data: CreateMapRequest) => {
     try {
       const map = await service.createMap(data)
       return { success: true, data: map }
@@ -620,7 +621,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.UPDATE_MAP, async (_event, id: string, data: UpdateMapRequest) => {
+  ipcBridge.handle(CHANNELS.UPDATE_MAP, async (_event, id: string, data: UpdateMapRequest) => {
     try {
       const map = await service.updateMap(id, data)
       return { success: true, data: map }
@@ -629,7 +630,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.DELETE_MAP, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.DELETE_MAP, async (_event, id: string) => {
     try {
       const result = await service.deleteMap(id)
       return { success: result }
@@ -638,7 +639,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.GENERATE_MAP_DATA, async (_event, eventId: string, projectId: string, mapId: string, prompt: string, providerConfigId?: string, modelId?: string) => {
+  ipcBridge.handle(CHANNELS.GENERATE_MAP_DATA, async (_event, eventId: string, projectId: string, mapId: string, prompt: string, providerConfigId?: string, modelId?: string) => {
     try {
       const result = await aiService.generateMapData(
         eventId,
@@ -654,7 +655,7 @@ export function registerLongWritingHandlers(): void {
     }
   })
 
-  ipcMain.handle(CHANNELS.GENERATE_MAP_IMAGE, async (event, projectId: string, mapId: string, providerConfigId?: string, modelId?: string) => {
+  ipcBridge.handle(CHANNELS.GENERATE_MAP_IMAGE, async (event, projectId: string, mapId: string, providerConfigId?: string, modelId?: string) => {
     try {
       // 获取地图信息
       const map = await service.getMap(mapId)
@@ -676,7 +677,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 请生成一张符合以上描述的地图风格插图。`
 
       // 获取 BrowserWindow
-      const window = BrowserWindow.fromWebContents(event.sender)
+      const window = getBrowserWindowFromEvent(event)
       if (!window) {
         return { success: false, error: '窗口不存在' }
       }
@@ -709,7 +710,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
   // ==================== 情节管理 ====================
 
-  ipcMain.handle(CHANNELS.GET_PLOTS, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.GET_PLOTS, async (_event, projectId: string) => {
     try {
       const plots = await service.getPlots(projectId)
       return { success: true, data: plots }
@@ -718,7 +719,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.GET_PLOT, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.GET_PLOT, async (_event, id: string) => {
     try {
       const plot = await service.getPlot(id)
       return { success: true, data: plot }
@@ -727,7 +728,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.CREATE_PLOT, async (_event, data: CreatePlotRequest) => {
+  ipcBridge.handle(CHANNELS.CREATE_PLOT, async (_event, data: CreatePlotRequest) => {
     try {
       const plot = await service.createPlot(data)
       return { success: true, data: plot }
@@ -736,7 +737,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.BATCH_CREATE_PLOTS, async (_event, projectId: string, plots: { title: string; summary: string; involvedCharacters?: string[] }[]) => {
+  ipcBridge.handle(CHANNELS.BATCH_CREATE_PLOTS, async (_event, projectId: string, plots: { title: string; summary: string; involvedCharacters?: string[] }[]) => {
     try {
       const result = await service.batchCreatePlots(projectId, plots)
       return { success: true, data: result }
@@ -745,7 +746,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.UPDATE_PLOT, async (_event, id: string, data: UpdatePlotRequest) => {
+  ipcBridge.handle(CHANNELS.UPDATE_PLOT, async (_event, id: string, data: UpdatePlotRequest) => {
     try {
       const plot = await service.updatePlot(id, data)
       return { success: true, data: plot }
@@ -754,7 +755,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.REORDER_PLOTS, async (_event, projectId: string, orderList: { id: string; order: number }[]) => {
+  ipcBridge.handle(CHANNELS.REORDER_PLOTS, async (_event, projectId: string, orderList: { id: string; order: number }[]) => {
     try {
       const result = await service.reorderPlots(projectId, orderList)
       return { success: result }
@@ -763,7 +764,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.DELETE_PLOT, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.DELETE_PLOT, async (_event, id: string) => {
     try {
       const result = await service.deletePlot(id)
       return { success: result }
@@ -772,7 +773,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.GET_PLOT_COUNT, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.GET_PLOT_COUNT, async (_event, projectId: string) => {
     try {
       const count = await service.getPlotCount(projectId)
       return { success: true, data: count }
@@ -783,7 +784,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
   // ==================== 角色关系 ====================
 
-  ipcMain.handle(CHANNELS.GET_CHARACTER_RELATIONS, async (_event, characterId: string) => {
+  ipcBridge.handle(CHANNELS.GET_CHARACTER_RELATIONS, async (_event, characterId: string) => {
     try {
       const relations = await service.getCharacterRelations(characterId)
       return { success: true, data: relations }
@@ -792,7 +793,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.CREATE_CHARACTER_RELATION, async (_event, data: any) => {
+  ipcBridge.handle(CHANNELS.CREATE_CHARACTER_RELATION, async (_event, data: any) => {
     try {
       const relation = await service.createCharacterRelation(data)
       return { success: true, data: relation }
@@ -801,7 +802,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.DELETE_CHARACTER_RELATION, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.DELETE_CHARACTER_RELATION, async (_event, id: string) => {
     try {
       const result = await service.deleteCharacterRelation(id)
       return { success: result }
@@ -813,9 +814,9 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   // ==================== 角色与人像同步 ====================
 
   // 根据人像ID获取关联的长文角色
-  ipcMain.handle(CHANNELS.GET_CHARACTER_BY_PORTRAIT_ID, async (_event, portraitId: string) => {
+  ipcBridge.handle(CHANNELS.GET_CHARACTER_BY_PORTRAIT_ID, async (_event, portraitId: string) => {
     try {
-      const dbManager = getDatabaseManager()
+      const dbManager = getCoreDatabaseManager()
       const characters = await dbManager.lwCharacters?.getByPortraitId(portraitId)
       return { success: true, data: characters?.[0] || null }
     } catch (error: any) {
@@ -824,9 +825,9 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   })
 
   // 同步角色信息到人像
-  ipcMain.handle(CHANNELS.SYNC_CHARACTER_TO_PORTRAIT, async (_event, portraitId: string, characterData: any) => {
+  ipcBridge.handle(CHANNELS.SYNC_CHARACTER_TO_PORTRAIT, async (_event, portraitId: string, characterData: any) => {
     try {
-      const dbManager = getDatabaseManager()
+      const dbManager = getCoreDatabaseManager()
 
       // 获取人像角色信息
       const portrait = dbManager.portraitCharacters?.getById(portraitId)
@@ -890,7 +891,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
   // ==================== 技能管理 ====================
 
-  ipcMain.handle(CHANNELS.GET_SKILLS, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.GET_SKILLS, async (_event, projectId: string) => {
     try {
       const skills = await service.getSkills(projectId)
       return { success: true, data: skills }
@@ -899,7 +900,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.GET_SKILL, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.GET_SKILL, async (_event, id: string) => {
     try {
       const skill = await service.getSkill(id)
       return { success: true, data: skill }
@@ -908,7 +909,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.CREATE_SKILL, async (_event, data: any) => {
+  ipcBridge.handle(CHANNELS.CREATE_SKILL, async (_event, data: any) => {
     try {
       const skill = await service.createSkill(data)
       return { success: true, data: skill }
@@ -917,7 +918,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.UPDATE_SKILL, async (_event, id: string, data: any) => {
+  ipcBridge.handle(CHANNELS.UPDATE_SKILL, async (_event, id: string, data: any) => {
     try {
       const skill = await service.updateSkill(id, data)
       return { success: true, data: skill }
@@ -926,7 +927,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.DELETE_SKILL, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.DELETE_SKILL, async (_event, id: string) => {
     try {
       const result = await service.deleteSkill(id)
       return { success: result }
@@ -937,7 +938,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
   // ==================== 物品管理 ====================
 
-  ipcMain.handle(CHANNELS.GET_ITEMS, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.GET_ITEMS, async (_event, projectId: string) => {
     try {
       const items = await service.getItems(projectId)
       return { success: true, data: items }
@@ -946,7 +947,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.GET_ITEM, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.GET_ITEM, async (_event, id: string) => {
     try {
       const item = await service.getItem(id)
       return { success: true, data: item }
@@ -955,7 +956,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.CREATE_ITEM, async (_event, data: any) => {
+  ipcBridge.handle(CHANNELS.CREATE_ITEM, async (_event, data: any) => {
     try {
       const item = await service.createItem(data)
       return { success: true, data: item }
@@ -964,7 +965,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.UPDATE_ITEM, async (_event, id: string, data: any) => {
+  ipcBridge.handle(CHANNELS.UPDATE_ITEM, async (_event, id: string, data: any) => {
     try {
       const item = await service.updateItem(id, data)
       return { success: true, data: item }
@@ -973,7 +974,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.DELETE_ITEM, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.DELETE_ITEM, async (_event, id: string) => {
     try {
       const result = await service.deleteItem(id)
       return { success: result }
@@ -984,7 +985,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
   // ==================== 素材管理 ====================
 
-  ipcMain.handle(CHANNELS.GET_MATERIALS, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.GET_MATERIALS, async (_event, projectId: string) => {
     try {
       const materials = await service.getMaterials(projectId)
       return { success: true, data: materials }
@@ -993,7 +994,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.GET_MATERIAL, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.GET_MATERIAL, async (_event, id: string) => {
     try {
       const material = await service.getMaterial(id)
       return { success: true, data: material }
@@ -1002,7 +1003,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.CREATE_MATERIAL, async (_event, data: any) => {
+  ipcBridge.handle(CHANNELS.CREATE_MATERIAL, async (_event, data: any) => {
     try {
       const material = await service.createMaterial(data)
       return { success: true, data: material }
@@ -1011,7 +1012,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.UPDATE_MATERIAL, async (_event, id: string, data: any) => {
+  ipcBridge.handle(CHANNELS.UPDATE_MATERIAL, async (_event, id: string, data: any) => {
     try {
       const material = await service.updateMaterial(id, data)
       return { success: true, data: material }
@@ -1020,7 +1021,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.UPDATE_MATERIAL_STATUS, async (_event, id: string, status: string, errorMessage?: string) => {
+  ipcBridge.handle(CHANNELS.UPDATE_MATERIAL_STATUS, async (_event, id: string, status: string, errorMessage?: string) => {
     try {
       const result = await service.updateMaterialStatus(id, status, errorMessage)
       return { success: result }
@@ -1029,7 +1030,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.DELETE_MATERIAL, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.DELETE_MATERIAL, async (_event, id: string) => {
     try {
       const result = await service.deleteMaterial(id)
       return { success: result }
@@ -1038,7 +1039,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.PROCESS_MATERIAL, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.PROCESS_MATERIAL, async (_event, id: string) => {
     try {
       const material = await service.getMaterial(id)
       if (!material) {
@@ -1078,7 +1079,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
   // ==================== 大纲管理 ====================
 
-  ipcMain.handle(CHANNELS.GET_OUTLINE_TREE, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.GET_OUTLINE_TREE, async (_event, projectId: string) => {
     try {
       const outlines = await service.getOutlineTree(projectId)
       return { success: true, data: outlines }
@@ -1087,7 +1088,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.GET_OUTLINE, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.GET_OUTLINE, async (_event, id: string) => {
     try {
       const outline = await service.getOutline(id)
       return { success: true, data: outline }
@@ -1096,7 +1097,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.CREATE_OUTLINE, async (_event, data: CreateOutlineRequest) => {
+  ipcBridge.handle(CHANNELS.CREATE_OUTLINE, async (_event, data: CreateOutlineRequest) => {
     try {
       const outline = await service.createOutline(data)
       return { success: true, data: outline }
@@ -1105,7 +1106,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.UPDATE_OUTLINE, async (_event, id: string, data: UpdateOutlineRequest) => {
+  ipcBridge.handle(CHANNELS.UPDATE_OUTLINE, async (_event, id: string, data: UpdateOutlineRequest) => {
     try {
       const outline = await service.updateOutline(id, data)
       return { success: true, data: outline }
@@ -1114,7 +1115,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.DELETE_OUTLINE, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.DELETE_OUTLINE, async (_event, id: string) => {
     try {
       const result = await service.deleteOutline(id)
       return { success: result }
@@ -1123,7 +1124,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.MOVE_OUTLINE, async (_event, id: string, newParentId: string | null) => {
+  ipcBridge.handle(CHANNELS.MOVE_OUTLINE, async (_event, id: string, newParentId: string | null) => {
     try {
       const result = await service.moveOutline(id, newParentId)
       return { success: result }
@@ -1134,7 +1135,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
   // ==================== 章节管理 ====================
 
-  ipcMain.handle(CHANNELS.GET_CHAPTER, async (_event, outlineId: string) => {
+  ipcBridge.handle(CHANNELS.GET_CHAPTER, async (_event, outlineId: string) => {
     try {
       const chapter = await service.getChapter(outlineId)
       return { success: true, data: chapter }
@@ -1143,7 +1144,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.GET_CHAPTERS_BY_OUTLINE_IDS, async (_event, outlineIds: string[]) => {
+  ipcBridge.handle(CHANNELS.GET_CHAPTERS_BY_OUTLINE_IDS, async (_event, outlineIds: string[]) => {
     try {
       const chaptersMap = await service.getChaptersByOutlineIds(outlineIds)
       // 将 Map 转换为普通对象以便 IPC 传输
@@ -1157,7 +1158,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.SAVE_CHAPTER, async (_event, outlineId: string, content: string) => {
+  ipcBridge.handle(CHANNELS.SAVE_CHAPTER, async (_event, outlineId: string, content: string) => {
     try {
       const chapter = await service.saveChapter(outlineId, content)
       return { success: true, data: chapter }
@@ -1166,7 +1167,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.GET_CHAPTER_VERSIONS, async (_event, chapterId: string) => {
+  ipcBridge.handle(CHANNELS.GET_CHAPTER_VERSIONS, async (_event, chapterId: string) => {
     try {
       const versions = await service.getChapterVersions(chapterId)
       return { success: true, data: versions }
@@ -1175,7 +1176,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.RESTORE_CHAPTER_VERSION, async (_event, chapterId: string, versionId: string) => {
+  ipcBridge.handle(CHANNELS.RESTORE_CHAPTER_VERSION, async (_event, chapterId: string, versionId: string) => {
     try {
       const chapter = await service.restoreChapterVersion(chapterId, versionId)
       return { success: true, data: chapter }
@@ -1184,7 +1185,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.LOCK_CHAPTER_VERSION, async (_event, versionId: string) => {
+  ipcBridge.handle(CHANNELS.LOCK_CHAPTER_VERSION, async (_event, versionId: string) => {
     try {
       const result = await service.lockChapterVersion(versionId)
       return { success: result }
@@ -1197,13 +1198,13 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
   const aiService = LongWritingAIService.getInstance()
 
-  ipcMain.handle(
+  ipcBridge.handle(
     CHANNELS.GENERATE_STORY_OVERVIEW,
     async (event, eventId: string, projectId: string, input: string, providerConfigId?: string, modelId?: string) => {
       console.log(`[LongWritingHandler] generateStoryOverview 被调用, eventId: ${eventId}, projectId: ${projectId}`)
       console.log(`[LongWritingHandler] providerConfigId: ${providerConfigId}, modelId: ${modelId}`)
       try {
-        const window = BrowserWindow.fromWebContents(event.sender)
+        const window = getBrowserWindowFromEvent(event)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
@@ -1217,11 +1218,11 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   )
 
-  ipcMain.handle(
+  ipcBridge.handle(
     CHANNELS.GENERATE_PLOTS,
     async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
       try {
-        const window = BrowserWindow.fromWebContents(event.sender)
+        const window = getBrowserWindowFromEvent(event)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
@@ -1233,11 +1234,11 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   )
 
-  ipcMain.handle(
+  ipcBridge.handle(
     CHANNELS.POLISH_BACKGROUND,
     async (event, eventId: string, projectId: string, field: 'eraDescription' | 'socialStructure' | 'techLevel' | 'specialRules' | 'factionDistribution' | 'geographicOrientation', eraType: string, content: string, providerConfigId?: string, modelId?: string) => {
       try {
-        const window = BrowserWindow.fromWebContents(event.sender)
+        const window = getBrowserWindowFromEvent(event)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
@@ -1249,11 +1250,11 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   )
 
-  ipcMain.handle(
+  ipcBridge.handle(
     CHANNELS.GENERATE_LOCATIONS,
     async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
       try {
-        const window = BrowserWindow.fromWebContents(event.sender)
+        const window = getBrowserWindowFromEvent(event)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
@@ -1265,11 +1266,11 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   )
 
-  ipcMain.handle(
+  ipcBridge.handle(
     CHANNELS.GENERATE_FACTIONS,
     async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
       try {
-        const window = BrowserWindow.fromWebContents(event.sender)
+        const window = getBrowserWindowFromEvent(event)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
@@ -1281,12 +1282,12 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   )
 
-  ipcMain.handle(
+  ipcBridge.handle(
     CHANNELS.GENERATE_CHARACTERS,
     async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string, requirements?: string) => {
       try {
         console.log(`[LongWritingHandler] generateCharacters 被调用, eventId: ${eventId}, projectId: ${projectId}`)
-        const window = BrowserWindow.fromWebContents(event.sender)
+        const window = getBrowserWindowFromEvent(event)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
@@ -1300,11 +1301,11 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   )
 
-  ipcMain.handle(
+  ipcBridge.handle(
     CHANNELS.GENERATE_SKILLS_ITEMS,
     async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
       try {
-        const window = BrowserWindow.fromWebContents(event.sender)
+        const window = getBrowserWindowFromEvent(event)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
@@ -1316,11 +1317,11 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   )
 
-  ipcMain.handle(
+  ipcBridge.handle(
     CHANNELS.GENERATE_SKILL_ITEM_TYPES,
     async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
       try {
-        const window = BrowserWindow.fromWebContents(event.sender)
+        const window = getBrowserWindowFromEvent(event)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
@@ -1332,11 +1333,11 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   )
 
-  ipcMain.handle(
+  ipcBridge.handle(
     CHANNELS.GENERATE_SKILLS_ONLY,
     async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
       try {
-        const window = BrowserWindow.fromWebContents(event.sender)
+        const window = getBrowserWindowFromEvent(event)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
@@ -1348,11 +1349,11 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   )
 
-  ipcMain.handle(
+  ipcBridge.handle(
     CHANNELS.GENERATE_ITEMS_ONLY,
     async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
       try {
-        const window = BrowserWindow.fromWebContents(event.sender)
+        const window = getBrowserWindowFromEvent(event)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
@@ -1364,11 +1365,11 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   )
 
-  ipcMain.handle(
+  ipcBridge.handle(
     CHANNELS.GENERATE_OUTLINE_STORY,
     async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string, structureLevel?: number) => {
       try {
-        const window = BrowserWindow.fromWebContents(event.sender)
+        const window = getBrowserWindowFromEvent(event)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
@@ -1380,11 +1381,11 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   )
 
-  ipcMain.handle(
+  ipcBridge.handle(
     CHANNELS.GENERATE_OUTLINE_COMMENT,
     async (event, eventId: string, projectId: string, providerConfigId?: string, modelId?: string) => {
       try {
-        const window = BrowserWindow.fromWebContents(event.sender)
+        const window = getBrowserWindowFromEvent(event)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
@@ -1396,11 +1397,11 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   )
 
-  ipcMain.handle(
+  ipcBridge.handle(
     CHANNELS.GENERATE_CHAPTER,
     async (event, eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string) => {
       try {
-        const window = BrowserWindow.fromWebContents(event.sender)
+        const window = getBrowserWindowFromEvent(event)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
@@ -1412,11 +1413,11 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   )
 
-  ipcMain.handle(
+  ipcBridge.handle(
     CHANNELS.GENERATE_CHAPTER_PREWRITE,
     async (event, eventId: string, projectId: string, outlineId: string, providerConfigId?: string, modelId?: string) => {
       try {
-        const window = BrowserWindow.fromWebContents(event.sender)
+        const window = getBrowserWindowFromEvent(event)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
@@ -1428,11 +1429,11 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   )
 
-  ipcMain.handle(
+  ipcBridge.handle(
     CHANNELS.GENERATE_SECTION,
     async (event, eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string) => {
       try {
-        const window = BrowserWindow.fromWebContents(event.sender)
+        const window = getBrowserWindowFromEvent(event)
         if (!window) {
           return { success: false, error: '窗口不存在' }
         }
@@ -1449,7 +1450,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 获取导出数据
    */
-  ipcMain.handle(CHANNELS.GET_EXPORT_DATA, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.GET_EXPORT_DATA, async (_event, projectId: string) => {
     try {
       const project = await service.getProject(projectId)
       if (!project) {
@@ -1663,22 +1664,22 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 导出为 Markdown
    */
-  ipcMain.handle(CHANNELS.EXPORT_MARKDOWN, async (event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.EXPORT_MARKDOWN, async (event, projectId: string) => {
     try {
-      const window = BrowserWindow.fromWebContents(event.sender)
+      if (!isElectron) {
+        return { success: false, error: '该功能仅在桌面端可用' }
+      }
+      const window = getBrowserWindowFromEvent(event)
       if (!window) {
         return { success: false, error: '窗口不存在' }
       }
+      const { dialog, shell } = loadElectronModules()
 
       // 获取导出数据
       const dataResult = await service.getProject(projectId)
       if (!dataResult) {
         return { success: false, error: '项目不存在' }
       }
-
-      const exportDataResult = await new Promise<any>((resolve) => {
-        ipcMain.emit(CHANNELS.GET_EXPORT_DATA, event, projectId, (result: any) => resolve(result))
-      })
 
       // 直接调用获取数据
       const exportData: any = { project: dataResult }
@@ -1739,12 +1740,16 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 导出为 Word 文档
    */
-  ipcMain.handle(CHANNELS.EXPORT_WORD, async (event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.EXPORT_WORD, async (event, projectId: string) => {
     try {
-      const window = BrowserWindow.fromWebContents(event.sender)
+      if (!isElectron) {
+        return { success: false, error: '该功能仅在桌面端可用' }
+      }
+      const window = getBrowserWindowFromEvent(event)
       if (!window) {
         return { success: false, error: '窗口不存在' }
       }
+      const { dialog, shell } = loadElectronModules()
 
       // 获取项目数据
       const dataResult = await service.getProject(projectId)
@@ -1816,12 +1821,16 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 导出单个章节
    */
-  ipcMain.handle(CHANNELS.EXPORT_CHAPTER, async (event, data: { outlineId: string; content: string; fileName: string; format: string }) => {
+  ipcBridge.handle(CHANNELS.EXPORT_CHAPTER, async (event, data: { outlineId: string; content: string; fileName: string; format: string }) => {
     try {
-      const window = BrowserWindow.fromWebContents(event.sender)
+      if (!isElectron) {
+        return { success: false, error: '该功能仅在桌面端可用' }
+      }
+      const window = getBrowserWindowFromEvent(event)
       if (!window) {
         return { success: false, error: '窗口不存在' }
       }
+      const { dialog, shell } = loadElectronModules()
 
       const { content, fileName, format } = data
 
@@ -1856,7 +1865,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 获取全局配置
    */
-  ipcMain.handle(CHANNELS.GET_GLOBAL_SETTINGS, async () => {
+  ipcBridge.handle(CHANNELS.GET_GLOBAL_SETTINGS, async () => {
     try {
       const settings = await service.getGlobalSettings()
       return { success: true, data: settings }
@@ -1868,7 +1877,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 更新全局配置
    */
-  ipcMain.handle(CHANNELS.UPDATE_GLOBAL_SETTINGS, async (_event, data: any) => {
+  ipcBridge.handle(CHANNELS.UPDATE_GLOBAL_SETTINGS, async (_event, data: any) => {
     try {
       const settings = await service.updateGlobalSettings(data)
       return { success: true, data: settings }
@@ -1882,7 +1891,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 获取所有字典分类
    */
-  ipcMain.handle(CHANNELS.GET_DICTIONARY_CATEGORIES, async () => {
+  ipcBridge.handle(CHANNELS.GET_DICTIONARY_CATEGORIES, async () => {
     try {
       const categories = await service.getDictionaryCategories()
       return { success: true, data: categories }
@@ -1894,7 +1903,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 创建字典分类
    */
-  ipcMain.handle(CHANNELS.CREATE_DICTIONARY_CATEGORY, async (_event, code: string, name: string) => {
+  ipcBridge.handle(CHANNELS.CREATE_DICTIONARY_CATEGORY, async (_event, code: string, name: string) => {
     try {
       const category = await service.createDictionaryCategory(code, name)
       return { success: true, data: category }
@@ -1906,7 +1915,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 更新字典分类
    */
-  ipcMain.handle(CHANNELS.UPDATE_DICTIONARY_CATEGORY, async (_event, code: string, name: string) => {
+  ipcBridge.handle(CHANNELS.UPDATE_DICTIONARY_CATEGORY, async (_event, code: string, name: string) => {
     try {
       const category = await service.updateDictionaryCategory(code, name)
       return { success: true, data: category }
@@ -1918,7 +1927,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 删除字典分类
    */
-  ipcMain.handle(CHANNELS.DELETE_DICTIONARY_CATEGORY, async (_event, code: string) => {
+  ipcBridge.handle(CHANNELS.DELETE_DICTIONARY_CATEGORY, async (_event, code: string) => {
     try {
       const result = await service.deleteDictionaryCategory(code)
       return { success: true, data: result }
@@ -1932,7 +1941,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 获取所有字典项
    */
-  ipcMain.handle(CHANNELS.GET_DICTIONARY_ALL, async () => {
+  ipcBridge.handle(CHANNELS.GET_DICTIONARY_ALL, async () => {
     try {
       const dictionary = await service.getDictionaryAll()
       return { success: true, data: dictionary }
@@ -1944,7 +1953,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 获取指定分类的字典项
    */
-  ipcMain.handle(CHANNELS.GET_DICTIONARY_BY_CATEGORY, async (_event, categoryCode: string) => {
+  ipcBridge.handle(CHANNELS.GET_DICTIONARY_BY_CATEGORY, async (_event, categoryCode: string) => {
     try {
       const items = await service.getDictionaryByCategory(categoryCode)
       return { success: true, data: items }
@@ -1956,7 +1965,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 创建字典项
    */
-  ipcMain.handle(CHANNELS.CREATE_DICTIONARY_ITEM, async (_event, categoryCode: string, code: string, name: string) => {
+  ipcBridge.handle(CHANNELS.CREATE_DICTIONARY_ITEM, async (_event, categoryCode: string, code: string, name: string) => {
     try {
       const item = await service.createDictionaryItem(categoryCode, code, name)
       return { success: true, data: item }
@@ -1968,7 +1977,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 更新字典项
    */
-  ipcMain.handle(CHANNELS.UPDATE_DICTIONARY_ITEM, async (_event, id: string, data: { code?: string; name?: string }) => {
+  ipcBridge.handle(CHANNELS.UPDATE_DICTIONARY_ITEM, async (_event, id: string, data: { code?: string; name?: string }) => {
     try {
       const item = await service.updateDictionaryItem(id, data)
       return { success: true, data: item }
@@ -1980,7 +1989,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 删除字典项
    */
-  ipcMain.handle(CHANNELS.DELETE_DICTIONARY_ITEM, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.DELETE_DICTIONARY_ITEM, async (_event, id: string) => {
     try {
       const result = await service.deleteDictionaryItem(id)
       return { success: true, data: result }
@@ -1992,7 +2001,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 重排序字典项
    */
-  ipcMain.handle(CHANNELS.REORDER_DICTIONARY, async (_event, categoryCode: string, orderedIds: string[]) => {
+  ipcBridge.handle(CHANNELS.REORDER_DICTIONARY, async (_event, categoryCode: string, orderedIds: string[]) => {
     try {
       await service.reorderDictionary(categoryCode, orderedIds)
       return { success: true }
@@ -2006,7 +2015,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 获取项目的技能类型配置
    */
-  ipcMain.handle(CHANNELS.GET_SKILL_TYPE_CONFIGS, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.GET_SKILL_TYPE_CONFIGS, async (_event, projectId: string) => {
     try {
       const configs = await service.getSkillTypeConfigs(projectId)
       return { success: true, data: configs }
@@ -2018,7 +2027,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 创建技能类型配置
    */
-  ipcMain.handle(CHANNELS.CREATE_SKILL_TYPE_CONFIG, async (_event, data: CreateSkillTypeConfigRequest) => {
+  ipcBridge.handle(CHANNELS.CREATE_SKILL_TYPE_CONFIG, async (_event, data: CreateSkillTypeConfigRequest) => {
     try {
       const config = await service.createSkillTypeConfig(data)
       return { success: true, data: config }
@@ -2030,7 +2039,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 更新技能类型配置
    */
-  ipcMain.handle(CHANNELS.UPDATE_SKILL_TYPE_CONFIG, async (_event, id: string, data: UpdateSkillTypeConfigRequest) => {
+  ipcBridge.handle(CHANNELS.UPDATE_SKILL_TYPE_CONFIG, async (_event, id: string, data: UpdateSkillTypeConfigRequest) => {
     try {
       const config = await service.updateSkillTypeConfig(id, data)
       return { success: true, data: config }
@@ -2042,7 +2051,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 删除技能类型配置
    */
-  ipcMain.handle(CHANNELS.DELETE_SKILL_TYPE_CONFIG, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.DELETE_SKILL_TYPE_CONFIG, async (_event, id: string) => {
     try {
       const result = await service.deleteSkillTypeConfig(id)
       return { success: result }
@@ -2054,7 +2063,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 获取项目的物品类型配置
    */
-  ipcMain.handle(CHANNELS.GET_ITEM_TYPE_CONFIGS, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.GET_ITEM_TYPE_CONFIGS, async (_event, projectId: string) => {
     try {
       const configs = await service.getItemTypeConfigs(projectId)
       return { success: true, data: configs }
@@ -2066,7 +2075,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 创建物品类型配置
    */
-  ipcMain.handle(CHANNELS.CREATE_ITEM_TYPE_CONFIG, async (_event, data: CreateItemTypeConfigRequest) => {
+  ipcBridge.handle(CHANNELS.CREATE_ITEM_TYPE_CONFIG, async (_event, data: CreateItemTypeConfigRequest) => {
     try {
       const config = await service.createItemTypeConfig(data)
       return { success: true, data: config }
@@ -2078,7 +2087,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 更新物品类型配置
    */
-  ipcMain.handle(CHANNELS.UPDATE_ITEM_TYPE_CONFIG, async (_event, id: string, data: UpdateItemTypeConfigRequest) => {
+  ipcBridge.handle(CHANNELS.UPDATE_ITEM_TYPE_CONFIG, async (_event, id: string, data: UpdateItemTypeConfigRequest) => {
     try {
       const config = await service.updateItemTypeConfig(id, data)
       return { success: true, data: config }
@@ -2090,7 +2099,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 删除物品类型配置
    */
-  ipcMain.handle(CHANNELS.DELETE_ITEM_TYPE_CONFIG, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.DELETE_ITEM_TYPE_CONFIG, async (_event, id: string) => {
     try {
       const result = await service.deleteItemTypeConfig(id)
       return { success: result }
@@ -2102,7 +2111,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 初始化项目的默认类型配置
    */
-  ipcMain.handle(CHANNELS.INIT_DEFAULT_TYPE_CONFIGS, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.INIT_DEFAULT_TYPE_CONFIGS, async (_event, projectId: string) => {
     try {
       await service.initDefaultTypeConfigs(projectId)
       return { success: true }
@@ -2116,7 +2125,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 获取技能类型的等级列表
    */
-  ipcMain.handle(CHANNELS.GET_SKILL_LEVELS, async (_event, projectId: string, skillTypeCode: string) => {
+  ipcBridge.handle(CHANNELS.GET_SKILL_LEVELS, async (_event, projectId: string, skillTypeCode: string) => {
     try {
       const levels = await service.getSkillLevels(projectId, skillTypeCode)
       return { success: true, data: levels }
@@ -2128,7 +2137,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 创建技能等级
    */
-  ipcMain.handle(CHANNELS.CREATE_SKILL_LEVEL, async (_event, data: CreateSkillLevelRequest) => {
+  ipcBridge.handle(CHANNELS.CREATE_SKILL_LEVEL, async (_event, data: CreateSkillLevelRequest) => {
     try {
       const level = await service.createSkillLevel(data)
       return { success: true, data: level }
@@ -2140,7 +2149,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 更新技能等级
    */
-  ipcMain.handle(CHANNELS.UPDATE_SKILL_LEVEL, async (_event, id: string, data: UpdateSkillLevelRequest) => {
+  ipcBridge.handle(CHANNELS.UPDATE_SKILL_LEVEL, async (_event, id: string, data: UpdateSkillLevelRequest) => {
     try {
       const level = await service.updateSkillLevel(id, data)
       return { success: true, data: level }
@@ -2152,7 +2161,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 删除技能等级
    */
-  ipcMain.handle(CHANNELS.DELETE_SKILL_LEVEL, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.DELETE_SKILL_LEVEL, async (_event, id: string) => {
     try {
       await service.deleteSkillLevel(id)
       return { success: true }
@@ -2164,7 +2173,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 重排序技能等级
    */
-  ipcMain.handle(CHANNELS.REORDER_SKILL_LEVELS, async (_event, projectId: string, skillTypeCode: string, orderedIds: string[]) => {
+  ipcBridge.handle(CHANNELS.REORDER_SKILL_LEVELS, async (_event, projectId: string, skillTypeCode: string, orderedIds: string[]) => {
     try {
       await service.reorderSkillLevels(projectId, skillTypeCode, orderedIds)
       return { success: true }
@@ -2178,7 +2187,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 获取物品类型的等级列表
    */
-  ipcMain.handle(CHANNELS.GET_ITEM_LEVELS, async (_event, projectId: string, itemTypeCode: string) => {
+  ipcBridge.handle(CHANNELS.GET_ITEM_LEVELS, async (_event, projectId: string, itemTypeCode: string) => {
     try {
       const levels = await service.getItemLevels(projectId, itemTypeCode)
       return { success: true, data: levels }
@@ -2190,7 +2199,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 创建物品等级
    */
-  ipcMain.handle(CHANNELS.CREATE_ITEM_LEVEL, async (_event, data: CreateItemLevelRequest) => {
+  ipcBridge.handle(CHANNELS.CREATE_ITEM_LEVEL, async (_event, data: CreateItemLevelRequest) => {
     try {
       const level = await service.createItemLevel(data)
       return { success: true, data: level }
@@ -2202,7 +2211,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 更新物品等级
    */
-  ipcMain.handle(CHANNELS.UPDATE_ITEM_LEVEL, async (_event, id: string, data: UpdateItemLevelRequest) => {
+  ipcBridge.handle(CHANNELS.UPDATE_ITEM_LEVEL, async (_event, id: string, data: UpdateItemLevelRequest) => {
     try {
       const level = await service.updateItemLevel(id, data)
       return { success: true, data: level }
@@ -2214,7 +2223,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 删除物品等级
    */
-  ipcMain.handle(CHANNELS.DELETE_ITEM_LEVEL, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.DELETE_ITEM_LEVEL, async (_event, id: string) => {
     try {
       await service.deleteItemLevel(id)
       return { success: true }
@@ -2226,7 +2235,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 重排序物品等级
    */
-  ipcMain.handle(CHANNELS.REORDER_ITEM_LEVELS, async (_event, projectId: string, itemTypeCode: string, orderedIds: string[]) => {
+  ipcBridge.handle(CHANNELS.REORDER_ITEM_LEVELS, async (_event, projectId: string, itemTypeCode: string, orderedIds: string[]) => {
     try {
       await service.reorderItemLevels(projectId, itemTypeCode, orderedIds)
       return { success: true }
@@ -2240,7 +2249,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 获取预写
    */
-  ipcMain.handle(CHANNELS.GET_PREWRITE, async (_event, outlineId: string) => {
+  ipcBridge.handle(CHANNELS.GET_PREWRITE, async (_event, outlineId: string) => {
     try {
       const prewrite = await service.getPrewrite(outlineId)
       return { success: true, data: prewrite }
@@ -2252,7 +2261,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 保存预写
    */
-  ipcMain.handle(CHANNELS.SAVE_PREWRITE, async (_event, data: CreatePrewriteRequest) => {
+  ipcBridge.handle(CHANNELS.SAVE_PREWRITE, async (_event, data: CreatePrewriteRequest) => {
     try {
       const prewrite = await service.savePrewrite(data)
       return { success: true, data: prewrite }
@@ -2264,7 +2273,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 确认预写
    */
-  ipcMain.handle(CHANNELS.CONFIRM_PREWRITE, async (_event, outlineId: string) => {
+  ipcBridge.handle(CHANNELS.CONFIRM_PREWRITE, async (_event, outlineId: string) => {
     try {
       const prewrite = await service.confirmPrewrite(outlineId)
       return { success: true, data: prewrite }
@@ -2276,7 +2285,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 删除预写
    */
-  ipcMain.handle(CHANNELS.DELETE_PREWRITE, async (_event, outlineId: string) => {
+  ipcBridge.handle(CHANNELS.DELETE_PREWRITE, async (_event, outlineId: string) => {
     try {
       await service.deletePrewrite(outlineId)
       return { success: true }
@@ -2290,7 +2299,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 获取项目的所有记忆
    */
-  ipcMain.handle(CHANNELS.GET_MEMORIES, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.GET_MEMORIES, async (_event, projectId: string) => {
     try {
       const memories = await service.getMemories(projectId)
       return { success: true, data: memories }
@@ -2302,7 +2311,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 获取章节之前的记忆
    */
-  ipcMain.handle(CHANNELS.GET_MEMORIES_BEFORE_CHAPTER, async (_event, projectId: string, chapterNumber: number) => {
+  ipcBridge.handle(CHANNELS.GET_MEMORIES_BEFORE_CHAPTER, async (_event, projectId: string, chapterNumber: number) => {
     try {
       const memories = await service.getMemoriesBeforeChapter(projectId, chapterNumber)
       return { success: true, data: memories }
@@ -2314,7 +2323,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 获取单个记忆
    */
-  ipcMain.handle(CHANNELS.GET_MEMORY, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.GET_MEMORY, async (_event, id: string) => {
     try {
       const memory = await service.getMemory(id)
       return { success: true, data: memory }
@@ -2326,7 +2335,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 创建记忆
    */
-  ipcMain.handle(CHANNELS.CREATE_MEMORY, async (_event, data: CreateMemoryRequest) => {
+  ipcBridge.handle(CHANNELS.CREATE_MEMORY, async (_event, data: CreateMemoryRequest) => {
     try {
       const memory = await service.createMemory(data)
       return { success: true, data: memory }
@@ -2338,7 +2347,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 批量创建记忆
    */
-  ipcMain.handle(CHANNELS.BATCH_CREATE_MEMORIES, async (_event, dataList: CreateMemoryRequest[]) => {
+  ipcBridge.handle(CHANNELS.BATCH_CREATE_MEMORIES, async (_event, dataList: CreateMemoryRequest[]) => {
     try {
       const memories = await service.batchCreateMemories(dataList)
       return { success: true, data: memories }
@@ -2350,7 +2359,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 更新记忆
    */
-  ipcMain.handle(CHANNELS.UPDATE_MEMORY, async (_event, id: string, data: UpdateMemoryRequest) => {
+  ipcBridge.handle(CHANNELS.UPDATE_MEMORY, async (_event, id: string, data: UpdateMemoryRequest) => {
     try {
       const memory = await service.updateMemory(id, data)
       return { success: true, data: memory }
@@ -2362,7 +2371,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 删除记忆
    */
-  ipcMain.handle(CHANNELS.DELETE_MEMORY, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.DELETE_MEMORY, async (_event, id: string) => {
     try {
       await service.deleteMemory(id)
       return { success: true }
@@ -2374,7 +2383,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 切换记忆生效状态
    */
-  ipcMain.handle(CHANNELS.TOGGLE_MEMORY_ACTIVE, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.TOGGLE_MEMORY_ACTIVE, async (_event, id: string) => {
     try {
       const memory = await service.toggleMemoryActive(id)
       return { success: true, data: memory }
@@ -2386,7 +2395,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 获取记忆统计
    */
-  ipcMain.handle(CHANNELS.GET_MEMORY_STATS, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.GET_MEMORY_STATS, async (_event, projectId: string) => {
     try {
       const stats = await service.getMemoryStats(projectId)
       return { success: true, data: stats }
@@ -2400,7 +2409,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * AI 提取记忆
    */
-  ipcMain.handle(CHANNELS.EXTRACT_MEMORIES, async (_event, projectId: string, outlineId: string, prewriteContent: string, chapterNumber: number, providerConfigId?: string, modelId?: string) => {
+  ipcBridge.handle(CHANNELS.EXTRACT_MEMORIES, async (_event, projectId: string, outlineId: string, prewriteContent: string, chapterNumber: number, providerConfigId?: string, modelId?: string) => {
     try {
       const eventId = `extract-memories-${outlineId}-${Date.now()}`
       const aiService = LongWritingAIService.getInstance()
@@ -2424,7 +2433,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 获取项目的所有状态快照
    */
-  ipcMain.handle(CHANNELS.GET_ENTITY_STATE_SNAPSHOTS, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.GET_ENTITY_STATE_SNAPSHOTS, async (_event, projectId: string) => {
     try {
       const snapshots = await service.getEntityStateSnapshots(projectId)
       return { success: true, data: snapshots }
@@ -2436,7 +2445,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 获取实体在指定章节的状态快照
    */
-  ipcMain.handle(CHANNELS.GET_ENTITY_STATE_AT_CHAPTER, async (_event, projectId: string, entityType: string, entityId: string, chapterNumber: number) => {
+  ipcBridge.handle(CHANNELS.GET_ENTITY_STATE_AT_CHAPTER, async (_event, projectId: string, entityType: string, entityId: string, chapterNumber: number) => {
     try {
       const snapshot = await service.getEntityStateAtChapter(projectId, entityType as any, entityId, chapterNumber)
       return { success: true, data: snapshot }
@@ -2448,7 +2457,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 批量获取多个实体在指定章节的状态快照
    */
-  ipcMain.handle(CHANNELS.GET_ENTITIES_STATES_FOR_CHAPTER, async (_event, projectId: string, chapterNumber: number, entities: Array<{ entityType: string; entityId: string }>) => {
+  ipcBridge.handle(CHANNELS.GET_ENTITIES_STATES_FOR_CHAPTER, async (_event, projectId: string, chapterNumber: number, entities: Array<{ entityType: string; entityId: string }>) => {
     try {
       const snapshots = await service.getEntitiesStatesForChapter(projectId, chapterNumber, entities as any)
       return { success: true, data: snapshots }
@@ -2460,7 +2469,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 获取指定章节的所有状态快照
    */
-  ipcMain.handle(CHANNELS.GET_ENTITY_STATES_BY_CHAPTER, async (_event, projectId: string, chapterNumber: number) => {
+  ipcBridge.handle(CHANNELS.GET_ENTITY_STATES_BY_CHAPTER, async (_event, projectId: string, chapterNumber: number) => {
     try {
       const snapshots = await service.getEntityStatesByChapter(projectId, chapterNumber)
       return { success: true, data: snapshots }
@@ -2472,7 +2481,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 获取单个状态快照
    */
-  ipcMain.handle(CHANNELS.GET_ENTITY_STATE_SNAPSHOT, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.GET_ENTITY_STATE_SNAPSHOT, async (_event, id: string) => {
     try {
       const snapshot = await service.getEntityStateSnapshot(id)
       return { success: true, data: snapshot }
@@ -2484,7 +2493,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 创建状态快照
    */
-  ipcMain.handle(CHANNELS.CREATE_ENTITY_STATE_SNAPSHOT, async (_event, data: any) => {
+  ipcBridge.handle(CHANNELS.CREATE_ENTITY_STATE_SNAPSHOT, async (_event, data: any) => {
     try {
       const snapshot = await service.createEntityStateSnapshot(data)
       return { success: true, data: snapshot }
@@ -2496,7 +2505,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 批量创建状态快照
    */
-  ipcMain.handle(CHANNELS.BATCH_CREATE_ENTITY_STATE_SNAPSHOTS, async (_event, dataList: any[]) => {
+  ipcBridge.handle(CHANNELS.BATCH_CREATE_ENTITY_STATE_SNAPSHOTS, async (_event, dataList: any[]) => {
     try {
       const snapshots = await service.batchCreateEntityStateSnapshots(dataList)
       return { success: true, data: snapshots }
@@ -2508,7 +2517,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 更新或创建状态快照
    */
-  ipcMain.handle(CHANNELS.UPSERT_ENTITY_STATE_SNAPSHOT, async (_event, data: any) => {
+  ipcBridge.handle(CHANNELS.UPSERT_ENTITY_STATE_SNAPSHOT, async (_event, data: any) => {
     try {
       const snapshot = await service.upsertEntityStateSnapshot(data)
       return { success: true, data: snapshot }
@@ -2520,7 +2529,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 更新状态快照
    */
-  ipcMain.handle(CHANNELS.UPDATE_ENTITY_STATE_SNAPSHOT, async (_event, id: string, data: any) => {
+  ipcBridge.handle(CHANNELS.UPDATE_ENTITY_STATE_SNAPSHOT, async (_event, id: string, data: any) => {
     try {
       const snapshot = await service.updateEntityStateSnapshot(id, data)
       return { success: true, data: snapshot }
@@ -2532,7 +2541,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 删除状态快照
    */
-  ipcMain.handle(CHANNELS.DELETE_ENTITY_STATE_SNAPSHOT, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.DELETE_ENTITY_STATE_SNAPSHOT, async (_event, id: string) => {
     try {
       await service.deleteEntityStateSnapshot(id)
       return { success: true }
@@ -2544,7 +2553,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 删除指定章节的所有状态快照
    */
-  ipcMain.handle(CHANNELS.DELETE_ENTITY_STATES_BY_CHAPTER, async (_event, projectId: string, chapterNumber: number) => {
+  ipcBridge.handle(CHANNELS.DELETE_ENTITY_STATES_BY_CHAPTER, async (_event, projectId: string, chapterNumber: number) => {
     try {
       const count = await service.deleteEntityStatesByChapter(projectId, chapterNumber)
       return { success: true, data: count }
@@ -2556,7 +2565,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * 获取状态快照统计
    */
-  ipcMain.handle(CHANNELS.GET_SNAPSHOT_STATS, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.GET_SNAPSHOT_STATS, async (_event, projectId: string) => {
     try {
       const stats = await service.getSnapshotStats(projectId)
       return { success: true, data: stats }
@@ -2570,7 +2579,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * AI 提取实体状态
    */
-  ipcMain.handle(CHANNELS.EXTRACT_ENTITY_STATES, async (_event, projectId: string, outlineId: string, chapterContent: string, chapterNumber: number, involvedEntities: Array<{ type: string; id: string; name: string }>, providerConfigId?: string, modelId?: string) => {
+  ipcBridge.handle(CHANNELS.EXTRACT_ENTITY_STATES, async (_event, projectId: string, outlineId: string, chapterContent: string, chapterNumber: number, involvedEntities: Array<{ type: string; id: string; name: string }>, providerConfigId?: string, modelId?: string) => {
     try {
       const eventId = `extract-entity-states-${outlineId}-${Date.now()}`
       const aiService = LongWritingAIService.getInstance()
@@ -2593,7 +2602,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   /**
    * AI 识别章节涉及的实体（角色、地点等）
    */
-  ipcMain.handle(CHANNELS.RECOGNIZE_CHAPTER_ENTITIES, async (_event, projectId: string, chapterContent: string, providerConfigId?: string, modelId?: string) => {
+  ipcBridge.handle(CHANNELS.RECOGNIZE_CHAPTER_ENTITIES, async (_event, projectId: string, chapterContent: string, providerConfigId?: string, modelId?: string) => {
     try {
       const eventId = `recognize-chapter-entities-${projectId}-${Date.now()}`
       const aiService = LongWritingAIService.getInstance()
@@ -2611,7 +2620,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   })
 
   // ==================== 数据迁移 ====================
-  ipcMain.handle(CHANNELS.BACKUP_DATABASE, async () => {
+  ipcBridge.handle(CHANNELS.BACKUP_DATABASE, async () => {
     try {
       const { LwMigrationService } = await import('../../services/lw-migration.service')
       const backupPath = LwMigrationService.backupDatabase()
@@ -2622,7 +2631,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.MIGRATE_PROJECT, async (_event, projectId: string, autoBackup: boolean = true) => {
+  ipcBridge.handle(CHANNELS.MIGRATE_PROJECT, async (_event, projectId: string, autoBackup: boolean = true) => {
     try {
       const { LwMigrationService } = await import('../../services/lw-migration.service')
       const result = await LwMigrationService.migrateProject(projectId, autoBackup)
@@ -2633,7 +2642,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.MIGRATE_ALL_PROJECTS, async (_event, autoBackup: boolean = true) => {
+  ipcBridge.handle(CHANNELS.MIGRATE_ALL_PROJECTS, async (_event, autoBackup: boolean = true) => {
     try {
       const { LwMigrationService } = await import('../../services/lw-migration.service')
       const results = await LwMigrationService.migrateAllProjects(autoBackup)
@@ -2644,7 +2653,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.CHECK_NEEDS_MIGRATION, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.CHECK_NEEDS_MIGRATION, async (_event, projectId: string) => {
     try {
       const { LwMigrationService } = await import('../../services/lw-migration.service')
       const needsMigration = LwMigrationService.checkNeedsMigration(projectId)
@@ -2655,7 +2664,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   })
 
-  ipcMain.handle(CHANNELS.GET_MIGRATION_STATS, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.GET_MIGRATION_STATS, async (_event, projectId: string) => {
     try {
       const { LwMigrationService } = await import('../../services/lw-migration.service')
       const stats = LwMigrationService.getMigrationStats(projectId)
@@ -2669,7 +2678,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   // ==================== 新实体检测 ====================
 
   // 检测文本中的新实体
-  ipcMain.handle(CHANNELS.DETECT_NEW_ENTITIES, async (
+  ipcBridge.handle(CHANNELS.DETECT_NEW_ENTITIES, async (
     _event,
     projectId: string,
     text: string,
@@ -2692,7 +2701,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   })
 
   // 自动添加实体
-  ipcMain.handle(CHANNELS.AUTO_ADD_ENTITIES, async (
+  ipcBridge.handle(CHANNELS.AUTO_ADD_ENTITIES, async (
     _event,
     projectId: string,
     characters?: any[],
@@ -2717,9 +2726,9 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   // ==================== 项目步骤模型配置 ====================
 
   // 获取项目的所有步骤模型配置
-  ipcMain.handle(CHANNELS.GET_STAGE_MODEL_CONFIGS, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.GET_STAGE_MODEL_CONFIGS, async (_event, projectId: string) => {
     try {
-      const dbManager = getDatabaseManager()
+      const dbManager = getCoreDatabaseManager()
       if (!dbManager.lwProjectModelConfigs) {
         return { success: false, error: '数据库未初始化' }
       }
@@ -2732,9 +2741,9 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   })
 
   // 获取单个步骤的模型配置
-  ipcMain.handle(CHANNELS.GET_STAGE_MODEL_CONFIG, async (_event, projectId: string, stage: string) => {
+  ipcBridge.handle(CHANNELS.GET_STAGE_MODEL_CONFIG, async (_event, projectId: string, stage: string) => {
     try {
-      const dbManager = getDatabaseManager()
+      const dbManager = getCoreDatabaseManager()
       if (!dbManager.lwProjectModelConfigs) {
         return { success: false, error: '数据库未初始化' }
       }
@@ -2747,7 +2756,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   })
 
   // 设置单个步骤的模型配置
-  ipcMain.handle(CHANNELS.SET_STAGE_MODEL_CONFIG, async (
+  ipcBridge.handle(CHANNELS.SET_STAGE_MODEL_CONFIG, async (
     _event,
     projectId: string,
     stage: string,
@@ -2755,7 +2764,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     modelId: string
   ) => {
     try {
-      const dbManager = getDatabaseManager()
+      const dbManager = getCoreDatabaseManager()
       if (!dbManager.lwProjectModelConfigs) {
         return { success: false, error: '数据库未初始化' }
       }
@@ -2768,13 +2777,13 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   })
 
   // 批量设置步骤模型配置
-  ipcMain.handle(CHANNELS.SET_STAGE_MODEL_CONFIGS, async (
+  ipcBridge.handle(CHANNELS.SET_STAGE_MODEL_CONFIGS, async (
     _event,
     projectId: string,
     configs: Array<{ stage: string; providerConfigId: string; modelId: string }>
   ) => {
     try {
-      const dbManager = getDatabaseManager()
+      const dbManager = getCoreDatabaseManager()
       if (!dbManager.lwProjectModelConfigs) {
         return { success: false, error: '数据库未初始化' }
       }
@@ -2795,9 +2804,9 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   // ==================== 章节状态摘要 ====================
 
   // 获取项目的所有章节状态摘要
-  ipcMain.handle(CHANNELS.GET_CHAPTER_STATE_SUMMARIES, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.GET_CHAPTER_STATE_SUMMARIES, async (_event, projectId: string) => {
     try {
-      const dbManager = getDatabaseManager()
+      const dbManager = getCoreDatabaseManager()
       if (!dbManager.lwChapterStateSummaries) {
         return { success: false, error: '数据库未初始化' }
       }
@@ -2810,9 +2819,9 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   })
 
   // 获取单个章节状态摘要
-  ipcMain.handle(CHANNELS.GET_CHAPTER_STATE_SUMMARY, async (_event, id: string) => {
+  ipcBridge.handle(CHANNELS.GET_CHAPTER_STATE_SUMMARY, async (_event, id: string) => {
     try {
-      const dbManager = getDatabaseManager()
+      const dbManager = getCoreDatabaseManager()
       if (!dbManager.lwChapterStateSummaries) {
         return { success: false, error: '数据库未初始化' }
       }
@@ -2825,9 +2834,9 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   })
 
   // 根据大纲 ID 获取章节状态摘要
-  ipcMain.handle(CHANNELS.GET_CHAPTER_STATE_SUMMARY_BY_OUTLINE, async (_event, outlineId: string) => {
+  ipcBridge.handle(CHANNELS.GET_CHAPTER_STATE_SUMMARY_BY_OUTLINE, async (_event, outlineId: string) => {
     try {
-      const dbManager = getDatabaseManager()
+      const dbManager = getCoreDatabaseManager()
       if (!dbManager.lwChapterStateSummaries) {
         return { success: false, error: '数据库未初始化' }
       }
@@ -2840,9 +2849,9 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   })
 
   // 获取项目的最新章节状态摘要
-  ipcMain.handle(CHANNELS.GET_LATEST_CHAPTER_STATE_SUMMARY, async (_event, projectId: string) => {
+  ipcBridge.handle(CHANNELS.GET_LATEST_CHAPTER_STATE_SUMMARY, async (_event, projectId: string) => {
     try {
-      const dbManager = getDatabaseManager()
+      const dbManager = getCoreDatabaseManager()
       if (!dbManager.lwChapterStateSummaries) {
         return { success: false, error: '数据库未初始化' }
       }
@@ -2855,7 +2864,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   })
 
   // AI 提取章节状态摘要
-  ipcMain.handle(CHANNELS.EXTRACT_CHAPTER_STATE_SUMMARY, async (
+  ipcBridge.handle(CHANNELS.EXTRACT_CHAPTER_STATE_SUMMARY, async (
     _event,
     projectId: string,
     outlineId: string,
@@ -2865,7 +2874,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     modelId?: string
   ) => {
     try {
-      const dbManager = getDatabaseManager()
+      const dbManager = getCoreDatabaseManager()
       if (!dbManager.lwChapterStateSummaries) {
         return { success: false, error: '数据库未初始化' }
       }
@@ -2897,7 +2906,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   })
 
   // 保存章节状态摘要
-  ipcMain.handle(CHANNELS.SAVE_CHAPTER_STATE_SUMMARY, async (
+  ipcBridge.handle(CHANNELS.SAVE_CHAPTER_STATE_SUMMARY, async (
     _event,
     data: {
       projectId: string
@@ -2911,7 +2920,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     }
   ) => {
     try {
-      const dbManager = getDatabaseManager()
+      const dbManager = getCoreDatabaseManager()
       if (!dbManager.lwChapterStateSummaries) {
         return { success: false, error: '数据库未初始化' }
       }

@@ -4,11 +4,19 @@
  * @description 处理知识库相关的 IPC 请求
  */
 
-import { ipcMain, BrowserWindow, dialog } from 'electron'
-import type { IpcMainInvokeEvent } from 'electron'
+import { ipcBridge } from '@core/ipc/bridge-adapter'
 import * as fs from 'fs'
 import * as path from 'path'
 import { KnowledgeBaseService } from '@core/services/knowledge-base.service'
+
+const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
+
+function loadElectron(): { BrowserWindow?: any; dialog?: any } {
+  if (!isElectron) return {}
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const e = require('electron')
+  return { BrowserWindow: e.BrowserWindow, dialog: e.dialog }
+}
 import type {
   KnowledgeBase,
   CreateKnowledgeBaseRequest,
@@ -42,66 +50,66 @@ export function registerKnowledgeBaseHandlers(): void {
   // ==================== 知识库管理 ====================
 
   // 获取知识库列表
-  ipcMain.handle('knowledge-base:list', handleGetKnowledgeBases)
+  ipcBridge.handle('knowledge-base:list', handleGetKnowledgeBases)
 
   // 获取知识库详情
-  ipcMain.handle('knowledge-base:get', handleGetKnowledgeBase)
+  ipcBridge.handle('knowledge-base:get', handleGetKnowledgeBase)
 
   // 创建知识库
-  ipcMain.handle('knowledge-base:create', handleCreateKnowledgeBase)
+  ipcBridge.handle('knowledge-base:create', handleCreateKnowledgeBase)
 
   // 更新知识库
-  ipcMain.handle('knowledge-base:update', handleUpdateKnowledgeBase)
+  ipcBridge.handle('knowledge-base:update', handleUpdateKnowledgeBase)
 
   // 删除知识库
-  ipcMain.handle('knowledge-base:delete', handleDeleteKnowledgeBase)
+  ipcBridge.handle('knowledge-base:delete', handleDeleteKnowledgeBase)
 
   // ==================== 文档管理 ====================
 
   // 上传文档
-  ipcMain.handle('knowledge-base:upload-documents', handleUploadDocuments)
+  ipcBridge.handle('knowledge-base:upload-documents', handleUploadDocuments)
 
   // 添加文档（直接添加文本内容）
-  ipcMain.handle('knowledge-base:add-document', handleAddDocument)
+  ipcBridge.handle('knowledge-base:add-document', handleAddDocument)
 
   // 添加网页
-  ipcMain.handle('knowledge-base:add-webpage', handleAddWebpage)
+  ipcBridge.handle('knowledge-base:add-webpage', handleAddWebpage)
 
   // 获取文档列表
-  ipcMain.handle('knowledge-base:get-documents', handleGetDocuments)
+  ipcBridge.handle('knowledge-base:get-documents', handleGetDocuments)
 
   // 删除文档
-  ipcMain.handle('knowledge-base:delete-document', handleDeleteDocument)
+  ipcBridge.handle('knowledge-base:delete-document', handleDeleteDocument)
 
   // 重新处理文档
-  ipcMain.handle('knowledge-base:reprocess-document', handleReprocessDocument)
+  ipcBridge.handle('knowledge-base:reprocess-document', handleReprocessDocument)
 
   // 获取文档分片
-  ipcMain.handle('knowledge-base:get-document-chunks', handleGetDocumentChunks)
+  ipcBridge.handle('knowledge-base:get-document-chunks', handleGetDocumentChunks)
 
   // 分页获取文档分片
-  ipcMain.handle('knowledge-base:get-document-chunks-paginated', handleGetDocumentChunksPaginated)
+  ipcBridge.handle('knowledge-base:get-document-chunks-paginated', handleGetDocumentChunksPaginated)
 
   // 获取单个切片详情
-  ipcMain.handle('knowledge-base:get-chunk', handleGetChunk)
+  ipcBridge.handle('knowledge-base:get-chunk', handleGetChunk)
 
   // ==================== 检索服务 ====================
 
   // 检索知识库
-  ipcMain.handle('knowledge-base:search', handleSearch)
+  ipcBridge.handle('knowledge-base:search', handleSearch)
 
   // ==================== Embedding 模型 ====================
 
   // 获取可用的 Embedding 模型
-  ipcMain.handle('knowledge-base:get-embedding-models', handleGetEmbeddingModels)
+  ipcBridge.handle('knowledge-base:get-embedding-models', handleGetEmbeddingModels)
 
   // ==================== 文件选择 ====================
 
   // 选择文件
-  ipcMain.handle('knowledge-base:select-files', handleSelectFiles)
+  ipcBridge.handle('knowledge-base:select-files', handleSelectFiles)
 
   // 获取文件限制信息
-  ipcMain.handle('knowledge-base:get-file-limits', handleGetFileLimits)
+  ipcBridge.handle('knowledge-base:get-file-limits', handleGetFileLimits)
 
   console.log('[KnowledgeBaseHandlers] 知识库 IPC 处理器已注册')
 }
@@ -112,7 +120,7 @@ export function registerKnowledgeBaseHandlers(): void {
  * 处理获取知识库列表
  */
 async function handleGetKnowledgeBases(
-  _event: IpcMainInvokeEvent
+  _event: any
 ): Promise<IpcResponse<KnowledgeBase[]>> {
   const service = getKnowledgeBaseService()
   return await service.getKnowledgeBases()
@@ -122,7 +130,7 @@ async function handleGetKnowledgeBases(
  * 处理获取知识库详情
  */
 async function handleGetKnowledgeBase(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   id: string
 ): Promise<IpcResponse<KnowledgeBase>> {
   const service = getKnowledgeBaseService()
@@ -133,7 +141,7 @@ async function handleGetKnowledgeBase(
  * 处理创建知识库
  */
 async function handleCreateKnowledgeBase(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   request: CreateKnowledgeBaseRequest
 ): Promise<IpcResponse<KnowledgeBase>> {
   const service = getKnowledgeBaseService()
@@ -144,7 +152,7 @@ async function handleCreateKnowledgeBase(
  * 处理更新知识库
  */
 async function handleUpdateKnowledgeBase(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   data: { id: string; request: UpdateKnowledgeBaseRequest }
 ): Promise<IpcResponse<void>> {
   const service = getKnowledgeBaseService()
@@ -155,7 +163,7 @@ async function handleUpdateKnowledgeBase(
  * 处理删除知识库
  */
 async function handleDeleteKnowledgeBase(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   id: string
 ): Promise<IpcResponse<void>> {
   const service = getKnowledgeBaseService()
@@ -168,7 +176,7 @@ async function handleDeleteKnowledgeBase(
  * 处理上传文档
  */
 async function handleUploadDocuments(
-  event: IpcMainInvokeEvent,
+  event: any,
   data: { knowledgeBaseId: string; files: FileInfo[] }
 ): Promise<IpcResponse<KbDocument[]>> {
   const service = getKnowledgeBaseService()
@@ -179,7 +187,7 @@ async function handleUploadDocuments(
  * 处理添加文档（直接添加文本内容）
  */
 async function handleAddDocument(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   data: { knowledgeBaseId: string; data: { name: string; type: 'text'; content: string } }
 ): Promise<IpcResponse<KbDocument>> {
   const service = getKnowledgeBaseService()
@@ -190,7 +198,7 @@ async function handleAddDocument(
  * 处理添加网页
  */
 async function handleAddWebpage(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   data: { knowledgeBaseId: string; url: string }
 ): Promise<IpcResponse<KbDocument>> {
   const service = getKnowledgeBaseService()
@@ -201,7 +209,7 @@ async function handleAddWebpage(
  * 处理获取文档列表
  */
 async function handleGetDocuments(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   knowledgeBaseId: string
 ): Promise<IpcResponse<KbDocument[]>> {
   const service = getKnowledgeBaseService()
@@ -212,7 +220,7 @@ async function handleGetDocuments(
  * 处理删除文档
  */
 async function handleDeleteDocument(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   documentId: string
 ): Promise<IpcResponse<void>> {
   const service = getKnowledgeBaseService()
@@ -223,7 +231,7 @@ async function handleDeleteDocument(
  * 处理重新处理文档
  */
 async function handleReprocessDocument(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   documentId: string
 ): Promise<IpcResponse<void>> {
   const service = getKnowledgeBaseService()
@@ -234,7 +242,7 @@ async function handleReprocessDocument(
  * 处理获取文档分片
  */
 async function handleGetDocumentChunks(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   documentId: string
 ): Promise<IpcResponse<KbChunk[]>> {
   const service = getKnowledgeBaseService()
@@ -245,7 +253,7 @@ async function handleGetDocumentChunks(
  * 处理分页获取文档分片
  */
 async function handleGetDocumentChunksPaginated(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   data: { documentId: string; page: number; pageSize: number }
 ): Promise<IpcResponse<{ chunks: KbChunk[]; total: number }>> {
   const service = getKnowledgeBaseService()
@@ -256,7 +264,7 @@ async function handleGetDocumentChunksPaginated(
  * 处理获取单个切片详情
  */
 async function handleGetChunk(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   chunkId: string
 ): Promise<IpcResponse<KbChunk>> {
   const service = getKnowledgeBaseService()
@@ -269,7 +277,7 @@ async function handleGetChunk(
  * 处理检索知识库
  */
 async function handleSearch(
-  _event: IpcMainInvokeEvent,
+  _event: any,
   request: SearchRequest
 ): Promise<IpcResponse<SearchResult[]>> {
   const service = getKnowledgeBaseService()
@@ -282,7 +290,7 @@ async function handleSearch(
  * 处理获取可用的 Embedding 模型
  */
 async function handleGetEmbeddingModels(
-  _event: IpcMainInvokeEvent
+  _event: any
 ): Promise<IpcResponse<EmbeddingModel[]>> {
   const service = getKnowledgeBaseService()
   return await service.getEmbeddingModels()
@@ -294,9 +302,13 @@ async function handleGetEmbeddingModels(
  * 处理选择文件
  */
 async function handleSelectFiles(
-  event: IpcMainInvokeEvent
+  event: any
 ): Promise<IpcResponse<FileInfo[]>> {
-  const window = BrowserWindow.fromWebContents(event.sender)
+  if (!isElectron) {
+    return { success: false, error: '该功能仅在桌面端可用' }
+  }
+  const { BrowserWindow, dialog } = loadElectron()
+  const window = BrowserWindow?.fromWebContents(event?.sender)
   if (!window) {
     return { success: false, error: '窗口不存在' }
   }
@@ -327,7 +339,7 @@ async function handleSelectFiles(
  * 处理获取文件限制信息
  */
 async function handleGetFileLimits(
-  _event: IpcMainInvokeEvent
+  _event: any
 ): Promise<IpcResponse<{
   maxFileSize: number
   maxFilesPerUpload: number
