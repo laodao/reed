@@ -94,6 +94,8 @@ setFlagsFromString('--max-old-space-size=4096')
 
 import { app, BrowserWindow, shell, ipcMain, protocol, net } from 'electron'
 import { join } from 'path'
+import * as path from 'path'
+import { DataPathService } from './services/data-path.service'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { getDatabaseManager } from './database'
 import { ElectronPathProvider } from './services/electron-path.provider'
@@ -157,6 +159,51 @@ protocol.registerSchemesAsPrivileged([
 let mainWindow: BrowserWindow | null = null
 
 /**
+ * 把 protocol URL 解析为本地文件绝对路径。
+ * 兼容三种历史/当前格式：
+ *   1) local-xxx:///abs/posix/path                 → /abs/posix/path
+ *   2) local-xxx:///C:/Win/path 或 local-xxx://C:/Win/path → C:\Win\path
+ *   3) local-xxx://images/2026/03/x.png（相对路径）→ <dataPath>/images/2026/03/x.png
+ *      (路径首段不是 [A-Za-z]: 形式且不以 / 开头视为 dataPath 相对)
+ */
+function resolveProtocolUrlToFile(url: string, scheme: string): string {
+  let raw = url.substr(`${scheme}://`.length)
+
+  // 移除开头的所有斜杠
+  while (raw.startsWith('/')) {
+    raw = raw.substring(1)
+  }
+
+  // 旧 Windows 格式：浏览器把 'C:' 写成 'c'（第二位是 '/' 时是 Windows 盘符 + 缺冒号）
+  if (process.platform === 'win32' && raw.length > 1 && raw.charAt(1) === '/') {
+    const firstChar = raw.charAt(0).toUpperCase()
+    if (firstChar >= 'A' && firstChar <= 'Z') {
+      raw = firstChar + ':' + raw.substring(1)
+    }
+  }
+
+  let decoded = decodeURIComponent(raw)
+
+  // 判断是否绝对路径：Windows 盘符 'C:' 形式
+  const isWindowsAbs = /^[A-Za-z]:[\\/]/.test(decoded)
+  // POSIX 在去掉前导 / 后这里识别不出，但 dataPath 拼接时如果 raw 还残留绝对路径片段就保留
+  const looksAbsolute = isWindowsAbs
+
+  if (!looksAbsolute) {
+    // 视为相对 dataPath
+    const dataPath = DataPathService.getInstance().getDataPath()
+    decoded = path.join(dataPath, decoded)
+  }
+
+  // Windows 上将正斜杠转回反斜杠
+  if (process.platform === 'win32') {
+    decoded = decoded.replace(/\//g, '\\')
+  }
+
+  return decoded
+}
+
+/**
  * 注册自定义协议以访问本地图像文件
  */
 function registerImageProtocol(): void {
@@ -168,38 +215,9 @@ function registerImageProtocol(): void {
 
   // 使用 protocol.registerFileProtocol 处理本地文件
   protocol.registerFileProtocol('local-image', (request, callback) => {
-    console.log('[local-image] 收到请求，完整URL:', request.url)
-
-    // 提取路径部分：local-image://后面的内容
-    let url = request.url.substr('local-image://'.length)
-
-    // 移除开头的斜杠（如果有）
-    while (url.startsWith('/')) {
-      url = url.substring(1)
-    }
-
-    // Windows 路径修复：浏览器会去掉冒号
-    // 例如：c/Users/... -> C:/Users/...
-    if (process.platform === 'win32' && url.length > 1 && url.charAt(1) === '/') {
-      // 检查是否是 Windows 盘符格式（第一个字符是字母，第二个是斜杠）
-      const firstChar = url.charAt(0).toUpperCase()
-      if (firstChar >= 'A' && firstChar <= 'Z') {
-        url = firstChar + ':' + url.substring(1)
-      }
-    }
-
-    // 解码 URL
-    let filePath = decodeURIComponent(url)
-
-    // Windows 上将正斜杠转回反斜杠
-    if (process.platform === 'win32') {
-      filePath = filePath.replace(/\//g, '\\')
-    }
-
-    console.log('[local-image] 解析后文件路径:', filePath)
+    const filePath = resolveProtocolUrlToFile(request.url, 'local-image')
 
     if (fs.existsSync(filePath)) {
-      console.log('[local-image] 文件存在，返回文件')
       callback({ path: filePath })
     } else {
       console.error('[local-image] 文件不存在:', filePath)
@@ -215,25 +233,13 @@ function registerImageProtocol(): void {
  */
 function registerAudioProtocol(): void {
   protocol.registerFileProtocol('local-file', (request, callback) => {
-    let url = request.url.substr('local-file://'.length)
-    // 移除开头的斜杠（如果有的话，来自 /// 格式）
-    if (url.startsWith('/')) {
-      url = url.substring(1)
-    }
-    // 解码 URL 编码的路径
-    let filePath = decodeURIComponent(url)
-    // 将正斜杠转换回反斜杠（Windows）
-    if (process.platform === 'win32') {
-      filePath = filePath.replace(/\//g, '\\')
-    }
-
-    console.log('[local-file] 请求文件:', filePath)
+    const filePath = resolveProtocolUrlToFile(request.url, 'local-file')
 
     if (fs.existsSync(filePath)) {
       callback({ path: filePath })
     } else {
       console.error('[local-file] 文件不存在:', filePath)
-      callback({ error: -2 }) // 文件不存在
+      callback({ error: -2 })
     }
   })
 }
@@ -245,36 +251,9 @@ function registerVideoProtocol(): void {
   console.log('[local-video] 开始注册视频协议...')
 
   protocol.registerFileProtocol('local-video', (request, callback) => {
-    console.log('[local-video] 收到请求，完整URL:', request.url)
-
-    // 提取路径部分：local-video://后面的内容
-    let url = request.url.substr('local-video://'.length)
-
-    // 移除开头的斜杠（如果有）
-    while (url.startsWith('/')) {
-      url = url.substring(1)
-    }
-
-    // Windows 路径修复
-    if (process.platform === 'win32' && url.length > 1 && url.charAt(1) === '/') {
-      const firstChar = url.charAt(0).toUpperCase()
-      if (firstChar >= 'A' && firstChar <= 'Z') {
-        url = firstChar + ':' + url.substring(1)
-      }
-    }
-
-    // 解码 URL
-    let filePath = decodeURIComponent(url)
-
-    // Windows 上将正斜杠转回反斜杠
-    if (process.platform === 'win32') {
-      filePath = filePath.replace(/\//g, '\\')
-    }
-
-    console.log('[local-video] 解析后文件路径:', filePath)
+    const filePath = resolveProtocolUrlToFile(request.url, 'local-video')
 
     if (fs.existsSync(filePath)) {
-      console.log('[local-video] 文件存在，返回文件')
       callback({ path: filePath })
     } else {
       console.error('[local-video] 文件不存在:', filePath)

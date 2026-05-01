@@ -298,7 +298,7 @@ async function handleGetDisabledQuickEngines(
 ): Promise<{ success: boolean; disabledEngines?: string[]; error?: string }> {
   try {
     const service = getSearchEngineService()
-    const disabledEngines = service.getDisabledQuickEngines()
+    const disabledEngines = await service.getDisabledQuickEngines()
     return { success: true, disabledEngines }
   } catch (error) {
     console.error('获取被禁用的快速搜索引擎列表失败:', error)
@@ -315,7 +315,7 @@ async function handleSetQuickEngineEnabled(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const service = getSearchEngineService()
-    service.setQuickEngineEnabled(data.engineId, data.enabled)
+    await service.setQuickEngineEnabled(data.engineId, data.enabled)
     // 广播配置变化
     broadcastConfigChanged()
     return { success: true }

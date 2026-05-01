@@ -44,29 +44,21 @@ const logger = {
 const activePollingTasks = new Map<string, NodeJS.Timeout>()
 
 /**
- * 将本地文件路径转换为可访问的 URL
- * @param filePath - 本地文件路径
- * @returns 可访问的 URL
+ * 将本地文件路径（相对或绝对）转换为可访问的 URL（local-image://）。
+ * - 相对路径：local-image://images/2026/03/x.png（protocol handler 会拼 dataPath）
+ * - 绝对路径：local-image:///<absolute-path>（兼容旧链接）
  */
 function localPathToUrl(filePath: string): string {
-  if (!filePath) {
-    logger.info('[localPathToUrl] 空路径')
-    return ''
+  if (!filePath) return ''
+  const normalized = filePath.replace(/\\/g, '/')
+  // 已是 URL：原样返回
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(normalized)) return normalized
+  // 绝对路径（POSIX 或 Windows 盘符）：保留绝对，加三斜杠
+  if (normalized.startsWith('/') || /^[A-Za-z]:\//.test(normalized)) {
+    return `local-image:///${normalized}`
   }
-
-  logger.info('[localPathToUrl] 输入路径:', filePath)
-
-  // Windows 路径处理：将反斜杠转换为正斜杠
-  let normalizedPath = filePath
-  if (process.platform === 'win32') {
-    normalizedPath = filePath.replace(/\\/g, '/')
-  }
-
-  // 使用三个斜杠格式（标准 file URI 格式）：local-image:///C:/Users/...
-  // 不编码冒号，让盘符成为路径的一部分
-  const url = `local-image:///${normalizedPath}`
-  logger.info('[localPathToUrl] 输出 URL:', url)
-  return url
+  // 相对路径：直接拼协议（protocol handler 会基于 dataPath 解析）
+  return `local-image://${normalized}`
 }
 
 /**
@@ -495,9 +487,14 @@ export class ImageService {
         // 保存文件
         fs.writeFileSync(filePath, buffer)
 
+        // 计算相对于 dataPath 的相对路径，存入 DB（避免跨设备/跨平台失效）
+        const relativePath = path
+          .relative(userDataPath, filePath)
+          .replace(/\\/g, '/')
+
         // 更新数据库记录
         await dbManager.images.update(imageId, {
-          filePath: filePath,
+          filePath: relativePath,
           fileName: fileName,
           fileSize: buffer.length,
           mimeType: 'image/png',
@@ -617,8 +614,12 @@ export class ImageService {
           throw new Error('文件保存后验证失败')
         }
 
+        // 返回相对路径（供调用方写入 DB），同时通过 localPathToUrl 转 URL 供 UI 使用
+        const relativePath = path
+          .relative(userDataPath, filePath)
+          .replace(/\\/g, '/')
         savedImages.push({
-          filePath: localPathToUrl(filePath)
+          filePath: localPathToUrl(relativePath)
         })
       } catch (error: any) {
         logger.error(`[saveImagesWithoutHistory] 保存图像 ${i} 失败:`, error)

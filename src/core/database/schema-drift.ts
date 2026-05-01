@@ -136,11 +136,20 @@ function entityColumnTypeToString(t: unknown): string {
 /**
  * 类型 affinity 比对放宽：
  * - 整数族 / 文本族 / 浮点族 / 时间族内部互通即视为一致
+ * - SQLite 历史遗留：旧库 DATETIME 列实际存的是 epoch ms 整数（Date.now()），
+ *   与 TypeORM 的 bigint Entity 行为等价，单向放行；
+ *   反向（Entity 是 datetime / 新库存的真日期字符串）依然按时间族走严格比对。
  */
 function affinityEquivalent(expected: string, actual: string): boolean {
   const a = normalize(expected)
   const b = normalize(actual)
-  return a === b
+  if (a === b) return true
+  // SQLite 旧 schema：bigint Entity vs DATETIME/TIMESTAMP 列（实存为整数 epoch ms）
+  if (a === 'INT' && b === 'TIME') return true
+  // SQLite 数字 affinity：INTEGER 列可承载 REAL 数据，REAL 列亦可承载 INTEGER；
+  //   这里允许 Entity 声明 REAL 而旧库仍是 INTEGER（运行时无损升级）
+  if (a === 'REAL' && b === 'INT') return true
+  return false
 }
 
 function normalize(t: string): string {

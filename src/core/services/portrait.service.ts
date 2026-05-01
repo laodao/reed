@@ -109,15 +109,19 @@ function extractBasicCharacterInfo(character: PortraitCharacter): string {
 }
 
 /**
- * 将本地文件路径转换为可访问的 URL
+ * 将本地文件路径（绝对或相对）转换为可访问的 URL（local-image://）。
+ * - 已是 URL：原样返回
+ * - 绝对路径：local-image:///<abs>
+ * - 相对路径：local-image://<rel>（protocol handler 基于 dataPath 解析）
  */
 function localPathToUrl(filePath: string): string {
   if (!filePath) return ''
-  let normalizedPath = filePath
-  if (process.platform === 'win32') {
-    normalizedPath = filePath.replace(/\\/g, '/')
+  const normalized = filePath.replace(/\\/g, '/')
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(normalized)) return normalized
+  if (normalized.startsWith('/') || /^[A-Za-z]:\//.test(normalized)) {
+    return `local-image:///${normalized}`
   }
-  return `local-image:///${normalizedPath}`
+  return `local-image://${normalized}`
 }
 
 /**
@@ -477,7 +481,7 @@ export class PortraitService {
 
         // 保存变体记录
         const image = imageResult.images[0]
-        const actualImagePath = (image.url || '').replace('local-image:///', '')
+        const actualImagePath = (image.url || '').replace(/^local-image:\/\/\/?/, '')
 
         const variant = await dbManager.portraitVariants.create({
           characterId: character.id,
@@ -606,7 +610,7 @@ export class PortraitService {
               type: 'clothes',
               parentId: request.variantId || baseVariant.id,
               angle: 'front',
-              imagePath: (image.url || '').replace('local-image:///', ''),
+              imagePath: (image.url || '').replace(/^local-image:\/\/\/?/, ''),
               prompt: fullPrompt,
               config: baseVariant.config,
               variantInfo: {
@@ -664,7 +668,7 @@ export class PortraitService {
           type: 'clothes',
           parentId: frontVariantId || request.variantId || baseVariant.id, // 优先使用正面图 id
           angle: angle,
-          imagePath: (image.url || '').replace('local-image:///', ''),
+          imagePath: (image.url || '').replace(/^local-image:\/\/\/?/, ''),
           prompt: fullPrompt,
           config: baseVariant.config,
           variantInfo: {
@@ -780,7 +784,7 @@ export class PortraitService {
               type: 'background',
               parentId: request.variantId || baseVariant.id,
               angle: 'front',
-              imagePath: (image.url || '').replace('local-image:///', ''),
+              imagePath: (image.url || '').replace(/^local-image:\/\/\/?/, ''),
               prompt: fullPrompt,
               config: baseVariant.config,
               variantInfo: {
@@ -839,7 +843,7 @@ export class PortraitService {
           type: 'background',
           parentId: frontVariantId || request.variantId || baseVariant.id, // 优先使用正面图 id
           angle: angle,
-          imagePath: (image.url || '').replace('local-image:///', ''),
+          imagePath: (image.url || '').replace(/^local-image:\/\/\/?/, ''),
           prompt: fullPrompt,
           config: baseVariant.config,
           variantInfo: {
@@ -1022,7 +1026,7 @@ export class PortraitService {
         }
 
         const image = imageResult.images[0]
-        const imagePath = (image.url || '').replace('local-image:///', '')
+        const imagePath = (image.url || '').replace(/^local-image:\/\/\/?/, '')
 
         const variant = await dbManager.portraitVariants.create({
           characterId: request.characterId,
@@ -1136,7 +1140,7 @@ export class PortraitService {
 
       const image = imageResult.images[0]
       const updatedVariant = await dbManager.portraitVariants.update(variant.id, {
-        imagePath: (image.url || '').replace('local-image:///', ''),
+        imagePath: (image.url || '').replace(/^local-image:\/\/\/?/, ''),
         prompt: editPrompt
       })
 

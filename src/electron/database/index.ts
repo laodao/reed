@@ -250,6 +250,20 @@ export class DatabaseManager implements ICoreDatabaseManager {
     // 初始化长文写字典
     await this.initDictionary()
 
+    // 资源路径迁移：DB 中的绝对路径 → 相对 dataPath 路径（幂等）
+    try {
+      const { migrateAssetPathsToRelative } = await import(
+        '@core/database/migrations/asset-paths-to-relative'
+      )
+      const stats = await migrateAssetPathsToRelative(this)
+      const total = Object.values(stats).reduce((a, b) => a + b, 0)
+      if (total > 0) {
+        console.log('[DatabaseManager] 资源路径迁移完成:', stats)
+      }
+    } catch (e) {
+      console.warn('[DatabaseManager] 资源路径迁移失败（不致命）:', e)
+    }
+
     console.log('[DatabaseManager] 数据库初始化完成:', this.dbPath)
   }
 

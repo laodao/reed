@@ -322,12 +322,16 @@ export class SearchEngineService {
   /**
    * 获取被禁用的快速搜索引擎 ID 列表
    */
-  getDisabledQuickEngines(): string[] {
+  async getDisabledQuickEngines(): Promise<string[]> {
     const db = getCoreDatabaseManager()
     if (!db.settings) {
       return []
     }
-    return db.settings.get(this.DISABLED_QUICK_ENGINES_KEY) || []
+    const raw = (await db.settings.get(this.DISABLED_QUICK_ENGINES_KEY)) as
+      | string[]
+      | undefined
+      | null
+    return Array.isArray(raw) ? raw : []
   }
 
   /**
@@ -335,13 +339,13 @@ export class SearchEngineService {
    * @param engineId - 搜索引擎模板 ID
    * @param enabled - 是否启用
    */
-  setQuickEngineEnabled(engineId: string, enabled: boolean): void {
+  async setQuickEngineEnabled(engineId: string, enabled: boolean): Promise<void> {
     const db = getCoreDatabaseManager()
     if (!db.settings) {
       throw new Error('数据库未初始化')
     }
 
-    const disabledEngines = this.getDisabledQuickEngines()
+    const disabledEngines = await this.getDisabledQuickEngines()
 
     if (enabled) {
       // 从禁用列表中移除
@@ -356,15 +360,15 @@ export class SearchEngineService {
       }
     }
 
-    db.settings.set(this.DISABLED_QUICK_ENGINES_KEY, disabledEngines)
+    await db.settings.set(this.DISABLED_QUICK_ENGINES_KEY, disabledEngines)
   }
 
   /**
    * 检查快速搜索引擎是否启用
    * @param engineId - 搜索引擎模板 ID
    */
-  isQuickEngineEnabled(engineId: string): boolean {
-    const disabledEngines = this.getDisabledQuickEngines()
+  async isQuickEngineEnabled(engineId: string): Promise<boolean> {
+    const disabledEngines = await this.getDisabledQuickEngines()
     return !disabledEngines.includes(engineId)
   }
 }
