@@ -4,8 +4,8 @@
  * @description 处理API密钥相关的IPC请求
  */
 
-import { ipcMain, IpcMainInvokeEvent } from 'electron'
-import { getDatabaseManager } from '../../database'
+import { ipcBridge } from '@core/ipc/bridge-adapter'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { SetApiKeyResponse, ListApiKeysResponse, TestApiKeyResponse, ApiKeyInfo } from '@shared/types'
 import { SecureStorageService } from '../../services/secure-storage.service'
 
@@ -25,18 +25,18 @@ const PROVIDERS = [
  * 注册API密钥相关IPC处理器
  */
 export function registerApiKeyHandlers(): void {
-  ipcMain.handle('api-key:list', handleListApiKeys)
-  ipcMain.handle('api-key:set', handleSetApiKey)
-  ipcMain.handle('api-key:delete', handleDeleteApiKey)
-  ipcMain.handle('api-key:test', handleTestApiKey)
+  ipcBridge.handle('api-key:list', handleListApiKeys)
+  ipcBridge.handle('api-key:set', handleSetApiKey)
+  ipcBridge.handle('api-key:delete', handleDeleteApiKey)
+  ipcBridge.handle('api-key:test', handleTestApiKey)
 }
 
 /**
  * 处理获取密钥列表请求
  */
-async function handleListApiKeys(event: IpcMainInvokeEvent): Promise<ListApiKeysResponse> {
+async function handleListApiKeys(_event: any): Promise<ListApiKeysResponse> {
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.apiKeys) {
       return { success: true, keys: PROVIDERS.map(p => ({ provider: p.provider, name: p.name, configured: false })) }
     }
@@ -62,7 +62,7 @@ async function handleListApiKeys(event: IpcMainInvokeEvent): Promise<ListApiKeys
  * 处理设置密钥请求
  */
 async function handleSetApiKey(
-  event: IpcMainInvokeEvent,
+  _event: any,
   request: { provider: string; key: string; endpoint?: string }
 ): Promise<SetApiKeyResponse> {
   try {
@@ -72,7 +72,7 @@ async function handleSetApiKey(
       return { success: false, error: 'API密钥不能为空' }
     }
 
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.apiKeys) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -100,13 +100,13 @@ async function handleSetApiKey(
  * 处理删除密钥请求
  */
 async function handleDeleteApiKey(
-  event: IpcMainInvokeEvent,
+  _event: any,
   request: { provider: string }
 ): Promise<{ success: boolean }> {
   try {
     const { provider } = request
 
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.apiKeys) {
       return { success: false }
     }
@@ -123,13 +123,13 @@ async function handleDeleteApiKey(
  * 处理测试密钥请求
  */
 async function handleTestApiKey(
-  event: IpcMainInvokeEvent,
+  _event: any,
   request: { provider: string }
 ): Promise<TestApiKeyResponse> {
   try {
     const { provider } = request
 
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.apiKeys) {
       return { success: false, message: '数据库未初始化' }
     }
@@ -153,8 +153,8 @@ async function handleTestApiKey(
  * 注销API密钥相关IPC处理器
  */
 export function unregisterApiKeyHandlers(): void {
-  ipcMain.removeHandler('api-key:list')
-  ipcMain.removeHandler('api-key:set')
-  ipcMain.removeHandler('api-key:delete')
-  ipcMain.removeHandler('api-key:test')
+  ipcBridge.removeHandler('api-key:list')
+  ipcBridge.removeHandler('api-key:set')
+  ipcBridge.removeHandler('api-key:delete')
+  ipcBridge.removeHandler('api-key:test')
 }

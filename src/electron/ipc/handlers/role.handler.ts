@@ -4,28 +4,28 @@
  * @description 处理角色相关的IPC请求
  */
 
-import { ipcMain, IpcMainInvokeEvent } from 'electron'
-import { getDatabaseManager } from '../../database'
+import { ipcBridge } from '@core/ipc/bridge-adapter'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { Role, CreateRoleRequest, UpdateRoleRequest, ListRolesResponse, GetRoleResponse, CreateRoleResponse } from '@shared/types'
 
 /**
  * 注册角色相关IPC处理器
  */
 export function registerRoleHandlers(): void {
-  ipcMain.handle('role:list', handleListRoles)
-  ipcMain.handle('role:get', handleGetRole)
-  ipcMain.handle('role:create', handleCreateRole)
-  ipcMain.handle('role:update', handleUpdateRole)
-  ipcMain.handle('role:delete', handleDeleteRole)
-  ipcMain.handle('role:dialog-count', handleGetDialogCount)
+  ipcBridge.handle('role:list', handleListRoles)
+  ipcBridge.handle('role:get', handleGetRole)
+  ipcBridge.handle('role:create', handleCreateRole)
+  ipcBridge.handle('role:update', handleUpdateRole)
+  ipcBridge.handle('role:delete', handleDeleteRole)
+  ipcBridge.handle('role:dialog-count', handleGetDialogCount)
 }
 
 /**
  * 处理获取角色列表
  */
-async function handleListRoles(event: IpcMainInvokeEvent): Promise<ListRolesResponse> {
+async function handleListRoles(_event: any): Promise<ListRolesResponse> {
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.roles) {
       return { success: false, roles: [] }
     }
@@ -41,9 +41,9 @@ async function handleListRoles(event: IpcMainInvokeEvent): Promise<ListRolesResp
 /**
  * 处理获取单个角色
  */
-async function handleGetRole(event: IpcMainInvokeEvent, id: string): Promise<GetRoleResponse> {
+async function handleGetRole(_event: any, id: string): Promise<GetRoleResponse> {
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.roles) {
       return { success: false }
     }
@@ -60,11 +60,11 @@ async function handleGetRole(event: IpcMainInvokeEvent, id: string): Promise<Get
  * 处理创建角色
  */
 async function handleCreateRole(
-  event: IpcMainInvokeEvent,
+  _event: any,
   request: CreateRoleRequest
 ): Promise<CreateRoleResponse> {
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.roles) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -81,11 +81,11 @@ async function handleCreateRole(
  * 处理更新角色
  */
 async function handleUpdateRole(
-  event: IpcMainInvokeEvent,
+  _event: any,
   payload: { id: string; data: UpdateRoleRequest }
 ): Promise<{ success: boolean }> {
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.roles) {
       return { success: false }
     }
@@ -102,11 +102,11 @@ async function handleUpdateRole(
  * 处理删除角色
  */
 async function handleDeleteRole(
-  event: IpcMainInvokeEvent,
+  _event: any,
   id: string
 ): Promise<{ success: boolean; dialogCount?: number; error?: string }> {
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.roles) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -127,11 +127,11 @@ async function handleDeleteRole(
  * 处理获取角色关联的对话数量
  */
 async function handleGetDialogCount(
-  event: IpcMainInvokeEvent,
+  _event: any,
   id: string
 ): Promise<{ success: boolean; count?: number }> {
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.roles) {
       return { success: false }
     }
@@ -148,10 +148,10 @@ async function handleGetDialogCount(
  * 注销角色相关IPC处理器
  */
 export function unregisterRoleHandlers(): void {
-  ipcMain.removeHandler('role:list')
-  ipcMain.removeHandler('role:get')
-  ipcMain.removeHandler('role:create')
-  ipcMain.removeHandler('role:update')
-  ipcMain.removeHandler('role:delete')
-  ipcMain.removeHandler('role:dialog-count')
+  ipcBridge.removeHandler('role:list')
+  ipcBridge.removeHandler('role:get')
+  ipcBridge.removeHandler('role:create')
+  ipcBridge.removeHandler('role:update')
+  ipcBridge.removeHandler('role:delete')
+  ipcBridge.removeHandler('role:dialog-count')
 }

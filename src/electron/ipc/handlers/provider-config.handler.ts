@@ -4,13 +4,14 @@
  * @description 处理提供商配置相关的 IPC 请求
  */
 
-import { ipcMain, IpcMainInvokeEvent, BrowserWindow } from 'electron'
-import { getDatabaseManager } from '../../database'
+import { ipcBridge } from '@core/ipc/bridge-adapter'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { getEventEmitter } from '@core/interfaces/event.interface'
+import { getSecureStorage } from '@core/interfaces/storage.interface'
 import {
   providerTemplateService,
   PROVIDER_TEMPLATES
 } from '@core/services/provider-template.service'
-import { SecureStorageService } from '../../services/secure-storage.service'
 import type {
   ProviderTemplateListResponse,
   ProviderConfigListResponse,
@@ -21,12 +22,13 @@ import type {
 } from '@shared/types/provider-template.types'
 
 /**
- * 广播配置变化事件到所有窗口
+ * 广播配置变化事件（Electron 端 BroadcastEventEmitter 推到所有窗口；Web 端 WebSocketEventEmitter 推到当前用户的连接）
  */
 function broadcastConfigChanged(): void {
-  const windows = BrowserWindow.getAllWindows()
-  for (const window of windows) {
-    window.webContents.send('provider-config:changed')
+  try {
+    getEventEmitter().emit('provider-config:changed', {})
+  } catch {
+    // 启动早期 EventEmitter 还没注册时静默忽略
   }
 }
 
@@ -34,20 +36,20 @@ function broadcastConfigChanged(): void {
  * 注册提供商配置相关 IPC 处理器
  */
 export function registerProviderConfigHandlers(): void {
-  ipcMain.handle('provider-template:list', handleListTemplates)
-  ipcMain.handle('provider-config:list', handleListConfigs)
-  ipcMain.handle('provider-config:get', handleGetConfig)
-  ipcMain.handle('provider-config:create', handleCreateConfig)
-  ipcMain.handle('provider-config:update', handleUpdateConfig)
-  ipcMain.handle('provider-config:delete', handleDeleteConfig)
-  ipcMain.handle('provider-config:test', handleTestConfig)
-  ipcMain.handle('provider-config:set-default', handleSetDefault)
+  ipcBridge.handle('provider-template:list', handleListTemplates)
+  ipcBridge.handle('provider-config:list', handleListConfigs)
+  ipcBridge.handle('provider-config:get', handleGetConfig)
+  ipcBridge.handle('provider-config:create', handleCreateConfig)
+  ipcBridge.handle('provider-config:update', handleUpdateConfig)
+  ipcBridge.handle('provider-config:delete', handleDeleteConfig)
+  ipcBridge.handle('provider-config:test', handleTestConfig)
+  ipcBridge.handle('provider-config:set-default', handleSetDefault)
 }
 
 /**
  * 处理获取模板列表请求
  */
-async function handleListTemplates(event: IpcMainInvokeEvent): Promise<ProviderTemplateListResponse> {
+async function handleListTemplates(_event: any): Promise<ProviderTemplateListResponse> {
   try {
     return {
       success: true,
@@ -65,9 +67,9 @@ async function handleListTemplates(event: IpcMainInvokeEvent): Promise<ProviderT
 /**
  * 处理获取配置列表请求
  */
-async function handleListConfigs(event: IpcMainInvokeEvent): Promise<ProviderConfigListResponse> {
+async function handleListConfigs(_event: any): Promise<ProviderConfigListResponse> {
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.providerConfigs) {
       return { success: true, configs: [] }
     }
@@ -95,11 +97,11 @@ async function handleListConfigs(event: IpcMainInvokeEvent): Promise<ProviderCon
  * 处理获取单个配置请求
  */
 async function handleGetConfig(
-  event: IpcMainInvokeEvent,
+  _event: any,
   configId: string
 ): Promise<ProviderConfigResponse> {
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.providerConfigs) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -130,11 +132,11 @@ async function handleGetConfig(
  * 处理创建配置请求
  */
 async function handleCreateConfig(
-  event: IpcMainInvokeEvent,
+  _event: any,
   request: SaveProviderConfigRequest
 ): Promise<ProviderConfigResponse> {
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.providerConfigs) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -148,7 +150,7 @@ async function handleCreateConfig(
     // 加密 API 密钥
     let encryptedApiKey: string | undefined
     if (request.apiKey) {
-      const secureStorage = SecureStorageService.getInstance()
+      const secureStorage = getSecureStorage()
       if (!secureStorage.isInitialized()) {
         await secureStorage.initialize()
       }
@@ -158,7 +160,7 @@ async function handleCreateConfig(
     // 加密 Access Key Secret
     let encryptedAccessKeySecret: string | undefined
     if (request.accessKeySecret) {
-      const secureStorage = SecureStorageService.getInstance()
+      const secureStorage = getSecureStorage()
       if (!secureStorage.isInitialized()) {
         await secureStorage.initialize()
       }
@@ -218,12 +220,12 @@ async function handleCreateConfig(
  * 处理更新配置请求
  */
 async function handleUpdateConfig(
-  event: IpcMainInvokeEvent,
+  _event: any,
   request: { id: string; data: Partial<SaveProviderConfigRequest> }
 ): Promise<ProviderConfigResponse> {
   try {
     const { id, data } = request
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.providerConfigs) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -252,7 +254,7 @@ async function handleUpdateConfig(
     // 处理 API 密钥更新
     if (data.apiKey !== undefined) {
       if (data.apiKey && data.apiKey !== '******') {
-        const secureStorage = SecureStorageService.getInstance()
+        const secureStorage = getSecureStorage()
         if (!secureStorage.isInitialized()) {
           await secureStorage.initialize()
         }
@@ -270,7 +272,7 @@ async function handleUpdateConfig(
     // 处理 Access Key Secret 更新
     if (data.accessKeySecret !== undefined) {
       if (data.accessKeySecret && data.accessKeySecret !== '******') {
-        const secureStorage = SecureStorageService.getInstance()
+        const secureStorage = getSecureStorage()
         if (!secureStorage.isInitialized()) {
           await secureStorage.initialize()
         }
@@ -319,11 +321,11 @@ async function handleUpdateConfig(
  * 处理删除配置请求
  */
 async function handleDeleteConfig(
-  event: IpcMainInvokeEvent,
+  _event: any,
   configId: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.providerConfigs) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -347,7 +349,7 @@ async function handleDeleteConfig(
  * 处理测试配置请求
  */
 async function handleTestConfig(
-  event: IpcMainInvokeEvent,
+  _event: any,
   request: {
     configId?: string
     templateId?: string
@@ -368,7 +370,7 @@ async function handleTestConfig(
 
     // 如果提供了配置 ID，从数据库获取配置
     if (configId) {
-      const dbManager = getDatabaseManager()
+      const dbManager = getCoreDatabaseManager()
       if (!dbManager.providerConfigs) {
         return { success: false, message: '数据库未初始化' }
       }
@@ -384,7 +386,7 @@ async function handleTestConfig(
 
       // 解密 API 密钥
       if (config.apiKey) {
-        const secureStorage = SecureStorageService.getInstance()
+        const secureStorage = getSecureStorage()
         if (!secureStorage.isInitialized()) {
           await secureStorage.initialize()
         }
@@ -393,7 +395,7 @@ async function handleTestConfig(
 
       // 解密 Access Key Secret
       if (config.accessKeySecret) {
-        const secureStorage = SecureStorageService.getInstance()
+        const secureStorage = getSecureStorage()
         if (!secureStorage.isInitialized()) {
           await secureStorage.initialize()
         }
@@ -449,11 +451,11 @@ async function handleTestConfig(
  * 处理设置默认配置请求
  */
 async function handleSetDefault(
-  event: IpcMainInvokeEvent,
+  _event: any,
   configId: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.providerConfigs) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -477,12 +479,12 @@ async function handleSetDefault(
  * 注销提供商配置相关 IPC 处理器
  */
 export function unregisterProviderConfigHandlers(): void {
-  ipcMain.removeHandler('provider-template:list')
-  ipcMain.removeHandler('provider-config:list')
-  ipcMain.removeHandler('provider-config:get')
-  ipcMain.removeHandler('provider-config:create')
-  ipcMain.removeHandler('provider-config:update')
-  ipcMain.removeHandler('provider-config:delete')
-  ipcMain.removeHandler('provider-config:test')
-  ipcMain.removeHandler('provider-config:set-default')
+  ipcBridge.removeHandler('provider-template:list')
+  ipcBridge.removeHandler('provider-config:list')
+  ipcBridge.removeHandler('provider-config:get')
+  ipcBridge.removeHandler('provider-config:create')
+  ipcBridge.removeHandler('provider-config:update')
+  ipcBridge.removeHandler('provider-config:delete')
+  ipcBridge.removeHandler('provider-config:test')
+  ipcBridge.removeHandler('provider-config:set-default')
 }

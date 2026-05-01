@@ -4,29 +4,29 @@
  * @description 处理对话相关的IPC请求
  */
 
-import { ipcMain, IpcMainInvokeEvent } from 'electron'
-import { getDatabaseManager } from '../../database'
+import { ipcBridge } from '@core/ipc/bridge-adapter'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { Dialog, CreateDialogRequest, UpdateDialogRequest, ListDialogsResponse, GetDialogResponse, CreateDialogResponse } from '@shared/types'
 
 /**
  * 注册对话相关IPC处理器
  */
 export function registerDialogHandlers(): void {
-  ipcMain.handle('dialog:list', handleListDialogs)
-  ipcMain.handle('dialog:list-by-role', handleListDialogsByRole)
-  ipcMain.handle('dialog:get', handleGetDialog)
-  ipcMain.handle('dialog:create', handleCreateDialog)
-  ipcMain.handle('dialog:update', handleUpdateDialog)
-  ipcMain.handle('dialog:delete', handleDeleteDialog)
-  ipcMain.handle('dialog:touch', handleTouchDialog)
+  ipcBridge.handle('dialog:list', handleListDialogs)
+  ipcBridge.handle('dialog:list-by-role', handleListDialogsByRole)
+  ipcBridge.handle('dialog:get', handleGetDialog)
+  ipcBridge.handle('dialog:create', handleCreateDialog)
+  ipcBridge.handle('dialog:update', handleUpdateDialog)
+  ipcBridge.handle('dialog:delete', handleDeleteDialog)
+  ipcBridge.handle('dialog:touch', handleTouchDialog)
 }
 
 /**
  * 处理获取对话列表
  */
-async function handleListDialogs(event: IpcMainInvokeEvent): Promise<ListDialogsResponse> {
+async function handleListDialogs(_event: any): Promise<ListDialogsResponse> {
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.dialogs) {
       return { success: false, dialogs: [] }
     }
@@ -43,11 +43,11 @@ async function handleListDialogs(event: IpcMainInvokeEvent): Promise<ListDialogs
  * 处理按角色获取对话列表
  */
 async function handleListDialogsByRole(
-  event: IpcMainInvokeEvent,
+  _event: any,
   roleId: string | null
 ): Promise<ListDialogsResponse> {
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.dialogs) {
       return { success: false, dialogs: [] }
     }
@@ -64,11 +64,11 @@ async function handleListDialogsByRole(
  * 处理获取单个对话
  */
 async function handleGetDialog(
-  event: IpcMainInvokeEvent,
+  _event: any,
   dialogId: string
 ): Promise<GetDialogResponse> {
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.dialogs) {
       return { success: false }
     }
@@ -85,11 +85,11 @@ async function handleGetDialog(
  * 处理创建对话
  */
 async function handleCreateDialog(
-  event: IpcMainInvokeEvent,
+  _event: any,
   request: CreateDialogRequest
 ): Promise<CreateDialogResponse> {
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.dialogs) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -130,12 +130,12 @@ async function handleCreateDialog(
  * 处理更新对话
  */
 async function handleUpdateDialog(
-  event: IpcMainInvokeEvent,
+  _event: any,
   payload: { id: string; data: UpdateDialogRequest }
 ): Promise<{ success: boolean }> {
   console.log('[handleUpdateDialog] 收到更新请求:', JSON.stringify(payload, null, 2))
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.dialogs) {
       console.error('[handleUpdateDialog] 数据库未初始化')
       return { success: false }
@@ -160,11 +160,11 @@ async function handleUpdateDialog(
  * 处理删除对话
  */
 async function handleDeleteDialog(
-  event: IpcMainInvokeEvent,
+  _event: any,
   dialogId: string
 ): Promise<{ success: boolean }> {
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.dialogs) {
       return { success: false }
     }
@@ -181,11 +181,11 @@ async function handleDeleteDialog(
  * 处理更新对话时间戳（用于记录最后访问的对话）
  */
 async function handleTouchDialog(
-  event: IpcMainInvokeEvent,
+  _event: any,
   dialogId: string
 ): Promise<{ success: boolean }> {
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.dialogs) {
       return { success: false }
     }
@@ -202,11 +202,11 @@ async function handleTouchDialog(
  * 注销对话相关IPC处理器
  */
 export function unregisterDialogHandlers(): void {
-  ipcMain.removeHandler('dialog:list')
-  ipcMain.removeHandler('dialog:list-by-role')
-  ipcMain.removeHandler('dialog:get')
-  ipcMain.removeHandler('dialog:create')
-  ipcMain.removeHandler('dialog:update')
-  ipcMain.removeHandler('dialog:delete')
-  ipcMain.removeHandler('dialog:touch')
+  ipcBridge.removeHandler('dialog:list')
+  ipcBridge.removeHandler('dialog:list-by-role')
+  ipcBridge.removeHandler('dialog:get')
+  ipcBridge.removeHandler('dialog:create')
+  ipcBridge.removeHandler('dialog:update')
+  ipcBridge.removeHandler('dialog:delete')
+  ipcBridge.removeHandler('dialog:touch')
 }

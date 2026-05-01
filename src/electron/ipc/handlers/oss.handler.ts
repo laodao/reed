@@ -4,11 +4,10 @@
  * @description 处理图床/OSS配置相关的 IPC 请求
  */
 
-import { ipcMain } from 'electron'
-import type { IpcMainInvokeEvent } from 'electron'
-import { DatabaseManager } from '../../database/index'
+import { ipcBridge } from '@core/ipc/bridge-adapter'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { OSSService } from '@core/services/oss.service'
-import { SecureStorageService } from '../../services/secure-storage.service'
+import { getSecureStorage } from '@core/interfaces/storage.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type {
   OSSConfig,
@@ -22,17 +21,17 @@ import type {
  */
 export function registerOSSHandlers(): void {
   // 配置管理
-  ipcMain.handle('oss:list-configs', handleListConfigs)
-  ipcMain.handle('oss:get-config', handleGetConfig)
-  ipcMain.handle('oss:create-config', handleCreateConfig)
-  ipcMain.handle('oss:update-config', handleUpdateConfig)
-  ipcMain.handle('oss:delete-config', handleDeleteConfig)
-  ipcMain.handle('oss:set-default', handleSetDefault)
-  ipcMain.handle('oss:toggle-enabled', handleToggleEnabled)
-  ipcMain.handle('oss:test-connection', handleTestConnection)
+  ipcBridge.handle('oss:list-configs', handleListConfigs)
+  ipcBridge.handle('oss:get-config', handleGetConfig)
+  ipcBridge.handle('oss:create-config', handleCreateConfig)
+  ipcBridge.handle('oss:update-config', handleUpdateConfig)
+  ipcBridge.handle('oss:delete-config', handleDeleteConfig)
+  ipcBridge.handle('oss:set-default', handleSetDefault)
+  ipcBridge.handle('oss:toggle-enabled', handleToggleEnabled)
+  ipcBridge.handle('oss:test-connection', handleTestConnection)
 
   // 文件上传
-  ipcMain.handle('oss:upload-file', handleUploadFile)
+  ipcBridge.handle('oss:upload-file', handleUploadFile)
 
   console.log('[OSSHandlers] OSS 配置 IPC 处理器已注册')
 }
@@ -40,9 +39,9 @@ export function registerOSSHandlers(): void {
 /**
  * 获取所有 OSS 配置
  */
-async function handleListConfigs(_event: IpcMainInvokeEvent): Promise<IpcResponse> {
+async function handleListConfigs(__event: any): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.ossConfigs) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -65,11 +64,11 @@ async function handleListConfigs(_event: IpcMainInvokeEvent): Promise<IpcRespons
  * 获取单个 OSS 配置
  */
 async function handleGetConfig(
-  _event: IpcMainInvokeEvent,
+  __event: any,
   id: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.ossConfigs) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -95,17 +94,17 @@ async function handleGetConfig(
  * 创建 OSS 配置
  */
 async function handleCreateConfig(
-  _event: IpcMainInvokeEvent,
+  __event: any,
   request: CreateOSSConfigRequest
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.ossConfigs) {
       return { success: false, error: '数据库未初始化' }
     }
 
     // 加密密钥
-    const secureStorage = SecureStorageService.getInstance()
+    const secureStorage = getSecureStorage()
     if (!secureStorage.isInitialized()) {
       await secureStorage.initialize()
     }
@@ -137,11 +136,11 @@ async function handleCreateConfig(
  * 更新 OSS 配置
  */
 async function handleUpdateConfig(
-  _event: IpcMainInvokeEvent,
+  __event: any,
   request: UpdateOSSConfigRequest
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.ossConfigs) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -149,7 +148,7 @@ async function handleUpdateConfig(
     // 如果有新密钥，需要加密
     let updateData: any = { ...request }
     if (request.accessKeySecret) {
-      const secureStorage = SecureStorageService.getInstance()
+      const secureStorage = getSecureStorage()
       if (!secureStorage.isInitialized()) {
         await secureStorage.initialize()
       }
@@ -171,11 +170,11 @@ async function handleUpdateConfig(
  * 删除 OSS 配置
  */
 async function handleDeleteConfig(
-  _event: IpcMainInvokeEvent,
+  __event: any,
   id: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.ossConfigs) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -195,11 +194,11 @@ async function handleDeleteConfig(
  * 设置默认配置
  */
 async function handleSetDefault(
-  _event: IpcMainInvokeEvent,
+  __event: any,
   id: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.ossConfigs) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -219,11 +218,11 @@ async function handleSetDefault(
  * 切换启用状态
  */
 async function handleToggleEnabled(
-  _event: IpcMainInvokeEvent,
+  __event: any,
   id: string
 ): Promise<IpcResponse> {
   try {
-    const db = DatabaseManager.getInstance()
+    const db = getCoreDatabaseManager()
     if (!db.ossConfigs) {
       return { success: false, error: '数据库未初始化' }
     }
@@ -243,7 +242,7 @@ async function handleToggleEnabled(
  * 测试 OSS 连接
  */
 async function handleTestConnection(
-  _event: IpcMainInvokeEvent,
+  __event: any,
   id: string
 ): Promise<IpcResponse> {
   try {
@@ -260,7 +259,7 @@ async function handleTestConnection(
  * 上传文件到 OSS
  */
 async function handleUploadFile(
-  _event: IpcMainInvokeEvent,
+  __event: any,
   request: OSSUploadRequest
 ): Promise<IpcResponse> {
   try {

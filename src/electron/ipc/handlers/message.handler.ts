@@ -4,31 +4,31 @@
  * @description 处理消息相关的IPC请求
  */
 
-import { ipcMain, IpcMainInvokeEvent } from 'electron'
-import { getDatabaseManager } from '../../database'
+import { ipcBridge } from '@core/ipc/bridge-adapter'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { Message, CreateMessageRequest, ListMessagesResponse } from '@shared/types'
 
 /**
  * 注册消息相关IPC处理器
  */
 export function registerMessageHandlers(): void {
-  ipcMain.handle('message:list', handleListMessages)
-  ipcMain.handle('message:create', handleCreateMessage)
-  ipcMain.handle('message:get', handleGetMessage)
-  ipcMain.handle('message:update', handleUpdateMessage)
-  ipcMain.handle('message:delete', handleDeleteMessages)
-  ipcMain.handle('message:deleteSingle', handleDeleteSingleMessage)
+  ipcBridge.handle('message:list', handleListMessages)
+  ipcBridge.handle('message:create', handleCreateMessage)
+  ipcBridge.handle('message:get', handleGetMessage)
+  ipcBridge.handle('message:update', handleUpdateMessage)
+  ipcBridge.handle('message:delete', handleDeleteMessages)
+  ipcBridge.handle('message:deleteSingle', handleDeleteSingleMessage)
 }
 
 /**
  * 处理获取消息列表
  */
 async function handleListMessages(
-  event: IpcMainInvokeEvent,
+  _event: any,
   dialogId: string
 ): Promise<ListMessagesResponse> {
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.messages) {
       return { success: false, messages: [] }
     }
@@ -45,11 +45,11 @@ async function handleListMessages(
  * 处理获取单个消息
  */
 async function handleGetMessage(
-  event: IpcMainInvokeEvent,
+  _event: any,
   messageId: string
 ): Promise<{ success: boolean; message?: Message }> {
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.messages) {
       return { success: false }
     }
@@ -66,11 +66,11 @@ async function handleGetMessage(
  * 处理创建消息
  */
 async function handleCreateMessage(
-  event: IpcMainInvokeEvent,
+  _event: any,
   payload: CreateMessageRequest
 ): Promise<{ success: boolean; message?: Message }> {
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.messages) {
       return { success: false }
     }
@@ -103,11 +103,11 @@ async function handleCreateMessage(
  * 处理更新消息
  */
 async function handleUpdateMessage(
-  event: IpcMainInvokeEvent,
+  _event: any,
   payload: { id: string; content?: string; metadata?: Message['metadata'] }
 ): Promise<{ success: boolean }> {
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.messages) {
       return { success: false }
     }
@@ -128,11 +128,11 @@ async function handleUpdateMessage(
  * 处理删除消息
  */
 async function handleDeleteMessages(
-  event: IpcMainInvokeEvent,
+  _event: any,
   dialogId: string
 ): Promise<{ success: boolean }> {
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.messages) {
       return { success: false }
     }
@@ -155,11 +155,11 @@ async function handleDeleteMessages(
  * 处理删除单条消息
  */
 async function handleDeleteSingleMessage(
-  event: IpcMainInvokeEvent,
+  _event: any,
   messageId: string
 ): Promise<{ success: boolean }> {
   try {
-    const dbManager = getDatabaseManager()
+    const dbManager = getCoreDatabaseManager()
     if (!dbManager.messages) {
       return { success: false }
     }
@@ -189,10 +189,10 @@ async function handleDeleteSingleMessage(
  * 注销消息相关IPC处理器
  */
 export function unregisterMessageHandlers(): void {
-  ipcMain.removeHandler('message:list')
-  ipcMain.removeHandler('message:create')
-  ipcMain.removeHandler('message:get')
-  ipcMain.removeHandler('message:update')
-  ipcMain.removeHandler('message:delete')
-  ipcMain.removeHandler('message:deleteSingle')
+  ipcBridge.removeHandler('message:list')
+  ipcBridge.removeHandler('message:create')
+  ipcBridge.removeHandler('message:get')
+  ipcBridge.removeHandler('message:update')
+  ipcBridge.removeHandler('message:delete')
+  ipcBridge.removeHandler('message:deleteSingle')
 }

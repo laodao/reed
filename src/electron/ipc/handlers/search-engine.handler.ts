@@ -4,7 +4,8 @@
  * @description 处理搜索引擎相关的 IPC 请求
  */
 
-import { ipcMain, IpcMainInvokeEvent, BrowserWindow } from 'electron'
+import { ipcBridge } from '@core/ipc/bridge-adapter'
+import { getEventEmitter } from '@core/interfaces/event.interface'
 import { getSearchEngineService } from '@core/services/search-engine.service'
 import type {
   SearchEngineTemplateListResponse,
@@ -16,12 +17,13 @@ import type {
 } from '@shared/types/search-engine.types'
 
 /**
- * 广播配置变化事件到所有窗口
+ * 广播配置变化事件（跨平台 EventEmitter）
  */
 function broadcastConfigChanged(): void {
-  const windows = BrowserWindow.getAllWindows()
-  for (const window of windows) {
-    window.webContents.send('search-engine:changed')
+  try {
+    getEventEmitter().emit('search-engine:changed', {})
+  } catch {
+    // EventEmitter 未注册时静默忽略
   }
 }
 
@@ -29,24 +31,24 @@ function broadcastConfigChanged(): void {
  * 注册搜索引擎相关 IPC 处理器
  */
 export function registerSearchEngineHandlers(): void {
-  ipcMain.handle('search-engine:templates', handleListTemplates)
-  ipcMain.handle('search-engine:list', handleListConfigs)
-  ipcMain.handle('search-engine:get', handleGetConfig)
-  ipcMain.handle('search-engine:create', handleCreateConfig)
-  ipcMain.handle('search-engine:update', handleUpdateConfig)
-  ipcMain.handle('search-engine:delete', handleDeleteConfig)
-  ipcMain.handle('search-engine:test', handleTestConfig)
-  ipcMain.handle('search-engine:set-default', handleSetDefault)
-  ipcMain.handle('search-engine:search', handleSearch)
+  ipcBridge.handle('search-engine:templates', handleListTemplates)
+  ipcBridge.handle('search-engine:list', handleListConfigs)
+  ipcBridge.handle('search-engine:get', handleGetConfig)
+  ipcBridge.handle('search-engine:create', handleCreateConfig)
+  ipcBridge.handle('search-engine:update', handleUpdateConfig)
+  ipcBridge.handle('search-engine:delete', handleDeleteConfig)
+  ipcBridge.handle('search-engine:test', handleTestConfig)
+  ipcBridge.handle('search-engine:set-default', handleSetDefault)
+  ipcBridge.handle('search-engine:search', handleSearch)
   // 快速搜索引擎启用/停用
-  ipcMain.handle('search-engine:get-disabled-quick', handleGetDisabledQuickEngines)
-  ipcMain.handle('search-engine:set-quick-enabled', handleSetQuickEngineEnabled)
+  ipcBridge.handle('search-engine:get-disabled-quick', handleGetDisabledQuickEngines)
+  ipcBridge.handle('search-engine:set-quick-enabled', handleSetQuickEngineEnabled)
 }
 
 /**
  * 处理获取模板列表请求
  */
-async function handleListTemplates(event: IpcMainInvokeEvent): Promise<SearchEngineTemplateListResponse> {
+async function handleListTemplates(_event: any): Promise<SearchEngineTemplateListResponse> {
   try {
     const service = getSearchEngineService()
     const templates = await service.getTemplates()
@@ -66,7 +68,7 @@ async function handleListTemplates(event: IpcMainInvokeEvent): Promise<SearchEng
 /**
  * 处理获取配置列表请求
  */
-async function handleListConfigs(event: IpcMainInvokeEvent): Promise<SearchEngineConfigListResponse> {
+async function handleListConfigs(_event: any): Promise<SearchEngineConfigListResponse> {
   try {
     const service = getSearchEngineService()
     const configs = await service.getConfigs()
@@ -93,7 +95,7 @@ async function handleListConfigs(event: IpcMainInvokeEvent): Promise<SearchEngin
 /**
  * 处理获取单个配置请求
  */
-async function handleGetConfig(event: IpcMainInvokeEvent, id: string): Promise<SearchEngineConfigResponse> {
+async function handleGetConfig(_event: any, id: string): Promise<SearchEngineConfigResponse> {
   try {
     const service = getSearchEngineService()
     const config = await service.getConfig(id)
@@ -128,7 +130,7 @@ async function handleGetConfig(event: IpcMainInvokeEvent, id: string): Promise<S
  * 处理创建配置请求
  */
 async function handleCreateConfig(
-  event: IpcMainInvokeEvent,
+  _event: any,
   data: SaveSearchEngineConfigRequest
 ): Promise<SearchEngineConfigResponse> {
   try {
@@ -161,7 +163,7 @@ async function handleCreateConfig(
  * 处理更新配置请求
  */
 async function handleUpdateConfig(
-  event: IpcMainInvokeEvent,
+  _event: any,
   data: { id: string; data: SaveSearchEngineConfigRequest }
 ): Promise<SearchEngineConfigResponse> {
   try {
@@ -193,7 +195,7 @@ async function handleUpdateConfig(
 /**
  * 处理删除配置请求
  */
-async function handleDeleteConfig(event: IpcMainInvokeEvent, id: string): Promise<{ success: boolean; error?: string }> {
+async function handleDeleteConfig(_event: any, id: string): Promise<{ success: boolean; error?: string }> {
   try {
     const service = getSearchEngineService()
     const result = await service.deleteConfig(id)
@@ -217,7 +219,7 @@ async function handleDeleteConfig(event: IpcMainInvokeEvent, id: string): Promis
  * 处理测试配置请求
  */
 async function handleTestConfig(
-  event: IpcMainInvokeEvent,
+  _event: any,
   data: {
     configId?: string
     templateId?: string
@@ -240,7 +242,7 @@ async function handleTestConfig(
 /**
  * 处理设置默认配置请求
  */
-async function handleSetDefault(event: IpcMainInvokeEvent, id: string): Promise<{ success: boolean; error?: string }> {
+async function handleSetDefault(_event: any, id: string): Promise<{ success: boolean; error?: string }> {
   try {
     const service = getSearchEngineService()
     const result = await service.setDefaultConfig(id)
@@ -264,7 +266,7 @@ async function handleSetDefault(event: IpcMainInvokeEvent, id: string): Promise<
  * 处理执行搜索请求
  */
 async function handleSearch(
-  event: IpcMainInvokeEvent,
+  _event: any,
   data: {
     query: string
     engine: string
@@ -294,7 +296,7 @@ async function handleSearch(
  * 处理获取被禁用的快速搜索引擎列表
  */
 async function handleGetDisabledQuickEngines(
-  event: IpcMainInvokeEvent
+  _event: any
 ): Promise<{ success: boolean; disabledEngines?: string[]; error?: string }> {
   try {
     const service = getSearchEngineService()
@@ -310,7 +312,7 @@ async function handleGetDisabledQuickEngines(
  * 处理设置快速搜索引擎启用状态
  */
 async function handleSetQuickEngineEnabled(
-  event: IpcMainInvokeEvent,
+  _event: any,
   data: { engineId: string; enabled: boolean }
 ): Promise<{ success: boolean; error?: string }> {
   try {
