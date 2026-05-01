@@ -60,6 +60,31 @@ import { ElMessage } from 'element-plus'
 import { ArrowLeft, Download, ArrowDown } from '@element-plus/icons-vue'
 import MarkdownEditor from '@/components/common/MarkdownEditor.vue'
 import type { DiaryEntry } from '@shared/types/diary'
+import { toFileUrl } from '@/utils/asset-url'
+
+/**
+ * 触发浏览器下载（Web 端用）
+ * @param pathOrUrl service 返回的文件路径
+ * @param suggestedName 下载文件名
+ */
+function triggerDownload(pathOrUrl: string, suggestedName: string): void {
+  // 把 fs 路径或相对路径转成 /assets/... HTTP URL
+  // service 返回的可能是绝对路径（含 /home/.../data-web-mt/users/<uid>/exports/xxx）
+  // 转换：剥到 exports/<file> → /assets/exports/<file>
+  let downloadUrl = pathOrUrl
+  const exportsIdx = pathOrUrl.lastIndexOf('/exports/')
+  if (exportsIdx >= 0) {
+    const rel = 'exports/' + pathOrUrl.slice(exportsIdx + '/exports/'.length)
+    downloadUrl = toFileUrl(rel)
+  }
+  const a = document.createElement('a')
+  a.href = downloadUrl
+  a.download = suggestedName
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
 
 const props = defineProps<{
   entry: DiaryEntry
@@ -135,18 +160,20 @@ async function handleExport(format: string) {
         break
     }
 
-    // 弹出保存对话框
-    const dialogResult = await window.electronAPI.file.saveFile({
-      defaultPath: `${props.entry.title}.${ext}`,
-      filters
-    })
-
-    // 用户取消
-    if (!dialogResult.success || !dialogResult.filePath) {
-      return
+    // 双端：Electron 通过 dialog 选保存路径并传给 service；Web 跳过 dialog
+    // 让 service 写到用户数据目录，返回相对路径后由浏览器触发下载。
+    const isElectron = !!window.electronAPI?.file?.openDialog
+    let savePath: string | undefined
+    if (isElectron) {
+      const dialogResult = await window.electronAPI.file.saveFile({
+        defaultPath: `${props.entry.title}.${ext}`,
+        filters
+      })
+      if (!dialogResult.success || !dialogResult.filePath) {
+        return // 用户取消
+      }
+      savePath = dialogResult.filePath
     }
-
-    const savePath = dialogResult.filePath
 
     // 执行导出
     let result
@@ -163,6 +190,10 @@ async function handleExport(format: string) {
     }
 
     if (result?.success) {
+      // Web 端：result.data 是后端写入的绝对/相对路径，触发浏览器下载
+      if (!isElectron && result.data) {
+        triggerDownload(result.data, `${props.entry.title}.${ext}`)
+      }
       ElMessage.success(`导出成功`)
     } else {
       ElMessage.error(result?.error || '导出失败')

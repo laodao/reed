@@ -95,6 +95,10 @@ async function bootstrap(): Promise<void> {
   //    - 每用户 SQLite：<root>/users/<userId>/the_bot.db（懒创建）
   await initWebDatabaseRegistry(cfg.rootDataPath)
 
+  // 2.4 LanceDB 向量数据库初始化（与 Electron DatabaseManager.initialize 等价）
+  //     表 schema 由 KB id 隔离，多租户在同一进程共用一个 LanceDB 实例无冲突。
+  await initLanceDB(cfg.rootDataPath)
+
   // 2.5 注册 IPC channel 处理器
   const { registerAllWebChannels } = await import('./api/register-channels')
   await registerAllWebChannels()
@@ -137,6 +141,24 @@ async function bootstrap(): Promise<void> {
   }
   process.on('SIGINT', () => shutdown('SIGINT'))
   process.on('SIGTERM', () => shutdown('SIGTERM'))
+}
+
+/**
+ * 初始化 LanceDB（向量库）。Electron 端在 DatabaseManager.initialize() 里
+ * 调用，web 端缺这一步会导致 KB processDocument 报
+ * "Cannot read properties of null (reading 'createTable')"。
+ */
+async function initLanceDB(rootDataPath: string): Promise<void> {
+  try {
+    const { LanceDBService } = await import('@core/services/lance-db.service')
+    const lancePath = path.join(rootDataPath, 'lancedb')
+    if (!fs.existsSync(lancePath)) fs.mkdirSync(lancePath, { recursive: true })
+    await LanceDBService.getInstance().initialize(lancePath)
+    console.log('[web-server] LanceDB 初始化完成')
+  } catch (e) {
+    console.error('[web-server] LanceDB 初始化失败（KB 向量功能将不可用）:', e)
+    // 与 Electron 一致：失败不影响主流程
+  }
 }
 
 /**

@@ -206,8 +206,20 @@ export class DiaryExportService {
    * 获取默认导出路径
    */
   private getDefaultExportPath(title: string, ext: string): string {
-    const downloadsPath = path.join(os.homedir(), 'Downloads')
     const safeName = title.replace(/[<>:"/\\|?*]/g, '_')
-    return path.join(downloadsPath, `${safeName}.${ext}`)
+    const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
+    if (isElectron) {
+      // Electron 端：Downloads 目录，用户能直接看到
+      const downloadsPath = path.join(os.homedir(), 'Downloads')
+      return path.join(downloadsPath, `${safeName}.${ext}`)
+    }
+    // Web 端：用户数据目录的 exports 子文件夹（前端通过 /assets/exports/... 下载）
+    // 这里依赖 IPathProvider 已注册（web-server bootstrap 已完成）
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getPathProvider } = require('@core/interfaces/path.interface')
+    const dataPath = getPathProvider().getDataPath()
+    const exportsDir = path.join(dataPath, 'exports')
+    if (!fs.existsSync(exportsDir)) fs.mkdirSync(exportsDir, { recursive: true })
+    return path.join(exportsDir, `${safeName}.${ext}`)
   }
 }
