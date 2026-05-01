@@ -10,7 +10,7 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { getPathProvider } from '@core/interfaces/path.interface'
-import { toAssetUrl } from '@core/utils/asset-path'
+import { toAssetUrl, resolveAssetPath } from '@core/utils/asset-path'
 import { ImageService } from '@core/services/image.service'
 import type {
   PortraitProject,
@@ -222,8 +222,8 @@ export class PortraitService {
       for (const character of characters) {
         const variants = await dbManager.portraitVariants.getByCharacterId(character.id)
         for (const variant of variants) {
-          if (variant.imagePath && fs.existsSync(variant.imagePath)) {
-            fs.unlinkSync(variant.imagePath)
+          if (variant.imagePath && fs.existsSync(resolveAssetPath(variant.imagePath))) {
+            fs.unlinkSync(resolveAssetPath(variant.imagePath))
           }
         }
       }
@@ -357,8 +357,8 @@ export class PortraitService {
       // 获取角色的所有变体，删除图片文件
       const variants = await dbManager.portraitVariants.getByCharacterId(id)
       for (const variant of variants) {
-        if (variant.imagePath && fs.existsSync(variant.imagePath)) {
-          fs.unlinkSync(variant.imagePath)
+        if (variant.imagePath && fs.existsSync(resolveAssetPath(variant.imagePath))) {
+          fs.unlinkSync(resolveAssetPath(variant.imagePath))
         }
       }
 
@@ -582,8 +582,8 @@ export class PortraitService {
           let referenceImageBase64: string | undefined = undefined
           if (request.referenceImage) {
             referenceImageBase64 = request.referenceImage
-          } else if (baseVariant.imagePath && fs.existsSync(baseVariant.imagePath)) {
-            const imageBuffer = fs.readFileSync(baseVariant.imagePath)
+          } else if (baseVariant.imagePath && fs.existsSync(resolveAssetPath(baseVariant.imagePath))) {
+            const imageBuffer = fs.readFileSync(resolveAssetPath(baseVariant.imagePath))
             referenceImageBase64 = `data:image/png;base64,${imageBuffer.toString('base64')}`
           }
 
@@ -636,8 +636,8 @@ export class PortraitService {
         let referenceImageBase64: string | undefined = undefined
         if (request.referenceImage) {
           referenceImageBase64 = request.referenceImage
-        } else if (baseVariant.imagePath && fs.existsSync(baseVariant.imagePath)) {
-          const imageBuffer = fs.readFileSync(baseVariant.imagePath)
+        } else if (baseVariant.imagePath && fs.existsSync(resolveAssetPath(baseVariant.imagePath))) {
+          const imageBuffer = fs.readFileSync(resolveAssetPath(baseVariant.imagePath))
           referenceImageBase64 = `data:image/png;base64,${imageBuffer.toString('base64')}`
         }
 
@@ -756,8 +756,8 @@ export class PortraitService {
           const fullPrompt = `${character.prompt}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, same person, ${backgroundDescription}`
 
           let refImage = referenceImageBase64
-          if (!refImage && baseVariant.imagePath && fs.existsSync(baseVariant.imagePath)) {
-            const imageBuffer = fs.readFileSync(baseVariant.imagePath)
+          if (!refImage && baseVariant.imagePath && fs.existsSync(resolveAssetPath(baseVariant.imagePath))) {
+            const imageBuffer = fs.readFileSync(resolveAssetPath(baseVariant.imagePath))
             refImage = `data:image/png;base64,${imageBuffer.toString('base64')}`
           }
 
@@ -811,8 +811,8 @@ export class PortraitService {
         const fullPrompt = `${character.prompt}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, same person, ${backgroundDescription}`
 
         let refImage = referenceImageBase64
-        if (!refImage && baseVariant.imagePath && fs.existsSync(baseVariant.imagePath)) {
-          const imageBuffer = fs.readFileSync(baseVariant.imagePath)
+        if (!refImage && baseVariant.imagePath && fs.existsSync(resolveAssetPath(baseVariant.imagePath))) {
+          const imageBuffer = fs.readFileSync(resolveAssetPath(baseVariant.imagePath))
           refImage = `data:image/png;base64,${imageBuffer.toString('base64')}`
         }
 
@@ -881,8 +881,8 @@ export class PortraitService {
 
     try {
       const variant = await dbManager.portraitVariants.getById(id)
-      if (variant?.imagePath && fs.existsSync(variant.imagePath)) {
-        fs.unlinkSync(variant.imagePath)
+      if (variant?.imagePath && fs.existsSync(resolveAssetPath(variant.imagePath))) {
+        fs.unlinkSync(resolveAssetPath(variant.imagePath))
       }
 
       await dbManager.portraitVariants.delete(id)
@@ -930,13 +930,17 @@ export class PortraitService {
       const variants: PortraitVariant[] = []
 
       // 读取参考图文件 - 这是最重要的参考
+      // DB 中 imagePath 存的是相对路径（如 images/2026/05/01/xxx.png），需要 resolveAssetPath
+      // 拼成绝对路径才能 fs.readFileSync。绝对路径输入也兼容（旧数据）。
       let referenceImageBase64: string | undefined = undefined
-      const referenceImagePath = referenceVariant.imagePath
+      const refRel = referenceVariant.imagePath
+      const referenceImagePath = refRel ? resolveAssetPath(refRel) : ''
       if (referenceImagePath && fs.existsSync(referenceImagePath)) {
         const imageBuffer = fs.readFileSync(referenceImagePath)
         referenceImageBase64 = `data:image/png;base64,${imageBuffer.toString('base64')}`
-        console.log('[PortraitService.generateAngles] 已加载参考图作为参考图像')
+        console.log('[PortraitService.generateAngles] 已加载参考图作为参考图像:', referenceImagePath)
       } else {
+        console.error('[PortraitService.generateAngles] 参考图不存在:', refRel, '→', referenceImagePath)
         return { success: false, error: '无法读取参考图片' }
       }
 
