@@ -2,6 +2,7 @@
  * 对话数据访问层
  * @module database/repositories/dialog
  * @description 基于 TypeORM 实现，支持 sqlite / postgres 双方言。
+ *              所有读写都走 BaseRepository.scoped.* 实现 user_id 多租户隔离。
  */
 
 import type { DataSource } from 'typeorm'
@@ -14,6 +15,7 @@ import { randomUUID } from 'crypto'
 import { DialogEntity } from '../entities/dialog.entity'
 import { MessageEntity } from '../entities/message.entity'
 import { BaseRepository } from '../base-repository'
+import { getCurrentUserId } from '@core/context/user-context'
 
 export class DialogRepository extends BaseRepository<DialogEntity, Dialog> {
   constructor(dataSource: DataSource) {
@@ -32,7 +34,6 @@ export class DialogRepository extends BaseRepository<DialogEntity, Dialog> {
       title: e.title,
       modelId: e.modelId,
       providerConfigId: e.providerConfigId || undefined,
-      // 兼容处理：'default-assistant' 等同于 null（默认助手）
       roleId:
         e.roleId && e.roleId !== 'default-assistant' ? e.roleId : null,
       systemPrompt: e.systemPrompt || undefined,
@@ -48,26 +49,25 @@ export class DialogRepository extends BaseRepository<DialogEntity, Dialog> {
   }
 
   async getAll(): Promise<Dialog[]> {
-    const entities = await this.repo.find({
-      order: { updatedAt: 'DESC' } as any,
-    })
+    const entities = await this.scoped.find({ order: { updatedAt: 'DESC' } as any })
     return this.toDtoList(entities)
   }
 
   async getByRoleId(roleId: string | null): Promise<Dialog[]> {
-    const qb = this.repo.createQueryBuilder('d')
+    // 默认助手兼容：role_id IS NULL OR = 'default-assistant'，需要 raw 表达式 → 用 qb
+    const qb = this.scoped.qb('d')
     if (roleId) {
-      qb.where('d.role_id = :roleId', { roleId })
+      qb.andWhere('d.role_id = :roleId', { roleId })
     } else {
-      // 默认助手：兼容旧数据 role_id IS NULL 或 = 'default-assistant'
-      qb.where("d.role_id IS NULL OR d.role_id = 'default-assistant'")
+      qb.andWhere("(d.role_id IS NULL OR d.role_id = 'default-assistant')")
     }
     qb.orderBy('d.updated_at', 'DESC')
     return this.toDtoList(await qb.getMany())
   }
 
   async getById(id: string): Promise<Dialog | null> {
-    return this.findOneByWhere({ id } as any)
+    const e = await this.scoped.findOne({ id } as any)
+    return e ? this.toDto(e) : null
   }
 
   async create(
@@ -75,7 +75,7 @@ export class DialogRepository extends BaseRepository<DialogEntity, Dialog> {
   ): Promise<Dialog> {
     const id = randomUUID()
     const now = new Date()
-    const entity = this.repo.create({
+    const saved = await this.scoped.save({
       id,
       title: dialog.title,
       modelId: dialog.modelId,
@@ -89,13 +89,12 @@ export class DialogRepository extends BaseRepository<DialogEntity, Dialog> {
       messageCount: 0,
       createdAt: now,
       updatedAt: now,
-    })
-    const saved = await this.repo.save(entity)
+    } as Partial<DialogEntity>)
     return this.toDto(saved)
   }
 
   async update(id: string, data: Partial<Dialog>): Promise<void> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return
 
     if (data.title !== undefined) existing.title = data.title
@@ -118,27 +117,29 @@ export class DialogRepository extends BaseRepository<DialogEntity, Dialog> {
         (data.webSearchConfig as Record<string, unknown> | null) ?? null
     }
     existing.updatedAt = new Date()
-    await this.repo.save(existing)
+    await this.scoped.save(existing)
   }
 
   /**
-   * 删除对话 + 关联 messages（应用层级联，与原实现一致）。
+   * 删除对话 + 关联 messages。事务里删两张表，都按 user_id 限定。
    */
   async delete(id: string): Promise<void> {
+    const userId = getCurrentUserId()
     await this.dataSource.transaction(async manager => {
-      await manager.delete(MessageEntity, { dialogId: id })
-      await manager.delete(DialogEntity, { id })
+      const userScope = userId ? { userId } : {}
+      await manager.delete(MessageEntity, { dialogId: id, ...userScope })
+      await manager.delete(DialogEntity, { id, ...userScope })
     })
   }
 
   async updateMessageCount(id: string, count: number): Promise<void> {
-    await this.repo.update({ id } as any, {
+    await this.scoped.update({ id } as any, {
       messageCount: count,
       updatedAt: new Date(),
-    })
+    } as Partial<DialogEntity>)
   }
 
   async touch(id: string): Promise<void> {
-    await this.repo.update({ id } as any, { updatedAt: new Date() })
+    await this.scoped.update({ id } as any, { updatedAt: new Date() } as Partial<DialogEntity>)
   }
 }

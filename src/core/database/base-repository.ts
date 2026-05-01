@@ -1,77 +1,71 @@
 /**
  * Repository 基类
  * @module core/database/base-repository
- * @description 提供 protected 工具方法（查询/删除/存在性检查）+ 强制 toDto 抽象。
- *              所有工具方法自动按当前 ALS userId 过滤（多租户行级隔离）。
  *
- *              用法约束（重要）：
- *              - 子 Repository 的查询/写入应当走 protected 工具方法（findOneByWhere /
- *                findManyByWhere / countByWhere / deleteByWhere / saveScoped 等）；
- *              - 业务调用 `this.repo.find / save / update / delete` 直接绕过 BaseRepository
- *                的 user_id 注入会导致跨用户数据泄漏，必须避免。
- *
- *              不要 user_id 过滤的 entity 类（共享配置 / 用户表本身），通过
- *              `protected scopedToUser = false` 关闭注入。
+ * 多租户行级隔离机制：
+ * - 每张业务表都有 user_id 列（entity 的 userId 字段）
+ * - 子 Repository 必须显式调 `this.scoped.xxx`（findOne / find / save / update /
+ *   delete / count / exists / qb）—— 这些方法自动按当前 ALS userId 过滤 / 填充 user_id。
+ * - `this.repo` 是裸 typeorm Repository，**不带 scope**——只在确实不需要按用户过滤
+ *   的内部场景（共享配置、跨租户管理工具等）使用，必须显式确认安全性。
+ * - 共享配置类（user / settings / api-key / provider-config / oss-config /
+ *   search-engine-config / lw-dictionary-category / lw-global-settings 等）
+ *   在子类构造里调 `this.useRawRepo()`，scope 默认关闭，`this.scoped` 等同于裸操作。
  */
 
 import type {
   DataSource,
   EntityTarget,
+  FindManyOptions,
+  FindOneOptions,
   FindOptionsWhere,
   Repository,
+  SelectQueryBuilder,
 } from 'typeorm'
 import { getCurrentUserId } from '@core/context/user-context'
-import { createScopedRepository } from './scoped-repository'
+
+/**
+ * Scoped Repository API：暴露给子 Repository 的安全数据访问方法。
+ * 内部按 ALS userId 自动过滤；不需要按用户过滤的子 Repository 用 useRawRepo() 关闭。
+ */
+export interface ScopedRepoApi<TEntity extends object> {
+  findOne(where: FindOptionsWhere<TEntity>, options?: Omit<FindOneOptions<TEntity>, 'where'>): Promise<TEntity | null>
+  find(options?: FindManyOptions<TEntity>): Promise<TEntity[]>
+  findAndCount(options?: FindManyOptions<TEntity>): Promise<[TEntity[], number]>
+  save(entity: Partial<TEntity>): Promise<TEntity>
+  saveMany(entities: Partial<TEntity>[]): Promise<TEntity[]>
+  insert(entity: Partial<TEntity>): Promise<TEntity>
+  update(where: FindOptionsWhere<TEntity>, partial: Partial<TEntity>): Promise<number>
+  delete(where: FindOptionsWhere<TEntity>): Promise<number>
+  count(where?: FindOptionsWhere<TEntity>): Promise<number>
+  exists(where: FindOptionsWhere<TEntity>): Promise<boolean>
+  qb(alias: string): SelectQueryBuilder<TEntity>
+}
 
 export abstract class BaseRepository<TEntity extends object, TDto> {
-  /**
-   * 暴露给子类的 Repository，已经被 user_id 多租户隔离 Proxy 包过。
-   * 子类的 `this.repo.find/save/update/delete` 都会自动注入当前 ALS userId。
-   *
-   * 若 entity 没声明 userId 列（如 user / settings），proxy 内部会直接透传，
-   * 等价于裸 typeorm Repository。
-   */
+  /** 裸 typeorm Repository。仅在明确不需要 user_id 过滤时使用。 */
   protected readonly repo: Repository<TEntity>
   protected readonly dataSource: DataSource
-  /**
-   * 是否对当前 entity 应用 user_id 多租户过滤。默认 true。
-   * 共享配置类（user / settings / api-key / provider-config / oss-config /
-   * search-engine-config / lw-dictionary-category / lw-global-settings 等）
-   * 应在子类构造里设为 false——会拿到不带 user_id 注入的裸 Repository。
-   */
+  /** 子类构造里关闭 scope 后，所有 `this.scoped.*` 等同于裸操作。 */
   protected scopedToUser = true
+
+  /** 受 user_id scope 保护的数据访问入口。子类应使用此对象做所有读写。 */
+  protected readonly scoped: ScopedRepoApi<TEntity>
 
   constructor(dataSource: DataSource, target: EntityTarget<TEntity>) {
     this.dataSource = dataSource
-    const rawRepo = dataSource.getRepository(target)
-    // 默认 wrap scoped；scopedToUser=false 的子类会在构造结束后改 this.scopedToUser，
-    // 这里先 wrap，等子类构造结束如果发现关闭了再切回 raw 也行——但成本是子类需要在构造里
-    // 写 `this.scopedToUser = false; this.repo = rawRepo`。简化：
-    // 我们把 scoped 切换交给 createScopedRepository 自己——它读 entity metadata，
-    // 没 userId 列直接透传；scopedToUser=false 的子类必须自己 disable Proxy，方法见下。
-    this.repo = createScopedRepository(rawRepo) as Repository<TEntity>
+    this.repo = dataSource.getRepository(target)
+    this.scoped = this.makeScopedApi()
   }
 
-  /**
-   * scopedToUser=false 的子类在构造里调一次：拿到不带 user_id 注入的裸 Repository。
-   * 用法：
-   *   constructor(ds: DataSource) {
-   *     super(ds, UserEntity)
-   *     this.scopedToUser = false
-   *     this.useRawRepo()
-   *   }
-   */
+  /** 关闭当前 Repository 的 user_id 过滤（共享配置类调用）。 */
   protected useRawRepo(): void {
     this.scopedToUser = false
-    ;(this as { repo: Repository<TEntity> }).repo = this.dataSource.getRepository(
-      this.repo.metadata.target,
-    )
   }
 
   /** 子类必须实现：Entity → DTO */
   protected abstract toDto(entity: TEntity): TDto
 
-  /** 可选：DTO/部分 → Entity；默认抛错（仅简单 save 场景使用） */
   protected fromDto(_dto: Partial<TDto>): Partial<TEntity> {
     throw new Error('fromDto not implemented')
   }
@@ -80,67 +74,128 @@ export abstract class BaseRepository<TEntity extends object, TDto> {
     return entities.map(e => this.toDto(e))
   }
 
-  /**
-   * 注入当前 ALS userId 到 where 条件。Web 端有 userId 时强制注入；
-   * Electron 单用户场景 userId 为 null，按 user_id IS NULL 过滤（避免读到 web 用户数据）。
-   * scopedToUser=false 时直接返回原 where。
-   */
-  protected scopeWhere(
+  // ==================== Scope 实现 ====================
+
+  private scopeWhere(
     where: FindOptionsWhere<TEntity> | FindOptionsWhere<TEntity>[] = {},
   ): FindOptionsWhere<TEntity> | FindOptionsWhere<TEntity>[] {
     if (!this.scopedToUser) return where
     const userId = getCurrentUserId()
-    const userScope = { userId } as unknown as FindOptionsWhere<TEntity>
-    if (Array.isArray(where)) {
-      return where.map(w => ({ ...w, ...userScope }))
-    }
-    return { ...where, ...userScope }
+    const scope = { userId } as unknown as FindOptionsWhere<TEntity>
+    if (Array.isArray(where)) return where.map(w => ({ ...w, ...scope }))
+    return { ...where, ...scope }
   }
 
-  /**
-   * 把 userId 注入到要写入的实体上（insert / save 时调用）。
-   * scopedToUser=false 不动；userId 为 null 也写 null。
-   */
-  protected scopeEntity<T extends Partial<TEntity>>(entity: T): T {
+  private scopeEntity<T extends Partial<TEntity>>(entity: T): T {
     if (!this.scopedToUser) return entity
     const userId = getCurrentUserId()
     return { ...entity, userId } as T
   }
 
-  protected async findOneByWhere(
-    where: FindOptionsWhere<TEntity>,
-  ): Promise<TDto | null> {
-    const entity = await this.repo.findOne({ where: this.scopeWhere(where) as FindOptionsWhere<TEntity> })
-    return entity ? this.toDto(entity) : null
+  private stripUserIdFromUpdate<T extends object>(partial: T): T {
+    if (!this.scopedToUser) return partial
+    if (partial && typeof partial === 'object' && 'userId' in partial) {
+      const { userId: _omit, ...rest } = partial as any
+      void _omit
+      return rest as T
+    }
+    return partial
   }
 
+  private makeScopedApi(): ScopedRepoApi<TEntity> {
+    const self = this
+    return {
+      async findOne(where, options) {
+        return self.repo.findOne({
+          ...(options ?? {}),
+          where: self.scopeWhere(where) as FindOptionsWhere<TEntity>,
+        })
+      },
+      async find(options = {}) {
+        return self.repo.find({
+          ...options,
+          where: self.scopeWhere(options.where as FindOptionsWhere<TEntity>) as FindOptionsWhere<TEntity>,
+        })
+      },
+      async findAndCount(options = {}) {
+        return self.repo.findAndCount({
+          ...options,
+          where: self.scopeWhere(options.where as FindOptionsWhere<TEntity>) as FindOptionsWhere<TEntity>,
+        })
+      },
+      async save(entity) {
+        return self.repo.save(self.scopeEntity(entity) as TEntity)
+      },
+      async saveMany(entities) {
+        return self.repo.save(entities.map(e => self.scopeEntity(e)) as TEntity[])
+      },
+      async insert(entity) {
+        const scoped = self.scopeEntity(entity)
+        await self.repo.insert(scoped as any)
+        return scoped as TEntity
+      },
+      async update(where, partial) {
+        const safePartial = self.stripUserIdFromUpdate(partial)
+        const result = await self.repo.update(
+          self.scopeWhere(where) as FindOptionsWhere<TEntity>,
+          safePartial as any,
+        )
+        return result.affected ?? 0
+      },
+      async delete(where) {
+        const result = await self.repo.delete(self.scopeWhere(where) as FindOptionsWhere<TEntity>)
+        return result.affected ?? 0
+      },
+      async count(where = {}) {
+        return self.repo.count({ where: self.scopeWhere(where) as FindOptionsWhere<TEntity> })
+      },
+      async exists(where) {
+        return (await this.count(where)) > 0
+      },
+      qb(alias) {
+        const builder = self.repo.createQueryBuilder(alias)
+        if (self.scopedToUser) {
+          const userId = getCurrentUserId()
+          if (userId) {
+            builder.andWhere(`${alias}.user_id = :__scopedUserId`, {
+              __scopedUserId: userId,
+            })
+          }
+        }
+        return builder
+      },
+    }
+  }
+
+  // ==================== 老 API（已弃用，保留以兼容尚未改造的子类） ====================
+
+  /** @deprecated 用 this.scoped.findOne */
+  protected async findOneByWhere(where: FindOptionsWhere<TEntity>): Promise<TDto | null> {
+    const e = await this.scoped.findOne(where)
+    return e ? this.toDto(e) : null
+  }
+
+  /** @deprecated 用 this.scoped.find */
   protected async findManyByWhere(
     where: FindOptionsWhere<TEntity> = {},
     order?: Record<string, 'ASC' | 'DESC'>,
   ): Promise<TDto[]> {
-    const entities = await this.repo.find({
-      where: this.scopeWhere(where) as FindOptionsWhere<TEntity>,
-      order: order as any,
-    })
-    return this.toDtoList(entities)
+    const es = await this.scoped.find({ where, order: order as any })
+    return this.toDtoList(es)
   }
 
-  protected async deleteByWhere(
-    where: FindOptionsWhere<TEntity>,
-  ): Promise<void> {
-    await this.repo.delete(this.scopeWhere(where) as FindOptionsWhere<TEntity>)
+  /** @deprecated 用 this.scoped.delete */
+  protected async deleteByWhere(where: FindOptionsWhere<TEntity>): Promise<void> {
+    await this.scoped.delete(where)
   }
 
-  protected async existsByWhere(
-    where: FindOptionsWhere<TEntity>,
-  ): Promise<boolean> {
-    const count = await this.repo.count({ where: this.scopeWhere(where) as FindOptionsWhere<TEntity> })
-    return count > 0
+  /** @deprecated 用 this.scoped.exists */
+  protected async existsByWhere(where: FindOptionsWhere<TEntity>): Promise<boolean> {
+    return this.scoped.exists(where)
   }
 
-  protected async countByWhere(
-    where: FindOptionsWhere<TEntity> = {},
-  ): Promise<number> {
-    return this.repo.count({ where: this.scopeWhere(where) as FindOptionsWhere<TEntity> })
+  /** @deprecated 用 this.scoped.count */
+  protected async countByWhere(where: FindOptionsWhere<TEntity> = {}): Promise<number> {
+    return this.scoped.count(where)
   }
 }
