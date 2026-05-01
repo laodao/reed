@@ -214,7 +214,7 @@ export class VideoEpisodeRepository extends BaseRepository<
 
   async countByProjectId(projectId: string): Promise<number> {
     // 与原行为一致：含逻辑删除的也算
-    return this.repo.count({ where: { projectId } as any })
+    return this.scoped.count({ projectId } as any)
   }
 
   private generateId(): string {

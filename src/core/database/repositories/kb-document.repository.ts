@@ -71,7 +71,7 @@ export class KbDocumentRepository extends BaseRepository<
       createdAt: now,
       updatedAt: now,
     })
-    const saved = await this.repo.save(entity)
+    const saved = await this.scoped.save(entity)
     return this.toDto(saved)
   }
 
@@ -109,7 +109,7 @@ export class KbDocumentRepository extends BaseRepository<
   }
 
   async updateProgress(id: string, progress: number): Promise<void> {
-    await this.repo.update({ id } as any, {
+    await this.scoped.update({ id } as any, {
       progress,
       status: 'processing',
       updatedAt: new Date(),
@@ -117,7 +117,7 @@ export class KbDocumentRepository extends BaseRepository<
   }
 
   async markCompleted(id: string, chunkCount: number): Promise<void> {
-    await this.repo.update({ id } as any, {
+    await this.scoped.update({ id } as any, {
       status: 'completed',
       progress: 100,
       chunkCount,
@@ -126,7 +126,7 @@ export class KbDocumentRepository extends BaseRepository<
   }
 
   async markFailed(id: string, errorMessage: string): Promise<void> {
-    await this.repo.update({ id } as any, {
+    await this.scoped.update({ id } as any, {
       status: 'failed',
       errorMessage,
       updatedAt: new Date(),
@@ -134,23 +134,23 @@ export class KbDocumentRepository extends BaseRepository<
   }
 
   async updateMetadata(id: string, metadata: DocumentMetadata): Promise<void> {
-    await this.repo.update({ id } as any, {
+    await this.scoped.update({ id } as any, {
       metadata: metadata as Record<string, unknown>,
       updatedAt: new Date(),
     })
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.repo.delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ id } as any)
+    return affected > 0
   }
 
   async deleteByKnowledgeBaseId(knowledgeBaseId: string): Promise<void> {
-    await this.repo.delete({ knowledgeBaseId } as any)
+    await this.scoped.delete({ knowledgeBaseId } as any)
   }
 
   async countByKnowledgeBaseId(knowledgeBaseId: string): Promise<number> {
-    return this.repo.count({ where: { knowledgeBaseId } as any })
+    return this.scoped.count({ knowledgeBaseId } as any)
   }
 
   async sumSizeByKnowledgeBaseId(knowledgeBaseId: string): Promise<number> {

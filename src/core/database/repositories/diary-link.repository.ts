@@ -60,7 +60,7 @@ export class DiaryLinkRepository extends BaseRepository<
   }
 
   async findUnresolvedLinks(sourceEntryId: string): Promise<DiaryLink[]> {
-    const entities = await this.repo.find({
+    const entities = await this.scoped.find({
       where: { sourceEntryId, targetEntryId: IsNull() } as any,
     })
     return this.toDtoList(entities)
@@ -81,7 +81,7 @@ export class DiaryLinkRepository extends BaseRepository<
       anchor: options?.anchor ?? null,
       createdAt: new Date(),
     })
-    const saved = await this.repo.save(entity)
+    const saved = await this.scoped.save(entity)
     return this.toDto(saved)
   }
 
@@ -115,7 +115,7 @@ export class DiaryLinkRepository extends BaseRepository<
   }
 
   async deleteBySource(sourceEntryId: string): Promise<void> {
-    await this.repo.delete({ sourceEntryId } as any)
+    await this.scoped.delete({ sourceEntryId } as any)
   }
 
   async updateTarget(targetTitle: string, targetEntryId: string): Promise<void> {

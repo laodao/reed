@@ -72,12 +72,12 @@ export class ClonedVoiceRepository extends BaseRepository<
       createdAt: nowIso,
       updatedAt: record.updatedAt?.toISOString() ?? null,
     })
-    const saved = await this.repo.save(entity)
+    const saved = await this.scoped.save(entity)
     return this.toDto(saved)
   }
 
   async update(id: string, data: Partial<ClonedVoice>): Promise<void> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return
 
     if (data.status !== undefined) existing.status = data.status
@@ -89,14 +89,14 @@ export class ClonedVoiceRepository extends BaseRepository<
       existing.errorMessage = data.errorMessage ?? null
     }
     existing.updatedAt = new Date().toISOString()
-    await this.repo.save(existing)
+    await this.scoped.save(existing)
   }
 
   async delete(id: string): Promise<void> {
-    await this.repo.delete({ id } as any)
+    await this.scoped.delete({ id } as any)
   }
 
   async count(): Promise<number> {
-    return this.repo.count()
+    return this.scoped.count()
   }
 }

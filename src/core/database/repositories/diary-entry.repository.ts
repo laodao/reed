@@ -53,7 +53,7 @@ export class DiaryEntryRepository extends BaseRepository<
   }
 
   async findByFolder(folderId: string): Promise<DiaryEntryListItem[]> {
-    const entities = await this.repo.find({
+    const entities = await this.scoped.find({
       where: { folderId } as any,
       order: { createdAt: 'DESC' } as any,
     })
@@ -61,7 +61,7 @@ export class DiaryEntryRepository extends BaseRepository<
   }
 
   async findAll(limit?: number): Promise<DiaryEntryListItem[]> {
-    const entities = await this.repo.find({
+    const entities = await this.scoped.find({
       order: { createdAt: 'DESC' } as any,
       take: limit,
     })
@@ -81,7 +81,7 @@ export class DiaryEntryRepository extends BaseRepository<
     folderId?: string,
   ): Promise<DiaryEntryListItem[]> {
     const pattern = `%${keyword}%`
-    const qb = this.repo.createQueryBuilder('e')
+    const qb = this.scoped.qb('e')
     if (folderId) {
       qb.where('e.folder_id = :fid', { fid: folderId })
       qb.andWhere('(e.title LIKE :p OR e.content LIKE :p)', { p: pattern })
@@ -112,7 +112,7 @@ export class DiaryEntryRepository extends BaseRepository<
       createdAt: now,
       updatedAt: now,
     })
-    const saved = await this.repo.save(entity)
+    const saved = await this.scoped.save(entity)
     return this.toDto(saved)
   }
 
@@ -120,7 +120,7 @@ export class DiaryEntryRepository extends BaseRepository<
     id: string,
     request: UpdateDiaryEntryRequest,
   ): Promise<boolean> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return false
 
     let changed = false
@@ -141,7 +141,7 @@ export class DiaryEntryRepository extends BaseRepository<
     if (!changed) return false
 
     existing.updatedAt = new Date()
-    await this.repo.save(existing)
+    await this.scoped.save(existing)
     return true
   }
 
@@ -150,23 +150,23 @@ export class DiaryEntryRepository extends BaseRepository<
     targetFolderId: string,
     newFilePath: string,
   ): Promise<boolean> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return false
     existing.folderId = targetFolderId
     existing.filePath = newFilePath
     existing.updatedAt = new Date()
-    await this.repo.save(existing)
+    await this.scoped.save(existing)
     return true
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.repo.delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ id } as any)
+    return affected > 0
   }
 
   async count(folderId?: string): Promise<number> {
-    if (folderId) return this.repo.count({ where: { folderId } as any })
-    return this.repo.count()
+    if (folderId) return this.scoped.count({ folderId } as any)
+    return this.scoped.count()
   }
 
   private generateDefaultTitle(): string {

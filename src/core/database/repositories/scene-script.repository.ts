@@ -202,7 +202,7 @@ export class SceneScriptRepository extends BaseRepository<
   }
 
   async countByEpisodeScriptId(episodeScriptId: string): Promise<number> {
-    return this.repo.count({ where: { episodeScriptId } as any })
+    return this.scoped.count({ episodeScriptId } as any)
   }
 
   private generateId(): string {

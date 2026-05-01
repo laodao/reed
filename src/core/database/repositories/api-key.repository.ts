@@ -17,6 +17,8 @@ interface ApiKeyDto {
 export class ApiKeyRepository extends BaseRepository<ApiKeyEntity, ApiKeyDto> {
   constructor(dataSource: DataSource) {
     super(dataSource, ApiKeyEntity)
+    // 共享配置类 Repository：所有用户共享数据，不做 user_id 过滤
+    this.useRawRepo()
   }
 
   protected toDto(e: ApiKeyEntity): ApiKeyDto {

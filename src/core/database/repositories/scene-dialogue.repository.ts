@@ -155,7 +155,7 @@ export class SceneDialogueRepository extends BaseRepository<
   }
 
   async countBySceneScriptId(sceneScriptId: string): Promise<number> {
-    return this.repo.count({ where: { sceneScriptId } as any })
+    return this.scoped.count({ sceneScriptId } as any)
   }
 
   private generateId(): string {

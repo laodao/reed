@@ -52,7 +52,7 @@ export class KbChunkRepository extends BaseRepository<KbChunkEntity, KbChunk> {
     offset: number,
     limit: number,
   ): Promise<KbChunk[]> {
-    const entities = await this.repo.find({
+    const entities = await this.scoped.find({
       where: { documentId } as any,
       order: { chunkIndex: 'ASC' } as any,
       skip: offset,
@@ -62,7 +62,7 @@ export class KbChunkRepository extends BaseRepository<KbChunkEntity, KbChunk> {
   }
 
   async countByDocumentIdPaginated(documentId: string): Promise<number> {
-    return this.repo.count({ where: { documentId } as any })
+    return this.scoped.count({ documentId } as any)
   }
 
   async findByKnowledgeBaseId(knowledgeBaseId: string): Promise<KbChunk[]> {
@@ -94,7 +94,7 @@ export class KbChunkRepository extends BaseRepository<KbChunkEntity, KbChunk> {
   async create(request: CreateChunkRequest): Promise<KbChunk> {
     const now = new Date()
     const entity = this.repo.create(this.buildEntityForCreate(request, now))
-    const saved = await this.repo.save(entity)
+    const saved = await this.scoped.save(entity)
     return this.toDto(saved)
   }
 
@@ -115,29 +115,29 @@ export class KbChunkRepository extends BaseRepository<KbChunkEntity, KbChunk> {
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.repo.delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ id } as any)
+    return affected > 0
   }
 
   async deleteByDocumentId(documentId: string): Promise<void> {
-    await this.repo.delete({ documentId } as any)
+    await this.scoped.delete({ documentId } as any)
   }
 
   async deleteByKnowledgeBaseId(knowledgeBaseId: string): Promise<void> {
-    await this.repo.delete({ knowledgeBaseId } as any)
+    await this.scoped.delete({ knowledgeBaseId } as any)
   }
 
   async countByDocumentId(documentId: string): Promise<number> {
-    return this.repo.count({ where: { documentId } as any })
+    return this.scoped.count({ documentId } as any)
   }
 
   async countByKnowledgeBaseId(knowledgeBaseId: string): Promise<number> {
-    return this.repo.count({ where: { knowledgeBaseId } as any })
+    return this.scoped.count({ knowledgeBaseId } as any)
   }
 
   async findByIds(ids: string[]): Promise<KbChunk[]> {
     if (ids.length === 0) return []
-    const entities = await this.repo.find({
+    const entities = await this.scoped.find({
       where: { id: In(ids) } as any,
     })
     return this.toDtoList(entities)

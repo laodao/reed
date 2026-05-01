@@ -42,7 +42,7 @@ export class LwDesignMessageRepository extends BaseRepository<
   }
 
   async countByConversationId(conversationId: string): Promise<number> {
-    return this.repo.count({ where: { conversationId } as any })
+    return this.scoped.count({ conversationId } as any)
   }
 
   async add(

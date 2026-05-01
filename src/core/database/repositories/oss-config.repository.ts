@@ -20,6 +20,8 @@ export class OSSConfigRepository extends BaseRepository<
 > {
   constructor(dataSource: DataSource) {
     super(dataSource, OSSConfigEntity)
+    // 共享配置类 Repository：所有用户共享数据，不做 user_id 过滤
+    this.useRawRepo()
   }
 
   /**

@@ -44,7 +44,7 @@ export class DiaryFolderRepository extends BaseRepository<
     where: 'root' | { parentId?: string; id?: string; path?: string },
     orderBySort = true,
   ): Promise<DiaryFolder[]> {
-    const qb = this.repo.createQueryBuilder('f')
+    const qb = this.scoped.qb('f')
     if (where === 'root') {
       qb.where('f.parent_id IS NULL')
     } else {
@@ -109,8 +109,9 @@ export class DiaryFolderRepository extends BaseRepository<
   }
 
   async findAll(): Promise<DiaryFolder[]> {
-    const qb = this.repo
-      .createQueryBuilder('f')
+    // 用 scoped.qb 自动按 user_id 过滤
+    const qb = this.scoped
+      .qb('f')
       .orderBy('f.sort_order', 'ASC')
       .addOrderBy('f.created_at', 'DESC')
     const folders = await qb.getMany()
@@ -120,23 +121,24 @@ export class DiaryFolderRepository extends BaseRepository<
     const childCounts = new Map<string, number>()
     const entryCounts = new Map<string, number>()
 
-    const childRows = await this.repo
-      .createQueryBuilder('f')
+    const childRows = await this.scoped
+      .qb('f')
       .select('f.parent_id', 'parent_id')
       .addSelect('COUNT(*)', 'cnt')
-      .where('f.parent_id IN (:...ids)', { ids })
+      .andWhere('f.parent_id IN (:...ids)', { ids })
       .groupBy('f.parent_id')
       .getRawMany()
     for (const row of childRows) {
       childCounts.set(row.parent_id, Number(row.cnt))
     }
 
-    const entryRepo = this.dataSource.getRepository(DiaryEntryEntity)
-    const entryRows = await entryRepo
-      .createQueryBuilder('e')
+    // 条目数：用 scopedFor(DiaryEntryEntity) 保证按 user_id 过滤
+    const entryScoped = this.scopedFor(DiaryEntryEntity)
+    const entryRows = await entryScoped
+      .qb('e')
       .select('e.folder_id', 'folder_id')
       .addSelect('COUNT(*)', 'cnt')
-      .where('e.folder_id IN (:...ids)', { ids })
+      .andWhere('e.folder_id IN (:...ids)', { ids })
       .groupBy('e.folder_id')
       .getRawMany()
     for (const row of entryRows) {
@@ -182,7 +184,7 @@ export class DiaryFolderRepository extends BaseRepository<
       createdAt: now,
       updatedAt: now,
     })
-    const saved = await this.repo.save(entity)
+    const saved = await this.scoped.save(entity)
     return {
       ...this.toDto(saved),
       childCount: 0,
@@ -195,7 +197,7 @@ export class DiaryFolderRepository extends BaseRepository<
     request: UpdateDiaryFolderRequest,
     newPath?: string,
   ): Promise<boolean> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return false
 
     let changed = false
@@ -215,16 +217,16 @@ export class DiaryFolderRepository extends BaseRepository<
     if (!changed) return false
 
     existing.updatedAt = new Date()
-    await this.repo.save(existing)
+    await this.scoped.save(existing)
     return true
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.repo.delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ id } as any)
+    return affected > 0
   }
 
   async count(): Promise<number> {
-    return this.repo.count()
+    return this.scoped.count()
   }
 }

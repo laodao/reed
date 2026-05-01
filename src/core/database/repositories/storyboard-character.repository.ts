@@ -157,7 +157,7 @@ export class StoryboardCharacterRepository extends BaseRepository<
   }
 
   async countByStoryboardId(storyboardId: string): Promise<number> {
-    return this.repo.count({ where: { storyboardId } as any })
+    return this.scoped.count({ storyboardId } as any)
   }
 
   private generateId(): string {

@@ -25,6 +25,13 @@ import { VideoProjectRepository } from '@core/database/repositories/video-projec
 import { VideoEpisodeRepository } from '@core/database/repositories/video-episode.repository'
 import { StoryboardRepository } from '@core/database/repositories/storyboard.repository'
 import { CharacterBindingRepository } from '@core/database/repositories/character-binding.repository'
+import { TranslationRepository } from '@core/database/repositories/translation.repository'
+import { VoiceRepository } from '@core/database/repositories/voice.repository'
+import { KnowledgeBaseRepository } from '@core/database/repositories/knowledge-base.repository'
+import { KbDocumentRepository } from '@core/database/repositories/kb-document.repository'
+import { DiaryFolderRepository } from '@core/database/repositories/diary-folder.repository'
+import { DiaryEntryRepository } from '@core/database/repositories/diary-entry.repository'
+import { ApiKeyRepository } from '@core/database/repositories/api-key.repository'
 import { ensureUsersTable } from '@core/database/migrations/ensure-users-table'
 import {
   createTestDataSource,
@@ -49,6 +56,13 @@ describe.each(getTestDialects())('multi-tenant scoped repository (%s)', dialect 
   let videoEpisodeRepo: VideoEpisodeRepository
   let storyboardRepo: StoryboardRepository
   let characterBindingRepo: CharacterBindingRepository
+  let translationRepo: TranslationRepository
+  let voiceRepo: VoiceRepository
+  let kbRepo: KnowledgeBaseRepository
+  let kbDocRepo: KbDocumentRepository
+  let diaryFolderRepo: DiaryFolderRepository
+  let diaryEntryRepo: DiaryEntryRepository
+  let apiKeyRepo: ApiKeyRepository
 
   beforeAll(async () => {
     testDs = await createTestDataSource(dialect)
@@ -65,6 +79,13 @@ describe.each(getTestDialects())('multi-tenant scoped repository (%s)', dialect 
     videoEpisodeRepo = new VideoEpisodeRepository(testDs.ds)
     storyboardRepo = new StoryboardRepository(testDs.ds)
     characterBindingRepo = new CharacterBindingRepository(testDs.ds)
+    translationRepo = new TranslationRepository(testDs.ds)
+    voiceRepo = new VoiceRepository(testDs.ds)
+    kbRepo = new KnowledgeBaseRepository(testDs.ds)
+    kbDocRepo = new KbDocumentRepository(testDs.ds)
+    diaryFolderRepo = new DiaryFolderRepository(testDs.ds)
+    diaryEntryRepo = new DiaryEntryRepository(testDs.ds)
+    apiKeyRepo = new ApiKeyRepository(testDs.ds)
   })
 
   afterAll(async () => {
@@ -797,6 +818,165 @@ describe.each(getTestDialects())('multi-tenant scoped repository (%s)', dialect 
         portraitVariantRepo.getByCharacterId(charA.id),
       )
       expect(aStill.length).toBe(1)
+    })
+  })
+
+  // ========================================================================
+  // 10. 文档翻译模块
+  // ========================================================================
+  describe('文档翻译模块隔离', () => {
+    it('A 创建的 translation 在 B 的 getList 里看不到', async () => {
+      await runWithUserAsync(USER_A, () =>
+        translationRepo.create({
+          type: 'text',
+          sourceLanguage: 'en',
+          targetLanguage: 'zh',
+          sourceText: 'hello',
+          targetText: '你好',
+          status: 'completed',
+          favorite: false,
+          wordCount: 5,
+        } as any),
+      )
+
+      const aPage = await runWithUserAsync(USER_A, () =>
+        translationRepo.getList({ page: 1, pageSize: 20 }),
+      )
+      const bPage = await runWithUserAsync(USER_B, () =>
+        translationRepo.getList({ page: 1, pageSize: 20 }),
+      )
+
+      expect(aPage.list.length).toBe(1)
+      expect(aPage.total).toBe(1)
+      expect(bPage.list.length).toBe(0)
+      expect(bPage.total).toBe(0)
+    })
+  })
+
+  // ========================================================================
+  // 11. 语音助手模块
+  // ========================================================================
+  describe('语音助手模块隔离', () => {
+    it('A 创建的 voice record 在 B 的 getList 里看不到', async () => {
+      await runWithUserAsync(USER_A, () =>
+        voiceRepo.create({
+          type: 'tts',
+          status: 'completed',
+          inputText: 'hello',
+          outputAudioPath: 'a.wav',
+          favorite: false,
+        } as any),
+      )
+
+      const aPage = await runWithUserAsync(USER_A, () =>
+        voiceRepo.getList({ page: 1, pageSize: 20 } as any),
+      )
+      const bPage = await runWithUserAsync(USER_B, () =>
+        voiceRepo.getList({ page: 1, pageSize: 20 } as any),
+      )
+
+      expect(aPage.list.length).toBe(1)
+      expect(bPage.list.length).toBe(0)
+    })
+  })
+
+  // ========================================================================
+  // 12. 知识库模块（KnowledgeBase + Document）
+  // ========================================================================
+  describe('知识库模块隔离', () => {
+    it('A 创建的 KB 在 B 的 list 里看不到', async () => {
+      await runWithUserAsync(USER_A, () =>
+        kbRepo.create({ name: 'A 的知识库', embeddingModel: 'm', dimension: 768 } as any),
+      )
+
+      const aList = await runWithUserAsync(USER_A, () => kbRepo.findAll())
+      const bList = await runWithUserAsync(USER_B, () => kbRepo.findAll())
+
+      expect(aList.length).toBe(1)
+      expect(bList.length).toBe(0)
+    })
+
+    it('B 不能访问 A 的 KbDocument', async () => {
+      const kb = await runWithUserAsync(USER_A, () =>
+        kbRepo.create({ name: 'A 的 KB', embeddingModel: 'm', dimension: 768 } as any),
+      )
+      await runWithUserAsync(USER_A, () =>
+        kbDocRepo.create({
+          knowledgeBaseId: kb.id,
+          name: 'doc1.txt',
+          filePath: 'a.txt',
+          fileType: 'txt',
+          fileSize: 100,
+        } as any),
+      )
+
+      const aDocs = await runWithUserAsync(USER_A, () =>
+        kbDocRepo.findByKnowledgeBaseId(kb.id),
+      )
+      const bDocs = await runWithUserAsync(USER_B, () =>
+        kbDocRepo.findByKnowledgeBaseId(kb.id),
+      )
+
+      expect(aDocs.length).toBe(1)
+      expect(bDocs.length).toBe(0)
+    })
+  })
+
+  // ========================================================================
+  // 13. 日记模块（Folder + Entry）
+  // ========================================================================
+  describe('日记模块隔离', () => {
+    it('A 创建的 folder 在 B 看不到', async () => {
+      await runWithUserAsync(USER_A, () =>
+        diaryFolderRepo.create({ name: 'A 的目录', parentId: null } as any, '/A 的目录'),
+      )
+
+      const aList = await runWithUserAsync(USER_A, () =>
+        diaryFolderRepo.findAll(),
+      )
+      const bList = await runWithUserAsync(USER_B, () =>
+        diaryFolderRepo.findAll(),
+      )
+
+      expect(aList.length).toBeGreaterThanOrEqual(1)
+      expect(bList.length).toBe(0)
+    })
+
+    it('A 创建的 diary entry 在 B 的 list 里看不到', async () => {
+      const folder = await runWithUserAsync(USER_A, () =>
+        diaryFolderRepo.create({ name: 'A 的目录', parentId: null } as any, '/A 的目录'),
+      )
+      await runWithUserAsync(USER_A, () =>
+        diaryEntryRepo.create(
+          { folderId: folder.id, title: 'A 的日记', content: '内容' } as any,
+          '/A 的目录/A 的日记',
+        ),
+      )
+
+      const aEntries = await runWithUserAsync(USER_A, () =>
+        diaryEntryRepo.findByFolder(folder.id),
+      )
+      const bEntries = await runWithUserAsync(USER_B, () =>
+        diaryEntryRepo.findByFolder(folder.id),
+      )
+
+      expect(aEntries.length).toBe(1)
+      expect(bEntries.length).toBe(0)
+    })
+  })
+
+  // ========================================================================
+  // 14. 共享配置 Repository（useRawRepo）跨用户共享
+  // ========================================================================
+  describe('共享配置跨用户共享', () => {
+    it('ApiKey 是共享的：A 写入 B 也能读到', async () => {
+      await runWithUserAsync(USER_A, () =>
+        apiKeyRepo.save('openai', 'A-encrypted'),
+      )
+
+      const fromB = await runWithUserAsync(USER_B, () => apiKeyRepo.get('openai'))
+      expect(fromB).not.toBeNull()
+      expect(fromB?.encryptedKey).toBe('A-encrypted')
     })
   })
 })

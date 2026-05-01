@@ -73,7 +73,7 @@ export class KnowledgeBaseRepository extends BaseRepository<
       createdAt: now,
       updatedAt: now,
     })
-    const saved = await this.repo.save(entity)
+    const saved = await this.scoped.save(entity)
     return this.toDto(saved)
   }
 
@@ -81,7 +81,7 @@ export class KnowledgeBaseRepository extends BaseRepository<
     id: string,
     request: UpdateKnowledgeBaseRequest,
   ): Promise<boolean> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return false
 
     let changed = false
@@ -97,17 +97,17 @@ export class KnowledgeBaseRepository extends BaseRepository<
     if (!changed) return false
 
     existing.updatedAt = new Date()
-    await this.repo.save(existing)
+    await this.scoped.save(existing)
     return true
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.repo.delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ id } as any)
+    return affected > 0
   }
 
   async updateStats(id: string, stats: KnowledgeBaseStats): Promise<void> {
-    await this.repo.update({ id } as any, {
+    await this.scoped.update({ id } as any, {
       documentCount: stats.documentCount,
       vectorCount: stats.vectorCount,
       totalSize: stats.totalSize,
@@ -149,6 +149,6 @@ export class KnowledgeBaseRepository extends BaseRepository<
   }
 
   async count(): Promise<number> {
-    return this.repo.count()
+    return this.scoped.count()
   }
 }

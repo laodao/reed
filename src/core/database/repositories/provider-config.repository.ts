@@ -18,6 +18,8 @@ export class ProviderConfigRepository extends BaseRepository<
 > {
   constructor(dataSource: DataSource) {
     super(dataSource, ProviderConfigEntity)
+    // 共享配置类 Repository：所有用户共享数据，不做 user_id 过滤
+    this.useRawRepo()
   }
 
   private dateToIso(v: Date | string | null | undefined): string | undefined {

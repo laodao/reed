@@ -23,6 +23,8 @@ export class SettingsRepository extends BaseRepository<
 > {
   constructor(dataSource: DataSource) {
     super(dataSource, SettingsEntity)
+    // 共享配置类 Repository：所有用户共享数据，不做 user_id 过滤
+    this.useRawRepo()
   }
 
   protected toDto(e: SettingsEntity): SettingsDto {

@@ -54,7 +54,7 @@ export class VoiceRepository extends BaseRepository<
     const { page, pageSize, type, favorite } = query
     const offset = (page - 1) * pageSize
 
-    const qb = this.repo.createQueryBuilder('v')
+    const qb = this.scoped.qb('v')
     if (type) qb.andWhere('v.type = :type', { type })
     if (favorite !== undefined) {
       qb.andWhere('v.favorite = :fav', { fav: favorite ? 1 : 0 })
@@ -97,12 +97,12 @@ export class VoiceRepository extends BaseRepository<
       errorMessage: record.errorMessage ?? null,
       createdAt: nowIso,
     })
-    const saved = await this.repo.save(entity)
+    const saved = await this.scoped.save(entity)
     return this.toDto(saved)
   }
 
   async update(id: string, data: Partial<VoiceRecord>): Promise<void> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return
 
     if (data.status !== undefined) existing.status = data.status
@@ -115,11 +115,11 @@ export class VoiceRepository extends BaseRepository<
     if (data.errorMessage !== undefined) {
       existing.errorMessage = data.errorMessage ?? null
     }
-    await this.repo.save(existing)
+    await this.scoped.save(existing)
   }
 
   async delete(id: string): Promise<void> {
-    await this.repo.delete({ id } as any)
+    await this.scoped.delete({ id } as any)
   }
 
   async toggleFavorite(id: string): Promise<boolean> {

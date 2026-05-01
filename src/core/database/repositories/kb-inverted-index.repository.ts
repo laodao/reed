@@ -109,7 +109,7 @@ export class KbInvertedIndexRepository extends BaseRepository<
     knowledgeBaseId: string,
     term: string,
   ): Promise<InvertedIndexItem[]> {
-    const entities = await this.repo.find({
+    const entities = await this.scoped.find({
       where: { knowledgeBaseId, term } as any,
     })
     return this.toDtoList(entities)
@@ -120,7 +120,7 @@ export class KbInvertedIndexRepository extends BaseRepository<
     terms: string[],
   ): Promise<Map<string, InvertedIndexItem[]>> {
     if (terms.length === 0) return new Map()
-    const entities = await this.repo.find({
+    const entities = await this.scoped.find({
       where: { knowledgeBaseId, term: In(terms) } as any,
     })
     const result = new Map<string, InvertedIndexItem[]>()
@@ -134,7 +134,7 @@ export class KbInvertedIndexRepository extends BaseRepository<
   }
 
   async deleteByChunkId(chunkId: string): Promise<void> {
-    await this.repo.delete({ chunkId } as any)
+    await this.scoped.delete({ chunkId } as any)
   }
 
   async deleteByDocumentId(documentId: string): Promise<void> {
@@ -154,7 +154,7 @@ export class KbInvertedIndexRepository extends BaseRepository<
   }
 
   async deleteByKnowledgeBaseId(knowledgeBaseId: string): Promise<void> {
-    await this.repo.delete({ knowledgeBaseId } as any)
+    await this.scoped.delete({ knowledgeBaseId } as any)
   }
 
   async getDocumentFrequencies(

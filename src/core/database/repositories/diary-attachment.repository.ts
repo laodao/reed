@@ -56,21 +56,21 @@ export class DiaryAttachmentRepository extends BaseRepository<
       mimeType: mimeType ?? null,
       createdAt: new Date(),
     })
-    const saved = await this.repo.save(entity)
+    const saved = await this.scoped.save(entity)
     return this.toDto(saved)
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.repo.delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ id } as any)
+    return affected > 0
   }
 
   async deleteByEntry(entryId: string): Promise<void> {
-    await this.repo.delete({ entryId } as any)
+    await this.scoped.delete({ entryId } as any)
   }
 
   async count(entryId?: string): Promise<number> {
-    if (entryId) return this.repo.count({ where: { entryId } as any })
-    return this.repo.count()
+    if (entryId) return this.scoped.count({ entryId } as any)
+    return this.scoped.count()
   }
 }

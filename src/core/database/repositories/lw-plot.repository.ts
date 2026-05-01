@@ -200,7 +200,7 @@ export class LwPlotRepository extends BaseRepository<LwPlotEntity, StoryPlot> {
   }
 
   async countByProjectId(projectId: string): Promise<number> {
-    return this.repo.count({ where: { projectId } as any })
+    return this.scoped.count({ projectId } as any)
   }
 
   async getCharacterIds(plotId: string): Promise<string[]> {

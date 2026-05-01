@@ -2,7 +2,7 @@
  * 翻译数据访问层
  * @module database/repositories/translation
  * @description 基于 TypeORM 实现，支持 sqlite / postgres 双方言。
- *              所有方法已从同步签名迁移为 Promise<T>。
+ *              所有读写都走 BaseRepository.scoped.* 实现 user_id 多租户隔离。
  */
 
 import type { DataSource } from 'typeorm'
@@ -49,7 +49,7 @@ export class TranslationRepository extends BaseRepository<
     const { page, pageSize, type, favorite } = query
     const offset = (page - 1) * pageSize
 
-    const qb = this.repo.createQueryBuilder('t')
+    const qb = this.scoped.qb('t')
     if (type) qb.andWhere('t.type = :type', { type })
     if (favorite !== undefined) {
       qb.andWhere('t.favorite = :fav', { fav: favorite ? 1 : 0 })
@@ -61,7 +61,8 @@ export class TranslationRepository extends BaseRepository<
   }
 
   async getById(id: string): Promise<TranslationRecord | null> {
-    return this.findOneByWhere({ id } as any)
+    const e = await this.scoped.findOne({ id } as any)
+    return e ? this.toDto(e) : null
   }
 
   async create(
@@ -69,7 +70,7 @@ export class TranslationRepository extends BaseRepository<
   ): Promise<TranslationRecord> {
     const id = randomUUID()
     const nowIso = new Date().toISOString()
-    const entity = this.repo.create({
+    const saved = await this.scoped.save({
       id,
       type: record.type,
       sourceLanguage: record.sourceLanguage,
@@ -86,13 +87,12 @@ export class TranslationRepository extends BaseRepository<
       modelId: record.modelId ?? null,
       errorMessage: record.errorMessage ?? null,
       createdAt: nowIso,
-    })
-    const saved = await this.repo.save(entity)
+    } as Partial<TranslationEntity>)
     return this.toDto(saved)
   }
 
   async update(id: string, data: Partial<TranslationRecord>): Promise<void> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return
 
     if (data.targetText !== undefined) existing.targetText = data.targetText ?? null
@@ -102,11 +102,11 @@ export class TranslationRepository extends BaseRepository<
     if (data.errorMessage !== undefined) {
       existing.errorMessage = data.errorMessage ?? null
     }
-    await this.repo.save(existing)
+    await this.scoped.save(existing)
   }
 
   async delete(id: string): Promise<void> {
-    await this.repo.delete({ id } as any)
+    await this.scoped.delete({ id } as any)
   }
 
   async toggleFavorite(id: string): Promise<boolean> {
@@ -121,8 +121,8 @@ export class TranslationRepository extends BaseRepository<
 
   async count(favoriteOnly: boolean = false): Promise<number> {
     if (favoriteOnly) {
-      return this.repo.count({ where: { favorite: 1 } as any })
+      return this.scoped.count({ favorite: 1 } as any)
     }
-    return this.repo.count()
+    return this.scoped.count()
   }
 }
