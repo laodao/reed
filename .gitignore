@@ -1,50 +1,12 @@
-# Dependencies
 node_modules/
-
-# Build output
-dist/
 out/
-
-# Logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Environment files
-.env
-.env.local
-.env.*.local
-
-# Test coverage
-coverage/
-
-# Cache
-.cache/
-.parcel-cache/
-
-# Temporary files
-*.tmp
-*.temp
-
-# BMAD output (keep planning artifacts)
-_bmad-output/
-
-# Git worktrees
-.worktrees/
-
-.playwright-mcp
+dist/
+data/
+data-web/
+data-web-mt/
+test-results/
+.tsbuildinfo
+*.tsbuildinfo
+electron.vite.config.d.ts
+electron.vite.config.js
+.gitignore.local

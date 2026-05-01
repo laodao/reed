@@ -11,15 +11,16 @@
  * 启动流程：
  * 1. 读环境变量（PORT / JWT_SECRET / DATA_ROOT 等）
  * 2. 注册 4 个全局访问器（PathProvider / EventEmitter / SecureStorage / DatabaseManager）
- * 3. 初始化数据库（共用 src/core/database 的 DataSource，但 PathProvider 已是 Web 版）
- * 4. 启动 HTTP / WS
+ * 3. 初始化全局数据库（仅 users 表）
+ * 4. 注册 WebDatabaseRegistry：登录后每个用户使用独立 SQLite 文件
+ * 5. 启动 HTTP / WS
  */
 
 import 'reflect-metadata'
 import * as http from 'http'
 import * as path from 'path'
 import * as fs from 'fs'
-import express, { type Express } from 'express'
+import express from 'express'
 import cookieParser from 'cookie-parser'
 
 import { configureJwtSecret } from './auth/jwt'
@@ -32,12 +33,13 @@ import { attachWebSocketServer } from './ws/ws-server'
 import { WebPathProvider } from './platform/web-path.provider'
 import { WebSocketEventEmitter } from './platform/web-event-emitter'
 import { WebSecureStorage } from './platform/web-secure-storage'
+import { WebDatabaseRegistry } from './platform/web-database-registry'
 
 interface ServerConfig {
   port: number
   rootDataPath: string
   jwtSecret: string
-  rendererDir: string | null  // 静态资源目录；为 null 时不挂静态服务
+  rendererDir: string | null
 }
 
 function readConfig(): ServerConfig {
@@ -53,7 +55,6 @@ function defaultDevSecret(): string {
   if (process.env.NODE_ENV === 'production') {
     throw new Error('生产模式必须设置 JWT_SECRET 环境变量')
   }
-  // 开发模式给一个固定值，方便本地刷新仍保留登录态
   return 'dev-only-secret-do-not-use-in-prod'
 }
 
@@ -77,6 +78,10 @@ async function bootstrap(): Promise<void> {
     rendererDir: cfg.rendererDir,
   })
 
+  if (!fs.existsSync(cfg.rootDataPath)) {
+    fs.mkdirSync(cfg.rootDataPath, { recursive: true })
+  }
+
   // 1. 平台抽象层
   WebPathProvider.getInstance({ rootDataPath: cfg.rootDataPath })
   WebSocketEventEmitter.getInstance()
@@ -85,12 +90,12 @@ async function bootstrap(): Promise<void> {
 
   configureJwtSecret(cfg.jwtSecret)
 
-  // 2. 数据库初始化（用 web 版 PathProvider，所以 dataPath 是 <root>/users/_anonymous）
-  //    注意：这里数据库是全局单实例（所有用户共享一个 SQLite/PG），用 user_id 列做行级隔离。
-  //    用户专属文件目录由 PathProvider 隔离。
-  await initWebDatabase()
+  // 2. 多租户数据库初始化
+  //    - 全局 SQLite：<root>/global.db，仅承载 users 表用于鉴权
+  //    - 每用户 SQLite：<root>/users/<userId>/the_bot.db（懒创建）
+  await initWebDatabaseRegistry(cfg.rootDataPath)
 
-  // 2.5 注册 IPC channel 处理器（与 Electron handler 等价的逻辑）
+  // 2.5 注册 IPC channel 处理器
   const { registerAllWebChannels } = await import('./api/register-channels')
   await registerAllWebChannels()
 
@@ -105,10 +110,8 @@ async function bootstrap(): Promise<void> {
   app.use('/api/ipc', ipcRouter)
   app.use('/assets', assetsRouter)
 
-  // 静态前端
   if (cfg.rendererDir) {
     app.use(express.static(cfg.rendererDir))
-    // SPA fallback：除 /api / /assets / /events 之外的 GET 都返回 index.html
     app.get('/*splat', (req, res, next) => {
       if (req.path.startsWith('/api') || req.path.startsWith('/assets') || req.path.startsWith('/events')) {
         return next()
@@ -124,55 +127,47 @@ async function bootstrap(): Promise<void> {
   server.listen(cfg.port, () => {
     console.log(`[web-server] 监听 http://localhost:${cfg.port}`)
   })
+
+  // 优雅停机
+  const shutdown = async (signal: string) => {
+    console.log(`[web-server] 收到 ${signal}，开始关闭...`)
+    server.close()
+    await WebDatabaseRegistry.getInstance().shutdown()
+    process.exit(0)
+  }
+  process.on('SIGINT', () => shutdown('SIGINT'))
+  process.on('SIGTERM', () => shutdown('SIGTERM'))
 }
 
 /**
- * 初始化数据库（不依赖 Electron 的 DatabaseManager）。
- * 这里用最小代码：直接构造 DataSource + 注册到 ICoreDatabaseManager。
- *
- * 数据库路径优先级：
- *   1. DB_TYPE=postgres → 使用 PG 环境变量
- *   2. 默认 → SQLite，文件位置 <rootDataPath>/the_bot.db
+ * 初始化全局 DataSource（users 表）+ 注册 WebDatabaseRegistry
  */
-type DbConfig =
-  | { type: 'sqlite'; database: string; enableWal?: boolean }
-  | { type: 'postgres'; host: string; port?: number; username: string; password: string; database: string; schema?: string }
-
-async function initWebDatabase(): Promise<void> {
+async function initWebDatabaseRegistry(rootDataPath: string): Promise<void> {
   const { createDataSource } = await import('@core/database/data-source')
-  const { loadDbConfigFromEnv } = await import('@core/database/config')
   const { ensureUsersTable } = await import('@core/database/migrations/ensure-users-table')
   const { registerCoreDatabaseManager } = await import(
     '@core/database/database-manager.interface'
   )
-  const { WebDatabaseManager } = await import('./platform/web-database-manager')
 
-  // 从环境变量读 DbConfig；未设置则用 SQLite 文件
-  let cfg: DbConfig | null = loadDbConfigFromEnv()
-  if (!cfg) {
-    const root = path.resolve(process.env.DATA_ROOT ?? './data')
-    if (!fs.existsSync(root)) fs.mkdirSync(root, { recursive: true })
-    cfg = {
-      type: 'sqlite' as const,
-      database: path.join(root, 'the_bot.db'),
-      enableWal: true,
-    }
-  }
+  const globalDbFile = path.join(rootDataPath, 'global.db')
+  const globalDs = await createDataSource({
+    config: { type: 'sqlite', database: globalDbFile, enableWal: true },
+  })
+  // 全局库只用 users 表；synchronize 会按 entity metadata 建全表（其他表为空，可忽略）
+  await globalDs.synchronize()
+  await ensureUsersTable(globalDs)
 
-  const ds = await createDataSource({ config: cfg })
-  // Web 端首次启动用 synchronize 让 TypeORM 按 entity metadata 建全表（幂等）。
-  // 与 Electron 不同：Electron 由 initTables() raw SQL 建表，drift check 把关；
-  // Web 端不维护两份 DDL，统一走 TypeORM 自身的 schema 同步。
-  await ds.synchronize()
-  await ensureUsersTable(ds)
+  const registry = WebDatabaseRegistry.getInstance({
+    rootDataPath,
+    globalDataSource: globalDs,
+  })
 
-  // 注册 DatabaseManager（生成所有 Repository 实例）
-  const dm = new WebDatabaseManager(ds)
-  registerCoreDatabaseManager(() => dm)
-  console.log('[web-server] 数据库初始化完成')
+  // core 层访问器：未登录 → 全局 DM；登录后 → 该用户专属 DM
+  registerCoreDatabaseManager(() => registry.getCurrentUserDm())
+  console.log('[web-server] 数据库注册表初始化完成（多租户 SQLite）')
 }
 
-bootstrap().catch(err => {
+bootstrap().catch((err) => {
   console.error('[web-server] 启动失败:', err)
   process.exit(1)
 })
