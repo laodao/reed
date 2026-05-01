@@ -19,16 +19,17 @@
 
 import { rpcInvoke } from './http-rpc'
 import { on as wsOn, configureWsBase } from './ws-client'
-import { CHANNEL_OVERRIDES } from './channel-map'
+import { CHANNEL_OVERRIDES, type ChannelEntry } from './channel-map'
 
 function camelToKebab(s: string): string {
   return s.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase()
 }
 
-function resolveChannel(namespace: string, method: string): string {
+function resolveEntry(namespace: string, method: string): ChannelEntry & { channel: string } {
   const key = `${namespace}.${method}`
-  if (CHANNEL_OVERRIDES[key]) return CHANNEL_OVERRIDES[key]
-  return `${camelToKebab(namespace)}:${camelToKebab(method)}`
+  const override = CHANNEL_OVERRIDES[key]
+  const channel = override?.channel ?? `${camelToKebab(namespace)}:${camelToKebab(method)}`
+  return { channel, wrap: override?.wrap }
 }
 
 /**
@@ -45,14 +46,15 @@ function createNamespaceProxy(namespace: string): unknown {
         // onXxx / onYyyChanged：订阅事件
         if (prop.startsWith('on') && prop.length > 2 && prop[2] === prop[2].toUpperCase()) {
           return (cb: (data: unknown) => void) => {
-            const channel = resolveChannel(namespace, prop)
-            return wsOn(channel, cb)
+            const entry = resolveEntry(namespace, prop)
+            return wsOn(entry.channel, cb)
           }
         }
 
         return (...args: unknown[]) => {
-          const channel = resolveChannel(namespace, prop)
-          return rpcInvoke(channel, ...args)
+          const entry = resolveEntry(namespace, prop)
+          const finalArgs = entry.wrap ? entry.wrap(...args) : args
+          return rpcInvoke(entry.channel, ...finalArgs)
         }
       },
     },

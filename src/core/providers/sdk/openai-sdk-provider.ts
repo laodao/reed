@@ -75,7 +75,14 @@ export class OpenAISdkProvider extends BaseProvider {
       }))
     } catch (error) {
       console.error('获取模型列表失败:', error)
-      // 返回模板中预定义的模型列表
+      // 鉴权 / 权限 / 资源不存在 等明确错误必须冒泡到上层，避免被
+      // "回退到模板预置模型" 掩盖成 "连接成功但模型为空" 的误导信息。
+      const status = (error as { status?: number; response?: { status?: number } })?.status
+        ?? (error as { response?: { status?: number } })?.response?.status
+      if (status === 401 || status === 403 || status === 404) {
+        throw error
+      }
+      // 网络错误 / 5xx / endpoint 不支持 list models 时，回退到模板预定义模型
       if (this.template?.models) {
         return this.template.models.map((m) => ({
           id: m.id,
