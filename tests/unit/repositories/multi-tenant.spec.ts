@@ -16,6 +16,8 @@ import { runWithUserAsync, setDefaultUser } from '@core/context/user-context'
 import { DialogRepository } from '@core/database/repositories/dialog.repository'
 import { RoleRepository } from '@core/database/repositories/role.repository'
 import { UserRepository } from '@core/database/repositories/user.repository'
+import { ImageRepository } from '@core/database/repositories/image.repository'
+import { ImageAssetRepository } from '@core/database/repositories/image-asset.repository'
 import { ensureUsersTable } from '@core/database/migrations/ensure-users-table'
 import {
   createTestDataSource,
@@ -31,6 +33,8 @@ describe.each(getTestDialects())('multi-tenant scoped repository (%s)', dialect 
   let dialogRepo: DialogRepository
   let roleRepo: RoleRepository
   let userRepo: UserRepository
+  let imageRepo: ImageRepository
+  let imageAssetRepo: ImageAssetRepository
 
   beforeAll(async () => {
     testDs = await createTestDataSource(dialect)
@@ -38,6 +42,8 @@ describe.each(getTestDialects())('multi-tenant scoped repository (%s)', dialect 
     dialogRepo = new DialogRepository(testDs.ds)
     roleRepo = new RoleRepository(testDs.ds)
     userRepo = new UserRepository(testDs.ds)
+    imageRepo = new ImageRepository(testDs.ds)
+    imageAssetRepo = new ImageAssetRepository(testDs.ds)
   })
 
   afterAll(async () => {
@@ -327,6 +333,159 @@ describe.each(getTestDialects())('multi-tenant scoped repository (%s)', dialect 
         .getRepository(MessageEntity)
         .findOne({ where: { id: 'msg-2' } as any })
       expect(msgAfter).toBeNull()
+    })
+  })
+
+  // ========================================================================
+  // 7. ImageRepository / ImageAssetRepository 多租户隔离
+  // ========================================================================
+  describe('ImageRepository 隔离', () => {
+    it('A 创建的 image 在 B 的 getList 里看不到', async () => {
+      await runWithUserAsync(USER_A, () =>
+        imageRepo.create({
+          filePath: 'images/a.png',
+          prompt: 'A 的图',
+          providerId: 'p',
+          modelId: 'm',
+        } as any),
+      )
+
+      const aPage = await runWithUserAsync(USER_A, () => imageRepo.getList(1, 20))
+      const bPage = await runWithUserAsync(USER_B, () => imageRepo.getList(1, 20))
+
+      expect(aPage.images.length).toBe(1)
+      expect(aPage.total).toBe(1)
+      expect(bPage.images.length).toBe(0)
+      expect(bPage.total).toBe(0)
+    })
+
+    it('B 不能 toggleFavorite A 的 image', async () => {
+      const created = await runWithUserAsync(USER_A, () =>
+        imageRepo.create({
+          filePath: 'images/a.png',
+          prompt: 'A',
+          providerId: 'p',
+          modelId: 'm',
+        } as any),
+      )
+
+      // B 调 toggleFavorite 应该拿不到该 image，抛错
+      await expect(
+        runWithUserAsync(USER_B, () => imageRepo.toggleFavorite(created.id)),
+      ).rejects.toThrow()
+
+      // A 看自己的 favorite 仍是 false
+      const stillA = await runWithUserAsync(USER_A, () => imageRepo.getById(created.id))
+      expect(stillA?.favorite).toBe(false)
+    })
+
+    it('B 不能删除 A 的 image，deleteMany 跨用户也不删 A 的', async () => {
+      const a1 = await runWithUserAsync(USER_A, () =>
+        imageRepo.create({ filePath: 'a1.png', prompt: 'A1', providerId: 'p', modelId: 'm' } as any),
+      )
+      const b1 = await runWithUserAsync(USER_B, () =>
+        imageRepo.create({ filePath: 'b1.png', prompt: 'B1', providerId: 'p', modelId: 'm' } as any),
+      )
+
+      // B 调 deleteMany 传 A 的 id + B 自己的 id：A 不应被删
+      const affected = await runWithUserAsync(USER_B, () =>
+        imageRepo.deleteMany([a1.id, b1.id]),
+      )
+      expect(affected).toBe(1) // 只删除 B 的
+
+      const aStill = await runWithUserAsync(USER_A, () => imageRepo.getById(a1.id))
+      expect(aStill).not.toBeNull()
+    })
+
+    it('updateStatusByTaskId 限定 user_id：B 的 taskId 同名也不能改 A 的 status', async () => {
+      // A 和 B 创建两条 image，taskId 同名（极端场景）
+      const a1 = await runWithUserAsync(USER_A, () =>
+        imageRepo.create({
+          filePath: 'a.png',
+          prompt: 'A',
+          providerId: 'p',
+          modelId: 'm',
+          taskId: 'shared-task-id',
+          status: 'pending',
+        } as any),
+      )
+      await runWithUserAsync(USER_B, () =>
+        imageRepo.create({
+          filePath: 'b.png',
+          prompt: 'B',
+          providerId: 'p',
+          modelId: 'm',
+          taskId: 'shared-task-id',
+          status: 'pending',
+        } as any),
+      )
+
+      // B 想把 status 改成 completed —— 只应改 B 自己的
+      const affected = await runWithUserAsync(USER_B, () =>
+        imageRepo.updateStatusByTaskId('shared-task-id', 'completed'),
+      )
+      expect(affected).toBe(1)
+
+      const aImg = await runWithUserAsync(USER_A, () => imageRepo.getById(a1.id))
+      expect(aImg?.status).toBe('pending') // A 的不动
+    })
+  })
+
+  describe('ImageAssetRepository 隔离', () => {
+    it('A 的 image_asset 在 B 的 getByProjectId 里看不到', async () => {
+      await runWithUserAsync(USER_A, () =>
+        imageAssetRepo.create({
+          projectId: 'proj-1',
+          type: 'character' as any,
+          prompt: 'A',
+          imagePath: 'a.png',
+          width: 100,
+          height: 100,
+        }),
+      )
+
+      const aList = await runWithUserAsync(USER_A, () =>
+        imageAssetRepo.getByProjectId('proj-1'),
+      )
+      const bList = await runWithUserAsync(USER_B, () =>
+        imageAssetRepo.getByProjectId('proj-1'),
+      )
+
+      expect(aList.length).toBe(1)
+      expect(bList.length).toBe(0)
+    })
+
+    it('deleteByProjectId 限定 user_id：B 调用同 projectId 不删 A 的', async () => {
+      await runWithUserAsync(USER_A, () =>
+        imageAssetRepo.create({
+          projectId: 'shared-proj',
+          type: 'character' as any,
+          prompt: 'A',
+          imagePath: 'a.png',
+          width: 100,
+          height: 100,
+        }),
+      )
+      await runWithUserAsync(USER_B, () =>
+        imageAssetRepo.create({
+          projectId: 'shared-proj',
+          type: 'character' as any,
+          prompt: 'B',
+          imagePath: 'b.png',
+          width: 100,
+          height: 100,
+        }),
+      )
+
+      const bAffected = await runWithUserAsync(USER_B, () =>
+        imageAssetRepo.deleteByProjectId('shared-proj'),
+      )
+      expect(bAffected).toBe(1)
+
+      const aStill = await runWithUserAsync(USER_A, () =>
+        imageAssetRepo.getByProjectId('shared-proj'),
+      )
+      expect(aStill.length).toBe(1)
     })
   })
 })

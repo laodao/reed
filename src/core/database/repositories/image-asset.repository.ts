@@ -3,6 +3,7 @@
  * @module database/repositories/image-asset.repository
  * @description 基于 TypeORM 实现，所有方法异步。
  *              created_at 是 INTEGER（epoch ms），不同于其他表。
+ *              所有读写都走 BaseRepository.scoped.* 实现 user_id 多租户隔离。
  */
 
 import type { DataSource } from 'typeorm'
@@ -65,27 +66,33 @@ export class ImageAssetRepository extends BaseRepository<
   }
 
   async getByProjectId(projectId: string): Promise<ImageAsset[]> {
-    return this.findManyByWhere({ projectId } as any, { createdAt: 'DESC' })
+    const es = await this.scoped.find({
+      where: { projectId } as any,
+      order: { createdAt: 'DESC' } as any,
+    })
+    return this.toDtoList(es)
   }
 
   async getById(id: string): Promise<ImageAsset | null> {
-    return this.findOneByWhere({ id } as any)
+    const e = await this.scoped.findOne({ id } as any)
+    return e ? this.toDto(e) : null
   }
 
   async getByType(
     projectId: string,
     type: ImageAssetType,
   ): Promise<ImageAsset[]> {
-    return this.findManyByWhere(
-      { projectId, type } as any,
-      { createdAt: 'DESC' },
-    )
+    const es = await this.scoped.find({
+      where: { projectId, type } as any,
+      order: { createdAt: 'DESC' } as any,
+    })
+    return this.toDtoList(es)
   }
 
   async create(data: CreateImageAssetRequest): Promise<ImageAsset> {
     const id = this.generateId()
     const now = Date.now()
-    const entity = this.repo.create({
+    const saved = await this.scoped.save({
       id,
       projectId: data.projectId,
       type: data.type,
@@ -99,8 +106,7 @@ export class ImageAssetRepository extends BaseRepository<
       height: data.height,
       metadata: (data.metadata as Record<string, unknown> | undefined) ?? null,
       createdAt: now,
-    })
-    const saved = await this.repo.save(entity)
+    } as Partial<ImageAssetEntity>)
     return this.toDto(saved)
   }
 
@@ -108,7 +114,7 @@ export class ImageAssetRepository extends BaseRepository<
     id: string,
     data: UpdateImageAssetRequest,
   ): Promise<ImageAsset | null> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return null
 
     let changed = false
@@ -127,22 +133,21 @@ export class ImageAssetRepository extends BaseRepository<
 
     if (!changed) return this.toDto(existing)
 
-    const saved = await this.repo.save(existing)
+    const saved = await this.scoped.save(existing)
     return this.toDto(saved)
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.repo.delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ id } as any)
+    return affected > 0
   }
 
   async deleteByProjectId(projectId: string): Promise<number> {
-    const result = await this.repo.delete({ projectId } as any)
-    return result.affected ?? 0
+    return this.scoped.delete({ projectId } as any)
   }
 
   async countByProjectId(projectId: string): Promise<number> {
-    return this.repo.count({ where: { projectId } as any })
+    return this.scoped.count({ projectId } as any)
   }
 
   private generateId(): string {

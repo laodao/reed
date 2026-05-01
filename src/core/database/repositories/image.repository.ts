@@ -2,9 +2,10 @@
  * 图像数据访问层
  * @module database/repositories/image
  * @description 基于 TypeORM 实现，支持 sqlite / postgres 双方言。
+ *              所有读写都走 BaseRepository.scoped.* 实现 user_id 多租户隔离。
  */
 
-import { In, type DataSource } from 'typeorm'
+import { In, type DataSource, type SelectQueryBuilder } from 'typeorm'
 import type { ImageRecord } from '@shared/types'
 import { randomUUID } from 'crypto'
 import { ImageEntity } from '../entities/image.entity'
@@ -50,7 +51,7 @@ export class ImageRepository extends BaseRepository<ImageEntity, ImageRecord> {
   }
 
   private async paginate(
-    qb: ReturnType<typeof this.repo.createQueryBuilder>,
+    qb: SelectQueryBuilder<ImageEntity>,
     page: number,
     pageSize: number,
   ): Promise<ImagePage> {
@@ -70,18 +71,23 @@ export class ImageRepository extends BaseRepository<ImageEntity, ImageRecord> {
     favoriteOnly: boolean = false,
     status?: string,
   ): Promise<ImagePage> {
-    const qb = this.repo.createQueryBuilder('image')
+    const qb = this.scoped.qb('image')
     if (favoriteOnly) qb.andWhere('image.favorite = :fav', { fav: 1 })
     if (status) qb.andWhere('image.status = :s', { s: status })
     return this.paginate(qb, page, pageSize)
   }
 
   async getById(id: string): Promise<ImageRecord | null> {
-    return this.findOneByWhere({ id } as any)
+    const e = await this.scoped.findOne({ id } as any)
+    return e ? this.toDto(e) : null
   }
 
   async getByTaskId(taskId: string): Promise<ImageRecord[]> {
-    return this.findManyByWhere({ taskId } as any, { createdAt: 'DESC' })
+    const es = await this.scoped.find({
+      where: { taskId } as any,
+      order: { createdAt: 'DESC' } as any,
+    })
+    return this.toDtoList(es)
   }
 
   async create(
@@ -90,7 +96,7 @@ export class ImageRepository extends BaseRepository<ImageEntity, ImageRecord> {
     const id = randomUUID()
     const now = new Date()
     const status = image.status || 'completed'
-    const entity = this.repo.create({
+    const saved = await this.scoped.save({
       id,
       dialogId: image.dialogId ?? null,
       messageId: image.messageId ?? null,
@@ -114,13 +120,12 @@ export class ImageRepository extends BaseRepository<ImageEntity, ImageRecord> {
       taskId: image.taskId ?? null,
       status,
       errorMessage: image.errorMessage ?? null,
-    })
-    const saved = await this.repo.save(entity)
+    } as Partial<ImageEntity>)
     return this.toDto(saved)
   }
 
   async update(id: string, data: Partial<ImageRecord>): Promise<void> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return
 
     if (data.favorite !== undefined) existing.favorite = data.favorite ? 1 : 0
@@ -148,7 +153,7 @@ export class ImageRepository extends BaseRepository<ImageEntity, ImageRecord> {
     if (data.width !== undefined) existing.width = data.width ?? null
     if (data.height !== undefined) existing.height = data.height ?? null
 
-    await this.repo.save(existing)
+    await this.scoped.save(existing)
   }
 
   async updateStatus(
@@ -160,7 +165,7 @@ export class ImageRepository extends BaseRepository<ImageEntity, ImageRecord> {
     if (errorMessage !== undefined) {
       partial.errorMessage = errorMessage || null
     }
-    await this.repo.update({ id } as any, partial)
+    await this.scoped.update({ id } as any, partial)
   }
 
   async updateStatusByTaskId(
@@ -172,18 +177,16 @@ export class ImageRepository extends BaseRepository<ImageEntity, ImageRecord> {
     if (errorMessage !== undefined) {
       partial.errorMessage = errorMessage || null
     }
-    const result = await this.repo.update({ taskId } as any, partial)
-    return result.affected ?? 0
+    return this.scoped.update({ taskId } as any, partial)
   }
 
   async delete(id: string): Promise<void> {
-    await this.repo.delete({ id } as any)
+    await this.scoped.delete({ id } as any)
   }
 
   async deleteMany(ids: string[]): Promise<number> {
     if (ids.length === 0) return 0
-    const result = await this.repo.delete({ id: In(ids) } as any)
-    return result.affected ?? 0
+    return this.scoped.delete({ id: In(ids) } as any)
   }
 
   async toggleFavorite(id: string): Promise<boolean> {
@@ -197,7 +200,7 @@ export class ImageRepository extends BaseRepository<ImageEntity, ImageRecord> {
   }
 
   async count(favoriteOnly: boolean = false, status?: string): Promise<number> {
-    const qb = this.repo.createQueryBuilder('image')
+    const qb = this.scoped.qb('image')
     if (favoriteOnly) qb.andWhere('image.favorite = :fav', { fav: 1 })
     if (status) qb.andWhere('image.status = :s', { s: status })
     return qb.getCount()
@@ -208,9 +211,7 @@ export class ImageRepository extends BaseRepository<ImageEntity, ImageRecord> {
     page: number = 1,
     pageSize: number = 20,
   ): Promise<ImagePage> {
-    const qb = this.repo
-      .createQueryBuilder('image')
-      .where('image.provider_id = :pid', { pid: providerId })
+    const qb = this.scoped.qb('image').andWhere('image.provider_id = :pid', { pid: providerId })
     return this.paginate(qb, page, pageSize)
   }
 
@@ -219,9 +220,7 @@ export class ImageRepository extends BaseRepository<ImageEntity, ImageRecord> {
     page: number = 1,
     pageSize: number = 20,
   ): Promise<ImagePage> {
-    const qb = this.repo
-      .createQueryBuilder('image')
-      .where('image.model_id = :mid', { mid: modelId })
+    const qb = this.scoped.qb('image').andWhere('image.model_id = :mid', { mid: modelId })
     return this.paginate(qb, page, pageSize)
   }
 }
