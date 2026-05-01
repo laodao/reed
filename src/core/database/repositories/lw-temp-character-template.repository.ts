@@ -363,7 +363,7 @@ export class LwTempCharacterTemplateRepository extends BaseRepository<
   }
 
   async getDefault(): Promise<TemporaryCharacterTemplateRecord | null> {
-    const row = await this.repo.findOne({ where: { isDefault: 1 } as any })
+    const row = await this.scoped.findOne({ isDefault: 1 } as any)
     return row ? this.toDto(row) : null
   }
 
@@ -371,7 +371,7 @@ export class LwTempCharacterTemplateRepository extends BaseRepository<
     template: Omit<TemporaryCharacterTemplateRecord, 'id' | 'createdAt' | 'updatedAt'>,
   ): Promise<TemporaryCharacterTemplateRecord> {
     const now = Date.now()
-    const existing = await this.repo.findOne({ where: { type: template.type } as any })
+    const existing = await this.scoped.findOne({ type: template.type } as any)
 
     if (existing) {
       existing.name = template.name
@@ -385,7 +385,7 @@ export class LwTempCharacterTemplateRepository extends BaseRepository<
       existing.sortOrder = template.sortOrder
       existing.isDefault = template.isDefault
       existing.updatedAt = now
-      const saved = await this.repo.save(existing)
+      const saved = await this.scoped.save(existing)
       return this.toDto(saved)
     }
 
@@ -406,17 +406,17 @@ export class LwTempCharacterTemplateRepository extends BaseRepository<
       createdAt: now,
       updatedAt: now,
     })
-    const saved = await this.repo.save(entity)
+    const saved = await this.scoped.save(entity)
     return this.toDto(saved)
   }
 
   async delete(type: TemporaryCharacterTemplateType): Promise<boolean> {
-    const result = await this.repo.delete({ type } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ type } as any)
+    return affected > 0
   }
 
   async initializeDefaultData(): Promise<void> {
-    const count = await this.repo.count()
+    const count = await this.scoped.count()
     if (count > 0) return
     console.log('[LwTempCharacterTemplateRepository] 初始化默认临时角色模板数据...')
     await this.dataSource.transaction(async () => {

@@ -43,7 +43,7 @@ export class LwPrewriteRepository extends BaseRepository<
 
   async getByOutlineIds(outlineIds: string[]): Promise<Map<string, ChapterPrewrite>> {
     if (outlineIds.length === 0) return new Map()
-    const entities = await this.repo.find({
+    const entities = await this.scoped.find({
       where: { outlineId: In(outlineIds) } as any,
     })
     const result = new Map<string, ChapterPrewrite>()
@@ -65,7 +65,7 @@ export class LwPrewriteRepository extends BaseRepository<
       createdAt: now,
       updatedAt: now,
     })
-    const saved = await this.repo.save(entity)
+    const saved = await this.scoped.save(entity)
     return this.toDto(saved)
   }
 
@@ -73,7 +73,7 @@ export class LwPrewriteRepository extends BaseRepository<
     outlineId: string,
     data: UpdatePrewriteRequest,
   ): Promise<ChapterPrewrite | null> {
-    const existing = await this.repo.findOne({ where: { outlineId } as any })
+    const existing = await this.scoped.findOne({ outlineId } as any)
     if (!existing) return null
 
     let changed = false
@@ -85,34 +85,34 @@ export class LwPrewriteRepository extends BaseRepository<
     if (!changed) return this.toDto(existing)
 
     existing.updatedAt = Date.now()
-    const saved = await this.repo.save(existing)
+    const saved = await this.scoped.save(existing)
     return this.toDto(saved)
   }
 
   async confirm(outlineId: string): Promise<ChapterPrewrite | null> {
-    const existing = await this.repo.findOne({ where: { outlineId } as any })
+    const existing = await this.scoped.findOne({ outlineId } as any)
     if (!existing) return null
     const now = Date.now()
     existing.isConfirmed = 1
     existing.confirmedAt = now
     existing.updatedAt = now
-    const saved = await this.repo.save(existing)
+    const saved = await this.scoped.save(existing)
     return this.toDto(saved)
   }
 
   async unconfirm(outlineId: string): Promise<ChapterPrewrite | null> {
-    const existing = await this.repo.findOne({ where: { outlineId } as any })
+    const existing = await this.scoped.findOne({ outlineId } as any)
     if (!existing) return null
     existing.isConfirmed = 0
     existing.confirmedAt = null
     existing.updatedAt = Date.now()
-    const saved = await this.repo.save(existing)
+    const saved = await this.scoped.save(existing)
     return this.toDto(saved)
   }
 
   async delete(outlineId: string): Promise<boolean> {
-    const result = await this.repo.delete({ outlineId } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ outlineId } as any)
+    return affected > 0
   }
 
   async save(data: CreatePrewriteRequest): Promise<ChapterPrewrite> {

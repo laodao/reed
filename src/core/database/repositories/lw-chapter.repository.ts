@@ -58,7 +58,7 @@ export class LwChapterRepository extends BaseRepository<
 
   async getByOutlineIds(outlineIds: string[]): Promise<Map<string, StoryChapter>> {
     if (outlineIds.length === 0) return new Map()
-    const entities = await this.repo.find({
+    const entities = await this.scoped.find({
       where: { outlineId: In(outlineIds) } as any,
     })
     const result = new Map<string, StoryChapter>()
@@ -84,7 +84,7 @@ export class LwChapterRepository extends BaseRepository<
       createdAt: now,
       updatedAt: now,
     })
-    const saved = await this.repo.save(entity)
+    const saved = await this.scoped.save(entity)
     return this.toDto(saved)
   }
 
@@ -92,29 +92,29 @@ export class LwChapterRepository extends BaseRepository<
     id: string,
     content: string,
   ): Promise<StoryChapter | null> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return null
     existing.content = content
     existing.wordCount = this.countWords(content)
     existing.updatedAt = new Date()
-    const saved = await this.repo.save(existing)
+    const saved = await this.scoped.save(existing)
     return this.toDto(saved)
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.repo.delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ id } as any)
+    return affected > 0
   }
 
   // ==================== 版本管理 ====================
 
-  private versionRepo() {
-    return this.dataSource.getRepository(LwChapterVersionEntity)
+  /** chapter_versions 表的 scoped 入口（user_id 自动注入/过滤）。 */
+  private get versions() {
+    return this.scopedFor(LwChapterVersionEntity)
   }
 
   async getVersions(chapterId: string): Promise<ChapterVersion[]> {
-    const repo = this.versionRepo()
-    const entities = await repo.find({
+    const entities = await this.versions.find({
       where: { chapterId } as any,
       order: { versionNumber: 'DESC' } as any,
     })
@@ -122,17 +122,15 @@ export class LwChapterRepository extends BaseRepository<
   }
 
   async getVersion(id: string): Promise<ChapterVersion | null> {
-    const repo = this.versionRepo()
-    const e = await repo.findOne({ where: { id } as any })
+    const e = await this.versions.findOne({ id } as any)
     return e ? this.mapToVersion(e) : null
   }
 
   async getLatestVersion(chapterId: string): Promise<ChapterVersion | null> {
-    const repo = this.versionRepo()
-    const e = await repo.findOne({
-      where: { chapterId } as any,
-      order: { versionNumber: 'DESC' } as any,
-    })
+    const e = await this.versions.findOne(
+      { chapterId } as any,
+      { order: { versionNumber: 'DESC' } as any },
+    )
     return e ? this.mapToVersion(e) : null
   }
 
@@ -147,35 +145,28 @@ export class LwChapterRepository extends BaseRepository<
     const latest = await this.getLatestVersion(chapterId)
     const versionNumber = latest ? latest.versionNumber + 1 : 1
 
-    const repo = this.versionRepo()
-    const saved = await repo.save(
-      repo.create({
-        id,
-        chapterId,
-        content,
-        versionType,
-        wordCount,
-        isLocked: 0,
-        versionNumber,
-        createdAt: now,
-      }),
-    )
+    const saved = await this.versions.save({
+      id,
+      chapterId,
+      content,
+      versionType,
+      wordCount,
+      isLocked: 0,
+      versionNumber,
+      createdAt: now,
+    } as any)
     await this.cleanupOldVersions(chapterId)
-    return this.mapToVersion(saved)
+    return this.mapToVersion(saved as LwChapterVersionEntity)
   }
 
   async lockVersion(id: string): Promise<boolean> {
-    const result = await this.versionRepo().update({ id } as any, {
-      isLocked: 1,
-    })
-    return (result.affected ?? 0) > 0
+    const affected = await this.versions.update({ id } as any, { isLocked: 1 } as any)
+    return affected > 0
   }
 
   async unlockVersion(id: string): Promise<boolean> {
-    const result = await this.versionRepo().update({ id } as any, {
-      isLocked: 0,
-    })
-    return (result.affected ?? 0) > 0
+    const affected = await this.versions.update({ id } as any, { isLocked: 0 } as any)
+    return affected > 0
   }
 
   async restoreVersion(
@@ -193,20 +184,19 @@ export class LwChapterRepository extends BaseRepository<
   async deleteVersion(id: string): Promise<boolean> {
     const version = await this.getVersion(id)
     if (!version || version.isLocked) return false
-    const result = await this.versionRepo().delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.versions.delete({ id } as any)
+    return affected > 0
   }
 
   /** 保留最新 MAX_VERSIONS 个未锁定版本 */
   private async cleanupOldVersions(chapterId: string): Promise<void> {
-    const repo = this.versionRepo()
-    const old = await repo.find({
+    const old = await this.versions.find({
       where: { chapterId, isLocked: 0 } as any,
       order: { versionNumber: 'DESC' } as any,
       skip: MAX_VERSIONS,
     })
     if (old.length === 0) return
-    await repo.delete({ id: In(old.map(v => v.id)) } as any)
+    await this.versions.delete({ id: In(old.map(v => v.id)) } as any)
   }
 
   private countWords(content: string): number {

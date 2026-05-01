@@ -62,15 +62,16 @@ export class RoleRepository extends BaseRepository<RoleEntity, Role> {
 
   async getAll(): Promise<Role[]> {
     // 列表 = 当前用户自己的 + 内置角色（user_id IS NULL）
+    // ALS userId 为 null 时（PC 单用户测试 / 未登录），兼容 user_id IS NULL 的旧数据
     const userId = getCurrentUserId()
     const qb = this.repo
       .createQueryBuilder('r')
       .orderBy('r.is_builtin', 'DESC')
       .addOrderBy('r.created_at', 'ASC')
     if (userId) {
-      qb.where('r.user_id = :userId OR r.is_builtin = 1', { userId })
+      qb.where('(r.user_id = :userId OR r.is_builtin = 1)', { userId })
     } else {
-      qb.where('r.is_builtin = 1')
+      qb.where('(r.user_id IS NULL OR r.is_builtin = 1)')
     }
     const entities = await qb.getMany()
     return this.toDtoList(entities)
@@ -83,7 +84,7 @@ export class RoleRepository extends BaseRepository<RoleEntity, Role> {
     if (userId) {
       qb.andWhere('(r.user_id = :userId OR r.is_builtin = 1)', { userId })
     } else {
-      qb.andWhere('r.is_builtin = 1')
+      qb.andWhere('(r.user_id IS NULL OR r.is_builtin = 1)')
     }
     const e = await qb.getOne()
     return e ? this.toDto(e) : null

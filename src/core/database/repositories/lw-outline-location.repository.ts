@@ -30,19 +30,19 @@ export class LwOutlineLocationRepository extends BaseRepository<
   }
 
   async getLocationIdsByOutlineId(outlineId: string): Promise<string[]> {
-    const rows = await this.repo.find({ where: { outlineId } as any, select: ['locationId'] })
+    const rows = await this.scoped.find({ where: { outlineId } as any, select: ['locationId'] })
     return rows.map(r => r.locationId)
   }
 
   async getOutlineIdsByLocationId(locationId: string): Promise<string[]> {
-    const rows = await this.repo.find({ where: { locationId } as any, select: ['outlineId'] })
+    const rows = await this.scoped.find({ where: { locationId } as any, select: ['outlineId'] })
     return rows.map(r => r.outlineId)
   }
 
   async getLocationIdsByOutlineIds(outlineIds: string[]): Promise<Map<string, string[]>> {
     const result = new Map<string, string[]>()
     if (outlineIds.length === 0) return result
-    const rows = await this.repo.find({
+    const rows = await this.scoped.find({
       where: { outlineId: In(outlineIds) } as any,
       select: ['outlineId', 'locationId'],
     })
@@ -57,9 +57,9 @@ export class LwOutlineLocationRepository extends BaseRepository<
   async add(outlineId: string, locationId: string): Promise<OutlineLocationRelation> {
     const id = this.generateId()
     const now = Date.now()
-    const existing = await this.repo.findOne({ where: { outlineId, locationId } as any })
+    const existing = await this.scoped.findOne({ outlineId, locationId } as any)
     if (existing) return this.toDto(existing)
-    const saved = await this.repo.save(this.repo.create({ id, outlineId, locationId, createdAt: now }))
+    const saved = await this.scoped.save({ id, outlineId, locationId, createdAt: now })
     return this.toDto(saved)
   }
 
@@ -82,18 +82,16 @@ export class LwOutlineLocationRepository extends BaseRepository<
   }
 
   async delete(outlineId: string, locationId: string): Promise<boolean> {
-    const result = await this.repo.delete({ outlineId, locationId } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ outlineId, locationId } as any)
+    return affected > 0
   }
 
   async deleteByOutlineId(outlineId: string): Promise<number> {
-    const result = await this.repo.delete({ outlineId } as any)
-    return result.affected ?? 0
+    return this.scoped.delete({ outlineId } as any)
   }
 
   async deleteByLocationId(locationId: string): Promise<number> {
-    const result = await this.repo.delete({ locationId } as any)
-    return result.affected ?? 0
+    return this.scoped.delete({ locationId } as any)
   }
 
   async migrateFromJson(projectId: string): Promise<number> {

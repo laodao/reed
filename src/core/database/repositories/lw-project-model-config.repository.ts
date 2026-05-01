@@ -59,7 +59,7 @@ export class LwProjectModelConfigRepository extends BaseRepository<
       existing.providerConfigId = providerConfigId
       existing.modelId = modelId
       existing.updatedAt = now
-      const saved = await this.repo.save(existing)
+      const saved = await this.scoped.save(existing)
       return this.toDto(saved)
     }
     const entity = this.repo.create({
@@ -71,7 +71,7 @@ export class LwProjectModelConfigRepository extends BaseRepository<
       createdAt: now,
       updatedAt: now,
     })
-    const saved = await this.repo.save(entity)
+    const saved = await this.scoped.save(entity)
     return this.toDto(saved)
   }
 
@@ -95,12 +95,12 @@ export class LwProjectModelConfigRepository extends BaseRepository<
     projectId: string,
     stage: StoryStage | CommentStage,
   ): Promise<boolean> {
-    const result = await this.repo.delete({ projectId, stage } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ projectId, stage } as any)
+    return affected > 0
   }
 
   async deleteByProjectId(projectId: string): Promise<boolean> {
-    const result = await this.repo.delete({ projectId } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ projectId } as any)
+    return affected > 0
   }
 }

@@ -123,8 +123,7 @@ export class LwEntityStateRepository extends BaseRepository<
     const id = this.generateId()
     const now = Date.now()
 
-    await this.repo.save(
-      this.repo.create({
+    await this.scoped.save({
         id,
         projectId: data.projectId,
         entityType: data.entityType,
@@ -135,8 +134,7 @@ export class LwEntityStateRepository extends BaseRepository<
         keyChanges: JSON.stringify(data.keyChanges || []),
         createdAt: now,
         updatedAt: now,
-      }),
-    )
+      })
 
     return {
       id,
@@ -169,7 +167,7 @@ export class LwEntityStateRepository extends BaseRepository<
     id: string,
     data: UpdateEntityStateSnapshotRequest,
   ): Promise<EntityStateSnapshot | null> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return null
 
     let changed = false
@@ -185,23 +183,21 @@ export class LwEntityStateRepository extends BaseRepository<
     if (!changed) return this.toDto(existing)
 
     existing.updatedAt = Date.now()
-    await this.repo.save(existing)
+    await this.scoped.save(existing)
     return this.toDto(existing)
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.repo.delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ id } as any)
+    return affected > 0
   }
 
   async deleteByChapterNumber(projectId: string, chapterNumber: number): Promise<number> {
-    const result = await this.repo.delete({ projectId, chapterNumber } as any)
-    return result.affected ?? 0
+    return this.scoped.delete({ projectId, chapterNumber } as any)
   }
 
   async deleteByProjectId(projectId: string): Promise<number> {
-    const result = await this.repo.delete({ projectId } as any)
-    return result.affected ?? 0
+    return this.scoped.delete({ projectId } as any)
   }
 
   async getSnapshotStats(projectId: string): Promise<SnapshotStats> {
@@ -240,7 +236,7 @@ export class LwEntityStateRepository extends BaseRepository<
       existing.keyChanges = JSON.stringify(data.keyChanges || [])
       existing.entityName = data.entityName
       existing.updatedAt = Date.now()
-      await this.repo.save(existing)
+      await this.scoped.save(existing)
       return this.toDto(existing)
     }
     return this.create(data)

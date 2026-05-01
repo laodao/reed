@@ -125,7 +125,7 @@ export class LwMemoryRepository extends BaseRepository<LwMemoryEntity, StoryMemo
       createdAt: now,
       updatedAt: now,
     })
-    await this.repo.save(entity)
+    await this.scoped.save(entity)
 
     if (data.involvedEntities && data.involvedEntities.length > 0) {
       await this.memoryEntityRepo.batchAdd(id, data.involvedEntities)
@@ -159,7 +159,7 @@ export class LwMemoryRepository extends BaseRepository<LwMemoryEntity, StoryMemo
   }
 
   async update(id: string, data: UpdateMemoryRequest): Promise<StoryMemory | null> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return null
 
     let changed = false
@@ -187,7 +187,7 @@ export class LwMemoryRepository extends BaseRepository<LwMemoryEntity, StoryMemo
     if (!changed) return this.toDto(existing)
 
     existing.updatedAt = Date.now()
-    await this.repo.save(existing)
+    await this.scoped.save(existing)
 
     if (data.involvedEntities !== undefined) {
       await this.memoryEntityRepo.replaceAll(id, data.involvedEntities)
@@ -197,42 +197,40 @@ export class LwMemoryRepository extends BaseRepository<LwMemoryEntity, StoryMemo
   }
 
   async toggleActive(id: string): Promise<StoryMemory | null> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return null
     existing.isActive = existing.isActive === 1 ? 0 : 1
     existing.updatedAt = Date.now()
-    await this.repo.save(existing)
+    await this.scoped.save(existing)
     return this.toDto(existing)
   }
 
   async delete(id: string): Promise<boolean> {
     await this.memoryEntityRepo.deleteByMemoryId(id)
-    const result = await this.repo.delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ id } as any)
+    return affected > 0
   }
 
   async deleteBySourceOutlineId(outlineId: string): Promise<number> {
-    const rows = await this.repo.find({
+    const rows = await this.scoped.find({
       where: { sourceOutlineId: outlineId } as any,
       select: ['id'],
     })
     for (const r of rows) {
       await this.memoryEntityRepo.deleteByMemoryId(r.id)
     }
-    const result = await this.repo.delete({ sourceOutlineId: outlineId } as any)
-    return result.affected ?? 0
+    return this.scoped.delete({ sourceOutlineId: outlineId } as any)
   }
 
   async deleteByProjectId(projectId: string): Promise<number> {
-    const rows = await this.repo.find({
+    const rows = await this.scoped.find({
       where: { projectId } as any,
       select: ['id'],
     })
     for (const r of rows) {
       await this.memoryEntityRepo.deleteByMemoryId(r.id)
     }
-    const result = await this.repo.delete({ projectId } as any)
-    return result.affected ?? 0
+    return this.scoped.delete({ projectId } as any)
   }
 
   async getEntities(memoryId: string): Promise<MemoryEntity[]> {

@@ -85,7 +85,7 @@ export class LwPlotRepository extends BaseRepository<LwPlotEntity, StoryPlot> {
       createdAt: now,
       updatedAt: now,
     })
-    const saved = await this.repo.save(entity)
+    const saved = await this.scoped.save(entity)
 
     if (data.involvedCharacters?.length && this.isIdFormat(data.involvedCharacters)) {
       await this.plotCharacterRepo.batchAdd(id, data.involvedCharacters)
@@ -133,7 +133,7 @@ export class LwPlotRepository extends BaseRepository<LwPlotEntity, StoryPlot> {
   }
 
   async update(id: string, data: UpdatePlotRequest): Promise<StoryPlot | null> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return null
 
     let changed = false
@@ -153,7 +153,7 @@ export class LwPlotRepository extends BaseRepository<LwPlotEntity, StoryPlot> {
     if (!changed) return this.toDto(existing)
 
     existing.updatedAt = new Date()
-    const saved = await this.repo.save(existing)
+    const saved = await this.scoped.save(existing)
 
     if (data.involvedCharacters !== undefined && this.isIdFormat(data.involvedCharacters)) {
       await this.plotCharacterRepo.replaceAll(id, data.involvedCharacters)
@@ -185,18 +185,18 @@ export class LwPlotRepository extends BaseRepository<LwPlotEntity, StoryPlot> {
   async delete(id: string): Promise<boolean> {
     await this.plotCharacterRepo.deleteByPlotId(id)
     await this.plotLocationRepo.deleteByPlotId(id)
-    const result = await this.repo.delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ id } as any)
+    return affected > 0
   }
 
   async deleteByProjectId(projectId: string): Promise<boolean> {
-    const plots = await this.repo.find({ where: { projectId } as any, select: ['id'] })
+    const plots = await this.scoped.find({ where: { projectId } as any, select: ['id'] })
     for (const p of plots) {
       await this.plotCharacterRepo.deleteByPlotId(p.id)
       await this.plotLocationRepo.deleteByPlotId(p.id)
     }
-    const result = await this.repo.delete({ projectId } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ projectId } as any)
+    return affected > 0
   }
 
   async countByProjectId(projectId: string): Promise<number> {

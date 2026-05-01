@@ -13,6 +13,7 @@
  *   在子类构造里调 `this.useRawRepo()`，scope 默认关闭，`this.scoped` 等同于裸操作。
  */
 
+import { IsNull } from 'typeorm'
 import type {
   DataSource,
   EntityTarget,
@@ -23,6 +24,114 @@ import type {
   SelectQueryBuilder,
 } from 'typeorm'
 import { getCurrentUserId } from '@core/context/user-context'
+
+/**
+ * 创建针对某个 typeorm Repository 的 scoped API。
+ * isScopedFn 是函数（不是布尔值）——子类切换 scope 后能动态生效。
+ */
+function makeScopedApiForRepo<E extends object>(
+  repo: Repository<E>,
+  isScopedFn: () => boolean,
+): ScopedRepoApi<E> {
+  // entity 是否有 userId 列。没有就所有 scope 操作直接透传——共享配置类
+  // entity（user / settings / api-key / provider-config 等）都属于这种。
+  const hasUserIdColumn = !!repo.metadata.findColumnWithPropertyName('userId')
+
+  function shouldScope(): boolean {
+    return isScopedFn() && hasUserIdColumn
+  }
+
+  function scopeWhere(
+    where: FindOptionsWhere<E> | FindOptionsWhere<E>[] = {},
+  ): FindOptionsWhere<E> | FindOptionsWhere<E>[] {
+    if (!shouldScope()) return where
+    const userId = getCurrentUserId()
+    // userId 为 null 时统一用 IsNull()，避免 typeorm 把 = null 翻译成
+    // SQL 'user_id = NULL'（永远 false）。这影响 update / delete / find 全套。
+    const userScope = userId === null ? IsNull() : userId
+    const scope = { userId: userScope } as unknown as FindOptionsWhere<E>
+    if (Array.isArray(where)) return where.map(w => ({ ...w, ...scope }))
+    return { ...where, ...scope }
+  }
+  function scopeEntity<T extends Partial<E>>(entity: T): T {
+    if (!shouldScope()) return entity
+    return { ...entity, userId: getCurrentUserId() } as T
+  }
+  function stripUserId<T extends object>(partial: T): T {
+    if (!shouldScope()) return partial
+    if (partial && typeof partial === 'object' && 'userId' in partial) {
+      const { userId: _omit, ...rest } = partial as any
+      void _omit
+      return rest as T
+    }
+    return partial
+  }
+
+  return {
+    async findOne(where, options) {
+      return repo.findOne({
+        ...(options ?? {}),
+        where: scopeWhere(where) as FindOptionsWhere<E>,
+      })
+    },
+    async find(options = {}) {
+      return repo.find({
+        ...options,
+        where: scopeWhere(options.where as FindOptionsWhere<E>) as FindOptionsWhere<E>,
+      })
+    },
+    async findAndCount(options = {}) {
+      return repo.findAndCount({
+        ...options,
+        where: scopeWhere(options.where as FindOptionsWhere<E>) as FindOptionsWhere<E>,
+      })
+    },
+    async save(entity) {
+      return repo.save(scopeEntity(entity) as E)
+    },
+    async saveMany(entities) {
+      return repo.save(entities.map(e => scopeEntity(e)) as E[])
+    },
+    async insert(entity) {
+      const scoped = scopeEntity(entity)
+      await repo.insert(scoped as any)
+      return scoped as E
+    },
+    async update(where, partial) {
+      const safePartial = stripUserId(partial)
+      const result = await repo.update(
+        scopeWhere(where) as FindOptionsWhere<E>,
+        safePartial as any,
+      )
+      return result.affected ?? 0
+    },
+    async delete(where) {
+      const result = await repo.delete(scopeWhere(where) as FindOptionsWhere<E>)
+      return result.affected ?? 0
+    },
+    async count(where = {}) {
+      return repo.count({ where: scopeWhere(where) as FindOptionsWhere<E> })
+    },
+    async exists(where) {
+      return (await this.count(where)) > 0
+    },
+    qb(alias) {
+      const builder = repo.createQueryBuilder(alias)
+      if (shouldScope()) {
+        const userId = getCurrentUserId()
+        if (userId) {
+          builder.andWhere(`${alias}.user_id = :__scopedUserId`, {
+            __scopedUserId: userId,
+          })
+        } else {
+          // 没有 ALS userId（PC 单用户测试场景或 anonymous）→ user_id IS NULL
+          builder.andWhere(`${alias}.user_id IS NULL`)
+        }
+      }
+      return builder
+    },
+  }
+}
 
 /**
  * Scoped Repository API：暴露给子 Repository 的安全数据访问方法。
@@ -61,6 +170,16 @@ export abstract class BaseRepository<TEntity extends object, TDto> {
   /** 关闭当前 Repository 的 user_id 过滤（共享配置类调用）。 */
   protected useRawRepo(): void {
     this.scopedToUser = false
+  }
+
+  /**
+   * 为另一个 entity 创建 scoped API（同样按 ALS userId 过滤/注入 user_id）。
+   * 用于一个 Repository 维护多张表的场景（如 LwChapterRepository 同时访问
+   * chapters 和 chapter_versions）。target entity 必须有 userId 列。
+   */
+  protected scopedFor<E extends object>(target: EntityTarget<E>): ScopedRepoApi<E> {
+    const repo = this.dataSource.getRepository(target)
+    return makeScopedApiForRepo(repo, () => this.scopedToUser)
   }
 
   /** 子类必须实现：Entity → DTO */
@@ -103,68 +222,7 @@ export abstract class BaseRepository<TEntity extends object, TDto> {
   }
 
   private makeScopedApi(): ScopedRepoApi<TEntity> {
-    const self = this
-    return {
-      async findOne(where, options) {
-        return self.repo.findOne({
-          ...(options ?? {}),
-          where: self.scopeWhere(where) as FindOptionsWhere<TEntity>,
-        })
-      },
-      async find(options = {}) {
-        return self.repo.find({
-          ...options,
-          where: self.scopeWhere(options.where as FindOptionsWhere<TEntity>) as FindOptionsWhere<TEntity>,
-        })
-      },
-      async findAndCount(options = {}) {
-        return self.repo.findAndCount({
-          ...options,
-          where: self.scopeWhere(options.where as FindOptionsWhere<TEntity>) as FindOptionsWhere<TEntity>,
-        })
-      },
-      async save(entity) {
-        return self.repo.save(self.scopeEntity(entity) as TEntity)
-      },
-      async saveMany(entities) {
-        return self.repo.save(entities.map(e => self.scopeEntity(e)) as TEntity[])
-      },
-      async insert(entity) {
-        const scoped = self.scopeEntity(entity)
-        await self.repo.insert(scoped as any)
-        return scoped as TEntity
-      },
-      async update(where, partial) {
-        const safePartial = self.stripUserIdFromUpdate(partial)
-        const result = await self.repo.update(
-          self.scopeWhere(where) as FindOptionsWhere<TEntity>,
-          safePartial as any,
-        )
-        return result.affected ?? 0
-      },
-      async delete(where) {
-        const result = await self.repo.delete(self.scopeWhere(where) as FindOptionsWhere<TEntity>)
-        return result.affected ?? 0
-      },
-      async count(where = {}) {
-        return self.repo.count({ where: self.scopeWhere(where) as FindOptionsWhere<TEntity> })
-      },
-      async exists(where) {
-        return (await this.count(where)) > 0
-      },
-      qb(alias) {
-        const builder = self.repo.createQueryBuilder(alias)
-        if (self.scopedToUser) {
-          const userId = getCurrentUserId()
-          if (userId) {
-            builder.andWhere(`${alias}.user_id = :__scopedUserId`, {
-              __scopedUserId: userId,
-            })
-          }
-        }
-        return builder
-      },
-    }
+    return makeScopedApiForRepo<TEntity>(this.repo, () => this.scopedToUser)
   }
 
   // ==================== 老 API（已弃用，保留以兼容尚未改造的子类） ====================

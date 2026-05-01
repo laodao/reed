@@ -212,7 +212,11 @@
       "Bash(pkill -9 -f \"electron-vite\\\\|electron/dist\")",
       "Bash(chmod +x *)",
       "Bash(bash /home/ubuntu/workdir/the-bot/scripts/swap-sqlite-abi.sh node)",
-      "Bash(SKIP_PG_TESTS=1 npx vitest run tests/unit/repositories/multi-tenant.spec.ts)"
+      "Bash(SKIP_PG_TESTS=1 npx vitest run tests/unit/repositories/multi-tenant.spec.ts)",
+      "Bash(SKIP_PG_TESTS=1 npx vitest run tests/unit/repositories/lw-batch-1.repository.spec.ts tests/unit/repositories/lw-batch-2.repository.spec.ts tests/unit/repositories/lw-chapter.repository.spec.ts tests/unit/repositories/lw-character.repository.spec.ts tests/unit/repositories/lw-dictionary.repository.spec.ts)",
+      "Bash(SKIP_PG_TESTS=1 npx vitest run tests/unit/repositories/lw-batch-1.repository.spec.ts tests/unit/repositories/lw-batch-2.repository.spec.ts tests/unit/repositories/lw-chapter.repository.spec.ts tests/unit/repositories/lw-character.repository.spec.ts tests/unit/repositories/lw-dictionary.repository.spec.ts tests/unit/repositories/multi-tenant.spec.ts)",
+      "Bash(SKIP_PG_TESTS=1 npx vitest run tests/unit/repositories/lw-*.spec.ts tests/unit/repositories/multi-tenant.spec.ts)",
+      "Bash(SKIP_PG_TESTS=1 npx vitest run tests/unit/repositories/lw-*.spec.ts)"
     ]
   }
 }

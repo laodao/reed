@@ -125,7 +125,7 @@ export class LwCharacterRepository extends BaseRepository<
       createdAt: now,
       updatedAt: now,
     })
-    const saved = await this.repo.save(entity)
+    const saved = await this.scoped.save(entity)
     return this.toDto(saved)
   }
 
@@ -133,7 +133,7 @@ export class LwCharacterRepository extends BaseRepository<
     id: string,
     data: UpdateCharacterRequest,
   ): Promise<StoryCharacter | null> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return null
 
     let changed = false
@@ -180,18 +180,22 @@ export class LwCharacterRepository extends BaseRepository<
     if (!changed) return this.toDto(existing)
 
     existing.updatedAt = new Date()
-    const saved = await this.repo.save(existing)
+    const saved = await this.scoped.save(existing)
     return this.toDto(saved)
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.repo.delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ id } as any)
+    return affected > 0
+  }
+
+  /** lw_character_relations 表的 scoped 入口（user_id 自动注入/过滤）。 */
+  private get relations() {
+    return this.scopedFor(LwCharacterRelationEntity)
   }
 
   async getRelations(characterId: string): Promise<CharacterRelation[]> {
-    const repo = this.dataSource.getRepository(LwCharacterRelationEntity)
-    const rows = await repo.find({ where: { characterId } as any })
+    const rows = await this.relations.find({ where: { characterId } as any })
     return rows.map(r => ({
       id: r.id,
       characterId: r.characterId,
@@ -211,17 +215,14 @@ export class LwCharacterRepository extends BaseRepository<
   ): Promise<CharacterRelation> {
     const id = this.generateRelationId()
     const now = new Date()
-    const repo = this.dataSource.getRepository(LwCharacterRelationEntity)
-    const saved = await repo.save(
-      repo.create({
-        id,
-        characterId,
-        relatedCharacterId,
-        relationType,
-        relationDescription,
-        createdAt: now,
-      }),
-    )
+    const saved = await this.relations.save({
+      id,
+      characterId,
+      relatedCharacterId,
+      relationType,
+      relationDescription,
+      createdAt: now,
+    } as any)
     return {
       id: saved.id,
       characterId: saved.characterId,
@@ -236,9 +237,8 @@ export class LwCharacterRepository extends BaseRepository<
   }
 
   async deleteRelation(id: string): Promise<boolean> {
-    const repo = this.dataSource.getRepository(LwCharacterRelationEntity)
-    const result = await repo.delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.relations.delete({ id } as any)
+    return affected > 0
   }
 
   private generateId(): string {

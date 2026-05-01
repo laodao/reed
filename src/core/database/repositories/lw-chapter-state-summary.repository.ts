@@ -88,8 +88,7 @@ export class LwChapterStateSummaryRepository extends BaseRepository<
     const id = this.generateId()
     const now = Date.now()
 
-    await this.repo.save(
-      this.repo.create({
+    await this.scoped.save({
         id,
         projectId: data.projectId,
         outlineId: data.outlineId,
@@ -101,8 +100,7 @@ export class LwChapterStateSummaryRepository extends BaseRepository<
         keyChanges: data.keyChanges,
         createdAt: now,
         updatedAt: now,
-      }),
-    )
+      })
 
     return {
       id,
@@ -120,7 +118,7 @@ export class LwChapterStateSummaryRepository extends BaseRepository<
   }
 
   async upsert(data: CreateChapterStateSummaryRequest): Promise<ChapterStateSummary> {
-    const existing = await this.repo.findOne({ where: { outlineId: data.outlineId } as any })
+    const existing = await this.scoped.findOne({ outlineId: data.outlineId } as any)
     if (existing) {
       existing.storyTime = data.storyTime
       existing.currentLocation = data.currentLocation
@@ -129,25 +127,24 @@ export class LwChapterStateSummaryRepository extends BaseRepository<
       existing.keyChanges = data.keyChanges
       existing.chapterNumber = data.chapterNumber
       existing.updatedAt = Date.now()
-      await this.repo.save(existing)
+      await this.scoped.save(existing)
       return this.toDto(existing)
     }
     return this.create(data)
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.repo.delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ id } as any)
+    return affected > 0
   }
 
   async deleteByOutlineId(outlineId: string): Promise<boolean> {
-    const result = await this.repo.delete({ outlineId } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ outlineId } as any)
+    return affected > 0
   }
 
   async deleteByProjectId(projectId: string): Promise<number> {
-    const result = await this.repo.delete({ projectId } as any)
-    return result.affected ?? 0
+    return this.scoped.delete({ projectId } as any)
   }
 
   private generateId(): string {

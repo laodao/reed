@@ -35,7 +35,7 @@ export class LwSkillCharacterRepository extends BaseRepository<
   }
 
   async getCharacterIdsBySkillId(skillId: string): Promise<string[]> {
-    const rows = await this.repo.find({
+    const rows = await this.scoped.find({
       where: { skillId } as any,
       select: ['characterId'],
     })
@@ -43,7 +43,7 @@ export class LwSkillCharacterRepository extends BaseRepository<
   }
 
   async getSkillIdsByCharacterId(characterId: string): Promise<string[]> {
-    const rows = await this.repo.find({
+    const rows = await this.scoped.find({
       where: { characterId } as any,
       select: ['skillId'],
     })
@@ -56,7 +56,7 @@ export class LwSkillCharacterRepository extends BaseRepository<
     const result = new Map<string, string[]>()
     if (skillIds.length === 0) return result
 
-    const rows = await this.repo.find({
+    const rows = await this.scoped.find({
       where: { skillId: In(skillIds) } as any,
       select: ['skillId', 'characterId'],
     })
@@ -83,9 +83,7 @@ export class LwSkillCharacterRepository extends BaseRepository<
     if (existing) {
       return this.toDto(existing)
     }
-    const saved = await this.repo.save(
-      this.repo.create({ id, skillId, characterId, createdAt: now }),
-    )
+    const saved = await this.scoped.save({ id, skillId, characterId, createdAt: now })
     return this.toDto(saved)
   }
 
@@ -117,18 +115,16 @@ export class LwSkillCharacterRepository extends BaseRepository<
   }
 
   async delete(skillId: string, characterId: string): Promise<boolean> {
-    const result = await this.repo.delete({ skillId, characterId } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ skillId, characterId } as any)
+    return affected > 0
   }
 
   async deleteBySkillId(skillId: string): Promise<number> {
-    const result = await this.repo.delete({ skillId } as any)
-    return result.affected ?? 0
+    return this.scoped.delete({ skillId } as any)
   }
 
   async deleteByCharacterId(characterId: string): Promise<number> {
-    const result = await this.repo.delete({ characterId } as any)
-    return result.affected ?? 0
+    return this.scoped.delete({ characterId } as any)
   }
 
   /** 从 JSON 字段迁移到关联表 */

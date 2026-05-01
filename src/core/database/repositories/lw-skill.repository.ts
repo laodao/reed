@@ -71,7 +71,7 @@ export class LwSkillRepository extends BaseRepository<LwSkillEntity, StorySkill>
       createdAt: now,
       updatedAt: now,
     })
-    const saved = await this.repo.save(entity)
+    const saved = await this.scoped.save(entity)
     if (data.characterIds && data.characterIds.length > 0) {
       await this.skillCharacterRepo.batchAdd(id, data.characterIds)
     }
@@ -82,7 +82,7 @@ export class LwSkillRepository extends BaseRepository<LwSkillEntity, StorySkill>
     id: string,
     data: Partial<StorySkill>,
   ): Promise<StorySkill | null> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return null
 
     let changed = false
@@ -99,7 +99,7 @@ export class LwSkillRepository extends BaseRepository<LwSkillEntity, StorySkill>
     if (!changed) return this.toDto(existing)
 
     existing.updatedAt = new Date()
-    const saved = await this.repo.save(existing)
+    const saved = await this.scoped.save(existing)
 
     if (data.characterIds !== undefined) {
       await this.skillCharacterRepo.replaceAll(id, data.characterIds)
@@ -110,20 +110,19 @@ export class LwSkillRepository extends BaseRepository<LwSkillEntity, StorySkill>
 
   async delete(id: string): Promise<boolean> {
     await this.skillCharacterRepo.deleteBySkillId(id)
-    const result = await this.repo.delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ id } as any)
+    return affected > 0
   }
 
   async deleteByProjectId(projectId: string): Promise<number> {
-    const skills = await this.repo.find({
+    const skills = await this.scoped.find({
       where: { projectId } as any,
       select: ['id'],
     })
     for (const skill of skills) {
       await this.skillCharacterRepo.deleteBySkillId(skill.id)
     }
-    const result = await this.repo.delete({ projectId } as any)
-    return result.affected ?? 0
+    return this.scoped.delete({ projectId } as any)
   }
 
   async getCharacterIds(skillId: string): Promise<string[]> {
@@ -142,7 +141,7 @@ export class LwSkillRepository extends BaseRepository<LwSkillEntity, StorySkill>
       characterId,
     )
     if (skillIds.length === 0) return []
-    const entities = await this.repo.find({
+    const entities = await this.scoped.find({
       where: { id: In(skillIds) } as any,
     })
     return this.toDtoList(entities)

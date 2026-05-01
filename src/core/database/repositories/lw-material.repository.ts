@@ -57,8 +57,7 @@ export class LwMaterialRepository extends BaseRepository<LwMaterialEntity, Story
   }): Promise<StoryMaterial> {
     const id = `material_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
     const now = Date.now()
-    await this.repo.save(
-      this.repo.create({
+    await this.scoped.save({
         id,
         projectId: data.projectId,
         name: data.name,
@@ -69,8 +68,7 @@ export class LwMaterialRepository extends BaseRepository<LwMaterialEntity, Story
         retryCount: 0,
         used: 0,
         createdAt: now,
-      }),
-    )
+      })
     return {
       id,
       projectId: data.projectId,
@@ -99,7 +97,7 @@ export class LwMaterialRepository extends BaseRepository<LwMaterialEntity, Story
       used: boolean
     }>,
   ): Promise<StoryMaterial | null> {
-    const row = await this.repo.findOne({ where: { id } as any })
+    const row = await this.scoped.findOne({ id } as any)
     if (!row) return null
     let changed = false
     if (data.name !== undefined) {
@@ -135,7 +133,7 @@ export class LwMaterialRepository extends BaseRepository<LwMaterialEntity, Story
       changed = true
     }
     if (!changed) return this.toDto(row)
-    const saved = await this.repo.save(row)
+    const saved = await this.scoped.save(row)
     return this.toDto(saved)
   }
 
@@ -144,11 +142,11 @@ export class LwMaterialRepository extends BaseRepository<LwMaterialEntity, Story
     status: MaterialStatus,
     errorMessage?: string,
   ): Promise<boolean> {
-    const result = await this.repo.update({ id } as any, {
+    const affected = await this.scoped.update({ id } as any, {
       status,
       errorMessage: errorMessage ?? null,
     })
-    return (result.affected ?? 0) > 0
+    return affected > 0
   }
 
   async incrementRetryCount(id: string): Promise<number> {
@@ -158,22 +156,21 @@ export class LwMaterialRepository extends BaseRepository<LwMaterialEntity, Story
       .set({ retryCount: () => 'retry_count + 1' })
       .where('id = :id', { id })
       .execute()
-    const row = await this.repo.findOne({ where: { id } as any })
+    const row = await this.scoped.findOne({ id } as any)
     return row?.retryCount ?? 0
   }
 
   async markAsUsed(id: string): Promise<boolean> {
-    const result = await this.repo.update({ id } as any, { used: 1 })
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.update({ id } as any, { used: 1 })
+    return affected > 0
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.repo.delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ id } as any)
+    return affected > 0
   }
 
   async deleteByProjectId(projectId: string): Promise<number> {
-    const result = await this.repo.delete({ projectId } as any)
-    return result.affected ?? 0
+    return this.scoped.delete({ projectId } as any)
   }
 }

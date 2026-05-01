@@ -30,19 +30,19 @@ export class LwPlotCharacterRepository extends BaseRepository<
   }
 
   async getCharacterIdsByPlotId(plotId: string): Promise<string[]> {
-    const rows = await this.repo.find({ where: { plotId } as any, select: ['characterId'] })
+    const rows = await this.scoped.find({ where: { plotId } as any, select: ['characterId'] })
     return rows.map(r => r.characterId)
   }
 
   async getPlotIdsByCharacterId(characterId: string): Promise<string[]> {
-    const rows = await this.repo.find({ where: { characterId } as any, select: ['plotId'] })
+    const rows = await this.scoped.find({ where: { characterId } as any, select: ['plotId'] })
     return rows.map(r => r.plotId)
   }
 
   async getCharacterIdsByPlotIds(plotIds: string[]): Promise<Map<string, string[]>> {
     const result = new Map<string, string[]>()
     if (plotIds.length === 0) return result
-    const rows = await this.repo.find({
+    const rows = await this.scoped.find({
       where: { plotId: In(plotIds) } as any,
       select: ['plotId', 'characterId'],
     })
@@ -57,9 +57,9 @@ export class LwPlotCharacterRepository extends BaseRepository<
   async add(plotId: string, characterId: string): Promise<PlotCharacterRelation> {
     const id = this.generateId()
     const now = Date.now()
-    const existing = await this.repo.findOne({ where: { plotId, characterId } as any })
+    const existing = await this.scoped.findOne({ plotId, characterId } as any)
     if (existing) return this.toDto(existing)
-    const saved = await this.repo.save(this.repo.create({ id, plotId, characterId, createdAt: now }))
+    const saved = await this.scoped.save({ id, plotId, characterId, createdAt: now })
     return this.toDto(saved)
   }
 
@@ -82,18 +82,16 @@ export class LwPlotCharacterRepository extends BaseRepository<
   }
 
   async delete(plotId: string, characterId: string): Promise<boolean> {
-    const result = await this.repo.delete({ plotId, characterId } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ plotId, characterId } as any)
+    return affected > 0
   }
 
   async deleteByPlotId(plotId: string): Promise<number> {
-    const result = await this.repo.delete({ plotId } as any)
-    return result.affected ?? 0
+    return this.scoped.delete({ plotId } as any)
   }
 
   async deleteByCharacterId(characterId: string): Promise<number> {
-    const result = await this.repo.delete({ characterId } as any)
-    return result.affected ?? 0
+    return this.scoped.delete({ characterId } as any)
   }
 
   /** 从 lw_story_plots.involved_characters JSON（角色名）迁移到关联表 */

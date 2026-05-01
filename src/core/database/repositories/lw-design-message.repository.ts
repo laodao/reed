@@ -60,16 +60,14 @@ export class LwDesignMessageRepository extends BaseRepository<
       .getRawOne()
     const sortOrder = (Number(maxOrder?.max) || -1) + 1
 
-    await this.repo.save(
-      this.repo.create({
+    await this.scoped.save({
         id,
         conversationId,
         role: message.role,
         content: message.content,
         timestamp,
         sortOrder,
-      }),
-    )
+      })
     return {
       role: message.role as 'user' | 'assistant',
       content: message.content,
@@ -124,13 +122,12 @@ export class LwDesignMessageRepository extends BaseRepository<
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.repo.delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ id } as any)
+    return affected > 0
   }
 
   async deleteByConversationId(conversationId: string): Promise<number> {
-    const result = await this.repo.delete({ conversationId } as any)
-    return result.affected ?? 0
+    return this.scoped.delete({ conversationId } as any)
   }
 
   async migrateFromJson(conversationId: string): Promise<number> {

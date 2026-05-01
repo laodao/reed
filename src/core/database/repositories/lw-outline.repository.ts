@@ -104,7 +104,7 @@ export class LwOutlineRepository extends BaseRepository<
       createdAt: now,
       updatedAt: now,
     })
-    const saved = await this.repo.save(entity)
+    const saved = await this.scoped.save(entity)
 
     if (data.involvedCharacters?.length) {
       await this.outlineCharacterRepo.batchAdd(id, data.involvedCharacters)
@@ -123,7 +123,7 @@ export class LwOutlineRepository extends BaseRepository<
     id: string,
     data: UpdateOutlineRequest,
   ): Promise<StoryOutline | null> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return null
 
     let changed = false
@@ -147,7 +147,7 @@ export class LwOutlineRepository extends BaseRepository<
     if (!changed) return this.toDto(existing)
 
     existing.updatedAt = new Date()
-    const saved = await this.repo.save(existing)
+    const saved = await this.scoped.save(existing)
 
     if (data.involvedCharacters !== undefined) {
       await this.outlineCharacterRepo.replaceAll(id, data.involvedCharacters)
@@ -163,33 +163,33 @@ export class LwOutlineRepository extends BaseRepository<
   }
 
   async updateOrder(id: string, orderIndex: number): Promise<boolean> {
-    const result = await this.repo.update({ id } as any, {
+    const affected = await this.scoped.update({ id } as any, {
       orderIndex,
       updatedAt: new Date(),
     })
-    return (result.affected ?? 0) > 0
+    return affected > 0
   }
 
   async moveTo(id: string, newParentId: string | null): Promise<boolean> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return false
     const newLevel = newParentId ? (await this.calculateLevel(newParentId)) + 1 : 1
     const newOrderIndex = await this.getNextOrderIndex(
       existing.projectId,
       newParentId,
     )
-    const result = await this.repo.update({ id } as any, {
+    const affected = await this.scoped.update({ id } as any, {
       parentId: newParentId,
       level: newLevel,
       orderIndex: newOrderIndex,
       updatedAt: new Date(),
     })
-    return (result.affected ?? 0) > 0
+    return affected > 0
   }
 
   async delete(id: string): Promise<boolean> {
     // 递归删除子节点
-    const children = await this.repo.find({
+    const children = await this.scoped.find({
       where: { parentId: id } as any,
       select: ['id'],
     })
@@ -201,8 +201,8 @@ export class LwOutlineRepository extends BaseRepository<
     await this.outlineLocationRepo.deleteByOutlineId(id)
     await this.outlineItemRepo.deleteByOutlineId(id)
 
-    const result = await this.repo.delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ id } as any)
+    return affected > 0
   }
 
   async getCharacterIds(outlineId: string): Promise<string[]> {
@@ -265,7 +265,7 @@ export class LwOutlineRepository extends BaseRepository<
   }
 
   private async calculateLevel(parentId: string): Promise<number> {
-    const parent = await this.repo.findOne({ where: { id: parentId } as any })
+    const parent = await this.scoped.findOne({ id: parentId } as any)
     return parent ? parent.level : 0
   }
 

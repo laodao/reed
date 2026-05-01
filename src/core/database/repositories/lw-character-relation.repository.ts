@@ -50,16 +50,14 @@ export class LwCharacterRelationRepository extends BaseRepository<
   }): Promise<CharacterRelation> {
     const id = `rel_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
     const createdAt = new Date()
-    await this.repo.save(
-      this.repo.create({
+    await this.scoped.save({
         id,
         characterId: data.characterId,
         relatedCharacterId: data.relatedCharacterId,
         relationType: data.relationType,
         relationDescription: data.relationDescription,
         createdAt,
-      }),
-    )
+      })
     return {
       id,
       characterId: data.characterId,
@@ -71,12 +69,11 @@ export class LwCharacterRelationRepository extends BaseRepository<
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.repo.delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ id } as any)
+    return affected > 0
   }
 
   async deleteByCharacterId(characterId: string): Promise<number> {
-    const result = await this.repo.delete({ characterId } as any)
-    return result.affected ?? 0
+    return this.scoped.delete({ characterId } as any)
   }
 }

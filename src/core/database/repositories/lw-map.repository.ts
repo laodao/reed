@@ -80,12 +80,12 @@ export class LwMapRepository extends BaseRepository<LwMapEntity, StoryMap> {
       createdAt: now,
       updatedAt: now,
     })
-    const saved = await this.repo.save(entity)
+    const saved = await this.scoped.save(entity)
     return this.toDto(saved)
   }
 
   async update(id: string, data: Partial<StoryMap>): Promise<StoryMap | null> {
-    const existing = await this.repo.findOne({ where: { id } as any })
+    const existing = await this.scoped.findOne({ id } as any)
     if (!existing) return null
 
     let changed = false
@@ -102,7 +102,7 @@ export class LwMapRepository extends BaseRepository<LwMapEntity, StoryMap> {
     if (!changed) return this.toDto(existing)
 
     existing.updatedAt = new Date()
-    const saved = await this.repo.save(existing)
+    const saved = await this.scoped.save(existing)
     return this.toDto(saved)
   }
 
@@ -110,27 +110,27 @@ export class LwMapRepository extends BaseRepository<LwMapEntity, StoryMap> {
     id: string,
     imagePath: string | null,
   ): Promise<boolean> {
-    const result = await this.repo.update({ id } as any, {
+    const affected = await this.scoped.update({ id } as any, {
       imagePath,
       updatedAt: new Date(),
     })
-    return (result.affected ?? 0) > 0
+    return affected > 0
   }
 
   async updateAIGeneratedData(
     id: string,
     data: MapGeneratedData | null,
   ): Promise<boolean> {
-    const result = await this.repo.update({ id } as any, {
+    const affected = await this.scoped.update({ id } as any, {
       aiGeneratedData: data ? JSON.stringify(data) : null,
       updatedAt: new Date(),
     })
-    return (result.affected ?? 0) > 0
+    return affected > 0
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.repo.delete({ id } as any)
-    return (result.affected ?? 0) > 0
+    const affected = await this.scoped.delete({ id } as any)
+    return affected > 0
   }
 
   async updateSortOrder(

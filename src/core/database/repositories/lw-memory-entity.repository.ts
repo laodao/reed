@@ -27,7 +27,7 @@ export class LwMemoryEntityRepository extends BaseRepository<
   }
 
   async getEntitiesByMemoryId(memoryId: string): Promise<MemoryEntity[]> {
-    const rows = await this.repo.find({ where: { memoryId } as any })
+    const rows = await this.scoped.find({ where: { memoryId } as any })
     return rows.map(r => this.toDto(r))
   }
 
@@ -35,7 +35,7 @@ export class LwMemoryEntityRepository extends BaseRepository<
     entityType: MemoryEntity['type'],
     entityId: string,
   ): Promise<string[]> {
-    const rows = await this.repo.find({
+    const rows = await this.scoped.find({
       where: { entityType, entityId } as any,
       select: ['memoryId'],
     })
@@ -47,7 +47,7 @@ export class LwMemoryEntityRepository extends BaseRepository<
   ): Promise<Map<string, MemoryEntity[]>> {
     const result = new Map<string, MemoryEntity[]>()
     if (memoryIds.length === 0) return result
-    const rows = await this.repo.find({
+    const rows = await this.scoped.find({
       where: { memoryId: In(memoryIds) } as any,
     })
     for (const row of rows) {
@@ -67,16 +67,14 @@ export class LwMemoryEntityRepository extends BaseRepository<
       } as any,
     })
     if (existing) return
-    await this.repo.save(
-      this.repo.create({
+    await this.scoped.save({
         id: this.generateId(),
         memoryId,
         entityType: entity.type,
         entityId: entity.id,
         entityName: entity.name,
         createdAt: Date.now(),
-      }),
-    )
+      })
   }
 
   async batchAdd(memoryId: string, entities: MemoryEntity[]): Promise<void> {
@@ -111,23 +109,21 @@ export class LwMemoryEntityRepository extends BaseRepository<
     entityType: MemoryEntity['type'],
     entityId: string,
   ): Promise<boolean> {
-    const result = await this.repo.delete({
+    const affected = await this.scoped.delete({
       memoryId, entityType, entityId,
     } as any)
-    return (result.affected ?? 0) > 0
+    return affected > 0
   }
 
   async deleteByMemoryId(memoryId: string): Promise<number> {
-    const result = await this.repo.delete({ memoryId } as any)
-    return result.affected ?? 0
+    return this.scoped.delete({ memoryId } as any)
   }
 
   async deleteByEntity(
     entityType: MemoryEntity['type'],
     entityId: string,
   ): Promise<number> {
-    const result = await this.repo.delete({ entityType, entityId } as any)
-    return result.affected ?? 0
+    return this.scoped.delete({ entityType, entityId } as any)
   }
 
   async migrateFromJson(memoryId: string): Promise<number> {
