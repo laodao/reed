@@ -13,7 +13,18 @@
 declare global {
   interface Window {
     electronAPI?: any
+    __APP_PLATFORM__?: 'electron' | 'web'
   }
+}
+
+/**
+ * 是否运行在 Electron 渲染端。Web 模式下虽然 main-web.ts 注入了 window.electronAPI
+ * 桥接代理，但同时设置了 __APP_PLATFORM__='web'，必须按这个判断而不是看 electronAPI。
+ */
+function isElectronRenderer(): boolean {
+  if (typeof window === 'undefined') return false
+  if (window.__APP_PLATFORM__ === 'web') return false
+  return !!window.electronAPI
 }
 
 /**
@@ -58,10 +69,21 @@ function isAlreadyUsable(s: string): boolean {
 }
 
 function prefixForCurrentPlatform(rel: string, scheme: 'image' | 'video' | 'file'): string {
-  // Electron：preload 注入了 window.electronAPI
-  if (typeof window !== 'undefined' && window.electronAPI) {
+  if (isElectronRenderer()) {
     return `local-${scheme}://${rel.replace(/^\/+/, '')}`
   }
   // Web：HTTP /assets 路由（按 cookie userId 隔离，scheme 无意义）
-  return '/assets/' + rel.replace(/^\/+/, '')
+  // 绝对路径（含 /home/.../data-web-mt/users/<uid>/voice/...）需要剥到用户目录之后部分
+  // 让后端 /assets 能按相对路径找到文件
+  let normalized = rel.replace(/^\/+/, '')
+  // 已是某个 user 目录下的子路径：截取该用户目录后的部分
+  const usersIdx = normalized.indexOf('users/')
+  if (usersIdx >= 0) {
+    const tail = normalized.slice(usersIdx + 'users/'.length)
+    const slash = tail.indexOf('/')
+    if (slash >= 0) {
+      normalized = tail.slice(slash + 1) // <userId>/<rest> → <rest>
+    }
+  }
+  return '/assets/' + normalized
 }

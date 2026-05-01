@@ -59,7 +59,7 @@
                 <span>生成的音频</span>
               </div>
               <div class="audio-player">
-                <audio :src="'file:///' + historyDetail.outputAudioPath.replace(/\\/g, '/')" controls style="width: 100%" />
+                <audio :src="toFileUrl(historyDetail.outputAudioPath)" controls style="width: 100%" />
               </div>
             </div>
           </div>
@@ -73,7 +73,7 @@
                 <span>输入音频</span>
               </div>
               <div class="audio-player">
-                <audio :src="'file:///' + historyDetail.inputAudioPath.replace(/\\/g, '/')" controls style="width: 100%" />
+                <audio :src="toFileUrl(historyDetail.inputAudioPath)" controls style="width: 100%" />
               </div>
             </div>
             <div class="content-panel">
@@ -107,6 +107,7 @@ import VoiceSidebar from '@/components/voice/VoiceSidebar.vue'
 import TextToSpeech from '@/components/voice/TextToSpeech.vue'
 import { getVoiceLanguageName } from '../../../shared/types/voice.types'
 import type { VoiceRecord } from '../../../shared/types/voice.types'
+import { toFileUrl } from '@/utils/asset-url'
 
 // 选中的历史 ID
 const selectedHistoryId = ref('')

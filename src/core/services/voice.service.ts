@@ -13,7 +13,7 @@ import { ClonedVoiceRepository } from '@core/database/repositories/cloned-voice.
 import { PROVIDER_TEMPLATES } from '@core/services/provider-template.service'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { getPathProvider } from '@core/interfaces/path.interface'
-import { toAssetUrl, toRelativeAssetPath } from '@core/utils/asset-path'
+import { toAssetUrl, toRelativeAssetPath, resolveAssetPath } from '@core/utils/asset-path'
 import { DashScopeTTSProvider } from '@core/voice-providers/dashscope-tts-provider'
 import { DashScopeSTTProvider } from '@core/voice-providers/dashscope-stt-provider'
 import type {
@@ -456,12 +456,24 @@ export class VoiceService {
 
   /**
    * 获取语音历史
+   *
+   * DB 中 outputAudioPath / inputAudioPath 字段存相对路径（兼容旧数据中
+   * 的绝对路径）。返回给前端时统一用 toAssetUrl 包成当前端可加载的 URL：
+   *   - Electron：local-file://...
+   *   - Web：    /assets/...
+   * 这样前端 <audio :src> 直接绑定即可。
    */
   static async getHistory(query: { page: number; pageSize: number; type?: string; favorite?: boolean }) {
     try {
       const voiceRepo = this.getVoiceRepository()
       const result = await voiceRepo.getList(query)
-      return { success: true, data: result }
+      // VoiceRepository.getList 返回 { list, total }，把每条记录的音频路径包成 URL
+      const list = result.list.map((r: any) => ({
+        ...r,
+        outputAudioPath: r.outputAudioPath ? toAssetUrl(r.outputAudioPath, 'file') : r.outputAudioPath,
+        inputAudioPath: r.inputAudioPath ? toAssetUrl(r.inputAudioPath, 'file') : r.inputAudioPath,
+      }))
+      return { success: true, data: { ...result, list } }
     } catch (error: any) {
       console.error('[VoiceService.getHistory] 错误:', error)
       return { success: false, error: error.message || '获取历史失败' }
@@ -476,11 +488,14 @@ export class VoiceService {
       const voiceRepo = this.getVoiceRepository()
       const record = await voiceRepo.getById(id)
 
-      if (record?.outputAudioPath && fs.existsSync(record.outputAudioPath)) {
-        fs.unlinkSync(record.outputAudioPath)
+      // DB 中存的可能是相对路径或旧绝对路径，统一 resolveAssetPath 后再删
+      if (record?.outputAudioPath) {
+        const abs = resolveAssetPath(record.outputAudioPath)
+        if (fs.existsSync(abs)) fs.unlinkSync(abs)
       }
-      if (record?.inputAudioPath && fs.existsSync(record.inputAudioPath)) {
-        fs.unlinkSync(record.inputAudioPath)
+      if (record?.inputAudioPath) {
+        const abs = resolveAssetPath(record.inputAudioPath)
+        if (fs.existsSync(abs)) fs.unlinkSync(abs)
       }
 
       await voiceRepo.delete(id)
