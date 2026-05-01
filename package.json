@@ -9,6 +9,10 @@
   "scripts": {
     "dev": "set LANG=en_US.UTF-8 && set PYTHONIOENCODING=utf-8 && electron-vite dev",
     "dev:debug": "electron-vite dev -- --remote-debugging-port=9222",
+    "rebuild:electron": "electron-builder install-app-deps",
+    "rebuild:node": "npm rebuild better-sqlite3 canvas nodejieba",
+    "pc:dev": "npm run rebuild:electron && electron-vite dev -- --no-sandbox",
+    "web:server:dev": "npm run rebuild:node && tsx watch -r tsconfig-paths/register src/web/server/index.ts",
     "build": "electron-vite build",
     "postinstall": "electron-builder install-app-deps",
     "package": "electron-vite build && electron-builder",
