@@ -7,6 +7,14 @@ import { Column, Entity, Index, PrimaryColumn } from 'typeorm'
 @Entity({ name: 'diary_links' })
 @Index('idx_diary_links_source', ['sourceEntryId'])
 export class DiaryLinkEntity {
+  /**
+   * 所属用户 ID（多租户隔离）。Web 端通过 ALS 注入，Electron 端单用户为 null。
+   * BaseRepository 在所有查询 / 写入前注入 WHERE user_id 与默认 user_id 值。
+   */
+  @Index()
+  @Column({ name: 'user_id', type: 'varchar', nullable: true })
+  userId!: string | null
+
   @PrimaryColumn({ name: 'id', type: 'varchar' })
   id!: string
 

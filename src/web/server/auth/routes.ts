@@ -5,7 +5,7 @@
 
 import { Router, type Request, type Response } from 'express'
 import bcrypt from 'bcryptjs'
-import { WebDatabaseRegistry } from '../platform/web-database-registry'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { JWT_COOKIE_NAME, JWT_TTL_SECONDS, signToken } from './jwt'
 import { requireAuth } from './middleware'
 
@@ -26,7 +26,7 @@ router.post('/register', async (req: Request, res: Response) => {
       res.status(400).json({ ok: false, error: '密码至少 6 位' })
       return
     }
-    const db = WebDatabaseRegistry.getInstance().getGlobalDm()
+    const db = getCoreDatabaseManager()
     if (!db.users) {
       res.status(500).json({ ok: false, error: '数据库未初始化' })
       return
@@ -62,7 +62,7 @@ router.post('/login', async (req: Request, res: Response) => {
       res.status(400).json({ ok: false, error: '邮箱和密码必填' })
       return
     }
-    const db = WebDatabaseRegistry.getInstance().getGlobalDm()
+    const db = getCoreDatabaseManager()
     if (!db.users) {
       res.status(500).json({ ok: false, error: '数据库未初始化' })
       return
@@ -108,7 +108,7 @@ router.post('/logout', (_req: Request, res: Response) => {
  */
 router.get('/me', requireAuth, async (req: Request, res: Response) => {
   try {
-    const db = WebDatabaseRegistry.getInstance().getGlobalDm()
+    const db = getCoreDatabaseManager()
     if (!db.users) {
       res.status(500).json({ ok: false, error: '数据库未初始化' })
       return

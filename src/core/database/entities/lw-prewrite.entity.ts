@@ -1,4 +1,4 @@
-import { Column, Entity, PrimaryColumn, Unique } from 'typeorm'
+import { Column, Entity, PrimaryColumn, Unique, Index} from 'typeorm'
 
 /**
  * LW 章节预写 Entity（FK CASCADE 到 lw_story_outlines；UNIQUE outline_id）。
@@ -7,6 +7,14 @@ import { Column, Entity, PrimaryColumn, Unique } from 'typeorm'
 @Entity({ name: 'lw_chapter_prewrites' })
 @Unique('uq_lw_chapter_prewrites_outline', ['outlineId'])
 export class LwPrewriteEntity {
+  /**
+   * 所属用户 ID（多租户隔离）。Web 端通过 ALS 注入，Electron 端单用户为 null。
+   * BaseRepository 在所有查询 / 写入前注入 WHERE user_id 与默认 user_id 值。
+   */
+  @Index()
+  @Column({ name: 'user_id', type: 'varchar', nullable: true })
+  userId!: string | null
+
   @PrimaryColumn({ name: 'id', type: 'varchar' })
   id!: string
 

@@ -8,12 +8,9 @@
  *              - /events           WebSocket，订阅业务事件
  *              - /                 静态资源（生产模式 dist/renderer-web）
  *
- * 启动流程：
- * 1. 读环境变量（PORT / JWT_SECRET / DATA_ROOT 等）
- * 2. 注册 4 个全局访问器（PathProvider / EventEmitter / SecureStorage / DatabaseManager）
- * 3. 初始化全局数据库（仅 users 表）
- * 4. 注册 WebDatabaseRegistry：登录后每个用户使用独立 SQLite 文件
- * 5. 启动 HTTP / WS
+ * 数据库：单 PostgreSQL 库（DB_TYPE=postgres），多租户用 user_id 列做行级隔离。
+ *        每张业务表都有 user_id 列，BaseRepository 在所有查询/写入前自动按
+ *        当前 ALS userId 过滤 / 填充。
  */
 
 import 'reflect-metadata'
@@ -33,7 +30,7 @@ import { attachWebSocketServer } from './ws/ws-server'
 import { WebPathProvider } from './platform/web-path.provider'
 import { WebSocketEventEmitter } from './platform/web-event-emitter'
 import { WebSecureStorage } from './platform/web-secure-storage'
-import { WebDatabaseRegistry } from './platform/web-database-registry'
+import { WebDatabaseManager } from './platform/web-database-manager'
 
 interface ServerConfig {
   port: number
@@ -90,20 +87,17 @@ async function bootstrap(): Promise<void> {
 
   configureJwtSecret(cfg.jwtSecret)
 
-  // 2. 多租户数据库初始化
-  //    - 全局 SQLite：<root>/global.db，仅承载 users 表用于鉴权
-  //    - 每用户 SQLite：<root>/users/<userId>/the_bot.db（懒创建）
-  await initWebDatabaseRegistry(cfg.rootDataPath)
+  // 2. 单 PG DataSource（多租户行级隔离：user_id 列 + BaseRepository ALS 注入）
+  await initDatabase()
 
-  // 2.4 LanceDB 向量数据库初始化（与 Electron DatabaseManager.initialize 等价）
-  //     表 schema 由 KB id 隔离，多租户在同一进程共用一个 LanceDB 实例无冲突。
+  // 3. LanceDB（与 Electron 等价）
   await initLanceDB(cfg.rootDataPath)
 
-  // 2.5 注册 IPC channel 处理器
+  // 4. 注册 IPC channel 处理器
   const { registerAllWebChannels } = await import('./api/register-channels')
   await registerAllWebChannels()
 
-  // 3. Express
+  // 5. Express
   const app = express()
   app.use(express.json({ limit: '50mb' }))
   app.use(cookieParser())
@@ -124,7 +118,7 @@ async function bootstrap(): Promise<void> {
     })
   }
 
-  // 4. HTTP + WS
+  // 6. HTTP + WS
   const server = http.createServer(app)
   attachWebSocketServer(server)
 
@@ -132,11 +126,9 @@ async function bootstrap(): Promise<void> {
     console.log(`[web-server] 监听 http://localhost:${cfg.port}`)
   })
 
-  // 优雅停机
   const shutdown = async (signal: string) => {
-    console.log(`[web-server] 收到 ${signal}，开始关闭...`)
+    console.log(`[web-server] 收到 ${signal}，关闭...`)
     server.close()
-    await WebDatabaseRegistry.getInstance().shutdown()
     process.exit(0)
   }
   process.on('SIGINT', () => shutdown('SIGINT'))
@@ -144,9 +136,38 @@ async function bootstrap(): Promise<void> {
 }
 
 /**
- * 初始化 LanceDB（向量库）。Electron 端在 DatabaseManager.initialize() 里
- * 调用，web 端缺这一步会导致 KB processDocument 报
- * "Cannot read properties of null (reading 'createTable')"。
+ * 初始化单 PG DataSource。Web 端强制使用 PostgreSQL（与 Electron 端 SQLite 形成对比，
+ * 但 entity / Repository 完全共用，TypeORM 自动适配方言）。
+ */
+async function initDatabase(): Promise<void> {
+  const { createDataSource } = await import('@core/database/data-source')
+  const { ensureUsersTable } = await import('@core/database/migrations/ensure-users-table')
+  const { registerCoreDatabaseManager } = await import(
+    '@core/database/database-manager.interface'
+  )
+
+  const dbCfg = {
+    type: 'postgres' as const,
+    host: process.env.PGHOST ?? 'localhost',
+    port: Number(process.env.PGPORT ?? 5432),
+    username: process.env.PGUSER ?? 'postgres',
+    password: process.env.PGPASSWORD ?? 'postgres',
+    database: process.env.PGDATABASE ?? 'the_bot_web',
+    poolSize: Number(process.env.PG_POOL_SIZE ?? 10),
+  }
+
+  const ds = await createDataSource({ config: dbCfg })
+  await ds.synchronize()  // 自动建表 + 加 user_id 列
+  await ensureUsersTable(ds)
+
+  const dm = new WebDatabaseManager(ds)
+  registerCoreDatabaseManager(() => dm)
+  console.log('[web-server] PostgreSQL 数据库初始化完成')
+}
+
+/**
+ * LanceDB 向量库（与 Electron 等价）。多租户在 chunk 表里按 knowledge_base_id 隔离，
+ * KB 自身已带 user_id，天然安全。
  */
 async function initLanceDB(rootDataPath: string): Promise<void> {
   try {
@@ -157,36 +178,7 @@ async function initLanceDB(rootDataPath: string): Promise<void> {
     console.log('[web-server] LanceDB 初始化完成')
   } catch (e) {
     console.error('[web-server] LanceDB 初始化失败（KB 向量功能将不可用）:', e)
-    // 与 Electron 一致：失败不影响主流程
   }
-}
-
-/**
- * 初始化全局 DataSource（users 表）+ 注册 WebDatabaseRegistry
- */
-async function initWebDatabaseRegistry(rootDataPath: string): Promise<void> {
-  const { createDataSource } = await import('@core/database/data-source')
-  const { ensureUsersTable } = await import('@core/database/migrations/ensure-users-table')
-  const { registerCoreDatabaseManager } = await import(
-    '@core/database/database-manager.interface'
-  )
-
-  const globalDbFile = path.join(rootDataPath, 'global.db')
-  const globalDs = await createDataSource({
-    config: { type: 'sqlite', database: globalDbFile, enableWal: true },
-  })
-  // 全局库只用 users 表；synchronize 会按 entity metadata 建全表（其他表为空，可忽略）
-  await globalDs.synchronize()
-  await ensureUsersTable(globalDs)
-
-  const registry = WebDatabaseRegistry.getInstance({
-    rootDataPath,
-    globalDataSource: globalDs,
-  })
-
-  // core 层访问器：未登录 → 全局 DM；登录后 → 该用户专属 DM
-  registerCoreDatabaseManager(() => registry.getCurrentUserDm())
-  console.log('[web-server] 数据库注册表初始化完成（多租户 SQLite）')
 }
 
 bootstrap().catch((err) => {

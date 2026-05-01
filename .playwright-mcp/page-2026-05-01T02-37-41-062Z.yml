@@ -1,0 +1,10 @@
+- generic [ref=e4]:
+  - heading "The Bot" [level=1] [ref=e5]
+  - paragraph [ref=e6]: 登录到你的账号
+  - generic [ref=e7]:
+    - generic [ref=e8] [cursor=pointer]: 登录
+    - generic [ref=e9] [cursor=pointer]: 注册
+  - generic [ref=e10]:
+    - textbox "邮箱" [ref=e11]
+    - textbox "密码（至少 6 位）" [ref=e12]
+    - button "登录" [ref=e13] [cursor=pointer]

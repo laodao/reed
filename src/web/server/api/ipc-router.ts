@@ -5,17 +5,15 @@
  *              所有 channel 都需要登录后才能调用。
  *              channel 处理函数从 ipc-bridge 注册表中读取（业务侧只需 registerIpc）。
  *
- *              多租户：在调用 invokeIpc 之前先 ensureUserDb，保证当前请求的
- *              userId 对应的 DataSource 已初始化。再用 runWithUserAsync 把
- *              userId 注入 ALS，core 层 getCoreDatabaseManager() 即可解析到该
- *              用户专属的 DM。
+ *              多租户：runWithUserAsync 把当前请求 userId 注入 ALS，
+ *              core 层 BaseRepository 在所有查询/写入前自动按此 userId
+ *              过滤 / 填充 user_id 列。
  */
 
 import { Router, type Request, type Response } from 'express'
 import { invokeIpc } from '@core/ipc/ipc-bridge'
 import { runWithUserAsync } from '@core/context/user-context'
 import { requireAuth } from '../auth/middleware'
-import { WebDatabaseRegistry } from '../platform/web-database-registry'
 
 const router = Router()
 
@@ -25,7 +23,6 @@ router.post('/:channel', requireAuth, async (req: Request, res: Response) => {
 
   try {
     const userId = req.user!.userId
-    await WebDatabaseRegistry.getInstance().ensureUserDb(userId)
     const result = await runWithUserAsync(userId, async () => {
       return await invokeIpc(channel, args)
     })

@@ -1,10 +1,18 @@
-import { Column, Entity, PrimaryColumn } from 'typeorm'
+import { Column, Entity, Index, PrimaryColumn } from 'typeorm'
 
 /**
  * LW 故事记忆 Entity（FK CASCADE 到 lw_projects；FK SET NULL 到 lw_story_outlines）。
  */
 @Entity({ name: 'lw_story_memories' })
 export class LwMemoryEntity {
+  /**
+   * 所属用户 ID（多租户隔离）。Web 端 web-server 在请求上下文里通过 ALS 注入；
+   * Electron 端单用户场景为 null。BaseRepository 会在所有查询/写入前注入 WHERE user_id 与默认 user_id。
+   */
+  @Index()
+  @Column({ name: 'user_id', type: 'varchar', nullable: true })
+  userId!: string | null
+
   @PrimaryColumn({ name: 'id', type: 'varchar' })
   id!: string
 
