@@ -131,10 +131,26 @@ function setSessionCookie(res: Response, token: string): void {
   res.cookie(JWT_COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: isSecureCookie(),
     maxAge: JWT_TTL_SECONDS * 1000,
     path: '/',
   })
+}
+
+/**
+ * 是否给 session cookie 加 Secure 标志（仅 HTTPS 才会被浏览器保存/回传）。
+ * 优先看 SECURE_COOKIE 环境变量（'true'/'1' 启用，'false'/'0' 关闭），
+ * 未显式设置时回落到 NODE_ENV === 'production'。
+ *
+ * staging 通过 HTTP 暴露给内网，必须显式设 SECURE_COOKIE=false，
+ * 否则浏览器拒绝保存 cookie，登录后立刻回到登录页。
+ */
+function isSecureCookie(): boolean {
+  const v = process.env.SECURE_COOKIE
+  if (v !== undefined) {
+    return v === 'true' || v === '1'
+  }
+  return process.env.NODE_ENV === 'production'
 }
 
 export default router

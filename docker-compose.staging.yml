@@ -37,6 +37,8 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
+      # staging 通过 HTTP 暴露给内网，关闭 secure cookie；上线 HTTPS 时改为 "true"
+      SECURE_COOKIE: "false"
       PORT: 4201
       DATA_ROOT: /app/data
       JWT_SECRET: ${STAGING_JWT_SECRET:-staging-only-secret-change-me}
