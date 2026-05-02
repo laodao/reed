@@ -1,5 +1,5 @@
 <template>
-  <div class="tab-bar" v-if="tabList.length > 1">
+  <div class="tab-bar">
     <div class="tab-list" ref="tabListRef">
       <div
         v-for="tab in tabList"
@@ -18,6 +18,40 @@
           <Close />
         </el-icon>
       </div>
+    </div>
+
+    <!-- 用户菜单（仅 Web 端，且已登录） -->
+    <div v-if="showUserMenu" class="tab-actions">
+      <el-dropdown trigger="click" placement="bottom-end">
+        <button
+          class="user-menu-trigger"
+          type="button"
+          data-test="user-menu-trigger"
+          aria-label="用户菜单"
+        >
+          <el-icon class="user-menu-icon"><User /></el-icon>
+        </button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <div class="user-menu-header">
+              <div class="user-menu-name">
+                {{ currentUser!.displayName || currentUser!.email }}
+              </div>
+              <div v-if="currentUser!.displayName" class="user-menu-email">
+                {{ currentUser!.email }}
+              </div>
+            </div>
+            <el-dropdown-item
+              divided
+              data-test="user-menu-logout"
+              @click="handleLogout"
+            >
+              <el-icon><SwitchButton /></el-icon>
+              <span>注销</span>
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
     </div>
 
     <!-- 右键菜单 -->
@@ -47,18 +81,35 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Close, DArrowRight, CircleClose } from '@element-plus/icons-vue'
+import {
+  Close,
+  DArrowRight,
+  CircleClose,
+  User,
+  SwitchButton,
+} from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useTabsStore } from '@/stores/tabs'
+import { useUserStore } from '@/stores/user'
 import type { TabItem } from '@/stores/tabs'
 
 const router = useRouter()
 const tabsStore = useTabsStore()
+const userStore = useUserStore()
 
 const tabListRef = ref<HTMLElement | null>(null)
 
 // 计算属性
 const tabList = computed(() => tabsStore.tabList)
 const activeTabPath = computed(() => tabsStore.activeTabPath)
+
+// 用户菜单：仅 Web 端 + 已登录
+const isWebPlatform = computed(() => {
+  if (typeof window === 'undefined') return false
+  return window.__APP_PLATFORM__ === 'web'
+})
+const currentUser = computed(() => userStore.user)
+const showUserMenu = computed(() => isWebPlatform.value && !!currentUser.value)
 
 // 右键菜单状态
 const contextMenuVisible = ref(false)
@@ -129,6 +180,35 @@ function handleDocumentClick() {
   hideContextMenu()
 }
 
+// 注销（Web 端用户菜单触发）
+async function handleLogout(): Promise<void> {
+  try {
+    await ElMessageBox.confirm('确定要注销当前账号吗？', '注销确认', {
+      confirmButtonText: '注销',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch {
+    return
+  }
+  try {
+    const resp = await fetch('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'include',
+    })
+    if (!resp.ok) {
+      ElMessage.error(`注销失败 (${resp.status})`)
+      return
+    }
+  } catch (e) {
+    ElMessage.error(`注销失败：${(e as Error).message}`)
+    return
+  }
+  ElMessage.success('已注销')
+  // main-web.ts 的 checkAuthOrShowLogin 会回到登录门
+  window.location.reload()
+}
+
 onMounted(() => {
   document.addEventListener('click', handleDocumentClick)
 })
@@ -182,7 +262,6 @@ onUnmounted(() => {
   user-select: none;
   position: relative;
 
-  // 默认状态下的左侧分隔线效果
   &::before {
     content: '';
     position: absolute;
@@ -206,7 +285,6 @@ onUnmounted(() => {
     color: var(--color-primary);
     box-shadow: 0 2px 8px rgba(var(--color-primary-rgb), 0.15);
 
-    // 激活状态下的顶部高亮条
     &::after {
       content: '';
       position: absolute;
@@ -252,6 +330,44 @@ onUnmounted(() => {
   }
 }
 
+// ==================== 用户菜单（Web 端） ====================
+
+.tab-actions {
+  display: flex;
+  align-items: center;
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+
+.user-menu-trigger {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color-lighter);
+  background: var(--fill-color-blank);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: var(--fill-color-light);
+    border-color: var(--color-primary-light-5);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-primary-light-5);
+    outline-offset: 2px;
+  }
+}
+
+.user-menu-icon {
+  font-size: 18px;
+  color: var(--text-color-regular);
+}
+
 .tab-context-menu {
   position: fixed;
   z-index: 9999;
@@ -280,6 +396,28 @@ onUnmounted(() => {
     .el-icon {
       font-size: 15px;
     }
+  }
+}
+</style>
+
+<style lang="scss">
+// el-dropdown 内容通过 Teleport 出去，scoped 选择器抓不到，
+// 所以这一段放在非 scoped style 里。
+.user-menu-header {
+  padding: 10px 16px;
+  min-width: 180px;
+
+  .user-menu-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-color-primary);
+    line-height: 1.4;
+  }
+  .user-menu-email {
+    font-size: 12px;
+    color: var(--text-color-secondary);
+    margin-top: 2px;
+    line-height: 1.4;
   }
 }
 </style>
