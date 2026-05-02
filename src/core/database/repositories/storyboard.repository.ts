@@ -17,7 +17,7 @@ import {
   TransitionType,
   ImageAsset,
 } from '@shared/types/story-to-video.types'
-import { StoryboardEntity } from '../entities/storyboard.entity'
+import { StoryboardEntity } from '../entities/episode-production/storyboard.entity'
 import { BaseRepository } from '../base-repository'
 
 export interface CreateStoryboardRequest {

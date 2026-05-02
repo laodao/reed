@@ -6,7 +6,7 @@
 
 import type { DataSource } from 'typeorm'
 import { Dialogue } from '@shared/types/story-to-video.types'
-import { SceneDialogueEntity } from '../entities/scene-dialogue.entity'
+import { SceneDialogueEntity } from '../entities/episode-production/scene-dialogue.entity'
 import { BaseRepository } from '../base-repository'
 
 export interface CreateSceneDialogueRequest {

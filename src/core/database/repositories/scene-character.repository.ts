@@ -8,8 +8,8 @@ import type { DataSource } from 'typeorm'
 import {
   SceneCharacter,
 } from '@shared/types/story-to-video.types'
-import { SceneCharacterEntity } from '../entities/scene-character.entity'
-import { ScenePropEntity } from '../entities/scene-prop.entity'
+import { SceneCharacterEntity } from '../entities/episode-production/scene-character.entity'
+import { ScenePropEntity } from '../entities/episode-production/scene-prop.entity'
 import { BaseRepository } from '../base-repository'
 import { getCurrentUserId } from '@core/context/user-context'
 

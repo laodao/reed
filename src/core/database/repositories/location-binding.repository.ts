@@ -10,7 +10,7 @@ import {
   TimeOfDay,
   WeatherType,
 } from '@shared/types/story-to-video.types'
-import { LocationBindingEntity } from '../entities/location-binding.entity'
+import { LocationBindingEntity } from '../entities/episode-production/location-binding.entity'
 import { BaseRepository } from '../base-repository'
 
 export interface CreateLocationBindingRequest {

@@ -6,7 +6,7 @@
 
 import type { DataSource } from 'typeorm'
 import { ActionDescription } from '@shared/types/story-to-video.types'
-import { SceneActionEntity } from '../entities/scene-action.entity'
+import { SceneActionEntity } from '../entities/episode-production/scene-action.entity'
 import { BaseRepository } from '../base-repository'
 
 export interface CreateSceneActionRequest {

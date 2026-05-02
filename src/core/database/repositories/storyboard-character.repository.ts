@@ -6,7 +6,7 @@
 
 import type { DataSource } from 'typeorm'
 import { StoryboardCharacter } from '@shared/types/story-to-video.types'
-import { StoryboardCharacterEntity } from '../entities/storyboard-character.entity'
+import { StoryboardCharacterEntity } from '../entities/episode-production/storyboard-character.entity'
 import { BaseRepository } from '../base-repository'
 
 type Facing =

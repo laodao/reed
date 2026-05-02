@@ -14,7 +14,7 @@ import {
   TimeOfDay,
   WeatherType,
 } from '@shared/types/story-to-video.types'
-import { SceneScriptEntity } from '../entities/scene-script.entity'
+import { SceneScriptEntity } from '../entities/episode-production/scene-script.entity'
 import { BaseRepository } from '../base-repository'
 
 export interface CreateSceneScriptRequest {

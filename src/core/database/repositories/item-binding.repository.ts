@@ -6,7 +6,7 @@
 
 import type { DataSource } from 'typeorm'
 import { ItemBinding } from '@shared/types/story-to-video.types'
-import { ItemBindingEntity } from '../entities/item-binding.entity'
+import { ItemBindingEntity } from '../entities/episode-production/item-binding.entity'
 import { BaseRepository } from '../base-repository'
 
 export interface CreateItemBindingRequest {

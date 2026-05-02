@@ -10,7 +10,7 @@ import type { DataSource } from 'typeorm'
 import {
   CharacterBinding,
 } from '@shared/types/story-to-video.types'
-import { CharacterBindingEntity } from '../entities/character-binding.entity'
+import { CharacterBindingEntity } from '../entities/episode-production/character-binding.entity'
 import { LwCharacterEntity } from '../entities/lw-character.entity'
 import { BaseRepository } from '../base-repository'
 

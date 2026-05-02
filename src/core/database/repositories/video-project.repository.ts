@@ -9,7 +9,7 @@ import {
   VideoProject,
   VideoProjectConfig,
 } from '@shared/types/story-to-video.types'
-import { VideoProjectEntity } from '../entities/video-project.entity'
+import { VideoProjectEntity } from '../entities/episode-production/video-project.entity'
 import { BaseRepository } from '../base-repository'
 
 export interface CreateVideoProjectRequest {

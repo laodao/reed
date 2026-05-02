@@ -13,7 +13,7 @@ import {
   EpisodeSourceType,
   UploadedCharacter,
 } from '@shared/types/story-to-video.types'
-import { VideoEpisodeEntity } from '../entities/video-episode.entity'
+import { VideoEpisodeEntity } from '../entities/episode-production/video-episode.entity'
 import { BaseRepository } from '../base-repository'
 
 export interface CreateVideoEpisodeRequest {

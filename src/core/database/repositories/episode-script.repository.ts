@@ -10,7 +10,7 @@ import {
   SceneScript,
   ScriptStatus,
 } from '@shared/types/story-to-video.types'
-import { EpisodeScriptEntity } from '../entities/episode-script.entity'
+import { EpisodeScriptEntity } from '../entities/episode-production/episode-script.entity'
 import { BaseRepository } from '../base-repository'
 
 export interface CreateEpisodeScriptRequest {
