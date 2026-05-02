@@ -247,6 +247,8 @@ export class StoryToVideoAIService {
     return this.storyboardGen.generateStoryboards(scenes, providerConfigId, modelId, onProgress)
   }
 
+  analyzeSceneStoryboardNeeds = this.storyboardGen.analyzeSceneStoryboardNeeds.bind(this.storyboardGen)
+
   // ---- 未拆分的方法（保留在 facade 中，后续 task 再迁移） ----
 
   /**

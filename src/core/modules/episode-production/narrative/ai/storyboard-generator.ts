@@ -249,7 +249,7 @@ export class EpisodeStoryboardGenerator {
   /**
    * 分析场景，确定需要的分镜数量和类型
    */
-  private async analyzeSceneStoryboardNeeds(
+  async analyzeSceneStoryboardNeeds(
     sceneScript: SceneScript,
     providerConfigId?: string,
     modelId?: string

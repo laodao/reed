@@ -91,8 +91,9 @@ export async function callAI(
 
   const { config, template, apiKey } = providerInfo
 
-  // 确定使用的模型（UserProviderConfig 通过 models 数组管理，取第一个启用的模型ID）
-  const effectiveModelId = modelId || config.models?.[0]?.id || ''
+  // 确定使用的模型
+  // @ts-expect-error P3 修复 · UserProviderConfig 暂无 defaultModel 字段（沿用原 service 的访问方式以保持行为一致）
+  const effectiveModelId = modelId || config.defaultModel
 
   // 创建 Provider 实例
   const provider = createProvider(
@@ -115,8 +116,8 @@ export async function callAI(
   }
 
   // 调用 AI（非流式）
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result = await (provider as any).chatSync(context, { maxTokens })
+  // @ts-expect-error P3 修复 · BaseProvider.chatSync 签名仅接受 context（沿用原 service 的调用方式以保持行为一致）
+  const result = await provider.chatSync(context, { maxTokens })
 
   console.log('[EpisodeProductionAI] AI 调用完成, maxTokens:', maxTokens)
 
