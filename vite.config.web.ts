@@ -27,29 +27,35 @@ import vue from '@vitejs/plugin-vue'
 function replaceEntryToWebMain(): Plugin {
   return {
     name: 'replace-entry-to-web-main',
-    transformIndexHtml(html) {
-      let out = html.replace('/src/main.ts', '/src/main-web.ts')
+    // 关键：必须在 vite 内部 HTML 脚本提取之前替换 entry，否则 build 阶段
+    // 仍按 /src/main.ts bundle，登录门 / Web 桥都不会被打进产物。
+    enforce: 'pre',
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html) {
+        let out = html.replace('/src/main.ts', '/src/main-web.ts')
 
-      // 仅修改 CSP <meta> 标签的 content 属性
-      out = out.replace(
-        /(<meta http-equiv="Content-Security-Policy"\s+content=")([^"]+)("\s*\/?>)/i,
-        (_m, prefix, csp, suffix) => {
-          let next = csp
-          // 加 unsafe-eval / wasm-unsafe-eval
-          if (/script-src\s+'self';?/.test(next)) {
-            next = next.replace(
-              /script-src\s+'self';?/,
-              "script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval';",
-            )
-          }
-          // 加 connect-src（vite HMR / 业务 WebSocket /events 需要）
-          if (!/connect-src/.test(next)) {
-            next = `${next.replace(/;?\s*$/, '')}; connect-src 'self' ws: wss: http: https:;`
-          }
-          return `${prefix}${next}${suffix}`
-        },
-      )
-      return out
+        // 仅修改 CSP <meta> 标签的 content 属性
+        out = out.replace(
+          /(<meta http-equiv="Content-Security-Policy"\s+content=")([^"]+)("\s*\/?>)/i,
+          (_m, prefix, csp, suffix) => {
+            let next = csp
+            // 加 unsafe-eval / wasm-unsafe-eval
+            if (/script-src\s+'self';?/.test(next)) {
+              next = next.replace(
+                /script-src\s+'self';?/,
+                "script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval';",
+              )
+            }
+            // 加 connect-src（vite HMR / 业务 WebSocket /events 需要）
+            if (!/connect-src/.test(next)) {
+              next = `${next.replace(/;?\s*$/, '')}; connect-src 'self' ws: wss: http: https:;`
+            }
+            return `${prefix}${next}${suffix}`
+          },
+        )
+        return out
+      },
     },
   }
 }
