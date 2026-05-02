@@ -239,13 +239,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
     // schema drift 检查 + 备份保护
     await this.initTypeOrmDataSource()
 
-    // 初始化仓库
-    await this.initRepositories()
-
-    // Electron 单用户：先注入 ALS 默认 userId，再补写 users 表记录。
-    // 顺序很关键：setDefaultUser 必须在 users.getById/create 抛错也能落地，
-    // 否则 IPC 查询会因为 ALS 没 userId、按 user_id IS NULL 过滤而拿到空集
-    // （场景：旧 PC 库迁移后所有数据 user_id = LOCAL_DEFAULT_USER_ID）。
+    // 关键：在 initRepositories 之前注入 ALS 默认 userId。
+    // initRepositories 内部会调用 LwTempXxx.initializeDefaultData，这些初始化
+    // 通过 BaseRepository.scoped.count()/upsert 操作，必须能看到迁移回填后的
+    // 旧数据（user_id = 'local-default-user'）；否则会按 user_id IS NULL 过滤
+    // 看不到旧数据，走 INSERT 路径触发 UNIQUE 冲突（type 列）。
     {
       const { LOCAL_DEFAULT_USER_ID, setDefaultUser } = await import(
         '@core/context/user-context'
@@ -254,23 +252,28 @@ export class DatabaseManager implements ICoreDatabaseManager {
       console.log(
         `[DatabaseManager] 已注入 ALS 默认 userId = ${LOCAL_DEFAULT_USER_ID}`,
       )
+    }
 
-      if (this.users) {
-        try {
-          const existing = await this.users.getById(LOCAL_DEFAULT_USER_ID)
-          if (!existing) {
-            await this.users.create({
-              id: LOCAL_DEFAULT_USER_ID,
-              email: 'local@local',
-              displayName: '本地用户',
-              role: 'admin',
-            })
-            console.log('[DatabaseManager] 已创建本地默认用户')
-          }
-        } catch (e) {
-          // 不致命：ALS 默认 userId 已设，业务查询能命中迁移后回填的旧数据
-          console.warn('[DatabaseManager] 写入本地默认用户失败（不致命）:', e)
+    // 初始化仓库（内部可能跑 initializeDefaultData，依赖上面已 set 的 userId）
+    await this.initRepositories()
+
+    // 写入本地默认用户记录到 users 表（依赖 this.users，必须在 initRepositories 之后）
+    if (this.users) {
+      const { LOCAL_DEFAULT_USER_ID } = await import('@core/context/user-context')
+      try {
+        const existing = await this.users.getById(LOCAL_DEFAULT_USER_ID)
+        if (!existing) {
+          await this.users.create({
+            id: LOCAL_DEFAULT_USER_ID,
+            email: 'local@local',
+            displayName: '本地用户',
+            role: 'admin',
+          })
+          console.log('[DatabaseManager] 已创建本地默认用户')
         }
+      } catch (e) {
+        // 不致命：ALS 默认 userId 已在更早阶段设好，业务查询能命中数据
+        console.warn('[DatabaseManager] 写入本地默认用户失败（不致命）:', e)
       }
     }
 
