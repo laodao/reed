@@ -40,11 +40,14 @@ function replaceEntryToWebMain(): Plugin {
           /(<meta http-equiv="Content-Security-Policy"\s+content=")([^"]+)("\s*\/?>)/i,
           (_m, prefix, csp, suffix) => {
             let next = csp
-            // script-src: 加 unsafe-eval / wasm-unsafe-eval（bytemd / katex / mermaid 等需要）
+            // script-src: 加 unsafe-eval / wasm-unsafe-eval / unsafe-inline
+            // - unsafe-eval / wasm-unsafe-eval: bytemd / katex / mermaid 用 eval / Function ctor / wasm
+            // - unsafe-inline: mermaid 等渲染时会注入 <script> 标签（script-src-elem 默认回落到此）
+            //   注：CSP 规定有 hash/nonce 时 unsafe-inline 被忽略；本项目未用 hash/nonce 所以生效
             if (/script-src\s+'self';?/.test(next)) {
               next = next.replace(
                 /script-src\s+'self';?/,
-                "script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval';",
+                "script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' 'unsafe-inline';",
               )
             }
             // script-src-attr: 允许 inline event handlers（Element Plus 部分组件 / 知识库 UI）

@@ -13,6 +13,7 @@ import type {
 } from '@shared/types/knowledge-base.types'
 import { KbChunkEntity } from '../entities/kb-chunk.entity'
 import { BaseRepository } from '../base-repository'
+import { getCurrentUserId } from '@core/context/user-context'
 
 export class KbChunkRepository extends BaseRepository<KbChunkEntity, KbChunk> {
   constructor(dataSource: DataSource) {
@@ -101,13 +102,19 @@ export class KbChunkRepository extends BaseRepository<KbChunkEntity, KbChunk> {
   async createBatch(requests: CreateChunkRequest[]): Promise<KbChunk[]> {
     if (requests.length === 0) return []
     const now = new Date()
+    // 事务里要走 manager.getRepository（拿到事务范围内的 repo），
+    // 不能用 this.scoped（绑定的是 dataSource 顶层 repo，会脱离事务）。
+    // 但 manager.repo 不带 user_id 注入，必须手动从 ALS 拿当前 userId 填入。
+    const userId = getCurrentUserId()
     return this.dataSource.transaction(async manager => {
       const repo = manager.getRepository(KbChunkEntity)
       const result: KbChunk[] = []
       for (const request of requests) {
-        const saved = await repo.save(
-          repo.create(this.buildEntityForCreate(request, now)),
-        )
+        const built = this.buildEntityForCreate(request, now)
+        // 必须手动注入 user_id，否则后续 scoped 查询（findByDocumentId 等）
+        // 因 user_id NULL 而看不到这批 chunk，UI 上"切片不可见"
+        built.userId = userId
+        const saved = await repo.save(repo.create(built))
         result.push(this.toDto(saved))
       }
       return result
