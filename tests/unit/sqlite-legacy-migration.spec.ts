@@ -105,4 +105,92 @@ describe('PC 端旧 SQLite 库启动迁移', () => {
 
     await ds.destroy()
   })
+
+  it('lw_temp_*_templates 改为全局共享后，旧库残留 user_id 列不影响所有用户读取', async () => {
+    // 场景：旧 PC 库被 ensureUserIdColumns 给两张模板表加了 user_id 列、
+    // 并把数据回填成 LOCAL_DEFAULT_USER_ID。entity 现在已删除 userId 字段，
+    // BaseRepository.scoped 应当自动跳过 user_id 过滤，所有 ALS userId 都
+    // 能看到全部模板。schema-drift 检查也应通过（实库多列无害）。
+    const allEntities = Object.values(entities).filter(
+      v => typeof v === 'function',
+    ) as EntityCtor[]
+    const ds = new DataSource({
+      type: 'better-sqlite3',
+      database: ':memory:',
+      entities: allEntities as any,
+      synchronize: true,
+      logging: false,
+    })
+    await ds.initialize()
+
+    // 模拟旧 PC 库：手工给两张模板表加 user_id 列（entity 已无此字段）
+    for (const t of ['lw_temp_character_templates', 'lw_temp_location_templates']) {
+      await ds.query(`ALTER TABLE "${t}" ADD COLUMN user_id varchar`)
+    }
+
+    // 注册全局 dataSource 供 Repository 使用
+    const { registerCoreDatabaseManager } = await import(
+      '@core/database/database-manager.interface'
+    )
+    registerCoreDatabaseManager(() => ({ getDataSource: () => ds }) as any)
+
+    const { LwTempCharacterTemplateRepository } = await import(
+      '@core/database/repositories/lw-temp-character-template.repository'
+    )
+    const { LwTempLocationTemplateRepository } = await import(
+      '@core/database/repositories/lw-temp-location-template.repository'
+    )
+
+    const charRepo = new LwTempCharacterTemplateRepository(ds)
+    const locRepo = new LwTempLocationTemplateRepository(ds)
+
+    // 写入默认 17 / 10 条种子数据
+    await charRepo.initializeDefaultData()
+    await locRepo.initializeDefaultData()
+
+    // 把现有 17 / 10 条 user_id 都改成 'local-default-user'，模拟迁移效果
+    await ds.query(
+      `UPDATE lw_temp_character_templates SET user_id = ?`,
+      [LOCAL_DEFAULT_USER_ID],
+    )
+    await ds.query(
+      `UPDATE lw_temp_location_templates SET user_id = ?`,
+      [LOCAL_DEFAULT_USER_ID],
+    )
+
+    const { runWithUserAsync } = await import('@core/context/user-context')
+
+    // 任意 ALS userId 都应看到全部 17 + 10 条
+    for (const userId of ['local-default-user', 'someone-else', '__no_user__']) {
+      const got = await (userId === '__no_user__'
+        ? Promise.resolve()
+        : runWithUserAsync(userId, async () => {
+            // no-op，仅注入 ALS
+          }))
+      void got
+
+      const charsAll = await runWithUserAsync(
+        userId === '__no_user__' ? '' : userId,
+        async () => charRepo.getAll(),
+      )
+      const locsAll = await runWithUserAsync(
+        userId === '__no_user__' ? '' : userId,
+        async () => locRepo.getAll(),
+      )
+      expect(charsAll.length, `userId=${userId} 应看到全部 char 模板`).toBe(17)
+      expect(locsAll.length, `userId=${userId} 应看到全部 location 模板`).toBe(10)
+    }
+
+    // 第二次 initializeDefaultData 不报错（count() 看到现有数据 → return）
+    await charRepo.initializeDefaultData()
+    await locRepo.initializeDefaultData()
+    expect((await charRepo.getAll()).length).toBe(17)
+    expect((await locRepo.getAll()).length).toBe(10)
+
+    // schema-drift 检查通过（实库多 user_id 列对 entity 无影响）
+    const report = await checkSchemaDrift(ds)
+    expect(report.ok, JSON.stringify(report)).toBe(true)
+
+    await ds.destroy()
+  })
 })

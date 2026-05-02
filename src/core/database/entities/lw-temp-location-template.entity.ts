@@ -2,18 +2,14 @@ import { Column, Entity, Index, PrimaryColumn } from 'typeorm'
 
 /**
  * LW 临时地点模板 Entity
+ *
+ * 全局共享资源（不按 user_id 隔离）：
+ * 系统预设的内置场景字典（街道 / 房间 / 庙宇 …），所有用户共用一份；
+ * type 列保持全局 UNIQUE。详见 lw-temp-character-template.entity.ts 文档。
  */
 @Entity({ name: 'lw_temp_location_templates' })
 @Index('idx_lw_temp_loc_templates_type', ['type'])
 export class LwTempLocationTemplateEntity {
-  /**
-   * 所属用户 ID（多租户隔离）。Web 端通过 ALS 注入，Electron 端单用户为 null。
-   * BaseRepository 在所有查询 / 写入前注入 WHERE user_id 与默认 user_id 值。
-   */
-  @Index()
-  @Column({ name: 'user_id', type: 'varchar', nullable: true })
-  userId!: string | null
-
   @PrimaryColumn({ name: 'id', type: 'varchar' })
   id!: string
 

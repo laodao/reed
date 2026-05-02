@@ -2,18 +2,19 @@ import { Column, Entity, Index, PrimaryColumn } from 'typeorm'
 
 /**
  * LW 临时角色模板 Entity
+ *
+ * 全局共享资源（不按 user_id 隔离）：
+ * 这些是系统预设的内置类型字典（路人 / 店家 / 士兵 / 儿童 …），所有用户共用一份。
+ * 因此 entity **不声明** userId 字段：BaseRepository 检测无 userId 列后会
+ * 自动跳过 scope 过滤；type 列保持全局 UNIQUE 即可（同一类型只允许一条）。
+ *
+ * 注：旧 PC 库可能残留 user_id 列（Phase 3 多租户迁移期被 ensureUserIdColumns
+ * 加过列并回填 LOCAL_DEFAULT_USER_ID）。schema-drift 检查只校验
+ * entity → 实库方向，多余列无害；可在未来打包阶段集中清理。
  */
 @Entity({ name: 'lw_temp_character_templates' })
 @Index('idx_lw_temp_char_templates_type', ['type'])
 export class LwTempCharacterTemplateEntity {
-  /**
-   * 所属用户 ID（多租户隔离）。Web 端通过 ALS 注入，Electron 端单用户为 null。
-   * BaseRepository 在所有查询 / 写入前注入 WHERE user_id 与默认 user_id 值。
-   */
-  @Index()
-  @Column({ name: 'user_id', type: 'varchar', nullable: true })
-  userId!: string | null
-
   @PrimaryColumn({ name: 'id', type: 'varchar' })
   id!: string
 
