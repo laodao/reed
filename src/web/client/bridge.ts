@@ -29,7 +29,12 @@ function resolveEntry(namespace: string, method: string): ChannelEntry & { chann
   const key = `${namespace}.${method}`
   const override = CHANNEL_OVERRIDES[key]
   const channel = override?.channel ?? `${camelToKebab(namespace)}:${camelToKebab(method)}`
-  return { channel, wrap: override?.wrap, eventChannel: override?.eventChannel }
+  return {
+    channel,
+    wrap: override?.wrap,
+    eventChannel: override?.eventChannel,
+    legacyEventArg: override?.legacyEventArg,
+  }
 }
 
 /**
@@ -50,7 +55,7 @@ function createNamespaceProxy(namespace: string): unknown {
         if (prop.startsWith('on') && prop.length > 2 && prop[2] === prop[2].toUpperCase()) {
           return (...args: unknown[]) => {
             const entry = resolveEntry(namespace, prop)
-            const cb = args[args.length - 1] as (data: unknown) => void
+            const cb = args[args.length - 1] as (...cbArgs: unknown[]) => void
             if (typeof cb !== 'function') {
               console.warn(
                 `[bridge] ${namespace}.${prop} 调用缺少回调函数（最后一个参数）`,
@@ -60,7 +65,13 @@ function createNamespaceProxy(namespace: string): unknown {
             const channel = entry.eventChannel
               ? entry.eventChannel(...args.slice(0, -1))
               : entry.channel
-            return wsOn(channel, cb)
+            // 部分 preload 把 IpcRendererEvent 透传给业务回调（chat.onStream /
+            // image.onGenerationEvent），渲染端按 (event, data) 解构。Web 这边没
+            // 真实 event，模拟成 cb(undefined, data) 对齐契约。
+            const wrapped = entry.legacyEventArg
+              ? (data: unknown) => cb(undefined, data)
+              : cb
+            return wsOn(channel, wrapped)
           }
         }
 

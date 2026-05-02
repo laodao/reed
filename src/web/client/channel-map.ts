@@ -18,6 +18,16 @@ export interface ChannelEntry {
    * bridge 在 onXxx 分支检测到此字段，会把除最后一个 cb 外的所有参数转发给它。
    */
   eventChannel?: (...args: unknown[]) => string
+  /**
+   * 仅事件订阅（onXxx）使用：渲染端的回调签名是否保留 Electron 的 IpcRendererEvent
+   * 第一个参数（即 `(event, data) => ...`）。
+   * - false / 未设：preload 在 PC 端已 strip 掉 event，回调形如 `(data) => ...`，
+   *   Web bridge 直接 `cb(data)`。
+   * - true：preload 把 `(event, data)` 透传给业务回调（如 chat.onStream /
+   *   image.onGenerationEvent）。Web bridge 模拟成 `cb(undefined, data)` 对齐契约，
+   *   避免业务侧 `data` 收到 undefined。
+   */
+  legacyEventArg?: boolean
 }
 
 export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
@@ -57,7 +67,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'chat.send': { channel: 'chat:send' },
   'chat.stop': { channel: 'chat:stop' },
   // chat.onStream(cb) — 后端 emit('chat:stream', event)
-  'chat.onStream': { channel: 'chat:stream' },
+  // PC preload 透传 (event, data)，渲染端按 (event, data) 解构 → 标 legacyEventArg
+  'chat.onStream': { channel: 'chat:stream', legacyEventArg: true },
   'image.generate': { channel: 'image:generate' },
   'image.getTaskStatus': { channel: 'image:task-status' },
   'image.stop': { channel: 'image:stop' },
@@ -72,7 +83,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'image.download': { channel: 'image:download' },
   'image.selectFile': { channel: 'image:select-file' },
   // image.onGenerationEvent(cb) — 后端 emit('image:generation-event', event)
-  'image.onGenerationEvent': { channel: 'image:generation-event' },
+  // PC preload 透传 (event, data)，渲染端 useImage handleGenerationEvent(event, data)
+  'image.onGenerationEvent': { channel: 'image:generation-event', legacyEventArg: true },
   'file.openDialog': { channel: 'file:open-dialog' },
   'file.readAsBase64': { channel: 'file:read-base64' },
   'file.saveFile': { channel: 'file:save-dialog' },
