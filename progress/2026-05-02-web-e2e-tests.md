@@ -155,6 +155,47 @@ check 正常返回。
 **后续可选**：把 better-sqlite3 标记为 optionalDependencies，让 web-only 部署
 不再带 native 二进制。当前双端单仓库，保持 dependencies 即可。
 
+### 5. PC 端旧 SQLite 库启动报 schema drift（user_id 缺失）
+
+**报错**：
+```
+Schema drift detected: missingColumns: [
+  {table: dialogs, column: user_id},
+  {table: messages, column: user_id},
+  ...60+ 张表均缺 user_id
+]
+```
+
+**根因**：
+Phase 3 多租户改造给所有业务 entity 加了 `userId` 字段，TypeORM
+synchronize 在 PC 端被禁用（schema 由 raw DDL initTables 维护），所以旧库
+的 60+ 张表都没补 user_id 列。代码里**已有** `ensureUserIdColumns` 迁移，
+但执行顺序错误：
+
+```
+initTables()              // raw DDL 旧 schema（无 user_id 列）
+initTypeOrmDataSource()   // 内部跑 schema-drift 检查 → 抛错
+ensureUserIdColumns()     // 永远跑不到
+```
+
+**修复**：
+`src/electron/database/index.ts`：把多租户预迁移
+（`ensureUsersTable + ensureUserIdColumns`）从 `initialize()` 移到
+`initTypeOrmDataSource()` **schema drift 检查之前**。新增私有方法
+`runMultiTenantMigrations()`，在创建 DataSource 后立即跑迁移、再做 drift
+检查。这样老库会自动补列 + 把旧数据 user_id 回填为 LOCAL_DEFAULT_USER_ID
+（与 BaseRepository PC 单用户语义一致）。
+
+**改动范围**：
+- 仅 `src/electron/database/index.ts` 一个文件
+- 没动任何 IPC channel / Repository 公共接口 / Web 端代码
+- ensureUserIdColumns / ensureUsersTable 函数本身不变
+
+回归测试：`tests/unit/sqlite-legacy-migration.spec.ts`
+- 模拟旧 schema（DROP user_id 列）→ 跑迁移 → drift ok=true
+- 验证迁移幂等（连续跑两次不报错）
+- 全部 334 个 unit 用例通过
+
 ## 后续可扩展点
 
 - chat：增加多轮对话、停止生成、删除消息

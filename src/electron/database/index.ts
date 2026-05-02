@@ -235,23 +235,9 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.initTables()
 
     // === Phase 1: 建立 TypeORM DataSource（与 better-sqlite3 并存）===
+    // 内部已包含多租户预迁移（ensureUsersTable + ensureUserIdColumns）+
+    // schema drift 检查 + 备份保护
     await this.initTypeOrmDataSource()
-
-    // 多用户基础：确保 users 表存在（幂等）+ 为 Electron 注入本地默认用户
-    if (this.dataSource) {
-      const { ensureUsersTable } = await import(
-        '@core/database/migrations/ensure-users-table'
-      )
-      await ensureUsersTable(this.dataSource)
-
-      // 多租户隔离：给所有声明了 userId 字段的 entity 表加 user_id 列；
-      // PC 端旧数据全部回填为 LOCAL_DEFAULT_USER_ID。
-      const { ensureUserIdColumns } = await import(
-        '@core/database/migrations/ensure-user-id-columns'
-      )
-      const { LOCAL_DEFAULT_USER_ID } = await import('@core/context/user-context')
-      await ensureUserIdColumns(this.dataSource, LOCAL_DEFAULT_USER_ID)
-    }
 
     // 初始化仓库
     await this.initRepositories()
@@ -308,8 +294,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
    * 流程：
    * 1. 从环境变量加载配置；未设则用本地 sqlite 文件（路径已由 initTables 阶段建好）。
    * 2. 创建 DataSource。
-   * 3. 漂移检查（仅 sqlite + 已存在文件场景）：发现差异时备份并抛错，绝不让 synchronize 偷改用户库。
-   * 4. **不**调用 synchronize：本期 schema 由现有 raw DDL（initTables）负责；
+   * 3. 多租户预迁移（drift 检查之前执行）：保障 users 表存在 + 业务表补 user_id 列
+   *    + 旧数据回填到 LOCAL_DEFAULT_USER_ID。
+   *    必须先于 drift 检查 —— 否则旧 PC 库（Phase 3 多租户改造前的）所有业务表
+   *    都会被报告 missingColumns: user_id 而无法启动。
+   * 4. 漂移检查（仅 sqlite + 已存在文件场景）：发现差异时备份并抛错，绝不让 synchronize 偷改用户库。
+   * 5. **不**调用 synchronize：本期 schema 由现有 raw DDL（initTables）负责；
    *    Phase 1 收尾批次（删除 raw DDL）时再切换到 synchronize 接管。
    */
   private async initTypeOrmDataSource(): Promise<void> {
@@ -320,6 +310,10 @@ export class DatabaseManager implements ICoreDatabaseManager {
     }
 
     this.dataSource = await createDataSource({ config: cfg })
+
+    // 多租户预迁移：保障 users 表存在 + 业务表补 user_id 列 + 旧数据回填。
+    // 必须早于 drift 检查执行。
+    await this.runMultiTenantMigrations()
 
     if (cfg.type === 'sqlite' && fs.existsSync(cfg.database)) {
       const report = await checkSchemaDrift(this.dataSource)
@@ -340,6 +334,26 @@ export class DatabaseManager implements ICoreDatabaseManager {
     }
 
     console.log('[DatabaseManager] TypeORM DataSource 初始化完成')
+  }
+
+  /**
+   * 运行多租户基础迁移：
+   * 1. ensureUsersTable —— users 表存在（typeorm synchronize 不接管旧库时手工保障）
+   * 2. ensureUserIdColumns —— 所有声明了 userId 字段的业务表补 user_id 列
+   *    + 旧数据回填为 LOCAL_DEFAULT_USER_ID（PC 单用户语义）
+   * 必须在 schema drift 检查之前执行，否则旧库会因为缺 user_id 列而被判定漂移。
+   */
+  private async runMultiTenantMigrations(): Promise<void> {
+    if (!this.dataSource) return
+    const { ensureUsersTable } = await import(
+      '@core/database/migrations/ensure-users-table'
+    )
+    const { ensureUserIdColumns } = await import(
+      '@core/database/migrations/ensure-user-id-columns'
+    )
+    const { LOCAL_DEFAULT_USER_ID } = await import('@core/context/user-context')
+    await ensureUsersTable(this.dataSource)
+    await ensureUserIdColumns(this.dataSource, LOCAL_DEFAULT_USER_ID)
   }
 
   /**
