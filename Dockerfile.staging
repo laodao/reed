@@ -22,8 +22,10 @@ COPY package.json package-lock.json ./
 
 # 2. 装依赖：跳过 postinstall（electron-builder install-app-deps 会按 Electron ABI 编 better-sqlite3，
 #    Web 容器跑 Node 不能用），随后显式 rebuild 几个 native 模块为 Node ABI
+#    --build-from-source：避免 nodejieba / canvas 等用 prebuild-install 下载到 glibc≥2.38
+#    的 prebuilt 二进制（容器是 bookworm = glibc 2.36，加载时报 GLIBC_2.38 not found）
 RUN npm ci --no-audit --ignore-scripts \
- && npm rebuild better-sqlite3 canvas nodejieba
+ && npm rebuild --build-from-source better-sqlite3 canvas nodejieba
 
 # 3. 复制源代码
 COPY . .
