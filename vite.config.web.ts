@@ -40,14 +40,27 @@ function replaceEntryToWebMain(): Plugin {
           /(<meta http-equiv="Content-Security-Policy"\s+content=")([^"]+)("\s*\/?>)/i,
           (_m, prefix, csp, suffix) => {
             let next = csp
-            // 加 unsafe-eval / wasm-unsafe-eval
+            // script-src: 加 unsafe-eval / wasm-unsafe-eval（bytemd / katex / mermaid 等需要）
             if (/script-src\s+'self';?/.test(next)) {
               next = next.replace(
                 /script-src\s+'self';?/,
                 "script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval';",
               )
             }
-            // 加 connect-src（vite HMR / 业务 WebSocket /events 需要）
+            // script-src-attr: 允许 inline event handlers（Element Plus 部分组件 / 知识库 UI）
+            // 不显式声明时浏览器回落到 default-src 'self'，会拒绝 onclick=... 之类
+            if (!/script-src-attr/.test(next)) {
+              next = `${next.replace(/;?\s*$/, '')}; script-src-attr 'unsafe-inline';`
+            }
+            // font-src: 允许 data: 内嵌字体（图标库 woff2 base64）
+            if (!/font-src/.test(next)) {
+              next = `${next.replace(/;?\s*$/, '')}; font-src 'self' data:;`
+            }
+            // worker-src: 部分 wasm / web worker 需要 blob:
+            if (!/worker-src/.test(next)) {
+              next = `${next.replace(/;?\s*$/, '')}; worker-src 'self' blob:;`
+            }
+            // connect-src: vite HMR / 业务 WebSocket /events / 跨域 API
             if (!/connect-src/.test(next)) {
               next = `${next.replace(/;?\s*$/, '')}; connect-src 'self' ws: wss: http: https:;`
             }
