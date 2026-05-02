@@ -90,32 +90,51 @@ test.describe('Web 端 - 认证', () => {
     expect(after).toBe(401)
   })
 
-  test('侧边栏注销按钮点击后回到登录页', async ({ page }) => {
+  test('TabBar 用户菜单点击注销后回到登录页', async ({ page }) => {
     await loginViaUI(page)
     await expect(page.getByText('AI 对话').first()).toBeVisible({ timeout: 15_000 })
 
-    // 点击侧边栏底部「注销」按钮
-    const logoutBtn = page.locator('[data-test="logout-btn"]')
-    await expect(logoutBtn).toBeVisible()
-    await logoutBtn.click()
+    // 侧边栏底部不应再有 logout-btn（已搬到 TabBar 用户菜单）
+    await expect(page.locator('[data-test="logout-btn"]')).toHaveCount(0)
 
-    // 弹出确认框
+    // 点击 TabBar 右上角用户菜单触发器
+    const userTrigger = page.locator('[data-test="user-menu-trigger"]')
+    await expect(userTrigger).toBeVisible({ timeout: 5_000 })
+    await userTrigger.click()
+
+    // 下拉里点「注销」
+    const logoutItem = page.locator('[data-test="user-menu-logout"]')
+    await expect(logoutItem).toBeVisible({ timeout: 5_000 })
+    await logoutItem.click()
+
+    // 确认弹窗
     await expect(page.getByText('确定要注销当前账号吗')).toBeVisible({
       timeout: 5_000,
     })
     await page.getByRole('button', { name: '注销', exact: true }).click()
 
-    // 页面回到登录门：登录表单的 邮箱 / 密码 input 出现
+    // 页面回到登录门
     await expect(page.getByRole('textbox', { name: '邮箱' })).toBeVisible({
       timeout: 10_000,
     })
     await expect(page.getByRole('textbox', { name: /密码/ })).toBeVisible()
 
-    // 此时 /api/auth/me 应为 401
+    // /api/auth/me 应为 401
     const status = await page.evaluate(async () => {
       const r = await fetch('/api/auth/me', { credentials: 'include' })
       return r.status
     })
     expect(status).toBe(401)
+  })
+
+  test('TabBar 用户菜单展示当前用户邮箱', async ({ page }) => {
+    await loginViaUI(page)
+    await expect(page.getByText('AI 对话').first()).toBeVisible({ timeout: 15_000 })
+
+    await page.locator('[data-test="user-menu-trigger"]').click()
+    // 下拉头部应包含当前账号邮箱
+    await expect(page.getByText(DEFAULT_USER.email).first()).toBeVisible({
+      timeout: 5_000,
+    })
   })
 })
