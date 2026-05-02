@@ -106,10 +106,19 @@ async function bootstrap(): Promise<void> {
   app.get('/api/health', (_req, res) => res.json({ ok: true, ts: Date.now() }))
   app.use('/api/auth', authRouter)
   app.use('/api/ipc', ipcRouter)
+
+  // 顺序关键：vite 构建产物（/assets/index-*.js 等哈希命名 chunk）必须先于
+  // /assets 用户文件路由匹配——否则前端入口 JS 被 assetsRouter 401 拦截，
+  // 浏览器收到 application/json 拒绝当 module 加载，整个页面空白。
+  // express.static 命中的走静态返回；未命中（比如 /assets/<userId>/xxx 用户文件）
+  // 会 next() 给 assetsRouter 接管。
+  if (cfg.rendererDir) {
+    app.use(express.static(cfg.rendererDir))
+  }
+
   app.use('/assets', assetsRouter)
 
   if (cfg.rendererDir) {
-    app.use(express.static(cfg.rendererDir))
     app.get('/*splat', (req, res, next) => {
       if (req.path.startsWith('/api') || req.path.startsWith('/assets') || req.path.startsWith('/events')) {
         return next()
