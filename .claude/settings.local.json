@@ -218,7 +218,27 @@
       "Bash(SKIP_PG_TESTS=1 npx vitest run tests/unit/repositories/lw-*.spec.ts tests/unit/repositories/multi-tenant.spec.ts)",
       "Bash(SKIP_PG_TESTS=1 npx vitest run tests/unit/repositories/lw-*.spec.ts)",
       "Bash(echo \"PG started, PID=$!\")",
-      "Bash(break)"
+      "Bash(break)",
+      "Bash(bash scripts/swap-sqlite-abi.sh node)",
+      "Bash(fuser -k 4201/tcp)",
+      "Bash(pkill -f 'tsx.*web/server')",
+      "Bash(pkill -f 'electron-vite')",
+      "Bash(lsof -i:4201)",
+      "Bash(lsof -i:5174)",
+      "Bash(ps -p 1813248 -o pid,cmd --no-headers)",
+      "Bash(grep -E 'better.sqlite|\\\\.db$')",
+      "Bash(disown)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(grep -nB1 -A1 \"注销\" .playwright-mcp/home-with-logout.yml)",
+      "Bash(SKIP_PG_TESTS=1 npx vitest run tests/unit/web-bridge.spec.ts)",
+      "Bash(SKIP_PG_TESTS=1 npx vitest run tests/unit/sqlite-legacy-migration.spec.ts)",
+      "Bash(SKIP_PG_TESTS=1 npx vitest run tests/unit/)",
+      "Read(//usr/bin/**)",
+      "Bash(npx --no-install better-sqlite3 -e 1)",
+      "Bash(SKIP_PG_TESTS=1 npx vitest run tests/unit/sqlite-legacy-migration.spec.ts tests/unit/repositories/multi-tenant.spec.ts)",
+      "Bash(tee /tmp/test_output.txt)",
+      "Bash(bash /tmp/byte_check.sh)",
+      "Bash(bash /tmp/verify_task3.sh)"
     ]
   }
 }
