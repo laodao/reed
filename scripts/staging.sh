@@ -33,6 +33,12 @@ PG_CONTAINER="the-bot-staging-pg"
 SOURCE_PG_DEFAULT="the-bot-test-pg"
 APP_PORT=4291
 PG_PORT=5433
+# bind mount 路径（与 docker-compose.staging.yml 对齐）
+APP_DATA_DIR="$PROJECT_ROOT/.staging-data/app"
+# dev 端用户文件根（来源）
+DEV_DATA_DIR_DEFAULT="$PROJECT_ROOT/data-web"
+# 备份归档目录
+BACKUP_DIR="$PROJECT_ROOT/.staging-data/backups"
 
 # ---------- 颜色 ----------
 if [[ -t 1 ]]; then
@@ -107,6 +113,97 @@ cmd_psql() {
   docker exec -it "$PG_CONTAINER" psql -U postgres -d the_bot_web
 }
 
+cmd_sync_files() {
+  local src="${1:-$DEV_DATA_DIR_DEFAULT}"
+  if [[ ! -d "$src" ]]; then
+    err "源目录不存在：$src"
+    exit 1
+  fi
+  if [[ ! -d "$APP_DATA_DIR" ]]; then
+    log "目标 bind mount 目录不存在，创建：$APP_DATA_DIR"
+    mkdir -p "$APP_DATA_DIR"
+  fi
+  log "rsync $src → $APP_DATA_DIR"
+  log "（覆盖模式：dev 那边没有的文件 staging 这边也会被删，--delete）"
+  if ! command -v rsync >/dev/null 2>&1; then
+    err "rsync 未安装：apt-get install rsync 后重试"
+    exit 1
+  fi
+  # 用 sudo 跑：bind mount 容器写入的文件 owner 是 root（容器内进程以 root 跑）
+  # rsync 复制时需要写 root 拥有的目录
+  if [[ -w "$APP_DATA_DIR" ]] && [[ ! -e "$APP_DATA_DIR/secure-key" || -w "$APP_DATA_DIR/secure-key" ]]; then
+    rsync -a --delete --info=stats2 "$src/" "$APP_DATA_DIR/" | tail -10
+  else
+    log "目标含 root 拥有的文件，使用 sudo rsync"
+    sudo rsync -a --delete --info=stats2 "$src/" "$APP_DATA_DIR/" | tail -10
+  fi
+  ok "文件同步完成"
+  log "提示：若 app 容器在跑，重启以让 LanceDB 重读：bash scripts/staging.sh restart app"
+}
+
+cmd_backup() {
+  mkdir -p "$BACKUP_DIR"
+  local ts="$(date +%Y%m%d-%H%M%S)"
+  local archive="$BACKUP_DIR/staging-$ts.tar.gz"
+
+  log "归档 app 数据 → $archive"
+  if [[ ! -d "$APP_DATA_DIR" ]]; then
+    err "$APP_DATA_DIR 不存在"
+    exit 1
+  fi
+  # bind mount 是 root 拥有的，需 sudo
+  sudo tar -czf "$archive" -C "$APP_DATA_DIR" . 2>/dev/null
+  sudo chown "$(id -u):$(id -g)" "$archive"
+  local size
+  size=$(du -h "$archive" | awk '{print $1}')
+  ok "完成：$archive ($size)"
+
+  log "归档 PG 数据 → ${archive%.tar.gz}.pgdump"
+  if docker ps --format '{{.Names}}' | grep -qx "$PG_CONTAINER"; then
+    docker exec "$PG_CONTAINER" pg_dump -U postgres -d the_bot_web -Fc \
+      > "${archive%.tar.gz}.pgdump"
+    local pgsize
+    pgsize=$(du -h "${archive%.tar.gz}.pgdump" | awk '{print $1}')
+    ok "完成：${archive%.tar.gz}.pgdump ($pgsize)"
+  else
+    warn "PG 容器未运行，跳过 pgdump"
+  fi
+}
+
+cmd_restore() {
+  local archive="${1:-}"
+  if [[ -z "$archive" ]]; then
+    err "用法：bash scripts/staging.sh restore <archive.tar.gz>"
+    err "可用归档："
+    ls -1t "$BACKUP_DIR"/staging-*.tar.gz 2>/dev/null | head -5 | sed 's/^/  /'
+    exit 1
+  fi
+  if [[ ! -f "$archive" ]]; then
+    err "找不到归档：$archive"
+    exit 1
+  fi
+  warn "目标 $APP_DATA_DIR 将被覆盖（先清空再解压）"
+  read -r -p "确认继续？[y/N] " yn
+  [[ "$yn" =~ ^[Yy]$ ]] || { log "已取消"; exit 0; }
+
+  sudo rm -rf "$APP_DATA_DIR"
+  mkdir -p "$APP_DATA_DIR"
+  sudo tar -xzf "$archive" -C "$APP_DATA_DIR"
+  ok "app 数据已恢复"
+
+  local pgdump="${archive%.tar.gz}.pgdump"
+  if [[ -f "$pgdump" ]] && docker ps --format '{{.Names}}' | grep -qx "$PG_CONTAINER"; then
+    log "同时发现 PG 归档 $pgdump，恢复中..."
+    docker exec "$PG_CONTAINER" psql -U postgres -d postgres -c \
+      "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='the_bot_web' AND pid<>pg_backend_pid();" >/dev/null
+    docker exec "$PG_CONTAINER" psql -U postgres -d postgres -c "DROP DATABASE IF EXISTS the_bot_web;" >/dev/null
+    docker exec "$PG_CONTAINER" psql -U postgres -d postgres -c "CREATE DATABASE the_bot_web;" >/dev/null
+    cat "$pgdump" | docker exec -i "$PG_CONTAINER" pg_restore -U postgres -d the_bot_web --no-owner --no-privileges 2>&1 | tail -3
+    ok "PG 已恢复"
+  fi
+  log "提示：重启 app 容器：bash scripts/staging.sh restart app"
+}
+
 cmd_restore_pg() {
   local source="${1:-$SOURCE_PG_DEFAULT}"
   if ! docker ps --format '{{.Names}}' | grep -qx "$source"; then
@@ -154,14 +251,17 @@ cmd_restore_pg() {
 action="${1:-}"
 shift || true
 case "$action" in
-  build)      cmd_build ;;
-  up)         cmd_up ;;
-  down)       cmd_down "$@" ;;
-  restart)    cmd_restart "$@" ;;
-  status)     cmd_status ;;
-  logs)       cmd_logs "$@" ;;
-  psql)       cmd_psql ;;
-  restore-pg) cmd_restore_pg "$@" ;;
+  build)       cmd_build ;;
+  up)          cmd_up ;;
+  down)        cmd_down "$@" ;;
+  restart)     cmd_restart "$@" ;;
+  status)      cmd_status ;;
+  logs)        cmd_logs "$@" ;;
+  psql)        cmd_psql ;;
+  restore-pg)  cmd_restore_pg "$@" ;;
+  sync-files)  cmd_sync_files "$@" ;;
+  backup)      cmd_backup ;;
+  restore)     cmd_restore "$@" ;;
   *)
     cat <<EOF
 ${BOLD}用法：${RESET}
@@ -172,8 +272,19 @@ ${BOLD}用法：${RESET}
   bash scripts/staging.sh status              ps + 健康检查
   bash scripts/staging.sh logs   [app|pg]     tail 日志
   bash scripts/staging.sh psql                进 staging PG 的 psql shell
-  bash scripts/staging.sh restore-pg [SRC]    SRC 默认 the-bot-test-pg
+  bash scripts/staging.sh restore-pg  [SRC]   SRC 默认 the-bot-test-pg
                                               全量复制 the_bot_web
+  bash scripts/staging.sh sync-files  [SRC]   SRC 默认 ./data-web
+                                              rsync --delete 覆盖到 staging
+                                              app 数据目录（图片/语音/视频/
+                                              lancedb/secure-key 等）
+  bash scripts/staging.sh backup              快照 app 数据 + PG 到
+                                              .staging-data/backups/
+  bash scripts/staging.sh restore <archive>   从快照恢复（同时找同名 .pgdump）
+
+${BOLD}数据持久化：${RESET}
+  app  数据 → bind mount 到 host：$APP_DATA_DIR
+  PG   数据 → docker named volume（down --volumes 才会丢；建议先 backup）
 
 ${BOLD}容器名：${RESET} $APP_CONTAINER / $PG_CONTAINER
 ${BOLD}端口：${RESET} app http://localhost:$APP_PORT  pg localhost:$PG_PORT

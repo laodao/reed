@@ -50,8 +50,10 @@ services:
     ports:
       - "4291:4201"
     volumes:
-      - staging-app-data:/app/data
+      # bind mount 而非 named volume：数据落在 host ./.staging-data/app/，
+      # docker compose down --volumes 也不会动它，user files / lancedb /
+      # secure-key 等业务数据在重新部署时彻底无丢失风险。
+      - ./.staging-data/app:/app/data
 
 volumes:
   staging-pg-data:
-  staging-app-data:

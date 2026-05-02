@@ -8,6 +8,7 @@ data-web-mt
 .git
 .run
 .cache
+.staging-data
 .tsbuildinfo
 *.tsbuildinfo
 test-results
