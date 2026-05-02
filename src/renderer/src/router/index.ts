@@ -116,7 +116,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/story-to-video/:projectId',
     name: 'VideoProjectEditor',
-    component: () => import('@/views/VideoProjectEditor.vue'),
+    component: () => import('@/views/EpisodeWorkbench.vue'),
     meta: {
       title: '项目编辑'
     }
