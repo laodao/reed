@@ -3,7 +3,7 @@
  * @module services/diary-export.service
  */
 
-import { BrowserWindow } from 'electron'
+import type { BrowserWindow } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
@@ -76,8 +76,9 @@ export class DiaryExportService {
       const tempPath = path.join(this.diaryService.getRootPath(), '.temp-export.html')
       fs.writeFileSync(tempPath, fullHtml, 'utf-8')
 
-      // 创建隐藏窗口用于生成 PDF
-      pdfWindow = new BrowserWindow({
+      // 创建隐藏窗口用于生成 PDF（运行期 require electron，避免 Web 端无 electron 时模块加载失败）
+      const electron = require('electron') as typeof import('electron')
+      pdfWindow = new electron.BrowserWindow({
         width: 800,
         height: 600,
         show: false,
