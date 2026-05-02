@@ -5,6 +5,9 @@ data/
 data-web/
 data-web-mt/
 test-results/
+playwright-report/
+playwright-report-web/
+.playwright-mcp/
 .tsbuildinfo
 *.tsbuildinfo
 electron.vite.config.d.ts

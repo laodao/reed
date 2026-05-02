@@ -14,12 +14,42 @@ import vue from '@vitejs/plugin-vue'
 /**
  * 把 index.html 中的入口脚本从 main.ts 替换为 main-web.ts，让 web 端
  * 走包含登录门 + 桥接安装的 Web bootstrap，而 Electron 仍用默认的 main.ts。
+ *
+ * 同时放宽 Web 端 CSP：
+ * - 加 'unsafe-eval' / 'wasm-unsafe-eval'：长文写作等模块依赖的 markdown / 模板渲染
+ *   库（bytemd、katex、mermaid 等）会调用 eval / Function ctor，严格 CSP 在 Firefox
+ *   下会报错；Chromium 默认不强制 meta CSP 的 eval 限制，但为统一行为统一放开。
+ * - 加 connect-src：dev 时 vite HMR / WebSocket /events 需要明确允许。
+ *
+ * Electron 端保留 src/renderer/index.html 中的严格 CSP（'self' only），
+ * 因为 Electron 进程沙盒对 eval 不敏感且需要更严的 web 安全。
  */
 function replaceEntryToWebMain(): Plugin {
   return {
     name: 'replace-entry-to-web-main',
     transformIndexHtml(html) {
-      return html.replace('/src/main.ts', '/src/main-web.ts')
+      let out = html.replace('/src/main.ts', '/src/main-web.ts')
+
+      // 仅修改 CSP <meta> 标签的 content 属性
+      out = out.replace(
+        /(<meta http-equiv="Content-Security-Policy"\s+content=")([^"]+)("\s*\/?>)/i,
+        (_m, prefix, csp, suffix) => {
+          let next = csp
+          // 加 unsafe-eval / wasm-unsafe-eval
+          if (/script-src\s+'self';?/.test(next)) {
+            next = next.replace(
+              /script-src\s+'self';?/,
+              "script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval';",
+            )
+          }
+          // 加 connect-src（vite HMR / 业务 WebSocket /events 需要）
+          if (!/connect-src/.test(next)) {
+            next = `${next.replace(/;?\s*$/, '')}; connect-src 'self' ws: wss: http: https:;`
+          }
+          return `${prefix}${next}${suffix}`
+        },
+      )
+      return out
     },
   }
 }

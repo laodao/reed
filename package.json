@@ -37,6 +37,8 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
+    "test:e2e:web": "playwright test --config=playwright.web.config.ts",
+    "test:e2e:web:ui": "playwright test --config=playwright.web.config.ts --ui",
     "pg:up": "bash scripts/test-pg-up.sh",
     "pg:down": "bash scripts/test-pg-down.sh",
     "fix-encoding": "electron scripts/fix-chunk-encoding.js"
