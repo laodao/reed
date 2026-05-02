@@ -2608,7 +2608,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     chapterNumber?: number
   ) => {
     try {
-      const { LwEntityDetectionService } = await import('@core/services/lw-entity-detection.service')
+      const { LwEntityDetectionService } = await import('@core/modules/episode-production/auto-binding/lw-entity-detection.service')
       const result = await LwEntityDetectionService.detectNewEntities(
         projectId,
         text,
@@ -2631,7 +2631,7 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     items?: any[]
   ) => {
     try {
-      const { LwEntityDetectionService } = await import('@core/services/lw-entity-detection.service')
+      const { LwEntityDetectionService } = await import('@core/modules/episode-production/auto-binding/lw-entity-detection.service')
       const result = await LwEntityDetectionService.autoAddEntities(
         projectId,
         characters,

@@ -249,7 +249,7 @@ export class LwEntityDetectionService {
     try {
       // 获取 AI 配置
       const { getSecureStorage } = await import('@core/interfaces/storage.interface')
-      const { PROVIDER_TEMPLATES } = await import('./provider-template.service')
+      const { PROVIDER_TEMPLATES } = await import('../../../services/provider-template.service')
 
       const dbManager = getCoreDatabaseManager()
       if (!dbManager.providerConfigs) {
