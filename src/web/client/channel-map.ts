@@ -420,6 +420,13 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'storyToVideo.updateUploadedEntity': { channel: 'stv:update-uploaded-entity' },
   'storyToVideo.deleteUploadedEntity': { channel: 'stv:delete-uploaded-entity' },
   'storyToVideo.isBindingFromLongWriting': { channel: 'stv:is-binding-from-longwriting' },
+  // storyToVideo.on*Progress(cb) — 后端 emit('stv:*-progress', event)
+  // PC preload 透传 (event, data)，渲染端按 (_event, data) 解构 → 标 legacyEventArg
+  'storyToVideo.onImageProgress': { channel: 'stv:image-progress', legacyEventArg: true },
+  'storyToVideo.onAudioProgress': { channel: 'stv:audio-progress', legacyEventArg: true },
+  'storyToVideo.onStoryboardProgress': { channel: 'stv:storyboard-progress', legacyEventArg: true },
+  'storyToVideo.onStoryboardsProgress': { channel: 'stv:storyboards-progress', legacyEventArg: true },
+  'storyToVideo.onSynthesisProgress': { channel: 'stv:synthesis-progress', legacyEventArg: true },
   'oss.listConfigs': { channel: 'oss:list-configs' },
   'oss.getConfig': { channel: 'oss:get-config' },
   'oss.createConfig': { channel: 'oss:create-config' },
