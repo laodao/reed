@@ -7,8 +7,7 @@
  *     P1 拆分后旧文件改为 deprecated re-export。修改请改本文件。
  */
 
-import type { AudioType } from './domain.types'
-import type { AudioAsset } from './domain.types'
+import type { AudioType, AudioAsset } from './domain.types'
 
 /**
  * 图像资产记录

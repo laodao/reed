@@ -8,6 +8,7 @@
  */
 
 import type { TransitionType } from './compose.types'
+// TODO(P2): VideoEpisode.audioTracks 应改为 audioTrackIds: string[]（关系引用），届时可移除对 render.types 的依赖。
 import type { AudioTrack } from './render.types'
 
 /**
