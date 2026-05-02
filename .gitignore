@@ -13,3 +13,4 @@ playwright-report-web/
 electron.vite.config.d.ts
 electron.vite.config.js
 .gitignore.local
+.run/
