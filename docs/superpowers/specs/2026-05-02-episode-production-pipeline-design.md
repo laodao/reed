@@ -29,6 +29,52 @@
 
 ---
 
+### 0.3 ⭐ 强约束：PC + Web 双端必须同时支持
+
+> **这是贯穿全设计的最高优先级约束**。本模块所有功能必须在 **Electron PC 端**和 **Web 端**同等可用，使用同一份业务逻辑、同一份 UI 代码、同一份 IPC 契约。任何只对单端有效的方案都不被接受。
+
+**项目现有双端架构**（设计必须遵循这个既有模式，不能新设计平台特定接口）：
+
+```
+src/core/                   ← 业务逻辑（双端共用，平台无关）
+src/electron/               ← PC 端：Electron 主进程 + IPC handlers
+src/web/server/             ← Web 端：Express 服务端 + WebSocket bridge
+src/web/client/             ← Web 端：浏览器 bridge（HTTP RPC + WS Client + channel-map）
+src/renderer/               ← 渲染层（双端共享 UI；main.ts 走 PC，main-web.ts 走 Web）
+src/preload/                ← PC 端 preload，把 IPC 暴露为 window.electronAPI
+
+统一 API 契约：
+  - PC 端：preload/index.ts 中 electronAPI.episodeProduction.xxx → ipcRenderer.invoke('ep:xxx')
+  - Web 端：web/client/channel-map.ts 把 electronAPI.episodeProduction.xxx 映射到同名 channel
+           然后通过 HTTP RPC 或 WebSocket 转发到 web-server
+  - 服务端：src/electron/ipc/handlers/episode-production/* 注册的 handler
+           被两端共用：electron/index.ts 注册一次（PC），web/server/api/register-channels.ts 注册一次（Web）
+```
+
+**双端约束的具体含义**：
+
+| 约束 | 含义 |
+|---|---|
+| ✅ 同一份业务代码 | 所有业务逻辑在 `src/core/modules/episode-production/`，不依赖 Electron API、Node API 路径硬编码、文件系统直访等平台专属 API |
+| ✅ 同一份 IPC handler | `src/electron/ipc/handlers/episode-production/*` 必须能被 `web/server/api/register-channels.ts` 直接注册 |
+| ✅ 同一份 channel 名 | 比如 `ep:list-projects` 在 PC 是 IPC channel，在 Web 是 HTTP/WS channel；两边名字相同 |
+| ✅ 同一份 UI 代码 | renderer 的 view / component 在 PC 和 Web 共享，不分叉 |
+| ✅ 文件系统访问受限 | Web 端没有文件系统直访能力——所有"路径"必须经 `core/utils/asset-path` / Repository 抽象，不允许直接 `fs.readFileSync` |
+| ✅ 事件流双端可用 | 进度推送等事件需走 `getEventEmitter()`，PC 走 Electron event，Web 走 WebSocket，统一接口 |
+| ✅ 两端 e2e 必须都通过 | `tests/e2e/*.spec.ts`（PC）和 `tests/e2e/web/*.spec.ts`（Web）必须**同时**通过 |
+
+**违反双端约束的典型反模式**（设计/实现必须避免）：
+
+- 在 service 里直接 `import { app } from 'electron'`
+- 在 service 里直接 `fs.writeFileSync(systemPath, ...)`（Web 端无法访问宿主机系统路径）
+- 在 renderer 里 `if (window.process)` 这种平台分支代码
+- IPC channel 名仅在 preload 改、忘记同步 channel-map / register-channels
+- 添加新 channel 时只在 preload 加，没在 channel-map 加（→ Web 端运行时报"unknown channel"）
+
+**所有 DoD 条目都隐含一条**：PC 和 Web 双端都满足。
+
+---
+
 ## 1. 总体架构
 
 ### 1.1 双轴 + 单合流点
@@ -993,6 +1039,21 @@ episode-production
   - 长文/人像/图像/语音 模块永远不知道 episode-production 的存在
 ```
 
+### 5.7 ⭐ 双端契约同步点（与 0.3 节呼应）
+
+每次新增或改动 IPC 通道，**必须同步以下 4 个文件**，缺一不可：
+
+| 文件 | 作用 | 改什么 |
+|---|---|---|
+| `src/electron/ipc/handlers/episode-production/*.handler.ts` | 服务端 handler 实现 | `ipcMain.handle('ep:xxx', ...)` |
+| `src/electron/index.ts` | PC 端注册入口 | 调用 `registerEpisodeProductionHandlers()` |
+| `src/web/server/api/register-channels.ts` | Web 端注册入口 | 同样调用 `registerEpisodeProductionHandlers()` |
+| `src/preload/index.ts` | 暴露 `electronAPI.episodeProduction.xxx` | `IPC_CHANNELS.EP_XXX` 常量 + invoke 调用 |
+| `src/web/client/channel-map.ts` | Web 端 bridge 映射表 | `'episodeProduction.xxx': { channel: 'ep:xxx' }` |
+
+**P1 重命名时**：5 个文件都必须改。后续 phase 加新通道时，每加一条就改 5 处。
+本设计的实施 plan 在每个涉及通道的 task 末尾会列一个"双端契约同步检查清单"。
+
 ---
 
 ## 6. 数据迁移 + 实施分期 + 风险 + DoD
@@ -1117,9 +1178,19 @@ gantt
 
 - [ ] 每个 service 单元测试覆盖核心路径
 - [ ] IPC handler 集成测试
-- [ ] 端到端：上传一段文字 → 跑通到导出
-- [ ] 端到端：选一个长文章节 → 跑通到导出
+- [ ] **PC 端 e2e（`tests/e2e/*.spec.ts`）**：上传一段文字 → 跑通到导出 ⭐ 双端
+- [ ] **Web 端 e2e（`tests/e2e/web/*.spec.ts`）**：上传一段文字 → 跑通到导出 ⭐ 双端
+- [ ] PC 端 e2e：选一个长文章节 → 跑通到导出
+- [ ] Web 端 e2e：选一个长文章节 → 跑通到导出
 - [ ] 数据迁移在历史 DB 上能成功跑
+
+#### ⭐ 双端契约（独立维度，必须全部满足）
+
+- [ ] 所有 IPC handler 同时注册在 `electron/index.ts` 和 `web/server/api/register-channels.ts`
+- [ ] 所有新增通道在 `preload/index.ts` 和 `web/client/channel-map.ts` 都有对应映射
+- [ ] core/ 中无 `import { app } from 'electron'`、无 `fs.writeFileSync(systemPath, ...)`、无平台分支代码
+- [ ] PC e2e 全绿
+- [ ] Web e2e 全绿
 
 #### 文档
 
@@ -1138,6 +1209,9 @@ gantt
 ---
 
 ## 附录 A：36 条关键决策清单
+
+> 注：附录 A 的 36 条决策是 brainstorming 阶段在第 1-6 节正文中**逐节逐条**敲定的关键决策，与正文一一对应。**双端约束（第 0.3 节）作为最高优先级强约束**，是所有决策的隐含前提，不另列编号——任何决策的实现都必须双端可用。
+
 
 **第 1 节 · 总体架构**
 
