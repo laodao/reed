@@ -1,0 +1,55 @@
+# Web 端测试部署 · 包含独立 Postgres（与 dev 的 the-bot-test-pg 完全隔离）
+# 端口与 dev 错开：app 4291（dev=4201），pg 5433（dev=5432）
+#
+# 用法：
+#   bash scripts/staging.sh up           # 构建并启动
+#   bash scripts/staging.sh restore-pg   # 把 dev PG（the-bot-test-pg）数据复制过来
+#   bash scripts/staging.sh down         # 停止并移除（数据保留在 named volume）
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: the-bot-staging-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: the_bot_web
+    ports:
+      - "5433:5432"
+    volumes:
+      - staging-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.staging
+    image: the-bot-staging-app:latest
+    container_name: the-bot-staging-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4201
+      DATA_ROOT: /app/data
+      JWT_SECRET: ${STAGING_JWT_SECRET:-staging-only-secret-change-me}
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: the_bot_web
+    ports:
+      - "4291:4201"
+    volumes:
+      - staging-app-data:/app/data
+
+volumes:
+  staging-pg-data:
+  staging-app-data:

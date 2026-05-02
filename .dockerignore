@@ -1,0 +1,24 @@
+# 减小 build context（npm ci 后的 node_modules 等不进镜像）
+node_modules
+out
+dist
+data
+data-web
+data-web-mt
+.git
+.run
+.cache
+.tsbuildinfo
+*.tsbuildinfo
+test-results
+playwright-report
+playwright-report-web
+.playwright-mcp
+electron.vite.config.d.ts
+electron.vite.config.js
+.gitignore.local
+.claude
+_bmad
+_bmad-output
+docs
+progress
