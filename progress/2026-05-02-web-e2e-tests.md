@@ -106,6 +106,55 @@ Electron 端不走该 vite 配置，原 CSP 保持严格。
 
 回归测试：`tests/e2e/web/01-auth.spec.ts::侧边栏注销按钮点击后回到登录页`
 
+### 3. 长文写作生成概要前端"卡在生成中"
+
+**现象**：`/story-editor/.../#1` 故事概要 → 点「生成概要」→ AI 已返回完整 JSON
+（后端日志正常 done，前端 console 也能看到 done 事件**走的是 Electron 桥**），
+但 Web 端在 chromium / 实际生产中前端 `generating.value` 一直为 true。
+
+**根因**：
+Web bridge `src/web/client/bridge.ts` 的 `onXxx(cb)` 默认订阅静态 channel
+`<ns>:on-<event>`（kebab 转换）。但长文写作流式事件用的是 **per-eventId 动态
+channel** `longwriting:generate:${eventId}`，且 preload 签名是
+`onGenerateEvent(eventId, cb)`（带前置参数）。bridge 把它误映射为静态
+`longwriting:on-generate-event`，订阅了一个永远不会有事件的 channel。
+
+**修复**：
+- `ChannelEntry` 新增 `eventChannel?: (...args) => string`，用于动态计算 channel
+- bridge `onXxx` 分支改成可变参数：最后一个是 cb，前面参数转发给 `eventChannel`
+- `channel-map` 补全：
+  - `longwriting.onGenerateEvent` → `eventChannel(eventId) => 'longwriting:generate:${eventId}'`
+  - `longwriting.onNewEntitiesDetected` → `'longwriting:new-entities-detected:${eventId}'`
+- 同步把其他静态事件的 channel 显式映射，避免 kebab 默认转换出错：
+  - `chat.onStream` → `chat:stream`
+  - `image.onGenerationEvent` → `image:generation-event`
+  - `portrait.onGenerationEvent` → `portrait:generation-event`
+  - `translation.onProgress / onCompleted / onFailed`
+  - `voice.onTTSCompleted / onSTTCompleted`
+
+回归测试：`tests/unit/web-bridge.spec.ts`（5 用例）。
+
+### 4. 取消 web-server 启动前的 better-sqlite3 ABI 切换
+
+**背景**：
+`npm run web:server:dev` 之前会先 `npm run abi:node`，把 better-sqlite3 native
+模块切到 host-Node ABI。这会让随后启动 PC 端（Electron）时报「数据库未初始化」
+（Electron 内嵌 Node v20 与 host Node v25 ABI 不兼容）。
+
+**现状验证**：Web Server 启动路径上 `data-source.ts` 仅在
+`cfg.type === 'sqlite'` 分支配置 `type: 'better-sqlite3'`，TypeORM 按需加载
+dialect，而 web-server 强制 `type: 'postgres'`，**运行时根本不会加载
+better-sqlite3 native 模块**。实测在 Electron ABI 下启动 web-server，health
+check 正常返回。
+
+**修复**：
+- `web:server:dev` 脚本去掉 `npm run abi:node` 前缀
+- `pc:dev` 仍保留 `npm run abi:electron`（PC 端必须）
+- 双端可共存：PC 启动一次切到 Electron ABI 后，Web 启动不再污染
+
+**后续可选**：把 better-sqlite3 标记为 optionalDependencies，让 web-only 部署
+不再带 native 二进制。当前双端单仓库，保持 dependencies 即可。
+
 ## 后续可扩展点
 
 - chat：增加多轮对话、停止生成、删除消息

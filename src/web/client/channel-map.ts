@@ -11,6 +11,13 @@
 export interface ChannelEntry {
   channel?: string
   wrap?: (...args: unknown[]) => unknown[]
+  /**
+   * 仅事件订阅（onXxx）使用：根据订阅时传入的非 cb 前置参数计算动态 channel。
+   * 例：`onGenerateEvent(eventId, cb)` → `eventChannel(eventId)` 返回
+   *     `longwriting:generate:${eventId}`。
+   * bridge 在 onXxx 分支检测到此字段，会把除最后一个 cb 外的所有参数转发给它。
+   */
+  eventChannel?: (...args: unknown[]) => string
 }
 
 export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
@@ -49,6 +56,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'role.getDialogCount': { channel: 'role:dialog-count' },
   'chat.send': { channel: 'chat:send' },
   'chat.stop': { channel: 'chat:stop' },
+  // chat.onStream(cb) — 后端 emit('chat:stream', event)
+  'chat.onStream': { channel: 'chat:stream' },
   'image.generate': { channel: 'image:generate' },
   'image.getTaskStatus': { channel: 'image:task-status' },
   'image.stop': { channel: 'image:stop' },
@@ -62,6 +71,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'image.testProvider': { channel: 'image:test-provider' },
   'image.download': { channel: 'image:download' },
   'image.selectFile': { channel: 'image:select-file' },
+  // image.onGenerationEvent(cb) — 后端 emit('image:generation-event', event)
+  'image.onGenerationEvent': { channel: 'image:generation-event' },
   'file.openDialog': { channel: 'file:open-dialog' },
   'file.readAsBase64': { channel: 'file:read-base64' },
   'file.saveFile': { channel: 'file:save-dialog' },
@@ -84,6 +95,10 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'translation.delete': { channel: 'translation:delete' },
   'translation.download': { channel: 'translation:download' },
   'translation.openFolder': { channel: 'translation:open-folder' },
+  // translation.onProgress / onCompleted / onFailed
+  'translation.onProgress': { channel: 'translation:progress' },
+  'translation.onCompleted': { channel: 'translation:completed' },
+  'translation.onFailed': { channel: 'translation:failed' },
   'voice.getProviders': { channel: 'voice:providers' },
   'voice.getVoices': { channel: 'voice:voices' },
   'voice.tts': { channel: 'voice:tts' },
@@ -96,6 +111,9 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'voice.getClonedVoices': { channel: 'voice:cloned-list' },
   'voice.deleteClonedVoice': { channel: 'voice:cloned-delete' },
   'voice.download': { channel: 'voice:download' },
+  // voice.onTTSCompleted / onSTTCompleted
+  'voice.onTTSCompleted': { channel: 'voice:tts-completed' },
+  'voice.onSTTCompleted': { channel: 'voice:stt-completed' },
   'dataPath.getConfig': { channel: 'data-path:get-config' },
   'dataPath.select': { channel: 'data-path:select' },
   'dataPath.set': { channel: 'data-path:set' },
@@ -134,6 +152,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'portrait.deleteVariant': { channel: 'portrait:delete-variant' },
   'portrait.editImage': { channel: 'portrait:edit-image' },
   'portrait.export': { channel: 'portrait:export' },
+  // portrait.onGenerationEvent — 后端 emit('portrait:generation-event', event)
+  'portrait.onGenerationEvent': { channel: 'portrait:generation-event' },
   'searchEngine.getTemplates': { channel: 'search-engine:templates' },
   'searchEngine.list': { channel: 'search-engine:list' },
   'searchEngine.get': { channel: 'search-engine:get' },
@@ -238,6 +258,14 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'longwriting.generateChapter': { channel: 'longwriting:generateChapter' },
   'longwriting.generateSection': { channel: 'longwriting:generateSection' },
   'longwriting.generateChapterPrewrite': { channel: 'longwriting:generateChapterPrewrite' },
+  // longwriting.onGenerateEvent(eventId, cb) — 后端 emit(`longwriting:generate:${eventId}`, ...)
+  'longwriting.onGenerateEvent': {
+    eventChannel: (eventId) => `longwriting:generate:${eventId}`,
+  },
+  // longwriting.onNewEntitiesDetected(eventId, cb) — 后端 emit(`longwriting:new-entities-detected:${eventId}`, ...)
+  'longwriting.onNewEntitiesDetected': {
+    eventChannel: (eventId) => `longwriting:new-entities-detected:${eventId}`,
+  },
   'longwriting.getExportData': { channel: 'longwriting:getExportData' },
   'longwriting.exportMarkdown': { channel: 'longwriting:exportMarkdown' },
   'longwriting.exportWord': { channel: 'longwriting:exportWord' },

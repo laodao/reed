@@ -29,7 +29,7 @@ function resolveEntry(namespace: string, method: string): ChannelEntry & { chann
   const key = `${namespace}.${method}`
   const override = CHANNEL_OVERRIDES[key]
   const channel = override?.channel ?? `${camelToKebab(namespace)}:${camelToKebab(method)}`
-  return { channel, wrap: override?.wrap }
+  return { channel, wrap: override?.wrap, eventChannel: override?.eventChannel }
 }
 
 /**
@@ -44,10 +44,23 @@ function createNamespaceProxy(namespace: string): unknown {
         if (typeof prop !== 'string') return undefined
 
         // onXxx / onYyyChanged：订阅事件
+        // 支持两种签名：
+        //   1) onEvent(cb)              — 静态 channel
+        //   2) onEvent(arg1, arg2, cb)  — 动态 channel（需 eventChannel 配置）
         if (prop.startsWith('on') && prop.length > 2 && prop[2] === prop[2].toUpperCase()) {
-          return (cb: (data: unknown) => void) => {
+          return (...args: unknown[]) => {
             const entry = resolveEntry(namespace, prop)
-            return wsOn(entry.channel, cb)
+            const cb = args[args.length - 1] as (data: unknown) => void
+            if (typeof cb !== 'function') {
+              console.warn(
+                `[bridge] ${namespace}.${prop} 调用缺少回调函数（最后一个参数）`,
+              )
+              return () => {}
+            }
+            const channel = entry.eventChannel
+              ? entry.eventChannel(...args.slice(0, -1))
+              : entry.channel
+            return wsOn(channel, cb)
           }
         }
 
