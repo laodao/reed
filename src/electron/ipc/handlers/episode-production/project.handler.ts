@@ -1,0 +1,131 @@
+/**
+ * episode-production · 项目管理 · IPC handler
+ * @module electron/ipc/handlers/episode-production/project.handler
+ * @description 双端共用 handler — PC 由 electron/index.ts 注册，Web 由 register-channels.ts 注册。
+ */
+
+import { ipcBridge } from '@core/ipc/bridge-adapter'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import type { IpcResponse } from '@shared/types/ipc.types'
+import type { VideoProjectConfig } from '@shared/types/story-to-video.types'
+
+export function registerProjectHandlers(): void {
+  // ==================== 项目管理 ====================
+  ipcBridge.handle('ep:list-projects', handleListProjects)
+  ipcBridge.handle('ep:get-project', handleGetProject)
+  ipcBridge.handle('ep:create-project', handleCreateProject)
+  ipcBridge.handle('ep:update-project', handleUpdateProject)
+  ipcBridge.handle('ep:delete-project', handleDeleteProject)
+}
+
+// ==================== 项目管理处理器 ====================
+
+async function handleListProjects(
+  _event: any,
+  longWritingProjectId?: string
+): Promise<IpcResponse> {
+  try {
+    console.log('[EpisodeProductionHandler] handleListProjects 被调用, longWritingProjectId:', longWritingProjectId)
+    const db = getCoreDatabaseManager()
+    if (!db.videoProjects) {
+      console.error('[EpisodeProductionHandler] videoProjects 仓库未初始化')
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    const projects = longWritingProjectId
+      ? await db.videoProjects.getByLongWritingProjectId(longWritingProjectId)
+      : await db.videoProjects.getAll()
+
+    console.log('[EpisodeProductionHandler] 查询到的项目数量:', projects.length)
+    console.log('[EpisodeProductionHandler] 项目列表:', JSON.stringify(projects, null, 2))
+
+    return { success: true, data: projects }
+  } catch (error: any) {
+    console.error('[EpisodeProductionHandler] 错误:', error)
+    return { success: false, error: error.message || '获取项目列表失败' }
+  }
+}
+
+async function handleGetProject(
+  _event: any,
+  projectId: string
+): Promise<IpcResponse> {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.videoProjects) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    const project = await db.videoProjects.getById(projectId)
+    if (!project) {
+      return { success: false, error: '项目不存在' }
+    }
+
+    return { success: true, data: project }
+  } catch (error: any) {
+    return { success: false, error: error.message || '获取项目失败' }
+  }
+}
+
+async function handleCreateProject(
+  _event: any,
+  name: string,
+  longWritingProjectId: string | undefined,
+  config: VideoProjectConfig
+): Promise<IpcResponse> {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.videoProjects) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    const project = await db.videoProjects.create({
+      name,
+      longWritingProjectId: longWritingProjectId || undefined,  // 空字符串转为 undefined
+      config
+    })
+
+    return { success: true, data: project }
+  } catch (error: any) {
+    return { success: false, error: error.message || '创建项目失败' }
+  }
+}
+
+async function handleUpdateProject(
+  _event: any,
+  projectId: string,
+  data: { name?: string; status?: string; config?: VideoProjectConfig; longWritingProjectId?: string }
+): Promise<IpcResponse> {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.videoProjects) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    const project = await db.videoProjects.update(projectId, data)
+    if (!project) {
+      return { success: false, error: '项目不存在' }
+    }
+
+    return { success: true, data: project }
+  } catch (error: any) {
+    return { success: false, error: error.message || '更新项目失败' }
+  }
+}
+
+async function handleDeleteProject(
+  _event: any,
+  projectId: string
+): Promise<IpcResponse> {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.videoProjects) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    const success = await db.videoProjects.delete(projectId)
+    return { success, data: { deleted: success } }
+  } catch (error: any) {
+    return { success: false, error: error.message || '删除项目失败' }
+  }
+}

@@ -3789,7 +3789,7 @@ async function handleBindLocation() {
  */
 async function isBindingFromLongWriting(binding: CharacterBinding | LocationBinding | ItemBinding): Promise<boolean> {
   try {
-    const result = await window.electronAPI.storyToVideo.isBindingFromLongWriting({
+    const result = await window.electronAPI.episodeProduction.isBindingFromLongWriting({
       longWritingCharacterId: (binding as CharacterBinding).longWritingCharacterId,
       longWritingLocationId: (binding as LocationBinding).longWritingLocationId,
       longWritingItemId: (binding as ItemBinding).longWritingItemId
@@ -3814,7 +3814,7 @@ async function editBinding(binding: CharacterBinding) {
 
   // 获取实体详情
   try {
-    const result = await window.electronAPI.storyToVideo.getUploadedEntity(
+    const result = await window.electronAPI.episodeProduction.getUploadedEntity(
       binding.longWritingCharacterId,
       'character'
     )
@@ -3842,7 +3842,7 @@ async function editLocationBinding(binding: LocationBinding) {
   }
 
   try {
-    const result = await window.electronAPI.storyToVideo.getUploadedEntity(
+    const result = await window.electronAPI.episodeProduction.getUploadedEntity(
       binding.longWritingLocationId,
       'location'
     )
@@ -3870,7 +3870,7 @@ async function editItemBinding(binding: ItemBinding) {
   }
 
   try {
-    const result = await window.electronAPI.storyToVideo.getUploadedEntity(
+    const result = await window.electronAPI.episodeProduction.getUploadedEntity(
       binding.longWritingItemId,
       'item'
     )
@@ -3900,7 +3900,7 @@ async function removeBinding(binding: CharacterBinding) {
     const fromLongWriting = await isBindingFromLongWriting(binding)
     if (!fromLongWriting) {
       // 上传模式的实体，同时删除实体记录
-      await window.electronAPI.storyToVideo.deleteUploadedEntity(
+      await window.electronAPI.episodeProduction.deleteUploadedEntity(
         binding.longWritingCharacterId,
         'character',
         projectId.value
@@ -3925,7 +3925,7 @@ async function removeLocationBinding(binding: LocationBinding) {
 
     const fromLongWriting = await isBindingFromLongWriting(binding)
     if (!fromLongWriting) {
-      await window.electronAPI.storyToVideo.deleteUploadedEntity(
+      await window.electronAPI.episodeProduction.deleteUploadedEntity(
         binding.longWritingLocationId,
         'location',
         projectId.value
@@ -3950,7 +3950,7 @@ async function removeItemBinding(binding: ItemBinding) {
 
     const fromLongWriting = await isBindingFromLongWriting(binding)
     if (!fromLongWriting) {
-      await window.electronAPI.storyToVideo.deleteUploadedEntity(
+      await window.electronAPI.episodeProduction.deleteUploadedEntity(
         binding.longWritingItemId,
         'item',
         projectId.value

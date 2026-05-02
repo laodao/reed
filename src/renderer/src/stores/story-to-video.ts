@@ -135,7 +135,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     error.value = null
     try {
       console.log('[StoryToVideoStore] 调用 listProjects API, longWritingProjectId:', longWritingProjectId)
-      const response = await window.electronAPI.storyToVideo.listProjects(longWritingProjectId)
+      const response = await window.electronAPI.episodeProduction.listProjects(longWritingProjectId)
       console.log('[StoryToVideoStore] API 响应:', response)
       if (response.success && response.data) {
         projects.value = response.data as VideoProject[]
@@ -159,7 +159,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.getProject(projectId)
+      const response = await window.electronAPI.episodeProduction.getProject(projectId)
       if (response.success && response.data) {
         currentProject.value = response.data as VideoProject
       } else {
@@ -183,7 +183,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.createProject(
+      const response = await window.electronAPI.episodeProduction.createProject(
         name,
         longWritingProjectId || undefined,  // 空字符串转为 undefined
         JSON.parse(JSON.stringify(config || defaultConfig))
@@ -213,7 +213,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
   ): Promise<boolean> {
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.updateProject(
+      const response = await window.electronAPI.episodeProduction.updateProject(
         projectId,
         JSON.parse(JSON.stringify(data))
       )
@@ -243,7 +243,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
   async function deleteProject(projectId: string): Promise<boolean> {
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.deleteProject(projectId)
+      const response = await window.electronAPI.episodeProduction.deleteProject(projectId)
       if (response.success) {
         projects.value = projects.value.filter(p => p.id !== projectId)
         if (currentProject.value?.id === projectId) {
@@ -297,7 +297,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     error.value = null
     try {
       console.log('[StoryToVideoStore] 加载剧集列表, projectId:', projectId)
-      const response = await window.electronAPI.storyToVideo.listEpisodes(projectId)
+      const response = await window.electronAPI.episodeProduction.listEpisodes(projectId)
       console.log('[StoryToVideoStore] 剧集列表响应:', response)
       if (response.success && response.data) {
         episodes.value = response.data as VideoEpisode[]
@@ -330,7 +330,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.createEpisode(
+      const response = await window.electronAPI.episodeProduction.createEpisode(
         projectId,
         data
       )
@@ -360,7 +360,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.updateEpisode(episodeId, data)
+      const response = await window.electronAPI.episodeProduction.updateEpisode(episodeId, data)
       if (response.success && response.data) {
         const episode = response.data as VideoEpisode
         // 更新列表中的剧集
@@ -418,7 +418,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
   async function deleteEpisode(episodeId: string): Promise<boolean> {
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.deleteEpisode(episodeId)
+      const response = await window.electronAPI.episodeProduction.deleteEpisode(episodeId)
       if (response.success) {
         // 从列表中移除
         episodes.value = episodes.value.filter(e => e.id !== episodeId)
@@ -446,7 +446,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.getScript(scriptId)
+      const response = await window.electronAPI.episodeProduction.getScript(scriptId)
       if (response.success && response.data) {
         currentScript.value = response.data as EpisodeScript
         // 加载场景列表
@@ -472,7 +472,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
   ): Promise<boolean> {
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.updateScript(
+      const response = await window.electronAPI.episodeProduction.updateScript(
         scriptId,
         JSON.parse(JSON.stringify(data))
       )
@@ -498,7 +498,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.listScenes(episodeScriptId)
+      const response = await window.electronAPI.episodeProduction.listScenes(episodeScriptId)
       if (response.success && response.data) {
         scenes.value = response.data as SceneScript[]
         // 如果有场景，自动选中第一个并加载分镜
@@ -527,7 +527,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.getScene(sceneId)
+      const response = await window.electronAPI.episodeProduction.getScene(sceneId)
       if (response.success && response.data) {
         currentScene.value = response.data as SceneScript
       } else {
@@ -554,7 +554,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
   async function updateScene(sceneId: string, data: Partial<SceneScript>): Promise<boolean> {
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.updateScene(
+      const response = await window.electronAPI.episodeProduction.updateScene(
         sceneId,
         JSON.parse(JSON.stringify(data))
       )
@@ -595,7 +595,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.listStoryboards(sceneScriptId)
+      const response = await window.electronAPI.episodeProduction.listStoryboards(sceneScriptId)
       if (response.success && response.data) {
         storyboards.value = response.data as Storyboard[]
       } else {
@@ -617,7 +617,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
   ): Promise<boolean> {
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.updateStoryboard(
+      const response = await window.electronAPI.episodeProduction.updateStoryboard(
         storyboardId,
         JSON.parse(JSON.stringify(data))
       )
@@ -647,7 +647,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.getCharacterBindings(projectId)
+      const response = await window.electronAPI.episodeProduction.getCharacterBindings(projectId)
       if (response.success && response.data) {
         characterBindings.value = response.data as CharacterBinding[]
       } else {
@@ -673,7 +673,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.bindCharacter(
+      const response = await window.electronAPI.episodeProduction.bindCharacter(
         projectId,
         longWritingCharacterId,
         portraitId,
@@ -711,7 +711,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
   ): Promise<boolean> {
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.updateCharacterBinding(
+      const response = await window.electronAPI.episodeProduction.updateCharacterBinding(
         bindingId,
         JSON.parse(JSON.stringify(data))
       )
@@ -738,7 +738,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
   async function deleteCharacterBinding(bindingId: string): Promise<boolean> {
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.deleteCharacterBinding(bindingId)
+      const response = await window.electronAPI.episodeProduction.deleteCharacterBinding(bindingId)
       if (response.success) {
         characterBindings.value = characterBindings.value.filter(b => b.id !== bindingId)
         return true
@@ -768,7 +768,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.getLocationBindings(projectId)
+      const response = await window.electronAPI.episodeProduction.getLocationBindings(projectId)
       if (response.success && response.data) {
         locationBindings.value = response.data as LocationBinding[]
       } else {
@@ -795,7 +795,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.bindLocation(
+      const response = await window.electronAPI.episodeProduction.bindLocation(
         projectId,
         longWritingLocationId,
         locationName,
@@ -833,7 +833,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
   ): Promise<boolean> {
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.updateLocationBinding(
+      const response = await window.electronAPI.episodeProduction.updateLocationBinding(
         bindingId,
         JSON.parse(JSON.stringify(data))
       )
@@ -860,7 +860,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
   async function deleteLocationBinding(bindingId: string): Promise<boolean> {
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.deleteLocationBinding(bindingId)
+      const response = await window.electronAPI.episodeProduction.deleteLocationBinding(bindingId)
       if (response.success) {
         locationBindings.value = locationBindings.value.filter(b => b.id !== bindingId)
         return true
@@ -890,7 +890,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.getItemBindings(projectId)
+      const response = await window.electronAPI.episodeProduction.getItemBindings(projectId)
       if (response.success && response.data) {
         itemBindings.value = response.data as ItemBinding[]
       } else {
@@ -917,7 +917,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.bindItem(
+      const response = await window.electronAPI.episodeProduction.bindItem(
         projectId,
         longWritingItemId,
         itemName,
@@ -955,7 +955,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
   ): Promise<boolean> {
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.updateItemBinding(
+      const response = await window.electronAPI.episodeProduction.updateItemBinding(
         bindingId,
         JSON.parse(JSON.stringify(data))
       )
@@ -982,7 +982,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
   async function deleteItemBinding(bindingId: string): Promise<boolean> {
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.deleteItemBinding(bindingId)
+      const response = await window.electronAPI.episodeProduction.deleteItemBinding(bindingId)
       if (response.success) {
         itemBindings.value = itemBindings.value.filter(b => b.id !== bindingId)
         return true
@@ -1041,7 +1041,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     generating.value = true
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.generateScript(
+      const response = await window.electronAPI.episodeProduction.generateScript(
         episodeId,
         providerConfigId,
         modelId
@@ -1074,7 +1074,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     generating.value = true
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.generateScenes(
+      const response = await window.electronAPI.episodeProduction.generateScenes(
         scriptId,
         providerConfigId,
         modelId
@@ -1106,7 +1106,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     generating.value = true
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.generateStoryboard(
+      const response = await window.electronAPI.episodeProduction.generateStoryboard(
         sceneId,
         providerConfigId,
         modelId
@@ -1138,7 +1138,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     generating.value = true
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.generateStoryboards(
+      const response = await window.electronAPI.episodeProduction.generateStoryboards(
         scriptId,
         providerConfigId,
         modelId
@@ -1169,7 +1169,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
    */
   async function getStylePresets(): Promise<Array<{ id: string; name: string }> | null> {
     try {
-      const response = await window.electronAPI.storyToVideo.getStylePresets()
+      const response = await window.electronAPI.episodeProduction.getStylePresets()
       if (response.success && response.data) {
         return response.data as Array<{ id: string; name: string }>
       }
@@ -1192,7 +1192,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await window.electronAPI.storyToVideo.generateStoryboardImage(
+      const response = await window.electronAPI.episodeProduction.generateStoryboardImage(
         storyboardId,
         styleName,
         providerConfigId,
@@ -1234,7 +1234,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     // 注册进度监听
     let unsubscribe: (() => void) | null = null
     if (onProgress) {
-      unsubscribe = window.electronAPI.storyToVideo.onImageProgress(
+      unsubscribe = window.electronAPI.episodeProduction.onImageProgress(
         (_event, data) => {
           if (data.sceneId === sceneId) {
             onProgress(data.index, data.total)
@@ -1244,7 +1244,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     }
 
     try {
-      const response = await window.electronAPI.storyToVideo.generateSceneImages(
+      const response = await window.electronAPI.episodeProduction.generateSceneImages(
         sceneId,
         styleName,
         providerConfigId,
@@ -1288,7 +1288,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     // 注册进度监听
     let unsubscribe: (() => void) | null = null
     if (onProgress) {
-      unsubscribe = window.electronAPI.storyToVideo.onAudioProgress(
+      unsubscribe = window.electronAPI.episodeProduction.onAudioProgress(
         (_event, data) => {
           if (data.sceneId === sceneId) {
             onProgress(data.type, data.index, data.total)
@@ -1298,7 +1298,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     }
 
     try {
-      const response = await window.electronAPI.storyToVideo.generateAudio(sceneId)
+      const response = await window.electronAPI.episodeProduction.generateAudio(sceneId)
       if (response.success && response.data) {
         return response.data as { narrationPath?: string; dialogueCount: number }
       } else {
@@ -1323,7 +1323,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
    */
   async function getVideoPresets(): Promise<Array<{ id: string; name: string }> | null> {
     try {
-      const response = await window.electronAPI.storyToVideo.getVideoPresets()
+      const response = await window.electronAPI.episodeProduction.getVideoPresets()
       if (response.success && response.data) {
         return response.data
       }
@@ -1348,7 +1348,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     // 注册进度监听
     let unsubscribe: (() => void) | null = null
     if (onProgress) {
-      unsubscribe = window.electronAPI.storyToVideo.onSynthesisProgress(
+      unsubscribe = window.electronAPI.episodeProduction.onSynthesisProgress(
         (_event, data) => {
           if (data.sceneId === sceneId) {
             onProgress(data.phase, data.progress)
@@ -1358,7 +1358,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     }
 
     try {
-      const response = await window.electronAPI.storyToVideo.synthesizeSceneVideo(sceneId, quality)
+      const response = await window.electronAPI.episodeProduction.synthesizeSceneVideo(sceneId, quality)
       if (response.success && response.data) {
         return response.data as { outputPath: string; duration: number }
       } else {
@@ -1387,7 +1387,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     error.value = null
 
     try {
-      const response = await window.electronAPI.storyToVideo.synthesizeStoryboardVideo(storyboardId, quality)
+      const response = await window.electronAPI.episodeProduction.synthesizeStoryboardVideo(storyboardId, quality)
       if (response.success && response.data) {
         return response.data as { outputPath: string; duration: number }
       } else {
@@ -1414,7 +1414,7 @@ export const useStoryToVideoStore = defineStore('storyToVideo', () => {
     error.value = null
 
     try {
-      const response = await window.electronAPI.storyToVideo.exportVideo(
+      const response = await window.electronAPI.episodeProduction.exportVideo(
         sourcePath,
         outputPath,
         quality

@@ -55,8 +55,8 @@ export class SceneShotsService {
       if (onProgress) {
         onProgress(i, storyboards.length)
         // 通知前端进度
-        // 注意：事件名 'stv:synthesis-progress' 待 task 8 整体 channel rename 时统一改为 'ep:' 前缀
-        getEventEmitter().emit('stv:synthesis-progress', {
+        // 注意：事件名 'ep:synthesis-progress' 待 task 8 整体 channel rename 时统一改为 'ep:' 前缀
+        getEventEmitter().emit('ep:synthesis-progress', {
           sceneId,
           type: 'shot',
           index: i,

@@ -19,7 +19,7 @@ test.describe('Web 端 - 剧集制作', () => {
   test('IPC stv:list-projects 返回项目数组', async ({ page }) => {
     const data = await invokeIpcUnwrap<unknown[]>(
       page.context().request,
-      'stv:list-projects',
+      'ep:list-projects',
     )
     expect(Array.isArray(data)).toBe(true)
   })

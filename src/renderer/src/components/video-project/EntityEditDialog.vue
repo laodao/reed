@@ -268,7 +268,7 @@ async function handleSave() {
     }
 
     // 调用更新 API
-    const result = await window.electronAPI.storyToVideo.updateUploadedEntity(
+    const result = await window.electronAPI.episodeProduction.updateUploadedEntity(
       props.entityId,
       props.entityType,
       updateData

@@ -26,7 +26,7 @@ import { registerKnowledgeBaseHandlers } from '@electron/ipc/handlers/knowledge-
 import { registerLongWritingHandlers } from '@electron/ipc/handlers/longwriting.handler'
 import { registerDiaryHandlers } from '@electron/ipc/handlers/diary.handler'
 import { registerPortraitHandlers } from '@electron/ipc/handlers/portrait.handler'
-import { registerStoryToVideoHandlers } from '@electron/ipc/handlers/story-to-video.handler'
+import { registerEpisodeProductionHandlers } from '@electron/ipc/handlers/episode-production'
 import { registerFileHandlers } from '@electron/ipc/handlers/file.handler'
 import { registerExportHandlers } from '@electron/ipc/handlers/export.handler'
 import { registerDataPathHandlers } from '@electron/ipc/handlers/data-path.handler'
@@ -50,7 +50,7 @@ export async function registerAllWebChannels(): Promise<void> {
   registerLongWritingHandlers()
   registerDiaryHandlers()
   registerPortraitHandlers()
-  registerStoryToVideoHandlers()
+  registerEpisodeProductionHandlers()
   registerFileHandlers()
   registerExportHandlers()
   // data-path 仅在 Electron 端有意义，函数内部已 isElectron 判断
