@@ -78,7 +78,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { InfoFilled } from '@element-plus/icons-vue'
-import { useStoryToVideoStore } from '@/stores/story-to-video'
+import { useEpWorkbenchStore, useEpProjectStore, useEpEpisodeStore } from '@/stores/episode-production'
 import {
   outlineCascaderProps,
   buildOutlineCascaderData,
@@ -103,10 +103,12 @@ const visible = computed({
   set: (v) => emit('update:modelValue', v)
 })
 
-const store = useStoryToVideoStore()
-const loading = computed(() => store.loading)
+const workbenchStore = useEpWorkbenchStore()
+const projectStore = useEpProjectStore()
+const episodeStore = useEpEpisodeStore()
+const loading = computed(() => workbenchStore.loading)
 
-const hasLinkedLongWriting = computed(() => !!store.currentProject?.longWritingProjectId)
+const hasLinkedLongWriting = computed(() => !!projectStore.currentProject?.longWritingProjectId)
 
 const form = reactive({
   episodeNumber: 1,
@@ -203,7 +205,7 @@ async function handleSubmit() {
     return
   }
 
-  const episode = await store.createEpisode(
+  const episode = await episodeStore.createEpisode(
     props.projectId,
     {
       sourceType: form.sourceType,
@@ -219,7 +221,7 @@ async function handleSubmit() {
     visible.value = false
     emit('created')
   } else {
-    ElMessage.error(store.error || '创建失败')
+    ElMessage.error(workbenchStore.error || '创建失败')
   }
 }
 </script>

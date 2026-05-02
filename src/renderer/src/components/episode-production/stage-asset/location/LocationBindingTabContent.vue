@@ -10,7 +10,7 @@
 
     <div class="bindings-list">
       <div
-        v-for="binding in store.locationBindings"
+        v-for="binding in assetStore.locationBindings"
         :key="binding.id"
         class="binding-card location-card"
         @click="emit('open-dialog', 'locationDetail', { id: binding.longWritingLocationId })"
@@ -50,7 +50,7 @@
         </div>
       </div>
 
-      <el-empty v-if="store.locationBindings.length === 0" description="暂无地点绑定" :image-size="60" />
+      <el-empty v-if="assetStore.locationBindings.length === 0" description="暂无地点绑定" :image-size="60" />
     </div>
   </div>
 </template>
@@ -58,7 +58,7 @@
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Location, Picture, Warning, Edit, Delete } from '@element-plus/icons-vue'
-import { useStoryToVideoStore } from '@/stores/story-to-video'
+import { useEpAssetStore } from '@/stores/episode-production'
 import type { LocationBinding } from '../../../../../shared/types/story-to-video.types'
 import type { StoryLocation } from '../../../../../shared/types/longwriting.types'
 
@@ -70,7 +70,7 @@ const emit = defineEmits<{
   'open-dialog': [name: string, payload?: any]
 }>()
 
-const store = useStoryToVideoStore()
+const assetStore = useEpAssetStore()
 
 function getLocationImportance(_locationId: string): string | undefined {
   return undefined
@@ -136,7 +136,7 @@ async function handleRemoveLocationBinding(binding: LocationBinding) {
       )
     }
 
-    await store.deleteLocationBinding(binding.id)
+    await assetStore.deleteLocationBinding(binding.id)
     ElMessage.success('移除成功')
   } catch {
     // 用户取消

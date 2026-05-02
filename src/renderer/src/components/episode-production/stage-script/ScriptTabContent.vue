@@ -6,8 +6,8 @@
         <h4>场景导航</h4>
         <el-button
           size="small"
-          :loading="store.generating"
-          :disabled="store.generating"
+          :loading="workbenchStore.generating"
+          :disabled="workbenchStore.generating"
           @click="handleGenerateScript"
         >
           <el-icon><MagicStick /></el-icon>
@@ -16,7 +16,7 @@
       </div>
       <div class="scene-nav-list">
         <div
-          v-for="(scene, index) in store.scenes"
+          v-for="(scene, index) in scriptStore.scenes"
           :key="scene.id"
           class="scene-nav-item"
           :class="{ active: currentSceneIndex === index }"
@@ -29,7 +29,7 @@
             <el-tag size="small">{{ getTimeOfDayLabel(scene.timeOfDay) }}</el-tag>
           </div>
         </div>
-        <el-empty v-if="store.scenes.length === 0" description="暂无场景" :image-size="60" />
+        <el-empty v-if="scriptStore.scenes.length === 0" description="暂无场景" :image-size="60" />
       </div>
     </div>
 
@@ -40,10 +40,10 @@
         <div class="header-actions">
           <el-button
             size="small"
-            :loading="store.generating"
-            :disabled="store.generating"
+            :loading="workbenchStore.generating"
+            :disabled="workbenchStore.generating"
             @click="handleGenerateScenes"
-            v-if="store.currentScript && !store.currentScript.scriptContent"
+            v-if="scriptStore.currentScript && !scriptStore.currentScript.scriptContent"
           >
             <el-icon><MagicStick /></el-icon>
             拆分场景
@@ -52,9 +52,9 @@
       </div>
 
       <div class="script-content-body">
-        <template v-if="store.currentScript?.scriptContent">
+        <template v-if="scriptStore.currentScript?.scriptContent">
           <div
-            v-for="(scene, index) in store.scenes"
+            v-for="(scene, index) in scriptStore.scenes"
             :key="scene.id"
             :id="`scene-${index}`"
             class="scene-block"
@@ -69,10 +69,10 @@
             ></div>
           </div>
         </template>
-        <template v-else-if="store.currentScript">
+        <template v-else-if="scriptStore.currentScript">
           <div class="no-script-content">
             <el-empty description="剧本正文尚未生成" :image-size="120">
-              <el-button type="primary" @click="handleGenerateScript" :loading="store.generating">
+              <el-button type="primary" @click="handleGenerateScript" :loading="workbenchStore.generating">
                 生成完整剧本
               </el-button>
             </el-empty>
@@ -81,7 +81,7 @@
         <template v-else>
           <div class="no-script-content">
             <el-empty description="请先生成剧本" :image-size="120">
-              <el-button type="primary" @click="handleGenerateScript" :loading="store.generating">
+              <el-button type="primary" @click="handleGenerateScript" :loading="workbenchStore.generating">
                 AI 生成剧本
               </el-button>
             </el-empty>
@@ -109,21 +109,31 @@
 import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { MagicStick } from '@element-plus/icons-vue'
-import { useStoryToVideoStore } from '@/stores/story-to-video'
+import {
+  useEpWorkbenchStore,
+  useEpProjectStore,
+  useEpEpisodeStore,
+  useEpScriptStore,
+  useEpStoryboardStore
+} from '@/stores/episode-production'
 import type { SceneScript } from '../../../../../shared/types/story-to-video.types'
 
 const props = defineProps<{
   projectId: string
 }>()
 
-const store = useStoryToVideoStore()
+const workbenchStore = useEpWorkbenchStore()
+const projectStore = useEpProjectStore()
+const episodeStore = useEpEpisodeStore()
+const scriptStore = useEpScriptStore()
+const storyboardStore = useEpStoryboardStore()
 
 const scriptContentRef = ref<HTMLElement | null>(null)
 const currentSceneIndex = ref(0)
 const scriptSynopsisLocal = ref('')
 
 // 同步外部 synopsis
-watch(() => store.currentScript?.synopsis, (synopsis) => {
+watch(() => scriptStore.currentScript?.synopsis, (synopsis) => {
   if (synopsis !== undefined) {
     scriptSynopsisLocal.value = synopsis
   }
@@ -175,7 +185,7 @@ function formatSceneHeader(scene: SceneScript): string {
  */
 function buildStoryboardMapping(sceneId: string): Map<string, number> {
   const mapping = new Map<string, number>()
-  const sceneStoryboards = store.storyboards.filter(s => s.sceneScriptId === sceneId)
+  const sceneStoryboards = storyboardStore.storyboards.filter(s => s.sceneScriptId === sceneId)
   for (const storyboard of sceneStoryboards) {
     for (const dialogueId of storyboard.dialogueIds) {
       mapping.set(dialogueId, storyboard.shotNumber)
@@ -202,16 +212,16 @@ function renderStoryboardTag(shotNumber: number | undefined | null): string {
  * 格式化场景剧本内容
  */
 function formatSceneScriptContent(scene: SceneScript, index: number): string {
-  if (!store.currentScript?.scriptContent) {
+  if (!scriptStore.currentScript?.scriptContent) {
     return `<p class="no-content">场景内容尚未生成</p>`
   }
 
-  const fullContent = store.currentScript.scriptContent
+  const fullContent = scriptStore.currentScript.scriptContent
   const sceneHeader = formatSceneHeader(scene)
   const nextSceneIndex = index + 1
   let nextSceneHeader = ''
-  if (nextSceneIndex < store.scenes.length) {
-    nextSceneHeader = formatSceneHeader(store.scenes[nextSceneIndex])
+  if (nextSceneIndex < scriptStore.scenes.length) {
+    nextSceneHeader = formatSceneHeader(scriptStore.scenes[nextSceneIndex])
   }
 
   const headerIndex = fullContent.indexOf(sceneHeader)
@@ -225,12 +235,12 @@ function formatSceneScriptContent(scene: SceneScript, index: number): string {
     const altHeaderIndex = fullContent.indexOf(altHeader)
     if (altHeaderIndex !== -1) {
       let endIndex = fullContent.length
-      if (nextSceneIndex < store.scenes.length) {
-        const nextAltHeader = store.scenes[nextSceneIndex].locationType === 'interior'
-          ? `INT. ${store.scenes[nextSceneIndex].location}`
-          : store.scenes[nextSceneIndex].locationType === 'exterior'
-            ? `EXT. ${store.scenes[nextSceneIndex].location}`
-            : `INT./EXT. ${store.scenes[nextSceneIndex].location}`
+      if (nextSceneIndex < scriptStore.scenes.length) {
+        const nextAltHeader = scriptStore.scenes[nextSceneIndex].locationType === 'interior'
+          ? `INT. ${scriptStore.scenes[nextSceneIndex].location}`
+          : scriptStore.scenes[nextSceneIndex].locationType === 'exterior'
+            ? `EXT. ${scriptStore.scenes[nextSceneIndex].location}`
+            : `INT./EXT. ${scriptStore.scenes[nextSceneIndex].location}`
         const nextIndex = fullContent.indexOf(nextAltHeader, altHeaderIndex + altHeader.length)
         if (nextIndex !== -1) endIndex = nextIndex
       }
@@ -258,7 +268,7 @@ function formatSceneScriptContent(scene: SceneScript, index: number): string {
   }
 
   let endIndex = fullContent.length
-  if (nextSceneHeader && nextSceneIndex < store.scenes.length) {
+  if (nextSceneHeader && nextSceneIndex < scriptStore.scenes.length) {
     const nextIndex = fullContent.indexOf(nextSceneHeader, headerIndex + sceneHeader.length)
     if (nextIndex !== -1) endIndex = nextIndex
   }
@@ -367,8 +377,8 @@ function scrollToScene(index: number) {
       behavior: 'smooth'
     })
   }
-  if (store.scenes[index]) {
-    store.selectScene(store.scenes[index])
+  if (scriptStore.scenes[index]) {
+    scriptStore.selectScene(scriptStore.scenes[index])
   }
 }
 
@@ -376,20 +386,20 @@ function scrollToScene(index: number) {
  * 保存剧本概要
  */
 async function saveScriptSynopsis() {
-  if (!store.currentScript) return
-  await store.updateScript(store.currentScript.id, { synopsis: scriptSynopsisLocal.value })
+  if (!scriptStore.currentScript) return
+  await scriptStore.updateScript(scriptStore.currentScript.id, { synopsis: scriptSynopsisLocal.value })
 }
 
 /**
  * 生成剧本（AI）
  */
 async function handleGenerateScript() {
-  if (!store.currentProject) {
+  if (!projectStore.currentProject) {
     ElMessage.warning('项目数据加载中，请稍候')
     return
   }
-  if (!store.currentEpisode) {
-    if (store.episodes.length === 0) {
+  if (!episodeStore.currentEpisode) {
+    if (episodeStore.episodes.length === 0) {
       ElMessage.warning('请先在左侧面板添加剧集')
     } else {
       ElMessage.warning('请在左侧面板选择要生成剧本的剧集')
@@ -397,25 +407,25 @@ async function handleGenerateScript() {
     return
   }
 
-  const scriptModel = store.currentProject.config?.scriptModel
+  const scriptModel = projectStore.currentProject.config?.scriptModel
   if (!scriptModel?.providerConfigId || !scriptModel?.modelId) {
     ElMessage.warning('请先在项目设置中配置剧本生成模型')
     return
   }
 
-  if (store.currentEpisode.sourceType === 'outline' && !store.currentEpisode.outlineId) {
+  if (episodeStore.currentEpisode.sourceType === 'outline' && !episodeStore.currentEpisode.outlineId) {
     ElMessage.warning('该剧集未关联章节，无法生成剧本')
     return
   }
-  if (store.currentEpisode.sourceType === 'uploaded' && !store.currentEpisode.uploadedContent) {
+  if (episodeStore.currentEpisode.sourceType === 'uploaded' && !episodeStore.currentEpisode.uploadedContent) {
     ElMessage.warning('该剧集没有上传长文内容，无法生成剧本')
     return
   }
 
   try {
     ElMessage.info('正在生成剧本，请稍候...')
-    const result = await store.generateScript(
-      store.currentEpisode.id,
+    const result = await scriptStore.generateScript(
+      episodeStore.currentEpisode.id,
       scriptModel.providerConfigId,
       scriptModel.modelId
     )
@@ -424,13 +434,13 @@ async function handleGenerateScript() {
       ElMessage.success(`剧本生成成功，共 ${result.scenes.length} 个场景`)
       scriptSynopsisLocal.value = result.script.synopsis
 
-      await store.loadEpisodes(store.currentProject.id)
-      const updatedEpisode = store.episodes.find(e => e.id === store.currentEpisode?.id)
+      await episodeStore.loadEpisodes(projectStore.currentProject.id)
+      const updatedEpisode = episodeStore.episodes.find(e => e.id === episodeStore.currentEpisode?.id)
       if (updatedEpisode) {
-        await store.selectEpisode(updatedEpisode)
+        await episodeStore.selectEpisode(updatedEpisode)
       }
     } else {
-      ElMessage.error(store.error || '生成剧本失败')
+      ElMessage.error(workbenchStore.error || '生成剧本失败')
     }
   } catch (error: any) {
     ElMessage.error(error.message || '生成剧本失败')
@@ -441,27 +451,27 @@ async function handleGenerateScript() {
  * 拆分场景（AI）
  */
 async function handleGenerateScenes() {
-  if (!store.currentScript) {
+  if (!scriptStore.currentScript) {
     ElMessage.warning('请先生成剧本')
     return
   }
-  if (!store.selectedProviderConfigId || !store.selectedModelId) {
+  if (!workbenchStore.selectedProviderConfigId || !workbenchStore.selectedModelId) {
     ElMessage.warning('请先在顶部选择 AI 模型')
     return
   }
 
   try {
     ElMessage.info('正在拆分场景，请稍候...')
-    const result = await store.generateScenes(
-      store.currentScript.id,
-      store.selectedProviderConfigId,
-      store.selectedModelId
+    const result = await scriptStore.generateScenes(
+      scriptStore.currentScript.id,
+      workbenchStore.selectedProviderConfigId,
+      workbenchStore.selectedModelId
     )
 
     if (result) {
       ElMessage.success(`场景拆分成功，共 ${result.length} 个场景`)
     } else {
-      ElMessage.error(store.error || '拆分场景失败')
+      ElMessage.error(workbenchStore.error || '拆分场景失败')
     }
   } catch (error: any) {
     ElMessage.error(error.message || '拆分场景失败')

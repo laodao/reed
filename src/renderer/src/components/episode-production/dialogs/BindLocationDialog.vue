@@ -44,7 +44,7 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useStoryToVideoStore } from '@/stores/story-to-video'
+import { useEpWorkbenchStore, useEpAssetStore } from '@/stores/episode-production'
 
 const props = defineProps<{
   modelValue: boolean
@@ -62,8 +62,9 @@ const visible = computed({
   set: (v) => emit('update:modelValue', v)
 })
 
-const store = useStoryToVideoStore()
-const loading = computed(() => store.loading)
+const workbenchStore = useEpWorkbenchStore()
+const assetStore = useEpAssetStore()
+const loading = computed(() => workbenchStore.loading)
 
 const form = reactive({
   locationId: '',
@@ -92,7 +93,7 @@ async function handleSubmit() {
     return
   }
 
-  const result = await store.bindLocation(
+  const result = await assetStore.bindLocation(
     props.projectId,
     form.locationId,
     location.name,
@@ -106,7 +107,7 @@ async function handleSubmit() {
     visible.value = false
     emit('bound')
   } else {
-    ElMessage.error(store.error || '绑定失败')
+    ElMessage.error(workbenchStore.error || '绑定失败')
   }
 }
 </script>

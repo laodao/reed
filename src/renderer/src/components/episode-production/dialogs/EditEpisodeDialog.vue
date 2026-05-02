@@ -24,7 +24,7 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useStoryToVideoStore } from '@/stores/story-to-video'
+import { useEpWorkbenchStore, useEpEpisodeStore } from '@/stores/episode-production'
 
 const props = defineProps<{
   modelValue: boolean
@@ -43,8 +43,9 @@ const visible = computed({
   set: (v) => emit('update:modelValue', v)
 })
 
-const store = useStoryToVideoStore()
-const loading = computed(() => store.loading)
+const workbenchStore = useEpWorkbenchStore()
+const episodeStore = useEpEpisodeStore()
+const loading = computed(() => workbenchStore.loading)
 
 const form = reactive({
   episodeNumber: 1,
@@ -65,7 +66,7 @@ async function handleSubmit() {
     return
   }
 
-  const episode = await store.updateEpisode(
+  const episode = await episodeStore.updateEpisode(
     props.episodeId,
     {
       episodeNumber: form.episodeNumber,
@@ -78,7 +79,7 @@ async function handleSubmit() {
     visible.value = false
     emit('updated')
   } else {
-    ElMessage.error(store.error || '保存失败')
+    ElMessage.error(workbenchStore.error || '保存失败')
   }
 }
 </script>

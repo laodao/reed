@@ -45,7 +45,7 @@
 
 <script setup lang="ts">
 import { computed, reactive } from 'vue'
-import { useStoryToVideoStore } from '@/stores/story-to-video'
+import { useEpWorkbenchStore } from '@/stores/episode-production'
 
 const props = defineProps<{
   modelValue: boolean
@@ -66,8 +66,8 @@ const visible = computed({
   set: (v) => emit('update:modelValue', v)
 })
 
-const store = useStoryToVideoStore()
-const loading = computed(() => store.loading)
+const workbenchStore = useEpWorkbenchStore()
+const loading = computed(() => workbenchStore.loading)
 
 const form = reactive({
   quality: 'standard'

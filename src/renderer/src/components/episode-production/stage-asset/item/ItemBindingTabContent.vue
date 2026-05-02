@@ -10,7 +10,7 @@
 
     <div class="bindings-list">
       <div
-        v-for="binding in store.itemBindings"
+        v-for="binding in assetStore.itemBindings"
         :key="binding.id"
         class="binding-card item-card"
         @click="emit('open-dialog', 'itemDetail', { id: binding.longWritingItemId })"
@@ -50,7 +50,7 @@
         </div>
       </div>
 
-      <el-empty v-if="store.itemBindings.length === 0" description="暂无物品绑定" :image-size="60" />
+      <el-empty v-if="assetStore.itemBindings.length === 0" description="暂无物品绑定" :image-size="60" />
     </div>
   </div>
 </template>
@@ -58,7 +58,7 @@
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Box, Picture, Warning, Edit, Delete } from '@element-plus/icons-vue'
-import { useStoryToVideoStore } from '@/stores/story-to-video'
+import { useEpAssetStore } from '@/stores/episode-production'
 import type { ItemBinding } from '../../../../../shared/types/story-to-video.types'
 import type { StoryItem } from '../../../../../shared/types/longwriting.types'
 
@@ -70,7 +70,7 @@ const emit = defineEmits<{
   'open-dialog': [name: string, payload?: any]
 }>()
 
-const store = useStoryToVideoStore()
+const assetStore = useEpAssetStore()
 
 // 物品重要性缓存（当前版本未缓存完整数据，返回 undefined）
 function getItemImportance(_itemId: string): string | undefined {
@@ -137,7 +137,7 @@ async function handleRemoveItemBinding(binding: ItemBinding) {
       )
     }
 
-    await store.deleteItemBinding(binding.id)
+    await assetStore.deleteItemBinding(binding.id)
     ElMessage.success('移除成功')
   } catch {
     // 用户取消

@@ -5,7 +5,7 @@
     width="700px"
     class="settings-dialog"
   >
-    <el-form v-if="store.currentProject" label-width="100px" class="settings-form">
+    <el-form v-if="projectStore.currentProject" label-width="100px" class="settings-form">
       <el-divider content-position="left">基本设置</el-divider>
       <el-form-item label="项目名称">
         <el-input v-model="form.name" />
@@ -182,7 +182,7 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useStoryToVideoStore } from '@/stores/story-to-video'
+import { useEpWorkbenchStore, useEpProjectStore } from '@/stores/episode-production'
 import { modelToString, stringToModel } from '../shared/model-config'
 import type { UserProviderConfig, ProviderTemplate } from '../../../../shared/types'
 
@@ -210,8 +210,9 @@ const visible = computed({
   set: (v) => emit('update:modelValue', v)
 })
 
-const store = useStoryToVideoStore()
-const loading = computed(() => store.loading)
+const workbenchStore = useEpWorkbenchStore()
+const projectStore = useEpProjectStore()
+const loading = computed(() => workbenchStore.loading)
 
 const form = reactive({
   name: '',
@@ -232,8 +233,8 @@ const form = reactive({
 
 // 打开时同步当前项目设置
 watch(() => props.modelValue, (val) => {
-  if (val && store.currentProject) {
-    const project = store.currentProject
+  if (val && projectStore.currentProject) {
+    const project = projectStore.currentProject
     form.name = project.name
     form.longWritingProjectId = project.longWritingProjectId || ''
     const config = project.config
@@ -354,9 +355,9 @@ const audioProviderModels = computed<ProviderModelGroup[]>(() => {
 })
 
 async function handleSubmit() {
-  if (!store.currentProject) return
+  if (!projectStore.currentProject) return
 
-  const oldLwProjectId = store.currentProject.longWritingProjectId || ''
+  const oldLwProjectId = projectStore.currentProject.longWritingProjectId || ''
   const newLwProjectId = form.longWritingProjectId || ''
 
   const configToSave = {
@@ -368,7 +369,7 @@ async function handleSubmit() {
     audioModel: stringToModel(form.config.audioModel)
   }
 
-  const success = await store.updateProject(store.currentProject.id, {
+  const success = await projectStore.updateProject(projectStore.currentProject.id, {
     name: form.name,
     config: configToSave,
     longWritingProjectId: newLwProjectId
@@ -379,7 +380,7 @@ async function handleSubmit() {
     visible.value = false
     emit('saved', newLwProjectId, oldLwProjectId)
   } else {
-    ElMessage.error(store.error || '保存失败')
+    ElMessage.error(workbenchStore.error || '保存失败')
   }
 }
 </script>

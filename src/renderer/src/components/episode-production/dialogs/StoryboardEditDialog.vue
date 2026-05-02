@@ -131,7 +131,7 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useStoryToVideoStore } from '@/stores/story-to-video'
+import { useEpWorkbenchStore, useEpStoryboardStore } from '@/stores/episode-production'
 import type { Storyboard } from '../../../../shared/types/story-to-video.types'
 
 const props = defineProps<{
@@ -149,8 +149,9 @@ const visible = computed({
   set: (v) => emit('update:modelValue', v)
 })
 
-const store = useStoryToVideoStore()
-const loading = computed(() => store.loading)
+const workbenchStore = useEpWorkbenchStore()
+const storyboardStore = useEpStoryboardStore()
+const loading = computed(() => workbenchStore.loading)
 
 const form = reactive({
   shotNumber: 1,
@@ -182,7 +183,7 @@ watch(() => props.storyboard, (storyboard) => {
 async function handleSubmit() {
   if (!props.storyboard) return
 
-  const success = await store.updateStoryboard(props.storyboard.id, {
+  const success = await storyboardStore.updateStoryboard(props.storyboard.id, {
     shotNumber: form.shotNumber,
     shotType: form.shotType as any,
     cameraAngle: form.cameraAngle as any,
@@ -202,7 +203,7 @@ async function handleSubmit() {
     visible.value = false
     emit('saved')
   } else {
-    ElMessage.error(store.error || '保存失败')
+    ElMessage.error(workbenchStore.error || '保存失败')
   }
 }
 </script>

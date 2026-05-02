@@ -9,7 +9,7 @@
         </el-button>
       </div>
       <div class="header-center">
-        <h2 class="project-title">{{ store.currentProject?.name || '加载中...' }}</h2>
+        <h2 class="project-title">{{ projectStore.currentProject?.name || '加载中...' }}</h2>
       </div>
       <div class="header-right">
         <el-button @click="dialogs.settings = true">
@@ -32,10 +32,10 @@
 
         <div class="episode-list">
           <div
-            v-for="episode in store.episodes"
+            v-for="episode in episodeStore.episodes"
             :key="episode.id"
             class="episode-item"
-            :class="{ active: store.currentEpisode?.id === episode.id }"
+            :class="{ active: episodeStore.currentEpisode?.id === episode.id }"
             @click="selectEpisode(episode)"
           >
             <div class="episode-number">第{{ episode.episodeNumber }}集</div>
@@ -55,13 +55,13 @@
             </div>
           </div>
 
-          <el-empty v-if="store.episodes.length === 0" description="暂无剧集" :image-size="80" />
+          <el-empty v-if="episodeStore.episodes.length === 0" description="暂无剧集" :image-size="80" />
         </div>
       </div>
 
       <!-- 中间区域 - 4 Tab -->
       <div class="center-panel">
-        <template v-if="store.currentEpisode">
+        <template v-if="episodeStore.currentEpisode">
           <el-tabs v-model="activeTab" class="editor-tabs">
             <!-- 剧本标签页 -->
             <el-tab-pane label="剧本" name="script">
@@ -101,21 +101,21 @@
 
       <!-- 右侧面板 - 分镜 -->
       <div class="right-panel">
-        <template v-if="store.currentScene">
+        <template v-if="scriptStore.currentScene">
           <div class="panel-header">
             <h3>分镜列表</h3>
             <div class="panel-actions">
               <el-button
                 size="small"
-                :loading="store.generating"
-                :disabled="store.generating"
+                :loading="workbenchStore.generating"
+                :disabled="workbenchStore.generating"
                 @click="generateStoryboards"
               >
                 <el-icon><MagicStick /></el-icon>
                 生成分镜
               </el-button>
               <el-button
-                v-if="store.storyboards.length > 0"
+                v-if="storyboardStore.storyboards.length > 0"
                 size="small"
                 type="primary"
                 @click="goToVideoProduction"
@@ -128,7 +128,7 @@
 
           <div class="storyboard-list">
             <div
-              v-for="storyboard in store.storyboards"
+              v-for="storyboard in storyboardStore.storyboards"
               :key="storyboard.id"
               class="storyboard-item"
               :class="{
@@ -186,7 +186,7 @@
             </div>
           </div>
 
-          <el-empty v-if="store.storyboards.length === 0" description="暂无分镜" :image-size="80" />
+          <el-empty v-if="storyboardStore.storyboards.length === 0" description="暂无分镜" :image-size="80" />
         </template>
 
         <el-empty v-else description="请选择场景" :image-size="80" />
@@ -199,7 +199,7 @@
     <CreateEpisodeDialog
       v-model="dialogs.createEpisode"
       :project-id="projectId"
-      :initial-episode-number="store.episodes.length + 1"
+      :initial-episode-number="episodeStore.episodes.length + 1"
       :outline-tree-data="outlineTreeData"
       @created="onEpisodeCreated"
     />
@@ -257,7 +257,7 @@
     <!-- 视频合成 -->
     <SynthesisDialog
       v-model="dialogs.synthesis"
-      :storyboard-count="store.storyboards.length"
+      :storyboard-count="storyboardStore.storyboards.length"
       :synthesis-progress="synthesisProgress"
       @submit="synthesizeVideo"
     />
@@ -320,7 +320,16 @@ import {
   ArrowLeft, Setting, Plus, MagicStick, Picture, VideoPlay,
   Delete, ZoomIn, RefreshRight, Edit
 } from '@element-plus/icons-vue'
-import { useStoryToVideoStore } from '@/stores/story-to-video'
+import {
+  useEpWorkbenchStore,
+  useEpProjectStore,
+  useEpEpisodeStore,
+  useEpAssetStore,
+  useEpScriptStore,
+  useEpStoryboardStore,
+  useEpProductionStore,
+  useEpComposeStore
+} from '@/stores/episode-production'
 import { useTabsStore } from '@/stores/tabs'
 import type {
   VideoEpisode, Storyboard, CharacterBinding, LocationBinding, ItemBinding
@@ -357,7 +366,14 @@ import EntityEditDialog from '@/components/episode-production/dialogs/EntityEdit
 
 const route = useRoute()
 const router = useRouter()
-const store = useStoryToVideoStore()
+const workbenchStore = useEpWorkbenchStore()
+const projectStore = useEpProjectStore()
+const episodeStore = useEpEpisodeStore()
+const assetStore = useEpAssetStore()
+const scriptStore = useEpScriptStore()
+const storyboardStore = useEpStoryboardStore()
+const productionStore = useEpProductionStore()
+const composeStore = useEpComposeStore()
 const tabsStore = useTabsStore()
 
 const projectId = computed(() => route.params.projectId as string)
@@ -438,17 +454,17 @@ const dialogs = reactive({
 // ===== 可绑定资产（排除已绑定的） =====
 
 const availableCharacters = computed(() => {
-  const boundIds = store.characterBindings.map((b: CharacterBinding) => b.longWritingCharacterId)
+  const boundIds = assetStore.characterBindings.map((b: CharacterBinding) => b.longWritingCharacterId)
   return longWritingCharacters.value.filter(c => !boundIds.includes(c.id))
 })
 
 const availableItems = computed(() => {
-  const boundIds = store.itemBindings.map((b: ItemBinding) => b.longWritingItemId)
+  const boundIds = assetStore.itemBindings.map((b: ItemBinding) => b.longWritingItemId)
   return longWritingItems.value.filter(item => !boundIds.includes(item.id))
 })
 
 const availableLocations = computed(() => {
-  const boundIds = store.locationBindings.map((b: LocationBinding) => b.longWritingLocationId)
+  const boundIds = assetStore.locationBindings.map((b: LocationBinding) => b.longWritingLocationId)
   return longWritingLocations.value.filter(loc => !boundIds.includes(loc.id))
 })
 
@@ -527,16 +543,16 @@ function selectStoryboard(storyboard: Storyboard) {
 }
 
 async function generateStoryboards() {
-  if (!store.currentScript) {
+  if (!scriptStore.currentScript) {
     ElMessage.warning('请先生成剧本')
     return
   }
-  if (store.scenes.length === 0) {
+  if (scriptStore.scenes.length === 0) {
     ElMessage.warning('请先拆分场景')
     return
   }
 
-  const storyboardModel = store.currentProject?.config?.storyboardModel
+  const storyboardModel = projectStore.currentProject?.config?.storyboardModel
   if (!storyboardModel?.providerConfigId || !storyboardModel?.modelId) {
     ElMessage.warning('请先在项目设置中配置分镜生成模型')
     return
@@ -544,22 +560,22 @@ async function generateStoryboards() {
 
   try {
     const confirm = await ElMessageBox.confirm(
-      `将为 ${store.scenes.length} 个场景生成分镜，是否继续？`,
+      `将为 ${scriptStore.scenes.length} 个场景生成分镜，是否继续？`,
       '生成分镜',
       { confirmButtonText: '生成', cancelButtonText: '取消', type: 'info' }
     ).catch(() => false)
     if (!confirm) return
 
     ElMessage.info('正在生成分镜，请稍候...')
-    const result = await store.generateStoryboards(
-      store.currentScript.id,
+    const result = await storyboardStore.generateStoryboards(
+      scriptStore.currentScript.id,
       storyboardModel.providerConfigId,
       storyboardModel.modelId
     )
     if (result) {
       ElMessage.success(`分镜生成成功，共 ${result.length} 个镜头`)
     } else {
-      ElMessage.error(store.error || '生成分镜失败')
+      ElMessage.error(workbenchStore.error || '生成分镜失败')
     }
   } catch (error: any) {
     ElMessage.error(error.message || '生成分镜失败')
@@ -572,7 +588,7 @@ async function generateSingleStoryboardImage(styleName: string) {
     return
   }
 
-  const imageModel = store.currentProject?.config?.imageModel
+  const imageModel = projectStore.currentProject?.config?.imageModel
   if (!imageModel?.providerConfigId || !imageModel?.modelId) {
     ElMessage.warning('请先在项目设置中配置画面生成模型')
     return
@@ -583,7 +599,7 @@ async function generateSingleStoryboardImage(styleName: string) {
     dialogs.generateImages = false
     ElMessage.info(`正在生成镜头 ${selectedStoryboard.value.shotNumber} 的画面，请稍候...`)
 
-    const result = await store.generateStoryboardImage(
+    const result = await productionStore.generateStoryboardImage(
       selectedStoryboard.value.id,
       styleName,
       imageModel.providerConfigId,
@@ -594,7 +610,7 @@ async function generateSingleStoryboardImage(styleName: string) {
       ElMessage.success('画面生成成功')
       selectedStoryboard.value = result
     } else {
-      ElMessage.error(store.error || '生成画面失败')
+      ElMessage.error(workbenchStore.error || '生成画面失败')
     }
   } catch (error: any) {
     ElMessage.error(error.message || '生成画面失败')
@@ -607,7 +623,7 @@ async function regenerateStoryboardImage(styleName: string, additionalPrompt: st
   if (!dialogs.regeneratingStoryboard) return
 
   try {
-    const result = await store.generateStoryboardImage(
+    const result = await productionStore.generateStoryboardImage(
       dialogs.regeneratingStoryboard.id,
       styleName,
       undefined,
@@ -638,7 +654,7 @@ async function confirmDeleteStoryboardImage(storyboard: Storyboard) {
 }
 
 async function synthesizeVideo(quality: string) {
-  if (!store.currentScene) {
+  if (!scriptStore.currentScene) {
     ElMessage.warning('请先选择场景')
     return
   }
@@ -647,8 +663,8 @@ async function synthesizeVideo(quality: string) {
     synthesisProgress.phase = 'shots'
     synthesisProgress.progress = 0
 
-    const result = await store.synthesizeSceneVideo(
-      store.currentScene.id,
+    const result = await composeStore.synthesizeSceneVideo(
+      scriptStore.currentScene.id,
       quality,
       (phase, progress) => {
         synthesisProgress.phase = phase
@@ -660,7 +676,7 @@ async function synthesizeVideo(quality: string) {
       ElMessage.success(`视频合成成功，时长 ${result.duration} 秒`)
       dialogs.synthesis = false
     } else {
-      ElMessage.error(store.error || '视频合成失败')
+      ElMessage.error(workbenchStore.error || '视频合成失败')
     }
   } catch (error: any) {
     ElMessage.error(error.message || '视频合成失败')
@@ -696,7 +712,7 @@ function getEpisodeStatusType(status: string): '' | 'success' | 'warning' | 'inf
 }
 
 async function selectEpisode(episode: VideoEpisode) {
-  await store.selectEpisode(episode)
+  await episodeStore.selectEpisode(episode)
 }
 
 async function confirmDeleteEpisode(episode: VideoEpisode) {
@@ -706,11 +722,11 @@ async function confirmDeleteEpisode(episode: VideoEpisode) {
       '删除剧集',
       { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
     )
-    const success = await store.deleteEpisode(episode.id)
+    const success = await episodeStore.deleteEpisode(episode.id)
     if (success) {
       ElMessage.success('删除成功')
     } else {
-      ElMessage.error(store.error || '删除失败')
+      ElMessage.error(workbenchStore.error || '删除失败')
     }
   } catch {
     // 用户取消
@@ -722,24 +738,24 @@ function goBack() {
 }
 
 function goToVideoProduction() {
-  if (!store.currentScene) {
+  if (!scriptStore.currentScene) {
     ElMessage.warning('请先选择场景')
     return
   }
-  router.push(`/story-to-video/${projectId.value}/production/${store.currentScene.id}`)
+  router.push(`/story-to-video/${projectId.value}/production/${scriptStore.currentScene.id}`)
 }
 
 // ===== Dialog 事件回调 =====
 
 async function onEpisodeCreated() {
   // 刷新绑定数据（主进程已经自动绑定了角色、地点、物品）
-  await store.loadCharacterBindings(projectId.value)
-  await store.loadLocationBindings(projectId.value)
-  await store.loadItemBindings(projectId.value)
+  await assetStore.loadCharacterBindings(projectId.value)
+  await assetStore.loadLocationBindings(projectId.value)
+  await assetStore.loadItemBindings(projectId.value)
 
   // 选中新创建的剧集（最后一个）
-  if (store.episodes.length > 0) {
-    await selectEpisode(store.episodes[store.episodes.length - 1])
+  if (episodeStore.episodes.length > 0) {
+    await selectEpisode(episodeStore.episodes[episodeStore.episodes.length - 1])
   }
 }
 
@@ -749,15 +765,15 @@ async function onEpisodeUpdated() {
 
 async function onAssetBound() {
   // 刷新绑定列表
-  await store.loadCharacterBindings(projectId.value)
-  await store.loadLocationBindings(projectId.value)
-  await store.loadItemBindings(projectId.value)
+  await assetStore.loadCharacterBindings(projectId.value)
+  await assetStore.loadLocationBindings(projectId.value)
+  await assetStore.loadItemBindings(projectId.value)
 }
 
 async function onEntitySaved() {
-  await store.loadCharacterBindings(projectId.value)
-  await store.loadLocationBindings(projectId.value)
-  await store.loadItemBindings(projectId.value)
+  await assetStore.loadCharacterBindings(projectId.value)
+  await assetStore.loadLocationBindings(projectId.value)
+  await assetStore.loadItemBindings(projectId.value)
 }
 
 function onStoryboardSaved() {
@@ -783,20 +799,20 @@ async function loadProject() {
   await loadProviderConfigs()
   await loadAllLwProjects()
 
-  await store.loadProject(projectId.value)
-  if (store.currentProject) {
-    const projectName = truncateTitle(store.currentProject.name)
+  await projectStore.loadProject(projectId.value)
+  if (projectStore.currentProject) {
+    const projectName = truncateTitle(projectStore.currentProject.name)
     tabsStore.updateTabTitle(route.path, projectName)
 
-    await store.loadEpisodes(projectId.value)
-    await store.loadCharacterBindings(projectId.value)
+    await episodeStore.loadEpisodes(projectId.value)
+    await assetStore.loadCharacterBindings(projectId.value)
 
-    if (store.currentProject.longWritingProjectId) {
-      await loadLongWritingData(store.currentProject.longWritingProjectId)
+    if (projectStore.currentProject.longWritingProjectId) {
+      await loadLongWritingData(projectStore.currentProject.longWritingProjectId)
     }
 
-    if (store.episodes.length === 1) {
-      await selectEpisode(store.episodes[0])
+    if (episodeStore.episodes.length === 1) {
+      await selectEpisode(episodeStore.episodes[0])
     }
   }
 }
