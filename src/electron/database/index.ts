@@ -242,21 +242,36 @@ export class DatabaseManager implements ICoreDatabaseManager {
     // 初始化仓库
     await this.initRepositories()
 
-    // Electron 单用户：写入并设置默认 userId 供 ALS 在没有显式上下文时回退
-    if (this.users) {
+    // Electron 单用户：先注入 ALS 默认 userId，再补写 users 表记录。
+    // 顺序很关键：setDefaultUser 必须在 users.getById/create 抛错也能落地，
+    // 否则 IPC 查询会因为 ALS 没 userId、按 user_id IS NULL 过滤而拿到空集
+    // （场景：旧 PC 库迁移后所有数据 user_id = LOCAL_DEFAULT_USER_ID）。
+    {
       const { LOCAL_DEFAULT_USER_ID, setDefaultUser } = await import(
         '@core/context/user-context'
       )
-      const existing = await this.users.getById(LOCAL_DEFAULT_USER_ID)
-      if (!existing) {
-        await this.users.create({
-          id: LOCAL_DEFAULT_USER_ID,
-          email: 'local@local',
-          displayName: '本地用户',
-          role: 'admin',
-        })
-      }
       setDefaultUser(LOCAL_DEFAULT_USER_ID)
+      console.log(
+        `[DatabaseManager] 已注入 ALS 默认 userId = ${LOCAL_DEFAULT_USER_ID}`,
+      )
+
+      if (this.users) {
+        try {
+          const existing = await this.users.getById(LOCAL_DEFAULT_USER_ID)
+          if (!existing) {
+            await this.users.create({
+              id: LOCAL_DEFAULT_USER_ID,
+              email: 'local@local',
+              displayName: '本地用户',
+              role: 'admin',
+            })
+            console.log('[DatabaseManager] 已创建本地默认用户')
+          }
+        } catch (e) {
+          // 不致命：ALS 默认 userId 已设，业务查询能命中迁移后回填的旧数据
+          console.warn('[DatabaseManager] 写入本地默认用户失败（不致命）:', e)
+        }
+      }
     }
 
     // 初始化 LanceDB 向量数据库
