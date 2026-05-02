@@ -32,6 +32,16 @@ import { WebSocketEventEmitter } from './platform/web-event-emitter'
 import { WebSecureStorage } from './platform/web-secure-storage'
 import { WebDatabaseManager } from './platform/web-database-manager'
 
+// 这三个必须 static import：tsx 在 ESM/CJS 混合下，static 与 dynamic
+// 解析 '@core/...' 可能产生**两份**模块实例，导致 dynamic 端 register 的
+// _accessor 在 static 端（auth/routes 等）看不到。统一走 static 即可。
+import { createDataSource } from '@core/database/data-source'
+import { ensureUsersTable } from '@core/database/migrations/ensure-users-table'
+import { ensureUserIdColumns } from '@core/database/migrations/ensure-user-id-columns'
+import { registerCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { LanceDBService } from '@core/services/lance-db.service'
+import { registerAllWebChannels } from './api/register-channels'
+
 interface ServerConfig {
   port: number
   rootDataPath: string
@@ -94,7 +104,6 @@ async function bootstrap(): Promise<void> {
   await initLanceDB(cfg.rootDataPath)
 
   // 4. 注册 IPC channel 处理器
-  const { registerAllWebChannels } = await import('./api/register-channels')
   await registerAllWebChannels()
 
   // 5. Express
@@ -149,12 +158,6 @@ async function bootstrap(): Promise<void> {
  * 但 entity / Repository 完全共用，TypeORM 自动适配方言）。
  */
 async function initDatabase(): Promise<void> {
-  const { createDataSource } = await import('@core/database/data-source')
-  const { ensureUsersTable } = await import('@core/database/migrations/ensure-users-table')
-  const { registerCoreDatabaseManager } = await import(
-    '@core/database/database-manager.interface'
-  )
-
   const dbCfg = {
     type: 'postgres' as const,
     host: process.env.PGHOST ?? 'localhost',
@@ -168,6 +171,8 @@ async function initDatabase(): Promise<void> {
   const ds = await createDataSource({ config: dbCfg })
   await ds.synchronize()  // 自动建表 + 加 user_id 列
   await ensureUsersTable(ds)
+  // Web 多用户：仅保证 user_id 列存在；旧数据归属由迁移脚本处理
+  await ensureUserIdColumns(ds)
 
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)
@@ -180,7 +185,6 @@ async function initDatabase(): Promise<void> {
  */
 async function initLanceDB(rootDataPath: string): Promise<void> {
   try {
-    const { LanceDBService } = await import('@core/services/lance-db.service')
     const lancePath = path.join(rootDataPath, 'lancedb')
     if (!fs.existsSync(lancePath)) fs.mkdirSync(lancePath, { recursive: true })
     await LanceDBService.getInstance().initialize(lancePath)
