@@ -4,7 +4,7 @@
  */
 
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import type { RouteLocationNormalized } from 'vue-router'
 
 export interface TabItem {
@@ -20,24 +20,75 @@ export interface TabItem {
   affixed?: boolean
 }
 
-export const useTabsStore = defineStore('tabs', () => {
-  // 标签页列表
-  const tabList = ref<TabItem[]>([
-    {
-      path: '/',
-      title: '首页',
-      closable: false,
-      affixed: true
+const STORAGE_KEY = 'tabs:state:v1'
+
+interface PersistedState {
+  tabList: TabItem[]
+  activeTabPath: string
+}
+
+function defaultState(): PersistedState {
+  return {
+    tabList: [{ path: '/', title: '首页', closable: false, affixed: true }],
+    activeTabPath: '/',
+  }
+}
+
+function loadFromStorage(): PersistedState {
+  try {
+    if (typeof sessionStorage === 'undefined') return defaultState()
+    const raw = sessionStorage.getItem(STORAGE_KEY)
+    if (!raw) return defaultState()
+    const parsed = JSON.parse(raw) as Partial<PersistedState> | null
+    if (!parsed || !Array.isArray(parsed.tabList) || typeof parsed.activeTabPath !== 'string') {
+      return defaultState()
     }
-  ])
+    const tabList = parsed.tabList.filter(
+      (t): t is TabItem => !!t && typeof t.path === 'string' && typeof t.title === 'string',
+    )
+    if (!tabList.some(t => t.path === '/')) {
+      tabList.unshift({ path: '/', title: '首页', closable: false, affixed: true })
+    }
+    const activeTabPath = tabList.some(t => t.path === parsed.activeTabPath)
+      ? parsed.activeTabPath
+      : '/'
+    return { tabList, activeTabPath }
+  } catch {
+    return defaultState()
+  }
+}
+
+function saveToStorage(state: PersistedState): void {
+  try {
+    if (typeof sessionStorage === 'undefined') return
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+  } catch {
+    // 配额超限或隐私模式，静默
+  }
+}
+
+export const useTabsStore = defineStore('tabs', () => {
+  const restored = loadFromStorage()
+
+  // 标签页列表
+  const tabList = ref<TabItem[]>(restored.tabList)
 
   // 当前激活的标签路径
-  const activeTabPath = ref('/')
+  const activeTabPath = ref<string>(restored.activeTabPath)
 
   // 计算属性：当前激活的标签
   const activeTab = computed(() => {
     return tabList.value.find(tab => tab.path === activeTabPath.value)
   })
+
+  // 持久化：watch 任意一边变化都写回
+  watch(
+    [tabList, activeTabPath],
+    () => {
+      saveToStorage({ tabList: tabList.value, activeTabPath: activeTabPath.value })
+    },
+    { deep: true },
+  )
 
   /**
    * 添加标签页
