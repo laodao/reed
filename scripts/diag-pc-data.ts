@@ -5,10 +5,10 @@
  * 不依赖 Electron / DataPathService，直接用 typeorm + 真实 sqlite 文件。
  *
  * 用法：
- *   1. 先 `npm run abi:node`（让 better-sqlite3 跑在 host Node 下）
+ *   1. 先 `npm run rebuild:node`（让 better-sqlite3 按 host Node ABI 编译）
  *   2. `npx tsx -r tsconfig-paths/register scripts/diag-pc-data.ts`
  *      可选 DB_PATH=/path/to/the_bot.db（默认 ~/Documents/data/the-bot/the_bot.db）
- *   3. 跑完记得 `npm run abi:electron` 切回 PC 端可用 ABI
+ *   3. 跑完执行 `npm run rebuild:electron` 切回 PC 端可用 ABI
  *
  * 输出三种场景下 dialogs / images 的命中数量：
  *   场景 1：无 ALS userId、无 defaultUserId
