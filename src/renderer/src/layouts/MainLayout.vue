@@ -91,22 +91,6 @@
               </transition>
             </div>
           </li>
-          <!-- 注销（仅 Web 端） -->
-          <li
-            v-if="isWebPlatform"
-            class="nav-item nav-logout"
-            data-test="logout-btn"
-            @click="handleLogout"
-          >
-            <div class="nav-item-content">
-              <div class="nav-icon-wrapper">
-                <SwitchButton class="nav-icon" />
-              </div>
-              <transition name="slide-fade">
-                <span v-if="!isCollapsed" class="nav-label">注销</span>
-              </transition>
-            </div>
-          </li>
         </ul>
       </div>
     </aside>
@@ -147,10 +131,8 @@ import {
   User,
   EditPen,
   Notebook,
-  VideoCamera,
-  SwitchButton
+  VideoCamera
 } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import { useTheme } from '@/composables/useTheme'
 import { useTabsStore } from '@/stores/tabs'
 import TabBar from '@/components/common/TabBar.vue'
@@ -236,42 +218,6 @@ const toggleCollapse = () => {
 
 const navigateTo = (path: string) => {
   router.push(path)
-}
-
-// 仅 Web 端启用注销：Electron 端没有会话概念
-// window.__APP_PLATFORM__ 由 main-web.ts 在 Web 启动时赋值为 'web'
-const isWebPlatform = computed(() => {
-  if (typeof window === 'undefined') return false
-  return window.__APP_PLATFORM__ === 'web'
-})
-
-const handleLogout = async (): Promise<void> => {
-  try {
-    await ElMessageBox.confirm('确定要注销当前账号吗？', '注销确认', {
-      confirmButtonText: '注销',
-      cancelButtonText: '取消',
-      type: 'warning',
-    })
-  } catch {
-    // 用户取消
-    return
-  }
-  try {
-    const resp = await fetch('/api/auth/logout', {
-      method: 'POST',
-      credentials: 'include',
-    })
-    if (!resp.ok) {
-      ElMessage.error(`注销失败 (${resp.status})`)
-      return
-    }
-  } catch (e) {
-    ElMessage.error(`注销失败：${(e as Error).message}`)
-    return
-  }
-  ElMessage.success('已注销')
-  // 直接重新加载，main-web.ts 的 checkAuthOrShowLogin 会回到登录门
-  window.location.reload()
 }
 
 // 路由路径到标题的映射
@@ -549,20 +495,6 @@ watch(
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   position: relative;
   z-index: 1;
-}
-
-// 注销按钮（仅 Web 端显示，强调"危险"动作）
-.nav-item.nav-logout {
-  &:hover {
-    background: rgba(220, 38, 38, 0.12);
-
-    .nav-icon {
-      color: #dc2626;
-    }
-    .nav-label {
-      color: #dc2626;
-    }
-  }
 }
 
 // ==================== 主内容区 ====================
