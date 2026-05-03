@@ -16,7 +16,7 @@ test.describe('Web 端 - 剧集制作', () => {
     await expect(page).toHaveTitle(/剧集制作/)
   })
 
-  test('IPC stv:list-projects 返回项目数组', async ({ page }) => {
+  test('IPC ep:list-projects 返回项目数组', async ({ page }) => {
     const data = await invokeIpcUnwrap<unknown[]>(
       page.context().request,
       'ep:list-projects',
