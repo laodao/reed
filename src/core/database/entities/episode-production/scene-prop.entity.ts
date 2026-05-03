@@ -22,4 +22,11 @@ export class ScenePropEntity {
 
   @Column({ name: 'prop_name', type: 'text' })
   propName!: string
+
+  /**
+   * 关联的道具绑定 ID（item_bindings.id）。
+   * 迁移时按 prop_name = item_bindings.item_name 自动回填；匹配不到则为 NULL。
+   */
+  @Column({ name: 'item_binding_id', type: 'varchar', nullable: true })
+  itemBindingId!: string | null
 }

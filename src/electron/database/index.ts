@@ -362,6 +362,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
    * 3. ensureAssetBindingSourceType —— P2: episode-production binding 加 source_type/override_x/standalone_x + 3D 接入点
    * 4. createAssetImage —— P2 task 2: 新建 asset_image 表 + 把 *_binding.image_paths JSON 数据搬过来
    * 5. createStoryboardKeyframe —— P2 task 3: 新建 storyboard_keyframe 表 + storyboard 多模式字段 + 搬 frame_image_id
+   * 6. ensureScenePropItemBinding —— P2 task 4: scene_props 加 item_binding_id + 按 prop_name 匹配回填
    * 必须在 schema drift 检查之前执行，否则旧库会因为缺列而被判定漂移。
    */
   private async runMultiTenantMigrations(): Promise<void> {
@@ -387,6 +388,10 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-storyboard-keyframe'
     )
     await createStoryboardKeyframe(this.dataSource)
+    const { ensureScenePropItemBinding } = await import(
+      '@core/database/migrations/scene-prop-item-binding'
+    )
+    await ensureScenePropItemBinding(this.dataSource)
   }
 
   /**
