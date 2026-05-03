@@ -3,7 +3,8 @@ import { Column, Entity, Index, PrimaryColumn } from 'typeorm'
 /**
  * 长文写作角色 Entity
  * 对齐 lw_story_characters DDL（FK CASCADE 到 lw_projects；FK SET NULL 到 portrait_variants）。
- * 含 ALTER 后扩展列：importance / template_type / generated_image_id / source_type / source_episode_id。
+ * 含 ALTER 后扩展列：importance / template_type / source_type / source_episode_id。
+ * portrait_id / generated_image_id 已于 P2 Task 6 数据搬运后从 entity 移除（SQL 列保留 deprecated）。
  */
 @Entity({ name: 'lw_story_characters' })
 @Index('idx_lw_characters_project_id', ['projectId'])
@@ -21,9 +22,6 @@ export class LwCharacterEntity {
 
   @Column({ name: 'project_id', type: 'varchar' })
   projectId!: string
-
-  @Column({ name: 'portrait_id', type: 'text', nullable: true })
-  portraitId!: string | null
 
   @Column({ name: 'name', type: 'varchar' })
   name!: string
@@ -69,9 +67,6 @@ export class LwCharacterEntity {
 
   @Column({ name: 'template_type', type: 'text', nullable: true })
   templateType!: string | null
-
-  @Column({ name: 'generated_image_id', type: 'text', nullable: true })
-  generatedImageId!: string | null
 
   @Column({ name: 'major_events', type: 'text', nullable: true })
   majorEvents!: string | null

@@ -41,7 +41,7 @@ export class LwLocationRepository extends BaseRepository<
       importance: e.importance as LocationImportance,
       entityImportance: (e.entityImportance as EntityImportance) || 'secondary',
       templateType: (e.templateType as TemporaryLocationTemplateType | null) ?? undefined,
-      generatedImageId: e.generatedImageId ?? undefined,
+      // generatedImageId 已从 entity 移除（数据在 asset_image）
       mapId: e.mapId ?? undefined,
       sourceType: (e.sourceType as EntitySourceType) || 'longwriting',
       sourceEpisodeId: e.sourceEpisodeId ?? undefined,
@@ -79,6 +79,7 @@ export class LwLocationRepository extends BaseRepository<
     importance: LocationImportance
     entityImportance?: EntityImportance
     templateType?: TemporaryLocationTemplateType
+    /** @deprecated generatedImageId 已从 entity 移除，写入会被忽略；数据应写 asset_image 表 */
     generatedImageId?: string
     description: string
     mapId?: string
@@ -96,7 +97,7 @@ export class LwLocationRepository extends BaseRepository<
       importance: data.importance,
       entityImportance: data.entityImportance || 'secondary',
       templateType: data.templateType ?? null,
-      generatedImageId: data.generatedImageId ?? null,
+      // generatedImageId 已从 entity 移除，create 时忽略
       mapId: data.mapId ?? null,
       sourceType: data.sourceType || 'longwriting',
       sourceEpisodeId: data.sourceEpisodeId ?? null,
@@ -121,7 +122,7 @@ export class LwLocationRepository extends BaseRepository<
     if (data.importance !== undefined) { existing.importance = data.importance; changed = true }
     if (data.entityImportance !== undefined) { existing.entityImportance = data.entityImportance; changed = true }
     if (data.templateType !== undefined) { existing.templateType = data.templateType ?? null; changed = true }
-    if (data.generatedImageId !== undefined) { existing.generatedImageId = data.generatedImageId ?? null; changed = true }
+    // generatedImageId 已从 entity 移除，update 时忽略
     if (data.mapId !== undefined) { existing.mapId = data.mapId ?? null; changed = true }
     if (data.sourceType !== undefined) { existing.sourceType = data.sourceType; changed = true }
     if (data.sourceEpisodeId !== undefined) { existing.sourceEpisodeId = data.sourceEpisodeId ?? null; changed = true }

@@ -364,6 +364,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
    * 5. createStoryboardKeyframe —— P2 task 3: 新建 storyboard_keyframe 表 + storyboard 多模式字段 + 搬 frame_image_id
    * 6. ensureScenePropItemBinding —— P2 task 4: scene_props 加 item_binding_id + 按 prop_name 匹配回填
    * 7. expandEpisodeStatus —— P2 task 5: EpisodeStatus 扩展：reviewing→composing + 新增 asset_prep
+   * 8. stripLwImageFields  —— P2 task 6: 长文图字段移除（portrait_id → character_bindings，generated_image_id → asset_image）
    * 必须在 schema drift 检查之前执行，否则旧库会因为缺列而被判定漂移。
    */
   private async runMultiTenantMigrations(): Promise<void> {
@@ -398,6 +399,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/expand-episode-status'
     )
     await expandEpisodeStatus(this.dataSource)
+    // P2 task 6: 长文图字段移除 —— portrait_id → character_bindings，generated_image_id → asset_image
+    const { stripLwImageFields } = await import(
+      '@core/database/migrations/strip-lw-image-fields'
+    )
+    await stripLwImageFields(this.dataSource)
   }
 
   /**

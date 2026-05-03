@@ -43,6 +43,7 @@ import { createAssetImage } from '@core/database/migrations/create-asset-image'
 import { createStoryboardKeyframe } from '@core/database/migrations/create-storyboard-keyframe'
 import { ensureScenePropItemBinding } from '@core/database/migrations/scene-prop-item-binding'
 import { expandEpisodeStatus } from '@core/database/migrations/expand-episode-status'
+import { stripLwImageFields } from '@core/database/migrations/strip-lw-image-fields'
 import { registerCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { LanceDBService } from '@core/services/lance-db.service'
 import { registerAllWebChannels } from './api/register-channels'
@@ -187,6 +188,8 @@ async function initDatabase(): Promise<void> {
   await ensureScenePropItemBinding(ds)
   // P2 task 5: EpisodeStatus 扩展：reviewing→composing + pending 按要素分流到 asset_prep
   await expandEpisodeStatus(ds)
+  // P2 task 6: 长文图字段移除 —— portrait_id → character_bindings，generated_image_id → asset_image
+  await stripLwImageFields(ds)
 
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)

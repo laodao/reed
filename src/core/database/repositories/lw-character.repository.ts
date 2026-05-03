@@ -37,7 +37,7 @@ export class LwCharacterRepository extends BaseRepository<
     return {
       id: e.id,
       projectId: e.projectId,
-      portraitId: e.portraitId ?? undefined,
+      // portraitId / generatedImageId 已从 entity 移除（数据在 character_bindings / asset_image）
       name: e.name,
       gender: e.gender as any,
       age: e.age ?? undefined,
@@ -53,7 +53,6 @@ export class LwCharacterRepository extends BaseRepository<
       rolePosition: e.rolePosition as any,
       importance: (e.importance as EntityImportance) || 'secondary',
       templateType: (e.templateType as TemporaryCharacterTemplateType | null) ?? undefined,
-      generatedImageId: e.generatedImageId ?? undefined,
       majorEvents: e.majorEvents ?? '',
       sourceType: (e.sourceType as EntitySourceType) || 'longwriting',
       sourceEpisodeId: e.sourceEpisodeId ?? undefined,
@@ -85,7 +84,10 @@ export class LwCharacterRepository extends BaseRepository<
   }
 
   async getByPortraitId(portraitId: string): Promise<StoryCharacter[]> {
-    return this.findManyByWhere({ portraitId } as any)
+    // portraitId 字段已从 entity 移除，此方法暂时返回空数组（消费方应改为从 character_bindings 查询）
+    // TODO: 后续 task 中从 character_bindings 表查询
+    void portraitId
+    return []
   }
 
   /** 数组转字符串，对象 JSON 序列化（保留原行为） */
@@ -102,7 +104,7 @@ export class LwCharacterRepository extends BaseRepository<
     const entity = this.repo.create({
       id,
       projectId: data.projectId,
-      portraitId: data.portraitId ?? null,
+      // portraitId / generatedImageId 已从 entity 移除，create 时忽略（数据存 character_bindings / asset_image）
       name: this.normalizeValue(data.name),
       gender: data.gender || 'male',
       age: data.age ?? 25,
@@ -119,7 +121,6 @@ export class LwCharacterRepository extends BaseRepository<
       majorEvents: this.normalizeValue(data.majorEvents),
       importance: data.importance || 'secondary',
       templateType: data.templateType ?? null,
-      generatedImageId: data.generatedImageId ?? null,
       sourceType: data.sourceType || 'longwriting',
       sourceEpisodeId: data.sourceEpisodeId ?? null,
       createdAt: now,
@@ -147,10 +148,7 @@ export class LwCharacterRepository extends BaseRepository<
       }
     }
 
-    if (data.portraitId !== undefined) {
-      existing.portraitId = data.portraitId === '' ? null : data.portraitId
-      changed = true
-    }
+    // portraitId / generatedImageId 已从 entity 移除，update 时忽略
     apply('name', data.name as any)
     apply('gender', data.gender as any)
     apply('age', data.age as any)
@@ -166,10 +164,6 @@ export class LwCharacterRepository extends BaseRepository<
     apply('rolePosition', data.rolePosition as any)
     apply('importance', data.importance as any)
     apply('templateType', data.templateType as any)
-    if (data.generatedImageId !== undefined) {
-      existing.generatedImageId = data.generatedImageId === '' ? null : data.generatedImageId
-      changed = true
-    }
     apply('majorEvents', data.majorEvents as any)
     apply('sourceType', data.sourceType as any)
     if (data.sourceEpisodeId !== undefined) {

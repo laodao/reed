@@ -314,7 +314,7 @@ export interface StoryLocation {
   importance: LocationImportance
   entityImportance: EntityImportance    // 实体重要性分类
   templateType?: TemporaryLocationTemplateType  // 临时实体模板类型
-  generatedImageId?: string  // 自动生成的形象图片ID
+  // generatedImageId 已移至 asset_image 表（P2 Task 6）
   mapId?: string            // 关联地图 ID
   sourceType?: EntitySourceType  // 来源类型：longwriting 或 uploaded
   sourceEpisodeId?: string      // 来源剧集ID（uploaded模式时使用）
@@ -716,7 +716,7 @@ export interface StoryCharacter {
   rolePosition: CharacterRolePosition
   importance: EntityImportance  // 重要性分类
   templateType?: TemporaryCharacterTemplateType  // 临时实体模板类型
-  generatedImageId?: string  // 自动生成的形象图片ID
+  // generatedImageId 已移至 asset_image 表（P2 Task 6）
   majorEvents: string        // 主要事件
   sourceType?: EntitySourceType  // 来源类型：longwriting 或 uploaded
   sourceEpisodeId?: string      // 来源剧集ID（uploaded模式时使用）
@@ -950,7 +950,7 @@ export interface CreateCharacterRequest {
   rolePosition?: CharacterRolePosition
   importance?: EntityImportance      // 重要性分类
   templateType?: TemporaryCharacterTemplateType  // 临时实体模板类型
-  generatedImageId?: string         // 自动生成的形象图片ID
+  // generatedImageId 已移至 asset_image 表（P2 Task 6）
   majorEvents?: string
   portraitId?: string
   sourceType?: EntitySourceType     // 来源类型（uploaded模式时使用）
@@ -976,7 +976,7 @@ export interface UpdateCharacterRequest {
   rolePosition?: CharacterRolePosition
   importance?: EntityImportance      // 重要性分类
   templateType?: TemporaryCharacterTemplateType  // 临时实体模板类型
-  generatedImageId?: string         // 自动生成的形象图片ID
+  // generatedImageId 已移至 asset_image 表（P2 Task 6）
   majorEvents?: string
   portraitId?: string
   sourceType?: EntitySourceType     // 来源类型

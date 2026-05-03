@@ -42,9 +42,6 @@ export class LwLocationEntity {
   @Column({ name: 'template_type', type: 'text', nullable: true })
   templateType!: string | null
 
-  @Column({ name: 'generated_image_id', type: 'text', nullable: true })
-  generatedImageId!: string | null
-
   @Column({ name: 'source_type', type: 'text', default: 'longwriting', nullable: true })
   sourceType!: string | null
 

@@ -4,10 +4,12 @@
  * @description 临时角色/地点图片生成服务。
  *              拆自原 story-to-video-resource.service.ts 的
  *              generateTemporaryCharacterImage / generateTemporaryLocationImage 方法。
- *              注意：P3 阶段会移除 lw-character/lw-location entity 上的 generatedImageId 字段；
- *              本 phase 保持与原实现完全一致，不做任何字段清理。
+ *              P2 Task 6：lw entity 的 generatedImageId 字段已移除，
+ *              生成结果改为写入 asset_image 表（category='main'，is_main=1）。
  */
 
+import { randomBytes } from 'crypto'
+import type { DataSource } from 'typeorm'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { ImageService } from '@core/services/image.service'
 import type { ImageGenerationRequest } from '@shared/types'
@@ -92,10 +94,8 @@ export class TempAssetService {
         const imageInfo = response.images[0]
         const imageRef = imageInfo.url || ''
 
-        // 更新角色的 generatedImageId
-        await db.lwCharacters?.update(characterId, {
-          generatedImageId: imageRef,
-        })
+        // 写入 asset_image 表（character/main）—— P2 Task 6 移除 lw entity.generatedImageId 后的新写路径
+        await writeAssetImageMain(db.dataSource, 'character', characterId, imageRef)
 
         console.log(`[StoryToVideoResource] 临时角色图片生成成功: ${imageRef}`)
 
@@ -174,10 +174,8 @@ export class TempAssetService {
         const imageInfo = response.images[0]
         const imageRef = imageInfo.url || ''
 
-        // 更新地点的 generatedImageId
-        await db.lwLocations?.update(locationId, {
-          generatedImageId: imageRef,
-        })
+        // 写入 asset_image 表（location/main）—— P2 Task 6 移除 lw entity.generatedImageId 后的新写路径
+        await writeAssetImageMain(db.dataSource, 'location', locationId, imageRef)
 
         return {
           success: true,
@@ -194,4 +192,40 @@ export class TempAssetService {
       return { success: false, error: error.message }
     }
   }
+}
+
+/**
+ * 将生成图写入 asset_image 表作为 main 图（幂等）。
+ * asset_id 为 binding 的 id；此处直接用 lwCharacterId / lwLocationId 作为 asset_id 的备选，
+ * 实际上 temp-asset 阶段 binding 不一定存在，因此以 lwEntityId 作为 asset_id。
+ * 若 asset_image 中已有 (asset_type, asset_id, is_main=1) 则跳过，保持幂等。
+ *
+ * @param ds - TypeORM DataSource
+ * @param assetType - 'character' | 'location'
+ * @param assetId - 对应 binding 或 lw entity 的 id
+ * @param imagePath - 图片路径
+ */
+async function writeAssetImageMain(
+  ds: DataSource | null,
+  assetType: 'character' | 'location',
+  assetId: string,
+  imagePath: string,
+): Promise<void> {
+  if (!ds) return
+  const isPg = ds.options.type === 'postgres'
+  const ph = (n: number) => (isPg ? `$${n}` : '?')
+
+  // 幂等检查
+  const existing = await ds.query(
+    `SELECT 1 FROM asset_image WHERE asset_type = ${ph(1)} AND asset_id = ${ph(2)} AND is_main = 1 LIMIT 1`,
+    [assetType, assetId],
+  )
+  if (existing.length > 0) return
+
+  const id = `ai_${randomBytes(8).toString('hex')}`
+  await ds.query(
+    `INSERT INTO asset_image (id, asset_type, asset_id, category, image_path, is_main, sort_order, created_at)
+     VALUES (${ph(1)}, ${ph(2)}, ${ph(3)}, 'main', ${ph(4)}, 1, 0, ${isPg ? 'NOW()' : 'CURRENT_TIMESTAMP'})`,
+    [id, assetType, assetId, imagePath],
+  )
 }
