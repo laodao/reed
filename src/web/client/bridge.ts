@@ -25,64 +25,80 @@ function camelToKebab(s: string): string {
   return s.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase()
 }
 
-function resolveEntry(namespace: string, method: string): ChannelEntry & { channel: string } {
-  const key = `${namespace}.${method}`
-  const override = CHANNEL_OVERRIDES[key]
-  const channel = override?.channel ?? `${camelToKebab(namespace)}:${camelToKebab(method)}`
+/**
+ * 把 dot path（如 'episodeProduction.asset.character.list'）拆成 namespace + method 用于 channel-map 查找。
+ * 兼容旧两段式（'episodeProduction.listProjects'）和新多段式（'episodeProduction.asset.character.list'）。
+ */
+function resolveEntryByPath(dotPath: string): ChannelEntry & { channel: string } {
+  // 优先精确查找完整 dot path（channel-map 的 key 已是完整 dot 形式）
+  const override = CHANNEL_OVERRIDES[dotPath]
+  if (override?.channel) {
+    return {
+      channel: override.channel,
+      wrap: override.wrap,
+      eventChannel: override.eventChannel,
+      legacyEventArg: override.legacyEventArg,
+    }
+  }
+  // 兜底：取 dot path 最后一段为 method，前面拼成 namespace；
+  // 用 camelToKebab 拼默认 channel。这条路径只有 channel-map 没覆盖时走到。
+  const lastDotIdx = dotPath.lastIndexOf('.')
+  const namespace = lastDotIdx >= 0 ? dotPath.slice(0, lastDotIdx) : ''
+  const method = lastDotIdx >= 0 ? dotPath.slice(lastDotIdx + 1) : dotPath
   return {
-    channel,
-    wrap: override?.wrap,
-    eventChannel: override?.eventChannel,
-    legacyEventArg: override?.legacyEventArg,
+    channel: namespace
+      ? `${camelToKebab(namespace.replace(/\./g, '-'))}:${camelToKebab(method)}`
+      : camelToKebab(method),
   }
 }
 
 /**
- * 创建一个命名空间代理：electronAPI.<ns>.<method>(args) → rpcInvoke(channel, ...args)
- *                     electronAPI.<ns>.on<Event>(cb)    → wsOn(channel, cb)
+ * 创建支持任意层级嵌套的 callable namespace proxy：
+ *   electronAPI.episodeProduction.listProjects(args)                  → rpcInvoke(channel, ...args) — 两层嵌套
+ *   electronAPI.episodeProduction.asset.character.list(projectId)     → rpcInvoke(channel, ...args) — 多层嵌套
+ *   electronAPI.<ns>.on<Event>(cb)                                    → wsOn(channel, cb)
+ *
+ * 实现要点：
+ * - 返回 callable Proxy（target 是函数）—— 支持继续 .property 访问 + 直接调用
+ * - prefix 用 dot path 累积；调用时按完整 prefix 查 channel-map
+ * - 任意一层都可继续访问 sub-namespace 也可直接调用，不需提前知道是哪种
  */
-function createNamespaceProxy(namespace: string): unknown {
-  return new Proxy(
-    {},
-    {
-      get(_target, prop: string) {
-        if (typeof prop !== 'string') return undefined
+function createNamespaceProxy(prefix: string): unknown {
+  const target = function () {} as any
+  return new Proxy(target, {
+    get(_t, prop: string) {
+      if (typeof prop !== 'string') return undefined
 
-        // onXxx / onYyyChanged：订阅事件
-        // 支持两种签名：
-        //   1) onEvent(cb)              — 静态 channel
-        //   2) onEvent(arg1, arg2, cb)  — 动态 channel（需 eventChannel 配置）
-        if (prop.startsWith('on') && prop.length > 2 && prop[2] === prop[2].toUpperCase()) {
-          return (...args: unknown[]) => {
-            const entry = resolveEntry(namespace, prop)
-            const cb = args[args.length - 1] as (...cbArgs: unknown[]) => void
-            if (typeof cb !== 'function') {
-              console.warn(
-                `[bridge] ${namespace}.${prop} 调用缺少回调函数（最后一个参数）`,
-              )
-              return () => {}
-            }
-            const channel = entry.eventChannel
-              ? entry.eventChannel(...args.slice(0, -1))
-              : entry.channel
-            // 部分 preload 把 IpcRendererEvent 透传给业务回调（chat.onStream /
-            // image.onGenerationEvent），渲染端按 (event, data) 解构。Web 这边没
-            // 真实 event，模拟成 cb(undefined, data) 对齐契约。
-            const wrapped = entry.legacyEventArg
-              ? (data: unknown) => cb(undefined, data)
-              : cb
-            return wsOn(channel, wrapped)
-          }
-        }
-
+      // onXxx / onYyyChanged：订阅事件（仅在 prop 是 onXxx 形式时识别）
+      if (prop.startsWith('on') && prop.length > 2 && prop[2] === prop[2].toUpperCase()) {
         return (...args: unknown[]) => {
-          const entry = resolveEntry(namespace, prop)
-          const finalArgs = entry.wrap ? entry.wrap(...args) : args
-          return rpcInvoke(entry.channel, ...finalArgs)
+          const fullPath = `${prefix}.${prop}`
+          const entry = resolveEntryByPath(fullPath)
+          const cb = args[args.length - 1] as (...cbArgs: unknown[]) => void
+          if (typeof cb !== 'function') {
+            console.warn(`[bridge] ${fullPath} 调用缺少回调函数（最后一个参数）`)
+            return () => {}
+          }
+          const channel = entry.eventChannel
+            ? entry.eventChannel(...args.slice(0, -1))
+            : entry.channel
+          const wrapped = entry.legacyEventArg
+            ? (data: unknown) => cb(undefined, data)
+            : cb
+          return wsOn(channel, wrapped)
         }
-      },
+      }
+
+      // 否则继续累积 prefix，返回又一层 callable proxy
+      return createNamespaceProxy(`${prefix}.${prop}`)
     },
-  )
+    apply(_t, _thisArg, args: unknown[]) {
+      // 直接调用：按当前 prefix 查 channel-map
+      const entry = resolveEntryByPath(prefix)
+      const finalArgs = entry.wrap ? entry.wrap(...args) : args
+      return rpcInvoke(entry.channel, ...finalArgs)
+    },
+  })
 }
 
 /**
