@@ -372,6 +372,10 @@ export class DatabaseManager implements ICoreDatabaseManager {
     const { LOCAL_DEFAULT_USER_ID } = await import('@core/context/user-context')
     await ensureUsersTable(this.dataSource)
     await ensureUserIdColumns(this.dataSource, LOCAL_DEFAULT_USER_ID)
+    const { ensureAssetBindingSourceType } = await import(
+      '@core/database/migrations/ensure-asset-binding-source-type'
+    )
+    await ensureAssetBindingSourceType(this.dataSource)
   }
 
   /**

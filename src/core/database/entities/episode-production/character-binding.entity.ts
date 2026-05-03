@@ -53,6 +53,28 @@ export class CharacterBindingEntity {
   @Column({ name: 'additional_prompts', type: 'text', nullable: true })
   additionalPrompts!: string | null
 
+  // ─── source_type + override_* + standalone_*（spec §3.7，migration: ensure-asset-binding-source-type）
+  @Column({ name: 'source_type', type: 'text', default: 'standalone' })
+  sourceType!: 'linked_lw' | 'standalone'
+
+  @Column({ name: 'override_name', type: 'text', nullable: true })
+  overrideName!: string | null
+
+  @Column({ name: 'override_description', type: 'text', nullable: true })
+  overrideDescription!: string | null
+
+  @Column({ name: 'override_appearance', type: 'text', nullable: true })
+  overrideAppearance!: string | null
+
+  @Column({ name: 'override_outfit', type: 'text', nullable: true })
+  overrideOutfit!: string | null
+
+  @Column({ name: 'standalone_name', type: 'text', nullable: true })
+  standaloneName!: string | null
+
+  @Column({ name: 'standalone_description', type: 'text', nullable: true })
+  standaloneDescription!: string | null
+
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 

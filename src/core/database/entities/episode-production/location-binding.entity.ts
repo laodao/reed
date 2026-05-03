@@ -55,6 +55,29 @@ export class LocationBindingEntity {
   @Column({ name: 'generate_images', type: 'integer', default: 0 })
   generateImages!: number
 
+  // ─── source_type + override_* + standalone_*（spec §3.7，migration: ensure-asset-binding-source-type）
+  @Column({ name: 'source_type', type: 'text', default: 'standalone' })
+  sourceType!: 'linked_lw' | 'standalone'
+
+  @Column({ name: 'override_name', type: 'text', nullable: true })
+  overrideName!: string | null
+
+  @Column({ name: 'override_description', type: 'text', nullable: true })
+  overrideDescription!: string | null
+
+  @Column({ name: 'standalone_name', type: 'text', nullable: true })
+  standaloneName!: string | null
+
+  @Column({ name: 'standalone_description', type: 'text', nullable: true })
+  standaloneDescription!: string | null
+
+  // ─── 3D 接入点（spec §4.5，migration: ensure-asset-binding-source-type）
+  @Column({ name: 'panorama_3d_id', type: 'text', nullable: true })
+  panorama3dId!: string | null
+
+  @Column({ name: 'scene_layout_id', type: 'text', nullable: true })
+  sceneLayoutId!: string | null
+
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 
