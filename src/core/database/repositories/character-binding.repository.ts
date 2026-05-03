@@ -11,7 +11,6 @@ import {
   CharacterBinding,
 } from '@shared/types/story-to-video.types'
 import { CharacterBindingEntity } from '../entities/episode-production/character-binding.entity'
-import { LwCharacterEntity } from '../entities/lw-character.entity'
 import { BaseRepository } from '../base-repository'
 
 export interface CreateCharacterBindingRequest {
@@ -87,27 +86,10 @@ export class CharacterBindingRepository extends BaseRepository<
   }
 
   async getByProjectId(projectId: string): Promise<CharacterBinding[]> {
-    // LEFT JOIN lw_story_characters 同步 portrait_id（绑定为空时从长文角色取）
-    // scoped.qb 已自动按 user_id 过滤 cb；c 的 user_id 由 ON 条件兼容自动匹配
-    const qb = this.scoped
-      .qb('cb')
-      .leftJoin(LwCharacterEntity, 'c', 'cb.long_writing_character_id = c.id')
-      .select('cb')
-      .addSelect(
-        'COALESCE(cb.portrait_id, c.portrait_id)',
-        'cb_synced_portrait_id',
-      )
-      .andWhere('cb.project_id = :pid', { pid: projectId })
-    const rows = await qb.getRawAndEntities()
-
-    return rows.entities.map((entity, idx) => {
-      const dto = this.toDto(entity)
-      const syncedRaw = rows.raw[idx]?.cb_synced_portrait_id
-      if (!dto.portraitId && syncedRaw) {
-        dto.portraitId = syncedRaw
-      }
-      return dto
-    })
+    // P2 Task 6 后 lw_story_characters.portrait_id 已移除，
+    // portrait_id 仅保留在 character_bindings 自身，不再 JOIN 同步
+    const entities = await this.scoped.find({ where: { projectId } as any })
+    return entities.map(e => this.toDto(e))
   }
 
   async getById(id: string): Promise<CharacterBinding | null> {

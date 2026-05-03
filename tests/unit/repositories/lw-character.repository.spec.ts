@@ -51,7 +51,9 @@ describe.each(getTestDialects())('LwCharacterRepository [%s]', dialect => {
     } as any)
     expect((await repo.getByProjectId('p1')).length).toBe(2)
     expect((await repo.getTemporaryByProjectId('p1')).length).toBe(1)
-    expect((await repo.getByPortraitId('pt1')).length).toBe(1)
+    // P2 Task 6 后 lw_story_characters.portrait_id 已从 entity 移除，
+    // getByPortraitId 暂返回空数组（消费方应改为从 character_bindings 查询）
+    expect((await repo.getByPortraitId('pt1')).length).toBe(0)
   })
 
   it('update：portraitId 空字符串转 null', async () => {
