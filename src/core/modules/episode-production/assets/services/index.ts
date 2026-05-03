@@ -31,3 +31,10 @@ export type {
   LocationStandalonePatch,
   PickVariantInput,
 } from './location-asset.service'
+export { ItemAssetService } from './item-asset.service'
+export type {
+  CreateStandaloneItemInput,
+  CreateLinkedLwItemInput,
+  ItemOverridePatch,
+  ItemStandalonePatch,
+} from './item-asset.service'
