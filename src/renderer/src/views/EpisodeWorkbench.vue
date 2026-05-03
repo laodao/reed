@@ -94,7 +94,7 @@
               />
             </el-tab-pane>
 
-            <!-- ② 资产（P3a Task 11 · 新版资产盘点页 + Task 12/13 角色 / 地点编辑器） -->
+            <!-- ② 资产（P3a Task 11 · 新版资产盘点页 + Task 12/13/14 角色 / 地点 / 物品 / 语音 编辑器） -->
             <el-tab-pane label="② 资产" name="asset-v2">
               <AssetStageView
                 v-if="!selectedAsset"
@@ -117,14 +117,18 @@
                 @close="selectedAsset = null"
                 @saved="onAssetSaved"
               />
-              <!-- item/voice editor 留 task 14 接入 -->
-              <div v-else class="ep-stub-editor">
-                <el-button text @click="selectedAsset = null">
-                  <el-icon><ArrowLeft /></el-icon>
-                  <span>返回盘点</span>
-                </el-button>
-                <el-empty :description="`${selectedAsset.type} 编辑器 · Task 14 实现`" />
-              </div>
+              <ItemAssetEditor
+                v-else-if="selectedAsset.type === 'item'"
+                :binding-id="selectedAsset.id"
+                @close="selectedAsset = null"
+                @saved="onAssetSaved"
+              />
+              <VoiceAssetEditor
+                v-else-if="selectedAsset.type === 'voice'"
+                :voice-id="selectedAsset.id"
+                @close="selectedAsset = null"
+                @saved="onAssetSaved"
+              />
             </el-tab-pane>
           </el-tabs>
         </template>
@@ -385,6 +389,10 @@ import AssetStageView from '@/components/episode-production/stage-asset/AssetSta
 import CharacterAssetEditor from '@/components/episode-production/stage-asset/character/CharacterAssetEditor.vue'
 // P3a Task 13 · 地点资产编辑器（双栏：设定卡 + 图谱）
 import LocationAssetEditor from '@/components/episode-production/stage-asset/location/LocationAssetEditor.vue'
+// P3a Task 14 · 物品资产编辑器（双栏：设定卡 + 图谱 view+context）
+import ItemAssetEditor from '@/components/episode-production/stage-asset/item/ItemAssetEditor.vue'
+// P3a Task 14 · 语音资产编辑器（单栏：声音卡，无图谱）
+import VoiceAssetEditor from '@/components/episode-production/stage-asset/voice/VoiceAssetEditor.vue'
 
 // Dialogs
 import CreateEpisodeDialog from '@/components/episode-production/dialogs/CreateEpisodeDialog.vue'
@@ -927,11 +935,11 @@ async function loadProviderConfigs(): Promise<void> {
   }
 }
 
-// ===== P3a Task 11 / Task 12 / Task 13 · ② 资产 tab handlers =====
+// ===== P3a Task 11 / Task 12 / Task 13 / Task 14 · ② 资产 tab handlers =====
 // Task 11 引入 AssetStageView 资产盘点页；
 // Task 12 接入 CharacterAssetEditor，Task 13 接入 LocationAssetEditor，
+// Task 14 接入 ItemAssetEditor + VoiceAssetEditor（4 类资产 editor 全覆盖）；
 // 通过 selectedAsset 状态在 stage view ↔ editor 切换。
-// item / voice 编辑器留 Task 14 实现。
 
 const selectedAsset = ref<{ type: 'character' | 'location' | 'item' | 'voice'; id: string } | null>(null)
 
@@ -1153,17 +1161,6 @@ watch(projectId, () => {
     display: flex;
     flex-direction: column;
   }
-}
-
-// Task 12 / Task 13 · 资产编辑器占位（item/voice 留 Task 14）
-.ep-stub-editor {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  padding: 16px;
-  background: var(--el-bg-color-page);
-  gap: 16px;
 }
 
 // 右侧分镜列表
