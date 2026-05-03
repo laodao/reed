@@ -38,3 +38,4 @@ export type {
   ItemOverridePatch,
   ItemStandalonePatch,
 } from './item-asset.service'
+export { VoiceAssetService } from './voice-asset.service'
