@@ -50,3 +50,9 @@ export type {
   GenerateForInput,
   UploadForInput,
 } from './panorama-generator.service'
+export { PanoramaSnapshotService } from './panorama-snapshot.service'
+export type {
+  Viewpoint,
+  SnapshotFileWriter,
+  CreateSnapshotInput,
+} from './panorama-snapshot.service'
