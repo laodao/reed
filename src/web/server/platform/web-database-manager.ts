@@ -78,6 +78,7 @@ import { SceneActionRepository } from '@core/database/repositories/scene-action.
 import { StoryboardCharacterRepository } from '@core/database/repositories/storyboard-character.repository'
 import { ImageAssetRepository } from '@core/database/repositories/image-asset.repository'
 import { OSSConfigRepository } from '@core/database/repositories/oss-config.repository'
+import { AssetImageRepository } from '@core/database/repositories/asset-image.repository'
 
 export class WebDatabaseManager implements ICoreDatabaseManager {
   readonly dataSource: DataSource | null
@@ -162,6 +163,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   sceneActions: SceneActionRepository | null
   storyboardCharacters: StoryboardCharacterRepository | null
   imageAssets: ImageAssetRepository | null
+  assetImage: AssetImageRepository | null
 
   constructor(ds: DataSource) {
     this.dataSource = ds
@@ -244,5 +246,6 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.sceneActions = new SceneActionRepository(ds)
     this.storyboardCharacters = new StoryboardCharacterRepository(ds)
     this.imageAssets = new ImageAssetRepository(ds)
+    this.assetImage = new AssetImageRepository(ds)
   }
 }
