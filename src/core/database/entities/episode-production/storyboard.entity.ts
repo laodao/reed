@@ -126,6 +126,13 @@ export class StoryboardEntity {
   @Column({ name: 'staging_layout_id', type: 'varchar', nullable: true })
   stagingLayoutId!: string | null
 
+  /**
+   * 背景 ref 图（spec §4.8）：指向 asset_image.id（category='panorama_snapshot'），
+   * 用于把 360 全景截图作为分镜的背景参考。
+   */
+  @Column({ name: 'background_ref_image_id', type: 'varchar', nullable: true })
+  backgroundRefImageId!: string | null
+
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 

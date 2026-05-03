@@ -44,6 +44,7 @@ import { createStoryboardKeyframe } from '@core/database/migrations/create-story
 import { ensureScenePropItemBinding } from '@core/database/migrations/scene-prop-item-binding'
 import { expandEpisodeStatus } from '@core/database/migrations/expand-episode-status'
 import { stripLwImageFields } from '@core/database/migrations/strip-lw-image-fields'
+import { addStoryboardBackgroundRef } from '@core/database/migrations/add-storyboard-background-ref'
 import { registerCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { LanceDBService } from '@core/services/lance-db.service'
 import { registerAllWebChannels } from './api/register-channels'
@@ -190,6 +191,8 @@ async function initDatabase(): Promise<void> {
   await expandEpisodeStatus(ds)
   // P2 task 6: 长文图字段移除 —— portrait_id → character_bindings，generated_image_id → asset_image
   await stripLwImageFields(ds)
+  // P3c task 1: storyboards 加 background_ref_image_id（spec §4.8）
+  await addStoryboardBackgroundRef(ds)
 
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)
