@@ -39,6 +39,7 @@ import { createDataSource } from '@core/database/data-source'
 import { ensureUsersTable } from '@core/database/migrations/ensure-users-table'
 import { ensureUserIdColumns } from '@core/database/migrations/ensure-user-id-columns'
 import { ensureAssetBindingSourceType } from '@core/database/migrations/ensure-asset-binding-source-type'
+import { createAssetImage } from '@core/database/migrations/create-asset-image'
 import { registerCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { LanceDBService } from '@core/services/lance-db.service'
 import { registerAllWebChannels } from './api/register-channels'
@@ -175,6 +176,8 @@ async function initDatabase(): Promise<void> {
   // Web 多用户：仅保证 user_id 列存在；旧数据归属由迁移脚本处理
   await ensureUserIdColumns(ds)
   await ensureAssetBindingSourceType(ds)
+  // P2 task 2: 新建 asset_image 表 + 把 *_binding.image_paths JSON 数据搬过来
+  await createAssetImage(ds)
 
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)
