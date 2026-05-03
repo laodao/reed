@@ -15,6 +15,7 @@ import {
   registerAssetImageHandlers,
   registerDerivationHandlers,
   registerImportHandlers,
+  registerPanoramaHandlers,
 } from './asset'
 import { registerScriptHandlers } from './narrative/script.handler'
 import { registerStoryboardHandlers } from './narrative/storyboard.handler'
@@ -38,6 +39,8 @@ export function registerEpisodeProductionHandlers(): void {
   registerAssetImageHandlers()
   registerDerivationHandlers()
   registerImportHandlers()
+  // P3c Task 4 新增：360 全景 + 视角截图
+  registerPanoramaHandlers()
   registerScriptHandlers()
   registerStoryboardHandlers()
   registerKeyframeHandlers()

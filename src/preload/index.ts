@@ -228,6 +228,15 @@ const IPC_CHANNELS = {
   EP_ASSET_IMPORT_FROM_PORTRAIT: 'ep:asset:import:from-portrait',
   EP_ASSET_IMPORT_FROM_IMAGE: 'ep:asset:import:from-image',
 
+  // 360 全景 + 视角截图（7 个 · P3c Task 4）
+  EP_ASSET_PANORAMA_LIST: 'ep:asset:panorama:list',
+  EP_ASSET_PANORAMA_GENERATE: 'ep:asset:panorama:generate',
+  EP_ASSET_PANORAMA_UPLOAD: 'ep:asset:panorama:upload',
+  EP_ASSET_PANORAMA_DELETE: 'ep:asset:panorama:delete',
+  EP_ASSET_PANORAMA_CREATE_SNAPSHOT: 'ep:asset:panorama:create-snapshot',
+  EP_ASSET_PANORAMA_LIST_SNAPSHOTS: 'ep:asset:panorama:list-snapshots',
+  EP_ASSET_PANORAMA_DELETE_SNAPSHOT: 'ep:asset:panorama:delete-snapshot',
+
   // OSS 配置相关
   OSS_LIST_CONFIGS: 'oss:list-configs',
   OSS_GET_CONFIG: 'oss:get-config',
@@ -1729,6 +1738,23 @@ const electronAPI = {
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMPORT_FROM_PORTRAIT, input),
         fromImage: (input: any) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMPORT_FROM_IMAGE, input),
+      },
+      // 360 全景 + 视角截图（7 个 · P3c Task 4）
+      panorama: {
+        list: (locationBindingId: string) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_PANORAMA_LIST, locationBindingId),
+        generate: (input: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_PANORAMA_GENERATE, input),
+        upload: (input: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_PANORAMA_UPLOAD, input),
+        delete: (id: string) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_PANORAMA_DELETE, id),
+        createSnapshot: (input: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_PANORAMA_CREATE_SNAPSHOT, input),
+        listSnapshots: (locationBindingId: string) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_PANORAMA_LIST_SNAPSHOTS, locationBindingId),
+        deleteSnapshot: (id: string) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_PANORAMA_DELETE_SNAPSHOT, id),
       },
     },
 

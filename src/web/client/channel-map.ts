@@ -471,6 +471,14 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   // 引用导入（2 个）
   'episodeProduction.asset.import.fromPortrait': { channel: 'ep:asset:import:from-portrait' },
   'episodeProduction.asset.import.fromImage': { channel: 'ep:asset:import:from-image' },
+  // 360 全景 + 视角截图（7 个 · P3c Task 4）
+  'episodeProduction.asset.panorama.list': { channel: 'ep:asset:panorama:list' },
+  'episodeProduction.asset.panorama.generate': { channel: 'ep:asset:panorama:generate' },
+  'episodeProduction.asset.panorama.upload': { channel: 'ep:asset:panorama:upload' },
+  'episodeProduction.asset.panorama.delete': { channel: 'ep:asset:panorama:delete' },
+  'episodeProduction.asset.panorama.createSnapshot': { channel: 'ep:asset:panorama:create-snapshot' },
+  'episodeProduction.asset.panorama.listSnapshots': { channel: 'ep:asset:panorama:list-snapshots' },
+  'episodeProduction.asset.panorama.deleteSnapshot': { channel: 'ep:asset:panorama:delete-snapshot' },
   // episodeProduction.on*Progress(cb) — 后端 emit('ep:*-progress', event)
   // PC preload 透传 (event, data)，渲染端按 (_event, data) 解构 → 标 legacyEventArg
   'episodeProduction.onImageProgress': { channel: 'ep:image-progress', legacyEventArg: true },
