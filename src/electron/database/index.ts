@@ -363,6 +363,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
    * 4. createAssetImage —— P2 task 2: 新建 asset_image 表 + 把 *_binding.image_paths JSON 数据搬过来
    * 5. createStoryboardKeyframe —— P2 task 3: 新建 storyboard_keyframe 表 + storyboard 多模式字段 + 搬 frame_image_id
    * 6. ensureScenePropItemBinding —— P2 task 4: scene_props 加 item_binding_id + 按 prop_name 匹配回填
+   * 7. expandEpisodeStatus —— P2 task 5: EpisodeStatus 扩展：reviewing→composing + 新增 asset_prep
    * 必须在 schema drift 检查之前执行，否则旧库会因为缺列而被判定漂移。
    */
   private async runMultiTenantMigrations(): Promise<void> {
@@ -392,6 +393,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/scene-prop-item-binding'
     )
     await ensureScenePropItemBinding(this.dataSource)
+    // P2 task 5: EpisodeStatus 扩展：reviewing→composing + pending 按要素分流到 asset_prep
+    const { expandEpisodeStatus } = await import(
+      '@core/database/migrations/expand-episode-status'
+    )
+    await expandEpisodeStatus(this.dataSource)
   }
 
   /**

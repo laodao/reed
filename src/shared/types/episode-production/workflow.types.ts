@@ -18,13 +18,18 @@ export type ProjectStatus = 'draft' | 'producing' | 'completed'
 
 /**
  * 剧集状态
+ *
+ * P2 变更（spec §2.4）：
+ * - 新增 'asset_prep'：已识别角色/地点/物品，等待素材确认
+ * - 'reviewing' 改名为 'composing'：合成/后期审查阶段
  */
 export type EpisodeStatus =
   | 'pending'
+  | 'asset_prep'      // P2 新增（spec §2.4）：已识别要素，等待素材确认
   | 'scripting'
   | 'storyboarding'
   | 'producing'
-  | 'reviewing'
+  | 'composing'       // P2 改名（旧 'reviewing'）：合成/后期审查阶段
   | 'completed'
 
 /**

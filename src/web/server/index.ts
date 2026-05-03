@@ -42,6 +42,7 @@ import { ensureAssetBindingSourceType } from '@core/database/migrations/ensure-a
 import { createAssetImage } from '@core/database/migrations/create-asset-image'
 import { createStoryboardKeyframe } from '@core/database/migrations/create-storyboard-keyframe'
 import { ensureScenePropItemBinding } from '@core/database/migrations/scene-prop-item-binding'
+import { expandEpisodeStatus } from '@core/database/migrations/expand-episode-status'
 import { registerCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { LanceDBService } from '@core/services/lance-db.service'
 import { registerAllWebChannels } from './api/register-channels'
@@ -184,6 +185,8 @@ async function initDatabase(): Promise<void> {
   await createStoryboardKeyframe(ds)
   // P2 task 4: scene_props 加 item_binding_id + 按 prop_name 匹配 item_bindings.item_name 自动回填
   await ensureScenePropItemBinding(ds)
+  // P2 task 5: EpisodeStatus 扩展：reviewing→composing + pending 按要素分流到 asset_prep
+  await expandEpisodeStatus(ds)
 
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)
