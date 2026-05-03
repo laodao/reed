@@ -5,6 +5,7 @@
  *   有任一非空 JSON 数组 → 'asset_prep'，否则保持 'pending'
  *
  * 兼容 SQLite + PG，幂等（多次跑只对仍是旧值的行操作）。
+ * 防御性处理：uploaded_locations / uploaded_items 可能不存在于旧库，运行时检测实际列集合。
  *
  * @module core/database/migrations/expand-episode-status
  */
@@ -26,27 +27,51 @@ export async function expandEpisodeStatus(ds: DataSource): Promise<void> {
   await ds.query(`UPDATE video_episodes SET status = 'composing' WHERE status = 'reviewing'`)
 
   // 步骤 2：pending → asset_prep（如果已识别要素）
+  // 防御性：运行时检测哪些列实际存在（旧库可能只有 uploaded_characters）
+  const existingCols = await getExistingColumns(ds, 'video_episodes', isPg)
+  const uploadedCols = ['uploaded_characters', 'uploaded_locations', 'uploaded_items'].filter(
+    (c) => existingCols.has(c),
+  )
+
+  if (uploadedCols.length === 0) {
+    // 无任何 uploaded_* 列：无法分流，所有 pending 保持 pending
+    return
+  }
+
   // 跨端 JSON 解析差异较大，改为应用层逐行处理，保证 SQLite + PG 一致性
-  const pendings: Array<{
-    id: string
-    uploaded_characters: string | null
-    uploaded_locations: string | null
-    uploaded_items: string | null
-  }> = await ds.query(
-    `SELECT id, uploaded_characters, uploaded_locations, uploaded_items FROM video_episodes WHERE status = 'pending'`,
+  const selectCols = ['id', ...uploadedCols].join(', ')
+  const pendings: Array<Record<string, string | null>> = await ds.query(
+    `SELECT ${selectCols} FROM video_episodes WHERE status = 'pending'`,
   )
 
   for (const ep of pendings) {
-    if (
-      hasEntities(ep.uploaded_characters) ||
-      hasEntities(ep.uploaded_locations) ||
-      hasEntities(ep.uploaded_items)
-    ) {
+    const hasAny = uploadedCols.some((col) => hasEntities(ep[col]))
+    if (hasAny) {
       // 使用占位符：PG 用 $1，SQLite 用 ?
       const ph = isPg ? '$1' : '?'
       await ds.query(`UPDATE video_episodes SET status = 'asset_prep' WHERE id = ${ph}`, [ep.id])
     }
   }
+}
+
+/**
+ * 获取指定表的实际列名集合（运行时反射，防御列不存在）。
+ */
+async function getExistingColumns(
+  ds: DataSource,
+  table: string,
+  isPg: boolean,
+): Promise<Set<string>> {
+  if (isPg) {
+    const rows: Array<{ column_name: string }> = await ds.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_name=$1 AND table_schema=current_schema()`,
+      [table],
+    )
+    return new Set(rows.map((r) => r.column_name))
+  }
+  // SQLite：PRAGMA table_info
+  const rows: Array<{ name: string }> = await ds.query(`PRAGMA table_info(${table})`)
+  return new Set(rows.map((r) => r.name))
 }
 
 /**
