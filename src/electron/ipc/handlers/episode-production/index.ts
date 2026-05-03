@@ -7,10 +7,15 @@
 
 import { registerProjectHandlers } from './project.handler'
 import { registerEpisodeHandlers } from './episode.handler'
-import { registerCharacterAssetHandlers } from './asset/character-asset.handler'
-import { registerLocationAssetHandlers } from './asset/location-asset.handler'
-import { registerItemAssetHandlers } from './asset/item-asset.handler'
-import { registerVoiceAssetHandlers } from './asset/voice-asset.handler'
+import {
+  registerCharacterAssetHandlers,
+  registerLocationAssetHandlers,
+  registerItemAssetHandlers,
+  registerVoiceAssetHandlers,
+  registerAssetImageHandlers,
+  registerDerivationHandlers,
+  registerImportHandlers,
+} from './asset'
 import { registerScriptHandlers } from './narrative/script.handler'
 import { registerStoryboardHandlers } from './narrative/storyboard.handler'
 import { registerKeyframeHandlers } from './render/keyframe.handler'
@@ -20,7 +25,7 @@ import { registerComposeHandlers } from './compose.handler'
 import { registerWorkflowHandlers } from './workflow.handler'
 
 /**
- * 注册剧集制作模块所有 IPC handler（46 个 ep:* channel）
+ * 注册剧集制作模块所有 IPC handler（V2 老 channel + V2.5 新增资产域 ep:asset:* channel）
  */
 export function registerEpisodeProductionHandlers(): void {
   registerProjectHandlers()
@@ -29,6 +34,10 @@ export function registerEpisodeProductionHandlers(): void {
   registerLocationAssetHandlers()
   registerItemAssetHandlers()
   registerVoiceAssetHandlers()
+  // V2.5 新增：统一图谱 / 派生 / 引用导入
+  registerAssetImageHandlers()
+  registerDerivationHandlers()
+  registerImportHandlers()
   registerScriptHandlers()
   registerStoryboardHandlers()
   registerKeyframeHandlers()

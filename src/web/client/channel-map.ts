@@ -420,6 +420,57 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.updateUploadedEntity': { channel: 'ep:update-uploaded-entity' },
   'episodeProduction.deleteUploadedEntity': { channel: 'ep:delete-uploaded-entity' },
   'episodeProduction.isBindingFromLongWriting': { channel: 'ep:is-binding-from-longwriting' },
+  // ===== V2.5 资产域 channel 映射（与 V2 channel 共存；走 *AssetService） =====
+  // 角色资产（10 个）
+  'episodeProduction.asset.character.list': { channel: 'ep:asset:character:list' },
+  'episodeProduction.asset.character.get': { channel: 'ep:asset:character:get' },
+  'episodeProduction.asset.character.effective': { channel: 'ep:asset:character:effective' },
+  'episodeProduction.asset.character.createStandalone': { channel: 'ep:asset:character:create-standalone' },
+  'episodeProduction.asset.character.createLinkedLw': { channel: 'ep:asset:character:create-linked-lw' },
+  'episodeProduction.asset.character.updateOverride': { channel: 'ep:asset:character:update-override' },
+  'episodeProduction.asset.character.updateStandalone': { channel: 'ep:asset:character:update-standalone' },
+  'episodeProduction.asset.character.setVoice': { channel: 'ep:asset:character:set-voice' },
+  'episodeProduction.asset.character.setPortrait': { channel: 'ep:asset:character:set-portrait' },
+  'episodeProduction.asset.character.delete': { channel: 'ep:asset:character:delete' },
+  // 地点资产（9 个）
+  'episodeProduction.asset.location.list': { channel: 'ep:asset:location:list' },
+  'episodeProduction.asset.location.get': { channel: 'ep:asset:location:get' },
+  'episodeProduction.asset.location.effective': { channel: 'ep:asset:location:effective' },
+  'episodeProduction.asset.location.createStandalone': { channel: 'ep:asset:location:create-standalone' },
+  'episodeProduction.asset.location.createLinkedLw': { channel: 'ep:asset:location:create-linked-lw' },
+  'episodeProduction.asset.location.pickBestVariant': { channel: 'ep:asset:location:pick-best-variant' },
+  'episodeProduction.asset.location.updateOverride': { channel: 'ep:asset:location:update-override' },
+  'episodeProduction.asset.location.updateStandalone': { channel: 'ep:asset:location:update-standalone' },
+  'episodeProduction.asset.location.delete': { channel: 'ep:asset:location:delete' },
+  // 物品资产（8 个）
+  'episodeProduction.asset.item.list': { channel: 'ep:asset:item:list' },
+  'episodeProduction.asset.item.get': { channel: 'ep:asset:item:get' },
+  'episodeProduction.asset.item.effective': { channel: 'ep:asset:item:effective' },
+  'episodeProduction.asset.item.createStandalone': { channel: 'ep:asset:item:create-standalone' },
+  'episodeProduction.asset.item.createLinkedLw': { channel: 'ep:asset:item:create-linked-lw' },
+  'episodeProduction.asset.item.updateOverride': { channel: 'ep:asset:item:update-override' },
+  'episodeProduction.asset.item.updateStandalone': { channel: 'ep:asset:item:update-standalone' },
+  'episodeProduction.asset.item.delete': { channel: 'ep:asset:item:delete' },
+  // 语音资产（5 个）
+  'episodeProduction.asset.voice.list': { channel: 'ep:asset:voice:list' },
+  'episodeProduction.asset.voice.listReady': { channel: 'ep:asset:voice:list-ready' },
+  'episodeProduction.asset.voice.get': { channel: 'ep:asset:voice:get' },
+  'episodeProduction.asset.voice.bindToCharacter': { channel: 'ep:asset:voice:bind-to-character' },
+  'episodeProduction.asset.voice.listCharacters': { channel: 'ep:asset:voice:list-characters' },
+  // 统一图谱（7 个）
+  'episodeProduction.asset.image.listByAsset': { channel: 'ep:asset:image:list-by-asset' },
+  'episodeProduction.asset.image.listByCategory': { channel: 'ep:asset:image:list-by-category' },
+  'episodeProduction.asset.image.getMain': { channel: 'ep:asset:image:get-main' },
+  'episodeProduction.asset.image.add': { channel: 'ep:asset:image:add' },
+  'episodeProduction.asset.image.setAsMain': { channel: 'ep:asset:image:set-as-main' },
+  'episodeProduction.asset.image.delete': { channel: 'ep:asset:image:delete' },
+  'episodeProduction.asset.image.update': { channel: 'ep:asset:image:update' },
+  // 派生（2 个）
+  'episodeProduction.asset.derive.single': { channel: 'ep:asset:derive:single' },
+  'episodeProduction.asset.derive.batch': { channel: 'ep:asset:derive:batch' },
+  // 引用导入（2 个）
+  'episodeProduction.asset.import.fromPortrait': { channel: 'ep:asset:import:from-portrait' },
+  'episodeProduction.asset.import.fromImage': { channel: 'ep:asset:import:from-image' },
   // episodeProduction.on*Progress(cb) — 后端 emit('ep:*-progress', event)
   // PC preload 透传 (event, data)，渲染端按 (_event, data) 解构 → 标 legacyEventArg
   'episodeProduction.onImageProgress': { channel: 'ep:image-progress', legacyEventArg: true },

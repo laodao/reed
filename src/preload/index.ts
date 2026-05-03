@@ -170,6 +170,64 @@ const IPC_CHANNELS = {
   EP_DELETE_UPLOADED_ENTITY: 'ep:delete-uploaded-entity',
   EP_IS_BINDING_FROM_LONGWRITING: 'ep:is-binding-from-longwriting',
 
+  // ===== V2.5 资产域 channel（与 V2 channel 共存；service 走 *AssetService） =====
+  // 角色资产（10 个）
+  EP_ASSET_CHARACTER_LIST: 'ep:asset:character:list',
+  EP_ASSET_CHARACTER_GET: 'ep:asset:character:get',
+  EP_ASSET_CHARACTER_EFFECTIVE: 'ep:asset:character:effective',
+  EP_ASSET_CHARACTER_CREATE_STANDALONE: 'ep:asset:character:create-standalone',
+  EP_ASSET_CHARACTER_CREATE_LINKED_LW: 'ep:asset:character:create-linked-lw',
+  EP_ASSET_CHARACTER_UPDATE_OVERRIDE: 'ep:asset:character:update-override',
+  EP_ASSET_CHARACTER_UPDATE_STANDALONE: 'ep:asset:character:update-standalone',
+  EP_ASSET_CHARACTER_SET_VOICE: 'ep:asset:character:set-voice',
+  EP_ASSET_CHARACTER_SET_PORTRAIT: 'ep:asset:character:set-portrait',
+  EP_ASSET_CHARACTER_DELETE: 'ep:asset:character:delete',
+
+  // 地点资产（9 个）
+  EP_ASSET_LOCATION_LIST: 'ep:asset:location:list',
+  EP_ASSET_LOCATION_GET: 'ep:asset:location:get',
+  EP_ASSET_LOCATION_EFFECTIVE: 'ep:asset:location:effective',
+  EP_ASSET_LOCATION_CREATE_STANDALONE: 'ep:asset:location:create-standalone',
+  EP_ASSET_LOCATION_CREATE_LINKED_LW: 'ep:asset:location:create-linked-lw',
+  EP_ASSET_LOCATION_PICK_BEST_VARIANT: 'ep:asset:location:pick-best-variant',
+  EP_ASSET_LOCATION_UPDATE_OVERRIDE: 'ep:asset:location:update-override',
+  EP_ASSET_LOCATION_UPDATE_STANDALONE: 'ep:asset:location:update-standalone',
+  EP_ASSET_LOCATION_DELETE: 'ep:asset:location:delete',
+
+  // 物品资产（8 个）
+  EP_ASSET_ITEM_LIST: 'ep:asset:item:list',
+  EP_ASSET_ITEM_GET: 'ep:asset:item:get',
+  EP_ASSET_ITEM_EFFECTIVE: 'ep:asset:item:effective',
+  EP_ASSET_ITEM_CREATE_STANDALONE: 'ep:asset:item:create-standalone',
+  EP_ASSET_ITEM_CREATE_LINKED_LW: 'ep:asset:item:create-linked-lw',
+  EP_ASSET_ITEM_UPDATE_OVERRIDE: 'ep:asset:item:update-override',
+  EP_ASSET_ITEM_UPDATE_STANDALONE: 'ep:asset:item:update-standalone',
+  EP_ASSET_ITEM_DELETE: 'ep:asset:item:delete',
+
+  // 语音资产（5 个）
+  EP_ASSET_VOICE_LIST: 'ep:asset:voice:list',
+  EP_ASSET_VOICE_LIST_READY: 'ep:asset:voice:list-ready',
+  EP_ASSET_VOICE_GET: 'ep:asset:voice:get',
+  EP_ASSET_VOICE_BIND_TO_CHARACTER: 'ep:asset:voice:bind-to-character',
+  EP_ASSET_VOICE_LIST_CHARACTERS: 'ep:asset:voice:list-characters',
+
+  // 统一图谱（7 个）
+  EP_ASSET_IMAGE_LIST_BY_ASSET: 'ep:asset:image:list-by-asset',
+  EP_ASSET_IMAGE_LIST_BY_CATEGORY: 'ep:asset:image:list-by-category',
+  EP_ASSET_IMAGE_GET_MAIN: 'ep:asset:image:get-main',
+  EP_ASSET_IMAGE_ADD: 'ep:asset:image:add',
+  EP_ASSET_IMAGE_SET_AS_MAIN: 'ep:asset:image:set-as-main',
+  EP_ASSET_IMAGE_DELETE: 'ep:asset:image:delete',
+  EP_ASSET_IMAGE_UPDATE: 'ep:asset:image:update',
+
+  // 派生（2 个）
+  EP_ASSET_DERIVE_SINGLE: 'ep:asset:derive:single',
+  EP_ASSET_DERIVE_BATCH: 'ep:asset:derive:batch',
+
+  // 引用导入（2 个）
+  EP_ASSET_IMPORT_FROM_PORTRAIT: 'ep:asset:import:from-portrait',
+  EP_ASSET_IMPORT_FROM_IMAGE: 'ep:asset:import:from-image',
+
   // OSS 配置相关
   OSS_LIST_CONFIGS: 'oss:list-configs',
   OSS_GET_CONFIG: 'oss:get-config',
@@ -1562,6 +1620,117 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.EP_DELETE_UPLOADED_ENTITY, entityId, entityType, projectId),
     isBindingFromLongWriting: (binding: { longWritingCharacterId?: string; longWritingLocationId?: string; longWritingItemId?: string }) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_IS_BINDING_FROM_LONGWRITING, binding),
+
+    // ==================== V2.5 资产域 namespace（与 V2 channel 共存） ====================
+    asset: {
+      // 角色资产（10 个）
+      character: {
+        list: (projectId: string) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_LIST, projectId),
+        get: (id: string) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_GET, id),
+        effective: (id: string) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_EFFECTIVE, id),
+        createStandalone: (input: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_CREATE_STANDALONE, input),
+        createLinkedLw: (input: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_CREATE_LINKED_LW, input),
+        updateOverride: (id: string, override: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_UPDATE_OVERRIDE, id, override),
+        updateStandalone: (id: string, patch: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_UPDATE_STANDALONE, id, patch),
+        setVoice: (id: string, voiceId: string | null) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_SET_VOICE, id, voiceId),
+        setPortrait: (id: string, portraitId: string | null) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_SET_PORTRAIT, id, portraitId),
+        delete: (id: string) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_DELETE, id),
+      },
+      // 地点资产（9 个）
+      location: {
+        list: (projectId: string) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_LOCATION_LIST, projectId),
+        get: (id: string) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_LOCATION_GET, id),
+        effective: (id: string) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_LOCATION_EFFECTIVE, id),
+        createStandalone: (input: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_LOCATION_CREATE_STANDALONE, input),
+        createLinkedLw: (input: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_LOCATION_CREATE_LINKED_LW, input),
+        pickBestVariant: (bindingId: string, input: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_LOCATION_PICK_BEST_VARIANT, bindingId, input),
+        updateOverride: (id: string, override: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_LOCATION_UPDATE_OVERRIDE, id, override),
+        updateStandalone: (id: string, patch: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_LOCATION_UPDATE_STANDALONE, id, patch),
+        delete: (id: string) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_LOCATION_DELETE, id),
+      },
+      // 物品资产（8 个）
+      item: {
+        list: (projectId: string) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_ITEM_LIST, projectId),
+        get: (id: string) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_ITEM_GET, id),
+        effective: (id: string) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_ITEM_EFFECTIVE, id),
+        createStandalone: (input: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_ITEM_CREATE_STANDALONE, input),
+        createLinkedLw: (input: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_ITEM_CREATE_LINKED_LW, input),
+        updateOverride: (id: string, override: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_ITEM_UPDATE_OVERRIDE, id, override),
+        updateStandalone: (id: string, patch: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_ITEM_UPDATE_STANDALONE, id, patch),
+        delete: (id: string) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_ITEM_DELETE, id),
+      },
+      // 语音资产（5 个）
+      voice: {
+        list: () =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_VOICE_LIST),
+        listReady: () =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_VOICE_LIST_READY),
+        get: (voiceId: string) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_VOICE_GET, voiceId),
+        bindToCharacter: (characterBindingId: string, voiceId: string | null) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_VOICE_BIND_TO_CHARACTER, characterBindingId, voiceId),
+        listCharacters: (voiceId: string) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_VOICE_LIST_CHARACTERS, voiceId),
+      },
+      // 统一图谱（7 个）
+      image: {
+        listByAsset: (assetType: string, assetId: string) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_LIST_BY_ASSET, assetType, assetId),
+        listByCategory: (assetType: string, assetId: string, category: string) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_LIST_BY_CATEGORY, assetType, assetId, category),
+        getMain: (assetType: string, assetId: string) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_GET_MAIN, assetType, assetId),
+        add: (input: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_ADD, input),
+        setAsMain: (id: string) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_SET_AS_MAIN, id),
+        delete: (id: string) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_DELETE, id),
+        update: (id: string, patch: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_UPDATE, id, patch),
+      },
+      // 派生（2 个）
+      derive: {
+        single: (input: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_DERIVE_SINGLE, input),
+        batch: (input: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_DERIVE_BATCH, input),
+      },
+      // 引用导入（2 个）
+      import: {
+        fromPortrait: (input: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMPORT_FROM_PORTRAIT, input),
+        fromImage: (input: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMPORT_FROM_IMAGE, input),
+      },
+    },
 
     // 视频合成进度事件监听
     onSynthesisProgress: (callback: (event: any, data: { sceneId: string; phase: string; progress: number }) => void) => {

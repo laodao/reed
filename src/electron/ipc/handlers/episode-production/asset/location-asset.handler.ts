@@ -2,18 +2,55 @@
  * episode-production · 地点资产绑定 · IPC handler
  * @module electron/ipc/handlers/episode-production/asset/location-asset.handler
  * @description 双端共用 handler — PC 由 electron/index.ts 注册，Web 由 register-channels.ts 注册。
+ * 包含：V2 地点绑定（保留：老 UI 在用）+ V2.5 资产域 channel（ep:asset:location:* · 走
+ *      LocationAssetService 双源投影 + 变体降级 pickBestVariant）
  */
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
+import {
+  LocationAssetService,
+  type CreateStandaloneLocationInput,
+  type CreateLinkedLwLocationInput,
+  type LocationOverridePatch,
+  type LocationStandalonePatch,
+  type PickVariantInput,
+} from '@core/modules/episode-production/assets/services/location-asset.service'
+import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
 
 export function registerLocationAssetHandlers(): void {
-  // ==================== 地点绑定 ====================
+  // ==================== V2 地点绑定（保留：老 UI 在用） ====================
   ipcBridge.handle('ep:get-location-bindings', handleGetLocationBindings)
   ipcBridge.handle('ep:bind-location', handleBindLocation)
   ipcBridge.handle('ep:update-location-binding', handleUpdateLocationBinding)
   ipcBridge.handle('ep:delete-location-binding', handleDeleteLocationBinding)
+
+  // ==================== V2.5 资产域：LocationAssetService 包装 ====================
+  ipcBridge.handle('ep:asset:location:list', handleAssetLocationList)
+  ipcBridge.handle('ep:asset:location:get', handleAssetLocationGet)
+  ipcBridge.handle('ep:asset:location:effective', handleAssetLocationEffective)
+  ipcBridge.handle('ep:asset:location:create-standalone', handleAssetLocationCreateStandalone)
+  ipcBridge.handle('ep:asset:location:create-linked-lw', handleAssetLocationCreateLinkedLw)
+  ipcBridge.handle('ep:asset:location:pick-best-variant', handleAssetLocationPickBestVariant)
+  ipcBridge.handle('ep:asset:location:update-override', handleAssetLocationUpdateOverride)
+  ipcBridge.handle('ep:asset:location:update-standalone', handleAssetLocationUpdateStandalone)
+  ipcBridge.handle('ep:asset:location:delete', handleAssetLocationDelete)
+}
+
+/** 取 DataSource；未初始化则抛错 */
+function requireDataSource() {
+  const db = getCoreDatabaseManager()
+  if (!db.dataSource) {
+    throw new Error('数据库未初始化')
+  }
+  return db.dataSource
+}
+
+/** 构造 LocationAssetService（注入 AssetImageService 用于 pickBestVariant） */
+function buildLocationService(): LocationAssetService {
+  const ds = requireDataSource()
+  return new LocationAssetService(ds, new AssetImageService(ds))
 }
 
 // ==================== 地点绑定处理器 ====================
@@ -113,5 +150,118 @@ async function handleDeleteLocationBinding(
     return { success, data: { deleted: success } }
   } catch (error: any) {
     return { success: false, error: error.message || '删除地点绑定失败' }
+  }
+}
+
+// ==================== V2.5 资产域处理器 · 走 LocationAssetService ====================
+
+async function handleAssetLocationList(
+  _event: any,
+  projectId: string,
+): Promise<IpcResponse> {
+  try {
+    const data = await buildLocationService().listByProject(projectId)
+    return { success: true, data }
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+async function handleAssetLocationGet(
+  _event: any,
+  id: string,
+): Promise<IpcResponse> {
+  try {
+    const data = await buildLocationService().getById(id)
+    return { success: true, data }
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+async function handleAssetLocationEffective(
+  _event: any,
+  id: string,
+): Promise<IpcResponse> {
+  try {
+    const data = await buildLocationService().getEffectiveData(id)
+    return { success: true, data }
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+async function handleAssetLocationCreateStandalone(
+  _event: any,
+  input: CreateStandaloneLocationInput,
+): Promise<IpcResponse> {
+  try {
+    const data = await buildLocationService().createStandalone(input)
+    return { success: true, data }
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+async function handleAssetLocationCreateLinkedLw(
+  _event: any,
+  input: CreateLinkedLwLocationInput,
+): Promise<IpcResponse> {
+  try {
+    const data = await buildLocationService().createLinkedLw(input)
+    return { success: true, data }
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+async function handleAssetLocationPickBestVariant(
+  _event: any,
+  bindingId: string,
+  input: PickVariantInput,
+): Promise<IpcResponse> {
+  try {
+    const data = await buildLocationService().pickBestVariant(bindingId, input)
+    return { success: true, data }
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+async function handleAssetLocationUpdateOverride(
+  _event: any,
+  id: string,
+  override: LocationOverridePatch,
+): Promise<IpcResponse> {
+  try {
+    await buildLocationService().updateOverride(id, override)
+    return { success: true, data: { updated: true } }
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+async function handleAssetLocationUpdateStandalone(
+  _event: any,
+  id: string,
+  patch: LocationStandalonePatch,
+): Promise<IpcResponse> {
+  try {
+    await buildLocationService().updateStandalone(id, patch)
+    return { success: true, data: { updated: true } }
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+async function handleAssetLocationDelete(
+  _event: any,
+  id: string,
+): Promise<IpcResponse> {
+  try {
+    await buildLocationService().delete(id)
+    return { success: true, data: { deleted: true } }
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) }
   }
 }
