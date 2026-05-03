@@ -75,6 +75,132 @@ src/preload/                ← PC 端 preload，把 IPC 暴露为 window.electr
 
 ---
 
+### 0.4 全局详细操作流程图
+
+下图展示从"用户进入剧集制作"到"导出 MP4"的全流程操作（含分支、循环、决策点）。每个节点对应 UI 上一个具体操作或系统行为。6 个阶段（①-⑥）的边界与第 2 节"6 阶段四要素"严格对应。
+
+```mermaid
+flowchart TD
+    Start([用户进入剧集制作]) --> CreateProject[创建剧集项目<br/>VideoProject]
+    CreateProject --> CreateEp[创建剧集<br/>VideoEpisode]
+
+    subgraph S1[① 内容]
+        direction TB
+        CreateEp --> SourceChoice{选择来源}
+        SourceChoice -- 长文项目 --> PickLwChapter[选 long-writing 项目<br/>→ 选章节]
+        SourceChoice -- 上传文本 --> PasteText[粘贴长文]
+        PickLwChapter --> AnalyzeContent[AI 内容分析]
+        PasteText --> AnalyzeContent
+        AnalyzeContent --> IdentifyEntities[识别角色/地点/物品<br/>uploaded_*]
+        IdentifyEntities --> ConfirmEntities[用户确认要素清单]
+    end
+
+    subgraph S2[② 资产]
+        direction TB
+        ConfirmEntities --> AssetAudit[资产盘点<br/>哪些已绑/缺图]
+        AssetAudit --> AssetLoop[对每个出场要素]
+        AssetLoop --> AssetSourceType{来源 source_type}
+        AssetSourceType -- linked_lw --> ProjectFromLw[投影 lw 设定卡<br/>+ override_*]
+        AssetSourceType -- standalone --> FillStandalone[直接填 standalone_*]
+        ProjectFromLw --> AssetSubType{资产类型}
+        FillStandalone --> AssetSubType
+        AssetSubType -- 角色 --> CharFlow[绑定 portrait?<br/>填风格/服装/声音]
+        AssetSubType -- 地点 --> LocFlow[填地点设定<br/>3D 升级?]
+        AssetSubType -- 物品 --> ItemFlow[填物品设定]
+        AssetSubType -- 语音 --> VoiceFlow[选系统音色<br/>或复刻新音色]
+        CharFlow --> GenMain[生成主图<br/>或 上传 / 从 portrait 导入 / 从 image 导入]
+        LocFlow --> GenMain
+        ItemFlow --> GenMain
+        GenMain --> ReviewMain{满意?}
+        ReviewMain -- 否 --> GenMain
+        ReviewMain -- 是 --> MarkMain[asset_image: is_main=1]
+        MarkMain --> DeriveOpt{需派生?}
+        DeriveOpt -- 是 --> DeriveGallery[按需派生<br/>角色: views/expressions/outfits/poses<br/>地点: time/weather/angle 变体<br/>物品: views/context]
+        DeriveOpt -- 否 --> AssetReady{所有要素 ≥1 主图?}
+        DeriveGallery --> AssetReady
+        VoiceFlow --> BindVoiceToChar[绑定到角色<br/>character_binding.voice_id]
+        BindVoiceToChar --> AssetReady
+        AssetReady -- 否 --> AssetLoop
+        AssetReady -- 是 --> AssetsDone[确认资产就绪]
+    end
+
+    subgraph S3[③ 剧本]
+        direction TB
+        AssetsDone --> GenSynopsis[AI 生成章节梗概]
+        GenSynopsis --> GenScenes[AI 拆场景<br/>原文/旁白/对话/动作/出场]
+        GenScenes --> EditScenes[用户编辑<br/>引用资产用 @提及]
+        EditScenes --> ValidateRefs[完整性检查<br/>所有引用必须解析到资产]
+        ValidateRefs -- 失败 --> EditScenes
+        ValidateRefs -- 通过 --> ScriptDone[剧本定稿]
+    end
+
+    subgraph S4[④ 分镜]
+        direction TB
+        ScriptDone --> GenStoryboards[AI 按场景拆分镜<br/>含景别/角度/运镜/角色站位]
+        GenStoryboards --> EditShots[用户调整<br/>设 keyframe_count 2~9]
+        EditShots --> StoryboardDone[分镜定稿]
+    end
+
+    subgraph S5[⑤ 画面+音频]
+        direction TB
+        StoryboardDone --> ShotLoop[对每个分镜]
+        ShotLoop --> Choose3D{地点是 3D<br/>且启用摆位?}
+        Choose3D -- 是 --> Pose3D[3D 摆位编辑器<br/>渲染 staging 预览图<br/>★Phase 8 实现]
+        Choose3D -- 否 --> KFGen[按 frame_role 顺序生成关键帧<br/>start → end → middle<br/>参考链注入]
+        Pose3D --> KFGen
+        KFGen --> ReviewFrames{用户审核}
+        ReviewFrames -- 改 --> RegenFrame[单帧重生成<br/>修改时弹联动询问]
+        RegenFrame --> ReviewFrames
+        ReviewFrames -- 通过 --> SelectVideoMode{video_mode}
+        SelectVideoMode -- 1帧 --> Img2Vid[image2video]
+        SelectVideoMode -- 多帧 --> KF2Vid[keyframes2video]
+        Img2Vid --> GenAudio[生成旁白/对话/BGM<br/>用绑定 voice]
+        KF2Vid --> GenAudio
+        GenAudio --> ShotDone{此分镜全部完成?}
+        ShotDone -- 还有 --> ShotLoop
+        ShotDone -- 全完 --> AllShotsDone[所有分镜出片]
+    end
+
+    subgraph S6[⑥ 合成]
+        direction TB
+        AllShotsDone --> AssembleTimeline[拼接时间线<br/>视频片段 + 转场]
+        AssembleTimeline --> MixAudio[多轨音频混音<br/>+ 字幕]
+        MixAudio --> Preview[预览成片]
+        Preview -- 不满意 --> EditTimeline[调时间线/转场]
+        EditTimeline --> AssembleTimeline
+        Preview -- 满意 --> Export[导出 MP4]
+    end
+
+    Export --> End([完成])
+
+    classDef stage fill:#e8f4ff,stroke:#4a90e2,color:#000
+    classDef user fill:#e8ffe8,stroke:#5cb85c,color:#000
+    classDef ai fill:#fff7e8,stroke:#f0ad4e,color:#000
+    classDef placeholder fill:#fce4ec,stroke:#c2185b,color:#000
+    class S1,S2,S3,S4,S5,S6 stage
+    class Pose3D placeholder
+    class AnalyzeContent,IdentifyEntities,GenSynopsis,GenScenes,GenStoryboards,KFGen,GenAudio,Img2Vid,KF2Vid ai
+```
+
+**操作类型图例**：
+
+- 🟢 用户主动操作（确认 / 编辑 / 审核 / 选择）
+- 🟡 AI 自动生成（识别 / 拆分 / 派生 / 渲染）
+- 🔴 3D 摆位是 Phase 8 占位（本设计不实现，留接入点）
+- 蓝色子图边框表示 6 个阶段的物理边界
+
+**关键决策点**：
+
+| # | 决策点 | 选项 | 影响 |
+|---|---|---|---|
+| ① | 来源 | 长文项目 / 上传文本 | 决定后续所有资产的 source_type 默认值 |
+| ② | source_type | linked_lw / standalone | 设定卡是否含 override_*（投影 + 覆盖语义） |
+| ③ | 派生图谱 | 是 / 否 | 影响一致性强度；只有主图也能跑通 |
+| ④ | 3D 摆位 | 是 / 否 | 仅 3D 地点可启用；本 phase 未实现 |
+| ⑤ | video_mode | image2video / keyframes2video | 由 keyframe_count 自动建议 + provider capability 兜底 |
+
+---
+
 ## 1. 总体架构
 
 ### 1.1 双轴 + 单合流点
@@ -164,6 +290,114 @@ flowchart LR
 ```
 
 每层改动不影响相邻层（资产换发色不动剧本；叙事改对话不动资产；渲染换模型前两层不变）。
+
+### 1.4 数据结构关系图
+
+下图展示长文 → 资产 → 剧本 → 场景 → 角色 → 分镜 → 关键帧 → 视频/音频 的核心实体关联。FK 关系标注在边上；重要约束（polymorphic FK、双源、3D 接入点等）在下方表格补充。
+
+```mermaid
+erDiagram
+    %% ─────────────── 长文模块（外部，纯文字资料） ───────────────
+    LwProject ||--o{ LwChapter   : "含章节"
+    LwProject ||--o{ LwCharacter : "含角色档案"
+    LwProject ||--o{ LwLocation  : "含地点档案"
+    LwProject ||--o{ LwItem      : "含物品档案"
+
+    %% ─────────────── 引用层（独立模块） ───────────────
+    Portrait    ||--o{ PortraitVariant : "多变体"
+    ClonedVoice }|..|| VoiceProvider   : "供应商"
+
+    %% ─────────────── 项目级 ───────────────
+    VideoProject ||--o{ VideoEpisode      : "剧集"
+    VideoProject ||--o{ CharacterBinding  : "角色资产（项目级）"
+    VideoProject ||--o{ LocationBinding   : "地点资产"
+    VideoProject ||--o{ ItemBinding       : "物品资产"
+
+    %% ─────────────── 资产 ← 长文（linked_lw 模式） ───────────────
+    LwCharacter |o..o{ CharacterBinding : "投影 source_type=linked_lw"
+    LwLocation  |o..o{ LocationBinding  : "投影"
+    LwItem      |o..o{ ItemBinding      : "投影"
+
+    %% ─────────────── 资产 ← 引用层 ───────────────
+    Portrait    |o..o{ CharacterBinding : "可绑 portrait_id"
+    ClonedVoice |o..o{ CharacterBinding : "voice_id"
+
+    %% ─────────────── 资产 → 图谱（polymorphic） ───────────────
+    CharacterBinding ||--o{ AssetImage : "asset_type=character"
+    LocationBinding  ||--o{ AssetImage : "asset_type=location"
+    ItemBinding      ||--o{ AssetImage : "asset_type=item"
+
+    %% ─────────────── 剧集 ← 来源 ───────────────
+    LwChapter    |o..o| VideoEpisode    : "outline 模式"
+    VideoEpisode ||--|| EpisodeScript   : "1:1 剧本"
+
+    %% ─────────────── 叙事：场景 + 出场 + 对话 + 动作 + 道具 ───────────────
+    EpisodeScript    ||--o{ SceneScript    : "场景列表"
+    SceneScript      }o--|| LocationBinding : "场景地点 location_binding_id"
+    SceneScript      ||--o{ SceneCharacter  : "出场角色"
+    SceneCharacter   }o--|| CharacterBinding : "character_binding_id"
+    SceneCharacter   ||--o{ SceneProp       : "携带道具"
+    SceneProp        }o--|| ItemBinding     : "item_binding_id"
+    SceneScript      ||--o{ Dialogue        : "对话"
+    Dialogue         }o--|| CharacterBinding : "讲话人"
+    Dialogue         }o..o| ClonedVoice     : "voice_id"
+    SceneScript      ||--o{ ActionDescription : "动作"
+    ActionDescription }o..o| CharacterBinding : "执行者"
+
+    %% ─────────────── 分镜 + 关键帧 ───────────────
+    SceneScript          ||--o{ Storyboard           : "拆镜头"
+    Storyboard           ||--o{ StoryboardCharacter  : "镜头内角色"
+    StoryboardCharacter  }o--|| CharacterBinding     : "绑定角色"
+    Storyboard           ||--o{ StoryboardKeyframe   : "多关键帧 2~9"
+    StoryboardKeyframe   }o..o| AssetImage           : "image_asset_id"
+    Storyboard           ||--o{ StoryboardDialogueLink : "关联对话"
+    StoryboardDialogueLink }o--|| Dialogue           : "dialogue_id"
+
+    %% ─────────────── 渲染产物：视频 + 音频 ───────────────
+    Storyboard       ||--o| VideoSegment    : "videoPath"
+    VideoEpisode     ||--o{ AudioTrack      : "多音轨"
+    AudioTrack       ||--o{ AudioAsset      : "音频片段"
+    Dialogue         |o..o| AudioAsset      : "对话音频 audio_asset_id"
+```
+
+**约束补充**（图中无法直观表达的）：
+
+| 关系 | 含义 |
+|---|---|
+| `LwCharacter |o..o{ CharacterBinding` | 虚线 = 弱依赖；character_binding 可独立于 lw 存在（standalone 模式） |
+| `LwChapter |o..o| VideoEpisode` | 二选一：episode.source_type 为 'outline' 时绑 lw_chapter，'uploaded' 时只存 uploaded_content 文本 |
+| `AssetImage` 多向 FK | polymorphic：用 `asset_type` enum + `asset_id` 联合定位归属（character/location/item 之一） |
+| `StoryboardKeyframe.image_asset_id` | 指向 `asset_image.id`（用渲染产生的图）或可指向资产图谱（复用现成图） |
+| `LocationBinding` 含 3D 字段 | `panorama_3d_id` / `scene_layout_id` 是 3D 接入点 1（Phase 8 实现） |
+| `Storyboard` 含 3D 字段 | `use_3d_staging` / `staging_layout_id` 是 3D 接入点 2 |
+| `VoiceProvider` 抽象 | 系统音色（如 dashscope-tts 预设）+ 用户复刻（cloned_voice）共用 `voice_id` 字段名 |
+
+**关键 FK 总览**（按"出现位置"反查依赖）：
+
+| 持有 FK 的表 | 字段 | 指向 |
+|---|---|---|
+| `character_binding` | `lw_character_id?` / `portrait_id?` / `voice_id?` | LwCharacter / Portrait / ClonedVoice |
+| `location_binding` | `lw_location_id?` / `panorama_3d_id?` / `scene_layout_id?` | LwLocation / 3D 资源 / 3D 场景 |
+| `item_binding` | `lw_item_id?` | LwItem |
+| `asset_image` | `(asset_type, asset_id)` polymorphic / `derived_from_image_id?` | binding 三表之一 / 自身（派生关系） |
+| `scene_script` | `episode_script_id` / `location_binding_id` | EpisodeScript / LocationBinding |
+| `scene_character` | `scene_script_id` / `character_binding_id` | SceneScript / CharacterBinding |
+| `scene_prop` | `scene_character_id` / `item_binding_id?` | SceneCharacter / ItemBinding |
+| `dialogue` | `scene_script_id` / `character_binding_id` / `voice_id?` / `audio_asset_id?` | SceneScript / CharacterBinding / ClonedVoice / AudioAsset |
+| `storyboard` | `scene_script_id` / `video_provider_id?` / `video_model_id?` / `staging_layout_id?` | SceneScript / Provider / Model / 3D 场景 |
+| `storyboard_keyframe` | `storyboard_id` / `image_asset_id?` / `derived_from_keyframe_id?` | Storyboard / AssetImage / 自身 |
+| `storyboard_character` | `storyboard_id` / `character_binding_id` | Storyboard / CharacterBinding |
+| `audio_track` | `episode_id` | VideoEpisode |
+| `audio_asset` | `audio_track_id` | AudioTrack |
+
+**双源约束（character/location/item_binding 通用）**：
+
+```
+source_type = 'linked_lw'  → lw_xxx_id 必填，override_* 可选（基础值来自 lw + override 覆盖）
+source_type = 'standalone' → lw_xxx_id 必为 NULL，standalone_name + standalone_description 必填
+```
+
+数据库无外键级别约束（用 typeorm naming 弱关联），由 service 层校验 source_type 与字段填写的一致性。
 
 ---
 
