@@ -10,3 +10,9 @@ export type {
   AssetImageCategory,
   AddImageInput,
 } from './asset-image.service'
+export { GalleryDerivationService } from './gallery-derivation.service'
+export type {
+  ImageGenerator,
+  DeriveSingleInput,
+  DeriveBatchInput,
+} from './gallery-derivation.service'
