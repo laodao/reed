@@ -242,7 +242,7 @@ async function createProject() {
       stylePrompt: ''
     }
     // 打开项目编辑页面
-    router.push(`/story-to-video/${project.id}`)
+    router.push(`/episode-production/${project.id}`)
   } else {
     ElMessage.error(store.error || '创建失败')
   }
@@ -252,7 +252,7 @@ async function createProject() {
  * 打开项目
  */
 function openProject(project: VideoProject) {
-  router.push(`/story-to-video/${project.id}`)
+  router.push(`/episode-production/${project.id}`)
 }
 
 /**

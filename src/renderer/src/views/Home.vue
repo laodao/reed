@@ -100,7 +100,7 @@ const features = [
     icon: markRaw(EditPen)
   },
   {
-    path: '/story-to-video',
+    path: '/episode-production',
     title: '剧集制作',
     description: '剧本生成与视频制作',
     icon: markRaw(VideoCamera)

@@ -87,7 +87,7 @@ test.describe('页面导航测试', () => {
   })
 
   test('应该能导航到剧集制作页面', async () => {
-    await helper.navigateTo('/story-to-video')
+    await helper.navigateTo('/episode-production')
     const page = helper.getPage()
 
     // 等待页面加载

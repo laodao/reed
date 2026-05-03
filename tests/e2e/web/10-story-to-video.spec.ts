@@ -8,7 +8,7 @@ import { gotoApp, invokeIpcUnwrap, loginViaApi } from './helpers/auth'
 test.describe('Web 端 - 剧集制作', () => {
   test.beforeEach(async ({ page }) => {
     await loginViaApi(page)
-    await gotoApp(page, '/story-to-video')
+    await gotoApp(page, '/episode-production')
   })
 
   test('页面应正常加载', async ({ page }) => {

@@ -11,7 +11,7 @@ const SIDEBAR_ITEMS = [
   { name: '图像生成', hash: '/image' },
   { name: '人像设计', hash: '/portrait' },
   { name: '长文写作', hash: '/longwriting' },
-  { name: '剧集制作', hash: '/story-to-video' },
+  { name: '剧集制作', hash: '/episode-production' },
   { name: '文档翻译', hash: '/translate' },
   { name: '语音助手', hash: '/voice' },
   { name: '知识库', hash: '/knowledge-base' },

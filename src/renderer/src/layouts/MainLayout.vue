@@ -175,7 +175,7 @@ const mainMenuItems = [
     icon: markRaw(EditPen)
   },
   {
-    path: '/story-to-video',
+    path: '/episode-production',
     label: '剧集制作',
     icon: markRaw(VideoCamera)
   },
@@ -228,7 +228,7 @@ const pathTitleMap: Record<string, string> = {
   '/portrait': '人像设计',
   '/longwriting': '长文写作',
   '/diary': '日记',
-  '/story-to-video': '剧集制作',
+  '/episode-production': '剧集制作',
   '/translate': '文档翻译',
   '/voice': '语音助手',
   '/knowledge-base': '知识库',

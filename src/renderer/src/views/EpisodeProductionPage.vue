@@ -222,7 +222,7 @@ const dialoguesWithAudio = computed(() => {
 // ==================== 事件处理函数 ====================
 
 function goBack() {
-  router.push(`/story-to-video/${projectId.value}`)
+  router.push(`/episode-production/${projectId.value}`)
 }
 
 function onSelectStoryboard(storyboard: Storyboard) {

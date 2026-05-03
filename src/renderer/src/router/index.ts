@@ -106,28 +106,42 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
-    path: '/story-to-video',
-    name: 'StoryToVideo',
-    component: () => import('@/views/StoryToVideo.vue'),
+    path: '/episode-production',
+    name: 'EpisodeProjectList',
+    component: () => import('@/views/EpisodeProjectList.vue'),
     meta: {
       title: '剧集制作'
     }
   },
   {
-    path: '/story-to-video/:projectId',
-    name: 'VideoProjectEditor',
+    path: '/episode-production/:projectId',
+    name: 'EpisodeWorkbench',
     component: () => import('@/views/EpisodeWorkbench.vue'),
     meta: {
-      title: '项目编辑'
+      title: '剧集编辑'
     }
   },
   {
-    path: '/story-to-video/:projectId/production/:sceneId',
-    name: 'VideoProduction',
+    path: '/episode-production/:projectId/production/:sceneId',
+    name: 'EpisodeProduction',
     component: () => import('@/views/EpisodeProductionPage.vue'),
     meta: {
-      title: '视频制作'
+      title: '画面制作'
     }
+  },
+  // =====================================================
+  // 旧路由兼容 redirect（1 个版本周期后移除）
+  // 旧 path: /story-to-video → 新 /episode-production
+  // =====================================================
+  { path: '/story-to-video', redirect: '/episode-production' },
+  {
+    path: '/story-to-video/:projectId',
+    redirect: (to) => `/episode-production/${to.params.projectId}`
+  },
+  {
+    path: '/story-to-video/:projectId/production/:sceneId',
+    redirect: (to) =>
+      `/episode-production/${to.params.projectId}/production/${to.params.sceneId}`
   },
   {
     path: '/settings',

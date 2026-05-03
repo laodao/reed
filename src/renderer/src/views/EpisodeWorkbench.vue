@@ -734,7 +734,7 @@ async function confirmDeleteEpisode(episode: VideoEpisode) {
 }
 
 function goBack() {
-  router.push('/story-to-video')
+  router.push('/episode-production')
 }
 
 function goToVideoProduction() {
@@ -742,7 +742,7 @@ function goToVideoProduction() {
     ElMessage.warning('请先选择场景')
     return
   }
-  router.push(`/story-to-video/${projectId.value}/production/${scriptStore.currentScene.id}`)
+  router.push(`/episode-production/${projectId.value}/production/${scriptStore.currentScene.id}`)
 }
 
 // ===== Dialog 事件回调 =====
