@@ -67,6 +67,12 @@ export class ItemBindingRepository extends BaseRepository<
       thumbnailPath: e.thumbnailPath || undefined,
       generateConfig: this.buildGenerateConfig(e),
       generateImages: e.generateImages === 1,
+      // P2 task 1 双源字段（spec §3.7）
+      sourceType: e.sourceType,
+      overrideName: e.overrideName,
+      overrideDescription: e.overrideDescription,
+      standaloneName: e.standaloneName,
+      standaloneDescription: e.standaloneDescription,
       createdAt: this.toEpochMs(e.createdAt),
       updatedAt: this.toEpochMs(e.updatedAt),
     }

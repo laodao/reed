@@ -7,6 +7,9 @@
  *     P1 拆分后旧文件改为 deprecated re-export。修改请改本文件。
  */
 
+/** 资产卡数据来源（spec §3.7） */
+export type AssetBindingSourceType = 'linked_lw' | 'standalone'
+
 /**
  * 场景地点类型
  */
@@ -103,7 +106,7 @@ export interface CharacterBinding {
   }
 
   // P2 task 1 双源字段（spec §3.7）
-  sourceType: 'linked_lw' | 'standalone'
+  sourceType: AssetBindingSourceType
   overrideName?: string | null
   overrideDescription?: string | null
   overrideAppearance?: string | null
@@ -141,7 +144,7 @@ export interface LocationBinding {
   generateImages: boolean
 
   // P2 task 1 双源字段
-  sourceType: 'linked_lw' | 'standalone'
+  sourceType: AssetBindingSourceType
   overrideName?: string | null
   overrideDescription?: string | null
   standaloneName?: string | null
@@ -177,7 +180,7 @@ export interface ItemBinding {
   generateImages: boolean
 
   // P2 task 1 双源字段
-  sourceType: 'linked_lw' | 'standalone'
+  sourceType: AssetBindingSourceType
   overrideName?: string | null
   overrideDescription?: string | null
   standaloneName?: string | null
@@ -259,21 +262,21 @@ export interface ItemBindingRecord {
 export interface EffectiveCharacterData {
   name: string
   description: string
-  appearance?: string
-  outfit?: string
+  appearance?: string | null
+  outfit?: string | null
   voiceId?: string | null
   portraitId?: string | null
-  source: 'linked_lw' | 'standalone'
+  source: AssetBindingSourceType
 }
 
 export interface EffectiveLocationData {
   name: string
   description: string
-  source: 'linked_lw' | 'standalone'
+  source: AssetBindingSourceType
 }
 
 export interface EffectiveItemData {
   name: string
   description: string
-  source: 'linked_lw' | 'standalone'
+  source: AssetBindingSourceType
 }

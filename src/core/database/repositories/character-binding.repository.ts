@@ -80,6 +80,14 @@ export class CharacterBindingRepository extends BaseRepository<
       portraitId: e.portraitId || undefined,
       generateConfig: this.buildGenerateConfig(e),
       voiceConfig: this.buildVoiceConfig(e),
+      // P2 task 1 双源字段（spec §3.7）
+      sourceType: e.sourceType,
+      overrideName: e.overrideName,
+      overrideDescription: e.overrideDescription,
+      overrideAppearance: e.overrideAppearance,
+      overrideOutfit: e.overrideOutfit,
+      standaloneName: e.standaloneName,
+      standaloneDescription: e.standaloneDescription,
       createdAt: this.toEpochMs(e.createdAt),
       updatedAt: this.toEpochMs(e.updatedAt),
     }
