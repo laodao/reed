@@ -70,6 +70,7 @@ import { EpisodeScriptRepository } from '@core/database/repositories/episode-scr
 import { SceneScriptRepository } from '@core/database/repositories/scene-script.repository'
 import { StoryboardRepository } from '@core/database/repositories/storyboard.repository'
 import { CharacterBindingRepository } from '@core/database/repositories/character-binding.repository'
+import { AssetImageRepository } from '@core/database/repositories/asset-image.repository'
 import { LocationBindingRepository } from '@core/database/repositories/location-binding.repository'
 import { ItemBindingRepository } from '@core/database/repositories/item-binding.repository'
 import { SceneCharacterRepository } from '@core/database/repositories/scene-character.repository'
@@ -178,6 +179,8 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public characterBindings: CharacterBindingRepository | null = null
   public locationBindings: LocationBindingRepository | null = null
   public itemBindings: ItemBindingRepository | null = null
+  /** asset_image 统一图谱（spec §3.8） */
+  public assetImage: AssetImageRepository | null = null
 
   // 新增：符合第三范式的子表仓库
   public sceneCharacters: SceneCharacterRepository | null = null
@@ -3841,6 +3844,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.characterBindings = new CharacterBindingRepository(this.dataSource)
     this.locationBindings = new LocationBindingRepository(this.dataSource)
     this.itemBindings = new ItemBindingRepository(this.dataSource)
+    this.assetImage = new AssetImageRepository(this.dataSource)
 
     // 初始化新的子表仓库
     this.sceneCharacters = new SceneCharacterRepository(this.dataSource)

@@ -20,7 +20,8 @@ describe('createAssetImage migration', () => {
     expect(cols).toEqual(expect.arrayContaining([
       'id', 'user_id', 'asset_type', 'asset_id', 'category', 'label',
       'prompt', 'negative_prompt', 'image_path', 'thumbnail_path',
-      'is_main', 'derived_from_image_id', 'sort_order', 'created_at', 'updated_at',
+      'is_main', 'derived_from_image_id', 'sort_order', 'metadata',
+      'created_at', 'updated_at',
     ]))
     await ds.destroy()
   })

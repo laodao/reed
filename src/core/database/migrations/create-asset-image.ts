@@ -29,6 +29,9 @@ export async function createAssetImage(ds: DataSource): Promise<void> {
   // 1. 建表（幂等）
   await ensureAssetImageTable(ds, isPg)
 
+  // 1.1 兼容历史库：补 metadata 列（P3a task 2 引入；旧 schema 可能缺）
+  await ensureMetadataColumn(ds, isPg)
+
   // 2. 搬运每个 binding 表的 image_paths
   for (const { tableName, assetType } of ASSET_TYPES) {
     const tableExists = await checkTableExists(ds, tableName, isPg)
@@ -117,6 +120,7 @@ async function ensureAssetImageTable(ds: DataSource, isPg: boolean): Promise<voi
         is_main               integer        NOT NULL DEFAULT 0,
         derived_from_image_id varchar,
         sort_order            integer        NOT NULL DEFAULT 0,
+        metadata              text,
         created_at            timestamp      NOT NULL DEFAULT NOW(),
         updated_at            timestamp
       )
@@ -137,6 +141,7 @@ async function ensureAssetImageTable(ds: DataSource, isPg: boolean): Promise<voi
         is_main               INTEGER     NOT NULL DEFAULT 0,
         derived_from_image_id TEXT,
         sort_order            INTEGER     NOT NULL DEFAULT 0,
+        metadata              TEXT,
         created_at            TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at            TIMESTAMP
       )
@@ -152,6 +157,23 @@ async function ensureAssetImageTable(ds: DataSource, isPg: boolean): Promise<voi
   )
 
   console.log('[create-asset-image] asset_image 表及索引已建立')
+}
+
+/**
+ * 老库可能在 P3a task 2 之前建过 asset_image 表（无 metadata 列），
+ * 这里幂等地补列。
+ */
+async function ensureMetadataColumn(ds: DataSource, isPg: boolean): Promise<void> {
+  const tableExists = await checkTableExists(ds, 'asset_image', isPg)
+  if (!tableExists) return
+  const hasMetadata = await checkColumnExists(ds, 'asset_image', 'metadata', isPg)
+  if (hasMetadata) return
+  if (isPg) {
+    await ds.query(`ALTER TABLE asset_image ADD COLUMN metadata text`)
+  } else {
+    await ds.query(`ALTER TABLE asset_image ADD COLUMN metadata TEXT`)
+  }
+  console.log('[create-asset-image] 已补 metadata 列')
 }
 
 async function checkTableExists(

@@ -3,7 +3,7 @@ import { Column, Entity, Index, PrimaryColumn } from 'typeorm'
 /** asset_image 行的 asset_type 枚举 */
 export type AssetType = 'character' | 'location' | 'item'
 
-/** asset_image 行的 category 枚举（spec §3.8） */
+/** asset_image 行的 category 枚举（spec §3.8 + §P3c 360 全景） */
 export type AssetImageCategory =
   | 'main'
   | 'view'
@@ -14,6 +14,8 @@ export type AssetImageCategory =
   | 'weather_variant'
   | 'angle_variant'
   | 'context'
+  | 'panorama_360'
+  | 'panorama_snapshot'
 
 /**
  * asset_image 表实体（spec §3.8）
@@ -78,6 +80,13 @@ export class AssetImageEntity {
   /** 同一 asset_id 下的排列顺序 */
   @Column({ name: 'sort_order', type: 'integer', default: 0 })
   sortOrder!: number
+
+  /**
+   * 扩展元数据（JSON 文本存储，跨 SQLite/PG 兼容）。
+   * P3c 360 全景：保存 yaw/pitch/fov/source_image_id 等截图参数。
+   */
+  @Column({ name: 'metadata', type: 'text', nullable: true })
+  metadata!: string | null
 
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
