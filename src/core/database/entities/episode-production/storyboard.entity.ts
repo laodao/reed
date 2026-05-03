@@ -92,6 +92,34 @@ export class StoryboardEntity {
   @Column({ name: 'status', type: 'varchar', default: 'pending' })
   status!: string
 
+  // ─── 多关键帧 + 视频生成字段（spec §4.2 / §4.7，P2 task 3）─────────────────
+
+  /** 关键帧总数，默认 2（start + end）*/
+  @Column({ name: 'keyframe_count', type: 'integer', default: 2 })
+  keyframeCount!: number
+
+  /** 视频生成服务商 ID（对应 provider_config 表）*/
+  @Column({ name: 'video_provider_id', type: 'varchar', nullable: true })
+  videoProviderId!: string | null
+
+  /** 视频生成模型 ID */
+  @Column({ name: 'video_model_id', type: 'varchar', nullable: true })
+  videoModelId!: string | null
+
+  /** 视频生成模式：text2video / image2video / keyframes2video */
+  @Column({ name: 'video_mode', type: 'varchar', nullable: true })
+  videoMode!: 'text2video' | 'image2video' | 'keyframes2video' | null
+
+  // ─── 3D 接入点 2（spec §4.7）──────────────────────────────────────────────
+
+  /** 是否启用 3D 分镜布局（0=否，1=是）*/
+  @Column({ name: 'use_3d_staging', type: 'integer', default: 0 })
+  use3dStaging!: number
+
+  /** 3D 分镜布局模板 ID */
+  @Column({ name: 'staging_layout_id', type: 'varchar', nullable: true })
+  stagingLayoutId!: string | null
+
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 

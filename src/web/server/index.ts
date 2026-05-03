@@ -40,6 +40,7 @@ import { ensureUsersTable } from '@core/database/migrations/ensure-users-table'
 import { ensureUserIdColumns } from '@core/database/migrations/ensure-user-id-columns'
 import { ensureAssetBindingSourceType } from '@core/database/migrations/ensure-asset-binding-source-type'
 import { createAssetImage } from '@core/database/migrations/create-asset-image'
+import { createStoryboardKeyframe } from '@core/database/migrations/create-storyboard-keyframe'
 import { registerCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { LanceDBService } from '@core/services/lance-db.service'
 import { registerAllWebChannels } from './api/register-channels'
@@ -178,6 +179,8 @@ async function initDatabase(): Promise<void> {
   await ensureAssetBindingSourceType(ds)
   // P2 task 2: 新建 asset_image 表 + 把 *_binding.image_paths JSON 数据搬过来
   await createAssetImage(ds)
+  // P2 task 3: 新建 storyboard_keyframe 表 + storyboard 多模式字段 + 搬 frame_image_id
+  await createStoryboardKeyframe(ds)
 
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)
