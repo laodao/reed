@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>角色资产卡编辑</title>
+  <link rel="stylesheet" href="shell.css">
+</head>
+<body>
+  <div class="workbench">
+
+    <div class="topbar">
+      <div class="topbar-title">
+        <a href="02-stage-asset.html" style="text-decoration: none; color: var(--color-text-tertiary); font-size: 16px;">←</a>
+        🎬 江湖传 / 第 1 集 · 茶馆相遇
+        <span class="ep-meta">/ 角色资产 / 张三</span>
+      </div>
+      <div class="stepper">
+        <div class="step done"><span class="dot">✓</span><span>① 内容</span></div>
+        <span class="step-arrow">━</span>
+        <div class="step active"><span class="dot">●</span><span>② 资产</span></div>
+        <span class="step-arrow">─</span>
+        <div class="step todo"><span class="dot">○</span><span>③ 剧本</span></div>
+        <span class="step-arrow">─</span>
+        <div class="step todo"><span class="dot">○</span><span>④ 分镜</span></div>
+        <span class="step-arrow">─</span>
+        <div class="step todo"><span class="dot">○</span><span>⑤ 画面+音频</span></div>
+        <span class="step-arrow">─</span>
+        <div class="step todo"><span class="dot">○</span><span>⑥ 合成</span></div>
+      </div>
+    </div>
+
+    <div class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-section-header"><span>角色</span><span class="count">3</span></div>
+        <div class="sidebar-item active"><div class="thumb">📸</div><div>张三 <span class="meta">编辑中</span></div></div>
+        <div class="sidebar-item"><div class="thumb warn">⚠</div><div>李四</div></div>
+        <div class="sidebar-item"><div class="thumb">📸</div><div>老板娘</div></div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-section-header"><span>地点</span><span class="count">2</span></div>
+        <div class="sidebar-item"><div class="thumb">🏛</div><div>茶馆</div></div>
+        <div class="sidebar-item"><div class="thumb">🌆</div><div>客栈</div></div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-section-header"><span>物品</span><span class="count">4</span></div>
+        <div class="sidebar-item"><div class="thumb">🗡</div><div>长剑</div></div>
+        <div class="sidebar-item"><div class="thumb">🪭</div><div>折扇</div></div>
+      </div>
+    </div>
+
+    <div class="main">
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+        <a href="02-stage-asset.html" class="btn btn-sm">← 返回盘点</a>
+        <h2 style="margin: 0; font-size: 22px;">张三</h2>
+        <span class="tag tag-linked-lw">linked_lw · 来自《江湖传》原著</span>
+        <span class="tag tag-success">主图齐备</span>
+        <div style="margin-left: auto; display: flex; gap: 6px;">
+          <button class="btn">↺ 拉取最新基础值</button>
+          <button class="btn btn-success">保存</button>
+        </div>
+      </div>
+
+      <div style="background: var(--color-warning-light); border-left: 3px solid var(--color-warning); padding: 8px 14px; border-radius: 0 4px 4px 0; font-size: 13px; margin-bottom: 16px;">
+        ⓘ 长文中"张三"的设定 4 天前更新过 — <a href="#" style="color: var(--color-primary);">查看变更 / 同步基础值</a>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 360px 1fr; gap: 16px;">
+
+        <!-- 左：设定卡 -->
+        <div class="keyframe-panel">
+          <div style="font-weight: 600; font-size: 15px; margin-bottom: 12px;">📋 设定卡</div>
+
+          <div style="margin-bottom: 12px;">
+            <div style="font-size: 11px; color: var(--color-text-tertiary); margin-bottom: 4px;">身份</div>
+            <div style="display: grid; grid-template-columns: 80px 1fr; gap: 8px; font-size: 13px;">
+              <span style="color: var(--color-text-tertiary);">姓名</span><span>张三</span>
+              <span style="color: var(--color-text-tertiary);">别名</span><span>三爷 / 浪剑客</span>
+              <span style="color: var(--color-text-tertiary);">定位</span><span>主角</span>
+              <span style="color: var(--color-text-tertiary);">性别</span><span>男</span>
+              <span style="color: var(--color-text-tertiary);">年龄</span><span>32</span>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 12px; padding-top: 10px; border-top: 1px solid var(--color-bg);">
+            <div style="font-size: 11px; color: var(--color-text-tertiary); margin-bottom: 4px;">外貌</div>
+            <div style="font-size: 13px; line-height: 1.7;">
+              身高 1.78m · 瘦削 · 剑眉星目 · 短发墨色 · 眸色深褐 · 左眉一道旧疤
+            </div>
+            <div style="margin-top: 6px;">
+              <span style="font-size: 11px; color: var(--color-primary);">基础值来自长文</span> ·
+              <a href="#" style="font-size: 11px; color: var(--color-primary);">+ 添加 override</a>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 12px; padding-top: 10px; border-top: 1px solid var(--color-bg);">
+            <div style="font-size: 11px; color: var(--color-text-tertiary); margin-bottom: 4px;">服装</div>
+            <div style="font-size: 13px;">
+              <strong>默认：</strong>玄色长袍 + 玉冠 + 腰佩长剑
+              <br>
+              <strong>备选：</strong>白衣（重要场合）/ 便装（市井）
+            </div>
+          </div>
+
+          <div style="margin-bottom: 12px; padding-top: 10px; border-top: 1px solid var(--color-bg);">
+            <div style="font-size: 11px; color: var(--color-text-tertiary); margin-bottom: 4px;">声音</div>
+            <div style="display: grid; grid-template-columns: 80px 1fr; gap: 6px; font-size: 13px;">
+              <span style="color: var(--color-text-tertiary);">音色</span><span>沉稳男声 <button class="btn btn-sm">▶ 试听</button></span>
+              <span style="color: var(--color-text-tertiary);">语速</span><span>1.0x</span>
+              <span style="color: var(--color-text-tertiary);">音调</span><span>0</span>
+              <span style="color: var(--color-text-tertiary);">情感</span><span>neutral</span>
+            </div>
+          </div>
+
+          <div style="padding-top: 10px; border-top: 1px solid var(--color-bg);">
+            <div style="font-size: 11px; color: var(--color-text-tertiary); margin-bottom: 4px;">风格锚点</div>
+            <div style="font-size: 13px; line-height: 1.5;">
+              <span class="tag" style="margin-right: 4px;">工笔国风</span>
+              <span class="tag" style="margin-right: 4px;">水墨</span>
+              <span class="tag">微写实</span>
+            </div>
+          </div>
+
+          <div style="margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--color-bg);">
+            <button class="btn" style="width: 100%;">绑定 portrait_id</button>
+            <div style="font-size: 11px; color: var(--color-text-tertiary); margin-top: 6px; text-align: center;">
+              当前未绑定 — 主图由本剧集独立生成
+            </div>
+          </div>
+        </div>
+
+        <!-- 右：图谱 -->
+        <div>
+          <div class="keyframe-panel">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
+              <div>
+                <span style="font-weight: 600; font-size: 15px;">🖼 图谱</span>
+                <span style="color: var(--color-text-tertiary); font-size: 12px; margin-left: 10px;">8 / 12 已生成</span>
+              </div>
+              <button class="btn btn-primary btn-sm">✨ 批量派生缺失</button>
+            </div>
+
+            <!-- 主图 -->
+            <div style="margin-bottom: 16px;">
+              <div style="font-size: 13px; font-weight: 600; margin-bottom: 6px;">主图 <span class="tag tag-success" style="font-size: 10px;">✓ 已生成</span></div>
+              <div style="display: flex; gap: 10px; align-items: center;">
+                <div style="width: 120px; height: 160px; background: linear-gradient(135deg, #ddeeff, #99c2ff); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 60px; color: rgba(255,255,255,0.6);">👨</div>
+                <div style="font-size: 12px; color: var(--color-text-secondary);">
+                  生成时间：3 小时前 · dashscope-image
+                  <br>
+                  <button class="btn btn-sm" style="margin-top: 4px;">↺ 重生成</button>
+                  <button class="btn btn-sm">⬆ 上传替换</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 视角 -->
+            <div style="margin-bottom: 16px;">
+              <div style="font-size: 13px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
+                <span>视角 <span class="tag" style="font-size: 10px;">3/6 已生成</span></span>
+                <button class="btn btn-sm">✨ 派生剩余</button>
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px;">
+                <div style="aspect-ratio: 3/4; background: linear-gradient(135deg, #ddeeff, #99c2ff); border-radius: 4px; display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,0.5);">👨</div>
+                <div style="aspect-ratio: 3/4; background: linear-gradient(135deg, #ddeeff, #99c2ff); border-radius: 4px; display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,0.5);">👤</div>
+                <div style="aspect-ratio: 3/4; background: linear-gradient(135deg, #ddeeff, #99c2ff); border-radius: 4px; display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,0.5);">👤</div>
+                <div style="aspect-ratio: 3/4; background: var(--color-bg); border-radius: 4px; border: 1px dashed var(--color-border); display: flex; align-items: center; justify-content: center; color: var(--color-text-tertiary);">+</div>
+                <div style="aspect-ratio: 3/4; background: var(--color-bg); border-radius: 4px; border: 1px dashed var(--color-border); display: flex; align-items: center; justify-content: center; color: var(--color-text-tertiary);">+</div>
+                <div style="aspect-ratio: 3/4; background: var(--color-bg); border-radius: 4px; border: 1px dashed var(--color-border); display: flex; align-items: center; justify-content: center; color: var(--color-text-tertiary);">+</div>
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; font-size: 10px; color: var(--color-text-tertiary); text-align: center; margin-top: 4px;">
+                <span>front</span>
+                <span>3q_left</span>
+                <span>3q_right</span>
+                <span>side_l</span>
+                <span>side_r</span>
+                <span>back</span>
+              </div>
+            </div>
+
+            <!-- 表情 -->
+            <div style="margin-bottom: 16px;">
+              <div style="font-size: 13px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
+                <span>表情 <span class="tag" style="font-size: 10px;">2/6 已生成</span></span>
+                <button class="btn btn-sm">✨ 派生剩余</button>
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px;">
+                <div style="aspect-ratio: 1; background: linear-gradient(135deg, #ddeeff, #99c2ff); border-radius: 4px; display: flex; align-items: center; justify-content: center;">😐</div>
+                <div style="aspect-ratio: 1; background: linear-gradient(135deg, #ffe0e0, #ee9999); border-radius: 4px; display: flex; align-items: center; justify-content: center;">😠</div>
+                <div style="aspect-ratio: 1; background: var(--color-bg); border-radius: 4px; border: 1px dashed var(--color-border);"></div>
+                <div style="aspect-ratio: 1; background: var(--color-bg); border-radius: 4px; border: 1px dashed var(--color-border);"></div>
+                <div style="aspect-ratio: 1; background: var(--color-bg); border-radius: 4px; border: 1px dashed var(--color-border);"></div>
+                <div style="aspect-ratio: 1; background: var(--color-bg); border-radius: 4px; border: 1px dashed var(--color-border);"></div>
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; font-size: 10px; color: var(--color-text-tertiary); text-align: center; margin-top: 4px;">
+                <span>neutral</span>
+                <span>angry</span>
+                <span>happy</span>
+                <span>sad</span>
+                <span>surprised</span>
+                <span>confused</span>
+              </div>
+            </div>
+
+            <!-- 服装 -->
+            <div style="margin-bottom: 16px;">
+              <div style="font-size: 13px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
+                <span>服装 <span class="tag" style="font-size: 10px;">2/3 已生成</span></span>
+                <button class="btn btn-sm">+ 添加服装</button>
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;">
+                <div style="aspect-ratio: 3/4; background: linear-gradient(135deg, #444, #888); border-radius: 4px; display: flex; align-items: center; justify-content: center; color: white;">玄袍</div>
+                <div style="aspect-ratio: 3/4; background: linear-gradient(135deg, #fff, #ddd); border-radius: 4px; display: flex; align-items: center; justify-content: center;">白衣</div>
+                <div style="aspect-ratio: 3/4; background: var(--color-bg); border-radius: 4px; border: 1px dashed var(--color-border); display: flex; align-items: center; justify-content: center; color: var(--color-text-tertiary);">+ 便装</div>
+              </div>
+            </div>
+
+            <!-- 姿势 -->
+            <div>
+              <div style="font-size: 13px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
+                <span>姿势 <span class="tag" style="font-size: 10px;">1/4 已生成</span></span>
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;">
+                <div style="aspect-ratio: 3/4; background: linear-gradient(135deg, #ddeeff, #99c2ff); border-radius: 4px; display: flex; align-items: center; justify-content: center;">🧍</div>
+                <div style="aspect-ratio: 3/4; background: var(--color-bg); border-radius: 4px; border: 1px dashed var(--color-border);"></div>
+                <div style="aspect-ratio: 3/4; background: var(--color-bg); border-radius: 4px; border: 1px dashed var(--color-border);"></div>
+                <div style="aspect-ratio: 3/4; background: var(--color-bg); border-radius: 4px; border: 1px dashed var(--color-border);"></div>
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; font-size: 10px; color: var(--color-text-tertiary); text-align: center; margin-top: 4px;">
+                <span>standing</span><span>sitting</span><span>walking</span><span>fighting</span>
+              </div>
+            </div>
+
+            <div style="background: var(--color-primary-light); border-left: 3px solid var(--color-primary); padding: 8px 12px; border-radius: 0 4px 4px 0; font-size: 12px; color: var(--color-text); margin-top: 16px;">
+              💡 派生图都以"主图"为参考生成，保证人物形象跨视角/表情/服装一致
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>底部时间线：</span>
+      <div class="timeline-blocks">
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+      </div>
+      <span class="timeline-stat">0/12 分镜未出片</span>
+      <button class="timeline-action" disabled style="opacity: 0.5;">▶ 试播</button>
+    </div>
+
+  </div>
+
+  <div style="position: fixed; bottom: 80px; right: 20px; display: flex; flex-direction: column; gap: 6px;">
+    <a href="index.html" class="btn btn-sm" style="background: white;">← 导航</a>
+  </div>
+</body>
+</html>

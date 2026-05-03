@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>剧集项目列表</title>
+  <link rel="stylesheet" href="shell.css">
+  <style>
+    body { padding: 32px; overflow: auto; height: auto; min-height: 100vh; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .page-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 24px;
+    }
+    .breadcrumb { font-size: 13px; color: var(--color-text-secondary); }
+    .breadcrumb a { color: var(--color-primary); text-decoration: none; }
+    h1 { font-size: 22px; margin: 8px 0 0; }
+    .project-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    .project-card {
+      background: white;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .project-card:hover { border-color: var(--color-primary); box-shadow: 0 4px 16px rgba(74,144,226,0.12); transform: translateY(-1px); }
+    .project-card.new {
+      display: flex; align-items: center; justify-content: center;
+      border-style: dashed; min-height: 220px; cursor: pointer;
+      flex-direction: column; gap: 8px; color: var(--color-text-tertiary);
+    }
+    .project-card.new:hover { color: var(--color-primary); }
+    .project-cover {
+      height: 130px;
+      background: linear-gradient(135deg, #4a90e2, #357abd);
+      display: flex; align-items: center; justify-content: center;
+      color: rgba(255,255,255,0.4); font-size: 60px;
+    }
+    .project-cover.c2 { background: linear-gradient(135deg, #5cb85c, #4a9d4a); }
+    .project-cover.c3 { background: linear-gradient(135deg, #f0ad4e, #db9743); }
+    .project-cover.c4 { background: linear-gradient(135deg, #c2185b, #a01448); }
+    .project-body { padding: 14px; }
+    .project-title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+    .project-meta { font-size: 12px; color: var(--color-text-tertiary); display: flex; gap: 8px; }
+    .project-progress {
+      margin-top: 10px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .project-progress-bar {
+      flex: 1; height: 4px; background: var(--color-bg); border-radius: 2px;
+      overflow: hidden;
+    }
+    .project-progress-fill { height: 100%; background: var(--color-success); }
+    .project-progress-text { font-size: 11px; color: var(--color-text-tertiary); white-space: nowrap; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="breadcrumb">
+      <a href="index.html">← 原型导航</a>
+    </div>
+
+    <div class="page-header">
+      <div>
+        <h1>剧集制作 · 项目列表</h1>
+        <p style="color: var(--color-text-secondary); margin: 4px 0 0;">EpisodeProjectList — 选择已有项目或新建一个</p>
+      </div>
+      <button class="btn btn-primary">+ 新建项目</button>
+    </div>
+
+    <div class="project-grid">
+
+      <a href="02-stage-asset.html" class="project-card">
+        <div class="project-cover">🎬</div>
+        <div class="project-body">
+          <div class="project-title">江湖传 · 第一季</div>
+          <div class="project-meta">
+            <span>5 集</span>
+            <span>·</span>
+            <span>武侠</span>
+            <span>·</span>
+            <span class="tag tag-linked-lw">长文</span>
+          </div>
+          <div class="project-progress">
+            <div class="project-progress-bar"><div class="project-progress-fill" style="width: 38%"></div></div>
+            <span class="project-progress-text">第 1 集进行中</span>
+          </div>
+        </div>
+      </a>
+
+      <a href="#" class="project-card">
+        <div class="project-cover c2">📖</div>
+        <div class="project-body">
+          <div class="project-title">人生苦短的故事</div>
+          <div class="project-meta">
+            <span>2 集</span>
+            <span>·</span>
+            <span>都市</span>
+            <span>·</span>
+            <span class="tag tag-standalone">独立</span>
+          </div>
+          <div class="project-progress">
+            <div class="project-progress-bar"><div class="project-progress-fill" style="width: 100%"></div></div>
+            <span class="project-progress-text">已完成</span>
+          </div>
+        </div>
+      </a>
+
+      <a href="#" class="project-card">
+        <div class="project-cover c3">🎥</div>
+        <div class="project-body">
+          <div class="project-title">星海漫游记</div>
+          <div class="project-meta">
+            <span>1 集</span>
+            <span>·</span>
+            <span>科幻</span>
+            <span>·</span>
+            <span class="tag tag-linked-lw">长文</span>
+          </div>
+          <div class="project-progress">
+            <div class="project-progress-bar"><div class="project-progress-fill" style="width: 12%"></div></div>
+            <span class="project-progress-text">资产准备中</span>
+          </div>
+        </div>
+      </a>
+
+      <a href="#" class="project-card">
+        <div class="project-cover c4">📺</div>
+        <div class="project-body">
+          <div class="project-title">网红打卡推广</div>
+          <div class="project-meta">
+            <span>3 集</span>
+            <span>·</span>
+            <span>营销</span>
+            <span>·</span>
+            <span class="tag tag-standalone">独立</span>
+          </div>
+          <div class="project-progress">
+            <div class="project-progress-bar"><div class="project-progress-fill" style="width: 65%"></div></div>
+            <span class="project-progress-text">第 2 集分镜中</span>
+          </div>
+        </div>
+      </a>
+
+      <div class="project-card new">
+        <div style="font-size: 36px;">+</div>
+        <div>新建剧集项目</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>剧集制作 · 原型导航</title>
+  <link rel="stylesheet" href="shell.css">
+  <style>
+    body { padding: 40px; overflow: auto; height: auto; min-height: 100vh; }
+    .container { max-width: 960px; margin: 0 auto; }
+    h1 { font-size: 28px; margin-bottom: 8px; }
+    .lead { color: var(--color-text-secondary); margin-bottom: 32px; line-height: 1.6; }
+    h2 { font-size: 18px; margin: 32px 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--color-primary); }
+    .nav-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px;
+    }
+    .nav-card {
+      display: block;
+      padding: 16px;
+      background: white;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      text-decoration: none;
+      color: inherit;
+      transition: all 0.15s;
+    }
+    .nav-card:hover { border-color: var(--color-primary); box-shadow: 0 4px 12px rgba(74,144,226,0.15); transform: translateY(-1px); }
+    .nav-card .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      background: var(--color-primary-light);
+      color: var(--color-primary);
+      font-size: 11px;
+      border-radius: 3px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .nav-card h3 { font-size: 15px; margin: 0 0 6px; }
+    .nav-card p { font-size: 12px; color: var(--color-text-secondary); margin: 0; line-height: 1.5; }
+    .meta-bar {
+      background: var(--color-warning-light);
+      border-left: 4px solid var(--color-warning);
+      padding: 12px 16px;
+      border-radius: 4px;
+      font-size: 13px;
+      color: var(--color-text);
+      margin-bottom: 24px;
+    }
+    .meta-bar code { background: white; padding: 1px 5px; border-radius: 2px; font-size: 12px; }
+    .legend {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      font-size: 12px;
+      color: var(--color-text-secondary);
+      padding: 12px;
+      background: var(--color-bg);
+      border-radius: 4px;
+    }
+    .legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>剧集制作 · 新设计原型</h1>
+    <p class="lead">
+      基于 <code>docs/superpowers/specs/2026-05-02-episode-production-pipeline-design.md</code> 的设计稿做的高保真静态原型。
+      数据全是硬编码 mock，仅展示交互形态和 UI 结构。点击下面卡片查看各阶段。
+    </p>
+
+    <div class="meta-bar">
+      <strong>原型说明：</strong>静态 HTML（Tailwind CDN + 自定义 shell.css），
+      浏览器直接打开 <code>file://</code> 即可，不需要起服务器。
+      所有按钮 / 链接均无后端逻辑，仅做视觉效果展示。
+      数据 mock 自一个虚构的"江湖故事"剧集项目。
+    </div>
+
+    <h2>核心页面</h2>
+    <div class="nav-grid">
+      <a class="nav-card" href="00-project-list.html">
+        <div class="badge">入口</div>
+        <h3>剧集项目列表</h3>
+        <p>EpisodeProjectList — 选择 / 创建剧集项目入口</p>
+      </a>
+      <a class="nav-card" href="02-stage-asset.html">
+        <div class="badge">② 资产</div>
+        <h3>资产盘点（4 类）</h3>
+        <p>EpisodeWorkbench / 资产阶段 — 角色 / 地点 / 物品 / 语音 4 大类卡片视图</p>
+      </a>
+      <a class="nav-card" href="02-stage-asset-edit.html">
+        <div class="badge">② 资产 / 二级</div>
+        <h3>角色资产卡编辑</h3>
+        <p>展示设定卡 + 图谱（主图 / 视角 / 表情 / 服装 / 姿势）+ linked_lw 同步提示</p>
+      </a>
+      <a class="nav-card" href="04-stage-storyboard.html">
+        <div class="badge">④ 分镜</div>
+        <h3>分镜阶段</h3>
+        <p>场景树 + 分镜网格 — 镜头语言 / 关键帧数配置</p>
+      </a>
+      <a class="nav-card" href="05-stage-production.html">
+        <div class="badge">⑤ 画面+音频</div>
+        <h3>画面+音频（含九宫格）</h3>
+        <p>★ 关键帧序列 + 视频生成 + 旁白/对话/BGM 配音 — 九宫格机制最直观的展示</p>
+      </a>
+      <a class="nav-card" href="03-stage-script.html">
+        <div class="badge">③ 剧本</div>
+        <h3>剧本编辑</h3>
+        <p>章节梗概 + 场景列表 + @提及资产强约束</p>
+      </a>
+    </div>
+
+    <h2>设计要点</h2>
+    <ul style="line-height: 1.8;">
+      <li><strong>顶部进度条</strong>：6 阶段始终可见，软引导（可任意跳转，缺前置时弹提示）</li>
+      <li><strong>左侧资产侧栏</strong>：4 大类（角色 / 地点 / 物品 / 语音）+ 数字徽章，任何阶段都能查 / 编辑资产</li>
+      <li><strong>底部迷你时间线</strong>：始终可见，预览当前已生产分镜的累计时长</li>
+      <li><strong>双来源标签</strong>：<span class="tag tag-linked-lw">linked_lw</span>（来自长文）/ <span class="tag tag-standalone">standalone</span>（剧集独立）</li>
+      <li><strong>九宫格</strong>：时间顺序的 N 张关键帧（2~9，按复杂度可调；UI 默认 3×3 视觉布局）</li>
+      <li><strong>3D 占位</strong>：<span class="tag tag-3d">3D</span> 标签预留（本 phase 不实现）</li>
+    </ul>
+
+    <h2>状态图例</h2>
+    <div class="legend">
+      <span><span class="legend-dot" style="background: var(--color-success)"></span>已完成 / done</span>
+      <span><span class="legend-dot" style="background: var(--color-primary)"></span>进行中 / active</span>
+      <span><span class="legend-dot" style="background: var(--color-warning)"></span>部分完成 / partial</span>
+      <span><span class="legend-dot" style="background: var(--color-text-tertiary)"></span>未开始 / todo</span>
+    </div>
+
+    <h2>跟 spec 章节的对应关系</h2>
+    <table style="width:100%; border-collapse: collapse; font-size: 13px;">
+      <thead>
+        <tr style="background: var(--color-bg);">
+          <th style="padding: 8px; text-align: left; border: 1px solid var(--color-border);">原型页面</th>
+          <th style="padding: 8px; text-align: left; border: 1px solid var(--color-border);">spec 章节</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td style="padding: 8px; border: 1px solid var(--color-border);">工作台框架（顶部进度条 / 资产侧栏 / 底部时间线）</td>
+            <td style="padding: 8px; border: 1px solid var(--color-border);">§2.1 / §2.2 / §2.3</td></tr>
+        <tr><td style="padding: 8px; border: 1px solid var(--color-border);">资产盘点（02-stage-asset）</td>
+            <td style="padding: 8px; border: 1px solid var(--color-border);">§3.9</td></tr>
+        <tr><td style="padding: 8px; border: 1px solid var(--color-border);">角色资产卡编辑（02-stage-asset-edit）</td>
+            <td style="padding: 8px; border: 1px solid var(--color-border);">§3.1-3.7</td></tr>
+        <tr><td style="padding: 8px; border: 1px solid var(--color-border);">分镜（04-stage-storyboard）</td>
+            <td style="padding: 8px; border: 1px solid var(--color-border);">§4.2</td></tr>
+        <tr><td style="padding: 8px; border: 1px solid var(--color-border);">画面+音频 + 九宫格（05-stage-production）</td>
+            <td style="padding: 8px; border: 1px solid var(--color-border);">§4.5（九宫格机制详解）+ §4.7（UI）</td></tr>
+        <tr><td style="padding: 8px; border: 1px solid var(--color-border);">剧本（03-stage-script）</td>
+            <td style="padding: 8px; border: 1px solid var(--color-border);">§4.1</td></tr>
+      </tbody>
+    </table>
+
+    <p style="margin-top: 32px; color: var(--color-text-tertiary); font-size: 12px;">
+      浏览器直接打开 <code>file:///home/ubuntu/workdir/the-bot/docs/ui-prototypes/episode-production/index.html</code>
+    </p>
+  </div>
+</body>
+</html>

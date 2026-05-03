@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>③ 剧本</title>
+  <link rel="stylesheet" href="shell.css">
+</head>
+<body>
+  <div class="workbench">
+    <div class="topbar">
+      <div class="topbar-title">
+        <a href="00-project-list.html" style="text-decoration: none; color: var(--color-text-tertiary); font-size: 16px;">←</a>
+        🎬 江湖传 / 第 1 集 · 茶馆相遇
+      </div>
+      <div class="stepper">
+        <div class="step done"><span class="dot">✓</span><span>① 内容</span></div>
+        <span class="step-arrow">━</span>
+        <div class="step done"><span class="dot">✓</span><span>② 资产</span></div>
+        <span class="step-arrow">━</span>
+        <div class="step active"><span class="dot">●</span><span>③ 剧本</span></div>
+        <span class="step-arrow">─</span>
+        <div class="step todo"><span class="dot">○</span><span>④ 分镜</span></div>
+        <span class="step-arrow">─</span>
+        <div class="step todo"><span class="dot">○</span><span>⑤ 画面+音频</span></div>
+        <span class="step-arrow">─</span>
+        <div class="step todo"><span class="dot">○</span><span>⑥ 合成</span></div>
+      </div>
+    </div>
+
+    <div class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-section-header"><span>角色</span><span class="count">3</span></div>
+        <div class="sidebar-item"><div class="thumb">📸</div><div>张三 <span class="meta">@提及 8</span></div></div>
+        <div class="sidebar-item"><div class="thumb">📸</div><div>李四 <span class="meta">@提及 6</span></div></div>
+        <div class="sidebar-item"><div class="thumb">📸</div><div>老板娘 <span class="meta">@提及 1</span></div></div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-section-header"><span>地点</span><span class="count">2</span></div>
+        <div class="sidebar-item"><div class="thumb">🏛</div><div>茶馆 <span class="meta">2 场景</span></div></div>
+        <div class="sidebar-item"><div class="thumb">🌆</div><div>客栈 <span class="meta">1 场景</span></div></div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-section-header"><span>物品</span><span class="count">4</span></div>
+        <div class="sidebar-item"><div class="thumb">🪭</div><div>折扇 <span class="meta">3</span></div></div>
+        <div class="sidebar-item"><div class="thumb">🗡</div><div>长剑</div></div>
+        <div class="sidebar-item"><div class="thumb">📜</div><div>书信 <span class="meta">2</span></div></div>
+      </div>
+    </div>
+
+    <div class="main">
+      <div class="main-header">
+        <div>
+          <div class="main-title">③ 剧本编辑</div>
+          <div class="main-subtitle">3 个场景 · 12 段对白 · 8 个动作 · 实体引用 100% 解析</div>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn">✨ AI 重写场景</button>
+          <button class="btn btn-success">完成本阶段 →</button>
+        </div>
+      </div>
+
+      <!-- 章节梗概 -->
+      <div class="keyframe-panel">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+          <div style="font-weight: 600;">章节梗概</div>
+          <button class="btn btn-sm">✨ AI 重新生成</button>
+        </div>
+        <div style="font-size: 13px; line-height: 1.7; padding: 8px; background: var(--color-bg); border-radius: 4px;">
+          <span class="tag tag-linked-lw">@张三</span> 在茶馆内偶遇了多年未见的红颜知己 <span class="tag tag-linked-lw">@李四</span>。两人目光交汇，欲言又止。张三手中的 <span class="tag tag-linked-lw">@折扇</span> 缓缓收起，<span class="tag tag-standalone">@老板娘</span> 看似无意地走过两人桌边。夜深时，李四递出一封 <span class="tag tag-linked-lw">@书信</span>，张三接过未读。
+        </div>
+      </div>
+
+      <!-- 场景列表 -->
+      <div class="keyframe-panel">
+        <div style="font-weight: 600; margin-bottom: 12px;">场景列表</div>
+
+        <!-- Scene 1 -->
+        <div style="border: 1px solid var(--color-border); border-radius: 6px; margin-bottom: 12px; overflow: hidden;">
+          <div style="background: var(--color-primary-light); padding: 8px 12px; display: flex; align-items: center; justify-content: space-between;">
+            <div>
+              <strong>场景 1</strong>
+              <span style="margin-left: 12px; font-size: 13px;">📍 <span class="tag tag-linked-lw">@茶馆</span> · 黄昏 · 阴天</span>
+              <span style="margin-left: 8px; color: var(--color-text-secondary); font-size: 12px;">出场: <span class="tag tag-linked-lw" style="font-size: 11px;">@张三</span> <span class="tag tag-linked-lw" style="font-size: 11px;">@李四</span></span>
+            </div>
+            <button class="btn btn-sm">编辑</button>
+          </div>
+          <div style="padding: 12px;">
+            <div style="margin-bottom: 8px;">
+              <span style="display: inline-block; width: 50px; font-size: 11px; color: var(--color-text-tertiary); text-transform: uppercase; vertical-align: top;">原文</span>
+              <span style="font-size: 13px; color: var(--color-text-secondary);">"夕阳下他缓缓走入茶馆，眼神与坐在窗边的女人对上。一刹那，时间仿佛凝固。"</span>
+            </div>
+            <div style="margin-bottom: 8px;">
+              <span style="display: inline-block; width: 50px; font-size: 11px; color: var(--color-primary); text-transform: uppercase; vertical-align: top;">旁白</span>
+              <span style="font-size: 13px;">夕阳下他缓缓走入茶馆。</span>
+            </div>
+            <div style="margin-bottom: 8px;">
+              <span style="display: inline-block; width: 50px; font-size: 11px; color: var(--color-success); text-transform: uppercase; vertical-align: top;">对话</span>
+              <span style="font-size: 13px;"><strong><span class="tag tag-linked-lw" style="font-size: 11px;">@张三</span></strong> · neutral · "你来了。"</span>
+            </div>
+            <div style="margin-bottom: 8px;">
+              <span style="display: inline-block; width: 50px; font-size: 11px; color: var(--color-success); text-transform: uppercase; vertical-align: top;">对话</span>
+              <span style="font-size: 13px;"><strong><span class="tag tag-linked-lw" style="font-size: 11px;">@李四</span></strong> · whisper · "等你很久了。"</span>
+            </div>
+            <div>
+              <span style="display: inline-block; width: 50px; font-size: 11px; color: var(--color-warning); text-transform: uppercase; vertical-align: top;">动作</span>
+              <span style="font-size: 13px;"><span class="tag tag-linked-lw" style="font-size: 11px;">@张三</span> 收起手中 <span class="tag tag-linked-lw" style="font-size: 11px;">@折扇</span>，走到窗边坐下</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Scene 2 collapsed -->
+        <div style="border: 1px solid var(--color-border); border-radius: 6px; margin-bottom: 12px; overflow: hidden;">
+          <div style="background: var(--color-bg); padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+            <div>
+              <strong>场景 2</strong>
+              <span style="margin-left: 12px; font-size: 13px;">📍 <span class="tag tag-linked-lw">@茶馆</span> · 夜晚 · 晴</span>
+              <span style="margin-left: 8px; color: var(--color-text-secondary); font-size: 12px;">出场: <span class="tag tag-linked-lw" style="font-size: 11px;">@张三</span> <span class="tag tag-linked-lw" style="font-size: 11px;">@李四</span> <span class="tag tag-standalone" style="font-size: 11px;">@老板娘</span></span>
+            </div>
+            <button class="btn btn-sm">展开</button>
+          </div>
+        </div>
+
+        <!-- Scene 3 collapsed -->
+        <div style="border: 1px solid var(--color-border); border-radius: 6px; margin-bottom: 12px; overflow: hidden;">
+          <div style="background: var(--color-bg); padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+            <div>
+              <strong>场景 3</strong>
+              <span style="margin-left: 12px; font-size: 13px;">📍 <span class="tag tag-linked-lw">@客栈</span> <span class="tag tag-3d" style="font-size: 11px;">3D</span> · 白天 · 晴</span>
+              <span style="margin-left: 8px; color: var(--color-text-secondary); font-size: 12px;">出场: <span class="tag tag-linked-lw" style="font-size: 11px;">@张三</span></span>
+            </div>
+            <button class="btn btn-sm">展开</button>
+          </div>
+        </div>
+
+        <button class="btn" style="width: 100%; border-style: dashed;">+ 添加场景</button>
+      </div>
+
+      <!-- 完整性检查 -->
+      <div class="keyframe-panel" style="background: var(--color-success-light); border-color: var(--color-success);">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 24px;">✓</span>
+          <div style="flex: 1;">
+            <div style="font-weight: 600; color: var(--color-success);">完整性检查通过 — 可以进入分镜</div>
+            <div style="font-size: 12px; color: var(--color-text-secondary); margin-top: 2px;">
+              所有 3 角色 · 2 地点 · 4 物品 · 5 语音 引用都解析到资产；所有引用资产的主图均已就绪。
+            </div>
+          </div>
+          <a href="04-stage-storyboard.html" class="btn btn-success">→ 进入 ④ 分镜</a>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="footer">
+      <span>底部时间线：</span>
+      <div class="timeline-blocks">
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+      </div>
+      <span class="timeline-stat">尚未拆分镜</span>
+      <button class="timeline-action" disabled style="opacity: 0.5;">▶ 试播</button>
+    </div>
+
+  </div>
+
+  <div style="position: fixed; bottom: 80px; right: 20px; display: flex; flex-direction: column; gap: 6px;">
+    <a href="index.html" class="btn btn-sm" style="background: white;">← 导航</a>
+    <a href="04-stage-storyboard.html" class="btn btn-sm" style="background: white;">下一步 →</a>
+  </div>
+</body>
+</html>

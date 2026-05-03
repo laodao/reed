@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>⑤ 画面+音频 · 九宫格</title>
+  <link rel="stylesheet" href="shell.css">
+</head>
+<body>
+  <div class="workbench">
+
+    <!-- 顶部进度条 -->
+    <div class="topbar">
+      <div class="topbar-title">
+        <a href="00-project-list.html" style="text-decoration: none; color: var(--color-text-tertiary); font-size: 16px;">←</a>
+        🎬 江湖传 · 第一季
+        <span class="ep-meta">/ 第 1 集 · 茶馆相遇</span>
+      </div>
+      <div class="stepper">
+        <div class="step done"><span class="dot">✓</span><span>① 内容</span></div>
+        <span class="step-arrow">━</span>
+        <div class="step done"><span class="dot">✓</span><span>② 资产</span></div>
+        <span class="step-arrow">━</span>
+        <div class="step done"><span class="dot">✓</span><span>③ 剧本</span></div>
+        <span class="step-arrow">━</span>
+        <div class="step done"><span class="dot">✓</span><span>④ 分镜</span></div>
+        <span class="step-arrow">━</span>
+        <div class="step active"><span class="dot">●</span><span>⑤ 画面+音频</span></div>
+        <span class="step-arrow">─</span>
+        <div class="step todo"><span class="dot">○</span><span>⑥ 合成</span></div>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-sm">设置</button>
+      </div>
+    </div>
+
+    <!-- 左侧资产侧栏 -->
+    <div class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-section-header"><span>角色</span><span class="count">3</span></div>
+        <div class="sidebar-item"><div class="thumb">📸</div><div>张三</div></div>
+        <div class="sidebar-item"><div class="thumb">📸</div><div>李四</div></div>
+        <div class="sidebar-item"><div class="thumb">📸</div><div>老板娘</div></div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-section-header"><span>地点</span><span class="count">2</span></div>
+        <div class="sidebar-item active"><div class="thumb">🏛</div><div>茶馆 <span class="meta">当前场景</span></div></div>
+        <div class="sidebar-item"><div class="thumb">🌆</div><div>客栈 <span class="meta"><span class="tag tag-3d" style="font-size: 9px; padding: 1px 4px;">3D</span></span></div></div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-section-header"><span>物品</span><span class="count">4</span></div>
+        <div class="sidebar-item"><div class="thumb">🪭</div><div>折扇 <span class="meta">当前镜头</span></div></div>
+        <div class="sidebar-item"><div class="thumb">🗡</div><div>长剑</div></div>
+        <div class="sidebar-item"><div class="thumb">📜</div><div>书信</div></div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-section-header"><span>语音</span><span class="count">5</span></div>
+        <div class="sidebar-item"><div class="thumb voice">🎙</div><div>沉稳男声</div></div>
+        <div class="sidebar-item"><div class="thumb voice">🎙</div><div>温柔女声</div></div>
+        <div class="sidebar-item"><div class="thumb voice">🎙</div><div>苍老男声</div></div>
+        <div class="sidebar-item"><div class="thumb voice">🎤</div><div>我自己</div></div>
+        <div class="sidebar-item"><div class="thumb voice">🎤</div><div>助理 A</div></div>
+      </div>
+    </div>
+
+    <!-- 主区域 -->
+    <div class="main">
+      <div class="main-header">
+        <div>
+          <div class="main-title">⑤ 画面+音频生成</div>
+          <div class="main-subtitle">12 个分镜 · 已出片 5/12 · 当前进入分镜 1.2</div>
+        </div>
+        <button class="btn btn-success">完成本阶段 →</button>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 220px 1fr; gap: 16px;">
+
+        <!-- 左：分镜列表 -->
+        <div class="scene-tree" style="width: auto;">
+          <div class="scene-tree-item"><span>📁</span> 场景 1 · 茶馆 · 黄昏</div>
+          <div class="scene-tree-item shot">
+            <span style="color: var(--color-success);">●</span> 1.1 远景 5s
+          </div>
+          <div class="scene-tree-item shot active">
+            <span style="color: var(--color-warning);">●</span> 1.2 中景 5s
+          </div>
+          <div class="scene-tree-item shot">
+            <span style="color: var(--color-text-tertiary);">○</span> 1.3 特写 3s
+          </div>
+          <div class="scene-tree-item shot">
+            <span style="color: var(--color-text-tertiary);">○</span> 1.4 中近景 4s
+          </div>
+          <div class="scene-tree-item"><span>📁</span> 场景 2 · 茶馆 · 夜晚</div>
+          <div class="scene-tree-item shot">
+            <span style="color: var(--color-success);">●</span> 2.1 远景 6s
+          </div>
+          <div class="scene-tree-item shot">
+            <span style="color: var(--color-success);">●</span> 2.2 中景 5s
+          </div>
+          <div class="scene-tree-item shot">
+            <span style="color: var(--color-success);">●</span> 2.3 特写 3s
+          </div>
+          <div class="scene-tree-item shot">
+            <span style="color: var(--color-text-tertiary);">○</span> 2.4 全景 8s
+          </div>
+          <div class="scene-tree-item"><span>📁</span> 场景 3 · 客栈 · 白天</div>
+          <div class="scene-tree-item shot">
+            <span style="color: var(--color-success);">●</span> 3.1 远景 5s
+          </div>
+          <div class="scene-tree-item shot">
+            <span style="color: var(--color-text-tertiary);">○</span> 3.2 推镜 6s
+          </div>
+          <div class="scene-tree-item shot">
+            <span style="color: var(--color-text-tertiary);">○</span> 3.3 特写 4s
+          </div>
+        </div>
+
+        <!-- 右：分镜详情 -->
+        <div>
+
+          <!-- 镜头语言 -->
+          <div class="keyframe-panel">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+              <div>
+                <span style="font-size: 16px; font-weight: 600;">分镜 1.2</span>
+                <span style="margin-left: 12px; color: var(--color-text-secondary); font-size: 13px;">
+                  中景 · 仰拍 · 推镜
+                  <span style="margin-left: 8px;" class="tag tag-success">5.0s</span>
+                </span>
+              </div>
+              <div style="display: flex; gap: 6px;">
+                <button class="btn btn-sm">编辑分镜</button>
+              </div>
+            </div>
+            <div class="toolbar" style="border: none; padding: 0; margin: 0;">
+              <select>
+                <option>景别: 中景</option>
+              </select>
+              <select>
+                <option>角度: 仰拍</option>
+              </select>
+              <select>
+                <option>运镜: 推镜</option>
+              </select>
+              <input type="number" value="5.0" step="0.5" style="width: 60px;"> s
+              <span style="color: var(--color-text-tertiary); margin-left: 8px;">|</span>
+              <span style="font-size: 12px; color: var(--color-text-secondary);">
+                关键帧数:
+              </span>
+              <select>
+                <option>5 (建议)</option>
+              </select>
+              <span style="font-size: 12px; color: var(--color-text-tertiary); margin-left: auto;">
+                启用 3D 摆位
+                <input type="checkbox" disabled style="margin-left: 6px;"> <span style="color: var(--color-text-tertiary);">(地点非 3D)</span>
+              </span>
+            </div>
+          </div>
+
+          <!-- 九宫格关键帧 -->
+          <div class="keyframe-panel">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+              <div>
+                <span style="font-weight: 600;">关键帧序列</span>
+                <span style="color: var(--color-text-tertiary); font-size: 12px; margin-left: 8px;">
+                  时间顺序的 5 张快照（"九宫格"）· 用于 keyframesToVideo 模型
+                </span>
+              </div>
+              <div style="display: flex; gap: 6px;">
+                <button class="btn btn-sm">重生成全部</button>
+                <button class="btn btn-sm">+ 添加帧</button>
+              </div>
+            </div>
+
+            <!-- 时间轴 bar -->
+            <div class="timeline-bar">
+              <div class="timeline-tick" style="left: 0%"></div>
+              <div class="timeline-tick" style="left: 25%"></div>
+              <div class="timeline-tick" style="left: 50%"></div>
+              <div class="timeline-tick" style="left: 75%"></div>
+              <div class="timeline-tick" style="left: 100%"></div>
+            </div>
+
+            <!-- 九宫格本体 -->
+            <div class="keyframe-grid">
+              <!-- Frame 1: start -->
+              <div class="keyframe-cell role-start">
+                <span class="kf-no">1</span>
+                <span>👨</span>
+                <span class="kf-role">START · 0%</span>
+              </div>
+
+              <!-- Frame 2: middle -->
+              <div class="keyframe-cell">
+                <span class="kf-no">2</span>
+                <span>👨</span>
+                <span class="kf-role">25%</span>
+              </div>
+
+              <!-- Frame 3: middle (generating) -->
+              <div class="keyframe-cell gen">
+                <span class="kf-no">3</span>
+                <span>⏳</span>
+                <span class="kf-role">50% (生成中)</span>
+              </div>
+
+              <!-- Frame 4: middle (empty) -->
+              <div class="keyframe-cell empty">
+                <span class="kf-no">4</span>
+                <span>+</span>
+                <span class="kf-role">75% (待生成)</span>
+              </div>
+
+              <!-- Frame 5: end -->
+              <div class="keyframe-cell role-end empty">
+                <span class="kf-no">5</span>
+                <span>+</span>
+                <span class="kf-role">END · 100% (待生成)</span>
+              </div>
+            </div>
+
+            <div style="background: var(--color-primary-light); border-left: 3px solid var(--color-primary); padding: 8px 12px; border-radius: 0 4px 4px 0; font-size: 12px; color: var(--color-text); margin-top: 12px;">
+              💡 <strong>参考链顺序</strong>：先生成 1 (start) → 5 (end，参考 1) → 2/3/4 中间帧（参考首尾），保证运动连贯
+            </div>
+          </div>
+
+          <!-- 资产引用 -->
+          <div class="keyframe-panel">
+            <div style="font-weight: 600; margin-bottom: 10px;">本分镜引用的资产</div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <div class="tag tag-linked-lw" style="font-size: 12px; padding: 4px 10px;">📍 茶馆 · interior_a · 黄昏阴天</div>
+              <div class="tag tag-linked-lw" style="font-size: 12px; padding: 4px 10px;">👤 张三 · face/angry · default_outfit</div>
+              <div class="tag tag-linked-lw" style="font-size: 12px; padding: 4px 10px;">⚔️ 折扇 · held</div>
+            </div>
+            <div style="margin-top: 10px; font-size: 12px; color: var(--color-text-tertiary);">
+              每张关键帧自动按以下公式组装提示词：
+              <br>
+              <code style="background: var(--color-bg); padding: 2px 6px; border-radius: 3px; font-size: 11px;">
+                style_anchor + 镜头语言 + 场景描述 + 地点变体图 + 角色图 + 物品图 + 上一帧
+              </code>
+            </div>
+          </div>
+
+          <!-- 视频生成 -->
+          <div class="keyframe-panel">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+              <div>
+                <span style="font-weight: 600;">视频生成</span>
+                <span style="color: var(--color-text-tertiary); font-size: 12px; margin-left: 8px;">把上面 5 张关键帧喂给视频模型，输出 5 秒连续片段</span>
+              </div>
+            </div>
+            <div class="toolbar" style="border: none; padding: 0; margin: 0;">
+              <span style="font-size: 12px;">Provider:</span>
+              <select><option>可灵 Kling v2</option></select>
+              <span style="font-size: 12px;">模式:</span>
+              <select><option>keyframesToVideo (推荐)</option><option>imageToVideo</option></select>
+              <button class="btn btn-primary btn-sm">🎥 生成视频片段</button>
+              <span style="margin-left: auto; font-size: 12px; color: var(--color-text-secondary);">
+                状态：<span class="tag" style="background: var(--color-warning-light); color: var(--color-warning);">⏳ 关键帧未齐</span>
+              </span>
+            </div>
+          </div>
+
+          <!-- 音频 -->
+          <div class="keyframe-panel">
+            <div style="font-weight: 600; margin-bottom: 10px;">音频</div>
+
+            <div style="display: grid; grid-template-columns: 80px 1fr auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--color-bg);">
+              <span class="tag" style="background: var(--color-primary-light); color: var(--color-primary); justify-self: start;">旁白</span>
+              <div style="font-size: 13px;">「夕阳下他缓缓走入茶馆，眼神与坐在窗边的女人对上」</div>
+              <div style="display: flex; gap: 4px; align-items: center;">
+                <span style="font-size: 12px; color: var(--color-text-tertiary);">沉稳男声 · 1.0x</span>
+                <button class="btn btn-sm">▶</button>
+                <button class="btn btn-sm">↺</button>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 80px 1fr auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--color-bg);">
+              <span class="tag" style="background: var(--color-success-light); color: var(--color-success); justify-self: start;">对话</span>
+              <div style="font-size: 13px;"><strong>张三</strong> · neutral · "你来了。" </div>
+              <div style="display: flex; gap: 4px; align-items: center;">
+                <span style="font-size: 12px; color: var(--color-text-tertiary);">沉稳男声</span>
+                <button class="btn btn-sm">▶</button>
+                <button class="btn btn-sm">↺</button>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 80px 1fr auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--color-bg);">
+              <span class="tag" style="background: var(--color-success-light); color: var(--color-success); justify-self: start;">对话</span>
+              <div style="font-size: 13px;"><strong>李四</strong> · whisper · "等你很久了。"</div>
+              <div style="display: flex; gap: 4px; align-items: center;">
+                <span style="font-size: 12px; color: var(--color-text-tertiary);">温柔女声 · 0.9x</span>
+                <button class="btn btn-sm">▶</button>
+                <button class="btn btn-sm">↺</button>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 80px 1fr auto; gap: 10px; align-items: center; padding: 8px 0;">
+              <span class="tag" style="background: var(--color-warning-light); color: var(--color-warning); justify-self: start;">BGM</span>
+              <div style="font-size: 13px; color: var(--color-text-secondary);">古风弦乐 · 缓 · loop</div>
+              <div style="display: flex; gap: 4px; align-items: center;">
+                <span style="font-size: 12px; color: var(--color-text-tertiary);">音量 30</span>
+                <button class="btn btn-sm">▶</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部迷你时间线 -->
+    <div class="footer">
+      <span>底部时间线：</span>
+      <div class="timeline-blocks">
+        <div class="timeline-block done"></div>
+        <div class="timeline-block partial"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block done"></div>
+        <div class="timeline-block done"></div>
+        <div class="timeline-block done"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block done"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+        <div class="timeline-block"></div>
+      </div>
+      <span class="timeline-stat">5/12 分镜出片 · 累计 24s</span>
+      <button class="timeline-action">▶ 试播</button>
+    </div>
+
+  </div>
+
+  <div style="position: fixed; bottom: 80px; right: 20px; display: flex; flex-direction: column; gap: 6px;">
+    <a href="index.html" class="btn btn-sm" style="background: white;">← 导航</a>
+    <a href="04-stage-storyboard.html" class="btn btn-sm" style="background: white;">上一步</a>
+  </div>
+</body>
+</html>
