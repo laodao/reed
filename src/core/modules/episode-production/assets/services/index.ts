@@ -23,3 +23,11 @@ export type {
   OverridePatch,
   StandalonePatch,
 } from './character-asset.service'
+export { LocationAssetService } from './location-asset.service'
+export type {
+  CreateStandaloneLocationInput,
+  CreateLinkedLwLocationInput,
+  LocationOverridePatch,
+  LocationStandalonePatch,
+  PickVariantInput,
+} from './location-asset.service'
