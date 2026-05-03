@@ -564,7 +564,10 @@ classDiagram
 ├─ time_variants[]      时间变体：morning/noon/.../night
 ├─ weather_variants[]   天气变体：sunny/rainy/snowy/...
 ├─ angle_variants[]     视角变体：wide_shot/entrance/interior_a/...
-└─ panorama_360 ★       360 全景图（3D 升级形态，本次不实现）
+├─ panorama_360         360 全景图（AI 生成或上传，详见 §4.5.10）
+├─ panorama_snapshots[] 全景视角截图（从 panorama_360 选定 yaw/pitch/fov 渲染的 2D 图，
+│                       给分镜当背景 ref；保证同场景多分镜背景 3D 一致）
+└─ scene_layout_3d ★    3D 摆位场景（Phase 8 超精准模式，本 phase 不实现）
 
 物品图谱
 ├─ main           主图（孤立物品图）
@@ -637,19 +640,62 @@ flowchart LR
 
 **铁律**：派生图必须以主图作为参考图，**不允许独立生成**。这避免当前代码"每帧独立生成造成漂移"。
 
-### 3.6 与 portrait 模块的关系
+### 3.6 与 portrait 模块的关系（重新定位为"角色形象库"）
+
+**portrait 模块在新架构里重新定位**：从"独立的人像设计工具"升级为"全局角色形象库"——它存的是**跨项目复用的、稳定的角色形象档案**（脸 + 身材 + 标准视角图集）。
 
 ```
-portrait（独立模块）
-   = 一个角色"脸 + 身材"的多变体
-   = 长期存在,跨项目复用
+portrait（"角色形象库"重新定位）
+   = 一个角色"脸 + 身材"的稳定档案
+   = 跨项目复用：A 剧用过的张三可在 B 剧继续用
+   = portrait_variant 是"标准视角图集"（多角度脸/身材的图）
+   = UI: 主菜单"角色形象库"独立入口
+   ✗ 不管：服装 / 表情 / 姿势 / 声音 / 剧集业务上下文
 
-character_binding（剧集制作模块）
-   = portrait（脸+身材） + 这部剧里的形象状态
-   = 服装变体 + 表情变体 + 姿势变体 + 声音 + 与剧集的关联
+character_binding（剧集制作模块的角色资产）
+   = portrait_id?（可选，绑定形象库一个角色）+ 这部剧里的形象状态
+   = 服装变体 + 表情变体 + 姿势变体 + 声音绑定 + 与剧集的关联
+   = 没绑 portrait 时，所有维度都剧集内独立生成
 ```
 
-复用方式：角色资产卡的 `views[]` 字段可绑定 `portrait_id`，复用 portrait 的 variants 作为视角图。`outfits / expressions / poses` 永远在 character_binding 内生成（portrait 不管这些）。
+**两类用户路径**：
+
+```
+A. 从形象库选已有角色（推荐 · 跨剧复用）
+   character_binding 编辑 → "绑定形象库角色" → 选 portrait
+                       → portrait.variants 投影为 character_binding 的 views[]
+                       → 用户填本剧独有的服装 / 表情 / 姿势 / 声音
+
+B. 独立创建（不绑库）
+   character_binding 编辑 → "独立新建" → 所有维度（含 views）都剧集级
+   → 后续可"提升到形象库"（标记 portrait_id 入库，供其它剧用）
+```
+
+**variant 类型标准化对齐**（数据层硬约束）：
+
+`portrait_variant.view_type` 与 `character_binding.views[].label` 共用同一组枚举：
+
+```
+'front' | '3q_left' | '3q_right' | 'side_l' | 'side_r' | 'back'
+```
+
+这样 portrait → character_binding 的投影、character_binding 反向"提升到 portrait" 的导出，都不需要语义转换。
+
+**职责分界（强约束）**：
+
+| 维度 | portrait（库） | character_binding（剧集） |
+|---|---|---|
+| 名字 / 简介 / 外貌（脸/身材） | ✅ 权威 | 投影 + override |
+| views[] 视角图（front/3q/back...） | ✅ 权威 | 投影自 portrait_variant；本剧独立可补 |
+| outfits[] 服装 | ❌ 不管 | ✅ 权威 |
+| expressions[] 表情 | ❌ 不管 | ✅ 权威 |
+| poses[] 姿势 | ❌ 不管 | ✅ 权威 |
+| voice 声音 | ❌ 不管 | ✅ 权威 |
+| 与剧本/场景/分镜的关联 | ❌ 不管 | ✅ 权威 |
+
+**反向回写**（可选）：character_binding 在本剧新生成的 views（如新增的"3q_right"角度）可以"回写"到绑定的 portrait——丰富库的视角覆盖。服装/表情/姿势永远不回写（它们是剧集情境特有的）。
+
+**长文模块和 portrait 的关系**：保持现状——长文模块的 lw_character 不知道 portrait 的存在；character_binding 是唯一的衔接层（lw_character ←→ character_binding ←→ portrait）。
 
 ### 3.7 双来源在资产卡的差异
 
@@ -1078,36 +1124,136 @@ StoryboardCharacters: [{cb_lisi, position=center, expression=surprised, facing=3
 
 3 个分镜共享同一地点资产（不同 angle 变体）+ 共享角色资产（不同 expression / facing / action 选取）。每分镜 1-4 张关键帧按复杂度配置，每张关键帧拉的参考图按上述公式组装。
 
----
+#### 4.5.10 ★ 360 全景 + 视角截图机制（核心一致性方案）
 
-### 4.6 3D 接入点（本次不实现）
+**比"3D 摆位编辑器"更轻、更实用**的同场景多分镜背景一致性方案。本 phase 主流程，不是占位。
+
+**完整流程**：
 
 ```mermaid
 flowchart TD
-    L[地点资产] -. 升级 .-> L3D[3D 地点<br/>panorama_360 + scene_layout]
-    SB[分镜定稿] --> CHECK{地点是 3D?<br/>启用摆位?}
-    CHECK -- 否 --> KF[直接生成关键帧<br/>2D 路径]
-    CHECK -- 是 --> POSE[3D 摆位编辑器<br/>用简易模型代位人/物]
+    A[地点资产卡 · 茶馆] --> B{有 360 全景?}
+    B -- 没有 --> C[AI 生成 panorama_360<br/>用 image API + equirectangular prompt<br/>输出 2:1 等距投影图，存 asset_image category=panorama_360]
+    B -- 上传 --> D[用户上传现成 360 图<br/>或从 image 模块导入]
+    C --> E
+    D --> E[全景图就绪]
+    E --> F[浏览器内 360 预览<br/>photo-sphere-viewer 可拖动/缩放]
+    F --> G[做分镜 1.1 → 进入'视角选择'<br/>调 yaw/pitch/fov]
+    F --> H[做分镜 1.2 → 视角选择<br/>另一组 yaw/pitch/fov]
+    F --> I[做分镜 1.3 → 同上]
+    G --> J[当前视角渲染 2D 截图<br/>存 asset_image category=panorama_snapshot<br/>metadata={yaw, pitch, fov}]
+    H --> K[同上]
+    I --> L[同上]
+    J & K & L --> M[关键帧生成时<br/>截图作 background_ref<br/>+ 角色/物品图]
+    M --> N[同场景 3 分镜的背景<br/>3D 几何天然一致]
+```
+
+**关键步骤说明**：
+
+1. **生成 panorama_360**
+   - AI Image Provider 支持 panoramic / equirectangular 模式
+   - 阿里 dashscope-image / Stability SDXL 加 panorama LoRA / 或普通 image API + `'equirectangular panoramic 2:1'` prompt
+   - 输出: 2:1 等距投影图（推荐 4096×2048 或 6912×3456）
+   - 存: `asset_image (category='panorama_360', is_main=0, sort_order=0)`，归属 `location_binding.id`
+
+2. **浏览器内 360 预览**
+   - 引入 [photo-sphere-viewer.js](https://photo-sphere-viewer.js.org/)（轻量库 ~80KB）
+   - 在 ② 资产 / ④ 分镜 / ⑤ 画面阶段都能嵌入预览组件
+   - 用户拖动旋转 / 缩放 / 切换不同 panorama
+
+3. **视角截图作分镜背景 ref（最关键）**
+   - 用户在分镜编辑里点"从全景图截背景" → 进入"视角选择器"
+   - 用户调好 `yaw`（左右旋转 -180°~180°）/ `pitch`（俯仰 -90°~90°）/ `fov`（视场角 30°~120°）
+   - 系统按当前视角渲染（photo-sphere-viewer 的 `getRenderer().domElement.toDataURL()`）→ 2D 图
+   - 存 `asset_image (category='panorama_snapshot', metadata={yaw, pitch, fov, source_panorama_id})`
+   - 关联到 storyboard：`storyboard.background_ref_image_id` 指向这张截图
+
+4. **关键帧生成消费截图**
+   - 每张关键帧的 reference_images 公式（§4.5.7）追加一项：
+     - 优先取 `storyboard.background_ref_image_id`（panorama 截图）
+     - 没有就退回到 §3.4 的取图优先级（地点 angle 变体）
+   - 把截图作为强 reference image 喂给图像模型 → 输出画面背景与截图几何对齐
+
+**vs 现有"3D 摆位编辑器"对比**：
+
+| 维度 | 360 + 视角截图 ★ 本 phase 主流程 | 3D 摆位编辑器 ★ Phase 8 超精准模式 |
+|---|---|---|
+| 实施难度 | 低（用 image API + photo-sphere-viewer） | 高（要 3D 编辑器 + 简易模型库 + 摆位 UI） |
+| 用户学习成本 | 低（拖动看 360 + 截图，类似看街景） | 高（要懂 3D 视角操作） |
+| 一致性效果 | ★★★★ 同 panorama 截图保证背景 3D 一致 | ★★★★★ 完美但成本高（含人物站位精确） |
+| 资产成本 | 1 张 panorama / 地点 | 360 + 简易模型库 + 摆位场景 |
+| 适用范围 | 90% 场景（背景一致性） | 复杂群戏 / 精确走位 |
+
+**实操示例（茶馆 3 分镜共享 panorama）**：
+
+```
+地点 茶馆 · panorama_360 (1 张全景图)
+
+分镜 1.1 远景 · 平视 · 固定
+  → 视角选择：yaw=0°, pitch=-5°, fov=70°
+  → 截图: snapshot_1.1（看到整个茶馆大堂）
+  → background_ref_image_id = snapshot_1.1
+
+分镜 1.2 中景 · 仰拍 · 推镜
+  → 视角选择：yaw=-15°, pitch=-25°, fov=50°
+  → 截图: snapshot_1.2（仰拍角度看到屋顶横梁）
+  → background_ref_image_id = snapshot_1.2
+
+分镜 1.3 特写 · 平视 · 固定
+  → 视角选择：yaw=-30°, pitch=0°, fov=35°
+  → 截图: snapshot_1.3（聚焦窗边八仙桌）
+  → background_ref_image_id = snapshot_1.3
+
+→ 3 张截图都源自同一全景，背景的木梁 / 灯笼 / 屏风位置在 3D 空间里完全一致
+→ AI 生成的关键帧背景结构稳定，跨分镜剪辑不会"穿帮"
+```
+
+**降级策略**：
+
+- 没生成 panorama_360 → 退回 §3.4 / §4.5.2 的 angle_variants 路径（用地点变体图）
+- 用户拒绝 panorama → 整个 360 机制不启用，纯 2D 路径
+
+---
+
+### 4.6 3D 接入点（Phase 8 超精准模式）
+
+> **重要**：360 全景 + 视角截图（§4.5.10）已是本 phase **正式机制**，覆盖 90% 场景背景一致性需求。本节描述的"3D 摆位编辑器"是 Phase 8 才实现的**超精准升级**，给"复杂群戏 / 多人物精确走位"等专业场景留口。
+
+```mermaid
+flowchart TD
+    L[地点资产] --> L1[panorama_360 全景图 ★ 已实现]
+    L --> L3D[scene_layout_3d ★ Phase 8]
+    SB[分镜定稿] --> CHECK{用什么模式?}
+    CHECK -- 主流程 --> SS[panorama 视角截图<br/>storyboard.background_ref_image_id<br/>★ §4.5.10 已实现]
+    CHECK -- 超精准 Phase 8 --> POSE[3D 摆位编辑器<br/>用简易模型代位人/物]
     POSE --> RENDER[渲染摆位预览图]
-    RENDER --> KF3D[基于摆位预览图<br/>生成关键帧]
+    RENDER --> KF3D[关键帧生成器<br/>把摆位图作为强参考]
+    SS --> KF[关键帧生成器<br/>把截图作为背景 ref]
     KF --> V[视频片段]
     KF3D --> V
+
+    style SS fill:#e8ffe8,stroke:#5cb85c
+    style L1 fill:#e8ffe8,stroke:#5cb85c
+    style POSE fill:#fce4ec,stroke:#c2185b
+    style L3D fill:#fce4ec,stroke:#c2185b
+    style KF3D fill:#fce4ec,stroke:#c2185b
 ```
 
 **接入点 1：地点资产层**
 
 ```
 location_binding 扩展：
-  panorama_3d_id  text nullable   ← 360 全景图资源
-  scene_layout_id text nullable   ← 3D 场景搭建
+  panorama_360_image_id text nullable   ★ 已实现 (§4.5.10) — 指向 asset_image
+  scene_layout_3d_id    text nullable   ★ Phase 8 — 3D 摆位场景
 ```
 
 **接入点 2：分镜层**
 
 ```
 storyboard 扩展：
-  use_3d_staging  bool default false
-  staging_layout_id text nullable
+  background_ref_image_id text nullable   ★ 已实现 — panorama 截图作背景 ref
+  use_3d_staging          bool default false   ★ Phase 8
+  staging_layout_id       text nullable        ★ Phase 8
 ```
 
 **接入点 3：关键帧生成器层**
@@ -1115,11 +1261,15 @@ storyboard 扩展：
 ```
 generateKeyframe(opts: {
   storyboard, frameRole, prevKeyframes,
-  stagingPreviewImage?: string  ← 本次永远 undefined
+  backgroundRefImage?: string,    ★ 已实现 — panorama 截图（§4.5.10）
+  stagingPreviewImage?: string,   ★ Phase 8 — 3D 摆位渲染图
 })
+
+本 phase: backgroundRefImage 取 storyboard.background_ref_image_id 对应的 asset_image
+Phase 8 : stagingPreviewImage 由 3D 摆位编辑器实时渲染
 ```
 
-接口预留 + 参数为可选，本次实现完全不知道 3D 的存在；将来加 3D 模块只需要填那个参数。
+两个 `?` 参数同时可选，关键帧生成器根据填了哪个走相应的 reference 注入路径。本 phase 实现读 backgroundRefImage；Phase 8 时再加 stagingPreviewImage 分支，对前者零侵入。
 
 ### 4.7 ⑤ 阶段（画面+音频）UI
 
@@ -1168,12 +1318,17 @@ storyboard_keyframe 表
 扩展 `storyboard`：
 - `keyframe_count` int default 2
 - `video_provider_id` / `video_model_id` / `video_mode` enum('text2video','image2video','keyframes2video')
-- `use_3d_staging` bool default false（接入点 2）
-- `staging_layout_id` text nullable（接入点 2）
+- `background_ref_image_id` text nullable —— 指向 `asset_image.id`（panorama_snapshot），见 §4.5.10
+- `use_3d_staging` bool default false（Phase 8 接入点）
+- `staging_layout_id` text nullable（Phase 8 接入点）
 
 扩展 `location_binding`：
-- `panorama_3d_id` text nullable（接入点 1）
-- `scene_layout_id` text nullable（接入点 1）
+- `panorama_360_image_id` text nullable —— 指向 `asset_image.id`（category='panorama_360'）
+- `scene_layout_3d_id` text nullable（Phase 8 3D 摆位场景接入点）
+
+扩展 `asset_image.category` 枚举（追加 2 个值）：
+- `'panorama_360'` —— 360 等距投影全景图
+- `'panorama_snapshot'` —— 从 panorama_360 截的 2D 视角图，metadata 存 `{yaw, pitch, fov, source_panorama_id}`
 
 扩展 `scene_prop`：
 - `item_binding_id` text nullable FK（之前是裸 prop_name 字符串）

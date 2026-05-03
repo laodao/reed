@@ -259,16 +259,18 @@
             </div>
           </div>
 
-          <!-- 3D 升级 -->
+          <!-- 360 全景 + 3D 升级 -->
           <div class="panel-divider" style="background: var(--color-bg); margin-left: -16px; margin-right: -16px; margin-bottom: -16px; padding: 14px 16px; border-bottom-left-radius: 6px; border-bottom-right-radius: 6px;">
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-              <div style="font-weight: 600;">🎲 3D 升级（可选）</div>
-              <span class="tag" style="background: white; color: var(--color-text-tertiary);">未升级</span>
+              <div style="font-weight: 600;">🌐 360 全景图（panorama_360）</div>
+              <span class="tag tag-success">已生成</span>
             </div>
             <div style="font-size: 12px; color: var(--color-text-secondary); margin-bottom: 8px; line-height: 1.5;">
-              升级后可上传 360 全景图 + 用 3D 编辑器布置场景，分镜阶段可启用"3D 摆位"，让人物/物品在场景里精确定位，提高画面一致性。
+              本 phase 主流程：AI 生成或上传 360 全景 → 视角截图给分镜当背景 ref → 同场景多分镜背景 3D 一致。详见右栏。
             </div>
-            <button class="btn btn-sm" disabled style="opacity: 0.6;">升级到 3D 地点 (Phase 8)</button>
+            <div style="font-size: 11px; color: var(--color-text-tertiary); border-top: 1px dashed var(--color-border); padding-top: 8px; margin-top: 8px;">
+              🎲 3D 摆位场景（更精准）— Phase 8 实现，本 phase 不启用
+            </div>
           </div>
 
         </div>
@@ -367,54 +369,105 @@
             </div>
           </div>
 
-          <!-- 3D 升级形态 -->
+          <!-- 360 全景图（本 phase 主流程） -->
           <div class="keyframe-panel">
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
               <div>
-                <span style="font-weight: 600;">🎲 3D 升级形态</span>
-                <span class="tag" style="background: var(--color-bg); font-size: 10px; margin-left: 6px;">未启用</span>
-                <span style="color: var(--color-text-tertiary); font-size: 12px; margin-left: 6px;">Phase 8 实现 — 当前仅占位</span>
+                <span style="font-weight: 600;">🌐 360 全景图（panorama_360）</span>
+                <span class="tag tag-success" style="font-size: 10px; margin-left: 6px;">已生成</span>
+                <span style="color: var(--color-text-tertiary); font-size: 12px; margin-left: 6px;">同场景多分镜共享背景的核心机制（spec §4.5.10）</span>
               </div>
-              <button class="btn btn-sm" disabled style="opacity: 0.5;">升级到 3D</button>
-            </div>
-
-            <div class="pano-empty">
-              <div style="font-size: 36px;">🎲</div>
-              <div style="font-size: 13px; font-weight: 600;">360 全景图 + 3D 摆位场景（未上传）</div>
-              <div style="font-size: 11px; max-width: 480px; text-align: center; line-height: 1.6;">
-                升级后：上传 panorama_360 全景图 → 进入 3D 编辑器，
-                用简易模型代指人物/物品位置 → 分镜阶段可"启用 3D 摆位"，
-                每个关键帧从 3D 视图渲染参考图喂给 AI，最大化空间一致性
+              <div style="display: flex; gap: 6px;">
+                <button class="btn btn-sm">↺ 重新生成</button>
+                <button class="btn btn-sm">⬆ 上传替换</button>
               </div>
             </div>
 
-            <!-- 已升级时的展示样例（仅做参考视觉） -->
-            <details style="margin-top: 12px;">
-              <summary style="cursor: pointer; font-size: 12px; color: var(--color-primary);">▸ 预览：升级后的 3D 形态（参考客栈，本地点未升级）</summary>
-              <div style="margin-top: 10px;">
-                <div class="pano-area">
-                  <div class="pano-tag">panorama_360 · 6912×3456</div>
-                  <div class="pano-grip"></div>
-                  <div style="font-size: 56px;">🌐</div>
-                  <div class="scene-label" style="position: absolute; bottom: 6px; right: 8px; background: rgba(0,0,0,0.5); padding: 2px 8px; border-radius: 3px; font-size: 11px;">滚动查看 360°</div>
-                </div>
-                <div style="margin-top: 8px; padding: 8px 12px; background: var(--color-warning-light); border-radius: 4px; font-size: 12px; color: var(--color-text-secondary);">
-                  3D 摆位场景 1：第 1 章 张三入店 — 张三模型在入口、李四模型在窗边、折扇道具放桌上
-                </div>
+            <!-- panorama 预览（mock） -->
+            <div class="pano-area" style="cursor: grab;">
+              <div class="pano-tag">panorama_360 · 6912×3456 · equirectangular</div>
+              <div class="pano-grip"></div>
+              <div style="font-size: 56px;">🌐</div>
+              <div style="position: absolute; bottom: 8px; right: 10px; background: rgba(0,0,0,0.5); padding: 3px 10px; border-radius: 3px; font-size: 11px; color: white;">拖动旋转 · 滚轮缩放 · 360°</div>
+              <div style="position: absolute; bottom: 8px; left: 10px; background: rgba(0,0,0,0.5); padding: 3px 10px; border-radius: 3px; font-size: 11px; color: white; font-family: monospace;">yaw: 0° · pitch: -5° · fov: 70°</div>
+            </div>
+            <div style="font-size: 11px; color: var(--color-text-tertiary); margin-top: 6px;">
+              生成时间：1 小时前 · dashscope-image · prompt 含 "equirectangular panoramic 2:1"
+              <br>
+              💡 用 photo-sphere-viewer.js 在浏览器内 360 拖动预览
+            </div>
+          </div>
+
+          <!-- 视角截图（panorama_snapshot） -->
+          <div class="keyframe-panel">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+              <div>
+                <span style="font-weight: 600;">📷 视角截图（panorama_snapshot）</span>
+                <span class="tag" style="font-size: 10px; margin-left: 6px;">3 张 · 给分镜当背景 ref</span>
+                <span style="color: var(--color-text-tertiary); font-size: 12px; margin-left: 6px;">
+                  从全景图选 yaw/pitch/fov 截出 2D 图，同场景多分镜共享 → 背景 3D 几何一致
+                </span>
               </div>
-            </details>
+              <button class="btn btn-primary btn-sm">+ 进入截图模式</button>
+            </div>
+
+            <div class="grid-4">
+              <div class="scene-thumb grad-angle1">
+                <span class="scene-icon">📍</span>
+                <span class="scene-label">snap_1.1 · yaw=0° pitch=-5° fov=70°</span>
+                <span class="ribbon" style="background: var(--color-primary);">分镜 1.1</span>
+              </div>
+              <div class="scene-thumb grad-angle2">
+                <span class="scene-icon">📍</span>
+                <span class="scene-label">snap_1.2 · yaw=-15° pitch=-25° fov=50°</span>
+                <span class="ribbon" style="background: var(--color-primary);">分镜 1.2</span>
+              </div>
+              <div class="scene-thumb grad-angle3">
+                <span class="scene-icon">📍</span>
+                <span class="scene-label">snap_1.3 · yaw=-30° pitch=0° fov=35°</span>
+                <span class="ribbon" style="background: var(--color-primary);">分镜 1.3</span>
+              </div>
+              <div class="scene-thumb empty">
+                <span class="scene-icon">+</span>
+                <span class="scene-label">为分镜 1.4 截图</span>
+              </div>
+            </div>
+            <div class="lbl-row" style="grid-template-columns: repeat(4, 1fr);">
+              <span>整体远景</span><span>仰拍中景</span><span>临窗特写</span><span>—</span>
+            </div>
+
+            <div style="background: var(--color-success-light); border-left: 3px solid var(--color-success); padding: 8px 12px; border-radius: 0 4px 4px 0; font-size: 12px; color: var(--color-text); margin-top: 12px; line-height: 1.7;">
+              ✓ <strong>3D 一致性效果</strong>：分镜 1.1 / 1.2 / 1.3 都从同一全景图截图，背景里的木梁 / 灯笼 / 屏风位置在 3D 空间里完全一致 → AI 生成的关键帧背景结构稳定，跨分镜剪辑不会"穿帮"。
+            </div>
           </div>
 
           <!-- 一致性提示 -->
           <div style="background: var(--color-primary-light); border-left: 3px solid var(--color-primary); padding: 10px 14px; border-radius: 0 4px 4px 0; font-size: 12px; color: var(--color-text); margin-top: 4px; line-height: 1.7;">
             💡 <strong>分镜如何用这些图？</strong>
             <br>
-            ⑤ 画面+音频阶段每生成一张关键帧时，按场景的 <code>time_of_day</code> + <code>weather</code> + 镜头构图自动从图谱拉<strong>最匹配的变体</strong>作 reference image：
-            <ul style="margin: 4px 0 0 20px; padding: 0; line-height: 1.6;">
-              <li>时间+天气+视角都匹配 → 用之</li>
-              <li>只有时间匹配 → 用之</li>
-              <li>都不匹配 → 退回主图</li>
-            </ul>
+            ⑤ 画面+音频阶段每生成一张关键帧时，参考图按以下优先级注入：
+            <ol style="margin: 4px 0 0 20px; padding: 0; line-height: 1.6;">
+              <li>★ 该分镜的 panorama_snapshot（背景 ref，3D 一致）</li>
+              <li>没有截图 → 退回到地点 angle 变体（按 time+weather+视角匹配）</li>
+              <li>都没有 → 退回到主图</li>
+            </ol>
+          </div>
+
+          <!-- 3D 摆位 Phase 8 占位 -->
+          <div class="keyframe-panel" style="background: var(--color-bg);">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+              <div>
+                <span style="font-weight: 600;">🎲 3D 摆位场景</span>
+                <span class="tag tag-3d" style="font-size: 10px; margin-left: 6px;">Phase 8 超精准模式</span>
+                <span style="color: var(--color-text-tertiary); font-size: 12px; margin-left: 6px;">本 phase 不实现 · 复杂群戏 / 精确走位时启用</span>
+              </div>
+              <button class="btn btn-sm" disabled style="opacity: 0.5;">升级到 3D 摆位</button>
+            </div>
+            <div style="font-size: 12px; color: var(--color-text-secondary); padding: 8px 0; line-height: 1.7;">
+              在 360 全景基础上，进 3D 编辑器用简易模型代位人物/物品 → 渲染摆位预览图作为关键帧 ref，
+              比 panorama 截图更精准（含人物站位/朝向/物品位置的 3D 几何信息）。<br>
+              90% 场景"360 + 截图"已经够用；这是给战斗 / 群戏 / 多机位调度等专业场景留口。
+            </div>
           </div>
         </div>
       </div>
