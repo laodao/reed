@@ -355,11 +355,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
   }
 
   /**
-   * 运行多租户基础迁移：
-   * 1. ensureUsersTable —— users 表存在（typeorm synchronize 不接管旧库时手工保障）
-   * 2. ensureUserIdColumns —— 所有声明了 userId 字段的业务表补 user_id 列
+   * 多租户预迁移 + 业务 schema 迁移
+   * 1. ensureUsersTable      —— users 表存在（typeorm synchronize 不接管旧库时手工保障）
+   * 2. ensureUserIdColumns   —— 所有声明了 userId 字段的业务表补 user_id 列
    *    + 旧数据回填为 LOCAL_DEFAULT_USER_ID（PC 单用户语义）
-   * 必须在 schema drift 检查之前执行，否则旧库会因为缺 user_id 列而被判定漂移。
+   * 3. ensureAssetBindingSourceType —— P2: episode-production binding 加 source_type/override_x/standalone_x + 3D 接入点
+   * 必须在 schema drift 检查之前执行，否则旧库会因为缺列而被判定漂移。
    */
   private async runMultiTenantMigrations(): Promise<void> {
     if (!this.dataSource) return

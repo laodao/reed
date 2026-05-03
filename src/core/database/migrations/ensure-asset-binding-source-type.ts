@@ -30,7 +30,8 @@ interface BindingTableSpec {
 
 /** 所有 binding 表共享的 5 个公共列 */
 const COMMON_COLUMNS: ColumnSpec[] = [
-  { name: 'source_type', type: 'TEXT', defaultExpr: "'standalone'" },
+  // source_type 不设 DEFAULT：旧行保持 NULL，交由下方回填逻辑处理；新行由业务代码写入
+  { name: 'source_type', type: 'TEXT' },
   { name: 'override_name', type: 'TEXT' },
   { name: 'override_description', type: 'TEXT' },
   { name: 'standalone_name', type: 'TEXT' },
@@ -94,12 +95,12 @@ export async function ensureAssetBindingSourceType(ds: DataSource): Promise<void
       console.log(`[ensure-asset-binding-source-type] ${spec.table}: 加列 ${col.name}`)
     }
 
-    // 回填 source_type
-    // linked_lw：long_writing_xxx_id 非空 且 source_type 仍为默认值（首次执行或多次执行安全）
+    // 回填 source_type（只动 NULL 行，已显式设值的不动）
+    // linked_lw：long_writing_xxx_id 非空 且 source_type 仍为 NULL（首次执行）
     await ds.query(
       `UPDATE "${spec.table}" SET source_type = 'linked_lw'
        WHERE ${spec.lwIdColumn} IS NOT NULL
-         AND (source_type IS NULL OR source_type = 'standalone')`,
+         AND source_type IS NULL`,
     )
     // standalone：long_writing_xxx_id 为空 且 source_type 仍为 NULL（DDL DEFAULT 不填充已存在行）
     await ds.query(

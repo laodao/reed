@@ -86,10 +86,31 @@ describe('ensureAssetBindingSourceType migration', () => {
     await ds.destroy()
   })
 
-  it('幂等：重复跑两次不报错', async () => {
+  it('幂等：重复跑两次数据保持稳定', async () => {
     const ds = await buildLegacyDb()
+    await ds.query(`INSERT INTO character_bindings (id, project_id, long_writing_character_id) VALUES
+      ('a', 'p1', 'lw_c_1'),
+      ('b', 'p1', NULL)`)
+
     await ensureAssetBindingSourceType(ds)
+    // 第一次跑后断言
+    const after1 = await ds.query(`SELECT id, source_type FROM character_bindings ORDER BY id`)
+    expect(after1).toEqual([
+      { id: 'a', source_type: 'linked_lw' },
+      { id: 'b', source_type: 'standalone' },
+    ])
+
+    // 模拟用户手动改了一行的 source_type（应保留不被覆盖）
+    await ds.query(`UPDATE character_bindings SET source_type = 'standalone' WHERE id = 'a'`)
+
     await ensureAssetBindingSourceType(ds)
+    // 第二次跑后：手动改的 a 不应被回退；b 仍然 standalone
+    const after2 = await ds.query(`SELECT id, source_type FROM character_bindings ORDER BY id`)
+    expect(after2).toEqual([
+      { id: 'a', source_type: 'standalone' }, // 手动改后保留
+      { id: 'b', source_type: 'standalone' },
+    ])
+
     await ds.destroy()
   })
 })
