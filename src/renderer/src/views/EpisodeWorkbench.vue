@@ -93,6 +93,18 @@
                 @open-dialog="handleOpenDialog"
               />
             </el-tab-pane>
+
+            <!-- ② 资产（P3a Task 11 · 新版资产盘点页） -->
+            <el-tab-pane label="② 资产" name="asset-v2">
+              <AssetStageView
+                :project-id="projectId"
+                @open-character="onOpenCharacterEditor"
+                @open-location="onOpenLocationEditor"
+                @open-item="onOpenItemEditor"
+                @open-voice="onOpenVoiceEditor"
+                @complete="onCompleteAssetStage"
+              />
+            </el-tab-pane>
           </el-tabs>
         </template>
 
@@ -346,6 +358,8 @@ import ScriptTabContent from '@/components/episode-production/stage-script/Scrip
 import CharacterBindingTabContent from '@/components/episode-production/stage-asset/character/CharacterBindingTabContent.vue'
 import ItemBindingTabContent from '@/components/episode-production/stage-asset/item/ItemBindingTabContent.vue'
 import LocationBindingTabContent from '@/components/episode-production/stage-asset/location/LocationBindingTabContent.vue'
+// P3a Task 11 · 资产盘点新页面（追加在原 4 tab 之后，不替换老 tab）
+import AssetStageView from '@/components/episode-production/stage-asset/AssetStageView.vue'
 
 // Dialogs
 import CreateEpisodeDialog from '@/components/episode-production/dialogs/CreateEpisodeDialog.vue'
@@ -886,6 +900,29 @@ async function loadProviderConfigs(): Promise<void> {
   } catch (error) {
     console.error('加载提供商配置失败:', error)
   }
+}
+
+// ===== P3a Task 11 · ② 资产 tab stub handlers =====
+// 编辑器 / 阶段持久化将在后续 task 接入；当前仅给出占位提示，避免空交互。
+
+function onOpenCharacterEditor(_id: string) {
+  ElMessage.info('编辑器 待 Task 12-14 实现')
+}
+
+function onOpenLocationEditor(_id: string) {
+  ElMessage.info('编辑器 待 Task 12-14 实现')
+}
+
+function onOpenItemEditor(_id: string) {
+  ElMessage.info('编辑器 待 Task 12-14 实现')
+}
+
+function onOpenVoiceEditor(_id: string) {
+  ElMessage.info('编辑器 待 Task 12-14 实现')
+}
+
+function onCompleteAssetStage() {
+  ElMessage.success('阶段完成（暂未持久化）')
 }
 
 // ===== 监听 =====
