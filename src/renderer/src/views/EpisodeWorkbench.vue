@@ -94,16 +94,31 @@
               />
             </el-tab-pane>
 
-            <!-- ② 资产（P3a Task 11 · 新版资产盘点页） -->
+            <!-- ② 资产（P3a Task 11 · 新版资产盘点页 + Task 12 角色编辑器） -->
             <el-tab-pane label="② 资产" name="asset-v2">
               <AssetStageView
+                v-if="!selectedAsset"
                 :project-id="projectId"
-                @open-character="onOpenCharacterEditor"
-                @open-location="onOpenLocationEditor"
-                @open-item="onOpenItemEditor"
-                @open-voice="onOpenVoiceEditor"
+                @open-character="(id: string) => (selectedAsset = { type: 'character', id })"
+                @open-location="(id: string) => (selectedAsset = { type: 'location', id })"
+                @open-item="(id: string) => (selectedAsset = { type: 'item', id })"
+                @open-voice="(id: string) => (selectedAsset = { type: 'voice', id })"
                 @complete="onCompleteAssetStage"
               />
+              <CharacterAssetEditor
+                v-else-if="selectedAsset.type === 'character'"
+                :binding-id="selectedAsset.id"
+                @close="selectedAsset = null"
+                @saved="onAssetSaved"
+              />
+              <!-- location/item/voice editor 留 task 13/14 接入 -->
+              <div v-else class="ep-stub-editor">
+                <el-button text @click="selectedAsset = null">
+                  <el-icon><ArrowLeft /></el-icon>
+                  <span>返回盘点</span>
+                </el-button>
+                <el-empty :description="`${selectedAsset.type} 编辑器 · Task 13/14 实现`" />
+              </div>
             </el-tab-pane>
           </el-tabs>
         </template>
@@ -360,6 +375,8 @@ import ItemBindingTabContent from '@/components/episode-production/stage-asset/i
 import LocationBindingTabContent from '@/components/episode-production/stage-asset/location/LocationBindingTabContent.vue'
 // P3a Task 11 · 资产盘点新页面（追加在原 4 tab 之后，不替换老 tab）
 import AssetStageView from '@/components/episode-production/stage-asset/AssetStageView.vue'
+// P3a Task 12 · 角色资产编辑器（双栏：设定卡 + 图谱）
+import CharacterAssetEditor from '@/components/episode-production/stage-asset/character/CharacterAssetEditor.vue'
 
 // Dialogs
 import CreateEpisodeDialog from '@/components/episode-production/dialogs/CreateEpisodeDialog.vue'
@@ -902,23 +919,15 @@ async function loadProviderConfigs(): Promise<void> {
   }
 }
 
-// ===== P3a Task 11 · ② 资产 tab stub handlers =====
-// 编辑器 / 阶段持久化将在后续 task 接入；当前仅给出占位提示，避免空交互。
+// ===== P3a Task 11 / Task 12 · ② 资产 tab handlers =====
+// Task 11 引入 AssetStageView 资产盘点页；
+// Task 12 接入 CharacterAssetEditor，通过 selectedAsset 状态在 stage view ↔ editor 切换。
+// location / item / voice 编辑器留 Task 13/14 实现。
 
-function onOpenCharacterEditor(_id: string) {
-  ElMessage.info('编辑器 待 Task 12-14 实现')
-}
+const selectedAsset = ref<{ type: 'character' | 'location' | 'item' | 'voice'; id: string } | null>(null)
 
-function onOpenLocationEditor(_id: string) {
-  ElMessage.info('编辑器 待 Task 12-14 实现')
-}
-
-function onOpenItemEditor(_id: string) {
-  ElMessage.info('编辑器 待 Task 12-14 实现')
-}
-
-function onOpenVoiceEditor(_id: string) {
-  ElMessage.info('编辑器 待 Task 12-14 实现')
+function onAssetSaved() {
+  ElMessage.success('保存成功')
 }
 
 function onCompleteAssetStage() {
@@ -1135,6 +1144,17 @@ watch(projectId, () => {
     display: flex;
     flex-direction: column;
   }
+}
+
+// Task 12 · 资产编辑器占位（location/item/voice 留 Task 13/14）
+.ep-stub-editor {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 16px;
+  background: var(--el-bg-color-page);
+  gap: 16px;
 }
 
 // 右侧分镜列表
