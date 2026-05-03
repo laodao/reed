@@ -44,3 +44,9 @@ export type {
   ImportFromPortraitVariantInput,
   ImportFromImageInput,
 } from './asset-import.service'
+export { PanoramaGeneratorService } from './panorama-generator.service'
+export type {
+  PanoramaImageGenerator,
+  GenerateForInput,
+  UploadForInput,
+} from './panorama-generator.service'
