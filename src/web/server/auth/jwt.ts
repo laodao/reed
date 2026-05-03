@@ -41,5 +41,13 @@ export function verifyToken(token: string): TokenPayload | null {
   }
 }
 
-export const JWT_COOKIE_NAME = 'tb_session'
+/**
+ * Session cookie 名。默认 'tb_session'，可通过 `JWT_COOKIE_NAME` 环境变量覆盖。
+ *
+ * 同机并存多套部署（如本地 dev + Docker staging）时，浏览器按 domain（不含 port）
+ * 隔离 cookie：localhost:5174 和 localhost:4291 共用同一份 cookie。如果两边都用
+ * 默认名 'tb_session' + 不同 JWT_SECRET，登录一边就会让另一边的 cookie 失效（验签失败）。
+ * 给本地 dev 设 `JWT_COOKIE_NAME=tb_session_dev` 即可让两套环境互不踢线。
+ */
+export const JWT_COOKIE_NAME = process.env.JWT_COOKIE_NAME ?? 'tb_session'
 export const JWT_TTL_SECONDS = TOKEN_TTL_SECONDS

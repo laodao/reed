@@ -11,6 +11,7 @@
 #   PORT_CLIENT  / WEB_CLIENT_PORT      默认 5174
 #   DATA_ROOT                            默认 ./data-web
 #   JWT_SECRET                           默认 dev-only-secret-do-not-use-in-prod
+#   JWT_COOKIE_NAME                      默认 tb_session_dev（与 staging 默认 tb_session 区分，避免同机互踢）
 #   PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE  默认 localhost/5432/postgres/postgres/the_bot_web
 
 set -euo pipefail
@@ -24,6 +25,7 @@ PORT_SERVER="${WEB_SERVER_PORT:-${PORT_SERVER:-4201}}"
 PORT_CLIENT="${WEB_CLIENT_PORT:-${PORT_CLIENT:-5174}}"
 DATA_ROOT_VAL="${DATA_ROOT:-./data-web}"
 JWT_SECRET_VAL="${JWT_SECRET:-dev-only-secret-do-not-use-in-prod}"
+JWT_COOKIE_NAME_VAL="${JWT_COOKIE_NAME:-tb_session_dev}"
 PGHOST_VAL="${PGHOST:-localhost}"
 PGPORT_VAL="${PGPORT:-5432}"
 PGUSER_VAL="${PGUSER:-postgres}"
@@ -90,6 +92,7 @@ start_server() {
   nohup setsid env \
     DATA_ROOT="$DATA_ROOT_VAL" \
     JWT_SECRET="$JWT_SECRET_VAL" \
+    JWT_COOKIE_NAME="$JWT_COOKIE_NAME_VAL" \
     PGHOST="$PGHOST_VAL" PGPORT="$PGPORT_VAL" \
     PGUSER="$PGUSER_VAL" PGPASSWORD="$PGPASSWORD_VAL" \
     PGDATABASE="$PGDATABASE_VAL" \
