@@ -85,6 +85,47 @@
           </div>
         </div>
       </el-card>
+
+      <!-- 360 全景区（P3c Task 8） -->
+      <el-card class="category-card panorama-section" shadow="never">
+        <template #header>
+          <div class="section-header">
+            <span class="section-title">
+              🌐 360 全景图（panorama_360）
+              <el-tag v-if="panoramas.length > 0" type="success" size="small">
+                已生成 {{ panoramas.length }}
+              </el-tag>
+              <el-tag v-else type="info" size="small">未生成</el-tag>
+            </span>
+          </div>
+        </template>
+
+        <div class="panorama-actions">
+          <el-button type="primary" :loading="generating" @click="onGeneratePanorama">
+            ✨ AI 生成 360 全景
+          </el-button>
+          <el-button @click="onUploadPanorama">⬆ 上传现成 360 图</el-button>
+        </div>
+
+        <div v-if="panoramas.length > 0" class="panorama-list">
+          <el-radio-group v-model="activePanoramaId" class="panorama-tabs">
+            <el-radio-button v-for="p in panoramas" :key="p.id" :label="p.id">
+              {{ p.label ?? p.id.slice(0, 12) }}
+            </el-radio-button>
+          </el-radio-group>
+
+          <PanoramaSnapshotEditor
+            v-if="activePanorama"
+            :panorama="{
+              id: activePanorama.id,
+              imagePath: activePanorama.imagePath,
+              label: activePanorama.label,
+            }"
+            :location-binding-id="props.bindingId"
+            @snapshot-created="onSnapshotCreated"
+          />
+        </div>
+      </el-card>
     </div>
   </el-card>
 </template>
@@ -105,6 +146,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
+import PanoramaSnapshotEditor from './PanoramaSnapshotEditor.vue'
 
 const props = defineProps<{
   bindingId: string
@@ -243,8 +285,119 @@ async function onBatchDerive(cat: CategoryConfig) {
   }
 }
 
-onMounted(reload)
-watch(() => props.bindingId, reload)
+// ─── 360 全景区（P3c Task 8） ───────────────────────────────────────────
+interface PanoramaImageRow {
+  id: string
+  imagePath: string
+  label?: string | null
+  [key: string]: unknown
+}
+
+const panoramas = ref<PanoramaImageRow[]>([])
+const activePanoramaId = ref<string | null>(null)
+const generating = ref(false)
+
+const activePanorama = computed<PanoramaImageRow | undefined>(() =>
+  panoramas.value.find((p) => p.id === activePanoramaId.value),
+)
+
+function getPanoramaApi() {
+  return (window as unknown as {
+    electronAPI?: {
+      episodeProduction?: { asset?: { panorama?: any } }
+    }
+  }).electronAPI?.episodeProduction?.asset?.panorama
+}
+
+async function loadPanoramas() {
+  const api = getPanoramaApi()
+  if (!api) return
+  if (!props.bindingId) return
+  try {
+    const resp = await api.list(props.bindingId)
+    if (resp?.success && Array.isArray(resp.data)) {
+      panoramas.value = resp.data as PanoramaImageRow[]
+      if (
+        (!activePanoramaId.value ||
+          !panoramas.value.find((p) => p.id === activePanoramaId.value)) &&
+        panoramas.value.length > 0
+      ) {
+        activePanoramaId.value = panoramas.value[0].id
+      }
+      if (panoramas.value.length === 0) {
+        activePanoramaId.value = null
+      }
+    } else {
+      panoramas.value = []
+      activePanoramaId.value = null
+    }
+  } catch (e: any) {
+    console.error('[LocationGalleryEditor] loadPanoramas 失败', e)
+    panoramas.value = []
+  }
+}
+
+async function onGeneratePanorama() {
+  generating.value = true
+  try {
+    const api = getPanoramaApi()
+    if (!api) throw new Error('panorama API 未暴露')
+    // 简化版 stylePrompt — 真实场景应从 location-asset.getEffectiveData 拉地点描述
+    const resp = await api.generate({
+      locationBindingId: props.bindingId,
+      stylePrompt: '地点 古风',
+    })
+    if (resp?.success && resp.data) {
+      ElMessage.success('360 全景已生成')
+      await loadPanoramas()
+    } else {
+      ElMessage.warning(
+        resp?.error || '生成失败（待 P3c 后续接入真实 AI 全景 provider）',
+      )
+    }
+  } catch (err: any) {
+    ElMessage.error('生成失败: ' + (err?.message ?? '未知错误'))
+  } finally {
+    generating.value = false
+  }
+}
+
+async function onUploadPanorama() {
+  const imagePath = window.prompt('请输入 360 全景图本地路径或 URL:')
+  if (!imagePath) return
+  const api = getPanoramaApi()
+  if (!api) {
+    ElMessage.error('panorama API 未暴露')
+    return
+  }
+  try {
+    const resp = await api.upload({
+      locationBindingId: props.bindingId,
+      imagePath,
+    })
+    if (resp?.success && resp.data) {
+      ElMessage.success('已上传')
+      await loadPanoramas()
+    } else {
+      ElMessage.error(resp?.error || '上传失败')
+    }
+  } catch (err: any) {
+    ElMessage.error('上传失败: ' + (err?.message ?? '未知错误'))
+  }
+}
+
+function onSnapshotCreated() {
+  // PanoramaSnapshotEditor 自管理 snapshots 列表，本组件无需响应
+}
+
+onMounted(() => {
+  reload()
+  loadPanoramas()
+})
+watch(() => props.bindingId, () => {
+  reload()
+  loadPanoramas()
+})
 watch(() => props.assetType, reload)
 
 defineExpose({ reload })
@@ -376,5 +529,27 @@ defineExpose({ reload })
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 360 全景区（P3c Task 8） */
+.panorama-section {
+  background: var(--el-bg-color);
+}
+
+.panorama-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.panorama-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.panorama-tabs {
+  margin-bottom: 4px;
 }
 </style>
