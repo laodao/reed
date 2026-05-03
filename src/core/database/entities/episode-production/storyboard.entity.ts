@@ -58,9 +58,15 @@ export class StoryboardEntity {
   @Column({ name: 'action_ids', type: 'simple-json', nullable: true })
   actionIds!: string[] | null
 
+  /**
+   * @deprecated P2 已把数据搬到 storyboard_keyframe 表（spec §4.7）。
+   *             保留 SQL 列兼容旧消费方；新代码请用 storyboard_keyframe。
+   *             待全部消费方迁移到 storyboard_keyframe 后由 P3+ 真正 DROP COLUMN。
+   */
   @Column({ name: 'frame_image', type: 'simple-json', nullable: true })
   frameImage!: Record<string, unknown> | null
 
+  /** @deprecated 同 frame_image，P2 数据已搬到 storyboard_keyframe（spec §4.7）。 */
   @Column({ name: 'frame_image_id', type: 'text', nullable: true })
   frameImageId!: string | null
 

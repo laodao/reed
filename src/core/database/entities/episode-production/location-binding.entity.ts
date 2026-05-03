@@ -28,6 +28,11 @@ export class LocationBindingEntity {
   @Column({ name: 'location_name', type: 'varchar' })
   locationName!: string
 
+  /**
+   * @deprecated P2 已把数据搬到 asset_image 表（spec §3.8）。
+   *             保留 SQL 列兼容旧消费方读取；新代码请用 asset_image。
+   *             待全部消费方迁移到 asset_image 后由 P3+ 真正 DROP COLUMN。
+   */
   @Column({ name: 'image_paths', type: 'simple-json', nullable: true })
   imagePaths!: string[] | null
 
