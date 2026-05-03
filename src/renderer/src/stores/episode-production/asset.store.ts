@@ -409,6 +409,44 @@ export const useEpAssetStore = defineStore('ep-asset', () => {
     return itemBindings.value.find(b => b.longWritingItemId === longWritingItemId)
   }
 
+  // ==================== P3a Task 10 · 新版 4 类资产 store ====================
+  // 不复用 V2 字段（characterBindings 等），避免污染 V2 老页面（EpisodeWorkbench.vue）。
+  // 这里直接面向新版资产域 IPC（namespace：episodeProduction.asset.*），返回的是
+  // 新版 binding 实体（含 sourceType / standaloneName / overrideName 等双源字段）。
+
+  /** 新版角色资产列表（用于 AssetSidebar 等新组件） */
+  const epAssetCharacters = ref<any[]>([])
+  /** 新版地点资产列表 */
+  const epAssetLocations = ref<any[]>([])
+  /** 新版物品资产列表 */
+  const epAssetItems = ref<any[]>([])
+  /** 新版语音资产列表（全局，不属于某 project） */
+  const epAssetVoices = ref<any[]>([])
+
+  /**
+   * 按项目加载 4 类资产（角色 / 地点 / 物品 / 语音）。
+   * 走新版 namespace IPC：episodeProduction.asset.{character|location|item|voice}.list。
+   * IPC 返回 IpcResponse<T> = { success, data?, error? }，需解包 .data。
+   */
+  async function loadAssetsByProject(projectId: string): Promise<void> {
+    const api = (window as any).electronAPI?.episodeProduction?.asset
+    if (!api) {
+      console.warn('[ep-asset.store] electronAPI.episodeProduction.asset 未暴露')
+      return
+    }
+    const [chars, locs, its, vs] = await Promise.all([
+      api.character.list(projectId).catch(() => null),
+      api.location.list(projectId).catch(() => null),
+      api.item.list(projectId).catch(() => null),
+      api.voice.list().catch(() => null),
+    ])
+    // 解包 IpcResponse；任一通道失败/返回非数组都退化为空数组，保证 UI 不崩
+    epAssetCharacters.value = chars && chars.success && Array.isArray(chars.data) ? chars.data : []
+    epAssetLocations.value = locs && locs.success && Array.isArray(locs.data) ? locs.data : []
+    epAssetItems.value = its && its.success && Array.isArray(its.data) ? its.data : []
+    epAssetVoices.value = vs && vs.success && Array.isArray(vs.data) ? vs.data : []
+  }
+
   return {
     characterBindings,
     locationBindings,
@@ -431,5 +469,11 @@ export const useEpAssetStore = defineStore('ep-asset', () => {
     updateItemBinding,
     deleteItemBinding,
     getBindingByItemId,
+    // P3a Task 10 · 新版 4 类资产
+    epAssetCharacters,
+    epAssetLocations,
+    epAssetItems,
+    epAssetVoices,
+    loadAssetsByProject,
   }
 })
