@@ -27,6 +27,7 @@ python3 -m http.server 8000
 | `00-project-list.html` | 剧集项目列表 | — |
 | `02-stage-asset.html` | ② 资产盘点（4 类卡片视图） | §3.9 |
 | `02-stage-asset-edit.html` | 角色资产卡编辑（设定卡 + 图谱） | §3.1-3.7 |
+| `02-stage-location-edit.html` | **地点资产卡编辑（场景图制作）** | §3.2 / §3.3 / §4.5 |
 | `03-stage-script.html` | ③ 剧本编辑 + 完整性检查 | §4.1 |
 | `04-stage-storyboard.html` | ④ 分镜（场景树 + 分镜网格 + 关键帧数配置） | §4.2 |
 | `05-stage-production.html` | ⑤ 画面+音频（**含九宫格关键帧**） | §4.5 / §4.7 |
