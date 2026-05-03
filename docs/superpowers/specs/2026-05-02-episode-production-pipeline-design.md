@@ -876,7 +876,211 @@ keyframe_count >= 3  → keyframes2video（多关键帧）
   → UI 提示当前 provider 能力上限
 ```
 
-### 4.5 3D 接入点（本次不实现）
+### 4.5 分镜阶段资产消费实操（"九宫格"机制详解）
+
+本节解读分镜阶段如何消费资产、为什么需要"九宫格"、一个分镜画面的完整生成流程。这是把 §3.4（消费规则） + §4.2（多关键帧） + §4.3（参考链） + §4.4（视频三模式）整合落地的实操指南。
+
+#### 4.5.1 三层映射关系
+
+```
+场景级:   一个场景 SceneScript → 一个地点 LocationBinding（带图谱多变体）
+                              → 一组角色 SceneCharacter[]（出场名单）
+
+分镜级:   一个分镜 Storyboard → 同一地点的某个 angle 变体（作参考图）
+                              → 该镜头里的角色 StoryboardCharacter[]（独立站位/表情/动作）
+                              → N 张关键帧（N = keyframe_count, 2~9）
+                              → 1 段视频片段 videoPath
+
+合成级:   分镜视频片段 + 转场 + 多轨音频 + 字幕 → 成片
+```
+
+#### 4.5.2 一个场景内多分镜共享地点（不同角度）
+
+```
+场景 1 · 客厅 · 黄昏 · 阴天
+  ├─ 分镜 1.1  远景 · 平视 · 固定          ← 拉地点 wide_shot 变体作 ref
+  ├─ 分镜 1.2  中景 · 仰拍 · 推镜          ← 拉地点 interior_a 变体
+  └─ 分镜 1.3  特写 · 平视 · 固定          ← 主要看人物，地点退到背景
+```
+
+注意：
+
+- 地点 `LocationBinding` **不是单张图**，是一组带语义标签的图集（main + time/weather/angle 变体）
+- 场景的 `time_of_day` / `weather` 字段决定从地点图谱拉**哪个变体**作参考
+- 分镜画面**不是直接复用**地点图，而是 **AI 重新生成**——地点图作为 reference image 之一注入，保证空间一致性
+
+取图优先级（同 §3.4）：
+
+```
+1. 时间+天气都匹配的变体 → 用之
+2. 只有时间匹配           → 用之
+3. 都不匹配              → 退回主图
+```
+
+#### 4.5.3 分镜内角色独立配置
+
+```
+SceneScript.characters[]      场景级"出场名单"（如：张三、李四、王五）
+                              ↓
+Storyboard.characters[]       分镜级"镜头内角色"（独立配置每个镜头）：
+  ├─ character_binding_id     是谁
+  ├─ position {x, y, scale}   站位（左/中/右 + 缩放）
+  ├─ expression               表情（happy/angry/...）
+  ├─ facing                   朝向（front/3q_left/back...）
+  └─ action                   当前动作（"举起茶杯"）
+```
+
+同一场景的不同分镜可以：
+
+- 只出现部分角色（如分镜 1.3 只有张三特写）
+- 同一角色不同表情 / 动作 / 站位
+- 取角色图谱中**最匹配的 view + expression + outfit** 作参考图
+
+#### 4.5.4 "九宫格"的真正含义
+
+九宫格的"九"是 **时间顺序的 N 张图**（俗称 9，实际 `keyframe_count` 2-9 可调），**不是空间布局上的 3×3 拼图**。
+
+```
+分镜 A：客厅，张三从沙发起身走到门口（5 秒）
+
+时间轴   0%         25%         50%         75%        100%
+关键帧 1  →  2  →  3  →  4  →  5  →  6  →  7  →  8  →  9
+        坐沙发     半起身       走到一半     接近门口    门口背对
+
+UI 上展示成网格（3×3 视觉布局，但语义是时间顺序）：
+  ┌────┬────┬────┐
+  │ 1  │ 2  │ 3  │   ← 第一行：分镜前 1/3
+  ├────┼────┼────┤
+  │ 4  │ 5  │ 6  │   ← 中间 1/3
+  ├────┼────┼────┤
+  │ 7  │ 8  │ 9  │   ← 后 1/3
+  └────┴────┴────┘
+                ↓
+       喂给视频生成模型
+                ↓
+   一段 5 秒连续视频（模型补中间过渡帧）
+```
+
+技术字段层叫 `keyframe_count` + `storyboard_keyframe` 表（见 §4.8 数据库改动）；UI / 产品话术里叫"九宫格"——两者指同一个东西。
+
+#### 4.5.5 为什么需要九宫格 — vs 单图生视频对比
+
+```
+做同一个 5 秒分镜（"张三起身走到门口"）：
+
+[传统 image2video 单图生视频]
+  输入: 1 张图 + 镜头描述 + 时长
+  输出: 一段视频
+  问题: 模型自己决定怎么动 → 角色变形 / 走路姿势诡异 / 镜头乱晃
+
+[keyframes2video 九宫格生视频] ★ 本设计推荐
+  输入: N 张时序关键帧 + 时长
+  输出: 模型在关键帧之间插值/补全 → 连续视频
+  好处: 关键瞬间被钉死 → 角色形象稳定 / 动作流畅 / 镜头按预设运动
+```
+
+#### 4.5.6 完整画面生成流水线
+
+```mermaid
+flowchart LR
+    A[读分镜配置<br/>shotType/angle/movement<br/>keyframe_count N=2~9] --> B[生成开始帧]
+    B --> C{用户审核}
+    C -- 不满意 --> B
+    C -- 通过 --> D[生成结束帧<br/>用开始帧作 ref]
+    D --> E{N >= 3?}
+    E -- 是 --> F[生成中间帧<br/>用首尾作 ref<br/>逐帧推进]
+    E -- 否 --> G[关键帧序列就绪]
+    F --> G
+    G --> H{video_mode}
+    H -- N=1 --> I[imageToVideo<br/>单图生视频]
+    H -- N>=2 --> J[keyframesToVideo<br/>九宫格生视频]
+    I --> K[输出分镜视频片段<br/>videoPath]
+    J --> K
+
+    style G fill:#fff7e8,stroke:#f0ad4e
+    style K fill:#e8ffe8,stroke:#5cb85c
+```
+
+#### 4.5.7 每张关键帧的资产组合公式
+
+每生成一张关键帧时，提示词 + 参考图按以下公式组装：
+
+```
+最终提示词 final_prompt =
+  ① 项目级 style_anchor                          （全片画风统一）
+  ② 分镜镜头语言（shotType + cameraAngle + cameraMovement）
+  ③ 场景描述（SceneScript.sceneDescription）
+  ④ 该关键帧的 frame_role 描述（开始/中间/结束）
+  ⑤ 该关键帧的 specific_action 描述
+
+reference_images = （按当前模型支持能力）
+  ④ 地点图谱中匹配 time+weather+angle 的变体        ← 1 张
+  ⑤ 出场角色的 face + 当前服装/表情/姿势的图        ← 每主要角色 1 张
+  ⑥ 重要道具的图（如分镜含特写）                    ← 必要时 1 张
+  ⑦ 上一关键帧（中间/结束帧用，保证连贯）            ← 1 张
+  + 3D 摆位预览图（仅 3D 地点 + 启用摆位时；§4.6 占位）
+```
+
+模型不支持参考图时，降级为"长 prompt + 风格锚点"模式。
+
+#### 4.5.8 不同分镜复杂度的关键帧策略对比
+
+按 §4.2 表 + 实操经验：
+
+| 分镜类型 | 推荐 keyframe_count | 关键帧角色分配 | 视频生成模式 |
+|---|---|---|---|
+| 静态特写（如人物面部反应） | 1 | 仅 start | imageToVideo |
+| 简单对话头（无走位） | 2 | start + end | keyframesToVideo（首尾） |
+| 人物动作（推/拉/摇/移） | 3-5 | start + 1-3 middle + end | keyframesToVideo |
+| 群戏 / 多动作 / 长镜头 | 6-9 | start + 4-7 middle + end | keyframesToVideo |
+| 不熟悉镜头 / 让 AI 自由发挥 | 0 | 无关键帧（不推荐） | text2video |
+
+UI 上 AI 拆分镜时按场景描述自动建议 `keyframe_count`，用户可调。
+
+#### 4.5.9 实操示例：客厅 3 个分镜的完整资产消费
+
+```
+场景 1 · 客厅 · 黄昏 · 阴天
+SceneScript:
+  location_binding_id = "lb_living_room"
+  time_of_day = "evening"
+  weather = "cloudy"
+  characters = [{cb_zhangsan}, {cb_lisi}]
+
+──────────────────────────────────────────
+分镜 1.1：远景 · 平视 · 固定 · keyframe_count=2
+StoryboardCharacters: [{cb_zhangsan, position=center}, {cb_lisi, position=right}]
+
+  关键帧 1 (start):
+    prompt = style_anchor + "客厅远景平视固定" + 场景描述 + "两人对峙开始"
+    refs   = [客厅.angle=wide_shot+evening+cloudy, 张三.front+default_outfit, 李四.front+default_outfit]
+  关键帧 2 (end):
+    prompt = ... + "两人保持对峙"
+    refs   = [关键帧1 (连贯), 客厅 wide_shot, 张三, 李四]
+  → keyframesToVideo([1, 2]) → 5s 视频片段
+
+──────────────────────────────────────────
+分镜 1.2：中景 · 仰拍 · 推镜 · keyframe_count=4
+StoryboardCharacters: [{cb_zhangsan, position=center, expression=angry, action="举手指向李四"}]
+
+  关键帧 1 (start):  refs = [客厅 interior_a, 张三 face/angry/default_outfit]
+  关键帧 4 (end):    refs = [关键帧1, 张三 face/angry/手指向前]
+  关键帧 2-3 (mid):  refs = [关键帧1, 关键帧4, 张三]
+  → keyframesToVideo([1,2,3,4]) → 5s 推镜视频
+
+──────────────────────────────────────────
+分镜 1.3：特写 · 平视 · 固定 · keyframe_count=1
+StoryboardCharacters: [{cb_lisi, position=center, expression=surprised, facing=3q_left}]
+
+  关键帧 1 (start):  refs = [客厅 interior_a (作背景虚化), 李四 face/surprised/3q_left]
+  → imageToVideo(关键帧1) → 3s 反应特写
+```
+
+3 个分镜共享同一地点资产（不同 angle 变体）+ 共享角色资产（不同 expression / facing / action 选取）。每分镜 1-4 张关键帧按复杂度配置，每张关键帧拉的参考图按上述公式组装。
+
+---
+
+### 4.6 3D 接入点（本次不实现）
 
 ```mermaid
 flowchart TD
@@ -917,7 +1121,7 @@ generateKeyframe(opts: {
 
 接口预留 + 参数为可选，本次实现完全不知道 3D 的存在；将来加 3D 模块只需要填那个参数。
 
-### 4.6 ⑤ 阶段（画面+音频）UI
+### 4.7 ⑤ 阶段（画面+音频）UI
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -943,7 +1147,7 @@ generateKeyframe(opts: {
 └────────────┴─────────────────────────────────────────────────┘
 ```
 
-### 4.7 数据库改动（叙事+渲染）
+### 4.8 数据库改动（叙事+渲染）
 
 新增：
 
