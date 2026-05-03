@@ -102,6 +102,15 @@ export interface CharacterBinding {
     pitch: number // 音调
   }
 
+  // P2 task 1 双源字段（spec §3.7）
+  sourceType: 'linked_lw' | 'standalone'
+  overrideName?: string | null
+  overrideDescription?: string | null
+  overrideAppearance?: string | null
+  overrideOutfit?: string | null
+  standaloneName?: string | null
+  standaloneDescription?: string | null
+
   createdAt: number
   updatedAt: number
 }
@@ -131,6 +140,15 @@ export interface LocationBinding {
   // 是否自动生成图片
   generateImages: boolean
 
+  // P2 task 1 双源字段
+  sourceType: 'linked_lw' | 'standalone'
+  overrideName?: string | null
+  overrideDescription?: string | null
+  standaloneName?: string | null
+  standaloneDescription?: string | null
+  panorama3dId?: string | null      // 接入点 P3c 用
+  sceneLayoutId?: string | null     // 接入点 Phase 8 用
+
   createdAt: number
   updatedAt: number
 }
@@ -157,6 +175,13 @@ export interface ItemBinding {
 
   // 是否自动生成图片
   generateImages: boolean
+
+  // P2 task 1 双源字段
+  sourceType: 'linked_lw' | 'standalone'
+  overrideName?: string | null
+  overrideDescription?: string | null
+  standaloneName?: string | null
+  standaloneDescription?: string | null
 
   createdAt: number
   updatedAt: number
@@ -225,4 +250,30 @@ export interface ItemBindingRecord {
   generate_images: number // 0 或 1
   created_at: number
   updated_at: number
+}
+
+/**
+ * 资产生效数据（spec §3.7）：
+ * source_type 决定字段来源——linked_lw 走"长文基础值 + override"；standalone 直接读 standalone_*。
+ */
+export interface EffectiveCharacterData {
+  name: string
+  description: string
+  appearance?: string
+  outfit?: string
+  voiceId?: string | null
+  portraitId?: string | null
+  source: 'linked_lw' | 'standalone'
+}
+
+export interface EffectiveLocationData {
+  name: string
+  description: string
+  source: 'linked_lw' | 'standalone'
+}
+
+export interface EffectiveItemData {
+  name: string
+  description: string
+  source: 'linked_lw' | 'standalone'
 }
