@@ -16,3 +16,10 @@ export type {
   DeriveSingleInput,
   DeriveBatchInput,
 } from './gallery-derivation.service'
+export { CharacterAssetService } from './character-asset.service'
+export type {
+  CreateStandaloneInput,
+  CreateLinkedLwInput,
+  OverridePatch,
+  StandalonePatch,
+} from './character-asset.service'
