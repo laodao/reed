@@ -39,3 +39,8 @@ export type {
   ItemStandalonePatch,
 } from './item-asset.service'
 export { VoiceAssetService } from './voice-asset.service'
+export { AssetImportService } from './asset-import.service'
+export type {
+  ImportFromPortraitVariantInput,
+  ImportFromImageInput,
+} from './asset-import.service'
