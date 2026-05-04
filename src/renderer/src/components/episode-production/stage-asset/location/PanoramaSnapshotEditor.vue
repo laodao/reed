@@ -32,7 +32,7 @@
           class="snapshot-cell"
           @click="onClickSnapshot(s)"
         >
-          <img :src="s.imagePath" alt="snapshot" />
+          <img :src="toImageUrl(s.imagePath)" alt="snapshot" />
           <div class="vp-label">
             yaw{{ getMeta(s).yaw ?? '?' }}° · pitch{{ getMeta(s).pitch ?? '?' }}° · fov{{ getMeta(s).fov ?? '?' }}°
           </div>
@@ -56,6 +56,7 @@
 import { ref, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import PanoramaViewer from '@/components/episode-production/shared/PanoramaViewer.vue'
+import { toImageUrl } from '@/utils/asset-url'
 
 interface PanoramaSnapshotMeta {
   yaw?: number

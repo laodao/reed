@@ -134,7 +134,7 @@
  *              真正的渲染域 API 将在 P5 阶段实现。
  */
 import { computed, onMounted, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Box, Location, Microphone, User } from '@element-plus/icons-vue'
 import { useEpAssetStore } from '@/stores/episode-production/asset.store'
 
@@ -181,23 +181,63 @@ async function reload() {
   await assetStore.loadAssetsByProject(props.projectId)
 }
 
+/**
+ * 通用 standalone 资产创建：弹 prompt 输名字 → 调 IPC → reload → emit open-*。
+ * linked_lw（绑定到长文角色 / 地点 / 物品）入口暂留 P3b 实现（需要选择 lw 实体的 picker）。
+ */
+async function promptCreateStandalone(
+  type: 'character' | 'location' | 'item',
+): Promise<void> {
+  const labelMap = { character: '角色', location: '地点', item: '物品' } as const
+  const label = labelMap[type]
+  let name: string
+  try {
+    const result = await ElMessageBox.prompt(`请输入${label}名称`, `新建${label}`, {
+      confirmButtonText: '创建',
+      cancelButtonText: '取消',
+      inputPattern: /^.{1,80}$/,
+      inputErrorMessage: '名称必填，最多 80 字符',
+    })
+    name = String(result.value ?? '').trim()
+  } catch {
+    return
+  }
+  if (!name) return
+
+  const api = (window as any).electronAPI?.episodeProduction?.asset
+  if (!api) {
+    ElMessage.error('资产 API 不可用')
+    return
+  }
+  try {
+    const resp = await api[type].createStandalone({ projectId: props.projectId, name })
+    if (!resp?.success) {
+      ElMessage.error(resp?.error || `新建${label}失败`)
+      return
+    }
+    ElMessage.success(`已创建${label}：${name}`)
+    await reload()
+    const id = resp.data?.id
+    if (id) emit(`open-${type}` as 'open-character' | 'open-location' | 'open-item', id)
+  } catch (e: any) {
+    ElMessage.error(e?.message || `新建${label}失败`)
+  }
+}
+
 function onAddCharacter() {
-  ElMessage.info('新建对话框 待 Task 12-14 接入')
-  emit('add-character')
+  void promptCreateStandalone('character')
 }
 
 function onAddLocation() {
-  ElMessage.info('新建对话框 待 Task 12-14 接入')
-  emit('add-location')
+  void promptCreateStandalone('location')
 }
 
 function onAddItem() {
-  ElMessage.info('新建对话框 待 Task 12-14 接入')
-  emit('add-item')
+  void promptCreateStandalone('item')
 }
 
 function onAddVoice() {
-  ElMessage.info('新建对话框 待 Task 12-14 接入')
+  ElMessage.info('请在 语音助手 → 声音复刻 中创建声音，复刻完成后会自动出现在此处')
   emit('add-voice')
 }
 

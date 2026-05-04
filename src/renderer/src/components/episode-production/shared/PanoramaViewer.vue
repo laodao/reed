@@ -17,9 +17,10 @@
  *   - fov 与 zoom level 之间通过线性映射换算（zoom 0 ≈ fov 120°，zoom 100 ≈ fov 30°）；
  *   - captureCanvas 依赖 WebGL preserveDrawingBuffer，已在构造时开启。
  */
-import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { Viewer } from '@photo-sphere-viewer/core'
 import '@photo-sphere-viewer/core/index.css'
+import { toImageUrl } from '@/utils/asset-url'
 
 const props = withDefaults(
   defineProps<{
@@ -43,6 +44,13 @@ const emit = defineEmits<{
 
 const container = ref<HTMLElement | null>(null)
 let viewer: Viewer | null = null
+
+/**
+ * 把数据库存的相对路径（如 panoramas/pano_xxx.png）转成浏览器可加载的 URL。
+ * Web：/assets/panoramas/pano_xxx.png；Electron：local-image://panoramas/pano_xxx.png。
+ * 已是完整 URL（http / data: / blob: / /assets/ 前缀）的情况下原样返回。
+ */
+const resolvedImageUrl = computed(() => toImageUrl(props.imagePath))
 
 function degToRad(d: number): number {
   return (d * Math.PI) / 180
@@ -91,7 +99,7 @@ onMounted(() => {
   if (!container.value) return
   viewer = new Viewer({
     container: container.value,
-    panorama: props.imagePath,
+    panorama: resolvedImageUrl.value,
     defaultYaw: degToRad(props.initialYaw),
     defaultPitch: degToRad(props.initialPitch),
     defaultZoomLvl: fovToZoomLvl(props.initialFov),
@@ -118,10 +126,10 @@ onBeforeUnmount(() => {
 })
 
 watch(
-  () => props.imagePath,
-  (newPath) => {
-    if (viewer && newPath) {
-      viewer.setPanorama(newPath)
+  () => resolvedImageUrl.value,
+  (newUrl) => {
+    if (viewer && newUrl) {
+      viewer.setPanorama(newUrl)
     }
   },
 )

@@ -104,7 +104,17 @@
           <el-button type="primary" :loading="generating" @click="onGeneratePanorama">
             ✨ AI 生成 360 全景
           </el-button>
-          <el-button @click="onUploadPanorama">⬆ 上传现成 360 图</el-button>
+          <el-upload
+            :auto-upload="false"
+            :show-file-list="false"
+            :on-change="onPickPanoramaFile"
+            accept="image/jpeg,image/png,image/webp"
+          >
+            <el-button :loading="uploading">⬆ 上传现成 360 图</el-button>
+          </el-upload>
+          <span class="panorama-hint">
+            支持 jpg/png/webp，比例需≈2:1（equirectangular），≤50MB
+          </span>
         </div>
 
         <div v-if="panoramas.length > 0" class="panorama-list">
@@ -145,8 +155,10 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import type { UploadFile } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import PanoramaSnapshotEditor from './PanoramaSnapshotEditor.vue'
+import { uploadPanoramaFile } from '@/api/panorama-upload'
 
 const props = defineProps<{
   bindingId: string
@@ -296,6 +308,7 @@ interface PanoramaImageRow {
 const panoramas = ref<PanoramaImageRow[]>([])
 const activePanoramaId = ref<string | null>(null)
 const generating = ref(false)
+const uploading = ref(false)
 
 const activePanorama = computed<PanoramaImageRow | undefined>(() =>
   panoramas.value.find((p) => p.id === activePanoramaId.value),
@@ -362,27 +375,25 @@ async function onGeneratePanorama() {
   }
 }
 
-async function onUploadPanorama() {
-  const imagePath = window.prompt('请输入 360 全景图本地路径或 URL:')
-  if (!imagePath) return
-  const api = getPanoramaApi()
-  if (!api) {
-    ElMessage.error('panorama API 未暴露')
-    return
-  }
+/**
+ * ElUpload 在 :auto-upload="false" 模式下，每次选文件都会触发 on-change，
+ * 我们手动接管：调 client 上传 → 后端校验 + 落盘 + 落表 → 刷新列表。
+ */
+async function onPickPanoramaFile(file: UploadFile) {
+  const raw = file.raw
+  if (!raw) return
+  uploading.value = true
   try {
-    const resp = await api.upload({
+    await uploadPanoramaFile({
+      file: raw,
       locationBindingId: props.bindingId,
-      imagePath,
     })
-    if (resp?.success && resp.data) {
-      ElMessage.success('已上传')
-      await loadPanoramas()
-    } else {
-      ElMessage.error(resp?.error || '上传失败')
-    }
+    ElMessage.success('已上传 360 全景')
+    await loadPanoramas()
   } catch (err: any) {
-    ElMessage.error('上传失败: ' + (err?.message ?? '未知错误'))
+    ElMessage.error('上传失败：' + (err?.message ?? '未知错误'))
+  } finally {
+    uploading.value = false
   }
 }
 
@@ -540,7 +551,13 @@ defineExpose({ reload })
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
   margin-bottom: 12px;
+}
+
+.panorama-hint {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 .panorama-list {

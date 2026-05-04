@@ -25,6 +25,7 @@ import { attachUser } from './auth/middleware'
 import authRouter from './auth/routes'
 import ipcRouter from './api/ipc-router'
 import assetsRouter from './api/assets-router'
+import uploadRouter from './api/upload-router'
 import { attachWebSocketServer } from './ws/ws-server'
 
 import { WebPathProvider } from './platform/web-path.provider'
@@ -122,6 +123,7 @@ async function bootstrap(): Promise<void> {
   app.get('/api/health', (_req, res) => res.json({ ok: true, ts: Date.now() }))
   app.use('/api/auth', authRouter)
   app.use('/api/ipc', ipcRouter)
+  app.use('/api/upload', uploadRouter)
 
   // 顺序关键：vite 构建产物（/assets/index-*.js 等哈希命名 chunk）必须先于
   // /assets 用户文件路由匹配——否则前端入口 JS 被 assetsRouter 401 拦截，

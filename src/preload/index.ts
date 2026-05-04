@@ -232,6 +232,7 @@ const IPC_CHANNELS = {
   EP_ASSET_PANORAMA_LIST: 'ep:asset:panorama:list',
   EP_ASSET_PANORAMA_GENERATE: 'ep:asset:panorama:generate',
   EP_ASSET_PANORAMA_UPLOAD: 'ep:asset:panorama:upload',
+  EP_ASSET_PANORAMA_UPLOAD_FILE: 'ep:asset:panorama:upload-file',
   EP_ASSET_PANORAMA_DELETE: 'ep:asset:panorama:delete',
   EP_ASSET_PANORAMA_CREATE_SNAPSHOT: 'ep:asset:panorama:create-snapshot',
   EP_ASSET_PANORAMA_LIST_SNAPSHOTS: 'ep:asset:panorama:list-snapshots',
@@ -1747,6 +1748,8 @@ const electronAPI = {
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_PANORAMA_GENERATE, input),
         upload: (input: any) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_PANORAMA_UPLOAD, input),
+        uploadFile: (input: { fileName: string; base64: string; locationBindingId: string; label?: string | null }) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_PANORAMA_UPLOAD_FILE, input),
         delete: (id: string) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_PANORAMA_DELETE, id),
         createSnapshot: (input: any) =>

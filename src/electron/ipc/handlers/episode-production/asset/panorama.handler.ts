@@ -29,6 +29,10 @@ import {
   type SnapshotFileWriter,
   type CreateSnapshotInput,
 } from '@core/modules/episode-production/assets/services/panorama-snapshot.service'
+import {
+  PanoramaUploadService,
+  PanoramaUploadValidationError,
+} from '@core/modules/episode-production/assets/services/panorama-upload.service'
 
 /**
  * Stub PanoramaImageGenerator：调用 generate 直接抛错。
@@ -81,6 +85,10 @@ function snapshotSvc(): PanoramaSnapshotService {
   return new PanoramaSnapshotService(imageSvc(), realWriter, SNAPSHOTS_DIR)
 }
 
+function uploadSvc(): PanoramaUploadService {
+  return new PanoramaUploadService(getPathProvider(), genSvc())
+}
+
 /** 统一异常包装：捕获 throw 转成 IpcResponse */
 async function wrap<T>(fn: () => Promise<T>): Promise<IpcResponse<T>> {
   try {
@@ -109,6 +117,35 @@ export function registerPanoramaHandlers(): void {
     'ep:asset:panorama:upload',
     async (_event: any, input: UploadForInput) =>
       wrap(() => genSvc().uploadFor(input)),
+  )
+
+  // 文件上传（接 base64 字节流）：核心走 PanoramaUploadService，做完整校验 + 落盘 + 落表
+  ipcBridge.handle(
+    'ep:asset:panorama:upload-file',
+    async (
+      _event: any,
+      input: {
+        fileName: string
+        base64: string
+        locationBindingId: string
+        label?: string | null
+      },
+    ) =>
+      wrap(async () => {
+        try {
+          return await uploadSvc().upload({
+            buffer: Buffer.from(input.base64, 'base64'),
+            fileName: input.fileName,
+            locationBindingId: input.locationBindingId,
+            label: input.label ?? null,
+          })
+        } catch (e) {
+          if (e instanceof PanoramaUploadValidationError) {
+            throw new Error(`[${e.code}] ${e.message}`)
+          }
+          throw e
+        }
+      }),
   )
 
   ipcBridge.handle(
