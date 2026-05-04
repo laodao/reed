@@ -405,6 +405,7 @@ import mermaid from 'mermaid'
 import type { Message, Attachment } from '../../../shared/types'
 import ModelSelectDialog from './ModelSelectDialog.vue'
 import ExportToObsidianDialog from './ExportToObsidianDialog.vue'
+import { saveBlobAs } from '@/utils/file-saver'
 
 // 初始化 Mermaid
 mermaid.initialize({
@@ -1134,27 +1135,18 @@ function handleModelSelect(model: ModelOption) {
 // 保存为本地 Markdown 文件
 async function saveAsLocalFile(): Promise<void> {
   try {
-    // 生成默认文件名（使用时间戳）
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
     const defaultName = `AI回答_${timestamp}.md`
-
-    const response = await window.electronAPI.file.saveFile({
-      defaultPath: defaultName,
-      filters: [{ name: 'Markdown 文件', extensions: ['md'] }]
+    const r = await saveBlobAs(props.message.content, {
+      defaultName,
+      filters: [{ name: 'Markdown 文件', extensions: ['md'] }],
+      mimeType: 'text/markdown;charset=utf-8',
     })
-
-    if (response.success && response.filePath) {
-      // 将消息内容写入文件
-      const writeResponse = await window.electronAPI.file.writeTextFile(
-        response.filePath,
-        props.message.content
-      )
-
-      if (writeResponse.success) {
-        ElMessage.success('保存成功')
-      } else {
-        ElMessage.error(writeResponse.error || '保存失败')
-      }
+    if (r.canceled) return
+    if (r.success) {
+      ElMessage.success('保存成功')
+    } else {
+      ElMessage.error(r.error || '保存失败')
     }
   } catch (error) {
     console.error('保存文件失败:', error)
@@ -1236,20 +1228,25 @@ async function exportAsImage(): Promise<void> {
       logging: false
     })
 
-    // 转换为 Base64
-    const base64 = canvas.toDataURL('image/png')
-
-    // 调用主进程保存
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-    const response = await window.electronAPI.export.messageAsImage({
-      imageBase64: base64,
-      fileName: `AI回答_${timestamp}.png`
+    // canvas → Blob → 跨端 saveBlobAs（PC dialog / Web 浏览器下载）
+    const blob: Blob = await new Promise((resolve, reject) => {
+      canvas.toBlob((b) => {
+        if (b) resolve(b)
+        else reject(new Error('canvas.toBlob 返回空'))
+      }, 'image/png')
     })
-
-    if (response.success) {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const r = await saveBlobAs(blob, {
+      defaultName: `AI回答_${timestamp}.png`,
+      filters: [{ name: 'PNG 图片', extensions: ['png'] }],
+      mimeType: 'image/png',
+    })
+    if (r.canceled) {
+      // 用户取消
+    } else if (r.success) {
       ElMessage.success('图片已保存')
-    } else if (response.error) {
-      ElMessage.error(response.error)
+    } else {
+      ElMessage.error(r.error || '保存图片失败')
     }
 
     // 清理
@@ -1382,7 +1379,7 @@ function renderContentForImage(content: string): string {
   }
 }
 
-// 导出为 Word
+// 导出为 Word：IPC 仅返回 docx base64 buffer，前端 saveBlobAs 触发本地保存
 async function exportAsWord(): Promise<void> {
   try {
     ElMessage.info('正在生成 Word 文档...')
@@ -1392,10 +1389,27 @@ async function exportAsWord(): Promise<void> {
       modelId: props.message.modelId
     })
 
-    if (response.success) {
+    if (!response?.success || !response.data?.base64) {
+      ElMessage.error(response?.error || '导出 Word 失败')
+      return
+    }
+    // base64 → Uint8Array → Blob
+    const bin = atob(response.data.base64 as string)
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    const blob = new Blob([bytes], {
+      type: response.data.mimeType ||
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    })
+    const r = await saveBlobAs(blob, {
+      defaultName: response.data.defaultName || `AI回答_${Date.now()}.docx`,
+      filters: [{ name: 'Word 文档', extensions: ['docx'] }],
+    })
+    if (r.canceled) return
+    if (r.success) {
       ElMessage.success('Word 文档已保存')
     } else {
-      ElMessage.error(response.error || '导出 Word 失败')
+      ElMessage.error(r.error || '导出 Word 失败')
     }
   } catch (error) {
     console.error('导出 Word 失败:', error)

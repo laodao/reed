@@ -19,6 +19,7 @@
  */
 
 import { ImageService } from '@core/services/image.service'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { ImageGenerator } from './gallery-derivation.service'
 import type { PanoramaImageGenerator } from './panorama-generator.service'
 
@@ -29,6 +30,40 @@ const DEFAULT_DERIVE_HEIGHT = 1024
 /** 360 全景默认尺寸（equirectangular 2:1） */
 const DEFAULT_PANORAMA_WIDTH = 2048
 const DEFAULT_PANORAMA_HEIGHT = 1024
+
+/**
+ * 从用户已启用的 provider configs 里挑一个 image 类型 model 的 ID。
+ * 优先 default provider 的第一个 image model；否则任意 enabled provider 的第一个。
+ *
+ * 不写死任何 model 名 —— 由用户在 settings 里启用什么模型，就用什么。
+ *
+ * @throws 找不到任何已启用的 image model 时抛错（用户需要先去 settings 配 image 类型模型）
+ */
+async function pickImageModel(): Promise<{ providerConfigId: string; model: string }> {
+  const db = getCoreDatabaseManager()
+  if (!db.providerConfigs) {
+    throw new Error('数据库未初始化（providerConfigs 仓库不可用）')
+  }
+  const enabled = await db.providerConfigs.getEnabled()
+  if (!enabled.length) {
+    throw new Error('未配置任何 enabled image provider，请到「设置 → 模型服务」启用一个图像 provider')
+  }
+  // 把 default 排前面
+  enabled.sort((a, b) => Number(b.isDefault ?? 0) - Number(a.isDefault ?? 0))
+  for (const cfg of enabled) {
+    const models = (cfg.models ?? []) as Array<{ id?: string; type?: string }>
+    const imgModel = models.find(
+      (m) => m.id && (m.type === 'image' || m.type === 'multimodal'),
+    )
+    if (imgModel?.id) {
+      return { providerConfigId: cfg.id, model: imgModel.id }
+    }
+  }
+  throw new Error(
+    '已启用的 provider 中没有 image 类型模型，请到「设置 → 模型服务」' +
+      '为某个 provider 添加 type=image 的模型（如阿里百炼的 wan2.7-image / qwen-image-2.0）',
+  )
+}
 
 /**
  * 创建 gallery 派生用的 ImageGenerator。
@@ -46,8 +81,10 @@ export function createGalleryImageGenerator(): ImageGenerator {
         ? `${opts.prompt}, variant: ${opts.label}`
         : opts.prompt
 
+      const { providerConfigId, model } = await pickImageModel()
       const resp = await ImageService.generateImage({
-        model: '', // 空字符串触发 provider 默认模型选择
+        providerConfigId,
+        model,
         prompt: fullPrompt,
         negativePrompt: opts.negativePrompt,
         width: DEFAULT_DERIVE_WIDTH,
@@ -80,8 +117,10 @@ export function createGalleryImageGenerator(): ImageGenerator {
 export function createPanoramaImageGenerator(): PanoramaImageGenerator {
   return {
     async generate(opts) {
+      const { providerConfigId, model } = await pickImageModel()
       const resp = await ImageService.generateImage({
-        model: '',
+        providerConfigId,
+        model,
         prompt: opts.prompt,
         negativePrompt: opts.negativePrompt,
         width: DEFAULT_PANORAMA_WIDTH,

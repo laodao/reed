@@ -88,6 +88,9 @@ export default defineConfig({
       '@renderer': resolve(__dirname, 'src/renderer'),
       '@shared': resolve(__dirname, 'src/shared'),
       '@web-client': resolve(__dirname, 'src/web/client'),
+      // @core：前端可 import core 的纯类型 / 纯常量 / 纯函数（无 Node 副作用模块）。
+      // typeorm / fs 等服务端代码不要从 renderer import；仅 import type / const。
+      '@core': resolve(__dirname, 'src/core'),
       '@': resolve(__dirname, 'src/renderer/src'),
     },
   },

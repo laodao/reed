@@ -158,6 +158,7 @@
       "Bash(curl -s -b /tmp/cookies-w3.txt -X POST http://localhost:4201/api/ipc/provider-config:list -H 'Content-Type: application/json' -d '{\"args\":[]}')",
       "Bash(curl -s -b /tmp/cookies-w3.txt -X POST http://localhost:4201/api/ipc/search-engine:templates -H 'Content-Type: application/json' -d '{\"args\":[]}')",
       "Bash(curl -s -b /tmp/cookies-w3.txt -X POST http://localhost:4201/api/ipc/oss:list-configs -H 'Content-Type: application/json' -d '{\"args\":[]}')",
+      "Bash(sleep 3; curl -s -X POST http://localhost:4201/*)",
       "Bash(pkill -f \"tsx.*web/server/index.ts\")",
       "Bash(DATA_ROOT=./data-web DB_TYPE=postgres PG_HOST=localhost PG_PORT=15432 PG_DATABASE=the_bot_web PG_USER=the_bot PG_PASSWORD=the_bot nohup npx tsx -r tsconfig-paths/register src/web/server/index.ts)",
       "Read(//tmp/**)",
@@ -274,7 +275,10 @@
       "Bash(curl -sI http://localhost:4201/api/upload/panorama -X POST)",
       "mcp__plugin_chrome-devtools-mcp_chrome-devtools__handle_dialog",
       "Bash(bash scripts/test-pg-up.sh)",
-      "Bash(PGDATABASE=the_bot_test bash scripts/web.sh restart server)"
+      "Bash(PGDATABASE=the_bot_test bash scripts/web.sh restart server)",
+      "Bash(PGDATABASE=the_bot_test bash scripts/web.sh restart all)",
+      "Bash(curl -s -c - -b /dev/null -X POST http://localhost:4201/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"test@local.dev\",\"password\":\"test123456\"}')",
+      "Bash(curl -s -X POST http://localhost:4201/api/ipc/ep:asset:image:generate-main -b tb_session_dev=__CMDSUB_OUTPUT__)"
     ]
   }
 }

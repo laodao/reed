@@ -229,30 +229,25 @@ export function registerExportHandlers(): void {
   })
 
   /**
-   * 导出消息为 Word 文档
+   * 把消息渲染为 Word 文档 buffer（base64），不直接写盘 —— 由前端
+   * （saveBlobAs）决定保存到本地（PC 走 dialog，Web 走浏览器下载）。
+   *
+   * 双端共用：core 端只负责"markdown → docx 字节流"，落盘行为下沉到前端。
    */
   ipcBridge.handle('export:message-word', async (_event: any, data: { content: string; modelId?: string }) => {
     try {
-      if (!isElectron) {
-        return { success: false, error: '该功能仅在桌面端可用' }
+      if (!data?.content) {
+        return { success: false, error: '消息内容为空' }
       }
-      const { dialog, BrowserWindow } = loadElectron()
+      const buffer = await markdownToDocx(data.content, { title: 'AI 回答' })
+      // Buffer → base64（前端用 atob/Uint8Array 还原成 Blob 再触发下载）
+      const base64 = Buffer.from(buffer).toString('base64')
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
       const defaultName = `AI回答_${timestamp}.docx`
-
-      const result = await dialog.showSaveDialog(BrowserWindow.getFocusedWindow()!, {
-        defaultPath: defaultName,
-        filters: [{ name: 'Word 文档', extensions: ['docx'] }]
-      })
-
-      if (result.canceled || !result.filePath) {
-        return { success: true, message: '用户取消' }
+      return {
+        success: true,
+        data: { base64, defaultName, mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
       }
-
-      const buffer = await markdownToDocx(data.content, { title: 'AI 回答' })
-      fs.writeFileSync(result.filePath, buffer)
-
-      return { success: true, filePath: result.filePath }
     } catch (error: any) {
       console.error('[export:message-word] 错误:', error)
       return { success: false, error: error.message }
