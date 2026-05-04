@@ -2,13 +2,14 @@
  * episode-production · 360 全景 + 视角截图（spec §4.5.10） · IPC handler
  * @module electron/ipc/handlers/episode-production/asset/panorama.handler
  * @description 双端共用 handler — PC 由 electron/index.ts 注册，Web 由 register-channels.ts 注册。
- * P3c Task 4 新增 channel（ep:asset:panorama:* · 走 PanoramaGeneratorService / PanoramaSnapshotService）。
  *
- * **重要 · TODO(P3c 后续)**：generate handler 注入的 PanoramaImageGenerator 是 stub 占位 ——
- *   调 generate 直接抛错。真实接入要 wire 到 dashscope panorama / SDXL panorama LoRA 等
- *   2:1 等距投影专用 provider，签名复杂、含 provider 选择，留给 P3c 后续 task 完成；
- *   当前阶段只先把 IPC 契约打通，service 编排逻辑已稳定。
- *   uploadFor / createSnapshot / list / delete 走真实路径，不依赖 imageGen。
+ * P3c Task 4 加入 ep:asset:panorama:* channel；P3c follow-up #64 把 stubPanoramaGen
+ * 替换为 createPanoramaImageGenerator() —— 走通用 ImageService.generateImage（按用户
+ * 配置的 enabled provider 路由），用 panorama prompt suffix + 2:1 width/height 让普通
+ * 图像 API 出 equirectangular 风格图。**注意**：通用 provider 输出不保证左右无缝，
+ * 真无缝需要换专门 panorama provider（如 Blockade Labs Skybox AI）。
+ *
+ * upload / uploadFile / createSnapshot / list / delete 走真实路径，不依赖 imageGen。
  */
 
 import * as fs from 'fs/promises'
@@ -20,7 +21,6 @@ import type { IpcResponse } from '@shared/types/ipc.types'
 import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
 import {
   PanoramaGeneratorService,
-  type PanoramaImageGenerator,
   type GenerateForInput,
   type UploadForInput,
 } from '@core/modules/episode-production/assets/services/panorama-generator.service'
@@ -33,18 +33,7 @@ import {
   PanoramaUploadService,
   PanoramaUploadValidationError,
 } from '@core/modules/episode-production/assets/services/panorama-upload.service'
-
-/**
- * Stub PanoramaImageGenerator：调用 generate 直接抛错。
- * TODO(P3c 后续)：替换为真实 dashscope panorama / SDXL panorama LoRA 适配器。
- */
-const stubPanoramaGen: PanoramaImageGenerator = {
-  async generate(_opts) {
-    throw new Error(
-      '360 全景 AI 生成 API 待 P3c 后续接入（dashscope panorama / SDXL panorama LoRA 适配）',
-    )
-  },
-}
+import { createPanoramaImageGenerator } from '@core/modules/episode-production/assets/services/image-provider-adapter'
 
 /**
  * 真实 SnapshotFileWriter：把 base64 字节落到 `<dataPath>/<targetDir>/<fileName>`，
@@ -78,7 +67,7 @@ function imageSvc(): AssetImageService {
 }
 
 function genSvc(): PanoramaGeneratorService {
-  return new PanoramaGeneratorService(imageSvc(), stubPanoramaGen)
+  return new PanoramaGeneratorService(imageSvc(), createPanoramaImageGenerator())
 }
 
 function snapshotSvc(): PanoramaSnapshotService {

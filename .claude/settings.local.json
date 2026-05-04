@@ -272,7 +272,9 @@
       "Bash(convert -size 2000x1000 gradient:'#FFD700-#4682B4' -gravity center -pointsize 80 -fill black -annotate 0 'TEST 360 PANORAMA' /tmp/test-panorama.png)",
       "mcp__plugin_chrome-devtools-mcp_chrome-devtools__upload_file",
       "Bash(curl -sI http://localhost:4201/api/upload/panorama -X POST)",
-      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__handle_dialog"
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__handle_dialog",
+      "Bash(bash scripts/test-pg-up.sh)",
+      "Bash(PGDATABASE=the_bot_test bash scripts/web.sh restart server)"
     ]
   }
 }

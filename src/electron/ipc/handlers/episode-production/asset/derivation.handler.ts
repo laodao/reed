@@ -2,11 +2,10 @@
  * episode-production · 图谱派生（spec §3.5） · IPC handler
  * @module electron/ipc/handlers/episode-production/asset/derivation.handler
  * @description 双端共用 handler — PC 由 electron/index.ts 注册，Web 由 register-channels.ts 注册。
- * V2.5 新增 channel（ep:asset:derive:* · 走 GalleryDerivationService）。
  *
- * **重要 · TODO(P5)**：本 handler 注入的 ImageGenerator 是 stub 占位 —— 调 generate 直接抛错。
- *   真实接入要 wire 到 ImageService.generateImage（接口签名复杂、含 provider 选择 / 多模型路由），
- *   留给 P5 渲染域 task 完成；当前阶段只先把 IPC 契约打通，service 编排逻辑已稳定。
+ * V2.5 加入 ep:asset:derive:* channel；P3c follow-up #64 把 stubImageGenerator
+ * 替换为 createGalleryImageGenerator() —— 走通用 ImageService.generateImage（按用户
+ * 配置的 enabled provider 路由）真实出图，1024×1024 派生图。
  */
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
@@ -16,9 +15,9 @@ import {
   GalleryDerivationService,
   type DeriveSingleInput,
   type DeriveBatchInput,
-  type ImageGenerator,
 } from '@core/modules/episode-production/assets/services/gallery-derivation.service'
 import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
+import { createGalleryImageGenerator } from '@core/modules/episode-production/assets/services/image-provider-adapter'
 
 export function registerDerivationHandlers(): void {
   ipcBridge.handle('ep:asset:derive:single', handleDeriveSingle)
@@ -34,20 +33,10 @@ function requireDataSource() {
   return db.dataSource
 }
 
-/**
- * Stub ImageGenerator：调用 generate 直接抛错。
- * TODO(P5)：替换为真实 ImageService.generateImage wrapper。
- */
-const stubImageGenerator: ImageGenerator = {
-  async generate(_opts) {
-    throw new Error('图像派生 API 待 P5 task 接入 ImageService.generateImage')
-  },
-}
-
 function buildService(): GalleryDerivationService {
   const ds = requireDataSource()
   const imageSvc = new AssetImageService(ds)
-  return new GalleryDerivationService(imageSvc, stubImageGenerator)
+  return new GalleryDerivationService(imageSvc, createGalleryImageGenerator())
 }
 
 async function handleDeriveSingle(

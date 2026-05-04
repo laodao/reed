@@ -164,6 +164,7 @@ import {
   LOCATION_WEATHER_VALUES,
   LOCATION_ANGLE_VALUES,
 } from '@core/modules/episode-production/assets/constants/location-variants'
+import { generateMainFor } from '@/api/main-image-generator'
 
 const props = defineProps<{
   bindingId: string
@@ -246,16 +247,26 @@ function getMissingLabels(cat: CategoryConfig): string[] {
   return cat.labels.filter((label) => !getImageByLabel(cat.key, label))
 }
 
+async function doGenerateMain() {
+  try {
+    await generateMainFor(props.assetType, props.bindingId)
+    ElMessage.success('主图已生成')
+    await reload()
+  } catch (e: any) {
+    ElMessage.error('生成失败：' + (e?.message ?? '未知错误'))
+  }
+}
+
 function onGenerateMain() {
-  ElMessage.info('生成主图 API 待 P5 渲染域接入')
+  void doGenerateMain()
 }
 
 function onRegenerateMain() {
-  ElMessage.info('生成主图 API 待 P5 渲染域接入')
+  void doGenerateMain()
 }
 
 function onUploadMain() {
-  ElMessage.info('生成主图 API 待 P5 渲染域接入')
+  ElMessage.info('主图上传走 follow-up，当前请用「生成主图」AI 出图')
 }
 
 async function onBatchDerive(cat: CategoryConfig) {

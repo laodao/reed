@@ -22,24 +22,15 @@ import { runWithUserAsync } from '@core/context/user-context'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
-import {
-  PanoramaGeneratorService,
-  type PanoramaImageGenerator,
-} from '@core/modules/episode-production/assets/services/panorama-generator.service'
+import { PanoramaGeneratorService } from '@core/modules/episode-production/assets/services/panorama-generator.service'
 import {
   PanoramaUploadService,
   PanoramaUploadValidationError,
 } from '@core/modules/episode-production/assets/services/panorama-upload.service'
+import { createPanoramaImageGenerator } from '@core/modules/episode-production/assets/services/image-provider-adapter'
 import { requireAuth } from '../auth/middleware'
 
 const router = Router()
-
-/** 与 panorama.handler.ts 对齐的 stub generator（upload 路径不会调它，仅占位） */
-const stubPanoramaGen: PanoramaImageGenerator = {
-  async generate() {
-    throw new Error('panorama AI 生成走 IPC 路由，非 upload')
-  },
-}
 
 /**
  * multer 配置：内存存储；50MB 硬上限（service 层会再校一次，提前拦截避免读完整体）。
@@ -74,7 +65,7 @@ router.post(
         const db = getCoreDatabaseManager()
         if (!db.dataSource) throw new Error('数据库未初始化')
         const imageSvc = new AssetImageService(db.dataSource)
-        const genSvc = new PanoramaGeneratorService(imageSvc, stubPanoramaGen)
+        const genSvc = new PanoramaGeneratorService(imageSvc, createPanoramaImageGenerator())
         const svc = new PanoramaUploadService(getPathProvider(), genSvc)
         return await svc.upload({
           buffer: file.buffer,

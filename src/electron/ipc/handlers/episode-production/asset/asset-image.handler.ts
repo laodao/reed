@@ -14,6 +14,11 @@ import {
   type AssetImageCategory,
   type AddImageInput,
 } from '@core/modules/episode-production/assets/services/asset-image.service'
+import {
+  MainImageGeneratorService,
+  type GenerateMainInput,
+} from '@core/modules/episode-production/assets/services/main-image-generator.service'
+import { createGalleryImageGenerator } from '@core/modules/episode-production/assets/services/image-provider-adapter'
 import type { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 
 /** updateImage 接受的 patch 子集（与 AssetImageService.updateImage 第二参一致） */
@@ -39,6 +44,7 @@ export function registerAssetImageHandlers(): void {
   ipcBridge.handle('ep:asset:image:set-as-main', handleSetAsMain)
   ipcBridge.handle('ep:asset:image:delete', handleDeleteImage)
   ipcBridge.handle('ep:asset:image:update', handleUpdateImage)
+  ipcBridge.handle('ep:asset:image:generate-main', handleGenerateMain)
 }
 
 /** 取 DataSource；未初始化则抛错 */
@@ -138,6 +144,25 @@ async function handleUpdateImage(
   try {
     await buildService().updateImage(imageId, patch)
     return { success: true, data: { updated: true } }
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+async function handleGenerateMain(
+  _event: any,
+  input: GenerateMainInput,
+): Promise<IpcResponse> {
+  try {
+    const ds = requireDataSource()
+    const imageSvc = new AssetImageService(ds)
+    const svc = new MainImageGeneratorService(
+      imageSvc,
+      createGalleryImageGenerator(),
+      ds,
+    )
+    const data = await svc.generateMain(input)
+    return { success: true, data }
   } catch (err: any) {
     return { success: false, error: err?.message ?? String(err) }
   }

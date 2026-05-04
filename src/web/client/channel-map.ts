@@ -465,6 +465,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.asset.image.setAsMain': { channel: 'ep:asset:image:set-as-main' },
   'episodeProduction.asset.image.delete': { channel: 'ep:asset:image:delete' },
   'episodeProduction.asset.image.update': { channel: 'ep:asset:image:update' },
+  'episodeProduction.asset.image.generateMain': { channel: 'ep:asset:image:generate-main' },
   // 派生（2 个）
   'episodeProduction.asset.derive.single': { channel: 'ep:asset:derive:single' },
   'episodeProduction.asset.derive.batch': { channel: 'ep:asset:derive:batch' },

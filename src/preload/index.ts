@@ -219,6 +219,7 @@ const IPC_CHANNELS = {
   EP_ASSET_IMAGE_SET_AS_MAIN: 'ep:asset:image:set-as-main',
   EP_ASSET_IMAGE_DELETE: 'ep:asset:image:delete',
   EP_ASSET_IMAGE_UPDATE: 'ep:asset:image:update',
+  EP_ASSET_IMAGE_GENERATE_MAIN: 'ep:asset:image:generate-main',
 
   // 派生（2 个）
   EP_ASSET_DERIVE_SINGLE: 'ep:asset:derive:single',
@@ -1725,6 +1726,8 @@ const electronAPI = {
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_DELETE, id),
         update: (id: string, patch: any) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_UPDATE, id, patch),
+        generateMain: (input: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_GENERATE_MAIN, input),
       },
       // 派生（2 个）
       derive: {
