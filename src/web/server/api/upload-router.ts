@@ -84,15 +84,24 @@ router.post(
           userId,
         })
       })
-      res.json({ ok: true, data: result })
+      // 双层 envelope：外层 ok 是 HTTP 层；内层 success 是 IpcResponse（与 /api/ipc/<channel> 对齐）
+      res.json({ ok: true, data: { success: true, data: result } })
     } catch (e: any) {
       if (e instanceof PanoramaUploadValidationError) {
         res
           .status(400)
-          .json({ ok: false, error: e.message, code: e.code })
+          .json({
+            ok: true,
+            data: { success: false, error: `[${e.code}] ${e.message}` },
+          })
         return
       }
-      res.status(500).json({ ok: false, error: e?.message ?? String(e) })
+      res
+        .status(500)
+        .json({
+          ok: true,
+          data: { success: false, error: e?.message ?? String(e) },
+        })
     }
   },
 )

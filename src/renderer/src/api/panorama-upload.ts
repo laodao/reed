@@ -17,17 +17,17 @@ export interface PanoramaUploadParams {
   label?: string | null
 }
 
-declare global {
-  interface Window {
-    electronAPI?: any
-    __APP_PLATFORM__?: 'electron' | 'web'
-  }
-}
-
+/**
+ * 与 utils/asset-url.ts 的 isElectronRenderer 同语义但不重复 Window 扩展（避免重复 declare global）。
+ */
 function isElectronRenderer(): boolean {
   if (typeof window === 'undefined') return false
-  if (window.__APP_PLATFORM__ === 'web') return false
-  return !!window.electronAPI
+  const w = window as unknown as {
+    __APP_PLATFORM__?: 'electron' | 'web'
+    electronAPI?: unknown
+  }
+  if (w.__APP_PLATFORM__ === 'web') return false
+  return !!w.electronAPI
 }
 
 /**
@@ -65,7 +65,17 @@ async function uploadViaHttp(
   if (!resp.ok || !body?.ok) {
     throw new Error(body?.error || `上传失败 (${resp.status})`)
   }
-  return body.data as AssetImageEntity
+  // 与 /api/ipc/<channel> 对齐的双层 envelope：外层 { ok, data } 是 HTTP；
+  // 内层 data 是 IpcResponse<T> = { success, data?, error? }
+  const inner = body.data as {
+    success: boolean
+    data?: AssetImageEntity
+    error?: string
+  }
+  if (!inner?.success) {
+    throw new Error(inner?.error || '上传失败')
+  }
+  return inner.data as AssetImageEntity
 }
 
 async function uploadViaIpc(
@@ -73,7 +83,7 @@ async function uploadViaIpc(
 ): Promise<AssetImageEntity> {
   const buffer = await params.file.arrayBuffer()
   const base64 = arrayBufferToBase64(buffer)
-  const api = window.electronAPI?.episodeProduction?.asset?.panorama
+  const api = (window as any).electronAPI?.episodeProduction?.asset?.panorama
   if (!api?.uploadFile) {
     throw new Error('panorama.uploadFile IPC 未暴露（PC 端版本过旧）')
   }

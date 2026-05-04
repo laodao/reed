@@ -110,6 +110,10 @@
  */
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import {
+  LOCATION_TIME_VARIANTS,
+  LOCATION_WEATHER_VARIANTS,
+} from '@core/modules/episode-production/assets/constants/location-variants'
 
 const props = defineProps<{ bindingId: string }>()
 const emit = defineEmits<{ saved: [] }>()
@@ -119,26 +123,15 @@ interface OptionDef {
   label: string
 }
 
-// 时间选项（与 LocationGalleryEditor.TIME_LABELS 保持一致）
-const TIME_OPTIONS: OptionDef[] = [
-  { value: 'morning', label: '清晨 morning' },
-  { value: 'noon', label: '正午 noon' },
-  { value: 'afternoon', label: '下午 afternoon' },
-  { value: 'evening', label: '黄昏 evening' },
-  { value: 'night', label: '夜晚 night' },
-  { value: 'dawn', label: '黎明 dawn' },
-  { value: 'dusk', label: '日暮 dusk' },
-]
-
-// 天气选项（与 LocationGalleryEditor.WEATHER_LABELS 保持一致）
-const WEATHER_OPTIONS: OptionDef[] = [
-  { value: 'sunny', label: '晴 sunny' },
-  { value: 'cloudy', label: '多云 cloudy' },
-  { value: 'rainy', label: '雨 rainy' },
-  { value: 'snowy', label: '雪 snowy' },
-  { value: 'foggy', label: '雾 foggy' },
-  { value: 'stormy', label: '暴风 stormy' },
-]
+// 时间 / 天气选项 — 从 core 共享常量派生（避免与 LocationGalleryEditor / 派生器分叉）
+const TIME_OPTIONS: OptionDef[] = LOCATION_TIME_VARIANTS.map((v) => ({
+  value: v.value,
+  label: `${v.cn} ${v.value}`,
+}))
+const WEATHER_OPTIONS: OptionDef[] = LOCATION_WEATHER_VARIANTS.map((v) => ({
+  value: v.value,
+  label: `${v.cn} ${v.value}`,
+}))
 
 const loading = ref(false)
 const saving = ref(false)

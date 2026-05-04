@@ -159,6 +159,11 @@ import type { UploadFile } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import PanoramaSnapshotEditor from './PanoramaSnapshotEditor.vue'
 import { uploadPanoramaFile } from '@/api/panorama-upload'
+import {
+  LOCATION_TIME_VALUES,
+  LOCATION_WEATHER_VALUES,
+  LOCATION_ANGLE_VALUES,
+} from '@core/modules/episode-production/assets/constants/location-variants'
 
 const props = defineProps<{
   bindingId: string
@@ -179,28 +184,21 @@ interface AssetImageRow {
   isMain: number
 }
 
-// 时间标签（与 LocationCardForm.TIME_OPTIONS 保持一致）
-const TIME_LABELS = ['morning', 'noon', 'afternoon', 'evening', 'night', 'dawn', 'dusk']
-// 天气标签（与 LocationCardForm.WEATHER_OPTIONS 保持一致）
-const WEATHER_LABELS = ['sunny', 'cloudy', 'rainy', 'snowy', 'foggy', 'stormy']
-// 角度标签（地点取景）
-const ANGLE_LABELS = ['wide_shot', 'entrance', 'interior_a', 'interior_b']
-
 const categories: CategoryConfig[] = [
   {
     key: 'time_variant',
     label: '时间变体',
-    labels: TIME_LABELS,
+    labels: [...LOCATION_TIME_VALUES],
   },
   {
     key: 'weather_variant',
     label: '天气变体',
-    labels: WEATHER_LABELS,
+    labels: [...LOCATION_WEATHER_VALUES],
   },
   {
     key: 'angle_variant',
     label: '角度变体',
-    labels: ANGLE_LABELS,
+    labels: [...LOCATION_ANGLE_VALUES],
   },
 ]
 
@@ -350,15 +348,40 @@ async function loadPanoramas() {
   }
 }
 
+/**
+ * 拼接 360 全景生成的 stylePrompt：从 location effective data 拉名字 + 描述，
+ * 拼成 "<name>: <description>"。无任何描述时不发请求（强制用户先填）。
+ */
+async function buildPanoramaStylePrompt(): Promise<string> {
+  const locationApi = (window as unknown as {
+    electronAPI?: { episodeProduction?: { asset?: { location?: any } } }
+  }).electronAPI?.episodeProduction?.asset?.location
+  if (!locationApi?.effective) {
+    throw new Error('location.effective IPC 未暴露')
+  }
+  const resp = await locationApi.effective(props.bindingId)
+  if (!resp?.success || !resp.data) {
+    throw new Error(resp?.error || '加载地点信息失败')
+  }
+  const eff = resp.data as { name?: string | null; description?: string | null }
+  const name = (eff.name ?? '').trim()
+  const desc = (eff.description ?? '').trim()
+  const parts = [name, desc].filter(Boolean)
+  if (parts.length === 0) {
+    throw new Error('请先在设定卡填写地点名称或描述，AI 全景才有可生成内容')
+  }
+  return parts.join('：')
+}
+
 async function onGeneratePanorama() {
   generating.value = true
   try {
+    const stylePrompt = await buildPanoramaStylePrompt()
     const api = getPanoramaApi()
     if (!api) throw new Error('panorama API 未暴露')
-    // 简化版 stylePrompt — 真实场景应从 location-asset.getEffectiveData 拉地点描述
     const resp = await api.generate({
       locationBindingId: props.bindingId,
-      stylePrompt: '地点 古风',
+      stylePrompt,
     })
     if (resp?.success && resp.data) {
       ElMessage.success('360 全景已生成')
