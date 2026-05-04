@@ -46,6 +46,7 @@ import { ensureScenePropItemBinding } from '@core/database/migrations/scene-prop
 import { expandEpisodeStatus } from '@core/database/migrations/expand-episode-status'
 import { stripLwImageFields } from '@core/database/migrations/strip-lw-image-fields'
 import { addStoryboardBackgroundRef } from '@core/database/migrations/add-storyboard-background-ref'
+import { relaxBindingLwIdNullable } from '@core/database/migrations/relax-binding-lw-id-nullable'
 import { registerCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { LanceDBService } from '@core/services/lance-db.service'
 import { registerAllWebChannels } from './api/register-channels'
@@ -195,6 +196,8 @@ async function initDatabase(): Promise<void> {
   await stripLwImageFields(ds)
   // P3c task 1: storyboards 加 background_ref_image_id（spec §4.8）
   await addStoryboardBackgroundRef(ds)
+  // P3c follow-up #60: character/location/item bindings 的 long_writing_*_id 改 nullable
+  await relaxBindingLwIdNullable(ds)
 
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)

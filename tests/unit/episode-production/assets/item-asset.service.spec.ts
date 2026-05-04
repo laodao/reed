@@ -106,8 +106,8 @@ describe('ItemAssetService', () => {
     expect(created.standaloneName).toBe('夜行衣')
     expect(created.standaloneDescription).toBe('黑色紧身衣')
     expect(created.projectId).toBe('p1')
-    // 占位列：standalone 不该有 lw 关联，当前用空串占位（follow-up #60）
-    expect(created.longWritingItemId).toBe('')
+    // standalone 不绑 lw（migration relax-binding-lw-id-nullable 已开放 nullable）
+    expect(created.longWritingItemId).toBeNull()
 
     // 落库可被 getById 取到
     const loaded = await svc.getById(created.id)

@@ -131,9 +131,8 @@ export class ItemAssetService {
       id: this.generateId(),
       userId: input.userId ?? null,
       projectId: input.projectId,
-      // TODO(follow-up #60)：standalone 不该绑 lw，但 long_writing_item_id 列当前 NOT NULL；
-      // 后续 task 加迁移把该列改 nullable，这里就能 set null。当前用空串占位仅为通过约束。
-      longWritingItemId: '',
+      // standalone 模式不绑 lw_item（migration relax-binding-lw-id-nullable 已开放 nullable）
+      longWritingItemId: null,
       itemName: input.name,
       sourceType: 'standalone',
       standaloneName: input.name,

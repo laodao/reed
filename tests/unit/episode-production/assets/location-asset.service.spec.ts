@@ -149,8 +149,8 @@ describe('LocationAssetService', () => {
     expect(standalone.sourceType).toBe('standalone')
     expect(standalone.standaloneName).toBe('废弃仓库')
     expect(standalone.standaloneDescription).toBe('阴暗潮湿')
-    // 占位列：standalone 不该有 lw 关联，当前用空串占位（follow-up #60）
-    expect(standalone.longWritingLocationId).toBe('')
+    // standalone 不绑 lw（migration relax-binding-lw-id-nullable 已开放 nullable）
+    expect(standalone.longWritingLocationId).toBeNull()
 
     let eff = await svc.getEffectiveData(standalone.id)
     expect(eff).toMatchObject({

@@ -142,9 +142,8 @@ export class CharacterAssetService {
       id: this.generateId(),
       userId: input.userId ?? null,
       projectId: input.projectId,
-      // TODO(follow-up #60)：standalone 不该绑 lw，但 long_writing_character_id 列当前 NOT NULL；
-      // 后续 task 加迁移把该列改 nullable，这里就能 set null。当前用空串占位仅为通过约束。
-      longWritingCharacterId: '',
+      // standalone 模式不绑 lw_character（migration relax-binding-lw-id-nullable 已开放 nullable）
+      longWritingCharacterId: null,
       sourceType: 'standalone',
       voiceConfig: {},
       voiceId: input.voiceId ?? null,

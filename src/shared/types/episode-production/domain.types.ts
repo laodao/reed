@@ -88,7 +88,11 @@ export interface AudioAsset {
 export interface CharacterBinding {
   id: string
   projectId: string
-  longWritingCharacterId: string // 长文写作角色ID
+  /**
+   * 长文写作角色ID。仅 source_type='linked_lw' 时有值；standalone 模式必须为 null
+   * （migration: relax-binding-lw-id-nullable）。
+   */
+  longWritingCharacterId: string | null
   portraitId?: string // 人像设计ID
 
   // 如果没有人像，使用配置生成
@@ -124,7 +128,11 @@ export interface CharacterBinding {
 export interface LocationBinding {
   id: string
   projectId: string
-  longWritingLocationId: string // 长文写作地点ID
+  /**
+   * 长文写作地点ID。仅 source_type='linked_lw' 时有值；standalone 模式必须为 null
+   * （migration: relax-binding-lw-id-nullable）。
+   */
+  longWritingLocationId: string | null
   locationName: string // 地点名称
 
   // 图片资产
@@ -162,7 +170,11 @@ export interface LocationBinding {
 export interface ItemBinding {
   id: string
   projectId: string
-  longWritingItemId: string // 长文写作物品ID
+  /**
+   * 长文写作物品ID。仅 source_type='linked_lw' 时有值；standalone 模式必须为 null
+   * （migration: relax-binding-lw-id-nullable）。
+   */
+  longWritingItemId: string | null
   itemName: string // 物品名称
 
   // 图片资产

@@ -22,8 +22,12 @@ export class LocationBindingEntity {
   @Column({ name: 'project_id', type: 'varchar' })
   projectId!: string
 
-  @Column({ name: 'long_writing_location_id', type: 'varchar' })
-  longWritingLocationId!: string
+  /**
+   * 关联 lw_location.id；仅 source_type='linked_lw' 时有值，standalone 必须为 null。
+   * 历史遗留：见 character-binding 同字段说明（migration: relax-binding-lw-id-nullable）。
+   */
+  @Column({ name: 'long_writing_location_id', type: 'varchar', nullable: true })
+  longWritingLocationId!: string | null
 
   @Column({ name: 'location_name', type: 'varchar' })
   locationName!: string

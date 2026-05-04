@@ -181,10 +181,13 @@ describe('CharacterAssetService', () => {
     expect(created.standaloneName).toBe('新角色')
     expect(created.standaloneDescription).toBe('描述')
     expect(created.projectId).toBe('p1')
+    // standalone 不绑 lw（migration relax-binding-lw-id-nullable 已开放 nullable）
+    expect(created.longWritingCharacterId).toBeNull()
 
     // 落库可被 getById 取到
     const loaded = await svc.getById(created.id)
     expect(loaded?.standaloneName).toBe('新角色')
+    expect(loaded?.longWritingCharacterId).toBeNull()
   })
 
   it('createLinkedLw: 新建 linked_lw 角色（含初始 override）', async () => {

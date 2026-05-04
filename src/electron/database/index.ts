@@ -413,6 +413,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-storyboard-background-ref'
     )
     await addStoryboardBackgroundRef(this.dataSource)
+    // P3c follow-up #60: character/location/item bindings 的 long_writing_*_id 改 nullable
+    const { relaxBindingLwIdNullable } = await import(
+      '@core/database/migrations/relax-binding-lw-id-nullable'
+    )
+    await relaxBindingLwIdNullable(this.dataSource)
   }
 
   /**

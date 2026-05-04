@@ -22,8 +22,13 @@ export class CharacterBindingEntity {
   @Column({ name: 'project_id', type: 'varchar' })
   projectId!: string
 
-  @Column({ name: 'long_writing_character_id', type: 'varchar' })
-  longWritingCharacterId!: string
+  /**
+   * 关联 lw_character.id；仅 source_type='linked_lw' 时有值，standalone 必须为 null。
+   * 历史遗留：早期 standalone 用 '' 占位，已被 migration relax-binding-lw-id-nullable
+   * 改为 nullable + 回填 NULL。
+   */
+  @Column({ name: 'long_writing_character_id', type: 'varchar', nullable: true })
+  longWritingCharacterId!: string | null
 
   @Column({ name: 'portrait_id', type: 'text', nullable: true })
   portraitId!: string | null

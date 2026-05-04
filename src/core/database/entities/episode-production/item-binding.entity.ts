@@ -22,8 +22,12 @@ export class ItemBindingEntity {
   @Column({ name: 'project_id', type: 'varchar' })
   projectId!: string
 
-  @Column({ name: 'long_writing_item_id', type: 'varchar' })
-  longWritingItemId!: string
+  /**
+   * 关联 lw_item.id；仅 source_type='linked_lw' 时有值，standalone 必须为 null。
+   * 历史遗留：见 character-binding 同字段说明（migration: relax-binding-lw-id-nullable）。
+   */
+  @Column({ name: 'long_writing_item_id', type: 'varchar', nullable: true })
+  longWritingItemId!: string | null
 
   @Column({ name: 'item_name', type: 'varchar' })
   itemName!: string
