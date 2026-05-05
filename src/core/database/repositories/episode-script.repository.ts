@@ -16,7 +16,8 @@ import { BaseRepository } from '../base-repository'
 export interface CreateEpisodeScriptRequest {
   projectId: string
   episodeId: string
-  outlineId: string
+  /** 关联的 lw_outline ID；uploaded 模式下为 null */
+  outlineId?: string | null
   synopsis?: string
   scriptContent?: string
   scriptFormat?: string
@@ -84,7 +85,7 @@ export class EpisodeScriptRepository extends BaseRepository<
       id,
       projectId: data.projectId,
       episodeId: data.episodeId,
-      outlineId: data.outlineId,
+      outlineId: data.outlineId ?? null,
       status: 'pending',
       synopsis: data.synopsis ?? '',
       scriptContent: data.scriptContent ?? null,

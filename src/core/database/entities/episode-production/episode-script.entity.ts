@@ -26,8 +26,14 @@ export class EpisodeScriptEntity {
   @Column({ name: 'episode_id', type: 'varchar' })
   episodeId!: string
 
-  @Column({ name: 'outline_id', type: 'varchar' })
-  outlineId!: string
+  /**
+   * 关联的 lw_outline 节点 ID。仅 episode.sourceType='outline' 时有值；
+   * 'uploaded' 模式（用户直接粘长文）下为 null。P7 实测发现 PG NOT NULL
+   * 约束阻断 uploaded 流程，改 nullable + 配套 relax-episode-script-outline-id
+   * migration 同步 schema。
+   */
+  @Column({ name: 'outline_id', type: 'varchar', nullable: true })
+  outlineId!: string | null
 
   @Column({ name: 'status', type: 'varchar', default: 'pending' })
   status!: string

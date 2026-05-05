@@ -425,6 +425,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-narrative-binding-fks'
     )
     await addNarrativeBindingFks(this.dataSource)
+    // P7-bug-1: episode_scripts.outline_id 改 nullable（uploaded 模式无 outlineId）
+    const { relaxEpisodeScriptOutlineId } = await import(
+      '@core/database/migrations/relax-episode-script-outline-id'
+    )
+    await relaxEpisodeScriptOutlineId(this.dataSource)
   }
 
   /**

@@ -48,6 +48,7 @@ import { stripLwImageFields } from '@core/database/migrations/strip-lw-image-fie
 import { addStoryboardBackgroundRef } from '@core/database/migrations/add-storyboard-background-ref'
 import { relaxBindingLwIdNullable } from '@core/database/migrations/relax-binding-lw-id-nullable'
 import { addNarrativeBindingFks } from '@core/database/migrations/add-narrative-binding-fks'
+import { relaxEpisodeScriptOutlineId } from '@core/database/migrations/relax-episode-script-outline-id'
 import { registerCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { LanceDBService } from '@core/services/lance-db.service'
 import { initVectorStore } from '@core/services/vector/registry'
@@ -203,6 +204,8 @@ async function initDatabase(): Promise<void> {
   await relaxBindingLwIdNullable(ds)
   // P4-T1: 叙事域强约束 — scene_script/character/dialogue/action 加 binding_id FK
   await addNarrativeBindingFks(ds)
+  // P7-bug-1: episode_scripts.outline_id 改 nullable（uploaded 模式无 outlineId）
+  await relaxEpisodeScriptOutlineId(ds)
 
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)
