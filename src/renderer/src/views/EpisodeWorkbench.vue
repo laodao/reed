@@ -337,7 +337,11 @@ import AssetSidebar from '@/components/episode-production/workbench/AssetSidebar
 import BottomTimeline from '@/components/episode-production/workbench/BottomTimeline.vue'
 // P6-T17 stage 占位组件（① 内容 / ③ 剧本 / ④ 分镜 待实现 stage view）
 import StagePlaceholder from '@/components/episode-production/workbench/StagePlaceholder.vue'
-import type { EpisodeStatus, VideoEpisode as _VE } from '../../../shared/types/episode-production'
+import type {
+  EpisodeStatus,
+  VideoEpisode as _VE,
+  StageEnterDecision,
+} from '../../../shared/types/episode-production'
 // V2 老 tab（剧本 / 角色绑定 / 物品绑定 / 地点绑定）已从 template 移除
 // import 也跟着删除；P6-T19/T20 新 stage view 完成后会彻底删源文件
 // P3a Task 11 · 资产盘点新页面（追加在原 4 tab 之后，不替换老 tab）
@@ -402,17 +406,73 @@ const activeTab = ref<WorkbenchStage>('asset_prep')
 const progressBarRef = ref<{ reload: () => Promise<void> } | null>(null)
 
 /**
- * P6-T13 顶部进度条点击 → 切到对应 stage tab。
+ * P6-T13/T16/T17 顶部进度条点击 → 经门控决策 → 切到对应 stage tab。
  *
- * P6-T17 重构后：tab name 与 EpisodeStatus 对齐，无需字符串映射。
- * completed 终态 stage 提示"剧集已完成"，其他 6 个 stage 直接 set activeTab。
+ * P6-T16 门控逻辑（spec §2.3 软引导 + 末端硬锁）：
+ *   - 同状态 / 回退：StageGate 直接 allowed=true → 切换
+ *   - 前向跳转 + 前置阶段已完成：allowed=true → 切换
+ *   - 前向跳转 + 前置未完成 + canForce=true：弹 confirm 列 gaps[]，
+ *     用户选"仍要进入"则切换，"回到 ② 资产"则跳到 asset_prep
+ *   - canForce=false（末端硬锁）：弹 alert 提示，不允许强制
+ *   - IPC 失败 / 数据缺失：软放过（避免门控 bug 阻塞用户）
  */
-function onNavigateStage(status: EpisodeStatus): void {
+async function onNavigateStage(status: EpisodeStatus): Promise<void> {
   if (status === 'completed') {
     ElMessage.info('剧集已完成')
     return
   }
-  activeTab.value = status
+  const ep = episodeStore.currentEpisode
+  if (!ep) {
+    activeTab.value = status as WorkbenchStage
+    return
+  }
+  try {
+    const api = (window as any).electronAPI?.episodeProduction
+    if (!api?.canEnterStage) {
+      activeTab.value = status as WorkbenchStage
+      return
+    }
+    const resp = await api.canEnterStage(ep.id, ep.status as EpisodeStatus, status)
+    if (!resp?.success) {
+      console.warn('canEnterStage 返回失败，软放过：', resp?.error)
+      activeTab.value = status as WorkbenchStage
+      return
+    }
+    const decision = resp.data as StageEnterDecision
+    if (decision.allowed) {
+      activeTab.value = status as WorkbenchStage
+      return
+    }
+    if (!decision.canForce) {
+      const gapList = decision.gaps.map((g) => `• ${g.message}`).join('\n')
+      await ElMessageBox.alert(
+        `不能进入此阶段（末端硬锁）：\n\n${gapList}\n\n请先完成上述项再试。`,
+        '阶段门控',
+        { type: 'error', confirmButtonText: '知道了' },
+      )
+      return
+    }
+    // 软关卡 → 弹 confirm
+    const gapList = decision.gaps.map((g) => `• ${g.message}`).join('\n')
+    try {
+      await ElMessageBox.confirm(
+        `前置阶段还有 ${decision.gaps.length} 项未完成：\n\n${gapList}\n\n仍要进入吗？`,
+        '前置未完成',
+        {
+          confirmButtonText: '仍要进入',
+          cancelButtonText: '回到 ② 资产',
+          type: 'warning',
+        },
+      )
+      activeTab.value = status as WorkbenchStage
+    } catch {
+      // 用户点"回到 ② 资产"或 ESC
+      activeTab.value = 'asset_prep'
+    }
+  } catch (e: any) {
+    console.warn('门控调用异常，软放过：', e)
+    activeTab.value = status as WorkbenchStage
+  }
 }
 
 /**

@@ -11,13 +11,16 @@
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
+import type { EpisodeStatus } from '@shared/types/episode-production'
 import { ProgressCalculator } from '@core/modules/episode-production/workflow/progress-calculator'
+import { StageGateService } from '@core/modules/episode-production/workflow/stage-gate.service'
 
 /**
  * 注册工作流相关 IPC 处理器
  */
 export function registerWorkflowHandlers(): void {
   ipcBridge.handle('ep:calculate-episode-progress', handleCalculateEpisodeProgress)
+  ipcBridge.handle('ep:can-enter-stage', handleCanEnterStage)
 }
 
 /**
@@ -45,5 +48,37 @@ async function handleCalculateEpisodeProgress(
     return { success: true, data: progress }
   } catch (e: any) {
     return { success: false, error: e?.message ?? '计算剧集进度失败' }
+  }
+}
+
+/**
+ * 决策能否从 currentStatus 进入 targetStatus（P6-T16 · spec §2.3）。
+ *
+ * UI 用：
+ * - allowed=true → 直接切换
+ * - allowed=false + canForce=true → 弹"前置未完成，仍要进入？"对话框，
+ *   列出 gaps[]
+ * - allowed=false + canForce=false → 末端硬锁（如 ⑥ 合成 export 必须全
+ *   分镜出片），不允许强制
+ */
+async function handleCanEnterStage(
+  _event: any,
+  episodeId: string,
+  currentStatus: EpisodeStatus,
+  targetStatus: EpisodeStatus,
+): Promise<IpcResponse> {
+  try {
+    if (!episodeId) {
+      return { success: false, error: 'episodeId 不能为空' }
+    }
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) {
+      return { success: false, error: '数据库未初始化' }
+    }
+    const gate = new StageGateService(db.dataSource)
+    const decision = await gate.canEnterStage(episodeId, currentStatus, targetStatus)
+    return { success: true, data: decision }
+  } catch (e: any) {
+    return { success: false, error: e?.message ?? '阶段门控决策失败' }
   }
 }

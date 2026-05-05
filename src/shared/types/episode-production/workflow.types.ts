@@ -158,6 +158,27 @@ export interface VideoEpisode {
 }
 
 /**
+ * 缺失项详情（spec §2.3 软引导提示用 · P6-T16）
+ */
+export interface StageGap {
+  code: string
+  message: string
+  /** 可选：跳转目标（如 sceneId / bindingId） */
+  targetId?: string
+}
+
+/**
+ * 阶段进入决策结果（P6-T16 软引导）
+ */
+export interface StageEnterDecision {
+  allowed: boolean
+  /** 缺失项列表（allowed=true 时为空） */
+  gaps: StageGap[]
+  /** 即使 allowed=false，是否允许"仍要进入"（前向软关卡=true；末端硬锁=false） */
+  canForce: boolean
+}
+
+/**
  * 单阶段进度（顶部进度条 + 工作台总览用）
  *
  * P6-T13：从 core/progress-calculator 提到 shared 层，让前端组件能直接 import 类型。

@@ -181,6 +181,9 @@ const IPC_CHANNELS = {
   // P6-T13 顶部 6 段阶段进度条（spec §2.1 + §2.2）
   EP_CALCULATE_EPISODE_PROGRESS: 'ep:calculate-episode-progress',
 
+  // P6-T16 阶段门控（spec §2.3 软引导）
+  EP_CAN_ENTER_STAGE: 'ep:can-enter-stage',
+
   EP_GET_STYLE_PRESETS: 'ep:get-style-presets',
   EP_GENERATE_STORYBOARD_IMAGE: 'ep:generate-storyboard-image',
   EP_GENERATE_SCENE_IMAGES: 'ep:generate-scene-images',
@@ -1649,6 +1652,10 @@ const electronAPI = {
     // P6-T13 顶部 6 段阶段进度条（spec §2.1）
     calculateEpisodeProgress: (episodeId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_CALCULATE_EPISODE_PROGRESS, episodeId),
+
+    // P6-T16 阶段门控（spec §2.3 软引导）
+    canEnterStage: (episodeId: string, currentStatus: string, targetStatus: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_CAN_ENTER_STAGE, episodeId, currentStatus, targetStatus),
 
     // 资源生成
     getStylePresets: () =>
