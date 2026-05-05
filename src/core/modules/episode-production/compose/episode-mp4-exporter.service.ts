@@ -21,7 +21,9 @@
  * 在 ffmpeg-assembler.service.ts（已存在）或 follow-up 新建的 native runner 中。
  */
 
+import * as path from 'path'
 import type { DataSource } from 'typeorm'
+import { getPathProvider } from '@core/interfaces/path.interface'
 import {
   TimelineBuilderService,
   type Timeline,
@@ -32,6 +34,18 @@ import {
   toFfmpegTransition,
   type FfmpegTransitionPlan,
 } from './transition-translator'
+
+/**
+ * 解析 user-rel 相对路径为绝对路径：业务层（image_assets / storyboard.videoPath）
+ * 持久化的是相对 user 数据根的路径，ffmpeg 等 native 工具需要绝对路径。
+ * 与 base-video-provider-bridge.resolveImagePath 同义；这里就近实现避免跨模块依赖。
+ */
+function resolveUserRelPath(p: string): string {
+  if (!p) return p
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(p)) return p  // http(s)://、file://、local-image://、data:
+  if (path.isAbsolute(p)) return p
+  return path.join(getPathProvider().getDataPath(), p)
+}
 
 /** ffmpeg 命令的执行抽象（依赖注入，便于双端 + mock 单测） */
 export interface FfmpegRunner {
@@ -118,7 +132,8 @@ export class EpisodeMp4ExporterService {
     if (flatShots.length === 0) {
       throw new Error('导出阻断：时间线为空')
     }
-    const inputs = flatShots.map((s) => s.videoPath!)
+    // 把 user-rel 相对路径解析为绝对路径再交给 ffmpeg
+    const inputs = flatShots.map((s) => resolveUserRelPath(s.videoPath!))
 
     // 字幕（可选烧入）
     let srtPath: string | undefined

@@ -10,6 +10,7 @@
  * ffmpeg-static 实现，作为后续 follow-up。
  */
 
+import { execFileSync } from 'child_process'
 import * as path from 'path'
 import * as fs from 'fs'
 import ffmpeg from 'fluent-ffmpeg'
@@ -21,8 +22,32 @@ import type {
   FileWriter,
 } from '@core/modules/episode-production/compose/episode-mp4-exporter.service'
 
-ffmpeg.setFfmpegPath(ffmpegPath.path)
-ffmpeg.setFfprobePath(ffprobePath.path)
+/**
+ * 选 ffmpeg / ffprobe 路径：
+ *   1. FFMPEG_PATH / FFPROBE_PATH 环境变量（最高优先，部署/测试覆盖）
+ *   2. 系统 PATH 上的 ffmpeg / ffprobe（推荐：发行版打包 ≥ 4.3 支持 xfade 等新 filter）
+ *   3. @ffmpeg-installer/ffmpeg 自带 binary（兜底；该 binary 是 2018 年 N-47683 nightly，
+ *      不支持 xfade（4.3，2020 年才引入）等较新 filter，仅作 fallback）
+ */
+function resolveBinary(envVar: string, name: string, installerPath: string): string {
+  const fromEnv = process.env[envVar]
+  if (fromEnv && fs.existsSync(fromEnv)) return fromEnv
+  try {
+    // execFileSync 不走 shell，无注入风险（命令名是固定字符串）
+    const out = execFileSync('which', [name], { encoding: 'utf8' }).trim()
+    if (out && fs.existsSync(out)) return out
+  } catch {
+    // which 失败：name 不在 PATH 上
+  }
+  return installerPath
+}
+
+const RESOLVED_FFMPEG = resolveBinary('FFMPEG_PATH', 'ffmpeg', ffmpegPath.path)
+const RESOLVED_FFPROBE = resolveBinary('FFPROBE_PATH', 'ffprobe', ffprobePath.path)
+console.log('[FluentFfmpegRunner] using ffmpeg:', RESOLVED_FFMPEG)
+console.log('[FluentFfmpegRunner] using ffprobe:', RESOLVED_FFPROBE)
+ffmpeg.setFfmpegPath(RESOLVED_FFMPEG)
+ffmpeg.setFfprobePath(RESOLVED_FFPROBE)
 
 /** fluent-ffmpeg 实现：跑 ffmpeg + 解析输出时长 */
 export class FluentFfmpegRunner implements FfmpegRunner {
@@ -40,14 +65,24 @@ export class FluentFfmpegRunner implements FfmpegRunner {
       cmd.output(args.outputPath)
 
       let lastDurationSec = 0
+      let stderrTail = ''
+      cmd.on('start', (commandLine: string) => {
+        console.log('[FluentFfmpegRunner] command:', commandLine)
+      })
+      cmd.on('stderr', (line: string) => {
+        // 累积最后 2k 字符的 stderr 用于失败诊断
+        stderrTail = (stderrTail + '\n' + line).slice(-2000)
+      })
       cmd.on('progress', (p: any) => {
-        // p.timemark 形如 "00:00:05.20"
         if (p?.timemark && typeof p.timemark === 'string') {
           lastDurationSec = parseTimemark(p.timemark)
         }
       })
 
-      cmd.on('error', (err) => reject(err))
+      cmd.on('error', (err) => {
+        console.error('[FluentFfmpegRunner] failed; stderr tail:\n', stderrTail)
+        reject(new Error(`${err.message}\n--- ffmpeg stderr ---\n${stderrTail}`))
+      })
       cmd.on('end', () => {
         // 通过 ffprobe 取最终 duration，比 progress 更精确
         ffmpeg.ffprobe(args.outputPath, (probeErr, data) => {
