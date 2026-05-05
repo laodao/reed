@@ -21,6 +21,7 @@ import type { IpcResponse } from '@shared/types/ipc.types'
 import {
   VIDEO_PROVIDER_DEFINITIONS,
   isProviderImplemented,
+  createVideoProvider,
 } from '@core/video-providers'
 import type { VideoProviderType } from '@shared/types/video-provider.types'
 import {
@@ -32,6 +33,7 @@ import type {
   VideoProviderAdapter,
   VideoProviderCapabilities,
 } from '@core/modules/episode-production/render/video/video-provider-adapter'
+import { adaptBaseVideoProvider } from '@core/modules/episode-production/render/video/base-video-provider-bridge'
 
 export function registerVideoSegmentHandlers(): void {
   ipcBridge.handle('ep:list-video-providers', handleListVideoProviders)
@@ -148,15 +150,51 @@ async function handleGenerateVideoSegment(
 // ─── helpers ──────────────────────────────────────────────
 
 /**
- * 占位：P5-T12 真实 adapter 接入前返回 null。
- * 真实实现：把已启用的 BaseVideoProvider 包装为 VideoProviderAdapter。
+ * P5-T12：把已配置的 BaseVideoProvider 包装为 VideoProviderAdapter。
+ *
+ * 流程：
+ *   1. 取 providerConfigId 对应的 ProviderConfig（含 type / API key 等）
+ *   2. 用 createVideoProvider 实例化 BaseVideoProvider
+ *   3. 用 adaptBaseVideoProvider 包成 spec 三模式契约
+ *
+ * 不支持的 provider 类型 / 未配置时返回 null（caller 给清晰错误）。
  */
 async function createAdapterForProvider(
-  _providerConfigId?: string,
-  _modelId?: string,
+  providerConfigId?: string,
+  modelId?: string,
 ): Promise<VideoProviderAdapter | null> {
-  // TODO P5-T12：根据 providerConfigId 查 BaseVideoProvider，包成 adapter
-  return null
+  if (!providerConfigId || !modelId) return null
+
+  const db = getCoreDatabaseManager()
+  if (!db.providerConfigs) return null
+
+  const cfg = await db.providerConfigs.getById(providerConfigId)
+  if (!cfg) return null
+
+  // 把 templateId（'bailian' / 'dashscope' / 'volcengine' 等）映射到 VideoProviderType
+  // 模板 ID 即 provider 类型字面值（用户配置时已对齐）
+  const providerType = cfg.templateId as VideoProviderType | undefined
+  if (!providerType) return null
+  if (!isProviderImplemented(providerType)) return null
+
+  const apiKey = cfg.apiKey ?? ''
+
+  // 默认 capabilities 推断（按 provider 类型）；用户可后续在 customParams 覆盖
+  const capabilitiesOverride: VideoProviderCapabilities | undefined =
+    ((cfg.customParams as any)?.videoCapabilities as VideoProviderCapabilities | undefined) ??
+    defaultCapabilitiesFor(providerType)
+
+  const baseProvider = createVideoProvider(providerType, {
+    id: providerConfigId,
+    apiKey,
+    baseUrl: cfg.videoBaseUrl ?? cfg.baseUrl ?? undefined,
+  })
+
+  return await adaptBaseVideoProvider(baseProvider, {
+    modelId,
+    providerConfigId,
+    capabilitiesOverride,
+  })
 }
 
 /** 按 provider 类型给出推断的 capabilities（静态查表，UI 用）。 */
