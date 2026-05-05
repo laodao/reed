@@ -137,6 +137,14 @@
                 :storyboards="productionStoryboards"
               />
             </el-tab-pane>
+
+            <!-- ⑥ 合成（P6-T8/T12 · 整剧导出 MP4） -->
+            <el-tab-pane label="⑥ 合成" name="compose">
+              <StageComposeView
+                :episode-script-id="scriptStore.currentScript?.id ?? null"
+                :project-id="projectId"
+              />
+            </el-tab-pane>
           </el-tabs>
         </template>
 
@@ -388,6 +396,7 @@ import { buildOutlineTree, type OutlineTreeNode } from '@/components/episode-pro
 // Tab 内容组件
 import ScriptTabContent from '@/components/episode-production/stage-script/ScriptTabContent.vue'
 import StageProductionTabContent from '@/components/episode-production/stage-production/StageProductionTabContent.vue'
+import StageComposeView from '@/components/episode-production/stage-compose/StageComposeView.vue'
 import CharacterBindingTabContent from '@/components/episode-production/stage-asset/character/CharacterBindingTabContent.vue'
 import ItemBindingTabContent from '@/components/episode-production/stage-asset/item/ItemBindingTabContent.vue'
 import LocationBindingTabContent from '@/components/episode-production/stage-asset/location/LocationBindingTabContent.vue'
