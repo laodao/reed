@@ -154,6 +154,14 @@
       -->
     </div>
 
+    <!-- P6-T15 底部迷你时间线（spec §2.1 第 420-421 行） -->
+    <BottomTimeline
+      v-if="episodeStore.currentEpisode"
+      :episode-script-id="scriptStore.currentScript?.id ?? null"
+      @preview="onPreviewEpisode"
+      @select-storyboard="onSelectStoryboard"
+    />
+
     <!-- ===== 14 个 Dialogs ===== -->
 
     <!-- 创建剧集 -->
@@ -309,6 +317,8 @@ import StageComposeView from '@/components/episode-production/stage-compose/Stag
 import StageProgressBar from '@/components/episode-production/workbench/StageProgressBar.vue'
 // P6-T14 左侧资产侧栏（spec §2.1 第 414-418 行）
 import AssetSidebar from '@/components/episode-production/workbench/AssetSidebar.vue'
+// P6-T15 底部迷你时间线（spec §2.1 第 420-421 行）
+import BottomTimeline from '@/components/episode-production/workbench/BottomTimeline.vue'
 import type { EpisodeStatus, VideoEpisode as _VE } from '../../../shared/types/episode-production'
 // V2 老 tab（剧本 / 角色绑定 / 物品绑定 / 地点绑定）已从 template 移除
 // import 也跟着删除；P6-T19/T20 新 stage view 完成后会彻底删源文件
@@ -422,6 +432,29 @@ function onAddAsset(kind: 'character' | 'location' | 'item' | 'voice'): void {
   activeTab.value = 'asset-v2'
   selectedAsset.value = null
   ElMessage.info(`${kind === 'voice' ? '语音' : kind === 'item' ? '物品' : kind === 'location' ? '地点' : '角色'}添加入口在 ② 资产 stage 中（待 P6 follow-up 接入）`)
+}
+
+/**
+ * P6-T15 底部时间线"⏵ 试播" → 跳到 ⑥ 合成 stage（让用户看上次 export
+ * 或直接 export 一份）。
+ *
+ * 真正的 in-page 视频播放器留 P6 后续 follow-up（需要 episode 级 lastExport
+ * 持久化 + 视频播放器组件）。
+ */
+function onPreviewEpisode(): void {
+  activeTab.value = 'compose'
+  ElMessage.info('已跳到 ⑥ 合成 stage — 请点"导出 MP4"获得最新成片')
+}
+
+/**
+ * P6-T15 底部时间线点击单个分镜 cell → 跳 ⑤ 制作 tab 选中该分镜。
+ *
+ * StageProductionTabContent 暂未支持外部 prop 选中具体分镜（默认选第一个）；
+ * 此函数先跳 tab，待 P6 后续 follow-up 暴露 selectedStoryboardId prop。
+ */
+function onSelectStoryboard(storyboardId: string): void {
+  void storyboardId // 保留参数；P6 后续传给 StageProductionTabContent
+  activeTab.value = 'production'
 }
 
 /** P5-T23：⑤ 制作 tab 用的分镜列表（精简映射 + keyframeCount 透传） */
