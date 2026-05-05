@@ -128,9 +128,15 @@
               />
             </el-tab-pane>
 
-            <!-- ③ 剧本 -->
+            <!--
+              ③ 剧本（P6-T19 · spec §2.2 第 435 行）
+              先复用 V2 ScriptTabContent（已实现剧本生成 + 场景卡片列表 +
+              ScriptCompletenessPanel 完整性面板）；spec §4.1 强约束完善
+              （"剧本定稿"按钮 / character/location/item binding 校验加严）
+              留 P6 follow-up。
+            -->
             <el-tab-pane label="③ 剧本" name="scripting">
-              <StagePlaceholder stage="scripting" @jump-to="(s) => (activeTab = s)" />
+              <ScriptTabContent :project-id="projectId" />
             </el-tab-pane>
 
             <!-- ④ 分镜（P6-T20 · spec §2.2 第 436 行 + §4.5） -->
@@ -334,6 +340,8 @@ import { buildOutlineTree, type OutlineTreeNode } from '@/components/episode-pro
 // V3 stage tab 内容组件（保留中）
 import StageProductionTabContent from '@/components/episode-production/stage-production/StageProductionTabContent.vue'
 import StageComposeView from '@/components/episode-production/stage-compose/StageComposeView.vue'
+// P6-T19 ③ 剧本 stage 复用 V2 ScriptTabContent（spec §4.1 强约束完善留 P6 follow-up）
+import ScriptTabContent from '@/components/episode-production/stage-script/ScriptTabContent.vue'
 // P6-T13 顶部 6 段阶段进度条（spec §2.1）
 import StageProgressBar from '@/components/episode-production/workbench/StageProgressBar.vue'
 // P6-T14 左侧资产侧栏（spec §2.1 第 414-418 行）
