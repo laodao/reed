@@ -432,6 +432,10 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.calculateEpisodeProgress': { channel: 'ep:calculate-episode-progress' },
   // P6-T16 阶段门控（spec §2.3 软引导）
   'episodeProduction.canEnterStage': { channel: 'ep:can-enter-stage' },
+  // P5-T32 分镜内角色独立配置（spec §4.5.3）
+  'episodeProduction.listStoryboardCharacters': { channel: 'ep:list-storyboard-characters' },
+  'episodeProduction.saveStoryboardCharacters': { channel: 'ep:save-storyboard-characters' },
+  'episodeProduction.clearStoryboardCharacters': { channel: 'ep:clear-storyboard-characters' },
   'episodeProduction.getStylePresets': { channel: 'ep:get-style-presets' },
   'episodeProduction.generateStoryboardImage': { channel: 'ep:generate-storyboard-image' },
   'episodeProduction.generateSceneImages': { channel: 'ep:generate-scene-images' },

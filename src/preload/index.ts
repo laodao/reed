@@ -184,6 +184,11 @@ const IPC_CHANNELS = {
   // P6-T16 阶段门控（spec §2.3 软引导）
   EP_CAN_ENTER_STAGE: 'ep:can-enter-stage',
 
+  // P5-T32 分镜内角色独立配置（spec §4.5.3）
+  EP_LIST_STORYBOARD_CHARACTERS: 'ep:list-storyboard-characters',
+  EP_SAVE_STORYBOARD_CHARACTERS: 'ep:save-storyboard-characters',
+  EP_CLEAR_STORYBOARD_CHARACTERS: 'ep:clear-storyboard-characters',
+
   EP_GET_STYLE_PRESETS: 'ep:get-style-presets',
   EP_GENERATE_STORYBOARD_IMAGE: 'ep:generate-storyboard-image',
   EP_GENERATE_SCENE_IMAGES: 'ep:generate-scene-images',
@@ -1656,6 +1661,14 @@ const electronAPI = {
     // P6-T16 阶段门控（spec §2.3 软引导）
     canEnterStage: (episodeId: string, currentStatus: string, targetStatus: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_CAN_ENTER_STAGE, episodeId, currentStatus, targetStatus),
+
+    // P5-T32 分镜内角色独立配置（spec §4.5.3）
+    listStoryboardCharacters: (storyboardId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_LIST_STORYBOARD_CHARACTERS, storyboardId),
+    saveStoryboardCharacters: (storyboardId: string, inputs: any[]) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_SAVE_STORYBOARD_CHARACTERS, storyboardId, inputs),
+    clearStoryboardCharacters: (storyboardId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_CLEAR_STORYBOARD_CHARACTERS, storyboardId),
 
     // 资源生成
     getStylePresets: () =>

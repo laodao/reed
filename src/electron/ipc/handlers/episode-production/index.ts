@@ -19,6 +19,7 @@ import {
 } from './asset'
 import { registerScriptHandlers } from './narrative/script.handler'
 import { registerStoryboardHandlers } from './narrative/storyboard.handler'
+import { registerStoryboardCharacterHandlers } from './narrative/storyboard-character.handler'
 import { registerReferenceHandlers } from './narrative/reference.handler'
 import { registerKeyframeHandlers } from './render/keyframe.handler'
 import { registerVideoHandlers } from './render/video.handler'
@@ -45,6 +46,8 @@ export function registerEpisodeProductionHandlers(): void {
   registerPanoramaHandlers()
   registerScriptHandlers()
   registerStoryboardHandlers()
+  // P5-T32 分镜内角色独立配置（spec §4.5.3）
+  registerStoryboardCharacterHandlers()
   // P4-T6 新增：引用解析 + 完整性校验
   registerReferenceHandlers()
   registerKeyframeHandlers()
