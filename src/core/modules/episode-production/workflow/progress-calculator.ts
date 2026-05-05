@@ -14,7 +14,11 @@
  */
 
 import type { DataSource } from 'typeorm'
-import type { EpisodeStatus } from '@shared/types/episode-production'
+import type {
+  EpisodeStatus,
+  StageProgress,
+  EpisodeProgress,
+} from '@shared/types/episode-production'
 import { StageGateService } from './stage-gate.service'
 import { VideoEpisodeEntity } from '@core/database/entities/episode-production/video-episode.entity'
 import {
@@ -23,27 +27,8 @@ import {
   visualMarkOfStage,
 } from './episode-status.machine'
 
-/** 单阶段进度 */
-export interface StageProgress {
-  stage: EpisodeStatus
-  label: string
-  complete: boolean
-  /** 0~1，1 表示完成 */
-  progress: number
-  mark: '✓' | '●' | '○'
-  /** 缺失项（incomplete 时） */
-  gapCount: number
-}
-
-/** 整剧进度 */
-export interface EpisodeProgress {
-  episodeId: string
-  currentStatus: EpisodeStatus
-  /** 6 个阶段（不含 completed） */
-  stages: StageProgress[]
-  /** 整剧进度 0~1，6 个阶段平均 */
-  overallProgress: number
-}
+// P6-T13：StageProgress / EpisodeProgress 接口已迁移到 shared/types，前端组件可直接 import
+export type { StageProgress, EpisodeProgress }
 
 /** 剧集进度计算器 */
 export class ProgressCalculator {

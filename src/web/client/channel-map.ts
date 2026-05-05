@@ -428,6 +428,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.exportMp4': { channel: 'ep:export-mp4' },
   // P5-T14/T15 V3 binding-aware 场景音频
   'episodeProduction.generateSceneAudioV3': { channel: 'ep:generate-scene-audio-v3' },
+  // P6-T13 顶部 6 段阶段进度条（spec §2.1）
+  'episodeProduction.calculateEpisodeProgress': { channel: 'ep:calculate-episode-progress' },
   'episodeProduction.getStylePresets': { channel: 'ep:get-style-presets' },
   'episodeProduction.generateStoryboardImage': { channel: 'ep:generate-storyboard-image' },
   'episodeProduction.generateSceneImages': { channel: 'ep:generate-scene-images' },

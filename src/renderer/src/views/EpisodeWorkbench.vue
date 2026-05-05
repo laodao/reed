@@ -19,6 +19,14 @@
       </div>
     </div>
 
+    <!-- P6-T13 顶部 6 段阶段进度条（spec §2.1 + §2.2） -->
+    <StageProgressBar
+      v-if="episodeStore.currentEpisode"
+      ref="progressBarRef"
+      :episode-id="episodeStore.currentEpisode.id"
+      @navigate-stage="onNavigateStage"
+    />
+
     <!-- 主要内容区 -->
     <div class="editor-content">
       <!-- 左侧面板 - 剧集列表 -->
@@ -397,6 +405,9 @@ import { buildOutlineTree, type OutlineTreeNode } from '@/components/episode-pro
 import ScriptTabContent from '@/components/episode-production/stage-script/ScriptTabContent.vue'
 import StageProductionTabContent from '@/components/episode-production/stage-production/StageProductionTabContent.vue'
 import StageComposeView from '@/components/episode-production/stage-compose/StageComposeView.vue'
+// P6-T13 顶部 6 段阶段进度条（spec §2.1）
+import StageProgressBar from '@/components/episode-production/workbench/StageProgressBar.vue'
+import type { EpisodeStatus } from '../../../shared/types/episode-production'
 import CharacterBindingTabContent from '@/components/episode-production/stage-asset/character/CharacterBindingTabContent.vue'
 import ItemBindingTabContent from '@/components/episode-production/stage-asset/item/ItemBindingTabContent.vue'
 import LocationBindingTabContent from '@/components/episode-production/stage-asset/location/LocationBindingTabContent.vue'
@@ -442,6 +453,35 @@ const tabsStore = useTabsStore()
 
 const projectId = computed(() => route.params.projectId as string)
 const activeTab = ref('script')
+
+// P6-T13 顶部进度条引用（用于剧集状态变化后主动 reload）
+const progressBarRef = ref<{ reload: () => Promise<void> } | null>(null)
+
+/**
+ * P6-T13 顶部进度条点击 → 跳到对应 tab。
+ *
+ * 当前 tab 顺序是 V2 老 + V3 新并存的过渡形态（P6-T17 主区域 stage 切换尚未实现）；
+ * 此 mapping 临时把 status 映射到现有 tab，让用户点击有反应。
+ *
+ * 真正的 6 stage 主区域切换由 P6-T17 实现，届时本函数随之重构。
+ */
+function onNavigateStage(status: EpisodeStatus): void {
+  const map: Partial<Record<EpisodeStatus, string>> = {
+    asset_prep: 'asset-v2',     // ② 资产
+    scripting: 'script',         // ③ 剧本（V2 老）
+    storyboarding: 'script',     // ④ 分镜：暂跳剧本 tab（右侧分镜列表是基于剧本场景）
+    producing: 'production',     // ⑤ 制作
+    composing: 'compose',        // ⑥ 合成
+  }
+  const target = map[status]
+  if (target) {
+    activeTab.value = target
+  } else if (status === 'pending') {
+    ElMessage.info('① 内容 stage 待 P6-T18 实现，当前无独立 tab')
+  } else if (status === 'completed') {
+    ElMessage.info('剧集已完成')
+  }
+}
 
 /** P5-T23：⑤ 制作 tab 用的分镜列表（精简映射 + keyframeCount 透传） */
 const productionStoryboards = computed(() =>

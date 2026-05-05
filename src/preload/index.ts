@@ -178,6 +178,9 @@ const IPC_CHANNELS = {
   // P5-T14/T15 V3 binding-aware 场景音频
   EP_GENERATE_SCENE_AUDIO_V3: 'ep:generate-scene-audio-v3',
 
+  // P6-T13 顶部 6 段阶段进度条（spec §2.1 + §2.2）
+  EP_CALCULATE_EPISODE_PROGRESS: 'ep:calculate-episode-progress',
+
   EP_GET_STYLE_PRESETS: 'ep:get-style-presets',
   EP_GENERATE_STORYBOARD_IMAGE: 'ep:generate-storyboard-image',
   EP_GENERATE_SCENE_IMAGES: 'ep:generate-scene-images',
@@ -1642,6 +1645,10 @@ const electronAPI = {
     // P5-T14/T15 V3 binding-aware 场景音频
     generateSceneAudioV3: (sceneScriptId: string, opts?: any) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_GENERATE_SCENE_AUDIO_V3, sceneScriptId, opts),
+
+    // P6-T13 顶部 6 段阶段进度条（spec §2.1）
+    calculateEpisodeProgress: (episodeId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_CALCULATE_EPISODE_PROGRESS, episodeId),
 
     // 资源生成
     getStylePresets: () =>

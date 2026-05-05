@@ -59,7 +59,7 @@ flowchart TD
 
 | # | Subject | spec 行号 | 复杂度 | 验收路径 |
 |---|---|---|---|---|
-| **P6-T13** | 顶部 6 段阶段进度条组件（试点） | §2.1 411 行 + §2.4 463-477 行 | 中 | 登录 → 进项目 → EpisodeWorkbench → 顶部看到 6 段进度条；当前阶段 ●；已完成 ✓；未开始 ○；点任一段都能跳；状态机驱动，不写死 |
+| **P6-T13** | 顶部 6 段阶段进度条组件（试点） · ✅ **端到端可用** 2026-05-05 | §2.1 411 行 + §2.4 463-477 行 | 中 | **已完成** — 登录 test@local.dev → http://localhost:5174/#/episode-production/vp_1777948217860_rqlmjd55l → 选剧集 → 顶部看到 6 段进度条（① 内容 ●  ② 资产 ○  ③ 剧本 ○  ④ 分镜 ○  ⑤ 制作 ○  ⑥ 合成 ○），每段含中文标签 + 缺 N 项 meta + 阶段间连接线；点 ⑤ 段跳到 ⑤ 制作 tab。截图：tests/e2e/web/screenshots/p6-t13-stage-progress-bar.png。e2e spec：tests/e2e/web/17-stage-progress-bar.spec.ts |
 | **P6-T14** | 左侧资产侧栏（4 类，可折叠 + 计数） | §2.1 414-418 行 | 中 | 进入 EpisodeWorkbench → 左侧看到"角色 (N) / 地点 (N) / 物品 (N) / 语音 (N)"；点击折叠按钮收起；点击单项跳到 ② 资产 stage 对应分组 |
 | **P6-T15** | 底部迷你时间线（"X/N 分镜已出片" + ⏵ 试播） | §2.1 420-421 行 | 中 | 底部看到进度条；正确反映当前剧集分镜 videoPath 数；点 ⏵ 触发 lightweight preview |
 | **P6-T16** | StageGate / status-machine / ProgressCalculator 接 UI | §2.3 442-462 行 | 中 | 跳到未完成的下游 stage 时弹"前置未完成"提示；列出缺失项；按"仍要进入"能强制；末端 ⑥ 合成"导出"严格门控 |

@@ -158,6 +158,38 @@ export interface VideoEpisode {
 }
 
 /**
+ * 单阶段进度（顶部进度条 + 工作台总览用）
+ *
+ * P6-T13：从 core/progress-calculator 提到 shared 层，让前端组件能直接 import 类型。
+ */
+export interface StageProgress {
+  /** 阶段 status（pending / asset_prep / scripting / storyboarding / producing / composing） */
+  stage: EpisodeStatus
+  /** 中文标签（如 "① 内容"） */
+  label: string
+  /** 是否完整（StageGateService.checkStageComplete=true） */
+  complete: boolean
+  /** 0~1，1 表示完成 */
+  progress: number
+  /** 视觉标记 ✓（已完成）/ ●（进行中）/ ○（未到） */
+  mark: '✓' | '●' | '○'
+  /** 缺失项数（incomplete 时） */
+  gapCount: number
+}
+
+/**
+ * 整剧进度（顶部进度条 + 工作台总览用）
+ */
+export interface EpisodeProgress {
+  episodeId: string
+  currentStatus: EpisodeStatus
+  /** 6 个生产阶段（不含 completed 终态） */
+  stages: StageProgress[]
+  /** 整剧进度 0~1，6 阶段平均 */
+  overallProgress: number
+}
+
+/**
  * 数据库中的剧集项目记录
  */
 export interface VideoProjectRecord {
