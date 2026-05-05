@@ -7,9 +7,38 @@
           <el-icon><ArrowLeft /></el-icon>
           返回
         </el-button>
+        <span class="project-title">{{ projectStore.currentProject?.name || '加载中...' }}</span>
       </div>
       <div class="header-center">
-        <h2 class="project-title">{{ projectStore.currentProject?.name || '加载中...' }}</h2>
+        <!-- 剧集选择器（替代原左侧剧集列表 · spec §2.1 形态 D 左侧给资产侧栏） -->
+        <el-select
+          v-if="episodeStore.episodes.length > 0"
+          :model-value="episodeStore.currentEpisode?.id ?? ''"
+          @change="onEpisodeSelectChange"
+          placeholder="选择剧集"
+          size="default"
+          class="episode-selector"
+        >
+          <el-option
+            v-for="ep in episodeStore.episodes"
+            :key="ep.id"
+            :value="ep.id"
+            :label="`第 ${ep.episodeNumber} 集 · ${ep.title}`"
+          >
+            <span>第 {{ ep.episodeNumber }} 集 · {{ ep.title }}</span>
+            <el-tag size="small" :type="getEpisodeStatusType(ep.status)" class="episode-status-tag">
+              {{ getEpisodeStatusLabel(ep.status) }}
+            </el-tag>
+          </el-option>
+        </el-select>
+        <el-button size="small" @click="openCreateEpisodeDialog" :icon="Plus" title="新建剧集" />
+        <el-button
+          v-if="episodeStore.currentEpisode"
+          size="small"
+          @click="openEditEpisodeDialog(episodeStore.currentEpisode)"
+          :icon="Edit"
+          title="编辑当前剧集"
+        />
       </div>
       <div class="header-right">
         <el-button @click="dialogs.settings = true">
@@ -27,45 +56,21 @@
       @navigate-stage="onNavigateStage"
     />
 
-    <!-- 主要内容区 -->
+    <!-- 主要内容区（spec §2.1 形态 D：左侧资产侧栏 + 主区域） -->
     <div class="editor-content">
-      <!-- 左侧面板 - 剧集列表 -->
-      <div class="left-panel">
-        <div class="panel-header">
-          <h3>剧集列表</h3>
-          <el-button type="primary" size="small" @click="openCreateEpisodeDialog" circle>
-            <el-icon><Plus /></el-icon>
-          </el-button>
-        </div>
-
-        <div class="episode-list">
-          <div
-            v-for="episode in episodeStore.episodes"
-            :key="episode.id"
-            class="episode-item"
-            :class="{ active: episodeStore.currentEpisode?.id === episode.id }"
-            @click="selectEpisode(episode)"
-          >
-            <div class="episode-number">第{{ episode.episodeNumber }}集</div>
-            <div class="episode-title">{{ episode.title }}</div>
-            <div class="episode-status">
-              <el-tag size="small" :type="getEpisodeStatusType(episode.status)">
-                {{ getEpisodeStatusLabel(episode.status) }}
-              </el-tag>
-            </div>
-            <div class="episode-actions" @click.stop>
-              <el-button text type="primary" size="small" @click="openEditEpisodeDialog(episode)">
-                <el-icon><Edit /></el-icon>
-              </el-button>
-              <el-button text type="danger" size="small" @click="confirmDeleteEpisode(episode)">
-                <el-icon><Delete /></el-icon>
-              </el-button>
-            </div>
-          </div>
-
-          <el-empty v-if="episodeStore.episodes.length === 0" description="暂无剧集" :image-size="80" />
-        </div>
-      </div>
+      <!-- 左侧资产侧栏（P6-T14 · spec §2.1 第 414-418 行） -->
+      <AssetSidebar
+        v-if="projectId"
+        :project-id="projectId"
+        @select-character="(id: string) => onOpenAsset('character', id)"
+        @select-location="(id: string) => onOpenAsset('location', id)"
+        @select-item="(id: string) => onOpenAsset('item', id)"
+        @select-voice="(id: string) => onOpenAsset('voice', id)"
+        @add-character="onAddAsset('character')"
+        @add-location="onAddAsset('location')"
+        @add-item="onAddAsset('item')"
+        @add-voice="onAddAsset('voice')"
+      />
 
       <!-- 中间区域 - V3 stage tab -->
       <div class="center-panel">
@@ -302,7 +307,9 @@ import StageProductionTabContent from '@/components/episode-production/stage-pro
 import StageComposeView from '@/components/episode-production/stage-compose/StageComposeView.vue'
 // P6-T13 顶部 6 段阶段进度条（spec §2.1）
 import StageProgressBar from '@/components/episode-production/workbench/StageProgressBar.vue'
-import type { EpisodeStatus } from '../../../shared/types/episode-production'
+// P6-T14 左侧资产侧栏（spec §2.1 第 414-418 行）
+import AssetSidebar from '@/components/episode-production/workbench/AssetSidebar.vue'
+import type { EpisodeStatus, VideoEpisode as _VE } from '../../../shared/types/episode-production'
 // V2 老 tab（剧本 / 角色绑定 / 物品绑定 / 地点绑定）已从 template 移除
 // import 也跟着删除；P6-T19/T20 新 stage view 完成后会彻底删源文件
 // P3a Task 11 · 资产盘点新页面（追加在原 4 tab 之后，不替换老 tab）
@@ -386,6 +393,35 @@ function onNavigateStage(status: EpisodeStatus): void {
   } else if (status === 'completed') {
     ElMessage.info('剧集已完成')
   }
+}
+
+/**
+ * P6-T14 顶部 episode dropdown change → 切换当前剧集（替代原左侧剧集列表）。
+ */
+async function onEpisodeSelectChange(episodeId: string): Promise<void> {
+  const ep = episodeStore.episodes.find((e) => e.id === episodeId)
+  if (!ep) return
+  await selectEpisode(ep)
+}
+
+/**
+ * P6-T14 左侧资产侧栏点击单条资产 → 跳到 ② 资产 tab + 打开对应 editor。
+ */
+function onOpenAsset(kind: 'character' | 'location' | 'item' | 'voice', id: string): void {
+  activeTab.value = 'asset-v2'
+  selectedAsset.value = { type: kind, id }
+}
+
+/**
+ * P6-T14 左侧资产侧栏"+ 添加 X" → 跳到 ② 资产 tab，由 AssetStageView 处理添加。
+ *
+ * 当前 AssetStageView 暂不支持外部触发"添加"，本函数先跳 tab；
+ * 后续 P6 follow-up 时再让 AssetStageView 暴露 addX 入口。
+ */
+function onAddAsset(kind: 'character' | 'location' | 'item' | 'voice'): void {
+  activeTab.value = 'asset-v2'
+  selectedAsset.value = null
+  ElMessage.info(`${kind === 'voice' ? '语音' : kind === 'item' ? '物品' : kind === 'location' ? '地点' : '角色'}添加入口在 ② 资产 stage 中（待 P6 follow-up 接入）`)
 }
 
 /** P5-T23：⑤ 制作 tab 用的分镜列表（精简映射 + keyframeCount 透传） */
