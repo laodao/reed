@@ -1,0 +1,193 @@
+# P5/P6 follow-up · 补完审计暴露的 12 个 🟡 缺口
+
+| 项 | 值 |
+|---|---|
+| 日期 | 2026-05-05 |
+| 类型 | **P5/P6 follow-up，不是新 phase** — 补完原 P5/P6 应做未做的 task |
+| 依据 | `docs/superpowers/dod/2026-05-05-p5-p6-audit.md` 12 个 🟡 task 的具体缺口 |
+| DoD | `docs/superpowers/dod/2026-05-05-task-completion-checklist.md` 5 阶段 + 7 红线 |
+| 命名规则 | P5 follow-up 从 T25 起；P6 follow-up 从 T13 起；不开新 phase 数字 |
+
+---
+
+## 0. 为什么不开新 phase
+
+之前提议过 P8/P9/P10，用户指正："P5/P6 没真完成怎么就到 P8 了？"——确实有自我表扬嫌疑。这次重做 task 全部归到 P5/P6 内部，task 编号续 T25 / T13 起，phase 内闭环（memory 守则"模块边界优先 · 模块内部改造模块内部解决"）。
+
+---
+
+## 1. spec §2.1 形态 D 设计回顾
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ 顶部：阶段进度条（始终可见，软引导）                            │
+│ ① 内容 ── ② 资产 ── ③ 剧本 ── ④ 分镜 ── ⑤ 画面+音频 ── ⑥ 合成 │
+│   ✓        ✓        ●         ○         ○            ○         │
+├──────────┬──────────────────────────────────────────────────────┤
+│ 资产侧栏 │  主区域（随当前阶段切换内容）                        │
+│ 角色 (3) │                                                      │
+│ 地点 (2) │                                                      │
+│ 物品 (4) │                                                      │
+│ 语音 (5) │                                                      │
+├──────────┴──────────────────────────────────────────────────────┤
+│ 底部：迷你时间线（始终可见，预览当前已生产内容）                │
+│ ▰▰▰▰▱▱▱▱▱▱▱▱  3/12 分镜已出片  ⏵ 试播                     │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 2. P6 follow-up（工作台 §2.1 重构）— 8 个 task
+
+### 任务依赖图
+
+```mermaid
+flowchart TD
+    T13[P6-T13<br/>顶部进度条] --> T17[P6-T17<br/>主区域 stage 切换框架]
+    T14[P6-T14<br/>左侧资产侧栏] --> T17
+    T15[P6-T15<br/>底部迷你时间线] --> T17
+    T17 --> T18[P6-T18<br/>新建 ① 内容 stage view]
+    T17 --> T19[P6-T19<br/>新建 ③ 剧本 stage view]
+    T17 --> T20[P6-T20<br/>新建 ④ 分镜 stage view]
+    T18 --> T16[P6-T16<br/>状态机 + 门控接 UI]
+    T19 --> T16
+    T20 --> T16
+    T16 --> T21[P6-T21<br/>删 V2 老 4 tab]
+```
+
+### Task 列表
+
+| # | Subject | spec 行号 | 复杂度 | 验收路径 |
+|---|---|---|---|---|
+| **P6-T13** | 顶部 6 段阶段进度条组件（试点） | §2.1 411 行 + §2.4 463-477 行 | 中 | 登录 → 进项目 → EpisodeWorkbench → 顶部看到 6 段进度条；当前阶段 ●；已完成 ✓；未开始 ○；点任一段都能跳；状态机驱动，不写死 |
+| **P6-T14** | 左侧资产侧栏（4 类，可折叠 + 计数） | §2.1 414-418 行 | 中 | 进入 EpisodeWorkbench → 左侧看到"角色 (N) / 地点 (N) / 物品 (N) / 语音 (N)"；点击折叠按钮收起；点击单项跳到 ② 资产 stage 对应分组 |
+| **P6-T15** | 底部迷你时间线（"X/N 分镜已出片" + ⏵ 试播） | §2.1 420-421 行 | 中 | 底部看到进度条；正确反映当前剧集分镜 videoPath 数；点 ⏵ 触发 lightweight preview |
+| **P6-T16** | StageGate / status-machine / ProgressCalculator 接 UI | §2.3 442-462 行 | 中 | 跳到未完成的下游 stage 时弹"前置未完成"提示；列出缺失项；按"仍要进入"能强制；末端 ⑥ 合成"导出"严格门控 |
+| **P6-T17** | 主区域 stage 切换框架（不是 tab） | §2.1 414+427 行 | 大 | EpisodeWorkbench 不再用 el-tabs，改为顶部进度条驱动主区域内容切换；URL hash 反映当前 stage |
+| **P6-T18** | 新建 ① 内容 stage view | §2.2 433 行 | 中 | 新 stage 主区域：长文/上传内容 + 识别要素三栏（角色/地点/物品）+ "确认要素" 按钮 |
+| **P6-T19** | 新建 ③ 剧本 stage view（接管 V2 ScriptTabContent） | §2.2 435 行 | 中 | 章节梗概 + 场景卡片列表 + ScriptCompletenessPanel + "剧本定稿" 按钮 |
+| **P6-T20** | 新建 ④ 分镜 stage view（场景树 + 分镜网格） | §2.2 436 行 | 大 | 左侧场景树 + 右侧该场分镜网格；每个分镜含 keyframeCount 配置 + StoryboardCharacter 编辑入口（待 P5-T31 数据） |
+| **P6-T21** | 删 V2 老 4 tab + 数据迁移 | §2.5 478-491 行 | 中 | 删除 ScriptTabContent / CharacterBindingTabContent / ItemBindingTabContent / LocationBindingTabContent；数据迁到新 stage view；红线 R1 不命中 |
+
+---
+
+## 3. P5 follow-up（分镜数据接通 + UI 资产展示）— 10 个 task
+
+### 任务依赖图
+
+```mermaid
+flowchart TD
+    subgraph 数据层
+    T31[P5-T31<br/>resolveSceneAssets 接 storyboard_characters] --> T32[P5-T32<br/>StoryboardCharacter CRUD service]
+    T32 --> T33[P5-T33<br/>分镜内角色编辑 dialog]
+    T33 --> T34[P5-T34<br/>e2e 验证多分镜不同角色]
+    end
+    
+    subgraph UI 资产展示
+    T25[P5-T25<br/>BuildKeyframePromptInput 加 userPrompt] --> T26[P5-T26<br/>IPC handler 加 userPrompt 入参]
+    T26 --> T27[P5-T27<br/>KeyframeRegenerateDialog 加 textarea]
+    T31 --> T28[P5-T28<br/>KeyframeGrid 资产 chip + 参考图]
+    T31 --> T29[P5-T29<br/>VideoSegmentPanel 分镜元信息]
+    T27 --> T30[P5-T30<br/>e2e user prompt 真传到生成层]
+    end
+    
+    T34 --> T28
+    T34 --> T29
+```
+
+### Task 列表
+
+| # | Subject | spec 行号 | 复杂度 | 验收路径 |
+|---|---|---|---|---|
+| **P5-T25** | BuildKeyframePromptInput 加 `userPrompt?: string` | §4.5.7 1050-1068 行 | 小 | 单测：传 userPrompt → prompt 输出含用户文本 |
+| **P5-T26** | IPC `ep:generate-keyframes` / `ep:regenerate-keyframe` 入参加 userPrompt | §4.7 | 小 | curl 调 IPC 传 userPrompt → handler 正确转给 service |
+| **P5-T27** | KeyframeRegenerateDialog 加 user prompt textarea | §4.7 | 小 | UI 弹框出现 textarea；输入"角色更愤怒"→ 重生成的图体现愤怒情绪 |
+| **P5-T28** | KeyframeGrid 每帧 cell 加资产 chip + 参考图缩略图 | §4.5.7 1062-1068 行 | 中 | 每个关键帧显示：角色头像 chip / 地点缩略图 / 道具 chip / 参考图列表（鼠标 hover 看大图）|
+| **P5-T29** | VideoSegmentPanel 加分镜元信息 panel | §4.7 1288-1296 行 | 大 | 显示：旁白文本 + 试听按钮 / 对话清单（character + text + 试听）/ 当前分镜角色清单（带 expression/action）/ 关键帧序列预览 |
+| **P5-T30** | e2e: user prompt 真传到生成层 + 影响输出 | §4.7 + DoD §4 | 中 | Playwright spec 真打 API：输入 userPrompt → DB 存 prompt 字段含 userPrompt → 生成图体现差异 |
+| **P5-T31** | KeyframeGenerationService.resolveSceneAssets 重构：接收 storyboardId，先查 storyboard_characters | §4.5.3 966-984 行 | 中 | service 单测：同 scene 两 storyboard 不同 angry/happy → 生成不同 prompt |
+| **P5-T32** | StoryboardCharacterService CRUD（add/update/delete/list） | §4.5.3 | 中 | service 单测 + IPC 暴露 |
+| **P5-T33** | 分镜内角色编辑 dialog（接 P6-T20 ④ 分镜 stage） | §4.5.3 + §4.7 | 中 | UI：选分镜 → 点"编辑分镜内角色" → 弹框编辑 expression/action/facing/positionX/Y/scale → 保存写入 storyboard_characters 表 |
+| **P5-T34** | e2e: 多分镜不同角色配置真生成不同关键帧 | §4.5.9 实操示例 | 中 | Playwright spec：场景 1.2 张三 angry / 场景 1.3 李四 surprised → 生成两组关键帧角色表情真不同 |
+
+---
+
+## 4. 总执行顺序
+
+```mermaid
+gantt
+    title P5/P6 follow-up 执行顺序
+    dateFormat  YYYY-MM-DD
+    section P6 工作台框架
+    P6-T13 顶部进度条（试点）       :2026-05-06, 1d
+    P6-T14 资产侧栏                 :2026-05-06, 1d
+    P6-T15 底部时间线               :2026-05-06, 1d
+    P6-T17 主区域 stage 切换框架    :after T13 T14 T15, 1d
+    P6-T18 ① 内容 stage             :after T17, 1d
+    P6-T19 ③ 剧本 stage             :after T17, 1d
+    P6-T20 ④ 分镜 stage             :after T17, 1d
+    P6-T16 状态机 UI 接入           :after T18 T19 T20, 1d
+    P6-T21 删 V2 老 tab             :after T16, 1d
+    section P5 分镜数据
+    P5-T31 resolveSceneAssets 重构  :2026-05-09, 1d
+    P5-T32 StoryboardCharacter CRUD :after T31, 1d
+    P5-T33 分镜内角色编辑 dialog    :after T32, 1d
+    P5-T34 e2e 多分镜不同配置       :after T33, 1d
+    section P5 UI 装配
+    P5-T25 userPrompt 接口          :2026-05-12, 1d
+    P5-T26 IPC userPrompt 入参      :after T25, 1d
+    P5-T27 RegenerateDialog textarea:after T26, 1d
+    P5-T28 KeyframeGrid 资产 chip   :after T34, 1d
+    P5-T29 VideoSegmentPanel 元信息 :after T34, 1d
+    P5-T30 e2e userPrompt 真传      :after T27 T28 T29, 1d
+```
+
+总 18 个 task，预估 8-10 工作日（按串行；有并行余地可压缩到 5-7 天）。
+
+---
+
+## 5. DoD（每个 task 都必须满足）
+
+按 `docs/superpowers/dod/2026-05-05-task-completion-checklist.md`：
+
+- [ ] §1 Phase A 单文件层 10 项
+- [ ] §2 Phase B 组件装配层 10 项
+- [ ] §3 Phase C 数据流层 7 项
+- [ ] §4 Phase D 端到端层 9 项（**必须 Playwright 真走 UI + 真打 API**）
+- [ ] §5 Phase E 文档同步 6 项
+- [ ] §0 红线 R1-R7 全部不命中
+- [ ] §6 commit message 含 5 条 DoD 状态 + spec 行号 + 用户验收路径
+- [ ] 等用户/Reviewer §7 反向核查通过才能标 ✅；没通过只能 🟡
+
+---
+
+## 6. 风险登记
+
+| 风险 | 应对 |
+|---|---|
+| 删 V2 老 tab 可能丢失用户在那 4 个 tab 的现有数据 | P6-T21 实施前先验证数据已迁移到新 stage view 的 store；commit 前 e2e 跑一遍 V2 数据在新 view 能看到 |
+| spec §2.1 形态 D 在 small viewport 上挤 | 加 responsive breakpoints；< 1280px 资产侧栏自动折叠 |
+| 状态机门控太严苛影响用户体验 | 软引导（弹提示）+ "仍要进入"按钮（spec §2.3 已要求）；末端硬锁仅 ⑥ 合成 export |
+| 改 EpisodeWorkbench.vue（1320 行）改坏 | 先拆文件（memory "发现大文件就顺手拆分"），P6-T17 前置：把 EpisodeWorkbench 拆成 layout 框架 + stage container 子组件 |
+| 跨 phase 重构影响 P7 e2e | 重构后跑一次 P7 e2e（"上传长文 → 6 阶段 → MP4"）确认不破坏 |
+
+---
+
+## 7. 试点：P6-T13 顶部进度条
+
+第一个做 P6-T13。理由：
+- 复杂度中等，1 天内能完成
+- 依赖少（只接 status-machine + ProgressCalculator 两个已有 service）
+- 验收路径清晰（用户能直接在 EpisodeWorkbench 看到进度条）
+- 是新 DoD 流程的试金石——如果 P6-T13 都走不通完整 DoD，后续都白搭
+
+P6-T13 完成后我会给你一个明确的验收路径（URL + 步骤 + 截图），你点完确认 → 标 ✅；任何缺口 → 标 🟡 重做。
+
+---
+
+## 8. 文档同步要求
+
+每完成一个 task：
+- 本 plan 文件状态更新（✅/🟡/⏳）+ 验收路径填实
+- spec 文件如有调整同步（memory 守则）
+- audit 报告对应 task 状态可同步降级（如发现新缺口）
