@@ -422,6 +422,10 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.listVideoProviders': { channel: 'ep:list-video-providers' },
   'episodeProduction.getProviderCapabilities': { channel: 'ep:get-provider-capabilities' },
   'episodeProduction.generateVideoSegment': { channel: 'ep:generate-video-segment' },
+  // P6-T5 合成 + 导出 MP4
+  'episodeProduction.buildTimeline': { channel: 'ep:build-timeline' },
+  'episodeProduction.previewSubtitle': { channel: 'ep:preview-subtitle' },
+  'episodeProduction.exportMp4': { channel: 'ep:export-mp4' },
   'episodeProduction.getStylePresets': { channel: 'ep:get-style-presets' },
   'episodeProduction.generateStoryboardImage': { channel: 'ep:generate-storyboard-image' },
   'episodeProduction.generateSceneImages': { channel: 'ep:generate-scene-images' },

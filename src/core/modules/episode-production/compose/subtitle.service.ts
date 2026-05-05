@@ -20,7 +20,6 @@
 
 import type { DataSource } from 'typeorm'
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
-import { SceneDialogueEntity } from '@core/database/entities/episode-production/scene-dialogue.entity'
 import type { Timeline, TimelineShot } from './timeline-builder.service'
 
 /** 一条字幕 */

@@ -86,7 +86,7 @@ export class EpisodeMp4ExporterService {
   private readonly subtitleSvc: SubtitleService
 
   constructor(
-    private readonly ds: DataSource,
+    ds: DataSource,
     private readonly ffmpegRunner: FfmpegRunner,
     private readonly fileWriter: FileWriter,
   ) {

@@ -170,6 +170,11 @@ const IPC_CHANNELS = {
   EP_GET_PROVIDER_CAPABILITIES: 'ep:get-provider-capabilities',
   EP_GENERATE_VIDEO_SEGMENT: 'ep:generate-video-segment',
 
+  // P6-T5 合成 + 导出 MP4
+  EP_BUILD_TIMELINE: 'ep:build-timeline',
+  EP_PREVIEW_SUBTITLE: 'ep:preview-subtitle',
+  EP_EXPORT_MP4: 'ep:export-mp4',
+
   EP_GET_STYLE_PRESETS: 'ep:get-style-presets',
   EP_GENERATE_STORYBOARD_IMAGE: 'ep:generate-storyboard-image',
   EP_GENERATE_SCENE_IMAGES: 'ep:generate-scene-images',
@@ -1622,6 +1627,14 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.EP_GET_PROVIDER_CAPABILITIES, providerType),
     generateVideoSegment: (storyboardId: string, opts?: any) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_GENERATE_VIDEO_SEGMENT, storyboardId, opts),
+
+    // P6-T5 合成 + 导出 MP4
+    buildTimeline: (episodeScriptId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_BUILD_TIMELINE, episodeScriptId),
+    previewSubtitle: (episodeScriptId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_PREVIEW_SUBTITLE, episodeScriptId),
+    exportMp4: (episodeScriptId: string, outputPath: string, opts?: any) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_EXPORT_MP4, episodeScriptId, outputPath, opts),
 
     // 资源生成
     getStylePresets: () =>
