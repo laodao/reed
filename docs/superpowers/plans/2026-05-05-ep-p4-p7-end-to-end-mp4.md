@@ -75,25 +75,25 @@ P3a + P3c follow-up 已完成资产域全部能力（角色 / 地点 / 物品 / 
 | P5-T2 | DB migration：扩展 `storyboard` 多模式字段 | ✅ 同 T1 migration |
 | P5-T3 | StoryboardKeyframeRepository | ✅ 2026-05-05（CRUD + listByStoryboard + 6 单测） |
 
-### 2.2 关键帧子域 · **TODO**
+### 2.2 关键帧子域 · **全部完成 ✅**
 
 | # | Subject | 状态 |
 |---|---|---|
-| P5-T4 | keyframe-generator.service.ts：生成开始/结束/中间帧的核心逻辑 | 现有单帧逻辑 stub，需改造为多帧 |
-| P5-T5 | keyframe-prompt-builder.ts：拼资产引用 + 镜头语言 + 时刻描述 | 现有 single-frame 版本，需扩展 |
-| P5-T6 | reference-image-selector.ts：按场景 time/weather + 角色 view/expression/outfit 选 ref 图 | 新建 |
-| P5-T7 | keyframe-chain-strategy.ts：实现"先开始 → 再结束 → 再中间"参考链算法 | 新建 |
-| P5-T8 | IPC：generate-keyframe / regenerate-keyframe / list-keyframes | 5-file 契约 |
+| P5-T4 | KeyframeGenerationService 多帧链式生成（plan + ref + prompt + image gen + 落库） | ✅ 6 单测 |
+| P5-T5 | keyframe-prompt-builder buildKeyframePrompt 多时刻版本 + 老 buildImagePrompt 兼容 | ✅ 7 单测 |
+| P5-T6 | reference-image-selector 三类资产打分 + 兜底主图 | ✅ 9 单测 |
+| P5-T7 | keyframe-chain-strategy planKeyframes / planRegenPropagation / describeFrameMoment | ✅ 14 单测 |
+| P5-T8 | 4 个 IPC channel（generate-keyframes / regenerate / list / plan-regen），5-file 契约同步 | ✅ |
 
-### 2.3 视频片段子域
+### 2.3 视频片段子域 · **架构层完成 4/5 ✅**
 
-| # | Subject |
-|---|---|
-| P5-T9 | VideoProvider 接口（textToVideo / imageToVideo / keyframesToVideo + capabilities） |
-| P5-T10 | provider-capability-matcher.ts：按 keyframe_count 选模式 + 降级 |
-| P5-T11 | video-segment.service.ts：生成视频片段，调 provider |
-| P5-T12 | DashScope（万相视频）+ Bailian（百炼视频）provider 适配（或 stub 留到 P5-T17） |
-| P5-T13 | IPC：generate-video-segment / list-providers / get-provider-capabilities |
+| # | Subject | 状态 |
+|---|---|---|
+| P5-T9 | VideoProviderAdapter 接口（textToVideo / imageToVideo / keyframesToVideo + capabilities） | ✅ |
+| P5-T10 | provider-capability-matcher（按 keyframe_count 选模式 + 三档降级 + clamp 截断） | ✅ 17 单测 |
+| P5-T11 | VideoSegmentService（串联 keyframes → matcher → adapter → 落 video_path） | ✅ 9 单测 |
+| P5-T12 | DashScope wanx + 百炼视频 provider 适配 → VideoProviderAdapter | ⏳ TODO follow-up（需外部 API 测试） |
+| P5-T13 | 3 个 IPC channel + 5-file 契约 + 静态 capabilities 推断 | ✅ |
 
 ### 2.4 音频子域
 
@@ -104,15 +104,15 @@ P3a + P3c follow-up 已完成资产域全部能力（角色 / 地点 / 物品 / 
 | P5-T16 | bgm.service.ts（背景音乐 stub，spec 未细写） |
 | P5-T17 | DashScope qwen3-tts 适配 |
 
-### 2.5 UI
+### 2.5 UI · **关键 UI 完成 2/5**
 
-| # | Subject |
-|---|---|
-| P5-T18 | KeyframeGrid.vue：九宫格关键帧序列展示 + 单帧 hover 操作 |
-| P5-T19 | KeyframeRegenerateDialog.vue：重生成弹框（传播勾选） |
-| P5-T20 | VideoSegmentPanel.vue：provider/mode 选择 + 生成视频片段按钮 + 进度 |
-| P5-T21 | AudioPanel.vue：旁白 / 对话 列表 + 试听 + 重生成 |
-| P5-T22 | StageProductionView.vue：上面三个 panel 的容器（替换 V2 老 stage-production） |
+| # | Subject | 状态 |
+|---|---|---|
+| P5-T18 | KeyframeGrid 九宫格关键帧序列 + hover 操作 + 全部重生成 | ✅ |
+| P5-T19 | KeyframeRegenerateDialog 重生成弹框（传播勾选 + 顺序重生成 + 进度） | ✅ |
+| P5-T20 | VideoSegmentPanel.vue：provider/mode 选择 + 生成视频片段按钮 + 进度 | ⏳ TODO（依赖 T12 真 provider） |
+| P5-T21 | AudioPanel.vue：旁白 / 对话 列表 + 试听 + 重生成 | ⏳ TODO（依赖 T14-T17 音频 service 改造） |
+| P5-T22 | StageProductionView.vue：上面三个 panel 的容器（替换 V2 老 stage-production） | ⏳ TODO（依赖 T20/T21） |
 
 ### 2.6 收尾
 
