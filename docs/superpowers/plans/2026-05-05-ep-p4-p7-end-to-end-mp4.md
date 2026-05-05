@@ -67,23 +67,23 @@ P3a + P3c follow-up 已完成资产域全部能力（角色 / 地点 / 物品 / 
 
 **目标**：把分镜从单帧改成 N 张关键帧 + 1 段视频；关键帧带参考链；视频片段三模式（text2video / image2video / keyframes2video）；音频含旁白和对话。
 
-### 2.1 数据库改动（先做）
+### 2.1 数据库改动（先做） · **已完成 ✅**
 
-| # | Subject | 内容 |
+| # | Subject | 状态 |
 |---|---|---|
-| P5-T1 | DB migration：新建 `storyboard_keyframe` 表 | id / storyboard_id / frame_index / time_percent / frame_role / image_asset_id / derived_from_keyframe_id / prompt 等 |
-| P5-T2 | DB migration：扩展 `storyboard` | keyframe_count / video_provider_id / video_model_id / video_mode / use_3d_staging / staging_layout_id |
-| P5-T3 | Entity 同步 + Repository | StoryboardKeyframeEntity / StoryboardEntity 改 |
+| P5-T1 | DB migration：新建 `storyboard_keyframe` 表 | ✅ P2 历史 commit 已完成（`migrations/create-storyboard-keyframe.ts`） |
+| P5-T2 | DB migration：扩展 `storyboard` 多模式字段 | ✅ 同 T1 migration |
+| P5-T3 | StoryboardKeyframeRepository | ✅ 2026-05-05（CRUD + listByStoryboard + 6 单测） |
 
-### 2.2 关键帧子域
+### 2.2 关键帧子域 · **TODO**
 
-| # | Subject |
-|---|---|
-| P5-T4 | keyframe-generator.service.ts：生成开始/结束/中间帧的核心逻辑 |
-| P5-T5 | keyframe-prompt-builder.ts：拼资产引用 + 镜头语言 + 时刻描述 |
-| P5-T6 | reference-image-selector.ts：按场景 time/weather + 角色 view/expression/outfit 选 ref 图 |
-| P5-T7 | keyframe-chain-strategy.ts：实现"先开始 → 再结束 → 再中间"参考链算法 |
-| P5-T8 | IPC：generate-keyframe / regenerate-keyframe / list-keyframes |
+| # | Subject | 状态 |
+|---|---|---|
+| P5-T4 | keyframe-generator.service.ts：生成开始/结束/中间帧的核心逻辑 | 现有单帧逻辑 stub，需改造为多帧 |
+| P5-T5 | keyframe-prompt-builder.ts：拼资产引用 + 镜头语言 + 时刻描述 | 现有 single-frame 版本，需扩展 |
+| P5-T6 | reference-image-selector.ts：按场景 time/weather + 角色 view/expression/outfit 选 ref 图 | 新建 |
+| P5-T7 | keyframe-chain-strategy.ts：实现"先开始 → 再结束 → 再中间"参考链算法 | 新建 |
+| P5-T8 | IPC：generate-keyframe / regenerate-keyframe / list-keyframes | 5-file 契约 |
 
 ### 2.3 视频片段子域
 
