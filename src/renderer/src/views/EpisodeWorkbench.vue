@@ -86,9 +86,12 @@
             页面，明确说明"待哪个 task 实现"。
           -->
           <el-tabs v-model="activeTab" class="editor-tabs">
-            <!-- ① 内容 -->
+            <!-- ① 内容（P6-T18 · spec §2.2 第 433 行） -->
             <el-tab-pane label="① 内容" name="pending">
-              <StagePlaceholder stage="pending" @jump-to="(s) => (activeTab = s)" />
+              <StageContentView
+                :episode="episodeStore.currentEpisode"
+                @confirmed="onContentConfirmed"
+              />
             </el-tab-pane>
 
             <!-- ② 资产 -->
@@ -352,6 +355,8 @@ import BottomTimeline from '@/components/episode-production/workbench/BottomTime
 import StagePlaceholder from '@/components/episode-production/workbench/StagePlaceholder.vue'
 // P6-T20 ④ 分镜 stage view（spec §2.2 第 436 行 + §4.5）
 import StageStoryboardView from '@/components/episode-production/stage-storyboard/StageStoryboardView.vue'
+// P6-T18 ① 内容 stage view（spec §2.2 第 433 行 + §0.4）
+import StageContentView from '@/components/episode-production/stage-content/StageContentView.vue'
 import type {
   EpisodeStatus,
   VideoEpisode as _VE,
@@ -556,6 +561,15 @@ function onEditStoryboardFromStage(sb: Storyboard): void {
 function onJumpToProductionWithSb(storyboardId: string): void {
   void storyboardId // 待 P6 follow-up 传给 StageProductionTabContent 的 selectedStoryboardId
   activeTab.value = 'producing'
+}
+
+/**
+ * P6-T18 ① 内容 stage 的"确认要素"按钮 → 切到 ② 资产 stage 并刷新进度条
+ */
+async function onContentConfirmed(): Promise<void> {
+  activeTab.value = 'asset_prep'
+  // 进度条根据 episode.status 自动重算（StageProgressBar 会在 ref 触发时 reload）
+  await progressBarRef.value?.reload()
 }
 
 /** P5-T23：⑤ 制作 tab 用的分镜列表（精简映射 + keyframeCount 透传） */
