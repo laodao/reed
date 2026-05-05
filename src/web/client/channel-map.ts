@@ -426,6 +426,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.buildTimeline': { channel: 'ep:build-timeline' },
   'episodeProduction.previewSubtitle': { channel: 'ep:preview-subtitle' },
   'episodeProduction.exportMp4': { channel: 'ep:export-mp4' },
+  // P5-T14/T15 V3 binding-aware 场景音频
+  'episodeProduction.generateSceneAudioV3': { channel: 'ep:generate-scene-audio-v3' },
   'episodeProduction.getStylePresets': { channel: 'ep:get-style-presets' },
   'episodeProduction.generateStoryboardImage': { channel: 'ep:generate-storyboard-image' },
   'episodeProduction.generateSceneImages': { channel: 'ep:generate-scene-images' },

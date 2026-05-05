@@ -12,10 +12,64 @@ import { getPathProvider } from '@core/interfaces/path.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type { CharacterBinding } from '@shared/types/story-to-video.types'
 import { StoryToVideoResourceService } from '@core/services/story-to-video-resource.service'
+import { SceneAudioOrchestratorService } from '@core/modules/episode-production/render/audio/scene-audio-orchestrator.service'
 
 export function registerAudioHandlers(): void {
   // ==================== 资源生成（音频） ====================
   ipcBridge.handle('ep:generate-audio', handleGenerateAudio)
+  // P5-T14/T15 binding-aware 音频编排
+  ipcBridge.handle('ep:generate-scene-audio-v3', handleGenerateSceneAudioV3)
+}
+
+/**
+ * V3 binding-aware 场景音频生成。
+ * 走 SceneAudioOrchestrator：dialogue.voiceId → binding.voiceId → fallback Cherry。
+ */
+async function handleGenerateSceneAudioV3(
+  _event: any,
+  sceneScriptId: string,
+  opts?: { defaultNarratorVoiceId?: string; outputDir?: string },
+): Promise<IpcResponse> {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+
+    // 解析 outputDir：未传则走 path provider 默认
+    let outputDir = opts?.outputDir
+    if (!outputDir) {
+      const userDataPath = getPathProvider().getUserDataPath()
+      outputDir = path.join(
+        userDataPath,
+        'episode-production',
+        'audio',
+        sceneScriptId,
+      )
+    }
+
+    const svc = new SceneAudioOrchestratorService(db.dataSource)
+    const result = await svc.orchestrateScene({
+      sceneScriptId,
+      outputDir,
+      defaultNarratorVoiceId: opts?.defaultNarratorVoiceId,
+    })
+
+    // dialoguePaths Map → object（IPC 序列化）
+    const dialoguePathsObj: Record<string, string> = {}
+    result.dialoguePaths.forEach((v, k) => {
+      dialoguePathsObj[k] = v
+    })
+
+    return {
+      success: true,
+      data: {
+        narrationPath: result.narrationPath,
+        dialoguePaths: dialoguePathsObj,
+        fallbackDialogueCount: result.fallbackDialogueCount,
+      },
+    }
+  } catch (e: any) {
+    return { success: false, error: e?.message || '生成场景音频失败' }
+  }
 }
 
 // ==================== 音频生成处理器 ====================
