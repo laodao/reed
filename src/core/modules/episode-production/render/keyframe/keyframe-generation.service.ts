@@ -28,6 +28,8 @@
 import type { DataSource, Repository } from 'typeorm'
 import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
+import { EpisodeScriptEntity } from '@core/database/entities/episode-production/episode-script.entity'
+import { VideoEpisodeEntity } from '@core/database/entities/episode-production/video-episode.entity'
 import {
   StoryboardKeyframeRepository,
   type StoryboardKeyframe,
@@ -275,8 +277,9 @@ export class KeyframeGenerationService {
     })
 
     // 写 image_assets 记录（type='generated'，子类型放 metadata.subType）
+    const projectId = await this.resolveProjectIdForScene(scene)
     const ia = await this.imageAssetRepo.create({
-      projectId: this.findProjectIdFromStoryboard(storyboard, scene),
+      projectId,
       type: 'generated',
       prompt: promptOut.prompt,
       negativePrompt: promptOut.negativePrompt,
@@ -348,17 +351,24 @@ export class KeyframeGenerationService {
   }
 
   /**
-   * 从 storyboard / scene 反查 projectId（image_assets 需要 project_id）。
-   * scene → episode_script → episode → project；这里用一次 raw 查询走捷径，
-   * 失败时退回 'unknown' 而不是阻断生成。
+   * 反查真实 projectId（image_assets.project_id 字段）：
+   * scene → episode_script → episode → project（spec §1.4 实体关系）
+   *
+   * 失败时回落 'unknown'（不阻断生成；image_assets 仍然能写入）。
    */
-  private findProjectIdFromStoryboard(
-    storyboard: StoryboardEntity,
-    scene: SceneScriptEntity,
-  ): string {
-    void storyboard
-    // 回查 episode_script.episode → video_episodes.project_id
-    // 这里用同步取兜底，运行时 DB 内可能有时延；如有性能问题可缓存 episodeScriptId → projectId 映射
-    return (scene as any).episodeScriptId ?? 'unknown'
+  private async resolveProjectIdForScene(scene: SceneScriptEntity): Promise<string> {
+    try {
+      const epScript = await this.ds
+        .getRepository(EpisodeScriptEntity)
+        .findOne({ where: { id: scene.episodeScriptId } })
+      if (!epScript) return 'unknown'
+      const ep = await this.ds
+        .getRepository(VideoEpisodeEntity)
+        .findOne({ where: { id: (epScript as any).episodeId } })
+      if (!ep) return 'unknown'
+      return (ep as any).projectId ?? 'unknown'
+    } catch {
+      return 'unknown'
+    }
   }
 }

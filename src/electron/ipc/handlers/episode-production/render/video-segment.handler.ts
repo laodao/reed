@@ -42,28 +42,63 @@ export function registerVideoSegmentHandlers(): void {
 }
 
 interface ProviderInfo {
+  /** 用户配置的 providerConfigId（实际调用 generate 时用此 ID） */
+  providerConfigId: string
+  /** Provider 类型（bailian / dashscope / volcengine 等） */
   type: VideoProviderType
+  /** 用户自定义的 provider 显示名 */
   name: string
   description: string
   implemented: boolean
-  /** 推断的 capabilities（基于 VIDEO_PROVIDER_DEFINITIONS 静态信息） */
-  capabilities: VideoProviderCapabilities
-  /** P5-T12 真接入完成前为 false；UI 用此知道是否可用 */
+  /** 该 provider 已配置 + 模型可用，UI 选了就能跑 */
   ready: boolean
+  /** 推断的 capabilities */
+  capabilities: VideoProviderCapabilities
+  /** 用户启用的视频 model 列表（用户在 UI 还要选具体 model） */
+  models: Array<{ id: string; name?: string }>
 }
 
-/** 列出全部已知 video provider + 推断 capabilities */
+/**
+ * 列出用户已配置的 video provider（从 provider_configs 表读 enabled，按 templateId
+ * 映射到 VIDEO_PROVIDER_DEFINITIONS）。
+ *
+ * 与之前"静态列出 10 个 provider 类型"不同——本版本只列用户已开关的 + 已配 API key 的。
+ */
 async function handleListVideoProviders(): Promise<IpcResponse> {
   try {
-    const list: ProviderInfo[] = Object.values(VIDEO_PROVIDER_DEFINITIONS).map((d) => ({
-      type: d.type,
-      name: d.name,
-      description: d.description,
-      implemented: isProviderImplemented(d.type),
-      capabilities: defaultCapabilitiesFor(d.type),
-      // P5-T12 接入 VideoProviderAdapter 后此处改为真值
-      ready: false,
-    }))
+    const db = getCoreDatabaseManager()
+    if (!db.providerConfigs) {
+      return { success: false, error: '数据库未初始化（providerConfigs 不可用）' }
+    }
+    const enabled = await db.providerConfigs.getEnabled()
+
+    const list: ProviderInfo[] = []
+    for (const cfg of enabled) {
+      const templateId = cfg.templateId as string | undefined
+      if (!templateId) continue
+      // 跳过非视频 provider（templateId 不是已知 video provider 类型时）
+      const def = VIDEO_PROVIDER_DEFINITIONS[templateId as VideoProviderType]
+      if (!def) continue
+
+      // 取该 cfg 下 type='video' 的模型
+      const videoModels = ((cfg.models ?? []) as Array<{ id?: string; name?: string; type?: string }>)
+        .filter((m) => m.id && (m.type === 'video' || m.type === 'multimodal'))
+        .map((m) => ({ id: m.id!, name: m.name }))
+
+      list.push({
+        providerConfigId: cfg.id,
+        type: def.type,
+        name: cfg.name || def.name,
+        description: def.description,
+        implemented: isProviderImplemented(def.type),
+        ready:
+          isProviderImplemented(def.type) &&
+          videoModels.length > 0 &&
+          (cfg.apiKey ? cfg.apiKey.length > 0 : false),
+        capabilities: defaultCapabilitiesFor(def.type),
+        models: videoModels,
+      })
+    }
     return { success: true, data: list }
   } catch (e: any) {
     return { success: false, error: e?.message || '列视频 provider 失败' }

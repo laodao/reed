@@ -213,8 +213,11 @@ describe('KeyframeGenerationService', () => {
     const list = await new StoryboardKeyframeRepository(ds).listByStoryboard(sbId)
     expect(list.map((k) => k.frameIndex)).toEqual([0, 1, 2])
 
-    // image_assets 表写了 3 行
-    const ias = await new ImageAssetRepository(ds).getByProjectId('es1')
+    // image_assets 表写了 3 行（projectId 来自 scene → episode_script → episode 反查；
+    // 测试 seed 中 episode_script / video_episodes 不存在 → 回落 'unknown'）
+    const ias = await ds
+      .getRepository(ImageAssetEntity)
+      .find()
     expect(ias).toHaveLength(3)
     // 每行 metadata 含 subType
     for (const ia of ias) {

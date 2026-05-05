@@ -59,8 +59,8 @@
       >
         <div class="cell-frame">
           <img
-            v-if="kf._imagePath"
-            :src="toImageUrl(kf._imagePath)"
+            v-if="kf.imagePath"
+            :src="toImageUrl(kf.imagePath)"
             :alt="`关键帧 ${kf.frameIndex}`"
           />
           <el-empty v-else description="无图" :image-size="40" />
@@ -75,7 +75,7 @@
               <el-icon><Refresh /></el-icon>
             </el-button>
             <el-button
-              v-if="kf._imagePath"
+              v-if="kf.imagePath"
               size="small"
               circle
               @click="onPreview(kf)"
@@ -144,8 +144,8 @@ interface Keyframe {
   frameRole: 'start' | 'middle' | 'end' | 'extra'
   imageAssetId: string | null
   prompt?: string | null
-  /** 内部加载好的图片路径（IPC 回查 image_assets 拼上） */
-  _imagePath?: string | null
+  /** P7 修复：handler 已经返回 imagePath（直接 join image_assets） */
+  imagePath?: string | null
 }
 
 const props = withDefaults(
@@ -198,22 +198,14 @@ async function loadKeyframes(): Promise<void> {
     }
     const resp = await api.listKeyframes(props.storyboardId)
     if (!resp?.success) throw new Error(resp?.error || '加载关键帧失败')
-    const list = (resp.data ?? []) as Keyframe[]
-    // 解析 image_assets 路径（每帧异步取，生效"看到图"）
-    keyframes.value = await Promise.all(list.map(enrichWithImagePath))
+    // P7 修复：handler 已经 join 了 image_assets 返回 imagePath 字段，无需再加工
+    keyframes.value = (resp.data ?? []) as Keyframe[]
   } catch (e: any) {
     ElMessage.error(`加载关键帧失败：${e?.message ?? e}`)
     keyframes.value = []
   } finally {
     loading.value = false
   }
-}
-
-async function enrichWithImagePath(kf: Keyframe): Promise<Keyframe> {
-  if (!kf.imageAssetId) return { ...kf, _imagePath: null }
-  // 暂用 image asset id 作为 URL 占位；真正的 path 解析由 image_assets 表回查
-  // 简化：让 IPC 已经返回了 imagePath（若 service 后续扩展），这里先按 id 兜底
-  return { ...kf, _imagePath: null } // 占位：后续 IPC 加 imagePath 字段后填
 }
 
 async function onGenerateAll(): Promise<void> {

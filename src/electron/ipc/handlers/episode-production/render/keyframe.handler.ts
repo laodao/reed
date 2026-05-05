@@ -275,18 +275,34 @@ async function handleRegenerateKeyframe(
   }
 }
 
-/** 列出某分镜的全部关键帧（按 frame_index 升序） */
+/**
+ * 列出某分镜的全部关键帧（按 frame_index 升序）。
+ *
+ * 附带 imageAssets[].imagePath：UI（KeyframeGrid）需要 imagePath 才能显示生成的图。
+ * 不在 service 层强行 join 是为了 service 保持纯净；handler 在边界处装配。
+ */
 async function handleListKeyframes(
   _event: any,
   storyboardId: string,
 ): Promise<IpcResponse> {
   try {
     const db = getCoreDatabaseManager()
-    if (!db.storyboardKeyframes) {
-      return { success: false, error: '数据库未初始化（storyboardKeyframes 仓库不可用）' }
+    if (!db.storyboardKeyframes || !db.imageAssets) {
+      return { success: false, error: '数据库未初始化（仓库不可用）' }
     }
-    const data = await db.storyboardKeyframes.listByStoryboard(storyboardId)
-    return { success: true, data }
+    const keyframes = await db.storyboardKeyframes.listByStoryboard(storyboardId)
+    // 附带 imagePath：UI 需要它显示图
+    const enriched = await Promise.all(
+      keyframes.map(async (kf) => {
+        let imagePath: string | null = null
+        if (kf.imageAssetId) {
+          const ia = await db.imageAssets!.getById(kf.imageAssetId)
+          imagePath = ia?.imagePath ?? null
+        }
+        return { ...kf, imagePath }
+      }),
+    )
+    return { success: true, data: enriched }
   } catch (e: any) {
     return { success: false, error: e?.message || '列关键帧失败' }
   }

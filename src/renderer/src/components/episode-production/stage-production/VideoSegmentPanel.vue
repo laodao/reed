@@ -28,23 +28,35 @@
       <el-form label-width="80px" size="small">
         <el-form-item label="Provider">
           <el-select
-            v-model="selectedProvider"
-            placeholder="选择视频 provider"
+            v-model="selectedProviderConfigId"
+            placeholder="选择已配置的视频 provider"
             :loading="loadingProviders"
+            @change="onProviderChange"
           >
             <el-option
               v-for="p in availableProviders"
-              :key="p.type"
-              :value="p.type"
+              :key="p.providerConfigId"
+              :value="p.providerConfigId"
               :label="p.name"
-              :disabled="!p.implemented"
+              :disabled="!p.ready"
             >
               <span>{{ p.name }}</span>
               <span class="opt-meta">
                 {{ formatCapabilities(p.capabilities) }}
-                <el-tag v-if="!p.implemented" size="small" type="info">未实现</el-tag>
+                <el-tag v-if="!p.ready" size="small" type="warning">未就绪</el-tag>
               </span>
             </el-option>
+          </el-select>
+        </el-form-item>
+
+        <el-form-item v-if="selectedProvider && selectedProvider.models.length > 0" label="模型">
+          <el-select v-model="selectedModelId" placeholder="选择视频 model">
+            <el-option
+              v-for="m in selectedProvider.models"
+              :key="m.id"
+              :value="m.id"
+              :label="m.name || m.id"
+            />
           </el-select>
         </el-form-item>
 
@@ -130,12 +142,14 @@ interface ProviderCapabilities {
 }
 
 interface ProviderInfo {
+  providerConfigId: string
   type: string
   name: string
   description: string
   implemented: boolean
   capabilities: ProviderCapabilities
   ready: boolean
+  models: Array<{ id: string; name?: string }>
 }
 
 interface VideoSegmentResult {
@@ -165,7 +179,8 @@ const emit = defineEmits<{
 }>()
 
 const availableProviders = ref<ProviderInfo[]>([])
-const selectedProvider = ref<string>('')
+const selectedProviderConfigId = ref<string>('')
+const selectedModelId = ref<string>('')
 const modeChoice = ref<'auto' | 'text2video' | 'image2video' | 'keyframes2video'>(
   'auto',
 )
@@ -175,12 +190,27 @@ const generating = ref(false)
 const lastResult = ref<VideoSegmentResult | null>(null)
 const errorMessage = ref<string | null>(null)
 
+const selectedProvider = computed(() =>
+  availableProviders.value.find(
+    (p) => p.providerConfigId === selectedProviderConfigId.value,
+  ),
+)
+
 const canGenerate = computed(
   () =>
     !generating.value &&
-    selectedProvider.value !== '' &&
+    selectedProviderConfigId.value !== '' &&
+    selectedModelId.value !== '' &&
     props.storyboard !== null,
 )
+
+function onProviderChange(): void {
+  // 切 provider 时自动选第一个 model
+  const p = selectedProvider.value
+  if (p && p.models.length > 0 && !p.models.find((m) => m.id === selectedModelId.value)) {
+    selectedModelId.value = p.models[0].id
+  }
+}
 
 watch(
   () => props.storyboard?.duration,
@@ -200,10 +230,13 @@ async function loadProviders(): Promise<void> {
     const resp = await api.listVideoProviders()
     if (!resp?.success) throw new Error(resp?.error || '列 provider 失败')
     availableProviders.value = resp.data as ProviderInfo[]
-    // 默认选中第一个 implemented
-    if (!selectedProvider.value) {
-      const first = availableProviders.value.find((p) => p.implemented)
-      if (first) selectedProvider.value = first.type
+    // 默认选中第一个 ready 的
+    if (!selectedProviderConfigId.value) {
+      const first = availableProviders.value.find((p) => p.ready)
+      if (first) {
+        selectedProviderConfigId.value = first.providerConfigId
+        if (first.models.length > 0) selectedModelId.value = first.models[0].id
+      }
     }
   } catch (e: any) {
     ElMessage.error(`加载 provider 列表失败：${e?.message ?? e}`)
@@ -224,8 +257,11 @@ async function onGenerate(): Promise<void> {
     }
     const opts: Record<string, unknown> = {
       durationSec: durationSec.value,
+      providerConfigId: selectedProviderConfigId.value,
+      modelId: selectedModelId.value,
     }
     if (modeChoice.value !== 'auto') opts.forceMode = modeChoice.value
+    // props 覆盖（外部父组件强制指定时）
     if (props.providerConfigId) opts.providerConfigId = props.providerConfigId
     if (props.modelId) opts.modelId = props.modelId
 
