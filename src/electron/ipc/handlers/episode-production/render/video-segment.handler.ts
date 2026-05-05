@@ -34,6 +34,7 @@ import type {
   VideoProviderCapabilities,
 } from '@core/modules/episode-production/render/video/video-provider-adapter'
 import { adaptBaseVideoProvider } from '@core/modules/episode-production/render/video/base-video-provider-bridge'
+import { getProviderConfig } from '@core/modules/episode-production/narrative/ai/_helpers'
 
 export function registerVideoSegmentHandlers(): void {
   ipcBridge.handle('ep:list-video-providers', handleListVideoProviders)
@@ -172,18 +173,15 @@ async function handleGenerateVideoSegment(
       return { success: false, error: '数据库未初始化（providerConfigs 不可用）' }
     }
 
-    const adapter = await createAdapterForProvider(opts?.providerConfigId, opts?.modelId)
-    if (!adapter) {
+    const adapterResult = await createAdapterForProviderWithReason(opts?.providerConfigId, opts?.modelId)
+    if (!adapterResult.adapter) {
       return {
         success: false,
-        error:
-          '当前没有可用的视频生成 provider 适配（P5-T12 接入待完成）。' +
-          '请到「设置 → 模型服务」启用一个支持视频生成的 provider，' +
-          '或等待后续版本对 DashScope wanx 视频 / 百炼视频的真接入。',
+        error: `创建 video provider 适配失败：${adapterResult.reason}`,
       }
     }
 
-    const svc = new VideoSegmentService(db.dataSource, adapter)
+    const svc = new VideoSegmentService(db.dataSource, adapterResult.adapter)
     const data = await svc.generateForStoryboard({
       storyboardId,
       durationSec: opts?.durationSec,
@@ -213,21 +211,29 @@ async function createAdapterForProvider(
   providerConfigId?: string,
   modelId?: string,
 ): Promise<VideoProviderAdapter | null> {
-  if (!providerConfigId || !modelId) return null
+  return (await createAdapterForProviderWithReason(providerConfigId, modelId)).adapter
+}
 
-  const db = getCoreDatabaseManager()
-  if (!db.providerConfigs) return null
+async function createAdapterForProviderWithReason(
+  providerConfigId?: string,
+  modelId?: string,
+): Promise<{ adapter: VideoProviderAdapter | null; reason: string }> {
+  if (!providerConfigId || !modelId) {
+    return { adapter: null, reason: `缺 providerConfigId(${providerConfigId})/modelId(${modelId})` }
+  }
 
-  const cfg = await db.providerConfigs.getById(providerConfigId)
-  if (!cfg) return null
+  // P7-bug-3 修复：复用 _helpers.getProviderConfig（与 callAI 同一份解密路径，避免实现漂移）
+  const providerInfo = await getProviderConfig(providerConfigId)
+  if (!providerInfo) {
+    return { adapter: null, reason: `getProviderConfig 失败（cfg/template/apiKey 解密任一缺失，${providerConfigId}）` }
+  }
+  const { config: cfg, apiKey } = providerInfo
 
-  // 把 templateId（'bailian' / 'dashscope' / 'volcengine' 等）映射到 VideoProviderType
-  // 模板 ID 即 provider 类型字面值（用户配置时已对齐）
   const providerType = cfg.templateId as VideoProviderType | undefined
-  if (!providerType) return null
-  if (!isProviderImplemented(providerType)) return null
-
-  const apiKey = cfg.apiKey ?? ''
+  if (!providerType) return { adapter: null, reason: `provider config 缺 templateId` }
+  if (!isProviderImplemented(providerType)) {
+    return { adapter: null, reason: `provider type=${providerType} 未实现 BaseVideoProvider` }
+  }
 
   // 选定 model 的真实 features 驱动 capabilities（不再硬编码 provider 能力）
   const allModels = (cfg.models ?? []) as Array<{
@@ -237,10 +243,10 @@ async function createAdapterForProvider(
   }>
   const selectedModel = allModels.find((m) => m.id === modelId)
   if (!selectedModel) {
-    console.warn(
-      `[video-segment.handler] model ${modelId} 不在 provider config ${providerConfigId} 已启用列表内`,
-    )
-    return null
+    return {
+      adapter: null,
+      reason: `model ${modelId} 不在 provider config ${providerConfigId} 启用模型列表 (${allModels.map((m) => m.id).join(',')})`,
+    }
   }
 
   // 用户可在 customParams.videoCapabilities 进一步覆盖（启用 keyframes 等高级特性）
@@ -254,37 +260,70 @@ async function createAdapterForProvider(
     baseUrl: cfg.videoBaseUrl ?? cfg.baseUrl ?? undefined,
   })
 
-  return await adaptBaseVideoProvider(baseProvider, {
+  const adapter = await adaptBaseVideoProvider(baseProvider, {
     modelId,
     providerConfigId,
     capabilitiesOverride,
   })
+  return { adapter, reason: 'ok' }
 }
 
 /**
- * 从 user model features 推导 capabilities（真实数据驱动）。
+ * 从 user model 推导 capabilities（多源数据驱动）。
  *
- * 规则：
- * - text / image：直读 features.textToVideo / imageToVideo
- * - keyframes：BaseVideoProvider 的 features 不暴露此维度；
- *   通过 customParams.videoCapabilities.keyframes 由用户/运维手工开启
- *   （未开则保守 false，避免 capability-matcher 选错模式调用失败）
- * - maxDurationSec：直读 features.maxDuration（默认 5）
+ * 数据源优先级（由强到弱）：
+ *   1. features 是对象（VideoModelFeatures shape）→ 直读 textToVideo/imageToVideo/maxDuration
+ *      （这是 spec 期待的形式；当前 user provider config 实际填的是字符串数组）
+ *   2. 按 model.id 命名约定推断（实际生产用得最多的路径）：
+ *        - 含 't2v' / 'text2video' / 'text-to-video' → text=true
+ *        - 含 'i2v' / 'image2video' / 'image-to-video' → image=true
+ *        - 都不含 → 同时开 text=true + image=true（最宽松默认，让 capability-matcher
+ *          按 keyframeCount 自选，单步失败再降级）
+ *   3. type='video' 但 id 无线索 → 假设支持 text + image
  *
- * 不再硬编码任何 provider 类型的能力；type 仅用于 maxKeyframes 默认值（仍是
- * "未声明 keyframes 维度时的兜底"，是合理的兜底常量而非欺骗用户的假数据）。
+ * keyframes 维度：BaseVideoProvider features 不声明，需用户在
+ *   customParams.videoCapabilities.keyframes 显式开启（避免 matcher 选错调用失败）。
+ *
+ * P7-bug-2 修复：之前直接 `!!f.textToVideo` 假设对象，但用户填字符串数组
+ *   `["chat","streaming"]` 时全部回落 false，导致 wan2.7-i2v 被判"无能力"无法生成。
  */
 function deriveCapabilitiesFromModel(
-  model: { features?: any } | undefined,
+  model: { id?: string; type?: string; features?: any } | undefined,
   _type: VideoProviderType,
 ): VideoProviderCapabilities {
-  const f = model?.features ?? {}
+  const f = model?.features
+  // Path 1：features 是 VideoModelFeatures 对象
+  if (f && typeof f === 'object' && !Array.isArray(f) &&
+      ('textToVideo' in f || 'imageToVideo' in f || 'maxDuration' in f)) {
+    return {
+      text: !!f.textToVideo,
+      image: !!f.imageToVideo,
+      keyframes: false,
+      maxKeyframes: 0,
+      maxDurationSec: typeof f.maxDuration === 'number' && f.maxDuration > 0 ? f.maxDuration : 5,
+    }
+  }
+  // Path 2：按 model.id 命名约定推断
+  const id = (model?.id ?? '').toLowerCase()
+  let text = false
+  let image = false
+  if (id.includes('t2v') || id.includes('text2video') || id.includes('text-to-video')) {
+    text = true
+  }
+  if (id.includes('i2v') || id.includes('image2video') || id.includes('image-to-video')) {
+    image = true
+  }
+  // Path 3：type='video' 但 id 无线索 → 默认两种都开（最宽松）
+  if (!text && !image && model?.type === 'video') {
+    text = true
+    image = true
+  }
   return {
-    text: !!f.textToVideo,
-    image: !!f.imageToVideo,
-    keyframes: false, // 默认关闭：BaseVideoProvider features 没此维度，保守降级到 image2video
+    text,
+    image,
+    keyframes: false,
     maxKeyframes: 0,
-    maxDurationSec: typeof f.maxDuration === 'number' && f.maxDuration > 0 ? f.maxDuration : 5,
+    maxDurationSec: 5,
   }
 }
 
