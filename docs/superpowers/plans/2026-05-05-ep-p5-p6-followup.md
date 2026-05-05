@@ -68,6 +68,8 @@ flowchart TD
 | **P6-T19** | 新建 ③ 剧本 stage view · ✅ **端到端可用** 2026-05-05（轻量版） | §2.2 435 行 | 中 | **已完成** — ③ 剧本 stage 复用 V2 ScriptTabContent（含 AI 生成剧本 + 场景导航 + 剧本正文 + ScriptCompletenessPanel 完整性面板）；EpisodeWorkbench 替换 ③ 剧本 占位为 ScriptTabContent。验收：进度条点 ③ 剧本段 → 看到"场景导航 / AI 生成剧本 / 场景 1-3 / 剧本正文 / 校验完整性"。spec §4.1 强约束完善（"剧本定稿"按钮 / binding 强类型校验加严）留 P6 follow-up |
 | **P6-T20** | 新建 ④ 分镜 stage view（场景树 + 分镜网格） · ✅ **端到端可用** 2026-05-05 | §2.2 436 行 + §4.5 | 大 | **已完成** — StageStoryboardView.vue 实现三栏布局：左侧场景树（场景标题 + 时间天气 + 当前场景分镜数）+ 中间分镜网格（卡片：镜头语言 / keyframe / 时长 / videoPath 状态 / 画面描述）+ 右侧详情面板（el-descriptions 全字段 + 画面描述 + 分镜内角色 spec §4.5.3 占位说明 + "编辑分镜配置"复用 StoryboardEditDialog + "去 ⑤ 制作"按钮）。验收：登录 → 选 e2e-茶馆相遇 → 进度条点 ④ 分镜段 → 看到 3 场景 + 5 分镜卡片 + 选第 1 镜显示详情。spec §4.5.3 StoryboardCharacters 编辑留 P5-T31~T34 |
 | **P6-T21** | 删 V2 老 4 tab + 数据迁移 | §2.5 478-491 行 | 中 | 删除 ScriptTabContent / CharacterBindingTabContent / ItemBindingTabContent / LocationBindingTabContent；数据迁到新 stage view；红线 R1 不命中 |
+| **P6-T22** | 资产侧栏 context-aware（B 方案） | spec §2.1 增强 | 大 | ③④⑤⑥ stage 让 AssetSidebar 智能高亮：③ 当前场景出场角色/地点；④ 当前分镜涉及角色/道具；⑤ 当前关键帧资产组合（spec §4.5.7）；⑥ 不强制。需要 active context store + 每个 stage 触发更新 active 集合 |
+| **P6-T-sidebar-hide** | ①/② stage 隐藏 AssetSidebar · ✅ **端到端可用** 2026-05-05 | 用户反馈 | 小 | **已完成** — ① 内容（资产还没生产，识别要素是雏形）+ ② 资产（主区域已详细管理重复）→ 隐藏左侧侧栏；③④⑤⑥ 保留作为参考。验收：进度条点 ① ② 段 → 左侧无侧栏；点 ③④⑤⑥ → 左侧出现侧栏。DOM 验证 6 stage 切换全过 |
 
 ---
 

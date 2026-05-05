@@ -58,9 +58,18 @@
 
     <!-- 主要内容区（spec §2.1 形态 D：左侧资产侧栏 + 主区域） -->
     <div class="editor-content">
-      <!-- 左侧资产侧栏（P6-T14 · spec §2.1 第 414-418 行） -->
+      <!--
+        左侧资产侧栏（P6-T14 · spec §2.1 第 414-418 行）
+
+        spec §2.1 第 425 行字面要求"任何阶段都可见"，但用户反馈：
+        - ① 内容 stage：资产还没生产出来（识别要素是雏形，不算资产）
+        - ② 资产 stage：主区域已详细管理资产，左侧侧栏视觉重复
+
+        因此 ①/② 时隐藏；其他 stage 保留（③④⑤⑥）。
+        context-aware 高亮（按当前 stage 关联资产）= P6-T22 follow-up。
+      -->
       <AssetSidebar
-        v-if="projectId"
+        v-if="projectId && showAssetSidebar"
         :project-id="projectId"
         @select-character="(id: string) => onOpenAsset('character', id)"
         @select-location="(id: string) => onOpenAsset('location', id)"
@@ -421,6 +430,17 @@ const projectId = computed(() => route.params.projectId as string)
  */
 type WorkbenchStage = Exclude<EpisodeStatus, 'completed'>
 const activeTab = ref<WorkbenchStage>('asset_prep')
+
+/**
+ * AssetSidebar 显隐逻辑（用户反馈）：
+ * - ① 内容（pending）：资产还没生产，识别要素在主区域右侧（不重复）
+ * - ② 资产（asset_prep）：主区域已详细管理资产，侧栏重复
+ * - ③④⑤⑥（scripting / storyboarding / producing / composing）：保留侧栏作为
+ *   参考；P6-T22 follow-up 实现 context-aware 高亮
+ */
+const showAssetSidebar = computed(
+  () => activeTab.value !== 'pending' && activeTab.value !== 'asset_prep',
+)
 
 // P6-T13 顶部进度条引用（用于剧集状态变化后主动 reload）
 const progressBarRef = ref<{ reload: () => Promise<void> } | null>(null)
