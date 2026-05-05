@@ -67,40 +67,18 @@
         </div>
       </div>
 
-      <!-- 中间区域 - 4 Tab -->
+      <!-- 中间区域 - V3 stage tab -->
       <div class="center-panel">
         <template v-if="episodeStore.currentEpisode">
           <el-tabs v-model="activeTab" class="editor-tabs">
-            <!-- 剧本标签页 -->
-            <el-tab-pane label="剧本" name="script">
-              <ScriptTabContent :project-id="projectId" />
-            </el-tab-pane>
-
-            <!-- 角色绑定标签页 -->
-            <el-tab-pane label="角色绑定" name="characters">
-              <CharacterBindingTabContent
-                :project-id="projectId"
-                :long-writing-characters="longWritingCharacters"
-                :portrait-previews="portraitPreviews"
-                @open-dialog="handleOpenDialog"
-              />
-            </el-tab-pane>
-
-            <!-- 物品绑定标签页 -->
-            <el-tab-pane label="物品绑定" name="items">
-              <ItemBindingTabContent
-                :project-id="projectId"
-                @open-dialog="handleOpenDialog"
-              />
-            </el-tab-pane>
-
-            <!-- 地点绑定标签页 -->
-            <el-tab-pane label="地点绑定" name="locations">
-              <LocationBindingTabContent
-                :project-id="projectId"
-                @open-dialog="handleOpenDialog"
-              />
-            </el-tab-pane>
+            <!--
+              【已隐藏】V2 老 4 tab（剧本 / 角色绑定 / 物品绑定 / 地点绑定）
+              理由：与新业务流程（spec §2.1 形态 D 6 stage）不匹配；功能已分别迁到
+              ② 资产 (AssetStageView) + 后续 ③ 剧本 stage (P6-T19) + ④ 分镜 stage
+              (P6-T20) + ⑤ 制作 (StageProductionTabContent)。
+              彻底删除时机：P6-T17 主区域 stage 切换框架完成 + P6-T19/T20 新 stage
+              view 完成 + P6-T21 数据迁移验证后。届时一并移除 import 与 dialog 依赖。
+            -->
 
             <!-- ② 资产（P3a Task 11 · 新版资产盘点页 + Task 12/13/14 角色 / 地点 / 物品 / 语音 编辑器） -->
             <el-tab-pane label="② 资产" name="asset-v2">
@@ -159,98 +137,16 @@
         <el-empty v-else description="请选择或创建剧集" :image-size="120" />
       </div>
 
-      <!-- 右侧面板 - 分镜 -->
-      <div class="right-panel">
-        <template v-if="scriptStore.currentScene">
-          <div class="panel-header">
-            <h3>分镜列表</h3>
-            <div class="panel-actions">
-              <el-button
-                size="small"
-                :loading="workbenchStore.generating"
-                :disabled="workbenchStore.generating"
-                @click="generateStoryboards"
-              >
-                <el-icon><MagicStick /></el-icon>
-                生成分镜
-              </el-button>
-              <el-button
-                v-if="storyboardStore.storyboards.length > 0"
-                size="small"
-                type="primary"
-                @click="goToVideoProduction"
-              >
-                <el-icon><VideoPlay /></el-icon>
-                视频制作
-              </el-button>
-            </div>
-          </div>
-
-          <div class="storyboard-list">
-            <div
-              v-for="storyboard in storyboardStore.storyboards"
-              :key="storyboard.id"
-              class="storyboard-item"
-              :class="{
-                'has-image': storyboard.frameImage,
-                'selected': selectedStoryboard?.id === storyboard.id
-              }"
-              @click="selectStoryboard(storyboard)"
-              @dblclick="openStoryboardEditDialog(storyboard)"
-            >
-              <div class="storyboard-item-left">
-                <div
-                  v-if="storyboard.frameImage"
-                  class="storyboard-preview"
-                  @click.stop="openImagePreview(storyboard.frameImage.filePath || storyboard.frameImage.url)"
-                >
-                  <img :src="storyboard.frameImage.filePath || storyboard.frameImage.url" :alt="`镜头${storyboard.shotNumber}`" />
-                  <div class="preview-overlay">
-                    <el-icon size="20"><ZoomIn /></el-icon>
-                  </div>
-                </div>
-                <div v-else class="storyboard-preview placeholder">
-                  <el-icon size="32"><Picture /></el-icon>
-                  <span>待生成</span>
-                </div>
-
-                <div class="storyboard-info">
-                  <div class="storyboard-header">
-                    <span class="shot-number">镜头 {{ storyboard.shotNumber }}</span>
-                    <el-tag size="small">{{ getShotTypeLabel(storyboard.shotType) }}</el-tag>
-                    <el-tag v-if="storyboard.frameImage" size="small" type="success">已生成</el-tag>
-                  </div>
-                  <div class="storyboard-description">
-                    {{ storyboard.frameDescription }}
-                  </div>
-                  <div class="storyboard-meta">
-                    <span>{{ storyboard.duration }}s</span>
-                    <span>{{ getCameraAngleLabel(storyboard.cameraAngle) }}</span>
-                    <span>{{ getCameraMovementLabel(storyboard.cameraMovement) }}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div class="storyboard-item-actions" @click.stop>
-                <el-tooltip v-if="storyboard.frameImage" content="重新生成" placement="top">
-                  <el-button circle size="small" @click="openRegenerateDialog(storyboard)">
-                    <el-icon><RefreshRight /></el-icon>
-                  </el-button>
-                </el-tooltip>
-                <el-tooltip v-if="storyboard.frameImage" content="删除画面" placement="top">
-                  <el-button circle size="small" type="danger" @click="confirmDeleteStoryboardImage(storyboard)">
-                    <el-icon><Delete /></el-icon>
-                  </el-button>
-                </el-tooltip>
-              </div>
-            </div>
-          </div>
-
-          <el-empty v-if="storyboardStore.storyboards.length === 0" description="暂无分镜" :image-size="80" />
-        </template>
-
-        <el-empty v-else description="请选择场景" :image-size="80" />
-      </div>
+      <!--
+        【已隐藏】右侧分镜列表（V2 path · frameImage 单图模型）
+        理由：与 V3 多关键帧模型（StoryboardKeyframe 表）不匹配；分镜浏览/选择
+        功能已迁到 ⑤ 制作 tab 内的 StageProductionTabContent（含分镜选择器 +
+        KeyframeGrid 多关键帧网格）。
+        彻底删除时机：P6-T20 ④ 分镜 stage view 完成 + P6-T17 主区域 stage 切换
+        重构后，一并清理 right-panel + 相关 dialog（regenerate / synthesis /
+        storyboardEdit）+ 相关方法（selectStoryboard / generateStoryboards /
+        synthesizeVideo / regenerateStoryboardImage 等）。
+      -->
     </div>
 
     <!-- ===== 14 个 Dialogs ===== -->
@@ -401,16 +297,14 @@ import { getShotTypeLabel, getCameraAngleLabel, getCameraMovementLabel } from '@
 import { truncateTitle } from '@/components/episode-production/shared/model-config'
 import { buildOutlineTree, type OutlineTreeNode } from '@/components/episode-production/shared/outline-utils'
 
-// Tab 内容组件
-import ScriptTabContent from '@/components/episode-production/stage-script/ScriptTabContent.vue'
+// V3 stage tab 内容组件（保留中）
 import StageProductionTabContent from '@/components/episode-production/stage-production/StageProductionTabContent.vue'
 import StageComposeView from '@/components/episode-production/stage-compose/StageComposeView.vue'
 // P6-T13 顶部 6 段阶段进度条（spec §2.1）
 import StageProgressBar from '@/components/episode-production/workbench/StageProgressBar.vue'
 import type { EpisodeStatus } from '../../../shared/types/episode-production'
-import CharacterBindingTabContent from '@/components/episode-production/stage-asset/character/CharacterBindingTabContent.vue'
-import ItemBindingTabContent from '@/components/episode-production/stage-asset/item/ItemBindingTabContent.vue'
-import LocationBindingTabContent from '@/components/episode-production/stage-asset/location/LocationBindingTabContent.vue'
+// V2 老 tab（剧本 / 角色绑定 / 物品绑定 / 地点绑定）已从 template 移除
+// import 也跟着删除；P6-T19/T20 新 stage view 完成后会彻底删源文件
 // P3a Task 11 · 资产盘点新页面（追加在原 4 tab 之后，不替换老 tab）
 import AssetStageView from '@/components/episode-production/stage-asset/AssetStageView.vue'
 // P3a Task 12 · 角色资产编辑器（双栏：设定卡 + 图谱）
@@ -452,32 +346,43 @@ const composeStore = useEpComposeStore()
 const tabsStore = useTabsStore()
 
 const projectId = computed(() => route.params.projectId as string)
-const activeTab = ref('script')
+// V2 老 tab 已隐藏；默认 ② 资产（新流程起点，P6-T18 ① 内容 stage 完成后改为 'pending'）
+const activeTab = ref('asset-v2')
 
 // P6-T13 顶部进度条引用（用于剧集状态变化后主动 reload）
 const progressBarRef = ref<{ reload: () => Promise<void> } | null>(null)
 
 /**
- * P6-T13 顶部进度条点击 → 跳到对应 tab。
+ * P6-T13 顶部进度条点击 → 跳到对应 tab / 提示。
  *
- * 当前 tab 顺序是 V2 老 + V3 新并存的过渡形态（P6-T17 主区域 stage 切换尚未实现）；
- * 此 mapping 临时把 status 映射到现有 tab，让用户点击有反应。
+ * 当前 V2 老 tab 已隐藏，V3 新 stage view 部分尚未实现：
+ *   - ① 内容 → P6-T18 待实现，提示
+ *   - ② 资产 → 'asset-v2' tab（已可用）
+ *   - ③ 剧本 → P6-T19 待实现，提示
+ *   - ④ 分镜 → P6-T20 待实现，提示
+ *   - ⑤ 制作 → 'production' tab（已可用）
+ *   - ⑥ 合成 → 'compose' tab（已可用）
  *
- * 真正的 6 stage 主区域切换由 P6-T17 实现，届时本函数随之重构。
+ * 真正的 6 stage 主区域切换框架由 P6-T17 实现，届时本函数和 activeTab 一起重构。
  */
 function onNavigateStage(status: EpisodeStatus): void {
   const map: Partial<Record<EpisodeStatus, string>> = {
-    asset_prep: 'asset-v2',     // ② 资产
-    scripting: 'script',         // ③ 剧本（V2 老）
-    storyboarding: 'script',     // ④ 分镜：暂跳剧本 tab（右侧分镜列表是基于剧本场景）
-    producing: 'production',     // ⑤ 制作
-    composing: 'compose',        // ⑥ 合成
+    asset_prep: 'asset-v2',
+    producing: 'production',
+    composing: 'compose',
   }
   const target = map[status]
   if (target) {
     activeTab.value = target
-  } else if (status === 'pending') {
-    ElMessage.info('① 内容 stage 待 P6-T18 实现，当前无独立 tab')
+    return
+  }
+  const todoMap: Partial<Record<EpisodeStatus, string>> = {
+    pending: '① 内容 stage 待 P6-T18 实现',
+    scripting: '③ 剧本 stage 待 P6-T19 实现',
+    storyboarding: '④ 分镜 stage 待 P6-T20 实现',
+  }
+  if (todoMap[status]) {
+    ElMessage.info(todoMap[status])
   } else if (status === 'completed') {
     ElMessage.info('剧集已完成')
   }
