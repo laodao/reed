@@ -52,6 +52,14 @@
       />
     </div>
 
+    <!-- P5-T20 视频片段生成面板（关键帧后接） -->
+    <div v-if="selectedStoryboard" class="video-section">
+      <VideoSegmentPanel
+        :storyboard="selectedStoryboard"
+        @generated="onVideoGenerated"
+      />
+    </div>
+
     <KeyframeRegenerateDialog
       v-if="regenDialogProps && selectedStoryboardId"
       v-model="regenDialogVisible"
@@ -81,6 +89,7 @@
 import { computed, ref, watch } from 'vue'
 import KeyframeGrid from './KeyframeGrid.vue'
 import KeyframeRegenerateDialog from './KeyframeRegenerateDialog.vue'
+import VideoSegmentPanel from './VideoSegmentPanel.vue'
 
 interface StoryboardLite {
   id: string
@@ -158,6 +167,11 @@ async function onRegenerated(): Promise<void> {
   // 弹框完成 → grid reload
   await gridRef.value?.reload()
   await refreshKeyframes()
+}
+
+function onVideoGenerated(_videoPath: string): void {
+  // 视频片段生成完成；后续 follow-up 可触发父组件 storyboardStore 刷新
+  void _videoPath
 }
 
 async function refreshKeyframes(): Promise<void> {
@@ -250,5 +264,9 @@ watch(selectedStoryboardId, () => refreshKeyframes())
 
 .grid-container {
   flex: 1;
+}
+
+.video-section {
+  margin-top: 12px;
 }
 </style>
