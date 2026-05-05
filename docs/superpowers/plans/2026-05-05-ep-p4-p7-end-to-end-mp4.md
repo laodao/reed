@@ -36,20 +36,30 @@ P3a + P3c follow-up 已完成资产域全部能力（角色 / 地点 / 物品 / 
 
 **目标**：剧本所有引用强约束（character_binding_id / location_binding_id / item_binding_id），不允许裸字符串；剧本定稿前完整性校验。
 
-### Task 列表（10 个）
+### Task 列表（10 个） · **全部完成 ✅ 2026-05-05**
 
-| # | Subject | 文件 | 依赖 |
+| # | Subject | 文件 | 状态 |
 |---|---|---|---|
-| P4-T1 | DB schema：scene_character / scene_dialogue / scene_action 加 binding_id FK | migration + 3 entity | — |
-| P4-T2 | reference-resolver.ts：把"@提及"或下拉选中的 binding ID 解析为 effective data | core | T1 |
-| P4-T3 | script-completeness.validator.ts：所有引用必须解析到资产库存在且主图就绪 | core | T2 |
-| P4-T4 | 改造 script-generator.ts：AI 生成剧本时输出 binding_id（不再是裸字符串） | core | T2 |
-| P4-T5 | scene-script.service.ts 加 `validateCompleteness(sceneId)` API | core | T3 |
-| P4-T6 | IPC handlers 暴露 reference-resolver / validator | electron | T2/T3 |
-| P4-T7 | UI ScriptEditor @ 提及组件（输入 @ 弹角色/地点/物品下拉） | Vue | T6 |
-| P4-T8 | UI ScriptEditor 完整性面板（红/黄/绿状态 + 失败项跳转） | Vue | T6 |
-| P4-T9 | 改 ScriptTabContent 接入 P4 新组件（保留 V2 老入口为兜底） | Vue | T7/T8 |
-| P4-T10 | 单测 + 端到端 IPC 联调（生成剧本 → validator → 通过） | tests | All |
+| P4-T1 | DB schema：scene_character / scene_dialogue / scene_action 加 binding_id FK | migration + 4 entity | ✅ |
+| P4-T2 | reference-resolver.ts：把"@提及"或下拉选中的 binding ID 解析为 effective data | core | ✅ |
+| P4-T3 | script-completeness.validator.ts：所有引用必须解析到资产库存在且主图就绪 | core | ✅ |
+| P4-T4 | 改造 script-generator.ts：AI 生成剧本时输出 binding_id（不再是裸字符串） | core | ✅ |
+| P4-T5 | scene-script.service.ts 加 `validateCompleteness(sceneId)` API | core | ✅ |
+| P4-T6 | IPC handlers 暴露 reference-resolver / validator | electron | ✅ |
+| P4-T7 | UI ScriptMentionInput @ 提及组件（textarea + 下拉，可复用 primitive） | Vue | ✅ |
+| P4-T8 | UI ScriptCompletenessPanel 完整性面板（红/黄/绿 + 失败项跳转） | Vue | ✅ |
+| P4-T9 | ScriptTabContent 接入 ScriptCompletenessPanel | Vue | ✅ |
+| P4-T10 | 单测 + 端到端回归（116 P4 spec 用例 + 全 785 测试通过 0 失败） | tests | ✅ |
+
+**P4 实施收获**：
+- 38 个新单元测试覆盖 binding 解析 + validator 13 种违例 + service 装配回退 + AI 解析三层兜底
+- 5-file IPC 契约同步（4 个新 channel：resolve-reference / resolve-references-batch / validate-scene / validate-episode-script）
+- ScenePropRef 新类型 + GeneratedSceneCharacter / Dialogue / ActionDescription 加 characterBindingId 字段
+- 不破坏 V2 老路径：JSON 列回退路径让旧剧本仍可正常工作
+
+**遗留**（不阻塞 P5）：
+- 归一化 scene_characters / scene_dialogues / scene_actions 表的同步写入（service 当前用 JSON 回退覆盖）
+- 实际 scene 编辑面板（mention input 已就位但还无消费者）— P5/P6 真正需要时再建
 
 ---
 
