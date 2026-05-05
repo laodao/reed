@@ -66,7 +66,7 @@ flowchart TD
 | **P6-T17** | 主区域 stage 切换框架 · ✅ **端到端可用** 2026-05-05 | §2.1 414+427 行 | 大 | **已完成**（轻量版） — el-tabs 保留作为 nav，但 6 tab 按 spec §2.1 顺序排列（① 内容 / ② 资产 / ③ 剧本 / ④ 分镜 / ⑤ 制作 / ⑥ 合成）；activeTab 类型对齐 EpisodeStatus 字符串（`pending` / `asset_prep` / `scripting` / `storyboarding` / `producing` / `composing`）让顶部进度条直接驱动 stage 切换；① ③ ④ 三个未实现 stage 用 StagePlaceholder.vue 占位（含跳转按钮 + 实现 task ID 提示）。验收：登录 → 选剧集 → 顶部进度条点 ④ 分镜段 → tab 真切到 ④ 分镜 + 占位说明"待 P6-T20 实现"+ 跳"③ 剧本"按钮。注：URL hash 同步留 P6 follow-up |
 | **P6-T18** | 新建 ① 内容 stage view | §2.2 433 行 | 中 | 新 stage 主区域：长文/上传内容 + 识别要素三栏（角色/地点/物品）+ "确认要素" 按钮 |
 | **P6-T19** | 新建 ③ 剧本 stage view（接管 V2 ScriptTabContent） | §2.2 435 行 | 中 | 章节梗概 + 场景卡片列表 + ScriptCompletenessPanel + "剧本定稿" 按钮 |
-| **P6-T20** | 新建 ④ 分镜 stage view（场景树 + 分镜网格） | §2.2 436 行 | 大 | 左侧场景树 + 右侧该场分镜网格；每个分镜含 keyframeCount 配置 + StoryboardCharacter 编辑入口（待 P5-T31 数据） |
+| **P6-T20** | 新建 ④ 分镜 stage view（场景树 + 分镜网格） · ✅ **端到端可用** 2026-05-05 | §2.2 436 行 + §4.5 | 大 | **已完成** — StageStoryboardView.vue 实现三栏布局：左侧场景树（场景标题 + 时间天气 + 当前场景分镜数）+ 中间分镜网格（卡片：镜头语言 / keyframe / 时长 / videoPath 状态 / 画面描述）+ 右侧详情面板（el-descriptions 全字段 + 画面描述 + 分镜内角色 spec §4.5.3 占位说明 + "编辑分镜配置"复用 StoryboardEditDialog + "去 ⑤ 制作"按钮）。验收：登录 → 选 e2e-茶馆相遇 → 进度条点 ④ 分镜段 → 看到 3 场景 + 5 分镜卡片 + 选第 1 镜显示详情。spec §4.5.3 StoryboardCharacters 编辑留 P5-T31~T34 |
 | **P6-T21** | 删 V2 老 4 tab + 数据迁移 | §2.5 478-491 行 | 中 | 删除 ScriptTabContent / CharacterBindingTabContent / ItemBindingTabContent / LocationBindingTabContent；数据迁到新 stage view；红线 R1 不命中 |
 
 ---

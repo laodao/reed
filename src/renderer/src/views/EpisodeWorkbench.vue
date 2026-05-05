@@ -133,9 +133,14 @@
               <StagePlaceholder stage="scripting" @jump-to="(s) => (activeTab = s)" />
             </el-tab-pane>
 
-            <!-- ④ 分镜 -->
+            <!-- ④ 分镜（P6-T20 · spec §2.2 第 436 行 + §4.5） -->
             <el-tab-pane label="④ 分镜" name="storyboarding">
-              <StagePlaceholder stage="storyboarding" @jump-to="(s) => (activeTab = s)" />
+              <StageStoryboardView
+                :episode-script-id="scriptStore.currentScript?.id ?? null"
+                :project-id="projectId"
+                @edit-storyboard="onEditStoryboardFromStage"
+                @jump-to-production="onJumpToProductionWithSb"
+              />
             </el-tab-pane>
 
             <!-- ⑤ 制作 -->
@@ -335,8 +340,10 @@ import StageProgressBar from '@/components/episode-production/workbench/StagePro
 import AssetSidebar from '@/components/episode-production/workbench/AssetSidebar.vue'
 // P6-T15 底部迷你时间线（spec §2.1 第 420-421 行）
 import BottomTimeline from '@/components/episode-production/workbench/BottomTimeline.vue'
-// P6-T17 stage 占位组件（① 内容 / ③ 剧本 / ④ 分镜 待实现 stage view）
+// P6-T17 stage 占位组件（① 内容 / ③ 剧本 待实现 stage view）
 import StagePlaceholder from '@/components/episode-production/workbench/StagePlaceholder.vue'
+// P6-T20 ④ 分镜 stage view（spec §2.2 第 436 行 + §4.5）
+import StageStoryboardView from '@/components/episode-production/stage-storyboard/StageStoryboardView.vue'
 import type {
   EpisodeStatus,
   VideoEpisode as _VE,
@@ -524,6 +531,22 @@ function onPreviewEpisode(): void {
  */
 function onSelectStoryboard(storyboardId: string): void {
   void storyboardId // 保留参数；P6 后续传给 StageProductionTabContent
+  activeTab.value = 'producing'
+}
+
+/**
+ * P6-T20 StageStoryboardView "编辑分镜配置"按钮 → 复用现有 StoryboardEditDialog
+ */
+function onEditStoryboardFromStage(sb: Storyboard): void {
+  dialogs.editingStoryboard = sb
+  dialogs.storyboardEdit = true
+}
+
+/**
+ * P6-T20 StageStoryboardView "去 ⑤ 制作"按钮 → 切到 ⑤ 制作 stage 选中该分镜
+ */
+function onJumpToProductionWithSb(storyboardId: string): void {
+  void storyboardId // 待 P6 follow-up 传给 StageProductionTabContent 的 selectedStoryboardId
   activeTab.value = 'producing'
 }
 
