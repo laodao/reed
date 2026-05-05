@@ -57,9 +57,10 @@ P3a + P3c follow-up 已完成资产域全部能力（角色 / 地点 / 物品 / 
 - ScenePropRef 新类型 + GeneratedSceneCharacter / Dialogue / ActionDescription 加 characterBindingId 字段
 - 不破坏 V2 老路径：JSON 列回退路径让旧剧本仍可正常工作
 
-**遗留**（不阻塞 P5）：
-- 归一化 scene_characters / scene_dialogues / scene_actions 表的同步写入（service 当前用 JSON 回退覆盖）
-- 实际 scene 编辑面板（mention input 已就位但还无消费者）— P5/P6 真正需要时再建
+**遗留**（实际已阻塞 P5，2026-05-05 audit 暴露）：
+- ⚠️ 归一化 scene_characters / scene_dialogues / scene_actions 表的同步写入仍未做；service 当前用 JSON 回退覆盖。**这导致 P5-T4 关键帧生成只能读 scene.characters JSON，无法消费 storyboard_characters 表，spec §4.5.3 分镜内角色独立配置全链路打不通**。
+- ⚠️ 实际 scene 编辑面板未建——P5 已经"真正需要"它了。
+- ⚠️ 这两个遗留**应当从 P4 重新审计**，可能 P4 的 ✅ 也需要降到 🟡。本次 audit 只覆盖 P5/P6，P4 待下次审计。
 
 ---
 
@@ -75,15 +76,17 @@ P3a + P3c follow-up 已完成资产域全部能力（角色 / 地点 / 物品 / 
 | P5-T2 | DB migration：扩展 `storyboard` 多模式字段 | ✅ 同 T1 migration |
 | P5-T3 | StoryboardKeyframeRepository | ✅ 2026-05-05（CRUD + listByStoryboard + 6 单测） |
 
-### 2.2 关键帧子域 · **全部完成 ✅**
+### 2.2 关键帧子域 · **审计后 2/5 真完成（2026-05-05 audit 降级）**
 
-| # | Subject | 状态 |
-|---|---|---|
-| P5-T4 | KeyframeGenerationService 多帧链式生成（plan + ref + prompt + image gen + 落库） | ✅ 6 单测 |
-| P5-T5 | keyframe-prompt-builder buildKeyframePrompt 多时刻版本 + 老 buildImagePrompt 兼容 | ✅ 7 单测 |
-| P5-T6 | reference-image-selector 三类资产打分 + 兜底主图 | ✅ 9 单测 |
-| P5-T7 | keyframe-chain-strategy planKeyframes / planRegenPropagation / describeFrameMoment | ✅ 14 单测 |
-| P5-T8 | 4 个 IPC channel（generate-keyframes / regenerate / list / plan-regen），5-file 契约同步 | ✅ |
+⚠️ 详见 `docs/superpowers/dod/2026-05-05-p5-p6-audit.md`。骨架打勾的全部降为 🟡。
+
+| # | Subject | 状态 | 缺口 |
+|---|---|---|---|
+| P5-T4 | KeyframeGenerationService 多帧链式生成 | 🟡 | 用 `scene.characters` JSON，**未消费 storyboard_characters 表**；spec §4.5.3/§4.5.9"分镜内角色独立配置"未接通 |
+| P5-T5 | keyframe-prompt-builder buildKeyframePrompt | 🟡 | `BuildKeyframePromptInput` 12 字段中**无 userPrompt 字段**；用户输入通道全链路缺起点 |
+| P5-T6 | reference-image-selector 三类资产打分 | ✅ 端到端可用 | — |
+| P5-T7 | keyframe-chain-strategy | ✅ 端到端可用 | — |
+| P5-T8 | 4 个 IPC channel | 🟡 | handler 入参 `(storyboardId, styleName?, keyframeCountOverride?)` / `(keyframeId, styleName?)` 都**无 user prompt** |
 
 ### 2.3 视频片段子域 · **架构层完成 4/5 ✅**
 
@@ -103,24 +106,28 @@ P3a + P3c follow-up 已完成资产域全部能力（角色 / 地点 / 物品 / 
 | P5-T16 | bgm.service.ts（背景音乐 stub，spec 未细写） | ⏳ TODO（spec 未细化） |
 | P5-T17 | DashScope qwen3-tts 适配 | ⏳ TODO（需外部 API 测试） |
 
-### 2.5 UI · **3/5 完成**
+### 2.5 UI · **审计后 1/5 真完成（2026-05-05 audit 降级）**
 
-| # | Subject | 状态 |
-|---|---|---|
-| P5-T18 | KeyframeGrid 九宫格关键帧序列 + hover 操作 + 全部重生成 | ✅ |
-| P5-T19 | KeyframeRegenerateDialog 重生成弹框（传播勾选 + 顺序重生成 + 进度） | ✅ |
-| P5-T20 | VideoSegmentPanel：provider/mode 选择 + 生成视频片段按钮 + 进度 | ✅（已接入 ⑤ 制作 tab） |
-| P5-T21 | AudioPanel：旁白 / 对话 列表 + 试听 + voice tag | ✅（独立组件，待接入 ⑥ 合成 / 后续 follow-up） |
-| P5-T22 | StageProductionView 重命名（替换 V2 老 stage-production） | ⏳ TODO（StageProductionTabContent 已替代功能） |
+⚠️ 详见 `docs/superpowers/dod/2026-05-05-p5-p6-audit.md`。
 
-### 2.6 收尾 · **1/2 完成**
+| # | Subject | 状态 | 缺口 |
+|---|---|---|---|
+| P5-T18 | KeyframeGrid 九宫格关键帧序列 | 🟡 严重 | 仅渲染 frameIndex/frameRole/timePercent/imagePath；**完全无 spec §4.5.7 资产组合公式**（角色 chip / 地点 chip / 道具 / 参考图缩略图）；预览框无参考图、无用户提示词输入 |
+| P5-T19 | KeyframeRegenerateDialog 重生成弹框 | 🟡 | 仅传播范围勾选；**无 textarea 让用户输入"如何修改"**；用户参与度为零 |
+| P5-T20 | VideoSegmentPanel | 🟡 严重 | 仅 provider/mode/duration 选择；**完全无 spec §4.7 分镜元信息**（旁白文本 / 对话清单 / 角色清单 / 关键帧序列预览 / 用户额外提示词） |
+| P5-T21 | AudioPanel | ✅ 端到端可用 | — |
+| P5-T22 | StageProductionView 重命名 | 🟡 红线 R1 命中 | StageProductionTabContent 新建了，但 EpisodeWorkbench.vue:67-95 V2 老 4 tab（剧本/角色绑定/物品绑定/地点绑定）仍存在 — V2 兼容后门未清 |
 
-| # | Subject | 状态 |
-|---|---|---|
-| P5-T23 | 接入 EpisodeWorkbench 加 ⑤ 制作 tab | ✅ |
-| P5-T24 | 单测 + 端到端 e2e | ⏳ TODO（需真实 provider 实测；本会话覆盖了 90 个 P5 单测） |
+### 2.6 收尾 · **审计后 0/2 真完成（2026-05-05 audit 降级）**
 
-**P5 总计：21/24 完成（87.5%）**
+| # | Subject | 状态 | 缺口 |
+|---|---|---|---|
+| P5-T23 | 接入 EpisodeWorkbench 加 ⑤ 制作 tab | 🟡 严重 | tab 接入了，但 spec §2.1 工作台布局 0%（无顶部 6 段进度条 / 无左侧资产侧栏 / 无底部迷你时间线 / 缺 ① 内容 / ③ 剧本 / ④ 分镜 三个 tab / V2 老 tab 并存） |
+| P5-T24 | 单测 + 端到端 e2e | 🟡 | 90 个单测过了，但 Playwright 真走 UI 的 e2e 仅 1 个 .skip spec；spec §4.5/§4.7 用户视角覆盖为零 |
+
+**P5 真实完成度（2026-05-05 audit）：12/24（50%）真 ✅；9/24（37.5%）🟡；3/24（12.5%）⏳**
+
+（之前 plan 写"21/24 完成（87.5%）"是骨架打勾。）
 
 ---
 
@@ -128,22 +135,28 @@ P3a + P3c follow-up 已完成资产域全部能力（角色 / 地点 / 物品 / 
 
 **目标**：把所有分镜视频片段 + 音频 + 字幕用 ffmpeg 拼成单段 MP4，提供"导出"入口。
 
-### Task 列表（12 个） · **完成 11/12 ✅**
+### Task 列表（12 个） · **审计后 8/12 真完成（2026-05-05 audit 降级）**
 
-| # | Subject | 状态 |
-|---|---|---|
-| P6-T1 | TimelineBuilderService（场景 + 分镜 → Timeline + missingVideo 收集） | ✅ 5 单测 |
-| P6-T2 | transition-translator（spec 8 种转场 → ffmpeg xfade 关键字） | ✅ 13 单测 |
-| P6-T3 | SubtitleService（旁白 + 对话 → SRT，含 formatSrtTime） | ✅ 7 单测 |
-| P6-T4 | EpisodeMp4ExporterService（filter_complex 拼装 + ffmpeg 调用 DI） | ✅ 9 单测 |
-| P6-T5 | IPC: build-timeline / preview-subtitle / export-mp4 + FluentFfmpegRunner | ✅ |
-| P6-T6 | TimelineEditor.vue 多轨时间线 UI | ⏳ TODO follow-up（不阻塞 MP4） |
-| P6-T7 | ExportDialog.vue：参数 + 进度 + 调 ep:export-mp4 | ✅ |
-| P6-T8 | StageComposeView.vue：⑥ 合成阶段容器 | ✅ |
-| P6-T9 | StageGateService（6 阶段完成判断 + canEnterStage 决策 + 末端硬锁） | ✅ |
-| P6-T10 | episode-status.machine（7 状态 + 转换分类 + 视觉标记） | ✅ 7 单测 |
-| P6-T11 | ProgressCalculator（6 阶段进度 + overallProgress） | ✅ |
-| P6-T12 | EpisodeWorkbench 接入 ⑤ 制作 + ⑥ 合成 tabs | ✅ |
+⚠️ 详见 `docs/superpowers/dod/2026-05-05-p5-p6-audit.md`。
+
+| # | Subject | 状态 | 缺口 |
+|---|---|---|---|
+| P6-T1 | TimelineBuilderService | ✅ 端到端可用 | — |
+| P6-T2 | transition-translator | ✅ 端到端可用 | — |
+| P6-T3 | SubtitleService | ✅ 端到端可用 | — |
+| P6-T4 | EpisodeMp4ExporterService | ✅ 端到端可用 | — |
+| P6-T5 | IPC + FluentFfmpegRunner | ✅ 端到端可用 | — |
+| P6-T6 | TimelineEditor.vue 多轨时间线 UI | ⏳ 未开始 | （明确未做） |
+| P6-T7 | ExportDialog.vue | ✅ 端到端可用 | — |
+| P6-T8 | StageComposeView.vue ⑥ 合成阶段容器 | 🟡 V1 简化版 | spec §6.2 要求"时间线视图"未实现，目前仅一个"导出 MP4"按钮 |
+| P6-T9 | StageGateService | ✅ 端到端可用 | — |
+| P6-T10 | episode-status.machine | ✅ 端到端可用 | — |
+| P6-T11 | ProgressCalculator | 🟡 | service 写好了 + 7 单测，但 grep 显示 EpisodeWorkbench.vue 没引用 — UI 未消费 |
+| P6-T12 | EpisodeWorkbench 接入 ⑤ 制作 + ⑥ 合成 tabs | 🟡 严重 | tab 接入了，但 spec §2.1 工作台布局**完全没实现**：无顶部 6 段进度条 / 无左侧资产侧栏 / 无底部迷你时间线 / 状态机和门控有 service 但 UI 没消费 |
+
+**P6 真实完成度（2026-05-05 audit）：8/12（66%）真 ✅；3/12（25%）🟡；1/12（9%）⏳**
+
+（之前 plan 写"完成 11/12 ✅"是骨架打勾。）
 
 ---
 
@@ -193,17 +206,19 @@ P3a + P3c follow-up 已完成资产域全部能力（角色 / 地点 / 物品 / 
 6. **数据**：所有 schema 变更幂等迁移
 7. **文档**：本 plan 文档随 commit 同步进度状态
 
-### DoD 当前状态（2026-05-05）
+### DoD 当前状态（2026-05-05 audit 后修订）
 
-| 维度 | 状态 | 备注 |
+⚠️ 之前的 DoD 维度评判过于乐观，按 `docs/superpowers/dod/2026-05-05-task-completion-checklist.md` 严格 DoD 重估：
+
+| 维度 | 真实状态 | 备注 |
 |---|---|---|
-| 1 功能 | 🟡 架构层全打通，需真 provider 实测 e2e | UI / IPC / service / db 全链路就绪；待 P7 实跑 |
-| 2 类型 | ✅ 本次新增文件 0 错（pre-existing 错误与本次无关） | 见 git log 各 task commit |
-| 3 测试 | ✅ episode-production 30 spec / 212 用例全通过；架构层覆盖率高 | 真 provider 调用单测留 e2e |
-| 4 双端 | ✅ 全部 service 在 src/core；IPC 契约双端共用 | TTS / FFmpeg 走 PC 路径；Web 端导出留 server-side follow-up |
-| 5 契约 | ✅ 5-file 全同步；V2 老 channel 保留 | 17 个新 channel（P4 4 + P5 7 + P6 3 + 音频 1 + 视频 1 + 占位 1） |
-| 6 数据 | ✅ 全部 migration 幂等 + 双端启动注册 | scene_* binding FK / storyboard_keyframe / 多模式列均已落地 |
-| 7 文档 | ✅ 本文档随每 task commit 同步 | 5 次 plan doc 更新 |
+| 1 功能 | 🟡 严重缺失 | 端到端能跑出 mp4（P7 实测 25s 视频已验证），但 UI 装配层缺 spec §4.5.7（资产组合公式）/ §4.7（分镜元信息）/ §2.1（工作台布局）；用户输入通道全链路缺失 |
+| 2 类型 | ✅ tsc 0 错 | 维持 |
+| 3 测试 | 🟡 单测够，e2e 不够 | 212 单测过，但 Playwright 真走 UI 仅 1 个 .skip spec |
+| 4 双端 | ✅ | 维持 |
+| 5 契约 | 🟡 红线 R1 命中 | 5-file IPC 同步是真，但 V2 老 channel 保留 = V2 兼容后门 = spec §2.1 stage 流程不闭环；不是"不破坏"而是"应该清理" |
+| 6 数据 | 🟡 | migration 幂等 + 双端注册是真，但 storyboard_characters 表是孤儿（spec §4.5.3 未接通） |
+| 7 文档 | 🟡 plan 自我表扬 | 21/24 P5 ✅ + 11/12 P6 ✅ 是骨架打勾；本次 audit 已降级 |
 
 ---
 
