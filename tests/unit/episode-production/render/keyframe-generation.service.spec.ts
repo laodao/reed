@@ -23,6 +23,8 @@ import { LwCharacterEntity } from '@core/database/entities/lw-character.entity'
 import { LwLocationEntity } from '@core/database/entities/lw-location.entity'
 import { LwItemEntity } from '@core/database/entities/lw-item.entity'
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
+import { EpisodeScriptEntity } from '@core/database/entities/episode-production/episode-script.entity'
+import { VideoEpisodeEntity } from '@core/database/entities/episode-production/video-episode.entity'
 import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
 import { StoryboardKeyframeEntity } from '@core/database/entities/episode-production/storyboard-keyframe.entity'
 import { ImageAssetEntity } from '@core/database/entities/image-asset.entity'
@@ -43,6 +45,8 @@ async function buildDb(): Promise<DataSource> {
       LwLocationEntity,
       LwItemEntity,
       SceneScriptEntity,
+      EpisodeScriptEntity,
+      VideoEpisodeEntity,
       StoryboardEntity,
       StoryboardKeyframeEntity,
       ImageAssetEntity,
@@ -101,6 +105,30 @@ async function seedScene(ds: DataSource): Promise<{ sceneId: string; sbId: strin
       updatedAt: new Date(),
     },
   ] as any)
+
+  // 项目 + 剧集 + 剧本（resolveProjectIdForScene 链路 seed）
+  await ds.getRepository(VideoEpisodeEntity).save({
+    id: 'ep1',
+    projectId: 'proj1',
+    episodeNumber: 1,
+    title: '测试剧集',
+    sourceType: 'uploaded',
+    status: 'producing',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  } as any)
+  await ds.getRepository(EpisodeScriptEntity).save({
+    id: 'es1',
+    projectId: 'proj1',
+    episodeId: 'ep1',
+    outlineId: '',
+    status: 'approved',
+    synopsis: '',
+    totalDuration: 0,
+    characterAppearances: [],
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  } as any)
 
   // 场景 + 分镜
   const sceneId = 's1'

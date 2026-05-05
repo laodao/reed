@@ -354,21 +354,30 @@ export class KeyframeGenerationService {
    * 反查真实 projectId（image_assets.project_id 字段）：
    * scene → episode_script → episode → project（spec §1.4 实体关系）
    *
-   * 失败时回落 'unknown'（不阻断生成；image_assets 仍然能写入）。
+   * 链路任一环缺失都 throw 暴露真实错误——不再静默写入 'unknown'，
+   * 因为那会让 image_assets 表沉积"孤儿记录"，UI 后续按 projectId 过滤时找不到。
    */
   private async resolveProjectIdForScene(scene: SceneScriptEntity): Promise<string> {
-    try {
-      const epScript = await this.ds
-        .getRepository(EpisodeScriptEntity)
-        .findOne({ where: { id: scene.episodeScriptId } })
-      if (!epScript) return 'unknown'
-      const ep = await this.ds
-        .getRepository(VideoEpisodeEntity)
-        .findOne({ where: { id: (epScript as any).episodeId } })
-      if (!ep) return 'unknown'
-      return (ep as any).projectId ?? 'unknown'
-    } catch {
-      return 'unknown'
+    const epScript = await this.ds
+      .getRepository(EpisodeScriptEntity)
+      .findOne({ where: { id: scene.episodeScriptId } })
+    if (!epScript) {
+      throw new Error(
+        `EpisodeScript not found for scene ${scene.id} (episodeScriptId=${scene.episodeScriptId})`,
+      )
     }
+    const ep = await this.ds
+      .getRepository(VideoEpisodeEntity)
+      .findOne({ where: { id: (epScript as any).episodeId } })
+    if (!ep) {
+      throw new Error(
+        `VideoEpisode not found for episodeScript ${epScript.id} (episodeId=${(epScript as any).episodeId})`,
+      )
+    }
+    const projectId = (ep as any).projectId
+    if (!projectId) {
+      throw new Error(`VideoEpisode ${ep.id} 缺 projectId（DB 数据异常）`)
+    }
+    return projectId
   }
 }

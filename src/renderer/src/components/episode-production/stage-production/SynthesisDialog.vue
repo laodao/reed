@@ -1,5 +1,5 @@
 <template>
-  <el-dialog v-model="modelValue" title="合成场景视频" width="500px" @update:model-value="emit('update:modelValue', $event)">
+  <el-dialog :model-value="modelValue" title="合成场景视频" width="500px" @update:model-value="emit('update:modelValue', $event)">
     <el-form :model="form" label-width="80px">
       <el-form-item label="视频质量">
         <el-select v-model="form.quality" style="width: 100%">

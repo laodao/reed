@@ -27,9 +27,7 @@ import type { Dialogue } from '@shared/types/episode-production'
 import { NarrationSynthesisService } from './narration-synthesis.service'
 import { DialogueSynthesisService } from './dialogue-synthesis.service'
 import { ReferenceResolver } from '@core/modules/episode-production/narrative/reference-resolver'
-
-const DEFAULT_NARRATION_VOICE = 'Cherry'
-const DEFAULT_FALLBACK_VOICE = 'Cherry'
+import { VoiceService } from '@core/services/voice.service'
 
 export interface OrchestrateAudioInput {
   sceneScriptId: string
@@ -55,11 +53,35 @@ export class SceneAudioOrchestratorService {
   private readonly resolver: ReferenceResolver
   private readonly narrationSvc: NarrationSynthesisService
   private readonly dialogueSvc: DialogueSynthesisService
+  /** 运行时缓存：第一次需要 fallback voice 时去 VoiceService 取列表，缓存后复用 */
+  private cachedFallbackVoiceId: string | null = null
 
   constructor(private readonly ds: DataSource) {
     this.resolver = new ReferenceResolver(ds)
     this.narrationSvc = NarrationSynthesisService.getInstance()
     this.dialogueSvc = DialogueSynthesisService.getInstance()
+  }
+
+  /**
+   * 取系统可用音色作为 fallback。
+   *
+   * 来源优先级：
+   *   1. VoiceService.getVoices() 返回的第一个（含 DashScope 预置 + cloned voices）
+   *   2. 失败时抛错（不再静默走硬编码 'Cherry'，迫使运维真正配 voice provider）
+   *
+   * 缓存避免每条对话都去查；首次调用时拉一次列表。
+   */
+  private async resolveFallbackVoiceId(): Promise<string> {
+    if (this.cachedFallbackVoiceId) return this.cachedFallbackVoiceId
+    const resp = await VoiceService.getVoices()
+    if (!resp.success || !resp.data || resp.data.length === 0) {
+      throw new Error(
+        '无法生成音频：系统未提供任何可用音色。请在「设置 → 模型服务」配置 ' +
+          'TTS provider（如 DashScope qwen-tts）后重试。',
+      )
+    }
+    this.cachedFallbackVoiceId = resp.data[0].id
+    return this.cachedFallbackVoiceId
   }
 
   async orchestrateScene(
@@ -80,8 +102,9 @@ export class SceneAudioOrchestratorService {
     const narrationText = (scene.narration ?? '').trim()
     if (narrationText) {
       input.onProgress?.('narration', 0, 1)
+      // 旁白音色：用户传 → 项目级配置 → VoiceService 取系统第一个可用
       const narrationVoice =
-        input.defaultNarratorVoiceId ?? DEFAULT_NARRATION_VOICE
+        input.defaultNarratorVoiceId ?? (await this.resolveFallbackVoiceId())
       const narrationPath = await this.narrationSvc.generateNarrationAudio(
         narrationText,
         { voiceId: narrationVoice, speed: 1.0, pitch: 0 },
@@ -96,9 +119,8 @@ export class SceneAudioOrchestratorService {
       const d = dialogues[i]
       input.onProgress?.('dialogue', i, dialogues.length)
 
-      const voiceId = await this.resolveDialogueVoice(d)
-      const isFallback = !d.voiceId && voiceId === DEFAULT_FALLBACK_VOICE
-      if (isFallback) result.fallbackDialogueCount++
+      const { voiceId, fellBackToSystemDefault } = await this.resolveDialogueVoice(d)
+      if (fellBackToSystemDefault) result.fallbackDialogueCount++
 
       // 调老 service 落盘。它内部走 binding 查 voice，会"再查一次"，
       // 但我们已经在这里把场景级 voiceId 决定好；为了不双重查找，直接调
@@ -125,15 +147,24 @@ export class SceneAudioOrchestratorService {
    * 解析对话的 voice ID（spec §4.1 优先级）：
    *   1. dialogue.voiceId（场景级覆盖）
    *   2. character_binding.voiceId（resolver 取）
-   *   3. DEFAULT_FALLBACK_VOICE（'Cherry'）
+   *   3. VoiceService 第一个可用音色（运行时取，不硬编码）
+   *
+   * 返回 fellBackToSystemDefault=true 表示走了第 3 档（系统兜底），调用方累计统计。
    */
-  private async resolveDialogueVoice(d: Dialogue): Promise<string> {
-    if (d.voiceId && d.voiceId.length > 0) return d.voiceId
+  private async resolveDialogueVoice(
+    d: Dialogue,
+  ): Promise<{ voiceId: string; fellBackToSystemDefault: boolean }> {
+    if (d.voiceId && d.voiceId.length > 0) {
+      return { voiceId: d.voiceId, fellBackToSystemDefault: false }
+    }
     if (d.characterBindingId) {
       const r = await this.resolver.resolveCharacter(d.characterBindingId)
-      if (r?.effective.voiceId) return r.effective.voiceId
+      if (r?.effective.voiceId) {
+        return { voiceId: r.effective.voiceId, fellBackToSystemDefault: false }
+      }
     }
-    return DEFAULT_FALLBACK_VOICE
+    const voiceId = await this.resolveFallbackVoiceId()
+    return { voiceId, fellBackToSystemDefault: true }
   }
 }
 

@@ -1,5 +1,5 @@
 <template>
-  <el-dialog v-model="modelValue" title="重新生成画面" width="500px" @update:model-value="emit('update:modelValue', $event)">
+  <el-dialog :model-value="modelValue" title="重新生成画面" width="500px" @update:model-value="emit('update:modelValue', $event)">
     <el-form label-width="80px">
       <el-form-item label="镜头">
         镜头 {{ shotNumber }}

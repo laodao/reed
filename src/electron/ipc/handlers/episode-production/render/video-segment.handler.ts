@@ -80,10 +80,23 @@ async function handleListVideoProviders(): Promise<IpcResponse> {
       const def = VIDEO_PROVIDER_DEFINITIONS[templateId as VideoProviderType]
       if (!def) continue
 
-      // 取该 cfg 下 type='video' 的模型
-      const videoModels = ((cfg.models ?? []) as Array<{ id?: string; name?: string; type?: string }>)
+      // 取该 cfg 下 type='video' 的模型 + 模型自带 features（真实数据，非硬编码）
+      const allModels = (cfg.models ?? []) as Array<{
+        id?: string
+        name?: string
+        type?: string
+        features?: {
+          textToVideo?: boolean
+          imageToVideo?: boolean
+          videoToVideo?: boolean
+          maxDuration?: number
+          supportedResolutions?: string[]
+          supportedAspectRatios?: string[]
+        }
+      }>
+      const videoModels = allModels
         .filter((m) => m.id && (m.type === 'video' || m.type === 'multimodal'))
-        .map((m) => ({ id: m.id!, name: m.name }))
+        .map((m) => ({ id: m.id!, name: m.name, features: m.features }))
 
       list.push({
         providerConfigId: cfg.id,
@@ -95,8 +108,10 @@ async function handleListVideoProviders(): Promise<IpcResponse> {
           isProviderImplemented(def.type) &&
           videoModels.length > 0 &&
           (cfg.apiKey ? cfg.apiKey.length > 0 : false),
-        capabilities: defaultCapabilitiesFor(def.type),
-        models: videoModels,
+        // 用第一个 model 的真实 features 推断 capabilities；多个 model 时调用方
+        // 实际选 model 后 generate-video-segment 会用具体 model 的 features 覆盖
+        capabilities: deriveCapabilitiesFromModel(videoModels[0], def.type),
+        models: videoModels.map((m) => ({ id: m.id, name: m.name })),
       })
     }
     return { success: true, data: list }
@@ -214,10 +229,24 @@ async function createAdapterForProvider(
 
   const apiKey = cfg.apiKey ?? ''
 
-  // 默认 capabilities 推断（按 provider 类型）；用户可后续在 customParams 覆盖
+  // 选定 model 的真实 features 驱动 capabilities（不再硬编码 provider 能力）
+  const allModels = (cfg.models ?? []) as Array<{
+    id?: string
+    type?: string
+    features?: any
+  }>
+  const selectedModel = allModels.find((m) => m.id === modelId)
+  if (!selectedModel) {
+    console.warn(
+      `[video-segment.handler] model ${modelId} 不在 provider config ${providerConfigId} 已启用列表内`,
+    )
+    return null
+  }
+
+  // 用户可在 customParams.videoCapabilities 进一步覆盖（启用 keyframes 等高级特性）
   const capabilitiesOverride: VideoProviderCapabilities | undefined =
     ((cfg.customParams as any)?.videoCapabilities as VideoProviderCapabilities | undefined) ??
-    defaultCapabilitiesFor(providerType)
+    deriveCapabilitiesFromModel(selectedModel, providerType)
 
   const baseProvider = createVideoProvider(providerType, {
     id: providerConfigId,
@@ -232,48 +261,40 @@ async function createAdapterForProvider(
   })
 }
 
-/** 按 provider 类型给出推断的 capabilities（静态查表，UI 用）。 */
-function defaultCapabilitiesFor(type: VideoProviderType): VideoProviderCapabilities {
-  // 大多数 provider 同时支持 text2video + image2video，多关键帧少有支持
-  switch (type) {
-    case 'bailian':
-    case 'dashscope':
-      return {
-        text: true,
-        image: true,
-        keyframes: true, // wanx 2.5 keyframes 模式（spec §4.4 提到）
-        maxKeyframes: 2, // 当前 wanx 多帧上限保守填 2（首尾）
-        maxDurationSec: 5,
-      }
-    case 'volcengine':
-      return {
-        text: true,
-        image: true,
-        keyframes: false,
-        maxKeyframes: 0,
-        maxDurationSec: 5,
-      }
-    case 'runway':
-    case 'pika':
-    case 'luma':
-    case 'kling':
-    case 'minimax':
-    case 'zhipu':
-      return {
-        text: true,
-        image: true,
-        keyframes: false,
-        maxKeyframes: 0,
-        maxDurationSec: 5,
-      }
-    case 'custom':
-    default:
-      return {
-        text: true,
-        image: false,
-        keyframes: false,
-        maxKeyframes: 0,
-        maxDurationSec: 4,
-      }
+/**
+ * 从 user model features 推导 capabilities（真实数据驱动）。
+ *
+ * 规则：
+ * - text / image：直读 features.textToVideo / imageToVideo
+ * - keyframes：BaseVideoProvider 的 features 不暴露此维度；
+ *   通过 customParams.videoCapabilities.keyframes 由用户/运维手工开启
+ *   （未开则保守 false，避免 capability-matcher 选错模式调用失败）
+ * - maxDurationSec：直读 features.maxDuration（默认 5）
+ *
+ * 不再硬编码任何 provider 类型的能力；type 仅用于 maxKeyframes 默认值（仍是
+ * "未声明 keyframes 维度时的兜底"，是合理的兜底常量而非欺骗用户的假数据）。
+ */
+function deriveCapabilitiesFromModel(
+  model: { features?: any } | undefined,
+  _type: VideoProviderType,
+): VideoProviderCapabilities {
+  const f = model?.features ?? {}
+  return {
+    text: !!f.textToVideo,
+    image: !!f.imageToVideo,
+    keyframes: false, // 默认关闭：BaseVideoProvider features 没此维度，保守降级到 image2video
+    maxKeyframes: 0,
+    maxDurationSec: typeof f.maxDuration === 'number' && f.maxDuration > 0 ? f.maxDuration : 5,
+  }
+}
+
+/** 仍保留兜底版本：handler.handleGetProviderCapabilities 在没有具体 cfg/model 时用 */
+function defaultCapabilitiesFor(_type: VideoProviderType): VideoProviderCapabilities {
+  return {
+    text: true,
+    image: true,
+    keyframes: false,
+    maxKeyframes: 0,
+    maxDurationSec: 5,
   }
 }

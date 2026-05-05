@@ -24,6 +24,7 @@ import { LwItemEntity } from '@core/database/entities/lw-item.entity'
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
 import { SceneAudioOrchestratorService } from '@core/modules/episode-production/render/audio/scene-audio-orchestrator.service'
 import { NarrationSynthesisService } from '@core/modules/episode-production/render/audio/narration-synthesis.service'
+import { VoiceService } from '@core/services/voice.service'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({
@@ -119,6 +120,16 @@ describe('SceneAudioOrchestratorService', () => {
     )
     const inst = NarrationSynthesisService.getInstance()
     ;(inst as any).generateNarrationAudio = narrationGenSpy
+
+    // mock VoiceService.getVoices：返回 'Cherry' 作为系统第一个可用音色
+    // （和 DashScopeTTSProvider.VOICES 第一项一致；测试不真调）
+    vi.spyOn(VoiceService, 'getVoices').mockResolvedValue({
+      success: true,
+      data: [
+        { id: 'Cherry', name: 'Cherry', language: 'zh' },
+        { id: 'Ethan', name: 'Ethan', language: 'zh' },
+      ] as any,
+    })
   })
 
   afterEach(async () => {

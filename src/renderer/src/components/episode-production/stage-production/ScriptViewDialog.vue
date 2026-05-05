@@ -1,6 +1,6 @@
 <template>
   <el-dialog
-    v-model="modelValue"
+    :model-value="modelValue"
     title="镜头剧本"
     width="70%"
     top="8vh"
