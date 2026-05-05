@@ -408,6 +408,11 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.generateScenes': { channel: 'ep:generate-scenes' },
   'episodeProduction.generateStoryboard': { channel: 'ep:generate-storyboard' },
   'episodeProduction.generateStoryboards': { channel: 'ep:generate-storyboards' },
+  // P4-T6 引用解析 + 完整性校验
+  'episodeProduction.resolveReference': { channel: 'ep:resolve-reference' },
+  'episodeProduction.resolveReferencesBatch': { channel: 'ep:resolve-references-batch' },
+  'episodeProduction.validateScene': { channel: 'ep:validate-scene' },
+  'episodeProduction.validateEpisodeScript': { channel: 'ep:validate-episode-script' },
   'episodeProduction.getStylePresets': { channel: 'ep:get-style-presets' },
   'episodeProduction.generateStoryboardImage': { channel: 'ep:generate-storyboard-image' },
   'episodeProduction.generateSceneImages': { channel: 'ep:generate-scene-images' },

@@ -153,6 +153,12 @@ const IPC_CHANNELS = {
   EP_GENERATE_STORYBOARD: 'ep:generate-storyboard',
   EP_GENERATE_STORYBOARDS: 'ep:generate-storyboards',
 
+  // P4-T6 引用解析 + 完整性校验
+  EP_RESOLVE_REFERENCE: 'ep:resolve-reference',
+  EP_RESOLVE_REFERENCES_BATCH: 'ep:resolve-references-batch',
+  EP_VALIDATE_SCENE: 'ep:validate-scene',
+  EP_VALIDATE_EPISODE_SCRIPT: 'ep:validate-episode-script',
+
   EP_GET_STYLE_PRESETS: 'ep:get-style-presets',
   EP_GENERATE_STORYBOARD_IMAGE: 'ep:generate-storyboard-image',
   EP_GENERATE_SCENE_IMAGES: 'ep:generate-scene-images',
@@ -1577,6 +1583,16 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.EP_GENERATE_STORYBOARD, sceneId, providerConfigId, modelId),
     generateStoryboards: (scriptId: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_GENERATE_STORYBOARDS, scriptId, providerConfigId, modelId),
+
+    // P4-T6 引用解析 + 完整性校验
+    resolveReference: (kind: 'character' | 'location' | 'item', bindingId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_RESOLVE_REFERENCE, kind, bindingId),
+    resolveReferencesBatch: (refs: Array<{ kind: 'character' | 'location' | 'item'; bindingId: string }>) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_RESOLVE_REFERENCES_BATCH, refs),
+    validateScene: (sceneScriptId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_VALIDATE_SCENE, sceneScriptId),
+    validateEpisodeScript: (episodeScriptId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_VALIDATE_EPISODE_SCRIPT, episodeScriptId),
 
     // 资源生成
     getStylePresets: () =>
