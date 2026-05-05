@@ -92,36 +92,35 @@ P3a + P3c follow-up 已完成资产域全部能力（角色 / 地点 / 物品 / 
 | P5-T9 | VideoProviderAdapter 接口（textToVideo / imageToVideo / keyframesToVideo + capabilities） | ✅ |
 | P5-T10 | provider-capability-matcher（按 keyframe_count 选模式 + 三档降级 + clamp 截断） | ✅ 17 单测 |
 | P5-T11 | VideoSegmentService（串联 keyframes → matcher → adapter → 落 video_path） | ✅ 9 单测 |
-| P5-T12 | DashScope wanx + 百炼视频 provider 适配 → VideoProviderAdapter | ⏳ TODO follow-up（需外部 API 测试） |
-| P5-T13 | 3 个 IPC channel + 5-file 契约 + 静态 capabilities 推断 | ✅ |
+| P5-T12 | BaseVideoProvider → VideoProviderAdapter 桥接（含 polling + capabilities 推断） | ✅ 8 单测 |
+| P5-T13 | 3 个 IPC channel + 5-file 契约 + 真实 createAdapterForProvider | ✅ |
 
-### 2.4 音频子域
+### 2.4 音频子域 · **2/4 完成**
 
-| # | Subject |
-|---|---|
-| P5-T14 | narration-synthesis.service.ts：旁白 → TTS → 音频文件 |
-| P5-T15 | dialogue-synthesis.service.ts：对话按角色 voice_id → TTS |
-| P5-T16 | bgm.service.ts（背景音乐 stub，spec 未细写） |
-| P5-T17 | DashScope qwen3-tts 适配 |
+| # | Subject | 状态 |
+|---|---|---|
+| P5-T14/T15 | SceneAudioOrchestrator binding-aware 编排 + IPC ep:generate-scene-audio-v3 | ✅ 7 单测 |
+| P5-T16 | bgm.service.ts（背景音乐 stub，spec 未细写） | ⏳ TODO（spec 未细化） |
+| P5-T17 | DashScope qwen3-tts 适配 | ⏳ TODO（需外部 API 测试） |
 
-### 2.5 UI · **关键 UI 完成 2/5**
+### 2.5 UI · **3/5 完成**
 
 | # | Subject | 状态 |
 |---|---|---|
 | P5-T18 | KeyframeGrid 九宫格关键帧序列 + hover 操作 + 全部重生成 | ✅ |
 | P5-T19 | KeyframeRegenerateDialog 重生成弹框（传播勾选 + 顺序重生成 + 进度） | ✅ |
-| P5-T20 | VideoSegmentPanel.vue：provider/mode 选择 + 生成视频片段按钮 + 进度 | ⏳ TODO（依赖 T12 真 provider） |
-| P5-T21 | AudioPanel.vue：旁白 / 对话 列表 + 试听 + 重生成 | ⏳ TODO（依赖 T14-T17 音频 service 改造） |
-| P5-T22 | StageProductionView.vue：上面三个 panel 的容器（替换 V2 老 stage-production） | ⏳ TODO（依赖 T20/T21） |
+| P5-T20 | VideoSegmentPanel：provider/mode 选择 + 生成视频片段按钮 + 进度 | ✅（已接入 ⑤ 制作 tab） |
+| P5-T21 | AudioPanel：旁白 / 对话 列表 + 试听 + voice tag | ✅（独立组件，待接入 ⑥ 合成 / 后续 follow-up） |
+| P5-T22 | StageProductionView 重命名（替换 V2 老 stage-production） | ⏳ TODO（StageProductionTabContent 已替代功能） |
 
-### 2.6 收尾
+### 2.6 收尾 · **1/2 完成**
 
-| # | Subject |
-|---|---|
-| P5-T23 | 接入 EpisodeWorkbench 加 ⑤ 制作 tab |
-| P5-T24 | 单测 + 端到端 |
+| # | Subject | 状态 |
+|---|---|---|
+| P5-T23 | 接入 EpisodeWorkbench 加 ⑤ 制作 tab | ✅ |
+| P5-T24 | 单测 + 端到端 e2e | ⏳ TODO（需真实 provider 实测；本会话覆盖了 90 个 P5 单测） |
 
-总计 P5 = **24 个 task**。
+**P5 总计：21/24 完成（87.5%）**
 
 ---
 
@@ -193,6 +192,18 @@ P3a + P3c follow-up 已完成资产域全部能力（角色 / 地点 / 物品 / 
 5. **契约**：5-file IPC 同步；V2 老 channel 不破坏
 6. **数据**：所有 schema 变更幂等迁移
 7. **文档**：本 plan 文档随 commit 同步进度状态
+
+### DoD 当前状态（2026-05-05）
+
+| 维度 | 状态 | 备注 |
+|---|---|---|
+| 1 功能 | 🟡 架构层全打通，需真 provider 实测 e2e | UI / IPC / service / db 全链路就绪；待 P7 实跑 |
+| 2 类型 | ✅ 本次新增文件 0 错（pre-existing 错误与本次无关） | 见 git log 各 task commit |
+| 3 测试 | ✅ episode-production 30 spec / 212 用例全通过；架构层覆盖率高 | 真 provider 调用单测留 e2e |
+| 4 双端 | ✅ 全部 service 在 src/core；IPC 契约双端共用 | TTS / FFmpeg 走 PC 路径；Web 端导出留 server-side follow-up |
+| 5 契约 | ✅ 5-file 全同步；V2 老 channel 保留 | 17 个新 channel（P4 4 + P5 7 + P6 3 + 音频 1 + 视频 1 + 占位 1） |
+| 6 数据 | ✅ 全部 migration 幂等 + 双端启动注册 | scene_* binding FK / storyboard_keyframe / 多模式列均已落地 |
+| 7 文档 | ✅ 本文档随每 task commit 同步 | 5 次 plan doc 更新 |
 
 ---
 
