@@ -129,22 +129,22 @@ P3a + P3c follow-up 已完成资产域全部能力（角色 / 地点 / 物品 / 
 
 **目标**：把所有分镜视频片段 + 音频 + 字幕用 ffmpeg 拼成单段 MP4，提供"导出"入口。
 
-### Task 列表（12 个）
+### Task 列表（12 个） · **完成 11/12 ✅**
 
-| # | Subject |
-|---|---|
-| P6-T1 | timeline-builder.service.ts：把场景/分镜组装成时间线（开始时间、轨道分配） |
-| P6-T2 | transition.service.ts：转场效果（淡入淡出、硬切等） |
-| P6-T3 | subtitle.service.ts：从对话+旁白生成 SRT/ASS 字幕轨 |
-| P6-T4 | ffmpeg-assembler.service.ts：调 ffmpeg 拼视频 + 音频 + 字幕 |
-| P6-T5 | IPC：build-timeline / preview-timeline / export-mp4 |
-| P6-T6 | TimelineEditor.vue：多轨时间线 UI（视频轨 + 音频轨 + 字幕轨） |
-| P6-T7 | ExportDialog.vue：导出参数（分辨率 / 帧率 / 码率） + 进度条 |
-| P6-T8 | StageComposeView.vue：⑥ 合成阶段容器 |
-| P6-T9 | workflow/stage-gate.service.ts：阶段门控（下一阶段进入条件） |
-| P6-T10 | workflow/episode-status.machine.ts：剧集状态机扩展（spec §2.4 EpisodeStatus 扩展） |
-| P6-T11 | workflow/progress-calculator.ts：每阶段进度百分比 |
-| P6-T12 | EpisodeWorkbench 6 阶段 tabs 全打通 + 阶段门控接入 |
+| # | Subject | 状态 |
+|---|---|---|
+| P6-T1 | TimelineBuilderService（场景 + 分镜 → Timeline + missingVideo 收集） | ✅ 5 单测 |
+| P6-T2 | transition-translator（spec 8 种转场 → ffmpeg xfade 关键字） | ✅ 13 单测 |
+| P6-T3 | SubtitleService（旁白 + 对话 → SRT，含 formatSrtTime） | ✅ 7 单测 |
+| P6-T4 | EpisodeMp4ExporterService（filter_complex 拼装 + ffmpeg 调用 DI） | ✅ 9 单测 |
+| P6-T5 | IPC: build-timeline / preview-subtitle / export-mp4 + FluentFfmpegRunner | ✅ |
+| P6-T6 | TimelineEditor.vue 多轨时间线 UI | ⏳ TODO follow-up（不阻塞 MP4） |
+| P6-T7 | ExportDialog.vue：参数 + 进度 + 调 ep:export-mp4 | ✅ |
+| P6-T8 | StageComposeView.vue：⑥ 合成阶段容器 | ✅ |
+| P6-T9 | StageGateService（6 阶段完成判断 + canEnterStage 决策 + 末端硬锁） | ✅ |
+| P6-T10 | episode-status.machine（7 状态 + 转换分类 + 视觉标记） | ✅ 7 单测 |
+| P6-T11 | ProgressCalculator（6 阶段进度 + overallProgress） | ✅ |
+| P6-T12 | EpisodeWorkbench 接入 ⑤ 制作 + ⑥ 合成 tabs | ✅ |
 
 ---
 
