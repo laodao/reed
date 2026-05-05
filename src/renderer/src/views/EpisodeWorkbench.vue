@@ -1237,25 +1237,12 @@ watch(projectId, () => {
   flex-direction: column;
   overflow: hidden;
 
+  // P6-T17 follow-up: 隐藏 el-tabs 自带 header（标签栏）
+  // 因为顶部 StageProgressBar 已是唯一 navigation（spec §2.1 形态 D），
+  // el-tabs 的 tab header 视觉重复且让用户困惑（同一 stage 切换有两个入口）。
+  // el-tabs 的 v-model 切换内容能力保留，仅隐藏 header DOM。
   :deep(.el-tabs__header) {
-    margin: 0;
-    padding: 0 12px;
-    background: var(--el-bg-color);
-    height: 40px;
-    min-height: 40px;
-    flex-shrink: 0;
-  }
-
-  :deep(.el-tabs__nav-wrap),
-  :deep(.el-tabs__nav-scroll),
-  :deep(.el-tabs__nav) {
-    height: 40px;
-  }
-
-  :deep(.el-tabs__item) {
-    height: 40px;
-    line-height: 40px;
-    font-size: 13px;
+    display: none;
   }
 
   :deep(.el-tabs__content) {
