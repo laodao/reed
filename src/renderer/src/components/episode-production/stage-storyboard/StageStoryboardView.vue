@@ -165,22 +165,37 @@
         <div class="detail-section">
           <h5>
             分镜内角色 (spec §4.5.3)
-            <el-tag size="small" type="warning" round>占位</el-tag>
+            <el-tag size="small" :type="hasOverrides ? 'success' : 'info'" round>
+              {{ hasOverrides ? `${overrides.length} 项已配置` : '场景级' }}
+            </el-tag>
           </h5>
-          <p class="placeholder-note">
+          <p v-if="!hasOverrides" class="info-note">
             <el-icon><InfoFilled /></el-icon>
-            分镜内角色独立配置（站位 / 表情 / 朝向 / 动作）目前数据库表
-            <code>storyboard_characters</code> 已建但 service 未消费。
-            待 <strong>P5-T31~T34</strong> 接通后此处显示编辑入口。当前
-            关键帧生成读 <code>scene.characters</code> JSON（场景级），
-            导致同场景多分镜不能区分角色配置。
+            未配置分镜级独立角色 → 关键帧生成回退到场景级
+            <code>scene.characters</code>。点"编辑分镜内角色"为本分镜独立
+            配置（spec §4.5.3 实操示例：分镜 1.2 张三 angry 举手 / 分镜
+            1.3 李四 surprised 3q_left）。
           </p>
+          <ul v-else class="override-list">
+            <li v-for="(o, i) in overrides" :key="`o-${i}`" class="override-item">
+              <span class="o-name">{{ characterName(o.characterId) }}</span>
+              <span v-if="o.expression" class="o-attr">{{ o.expression }}</span>
+              <span v-if="o.action" class="o-attr">{{ o.action }}</span>
+              <span v-if="o.facing && o.facing !== 'front'" class="o-attr">
+                朝向 {{ o.facing }}
+              </span>
+            </li>
+          </ul>
         </div>
 
         <div class="detail-actions">
           <el-button size="small" @click="$emit('edit-storyboard', selectedStoryboard)">
             <el-icon><Edit /></el-icon>
             编辑分镜配置
+          </el-button>
+          <el-button size="small" type="warning" @click="onEditCharacters">
+            <el-icon><User /></el-icon>
+            {{ hasOverrides ? '修改' : '编辑' }}分镜内角色
           </el-button>
           <el-button
             size="small"
@@ -197,6 +212,14 @@
         <el-empty description="点击中间网格中的某个分镜查看详情" :image-size="80" />
       </div>
     </div>
+
+    <!-- P5-T33 分镜内角色编辑（spec §4.5.3） -->
+    <StoryboardCharacterEditDialog
+      v-model="charDialogVisible"
+      :storyboard-id="selectedStoryboardId"
+      :character-candidates="characterCandidates"
+      @saved="onCharactersSaved"
+    />
   </div>
 </template>
 
@@ -228,14 +251,17 @@ import {
   InfoFilled,
   Loading,
   MagicStick,
+  User,
   VideoCamera,
 } from '@element-plus/icons-vue'
 import {
+  useEpAssetStore,
   useEpProjectStore,
   useEpScriptStore,
   useEpStoryboardStore,
   useEpWorkbenchStore,
 } from '@/stores/episode-production'
+import StoryboardCharacterEditDialog from '../dialogs/StoryboardCharacterEditDialog.vue'
 import {
   getCameraAngleLabel,
   getCameraMovementLabel,
@@ -257,6 +283,7 @@ const projectStore = useEpProjectStore()
 const scriptStore = useEpScriptStore()
 const storyboardStore = useEpStoryboardStore()
 const workbenchStore = useEpWorkbenchStore()
+const assetStore = useEpAssetStore()
 
 const scenes = computed(() => scriptStore.scenes)
 const storyboards = computed(() => storyboardStore.storyboards)
@@ -266,6 +293,67 @@ const selectedSceneId = ref<string | null>(null)
 const selectedStoryboardId = ref<string | null>(null)
 const generating = ref(false)
 const generatingAll = ref(false)
+
+// P5-T33 分镜内角色编辑
+const charDialogVisible = ref(false)
+interface StoryboardCharOverride {
+  characterId: string
+  expression?: string
+  action?: string
+  facing?: string
+  position?: { x: number; y: number; scale: number }
+}
+const overrides = ref<StoryboardCharOverride[]>([])
+const hasOverrides = computed(() => overrides.value.length > 0)
+
+// 候选角色列表（来自项目级 epAssetCharacters）
+const characterCandidates = computed(() => {
+  return (assetStore.epAssetCharacters as any[]).map((c) => ({
+    id: c.id ?? c.bindingId ?? '',
+    name: c.name ?? c.standaloneName ?? c.characterName ?? '未命名',
+  }))
+})
+
+function characterName(id: string): string {
+  const cand = characterCandidates.value.find((c) => c.id === id)
+  return cand?.name ?? id.slice(0, 8)
+}
+
+async function loadStoryboardCharacters(sbId: string): Promise<void> {
+  if (!sbId) {
+    overrides.value = []
+    return
+  }
+  try {
+    const api = (window as any).electronAPI?.episodeProduction
+    if (!api?.listStoryboardCharacters) return
+    const resp = await api.listStoryboardCharacters(sbId)
+    if (resp?.success && Array.isArray(resp.data)) {
+      overrides.value = resp.data as StoryboardCharOverride[]
+    } else {
+      overrides.value = []
+    }
+  } catch {
+    overrides.value = []
+  }
+}
+
+function onEditCharacters(): void {
+  if (!selectedStoryboardId.value) return
+  charDialogVisible.value = true
+}
+
+async function onCharactersSaved(): Promise<void> {
+  if (selectedStoryboardId.value) {
+    await loadStoryboardCharacters(selectedStoryboardId.value)
+  }
+}
+
+// 选中分镜变化时 reload overrides
+watch(selectedStoryboardId, (id) => {
+  if (id) void loadStoryboardCharacters(id)
+  else overrides.value = []
+})
 
 const selectedSceneIndex = computed(() =>
   scenes.value.findIndex((s) => s.id === selectedSceneId.value),
@@ -616,23 +704,63 @@ watch(
       border-radius: 4px;
     }
 
-    .placeholder-note {
+    .placeholder-note,
+    .info-note {
       margin: 0;
       font-size: 11px;
       line-height: 1.5;
-      color: var(--el-color-warning-dark-2);
+      color: var(--el-color-info);
       padding: 8px 10px;
-      background: var(--el-color-warning-light-9);
+      background: var(--el-color-info-light-9);
       border-radius: 4px;
       display: flex;
       gap: 6px;
       align-items: flex-start;
 
       code {
-        background: var(--el-color-info-light-7);
+        background: var(--el-color-warning-light-7);
         padding: 1px 4px;
         border-radius: 2px;
         font-size: 10px;
+      }
+    }
+
+    .placeholder-note {
+      color: var(--el-color-warning-dark-2);
+      background: var(--el-color-warning-light-9);
+    }
+
+    .override-list {
+      list-style: none;
+      padding: 0;
+      margin: 4px 0 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .override-item {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      padding: 6px 8px;
+      background: var(--el-color-success-light-9);
+      border-left: 2px solid var(--el-color-success);
+      border-radius: 4px;
+      font-size: 11px;
+      align-items: center;
+
+      .o-name {
+        font-weight: 600;
+        color: var(--el-text-color-primary);
+      }
+
+      .o-attr {
+        font-size: 10px;
+        color: var(--el-text-color-secondary);
+        background: var(--el-fill-color-blank);
+        padding: 1px 4px;
+        border-radius: 2px;
       }
     }
   }
