@@ -159,6 +159,12 @@ const IPC_CHANNELS = {
   EP_VALIDATE_SCENE: 'ep:validate-scene',
   EP_VALIDATE_EPISODE_SCRIPT: 'ep:validate-episode-script',
 
+  // P5-T8 多关键帧
+  EP_GENERATE_KEYFRAMES: 'ep:generate-keyframes',
+  EP_REGENERATE_KEYFRAME: 'ep:regenerate-keyframe',
+  EP_LIST_KEYFRAMES: 'ep:list-keyframes',
+  EP_PLAN_KEYFRAME_REGEN: 'ep:plan-keyframe-regen',
+
   EP_GET_STYLE_PRESETS: 'ep:get-style-presets',
   EP_GENERATE_STORYBOARD_IMAGE: 'ep:generate-storyboard-image',
   EP_GENERATE_SCENE_IMAGES: 'ep:generate-scene-images',
@@ -1593,6 +1599,16 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.EP_VALIDATE_SCENE, sceneScriptId),
     validateEpisodeScript: (episodeScriptId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_VALIDATE_EPISODE_SCRIPT, episodeScriptId),
+
+    // P5-T8 多关键帧
+    generateKeyframes: (storyboardId: string, styleName?: string, keyframeCountOverride?: number) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_GENERATE_KEYFRAMES, storyboardId, styleName, keyframeCountOverride),
+    regenerateKeyframe: (keyframeId: string, styleName?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_REGENERATE_KEYFRAME, keyframeId, styleName),
+    listKeyframes: (storyboardId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_LIST_KEYFRAMES, storyboardId),
+    planKeyframeRegen: (changedFrameIndex: number, keyframeCount: number) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_PLAN_KEYFRAME_REGEN, changedFrameIndex, keyframeCount),
 
     // 资源生成
     getStylePresets: () =>

@@ -413,6 +413,11 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.resolveReferencesBatch': { channel: 'ep:resolve-references-batch' },
   'episodeProduction.validateScene': { channel: 'ep:validate-scene' },
   'episodeProduction.validateEpisodeScript': { channel: 'ep:validate-episode-script' },
+  // P5-T8 多关键帧
+  'episodeProduction.generateKeyframes': { channel: 'ep:generate-keyframes' },
+  'episodeProduction.regenerateKeyframe': { channel: 'ep:regenerate-keyframe' },
+  'episodeProduction.listKeyframes': { channel: 'ep:list-keyframes' },
+  'episodeProduction.planKeyframeRegen': { channel: 'ep:plan-keyframe-regen' },
   'episodeProduction.getStylePresets': { channel: 'ep:get-style-presets' },
   'episodeProduction.generateStoryboardImage': { channel: 'ep:generate-storyboard-image' },
   'episodeProduction.generateSceneImages': { channel: 'ep:generate-scene-images' },

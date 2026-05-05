@@ -11,12 +11,19 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type { CharacterBinding, Storyboard } from '@shared/types/story-to-video.types'
 import { StoryToVideoResourceService, PRESET_STYLES } from '@core/services/story-to-video-resource.service'
+import { KeyframeGenerationService } from '@core/modules/episode-production/render/keyframe/keyframe-generation.service'
+import { planRegenPropagation } from '@core/modules/episode-production/render/keyframe/keyframe-chain-strategy'
 
 export function registerKeyframeHandlers(): void {
   // ==================== 资源生成（图像） ====================
   ipcBridge.handle('ep:get-style-presets', handleGetStylePresets)
   ipcBridge.handle('ep:generate-storyboard-image', handleGenerateStoryboardImage)
   ipcBridge.handle('ep:generate-scene-images', handleGenerateSceneImages)
+  // P5-T8 多关键帧
+  ipcBridge.handle('ep:generate-keyframes', handleGenerateKeyframes)
+  ipcBridge.handle('ep:regenerate-keyframe', handleRegenerateKeyframe)
+  ipcBridge.handle('ep:list-keyframes', handleListKeyframes)
+  ipcBridge.handle('ep:plan-keyframe-regen', handlePlanKeyframeRegen)
 }
 
 // ==================== 资源生成处理器（图像） ====================
@@ -219,5 +226,85 @@ async function handleGenerateSceneImages(
     return { success: true, data: updatedStoryboards }
   } catch (error: any) {
     return { success: false, error: error.message || '批量生成场景图像失败' }
+  }
+}
+
+// ==================== P5-T8 多关键帧 ====================
+
+/**
+ * 生成单个分镜的全部关键帧（spec §4.3 链式：start → end → middle）
+ */
+async function handleGenerateKeyframes(
+  _event: any,
+  storyboardId: string,
+  styleName?: string,
+  keyframeCountOverride?: number,
+): Promise<IpcResponse> {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+    const svc = new KeyframeGenerationService(db.dataSource)
+    const data = await svc.generateKeyframesForStoryboard({
+      storyboardId,
+      styleName: styleName as any,
+      keyframeCountOverride,
+    })
+    return { success: true, data }
+  } catch (e: any) {
+    return { success: false, error: e?.message || '生成关键帧失败' }
+  }
+}
+
+/** 重生成单帧（不级联；级联由 UI 拿 plan-keyframe-regen 决定） */
+async function handleRegenerateKeyframe(
+  _event: any,
+  keyframeId: string,
+  styleName?: string,
+): Promise<IpcResponse> {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+    const svc = new KeyframeGenerationService(db.dataSource)
+    const data = await svc.regenerateKeyframe({
+      keyframeId,
+      styleName: styleName as any,
+    })
+    return { success: true, data }
+  } catch (e: any) {
+    return { success: false, error: e?.message || '重生成关键帧失败' }
+  }
+}
+
+/** 列出某分镜的全部关键帧（按 frame_index 升序） */
+async function handleListKeyframes(
+  _event: any,
+  storyboardId: string,
+): Promise<IpcResponse> {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.storyboardKeyframes) {
+      return { success: false, error: '数据库未初始化（storyboardKeyframes 仓库不可用）' }
+    }
+    const data = await db.storyboardKeyframes.listByStoryboard(storyboardId)
+    return { success: true, data }
+  } catch (e: any) {
+    return { success: false, error: e?.message || '列关键帧失败' }
+  }
+}
+
+/**
+ * 计算重生成传播范围（pure，不调 image provider）。
+ * UI 用此结果决定弹"是否级联重生成 X / Y / Z 帧"对话框。
+ */
+async function handlePlanKeyframeRegen(
+  _event: any,
+  changedFrameIndex: number,
+  keyframeCount: number,
+): Promise<IpcResponse> {
+  try {
+    const data = planRegenPropagation(changedFrameIndex, keyframeCount)
+    return { success: true, data }
+  } catch (e: any) {
+    return { success: false, error: e?.message || '计算传播范围失败' }
   }
 }
