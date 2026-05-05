@@ -22,6 +22,13 @@ export class SceneCharacterEntity {
   @Column({ name: 'character_id', type: 'varchar' })
   characterId!: string
 
+  /**
+   * 关联 character_bindings.id（spec §4.1 强约束）。null 表示老剧本未迁移。
+   * Validator (P4-T3) 要求非空才算"通过完整性检查"。
+   */
+  @Column({ name: 'character_binding_id', type: 'varchar', nullable: true })
+  characterBindingId!: string | null
+
   @Column({ name: 'character_name', type: 'varchar' })
   characterName!: string
 

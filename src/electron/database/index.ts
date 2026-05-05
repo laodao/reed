@@ -418,6 +418,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/relax-binding-lw-id-nullable'
     )
     await relaxBindingLwIdNullable(this.dataSource)
+    // P4-T1: 叙事域强约束 — scene_script/character/dialogue/action 加 binding_id FK
+    const { addNarrativeBindingFks } = await import(
+      '@core/database/migrations/add-narrative-binding-fks'
+    )
+    await addNarrativeBindingFks(this.dataSource)
   }
 
   /**

@@ -28,6 +28,13 @@ export class SceneScriptEntity {
   @Column({ name: 'location', type: 'text' })
   location!: string
 
+  /**
+   * 关联 location_bindings.id（强约束，spec §4.1）。剧本完整性 validator 要求非空。
+   * 老剧本未迁移时为 null，UI 提示用户从下拉绑定。
+   */
+  @Column({ name: 'location_binding_id', type: 'varchar', nullable: true })
+  locationBindingId!: string | null
+
   @Column({ name: 'location_type', type: 'varchar', default: 'exterior' })
   locationType!: string
 

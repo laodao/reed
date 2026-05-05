@@ -47,6 +47,7 @@ import { expandEpisodeStatus } from '@core/database/migrations/expand-episode-st
 import { stripLwImageFields } from '@core/database/migrations/strip-lw-image-fields'
 import { addStoryboardBackgroundRef } from '@core/database/migrations/add-storyboard-background-ref'
 import { relaxBindingLwIdNullable } from '@core/database/migrations/relax-binding-lw-id-nullable'
+import { addNarrativeBindingFks } from '@core/database/migrations/add-narrative-binding-fks'
 import { registerCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { LanceDBService } from '@core/services/lance-db.service'
 import { initVectorStore } from '@core/services/vector/registry'
@@ -200,6 +201,8 @@ async function initDatabase(): Promise<void> {
   await addStoryboardBackgroundRef(ds)
   // P3c follow-up #60: character/location/item bindings 的 long_writing_*_id 改 nullable
   await relaxBindingLwIdNullable(ds)
+  // P4-T1: 叙事域强约束 — scene_script/character/dialogue/action 加 binding_id FK
+  await addNarrativeBindingFks(ds)
 
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)

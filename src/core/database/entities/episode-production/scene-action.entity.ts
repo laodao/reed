@@ -23,6 +23,12 @@ export class SceneActionEntity {
   @Column({ name: 'character_id', type: 'text', nullable: true })
   characterId!: string | null
 
+  /**
+   * 关联 character_bindings.id（spec §4.1）。null 表示老剧本未迁移或动作没有特定执行者。
+   */
+  @Column({ name: 'character_binding_id', type: 'varchar', nullable: true })
+  characterBindingId!: string | null
+
   @Column({ name: 'description', type: 'text' })
   description!: string
 
