@@ -72,21 +72,27 @@
         @add-voice="onAddAsset('voice')"
       />
 
-      <!-- 中间区域 - V3 stage tab -->
+      <!-- 中间区域 - 主区域 stage 切换（P6-T17 · spec §2.1 形态 D） -->
       <div class="center-panel">
         <template v-if="episodeStore.currentEpisode">
+          <!--
+            P6-T17 主区域 stage 切换：
+            按 spec §2.1 6 stage 顺序：① 内容 / ② 资产 / ③ 剧本 / ④ 分镜 / ⑤ 制作 / ⑥ 合成
+            activeTab 类型对齐 EpisodeStatus（pending / asset_prep / scripting /
+            storyboarding / producing / composing），让顶部进度条点击直接驱动
+            主区域，不再走 tab name 字符串。
+            ① ③ ④ 三个 stage view 待 P6-T18/T19/T20 实现，目前用 StagePlaceholder
+            占位 — 不再让用户看到突然的"无 tab"或"提示弹框"，而是真实可见的占位
+            页面，明确说明"待哪个 task 实现"。
+          -->
           <el-tabs v-model="activeTab" class="editor-tabs">
-            <!--
-              【已隐藏】V2 老 4 tab（剧本 / 角色绑定 / 物品绑定 / 地点绑定）
-              理由：与新业务流程（spec §2.1 形态 D 6 stage）不匹配；功能已分别迁到
-              ② 资产 (AssetStageView) + 后续 ③ 剧本 stage (P6-T19) + ④ 分镜 stage
-              (P6-T20) + ⑤ 制作 (StageProductionTabContent)。
-              彻底删除时机：P6-T17 主区域 stage 切换框架完成 + P6-T19/T20 新 stage
-              view 完成 + P6-T21 数据迁移验证后。届时一并移除 import 与 dialog 依赖。
-            -->
+            <!-- ① 内容 -->
+            <el-tab-pane label="① 内容" name="pending">
+              <StagePlaceholder stage="pending" @jump-to="(s) => (activeTab = s)" />
+            </el-tab-pane>
 
-            <!-- ② 资产（P3a Task 11 · 新版资产盘点页 + Task 12/13/14 角色 / 地点 / 物品 / 语音 编辑器） -->
-            <el-tab-pane label="② 资产" name="asset-v2">
+            <!-- ② 资产 -->
+            <el-tab-pane label="② 资产" name="asset_prep">
               <AssetStageView
                 v-if="!selectedAsset"
                 :project-id="projectId"
@@ -122,15 +128,25 @@
               />
             </el-tab-pane>
 
-            <!-- ⑤ 制作（P5-T23 · 多关键帧 + 重生成） -->
-            <el-tab-pane label="⑤ 制作" name="production">
+            <!-- ③ 剧本 -->
+            <el-tab-pane label="③ 剧本" name="scripting">
+              <StagePlaceholder stage="scripting" @jump-to="(s) => (activeTab = s)" />
+            </el-tab-pane>
+
+            <!-- ④ 分镜 -->
+            <el-tab-pane label="④ 分镜" name="storyboarding">
+              <StagePlaceholder stage="storyboarding" @jump-to="(s) => (activeTab = s)" />
+            </el-tab-pane>
+
+            <!-- ⑤ 制作 -->
+            <el-tab-pane label="⑤ 制作" name="producing">
               <StageProductionTabContent
                 :storyboards="productionStoryboards"
               />
             </el-tab-pane>
 
-            <!-- ⑥ 合成（P6-T8/T12 · 整剧导出 MP4） -->
-            <el-tab-pane label="⑥ 合成" name="compose">
+            <!-- ⑥ 合成 -->
+            <el-tab-pane label="⑥ 合成" name="composing">
               <StageComposeView
                 :episode-script-id="scriptStore.currentScript?.id ?? null"
                 :project-id="projectId"
@@ -319,6 +335,8 @@ import StageProgressBar from '@/components/episode-production/workbench/StagePro
 import AssetSidebar from '@/components/episode-production/workbench/AssetSidebar.vue'
 // P6-T15 底部迷你时间线（spec §2.1 第 420-421 行）
 import BottomTimeline from '@/components/episode-production/workbench/BottomTimeline.vue'
+// P6-T17 stage 占位组件（① 内容 / ③ 剧本 / ④ 分镜 待实现 stage view）
+import StagePlaceholder from '@/components/episode-production/workbench/StagePlaceholder.vue'
 import type { EpisodeStatus, VideoEpisode as _VE } from '../../../shared/types/episode-production'
 // V2 老 tab（剧本 / 角色绑定 / 物品绑定 / 地点绑定）已从 template 移除
 // import 也跟着删除；P6-T19/T20 新 stage view 完成后会彻底删源文件
@@ -363,46 +381,38 @@ const composeStore = useEpComposeStore()
 const tabsStore = useTabsStore()
 
 const projectId = computed(() => route.params.projectId as string)
-// V2 老 tab 已隐藏；默认 ② 资产（新流程起点，P6-T18 ① 内容 stage 完成后改为 'pending'）
-const activeTab = ref('asset-v2')
+
+/**
+ * P6-T17 主区域 stage state — 类型对齐 EpisodeStatus（不含 completed 终态）。
+ *
+ * 6 个值：
+ *   pending（① 内容） / asset_prep（② 资产） / scripting（③ 剧本）
+ *   storyboarding（④ 分镜） / producing（⑤ 制作） / composing（⑥ 合成）
+ *
+ * 顶部进度条点击 → 直接 set activeTab.value = status（之前还要做字符串映射）
+ * el-tabs 的 v-model 接收同样的 string，pane 的 name 与之对应。
+ *
+ * 默认 'asset_prep'（① 内容 stage view 是占位，不强制把用户拉过去）；
+ * P6-T18 ① 内容 stage view 实现后默认改 'pending' 或按 episode.status 智能选。
+ */
+type WorkbenchStage = Exclude<EpisodeStatus, 'completed'>
+const activeTab = ref<WorkbenchStage>('asset_prep')
 
 // P6-T13 顶部进度条引用（用于剧集状态变化后主动 reload）
 const progressBarRef = ref<{ reload: () => Promise<void> } | null>(null)
 
 /**
- * P6-T13 顶部进度条点击 → 跳到对应 tab / 提示。
+ * P6-T13 顶部进度条点击 → 切到对应 stage tab。
  *
- * 当前 V2 老 tab 已隐藏，V3 新 stage view 部分尚未实现：
- *   - ① 内容 → P6-T18 待实现，提示
- *   - ② 资产 → 'asset-v2' tab（已可用）
- *   - ③ 剧本 → P6-T19 待实现，提示
- *   - ④ 分镜 → P6-T20 待实现，提示
- *   - ⑤ 制作 → 'production' tab（已可用）
- *   - ⑥ 合成 → 'compose' tab（已可用）
- *
- * 真正的 6 stage 主区域切换框架由 P6-T17 实现，届时本函数和 activeTab 一起重构。
+ * P6-T17 重构后：tab name 与 EpisodeStatus 对齐，无需字符串映射。
+ * completed 终态 stage 提示"剧集已完成"，其他 6 个 stage 直接 set activeTab。
  */
 function onNavigateStage(status: EpisodeStatus): void {
-  const map: Partial<Record<EpisodeStatus, string>> = {
-    asset_prep: 'asset-v2',
-    producing: 'production',
-    composing: 'compose',
-  }
-  const target = map[status]
-  if (target) {
-    activeTab.value = target
+  if (status === 'completed') {
+    ElMessage.info('剧集已完成')
     return
   }
-  const todoMap: Partial<Record<EpisodeStatus, string>> = {
-    pending: '① 内容 stage 待 P6-T18 实现',
-    scripting: '③ 剧本 stage 待 P6-T19 实现',
-    storyboarding: '④ 分镜 stage 待 P6-T20 实现',
-  }
-  if (todoMap[status]) {
-    ElMessage.info(todoMap[status])
-  } else if (status === 'completed') {
-    ElMessage.info('剧集已完成')
-  }
+  activeTab.value = status
 }
 
 /**
@@ -418,7 +428,7 @@ async function onEpisodeSelectChange(episodeId: string): Promise<void> {
  * P6-T14 左侧资产侧栏点击单条资产 → 跳到 ② 资产 tab + 打开对应 editor。
  */
 function onOpenAsset(kind: 'character' | 'location' | 'item' | 'voice', id: string): void {
-  activeTab.value = 'asset-v2'
+  activeTab.value = 'asset_prep'
   selectedAsset.value = { type: kind, id }
 }
 
@@ -429,7 +439,7 @@ function onOpenAsset(kind: 'character' | 'location' | 'item' | 'voice', id: stri
  * 后续 P6 follow-up 时再让 AssetStageView 暴露 addX 入口。
  */
 function onAddAsset(kind: 'character' | 'location' | 'item' | 'voice'): void {
-  activeTab.value = 'asset-v2'
+  activeTab.value = 'asset_prep'
   selectedAsset.value = null
   ElMessage.info(`${kind === 'voice' ? '语音' : kind === 'item' ? '物品' : kind === 'location' ? '地点' : '角色'}添加入口在 ② 资产 stage 中（待 P6 follow-up 接入）`)
 }
@@ -442,7 +452,7 @@ function onAddAsset(kind: 'character' | 'location' | 'item' | 'voice'): void {
  * 持久化 + 视频播放器组件）。
  */
 function onPreviewEpisode(): void {
-  activeTab.value = 'compose'
+  activeTab.value = 'composing'
   ElMessage.info('已跳到 ⑥ 合成 stage — 请点"导出 MP4"获得最新成片')
 }
 
@@ -454,7 +464,7 @@ function onPreviewEpisode(): void {
  */
 function onSelectStoryboard(storyboardId: string): void {
   void storyboardId // 保留参数；P6 后续传给 StageProductionTabContent
-  activeTab.value = 'production'
+  activeTab.value = 'producing'
 }
 
 /** P5-T23：⑤ 制作 tab 用的分镜列表（精简映射 + keyframeCount 透传） */
