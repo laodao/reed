@@ -27,6 +27,7 @@ import { EpisodeScriptEntity } from '@core/database/entities/episode-production/
 import { VideoEpisodeEntity } from '@core/database/entities/episode-production/video-episode.entity'
 import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
 import { StoryboardKeyframeEntity } from '@core/database/entities/episode-production/storyboard-keyframe.entity'
+import { StoryboardCharacterEntity } from '@core/database/entities/episode-production/storyboard-character.entity'
 import { ImageAssetEntity } from '@core/database/entities/image-asset.entity'
 import { KeyframeGenerationService } from '@core/modules/episode-production/render/keyframe/keyframe-generation.service'
 import { ImageAssetRepository } from '@core/database/repositories/image-asset.repository'
@@ -49,6 +50,7 @@ async function buildDb(): Promise<DataSource> {
       VideoEpisodeEntity,
       StoryboardEntity,
       StoryboardKeyframeEntity,
+      StoryboardCharacterEntity,
       ImageAssetEntity,
     ],
     synchronize: true,
@@ -318,5 +320,61 @@ describe('KeyframeGenerationService', () => {
     })
     expect(result).toHaveLength(2)
     expect(result.map((k) => k.frameRole)).toEqual(['start', 'end'])
+  })
+
+  /**
+   * P5-T31 spec §4.5.3：storyboard_characters 表有数据时优先用分镜级
+   * 配置（覆盖 scene.characters JSON 的场景级配置）。
+   *
+   * 验证：seedScene 写 scene.characters=[{cb1, expression='neutral'}]，
+   * 同时往 storyboard_characters 表写 {storyboardId=sbId, characterId=cb1,
+   * expression='angry'} → 生成的 prompt 应含 'angry'，不含 'neutral'。
+   */
+  it('P5-T31 spec §4.5.3：storyboard_characters 表存在时覆盖 scene 级', async () => {
+    const { sbId } = await seedScene(ds)
+
+    // 在 storyboard_characters 表写分镜级独立配置（angry 表情）
+    await ds.getRepository(StoryboardCharacterEntity).save({
+      id: 'sbc1',
+      storyboardId: sbId,
+      characterId: 'cb1',
+      positionX: 50,
+      positionY: 50,
+      positionScale: 1.0,
+      expression: 'angry',
+      action: '怒指对方',
+      facing: 'front',
+      sortOrder: 0,
+    })
+
+    const result = await svc.generateKeyframesForStoryboard({
+      storyboardId: sbId,
+      keyframeCountOverride: 1,
+    })
+    expect(result).toHaveLength(1)
+    const prompt = result[0].prompt ?? ''
+    expect(prompt).toContain('angry')
+    expect(prompt).toContain('怒指对方')
+    expect(prompt).not.toContain('neutral') // scene 级 expression 不应进入
+  })
+
+  /**
+   * P5-T31 回退兜底：storyboard_characters 表无数据时走 scene.characters JSON。
+   */
+  it('P5-T31 兜底：storyboard_characters 空时回退到 scene.characters JSON', async () => {
+    const { sbId } = await seedScene(ds)
+    // 不往 storyboard_characters 写 → 走回退路径
+
+    const result = await svc.generateKeyframesForStoryboard({
+      storyboardId: sbId,
+      keyframeCountOverride: 1,
+    })
+    expect(result).toHaveLength(1)
+    const prompt = result[0].prompt ?? ''
+    // seedScene 在 scene.characters 写了 expression='凝重' + action='推门'
+    expect(prompt).toContain('凝重')
+    expect(prompt).toContain('推门')
+    // 验证没有"angry"（覆盖测试中分镜级用 angry，本测试不写分镜级所以不应该出现）
+    expect(prompt).not.toContain('angry')
   })
 })

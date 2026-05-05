@@ -34,6 +34,7 @@ import {
   StoryboardKeyframeRepository,
   type StoryboardKeyframe,
 } from '@core/database/repositories/storyboard-keyframe.repository'
+import { StoryboardCharacterRepository } from '@core/database/repositories/storyboard-character.repository'
 import { ImageAssetRepository } from '@core/database/repositories/image-asset.repository'
 import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
 import { ReferenceResolver } from '@core/modules/episode-production/narrative/reference-resolver'
@@ -57,6 +58,23 @@ import type { SceneCharacter } from '@shared/types/episode-production'
 const DEFAULT_KEYFRAME_WIDTH = 1024
 const DEFAULT_KEYFRAME_HEIGHT = 1024
 
+/**
+ * P5-T31：把 storyboard_characters 表的 position { x, y, scale } 映射回
+ * 字符串（spec §4.5.3 character 配置语义：left/center/right + 缩放）。
+ *
+ * 关键帧 prompt-builder 期待 sceneRole.position 是字符串描述。
+ */
+function positionToString(
+  pos: { x: number; y: number; scale: number } | undefined,
+): string | null {
+  if (!pos) return null
+  const x = pos.x
+  const horizontal = x < 33 ? 'left' : x > 66 ? 'right' : 'center'
+  const scaleHint =
+    pos.scale > 1.2 ? ' close-up' : pos.scale < 0.8 ? ' distant' : ''
+  return `${horizontal}${scaleHint}`
+}
+
 export interface GenerateKeyframesInput {
   storyboardId: string
   /** 风格预设 key，默认 cinematic */
@@ -75,6 +93,7 @@ export interface RegenerateKeyframeInput {
  */
 export class KeyframeGenerationService {
   private readonly keyframeRepo: StoryboardKeyframeRepository
+  private readonly sbCharRepo: StoryboardCharacterRepository
   private readonly imageAssetRepo: ImageAssetRepository
   private readonly resolver: ReferenceResolver
   private readonly imageSvc: AssetImageService
@@ -85,6 +104,7 @@ export class KeyframeGenerationService {
     imageGenerator?: ImageGenerator,
   ) {
     this.keyframeRepo = new StoryboardKeyframeRepository(ds)
+    this.sbCharRepo = new StoryboardCharacterRepository(ds)
     this.imageAssetRepo = new ImageAssetRepository(ds)
     this.resolver = new ReferenceResolver(ds)
     this.imageSvc = new AssetImageService(ds)
@@ -116,7 +136,9 @@ export class KeyframeGenerationService {
     const plan = planKeyframes(keyframeCount)
 
     // 解析场景资产（一次性，生成所有帧时复用）
-    const sceneAssets = await this.resolveSceneAssets(scene)
+    // P5-T31：传 storyboardId 让 resolveSceneAssets 优先查 storyboard_characters
+    // 表（spec §4.5.3 分镜内角色独立配置）
+    const sceneAssets = await this.resolveSceneAssets(scene, sb.id)
 
     // 清掉旧的 keyframe（重新生成全量）
     await this.keyframeRepo.deleteByStoryboard(sb.id)
@@ -147,7 +169,8 @@ export class KeyframeGenerationService {
     if (!scene) throw new Error(`SceneScript not found: ${sb.sceneScriptId}`)
 
     const styleConfig = this.pickStyle(input.styleName)
-    const sceneAssets = await this.resolveSceneAssets(scene)
+    // P5-T31：传 storyboardId（同 generateKeyframesForStoryboard 路径）
+    const sceneAssets = await this.resolveSceneAssets(scene, sb.id)
 
     const keyframeCount = Math.max(1, sb.keyframeCount ?? 3)
     const plan = planKeyframes(keyframeCount)
@@ -180,13 +203,26 @@ export class KeyframeGenerationService {
     return PRESET_STYLES[name ?? 'cinematic'] ?? PRESET_STYLES.cinematic
   }
 
-  /** 解析场景所有资产引用（chars / location / items）一次，逐帧复用 */
-  private async resolveSceneAssets(scene: SceneScriptEntity): Promise<{
+  /**
+   * 解析场景资产引用（chars / location / items）一次，逐帧复用。
+   *
+   * P5-T31（spec §4.5.3 分镜内角色独立配置）：
+   *   - 优先查 storyboard_characters 表（分镜级独立配置：position/expression/
+   *     facing/action）→ 用之
+   *   - 回退到 scene.characters JSON（V2 兼容；旧剧本走这条）
+   *
+   * 这样同场景多分镜可以有不同 expression/action（spec §4.5.9 实操示例）。
+   */
+  private async resolveSceneAssets(
+    scene: SceneScriptEntity,
+    storyboardId: string,
+  ): Promise<{
     characters: Array<ResolvedCharacterRef>
     location: ResolvedLocationRef | null
     items: ResolvedItemRef[]
   }> {
-    // location
+    // location（spec §4.5.2 一场景多分镜共享地点；本 task 不接 angle 变体，
+    // location 仍是场景级；spec §4.5.7 提到的"分镜级 angle 选取"留 follow-up）
     let location: ResolvedLocationRef | null = null
     if (scene.locationBindingId) {
       const r = await this.resolver.resolveLocation(scene.locationBindingId)
@@ -195,28 +231,53 @@ export class KeyframeGenerationService {
       }
     }
 
-    // characters：从 scene.characters JSON（V2 兼容）按 binding 解析
-    const chars = (scene.characters as SceneCharacter[] | null) ?? []
+    // characters：先查分镜级 storyboard_characters 表
+    const sbChars = await this.sbCharRepo.getByStoryboardId(storyboardId)
     const characters: ResolvedCharacterRef[] = []
-    for (const sc of chars) {
-      if (!sc.characterBindingId) continue
-      const r = await this.resolver.resolveCharacter(sc.characterBindingId)
-      if (!r) continue
-      characters.push({
-        bindingId: r.bindingId,
-        effective: r.effective,
-        sceneRole: {
-          expression: sc.expression ?? null,
-          action: sc.action ?? null,
-          outfit: sc.outfit ?? null,
-          position: sc.position ?? null,
-        },
-      })
+
+    if (sbChars.length > 0) {
+      // 分镜级独立配置存在 → 用之（spec §4.5.3）
+      for (const sc of sbChars) {
+        const r = await this.resolver.resolveCharacter(sc.characterId)
+        if (!r) continue
+        characters.push({
+          bindingId: r.bindingId,
+          effective: r.effective,
+          sceneRole: {
+            expression: sc.expression ?? null,
+            action: sc.action ?? null,
+            outfit: null, // storyboard_characters 暂不含 outfit；可走角色 effective.outfit
+            position: positionToString(sc.position),
+            facing: sc.facing ?? null,
+          } as any,
+        })
+      }
+    } else {
+      // 回退：分镜级未配置 → 用场景级 scene.characters JSON
+      const sceneChars = (scene.characters as SceneCharacter[] | null) ?? []
+      for (const sc of sceneChars) {
+        if (!sc.characterBindingId) continue
+        const r = await this.resolver.resolveCharacter(sc.characterBindingId)
+        if (!r) continue
+        characters.push({
+          bindingId: r.bindingId,
+          effective: r.effective,
+          sceneRole: {
+            expression: sc.expression ?? null,
+            action: sc.action ?? null,
+            outfit: sc.outfit ?? null,
+            position: sc.position ?? null,
+          },
+        })
+      }
     }
 
     // items：从 scene.characters[*].props 合成（spec §4.1 道具挂在角色身上）
+    // 分镜级独立 props 暂不在 storyboard_characters entity 字段范围；留 follow-up
+    const sceneCharsForItems =
+      (scene.characters as SceneCharacter[] | null) ?? []
     const items: ResolvedItemRef[] = []
-    for (const sc of chars) {
+    for (const sc of sceneCharsForItems) {
       const props = sc.props ?? []
       for (const p of props) {
         if (typeof p === 'string') continue
