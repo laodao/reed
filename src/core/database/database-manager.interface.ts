@@ -74,6 +74,7 @@ import type { SceneScriptRepository } from './repositories/scene-script.reposito
 import type { SearchEngineConfigRepository } from './repositories/search-engine-config.repository'
 import type { SettingsRepository } from './repositories/settings.repository'
 import type { StoryboardCharacterRepository } from './repositories/storyboard-character.repository'
+import type { StoryboardKeyframeRepository } from './repositories/storyboard-keyframe.repository'
 import type { StoryboardRepository } from './repositories/storyboard.repository'
 import type { TranslationRepository } from './repositories/translation.repository'
 import type { VideoEpisodeRepository } from './repositories/video-episode.repository'
@@ -181,6 +182,8 @@ export interface ICoreDatabaseManager {
   sceneDialogues: SceneDialogueRepository | null
   sceneActions: SceneActionRepository | null
   storyboardCharacters: StoryboardCharacterRepository | null
+  /** P5-T3：分镜关键帧（spec §4.2）— 一个 storyboard 含 N 张 keyframe */
+  storyboardKeyframes: StoryboardKeyframeRepository | null
   imageAssets: ImageAssetRepository | null
   assetImage: AssetImageRepository | null
 }

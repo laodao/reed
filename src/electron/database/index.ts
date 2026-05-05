@@ -77,6 +77,7 @@ import { SceneCharacterRepository } from '@core/database/repositories/scene-char
 import { SceneDialogueRepository } from '@core/database/repositories/scene-dialogue.repository'
 import { SceneActionRepository } from '@core/database/repositories/scene-action.repository'
 import { StoryboardCharacterRepository } from '@core/database/repositories/storyboard-character.repository'
+import { StoryboardKeyframeRepository } from '@core/database/repositories/storyboard-keyframe.repository'
 import { ImageAssetRepository } from '@core/database/repositories/image-asset.repository'
 import { OSSConfigRepository } from '@core/database/repositories/oss-config.repository'
 import { DataPathService } from '../services/data-path.service'
@@ -187,6 +188,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public sceneDialogues: SceneDialogueRepository | null = null
   public sceneActions: SceneActionRepository | null = null
   public storyboardCharacters: StoryboardCharacterRepository | null = null
+  public storyboardKeyframes: StoryboardKeyframeRepository | null = null
   public imageAssets: ImageAssetRepository | null = null
 
   // OSS 配置仓库
@@ -3868,6 +3870,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.sceneDialogues = new SceneDialogueRepository(this.dataSource)
     this.sceneActions = new SceneActionRepository(this.dataSource)
     this.storyboardCharacters = new StoryboardCharacterRepository(this.dataSource)
+    this.storyboardKeyframes = new StoryboardKeyframeRepository(this.dataSource)
     this.imageAssets = new ImageAssetRepository(this.dataSource)
 
     // 初始化 OSS 配置仓库（表通过 Repository.initTable 创建，非 initTables 流程）

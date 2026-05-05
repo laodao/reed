@@ -76,6 +76,7 @@ import { SceneCharacterRepository } from '@core/database/repositories/scene-char
 import { SceneDialogueRepository } from '@core/database/repositories/scene-dialogue.repository'
 import { SceneActionRepository } from '@core/database/repositories/scene-action.repository'
 import { StoryboardCharacterRepository } from '@core/database/repositories/storyboard-character.repository'
+import { StoryboardKeyframeRepository } from '@core/database/repositories/storyboard-keyframe.repository'
 import { ImageAssetRepository } from '@core/database/repositories/image-asset.repository'
 import { OSSConfigRepository } from '@core/database/repositories/oss-config.repository'
 import { AssetImageRepository } from '@core/database/repositories/asset-image.repository'
@@ -162,6 +163,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   sceneDialogues: SceneDialogueRepository | null
   sceneActions: SceneActionRepository | null
   storyboardCharacters: StoryboardCharacterRepository | null
+  storyboardKeyframes: StoryboardKeyframeRepository | null
   imageAssets: ImageAssetRepository | null
   assetImage: AssetImageRepository | null
 
@@ -245,6 +247,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.sceneDialogues = new SceneDialogueRepository(ds)
     this.sceneActions = new SceneActionRepository(ds)
     this.storyboardCharacters = new StoryboardCharacterRepository(ds)
+    this.storyboardKeyframes = new StoryboardKeyframeRepository(ds)
     this.imageAssets = new ImageAssetRepository(ds)
     this.assetImage = new AssetImageRepository(ds)
   }
