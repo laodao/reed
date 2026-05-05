@@ -278,7 +278,8 @@
       "Bash(PGDATABASE=the_bot_test bash scripts/web.sh restart server)",
       "Bash(PGDATABASE=the_bot_test bash scripts/web.sh restart all)",
       "Bash(curl -s -c - -b /dev/null -X POST http://localhost:4201/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"test@local.dev\",\"password\":\"test123456\"}')",
-      "Bash(curl -s -X POST http://localhost:4201/api/ipc/ep:asset:image:generate-main -b tb_session_dev=__CMDSUB_OUTPUT__)"
+      "Bash(curl -s -X POST http://localhost:4201/api/ipc/ep:asset:image:generate-main -b tb_session_dev=__CMDSUB_OUTPUT__)",
+      "Bash(VECTOR_STORE=pgvector PGDATABASE=the_bot_test bash scripts/web.sh restart server)"
     ]
   }
 }

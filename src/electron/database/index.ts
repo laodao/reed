@@ -425,12 +425,13 @@ export class DatabaseManager implements ICoreDatabaseManager {
    */
   private async initializeLanceDB(dataPath: string): Promise<void> {
     try {
-      const lanceDB = LanceDBService.getInstance()
-      await lanceDB.initialize(dataPath)
-      console.log('[DatabaseManager] LanceDB 初始化完成')
+      const { initVectorStore } = await import('@core/services/vector/registry')
+      // PC 端永远走 LanceDB（无 pgvector 选择，离线优先）
+      await initVectorStore({ mode: 'lance', dataPath })
+      console.log('[DatabaseManager] LanceDB 向量库初始化完成')
     } catch (error: any) {
-      console.error('[DatabaseManager] LanceDB 初始化失败:', error)
-      // LanceDB 初始化失败不影响主数据库功能
+      console.error('[DatabaseManager] 向量库初始化失败:', error)
+      // 向量库初始化失败不影响主数据库功能（KB 检索会降级抛错）
     }
   }
 

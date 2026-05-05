@@ -49,6 +49,8 @@ import { addStoryboardBackgroundRef } from '@core/database/migrations/add-storyb
 import { relaxBindingLwIdNullable } from '@core/database/migrations/relax-binding-lw-id-nullable'
 import { registerCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { LanceDBService } from '@core/services/lance-db.service'
+import { initVectorStore } from '@core/services/vector/registry'
+import { ensurePgvectorKbVectors } from '@core/database/migrations/ensure-pgvector-kb-vectors'
 import { registerAllWebChannels } from './api/register-channels'
 
 interface ServerConfig {
@@ -109,8 +111,8 @@ async function bootstrap(): Promise<void> {
   // 2. 单 PG DataSource（多租户行级隔离：user_id 列 + BaseRepository ALS 注入）
   await initDatabase()
 
-  // 3. LanceDB（与 Electron 等价）
-  await initLanceDB(cfg.rootDataPath)
+  // 3. 向量库（VECTOR_STORE=pgvector → PgVectorStore，否则 LanceDB 兜底）
+  await initWebVectorStore(cfg.rootDataPath)
 
   // 4. 注册 IPC channel 处理器
   await registerAllWebChannels()
@@ -205,19 +207,46 @@ async function initDatabase(): Promise<void> {
 }
 
 /**
- * LanceDB 向量库（与 Electron 等价）。多租户在 chunk 表里按 knowledge_base_id 隔离，
- * KB 自身已带 user_id，天然安全。
+ * 向量库初始化（plan 2026-05-03 web-vector-store-pgvector-migration）：
+ * - VECTOR_STORE=pgvector：先跑 ensurePgvectorKbVectors 迁移建表 / 索引，
+ *   再注册 PgVectorStore（halfvec(8192) + HNSW），Web 容器可水平扩展（无本地 lancedb 状态）
+ * - 默认 / VECTOR_STORE=lance：仍用 LanceDBService 本地实现（向后兼容旧 staging）
+ *
+ * 任意一个失败都不阻塞 web-server 启动 —— KB 向量功能会降级（搜索抛错），
+ * 其他业务（chat / 项目 / 资产）不受影响。
  */
-async function initLanceDB(rootDataPath: string): Promise<void> {
+async function initWebVectorStore(rootDataPath: string): Promise<void> {
+  const mode = process.env.VECTOR_STORE === 'pgvector' ? 'pgvector' : 'lance'
   try {
+    if (mode === 'pgvector') {
+      const { getCoreDatabaseManager } = await import(
+        '@core/database/database-manager.interface'
+      )
+      const ds = getCoreDatabaseManager().dataSource
+      if (!ds) throw new Error('PG DataSource 尚未初始化')
+      await ensurePgvectorKbVectors(ds)
+      await initVectorStore({ mode: 'pgvector' })
+      // 标识全局已切换（其他模块如有自检逻辑可读此 flag）
+      ;(globalThis as any).__VECTOR_STORE__ = 'pgvector'
+      console.log('[web-server] VECTOR_STORE=pgvector 初始化完成')
+      return
+    }
+    // lance 模式（默认 / 向后兼容）
     const lancePath = path.join(rootDataPath, 'lancedb')
     if (!fs.existsSync(lancePath)) fs.mkdirSync(lancePath, { recursive: true })
-    await LanceDBService.getInstance().initialize(lancePath)
-    console.log('[web-server] LanceDB 初始化完成')
+    await initVectorStore({ mode: 'lance', dataPath: lancePath })
+    ;(globalThis as any).__VECTOR_STORE__ = 'lance'
+    console.log('[web-server] LanceDB 向量库初始化完成')
   } catch (e) {
-    console.error('[web-server] LanceDB 初始化失败（KB 向量功能将不可用）:', e)
+    console.error(
+      `[web-server] 向量库初始化失败（mode=${mode}，KB 向量功能将不可用）:`,
+      e,
+    )
   }
 }
+
+// LanceDBService 仍保留 import 让 tsx 不抛 unused（PC 端继续用，dev hot-reload 安全）
+void LanceDBService
 
 bootstrap().catch((err) => {
   console.error('[web-server] 启动失败:', err)
