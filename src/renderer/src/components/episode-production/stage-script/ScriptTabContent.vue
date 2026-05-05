@@ -51,6 +51,13 @@
         </div>
       </div>
 
+      <!-- P4-T9 接入：剧本完整性面板（spec §4.1 强约束） -->
+      <ScriptCompletenessPanel
+        v-if="scriptStore.currentScript"
+        :episode-script-id="scriptStore.currentScript.id"
+        @jump-to-scene="onJumpToScene"
+      />
+
       <div class="script-content-body">
         <template v-if="scriptStore.currentScript?.scriptContent">
           <div
@@ -117,6 +124,7 @@ import {
   useEpStoryboardStore
 } from '@/stores/episode-production'
 import type { SceneScript } from '../../../../../shared/types/story-to-video.types'
+import ScriptCompletenessPanel from './ScriptCompletenessPanel.vue'
 
 const props = defineProps<{
   projectId: string
@@ -362,6 +370,18 @@ function escapeHtml(text: string): string {
   const div = document.createElement('div')
   div.textContent = text
   return div.innerHTML
+}
+
+/**
+ * P4-T9：完整性面板"跳转到场景"事件 → 按 sceneScriptId 找索引并滚动
+ */
+function onJumpToScene(sceneScriptId: string): void {
+  const index = scriptStore.scenes.findIndex((s) => s.id === sceneScriptId)
+  if (index >= 0) {
+    scrollToScene(index)
+  } else {
+    ElMessage.warning('未找到对应场景，请先刷新或重新校验')
+  }
 }
 
 /**
