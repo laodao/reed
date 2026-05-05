@@ -130,6 +130,13 @@
                 @saved="onAssetSaved"
               />
             </el-tab-pane>
+
+            <!-- ⑤ 制作（P5-T23 · 多关键帧 + 重生成） -->
+            <el-tab-pane label="⑤ 制作" name="production">
+              <StageProductionTabContent
+                :storyboards="productionStoryboards"
+              />
+            </el-tab-pane>
           </el-tabs>
         </template>
 
@@ -380,6 +387,7 @@ import { buildOutlineTree, type OutlineTreeNode } from '@/components/episode-pro
 
 // Tab 内容组件
 import ScriptTabContent from '@/components/episode-production/stage-script/ScriptTabContent.vue'
+import StageProductionTabContent from '@/components/episode-production/stage-production/StageProductionTabContent.vue'
 import CharacterBindingTabContent from '@/components/episode-production/stage-asset/character/CharacterBindingTabContent.vue'
 import ItemBindingTabContent from '@/components/episode-production/stage-asset/item/ItemBindingTabContent.vue'
 import LocationBindingTabContent from '@/components/episode-production/stage-asset/location/LocationBindingTabContent.vue'
@@ -425,6 +433,16 @@ const tabsStore = useTabsStore()
 
 const projectId = computed(() => route.params.projectId as string)
 const activeTab = ref('script')
+
+/** P5-T23：⑤ 制作 tab 用的分镜列表（精简映射 + keyframeCount 透传） */
+const productionStoryboards = computed(() =>
+  storyboardStore.storyboards.map((s: any) => ({
+    id: s.id,
+    shotNumber: s.shotNumber,
+    frameDescription: s.frameDescription,
+    keyframeCount: s.keyframeCount ?? 3,
+  })),
+)
 
 // ===== 数据状态 =====
 
