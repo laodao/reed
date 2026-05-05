@@ -165,6 +165,11 @@ const IPC_CHANNELS = {
   EP_LIST_KEYFRAMES: 'ep:list-keyframes',
   EP_PLAN_KEYFRAME_REGEN: 'ep:plan-keyframe-regen',
 
+  // P5-T13 视频片段 + provider 列表
+  EP_LIST_VIDEO_PROVIDERS: 'ep:list-video-providers',
+  EP_GET_PROVIDER_CAPABILITIES: 'ep:get-provider-capabilities',
+  EP_GENERATE_VIDEO_SEGMENT: 'ep:generate-video-segment',
+
   EP_GET_STYLE_PRESETS: 'ep:get-style-presets',
   EP_GENERATE_STORYBOARD_IMAGE: 'ep:generate-storyboard-image',
   EP_GENERATE_SCENE_IMAGES: 'ep:generate-scene-images',
@@ -1609,6 +1614,14 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.EP_LIST_KEYFRAMES, storyboardId),
     planKeyframeRegen: (changedFrameIndex: number, keyframeCount: number) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_PLAN_KEYFRAME_REGEN, changedFrameIndex, keyframeCount),
+
+    // P5-T13 视频片段
+    listVideoProviders: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_LIST_VIDEO_PROVIDERS),
+    getProviderCapabilities: (providerType: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_GET_PROVIDER_CAPABILITIES, providerType),
+    generateVideoSegment: (storyboardId: string, opts?: any) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_GENERATE_VIDEO_SEGMENT, storyboardId, opts),
 
     // 资源生成
     getStylePresets: () =>

@@ -418,6 +418,10 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.regenerateKeyframe': { channel: 'ep:regenerate-keyframe' },
   'episodeProduction.listKeyframes': { channel: 'ep:list-keyframes' },
   'episodeProduction.planKeyframeRegen': { channel: 'ep:plan-keyframe-regen' },
+  // P5-T13 视频片段
+  'episodeProduction.listVideoProviders': { channel: 'ep:list-video-providers' },
+  'episodeProduction.getProviderCapabilities': { channel: 'ep:get-provider-capabilities' },
+  'episodeProduction.generateVideoSegment': { channel: 'ep:generate-video-segment' },
   'episodeProduction.getStylePresets': { channel: 'ep:get-style-presets' },
   'episodeProduction.generateStoryboardImage': { channel: 'ep:generate-storyboard-image' },
   'episodeProduction.generateSceneImages': { channel: 'ep:generate-scene-images' },
