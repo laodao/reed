@@ -11,6 +11,7 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type { SceneScript } from '@shared/types/story-to-video.types'
 import { StoryToVideoAIService } from '@core/services/story-to-video-ai.service'
+import { buildAssetRosterForProject } from '@core/modules/episode-production/narrative/asset-roster-builder'
 
 export function registerScriptHandlers(): void {
   // ==================== 剧本管理 ====================
@@ -169,14 +170,12 @@ async function handleGenerateScript(
     }
 
     let chapterContent = ''
-    let characters: Array<{ id: string; name: string; description?: string }> = []
 
-    // 根据来源类型获取内容和角色
+    // 根据来源类型获取章节内容（角色/地点/物品由 roster 统一从 binding 表读，不再走老 lw_character 列表）
     if (episode.sourceType === 'uploaded') {
-      // 上传长文模式：使用上传的内容
       chapterContent = episode.uploadedContent || ''
 
-      // 如果还没有识别角色，先识别
+      // 上传模式：仍然先识别角色，便于后续 ②资产 阶段用户绑定到 character_binding
       if (!episode.uploadedCharacters || episode.uploadedCharacters.length === 0) {
         const aiService = StoryToVideoAIService.getInstance()
         const identifiedChars = await aiService.identifyCharacters(
@@ -184,18 +183,9 @@ async function handleGenerateScript(
           providerConfigId,
           modelId
         )
-
-        // 更新剧集的角色信息
         await db.videoEpisodes.update(episodeId, { uploadedCharacters: identifiedChars })
         episode.uploadedCharacters = identifiedChars
       }
-
-      // 使用识别的角色
-      characters = (episode.uploadedCharacters || []).map((char, index) => ({
-        id: `uploaded_char_${index}`,
-        name: char.name,
-        description: char.description || ''
-      }))
     } else {
       // 关联章节模式：从长文项目中获取内容
       const outlineId = episode.outlineId
@@ -206,15 +196,10 @@ async function handleGenerateScript(
       if (project.longWritingProjectId) {
         const outline = await db.lwOutlines?.getById(outlineId)
         if (outline) {
-          // 根据节点类型获取内容
           if (outline.nodeType === 'section') {
-            // 节级别：直接获取内容
             const chapter = await db.lwChapters?.getByOutlineId(outlineId)
-            if (chapter && chapter.content) {
-              chapterContent = chapter.content
-            }
+            if (chapter && chapter.content) chapterContent = chapter.content
           } else if (outline.nodeType === 'chapter') {
-            // 章级别：获取所有子节的内容
             const sections = (await db.lwOutlines?.getChildren(outlineId)) || []
             const contents: string[] = []
             for (const section of sections) {
@@ -227,7 +212,6 @@ async function handleGenerateScript(
             }
             chapterContent = contents.join('\n\n')
           } else if (outline.nodeType === 'volume') {
-            // 卷级别：获取所有章和节的内容
             const chapters = (await db.lwOutlines?.getChildren(outlineId)) || []
             const contents: string[] = []
             for (const chapterNode of chapters) {
@@ -249,25 +233,19 @@ async function handleGenerateScript(
       if (!chapterContent) {
         return { success: false, error: '未找到章节内容，请先在长文写作中完成章节内容' }
       }
-
-      // 获取角色列表
-      if (project.longWritingProjectId) {
-        const chars = (await db.lwCharacters?.getByProjectId(project.longWritingProjectId)) || []
-        for (const char of chars) {
-          characters.push({
-            id: char.id,
-            name: char.name,
-            description: char.appearance
-          })
-        }
-      }
     }
 
-    // 调用 AI 生成剧本（完整剧本模式）
+    // 构建资产花名册（spec §4.1 强约束 · P4-T4）：从 character/location/item_bindings 读项目级资产
+    if (!db.dataSource) {
+      return { success: false, error: '数据库未初始化（dataSource 不可用）' }
+    }
+    const roster = await buildAssetRosterForProject(db.dataSource, episode.projectId)
+
+    // 调用 AI 生成剧本（完整剧本模式 + binding 引用强约束）
     const aiService = StoryToVideoAIService.getInstance()
     const result = await aiService.generateFullScript(
       chapterContent,
-      characters,
+      roster,
       providerConfigId,
       modelId
     )
@@ -307,13 +285,14 @@ async function handleGenerateScript(
       await db.sceneScripts.deleteByEpisodeScriptId(existingScript.id)
     }
 
-    // 创建场景
+    // 创建场景（含 P4-T1 加的 locationBindingId 强引用列）
     const sceneRecords: SceneScript[] = []
     for (const sceneData of result.scenes) {
       const sceneRecord = await db.sceneScripts.create({
         episodeScriptId: script.id,
         sceneNumber: sceneData.sceneNumber,
         location: sceneData.location,
+        locationBindingId: sceneData.locationBindingId ?? null,
         locationType: sceneData.locationType,
         timeOfDay: sceneData.timeOfDay as any,
         weather: sceneData.weather as any,

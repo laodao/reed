@@ -11,6 +11,7 @@ import type {
   UploadedLocation,
   UploadedItem
 } from '@shared/types/story-to-video.types'
+import type { AssetRosterForScript } from '@shared/types/episode-production'
 import { callAI, extractJsonFromResponse } from '../modules/episode-production/narrative/ai/_helpers'
 import { EpisodeScriptGenerator } from '../modules/episode-production/narrative/ai/script-generator'
 import { EpisodeStoryboardGenerator } from '../modules/episode-production/narrative/ai/storyboard-generator'
@@ -193,20 +194,20 @@ export class StoryToVideoAIService {
 
   generateFullScript(
     chapterContent: string,
-    characters: Array<{ id: string; name: string; description?: string }>,
+    roster: AssetRosterForScript,
     providerConfigId?: string,
     modelId?: string
   ): Promise<FullScriptGenerationResult> {
-    return this.scriptGen.generateFullScript(chapterContent, characters, providerConfigId, modelId)
+    return this.scriptGen.generateFullScript(chapterContent, roster, providerConfigId, modelId)
   }
 
   generateScript(
     chapterContent: string,
-    characters: Array<{ id: string; name: string; description?: string }>,
+    roster: AssetRosterForScript,
     providerConfigId?: string,
     modelId?: string
   ) {
-    return this.scriptGen.generateScript(chapterContent, characters, providerConfigId, modelId)
+    return this.scriptGen.generateScript(chapterContent, roster, providerConfigId, modelId)
   }
 
   // ---- 委托给 EpisodeStoryboardGenerator ----

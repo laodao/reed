@@ -21,6 +21,8 @@ export interface CreateSceneScriptRequest {
   episodeScriptId: string
   sceneNumber: number
   location: string
+  /** spec §4.1：场景对地点 binding 的强引用；定稿时 validator 要求非空 */
+  locationBindingId?: string | null
   locationType: LocationType
   timeOfDay: TimeOfDay
   weather?: WeatherType
@@ -36,6 +38,7 @@ export interface CreateSceneScriptRequest {
 
 export interface UpdateSceneScriptRequest {
   location?: string
+  locationBindingId?: string | null
   locationType?: LocationType
   timeOfDay?: TimeOfDay
   weather?: WeatherType
@@ -70,6 +73,7 @@ export class SceneScriptRepository extends BaseRepository<
       episodeScriptId: e.episodeScriptId,
       sceneNumber: e.sceneNumber,
       location: e.location,
+      locationBindingId: e.locationBindingId ?? null,
       locationType: e.locationType as LocationType,
       timeOfDay: e.timeOfDay as TimeOfDay,
       weather: (e.weather as WeatherType | null) ?? undefined,
@@ -105,6 +109,7 @@ export class SceneScriptRepository extends BaseRepository<
       episodeScriptId: data.episodeScriptId,
       sceneNumber: data.sceneNumber,
       location: data.location,
+      locationBindingId: data.locationBindingId ?? null,
       locationType: data.locationType,
       timeOfDay: data.timeOfDay,
       weather: data.weather ?? null,
@@ -137,6 +142,7 @@ export class SceneScriptRepository extends BaseRepository<
             episodeScriptId: data.episodeScriptId,
             sceneNumber: data.sceneNumber,
             location: data.location,
+            locationBindingId: data.locationBindingId ?? null,
             locationType: data.locationType,
             timeOfDay: data.timeOfDay,
             weather: data.weather ?? null,
@@ -167,6 +173,10 @@ export class SceneScriptRepository extends BaseRepository<
 
     let changed = false
     if (data.location !== undefined) { existing.location = data.location; changed = true }
+    if (data.locationBindingId !== undefined) {
+      existing.locationBindingId = data.locationBindingId ?? null
+      changed = true
+    }
     if (data.locationType !== undefined) { existing.locationType = data.locationType; changed = true }
     if (data.timeOfDay !== undefined) { existing.timeOfDay = data.timeOfDay; changed = true }
     if (data.weather !== undefined) { existing.weather = data.weather ?? null; changed = true }

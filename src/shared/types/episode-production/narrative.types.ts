@@ -70,10 +70,21 @@ export type StoryboardStatus =
   | 'error' // 错误
 
 /**
+ * 场景道具引用（spec §4.1：每个 prop 含 item_binding_id）。
+ * JSON 列中支持两种表示——纯字符串（老数据）或 {itemBindingId, name} 对象（新数据）。
+ */
+export interface ScenePropRef {
+  itemBindingId: string | null
+  name: string
+}
+
+/**
  * 场景中的角色
  */
 export interface SceneCharacter {
-  characterId: string // 长文写作中的角色ID
+  /** spec §4.1：character_binding.id 强引用（定稿前 validator 要求非空） */
+  characterBindingId?: string | null
+  characterId: string // 长文写作中的角色ID（兼容字段）
   characterName: string // 角色名称
   portraitId?: string // 绑定的人像ID
 
@@ -82,7 +93,8 @@ export interface SceneCharacter {
   expression?: string // 表情
   action?: string // 当前动作
   outfit?: string // 服装描述
-  props?: string[] // 道具
+  /** 道具：兼容老格式（string[]）和新格式（ScenePropRef[]） */
+  props?: Array<string | ScenePropRef>
 }
 
 /**
@@ -90,7 +102,9 @@ export interface SceneCharacter {
  */
 export interface ActionDescription {
   id: string
-  characterId?: string // 执行动作的角色（空表示群像动作）
+  /** spec §4.1：执行者 character_binding.id；群像动作为 null */
+  characterBindingId?: string | null
+  characterId?: string // 兼容字段
   description: string // 动作描述
   timing: 'before' | 'during' | 'after' // 动作时机（相对于对话）
   duration?: number // 预计时长（秒）
@@ -101,6 +115,8 @@ export interface ActionDescription {
  */
 export interface Dialogue {
   id: string
+  /** spec §4.1：讲话人 character_binding.id */
+  characterBindingId?: string | null
   characterId: string
   characterName: string
   text: string // 对话内容
@@ -110,7 +126,7 @@ export interface Dialogue {
   pause?: number // 停顿（毫秒）
 
   // 配音信息
-  voiceId?: string // 指定的声音ID
+  voiceId?: string | null // 指定的声音ID
   audioAsset?: AudioAsset // 生成的音频资产
 }
 
@@ -123,7 +139,9 @@ export interface SceneScript {
   sceneNumber: number
 
   // 场景信息
-  location: string // 地点名称
+  location: string // 地点名称（兜底显示）
+  /** spec §4.1：场景对地点 binding 的强引用；定稿前 validator 要求非空 */
+  locationBindingId?: string | null
   locationType: LocationType // 内景/外景
   timeOfDay: TimeOfDay
   weather?: WeatherType
@@ -399,17 +417,27 @@ export interface StoryboardActionLinkRecord {
 }
 
 /**
+ * AI 生成的场景道具（spec §4.1：每个 prop 含 item_binding_id）。
+ * 与 SceneCharacter.props 内嵌的 ScenePropRef 同形（保持别名是为了语义清晰：
+ * Generated* 系列代表 AI 输出阶段，SceneCharacter 系列代表持久化形态）。
+ */
+export type GeneratedScenePropRef = ScenePropRef
+
+/**
  * AI 生成的场景角色
  */
 export interface GeneratedSceneCharacter {
-  characterId: string // 角色ID
+  /** spec §4.1 强约束：character_binding.id；命中 roster 时为 binding ID；未命中为 null */
+  characterBindingId: string | null
+  characterId: string // 长文角色 ID（兼容字段，逐步淘汰）
   characterName: string // 角色名称
   portraitId?: string // 人像ID
   position?: 'left' | 'center' | 'right' | 'foreground' | 'background'
   expression?: string // 表情
   action?: string // 动作
   outfit?: string // 服装描述
-  props?: string[] // 道具
+  /** 道具列表，spec §4.1：每个 prop 含 item_binding_id */
+  props?: GeneratedScenePropRef[]
 }
 
 /**
@@ -417,6 +445,8 @@ export interface GeneratedSceneCharacter {
  */
 export interface GeneratedDialogue {
   id: string
+  /** spec §4.1：每个 Dialogue 含 character_binding_id + voice_id */
+  characterBindingId: string | null
   characterId: string
   characterName: string
   text: string // 对话内容
@@ -424,6 +454,8 @@ export interface GeneratedDialogue {
   volume?: 'normal' | 'loud' | 'whisper' // 音量
   pace?: 'normal' | 'fast' | 'slow' // 语速
   pause?: number // 停顿（毫秒）
+  /** 指定声音；空时由角色 binding.voiceId 兜底 */
+  voiceId?: string | null
 }
 
 /**
@@ -431,7 +463,9 @@ export interface GeneratedDialogue {
  */
 export interface GeneratedAction {
   id: string
-  characterId?: string // 执行动作的角色（空表示群像动作）
+  /** spec §4.1：动作执行者 character_binding.id；群像动作（无角色）为 null */
+  characterBindingId: string | null
+  characterId?: string // 兼容字段
   description: string // 动作描述
   timing: 'before' | 'during' | 'after' // 动作时机（相对于对话）
   duration?: number // 预计时长（秒）
@@ -442,7 +476,9 @@ export interface GeneratedAction {
  */
 export interface GeneratedScene {
   sceneNumber: number
-  location: string // 地点名称
+  location: string // 地点名称（兜底显示）
+  /** spec §4.1：每个 SceneScript 含 location_binding_id；未命中 roster 为 null */
+  locationBindingId: string | null
   locationType: LocationType // 内景/外景
   timeOfDay: TimeOfDay
   weather?: WeatherType
@@ -463,4 +499,22 @@ export interface FullScriptGenerationResult {
   synopsis: string // 章节梗概（50-100字）
   scriptContent: string // 完整剧本正文（标准格式）
   scenes: GeneratedScene[] // 结构化场景数据（用于系统处理）
+}
+
+/**
+ * 剧本生成入参的资产花名册（spec §4.1）
+ *
+ * 由调用方（script handler）从 character_bindings / location_bindings / item_bindings
+ * 表读取项目级资产构建。Generator 把花名册注入提示词，AI 用 binding ID 引用。
+ */
+export interface AssetRosterEntry {
+  bindingId: string
+  name: string
+  description?: string
+}
+
+export interface AssetRosterForScript {
+  characters: AssetRosterEntry[]
+  locations: AssetRosterEntry[]
+  items: AssetRosterEntry[]
 }

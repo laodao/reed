@@ -103,11 +103,11 @@ export class ReferenceResolver {
   private readonly itemSvc: ItemAssetService
   private readonly imageSvc: AssetImageService
 
-  constructor(private readonly ds: DataSource) {
-    this.characterSvc = new CharacterAssetService(ds)
-    this.locationSvc = new LocationAssetService(ds)
-    this.itemSvc = new ItemAssetService(ds)
+  constructor(ds: DataSource) {
     this.imageSvc = new AssetImageService(ds)
+    this.characterSvc = new CharacterAssetService(ds)
+    this.locationSvc = new LocationAssetService(ds, this.imageSvc)
+    this.itemSvc = new ItemAssetService(ds)
   }
 
   /**
