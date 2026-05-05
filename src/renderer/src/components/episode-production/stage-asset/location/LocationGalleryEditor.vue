@@ -23,7 +23,7 @@
         </template>
 
         <div class="main-thumb">
-          <img v-if="mainImage?.imagePath" :src="mainImage.imagePath" alt="主图" />
+          <img v-if="mainImage?.imagePath" :src="toImageUrl(mainImage.imagePath)" alt="主图" />
           <el-empty v-else description="尚未生成主图" :image-size="60" />
         </div>
 
@@ -76,7 +76,7 @@
             <div class="thumb-frame">
               <img
                 v-if="getImageByLabel(cat.key, label)?.imagePath"
-                :src="getImageByLabel(cat.key, label)!.imagePath"
+                :src="toImageUrl(getImageByLabel(cat.key, label)!.imagePath)"
                 :alt="label"
               />
               <el-icon v-else size="24" class="thumb-empty-icon"><Plus /></el-icon>
@@ -165,6 +165,7 @@ import {
   LOCATION_ANGLE_VALUES,
 } from '@core/modules/episode-production/assets/constants/location-variants'
 import { generateMainFor } from '@/api/main-image-generator'
+import { toImageUrl } from '@/utils/asset-url'
 
 const props = defineProps<{
   bindingId: string

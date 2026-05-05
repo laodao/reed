@@ -1,7 +1,7 @@
 <template>
   <el-card class="asset-card" shadow="hover" body-style="padding: 8px;" @click="onCardClick">
     <div class="thumb">
-      <img v-if="mainImagePath" :src="mainImagePath" :alt="displayName" />
+      <img v-if="mainImagePath" :src="toImageUrl(mainImagePath)" :alt="displayName" />
       <el-icon v-else size="32"><Box /></el-icon>
       <el-tag
         class="badge"
@@ -46,6 +46,7 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { Box } from '@element-plus/icons-vue'
+import { toImageUrl } from '@/utils/asset-url'
 
 const props = defineProps<{ binding: any }>()
 const emit = defineEmits<{
