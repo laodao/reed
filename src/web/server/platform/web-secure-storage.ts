@@ -68,12 +68,23 @@ export class WebSecureStorage implements ISecureStorage {
       if (data.length === 32) {
         this.masterKey = data
         this.initialized = true
+        console.log(`[WebSecureStorage] 复用已有 master key: ${keyFile}`)
         return
       }
     }
+    // 新生成 master key：以前用旧 key 加密的 provider apiKey 等密文将无法解密！
+    // 显眼提示用户，避免不知情切了 DATA_ROOT 后茫然撞上"Unsupported state"错误。
     this.masterKey = crypto.randomBytes(32)
     fs.writeFileSync(keyFile, this.masterKey, { mode: 0o600 })
     this.initialized = true
+    console.warn(
+      `\n[WebSecureStorage] ⚠ 新生成 master key 写到 ${keyFile}\n` +
+        `  如果数据库里已存在用旧 master key 加密的 apiKey 等密文，` +
+        `从这里开始解密都会报 "Unsupported state or unable to authenticate data"。\n` +
+        `  常见原因：DATA_ROOT 环境变量与之前启动不一致；secure-key 文件被删/覆盖；` +
+        `多个不同 cwd 的进程并存。\n` +
+        `  修复：在「设置 → AI 模型配置」逐个重填 API key（写入会用当前 master key 重加密）。\n`,
+    )
   }
 
   isInitialized(): boolean {
