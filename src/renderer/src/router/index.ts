@@ -108,7 +108,9 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/episode-production',
     name: 'EpisodeProjectList',
-    component: () => import('@/views/EpisodeProjectList.vue'),
+    // FU5-B1：切到 V2（按原型 §1 重写 + 用 listProjectsSummary 聚合数据）
+    // 旧 EpisodeProjectList.vue 暂保留作参考，下个 phase 删除
+    component: () => import('@/views/EpisodeProjectListV2.vue'),
     meta: {
       title: '剧集制作'
     }
