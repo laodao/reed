@@ -446,6 +446,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.createMissingScriptBindings': { channel: 'ep:create-missing-script-bindings' },
   // FU4-1 ① 内容 stage AI 识别要素
   'episodeProduction.identifyUploadedEntities': { channel: 'ep:identify-uploaded-entities' },
+  // FU5-B2 ① 内容 stage 整理 / 取舍
+  'episodeProduction.updateUploadedEntities': { channel: 'ep:update-uploaded-entities' },
   'episodeProduction.getStylePresets': { channel: 'ep:get-style-presets' },
   'episodeProduction.generateStoryboardImage': { channel: 'ep:generate-storyboard-image' },
   'episodeProduction.generateSceneImages': { channel: 'ep:generate-scene-images' },

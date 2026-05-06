@@ -38,30 +38,46 @@ export type EpisodeStatus =
 export type EpisodeSourceType = 'outline' | 'uploaded'
 
 /**
- * 上传长文识别的角色
+ * 上传长文识别的角色（FU5-B2 扩展：source / confirmed / lw 关联 + 客户端临时 id）
  */
 export interface UploadedCharacter {
+  /** 客户端临时 id，用于 v-for key + 用户取舍跟踪；服务端不强制要求 */
+  id?: string
   name: string
   description?: string
   role?: string // 主角、配角、反派等
+  /** 双来源标签（spec §1.2）；缺省按 lw_*_id 是否存在推断（有→linked_lw，否→standalone） */
+  sourceType?: 'linked_lw' | 'standalone'
+  /** 已绑定的长文角色 id（linked_lw 时有值） */
+  longWritingCharacterId?: string
+  /** 用户是否确认该实体进入剧集；缺省 true（FU5-B2 用户取舍 §2.D-1） */
+  confirmed?: boolean
 }
 
 /**
  * 上传长文识别的地点
  */
 export interface UploadedLocation {
+  id?: string
   name: string
   description?: string
   type?: string // 地点类型
+  sourceType?: 'linked_lw' | 'standalone'
+  longWritingLocationId?: string
+  confirmed?: boolean
 }
 
 /**
  * 上传长文识别的物品
  */
 export interface UploadedItem {
+  id?: string
   name: string
   description?: string
   type?: string // 物品类型
+  sourceType?: 'linked_lw' | 'standalone'
+  longWritingItemId?: string
+  confirmed?: boolean
 }
 
 /**

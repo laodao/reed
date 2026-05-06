@@ -199,6 +199,8 @@ const IPC_CHANNELS = {
 
   // FU4-1 ① 内容 stage AI 识别要素
   EP_IDENTIFY_UPLOADED_ENTITIES: 'ep:identify-uploaded-entities',
+  // FU5-B2 ① 内容 stage 整理 / 取舍（覆写三数组）
+  EP_UPDATE_UPLOADED_ENTITIES: 'ep:update-uploaded-entities',
 
   EP_GET_STYLE_PRESETS: 'ep:get-style-presets',
   EP_GENERATE_STORYBOARD_IMAGE: 'ep:generate-storyboard-image',
@@ -1724,6 +1726,15 @@ const electronAPI = {
     // FU4-1 ① 内容 stage AI 识别要素（spec §0.4 IdentifyEntities）
     identifyUploadedEntities: (episodeId: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_IDENTIFY_UPLOADED_ENTITIES, episodeId, providerConfigId, modelId),
+    /** FU5-B2 ① 内容 stage 整理 / 取舍（覆写 episode.uploadedX） */
+    updateUploadedEntities: (
+      episodeId: string,
+      payload: {
+        uploadedCharacters?: any[]
+        uploadedLocations?: any[]
+        uploadedItems?: any[]
+      },
+    ) => ipcRenderer.invoke(IPC_CHANNELS.EP_UPDATE_UPLOADED_ENTITIES, episodeId, payload),
 
     // 资源生成
     getStylePresets: () =>

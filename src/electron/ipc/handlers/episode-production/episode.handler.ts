@@ -20,6 +20,34 @@ export function registerEpisodeHandlers(): void {
   ipcBridge.handle('ep:delete-episode', handleDeleteEpisode)
   // FU4-1 ① 内容 stage AI 识别要素
   ipcBridge.handle('ep:identify-uploaded-entities', handleIdentifyEntities)
+  // FU5-B2 ① 内容 stage 整理 / 取舍（覆写三数组）
+  ipcBridge.handle('ep:update-uploaded-entities', handleUpdateUploadedEntities)
+}
+
+async function handleUpdateUploadedEntities(
+  _event: any,
+  episodeId: string,
+  payload: {
+    uploadedCharacters?: any[]
+    uploadedLocations?: any[]
+    uploadedItems?: any[]
+  },
+): Promise<IpcResponse> {
+  try {
+    if (!episodeId) return { success: false, error: 'episodeId 不能为空' }
+    const db = getCoreDatabaseManager()
+    if (!db.videoEpisodes) return { success: false, error: '数据库未初始化' }
+    const episode = await db.videoEpisodes.update(episodeId, {
+      uploadedCharacters: payload.uploadedCharacters as any,
+      uploadedLocations: payload.uploadedLocations as any,
+      uploadedItems: payload.uploadedItems as any,
+    } as any)
+    if (!episode) return { success: false, error: '剧集不存在' }
+    return { success: true, data: episode }
+  } catch (e: any) {
+    console.error('[handleUpdateUploadedEntities] 异常:', e)
+    return { success: false, error: e?.message ?? '更新识别要素失败' }
+  }
 }
 
 // ==================== FU4-1 AI 识别要素 ====================
