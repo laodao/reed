@@ -167,10 +167,10 @@
         v-if="projectId && showAssetSidebar"
         :project-id="projectId"
         class="asset-sidebar-right"
-        @select-character="(id: string) => onOpenAsset('character', id)"
-        @select-location="(id: string) => onOpenAsset('location', id)"
-        @select-item="(id: string) => onOpenAsset('item', id)"
-        @select-voice="(id: string) => onOpenAsset('voice', id)"
+        @select-character="(id: string) => openAssetEditDrawer('character', id)"
+        @select-location="(id: string) => openAssetEditDrawer('location', id)"
+        @select-item="(id: string) => openAssetEditDrawer('item', id)"
+        @select-voice="(id: string) => openAssetEditDrawer('voice', id)"
         @add-character="onAddAsset('character')"
         @add-location="onAddAsset('location')"
         @add-item="onAddAsset('item')"
@@ -270,6 +270,14 @@
       :project-id="projectId"
       @saved="onEntitySaved"
     />
+
+    <!-- FU5-A8 · 资产编辑右抽屉（B2 决策；③④⑤⑥ stage 用） -->
+    <AssetEditDrawer
+      v-model:open="assetEditDrawer.open"
+      :asset-type="assetEditDrawer.type"
+      :binding-id="assetEditDrawer.id"
+      @saved="onAssetEditDrawerSaved"
+    />
   </div>
 </template>
 
@@ -350,6 +358,9 @@ import CharacterDetailDialog from '@/components/episode-production/dialogs/Chara
 import ItemDetailDialog from '@/components/episode-production/dialogs/ItemDetailDialog.vue'
 import LocationDetailDialog from '@/components/episode-production/dialogs/LocationDetailDialog.vue'
 import EntityEditDialog from '@/components/episode-production/dialogs/EntityEditDialog.vue'
+import AssetEditDrawer from '@/components/episode-production/shared/AssetEditDrawer.vue'
+
+type AssetEditDrawerType = 'character' | 'location' | 'item' | 'voice'
 // V2 老 dialog 已删除（GenerateImagesDialog / SynthesisDialog /
 // ImagePreviewDialog / RegenerateDialog）— 之前由右侧 V2 panel 触发，
 // 右侧 panel 删除后这些 dialog 无触发点
@@ -415,6 +426,27 @@ watch(activeTab, (s) => {
 
 // FU3：selectedAsset 提前声明（多个 composable + 模板共享）
 const selectedAsset = ref<{ type: 'character' | 'location' | 'item' | 'voice'; id: string } | null>(null)
+
+/**
+ * FU5-A8 · 资产编辑右抽屉（B2 决策）。
+ *
+ * - ② 资产 stage 内部点击仍走 sub-page（selectedAsset；主区即资产管理）
+ * - ③④⑤⑥ stage 右侧 sidebar 点击 → 弹本抽屉（不脱离当前 stage）
+ */
+const assetEditDrawer = ref<{
+  open: boolean
+  type: AssetEditDrawerType | null
+  id: string | null
+}>({ open: false, type: null, id: null })
+
+function openAssetEditDrawer(type: AssetEditDrawerType, id: string): void {
+  assetEditDrawer.value = { open: true, type, id }
+}
+
+function onAssetEditDrawerSaved(): void {
+  // 抽屉内 *AssetEditor saved 事件冒泡到此 — 后续可触发 sidebar 刷新
+  // 当前暂无副作用（sidebar 自身按需 reload）
+}
 
 // FU3：useWorkbenchStageNavigation 调用挪到 setup 末尾（所有 ref/function 声明之后）
 // 见 watch(projectId) 上方
