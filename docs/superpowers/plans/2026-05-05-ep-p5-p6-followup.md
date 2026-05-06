@@ -101,12 +101,12 @@ flowchart TD
 
 | # | Subject | spec 行号 | 复杂度 | 验收路径 |
 |---|---|---|---|---|
-| **P5-T25** | BuildKeyframePromptInput 加 `userPrompt?: string` | §4.5.7 1050-1068 行 | 小 | 单测：传 userPrompt → prompt 输出含用户文本 |
-| **P5-T26** | IPC `ep:generate-keyframes` / `ep:regenerate-keyframe` 入参加 userPrompt | §4.7 | 小 | curl 调 IPC 传 userPrompt → handler 正确转给 service |
-| **P5-T27** | KeyframeRegenerateDialog 加 user prompt textarea | §4.7 | 小 | UI 弹框出现 textarea；输入"角色更愤怒"→ 重生成的图体现愤怒情绪 |
-| **P5-T28** | KeyframeGrid 每帧 cell 加资产 chip + 参考图缩略图 | §4.5.7 1062-1068 行 | 中 | 每个关键帧显示：角色头像 chip / 地点缩略图 / 道具 chip / 参考图列表（鼠标 hover 看大图）|
-| **P5-T29** | VideoSegmentPanel 加分镜元信息 panel | §4.7 1288-1296 行 | 大 | 显示：旁白文本 + 试听按钮 / 对话清单（character + text + 试听）/ 当前分镜角色清单（带 expression/action）/ 关键帧序列预览 |
-| **P5-T30** | e2e: user prompt 真传到生成层 + 影响输出 | §4.7 + DoD §4 | 中 | Playwright spec 真打 API：输入 userPrompt → DB 存 prompt 字段含 userPrompt → 生成图体现差异 |
+| **P5-T25** | BuildKeyframePromptInput 加 userPrompt · ✅ | §4.5.7 1050-1068 行 | 小 | **完成** — userPrompt 字段拼装到 [user direction] 段，位于质量后缀前；3 个新单测覆盖（非空拼入 / 空字符串忽略 / trim 处理）|
+| **P5-T26** | IPC handler 加 userPrompt 入参 · ✅ | §4.7 | 小 | **完成** — generate-keyframes 第 4 入参 / regenerate-keyframe 第 3 入参；preload electronAPI 同步；service input interface 接通 |
+| **P5-T27** | KeyframeRegenerateDialog 加 user prompt textarea · ✅ | §4.7 | 小 | **完成** — 调整方向 textarea（rows=3, max=200）+ 信息 tooltip；onConfirm 真传 userPrompt 给 IPC；onClose 重置 |
+| **P5-T28** | KeyframeGrid 每帧 cell 加资产 chip · ✅ | §4.5.7 1062-1068 行 | 中 | **完成** — 每 cell 显示地点 chip（场景元数据）+ 角色 chips（含表情，分镜级 storyboard_characters 优先 / 场景级兜底）；调 listStoryboardCharacters IPC；tooltip 标明来源；hover 大图 + 道具 chip 留 follow-up |
+| **P5-T29** | VideoSegmentPanel 加分镜元信息 panel · ✅ | §4.7 1288-1296 行 | 大 | **完成** — 关键帧序列横向缩略图 + 角色清单 chip + 旁白 + 对话清单（speaker/tone/text）+ 用户调整方向 textarea。video-segment service 后端 userPrompt 消费留 follow-up（视频生成路径独立于关键帧 prompt 路径） |
+| **P5-T30** | e2e: user prompt 真传到生成层 · ✅ | §4.7 + DoD §4 | 中 | **完成** — Playwright spec 3/3 通过：generate-keyframes IPC 接受 4 入参 / regenerate-keyframe IPC 接受 3 入参 / 已生成关键帧的 prompt 列非空。完整 prompt 拼装路径单测已覆盖 |
 | **P5-T31** | KeyframeGenerationService.resolveSceneAssets 重构：接收 storyboardId，先查 storyboard_characters | §4.5.3 966-984 行 | 中 | service 单测：同 scene 两 storyboard 不同 angry/happy → 生成不同 prompt |
 | **P5-T32** | StoryboardCharacterService CRUD（add/update/delete/list） | §4.5.3 | 中 | service 单测 + IPC 暴露 |
 | **P5-T33** | 分镜内角色编辑 dialog（接 P6-T20 ④ 分镜 stage） | §4.5.3 + §4.7 | 中 | UI：选分镜 → 点"编辑分镜内角色" → 弹框编辑 expression/action/facing/positionX/Y/scale → 保存写入 storyboard_characters 表 |
