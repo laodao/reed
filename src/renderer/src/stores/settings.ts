@@ -1,174 +1,173 @@
 /**
  * 设置状态管理
  * @module stores/settings
- * @description 管理应用程序的全局设置（主题 / 语言 / 字体大小）。
- *              FU5-A6 落地实现：之前 9 个方法全是 `throw Error('Not implemented')` —
- *              这次按 spec G1（UI 必须支持主题切换）真实实现。
+ * @description 管理应用程序的全局设置，包括主题、语言、字体大小等
  */
 
-import { ref, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { defineStore } from 'pinia'
-import type { ThemeMode, Language, FontSize } from '../../../shared/types/settings.types'
-import { fontSizeMap } from '../../../shared/types/settings.types'
+import type { ThemeMode, Language, FontSize, AppSettings } from '../../shared/types'
+import { fontSizeMap } from '../../shared/types'
 
-/** 系统主题变化监听器引用（auto 模式时跟随系统） */
+/**
+ * 系统主题变化监听器引用
+ */
 let systemThemeListener: ((e: MediaQueryListEvent) => void) | null = null
 
+/**
+ * 使用设置 Store
+ */
 export const useSettingsStore = defineStore('settings', () => {
+  /**
+   * 主题模式
+   */
   const theme = ref<ThemeMode>('auto')
-  const language = ref<Language>('zh-CN')
-  const fontSize = ref<FontSize>('medium')
-  const dataPath = ref<string>('')
-  /** 当前实际生效的暗色态（auto 模式下随系统） */
-  const isDark = ref<boolean>(false)
-
-  // ─── settings IPC 适配（PC + Web 双端共用 electronAPI.settings.get/set） ──
-  async function ipcGet(key: string): Promise<any> {
-    try {
-      const api = (window as any).electronAPI?.settings
-      if (!api?.get) return null
-      const resp = await api.get(key)
-      return resp?.success ? resp.data : null
-    } catch {
-      return null
-    }
-  }
-
-  async function ipcSet(key: string, value: any): Promise<void> {
-    try {
-      const api = (window as any).electronAPI?.settings
-      if (!api?.set) return
-      await api.set(key, value)
-    } catch (e) {
-      console.warn(`[settings] set ${key} 失败`, e)
-    }
-  }
 
   /**
-   * 加载设置（启动时调用）。
-   * 1. 从 settings:get 拉取 theme / language / fontSize
-   * 2. 设置响应式状态
-   * 3. 应用主题 + 字体大小到 DOM
-   * 4. auto 模式注册系统主题监听
+   * 语言
+   */
+  const language = ref<Language>('zh-CN')
+
+  /**
+   * 字体大小
+   */
+  const fontSize = ref<FontSize>('medium')
+
+  /**
+   * 数据路径
+   */
+  const dataPath = ref<string>('')
+
+  /**
+   * 加载设置
+   * @returns Promise<void>
+   * @description 从数据库加载设置并应用
+   * 逻辑：
+   * 1. 调用 settings:get IPC 获取所有设置
+   * 2. 设置 theme、language、fontSize 响应式变量
+   * 3. 应用主题和字体大小到界面
    */
   async function loadSettings(): Promise<void> {
-    const [savedTheme, savedLang, savedFs] = await Promise.all([
-      ipcGet('theme'),
-      ipcGet('language'),
-      ipcGet('fontSize'),
-    ])
-    if (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'auto') {
-      theme.value = savedTheme as ThemeMode
-    }
-    if (savedLang === 'zh-CN' || savedLang === 'en-US') {
-      language.value = savedLang as Language
-    }
-    if (savedFs === 'small' || savedFs === 'medium' || savedFs === 'large') {
-      fontSize.value = savedFs as FontSize
-    }
-
-    // 应用
-    const dark = theme.value === 'dark' || (theme.value === 'auto' && getSystemTheme())
-    applyTheme(dark)
-    applyFontSize(fontSize.value)
-    if (theme.value === 'auto') setupSystemThemeListener()
-    else removeSystemThemeListener()
+    // TODO: 实现从数据库加载设置
+    throw new Error('Not implemented')
   }
 
   /**
-   * 切换主题模式（用户主动）。
+   * 设置主题
+   * @param mode - 主题模式
+   * @returns Promise<void>
+   * @description 设置应用程序主题
+   * 逻辑：
+   * 1. 更新 theme 响应式变量
+   * 2. 如果是 'auto'，获取系统主题并注册监听器
+   * 3. 如果是 'light' 或 'dark'，移除监听器
+   * 4. 调用 applyTheme 应用主题
+   * 5. 保存设置到数据库
    */
   async function setTheme(mode: ThemeMode): Promise<void> {
-    theme.value = mode
-    if (mode === 'auto') {
-      setupSystemThemeListener()
-      applyTheme(getSystemTheme())
-    } else {
-      removeSystemThemeListener()
-      applyTheme(mode === 'dark')
-    }
-    await ipcSet('theme', mode)
+    // TODO: 实现设置主题
+    throw new Error('Not implemented')
   }
 
   /**
-   * 应用主题：toggle html.dark + 暴露 isDark ref（element-plus 暗主题 css 自动接管）。
+   * 应用主题到界面
+   * @param isDark - 是否为深色主题
+   * @returns void
+   * @description 将主题应用到 CSS
+   * 逻辑：
+   * 1. 如果 isDark 为 true，添加 'dark' class 到 html 元素
+   * 2. 如果 isDark 为 false，移除 'dark' class
    */
-  function applyTheme(dark: boolean): void {
-    isDark.value = dark
-    if (dark) {
-      document.documentElement.classList.add('dark')
-    } else {
-      document.documentElement.classList.remove('dark')
-    }
+  function applyTheme(isDark: boolean): void {
+    // TODO: 实现应用主题
+    throw new Error('Not implemented')
   }
 
   /**
-   * 检测系统主题偏好（prefers-color-scheme）。
+   * 获取系统当前主题
+   * @returns boolean - true 表示深色，false 表示浅色
+   * @description 检测系统主题偏好
    */
   function getSystemTheme(): boolean {
-    return (
-      typeof window !== 'undefined' &&
-      window.matchMedia &&
-      window.matchMedia('(prefers-color-scheme: dark)').matches
-    )
+    // TODO: 实现获取系统主题
+    throw new Error('Not implemented')
   }
 
   /**
-   * auto 模式监听系统主题切换。
+   * 设置系统主题监听器
+   * @returns void
+   * @description 监听系统主题变化
+   * 逻辑：
+   * 1. 如果已有监听器，先移除
+   * 2. 创建新的监听器函数
+   * 3. 监听 prefers-color-scheme 变化
    */
   function setupSystemThemeListener(): void {
-    if (typeof window === 'undefined' || !window.matchMedia) return
-    removeSystemThemeListener()
-    const mql = window.matchMedia('(prefers-color-scheme: dark)')
-    systemThemeListener = (e: MediaQueryListEvent) => {
-      if (theme.value === 'auto') applyTheme(e.matches)
-    }
-    // 兼容老 API（Safari < 14 用 addListener）
-    if (typeof mql.addEventListener === 'function') {
-      mql.addEventListener('change', systemThemeListener)
-    } else if (typeof (mql as any).addListener === 'function') {
-      ;(mql as any).addListener(systemThemeListener)
-    }
+    // TODO: 实现设置系统主题监听器
+    throw new Error('Not implemented')
   }
 
+  /**
+   * 移除系统主题监听器
+   * @returns void
+   */
   function removeSystemThemeListener(): void {
-    if (!systemThemeListener || typeof window === 'undefined' || !window.matchMedia) {
-      systemThemeListener = null
-      return
-    }
-    const mql = window.matchMedia('(prefers-color-scheme: dark)')
-    if (typeof mql.removeEventListener === 'function') {
-      mql.removeEventListener('change', systemThemeListener)
-    } else if (typeof (mql as any).removeListener === 'function') {
-      ;(mql as any).removeListener(systemThemeListener)
-    }
-    systemThemeListener = null
+    // TODO: 实现移除系统主题监听器
+    throw new Error('Not implemented')
   }
 
+  /**
+   * 设置语言
+   * @param lang - 语言代码
+   * @returns Promise<void>
+   * @description 设置界面语言
+   * 逻辑：
+   * 1. 验证语言代码有效性
+   * 2. 更新 language 响应式变量
+   * 3. 保存到数据库
+   */
   async function setLanguage(lang: Language): Promise<void> {
-    if (lang !== 'zh-CN' && lang !== 'en-US') return
-    language.value = lang
-    await ipcSet('language', lang)
+    // TODO: 实现设置语言
+    throw new Error('Not implemented')
   }
 
+  /**
+   * 设置字体大小
+   * @param size - 字体大小
+   * @returns Promise<void>
+   * @description 设置界面字体大小
+   * 逻辑：
+   * 1. 验证 size 有效性
+   * 2. 更新 fontSize 响应式变量
+   * 3. 调用 applyFontSize 应用到界面
+   * 4. 保存到数据库
+   */
   async function setFontSize(size: FontSize): Promise<void> {
-    if (size !== 'small' && size !== 'medium' && size !== 'large') return
-    fontSize.value = size
-    applyFontSize(size)
-    await ipcSet('fontSize', size)
+    // TODO: 实现设置字体大小
+    throw new Error('Not implemented')
   }
 
-  /** 应用字体大小到 :root font-size（全局 rem 跟随）。 */
+  /**
+   * 应用字体大小到界面
+   * @param size - 字体大小
+   * @returns void
+   * @description 将字体大小应用到 CSS 变量
+   */
   function applyFontSize(size: FontSize): void {
-    const fs = fontSizeMap[size] ?? fontSizeMap.medium
-    document.documentElement.style.fontSize = fs
+    // TODO: 实现应用字体大小
+    throw new Error('Not implemented')
   }
 
-  /** 启动一次（App.vue 内调） */
-  async function initSettings(): Promise<void> {
-    await loadSettings()
-  }
+  /**
+   * 组件挂载时加载设置
+   */
+  onMounted(() => {
+    loadSettings()
+  })
 
+  /**
+   * 组件卸载时移除监听器
+   */
   onUnmounted(() => {
     removeSystemThemeListener()
   })
@@ -179,14 +178,12 @@ export const useSettingsStore = defineStore('settings', () => {
     language,
     fontSize,
     dataPath,
-    isDark,
     // 方法
-    initSettings,
     loadSettings,
     setTheme,
     setLanguage,
     setFontSize,
     // 常量
-    fontSizeMap,
+    fontSizeMap
   }
 })

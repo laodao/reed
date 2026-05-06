@@ -20,22 +20,12 @@
       </div>
     </div>
 
-    <!-- FU5-A6 主题切换按钮（auto / light / dark 三态轮换） -->
-    <div class="tab-actions theme-switcher">
-      <button
-        class="theme-toggle-btn"
-        type="button"
-        :title="themeTitle"
-        :aria-label="themeTitle"
-        @click="onCycleTheme"
-      >
-        <el-icon class="theme-icon">
-          <Sunny v-if="settings.theme === 'light'" />
-          <Moon v-else-if="settings.theme === 'dark'" />
-          <Monitor v-else />
-        </el-icon>
-      </button>
-    </div>
+    <!--
+      FU5-A6 修正：user 5/6 纠正"系统设置里有主题设置，我要的是支持那个主题切换"——
+      应用本身有"设置 / 主题"页可切，TabBar 不再放重复入口。
+      settings store 启动时调用 initSettings 应用持久化的主题；
+      在 settings 页改主题后，所有 UI（含 v2 view）走 var(--el-*) 自动跟随。
+    -->
 
     <!-- 用户菜单（仅 Web 端，且已登录） -->
     <div v-if="showUserMenu" class="tab-actions">
@@ -104,26 +94,7 @@ import {
   CircleClose,
   User,
   SwitchButton,
-  Sunny,
-  Moon,
-  Monitor,
 } from '@element-plus/icons-vue'
-import { useSettingsStore } from '@/stores/settings'
-
-const settings = useSettingsStore()
-
-const themeTitle = computed(() => {
-  if (settings.theme === 'light') return '主题：浅色（点击切到深色）'
-  if (settings.theme === 'dark') return '主题：深色（点击切到自动）'
-  return `主题：自动（当前${settings.isDark ? '深色' : '浅色'}，点击切到浅色）`
-})
-
-async function onCycleTheme(): Promise<void> {
-  const order: ('light' | 'dark' | 'auto')[] = ['light', 'dark', 'auto']
-  const idx = order.indexOf(settings.theme as any)
-  const next = order[(idx + 1) % order.length]
-  await settings.setTheme(next)
-}
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useTabsStore } from '@/stores/tabs'
 import { useUserStore } from '@/stores/user'
@@ -373,40 +344,6 @@ onUnmounted(() => {
   align-items: center;
   margin-left: 12px;
   flex-shrink: 0;
-}
-
-.theme-switcher {
-  margin-left: 8px;
-}
-
-.theme-toggle-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 1px solid var(--el-border-color-lighter);
-  background: var(--el-fill-color-blank);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  padding: 0;
-  transition: all 0.2s ease;
-  color: var(--el-text-color-regular);
-
-  &:hover {
-    background: var(--el-fill-color-light);
-    border-color: var(--el-color-primary-light-5);
-    color: var(--el-color-primary);
-  }
-
-  &:focus-visible {
-    outline: 2px solid var(--el-color-primary-light-5);
-    outline-offset: 2px;
-  }
-}
-
-.theme-icon {
-  font-size: 18px;
 }
 
 .user-menu-trigger {
