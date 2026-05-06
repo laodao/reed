@@ -80,7 +80,7 @@
             <el-icon><MagicStick /></el-icon>
             批量派生图谱
           </el-button>
-          <el-button size="small" @click="emit('add-character')">
+          <el-button size="small" @click="onAddCharacter">
             <el-icon><Plus /></el-icon>
             新建角色
           </el-button>
@@ -113,7 +113,7 @@
             <el-icon><MagicStick /></el-icon>
             批量派生变体
           </el-button>
-          <el-button size="small" @click="emit('add-location')">
+          <el-button size="small" @click="onAddLocation">
             <el-icon><Plus /></el-icon>
             新建地点
           </el-button>
@@ -142,7 +142,7 @@
           <el-tag size="small" round class="section-count">{{ summary.items.length }}</el-tag>
         </span>
         <div class="section-actions">
-          <el-button size="small" @click="emit('add-item')">
+          <el-button size="small" @click="onAddItem">
             <el-icon><Plus /></el-icon>
             新建物品
           </el-button>
@@ -171,7 +171,7 @@
           <el-tag size="small" round class="section-count">{{ summary.voices.length }}</el-tag>
         </span>
         <div class="section-actions">
-          <el-button size="small" @click="emit('add-voice')">
+          <el-button size="small" @click="onAddVoice">
             <el-icon><Plus /></el-icon>
             复刻新音色
           </el-button>
@@ -194,7 +194,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { MagicStick, Plus, Right } from '@element-plus/icons-vue'
 import StageMainHeader from '../shared/StageMainHeader.vue'
 import StageGapBanner from '../workbench/StageGapBanner.vue'
@@ -289,10 +289,67 @@ defineExpose({ reload })
 watch(() => props.projectId, () => void reload(), { immediate: true })
 onMounted(() => void reload())
 
-function onGenerateAllMissing(): void {
-  // 委托父组件 / store 实施异步队列；本组件只触发事件
-  emit('generate-main', { kind: 'character', id: '__ALL__' } as any)
-  ElMessage.info(`开始为 ${missingMainCount.value} 个 binding 生成主图（异步队列；进度可在每张卡片观察）`)
+/*
+ * FU8-C5 一键生成所有缺失主图：
+ *   旧实现只 emit 给父组件，但父组件从未注册 generate-main handler →
+ *   按钮点了什么都没发生。改在本组件内部实现并发受限的真任务队列：
+ *
+ *   遍历 character / location / item 三类 binding 中 hasMain=false 的，
+ *   每条调 generateMainFor(kind, bindingId)（已封装 effective+prompt+IPC）。
+ *   并发上限 2 避免压垮 provider；任意条失败不阻塞其他条。
+ *   全部跑完后 reload() 拉最新 summary，让卡片立刻更新主图。
+ */
+async function onGenerateAllMissing(): Promise<void> {
+  if (generatingAll.value) return
+  const tasks: Array<{ kind: 'character' | 'location' | 'item'; id: string }> = []
+  for (const c of summary.value.characters) {
+    if (!c.hasMain) tasks.push({ kind: 'character', id: c.bindingId })
+  }
+  for (const l of summary.value.locations) {
+    if (!l.hasMain) tasks.push({ kind: 'location', id: l.bindingId })
+  }
+  for (const i of summary.value.items) {
+    if (!i.hasMain) tasks.push({ kind: 'item', id: i.bindingId })
+  }
+  if (tasks.length === 0) {
+    ElMessage.info('没有缺失主图的资产')
+    return
+  }
+
+  generatingAll.value = true
+  let okCount = 0
+  let failCount = 0
+  const failures: string[] = []
+  ElMessage.info(`开始为 ${tasks.length} 个资产生成主图（并发 2）`)
+
+  const { generateMainFor } = await import('@/api/main-image-generator')
+  const concurrency = 2
+  let cursor = 0
+  async function worker(): Promise<void> {
+    while (cursor < tasks.length) {
+      const idx = cursor++
+      const t = tasks[idx]
+      try {
+        await generateMainFor(t.kind, t.id)
+        okCount++
+      } catch (e: any) {
+        failCount++
+        failures.push(`${t.kind}/${t.id.slice(0, 8)}: ${e?.message ?? e}`)
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, tasks.length) }, () => worker()))
+
+  await reload()
+  generatingAll.value = false
+
+  if (failCount === 0) {
+    ElMessage.success(`已为 ${okCount} 个资产生成主图`)
+  } else {
+    ElMessage.warning(
+      `主图生成完成：成功 ${okCount}，失败 ${failCount}\n${failures.slice(0, 3).join('\n')}`,
+    )
+  }
 }
 
 function onSkipEmpty(): void {
@@ -301,6 +358,79 @@ function onSkipEmpty(): void {
 
 function onBatchDerive(kind: 'character' | 'location'): void {
   ElMessage.info(`批量派生 ${kind === 'character' ? '角色图谱' : '地点变体'} — 留 follow-up 接入派生服务`)
+}
+
+/*
+ * FU6-T3 · 4 类资产新建按钮真功能
+ * V1 版 stage-asset/AssetStageView.vue 已有 promptCreateStandalone 完整实现，
+ * V2 重写时只 emit 没接，导致按钮全部"无反应"。
+ *
+ * 行为约定（spec §2.3）：
+ *   - character / location / item · prompt 输名字 → asset.{kind}.createStandalone
+ *     → reload + emit open-* 唤起 V2 编辑抽屉补充详情
+ *   - voice · 复刻流程依赖音频文件，主区不能纯 prompt 完成；
+ *     给提示并 emit add-voice 让父级承接（后续可接独立的 VoiceCloneDialog；
+ *     当前阶段 voice 复刻入口在"语音助手 → 声音复刻"已存在，先指向那里）。
+ */
+async function promptCreateStandalone(
+  kind: 'character' | 'location' | 'item',
+): Promise<void> {
+  const labelMap = { character: '角色', location: '地点', item: '物品' } as const
+  const label = labelMap[kind]
+  let name: string
+  try {
+    const result = await ElMessageBox.prompt(`请输入${label}名称`, `新建${label}`, {
+      confirmButtonText: '创建',
+      cancelButtonText: '取消',
+      inputPattern: /^.{1,80}$/,
+      inputErrorMessage: '名称必填，最多 80 字符',
+    })
+    name = String(result.value ?? '').trim()
+  } catch {
+    return
+  }
+  if (!name) return
+
+  const api = (window as any).electronAPI?.episodeProduction?.asset
+  if (!api?.[kind]?.createStandalone) {
+    ElMessage.error(`${label}创建 IPC 不可用`)
+    return
+  }
+  try {
+    const resp = await api[kind].createStandalone({ projectId: props.projectId, name })
+    if (!resp?.success) {
+      ElMessage.error(resp?.error || `新建${label}失败`)
+      return
+    }
+    ElMessage.success(`已创建${label}：${name}`)
+    await reload()
+    const id = resp.data?.id
+    if (id) {
+      emit(
+        `open-${kind}` as 'open-character' | 'open-location' | 'open-item',
+        id,
+      )
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || `新建${label}失败`)
+  }
+}
+
+function onAddCharacter(): void {
+  void promptCreateStandalone('character')
+}
+
+function onAddLocation(): void {
+  void promptCreateStandalone('location')
+}
+
+function onAddItem(): void {
+  void promptCreateStandalone('item')
+}
+
+function onAddVoice(): void {
+  ElMessage.info('请去"语音助手 → 声音复刻"完成音色克隆，复刻完成后会自动出现在此处')
+  emit('add-voice')
 }
 </script>
 

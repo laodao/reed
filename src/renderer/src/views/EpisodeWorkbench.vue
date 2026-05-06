@@ -124,7 +124,10 @@
               + "修复缺失绑定" + "剧本定稿" 按钮。替代 V2 ScriptTabContent。
             -->
             <el-tab-pane label="③ 剧本" name="scripting">
-              <StageScriptView :project-id="projectId" />
+              <StageScriptView
+                :project-id="projectId"
+                @go-asset-stage="onScriptGoAssetStage"
+              />
             </el-tab-pane>
 
             <!-- ④ 分镜（P6-T20 · spec §2.2 第 436 行 + §4.5） -->
@@ -133,6 +136,7 @@
                 :episode-script-id="scriptStore.currentScript?.id ?? null"
                 :project-id="projectId"
                 @edit-storyboard="onEditStoryboardFromStage"
+                @edit-storyboard-characters="onEditStoryboardFromStage"
                 @jump-to-production="onJumpToProductionWithSb"
               />
             </el-tab-pane>
@@ -456,6 +460,22 @@ function openAssetEditDrawer(type: AssetEditDrawerType, id: string): void {
 function onAssetEditDrawerSaved(): void {
   // 抽屉内 *AssetEditor saved 事件冒泡到此 — 后续可触发 sidebar 刷新
   // 当前暂无副作用（sidebar 自身按需 reload）
+}
+
+/*
+ * FU6-T4 剧本完整性 → 主图类违例 → 切到 ② 资产 stage 并选中对应 binding，
+ * 让 user 立刻在主区点"生成主图"修复。
+ */
+function onScriptGoAssetStage(payload: {
+  kind: 'character' | 'location' | 'item' | 'voice'
+  bindingId?: string
+}): void {
+  activeTab.value = 'asset_prep'
+  if (payload.kind !== 'voice' && payload.bindingId) {
+    selectedAsset.value = { type: payload.kind, id: payload.bindingId }
+  } else {
+    selectedAsset.value = null
+  }
 }
 
 // FU3：useWorkbenchStageNavigation 调用挪到 setup 末尾（所有 ref/function 声明之后）
@@ -881,6 +901,13 @@ watch(projectId, () => {
     align-items: center;
     justify-content: center;
     flex: 1;
+    gap: 6px;
+  }
+
+  /* FU6-T2 收窄剧集 dropdown：默认 el-select min-width ~240px 占太多顶栏 */
+  .episode-selector {
+    width: 200px;
+    min-width: 160px;
   }
 
   .project-title {

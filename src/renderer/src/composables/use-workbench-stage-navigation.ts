@@ -135,17 +135,21 @@ export function useWorkbenchStageNavigation(
     input.selectedAsset.value = { type: kind, id }
   }
 
-  /** P6-T14 左侧资产侧栏"+ 添加 X"（待 P6 follow-up 接 AssetStageView） */
+  /**
+   * 右侧资产侧栏"+ 添加 X"。
+   * FU6-T3：跳到 ② 资产 stage —— 真正的新建按钮在 AssetStageViewV2 里
+   * （v2 已内置 promptCreateStandalone + voice 复刻提示），跳过去 user 立刻就能点。
+   * voice 例外：直接给 user 指引（资产 stage 内也只是同样提示）。
+   */
   function onAddAsset(kind: AssetKind): void {
     input.activeTab.value = 'asset_prep'
     input.selectedAsset.value = null
-    const labelMap: Record<AssetKind, string> = {
-      character: '角色',
-      location: '地点',
-      item: '物品',
-      voice: '语音',
+    if (kind === 'voice') {
+      ElMessage.info('请去"语音助手 → 声音复刻"完成音色克隆，复刻完成后会自动出现在此处')
+      return
     }
-    ElMessage.info(`${labelMap[kind]}添加入口在 ② 资产 stage 中（待 P6 follow-up 接入）`)
+    const labelMap = { character: '角色', location: '地点', item: '物品' } as const
+    ElMessage.info(`已切到 ② 资产，点列表头部"+ 新建${labelMap[kind]}"创建`)
   }
 
   /** P6-T15 底部时间线"⏵ 试播" */

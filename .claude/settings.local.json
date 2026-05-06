@@ -311,7 +311,10 @@
       "Bash(E2E_WEB_EMAIL=test@local.dev E2E_WEB_PASSWORD=test123456 npx playwright test tests/e2e/web/18-storyboard-character-edit.spec.ts)",
       "Bash(SKIP_PG_TESTS=1 npx vitest run tests/unit/episode-production/render/keyframe-prompt-builder.spec.ts tests/unit/episode-production/render/keyframe-generation.service.spec.ts)",
       "Bash(E2E_WEB_EMAIL=test@local.dev E2E_WEB_PASSWORD=test123456 npx playwright test tests/e2e/web/19-keyframe-user-prompt.spec.ts)",
-      "Bash(PGDATABASE=the_bot_test bash /home/ubuntu/workdir/the-bot/scripts/web.sh restart client)"
+      "Bash(PGDATABASE=the_bot_test bash /home/ubuntu/workdir/the-bot/scripts/web.sh restart client)",
+      "Bash(PGDATABASE=the_bot_test bash /home/ubuntu/workdir/the-bot/scripts/web.sh restart all)",
+      "Bash(pkill -f \"tsx watch.*web/server\")",
+      "Bash(PGDATABASE=the_bot_test nohup npm run dev:web-server)"
     ]
   }
 }

@@ -396,10 +396,39 @@ const locationRef = computed(() => {
   return s.location ?? ''
 })
 
+/*
+ * FU8-H3 物品引用真实解析：
+ *   spec §4.1：场景中的物品挂在 scene.characters[].props（与角色绑定的道具）。
+ *   ScenePropRef = { itemBindingId: string|null, name: string }；
+ *   兼容老格式 string（仅 name）。
+ *   去重：同一 itemBindingId 多次出现只显示一次。
+ */
 const itemRefs = computed(() => {
-  // scene.scene_props 含物品引用；store 没专门字段，从 scene.actions 简单解析
-  // 复杂场景留 follow-up（现在拿 scene-level item 引用即可）
-  return []
+  const scene = selectedScene.value as any
+  if (!scene || !Array.isArray(scene.characters)) return []
+  const seen = new Set<string>()
+  const refs: Array<{ name: string; bindingId: string | null }> = []
+  for (const ch of scene.characters) {
+    if (!Array.isArray(ch.props)) continue
+    for (const p of ch.props) {
+      let bindingId: string | null = null
+      let name: string
+      if (typeof p === 'string') {
+        name = p
+      } else if (p && typeof p === 'object') {
+        bindingId = (p.itemBindingId ?? null) as string | null
+        name = (p.name as string) ?? ''
+      } else {
+        continue
+      }
+      if (!name) continue
+      const key = bindingId ?? `name:${name}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      refs.push({ name, bindingId })
+    }
+  }
+  return refs
 })
 
 const hasUserPrompt = computed(() => {

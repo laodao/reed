@@ -143,7 +143,9 @@ const IPC_CHANNELS = {
 
   EP_LIST_SCENES: 'ep:list-scenes',
   EP_GET_SCENE: 'ep:get-scene',
+  EP_CREATE_SCENE: 'ep:create-scene',
   EP_UPDATE_SCENE: 'ep:update-scene',
+  EP_DELETE_SCENE: 'ep:delete-scene',
 
   EP_LIST_STORYBOARDS: 'ep:list-storyboards',
   EP_STORYBOARD_SET_BACKGROUND_REF: 'ep:storyboard:set-background-ref',
@@ -1612,8 +1614,13 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.EP_LIST_SCENES, episodeScriptId),
     getScene: (sceneId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_GET_SCENE, sceneId),
+    /** FU8-C3 手动添加场景：partial 不传则用默认空字段 + 自动 sceneNumber */
+    createScene: (episodeScriptId: string, partial: any = {}) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_CREATE_SCENE, episodeScriptId, partial),
     updateScene: (sceneId: string, data: any) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_UPDATE_SCENE, sceneId, data),
+    deleteScene: (sceneId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_DELETE_SCENE, sceneId),
 
     // 分镜管理
     listStoryboards: (sceneScriptId: string) =>

@@ -46,7 +46,6 @@
         :key="`${v.code}-${v.sceneScriptId}-${v.context.targetId ?? idx}`"
         class="violation-item"
         :class="`level-${v.level}`"
-        @click="emit('jump-to-scene', v.sceneScriptId)"
       >
         <div class="violation-row">
           <el-tag
@@ -57,8 +56,29 @@
             场景 {{ v.sceneNumber }}
           </el-tag>
           <span class="violation-code">{{ codeShort(v.code) }}</span>
+          <span class="row-spacer" />
+          <!--
+            FU6-T4 显式修复入口：
+              - binding 类 → 跳到场景并打开 binding picker（fix-violation 事件）
+              - 主图类 → 提示父组件去 ② 资产 stage 生成主图
+              - 声音类 → 提示父组件打开声音绑定
+            父组件根据 v.code 分发处理。
+          -->
+          <el-button
+            size="small"
+            :type="v.level === 'error' ? 'danger' : 'warning'"
+            link
+            @click.stop="emit('fix-violation', v)"
+          >
+            {{ fixActionLabel(v.code) }} →
+          </el-button>
         </div>
-        <div class="violation-message">{{ v.message }}</div>
+        <div
+          class="violation-message"
+          @click="emit('jump-to-scene', v.sceneScriptId)"
+        >
+          {{ v.message }}
+        </div>
       </div>
     </div>
 
@@ -121,6 +141,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   (e: 'jump-to-scene', sceneScriptId: string): void
   (e: 'report-changed', report: CompletenessReport | null): void
+  /** FU6-T4 显式修复入口：父组件根据 v.code 分发 picker / stage 跳转 */
+  (e: 'fix-violation', violation: CompletenessViolation): void
 }>()
 
 const loading = ref(false)
@@ -145,6 +167,16 @@ const codeMap: Record<string, string> = {
 
 function codeShort(code: string): string {
   return codeMap[code] ?? code
+}
+
+/* FU6-T4 修复按钮文案：根据违例 code 分类提示动作目的地 */
+function fixActionLabel(code: string): string {
+  if (code.endsWith('_MAIN_IMAGE_MISSING')) return '去生成主图'
+  if (code === 'DIALOGUE_VOICE_MISSING') return '去绑声音'
+  if (code.endsWith('_BINDING_MISSING')) return '去绑定资产'
+  if (code.endsWith('_BINDING_UNRESOLVED') || code.endsWith('_UNRESOLVED'))
+    return '去重新选择'
+  return '去修复'
 }
 
 async function runValidation(): Promise<void> {
@@ -218,13 +250,20 @@ defineExpose({ runValidation })
 
 .violation-item {
   padding: 6px 8px;
-  cursor: pointer;
   border-radius: 4px;
   transition: background-color 0.1s;
 }
 
 .violation-item:hover {
   background: var(--el-color-primary-light-9);
+}
+
+.row-spacer {
+  flex: 1;
+}
+
+.violation-message {
+  cursor: pointer;
 }
 
 .violation-item.level-error {

@@ -136,7 +136,21 @@
             >
               <div class="shot-thumb" :class="getStatusClass(sb)">
                 <span class="shot-no-badge">{{ selectedSceneIndex + 1 }}.{{ sb.shotNumber }}</span>
-                <span class="thumb-emoji">{{ shotTypeEmoji(sb.shotType) }}</span>
+                <!--
+                  FU6-T5 真实缩略图：
+                    - 已生成首帧（frameImage.url）→ 真实图片预览
+                    - 否则 → emoji + "未生成"文字标签（明确告诉 user 这是占位非示意图）
+                -->
+                <img
+                  v-if="sb.frameImage?.url"
+                  :src="sb.frameImage.url"
+                  class="thumb-img"
+                  :alt="`分镜 ${sb.shotNumber} 首帧`"
+                />
+                <template v-else>
+                  <span class="thumb-emoji">{{ shotTypeEmoji(sb.shotType) }}</span>
+                  <span class="thumb-empty-label">未生成首帧</span>
+                </template>
                 <span class="status-badge" :class="getStatusClass(sb)">
                   {{ getStatusEmoji(sb) }}
                 </span>
@@ -303,8 +317,14 @@
                 class="char-grid-row"
               >
                 <span class="cg-name">
+                  <!--
+                    FU6-T5 真实角色名解析：
+                    StoryboardCharacter 数据结构只存 characterId，没有 characterName。
+                    旧代码 c.characterName ?? '?' 永远显示 "@?"，是数据契约误用。
+                    改：通过 entityList 查 binding 拿真名；查不到说明 binding 已删 → 提示。
+                  -->
                   <EntityRefRenderer
-                    :text="`@${c.characterName ?? '?'}`"
+                    :text="`@${resolveCharName(c) ?? '(未绑定)'}`"
                     :entities="entityList"
                   />
                 </span>
@@ -447,6 +467,21 @@ watch(
 
 const storyboardCharacters = computed(() => selectedStoryboard.value?.characters ?? [])
 
+/*
+ * FU6-T5 通过 characterId 反查 binding 拿真名：
+ *   StoryboardCharacter 数据契约只有 characterId（指向 epAssetCharacterBinding）；
+ *   一些旧记录可能直接挂 characterBindingId 或 characterName，这里都做兼容。
+ *   返回 null 给上层用 (未绑定) 提示。
+ */
+function resolveCharName(c: any): string | null {
+  if (typeof c?.characterName === 'string' && c.characterName.trim()) return c.characterName
+  const id: string | undefined = c?.characterId ?? c?.characterBindingId
+  if (!id) return null
+  const b = (assetStore.epAssetCharacters ?? []).find((x: any) => x.id === id)
+  if (!b) return null
+  return (b as any).standaloneName ?? (b as any).overrideName ?? null
+}
+
 const entityList = computed<EntityRefMeta[]>(() => {
   const list: EntityRefMeta[] = []
   for (const b of assetStore.epAssetCharacters ?? []) {
@@ -467,17 +502,66 @@ const entityList = computed<EntityRefMeta[]>(() => {
 const headerSubtitle = computed(() => {
   const sceneCount = scenes.value.length
   let totalSb = 0
-  let totalDur = 0
-  for (const s of scenes.value) {
-    // 不准确（store 只缓存 selected scene 的 storyboards）；近似显示
-  }
-  // 用当前 scene 的 storyboards 做累计估算
-  totalSb = storyboards.value.length
-  totalDur = storyboards.value.reduce((acc, sb) => acc + (sb.duration ?? 0), 0)
-  return `${sceneCount} 个场景 · 当前场景 ${totalSb} 个分镜 · 累计预估 ${totalDur.toFixed(1)}s`
+  // FU8-H2 真实总分镜数取自 sceneCounts；时长估算仅当前场景已加载（不强求全集时长聚合，
+  // 时长由 ⑤/⑥ stage 落到 storyboard.duration 字段后才准）
+  totalSb = totalStoryboardsAcrossScenes.value
+  const curDur = storyboards.value.reduce((acc, sb) => acc + (sb.duration ?? 0), 0)
+  return `${sceneCount} 个场景 · 共 ${totalSb} 个分镜 · 当前场景预估 ${curDur.toFixed(1)}s`
 })
 
-const canComplete = computed(() => storyboards.value.length > 0)
+/*
+ * FU8-H2 跨场景 canComplete + countSceneStoryboards 真实数据：
+ *   设计要求每场至少 1 个 Storyboard 才能进 ⑤。旧实现只看当前选中场景分镜数。
+ *   新实现：scenes 加载完毕后，并发拉每个场景的分镜，缓存到 sceneCounts。
+ *   - canComplete: 所有 scene 在 sceneCounts 中都 ≥1
+ *   - countSceneStoryboards: 显示真实数量，未加载完显示 "..."
+ */
+const sceneCounts = ref<Record<string, number>>({})
+const sceneCountsLoading = ref(false)
+
+async function reloadSceneCounts(): Promise<void> {
+  const list = scenes.value
+  if (!list || list.length === 0) {
+    sceneCounts.value = {}
+    return
+  }
+  sceneCountsLoading.value = true
+  try {
+    const api = (window as any).electronAPI?.episodeProduction
+    if (!api?.listStoryboards) return
+    const results = await Promise.all(
+      list.map(async (s: any) => {
+        try {
+          const resp = await api.listStoryboards(s.id)
+          if (resp?.success && Array.isArray(resp.data)) return [s.id, resp.data.length] as const
+        } catch {
+          /* 单条失败不影响其他场景计数 */
+        }
+        return [s.id, 0] as const
+      }),
+    )
+    const next: Record<string, number> = {}
+    for (const [id, cnt] of results) next[id] = cnt
+    sceneCounts.value = next
+  } finally {
+    sceneCountsLoading.value = false
+  }
+}
+
+watch(
+  () => scenes.value.map((s: any) => s.id).join('|'),
+  () => { void reloadSceneCounts() },
+  { immediate: true },
+)
+
+const totalStoryboardsAcrossScenes = computed(() =>
+  Object.values(sceneCounts.value).reduce((acc, n) => acc + n, 0),
+)
+
+const canComplete = computed(() => {
+  if (scenes.value.length === 0) return false
+  return scenes.value.every((s: any) => (sceneCounts.value[s.id] ?? 0) > 0)
+})
 
 function selectScene(id: string): void {
   selectedSceneId.value = id
@@ -499,10 +583,12 @@ async function loadStoryboardsForSelected(): Promise<void> {
   }
 }
 
-function countSceneStoryboards(_sceneId: string): string {
-  // 优化版：等 store 支持每场景缓存时再展开；当前显示 selected 场景的数量
-  if (selectedSceneId.value === _sceneId) return `${storyboards.value.length} 镜`
-  return '?'
+function countSceneStoryboards(sceneId: string): string {
+  // FU8-H2 真实数据：选中场景以 store 实时计为准（含刚生成未刷的）
+  if (selectedSceneId.value === sceneId) return `${storyboards.value.length} 镜`
+  const n = sceneCounts.value[sceneId]
+  if (n === undefined) return sceneCountsLoading.value ? '...' : '0 镜'
+  return `${n} 镜`
 }
 
 function getStatusClass(sb: any): string {
@@ -620,20 +706,70 @@ async function onSaveEdit(): Promise<void> {
   }
 }
 
+/*
+ * FU8-C1 单场景 AI 拆分镜：调 ep:generate-storyboard(sceneId)
+ * 后端 handler 内部走 generateStoryboardsIncremental + 落库 + 推送 ep:storyboard-progress
+ * 完成后 reload storyboards 让本场景的分镜列表立即出现。
+ */
 async function onGenerateForScene(): Promise<void> {
   if (!selectedScene.value) return
   generating.value = true
   try {
-    ElMessage.info('为本场景生成分镜 — IPC 复用现有 ep:generate-storyboards')
+    const api = (window as any).electronAPI?.episodeProduction
+    if (!api?.generateStoryboard) {
+      ElMessage.error('分镜生成 IPC 不可用')
+      return
+    }
+    const resp = await api.generateStoryboard(selectedScene.value.id)
+    if (!resp?.success) {
+      ElMessage.error(resp?.error || '生成分镜失败')
+      return
+    }
+    const cnt = Array.isArray(resp.data) ? resp.data.length : 0
+    ElMessage.success(`已为本场景生成 ${cnt} 个分镜`)
+    await storyboardStore.loadStoryboards(selectedScene.value.id)
+  } catch (e: any) {
+    ElMessage.error(e?.message || '生成分镜失败')
   } finally {
     generating.value = false
   }
 }
 
+/*
+ * FU8-C2 全剧本批量拆分镜：调 ep:generate-storyboards(scriptId)
+ * 后端 handler 顺序遍历所有 scene 调 generateStoryboards + 推送 ep:storyboards-progress
+ * 完成后 reload 当前选中场景的分镜列表（其他场景待选中时按需加载）
+ */
 async function onGenerateAllScenes(): Promise<void> {
+  if (!script.value?.id) {
+    ElMessage.warning('请先生成剧本')
+    return
+  }
+  if (scenes.value.length === 0) {
+    ElMessage.warning('剧本没有场景，请先 ✨ AI 重新生成剧本')
+    return
+  }
   generatingAll.value = true
   try {
-    ElMessage.info('一键拆所有场景 — 留 follow-up 实施异步队列')
+    const api = (window as any).electronAPI?.episodeProduction
+    if (!api?.generateStoryboards) {
+      ElMessage.error('分镜批量生成 IPC 不可用')
+      return
+    }
+    const resp = await api.generateStoryboards(script.value.id)
+    if (!resp?.success) {
+      ElMessage.error(resp?.error || '批量生成分镜失败')
+      return
+    }
+    const totalShots = Array.isArray(resp.data)
+      ? resp.data.reduce((acc: number, r: any) => acc + (r?.storyboards?.length ?? 0), 0)
+      : 0
+    ElMessage.success(`已为 ${scenes.value.length} 个场景生成共 ${totalShots} 个分镜`)
+    if (selectedScene.value) {
+      await storyboardStore.loadStoryboards(selectedScene.value.id)
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || '批量生成分镜失败')
   } finally {
     generatingAll.value = false
   }
@@ -898,6 +1034,29 @@ watch(
 .thumb-emoji {
   font-size: 36px;
   filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.15));
+}
+
+/* FU6-T5 真实首帧图片占满 thumb 区域 */
+.thumb-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* FU6-T5 未生成时显式标签：避免 user 把 emoji 当真实"示意图" */
+.thumb-empty-label {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 .status-badge {

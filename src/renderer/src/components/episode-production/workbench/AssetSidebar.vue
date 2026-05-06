@@ -1,5 +1,18 @@
 <template>
   <aside class="ep-asset-sidebar">
+    <!--
+      FU6-T6 顶部说明 banner：
+      user 反馈"不知道分镜引用资产从哪里设置" — 这里清单只显示 + 编辑入口，
+      真正的"引用 / 绑定"动作在主区（剧本场景的 @角色/@地点 / 分镜的"编辑分镜内角色"）。
+      用一行小提示明确职责，避免再被误以为"这里是绑定面板"。
+    -->
+    <div class="sidebar-help-banner">
+      <el-icon><InfoFilled /></el-icon>
+      <span class="help-text">
+        清单 / 编辑入口。<strong>引用</strong>请在主区：剧本 @角色/@地点、分镜"编辑分镜内角色"
+      </span>
+    </div>
+
     <!-- P6-T22 context-aware：当前激活 stage 的上下文标签 -->
     <div
       v-if="ctxStore.activeStage !== 'none' && ctxStore.activeContextLabel"
@@ -448,6 +461,33 @@ watch(
 }
 
 /* P6-T22 context-aware：当前 stage 上下文标签 */
+/* FU6-T6 sidebar 顶部"职责说明"banner */
+.sidebar-help-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--el-color-info-light-9);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
+
+  .el-icon {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: var(--el-color-info);
+  }
+
+  .help-text {
+    flex: 1;
+
+    strong {
+      color: var(--el-color-primary);
+    }
+  }
+}
+
 .sidebar-context-bar {
   display: flex;
   align-items: center;

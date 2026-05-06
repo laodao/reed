@@ -303,6 +303,7 @@ import {
 import StageMainHeader from '../shared/StageMainHeader.vue'
 import {
   useEpEpisodeStore,
+  useEpProjectStore,
   useEpScriptStore,
 } from '@/stores/episode-production'
 
@@ -313,6 +314,7 @@ const props = defineProps<{
 
 const episodeStore = useEpEpisodeStore()
 const scriptStore = useEpScriptStore()
+const projectStore = useEpProjectStore()
 
 const loadingTimeline = ref(false)
 const timeline = ref<any>(null)
@@ -420,23 +422,45 @@ function collectSubtitleSegs(): any[] {
     .sort((a, b) => a.startSec - b.startSec)
 }
 
+/*
+ * FU8-H4 BGM 段落真实数据（spec §5.3 / FU5 §11 L5 决策）：
+ *   旧实现 label/volume 全写死。改成：
+ *   - label：从 scriptStore.scenes 找对应 scene，拼"BGM · {location}（{mood}）"
+ *   - volume：用项目配置 audio.bgmVolume（无则保留 30 作为默认，并在 label 标注"默认"）
+ *   - 仍按 sceneScriptId 切段（每场一段 BGM 是合成层的稳定假设）。
+ */
 function collectBgmSegs(): any[] {
-  // BGM per-scene（spec §5.3 / FU5 §11 L5 决策）：每个场景一段 BGM
+  const projectVolume: number | undefined =
+    (projectStore.currentProject?.config as any)?.audio?.bgmVolume
+  const defaultVol = projectVolume ?? 30
+  const usingDefault = projectVolume === undefined
+
   const segs: any[] = []
   let acc = 0
   let curSceneId: string | null = null
   let curStart = 0
   let curDur = 0
+
+  function pushSeg(): void {
+    if (curSceneId === null) return
+    const scene: any = scriptStore.scenes?.find((s: any) => s.id === curSceneId)
+    const loc = scene?.location?.trim() || `场景 ${segs.length + 1}`
+    const mood = scene?.mood?.trim()
+    const label = mood
+      ? `BGM · ${loc}（${mood}）${usingDefault ? ' · 默认音量' : ''}`
+      : `BGM · ${loc}${usingDefault ? ' · 默认音量' : ''}`
+    segs.push({
+      startSec: curStart,
+      duration: curDur,
+      label,
+      volume: defaultVol,
+      sceneScriptId: curSceneId,
+    })
+  }
+
   for (const cell of cells.value) {
     if (cell.sceneScriptId !== curSceneId) {
-      if (curSceneId !== null) {
-        segs.push({
-          startSec: curStart,
-          duration: curDur,
-          label: `BGM 场景 ${segs.length + 1}`,
-          volume: 30,
-        })
-      }
+      pushSeg()
       curSceneId = cell.sceneScriptId
       curStart = acc
       curDur = cell.duration ?? 0
@@ -445,14 +469,7 @@ function collectBgmSegs(): any[] {
     }
     acc += cell.duration ?? 0
   }
-  if (curSceneId !== null) {
-    segs.push({
-      startSec: curStart,
-      duration: curDur,
-      label: `BGM 场景 ${segs.length + 1}`,
-      volume: 30,
-    })
-  }
+  pushSeg()
   return segs
 }
 

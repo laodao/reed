@@ -61,7 +61,11 @@
             <span v-else>（上传长文）</span>
           </span>
         </div>
-        <!-- 来源 tabs（当前模式高亮 + 切换 hint） -->
+        <!--
+          来源 tabs（当前模式高亮 + 切换 hint）
+          FU8-H1：sourceType 在剧集创建时定下，不在 ① stage 切换（避免数据契约错乱）。
+          切换 = 新建一集 → 顶部 "+" 入口（CreateEpisodeDialog 内有长文/上传二选一）。
+        -->
         <div class="source-tabs">
           <button
             class="source-tab"
@@ -80,6 +84,11 @@
             📝 上传文本
           </button>
         </div>
+        <p class="source-switch-hint">
+          需要切换来源？请回到顶部
+          <strong>+ 新建剧集</strong>
+          ，新建时可选"📚 长文项目"或"📝 上传长文"。
+        </p>
 
         <!-- 长文模式：显示关联的 outline -->
         <div v-if="episode.sourceType === 'outline'" class="source-detail">
@@ -751,6 +760,17 @@ async function onConfirm(): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.source-switch-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+
+  strong {
+    color: var(--el-color-primary);
+    font-weight: 500;
+  }
 }
 
 .detail-row {

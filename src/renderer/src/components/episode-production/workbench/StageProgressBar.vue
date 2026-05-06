@@ -166,14 +166,20 @@ defineExpose({ reload: loadProgress })
 </script>
 
 <style scoped lang="scss">
+/*
+ * FU6-T1 紧凑顶部 stepper：
+ *   原版 64px 高 + 圆 32px + 三行（圆/label/meta），占据屏幕过多。
+ *   改成单行 stepper：32px 高 + 圆 22px + label/meta 同行排列。
+ *   节省 ~32px 垂直空间，让主区视野更大。
+ */
 .stage-progress-bar {
   display: flex;
   align-items: center;
-  padding: 12px 16px;
+  padding: 4px 16px;
   background: var(--el-bg-color);
   border-bottom: 1px solid var(--el-border-color-light);
   gap: 12px;
-  min-height: 64px;
+  min-height: 36px;
 }
 
 .loading-state,
@@ -200,27 +206,30 @@ defineExpose({ reload: loadProgress })
 
 .stage-segment {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
+  gap: 6px;
   position: relative;
   cursor: pointer;
-  padding: 4px 8px;
-  min-width: 100px;
-  transition: transform 0.15s;
+  padding: 2px 8px;
+  min-width: 0;
+  flex: 1;
+  transition: opacity 0.15s;
 
   &:hover {
-    transform: translateY(-2px);
+    opacity: 0.85;
   }
 }
 
 .segment-circle {
-  width: 32px;
-  height: 32px;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: 12px;
   font-weight: 600;
   background: var(--el-fill-color);
   color: var(--el-text-color-secondary);
@@ -238,21 +247,11 @@ defineExpose({ reload: loadProgress })
   background: var(--el-color-primary);
   color: #fff;
   border-color: var(--el-color-primary);
-  box-shadow: 0 0 0 4px var(--el-color-primary-light-7);
-  animation: pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% {
-    box-shadow: 0 0 0 4px var(--el-color-primary-light-7);
-  }
-  50% {
-    box-shadow: 0 0 0 8px var(--el-color-primary-light-9);
-  }
+  box-shadow: 0 0 0 2px var(--el-color-primary-light-7);
 }
 
 .segment-label {
-  margin-top: 4px;
+  margin-top: 0;
   font-size: 12px;
   font-weight: 500;
   color: var(--el-text-color-primary);
@@ -266,7 +265,7 @@ defineExpose({ reload: loadProgress })
 }
 
 .segment-meta {
-  margin-top: 2px;
+  margin-top: 0;
   font-size: 10px;
   color: var(--el-text-color-secondary);
   white-space: nowrap;
@@ -286,13 +285,11 @@ defineExpose({ reload: loadProgress })
 }
 
 .segment-connector {
-  position: absolute;
-  top: 20px;
-  left: calc(50% + 16px);
+  flex: 1;
   height: 2px;
-  width: calc(100% - 16px);
+  min-width: 12px;
   background: var(--el-border-color);
-  z-index: -1;
+  align-self: center;
   transition: background 0.3s;
 }
 
@@ -302,28 +299,27 @@ defineExpose({ reload: loadProgress })
 
 .overall-progress {
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 4px;
-  margin-left: 16px;
-  padding-left: 16px;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  padding-left: 8px;
   border-left: 1px solid var(--el-border-color-light);
-  min-width: 160px;
+  min-width: 0;
+  flex-shrink: 0;
 }
 
 .overall-label {
   font-size: 11px;
   color: var(--el-text-color-secondary);
+  white-space: nowrap;
 }
 
 .overall-bar {
-  width: 140px;
+  width: 80px;
 }
 
 @media (max-width: 1280px) {
-  .stage-segment {
-    min-width: 80px;
-  }
   .overall-progress {
     display: none;
   }

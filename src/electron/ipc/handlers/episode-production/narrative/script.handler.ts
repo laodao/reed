@@ -21,7 +21,9 @@ export function registerScriptHandlers(): void {
   // ==================== 场景管理 ====================
   ipcBridge.handle('ep:list-scenes', handleListScenes)
   ipcBridge.handle('ep:get-scene', handleGetScene)
+  ipcBridge.handle('ep:create-scene', handleCreateScene) // FU8-C3
   ipcBridge.handle('ep:update-scene', handleUpdateScene)
+  ipcBridge.handle('ep:delete-scene', handleDeleteScene) // FU8-C3 删除
 
   // ==================== AI 生成（剧本与场景） ====================
   ipcBridge.handle('ep:generate-script', handleGenerateScript)
@@ -140,6 +142,67 @@ async function handleUpdateScene(
     return { success: true, data: scene }
   } catch (error: any) {
     return { success: false, error: error.message || '更新场景失败' }
+  }
+}
+
+/*
+ * FU8-C3 手动添加场景：
+ *   user 在 ③ 剧本 stage 点"添加场景"输入 location/timeOfDay 等基础要素，
+ *   后端补齐 sceneNumber（取已有最大值 +1）+ 默认空字段，落库返回完整 SceneScript。
+ *   不覆盖现有 scenes，只追加。
+ */
+async function handleCreateScene(
+  _event: any,
+  episodeScriptId: string,
+  partial: Partial<SceneScript>,
+): Promise<IpcResponse> {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.sceneScripts) {
+      return { success: false, error: '数据库未初始化' }
+    }
+    const existing = await db.sceneScripts.getByEpisodeScriptId(episodeScriptId)
+    const nextSceneNumber = existing.reduce(
+      (max, s: SceneScript) => Math.max(max, s.sceneNumber ?? 0),
+      0,
+    ) + 1
+
+    const created = await db.sceneScripts.create({
+      episodeScriptId,
+      sceneNumber: partial.sceneNumber ?? nextSceneNumber,
+      location: partial.location ?? '未命名地点',
+      locationBindingId: partial.locationBindingId ?? null,
+      locationType: (partial.locationType ?? 'interior') as any,
+      timeOfDay: (partial.timeOfDay ?? 'day') as any,
+      weather: partial.weather as any,
+      sceneDescription: partial.sceneDescription ?? '',
+      mood: partial.mood ?? '',
+      lighting: partial.lighting,
+      characters: partial.characters ?? [],
+      originalText: partial.originalText ?? '',
+      narration: partial.narration ?? '',
+      dialogues: partial.dialogues ?? [],
+      actions: partial.actions ?? [],
+    } as any)
+    return { success: true, data: created }
+  } catch (error: any) {
+    return { success: false, error: error.message || '创建场景失败' }
+  }
+}
+
+async function handleDeleteScene(
+  _event: any,
+  sceneId: string,
+): Promise<IpcResponse> {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.sceneScripts) {
+      return { success: false, error: '数据库未初始化' }
+    }
+    await db.sceneScripts.delete(sceneId)
+    return { success: true, data: { id: sceneId } }
+  } catch (error: any) {
+    return { success: false, error: error.message || '删除场景失败' }
   }
 }
 

@@ -100,14 +100,15 @@
       <!-- 标签页栏 -->
       <TabBar />
 
-      <!-- 页面内容 -->
+      <!--
+        FU6-T7 修复进入剧集页白屏：原 transition mode="out-in" + keep-alive
+        包裹 dynamic import 路由时存在竞态，首次切换 EpisodeWorkbench 时
+        leave 完成但 enter 未触发，page-container 渲染为空注释节点。改成
+        直接 :key=route.path 重建组件，去掉 transition / keep-alive 包装。
+      -->
       <div class="page-container" id="page-container">
         <router-view v-slot="{ Component, route }">
-          <transition :name="pageTransition" mode="out-in">
-            <keep-alive :include="cachedViews">
-              <component :is="Component" :key="route.path" />
-            </keep-alive>
-          </transition>
+          <component :is="Component" :key="route.path" />
         </router-view>
       </div>
     </main>
