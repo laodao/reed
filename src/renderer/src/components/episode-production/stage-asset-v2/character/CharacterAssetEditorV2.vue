@@ -79,12 +79,6 @@
           :binding-id="bindingId"
           asset-type="character"
         />
-        <div class="gallery-tip">
-          <el-icon><InfoFilled /></el-icon>
-          <span>
-            💡 派生图都以"主图"为参考生成 — 视角 / 表情 / 服装 / 姿势 跨变体保持人物形象一致
-          </span>
-        </div>
       </div>
     </div>
   </div>
@@ -96,7 +90,6 @@ import { ElMessage } from 'element-plus'
 import {
   ArrowLeft,
   DocumentChecked,
-  InfoFilled,
   Refresh,
 } from '@element-plus/icons-vue'
 import AssetSourceTag from '../../shared/AssetSourceTag.vue'
@@ -211,6 +204,7 @@ async function onSave(): Promise<void> {
       'role',
       'gender',
       'age',
+      'race',
       'voiceSpeed',
       'voicePitch',
       'voiceEmotion',
@@ -269,20 +263,22 @@ watch(() => props.bindingId, load)
 .editor-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
+  gap: 8px;
+  padding: 6px 14px;
   background: var(--el-bg-color);
   border-bottom: 1px solid var(--el-border-color-light);
   flex-shrink: 0;
+  min-height: 36px;
 }
 
 .back-btn {
   flex-shrink: 0;
+  padding: 4px 6px;
 }
 
 .ch-name {
   margin: 0;
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--el-text-color-primary);
 }
@@ -310,19 +306,6 @@ watch(() => props.bindingId, load)
   flex-direction: column;
   overflow: auto;
   min-height: 0;
-}
-
-.gallery-tip {
-  margin-top: 12px;
-  padding: 8px 12px;
-  background: var(--el-color-primary-light-9);
-  border-left: 3px solid var(--el-color-primary);
-  border-radius: 0 4px 4px 0;
-  font-size: 12px;
-  color: var(--el-text-color-regular);
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 
 @media (max-width: 1024px) {

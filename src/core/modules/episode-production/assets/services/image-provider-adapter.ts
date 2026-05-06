@@ -18,10 +18,36 @@
  * 或 SDXL panorama LoRA），那是另一个 follow-up，本 adapter 仅打通"能跑"基线。
  */
 
+import * as fs from 'fs'
+import * as path from 'path'
 import { ImageService } from '@core/services/image.service'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { resolveAssetPath } from '@core/utils/asset-path'
 import type { ImageGenerator } from './gallery-derivation.service'
 import type { PanoramaImageGenerator } from './panorama-generator.service'
+
+/**
+ * 把磁盘上的图像文件读成 data URL（用于把"主图"作为参考图传给 provider）。
+ * 失败返回 undefined（让生成走纯 prompt 模式而非整个失败）。
+ */
+function readImageAsDataUrl(relativeOrAbsPath: string): string | undefined {
+  try {
+    const abs = resolveAssetPath(relativeOrAbsPath)
+    if (!fs.existsSync(abs)) return undefined
+    const buf = fs.readFileSync(abs)
+    const ext = path.extname(abs).toLowerCase().replace(/^\./, '') || 'png'
+    const mime =
+      ext === 'jpg' || ext === 'jpeg'
+        ? 'image/jpeg'
+        : ext === 'webp'
+          ? 'image/webp'
+          : 'image/png'
+    return `data:${mime};base64,${buf.toString('base64')}`
+  } catch (e) {
+    console.warn('[image-provider-adapter] 读取参考图失败:', relativeOrAbsPath, e)
+    return undefined
+  }
+}
 
 /** 派生图默认尺寸（视角 / 表情 / 服装 / 姿势 / 时间 / 天气 / 角度通用） */
 const DEFAULT_DERIVE_WIDTH = 1024
@@ -69,9 +95,11 @@ async function pickImageModel(): Promise<{ providerConfigId: string; model: stri
  * 创建 gallery 派生用的 ImageGenerator。
  * 调 ImageService.generateImage（skipHistory=true，避免污染主图像库历史）。
  *
- * referenceImagePaths 暂不传给 provider —— 各家 provider 对参考图协议不一致
- * （DashScope wanx 用 referenceImage 字段，OpenAI 用 image-to-image 端点等），
- * 当前仅做 prompt-only 派生。后续如需精细控制可引入 ControlNet / IP-Adapter。
+ * 派生图必须以"主图"作 reference image —— 否则 AI 完全按 prompt 自由发挥，
+ * 跨变体的人物形象 / 风格 / 长相会漂移（实测会出现完全不同的人）。
+ * 这里把主图文件读成 data URL 透传到 ImageService.generateImage 的 referenceImage
+ * 字段，后续 provider 适配层负责按各家协议（DashScope reference_images /
+ * OpenAI image-to-image / Volcengine prompt_image_url 等）转译。
  */
 export function createGalleryImageGenerator(): ImageGenerator {
   return {
@@ -81,6 +109,10 @@ export function createGalleryImageGenerator(): ImageGenerator {
         ? `${opts.prompt}, variant: ${opts.label}`
         : opts.prompt
 
+      // 主图作参考：取第一张（派生 service 当前只传一张主图）
+      const refPath = opts.referenceImagePaths?.[0]
+      const referenceImage = refPath ? readImageAsDataUrl(refPath) : undefined
+
       const { providerConfigId, model } = await pickImageModel()
       const resp = await ImageService.generateImage({
         providerConfigId,
@@ -89,6 +121,7 @@ export function createGalleryImageGenerator(): ImageGenerator {
         negativePrompt: opts.negativePrompt,
         width: DEFAULT_DERIVE_WIDTH,
         height: DEFAULT_DERIVE_HEIGHT,
+        referenceImage,
         skipHistory: true,
       })
 
@@ -113,10 +146,16 @@ export function createGalleryImageGenerator(): ImageGenerator {
  * 注意：panorama-generator.service.generateFor 自己已经在 prompt 末尾拼了
  * PANORAMA_PROMPT_SUFFIX（"... 360 panorama equirectangular ..."），
  * adapter 不再重复添加，避免 prompt 双重。
+ *
+ * referenceImagePaths：service 传入主图路径时，把主图读为 data URL 作 reference，
+ * 让 panorama 在风格 / 色调 / 陈设元素上跟主图对齐。
  */
 export function createPanoramaImageGenerator(): PanoramaImageGenerator {
   return {
     async generate(opts) {
+      const refPath = opts.referenceImagePaths?.[0]
+      const referenceImage = refPath ? readImageAsDataUrl(refPath) : undefined
+
       const { providerConfigId, model } = await pickImageModel()
       const resp = await ImageService.generateImage({
         providerConfigId,
@@ -125,6 +164,7 @@ export function createPanoramaImageGenerator(): PanoramaImageGenerator {
         negativePrompt: opts.negativePrompt,
         width: DEFAULT_PANORAMA_WIDTH,
         height: DEFAULT_PANORAMA_HEIGHT,
+        referenceImage,
         skipHistory: true,
       })
 

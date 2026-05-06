@@ -192,6 +192,14 @@ export interface VideoEpisode {
 }
 
 /**
+ * 剧集更新载荷 — 可更新字段为 VideoEpisode 中除身份/时间戳外的全部字段；
+ * 用于前后端 update 接口的统一类型契约（store · handler · repository）。
+ */
+export type UpdateVideoEpisodeData = Partial<
+  Omit<VideoEpisode, 'id' | 'projectId' | 'createdAt' | 'updatedAt'>
+>
+
+/**
  * 缺失项详情（spec §2.3 软引导提示用 · P6-T16）
  */
 export interface StageGap {

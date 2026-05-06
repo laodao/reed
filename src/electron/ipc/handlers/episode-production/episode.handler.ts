@@ -7,6 +7,7 @@
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
+import type { UpdateVideoEpisodeData } from '@shared/types/episode-production'
 import { StoryToVideoAIService } from '@core/services/story-to-video-ai.service'
 import { EpisodeAutoBindingService } from '@core/modules/episode-production/auto-binding/episode-auto-binding.service'
 import { UploadedEntityService } from '@core/modules/episode-production/auto-binding/uploaded-entity.service'
@@ -52,11 +53,15 @@ async function handleUpdateUploadedEntities(
 
 // ==================== FU4-1 AI 识别要素 ====================
 
+type IdentifyKind = 'character' | 'location' | 'item'
+const ALL_KINDS: readonly IdentifyKind[] = ['character', 'location', 'item']
+
 async function handleIdentifyEntities(
   _event: any,
   episodeId: string,
   providerConfigId?: string,
   modelId?: string,
+  kinds?: IdentifyKind[],
 ): Promise<IpcResponse> {
   try {
     if (!episodeId) return { success: false, error: 'episodeId 不能为空' }
@@ -77,36 +82,59 @@ async function handleIdentifyEntities(
       }
     }
 
+    const targetKinds: IdentifyKind[] =
+      Array.isArray(kinds) && kinds.length > 0
+        ? ALL_KINDS.filter((k) => kinds.includes(k))
+        : [...ALL_KINDS]
+    if (targetKinds.length === 0) {
+      return { success: false, error: 'kinds 参数无有效类型' }
+    }
+
     const aiService = StoryToVideoAIService.getInstance()
-    // 三类要素并行识别（spec §0.4 IdentifyEntities）
+    // 选定类型并行识别（spec §0.4 IdentifyEntities）
+    const want = (k: IdentifyKind): boolean => targetKinds.includes(k)
     const [characters, locations, items] = await Promise.all([
-      aiService.identifyCharacters(episode.uploadedContent, providerConfigId, modelId),
-      aiService.identifyLocations(episode.uploadedContent, providerConfigId, modelId),
-      aiService.identifyItems(episode.uploadedContent, providerConfigId, modelId),
+      want('character')
+        ? aiService.identifyCharacters(episode.uploadedContent, providerConfigId, modelId)
+        : Promise.resolve(null),
+      want('location')
+        ? aiService.identifyLocations(episode.uploadedContent, providerConfigId, modelId)
+        : Promise.resolve(null),
+      want('item')
+        ? aiService.identifyItems(episode.uploadedContent, providerConfigId, modelId)
+        : Promise.resolve(null),
     ])
 
-    // 创建并绑定 uploaded 实体（自动转 standalone binding）
+    // 仅为本次重识别的 kind 创建/绑定资产，避免误创建未受影响 kind 的重复资产
     await UploadedEntityService.createAndBindUploadedEntities(
       episode.projectId,
       episode.id,
-      characters,
-      locations,
-      items,
+      characters ?? [],
+      locations ?? [],
+      items ?? [],
     )
 
-    // 写回 episode.uploadedX
-    await db.videoEpisodes.update(episodeId, {
-      uploadedCharacters: characters,
-      uploadedLocations: locations,
-      uploadedItems: items,
-    })
+    // 写回 episode.uploadedX：未识别的 kind 保留原值
+    const patch: Record<string, any> = {}
+    if (characters !== null) patch.uploadedCharacters = characters
+    if (locations !== null) patch.uploadedLocations = locations
+    if (items !== null) patch.uploadedItems = items
+    await db.videoEpisodes.update(episodeId, patch)
 
+    // 返回最新三类计数（未受影响的回填现有值）
     return {
       success: true,
       data: {
-        characters: characters.length,
-        locations: locations.length,
-        items: items.length,
+        characters:
+          characters?.length ??
+          (Array.isArray(episode.uploadedCharacters) ? episode.uploadedCharacters.length : 0),
+        locations:
+          locations?.length ??
+          (Array.isArray(episode.uploadedLocations) ? episode.uploadedLocations.length : 0),
+        items:
+          items?.length ??
+          (Array.isArray(episode.uploadedItems) ? episode.uploadedItems.length : 0),
+        kinds: targetKinds,
       },
     }
   } catch (e: any) {
@@ -279,12 +307,7 @@ async function handleCreateEpisode(
 async function handleUpdateEpisode(
   _event: any,
   episodeId: string,
-  data: {
-    title?: string
-    status?: string
-    duration?: number
-    scriptId?: string
-  }
+  data: UpdateVideoEpisodeData,
 ): Promise<IpcResponse> {
   try {
     const db = getCoreDatabaseManager()
@@ -292,7 +315,18 @@ async function handleUpdateEpisode(
       return { success: false, error: '数据库未初始化' }
     }
 
-    const episode = await db.videoEpisodes.update(episodeId, data)
+    // uploaded 模式编辑原文：做基本校验（与 createEpisode 同口径，避免脏数据）
+    if (typeof data.uploadedContent === 'string') {
+      const wc = data.uploadedContent.length
+      if (wc < 500) {
+        return { success: false, error: `原文字数不足，当前 ${wc} 字，最少需要 500 字` }
+      }
+      if (wc > 15000) {
+        return { success: false, error: `原文字数超出限制，当前 ${wc} 字，最多允许 15000 字` }
+      }
+    }
+
+    const episode = await db.videoEpisodes.update(episodeId, data as any)
     if (!episode) {
       return { success: false, error: '剧集不存在' }
     }

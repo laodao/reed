@@ -39,7 +39,16 @@
           <div class="vp-label">
             yaw{{ getMeta(s).yaw ?? '?' }}° · pitch{{ getMeta(s).pitch ?? '?' }}° · fov{{ getMeta(s).fov ?? '?' }}°
           </div>
-          <el-button text size="small" class="del-btn" @click.stop="onDelete(s.id)">删</el-button>
+          <span class="cell-actions" @click.stop>
+            <el-tooltip content="用这张截图替换地点主图" placement="top">
+              <el-button text size="small" class="action-btn" @click="onSetAsMain(s.id)">
+                设为主图
+              </el-button>
+            </el-tooltip>
+            <el-button text size="small" class="action-btn danger" @click="onDelete(s.id)">
+              删
+            </el-button>
+          </span>
         </div>
       </div>
     </div>
@@ -57,7 +66,7 @@
  *   - snapshot 的视角元数据通过 metadata 字段（json）回写。
  */
 import { ref, onMounted, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import PanoramaViewer from '@/components/episode-production/shared/PanoramaViewer.vue'
 import { toImageUrl } from '@/utils/asset-url'
 
@@ -83,6 +92,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'snapshot-created': [snapshot: PanoramaSnapshotRow]
+  'main-replaced': []
 }>()
 
 const viewerRef = ref<InstanceType<typeof PanoramaViewer> | null>(null)
@@ -175,6 +185,38 @@ async function onDelete(id: string) {
     }
   } catch (err: any) {
     ElMessage.error('删除失败: ' + (err?.message ?? '未知错误'))
+  }
+}
+
+/**
+ * 用这张截图替换地点主图：调 setAsMain 切 isMain + category。
+ * 原主图自动降级为 view，不删图（数据保留）。父组件应在 main-replaced 事件后 reload。
+ */
+async function onSetAsMain(id: string) {
+  try {
+    await ElMessageBox.confirm(
+      '将这张截图设为地点主图？原主图会降级为普通图（保留不删除）。',
+      '设为主图',
+      { type: 'warning', confirmButtonText: '设为主图', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  const imageApi = (window as any).electronAPI?.episodeProduction?.asset?.image
+  if (!imageApi?.setAsMain) {
+    ElMessage.error('image.setAsMain IPC 未暴露')
+    return
+  }
+  try {
+    const resp = await imageApi.setAsMain(id)
+    if (!resp?.success) {
+      ElMessage.error(resp?.error || '设为主图失败')
+      return
+    }
+    ElMessage.success('已设为主图')
+    emit('main-replaced')
+  } catch (err: any) {
+    ElMessage.error('设为主图失败: ' + (err?.message ?? '未知错误'))
   }
 }
 
@@ -273,10 +315,29 @@ watch(() => props.locationBindingId, loadSnapshots)
   font-family: monospace;
 }
 
-.del-btn {
+.cell-actions {
   position: absolute;
   top: 2px;
   right: 2px;
+  display: inline-flex;
+  gap: 2px;
   background-color: var(--el-bg-color);
+  border-radius: 3px;
+  padding: 1px 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.snapshot-cell:hover .cell-actions {
+  opacity: 1;
+}
+
+.action-btn {
+  padding: 0 4px;
+  height: 22px;
+}
+
+.action-btn.danger {
+  color: var(--el-color-danger);
 }
 </style>

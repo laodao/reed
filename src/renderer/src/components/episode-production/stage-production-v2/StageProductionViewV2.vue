@@ -782,8 +782,8 @@ watch(
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
+  gap: 10px 16px;
+  padding: 10px 12px;
   background: var(--el-fill-color-lighter);
   border-radius: 4px;
 }
@@ -791,18 +791,28 @@ watch(
 .tool-item {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .tool-label {
   font-size: 12px;
   color: var(--el-text-color-secondary);
-  margin-right: 4px;
+  flex-shrink: 0;
+}
+
+/* 控件给最小宽度，避免标签 + 控件挤变形（与分镜界面对齐） */
+.tool-item :deep(.el-select),
+.tool-item :deep(.el-input-number) {
+  min-width: 110px;
+  width: 110px;
 }
 
 .suffix-x {
   font-size: 12px;
   color: var(--el-text-color-placeholder);
+  margin-left: -2px;
 }
 
 .kf-buttons.inline {

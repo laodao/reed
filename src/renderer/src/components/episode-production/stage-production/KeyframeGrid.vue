@@ -133,10 +133,11 @@
       destroy-on-close
     >
       <img
-        v-if="previewKeyframe?._imagePath"
-        :src="toImageUrl(previewKeyframe._imagePath)"
+        v-if="previewKeyframe?.imagePath"
+        :src="toImageUrl(previewKeyframe.imagePath)"
         style="width: 100%; height: auto"
       />
+      <el-empty v-else description="该关键帧暂无图像" />
       <div v-if="previewKeyframe?.prompt" class="preview-prompt">
         <strong>Prompt：</strong>
         <pre>{{ previewKeyframe.prompt }}</pre>
@@ -460,42 +461,60 @@ defineExpose({ reload: loadKeyframes })
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 6px;
   font-size: 11px;
-  padding: 0 2px;
+  padding: 4px 2px 0;
+  min-height: 22px;
+}
+
+.cell-meta .role-tag {
+  flex-shrink: 0;
+  height: 20px;
+  line-height: 18px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+.time-percent {
+  color: var(--el-text-color-secondary);
+  font-size: 11px;
+  flex-shrink: 0;
 }
 
 .cell-assets {
   display: flex;
   flex-wrap: wrap;
-  gap: 3px;
-  padding: 2px 0;
-
-  .el-tag {
-    font-size: 10px;
-    padding: 0 6px;
-    height: 20px;
-    line-height: 18px;
-
-    .el-icon {
-      font-size: 11px;
-      margin-right: 2px;
-    }
-
-    .chip-expr {
-      margin-left: 2px;
-      color: var(--el-color-warning);
-      font-weight: 500;
-    }
-  }
-
-  .loc-chip {
-    width: 100%;
-    justify-content: flex-start;
-  }
+  gap: 4px;
+  padding: 2px 0 0;
 }
 
-.time-percent {
-  color: var(--el-text-color-secondary);
+.cell-assets :deep(.el-tag) {
+  height: 20px;
+  line-height: 18px;
+  padding: 0 6px;
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cell-assets :deep(.el-tag .el-icon) {
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.cell-assets .chip-expr {
+  margin-left: 2px;
+  color: var(--el-color-warning);
+  font-weight: 500;
+}
+
+.cell-assets .loc-chip {
+  flex-basis: 100%;
 }
 
 .preview-prompt {

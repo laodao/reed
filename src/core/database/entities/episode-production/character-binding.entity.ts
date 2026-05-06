@@ -97,6 +97,10 @@ export class CharacterBindingEntity {
   @Column({ name: 'age', type: 'integer', nullable: true })
   age!: number | null
 
+  /** 人种 — 用于 AI 主图 / 派生图 prompt 拼接，枚举见 RACE_OPTIONS */
+  @Column({ name: 'race', type: 'text', nullable: true })
+  race!: string | null
+
   /** 默认情感（neutral / angry / happy / sad / surprised / confused） */
   @Column({ name: 'voice_emotion', type: 'text', nullable: true })
   voiceEmotion!: string | null

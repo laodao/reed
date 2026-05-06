@@ -2,13 +2,12 @@
   <!--
     CharacterCardFormV2 · 角色设定卡（FU5-C2 / 原型 §4.C 6 节）
 
-    严格按对照表 §4 cell 表 6 节实施：
+    严格按对照表 §4 cell 表实施：
       ① 身份（姓名 / 别名 / 定位 / 性别 / 年龄）
       ② 外貌（自由文字 + 来自长文 hint + 添加 override）
       ③ 服装（默认 + 备选数组）
-      ④ 声音（音色 + 试听 / 语速 / 音调 / 情感）
-      ⑤ 风格锚点（tags 数组）
-      ⑥ 形象库 portrait_id 绑定
+      ④ 声音（音色 — 语速 / 音调 / 情感按场景在分镜阶段配置）
+      ⑤ 形象库 portrait_id 绑定
 
     每个字段独立 onChange → emit('change', { key, value, dirty })，
     父组件 EditorV2 收集成 patch 一次性提交（按 IPC 类型分发）。
@@ -66,6 +65,22 @@
             :placeholder="undefined"
             @change="onChange('age', form.age, form.age !== initial.age)"
           />
+        </el-form-item>
+        <el-form-item label="人种">
+          <el-select
+            v-model="form.race"
+            placeholder="选择人种"
+            clearable
+            class="full-width"
+            @change="onChange('race', form.race, form.race !== initial.race)"
+          >
+            <el-option
+              v-for="opt in RACE_OPTIONS"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
+          </el-select>
         </el-form-item>
       </el-form>
     </section>
@@ -135,60 +150,13 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="语速">
-          <el-input-number
-            v-model="form.voiceSpeed"
-            :min="0.5"
-            :max="2.0"
-            :step="0.1"
-            @change="onChange('voiceSpeed', form.voiceSpeed, form.voiceSpeed !== initial.voiceSpeed)"
-          />
-          <span class="suffix-x">x</span>
-        </el-form-item>
-        <el-form-item label="音调">
-          <el-input-number
-            v-model="form.voicePitch"
-            :min="-12"
-            :max="12"
-            :step="1"
-            @change="onChange('voicePitch', form.voicePitch, form.voicePitch !== initial.voicePitch)"
-          />
-        </el-form-item>
-        <el-form-item label="情感">
-          <el-select
-            v-model="form.voiceEmotion"
-            placeholder="选择情感"
-            clearable
-            class="full-width"
-            @change="onChange('voiceEmotion', form.voiceEmotion, form.voiceEmotion !== initial.voiceEmotion)"
-          >
-            <el-option label="neutral 中性" value="neutral" />
-            <el-option label="angry 愤怒" value="angry" />
-            <el-option label="happy 开心" value="happy" />
-            <el-option label="sad 悲伤" value="sad" />
-            <el-option label="surprised 惊讶" value="surprised" />
-            <el-option label="confused 困惑" value="confused" />
-          </el-select>
-        </el-form-item>
+        <p class="section-note">
+          语速 / 音调 / 情感按场景在分镜阶段配置 — 同一角色不同场景可不同。
+        </p>
       </el-form>
     </section>
 
-    <!-- ⑤ 风格锚点 -->
-    <section class="form-section">
-      <div class="section-label">风格锚点</div>
-      <el-select
-        v-model="form.styleAnchors"
-        multiple
-        filterable
-        allow-create
-        default-first-option
-        placeholder="如：工笔国风 / 水墨 / 微写实（按回车添加）"
-        class="full-width"
-        @change="onChange('styleAnchors', form.styleAnchors, !arraysEqual(form.styleAnchors, initial.styleAnchors))"
-      />
-    </section>
-
-    <!-- ⑥ 形象库 portrait_id -->
+    <!-- ⑤ 形象库 portrait_id -->
     <section class="form-section last">
       <div class="section-label">形象库</div>
       <div class="portrait-row">
@@ -242,6 +210,7 @@ const form = reactive<{
   role: string | null
   gender: string | null
   age: number | null
+  race: string | null
   appearance: string
   outfit: string
   outfitsExtra: string[]
@@ -257,6 +226,7 @@ const form = reactive<{
   role: null,
   gender: null,
   age: null,
+  race: null,
   appearance: '',
   outfit: '',
   outfitsExtra: [],
@@ -267,6 +237,21 @@ const form = reactive<{
   styleAnchors: [],
   portraitId: null,
 })
+
+/**
+ * 人种枚举（角色资产）— 与后端 race 列、prompt builder 共享同一组 value。
+ * value 用英文 key 是为了让 prompt 拼接时直接映射到英文 prompt 词，
+ * label 仅 UI 显示。
+ */
+const RACE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: 'east_asian', label: '东亚' },
+  { value: 'south_asian', label: '南亚' },
+  { value: 'southeast_asian', label: '东南亚' },
+  { value: 'central_asian', label: '中亚' },
+  { value: 'european', label: '欧洲' },
+  { value: 'african', label: '非洲' },
+  { value: 'south_american', label: '南美' },
+]
 
 const initial = ref<any>({})
 
@@ -282,6 +267,7 @@ watch(
     form.role = b.role ?? null
     form.gender = b.gender ?? null
     form.age = b.age ?? null
+    form.race = b.race ?? null
     form.appearance =
       (isLwBinding ? b.overrideAppearance : b.standaloneDescription) ?? ''
     form.outfit = b.overrideOutfit ?? ''
@@ -384,6 +370,13 @@ function arraysEqual(a: string[], b: string[]): boolean {
 .lw-hint {
   font-size: 10px;
   color: var(--el-color-primary);
+}
+
+.section-note {
+  margin: 4px 0 0 60px;
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
+  line-height: 1.5;
 }
 
 .full-width {

@@ -24,10 +24,22 @@
           </template>
         </el-tag>
       </span>
-      <el-button size="small" @click="emit('add')">
-        <el-icon><Plus /></el-icon>
-        <span>手动加</span>
-      </el-button>
+      <span class="col-actions">
+        <el-button
+          v-if="canReidentify"
+          size="small"
+          :loading="reidentifying"
+          :title="`仅重新识别${title}`"
+          @click="emit('reidentify')"
+        >
+          <el-icon><Refresh /></el-icon>
+          <span>重新识别</span>
+        </el-button>
+        <el-button size="small" @click="emit('add')">
+          <el-icon><Plus /></el-icon>
+          <span>手动加</span>
+        </el-button>
+      </span>
     </header>
 
     <div v-if="entities.length === 0" class="empty-hint">
@@ -83,7 +95,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, Refresh } from '@element-plus/icons-vue'
 import AssetSourceTag from '../shared/AssetSourceTag.vue'
 import type {
   UploadedCharacter,
@@ -98,6 +110,10 @@ const props = defineProps<{
   icon: string
   title: string
   entities: AnyEntity[]
+  /** 是否允许"重新识别" — 由父组件控制（uploaded 模式 + 未确认 + 有原文） */
+  canReidentify?: boolean
+  /** 当前列正在重新识别（loading 态） */
+  reidentifying?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -106,6 +122,7 @@ const emit = defineEmits<{
   (e: 'add'): void
   (e: 'edit', idx: number): void
   (e: 'delete', idx: number): void
+  (e: 'reidentify'): void
 }>()
 
 const confirmedInCol = computed(
@@ -138,6 +155,14 @@ function getSubtitle(e: AnyEntity): string {
   justify-content: space-between;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--el-border-color-lighter);
+  gap: 6px;
+}
+
+.col-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .col-title {

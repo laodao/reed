@@ -132,7 +132,9 @@
               :key="sb.id"
               class="shot-card-v2"
               :class="{ active: selectedStoryboardId === sb.id }"
+              :title="'双击进入 ⑤ 画面+音频'"
               @click="selectedStoryboardId = sb.id"
+              @dblclick="emit('jump-to-production', sb)"
             >
               <div class="shot-thumb" :class="getStatusClass(sb)">
                 <span class="shot-no-badge">{{ selectedSceneIndex + 1 }}.{{ sb.shotNumber }}</span>
@@ -191,6 +193,71 @@
             </el-button>
           </header>
 
+          <!-- 所属场景剧情快照（默认收起；提供编辑分镜时的剧本上下文） -->
+          <el-collapse v-if="selectedScene" class="scene-context-collapse">
+            <el-collapse-item name="ctx">
+              <template #title>
+                <span class="scene-ctx-title">
+                  📖 所属场景剧情
+                  <span class="scene-ctx-meta">
+                    · 场景 {{ selectedSceneIndex + 1 }}
+                    <template v-if="selectedScene.location">· 📍 {{ selectedScene.location }}</template>
+                  </span>
+                </span>
+              </template>
+              <div class="scene-ctx-body">
+                <div v-if="selectedScene.originalText" class="ctx-row">
+                  <span class="ctx-label">原文</span>
+                  <span class="ctx-text muted">{{ selectedScene.originalText }}</span>
+                </div>
+                <div v-if="selectedScene.narration" class="ctx-row">
+                  <span class="ctx-label">旁白</span>
+                  <span class="ctx-text">
+                    <EntityRefRenderer :text="selectedScene.narration" :entities="entityList" />
+                  </span>
+                </div>
+                <div
+                  v-for="(d, di) in sceneDialoguesOf(selectedScene)"
+                  :key="`ctx-d-${di}`"
+                  class="ctx-row"
+                >
+                  <span class="ctx-label">对话</span>
+                  <span class="ctx-text">
+                    <strong>
+                      <EntityRefRenderer
+                        :text="`@${d.characterName ?? '?'}`"
+                        :entities="entityList"
+                      />
+                    </strong>
+                    <span v-if="d.emotion" class="ctx-attr">· {{ d.emotion }}</span>
+                    <span class="ctx-dlg">· "{{ d.text }}"</span>
+                  </span>
+                </div>
+                <div
+                  v-for="(a, ai) in sceneActionsOf(selectedScene)"
+                  :key="`ctx-a-${ai}`"
+                  class="ctx-row"
+                >
+                  <span class="ctx-label">动作</span>
+                  <span class="ctx-text">
+                    <EntityRefRenderer :text="a.description ?? a.text ?? ''" :entities="entityList" />
+                  </span>
+                </div>
+                <div
+                  v-if="
+                    !selectedScene.originalText &&
+                    !selectedScene.narration &&
+                    sceneDialoguesOf(selectedScene).length === 0 &&
+                    sceneActionsOf(selectedScene).length === 0
+                  "
+                  class="ctx-empty"
+                >
+                  该场景没有原文 / 旁白 / 对话 / 动作信息
+                </div>
+              </div>
+            </el-collapse-item>
+          </el-collapse>
+
           <!-- 镜头语言 toolbar -->
           <div class="lang-toolbar">
             <label class="tool-item">
@@ -244,7 +311,8 @@
                 v-model="editDraft.duration"
                 :min="0.5"
                 :max="60"
-                :step="0.5"
+                :step="0.1"
+                :precision="1"
                 size="small"
                 controls-position="right"
                 @change="onEditChange('duration', $event)"
@@ -468,18 +536,36 @@ watch(
 const storyboardCharacters = computed(() => selectedStoryboard.value?.characters ?? [])
 
 /*
- * FU6-T5 通过 characterId 反查 binding 拿真名：
- *   StoryboardCharacter 数据契约只有 characterId（指向 epAssetCharacterBinding）；
- *   一些旧记录可能直接挂 characterBindingId 或 characterName，这里都做兼容。
- *   返回 null 给上层用 (未绑定) 提示。
+ * 通过 characterId 反查 binding 拿真名。
+ *
+ * 三层 fallback：
+ *   1. c.characterName 直接是字符串就用（兼容老结构）
+ *   2. c.characterId / c.characterBindingId === binding.id 严格匹配（理想契约）
+ *   3. LLM 生成 storyboard 时常把 characterId 填成"角色名字"或自创短 id（如 "elder_01" / "少年"），
+ *      字面 id 不在 binding.id 集合里 → 这里再按 standaloneName / overrideName 模糊匹配回真 binding，
+ *      让 UI 显示正确名字（避免"未绑定"假象）。匹配不到才返 null。
  */
 function resolveCharName(c: any): string | null {
   if (typeof c?.characterName === 'string' && c.characterName.trim()) return c.characterName
   const id: string | undefined = c?.characterId ?? c?.characterBindingId
   if (!id) return null
-  const b = (assetStore.epAssetCharacters ?? []).find((x: any) => x.id === id)
-  if (!b) return null
-  return (b as any).standaloneName ?? (b as any).overrideName ?? null
+  const all = assetStore.epAssetCharacters ?? []
+  // 2. 严格 id 匹配
+  const byId = all.find((x: any) => x.id === id)
+  if (byId) {
+    return (byId as any).standaloneName ?? (byId as any).overrideName ?? null
+  }
+  // 3. 兜底：把 id 当作"名字"按 standaloneName / overrideName 匹配
+  const idStr = String(id).trim().toLowerCase()
+  const byName = all.find((x: any) => {
+    const a = String((x as any).standaloneName ?? '').trim().toLowerCase()
+    const b = String((x as any).overrideName ?? '').trim().toLowerCase()
+    return (a && a === idStr) || (b && b === idStr)
+  })
+  if (byName) {
+    return (byName as any).standaloneName ?? (byName as any).overrideName ?? null
+  }
+  return null
 }
 
 const entityList = computed<EntityRefMeta[]>(() => {
@@ -655,6 +741,15 @@ function cameraMovementLabel(m: string): string {
 
 function keyframeCountOf(sb: any): number {
   return sb.keyframeCount ?? 3
+}
+
+/** 当前选中场景的对白 / 动作列表 helper（与剧本视图逻辑一致） */
+function sceneDialoguesOf(scene: any): any[] {
+  return Array.isArray(scene?.dialogues) ? scene.dialogues : []
+}
+
+function sceneActionsOf(scene: any): any[] {
+  return Array.isArray(scene?.actions) ? scene.actions : []
 }
 
 function sceneCastNames(scene: any): string[] {
@@ -1157,12 +1252,99 @@ watch(
   flex: 1;
 }
 
+/* 所属场景剧情折叠面板 */
+.scene-context-collapse {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+  margin-bottom: 10px;
+  background: var(--el-fill-color-lighter);
+}
+
+.scene-context-collapse :deep(.el-collapse-item__header) {
+  padding: 0 12px;
+  background: transparent;
+  border-bottom: none;
+  font-size: 13px;
+  height: 36px;
+  line-height: 36px;
+}
+
+.scene-context-collapse :deep(.el-collapse-item__wrap) {
+  background: transparent;
+}
+
+.scene-context-collapse :deep(.el-collapse-item__content) {
+  padding: 6px 12px 12px;
+}
+
+.scene-ctx-title {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.scene-ctx-meta {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-left: 4px;
+}
+
+.scene-ctx-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--el-text-color-regular);
+}
+
+.ctx-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.ctx-label {
+  flex-shrink: 0;
+  width: 36px;
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color);
+  border-radius: 3px;
+  padding: 1px 0;
+  text-align: center;
+}
+
+.ctx-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.ctx-text.muted {
+  color: var(--el-text-color-placeholder);
+}
+
+.ctx-attr {
+  margin-left: 4px;
+  color: var(--el-color-primary);
+}
+
+.ctx-dlg {
+  margin-left: 4px;
+}
+
+.ctx-empty {
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+  font-style: italic;
+}
+
 .lang-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
+  gap: 10px 16px;
+  padding: 10px 12px;
   background: var(--el-fill-color-lighter);
   border-radius: 4px;
 }
@@ -1170,17 +1352,28 @@ watch(
 .tool-item {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .tool-label {
   font-size: 12px;
   color: var(--el-text-color-secondary);
+  flex-shrink: 0;
+}
+
+/* 控件给最小宽度，避免标签 + 控件挤变形 */
+.tool-item :deep(.el-select),
+.tool-item :deep(.el-input-number) {
+  min-width: 110px;
+  width: 110px;
 }
 
 .suffix-x {
   font-size: 12px;
   color: var(--el-text-color-placeholder);
+  margin-left: -2px;
 }
 
 /* 关键帧数 1-9 visual 按钮 */

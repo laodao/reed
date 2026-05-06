@@ -116,7 +116,7 @@
                 <template v-else>未指定地点</template>
                 <template v-if="scene.timeOfDay || scene.weather">
                   <span class="meta-sep">·</span>
-                  <span>{{ scene.timeOfDay ?? '?时' }} · {{ scene.weather ?? '?气' }}</span>
+                  <span>{{ timeOfDayText(scene.timeOfDay) }} · {{ weatherText(scene.weather) }}</span>
                 </template>
               </span>
               <span class="scene-cast">
@@ -597,17 +597,23 @@ function onFixViolation(v: CompletenessViolation): void {
     ElMessage.info('请在该场景对话行点击"绑声音"，从已复刻音色中选取')
     return
   }
-  // 绑定类（含 unresolved）→ 跳到场景 + 按目标类型给提示
+  // 绑定类（含 unresolved）→ 跳到场景 + 引导到正确的修复入口
+  // 当前剧本界面没有"在场景内绑定"的逐项入口，统一引导用户走顶部「修复缺失绑定」自动按名匹配；
+  // 匹配不上时（资产不存在 / 名字对不上）去 ② 资产新建或重命名后再回来点一次。
   onJumpToScene(v.sceneScriptId)
-  if (code.startsWith('CHARACTER_') || code.startsWith('DIALOGUE_CHARACTER') || code.startsWith('ACTION_CHARACTER')) {
-    ElMessage.info('请在该场景的角色行点击"绑定角色"选择已存在角色，或先去 ② 资产新建')
-  } else if (code.startsWith('LOCATION_')) {
-    ElMessage.info('请在该场景头部点击"绑定地点"选择，或先去 ② 资产新建地点')
-  } else if (code.startsWith('PROP_')) {
-    ElMessage.info('请在该场景的道具行绑定，或先去 ② 资产新建物品')
-  } else {
-    ElMessage.info('请在场景内点击对应行的绑定按钮完成修复')
-  }
+  const kind = code.startsWith('CHARACTER_') || code.startsWith('DIALOGUE_CHARACTER') || code.startsWith('ACTION_CHARACTER')
+    ? '角色'
+    : code.startsWith('LOCATION_')
+      ? '地点'
+      : code.startsWith('PROP_')
+        ? '物品'
+        : ''
+  ElMessage.info({
+    message: kind
+      ? `点击顶部「修复缺失绑定」自动按名匹配${kind}；若${kind}还不存在，请先到 ② 资产新建（名字与剧本中一致），再点一次「修复缺失绑定」`
+      : '点击顶部「修复缺失绑定」尝试自动修复；若资产不存在请先到 ② 资产新建',
+    duration: 6000,
+  })
 }
 
 watch(
@@ -619,6 +625,48 @@ watch(
   },
   { immediate: true },
 )
+
+/**
+ * 时间 / 天气英文 key → 中文显示。
+ * 底层 scene.timeOfDay / scene.weather 仍存英文 key（与 IPC / 派生 service 对齐），
+ * 仅在模板渲染时映射。未匹配上的 key 原样返回（兼容历史脏数据 / 自由输入）。
+ */
+const TIME_OF_DAY_LABELS: Record<string, string> = {
+  day: '白天',
+  morning: '早晨',
+  noon: '中午',
+  afternoon: '午后',
+  evening: '傍晚',
+  night: '夜间',
+  dawn: '拂晓',
+  dusk: '黄昏',
+}
+
+const WEATHER_LABELS: Record<string, string> = {
+  sunny: '晴',
+  clear: '晴',
+  cloudy: '阴',
+  overcast: '阴',
+  rainy: '雨',
+  rain: '雨',
+  snowy: '雪',
+  snow: '雪',
+  foggy: '雾',
+  fog: '雾',
+  stormy: '暴风',
+  storm: '暴风',
+  windy: '大风',
+}
+
+function timeOfDayText(v: string | null | undefined): string {
+  if (!v) return '?时'
+  return TIME_OF_DAY_LABELS[v] ?? v
+}
+
+function weatherText(v: string | null | undefined): string {
+  if (!v) return '?气'
+  return WEATHER_LABELS[v] ?? v
+}
 </script>
 
 <style scoped lang="scss">

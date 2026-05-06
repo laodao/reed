@@ -2,11 +2,7 @@
   <!--
     CharacterAssetCardV2 · 角色资产卡（FU5-C1 / 原型 §3.D-char）
 
-    布局：缩略图（120 高 + 来源 badge + 缺图 ⚠ 占位）/ body（标题 + 状态 tag + meta + actions）
-
-    状态：
-    - 主图 ✓（success tag）：actions = [设定] [图谱]
-    - 缺主图（warning tag）：actions = [✨ 生成主图]（primary）
+    布局：缩略图（已有主图 → 真实主图缩略；缺主图 → ⚠ 占位）/ body（标题 + 状态 tag + meta + 设定）
   -->
   <article
     class="asset-card-v2 character-card"
@@ -14,7 +10,14 @@
     @click="emit('click')"
   >
     <div class="card-thumb" :class="{ warn: !summary.hasMain }">
-      <div v-if="summary.hasMain" class="thumb-emoji">👨</div>
+      <img
+        v-if="summary.hasMain && mainImageUrl"
+        :src="mainImageUrl"
+        class="thumb-image"
+        :alt="summary.name"
+        @error="onImgError"
+      />
+      <div v-else-if="summary.hasMain" class="thumb-emoji">👨</div>
       <div v-else class="thumb-empty">⚠</div>
       <AssetSourceTag :source="summary.sourceType" variant="badge" />
     </div>
@@ -41,29 +44,14 @@
         </span>
       </div>
 
-      <div class="card-actions" @click.stop>
-        <el-button
-          v-if="!summary.hasMain"
-          size="small"
-          type="primary"
-          @click="emit('generate-main')"
-        >
-          <el-icon><MagicStick /></el-icon>
-          ✨ 生成主图
-        </el-button>
-        <template v-else>
-          <el-button size="small" @click="emit('click')">设定</el-button>
-          <el-button size="small" @click="emit('click')">图谱</el-button>
-        </template>
-      </div>
     </div>
   </article>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { MagicStick } from '@element-plus/icons-vue'
+import { computed, ref, watch } from 'vue'
 import AssetSourceTag from '../shared/AssetSourceTag.vue'
+import { toImageUrl } from '@/utils/asset-url'
 
 const props = defineProps<{
   summary: {
@@ -71,6 +59,7 @@ const props = defineProps<{
     name: string
     sourceType: 'linked_lw' | 'standalone'
     hasMain: boolean
+    mainImagePath?: string
     galleryCount: number
     categoryCounts: Record<string, number>
     voiceId?: string | null
@@ -86,6 +75,16 @@ const emit = defineEmits<{
 const desiredCount = computed(() => 6 + 6 + 3 + 4)
 
 const hasVoice = computed(() => Boolean((props.summary as any).voiceId))
+
+// 主图加载失败时回退到 emoji 占位
+const imgFailed = ref(false)
+watch(() => props.summary.mainImagePath, () => { imgFailed.value = false })
+const mainImageUrl = computed(() =>
+  imgFailed.value ? '' : toImageUrl(props.summary.mainImagePath),
+)
+function onImgError(): void {
+  imgFailed.value = true
+}
 </script>
 
 <style scoped lang="scss">

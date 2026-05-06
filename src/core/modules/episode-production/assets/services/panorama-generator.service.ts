@@ -19,12 +19,16 @@ import type { AssetImageEntity } from '@core/database/entities/episode-productio
  *
  * 实现方负责：根据 prompt 生成 2:1 等距投影全景图，
  * 落地为本地或远端文件路径，并返回主图路径与可选缩略图路径。
+ *
+ * referenceImagePaths：可选的参考图（如地点主图），用于让 360 在风格 / 色调 /
+ * 陈设元素上与主图保持一致——避免下游派生链漂移。
  */
 export interface PanoramaImageGenerator {
   generate(opts: {
     prompt: string
     negativePrompt?: string
     aspectRatio: '2:1'
+    referenceImagePaths?: string[]
   }): Promise<{ imagePath: string; thumbnailPath: string | null }>
 }
 
@@ -72,8 +76,9 @@ export class PanoramaGeneratorService {
   /**
    * AI 生成 360 全景：
    * 1. 拼接 prompt = stylePrompt + (additionalPrompt 拼空格) + 等距投影后缀
-   * 2. 调 imageGen.generate 出图（aspectRatio 强制 2:1）
-   * 3. 写入 asset_image (assetType='location', category='panorama_360', isMain=0)
+   * 2. 取该地点的主图作 reference（若有），让 360 在风格 / 色调上跟主图保持一致
+   * 3. 调 imageGen.generate 出图（aspectRatio 强制 2:1）
+   * 4. 写入 asset_image (assetType='location', category='panorama_360', isMain=0)
    */
   async generateFor(input: GenerateForInput): Promise<AssetImageEntity> {
     const fullPrompt =
@@ -81,10 +86,15 @@ export class PanoramaGeneratorService {
       (input.additionalPrompt ? ' ' + input.additionalPrompt : '') +
       PANORAMA_PROMPT_SUFFIX
 
+    // 若该地点已有主图，作为 reference 透传 → 360 风格跟主图对齐
+    const main = await this.imageSvc.getMainImage('location', input.locationBindingId)
+    const referenceImagePaths = main?.imagePath ? [main.imagePath] : undefined
+
     const result = await this.imageGen.generate({
       prompt: fullPrompt,
       negativePrompt: input.negativePrompt,
       aspectRatio: '2:1',
+      referenceImagePaths,
     })
 
     return await this.imageSvc.addImage({

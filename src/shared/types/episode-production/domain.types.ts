@@ -270,6 +270,10 @@ export interface ItemBindingRecord {
 /**
  * 资产生效数据（spec §3.7）：
  * source_type 决定字段来源——linked_lw 走"长文基础值 + override"；standalone 直接读 standalone_*。
+ *
+ * 设定卡上的非 override / 非 standalone_* 字段（alias / role / gender / age / race /
+ * styleAnchors / outfitsExtra）直接从 binding 自身读，不参与双源投影。
+ * AI 主图 / 派生图 prompt 拼装时按需引用。
  */
 export interface EffectiveCharacterData {
   name: string
@@ -279,6 +283,20 @@ export interface EffectiveCharacterData {
   voiceId?: string | null
   portraitId?: string | null
   source: AssetBindingSourceType
+  /** 别名（"三爷 / 浪剑客"） */
+  alias?: string | null
+  /** 定位（protagonist / antagonist / supporting / minor） */
+  role?: string | null
+  /** 性别（male / female / other） */
+  gender?: string | null
+  /** 年龄 */
+  age?: number | null
+  /** 人种（east_asian / south_asian / southeast_asian / central_asian / european / african / south_american） */
+  race?: string | null
+  /** 风格锚点列表 */
+  styleAnchors?: string[] | null
+  /** 备选服装列表 */
+  outfitsExtra?: string[] | null
 }
 
 export interface EffectiveLocationData {

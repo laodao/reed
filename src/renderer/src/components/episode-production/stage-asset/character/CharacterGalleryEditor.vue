@@ -3,7 +3,7 @@
     <template #header>
       <div class="card-header">
         <span class="header-title">🖼️ 图谱</span>
-        <el-button size="small" text @click="reload">
+        <el-button size="small" text :disabled="busy" @click="reload">
           <el-icon><Refresh /></el-icon>
           刷新
         </el-button>
@@ -16,27 +16,56 @@
         <template #header>
           <div class="section-header">
             <span class="section-title">主图 (main)</span>
-            <el-tag size="small" :type="mainImage ? 'success' : 'info'">
-              {{ mainImage ? '已就绪' : '缺主图' }}
-            </el-tag>
+            <span class="header-actions">
+              <template v-if="mainImage">
+                <el-button
+                  size="small"
+                  :loading="busyKey === 'main'"
+                  :disabled="busy && busyKey !== 'main'"
+                  @click="onRegenerateMain"
+                >
+                  ↺ 重生成
+                </el-button>
+                <el-button size="small" :disabled="busy" @click="onUploadMain">
+                  ⬆ 上传替换
+                </el-button>
+              </template>
+              <el-button
+                v-else
+                type="primary"
+                plain
+                size="small"
+                :loading="busyKey === 'main'"
+                :disabled="busy && busyKey !== 'main'"
+                @click="onGenerateMain"
+              >
+                ✨ 生成主图
+              </el-button>
+            </span>
           </div>
         </template>
 
         <div class="main-thumb">
-          <img v-if="mainImage?.imagePath" :src="toImageUrl(mainImage.imagePath)" alt="主图" />
+          <template v-if="mainImageSrc && mainImage">
+            <img
+              :src="mainImageSrc"
+              alt="主图"
+              @dblclick="openPreview('main', [mainImage], 0)"
+            />
+            <div class="thumb-tools" @click.stop>
+              <el-tooltip content="下载" placement="top">
+                <el-icon class="thumb-tool-icon" :size="14" @click="downloadImage(mainImage)"><Download /></el-icon>
+              </el-tooltip>
+              <el-tooltip content="删除" placement="top">
+                <el-icon class="thumb-tool-icon danger" :size="14" @click="onDeleteImage(mainImage)"><Delete /></el-icon>
+              </el-tooltip>
+            </div>
+          </template>
+          <div v-else-if="busyKey === 'main'" class="thumb-loading">
+            <el-icon class="is-loading" :size="32"><Loading /></el-icon>
+            <span>生成中…</span>
+          </div>
           <el-empty v-else description="尚未生成主图" :image-size="60" />
-        </div>
-
-        <div class="main-actions">
-          <el-button v-if="!mainImage" type="primary" plain size="small" @click="onGenerateMain">
-            ✨ 生成主图
-          </el-button>
-          <el-button v-else size="small" @click="onRegenerateMain">
-            ↺ 重生成
-          </el-button>
-          <el-button size="small" @click="onUploadMain">
-            ⬆ 上传替换
-          </el-button>
         </div>
       </el-card>
 
@@ -60,7 +89,8 @@
               size="small"
               type="primary"
               plain
-              :disabled="getMissingLabels(cat).length === 0"
+              :loading="busyKey === `derive:${cat.key}`"
+              :disabled="(busy && busyKey !== `derive:${cat.key}`) || getMissingLabels(cat).length === 0"
               @click="onBatchDerive(cat)"
             >
               ✨ 派生剩余
@@ -75,14 +105,37 @@
             class="thumb-cell"
           >
             <div class="thumb-frame">
-              <img
-                v-if="getImageByLabel(cat.key, label)?.imagePath"
-                :src="getImageByLabel(cat.key, label)!.imagePath"
-                :alt="label"
-              />
+              <template v-if="getImageByLabel(cat.key, label)">
+                <img
+                  :src="toImageUrl(getImageByLabel(cat.key, label)!.imagePath)"
+                  :alt="labelText(cat.key, label)"
+                  @dblclick="openPreview(cat.key, getCategoryPreviewList(cat), getCategoryPreviewIndex(cat, label))"
+                />
+                <div class="thumb-tools" @click.stop>
+                  <el-tooltip content="下载" placement="top">
+                    <el-icon
+                      class="thumb-tool-icon"
+                      :size="14"
+                      @click="downloadImage(getImageByLabel(cat.key, label)!)"
+                    ><Download /></el-icon>
+                  </el-tooltip>
+                  <el-tooltip content="删除" placement="top">
+                    <el-icon
+                      class="thumb-tool-icon danger"
+                      :size="14"
+                      @click="onDeleteImage(getImageByLabel(cat.key, label)!)"
+                    ><Delete /></el-icon>
+                  </el-tooltip>
+                </div>
+              </template>
+              <el-icon
+                v-else-if="busyKey === `derive:${cat.key}`"
+                class="thumb-loading-icon is-loading"
+                :size="20"
+              ><Loading /></el-icon>
               <el-icon v-else size="24" class="thumb-empty-icon"><Plus /></el-icon>
             </div>
-            <div class="thumb-label">{{ label }}</div>
+            <div class="thumb-label">{{ labelText(cat.key, label) }}</div>
           </div>
         </div>
 
@@ -94,7 +147,20 @@
             class="thumb-cell"
           >
             <div class="thumb-frame">
-              <img v-if="img.imagePath" :src="toImageUrl(img.imagePath)" :alt="img.label || ''" />
+              <img
+                v-if="img.imagePath"
+                :src="toImageUrl(img.imagePath)"
+                :alt="img.label || ''"
+                @dblclick="openPreview(cat.key, getImagesByCategory(cat.key), getImagesByCategory(cat.key).indexOf(img))"
+              />
+              <div class="thumb-tools" @click.stop>
+                <el-tooltip content="下载" placement="top">
+                  <el-icon class="thumb-tool-icon" :size="14" @click="downloadImage(img)"><Download /></el-icon>
+                </el-tooltip>
+                <el-tooltip content="删除" placement="top">
+                  <el-icon class="thumb-tool-icon danger" :size="14" @click="onDeleteImage(img)"><Delete /></el-icon>
+                </el-tooltip>
+              </div>
             </div>
             <div class="thumb-label">{{ img.label || '(未标注)' }}</div>
           </div>
@@ -104,6 +170,47 @@
         </div>
       </el-card>
     </div>
+
+    <!-- 图片大图预览（双击打开 / 左右翻页 / 下载） -->
+    <el-dialog
+      v-model="showPreviewDialog"
+      :title="previewDialogTitle"
+      width="90%"
+      class="asset-preview-dialog"
+      append-to-body
+      destroy-on-close
+      @keydown.left="prevPreview"
+      @keydown.right="nextPreview"
+    >
+      <div v-if="previewImage" class="preview-container">
+        <div
+          class="preview-nav prev"
+          :class="{ disabled: previewIndex === 0 }"
+          @click.stop="prevPreview"
+        >
+          <el-icon :size="32"><ArrowLeft /></el-icon>
+        </div>
+        <img
+          :src="previewImageSrc"
+          :alt="previewDialogTitle"
+          draggable="false"
+          @click.stop="nextPreview"
+        />
+        <div
+          class="preview-nav next"
+          :class="{ disabled: previewIndex >= previewList.length - 1 }"
+          @click.stop="nextPreview"
+        >
+          <el-icon :size="32"><ArrowRight /></el-icon>
+        </div>
+        <div class="preview-tool" @click.stop="downloadImage(previewImage)">
+          <el-icon :size="22"><Download /></el-icon>
+        </div>
+      </div>
+      <div v-if="previewList.length > 1" class="preview-counter">
+        {{ previewIndex + 1 }} / {{ previewList.length }}
+      </div>
+    </el-dialog>
   </el-card>
 </template>
 
@@ -119,8 +226,16 @@
  *   - 生成主图按钮 toast 占位（IPC 已注册但 image gen adapter 是 stub）。
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Plus, Refresh } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  ArrowLeft,
+  ArrowRight,
+  Delete,
+  Download,
+  Loading,
+  Plus,
+  Refresh,
+} from '@element-plus/icons-vue'
 import { generateMainFor } from '@/api/main-image-generator'
 import { toImageUrl } from '@/utils/asset-url'
 
@@ -140,6 +255,7 @@ interface AssetImageRow {
   category: string
   label: string | null
   imagePath: string
+  thumbnailPath?: string | null
   isMain: number
 }
 
@@ -166,10 +282,71 @@ const categories: CategoryConfig[] = [
   },
 ]
 
+/**
+ * 各 category 下 label 的中文显示。
+ * key 仍以英文存到 DB（与底层 prompt / 派生服务对齐），UI 显示中文。
+ */
+const LABEL_LABELS: Record<string, Record<string, string>> = {
+  view: {
+    front: '正面',
+    '3q_left': '左 3/4',
+    '3q_right': '右 3/4',
+    side_l: '左侧',
+    side_r: '右侧',
+    back: '背面',
+  },
+  expression: {
+    neutral: '中性',
+    smile: '微笑',
+    sad: '难过',
+    angry: '愤怒',
+    surprised: '惊讶',
+    thinking: '思考',
+  },
+  pose: {
+    standing: '站姿',
+    walking: '行走',
+    sitting: '坐姿',
+    pointing: '指向',
+  },
+  outfit: {},
+  main: { main: '主图' },
+}
+
+function labelText(catKey: string, label: string | null | undefined): string {
+  if (!label) return ''
+  return LABEL_LABELS[catKey]?.[label] ?? label
+}
+
 const loading = ref(false)
 const allImages = ref<AssetImageRow[]>([])
 
-const mainImage = computed(() => allImages.value.find((i) => i.category === 'main') || null)
+/**
+ * 全局忙状态 key：
+ *   - null    = 无生成任务，所有按钮可用
+ *   - 'main'  = 主图正在生成 / 重生成
+ *   - 'derive:<category>' = 该分类正在派生剩余
+ *
+ * 任意非 null 时所有生成按钮统一 disable，仅匹配 key 的按钮显示 loading。
+ */
+const busyKey = ref<string | null>(null)
+const busy = computed(() => busyKey.value !== null)
+
+/**
+ * 当前生效的主图：以 is_main=1 为准。
+ * 同一 asset 下可能堆积多条 category='main' 的历史记录（每次重生成都新增一行，
+ * 旧的 is_main 置 0）；按 category 过滤会拿到最早那条而非当前主图。
+ */
+const mainImage = computed(() => allImages.value.find((i) => i.isMain === 1) || null)
+
+/** 主图渲染 URL：thumbnail 优先（旧数据可能存空字符串），回退 imagePath */
+const mainImageSrc = computed(() => {
+  const img = mainImage.value
+  if (!img) return ''
+  const thumb = (img.thumbnailPath ?? '').trim()
+  const main = (img.imagePath ?? '').trim()
+  return toImageUrl(thumb || main || '')
+})
 
 function getApi() {
   return (window as any).electronAPI?.episodeProduction?.asset
@@ -219,12 +396,16 @@ function getMissingLabels(cat: CategoryConfig): string[] {
 }
 
 async function doGenerateMain() {
+  if (busy.value) return
+  busyKey.value = 'main'
   try {
     await generateMainFor(props.assetType, props.bindingId)
     ElMessage.success('主图已生成')
     await reload()
   } catch (e: any) {
     ElMessage.error('生成失败：' + (e?.message ?? '未知错误'))
+  } finally {
+    busyKey.value = null
   }
 }
 
@@ -237,11 +418,13 @@ function onRegenerateMain() {
 }
 
 function onUploadMain() {
+  if (busy.value) return
   // 主图上传留 follow-up（与 panorama 上传同模式：ElUpload + multipart endpoint）
   ElMessage.info('主图上传走 follow-up，当前请用「生成主图」AI 出图')
 }
 
 async function onBatchDerive(cat: CategoryConfig) {
+  if (busy.value) return
   const api = getApi()
   if (!api) {
     ElMessage.error('IPC 桥未就绪')
@@ -259,6 +442,7 @@ async function onBatchDerive(cat: CategoryConfig) {
     return
   }
 
+  busyKey.value = `derive:${cat.key}`
   try {
     const resp = await api.derive.batch({
       assetType: props.assetType,
@@ -275,6 +459,161 @@ async function onBatchDerive(cat: CategoryConfig) {
   } catch (e: any) {
     console.error('[CharacterGalleryEditor] batch derive 失败', e)
     ElMessage.error(e?.message || '派生失败')
+  } finally {
+    busyKey.value = null
+  }
+}
+
+// ===== 预览大图 dialog =====
+const showPreviewDialog = ref(false)
+const previewList = ref<AssetImageRow[]>([])
+const previewIndex = ref(0)
+const previewCategory = ref<string>('main')
+
+const previewImage = computed<AssetImageRow | null>(
+  () => previewList.value[previewIndex.value] ?? null,
+)
+
+const previewImageSrc = computed(() => {
+  const img = previewImage.value
+  if (!img) return ''
+  // 大图预览优先用原图（imagePath），缩略图（thumbnailPath）只用于网格
+  return toImageUrl((img.imagePath ?? '').trim() || '')
+})
+
+const previewDialogTitle = computed(() => {
+  const img = previewImage.value
+  if (!img) return ''
+  if (img.category === 'main') return '主图'
+  return `${LABEL_LABELS[img.category]?.[img.label ?? ''] ?? img.label ?? img.category}`
+})
+
+/** 打开预览：传入当前 category、本次可翻页的图列表（已过滤）、起始下标 */
+function openPreview(category: string, list: AssetImageRow[], startIdx: number): void {
+  if (list.length === 0) return
+  previewCategory.value = category
+  previewList.value = list
+  previewIndex.value = Math.max(0, Math.min(startIdx, list.length - 1))
+  showPreviewDialog.value = true
+}
+
+function prevPreview(): void {
+  if (previewIndex.value > 0) previewIndex.value--
+}
+
+function nextPreview(): void {
+  if (previewIndex.value < previewList.value.length - 1) previewIndex.value++
+}
+
+/** 固定 label 类目（view/expression/pose）：取该类下"已存在的图"作为预览翻页 list */
+function getCategoryPreviewList(cat: CategoryConfig): AssetImageRow[] {
+  if (cat.labels.length === 0) return getImagesByCategory(cat.key)
+  return cat.labels
+    .map((l) => getImageByLabel(cat.key, l))
+    .filter((x): x is AssetImageRow => !!x)
+}
+
+function getCategoryPreviewIndex(cat: CategoryConfig, label: string): number {
+  const list = getCategoryPreviewList(cat)
+  return Math.max(
+    0,
+    list.findIndex((i) => i.category === cat.key && i.label === label),
+  )
+}
+
+// ===== 下载（双端兼容：PC 走 electronAPI 保存对话框 + 文件复制；Web 走 fetch + a[download]） =====
+async function downloadImage(img: AssetImageRow | null | undefined): Promise<void> {
+  if (!img?.imagePath) {
+    ElMessage.error('图片路径无效')
+    return
+  }
+  const fileName = (img.imagePath.split('/').pop() || 'image.png').trim()
+  const isWeb =
+    (window as any).__APP_PLATFORM__ === 'web' ||
+    !(window as any).electronAPI?.file?.saveFile
+
+  if (!isWeb) {
+    try {
+      const saveResult = await (window as any).electronAPI.file.saveFile({
+        defaultPath: fileName,
+        filters: [{ name: 'PNG 图片', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+      })
+      if (!saveResult?.success || !saveResult.filePath) return
+      // imagePath 是相对路径，PC 端需要本地绝对路径
+      const url = toImageUrl(img.imagePath)
+      const abs = url.startsWith('local-image:///')
+        ? url.replace('local-image:///', '')
+        : img.imagePath
+      const copyResult = await (window as any).electronAPI.file.copyFile(
+        abs,
+        saveResult.filePath,
+      )
+      if (copyResult?.success) ElMessage.success('已保存')
+      else ElMessage.error(copyResult?.error || '保存失败')
+    } catch (e: any) {
+      ElMessage.error(e?.message || '下载失败')
+    }
+    return
+  }
+
+  // Web：fetch URL → blob → anchor download
+  const url = toImageUrl(img.imagePath)
+  if (!url) {
+    ElMessage.error('图片 URL 无效')
+    return
+  }
+  try {
+    const resp = await fetch(url)
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    const blob = await resp.blob()
+    const blobUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = blobUrl
+    a.download = fileName
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(blobUrl)
+  } catch (e: any) {
+    ElMessage.error('下载失败：' + (e?.message ?? '未知错误'))
+  }
+}
+
+// ===== 删除单张图 =====
+async function onDeleteImage(img: AssetImageRow | null | undefined): Promise<void> {
+  if (!img) return
+  const api = getApi()
+  if (!api?.image?.delete) {
+    ElMessage.error('image.delete IPC 未暴露')
+    return
+  }
+  const isMain = img.isMain === 1
+  const labelText0 = labelText(img.category, img.label) || img.category
+  try {
+    await ElMessageBox.confirm(
+      isMain
+        ? `当前要删除的是"主图"。删除后该角色将进入"缺主图"状态，是否继续？`
+        : `确认删除"${labelText0}"这张图？`,
+      '删除图片',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  try {
+    const resp = await api.image.delete(img.id)
+    if (!resp?.success) {
+      ElMessage.error(resp?.error || '删除失败')
+      return
+    }
+    ElMessage.success('已删除')
+    // 如果当前预览中正是这张，关闭预览
+    if (showPreviewDialog.value && previewImage.value?.id === img.id) {
+      showPreviewDialog.value = false
+    }
+    await reload()
+  } catch (e: any) {
+    ElMessage.error(e?.message || '删除失败')
   }
 }
 
@@ -292,10 +631,21 @@ defineExpose({ reload })
   flex-direction: column;
 }
 
+/* 紧凑：图谱外卡和内卡 header padding 调矮 */
+.character-gallery-editor :deep(.el-card__header) {
+  padding: 6px 12px;
+}
+
 .character-gallery-editor :deep(.el-card__body) {
   flex: 1;
   overflow: auto;
   min-height: 0;
+  padding: 10px 12px;
+}
+
+.character-gallery-editor :deep(.main-card .el-card__body),
+.character-gallery-editor :deep(.category-card .el-card__body) {
+  padding: 8px 10px;
 }
 
 .card-header {
@@ -303,6 +653,7 @@ defineExpose({ reload })
   justify-content: space-between;
   align-items: center;
   color: var(--el-text-color-primary);
+  min-height: 22px;
 }
 
 .header-title {
@@ -313,7 +664,7 @@ defineExpose({ reload })
 .gallery-body {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .main-card,
@@ -325,6 +676,8 @@ defineExpose({ reload })
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
 }
 
 .section-title {
@@ -336,6 +689,13 @@ defineExpose({ reload })
   color: var(--el-text-color-primary);
 }
 
+.header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .progress-meta {
   font-size: 12px;
   color: var(--el-text-color-secondary);
@@ -343,6 +703,7 @@ defineExpose({ reload })
 }
 
 .main-thumb {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -351,7 +712,6 @@ defineExpose({ reload })
   background: var(--el-fill-color-light);
   border-radius: 6px;
   overflow: hidden;
-  margin-bottom: 8px;
 }
 
 .main-thumb img {
@@ -360,11 +720,17 @@ defineExpose({ reload })
   object-fit: contain;
 }
 
-.main-actions {
+.thumb-loading {
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.thumb-loading .el-icon {
+  color: var(--el-color-primary);
 }
 
 .thumb-grid {
@@ -381,6 +747,7 @@ defineExpose({ reload })
 }
 
 .thumb-frame {
+  position: relative;
   width: 100%;
   aspect-ratio: 1 / 1;
   background: var(--el-fill-color-light);
@@ -393,6 +760,39 @@ defineExpose({ reload })
   color: var(--el-text-color-secondary);
 }
 
+/* hover 工具条：右上角下载 / 删除 icon（仅在格子有图时显示） */
+.thumb-tools {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.thumb-frame:hover .thumb-tools,
+.main-thumb:hover .thumb-tools {
+  opacity: 1;
+}
+
+.thumb-tool-icon {
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  padding: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.thumb-tool-icon:hover {
+  background: var(--el-color-primary);
+}
+
+.thumb-tool-icon.danger:hover {
+  background: var(--el-color-danger);
+}
+
 .thumb-frame img {
   width: 100%;
   height: 100%;
@@ -401,6 +801,10 @@ defineExpose({ reload })
 
 .thumb-empty-icon {
   color: var(--el-text-color-placeholder);
+}
+
+.thumb-loading-icon {
+  color: var(--el-color-primary);
 }
 
 .thumb-label {
@@ -416,5 +820,92 @@ defineExpose({ reload })
 .empty-cell {
   grid-column: 1 / -1;
   padding: 8px;
+}
+</style>
+
+<style lang="scss">
+/* 预览大图 dialog —— 非 scoped，因为 el-dialog 渲染到 body 外，scoped 选择器命中不到 */
+.asset-preview-dialog {
+  .el-dialog__body {
+    padding: 0;
+  }
+
+  .preview-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 70vh;
+    background: var(--el-fill-color-darker);
+
+    img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      cursor: pointer;
+      user-select: none;
+    }
+  }
+
+  .preview-nav {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.85);
+    background: rgba(0, 0, 0, 0.25);
+    cursor: pointer;
+    transition: background 0.15s;
+    user-select: none;
+
+    &:hover {
+      background: rgba(0, 0, 0, 0.45);
+    }
+
+    &.disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    &.prev {
+      left: 0;
+    }
+
+    &.next {
+      right: 0;
+    }
+  }
+
+  .preview-tool {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background 0.15s;
+
+    &:hover {
+      background: var(--el-color-primary);
+    }
+  }
+
+  .preview-counter {
+    text-align: center;
+    padding: 8px 0;
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
 }
 </style>

@@ -38,6 +38,12 @@ export class VideoEpisodeEntity {
   @Column({ name: 'uploaded_characters', type: 'simple-json', nullable: true })
   uploadedCharacters!: unknown[] | null
 
+  @Column({ name: 'uploaded_locations', type: 'simple-json', nullable: true })
+  uploadedLocations!: unknown[] | null
+
+  @Column({ name: 'uploaded_items', type: 'simple-json', nullable: true })
+  uploadedItems!: unknown[] | null
+
   @Column({ name: 'episode_number', type: 'integer' })
   episodeNumber!: number
 

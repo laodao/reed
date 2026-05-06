@@ -40,6 +40,16 @@
   color: var(--el-color-warning);
 }
 
+/* 主图缩略：填满整个 .card-thumb（保留 source-tag 的角标在右上） */
+.thumb-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
 /*
  * 不同 kind 的封面色（character / location / item / voice）
  * FU5-A6 G1：用 element-plus 主题变量，亮 / 暗主题自动切换。

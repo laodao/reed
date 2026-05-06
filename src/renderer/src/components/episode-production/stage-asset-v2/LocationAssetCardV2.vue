@@ -10,7 +10,14 @@
     @click="emit('click')"
   >
     <div class="card-thumb" :class="{ warn: !summary.hasMain }">
-      <div v-if="summary.hasMain" class="thumb-emoji">🏛</div>
+      <img
+        v-if="summary.hasMain && mainImageUrl"
+        :src="mainImageUrl"
+        class="thumb-image"
+        :alt="summary.name"
+        @error="onImgError"
+      />
+      <div v-else-if="summary.hasMain" class="thumb-emoji">🏛</div>
       <div v-else class="thumb-empty">⚠</div>
       <AssetSourceTag
         :source="hasPanorama ? '3d' : summary.sourceType"
@@ -52,31 +59,14 @@
         </template>
       </div>
 
-      <div class="card-actions" @click.stop>
-        <el-button
-          v-if="!summary.hasMain"
-          size="small"
-          type="primary"
-          @click="emit('generate-main')"
-        >
-          <el-icon><MagicStick /></el-icon>
-          ✨ 生成主图
-        </el-button>
-        <template v-else>
-          <el-button size="small" @click="emit('click')">设定</el-button>
-          <el-button size="small" @click="emit('click')">
-            {{ hasPanorama ? '3D 编辑' : '图谱' }}
-          </el-button>
-        </template>
-      </div>
     </div>
   </article>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { MagicStick } from '@element-plus/icons-vue'
+import { computed, ref, watch } from 'vue'
 import AssetSourceTag from '../shared/AssetSourceTag.vue'
+import { toImageUrl } from '@/utils/asset-url'
 
 const props = defineProps<{
   summary: {
@@ -84,6 +74,7 @@ const props = defineProps<{
     name: string
     sourceType: 'linked_lw' | 'standalone'
     hasMain: boolean
+    mainImagePath?: string
     galleryCount: number
     categoryCounts: Record<string, number>
   }
@@ -104,6 +95,15 @@ const angleCount = computed(
 const hasPanorama = computed(
   () => (props.summary.categoryCounts.panorama_360 ?? 0) > 0,
 )
+
+const imgFailed = ref(false)
+watch(() => props.summary.mainImagePath, () => { imgFailed.value = false })
+const mainImageUrl = computed(() =>
+  imgFailed.value ? '' : toImageUrl(props.summary.mainImagePath),
+)
+function onImgError(): void {
+  imgFailed.value = true
+}
 </script>
 
 <style scoped lang="scss">

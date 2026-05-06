@@ -239,6 +239,9 @@ export interface Storyboard {
   // 时长
   duration: number // 分镜时长（秒）
 
+  // 关键帧总数（前端编辑面板按钮组持久化字段，spec §4.2 / §4.7）
+  keyframeCount?: number
+
   // 转场设置
   transition: TransitionConfig
 

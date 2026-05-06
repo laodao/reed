@@ -23,6 +23,8 @@ export interface BindingSummary {
   name: string
   sourceType: 'linked_lw' | 'standalone'
   hasMain: boolean
+  /** 已有主图时给前端的缩略图路径（thumbnail 优先，否则 imagePath；URL 由前端 toImageUrl 适配双端） */
+  mainImagePath?: string
   galleryCount: number
   /**
    * 按 category 细分计数（spec §3.5 / §3.7）：
@@ -190,17 +192,26 @@ export class AssetProjectSummaryService {
     const imgs: AssetImageEntity[] = await imgRepo.find({
       where: { assetType, assetId: binding.id },
     })
-    const hasMain = imgs.some((i) => i.isMain === 1)
+    const mainImg = imgs.find((i) => i.isMain === 1)
     const galleryCount = imgs.length
     const categoryCounts: Record<string, number> = {}
     for (const img of imgs) {
       categoryCounts[img.category] = (categoryCounts[img.category] ?? 0) + 1
     }
+    // 缩略图优先：thumbnailPath 在旧数据里可能是空字符串而非 null，
+    // 必须用 .trim() 判断后再回退到 imagePath，否则前端会拿到空 URL。
+    let mainImagePath: string | undefined
+    if (mainImg) {
+      const thumb = (mainImg.thumbnailPath ?? '').trim()
+      const main = (mainImg.imagePath ?? '').trim()
+      mainImagePath = thumb || main || undefined
+    }
     return {
       bindingId: binding.id,
       name: binding.name,
       sourceType: binding.sourceType,
-      hasMain,
+      hasMain: !!mainImg,
+      mainImagePath,
       galleryCount,
       categoryCounts,
     }

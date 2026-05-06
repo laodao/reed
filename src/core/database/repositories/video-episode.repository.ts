@@ -29,11 +29,13 @@ export interface CreateVideoEpisodeRequest {
 }
 
 export interface UpdateVideoEpisodeRequest {
+  episodeNumber?: number
   title?: string
   status?: EpisodeStatus
   duration?: number
   scriptId?: string
   audioTracks?: AudioTrack[]
+  uploadedContent?: string
   uploadedCharacters?: UploadedCharacter[]
   uploadedLocations?: UploadedLocation[]
   uploadedItems?: UploadedItem[]
@@ -63,6 +65,10 @@ export class VideoEpisodeRepository extends BaseRepository<
       uploadedContent: e.uploadedContent || undefined,
       uploadedCharacters:
         (e.uploadedCharacters as UploadedCharacter[] | null) ?? undefined,
+      uploadedLocations:
+        ((e as any).uploadedLocations as UploadedLocation[] | null) ?? undefined,
+      uploadedItems:
+        ((e as any).uploadedItems as UploadedItem[] | null) ?? undefined,
       episodeNumber: e.episodeNumber,
       title: e.title,
       status: e.status as EpisodeStatus,
@@ -170,6 +176,7 @@ export class VideoEpisodeRepository extends BaseRepository<
     if (!existing) return null
 
     let changed = false
+    if (data.episodeNumber !== undefined) { existing.episodeNumber = data.episodeNumber; changed = true }
     if (data.title !== undefined) { existing.title = data.title; changed = true }
     if (data.status !== undefined) { existing.status = data.status; changed = true }
     if (data.duration !== undefined) { existing.duration = data.duration; changed = true }
@@ -178,8 +185,20 @@ export class VideoEpisodeRepository extends BaseRepository<
       existing.audioTracks = data.audioTracks as unknown[]
       changed = true
     }
+    if (data.uploadedContent !== undefined) {
+      existing.uploadedContent = data.uploadedContent ?? null
+      changed = true
+    }
     if (data.uploadedCharacters !== undefined) {
       existing.uploadedCharacters = data.uploadedCharacters as unknown[]
+      changed = true
+    }
+    if (data.uploadedLocations !== undefined) {
+      ;(existing as any).uploadedLocations = data.uploadedLocations as unknown[]
+      changed = true
+    }
+    if (data.uploadedItems !== undefined) {
+      ;(existing as any).uploadedItems = data.uploadedItems as unknown[]
       changed = true
     }
 

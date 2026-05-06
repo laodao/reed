@@ -15,14 +15,27 @@
   <div class="stage-content-v2">
     <StageMainHeader title="① 内容识别" :subtitle="headerSubtitle">
       <template #actions>
+        <el-tag
+          v-if="episode"
+          :type="episode.sourceType === 'outline' ? 'info' : 'warning'"
+          :title="
+            episode.sourceType === 'outline'
+              ? '本剧来自长文项目章节；如需切换来源请新建剧集'
+              : '本剧由上传长文创建；如需切换来源请新建剧集'
+          "
+          round
+          class="source-type-tag"
+        >
+          {{ episode.sourceType === 'outline' ? '📚 长文项目' : '📝 上传长文' }}
+        </el-tag>
         <el-button
           v-if="canIdentify"
           :type="totalEntities === 0 ? 'primary' : 'default'"
-          :loading="identifying"
+          :loading="identifying && !reidentifyingKind"
           @click="onIdentify"
         >
           <el-icon><MagicStick /></el-icon>
-          <span>{{ totalEntities === 0 ? 'AI 识别要素' : '重新识别' }}</span>
+          <span>{{ totalEntities === 0 ? 'AI 识别要素' : '重新识别全部' }}</span>
         </el-button>
         <el-button
           v-if="hasDirty"
@@ -50,76 +63,39 @@
     </div>
 
     <div v-else class="content-body">
-      <!-- 来源 panel -->
-      <section class="source-panel">
-        <div class="panel-header">
-          <span class="panel-title">来源</span>
-          <span class="panel-hint">
-            sourceType =
-            <code class="inline-code">{{ episode.sourceType }}</code>
-            <span v-if="episode.sourceType === 'outline'">（来自长文项目）</span>
-            <span v-else>（上传长文）</span>
-          </span>
-        </div>
-        <!--
-          来源 tabs（当前模式高亮 + 切换 hint）
-          FU8-H1：sourceType 在剧集创建时定下，不在 ① stage 切换（避免数据契约错乱）。
-          切换 = 新建一集 → 顶部 "+" 入口（CreateEpisodeDialog 内有长文/上传二选一）。
-        -->
-        <div class="source-tabs">
-          <button
-            class="source-tab"
-            :class="{ active: episode.sourceType === 'outline' }"
-            :disabled="episode.sourceType !== 'outline'"
-            :title="episode.sourceType === 'outline' ? '当前来源' : '切换来源请新建剧集'"
-          >
-            📚 长文项目
-          </button>
-          <button
-            class="source-tab"
-            :class="{ active: episode.sourceType === 'uploaded' }"
-            :disabled="episode.sourceType !== 'uploaded'"
-            :title="episode.sourceType === 'uploaded' ? '当前来源' : '切换来源请新建剧集'"
-          >
-            📝 上传文本
-          </button>
-        </div>
-        <p class="source-switch-hint">
-          需要切换来源？请回到顶部
-          <strong>+ 新建剧集</strong>
-          ，新建时可选"📚 长文项目"或"📝 上传长文"。
-        </p>
-
-        <!-- 长文模式：显示关联的 outline -->
-        <div v-if="episode.sourceType === 'outline'" class="source-detail">
-          <div class="detail-row">
-            <span class="detail-label">长文章节</span>
-            <span class="detail-value">{{ episode.outlineId ?? '未设置' }}</span>
-          </div>
-          <p class="source-note">
-            章节内容由长文模块管理；如需修改请在长文模块编辑后回到本页"重新识别"。
-          </p>
-        </div>
-
-        <!-- 上传模式：显示原文 -->
-        <div v-else class="source-detail uploaded-detail">
-          <div class="detail-row">
-            <span class="detail-label">长文片段</span>
-            <span class="detail-value">{{ contentWordCount }} 字</span>
-          </div>
-        </div>
-      </section>
-
-      <!-- 原文片段 panel（含实体高亮 + 重新 AI 分析） -->
+      <!-- 原文片段 panel（只读高亮 / 编辑双模式） -->
       <section v-if="episode.sourceType === 'uploaded' && episode.uploadedContent" class="excerpt-panel">
         <div class="panel-header">
           <span class="panel-title">原文片段</span>
-          <el-button size="small" :loading="identifying" @click="onIdentify">
-            <el-icon><Refresh /></el-icon>
-            <span>✨ 重新 AI 分析</span>
-          </el-button>
+          <span class="panel-actions">
+            <template v-if="!editingContent">
+              <el-button size="small" @click="enterEditContent">
+                <el-icon><EditPen /></el-icon>
+                <span>编辑</span>
+              </el-button>
+              <el-button size="small" :loading="identifying" @click="onIdentify">
+                <el-icon><Refresh /></el-icon>
+                <span>✨ 重新 AI 分析</span>
+              </el-button>
+            </template>
+            <template v-else>
+              <el-button size="small" :disabled="savingContent" @click="cancelEditContent">
+                取消
+              </el-button>
+              <el-button
+                size="small"
+                type="primary"
+                :loading="savingContent"
+                :disabled="!editContentDirty || !isEditContentValid"
+                @click="saveEditContent"
+              >
+                保存
+              </el-button>
+            </template>
+          </span>
         </div>
-        <div class="excerpt-body">
+
+        <div v-if="!editingContent" class="excerpt-body">
           <span
             v-for="(seg, i) in highlightedExcerpt"
             :key="i"
@@ -133,27 +109,37 @@
             <template v-else>{{ seg.text }}</template>
           </span>
         </div>
+        <el-input
+          v-else
+          v-model="editContentDraft"
+          type="textarea"
+          :rows="14"
+          resize="vertical"
+          placeholder="原文内容（500–15000 字）"
+          class="excerpt-editor"
+        />
+
         <div class="excerpt-footer">
-          字数：约 {{ contentWordCount }} 字 ·
-          AI 已扫描，识别出
-          <strong>{{ characters.length }}</strong> 角色 ·
-          <strong>{{ locations.length }}</strong> 地点 ·
-          <strong>{{ items.length }}</strong> 物品 — 见下方
+          <template v-if="!editingContent">
+            字数：约 {{ contentWordCount }} 字 ·
+            AI 已扫描，识别出
+            <strong>{{ characters.length }}</strong> 角色 ·
+            <strong>{{ locations.length }}</strong> 地点 ·
+            <strong>{{ items.length }}</strong> 物品 — 见下方
+          </template>
+          <template v-else>
+            字数：{{ editContentDraft.length }} 字
+            <span :class="['word-count-hint', { warn: !isEditContentValid }]">
+              （需 500–15000 字）
+            </span>
+            <span v-if="editContentDirty" class="dirty-tip">· 未保存</span>
+          </template>
         </div>
       </section>
 
       <!-- 识别要素清单标题 -->
       <div class="entities-section-header">
         <h3 class="section-title">识别要素清单</h3>
-        <p class="section-hint">
-          勾选要进入剧集的要素 — 取消勾选 = 不进入
-          <span class="hint-sep">·</span>
-          为每个选
-          <AssetSourceTag source="linked_lw" custom-label="linked_lw" size="small" />
-          （来自长文）或
-          <AssetSourceTag source="standalone" custom-label="standalone" size="small" />
-          （本剧独立）
-        </p>
       </div>
 
       <!-- 3 列要素网格 -->
@@ -163,33 +149,42 @@
           icon="👤"
           title="角色"
           :entities="characters"
+          :can-reidentify="canReidentifyKind"
+          :reidentifying="reidentifyingKind === 'character'"
           @toggle="(idx) => toggleConfirmed('character', idx)"
           @toggle-source="(idx) => toggleSource('character', idx)"
           @add="onManualAdd('character')"
           @edit="(idx) => onEdit('character', idx)"
           @delete="(idx) => onDelete('character', idx)"
+          @reidentify="onIdentify(['character'])"
         />
         <EntityColumn
           kind="location"
           icon="🏛"
           title="地点"
           :entities="locations"
+          :can-reidentify="canReidentifyKind"
+          :reidentifying="reidentifyingKind === 'location'"
           @toggle="(idx) => toggleConfirmed('location', idx)"
           @toggle-source="(idx) => toggleSource('location', idx)"
           @add="onManualAdd('location')"
           @edit="(idx) => onEdit('location', idx)"
           @delete="(idx) => onDelete('location', idx)"
+          @reidentify="onIdentify(['location'])"
         />
         <EntityColumn
           kind="item"
           icon="⚔️"
           title="物品"
           :entities="items"
+          :can-reidentify="canReidentifyKind"
+          :reidentifying="reidentifyingKind === 'item'"
           @toggle="(idx) => toggleConfirmed('item', idx)"
           @toggle-source="(idx) => toggleSource('item', idx)"
           @add="onManualAdd('item')"
           @edit="(idx) => onEdit('item', idx)"
           @delete="(idx) => onDelete('item', idx)"
+          @reidentify="onIdentify(['item'])"
         />
       </div>
 
@@ -251,17 +246,18 @@ import {
   Check,
   CircleCheckFilled,
   DocumentChecked,
+  EditPen,
   InfoFilled,
   MagicStick,
   Refresh,
 } from '@element-plus/icons-vue'
 import StageMainHeader from '../shared/StageMainHeader.vue'
-import AssetSourceTag from '../shared/AssetSourceTag.vue'
 import EntityColumn from './EntityColumn.vue'
 import ManualAddEntityDialog from './ManualAddEntityDialog.vue'
 import {
   useEpEpisodeStore,
   useEpProjectStore,
+  useEpWorkbenchStore,
 } from '@/stores/episode-production'
 import type {
   EpisodeStatus,
@@ -287,6 +283,22 @@ const projectStore = useEpProjectStore()
 const identifying = ref(false)
 const confirming = ref(false)
 const saving = ref(false)
+/** 当前正在单类型重识别的 kind；null = 未在单类型识别中（可能在全量识别） */
+const reidentifyingKind = ref<Kind | null>(null)
+
+// ===== 原文片段编辑态 =====
+const editingContent = ref(false)
+const savingContent = ref(false)
+const editContentDraft = ref('')
+const editContentOriginal = ref('')
+
+const editContentDirty = computed(
+  () => editContentDraft.value !== editContentOriginal.value,
+)
+const isEditContentValid = computed(() => {
+  const len = editContentDraft.value.length
+  return len >= 500 && len <= 15000
+})
 
 // ===== 本地编辑态（数组深拷贝；保存时回写） =====
 const characters = ref<UploadedCharacter[]>([])
@@ -403,10 +415,15 @@ const confirmedBreakdown = computed(() => {
 
 const headerSubtitle = computed(() => {
   if (!props.episode) return ''
+  // 字数后缀（仅 uploaded 模式有意义）
+  const wcSuffix =
+    props.episode.sourceType === 'uploaded' && contentWordCount.value > 0
+      ? ` · 约 ${contentWordCount.value} 字`
+      : ''
   if (totalEntities.value === 0) {
-    return '从长文项目或上传文本中识别出本剧集的角色 / 地点 / 物品'
+    return `从长文项目或上传文本中识别出本剧集的角色 / 地点 / 物品${wcSuffix}`
   }
-  return `${characters.value.length} 角色 · ${locations.value.length} 地点 · ${items.value.length} 物品（已确认 ${confirmedCount.value}）`
+  return `${characters.value.length} 角色 · ${locations.value.length} 地点 · ${items.value.length} 物品（已确认 ${confirmedCount.value}）${wcSuffix}`
 })
 
 const contentWordCount = computed(
@@ -422,6 +439,18 @@ const canIdentify = computed(() => {
   if (!props.episode) return false
   if (alreadyConfirmed.value) return false
   if (props.episode.sourceType === 'uploaded' && !props.episode.uploadedContent) return false
+  return true
+})
+
+/**
+ * 单类型"重新识别"的可见性。
+ * 比 canIdentify 更宽松：剧集已确认（status≠pending）也允许，仍可对单类要素重新跑 AI；
+ * 仅要求 uploaded 模式 + 有长文原文（后端只支持 uploaded 模式识别）。
+ */
+const canReidentifyKind = computed(() => {
+  if (!props.episode) return false
+  if (props.episode.sourceType !== 'uploaded') return false
+  if (!props.episode.uploadedContent) return false
   return true
 })
 
@@ -487,35 +516,63 @@ const highlightedExcerpt = computed<ExcerptSeg[]>(() => {
 })
 
 // ===== AI 识别 =====
-async function onIdentify(): Promise<void> {
+/**
+ * @param kinds 不传 = 全部三类；传子集 = 只重新识别该类（其余保留现状）
+ */
+async function onIdentify(kinds?: Kind[]): Promise<void> {
   if (!props.episode) return
   const sm = projectStore.currentProject?.config?.scriptModel
   if (!sm?.providerConfigId || !sm?.modelId) {
     ElMessage.warning('请先在项目设置中配置剧本生成模型（用于 AI 识别）')
     return
   }
-  if (totalEntities.value > 0) {
+
+  const targetKinds: Kind[] | undefined =
+    Array.isArray(kinds) && kinds.length > 0 ? kinds : undefined
+  const isPartial = !!targetKinds && targetKinds.length < 3
+  const kindLabels = targetKinds?.map(kindLabel).join(' / ') ?? ''
+
+  // 仅当当前 kind 已有结果时才弹覆盖确认；首次识别（该 kind 为空）直接执行
+  const existingForTarget = isPartial
+    ? targetKinds!.reduce((sum, k) => sum + arrayFor(k).value.length, 0)
+    : totalEntities.value
+  if (existingForTarget > 0) {
     try {
       await ElMessageBox.confirm(
-        '已有识别结果将被覆盖（包括已勾选 / 手动添加的 entity），是否继续？',
-        '重新识别要素',
+        isPartial
+          ? `已有的"${kindLabels}"识别结果将被覆盖（包括已勾选 / 手动添加的同类 entity），其他类型保持不变。是否继续？`
+          : '已有识别结果将被覆盖（包括已勾选 / 手动添加的 entity），是否继续？',
+        isPartial ? `重新识别${kindLabels}` : '重新识别要素',
         { type: 'warning', confirmButtonText: '重新识别', cancelButtonText: '取消' },
       )
     } catch {
       return
     }
   }
+
   identifying.value = true
+  if (isPartial && targetKinds!.length === 1) {
+    reidentifyingKind.value = targetKinds![0]
+  }
   try {
     const result = await episodeStore.identifyEntities(
       props.episode.id,
       sm.providerConfigId,
       sm.modelId,
+      targetKinds,
     )
     if (result) {
-      ElMessage.success(
-        `识别完成：${result.characters} 角色 / ${result.locations} 地点 / ${result.items} 物品`,
-      )
+      if (isPartial) {
+        const parts: string[] = []
+        if (targetKinds!.includes('character')) parts.push(`${result.characters} 角色`)
+        if (targetKinds!.includes('location')) parts.push(`${result.locations} 地点`)
+        if (targetKinds!.includes('item')) parts.push(`${result.items} 物品`)
+        ElMessage.success(`重新识别完成：${parts.join(' / ')}`)
+      } else {
+        ElMessage.success(
+          `识别完成：${result.characters} 角色 / ${result.locations} 地点 / ${result.items} 物品`,
+        )
+      }
     } else {
       ElMessage.error('识别失败，请检查模型配置或稍后重试')
     }
@@ -523,6 +580,7 @@ async function onIdentify(): Promise<void> {
     ElMessage.error(e?.message ?? 'AI 识别失败')
   } finally {
     identifying.value = false
+    reidentifyingKind.value = null
   }
 }
 
@@ -614,6 +672,47 @@ function kindLabel(k: Kind): string {
   return k === 'character' ? '角色' : k === 'location' ? '地点' : '物品'
 }
 
+// ===== 原文片段编辑 =====
+function enterEditContent(): void {
+  if (!props.episode || props.episode.sourceType !== 'uploaded') return
+  const cur = props.episode.uploadedContent ?? ''
+  editContentOriginal.value = cur
+  editContentDraft.value = cur
+  editingContent.value = true
+}
+
+function cancelEditContent(): void {
+  editingContent.value = false
+  editContentDraft.value = ''
+  editContentOriginal.value = ''
+}
+
+async function saveEditContent(): Promise<void> {
+  if (!props.episode) return
+  if (!editContentDirty.value) {
+    cancelEditContent()
+    return
+  }
+  if (!isEditContentValid.value) {
+    ElMessage.warning('原文字数需在 500–15000 字之间')
+    return
+  }
+  savingContent.value = true
+  try {
+    const updated = await episodeStore.updateEpisode(props.episode.id, {
+      uploadedContent: editContentDraft.value,
+    })
+    if (!updated) {
+      ElMessage.error(useEpWorkbenchStore().error || '保存原文失败')
+      return
+    }
+    ElMessage.success('原文已保存 — 如要据此刷新角色 / 地点 / 物品，请点"重新识别"')
+    cancelEditContent()
+  } finally {
+    savingContent.value = false
+  }
+}
+
 // ===== 保存 =====
 async function saveEntities(): Promise<boolean> {
   if (!props.episode) return false
@@ -692,7 +791,6 @@ async function onConfirm(): Promise<void> {
   gap: 14px;
 }
 
-.source-panel,
 .excerpt-panel {
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-lighter);
@@ -714,85 +812,15 @@ async function onConfirm(): Promise<void> {
   color: var(--el-text-color-primary);
 }
 
-.panel-hint {
-  font-size: 12px;
-  color: var(--el-text-color-placeholder);
-}
-
-.inline-code {
-  background: var(--el-fill-color-light);
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-family: monospace;
-  font-size: 12px;
-}
-
-.source-tabs {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-
-.source-tab {
-  padding: 6px 14px;
-  border: 1px solid var(--el-border-color);
-  border-radius: 4px;
-  background: var(--el-bg-color);
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.source-tab.active {
-  background: var(--el-color-primary-light-9);
-  border-color: var(--el-color-primary);
-  color: var(--el-color-primary);
-  font-weight: 600;
-}
-
-.source-tab:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.source-detail {
-  display: flex;
-  flex-direction: column;
+.panel-actions {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
 }
 
-.source-switch-hint {
-  margin: 8px 0 0;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-
-  strong {
-    color: var(--el-color-primary);
-    font-weight: 500;
-  }
-}
-
-.detail-row {
-  display: flex;
-  gap: 10px;
-  align-items: baseline;
-  font-size: 13px;
-}
-
-.detail-label {
-  color: var(--el-text-color-secondary);
-  min-width: 70px;
-}
-
-.detail-value {
-  color: var(--el-text-color-regular);
-}
-
-.source-note {
-  margin: 0;
-  font-size: 11px;
-  color: var(--el-text-color-placeholder);
+/* 标题栏类型 tag — 与 actions 按钮对齐，靠近右端 */
+.source-type-tag {
+  margin-right: 4px;
 }
 
 /* 原文片段 */
@@ -827,10 +855,37 @@ async function onConfirm(): Promise<void> {
   background: var(--el-color-warning-light-7);
 }
 
+.excerpt-editor {
+  /* el-input textarea 容器自适应；保持与 .excerpt-body 视觉同高 */
+  width: 100%;
+}
+
+.excerpt-editor :deep(.el-textarea__inner) {
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.85;
+  background: var(--el-fill-color-lighter);
+  color: var(--el-text-color-regular);
+}
+
 .excerpt-footer {
   margin-top: 8px;
   font-size: 11px;
   color: var(--el-text-color-placeholder);
+}
+
+.word-count-hint {
+  margin-left: 4px;
+  color: var(--el-text-color-placeholder);
+}
+
+.word-count-hint.warn {
+  color: var(--el-color-warning);
+}
+
+.dirty-tip {
+  margin-left: 6px;
+  color: var(--el-color-warning);
 }
 
 .entities-section-header {
@@ -842,20 +897,6 @@ async function onConfirm(): Promise<void> {
   font-size: 16px;
   font-weight: 600;
   color: var(--el-text-color-primary);
-}
-
-.section-hint {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.hint-sep {
-  color: var(--el-text-color-placeholder);
 }
 
 .entity-row {

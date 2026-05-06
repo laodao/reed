@@ -445,6 +445,16 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-location-binding-extra-fields'
     )
     await addLocationBindingExtraFields(this.dataSource)
+    // 角色资产 race（人种）字段：用于 AI 主图 / 派生图 prompt 拼接
+    const { addCharacterBindingRace } = await import(
+      '@core/database/migrations/add-character-binding-race'
+    )
+    await addCharacterBindingRace(this.dataSource)
+    // 分镜 keyframe_count 字段（前端编辑面板有按钮组但保存链路缺）
+    const { addStoryboardKeyframeCount } = await import(
+      '@core/database/migrations/add-storyboard-keyframe-count'
+    )
+    await addStoryboardKeyframeCount(this.dataSource)
   }
 
   /**

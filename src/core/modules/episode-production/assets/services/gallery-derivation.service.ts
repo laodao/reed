@@ -13,6 +13,15 @@ import type {
   AssetImageCategory,
 } from './asset-image.service'
 import type { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
+import {
+  appendCharacterConstraints,
+  framingForCategory,
+  mergeCharacterNegative,
+} from '@core/modules/episode-production/assets/prompts/character-constraints'
+import {
+  appendAngleLightingLock,
+  mergeAngleLightingNegative,
+} from '@core/modules/episode-production/assets/prompts/location-constraints'
 
 /**
  * 抽象图像生成器接口（依赖注入）。
@@ -85,11 +94,25 @@ export class GalleryDerivationService {
       )
     }
 
-    const prompt = input.additionalPrompt ?? `${input.category} · ${input.label}`
+    let prompt = input.additionalPrompt ?? `${input.category} · ${input.label}`
+    let negativePrompt = input.negativePrompt
+    // 角色资产硬约束：纯色背景 / 无帽子无首饰；
+    // framing 按 category 决定（expression → 上半身；其他 → 全身）。
+    if (input.assetType === 'character') {
+      const framing = framingForCategory(input.category)
+      prompt = appendCharacterConstraints(prompt, framing)
+      negativePrompt = mergeCharacterNegative(negativePrompt, framing)
+    }
+    // 地点角度变体：锁光照 / 时间 / 天气，仅改机位
+    // （time_variant / weather_variant 本来就是要换，不约束）
+    if (input.assetType === 'location' && input.category === 'angle_variant') {
+      prompt = appendAngleLightingLock(prompt)
+      negativePrompt = mergeAngleLightingNegative(negativePrompt)
+    }
     const result = await this.imageGen.generate({
       referenceImagePaths: [main.imagePath],
       prompt,
-      negativePrompt: input.negativePrompt,
+      negativePrompt,
       label: input.label,
     })
 

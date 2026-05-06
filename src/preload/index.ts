@@ -1734,8 +1734,20 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.EP_CREATE_MISSING_SCRIPT_BINDINGS, episodeScriptId),
 
     // FU4-1 ① 内容 stage AI 识别要素（spec §0.4 IdentifyEntities）
-    identifyUploadedEntities: (episodeId: string, providerConfigId?: string, modelId?: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.EP_IDENTIFY_UPLOADED_ENTITIES, episodeId, providerConfigId, modelId),
+    // kinds 缺省 = 三类全识别；传入子集 = 只识别该子集（保留其他 kind 的现状）
+    identifyUploadedEntities: (
+      episodeId: string,
+      providerConfigId?: string,
+      modelId?: string,
+      kinds?: Array<'character' | 'location' | 'item'>,
+    ) =>
+      ipcRenderer.invoke(
+        IPC_CHANNELS.EP_IDENTIFY_UPLOADED_ENTITIES,
+        episodeId,
+        providerConfigId,
+        modelId,
+        kinds,
+      ),
     /** FU5-B2 ① 内容 stage 整理 / 取舍（覆写 episode.uploadedX） */
     updateUploadedEntities: (
       episodeId: string,

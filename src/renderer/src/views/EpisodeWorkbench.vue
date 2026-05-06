@@ -411,14 +411,21 @@ type WorkbenchStage = Exclude<EpisodeStatus, 'completed'>
 const activeTab = ref<WorkbenchStage>('asset_prep')
 
 /**
- * AssetSidebar 显隐逻辑（用户反馈）：
- * - ① 内容（pending）：资产还没生产，识别要素在主区域右侧（不重复）
+ * AssetSidebar 显隐逻辑：
+ * - ① 内容（pending）：识别要素在主区域，不重复
  * - ② 资产（asset_prep）：主区域已详细管理资产，侧栏重复
- * - ③④⑤⑥（scripting / storyboarding / producing / composing）：保留侧栏作为
- *   参考；P6-T22 follow-up 实现 context-aware 高亮
+ * - ③ 剧本（scripting）：引用通过 @角色/@地点 写在剧本里，侧栏不实用
+ * - ④ 分镜（storyboarding）：分镜卡 + 编辑面板已自含角色配置，侧栏不实用
+ * - ⑤ 制作（producing）：编辑面板已显示本分镜引用资产 + 关键帧 chips，侧栏不实用
+ * - ⑥ 合成（composing）：保留侧栏作为参考
  */
 const showAssetSidebar = computed(
-  () => activeTab.value !== 'pending' && activeTab.value !== 'asset_prep',
+  () =>
+    activeTab.value !== 'pending' &&
+    activeTab.value !== 'asset_prep' &&
+    activeTab.value !== 'scripting' &&
+    activeTab.value !== 'storyboarding' &&
+    activeTab.value !== 'producing',
 )
 
 // P6-T13 顶部进度条引用（用于剧集状态变化后主动 reload）
@@ -740,8 +747,11 @@ async function loadProject() {
       await loadLongWritingData(projectStore.currentProject.longWritingProjectId)
     }
 
-    if (episodeStore.episodes.length === 1) {
-      await selectEpisode(episodeStore.episodes[0])
+    // 进入工作台默认选回该项目"上次选过的剧集"；
+    // 找不到 → 回退到第一集；列表空 → 不选（页面提示新建剧集）。
+    const initial = episodeStore.pickInitialEpisode(projectId.value)
+    if (initial) {
+      await selectEpisode(initial)
     }
   }
 }

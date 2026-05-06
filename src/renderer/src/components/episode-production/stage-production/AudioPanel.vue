@@ -57,11 +57,21 @@
         />
       </div>
 
-      <div v-if="result" class="result-summary">
-        <el-icon><CircleCheck /></el-icon>
-        生成完成 · {{ Object.keys(result.dialoguePaths).length }} 条对话
-        <span v-if="result.fallbackDialogueCount > 0" class="warn">
-          · {{ result.fallbackDialogueCount }} 条用了 fallback voice
+      <div v-if="result" class="result-summary" :class="resultLevel">
+        <el-icon v-if="resultLevel === 'ok'"><CircleCheck /></el-icon>
+        <el-icon v-else><Warning /></el-icon>
+        <span v-if="dialogueAttempted === 0">
+          本场景无对话需要生成
+          <template v-if="result.narrationPath"> · 旁白已生成</template>
+        </span>
+        <span v-else>
+          {{ dialogueSucceeded }} / {{ dialogueAttempted }} 条对话生成成功
+          <span v-if="dialogueFailed > 0" class="warn">
+            · {{ dialogueFailed }} 条失败
+          </span>
+          <span v-if="result.fallbackDialogueCount > 0" class="warn">
+            · 其中 {{ result.fallbackDialogueCount }} 条用了备用音色（角色未绑专属音色）
+          </span>
         </span>
       </div>
 
@@ -139,6 +149,26 @@ const dialogues = computed<Dialogue[]>(() => {
   }))
 })
 
+/** 本场景应该尝试生成的对话条数（来自 scene.dialogues 数组） */
+const dialogueAttempted = computed(() => (props.scene?.dialogues ?? []).length)
+
+/** 实际成功生成的对话条数（含 fallback 也算成功 — 至少出了音频） */
+const dialogueSucceeded = computed(
+  () => Object.keys(result.value?.dialoguePaths ?? {}).length,
+)
+
+/** 失败条数 = 应该生成 - 实际成功 */
+const dialogueFailed = computed(
+  () => Math.max(0, dialogueAttempted.value - dialogueSucceeded.value),
+)
+
+/** 整体状态：全部成功为 ok（绿）；部分 / 全部失败为 warn（黄） */
+const resultLevel = computed<'ok' | 'warn'>(() => {
+  if (!result.value) return 'ok'
+  if (dialogueAttempted.value === 0) return 'ok'
+  return dialogueFailed.value === 0 ? 'ok' : 'warn'
+})
+
 function hasVoiceTagType(d: Dialogue): 'success' | 'warning' | 'info' {
   if (d.voiceId) return 'success'
   if (d.characterBindingId) return 'info'
@@ -164,13 +194,21 @@ async function onGenerateAll(): Promise<void> {
     if (!resp?.success) throw new Error(resp?.error || '生成失败')
     result.value = resp.data as OrchestrateResult
     emit('generated', result.value)
-    ElMessage.success(
-      `音频生成完成（${Object.keys(result.value.dialoguePaths).length} 条对话` +
-        (result.value.fallbackDialogueCount > 0
-          ? ` · ${result.value.fallbackDialogueCount} 条 fallback voice`
-          : '') +
-        '）',
-    )
+    const attempted = (props.scene?.dialogues ?? []).length
+    const succeeded = Object.keys(result.value.dialoguePaths).length
+    const failed = Math.max(0, attempted - succeeded)
+    if (attempted === 0) {
+      ElMessage.success('本场景无对话；旁白处理完成')
+    } else if (failed === 0) {
+      const fb = result.value.fallbackDialogueCount > 0
+        ? `（其中 ${result.value.fallbackDialogueCount} 条用了备用音色）`
+        : ''
+      ElMessage.success(`音频生成完成：${succeeded} / ${attempted} 条对话${fb}`)
+    } else {
+      ElMessage.warning(
+        `音频部分失败：${succeeded} / ${attempted} 条成功 · ${failed} 条失败`,
+      )
+    }
   } catch (e: any) {
     errorMessage.value = e?.message ?? String(e)
   } finally {
@@ -251,9 +289,17 @@ watch(
   margin-top: 12px;
   padding: 8px 10px;
   font-size: 13px;
-  background: var(--el-color-success-light-9);
   border-radius: 4px;
+}
+
+.result-summary.ok {
+  background: var(--el-color-success-light-9);
   color: var(--el-color-success);
+}
+
+.result-summary.warn {
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning);
 }
 
 .warn {

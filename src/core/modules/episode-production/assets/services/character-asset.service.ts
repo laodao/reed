@@ -63,6 +63,7 @@ export type CharacterExtraPatch = Partial<{
   role: string | null
   gender: string | null
   age: number | null
+  race: string | null
   voiceSpeed: number | null
   voicePitch: number | null
   voiceEmotion: string | null
@@ -117,6 +118,17 @@ export class CharacterAssetService {
     const b = await this.bindingRepo.findOne({ where: { id: bindingId } })
     if (!b) throw new Error(`CharacterBinding not found: ${bindingId}`)
 
+    /** 把 binding 上设定卡字段的"剩余部分"打平输出（alias/role/gender/age/race/锚点/备选服装） */
+    const setupFields = {
+      alias: b.alias ?? null,
+      role: b.role ?? null,
+      gender: b.gender ?? null,
+      age: b.age ?? null,
+      race: (b as any).race ?? null,
+      styleAnchors: parseJsonArray(b.styleAnchors),
+      outfitsExtra: parseJsonArray(b.outfitsExtra),
+    }
+
     if (b.sourceType === 'standalone') {
       return {
         name: b.standaloneName ?? '(未命名)',
@@ -126,6 +138,7 @@ export class CharacterAssetService {
         voiceId: b.voiceId ?? null,
         portraitId: b.portraitId ?? null,
         source: 'standalone',
+        ...setupFields,
       }
     }
 
@@ -144,6 +157,7 @@ export class CharacterAssetService {
       voiceId: b.voiceId ?? null,
       portraitId: b.portraitId ?? null,
       source: 'linked_lw',
+      ...setupFields,
     }
   }
 
@@ -254,6 +268,7 @@ export class CharacterAssetService {
     if ('role' in patch) update.role = patch.role ?? null
     if ('gender' in patch) update.gender = patch.gender ?? null
     if ('age' in patch) update.age = patch.age ?? null
+    if ('race' in patch) update.race = patch.race ?? null
     if ('voiceSpeed' in patch) update.voiceSpeed = patch.voiceSpeed ?? null
     if ('voicePitch' in patch) update.voicePitch = patch.voicePitch ?? null
     if ('voiceEmotion' in patch) update.voiceEmotion = patch.voiceEmotion ?? null
@@ -268,5 +283,18 @@ export class CharacterAssetService {
         : null
     }
     await this.bindingRepo.update(bindingId, update)
+  }
+}
+
+/** 把 JSON 字符串解析成 string[]；失败 / null / 不是数组 都返回 null（不再 [] 以区分"未设置"vs"显式空"） */
+function parseJsonArray(s: string | null | undefined): string[] | null {
+  if (!s) return null
+  try {
+    const v = JSON.parse(s)
+    if (!Array.isArray(v)) return null
+    const arr = v.filter((x): x is string => typeof x === 'string')
+    return arr.length === 0 ? null : arr
+  } catch {
+    return null
   }
 }

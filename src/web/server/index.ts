@@ -51,6 +51,8 @@ import { addNarrativeBindingFks } from '@core/database/migrations/add-narrative-
 import { relaxEpisodeScriptOutlineId } from '@core/database/migrations/relax-episode-script-outline-id'
 import { addKeyframeUserPromptOverride } from '@core/database/migrations/add-keyframe-user-prompt-override'
 import { addCharacterBindingExtraFields } from '@core/database/migrations/add-character-binding-extra-fields'
+import { addCharacterBindingRace } from '@core/database/migrations/add-character-binding-race'
+import { addStoryboardKeyframeCount } from '@core/database/migrations/add-storyboard-keyframe-count'
 import { addLocationBindingExtraFields } from '@core/database/migrations/add-location-binding-extra-fields'
 import { registerCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { LanceDBService } from '@core/services/lance-db.service'
@@ -213,6 +215,10 @@ async function initDatabase(): Promise<void> {
   await addKeyframeUserPromptOverride(ds)
   // FU5-C2: character_bindings 加身份块 + 声音情感 + 风格锚点字段（spec §3.1/3.4/3.6）
   await addCharacterBindingExtraFields(ds)
+  // 角色资产 race（人种）字段：用于 AI 主图 / 派生图 prompt 拼接
+  await addCharacterBindingRace(ds)
+  // 分镜 keyframe_count 字段（前端编辑面板有按钮组但保存链路缺）
+  await addStoryboardKeyframeCount(ds)
   // FU5-C3: location_bindings 加场景类型 + 规模 + 氛围 + 风格锚点字段（spec §3.2/3.3）
   await addLocationBindingExtraFields(ds)
 
