@@ -326,7 +326,8 @@ import StagePlaceholder from '@/components/episode-production/workbench/StagePla
 // FU3 stage 切换 + 门控 composable
 import { useWorkbenchStageNavigation } from '@/composables/use-workbench-stage-navigation'
 // P6-T20 ④ 分镜 stage view（spec §2.2 第 436 行 + §4.5）
-import StageStoryboardView from '@/components/episode-production/stage-storyboard/StageStoryboardView.vue'
+// FU5-E1 · ④ 分镜 stage 切到 V2（按原型 §7 + §11 修订）
+import StageStoryboardView from '@/components/episode-production/stage-storyboard-v2/StageStoryboardViewV2.vue'
 // P6-T18 ① 内容 stage view（spec §2.2 第 433 行 + §0.4）
 // FU5-B2 · ① 内容 stage 切到 V2（按原型 §2 + §11 修订重写）
 import StageContentView from '@/components/episode-production/stage-content-v2/StageContentViewV2.vue'
