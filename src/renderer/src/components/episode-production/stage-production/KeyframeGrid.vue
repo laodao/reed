@@ -95,6 +95,34 @@
           </el-tag>
           <span class="time-percent">{{ Math.round(kf.timePercent * 100) }}%</span>
         </div>
+
+        <!-- P5-T28 spec §4.5.7：资产组合 chip（角色 + 地点） -->
+        <div v-if="characterChips.length > 0 || locationChip" class="cell-assets">
+          <el-tag
+            v-if="locationChip"
+            size="small"
+            type="warning"
+            effect="plain"
+            class="loc-chip"
+            :title="locationChip.tooltip"
+          >
+            <el-icon><Location /></el-icon>
+            {{ locationChip.label }}
+          </el-tag>
+          <el-tag
+            v-for="c in characterChips"
+            :key="c.id"
+            size="small"
+            type="info"
+            effect="plain"
+            class="char-chip"
+            :title="c.tooltip"
+          >
+            <el-icon><User /></el-icon>
+            {{ c.name }}
+            <span v-if="c.expression" class="chip-expr">· {{ c.expression }}</span>
+          </el-tag>
+        </div>
       </div>
     </div>
 
@@ -133,8 +161,16 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Loading, MagicStick, Refresh, ZoomIn } from '@element-plus/icons-vue'
+import {
+  Loading,
+  Location,
+  MagicStick,
+  Refresh,
+  User,
+  ZoomIn,
+} from '@element-plus/icons-vue'
 import { toImageUrl } from '@/utils/asset-url'
+import { useEpAssetStore, useEpScriptStore } from '@/stores/episode-production'
 
 interface Keyframe {
   id: string
@@ -166,6 +202,96 @@ const loading = ref(false)
 const generating = ref(false)
 const previewVisible = ref(false)
 const previewKeyframe = ref<Keyframe | null>(null)
+
+// P5-T28 spec §4.5.7 资产组合可视化
+const assetStore = useEpAssetStore()
+const scriptStore = useEpScriptStore()
+interface CharOverride {
+  characterId: string
+  expression?: string
+  action?: string
+  facing?: string
+}
+const sbCharOverrides = ref<CharOverride[]>([])
+const currentSb = computed(() => {
+  return scriptStore.scenes
+    .flatMap((s: any) => s.storyboards ?? [])
+    .find((sb: any) => sb.id === props.storyboardId)
+})
+const currentScene = computed(() => {
+  if (!currentSb.value) return null
+  return scriptStore.scenes.find((s: any) =>
+    (s.storyboards ?? []).some((sb: any) => sb.id === currentSb.value.id),
+  )
+})
+
+const characterChips = computed(() => {
+  // 优先用分镜级 storyboard_characters；回退场景级 scene.characters
+  const list: Array<{ id: string; name: string; expression: string; tooltip: string }> = []
+  if (sbCharOverrides.value.length > 0) {
+    for (const sc of sbCharOverrides.value) {
+      const name = lookupCharName(sc.characterId)
+      list.push({
+        id: sc.characterId,
+        name,
+        expression: sc.expression ?? '',
+        tooltip: `${name} · 分镜级配置${sc.expression ? ` · ${sc.expression}` : ''}${sc.action ? ` · ${sc.action}` : ''}`,
+      })
+    }
+  } else {
+    // scene 级
+    const sceneChars = (currentScene.value?.characters ?? []) as any[]
+    for (const sc of sceneChars) {
+      const id = sc.characterBindingId ?? sc.characterId ?? ''
+      if (!id) continue
+      const name = lookupCharName(id) || sc.characterName || sc.name || '?'
+      list.push({
+        id,
+        name,
+        expression: sc.expression ?? '',
+        tooltip: `${name} · 场景级（spec §4.5.3 兜底）${sc.expression ? ` · ${sc.expression}` : ''}`,
+      })
+    }
+  }
+  return list
+})
+
+const locationChip = computed(() => {
+  const scene = currentScene.value
+  if (!scene?.location) return null
+  return {
+    label: scene.location,
+    tooltip: `场景地点 ${scene.location}${scene.timeOfDay ? ' · ' + scene.timeOfDay : ''}${scene.weather ? ' · ' + scene.weather : ''}`,
+  }
+})
+
+function lookupCharName(id: string): string {
+  const cand = (assetStore.epAssetCharacters as any[]).find(
+    (c) => (c.id ?? c.bindingId) === id,
+  )
+  return cand?.name ?? cand?.standaloneName ?? id.slice(0, 8)
+}
+
+async function loadStoryboardOverrides(): Promise<void> {
+  if (!props.storyboardId) {
+    sbCharOverrides.value = []
+    return
+  }
+  try {
+    const api = (window as any).electronAPI?.episodeProduction
+    if (!api?.listStoryboardCharacters) return
+    const resp = await api.listStoryboardCharacters(props.storyboardId)
+    if (resp?.success && Array.isArray(resp.data)) {
+      sbCharOverrides.value = resp.data as CharOverride[]
+    } else {
+      sbCharOverrides.value = []
+    }
+  } catch {
+    sbCharOverrides.value = []
+  }
+}
+
+watch(() => props.storyboardId, () => loadStoryboardOverrides(), { immediate: true })
 
 const sortedKeyframes = computed(() =>
   [...keyframes.value].sort((a, b) => a.frameIndex - b.frameIndex),
@@ -336,6 +462,36 @@ defineExpose({ reload: loadKeyframes })
   justify-content: space-between;
   font-size: 11px;
   padding: 0 2px;
+}
+
+.cell-assets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 2px 0;
+
+  .el-tag {
+    font-size: 10px;
+    padding: 0 6px;
+    height: 20px;
+    line-height: 18px;
+
+    .el-icon {
+      font-size: 11px;
+      margin-right: 2px;
+    }
+
+    .chip-expr {
+      margin-left: 2px;
+      color: var(--el-color-warning);
+      font-weight: 500;
+    }
+  }
+
+  .loc-chip {
+    width: 100%;
+    justify-content: flex-start;
+  }
 }
 
 .time-percent {
