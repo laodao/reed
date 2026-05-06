@@ -242,6 +242,17 @@ export interface BuildKeyframePromptInput {
   timePercent: number
   // 风格
   styleConfig: StyleConfig
+  /**
+   * P5-T25 (spec §4.5.7)：用户额外提示词
+   *
+   * 用户在 UI 输入的"如何修改"或"额外要求"（如"角色更愤怒" /
+   * "镜头拉近" / "背景虚化"）。会作为单独段拼到 final_prompt 末尾，
+   * 位于质量后缀之前，让用户描述能影响 image provider 的输出。
+   *
+   * 为空时不影响输出；与系统拼接的 style_anchor / shotType / 角色 /
+   * 物品 / 氛围 / 构图 等并存（不替代）。
+   */
+  userPrompt?: string | null
 }
 
 /** 多帧 prompt 输出：正向 + 负向 */
@@ -331,7 +342,14 @@ export function buildKeyframePrompt(
   const angle = getCameraAnglePrompt(input.cameraAngle)
   if (angle) parts.push(angle)
 
-  // 11. 质量后缀
+  // 11. 用户额外提示词（P5-T25 · spec §4.5.7）
+  // 让用户在 UI 输入的"调整方向"段进入 prompt（位于质量后缀之前，
+  // 作为最高优先级的"用户意图"参考给 image provider）
+  if (input.userPrompt && input.userPrompt.trim()) {
+    parts.push(`[user direction] ${input.userPrompt.trim()}`)
+  }
+
+  // 12. 质量后缀
   parts.push(input.styleConfig.qualitySuffix)
 
   return {

@@ -239,6 +239,8 @@ async function handleGenerateKeyframes(
   storyboardId: string,
   styleName?: string,
   keyframeCountOverride?: number,
+  /** P5-T26 用户额外提示词（spec §4.5.7），可选 */
+  userPrompt?: string,
 ): Promise<IpcResponse> {
   try {
     const db = getCoreDatabaseManager()
@@ -248,6 +250,7 @@ async function handleGenerateKeyframes(
       storyboardId,
       styleName: styleName as any,
       keyframeCountOverride,
+      userPrompt,
     })
     return { success: true, data }
   } catch (e: any) {
@@ -260,6 +263,8 @@ async function handleRegenerateKeyframe(
   _event: any,
   keyframeId: string,
   styleName?: string,
+  /** P5-T26 用户在 RegenerateDialog 输入的"如何修改"提示词 */
+  userPrompt?: string,
 ): Promise<IpcResponse> {
   try {
     const db = getCoreDatabaseManager()
@@ -268,6 +273,7 @@ async function handleRegenerateKeyframe(
     const data = await svc.regenerateKeyframe({
       keyframeId,
       styleName: styleName as any,
+      userPrompt,
     })
     return { success: true, data }
   } catch (e: any) {

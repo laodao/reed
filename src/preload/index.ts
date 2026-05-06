@@ -1624,11 +1624,31 @@ const electronAPI = {
     validateEpisodeScript: (episodeScriptId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_VALIDATE_EPISODE_SCRIPT, episodeScriptId),
 
-    // P5-T8 多关键帧
-    generateKeyframes: (storyboardId: string, styleName?: string, keyframeCountOverride?: number) =>
-      ipcRenderer.invoke(IPC_CHANNELS.EP_GENERATE_KEYFRAMES, storyboardId, styleName, keyframeCountOverride),
-    regenerateKeyframe: (keyframeId: string, styleName?: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.EP_REGENERATE_KEYFRAME, keyframeId, styleName),
+    // P5-T8 多关键帧（P5-T26 加 userPrompt）
+    generateKeyframes: (
+      storyboardId: string,
+      styleName?: string,
+      keyframeCountOverride?: number,
+      userPrompt?: string,
+    ) =>
+      ipcRenderer.invoke(
+        IPC_CHANNELS.EP_GENERATE_KEYFRAMES,
+        storyboardId,
+        styleName,
+        keyframeCountOverride,
+        userPrompt,
+      ),
+    regenerateKeyframe: (
+      keyframeId: string,
+      styleName?: string,
+      userPrompt?: string,
+    ) =>
+      ipcRenderer.invoke(
+        IPC_CHANNELS.EP_REGENERATE_KEYFRAME,
+        keyframeId,
+        styleName,
+        userPrompt,
+      ),
     listKeyframes: (storyboardId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_LIST_KEYFRAMES, storyboardId),
     planKeyframeRegen: (changedFrameIndex: number, keyframeCount: number) =>

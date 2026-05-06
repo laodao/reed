@@ -81,11 +81,21 @@ export interface GenerateKeyframesInput {
   styleName?: keyof typeof PRESET_STYLES
   /** 强制使用的 keyframeCount（不传则用 storyboard.keyframeCount，未设置默认 3） */
   keyframeCountOverride?: number
+  /**
+   * P5-T26 (spec §4.5.7)：用户额外提示词，每张关键帧 prompt 都会带上。
+   * 例如批量生成时用户希望"全部画面更暖色调"。
+   */
+  userPrompt?: string | null
 }
 
 export interface RegenerateKeyframeInput {
   keyframeId: string
   styleName?: keyof typeof PRESET_STYLES
+  /**
+   * P5-T26 (spec §4.5.7)：用户重生成单帧时的"如何修改"提示词。
+   * 例如"让角色更愤怒" / "镜头拉近" / "背景虚化"。
+   */
+  userPrompt?: string | null
 }
 
 /**
@@ -151,6 +161,7 @@ export class KeyframeGenerationService {
         plan: planItem,
         sceneAssets,
         styleConfig,
+        userPrompt: input.userPrompt ?? null,
       })
       created.push(kf)
     }
@@ -189,6 +200,7 @@ export class KeyframeGenerationService {
       plan: planItem,
       sceneAssets,
       styleConfig,
+      userPrompt: input.userPrompt ?? null,
     })
   }
 
@@ -302,8 +314,10 @@ export class KeyframeGenerationService {
       items: ResolvedItemRef[]
     }
     styleConfig: StyleConfig
+    /** P5-T26 用户额外提示词，传给 prompt-builder */
+    userPrompt?: string | null
   }): Promise<StoryboardKeyframe> {
-    const { storyboard, scene, plan, sceneAssets, styleConfig } = args
+    const { storyboard, scene, plan, sceneAssets, styleConfig, userPrompt } = args
 
     // 选 ref 图（每个出场角色 / 地点 / 道具按维度评分挑变体）
     // ref 图当前不传给 provider（ImageGenerator 接口未暴露 referenceImagePaths），
@@ -327,6 +341,7 @@ export class KeyframeGenerationService {
       frameRole: plan.frameRole,
       timePercent: plan.timePercent,
       styleConfig,
+      userPrompt,
     })
 
     // 调 image generator 生成图（label 用 frame 角色 + frameIndex 便于追踪）

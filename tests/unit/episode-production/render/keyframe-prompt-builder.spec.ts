@@ -170,4 +170,40 @@ describe('buildKeyframePrompt', () => {
     // 检查镜头描述被拼入（具体 shotType prompt 前缀来自映射表）
     expect(out.prompt).toMatch(/close-up|近景/)
   })
+
+  /**
+   * P5-T25 spec §4.5.7：用户额外提示词作为单独段拼入 prompt 末尾
+   * （位于质量后缀之前，作为最高优先级"用户意图"参考）。
+   */
+  it('P5-T25 userPrompt：非空时作为 [user direction] 段拼入', () => {
+    const out = buildKeyframePrompt(
+      baseInput({ userPrompt: '让角色更愤怒，镜头拉近' }),
+    )
+    expect(out.prompt).toContain('[user direction] 让角色更愤怒，镜头拉近')
+    // 应该位于质量后缀之前
+    const userIdx = out.prompt.indexOf('[user direction]')
+    const qualityIdx = out.prompt.indexOf(STYLE.qualitySuffix)
+    expect(userIdx).toBeGreaterThan(0)
+    expect(userIdx).toBeLessThan(qualityIdx)
+  })
+
+  it('P5-T25 userPrompt：空字符串 / null / undefined 不影响输出', () => {
+    const baseOut = buildKeyframePrompt(baseInput({}))
+    const emptyOut = buildKeyframePrompt(baseInput({ userPrompt: '' }))
+    const nullOut = buildKeyframePrompt(baseInput({ userPrompt: null }))
+    const whitespaceOut = buildKeyframePrompt(baseInput({ userPrompt: '   ' }))
+    expect(emptyOut.prompt).toBe(baseOut.prompt)
+    expect(nullOut.prompt).toBe(baseOut.prompt)
+    expect(whitespaceOut.prompt).toBe(baseOut.prompt)
+    // 不应出现 [user direction] 标识
+    expect(baseOut.prompt).not.toContain('[user direction]')
+  })
+
+  it('P5-T25 userPrompt：trim 处理两端空白', () => {
+    const out = buildKeyframePrompt(
+      baseInput({ userPrompt: '  背景虚化  ' }),
+    )
+    expect(out.prompt).toContain('[user direction] 背景虚化')
+    expect(out.prompt).not.toContain('[user direction]   背景虚化')
+  })
 })
