@@ -49,6 +49,7 @@ import { addStoryboardBackgroundRef } from '@core/database/migrations/add-storyb
 import { relaxBindingLwIdNullable } from '@core/database/migrations/relax-binding-lw-id-nullable'
 import { addNarrativeBindingFks } from '@core/database/migrations/add-narrative-binding-fks'
 import { relaxEpisodeScriptOutlineId } from '@core/database/migrations/relax-episode-script-outline-id'
+import { addKeyframeUserPromptOverride } from '@core/database/migrations/add-keyframe-user-prompt-override'
 import { registerCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { LanceDBService } from '@core/services/lance-db.service'
 import { initVectorStore } from '@core/services/vector/registry'
@@ -206,6 +207,8 @@ async function initDatabase(): Promise<void> {
   await addNarrativeBindingFks(ds)
   // P7-bug-1: episode_scripts.outline_id 改 nullable（uploaded 模式无 outlineId）
   await relaxEpisodeScriptOutlineId(ds)
+  // FU5-A9-L4: storyboard_keyframe 加 user_prompt_override（spec §4.5.7 持久化用户提示词）
+  await addKeyframeUserPromptOverride(ds)
 
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)

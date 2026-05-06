@@ -192,6 +192,14 @@ export class KeyframeGenerationService {
       )
     }
 
+    // FU5-A9-L4：用户提示词 fallback —
+    // 调用方不传 userPrompt 时（重生成无新提示词），从旧帧 userPromptOverride 读，
+    // 让上次保存的"调整方向"在重生成时仍生效，不丢失。
+    const effectiveUserPrompt =
+      input.userPrompt !== undefined
+        ? input.userPrompt
+        : (old as any).userPromptOverride ?? null
+
     // 删旧帧再写新帧（保持 frameIndex 唯一性 / id 不复用）
     await this.keyframeRepo.delete(old.id)
     return await this.generateOneKeyframe({
@@ -200,7 +208,7 @@ export class KeyframeGenerationService {
       plan: planItem,
       sceneAssets,
       styleConfig,
-      userPrompt: input.userPrompt ?? null,
+      userPrompt: effectiveUserPrompt,
     })
   }
 
@@ -373,6 +381,8 @@ export class KeyframeGenerationService {
     })
 
     // 写 storyboard_keyframe 行
+    // FU5-A9-L4：持久化 userPrompt → keyframe.userPromptOverride，
+    // 让用户重生成时不丢失（之前每次都得重输入）
     return await this.keyframeRepo.create({
       storyboardId: storyboard.id,
       frameIndex: plan.frameIndex,
@@ -381,6 +391,7 @@ export class KeyframeGenerationService {
       imageAssetId: ia.id,
       prompt: promptOut.prompt,
       negativePrompt: promptOut.negativePrompt,
+      userPromptOverride: userPrompt && userPrompt.trim() ? userPrompt.trim() : null,
     })
   }
 

@@ -22,6 +22,8 @@ export interface StoryboardKeyframe {
   derivedFromKeyframeId: string | null
   prompt: string | null
   negativePrompt: string | null
+  /** 用户提示词 override（FU5-A9-L4 / spec §4.5.7）*/
+  userPromptOverride: string | null
   createdAt: number
   updatedAt: number
 }
@@ -35,6 +37,7 @@ export interface CreateKeyframeRequest {
   derivedFromKeyframeId?: string | null
   prompt?: string | null
   negativePrompt?: string | null
+  userPromptOverride?: string | null
 }
 
 export interface UpdateKeyframeRequest {
@@ -44,6 +47,7 @@ export interface UpdateKeyframeRequest {
   negativePrompt?: string | null
   timePercent?: number
   frameRole?: KeyframeRole
+  userPromptOverride?: string | null
 }
 
 export class StoryboardKeyframeRepository extends BaseRepository<
@@ -72,6 +76,7 @@ export class StoryboardKeyframeRepository extends BaseRepository<
       derivedFromKeyframeId: e.derivedFromKeyframeId,
       prompt: e.prompt,
       negativePrompt: e.negativePrompt,
+      userPromptOverride: e.userPromptOverride ?? null,
       createdAt: this.toEpochMs(e.createdAt),
       updatedAt: this.toEpochMs(e.updatedAt),
     }
@@ -103,6 +108,7 @@ export class StoryboardKeyframeRepository extends BaseRepository<
       derivedFromKeyframeId: data.derivedFromKeyframeId ?? null,
       prompt: data.prompt ?? null,
       negativePrompt: data.negativePrompt ?? null,
+      userPromptOverride: data.userPromptOverride ?? null,
       createdAt: now,
       updatedAt: now,
     })
@@ -132,6 +138,7 @@ export class StoryboardKeyframeRepository extends BaseRepository<
             derivedFromKeyframeId: data.derivedFromKeyframeId ?? null,
             prompt: data.prompt ?? null,
             negativePrompt: data.negativePrompt ?? null,
+            userPromptOverride: data.userPromptOverride ?? null,
             createdAt: now,
             updatedAt: now,
           }),
@@ -172,6 +179,10 @@ export class StoryboardKeyframeRepository extends BaseRepository<
     }
     if (data.frameRole !== undefined) {
       existing.frameRole = data.frameRole
+      changed = true
+    }
+    if (data.userPromptOverride !== undefined) {
+      existing.userPromptOverride = data.userPromptOverride ?? null
       changed = true
     }
 

@@ -52,6 +52,16 @@ export class StoryboardKeyframeEntity {
   @Column({ name: 'negative_prompt', type: 'text', nullable: true })
   negativePrompt!: string | null
 
+  /**
+   * 用户提示词 override（FU5-A9-L4 / spec §4.5.7）。
+   *
+   * 用户在 ⑤ 关键帧 panel 输入的"调整方向"（如 "角色更愤怒" / "镜头拉近"）。
+   * builder 拼到 final_prompt 末尾"[user direction]"段。
+   * 持久化保存以便重生成时不丢失（每次都重输入很糟糕）。
+   */
+  @Column({ name: 'user_prompt_override', type: 'text', nullable: true })
+  userPromptOverride!: string | null
+
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 
