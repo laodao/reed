@@ -254,58 +254,26 @@
       @bound="onAssetBound"
     />
 
-    <!-- 生成分镜画面 -->
-    <GenerateImagesDialog
-      v-model="dialogs.generateImages"
-      :storyboard="selectedStoryboard"
-      :generating="generatingImage"
-      @submit="generateSingleStoryboardImage"
-    />
-
-    <!-- 视频合成 -->
-    <SynthesisDialog
-      v-model="dialogs.synthesis"
-      :storyboard-count="storyboardStore.storyboards.length"
-      :synthesis-progress="synthesisProgress"
-      @submit="synthesizeVideo"
-    />
-
-    <!-- 分镜编辑 -->
+    <!-- 分镜编辑（StageStoryboardView 触发） -->
     <StoryboardEditDialog
       v-model="dialogs.storyboardEdit"
       :storyboard="dialogs.editingStoryboard"
       @saved="onStoryboardSaved"
     />
 
-    <!-- 角色详情 -->
+    <!-- 角色 / 物品 / 地点 详情（V2 路径触发已删除，但 dialog 保留供
+         未来 stage view 可能复用）— P6 follow-up 时确认无引用再彻底删 -->
     <CharacterDetailDialog
       v-model="dialogs.characterDetail"
       :character-id="dialogs.detailId"
     />
-
-    <!-- 物品详情 -->
     <ItemDetailDialog
       v-model="dialogs.itemDetail"
       :item-id="dialogs.detailId"
     />
-
-    <!-- 地点详情 -->
     <LocationDetailDialog
       v-model="dialogs.locationDetail"
       :location-id="dialogs.detailId"
-    />
-
-    <!-- 图片预览 -->
-    <ImagePreviewDialog
-      v-model="dialogs.imagePreview"
-      :image-url="dialogs.previewImageUrl"
-    />
-
-    <!-- 重新生成画面 -->
-    <RegenerateDialog
-      v-model="dialogs.regenerate"
-      :storyboard="dialogs.regeneratingStoryboard"
-      @submit="regenerateStoryboardImage"
     />
 
     <!-- 实体编辑 -->
@@ -335,8 +303,6 @@ import {
   useEpAssetStore,
   useEpScriptStore,
   useEpStoryboardStore,
-  useEpProductionStore,
-  useEpComposeStore,
   useEpActiveContextStore
 } from '@/stores/episode-production'
 import { useTabsStore } from '@/stores/tabs'
@@ -392,15 +358,14 @@ import SettingsDialog from '@/components/episode-production/dialogs/SettingsDial
 import BindCharacterDialog from '@/components/episode-production/dialogs/BindCharacterDialog.vue'
 import BindItemDialog from '@/components/episode-production/dialogs/BindItemDialog.vue'
 import BindLocationDialog from '@/components/episode-production/dialogs/BindLocationDialog.vue'
-import GenerateImagesDialog from '@/components/episode-production/dialogs/GenerateImagesDialog.vue'
-import SynthesisDialog from '@/components/episode-production/dialogs/SynthesisDialog.vue'
 import StoryboardEditDialog from '@/components/episode-production/dialogs/StoryboardEditDialog.vue'
 import CharacterDetailDialog from '@/components/episode-production/dialogs/CharacterDetailDialog.vue'
 import ItemDetailDialog from '@/components/episode-production/dialogs/ItemDetailDialog.vue'
 import LocationDetailDialog from '@/components/episode-production/dialogs/LocationDetailDialog.vue'
-import ImagePreviewDialog from '@/components/episode-production/dialogs/ImagePreviewDialog.vue'
-import RegenerateDialog from '@/components/episode-production/dialogs/RegenerateDialog.vue'
 import EntityEditDialog from '@/components/episode-production/dialogs/EntityEditDialog.vue'
+// V2 老 dialog 已删除（GenerateImagesDialog / SynthesisDialog /
+// ImagePreviewDialog / RegenerateDialog）— 之前由右侧 V2 panel 触发，
+// 右侧 panel 删除后这些 dialog 无触发点
 
 const route = useRoute()
 const router = useRouter()
@@ -410,8 +375,9 @@ const episodeStore = useEpEpisodeStore()
 const assetStore = useEpAssetStore()
 const scriptStore = useEpScriptStore()
 const storyboardStore = useEpStoryboardStore()
-const productionStore = useEpProductionStore()
-const composeStore = useEpComposeStore()
+// productionStore / composeStore 之前由已删的 V2 单图生成 + 单镜合成
+// 流程使用，P6-T21 清理后无引用，移除（V3 路径在各 stage view 内部
+// 直接调对应 store / IPC）
 const tabsStore = useTabsStore()
 
 const projectId = computed(() => route.params.projectId as string)
@@ -637,19 +603,10 @@ const portraitPreviews = ref<Map<string, string>>(new Map())
 // 所有长文项目
 const allLwProjects = ref<Array<{ id: string; name: string }>>([])
 
-// 当前选中的分镜
-const selectedStoryboard = ref<Storyboard | null>(null)
-
-// 图像生成状态
-const generatingImage = ref(false)
-
-// 合成进度
-const synthesisProgress = reactive({
-  phase: '',
-  progress: 0
-})
-
 // ===== Dialog 状态集中管理 =====
+// 注：V2 老右侧 panel 删除后，generateImages / synthesis / imagePreview /
+// regenerate / regeneratingStoryboard / previewImageUrl / selectedStoryboard /
+// generatingImage / synthesisProgress 等状态已无引用，删除（P6-T21）。
 const dialogs = reactive({
   // 创建剧集
   createEpisode: false,
@@ -664,14 +621,10 @@ const dialogs = reactive({
   bindCharacter: false,
   bindItem: false,
   bindLocation: false,
-  // 生成画面
-  generateImages: false,
-  // 视频合成
-  synthesis: false,
-  // 分镜编辑
+  // 分镜编辑（StageStoryboardView 触发）
   storyboardEdit: false,
   editingStoryboard: null as Storyboard | null,
-  // 详情
+  // 资产详情
   characterDetail: false,
   itemDetail: false,
   locationDetail: false,
@@ -681,12 +634,6 @@ const dialogs = reactive({
   editingEntityType: 'character' as 'character' | 'location' | 'item',
   editingEntityId: '',
   editingEntityData: null as StoryCharacter | StoryLocation | StoryItem | null,
-  // 图片预览
-  imagePreview: false,
-  previewImageUrl: '',
-  // 重新生成
-  regenerate: false,
-  regeneratingStoryboard: null as Storyboard | null,
 })
 
 // ===== 可绑定资产（排除已绑定的） =====
@@ -753,176 +700,17 @@ function openEditEpisodeDialog(episode: VideoEpisode) {
   dialogs.editEpisode = true
 }
 
-function openImagePreview(url: string) {
-  if (url) {
-    dialogs.previewImageUrl = url
-    dialogs.imagePreview = true
-  }
-}
-
-function openRegenerateDialog(storyboard: Storyboard) {
-  dialogs.regeneratingStoryboard = storyboard
-  dialogs.regenerate = true
-}
-
-function openStoryboardEditDialog(storyboard: Storyboard) {
-  dialogs.editingStoryboard = storyboard
-  dialogs.storyboardEdit = true
-}
-
-// ===== 分镜操作 =====
-
-function selectStoryboard(storyboard: Storyboard) {
-  if (selectedStoryboard.value?.id === storyboard.id) {
-    selectedStoryboard.value = null
-  } else {
-    selectedStoryboard.value = storyboard
-  }
-}
-
-async function generateStoryboards() {
-  if (!scriptStore.currentScript) {
-    ElMessage.warning('请先生成剧本')
-    return
-  }
-  if (scriptStore.scenes.length === 0) {
-    ElMessage.warning('请先拆分场景')
-    return
-  }
-
-  const storyboardModel = projectStore.currentProject?.config?.storyboardModel
-  if (!storyboardModel?.providerConfigId || !storyboardModel?.modelId) {
-    ElMessage.warning('请先在项目设置中配置分镜生成模型')
-    return
-  }
-
-  try {
-    const confirm = await ElMessageBox.confirm(
-      `将为 ${scriptStore.scenes.length} 个场景生成分镜，是否继续？`,
-      '生成分镜',
-      { confirmButtonText: '生成', cancelButtonText: '取消', type: 'info' }
-    ).catch(() => false)
-    if (!confirm) return
-
-    ElMessage.info('正在生成分镜，请稍候...')
-    const result = await storyboardStore.generateStoryboards(
-      scriptStore.currentScript.id,
-      storyboardModel.providerConfigId,
-      storyboardModel.modelId
-    )
-    if (result) {
-      ElMessage.success(`分镜生成成功，共 ${result.length} 个镜头`)
-    } else {
-      ElMessage.error(workbenchStore.error || '生成分镜失败')
-    }
-  } catch (error: any) {
-    ElMessage.error(error.message || '生成分镜失败')
-  }
-}
-
-async function generateSingleStoryboardImage(styleName: string) {
-  if (!selectedStoryboard.value) {
-    ElMessage.warning('请先选择一个分镜')
-    return
-  }
-
-  const imageModel = projectStore.currentProject?.config?.imageModel
-  if (!imageModel?.providerConfigId || !imageModel?.modelId) {
-    ElMessage.warning('请先在项目设置中配置画面生成模型')
-    return
-  }
-
-  try {
-    generatingImage.value = true
-    dialogs.generateImages = false
-    ElMessage.info(`正在生成镜头 ${selectedStoryboard.value.shotNumber} 的画面，请稍候...`)
-
-    const result = await productionStore.generateStoryboardImage(
-      selectedStoryboard.value.id,
-      styleName,
-      imageModel.providerConfigId,
-      imageModel.modelId
-    )
-
-    if (result) {
-      ElMessage.success('画面生成成功')
-      selectedStoryboard.value = result
-    } else {
-      ElMessage.error(workbenchStore.error || '生成画面失败')
-    }
-  } catch (error: any) {
-    ElMessage.error(error.message || '生成画面失败')
-  } finally {
-    generatingImage.value = false
-  }
-}
-
-async function regenerateStoryboardImage(styleName: string, additionalPrompt: string) {
-  if (!dialogs.regeneratingStoryboard) return
-
-  try {
-    const result = await productionStore.generateStoryboardImage(
-      dialogs.regeneratingStoryboard.id,
-      styleName,
-      undefined,
-      undefined,
-      additionalPrompt
-    )
-    if (result) {
-      ElMessage.success('画面生成成功')
-      dialogs.regenerate = false
-    } else {
-      ElMessage.error('画面生成失败')
-    }
-  } catch (error: any) {
-    ElMessage.error(error.message || '画面生成失败')
-  }
-}
-
-async function confirmDeleteStoryboardImage(storyboard: Storyboard) {
-  try {
-    await ElMessageBox.confirm('确定要删除这个画面吗？删除后可以重新生成。', '删除画面', {
-      type: 'warning'
-    })
-    // TODO: 实现删除画面逻辑
-    ElMessage.success('画面已删除')
-  } catch {
-    // 用户取消
-  }
-}
-
-async function synthesizeVideo(quality: string) {
-  if (!scriptStore.currentScene) {
-    ElMessage.warning('请先选择场景')
-    return
-  }
-
-  try {
-    synthesisProgress.phase = 'shots'
-    synthesisProgress.progress = 0
-
-    const result = await composeStore.synthesizeSceneVideo(
-      scriptStore.currentScene.id,
-      quality,
-      (phase, progress) => {
-        synthesisProgress.phase = phase
-        synthesisProgress.progress = Math.round(progress)
-      }
-    )
-
-    if (result) {
-      ElMessage.success(`视频合成成功，时长 ${result.duration} 秒`)
-      dialogs.synthesis = false
-    } else {
-      ElMessage.error(workbenchStore.error || '视频合成失败')
-    }
-  } catch (error: any) {
-    ElMessage.error(error.message || '视频合成失败')
-  } finally {
-    synthesisProgress.phase = ''
-    synthesisProgress.progress = 0
-  }
-}
+// V2 老右侧 panel + 单图 frameImage 路径相关函数已删除（P6-T21）：
+// - openImagePreview / openRegenerateDialog（V2 单图重生成 dialog 已删）
+// - openStoryboardEditDialog（StageStoryboardView 直接 set dialogs.
+//   storyboardEdit，不再需要本地包装）
+// - selectStoryboard / generateStoryboards（右侧 panel 已删；④ 分镜
+//   stage 内部直接调 storyboardStore）
+// - generateSingleStoryboardImage / regenerateStoryboardImage（V2 单图
+//   流程；V3 走多关键帧路径 P5-T31~T34）
+// - confirmDeleteStoryboardImage（V2 删除单图；V3 关键帧重生成走
+//   keyframe-regenerate-dialog）
+// - synthesizeVideo（V2 单镜合成；V3 走 ⑥ 合成 stage 整剧 export-mp4）
 
 // ===== 剧集操作 =====
 
@@ -975,13 +763,8 @@ function goBack() {
   router.push('/episode-production')
 }
 
-function goToVideoProduction() {
-  if (!scriptStore.currentScene) {
-    ElMessage.warning('请先选择场景')
-    return
-  }
-  router.push(`/episode-production/${projectId.value}/production/${scriptStore.currentScene.id}`)
-}
+// goToVideoProduction 已删除（V2 路由 /production/:sceneId 已废弃，
+// V3 用 ⑤ 制作 stage tab 替代）
 
 // ===== Dialog 事件回调 =====
 
