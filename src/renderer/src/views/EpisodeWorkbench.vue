@@ -313,7 +313,8 @@ import { buildOutlineTree, type OutlineTreeNode } from '@/components/episode-pro
 import StageProductionTabContent from '@/components/episode-production/stage-production/StageProductionTabContent.vue'
 import StageComposeView from '@/components/episode-production/stage-compose/StageComposeView.vue'
 // FU2 ③ 剧本 stage view（V3 重写，替代 V2 ScriptTabContent）
-import StageScriptView from '@/components/episode-production/stage-script/StageScriptView.vue'
+// FU5-D1 · ③ 剧本 stage 切到 V2（章节梗概 panel + EntityRefRenderer + 场景卡折叠）
+import StageScriptView from '@/components/episode-production/stage-script-v2/StageScriptViewV2.vue'
 // P6-T13 顶部 6 段阶段进度条（spec §2.1）
 import StageProgressBar from '@/components/episode-production/workbench/StageProgressBar.vue'
 // P6-T14 左侧资产侧栏（spec §2.1 第 414-418 行）
