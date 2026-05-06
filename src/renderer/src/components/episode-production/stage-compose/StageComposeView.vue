@@ -10,6 +10,12 @@
     后续扩展：TimelineEditor 多轨时间线 UI（P6-T6）+ 复杂导出（音轨调整 / 转场预览）。
   -->
   <div class="stage-compose-view">
+    <!-- P6-T6 多轨时间线（V1 read-only） -->
+    <TimelineEditor
+      v-if="episodeScriptId"
+      :episode-script-id="episodeScriptId"
+    />
+
     <div class="hero">
       <div class="hero-icon">
         <el-icon><VideoCameraFilled /></el-icon>
@@ -64,6 +70,7 @@ import {
   VideoCameraFilled,
 } from '@element-plus/icons-vue'
 import ExportDialog from './ExportDialog.vue'
+import TimelineEditor from './TimelineEditor.vue'
 
 interface ExportResult {
   outputPath: string
