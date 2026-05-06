@@ -19,12 +19,15 @@
         · fov: <strong>{{ vp.fov }}°</strong>
       </span>
       <el-button type="primary" :loading="capturing" @click="onCapture">
-        📷 截图作分镜背景
+        📷 保存视角截图
       </el-button>
     </div>
 
     <div v-if="snapshots.length" class="snapshot-list">
-      <div class="list-title">已截图（{{ snapshots.length }}）</div>
+      <div class="list-title">
+        已截图（{{ snapshots.length }}）
+        <span class="list-hint">— 在 ④ 分镜 stage 配镜头时绑定为背景 ref（spec §4.5.10）</span>
+      </div>
       <div class="snapshot-grid">
         <div
           v-for="s in snapshots"

@@ -11,6 +11,7 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type { Storyboard } from '@shared/types/story-to-video.types'
 import { StoryToVideoAIService } from '@core/services/story-to-video-ai.service'
+import { StoryboardService } from '@core/modules/episode-production/narrative/services/storyboard.service'
 
 export function registerStoryboardHandlers(): void {
   // ==================== 分镜管理 ====================
@@ -21,6 +22,44 @@ export function registerStoryboardHandlers(): void {
   // ==================== AI 生成（分镜） ====================
   ipcBridge.handle('ep:generate-storyboard', handleGenerateStoryboard)
   ipcBridge.handle('ep:generate-storyboards', handleGenerateStoryboards)
+
+  // ==================== FU5-A9-L2 · 分镜背景 ref 图（panorama_snapshot 绑入分镜） ==
+  ipcBridge.handle('ep:storyboard:set-background-ref', handleSetBackgroundRef)
+  ipcBridge.handle('ep:storyboard:get-background-ref', handleGetBackgroundRef)
+}
+
+// ==================== FU5-A9-L2 background ref handlers ====================
+
+function getStoryboardSvc(): StoryboardService {
+  const db = getCoreDatabaseManager()
+  if (!db.dataSource) throw new Error('数据库未初始化')
+  return new StoryboardService(db.dataSource)
+}
+
+async function handleSetBackgroundRef(
+  _event: any,
+  storyboardId: string,
+  imageId: string | null,
+): Promise<IpcResponse> {
+  try {
+    if (!storyboardId) return { success: false, error: 'storyboardId 不能为空' }
+    await getStoryboardSvc().setBackgroundRefImage(storyboardId, imageId)
+    return { success: true, data: { storyboardId, imageId } }
+  } catch (e: any) {
+    return { success: false, error: e?.message ?? '绑定背景 ref 失败' }
+  }
+}
+
+async function handleGetBackgroundRef(
+  _event: any,
+  storyboardId: string,
+): Promise<IpcResponse> {
+  try {
+    const imageId = await getStoryboardSvc().getBackgroundRefImageId(storyboardId)
+    return { success: true, data: { storyboardId, imageId } }
+  } catch (e: any) {
+    return { success: false, error: e?.message ?? '读取背景 ref 失败' }
+  }
 }
 
 // ==================== 分镜管理处理器 ====================
