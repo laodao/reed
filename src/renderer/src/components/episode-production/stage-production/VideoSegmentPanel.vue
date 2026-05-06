@@ -25,6 +25,88 @@
     </div>
 
     <div v-else class="form-area">
+      <!-- P5-T29 spec §4.7：分镜元信息 panel -->
+      <div class="meta-section">
+        <h5 class="meta-title">分镜元信息（spec §4.7）</h5>
+
+        <!-- 关键帧序列预览（spec §4.5.4 九宫格） -->
+        <div v-if="keyframes.length > 0" class="keyframe-strip">
+          <div
+            v-for="kf in keyframes"
+            :key="kf.id"
+            class="strip-cell"
+            :title="`镜头 #${kf.frameIndex} · ${kf.frameRole}`"
+          >
+            <img v-if="kf.imagePath" :src="toImageUrl(kf.imagePath)" alt="kf" />
+            <el-icon v-else><Picture /></el-icon>
+            <span class="strip-idx">#{{ kf.frameIndex }}</span>
+          </div>
+        </div>
+        <div v-else class="meta-empty">尚未生成关键帧</div>
+
+        <!-- 角色清单 -->
+        <div class="meta-row">
+          <span class="meta-label">角色</span>
+          <span v-if="characterChips.length === 0" class="meta-empty-inline">
+            未配置（spec §4.5.3 回退场景级）
+          </span>
+          <el-tag
+            v-for="c in characterChips"
+            :key="c.id"
+            size="small"
+            type="info"
+            effect="plain"
+          >
+            {{ c.name }}<span v-if="c.expression"> · {{ c.expression }}</span>
+          </el-tag>
+        </div>
+
+        <!-- 旁白 -->
+        <div v-if="narration" class="meta-row">
+          <span class="meta-label">旁白</span>
+          <span class="meta-text">{{ narration }}</span>
+        </div>
+
+        <!-- 对话清单 -->
+        <div v-if="dialogues.length > 0" class="meta-row">
+          <span class="meta-label">对话 ({{ dialogues.length }})</span>
+          <div class="dialogue-list">
+            <div
+              v-for="(d, i) in dialogues"
+              :key="`d-${i}`"
+              class="dialogue-item"
+            >
+              <span class="dlg-speaker">{{ d.speaker }}</span>
+              <span v-if="d.tone" class="dlg-tone">{{ d.tone }}</span>
+              <span class="dlg-text">{{ d.text }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- P5-T29 spec §4.5.7：用户额外提示词（生成视频片段时一并影响 prompt） -->
+      <div class="user-prompt-section">
+        <label class="prompt-label">
+          <el-icon><EditPen /></el-icon>
+          调整方向（可选）
+          <el-tooltip
+            content="影响视频片段生成的 prompt（如'动作更慢'、'镜头平稳'）。批量重生成关键帧时也会带上。"
+            placement="top"
+          >
+            <el-icon class="hint-icon"><InfoFilled /></el-icon>
+          </el-tooltip>
+        </label>
+        <el-input
+          v-model="userPrompt"
+          type="textarea"
+          :rows="2"
+          placeholder="例如：动作更慢一些 / 镜头保持平稳 / 整体偏暖色调"
+          :maxlength="200"
+          show-word-limit
+          resize="none"
+        />
+      </div>
+
       <el-form label-width="80px" size="small">
         <el-form-item label="Provider">
           <el-select
@@ -124,7 +206,15 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { MagicStick, Warning } from '@element-plus/icons-vue'
+import {
+  EditPen,
+  InfoFilled,
+  MagicStick,
+  Picture,
+  Warning,
+} from '@element-plus/icons-vue'
+import { toImageUrl } from '@/utils/asset-url'
+import { useEpAssetStore, useEpScriptStore } from '@/stores/episode-production'
 
 interface Storyboard {
   id: string
@@ -177,6 +267,114 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'generated', videoPath: string): void
 }>()
+
+// P5-T29 spec §4.7：分镜元信息状态
+const assetStore = useEpAssetStore()
+const scriptStore = useEpScriptStore()
+const userPrompt = ref('')
+
+interface KeyframeLite {
+  id: string
+  frameIndex: number
+  frameRole: string
+  imagePath: string | null
+}
+const keyframes = ref<KeyframeLite[]>([])
+
+interface CharOverride {
+  characterId: string
+  expression?: string
+  action?: string
+  facing?: string
+}
+const sbCharOverrides = ref<CharOverride[]>([])
+
+const currentScene = computed(() => {
+  if (!props.storyboard) return null
+  return scriptStore.scenes.find((s: any) =>
+    (s.storyboards ?? []).some((sb: any) => sb.id === props.storyboard?.id),
+  )
+})
+
+const characterChips = computed(() => {
+  const list: Array<{ id: string; name: string; expression: string }> = []
+  if (sbCharOverrides.value.length > 0) {
+    for (const sc of sbCharOverrides.value) {
+      list.push({
+        id: sc.characterId,
+        name: lookupCharName(sc.characterId),
+        expression: sc.expression ?? '',
+      })
+    }
+  } else {
+    const sceneChars = (currentScene.value?.characters ?? []) as any[]
+    for (const sc of sceneChars) {
+      const id = sc.characterBindingId ?? sc.characterId ?? ''
+      if (!id) continue
+      list.push({
+        id,
+        name: lookupCharName(id) || sc.characterName || sc.name || '?',
+        expression: sc.expression ?? '',
+      })
+    }
+  }
+  return list
+})
+
+const narration = computed<string>(() => {
+  return (currentScene.value as any)?.narration ?? ''
+})
+
+interface DialogueItem {
+  speaker: string
+  tone?: string
+  text: string
+}
+const dialogues = computed<DialogueItem[]>(() => {
+  const scene = currentScene.value as any
+  const raw = scene?.dialogues
+  if (!Array.isArray(raw)) return []
+  return raw.map((d: any) => ({
+    speaker: d.characterName ?? d.speaker ?? lookupCharName(d.characterBindingId ?? '') ?? '?',
+    tone: d.tone ?? d.emotion,
+    text: d.text ?? '',
+  }))
+})
+
+function lookupCharName(id: string): string {
+  if (!id) return ''
+  const cand = (assetStore.epAssetCharacters as any[]).find(
+    (c) => (c.id ?? c.bindingId) === id,
+  )
+  return cand?.name ?? cand?.standaloneName ?? id.slice(0, 8)
+}
+
+async function loadMeta(): Promise<void> {
+  if (!props.storyboard) return
+  try {
+    const api = (window as any).electronAPI?.episodeProduction
+    if (api?.listKeyframes) {
+      const respKf = await api.listKeyframes(props.storyboard.id)
+      if (respKf?.success && Array.isArray(respKf.data)) {
+        keyframes.value = respKf.data as KeyframeLite[]
+      } else {
+        keyframes.value = []
+      }
+    }
+    if (api?.listStoryboardCharacters) {
+      const respSc = await api.listStoryboardCharacters(props.storyboard.id)
+      if (respSc?.success && Array.isArray(respSc.data)) {
+        sbCharOverrides.value = respSc.data as CharOverride[]
+      } else {
+        sbCharOverrides.value = []
+      }
+    }
+  } catch {
+    // 静默：UI 上 empty state 已能反映
+  }
+}
+
+watch(() => props.storyboard?.id, () => loadMeta(), { immediate: true })
 
 const availableProviders = ref<ProviderInfo[]>([])
 const selectedProviderConfigId = ref<string>('')
@@ -261,6 +459,10 @@ async function onGenerate(): Promise<void> {
       modelId: selectedModelId.value,
     }
     if (modeChoice.value !== 'auto') opts.forceMode = modeChoice.value
+    // P5-T29 spec §4.5.7：用户额外提示词
+    if (userPrompt.value.trim()) {
+      opts.userPrompt = userPrompt.value.trim()
+    }
     // props 覆盖（外部父组件强制指定时）
     if (props.providerConfigId) opts.providerConfigId = props.providerConfigId
     if (props.modelId) opts.modelId = props.modelId
@@ -364,6 +566,156 @@ onMounted(loadProviders)
   padding-left: 76px;
   font-size: 11px;
   color: var(--el-color-warning);
+}
+
+/* P5-T29 spec §4.7：分镜元信息 */
+.meta-section {
+  margin-bottom: 12px;
+  padding: 10px;
+  background: var(--el-fill-color-lighter);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  .meta-title {
+    margin: 0 0 4px 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--el-text-color-secondary);
+  }
+}
+
+.keyframe-strip {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 2px 0;
+
+  .strip-cell {
+    flex-shrink: 0;
+    width: 64px;
+    height: 36px;
+    position: relative;
+    border: 1px solid var(--el-border-color-light);
+    border-radius: 3px;
+    overflow: hidden;
+    background: var(--el-fill-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .strip-idx {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(0, 0, 0, 0.5);
+      color: #fff;
+      font-size: 9px;
+      text-align: center;
+      padding: 1px 0;
+    }
+  }
+}
+
+.meta-empty {
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
+  font-style: italic;
+  padding: 4px 0;
+}
+
+.meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.meta-label {
+  flex-shrink: 0;
+  font-weight: 500;
+  color: var(--el-text-color-secondary);
+  width: 50px;
+}
+
+.meta-text {
+  flex: 1;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--el-text-color-regular);
+}
+
+.meta-empty-inline {
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
+  font-style: italic;
+}
+
+.dialogue-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dialogue-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+
+  .dlg-speaker {
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+  }
+
+  .dlg-tone {
+    font-size: 10px;
+    color: var(--el-color-info);
+    background: var(--el-color-info-light-9);
+    padding: 0 4px;
+    border-radius: 2px;
+  }
+
+  .dlg-text {
+    flex: 1;
+    color: var(--el-text-color-regular);
+  }
+}
+
+.user-prompt-section {
+  margin-bottom: 12px;
+  padding: 10px;
+  background: var(--el-color-info-light-9);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  .prompt-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--el-text-color-primary);
+    font-weight: 500;
+
+    .hint-icon {
+      color: var(--el-text-color-secondary);
+      cursor: help;
+    }
+  }
 }
 
 .error-banner {
