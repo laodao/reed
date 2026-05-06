@@ -16,6 +16,7 @@ import {
   registerDerivationHandlers,
   registerImportHandlers,
   registerPanoramaHandlers,
+  registerAssetSummaryHandlers,
 } from './asset'
 import { registerScriptHandlers } from './narrative/script.handler'
 import { registerStoryboardHandlers } from './narrative/storyboard.handler'
@@ -44,6 +45,8 @@ export function registerEpisodeProductionHandlers(): void {
   registerImportHandlers()
   // P3c Task 4 新增：360 全景 + 视角截图
   registerPanoramaHandlers()
+  // FU5-C1 项目级资产聚合
+  registerAssetSummaryHandlers()
   registerScriptHandlers()
   registerStoryboardHandlers()
   // P5-T32 分镜内角色独立配置（spec §4.5.3）

@@ -254,6 +254,7 @@ const IPC_CHANNELS = {
   EP_ASSET_ITEM_DELETE: 'ep:asset:item:delete',
 
   // 语音资产（5 个）
+  EP_ASSET_PROJECT_SUMMARY: 'ep:asset:project-summary',
   EP_ASSET_VOICE_LIST: 'ep:asset:voice:list',
   EP_ASSET_VOICE_LIST_READY: 'ep:asset:voice:list-ready',
   EP_ASSET_VOICE_GET: 'ep:asset:voice:get',
@@ -1792,6 +1793,9 @@ const electronAPI = {
 
     // ==================== V2.5 资产域 namespace（与 V2 channel 共存） ====================
     asset: {
+      /** FU5-C1 项目级聚合（4 类 binding 主图状态 + 图谱细分计数 + voice 关系） */
+      projectSummary: (projectId: string) =>
+        ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_PROJECT_SUMMARY, projectId),
       // 角色资产（10 个）
       character: {
         list: (projectId: string) =>

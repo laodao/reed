@@ -462,6 +462,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.isBindingFromLongWriting': { channel: 'ep:is-binding-from-longwriting' },
   // ===== V2.5 资产域 channel 映射（与 V2 channel 共存；走 *AssetService） =====
   // 角色资产（10 个）
+  'episodeProduction.asset.projectSummary': { channel: 'ep:asset:project-summary' },
   'episodeProduction.asset.character.list': { channel: 'ep:asset:character:list' },
   'episodeProduction.asset.character.get': { channel: 'ep:asset:character:get' },
   'episodeProduction.asset.character.effective': { channel: 'ep:asset:character:effective' },

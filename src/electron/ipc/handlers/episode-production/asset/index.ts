@@ -12,3 +12,5 @@ export { registerAssetImageHandlers } from './asset-image.handler'
 export { registerDerivationHandlers } from './derivation.handler'
 export { registerImportHandlers } from './import.handler'
 export { registerPanoramaHandlers } from './panorama.handler'
+// FU5-C1 项目级资产聚合（一次性返回 4 类 binding 主图状态 + 图谱细分计数）
+export { registerAssetSummaryHandlers } from './asset-summary.handler'

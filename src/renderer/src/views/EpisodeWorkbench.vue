@@ -337,7 +337,8 @@ import type {
 // V2 老 tab（剧本 / 角色绑定 / 物品绑定 / 地点绑定）已从 template 移除
 // import 也跟着删除；P6-T19/T20 新 stage view 完成后会彻底删源文件
 // P3a Task 11 · 资产盘点新页面（追加在原 4 tab 之后，不替换老 tab）
-import AssetStageView from '@/components/episode-production/stage-asset/AssetStageView.vue'
+// FU5-C1 · ② 资产盘点 stage 切到 V2（按原型 §3 + §11 修订）
+import AssetStageView from '@/components/episode-production/stage-asset-v2/AssetStageViewV2.vue'
 // P3a Task 12 · 角色资产编辑器（双栏：设定卡 + 图谱）
 import CharacterAssetEditor from '@/components/episode-production/stage-asset/character/CharacterAssetEditor.vue'
 // P3a Task 13 · 地点资产编辑器（双栏：设定卡 + 图谱）

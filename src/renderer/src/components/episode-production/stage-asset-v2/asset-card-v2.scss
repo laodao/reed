@@ -1,0 +1,109 @@
+/* asset-card-v2 公共样式（FU5-C1）— 4 类卡片复用，统一视觉密度 */
+
+.asset-card-v2 {
+  display: flex;
+  flex-direction: column;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.asset-card-v2:hover {
+  border-color: var(--el-color-primary-light-5);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
+}
+
+.card-thumb {
+  position: relative;
+  height: 130px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--el-color-primary-light-7), var(--el-color-primary-light-5));
+}
+
+.card-thumb.warn {
+  background: linear-gradient(135deg, var(--el-color-warning-light-7), var(--el-color-warning-light-5));
+}
+
+.thumb-emoji {
+  font-size: 56px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.15));
+}
+
+.thumb-empty {
+  font-size: 40px;
+  color: var(--el-color-warning);
+}
+
+/* 不同 kind 的封面色（character/location/item/voice） */
+.character-card .card-thumb { background: linear-gradient(135deg, #ddeeff, #99c2ff); }
+.character-card .card-thumb.warn { background: linear-gradient(135deg, #fff0e0, #ffd4a3); }
+
+.location-card .card-thumb { background: linear-gradient(135deg, #d4f4dd, #8fd9a8); }
+.location-card .card-thumb.warn { background: linear-gradient(135deg, #fff0e0, #ffd4a3); }
+
+.item-card .card-thumb { background: linear-gradient(135deg, #f0d9ff, #c9a3ee); }
+.item-card .card-thumb.warn { background: linear-gradient(135deg, #fff0e0, #ffd4a3); }
+
+.voice-card .card-thumb { background: linear-gradient(135deg, #fff3cd, #ffe084); }
+
+.card-body {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.title-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-meta {
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.meta-sep {
+  color: var(--el-text-color-placeholder);
+}
+
+.meta-ok {
+  color: var(--el-color-success);
+}
+
+.meta-warn {
+  color: var(--el-color-warning);
+}
+
+.card-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+/* 缺图卡片：整体降饱和；hover 恢复 */
+.asset-card-v2.no-main {
+  opacity: 0.95;
+}
