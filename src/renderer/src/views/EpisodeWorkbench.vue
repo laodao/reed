@@ -314,7 +314,8 @@ import { buildOutlineTree, type OutlineTreeNode } from '@/components/episode-pro
 // V3 stage tab 内容组件（保留中）
 // FU5-F1 · ⑤ 渲染 stage 切到 V2（按原型 §8 + §11 修订）
 import StageProductionTabContent from '@/components/episode-production/stage-production-v2/StageProductionViewV2.vue'
-import StageComposeView from '@/components/episode-production/stage-compose/StageComposeView.vue'
+// FU5-G1 · ⑥ 合成 stage 切到 V2（按原型 §9 + §11 修订 · 全部真实功能）
+import StageComposeView from '@/components/episode-production/stage-compose-v2/StageComposeViewV2.vue'
 // FU2 ③ 剧本 stage view（V3 重写，替代 V2 ScriptTabContent）
 // FU5-D1 · ③ 剧本 stage 切到 V2（章节梗概 panel + EntityRefRenderer + 场景卡折叠）
 import StageScriptView from '@/components/episode-production/stage-script-v2/StageScriptViewV2.vue'
