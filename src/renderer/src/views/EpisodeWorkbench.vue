@@ -58,30 +58,7 @@
 
     <!-- 主要内容区（spec §2.1 形态 D：左侧资产侧栏 + 主区域） -->
     <div class="editor-content">
-      <!--
-        左侧资产侧栏（P6-T14 · spec §2.1 第 414-418 行）
-
-        spec §2.1 第 425 行字面要求"任何阶段都可见"，但用户反馈：
-        - ① 内容 stage：资产还没生产出来（识别要素是雏形，不算资产）
-        - ② 资产 stage：主区域已详细管理资产，左侧侧栏视觉重复
-
-        因此 ①/② 时隐藏；其他 stage 保留（③④⑤⑥）。
-        context-aware 高亮（按当前 stage 关联资产）= P6-T22 follow-up。
-      -->
-      <AssetSidebar
-        v-if="projectId && showAssetSidebar"
-        :project-id="projectId"
-        @select-character="(id: string) => onOpenAsset('character', id)"
-        @select-location="(id: string) => onOpenAsset('location', id)"
-        @select-item="(id: string) => onOpenAsset('item', id)"
-        @select-voice="(id: string) => onOpenAsset('voice', id)"
-        @add-character="onAddAsset('character')"
-        @add-location="onAddAsset('location')"
-        @add-item="onAddAsset('item')"
-        @add-voice="onAddAsset('voice')"
-      />
-
-      <!-- 中间区域 - 主区域 stage 切换（P6-T17 · spec §2.1 形态 D） -->
+      <!-- 中间区域 - 主区域 stage 切换（P6-T17 · spec §2.1 形态 D · FU5-A7 侧栏右移后主区域贴左） -->
       <div class="center-panel">
         <template v-if="episodeStore.currentEpisode">
           <!--
@@ -181,15 +158,24 @@
       </div>
 
       <!--
-        【已隐藏】右侧分镜列表（V2 path · frameImage 单图模型）
-        理由：与 V3 多关键帧模型（StoryboardKeyframe 表）不匹配；分镜浏览/选择
-        功能已迁到 ⑤ 制作 tab 内的 StageProductionTabContent（含分镜选择器 +
-        KeyframeGrid 多关键帧网格）。
-        彻底删除时机：P6-T20 ④ 分镜 stage view 完成 + P6-T17 主区域 stage 切换
-        重构后，一并清理 right-panel + 相关 dialog（regenerate / synthesis /
-        storyboardEdit）+ 相关方法（selectStoryboard / generateStoryboards /
-        synthesizeVideo / regenerateStoryboardImage 等）。
+        右侧资产侧栏（FU5-A7 · user 5/6 决策）
+
+        - ① 内容、② 资产 stage 隐藏（资产未就绪 / 主区即资产清单）
+        - ③ 剧本 / ④ 分镜 / ⑤ 画面+音频 / ⑥ 合成 显示在右侧（不是原型左侧）
       -->
+      <AssetSidebar
+        v-if="projectId && showAssetSidebar"
+        :project-id="projectId"
+        class="asset-sidebar-right"
+        @select-character="(id: string) => onOpenAsset('character', id)"
+        @select-location="(id: string) => onOpenAsset('location', id)"
+        @select-item="(id: string) => onOpenAsset('item', id)"
+        @select-voice="(id: string) => onOpenAsset('voice', id)"
+        @add-character="onAddAsset('character')"
+        @add-location="onAddAsset('location')"
+        @add-item="onAddAsset('item')"
+        @add-voice="onAddAsset('voice')"
+      />
     </div>
 
     <!-- P6-T15 底部迷你时间线（spec §2.1 第 420-421 行） -->
@@ -896,11 +882,21 @@ watch(projectId, () => {
 
 .center-panel {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
+}
+
+/*
+ * FU5-A7：资产侧栏改右侧（user 5/6 决策）。
+ * AssetSidebar 自带 border-right（左侧布局用），右侧布局下覆盖为 border-left。
+ */
+.asset-sidebar-right {
+  border-right: none !important;
+  border-left: 1px solid var(--el-border-color-lighter);
 }
 
 .panel-header {
