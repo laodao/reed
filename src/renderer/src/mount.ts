@@ -10,6 +10,8 @@ import { createApp } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
+// FU5-A6 G1 · element-plus 暗主题 css-vars（html.dark 类启用时自动接管所有 --el-* 变量）
+import 'element-plus/theme-chalk/dark/css-vars.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 
 import App from './App.vue'
@@ -53,5 +55,11 @@ export async function mountApp(opts: MountOptions = {}): Promise<void> {
   }
 
   await appSettings.loadSettings()
+
+  // FU5-A6 G1 · 启动时初始化主题（auto / light / dark）+ 字体大小
+  setActivePinia(pinia)
+  const { useSettingsStore } = await import('./stores/settings')
+  await useSettingsStore().initSettings()
+
   app.mount('#app')
 }

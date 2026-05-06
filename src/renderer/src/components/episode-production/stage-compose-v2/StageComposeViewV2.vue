@@ -659,7 +659,12 @@ onMounted(() => {
 .preview-area {
   position: relative;
   aspect-ratio: 16 / 9;
-  background: linear-gradient(135deg, #1a1a2e, #2c3e50);
+  /*
+   * FU5-A6 G1：视频预览区视觉规范上保持深色（无论亮/暗主题），
+   * 但 placeholder 文字使用 var(--el-color-white) 而非写死 #fff，
+   * 让 element-plus 主题切换时背景明暗对比仍合理。
+   */
+  background: var(--el-color-black, #000);
   border-radius: 6px;
   overflow: hidden;
   display: flex;
@@ -671,7 +676,7 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  background: #000;
+  background: var(--el-color-black, #000);
 }
 
 .preview-placeholder {
@@ -679,7 +684,9 @@ onMounted(() => {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  color: rgba(255, 255, 255, 0.65);
+  /* 视频区固定深色背景 → 文字白色（不需主题变量切换） */
+  color: var(--el-color-white, #fff);
+  opacity: 0.7;
 }
 
 .placeholder-icon {
@@ -897,7 +904,8 @@ onMounted(() => {
   bottom: 0;
   width: 12px;
   transform: translateX(-6px);
-  background: rgba(192, 24, 91, 0.4);
+  /* FU5-A6 G1：用主题色 light-5（亮/暗主题各自语义色） */
+  background: var(--el-color-danger-light-5);
   display: flex;
   align-items: center;
   justify-content: center;

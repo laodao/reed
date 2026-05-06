@@ -40,17 +40,39 @@
   color: var(--el-color-warning);
 }
 
-/* 不同 kind 的封面色（character/location/item/voice） */
-.character-card .card-thumb { background: linear-gradient(135deg, #ddeeff, #99c2ff); }
-.character-card .card-thumb.warn { background: linear-gradient(135deg, #fff0e0, #ffd4a3); }
+/*
+ * 不同 kind 的封面色（character / location / item / voice）
+ * FU5-A6 G1：用 element-plus 主题变量，亮 / 暗主题自动切换。
+ *   - character → primary（蓝）
+ *   - location  → success（绿）
+ *   - item      → danger（紫红）
+ *   - voice     → warning（黄）
+ *   - 缺图 warn → warning 浅色（统一）
+ */
+.character-card .card-thumb {
+  background: linear-gradient(135deg, var(--el-color-primary-light-7), var(--el-color-primary-light-5));
+}
+.character-card .card-thumb.warn {
+  background: linear-gradient(135deg, var(--el-color-warning-light-7), var(--el-color-warning-light-5));
+}
 
-.location-card .card-thumb { background: linear-gradient(135deg, #d4f4dd, #8fd9a8); }
-.location-card .card-thumb.warn { background: linear-gradient(135deg, #fff0e0, #ffd4a3); }
+.location-card .card-thumb {
+  background: linear-gradient(135deg, var(--el-color-success-light-7), var(--el-color-success-light-5));
+}
+.location-card .card-thumb.warn {
+  background: linear-gradient(135deg, var(--el-color-warning-light-7), var(--el-color-warning-light-5));
+}
 
-.item-card .card-thumb { background: linear-gradient(135deg, #f0d9ff, #c9a3ee); }
-.item-card .card-thumb.warn { background: linear-gradient(135deg, #fff0e0, #ffd4a3); }
+.item-card .card-thumb {
+  background: linear-gradient(135deg, var(--el-color-danger-light-7), var(--el-color-danger-light-5));
+}
+.item-card .card-thumb.warn {
+  background: linear-gradient(135deg, var(--el-color-warning-light-7), var(--el-color-warning-light-5));
+}
 
-.voice-card .card-thumb { background: linear-gradient(135deg, #fff3cd, #ffe084); }
+.voice-card .card-thumb {
+  background: linear-gradient(135deg, var(--el-color-warning-light-7), var(--el-color-warning-light-5));
+}
 
 .card-body {
   padding: 10px 12px;
