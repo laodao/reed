@@ -80,6 +80,35 @@ export class CharacterBindingEntity {
   @Column({ name: 'standalone_description', type: 'text', nullable: true })
   standaloneDescription!: string | null
 
+  // ─── FU5-C2 身份块 + 声音情感 + 风格锚点 + 备选服装（spec §3.1·§3.4·§3.6）
+  /** 别名 — 自由文本（如"三爷 / 浪剑客"） */
+  @Column({ name: 'alias', type: 'text', nullable: true })
+  alias!: string | null
+
+  /** 定位（主角 / 配角 / 反派 / 旁白） */
+  @Column({ name: 'role', type: 'text', nullable: true })
+  role!: string | null
+
+  /** 性别（男 / 女 / 其他 / 未指定） */
+  @Column({ name: 'gender', type: 'text', nullable: true })
+  gender!: string | null
+
+  /** 年龄 */
+  @Column({ name: 'age', type: 'integer', nullable: true })
+  age!: number | null
+
+  /** 默认情感（neutral / angry / happy / sad / surprised / confused） */
+  @Column({ name: 'voice_emotion', type: 'text', nullable: true })
+  voiceEmotion!: string | null
+
+  /** 风格锚点（JSON 数组字符串："[\"工笔国风\",\"水墨\"]"） */
+  @Column({ name: 'style_anchors', type: 'text', nullable: true })
+  styleAnchors!: string | null
+
+  /** 备选服装列表（JSON 数组字符串） */
+  @Column({ name: 'outfits_extra', type: 'text', nullable: true })
+  outfitsExtra!: string | null
+
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 

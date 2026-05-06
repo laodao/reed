@@ -57,6 +57,19 @@ export type StandalonePatch = Partial<{
   description: string
 }>
 
+/** FU5-C2 身份块 + 声音 + 风格锚点 + 备选服装 patch（spec §3.1/3.4/3.6） */
+export type CharacterExtraPatch = Partial<{
+  alias: string | null
+  role: string | null
+  gender: string | null
+  age: number | null
+  voiceSpeed: number | null
+  voicePitch: number | null
+  voiceEmotion: string | null
+  styleAnchors: string[] | null
+  outfitsExtra: string[] | null
+}>
+
 /**
  * 角色资产业务 service。
  *
@@ -229,5 +242,31 @@ export class CharacterAssetService {
   /** 删除一个角色 binding */
   async delete(bindingId: string): Promise<void> {
     await this.bindingRepo.delete(bindingId)
+  }
+
+  /**
+   * FU5-C2 一次性更新身份块 + 声音参数 + 风格锚点 + 备选服装。
+   * 仅 patch 里出现的 key 才更新；styleAnchors / outfitsExtra 数组转 JSON 字符串。
+   */
+  async updateExtra(bindingId: string, patch: CharacterExtraPatch): Promise<void> {
+    const update: Record<string, unknown> = { updatedAt: new Date() }
+    if ('alias' in patch) update.alias = patch.alias ?? null
+    if ('role' in patch) update.role = patch.role ?? null
+    if ('gender' in patch) update.gender = patch.gender ?? null
+    if ('age' in patch) update.age = patch.age ?? null
+    if ('voiceSpeed' in patch) update.voiceSpeed = patch.voiceSpeed ?? null
+    if ('voicePitch' in patch) update.voicePitch = patch.voicePitch ?? null
+    if ('voiceEmotion' in patch) update.voiceEmotion = patch.voiceEmotion ?? null
+    if ('styleAnchors' in patch) {
+      update.styleAnchors = patch.styleAnchors
+        ? JSON.stringify(patch.styleAnchors)
+        : null
+    }
+    if ('outfitsExtra' in patch) {
+      update.outfitsExtra = patch.outfitsExtra
+        ? JSON.stringify(patch.outfitsExtra)
+        : null
+    }
+    await this.bindingRepo.update(bindingId, update)
   }
 }

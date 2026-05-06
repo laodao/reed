@@ -17,6 +17,7 @@ import {
   type CreateLinkedLwInput,
   type OverridePatch,
   type StandalonePatch,
+  type CharacterExtraPatch,
 } from '@core/modules/episode-production/assets/services/character-asset.service'
 
 export function registerCharacterAssetHandlers(): void {
@@ -40,6 +41,8 @@ export function registerCharacterAssetHandlers(): void {
   ipcBridge.handle('ep:asset:character:create-linked-lw', handleAssetCharacterCreateLinkedLw)
   ipcBridge.handle('ep:asset:character:update-override', handleAssetCharacterUpdateOverride)
   ipcBridge.handle('ep:asset:character:update-standalone', handleAssetCharacterUpdateStandalone)
+  // FU5-C2 身份块 + 声音参数 + 风格锚点 + 备选服装
+  ipcBridge.handle('ep:asset:character:update-extra', handleAssetCharacterUpdateExtra)
   ipcBridge.handle('ep:asset:character:set-voice', handleAssetCharacterSetVoice)
   ipcBridge.handle('ep:asset:character:set-portrait', handleAssetCharacterSetPortrait)
   ipcBridge.handle('ep:asset:character:delete', handleAssetCharacterDelete)
@@ -336,6 +339,20 @@ async function handleAssetCharacterUpdateStandalone(
   try {
     const svc = new CharacterAssetService(requireDataSource())
     await svc.updateStandalone(id, patch)
+    return { success: true, data: { updated: true } }
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+async function handleAssetCharacterUpdateExtra(
+  _event: any,
+  id: string,
+  patch: CharacterExtraPatch,
+): Promise<IpcResponse> {
+  try {
+    const svc = new CharacterAssetService(requireDataSource())
+    await svc.updateExtra(id, patch)
     return { success: true, data: { updated: true } }
   } catch (err: any) {
     return { success: false, error: err?.message ?? String(err) }

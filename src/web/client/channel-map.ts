@@ -470,6 +470,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.asset.character.createLinkedLw': { channel: 'ep:asset:character:create-linked-lw' },
   'episodeProduction.asset.character.updateOverride': { channel: 'ep:asset:character:update-override' },
   'episodeProduction.asset.character.updateStandalone': { channel: 'ep:asset:character:update-standalone' },
+  'episodeProduction.asset.character.updateExtra': { channel: 'ep:asset:character:update-extra' },
   'episodeProduction.asset.character.setVoice': { channel: 'ep:asset:character:set-voice' },
   'episodeProduction.asset.character.setPortrait': { channel: 'ep:asset:character:set-portrait' },
   'episodeProduction.asset.character.delete': { channel: 'ep:asset:character:delete' },

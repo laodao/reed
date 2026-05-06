@@ -228,6 +228,7 @@ const IPC_CHANNELS = {
   EP_ASSET_CHARACTER_CREATE_LINKED_LW: 'ep:asset:character:create-linked-lw',
   EP_ASSET_CHARACTER_UPDATE_OVERRIDE: 'ep:asset:character:update-override',
   EP_ASSET_CHARACTER_UPDATE_STANDALONE: 'ep:asset:character:update-standalone',
+  EP_ASSET_CHARACTER_UPDATE_EXTRA: 'ep:asset:character:update-extra',
   EP_ASSET_CHARACTER_SET_VOICE: 'ep:asset:character:set-voice',
   EP_ASSET_CHARACTER_SET_PORTRAIT: 'ep:asset:character:set-portrait',
   EP_ASSET_CHARACTER_DELETE: 'ep:asset:character:delete',
@@ -1812,6 +1813,9 @@ const electronAPI = {
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_UPDATE_OVERRIDE, id, override),
         updateStandalone: (id: string, patch: any) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_UPDATE_STANDALONE, id, patch),
+        /** FU5-C2 身份块 + 声音参数 + 风格锚点 + 备选服装 */
+        updateExtra: (id: string, patch: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_UPDATE_EXTRA, id, patch),
         setVoice: (id: string, voiceId: string | null) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_SET_VOICE, id, voiceId),
         setPortrait: (id: string, portraitId: string | null) =>

@@ -435,6 +435,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-keyframe-user-prompt-override'
     )
     await addKeyframeUserPromptOverride(this.dataSource)
+    // FU5-C2: character_bindings 加身份块 + 声音情感 + 风格锚点字段（spec §3.1/3.4/3.6）
+    const { addCharacterBindingExtraFields } = await import(
+      '@core/database/migrations/add-character-binding-extra-fields'
+    )
+    await addCharacterBindingExtraFields(this.dataSource)
   }
 
   /**
