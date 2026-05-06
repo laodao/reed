@@ -375,6 +375,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'diary.exportPdf': { channel: 'diary:export-pdf', wrap: (entryId, outputPath) => [{ entryId, outputPath }] },
   'diary.exportDocx': { channel: 'diary:export-docx', wrap: (entryId, outputPath) => [{ entryId, outputPath }] },
   'episodeProduction.listProjects': { channel: 'ep:list-projects' },
+  'episodeProduction.listProjectsSummary': { channel: 'ep:list-projects-summary' },
   'episodeProduction.getProject': { channel: 'ep:get-project' },
   'episodeProduction.createProject': { channel: 'ep:create-project' },
   'episodeProduction.updateProject': { channel: 'ep:update-project' },

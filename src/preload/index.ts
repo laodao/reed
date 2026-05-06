@@ -109,6 +109,7 @@ const IPC_CHANNELS = {
 
   // 剧集制作相关
   EP_LIST_PROJECTS: 'ep:list-projects',
+  EP_LIST_PROJECTS_SUMMARY: 'ep:list-projects-summary',
   EP_GET_PROJECT: 'ep:get-project',
   EP_CREATE_PROJECT: 'ep:create-project',
   EP_UPDATE_PROJECT: 'ep:update-project',
@@ -1531,6 +1532,9 @@ const electronAPI = {
     // 项目管理
     listProjects: (longWritingProjectId?: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_LIST_PROJECTS, longWritingProjectId),
+    /** FU5-A1 项目卡片聚合视图（项目列表 v2 用） */
+    listProjectsSummary: (longWritingProjectId?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_LIST_PROJECTS_SUMMARY, longWritingProjectId),
     getProject: (projectId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_GET_PROJECT, projectId),
     createProject: (name: string, longWritingProjectId?: string, config?: any) =>

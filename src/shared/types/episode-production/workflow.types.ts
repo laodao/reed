@@ -131,6 +131,24 @@ export interface VideoProject {
 }
 
 /**
+ * 项目卡片用聚合视图（FU5-A1 / 原型 00 项目列表）。
+ *
+ * 给项目列表卡片用，避免渲染时 N+1 查 episodes / 计算进度。
+ * 后端 listSummaries IPC 一次性返回。
+ *
+ * - episodeCount         项目下剧集数
+ * - currentStageLabel    "第 N 集 进行中" / "已完成" 等供卡片底部显示
+ * - progressPct          0-100 项目级总进度（按所有剧集 status 平均）
+ * - sourceType           linked_lw（项目关联了长文）/ standalone（独立剧集）
+ */
+export interface VideoProjectSummary extends VideoProject {
+  episodeCount: number
+  currentStageLabel: string | null
+  progressPct: number
+  sourceType: 'linked_lw' | 'standalone'
+}
+
+/**
  * 剧集（对应一个章节或上传的长文）
  */
 export interface VideoEpisode {

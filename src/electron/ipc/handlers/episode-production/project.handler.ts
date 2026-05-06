@@ -8,6 +8,7 @@ import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import type { VideoProjectConfig } from '@shared/types/story-to-video.types'
+import { buildProjectSummary } from '@core/modules/episode-production/workflow/project-summary'
 
 export function registerProjectHandlers(): void {
   // ==================== 项目管理 ====================
@@ -16,6 +17,8 @@ export function registerProjectHandlers(): void {
   ipcBridge.handle('ep:create-project', handleCreateProject)
   ipcBridge.handle('ep:update-project', handleUpdateProject)
   ipcBridge.handle('ep:delete-project', handleDeleteProject)
+  // FU5-A1 项目卡片聚合视图（episodeCount / progressPct / currentStageLabel / sourceType）
+  ipcBridge.handle('ep:list-projects-summary', handleListProjectsSummary)
 }
 
 // ==================== 项目管理处理器 ====================
@@ -110,6 +113,34 @@ async function handleUpdateProject(
     return { success: true, data: project }
   } catch (error: any) {
     return { success: false, error: error.message || '更新项目失败' }
+  }
+}
+
+async function handleListProjectsSummary(
+  _event: any,
+  longWritingProjectId?: string,
+): Promise<IpcResponse> {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.videoProjects || !db.videoEpisodes) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    const projects = longWritingProjectId
+      ? await db.videoProjects.getByLongWritingProjectId(longWritingProjectId)
+      : await db.videoProjects.getAll()
+
+    // 并发拉每个项目的 episodes（user_id scope 已在 repo 层加好）
+    const summaries = await Promise.all(
+      projects.map(async (p) => {
+        const episodes = await db.videoEpisodes!.getByProjectId(p.id)
+        return buildProjectSummary(p, episodes)
+      }),
+    )
+    return { success: true, data: summaries }
+  } catch (error: any) {
+    console.error('[handleListProjectsSummary] 错误:', error)
+    return { success: false, error: error.message || '获取项目摘要失败' }
   }
 }
 
