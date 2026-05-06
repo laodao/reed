@@ -1,12 +1,12 @@
 /**
- * 阶段门控 service（spec §2.2 / §2.3 · P6-T9）
+ * 阶段门控 service（spec §2.2 / §2.3 · P6-T9 · FU5-A9-L1 修订）
  * @module modules/episode-production/workflow/stage-gate.service
  *
  * 给每个阶段定义"完成条件"——满足后才能进入下一阶段（软引导 + 末端硬锁）。
  *
  * 各阶段完成条件（spec §2.2）：
  *   ① 内容        → 用户已点"确认要素"（episode.uploadedCharacters 非空 OR outline 已选）
- *   ② 资产        → 所有出场要素都有可用主图（character/location/item bindings 主图就绪）
+ *   ② 资产        → 至少创建 1 个 binding（用户进入过 ②）；主图齐备改为 ⑤ 前硬卡（FU5-L1）
  *   ③ 剧本        → 用户点"剧本定稿"（status >= scripting 且通过 P4 完整性校验）
  *   ④ 分镜        → 每场 ≥1 个 Storyboard
  *   ⑤ 制作        → 所有分镜 videoPath 非空
@@ -17,6 +17,11 @@
  *
  * 末端硬锁（spec §2.3）：⑥ 合成 → completed 必须满足"所有分镜 videoPath 非空"；
  * 前面阶段允许"软" 跳过。
+ *
+ * FU5-A9-L1（user 5/6 决策）：
+ * 之前 ② 资产完成必须主图全齐备 → 用户被卡在 ② 等所有 AI 出图，影响 ③ ④ 写剧本/分镜效率。
+ * 修订后 ② → ③ 软化：只要有任意 binding 就让进 ③；主图齐备校验改为
+ * ④ → ⑤ 进 producing 前的硬卡（涉及关键帧生成才需要主图）。
  *
  * 仅查询 + 计算，不修改数据。
  */
@@ -70,7 +75,8 @@ export class StageGateService {
    *
    * - 同状态 / 回退：直接 allowed=true
    * - 前向跳转：检查目标状态前一阶段的完成条件
-   * - completed（末端硬锁）：必须⑤ 制作完成（所有分镜有 videoPath）
+   * - producing（FU5-L1）：除前置 storyboarding 完成外，叠加"涉及到的 binding 主图齐备"硬校验
+   * - completed（末端硬锁）：必须 ⑤ 制作完成（所有分镜有 videoPath）
    */
   async canEnterStage(
     episodeId: string,
@@ -89,6 +95,20 @@ export class StageGateService {
         allowed: completion.complete,
         gaps: completion.gaps,
         canForce: false,
+      }
+    }
+
+    if (targetStatus === 'producing') {
+      // FU5-L1：进 ⑤ producing 前同时校验
+      //   1. 前置 storyboarding 完成（每场景 ≥1 storyboard）
+      //   2. 资产主图齐备（关键帧生成依赖；不齐备会失败）
+      const sb = await this.checkStageComplete(episodeId, 'storyboarding')
+      const img = await this.checkAssetMainImagesReady(episodeId)
+      const gaps = [...sb.gaps, ...img.gaps]
+      return {
+        allowed: sb.complete && img.complete,
+        gaps,
+        canForce: true,
       }
     }
 
@@ -166,8 +186,56 @@ export class StageGateService {
     }
   }
 
-  /** ② 资产：所有 binding 都有主图 */
+  /**
+   * ② 资产：FU5-L1 软化 — 至少创建 1 个 binding 即可进 ③
+   *
+   * 修订前：要求所有 binding 主图齐备 → 用户被卡在 ② 等 AI 出图。
+   * 修订后：用户在 ② 至少建过一个 character/location/item binding 即可进 ③ 写剧本；
+   *         主图齐备校验改到 ④ → ⑤ producing 前（见 checkAssetMainImagesReady + canEnterStage）。
+   */
   private async checkAssetComplete(
+    episodeId: string,
+  ): Promise<StageCompletionStatus> {
+    const ep = await this.ds
+      .getRepository(VideoEpisodeEntity)
+      .findOne({ where: { id: episodeId } })
+    if (!ep) {
+      return {
+        stage: 'asset_prep',
+        complete: false,
+        gaps: [{ code: 'EPISODE_NOT_FOUND', message: '剧集不存在' }],
+      }
+    }
+    const projectId = ep.projectId
+
+    const [charCount, locCount, itemCount] = await Promise.all([
+      this.ds.getRepository(CharacterBindingEntity).count({ where: { projectId } }),
+      this.ds.getRepository(LocationBindingEntity).count({ where: { projectId } }),
+      this.ds.getRepository(ItemBindingEntity).count({ where: { projectId } }),
+    ])
+
+    if (charCount + locCount + itemCount === 0) {
+      return {
+        stage: 'asset_prep',
+        complete: false,
+        gaps: [
+          {
+            code: 'NO_BINDINGS_CREATED',
+            message: '还没创建任何资产 binding（角色 / 地点 / 物品至少建一个）',
+          },
+        ],
+      }
+    }
+    return { stage: 'asset_prep', complete: true, gaps: [] }
+  }
+
+  /**
+   * FU5-L1 ④ → ⑤ 进 producing 前的"主图齐备"硬校验。
+   *
+   * 关键帧生成依赖每个 binding 的主图（spec §4.5.7 资产引用），所以进 ⑤ 前必须有；
+   * 但 ② → ③ 不再卡这个，让用户能在 ③ ④ 写剧本和分镜的同时让 ② 的 AI 出图慢慢跑。
+   */
+  async checkAssetMainImagesReady(
     episodeId: string,
   ): Promise<StageCompletionStatus> {
     const ep = await this.ds
@@ -183,11 +251,9 @@ export class StageGateService {
     const projectId = ep.projectId
     const gaps: StageGap[] = []
 
-    const charRepo = this.ds.getRepository(CharacterBindingEntity)
-    const locRepo = this.ds.getRepository(LocationBindingEntity)
-    const itemRepo = this.ds.getRepository(ItemBindingEntity)
-
-    const chars = await charRepo.find({ where: { projectId } })
+    const chars = await this.ds
+      .getRepository(CharacterBindingEntity)
+      .find({ where: { projectId } })
     for (const b of chars) {
       const main = await this.imageSvc.getMainImage('character', b.id)
       if (!main) {
@@ -198,7 +264,9 @@ export class StageGateService {
         })
       }
     }
-    const locs = await locRepo.find({ where: { projectId } })
+    const locs = await this.ds
+      .getRepository(LocationBindingEntity)
+      .find({ where: { projectId } })
     for (const b of locs) {
       const main = await this.imageSvc.getMainImage('location', b.id)
       if (!main) {
@@ -209,7 +277,9 @@ export class StageGateService {
         })
       }
     }
-    const items = await itemRepo.find({ where: { projectId } })
+    const items = await this.ds
+      .getRepository(ItemBindingEntity)
+      .find({ where: { projectId } })
     for (const b of items) {
       const main = await this.imageSvc.getMainImage('item', b.id)
       if (!main) {
