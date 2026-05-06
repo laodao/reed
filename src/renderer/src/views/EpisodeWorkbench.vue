@@ -329,6 +329,8 @@ import AssetSidebar from '@/components/episode-production/workbench/AssetSidebar
 import BottomTimeline from '@/components/episode-production/workbench/BottomTimeline.vue'
 // P6-T17 stage 占位组件（① 内容 / ③ 剧本 待实现 stage view）
 import StagePlaceholder from '@/components/episode-production/workbench/StagePlaceholder.vue'
+// FU3 stage 切换 + 门控 composable
+import { useWorkbenchStageNavigation } from '@/composables/use-workbench-stage-navigation'
 // P6-T20 ④ 分镜 stage view（spec §2.2 第 436 行 + §4.5）
 import StageStoryboardView from '@/components/episode-production/stage-storyboard/StageStoryboardView.vue'
 // P6-T18 ① 内容 stage view（spec §2.2 第 433 行 + §0.4）
@@ -426,152 +428,11 @@ watch(activeTab, (s) => {
   }
 })
 
-/**
- * P6-T13/T16/T17 顶部进度条点击 → 经门控决策 → 切到对应 stage tab。
- *
- * P6-T16 门控逻辑（spec §2.3 软引导 + 末端硬锁）：
- *   - 同状态 / 回退：StageGate 直接 allowed=true → 切换
- *   - 前向跳转 + 前置阶段已完成：allowed=true → 切换
- *   - 前向跳转 + 前置未完成 + canForce=true：弹 confirm 列 gaps[]，
- *     用户选"仍要进入"则切换，"回到 ② 资产"则跳到 asset_prep
- *   - canForce=false（末端硬锁）：弹 alert 提示，不允许强制
- *   - IPC 失败 / 数据缺失：软放过（避免门控 bug 阻塞用户）
- */
-async function onNavigateStage(status: EpisodeStatus): Promise<void> {
-  if (status === 'completed') {
-    ElMessage.info('剧集已完成')
-    return
-  }
-  const ep = episodeStore.currentEpisode
-  if (!ep) {
-    activeTab.value = status as WorkbenchStage
-    return
-  }
-  try {
-    const api = (window as any).electronAPI?.episodeProduction
-    if (!api?.canEnterStage) {
-      activeTab.value = status as WorkbenchStage
-      return
-    }
-    const resp = await api.canEnterStage(ep.id, ep.status as EpisodeStatus, status)
-    if (!resp?.success) {
-      console.warn('canEnterStage 返回失败，软放过：', resp?.error)
-      activeTab.value = status as WorkbenchStage
-      return
-    }
-    const decision = resp.data as StageEnterDecision
-    if (decision.allowed) {
-      activeTab.value = status as WorkbenchStage
-      return
-    }
-    if (!decision.canForce) {
-      const gapList = decision.gaps.map((g) => `• ${g.message}`).join('\n')
-      await ElMessageBox.alert(
-        `不能进入此阶段（末端硬锁）：\n\n${gapList}\n\n请先完成上述项再试。`,
-        '阶段门控',
-        { type: 'error', confirmButtonText: '知道了' },
-      )
-      return
-    }
-    // 软关卡 → 弹 confirm
-    const gapList = decision.gaps.map((g) => `• ${g.message}`).join('\n')
-    try {
-      await ElMessageBox.confirm(
-        `前置阶段还有 ${decision.gaps.length} 项未完成：\n\n${gapList}\n\n仍要进入吗？`,
-        '前置未完成',
-        {
-          confirmButtonText: '仍要进入',
-          cancelButtonText: '回到 ② 资产',
-          type: 'warning',
-        },
-      )
-      activeTab.value = status as WorkbenchStage
-    } catch {
-      // 用户点"回到 ② 资产"或 ESC
-      activeTab.value = 'asset_prep'
-    }
-  } catch (e: any) {
-    console.warn('门控调用异常，软放过：', e)
-    activeTab.value = status as WorkbenchStage
-  }
-}
+// FU3：selectedAsset 提前声明（多个 composable + 模板共享）
+const selectedAsset = ref<{ type: 'character' | 'location' | 'item' | 'voice'; id: string } | null>(null)
 
-/**
- * P6-T14 顶部 episode dropdown change → 切换当前剧集（替代原左侧剧集列表）。
- */
-async function onEpisodeSelectChange(episodeId: string): Promise<void> {
-  const ep = episodeStore.episodes.find((e) => e.id === episodeId)
-  if (!ep) return
-  await selectEpisode(ep)
-}
-
-/**
- * P6-T14 左侧资产侧栏点击单条资产 → 跳到 ② 资产 tab + 打开对应 editor。
- */
-function onOpenAsset(kind: 'character' | 'location' | 'item' | 'voice', id: string): void {
-  activeTab.value = 'asset_prep'
-  selectedAsset.value = { type: kind, id }
-}
-
-/**
- * P6-T14 左侧资产侧栏"+ 添加 X" → 跳到 ② 资产 tab，由 AssetStageView 处理添加。
- *
- * 当前 AssetStageView 暂不支持外部触发"添加"，本函数先跳 tab；
- * 后续 P6 follow-up 时再让 AssetStageView 暴露 addX 入口。
- */
-function onAddAsset(kind: 'character' | 'location' | 'item' | 'voice'): void {
-  activeTab.value = 'asset_prep'
-  selectedAsset.value = null
-  ElMessage.info(`${kind === 'voice' ? '语音' : kind === 'item' ? '物品' : kind === 'location' ? '地点' : '角色'}添加入口在 ② 资产 stage 中（待 P6 follow-up 接入）`)
-}
-
-/**
- * P6-T15 底部时间线"⏵ 试播" → 跳到 ⑥ 合成 stage（让用户看上次 export
- * 或直接 export 一份）。
- *
- * 真正的 in-page 视频播放器留 P6 后续 follow-up（需要 episode 级 lastExport
- * 持久化 + 视频播放器组件）。
- */
-function onPreviewEpisode(): void {
-  activeTab.value = 'composing'
-  ElMessage.info('已跳到 ⑥ 合成 stage — 请点"导出 MP4"获得最新成片')
-}
-
-/**
- * P6-T15 底部时间线点击单个分镜 cell → 跳 ⑤ 制作 tab 选中该分镜。
- *
- * StageProductionTabContent 暂未支持外部 prop 选中具体分镜（默认选第一个）；
- * 此函数先跳 tab，待 P6 后续 follow-up 暴露 selectedStoryboardId prop。
- */
-function onSelectStoryboard(storyboardId: string): void {
-  void storyboardId // 保留参数；P6 后续传给 StageProductionTabContent
-  activeTab.value = 'producing'
-}
-
-/**
- * P6-T20 StageStoryboardView "编辑分镜配置"按钮 → 复用现有 StoryboardEditDialog
- */
-function onEditStoryboardFromStage(sb: Storyboard): void {
-  dialogs.editingStoryboard = sb
-  dialogs.storyboardEdit = true
-}
-
-/**
- * P6-T20 StageStoryboardView "去 ⑤ 制作"按钮 → 切到 ⑤ 制作 stage 选中该分镜
- */
-function onJumpToProductionWithSb(storyboardId: string): void {
-  void storyboardId // 待 P6 follow-up 传给 StageProductionTabContent 的 selectedStoryboardId
-  activeTab.value = 'producing'
-}
-
-/**
- * P6-T18 ① 内容 stage 的"确认要素"按钮 → 切到 ② 资产 stage 并刷新进度条
- */
-async function onContentConfirmed(): Promise<void> {
-  activeTab.value = 'asset_prep'
-  // 进度条根据 episode.status 自动重算（StageProgressBar 会在 ref 触发时 reload）
-  await progressBarRef.value?.reload()
-}
+// FU3：useWorkbenchStageNavigation 调用挪到 setup 末尾（所有 ref/function 声明之后）
+// 见 watch(projectId) 上方
 
 /** P5-T23：⑤ 制作 tab 用的分镜列表（精简映射 + keyframeCount 透传） */
 const productionStoryboards = computed(() =>
@@ -914,8 +775,7 @@ async function loadProviderConfigs(): Promise<void> {
 // Task 12 接入 CharacterAssetEditor，Task 13 接入 LocationAssetEditor，
 // Task 14 接入 ItemAssetEditor + VoiceAssetEditor（4 类资产 editor 全覆盖）；
 // 通过 selectedAsset 状态在 stage view ↔ editor 切换。
-
-const selectedAsset = ref<{ type: 'character' | 'location' | 'item' | 'voice'; id: string } | null>(null)
+// FU3：selectedAsset 已提前声明（line 432 上方）
 
 function onAssetSaved() {
   ElMessage.success('保存成功')
@@ -924,6 +784,25 @@ function onAssetSaved() {
 function onCompleteAssetStage() {
   ElMessage.success('阶段完成（暂未持久化）')
 }
+
+// ===== FU3 stage 切换 + 门控 composable（放最末避免 TDZ） =====
+const {
+  onNavigateStage,
+  onEpisodeSelectChange,
+  onOpenAsset,
+  onAddAsset,
+  onPreviewEpisode,
+  onSelectStoryboard,
+  onEditStoryboardFromStage,
+  onJumpToProductionWithSb,
+  onContentConfirmed,
+} = useWorkbenchStageNavigation({
+  activeTab,
+  selectedAsset,
+  dialogs,
+  progressBarRef,
+  selectEpisode,
+})
 
 // ===== 监听 =====
 

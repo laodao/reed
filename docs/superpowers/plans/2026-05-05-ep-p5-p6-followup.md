@@ -194,3 +194,16 @@ P6-T13 完成后我会给你一个明确的验收路径（URL + 步骤 + 截图�
 - 本 plan 文件状态更新（✅/🟡/⏳）+ 验收路径填实
 - spec 文件如有调整同步（memory 守则）
 - audit 报告对应 task 状态可同步降级（如发现新缺口）
+
+---
+
+## 9. 后续 follow-up（P5/P6 plan 之外）
+
+| Task | 状态 | 说明 |
+|---|---|---|
+| **FU1** V2 数据 binding_id 补齐 | ✅ 2026-05-06 | ScriptBindingFixerService + 3 IPC + 茶馆相遇真测（创建 老者/少年 binding + 填回 19 处引用 + P6-T22 高亮真生效） |
+| **FU3** EpisodeWorkbench 拆分 | ✅ 2026-05-06 | 抽 stage 切换 + 9 navigation handler 到 use-workbench-stage-navigation composable；EpisodeWorkbench 1254 → 1133 行 (-121 行)；DOM 验证 6 stage 切换全过 |
+| **P5-T16** BGM stub | ✅ 2026-05-06 | bgm.service.ts stub；audio-mix 已有 backgroundMusicPath 接口 |
+| **FU2** ③ 剧本 V3 ScriptStageView 重写 | ⏳ pending | 删 V2 ScriptTabContent，spec §4.1 强约束完整版 |
+| **P5-T17** DashScope qwen3-tts 适配 | ⏳ pending | 需真打 qwen3-tts API |
+| **P6-T6** TimelineEditor 多轨 UI | ⏳ pending | 视频/音频/字幕 3 轨可视化时间轴 |
