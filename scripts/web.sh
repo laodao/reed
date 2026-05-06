@@ -86,9 +86,10 @@ start_server() {
     return 1
   fi
 
-  log "启动 server: tsx watch src/web/server/index.ts (port=$PORT_SERVER)"
+  log "启动 server: tsx watch src/web/server/index.ts (port=$PORT_SERVER, host=0.0.0.0)"
   : > "$SERVER_LOG"
   # nohup + setsid 让进程脱离当前 shell 进程组，便于按指纹 pkill
+  # node http.Server.listen(port) 默认就 bind 0.0.0.0；显式传 HOST 仅作文档化
   nohup setsid env \
     DATA_ROOT="$DATA_ROOT_VAL" \
     JWT_SECRET="$JWT_SECRET_VAL" \
@@ -97,6 +98,7 @@ start_server() {
     PGUSER="$PGUSER_VAL" PGPASSWORD="$PGPASSWORD_VAL" \
     PGDATABASE="$PGDATABASE_VAL" \
     PORT="$PORT_SERVER" \
+    HOST="0.0.0.0" \
     npm run web:dev \
     >>"$SERVER_LOG" 2>&1 &
   echo $! > "$SERVER_PID_FILE"
@@ -104,7 +106,10 @@ start_server() {
   # 等监听端口
   for _ in $(seq 1 30); do
     if port_listening "$PORT_SERVER"; then
-      ok "server 启动成功 → http://localhost:$PORT_SERVER  (log: $SERVER_LOG)"
+      local lan_ip
+      lan_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+      ok "server 启动成功 → http://localhost:$PORT_SERVER  (LAN: http://${lan_ip}:$PORT_SERVER)"
+      log "log: $SERVER_LOG"
       return 0
     fi
     sleep 1
@@ -125,17 +130,21 @@ start_client() {
     return 1
   fi
 
-  log "启动 client: vite (port=$PORT_CLIENT, proxy → :$PORT_SERVER)"
+  log "启动 client: vite (port=$PORT_CLIENT, host=0.0.0.0, proxy → :$PORT_SERVER)"
   : > "$CLIENT_LOG"
+  # --host 0.0.0.0 让 LAN 其他设备能访问（默认仅 localhost）
   nohup setsid env \
     PORT_CLIENT="$PORT_CLIENT" \
-    npm run web:client:dev -- --port "$PORT_CLIENT" \
+    npm run web:client:dev -- --port "$PORT_CLIENT" --host 0.0.0.0 \
     >>"$CLIENT_LOG" 2>&1 &
   echo $! > "$CLIENT_PID_FILE"
 
   for _ in $(seq 1 30); do
     if port_listening "$PORT_CLIENT"; then
-      ok "client 启动成功 → http://localhost:$PORT_CLIENT  (log: $CLIENT_LOG)"
+      local lan_ip
+      lan_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+      ok "client 启动成功 → http://localhost:$PORT_CLIENT  (LAN: http://${lan_ip}:$PORT_CLIENT)"
+      log "log: $CLIENT_LOG"
       return 0
     fi
     sleep 1
@@ -198,9 +207,14 @@ status_one() {
 }
 
 cmd_status() {
-  echo "${C_BOLD}Web 服务状态：${C_RESET}"
+  echo -e "${C_BOLD}Web 服务状态：${C_RESET}"
+  local lan_ip
+  lan_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
   status_one "server" "$SERVER_PID_FILE" "$PORT_SERVER" "http://localhost:$PORT_SERVER"
   status_one "client" "$CLIENT_PID_FILE" "$PORT_CLIENT" "http://localhost:$PORT_CLIENT"
+  if [[ -n "$lan_ip" ]]; then
+    echo -e "  ${C_DIM}LAN 访问 → http://${lan_ip}:$PORT_CLIENT  (server: http://${lan_ip}:$PORT_SERVER)${C_RESET}"
+  fi
 }
 
 # ---------- logs ----------
