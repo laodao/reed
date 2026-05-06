@@ -18,6 +18,73 @@ export function registerEpisodeHandlers(): void {
   ipcBridge.handle('ep:create-episode', handleCreateEpisode)
   ipcBridge.handle('ep:update-episode', handleUpdateEpisode)
   ipcBridge.handle('ep:delete-episode', handleDeleteEpisode)
+  // FU4-1 ① 内容 stage AI 识别要素
+  ipcBridge.handle('ep:identify-uploaded-entities', handleIdentifyEntities)
+}
+
+// ==================== FU4-1 AI 识别要素 ====================
+
+async function handleIdentifyEntities(
+  _event: any,
+  episodeId: string,
+  providerConfigId?: string,
+  modelId?: string,
+): Promise<IpcResponse> {
+  try {
+    if (!episodeId) return { success: false, error: 'episodeId 不能为空' }
+    const db = getCoreDatabaseManager()
+    if (!db.videoEpisodes) return { success: false, error: '数据库未初始化' }
+    const episode = await db.videoEpisodes.getById(episodeId)
+    if (!episode) return { success: false, error: '剧集不存在' }
+    if (episode.sourceType !== 'uploaded' || !episode.uploadedContent) {
+      return {
+        success: false,
+        error: '仅 uploaded 模式 + 有长文内容时可识别',
+      }
+    }
+    if (!providerConfigId || !modelId) {
+      return {
+        success: false,
+        error: '请先在项目设置中配置剧本生成模型（用于 AI 识别）',
+      }
+    }
+
+    const aiService = StoryToVideoAIService.getInstance()
+    // 三类要素并行识别（spec §0.4 IdentifyEntities）
+    const [characters, locations, items] = await Promise.all([
+      aiService.identifyCharacters(episode.uploadedContent, providerConfigId, modelId),
+      aiService.identifyLocations(episode.uploadedContent, providerConfigId, modelId),
+      aiService.identifyItems(episode.uploadedContent, providerConfigId, modelId),
+    ])
+
+    // 创建并绑定 uploaded 实体（自动转 standalone binding）
+    await UploadedEntityService.createAndBindUploadedEntities(
+      episode.projectId,
+      episode.id,
+      characters,
+      locations,
+      items,
+    )
+
+    // 写回 episode.uploadedX
+    await db.videoEpisodes.update(episodeId, {
+      uploadedCharacters: characters,
+      uploadedLocations: locations,
+      uploadedItems: items,
+    })
+
+    return {
+      success: true,
+      data: {
+        characters: characters.length,
+        locations: locations.length,
+        items: items.length,
+      },
+    }
+  } catch (e: any) {
+    console.error('[handleIdentifyEntities] 异常:', e)
+    return { success: false, error: e?.message ?? 'AI 识别失败' }
+  }
 }
 
 // ==================== 剧集管理处理器 ====================

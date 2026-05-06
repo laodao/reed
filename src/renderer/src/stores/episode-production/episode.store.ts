@@ -140,17 +140,23 @@ export const useEpEpisodeStore = defineStore('ep-episode', () => {
 
   /**
    * 选择剧集
+   *
+   * FU4-2 修复：之前 selectEpisode 仅清 scriptStore（scenes/currentScene），
+   * 不清 storyboardStore → 切到新建剧集时仍显示上一剧集的分镜。
+   * 现强制先 clear 全部下游 store，再按需加载。
    */
   async function selectEpisode(episode: VideoEpisode): Promise<void> {
     currentEpisode.value = episode
     const scriptStore = useEpScriptStore()
+    const storyboardStore = useEpStoryboardStore()
+    // 1. 先清空所有下游 store（防止残留前剧集数据）
+    scriptStore.currentScript = null
+    scriptStore.scenes = []
+    scriptStore.currentScene = null
+    storyboardStore.storyboards = []
+    // 2. 有剧本才加载
     if (episode.scriptId) {
       await scriptStore.loadScript(episode.scriptId)
-    } else {
-      // 清空剧本相关数据
-      scriptStore.currentScript = null
-      scriptStore.scenes = []
-      scriptStore.currentScene = null
     }
   }
 
@@ -160,9 +166,50 @@ export const useEpEpisodeStore = defineStore('ep-episode', () => {
   function clearCurrentEpisode(): void {
     currentEpisode.value = null
     const scriptStore = useEpScriptStore()
+    const storyboardStore = useEpStoryboardStore()
     scriptStore.currentScript = null
     scriptStore.scenes = []
     scriptStore.currentScene = null
+    storyboardStore.storyboards = []
+  }
+
+  /**
+   * FU4-1 AI 识别要素（uploaded 模式 ① 内容 stage 用）
+   *
+   * 调 ep:identify-uploaded-entities → 后端跑 identifyCharacters/Locations/Items
+   * 并写回 episode.uploadedX 后，前端 reload episode 列表 + currentEpisode 同步。
+   */
+  async function identifyEntities(
+    episodeId: string,
+    providerConfigId: string,
+    modelId: string,
+  ): Promise<{ characters: number; locations: number; items: number } | null> {
+    const wb = useEpWorkbenchStore()
+    wb.error = null
+    try {
+      const api = (window as any).electronAPI?.episodeProduction
+      if (!api?.identifyUploadedEntities) {
+        wb.error = '当前环境不支持 AI 识别要素接口'
+        return null
+      }
+      const resp = await api.identifyUploadedEntities(episodeId, providerConfigId, modelId)
+      if (!resp.success) {
+        wb.error = resp.error || 'AI 识别失败'
+        return null
+      }
+      // 写回后 reload 当前剧集（拿到新的 uploadedX）
+      const fresh = await window.electronAPI.episodeProduction.getEpisode(episodeId)
+      if (fresh.success && fresh.data) {
+        const ep = fresh.data as VideoEpisode
+        const idx = episodes.value.findIndex(e => e.id === episodeId)
+        if (idx !== -1) episodes.value[idx] = ep
+        if (currentEpisode.value?.id === episodeId) currentEpisode.value = ep
+      }
+      return resp.data as { characters: number; locations: number; items: number }
+    } catch (e: any) {
+      wb.error = e.message || 'AI 识别失败'
+      return null
+    }
   }
 
   /**
@@ -201,5 +248,6 @@ export const useEpEpisodeStore = defineStore('ep-episode', () => {
     selectEpisode,
     clearCurrentEpisode,
     deleteEpisode,
+    identifyEntities,
   }
 })

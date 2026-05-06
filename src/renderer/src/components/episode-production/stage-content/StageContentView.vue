@@ -18,6 +18,16 @@
     <div class="view-header">
       <h3 class="view-title">① 内容</h3>
       <div class="view-actions">
+        <!-- FU4-1 AI 识别要素（uploaded 模式可见；总数 0 时主推，>0 时辅助） -->
+        <el-button
+          v-if="canIdentify"
+          :type="entityCount === 0 ? 'primary' : 'default'"
+          :loading="identifying"
+          @click="onIdentify"
+        >
+          <el-icon><MagicStick /></el-icon>
+          {{ entityCount === 0 ? 'AI 识别要素' : '重新识别' }}
+        </el-button>
         <el-button
           v-if="canConfirm"
           type="primary"
@@ -133,10 +143,14 @@
           </div>
         </div>
 
-        <!-- 重识别提示（spec §2.2 ① 内容 进入 ② 资产 前可重跑） -->
-        <p class="rebuild-note">
+        <!-- spec §2.2 ① 内容 - 进入 ② 资产 前可随时点上方"AI 识别 / 重新识别"重跑 -->
+        <p v-if="entityCount === 0" class="rebuild-note empty-note">
           <el-icon><InfoFilled /></el-icon>
-          重新识别要素 / 编辑识别结果 — 留 P6 follow-up（当前需要在创建剧集时一次性识别）
+          还未识别到任何要素。请点上方"AI 识别要素"按钮跑 AI 识别（需要先在项目设置中配置剧本生成模型）。
+        </p>
+        <p v-else class="rebuild-note">
+          <el-icon><InfoFilled /></el-icon>
+          已识别 {{ entityCount }} 个要素。如需调整可点"重新识别"重跑。
         </p>
       </div>
     </div>
@@ -158,8 +172,8 @@
  * 仅展示 + 确认。AI 识别 / 重新识别 / 编辑识别结果留 P6 follow-up。
  */
 import { computed, ref } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Box, Check, InfoFilled, Location, User } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Box, Check, InfoFilled, Location, MagicStick, User } from '@element-plus/icons-vue'
 import type {
   VideoEpisode,
   EpisodeStatus,
@@ -167,7 +181,7 @@ import type {
   UploadedLocation,
   UploadedItem,
 } from '../../../../../shared/types/episode-production'
-import { useEpEpisodeStore } from '@/stores/episode-production'
+import { useEpEpisodeStore, useEpProjectStore } from '@/stores/episode-production'
 
 const props = defineProps<{
   episode: VideoEpisode | null
@@ -178,7 +192,9 @@ const emit = defineEmits<{
 }>()
 
 const episodeStore = useEpEpisodeStore()
+const projectStore = useEpProjectStore()
 const confirming = ref(false)
+const identifying = ref(false)
 
 const sourceLabel = computed(() => {
   if (!props.episode) return ''
@@ -211,6 +227,62 @@ const alreadyConfirmed = computed(() => {
   // 只要 status 已经走过 pending（含 asset_prep / scripting / 后续），即视作已确认
   return s !== 'pending'
 })
+
+const entityCount = computed(
+  () =>
+    uploadedCharacters.value.length +
+    uploadedLocations.value.length +
+    uploadedItems.value.length,
+)
+
+const canIdentify = computed(() => {
+  // 仅 uploaded 模式有意义；outline 模式由长文模块管理
+  return (
+    !!props.episode &&
+    props.episode.sourceType === 'uploaded' &&
+    !!props.episode.uploadedContent &&
+    !alreadyConfirmed.value
+  )
+})
+
+async function onIdentify(): Promise<void> {
+  if (!props.episode) return
+  const sm = projectStore.currentProject?.config?.scriptModel
+  if (!sm?.providerConfigId || !sm?.modelId) {
+    ElMessage.warning('请先在项目设置中配置剧本生成模型（用于 AI 识别）')
+    return
+  }
+  if (entityCount.value > 0) {
+    try {
+      await ElMessageBox.confirm(
+        '已有识别结果将被覆盖，是否继续？',
+        '重新识别要素',
+        { type: 'warning', confirmButtonText: '重新识别', cancelButtonText: '取消' },
+      )
+    } catch {
+      return
+    }
+  }
+  identifying.value = true
+  try {
+    const result = await episodeStore.identifyEntities(
+      props.episode.id,
+      sm.providerConfigId,
+      sm.modelId,
+    )
+    if (result) {
+      ElMessage.success(
+        `识别完成：${result.characters} 角色 / ${result.locations} 地点 / ${result.items} 物品`,
+      )
+    } else {
+      ElMessage.error(episodeStore.$state ? '识别失败，请检查模型配置或稍后重试' : '识别失败')
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? 'AI 识别失败')
+  } finally {
+    identifying.value = false
+  }
+}
 
 const canConfirm = computed(() => {
   if (!props.episode) return false

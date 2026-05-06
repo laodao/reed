@@ -194,6 +194,9 @@ const IPC_CHANNELS = {
   EP_FIX_SCRIPT_BINDINGS_BY_NAME: 'ep:fix-script-bindings-by-name',
   EP_CREATE_MISSING_SCRIPT_BINDINGS: 'ep:create-missing-script-bindings',
 
+  // FU4-1 ① 内容 stage AI 识别要素
+  EP_IDENTIFY_UPLOADED_ENTITIES: 'ep:identify-uploaded-entities',
+
   EP_GET_STYLE_PRESETS: 'ep:get-style-presets',
   EP_GENERATE_STORYBOARD_IMAGE: 'ep:generate-storyboard-image',
   EP_GENERATE_SCENE_IMAGES: 'ep:generate-scene-images',
@@ -1702,6 +1705,10 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.EP_FIX_SCRIPT_BINDINGS_BY_NAME, episodeScriptId),
     createMissingScriptBindings: (episodeScriptId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_CREATE_MISSING_SCRIPT_BINDINGS, episodeScriptId),
+
+    // FU4-1 ① 内容 stage AI 识别要素（spec §0.4 IdentifyEntities）
+    identifyUploadedEntities: (episodeId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_IDENTIFY_UPLOADED_ENTITIES, episodeId, providerConfigId, modelId),
 
     // 资源生成
     getStylePresets: () =>

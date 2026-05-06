@@ -12,6 +12,8 @@ import {
   EpisodeStatus,
   EpisodeSourceType,
   UploadedCharacter,
+  UploadedLocation,
+  UploadedItem,
 } from '@shared/types/story-to-video.types'
 import { VideoEpisodeEntity } from '../entities/episode-production/video-episode.entity'
 import { BaseRepository } from '../base-repository'
@@ -33,6 +35,8 @@ export interface UpdateVideoEpisodeRequest {
   scriptId?: string
   audioTracks?: AudioTrack[]
   uploadedCharacters?: UploadedCharacter[]
+  uploadedLocations?: UploadedLocation[]
+  uploadedItems?: UploadedItem[]
 }
 
 export class VideoEpisodeRepository extends BaseRepository<

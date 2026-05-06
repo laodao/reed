@@ -1,5 +1,13 @@
 <template>
   <div class="ep-asset-stage">
+    <!-- FU4-3 前置阶段未完成提示（spec §2.3 软引导门控可视化） -->
+    <StageGapBanner
+      :episode-id="currentEpisode?.id ?? null"
+      :current-status="(currentEpisode?.status as string) ?? null"
+      target-status="asset_prep"
+      @goto-prev-stage="emit('goto-prev-stage')"
+    />
+
     <!-- 整体进度条 -->
     <el-card class="progress-card" shadow="never">
       <div class="progress-row">
@@ -137,11 +145,13 @@ import { computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Box, Location, Microphone, User } from '@element-plus/icons-vue'
 import { useEpAssetStore } from '@/stores/episode-production/asset.store'
+import { useEpEpisodeStore } from '@/stores/episode-production'
 
 import CharacterAssetCard from './CharacterAssetCard.vue'
 import LocationAssetCard from './LocationAssetCard.vue'
 import ItemAssetCard from './ItemAssetCard.vue'
 import VoiceAssetCard from './VoiceAssetCard.vue'
+import StageGapBanner from '../workbench/StageGapBanner.vue'
 
 const props = defineProps<{ projectId: string }>()
 
@@ -154,10 +164,13 @@ const emit = defineEmits<{
   'add-location': []
   'add-item': []
   'add-voice': []
+  'goto-prev-stage': []
   complete: []
 }>()
 
 const assetStore = useEpAssetStore()
+const episodeStore = useEpEpisodeStore()
+const currentEpisode = computed(() => episodeStore.currentEpisode)
 
 const characters = computed(() => assetStore.epAssetCharacters)
 const locations = computed(() => assetStore.epAssetLocations)

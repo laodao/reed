@@ -113,6 +113,7 @@
                 @open-item="(id: string) => (selectedAsset = { type: 'item', id })"
                 @open-voice="(id: string) => (selectedAsset = { type: 'voice', id })"
                 @complete="onCompleteAssetStage"
+                @goto-prev-stage="activeTab = 'pending'"
               />
               <CharacterAssetEditor
                 v-else-if="selectedAsset.type === 'character'"
