@@ -142,7 +142,12 @@
     <h2>设计要点</h2>
     <ul style="line-height: 1.8;">
       <li><strong>顶部进度条</strong>：6 阶段始终可见，软引导（可任意跳转，缺前置时弹提示）</li>
-      <li><strong>左侧资产侧栏</strong>：4 大类（角色 / 地点 / 物品 / 语音）+ 数字徽章，任何阶段都能查 / 编辑资产</li>
+      <li><strong>资产侧栏（修订）</strong>：
+        <ul>
+          <li>① 内容、② 资产（含二级编辑）：<strong>不显示侧栏</strong> — ① 资产未就绪、② 主区域本身就是资产清单</li>
+          <li>③ 剧本 / ④ 分镜 / ⑤ 画面+音频 / ⑥ 合成：侧栏放<strong>右侧</strong>（4 大类 + 数字徽章 + 双来源 small tag）</li>
+        </ul>
+      </li>
       <li><strong>底部迷你时间线</strong>：始终可见，预览当前已生产分镜的累计时长</li>
       <li><strong>双来源标签</strong>：<span class="tag tag-linked-lw">linked_lw</span>（来自长文）/ <span class="tag tag-standalone">standalone</span>（剧集独立）</li>
       <li><strong>九宫格</strong>：时间顺序的 N 张关键帧（2~9，按复杂度可调；UI 默认 3×3 视觉布局）</li>

@@ -44,6 +44,30 @@ html, body {
   height: 100vh;
 }
 
+/*
+ * 修订原型（user 5/6 决策）：
+ * - .workbench.no-sidebar    → ① 内容 / ② 资产（含二级编辑）：不显示资产侧栏
+ * - .workbench.sidebar-right → ③ 剧本 / ④ 分镜 / ⑤ 画面+音频 / ⑥ 合成：侧栏放右侧
+ */
+.workbench.no-sidebar {
+  grid-template-columns: 1fr;
+  grid-template-areas:
+    "topbar"
+    "main"
+    "footer";
+}
+.workbench.sidebar-right {
+  grid-template-columns: 1fr 240px;
+  grid-template-areas:
+    "topbar topbar"
+    "main sidebar"
+    "footer footer";
+}
+.workbench.sidebar-right .sidebar {
+  border-right: none;
+  border-left: 1px solid var(--color-border);
+}
+
 /* ========== 顶部进度条 ========== */
 
 .topbar {
