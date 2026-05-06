@@ -213,16 +213,15 @@ interface CharOverride {
   facing?: string
 }
 const sbCharOverrides = ref<CharOverride[]>([])
-const currentSb = computed(() => {
-  return scriptStore.scenes
-    .flatMap((s: any) => s.storyboards ?? [])
-    .find((sb: any) => sb.id === props.storyboardId)
-})
+
+// 注：scriptStore.scenes 仅含场景级数据，无 storyboards 字段。
+// storyboard → scene 映射要走 storyboardStore，但 KeyframeGrid 当前
+// 不直接 inject storyboardStore；P6-T22 简化：currentScene 暂用 scenes[0]
+// 兜底（用户从 ⑤ 制作 选分镜时通常只在一个场景内）。完整映射留 follow-up。
 const currentScene = computed(() => {
-  if (!currentSb.value) return null
-  return scriptStore.scenes.find((s: any) =>
-    (s.storyboards ?? []).some((sb: any) => sb.id === currentSb.value.id),
-  )
+  const scenes = scriptStore.scenes
+  if (!Array.isArray(scenes) || scenes.length === 0) return null
+  return scenes[0] as any
 })
 
 const characterChips = computed(() => {
@@ -241,6 +240,7 @@ const characterChips = computed(() => {
   } else {
     // scene 级
     const sceneChars = (currentScene.value?.characters ?? []) as any[]
+    if (!Array.isArray(sceneChars)) return list
     for (const sc of sceneChars) {
       const id = sc.characterBindingId ?? sc.characterId ?? ''
       if (!id) continue

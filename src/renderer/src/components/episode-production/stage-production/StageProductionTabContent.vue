@@ -90,6 +90,11 @@ import { computed, ref, watch } from 'vue'
 import KeyframeGrid from './KeyframeGrid.vue'
 import KeyframeRegenerateDialog from './KeyframeRegenerateDialog.vue'
 import VideoSegmentPanel from './VideoSegmentPanel.vue'
+import {
+  useEpActiveContextStore,
+  useEpScriptStore,
+  useEpStoryboardStore,
+} from '@/stores/episode-production'
 
 interface StoryboardLite {
   id: string
@@ -107,6 +112,10 @@ interface KeyframeLite {
 const props = defineProps<{
   storyboards: StoryboardLite[]
 }>()
+
+const ctxStore = useEpActiveContextStore()
+const scriptStore = useEpScriptStore()
+const storyboardStore = useEpStoryboardStore()
 
 const selectedStoryboardId = ref<string | null>(null)
 const gridRef = ref<{ reload: () => Promise<void> } | null>(null)
@@ -191,7 +200,85 @@ async function refreshKeyframes(): Promise<void> {
   }
 }
 
-watch(selectedStoryboardId, () => refreshKeyframes())
+watch(selectedStoryboardId, () => {
+  refreshKeyframes()
+  syncActiveContext()
+})
+
+/**
+ * P6-T22 context-aware sidebar：
+ * 选中分镜时，把"涉及角色 + 场景地点 + 道具"传给 sidebar 高亮。
+ *
+ * 数据来源：
+ *   - 角色：调 ep:list-storyboard-characters（spec §4.5.3 分镜级优先）+
+ *     回退 scene.characters JSON
+ *   - 地点：scene.locationBindingId
+ *   - 道具：scene.characters[*].props
+ */
+async function syncActiveContext(): Promise<void> {
+  const sbId = selectedStoryboardId.value
+  if (!sbId) {
+    ctxStore.setContext({ stage: 'producing', label: '' })
+    return
+  }
+  const sb = storyboardStore.storyboards.find((s) => s.id === sbId) as any
+  const scene = sb
+    ? scriptStore.scenes.find((sc: any) => sc.id === sb.sceneScriptId)
+    : null
+  const sceneIdx = scene
+    ? scriptStore.scenes.findIndex((sc: any) => sc.id === scene.id)
+    : -1
+  const label = sb && scene
+    ? `场景 ${sceneIdx + 1} · 镜头 ${sb.shotNumber}`
+    : sb
+      ? `镜头 ${sb.shotNumber}`
+      : ''
+
+  // 角色 ID：先查 storyboard_characters
+  const charIds: string[] = []
+  try {
+    const api = (window as any).electronAPI?.episodeProduction
+    if (api?.listStoryboardCharacters) {
+      const resp = await api.listStoryboardCharacters(sbId)
+      if (resp?.success && Array.isArray(resp.data) && resp.data.length > 0) {
+        for (const sc of resp.data as any[]) charIds.push(sc.characterId)
+      }
+    }
+  } catch { /* 静默 */ }
+  // 回退：scene.characters JSON
+  if (charIds.length === 0 && scene) {
+    const sceneChars = ((scene as any).characters ?? []) as any[]
+    for (const sc of sceneChars) {
+      const id = sc.characterBindingId ?? sc.characterId
+      if (id) charIds.push(id)
+    }
+  }
+
+  const locIds: string[] = []
+  if (scene && (scene as any).locationBindingId) {
+    locIds.push((scene as any).locationBindingId)
+  }
+
+  const itemIds: string[] = []
+  if (scene) {
+    const sceneChars = ((scene as any).characters ?? []) as any[]
+    for (const sc of sceneChars) {
+      const props = sc.props ?? []
+      for (const p of props) {
+        if (typeof p === 'string') continue
+        if (p?.itemBindingId) itemIds.push(p.itemBindingId)
+      }
+    }
+  }
+
+  ctxStore.setContext({
+    stage: 'producing',
+    characterIds: charIds,
+    locationIds: locIds,
+    itemIds: itemIds,
+    label,
+  })
+}
 </script>
 
 <style scoped>

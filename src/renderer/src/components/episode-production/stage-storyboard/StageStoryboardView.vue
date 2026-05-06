@@ -255,6 +255,7 @@ import {
   VideoCamera,
 } from '@element-plus/icons-vue'
 import {
+  useEpActiveContextStore,
   useEpAssetStore,
   useEpProjectStore,
   useEpScriptStore,
@@ -284,6 +285,7 @@ const scriptStore = useEpScriptStore()
 const storyboardStore = useEpStoryboardStore()
 const workbenchStore = useEpWorkbenchStore()
 const assetStore = useEpAssetStore()
+const ctxStore = useEpActiveContextStore()
 
 const scenes = computed(() => scriptStore.scenes)
 const storyboards = computed(() => storyboardStore.storyboards)
@@ -363,6 +365,76 @@ const selectedScene = computed(() =>
 )
 const selectedStoryboard = computed(() =>
   storyboards.value.find((s) => s.id === selectedStoryboardId.value) ?? null,
+)
+
+/**
+ * P6-T22 context-aware sidebar：
+ * 选中分镜时，把"涉及角色"+"场景地点"+"道具"传给 sidebar 高亮。
+ *
+ * 优先级：分镜级 storyboard_characters（overrides） > 场景级 scene.characters JSON。
+ * 仅在 selectedSceneId / selectedStoryboardId / overrides 变化时更新。
+ *
+ * 注：必须放在 selectedScene computed 之后，避免 TDZ 错误。
+ */
+function syncActiveContext(): void {
+  const scene = selectedScene.value
+  const sb = storyboards.value.find((s) => s.id === selectedStoryboardId.value)
+  const sceneIdx = scenes.value.findIndex((s) => s.id === scene?.id)
+  const label = sb && scene
+    ? `场景 ${sceneIdx + 1} · 镜头 ${sb.shotNumber}`
+    : scene
+      ? `场景 ${sceneIdx + 1} · ${scene.location ?? ''}`
+      : ''
+
+  // 角色 ID 集合
+  const charIds: string[] = []
+  if (overrides.value.length > 0) {
+    for (const o of overrides.value) charIds.push(o.characterId)
+  } else if (scene) {
+    const sceneChars = ((scene as any).characters ?? []) as any[]
+    if (Array.isArray(sceneChars)) {
+      for (const sc of sceneChars) {
+        const id = sc?.characterBindingId ?? sc?.characterId
+        if (id) charIds.push(id)
+      }
+    }
+  }
+
+  // 地点 ID
+  const locIds: string[] = []
+  if (scene && (scene as any).locationBindingId) {
+    locIds.push((scene as any).locationBindingId)
+  }
+
+  // 道具 ID（来自 scene.characters[*].props）
+  const itemIds: string[] = []
+  if (scene) {
+    const sceneChars = ((scene as any).characters ?? []) as any[]
+    if (Array.isArray(sceneChars)) {
+      for (const sc of sceneChars) {
+        const props = sc?.props ?? []
+        if (!Array.isArray(props)) continue
+        for (const p of props) {
+          if (typeof p === 'string') continue
+          if (p?.itemBindingId) itemIds.push(p.itemBindingId)
+        }
+      }
+    }
+  }
+
+  ctxStore.setContext({
+    stage: 'storyboarding',
+    characterIds: charIds,
+    locationIds: locIds,
+    itemIds: itemIds,
+    label,
+  })
+}
+
+watch(
+  [selectedSceneId, selectedStoryboardId, overrides],
+  () => syncActiveContext(),
+  { deep: true, immediate: true },
 )
 
 function shotTypeLabel(t: string): string {

@@ -1,5 +1,20 @@
 <template>
   <aside class="ep-asset-sidebar">
+    <!-- P6-T22 context-aware：当前激活 stage 的上下文标签 -->
+    <div
+      v-if="ctxStore.activeStage !== 'none' && ctxStore.activeContextLabel"
+      class="sidebar-context-bar"
+    >
+      <el-icon><Aim /></el-icon>
+      <span class="ctx-label">{{ ctxStore.activeContextLabel }}</span>
+      <el-tooltip
+        content="当前 stage 的上下文：高亮相关资产，弱化无关资产（仍可点）"
+        placement="bottom"
+      >
+        <el-icon class="ctx-info"><InfoFilled /></el-icon>
+      </el-tooltip>
+    </div>
+
     <el-collapse v-model="openSections" class="sidebar-collapse">
       <!-- 角色 -->
       <el-collapse-item name="character">
@@ -14,7 +29,11 @@
           v-for="c in characters"
           :key="c.id"
           class="sidebar-item"
-          :class="{ active: c.id === props.activeCharacterId }"
+          :class="{
+            active: c.id === props.activeCharacterId,
+            'ctx-highlighted': isContextHighlighted('character', c.id),
+            'ctx-dimmed': isContextDimmed('character', c.id),
+          }"
           @click="emit('select-character', c.id)"
         >
           <div class="thumb thumb-character">
@@ -56,7 +75,11 @@
           v-for="l in locations"
           :key="l.id"
           class="sidebar-item"
-          :class="{ active: l.id === props.activeLocationId }"
+          :class="{
+            active: l.id === props.activeLocationId,
+            'ctx-highlighted': isContextHighlighted('location', l.id),
+            'ctx-dimmed': isContextDimmed('location', l.id),
+          }"
           @click="emit('select-location', l.id)"
         >
           <div class="thumb thumb-location">
@@ -98,7 +121,11 @@
           v-for="it in items"
           :key="it.id"
           class="sidebar-item"
-          :class="{ active: it.id === props.activeItemId }"
+          :class="{
+            active: it.id === props.activeItemId,
+            'ctx-highlighted': isContextHighlighted('item', it.id),
+            'ctx-dimmed': isContextDimmed('item', it.id),
+          }"
           @click="emit('select-item', it.id)"
         >
           <div class="thumb thumb-item">
@@ -140,7 +167,11 @@
           v-for="v in voices"
           :key="v.id"
           class="sidebar-item"
-          :class="{ active: v.id === props.activeVoiceId }"
+          :class="{
+            active: v.id === props.activeVoiceId,
+            'ctx-highlighted': isContextHighlighted('voice', v.id),
+            'ctx-dimmed': isContextDimmed('voice', v.id),
+          }"
           @click="emit('select-voice', v.id)"
         >
           <div class="thumb thumb-voice">
@@ -175,13 +206,16 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import {
+  Aim,
   Avatar,
   Box,
+  InfoFilled,
   Location,
   Microphone,
   User,
 } from '@element-plus/icons-vue'
 import { useEpAssetStore } from '@/stores/episode-production/asset.store'
+import { useEpActiveContextStore } from '@/stores/episode-production/active-context.store'
 
 const props = defineProps<{
   projectId: string
@@ -203,9 +237,31 @@ const emit = defineEmits<{
 }>()
 
 const assetStore = useEpAssetStore()
+const ctxStore = useEpActiveContextStore()
 
 // 默认 4 个分组全部展开
 const openSections = ref<string[]>(['character', 'location', 'item', 'voice'])
+
+/**
+ * P6-T22 高亮判定：active context 非 'none' 时，本资产在当前 context 集合
+ * 中 → highlighted；否则 dimmed。
+ *
+ * 'none' 状态下不区分（全部正常显示）。
+ */
+type AssetKind = 'character' | 'location' | 'item' | 'voice'
+function isContextHighlighted(kind: AssetKind, id: string): boolean {
+  if (ctxStore.activeStage === 'none') return false
+  switch (kind) {
+    case 'character': return ctxStore.isCharacterActive(id)
+    case 'location':  return ctxStore.isLocationActive(id)
+    case 'item':      return ctxStore.isItemActive(id)
+    case 'voice':     return ctxStore.isVoiceActive(id)
+  }
+}
+function isContextDimmed(kind: AssetKind, id: string): boolean {
+  if (ctxStore.activeStage === 'none') return false
+  return !isContextHighlighted(kind, id)
+}
 
 const characters = computed(() => assetStore.epAssetCharacters)
 const locations = computed(() => assetStore.epAssetLocations)
@@ -389,5 +445,56 @@ watch(
 
 .sidebar-add-row {
   padding: 4px 12px 8px;
+}
+
+/* P6-T22 context-aware：当前 stage 上下文标签 */
+.sidebar-context-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--el-color-primary-light-9);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  font-size: 11px;
+  color: var(--el-color-primary);
+
+  .ctx-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+  }
+
+  .ctx-info {
+    color: var(--el-text-color-secondary);
+    cursor: help;
+  }
+}
+
+/* P6-T22 高亮 / 弱化 */
+.sidebar-item.ctx-highlighted {
+  background: var(--el-color-success-light-9);
+  border-left: 2px solid var(--el-color-success);
+  padding-left: 10px;
+  position: relative;
+}
+
+.sidebar-item.ctx-highlighted::after {
+  content: '●';
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--el-color-success);
+  font-size: 12px;
+}
+
+.sidebar-item.ctx-dimmed {
+  opacity: 0.45;
+}
+
+.sidebar-item.ctx-dimmed:hover {
+  opacity: 1;
 }
 </style>

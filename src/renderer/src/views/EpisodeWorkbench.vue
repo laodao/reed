@@ -336,7 +336,8 @@ import {
   useEpScriptStore,
   useEpStoryboardStore,
   useEpProductionStore,
-  useEpComposeStore
+  useEpComposeStore,
+  useEpActiveContextStore
 } from '@/stores/episode-production'
 import { useTabsStore } from '@/stores/tabs'
 import type {
@@ -444,6 +445,20 @@ const showAssetSidebar = computed(
 
 // P6-T13 顶部进度条引用（用于剧集状态变化后主动 reload）
 const progressBarRef = ref<{ reload: () => Promise<void> } | null>(null)
+
+// P6-T22 active context store（资产侧栏 context-aware 高亮）
+const activeContextStore = useEpActiveContextStore()
+
+/**
+ * 当 activeTab 切换到 ①/②/⑥ stage 时清空侧栏 context（侧栏不显示也无所谓，
+ * 但避免下次切回 ③④⑤ 时显示陈旧 ctx label）。
+ * ③④⑤ 的 setContext 由对应 stage view 内部处理。
+ */
+watch(activeTab, (s) => {
+  if (s === 'pending' || s === 'asset_prep' || s === 'composing') {
+    activeContextStore.clear()
+  }
+})
 
 /**
  * P6-T13/T16/T17 顶部进度条点击 → 经门控决策 → 切到对应 stage tab。

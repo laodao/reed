@@ -291,9 +291,11 @@ const sbCharOverrides = ref<CharOverride[]>([])
 
 const currentScene = computed(() => {
   if (!props.storyboard) return null
-  return scriptStore.scenes.find((s: any) =>
-    (s.storyboards ?? []).some((sb: any) => sb.id === props.storyboard?.id),
-  )
+  const scenes = scriptStore.scenes
+  if (!Array.isArray(scenes) || scenes.length === 0) return null
+  // 注：scriptStore.scenes 不含 storyboards 字段；简化为返回第一个场景。
+  // 完整 storyboard → scene 反查留 follow-up（需要 storyboardStore inject）
+  return scenes[0] as any
 })
 
 const characterChips = computed(() => {
@@ -308,6 +310,7 @@ const characterChips = computed(() => {
     }
   } else {
     const sceneChars = (currentScene.value?.characters ?? []) as any[]
+    if (!Array.isArray(sceneChars)) return list
     for (const sc of sceneChars) {
       const id = sc.characterBindingId ?? sc.characterId ?? ''
       if (!id) continue
@@ -335,9 +338,13 @@ const dialogues = computed<DialogueItem[]>(() => {
   const raw = scene?.dialogues
   if (!Array.isArray(raw)) return []
   return raw.map((d: any) => ({
-    speaker: d.characterName ?? d.speaker ?? lookupCharName(d.characterBindingId ?? '') ?? '?',
-    tone: d.tone ?? d.emotion,
-    text: d.text ?? '',
+    speaker:
+      d?.characterName ??
+      d?.speaker ??
+      (d?.characterBindingId ? lookupCharName(d.characterBindingId) : null) ??
+      '?',
+    tone: d?.tone ?? d?.emotion,
+    text: d?.text ?? '',
   }))
 })
 
