@@ -189,6 +189,11 @@ const IPC_CHANNELS = {
   EP_SAVE_STORYBOARD_CHARACTERS: 'ep:save-storyboard-characters',
   EP_CLEAR_STORYBOARD_CHARACTERS: 'ep:clear-storyboard-characters',
 
+  // P5/P6-FU1 剧本 binding 修复（spec §4.1）
+  EP_SCAN_SCRIPT_BINDINGS: 'ep:scan-script-bindings',
+  EP_FIX_SCRIPT_BINDINGS_BY_NAME: 'ep:fix-script-bindings-by-name',
+  EP_CREATE_MISSING_SCRIPT_BINDINGS: 'ep:create-missing-script-bindings',
+
   EP_GET_STYLE_PRESETS: 'ep:get-style-presets',
   EP_GENERATE_STORYBOARD_IMAGE: 'ep:generate-storyboard-image',
   EP_GENERATE_SCENE_IMAGES: 'ep:generate-scene-images',
@@ -1689,6 +1694,14 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.EP_SAVE_STORYBOARD_CHARACTERS, storyboardId, inputs),
     clearStoryboardCharacters: (storyboardId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_CLEAR_STORYBOARD_CHARACTERS, storyboardId),
+
+    // P5/P6-FU1 剧本 binding 修复
+    scanScriptBindings: (episodeScriptId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_SCAN_SCRIPT_BINDINGS, episodeScriptId),
+    fixScriptBindingsByName: (episodeScriptId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_FIX_SCRIPT_BINDINGS_BY_NAME, episodeScriptId),
+    createMissingScriptBindings: (episodeScriptId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_CREATE_MISSING_SCRIPT_BINDINGS, episodeScriptId),
 
     // 资源生成
     getStylePresets: () =>

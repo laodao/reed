@@ -436,6 +436,10 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.listStoryboardCharacters': { channel: 'ep:list-storyboard-characters' },
   'episodeProduction.saveStoryboardCharacters': { channel: 'ep:save-storyboard-characters' },
   'episodeProduction.clearStoryboardCharacters': { channel: 'ep:clear-storyboard-characters' },
+  // P5/P6-FU1 剧本 binding 修复
+  'episodeProduction.scanScriptBindings': { channel: 'ep:scan-script-bindings' },
+  'episodeProduction.fixScriptBindingsByName': { channel: 'ep:fix-script-bindings-by-name' },
+  'episodeProduction.createMissingScriptBindings': { channel: 'ep:create-missing-script-bindings' },
   'episodeProduction.getStylePresets': { channel: 'ep:get-style-presets' },
   'episodeProduction.generateStoryboardImage': { channel: 'ep:generate-storyboard-image' },
   'episodeProduction.generateSceneImages': { channel: 'ep:generate-scene-images' },

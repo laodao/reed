@@ -18,11 +18,16 @@ import {
   StoryboardCharacterService,
   type StoryboardCharacterInput,
 } from '@core/modules/episode-production/narrative/services/storyboard-character.service'
+import { ScriptBindingFixerService } from '@core/modules/episode-production/narrative/services/script-binding-fixer.service'
 
 export function registerStoryboardCharacterHandlers(): void {
   ipcBridge.handle('ep:list-storyboard-characters', handleList)
   ipcBridge.handle('ep:save-storyboard-characters', handleSave)
   ipcBridge.handle('ep:clear-storyboard-characters', handleClear)
+  // P5/P6-FU1 剧本 binding 修复
+  ipcBridge.handle('ep:scan-script-bindings', handleScanBindings)
+  ipcBridge.handle('ep:fix-script-bindings-by-name', handleFixByName)
+  ipcBridge.handle('ep:create-missing-script-bindings', handleCreateMissing)
 }
 
 async function handleList(
@@ -86,5 +91,55 @@ async function handleClear(
     return { success: true }
   } catch (e: any) {
     return { success: false, error: e?.message ?? '清空分镜内角色失败' }
+  }
+}
+
+// ==================== P5/P6-FU1 剧本 binding 修复 ====================
+
+async function handleScanBindings(
+  _event: any,
+  episodeScriptId: string,
+): Promise<IpcResponse> {
+  try {
+    if (!episodeScriptId) return { success: false, error: 'episodeScriptId 不能为空' }
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+    const svc = new ScriptBindingFixerService(db.dataSource)
+    const data = await svc.scanUnbound(episodeScriptId)
+    return { success: true, data }
+  } catch (e: any) {
+    return { success: false, error: e?.message ?? '扫描剧本绑定失败' }
+  }
+}
+
+async function handleFixByName(
+  _event: any,
+  episodeScriptId: string,
+): Promise<IpcResponse> {
+  try {
+    if (!episodeScriptId) return { success: false, error: 'episodeScriptId 不能为空' }
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+    const svc = new ScriptBindingFixerService(db.dataSource)
+    const data = await svc.fixByNameMatch(episodeScriptId)
+    return { success: true, data }
+  } catch (e: any) {
+    return { success: false, error: e?.message ?? '按名匹配修复失败' }
+  }
+}
+
+async function handleCreateMissing(
+  _event: any,
+  episodeScriptId: string,
+): Promise<IpcResponse> {
+  try {
+    if (!episodeScriptId) return { success: false, error: 'episodeScriptId 不能为空' }
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+    const svc = new ScriptBindingFixerService(db.dataSource)
+    const data = await svc.createMissingBindings(episodeScriptId)
+    return { success: true, data }
+  } catch (e: any) {
+    return { success: false, error: e?.message ?? '创建缺失角色失败' }
   }
 }
