@@ -26,6 +26,29 @@
         以下帧将受影响。请勾选要重生成的帧：
       </p>
 
+      <!-- P5-T27 spec §4.5.7：用户提示词输入 -->
+      <div class="user-prompt-section">
+        <label class="prompt-label">
+          <el-icon><EditPen /></el-icon>
+          调整方向（可选）
+          <el-tooltip
+            content="告诉 AI 想怎么改。作为 [user direction] 段拼到关键帧 prompt 末尾，影响 image provider 输出。"
+            placement="top"
+          >
+            <el-icon class="hint-icon"><InfoFilled /></el-icon>
+          </el-tooltip>
+        </label>
+        <el-input
+          v-model="userPrompt"
+          type="textarea"
+          :rows="3"
+          placeholder="例如：让角色更愤怒 / 镜头拉近 / 背景虚化 / 改成俯视角度 ..."
+          :maxlength="200"
+          show-word-limit
+          resize="none"
+        />
+      </div>
+
       <el-checkbox-group v-model="selectedIndexes">
         <div class="frame-section" v-if="propagation.required.length > 0">
           <div class="section-label">必须重生成（包含本帧）</div>
@@ -93,7 +116,7 @@
  */
 import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Loading } from '@element-plus/icons-vue'
+import { EditPen, InfoFilled, Loading } from '@element-plus/icons-vue'
 
 interface Keyframe {
   id: string
@@ -138,6 +161,9 @@ const selectedIndexes = ref<number[]>([])
 const regenerating = ref(false)
 const regenDoneCount = ref(0)
 const regenTotalCount = ref(0)
+
+// P5-T27 spec §4.5.7：用户调整方向（拼到关键帧 prompt 末尾）
+const userPrompt = ref('')
 
 function roleLabel(role: string): string {
   return role === 'start'
@@ -197,9 +223,11 @@ async function onConfirm(): Promise<void> {
       throw new Error('IPC regenerateKeyframe 未暴露')
     }
     // 顺序重生成（避免 provider 并发限制）
+    // P5-T27：传 userPrompt 给 IPC（spec §4.5.7 用户调整方向）
+    const userPromptValue = userPrompt.value.trim() || undefined
     for (const id of ids) {
       try {
-        const resp = await api.regenerateKeyframe(id, undefined)
+        const resp = await api.regenerateKeyframe(id, undefined, userPromptValue)
         if (resp?.success) succeeded.push(id)
         else ElMessage.warning(`第 ${id} 帧失败：${resp?.error}`)
       } catch (e: any) {
@@ -222,6 +250,7 @@ function onCancel(): void {
 function onClose(): void {
   selectedIndexes.value = []
   propagation.value = null
+  userPrompt.value = '' // P5-T27 重置用户输入
 }
 </script>
 
@@ -263,5 +292,29 @@ function onClose(): void {
   padding: 8px 0 0 0;
   color: var(--el-color-primary);
   font-size: 12px;
+}
+
+.user-prompt-section {
+  margin: 12px 0;
+  padding: 10px;
+  background: var(--el-color-info-light-9);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  .prompt-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--el-text-color-primary);
+    font-weight: 500;
+
+    .hint-icon {
+      color: var(--el-text-color-secondary);
+      cursor: help;
+    }
+  }
 }
 </style>
