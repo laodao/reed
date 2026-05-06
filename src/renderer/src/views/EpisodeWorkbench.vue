@@ -343,7 +343,8 @@ import AssetStageView from '@/components/episode-production/stage-asset-v2/Asset
 // FU5-C2 · 角色编辑器切到 V2（身份块 + 长文同步 banner + 风格锚点 + 显式保存）
 import CharacterAssetEditor from '@/components/episode-production/stage-asset-v2/character/CharacterAssetEditorV2.vue'
 // P3a Task 13 · 地点资产编辑器（双栏：设定卡 + 图谱）
-import LocationAssetEditor from '@/components/episode-production/stage-asset/location/LocationAssetEditor.vue'
+// FU5-C3 · 地点编辑器切到 V2（设定卡 6 节 + 一致性优先级 banner + 3D 摆位 Phase 8 占位）
+import LocationAssetEditor from '@/components/episode-production/stage-asset-v2/location/LocationAssetEditorV2.vue'
 // P3a Task 14 · 物品资产编辑器（双栏：设定卡 + 图谱 view+context）
 import ItemAssetEditor from '@/components/episode-production/stage-asset/item/ItemAssetEditor.vue'
 // P3a Task 14 · 语音资产编辑器（单栏：声音卡，无图谱）

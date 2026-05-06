@@ -60,7 +60,8 @@
 import { computed } from 'vue'
 // FU5-C2 · 切到 V2 角色编辑器（身份块 + 长文同步 banner + 风格锚点 + 显式保存）
 import CharacterAssetEditor from '../stage-asset-v2/character/CharacterAssetEditorV2.vue'
-import LocationAssetEditor from '../stage-asset/location/LocationAssetEditor.vue'
+// FU5-C3 · 切到 V2 地点编辑器
+import LocationAssetEditor from '../stage-asset-v2/location/LocationAssetEditorV2.vue'
 import ItemAssetEditor from '../stage-asset/item/ItemAssetEditor.vue'
 import VoiceAssetEditor from '../stage-asset/voice/VoiceAssetEditor.vue'
 

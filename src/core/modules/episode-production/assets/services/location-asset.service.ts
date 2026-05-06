@@ -61,6 +61,17 @@ export type LocationStandalonePatch = Partial<{
   description: string
 }>
 
+/** FU5-C3 场景类型 + 规模 + 氛围 + 风格锚点 + 默认时间/天气 patch */
+export type LocationExtraPatch = Partial<{
+  locationType: string | null
+  scale: string | null
+  baseDescription: string | null
+  moodTags: string[] | null
+  styleAnchors: string[] | null
+  timeOfDay: string | null
+  weather: string | null
+}>
+
 /** pickBestVariant 输入：场景维度（任意子集） */
 export interface PickVariantInput {
   /** 时间标签（如 'morning' / 'evening' / 'noon'） */
@@ -278,5 +289,25 @@ export class LocationAssetService {
   /** 删除一个地点 binding */
   async delete(bindingId: string): Promise<void> {
     await this.bindingRepo.delete(bindingId)
+  }
+
+  /** FU5-C3 一次性更新场景类型 + 规模 + 氛围 + 风格锚点 + 默认时间/天气 */
+  async updateExtra(bindingId: string, patch: LocationExtraPatch): Promise<void> {
+    const update: Record<string, unknown> = { updatedAt: new Date() }
+    if ('locationType' in patch) update.locationType = patch.locationType ?? null
+    if ('scale' in patch) update.scale = patch.scale ?? null
+    if ('baseDescription' in patch)
+      update.baseDescription = patch.baseDescription ?? null
+    if ('moodTags' in patch) {
+      update.moodTags = patch.moodTags ? JSON.stringify(patch.moodTags) : null
+    }
+    if ('styleAnchors' in patch) {
+      update.styleAnchors = patch.styleAnchors
+        ? JSON.stringify(patch.styleAnchors)
+        : null
+    }
+    if ('timeOfDay' in patch) update.timeOfDay = patch.timeOfDay ?? null
+    if ('weather' in patch) update.weather = patch.weather ?? null
+    await this.bindingRepo.update(bindingId, update)
   }
 }

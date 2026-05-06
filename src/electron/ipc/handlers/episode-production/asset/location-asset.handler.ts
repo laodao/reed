@@ -15,6 +15,7 @@ import {
   type CreateLinkedLwLocationInput,
   type LocationOverridePatch,
   type LocationStandalonePatch,
+  type LocationExtraPatch,
   type PickVariantInput,
 } from '@core/modules/episode-production/assets/services/location-asset.service'
 import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
@@ -35,6 +36,8 @@ export function registerLocationAssetHandlers(): void {
   ipcBridge.handle('ep:asset:location:pick-best-variant', handleAssetLocationPickBestVariant)
   ipcBridge.handle('ep:asset:location:update-override', handleAssetLocationUpdateOverride)
   ipcBridge.handle('ep:asset:location:update-standalone', handleAssetLocationUpdateStandalone)
+  // FU5-C3 场景类型 + 规模 + 氛围 + 风格锚点 + 默认时间/天气
+  ipcBridge.handle('ep:asset:location:update-extra', handleAssetLocationUpdateExtra)
   ipcBridge.handle('ep:asset:location:delete', handleAssetLocationDelete)
 }
 
@@ -248,6 +251,19 @@ async function handleAssetLocationUpdateStandalone(
 ): Promise<IpcResponse> {
   try {
     await buildLocationService().updateStandalone(id, patch)
+    return { success: true, data: { updated: true } }
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+async function handleAssetLocationUpdateExtra(
+  _event: any,
+  id: string,
+  patch: LocationExtraPatch,
+): Promise<IpcResponse> {
+  try {
+    await buildLocationService().updateExtra(id, patch)
     return { success: true, data: { updated: true } }
   } catch (err: any) {
     return { success: false, error: err?.message ?? String(err) }

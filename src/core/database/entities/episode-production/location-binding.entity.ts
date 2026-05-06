@@ -80,6 +80,23 @@ export class LocationBindingEntity {
   @Column({ name: 'standalone_description', type: 'text', nullable: true })
   standaloneDescription!: string | null
 
+  // ─── FU5-C3 场景类型 + 规模 + 氛围 + 风格锚点（spec §3.2/3.3）
+  /** 场景类型：interior / exterior / mixed / fantasy / etc */
+  @Column({ name: 'location_type', type: 'text', nullable: true })
+  locationType!: string | null
+
+  /** 规模：小 / 中 / 大 / 巨大（自由文本） */
+  @Column({ name: 'scale', type: 'text', nullable: true })
+  scale!: string | null
+
+  /** 氛围 tags（JSON 数组字符串，如 ["温馨","古朴","市井烟火"]） */
+  @Column({ name: 'mood_tags', type: 'text', nullable: true })
+  moodTags!: string | null
+
+  /** 风格锚点（JSON 数组字符串） */
+  @Column({ name: 'style_anchors', type: 'text', nullable: true })
+  styleAnchors!: string | null
+
   // ─── 3D 接入点（spec §4.5，migration: ensure-asset-binding-source-type）
   @Column({ name: 'panorama_3d_id', type: 'text', nullable: true })
   panorama3dId!: string | null

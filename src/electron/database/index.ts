@@ -440,6 +440,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-character-binding-extra-fields'
     )
     await addCharacterBindingExtraFields(this.dataSource)
+    // FU5-C3: location_bindings 加场景类型 + 规模 + 氛围 + 风格锚点字段（spec §3.2/3.3）
+    const { addLocationBindingExtraFields } = await import(
+      '@core/database/migrations/add-location-binding-extra-fields'
+    )
+    await addLocationBindingExtraFields(this.dataSource)
   }
 
   /**

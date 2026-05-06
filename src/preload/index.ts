@@ -242,6 +242,7 @@ const IPC_CHANNELS = {
   EP_ASSET_LOCATION_PICK_BEST_VARIANT: 'ep:asset:location:pick-best-variant',
   EP_ASSET_LOCATION_UPDATE_OVERRIDE: 'ep:asset:location:update-override',
   EP_ASSET_LOCATION_UPDATE_STANDALONE: 'ep:asset:location:update-standalone',
+  EP_ASSET_LOCATION_UPDATE_EXTRA: 'ep:asset:location:update-extra',
   EP_ASSET_LOCATION_DELETE: 'ep:asset:location:delete',
 
   // 物品资产（8 个）
@@ -1841,6 +1842,9 @@ const electronAPI = {
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_LOCATION_UPDATE_OVERRIDE, id, override),
         updateStandalone: (id: string, patch: any) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_LOCATION_UPDATE_STANDALONE, id, patch),
+        /** FU5-C3 场景类型 + 规模 + 氛围 + 风格锚点 + 默认时间/天气 */
+        updateExtra: (id: string, patch: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_LOCATION_UPDATE_EXTRA, id, patch),
         delete: (id: string) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_LOCATION_DELETE, id),
       },
