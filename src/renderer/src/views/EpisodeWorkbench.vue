@@ -140,7 +140,9 @@
             <!-- ⑤ 制作 -->
             <el-tab-pane label="⑤ 制作" name="producing">
               <StageProductionTabContent
-                :storyboards="productionStoryboards"
+                :episode-script-id="scriptStore.currentScript?.id ?? null"
+                :project-id="projectId"
+                @complete="onProductionComplete"
               />
             </el-tab-pane>
 
@@ -310,7 +312,8 @@ import { truncateTitle } from '@/components/episode-production/shared/model-conf
 import { buildOutlineTree, type OutlineTreeNode } from '@/components/episode-production/shared/outline-utils'
 
 // V3 stage tab 内容组件（保留中）
-import StageProductionTabContent from '@/components/episode-production/stage-production/StageProductionTabContent.vue'
+// FU5-F1 · ⑤ 渲染 stage 切到 V2（按原型 §8 + §11 修订）
+import StageProductionTabContent from '@/components/episode-production/stage-production-v2/StageProductionViewV2.vue'
 import StageComposeView from '@/components/episode-production/stage-compose/StageComposeView.vue'
 // FU2 ③ 剧本 stage view（V3 重写，替代 V2 ScriptTabContent）
 // FU5-D1 · ③ 剧本 stage 切到 V2（章节梗概 panel + EntityRefRenderer + 场景卡折叠）
@@ -806,6 +809,12 @@ function onAssetSaved() {
 
 function onCompleteAssetStage() {
   ElMessage.success('阶段完成（暂未持久化）')
+}
+
+/** FU5-F1 · ⑤ 制作完成 → 切到 ⑥ 合成 tab */
+function onProductionComplete(): void {
+  activeTab.value = 'composing'
+  ElMessage.success('⑤ 制作完成 → 已切到 ⑥ 合成')
 }
 
 // ===== FU3 stage 切换 + 门控 composable（放最末避免 TDZ） =====
