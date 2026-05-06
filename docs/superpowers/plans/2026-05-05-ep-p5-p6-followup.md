@@ -204,6 +204,6 @@ P6-T13 完成后我会给你一个明确的验收路径（URL + 步骤 + 截图�
 | **FU1** V2 数据 binding_id 补齐 | ✅ 2026-05-06 | ScriptBindingFixerService + 3 IPC + 茶馆相遇真测（创建 老者/少年 binding + 填回 19 处引用 + P6-T22 高亮真生效） |
 | **FU3** EpisodeWorkbench 拆分 | ✅ 2026-05-06 | 抽 stage 切换 + 9 navigation handler 到 use-workbench-stage-navigation composable；EpisodeWorkbench 1254 → 1133 行 (-121 行)；DOM 验证 6 stage 切换全过 |
 | **P5-T16** BGM stub | ✅ 2026-05-06 | bgm.service.ts stub；audio-mix 已有 backgroundMusicPath 接口 |
-| **FU2** ③ 剧本 V3 ScriptStageView 重写 | ⏳ pending | 删 V2 ScriptTabContent，spec §4.1 强约束完整版 |
+| **FU2** ③ 剧本 V3 ScriptStageView 重写 | ✅ 2026-05-06 | 新建 StageScriptView.vue：场景卡片列表（含 timeOfDay / weather / locationType tag）+ 详情面板（el-descriptions + 角色清单含已绑定 tag + 旁白 + 对话清单）+ 顶部 toolbar 4 按钮（AI 生成 / 重新生成 / 修复缺失绑定接 FU1 IPC / 剧本定稿调 P4 ValidateEpisodeScript + updateScript status='approved'）+ ScriptCompletenessPanel 复用；删除 V2 ScriptTabContent.vue。截图 fu2-script-stage-view.jpg |
 | **P5-T17** DashScope qwen3-tts 适配 | ✅ 2026-05-06 | dashscope-tts-provider.ts 真实现已存在（qwen3-tts-flash 模型 + OSS URL/base64 双路径 + 10 voice 候选 + 多语言）；VoiceService.getVoices/generateSpeech 已注册；修 testConnection bug（'longxiaochun' 不存在 → 改 'Cherry'）；e2e spec 20-voice-tts.spec.ts（list 真测 + synthesize 默认 .skip 需真 API key） |
 | **P6-T6** TimelineEditor 多轨 UI | ⏳ pending | 视频/音频/字幕 3 轨可视化时间轴 |
