@@ -8,6 +8,7 @@ import type { DataSource } from 'typeorm'
 import { StoryboardCharacter } from '@shared/types/story-to-video.types'
 import { StoryboardCharacterEntity } from '../entities/episode-production/storyboard-character.entity'
 import { BaseRepository } from '../base-repository'
+import { getCurrentUserId } from '@core/context/user-context'
 
 type Facing =
   | 'front'
@@ -79,8 +80,11 @@ export class StoryboardCharacterRepository extends BaseRepository<
     data: CreateStoryboardCharacterRequest,
   ): Promise<StoryboardCharacter> {
     const id = this.generateId()
+    // P5-T34 fix: 手动注入 userId（BaseRepository.scoped.save 会注入，但
+    // 显式写一遍更清晰，且 createMany transaction 也走同款语义）
     const entity = this.repo.create({
       id,
+      userId: getCurrentUserId(),
       storyboardId: data.storyboardId,
       characterId: data.characterId,
       positionX: data.positionX ?? 50,
@@ -99,6 +103,11 @@ export class StoryboardCharacterRepository extends BaseRepository<
     characters: CreateStoryboardCharacterRequest[],
   ): Promise<StoryboardCharacter[]> {
     if (characters.length === 0) return []
+    // P5-T34 fix: createMany 之前直接用 manager.getRepository(裸的)，
+    // 绕过了 BaseRepository 的 scoped API → user_id 列不被注入 → list
+    // 时按 user_id 过滤查不到刚保存的数据。修：在 transaction 内手动
+    // 用 getCurrentUserId() 注入。
+    const userId = getCurrentUserId()
     return this.dataSource.transaction(async manager => {
       const repo = manager.getRepository(StoryboardCharacterEntity)
       const result: StoryboardCharacter[] = []
@@ -107,6 +116,7 @@ export class StoryboardCharacterRepository extends BaseRepository<
         const saved = await repo.save(
           repo.create({
             id,
+            userId,
             storyboardId: data.storyboardId,
             characterId: data.characterId,
             positionX: data.positionX ?? 50,
