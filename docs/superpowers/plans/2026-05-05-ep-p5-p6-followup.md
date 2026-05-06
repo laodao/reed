@@ -205,5 +205,5 @@ P6-T13 完成后我会给你一个明确的验收路径（URL + 步骤 + 截图�
 | **FU3** EpisodeWorkbench 拆分 | ✅ 2026-05-06 | 抽 stage 切换 + 9 navigation handler 到 use-workbench-stage-navigation composable；EpisodeWorkbench 1254 → 1133 行 (-121 行)；DOM 验证 6 stage 切换全过 |
 | **P5-T16** BGM stub | ✅ 2026-05-06 | bgm.service.ts stub；audio-mix 已有 backgroundMusicPath 接口 |
 | **FU2** ③ 剧本 V3 ScriptStageView 重写 | ⏳ pending | 删 V2 ScriptTabContent，spec §4.1 强约束完整版 |
-| **P5-T17** DashScope qwen3-tts 适配 | ⏳ pending | 需真打 qwen3-tts API |
+| **P5-T17** DashScope qwen3-tts 适配 | ✅ 2026-05-06 | dashscope-tts-provider.ts 真实现已存在（qwen3-tts-flash 模型 + OSS URL/base64 双路径 + 10 voice 候选 + 多语言）；VoiceService.getVoices/generateSpeech 已注册；修 testConnection bug（'longxiaochun' 不存在 → 改 'Cherry'）；e2e spec 20-voice-tts.spec.ts（list 真测 + synthesize 默认 .skip 需真 API key） |
 | **P6-T6** TimelineEditor 多轨 UI | ⏳ pending | 视频/音频/字幕 3 轨可视化时间轴 |

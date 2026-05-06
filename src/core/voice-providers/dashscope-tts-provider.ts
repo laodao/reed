@@ -262,7 +262,8 @@ export class DashScopeTTSProvider extends BaseVoiceProvider {
 
     try {
       // 尝试合成一个短文本测试
-      const result = await this.synthesize('测试', 'longxiaochun')
+      // P5-T17 修：之前用 'longxiaochun' 不在 VOICES 列表里 → 改用首位 'Cherry'
+      const result = await this.synthesize('测试', 'Cherry')
       if (result.success) {
         return { success: true, message: '连接成功' }
       }
