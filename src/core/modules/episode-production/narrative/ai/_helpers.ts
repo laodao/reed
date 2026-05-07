@@ -72,6 +72,25 @@ export async function getProviderConfig(providerConfigId?: string): Promise<Prov
   return { config, template, apiKey }
 }
 
+// ==================== 模型选择 fallback ====================
+
+/** 从 ModelDefinition[] 里挑第一个支持 chat 的文本模型 id；无则 undefined */
+function pickFirstChatModelId(
+  models: Array<{ id: string; type?: string; features?: string[] }> | undefined | null,
+): string | undefined {
+  if (!Array.isArray(models) || models.length === 0) return undefined
+  // 优先 type='text' 且 features 含 'chat'
+  const m =
+    models.find(
+      (x) => x?.id && (x.type === 'text' || !x.type) && Array.isArray(x.features) && x.features.includes('chat'),
+    ) ??
+    // 兜底：任意 type='text' 模型
+    models.find((x) => x?.id && (x.type === 'text' || !x.type)) ??
+    // 最弱兜底：第一个有 id 的
+    models.find((x) => !!x?.id)
+  return m?.id
+}
+
 // ==================== AI 调用 ====================
 
 /**
@@ -91,9 +110,22 @@ export async function callAI(
 
   const { config, template, apiKey } = providerInfo
 
-  // 确定使用的模型
-  // @ts-expect-error P3 修复 · UserProviderConfig 暂无 defaultModel 字段（沿用原 service 的访问方式以保持行为一致）
-  const effectiveModelId = modelId || config.defaultModel
+  // 确定使用的模型 — fallback 链：
+  //   1) 显式传入的 modelId
+  //   2) config.defaultModel（历史字段，UserProviderConfig 类型没声明，但实际可能存在）
+  //   3) 用户启用的第一个文本/对话模型（config.models）
+  //   4) template 内置的第一个文本/对话模型（template.models）
+  //   都没有 → throw 让上层报错，user 在配置面板里加一个模型即可
+  // @ts-expect-error UserProviderConfig 暂无 defaultModel 字段（历史遗留访问）
+  const fromConfigDefault: string | undefined = config.defaultModel
+  const fromUserModels = pickFirstChatModelId(config.models as any)
+  const fromTemplateModels = pickFirstChatModelId((template as any).models)
+  const effectiveModelId = modelId || fromConfigDefault || fromUserModels || fromTemplateModels
+  if (!effectiveModelId) {
+    throw new Error(
+      '未指定模型 — 请在 设置 → 提供商配置 中为该提供商启用至少一个文本/对话模型',
+    )
+  }
 
   // 创建 Provider 实例
   const provider = createProvider(

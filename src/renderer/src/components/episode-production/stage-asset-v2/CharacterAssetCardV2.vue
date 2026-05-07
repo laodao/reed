@@ -19,7 +19,6 @@
       />
       <div v-else-if="summary.hasMain" class="thumb-emoji">👨</div>
       <div v-else class="thumb-empty">⚠</div>
-      <AssetSourceTag :source="summary.sourceType" variant="badge" />
       <el-tooltip content="删除该角色（无图也可删）" placement="top">
         <el-icon class="card-delete-icon" :size="14" @click.stop="emit('delete')"><Delete /></el-icon>
       </el-tooltip>
@@ -54,7 +53,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { Delete } from '@element-plus/icons-vue'
-import AssetSourceTag from '../shared/AssetSourceTag.vue'
 import { toImageUrl } from '@/utils/asset-url'
 
 const props = defineProps<{

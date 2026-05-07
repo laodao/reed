@@ -19,10 +19,13 @@
       />
       <div v-else-if="summary.hasMain" class="thumb-emoji">🏛</div>
       <div v-else class="thumb-empty">⚠</div>
-      <AssetSourceTag
-        :source="hasPanorama ? '3d' : summary.sourceType"
-        variant="badge"
-      />
+      <el-tag
+        v-if="hasPanorama"
+        type="danger"
+        size="small"
+        effect="dark"
+        class="card-thumb-corner-tag"
+      >3D</el-tag>
       <el-tooltip content="删除该地点（无图也可删）" placement="top">
         <el-icon class="card-delete-icon" :size="14" @click.stop="emit('delete')"><Delete /></el-icon>
       </el-tooltip>
@@ -69,7 +72,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { Delete } from '@element-plus/icons-vue'
-import AssetSourceTag from '../shared/AssetSourceTag.vue'
 import { toImageUrl } from '@/utils/asset-url'
 
 const props = defineProps<{

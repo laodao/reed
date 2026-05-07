@@ -54,13 +54,6 @@
           </div>
           <div class="meta">
             <div class="name">{{ effectiveCharacterName(c) }}</div>
-            <el-tag
-              :type="c.sourceType === 'linked_lw' ? 'primary' : 'warning'"
-              size="small"
-              effect="plain"
-            >
-              {{ c.sourceType === 'linked_lw' ? 'linked' : 'standalone' }}
-            </el-tag>
           </div>
         </div>
         <el-empty
@@ -100,13 +93,6 @@
           </div>
           <div class="meta">
             <div class="name">{{ effectiveLocationName(l) }}</div>
-            <el-tag
-              :type="l.sourceType === 'linked_lw' ? 'primary' : 'warning'"
-              size="small"
-              effect="plain"
-            >
-              {{ l.sourceType === 'linked_lw' ? 'linked' : 'standalone' }}
-            </el-tag>
           </div>
         </div>
         <el-empty
@@ -146,13 +132,6 @@
           </div>
           <div class="meta">
             <div class="name">{{ effectiveItemName(it) }}</div>
-            <el-tag
-              :type="it.sourceType === 'linked_lw' ? 'primary' : 'warning'"
-              size="small"
-              effect="plain"
-            >
-              {{ it.sourceType === 'linked_lw' ? 'linked' : 'standalone' }}
-            </el-tag>
           </div>
         </div>
         <el-empty
