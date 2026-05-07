@@ -26,7 +26,9 @@ import type {
   SearchRequest,
   SearchResult,
   EmbeddingModel,
-  FileInfo
+  FileInfo,
+  DocumentSource,
+  AddDocumentResult
 } from '@shared/types/knowledge-base.types'
 import type { IpcResponse } from '@shared/types/ipc.types'
 
@@ -188,8 +190,11 @@ async function handleUploadDocuments(
  */
 async function handleAddDocument(
   _event: any,
-  data: { knowledgeBaseId: string; data: { name: string; type: 'text'; content: string } }
-): Promise<IpcResponse<KbDocument>> {
+  data: {
+    knowledgeBaseId: string
+    data: { name: string; type: 'text'; content: string; source?: DocumentSource }
+  }
+): Promise<IpcResponse<AddDocumentResult>> {
   const service = getKnowledgeBaseService()
   return await service.addDocument(data.knowledgeBaseId, data.data)
 }

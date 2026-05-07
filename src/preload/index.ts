@@ -5,6 +5,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron'
+import type { DocumentSource } from '@shared/types/knowledge-base.types'
 
 // IPC 通道名称常量
 const IPC_CHANNELS = {
@@ -833,6 +834,7 @@ const electronAPI = {
       name: string
       type: 'text'
       content: string
+      source?: DocumentSource
     }) => ipcRenderer.invoke('knowledge-base:add-document', { knowledgeBaseId, data }),
     // 添加网页
     addWebpage: (knowledgeBaseId: string, url: string) =>
