@@ -190,6 +190,7 @@
 
           <template v-if="langDraft.useKeyframes">
           <!-- 时间轴 bar -->
+          <div class="timeline-bar">
             <div
               v-for="t in timelineTicks"
               :key="t.pct"
