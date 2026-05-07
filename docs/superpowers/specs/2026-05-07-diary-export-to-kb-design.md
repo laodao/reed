@@ -127,10 +127,10 @@ addDocument(kbId: string, data: {
 `src/core/database/entities/kb-document.entity.ts` 新增两列：
 
 ```ts
-@Column({ name: 'source_type', type: 'varchar', length: 32, nullable: true })
+@Column({ name: 'source_type', type: 'varchar', nullable: true })
 sourceType!: string | null
 
-@Column({ name: 'source_id', type: 'varchar', length: 64, nullable: true })
+@Column({ name: 'source_id', type: 'varchar', nullable: true })
 sourceId!: string | null
 ```
 

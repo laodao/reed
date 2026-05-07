@@ -131,16 +131,17 @@ export async function addKbDocumentSource(ds: DataSource): Promise<void> {
     return
   }
 
-  const varchar32 = isPg ? 'varchar(32)' : 'TEXT'
-  const varchar64 = isPg ? 'varchar(64)' : 'TEXT'
+  // 与 entity 一致：用无 length 的 varchar（PG）/ TEXT（SQLite）。
+  // 加 length 会让 SQLite 的 PRAGMA 报 VARCHAR(N)，与 entity 声明的 'varchar' 触发 schema-drift 误报。
+  const varcharType = isPg ? 'varchar' : 'TEXT'
 
   if (!(await checkColumnExists(ds, 'kb_documents', 'source_type', isPg))) {
-    await ds.query(`ALTER TABLE kb_documents ADD COLUMN source_type ${varchar32}`)
+    await ds.query(`ALTER TABLE kb_documents ADD COLUMN source_type ${varcharType}`)
     console.log('[add-kb-document-source] 加列 source_type')
   }
 
   if (!(await checkColumnExists(ds, 'kb_documents', 'source_id', isPg))) {
-    await ds.query(`ALTER TABLE kb_documents ADD COLUMN source_id ${varchar64}`)
+    await ds.query(`ALTER TABLE kb_documents ADD COLUMN source_id ${varcharType}`)
     console.log('[add-kb-document-source] 加列 source_id')
   }
 
@@ -334,10 +335,10 @@ git commit -m "test(db): add-kb-document-source migration 单测（legacy/幂等
 在 `KbDocumentEntity` 类里、`metadata` 列后面追加（保持原有 column 顺序的相对位置）：
 
 ```ts
-@Column({ name: 'source_type', type: 'varchar', length: 32, nullable: true })
+@Column({ name: 'source_type', type: 'varchar', nullable: true })
 sourceType!: string | null
 
-@Column({ name: 'source_id', type: 'varchar', length: 64, nullable: true })
+@Column({ name: 'source_id', type: 'varchar', nullable: true })
 sourceId!: string | null
 ```
 

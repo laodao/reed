@@ -50,10 +50,10 @@ export class KbDocumentEntity {
   @Column({ name: 'metadata', type: 'simple-json', nullable: true })
   metadata!: Record<string, unknown> | null
 
-  @Column({ name: 'source_type', type: 'varchar', length: 32, nullable: true })
+  @Column({ name: 'source_type', type: 'varchar', nullable: true })
   sourceType!: string | null
 
-  @Column({ name: 'source_id', type: 'varchar', length: 64, nullable: true })
+  @Column({ name: 'source_id', type: 'varchar', nullable: true })
   sourceId!: string | null
 
   @Column({ name: 'created_at', type: Date })
