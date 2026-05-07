@@ -169,6 +169,7 @@ const IPC_CHANNELS = {
   EP_REGENERATE_KEYFRAME: 'ep:regenerate-keyframe',
   EP_LIST_KEYFRAMES: 'ep:list-keyframes',
   EP_PLAN_KEYFRAME_REGEN: 'ep:plan-keyframe-regen',
+  EP_INSERT_KEYFRAME_BETWEEN: 'ep:insert-keyframe-between',
 
   // P5-T13 视频片段 + provider 列表
   EP_LIST_VIDEO_PROVIDERS: 'ep:list-video-providers',
@@ -1686,6 +1687,17 @@ const electronAPI = {
       ),
     listKeyframes: (storyboardId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_LIST_KEYFRAMES, storyboardId),
+    insertKeyframeBetween: (
+      storyboardId: string,
+      afterKeyframeId: string,
+      userPrompt?: string,
+    ) =>
+      ipcRenderer.invoke(
+        IPC_CHANNELS.EP_INSERT_KEYFRAME_BETWEEN,
+        storyboardId,
+        afterKeyframeId,
+        userPrompt,
+      ),
     planKeyframeRegen: (changedFrameIndex: number, keyframeCount: number) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_PLAN_KEYFRAME_REGEN, changedFrameIndex, keyframeCount),
 

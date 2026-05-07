@@ -51,9 +51,8 @@
     </div>
 
     <div v-else class="grid-body">
+      <template v-for="(kf, idx) in sortedKeyframes" :key="kf.id">
       <div
-        v-for="kf in sortedKeyframes"
-        :key="kf.id"
         class="keyframe-cell"
         :class="`role-${kf.frameRole}`"
       >
@@ -85,45 +84,43 @@
             </el-button>
           </div>
         </div>
-        <div class="cell-meta">
-          <el-tag
-            size="small"
-            :type="roleTagType(kf.frameRole)"
-            class="role-tag"
-          >
-            #{{ kf.frameIndex }} · {{ roleLabel(kf.frameRole) }}
-          </el-tag>
-          <span class="time-percent">{{ Math.round(kf.timePercent * 100) }}%</span>
-        </div>
-
-        <!-- P5-T28 spec §4.5.7：资产组合 chip（角色 + 地点） -->
-        <div v-if="characterChips.length > 0 || locationChip" class="cell-assets">
-          <el-tag
-            v-if="locationChip"
-            size="small"
-            type="warning"
-            effect="plain"
-            class="loc-chip"
-            :title="locationChip.tooltip"
-          >
-            <el-icon><Location /></el-icon>
-            {{ locationChip.label }}
-          </el-tag>
-          <el-tag
+        <div class="cell-info">
+          <div class="info-row info-row-head" :class="`role-${kf.frameRole}`">
+            <span class="info-idx">#{{ kf.frameIndex }}</span>
+            <span class="info-role">{{ roleLabel(kf.frameRole) }}</span>
+            <span class="info-percent">{{ Math.round(kf.timePercent * 100) }}%</span>
+          </div>
+          <div v-if="locationChip" class="info-row" :title="locationChip.tooltip">
+            <el-icon class="info-icon"><Location /></el-icon>
+            <span class="info-text">{{ locationChip.label }}</span>
+          </div>
+          <div
             v-for="c in characterChips"
             :key="c.id"
-            size="small"
-            type="info"
-            effect="plain"
-            class="char-chip"
+            class="info-row"
             :title="c.tooltip"
           >
-            <el-icon><User /></el-icon>
-            {{ c.name }}
-            <span v-if="c.expression" class="chip-expr">· {{ c.expression }}</span>
-          </el-tag>
+            <el-icon class="info-icon"><User /></el-icon>
+            <span class="info-text">
+              {{ c.name }}
+              <span v-if="c.expression" class="info-attr">· {{ c.expression }}</span>
+            </span>
+          </div>
         </div>
       </div>
+
+      <!-- 两帧之间插帧按钮（最后一帧后面不显示——末尾追加请改 keyframeCount） -->
+      <button
+        v-if="idx < sortedKeyframes.length - 1"
+        class="insert-between-btn"
+        :disabled="!!inserting"
+        :title="'在第 ' + kf.frameIndex + ' 和 ' + sortedKeyframes[idx + 1].frameIndex + ' 帧之间插入一张'"
+        @click="onInsertAfter(kf)"
+      >
+        <el-icon v-if="inserting === kf.id" class="is-loading"><Loading /></el-icon>
+        <span v-else>＋</span>
+      </button>
+      </template>
     </div>
 
     <el-dialog
@@ -364,6 +361,31 @@ function onPreview(kf: Keyframe): void {
   previewVisible.value = true
 }
 
+/** "+" 在两帧之间插入新帧（frameRole='extra'，timePercent 取中点） */
+const inserting = ref<string | null>(null)
+async function onInsertAfter(kf: Keyframe): Promise<void> {
+  if (inserting.value) return
+  inserting.value = kf.id
+  try {
+    const api = (window as any).electronAPI?.episodeProduction
+    if (!api?.insertKeyframeBetween) {
+      ElMessage.error('insertKeyframeBetween IPC 未暴露')
+      return
+    }
+    const resp = await api.insertKeyframeBetween(kf.storyboardId, kf.id)
+    if (!resp?.success) {
+      ElMessage.error(resp?.error || '插入关键帧失败')
+      return
+    }
+    ElMessage.success('已在该帧后插入新帧')
+    await loadKeyframes()
+  } catch (e: any) {
+    ElMessage.error('插入失败：' + (e?.message ?? '未知错误'))
+  } finally {
+    inserting.value = null
+  }
+}
+
 watch(
   () => props.storyboardId,
   () => loadKeyframes(),
@@ -414,10 +436,46 @@ defineExpose({ reload: loadKeyframes })
   padding: 20px 0;
 }
 
+/* 用 flex+wrap 替代 grid，给每两帧之间插入按钮腾位 */
 .grid-body {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.keyframe-cell {
+  flex: 1 1 160px;
+  min-width: 160px;
+  max-width: 240px;
+}
+
+.insert-between-btn {
+  flex: 0 0 24px;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  background: transparent;
+  border: 1px dashed var(--el-border-color);
+  border-radius: 4px;
+  color: var(--el-text-color-placeholder);
+  font-size: 18px;
+  cursor: pointer;
+  transition: all 0.15s;
+  padding: 0;
+}
+
+.insert-between-btn:hover:not(:disabled) {
+  background: var(--el-color-primary-light-9);
+  border-color: var(--el-color-primary);
+  color: var(--el-color-primary);
+}
+
+.insert-between-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .keyframe-cell {
@@ -457,64 +515,82 @@ defineExpose({ reload: loadKeyframes })
   opacity: 1;
 }
 
-.cell-meta {
+/* 一律用 div+pill 样式，避免 el-tag 自带 padding/line-height 不齐导致视觉乱 */
+.cell-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0 0;
+}
+
+.info-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  font-size: 11px;
-  padding: 4px 2px 0;
-  min-height: 22px;
-}
-
-.cell-meta .role-tag {
-  flex-shrink: 0;
-  height: 20px;
-  line-height: 18px;
-  padding: 0 6px;
-  font-size: 11px;
-}
-
-.time-percent {
-  color: var(--el-text-color-secondary);
-  font-size: 11px;
-  flex-shrink: 0;
-}
-
-.cell-assets {
-  display: flex;
-  flex-wrap: wrap;
   gap: 4px;
-  padding: 2px 0 0;
-}
-
-.cell-assets :deep(.el-tag) {
-  height: 20px;
+  height: 18px;
   line-height: 18px;
+  font-size: 11px;
+  color: var(--el-text-color-regular);
   padding: 0 6px;
-  font-size: 11px;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  max-width: 100%;
+  background: var(--el-fill-color-light);
+  border-radius: 3px;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.cell-assets :deep(.el-tag .el-icon) {
-  font-size: 11px;
-  flex-shrink: 0;
-}
-
-.cell-assets .chip-expr {
-  margin-left: 2px;
-  color: var(--el-color-warning);
+.info-row-head {
+  background: transparent;
+  padding: 0 2px;
+  height: 16px;
+  line-height: 16px;
+  gap: 6px;
+  color: var(--el-text-color-secondary);
   font-weight: 500;
 }
 
-.cell-assets .loc-chip {
-  flex-basis: 100%;
+.info-idx {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
+
+.info-row-head.role-start .info-role {
+  color: var(--el-color-success);
+}
+
+.info-row-head.role-end .info-role {
+  color: var(--el-color-danger);
+}
+
+.info-row-head.role-middle .info-role {
+  color: var(--el-color-warning);
+}
+
+.info-row-head.role-extra .info-role {
+  color: var(--el-color-info);
+}
+
+.info-percent {
+  margin-left: auto;
+  color: var(--el-text-color-placeholder);
+  font-size: 10px;
+}
+
+.info-icon {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+}
+
+.info-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.info-attr {
+  color: var(--el-color-warning);
 }
 
 .preview-prompt {

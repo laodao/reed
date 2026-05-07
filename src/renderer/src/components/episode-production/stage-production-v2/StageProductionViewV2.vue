@@ -277,7 +277,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { InfoFilled, Refresh } from '@element-plus/icons-vue'
 import StageMainHeader from '../shared/StageMainHeader.vue'
 import KeyframeGrid from '../stage-production/KeyframeGrid.vue'
@@ -472,22 +472,42 @@ async function onSaveLang(): Promise<void> {
   if (!selectedStoryboard.value) return
   savingLang.value = true
   try {
+    const oldKfCount = selectedStoryboard.value.keyframeCount ?? 3
+    const newKfCount = langDraft.value.keyframeCount
+    const kfCountChanged = newKfCount !== oldKfCount
     const api = (window as any).electronAPI?.episodeProduction
     const resp = await api?.updateStoryboard?.(selectedStoryboard.value.id, {
       shotType: langDraft.value.shotType,
       cameraAngle: langDraft.value.cameraAngle,
       cameraMovement: langDraft.value.cameraMovement,
       duration: langDraft.value.duration,
-      keyframeCount: langDraft.value.keyframeCount,
+      keyframeCount: newKfCount,
     })
-    if (resp?.success) {
-      ElMessage.success('已保存')
-      langDirty.value = new Set()
-      if (selectedScene.value) {
-        await storyboardStore.loadStoryboards(selectedScene.value.id)
-      }
-    } else {
+    if (!resp?.success) {
       ElMessage.error(resp?.error || '保存失败')
+      return
+    }
+    ElMessage.success('已保存')
+    langDirty.value = new Set()
+    if (selectedScene.value) {
+      await storyboardStore.loadStoryboards(selectedScene.value.id)
+    }
+    // 关键帧数变了 → 询问是否立即按新数量重生（清旧帧）
+    if (kfCountChanged && currentKeyframes.value.length > 0) {
+      try {
+        await ElMessageBox.confirm(
+          `关键帧数已改为 ${newKfCount}（原 ${oldKfCount}）。立即按新数量重新生成？\n旧的 ${currentKeyframes.value.length} 张关键帧会被清空。`,
+          '关键帧数已变更',
+          {
+            type: 'warning',
+            confirmButtonText: '立即重生',
+            cancelButtonText: '稍后再说',
+          },
+        )
+        await onRegenAll()
+      } catch {
+        ElMessage.info('已保存数量；点顶部"全部重新生成"按新数量出图')
+      }
     }
   } finally {
     savingLang.value = false

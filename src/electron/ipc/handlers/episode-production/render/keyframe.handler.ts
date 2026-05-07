@@ -24,6 +24,30 @@ export function registerKeyframeHandlers(): void {
   ipcBridge.handle('ep:regenerate-keyframe', handleRegenerateKeyframe)
   ipcBridge.handle('ep:list-keyframes', handleListKeyframes)
   ipcBridge.handle('ep:plan-keyframe-regen', handlePlanKeyframeRegen)
+  // 在两帧之间插入一帧
+  ipcBridge.handle('ep:insert-keyframe-between', handleInsertKeyframeBetween)
+}
+
+async function handleInsertKeyframeBetween(
+  _event: any,
+  storyboardId: string,
+  afterKeyframeId: string,
+  userPrompt?: string,
+): Promise<IpcResponse> {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+    const svc = new KeyframeGenerationService(db.dataSource)
+    const created = await svc.insertBetween({
+      storyboardId,
+      afterKeyframeId,
+      userPrompt: userPrompt ?? null,
+    })
+    return { success: true, data: created }
+  } catch (e: any) {
+    console.error('[handleInsertKeyframeBetween] 失败:', e)
+    return { success: false, error: e?.message ?? '插入关键帧失败' }
+  }
 }
 
 // ==================== 资源生成处理器（图像） ====================

@@ -30,6 +30,7 @@ import { StoryboardEntity } from '@core/database/entities/episode-production/sto
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
 import { EpisodeScriptEntity } from '@core/database/entities/episode-production/episode-script.entity'
 import { VideoEpisodeEntity } from '@core/database/entities/episode-production/video-episode.entity'
+import { StoryboardKeyframeEntity } from '@core/database/entities/episode-production/storyboard-keyframe.entity'
 import {
   StoryboardKeyframeRepository,
   type StoryboardKeyframe,
@@ -215,6 +216,76 @@ export class KeyframeGenerationService {
   /** 列出某分镜的全部关键帧（按 frame_index 升序）*/
   listKeyframes(storyboardId: string): Promise<StoryboardKeyframe[]> {
     return this.keyframeRepo.listByStoryboard(storyboardId)
+  }
+
+  /**
+   * 在指定关键帧之后插入一张"extra"帧。
+   * - 必须存在 after 帧的下一帧（不能在序列末尾追加 — 末尾用"全部重新生成"调 keyframeCount+1）
+   * - 新帧的 timePercent 取 (after + next) / 2
+   * - frameIndex = after.frameIndex + 1；后续所有帧 frameIndex += 1
+   * - frameRole = 'extra'，参考链按 plan 复用现有生成路径
+   */
+  async insertBetween(input: {
+    storyboardId: string
+    afterKeyframeId: string
+    styleName?: keyof typeof PRESET_STYLES
+    userPrompt?: string | null
+  }): Promise<StoryboardKeyframe> {
+    const all = await this.keyframeRepo.listByStoryboard(input.storyboardId)
+    if (all.length === 0) throw new Error('该分镜还没有关键帧，先点"生成关键帧"')
+    const sorted = [...all].sort((a, b) => a.frameIndex - b.frameIndex)
+    const afterIdx = sorted.findIndex((k) => k.id === input.afterKeyframeId)
+    if (afterIdx === -1) throw new Error(`afterKeyframeId 不在该分镜：${input.afterKeyframeId}`)
+    if (afterIdx === sorted.length - 1) {
+      throw new Error('已是最后一帧；如需追加请改"关键帧数"后重生')
+    }
+    const after = sorted[afterIdx]
+    const next = sorted[afterIdx + 1]
+    const newTimePercent = (after.timePercent + next.timePercent) / 2
+    const newFrameIndex = after.frameIndex + 1
+
+    // 把 next 及之后所有帧 frameIndex += 1（避免唯一约束冲突时按"先大后小"避让；
+    // 当前 entity 没唯一约束，直接 update 所有 frameIndex >= next 的）
+    const sb = await this.sbRepo.findOne({ where: { id: input.storyboardId } })
+    if (!sb) throw new Error(`Storyboard not found: ${input.storyboardId}`)
+    const scene = await this.sceneRepo.findOne({ where: { id: sb.sceneScriptId } })
+    if (!scene) throw new Error(`SceneScript not found: ${sb.sceneScriptId}`)
+
+    // 倒序 +1 避免冲突（如果将来加唯一约束也兼容）
+    const toShift = sorted.slice(afterIdx + 1).slice().reverse()
+    for (const kf of toShift) {
+      await this.keyframeRepo.update(kf.id, {
+        // UpdateKeyframeRequest 没暴露 frameIndex；用底层 repo 直接更新
+      } as any)
+      // BaseRepository 的 scoped.update 暴露 ⤵ 用 getRepository
+      await this.ds
+        .getRepository(StoryboardKeyframeEntity)
+        .update({ id: kf.id }, { frameIndex: kf.frameIndex + 1 })
+    }
+    // storyboard.keyframeCount += 1（保持配置一致）
+    await this.ds
+      .getRepository(StoryboardEntity)
+      .update({ id: sb.id }, { keyframeCount: (sb.keyframeCount ?? sorted.length) + 1 })
+
+    // 用现有 plan 同口径构造 plan item（extra）
+    // 参考帧用前后两个相邻帧（after / next）的 frameIndex（after 已 shift 后仍 == old after.frameIndex）
+    const planItem: KeyframePlan = {
+      frameIndex: newFrameIndex,
+      timePercent: newTimePercent,
+      frameRole: 'extra',
+      referenceFrameIndexes: [after.frameIndex, next.frameIndex + 1],
+    }
+
+    const styleConfig = this.pickStyle(input.styleName)
+    const sceneAssets = await this.resolveSceneAssets(scene, sb.id)
+    return await this.generateOneKeyframe({
+      storyboard: sb,
+      scene,
+      plan: planItem,
+      sceneAssets,
+      styleConfig,
+      userPrompt: input.userPrompt ?? null,
+    })
   }
 
   // ─── 内部 ──────────────────────────────────────────────
