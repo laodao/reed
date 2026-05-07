@@ -42,17 +42,33 @@
                   </el-button>
                 </el-upload>
               </template>
-              <el-button
-                v-else
-                type="primary"
-                plain
-                size="small"
-                :loading="busyKey === 'main'"
-                :disabled="busy && busyKey !== 'main'"
-                @click="onGenerateMain"
-              >
-                ✨ 生成主图
-              </el-button>
+              <template v-else>
+                <el-button
+                  type="primary"
+                  plain
+                  size="small"
+                  :loading="busyKey === 'main'"
+                  :disabled="busy && busyKey !== 'main'"
+                  @click="onGenerateMain"
+                >
+                  ✨ 生成主图
+                </el-button>
+                <el-upload
+                  :auto-upload="false"
+                  :show-file-list="false"
+                  :on-change="onPickMainFile"
+                  accept="image/jpeg,image/png,image/webp"
+                  :disabled="busy"
+                >
+                  <el-button
+                    size="small"
+                    :loading="busyKey === 'main-upload'"
+                    :disabled="busy && busyKey !== 'main-upload'"
+                  >
+                    ⬆ 上传主图
+                  </el-button>
+                </el-upload>
+              </template>
             </span>
           </div>
         </template>
