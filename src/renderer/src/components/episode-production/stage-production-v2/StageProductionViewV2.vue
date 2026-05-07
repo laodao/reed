@@ -222,44 +222,57 @@
           </template>
         </section>
 
-        <!-- 资产引用 panel + 提示词组装公式（spec §4.5.7 P0） -->
-        <section class="panel asset-ref-panel">
-          <header class="panel-header">
-            <span class="panel-title">本分镜引用的资产</span>
-          </header>
-          <div class="ref-tags">
-            <el-tag
-              v-if="locationRef"
-              type="success"
-              effect="light"
-              class="ref-tag"
-            >📍 {{ locationRef }}</el-tag>
-            <el-tag
-              v-for="c in characterRefs"
-              :key="`c-${c.name}`"
-              type="primary"
-              effect="light"
-              class="ref-tag"
-            >👤 {{ c.name }}<span v-if="c.expression"> · {{ c.expression }}</span></el-tag>
-            <el-tag
-              v-for="it in itemRefs"
-              :key="`it-${it.name}`"
-              type="warning"
-              effect="light"
-              class="ref-tag"
-            >⚔️ {{ it.name }}<span v-if="it.context"> · {{ it.context }}</span></el-tag>
-            <span v-if="!locationRef && characterRefs.length === 0 && itemRefs.length === 0" class="hint-tertiary">
-              本分镜暂无资产引用
-            </span>
+        <!-- 资产引用 + 场景音频 一行两栏（在大屏并排，<1100px 退化为单列） -->
+        <div class="ref-audio-row">
+          <!-- 资产引用 panel + 提示词组装公式（spec §4.5.7 P0） -->
+          <section class="panel asset-ref-panel ref-audio-cell">
+            <header class="panel-header">
+              <span class="panel-title">本分镜引用的资产</span>
+            </header>
+            <div class="ref-tags">
+              <el-tag
+                v-if="locationRef"
+                type="success"
+                effect="light"
+                class="ref-tag"
+              >📍 {{ locationRef }}</el-tag>
+              <el-tag
+                v-for="c in characterRefs"
+                :key="`c-${c.name}`"
+                type="primary"
+                effect="light"
+                class="ref-tag"
+              >👤 {{ c.name }}<span v-if="c.expression"> · {{ c.expression }}</span></el-tag>
+              <el-tag
+                v-for="it in itemRefs"
+                :key="`it-${it.name}`"
+                type="warning"
+                effect="light"
+                class="ref-tag"
+              >⚔️ {{ it.name }}<span v-if="it.context"> · {{ it.context }}</span></el-tag>
+              <span v-if="!locationRef && characterRefs.length === 0 && itemRefs.length === 0" class="hint-tertiary">
+                本分镜暂无资产引用
+              </span>
+            </div>
+            <div class="prompt-formula">
+              每张关键帧自动按以下公式组装提示词：
+              <code class="formula-code">
+                style_anchor + 镜头语言 + 场景描述 + 地点变体图 + 角色图 + 物品图 + 上一帧
+                <span v-if="hasUserPrompt"> + [user direction]</span>
+              </code>
+            </div>
+          </section>
+
+          <!-- 音频 AudioPanel 复用（真实 旁白 + 对话 + BGM） -->
+          <div class="ref-audio-cell">
+            <AudioPanel
+              v-if="selectedScene"
+              :key="`audio-${selectedScene.id}`"
+              :scene-id="selectedScene.id"
+              :scene="selectedScene"
+            />
           </div>
-          <div class="prompt-formula">
-            每张关键帧自动按以下公式组装提示词：
-            <code class="formula-code">
-              style_anchor + 镜头语言 + 场景描述 + 地点变体图 + 角色图 + 物品图 + 上一帧
-              <span v-if="hasUserPrompt"> + [user direction]</span>
-            </code>
-          </div>
-        </section>
+        </div>
 
         <!-- 视频生成 VideoSegmentPanel 复用（真实 provider + 模式 + 状态） -->
         <VideoSegmentPanel
@@ -268,14 +281,6 @@
           :storyboard="selectedStoryboard"
           :provider-config-id="videoModelProviderConfigId"
           @generated="onVideoDone"
-        />
-
-        <!-- 音频 AudioPanel 复用（真实 旁白 + 对话 + BGM） -->
-        <AudioPanel
-          v-if="selectedScene"
-          :key="`audio-${selectedScene.id}`"
-          :scene-id="selectedScene.id"
-          :scene="selectedScene"
         />
       </main>
 
@@ -847,6 +852,24 @@ watch(
   font-size: 12px;
   color: var(--el-text-color-placeholder);
   margin-left: -2px;
+}
+
+/* 资产引用 + 场景音频一行两栏 */
+.ref-audio-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.ref-audio-cell {
+  min-width: 0;
+}
+
+@media (max-width: 1100px) {
+  .ref-audio-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .kf-buttons.inline {
