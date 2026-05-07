@@ -40,88 +40,6 @@
     </div>
 
     <div v-if="storyboard" class="form-area">
-      <!-- P5-T29 spec §4.7：分镜元信息 panel -->
-      <div class="meta-section">
-        <h5 class="meta-title">分镜元信息（spec §4.7）</h5>
-
-        <!-- 关键帧序列预览（spec §4.5.4 九宫格） -->
-        <div v-if="keyframes.length > 0" class="keyframe-strip">
-          <div
-            v-for="kf in keyframes"
-            :key="kf.id"
-            class="strip-cell"
-            :title="`镜头 #${kf.frameIndex} · ${kf.frameRole}`"
-          >
-            <img v-if="kf.imagePath" :src="toImageUrl(kf.imagePath)" alt="kf" />
-            <el-icon v-else><Picture /></el-icon>
-            <span class="strip-idx">#{{ kf.frameIndex }}</span>
-          </div>
-        </div>
-        <div v-else class="meta-empty">尚未生成关键帧</div>
-
-        <!-- 角色清单 -->
-        <div class="meta-row">
-          <span class="meta-label">角色</span>
-          <span v-if="characterChips.length === 0" class="meta-empty-inline">
-            未配置（spec §4.5.3 回退场景级）
-          </span>
-          <el-tag
-            v-for="c in characterChips"
-            :key="c.id"
-            size="small"
-            type="info"
-            effect="plain"
-          >
-            {{ c.name }}<span v-if="c.expression"> · {{ c.expression }}</span>
-          </el-tag>
-        </div>
-
-        <!-- 旁白 -->
-        <div v-if="narration" class="meta-row">
-          <span class="meta-label">旁白</span>
-          <span class="meta-text">{{ narration }}</span>
-        </div>
-
-        <!-- 对话清单 -->
-        <div v-if="dialogues.length > 0" class="meta-row">
-          <span class="meta-label">对话 ({{ dialogues.length }})</span>
-          <div class="dialogue-list">
-            <div
-              v-for="(d, i) in dialogues"
-              :key="`d-${i}`"
-              class="dialogue-item"
-            >
-              <span class="dlg-speaker">{{ d.speaker }}</span>
-              <span v-if="d.tone" class="dlg-tone">{{ d.tone }}</span>
-              <span class="dlg-text">{{ d.text }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- P5-T29 spec §4.5.7：用户额外提示词（生成视频片段时一并影响 prompt） -->
-      <div class="user-prompt-section">
-        <label class="prompt-label">
-          <el-icon><EditPen /></el-icon>
-          调整方向（可选）
-          <el-tooltip
-            content="影响视频片段生成的 prompt（如'动作更慢'、'镜头平稳'）。批量重生成关键帧时也会带上。"
-            placement="top"
-          >
-            <el-icon class="hint-icon"><InfoFilled /></el-icon>
-          </el-tooltip>
-        </label>
-        <el-input
-          v-model="userPrompt"
-          type="textarea"
-          :rows="2"
-          placeholder="例如：动作更慢一些 / 镜头保持平稳 / 整体偏暖色调"
-          :maxlength="200"
-          show-word-limit
-          resize="none"
-        />
-      </div>
-
       <!-- 提供商 + 模型 一行 -->
       <div class="form-row">
         <div class="form-cell">
@@ -201,6 +119,29 @@
         <pre class="prompt-preview-body">{{ finalPromptPreview }}</pre>
       </div>
 
+      <!-- 用户额外提示词：生成视频片段时一并影响 prompt -->
+      <div class="user-prompt-section">
+        <label class="prompt-label">
+          <el-icon><EditPen /></el-icon>
+          调整方向（可选）
+          <el-tooltip
+            content="影响视频片段生成的 prompt（如'动作更慢'、'镜头平稳'）。批量重生成关键帧时也会带上。"
+            placement="top"
+          >
+            <el-icon class="hint-icon"><InfoFilled /></el-icon>
+          </el-tooltip>
+        </label>
+        <el-input
+          v-model="userPrompt"
+          type="textarea"
+          :rows="2"
+          placeholder="例如：动作更慢一些 / 镜头保持平稳 / 整体偏暖色调"
+          :maxlength="200"
+          show-word-limit
+          resize="none"
+        />
+      </div>
+
       <div class="form-actions">
         <el-button
           type="primary"
@@ -254,10 +195,9 @@ import {
   EditPen,
   InfoFilled,
   MagicStick,
-  Picture,
   Warning,
 } from '@element-plus/icons-vue'
-import { toImageUrl, toVideoUrl } from '@/utils/asset-url'
+import { toVideoUrl } from '@/utils/asset-url'
 import { useEpAssetStore, useEpScriptStore } from '@/stores/episode-production'
 
 interface Storyboard {
@@ -265,6 +205,10 @@ interface Storyboard {
   videoPath?: string | null
   keyframeCount?: number
   duration?: number
+  frameDescription?: string | null
+  shotType?: string | null
+  cameraAngle?: string | null
+  cameraMovement?: string | null
 }
 
 interface ProviderCapabilities {
