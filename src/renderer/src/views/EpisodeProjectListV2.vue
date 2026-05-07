@@ -142,6 +142,20 @@
             <el-option label="60 fps（高帧率）" :value="60" />
           </el-select>
         </el-form-item>
+        <el-divider content-position="left">风格</el-divider>
+        <el-form-item label="项目风格">
+          <el-select
+            v-model="createForm.config.styleAnchors"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            placeholder="选择或输入主流风格（多选）— 将作为各角色/地点/物品的默认风格"
+            style="width: 100%"
+          >
+            <el-option v-for="s in STYLE_PRESETS" :key="s" :label="s" :value="s" />
+          </el-select>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showCreateDialog = false">取消</el-button>
@@ -180,6 +194,7 @@ import type {
   VideoProjectConfig,
 } from '../../../shared/types/story-to-video.types'
 import AssetSourceTag from '@/components/episode-production/shared/AssetSourceTag.vue'
+import { STYLE_PRESETS } from '@core/modules/episode-production/assets/constants/style-presets'
 
 const router = useRouter()
 
@@ -204,6 +219,7 @@ const createForm = reactive<{
     fps: 30,
     defaultTransition: 'fade' as any,
     stylePrompt: '',
+    styleAnchors: [],
   } as VideoProjectConfig,
 })
 

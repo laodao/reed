@@ -21,6 +21,7 @@ import type { DataSource, Repository } from 'typeorm'
 import { ItemBindingEntity } from '@core/database/entities/episode-production/item-binding.entity'
 import { LwItemEntity } from '@core/database/entities/lw-item.entity'
 import type { EffectiveItemData } from '@shared/types/episode-production/domain.types'
+import { getProjectStyleAnchorsAsJson } from './project-style.helper'
 
 /** 新建 standalone 物品入参 */
 export interface CreateStandaloneItemInput {
@@ -155,6 +156,7 @@ export class ItemAssetService {
   async createStandalone(
     input: CreateStandaloneItemInput,
   ): Promise<ItemBindingEntity> {
+    const styleAnchors = await getProjectStyleAnchorsAsJson(this.ds, input.projectId)
     const entity = this.bindingRepo.create({
       id: this.generateId(),
       userId: input.userId ?? null,
@@ -165,6 +167,7 @@ export class ItemAssetService {
       sourceType: 'standalone',
       standaloneName: input.name,
       standaloneDescription: input.description ?? null,
+      styleAnchors,
       generateImages: 0,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -177,6 +180,7 @@ export class ItemAssetService {
     input: CreateLinkedLwItemInput,
   ): Promise<ItemBindingEntity> {
     const ov = input.initialOverride ?? {}
+    const styleAnchors = await getProjectStyleAnchorsAsJson(this.ds, input.projectId)
     const entity = this.bindingRepo.create({
       id: this.generateId(),
       userId: input.userId ?? null,
@@ -186,6 +190,7 @@ export class ItemAssetService {
       sourceType: 'linked_lw',
       overrideName: ov.name ?? null,
       overrideDescription: ov.description ?? null,
+      styleAnchors,
       generateImages: 0,
       createdAt: new Date(),
       updatedAt: new Date(),

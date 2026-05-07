@@ -18,6 +18,7 @@
 import { randomBytes } from 'crypto'
 import type { DataSource, Repository } from 'typeorm'
 import { CharacterBindingEntity } from '@core/database/entities/episode-production/character-binding.entity'
+import { getProjectStyleAnchorsAsJson } from './project-style.helper'
 import { LwCharacterEntity } from '@core/database/entities/lw-character.entity'
 import type { EffectiveCharacterData } from '@shared/types/episode-production/domain.types'
 
@@ -165,6 +166,7 @@ export class CharacterAssetService {
   async createStandalone(
     input: CreateStandaloneInput,
   ): Promise<CharacterBindingEntity> {
+    const styleAnchors = await getProjectStyleAnchorsAsJson(this.ds, input.projectId)
     const entity = this.bindingRepo.create({
       id: this.generateId(),
       userId: input.userId ?? null,
@@ -176,6 +178,8 @@ export class CharacterAssetService {
       voiceId: input.voiceId ?? null,
       standaloneName: input.name,
       standaloneDescription: input.description ?? null,
+      // spec 2026-05-08：新建资产默认继承项目风格（snapshot；之后改项目不影响已建资产）
+      styleAnchors,
       createdAt: new Date(),
       updatedAt: new Date(),
     } as Partial<CharacterBindingEntity>)
@@ -187,6 +191,7 @@ export class CharacterAssetService {
     input: CreateLinkedLwInput,
   ): Promise<CharacterBindingEntity> {
     const ov = input.initialOverride ?? {}
+    const styleAnchors = await getProjectStyleAnchorsAsJson(this.ds, input.projectId)
     const entity = this.bindingRepo.create({
       id: this.generateId(),
       userId: input.userId ?? null,
@@ -198,6 +203,7 @@ export class CharacterAssetService {
       overrideDescription: ov.description ?? null,
       overrideAppearance: ov.appearance ?? null,
       overrideOutfit: ov.outfit ?? null,
+      styleAnchors,
       createdAt: new Date(),
       updatedAt: new Date(),
     } as Partial<CharacterBindingEntity>)

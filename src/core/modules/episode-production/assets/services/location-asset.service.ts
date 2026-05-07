@@ -27,6 +27,7 @@ import { LwLocationEntity } from '@core/database/entities/lw-location.entity'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 import type { AssetImageService } from './asset-image.service'
 import type { EffectiveLocationData } from '@shared/types/episode-production/domain.types'
+import { getProjectStyleAnchorsAsJson } from './project-style.helper'
 
 /** 新建 standalone 地点入参 */
 export interface CreateStandaloneLocationInput {
@@ -221,6 +222,7 @@ export class LocationAssetService {
   async createStandalone(
     input: CreateStandaloneLocationInput,
   ): Promise<LocationBindingEntity> {
+    const styleAnchors = await getProjectStyleAnchorsAsJson(this.ds, input.projectId)
     const entity = this.bindingRepo.create({
       id: this.generateId(),
       userId: input.userId ?? null,
@@ -231,6 +233,7 @@ export class LocationAssetService {
       sourceType: 'standalone',
       standaloneName: input.name,
       standaloneDescription: input.description ?? null,
+      styleAnchors,
       generateImages: 0,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -243,6 +246,7 @@ export class LocationAssetService {
     input: CreateLinkedLwLocationInput,
   ): Promise<LocationBindingEntity> {
     const ov = input.initialOverride ?? {}
+    const styleAnchors = await getProjectStyleAnchorsAsJson(this.ds, input.projectId)
     const entity = this.bindingRepo.create({
       id: this.generateId(),
       userId: input.userId ?? null,
@@ -252,6 +256,7 @@ export class LocationAssetService {
       sourceType: 'linked_lw',
       overrideName: ov.name ?? null,
       overrideDescription: ov.description ?? null,
+      styleAnchors,
       generateImages: 0,
       createdAt: new Date(),
       updatedAt: new Date(),

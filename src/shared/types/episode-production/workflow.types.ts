@@ -125,7 +125,14 @@ export interface VideoProjectConfig {
   // 图像设置
   imageProviderId: string // 图像生成提供商
   imageModelId: string // 图像模型
-  imageStyle: string // 图像风格（写实/动漫/插画等）
+  imageStyle: string // 图像风格（写实/动漫/插画等）— 历史字段，仅作 fallback；新代码用 styleAnchors
+
+  /**
+   * 项目级风格锚点（spec 2026-05-08）。新建剧集项目时选择，作为该项目下所有
+   * character / location / item 资产的默认风格 — 资产自身 styleAnchors 为空时继承本字段，
+   * 资产已填则不覆盖。所有主图 / 派生图 prompt 也会拼上项目风格作为兜底锚点。
+   */
+  styleAnchors?: string[]
 
   // 默认镜头设置
   defaultShotDuration: number // 默认分镜时长（秒）
