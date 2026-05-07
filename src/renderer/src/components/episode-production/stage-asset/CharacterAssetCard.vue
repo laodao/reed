@@ -130,7 +130,7 @@ watch(() => props.binding?.id, loadStats)
 .asset-card .thumb img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .asset-card .thumb .badge {
