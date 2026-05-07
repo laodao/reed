@@ -460,6 +460,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-keyframe-reference-overrides'
     )
     await addKeyframeReferenceOverrides(this.dataSource)
+    // 分镜 use_keyframes：是否走关键帧流程
+    const { addStoryboardUseKeyframes } = await import(
+      '@core/database/migrations/add-storyboard-use-keyframes'
+    )
+    await addStoryboardUseKeyframes(this.dataSource)
   }
 
   /**

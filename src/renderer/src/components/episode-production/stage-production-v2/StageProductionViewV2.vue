@@ -147,13 +147,19 @@
               <span class="suffix-x">s</span>
             </label>
             <label class="tool-item">
-              <span class="tool-label">关键帧数</span>
-              <div class="kf-buttons inline">
+              <el-checkbox
+                v-model="langDraft.useKeyframes"
+                @change="markLangDirty('useKeyframes')"
+              >
+                关键帧数
+              </el-checkbox>
+              <div class="kf-buttons inline" :class="{ disabled: !langDraft.useKeyframes }">
                 <button
                   v-for="n in 9"
                   :key="n"
                   class="kf-btn-mini"
                   :class="{ active: langDraft.keyframeCount === n }"
+                  :disabled="!langDraft.useKeyframes"
                   @click="onSetKfCount(n)"
                 >{{ n }}</button>
               </div>
@@ -165,22 +171,25 @@
           </div>
         </section>
 
-        <!-- 九宫格 KeyframeGrid wrapper -->
-        <section class="panel keyframes-panel">
+        <!-- 九宫格 KeyframeGrid wrapper（关键帧关闭时整体折叠 + disable） -->
+        <section
+          class="panel keyframes-panel"
+          :class="{ 'kf-disabled': !langDraft.useKeyframes }"
+        >
           <header class="panel-header">
             <span class="panel-title">关键帧序列</span>
             <span class="panel-hint">
-              时间顺序的 {{ langDraft.keyframeCount }} 张快照（"九宫格"）· 用于 keyframesToVideo 模型
+              <template v-if="langDraft.useKeyframes">
+                时间顺序的 {{ langDraft.keyframeCount }} 张快照（"九宫格"）· 用于 keyframesToVideo 模型
+              </template>
+              <template v-else>
+                已关闭：本分镜将直接用画面描述 + 引用资产生成视频，不走关键帧
+              </template>
             </span>
-            <span class="header-spacer" />
-            <el-button size="small" :loading="regeneratingAll" @click="onRegenAll">
-              <el-icon><Refresh /></el-icon>
-              重生成全部
-            </el-button>
           </header>
 
+          <template v-if="langDraft.useKeyframes">
           <!-- 时间轴 bar -->
-          <div class="timeline-bar">
             <div
               v-for="t in timelineTicks"
               :key="t.pct"
@@ -209,6 +218,7 @@
               → 中间帧（参考首尾），保证运动连贯
             </span>
           </div>
+          </template>
         </section>
 
         <!-- 资产引用 panel + 提示词组装公式（spec §4.5.7 P0） -->
@@ -252,11 +262,11 @@
 
         <!-- 视频生成 VideoSegmentPanel 复用（真实 provider + 模式 + 状态） -->
         <VideoSegmentPanel
-          v-if="selectedStoryboardId"
+          v-if="selectedStoryboard"
           :key="`vsp-${selectedStoryboardId}`"
-          :storyboard-id="selectedStoryboardId"
+          :storyboard="selectedStoryboard"
           :provider-config-id="videoModelProviderConfigId"
-          @done="onVideoDone"
+          @generated="onVideoDone"
         />
 
         <!-- 音频 AudioPanel 复用（真实 旁白 + 对话 + BGM） -->
@@ -278,7 +288,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { InfoFilled, Refresh } from '@element-plus/icons-vue'
+import { InfoFilled } from '@element-plus/icons-vue'
 import StageMainHeader from '../shared/StageMainHeader.vue'
 import KeyframeGrid from '../stage-production/KeyframeGrid.vue'
 import VideoSegmentPanel from '../stage-production/VideoSegmentPanel.vue'
@@ -329,6 +339,7 @@ const langDraft = ref<any>({
   cameraMovement: '',
   duration: 5,
   keyframeCount: 5,
+  useKeyframes: true,
 })
 
 const hasLangDirty = computed(() => langDirty.value.size > 0)
@@ -345,6 +356,7 @@ watch(
       cameraMovement: sb.cameraMovement,
       duration: sb.duration,
       keyframeCount: sb.keyframeCount ?? 3,
+      useKeyframes: (sb as any).useKeyframes ?? true,
     }
     langDirty.value = new Set()
   },
@@ -482,6 +494,7 @@ async function onSaveLang(): Promise<void> {
       cameraMovement: langDraft.value.cameraMovement,
       duration: langDraft.value.duration,
       keyframeCount: newKfCount,
+      useKeyframes: langDraft.value.useKeyframes,
     })
     if (!resp?.success) {
       ElMessage.error(resp?.error || '保存失败')
@@ -567,7 +580,7 @@ async function refreshCurrentKeyframes(): Promise<void> {
 
 watch(() => selectedStoryboardId.value, () => void refreshCurrentKeyframes(), { immediate: true })
 
-function onVideoDone(_result: any): void {
+function onVideoDone(_videoPath: string): void {
   // VideoSegmentPanel 完成后刷新 storyboards 拿新 videoPath
   if (selectedScene.value) {
     void storyboardStore.loadStoryboards(selectedScene.value.id)
@@ -838,6 +851,21 @@ watch(
 .kf-buttons.inline {
   display: flex;
   gap: 3px;
+}
+
+.kf-buttons.inline.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* 关键帧关闭时整体折叠的 panel：背景灰化、内容区压缩 */
+.keyframes-panel.kf-disabled {
+  opacity: 0.7;
+  background: var(--el-fill-color-lighter);
+}
+
+.keyframes-panel.kf-disabled .panel-header {
+  border-bottom: 1px dashed var(--el-border-color);
 }
 
 .kf-btn-mini {

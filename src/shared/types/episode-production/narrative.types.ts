@@ -242,6 +242,12 @@ export interface Storyboard {
   // 关键帧总数（前端编辑面板按钮组持久化字段，spec §4.2 / §4.7）
   keyframeCount?: number
 
+  /**
+   * 是否走关键帧流程（默认 true）。
+   * false → 跳过关键帧，VideoSegmentPanel 直接用 frameDescription + 资产引用生成视频。
+   */
+  useKeyframes?: boolean
+
   // 转场设置
   transition: TransitionConfig
 

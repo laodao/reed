@@ -54,6 +54,7 @@ export interface UpdateStoryboardRequest {
   videoPath?: string
   duration?: number
   keyframeCount?: number
+  useKeyframes?: boolean
   transition?: TransitionConfig
   status?: StoryboardStatus
 }
@@ -116,6 +117,7 @@ export class StoryboardRepository extends BaseRepository<
       videoPath: e.videoPath ?? undefined,
       duration: e.duration,
       keyframeCount: e.keyframeCount,
+      useKeyframes: ((e as any).useKeyframes ?? 1) !== 0,
       transition: this.parseTransition(e),
       status: e.status as StoryboardStatus,
       createdAt: this.toEpochMs(e.createdAt),
@@ -245,6 +247,10 @@ export class StoryboardRepository extends BaseRepository<
     if (data.videoPath !== undefined) { existing.videoPath = data.videoPath ?? null; changed = true }
     if (data.duration !== undefined) { existing.duration = data.duration; changed = true }
     if (data.keyframeCount !== undefined) { existing.keyframeCount = data.keyframeCount; changed = true }
+    if (data.useKeyframes !== undefined) {
+      ;(existing as any).useKeyframes = data.useKeyframes ? 1 : 0
+      changed = true
+    }
     if (data.transition !== undefined) {
       existing.transition = JSON.stringify(data.transition)
       changed = true

@@ -104,6 +104,13 @@ export class StoryboardEntity {
   @Column({ name: 'keyframe_count', type: 'integer', default: 2 })
   keyframeCount!: number
 
+  /**
+   * 是否走关键帧流程（1=true 默认；0=false）。
+   * false 时跳过关键帧，VideoSegmentPanel 用 frameDescription + 资产引用直接生成视频。
+   */
+  @Column({ name: 'use_keyframes', type: 'integer', default: 1 })
+  useKeyframes!: number
+
   /** 视频生成服务商 ID（对应 provider_config 表）*/
   @Column({ name: 'video_provider_id', type: 'varchar', nullable: true })
   videoProviderId!: string | null
