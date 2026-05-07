@@ -135,6 +135,8 @@ export interface KbDocument {
   errorMessage?: string
   /** 元数据（JSON） */
   metadata?: DocumentMetadata
+  /** 文档来源（DTO 由 sourceType/sourceId 还原） */
+  source?: DocumentSource
   /** 创建时间 */
   createdAt: Date | string
   /** 更新时间 */
@@ -174,6 +176,8 @@ export interface CreateDocumentRequest {
   fileType: FileType
   /** 文件大小 */
   fileSize: number
+  /** 文档来源（跨模块导入用），默认 NULL（用户手动上传） */
+  source?: DocumentSource
 }
 
 // ==================== 切片 ====================
@@ -382,4 +386,17 @@ export interface KnowledgeBaseStats {
   vectorCount: number
   /** 总大小（字节） */
   totalSize: number
+}
+
+// ==================== 文档来源 ====================
+
+/**
+ * 文档来源标识。
+ * 同一 KB 中 (type, id) 二元组唯一对应一篇文档；用于跨模块导入（如日记）的去重 upsert。
+ */
+export interface DocumentSource {
+  /** 来源类型；后续可扩展 'character' / 'long-writing-chapter' 等 */
+  type: 'diary'
+  /** 来源在所属模块内的稳定 ID（如 diaryEntry.id） */
+  id: string
 }
