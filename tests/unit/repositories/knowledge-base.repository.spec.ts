@@ -276,6 +276,62 @@ describe.each(getTestDialects())('KB 子系统 [%s]', dialect => {
     expect(await inv.getAverageChunkLength('k1')).toBe(4.5)
   })
 
+  it('KbDocument: findBySource 命中（同 KB 同 source）', async () => {
+    const kb = await kbs.create({
+      name: 'KB1',
+      embeddingModel: 'm',
+      embeddingDimension: 1,
+      embeddingConfig: {} as any,
+    } as any)
+    const created = await docs.create({
+      knowledgeBaseId: kb.id,
+      name: '日记A',
+      filePath: '/tmp/a.txt',
+      fileType: 'txt',
+      fileSize: 100,
+      source: { type: 'diary', id: 'diary-1' },
+    })
+    expect(created.source).toEqual({ type: 'diary', id: 'diary-1' })
+
+    const found = await docs.findBySource(kb.id, { type: 'diary', id: 'diary-1' })
+    expect(found?.id).toBe(created.id)
+  })
+
+  it('KbDocument: findBySource 不跨 KB', async () => {
+    const kb1 = await kbs.create({ name: 'KB1', embeddingModel: 'm', embeddingDimension: 1, embeddingConfig: {} as any } as any)
+    const kb2 = await kbs.create({ name: 'KB2', embeddingModel: 'm', embeddingDimension: 1, embeddingConfig: {} as any } as any)
+    await docs.create({
+      knowledgeBaseId: kb1.id,
+      name: '日记A',
+      filePath: '/tmp/a.txt',
+      fileType: 'txt',
+      fileSize: 100,
+      source: { type: 'diary', id: 'diary-1' },
+    })
+    const got = await docs.findBySource(kb2.id, { type: 'diary', id: 'diary-1' })
+    expect(got).toBeNull()
+  })
+
+  it('KbDocument: 不传 source 时 sourceType/sourceId 为 null', async () => {
+    const kb = await kbs.create({ name: 'KB1', embeddingModel: 'm', embeddingDimension: 1, embeddingConfig: {} as any } as any)
+    const doc = await docs.create({
+      knowledgeBaseId: kb.id,
+      name: '上传文档',
+      filePath: '/tmp/x.txt',
+      fileType: 'txt',
+      fileSize: 50,
+    })
+    expect(doc.source).toBeUndefined()
+    const got = await docs.findBySource(kb.id, { type: 'diary', id: 'diary-1' })
+    expect(got).toBeNull()
+  })
+
+  it('KbDocument: findBySource 不存在返回 null', async () => {
+    const kb = await kbs.create({ name: 'KB1', embeddingModel: 'm', embeddingDimension: 1, embeddingConfig: {} as any } as any)
+    const got = await docs.findBySource(kb.id, { type: 'diary', id: 'no-such' })
+    expect(got).toBeNull()
+  })
+
   it('InvertedIndex: deleteByChunkId / deleteByKnowledgeBaseId', async () => {
     await inv.insertBatch([
       { term: 'a', chunkId: 'c1', knowledgeBaseId: 'k1', termFrequency: 1 },

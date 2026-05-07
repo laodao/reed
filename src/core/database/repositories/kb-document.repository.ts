@@ -11,6 +11,7 @@ import type {
   CreateDocumentRequest,
   DocumentStatus,
   DocumentMetadata,
+  DocumentSource,
 } from '@shared/types/knowledge-base.types'
 import { KbDocumentEntity } from '../entities/kb-document.entity'
 import { BaseRepository } from '../base-repository'
@@ -36,6 +37,9 @@ export class KbDocumentRepository extends BaseRepository<
       chunkCount: e.chunkCount,
       errorMessage: e.errorMessage || undefined,
       metadata: (e.metadata as DocumentMetadata | null) ?? undefined,
+      source: (e.sourceType && e.sourceId)
+        ? { type: e.sourceType as DocumentSource['type'], id: e.sourceId }
+        : undefined,
       createdAt: e.createdAt instanceof Date ? e.createdAt : new Date(e.createdAt),
       updatedAt: e.updatedAt instanceof Date ? e.updatedAt : new Date(e.updatedAt),
     }
@@ -47,6 +51,14 @@ export class KbDocumentRepository extends BaseRepository<
 
   async findById(id: string): Promise<KbDocument | null> {
     return this.findOneByWhere({ id } as any)
+  }
+
+  async findBySource(kbId: string, source: DocumentSource): Promise<KbDocument | null> {
+    return this.findOneByWhere({
+      knowledgeBaseId: kbId,
+      sourceType: source.type,
+      sourceId: source.id,
+    } as any)
   }
 
   async findByStatus(status: DocumentStatus): Promise<KbDocument[]> {
@@ -68,6 +80,8 @@ export class KbDocumentRepository extends BaseRepository<
       chunkCount: 0,
       errorMessage: null,
       metadata: null,
+      sourceType: request.source?.type ?? null,
+      sourceId: request.source?.id ?? null,
       createdAt: now,
       updatedAt: now,
     })
@@ -98,6 +112,8 @@ export class KbDocumentRepository extends BaseRepository<
             chunkCount: 0,
             errorMessage: null,
             metadata: null,
+            sourceType: request.source?.type ?? null,
+            sourceId: request.source?.id ?? null,
             createdAt: now,
             updatedAt: now,
           }),
