@@ -17,6 +17,10 @@ import type { Repository, DataSource } from 'typeorm'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 import { AssetImageService, type AssetType } from './asset-image.service'
 import type { ImageGenerator } from './gallery-derivation.service'
+import {
+  appendLocationNoHumanConstraint,
+  mergeLocationNoHumanNegative,
+} from '../prompts/location-constraints'
 
 export interface GenerateMainInput {
   assetType: AssetType
@@ -61,10 +65,18 @@ export class MainImageGeneratorService {
       throw new Error('生成主图需要 prompt（请检查资产 effective 数据）')
     }
 
+    // location 全域无人硬约束：在 service 层收口注入，renderer 不需要再单独拼
+    let effectivePrompt = input.prompt
+    let effectiveNegative = input.negativePrompt
+    if (input.assetType === 'location') {
+      effectivePrompt = appendLocationNoHumanConstraint(input.prompt)
+      effectiveNegative = mergeLocationNoHumanNegative(input.negativePrompt)
+    }
+
     const result = await this.imageGen.generate({
       referenceImagePaths: [],
-      prompt: input.prompt,
-      negativePrompt: input.negativePrompt,
+      prompt: effectivePrompt,
+      negativePrompt: effectiveNegative,
       label: 'main',
     })
 
@@ -92,8 +104,8 @@ export class MainImageGeneratorService {
       isMain: 1,
       sortOrder: 0,
       derivedFromImageId: null,
-      prompt: input.prompt,
-      negativePrompt: input.negativePrompt ?? null,
+      prompt: effectivePrompt,
+      negativePrompt: effectiveNegative ?? null,
       width: null,
       height: null,
       createdAt: new Date(),
