@@ -9,6 +9,8 @@ import {
 describe('location-constraints · 无人约束', () => {
   it('appendLocationNoHumanConstraint: 空 prompt 返回完整后缀', () => {
     expect(appendLocationNoHumanConstraint('')).toBe(LOCATION_NO_HUMAN_SUFFIX)
+    expect(appendLocationNoHumanConstraint(null as unknown as string)).toBe(LOCATION_NO_HUMAN_SUFFIX)
+    expect(appendLocationNoHumanConstraint(undefined as unknown as string)).toBe(LOCATION_NO_HUMAN_SUFFIX)
   })
 
   it('appendLocationNoHumanConstraint: 已含约束则幂等不重复', () => {
