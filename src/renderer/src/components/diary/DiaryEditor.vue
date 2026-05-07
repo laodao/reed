@@ -20,6 +20,12 @@
               <el-dropdown-item command="html">导出 HTML</el-dropdown-item>
               <el-dropdown-item v-if="isElectron" command="pdf">导出 PDF</el-dropdown-item>
               <el-dropdown-item command="docx">导出 Word</el-dropdown-item>
+              <el-dropdown-item
+                command="kb"
+                :disabled="!content.trim()"
+              >
+                加入知识库
+              </el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -51,6 +57,14 @@
       <span class="word-count">{{ wordCount }} 字</span>
       <span class="last-saved">最后保存: {{ lastSavedTime }}</span>
     </div>
+
+    <!-- 知识库导入对话框 -->
+    <KbPickerDialog
+      v-model="showKbDialog"
+      :entry-id="props.entry.id"
+      :title="title"
+      :content="content"
+    />
   </div>
 </template>
 
@@ -59,6 +73,7 @@ import { ref, computed, watch, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Download, ArrowDown } from '@element-plus/icons-vue'
 import MarkdownEditor from '@/components/common/MarkdownEditor.vue'
+import KbPickerDialog from './KbPickerDialog.vue'
 import type { DiaryEntry } from '@shared/types/diary'
 import { toFileUrl, isElectronRenderer } from '@/utils/asset-url'
 
@@ -104,6 +119,9 @@ const saveTimeout = ref<number | null>(null)
 // 模板里据此隐藏「导出 PDF」选项
 const isElectron = isElectronRenderer()
 
+// 知识库对话框可见性
+const showKbDialog = ref(false)
+
 const wordCount = computed(() => {
   return content.value.replace(/\s/g, '').length
 })
@@ -144,6 +162,11 @@ function handleContentChange() {
 }
 
 async function handleExport(format: string) {
+  if (format === 'kb') {
+    showKbDialog.value = true
+    return
+  }
+
   try {
     // 定义文件过滤器
     const filters: Array<{ name: string; extensions: string[] }> = []
