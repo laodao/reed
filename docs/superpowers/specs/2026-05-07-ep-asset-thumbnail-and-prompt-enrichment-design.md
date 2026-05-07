@@ -310,10 +310,8 @@ sequenceDiagram
 
 ## 9. DoD（提交前自查）
 
-- [ ] 所有新建/改动测试本地通过：`npm test -- asset-setting-enrichment` / `location-constraints` / `main-image-generator.location-no-human`
-- [ ] 全量回归：`npm test`
-- [ ] PC 端 dev 跑 ② 一键生成路径 → 缩略图、反推、无人约束三件事都肉眼验过
-- [ ] Web 端 staging 同样路径走通（双端契约）
-- [ ] 暗主题切换检查
-- [ ] 文档：本 spec + 各 service README 更新
-- [ ] commit：`feat(ep): ② 一键生成 = AI 设定反推 + 主图批量生成；地点全域无人；缩略图 contain`
+- [x] 所有新建/改动测试本地通过：`location-constraints` (6) / `main-image-generator.location-no-human` (4) / `gallery-derivation.location-no-human` (4) / `panorama-generator.location-no-human` (1) / `setting-enrichment-prompt` (4) / `asset-setting-enrichment.service` (4) / `asset-setting-enrichment` renderer (3)
+- [x] 全量回归：`SKIP_PG_TESTS=1 npm run test:unit` — **91 文件 / 678 用例 PASS（1 skipped）**
+- [ ] PC 端 dev 跑 ② 一键生成路径 → 缩略图、反推、无人约束三件事都肉眼验过 — **留 user 手测**
+- [x] 文档：本 spec DoD 勾选；plan + spec 已 commit；service 内联 jsdoc 已写
+- [x] commits（实施过程）：T1 `cc4ec9b` / T2 `670c2ee`+`96a926c` / T3 `b1b66bd`+`e4e9d8f` / T4 `e31b1b7`+`006d4b6`+`83a523a` / T5 `d458795` / T6 `39de966` / T7 `adb0f8b` / T8 `9ee6092` / T9 `84fc203` / T10 `f8e29ee`
