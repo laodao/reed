@@ -27,6 +27,7 @@
         <el-button
           v-if="missingMainCount > 0"
           :loading="generatingAll"
+          :disabled="actionBusy"
           @click="onSkipEmpty"
         >
           <el-icon><Right /></el-icon>
@@ -36,6 +37,7 @@
           v-if="missingMainCount > 0"
           type="primary"
           :loading="generatingAll"
+          :disabled="actionBusy"
           @click="onGenerateAllMissing"
         >
           <el-icon><MagicStick /></el-icon>
@@ -43,7 +45,7 @@
         </el-button>
         <el-button
           type="success"
-          :disabled="!canComplete"
+          :disabled="!canComplete || actionBusy"
           @click="emit('complete')"
         >
           <span>完成本阶段 →</span>
@@ -76,11 +78,16 @@
           <el-tag size="small" round class="section-count">{{ summary.characters.length }}</el-tag>
         </span>
         <div class="section-actions">
-          <el-button size="small" :disabled="summary.characters.length === 0" @click="onBatchDerive('character')">
+          <el-button
+            size="small"
+            :loading="batchDeriving && batchDerivingKind === 'character'"
+            :disabled="summary.characters.length === 0 || actionBusy"
+            @click="onBatchDerive('character')"
+          >
             <el-icon><MagicStick /></el-icon>
             批量派生图谱
           </el-button>
-          <el-button size="small" @click="onAddCharacter">
+          <el-button size="small" :disabled="actionBusy" @click="onAddCharacter">
             <el-icon><Plus /></el-icon>
             新建角色
           </el-button>
@@ -110,11 +117,16 @@
           <el-tag size="small" round class="section-count">{{ summary.locations.length }}</el-tag>
         </span>
         <div class="section-actions">
-          <el-button size="small" :disabled="summary.locations.length === 0" @click="onBatchDerive('location')">
+          <el-button
+            size="small"
+            :loading="batchDeriving && batchDerivingKind === 'location'"
+            :disabled="summary.locations.length === 0 || actionBusy"
+            @click="onBatchDerive('location')"
+          >
             <el-icon><MagicStick /></el-icon>
             批量派生变体
           </el-button>
-          <el-button size="small" @click="onAddLocation">
+          <el-button size="small" :disabled="actionBusy" @click="onAddLocation">
             <el-icon><Plus /></el-icon>
             新建地点
           </el-button>
@@ -144,7 +156,7 @@
           <el-tag size="small" round class="section-count">{{ summary.items.length }}</el-tag>
         </span>
         <div class="section-actions">
-          <el-button size="small" @click="onAddItem">
+          <el-button size="small" :disabled="actionBusy" @click="onAddItem">
             <el-icon><Plus /></el-icon>
             新建物品
           </el-button>
@@ -174,7 +186,7 @@
           <el-tag size="small" round class="section-count">{{ summary.voices.length }}</el-tag>
         </span>
         <div class="section-actions">
-          <el-button size="small" @click="onAddVoice">
+          <el-button size="small" :disabled="actionBusy" @click="onAddVoice">
             <el-icon><Plus /></el-icon>
             复刻新音色
           </el-button>
@@ -409,9 +421,17 @@ const CATEGORY_LABELS: Record<'character' | 'location', Array<{ key: string; lab
 }
 
 const batchDeriving = ref(false)
+const batchDerivingKind = ref<'character' | 'location' | null>(null)
+const deletingBinding = ref(false)
+
+/** 全 stage 级繁忙：任一 action 进行中，所有按钮置灰 */
+const actionBusy = computed(
+  () => generatingAll.value || batchDeriving.value || deletingBinding.value,
+)
 
 async function onBatchDerive(kind: 'character' | 'location'): Promise<void> {
-  if (batchDeriving.value) return
+  if (actionBusy.value) return
+  batchDerivingKind.value = kind
   const list = kind === 'character' ? summary.value.characters : summary.value.locations
   const eligible = list.filter((b: any) => b.hasMain) // 没主图无法派生
   if (eligible.length === 0) {
@@ -458,6 +478,7 @@ async function onBatchDerive(kind: 'character' | 'location'): Promise<void> {
     await reload()
   } finally {
     batchDeriving.value = false
+    batchDerivingKind.value = null
   }
   if (failBindings === 0) {
     ElMessage.success(`已派生 ${okBindings} 个${kind === 'character' ? '角色' : '地点'}的图谱`)
@@ -550,6 +571,7 @@ async function onDeleteBinding(
   bindingId: string,
   name: string,
 ): Promise<void> {
+  if (actionBusy.value) return
   const labelMap = { character: '角色', location: '地点', item: '物品' } as const
   const label = labelMap[kind]
   try {
@@ -566,6 +588,7 @@ async function onDeleteBinding(
     ElMessage.error(`${label}删除 IPC 未暴露`)
     return
   }
+  deletingBinding.value = true
   try {
     const resp = await api[kind].delete(bindingId)
     if (!resp?.success) {
@@ -576,6 +599,8 @@ async function onDeleteBinding(
     await reload()
   } catch (e: any) {
     ElMessage.error(e?.message || `删除${label}失败`)
+  } finally {
+    deletingBinding.value = false
   }
 }
 </script>

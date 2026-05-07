@@ -15,6 +15,7 @@ import {
   appendCharacterConstraints,
   mergeCharacterNegative,
 } from '@core/modules/episode-production/assets/prompts/character-constraints'
+import { buildStylePromptHint } from '@core/modules/episode-production/assets/constants/style-presets'
 
 type AssetType = 'character' | 'location' | 'item'
 
@@ -70,10 +71,10 @@ async function buildPromptFromEffective(
     if (Array.isArray(eff.outfitsExtra) && eff.outfitsExtra.length > 0) {
       parts.push(`备选服装：${eff.outfitsExtra.join(' / ')}`)
     }
-    if (Array.isArray(eff.styleAnchors) && eff.styleAnchors.length > 0) {
-      parts.push(`风格：${eff.styleAnchors.join(' / ')}`)
-    }
   }
+  // 风格锚点（character/location/item 通用）：中英双写，让各家 provider 命中率更高
+  const styleHint = buildStylePromptHint(parseStyleAnchors(eff.styleAnchors))
+  if (styleHint) parts.push(`风格：${styleHint}`)
   let prompt = parts.filter(Boolean).join('，')
   if (!prompt) {
     throw new Error('请先在设定卡填写名称或描述，AI 才有可生成内容')
@@ -85,6 +86,29 @@ async function buildPromptFromEffective(
     return { prompt, negativePrompt: mergeCharacterNegative(undefined, 'fullBody') }
   }
   return { prompt }
+}
+
+/**
+ * styleAnchors 来自 effective 投影时可能是 JSON 字符串（DB 字段是 text）或已解析的数组。
+ * 安全地解析为字符串数组；非法输入返回空数组。
+ */
+function parseStyleAnchors(raw: unknown): string[] {
+  if (!raw) return []
+  if (Array.isArray(raw)) return raw.filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+  if (typeof raw === 'string') {
+    const t = raw.trim()
+    if (!t) return []
+    try {
+      const parsed = JSON.parse(t)
+      if (Array.isArray(parsed)) {
+        return parsed.filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+      }
+    } catch {
+      // 非 JSON：当成单个风格
+      return [t]
+    }
+  }
+  return []
 }
 
 /**

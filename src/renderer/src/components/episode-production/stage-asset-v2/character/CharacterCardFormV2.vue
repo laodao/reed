@@ -130,6 +130,28 @@
       </el-form>
     </section>
 
+    <!-- ③.5 风格 -->
+    <section class="form-section">
+      <div class="section-label">风格</div>
+      <el-form label-width="60px" size="small" label-position="left">
+        <el-form-item label="风格">
+          <el-select
+            v-model="form.styleAnchors"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            placeholder="选择或输入主流风格（多选；按回车自定义）"
+            class="full-width"
+            @change="onChange('styleAnchors', form.styleAnchors, !arraysEqual(form.styleAnchors, initial.styleAnchors))"
+          >
+            <el-option v-for="s in STYLE_PRESETS" :key="s" :label="s" :value="s" />
+          </el-select>
+        </el-form-item>
+        <p class="section-note">主流风格（卡通 / 二次元 / 写实 等）会作为 prompt 锚点，影响主图与所有派生图的整体观感。</p>
+      </el-form>
+    </section>
+
     <!-- ④ 声音 -->
     <section class="form-section">
       <div class="section-label">声音</div>
@@ -187,6 +209,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { STYLE_PRESETS } from '@core/modules/episode-production/assets/constants/style-presets'
 
 export interface FormChangePayload {
   key: string

@@ -139,19 +139,22 @@
       </el-form>
     </section>
 
-    <!-- ⑤ 风格锚点 -->
+    <!-- ⑤ 风格 -->
     <section class="form-section">
-      <div class="section-label">风格锚点</div>
+      <div class="section-label">风格</div>
       <el-select
         v-model="form.styleAnchors"
         multiple
         filterable
         allow-create
         default-first-option
-        placeholder="如：工笔国风 / 水墨 / 微写实"
+        placeholder="选择或输入主流风格（多选；按回车自定义）"
         class="full-width"
         @change="onChange('styleAnchors', form.styleAnchors, !arraysEqual(form.styleAnchors, initial.styleAnchors))"
-      />
+      >
+        <el-option v-for="s in STYLE_PRESETS" :key="s" :label="s" :value="s" />
+      </el-select>
+      <p class="section-note">主流风格（卡通 / 二次元 / 写实 等）会作为 prompt 锚点，影响主图与所有派生图的整体观感。</p>
     </section>
 
     <!-- ⑥ 360 全景 + 3D 升级提示 -->
@@ -170,6 +173,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
+import { STYLE_PRESETS } from '@core/modules/episode-production/assets/constants/style-presets'
 
 export interface FormChangePayload {
   key: string
