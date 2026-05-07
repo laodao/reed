@@ -47,7 +47,7 @@ describe('MainImageGeneratorService · location 无人自动注入', () => {
   })
 
   it('location 主图：prompt 自动追加无人约束、negative 自动合并', async () => {
-    await svc.generateMain({
+    const entity = await svc.generateMain({
       assetType: 'location',
       assetId: 'loc1',
       prompt: '古风茶馆',
@@ -58,6 +58,9 @@ describe('MainImageGeneratorService · location 无人自动注入', () => {
     expect(c.prompt.includes('古风茶馆')).toBe(true)
     expect(c.negativePrompt).toBeDefined()
     expect(c.negativePrompt!.includes('person')).toBe(true)
+    // 写库一致性：entity 的 prompt / negativePrompt 必须是 effective 版本
+    expect(entity.prompt).toBe(c.prompt)
+    expect(entity.negativePrompt ?? null).toBe(c.negativePrompt ?? null)
   })
 
   it('character 主图：不注入无人约束', async () => {
