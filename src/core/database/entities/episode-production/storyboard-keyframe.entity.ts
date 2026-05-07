@@ -62,6 +62,14 @@ export class StoryboardKeyframeEntity {
   @Column({ name: 'user_prompt_override', type: 'text', nullable: true })
   userPromptOverride!: string | null
 
+  /**
+   * 用户为本帧手动指定的参考图覆盖列表（阶段 2 · 精细控制）：
+   * 存为 JSON 字符串 `[{ kind, bindingId, imageId }]`。
+   * 生成时优先用 override；override 没指定的资产仍走 pickReferenceImage 自动评分。
+   */
+  @Column({ name: 'reference_overrides', type: 'text', nullable: true })
+  referenceOverrides!: string | null
+
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 

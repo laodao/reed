@@ -27,6 +27,67 @@ export function registerKeyframeHandlers(): void {
   ipcBridge.handle('ep:plan-keyframe-regen', handlePlanKeyframeRegen)
   // 在两帧之间插入一帧
   ipcBridge.handle('ep:insert-keyframe-between', handleInsertKeyframeBetween)
+  // 阶段 2：用户为某帧挑图 override
+  ipcBridge.handle('ep:set-keyframe-reference-overrides', handleSetKeyframeReferenceOverrides)
+  // 阶段 2 配套：列某资产下全部图（让前端"挑图"dialog 渲染网格）
+  ipcBridge.handle('ep:list-asset-images', handleListAssetImages)
+}
+
+async function handleSetKeyframeReferenceOverrides(
+  _event: any,
+  keyframeId: string,
+  overrides: Array<{ kind: 'character' | 'location' | 'item'; bindingId: string; imageId: string }>,
+): Promise<IpcResponse> {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+    const svc = new KeyframeGenerationService(db.dataSource)
+    const data = await svc.setReferenceOverrides(keyframeId, overrides ?? [])
+    return { success: true, data }
+  } catch (e: any) {
+    console.error('[handleSetKeyframeReferenceOverrides] 失败:', e)
+    return { success: false, error: e?.message ?? '保存挑图覆盖失败' }
+  }
+}
+
+/**
+ * 列某资产下全部 asset_image。
+ * 前端"挑图"dialog 用此 IPC 拉每个资产的图谱网格让用户挑选。
+ */
+async function handleListAssetImages(
+  _event: any,
+  assetType: 'character' | 'location' | 'item',
+  assetId: string,
+): Promise<IpcResponse> {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+    const rows = await db.dataSource
+      .getRepository(AssetImageEntity)
+      .createQueryBuilder('ai')
+      .where('ai.assetType = :assetType AND ai.assetId = :assetId', {
+        assetType,
+        assetId,
+      })
+      .orderBy('ai.isMain', 'DESC')
+      .addOrderBy('ai.sortOrder', 'ASC')
+      .addOrderBy('ai.createdAt', 'ASC')
+      .getMany()
+    return {
+      success: true,
+      data: rows.map((r) => ({
+        id: r.id,
+        imagePath: r.imagePath,
+        thumbnailPath: r.thumbnailPath ?? null,
+        category: r.category,
+        label: r.label ?? null,
+        isMain: r.isMain === 1,
+      })),
+    }
+  } catch (e: any) {
+    console.error('[handleListAssetImages] 失败:', e)
+    return { success: false, error: e?.message ?? '列资产图失败' }
+  }
 }
 
 async function handleInsertKeyframeBetween(

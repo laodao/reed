@@ -11,6 +11,13 @@ import { BaseRepository } from '../base-repository'
 
 export type KeyframeRole = 'start' | 'middle' | 'end' | 'extra'
 
+/** 关键帧上的参考图覆盖项（阶段 2 · 用户精细挑图） */
+export interface KeyframeReferenceOverride {
+  kind: 'character' | 'location' | 'item'
+  bindingId: string
+  imageId: string
+}
+
 /** keyframe DTO（不引入 shared types 避免循环；entity 字段已稳定）*/
 export interface StoryboardKeyframe {
   id: string
@@ -24,6 +31,8 @@ export interface StoryboardKeyframe {
   negativePrompt: string | null
   /** 用户提示词 override（FU5-A9-L4 / spec §4.5.7）*/
   userPromptOverride: string | null
+  /** 用户挑图 override 列表（阶段 2）；JSON 解析后数组，无 → [] */
+  referenceOverrides: KeyframeReferenceOverride[]
   createdAt: number
   updatedAt: number
 }
@@ -48,6 +57,8 @@ export interface UpdateKeyframeRequest {
   timePercent?: number
   frameRole?: KeyframeRole
   userPromptOverride?: string | null
+  /** 阶段 2：用户挑图覆盖；undefined = 不动；null = 清空；数组 = 替换 */
+  referenceOverrides?: KeyframeReferenceOverride[] | null
 }
 
 export class StoryboardKeyframeRepository extends BaseRepository<
@@ -77,6 +88,7 @@ export class StoryboardKeyframeRepository extends BaseRepository<
       prompt: e.prompt,
       negativePrompt: e.negativePrompt,
       userPromptOverride: e.userPromptOverride ?? null,
+      referenceOverrides: parseReferenceOverrides((e as any).referenceOverrides),
       createdAt: this.toEpochMs(e.createdAt),
       updatedAt: this.toEpochMs(e.updatedAt),
     }
@@ -185,6 +197,13 @@ export class StoryboardKeyframeRepository extends BaseRepository<
       existing.userPromptOverride = data.userPromptOverride ?? null
       changed = true
     }
+    if (data.referenceOverrides !== undefined) {
+      ;(existing as any).referenceOverrides =
+        data.referenceOverrides && data.referenceOverrides.length > 0
+          ? JSON.stringify(data.referenceOverrides)
+          : null
+      changed = true
+    }
 
     if (!changed) return this.toDto(existing)
 
@@ -214,4 +233,34 @@ export class StoryboardKeyframeRepository extends BaseRepository<
     if (role === 'middle') return 0.5
     return 0.5 // extra
   }
+}
+
+/**
+ * 把 reference_overrides 列（JSON 字符串）解析成数组；
+ * 失败 / null / 不是数组 → []。
+ */
+function parseReferenceOverrides(raw: unknown): KeyframeReferenceOverride[] {
+  if (!raw) return []
+  let parsed: unknown = raw
+  if (typeof raw === 'string') {
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      return []
+    }
+  }
+  if (!Array.isArray(parsed)) return []
+  const out: KeyframeReferenceOverride[] = []
+  for (const item of parsed) {
+    if (!item || typeof item !== 'object') continue
+    const it = item as any
+    if (
+      (it.kind === 'character' || it.kind === 'location' || it.kind === 'item') &&
+      typeof it.bindingId === 'string' &&
+      typeof it.imageId === 'string'
+    ) {
+      out.push({ kind: it.kind, bindingId: it.bindingId, imageId: it.imageId })
+    }
+  }
+  return out
 }

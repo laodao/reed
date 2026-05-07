@@ -34,6 +34,7 @@ import { StoryboardKeyframeEntity } from '@core/database/entities/episode-produc
 import {
   StoryboardKeyframeRepository,
   type StoryboardKeyframe,
+  type KeyframeReferenceOverride,
 } from '@core/database/repositories/storyboard-keyframe.repository'
 import { StoryboardCharacterRepository } from '@core/database/repositories/storyboard-character.repository'
 import { ImageAssetRepository } from '@core/database/repositories/image-asset.repository'
@@ -201,16 +202,43 @@ export class KeyframeGenerationService {
         ? input.userPrompt
         : (old as any).userPromptOverride ?? null
 
+    // 阶段 2：旧帧上的 referenceOverrides 也透传给生成 — 用户挑过图就尊重选择
+    const oldDto = await this.keyframeRepo.getById(input.keyframeId)
+    const referenceOverrides = oldDto?.referenceOverrides ?? null
+
     // 删旧帧再写新帧（保持 frameIndex 唯一性 / id 不复用）
     await this.keyframeRepo.delete(old.id)
-    return await this.generateOneKeyframe({
+    const created = await this.generateOneKeyframe({
       storyboard: sb,
       scene,
       plan: planItem,
       sceneAssets,
       styleConfig,
       userPrompt: effectiveUserPrompt,
+      referenceOverrides,
     })
+    // 把旧 override 持久化到新帧（generateOneKeyframe 不会自动写）
+    if (referenceOverrides && referenceOverrides.length > 0) {
+      await this.keyframeRepo.update(created.id, {
+        referenceOverrides,
+      })
+    }
+    return created
+  }
+
+  /**
+   * 用户为某帧手动指定参考图。仅写入 keyframe.referenceOverrides 字段，
+   * 不立即重生（UI 控制：用户挑完图后选择"保存"或"保存并重生"）。
+   */
+  async setReferenceOverrides(
+    keyframeId: string,
+    overrides: KeyframeReferenceOverride[],
+  ): Promise<StoryboardKeyframe> {
+    const updated = await this.keyframeRepo.update(keyframeId, {
+      referenceOverrides: overrides,
+    })
+    if (!updated) throw new Error(`Keyframe not found: ${keyframeId}`)
+    return updated
   }
 
   /** 列出某分镜的全部关键帧（按 frame_index 升序）*/
@@ -395,13 +423,17 @@ export class KeyframeGenerationService {
     styleConfig: StyleConfig
     /** P5-T26 用户额外提示词，传给 prompt-builder */
     userPrompt?: string | null
+    /** 阶段 2：用户挑图覆盖 — 命中 (kind, bindingId) 的资产直接用指定 imageId 查图；其余走自动评分 */
+    referenceOverrides?: KeyframeReferenceOverride[] | null
   }): Promise<StoryboardKeyframe> {
     const { storyboard, scene, plan, sceneAssets, styleConfig, userPrompt } = args
 
-    // 选 ref 图（每个出场角色 / 地点 / 道具按维度评分挑变体）
-    // ref 图当前不传给 provider（ImageGenerator 接口未暴露 referenceImagePaths），
-    // 但仍提前做选择以便 metadata / 后续 provider 升级使用
-    const refImages = await this.collectReferenceImages(sceneAssets, scene)
+    // 选 ref 图：先看用户 override，再走自动评分兜底
+    const refImages = await this.collectReferenceImages(
+      sceneAssets,
+      scene,
+      args.referenceOverrides ?? null,
+    )
 
     // 拼提示词
     const promptOut = buildKeyframePrompt({
@@ -466,7 +498,12 @@ export class KeyframeGenerationService {
     })
   }
 
-  /** 给场景资产挑参考图（每类资产取最匹配变体），返回打中的 asset_image 列表 */
+  /**
+   * 给场景资产挑参考图。每类资产先看 override，没有再按维度评分挑变体。
+   *
+   * @param overrides 用户挑图覆盖列表；命中的 (kind, bindingId) 直接用指定 imageId
+   *                  查图（找不到 imageId 则回退到自动评分）。
+   */
   private async collectReferenceImages(
     assets: {
       characters: ResolvedCharacterRef[]
@@ -474,18 +511,46 @@ export class KeyframeGenerationService {
       items: ResolvedItemRef[]
     },
     scene: SceneScriptEntity,
+    overrides: KeyframeReferenceOverride[] | null = null,
   ): Promise<Array<{ id: string; imagePath: string }>> {
     const refs: Array<{ id: string; imagePath: string }> = []
+    const overrideMap = new Map<string, string>()
+    for (const o of overrides ?? []) {
+      overrideMap.set(`${o.kind}:${o.bindingId}`, o.imageId)
+    }
+
+    /** 命中 override 时按 imageId 拉一次 asset_image；找不到/不匹配时返回 null 让外层走 fallback */
+    const tryOverride = async (
+      kind: 'character' | 'location' | 'item',
+      bindingId: string,
+    ): Promise<{ id: string; imagePath: string } | null> => {
+      const imageId = overrideMap.get(`${kind}:${bindingId}`)
+      if (!imageId) return null
+      const list = await this.imageSvc.listByAsset(kind, bindingId)
+      const hit = list.find((img) => img.id === imageId)
+      if (!hit) return null
+      return { id: hit.id, imagePath: hit.imagePath }
+    }
 
     if (assets.location) {
-      const r = await pickReferenceImage(this.imageSvc, {
-        kind: 'location',
-        bindingId: assets.location.bindingId,
-        dims: { time: scene.timeOfDay, weather: scene.weather ?? undefined },
-      })
-      if (r.image) refs.push({ id: r.image.id, imagePath: r.image.imagePath })
+      const ov = await tryOverride('location', assets.location.bindingId)
+      if (ov) {
+        refs.push(ov)
+      } else {
+        const r = await pickReferenceImage(this.imageSvc, {
+          kind: 'location',
+          bindingId: assets.location.bindingId,
+          dims: { time: scene.timeOfDay, weather: scene.weather ?? undefined },
+        })
+        if (r.image) refs.push({ id: r.image.id, imagePath: r.image.imagePath })
+      }
     }
     for (const c of assets.characters) {
+      const ov = await tryOverride('character', c.bindingId)
+      if (ov) {
+        refs.push(ov)
+        continue
+      }
       const sceneRole = c.sceneRole ?? {}
       const r = await pickReferenceImage(this.imageSvc, {
         kind: 'character',
@@ -498,6 +563,11 @@ export class KeyframeGenerationService {
       if (r.image) refs.push({ id: r.image.id, imagePath: r.image.imagePath })
     }
     for (const it of assets.items) {
+      const ov = await tryOverride('item', it.bindingId)
+      if (ov) {
+        refs.push(ov)
+        continue
+      }
       const r = await pickReferenceImage(this.imageSvc, {
         kind: 'item',
         bindingId: it.bindingId,

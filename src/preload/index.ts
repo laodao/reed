@@ -170,6 +170,8 @@ const IPC_CHANNELS = {
   EP_LIST_KEYFRAMES: 'ep:list-keyframes',
   EP_PLAN_KEYFRAME_REGEN: 'ep:plan-keyframe-regen',
   EP_INSERT_KEYFRAME_BETWEEN: 'ep:insert-keyframe-between',
+  EP_SET_KEYFRAME_REFERENCE_OVERRIDES: 'ep:set-keyframe-reference-overrides',
+  EP_LIST_ASSET_IMAGES: 'ep:list-asset-images',
 
   // P5-T13 视频片段 + provider 列表
   EP_LIST_VIDEO_PROVIDERS: 'ep:list-video-providers',
@@ -1698,6 +1700,24 @@ const electronAPI = {
         afterKeyframeId,
         userPrompt,
       ),
+    setKeyframeReferenceOverrides: (
+      keyframeId: string,
+      overrides: Array<{
+        kind: 'character' | 'location' | 'item'
+        bindingId: string
+        imageId: string
+      }>,
+    ) =>
+      ipcRenderer.invoke(
+        IPC_CHANNELS.EP_SET_KEYFRAME_REFERENCE_OVERRIDES,
+        keyframeId,
+        overrides,
+      ),
+    listAssetImages: (
+      assetType: 'character' | 'location' | 'item',
+      assetId: string,
+    ) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_LIST_ASSET_IMAGES, assetType, assetId),
     planKeyframeRegen: (changedFrameIndex: number, keyframeCount: number) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_PLAN_KEYFRAME_REGEN, changedFrameIndex, keyframeCount),
 

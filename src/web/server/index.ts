@@ -53,6 +53,7 @@ import { addKeyframeUserPromptOverride } from '@core/database/migrations/add-key
 import { addCharacterBindingExtraFields } from '@core/database/migrations/add-character-binding-extra-fields'
 import { addCharacterBindingRace } from '@core/database/migrations/add-character-binding-race'
 import { addStoryboardKeyframeCount } from '@core/database/migrations/add-storyboard-keyframe-count'
+import { addKeyframeReferenceOverrides } from '@core/database/migrations/add-keyframe-reference-overrides'
 import { addLocationBindingExtraFields } from '@core/database/migrations/add-location-binding-extra-fields'
 import { registerCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { LanceDBService } from '@core/services/lance-db.service'
@@ -219,6 +220,8 @@ async function initDatabase(): Promise<void> {
   await addCharacterBindingRace(ds)
   // 分镜 keyframe_count 字段（前端编辑面板有按钮组但保存链路缺）
   await addStoryboardKeyframeCount(ds)
+  // 关键帧 reference_overrides：用户精细挑图覆盖
+  await addKeyframeReferenceOverrides(ds)
   // FU5-C3: location_bindings 加场景类型 + 规模 + 氛围 + 风格锚点字段（spec §3.2/3.3）
   await addLocationBindingExtraFields(ds)
 

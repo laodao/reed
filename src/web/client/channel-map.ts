@@ -425,6 +425,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.listKeyframes': { channel: 'ep:list-keyframes' },
   'episodeProduction.planKeyframeRegen': { channel: 'ep:plan-keyframe-regen' },
   'episodeProduction.insertKeyframeBetween': { channel: 'ep:insert-keyframe-between' },
+  'episodeProduction.setKeyframeReferenceOverrides': { channel: 'ep:set-keyframe-reference-overrides' },
+  'episodeProduction.listAssetImages': { channel: 'ep:list-asset-images' },
   // P5-T13 视频片段
   'episodeProduction.listVideoProviders': { channel: 'ep:list-video-providers' },
   'episodeProduction.getProviderCapabilities': { channel: 'ep:get-provider-capabilities' },

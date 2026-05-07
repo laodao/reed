@@ -107,9 +107,17 @@
             </span>
           </div>
 
-          <!-- 阶段 1：实际作为参考图传给 AI 的资产列表（缩略图 + 名字） -->
-          <div v-if="(kf.references ?? []).length > 0" class="info-refs">
-            <div class="info-refs-title">基于</div>
+          <!-- 阶段 1+2：实际作为参考图传给 AI 的资产列表 + 挑图入口 -->
+          <div v-if="(kf.references ?? []).length > 0 || hasPickableAssets" class="info-refs">
+            <div class="info-refs-title">
+              <span>基于</span>
+              <button
+                v-if="hasPickableAssets"
+                class="info-pick-btn"
+                :title="'手动挑选每个资产的参考图'"
+                @click="openPicker(kf)"
+              >🎯 挑图</button>
+            </div>
             <div class="info-refs-list">
               <div
                 v-for="r in kf.references"
@@ -189,6 +197,16 @@
         <pre>{{ previewKeyframe.prompt }}</pre>
       </div>
     </el-dialog>
+
+    <!-- 阶段 2：挑图 dialog -->
+    <KeyframeReferencePicker
+      v-model="pickerOpen"
+      :keyframe-id="pickerKeyframeId"
+      :assets="pickableAssetsForCurrent"
+      :existing-references="pickerExistingReferences"
+      :existing-overrides="pickerExistingOverrides"
+      @saved="onPickerSaved"
+    />
   </div>
 </template>
 
@@ -218,6 +236,7 @@ import {
 } from '@element-plus/icons-vue'
 import { toImageUrl } from '@/utils/asset-url'
 import { useEpAssetStore, useEpScriptStore } from '@/stores/episode-production'
+import KeyframeReferencePicker from './KeyframeReferencePicker.vue'
 
 interface KeyframeReference {
   id: string
@@ -242,6 +261,12 @@ interface Keyframe {
   imagePath?: string | null
   /** 阶段 1：handler 解析 image_assets.metadata.referenceImageIds 后返回的真实 reference 列表 */
   references?: KeyframeReference[]
+  /** 阶段 2：用户挑图覆盖（来自 keyframe.referenceOverrides） */
+  referenceOverrides?: Array<{
+    kind: 'character' | 'location' | 'item'
+    bindingId: string
+    imageId: string
+  }>
 }
 
 const props = withDefaults(
@@ -429,6 +454,70 @@ function refKindEmoji(t: string): string {
   if (t === 'location') return '📍'
   if (t === 'item') return '⚔️'
   return '📦'
+}
+
+// ===== 阶段 2 · 挑图 dialog =====
+const pickerOpen = ref(false)
+const pickerKeyframeId = ref<string | null>(null)
+const pickerKeyframeRef = ref<Keyframe | null>(null)
+
+/**
+ * 本帧出场资产清单（kind/bindingId/name）。
+ * 数据源优先：分镜级 storyboard_characters → 场景级 scene.characters；
+ * 地点：scene.location（与 binding 模糊匹配）；
+ * 物品：scene.characters[].props（暂未接入 picker — 留 follow-up）。
+ *
+ * 这里复用上面已有的 characterChips / locationChip 数据流，但要把"name"映射回 binding.id。
+ */
+const pickableAssetsForCurrent = computed(() => {
+  const list: Array<{ kind: 'character' | 'location' | 'item'; bindingId: string; name: string }> = []
+
+  // location：从 scene.location（名字字符串）模糊匹配 binding
+  const sceneLoc = currentScene.value?.location
+  if (sceneLoc) {
+    const locBinding = (assetStore.epAssetLocations as any[]).find((b) => {
+      const a = String(b.standaloneName ?? '').trim()
+      const c = String(b.overrideName ?? '').trim()
+      const d = String(b.locationName ?? '').trim()
+      return [a, c, d].some((n) => n && n === sceneLoc)
+    })
+    if (locBinding) list.push({ kind: 'location', bindingId: locBinding.id, name: sceneLoc })
+  }
+
+  // characters：复用 characterChips 已经做过的 binding 解析
+  for (const c of characterChips.value) {
+    if (!c.id) continue
+    list.push({ kind: 'character', bindingId: c.id, name: c.name })
+  }
+
+  return list
+})
+
+const hasPickableAssets = computed(() => pickableAssetsForCurrent.value.length > 0)
+
+function pickerExistingRefs() {
+  return (pickerKeyframeRef.value?.references ?? []).map((r) => ({
+    bindingId: r.assetId,
+    assetType: r.assetType,
+    id: r.id,
+    assetName: r.assetName,
+  }))
+}
+
+const pickerExistingReferences = computed(() => pickerExistingRefs())
+
+const pickerExistingOverrides = computed(
+  () => pickerKeyframeRef.value?.referenceOverrides ?? [],
+)
+
+function openPicker(kf: Keyframe): void {
+  pickerKeyframeRef.value = kf
+  pickerKeyframeId.value = kf.id
+  pickerOpen.value = true
+}
+
+async function onPickerSaved(_: { regenerated: boolean }): Promise<void> {
+  await loadKeyframes()
 }
 
 /** "+" 在两帧之间插入新帧（frameRole='extra'，timePercent 取中点） */
@@ -671,9 +760,27 @@ defineExpose({ reload: loadKeyframes })
 }
 
 .info-refs-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: 10px;
   color: var(--el-text-color-placeholder);
   margin-bottom: 2px;
+}
+
+.info-pick-btn {
+  border: none;
+  background: transparent;
+  color: var(--el-color-primary);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0 2px;
+  height: 16px;
+  line-height: 16px;
+}
+
+.info-pick-btn:hover {
+  text-decoration: underline;
 }
 
 .info-refs-list {
