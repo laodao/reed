@@ -39,6 +39,13 @@ export interface UpdateVideoEpisodeRequest {
   uploadedCharacters?: UploadedCharacter[]
   uploadedLocations?: UploadedLocation[]
   uploadedItems?: UploadedItem[]
+  // ─── 故事背景（spec 2026-05-08）───
+  /** 故事年代（如"民国初年"/"唐代盛世"），null 表示清空 */
+  storyEra?: string | null
+  /** 故事地域 */
+  storyRegion?: string | null
+  /** 其他背景描述（自由文本） */
+  storyBackgroundExtra?: string | null
 }
 
 export class VideoEpisodeRepository extends BaseRepository<
@@ -75,6 +82,9 @@ export class VideoEpisodeRepository extends BaseRepository<
       duration: e.duration,
       scriptId: e.scriptId || undefined,
       audioTracks: ((e.audioTracks as AudioTrack[] | null) ?? []) as AudioTrack[],
+      storyEra: (e as any).storyEra ?? undefined,
+      storyRegion: (e as any).storyRegion ?? undefined,
+      storyBackgroundExtra: (e as any).storyBackgroundExtra ?? undefined,
       createdAt: this.toEpochMs(e.createdAt),
       updatedAt: this.toEpochMs(e.updatedAt),
     }
@@ -199,6 +209,18 @@ export class VideoEpisodeRepository extends BaseRepository<
     }
     if (data.uploadedItems !== undefined) {
       ;(existing as any).uploadedItems = data.uploadedItems as unknown[]
+      changed = true
+    }
+    if (data.storyEra !== undefined) {
+      ;(existing as any).storyEra = data.storyEra
+      changed = true
+    }
+    if (data.storyRegion !== undefined) {
+      ;(existing as any).storyRegion = data.storyRegion
+      changed = true
+    }
+    if (data.storyBackgroundExtra !== undefined) {
+      ;(existing as any).storyBackgroundExtra = data.storyBackgroundExtra
       changed = true
     }
 

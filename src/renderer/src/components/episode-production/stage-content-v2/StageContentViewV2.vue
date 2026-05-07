@@ -63,8 +63,10 @@
     </div>
 
     <div v-else class="content-body">
+      <!-- 原文 + 故事背景 横向布局（spec 2026-05-08：右侧加故事背景卡） -->
+      <div v-if="episode.sourceType === 'uploaded' && episode.uploadedContent" class="excerpt-row">
       <!-- 原文片段 panel（只读高亮 / 编辑双模式） -->
-      <section v-if="episode.sourceType === 'uploaded' && episode.uploadedContent" class="excerpt-panel">
+      <section class="excerpt-panel">
         <div class="panel-header">
           <span class="panel-title">原文片段</span>
           <span class="panel-actions">
@@ -136,6 +138,46 @@
           </template>
         </div>
       </section>
+
+      <!-- 故事背景卡（spec 2026-05-08）：年代 / 地域 / 其他描述；参与主图 prompt 拼接 -->
+      <section class="story-background-panel">
+        <div class="panel-header">
+          <span class="panel-title">📜 故事背景</span>
+          <el-button
+            size="small"
+            type="primary"
+            :disabled="!storyBgDirty || savingStoryBg"
+            :loading="savingStoryBg"
+            @click="saveStoryBackground"
+          >保存</el-button>
+        </div>
+        <el-form label-position="top" size="small" class="story-bg-form">
+          <el-form-item label="年代">
+            <el-input
+              v-model="storyBg.era"
+              placeholder="如：民国初年 / 唐代盛世 / 近未来 2080 年"
+            />
+          </el-form-item>
+          <el-form-item label="地域">
+            <el-input
+              v-model="storyBg.region"
+              placeholder="如：江南水乡 / 东京涩谷 / 北欧雪原"
+            />
+          </el-form-item>
+          <el-form-item label="其他描述">
+            <el-input
+              v-model="storyBg.extra"
+              type="textarea"
+              :rows="6"
+              placeholder="阶级背景 / 文化氛围 / 时代关键事件 等自由文本"
+            />
+          </el-form-item>
+        </el-form>
+        <div class="story-bg-tip">
+          故事背景将作为生成主图 / 派生图的 prompt 锚点，与角色/地点/物品风格一起拼接到 AI prompt。
+        </div>
+      </section>
+      </div>
 
       <!-- 识别要素清单标题 -->
       <div class="entities-section-header">
@@ -292,6 +334,52 @@ const savingContent = ref(false)
 const editContentDraft = ref('')
 const editContentOriginal = ref('')
 
+// ===== 故事背景（spec 2026-05-08）=====
+const storyBg = ref<{ era: string; region: string; extra: string }>({
+  era: '',
+  region: '',
+  extra: '',
+})
+const storyBgInitial = ref<{ era: string; region: string; extra: string }>({
+  era: '',
+  region: '',
+  extra: '',
+})
+const savingStoryBg = ref(false)
+const storyBgDirty = computed(
+  () =>
+    storyBg.value.era !== storyBgInitial.value.era ||
+    storyBg.value.region !== storyBgInitial.value.region ||
+    storyBg.value.extra !== storyBgInitial.value.extra,
+)
+
+function loadStoryBgFromEpisode(ep: VideoEpisode | null): void {
+  const era = ep?.storyEra ?? ''
+  const region = ep?.storyRegion ?? ''
+  const extra = ep?.storyBackgroundExtra ?? ''
+  storyBg.value = { era, region, extra }
+  storyBgInitial.value = { era, region, extra }
+}
+
+async function saveStoryBackground(): Promise<void> {
+  if (!props.episode) return
+  if (savingStoryBg.value) return
+  savingStoryBg.value = true
+  try {
+    await episodeStore.updateEpisode(props.episode.id, {
+      storyEra: storyBg.value.era,
+      storyRegion: storyBg.value.region,
+      storyBackgroundExtra: storyBg.value.extra,
+    } as any)
+    storyBgInitial.value = { ...storyBg.value }
+    ElMessage.success('故事背景已保存')
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '故事背景保存失败')
+  } finally {
+    savingStoryBg.value = false
+  }
+}
+
 const editContentDirty = computed(
   () => editContentDraft.value !== editContentOriginal.value,
 )
@@ -328,6 +416,7 @@ watch(
 )
 
 function syncFromEpisode(ep: VideoEpisode | null): void {
+  loadStoryBgFromEpisode(ep)
   if (!ep) {
     characters.value = []
     locations.value = []
@@ -791,11 +880,54 @@ async function onConfirm(): Promise<void> {
   gap: 14px;
 }
 
+.excerpt-row {
+  display: flex;
+  gap: 14px;
+  align-items: stretch;
+}
+
 .excerpt-panel {
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
   padding: 12px 14px;
+  flex: 1;
+  min-width: 0;
+}
+
+.story-background-panel {
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  padding: 12px 14px;
+  width: 320px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.story-bg-form {
+  margin-top: 4px;
+}
+
+.story-bg-form :deep(.el-form-item) {
+  margin-bottom: 10px;
+}
+
+.story-bg-tip {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.6;
+}
+
+@media (max-width: 1100px) {
+  .excerpt-row {
+    flex-direction: column;
+  }
+  .story-background-panel {
+    width: 100%;
+  }
 }
 
 .panel-header {

@@ -62,6 +62,19 @@ export class VideoEpisodeEntity {
   @Column({ name: 'audio_tracks', type: 'simple-json', nullable: true })
   audioTracks!: unknown[] | null
 
+  // ─── 故事背景（spec 2026-05-08 ① 内容页右侧"故事背景卡"，参与主图 prompt 拼接） ───
+  /** 故事年代（如"民国初年"/"唐代盛世"/"近未来 2080 年"） */
+  @Column({ name: 'story_era', type: 'text', nullable: true })
+  storyEra!: string | null
+
+  /** 故事地域（如"江南水乡"/"东京涩谷"/"北欧雪原"） */
+  @Column({ name: 'story_region', type: 'text', nullable: true })
+  storyRegion!: string | null
+
+  /** 其他背景描述（自由文本：阶级背景 / 文化氛围 / 时代关键事件 等） */
+  @Column({ name: 'story_background_extra', type: 'text', nullable: true })
+  storyBackgroundExtra!: string | null
+
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 

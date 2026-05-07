@@ -194,6 +194,14 @@ export interface VideoEpisode {
   // 音轨
   audioTracks: AudioTrack[]
 
+  // ─── 故事背景（spec 2026-05-08 ① 内容页"故事背景卡"，参与主图 prompt） ───
+  /** 故事年代（如"民国初年"/"唐代盛世"） */
+  storyEra?: string
+  /** 故事地域（如"江南水乡"/"东京涩谷"） */
+  storyRegion?: string
+  /** 其他背景描述（自由文本：阶级 / 文化 / 关键事件） */
+  storyBackgroundExtra?: string
+
   createdAt: number
   updatedAt: number
 }

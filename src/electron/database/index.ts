@@ -450,6 +450,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-item-binding-style-anchors'
     )
     await addItemBindingStyleAnchors(this.dataSource)
+    // spec 2026-05-08: video_episodes 加故事背景三列
+    const { addEpisodeStoryBackground } = await import(
+      '@core/database/migrations/add-episode-story-background'
+    )
+    await addEpisodeStoryBackground(this.dataSource)
     // 角色资产 race（人种）字段：用于 AI 主图 / 派生图 prompt 拼接
     const { addCharacterBindingRace } = await import(
       '@core/database/migrations/add-character-binding-race'

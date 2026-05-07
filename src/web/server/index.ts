@@ -236,6 +236,11 @@ async function initDatabase(): Promise<void> {
   await addLocationBindingExtraFields(ds)
   // spec 2026-05-08: item_bindings 加 style_anchors（与 character/location 对齐）
   await addItemBindingStyleAnchors(ds)
+  // spec 2026-05-08: video_episodes 加 story_era / story_region / story_background_extra
+  const { addEpisodeStoryBackground } = await import(
+    '@core/database/migrations/add-episode-story-background'
+  )
+  await addEpisodeStoryBackground(ds)
 
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)

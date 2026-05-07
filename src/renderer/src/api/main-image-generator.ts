@@ -16,6 +16,7 @@ import {
   mergeCharacterNegative,
 } from '@core/modules/episode-production/assets/prompts/character-constraints'
 import { buildStylePromptHint } from '@core/modules/episode-production/assets/constants/style-presets'
+import { useEpEpisodeStore } from '@/stores/episode-production'
 
 type AssetType = 'character' | 'location' | 'item'
 
@@ -75,6 +76,13 @@ async function buildPromptFromEffective(
   // 风格锚点（character/location/item 通用）：中英双写，让各家 provider 命中率更高
   const styleHint = buildStylePromptHint(parseStyleAnchors(eff.styleAnchors))
   if (styleHint) parts.push(`风格：${styleHint}`)
+
+  // 故事背景（spec 2026-05-08 ① 内容页）— 从当前 episode 拉年代/地域/其他描述拼进 prompt
+  const storyBg = readStoryBackgroundFromCurrentEpisode()
+  if (storyBg.era) parts.push(`故事年代：${storyBg.era}`)
+  if (storyBg.region) parts.push(`故事地域：${storyBg.region}`)
+  if (storyBg.extra) parts.push(`故事背景：${storyBg.extra}`)
+
   let prompt = parts.filter(Boolean).join('，')
   if (!prompt) {
     throw new Error('请先在设定卡填写名称或描述，AI 才有可生成内容')
@@ -86,6 +94,30 @@ async function buildPromptFromEffective(
     return { prompt, negativePrompt: mergeCharacterNegative(undefined, 'fullBody') }
   }
   return { prompt }
+}
+
+/**
+ * 从 episode store 读当前 episode 的故事背景（年代 / 地域 / 其他描述）。
+ * pinia 全局单例 — 在 renderer api 层（vue 组件外）也可调用。
+ * store 未初始化或没有当前 episode 时返回空字段，buildPromptFromEffective 会跳过对应 prompt 段。
+ */
+function readStoryBackgroundFromCurrentEpisode(): {
+  era: string
+  region: string
+  extra: string
+} {
+  try {
+    const store = useEpEpisodeStore()
+    const ep: any = store?.currentEpisode
+    if (!ep) return { era: '', region: '', extra: '' }
+    return {
+      era: (ep.storyEra ?? '').toString().trim(),
+      region: (ep.storyRegion ?? '').toString().trim(),
+      extra: (ep.storyBackgroundExtra ?? '').toString().trim(),
+    }
+  } catch {
+    return { era: '', region: '', extra: '' }
+  }
 }
 
 /**
