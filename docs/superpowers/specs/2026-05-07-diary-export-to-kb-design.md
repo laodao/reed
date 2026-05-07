@@ -83,7 +83,7 @@ sequenceDiagram
  */
 export interface DocumentSource {
   /** 来源类型；后续可扩展 'character' / 'long-writing-chapter' 等 */
-  type: 'diary' | 'manual'
+  type: 'diary'
   /** 来源在所属模块内的稳定 ID（如 diaryEntry.id） */
   id: string
 }
