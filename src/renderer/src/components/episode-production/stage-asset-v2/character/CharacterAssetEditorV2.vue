@@ -43,7 +43,7 @@
         @click="onPullLatest"
       >
         <el-icon><Refresh /></el-icon>
-        <span>↺ 拉取最新基础值</span>
+        <span>拉取最新基础值</span>
       </el-button>
       <el-button
         type="success"
