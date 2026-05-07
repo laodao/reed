@@ -122,12 +122,16 @@
         />
       </div>
 
-      <el-form label-width="80px" size="small">
-        <el-form-item label="Provider">
+      <!-- 提供商 + 模型 一行 -->
+      <div class="form-row">
+        <div class="form-cell">
+          <label class="cell-label">提供商</label>
           <el-select
             v-model="selectedProviderConfigId"
-            placeholder="选择已配置的视频 provider"
+            placeholder="选择已配置的视频提供商"
             :loading="loadingProviders"
+            class="full-width"
+            size="small"
             @change="onProviderChange"
           >
             <el-option
@@ -144,45 +148,70 @@
               </span>
             </el-option>
           </el-select>
-        </el-form-item>
-
-        <el-form-item v-if="selectedProvider && selectedProvider.models.length > 0" label="模型">
-          <el-select v-model="selectedModelId" placeholder="选择视频 model">
+        </div>
+        <div class="form-cell">
+          <label class="cell-label">模型</label>
+          <el-select
+            v-model="selectedModelId"
+            :placeholder="selectedProvider ? '选择视频模型' : '请先选提供商'"
+            :disabled="!selectedProvider || !(selectedProvider.models?.length)"
+            class="full-width"
+            size="small"
+          >
             <el-option
-              v-for="m in selectedProvider.models"
+              v-for="m in (selectedProvider?.models ?? [])"
               :key="m.id"
               :value="m.id"
               :label="m.name || m.id"
             />
           </el-select>
-        </el-form-item>
+        </div>
+      </div>
 
-        <el-form-item label="模式">
-          <el-radio-group v-model="modeChoice">
+      <!-- 模式 + 时长 一行 -->
+      <div class="form-row">
+        <div class="form-cell">
+          <label class="cell-label">模式</label>
+          <el-radio-group v-model="modeChoice" size="small">
             <el-radio-button label="auto">自动</el-radio-button>
-            <el-radio-button label="text2video">text2video</el-radio-button>
-            <el-radio-button label="image2video">image2video</el-radio-button>
-            <el-radio-button label="keyframes2video">keyframes2video</el-radio-button>
+            <el-radio-button label="text2video">文生视频</el-radio-button>
+            <el-radio-button label="image2video">图生视频</el-radio-button>
+            <el-radio-button label="keyframes2video">关键帧序列</el-radio-button>
           </el-radio-group>
-        </el-form-item>
-
-        <el-form-item label="时长">
-          <el-input-number v-model="durationSec" :min="1" :max="10" :step="1" />
+        </div>
+        <div class="form-cell duration-cell">
+          <label class="cell-label">时长</label>
+          <el-input-number
+            v-model="durationSec"
+            :min="1"
+            :max="10"
+            :step="1"
+            size="small"
+          />
           <span class="form-hint">秒</span>
-        </el-form-item>
+        </div>
+      </div>
 
-        <el-form-item>
-          <el-button
-            type="primary"
-            :loading="generating"
-            :disabled="!canGenerate"
-            @click="onGenerate"
-          >
-            <el-icon><MagicStick /></el-icon>
-            {{ storyboard.videoPath ? '重新生成' : '生成视频片段' }}
-          </el-button>
-        </el-form-item>
-      </el-form>
+      <!-- 完整提示词预览 -->
+      <div class="prompt-preview">
+        <div class="prompt-preview-header">
+          <el-icon><InfoFilled /></el-icon>
+          最终提示词预览
+        </div>
+        <pre class="prompt-preview-body">{{ finalPromptPreview }}</pre>
+      </div>
+
+      <div class="form-actions">
+        <el-button
+          type="primary"
+          :loading="generating"
+          :disabled="!canGenerate"
+          @click="onGenerate"
+        >
+          <el-icon><MagicStick /></el-icon>
+          {{ storyboard.videoPath ? '重新生成' : '生成视频片段' }}
+        </el-button>
+      </div>
 
       <div v-if="lastResult" class="result-card">
         <div class="result-row">
@@ -422,6 +451,59 @@ const currentVideoPath = computed<string | null>(() => {
   )
 })
 
+/**
+ * 最终提示词预览（前端拼接，与后端真实拼装可能略有差异，但覆盖所有用户能控的部分）：
+ *   1) 画面描述（storyboard.frameDescription）
+ *   2) 镜头语言（景别 / 角度 / 运镜）
+ *   3) 资产引用（地点 / 角色 + 表情 / 物品）
+ *   4) 对白与旁白
+ *   5) 用户调整方向（userPrompt，⑤ 面板自定义）
+ *   6) 时长 / 模式 / 提供商
+ */
+const finalPromptPreview = computed<string>(() => {
+  const sb = props.storyboard
+  if (!sb) return ''
+  const parts: string[] = []
+
+  if (sb.frameDescription) parts.push(`【画面描述】${sb.frameDescription.trim()}`)
+
+  const cameraBits: string[] = []
+  if (sb.shotType) cameraBits.push(sb.shotType)
+  if (sb.cameraAngle) cameraBits.push(sb.cameraAngle)
+  if (sb.cameraMovement) cameraBits.push(sb.cameraMovement)
+  if (cameraBits.length) parts.push(`【镜头语言】${cameraBits.join(' · ')}`)
+
+  const locName = currentScene.value?.location
+  if (locName) parts.push(`【地点】${locName}`)
+
+  if (characterChips.value.length > 0) {
+    const charText = characterChips.value
+      .map((c) => `${c.name}${c.expression ? `(${c.expression})` : ''}`)
+      .join(' / ')
+    parts.push(`【角色】${charText}`)
+  }
+
+  if (narration.value) parts.push(`【旁白】${narration.value.trim()}`)
+
+  if (dialogues.value.length > 0) {
+    const dlgText = dialogues.value
+      .map((d) => `${d.speaker || '?'}: ${d.text || ''}`)
+      .join(' | ')
+    parts.push(`【对白】${dlgText}`)
+  }
+
+  if (userPrompt.value && userPrompt.value.trim()) {
+    parts.push(`【调整方向】${userPrompt.value.trim()}`)
+  }
+
+  parts.push(`【时长】${durationSec.value}s`)
+  if (modeChoice.value && modeChoice.value !== 'auto') {
+    parts.push(`【模式】${modeChoice.value}`)
+  }
+
+  return parts.length > 0 ? parts.join('\n') : '（暂无内容；先在 ④ 分镜或 ⑤ 镜头描述卡填写画面描述）'
+})
+
 const selectedProvider = computed(() =>
   availableProviders.value.find(
     (p) => p.providerConfigId === selectedProviderConfigId.value,
@@ -609,6 +691,89 @@ onMounted(loadProviders)
   margin-left: 6px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+/* 提供商+模型 / 模式+时长 一行两栏 */
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 10px;
+  align-items: end;
+}
+
+.form-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cell-label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  font-weight: 500;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.duration-cell {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.duration-cell .cell-label {
+  flex-shrink: 0;
+}
+
+@media (max-width: 720px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 最终提示词预览 */
+.prompt-preview {
+  margin: 12px 0;
+  padding: 8px 10px;
+  background: var(--el-fill-color-light);
+  border: 1px dashed var(--el-border-color);
+  border-radius: 4px;
+}
+
+.prompt-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  margin-bottom: 4px;
+}
+
+.prompt-preview-header .el-icon {
+  color: var(--el-color-primary);
+}
+
+.prompt-preview-body {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--el-text-color-regular);
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: inherit;
+  max-height: 200px;
+  overflow: auto;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
 }
 
 .result-card {
