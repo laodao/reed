@@ -228,6 +228,7 @@
           <section class="panel asset-ref-panel ref-audio-cell">
             <header class="panel-header">
               <span class="panel-title">本分镜引用的资产</span>
+              <span class="panel-hint">— 点击查看图谱</span>
             </header>
             <div class="ref-tags">
               <el-tag
@@ -235,21 +236,30 @@
                 type="success"
                 effect="light"
                 class="ref-tag"
+                :class="{ clickable: !!locationRefBindingId }"
+                :title="locationRefBindingId ? '点击查看地点图谱' : '该地点未在 ② 资产中创建'"
+                @click="locationRefBindingId && openAssetImages('location', locationRefBindingId, locationRef)"
               >📍 {{ locationRef }}</el-tag>
               <el-tag
-                v-for="c in characterRefs"
-                :key="`c-${c.name}`"
+                v-for="(c, i) in characterRefs"
+                :key="`c-${i}-${c.name}`"
                 type="primary"
                 effect="light"
                 class="ref-tag"
+                :class="{ clickable: !!c.bindingId }"
+                :title="c.bindingId ? '点击查看角色图谱' : '该角色未在 ② 资产中创建'"
+                @click="c.bindingId && openAssetImages('character', c.bindingId, c.name)"
               >👤 {{ c.name }}<span v-if="c.expression"> · {{ c.expression }}</span></el-tag>
               <el-tag
-                v-for="it in itemRefs"
-                :key="`it-${it.name}`"
+                v-for="(it, i) in itemRefs"
+                :key="`it-${i}-${it.name}`"
                 type="warning"
                 effect="light"
                 class="ref-tag"
-              >⚔️ {{ it.name }}<span v-if="it.context"> · {{ it.context }}</span></el-tag>
+                :class="{ clickable: !!it.bindingId }"
+                :title="it.bindingId ? '点击查看物品图谱' : '该物品未在 ② 资产中创建'"
+                @click="it.bindingId && openAssetImages('item', it.bindingId, it.name)"
+              >⚔️ {{ it.name }}</el-tag>
               <span v-if="!locationRef && characterRefs.length === 0 && itemRefs.length === 0" class="hint-tertiary">
                 本分镜暂无资产引用
               </span>
@@ -288,13 +298,49 @@
         <el-empty description="请先在左侧选一个场景 + 分镜" />
       </main>
     </div>
+
+    <!-- 资产图谱浏览 dialog（点击 ref-tag 触发） -->
+    <el-dialog
+      v-model="assetImagesDialog.open"
+      :title="assetImagesDialog.title"
+      width="80%"
+      destroy-on-close
+      append-to-body
+    >
+      <div v-if="assetImagesDialog.loading" class="asset-images-loading">
+        <el-icon class="is-loading"><Loading /></el-icon>
+        加载中…
+      </div>
+      <div v-else-if="assetImagesDialog.images.length === 0" class="asset-images-empty">
+        该资产还没有图（去 ② 资产生成主图 / 派生）
+      </div>
+      <div v-else class="asset-images-grid">
+        <div
+          v-for="img in assetImagesDialog.images"
+          :key="img.id"
+          class="asset-images-cell"
+        >
+          <img
+            v-if="img.imagePath"
+            :src="toImageUrl(img.thumbnailPath || img.imagePath)"
+            :alt="img.label || img.category"
+          />
+          <div class="asset-images-meta">
+            <span v-if="img.isMain" class="asset-images-main">主图</span>
+            <span class="asset-images-cat">{{ img.category }}</span>
+            <span v-if="img.label" class="asset-images-label">· {{ img.label }}</span>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { InfoFilled } from '@element-plus/icons-vue'
+import { InfoFilled, Loading } from '@element-plus/icons-vue'
+import { toImageUrl } from '@/utils/asset-url'
 import StageMainHeader from '../shared/StageMainHeader.vue'
 import KeyframeGrid from '../stage-production/KeyframeGrid.vue'
 import VideoSegmentPanel from '../stage-production/VideoSegmentPanel.vue'
@@ -399,20 +445,73 @@ const timelineTicks = computed(() => {
 })
 
 // 资产引用面板：从 storyboard.characters / scene.location 真实提取
+// 角色名解析逻辑跟 ④ 分镜 / KeyframeGrid 一致：
+//   1) c.characterName 直接是字符串就用
+//   2) c.characterId === binding.id 严格匹配
+//   3) LLM 自由填的 elder_01 / 中文角色名 → 模糊按 standaloneName / overrideName 匹配
+function resolveCharNameFromAny(c: any): { name: string; bindingId: string | null } {
+  if (typeof c?.characterName === 'string' && c.characterName.trim()) {
+    return { name: c.characterName.trim(), bindingId: c.characterBindingId ?? c.characterId ?? null }
+  }
+  const id: string | undefined = c?.characterId ?? c?.characterBindingId
+  if (!id) return { name: '?', bindingId: null }
+  const all = (assetStore.epAssetCharacters as any[]) ?? []
+  const byId = all.find((x) => x.id === id)
+  if (byId) {
+    return {
+      name: byId.standaloneName ?? byId.overrideName ?? id.slice(0, 8),
+      bindingId: byId.id,
+    }
+  }
+  const idStr = String(id).trim().toLowerCase()
+  const byName = all.find((x) => {
+    const a = String(x.standaloneName ?? '').trim().toLowerCase()
+    const b = String(x.overrideName ?? '').trim().toLowerCase()
+    return (a && a === idStr) || (b && b === idStr)
+  })
+  if (byName) {
+    return {
+      name: byName.standaloneName ?? byName.overrideName ?? id.slice(0, 8),
+      bindingId: byName.id,
+    }
+  }
+  // 既匹配不上 binding id 也不上 name —— 至少把 LLM 填的字符串显示出来（不再"?")
+  return { name: String(id), bindingId: null }
+}
+
 const characterRefs = computed(() => {
   const sb = selectedStoryboard.value as any
   if (!sb || !Array.isArray(sb.characters)) return []
-  return sb.characters.map((c: any) => ({
-    name: c.characterName ?? '?',
-    expression: c.expression ?? null,
-  }))
+  return sb.characters.map((c: any) => {
+    const resolved = resolveCharNameFromAny(c)
+    return {
+      name: resolved.name,
+      bindingId: resolved.bindingId,
+      expression: c.expression ?? null,
+    }
+  })
 })
+
+/** 按地点名解析对应的 location binding（用于点击查看图） */
+function resolveLocationBindingId(name: string | null | undefined): string | null {
+  if (!name) return null
+  const all = (assetStore.epAssetLocations as any[]) ?? []
+  const target = all.find((b) => {
+    const a = String(b.standaloneName ?? '').trim()
+    const c = String(b.overrideName ?? '').trim()
+    const d = String(b.locationName ?? '').trim()
+    return [a, c, d].some((n) => n && n === name)
+  })
+  return target?.id ?? null
+}
 
 const locationRef = computed(() => {
   const s = selectedScene.value as any
   if (!s) return ''
   return s.location ?? ''
 })
+
+const locationRefBindingId = computed(() => resolveLocationBindingId(locationRef.value))
 
 /*
  * FU8-H3 物品引用真实解析：
@@ -649,6 +748,57 @@ watch(
   },
   { immediate: true },
 )
+
+// ===== 资产图谱浏览 dialog =====
+interface AssetImageRow {
+  id: string
+  imagePath: string
+  thumbnailPath: string | null
+  category: string
+  label: string | null
+  isMain: boolean
+}
+
+const assetImagesDialog = reactive<{
+  open: boolean
+  loading: boolean
+  title: string
+  images: AssetImageRow[]
+}>({
+  open: false,
+  loading: false,
+  title: '',
+  images: [],
+})
+
+async function openAssetImages(
+  kind: 'character' | 'location' | 'item',
+  bindingId: string,
+  name: string,
+): Promise<void> {
+  const kindLabel = kind === 'character' ? '角色' : kind === 'location' ? '地点' : '物品'
+  assetImagesDialog.title = `${kindLabel}：${name}`
+  assetImagesDialog.images = []
+  assetImagesDialog.open = true
+  assetImagesDialog.loading = true
+  try {
+    const api = (window as any).electronAPI?.episodeProduction
+    if (!api?.listAssetImages) {
+      ElMessage.error('listAssetImages IPC 未暴露')
+      return
+    }
+    const resp = await api.listAssetImages(kind, bindingId)
+    if (resp?.success && Array.isArray(resp.data)) {
+      assetImagesDialog.images = resp.data as AssetImageRow[]
+    } else {
+      ElMessage.warning(resp?.error || '资产图加载失败')
+    }
+  } catch (e: any) {
+    ElMessage.error('资产图加载失败：' + (e?.message ?? '未知错误'))
+  } finally {
+    assetImagesDialog.loading = false
+  }
+}
 </script>
 
 <style scoped lang="scss">
@@ -980,6 +1130,77 @@ watch(
 
 .ref-tag {
   font-size: 12px;
+}
+
+.ref-tag.clickable {
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.ref-tag.clickable:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+/* 资产图谱浏览 dialog */
+.asset-images-loading,
+.asset-images-empty {
+  text-align: center;
+  padding: 30px 0;
+  color: var(--el-text-color-secondary);
+}
+
+.asset-images-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.asset-images-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.asset-images-cell {
+  background: var(--el-fill-color-lighter);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.asset-images-cell img {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  display: block;
+}
+
+.asset-images-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 8px;
+  font-size: 11px;
+  color: var(--el-text-color-regular);
+}
+
+.asset-images-main {
+  background: var(--el-color-success);
+  color: #fff;
+  padding: 0 4px;
+  border-radius: 2px;
+  font-size: 10px;
+}
+
+.asset-images-cat {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.asset-images-label {
+  color: var(--el-text-color-secondary);
 }
 
 .prompt-formula {
