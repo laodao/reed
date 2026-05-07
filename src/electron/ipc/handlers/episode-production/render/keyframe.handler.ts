@@ -13,6 +13,7 @@ import type { CharacterBinding, Storyboard } from '@shared/types/story-to-video.
 import { StoryToVideoResourceService, PRESET_STYLES } from '@core/services/story-to-video-resource.service'
 import { KeyframeGenerationService } from '@core/modules/episode-production/render/keyframe/keyframe-generation.service'
 import { planRegenPropagation } from '@core/modules/episode-production/render/keyframe/keyframe-chain-strategy'
+import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 
 export function registerKeyframeHandlers(): void {
   // ==================== 资源生成（图像） ====================
@@ -317,25 +318,124 @@ async function handleListKeyframes(
 ): Promise<IpcResponse> {
   try {
     const db = getCoreDatabaseManager()
-    if (!db.storyboardKeyframes || !db.imageAssets) {
+    if (!db.storyboardKeyframes || !db.imageAssets || !db.dataSource) {
       return { success: false, error: '数据库未初始化（仓库不可用）' }
     }
+    const ds = db.dataSource
     const keyframes = await db.storyboardKeyframes.listByStoryboard(storyboardId)
-    // 附带 imagePath：UI 需要它显示图
+
+    // 资产引用展示（阶段 1）：每帧从 image_assets.metadata.referenceImageIds 解析
+    // 出真实用过的 asset_image 行 → join binding 拿名字 → UI 渲染"基于：地点-茶馆 / 角色-老者"
+    const assetImageRepo = ds.getRepository(AssetImageEntity)
+
     const enriched = await Promise.all(
       keyframes.map(async (kf) => {
         let imagePath: string | null = null
+        let references: KeyframeReferenceRef[] = []
         if (kf.imageAssetId) {
           const ia = await db.imageAssets!.getById(kf.imageAssetId)
           imagePath = ia?.imagePath ?? null
+
+          const refIds = extractReferenceImageIds(ia?.metadata)
+          if (refIds.length > 0) {
+            const refRows = await assetImageRepo
+              .createQueryBuilder('ai')
+              .where('ai.id IN (:...ids)', { ids: refIds })
+              .getMany()
+
+            // 按 assetType 分组、批量查 binding 拿名字
+            const charIds = new Set(refRows.filter(r => r.assetType === 'character').map(r => r.assetId))
+            const locIds = new Set(refRows.filter(r => r.assetType === 'location').map(r => r.assetId))
+            const itemIds = new Set(refRows.filter(r => r.assetType === 'item').map(r => r.assetId))
+
+            const charNames = await batchLoadNames(
+              [...charIds],
+              (id) => db.characterBindings?.getById(id) ?? Promise.resolve(null),
+              (b: any) => b.standaloneName ?? b.overrideName ?? null,
+            )
+            const locNames = await batchLoadNames(
+              [...locIds],
+              (id) => db.locationBindings?.getById(id) ?? Promise.resolve(null),
+              (b: any) => b.standaloneName ?? b.overrideName ?? b.locationName ?? null,
+            )
+            const itemNames = await batchLoadNames(
+              [...itemIds],
+              (id) => db.itemBindings?.getById(id) ?? Promise.resolve(null),
+              (b: any) => b.standaloneName ?? b.overrideName ?? b.itemName ?? null,
+            )
+
+            references = refRows.map((r) => ({
+              id: r.id,
+              imagePath: r.imagePath,
+              thumbnailPath: r.thumbnailPath ?? null,
+              assetType: r.assetType,
+              assetId: r.assetId,
+              assetName:
+                r.assetType === 'character'
+                  ? charNames.get(r.assetId) ?? '(角色)'
+                  : r.assetType === 'location'
+                    ? locNames.get(r.assetId) ?? '(地点)'
+                    : itemNames.get(r.assetId) ?? '(物品)',
+              category: r.category,
+              label: r.label ?? null,
+              isMain: r.isMain === 1,
+            }))
+          }
         }
-        return { ...kf, imagePath }
+        return { ...kf, imagePath, references }
       }),
     )
     return { success: true, data: enriched }
   } catch (e: any) {
     return { success: false, error: e?.message || '列关键帧失败' }
   }
+}
+
+interface KeyframeReferenceRef {
+  id: string
+  imagePath: string | null
+  thumbnailPath: string | null
+  assetType: string
+  assetId: string
+  assetName: string
+  category: string
+  label: string | null
+  isMain: boolean
+}
+
+/** 从 image_assets.metadata 解析出 referenceImageIds（兼容 string / object） */
+function extractReferenceImageIds(metadata: unknown): string[] {
+  if (!metadata) return []
+  let obj: any = metadata
+  if (typeof metadata === 'string') {
+    try {
+      obj = JSON.parse(metadata)
+    } catch {
+      return []
+    }
+  }
+  if (!obj || typeof obj !== 'object') return []
+  const ids = obj.referenceImageIds
+  if (!Array.isArray(ids)) return []
+  return ids.filter((x: any): x is string => typeof x === 'string' && x.length > 0)
+}
+
+/** 批量按 id 查 binding 拿名字，结果按 id → name 映射；查不到 / 名字空 → 不入 map */
+async function batchLoadNames<T>(
+  ids: string[],
+  load: (id: string) => Promise<T | null>,
+  pickName: (b: T) => string | null,
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>()
+  if (ids.length === 0) return result
+  const rows = await Promise.all(ids.map((id) => load(id)))
+  ids.forEach((id, i) => {
+    const row = rows[i]
+    if (!row) return
+    const name = pickName(row)
+    if (name && name.trim()) result.set(id, name.trim())
+  })
+  return result
 }
 
 /**

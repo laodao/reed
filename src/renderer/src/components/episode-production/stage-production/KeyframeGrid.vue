@@ -106,6 +106,30 @@
               <span v-if="c.expression" class="info-attr">· {{ c.expression }}</span>
             </span>
           </div>
+
+          <!-- 阶段 1：实际作为参考图传给 AI 的资产列表（缩略图 + 名字） -->
+          <div v-if="(kf.references ?? []).length > 0" class="info-refs">
+            <div class="info-refs-title">基于</div>
+            <div class="info-refs-list">
+              <div
+                v-for="r in kf.references"
+                :key="r.id"
+                class="info-ref"
+                :title="`${refKindLabel(r.assetType)}：${r.assetName}（${r.category}${r.label ? ' · ' + r.label : ''}${r.isMain ? ' · 主图' : ''}）`"
+              >
+                <img
+                  v-if="r.imagePath"
+                  :src="toImageUrl(r.thumbnailPath || r.imagePath)"
+                  :alt="r.assetName"
+                  class="info-ref-img"
+                />
+                <span class="info-ref-text">
+                  <span class="info-ref-kind">{{ refKindEmoji(r.assetType) }}</span>
+                  {{ r.assetName }}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -135,6 +159,31 @@
         style="width: 100%; height: auto"
       />
       <el-empty v-else description="该关键帧暂无图像" />
+
+      <div v-if="(previewKeyframe?.references ?? []).length > 0" class="preview-refs">
+        <strong>基于以下资产生成：</strong>
+        <div class="preview-refs-grid">
+          <div
+            v-for="r in previewKeyframe?.references"
+            :key="r.id"
+            class="preview-ref-cell"
+          >
+            <img
+              v-if="r.imagePath"
+              :src="toImageUrl(r.imagePath)"
+              :alt="r.assetName"
+            />
+            <div class="preview-ref-meta">
+              <span class="preview-ref-kind">{{ refKindEmoji(r.assetType) }} {{ refKindLabel(r.assetType) }}</span>
+              <span class="preview-ref-name">{{ r.assetName }}</span>
+              <span class="preview-ref-cat">
+                {{ r.category }}{{ r.label ? ' · ' + r.label : '' }}{{ r.isMain ? ' · 主图' : '' }}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div v-if="previewKeyframe?.prompt" class="preview-prompt">
         <strong>Prompt：</strong>
         <pre>{{ previewKeyframe.prompt }}</pre>
@@ -170,6 +219,18 @@ import {
 import { toImageUrl } from '@/utils/asset-url'
 import { useEpAssetStore, useEpScriptStore } from '@/stores/episode-production'
 
+interface KeyframeReference {
+  id: string
+  imagePath: string | null
+  thumbnailPath: string | null
+  assetType: 'character' | 'location' | 'item' | string
+  assetId: string
+  assetName: string
+  category: string
+  label: string | null
+  isMain: boolean
+}
+
 interface Keyframe {
   id: string
   storyboardId: string
@@ -178,8 +239,9 @@ interface Keyframe {
   frameRole: 'start' | 'middle' | 'end' | 'extra'
   imageAssetId: string | null
   prompt?: string | null
-  /** P7 修复：handler 已经返回 imagePath（直接 join image_assets） */
   imagePath?: string | null
+  /** 阶段 1：handler 解析 image_assets.metadata.referenceImageIds 后返回的真实 reference 列表 */
+  references?: KeyframeReference[]
 }
 
 const props = withDefaults(
@@ -305,12 +367,6 @@ function roleLabel(role: string): string {
         : '附加'
 }
 
-function roleTagType(role: string): 'success' | 'warning' | 'info' | 'danger' | undefined {
-  if (role === 'start') return 'success'
-  if (role === 'end') return 'danger'
-  if (role === 'middle') return 'warning'
-  return 'info'
-}
 
 async function loadKeyframes(): Promise<void> {
   if (!props.storyboardId) return
@@ -359,6 +415,20 @@ function onRegenerate(kf: Keyframe): void {
 function onPreview(kf: Keyframe): void {
   previewKeyframe.value = kf
   previewVisible.value = true
+}
+
+function refKindLabel(t: string): string {
+  if (t === 'character') return '角色'
+  if (t === 'location') return '地点'
+  if (t === 'item') return '物品'
+  return t
+}
+
+function refKindEmoji(t: string): string {
+  if (t === 'character') return '👤'
+  if (t === 'location') return '📍'
+  if (t === 'item') return '⚔️'
+  return '📦'
 }
 
 /** "+" 在两帧之间插入新帧（frameRole='extra'，timePercent 取中点） */
@@ -591,6 +661,115 @@ defineExpose({ reload: loadKeyframes })
 
 .info-attr {
   color: var(--el-color-warning);
+}
+
+/* 阶段 1：每帧"基于"参考图列表（cell 内） */
+.info-refs {
+  margin-top: 4px;
+  padding: 4px 0 0;
+  border-top: 1px dashed var(--el-border-color-lighter);
+}
+
+.info-refs-title {
+  font-size: 10px;
+  color: var(--el-text-color-placeholder);
+  margin-bottom: 2px;
+}
+
+.info-refs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.info-ref {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  font-size: 11px;
+  color: var(--el-text-color-regular);
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--el-fill-color);
+}
+
+.info-ref-img {
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.info-ref-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.info-ref-kind {
+  font-size: 11px;
+  margin-right: 2px;
+}
+
+/* 预览大图 dialog 里的 references 网格 */
+.preview-refs {
+  margin-top: 12px;
+  padding: 10px;
+  background: var(--el-fill-color-lighter);
+  border-radius: 4px;
+}
+
+.preview-refs strong {
+  font-size: 13px;
+  color: var(--el-text-color-primary);
+}
+
+.preview-refs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.preview-ref-cell {
+  display: flex;
+  flex-direction: column;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.preview-ref-cell img {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+}
+
+.preview-ref-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  font-size: 11px;
+}
+
+.preview-ref-kind {
+  color: var(--el-text-color-secondary);
+}
+
+.preview-ref-name {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.preview-ref-cat {
+  color: var(--el-text-color-placeholder);
+  font-size: 10px;
 }
 
 .preview-prompt {
