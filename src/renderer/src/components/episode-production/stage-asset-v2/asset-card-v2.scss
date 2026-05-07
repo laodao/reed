@@ -40,6 +40,29 @@
   color: var(--el-color-warning);
 }
 
+/* hover 删除入口：右下角，hover 卡片才显示。无主图也能点 — user 要求"还没有图也应该可以删除" */
+.card-delete-icon {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  padding: 5px;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+  z-index: 2;
+}
+
+.asset-card-v2:hover .card-delete-icon {
+  opacity: 1;
+}
+
+.card-delete-icon:hover {
+  background: var(--el-color-danger);
+}
+
 /* 主图缩略：填满整个 .card-thumb（保留 source-tag 的角标在右上） */
 .thumb-image {
   position: absolute;

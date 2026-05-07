@@ -96,6 +96,7 @@
           :summary="c"
           @click="emit('open-character', c.bindingId)"
           @generate-main="emit('generate-main', { kind: 'character', id: c.bindingId })"
+          @delete="onDeleteBinding('character', c.bindingId, c.name)"
         />
       </div>
     </section>
@@ -129,6 +130,7 @@
           :summary="l"
           @click="emit('open-location', l.bindingId)"
           @generate-main="emit('generate-main', { kind: 'location', id: l.bindingId })"
+          @delete="onDeleteBinding('location', l.bindingId, l.name)"
         />
       </div>
     </section>
@@ -158,6 +160,7 @@
           :summary="it"
           @click="emit('open-item', it.bindingId)"
           @generate-main="emit('generate-main', { kind: 'item', id: it.bindingId })"
+          @delete="onDeleteBinding('item', it.bindingId, it.name)"
         />
       </div>
     </section>
@@ -382,8 +385,87 @@ function onSkipEmpty(): void {
   ElMessage.info('已跳过空缺（缺图 binding 仍在 ② 阶段保留；进 ⑤ 渲染前会硬卡）')
 }
 
-function onBatchDerive(kind: 'character' | 'location'): void {
-  ElMessage.info(`批量派生 ${kind === 'character' ? '角色图谱' : '地点变体'} — 留 follow-up 接入派生服务`)
+/**
+ * stage 级"批量派生"：遍历该 kind 下所有 binding，对每个 binding 调 derive.batch
+ * 派生该资产域全部 category 的缺失 label。串行（避免压垮 provider），单条失败不阻塞其他。
+ *
+ * 资产域 category：
+ *   - character: view / expression / outfit / pose
+ *   - location:  time_variant / weather_variant / angle_variant
+ *   - item: view / context（不通过本入口；item 上没暴露此按钮）
+ */
+const CATEGORY_LABELS: Record<'character' | 'location', Array<{ key: string; labels: string[] }>> = {
+  character: [
+    { key: 'view', labels: ['front', 'back', 'left', 'right', 'three_quarter_left', 'three_quarter_right'] },
+    { key: 'expression', labels: ['neutral', 'happy', 'sad', 'angry', 'surprised', 'confused'] },
+    { key: 'outfit', labels: [] }, // 自由 label，跳过批量
+    { key: 'pose', labels: ['stand', 'sit', 'walk', 'lie'] },
+  ],
+  location: [
+    { key: 'time_variant', labels: ['morning', 'noon', 'afternoon', 'evening', 'night', 'dawn', 'dusk'] },
+    { key: 'weather_variant', labels: ['sunny', 'cloudy', 'rainy', 'snowy', 'foggy', 'stormy'] },
+    { key: 'angle_variant', labels: ['wide_shot', 'entrance', 'interior_a', 'interior_b'] },
+  ],
+}
+
+const batchDeriving = ref(false)
+
+async function onBatchDerive(kind: 'character' | 'location'): Promise<void> {
+  if (batchDeriving.value) return
+  const list = kind === 'character' ? summary.value.characters : summary.value.locations
+  const eligible = list.filter((b: any) => b.hasMain) // 没主图无法派生
+  if (eligible.length === 0) {
+    ElMessage.warning(`${kind === 'character' ? '角色' : '地点'}缺主图，无法批量派生（请先生成主图）`)
+    return
+  }
+  const api = (window as any).electronAPI?.episodeProduction?.asset
+  if (!api?.derive?.batch) {
+    ElMessage.error('derive.batch IPC 未暴露')
+    return
+  }
+  batchDeriving.value = true
+  let okBindings = 0
+  let failBindings = 0
+  const failures: string[] = []
+  ElMessage.info(`开始批量派生 ${eligible.length} 个${kind === 'character' ? '角色' : '地点'}的图谱`)
+  try {
+    for (const b of eligible) {
+      let bindingHadAny = false
+      let bindingFailed = false
+      for (const cat of CATEGORY_LABELS[kind]) {
+        if (cat.labels.length === 0) continue // 跳过自由 label 类
+        try {
+          const resp = await api.derive.batch({
+            assetType: kind,
+            assetId: b.bindingId,
+            category: cat.key,
+            labels: cat.labels,
+          })
+          if (resp?.success) {
+            bindingHadAny = true
+          } else {
+            bindingFailed = true
+            failures.push(`${b.name} / ${cat.key}: ${resp?.error ?? '未知'}`)
+          }
+        } catch (e: any) {
+          bindingFailed = true
+          failures.push(`${b.name} / ${cat.key}: ${e?.message ?? e}`)
+        }
+      }
+      if (bindingHadAny && !bindingFailed) okBindings++
+      else if (bindingFailed) failBindings++
+    }
+    await reload()
+  } finally {
+    batchDeriving.value = false
+  }
+  if (failBindings === 0) {
+    ElMessage.success(`已派生 ${okBindings} 个${kind === 'character' ? '角色' : '地点'}的图谱`)
+  } else {
+    ElMessage.warning(
+      `批量派生完成：成功 ${okBindings} 失败 ${failBindings}\n${failures.slice(0, 3).join('\n')}`,
+    )
+  }
 }
 
 /*
@@ -457,6 +539,44 @@ function onAddItem(): void {
 function onAddVoice(): void {
   ElMessage.info('请去"语音助手 → 声音复刻"完成音色克隆，复刻完成后会自动出现在此处')
   emit('add-voice')
+}
+
+/**
+ * 资产卡 hover 删除入口（user mandate "还没有图也应该可以删除"）。
+ * 复用 ep:asset:{kind}:delete IPC，删除时一并清理 asset_image 关联记录（service 层负责）。
+ */
+async function onDeleteBinding(
+  kind: 'character' | 'location' | 'item',
+  bindingId: string,
+  name: string,
+): Promise<void> {
+  const labelMap = { character: '角色', location: '地点', item: '物品' } as const
+  const label = labelMap[kind]
+  try {
+    await ElMessageBox.confirm(
+      `确认删除${label} "${name}"？相关图谱与设定一并删除，无法恢复。`,
+      `删除${label}`,
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  const api = (window as any).electronAPI?.episodeProduction?.asset
+  if (!api?.[kind]?.delete) {
+    ElMessage.error(`${label}删除 IPC 未暴露`)
+    return
+  }
+  try {
+    const resp = await api[kind].delete(bindingId)
+    if (!resp?.success) {
+      ElMessage.error(resp?.error || `删除${label}失败`)
+      return
+    }
+    ElMessage.success(`已删除${label}：${name}`)
+    await reload()
+  } catch (e: any) {
+    ElMessage.error(e?.message || `删除${label}失败`)
+  }
 }
 </script>
 
