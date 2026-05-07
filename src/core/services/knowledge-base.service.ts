@@ -28,7 +28,9 @@ import type {
   FileInfo,
   FileType,
   EmbeddingConfig,
-  SplitStrategy
+  SplitStrategy,
+  DocumentSource,
+  AddDocumentResult,
 } from '@shared/types/knowledge-base.types'
 
 // 常量配置
@@ -236,16 +238,71 @@ export class KnowledgeBaseService {
 
   /**
    * 添加文档（直接添加文本内容）
+   * 支持 upsert 语义：传入 source 时若同源文档已存在则更新，否则新建。
    */
-  async addDocument(kbId: string, data: { name: string; type: 'text'; content: string }): Promise<{ success: boolean; data?: KbDocument; error?: string }> {
+  async addDocument(
+    kbId: string,
+    data: { name: string; type: 'text'; content: string; source?: DocumentSource },
+  ): Promise<{ success: boolean; data?: AddDocumentResult; error?: string }> {
     try {
       const db = getCoreDatabaseManager()
-      if (!db.knowledgeBases || !db.kbDocuments) return { success: false, error: '数据库未初始化' }
+      if (!db.knowledgeBases || !db.kbDocuments) {
+        return { success: false, error: '数据库未初始化' }
+      }
 
       const kb = await db.knowledgeBases.findById(kbId)
       if (!kb) return { success: false, error: '知识库不存在' }
 
-      // 准备目录
+      // 1. 命中已有同源文档 → upsert
+      if (data.source) {
+        const existing = await db.kbDocuments.findBySource(kbId, data.source)
+        if (existing) {
+          const newBuf = Buffer.from(data.content, 'utf-8')
+          // 覆盖文件内容（复用 existing.filePath，避免文件孤立）
+          await fs.promises.writeFile(existing.filePath, newBuf)
+
+          const sizeDelta = newBuf.length - existing.fileSize
+          const oldChunkCount = existing.chunkCount
+
+          // 重置 doc 元信息
+          await db.kbDocuments.resetForUpsert(existing.id, {
+            name: data.name,
+            fileSize: newBuf.length,
+          })
+
+          // 同步 KB 统计：documentCount 不变；totalSize 按 delta；vectorCount 暂减
+          if (sizeDelta !== 0) {
+            await db.knowledgeBases.incrementTotalSize(kbId, sizeDelta)
+          }
+          if (oldChunkCount > 0) {
+            await db.knowledgeBases.incrementVectorCount(kbId, -oldChunkCount)
+          }
+
+          // 清旧 artifacts（chunks/vectors/inverted-index）
+          await this.clearDocumentArtifacts(existing.id)
+
+          this.emitKnowledgeBaseStats(kbId)
+
+          // 构造更新后的 DTO（供 processDocument 使用）
+          const refreshed: KbDocument = {
+            ...existing,
+            name: data.name,
+            fileSize: newBuf.length,
+            status: 'processing',
+            progress: 0,
+            chunkCount: 0,
+            errorMessage: undefined,
+          }
+          // 异步重跑流水线
+          this.processDocument(refreshed, kb).catch(e =>
+            console.error('[KB] upsert 处理失败:', e),
+          )
+
+          return { success: true, data: { doc: refreshed, isUpdate: true } }
+        }
+      }
+
+      // 2. 未命中或未传 source → 走原新建路径
       const dataPath = getPathProvider().getDataPath()
       const docDir = path.join(dataPath, 'knowledge-base', kbId, 'documents')
       if (!fs.existsSync(docDir)) fs.mkdirSync(docDir, { recursive: true })
@@ -262,7 +319,8 @@ export class KnowledgeBaseService {
         name: data.name,
         filePath: destPath,
         fileType: 'txt',
-        fileSize: contentBuffer.length
+        fileSize: contentBuffer.length,
+        source: data.source,
       }
 
       const doc = await db.kbDocuments.create(request)
@@ -277,7 +335,7 @@ export class KnowledgeBaseService {
       // 异步处理
       this.processDocument(doc, kb).catch(e => console.error('[KB] 处理失败:', e))
 
-      return { success: true, data: doc }
+      return { success: true, data: { doc, isUpdate: false } }
     } catch (e: any) {
       console.error('[KB] 添加文档失败:', e)
       return { success: false, error: e.message }

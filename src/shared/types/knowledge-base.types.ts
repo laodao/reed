@@ -400,3 +400,13 @@ export interface DocumentSource {
   /** 来源在所属模块内的稳定 ID（如 diaryEntry.id） */
   id: string
 }
+
+/**
+ * addDocument 返回数据：upsert 语义下需要让前端区分新建与更新。
+ */
+export interface AddDocumentResult {
+  /** 文档 DTO */
+  doc: KbDocument
+  /** 是否走的 upsert 更新路径（命中已有 source） */
+  isUpdate: boolean
+}

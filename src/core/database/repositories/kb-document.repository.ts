@@ -156,6 +156,25 @@ export class KbDocumentRepository extends BaseRepository<
     })
   }
 
+  /**
+   * upsert 路径专用：重置文档元信息，准备重新处理。
+   * 同时更新 name / fileSize / status / progress / chunkCount / errorMessage。
+   */
+  async resetForUpsert(
+    id: string,
+    fields: { name: string; fileSize: number },
+  ): Promise<void> {
+    await this.scoped.update({ id } as any, {
+      name: fields.name,
+      fileSize: fields.fileSize,
+      status: 'processing',
+      progress: 0,
+      chunkCount: 0,
+      errorMessage: null,
+      updatedAt: new Date(),
+    } as any)
+  }
+
   async delete(id: string): Promise<boolean> {
     const affected = await this.scoped.delete({ id } as any)
     return affected > 0
