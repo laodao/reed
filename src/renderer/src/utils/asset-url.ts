@@ -21,7 +21,7 @@ declare global {
  * 是否运行在 Electron 渲染端。Web 模式下虽然 main-web.ts 注入了 window.electronAPI
  * 桥接代理，但同时设置了 __APP_PLATFORM__='web'，必须按这个判断而不是看 electronAPI。
  */
-function isElectronRenderer(): boolean {
+export function isElectronRenderer(): boolean {
   if (typeof window === 'undefined') return false
   if (window.__APP_PLATFORM__ === 'web') return false
   return !!window.electronAPI

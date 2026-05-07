@@ -18,7 +18,7 @@
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="html">导出 HTML</el-dropdown-item>
-              <el-dropdown-item command="pdf">导出 PDF</el-dropdown-item>
+              <el-dropdown-item v-if="isElectron" command="pdf">导出 PDF</el-dropdown-item>
               <el-dropdown-item command="docx">导出 Word</el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -60,7 +60,7 @@ import { ElMessage } from 'element-plus'
 import { ArrowLeft, Download, ArrowDown } from '@element-plus/icons-vue'
 import MarkdownEditor from '@/components/common/MarkdownEditor.vue'
 import type { DiaryEntry } from '@shared/types/diary'
-import { toFileUrl } from '@/utils/asset-url'
+import { toFileUrl, isElectronRenderer } from '@/utils/asset-url'
 
 /**
  * 触发浏览器下载（Web 端用）
@@ -99,6 +99,10 @@ const title = ref(props.entry.title)
 const content = ref(props.entry.content || '')
 const lastSavedTime = ref(new Date().toLocaleTimeString())
 const saveTimeout = ref<number | null>(null)
+
+// 平台标记：PDF 依赖 Electron 的 BrowserWindow.printToPDF，Web 端暂不支持
+// 模板里据此隐藏「导出 PDF」选项
+const isElectron = isElectronRenderer()
 
 const wordCount = computed(() => {
   return content.value.replace(/\s/g, '').length
@@ -162,7 +166,6 @@ async function handleExport(format: string) {
 
     // 双端：Electron 通过 dialog 选保存路径并传给 service；Web 跳过 dialog
     // 让 service 写到用户数据目录，返回相对路径后由浏览器触发下载。
-    const isElectron = !!window.electronAPI?.file?.openDialog
     let savePath: string | undefined
     if (isElectron) {
       const dialogResult = await window.electronAPI.file.saveFile({
