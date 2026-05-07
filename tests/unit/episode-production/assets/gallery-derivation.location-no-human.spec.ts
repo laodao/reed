@@ -74,7 +74,7 @@ describe('GalleryDerivationService · location 派生无人约束', () => {
   })
 
   it('location time_variant 派生：同样注入无人约束', async () => {
-    await svc.deriveSingle({
+    const entity = await svc.deriveSingle({
       assetType: 'location',
       assetId: 'loc1',
       category: 'time_variant',
@@ -84,6 +84,9 @@ describe('GalleryDerivationService · location 派生无人约束', () => {
     const c = mockGen.calls[0]
     expect(c.prompt.includes('no people')).toBe(true)
     expect(c.negativePrompt.includes('person')).toBe(true)
+    // 写库一致性：entity 字段必须是 effective 版本
+    expect(entity.prompt).toBe(c.prompt)
+    expect(entity.negativePrompt ?? null).toBe(c.negativePrompt ?? null)
   })
 
   it('character 派生：不注入无人约束', async () => {
@@ -96,5 +99,21 @@ describe('GalleryDerivationService · location 派生无人约束', () => {
     })
     const c = mockGen.calls[0]
     expect(c.prompt.includes('no people')).toBe(false)
+  })
+
+  it('location 已含无人约束的派生 prompt：不重复追加', async () => {
+    const { LOCATION_NO_HUMAN_SUFFIX } = await import(
+      '@core/modules/episode-production/assets/prompts/location-constraints'
+    )
+    await svc.deriveSingle({
+      assetType: 'location',
+      assetId: 'loc1',
+      category: 'time_variant',
+      label: 'dusk',
+      additionalPrompt: `茶馆黄昏，${LOCATION_NO_HUMAN_SUFFIX}`,
+    })
+    const c = mockGen.calls[0]
+    const occurrences = c.prompt.split(LOCATION_NO_HUMAN_SUFFIX).length - 1
+    expect(occurrences).toBe(1)
   })
 })
