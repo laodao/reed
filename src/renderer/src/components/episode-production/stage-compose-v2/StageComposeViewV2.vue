@@ -73,12 +73,6 @@
             <el-form-item label="烧入字幕">
               <el-switch v-model="exportForm.burnSubtitles" />
             </el-form-item>
-            <el-form-item label="输出路径">
-              <el-input
-                v-model="exportForm.outputPath"
-                placeholder="/path/to/output.mp4 或留空用默认"
-              />
-            </el-form-item>
           </el-form>
           <div class="opt-meta">
             预估文件大小：~{{ estimatedSizeMb }} MB · 渲染时长 ~{{ estimatedRenderMin }} 分钟
@@ -130,10 +124,20 @@
                   :class="[
                     `scene-${cell.sceneNumber}`,
                     cell.hasVideo ? 'filled' : 'missing',
+                    { excluded: !cell.includeInFinal },
                   ]"
                   :style="cellStyle(cell)"
-                  :title="`场景 ${cell.sceneNumber} 镜 ${cell.shotNumber} · ${cell.duration}s`"
+                  :title="
+                    `${cell.includeInFinal ? '✅ 入选' : '⊘ 不入选'} · 场景 ${cell.sceneNumber} 镜 ${cell.shotNumber} · ${cell.duration}s`
+                  "
                 >
+                  <el-checkbox
+                    :model-value="cell.includeInFinal"
+                    class="clip-include"
+                    :disabled="togglingShotIds.has(cell.id)"
+                    @click.stop
+                    @change="onToggleInclude(cell)"
+                  />
                   <span class="clip-name">{{ cell.sceneNumber }}.{{ cell.shotNumber }} · {{ cell.duration }}s</span>
                 </div>
                 <div
@@ -220,11 +224,11 @@
 
         <!-- 时间线底部统计行（§9.F） -->
         <div class="te-stats">
-          <span>🎬 {{ cells.length }} 视频片段</span>
-          <span>⇄ {{ Math.max(0, cells.length - 1) }} 个转场（淡入淡出 / 硬切）</span>
+          <span>🎬 {{ cells.length }} 视频片段（{{ includedCells.length }} 入选）</span>
+          <span>⇄ {{ Math.max(0, includedCells.length - 1) }} 个转场（淡入淡出 / 硬切）</span>
           <span>📄 {{ subtitleSegs.length }} 段字幕</span>
           <span>🔊 3 音轨（旁白 / 对话 / BGM）</span>
-          <span class="stats-total">总时长 {{ totalSec.toFixed(1) }}s</span>
+          <span class="stats-total">入选总时长 {{ includedDurationSec.toFixed(1) }}s</span>
         </div>
       </section>
 
@@ -274,12 +278,15 @@
         <el-icon class="success-icon"><CircleCheckFilled /></el-icon>
         <div class="result-text">
           <div><strong>导出成功</strong></div>
-          <div class="result-path">输出: {{ exportResult.outputPath }}</div>
           <div class="result-meta">
             时长 {{ formatTime(exportResult.durationSec) }}
-            <span v-if="exportResult.srtPath"> · 字幕: {{ exportResult.srtPath }}</span>
+            <span v-if="exportResult.srtPath"> · 含字幕</span>
           </div>
         </div>
+        <el-button type="primary" size="small" @click="onDownloadExport">
+          <el-icon><Download /></el-icon>
+          下载 MP4
+        </el-button>
       </div>
 
       <div v-if="exportError" class="error-banner">
@@ -334,8 +341,10 @@ const gateBlockMessage = ref('')
 const exportForm = ref({
   resolution: '1920x1080',
   burnSubtitles: true,
-  outputPath: '',
 })
+
+/** 标记当前正在切换"入选"的 storyboardId（防双击 / 排队请求） */
+const togglingShotIds = ref<Set<string>>(new Set())
 
 const trackBodyOffset = 90 // 跟 .track-label 宽度一致
 
@@ -356,11 +365,18 @@ const cells = computed<Array<any>>(() => {
         videoPath: sh.videoPath,
         hasVideo: !!sh.videoPath,
         transition: sh.transition,
+        includeInFinal: sh.includeInFinal !== false,
       })
     }
   }
   return out
 })
+
+const includedCells = computed(() => cells.value.filter((c) => c.includeInFinal))
+
+const includedDurationSec = computed(() =>
+  includedCells.value.reduce((acc, c) => acc + (c.duration ?? 0), 0),
+)
 
 const totalSec = computed(() => {
   return timeline.value?.totalDurationSec ?? cells.value.reduce((acc, c) => acc + (c.duration ?? 0), 0)
@@ -592,11 +608,8 @@ async function onExportMp4(): Promise<void> {
       burnSubtitles: exportForm.value.burnSubtitles,
       projectId: props.projectId,
     }
-    const resp = await api.exportMp4(
-      props.episodeScriptId,
-      exportForm.value.outputPath,
-      opts,
-    )
+    // outputPath 留空 → 后端 resolveOutputPath 自动落到 user data 默认目录
+    const resp = await api.exportMp4(props.episodeScriptId, '', opts)
     if (!resp?.success) {
       exportError.value = resp?.error || '导出失败'
       ElMessage.error(exportError.value)
@@ -627,11 +640,81 @@ watch(() => episodeStore.currentEpisode?.id, () => void refreshGate(), { immedia
 
 onMounted(() => {
   void refreshGate()
-  // 项目级 video 路径用 outputPath 默认
-  if (props.projectId && !exportForm.value.outputPath) {
-    exportForm.value.outputPath = ''
-  }
 })
+
+// ===== ⑥ 时间线"入选" toggle =====
+async function onToggleInclude(cell: { id: string; includeInFinal: boolean }) {
+  if (togglingShotIds.value.has(cell.id)) return
+  const next = !cell.includeInFinal
+  const api = (window as any).electronAPI?.episodeProduction
+  if (!api?.updateStoryboard) {
+    ElMessage.error('updateStoryboard IPC 未暴露')
+    return
+  }
+  togglingShotIds.value = new Set([...togglingShotIds.value, cell.id])
+  try {
+    const resp = await api.updateStoryboard(cell.id, { includeInFinal: next })
+    if (!resp?.success) {
+      ElMessage.error(resp?.error || '切换失败')
+      return
+    }
+    await loadTimeline()
+  } catch (e: any) {
+    ElMessage.error('切换失败：' + (e?.message ?? '未知错误'))
+  } finally {
+    const s = new Set(togglingShotIds.value)
+    s.delete(cell.id)
+    togglingShotIds.value = s
+  }
+}
+
+// ===== ⑥ 下载已合成视频 =====
+async function onDownloadExport() {
+  if (!lastExport.value?.outputPath) return
+  const url = toFileUrl(lastExport.value.outputPath)
+  const fileName = lastExport.value.outputPath.split('/').pop() || 'episode.mp4'
+  const isWeb =
+    (window as any).__APP_PLATFORM__ === 'web' ||
+    !(window as any).electronAPI?.file?.saveFile
+
+  if (!isWeb) {
+    try {
+      const saveResult = await (window as any).electronAPI.file.saveFile({
+        defaultPath: fileName,
+        filters: [{ name: 'MP4 视频', extensions: ['mp4'] }],
+      })
+      if (!saveResult?.success || !saveResult.filePath) return
+      const abs = url.startsWith('local-file:///')
+        ? url.replace('local-file:///', '')
+        : lastExport.value.outputPath
+      const copyResult = await (window as any).electronAPI.file.copyFile(
+        abs,
+        saveResult.filePath,
+      )
+      if (copyResult?.success) ElMessage.success('已保存')
+      else ElMessage.error(copyResult?.error || '保存失败')
+    } catch (e: any) {
+      ElMessage.error('下载失败：' + (e?.message ?? '未知错误'))
+    }
+    return
+  }
+
+  try {
+    const resp = await fetch(url)
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    const blob = await resp.blob()
+    const blobUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = blobUrl
+    a.download = fileName
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(blobUrl)
+  } catch (e: any) {
+    ElMessage.error('下载失败：' + (e?.message ?? '未知错误'))
+  }
+}
 </script>
 
 <style scoped lang="scss">
@@ -900,6 +983,35 @@ onMounted(() => {
   background: var(--el-fill-color);
   color: var(--el-text-color-placeholder);
   border: 1px dashed var(--el-border-color);
+}
+
+.video-clip.excluded {
+  filter: grayscale(80%);
+  opacity: 0.45;
+  border-style: dashed;
+}
+
+.clip-include {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  z-index: 2;
+}
+
+.clip-include :deep(.el-checkbox__inner) {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+}
+
+.clip-include :deep(.el-checkbox__inner::after) {
+  height: 7px;
+  left: 4px;
+  top: 1px;
+}
+
+.video-clip .clip-name {
+  padding-left: 22px;
 }
 
 .subtitle-clip {

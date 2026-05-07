@@ -411,22 +411,9 @@ type WorkbenchStage = Exclude<EpisodeStatus, 'completed'>
 const activeTab = ref<WorkbenchStage>('asset_prep')
 
 /**
- * AssetSidebar 显隐逻辑：
- * - ① 内容（pending）：识别要素在主区域，不重复
- * - ② 资产（asset_prep）：主区域已详细管理资产，侧栏重复
- * - ③ 剧本（scripting）：引用通过 @角色/@地点 写在剧本里，侧栏不实用
- * - ④ 分镜（storyboarding）：分镜卡 + 编辑面板已自含角色配置，侧栏不实用
- * - ⑤ 制作（producing）：编辑面板已显示本分镜引用资产 + 关键帧 chips，侧栏不实用
- * - ⑥ 合成（composing）：保留侧栏作为参考
+ * AssetSidebar 显隐逻辑：⑤⑥ 都已自含资产展示，全 stage 隐藏侧栏。
  */
-const showAssetSidebar = computed(
-  () =>
-    activeTab.value !== 'pending' &&
-    activeTab.value !== 'asset_prep' &&
-    activeTab.value !== 'scripting' &&
-    activeTab.value !== 'storyboarding' &&
-    activeTab.value !== 'producing',
-)
+const showAssetSidebar = computed(() => false)
 
 // P6-T13 顶部进度条引用（用于剧集状态变化后主动 reload）
 const progressBarRef = ref<{ reload: () => Promise<void> } | null>(null)

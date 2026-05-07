@@ -55,6 +55,7 @@ import { addCharacterBindingRace } from '@core/database/migrations/add-character
 import { addStoryboardKeyframeCount } from '@core/database/migrations/add-storyboard-keyframe-count'
 import { addKeyframeReferenceOverrides } from '@core/database/migrations/add-keyframe-reference-overrides'
 import { addStoryboardUseKeyframes } from '@core/database/migrations/add-storyboard-use-keyframes'
+import { addStoryboardIncludeInFinal } from '@core/database/migrations/add-storyboard-include-in-final'
 import { addLocationBindingExtraFields } from '@core/database/migrations/add-location-binding-extra-fields'
 import { registerCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { LanceDBService } from '@core/services/lance-db.service'
@@ -225,6 +226,8 @@ async function initDatabase(): Promise<void> {
   await addKeyframeReferenceOverrides(ds)
   // 分镜 use_keyframes：是否走关键帧流程（false → 直接用剧本描述 + 资产生成视频）
   await addStoryboardUseKeyframes(ds)
+  // 分镜 include_in_final：⑥ 合成时是否入最终成片（默认 1）
+  await addStoryboardIncludeInFinal(ds)
   // FU5-C3: location_bindings 加场景类型 + 规模 + 氛围 + 风格锚点字段（spec §3.2/3.3）
   await addLocationBindingExtraFields(ds)
 

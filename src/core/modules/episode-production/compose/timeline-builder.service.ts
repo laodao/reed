@@ -33,13 +33,15 @@ export interface TimelineShot {
   storyboardId: string
   sceneId: string
   shotNumber: number
-  /** 在整个剧集内的起始秒数 */
+  /** 在整个剧集内的起始秒数（按"包含全部分镜"计算；导出时仅 includeInFinal=true 才入帧） */
   startSec: number
   endSec: number
   durationSec: number
   videoPath: string | null
   /** 此分镜与前一分镜之间的转场（首镜为 null） */
   transition: TransitionConfig | null
+  /** 是否入最终成片（默认 true）— 用户可在 ⑥ 时间线上切换 */
+  includeInFinal: boolean
 }
 
 /** 时间线上的一个场景 */
@@ -94,6 +96,8 @@ export class TimelineBuilderService {
     let cursorSec = 0
 
     for (const scene of scenes) {
+      // 时间线返回全部分镜（含未入选的，让 UI 能展示并切换）；
+      // 真正"入选合成"由 EpisodeMp4ExporterService 在导出时按 includeInFinal 过滤。
       const storyboards = await sbRepo.find({
         where: { sceneScriptId: scene.id },
         order: { shotNumber: 'ASC' },
@@ -119,6 +123,7 @@ export class TimelineBuilderService {
           videoPath: sb.videoPath,
           // 首镜无 transition；其它镜从 entity 读 transition_*
           transition: i === 0 ? null : this.buildTransitionFromEntity(sb),
+          includeInFinal: ((sb as any).includeInFinal ?? 1) !== 0,
         })
         cursorSec = shotEnd
       }

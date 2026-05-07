@@ -55,6 +55,7 @@ export interface UpdateStoryboardRequest {
   duration?: number
   keyframeCount?: number
   useKeyframes?: boolean
+  includeInFinal?: boolean
   transition?: TransitionConfig
   status?: StoryboardStatus
 }
@@ -118,6 +119,7 @@ export class StoryboardRepository extends BaseRepository<
       duration: e.duration,
       keyframeCount: e.keyframeCount,
       useKeyframes: ((e as any).useKeyframes ?? 1) !== 0,
+      includeInFinal: ((e as any).includeInFinal ?? 1) !== 0,
       transition: this.parseTransition(e),
       status: e.status as StoryboardStatus,
       createdAt: this.toEpochMs(e.createdAt),
@@ -249,6 +251,10 @@ export class StoryboardRepository extends BaseRepository<
     if (data.keyframeCount !== undefined) { existing.keyframeCount = data.keyframeCount; changed = true }
     if (data.useKeyframes !== undefined) {
       ;(existing as any).useKeyframes = data.useKeyframes ? 1 : 0
+      changed = true
+    }
+    if (data.includeInFinal !== undefined) {
+      ;(existing as any).includeInFinal = data.includeInFinal ? 1 : 0
       changed = true
     }
     if (data.transition !== undefined) {

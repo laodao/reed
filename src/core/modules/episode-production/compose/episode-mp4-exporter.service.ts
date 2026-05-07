@@ -116,21 +116,28 @@ export class EpisodeMp4ExporterService {
       input.episodeScriptId,
     )
 
-    if (timeline.missingVideoStoryboardIds.length > 0) {
-      throw new Error(
-        `导出阻断：${timeline.missingVideoStoryboardIds.length} 个分镜尚未生成视频片段（${
-          timeline.missingVideoStoryboardIds.slice(0, 3).join(', ')
-        }${timeline.missingVideoStoryboardIds.length > 3 ? '...' : ''}）`,
-      )
-    }
-
     const width = input.width ?? DEFAULT_WIDTH
     const height = input.height ?? DEFAULT_HEIGHT
 
-    // 收集 inputs（按 timeline 顺序）+ 转场 plans
-    const flatShots = timeline.scenes.flatMap((s) => s.shots)
+    // ⑥ 用户可在时间线勾选/取消每个分镜是否入最终成片：仅保留 includeInFinal=true
+    const flatShots = timeline.scenes
+      .flatMap((s) => s.shots)
+      .filter((s) => s.includeInFinal !== false)
+
     if (flatShots.length === 0) {
-      throw new Error('导出阻断：时间线为空')
+      throw new Error('导出阻断：当前没有任何"入选"分镜，请在时间线上勾选至少一个')
+    }
+    // 入选分镜中若有缺视频的，提前阻断（buildEpisodeTimeline.missingVideoStoryboardIds
+    // 是全分镜的，过滤后要重新计算）
+    const missingInSelected = flatShots
+      .filter((s) => !s.videoPath)
+      .map((s) => s.storyboardId)
+    if (missingInSelected.length > 0) {
+      throw new Error(
+        `导出阻断：${missingInSelected.length} 个入选分镜尚未生成视频（${
+          missingInSelected.slice(0, 3).join(', ')
+        }${missingInSelected.length > 3 ? '...' : ''}）`,
+      )
     }
     // 把 user-rel 相对路径解析为绝对路径再交给 ffmpeg
     const inputs = flatShots.map((s) => resolveUserRelPath(s.videoPath!))

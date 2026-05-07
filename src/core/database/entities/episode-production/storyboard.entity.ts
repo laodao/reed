@@ -111,6 +111,13 @@ export class StoryboardEntity {
   @Column({ name: 'use_keyframes', type: 'integer', default: 1 })
   useKeyframes!: number
 
+  /**
+   * ⑥ 合成时是否入最终成片（1=true 默认；0=false 跳过）。
+   * 一个场景可能有多个分镜（不同角度 / 备选视角），用户可在时间线勾选只合成需要的。
+   */
+  @Column({ name: 'include_in_final', type: 'integer', default: 1 })
+  includeInFinal!: number
+
   /** 视频生成服务商 ID（对应 provider_config 表）*/
   @Column({ name: 'video_provider_id', type: 'varchar', nullable: true })
   videoProviderId!: string | null

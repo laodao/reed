@@ -465,6 +465,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-storyboard-use-keyframes'
     )
     await addStoryboardUseKeyframes(this.dataSource)
+    // 分镜 include_in_final：⑥ 合成是否入最终成片
+    const { addStoryboardIncludeInFinal } = await import(
+      '@core/database/migrations/add-storyboard-include-in-final'
+    )
+    await addStoryboardIncludeInFinal(this.dataSource)
   }
 
   /**

@@ -248,6 +248,12 @@ export interface Storyboard {
    */
   useKeyframes?: boolean
 
+  /**
+   * ⑥ 合成时是否入最终成片（默认 true）。
+   * false → buildEpisodeTimeline 跳过该分镜，不参与最终视频。
+   */
+  includeInFinal?: boolean
+
   // 转场设置
   transition: TransitionConfig
 
