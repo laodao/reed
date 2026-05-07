@@ -24,7 +24,9 @@
           @click="onGenerateForScene"
         >
           <el-icon><MagicStick /></el-icon>
-          为本场景生成分镜
+          {{ generating && genProgress
+            ? `生成中 ${genProgress.shotNumber}/${genProgress.total || '?'}`
+            : '为本场景生成分镜' }}
         </el-button>
         <el-button
           type="primary"
@@ -33,7 +35,9 @@
           @click="onGenerateAllScenes"
         >
           <el-icon><MagicStick /></el-icon>
-          ✨ AI 一键拆所有场景
+          {{ generatingAll && genProgress
+            ? `批量生成 ${genProgress.shotNumber}/${genProgress.total || '?'}`
+            : '✨ AI 一键拆所有场景' }}
         </el-button>
         <el-button
           type="success"
@@ -448,7 +452,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   ArrowRight,
@@ -485,6 +489,9 @@ const assetStore = useEpAssetStore()
 
 const generating = ref(false)
 const generatingAll = ref(false)
+/** 分镜生成进度（来自 ep:storyboard-progress 事件，逐个分镜推送） */
+const genProgress = ref<{ shotNumber: number; total: number } | null>(null)
+let unsubStoryboardProgress: (() => void) | null = null
 const savingEdit = ref(false)
 const loadingStoryboards = ref(false)
 
@@ -814,6 +821,7 @@ async function onGenerateForScene(): Promise<void> {
     return
   }
   generating.value = true
+  genProgress.value = { shotNumber: 0, total: 0 }
   try {
     const api = (window as any).electronAPI?.episodeProduction
     if (!api?.generateStoryboard) {
@@ -836,6 +844,7 @@ async function onGenerateForScene(): Promise<void> {
     ElMessage.error(e?.message || '生成分镜失败')
   } finally {
     generating.value = false
+    genProgress.value = null
   }
 }
 
@@ -859,6 +868,7 @@ async function onGenerateAllScenes(): Promise<void> {
     return
   }
   generatingAll.value = true
+  genProgress.value = { shotNumber: 0, total: 0 }
   try {
     const api = (window as any).electronAPI?.episodeProduction
     if (!api?.generateStoryboards) {
@@ -885,6 +895,7 @@ async function onGenerateAllScenes(): Promise<void> {
     ElMessage.error(e?.message || '批量生成分镜失败')
   } finally {
     generatingAll.value = false
+    genProgress.value = null
   }
 }
 
@@ -909,6 +920,29 @@ watch(
   },
   { immediate: true },
 )
+
+// 监听后端逐个分镜的进度推送（generateStoryboardsIncremental 内部 send）
+onMounted(() => {
+  const api = (window as any).electronAPI?.episodeProduction
+  if (!api?.onStoryboardProgress) return
+  unsubStoryboardProgress = api.onStoryboardProgress(
+    (_event: any, data: { sceneId: string; shotNumber: number; total: number; storyboard: any }) => {
+      genProgress.value = {
+        shotNumber: data.shotNumber ?? 0,
+        total: data.total ?? 0,
+      }
+      // 当前选中场景命中时立即追加新分镜，免等整批完
+      if (selectedScene.value && data.sceneId === selectedScene.value.id) {
+        void storyboardStore.loadStoryboards(selectedScene.value.id)
+      }
+    },
+  )
+})
+
+onBeforeUnmount(() => {
+  if (unsubStoryboardProgress) unsubStoryboardProgress()
+  unsubStoryboardProgress = null
+})
 </script>
 
 <style scoped lang="scss">
