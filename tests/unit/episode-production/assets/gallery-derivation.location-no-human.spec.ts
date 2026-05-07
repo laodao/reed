@@ -57,7 +57,7 @@ describe('GalleryDerivationService · location 派生无人约束', () => {
   })
 
   it('location 派生：自动注入无人约束', async () => {
-    await svc.deriveSingle({
+    const entity = await svc.deriveSingle({
       assetType: 'location',
       assetId: 'loc1',
       category: 'angle_variant',
@@ -68,6 +68,9 @@ describe('GalleryDerivationService · location 派生无人约束', () => {
     expect(c.prompt.includes('no people')).toBe(true)
     expect(c.negativePrompt).toBeDefined()
     expect(c.negativePrompt.includes('person')).toBe(true)
+    // 写库一致性：entity 字段必须是 effective 版本
+    expect(entity.prompt).toBe(c.prompt)
+    expect(entity.negativePrompt ?? null).toBe(c.negativePrompt ?? null)
   })
 
   it('location time_variant 派生：同样注入无人约束', async () => {
