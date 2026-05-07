@@ -317,11 +317,37 @@ async function onGenerateAllMissing(): Promise<void> {
   }
 
   generatingAll.value = true
+
+  // ── Stage 1: AI 设定反推（仅填空字段；任意 kind 失败不阻塞 stage 2） ──
+  try {
+    ElMessage.info('① AI 正在为缺失主图的资产反推设定卡…')
+    const { enrichAssetSettings } = await import('@/api/asset-setting-enrichment')
+    const enrichSummary = await enrichAssetSettings(props.projectId)
+    const total =
+      enrichSummary.enrichedCount.character +
+      enrichSummary.enrichedCount.location +
+      enrichSummary.enrichedCount.item
+    if (enrichSummary.failures.length > 0) {
+      ElMessage.warning(
+        `部分 kind 反推失败：${enrichSummary.failures.map((f) => f.kind).join(', ')}（继续生成）`,
+      )
+    } else {
+      ElMessage.success(`AI 反推完成，写入 ${total} 项设定`)
+    }
+  } catch (e: any) {
+    generatingAll.value = false
+    ElMessage.error(`AI 反推中止：${e?.message ?? e}`)
+    return
+  }
+
+  // 重新拉 summary（反推可能改了 hasMain 周边的可见字段；hasMain 本身不变，但生成依据已更新）
+  await reload()
+
+  // ── Stage 2: 主图批量生成 ──
+  ElMessage.info(`② 开始为 ${tasks.length} 个资产生成主图（并发 2）`)
   let okCount = 0
   let failCount = 0
   const failures: string[] = []
-  ElMessage.info(`开始为 ${tasks.length} 个资产生成主图（并发 2）`)
-
   const { generateMainFor } = await import('@/api/main-image-generator')
   const concurrency = 2
   let cursor = 0
