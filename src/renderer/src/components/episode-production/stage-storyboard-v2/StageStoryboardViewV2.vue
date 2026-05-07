@@ -808,6 +808,11 @@ async function onSaveEdit(): Promise<void> {
  */
 async function onGenerateForScene(): Promise<void> {
   if (!selectedScene.value) return
+  const sm = projectStore.currentProject?.config?.scriptModel
+  if (!sm?.providerConfigId || !sm?.modelId) {
+    ElMessage.warning('请先在项目设置中配置剧本生成模型（用于 AI 分镜）')
+    return
+  }
   generating.value = true
   try {
     const api = (window as any).electronAPI?.episodeProduction
@@ -815,7 +820,11 @@ async function onGenerateForScene(): Promise<void> {
       ElMessage.error('分镜生成 IPC 不可用')
       return
     }
-    const resp = await api.generateStoryboard(selectedScene.value.id)
+    const resp = await api.generateStoryboard(
+      selectedScene.value.id,
+      sm.providerConfigId,
+      sm.modelId,
+    )
     if (!resp?.success) {
       ElMessage.error(resp?.error || '生成分镜失败')
       return
@@ -844,6 +853,11 @@ async function onGenerateAllScenes(): Promise<void> {
     ElMessage.warning('剧本没有场景，请先 ✨ AI 重新生成剧本')
     return
   }
+  const sm = projectStore.currentProject?.config?.scriptModel
+  if (!sm?.providerConfigId || !sm?.modelId) {
+    ElMessage.warning('请先在项目设置中配置剧本生成模型（用于 AI 分镜）')
+    return
+  }
   generatingAll.value = true
   try {
     const api = (window as any).electronAPI?.episodeProduction
@@ -851,7 +865,11 @@ async function onGenerateAllScenes(): Promise<void> {
       ElMessage.error('分镜批量生成 IPC 不可用')
       return
     }
-    const resp = await api.generateStoryboards(script.value.id)
+    const resp = await api.generateStoryboards(
+      script.value.id,
+      sm.providerConfigId,
+      sm.modelId,
+    )
     if (!resp?.success) {
       ElMessage.error(resp?.error || '批量生成分镜失败')
       return
