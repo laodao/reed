@@ -118,18 +118,47 @@
           <div class="te-row track-row">
             <div class="track-label">视频 V1</div>
             <div class="track-content video-track">
+              <!-- 场景分隔符 + 场景级 ▶ 跳起点（P0） -->
+              <div
+                v-for="s in sceneDividers"
+                :key="`sd-${s.sceneId}`"
+                class="scene-divider"
+                :style="{ left: `${(s.startSec / totalSec) * 100}%` }"
+                :title="`场景 ${s.sceneNumber}：${s.title || ''} · 点 ▶ 跳到此场景`"
+              >
+                <button
+                  class="scene-divider-btn"
+                  :title="`跳到场景 ${s.sceneNumber} 起点（${s.startSec.toFixed(1)}s）`"
+                  @click.stop="onJumpToScene(s.startSec)"
+                >▶</button>
+                <span class="scene-divider-label">
+                  S{{ s.sceneNumber }}<span v-if="s.title">: {{ s.title }}</span>
+                </span>
+              </div>
+
+              <!-- 分镜片段（同场景内可拖拽调序，P1） -->
               <template v-for="(cell, i) in cells" :key="`v-${cell.id}`">
                 <div
                   class="clip video-clip"
                   :class="[
                     `scene-${cell.sceneNumber}`,
                     cell.hasVideo ? 'filled' : 'missing',
-                    { excluded: !cell.includeInFinal },
+                    {
+                      excluded: !cell.includeInFinal,
+                      'is-dragging': dragging.from === cell.id,
+                      'is-drop-target': dragging.target === cell.id,
+                    },
                   ]"
                   :style="cellStyle(cell)"
                   :title="
-                    `${cell.includeInFinal ? '✅ 入选' : '⊘ 不入选'} · 场景 ${cell.sceneNumber} 镜 ${cell.shotNumber} · ${cell.duration}s`
+                    `${cell.includeInFinal ? '✅ 入选' : '⊘ 不入选'} · 场景 ${cell.sceneNumber} 镜 ${cell.shotNumber} · ${cell.duration}s · 同场景内可拖拽调序`
                   "
+                  draggable="true"
+                  @dragstart="onCellDragStart($event, cell)"
+                  @dragover.prevent="onCellDragOver($event, cell)"
+                  @dragleave="onCellDragLeave(cell)"
+                  @drop.prevent="onCellDrop($event, cell)"
+                  @dragend="onCellDragEnd"
                 >
                   <el-checkbox
                     :model-value="cell.includeInFinal"
@@ -298,7 +327,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   CircleCheckFilled,
@@ -377,6 +406,108 @@ const includedCells = computed(() => cells.value.filter((c) => c.includeInFinal)
 const includedDurationSec = computed(() =>
   includedCells.value.reduce((acc, c) => acc + (c.duration ?? 0), 0),
 )
+
+/** P0：场景分隔符（每场起点 + ▶ 按钮） */
+const sceneDividers = computed(() => {
+  if (!timeline.value) return []
+  return (timeline.value.scenes ?? []).map((s: any) => ({
+    sceneId: s.sceneId,
+    sceneNumber: s.sceneNumber,
+    title: s.sceneTitle ?? s.title ?? '',
+    startSec: s.startSec ?? 0,
+  }))
+})
+
+function onJumpToScene(startSec: number) {
+  const v = videoRef.value
+  if (!v || !lastExport.value) {
+    ElMessage.info('请先导出视频后再跳转预览')
+    return
+  }
+  v.currentTime = Math.max(0, Math.min(v.duration || 0, startSec))
+  v.play?.().catch(() => {})
+}
+
+// ===== P1：分镜拖拽调序（同场景内） =====
+const dragging = reactive<{ from: string | null; target: string | null }>({
+  from: null,
+  target: null,
+})
+const reordering = ref(false)
+
+function onCellDragStart(e: DragEvent, cell: any) {
+  dragging.from = cell.id
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', cell.id)
+  }
+}
+
+function onCellDragOver(e: DragEvent, cell: any) {
+  if (!dragging.from || dragging.from === cell.id) return
+  // 仅允许同场景内
+  const fromCell = cells.value.find((c) => c.id === dragging.from)
+  if (!fromCell || fromCell.sceneScriptId !== cell.sceneScriptId) {
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'none'
+    return
+  }
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+  dragging.target = cell.id
+}
+
+function onCellDragLeave(cell: any) {
+  if (dragging.target === cell.id) dragging.target = null
+}
+
+async function onCellDrop(_e: DragEvent, targetCell: any) {
+  const fromId = dragging.from
+  dragging.target = null
+  dragging.from = null
+  if (!fromId || fromId === targetCell.id) return
+  const fromCell = cells.value.find((c) => c.id === fromId)
+  if (!fromCell) return
+  if (fromCell.sceneScriptId !== targetCell.sceneScriptId) {
+    ElMessage.warning('暂不支持跨场景拖拽（语义复杂；先取消勾选 / 改场景顺序）')
+    return
+  }
+  if (reordering.value) return
+
+  // 计算同场景内新顺序：把 fromId 抽出来插到 targetId 位置
+  const sceneCells = cells.value
+    .filter((c) => c.sceneScriptId === fromCell.sceneScriptId)
+    .map((c) => c.id)
+  const fromIdx = sceneCells.indexOf(fromId)
+  const toIdx = sceneCells.indexOf(targetCell.id)
+  if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return
+  const next = sceneCells.slice()
+  next.splice(fromIdx, 1)
+  next.splice(toIdx, 0, fromId)
+
+  reordering.value = true
+  try {
+    const api = (window as any).electronAPI?.episodeProduction
+    if (!api?.reorderStoryboards) {
+      ElMessage.error('reorderStoryboards IPC 未暴露')
+      return
+    }
+    const resp = await api.reorderStoryboards(fromCell.sceneScriptId, next)
+    if (!resp?.success) {
+      ElMessage.error(resp?.error || '调序失败')
+      return
+    }
+    ElMessage.success('已调序')
+    await loadTimeline()
+  } catch (e: any) {
+    ElMessage.error('调序失败：' + (e?.message ?? '未知错误'))
+  } finally {
+    reordering.value = false
+  }
+}
+
+function onCellDragEnd() {
+  dragging.from = null
+  dragging.target = null
+}
 
 const totalSec = computed(() => {
   return timeline.value?.totalDurationSec ?? cells.value.reduce((acc, c) => acc + (c.duration ?? 0), 0)
@@ -989,6 +1120,62 @@ async function onDownloadExport() {
   filter: grayscale(80%);
   opacity: 0.45;
   border-style: dashed;
+}
+
+.video-clip.is-dragging {
+  opacity: 0.5;
+}
+
+.video-clip.is-drop-target {
+  outline: 2px dashed var(--el-color-primary);
+  outline-offset: 1px;
+}
+
+/* 场景分隔符（P0） */
+.scene-divider {
+  position: absolute;
+  top: -20px;
+  bottom: -2px;
+  border-left: 2px dashed var(--el-color-warning);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.scene-divider-btn {
+  pointer-events: auto;
+  margin-left: 2px;
+  padding: 0;
+  width: 18px;
+  height: 18px;
+  font-size: 10px;
+  background: var(--el-color-primary);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+.scene-divider-btn:hover {
+  transform: scale(1.15);
+}
+
+.scene-divider-label {
+  pointer-events: auto;
+  margin-left: 4px;
+  margin-top: 1px;
+  padding: 0 4px;
+  font-size: 10px;
+  color: var(--el-color-warning);
+  background: var(--el-bg-color);
+  border-radius: 2px;
+  white-space: nowrap;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .clip-include {

@@ -152,6 +152,7 @@ const IPC_CHANNELS = {
   EP_STORYBOARD_GET_BACKGROUND_REF: 'ep:storyboard:get-background-ref',
   EP_GET_STORYBOARD: 'ep:get-storyboard',
   EP_UPDATE_STORYBOARD: 'ep:update-storyboard',
+  EP_REORDER_STORYBOARDS: 'ep:reorder-storyboards',
 
   EP_GENERATE_SCRIPT: 'ep:generate-script',
   EP_GENERATE_SCENES: 'ep:generate-scenes',
@@ -1632,6 +1633,12 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.EP_GET_STORYBOARD, storyboardId),
     updateStoryboard: (storyboardId: string, data: any) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_UPDATE_STORYBOARD, storyboardId, data),
+    reorderStoryboards: (sceneScriptId: string, orderedIds: string[]) =>
+      ipcRenderer.invoke(
+        IPC_CHANNELS.EP_REORDER_STORYBOARDS,
+        sceneScriptId,
+        orderedIds,
+      ),
     /** FU5-A9-L2 ④ 分镜配置时绑 panorama_snapshot 作背景 ref（spec §4.5.10） */
     setStoryboardBackgroundRef: (storyboardId: string, imageId: string | null) =>
       ipcRenderer.invoke(

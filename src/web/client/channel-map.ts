@@ -407,6 +407,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.listStoryboards': { channel: 'ep:list-storyboards' },
   'episodeProduction.getStoryboard': { channel: 'ep:get-storyboard' },
   'episodeProduction.updateStoryboard': { channel: 'ep:update-storyboard' },
+  'episodeProduction.reorderStoryboards': { channel: 'ep:reorder-storyboards' },
   // FU5-A9-L2 分镜背景 ref（panorama_snapshot 绑入分镜）
   'episodeProduction.setStoryboardBackgroundRef': { channel: 'ep:storyboard:set-background-ref' },
   'episodeProduction.getStoryboardBackgroundRef': { channel: 'ep:storyboard:get-background-ref' },

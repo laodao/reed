@@ -18,6 +18,7 @@ export function registerStoryboardHandlers(): void {
   ipcBridge.handle('ep:list-storyboards', handleListStoryboards)
   ipcBridge.handle('ep:get-storyboard', handleGetStoryboard)
   ipcBridge.handle('ep:update-storyboard', handleUpdateStoryboard)
+  ipcBridge.handle('ep:reorder-storyboards', handleReorderStoryboards)
 
   // ==================== AI 生成（分镜） ====================
   ipcBridge.handle('ep:generate-storyboard', handleGenerateStoryboard)
@@ -99,6 +100,23 @@ async function handleGetStoryboard(
     return { success: true, data: storyboard }
   } catch (error: any) {
     return { success: false, error: error.message || '获取分镜失败' }
+  }
+}
+
+async function handleReorderStoryboards(
+  _event: any,
+  sceneScriptId: string,
+  orderedIds: string[],
+): Promise<IpcResponse> {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.storyboards) {
+      return { success: false, error: '数据库未初始化' }
+    }
+    await db.storyboards.reorderInScene(sceneScriptId, orderedIds)
+    return { success: true, data: { reordered: orderedIds.length } }
+  } catch (error: any) {
+    return { success: false, error: error.message || '调序失败' }
   }
 }
 

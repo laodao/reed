@@ -275,6 +275,42 @@ export class StoryboardRepository extends BaseRepository<
     return affected > 0
   }
 
+  /**
+   * 批量重排某场景内分镜的 shotNumber。
+   * orderedIds 顺序即新的 shotNumber 顺序（1-based）。
+   * 用 transaction + 两步策略避免唯一约束冲突（如果将来加）：
+   *   1) 先把所有目标 storyboard 的 shotNumber 设到一个临时大数（id+10000）
+   *   2) 再按新顺序 1, 2, 3, ... 写回
+   */
+  async reorderInScene(
+    sceneScriptId: string,
+    orderedIds: string[],
+  ): Promise<void> {
+    if (orderedIds.length === 0) return
+
+    // 验证 ids 全部属于该 scene
+    const found = await this.scoped.find({ where: { sceneScriptId } as any })
+    const foundIds = new Set(found.map((sb) => sb.id))
+    for (const id of orderedIds) {
+      if (!foundIds.has(id)) {
+        throw new Error(`分镜 ${id} 不属于场景 ${sceneScriptId}`)
+      }
+    }
+
+    const TEMP_OFFSET = 10000
+    await this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(StoryboardEntity)
+      // 1) 临时偏移：所有传入分镜的 shotNumber 都 +OFFSET，避免和 1..N 冲突
+      for (const id of orderedIds) {
+        await repo.update({ id } as any, { shotNumber: () => `shot_number + ${TEMP_OFFSET}` } as any)
+      }
+      // 2) 按新顺序写 1..N
+      for (let i = 0; i < orderedIds.length; i++) {
+        await repo.update({ id: orderedIds[i] } as any, { shotNumber: i + 1 })
+      }
+    })
+  }
+
   async deleteBySceneScriptId(sceneScriptId: string): Promise<number> {
     return this.scoped.delete({ sceneScriptId } as any)
   }
