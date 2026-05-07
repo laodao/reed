@@ -343,15 +343,25 @@ export class KnowledgeBaseService {
       if (!kb) return { success: false, error: '知识库不存在' }
 
       await db.kbDocuments.updateProgress(docId, 0)
-      await db.kbVectors.deleteByDocumentId(docId)
-      await db.kbInvertedIndex.deleteByDocumentId(docId)
-      await db.kbChunks.deleteByDocumentId(docId)
-
+      await this.clearDocumentArtifacts(docId)
       await this.processDocument(doc, kb)
       return { success: true }
     } catch (e: any) {
       return { success: false, error: e.message }
     }
+  }
+
+  /**
+   * 清空一篇文档相关的所有派生数据：vectors / inverted-index / chunks。
+   * 由 reprocessDocument 与 addDocument 的 upsert 分支共用。
+   * 顺序与 deleteDocument 保持一致，避免外键约束被违反。
+   */
+  private async clearDocumentArtifacts(docId: string): Promise<void> {
+    const db = getCoreDatabaseManager()
+    if (!db.kbVectors || !db.kbInvertedIndex || !db.kbChunks) return
+    await db.kbVectors.deleteByDocumentId(docId)
+    await db.kbInvertedIndex.deleteByDocumentId(docId)
+    await db.kbChunks.deleteByDocumentId(docId)
   }
 
   // ==================== 文档处理 ====================
