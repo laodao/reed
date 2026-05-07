@@ -21,6 +21,8 @@ import {
 import {
   appendAngleLightingLock,
   mergeAngleLightingNegative,
+  appendLocationNoHumanConstraint,
+  mergeLocationNoHumanNegative,
 } from '@core/modules/episode-production/assets/prompts/location-constraints'
 
 /**
@@ -109,6 +111,13 @@ export class GalleryDerivationService {
       prompt = appendAngleLightingLock(prompt)
       negativePrompt = mergeAngleLightingNegative(negativePrompt)
     }
+    // 地点全域无人约束（spec §location-no-human）：
+    // 所有 location 资产的派生图（angle / time / weather / pose 等所有 label）
+    // 强制不出现人物，约束在此统一注入，与角度锁并存（幂等函数允许多次调用）。
+    if (input.assetType === 'location') {
+      prompt = appendLocationNoHumanConstraint(prompt)
+      negativePrompt = mergeLocationNoHumanNegative(negativePrompt)
+    }
     const result = await this.imageGen.generate({
       referenceImagePaths: [main.imagePath],
       prompt,
@@ -132,8 +141,8 @@ export class GalleryDerivationService {
       thumbnailPath: result.thumbnailPath ?? undefined,
       isMain: false,
       derivedFromImageId: main.id,
-      prompt: input.additionalPrompt ?? undefined,
-      negativePrompt: input.negativePrompt ?? undefined,
+      prompt: prompt,
+      negativePrompt: negativePrompt ?? undefined,
       sortOrder,
     })
   }
