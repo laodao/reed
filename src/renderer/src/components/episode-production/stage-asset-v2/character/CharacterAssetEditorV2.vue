@@ -117,9 +117,18 @@ const dirtyKeys = ref<Set<string>>(new Set())
 const hasDirty = computed(() => dirtyKeys.value.size > 0)
 const dirtyCount = computed(() => dirtyKeys.value.size)
 
+// effectiveName 来自后端 effective 投影：
+// - standalone：standaloneName
+// - linked_lw：overrideName ?? lw.name（lw 表的真实角色名）
+// 单独存一个 ref 是因为 binding.value 是 raw entity，不含 LW 投影；
+// load 后追加调一次 effective IPC 即可拿到正确显示名。
+const effectiveName = ref<string | null>(null)
+
 const displayName = computed(() => {
   const b = binding.value
   if (!b) return '加载中...'
+  if (effectiveName.value) return effectiveName.value
+  // effective 还没拉到 / 拉失败时按 raw 字段兜底（老逻辑保留作 fallback）
   if (b.sourceType === 'standalone') return b.standaloneName || '(未命名)'
   return b.overrideName || b.standaloneName || '(未命名 lw)'
 })
@@ -144,6 +153,18 @@ async function load(): Promise<void> {
     binding.value = resp.data
     formDraft.value = {}
     dirtyKeys.value = new Set()
+
+    // 拉 effective 投影后的 name（linked_lw 时会取 LW 表的真实角色名）
+    // 失败不阻塞 — displayName computed 会按 raw binding 字段兜底
+    api.character.effective?.(props.bindingId)
+      .then((eff: any) => {
+        if (eff?.success && eff.data?.name) {
+          effectiveName.value = eff.data.name
+        }
+      })
+      .catch(() => {
+        /* 静默忽略；fallback 到 raw 字段 */
+      })
 
     // 主图状态
     const imgList = await api.image

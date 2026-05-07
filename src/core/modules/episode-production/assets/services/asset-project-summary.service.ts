@@ -10,11 +10,14 @@
  * 不直接用 Repository.list（已 user_id scope），保持 PC + Web 双端共用。
  */
 
-import type { DataSource } from 'typeorm'
+import { In, type DataSource } from 'typeorm'
 import { CharacterBindingEntity } from '@core/database/entities/episode-production/character-binding.entity'
 import { LocationBindingEntity } from '@core/database/entities/episode-production/location-binding.entity'
 import { ItemBindingEntity } from '@core/database/entities/episode-production/item-binding.entity'
 import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
+import { LwCharacterEntity } from '@core/database/entities/lw-character.entity'
+import { LwLocationEntity } from '@core/database/entities/lw-location.entity'
+import { LwItemEntity } from '@core/database/entities/lw-item.entity'
 
 export interface BindingSummary {
   /** binding.id */
@@ -96,11 +99,32 @@ export class AssetProjectSummaryService {
       itemRepo.find({ where: { projectId } }),
     ])
 
+    // linked_lw binding 的"显示名"在 LW 表里——批量预取避免 N+1。
+    // 不存在 lwId（standalone）或 LW 已被删除时，fallback 到 binding 自身字段，最后才到 id。
+    const lwCharNames = await this.fetchLwNames(
+      LwCharacterEntity,
+      chars.map((b) => b.longWritingCharacterId),
+    )
+    const lwLocNames = await this.fetchLwNames(
+      LwLocationEntity,
+      locs.map((b) => (b as any).longWritingLocationId as string | null),
+    )
+    const lwItemNames = await this.fetchLwNames(
+      LwItemEntity,
+      items.map((b) => (b as any).longWritingItemId as string | null),
+    )
+
     const characters = await Promise.all(
       chars.map((b) =>
         this.summarizeBinding(imgRepo, 'character', {
           id: b.id,
-          name: b.standaloneName ?? (b as any).overrideName ?? b.id,
+          name: this.resolveDisplayName({
+            sourceType: b.sourceType,
+            standaloneName: b.standaloneName,
+            overrideName: (b as any).overrideName,
+            lwName: lwCharNames.get(b.longWritingCharacterId ?? ''),
+            id: b.id,
+          }),
           sourceType: (b.sourceType as 'linked_lw' | 'standalone') ?? 'standalone',
         }),
       ),
@@ -110,11 +134,13 @@ export class AssetProjectSummaryService {
       locs.map((b) =>
         this.summarizeBinding(imgRepo, 'location', {
           id: b.id,
-          name:
-            (b as any).standaloneName ??
-            (b as any).overrideName ??
-            (b as any).locationName ??
-            b.id,
+          name: this.resolveDisplayName({
+            sourceType: (b as any).sourceType,
+            standaloneName: (b as any).standaloneName,
+            overrideName: (b as any).overrideName,
+            lwName: lwLocNames.get((b as any).longWritingLocationId ?? ''),
+            id: b.id,
+          }),
           sourceType: (b.sourceType as 'linked_lw' | 'standalone') ?? 'standalone',
         }),
       ),
@@ -124,11 +150,13 @@ export class AssetProjectSummaryService {
       items.map((b) =>
         this.summarizeBinding(imgRepo, 'item', {
           id: b.id,
-          name:
-            (b as any).standaloneName ??
-            (b as any).overrideName ??
-            (b as any).itemName ??
-            b.id,
+          name: this.resolveDisplayName({
+            sourceType: (b as any).sourceType,
+            standaloneName: (b as any).standaloneName,
+            overrideName: (b as any).overrideName,
+            lwName: lwItemNames.get((b as any).longWritingItemId ?? ''),
+            id: b.id,
+          }),
           sourceType: (b.sourceType as 'linked_lw' | 'standalone') ?? 'standalone',
         }),
       ),
@@ -182,6 +210,46 @@ export class AssetProjectSummaryService {
         galleryCompletionPct,
       },
     }
+  }
+
+  /**
+   * 根据 binding 的来源类型挑选显示名。
+   * - standalone：用 standaloneName（独立创建时填的）
+   * - linked_lw：override 优先（用户改过名字）；其次 LW 表的真实名（最常见）；最后才 fallback 到 id
+   * 没有 sourceType / 老数据兜底：standalone → linked_lw 的 fallback 链都试一遍
+   */
+  private resolveDisplayName(input: {
+    sourceType: string | null | undefined
+    standaloneName: string | null | undefined
+    overrideName: string | null | undefined
+    lwName: string | undefined
+    id: string
+  }): string {
+    if (input.sourceType === 'standalone') {
+      return input.standaloneName?.trim() || input.id
+    }
+    // linked_lw 或未知 sourceType（老数据）
+    return (
+      input.overrideName?.trim() ||
+      input.lwName?.trim() ||
+      input.standaloneName?.trim() ||
+      input.id
+    )
+  }
+
+  /**
+   * 批量按 id IN 查询 LW 实体的 name 字段，返回 id → name 的 Map。
+   * 入参 ids 可能含 null / undefined / 重复，先去噪。空集合直接返回空 Map（不查 DB）。
+   */
+  private async fetchLwNames<T extends { id: string; name: string }>(
+    entityClass: new () => T,
+    rawIds: Array<string | null | undefined>,
+  ): Promise<Map<string, string>> {
+    const ids = Array.from(new Set(rawIds.filter((x): x is string => !!x)))
+    if (ids.length === 0) return new Map()
+    const repo = this.ds.getRepository(entityClass)
+    const rows = await repo.find({ where: { id: In(ids) } as any })
+    return new Map(rows.map((r) => [r.id, r.name]))
   }
 
   private async summarizeBinding(
