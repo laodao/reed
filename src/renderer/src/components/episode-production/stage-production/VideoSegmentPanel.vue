@@ -693,19 +693,20 @@ onMounted(loadProviders)
   color: var(--el-text-color-secondary);
 }
 
-/* 提供商+模型 / 模式+时长 一行两栏 */
+/* 提供商+模型 / 模式+时长 一行两栏；每栏内 label 与控件水平并排 */
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
   margin-bottom: 10px;
-  align-items: end;
+  align-items: center;
 }
 
 .form-cell {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -713,20 +714,14 @@ onMounted(loadProviders)
   font-size: 12px;
   color: var(--el-text-color-secondary);
   font-weight: 500;
+  flex-shrink: 0;
+  width: 56px;
+  text-align: right;
 }
 
 .full-width {
-  width: 100%;
-}
-
-.duration-cell {
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-}
-
-.duration-cell .cell-label {
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
 }
 
 @media (max-width: 720px) {
