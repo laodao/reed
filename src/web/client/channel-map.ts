@@ -499,6 +499,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.asset.item.createLinkedLw': { channel: 'ep:asset:item:create-linked-lw' },
   'episodeProduction.asset.item.updateOverride': { channel: 'ep:asset:item:update-override' },
   'episodeProduction.asset.item.updateStandalone': { channel: 'ep:asset:item:update-standalone' },
+  'episodeProduction.asset.item.updateExtra': { channel: 'ep:asset:item:update-extra' },
   'episodeProduction.asset.item.delete': { channel: 'ep:asset:item:delete' },
   // 语音资产（5 个）
   'episodeProduction.asset.voice.list': { channel: 'ep:asset:voice:list' },

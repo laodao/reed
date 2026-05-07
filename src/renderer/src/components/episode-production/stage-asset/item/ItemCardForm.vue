@@ -3,9 +3,6 @@
     <template #header>
       <div class="card-header">
         <span class="header-title">📋 设定卡</span>
-        <el-tag v-if="binding" :type="isLinkedLw ? 'primary' : 'warning'" size="small" effect="plain">
-          {{ isLinkedLw ? 'linked_lw' : 'standalone' }}
-        </el-tag>
       </div>
     </template>
 
@@ -48,6 +45,21 @@
         />
       </el-form-item>
 
+      <!-- 风格 -->
+      <el-form-item label="风格">
+        <el-select
+          v-model="form.styleAnchors"
+          multiple
+          filterable
+          allow-create
+          default-first-option
+          placeholder="选择或输入主流风格（多选；按回车自定义）"
+          class="full-width"
+        >
+          <el-option v-for="s in STYLE_PRESETS" :key="s" :label="s" :value="s" />
+        </el-select>
+      </el-form-item>
+
       <!-- 保存按钮 -->
       <div class="form-footer">
         <el-button type="success" :loading="saving" @click="onSave">
@@ -77,6 +89,7 @@
  */
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { STYLE_PRESETS } from '@core/modules/episode-production/assets/constants/style-presets'
 
 const props = defineProps<{ bindingId: string }>()
 const emit = defineEmits<{ saved: [] }>()
@@ -85,9 +98,14 @@ const loading = ref(false)
 const saving = ref(false)
 const binding = ref<any>(null)
 
-const form = reactive({
+const form = reactive<{
+  name: string
+  description: string
+  styleAnchors: string[]
+}>({
   name: '',
   description: '',
+  styleAnchors: [],
 })
 
 const overrideEnabled = reactive({
@@ -132,6 +150,7 @@ function hydrateFromBinding(b: any) {
   if (!b) {
     form.name = ''
     form.description = ''
+    form.styleAnchors = []
     overrideEnabled.name = false
     overrideEnabled.description = false
     return
@@ -148,6 +167,17 @@ function hydrateFromBinding(b: any) {
     form.description = b.standaloneDescription ?? ''
     overrideEnabled.name = true
     overrideEnabled.description = true
+  }
+  form.styleAnchors = parseJsonArray(b.styleAnchors)
+}
+
+function parseJsonArray(raw: string | null | undefined): string[] {
+  if (!raw) return []
+  try {
+    const v = JSON.parse(raw)
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
   }
 }
 
@@ -187,6 +217,16 @@ async function onSave() {
       if (!resp || !resp.success) {
         ElMessage.error(resp?.error || '保存 standalone 失败')
         return
+      }
+    }
+
+    // 风格锚点（character/location/item 通用 — 通过 updateExtra 落库）
+    if (api.item.updateExtra) {
+      const extraResp = await api.item.updateExtra(props.bindingId, {
+        styleAnchors: form.styleAnchors,
+      })
+      if (!extraResp?.success) {
+        ElMessage.warning(extraResp?.error || '风格保存失败（其他字段已保存）')
       }
     }
 
@@ -251,6 +291,10 @@ defineExpose({ reload: load })
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.full-width {
+  width: 100%;
 }
 
 .form-footer {

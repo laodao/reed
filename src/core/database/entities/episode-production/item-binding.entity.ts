@@ -74,6 +74,10 @@ export class ItemBindingEntity {
   @Column({ name: 'standalone_description', type: 'text', nullable: true })
   standaloneDescription!: string | null
 
+  /** 风格锚点（JSON 数组字符串：'["卡通","二次元"]'）。spec 2026-05-08 与 character/location 对齐。 */
+  @Column({ name: 'style_anchors', type: 'text', nullable: true })
+  styleAnchors!: string | null
+
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 

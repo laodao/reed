@@ -49,6 +49,16 @@ export type ItemOverridePatch = Partial<{
   description: string | null
 }>
 
+function parseJsonArray(raw: string | null | undefined): string[] {
+  if (!raw) return []
+  try {
+    const v = JSON.parse(raw)
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
 /** updateStandalone 接受的 patch */
 export type ItemStandalonePatch = Partial<{
   name: string
@@ -103,11 +113,13 @@ export class ItemAssetService {
     const b = await this.bindingRepo.findOne({ where: { id: bindingId } })
     if (!b) throw new Error(`ItemBinding not found: ${bindingId}`)
 
+    const styleAnchors = parseJsonArray(b.styleAnchors)
     if (b.sourceType === 'standalone') {
       return {
         name: b.standaloneName ?? b.itemName ?? '(未命名)',
         description: b.standaloneDescription ?? '',
         source: 'standalone',
+        styleAnchors,
       }
     }
 
@@ -120,7 +132,23 @@ export class ItemAssetService {
       name: b.overrideName ?? lw?.name ?? b.itemName ?? '(未命名)',
       description: b.overrideDescription ?? lw?.description ?? '',
       source: 'linked_lw',
+      styleAnchors,
     }
+  }
+
+  /** 更新风格锚点（与 character/location 对齐 — text JSON 字符串落库） */
+  async updateExtra(
+    bindingId: string,
+    patch: { styleAnchors?: string[] | null },
+  ): Promise<void> {
+    const update: Record<string, unknown> = { updatedAt: new Date() }
+    if ('styleAnchors' in patch) {
+      update.styleAnchors =
+        patch.styleAnchors == null
+          ? null
+          : JSON.stringify(patch.styleAnchors.filter((s) => typeof s === 'string' && s.trim() !== ''))
+    }
+    await this.bindingRepo.update(bindingId, update)
   }
 
   /** 新建 standalone 物品（独立物品，不绑定 lw_item） */

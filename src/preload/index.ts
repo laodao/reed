@@ -260,6 +260,7 @@ const IPC_CHANNELS = {
   EP_ASSET_ITEM_CREATE_LINKED_LW: 'ep:asset:item:create-linked-lw',
   EP_ASSET_ITEM_UPDATE_OVERRIDE: 'ep:asset:item:update-override',
   EP_ASSET_ITEM_UPDATE_STANDALONE: 'ep:asset:item:update-standalone',
+  EP_ASSET_ITEM_UPDATE_EXTRA: 'ep:asset:item:update-extra',
   EP_ASSET_ITEM_DELETE: 'ep:asset:item:delete',
 
   // 语音资产（5 个）
@@ -1928,6 +1929,8 @@ const electronAPI = {
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_ITEM_UPDATE_OVERRIDE, id, override),
         updateStandalone: (id: string, patch: any) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_ITEM_UPDATE_STANDALONE, id, patch),
+        updateExtra: (id: string, patch: any) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_ITEM_UPDATE_EXTRA, id, patch),
         delete: (id: string) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_ITEM_DELETE, id),
       },

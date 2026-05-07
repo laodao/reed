@@ -309,4 +309,6 @@ export interface EffectiveItemData {
   name: string
   description: string
   source: AssetBindingSourceType
+  /** 风格锚点（spec 2026-05-08 与 character/location 对齐） */
+  styleAnchors?: string[]
 }

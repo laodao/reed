@@ -32,6 +32,7 @@ export function registerItemAssetHandlers(): void {
   ipcBridge.handle('ep:asset:item:create-linked-lw', handleAssetItemCreateLinkedLw)
   ipcBridge.handle('ep:asset:item:update-override', handleAssetItemUpdateOverride)
   ipcBridge.handle('ep:asset:item:update-standalone', handleAssetItemUpdateStandalone)
+  ipcBridge.handle('ep:asset:item:update-extra', handleAssetItemUpdateExtra)
   ipcBridge.handle('ep:asset:item:delete', handleAssetItemDelete)
 }
 
@@ -233,6 +234,20 @@ async function handleAssetItemUpdateStandalone(
   try {
     const svc = new ItemAssetService(requireDataSource())
     await svc.updateStandalone(id, patch)
+    return { success: true, data: { updated: true } }
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+async function handleAssetItemUpdateExtra(
+  _event: any,
+  id: string,
+  patch: { styleAnchors?: string[] | null },
+): Promise<IpcResponse> {
+  try {
+    const svc = new ItemAssetService(requireDataSource())
+    await svc.updateExtra(id, patch)
     return { success: true, data: { updated: true } }
   } catch (err: any) {
     return { success: false, error: err?.message ?? String(err) }

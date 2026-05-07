@@ -58,6 +58,7 @@ import { addKeyframeReferenceOverrides } from '@core/database/migrations/add-key
 import { addStoryboardUseKeyframes } from '@core/database/migrations/add-storyboard-use-keyframes'
 import { addStoryboardIncludeInFinal } from '@core/database/migrations/add-storyboard-include-in-final'
 import { addLocationBindingExtraFields } from '@core/database/migrations/add-location-binding-extra-fields'
+import { addItemBindingStyleAnchors } from '@core/database/migrations/add-item-binding-style-anchors'
 import { registerCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { LanceDBService } from '@core/services/lance-db.service'
 import { initVectorStore } from '@core/services/vector/registry'
@@ -233,6 +234,8 @@ async function initDatabase(): Promise<void> {
   await addStoryboardIncludeInFinal(ds)
   // FU5-C3: location_bindings 加场景类型 + 规模 + 氛围 + 风格锚点字段（spec §3.2/3.3）
   await addLocationBindingExtraFields(ds)
+  // spec 2026-05-08: item_bindings 加 style_anchors（与 character/location 对齐）
+  await addItemBindingStyleAnchors(ds)
 
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)

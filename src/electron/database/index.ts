@@ -445,6 +445,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-location-binding-extra-fields'
     )
     await addLocationBindingExtraFields(this.dataSource)
+    // spec 2026-05-08: item_bindings 加 style_anchors（与 character/location 对齐）
+    const { addItemBindingStyleAnchors } = await import(
+      '@core/database/migrations/add-item-binding-style-anchors'
+    )
+    await addItemBindingStyleAnchors(this.dataSource)
     // 角色资产 race（人种）字段：用于 AI 主图 / 派生图 prompt 拼接
     const { addCharacterBindingRace } = await import(
       '@core/database/migrations/add-character-binding-race'
