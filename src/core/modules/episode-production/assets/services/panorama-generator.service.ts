@@ -13,6 +13,10 @@
 
 import type { AssetImageService } from './asset-image.service'
 import type { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
+import {
+  appendLocationNoHumanConstraint,
+  mergeLocationNoHumanNegative,
+} from '../prompts/location-constraints'
 
 /**
  * 抽象 360 全景图像生成器接口（依赖注入）。
@@ -81,10 +85,14 @@ export class PanoramaGeneratorService {
    * 4. 写入 asset_image (assetType='location', category='panorama_360', isMain=0)
    */
   async generateFor(input: GenerateForInput): Promise<AssetImageEntity> {
-    const fullPrompt =
+    const basePrompt =
       input.stylePrompt +
       (input.additionalPrompt ? ' ' + input.additionalPrompt : '') +
       PANORAMA_PROMPT_SUFFIX
+
+    // 360 全景永远在 location 域内，强制注入无人约束
+    const fullPrompt = appendLocationNoHumanConstraint(basePrompt)
+    const fullNegative = mergeLocationNoHumanNegative(input.negativePrompt)
 
     // 若该地点已有主图，作为 reference 透传 → 360 风格跟主图对齐
     const main = await this.imageSvc.getMainImage('location', input.locationBindingId)
@@ -92,7 +100,7 @@ export class PanoramaGeneratorService {
 
     const result = await this.imageGen.generate({
       prompt: fullPrompt,
-      negativePrompt: input.negativePrompt,
+      negativePrompt: fullNegative,
       aspectRatio: '2:1',
       referenceImagePaths,
     })
@@ -105,7 +113,7 @@ export class PanoramaGeneratorService {
       thumbnailPath: result.thumbnailPath ?? undefined,
       isMain: false,
       prompt: fullPrompt,
-      negativePrompt: input.negativePrompt,
+      negativePrompt: fullNegative,
       userId: input.userId,
     })
   }
