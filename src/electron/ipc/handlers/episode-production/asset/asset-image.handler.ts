@@ -7,6 +7,7 @@
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { getPathProvider } from '@core/interfaces/path.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import {
   AssetImageService,
@@ -18,6 +19,10 @@ import {
   MainImageGeneratorService,
   type GenerateMainInput,
 } from '@core/modules/episode-production/assets/services/main-image-generator.service'
+import {
+  MainImageUploadService,
+  MainImageUploadValidationError,
+} from '@core/modules/episode-production/assets/services/main-image-upload.service'
 import { createGalleryImageGenerator } from '@core/modules/episode-production/assets/services/image-provider-adapter'
 import type { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 
@@ -45,6 +50,7 @@ export function registerAssetImageHandlers(): void {
   ipcBridge.handle('ep:asset:image:delete', handleDeleteImage)
   ipcBridge.handle('ep:asset:image:update', handleUpdateImage)
   ipcBridge.handle('ep:asset:image:generate-main', handleGenerateMain)
+  ipcBridge.handle('ep:asset:image:upload-main-file', handleUploadMainFile)
 }
 
 /** 取 DataSource；未初始化则抛错 */
@@ -164,6 +170,34 @@ async function handleGenerateMain(
     const data = await svc.generateMain(input)
     return { success: true, data }
   } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+async function handleUploadMainFile(
+  _event: any,
+  input: {
+    fileName: string
+    base64: string
+    assetType: AssetType
+    assetId: string
+  },
+): Promise<IpcResponse> {
+  try {
+    const ds = requireDataSource()
+    const imageSvc = new AssetImageService(ds)
+    const svc = new MainImageUploadService(getPathProvider(), imageSvc)
+    const data = await svc.upload({
+      buffer: Buffer.from(input.base64, 'base64'),
+      fileName: input.fileName,
+      assetType: input.assetType,
+      assetId: input.assetId,
+    })
+    return { success: true, data }
+  } catch (err: any) {
+    if (err instanceof MainImageUploadValidationError) {
+      return { success: false, error: `[${err.code}] ${err.message}` }
+    }
     return { success: false, error: err?.message ?? String(err) }
   }
 }

@@ -2,15 +2,13 @@
  * 文件上传路由（multipart/form-data）
  * @module web/server/api/upload-router
  * @description 与 /api/ipc/<channel>（JSON 透传）并行的独立路由族，专门处理需要二进制
- *              字节流的资源上传。当前仅 panorama 一项，后续可扩展（headshot / item 主图等）。
+ *              字节流的资源上传。
  *
- * 路由：POST /api/upload/panorama
- * Body: multipart/form-data
- *   - file: 必填 · 360 全景图（jpeg/png/webp，2:1 比例 ±2%，≤50MB）
- *   - locationBindingId: 必填 · 关联地点 binding ID
- *   - label: 可选 · panorama 标签
+ * 路由：
+ *   POST /api/upload/panorama       · 360 全景图上传
+ *   POST /api/upload/main-image     · 资产主图上传替换（character/location/item）
  *
- * 响应: { ok: true, data: AssetImageEntity } | { ok: false, error: string }
+ * 响应: { ok: true, data: { success: true, data: AssetImageEntity } } | { ok: false, error: string }
  *
  * 多租户：requireAuth + runWithUserAsync 把当前请求 userId 注入 ALS，
  * 与 /api/ipc 路由保持一致的隔离规则。
@@ -27,6 +25,10 @@ import {
   PanoramaUploadService,
   PanoramaUploadValidationError,
 } from '@core/modules/episode-production/assets/services/panorama-upload.service'
+import {
+  MainImageUploadService,
+  MainImageUploadValidationError,
+} from '@core/modules/episode-production/assets/services/main-image-upload.service'
 import { createPanoramaImageGenerator } from '@core/modules/episode-production/assets/services/image-provider-adapter'
 import { requireAuth } from '../auth/middleware'
 
@@ -79,6 +81,72 @@ router.post(
       res.json({ ok: true, data: { success: true, data: result } })
     } catch (e: any) {
       if (e instanceof PanoramaUploadValidationError) {
+        res
+          .status(400)
+          .json({
+            ok: true,
+            data: { success: false, error: `[${e.code}] ${e.message}` },
+          })
+        return
+      }
+      res
+        .status(500)
+        .json({
+          ok: true,
+          data: { success: false, error: e?.message ?? String(e) },
+        })
+    }
+  },
+)
+
+/**
+ * POST /api/upload/main-image
+ * Body: multipart/form-data
+ *   - file:      必填 · 主图（jpeg/png/webp，≤20MB）
+ *   - assetType: 必填 · 'character' | 'location' | 'item'
+ *   - assetId:   必填 · 资产 binding ID
+ */
+router.post(
+  '/main-image',
+  requireAuth,
+  upload.single('file'),
+  async (req: Request, res: Response) => {
+    const file = (req as any).file as Express.Multer.File | undefined
+    const assetType = String(req.body?.assetType ?? '').trim() as 'character' | 'location' | 'item'
+    const assetId = String(req.body?.assetId ?? '').trim()
+
+    if (!file) {
+      res.status(400).json({ ok: false, error: '缺少 file 字段' })
+      return
+    }
+    if (!assetType || !['character', 'location', 'item'].includes(assetType)) {
+      res.status(400).json({ ok: false, error: '缺少或不合法的 assetType（应为 character/location/item）' })
+      return
+    }
+    if (!assetId) {
+      res.status(400).json({ ok: false, error: '缺少 assetId' })
+      return
+    }
+
+    try {
+      const userId = req.user!.userId
+      const result = await runWithUserAsync(userId, async () => {
+        const db = getCoreDatabaseManager()
+        if (!db.dataSource) throw new Error('数据库未初始化')
+        const imageSvc = new AssetImageService(db.dataSource)
+        const svc = new MainImageUploadService(getPathProvider(), imageSvc)
+        return await svc.upload({
+          buffer: file.buffer,
+          fileName: file.originalname,
+          assetType,
+          assetId,
+          userId,
+        })
+      })
+      // 双层 envelope：外层 ok 是 HTTP 层；内层 success 是 IpcResponse（与 /api/ipc/<channel> 对齐）
+      res.json({ ok: true, data: { success: true, data: result } })
+    } catch (e: any) {
+      if (e instanceof MainImageUploadValidationError) {
         res
           .status(400)
           .json({

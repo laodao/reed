@@ -289,6 +289,9 @@ const IPC_CHANNELS = {
   EP_ASSET_IMPORT_FROM_PORTRAIT: 'ep:asset:import:from-portrait',
   EP_ASSET_IMPORT_FROM_IMAGE: 'ep:asset:import:from-image',
 
+  // 主图文件上传（双端 · follow-up）
+  EP_ASSET_IMAGE_UPLOAD_MAIN_FILE: 'ep:asset:image:upload-main-file',
+
   // 360 全景 + 视角截图（7 个 · P3c Task 4）
   EP_ASSET_PANORAMA_LIST: 'ep:asset:panorama:list',
   EP_ASSET_PANORAMA_GENERATE: 'ep:asset:panorama:generate',
@@ -1959,6 +1962,8 @@ const electronAPI = {
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_UPDATE, id, patch),
         generateMain: (input: any) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_GENERATE_MAIN, input),
+        uploadMainFile: (input: { fileName: string; base64: string; assetType: string; assetId: string }) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_UPLOAD_MAIN_FILE, input),
       },
       // 派生（2 个）
       derive: {

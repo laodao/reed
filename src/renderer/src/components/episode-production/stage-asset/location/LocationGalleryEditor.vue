@@ -55,9 +55,21 @@
               >
                 ✨ 生成主图
               </el-button>
-              <el-button size="small" :disabled="busy" @click="onUploadMain">
-                {{ mainImage ? '⬆ 上传替换' : '⬆ 上传' }}
-              </el-button>
+              <el-upload
+                :auto-upload="false"
+                :show-file-list="false"
+                :on-change="onPickMainFile"
+                accept="image/jpeg,image/png,image/webp"
+                :disabled="busy"
+              >
+                <el-button
+                  size="small"
+                  :loading="busyKey === 'main-upload'"
+                  :disabled="busy && busyKey !== 'main-upload'"
+                >
+                  {{ mainImage ? '⬆ 上传替换' : '⬆ 上传' }}
+                </el-button>
+              </el-upload>
             </span>
           </div>
         </template>
@@ -301,6 +313,7 @@ import {
 import { useAssetImageActions } from '@/composables/use-asset-image-actions'
 import PanoramaSnapshotEditor from './PanoramaSnapshotEditor.vue'
 import { uploadPanoramaFile } from '@/api/panorama-upload'
+import { uploadMainImageFile } from '@/api/main-image-upload'
 import {
   LOCATION_TIME_VALUES,
   LOCATION_WEATHER_VALUES,
@@ -469,9 +482,20 @@ function onRegenerateMain() {
   void doGenerateMain()
 }
 
-function onUploadMain() {
+async function onPickMainFile(file: UploadFile) {
+  const raw = file.raw
+  if (!raw) return
   if (busy.value) return
-  ElMessage.info('主图上传走 follow-up，当前请用「生成主图」AI 出图')
+  busyKey.value = 'main-upload'
+  try {
+    await uploadMainImageFile({ file: raw, assetType: props.assetType, assetId: props.bindingId })
+    ElMessage.success('主图已上传替换')
+    await reload()
+  } catch (e: any) {
+    ElMessage.error(e?.message || '主图上传失败')
+  } finally {
+    busyKey.value = null
+  }
 }
 
 async function onBatchDerive(cat: CategoryConfig) {

@@ -23,8 +23,8 @@
         </template>
 
         <div class="main-thumb">
-          <template v-if="mainImage?.imagePath">
-            <img :src="toImageUrl(mainImage.imagePath)" alt="主图" />
+          <template v-if="mainImage?.imagePath || mainImage?.id">
+            <img :src="toImageUrl(mainImage!.imagePath)" alt="主图" />
             <div class="thumb-tools" @click.stop>
               <el-tooltip content="下载" placement="top">
                 <el-icon class="thumb-tool-icon" :size="14" @click="downloadImage(mainImage)"><Download /></el-icon>
@@ -38,15 +38,27 @@
         </div>
 
         <div class="main-actions">
-          <el-button v-if="!mainImage" type="primary" plain size="small" @click="onGenerateMain">
+          <el-button v-if="!mainImage" type="primary" plain size="small" :disabled="busy" @click="onGenerateMain">
             ✨ 生成主图
           </el-button>
-          <el-button v-else size="small" @click="onRegenerateMain">
+          <el-button v-else size="small" :disabled="busy" @click="onRegenerateMain">
             ↺ 重生成
           </el-button>
-          <el-button size="small" @click="onUploadMain">
-            ⬆ 上传替换
-          </el-button>
+          <el-upload
+            :auto-upload="false"
+            :show-file-list="false"
+            :on-change="onPickMainFile"
+            accept="image/jpeg,image/png,image/webp"
+            :disabled="busy"
+          >
+            <el-button
+              size="small"
+              :loading="busyKey === 'main-upload'"
+              :disabled="busy && busyKey !== 'main-upload'"
+            >
+              ⬆ 上传替换
+            </el-button>
+          </el-upload>
         </div>
       </el-card>
 
@@ -132,8 +144,10 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import type { UploadFile } from 'element-plus'
 import { Delete, Download, Plus, Refresh } from '@element-plus/icons-vue'
 import { generateMainFor } from '@/api/main-image-generator'
+import { uploadMainImageFile } from '@/api/main-image-upload'
 import { toImageUrl } from '@/utils/asset-url'
 import { useAssetImageActions } from '@/composables/use-asset-image-actions'
 
@@ -177,7 +191,15 @@ const categories: CategoryConfig[] = [
 const loading = ref(false)
 const allImages = ref<AssetImageRow[]>([])
 
-const mainImage = computed(() => allImages.value.find((i) => i.category === 'main') || null)
+/**
+ * 全局忙状态 key（与 character/location 保持一致）：
+ *   - null           所有按钮可用
+ *   - 'main-upload'  主图上传中
+ */
+const busyKey = ref<string | null>(null)
+const busy = computed(() => busyKey.value !== null)
+
+const mainImage = computed(() => allImages.value.find((i) => i.isMain === 1) || null)
 
 function getApi() {
   return (window as any).electronAPI?.episodeProduction?.asset
@@ -236,8 +258,20 @@ function onRegenerateMain() {
   void doGenerateMain()
 }
 
-function onUploadMain() {
-  ElMessage.info('主图上传走 follow-up，当前请用「生成主图」AI 出图')
+async function onPickMainFile(uploadFile: UploadFile) {
+  const file = uploadFile.raw as File | undefined
+  if (!file) return
+  if (busy.value) return
+  busyKey.value = 'main-upload'
+  try {
+    await uploadMainImageFile({ file, assetType: props.assetType, assetId: props.bindingId })
+    ElMessage.success('主图已上传替换')
+    await reload()
+  } catch (e: any) {
+    ElMessage.error(e?.message || '主图上传失败')
+  } finally {
+    busyKey.value = null
+  }
 }
 
 async function onBatchDerive(cat: CategoryConfig) {

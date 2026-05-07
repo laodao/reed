@@ -26,9 +26,21 @@
                 >
                   ↺ 重生成
                 </el-button>
-                <el-button size="small" :disabled="busy" @click="onUploadMain">
-                  ⬆ 上传替换
-                </el-button>
+                <el-upload
+                  :auto-upload="false"
+                  :show-file-list="false"
+                  :on-change="onPickMainFile"
+                  accept="image/jpeg,image/png,image/webp"
+                  :disabled="busy"
+                >
+                  <el-button
+                    size="small"
+                    :loading="busyKey === 'main-upload'"
+                    :disabled="busy && busyKey !== 'main-upload'"
+                  >
+                    ⬆ 上传替换
+                  </el-button>
+                </el-upload>
               </template>
               <el-button
                 v-else
@@ -227,6 +239,7 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import type { UploadFile } from 'element-plus'
 import {
   ArrowLeft,
   ArrowRight,
@@ -237,6 +250,7 @@ import {
   Refresh,
 } from '@element-plus/icons-vue'
 import { generateMainFor } from '@/api/main-image-generator'
+import { uploadMainImageFile } from '@/api/main-image-upload'
 import { toImageUrl } from '@/utils/asset-url'
 import { useAssetImageActions } from '@/composables/use-asset-image-actions'
 
@@ -418,10 +432,20 @@ function onRegenerateMain() {
   void doGenerateMain()
 }
 
-function onUploadMain() {
+async function onPickMainFile(uploadFile: UploadFile) {
+  const file = uploadFile.raw as File | undefined
+  if (!file) return
   if (busy.value) return
-  // 主图上传留 follow-up（与 panorama 上传同模式：ElUpload + multipart endpoint）
-  ElMessage.info('主图上传走 follow-up，当前请用「生成主图」AI 出图')
+  busyKey.value = 'main-upload'
+  try {
+    await uploadMainImageFile({ file, assetType: props.assetType, assetId: props.bindingId })
+    ElMessage.success('主图已上传替换')
+    await reload()
+  } catch (e: any) {
+    ElMessage.error(e?.message || '主图上传失败')
+  } finally {
+    busyKey.value = null
+  }
 }
 
 async function onBatchDerive(cat: CategoryConfig) {
