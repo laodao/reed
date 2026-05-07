@@ -24,7 +24,22 @@
       请先选择一个分镜
     </div>
 
-    <div v-else class="form-area">
+    <!-- 已生成视频播放器（取最新结果，回退到 storyboard.videoPath） -->
+    <div v-if="storyboard && currentVideoPath" class="video-player-section">
+      <video
+        :key="currentVideoPath"
+        :src="toVideoUrl(currentVideoPath)"
+        controls
+        preload="metadata"
+        class="result-video"
+      />
+      <div class="video-player-meta">
+        <span class="video-player-label">本分镜视频</span>
+        <span class="video-player-path" :title="currentVideoPath">{{ currentVideoPath }}</span>
+      </div>
+    </div>
+
+    <div v-if="storyboard" class="form-area">
       <!-- P5-T29 spec §4.7：分镜元信息 panel -->
       <div class="meta-section">
         <h5 class="meta-title">分镜元信息（spec §4.7）</h5>
@@ -213,7 +228,7 @@ import {
   Picture,
   Warning,
 } from '@element-plus/icons-vue'
-import { toImageUrl } from '@/utils/asset-url'
+import { toImageUrl, toVideoUrl } from '@/utils/asset-url'
 import { useEpAssetStore, useEpScriptStore } from '@/stores/episode-production'
 
 interface Storyboard {
@@ -395,6 +410,18 @@ const generating = ref(false)
 const lastResult = ref<VideoSegmentResult | null>(null)
 const errorMessage = ref<string | null>(null)
 
+/**
+ * 当前可播放的视频路径：优先取本次生成结果，其次取 storyboard 已有的 videoPath。
+ * 切换分镜时 lastResult 由父组件 :key 重置；storyboard.videoPath 来自 reload。
+ */
+const currentVideoPath = computed<string | null>(() => {
+  return (
+    lastResult.value?.output?.videoPath ||
+    props.storyboard?.videoPath ||
+    null
+  )
+})
+
 const selectedProvider = computed(() =>
   availableProviders.value.find(
     (p) => p.providerConfigId === selectedProviderConfigId.value,
@@ -521,6 +548,48 @@ onMounted(loadProviders)
   margin: 0;
   font-size: 14px;
   flex: 1;
+}
+
+.video-player-section {
+  margin-bottom: 12px;
+  padding: 10px;
+  background: var(--el-fill-color-lighter);
+  border-radius: 4px;
+}
+
+.result-video {
+  width: 100%;
+  max-height: 360px;
+  background: #000;
+  border-radius: 4px;
+  display: block;
+  outline: none;
+}
+
+.video-player-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+}
+
+.video-player-label {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  flex-shrink: 0;
+}
+
+.video-player-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: monospace;
+  font-size: 10px;
+  color: var(--el-text-color-placeholder);
 }
 
 .empty-state {
