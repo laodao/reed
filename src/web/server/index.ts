@@ -53,6 +53,7 @@ import { addKeyframeUserPromptOverride } from '@core/database/migrations/add-key
 import { addCharacterBindingExtraFields } from '@core/database/migrations/add-character-binding-extra-fields'
 import { addCharacterBindingRace } from '@core/database/migrations/add-character-binding-race'
 import { addStoryboardKeyframeCount } from '@core/database/migrations/add-storyboard-keyframe-count'
+import { addKbDocumentSource } from '@core/database/migrations/add-kb-document-source'
 import { addKeyframeReferenceOverrides } from '@core/database/migrations/add-keyframe-reference-overrides'
 import { addStoryboardUseKeyframes } from '@core/database/migrations/add-storyboard-use-keyframes'
 import { addStoryboardIncludeInFinal } from '@core/database/migrations/add-storyboard-include-in-final'
@@ -222,6 +223,8 @@ async function initDatabase(): Promise<void> {
   await addCharacterBindingRace(ds)
   // 分镜 keyframe_count 字段（前端编辑面板有按钮组但保存链路缺）
   await addStoryboardKeyframeCount(ds)
+  // 知识库文档来源字段
+  await addKbDocumentSource(ds)
   // 关键帧 reference_overrides：用户精细挑图覆盖
   await addKeyframeReferenceOverrides(ds)
   // 分镜 use_keyframes：是否走关键帧流程（false → 直接用剧本描述 + 资产生成视频）

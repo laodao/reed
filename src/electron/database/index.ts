@@ -455,6 +455,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-storyboard-keyframe-count'
     )
     await addStoryboardKeyframeCount(this.dataSource)
+    // 知识库文档来源字段
+    const { addKbDocumentSource } = await import(
+      '@core/database/migrations/add-kb-document-source'
+    )
+    await addKbDocumentSource(this.dataSource)
     // 关键帧 reference_overrides：用户精细挑图覆盖
     const { addKeyframeReferenceOverrides } = await import(
       '@core/database/migrations/add-keyframe-reference-overrides'
