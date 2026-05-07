@@ -100,7 +100,6 @@ export class AssetProjectSummaryService {
     ])
 
     // linked_lw binding 的"显示名"在 LW 表里——批量预取避免 N+1。
-    // 不存在 lwId（standalone）或 LW 已被删除时，fallback 到 binding 自身字段，最后才到 id。
     const lwCharNames = await this.fetchLwNames(
       LwCharacterEntity,
       chars.map((b) => b.longWritingCharacterId),
@@ -114,6 +113,11 @@ export class AssetProjectSummaryService {
       items.map((b) => (b as any).longWritingItemId as string | null),
     )
 
+    // 自愈：修复 CharacterBindingRepository.create 历史 bug（不写 name + sourceType 默认 standalone）
+    // 留下来的脏数据 —— 检测到"有 lwId 但 overrideName/standaloneName 都空"的 binding，
+    // 一次性回填 sourceType=linked_lw + overrideName=lw.name，写库后内存版本也同步更新。
+    await this.healCharacterBindingNames(charRepo, chars, lwCharNames)
+
     const characters = await Promise.all(
       chars.map((b) =>
         this.summarizeBinding(imgRepo, 'character', {
@@ -123,7 +127,9 @@ export class AssetProjectSummaryService {
             standaloneName: b.standaloneName,
             overrideName: (b as any).overrideName,
             lwName: lwCharNames.get(b.longWritingCharacterId ?? ''),
+            legacyName: undefined, // character_bindings 没有遗留 name 字段
             id: b.id,
+            kind: 'character',
           }),
           sourceType: (b.sourceType as 'linked_lw' | 'standalone') ?? 'standalone',
         }),
@@ -139,7 +145,9 @@ export class AssetProjectSummaryService {
             standaloneName: (b as any).standaloneName,
             overrideName: (b as any).overrideName,
             lwName: lwLocNames.get((b as any).longWritingLocationId ?? ''),
+            legacyName: (b as any).locationName,
             id: b.id,
+            kind: 'location',
           }),
           sourceType: (b.sourceType as 'linked_lw' | 'standalone') ?? 'standalone',
         }),
@@ -155,7 +163,9 @@ export class AssetProjectSummaryService {
             standaloneName: (b as any).standaloneName,
             overrideName: (b as any).overrideName,
             lwName: lwItemNames.get((b as any).longWritingItemId ?? ''),
+            legacyName: (b as any).itemName,
             id: b.id,
+            kind: 'item',
           }),
           sourceType: (b.sourceType as 'linked_lw' | 'standalone') ?? 'standalone',
         }),
@@ -218,22 +228,85 @@ export class AssetProjectSummaryService {
    * - linked_lw：override 优先（用户改过名字）；其次 LW 表的真实名（最常见）；最后才 fallback 到 id
    * 没有 sourceType / 老数据兜底：standalone → linked_lw 的 fallback 链都试一遍
    */
+  /**
+   * 解析显示名。**严禁静默 fallback 到 binding ID 或 "(未命名)"** —— 名字解析失败一律抛错让上层显式处理。
+   *
+   * 优先级：
+   *   - linked_lw → overrideName → lwName → standaloneName → legacyName → throw
+   *   - standalone → standaloneName → legacyName → throw
+   *
+   * `legacyName` 是 location_bindings.locationName / item_bindings.itemName 这种 schema 遗留字段
+   * （character_bindings 没有此字段，传 undefined 即可）。
+   */
   private resolveDisplayName(input: {
     sourceType: string | null | undefined
     standaloneName: string | null | undefined
     overrideName: string | null | undefined
     lwName: string | undefined
+    legacyName: string | null | undefined
     id: string
+    kind: 'character' | 'location' | 'item'
   }): string {
-    if (input.sourceType === 'standalone') {
-      return input.standaloneName?.trim() || input.id
+    const name =
+      input.sourceType === 'standalone'
+        ? (input.standaloneName?.trim() || input.legacyName?.trim())
+        : (input.overrideName?.trim() ||
+           input.lwName?.trim() ||
+           input.standaloneName?.trim() ||
+           input.legacyName?.trim())
+    if (!name) {
+      throw new Error(
+        `${input.kind} binding ${input.id} 缺失名称（sourceType=${input.sourceType}，未取到 standaloneName/overrideName/lwName/legacyName）`,
+      )
     }
-    // linked_lw 或未知 sourceType（老数据）
-    return (
-      input.overrideName?.trim() ||
-      input.lwName?.trim() ||
-      input.standaloneName?.trim() ||
-      input.id
+    return name
+  }
+
+  /**
+   * 自愈：修复历史 character_bindings 脏数据。
+   *
+   * 历史 bug：CharacterBindingRepository.create 不写 name 字段、不设 sourceType，导致
+   * 通过 uploaded-entity / episode-auto-binding 创建出来的 binding 全部 sourceType='standalone'
+   * 但 standaloneName/overrideName 都是 null，名字解析必然失败。
+   *
+   * 自愈策略（仅当 lwId 能在 LW 表查到 name 时才动；否则保持原样让上层抛错暴露更深问题）：
+   *   - sourceType 设为 'linked_lw'
+   *   - overrideName 写入 lw.name
+   * 同时修改入参 chars 引用以让本次 summary 立刻可用，无需 user 二次刷新。
+   */
+  private async healCharacterBindingNames(
+    repo: import('typeorm').Repository<CharacterBindingEntity>,
+    chars: CharacterBindingEntity[],
+    lwCharNames: Map<string, string>,
+  ): Promise<void> {
+    const toHeal: CharacterBindingEntity[] = []
+    for (const b of chars) {
+      const hasName =
+        (b.standaloneName?.trim() || (b as any).overrideName?.trim())
+      const lwId = b.longWritingCharacterId?.trim()
+      const lwName = lwId ? lwCharNames.get(lwId)?.trim() : undefined
+      if (!hasName && lwId && lwName) {
+        toHeal.push(b)
+      }
+    }
+    if (toHeal.length === 0) return
+    const now = new Date()
+    for (const b of toHeal) {
+      const lwName = lwCharNames.get(b.longWritingCharacterId!)!
+      await repo.update(
+        { id: b.id },
+        {
+          sourceType: 'linked_lw',
+          overrideName: lwName,
+          updatedAt: now,
+        },
+      )
+      // 同步内存对象，避免 caller 拿到旧值
+      ;(b as any).sourceType = 'linked_lw'
+      ;(b as any).overrideName = lwName
+    }
+    console.warn(
+      `[AssetProjectSummaryService] 已自愈 ${toHeal.length} 个 character_bindings 的名称（历史 bug 遗留脏数据）`,
     )
   }
 

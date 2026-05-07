@@ -106,10 +106,18 @@ async function handleBindCharacter(
       return { success: true, data: updated }
     }
 
-    // 创建新绑定
+    // 创建新绑定 — 必须传 name（与 location/item 对称），从 LW 表查
+    if (!db.lwCharacters) {
+      return { success: false, error: '数据库未初始化（lwCharacters）' }
+    }
+    const lwChar = await db.lwCharacters.getById(longWritingCharacterId)
+    if (!lwChar) {
+      return { success: false, error: `长文角色 ${longWritingCharacterId} 不存在，无法绑定` }
+    }
     const binding = await db.characterBindings.create({
       projectId,
       longWritingCharacterId,
+      name: lwChar.name,
       portraitId,
       voiceConfig,
       generateConfig

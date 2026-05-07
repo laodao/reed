@@ -226,7 +226,7 @@
  *   - 生成主图按钮 toast 占位（IPC 已注册但 image gen adapter 是 stub）。
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import {
   ArrowLeft,
   ArrowRight,
@@ -238,6 +238,7 @@ import {
 } from '@element-plus/icons-vue'
 import { generateMainFor } from '@/api/main-image-generator'
 import { toImageUrl } from '@/utils/asset-url'
+import { useAssetImageActions } from '@/composables/use-asset-image-actions'
 
 const props = defineProps<{
   bindingId: string
@@ -521,99 +522,25 @@ function getCategoryPreviewIndex(cat: CategoryConfig, label: string): number {
   )
 }
 
-// ===== 下载（双端兼容：PC 走 electronAPI 保存对话框 + 文件复制；Web 走 fetch + a[download]） =====
-async function downloadImage(img: AssetImageRow | null | undefined): Promise<void> {
-  if (!img?.imagePath) {
-    ElMessage.error('图片路径无效')
-    return
-  }
-  const fileName = (img.imagePath.split('/').pop() || 'image.png').trim()
-  const isWeb =
-    (window as any).__APP_PLATFORM__ === 'web' ||
-    !(window as any).electronAPI?.file?.saveFile
+// ===== 下载 / 删除（共享 composable，双端兼容） =====
+const { downloadImage, onDeleteImage: _onDeleteRaw } = useAssetImageActions({
+  onAfterDelete: reload,
+  mainDeleteWarning: () =>
+    `当前要删除的是"主图"。删除后该角色将进入"缺主图"状态，是否继续？`,
+  itemDeleteConfirm: (img) =>
+    `确认删除"${labelText(img.category, img.label) || img.category}"这张图？`,
+})
 
-  if (!isWeb) {
-    try {
-      const saveResult = await (window as any).electronAPI.file.saveFile({
-        defaultPath: fileName,
-        filters: [{ name: 'PNG 图片', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
-      })
-      if (!saveResult?.success || !saveResult.filePath) return
-      // imagePath 是相对路径，PC 端需要本地绝对路径
-      const url = toImageUrl(img.imagePath)
-      const abs = url.startsWith('local-image:///')
-        ? url.replace('local-image:///', '')
-        : img.imagePath
-      const copyResult = await (window as any).electronAPI.file.copyFile(
-        abs,
-        saveResult.filePath,
-      )
-      if (copyResult?.success) ElMessage.success('已保存')
-      else ElMessage.error(copyResult?.error || '保存失败')
-    } catch (e: any) {
-      ElMessage.error(e?.message || '下载失败')
-    }
-    return
-  }
-
-  // Web：fetch URL → blob → anchor download
-  const url = toImageUrl(img.imagePath)
-  if (!url) {
-    ElMessage.error('图片 URL 无效')
-    return
-  }
-  try {
-    const resp = await fetch(url)
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-    const blob = await resp.blob()
-    const blobUrl = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = blobUrl
-    a.download = fileName
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(blobUrl)
-  } catch (e: any) {
-    ElMessage.error('下载失败：' + (e?.message ?? '未知错误'))
-  }
-}
-
-// ===== 删除单张图 =====
+/**
+ * 删除单张图，删除后若当前预览正是该图则关闭预览。
+ * composable 的 onAfterDelete 负责 reload；本包装层额外处理"关闭预览"。
+ */
 async function onDeleteImage(img: AssetImageRow | null | undefined): Promise<void> {
-  if (!img) return
-  const api = getApi()
-  if (!api?.image?.delete) {
-    ElMessage.error('image.delete IPC 未暴露')
-    return
-  }
-  const isMain = img.isMain === 1
-  const labelText0 = labelText(img.category, img.label) || img.category
-  try {
-    await ElMessageBox.confirm(
-      isMain
-        ? `当前要删除的是"主图"。删除后该角色将进入"缺主图"状态，是否继续？`
-        : `确认删除"${labelText0}"这张图？`,
-      '删除图片',
-      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
-    )
-  } catch {
-    return
-  }
-  try {
-    const resp = await api.image.delete(img.id)
-    if (!resp?.success) {
-      ElMessage.error(resp?.error || '删除失败')
-      return
-    }
-    ElMessage.success('已删除')
-    // 如果当前预览中正是这张，关闭预览
-    if (showPreviewDialog.value && previewImage.value?.id === img.id) {
-      showPreviewDialog.value = false
-    }
-    await reload()
-  } catch (e: any) {
-    ElMessage.error(e?.message || '删除失败')
+  const targetId = img?.id
+  await _onDeleteRaw(img)
+  // reload 已在 onAfterDelete 里执行；若被删的图正好是预览中的图，关闭预览
+  if (targetId && previewImage.value?.id === targetId) {
+    showPreviewDialog.value = false
   }
 }
 

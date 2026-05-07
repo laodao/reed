@@ -63,12 +63,21 @@
         </template>
 
         <div class="main-thumb">
-          <img
-            v-if="mainImageSrc && mainImage"
-            :src="mainImageSrc"
-            alt="主图"
-            @dblclick="openPreview([mainImage], 0)"
-          />
+          <template v-if="mainImageSrc && mainImage">
+            <img
+              :src="mainImageSrc"
+              alt="主图"
+              @dblclick="openPreview([mainImage], 0)"
+            />
+            <div class="thumb-tools" @click.stop>
+              <el-tooltip content="下载" placement="top">
+                <el-icon class="thumb-tool-icon" :size="14" @click="downloadImage(mainImage)"><Download /></el-icon>
+              </el-tooltip>
+              <el-tooltip content="删除" placement="top">
+                <el-icon class="thumb-tool-icon danger" :size="14" @click="onDeleteImage(mainImage)"><Delete /></el-icon>
+              </el-tooltip>
+            </div>
+          </template>
           <div v-else-if="busyKey === 'main'" class="thumb-loading">
             <el-icon class="is-loading" :size="32"><Loading /></el-icon>
             <span>生成中…</span>
@@ -112,12 +121,29 @@
             class="thumb-cell"
           >
             <div class="thumb-frame">
-              <img
-                v-if="getImageByLabel(cat.key, label)?.imagePath"
-                :src="toImageUrl(getImageByLabel(cat.key, label)!.imagePath)"
-                :alt="labelText(cat.key, label)"
-                @dblclick="openPreview(getCategoryPreviewList(cat), getCategoryPreviewIndex(cat, label))"
-              />
+              <template v-if="getImageByLabel(cat.key, label)?.imagePath">
+                <img
+                  :src="toImageUrl(getImageByLabel(cat.key, label)!.imagePath)"
+                  :alt="labelText(cat.key, label)"
+                  @dblclick="openPreview(getCategoryPreviewList(cat), getCategoryPreviewIndex(cat, label))"
+                />
+                <div class="thumb-tools" @click.stop>
+                  <el-tooltip content="下载" placement="top">
+                    <el-icon
+                      class="thumb-tool-icon"
+                      :size="14"
+                      @click="downloadImage(getImageByLabel(cat.key, label)!)"
+                    ><Download /></el-icon>
+                  </el-tooltip>
+                  <el-tooltip content="删除" placement="top">
+                    <el-icon
+                      class="thumb-tool-icon danger"
+                      :size="14"
+                      @click="onDeleteImage(getImageByLabel(cat.key, label)!)"
+                    ><Delete /></el-icon>
+                  </el-tooltip>
+                </div>
+              </template>
               <el-icon
                 v-else-if="busyKey === `derive:${cat.key}`"
                 class="thumb-loading-icon is-loading"
@@ -265,11 +291,14 @@ import type { UploadFile } from 'element-plus'
 import {
   ArrowLeft,
   ArrowRight,
+  Delete,
+  Download,
   Loading,
   Plus,
   QuestionFilled,
   Refresh,
 } from '@element-plus/icons-vue'
+import { useAssetImageActions } from '@/composables/use-asset-image-actions'
 import PanoramaSnapshotEditor from './PanoramaSnapshotEditor.vue'
 import { uploadPanoramaFile } from '@/api/panorama-upload'
 import {
@@ -660,6 +689,15 @@ function getCategoryPreviewIndex(cat: CategoryConfig, label: string): number {
   return Math.max(0, list.findIndex((i) => i.category === cat.key && i.label === label))
 }
 
+// ===== 下载 / 删除（共享 composable，双端兼容） =====
+const { downloadImage, onDeleteImage } = useAssetImageActions({
+  onAfterDelete: reload,
+  mainDeleteWarning: () =>
+    `当前要删除的是"主图"。删除后该地点将进入"缺主图"状态，是否继续？`,
+  itemDeleteConfirm: (img) =>
+    `确认删除"${labelText(img.category, img.label) || img.category}"这张图？`,
+})
+
 onMounted(() => {
   reload()
   loadPanoramas()
@@ -822,6 +860,39 @@ defineExpose({ reload })
   justify-content: center;
   overflow: hidden;
   color: var(--el-text-color-secondary);
+}
+
+/* hover 工具条：右上角下载 / 删除 icon（仅在格子有图时显示） */
+.thumb-tools {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.thumb-frame:hover .thumb-tools,
+.main-thumb:hover .thumb-tools {
+  opacity: 1;
+}
+
+.thumb-tool-icon {
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  padding: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.thumb-tool-icon:hover {
+  background: var(--el-color-primary);
+}
+
+.thumb-tool-icon.danger:hover {
+  background: var(--el-color-danger);
 }
 
 .thumb-frame img {

@@ -117,7 +117,7 @@ describe('AssetProjectSummaryService.summarizeProject 显示名投影', () => {
     expect(summary.characters[0].name).toBe('王五')
   })
 
-  it('linked_lw + LW 已删除：fallback 到 binding.id（避免崩溃）', async () => {
+  it('linked_lw + LW 已删除 + 没有任何 name 字段：抛错（不静默 fallback 到 id）', async () => {
     const charRepo = ds.getRepository(CharacterBindingEntity)
     await charRepo.save({
       id: 'cb_dangling',
@@ -127,8 +127,8 @@ describe('AssetProjectSummaryService.summarizeProject 显示名投影', () => {
       voiceConfig: '{}', createdAt: new Date(), updatedAt: new Date(),
     } as any)
 
-    const summary = await svc.summarizeProject('p1')
-    expect(summary.characters[0].name).toBe('cb_dangling')
+    // 用户明确要求：拼不出名字一律抛错暴露脏数据，不能静默 fallback 到 binding ID 或 "(未命名)"
+    await expect(svc.summarizeProject('p1')).rejects.toThrow(/缺失名称/)
   })
 
   it('linked_lw 地点 binding：取 LW location 真实 name', async () => {

@@ -80,11 +80,12 @@ export class UploadedEntityService {
       })
       createdCharacters.push(character)
 
-      // 创建角色绑定
+      // 创建角色绑定（与 location/item 对称：必须传 name，否则 binding 永远无名）
       if (db.characterBindings) {
         await db.characterBindings.create({
           projectId,
           longWritingCharacterId: character.id,
+          name: character.name,
           voiceConfig: {
             voiceId: '',
             speed: 1.0,

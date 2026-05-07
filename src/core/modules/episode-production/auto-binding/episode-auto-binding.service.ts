@@ -147,6 +147,7 @@ export class EpisodeAutoBindingService {
           const createdBinding = await db.characterBindings?.create({
             projectId: videoProjectId,
             longWritingCharacterId: characterId,
+            name: character.name,
             voiceConfig: {
               voiceId: '',
               speed: 1.0,

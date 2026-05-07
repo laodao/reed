@@ -23,7 +23,17 @@
         </template>
 
         <div class="main-thumb">
-          <img v-if="mainImage?.imagePath" :src="toImageUrl(mainImage.imagePath)" alt="主图" />
+          <template v-if="mainImage?.imagePath">
+            <img :src="toImageUrl(mainImage.imagePath)" alt="主图" />
+            <div class="thumb-tools" @click.stop>
+              <el-tooltip content="下载" placement="top">
+                <el-icon class="thumb-tool-icon" :size="14" @click="downloadImage(mainImage)"><Download /></el-icon>
+              </el-tooltip>
+              <el-tooltip content="删除" placement="top">
+                <el-icon class="thumb-tool-icon danger" :size="14" @click="onDeleteImage(mainImage)"><Delete /></el-icon>
+              </el-tooltip>
+            </div>
+          </template>
           <el-empty v-else description="尚未生成主图" :image-size="60" />
         </div>
 
@@ -74,11 +84,28 @@
             class="thumb-cell"
           >
             <div class="thumb-frame">
-              <img
-                v-if="getImageByLabel(cat.key, label)?.imagePath"
-                :src="toImageUrl(getImageByLabel(cat.key, label)!.imagePath)"
-                :alt="label"
-              />
+              <template v-if="getImageByLabel(cat.key, label)?.imagePath">
+                <img
+                  :src="toImageUrl(getImageByLabel(cat.key, label)!.imagePath)"
+                  :alt="label"
+                />
+                <div class="thumb-tools" @click.stop>
+                  <el-tooltip content="下载" placement="top">
+                    <el-icon
+                      class="thumb-tool-icon"
+                      :size="14"
+                      @click="downloadImage(getImageByLabel(cat.key, label)!)"
+                    ><Download /></el-icon>
+                  </el-tooltip>
+                  <el-tooltip content="删除" placement="top">
+                    <el-icon
+                      class="thumb-tool-icon danger"
+                      :size="14"
+                      @click="onDeleteImage(getImageByLabel(cat.key, label)!)"
+                    ><Delete /></el-icon>
+                  </el-tooltip>
+                </div>
+              </template>
               <el-icon v-else size="24" class="thumb-empty-icon"><Plus /></el-icon>
             </div>
             <div class="thumb-label">{{ label }}</div>
@@ -105,9 +132,10 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Plus, Refresh } from '@element-plus/icons-vue'
+import { Delete, Download, Plus, Refresh } from '@element-plus/icons-vue'
 import { generateMainFor } from '@/api/main-image-generator'
 import { toImageUrl } from '@/utils/asset-url'
+import { useAssetImageActions } from '@/composables/use-asset-image-actions'
 
 const props = defineProps<{
   bindingId: string
@@ -249,6 +277,15 @@ async function onBatchDerive(cat: CategoryConfig) {
   }
 }
 
+// ===== 下载 / 删除（共享 composable，双端兼容） =====
+const { downloadImage, onDeleteImage } = useAssetImageActions({
+  onAfterDelete: reload,
+  mainDeleteWarning: () =>
+    `当前要删除的是"主图"。删除后该物品将进入"缺主图"状态，是否继续？`,
+  itemDeleteConfirm: (img) =>
+    `确认删除"${img.label || img.category}"这张图？`,
+})
+
 onMounted(reload)
 watch(() => props.bindingId, reload)
 watch(() => props.assetType, reload)
@@ -314,6 +351,7 @@ defineExpose({ reload })
 }
 
 .main-thumb {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -352,6 +390,7 @@ defineExpose({ reload })
 }
 
 .thumb-frame {
+  position: relative;
   width: 100%;
   aspect-ratio: 1 / 1;
   background: var(--el-fill-color-light);
@@ -362,6 +401,39 @@ defineExpose({ reload })
   justify-content: center;
   overflow: hidden;
   color: var(--el-text-color-secondary);
+}
+
+/* hover 工具条：右上角下载 / 删除 icon（仅在格子有图时显示） */
+.thumb-tools {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.thumb-frame:hover .thumb-tools,
+.main-thumb:hover .thumb-tools {
+  opacity: 1;
+}
+
+.thumb-tool-icon {
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  padding: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.thumb-tool-icon:hover {
+  background: var(--el-color-primary);
+}
+
+.thumb-tool-icon.danger:hover {
+  background: var(--el-color-danger);
 }
 
 .thumb-frame img {

@@ -15,7 +15,15 @@ import { BaseRepository } from '../base-repository'
 
 export interface CreateCharacterBindingRequest {
   projectId: string
-  longWritingCharacterId: string
+  /** 关联的长文角色 id；为 null/空 时表示 standalone（独立角色，不绑 LW） */
+  longWritingCharacterId: string | null
+  /**
+   * 角色显示名（必填）。语义按 sourceType：
+   *   - 有 longWritingCharacterId → linked_lw → 写入 overrideName（用户改过的名）
+   *   - 无 longWritingCharacterId → standalone → 写入 standaloneName
+   * 与 location_bindings.locationName / item_bindings.itemName 对称。
+   */
+  name: string
   portraitId?: string
   generateConfig?: CharacterBinding['generateConfig']
   voiceConfig: CharacterBinding['voiceConfig']
@@ -116,12 +124,21 @@ export class CharacterBindingRepository extends BaseRepository<
   async create(
     data: CreateCharacterBindingRequest,
   ): Promise<CharacterBinding> {
+    if (!data.name?.trim()) {
+      throw new Error('CharacterBindingRepository.create 必须提供 name（与 location/item 对称，避免 binding 无名）')
+    }
     const id = this.generateId()
     const now = new Date()
+    const lwId = data.longWritingCharacterId?.trim() || null
+    const sourceType: 'linked_lw' | 'standalone' = lwId ? 'linked_lw' : 'standalone'
     const entity = this.repo.create({
       id,
       projectId: data.projectId,
-      longWritingCharacterId: data.longWritingCharacterId,
+      longWritingCharacterId: lwId,
+      sourceType,
+      // linked_lw 时 name 写到 overrideName（用户对 LW 真名的覆盖）；standalone 写 standaloneName
+      overrideName: sourceType === 'linked_lw' ? data.name.trim() : null,
+      standaloneName: sourceType === 'standalone' ? data.name.trim() : null,
       portraitId: data.portraitId ?? null,
       generateConfig:
         (data.generateConfig as Record<string, unknown> | undefined) ?? null,
