@@ -279,6 +279,7 @@ const IPC_CHANNELS = {
   EP_ASSET_IMAGE_DELETE: 'ep:asset:image:delete',
   EP_ASSET_IMAGE_UPDATE: 'ep:asset:image:update',
   EP_ASSET_IMAGE_GENERATE_MAIN: 'ep:asset:image:generate-main',
+  EP_ASSET_ENRICH_SETTINGS: 'ep:asset:enrich-settings',
 
   // 派生（2 个）
   EP_ASSET_DERIVE_SINGLE: 'ep:asset:derive:single',
@@ -1992,6 +1993,9 @@ const electronAPI = {
         deleteSnapshot: (id: string) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_PANORAMA_DELETE_SNAPSHOT, id),
       },
+      // AI 设定反推（spec 2026-05-07）
+      enrichSettings: (input: { projectId: string }) =>
+        ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_ENRICH_SETTINGS, input),
     },
 
     // 视频合成进度事件监听

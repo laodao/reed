@@ -17,6 +17,7 @@ import {
   registerImportHandlers,
   registerPanoramaHandlers,
   registerAssetSummaryHandlers,
+  registerAssetSettingEnrichmentHandlers,
 } from './asset'
 import { registerScriptHandlers } from './narrative/script.handler'
 import { registerStoryboardHandlers } from './narrative/storyboard.handler'
@@ -47,6 +48,8 @@ export function registerEpisodeProductionHandlers(): void {
   registerPanoramaHandlers()
   // FU5-C1 项目级资产聚合
   registerAssetSummaryHandlers()
+  // spec 2026-05-07 · AI 设定反推
+  registerAssetSettingEnrichmentHandlers()
   registerScriptHandlers()
   registerStoryboardHandlers()
   // P5-T32 分镜内角色独立配置（spec §4.5.3）

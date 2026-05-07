@@ -515,6 +515,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.asset.image.delete': { channel: 'ep:asset:image:delete' },
   'episodeProduction.asset.image.update': { channel: 'ep:asset:image:update' },
   'episodeProduction.asset.image.generateMain': { channel: 'ep:asset:image:generate-main' },
+  // AI 设定反推（spec 2026-05-07）
+  'episodeProduction.asset.enrichSettings': { channel: 'ep:asset:enrich-settings' },
   // 派生（2 个）
   'episodeProduction.asset.derive.single': { channel: 'ep:asset:derive:single' },
   'episodeProduction.asset.derive.batch': { channel: 'ep:asset:derive:batch' },
