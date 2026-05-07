@@ -21,6 +21,10 @@ import {
   UploadedLocation,
   UploadedItem
 } from '@shared/types/story-to-video.types'
+import { CharacterAssetService } from '@core/modules/episode-production/assets/services/character-asset.service'
+import { LocationAssetService } from '@core/modules/episode-production/assets/services/location-asset.service'
+import { ItemAssetService } from '@core/modules/episode-production/assets/services/item-asset.service'
+import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
 
 /**
  * 上传模式实体服务
@@ -38,7 +42,7 @@ export class UploadedEntityService {
    */
   static async createAndBindUploadedEntities(
     projectId: string,
-    episodeId: string,
+    _episodeId: string,
     characters: UploadedCharacter[],
     locations: UploadedLocation[],
     items: UploadedItem[]
@@ -48,122 +52,54 @@ export class UploadedEntityService {
     items: StoryItem[]
   }> {
     const db = getCoreDatabaseManager()
-    if (!db.lwCharacters || !db.lwLocations || !db.lwItems) {
+    if (!db.dataSource) {
       throw new Error('数据库未初始化')
     }
 
-    console.log('[UploadedEntityService] 开始创建上传模式实体...')
+    console.log('[UploadedEntityService] 开始创建上传模式实体（spec 2026-05-08：standalone 模式，不再创建伪长文实体）')
     console.log('[UploadedEntityService] 角色:', characters.length, '地点:', locations.length, '物品:', items.length)
 
-    // 创建角色实体
-    const createdCharacters: StoryCharacter[] = []
-    for (const char of characters) {
-      // 根据 role 确定 rolePosition 和 importance
-      const rolePosition: CharacterRolePosition = this.mapRoleToPosition(char.role)
-      const importance: EntityImportance = rolePosition === 'protagonist' ? 'main' :
-        rolePosition === 'antagonist' ? 'main' :
-        rolePosition === 'supporting' ? 'secondary' : 'temporary'
+    const ds = db.dataSource
+    const imageSvc = new AssetImageService(ds)
+    const charSvc = new CharacterAssetService(ds)
+    const locSvc = new LocationAssetService(ds, imageSvc)
+    const itemSvc = new ItemAssetService(ds)
 
-      const character = await db.lwCharacters.create({
+    // 创建 standalone 角色 binding（不再 INSERT lw_story_characters）
+    for (const char of characters) {
+      await charSvc.createStandalone({
         projectId,
         name: char.name,
-        gender: 'other', // 上传模式默认值，用户可后续编辑
-        age: 25,
-        appearance: char.description || '',
-        background: '',
-        personality: '',
-        abilities: '',
-        rolePosition,
-        importance,
-        sourceType: 'uploaded',
-        sourceEpisodeId: episodeId
+        description: char.description || undefined,
       })
-      createdCharacters.push(character)
-
-      // 创建角色绑定（与 location/item 对称：必须传 name，否则 binding 永远无名）
-      if (db.characterBindings) {
-        await db.characterBindings.create({
-          projectId,
-          longWritingCharacterId: character.id,
-          name: character.name,
-          voiceConfig: {
-            voiceId: '',
-            speed: 1.0,
-            pitch: 1.0
-          }
-        })
-      }
     }
 
-    // 创建地点实体
-    const createdLocations: StoryLocation[] = []
+    // 创建 standalone 地点 binding
     for (const loc of locations) {
-      const type: LocationType = this.mapLocationType(loc.type)
-      const importance: LocationImportance = 'important'
-
-      const location = await db.lwLocations.create({
+      await locSvc.createStandalone({
         projectId,
         name: loc.name,
-        type,
-        importance,
-        entityImportance: 'secondary',
-        description: loc.description || '',
-        sourceType: 'uploaded',
-        sourceEpisodeId: episodeId
+        description: loc.description || undefined,
       })
-      createdLocations.push(location)
-
-      // 创建地点绑定
-      if (db.locationBindings) {
-        await db.locationBindings.create({
-          projectId,
-          longWritingLocationId: location.id,
-          locationName: location.name,
-          imagePaths: [],
-          generateImages: true
-        })
-      }
     }
 
-    // 创建物品实体
-    const createdItems: StoryItem[] = []
+    // 创建 standalone 物品 binding
     for (const item of items) {
-      const type: ItemType = this.mapItemType(item.type)
-      const level: ItemLevel = 'common'
-
-      const storyItem = await db.lwItems.create({
+      await itemSvc.createStandalone({
         projectId,
         name: item.name,
-        type,
-        level,
-        importance: 'secondary',
-        description: item.description || '',
-        sourceType: 'uploaded',
-        sourceEpisodeId: episodeId
+        description: item.description || undefined,
       })
-      createdItems.push(storyItem)
-
-      // 创建物品绑定
-      if (db.itemBindings) {
-        await db.itemBindings.create({
-          projectId,
-          longWritingItemId: storyItem.id,
-          itemName: storyItem.name,
-          imagePaths: [],
-          generateImages: true
-        })
-      }
     }
 
-    console.log('[UploadedEntityService] 实体创建完成')
-    console.log('[UploadedEntityService] 创建角色:', createdCharacters.length)
-    console.log('[UploadedEntityService] 创建地点:', createdLocations.length)
-    console.log('[UploadedEntityService] 创建物品:', createdItems.length)
+    console.log('[UploadedEntityService] 实体创建完成（standalone 模式，binding.sourceType=standalone）')
 
+    // 返回空 lw 数组保持接口兼容（旧调用方读 createdCharacters 等会拿到空数组）。
+    // 没人会真用这些返回值（之前的行为是返回新建的 lw 实体；现在 standalone 模式不存在 lw 实体）。
     return {
-      characters: createdCharacters,
-      locations: createdLocations,
-      items: createdItems
+      characters: [],
+      locations: [],
+      items: [],
     }
   }
 

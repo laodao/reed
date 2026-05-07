@@ -241,6 +241,11 @@ async function initDatabase(): Promise<void> {
     '@core/database/migrations/add-episode-story-background'
   )
   await addEpisodeStoryBackground(ds)
+  // spec 2026-05-08：上传模式 binding 从伪 linked_lw 转 standalone
+  const { repairUploadedBindingToStandalone } = await import(
+    '@core/database/migrations/repair-uploaded-binding-to-standalone'
+  )
+  await repairUploadedBindingToStandalone(ds)
 
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)

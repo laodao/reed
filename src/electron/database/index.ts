@@ -455,6 +455,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-episode-story-background'
     )
     await addEpisodeStoryBackground(this.dataSource)
+    // spec 2026-05-08：上传模式 binding 从伪 linked_lw 转 standalone
+    const { repairUploadedBindingToStandalone } = await import(
+      '@core/database/migrations/repair-uploaded-binding-to-standalone'
+    )
+    await repairUploadedBindingToStandalone(this.dataSource)
     // 角色资产 race（人种）字段：用于 AI 主图 / 派生图 prompt 拼接
     const { addCharacterBindingRace } = await import(
       '@core/database/migrations/add-character-binding-race'
