@@ -147,6 +147,15 @@ export class StoryboardEntity {
   @Column({ name: 'background_ref_image_id', type: 'varchar', nullable: true })
   backgroundRefImageId!: string | null
 
+  /**
+   * 用户在 ⑤ 制作 stage 为本分镜挑选的资产参考图（覆盖 keyframe-generation 默认评分挑图）。
+   * Shape：JSON 字符串（应用层 parse / stringify）`{ [`${kind}:${bindingId}`]: imageId }`
+   * 例：`{"character:ch_xxx":"img_a","location:loc_yyy":"img_b"}`
+   * NULL 时按现有 reference-image-selector 的默认评分逻辑自动选图。
+   */
+  @Column({ name: 'reference_image_ids', type: 'text', nullable: true })
+  referenceImageIds!: string | null
+
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 

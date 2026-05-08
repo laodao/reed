@@ -72,7 +72,9 @@
 
       <!-- 右：主区域 -->
       <main class="main-area" v-if="selectedStoryboard">
-        <!-- 镜头语言 panel -->
+        <!-- 分镜语言 panel · 只读展示
+             所有镜头参数 / 关键帧数 / 生成模式都在 ④ 分镜界面定稿，这里仅展示。
+             如需修改请回 ④ 分镜界面。 -->
         <section class="panel lang-panel">
           <header class="panel-header">
             <span class="panel-title">
@@ -88,107 +90,39 @@
               </el-tag>
             </span>
             <span class="header-spacer" />
-            <el-button
-              v-if="hasLangDirty"
-              type="primary"
-              size="small"
-              :loading="savingLang"
-              @click="onSaveLang"
-            >
-              保存修改
-            </el-button>
-          </header>
-
-          <div class="lang-toolbar">
-            <label class="tool-item">
-              <span class="tool-label">景别</span>
-              <el-select v-model="langDraft.shotType" size="small" @change="markLangDirty('shotType')">
-                <el-option label="远景" value="long" />
-                <el-option label="全景" value="full" />
-                <el-option label="中景" value="medium" />
-                <el-option label="近景" value="medium_close" />
-                <el-option label="特写" value="close" />
-                <el-option label="大特写" value="extreme_close" />
-              </el-select>
-            </label>
-            <label class="tool-item">
-              <span class="tool-label">角度</span>
-              <el-select v-model="langDraft.cameraAngle" size="small" @change="markLangDirty('cameraAngle')">
-                <el-option label="平视" value="eye_level" />
-                <el-option label="俯拍" value="high" />
-                <el-option label="仰拍" value="low" />
-                <el-option label="鸟瞰" value="birds_eye" />
-                <el-option label="蚁视" value="worms_eye" />
-                <el-option label="斜角" value="dutch" />
-              </el-select>
-            </label>
-            <label class="tool-item">
-              <span class="tool-label">运镜</span>
-              <el-select v-model="langDraft.cameraMovement" size="small" @change="markLangDirty('cameraMovement')">
-                <el-option label="固定" value="static" />
-                <el-option label="推镜" value="push" />
-                <el-option label="拉镜" value="pull" />
-                <el-option label="摇镜" value="pan" />
-                <el-option label="移镜" value="track" />
-                <el-option label="升降" value="crane" />
-              </el-select>
-            </label>
-            <label class="tool-item">
-              <span class="tool-label">时长</span>
-              <el-input-number
-                v-model="langDraft.duration"
-                :min="0.5"
-                :max="60"
-                :step="0.5"
-                size="small"
-                controls-position="right"
-                @change="markLangDirty('duration')"
-              />
-              <span class="suffix-x">s</span>
-            </label>
-            <label class="tool-item">
-              <el-checkbox
-                v-model="langDraft.useKeyframes"
-                @change="markLangDirty('useKeyframes')"
-              >
-                关键帧数
-              </el-checkbox>
-              <div class="kf-buttons inline" :class="{ disabled: !langDraft.useKeyframes }">
-                <button
-                  v-for="n in 9"
-                  :key="n"
-                  class="kf-btn-mini"
-                  :class="{ active: langDraft.keyframeCount === n }"
-                  :disabled="!langDraft.useKeyframes"
-                  @click="onSetKfCount(n)"
-                >{{ n }}</button>
-              </div>
-            </label>
-            <label class="tool-item disabled-3d">
-              <el-checkbox :model-value="false" disabled>启用 3D 摆位</el-checkbox>
-              <span class="hint-tertiary">{{ has3dStaging ? '' : '(地点非 3D)' }}</span>
-            </label>
-          </div>
-        </section>
-
-        <!-- 九宫格 KeyframeGrid wrapper（关键帧关闭时整体折叠 + disable） -->
-        <section
-          class="panel keyframes-panel"
-          :class="{ 'kf-disabled': !langDraft.useKeyframes }"
-        >
-          <header class="panel-header">
-            <span class="panel-title">关键帧序列</span>
-            <span class="panel-hint">
-              <template v-if="langDraft.useKeyframes">
-                时间顺序的 {{ langDraft.keyframeCount }} 张快照（"九宫格"）· 用于 keyframesToVideo 模型
-              </template>
-              <template v-else>
-                已关闭：本分镜将直接用画面描述 + 引用资产生成视频，不走关键帧
-              </template>
+            <span class="panel-readonly-hint">
+              <el-icon><Lock /></el-icon>
+              如需修改请回 ④ 分镜界面
             </span>
           </header>
 
-          <template v-if="langDraft.useKeyframes">
+          <div class="lang-readonly">
+            <span class="ro-item">
+              <span class="ro-label">生成模式</span>
+              <el-tag size="small" :type="useKeyframes ? 'success' : 'info'" effect="light">
+                {{ useKeyframes ? '首尾帧' : '文生图' }}
+              </el-tag>
+            </span>
+            <span v-if="useKeyframes" class="ro-item">
+              <span class="ro-label">关键帧数</span>
+              <span class="ro-value">{{ selectedStoryboard.keyframeCount ?? 3 }}</span>
+            </span>
+            <span v-if="useKeyframes" class="ro-item">
+              <span class="ro-label">3D 摆位</span>
+              <span class="ro-value">{{ has3dStaging ? '已启用' : '未启用' }}</span>
+            </span>
+          </div>
+        </section>
+
+        <!-- 九宫格 KeyframeGrid wrapper · 仅"首尾帧"模式才显示；"文生图"模式整段隐藏 -->
+        <section v-if="useKeyframes" class="panel keyframes-panel">
+          <header class="panel-header">
+            <span class="panel-title">关键帧序列</span>
+            <span class="panel-hint">
+              时间顺序的 {{ selectedStoryboard.keyframeCount ?? 3 }} 张快照（"九宫格"）· 用于 keyframesToVideo 模型
+            </span>
+          </header>
+
           <!-- 时间轴 bar -->
           <div class="timeline-bar">
             <div
@@ -206,7 +140,7 @@
             ref="kfGridRef"
             :key="`kfgrid-${selectedStoryboardId}`"
             :storyboard-id="selectedStoryboardId"
-            :keyframe-count="langDraft.keyframeCount"
+            :keyframe-count="selectedStoryboard.keyframeCount ?? 3"
             @regenerate="onKeyframeRegenRequest"
             @generate-all="onKeyframesGenerateAll"
           />
@@ -215,11 +149,11 @@
           <div class="chain-banner">
             <el-icon><InfoFilled /></el-icon>
             <span>
-              💡 <strong>参考链顺序</strong>：先生成 1 (start) → {{ langDraft.keyframeCount }} (end，参考 1)
+              💡 <strong>参考链顺序</strong>：先生成 1 (start) →
+              {{ selectedStoryboard.keyframeCount ?? 3 }} (end，参考 1)
               → 中间帧（参考首尾），保证运动连贯
             </span>
           </div>
-          </template>
         </section>
 
         <!-- 资产引用 + 场景音频 一行两栏（在大屏并排，<1100px 退化为单列） -->
@@ -236,30 +170,30 @@
                 type="success"
                 effect="light"
                 class="ref-tag"
-                :class="{ clickable: !!locationRefBindingId }"
-                :title="locationRefBindingId ? '点击查看地点图谱' : '该地点未在 ② 资产中创建'"
+                :class="{ clickable: !!locationRefBindingId, picked: hasPickedImage('location', locationRefBindingId) }"
+                :title="locationRefBindingId ? (hasPickedImage('location', locationRefBindingId) ? '已选定参考图 · 点击查看 / 修改' : '点击挑选地点参考图') : '该地点未在 ② 资产中创建'"
                 @click="locationRefBindingId && openAssetImages('location', locationRefBindingId, locationRef)"
-              >📍 {{ locationRef }}</el-tag>
+              >📍 {{ locationRef }}<span v-if="hasPickedImage('location', locationRefBindingId)" class="picked-dot" /></el-tag>
               <el-tag
                 v-for="(c, i) in characterRefs"
                 :key="`c-${i}-${c.name}`"
                 type="primary"
                 effect="light"
                 class="ref-tag"
-                :class="{ clickable: !!c.bindingId }"
-                :title="c.bindingId ? '点击查看角色图谱' : '该角色未在 ② 资产中创建'"
+                :class="{ clickable: !!c.bindingId, picked: hasPickedImage('character', c.bindingId) }"
+                :title="c.bindingId ? (hasPickedImage('character', c.bindingId) ? '已选定参考图 · 点击查看 / 修改' : '点击挑选角色参考图') : '该角色未在 ② 资产中创建'"
                 @click="c.bindingId && openAssetImages('character', c.bindingId, c.name)"
-              >👤 {{ c.name }}<span v-if="c.expression"> · {{ c.expression }}</span></el-tag>
+              >👤 {{ c.name }}<span v-if="c.expression"> · {{ c.expression }}</span><span v-if="hasPickedImage('character', c.bindingId)" class="picked-dot" /></el-tag>
               <el-tag
                 v-for="(it, i) in itemRefs"
                 :key="`it-${i}-${it.name}`"
                 type="warning"
                 effect="light"
                 class="ref-tag"
-                :class="{ clickable: !!it.bindingId }"
-                :title="it.bindingId ? '点击查看物品图谱' : '该物品未在 ② 资产中创建'"
+                :class="{ clickable: !!it.bindingId, picked: hasPickedImage('item', it.bindingId) }"
+                :title="it.bindingId ? (hasPickedImage('item', it.bindingId) ? '已选定参考图 · 点击查看 / 修改' : '点击挑选物品参考图') : '该物品未在 ② 资产中创建'"
                 @click="it.bindingId && openAssetImages('item', it.bindingId, it.name)"
-              >⚔️ {{ it.name }}</el-tag>
+              >⚔️ {{ it.name }}<span v-if="hasPickedImage('item', it.bindingId)" class="picked-dot" /></el-tag>
               <span v-if="!locationRef && characterRefs.length === 0 && itemRefs.length === 0" class="hint-tertiary">
                 本分镜暂无资产引用
               </span>
@@ -299,7 +233,7 @@
       </main>
     </div>
 
-    <!-- 资产图谱浏览 dialog（点击 ref-tag 触发） -->
+    <!-- 资产图谱浏览 dialog（点击 ref-tag 触发，可挑一张图作为生成视频的依据） -->
     <el-dialog
       v-model="assetImagesDialog.open"
       :title="assetImagesDialog.title"
@@ -307,6 +241,22 @@
       destroy-on-close
       append-to-body
     >
+      <div class="asset-images-hint">
+        💡 点击图片选定该图作为本分镜生成视频时的资产参考；再次点击取消选择回到自动评分挑图。
+        <span v-if="selectedAssetImageId" class="asset-images-cur">
+          当前已选定：<code>{{ selectedAssetImageId }}</code>
+        </span>
+        <el-button
+          v-if="selectedAssetImageId"
+          size="small"
+          text
+          type="danger"
+          :loading="savingAssetImageSelection"
+          @click="onClearAssetImageSelection"
+        >
+          清除选择（恢复自动）
+        </el-button>
+      </div>
       <div v-if="assetImagesDialog.loading" class="asset-images-loading">
         <el-icon class="is-loading"><Loading /></el-icon>
         加载中…
@@ -319,12 +269,18 @@
           v-for="img in assetImagesDialog.images"
           :key="img.id"
           class="asset-images-cell"
+          :class="{ selected: selectedAssetImageId === img.id }"
+          :title="selectedAssetImageId === img.id ? '已选定 · 点击取消选择' : '点击选定为本分镜参考图'"
+          @click="onPickAssetImage(img.id)"
         >
           <img
             v-if="img.imagePath"
             :src="toImageUrl(img.thumbnailPath || img.imagePath)"
             :alt="img.label || img.category"
           />
+          <span v-if="selectedAssetImageId === img.id" class="asset-images-selected-badge">
+            <el-icon><Select /></el-icon>已选定
+          </span>
           <div class="asset-images-meta">
             <span v-if="img.isMain" class="asset-images-main">主图</span>
             <span class="asset-images-cat">{{ img.category }}</span>
@@ -338,8 +294,8 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { InfoFilled, Loading } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { InfoFilled, Loading, Lock, Select } from '@element-plus/icons-vue'
 import { toImageUrl } from '@/utils/asset-url'
 import StageMainHeader from '../shared/StageMainHeader.vue'
 import KeyframeGrid from '../stage-production/KeyframeGrid.vue'
@@ -370,9 +326,6 @@ const assetStore = useEpAssetStore()
 
 const selectedSceneId = ref<string | null>(null)
 const selectedStoryboardId = ref<string | null>(null)
-const savingLang = ref(false)
-const regeneratingAll = ref(false)
-const langDirty = ref<Set<string>>(new Set())
 const kfGridRef = ref<any>(null)
 const currentKeyframes = ref<any[]>([])
 
@@ -385,35 +338,10 @@ const selectedSceneIndex = computed(() =>
 )
 const selectedStoryboard = computed(() => storyboards.value.find((s) => s.id === selectedStoryboardId.value) ?? null)
 
-const langDraft = ref<any>({
-  shotType: '',
-  cameraAngle: '',
-  cameraMovement: '',
-  duration: 5,
-  keyframeCount: 5,
-  useKeyframes: true,
-})
-
-const hasLangDirty = computed(() => langDirty.value.size > 0)
+/** 是否走"首尾帧"模式（关键帧 → 视频）。否 = 文生图模式，整段关键帧序列隐藏。 */
+const useKeyframes = computed(() => (selectedStoryboard.value as any)?.useKeyframes ?? true)
 
 const has3dStaging = computed(() => Boolean((selectedStoryboard.value as any)?.use3dStaging))
-
-watch(
-  () => selectedStoryboard.value,
-  (sb) => {
-    if (!sb) return
-    langDraft.value = {
-      shotType: sb.shotType,
-      cameraAngle: sb.cameraAngle,
-      cameraMovement: sb.cameraMovement,
-      duration: sb.duration,
-      keyframeCount: sb.keyframeCount ?? 3,
-      useKeyframes: (sb as any).useKeyframes ?? true,
-    }
-    langDirty.value = new Set()
-  },
-  { immediate: true },
-)
 
 const headerSubtitle = computed(() => {
   const sceneCount = scenes.value.length
@@ -431,7 +359,7 @@ const canComplete = computed(() => {
 })
 
 const timelineTicks = computed(() => {
-  const n = langDraft.value.keyframeCount ?? 5
+  const n = (selectedStoryboard.value as any)?.keyframeCount ?? 5
   if (n <= 1) return [{ pct: 0, label: 'START' }]
   const ticks: Array<{ pct: number; label: string }> = []
   for (let i = 0; i < n; i++) {
@@ -511,6 +439,20 @@ const locationRef = computed(() => {
   return s.location ?? ''
 })
 
+/** 当前分镜是否为该资产挑过参考图（用于资产标签显示绿点 + 切换 title 文案） */
+function hasPickedImage(
+  kind: 'character' | 'location' | 'item',
+  bindingId: string | null | undefined,
+): boolean {
+  if (!bindingId) return false
+  const refs = (selectedStoryboard.value as any)?.referenceImageIds as
+    | Record<string, string>
+    | null
+    | undefined
+  if (!refs) return false
+  return Boolean(refs[`${kind}:${bindingId}`])
+}
+
 const locationRefBindingId = computed(() => resolveLocationBindingId(locationRef.value))
 
 /*
@@ -573,88 +515,6 @@ async function loadStoryboardsForSelected(): Promise<void> {
     selectedStoryboardId.value = storyboards.value[0].id
   } else {
     selectedStoryboardId.value = null
-  }
-}
-
-function markLangDirty(key: string): void {
-  langDirty.value = new Set([...langDirty.value, key])
-}
-
-function onSetKfCount(n: number): void {
-  langDraft.value.keyframeCount = n
-  markLangDirty('keyframeCount')
-}
-
-async function onSaveLang(): Promise<void> {
-  if (!selectedStoryboard.value) return
-  savingLang.value = true
-  try {
-    const oldKfCount = selectedStoryboard.value.keyframeCount ?? 3
-    const newKfCount = langDraft.value.keyframeCount
-    const kfCountChanged = newKfCount !== oldKfCount
-    const api = (window as any).electronAPI?.episodeProduction
-    const resp = await api?.updateStoryboard?.(selectedStoryboard.value.id, {
-      shotType: langDraft.value.shotType,
-      cameraAngle: langDraft.value.cameraAngle,
-      cameraMovement: langDraft.value.cameraMovement,
-      duration: langDraft.value.duration,
-      keyframeCount: newKfCount,
-      useKeyframes: langDraft.value.useKeyframes,
-    })
-    if (!resp?.success) {
-      ElMessage.error(resp?.error || '保存失败')
-      return
-    }
-    ElMessage.success('已保存')
-    langDirty.value = new Set()
-    if (selectedScene.value) {
-      await storyboardStore.loadStoryboards(selectedScene.value.id)
-    }
-    // 关键帧数变了 → 询问是否立即按新数量重生（清旧帧）
-    if (kfCountChanged && currentKeyframes.value.length > 0) {
-      try {
-        await ElMessageBox.confirm(
-          `关键帧数已改为 ${newKfCount}（原 ${oldKfCount}）。立即按新数量重新生成？\n旧的 ${currentKeyframes.value.length} 张关键帧会被清空。`,
-          '关键帧数已变更',
-          {
-            type: 'warning',
-            confirmButtonText: '立即重生',
-            cancelButtonText: '稍后再说',
-          },
-        )
-        await onRegenAll()
-      } catch {
-        ElMessage.info('已保存数量；点顶部"全部重新生成"按新数量出图')
-      }
-    }
-  } finally {
-    savingLang.value = false
-  }
-}
-
-async function onRegenAll(): Promise<void> {
-  if (!selectedStoryboard.value) return
-  regeneratingAll.value = true
-  try {
-    const api = (window as any).electronAPI?.episodeProduction
-    if (!api?.generateKeyframes) {
-      ElMessage.error('当前环境不支持 generateKeyframes IPC')
-      return
-    }
-    const resp = await api.generateKeyframes(
-      selectedStoryboard.value.id,
-      undefined,
-      langDraft.value.keyframeCount,
-    )
-    if (resp?.success) {
-      ElMessage.success(`已重新生成全部关键帧（${resp.data?.length ?? 0} 张）`)
-      await kfGridRef.value?.reload?.()
-      await refreshCurrentKeyframes()
-    } else {
-      ElMessage.error(resp?.error || '重生失败')
-    }
-  } finally {
-    regeneratingAll.value = false
   }
 }
 
@@ -749,7 +609,7 @@ watch(
   { immediate: true },
 )
 
-// ===== 资产图谱浏览 dialog =====
+// ===== 资产图谱浏览 dialog（含 ⑤ stage "为本分镜挑参考图" 选定逻辑）=====
 interface AssetImageRow {
   id: string
   imagePath: string
@@ -764,11 +624,29 @@ const assetImagesDialog = reactive<{
   loading: boolean
   title: string
   images: AssetImageRow[]
+  // 当前打开的资产种类 + bindingId — 关闭时清空，避免脏数据残留
+  kind: 'character' | 'location' | 'item' | null
+  bindingId: string | null
 }>({
   open: false,
   loading: false,
   title: '',
   images: [],
+  kind: null,
+  bindingId: null,
+})
+
+const savingAssetImageSelection = ref(false)
+
+/** 当前 dialog 上下文（kind+bindingId）在 storyboard.referenceImageIds 里已选定的 imageId */
+const selectedAssetImageId = computed<string | null>(() => {
+  if (!assetImagesDialog.kind || !assetImagesDialog.bindingId) return null
+  const refs = (selectedStoryboard.value as any)?.referenceImageIds as
+    | Record<string, string>
+    | null
+    | undefined
+  if (!refs) return null
+  return refs[`${assetImagesDialog.kind}:${assetImagesDialog.bindingId}`] ?? null
 })
 
 async function openAssetImages(
@@ -778,6 +656,8 @@ async function openAssetImages(
 ): Promise<void> {
   const kindLabel = kind === 'character' ? '角色' : kind === 'location' ? '地点' : '物品'
   assetImagesDialog.title = `${kindLabel}：${name}`
+  assetImagesDialog.kind = kind
+  assetImagesDialog.bindingId = bindingId
   assetImagesDialog.images = []
   assetImagesDialog.open = true
   assetImagesDialog.loading = true
@@ -797,6 +677,65 @@ async function openAssetImages(
     ElMessage.error('资产图加载失败：' + (e?.message ?? '未知错误'))
   } finally {
     assetImagesDialog.loading = false
+  }
+}
+
+/**
+ * 用户点图：
+ *   - 同一张图再次点 → 清空（回到自动评分）
+ *   - 切换 / 新选 → 设为本分镜该资产的参考图
+ *
+ * 立即写库（不需要 "保存" 按钮），更新 storyboard.referenceImageIds JSON 字段。
+ * 写完 reload storyboards 让 selectedStoryboard 同步刷新。
+ */
+async function onPickAssetImage(imageId: string): Promise<void> {
+  if (!selectedStoryboard.value || !assetImagesDialog.kind || !assetImagesDialog.bindingId) return
+  const key = `${assetImagesDialog.kind}:${assetImagesDialog.bindingId}`
+  const cur = (selectedStoryboard.value as any).referenceImageIds as
+    | Record<string, string>
+    | null
+    | undefined
+  const next: Record<string, string> = { ...(cur ?? {}) }
+  if (next[key] === imageId) {
+    delete next[key]
+  } else {
+    next[key] = imageId
+  }
+  await persistReferenceImageIds(Object.keys(next).length === 0 ? null : next)
+}
+
+async function onClearAssetImageSelection(): Promise<void> {
+  if (!selectedStoryboard.value || !assetImagesDialog.kind || !assetImagesDialog.bindingId) return
+  const key = `${assetImagesDialog.kind}:${assetImagesDialog.bindingId}`
+  const cur = (selectedStoryboard.value as any).referenceImageIds as
+    | Record<string, string>
+    | null
+    | undefined
+  if (!cur || cur[key] === undefined) return
+  const next = { ...cur }
+  delete next[key]
+  await persistReferenceImageIds(Object.keys(next).length === 0 ? null : next)
+}
+
+async function persistReferenceImageIds(
+  next: Record<string, string> | null,
+): Promise<void> {
+  if (!selectedStoryboard.value) return
+  savingAssetImageSelection.value = true
+  try {
+    const api = (window as any).electronAPI?.episodeProduction
+    const resp = await api?.updateStoryboard?.(selectedStoryboard.value.id, {
+      referenceImageIds: next,
+    })
+    if (!resp?.success) {
+      ElMessage.error(resp?.error || '保存选图失败')
+      return
+    }
+    if (selectedScene.value) {
+      await storyboardStore.loadStoryboards(selectedScene.value.id)
+    }
+  } finally {
+    savingAssetImageSelection.value = false
   }
 }
 </script>
@@ -967,41 +906,44 @@ async function openAssetImages(
   flex: 1;
 }
 
-.lang-toolbar {
+/* 镜头语言只读展示行：生成模式 / 关键帧数 / 3D 摆位 */
+.lang-readonly {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 16px;
+  gap: 10px 24px;
   padding: 10px 12px;
   background: var(--el-fill-color-lighter);
   border-radius: 4px;
+  font-size: 12px;
 }
 
-.tool-item {
+.ro-item {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  flex: 0 0 auto;
-  white-space: nowrap;
 }
 
-.tool-label {
-  font-size: 12px;
+.ro-label {
   color: var(--el-text-color-secondary);
-  flex-shrink: 0;
 }
 
-/* 控件给最小宽度，避免标签 + 控件挤变形（与分镜界面对齐） */
-.tool-item :deep(.el-select),
-.tool-item :deep(.el-input-number) {
-  min-width: 110px;
-  width: 110px;
+.ro-value {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
 }
 
-.suffix-x {
-  font-size: 12px;
+.panel-readonly-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
   color: var(--el-text-color-placeholder);
-  margin-left: -2px;
+  font-style: italic;
+}
+
+.panel-readonly-hint .el-icon {
+  font-size: 12px;
 }
 
 /* 资产引用 + 场景音频一行两栏 */
@@ -1020,48 +962,6 @@ async function openAssetImages(
   .ref-audio-row {
     grid-template-columns: 1fr;
   }
-}
-
-.kf-buttons.inline {
-  display: flex;
-  gap: 3px;
-}
-
-.kf-buttons.inline.disabled {
-  opacity: 0.4;
-  pointer-events: none;
-}
-
-/* 关键帧关闭时整体折叠的 panel：背景灰化、内容区压缩 */
-.keyframes-panel.kf-disabled {
-  opacity: 0.7;
-  background: var(--el-fill-color-lighter);
-}
-
-.keyframes-panel.kf-disabled .panel-header {
-  border-bottom: 1px dashed var(--el-border-color);
-}
-
-.kf-btn-mini {
-  width: 24px;
-  height: 24px;
-  border-radius: 3px;
-  border: 1px solid var(--el-border-color);
-  background: var(--el-bg-color);
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--el-text-color-regular);
-  cursor: pointer;
-}
-
-.kf-btn-mini.active {
-  background: var(--el-color-primary);
-  border-color: var(--el-color-primary);
-  color: #fff;
-}
-
-.disabled-3d {
-  opacity: 0.6;
 }
 
 .hint-tertiary {
@@ -1142,6 +1042,20 @@ async function openAssetImages(
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
 }
 
+.ref-tag.picked {
+  box-shadow: 0 0 0 1px var(--el-color-success-light-5);
+}
+
+.picked-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--el-color-success);
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
 /* 资产图谱浏览 dialog */
 .asset-images-loading,
 .asset-images-empty {
@@ -1163,11 +1077,61 @@ async function openAssetImages(
   gap: 10px;
 }
 
+.asset-images-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: var(--el-color-primary-light-9);
+  border-left: 3px solid var(--el-color-primary);
+  border-radius: 0 4px 4px 0;
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+}
+
+.asset-images-cur code {
+  background: var(--el-bg-color);
+  padding: 0 6px;
+  border-radius: 2px;
+  font-family: monospace;
+  font-size: 11px;
+}
+
 .asset-images-cell {
+  position: relative;
   background: var(--el-fill-color-lighter);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 4px;
   overflow: hidden;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.asset-images-cell:hover {
+  border-color: var(--el-color-primary-light-5);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.asset-images-cell.selected {
+  border-color: var(--el-color-success);
+  box-shadow: 0 0 0 2px var(--el-color-success-light-7);
+}
+
+.asset-images-selected-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  background: var(--el-color-success);
+  color: #fff;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .asset-images-cell img {

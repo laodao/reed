@@ -98,6 +98,7 @@ import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { CircleCheck, MagicStick, Warning } from '@element-plus/icons-vue'
 import { toAssetUrl } from '@core/utils/asset-path'
+import { useEpAssetStore } from '@/stores/episode-production'
 
 interface Dialogue {
   id: string
@@ -127,6 +128,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'generated', result: OrchestrateResult): void
 }>()
+
+const assetStore = useEpAssetStore()
 
 const generating = ref(false)
 const result = ref<OrchestrateResult | null>(null)
@@ -180,8 +183,41 @@ function toAudioUrl(p: string | null | undefined): string {
   return toAssetUrl(p, 'audio')
 }
 
+/**
+ * 生成前校验：本场景每个对话角色都必须能解析到 voiceId（不能依赖 fallback）。
+ * 解析顺序：
+ *   1. dialogue.voiceId（场景级覆盖）
+ *   2. character_binding.voiceId（assetStore.epAssetCharacters 里查 binding）
+ *
+ * 任一对话两条路径都没有 → 列出具体未绑定音色的角色名让用户去修。
+ */
+function findCharactersMissingVoice(): string[] {
+  const dlgs = props.scene?.dialogues ?? []
+  if (dlgs.length === 0) return []
+  const bindings = (assetStore.epAssetCharacters as any[]) ?? []
+  const missing = new Set<string>()
+  for (const d of dlgs) {
+    if (d.voiceId) continue
+    const bid = d.characterBindingId
+    if (bid) {
+      const b = bindings.find((x) => x.id === bid)
+      if (b?.voiceId) continue
+    }
+    missing.add(d.characterName?.trim() || '(未命名)')
+  }
+  return Array.from(missing)
+}
+
 async function onGenerateAll(): Promise<void> {
   if (!props.sceneId) return
+  // 4. 先做音色绑定校验：未绑定直接拒绝并提示，不发 IPC
+  const missing = findCharactersMissingVoice()
+  if (missing.length > 0) {
+    ElMessage.warning(
+      `未绑定音色：${missing.join(' / ')} — 请先到 ② 资产 stage 给角色绑定音色后再生成`,
+    )
+    return
+  }
   generating.value = true
   errorMessage.value = null
   result.value = null

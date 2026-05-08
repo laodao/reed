@@ -95,7 +95,7 @@
 
       <!-- 中 + 右：主区域 -->
       <main class="main-area">
-        <!-- 场景概览 banner（§7.D-3 P0） -->
+        <!-- 场景概览 banner：场景信息 + 出场同行；下方一行场景说明（替代原文） -->
         <section v-if="selectedScene" class="scene-overview">
           <div class="overview-line">
             <strong>场景 {{ selectedSceneIndex + 1 }}</strong>
@@ -106,9 +106,8 @@
             />
             <span class="meta-sep">·</span>
             <span>{{ selectedScene.timeOfDay ?? '?' }} · {{ selectedScene.weather ?? '?' }}</span>
-          </div>
-          <div class="overview-line">
-            出场:
+            <span class="meta-sep">·</span>
+            <span class="cast-label">出场:</span>
             <EntityRefRenderer
               v-if="sceneCastNames(selectedScene).length > 0"
               :text="sceneCastNames(selectedScene).map(n => `@${n}`).join(' ')"
@@ -116,8 +115,8 @@
             />
             <span v-else class="hint-tertiary">未识别</span>
           </div>
-          <div v-if="selectedScene.originalText" class="overview-line muted">
-            原文: {{ selectedScene.originalText.slice(0, 80) }}{{ selectedScene.originalText.length > 80 ? '…' : '' }}
+          <div v-if="selectedScene.sceneDescription" class="overview-line muted">
+            说明: {{ selectedScene.sceneDescription }}
           </div>
         </section>
 
@@ -143,34 +142,27 @@
               <div class="shot-thumb" :class="getStatusClass(sb)">
                 <span class="shot-no-badge">{{ selectedSceneIndex + 1 }}.{{ sb.shotNumber }}</span>
                 <!--
-                  FU6-T5 真实缩略图：
-                    - 已生成首帧（frameImage.url）→ 真实图片预览
-                    - 否则 → emoji + "未生成"文字标签（明确告诉 user 这是占位非示意图）
+                  缩略图规则：
+                    - 已生成视频（videoPath）→ <video> preload metadata，自动呈现首帧
+                    - 未生成 → emoji + "未生成"文字标签
                 -->
-                <img
-                  v-if="sb.frameImage?.url"
-                  :src="sb.frameImage.url"
+                <video
+                  v-if="sb.videoPath"
+                  :src="sb.videoPath"
                   class="thumb-img"
-                  :alt="`分镜 ${sb.shotNumber} 首帧`"
+                  preload="metadata"
+                  muted
+                  playsinline
                 />
                 <template v-else>
                   <span class="thumb-emoji">{{ shotTypeEmoji(sb.shotType) }}</span>
-                  <span class="thumb-empty-label">未生成首帧</span>
+                  <span class="thumb-empty-label">未生成</span>
                 </template>
-                <span class="status-badge" :class="getStatusClass(sb)">
-                  {{ getStatusEmoji(sb) }}
-                </span>
                 <span class="duration-badge">{{ sb.duration }}s</span>
               </div>
               <div class="shot-body">
                 <div class="shot-title">
                   {{ shotTypeLabel(sb.shotType) }} · {{ cameraAngleLabel(sb.cameraAngle) }} · {{ cameraMovementLabel(sb.cameraMovement) }}
-                </div>
-                <div class="shot-meta">
-                  关键帧 {{ keyframeCountOf(sb) }}
-                  <span v-if="sb.frameDescription" class="shot-desc">
-                    · {{ sb.frameDescription.slice(0, 30) }}{{ sb.frameDescription.length > 30 ? '…' : '' }}
-                  </span>
                 </div>
               </div>
             </article>
@@ -186,7 +178,28 @@
             <span class="edit-status" :class="getStatusClass(selectedStoryboard)">
               {{ getStatusLabel(selectedStoryboard) }}
             </span>
+            <label class="header-mode">
+              <span class="header-mode-label">生成模式</span>
+              <el-radio-group
+                v-model="editDraft.generationMode"
+                size="small"
+                @change="onGenerationModeChange"
+              >
+                <el-radio-button value="text2image">文生图</el-radio-button>
+                <el-radio-button value="keyframes">首尾帧</el-radio-button>
+              </el-radio-group>
+            </label>
             <span class="header-spacer" />
+            <el-button
+              type="danger"
+              size="small"
+              plain
+              :loading="deleting"
+              @click="onDeleteStoryboard"
+            >
+              <el-icon><Delete /></el-icon>
+              删除分镜
+            </el-button>
             <el-button
               type="primary"
               size="small"
@@ -262,8 +275,9 @@
             </el-collapse-item>
           </el-collapse>
 
-          <!-- 镜头语言 toolbar -->
+          <!-- 镜头语言 toolbar：分镜头组 + 转场组，组前各加分组标签 -->
           <div class="lang-toolbar">
+            <span class="group-label">镜头：</span>
             <label class="tool-item">
               <span class="tool-label">景别</span>
               <el-select
@@ -323,10 +337,58 @@
               />
               <span class="suffix-x">s</span>
             </label>
+
+            <span class="group-divider" />
+            <span class="group-label">转场：</span>
+            <label class="tool-item">
+              <span class="tool-label">类型</span>
+              <el-select
+                v-model="editDraft.transitionType"
+                size="small"
+                @change="onEditChange('transitionType', $event)"
+              >
+                <el-option label="硬切" value="cut" />
+                <el-option label="淡入淡出" value="fade" />
+                <el-option label="溶解" value="dissolve" />
+                <el-option label="擦除" value="wipe" />
+                <el-option label="滑动" value="slide" />
+                <el-option label="缩放" value="zoom" />
+                <el-option label="光圈" value="iris" />
+                <el-option label="甩镜" value="whip" />
+              </el-select>
+            </label>
+            <label class="tool-item">
+              <span class="tool-label">时长</span>
+              <el-input-number
+                v-model="editDraft.transitionDuration"
+                :min="0"
+                :max="3000"
+                :step="100"
+                size="small"
+                controls-position="right"
+                @change="onEditChange('transitionDuration', $event)"
+              />
+              <span class="suffix-x">ms</span>
+            </label>
+            <label class="tool-item">
+              <span class="tool-label">方向</span>
+              <el-select
+                v-model="editDraft.transitionDirection"
+                size="small"
+                placeholder="—"
+                clearable
+                @change="onEditChange('transitionDirection', $event)"
+              >
+                <el-option label="向左" value="left" />
+                <el-option label="向右" value="right" />
+                <el-option label="向上" value="up" />
+                <el-option label="向下" value="down" />
+              </el-select>
+            </label>
           </div>
 
-          <!-- 关键帧数 1-9 visual 按钮组（§7.D-5 P0） -->
-          <div class="kf-section">
+          <!-- 关键帧数 1-9 visual 按钮组（§7.D-5 P0）— 文生图模式不需要关键帧，隐藏 -->
+          <div v-if="editDraft.generationMode === 'keyframes'" class="kf-section">
             <div class="kf-label">
               关键帧数
               <span class="hint-tertiary">
@@ -368,10 +430,43 @@
           <!-- 镜头内角色站位 / 表情 / 朝向 / 动作 inline 5 列 grid（§7.D-6 P1 / spec §4.5.3） -->
           <div class="characters-section">
             <div class="char-label">
-              镜头内角色（独立配置）
-              <span class="hint-tertiary">— 覆盖场景级；为空则继承</span>
+              <span>镜头内角色（独立配置）</span>
+              <span class="hint-tertiary">— 覆盖场景级；为空则继承 scene.characters</span>
+              <span class="header-spacer" />
+              <el-dropdown
+                v-if="availableBindingsForAdd.length > 0"
+                trigger="click"
+                @command="addStoryboardCharacter"
+              >
+                <el-button size="small" type="primary" plain>
+                  <el-icon><Plus /></el-icon>
+                  添加角色
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item
+                      v-for="b in availableBindingsForAdd"
+                      :key="b.id"
+                      :command="b.id"
+                    >
+                      @{{ bindingDisplayName(b) }}
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+              <el-button
+                v-else
+                size="small"
+                type="primary"
+                plain
+                disabled
+                title="没有可添加的角色 — 项目已无未占用的角色形象"
+              >
+                <el-icon><Plus /></el-icon>
+                添加角色
+              </el-button>
             </div>
-            <div v-if="storyboardCharacters.length === 0" class="empty-hint-inline">
+            <div v-if="editDraft.characters.length === 0" class="empty-hint-inline">
               未配置分镜级独立角色 → 关键帧生成回退到场景级
               <code>scene.characters</code>
             </div>
@@ -382,32 +477,40 @@
                 <span>表情</span>
                 <span>朝向</span>
                 <span>动作</span>
+                <span />
               </div>
               <div
-                v-for="(c, i) in storyboardCharacters"
+                v-for="(c, i) in editDraft.characters"
                 :key="i"
                 class="char-grid-row"
               >
                 <span class="cg-name">
                   <!--
-                    FU6-T5 真实角色名解析：
-                    StoryboardCharacter 数据结构只存 characterId，没有 characterName。
-                    旧代码 c.characterName ?? '?' 永远显示 "@?"，是数据契约误用。
-                    改：通过 entityList 查 binding 拿真名；查不到说明 binding 已删 → 提示。
+                    通过 characterId 反查 binding 取真名（resolveCharName 含 3 层 fallback）。
                   -->
                   <EntityRefRenderer
                     :text="`@${resolveCharName(c) ?? '(未绑定)'}`"
                     :entities="entityList"
                   />
                 </span>
-                <el-select v-model="c.position" size="small" placeholder="位置">
+                <el-select
+                  v-model="c.position"
+                  size="small"
+                  placeholder="位置"
+                  @change="onCharacterFieldEdit"
+                >
                   <el-option label="左" value="left" />
                   <el-option label="中" value="center" />
                   <el-option label="右" value="right" />
                   <el-option label="前" value="front" />
                   <el-option label="后" value="back" />
                 </el-select>
-                <el-select v-model="c.expression" size="small" placeholder="表情">
+                <el-select
+                  v-model="c.expression"
+                  size="small"
+                  placeholder="表情"
+                  @change="onCharacterFieldEdit"
+                >
                   <el-option label="neutral" value="neutral" />
                   <el-option label="angry" value="angry" />
                   <el-option label="happy" value="happy" />
@@ -415,25 +518,37 @@
                   <el-option label="surprised" value="surprised" />
                   <el-option label="confused" value="confused" />
                 </el-select>
-                <el-select v-model="c.facing" size="small" placeholder="朝向">
-                  <el-option label="front" value="front" />
-                  <el-option label="3q_left" value="3q_left" />
-                  <el-option label="3q_right" value="3q_right" />
-                  <el-option label="side_l" value="side_l" />
-                  <el-option label="side_r" value="side_r" />
-                  <el-option label="back" value="back" />
+                <el-select
+                  v-model="c.facing"
+                  size="small"
+                  placeholder="朝向"
+                  @change="onCharacterFieldEdit"
+                >
+                  <el-option label="正面" value="front" />
+                  <el-option label="左前侧" value="3q_left" />
+                  <el-option label="右前侧" value="3q_right" />
+                  <el-option label="左侧" value="side_l" />
+                  <el-option label="右侧" value="side_r" />
+                  <el-option label="背面" value="back" />
                 </el-select>
                 <el-input
                   v-model="c.action"
                   size="small"
                   placeholder="如：持折扇 / 站立"
+                  @input="onCharacterFieldEdit"
                 />
+                <el-button
+                  text
+                  size="small"
+                  class="cg-remove"
+                  title="移除该角色"
+                  @click="removeStoryboardCharacter(i)"
+                >
+                  <el-icon><Close /></el-icon>
+                </el-button>
               </div>
             </div>
             <div class="char-actions">
-              <el-button size="small" @click="emit('edit-storyboard-characters', selectedStoryboard)">
-                编辑分镜内角色（详细 dialog）
-              </el-button>
               <el-button
                 v-if="hasUnsavedEditChanges"
                 type="primary"
@@ -453,11 +568,14 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowRight,
+  Close,
+  Delete,
   Loading,
   MagicStick,
+  Plus,
 } from '@element-plus/icons-vue'
 import StageMainHeader from '../shared/StageMainHeader.vue'
 import EntityRefRenderer from '../shared/EntityRefRenderer.vue'
@@ -493,6 +611,7 @@ const generatingAll = ref(false)
 const genProgress = ref<{ shotNumber: number; total: number } | null>(null)
 let unsubStoryboardProgress: (() => void) | null = null
 const savingEdit = ref(false)
+const deleting = ref(false)
 const loadingStoryboards = ref(false)
 
 const selectedSceneId = ref<string | null>(null)
@@ -520,6 +639,17 @@ const editDraft = reactive<any>({
   duration: 5,
   keyframeCount: 5,
   frameDescription: '',
+  // 生成模式：text2image（不走关键帧 → useKeyframes=false）/ keyframes（走首尾帧 → useKeyframes=true）
+  generationMode: 'keyframes' as 'text2image' | 'keyframes',
+  transitionType: 'cut' as string,
+  transitionDuration: 500 as number,
+  transitionDirection: undefined as 'left' | 'right' | 'up' | 'down' | undefined,
+  /**
+   * 分镜内角色草稿：深拷贝自 selectedStoryboard.characters，避免直接 mutate store；
+   * 含修复历史 bug — 旧实现 v-model 直接挂在 store 引用上，
+   * 但 onSaveEdit 又不传 characters 给 update API，最终 UI 改完根本不持久化。
+   */
+  characters: [] as any[],
 })
 
 const editDirty = ref<Set<string>>(new Set())
@@ -535,12 +665,106 @@ watch(
     editDraft.duration = sb.duration
     editDraft.keyframeCount = sb.keyframeCount ?? 3
     editDraft.frameDescription = sb.frameDescription ?? ''
+    editDraft.generationMode = sb.useKeyframes ? 'keyframes' : 'text2image'
+    editDraft.transitionType = sb.transition?.type ?? 'cut'
+    editDraft.transitionDuration = sb.transition?.duration ?? 500
+    editDraft.transitionDirection = sb.transition?.direction
+    // 深拷贝避免改回 store；JSON parse/stringify 对纯 JSON 数据足够
+    editDraft.characters = Array.isArray(sb.characters)
+      ? JSON.parse(JSON.stringify(sb.characters))
+      : []
     editDirty.value = new Set()
   },
   { immediate: true },
 )
 
-const storyboardCharacters = computed(() => selectedStoryboard.value?.characters ?? [])
+function onGenerationModeChange(mode: 'text2image' | 'keyframes'): void {
+  onEditChange('generationMode', mode)
+}
+
+/**
+ * 把行里的 characterId 解析回真 binding.id：
+ *   1. 直接 id 命中 → 返回原 id
+ *   2. 把 id 当作角色名（standaloneName / overrideName）模糊匹配 → 返回命中的 binding.id
+ *   3. 都不命中 → 返回 null（视作未绑定，不参与去重）
+ *
+ * 必要原因：AI 生成 storyboard 时常常把 characterId 写成"少年"/"elder_01"
+ * 这种自创短名，跟真实 binding.id 不一致 — 不解析就无法做去重。
+ */
+function resolveBindingId(c: any): string | null {
+  const id: string | undefined = c?.characterId ?? c?.characterBindingId
+  if (!id) return null
+  const all = assetStore.epAssetCharacters ?? []
+  if (all.some((x: any) => x.id === id)) return id
+  const idStr = String(id).trim().toLowerCase()
+  const byName = all.find((x: any) => {
+    const a = String(x.standaloneName ?? '').trim().toLowerCase()
+    const b = String(x.overrideName ?? '').trim().toLowerCase()
+    return (a && a === idStr) || (b && b === idStr)
+  })
+  return byName ? byName.id : null
+}
+
+/** 已添加到分镜的 binding id 集合（用于过滤"添加角色"下拉中可选项） */
+const addedBindingIds = computed(() => {
+  const ids = new Set<string>()
+  for (const c of editDraft.characters) {
+    const resolved = resolveBindingId(c)
+    if (resolved) ids.add(resolved)
+  }
+  return ids
+})
+
+/**
+ * 优先列出"本场景出场过的角色"，再列出项目内其他角色。
+ * 已经被这个分镜引用过的 binding 不再列出。
+ */
+const availableBindingsForAdd = computed(() => {
+  const all = assetStore.epAssetCharacters ?? []
+  const inScene = new Set(
+    (selectedScene.value?.characters ?? [])
+      .map((c: any) => c.characterBindingId ?? c.characterId)
+      .filter((x: any) => !!x),
+  )
+  const added = addedBindingIds.value
+  const free = all.filter((b: any) => !added.has(b.id))
+  // scene 出场过的优先排前面
+  return free.sort((a: any, b: any) => {
+    const ai = inScene.has(a.id) ? 0 : 1
+    const bi = inScene.has(b.id) ? 0 : 1
+    return ai - bi
+  })
+})
+
+function bindingDisplayName(b: any): string {
+  return b?.standaloneName ?? b?.overrideName ?? '(未命名)'
+}
+
+function addStoryboardCharacter(bindingId: string): void {
+  if (!bindingId) return
+  if (addedBindingIds.value.has(bindingId)) {
+    ElMessage.warning('该角色已在镜头中，无法重复添加')
+    return
+  }
+  editDraft.characters.push({
+    characterId: bindingId,
+    position: 'center',
+    expression: 'neutral',
+    facing: 'front',
+    action: '',
+  })
+  onEditChange('characters', null)
+}
+
+function removeStoryboardCharacter(idx: number | string): void {
+  // editDraft 整体声明为 any，模板里 v-for 的 index 类型推不出 number；显式 Number() 收口
+  editDraft.characters.splice(Number(idx), 1)
+  onEditChange('characters', null)
+}
+
+function onCharacterFieldEdit(): void {
+  onEditChange('characters', null)
+}
 
 /*
  * 通过 characterId 反查 binding 拿真名。
@@ -690,12 +914,6 @@ function getStatusClass(sb: any): string {
   return 'status-todo'
 }
 
-function getStatusEmoji(sb: any): string {
-  if (sb.videoPath) return '✓'
-  if (sb.status === 'generating') return '⏳'
-  return '○'
-}
-
 function getStatusLabel(sb: any): string {
   if (sb.videoPath) return '已出片'
   if (sb.status === 'generating') return '生成中'
@@ -746,10 +964,6 @@ function cameraMovementLabel(m: string): string {
   } as any)[m] ?? m
 }
 
-function keyframeCountOf(sb: any): number {
-  return sb.keyframeCount ?? 3
-}
-
 /** 当前选中场景的对白 / 动作列表 helper（与剧本视图逻辑一致） */
 function sceneDialoguesOf(scene: any): any[] {
   return Array.isArray(scene?.dialogues) ? scene.dialogues : []
@@ -795,6 +1009,13 @@ async function onSaveEdit(): Promise<void> {
       duration: editDraft.duration,
       keyframeCount: editDraft.keyframeCount,
       frameDescription: editDraft.frameDescription,
+      useKeyframes: editDraft.generationMode === 'keyframes',
+      transition: {
+        type: editDraft.transitionType,
+        duration: editDraft.transitionDuration,
+        direction: editDraft.transitionDirection,
+      },
+      characters: editDraft.characters,
     })
     if (resp?.success) {
       ElMessage.success('已保存')
@@ -805,6 +1026,33 @@ async function onSaveEdit(): Promise<void> {
     }
   } finally {
     savingEdit.value = false
+  }
+}
+
+async function onDeleteStoryboard(): Promise<void> {
+  const sb = selectedStoryboard.value
+  if (!sb) return
+  try {
+    await ElMessageBox.confirm(
+      `确认删除分镜 ${selectedSceneIndex.value + 1}.${sb.shotNumber}？关联关键帧、独立角色配置、首帧图都将一并清除，无法恢复。`,
+      '删除分镜',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  deleting.value = true
+  try {
+    const result = await storyboardStore.deleteStoryboard(sb.id)
+    if (!result.ok) {
+      ElMessage.error(result.error || '删除分镜失败')
+      return
+    }
+    selectedStoryboardId.value = storyboards.value[0]?.id ?? null
+    void reloadSceneCounts()
+    ElMessage.success('已删除分镜')
+  } finally {
+    deleting.value = false
   }
 }
 
@@ -1103,6 +1351,10 @@ onBeforeUnmount(() => {
   font-style: italic;
 }
 
+.cast-label {
+  color: var(--el-text-color-secondary);
+}
+
 .meta-sep {
   color: var(--el-text-color-placeholder);
 }
@@ -1120,13 +1372,21 @@ onBeforeUnmount(() => {
   padding: 12px;
 }
 
+/*
+ * 分镜卡片单行横向滚动：
+ * 卡片不换行；多出的部分横向滚动查看，避免占据整页高度。
+ */
 .grid-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  display: flex;
+  flex-wrap: nowrap;
   gap: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 4px;
 }
 
 .shot-card-v2 {
+  flex: 0 0 220px;
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
@@ -1206,21 +1466,6 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.status-badge {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-}
-
 .duration-badge {
   position: absolute;
   bottom: 6px;
@@ -1241,15 +1486,6 @@ onBeforeUnmount(() => {
   font-weight: 600;
   color: var(--el-text-color-primary);
   margin-bottom: 3px;
-}
-
-.shot-meta {
-  font-size: 11px;
-  color: var(--el-text-color-placeholder);
-}
-
-.shot-desc {
-  color: var(--el-text-color-secondary);
 }
 
 .loading-hint,
@@ -1298,6 +1534,19 @@ onBeforeUnmount(() => {
 .edit-status.status-gen {
   background: var(--el-color-warning-light-9);
   color: var(--el-color-warning);
+}
+
+.header-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+}
+
+.header-mode-label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  flex-shrink: 0;
 }
 
 .header-spacer {
@@ -1399,6 +1648,21 @@ onBeforeUnmount(() => {
   padding: 10px 12px;
   background: var(--el-fill-color-lighter);
   border-radius: 4px;
+}
+
+.group-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  flex-shrink: 0;
+}
+
+/* 镜头组与转场组之间一根细线分隔 */
+.group-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--el-border-color);
+  margin: 0 4px;
 }
 
 .tool-item {
@@ -1511,6 +1775,9 @@ onBeforeUnmount(() => {
 }
 
 .char-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
   margin-bottom: 8px;
@@ -1539,10 +1806,21 @@ onBeforeUnmount(() => {
 .char-grid-header,
 .char-grid-row {
   display: grid;
-  grid-template-columns: 80px 1fr 1fr 1fr 1fr;
+  /* 角色 / 位置 0.5fr / 表情 0.5fr / 朝向 0.5fr / 动作 2.5fr / 删除
+     位置·表情·朝向各砍一半，省下的总共 1.5fr 全部给"动作"列 */
+  grid-template-columns: 80px 0.5fr 0.5fr 0.5fr 2.5fr 32px;
   gap: 6px;
   align-items: center;
   font-size: 12px;
+}
+
+.cg-remove {
+  color: var(--el-text-color-placeholder);
+  padding: 4px;
+}
+
+.cg-remove:hover {
+  color: var(--el-color-danger);
 }
 
 .char-grid-header {

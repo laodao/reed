@@ -490,6 +490,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-storyboard-include-in-final'
     )
     await addStoryboardIncludeInFinal(this.dataSource)
+    // 分镜 reference_image_ids：⑤ 制作 stage 用户为本分镜挑选资产参考图
+    const { addStoryboardReferenceImageIds } = await import(
+      '@core/database/migrations/add-storyboard-reference-image-ids'
+    )
+    await addStoryboardReferenceImageIds(this.dataSource)
   }
 
   /**

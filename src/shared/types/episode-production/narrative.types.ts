@@ -260,6 +260,13 @@ export interface Storyboard {
   // 状态
   status: StoryboardStatus
 
+  /**
+   * 用户在 ⑤ 制作 stage 为本分镜挑选的资产参考图覆盖。
+   * key: `${kind}:${bindingId}`，value: imageId（asset_image.id）。
+   * NULL/缺失 → 按现有 reference-image-selector 评分逻辑自动选图。
+   */
+  referenceImageIds?: Record<string, string> | null
+
   createdAt: number
   updatedAt: number
 }

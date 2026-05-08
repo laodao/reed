@@ -57,6 +57,7 @@ import { addKbDocumentSource } from '@core/database/migrations/add-kb-document-s
 import { addKeyframeReferenceOverrides } from '@core/database/migrations/add-keyframe-reference-overrides'
 import { addStoryboardUseKeyframes } from '@core/database/migrations/add-storyboard-use-keyframes'
 import { addStoryboardIncludeInFinal } from '@core/database/migrations/add-storyboard-include-in-final'
+import { addStoryboardReferenceImageIds } from '@core/database/migrations/add-storyboard-reference-image-ids'
 import { addLocationBindingExtraFields } from '@core/database/migrations/add-location-binding-extra-fields'
 import { addItemBindingStyleAnchors } from '@core/database/migrations/add-item-binding-style-anchors'
 import { registerCoreDatabaseManager } from '@core/database/database-manager.interface'
@@ -252,6 +253,8 @@ async function initDatabase(): Promise<void> {
   await addStoryboardUseKeyframes(ds)
   // 分镜 include_in_final：⑥ 合成时是否入最终成片（默认 1）
   await addStoryboardIncludeInFinal(ds)
+  // 分镜 reference_image_ids：⑤ 制作 stage 用户为本分镜挑选资产参考图
+  await addStoryboardReferenceImageIds(ds)
   // FU5-C3: location_bindings 加场景类型 + 规模 + 氛围 + 风格锚点字段（spec §3.2/3.3）
   await addLocationBindingExtraFields(ds)
   // spec 2026-05-08: item_bindings 加 style_anchors（与 character/location 对齐）

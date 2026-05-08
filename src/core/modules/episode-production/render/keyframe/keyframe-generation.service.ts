@@ -61,6 +61,44 @@ const DEFAULT_KEYFRAME_WIDTH = 1024
 const DEFAULT_KEYFRAME_HEIGHT = 1024
 
 /**
+ * 把 storyboard.referenceImageIds（JSON 字符串或对象）解析成
+ * KeyframeReferenceOverride[]。shape：`{ "${kind}:${bindingId}": imageId }`。
+ *
+ * 任意解析失败 / 非合法 kind / 缺值 → 跳过该项，不抛错（生成不能因脏数据中断）。
+ */
+function parseSbReferenceImageIds(
+  raw: string | Record<string, string> | null | undefined,
+): KeyframeReferenceOverride[] {
+  if (!raw) return []
+  let obj: Record<string, string> | null = null
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        obj = parsed as Record<string, string>
+      }
+    } catch {
+      return []
+    }
+  } else if (typeof raw === 'object' && !Array.isArray(raw)) {
+    obj = raw
+  }
+  if (!obj) return []
+  const out: KeyframeReferenceOverride[] = []
+  for (const [key, imageId] of Object.entries(obj)) {
+    if (!imageId || typeof imageId !== 'string') continue
+    const sep = key.indexOf(':')
+    if (sep <= 0) continue
+    const kind = key.slice(0, sep) as KeyframeReferenceOverride['kind']
+    const bindingId = key.slice(sep + 1)
+    if (!bindingId) continue
+    if (kind !== 'character' && kind !== 'location' && kind !== 'item') continue
+    out.push({ kind, bindingId, imageId })
+  }
+  return out
+}
+
+/**
  * P5-T31：把 storyboard_characters 表的 position { x, y, scale } 映射回
  * 字符串（spec §4.5.3 character 配置语义：left/center/right + 缩放）。
  *
@@ -155,6 +193,15 @@ export class KeyframeGenerationService {
     // 清掉旧的 keyframe（重新生成全量）
     await this.keyframeRepo.deleteByStoryboard(sb.id)
 
+    /*
+     * 用户在 ⑤ 制作 stage 为本分镜挑选的资产参考图覆盖（spec storyboard.referenceImageIds）。
+     * 这里把 storyboard 级 overrides 转成每帧生成时通用的 KeyframeReferenceOverride[]，
+     * 整批关键帧都用同一组挑图作为参考，并写回每个 keyframe.referenceOverrides 让后续
+     * 单帧重生（regenerateKeyframe）也能复用。用户后续仍可在 KeyframeReferencePicker
+     * 单独覆盖某一帧 — 单帧 override 优先级更高，由 keyframeRepo.update 直接覆盖。
+     */
+    const sbLevelOverrides = parseSbReferenceImageIds((sb as any).referenceImageIds)
+
     const created: StoryboardKeyframe[] = []
     for (const planItem of plan) {
       const kf = await this.generateOneKeyframe({
@@ -164,8 +211,12 @@ export class KeyframeGenerationService {
         sceneAssets,
         styleConfig,
         userPrompt: input.userPrompt ?? null,
+        referenceOverrides: sbLevelOverrides.length > 0 ? sbLevelOverrides : null,
       })
       created.push(kf)
+      if (sbLevelOverrides.length > 0) {
+        await this.keyframeRepo.update(kf.id, { referenceOverrides: sbLevelOverrides })
+      }
     }
     return created
   }

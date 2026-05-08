@@ -58,6 +58,12 @@ export interface UpdateStoryboardRequest {
   includeInFinal?: boolean
   transition?: TransitionConfig
   status?: StoryboardStatus
+  /**
+   * 用户在 ⑤ 制作 stage 挑选的资产参考图覆盖。
+   * key: `${kind}:${bindingId}`，value: imageId（asset_image.id）。
+   * 传 null 表示清空所有覆盖；传 undefined 不变。
+   */
+  referenceImageIds?: Record<string, string> | null
 }
 
 export class StoryboardRepository extends BaseRepository<
@@ -122,8 +128,24 @@ export class StoryboardRepository extends BaseRepository<
       includeInFinal: ((e as any).includeInFinal ?? 1) !== 0,
       transition: this.parseTransition(e),
       status: e.status as StoryboardStatus,
+      referenceImageIds: this.parseReferenceImageIds(e),
       createdAt: this.toEpochMs(e.createdAt),
       updatedAt: this.toEpochMs(e.updatedAt),
+    }
+  }
+
+  /** 解析 reference_image_ids JSON 字符串为对象；解析失败 / 空 → null */
+  private parseReferenceImageIds(e: StoryboardEntity): Record<string, string> | null {
+    const raw = (e as any).referenceImageIds as string | null | undefined
+    if (!raw) return null
+    try {
+      const obj = JSON.parse(raw)
+      if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+        return obj as Record<string, string>
+      }
+      return null
+    } catch {
+      return null
     }
   }
 
@@ -262,6 +284,11 @@ export class StoryboardRepository extends BaseRepository<
       changed = true
     }
     if (data.status !== undefined) { existing.status = data.status; changed = true }
+    if (data.referenceImageIds !== undefined) {
+      ;(existing as any).referenceImageIds =
+        data.referenceImageIds === null ? null : JSON.stringify(data.referenceImageIds)
+      changed = true
+    }
 
     if (!changed) return this.toDto(existing)
 
