@@ -1,126 +1,51 @@
 <template>
-  <!--
-    EpisodeProjectListV2 · 剧集项目列表（FU5-B1）
+  <div class="ep-project-list-v3">
+    <ProjectSidebar
+      :projects="summaries"
+      :selected-id="selectedProjectId"
+      @create="showCreateProjectDialog = true"
+      @select="onSelectProject"
+      @rename="onRenameProject"
+      @delete="onDeleteProject"
+    />
 
-    严格按对照表 §1 + 原型 00-project-list 重写。差异修订：
-    - 卡片：封面 + 标题 + 集数 · 来源标签 + 进度条（垂直布局）
-    - grid 280px 最小（紧凑视觉密度）
-    - 数据走 listProjectsSummary（A1 IPC，含聚合字段）
-    - 末尾"+ 新建剧集项目"占位卡（dashed border）
-    - 顶部面包屑
-    - 删除按钮挪到 hover 浮层（用户决策 §1.D-6）
-    - 视频配置（aspectRatio/resolution/fps）不在卡片显示（用户决策 §1.D-5）
-
-    旧 EpisodeProjectList.vue 标 deprecated 后续 phase 删除。
-  -->
-  <div class="ep-project-list-v2">
-    <div class="page-header">
-      <div class="title-block">
-        <nav class="breadcrumb">
-          <RouterLink to="/" class="crumb-link">首页</RouterLink>
-          <el-icon class="crumb-sep"><ArrowRight /></el-icon>
-          <span class="crumb-current">剧集制作</span>
-        </nav>
-        <h1 class="page-title">剧集制作 · 项目列表</h1>
-        <p class="page-subtitle">选择已有项目或新建一个</p>
+    <main class="main-area">
+      <EpisodeListPanel
+        v-if="selectedProject && episodes !== null"
+        :project="selectedProject"
+        :episodes="episodes"
+        @settings="dialogs.settings = true"
+        @create-episode="dialogs.createEpisode = true"
+        @open-episode="onOpenEpisode"
+        @edit-episode="onEditEpisode"
+        @delete-episode="onDeleteEpisode"
+      />
+      <div v-else-if="loadingProject" class="loading">加载剧集中…</div>
+      <div v-else class="empty-state">
+        <el-icon :size="64"><Folder /></el-icon>
+        <p>请选择一个项目，或点击左上角"新建"创建</p>
       </div>
-      <el-button type="primary" size="large" @click="showCreateDialog = true">
-        <el-icon><Plus /></el-icon>
-        <span>新建项目</span>
-      </el-button>
-    </div>
+    </main>
 
-    <div class="page-content">
-      <div v-if="loading" class="loading-state">
-        <el-icon class="is-loading" :size="32"><Loading /></el-icon>
-        <span>加载项目中...</span>
-      </div>
-
-      <div v-else-if="error" class="error-state">
-        <el-icon><WarningFilled /></el-icon>
-        <span>{{ error }}</span>
-        <el-button text @click="loadSummaries">重试</el-button>
-      </div>
-
-      <div v-else class="project-grid">
-        <article
-          v-for="p in summaries"
-          :key="p.id"
-          class="project-card"
-          @click="openProject(p)"
-        >
-          <div class="cover" :class="getCoverClass(p)">
-            <span class="cover-emoji">{{ getCoverEmoji(p) }}</span>
-            <button
-              class="hover-delete"
-              :title="`删除项目「${p.name}」`"
-              @click.stop="confirmDelete(p)"
-            >
-              <el-icon><Delete /></el-icon>
-            </button>
-          </div>
-          <div class="body">
-            <h3 class="title" :title="p.name">{{ p.name }}</h3>
-            <div class="meta">
-              <span class="meta-item">{{ p.episodeCount }} 集</span>
-              <span class="meta-sep">·</span>
-              <AssetSourceTag
-                :source="p.sourceType"
-                :custom-label="p.sourceType === 'linked_lw' ? '长文' : '独立'"
-                size="small"
-              />
-            </div>
-            <div class="progress-row">
-              <div class="progress-track">
-                <div class="progress-fill" :style="{ width: p.progressPct + '%' }" />
-              </div>
-              <span class="progress-text">
-                {{ p.currentStageLabel ?? '未开始' }}
-              </span>
-            </div>
-          </div>
-        </article>
-
-        <!-- "+ 新建剧集项目"占位卡（spec §1.D-4） -->
-        <button
-          class="project-card project-card-new"
-          @click="showCreateDialog = true"
-        >
-          <el-icon :size="36"><Plus /></el-icon>
-          <span class="new-label">新建剧集项目</span>
-        </button>
-      </div>
-    </div>
-
-    <!-- 创建项目对话框（复用旧 dialog 结构；后续 phase 可单独重写） -->
-    <el-dialog
-      v-model="showCreateDialog"
-      title="新建剧集项目"
-      width="600px"
-      :close-on-click-modal="false"
-    >
-      <el-form :model="createForm" label-width="100px">
+    <!-- 创建项目 dialog（沿用旧 V2 inline 实现） -->
+    <el-dialog v-model="showCreateProjectDialog" title="新建剧集项目" width="600px" :close-on-click-modal="false">
+      <el-form :model="createProjectForm" label-width="100px">
         <el-form-item label="项目名称" required>
-          <el-input v-model="createForm.name" placeholder="请输入项目名称" />
+          <el-input v-model="createProjectForm.name" placeholder="请输入项目名称" />
         </el-form-item>
         <el-form-item label="关联长文">
           <el-select
-            v-model="createForm.longWritingProjectId"
+            v-model="createProjectForm.longWritingProjectId"
             placeholder="可选 — 关联后剧集可用长文实体作 linked_lw"
             clearable
             style="width: 100%"
           >
-            <el-option
-              v-for="lw in longWritingProjects"
-              :key="lw.id"
-              :label="lw.name"
-              :value="lw.id"
-            />
+            <el-option v-for="lw in longWritingProjects" :key="lw.id" :label="lw.name" :value="lw.id" />
           </el-select>
         </el-form-item>
         <el-divider content-position="left">视频配置</el-divider>
         <el-form-item label="画幅比例">
-          <el-select v-model="createForm.config.aspectRatio" style="width: 100%">
+          <el-select v-model="createProjectForm.config.aspectRatio" style="width: 100%">
             <el-option label="16:9 横屏" value="16:9" />
             <el-option label="9:16 竖屏" value="9:16" />
             <el-option label="4:3 标准" value="4:3" />
@@ -128,7 +53,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="分辨率">
-          <el-select v-model="createForm.config.resolution" style="width: 100%">
+          <el-select v-model="createProjectForm.config.resolution" style="width: 100%">
             <el-option label="4K (3840×2160)" :value="2160" />
             <el-option label="2K (2560×1440)" :value="1440" />
             <el-option label="Full HD (1920×1080)" :value="1080" />
@@ -136,7 +61,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="帧率">
-          <el-select v-model="createForm.config.fps" style="width: 100%">
+          <el-select v-model="createProjectForm.config.fps" style="width: 100%">
             <el-option label="24 fps（电影）" :value="24" />
             <el-option label="30 fps（标准）" :value="30" />
             <el-option label="60 fps（高帧率）" :value="60" />
@@ -145,12 +70,9 @@
         <el-divider content-position="left">风格</el-divider>
         <el-form-item label="项目风格">
           <el-select
-            v-model="createForm.config.styleAnchors"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-            placeholder="选择或输入主流风格（多选）— 将作为各角色/地点/物品的默认风格"
+            v-model="createProjectForm.config.styleAnchors"
+            multiple filterable allow-create default-first-option
+            placeholder="选择或输入主流风格（多选）"
             style="width: 100%"
           >
             <el-option v-for="s in STYLE_PRESETS" :key="s" :label="s" :value="s" />
@@ -158,55 +80,90 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showCreateDialog = false">取消</el-button>
+        <el-button @click="showCreateProjectDialog = false">取消</el-button>
         <el-button
           type="primary"
-          :disabled="!createForm.name.trim()"
+          :disabled="!createProjectForm.name.trim()"
           :loading="creating"
-          @click="onCreate"
-        >
-          创建
-        </el-button>
+          @click="onConfirmCreateProject"
+        >创建</el-button>
       </template>
     </el-dialog>
+
+    <!-- 项目设置 dialog（从 EpisodeWorkbench 迁入） -->
+    <SettingsDialog
+      v-if="selectedProject"
+      v-model="dialogs.settings"
+      :all-lw-projects="longWritingProjects"
+      :provider-configs="providerConfigs"
+      :provider-templates="providerTemplates"
+      @saved="onSettingsSaved"
+    />
+
+    <!-- 新建剧集 dialog（迁入） -->
+    <CreateEpisodeDialog
+      v-if="selectedProjectId"
+      v-model="dialogs.createEpisode"
+      :project-id="selectedProjectId"
+      :initial-episode-number="(episodes?.length ?? 0) + 1"
+      :outline-tree-data="outlineTreeData"
+      @created="onEpisodeCreated"
+    />
+
+    <!-- 编辑剧集 dialog（迁入） -->
+    <EditEpisodeDialog
+      v-model="dialogs.editEpisode"
+      :episode-id="dialogs.editingEpisodeId"
+      :initial-number="dialogs.editingEpisodeNumber"
+      :initial-title="dialogs.editingEpisodeTitle"
+      @updated="onEpisodeUpdated"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-/**
- * EpisodeProjectListV2 · 严格按原型 §1 实施。
- *
- * 数据：listProjectsSummary（FU5-A1）一次性拿聚合字段。
- * 来源标签：FU5-A5 AssetSourceTag。
- */
 import { ref, reactive, onMounted } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import {
-  ArrowRight,
-  Delete,
-  Loading,
-  Plus,
-  WarningFilled,
-} from '@element-plus/icons-vue'
+import { Folder } from '@element-plus/icons-vue'
+import ProjectSidebar from '@/components/episode-production/project-list/ProjectSidebar.vue'
+import EpisodeListPanel from '@/components/episode-production/project-list/EpisodeListPanel.vue'
+import CreateEpisodeDialog from '@/components/episode-production/dialogs/CreateEpisodeDialog.vue'
+import EditEpisodeDialog from '@/components/episode-production/dialogs/EditEpisodeDialog.vue'
+import SettingsDialog from '@/components/episode-production/dialogs/SettingsDialog.vue'
+import { STYLE_PRESETS } from '@core/modules/episode-production/assets/constants/style-presets'
+import { useEpProjectStore } from '@/stores/episode-production/project.store'
 import type {
+  VideoProject,
   VideoProjectSummary,
   VideoProjectConfig,
 } from '../../../shared/types/story-to-video.types'
-import AssetSourceTag from '@/components/episode-production/shared/AssetSourceTag.vue'
-import { STYLE_PRESETS } from '@core/modules/episode-production/assets/constants/style-presets'
+import type { EpisodeWithProgress } from '../../../shared/types/episode-production/episode-with-progress.types'
+import type { UserProviderConfig, ProviderTemplate } from '../../../shared/types'
+import type { OutlineTreeNode } from '@/components/episode-production/shared/outline-utils'
 
 const router = useRouter()
+const projectStore = useEpProjectStore()
 
+// ===== 项目列表 =====
 const summaries = ref<VideoProjectSummary[]>([])
-const loading = ref(false)
-const error = ref<string | null>(null)
-
+const selectedProjectId = ref<string | null>(null)
+const selectedProject = ref<VideoProject | null>(null)
 const longWritingProjects = ref<Array<{ id: string; name: string }>>([])
-const showCreateDialog = ref(false)
-const creating = ref(false)
 
-const createForm = reactive<{
+// ===== 集列表 =====
+const episodes = ref<EpisodeWithProgress[] | null>(null)
+const loadingProject = ref(false)
+
+// ===== 项目设置 dialog 所需上下文 =====
+const providerConfigs = ref<UserProviderConfig[]>([])
+const providerTemplates = ref<ProviderTemplate[]>([])
+const outlineTreeData = ref<OutlineTreeNode[]>([])
+
+// ===== Dialog 状态 =====
+const showCreateProjectDialog = ref(false)
+const creating = ref(false)
+const createProjectForm = reactive<{
   name: string
   longWritingProjectId: string
   config: VideoProjectConfig
@@ -222,60 +179,152 @@ const createForm = reactive<{
     styleAnchors: [],
   } as VideoProjectConfig,
 })
+const dialogs = reactive({
+  settings: false,
+  createEpisode: false,
+  editEpisode: false,
+  editingEpisodeId: '',
+  editingEpisodeNumber: 1,
+  editingEpisodeTitle: '',
+})
 
-/** 4 种封面色（按项目 id hash 决定） */
-const COVER_CLASSES = ['cover-c1', 'cover-c2', 'cover-c3', 'cover-c4'] as const
-
-function getCoverClass(p: VideoProjectSummary): string {
-  // 简单 hash：取 id 字符 charCode 累加 mod 4
-  let sum = 0
-  for (let i = 0; i < p.id.length; i++) sum += p.id.charCodeAt(i)
-  return COVER_CLASSES[sum % COVER_CLASSES.length]
-}
-
-const COVER_EMOJI = ['🎬', '📖', '🎥', '📺']
-
-function getCoverEmoji(p: VideoProjectSummary): string {
-  let sum = 0
-  for (let i = 0; i < p.id.length; i++) sum += p.id.charCodeAt(i)
-  return COVER_EMOJI[sum % COVER_EMOJI.length]
-}
+// ===== 数据加载 =====
 
 async function loadSummaries(): Promise<void> {
-  loading.value = true
-  error.value = null
-  try {
-    const api = (window as any).electronAPI?.episodeProduction
-    if (!api?.listProjectsSummary) {
-      error.value = '当前环境不支持 listProjectsSummary（升级中）'
-      return
-    }
-    const resp = await api.listProjectsSummary()
-    if (!resp.success) {
-      error.value = resp.error || '加载项目失败'
-      return
-    }
-    summaries.value = resp.data as VideoProjectSummary[]
-  } catch (e: any) {
-    error.value = e?.message ?? '加载项目失败'
-  } finally {
-    loading.value = false
+  const api = (window as any).electronAPI?.episodeProduction
+  if (!api?.listProjectsSummary) {
+    ElMessage.error('当前环境不支持 listProjectsSummary')
+    return
+  }
+  const resp = await api.listProjectsSummary()
+  if (!resp.success) {
+    ElMessage.error(resp.error || '加载项目失败')
+    return
+  }
+  summaries.value = resp.data as VideoProjectSummary[]
+
+  // 默认选中：上次进入工作台的项目，找不到则取首个
+  if (!selectedProjectId.value && summaries.value.length > 0) {
+    const last = projectStore.lastSelectedProjectId
+    const initial =
+      (last && summaries.value.find((p) => p.id === last)?.id) ||
+      summaries.value[0].id
+    await selectProject(initial)
   }
 }
 
 async function loadLongWritingProjects(): Promise<void> {
-  try {
-    const resp = await window.electronAPI.longwriting.getProjects()
-    if (resp.success && resp.data) {
-      longWritingProjects.value = resp.data.map((p: any) => ({ id: p.id, name: p.name }))
-    }
-  } catch (e) {
-    console.error('[EpisodeProjectListV2] 加载长文项目失败', e)
+  const resp = await window.electronAPI.longwriting.getProjects()
+  if (resp.success && resp.data) {
+    longWritingProjects.value = resp.data.map((p: any) => ({ id: p.id, name: p.name }))
   }
 }
 
-async function onCreate(): Promise<void> {
-  const name = createForm.name.trim()
+async function loadProviderConfigs(): Promise<void> {
+  // 与 EpisodeWorkbench 保持一致：走 providerTemplate.list + providerConfig.list
+  const templatesResponse = await window.electronAPI.providerTemplate.list()
+  if (templatesResponse.success && templatesResponse.templates) {
+    providerTemplates.value = templatesResponse.templates
+  }
+  const response = await window.electronAPI.providerConfig.list()
+  if (response.success && response.configs) {
+    providerConfigs.value = response.configs.filter((c: UserProviderConfig) => c.isEnabled)
+  }
+}
+
+async function selectProject(projectId: string): Promise<void> {
+  if (selectedProjectId.value === projectId) return
+  loadingProject.value = true
+  selectedProjectId.value = projectId
+  selectedProject.value = null
+  episodes.value = null
+  try {
+    const api = window.electronAPI.episodeProduction
+    const projResp = await api.getProject(projectId)
+    if (!projResp.success || !projResp.data) {
+      ElMessage.error(projResp.error || '项目加载失败')
+      selectedProjectId.value = null
+      return
+    }
+    selectedProject.value = projResp.data as VideoProject
+    await reloadEpisodes()
+  } finally {
+    loadingProject.value = false
+  }
+}
+
+async function reloadEpisodes(): Promise<void> {
+  if (!selectedProjectId.value) return
+  const api = (window as any).electronAPI?.episodeProduction
+  if (!api?.listEpisodesWithProgress) {
+    ElMessage.error('当前环境不支持 listEpisodesWithProgress')
+    episodes.value = []
+    return
+  }
+  const resp = await api.listEpisodesWithProgress(selectedProjectId.value)
+  if (!resp.success) {
+    ElMessage.error(resp.error || '加载剧集失败')
+    episodes.value = []
+    return
+  }
+  episodes.value = resp.data as EpisodeWithProgress[]
+}
+
+// ===== 项目操作 =====
+
+function onSelectProject(p: VideoProjectSummary): void {
+  void selectProject(p.id)
+}
+
+async function onRenameProject(p: VideoProjectSummary): Promise<void> {
+  try {
+    const { value } = await ElMessageBox.prompt('输入新名称', '重命名项目', {
+      inputValue: p.name,
+      inputValidator: (v) => (!!v && v.trim().length > 0) || '名称不能为空',
+    })
+    const resp = await window.electronAPI.episodeProduction.updateProject(p.id, { name: value.trim() })
+    if (!resp.success) {
+      ElMessage.error(resp.error || '重命名失败')
+      return
+    }
+    ElMessage.success('已重命名')
+    await loadSummaries()
+    if (selectedProjectId.value === p.id) {
+      const projResp = await window.electronAPI.episodeProduction.getProject(p.id)
+      if (projResp.success && projResp.data) selectedProject.value = projResp.data as VideoProject
+    }
+  } catch {
+    /* 取消 */
+  }
+}
+
+async function onDeleteProject(p: VideoProjectSummary): Promise<void> {
+  try {
+    await ElMessageBox.confirm(`确定删除项目「${p.name}」？此操作不可恢复。`, '删除确认', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch {
+    return
+  }
+  const resp = await window.electronAPI.episodeProduction.deleteProject(p.id)
+  if (!resp.success) {
+    ElMessage.error(resp.error || '删除失败')
+    return
+  }
+  ElMessage.success('已删除')
+  if (selectedProjectId.value === p.id) {
+    selectedProjectId.value = null
+    selectedProject.value = null
+    episodes.value = null
+    if (projectStore.lastSelectedProjectId === p.id) projectStore.setLastSelectedProjectId(null)
+  }
+  await loadSummaries()
+}
+
+async function onConfirmCreateProject(): Promise<void> {
+  const name = createProjectForm.name.trim()
   if (!name) {
     ElMessage.warning('请输入项目名称')
     return
@@ -284,293 +333,104 @@ async function onCreate(): Promise<void> {
   try {
     const resp = await window.electronAPI.episodeProduction.createProject(
       name,
-      createForm.longWritingProjectId || undefined,
-      createForm.config,
+      createProjectForm.longWritingProjectId || undefined,
+      createProjectForm.config,
     )
     if (!resp.success || !resp.data) {
       ElMessage.error(resp.error || '创建失败')
       return
     }
     ElMessage.success('已创建')
-    showCreateDialog.value = false
-    createForm.name = ''
-    createForm.longWritingProjectId = ''
-    router.push(`/episode-production/${resp.data.id}`)
+    showCreateProjectDialog.value = false
+    createProjectForm.name = ''
+    createProjectForm.longWritingProjectId = ''
+    await loadSummaries()
+    await selectProject(resp.data.id)
   } finally {
     creating.value = false
   }
 }
 
-function openProject(p: VideoProjectSummary): void {
-  router.push(`/episode-production/${p.id}`)
+// ===== 集操作 =====
+
+function onOpenEpisode(ep: EpisodeWithProgress): void {
+  router.push(`/episode-production/${ep.projectId}/episode/${ep.id}`)
 }
 
-async function confirmDelete(p: VideoProjectSummary): Promise<void> {
+function onEditEpisode(ep: EpisodeWithProgress): void {
+  dialogs.editingEpisodeId = ep.id
+  dialogs.editingEpisodeNumber = ep.episodeNumber
+  dialogs.editingEpisodeTitle = ep.title
+  dialogs.editEpisode = true
+}
+
+async function onDeleteEpisode(ep: EpisodeWithProgress): Promise<void> {
   try {
     await ElMessageBox.confirm(
-      `确定删除项目「${p.name}」？此操作不可恢复。`,
+      `确定删除「第 ${ep.episodeNumber} 集 · ${ep.title}」？`,
       '删除确认',
-      {
-        confirmButtonText: '删除',
-        cancelButtonText: '取消',
-        type: 'warning',
-      },
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
     )
   } catch {
     return
   }
-  const resp = await window.electronAPI.episodeProduction.deleteProject(p.id)
-  if (resp.success) {
-    ElMessage.success('已删除')
-    await loadSummaries()
-  } else {
+  const resp = await window.electronAPI.episodeProduction.deleteEpisode(ep.id)
+  if (!resp.success) {
     ElMessage.error(resp.error || '删除失败')
+    return
   }
+  ElMessage.success('已删除')
+  await reloadEpisodes()
+  await loadSummaries()
 }
 
-onMounted(() => {
-  void loadSummaries()
-  void loadLongWritingProjects()
+async function onEpisodeCreated(): Promise<void> {
+  await reloadEpisodes()
+  await loadSummaries()
+}
+
+async function onEpisodeUpdated(): Promise<void> {
+  await reloadEpisodes()
+}
+
+async function onSettingsSaved(): Promise<void> {
+  if (selectedProjectId.value) {
+    const projResp = await window.electronAPI.episodeProduction.getProject(selectedProjectId.value)
+    if (projResp.success && projResp.data) selectedProject.value = projResp.data as VideoProject
+  }
+  await loadSummaries()
+}
+
+onMounted(async () => {
+  await loadLongWritingProjects()
+  await loadProviderConfigs()
+  await loadSummaries()
 })
 </script>
 
 <style scoped lang="scss">
-.ep-project-list-v2 {
-  height: 100%;
+.ep-project-list-v3 {
   display: flex;
-  flex-direction: column;
+  height: 100%;
   background: var(--el-bg-color-page);
   overflow: hidden;
 }
 
-.page-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 24px 28px 16px;
-  background: var(--el-bg-color);
-  border-bottom: 1px solid var(--el-border-color-light);
-  flex-shrink: 0;
-}
-
-.title-block {
+.main-area {
   flex: 1;
-  min-width: 0;
-}
-
-.breadcrumb {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 6px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-
-.crumb-link {
-  color: var(--el-color-primary);
-  text-decoration: none;
-}
-.crumb-link:hover {
-  text-decoration: underline;
-}
-
-.crumb-sep {
-  font-size: 12px;
-  color: var(--el-text-color-placeholder);
-}
-
-.crumb-current {
-  color: var(--el-text-color-regular);
-}
-
-.page-title {
-  margin: 0 0 4px;
-  font-size: 22px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-  line-height: 1.3;
-}
-
-.page-subtitle {
-  margin: 0;
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
-}
-
-.page-content {
-  flex: 1;
-  overflow: auto;
-  padding: 24px 28px;
-}
-
-.loading-state,
-.error-state {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 64px 0;
-  color: var(--el-text-color-secondary);
-  font-size: 14px;
-}
-
-.project-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
-}
-
-.project-card {
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 8px;
-  overflow: hidden;
-  cursor: pointer;
-  transition: all 0.15s;
-  text-align: left;
-  padding: 0;
-  font-family: inherit;
-  color: inherit;
-}
-
-.project-card:hover {
-  border-color: var(--el-color-primary-light-5);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-  transform: translateY(-1px);
-}
-
-.project-card:hover .hover-delete {
-  opacity: 1;
-}
-
-.cover {
-  height: 130px;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 60px;
-}
-
-/* 4 种封面渐变（视觉占位；后续可换真实封面） */
-.cover-c1 {
-  background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-dark-2));
-}
-.cover-c2 {
-  background: linear-gradient(135deg, var(--el-color-success), var(--el-color-success-dark-2));
-}
-.cover-c3 {
-  background: linear-gradient(135deg, var(--el-color-warning), var(--el-color-warning-dark-2));
-}
-.cover-c4 {
-  background: linear-gradient(135deg, var(--el-color-danger), var(--el-color-danger-dark-2));
-}
-
-.cover-emoji {
-  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.2));
-}
-
-.hover-delete {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.45);
-  color: var(--el-color-white, #fff);
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity 0.15s, background 0.15s;
-}
-
-.hover-delete:hover {
-  background: var(--el-color-danger);
-}
-
-.body {
-  padding: 14px;
-}
-
-.title {
-  margin: 0 0 6px;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-  line-height: 1.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  margin-bottom: 10px;
-}
-
-.meta-sep {
-  color: var(--el-text-color-placeholder);
-}
-
-.progress-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.progress-track {
-  flex: 1;
-  height: 4px;
-  background: var(--el-fill-color-light);
-  border-radius: 2px;
   overflow: hidden;
 }
 
-.progress-fill {
-  height: 100%;
-  background: var(--el-color-success);
-  transition: width 0.3s;
-}
-
-.progress-text {
-  font-size: 11px;
-  color: var(--el-text-color-placeholder);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.project-card-new {
+.empty-state,
+.loading {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  min-height: 220px;
-  border-style: dashed;
-  border-color: var(--el-border-color);
-  background: transparent;
-  color: var(--el-text-color-placeholder);
-  transition: all 0.15s;
-}
-
-.project-card-new:hover {
-  border-color: var(--el-color-primary);
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-}
-
-.new-label {
-  font-size: 13px;
+  gap: 12px;
+  color: var(--el-text-color-secondary);
+  font-size: 14px;
 }
 </style>
