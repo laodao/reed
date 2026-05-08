@@ -862,6 +862,9 @@ watch(
   gap: 8px;
   align-items: stretch;
   flex-shrink: 0;
+  /* 限定顶部内容行高度，防止长原文撑高整行抢占主区空间。
+     excerpt-body 在 panel 内 flex:1 + overflow auto 自适应撑满 panel 剩余高度。 */
+  height: 240px;
 }
 
 @media (max-width: 1100px) {
