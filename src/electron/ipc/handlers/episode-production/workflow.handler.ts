@@ -7,7 +7,7 @@
  *   - ep:calculate-episode-progress(episodeId) → EpisodeProgress
  *     供顶部 6 段阶段进度条 UI 使用（spec §2.1 + §2.2 · P6-T13）
  *   - ep:list-episodes-with-progress(projectId) → EpisodeWithProgress[]
- *     供剧集列表页展示每集进度（Task 3）
+ *     供剧集列表页展示每集进度（spec §6.1）
  */
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
@@ -89,7 +89,7 @@ async function handleCanEnterStage(
 /**
  * 获取指定项目下所有剧集及其 6 阶段进度列表。
  *
- * 剧集列表页（Task 3）使用：
+ * 剧集列表页（spec §6.1）使用：
  * - 展示每集进度摘要，供用户快速判断各集制作状态
  */
 async function handleListEpisodesWithProgress(
@@ -97,14 +97,17 @@ async function handleListEpisodesWithProgress(
   projectId: string,
 ): Promise<IpcResponse> {
   try {
-    if (!projectId) return { success: false, error: 'projectId 不能为空' }
+    if (!projectId) {
+      return { success: false, error: 'projectId 不能为空' }
+    }
     const db = getCoreDatabaseManager()
-    if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+    if (!db.dataSource) {
+      return { success: false, error: '数据库未初始化' }
+    }
     const calc = new ProgressCalculator(db.dataSource)
     const list = await calc.listEpisodesWithProgress(projectId)
     return { success: true, data: list }
   } catch (e: any) {
-    console.error('[handleListEpisodesWithProgress] 异常:', e)
     return { success: false, error: e?.message ?? '获取剧集进度列表失败' }
   }
 }
