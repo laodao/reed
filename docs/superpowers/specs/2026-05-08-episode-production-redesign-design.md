@@ -87,17 +87,21 @@ flowchart LR
   - **集卡片**（`EpisodeCard.vue`）：封面色块（emoji + 渐变，按 episodeNumber hash）+ "第 X 集 · 标题" + 进度条 + 当前阶段标签；hover 出右上角浮按钮 [✏ 编辑] [🗑 删除]
   - **末尾占位卡**：dashed border `+ 新建剧集`，点击 = 顶部 [+ 新建剧集] 同效
 
-### 3.4 dialog 复用
+### 3.4 dialog 复用与归属
 
-| 操作 | 触发点 | dialog |
-|---|---|---|
-| 新建项目 | sidebar [+ 新建] | 现有创建项目 dialog |
-| 重命名项目 | sidebar item ⋯ → [重命名] | 复用项目编辑 dialog（如无可新增简易输入框） |
-| 删除项目 | sidebar item ⋯ → [删除] | `ElMessageBox.confirm` |
-| 项目设置 | 右栏 page-header [项目设置] | `SettingsDialog`（复用） |
-| 新建剧集 | 右栏 page-header [+ 新建剧集] / 占位卡 | `CreateEpisodeDialog`（复用） |
-| 编辑剧集 | 集卡 hover ✏ | `EditEpisodeDialog`（复用） |
-| 删除剧集 | 集卡 hover 🗑 | `ElMessageBox.confirm` |
+EpisodeWorkbench 当前承载 14 个 dialog，本次重构将"项目级 / 集级"3 个 dialog 从 Workbench 迁出到本界面：
+
+| 操作 | 触发点 | dialog | 归属变化 |
+|---|---|---|---|
+| 新建项目 | sidebar [+ 新建] | 现有创建项目 inline dialog | 留在本界面（已是） |
+| 重命名项目 | sidebar item ⋯ → [重命名] | 复用项目编辑 dialog（无则用 `ElMessageBox.prompt` 简易实现） | 本界面 |
+| 删除项目 | sidebar item ⋯ → [删除] | `ElMessageBox.confirm` | 本界面 |
+| 项目设置 | 右栏 page-header [项目设置] | `SettingsDialog` | **从 Workbench 迁入** |
+| 新建剧集 | 右栏 page-header [+ 新建剧集] / 占位卡 | `CreateEpisodeDialog` | **从 Workbench 迁入** |
+| 编辑剧集 | 集卡 hover ✏ | `EditEpisodeDialog` | **从 Workbench 迁入** |
+| 删除剧集 | 集卡 hover 🗑 | `ElMessageBox.confirm` | 本界面 |
+
+**留在 Workbench 的 11 个 dialog**（与 stage view 强耦合）：`BindCharacterDialog` / `BindItemDialog` / `BindLocationDialog` / `StoryboardEditDialog` / `CharacterDetailDialog` / `ItemDetailDialog` / `LocationDetailDialog` / `EntityEditDialog` / `AssetEditDrawer`，以及保留的资产生成相关 dialog。
 
 ---
 
@@ -156,8 +160,13 @@ flowchart LR
 ### 4.5 进入工作台
 
 - 路由 `/episode-production/:projectId/episode/:episodeId`
-- `loadProject()` 改为：加载 project + episodes，按 `route.params.episodeId` 选中对应集；找不到 → `ElMessage.error` + 跳回 `/episode-production`
-- 旧 `pickInitialEpisode` 改为路由 beforeEnter：`/episode-production/:projectId` → 取首个集 → redirect 到 `/episode-production/:projectId/episode/:firstEpId`；空集 → 跳回 `/episode-production` 并提示
+- `loadProject()` 改为：加载 project + episodes，按 `route.params.episodeId` 选中对应集
+- 选中失败兜底（按下列顺序判断）：
+  1. project 不存在 → `ElMessage.error` + `router.replace('/episode-production')`
+  2. episodeId 不存在 / 已删除 → `ElMessage.warning` + `router.replace('/episode-production/:projectId')`（让 beforeEnter 接管 → 跳到首集）
+  3. episodeId 存在但 `episode.projectId !== route.params.projectId` → `ElMessage.error` + `router.replace('/episode-production')`
+- 旧 `pickInitialEpisode` 行为下沉到路由 beforeEnter：`/episode-production/:projectId` → 取首个集 → redirect 到 `/episode-production/:projectId/episode/:firstEpId`；空集 → `router.replace('/episode-production')` 并提示"项目暂无剧集，请先创建"
+- 进入 Workbench 后，在 `loadProject` 成功末尾把 `route.params.projectId` 写入 `project.store.lastSelectedProjectId`（持久化）
 
 ---
 
@@ -185,7 +194,7 @@ flowchart LR
 |---|---|
 | `router/index.ts` | 新增 `/episode-production/:projectId/episode/:episodeId`；旧 `:projectId` beforeEnter redirect 到首个集 |
 | `stores/episode-production/project.store.ts` | 新增 `lastSelectedProjectId` 持久化（localStorage，复用 `episode.store.ts` 现有 `LAST_SELECTED_STORAGE_KEY` 同款模式，新键如 `episode-production:last-selected-project`） |
-| `composables/use-workbench-stage-navigation.ts` | 移除 `progressBarRef` 入参（StageProgressBar 已删，新 StageHeaderBar 自带 reload via expose） |
+| `composables/use-workbench-stage-navigation.ts` | `progressBarRef` 入参改名为 `headerBarRef`，类型对齐 `StageHeaderBar` 的 expose（保留 `reload()` 方法）；调用点不变 |
 | `electron/ipc/handlers/episode-production/*.ts` | 新增 IPC `listEpisodesWithProgress(projectId)` |
 | `core/modules/episode-production/episode/episode-service.ts`（或对应聚合服务） | 实现 `listEpisodesWithProgress`：JOIN episodes + 计算每集进度 |
 | `shared/types/episode-production/*.ts` | 新增 `EpisodeWithProgress` 类型 |
@@ -220,9 +229,21 @@ listEpisodesWithProgress(projectId: string): Promise<IpcResult<EpisodeWithProgre
 ```
 
 实现要点：
-- 内部对每集调一次 `calculateEpisodeProgress` 服务（已存在），打包返回
-- 走 Repository（不直接 query DB）
-- core 实现，PC + Web 双端共用
+- 内部循环调用现有 `calculateEpisodeProgress` 服务，打包返回；这只**消除前端往返**，未真正消除 N+1（后端仍是逐集计算）
+- 单项目剧集量通常 < 30，第一版可接受；若实测慢，后续优化方向：把"集进度概览"下沉为聚合 SQL（直接读 episode + 关联表 count），不走完整 stage gap 计算
+- 走 Repository（不直接 query DB），core 实现，PC + Web 双端共用
+
+`currentStageLabel` 取值规则（基于 `status` 字段映射，避免在前端重复定义）：
+
+| status | currentStageLabel |
+|---|---|
+| `pending` | "未开始" |
+| `asset_prep` | "资产准备" |
+| `scripting` | "剧本中" |
+| `storyboarding` | "分镜中" |
+| `producing` | "制作中" |
+| `composing` | "合成中" |
+| `completed` | "已完成" |
 
 ### 6.2 复用 IPC
 
@@ -272,7 +293,7 @@ listEpisodesWithProgress(projectId: string): Promise<IpcResult<EpisodeWithProgre
 
 | 风险 | 缓解 |
 |---|---|
-| 集卡 N+1 性能 | 聚合 IPC `listEpisodesWithProgress` 一次性返回 |
+| 集卡 N+1（前端往返） | 聚合 IPC `listEpisodesWithProgress` 一次性返回；后端 N+1 留作后续 SQL 聚合优化 |
 | 旧 `:projectId` 路由跳转链 | beforeEnter redirect 到首集；空集 → 回项目列表 + 提示 |
 | 删除当前选中项目 | 删除后清空 `lastSelectedProjectId`，sidebar 失焦，主区回 empty |
 | `StageProgressBar` / `BottomTimeline` 删除前未发现的隐式引用 | 实施时再 grep 一次，确认无其他引用 |
@@ -282,22 +303,22 @@ listEpisodesWithProgress(projectId: string): Promise<IpcResult<EpisodeWithProgre
 
 ## 9. 实施分阶段（建议）
 
-> 本节供 writing-plans 阶段拆分参考；不是契约。
+> 本节供 writing-plans 阶段拆分参考；不是契约。Phase 之间存在串行依赖，不能完全独立合入。
 
-1. **Phase 1 · 基础设施**：路由调整、`listEpisodesWithProgress` IPC、`lastSelectedProjectId` 持久化
-2. **Phase 2 · 剧集项目界面**：`ProjectSidebar` / `EpisodeCard` / `EpisodeListPanel` + 重写 `EpisodeProjectListV2.vue`
-3. **Phase 3 · 剧集制作界面**：`StageHeaderBar` + 重构 `EpisodeWorkbench.vue` header + 删除 `StageProgressBar` / `BottomTimeline`
-4. **Phase 4 · 收尾**：删除孤儿文件、E2E、双端验证、暗主题验证、归档截图
+1. **Phase 1 · 后端 / 数据层**（可独立合入）：`listEpisodesWithProgress` IPC + 服务实现 + `EpisodeWithProgress` 类型 + `project.store.lastSelectedProjectId` 持久化
+2. **Phase 2 · 剧集项目界面**（依赖 Phase 1）：新增 `ProjectSidebar` / `EpisodeCard` / `EpisodeListPanel`；重写 `EpisodeProjectListV2.vue`；从 Workbench 迁入 `CreateEpisodeDialog` / `EditEpisodeDialog` / `SettingsDialog`
+3. **Phase 3 · 剧集制作界面 + 路由**（与 Phase 2 同期或之后；路由变更必须与 Workbench 改动**同 PR**，否则中间态会导航失败）：新增 `StageHeaderBar`；改 router；重构 `EpisodeWorkbench.vue` header；删除 `<StageProgressBar>` / `<BottomTimeline>` 引用 + 文件
+4. **Phase 4 · 收尾**：清理 `use-workbench-stage-navigation` 入参重命名、E2E、双端验证、暗主题验证、归档截图
 
 ---
 
 ## 10. 设计确认
 
-- [x] § 1 路由与导航流
-- [x] § 2 剧集项目界面布局
-- [x] § 3 剧集制作界面 header（颜色区分保留 / `BottomTimeline` 删除）
-- [x] § 4 组件改动清单
-- [x] § 5 数据 / IPC
-- [x] § 6 测试 / DoD
+- [x] § 2 路由与导航流
+- [x] § 3 剧集项目界面布局
+- [x] § 4 剧集制作界面 header（颜色区分保留 / `BottomTimeline` 删除）
+- [x] § 5 组件改动清单
+- [x] § 6 数据 / IPC
+- [x] § 7 测试 / DoD
 
-— 待 user 在 spec 写完后再 review 一次。
+— 待 user 对 spec 终稿再 review 一次。
