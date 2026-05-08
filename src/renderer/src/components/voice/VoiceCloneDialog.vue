@@ -106,19 +106,6 @@
         </p>
       </el-form>
 
-      <template #footer>
-        <span class="dialog-footer">
-          <el-button @click="closeDialog">取消</el-button>
-          <el-button
-            type="primary"
-            :disabled="!canSubmit"
-            :loading="submitting"
-            @click="onSubmit"
-          >
-            开始复刻
-          </el-button>
-        </span>
-      </template>
     </div>
 
     <!-- ========== 阶段 2：训练中 ========== -->
@@ -133,11 +120,6 @@
       <div class="busy-hint">
         训练通常需要 1-2 分钟。可以关闭对话框 — 训练在后台继续，完成后会通知您。
       </div>
-      <template #footer>
-        <span class="dialog-footer">
-          <el-button @click="closeDialog">关闭（后台继续）</el-button>
-        </span>
-      </template>
     </div>
 
     <!-- ========== 阶段 3：完成 / 失败 ========== -->
@@ -157,12 +139,33 @@
           {{ doneError || '未知错误，请重试' }}
         </div>
       </template>
-      <template #footer>
-        <span class="dialog-footer">
-          <el-button type="primary" @click="closeDialog">完成</el-button>
-        </span>
-      </template>
     </div>
+
+    <!--
+      footer slot 必须是 el-dialog 的**直接**子节点 —
+      不能套在 v-if 分支里（否则 vue 编译器报 "Codegen node is missing"）
+    -->
+    <template #footer>
+      <span class="dialog-footer">
+        <template v-if="phase === 'form'">
+          <el-button @click="closeDialog">取消</el-button>
+          <el-button
+            type="primary"
+            :disabled="!canSubmit"
+            :loading="submitting"
+            @click="onSubmit"
+          >
+            开始复刻
+          </el-button>
+        </template>
+        <template v-else-if="phase === 'busy'">
+          <el-button @click="closeDialog">关闭（后台继续）</el-button>
+        </template>
+        <template v-else>
+          <el-button type="primary" @click="closeDialog">完成</el-button>
+        </template>
+      </span>
+    </template>
   </el-dialog>
 </template>
 
