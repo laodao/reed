@@ -910,8 +910,8 @@ watch(
   flex-direction: column;
   overflow: hidden;
 
-  // P6-T17 follow-up: 隐藏 el-tabs 自带 header（标签栏）
-  // 因为顶部 StageProgressBar 已是唯一 navigation（spec §2.1 形态 D），
+  // 隐藏 el-tabs 自带 header（标签栏）
+  // 因为顶部 StageHeaderBar 已是唯一 navigation（spec §4.3），
   // el-tabs 的 tab header 视觉重复且让用户困惑（同一 stage 切换有两个入口）。
   // el-tabs 的 v-model 切换内容能力保留，仅隐藏 header DOM。
   :deep(.el-tabs__header) {
