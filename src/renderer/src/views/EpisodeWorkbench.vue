@@ -38,11 +38,14 @@
             页面，明确说明"待哪个 task 实现"。
           -->
           <el-tabs v-model="activeTab" class="editor-tabs">
-            <!-- ① 内容（P6-T18 · spec §2.2 第 433 行） -->
-            <el-tab-pane label="① 内容" name="pending">
-              <StageContentView
+            <!-- ① 内容 + ③ 剧本（合并 v3，Task 10） -->
+            <el-tab-pane label="内容+剧本" name="pending">
+              <StageContentScriptView
                 :episode="episodeStore.currentEpisode"
-                @confirmed="onContentConfirmed"
+                :project-id="projectId"
+                @confirmed-entities="onContentConfirmed"
+                @approved-script="onScriptApproved"
+                @go-asset-stage="onScriptGoAssetStage"
               />
             </el-tab-pane>
 
@@ -81,18 +84,6 @@
                 :voice-id="selectedAsset.id"
                 @close="selectedAsset = null"
                 @saved="onAssetSaved"
-              />
-            </el-tab-pane>
-
-            <!--
-              ③ 剧本（FU2 · spec §2.2 第 435 行 + §4.1）
-              V3 StageScriptView：场景卡片列表 + AI 生成 + ScriptCompletenessPanel
-              + "修复缺失绑定" + "剧本定稿" 按钮。替代 V2 ScriptTabContent。
-            -->
-            <el-tab-pane label="③ 剧本" name="scripting">
-              <StageScriptView
-                :project-id="projectId"
-                @go-asset-stage="onScriptGoAssetStage"
               />
             </el-tab-pane>
 
@@ -247,9 +238,8 @@ import { buildOutlineTree, type OutlineTreeNode } from '@/components/episode-pro
 import StageProductionTabContent from '@/components/episode-production/stage-production-v2/StageProductionViewV2.vue'
 // FU5-G1 · ⑥ 合成 stage 切到 V2（按原型 §9 + §11 修订 · 全部真实功能）
 import StageComposeView from '@/components/episode-production/stage-compose-v2/StageComposeViewV2.vue'
-// FU2 ③ 剧本 stage view（V3 重写，替代 V2 ScriptTabContent）
-// FU5-D1 · ③ 剧本 stage 切到 V2（章节梗概 panel + EntityRefRenderer + 场景卡折叠）
-import StageScriptView from '@/components/episode-production/stage-script-v2/StageScriptViewV2.vue'
+// Task 10：① 内容 + ③ 剧本 合并 v3 视图
+import StageContentScriptView from '@/components/episode-production/stage-content-script-v3/StageContentScriptView.vue'
 // FU7 顶部进度条 → StageHeaderBar（内嵌于 header 单行）
 import StageHeaderBar from '@/components/episode-production/workbench/StageHeaderBar.vue'
 // P6-T14 左侧资产侧栏（spec §2.1 第 414-418 行）
@@ -259,9 +249,7 @@ import { useWorkbenchStageNavigation } from '@/composables/use-workbench-stage-n
 // P6-T20 ④ 分镜 stage view（spec §2.2 第 436 行 + §4.5）
 // FU5-E1 · ④ 分镜 stage 切到 V2（按原型 §7 + §11 修订）
 import StageStoryboardView from '@/components/episode-production/stage-storyboard-v2/StageStoryboardViewV2.vue'
-// P6-T18 ① 内容 stage view（spec §2.2 第 433 行 + §0.4）
-// FU5-B2 · ① 内容 stage 切到 V2（按原型 §2 + §11 修订重写）
-import StageContentView from '@/components/episode-production/stage-content-v2/StageContentViewV2.vue'
+// （已合并到 StageContentScriptView · Task 10）
 import type {
   EpisodeStatus,
   StageEnterDecision,
@@ -323,10 +311,10 @@ const episodeIdParam = computed(() => route.params.episodeId as string | undefin
  * 顶部进度条点击 → 直接 set activeTab.value = status（之前还要做字符串映射）
  * el-tabs 的 v-model 接收同样的 string，pane 的 name 与之对应。
  *
- * 默认 'asset_prep'（① 内容 stage view 是占位，不强制把用户拉过去）；
- * P6-T18 ① 内容 stage view 实现后默认改 'pending' 或按 episode.status 智能选。
+ * Task 10：① 内容 + ③ 剧本 合并为同一 tab（name='pending'），故 WorkbenchStage
+ * 去掉 scripting，只剩 5 个值。scripting status 在进度条点击时映射到 pending。
  */
-type WorkbenchStage = Exclude<EpisodeStatus, 'completed'>
+type WorkbenchStage = 'pending' | 'asset_prep' | 'storyboarding' | 'producing' | 'composing'
 const activeTab = ref<WorkbenchStage>('asset_prep')
 
 /**
@@ -350,6 +338,28 @@ watch(activeTab, (s) => {
     activeContextStore.clear()
   }
 })
+
+/**
+ * Task 10：episode status → activeTab 映射。
+ * scripting 状态映射到合并 tab（name='pending'），其余直接映射。
+ */
+watch(
+  () => episodeStore.currentEpisode?.status,
+  (s) => {
+    if (!s) return
+    if (s === 'pending' || s === 'scripting') {
+      activeTab.value = 'pending'
+    } else if (
+      s === 'asset_prep' ||
+      s === 'storyboarding' ||
+      s === 'producing' ||
+      s === 'composing'
+    ) {
+      activeTab.value = s as WorkbenchStage
+    }
+  },
+  { immediate: true },
+)
 
 // FU3：selectedAsset 提前声明（多个 composable + 模板共享）
 const selectedAsset = ref<{ type: 'character' | 'location' | 'item' | 'voice'; id: string } | null>(null)
@@ -389,6 +399,15 @@ function onScriptGoAssetStage(payload: {
   } else {
     selectedAsset.value = null
   }
+}
+
+/**
+ * Task 10：StageContentScriptView 剧本定稿事件 → 切到 ④ 分镜 tab
+ */
+async function onScriptApproved(): Promise<void> {
+  activeTab.value = 'storyboarding'
+  await headerBarRef.value?.reload()
+  ElMessage.success('剧本已定稿 → 进入 ④ 分镜')
 }
 
 // FU3：useWorkbenchStageNavigation 调用挪到 setup 末尾（所有 ref/function 声明之后）

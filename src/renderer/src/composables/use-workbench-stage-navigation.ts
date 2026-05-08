@@ -32,7 +32,16 @@ import type {
   VideoEpisode,
 } from '../../../shared/types/story-to-video.types'
 
-type WorkbenchStage = Exclude<EpisodeStatus, 'completed'>
+/**
+ * Task 10：① 内容 + ③ 剧本 合并后，tab name 只有 5 个（无 scripting）。
+ * scripting status 在进度条点击时映射到 pending tab。
+ */
+type WorkbenchStage = 'pending' | 'asset_prep' | 'storyboarding' | 'producing' | 'composing'
+
+/** scripting status 映射到合并 tab pending；其余 status 直接用作 tab name */
+function toTabName(status: EpisodeStatus): WorkbenchStage {
+  return status === 'scripting' ? 'pending' : (status as WorkbenchStage)
+}
 type AssetKind = 'character' | 'location' | 'item' | 'voice'
 
 interface DialogsState {
@@ -72,24 +81,24 @@ export function useWorkbenchStageNavigation(
     }
     const ep = episodeStore.currentEpisode
     if (!ep) {
-      input.activeTab.value = status as WorkbenchStage
+      input.activeTab.value = toTabName(status)
       return
     }
     try {
       const api = (window as any).electronAPI?.episodeProduction
       if (!api?.canEnterStage) {
-        input.activeTab.value = status as WorkbenchStage
+        input.activeTab.value = toTabName(status)
         return
       }
       const resp = await api.canEnterStage(ep.id, ep.status as EpisodeStatus, status)
       if (!resp?.success) {
         console.warn('canEnterStage 返回失败，软放过：', resp?.error)
-        input.activeTab.value = status as WorkbenchStage
+        input.activeTab.value = toTabName(status)
         return
       }
       const decision = resp.data as StageEnterDecision
       if (decision.allowed) {
-        input.activeTab.value = status as WorkbenchStage
+        input.activeTab.value = toTabName(status)
         return
       }
       if (!decision.canForce) {
@@ -112,13 +121,13 @@ export function useWorkbenchStageNavigation(
             type: 'warning',
           },
         )
-        input.activeTab.value = status as WorkbenchStage
+        input.activeTab.value = toTabName(status)
       } catch {
         input.activeTab.value = 'asset_prep'
       }
     } catch (e: any) {
       console.warn('门控调用异常，软放过：', e)
-      input.activeTab.value = status as WorkbenchStage
+      input.activeTab.value = toTabName(status)
     }
   }
 
