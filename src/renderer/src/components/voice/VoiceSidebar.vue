@@ -2,7 +2,7 @@
   <div class="voice-sidebar">
     <!-- 顶部标题区域 -->
     <div class="sidebar-header">
-      <h3>语音历史</h3>
+      <h3>{{ title ?? '语音历史' }}</h3>
       <el-tooltip content="仅显示收藏" placement="bottom">
         <el-button
           :type="favoriteOnly ? 'warning' : 'default'"
@@ -257,6 +257,10 @@ import type { VoiceRecord } from '../../../../shared/types/voice.types'
 interface Props {
   /** 当前选中的历史 ID */
   modelValue?: string
+  /** 历史类型筛选：'tts' / 'stt'。缺省 'tts'（向后兼容）*/
+  historyType?: 'tts' | 'stt'
+  /** 标题文字（默认"语音历史"，TTS 拆独立页时可改为"合成历史"等）*/
+  title?: string
 }
 
 /**
@@ -327,7 +331,7 @@ async function loadHistories(): Promise<void> {
     const response = await window.electronAPI.voice.history({
       page: 1,
       pageSize: 50,
-      type: 'tts', // 只加载 TTS 类型的历史记录
+      type: props.historyType ?? 'tts',
       favorite: favoriteOnly.value || undefined
     })
 

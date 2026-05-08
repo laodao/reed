@@ -47,26 +47,77 @@
       <nav class="sidebar-nav">
         <div class="nav-section">
           <ul class="nav-list">
-            <li
-              v-for="item in mainMenuItems"
-              :key="item.path"
-              class="nav-item"
-              :class="{ active: currentRoute === item.path }"
-              @click="navigateTo(item.path)"
-            >
-              <div class="nav-item-content">
-                <div class="nav-icon-wrapper">
-                  <component :is="item.icon" class="nav-icon" />
-                  <div v-if="currentRoute === item.path" class="nav-glow"></div>
+            <template v-for="item in mainMenuItems" :key="item.path">
+              <!-- 普通项（无子菜单） -->
+              <li
+                v-if="!item.children || item.children.length === 0"
+                class="nav-item"
+                :class="{ active: isItemActive(item) }"
+                @click="navigateTo(item.path)"
+              >
+                <div class="nav-item-content">
+                  <div class="nav-icon-wrapper">
+                    <component :is="item.icon" class="nav-icon" />
+                    <div v-if="isItemActive(item)" class="nav-glow"></div>
+                  </div>
+                  <transition name="slide-fade">
+                    <span v-if="!isCollapsed" class="nav-label">{{ item.label }}</span>
+                  </transition>
+                  <transition name="indicator">
+                    <div v-if="isItemActive(item)" class="nav-indicator"></div>
+                  </transition>
                 </div>
-                <transition name="slide-fade">
-                  <span v-if="!isCollapsed" class="nav-label">{{ item.label }}</span>
-                </transition>
-                <transition name="indicator">
-                  <div v-if="currentRoute === item.path" class="nav-indicator"></div>
-                </transition>
-              </div>
-            </li>
+              </li>
+
+              <!-- 父项（带子菜单），点击展开 / 收起 -->
+              <template v-else>
+                <li
+                  class="nav-item"
+                  :class="{ active: isItemActive(item) || isAnyChildActive(item) }"
+                  @click="onParentClick(item)"
+                >
+                  <div class="nav-item-content">
+                    <div class="nav-icon-wrapper">
+                      <component :is="item.icon" class="nav-icon" />
+                      <div
+                        v-if="isItemActive(item) || isAnyChildActive(item)"
+                        class="nav-glow"
+                      ></div>
+                    </div>
+                    <transition name="slide-fade">
+                      <span v-if="!isCollapsed" class="nav-label">{{ item.label }}</span>
+                    </transition>
+                    <el-icon
+                      v-if="!isCollapsed"
+                      class="nav-caret"
+                      :class="{ 'is-open': expandedMenus.has(item.path) }"
+                    >
+                      <ArrowRight />
+                    </el-icon>
+                  </div>
+                </li>
+                <!-- 子菜单 -->
+                <li
+                  v-for="sub in item.children"
+                  v-show="!isCollapsed && expandedMenus.has(item.path)"
+                  :key="sub.path"
+                  class="nav-item nav-sub-item"
+                  :class="{ active: currentRoute === sub.path }"
+                  @click.stop="navigateTo(sub.path)"
+                >
+                  <div class="nav-item-content">
+                    <div class="nav-icon-wrapper">
+                      <component :is="sub.icon" class="nav-icon" />
+                      <div v-if="currentRoute === sub.path" class="nav-glow"></div>
+                    </div>
+                    <span class="nav-label">{{ sub.label }}</span>
+                    <transition name="indicator">
+                      <div v-if="currentRoute === sub.path" class="nav-indicator"></div>
+                    </transition>
+                  </div>
+                </li>
+              </template>
+            </template>
           </ul>
         </div>
       </nav>
@@ -124,6 +175,7 @@ import {
   Picture,
   Document,
   Microphone,
+  Headset,
   MagicStick,
   Setting,
   Expand,
@@ -132,7 +184,9 @@ import {
   User,
   EditPen,
   Notebook,
-  VideoCamera
+  VideoCamera,
+  ArrowRight,
+  Promotion,
 } from '@element-plus/icons-vue'
 import { useTheme } from '@/composables/useTheme'
 import { useTabsStore } from '@/stores/tabs'
@@ -188,7 +242,24 @@ const mainMenuItems = [
   {
     path: '/voice',
     label: '语音助手',
-    icon: markRaw(Microphone)
+    icon: markRaw(Microphone),
+    children: [
+      {
+        path: '/voice/tts',
+        label: '文本转语音',
+        icon: markRaw(Promotion),
+      },
+      {
+        path: '/voice/stt',
+        label: '语音转文本',
+        icon: markRaw(Headset),
+      },
+      {
+        path: '/voice/clone',
+        label: '声音复刻',
+        icon: markRaw(MagicStick),
+      },
+    ],
   },
   {
     path: '/knowledge-base',
@@ -213,6 +284,41 @@ const footerMenuItems = [
 
 const currentRoute = computed(() => route.path)
 
+/**
+ * 子菜单展开状态。
+ * 默认：当前路由命中某父项的子菜单时，对应父项展开（mount 后 watch 路由维护）。
+ */
+const expandedMenus = ref<Set<string>>(new Set())
+
+interface MenuItem {
+  path: string
+  label: string
+  icon: any
+  children?: MenuItem[]
+}
+
+function isItemActive(item: MenuItem): boolean {
+  return currentRoute.value === item.path
+}
+
+function isAnyChildActive(item: MenuItem): boolean {
+  if (!item.children) return false
+  return item.children.some((c) => currentRoute.value === c.path)
+}
+
+/** 父项点击：有 children 切换展开 / 收起；不导航（避免触发 redirect）*/
+function onParentClick(item: MenuItem): void {
+  if (!item.children || item.children.length === 0) {
+    router.push(item.path)
+    return
+  }
+  if (expandedMenus.value.has(item.path)) {
+    expandedMenus.value.delete(item.path)
+  } else {
+    expandedMenus.value.add(item.path)
+  }
+}
+
 const toggleCollapse = () => {
   isCollapsed.value = !isCollapsed.value
 }
@@ -232,12 +338,15 @@ const pathTitleMap: Record<string, string> = {
   '/episode-production': '剧集制作',
   '/translate': '文档翻译',
   '/voice': '语音助手',
+  '/voice/tts': '文本转语音',
+  '/voice/stt': '语音转文本',
+  '/voice/clone': '声音复刻',
   '/knowledge-base': '知识库',
   '/assistant': '智能助手',
   '/settings': '设置'
 }
 
-// 监听路由变化，添加标签页
+// 监听路由变化，添加标签页 + 自动展开父菜单
 watch(
   () => route.path,
   (path) => {
@@ -253,6 +362,13 @@ watch(
       query: {},
       redirectedFrom: null
     } as any)
+
+    // 子路由 → 父菜单自动展开（避免用户进 /voice/tts 时父项是收起的）
+    for (const item of mainMenuItems) {
+      if (item.children && item.children.some((c) => c.path === path)) {
+        expandedMenus.value.add(item.path)
+      }
+    }
   },
   { immediate: true }
 )
@@ -438,6 +554,38 @@ watch(
   border-radius: var(--radius-md);
   position: relative;
   transition: all var(--transition-normal);
+}
+
+/* 子菜单缩进 + 字号略小 */
+.nav-sub-item {
+  margin-left: 8px;
+
+  .nav-item-content {
+    padding: 9px 14px;
+    padding-left: 20px;
+  }
+
+  .nav-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .nav-label {
+    font-size: 13px;
+  }
+}
+
+/* 父项展开箭头：默认朝右；展开时旋转 90° 朝下 */
+.nav-caret {
+  margin-left: auto;
+  width: 12px;
+  height: 12px;
+  color: rgba(255, 255, 255, 0.55);
+  transition: transform var(--transition-fast);
+
+  &.is-open {
+    transform: rotate(90deg);
+  }
 }
 
 .nav-icon-wrapper {

@@ -1,33 +1,23 @@
 <template>
+  <!--
+    VoiceLayout · 语音助手 TTS / STT 公用 shell
+    包：左 sidebar 历史列表（按 historyType 过滤）+ 右主区 slot + 历史详情 dialog。
+    声音复刻页用不到 sidebar，不走 layout，直接渲染 VoiceCloneTab。
+  -->
   <div class="voice-page">
-    <!-- 左侧边栏（仅 TTS / STT tab 显示历史；声音复刻 tab 隐藏避免误导） -->
     <VoiceSidebar
-      v-if="activeTab !== 'clone'"
       v-model="selectedHistoryId"
+      :history-type="historyType"
+      :title="sidebarTitle"
       class="page-sidebar"
       @select="handleSelectHistory"
     />
 
-    <!-- 主内容区域 - 三 tab 切换 -->
     <div class="page-main">
-      <el-tabs
-        v-model="activeTab"
-        class="voice-main-tabs"
-        type="border-card"
-      >
-        <el-tab-pane label="文本转语音" name="tts">
-          <TextToSpeech v-if="activeTab === 'tts'" />
-        </el-tab-pane>
-        <el-tab-pane label="语音转文本" name="stt">
-          <SpeechToText v-if="activeTab === 'stt'" />
-        </el-tab-pane>
-        <el-tab-pane label="声音复刻" name="clone">
-          <VoiceCloneTab v-if="activeTab === 'clone'" />
-        </el-tab-pane>
-      </el-tabs>
+      <slot />
     </div>
 
-    <!-- 历史详情对话框 -->
+    <!-- 历史详情对话框（与原 Voice.vue 一致，搬过来共用） -->
     <el-dialog
       v-model="showHistoryDetail"
       title="语音详情"
@@ -119,34 +109,26 @@ import { ref } from 'vue'
 import { CopyDocument } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import VoiceSidebar from '@/components/voice/VoiceSidebar.vue'
-import TextToSpeech from '@/components/voice/TextToSpeech.vue'
-import SpeechToText from '@/components/voice/SpeechToText.vue'
-import VoiceCloneTab from '@/components/voice/VoiceCloneTab.vue'
-import { getVoiceLanguageName } from '../../../shared/types/voice.types'
-import type { VoiceRecord } from '../../../shared/types/voice.types'
+import { getVoiceLanguageName } from '../../../../shared/types/voice.types'
+import type { VoiceRecord } from '../../../../shared/types/voice.types'
 import { toFileUrl } from '@/utils/asset-url'
 
-// 主 tab 切换：'tts' | 'stt' | 'clone'
-const activeTab = ref<'tts' | 'stt' | 'clone'>('tts')
+defineProps<{
+  /** 历史筛选：'tts' / 'stt' */
+  historyType: 'tts' | 'stt'
+  /** sidebar 标题（默认"语音历史"）*/
+  sidebarTitle?: string
+}>()
 
-// 选中的历史 ID
 const selectedHistoryId = ref('')
-
-// 历史详情对话框
 const showHistoryDetail = ref(false)
 const historyDetail = ref<VoiceRecord | null>(null)
 
-/**
- * 处理历史选择
- */
 function handleSelectHistory(history: VoiceRecord): void {
   historyDetail.value = history
   showHistoryDetail.value = true
 }
 
-/**
- * 复制文本
- */
 async function handleCopyText(text?: string): Promise<void> {
   if (text) {
     await navigator.clipboard.writeText(text)
@@ -154,9 +136,6 @@ async function handleCopyText(text?: string): Promise<void> {
   }
 }
 
-/**
- * 格式化日期时间
- */
 function formatDateTime(date: Date | string): string {
   const d = typeof date === 'string' ? new Date(date) : date
   return d.toLocaleString('zh-CN', {
@@ -164,7 +143,7 @@ function formatDateTime(date: Date | string): string {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
   })
 }
 </script>
@@ -175,26 +154,6 @@ function formatDateTime(date: Date | string): string {
   height: 100%;
   background: var(--el-bg-color-page);
   overflow: hidden;
-}
-
-.voice-main-tabs {
-  flex: 1;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-
-  :deep(.el-tabs__content) {
-    flex: 1;
-    min-height: 0;
-    overflow: hidden;
-    padding: 0;
-  }
-
-  :deep(.el-tab-pane) {
-    height: 100%;
-    overflow: auto;
-  }
 }
 
 .page-sidebar {
@@ -290,7 +249,7 @@ function formatDateTime(date: Date | string): string {
 
       .audio-player {
         padding: 16px;
-        background: #fff;
+        background: var(--el-bg-color);
         border: 1px solid var(--el-border-color-light);
         border-top: none;
         border-radius: 0 0 12px 12px;

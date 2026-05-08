@@ -49,13 +49,26 @@ const routes: RouteRecordRaw[] = [
       title: '文档翻译'
     }
   },
+  // 语音助手 —— 2026-05-08 拆 3 个独立页面 + 主菜单子菜单
+  // /voice 兼容跳转：默认进文本转语音
+  { path: '/voice', redirect: '/voice/tts' },
   {
-    path: '/voice',
-    name: 'Voice',
-    component: () => import('@/views/Voice.vue'),
-    meta: {
-      title: '语音助手'
-    }
+    path: '/voice/tts',
+    name: 'VoiceTTS',
+    component: () => import('@/views/voice/VoiceTTS.vue'),
+    meta: { title: '文本转语音' },
+  },
+  {
+    path: '/voice/stt',
+    name: 'VoiceSTT',
+    component: () => import('@/views/voice/VoiceSTT.vue'),
+    meta: { title: '语音转文本' },
+  },
+  {
+    path: '/voice/clone',
+    name: 'VoiceClone',
+    component: () => import('@/views/voice/VoiceClone.vue'),
+    meta: { title: '声音复刻' },
   },
   {
     path: '/knowledge-base',
