@@ -23,6 +23,7 @@ import type { EpisodeWithProgress } from '@shared/types/episode-production/episo
 import { STAGE_LABEL_FOR_STATUS } from '@shared/types/episode-production/episode-with-progress.types'
 import { StageGateService } from './stage-gate.service'
 import { VideoEpisodeEntity } from '@core/database/entities/episode-production/video-episode.entity'
+import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
 import {
   ALL_EPISODE_STATUSES,
   STAGE_LABELS,
@@ -86,11 +87,17 @@ export class ProgressCalculator {
   async listEpisodesWithProgress(
     projectId: string,
   ): Promise<EpisodeWithProgress[]> {
+    // 项目存在性检查：让调用方可区分"项目不存在"与"项目下无集"
+    const project = await this.ds
+      .getRepository(VideoProjectEntity)
+      .findOne({ where: { id: projectId } })
+    if (!project) throw new Error(`Project not found: ${projectId}`)
+
     const eps = await this.ds
       .getRepository(VideoEpisodeEntity)
       .find({
-        where: { projectId } as any,
-        order: { episodeNumber: 'ASC' } as any,
+        where: { projectId } as any, // entity 含 unknown[] 字段致 FindOptionsWhere 推导失败
+        order: { episodeNumber: 'ASC' } as any, // 同上
       })
 
     const result: EpisodeWithProgress[] = []

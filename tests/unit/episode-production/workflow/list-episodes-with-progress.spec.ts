@@ -1,70 +1,33 @@
 /**
  * ProgressCalculator.listEpisodesWithProgress 单测（Task 2）
  *
- * 覆盖：返回项目下所有集的聚合进度 + 当前阶段中文标签。
+ * 覆盖：返回项目下所有集的聚合进度 + 当前阶段中文标签 + 找不到项目报错。
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { DataSource } from 'typeorm'
 import { ProgressCalculator } from '@core/modules/episode-production/workflow/progress-calculator'
 import { VideoEpisodeEntity } from '@core/database/entities/episode-production/video-episode.entity'
 import { VideoProjectEntity } from '@core/database/entities/episode-production/video-project.entity'
-import { EpisodeScriptEntity } from '@core/database/entities/episode-production/episode-script.entity'
-import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
-import { StoryboardEntity } from '@core/database/entities/episode-production/storyboard.entity'
-import { StoryboardKeyframeEntity } from '@core/database/entities/episode-production/storyboard-keyframe.entity'
-import { CharacterBindingEntity } from '@core/database/entities/episode-production/character-binding.entity'
-import { LocationBindingEntity } from '@core/database/entities/episode-production/location-binding.entity'
-import { ItemBindingEntity } from '@core/database/entities/episode-production/item-binding.entity'
-import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
-import { StoryboardCharacterEntity } from '@core/database/entities/episode-production/storyboard-character.entity'
-import { SceneCharacterEntity } from '@core/database/entities/episode-production/scene-character.entity'
-import { ScenePropEntity } from '@core/database/entities/episode-production/scene-prop.entity'
-import { SceneActionEntity } from '@core/database/entities/episode-production/scene-action.entity'
-import { SceneDialogueEntity } from '@core/database/entities/episode-production/scene-dialogue.entity'
-
-/** 构建内存 SQLite DataSource，包含 progress-calculator 依赖的所有 entity */
-async function buildDb(): Promise<DataSource> {
-  const ds = new DataSource({
-    type: 'better-sqlite3',
-    database: ':memory:',
-    entities: [
-      VideoProjectEntity,
-      VideoEpisodeEntity,
-      EpisodeScriptEntity,
-      SceneScriptEntity,
-      StoryboardEntity,
-      StoryboardKeyframeEntity,
-      StoryboardCharacterEntity,
-      CharacterBindingEntity,
-      LocationBindingEntity,
-      ItemBindingEntity,
-      AssetImageEntity,
-      SceneCharacterEntity,
-      ScenePropEntity,
-      SceneActionEntity,
-      SceneDialogueEntity,
-    ],
-    synchronize: true,
-  })
-  await ds.initialize()
-  return ds
-}
+import {
+  createTestDataSource,
+  type TestDataSource,
+} from '../../../unit/helpers/create-test-data-source'
 
 describe('ProgressCalculator.listEpisodesWithProgress', () => {
-  let ds: DataSource
+  let tds: TestDataSource
 
   beforeEach(async () => {
-    ds = await buildDb()
+    // 使用公共 helper，包含全部 entity，避免重复维护 entity 列表
+    tds = await createTestDataSource('sqlite')
   })
 
   afterEach(async () => {
-    if (ds.isInitialized) await ds.destroy()
+    await tds.close()
   })
 
   it('返回项目下所有集 + 进度 + 当前阶段标签', async () => {
-    const projectRepo = ds.getRepository(VideoProjectEntity)
-    const epRepo = ds.getRepository(VideoEpisodeEntity)
+    const projectRepo = tds.ds.getRepository(VideoProjectEntity)
+    const epRepo = tds.ds.getRepository(VideoEpisodeEntity)
     const project = await projectRepo.save({
       id: 'proj-1',
       name: 'P1',
@@ -104,7 +67,7 @@ describe('ProgressCalculator.listEpisodesWithProgress', () => {
       } as any,
     ])
 
-    const calc = new ProgressCalculator(ds)
+    const calc = new ProgressCalculator(tds.ds)
     const list = await calc.listEpisodesWithProgress(project.id)
 
     expect(list).toHaveLength(3)
@@ -116,10 +79,14 @@ describe('ProgressCalculator.listEpisodesWithProgress', () => {
       expect(e.progressPct).toBeGreaterThanOrEqual(0)
       expect(e.progressPct).toBeLessThanOrEqual(100)
     })
+    // pending 无任何 stage 完成，进度应为 0
+    expect(list[0].progressPct).toBe(0)
+    // completed 终态：6 个生产 stage 中无任何阶段数据完成，故 progress=0
+    expect(list[2].progressPct).toBe(0)
   })
 
   it('空项目返回空数组', async () => {
-    const projectRepo = ds.getRepository(VideoProjectEntity)
+    const projectRepo = tds.ds.getRepository(VideoProjectEntity)
     const project = await projectRepo.save({
       id: 'proj-empty',
       name: 'P-empty',
@@ -128,14 +95,14 @@ describe('ProgressCalculator.listEpisodesWithProgress', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     } as any)
-    const calc = new ProgressCalculator(ds)
+    const calc = new ProgressCalculator(tds.ds)
     const list = await calc.listEpisodesWithProgress(project.id)
     expect(list).toEqual([])
   })
 
   it('集按 episodeNumber 升序', async () => {
-    const projectRepo = ds.getRepository(VideoProjectEntity)
-    const epRepo = ds.getRepository(VideoEpisodeEntity)
+    const projectRepo = tds.ds.getRepository(VideoProjectEntity)
+    const epRepo = tds.ds.getRepository(VideoEpisodeEntity)
     const project = await projectRepo.save({
       id: 'proj-order',
       name: 'P-order',
@@ -173,8 +140,14 @@ describe('ProgressCalculator.listEpisodesWithProgress', () => {
         updatedAt: new Date(),
       } as any,
     ])
-    const calc = new ProgressCalculator(ds)
+    const calc = new ProgressCalculator(tds.ds)
     const list = await calc.listEpisodesWithProgress(project.id)
     expect(list.map((e) => e.episodeNumber)).toEqual([1, 2, 3])
+  })
+
+  it('找不到项目报错', async () => {
+    const calc = new ProgressCalculator(tds.ds)
+    await expect(calc.listEpisodesWithProgress('not-exist-id'))
+      .rejects.toThrow(/Project not found/)
   })
 })
