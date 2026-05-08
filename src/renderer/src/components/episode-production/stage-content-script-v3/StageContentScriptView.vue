@@ -860,11 +860,15 @@ watch(
 .excerpt-row {
   display: flex;
   gap: 8px;
-  align-items: stretch;
   flex-shrink: 0;
-  /* 高度由右侧 StoryBackgroundPanel 内容自然决定；
-     ExcerptPanel 通过 align stretch 等高，body 用 height:0 + flex:1
-     不参与 panel 高度计算，避免长原文撑高整行 */
+  /* 固定高度 300px（StoryBackgroundPanel 自然内容约 300px 也合适）。
+     两侧 panel 都设 height: 100% 占满该行；ExcerptPanel 内 body
+     用 height:0 + flex:1 撑满 panel 内剩余高度。 */
+  height: 300px;
+}
+
+.excerpt-row > * {
+  height: 100%;
 }
 
 @media (max-width: 1100px) {
