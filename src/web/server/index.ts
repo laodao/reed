@@ -67,6 +67,7 @@ import { registerAllWebChannels } from './api/register-channels'
 
 interface ServerConfig {
   port: number
+  host: string
   rootDataPath: string
   jwtSecret: string
   rendererDir: string | null
@@ -74,6 +75,9 @@ interface ServerConfig {
 
 function readConfig(): ServerConfig {
   return {
+    // 默认 0.0.0.0：局域网设备可直接访问 4201 端口（可被 vite 代理或 mobile 直连）
+    // 私网部署可设 HOST=127.0.0.1 收回到仅本机
+    host: process.env.HOST ?? '0.0.0.0',
     port: Number(process.env.PORT ?? 4201),
     rootDataPath: path.resolve(process.env.DATA_ROOT ?? './data'),
     jwtSecret: process.env.JWT_SECRET ?? defaultDevSecret(),
@@ -103,6 +107,7 @@ function resolveRendererDir(): string | null {
 async function bootstrap(): Promise<void> {
   const cfg = readConfig()
   console.log('[web-server] 启动配置:', {
+    host: cfg.host,
     port: cfg.port,
     rootDataPath: cfg.rootDataPath,
     rendererDir: cfg.rendererDir,
@@ -179,8 +184,8 @@ async function bootstrap(): Promise<void> {
     )
   }
 
-  server.listen(cfg.port, () => {
-    console.log(`[web-server] 监听 http://localhost:${cfg.port}`)
+  server.listen(cfg.port, cfg.host, () => {
+    console.log(`[web-server] 监听 http://${cfg.host}:${cfg.port}`)
   })
 
   const shutdown = async (signal: string) => {

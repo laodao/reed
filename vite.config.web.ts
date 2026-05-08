@@ -113,6 +113,9 @@ export default defineConfig({
   },
   plugins: [vue(), replaceEntryToWebMain()],
   server: {
+    // 监听 0.0.0.0 让局域网设备可访问（手机 / 平板 / 同网段电脑）
+    // proxy target 仍走 localhost：dev server 自身代理到本机 4201 web-server
+    host: true,
     port: 5174,
     proxy: {
       '/api': { target: 'http://localhost:4201', changeOrigin: true },
