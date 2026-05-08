@@ -16,9 +16,9 @@
       <h2 class="main-title">
         <slot name="title">{{ title }}</slot>
       </h2>
-      <p v-if="$slots.subtitle || subtitle" class="main-subtitle">
+      <span v-if="$slots.subtitle || subtitle" class="main-subtitle">
         <slot name="subtitle">{{ subtitle }}</slot>
-      </p>
+      </span>
     </div>
     <div v-if="$slots.actions" class="actions-block">
       <slot name="actions" />
@@ -38,33 +38,38 @@ defineProps<{
 <style scoped>
 .stage-main-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 18px;
+  padding: 6px 16px;
   background: var(--el-bg-color);
   border-bottom: 1px solid var(--el-border-color-lighter);
   flex-shrink: 0;
+  min-height: 36px;
 }
 
 .title-block {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .main-title {
-  margin: 0 0 4px;
-  font-size: 18px;
+  margin: 0;
+  font-size: 15px;
   font-weight: 600;
   color: var(--el-text-color-primary);
-  line-height: 1.4;
+  line-height: 1.3;
+  flex-shrink: 0;
 }
 
 .main-subtitle {
-  margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--el-text-color-secondary);
-  line-height: 1.5;
+  line-height: 1.4;
 }
 
 .actions-block {

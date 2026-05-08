@@ -356,7 +356,9 @@
       "Bash(DEBUG=vite:resolve timeout 30 npx electron-vite build --renderer)",
       "Bash(tee /tmp/build.log)",
       "Bash(DEBUG=vite:resolve timeout 60 npm run build:renderer)",
-      "Bash(tee /tmp/eb.log)"
+      "Bash(tee /tmp/eb.log)",
+      "Bash(kill %1)",
+      "Bash(PGDATABASE=the_bot_test npm run *)"
     ]
   }
 }

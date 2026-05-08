@@ -19,9 +19,10 @@
           <template v-else>(-)</template>
         </span>
       </div>
-      <div class="entity-meta">
+      <div v-if="entity.sourceType === 'linked_lw' || !readonly" class="entity-meta">
         <AssetSourceTag
-          :source="(entity.sourceType ?? 'standalone') as 'linked_lw' | 'standalone'"
+          v-if="entity.sourceType === 'linked_lw'"
+          source="linked_lw"
           size="small"
           effect="light"
         />
