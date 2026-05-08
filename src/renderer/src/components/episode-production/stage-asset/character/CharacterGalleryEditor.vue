@@ -11,93 +11,155 @@
     </template>
 
     <div v-loading="loading" class="gallery-body">
-      <!-- 主图 -->
-      <el-card class="main-card" shadow="never">
-        <template #header>
-          <div class="section-header">
-            <span class="section-title">主图 (main)</span>
-            <span class="header-actions">
-              <template v-if="mainImage">
-                <el-button
-                  size="small"
-                  :loading="busyKey === 'main'"
-                  :disabled="busy && busyKey !== 'main'"
-                  @click="onRegenerateMain"
-                >
-                  ↺ 重生成
-                </el-button>
-                <el-upload
-                  :auto-upload="false"
-                  :show-file-list="false"
-                  :on-change="onPickMainFile"
-                  accept="image/jpeg,image/png,image/webp"
-                  :disabled="busy"
-                >
+      <!-- 顶部并排：左侧主图（窄） + 右侧服装（带"生成服饰图"按钮） -->
+      <div class="top-row">
+        <el-card class="main-card" shadow="never">
+          <template #header>
+            <div class="section-header">
+              <span class="section-title">主图 (main)</span>
+              <span class="header-actions">
+                <template v-if="mainImage">
                   <el-button
                     size="small"
-                    :loading="busyKey === 'main-upload'"
-                    :disabled="busy && busyKey !== 'main-upload'"
+                    :loading="busyKey === 'main'"
+                    :disabled="busy && busyKey !== 'main'"
+                    @click="onRegenerateMain"
                   >
-                    ⬆ 上传替换
+                    ↺ 重生成
                   </el-button>
-                </el-upload>
-              </template>
-              <template v-else>
-                <el-button
-                  type="primary"
-                  plain
-                  size="small"
-                  :loading="busyKey === 'main'"
-                  :disabled="busy && busyKey !== 'main'"
-                  @click="onGenerateMain"
-                >
-                  ✨ 生成主图
-                </el-button>
-                <el-upload
-                  :auto-upload="false"
-                  :show-file-list="false"
-                  :on-change="onPickMainFile"
-                  accept="image/jpeg,image/png,image/webp"
-                  :disabled="busy"
-                >
+                  <el-upload
+                    :auto-upload="false"
+                    :show-file-list="false"
+                    :on-change="onPickMainFile"
+                    accept="image/jpeg,image/png,image/webp"
+                    :disabled="busy"
+                  >
+                    <el-button
+                      size="small"
+                      :loading="busyKey === 'main-upload'"
+                      :disabled="busy && busyKey !== 'main-upload'"
+                    >
+                      ⬆ 上传替换
+                    </el-button>
+                  </el-upload>
+                </template>
+                <template v-else>
                   <el-button
+                    type="primary"
+                    plain
                     size="small"
-                    :loading="busyKey === 'main-upload'"
-                    :disabled="busy && busyKey !== 'main-upload'"
+                    :loading="busyKey === 'main'"
+                    :disabled="busy && busyKey !== 'main'"
+                    @click="onGenerateMain"
                   >
-                    ⬆ 上传主图
+                    ✨ 生成主图
                   </el-button>
-                </el-upload>
-              </template>
-            </span>
-          </div>
-        </template>
-
-        <div class="main-thumb">
-          <template v-if="mainImageSrc && mainImage">
-            <img
-              :src="mainImageSrc"
-              alt="主图"
-              @dblclick="openPreview('main', [mainImage], 0)"
-            />
-            <div class="thumb-tools" @click.stop>
-              <el-tooltip content="下载" placement="top">
-                <el-icon class="thumb-tool-icon" :size="14" @click="downloadImage(mainImage)"><Download /></el-icon>
-              </el-tooltip>
-              <el-tooltip content="删除" placement="top">
-                <el-icon class="thumb-tool-icon danger" :size="14" @click="onDeleteImage(mainImage)"><Delete /></el-icon>
-              </el-tooltip>
+                  <el-upload
+                    :auto-upload="false"
+                    :show-file-list="false"
+                    :on-change="onPickMainFile"
+                    accept="image/jpeg,image/png,image/webp"
+                    :disabled="busy"
+                  >
+                    <el-button
+                      size="small"
+                      :loading="busyKey === 'main-upload'"
+                      :disabled="busy && busyKey !== 'main-upload'"
+                    >
+                      ⬆ 上传主图
+                    </el-button>
+                  </el-upload>
+                </template>
+              </span>
             </div>
           </template>
-          <div v-else-if="busyKey === 'main'" class="thumb-loading">
-            <el-icon class="is-loading" :size="32"><Loading /></el-icon>
-            <span>生成中…</span>
-          </div>
-          <el-empty v-else description="尚未生成主图" :image-size="60" />
-        </div>
-      </el-card>
 
-      <!-- 4 个 category 网格 -->
+          <div class="main-thumb">
+            <template v-if="mainImageSrc && mainImage">
+              <img
+                :src="mainImageSrc"
+                alt="主图"
+                @dblclick="openPreview('main', [mainImage], 0)"
+              />
+              <div class="thumb-tools" @click.stop>
+                <el-tooltip content="下载" placement="top">
+                  <el-icon class="thumb-tool-icon" :size="14" @click="downloadImage(mainImage)"><Download /></el-icon>
+                </el-tooltip>
+                <el-tooltip content="删除" placement="top">
+                  <el-icon class="thumb-tool-icon danger" :size="14" @click="onDeleteImage(mainImage)"><Delete /></el-icon>
+                </el-tooltip>
+              </div>
+            </template>
+            <div v-else-if="busyKey === 'main'" class="thumb-loading">
+              <el-icon class="is-loading" :size="32"><Loading /></el-icon>
+              <span>生成中…</span>
+            </div>
+            <el-empty v-else description="尚未生成主图" :image-size="60" />
+          </div>
+        </el-card>
+
+        <!-- 服装卡：仅角色资产显示，带"生成服饰图"按钮 → 弹对话框 → 走派生 IPC -->
+        <el-card v-if="assetType === 'character'" class="outfit-card" shadow="never">
+          <template #header>
+            <div class="section-header">
+              <span class="section-title">
+                服装
+                <span class="progress-meta">{{ outfitImages.length }}</span>
+              </span>
+              <el-button
+                size="small"
+                type="primary"
+                plain
+                :loading="busyKey === 'outfit-generate'"
+                :disabled="busy && busyKey !== 'outfit-generate'"
+                @click="openOutfitDialog"
+              >
+                ✨ 生成服饰图
+              </el-button>
+            </div>
+          </template>
+
+          <div class="thumb-grid outfit-grid">
+            <div
+              v-for="img in outfitImages"
+              :key="img.id"
+              class="thumb-cell"
+            >
+              <div class="thumb-frame outfit-frame">
+                <img
+                  v-if="img.imagePath"
+                  :src="toImageUrl(img.imagePath)"
+                  :alt="img.label || ''"
+                  @dblclick="openPreview('outfit', outfitImages, outfitImages.indexOf(img))"
+                />
+                <div class="thumb-tools" @click.stop>
+                  <el-tooltip content="下载" placement="top">
+                    <el-icon class="thumb-tool-icon" :size="14" @click="downloadImage(img)"><Download /></el-icon>
+                  </el-tooltip>
+                  <el-tooltip content="删除" placement="top">
+                    <el-icon class="thumb-tool-icon danger" :size="14" @click="onDeleteImage(img)"><Delete /></el-icon>
+                  </el-tooltip>
+                </div>
+              </div>
+              <div class="thumb-label">{{ img.label || '(未命名)' }}</div>
+            </div>
+            <div
+              v-if="busyKey === 'outfit-generate'"
+              class="thumb-cell outfit-loading-cell"
+            >
+              <div class="thumb-frame outfit-frame thumb-loading-frame">
+                <el-icon class="is-loading" :size="20"><Loading /></el-icon>
+              </div>
+              <div class="thumb-label">生成中…</div>
+            </div>
+            <div v-if="outfitImages.length === 0 && busyKey !== 'outfit-generate'" class="empty-cell">
+              <el-empty description="暂无服饰图" :image-size="40" />
+            </div>
+          </div>
+        </el-card>
+      </div>
+
+      <!-- 下方：视角 / 表情 / 姿势 网格（服装已上移到顶部） -->
       <el-card
         v-for="cat in categories"
         :key="cat.key"
@@ -199,6 +261,49 @@
       </el-card>
     </div>
 
+    <!-- 服饰图生成对话框：输入名称（label）+ 提示词（prompt），调 derive.single -->
+    <el-dialog
+      v-model="showOutfitDialog"
+      title="生成服饰图"
+      width="540px"
+      append-to-body
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <el-form label-width="64px" size="default">
+        <el-form-item label="名称">
+          <el-input
+            v-model="outfitDraft.label"
+            placeholder="如：玄色长袍"
+            maxlength="40"
+            clearable
+          />
+        </el-form-item>
+        <el-form-item label="提示词">
+          <el-input
+            v-model="outfitDraft.prompt"
+            type="textarea"
+            :rows="4"
+            placeholder="如：玄色长袍 + 玉冠 + 腰佩长剑（描述新服饰即可，无需重复角色长相）"
+          />
+        </el-form-item>
+        <p class="outfit-dialog-note">
+          系统将自动追加：直立全身、纯色背景、无帽子无首饰等约束，并以"主图"作为参考图保持人物形象一致。
+        </p>
+      </el-form>
+      <template #footer>
+        <el-button @click="showOutfitDialog = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="busyKey === 'outfit-generate'"
+          :disabled="!outfitDraftValid"
+          @click="confirmOutfitGenerate"
+        >
+          确定
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 图片大图预览（双击打开 / 左右翻页 / 下载） -->
     <el-dialog
       v-model="showPreviewDialog"
@@ -290,6 +395,15 @@ interface AssetImageRow {
   isMain: number
 }
 
+/**
+ * 下方网格的固定 label 类目。
+ *
+ * 注意：character 资产的 'outfit'（服装）已上移到顶部"主图 | 服装"并排区，
+ * 不再作为下方的 row 列出；下方仅保留 view / expression / pose 三组固定 label 类。
+ *
+ * location / item 资产复用本组件时，这里的 categories 仍可适用 —
+ * outfit 顶部卡通过 `v-if="assetType === 'character'"` 控制只在角色编辑器显示。
+ */
 const categories: CategoryConfig[] = [
   {
     key: 'view',
@@ -300,11 +414,6 @@ const categories: CategoryConfig[] = [
     key: 'expression',
     label: '表情',
     labels: ['neutral', 'smile', 'sad', 'angry', 'surprised', 'thinking'],
-  },
-  {
-    key: 'outfit',
-    label: '服装',
-    labels: [],
   },
   {
     key: 'pose',
@@ -354,9 +463,11 @@ const allImages = ref<AssetImageRow[]>([])
 
 /**
  * 全局忙状态 key：
- *   - null    = 无生成任务，所有按钮可用
- *   - 'main'  = 主图正在生成 / 重生成
- *   - 'derive:<category>' = 该分类正在派生剩余
+ *   - null               = 无生成任务，所有按钮可用
+ *   - 'main'             = 主图正在生成 / 重生成
+ *   - 'main-upload'      = 主图正在上传替换
+ *   - 'outfit-generate'  = 服饰图正在生成（顶部并排服装卡）
+ *   - 'derive:<category>' = 下方该分类正在派生剩余
  *
  * 任意非 null 时所有生成按钮统一 disable，仅匹配 key 的按钮显示 loading。
  */
@@ -369,6 +480,11 @@ const busy = computed(() => busyKey.value !== null)
  * 旧的 is_main 置 0）；按 category 过滤会拿到最早那条而非当前主图。
  */
 const mainImage = computed(() => allImages.value.find((i) => i.isMain === 1) || null)
+
+/** 顶部并排区域的服装图列表（仅 character 资产用；其他资产时空数组也无害） */
+const outfitImages = computed(() =>
+  allImages.value.filter((i) => i.category === 'outfit'),
+)
 
 /** 主图渲染 URL：thumbnail 优先（旧数据可能存空字符串），回退 imagePath */
 const mainImageSrc = computed(() => {
@@ -459,6 +575,65 @@ async function onPickMainFile(uploadFile: UploadFile) {
     await reload()
   } catch (e: any) {
     ElMessage.error(e?.message || '主图上传失败')
+  } finally {
+    busyKey.value = null
+  }
+}
+
+// ===== 服饰图生成（character 专用） =====
+const showOutfitDialog = ref(false)
+const outfitDraft = ref<{ label: string; prompt: string }>({ label: '', prompt: '' })
+
+const outfitDraftValid = computed(
+  () => outfitDraft.value.label.trim().length > 0 && outfitDraft.value.prompt.trim().length > 0,
+)
+
+function openOutfitDialog(): void {
+  if (busy.value) return
+  if (props.assetType !== 'character') return
+  if (!mainImage.value) {
+    ElMessage.warning('请先生成主图，再以主图为参考生成服饰图')
+    return
+  }
+  outfitDraft.value = { label: '', prompt: '' }
+  showOutfitDialog.value = true
+}
+
+async function confirmOutfitGenerate(): Promise<void> {
+  if (!outfitDraftValid.value) return
+  if (busy.value) return
+  const api = getApi()
+  if (!api?.derive?.single) {
+    ElMessage.error('派生 IPC 未就绪')
+    return
+  }
+
+  // 同 label 已存在则告知用户并阻止生成（避免和现有服饰图冲突，由用户改名后重试）
+  const labelTrim = outfitDraft.value.label.trim()
+  if (outfitImages.value.some((i) => (i.label ?? '') === labelTrim)) {
+    ElMessage.warning(`已存在名为 "${labelTrim}" 的服饰图，请换一个名称`)
+    return
+  }
+
+  busyKey.value = 'outfit-generate'
+  try {
+    const resp = await api.derive.single({
+      assetType: props.assetType,
+      assetId: props.bindingId,
+      category: 'outfit',
+      label: labelTrim,
+      additionalPrompt: outfitDraft.value.prompt.trim(),
+    })
+    if (!resp || !resp.success) {
+      ElMessage.error(resp?.error || '服饰图生成失败')
+      return
+    }
+    ElMessage.success(`已生成服饰图：${labelTrim}`)
+    showOutfitDialog.value = false
+    await reload()
+  } catch (e: any) {
+    console.error('[CharacterGalleryEditor] 服饰图生成失败', e)
+    ElMessage.error(e?.message || '服饰图生成失败')
   } finally {
     busyKey.value = null
   }
@@ -611,6 +786,7 @@ defineExpose({ reload })
 }
 
 .character-gallery-editor :deep(.main-card .el-card__body),
+.character-gallery-editor :deep(.outfit-card .el-card__body),
 .character-gallery-editor :deep(.category-card .el-card__body) {
   padding: 8px 10px;
 }
@@ -634,9 +810,53 @@ defineExpose({ reload })
   gap: 8px;
 }
 
+/**
+ * 顶部并排：左 主图（窄）/ 右 服装（宽，留出网格空间）。
+ * 主图卡 minmax 220px → 主图缩到合适大小且不被压成像素糊；
+ * 服装卡 1fr 自适应剩余宽度，最少 0 防止 grid item 撑破容器。
+ * 窄屏（<= 1024px）整组折回单列，与外层 body-grid 折回行为对齐。
+ */
+.top-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(0, 1.6fr);
+  gap: 8px;
+  align-items: stretch;
+}
+
+@media (max-width: 1024px) {
+  .top-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .main-card,
+.outfit-card,
 .category-card {
   background: var(--el-bg-color);
+}
+
+/* 服饰图：3:4 竖图 + 多列网格，aspect-ratio 与全身直立约束匹配 */
+.outfit-grid {
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+}
+
+.outfit-frame {
+  aspect-ratio: 3 / 4;
+}
+
+.thumb-loading-frame {
+  color: var(--el-color-primary);
+}
+
+.outfit-loading-cell .thumb-frame {
+  border-style: dashed;
+}
+
+.outfit-dialog-note {
+  margin: 4px 0 0 64px;
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+  line-height: 1.5;
 }
 
 .section-header {
