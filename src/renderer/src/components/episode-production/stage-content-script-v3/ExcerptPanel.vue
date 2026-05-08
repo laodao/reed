@@ -254,6 +254,10 @@ async function onSave(): Promise<void> {
   padding: 8px 12px;
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  /* 让 excerpt-body 能用 flex: 1 撑满 panel 剩余高度 */
+  min-height: 0;
 }
 
 .panel-header {
@@ -322,7 +326,9 @@ async function onSave(): Promise<void> {
   line-height: 1.7;
   color: var(--el-text-color-regular);
   white-space: pre-wrap;
-  max-height: 180px;
+  /* 撑满 ExcerptPanel 剩余高度（兄弟 StoryBackgroundPanel 决定 excerpt-row 高度） */
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 
