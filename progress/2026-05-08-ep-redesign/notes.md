@@ -45,6 +45,13 @@ e8a02cd docs(ep): 补全 STAGE_LABEL_FOR_STATUS 注释中 STAGE_LABELS 的模块
   - `tests/unit/episode-production/assets/item-asset.service.spec.ts`（3 fail）
   - `tests/unit/episode-production/assets/location-asset.service.spec.ts`（1 fail）
 
+## 验证中发现并修复的问题
+
+- **Task 3 漏改 web channel-map**（commit `6ee6735`）：新加 IPC 只在 preload 注册了
+  渲染层 API，但 web 端有独立桥接 `src/web/client/channel-map.ts`，必须同步注册才能让
+  Web 调用走对正确 channel。Plan 没列这个文件，review 也没覆盖到——后续新增 IPC 时
+  必须把 channel-map 同步加到 plan 清单。
+
 ## 已知偏离 plan 的地方
 
 - Task 1：import 路径 `./index` → `./workflow.types`（避免 barrel 循环引用）
