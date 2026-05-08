@@ -3,17 +3,17 @@
  * @module composables/use-workbench-stage-navigation
  *
  * 把 EpisodeWorkbench.vue 中 P6-T13/T16/T17/T18/T20 累积的 stage 切换 +
- * 门控 + AssetSidebar / BottomTimeline / StageContent / StageStoryboard
+ * 门控 + AssetSidebar / StageHeaderBar / StageContent / StageStoryboard
  * 跳转 handler 集中，让 EpisodeWorkbench template 只关心组件装配。
  *
  * 接收：
  *   - activeTab：父组件持有的 ref（当前 stage）
  *   - selectedAsset：父组件持有的 ref（② 资产 stage 选中编辑的资产）
  *   - dialogs：父组件 reactive（StoryboardEditDialog 触发用）
- *   - progressBarRef：父组件 StageProgressBar 引用（reload 进度）
+ *   - headerBarRef：父组件 StageHeaderBar 引用（reload 进度）
  *
- * 返回 9 个 handler：
- *   onNavigateStage, onEpisodeSelectChange, onOpenAsset, onAddAsset,
+ * 返回 8 个 handler：
+ *   onNavigateStage, onOpenAsset, onAddAsset,
  *   onPreviewEpisode, onSelectStoryboard, onEditStoryboardFromStage,
  *   onJumpToProductionWithSb, onContentConfirmed
  */
@@ -44,9 +44,9 @@ interface UseWorkbenchStageNavigationInput {
   activeTab: Ref<WorkbenchStage>
   selectedAsset: Ref<{ type: AssetKind; id: string } | null>
   dialogs: DialogsState
-  progressBarRef: Ref<{ reload: () => Promise<void> } | null>
-  /** 父组件 selectEpisode（episodeStore.selectEpisode 包装），让 dropdown
-   *  切换剧集后能触发 store 加载 script/scenes/storyboards 链路 */
+  headerBarRef: Ref<{ reload: () => Promise<void> } | null>
+  /** 父组件 selectEpisode（episodeStore.selectEpisode 包装），让路由
+   *  episodeId 变化后能触发 store 加载 script/scenes/storyboards 链路 */
   selectEpisode: (ep: VideoEpisode) => Promise<void>
 }
 
@@ -122,13 +122,6 @@ export function useWorkbenchStageNavigation(
     }
   }
 
-  /** P6-T14 顶部 episode dropdown change */
-  async function onEpisodeSelectChange(episodeId: string): Promise<void> {
-    const ep = episodeStore.episodes.find((e) => e.id === episodeId)
-    if (!ep) return
-    await input.selectEpisode(ep)
-  }
-
   /** P6-T14 左侧资产侧栏点击单条资产 */
   function onOpenAsset(kind: AssetKind, id: string): void {
     input.activeTab.value = 'asset_prep'
@@ -181,15 +174,14 @@ export function useWorkbenchStageNavigation(
     input.activeTab.value = 'producing'
   }
 
-  /** P6-T18 ① 内容 stage "确认要素" → 切 ② 资产 + 刷新进度条 */
+  /** P6-T18 ① 内容 stage "确认要素" → 切 ② 资产 + 刷新阶段进度 */
   async function onContentConfirmed(): Promise<void> {
     input.activeTab.value = 'asset_prep'
-    await input.progressBarRef.value?.reload()
+    await input.headerBarRef.value?.reload()
   }
 
   return {
     onNavigateStage,
-    onEpisodeSelectChange,
     onOpenAsset,
     onAddAsset,
     onPreviewEpisode,

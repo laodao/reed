@@ -130,11 +130,30 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/episode-production/:projectId',
+    name: 'EpisodeProjectShortcut',
+    // 旧路径：直接访问项目无 episodeId 时，beforeEnter 选首集 redirect
+    beforeEnter: async (to) => {
+      const projectId = to.params.projectId as string
+      try {
+        const api = (window as any).electronAPI?.episodeProduction
+        const resp = await api.listEpisodes(projectId)
+        if (resp?.success && Array.isArray(resp.data) && resp.data.length > 0) {
+          const first = resp.data[0]
+          return `/episode-production/${projectId}/episode/${first.id}`
+        }
+        return '/episode-production'
+      } catch {
+        return '/episode-production'
+      }
+    },
+    // 给 vue-router 一个空的 component 占位，避免报 missing component 警告
+    component: { template: '<div />' },
+  },
+  {
+    path: '/episode-production/:projectId/episode/:episodeId',
     name: 'EpisodeWorkbench',
     component: () => import('@/views/EpisodeWorkbench.vue'),
-    meta: {
-      title: '剧集编辑'
-    }
+    meta: { title: '剧集编辑' },
   },
   {
     path: '/episode-production/:projectId/production/:sceneId',

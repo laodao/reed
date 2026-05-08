@@ -1,60 +1,26 @@
 <template>
   <div class="video-project-editor">
-    <!-- 顶部导航 -->
+    <!-- 顶部 header（FU7 重构：单行 40px = 返回 + 第X集标题 + StageHeaderBar） -->
     <div class="editor-header">
       <div class="header-left">
         <el-button text @click="goBack">
           <el-icon><ArrowLeft /></el-icon>
           返回
         </el-button>
-        <span class="project-title">{{ projectStore.currentProject?.name || '加载中...' }}</span>
+        <span class="episode-title" v-if="episodeStore.currentEpisode">
+          第 {{ episodeStore.currentEpisode.episodeNumber }} 集 · {{ episodeStore.currentEpisode.title }}
+        </span>
       </div>
       <div class="header-center">
-        <!-- 剧集选择器（替代原左侧剧集列表 · spec §2.1 形态 D 左侧给资产侧栏） -->
-        <el-select
-          v-if="episodeStore.episodes.length > 0"
-          :model-value="episodeStore.currentEpisode?.id ?? ''"
-          @change="onEpisodeSelectChange"
-          placeholder="选择剧集"
-          size="default"
-          class="episode-selector"
-        >
-          <el-option
-            v-for="ep in episodeStore.episodes"
-            :key="ep.id"
-            :value="ep.id"
-            :label="`第 ${ep.episodeNumber} 集 · ${ep.title}`"
-          >
-            <span>第 {{ ep.episodeNumber }} 集 · {{ ep.title }}</span>
-            <el-tag size="small" :type="getEpisodeStatusType(ep.status)" class="episode-status-tag">
-              {{ getEpisodeStatusLabel(ep.status) }}
-            </el-tag>
-          </el-option>
-        </el-select>
-        <el-button size="small" @click="openCreateEpisodeDialog" :icon="Plus" title="新建剧集" />
-        <el-button
+        <StageHeaderBar
           v-if="episodeStore.currentEpisode"
-          size="small"
-          @click="openEditEpisodeDialog(episodeStore.currentEpisode)"
-          :icon="Edit"
-          title="编辑当前剧集"
+          ref="headerBarRef"
+          :episode-id="episodeStore.currentEpisode.id"
+          @navigate-stage="onNavigateStage"
         />
       </div>
-      <div class="header-right">
-        <el-button @click="dialogs.settings = true">
-          <el-icon><Setting /></el-icon>
-          项目设置
-        </el-button>
-      </div>
+      <div class="header-right" />
     </div>
-
-    <!-- P6-T13 顶部 6 段阶段进度条（spec §2.1 + §2.2） -->
-    <StageProgressBar
-      v-if="episodeStore.currentEpisode"
-      ref="progressBarRef"
-      :episode-id="episodeStore.currentEpisode.id"
-      @navigate-stage="onNavigateStage"
-    />
 
     <!-- 主要内容区（spec §2.1 形态 D：左侧资产侧栏 + 主区域） -->
     <div class="editor-content">
@@ -184,42 +150,7 @@
       />
     </div>
 
-    <!-- P6-T15 底部迷你时间线（spec §2.1 第 420-421 行） -->
-    <BottomTimeline
-      v-if="episodeStore.currentEpisode"
-      :episode-script-id="scriptStore.currentScript?.id ?? null"
-      @preview="onPreviewEpisode"
-      @select-storyboard="onSelectStoryboard"
-    />
-
-    <!-- ===== 14 个 Dialogs ===== -->
-
-    <!-- 创建剧集 -->
-    <CreateEpisodeDialog
-      v-model="dialogs.createEpisode"
-      :project-id="projectId"
-      :initial-episode-number="episodeStore.episodes.length + 1"
-      :outline-tree-data="outlineTreeData"
-      @created="onEpisodeCreated"
-    />
-
-    <!-- 编辑剧集 -->
-    <EditEpisodeDialog
-      v-model="dialogs.editEpisode"
-      :episode-id="dialogs.editingEpisodeId"
-      :initial-number="dialogs.editingEpisodeNumber"
-      :initial-title="dialogs.editingEpisodeTitle"
-      @updated="onEpisodeUpdated"
-    />
-
-    <!-- 项目设置 -->
-    <SettingsDialog
-      v-model="dialogs.settings"
-      :all-lw-projects="allLwProjects"
-      :provider-configs="providerConfigs"
-      :provider-templates="providerTemplates"
-      @saved="onSettingsSaved"
-    />
+    <!-- ===== Dialogs ===== -->
 
     <!-- 绑定角色 -->
     <BindCharacterDialog
@@ -290,13 +221,9 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { ArrowLeft } from '@element-plus/icons-vue'
 import {
-  ArrowLeft, Setting, Plus, MagicStick, Picture, VideoPlay,
-  Delete, ZoomIn, RefreshRight, Edit
-} from '@element-plus/icons-vue'
-import {
-  useEpWorkbenchStore,
   useEpProjectStore,
   useEpEpisodeStore,
   useEpAssetStore,
@@ -323,14 +250,10 @@ import StageComposeView from '@/components/episode-production/stage-compose-v2/S
 // FU2 ③ 剧本 stage view（V3 重写，替代 V2 ScriptTabContent）
 // FU5-D1 · ③ 剧本 stage 切到 V2（章节梗概 panel + EntityRefRenderer + 场景卡折叠）
 import StageScriptView from '@/components/episode-production/stage-script-v2/StageScriptViewV2.vue'
-// P6-T13 顶部 6 段阶段进度条（spec §2.1）
-import StageProgressBar from '@/components/episode-production/workbench/StageProgressBar.vue'
+// FU7 顶部进度条 → StageHeaderBar（内嵌于 header 单行）
+import StageHeaderBar from '@/components/episode-production/workbench/StageHeaderBar.vue'
 // P6-T14 左侧资产侧栏（spec §2.1 第 414-418 行）
 import AssetSidebar from '@/components/episode-production/workbench/AssetSidebar.vue'
-// P6-T15 底部迷你时间线（spec §2.1 第 420-421 行）
-import BottomTimeline from '@/components/episode-production/workbench/BottomTimeline.vue'
-// P6-T17 stage 占位组件（① 内容 / ③ 剧本 待实现 stage view）
-import StagePlaceholder from '@/components/episode-production/workbench/StagePlaceholder.vue'
 // FU3 stage 切换 + 门控 composable
 import { useWorkbenchStageNavigation } from '@/composables/use-workbench-stage-navigation'
 // P6-T20 ④ 分镜 stage view（spec §2.2 第 436 行 + §4.5）
@@ -341,7 +264,6 @@ import StageStoryboardView from '@/components/episode-production/stage-storyboar
 import StageContentView from '@/components/episode-production/stage-content-v2/StageContentViewV2.vue'
 import type {
   EpisodeStatus,
-  VideoEpisode as _VE,
   StageEnterDecision,
 } from '../../../shared/types/episode-production'
 // V2 老 tab（剧本 / 角色绑定 / 物品绑定 / 地点绑定）已从 template 移除
@@ -361,9 +283,6 @@ import ItemAssetEditor from '@/components/episode-production/stage-asset/item/It
 import VoiceAssetEditor from '@/components/episode-production/stage-asset/voice/VoiceAssetEditor.vue'
 
 // Dialogs
-import CreateEpisodeDialog from '@/components/episode-production/dialogs/CreateEpisodeDialog.vue'
-import EditEpisodeDialog from '@/components/episode-production/dialogs/EditEpisodeDialog.vue'
-import SettingsDialog from '@/components/episode-production/dialogs/SettingsDialog.vue'
 import BindCharacterDialog from '@/components/episode-production/dialogs/BindCharacterDialog.vue'
 import BindItemDialog from '@/components/episode-production/dialogs/BindItemDialog.vue'
 import BindLocationDialog from '@/components/episode-production/dialogs/BindLocationDialog.vue'
@@ -381,7 +300,6 @@ type AssetEditDrawerType = 'character' | 'location' | 'item' | 'voice'
 
 const route = useRoute()
 const router = useRouter()
-const workbenchStore = useEpWorkbenchStore()
 const projectStore = useEpProjectStore()
 const episodeStore = useEpEpisodeStore()
 const assetStore = useEpAssetStore()
@@ -393,6 +311,7 @@ const storyboardStore = useEpStoryboardStore()
 const tabsStore = useTabsStore()
 
 const projectId = computed(() => route.params.projectId as string)
+const episodeIdParam = computed(() => route.params.episodeId as string | undefined)
 
 /**
  * P6-T17 主区域 stage state — 类型对齐 EpisodeStatus（不含 completed 终态）。
@@ -415,8 +334,8 @@ const activeTab = ref<WorkbenchStage>('asset_prep')
  */
 const showAssetSidebar = computed(() => false)
 
-// P6-T13 顶部进度条引用（用于剧集状态变化后主动 reload）
-const progressBarRef = ref<{ reload: () => Promise<void> } | null>(null)
+// FU7 StageHeaderBar 引用（用于剧集状态变化后主动 reload）
+const headerBarRef = ref<{ reload: () => Promise<void> } | null>(null)
 
 // P6-T22 active context store（资产侧栏 context-aware 高亮）
 const activeContextStore = useEpActiveContextStore()
@@ -510,15 +429,6 @@ const allLwProjects = ref<Array<{ id: string; name: string }>>([])
 // regenerate / regeneratingStoryboard / previewImageUrl / selectedStoryboard /
 // generatingImage / synthesisProgress 等状态已无引用，删除（P6-T21）。
 const dialogs = reactive({
-  // 创建剧集
-  createEpisode: false,
-  // 编辑剧集
-  editEpisode: false,
-  editingEpisodeId: '',
-  editingEpisodeNumber: 1,
-  editingEpisodeTitle: '',
-  // 项目设置
-  settings: false,
   // 绑定资产
   bindCharacter: false,
   bindItem: false,
@@ -589,19 +499,6 @@ function handleOpenDialog(name: string, payload?: any) {
   }
 }
 
-// ===== Dialog 触发方法 =====
-
-function openCreateEpisodeDialog() {
-  dialogs.createEpisode = true
-}
-
-function openEditEpisodeDialog(episode: VideoEpisode) {
-  dialogs.editingEpisodeId = episode.id
-  dialogs.editingEpisodeNumber = episode.episodeNumber
-  dialogs.editingEpisodeTitle = episode.title
-  dialogs.editEpisode = true
-}
-
 // V2 老右侧 panel + 单图 frameImage 路径相关函数已删除（P6-T21）：
 // - openImagePreview / openRegenerateDialog（V2 单图重生成 dialog 已删）
 // - openStoryboardEditDialog（StageStoryboardView 直接 set dialogs.
@@ -643,24 +540,6 @@ async function selectEpisode(episode: VideoEpisode) {
   await episodeStore.selectEpisode(episode)
 }
 
-async function confirmDeleteEpisode(episode: VideoEpisode) {
-  try {
-    await ElMessageBox.confirm(
-      `确定要删除「第${episode.episodeNumber}集：${episode.title}」吗？删除后可在数据库中恢复。`,
-      '删除剧集',
-      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
-    )
-    const success = await episodeStore.deleteEpisode(episode.id)
-    if (success) {
-      ElMessage.success('删除成功')
-    } else {
-      ElMessage.error(workbenchStore.error || '删除失败')
-    }
-  } catch {
-    // 用户取消
-  }
-}
-
 function goBack() {
   router.push('/episode-production')
 }
@@ -669,22 +548,6 @@ function goBack() {
 // V3 用 ⑤ 制作 stage tab 替代）
 
 // ===== Dialog 事件回调 =====
-
-async function onEpisodeCreated() {
-  // 刷新绑定数据（主进程已经自动绑定了角色、地点、物品）
-  await assetStore.loadCharacterBindings(projectId.value)
-  await assetStore.loadLocationBindings(projectId.value)
-  await assetStore.loadItemBindings(projectId.value)
-
-  // 选中新创建的剧集（最后一个）
-  if (episodeStore.episodes.length > 0) {
-    await selectEpisode(episodeStore.episodes[episodeStore.episodes.length - 1])
-  }
-}
-
-async function onEpisodeUpdated() {
-  // 剧集已更新，store 中数据由 EditEpisodeDialog 内部刷新
-}
 
 async function onAssetBound() {
   // 刷新绑定列表
@@ -701,19 +564,6 @@ async function onEntitySaved() {
 
 function onStoryboardSaved() {
   dialogs.editingStoryboard = null
-}
-
-async function onSettingsSaved(newLwProjectId: string, oldLwProjectId: string) {
-  if (newLwProjectId !== oldLwProjectId) {
-    if (newLwProjectId) {
-      await loadLongWritingData(newLwProjectId)
-    } else {
-      outlineTreeData.value = []
-      longWritingCharacters.value = []
-      longWritingItems.value = []
-      longWritingLocations.value = []
-    }
-  }
 }
 
 // ===== 数据加载 =====
@@ -734,12 +584,26 @@ async function loadProject() {
       await loadLongWritingData(projectStore.currentProject.longWritingProjectId)
     }
 
-    // 进入工作台默认选回该项目"上次选过的剧集"；
-    // 找不到 → 回退到第一集；列表空 → 不选（页面提示新建剧集）。
-    const initial = episodeStore.pickInitialEpisode(projectId.value)
-    if (initial) {
-      await selectEpisode(initial)
+    if (!episodeIdParam.value) {
+      ElMessage.warning('未指定剧集 ID，回到项目列表')
+      router.replace('/episode-production')
+      return
     }
+    const target = episodeStore.episodes.find((ep) => ep.id === episodeIdParam.value)
+    if (!target) {
+      ElMessage.warning('剧集不存在或已删除')
+      router.replace(`/episode-production/${projectId.value}`)
+      return
+    }
+    if ((target as any).projectId !== projectId.value) {
+      ElMessage.error('剧集与项目不匹配')
+      router.replace('/episode-production')
+      return
+    }
+    await selectEpisode(target)
+
+    // 写入 lastSelectedProjectId（供项目界面 sidebar 默认选中用）
+    projectStore.setLastSelectedProjectId(projectId.value)
   }
 }
 
@@ -838,7 +702,6 @@ function onProductionComplete(): void {
 // ===== FU3 stage 切换 + 门控 composable（放最末避免 TDZ） =====
 const {
   onNavigateStage,
-  onEpisodeSelectChange,
   onOpenAsset,
   onAddAsset,
   onPreviewEpisode,
@@ -850,15 +713,17 @@ const {
   activeTab,
   selectedAsset,
   dialogs,
-  progressBarRef,
+  headerBarRef,
   selectEpisode,
 })
 
 // ===== 监听 =====
 
-watch(projectId, () => {
-  loadProject()
-}, { immediate: true })
+watch(
+  [projectId, episodeIdParam],
+  () => loadProject(),
+  { immediate: true },
+)
 </script>
 
 <style scoped lang="scss">
@@ -873,45 +738,44 @@ watch(projectId, () => {
 
 .editor-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 0 16px;
+  gap: 12px;
+  padding: 0 12px;
   height: 40px;
   min-height: 40px;
   flex-shrink: 0;
   background: var(--el-bg-color);
   border-bottom: 1px solid var(--el-border-color-light);
 
-  .header-left,
-  .header-right {
+  .header-left {
     display: flex;
     align-items: center;
-    min-width: 100px;
-  }
-
-  .header-right {
-    justify-content: flex-end;
+    gap: 8px;
+    flex-shrink: 0;
+    min-width: 200px;
   }
 
   .header-center {
+    flex: 1;
     display: flex;
     align-items: center;
-    justify-content: center;
-    flex: 1;
-    gap: 6px;
+    min-width: 0;
+    overflow: hidden;
   }
 
-  /* FU6-T2 收窄剧集 dropdown：默认 el-select min-width ~240px 占太多顶栏 */
-  .episode-selector {
-    width: 200px;
-    min-width: 160px;
+  .header-right {
+    flex-shrink: 0;
+    width: 16px;
   }
 
-  .project-title {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 600;
+  .episode-title {
+    font-size: 13px;
+    font-weight: 500;
     color: var(--el-text-color-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 280px;
   }
 }
 
