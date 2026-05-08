@@ -12,6 +12,27 @@ import { useEpWorkbenchStore } from './workbench.store'
 import { useEpEpisodeStore } from './episode.store'
 import { useEpAssetStore } from './asset.store'
 
+/** 持久化"上次进入工作台的项目 ID"（用于剧集项目界面 sidebar 默认选中） */
+const LAST_SELECTED_PROJECT_KEY = 'ep-production:last-selected-project'
+
+function loadLastSelectedProjectId(): string | null {
+  try {
+    return localStorage.getItem(LAST_SELECTED_PROJECT_KEY)
+  } catch (e) {
+    console.warn('[ep-project] 读取 last-selected-project 失败:', e)
+    return null
+  }
+}
+
+function persistLastSelectedProjectId(id: string | null): void {
+  try {
+    if (id) localStorage.setItem(LAST_SELECTED_PROJECT_KEY, id)
+    else localStorage.removeItem(LAST_SELECTED_PROJECT_KEY)
+  } catch (e) {
+    console.warn('[ep-project] 写入 last-selected-project 失败:', e)
+  }
+}
+
 /**
  * 默认项目配置
  */
@@ -45,6 +66,11 @@ export const useEpProjectStore = defineStore('ep-project', () => {
    * 当前选中的项目
    */
   const currentProject = ref<VideoProject | null>(null)
+
+  /**
+   * 上次进入工作台的项目 ID（持久化到 localStorage，用于 sidebar 默认选中）
+   */
+  const lastSelectedProjectId = ref<string | null>(loadLastSelectedProjectId())
 
   // ==================== 计算属性 ====================
 
@@ -215,6 +241,14 @@ export const useEpProjectStore = defineStore('ep-project', () => {
   }
 
   /**
+   * 设置并持久化上次选中的项目 ID
+   */
+  function setLastSelectedProjectId(id: string | null): void {
+    lastSelectedProjectId.value = id
+    persistLastSelectedProjectId(id)
+  }
+
+  /**
    * 清空当前项目
    */
   function clearCurrentProject(): void {
@@ -232,6 +266,7 @@ export const useEpProjectStore = defineStore('ep-project', () => {
   return {
     projects,
     currentProject,
+    lastSelectedProjectId,
     projectStats,
     loadProjects,
     loadProject,
@@ -240,5 +275,6 @@ export const useEpProjectStore = defineStore('ep-project', () => {
     deleteProject,
     selectProject,
     clearCurrentProject,
+    setLastSelectedProjectId,
   }
 })
