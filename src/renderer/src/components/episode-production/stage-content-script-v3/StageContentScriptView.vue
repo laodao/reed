@@ -862,9 +862,9 @@ watch(
   gap: 8px;
   align-items: stretch;
   flex-shrink: 0;
-  /* 限定顶部内容行高度，防止长原文撑高整行抢占主区空间。
-     excerpt-body 在 panel 内 flex:1 + overflow auto 自适应撑满 panel 剩余高度。 */
-  height: 240px;
+  /* 高度由右侧 StoryBackgroundPanel 内容自然决定；
+     ExcerptPanel 通过 align stretch 等高，body 用 height:0 + flex:1
+     不参与 panel 高度计算，避免长原文撑高整行 */
 }
 
 @media (max-width: 1100px) {

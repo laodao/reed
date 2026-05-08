@@ -326,9 +326,13 @@ async function onSave(): Promise<void> {
   line-height: 1.7;
   color: var(--el-text-color-regular);
   white-space: pre-wrap;
-  /* 撑满 ExcerptPanel 剩余高度（兄弟 StoryBackgroundPanel 决定 excerpt-row 高度） */
+  /*
+   * height:0 + flex:1：让 body 不参与 panel 自然高度计算（防止长原文
+   * 撑高 panel），由 align-stretch（StoryBackgroundPanel 决定）外部
+   * 给 panel 高度后，body 弹性占满 panel 内剩余。
+   */
+  height: 0;
   flex: 1;
-  min-height: 0;
   overflow-y: auto;
 }
 
