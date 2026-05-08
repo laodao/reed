@@ -21,7 +21,8 @@ export interface EpisodeWithProgress {
 /**
  * EpisodeStatus → 集卡 currentStageLabel 中文标签
  *
- * 注：与 STAGE_LABELS（侧重 stage 名）独立。这里给"集状态"标签，
+ * 注：与 core/modules/episode-production/workflow/episode-status.machine 中的
+ *     STAGE_LABELS（侧重 stage 名 "① 内容" 等）独立。这里给"集状态"标签，
  * pending/completed 是终态（不属 6 个生产 stage），单独定义。
  */
 export const STAGE_LABEL_FOR_STATUS: Record<EpisodeStatus, string> = {
