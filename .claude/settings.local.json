@@ -352,7 +352,11 @@
       "Bash(timeout * npm test *)",
       "Bash(timeout * npm run *)",
       "Bash(npx vitest run *)",
-      "Bash(npx vue-tsc *)"
+      "Bash(npx vue-tsc *)",
+      "Bash(DEBUG=vite:resolve timeout 30 npx electron-vite build --renderer)",
+      "Bash(tee /tmp/build.log)",
+      "Bash(DEBUG=vite:resolve timeout 60 npm run build:renderer)",
+      "Bash(tee /tmp/eb.log)"
     ]
   }
 }
