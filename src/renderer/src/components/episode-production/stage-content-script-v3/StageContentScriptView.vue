@@ -850,16 +850,16 @@ watch(
   flex: 1;
   /* 整体不滚动；左/右栏各自独立滚动，让两栏高度自适应 main-row */
   overflow: hidden;
-  padding: 16px 18px 24px;
+  padding: 8px 12px 14px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 8px;
   min-height: 0;
 }
 
 .excerpt-row {
   display: flex;
-  gap: 14px;
+  gap: 8px;
   align-items: stretch;
   flex-shrink: 0;
 }
@@ -873,7 +873,7 @@ watch(
 .main-row {
   flex: 1;
   display: flex;
-  gap: 14px;
+  gap: 8px;
   align-items: stretch;
   min-height: 0;
 }
@@ -884,7 +884,7 @@ watch(
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   overflow: auto;
 }
 

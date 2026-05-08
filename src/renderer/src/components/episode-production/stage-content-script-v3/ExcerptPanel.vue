@@ -46,24 +46,22 @@
       </span>
     </div>
 
-    <!-- 章节梗概嵌入 ExcerptPanel 内（在原文正文上面） -->
+    <!-- 章节梗概嵌入 ExcerptPanel 内（在原文正文上面，单行排列：标签:正文 [重新生成]） -->
     <div v-if="!editingContent && (synopsis || regenerating !== undefined)" class="synopsis-inline">
-      <div class="synopsis-header">
-        <span class="synopsis-label">章节梗概</span>
-        <el-button
-          v-if="!readonly"
-          size="small"
-          link
-          class="btn-regen-synopsis"
-          :loading="regenerating"
-          @click="emit('regenerate-synopsis')"
-        >
-          <el-icon><Refresh /></el-icon>
-          <span>✨ 重新生成</span>
-        </el-button>
-      </div>
-      <div v-if="synopsis" class="synopsis-text">{{ synopsis }}</div>
-      <div v-else class="synopsis-empty">梗概为空 — 点上方"重新生成"或在剧本生成后自动填充</div>
+      <span class="synopsis-label">章节梗概：</span>
+      <span v-if="synopsis" class="synopsis-text">{{ synopsis }}</span>
+      <span v-else class="synopsis-empty">梗概为空，点右侧"重新生成"或剧本生成后自动填充</span>
+      <el-button
+        v-if="!readonly"
+        size="small"
+        link
+        class="btn-regen-synopsis"
+        :loading="regenerating"
+        @click="emit('regenerate-synopsis')"
+      >
+        <el-icon><Refresh /></el-icon>
+        <span>✨ 重新生成</span>
+      </el-button>
     </div>
 
     <div v-if="!editingContent" class="excerpt-body">
@@ -253,7 +251,7 @@ async function onSave(): Promise<void> {
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
-  padding: 12px 14px;
+  padding: 8px 12px;
   flex: 1;
   min-width: 0;
 }
@@ -262,13 +260,13 @@ async function onSave(): Promise<void> {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
+  gap: 10px;
+  margin-bottom: 8px;
 }
 
 .panel-title {
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--el-text-color-primary);
 }
 
@@ -279,52 +277,52 @@ async function onSave(): Promise<void> {
 }
 
 .synopsis-inline {
-  margin-bottom: 10px;
-  padding: 10px 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 6px 10px;
   background: var(--el-color-primary-light-9);
   border-left: 3px solid var(--el-color-primary);
   border-radius: 4px;
-}
-
-.synopsis-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 4px;
+  font-size: 11px;
+  line-height: 1.55;
 }
 
 .synopsis-label {
-  font-size: 12px;
   font-weight: 600;
   color: var(--el-color-primary);
-}
-
-.btn-regen-synopsis {
-  font-size: 12px;
+  flex-shrink: 0;
 }
 
 .synopsis-text {
-  font-size: 13px;
-  line-height: 1.7;
+  flex: 1;
   color: var(--el-text-color-regular);
   white-space: pre-wrap;
+  min-width: 0;
 }
 
 .synopsis-empty {
-  font-size: 12px;
+  flex: 1;
   color: var(--el-text-color-placeholder);
   font-style: italic;
+  min-width: 0;
+}
+
+.btn-regen-synopsis {
+  font-size: 11px;
+  flex-shrink: 0;
 }
 
 .excerpt-body {
   background: var(--el-fill-color-lighter);
   border-radius: 4px;
-  padding: 12px 14px;
-  font-size: 13px;
-  line-height: 1.85;
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.7;
   color: var(--el-text-color-regular);
   white-space: pre-wrap;
-  max-height: 220px;
+  max-height: 180px;
   overflow-y: auto;
 }
 
@@ -360,8 +358,8 @@ async function onSave(): Promise<void> {
 }
 
 .excerpt-footer {
-  margin-top: 8px;
-  font-size: 11px;
+  margin-top: 6px;
+  font-size: 10px;
   color: var(--el-text-color-placeholder);
 }
 

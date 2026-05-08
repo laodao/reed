@@ -107,13 +107,13 @@ defineEmits<{
 .sidebar-header {
   display: flex;
   align-items: center;
-  padding: 12px 14px;
+  padding: 6px 10px;
   border-bottom: 1px solid var(--el-border-color-light);
   flex-shrink: 0;
 }
 
 .sidebar-title {
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--el-text-color-primary);
 }

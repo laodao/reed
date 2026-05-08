@@ -156,38 +156,38 @@ function getSceneChips(scene: SceneScript): EntityRef[] {
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
-  padding: 12px 14px;
+  padding: 8px 12px;
 }
 
 .panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .panel-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--el-text-color-primary);
 }
 
 .panel-actions {
   display: inline-flex;
-  gap: 6px;
+  gap: 4px;
 }
 
 .empty-hint {
   text-align: center;
-  padding: 24px 0;
-  font-size: 13px;
+  padding: 18px 0;
+  font-size: 12px;
   color: var(--el-text-color-placeholder);
 }
 
 .scenes {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .scene-card {
@@ -203,7 +203,7 @@ function getSceneChips(scene: SceneScript): EntityRef[] {
 }
 
 .scene-header {
-  padding: 10px 12px;
+  padding: 6px 10px;
   cursor: pointer;
   background: var(--el-color-primary-light-9);
   border-bottom: 1px solid var(--el-border-color-lighter);
@@ -212,46 +212,46 @@ function getSceneChips(scene: SceneScript): EntityRef[] {
 .scene-info {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
 .scene-num {
   font-weight: 600;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--el-color-primary);
 }
 
 .scene-meta {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--el-text-color-secondary);
 }
 
 .scene-body {
-  padding: 10px 12px;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .scene-section {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .section-label {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   color: var(--el-text-color-secondary);
 }
 
 .dialogue-line,
 .action-line {
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 11px;
+  line-height: 1.45;
   color: var(--el-text-color-regular);
-  padding-left: 12px;
+  padding-left: 10px;
 }
 
 .dialogue-speaker {
@@ -260,7 +260,7 @@ function getSceneChips(scene: SceneScript): EntityRef[] {
 }
 
 .scene-footer {
-  margin-top: 8px;
+  margin-top: 6px;
   display: flex;
   justify-content: flex-end;
 }

@@ -122,14 +122,14 @@ function onCommand(command: string): void {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 10px;
+  padding: 5px 8px;
   cursor: pointer;
   user-select: none;
   background: var(--el-fill-color-lighter);
 }
 
 .toggle-icon {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--el-text-color-secondary);
   transition: transform 0.15s;
 }
@@ -139,17 +139,17 @@ function onCommand(command: string): void {
 }
 
 .section-icon {
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .section-title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--el-text-color-primary);
 }
 
 .section-count {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--el-text-color-secondary);
 }
 
@@ -164,9 +164,9 @@ function onCommand(command: string): void {
 }
 
 .empty-hint {
-  padding: 12px 8px;
+  padding: 8px 6px;
   text-align: center;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--el-text-color-placeholder);
   list-style: none;
 }

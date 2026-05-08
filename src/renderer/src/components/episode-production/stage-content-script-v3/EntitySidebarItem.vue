@@ -83,8 +83,8 @@ function onItemClick(): void {
   position: relative;
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: 6px;
+  padding: 5px 8px;
   border-radius: 4px;
   cursor: pointer;
   transition: background 0.15s;
@@ -125,7 +125,7 @@ function onItemClick(): void {
 }
 
 .entity-name {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--el-text-color-primary);
   overflow: hidden;
@@ -134,7 +134,7 @@ function onItemClick(): void {
 }
 
 .entity-scenes {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--el-text-color-placeholder);
   flex-shrink: 0;
 }
@@ -143,8 +143,8 @@ function onItemClick(): void {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 2px;
-  font-size: 11px;
+  margin-top: 1px;
+  font-size: 10px;
 }
 
 .action-link {

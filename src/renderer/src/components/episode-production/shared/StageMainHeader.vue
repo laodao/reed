@@ -40,12 +40,12 @@ defineProps<{
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 6px 16px;
+  gap: 12px;
+  padding: 4px 14px;
   background: var(--el-bg-color);
   border-bottom: 1px solid var(--el-border-color-lighter);
   flex-shrink: 0;
-  min-height: 36px;
+  min-height: 32px;
 }
 
 .title-block {
@@ -53,13 +53,13 @@ defineProps<{
   min-width: 0;
   display: flex;
   align-items: baseline;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
 .main-title {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--el-text-color-primary);
   line-height: 1.3;
@@ -67,7 +67,7 @@ defineProps<{
 }
 
 .main-subtitle {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--el-text-color-secondary);
   line-height: 1.4;
 }

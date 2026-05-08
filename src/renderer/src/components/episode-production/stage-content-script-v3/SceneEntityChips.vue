@@ -47,13 +47,13 @@ function chipTitle(chip: EntityRef): string {
 .entity-chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 12px;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 10px;
   border: 1px solid var(--el-border-color-light);
   background: var(--el-fill-color-lighter);
   cursor: pointer;
-  font-size: 11px;
+  font-size: 10px;
   color: var(--el-text-color-regular);
   font-family: inherit;
   transition: all 0.15s;
@@ -66,7 +66,7 @@ function chipTitle(chip: EntityRef): string {
 }
 
 .chip-icon {
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .chip-character { color: var(--el-color-primary); }
