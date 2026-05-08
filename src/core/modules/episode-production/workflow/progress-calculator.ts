@@ -19,6 +19,8 @@ import type {
   StageProgress,
   EpisodeProgress,
 } from '@shared/types/episode-production'
+import type { EpisodeWithProgress } from '@shared/types/episode-production/episode-with-progress.types'
+import { STAGE_LABEL_FOR_STATUS } from '@shared/types/episode-production/episode-with-progress.types'
 import { StageGateService } from './stage-gate.service'
 import { VideoEpisodeEntity } from '@core/database/entities/episode-production/video-episode.entity'
 import {
@@ -73,5 +75,38 @@ export class ProgressCalculator {
       stages,
       overallProgress: totalProgress / productionStages.length,
     }
+  }
+
+  /**
+   * 一次性返回项目下所有集的简化进度（聚合 IPC 用）。
+   *
+   * 注：内部仍循环调用 calculateEpisodeProgress，只消除前端多次往返；
+   * 后端 N+1 留作后续 SQL 聚合优化。
+   */
+  async listEpisodesWithProgress(
+    projectId: string,
+  ): Promise<EpisodeWithProgress[]> {
+    const eps = await this.ds
+      .getRepository(VideoEpisodeEntity)
+      .find({
+        where: { projectId } as any,
+        order: { episodeNumber: 'ASC' } as any,
+      })
+
+    const result: EpisodeWithProgress[] = []
+    for (const ep of eps) {
+      const progress = await this.calculateEpisodeProgress(ep.id)
+      const status = ep.status as EpisodeStatus
+      result.push({
+        id: ep.id,
+        projectId: ep.projectId,
+        episodeNumber: ep.episodeNumber,
+        title: ep.title,
+        status,
+        progressPct: Math.round(progress.overallProgress * 100),
+        currentStageLabel: STAGE_LABEL_FOR_STATUS[status],
+      })
+    }
+    return result
   }
 }
