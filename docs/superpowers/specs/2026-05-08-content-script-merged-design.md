@@ -45,12 +45,28 @@
 **段着色规则（StageHeaderBar 渲染逻辑）：**
 
 ```
-段着色 = current     若 currentStatus ∈ 段对应集合
-段着色 = complete    若 currentStatus 的 order > 段集合最大 order
-段着色 = pending     否则
+令 ord = STAGE_ORDER[currentStatus]
+对每段 S：
+  若 ord ∈ {STAGE_ORDER[s] for s in S}             → current
+  否则若 ord > min({STAGE_ORDER[s] for s in S})    → complete
+  否则                                              → pending
 ```
 
-**注意非单调情况：** 状态机走 `pending → asset_prep → scripting → storyboarding`，所以从「资产」回到「内容+剧本」段（status=scripting）时，「资产」段会是 complete（绿）而「内容+剧本」是 current（主色）。这是合并段的预期行为——user 在两个 sub-state 都进入"内容+剧本"页面，第二次进时资产已完成。
+**关键：** 用 `min` 不是 `max`。理由：合并段 `{pending, scripting}` 跨越非连续 status，必须按"该段第一个 sub-state 是否已开始"判断是否进入过。
+
+**全态对照表（验证规则）：**
+
+| status | order | 内容+剧本 (min=0, max=2) | 资产 (1) | 分镜 (3) | 制作 (4) | 合成 (5,6) |
+|---|---|---|---|---|---|---|
+| pending | 0 | **current** | pending | pending | pending | pending |
+| asset_prep | 1 | **complete** (1>0 且 ∉ {0,2}) | **current** | pending | pending | pending |
+| scripting | 2 | **current** (∈ {0,2}) | complete | pending | pending | pending |
+| storyboarding | 3 | complete | complete | **current** | pending | pending |
+| producing | 4 | complete | complete | complete | **current** | pending |
+| composing | 5 | complete | complete | complete | complete | **current** |
+| completed | 6 | complete | complete | complete | complete | **current** (∈ {5,6}) |
+
+**关键非单调点：** status=asset_prep 时合并段是 complete（绿）；到 status=scripting 时合并段又**回到** current（主色）。这是预期——user 在资产阶段做完后回到合并页继续做剧本 sub-state，stage bar 视觉上让"内容+剧本"段重新点亮，引导 user 注意当前位置。
 
 ### 2.2 状态机不变（后端）
 
@@ -82,11 +98,11 @@ pending → asset_prep → scripting → storyboarding → producing → composi
 
 ## 3. 页面布局
 
-### 3.1 总览
+### 3.1 总览（scripting sub-state，剧本工作时）
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────┐
-│ 标题：内容+剧本                                              [完成 → 资产]         │
+│ 标题：内容+剧本                                              [完成定稿 → 分镜]     │
 ├────────────────────────────────────────────────────────────────────────────────────┤
 │ ┌────────────────────────────┬───────────────────────────────┐                    │
 │ │ 原文片段  [✏][✨ 重新识别] │ 故事背景            [保存]    │                    │
@@ -110,6 +126,16 @@ pending → asset_prep → scripting → storyboarding → producing → composi
 │  [+ 添加场景]                                            │                         │
 └──────────────────────────────────────────────────────────┴─────────────────────────┘
 ```
+
+**pending sub-state（识别要素阶段）变化：**
+- header 主按钮 → 「确认要素 → ② 资产」
+- 主区"章节梗概 + 场景列表"区域换成单一 empty 提示卡：「待要素确认 + 资产准备完成后回来 ✨ 生成剧本」
+- 要素 sidebar 同 scripting 状态（功能不变）
+
+**asset_prep / storyboarding+ sub-state（只读回看）变化：**
+- header 主按钮 → tag「已确认 (在阶段 ②)」/「已定稿」
+- 章节梗概 / 场景列表只读：禁用"重新生成 / 重写场景 / 修复绑定 / 添加场景"按钮（避免 user 在分镜后改剧本破坏分镜引用）
+- 要素 sidebar：asset_prep 时仍可编辑（资产准备过程中可能补要素）；storyboarding+ 时只读
 
 ### 3.2 顶部 header
 
@@ -174,8 +200,8 @@ pending → asset_prep → scripting → storyboarding → producing → composi
 
 每个 entity item：
 - 名称 + 出场场景号 `(1, 2)` 或 `(-)` 表示无出场
-- checkbox 取舍（沿用 EntityColumn 现有交互）
-- AssetSourceTag + 改 source 链接
+- checkbox：**confirmed 状态切换**（沿用 EntityColumn 现有：勾选=进入 ② 资产准备时该要素被纳入；不勾=AI 识别但 user 决定不要）
+- AssetSourceTag + 改 source 链接（standalone / linked_lw 切换）
 - 编辑 / 删除（hover 浮按钮）
 
 ### 4.2 折叠状态
@@ -184,18 +210,23 @@ pending → asset_prep → scripting → storyboarding → producing → composi
 
 ### 4.3 接口（Props/Emits）
 
+`Kind = 'character' | 'location' | 'item'`，与 `EntityRef`（§ 5.2 定义）保持一致。
+
 ```ts
+type Kind = 'character' | 'location' | 'item'
+
 defineProps<{
   characters: UploadedCharacter[]
   locations: UploadedLocation[]
   items: UploadedItem[]
-  scenes: SceneData[]              // 算出场场景号用
-  highlightedEntityId: string | null  // 当前被点的 entity（联动 ②）
-  highlightedSceneId: string | null   // 当前展开的场景（联动 ③）
+  scenes: SceneScript[]                // 算出场场景号用（来自 narrative.types）
+  highlightedEntity: EntityRef | null  // 当前被点的 entity（联动 ②）
+  highlightedSceneId: string | null    // 当前展开的场景（联动 ③）
+  readonly?: boolean                   // asset_prep 之后某些 sub-state 可能传 true
 }>()
 
 defineEmits<{
-  (e: 'click-entity', entity: { kind: Kind, index: number, name: string }): void
+  (e: 'click-entity', entity: EntityRef): void
   (e: 'toggle', kind: Kind, idx: number): void
   (e: 'toggle-source', kind: Kind, idx: number): void
   (e: 'edit', kind: Kind, idx: number): void
@@ -204,6 +235,8 @@ defineEmits<{
   (e: 'add', kind: Kind): void
 }>()
 ```
+
+> 用 `EntityRef` 而不是裸 `entityId` string，让 sceneContainsEntity 直接接住，无需父组件再做 ID→EntityRef 映射。
 
 ---
 
@@ -214,8 +247,8 @@ defineEmits<{
 | # | 交互 | 实现 |
 |---|---|---|
 | ① | 要素 chip 显示场景号 | EntitySidebar 内部用 `sceneContainsEntity` 反查每个 entity 出现于哪些场景（用 `entityScenes` 工具），渲染 `(1, 2)` |
-| ② | 点要素 → 高亮场景 | EntitySidebar emit `click-entity`；父组件 set `highlightedEntityId`；左侧场景卡用 `:class="{ highlighted: containsEntity(scene, highlightedEntityId) }"` 加金色背景；highlightedEntityId 保持到下次点击或 click 空白 |
-| ③ | 展开场景 → 高亮要素 | scene-card 展开 emit `expand`；父 set `highlightedSceneId`；EntitySidebar 内 entity item 用 `:class="{ highlighted: containsScene(entity, highlightedSceneId) }"` 加金色 |
+| ② | 点要素 → 高亮场景 | EntitySidebar emit `click-entity` 携带 `EntityRef`；父组件 set `highlightedEntity: EntityRef \| null`；左侧场景卡用 `:class="{ highlighted: highlightedEntity && sceneContainsEntity(scene, highlightedEntity) }"` 加金色背景；保持到下次点击或 click 空白 |
+| ③ | 展开场景 → 高亮要素 | scene-card 展开 emit `expand`；父 set `highlightedSceneId`；EntitySidebar 内 entity item 用 `:class="{ highlighted: highlightedSceneId && sceneContainsEntity(scenes.find(s => s.id === highlightedSceneId), entity) }"` 加金色 |
 | ④ | 场景卡 chip | scene-header 上渲染该场景出现的实体 chip 列表；点 chip 触发 ② 同款 emit |
 
 > ②③ 互不冲突：ID 各占一个，可同时存在（点要素 + 展开场景 = 同时高亮场景与要素）。
@@ -357,8 +390,9 @@ export function entityScenes(entity: EntityRef, scenes: SceneScript[]): number[]
 
 | 组件 / 模块 | 用例 |
 |---|---|
-| `scene-entity-utils.sceneContainsEntity` | 角色（appearances 字段命中）、地点（name/id 命中）、物品（@name 引用扫到）、负样本（不命中返回 false） |
-| `scene-entity-utils.entityScenes` | 多场景下返回正确编号数组、无场景返回 `[]` |
+| `scene-entity-utils.sceneContainsEntity` | 角色（`scene.characters[]` 通过 characterId/Name/BindingId 命中）、地点（name/locationBindingId 命中）、物品 - 结构化（`SceneCharacter.props[]` 含 `ScenePropRef` 或字符串名命中）、物品 - 文本兜底（@name 引用扫到 originalText/narration/dialogues/actions）、负样本（全部不命中返回 false） |
+| `scene-entity-utils.entityScenes` | 多场景下返回正确编号数组（升序）、无场景返回 `[]` |
+| `StageHeaderBar` 染色规则 | 7 个 status 全态映射对照表（§ 2.1）每行各 1 用例；特别覆盖 asset_prep（合并段 complete + 资产段 current）和 scripting（合并段重新 current） |
 | `EntitySidebar` | 三 section 渲染、折叠、entity item 渲染含场景号、点击 emit、props highlightedEntityId 联动样式 |
 | `EntitySidebarItem` | checkbox / source / 编辑 / 删除 emit |
 | `SceneEntityChips` | chip 列表、点击 emit |
@@ -402,7 +436,8 @@ export function entityScenes(entity: EntityRef, scenes: SceneScript[]): number[]
 | 风险 | 缓解 |
 |---|---|
 | 物品反查靠扫 `@name`，名含特殊字符可能漏 | 文档化为已知局限；后续可加 `scene.itemAppearances` 字段 |
-| stage 6→5 后用户回看旧版 episode 工作台困惑 | UI 层完全屏蔽 scripting 字眼；StageHeaderBar 单元测覆盖映射 |
+| 合并段染色 `cur > min(S)` 规则在 asset_prep 时合并段绿、scripting 时合并段又亮，可能让 user 困惑"为什么又点亮了" | 落地后实地验证视觉效果；header 标题或副标题加文字说明（如"剧本生成中"）作为辅助信号；§ 2.1 全态对照表配合单测覆盖 |
+| stage 6→5 mapping 误将其他模块的 `scripting`/`pending` 字符串引用一起改 | 改 StageHeaderBar 时只改这一个组件的渲染逻辑；不动 EpisodeStatus 类型本身、不动 visualMarkOfStage / STAGE_LABELS 后端常量 |
 | EntityColumn 现有功能（checkbox / source / reidentify）很重，并入 sidebar 可能视觉拥挤 | 拆 EntitySidebarItem 子组件，复杂操作藏到 hover / dropdown |
 | 删除 stage-content-v2 / stage-script-v2 风险（未发现的隐式引用） | 实施前 grep `StageContentViewV2\|StageScriptViewV2\|EntityColumn\b` 全仓 |
 | pending 与 scripting 两个状态都映射到同一 tab，stage-gate 跳转可能混乱 | 全局 search `EpisodeStatus.pending\|.scripting` 引用，确认 transition 仍按 7 段走 |
@@ -413,11 +448,11 @@ export function entityScenes(entity: EntityRef, scenes: SceneScript[]): number[]
 
 > 本节供 writing-plans 阶段参考；不是契约。
 
-1. **Phase 1 · 工具函数 + StageHeaderBar 重渲染**：scene-entity-utils + StageHeaderBar 6→5 段映射 + 单测
-2. **Phase 2 · EntitySidebar 三件套组件**：EntitySidebar / EntitySidebarSection / EntitySidebarItem + 单测
-3. **Phase 3 · SceneEntityChips + 章节梗概 / 场景卡子组件迁移**：从 stage-script-v2 拆出可复用子组件
-4. **Phase 4 · StageContentScriptView 容器组件 + 联动状态**：组合所有子组件，实现高亮联动
-5. **Phase 5 · 接入 EpisodeWorkbench**：替换 ① 内容 / ③ 剧本 两个 tab 为合并 tab；删除 v2 文件；E2E 验证
+1. **Phase 1 · 工具函数 + StageHeaderBar 重渲染**：`scene-entity-utils.ts` + StageHeaderBar 6→5 段染色映射（§ 2.1 规则）+ 单测覆盖全态对照表
+2. **Phase 2 · EntitySidebar 三件套组件**：EntitySidebar / EntitySidebarSection / EntitySidebarItem，含 `EntityRef` 接口、`readonly` prop + 单测
+3. **Phase 3 · SceneEntityChips + 章节梗概 / 场景卡子组件迁移**：从 stage-script-v2 拆出可复用子组件（章节梗概 panel / 场景卡 / 场景编辑 dialog 等）
+4. **Phase 4 · StageContentScriptView 容器组件 + 联动 + sub-state 切换**：组合所有子组件；实现 `highlightedEntity` / `highlightedSceneId` 联动；按 `episode.status` 切换 pending / scripting / readonly 三种 sub-state（§ 3.1 末尾说明）；header 主按钮按 sub-state 自适应
+5. **Phase 5 · 接入 EpisodeWorkbench**：先把 `ManualAddEntityDialog` 迁出到 v3 目录；替换 ① 内容 / ③ 剧本 两个 tab 为合并 tab；改 activeTab 在 status=scripting 时也映射到合并 tab；最后 grep 确认无引用后删除 stage-content-v2 / stage-script-v2 全部文件；E2E 验证三个 sub-state
 
 ---
 
