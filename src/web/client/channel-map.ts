@@ -444,6 +444,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.generateSceneAudioV3': { channel: 'ep:generate-scene-audio-v3' },
   // P6-T13 顶部 6 段阶段进度条（spec §2.1）
   'episodeProduction.calculateEpisodeProgress': { channel: 'ep:calculate-episode-progress' },
+  // 剧集项目界面集列表聚合（spec §6.1）
+  'episodeProduction.listEpisodesWithProgress': { channel: 'ep:list-episodes-with-progress' },
   // P6-T16 阶段门控（spec §2.3 软引导）
   'episodeProduction.canEnterStage': { channel: 'ep:can-enter-stage' },
   // P5-T32 分镜内角色独立配置（spec §4.5.3）
