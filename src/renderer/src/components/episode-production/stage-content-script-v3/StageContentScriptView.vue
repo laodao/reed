@@ -61,8 +61,11 @@
           :items="items"
           :identifying="identifying"
           :readonly="readonly"
+          :synopsis="subState !== 'pending' ? synopsisDraft : undefined"
+          :regenerating="regenSynopsis"
           @reidentify="onIdentifyAll()"
           @save-content="onSaveContent"
+          @regenerate-synopsis="onRegenSynopsis"
         />
         <StoryBackgroundPanel :episode-id="episode.id" :readonly="readonly" />
       </div>
@@ -82,15 +85,6 @@
           </div>
 
           <template v-else>
-            <SynopsisPanel
-              :synopsis="synopsisDraft"
-              :entities="entityList"
-              :readonly="readonly"
-              :regenerating="regenSynopsis"
-              @regenerate="onRegenSynopsis"
-              @click-entity="onClickEntityFromText"
-            />
-
             <div v-if="!script" class="generate-script-cta">
               <el-button
                 type="primary"
@@ -159,7 +153,6 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, InfoFilled, MagicStick } from '@element-plus/icons-vue'
 import StageMainHeader from '../shared/StageMainHeader.vue'
 import EntitySidebar from './EntitySidebar.vue'
-import SynopsisPanel from './SynopsisPanel.vue'
 import SceneListPanel from './SceneListPanel.vue'
 import ExcerptPanel from './ExcerptPanel.vue'
 import StoryBackgroundPanel from './StoryBackgroundPanel.vue'
@@ -299,7 +292,7 @@ const script = computed(() => scriptStore.currentScript)
 const scenes = computed(() => scriptStore.scenes ?? [])
 const synopsisDraft = computed(() => (script.value as any)?.synopsis ?? '')
 
-// 实体清单（给 SynopsisPanel / SceneListPanel EntityRefRenderer 用）
+// 实体清单（给 SceneListPanel EntityRefRenderer 用）
 const entityList = computed(() => {
   const list: any[] = []
   characters.value.forEach((c) =>
@@ -855,17 +848,20 @@ watch(
 
 .content-body {
   flex: 1;
-  overflow: auto;
+  /* 整体不滚动；左/右栏各自独立滚动，让两栏高度自适应 main-row */
+  overflow: hidden;
   padding: 16px 18px 24px;
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-height: 0;
 }
 
 .excerpt-row {
   display: flex;
   gap: 14px;
   align-items: stretch;
+  flex-shrink: 0;
 }
 
 @media (max-width: 1100px) {
@@ -885,9 +881,11 @@ watch(
 .left-col {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  overflow: auto;
 }
 
 .pending-hint {

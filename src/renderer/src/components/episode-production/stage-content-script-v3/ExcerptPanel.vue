@@ -46,6 +46,26 @@
       </span>
     </div>
 
+    <!-- 章节梗概嵌入 ExcerptPanel 内（在原文正文上面） -->
+    <div v-if="!editingContent && (synopsis || regenerating !== undefined)" class="synopsis-inline">
+      <div class="synopsis-header">
+        <span class="synopsis-label">章节梗概</span>
+        <el-button
+          v-if="!readonly"
+          size="small"
+          link
+          class="btn-regen-synopsis"
+          :loading="regenerating"
+          @click="emit('regenerate-synopsis')"
+        >
+          <el-icon><Refresh /></el-icon>
+          <span>✨ 重新生成</span>
+        </el-button>
+      </div>
+      <div v-if="synopsis" class="synopsis-text">{{ synopsis }}</div>
+      <div v-else class="synopsis-empty">梗概为空 — 点上方"重新生成"或在剧本生成后自动填充</div>
+    </div>
+
     <div v-if="!editingContent" class="excerpt-body">
       <span v-for="(seg, i) in highlightedExcerpt" :key="i">
         <mark
@@ -108,11 +128,16 @@ const props = defineProps<{
   items: UploadedItem[]
   identifying?: boolean
   readonly?: boolean
+  /** 章节梗概文本（嵌入显示在原文正文上面，仅在 scripting sub-state 由父容器传入） */
+  synopsis?: string
+  /** 章节梗概重新生成中（loading 态） */
+  regenerating?: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'reidentify'): void
   (e: 'save-content', content: string): void
+  (e: 'regenerate-synopsis'): void
 }>()
 
 // ===== 编辑态 =====
@@ -251,6 +276,44 @@ async function onSave(): Promise<void> {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.synopsis-inline {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  background: var(--el-color-primary-light-9);
+  border-left: 3px solid var(--el-color-primary);
+  border-radius: 4px;
+}
+
+.synopsis-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.synopsis-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--el-color-primary);
+}
+
+.btn-regen-synopsis {
+  font-size: 12px;
+}
+
+.synopsis-text {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--el-text-color-regular);
+  white-space: pre-wrap;
+}
+
+.synopsis-empty {
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+  font-style: italic;
 }
 
 .excerpt-body {
