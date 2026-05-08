@@ -56,9 +56,8 @@ e8a02cd docs(ep): 补全 STAGE_LABEL_FOR_STATUS 注释中 STAGE_LABELS 的模块
 ## 待 user 手动验证（自动化覆盖不到）
 
 - [ ] PC dev 端 E2E：项目列表 → 选项目 → 新建集 → 点集 → 工作台 → stage 切换 → 返回保选中
-- [ ] 暗色主题切换无写死颜色
 - [ ] Web 端验证（PGDATABASE=the_bot_test npm run dev:web）
-- [ ] 截图归档（项目界面 / 制作界面，亮 + 暗 4 张）
+- [ ] 截图归档（项目界面 / 制作界面）
 
 ## 后续优化建议（非阻塞）
 
