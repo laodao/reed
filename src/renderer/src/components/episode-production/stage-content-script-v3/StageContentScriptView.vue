@@ -861,10 +861,16 @@ watch(
   display: flex;
   gap: 8px;
   flex-shrink: 0;
-  /* 固定高度 300px（StoryBackgroundPanel 自然内容约 300px 也合适）。
-     两侧 panel 都设 height: 100% 占满该行；ExcerptPanel 内 body
-     用 height:0 + flex:1 撑满 panel 内剩余高度。 */
-  height: 300px;
+  /*
+   * 固定高度 420px：
+   * StoryBackgroundPanel 自然内容估算（panel padding 24 + header 38 +
+   * 年代 form-item 68 + 地域 68 + 其他描述（含 textarea rows=6）180 +
+   * 提示 40）≈ 418px，420 留 2px 余量避免被截断。
+   *
+   * ExcerptPanel 通过 .excerpt-row > * height:100% 同高，内部 body
+   * 用 height:0 + flex:1 撑满 panel 剩余高度。
+   */
+  height: 420px;
 }
 
 .excerpt-row > * {
