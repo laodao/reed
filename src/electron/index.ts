@@ -382,6 +382,18 @@ app.whenReady().then(async () => {
   // 注册 IPC 处理器
   initIpcHandlers()
 
+  // 启动声音复刻轮询调度器（boot resume + 持续轮询 training 任务）
+  // 设计文档：docs/superpowers/specs/2026-05-07-voice-cloning-design.md §5.5
+  try {
+    const { VoiceCloneJobScheduler } = await import(
+      '../core/services/voice-clone-job-scheduler'
+    )
+    VoiceCloneJobScheduler.getInstance().start()
+    console.log('[boot] VoiceCloneJobScheduler 已启动')
+  } catch (e: any) {
+    console.warn('[boot] VoiceCloneJobScheduler 启动失败（不致命）:', e?.message ?? e)
+  }
+
   // 创建窗口
   createWindow()
 

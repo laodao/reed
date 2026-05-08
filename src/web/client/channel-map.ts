@@ -122,10 +122,14 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'voice.toggleFavorite': { channel: 'voice:toggle-favorite' },
   'voice.getClonedVoices': { channel: 'voice:cloned-list' },
   'voice.deleteClonedVoice': { channel: 'voice:cloned-delete' },
+  'voice.refreshCloneStatus': { channel: 'voice:clone-refresh-status' },
+  'voice.preview': { channel: 'voice:preview' },
   'voice.download': { channel: 'voice:download' },
-  // voice.onTTSCompleted / onSTTCompleted
+  // voice.onTTSCompleted / onSTTCompleted / onCloneCompleted / onCloneFailed
   'voice.onTTSCompleted': { channel: 'voice:tts-completed' },
   'voice.onSTTCompleted': { channel: 'voice:stt-completed' },
+  'voice.onCloneCompleted': { channel: 'voice:clone-completed' },
+  'voice.onCloneFailed': { channel: 'voice:clone-failed' },
   'dataPath.getConfig': { channel: 'data-path:get-config' },
   'dataPath.select': { channel: 'data-path:select' },
   'dataPath.set': { channel: 'data-path:set' },

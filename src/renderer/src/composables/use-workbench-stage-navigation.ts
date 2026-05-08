@@ -138,18 +138,23 @@ export function useWorkbenchStageNavigation(
   /**
    * 右侧资产侧栏"+ 添加 X"。
    * FU6-T3：跳到 ② 资产 stage —— 真正的新建按钮在 AssetStageViewV2 里
-   * （v2 已内置 promptCreateStandalone + voice 复刻提示），跳过去 user 立刻就能点。
-   * voice 例外：直接给 user 指引（资产 stage 内也只是同样提示）。
+   * （v2 已内置 promptCreateStandalone + voice 复刻 dialog），跳过去 user 立刻就能点。
+   *
+   * 2026-05-08 T12：voice 不再 toast 跳走 — 资产 stage 的「+ 复刻新音色」按钮
+   * 已直接打开 VoiceCloneDialog 走完整复刻链路。这里统一只做切 tab + 提示。
    */
   function onAddAsset(kind: AssetKind): void {
     input.activeTab.value = 'asset_prep'
     input.selectedAsset.value = null
-    if (kind === 'voice') {
-      ElMessage.info('请去"语音助手 → 声音复刻"完成音色克隆，复刻完成后会自动出现在此处')
-      return
-    }
-    const labelMap = { character: '角色', location: '地点', item: '物品' } as const
-    ElMessage.info(`已切到 ② 资产，点列表头部"+ 新建${labelMap[kind]}"创建`)
+    // 2026-05-08 T12：voice 不再 toast 跳走 — 资产 stage 的「+ 复刻新音色」
+    // 按钮已直接打开 VoiceCloneDialog 走完整复刻链路。这里统一只做切 tab。
+    const labelMap = {
+      character: '角色',
+      location: '地点',
+      item: '物品',
+      voice: '复刻新音色',
+    } as const
+    ElMessage.info(`已切到 ② 资产，点列表头部"+ ${labelMap[kind]}"创建`)
   }
 
   /** P6-T15 底部时间线"⏵ 试播" */

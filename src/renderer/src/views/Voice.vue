@@ -1,15 +1,30 @@
 <template>
   <div class="voice-page">
-    <!-- 左侧边栏 -->
+    <!-- 左侧边栏（仅 TTS / STT tab 显示历史；声音复刻 tab 隐藏避免误导） -->
     <VoiceSidebar
+      v-if="activeTab !== 'clone'"
       v-model="selectedHistoryId"
       class="page-sidebar"
       @select="handleSelectHistory"
     />
 
-    <!-- 主内容区域 -->
+    <!-- 主内容区域 - 三 tab 切换 -->
     <div class="page-main">
-      <TextToSpeech />
+      <el-tabs
+        v-model="activeTab"
+        class="voice-main-tabs"
+        type="border-card"
+      >
+        <el-tab-pane label="文本转语音" name="tts">
+          <TextToSpeech v-if="activeTab === 'tts'" />
+        </el-tab-pane>
+        <el-tab-pane label="语音转文本" name="stt">
+          <SpeechToText v-if="activeTab === 'stt'" />
+        </el-tab-pane>
+        <el-tab-pane label="声音复刻" name="clone">
+          <VoiceCloneTab v-if="activeTab === 'clone'" />
+        </el-tab-pane>
+      </el-tabs>
     </div>
 
     <!-- 历史详情对话框 -->
@@ -105,9 +120,14 @@ import { CopyDocument } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import VoiceSidebar from '@/components/voice/VoiceSidebar.vue'
 import TextToSpeech from '@/components/voice/TextToSpeech.vue'
+import SpeechToText from '@/components/voice/SpeechToText.vue'
+import VoiceCloneTab from '@/components/voice/VoiceCloneTab.vue'
 import { getVoiceLanguageName } from '../../../shared/types/voice.types'
 import type { VoiceRecord } from '../../../shared/types/voice.types'
 import { toFileUrl } from '@/utils/asset-url'
+
+// 主 tab 切换：'tts' | 'stt' | 'clone'
+const activeTab = ref<'tts' | 'stt' | 'clone'>('tts')
 
 // 选中的历史 ID
 const selectedHistoryId = ref('')
@@ -153,8 +173,28 @@ function formatDateTime(date: Date | string): string {
 .voice-page {
   display: flex;
   height: 100%;
-  background: #f5f7fa;
+  background: var(--el-bg-color-page);
   overflow: hidden;
+}
+
+.voice-main-tabs {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+
+  :deep(.el-tabs__content) {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0;
+  }
+
+  :deep(.el-tab-pane) {
+    height: 100%;
+    overflow: auto;
+  }
 }
 
 .page-sidebar {

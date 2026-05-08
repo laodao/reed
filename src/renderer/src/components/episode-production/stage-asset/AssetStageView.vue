@@ -128,6 +128,14 @@
         />
       </div>
     </el-card>
+
+    <!-- 声音复刻对话框（V1 stage 也接通，2026-05-08 T12） -->
+    <VoiceCloneDialog
+      v-model="voiceCloneDialogVisible"
+      use-case="asset-stage"
+      @completed="onVoiceCloneCompleted"
+      @failed="onVoiceCloneFailed"
+    />
   </div>
 </template>
 
@@ -141,11 +149,12 @@
  *              通过 asset_image 异步聚合接入）。生成主图按钮目前 toast 提示，
  *              真正的渲染域 API 将在 P5 阶段实现。
  */
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Box, Location, Microphone, User } from '@element-plus/icons-vue'
 import { useEpAssetStore } from '@/stores/episode-production/asset.store'
 import { useEpEpisodeStore } from '@/stores/episode-production'
+import VoiceCloneDialog from '@/components/voice/VoiceCloneDialog.vue'
 
 import CharacterAssetCard from './CharacterAssetCard.vue'
 import LocationAssetCard from './LocationAssetCard.vue'
@@ -249,9 +258,21 @@ function onAddItem() {
   void promptCreateStandalone('item')
 }
 
+// 2026-05-08 T12：V1 stage 也接通真复刻链路（与 V2 共用 VoiceCloneDialog）
+const voiceCloneDialogVisible = ref(false)
+
 function onAddVoice() {
-  ElMessage.info('请在 语音助手 → 声音复刻 中创建声音，复刻完成后会自动出现在此处')
-  emit('add-voice')
+  voiceCloneDialogVisible.value = true
+}
+
+async function onVoiceCloneCompleted(): Promise<void> {
+  ElMessage.success('音色复刻完成')
+  await reload()
+}
+
+async function onVoiceCloneFailed(payload: { errorMessage?: string }): Promise<void> {
+  ElMessage.error(`复刻失败：${payload.errorMessage ?? '未知错误'}`)
+  await reload()
 }
 
 function onGenerateMain(_type: 'character' | 'location' | 'item', _id: string) {

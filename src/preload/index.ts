@@ -753,11 +753,13 @@ const electronAPI = {
       providerId?: string
       modelId?: string
     }) => ipcRenderer.invoke('voice:stt', request),
-    // 语音复刻
+    // 语音复刻 — 创建（DashScope CosyVoice，2026-05 接入）
     clone: (request: {
       name: string
-      sampleAudioPath?: string
-      sampleAudioData?: string
+      samplePath: string
+      sampleDurationSec: number
+      prefix: string
+      language?: string
       providerId?: string
     }) => ipcRenderer.invoke('voice:clone', request),
     // 选择音频文件
@@ -773,10 +775,17 @@ const electronAPI = {
     delete: (id: string) => ipcRenderer.invoke('voice:delete', id),
     // 切换收藏
     toggleFavorite: (id: string) => ipcRenderer.invoke('voice:toggle-favorite', id),
-    // 获取复刻声音列表
-    getClonedVoices: () => ipcRenderer.invoke('voice:cloned-list'),
-    // 删除复刻声音
+    // 获取复刻声音列表（status 可选筛 training/ready/failed）
+    getClonedVoices: (status?: 'training' | 'ready' | 'failed') =>
+      ipcRenderer.invoke('voice:cloned-list', status),
+    // 删除复刻声音（含 provider 端 + DB + 解绑相关角色）
     deleteClonedVoice: (id: string) => ipcRenderer.invoke('voice:cloned-delete', id),
+    // 同步刷新某条复刻状态（也被 scheduler 内部用）
+    refreshCloneStatus: (id: string) =>
+      ipcRenderer.invoke('voice:clone-refresh-status', id),
+    // 试听复刻音色（text 可选；当前仅支持系统 demo 试听）
+    preview: (id: string, text?: string) =>
+      ipcRenderer.invoke('voice:preview', id, text),
     // TTS 完成监听
     onTTSCompleted: (callback: (data: { recordId: string; audioPath: string }) => void) => {
       const handler = (_event: any, data: any) => callback(data)
@@ -788,6 +797,22 @@ const electronAPI = {
       const handler = (_event: any, data: any) => callback(data)
       ipcRenderer.on('voice:stt-completed', handler)
       return () => ipcRenderer.removeListener('voice:stt-completed', handler)
+    },
+    // 复刻完成监听（status='ready'）
+    onCloneCompleted: (
+      callback: (data: { id: string; status: 'ready'; voiceId?: string }) => void,
+    ) => {
+      const handler = (_event: any, data: any) => callback(data)
+      ipcRenderer.on('voice:clone-completed', handler)
+      return () => ipcRenderer.removeListener('voice:clone-completed', handler)
+    },
+    // 复刻失败监听（status='failed'）
+    onCloneFailed: (
+      callback: (data: { id: string; status: 'failed'; errorMessage?: string }) => void,
+    ) => {
+      const handler = (_event: any, data: any) => callback(data)
+      ipcRenderer.on('voice:clone-failed', handler)
+      return () => ipcRenderer.removeListener('voice:clone-failed', handler)
     },
     // 下载音频
     download: (audioPath: string) => ipcRenderer.invoke('voice:download', audioPath)

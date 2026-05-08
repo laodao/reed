@@ -106,17 +106,21 @@ export interface STTResponse {
 }
 
 /**
- * 语音复刻请求
+ * 语音复刻请求（旧 V1，仅向后兼容；voice:clone IPC 真实现走 VoiceCloneCreateRequest）
+ *
+ * @deprecated 使用 VoiceCloneCreateRequest，2026-05 切换
  */
 export interface VoiceCloneRequest {
   name: string
-  sampleAudioPath?: string  // 文件路径
-  sampleAudioData?: string  // base64 编码的音频数据
+  sampleAudioPath?: string
+  sampleAudioData?: string
   providerId?: string
 }
 
 /**
- * 语音复刻响应
+ * 语音复刻响应（旧 V1，仅保留类型让 voice.handler 旧 import 不立即报错）
+ *
+ * @deprecated voice:clone 真实现返回完整 ClonedVoice
  */
 export interface VoiceCloneResponse {
   success: boolean
@@ -124,6 +128,60 @@ export interface VoiceCloneResponse {
     voiceId: string
   }
   error?: string
+}
+
+/**
+ * 语音复刻 — 创建请求（IPC voice:clone 真实现入参，2026-05 接入 DashScope CosyVoice）
+ *
+ * 设计文档：docs/superpowers/specs/2026-05-07-voice-cloning-design.md §5.4
+ */
+export interface VoiceCloneCreateRequest {
+  /** 用户起的展示名（落 cloned_voices.name），不直接当 voice_id */
+  name: string
+  /** 本地音频绝对路径（已校验存在 + 时长 + 格式 + 单声道）*/
+  samplePath: string
+  /** 音频时长（秒），客户端预解析 */
+  sampleDurationSec: number
+  /** voice_id 前缀：仅小写字母数字、≤10 字符（DashScope 硬约束）*/
+  prefix: string
+  /** 语种 hint，影响特征提取。默认 'zh' */
+  language?: VoiceLanguageCode
+  /** 指定 provider id，缺省走默认 */
+  providerId?: string
+}
+
+/**
+ * Provider 层 — 复刻输入（VoiceService 翻译完 path 后传给 provider 的内部结构）
+ */
+export interface VoiceCloneInput {
+  name: string
+  samplePath: string
+  sampleDurationSec: number
+  prefix: string
+  language?: VoiceLanguageCode
+}
+
+/**
+ * Provider 层 — 创建复刻后的返回值
+ */
+export interface VoiceCloneCreateResult {
+  /** provider 端真实 voice_id（如 'cosyvoice-v3-plus-myvoice-xxxxxxxx'）*/
+  voiceId: string
+  /** 目标 TTS 模型（合成时必须用同一个）*/
+  targetModel: string
+  /** 当前状态（创建后第一次返回常常是 training）*/
+  status: ClonedVoiceStatus
+}
+
+/**
+ * Provider 层 — 查询音色训练状态返回值
+ */
+export interface VoiceCloneStatusResult {
+  status: ClonedVoiceStatus
+  /** 试听音频 URL（OK 状态时部分 provider 给）*/
+  previewAudioUrl?: string
+  /** 失败原因（仅 failed 状态有意义）*/
+  errorMessage?: string
 }
 
 /**

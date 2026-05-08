@@ -91,6 +91,16 @@
               >
                 {{ c.sourceType === 'linked_lw' ? 'linked_lw' : 'standalone' }}
               </el-tag>
+              <!-- T11：解绑按钮（双向编辑）— 调 voice.bindToCharacter(charId, null) -->
+              <el-button
+                size="small"
+                text
+                type="danger"
+                :loading="unbindingId === c.id"
+                @click="onUnbind(c)"
+              >
+                解绑
+              </el-button>
             </li>
           </ul>
         </div>
@@ -113,7 +123,7 @@
  * IPC：episodeProduction.asset.voice.get(voiceId) / .listCharacters(voiceId)。
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const props = defineProps<{ voiceId: string }>()
 
@@ -121,6 +131,8 @@ const loading = ref(false)
 const voice = ref<any>(null)
 const boundCharacters = ref<any[]>([])
 const bindingsExpanded = ref(false)
+// T11 双向绑定：解绑某个角色时锁住该条按钮，避免重复点击
+const unbindingId = ref<string>('')
 
 const statusType = computed<'success' | 'info' | 'danger' | ''>(() => {
   const s = voice.value?.status
@@ -194,25 +206,66 @@ async function load() {
   }
 }
 
-function onPreview() {
-  // 当前 episodeProduction.asset.voice 命名空间没有 preview API；
-  // global voice 命名空间提供 tts，但语音"试听"语义是直接播放 previewAudioPath，
-  // 暂未注册 IPC，先 toast 占位（spec P3a-final / P3b 接入）。
+async function onPreview(): Promise<void> {
+  // 2026-05-08 T11：voice:preview 已真实现 — 调 service.previewClonedVoice
+  // 该方法读 cloned_voices.preview_audio_path 缓存，未缓存时调 query_voice 拿 demo
+  // 下载到本地后写回 DB。试听音频通过 toAssetUrl 包成可播放 URL。
   const previewApi = (window as any).electronAPI?.voice?.preview
-  if (typeof previewApi === 'function' && voice.value?.id) {
-    Promise.resolve(previewApi(voice.value.id))
-      .then((resp: any) => {
-        if (resp && resp.success === false) {
-          ElMessage.error(resp.error || '试听失败')
-        }
-      })
-      .catch((e: any) => {
-        console.error('[VoiceCardForm] preview 失败', e)
-        ElMessage.error(e?.message || '试听失败')
-      })
+  if (typeof previewApi !== 'function') {
+    ElMessage.error('试听 IPC 未就绪')
     return
   }
-  ElMessage.info('试听 API 待接入')
+  if (!voice.value?.id) return
+  try {
+    const resp = await previewApi(voice.value.id)
+    if (!resp?.success || !resp.data?.audioPath) {
+      ElMessage.error(resp?.error || '试听失败')
+      return
+    }
+    const audio = new Audio(resp.data.audioPath)
+    audio.play().catch((err: any) => {
+      ElMessage.error(`音频播放失败：${err?.message ?? err}`)
+    })
+  } catch (e: any) {
+    console.error('[VoiceCardForm] preview 失败', e)
+    ElMessage.error(e?.message || '试听异常')
+  }
+}
+
+/**
+ * T11：解绑某个角色对当前音色的绑定。
+ * 调 episodeProduction.asset.voice.bindToCharacter(charBindingId, null)
+ * 成功后 reload 列表 — 反向视图自动刷新。
+ */
+async function onUnbind(c: any): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      `确认解除角色 "${characterDisplayName(c)}" 与本音色的绑定？\n该角色将变为 "未绑定音色" 状态。`,
+      '解除绑定',
+      { type: 'warning', confirmButtonText: '解绑', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  const api = getApi()
+  if (!api?.voice?.bindToCharacter) {
+    ElMessage.error('voice.bindToCharacter IPC 未就绪')
+    return
+  }
+  unbindingId.value = c.id
+  try {
+    const resp = await api.voice.bindToCharacter(c.id, null)
+    if (!resp?.success) {
+      ElMessage.error(resp?.error || '解绑失败')
+      return
+    }
+    ElMessage.success('已解绑')
+    await load()
+  } catch (e: any) {
+    ElMessage.error(e?.message || '解绑异常')
+  } finally {
+    unbindingId.value = ''
+  }
 }
 
 onMounted(load)

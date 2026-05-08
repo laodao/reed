@@ -8,11 +8,14 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { VoiceService } from '@core/services/voice.service'
+import { VoiceCloneService } from '@core/services/voice-clone.service'
+import { VoiceCloneJobScheduler } from '@core/services/voice-clone-job-scheduler'
 import type {
   TTSRequest,
   STTRequest,
-  VoiceCloneRequest,
-  VoiceHistoryQuery
+  ClonedVoiceStatus,
+  VoiceCloneCreateRequest,
+  VoiceHistoryQuery,
 } from '@shared/types/voice.types'
 import type { IpcResponse } from '@shared/types/ipc.types'
 
@@ -40,6 +43,8 @@ export function registerVoiceHandlers(): void {
   ipcBridge.handle('voice:toggle-favorite', handleToggleFavorite)
   ipcBridge.handle('voice:cloned-list', handleGetClonedVoices)
   ipcBridge.handle('voice:cloned-delete', handleDeleteClonedVoice)
+  ipcBridge.handle('voice:clone-refresh-status', handleRefreshCloneStatus)
+  ipcBridge.handle('voice:preview', handlePreviewClonedVoice)
   ipcBridge.handle('voice:download', handleDownloadAudio)
 
   console.log('[VoiceHandlers] 语音 IPC 处理器已注册')
@@ -71,9 +76,18 @@ async function handleSTT(_event: any, request: STTRequest): Promise<IpcResponse<
 
 async function handleVoiceClone(
   _event: any,
-  _request: VoiceCloneRequest
+  request: VoiceCloneCreateRequest,
 ): Promise<IpcResponse<any>> {
-  return { success: false, error: '语音复刻功能暂未实现' }
+  const result = await VoiceCloneService.cloneVoice(request)
+  // 创建成功后立刻把 id 加入 scheduler 轮询队列
+  if (result.success && result.data?.id) {
+    try {
+      VoiceCloneJobScheduler.getInstance().scheduleOne(result.data.id)
+    } catch (e: any) {
+      console.warn('[voice:clone] scheduler 入队失败（不影响主流程）:', e?.message ?? e)
+    }
+  }
+  return result as any
 }
 
 async function handleSelectFile(
@@ -132,15 +146,37 @@ async function handleToggleFavorite(_event: any, id: string): Promise<IpcRespons
   return response as any
 }
 
-async function handleGetClonedVoices(_event: any): Promise<IpcResponse<any[]>> {
-  return { success: true, data: [] }
+async function handleGetClonedVoices(
+  _event: any,
+  status?: ClonedVoiceStatus,
+): Promise<IpcResponse<any[]>> {
+  const r = await VoiceCloneService.listClonedVoices(status)
+  return r as any
 }
 
 async function handleDeleteClonedVoice(
   _event: any,
-  _id: string
-): Promise<IpcResponse<boolean>> {
-  return { success: false, error: '功能暂未实现' }
+  id: string,
+): Promise<IpcResponse<{ deleted: boolean }>> {
+  const r = await VoiceCloneService.deleteClonedVoice(id)
+  return r as any
+}
+
+async function handleRefreshCloneStatus(
+  _event: any,
+  id: string,
+): Promise<IpcResponse<any>> {
+  const r = await VoiceCloneService.refreshClonedVoiceStatus(id)
+  return r as any
+}
+
+async function handlePreviewClonedVoice(
+  _event: any,
+  id: string,
+  text?: string,
+): Promise<IpcResponse<{ audioPath: string }>> {
+  const r = await VoiceCloneService.previewClonedVoice(id, text)
+  return r as any
 }
 
 async function handleDownloadAudio(

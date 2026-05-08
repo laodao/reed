@@ -204,6 +204,14 @@
         />
       </div>
     </section>
+
+    <!-- 声音复刻对话框（"+ 复刻新音色"按钮触发；完成后 reload summary） -->
+    <VoiceCloneDialog
+      v-model="voiceCloneDialogVisible"
+      use-case="asset-stage"
+      @completed="onVoiceCloneCompleted"
+      @failed="onVoiceCloneFailed"
+    />
   </div>
 </template>
 
@@ -217,6 +225,7 @@ import CharacterAssetCardV2 from './CharacterAssetCardV2.vue'
 import LocationAssetCardV2 from './LocationAssetCardV2.vue'
 import ItemAssetCardV2 from './ItemAssetCardV2.vue'
 import VoiceAssetCardV2 from './VoiceAssetCardV2.vue'
+import VoiceCloneDialog from '@/components/voice/VoiceCloneDialog.vue'
 import { useEpEpisodeStore } from '@/stores/episode-production'
 
 const props = defineProps<{
@@ -497,10 +506,10 @@ async function onBatchDerive(kind: 'character' | 'location'): Promise<void> {
  * 行为约定（spec §2.3）：
  *   - character / location / item · prompt 输名字 → asset.{kind}.createStandalone
  *     → reload + emit open-* 唤起 V2 编辑抽屉补充详情
- *   - voice · 复刻流程依赖音频文件，主区不能纯 prompt 完成；
- *     给提示并 emit add-voice 让父级承接（后续可接独立的 VoiceCloneDialog；
- *     当前阶段 voice 复刻入口在"语音助手 → 声音复刻"已存在，先指向那里）。
+ *   - voice · 复刻流程在 2026-05-08 T10 接通：直接打开 VoiceCloneDialog 完成全链路
+ *     （上传样本 → DashScope CosyVoice → scheduler 轮询训练状态 → ready）。
  */
+const voiceCloneDialogVisible = ref(false)
 async function promptCreateStandalone(
   kind: 'character' | 'location' | 'item',
 ): Promise<void> {
@@ -558,8 +567,18 @@ function onAddItem(): void {
 }
 
 function onAddVoice(): void {
-  ElMessage.info('请去"语音助手 → 声音复刻"完成音色克隆，复刻完成后会自动出现在此处')
-  emit('add-voice')
+  // 直接打开复刻对话框（2026-05-08：T10 接通真实复刻链路）
+  voiceCloneDialogVisible.value = true
+}
+
+async function onVoiceCloneCompleted(): Promise<void> {
+  ElMessage.success('音色复刻完成')
+  await reload()
+}
+
+async function onVoiceCloneFailed(payload: { errorMessage?: string }): Promise<void> {
+  ElMessage.error(`复刻失败：${payload.errorMessage ?? '未知错误'}`)
+  await reload()
 }
 
 /**
