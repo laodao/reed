@@ -191,6 +191,9 @@ const IPC_CHANNELS = {
   // P6-T13 顶部 6 段阶段进度条（spec §2.1 + §2.2）
   EP_CALCULATE_EPISODE_PROGRESS: 'ep:calculate-episode-progress',
 
+  // Task 3 剧集列表含进度
+  EP_LIST_EPISODES_WITH_PROGRESS: 'ep:list-episodes-with-progress',
+
   // P6-T16 阶段门控（spec §2.3 软引导）
   EP_CAN_ENTER_STAGE: 'ep:can-enter-stage',
 
@@ -1783,6 +1786,10 @@ const electronAPI = {
     // P6-T13 顶部 6 段阶段进度条（spec §2.1）
     calculateEpisodeProgress: (episodeId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_CALCULATE_EPISODE_PROGRESS, episodeId),
+
+    // Task 3 剧集列表含进度
+    listEpisodesWithProgress: (projectId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_LIST_EPISODES_WITH_PROGRESS, projectId),
 
     // P6-T16 阶段门控（spec §2.3 软引导）
     canEnterStage: (episodeId: string, currentStatus: string, targetStatus: string) =>
