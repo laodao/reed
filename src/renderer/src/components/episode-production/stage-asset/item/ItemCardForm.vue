@@ -3,7 +3,15 @@
     <template #header>
       <div class="card-header">
         <span class="header-title">📋 设定卡</span>
-        <el-button size="small" type="primary" plain disabled title="即将开放（spec 2026-05-09 ep-redesign §3.2 B2 AI 字段提取）">
+        <el-button
+          size="small"
+          type="primary"
+          plain
+          :loading="extracting"
+          :disabled="!canExtract"
+          title="从描述中 AI 提取名称 / 风格（不覆盖已填字段）"
+          @click="onExtractFields"
+        >
           ✨ AI 自动填
         </el-button>
       </div>
@@ -267,6 +275,64 @@ onMounted(load)
 watch(() => props.bindingId, load)
 
 defineExpose({ reload: load })
+
+// ===== AI 正向字段提取（spec 2026-05-09 ep-redesign §3.2 B2） =====
+const extracting = ref(false)
+const canExtract = computed(() =>
+  !extracting.value && (form.description ?? '').trim().length >= 10,
+)
+
+async function onExtractFields(): Promise<void> {
+  const desc = (form.description ?? '').trim()
+  if (desc.length < 10) {
+    ElMessage.warning('描述太短（建议至少 10 字）')
+    return
+  }
+  const projectId: string | undefined = binding.value?.projectId
+  if (!projectId) {
+    ElMessage.warning('当前没有项目上下文，无法调用 AI 提取')
+    return
+  }
+  extracting.value = true
+  try {
+    const api = getApi()
+    if (!api?.extractFields) {
+      ElMessage.error('extractFields IPC 未暴露（请重启）')
+      return
+    }
+    const resp = await api.extractFields({
+      assetType: 'item',
+      description: desc,
+      projectId,
+    })
+    if (!resp?.success) {
+      ElMessage.error(resp?.error || 'AI 提取失败')
+      return
+    }
+    const data = resp.data ?? {}
+    let count = 0
+    // 不覆盖用户已填字段（仅 styleAnchors / name 可能要补）
+    if (data.name && !form.name) {
+      form.name = data.name
+      // linked_lw 模式需切到 override
+      if (isLinkedLw.value) overrideEnabled.name = true
+      count++
+    }
+    if (Array.isArray(data.styleAnchors) && data.styleAnchors.length > 0 && form.styleAnchors.length === 0) {
+      form.styleAnchors = data.styleAnchors
+      count++
+    }
+    if (count === 0) {
+      ElMessage.info('AI 未从描述中提取到新字段（可能字段已填或描述不够具体）')
+    } else {
+      ElMessage.success(`已自动填 ${count} 个字段，请确认或修改（保存才落库）`)
+    }
+  } catch (e: any) {
+    ElMessage.error('AI 提取异常：' + (e?.message ?? String(e)))
+  } finally {
+    extracting.value = false
+  }
+}
 </script>
 
 <style scoped>

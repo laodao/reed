@@ -24,7 +24,15 @@
         <span class="core-label">⭐ 生成核心</span>
         <span class="core-hint">— 决定 AI 生成质量</span>
         <span class="header-spacer" />
-        <el-button size="small" type="primary" plain disabled title="即将开放（C5 AI 字段提取）">
+        <el-button
+          size="small"
+          type="primary"
+          plain
+          :loading="extracting"
+          :disabled="!canExtract"
+          title="从人物描述中 AI 提取性别 / 年龄 / 人种 / 风格（不覆盖已填字段）"
+          @click="onExtractFields"
+        >
           ✨ AI 自动填
         </el-button>
       </div>
@@ -328,6 +336,79 @@ function arraysEqual(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
   return true
+}
+
+// ===== AI 正向字段提取（spec 2026-05-09 ep-redesign §3.2 B2） =====
+const extracting = ref(false)
+const canExtract = computed(() =>
+  !extracting.value && (form.appearance ?? '').trim().length >= 10,
+)
+
+async function onExtractFields(): Promise<void> {
+  const desc = (form.appearance ?? '').trim()
+  if (desc.length < 10) {
+    ElMessage.warning('描述太短（建议至少 10 字）')
+    return
+  }
+  const projectId: string | undefined = props.binding?.projectId
+  if (!projectId) {
+    ElMessage.warning('当前没有项目上下文，无法调用 AI 提取')
+    return
+  }
+  extracting.value = true
+  try {
+    const api = (window as any).electronAPI?.episodeProduction?.asset
+    if (!api?.extractFields) {
+      ElMessage.error('extractFields IPC 未暴露（请重启）')
+      return
+    }
+    const resp = await api.extractFields({
+      assetType: 'character',
+      description: desc,
+      projectId,
+    })
+    if (!resp?.success) {
+      ElMessage.error(resp?.error || 'AI 提取失败')
+      return
+    }
+    const data = resp.data ?? {}
+    let count = 0
+    // 不覆盖用户已填字段
+    if (data.name && !form.name) {
+      form.name = data.name
+      onChange('name', data.name, true)
+      count++
+    }
+    if (data.gender && !form.gender) {
+      form.gender = data.gender
+      onChange('gender', data.gender, true)
+      count++
+    }
+    if (data.age != null && form.age == null) {
+      form.age = data.age
+      onChange('age', data.age, true)
+      count++
+    }
+    if (data.race && !form.race) {
+      form.race = data.race
+      onChange('race', data.race, true)
+      count++
+    }
+    if (Array.isArray(data.styleAnchors) && data.styleAnchors.length > 0 && form.styleAnchors.length === 0) {
+      form.styleAnchors = data.styleAnchors
+      onChange('styleAnchors', form.styleAnchors, true)
+      count++
+    }
+    if (count === 0) {
+      ElMessage.info('AI 未从描述中提取到新字段（可能字段已填或描述不够具体）')
+    } else {
+      ElMessage.success(`已自动填 ${count} 个字段，请确认或修改`)
+    }
+  } catch (e: any) {
+    ElMessage.error('AI 提取异常：' + (e?.message ?? String(e)))
+  } finally {
+    extracting.value = false
+  }
 }
 </script>
 

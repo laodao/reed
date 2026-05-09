@@ -18,7 +18,15 @@
         <span class="core-label">⭐ 生成核心</span>
         <span class="core-hint">— 决定 AI 生成质量</span>
         <span class="header-spacer" />
-        <el-button size="small" type="primary" plain disabled title="即将开放（C5 AI 字段提取）">
+        <el-button
+          size="small"
+          type="primary"
+          plain
+          :loading="extracting"
+          :disabled="!canExtract"
+          title="从视觉特征中 AI 提取类型 / 规模 / 氛围 / 时间天气 / 风格（不覆盖已填字段）"
+          @click="onExtractFields"
+        >
           ✨ AI 自动填
         </el-button>
       </div>
@@ -193,6 +201,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import { STYLE_PRESETS } from '@core/modules/episode-production/assets/constants/style-presets'
 import ReferenceImageField from '../shared/ReferenceImageField.vue'
 
@@ -288,6 +297,93 @@ function arraysEqual(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
   return true
+}
+
+// ===== AI 正向字段提取（spec 2026-05-09 ep-redesign §3.2 B2） =====
+const extracting = ref(false)
+const canExtract = computed(() =>
+  !extracting.value && (form.baseDescription ?? '').trim().length >= 10,
+)
+
+async function onExtractFields(): Promise<void> {
+  const desc = (form.baseDescription ?? '').trim()
+  if (desc.length < 10) {
+    ElMessage.warning('视觉特征太短（建议至少 10 字）')
+    return
+  }
+  const projectId: string | undefined = props.binding?.projectId
+  if (!projectId) {
+    ElMessage.warning('当前没有项目上下文，无法调用 AI 提取')
+    return
+  }
+  extracting.value = true
+  try {
+    const api = (window as any).electronAPI?.episodeProduction?.asset
+    if (!api?.extractFields) {
+      ElMessage.error('extractFields IPC 未暴露（请重启）')
+      return
+    }
+    const resp = await api.extractFields({
+      assetType: 'location',
+      description: desc,
+      projectId,
+    })
+    if (!resp?.success) {
+      ElMessage.error(resp?.error || 'AI 提取失败')
+      return
+    }
+    const data = resp.data ?? {}
+    let count = 0
+    if (data.name && !form.name) {
+      form.name = data.name
+      onChange('name', data.name, true)
+      count++
+    }
+    if (data.description && !form.description) {
+      form.description = data.description
+      onChange('description', data.description, true)
+      count++
+    }
+    if (data.locationType && !form.locationType) {
+      form.locationType = data.locationType
+      onChange('locationType', data.locationType, true)
+      count++
+    }
+    if (data.scale && !form.scale) {
+      form.scale = data.scale
+      onChange('scale', data.scale, true)
+      count++
+    }
+    if (Array.isArray(data.moodTags) && data.moodTags.length > 0 && form.moodTags.length === 0) {
+      form.moodTags = data.moodTags
+      onChange('moodTags', form.moodTags, true)
+      count++
+    }
+    if (data.timeOfDay && !form.timeOfDay) {
+      form.timeOfDay = data.timeOfDay
+      onChange('timeOfDay', data.timeOfDay, true)
+      count++
+    }
+    if (data.weather && !form.weather) {
+      form.weather = data.weather
+      onChange('weather', data.weather, true)
+      count++
+    }
+    if (Array.isArray(data.styleAnchors) && data.styleAnchors.length > 0 && form.styleAnchors.length === 0) {
+      form.styleAnchors = data.styleAnchors
+      onChange('styleAnchors', form.styleAnchors, true)
+      count++
+    }
+    if (count === 0) {
+      ElMessage.info('AI 未从描述中提取到新字段（可能字段已填或描述不够具体）')
+    } else {
+      ElMessage.success(`已自动填 ${count} 个字段，请确认或修改`)
+    }
+  } catch (e: any) {
+    ElMessage.error('AI 提取异常：' + (e?.message ?? String(e)))
+  } finally {
+    extracting.value = false
+  }
 }
 </script>
 

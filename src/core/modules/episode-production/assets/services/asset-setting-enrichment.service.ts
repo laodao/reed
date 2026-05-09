@@ -50,6 +50,44 @@ interface AIResult {
   _evidence?: Record<string, string>
 }
 
+/**
+ * AI 正向字段提取（spec 2026-05-09 ep-redesign §3.2 B2）
+ *
+ * 与 enrich() 反推（已生成图反推设定）相对：用户在自由文本"人物描述"里写完，
+ * 点 ✨ → LLM 抽出结构化字段 → 前端不覆盖已填字段地填表。
+ *
+ * Service 层职责：调 callAI、parse JSON（带 fenced code 兜底）、校验枚举值。
+ * 不覆盖逻辑放在前端（service 只返回 LLM 结果）。
+ */
+export interface ExtractFieldsInput {
+  assetType: 'character' | 'location' | 'item'
+  description: string
+  projectId: string
+  /** Web 端通过 ALS 注入；PC 端 null */
+  userId?: string | null
+  /** 项目级 scriptModel 配置；不传走 callAI 默认 */
+  providerConfigId?: string
+  modelId?: string
+}
+
+export interface ExtractedFields {
+  // 三类共用
+  name?: string
+  styleAnchors?: string[]
+  // character 专属
+  gender?: '男' | '女' | '其他'
+  age?: number
+  race?: string
+  // location 专属
+  description?: string
+  locationType?: 'interior' | 'exterior' | 'mixed' | 'fantasy' | 'urban' | 'rural'
+  scale?: '小' | '中' | '大' | '巨大'
+  moodTags?: string[]
+  timeOfDay?: 'morning' | 'noon' | 'afternoon' | 'evening' | 'night' | 'dawn' | 'dusk'
+  weather?: 'sunny' | 'cloudy' | 'rainy' | 'snowy' | 'foggy' | 'stormy'
+  // item 借用 description / styleAnchors
+}
+
 export class AssetSettingEnrichmentService {
   constructor(
     private readonly ds: DataSource,
@@ -163,6 +201,152 @@ export class AssetSettingEnrichmentService {
     }
     return applyItem(this.ds.getRepository(ItemBindingEntity), projectId, results)
   }
+
+  /**
+   * AI 正向字段提取（spec 2026-05-09 ep-redesign §3.2 B2）
+   *
+   * 用户在自由文本"人物描述"里写完，调本方法 → LLM 抽出结构化字段。
+   * 不覆盖逻辑放前端（service 只返回 LLM 结果）。
+   *
+   * 错误处理：
+   *   - LLM 返回非 JSON / 含 markdown 围栏 → 兜底解析（剥围栏 / 提取首个 {} 块）
+   *   - 完全无法解析 → throw '...JSON...'
+   *   - 校验枚举值（gender / locationType / scale / timeOfDay / weather）；非法值丢弃该字段
+   */
+  async extractFieldsFromDescription(input: ExtractFieldsInput): Promise<ExtractedFields> {
+    const sys = buildExtractFieldsSystemPrompt(input.assetType)
+    const user = `用户描述：${input.description}`
+    // callAI 真实签名是位置参数（v3 修订）
+    const raw = await this.callAI(user, sys, 1024)
+    const parsed = parseExtractFieldsJson(raw)
+    return validateAndCoerceExtracted(input.assetType, parsed)
+  }
+}
+
+/**
+ * 系统 prompt — 三种 assetType 三个模板。
+ *
+ * 显式要求只输出 JSON，不要解释 / 不要 markdown 围栏；不能确定的字段不输出（让 LLM 留空 = 不抽该字段）。
+ */
+function buildExtractFieldsSystemPrompt(assetType: 'character' | 'location' | 'item'): string {
+  if (assetType === 'character') {
+    return `你是一个角色设定提取助手。从用户描述中抽出结构化字段，以 JSON 输出。
+
+字段说明：
+- name: 姓名（如有）
+- gender: '男' | '女' | '其他'（推断）
+- age: 数字（推断）
+- race: 自由文本（如"东亚" / "欧洲"；保留中文）
+- styleAnchors: 风格数组（从描述中提取，如"国风工笔"）
+
+只输出 JSON，不要解释，不要 markdown 围栏。不能确定的字段不输出。`
+  }
+  if (assetType === 'location') {
+    return `你是一个地点设定提取助手。从用户描述中抽出结构化字段，以 JSON 输出。
+
+字段说明：
+- name: 名称（如有）
+- description: 一句话描述
+- locationType: 'interior' | 'exterior' | 'mixed' | 'fantasy' | 'urban' | 'rural'
+- scale: '小' | '中' | '大' | '巨大'
+- moodTags: 氛围词数组（如["温馨","古朴"]）
+- timeOfDay: 'morning' | 'noon' | 'afternoon' | 'evening' | 'night' | 'dawn' | 'dusk'
+- weather: 'sunny' | 'cloudy' | 'rainy' | 'snowy' | 'foggy' | 'stormy'
+- styleAnchors: 风格数组
+
+只输出 JSON，不要解释，不要 markdown 围栏。不能确定的字段不输出。`
+  }
+  // item
+  return `你是一个物品设定提取助手。从用户描述中抽出结构化字段，以 JSON 输出。
+
+字段说明：
+- name: 名称（如有）
+- description: 一句话描述
+- styleAnchors: 风格数组（如"仿古" / "赛博朋克"）
+
+只输出 JSON，不要解释，不要 markdown 围栏。不能确定的字段不输出。`
+}
+
+/**
+ * 解析 LLM 返回的 JSON，含兜底：
+ *   - 直接 JSON.parse 成功 → 返回
+ *   - 失败 → 剥 markdown 围栏（``` json / ```）后再 parse
+ *   - 仍失败 → 提取首个 {...} 块再 parse
+ *   - 全失败 → throw
+ */
+function parseExtractFieldsJson(raw: string): Record<string, unknown> {
+  // 1. 直接 parse
+  try {
+    const v = JSON.parse(raw)
+    if (v && typeof v === 'object' && !Array.isArray(v)) return v as Record<string, unknown>
+  } catch { /* fall through */ }
+
+  // 2. 剥 markdown 围栏
+  const stripped = raw
+    .replace(/^\s*```(?:json)?\s*/i, '')
+    .replace(/\s*```\s*$/, '')
+    .trim()
+  if (stripped !== raw.trim()) {
+    try {
+      const v = JSON.parse(stripped)
+      if (v && typeof v === 'object' && !Array.isArray(v)) return v as Record<string, unknown>
+    } catch { /* fall through */ }
+  }
+
+  // 3. 提取首个 {...} 块
+  const m = raw.match(/\{[\s\S]*\}/)
+  if (m) {
+    try {
+      const v = JSON.parse(m[0])
+      if (v && typeof v === 'object' && !Array.isArray(v)) return v as Record<string, unknown>
+    } catch { /* fall through */ }
+  }
+
+  throw new Error('AI 返回非合法 JSON，无法提取字段')
+}
+
+/**
+ * 校验枚举值，非法字段丢弃。返回类型化的 ExtractedFields。
+ */
+function validateAndCoerceExtracted(
+  assetType: 'character' | 'location' | 'item',
+  data: Record<string, unknown>,
+): ExtractedFields {
+  const out: ExtractedFields = {}
+  if (typeof data.name === 'string' && data.name.trim()) out.name = data.name.trim()
+  if (typeof data.description === 'string' && data.description.trim()) out.description = data.description.trim()
+  if (Array.isArray(data.styleAnchors)) {
+    const sa = data.styleAnchors.filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+    if (sa.length > 0) out.styleAnchors = sa
+  }
+  if (assetType === 'character') {
+    if (data.gender === '男' || data.gender === '女' || data.gender === '其他') out.gender = data.gender
+    if (typeof data.age === 'number' && data.age >= 0 && data.age <= 200) out.age = data.age
+    if (typeof data.race === 'string' && data.race.trim()) out.race = data.race.trim()
+  } else if (assetType === 'location') {
+    const validLoc = ['interior', 'exterior', 'mixed', 'fantasy', 'urban', 'rural']
+    if (typeof data.locationType === 'string' && validLoc.includes(data.locationType)) {
+      out.locationType = data.locationType as ExtractedFields['locationType']
+    }
+    const validScale = ['小', '中', '大', '巨大']
+    if (typeof data.scale === 'string' && validScale.includes(data.scale)) {
+      out.scale = data.scale as ExtractedFields['scale']
+    }
+    if (Array.isArray(data.moodTags)) {
+      const mt = data.moodTags.filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+      if (mt.length > 0) out.moodTags = mt
+    }
+    const validTime = ['morning', 'noon', 'afternoon', 'evening', 'night', 'dawn', 'dusk']
+    if (typeof data.timeOfDay === 'string' && validTime.includes(data.timeOfDay)) {
+      out.timeOfDay = data.timeOfDay as ExtractedFields['timeOfDay']
+    }
+    const validWeather = ['sunny', 'cloudy', 'rainy', 'snowy', 'foggy', 'stormy']
+    if (typeof data.weather === 'string' && validWeather.includes(data.weather)) {
+      out.weather = data.weather as ExtractedFields['weather']
+    }
+  }
+  // item: name / description / styleAnchors 已在共用段处理
+  return out
 }
 
 // ─── 拆分：todo / context ─────────────────────────────────────

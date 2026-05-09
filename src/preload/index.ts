@@ -288,6 +288,8 @@ const IPC_CHANNELS = {
   EP_ASSET_IMAGE_UPDATE: 'ep:asset:image:update',
   EP_ASSET_IMAGE_GENERATE_MAIN: 'ep:asset:image:generate-main',
   EP_ASSET_ENRICH_SETTINGS: 'ep:asset:enrich-settings',
+  /** spec 2026-05-09 ep-redesign §3.2 B2 · AI 正向字段提取 */
+  EP_ASSET_EXTRACT_FIELDS: 'ep:asset:extract-fields',
 
   // 派生（2 个）
   EP_ASSET_DERIVE_SINGLE: 'ep:asset:derive:single',
@@ -2083,6 +2085,17 @@ const electronAPI = {
       // AI 设定反推（spec 2026-05-07）
       enrichSettings: (input: { projectId: string }) =>
         ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_ENRICH_SETTINGS, input),
+
+      /**
+       * AI 正向字段提取（spec 2026-05-09 ep-redesign §3.2 B2）
+       * 用户在自由文本"人物描述"里写完，调本 API → LLM 抽出结构化字段。
+       * 不覆盖逻辑放前端（service 只返回 LLM 结果）。
+       */
+      extractFields: (input: {
+        assetType: 'character' | 'location' | 'item'
+        description: string
+        projectId: string
+      }) => ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_EXTRACT_FIELDS, input),
 
       /**
        * 设置 / 清空资产参考图（spec 2026-05-09）：

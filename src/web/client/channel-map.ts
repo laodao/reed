@@ -533,6 +533,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.asset.image.updateMetadata': { channel: 'ep:asset:image:update-metadata' },
   // AI 设定反推（spec 2026-05-07）
   'episodeProduction.asset.enrichSettings': { channel: 'ep:asset:enrich-settings' },
+  // AI 正向字段提取（spec 2026-05-09 ep-redesign §3.2 B2）
+  'episodeProduction.asset.extractFields': { channel: 'ep:asset:extract-fields' },
   // 派生（2 个）
   'episodeProduction.asset.derive.single': { channel: 'ep:asset:derive:single' },
   'episodeProduction.asset.derive.batch': { channel: 'ep:asset:derive:batch' },
