@@ -24,91 +24,11 @@
       请先选择一个分镜
     </div>
 
-    <!-- 已生成视频播放器（取最新结果，回退到 storyboard.videoPath） -->
-    <div v-if="storyboard && currentVideoPath" class="video-player-section">
-      <video
-        :key="currentVideoPath"
-        :src="toVideoUrl(currentVideoPath)"
-        controls
-        preload="metadata"
-        class="result-video"
-      />
-      <div class="video-player-meta">
-        <span class="video-player-label">本分镜视频</span>
-        <span class="video-player-path" :title="currentVideoPath">{{ currentVideoPath }}</span>
-      </div>
-    </div>
-
     <div v-if="storyboard" class="form-area">
-      <!-- 提供商 + 模型 一行 -->
-      <div class="form-row">
-        <div class="form-cell">
-          <label class="cell-label">提供商</label>
-          <el-select
-            v-model="selectedProviderConfigId"
-            placeholder="选择已配置的视频提供商"
-            :loading="loadingProviders"
-            class="full-width"
-            size="small"
-            @change="onProviderChange"
-          >
-            <el-option
-              v-for="p in availableProviders"
-              :key="p.providerConfigId"
-              :value="p.providerConfigId"
-              :label="p.name"
-              :disabled="!p.ready"
-            >
-              <span>{{ p.name }}</span>
-              <span class="opt-meta">
-                {{ formatCapabilities(p.capabilities) }}
-                <el-tag v-if="!p.ready" size="small" type="warning">未就绪</el-tag>
-              </span>
-            </el-option>
-          </el-select>
-        </div>
-        <div class="form-cell">
-          <label class="cell-label">模型</label>
-          <el-select
-            v-model="selectedModelId"
-            :placeholder="selectedProvider ? '选择视频模型' : '请先选提供商'"
-            :disabled="!selectedProvider || !(selectedProvider.models?.length)"
-            class="full-width"
-            size="small"
-          >
-            <el-option
-              v-for="m in (selectedProvider?.models ?? [])"
-              :key="m.id"
-              :value="m.id"
-              :label="m.name || m.id"
-            />
-          </el-select>
-        </div>
-      </div>
-
-      <!-- 模式 + 时长 一行 -->
-      <div class="form-row">
-        <div class="form-cell">
-          <label class="cell-label">模式</label>
-          <el-radio-group v-model="modeChoice" size="small">
-            <el-radio-button label="auto">自动</el-radio-button>
-            <el-radio-button label="text2video">文生视频</el-radio-button>
-            <el-radio-button label="image2video">图生视频</el-radio-button>
-            <el-radio-button label="keyframes2video">关键帧序列</el-radio-button>
-          </el-radio-group>
-        </div>
-        <div class="form-cell duration-cell">
-          <label class="cell-label">时长</label>
-          <el-input-number
-            v-model="durationSec"
-            :min="1"
-            :max="10"
-            :step="1"
-            size="small"
-          />
-          <span class="form-hint">秒</span>
-        </div>
-      </div>
+      <!-- 提供商 / 模型 / 模式 / 时长 已移除：
+           provider+model 走项目设置（projectStore.currentProject.config.videoModel）；
+           mode 固定 auto（VideoSegmentService capability matcher 自动决策）；
+           时长直接用 storyboard.duration（④ 分镜界面定稿）。 -->
 
       <!-- 完整提示词预览 -->
       <div class="prompt-preview">
@@ -155,19 +75,9 @@
       </div>
 
       <div v-if="lastResult" class="result-card">
-        <div class="result-row">
-          <span class="label">实际模式：</span>
-          <el-tag size="small">{{ lastResult.match.mode }}</el-tag>
-          <el-tag v-if="lastResult.match.degraded" size="small" type="warning">
-            已降级
-          </el-tag>
-        </div>
-        <div v-if="lastResult.match.degraded" class="degrade-trace">
-          降级路径：{{ lastResult.match.trace.join(' → ') }}
-        </div>
-        <div class="result-row">
-          <span class="label">视频路径：</span>
-          <span class="path">{{ lastResult.output.videoPath }}</span>
+        <div v-if="lastResult.match.degraded" class="result-row">
+          <span class="label">⚠ 已降级:</span>
+          <span class="degrade-trace">{{ lastResult.match.trace.join(' → ') }}</span>
         </div>
       </div>
 
@@ -189,7 +99,7 @@
  * Emits：
  *   - generated(videoPath)：生成完成；父组件可 reload storyboardStore
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   EditPen,
@@ -197,7 +107,6 @@ import {
   MagicStick,
   Warning,
 } from '@element-plus/icons-vue'
-import { toVideoUrl } from '@/utils/asset-url'
 import { useEpAssetStore, useEpScriptStore } from '@/stores/episode-production'
 
 interface Storyboard {
@@ -209,25 +118,6 @@ interface Storyboard {
   shotType?: string | null
   cameraAngle?: string | null
   cameraMovement?: string | null
-}
-
-interface ProviderCapabilities {
-  text: boolean
-  image: boolean
-  keyframes: boolean
-  maxKeyframes: number
-  maxDurationSec: number
-}
-
-interface ProviderInfo {
-  providerConfigId: string
-  type: string
-  name: string
-  description: string
-  implemented: boolean
-  capabilities: ProviderCapabilities
-  ready: boolean
-  models: Array<{ id: string; name?: string }>
 }
 
 interface VideoSegmentResult {
@@ -247,8 +137,9 @@ interface VideoSegmentResult {
 
 const props = defineProps<{
   storyboard: Storyboard | null
-  /** 用户配置好的 video providerConfigId（来自 settings；不传则用 type 默认） */
+  /** 视频 providerConfigId（来自 projectStore.config.videoModel） */
   providerConfigId?: string | null
+  /** 视频 modelId（来自 projectStore.config.videoModel） */
   modelId?: string | null
 }>()
 
@@ -371,38 +262,14 @@ async function loadMeta(): Promise<void> {
 
 watch(() => props.storyboard?.id, () => loadMeta(), { immediate: true })
 
-const availableProviders = ref<ProviderInfo[]>([])
-const selectedProviderConfigId = ref<string>('')
-const selectedModelId = ref<string>('')
-const modeChoice = ref<'auto' | 'text2video' | 'image2video' | 'keyframes2video'>(
-  'auto',
-)
-const durationSec = ref(4)
-const loadingProviders = ref(false)
 const generating = ref(false)
 const lastResult = ref<VideoSegmentResult | null>(null)
 const errorMessage = ref<string | null>(null)
 
 /**
- * 当前可播放的视频路径：优先取本次生成结果，其次取 storyboard 已有的 videoPath。
- * 切换分镜时 lastResult 由父组件 :key 重置；storyboard.videoPath 来自 reload。
- */
-const currentVideoPath = computed<string | null>(() => {
-  return (
-    lastResult.value?.output?.videoPath ||
-    props.storyboard?.videoPath ||
-    null
-  )
-})
-
-/**
- * 最终提示词预览（前端拼接，与后端真实拼装可能略有差异，但覆盖所有用户能控的部分）：
- *   1) 画面描述（storyboard.frameDescription）
- *   2) 镜头语言（景别 / 角度 / 运镜）
- *   3) 资产引用（地点 / 角色 + 表情 / 物品）
- *   4) 对白与旁白
- *   5) 用户调整方向（userPrompt，⑤ 面板自定义）
- *   6) 时长 / 模式 / 提供商
+ * 最终提示词预览（前端拼接，覆盖用户能控的部分）：
+ * 画面描述 / 镜头语言 / 资产引用 / 对白 + 旁白 / 用户调整方向。
+ * 时长 / 模式 / provider 已从 UI 移除（项目设置 + 分镜定稿即决定，不再这里展示）。
  */
 const finalPromptPreview = computed<string>(() => {
   const sb = props.storyboard
@@ -440,71 +307,24 @@ const finalPromptPreview = computed<string>(() => {
     parts.push(`【调整方向】${userPrompt.value.trim()}`)
   }
 
-  parts.push(`【时长】${durationSec.value}s`)
-  if (modeChoice.value && modeChoice.value !== 'auto') {
-    parts.push(`【模式】${modeChoice.value}`)
-  }
-
-  return parts.length > 0 ? parts.join('\n') : '（暂无内容；先在 ④ 分镜或 ⑤ 镜头描述卡填写画面描述）'
+  return parts.length > 0 ? parts.join('\n') : '（暂无内容；先在 ④ 分镜填写画面描述）'
 })
 
-const selectedProvider = computed(() =>
-  availableProviders.value.find(
-    (p) => p.providerConfigId === selectedProviderConfigId.value,
-  ),
-)
-
+/** 是否具备最低生成条件：必须有 storyboard 和 项目级 video provider/model 配置 */
 const canGenerate = computed(
   () =>
     !generating.value &&
-    selectedProviderConfigId.value !== '' &&
-    selectedModelId.value !== '' &&
+    !!props.providerConfigId &&
+    !!props.modelId &&
     props.storyboard !== null,
 )
 
-function onProviderChange(): void {
-  // 切 provider 时自动选第一个 model
-  const p = selectedProvider.value
-  if (p && p.models.length > 0 && !p.models.find((m) => m.id === selectedModelId.value)) {
-    selectedModelId.value = p.models[0].id
-  }
-}
-
-watch(
-  () => props.storyboard?.duration,
-  (v) => {
-    if (v && v > 0 && v !== durationSec.value) durationSec.value = Math.round(v)
-  },
-  { immediate: true },
-)
-
-async function loadProviders(): Promise<void> {
-  loadingProviders.value = true
-  try {
-    const api = (window as any).electronAPI?.episodeProduction
-    if (!api?.listVideoProviders) {
-      throw new Error('IPC listVideoProviders 未暴露')
-    }
-    const resp = await api.listVideoProviders()
-    if (!resp?.success) throw new Error(resp?.error || '列 provider 失败')
-    availableProviders.value = resp.data as ProviderInfo[]
-    // 默认选中第一个 ready 的
-    if (!selectedProviderConfigId.value) {
-      const first = availableProviders.value.find((p) => p.ready)
-      if (first) {
-        selectedProviderConfigId.value = first.providerConfigId
-        if (first.models.length > 0) selectedModelId.value = first.models[0].id
-      }
-    }
-  } catch (e: any) {
-    ElMessage.error(`加载 provider 列表失败：${e?.message ?? e}`)
-  } finally {
-    loadingProviders.value = false
-  }
-}
-
 async function onGenerate(): Promise<void> {
   if (!props.storyboard) return
+  if (!props.providerConfigId || !props.modelId) {
+    ElMessage.warning('请先在项目设置中配置视频生成模型（providerConfigId + modelId）')
+    return
+  }
   generating.value = true
   errorMessage.value = null
   lastResult.value = null
@@ -513,19 +333,20 @@ async function onGenerate(): Promise<void> {
     if (!api?.generateVideoSegment) {
       throw new Error('IPC generateVideoSegment 未暴露')
     }
+    /*
+     * 简化后的 generate 调用：
+     *   - durationSec: 直接取 storyboard.duration（④ 分镜定稿值）
+     *   - providerConfigId / modelId: 来自项目设置
+     *   - forceMode: 不传 → 走 capability matcher 自动决策
+     *   - userPrompt: 调整方向（用户在本面板填写）
+     */
     const opts: Record<string, unknown> = {
-      durationSec: durationSec.value,
-      providerConfigId: selectedProviderConfigId.value,
-      modelId: selectedModelId.value,
+      providerConfigId: props.providerConfigId,
+      modelId: props.modelId,
     }
-    if (modeChoice.value !== 'auto') opts.forceMode = modeChoice.value
-    // P5-T29 spec §4.5.7：用户额外提示词
-    if (userPrompt.value.trim()) {
-      opts.userPrompt = userPrompt.value.trim()
-    }
-    // props 覆盖（外部父组件强制指定时）
-    if (props.providerConfigId) opts.providerConfigId = props.providerConfigId
-    if (props.modelId) opts.modelId = props.modelId
+    const dur = props.storyboard.duration
+    if (typeof dur === 'number' && dur > 0) opts.durationSec = Math.round(dur)
+    if (userPrompt.value.trim()) opts.userPrompt = userPrompt.value.trim()
 
     const resp = await api.generateVideoSegment(props.storyboard.id, opts)
     if (!resp?.success) throw new Error(resp?.error || '生成失败')
@@ -542,17 +363,6 @@ async function onGenerate(): Promise<void> {
     generating.value = false
   }
 }
-
-function formatCapabilities(c: ProviderCapabilities): string {
-  const parts: string[] = []
-  if (c.text) parts.push('text')
-  if (c.image) parts.push('image')
-  if (c.keyframes) parts.push(`kf×${c.maxKeyframes}`)
-  parts.push(`${c.maxDurationSec}s`)
-  return parts.join(' · ')
-}
-
-onMounted(loadProviders)
 </script>
 
 <style scoped>

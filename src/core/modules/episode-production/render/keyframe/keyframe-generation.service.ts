@@ -367,6 +367,74 @@ export class KeyframeGenerationService {
     })
   }
 
+  /**
+   * 用户在 ⑤ 制作 stage 点"添加关键帧"对话框：
+   *   选定一个 frameIndex（在 1..keyframeCount 范围、当前还没生成的索引）+ 描述（userPrompt），
+   *   生成该索引的单张关键帧。
+   *
+   * 行为：
+   *   - 如果 frameIndex 已存在 → 抛错让 UI 提示用户改用"重生成"
+   *   - 如果 frameIndex 越界（<=0 或 > keyframeCount）→ 抛错
+   *   - 否则按当前 keyframeCount 的 plan 找到该 frameIndex 对应的 plan item，
+   *     调 generateOneKeyframe 生成
+   *
+   * 参考帧依赖完全继承 plan（首帧无参考，末帧参考首帧，中间帧参考首尾）；
+   * 但用户 prompt 会附加到该帧 prompt。
+   */
+  async generateKeyframeAtIndex(input: {
+    storyboardId: string
+    frameIndex: number
+    userPrompt?: string | null
+    styleName?: keyof typeof PRESET_STYLES
+  }): Promise<StoryboardKeyframe> {
+    const sb = await this.sbRepo.findOne({ where: { id: input.storyboardId } })
+    if (!sb) throw new Error(`Storyboard not found: ${input.storyboardId}`)
+    const scene = await this.sceneRepo.findOne({ where: { id: sb.sceneScriptId } })
+    if (!scene) throw new Error(`SceneScript not found: ${sb.sceneScriptId}`)
+
+    const keyframeCount = Math.max(1, sb.keyframeCount ?? 3)
+    if (input.frameIndex < 1 || input.frameIndex > keyframeCount) {
+      throw new Error(
+        `frameIndex=${input.frameIndex} 超出范围 1..${keyframeCount}（当前分镜关键帧数）`,
+      )
+    }
+
+    const existing = await this.keyframeRepo.listByStoryboard(input.storyboardId)
+    const dup = existing.find((k) => k.frameIndex === input.frameIndex)
+    if (dup) {
+      throw new Error(
+        `frameIndex=${input.frameIndex} 已存在关键帧（${dup.id}）；如需替换请用"重生成此帧"`,
+      )
+    }
+
+    const plan = planKeyframes(keyframeCount)
+    const planItem = plan.find((p) => p.frameIndex === input.frameIndex)
+    if (!planItem) {
+      throw new Error(
+        `planKeyframes 未给出 frameIndex=${input.frameIndex} 的 plan item（keyframeCount=${keyframeCount}）`,
+      )
+    }
+
+    const styleConfig = this.pickStyle(input.styleName)
+    const sceneAssets = await this.resolveSceneAssets(scene, sb.id)
+    // 复用 storyboard 级资产参考图覆盖
+    const sbLevelOverrides = parseSbReferenceImageIds((sb as any).referenceImageIds)
+
+    const created = await this.generateOneKeyframe({
+      storyboard: sb,
+      scene,
+      plan: planItem,
+      sceneAssets,
+      styleConfig,
+      userPrompt: input.userPrompt ?? null,
+      referenceOverrides: sbLevelOverrides.length > 0 ? sbLevelOverrides : null,
+    })
+    if (sbLevelOverrides.length > 0) {
+      await this.keyframeRepo.update(created.id, { referenceOverrides: sbLevelOverrides })
+    }
+    return created
+  }
+
   // ─── 内部 ──────────────────────────────────────────────
 
   private pickStyle(name?: keyof typeof PRESET_STYLES): StyleConfig {

@@ -38,8 +38,69 @@
           <el-icon><Refresh /></el-icon>
           全部重新生成
         </el-button>
+        <el-button
+          size="small"
+          :disabled="!storyboardId || addableFrameIndexes.length === 0"
+          :title="addableFrameIndexes.length === 0 ? '所有帧都已生成；如需替换某帧请用单帧重生成' : '在指定帧号生成单张关键帧'"
+          @click="onOpenAddDialog"
+        >
+          <el-icon><Plus /></el-icon>
+          添加关键帧
+        </el-button>
       </div>
     </div>
+
+    <!-- 添加关键帧 dialog · 按 keyframeCount 选帧号 + 描述 → 单帧生成 -->
+    <el-dialog
+      v-model="addDialog.open"
+      title="添加关键帧"
+      width="480px"
+      destroy-on-close
+      append-to-body
+    >
+      <el-form label-position="top" @submit.prevent>
+        <el-form-item label="帧号">
+          <el-select
+            v-model="addDialog.frameIndex"
+            :placeholder="addableFrameIndexes.length === 0 ? '没有可添加的帧号' : '选择 1.. 范围内的帧号'"
+            :disabled="addableFrameIndexes.length === 0"
+            class="full-width"
+          >
+            <el-option
+              v-for="n in addableFrameIndexes"
+              :key="n"
+              :value="n"
+              :label="`第 ${n} 帧 / 共 ${keyframeCount}`"
+            />
+          </el-select>
+          <div class="dialog-hint">
+            可选范围：1..{{ keyframeCount }}（已存在的帧号已自动剔除）
+          </div>
+        </el-form-item>
+        <el-form-item label="该帧描述">
+          <el-input
+            v-model="addDialog.userPrompt"
+            type="textarea"
+            :rows="4"
+            placeholder="例如：少年缓缓抬头，眼神坚定；左侧光线打在脸上"
+            :maxlength="300"
+            show-word-limit
+            resize="none"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="addDialog.open = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="addDialog.submitting"
+          :disabled="addDialog.frameIndex === null || !addDialog.userPrompt.trim()"
+          @click="onSubmitAdd"
+        >
+          生成
+        </el-button>
+      </template>
+    </el-dialog>
 
     <div v-if="loading" class="loading-state">
       <el-icon class="is-loading"><Loading /></el-icon>
@@ -230,6 +291,7 @@ import {
   Loading,
   Location,
   MagicStick,
+  Plus,
   Refresh,
   User,
   ZoomIn,
@@ -287,6 +349,70 @@ const loading = ref(false)
 const generating = ref(false)
 const previewVisible = ref(false)
 const previewKeyframe = ref<Keyframe | null>(null)
+
+/**
+ * 添加关键帧 dialog 状态。
+ * 帧号选项 = 1..keyframeCount 中尚未生成的索引，用户必填；描述也必填。
+ */
+const addDialog = ref<{
+  open: boolean
+  frameIndex: number | null
+  userPrompt: string
+  submitting: boolean
+}>({
+  open: false,
+  frameIndex: null,
+  userPrompt: '',
+  submitting: false,
+})
+
+/** 当前可添加的帧号列表（1..keyframeCount 减去已存在的 frameIndex） */
+const addableFrameIndexes = computed<number[]>(() => {
+  const total = Math.max(1, props.keyframeCount ?? 0)
+  const taken = new Set(keyframes.value.map((k) => k.frameIndex))
+  const free: number[] = []
+  for (let i = 1; i <= total; i++) {
+    if (!taken.has(i)) free.push(i)
+  }
+  return free
+})
+
+function onOpenAddDialog(): void {
+  addDialog.value = {
+    open: true,
+    frameIndex: addableFrameIndexes.value[0] ?? null,
+    userPrompt: '',
+    submitting: false,
+  }
+}
+
+async function onSubmitAdd(): Promise<void> {
+  if (!props.storyboardId) return
+  if (addDialog.value.frameIndex === null) return
+  if (!addDialog.value.userPrompt.trim()) return
+  addDialog.value.submitting = true
+  try {
+    const api = (window as any).electronAPI?.episodeProduction
+    if (!api?.generateKeyframeAtIndex) {
+      ElMessage.error('IPC generateKeyframeAtIndex 未暴露（前端 preload / channel-map 未同步）')
+      return
+    }
+    const resp = await api.generateKeyframeAtIndex(
+      props.storyboardId,
+      addDialog.value.frameIndex,
+      addDialog.value.userPrompt.trim(),
+    )
+    if (!resp?.success) {
+      ElMessage.error(resp?.error || '生成关键帧失败')
+      return
+    }
+    ElMessage.success(`已生成关键帧 #${addDialog.value.frameIndex}`)
+    addDialog.value.open = false
+    await loadKeyframes()
+  } finally {
+    addDialog.value.submitting = false
+  }
+}
 
 // P5-T28 spec §4.5.7 资产组合可视化
 const assetStore = useEpAssetStore()
@@ -561,6 +687,16 @@ defineExpose({ reload: loadKeyframes })
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.dialog-hint {
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
+  margin-top: 4px;
 }
 
 .grid-header {

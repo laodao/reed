@@ -560,6 +560,19 @@
               </el-button>
             </div>
           </div>
+
+          <!-- 本分镜音频（旁白 + 对白）— 按 storyboard.dialogueIds / narrationId 过滤 -->
+          <AudioPanel
+            v-if="selectedScene && selectedStoryboard"
+            :key="`audio-${selectedStoryboard.id}`"
+            :scene-id="selectedScene.id"
+            :scene="selectedScene"
+            :storyboard="{
+              id: selectedStoryboard.id,
+              dialogueIds: selectedStoryboard.dialogueIds,
+              narrationId: selectedStoryboard.narrationId,
+            }"
+          />
         </section>
       </main>
     </div>
@@ -579,6 +592,7 @@ import {
 } from '@element-plus/icons-vue'
 import StageMainHeader from '../shared/StageMainHeader.vue'
 import EntityRefRenderer from '../shared/EntityRefRenderer.vue'
+import AudioPanel from '../stage-production/AudioPanel.vue'
 import type { EntityRefMeta } from '../shared/entity-ref-parser'
 import {
   useEpEpisodeStore,

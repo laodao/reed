@@ -7,9 +7,9 @@
     ✓ 双栏 220px scene-tree（替换原 horizontal pill）+ 1fr 主区域
     ✓ 镜头语言 panel inline（4 selector + 关键帧数 1-9 visual + 启用 3D 摆位 占位）
     ✓ 九宫格 KeyframeGrid wrapper：时间轴 bar + kf-role 比例 + 参考链顺序 banner
-    ✓ 资产引用 panel + 提示词组装公式（spec §4.5.7 用户提示词全链路）
-    ✓ 视频生成 VideoSegmentPanel（真实 provider / 模式 / 状态 — 已实现）
-    ✓ 音频 AudioPanel（真实 旁白 / 对话 / BGM — 已实现）
+    ✓ 上半部分双列布局：左 2/3（分镜信息 / 关键帧序列 / 视频生成）+ 右 1/3 视频预览
+    ✓ 底部 full-width 资产卡（缩略图）+ 提示词组装公式
+    ✓ AudioPanel 已迁回 ④ 分镜界面，按 storyboard.dialogueIds / narrationId 过滤
 
     所有按钮真实接 IPC，不留 ElMessage stub：
     - 镜头语言保存 → ep:update-storyboard（FU5-E1 已有）
@@ -70,8 +70,11 @@
         </div>
       </aside>
 
-      <!-- 右：主区域 -->
+      <!-- 右：主区域 — 上半部分左右两栏，底部 full-width 资产卡 -->
       <main class="main-area" v-if="selectedStoryboard">
+       <div class="upper-split">
+        <!-- 左列（2/3）：分镜信息 + 关键帧序列 + 视频生成 -->
+        <div class="upper-left">
         <!-- 分镜语言 panel · 只读展示
              所有镜头参数 / 关键帧数 / 生成模式都在 ④ 分镜界面定稿，这里仅展示。
              如需修改请回 ④ 分镜界面。 -->
@@ -156,76 +159,126 @@
           </div>
         </section>
 
-        <!-- 资产引用 + 场景音频 一行两栏（在大屏并排，<1100px 退化为单列） -->
-        <div class="ref-audio-row">
-          <!-- 资产引用 panel + 提示词组装公式（spec §4.5.7 P0） -->
-          <section class="panel asset-ref-panel ref-audio-cell">
-            <header class="panel-header">
-              <span class="panel-title">本分镜引用的资产</span>
-              <span class="panel-hint">— 点击查看图谱</span>
-            </header>
-            <div class="ref-tags">
-              <el-tag
-                v-if="locationRef"
-                type="success"
-                effect="light"
-                class="ref-tag"
-                :class="{ clickable: !!locationRefBindingId, picked: hasPickedImage('location', locationRefBindingId) }"
-                :title="locationRefBindingId ? (hasPickedImage('location', locationRefBindingId) ? '已选定参考图 · 点击查看 / 修改' : '点击挑选地点参考图') : '该地点未在 ② 资产中创建'"
-                @click="locationRefBindingId && openAssetImages('location', locationRefBindingId, locationRef)"
-              >📍 {{ locationRef }}<span v-if="hasPickedImage('location', locationRefBindingId)" class="picked-dot" /></el-tag>
-              <el-tag
-                v-for="(c, i) in characterRefs"
-                :key="`c-${i}-${c.name}`"
-                type="primary"
-                effect="light"
-                class="ref-tag"
-                :class="{ clickable: !!c.bindingId, picked: hasPickedImage('character', c.bindingId) }"
-                :title="c.bindingId ? (hasPickedImage('character', c.bindingId) ? '已选定参考图 · 点击查看 / 修改' : '点击挑选角色参考图') : '该角色未在 ② 资产中创建'"
-                @click="c.bindingId && openAssetImages('character', c.bindingId, c.name)"
-              >👤 {{ c.name }}<span v-if="c.expression"> · {{ c.expression }}</span><span v-if="hasPickedImage('character', c.bindingId)" class="picked-dot" /></el-tag>
-              <el-tag
-                v-for="(it, i) in itemRefs"
-                :key="`it-${i}-${it.name}`"
-                type="warning"
-                effect="light"
-                class="ref-tag"
-                :class="{ clickable: !!it.bindingId, picked: hasPickedImage('item', it.bindingId) }"
-                :title="it.bindingId ? (hasPickedImage('item', it.bindingId) ? '已选定参考图 · 点击查看 / 修改' : '点击挑选物品参考图') : '该物品未在 ② 资产中创建'"
-                @click="it.bindingId && openAssetImages('item', it.bindingId, it.name)"
-              >⚔️ {{ it.name }}<span v-if="hasPickedImage('item', it.bindingId)" class="picked-dot" /></el-tag>
-              <span v-if="!locationRef && characterRefs.length === 0 && itemRefs.length === 0" class="hint-tertiary">
-                本分镜暂无资产引用
-              </span>
-            </div>
-            <div class="prompt-formula">
-              每张关键帧自动按以下公式组装提示词：
-              <code class="formula-code">
-                style_anchor + 镜头语言 + 场景描述 + 地点变体图 + 角色图 + 物品图 + 上一帧
-                <span v-if="hasUserPrompt"> + [user direction]</span>
-              </code>
-            </div>
-          </section>
-
-          <!-- 音频 AudioPanel 复用（真实 旁白 + 对话 + BGM） -->
-          <div class="ref-audio-cell">
-            <AudioPanel
-              v-if="selectedScene"
-              :key="`audio-${selectedScene.id}`"
-              :scene-id="selectedScene.id"
-              :scene="selectedScene"
-            />
-          </div>
-        </div>
-
-        <!-- 视频生成 VideoSegmentPanel 复用（真实 provider + 模式 + 状态） -->
+        <!-- 视频生成 VideoSegmentPanel · 左列底部 -->
         <VideoSegmentPanel
           v-if="selectedStoryboard"
           :key="`vsp-${selectedStoryboardId}`"
           :storyboard="selectedStoryboard"
           :provider-config-id="videoModelProviderConfigId"
+          :model-id="videoModelId"
           @generated="onVideoDone"
         />
+        </div>
+
+        <!-- 右列（1/3）：视频预览（取最新生成视频或 storyboard.videoPath） -->
+        <aside class="upper-right">
+          <section class="panel video-preview-panel">
+            <header class="panel-header">
+              <span class="panel-title">视频预览</span>
+              <span v-if="latestVideoPath" class="panel-hint">— {{ selectedSceneIndex + 1 }}.{{ selectedStoryboard.shotNumber }}</span>
+            </header>
+            <div v-if="latestVideoPath" class="video-preview-body">
+              <video
+                :key="latestVideoPath"
+                :src="toVideoUrl(latestVideoPath)"
+                controls
+                preload="metadata"
+                class="video-preview-player"
+              />
+              <div class="video-preview-meta" :title="latestVideoPath">{{ latestVideoPath }}</div>
+            </div>
+            <div v-else class="video-preview-empty">
+              <el-icon><VideoCamera /></el-icon>
+              <span>本分镜还没有视频，点左侧"生成视频片段"</span>
+            </div>
+          </section>
+        </aside>
+       </div>
+
+        <!-- 底部 full-width：本分镜引用的资产（缩略图卡片） -->
+        <section class="panel asset-ref-panel">
+          <header class="panel-header">
+            <span class="panel-title">本分镜引用的资产</span>
+            <span class="panel-hint">— 点击缩略图为该资产挑选参考图（覆盖默认评分挑图）</span>
+          </header>
+          <div class="ref-thumbs">
+            <article
+              v-if="locationRef"
+              class="ref-thumb"
+              :class="{ clickable: !!locationRefBindingId, picked: hasPickedImage('location', locationRefBindingId) }"
+              :title="locationRefBindingId ? (hasPickedImage('location', locationRefBindingId) ? '已选定参考图 · 点击查看 / 修改' : '点击挑选地点参考图') : '该地点未在 ② 资产中创建'"
+              @click="locationRefBindingId && openAssetImages('location', locationRefBindingId, locationRef)"
+            >
+              <div class="ref-thumb-frame">
+                <img
+                  v-if="getMainAssetThumbnail('location', locationRefBindingId)"
+                  :src="toImageUrl(getMainAssetThumbnail('location', locationRefBindingId)!)"
+                  :alt="locationRef"
+                />
+                <div v-else class="ref-thumb-emoji">📍</div>
+                <span v-if="hasPickedImage('location', locationRefBindingId)" class="ref-thumb-picked">已挑图</span>
+              </div>
+              <div class="ref-thumb-meta">
+                <el-tag size="small" type="success" effect="light">地点</el-tag>
+                <span class="ref-thumb-name" :title="locationRef">{{ locationRef }}</span>
+              </div>
+            </article>
+            <article
+              v-for="(c, i) in characterRefs"
+              :key="`c-${i}-${c.name}`"
+              class="ref-thumb"
+              :class="{ clickable: !!c.bindingId, picked: hasPickedImage('character', c.bindingId) }"
+              :title="c.bindingId ? (hasPickedImage('character', c.bindingId) ? '已选定参考图 · 点击查看 / 修改' : '点击挑选角色参考图') : '该角色未在 ② 资产中创建'"
+              @click="c.bindingId && openAssetImages('character', c.bindingId, c.name)"
+            >
+              <div class="ref-thumb-frame">
+                <img
+                  v-if="getMainAssetThumbnail('character', c.bindingId)"
+                  :src="toImageUrl(getMainAssetThumbnail('character', c.bindingId)!)"
+                  :alt="c.name"
+                />
+                <div v-else class="ref-thumb-emoji">👤</div>
+                <span v-if="hasPickedImage('character', c.bindingId)" class="ref-thumb-picked">已挑图</span>
+              </div>
+              <div class="ref-thumb-meta">
+                <el-tag size="small" type="primary" effect="light">角色</el-tag>
+                <span class="ref-thumb-name" :title="c.name">{{ c.name }}<span v-if="c.expression"> · {{ c.expression }}</span></span>
+              </div>
+            </article>
+            <article
+              v-for="(it, i) in itemRefs"
+              :key="`it-${i}-${it.name}`"
+              class="ref-thumb"
+              :class="{ clickable: !!it.bindingId, picked: hasPickedImage('item', it.bindingId) }"
+              :title="it.bindingId ? (hasPickedImage('item', it.bindingId) ? '已选定参考图 · 点击查看 / 修改' : '点击挑选物品参考图') : '该物品未在 ② 资产中创建'"
+              @click="it.bindingId && openAssetImages('item', it.bindingId, it.name)"
+            >
+              <div class="ref-thumb-frame">
+                <img
+                  v-if="getMainAssetThumbnail('item', it.bindingId)"
+                  :src="toImageUrl(getMainAssetThumbnail('item', it.bindingId)!)"
+                  :alt="it.name"
+                />
+                <div v-else class="ref-thumb-emoji">⚔️</div>
+                <span v-if="hasPickedImage('item', it.bindingId)" class="ref-thumb-picked">已挑图</span>
+              </div>
+              <div class="ref-thumb-meta">
+                <el-tag size="small" type="warning" effect="light">物品</el-tag>
+                <span class="ref-thumb-name" :title="it.name">{{ it.name }}</span>
+              </div>
+            </article>
+            <span v-if="!locationRef && characterRefs.length === 0 && itemRefs.length === 0" class="hint-tertiary">
+              本分镜暂无资产引用
+            </span>
+          </div>
+          <div class="prompt-formula">
+            每张关键帧自动按以下公式组装提示词：
+            <code class="formula-code">
+              style_anchor + 镜头语言 + 场景描述 + 地点变体图 + 角色图 + 物品图 + 上一帧
+              <span v-if="hasUserPrompt"> + [user direction]</span>
+            </code>
+          </div>
+        </section>
       </main>
 
       <main v-else class="main-area-empty">
@@ -295,12 +348,11 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { InfoFilled, Loading, Lock, Select } from '@element-plus/icons-vue'
-import { toImageUrl } from '@/utils/asset-url'
+import { InfoFilled, Loading, Lock, Select, VideoCamera } from '@element-plus/icons-vue'
+import { toImageUrl, toVideoUrl } from '@/utils/asset-url'
 import StageMainHeader from '../shared/StageMainHeader.vue'
 import KeyframeGrid from '../stage-production/KeyframeGrid.vue'
 import VideoSegmentPanel from '../stage-production/VideoSegmentPanel.vue'
-import AudioPanel from '../stage-production/AudioPanel.vue'
 import {
   useEpEpisodeStore,
   useEpScriptStore,
@@ -499,6 +551,26 @@ const videoModelProviderConfigId = computed(
   () => projectStore.currentProject?.config?.videoModel?.providerConfigId ?? null,
 )
 
+const videoModelId = computed(
+  () => projectStore.currentProject?.config?.videoModel?.modelId ?? null,
+)
+
+/**
+ * 右侧视频预览：优先用本会话最新生成的 videoPath（onVideoDone 回填），
+ * 其次回退到 storyboard.videoPath（持久化的）；两者都没则空。
+ */
+const latestGeneratedPath = ref<string | null>(null)
+const latestVideoPath = computed<string | null>(
+  () => latestGeneratedPath.value || (selectedStoryboard.value as any)?.videoPath || null,
+)
+
+watch(
+  () => selectedStoryboardId.value,
+  () => {
+    latestGeneratedPath.value = null
+  },
+)
+
 function selectScene(id: string): void {
   selectedSceneId.value = id
   void loadStoryboardsForSelected()
@@ -545,11 +617,43 @@ async function refreshCurrentKeyframes(): Promise<void> {
 
 watch(() => selectedStoryboardId.value, () => void refreshCurrentKeyframes(), { immediate: true })
 
-function onVideoDone(_videoPath: string): void {
-  // VideoSegmentPanel 完成后刷新 storyboards 拿新 videoPath
+function onVideoDone(videoPath: string): void {
+  // 立即让右侧预览区刷新；同时 reload storyboards 让 storyboard.videoPath 持久化值同步
+  latestGeneratedPath.value = videoPath || null
   if (selectedScene.value) {
     void storyboardStore.loadStoryboards(selectedScene.value.id)
   }
+}
+
+/**
+ * 取某资产 binding 的"主图"作为缩略图（用于资产卡的缩略图展示）。
+ * 顺序：portraitId / portrait 字段 → 第一张可见图。
+ *
+ * 当前 epAssetCharacters / epAssetLocations / epAssetItems 数组中每条 binding 的
+ * 主图字段命名不统一（character 用 portraitId / portrait；location/item 可能用 mainImage），
+ * 这里用宽松的字段查找：portrait → portraitPath → mainImagePath → mainImage.imagePath。
+ */
+function getMainAssetThumbnail(
+  kind: 'character' | 'location' | 'item',
+  bindingId: string | null | undefined,
+): string | null {
+  if (!bindingId) return null
+  const list =
+    kind === 'character'
+      ? assetStore.epAssetCharacters
+      : kind === 'location'
+        ? assetStore.epAssetLocations
+        : assetStore.epAssetItems
+  const b: any = (list as any[])?.find((x: any) => x.id === bindingId)
+  if (!b) return null
+  return (
+    b.portrait ??
+    b.portraitPath ??
+    b.mainImagePath ??
+    b.mainImage?.imagePath ??
+    b.mainImage?.thumbnailPath ??
+    null
+  )
 }
 
 function getStatusClass(sb: any): string {
@@ -946,22 +1050,163 @@ async function persistReferenceImageIds(
   font-size: 12px;
 }
 
-/* 资产引用 + 场景音频一行两栏 */
-.ref-audio-row {
+/* 上半部分左右两栏：左 2/3 装信息+关键帧+视频生成；右 1/3 视频预览 */
+.upper-split {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 2fr 1fr;
   gap: 12px;
-  align-items: stretch;
+  align-items: start;
 }
 
-.ref-audio-cell {
+.upper-left {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   min-width: 0;
 }
 
+.upper-right {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  position: sticky;
+  top: 0;
+}
+
 @media (max-width: 1100px) {
-  .ref-audio-row {
+  .upper-split {
     grid-template-columns: 1fr;
   }
+  .upper-right {
+    position: static;
+  }
+}
+
+/* 视频预览面板 */
+.video-preview-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.video-preview-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.video-preview-player {
+  width: 100%;
+  background: #000;
+  border-radius: 4px;
+  display: block;
+  outline: none;
+  aspect-ratio: 16 / 9;
+}
+
+.video-preview-meta {
+  font-family: monospace;
+  font-size: 10px;
+  color: var(--el-text-color-placeholder);
+  word-break: break-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.video-preview-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 30px 12px;
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+  text-align: center;
+}
+
+.video-preview-empty .el-icon {
+  font-size: 32px;
+}
+
+/* 底部资产缩略图卡 */
+.ref-thumbs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.ref-thumb {
+  background: var(--el-fill-color-lighter);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  overflow: hidden;
+  transition: all 0.15s;
+}
+
+.ref-thumb.clickable {
+  cursor: pointer;
+}
+
+.ref-thumb.clickable:hover {
+  border-color: var(--el-color-primary-light-5);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.ref-thumb.picked {
+  border-color: var(--el-color-success);
+  box-shadow: 0 0 0 1px var(--el-color-success-light-7);
+}
+
+.ref-thumb-frame {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  background: linear-gradient(135deg, var(--el-fill-color), var(--el-fill-color-light));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ref-thumb-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ref-thumb-emoji {
+  font-size: 36px;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.15));
+}
+
+.ref-thumb-picked {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: var(--el-color-success);
+  color: #fff;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.ref-thumb-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.ref-thumb-name {
+  color: var(--el-text-color-primary);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hint-tertiary {

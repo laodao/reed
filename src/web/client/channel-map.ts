@@ -412,6 +412,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.getStoryboard': { channel: 'ep:get-storyboard' },
   'episodeProduction.updateStoryboard': { channel: 'ep:update-storyboard' },
   'episodeProduction.reorderStoryboards': { channel: 'ep:reorder-storyboards' },
+  'episodeProduction.deleteStoryboard': { channel: 'ep:delete-storyboard' },
   // FU5-A9-L2 分镜背景 ref（panorama_snapshot 绑入分镜）
   'episodeProduction.setStoryboardBackgroundRef': { channel: 'ep:storyboard:set-background-ref' },
   'episodeProduction.getStoryboardBackgroundRef': { channel: 'ep:storyboard:get-background-ref' },
@@ -419,6 +420,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.generateScenes': { channel: 'ep:generate-scenes' },
   'episodeProduction.generateStoryboard': { channel: 'ep:generate-storyboard' },
   'episodeProduction.generateStoryboards': { channel: 'ep:generate-storyboards' },
+  // spec 2026-05-08：场景级 AI 润色
+  'episodeProduction.polishScene': { channel: 'ep:polish-scene' },
   // P4-T6 引用解析 + 完整性校验
   'episodeProduction.resolveReference': { channel: 'ep:resolve-reference' },
   'episodeProduction.resolveReferencesBatch': { channel: 'ep:resolve-references-batch' },
@@ -430,6 +433,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.listKeyframes': { channel: 'ep:list-keyframes' },
   'episodeProduction.planKeyframeRegen': { channel: 'ep:plan-keyframe-regen' },
   'episodeProduction.insertKeyframeBetween': { channel: 'ep:insert-keyframe-between' },
+  'episodeProduction.generateKeyframeAtIndex': { channel: 'ep:generate-keyframe-at-index' },
   'episodeProduction.setKeyframeReferenceOverrides': { channel: 'ep:set-keyframe-reference-overrides' },
   'episodeProduction.listAssetImages': { channel: 'ep:list-asset-images' },
   // P5-T13 视频片段

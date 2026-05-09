@@ -27,6 +27,8 @@ export function registerKeyframeHandlers(): void {
   ipcBridge.handle('ep:plan-keyframe-regen', handlePlanKeyframeRegen)
   // 在两帧之间插入一帧
   ipcBridge.handle('ep:insert-keyframe-between', handleInsertKeyframeBetween)
+  // 在指定 frameIndex 生成单张关键帧（用户在 ⑤ 制作 stage "添加关键帧"对话框）
+  ipcBridge.handle('ep:generate-keyframe-at-index', handleGenerateKeyframeAtIndex)
   // 阶段 2：用户为某帧挑图 override
   ipcBridge.handle('ep:set-keyframe-reference-overrides', handleSetKeyframeReferenceOverrides)
   // 阶段 2 配套：列某资产下全部图（让前端"挑图"dialog 渲染网格）
@@ -109,6 +111,28 @@ async function handleInsertKeyframeBetween(
   } catch (e: any) {
     console.error('[handleInsertKeyframeBetween] 失败:', e)
     return { success: false, error: e?.message ?? '插入关键帧失败' }
+  }
+}
+
+async function handleGenerateKeyframeAtIndex(
+  _event: any,
+  storyboardId: string,
+  frameIndex: number,
+  userPrompt?: string,
+): Promise<IpcResponse> {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+    const svc = new KeyframeGenerationService(db.dataSource)
+    const created = await svc.generateKeyframeAtIndex({
+      storyboardId,
+      frameIndex,
+      userPrompt: userPrompt ?? null,
+    })
+    return { success: true, data: created }
+  } catch (e: any) {
+    console.error('[handleGenerateKeyframeAtIndex] 失败:', e)
+    return { success: false, error: e?.message ?? '生成关键帧失败' }
   }
 }
 

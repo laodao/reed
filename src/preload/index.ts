@@ -154,11 +154,14 @@ const IPC_CHANNELS = {
   EP_GET_STORYBOARD: 'ep:get-storyboard',
   EP_UPDATE_STORYBOARD: 'ep:update-storyboard',
   EP_REORDER_STORYBOARDS: 'ep:reorder-storyboards',
+  EP_DELETE_STORYBOARD: 'ep:delete-storyboard',
 
   EP_GENERATE_SCRIPT: 'ep:generate-script',
   EP_GENERATE_SCENES: 'ep:generate-scenes',
   EP_GENERATE_STORYBOARD: 'ep:generate-storyboard',
   EP_GENERATE_STORYBOARDS: 'ep:generate-storyboards',
+  // spec 2026-05-08：场景级 AI 润色
+  EP_POLISH_SCENE: 'ep:polish-scene',
 
   // P4-T6 引用解析 + 完整性校验
   EP_RESOLVE_REFERENCE: 'ep:resolve-reference',
@@ -172,6 +175,7 @@ const IPC_CHANNELS = {
   EP_LIST_KEYFRAMES: 'ep:list-keyframes',
   EP_PLAN_KEYFRAME_REGEN: 'ep:plan-keyframe-regen',
   EP_INSERT_KEYFRAME_BETWEEN: 'ep:insert-keyframe-between',
+  EP_GENERATE_KEYFRAME_AT_INDEX: 'ep:generate-keyframe-at-index',
   EP_SET_KEYFRAME_REFERENCE_OVERRIDES: 'ep:set-keyframe-reference-overrides',
   EP_LIST_ASSET_IMAGES: 'ep:list-asset-images',
 
@@ -1633,8 +1637,9 @@ const electronAPI = {
       uploadedContent?: string
       episodeNumber: number
       title: string
-      providerConfigId?: string
-      modelId?: string
+      storyEra?: string
+      storyRegion?: string
+      storyBackgroundExtra?: string
     }) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_CREATE_EPISODE, projectId, data),
     updateEpisode: (episodeId: string, data: { title?: string; status?: string; duration?: number; scriptId?: string }) =>
@@ -1674,6 +1679,8 @@ const electronAPI = {
         sceneScriptId,
         orderedIds,
       ),
+    deleteStoryboard: (storyboardId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_DELETE_STORYBOARD, storyboardId),
     /** FU5-A9-L2 ④ 分镜配置时绑 panorama_snapshot 作背景 ref（spec §4.5.10） */
     setStoryboardBackgroundRef: (storyboardId: string, imageId: string | null) =>
       ipcRenderer.invoke(
@@ -1693,6 +1700,10 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.EP_GENERATE_STORYBOARD, sceneId, providerConfigId, modelId),
     generateStoryboards: (scriptId: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_GENERATE_STORYBOARDS, scriptId, providerConfigId, modelId),
+
+    // spec 2026-05-08：场景级 AI 润色 — 不直接落库，返回字段子集让前端 SceneEditDialog 对比
+    polishScene: (sceneId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_POLISH_SCENE, sceneId, providerConfigId, modelId),
 
     // P4-T6 引用解析 + 完整性校验
     resolveReference: (kind: 'character' | 'location' | 'item', bindingId: string) =>
@@ -1740,6 +1751,18 @@ const electronAPI = {
         IPC_CHANNELS.EP_INSERT_KEYFRAME_BETWEEN,
         storyboardId,
         afterKeyframeId,
+        userPrompt,
+      ),
+    /** 在指定 frameIndex 生成单张关键帧（"添加关键帧"对话框入口） */
+    generateKeyframeAtIndex: (
+      storyboardId: string,
+      frameIndex: number,
+      userPrompt?: string,
+    ) =>
+      ipcRenderer.invoke(
+        IPC_CHANNELS.EP_GENERATE_KEYFRAME_AT_INDEX,
+        storyboardId,
+        frameIndex,
         userPrompt,
       ),
     setKeyframeReferenceOverrides: (

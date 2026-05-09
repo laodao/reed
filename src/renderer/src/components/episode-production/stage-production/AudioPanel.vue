@@ -12,7 +12,7 @@
   -->
   <div class="audio-panel">
     <div class="panel-header">
-      <h4>场景音频</h4>
+      <h4>{{ storyboard ? '本分镜音频' : '场景音频' }}</h4>
       <el-button
         v-if="sceneId"
         size="small"
@@ -27,6 +27,12 @@
 
     <div v-if="!sceneId" class="empty-state">
       请先选择一个场景
+    </div>
+    <div
+      v-else-if="storyboard && !narration && dialogues.length === 0"
+      class="empty-state"
+    >
+      本分镜没有关联的旁白 / 对白
     </div>
 
     <div v-else>
@@ -114,6 +120,13 @@ interface SceneInput {
   dialogues?: Dialogue[]
 }
 
+/** 分镜级筛选：只显示该分镜引用的旁白 + 对话 */
+interface StoryboardScope {
+  id: string
+  narrationId?: string | null
+  dialogueIds?: string[] | null
+}
+
 interface OrchestrateResult {
   narrationPath: string | null
   dialoguePaths: Record<string, string>
@@ -123,6 +136,12 @@ interface OrchestrateResult {
 const props = defineProps<{
   sceneId: string | null
   scene?: SceneInput | null
+  /**
+   * 当前分镜（可选）。传入后 AudioPanel 仅显示该分镜引用的旁白 + 对白
+   * （对话按 storyboard.dialogueIds 过滤；旁白仅当 storyboard.narrationId 非空才显示）。
+   * 不传则展示场景全部对白（兼容旧调用方）。
+   */
+  storyboard?: StoryboardScope | null
 }>()
 
 const emit = defineEmits<{
@@ -135,25 +154,42 @@ const generating = ref(false)
 const result = ref<OrchestrateResult | null>(null)
 const errorMessage = ref<string | null>(null)
 
+/**
+ * 旁白显示规则：
+ *   - 传了 storyboard：只在 storyboard.narrationId 非空时才显示场景旁白文本
+ *     （storyboard.narrationId 是分镜从 AI 生成时拿到的 narration ref；空则代表本分镜不含旁白）
+ *   - 没传 storyboard：兼容旧逻辑，只要场景有 narration 就显示
+ */
 const narration = computed(() => {
   const text = props.scene?.narration ?? ''
   if (!text) return null
+  if (props.storyboard && !props.storyboard.narrationId) return null
   return {
     text,
     audioPath: result.value?.narrationPath ?? null,
   }
 })
 
+/**
+ * 对话显示规则：
+ *   - 传了 storyboard：只显示 dialogueIds 列表里包含的对话；空数组 → 不显示
+ *   - 没传 storyboard：兼容旧逻辑，显示场景全部对话
+ */
 const dialogues = computed<Dialogue[]>(() => {
   const arr = props.scene?.dialogues ?? []
-  return arr.map((d) => ({
+  let scoped = arr
+  if (props.storyboard) {
+    const allow = new Set(props.storyboard.dialogueIds ?? [])
+    scoped = arr.filter((d) => allow.has(d.id))
+  }
+  return scoped.map((d) => ({
     ...d,
     audioPath: result.value?.dialoguePaths[d.id] ?? d.audioPath ?? null,
   }))
 })
 
-/** 本场景应该尝试生成的对话条数（来自 scene.dialogues 数组） */
-const dialogueAttempted = computed(() => (props.scene?.dialogues ?? []).length)
+/** 本面板应尝试生成的对话条数（受 storyboard 过滤） */
+const dialogueAttempted = computed(() => dialogues.value.length)
 
 /** 实际成功生成的对话条数（含 fallback 也算成功 — 至少出了音频） */
 const dialogueSucceeded = computed(
@@ -192,7 +228,8 @@ function toAudioUrl(p: string | null | undefined): string {
  * 任一对话两条路径都没有 → 列出具体未绑定音色的角色名让用户去修。
  */
 function findCharactersMissingVoice(): string[] {
-  const dlgs = props.scene?.dialogues ?? []
+  // 用过滤后的 dialogues（按 storyboard 范围）— 不在本分镜的对白没必要校验
+  const dlgs = dialogues.value
   if (dlgs.length === 0) return []
   const bindings = (assetStore.epAssetCharacters as any[]) ?? []
   const missing = new Set<string>()
@@ -226,12 +263,21 @@ async function onGenerateAll(): Promise<void> {
     if (!api?.generateSceneAudioV3) {
       throw new Error('IPC generateSceneAudioV3 未暴露')
     }
+    /*
+     * 注：generateSceneAudioV3 仍处理整个 scene 的对话与旁白（数据本身就在 scene 级），
+     * 但本面板按 storyboard 过滤后只展示 / 校验本分镜涉及的部分。
+     * 后端结果回填后在 dialoguePaths/narrationPath 里挑出本分镜的回放即可。
+     */
     const resp = await api.generateSceneAudioV3(props.sceneId, {})
     if (!resp?.success) throw new Error(resp?.error || '生成失败')
     result.value = resp.data as OrchestrateResult
     emit('generated', result.value)
-    const attempted = (props.scene?.dialogues ?? []).length
-    const succeeded = Object.keys(result.value.dialoguePaths).length
+    // 仅以本分镜过滤后的对白条数作为成败口径
+    const attempted = dialogues.value.length
+    const dialoguePathIds = result.value.dialoguePaths
+      ? new Set(Object.keys(result.value.dialoguePaths))
+      : new Set<string>()
+    const succeeded = dialogues.value.filter((d) => dialoguePathIds.has(d.id)).length
     const failed = Math.max(0, attempted - succeeded)
     if (attempted === 0) {
       ElMessage.success('本场景无对话；旁白处理完成')
