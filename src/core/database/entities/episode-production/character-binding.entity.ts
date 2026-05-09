@@ -125,6 +125,14 @@ export class CharacterBindingEntity {
   @Column({ name: 'reference_image_path', type: 'text', nullable: true })
   referenceImagePath!: string | null
 
+  /**
+   * 角色形象组 — asset_image.id 列表 JSON 字符串（spec 2026-05-09 ep-redesign §3.2 D1 · P-9）。
+   * 用户标记的"作为生图稳定参考"的图集合；推理时全部喂给 provider 的 multi-reference 入参。
+   * NULL = 默认（service 解析时 fallback 到 "main + 所有 view" 类目）。
+   */
+  @Column({ name: 'reference_set_image_ids', type: 'text', nullable: true })
+  referenceSetImageIds!: string | null
+
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 

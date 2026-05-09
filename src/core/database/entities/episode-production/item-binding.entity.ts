@@ -82,6 +82,10 @@ export class ItemBindingEntity {
   @Column({ name: 'reference_image_path', type: 'text', nullable: true })
   referenceImagePath!: string | null
 
+  /** 形象组（spec 2026-05-09 ep-redesign §3.2 D1）；详见 character-binding.entity 注释 */
+  @Column({ name: 'reference_set_image_ids', type: 'text', nullable: true })
+  referenceSetImageIds!: string | null
+
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 

@@ -505,6 +505,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-storyboard-metadata'
     )
     await addStoryboardMetadata(this.dataSource)
+    // 资产 binding 形象组：spec 2026-05-09 ep-redesign §3.2 D1 · multi-reference 替代 LoRA
+    const { addCharacterBindingReferenceSet } = await import(
+      '@core/database/migrations/add-character-binding-reference-set'
+    )
+    await addCharacterBindingReferenceSet(this.dataSource)
     // 分镜 location_binding_ids + item_binding_ids：分镜级地点 / 物品手动添加
     const { addStoryboardLocationItemBindings } = await import(
       '@core/database/migrations/add-storyboard-location-item-bindings'

@@ -177,6 +177,101 @@ export class CharacterAssetService {
     } as any)
   }
 
+  /**
+   * 设置角色形象组（spec 2026-05-09 ep-redesign §3.2 D1 · P-9）。
+   *
+   * @param bindingId character_bindings.id
+   * @param imageIds asset_image.id 列表（必须属于该 binding）；空数组 = 重置为默认（NULL）
+   * @returns 更新后的 binding 实体
+   *
+   * 校验：所有 imageIds 必须属于该 binding（asset_type='character' AND asset_id=bindingId）；
+   * 任一不属于则抛错。
+   */
+  async setReferenceSet(
+    bindingId: string,
+    imageIds: string[],
+  ): Promise<CharacterBindingEntity | null> {
+    const binding = await this.getById(bindingId)
+    if (!binding) throw new Error(`character binding 不存在：${bindingId}`)
+
+    if (imageIds.length === 0) {
+      // 空数组 = 重置为默认（NULL → service 解析时 fallback 到 main+view）
+      await this.bindingRepo.update(bindingId, {
+        referenceSetImageIds: null,
+        updatedAt: new Date(),
+      } as any)
+      return await this.getById(bindingId)
+    }
+
+    // 校验所有 imageIds 属于该 binding
+    const { AssetImageEntity } = await import('@core/database/entities/episode-production/asset-image.entity')
+    const repo = this.ds.getRepository(AssetImageEntity)
+    for (const id of imageIds) {
+      const img = await repo.findOne({ where: { id } })
+      if (!img) throw new Error(`asset_image 不存在：${id}`)
+      if (img.assetType !== 'character' || img.assetId !== bindingId) {
+        throw new Error(`asset_image ${id} 不属于该角色 binding`)
+      }
+    }
+
+    await this.bindingRepo.update(bindingId, {
+      referenceSetImageIds: JSON.stringify(imageIds),
+      updatedAt: new Date(),
+    } as any)
+    return await this.getById(bindingId)
+  }
+
+  /**
+   * 解析角色形象组实际生效的 image 路径列表（spec 2026-05-09 ep-redesign §3.2 D1）。
+   *
+   * 逻辑：
+   *   1. 取 binding.referenceSetImageIds；非空 → 解析 JSON → 按 id 查 asset_image.imagePath
+   *   2. 为空 → fallback 到默认策略：main + 所有 view 类目
+   *   3. 过滤掉不存在的 id（用户可能删过对应 asset_image）
+   *
+   * @returns 绝对路径数组（生图调用方喂给 provider 的 multi-reference 入参）
+   */
+  async getEffectiveReferenceImages(bindingId: string): Promise<string[]> {
+    const binding = await this.getById(bindingId)
+    if (!binding) return []
+
+    const { AssetImageEntity } = await import('@core/database/entities/episode-production/asset-image.entity')
+    const repo = this.ds.getRepository(AssetImageEntity)
+
+    // 用户标记 → 优先用
+    if (binding.referenceSetImageIds) {
+      let ids: string[]
+      try {
+        const v = JSON.parse(binding.referenceSetImageIds)
+        ids = Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []
+      } catch {
+        ids = []
+      }
+      const paths: string[] = []
+      for (const id of ids) {
+        const img = await repo.findOne({ where: { id } })
+        if (img?.imagePath) paths.push(img.imagePath)
+      }
+      if (paths.length > 0) return paths
+      // 用户标记的图全删了 → 落到默认策略
+    }
+
+    // 默认策略：main（isMain=1）+ 所有 view 类目
+    const all = await repo.find({
+      where: { assetType: 'character', assetId: bindingId },
+    })
+    const main = all.find((i) => i.isMain === 1)
+    const views = all.filter((i) => i.category === 'view')
+    const paths: string[] = []
+    if (main) paths.push(main.imagePath)
+    for (const v of views) {
+      if (v.imagePath && !paths.includes(v.imagePath)) {
+        paths.push(v.imagePath)
+      }
+    }
+    return paths
+  }
+
   /** 新建 standalone 角色（独立角色，不绑定 lw） */
   async createStandalone(
     input: CreateStandaloneInput,
