@@ -45,6 +45,24 @@
         <el-icon><Refresh /></el-icon>
         <span>拉取最新基础值</span>
       </el-button>
+      <!-- 一键多角度参考图（spec 2026-05-09 ep-redesign §3.2 B3） -->
+      <el-tooltip placement="bottom" effect="light">
+        <template #content>
+          <div style="max-width: 240px;">
+            <div>一次生成正面 / 3q 左 / 3q 右 三视图</div>
+            <div>跨分镜画同一角色时不走样的视觉锚点</div>
+            <div style="margin-top:4px;color:#aaa;font-size:11px;">专业用户：character bible / three-view sheet</div>
+          </div>
+        </template>
+        <el-button
+          :disabled="!hasMain"
+          :loading="generatingThreeViews"
+          @click="onGenerateThreeViews"
+        >
+          <el-icon><Picture /></el-icon>
+          <span>多角度参考图</span>
+        </el-button>
+      </el-tooltip>
       <el-button
         type="success"
         :loading="saving"
@@ -90,6 +108,7 @@ import { ElMessage } from 'element-plus'
 import {
   ArrowLeft,
   DocumentChecked,
+  Picture,
   Refresh,
 } from '@element-plus/icons-vue'
 import AssetSourceTag from '../../shared/AssetSourceTag.vue'
@@ -266,6 +285,57 @@ async function onPullLatest(): Promise<void> {
 
 function onViewChanges(): void {
   ElMessage.info('查看长文变更对照 — 留 follow-up（依赖 lw 域 diff API）')
+}
+
+// ===== 一键多角度参考图（spec 2026-05-09 ep-redesign §3.2 B3） =====
+const generatingThreeViews = ref(false)
+
+async function onGenerateThreeViews(): Promise<void> {
+  if (!hasMain.value) {
+    ElMessage.warning('请先生成主图')
+    return
+  }
+  if (!binding.value?.id) return
+  generatingThreeViews.value = true
+  try {
+    const api = (window as any).electronAPI?.episodeProduction?.asset
+    if (!api?.character?.generateThreeViews) {
+      ElMessage.error('generateThreeViews IPC 未暴露（请重启）')
+      return
+    }
+    // 拉 effective 用作 prompt 基底（同主图生成）
+    const effResp = await api.character.effective(binding.value.id)
+    if (!effResp?.success) {
+      ElMessage.error(effResp?.error || '加载 effective 失败')
+      return
+    }
+    const eff = effResp.data ?? {}
+    // 简单拼装：name + appearance + gender + race（主入口 generateMainFor 装得更全；
+    // 这里关键是给 view label 加视角语义，本身就是 character 多角度补丁，base ref 决定一致性）
+    const parts: string[] = []
+    if (eff.name) parts.push(String(eff.name))
+    if (eff.appearance) parts.push(String(eff.appearance))
+    if (eff.gender) parts.push(`性别：${eff.gender}`)
+    if (eff.age != null) parts.push(`年龄：${eff.age}`)
+    const prompt = parts.join('，').trim() || '保持人物身份特征'
+
+    const resp = await api.character.generateThreeViews({
+      assetType: 'character',
+      assetId: binding.value.id,
+      prompt,
+    })
+    if (!resp?.success) {
+      ElMessage.error(resp?.error || '多角度参考图生成失败')
+      return
+    }
+    ElMessage.success(`已生成 ${resp.data?.length ?? 3} 张多角度参考图`)
+    // 通知 GalleryEditor reload（V1 GalleryEditor 暴露了 reload 方法）
+    galleryRef.value?.reload?.()
+  } catch (e: any) {
+    ElMessage.error('生成异常：' + (e?.message ?? String(e)))
+  } finally {
+    generatingThreeViews.value = false
+  }
 }
 
 onMounted(load)

@@ -214,4 +214,99 @@ export class MainImageGeneratorService {
 
     return await this.imageRepo.save(entity)
   }
+
+  /**
+   * 角色一键多角度参考图（spec 2026-05-09 ep-redesign §3.2 B3）
+   *
+   * 串行调 imageGen 3 次（front / 3q_left / 3q_right），同一 base 主图作 reference 保一致性。
+   * 落 3 个 asset_image 行 category='view' label='front'/'3q_left'/'3q_right'，
+   * derivedFromImageId 都指向 baseImage。
+   *
+   * 流程：
+   * 1. 解析 baseImage（用 baseImageId 或自动取 isMain=1 主图）
+   * 2. 校验：必须有 base + prompt 非空
+   * 3. 串行 3 次：每次拼"视角"前缀 + 同一 base ref → imageGen.generate
+   * 4. 落 asset_image 行
+   *
+   * 双母语：
+   *   大众用户："让 AI 在不同分镜画同一角色时不走样"
+   *   专业用户：character bible / three-view sheet
+   */
+  async generateThreeViews(input: {
+    assetType: AssetType
+    assetId: string
+    /** 角色身份描述（必填）— 由调用方从 effective 拼好（同 generateMain） */
+    prompt: string
+    negativePrompt?: string
+    userId?: string | null
+    /** 不传 → 自动用 isMain=1 主图作 reference */
+    baseImageId?: string | null
+  }): Promise<AssetImageEntity[]> {
+    if (!input.prompt.trim()) {
+      throw new Error('生成多角度参考图需要 prompt（请检查资产 effective 数据）')
+    }
+
+    // 1. 解析 base 图
+    let baseImage: AssetImageEntity | null = null
+    if (input.baseImageId) {
+      baseImage = await this.imageRepo.findOne({ where: { id: input.baseImageId } })
+    }
+    if (!baseImage) {
+      // 自动取 isMain=1 主图
+      baseImage = await this.imageRepo.findOne({
+        where: {
+          assetType: input.assetType,
+          assetId: input.assetId,
+          isMain: 1,
+        },
+      })
+    }
+    if (!baseImage) {
+      throw new Error('生成多角度参考图需要先有主图（或显式传 baseImageId）')
+    }
+
+    const refPaths = [baseImage.imagePath]
+
+    // 2. 三个视角配置（label 为存储 key，promptHint 为给 AI 的视角指令）
+    const views: Array<{ label: string; promptHint: string }> = [
+      { label: 'front',    promptHint: '正面视角（front view, full body, looking at camera）' },
+      { label: '3q_left',  promptHint: '3q_left 三分之四左侧视角（three-quarter left view, full body）' },
+      { label: '3q_right', promptHint: '3q_right 三分之四右侧视角（three-quarter right view, full body）' },
+    ]
+
+    // 3. 串行调 imageGen 3 次（不并发：避免触发 rate limit + 简化 mock 计数）
+    const results: AssetImageEntity[] = []
+    for (const v of views) {
+      const viewPrompt = `${input.prompt.trim()}，${v.promptHint}`
+      const genResult = await this.imageGen.generate({
+        referenceImagePaths: refPaths,
+        prompt: viewPrompt,
+        negativePrompt: input.negativePrompt,
+        label: v.label,
+      })
+
+      const entity = this.imageRepo.create({
+        id: this.generateId(),
+        userId: input.userId ?? null,
+        assetType: input.assetType,
+        assetId: input.assetId,
+        category: 'view',
+        label: v.label,
+        imagePath: genResult.imagePath,
+        thumbnailPath: genResult.thumbnailPath ?? null,
+        isMain: 0,
+        sortOrder: 0,
+        derivedFromImageId: baseImage.id,
+        prompt: viewPrompt,
+        negativePrompt: input.negativePrompt ?? null,
+        width: null,
+        height: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as Partial<AssetImageEntity>)
+      results.push(await this.imageRepo.save(entity))
+    }
+
+    return results
+  }
 }

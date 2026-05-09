@@ -55,6 +55,8 @@ export function registerAssetImageHandlers(): void {
   ipcBridge.handle('ep:asset:image:add-main', handleAddAdditionalMain)
   ipcBridge.handle('ep:asset:image:switch-main', handleSwitchDefaultMain)
   ipcBridge.handle('ep:asset:image:update-metadata', handleUpdateMetadata)
+  // spec 2026-05-09 ep-redesign §3.2 B3 · 角色多角度参考图（一键三视图）
+  ipcBridge.handle('ep:asset:character:generate-three-views', handleGenerateThreeViews)
 }
 
 /** 取 DataSource；未初始化则抛错 */
@@ -260,6 +262,39 @@ async function handleUpdateMetadata(
   try {
     await buildService().updateMetadata(imageId, metadata)
     return { success: true, data: { updated: true } }
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+/**
+ * spec 2026-05-09 ep-redesign §3.2 B3 · 角色一键多角度参考图（character bible：正/3q左/3q右）
+ *
+ * 串行调 imageGen 3 次（同一 base 主图作 reference 保一致性），落 3 个 view 行。
+ */
+async function handleGenerateThreeViews(
+  _event: any,
+  input: {
+    assetType: AssetType
+    assetId: string
+    prompt: string
+    negativePrompt?: string
+    baseImageId?: string | null
+  },
+): Promise<IpcResponse> {
+  try {
+    if (input.assetType !== 'character') {
+      return { success: false, error: '仅 character 资产支持多角度参考图' }
+    }
+    const ds = requireDataSource()
+    const imageSvc = new AssetImageService(ds)
+    const svc = new MainImageGeneratorService(
+      imageSvc,
+      createGalleryImageGenerator(),
+      ds,
+    )
+    const data = await svc.generateThreeViews(input)
+    return { success: true, data }
   } catch (err: any) {
     return { success: false, error: err?.message ?? String(err) }
   }

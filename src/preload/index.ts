@@ -290,6 +290,8 @@ const IPC_CHANNELS = {
   EP_ASSET_ENRICH_SETTINGS: 'ep:asset:enrich-settings',
   /** spec 2026-05-09 ep-redesign §3.2 B2 · AI 正向字段提取 */
   EP_ASSET_EXTRACT_FIELDS: 'ep:asset:extract-fields',
+  /** spec 2026-05-09 ep-redesign §3.2 B3 · 角色一键多角度参考图（character bible 三视图）*/
+  EP_ASSET_CHARACTER_GENERATE_THREE_VIEWS: 'ep:asset:character:generate-three-views',
 
   // 派生（2 个）
   EP_ASSET_DERIVE_SINGLE: 'ep:asset:derive:single',
@@ -1951,6 +1953,17 @@ const electronAPI = {
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_SET_PORTRAIT, id, portraitId),
         delete: (id: string) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_DELETE, id),
+        /**
+         * 一键多角度参考图（spec 2026-05-09 ep-redesign §3.2 B3）
+         * 串行调 imageGen 3 次（front / 3q_left / 3q_right），同 base 主图 ref 保一致性。
+         */
+        generateThreeViews: (input: {
+          assetType: 'character'
+          assetId: string
+          prompt: string
+          negativePrompt?: string
+          baseImageId?: string | null
+        }) => ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_GENERATE_THREE_VIEWS, input),
       },
       // 地点资产（9 个）
       location: {
