@@ -40,30 +40,55 @@
         </div>
       </el-form-item>
 
-      <!-- 上传长文模式 -->
+      <!-- 上传长文模式：长文可不在创建时填写（用户可在 ① 内容 stage 再粘贴） -->
       <template v-if="form.sourceType === 'uploaded'">
         <el-form-item label="长文内容">
           <el-input
             v-model="form.uploadedContent"
             type="textarea"
-            :rows="10"
-            placeholder="请粘贴长文内容（500-15000字）"
+            :rows="8"
+            placeholder="可留空，进入剧集后在 ① 内容页粘贴；如填写需 500-15000 字"
             style="width: 100%"
           />
           <div class="word-count-hint">
-            <span :class="{ 'word-count-warning': uploadedWordCount < 500 || uploadedWordCount > 15000 }">
+            <span
+              :class="{ 'word-count-warning': uploadedWordCount > 0 && (uploadedWordCount < 500 || uploadedWordCount > 15000) }"
+            >
               当前字数：{{ uploadedWordCount }} 字
             </span>
-            <span class="word-count-limit">（限制：500-15000字）</span>
+            <span class="word-count-limit">（可空，或 500-15000 字）</span>
           </div>
         </el-form-item>
-        <el-form-item v-if="uploadedWordCount < 500 && uploadedWordCount > 0">
+        <el-form-item v-if="uploadedWordCount > 0 && uploadedWordCount < 500">
           <div class="form-error">字数不足，至少需要 500 字，当前 {{ uploadedWordCount }} 字</div>
         </el-form-item>
         <el-form-item v-if="uploadedWordCount > 15000">
           <div class="form-error">字数超出限制，最多允许 15000 字，当前 {{ uploadedWordCount }} 字</div>
         </el-form-item>
       </template>
+
+      <!-- 故事背景（参与后续主图/派生图 prompt 拼接） -->
+      <el-divider class="story-bg-divider">故事背景（可选）</el-divider>
+      <el-form-item label="年代">
+        <el-input
+          v-model="form.storyEra"
+          placeholder="如：民国初年 / 唐代盛世 / 近未来 2080 年"
+        />
+      </el-form-item>
+      <el-form-item label="地域">
+        <el-input
+          v-model="form.storyRegion"
+          placeholder="如：江南水乡 / 东京涩谷 / 北欧雪原"
+        />
+      </el-form-item>
+      <el-form-item label="其他说明">
+        <el-input
+          v-model="form.storyBackgroundExtra"
+          type="textarea"
+          :rows="3"
+          placeholder="阶级背景 / 文化氛围 / 时代关键事件 等自由文本"
+        />
+      </el-form-item>
     </el-form>
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
@@ -115,7 +140,11 @@ const form = reactive({
   title: '',
   sourceType: 'outline' as 'outline' | 'uploaded',
   outlineId: '',
-  uploadedContent: ''
+  uploadedContent: '',
+  // 故事背景三字段（可选；落到 episode 主表 storyEra/Region/Extra）
+  storyEra: '',
+  storyRegion: '',
+  storyBackgroundExtra: ''
 })
 
 const selectedOutlineInfo = ref<{
@@ -139,7 +168,9 @@ const isFormValid = computed(() => {
   if (form.sourceType === 'outline') {
     return !!form.outlineId
   } else {
+    // uploaded 模式：长文允许空（用户在内容页填）；填了内容则 500-15000 中段
     const wc = uploadedWordCount.value
+    if (wc === 0) return true
     return wc >= 500 && wc <= 15000
   }
 })
@@ -152,6 +183,9 @@ watch(() => props.modelValue, (val) => {
     form.sourceType = hasLinkedLongWriting.value ? 'outline' : 'uploaded'
     form.outlineId = ''
     form.uploadedContent = ''
+    form.storyEra = ''
+    form.storyRegion = ''
+    form.storyBackgroundExtra = ''
     selectedOutlineInfo.value = null
   }
 })
@@ -210,9 +244,16 @@ async function handleSubmit() {
     {
       sourceType: form.sourceType,
       outlineId: form.sourceType === 'outline' ? form.outlineId : undefined,
-      uploadedContent: form.sourceType === 'uploaded' ? form.uploadedContent : undefined,
+      uploadedContent:
+        form.sourceType === 'uploaded' && form.uploadedContent
+          ? form.uploadedContent
+          : undefined,
       episodeNumber: form.episodeNumber,
-      title: form.title
+      title: form.title,
+      // 故事背景：空串不上送，避免落库存空字符串而非 null
+      storyEra: form.storyEra.trim() || undefined,
+      storyRegion: form.storyRegion.trim() || undefined,
+      storyBackgroundExtra: form.storyBackgroundExtra.trim() || undefined,
     }
   )
 
@@ -264,5 +305,14 @@ async function handleSubmit() {
 .form-error {
   color: var(--el-color-danger);
   font-size: 12px;
+}
+
+.story-bg-divider {
+  margin: 16px 0 12px;
+
+  :deep(.el-divider__text) {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
 }
 </style>

@@ -12,6 +12,7 @@ import type { IpcResponse } from '@shared/types/ipc.types'
 import type { SceneScript } from '@shared/types/story-to-video.types'
 import { StoryToVideoAIService } from '@core/services/story-to-video-ai.service'
 import { buildAssetRosterForProject } from '@core/modules/episode-production/narrative/asset-roster-builder'
+import { EpisodeScenePolisher } from '@core/modules/episode-production/narrative/ai/scene-polisher'
 
 export function registerScriptHandlers(): void {
   // ==================== 剧本管理 ====================
@@ -28,6 +29,9 @@ export function registerScriptHandlers(): void {
   // ==================== AI 生成（剧本与场景） ====================
   ipcBridge.handle('ep:generate-script', handleGenerateScript)
   ipcBridge.handle('ep:generate-scenes', handleGenerateScenes)
+
+  // ==================== AI 润色（场景级 · spec 2026-05-08） ====================
+  ipcBridge.handle('ep:polish-scene', handlePolishScene)
 }
 
 // ==================== 剧本管理处理器 ====================
@@ -203,6 +207,55 @@ async function handleDeleteScene(
     return { success: true, data: { id: sceneId } }
   } catch (error: any) {
     return { success: false, error: error.message || '删除场景失败' }
+  }
+}
+
+/**
+ * AI 场景级润色（spec 2026-05-08）。
+ *
+ * 流程：sceneId → 拉 SceneScript → 顺藤摸到 episode（获取故事背景上下文）→
+ * 调 EpisodeScenePolisher.polishScene → 仅返回字段子集给前端，由用户在
+ * SceneEditDialog 里对比 → 接受 → 保存（保存时再走 ep:update-scene 落库）。
+ *
+ * 故意不直接落库——保留用户"对比 / 拒绝"的回退能力。
+ */
+async function handlePolishScene(
+  _event: any,
+  sceneId: string,
+  providerConfigId?: string,
+  modelId?: string,
+): Promise<IpcResponse> {
+  try {
+    if (!sceneId) return { success: false, error: 'sceneId 不能为空' }
+    const db = getCoreDatabaseManager()
+    if (!db.sceneScripts || !db.episodeScripts || !db.videoEpisodes) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    const scene = await db.sceneScripts.getById(sceneId)
+    if (!scene) return { success: false, error: '场景不存在' }
+
+    // 顺藤摸瓜：scene → episodeScript → episode（拉故事背景）
+    const epScript = await db.episodeScripts.getById(scene.episodeScriptId)
+    if (!epScript) return { success: false, error: '关联的剧本不存在' }
+    const episode = await db.videoEpisodes.getById(epScript.episodeId)
+    const ctx = {
+      era: episode?.storyEra ?? null,
+      region: episode?.storyRegion ?? null,
+      extra: episode?.storyBackgroundExtra ?? null,
+    }
+
+    const result = await EpisodeScenePolisher.getInstance().polishScene(
+      scene,
+      ctx,
+      providerConfigId,
+      modelId,
+    )
+
+    return { success: true, data: result }
+  } catch (error: any) {
+    console.error('[handlePolishScene] 异常:', error)
+    return { success: false, error: error?.message ?? '场景润色失败' }
   }
 }
 

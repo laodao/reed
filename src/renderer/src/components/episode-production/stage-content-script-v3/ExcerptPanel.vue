@@ -12,22 +12,40 @@
   -->
   <section class="excerpt-panel">
     <div class="panel-header">
-      <span class="panel-title">原文片段</span>
+      <div class="panel-title-row">
+        <span class="panel-title">原文片段</span>
+        <!-- 字数 / 识别结果信息（spec 2026-05-08 v4：原 footer 上提到标题后） -->
+        <span v-if="!editingContent" class="panel-meta">
+          <template v-if="hasContent">
+            字数：约 {{ contentWordCount }} 字 ·
+            识别出
+            <strong>{{ characters.length }}</strong> 角色 ·
+            <strong>{{ locations.length }}</strong> 地点 ·
+            <strong>{{ items.length }}</strong> 物品
+          </template>
+          <template v-else>
+            字数：0 字 · 未粘贴原文
+          </template>
+        </span>
+      </div>
       <span class="panel-actions">
         <template v-if="!editingContent">
           <el-button size="small" :disabled="readonly" @click="enterEditContent">
             <el-icon><EditPen /></el-icon>
-            <span>编辑</span>
+            <span>{{ hasContent ? '编辑' : '粘贴原文' }}</span>
           </el-button>
           <el-button
             size="small"
             :loading="identifying"
-            :disabled="readonly"
+            :disabled="readonly || !hasContent"
+            :title="!hasContent ? '请先粘贴原文再做 AI 分析' : ''"
             @click="emit('reidentify')"
           >
             <el-icon><Refresh /></el-icon>
             <span>✨ 重新 AI 分析</span>
           </el-button>
+          <!-- 专注 icon 已移除（spec 2026-05-08 v5）：原文片段没有最大化入口；
+               场景列表的最大化仍可反向折叠本卡（由父容器 collapsed-bar 显示） -->
         </template>
         <template v-else>
           <el-button size="small" :disabled="savingContent" @click="cancelEditContent">
@@ -46,25 +64,67 @@
       </span>
     </div>
 
-    <!-- 章节梗概嵌入 ExcerptPanel 内（在原文正文上面，单行排列：标签:正文 [重新生成]） -->
+    <!--
+      章节梗概嵌入 ExcerptPanel 内（在原文正文上面）。
+      spec 2026-05-08 v3：支持就地编辑——
+        - readonly 状态：单行展示 + ✨ 重新生成 AI 按钮
+        - editing 状态：textarea + 保存 / 取消，emit('save-synopsis', text)
+    -->
     <div v-if="!editingContent && (synopsis || regenerating !== undefined)" class="synopsis-inline">
-      <span class="synopsis-label">章节梗概：</span>
-      <span v-if="synopsis" class="synopsis-text">{{ synopsis }}</span>
-      <span v-else class="synopsis-empty">梗概为空，点右侧"重新生成"或剧本生成后自动填充</span>
-      <el-button
-        v-if="!readonly"
-        size="small"
-        link
-        class="btn-regen-synopsis"
-        :loading="regenerating"
-        @click="emit('regenerate-synopsis')"
-      >
-        <el-icon><Refresh /></el-icon>
-        <span>✨ 重新生成</span>
-      </el-button>
+      <template v-if="!editingSynopsis">
+        <span class="synopsis-label">章节梗概：</span>
+        <span v-if="synopsis" class="synopsis-text">{{ synopsis }}</span>
+        <span v-else class="synopsis-empty">梗概为空，点右侧"编辑"或"重新生成"或剧本生成后自动填充</span>
+        <el-button
+          v-if="!readonly"
+          size="small"
+          link
+          class="btn-regen-synopsis"
+          @click="enterEditSynopsis"
+        >
+          <el-icon><EditPen /></el-icon>
+          <span>编辑</span>
+        </el-button>
+        <el-button
+          v-if="!readonly"
+          size="small"
+          link
+          class="btn-regen-synopsis"
+          :loading="regenerating"
+          @click="emit('regenerate-synopsis')"
+        >
+          <el-icon><Refresh /></el-icon>
+          <span>✨ 重新生成</span>
+        </el-button>
+      </template>
+      <template v-else>
+        <div class="synopsis-edit-row">
+          <el-input
+            v-model="synopsisDraft"
+            type="textarea"
+            :rows="3"
+            placeholder="章节梗概（50-100 字摘要，参与后续 prompt 拼接）"
+            class="synopsis-editor"
+          />
+          <div class="synopsis-edit-actions">
+            <el-button size="small" :disabled="savingSynopsis" @click="cancelEditSynopsis">
+              取消
+            </el-button>
+            <el-button
+              size="small"
+              type="primary"
+              :loading="savingSynopsis"
+              :disabled="!synopsisDirty"
+              @click="onSaveSynopsis"
+            >
+              保存
+            </el-button>
+          </div>
+        </div>
+      </template>
     </div>
 
-    <div v-if="!editingContent" class="excerpt-body">
+    <div v-if="!editingContent && hasContent" class="excerpt-body">
       <span v-for="(seg, i) in highlightedExcerpt" :key="i">
         <mark
           v-if="seg.type === 'entity'"
@@ -74,6 +134,17 @@
         >{{ seg.name }}</mark>
         <template v-else>{{ seg.text }}</template>
       </span>
+    </div>
+    <!-- 空态：剧集创建时未填长文，进入剧集页后引导粘贴 -->
+    <div v-else-if="!editingContent && !hasContent" class="excerpt-empty">
+      <el-icon :size="32" color="var(--el-text-color-placeholder)">
+        <DocumentAdd />
+      </el-icon>
+      <p class="empty-title">还没有原文</p>
+      <p class="empty-hint">
+        点上方"粘贴原文"贴入小说章节内容（500-15000 字），
+        AI 会基于原文识别角色 / 地点 / 物品要素，并生成剧本。
+      </p>
     </div>
     <el-input
       v-else
@@ -85,21 +156,13 @@
       class="excerpt-editor"
     />
 
-    <div class="excerpt-footer">
-      <template v-if="!editingContent">
-        字数：约 {{ contentWordCount }} 字 ·
-        AI 已扫描，识别出
-        <strong>{{ characters.length }}</strong> 角色 ·
-        <strong>{{ locations.length }}</strong> 地点 ·
-        <strong>{{ items.length }}</strong> 物品 — 见右侧
-      </template>
-      <template v-else>
-        字数：{{ editContentDraft.length }} 字
-        <span :class="['word-count-hint', { warn: !isEditContentValid }]">
-          （需 500–15000 字）
-        </span>
-        <span v-if="editContentDirty" class="dirty-tip">· 未保存</span>
-      </template>
+    <!-- 编辑模式下保留字数提示（浏览模式的字数信息已上提到 panel-header） -->
+    <div v-if="editingContent" class="excerpt-footer">
+      字数：{{ editContentDraft.length }} 字
+      <span :class="['word-count-hint', { warn: !isEditContentValid }]">
+        （需 500–15000 字）
+      </span>
+      <span v-if="editContentDirty" class="dirty-tip">· 未保存</span>
     </div>
   </section>
 </template>
@@ -107,7 +170,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { EditPen, Refresh } from '@element-plus/icons-vue'
+import { DocumentAdd, EditPen, Refresh } from '@element-plus/icons-vue'
 import type {
   UploadedCharacter,
   UploadedItem,
@@ -136,6 +199,8 @@ const emit = defineEmits<{
   (e: 'reidentify'): void
   (e: 'save-content', content: string): void
   (e: 'regenerate-synopsis'): void
+  /** 章节梗概就地编辑保存：父容器调 ep:update-script({ synopsis }) 落库 */
+  (e: 'save-synopsis', text: string): void
 }>()
 
 // ===== 编辑态 =====
@@ -143,6 +208,41 @@ const editingContent = ref(false)
 const savingContent = ref(false)
 const editContentDraft = ref('')
 const editContentOriginal = ref('')
+
+// ===== 章节梗概就地编辑（spec 2026-05-08 v3） =====
+const editingSynopsis = ref(false)
+const savingSynopsis = ref(false)
+const synopsisDraft = ref('')
+const synopsisOriginal = ref('')
+const synopsisDirty = computed(() => synopsisDraft.value !== synopsisOriginal.value)
+
+function enterEditSynopsis(): void {
+  if (props.readonly) return
+  synopsisDraft.value = props.synopsis ?? ''
+  synopsisOriginal.value = props.synopsis ?? ''
+  editingSynopsis.value = true
+}
+
+function cancelEditSynopsis(): void {
+  editingSynopsis.value = false
+  synopsisDraft.value = ''
+  synopsisOriginal.value = ''
+}
+
+async function onSaveSynopsis(): Promise<void> {
+  if (!synopsisDirty.value) {
+    cancelEditSynopsis()
+    return
+  }
+  savingSynopsis.value = true
+  try {
+    emit('save-synopsis', synopsisDraft.value.trim())
+    // 父容器实际落库后会通过 props.synopsis 同步回来；这里乐观退出编辑态
+    cancelEditSynopsis()
+  } finally {
+    savingSynopsis.value = false
+  }
+}
 
 const editContentDirty = computed(
   () => editContentDraft.value !== editContentOriginal.value,
@@ -153,6 +253,10 @@ const isEditContentValid = computed(() => {
 })
 
 const contentWordCount = computed(() => props.episode?.uploadedContent?.length ?? 0)
+/** 是否已有原文（创建时可空 → 进剧集后再填，期间显示空态引导） */
+const hasContent = computed(
+  () => !!props.episode?.uploadedContent && props.episode.uploadedContent.length > 0,
+)
 
 // ===== 实体高亮 =====
 type ExcerptSeg =
@@ -268,10 +372,33 @@ async function onSave(): Promise<void> {
   margin-bottom: 8px;
 }
 
+.panel-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .panel-title {
   font-weight: 600;
   font-size: 13px;
   color: var(--el-text-color-primary);
+  flex-shrink: 0;
+}
+
+.panel-meta {
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.panel-meta strong {
+  font-weight: 600;
+  color: var(--el-text-color-secondary);
 }
 
 .panel-actions {
@@ -318,6 +445,23 @@ async function onSave(): Promise<void> {
   flex-shrink: 0;
 }
 
+.synopsis-edit-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.synopsis-editor {
+  width: 100%;
+}
+
+.synopsis-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .excerpt-body {
   background: var(--el-fill-color-lighter);
   border-radius: 4px;
@@ -328,12 +472,41 @@ async function onSave(): Promise<void> {
   white-space: pre-wrap;
   /*
    * height:0 + flex:1：让 body 不参与 panel 自然高度计算（防止长原文
-   * 撑高 panel），由 align-stretch（StoryBackgroundPanel 决定）外部
-   * 给 panel 高度后，body 弹性占满 panel 内剩余。
+   * 撑高 panel）；外部 excerpt-row 单栏布局后 panel 自由生长，body 弹性占满。
    */
   height: 0;
   flex: 1;
   overflow-y: auto;
+}
+
+.excerpt-empty {
+  flex: 1;
+  min-height: 160px;
+  background: var(--el-fill-color-lighter);
+  border: 1px dashed var(--el-border-color);
+  border-radius: 4px;
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.empty-title {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  margin: 0;
+  font-weight: 500;
+}
+
+.empty-hint {
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
+  line-height: 1.6;
+  max-width: 420px;
+  margin: 0;
 }
 
 .entity-mark {

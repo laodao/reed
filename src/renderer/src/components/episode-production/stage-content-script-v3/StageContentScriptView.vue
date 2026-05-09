@@ -49,9 +49,13 @@
     </div>
 
     <div v-else class="content-body">
-      <!-- 顶部内容行：原文 + 故事背景（仅 uploaded 模式 + 有原文时显示） -->
+      <!--
+        顶部内容行：原文片段（左）+ 故事背景卡片（右）。
+        spec 2026-05-08 v5：原文片段没有最大化 icon；只有场景列表能最大化（focusedPanel='sceneList'），
+        最大化时本行折叠成 collapsed-bar 占位条（点击可恢复）。
+      -->
       <div
-        v-if="episode.sourceType === 'uploaded' && episode.uploadedContent"
+        v-if="episode.sourceType === 'uploaded' && focusedPanel !== 'sceneList'"
         class="excerpt-row"
       >
         <ExcerptPanel
@@ -66,8 +70,22 @@
           @reidentify="onIdentifyAll()"
           @save-content="onSaveContent"
           @regenerate-synopsis="onRegenSynopsis"
+          @save-synopsis="onSaveSynopsisInline"
         />
         <StoryBackgroundPanel :episode-id="episode.id" :readonly="readonly" />
+      </div>
+
+      <!-- 专注 sceneList 时把原文行折叠成一行标题占位（点击恢复） -->
+      <div
+        v-if="episode.sourceType === 'uploaded' && focusedPanel === 'sceneList'"
+        class="collapsed-bar"
+        @click="onToggleFocus('sceneList')"
+      >
+        <span class="collapsed-title">原文片段（已折叠）</span>
+        <el-button size="small" link>
+          <el-icon><Expand /></el-icon>
+          展开
+        </el-button>
       </div>
 
       <!-- 主区两栏：左主区 + 右侧 EntitySidebar -->
@@ -100,6 +118,7 @@
 
             <SceneListPanel
               v-else
+              ref="sceneListPanelRef"
               :scenes="scenes"
               :entities="entityList"
               :characters="characters"
@@ -107,13 +126,18 @@
               :items="items"
               :highlighted-entity="highlightedEntity"
               :readonly="readonly"
+              :saving-scene-id="savingSceneId"
+              :polishing-scene-id="polishingSceneId"
+              :focused="focusedPanel === 'sceneList'"
               @add-scene="onAddScene"
               @rewrite-scenes="onGenerateScript"
               @fix-bindings="onFixBindings"
-              @edit-scene="onEditScene"
+              @save-scene="onSaveSceneInline"
+              @polish-scene="onPolishSceneInline"
               @expand="onExpandScene"
               @collapse="onCollapseScene"
               @click-entity="onClickEntity"
+              @toggle-focus="onToggleFocus('sceneList')"
             />
           </template>
         </div>
@@ -144,13 +168,14 @@
       :initial="addDialog.initial"
       @confirm="onManualAddConfirm"
     />
+
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, InfoFilled, MagicStick } from '@element-plus/icons-vue'
+import { Check, Expand, InfoFilled, MagicStick } from '@element-plus/icons-vue'
 import StageMainHeader from '../shared/StageMainHeader.vue'
 import EntitySidebar from './EntitySidebar.vue'
 import SceneListPanel from './SceneListPanel.vue'
@@ -171,6 +196,7 @@ import type {
   UploadedLocation,
   VideoEpisode,
 } from '../../../../../shared/types/episode-production'
+import type { SceneScript } from '../../../../../shared/types/episode-production/narrative.types'
 import type { EntityRef } from './scene-entity-utils'
 
 defineOptions({ name: 'StageContentScriptView' })
@@ -198,10 +224,20 @@ const scriptStore = useEpScriptStore()
 const assetStore = useEpAssetStore()
 
 // ===== sub-state 派生 =====
+//
+// readonly 阈值（spec 2026-05-08 调整）：
+//   pending                                      → 'pending'   仅识别要素 + 原文编辑
+//   asset_prep / scripting / storyboarding       → 'scripting' 可编辑原文 / 剧本（含润色）
+//   producing / composing / completed            → 'readonly'  已开始批量生成关键帧/视频，
+//                                                              改剧本会让分镜/视频不一致
+//
+// 解锁到 'producing' 之前是用户决策：让用户在确认要素 / 资产 / 分镜阶段都能回头改原文/剧本，
+// 真正进入 ⑤ producing 大批量生成关键帧后才锁住（避免回改导致已生成关键帧/视频与文本不一致）。
 const subState = computed<'pending' | 'scripting' | 'readonly'>(() => {
   const s = props.episode?.status as EpisodeStatus | undefined
   if (!s) return 'pending'
-  if (s === 'pending' || s === 'scripting') return s
+  if (s === 'pending') return 'pending'
+  if (s === 'asset_prep' || s === 'scripting' || s === 'storyboarding') return 'scripting'
   return 'readonly'
 })
 
@@ -209,7 +245,9 @@ const readonly = computed(() => subState.value === 'readonly')
 
 const readonlyTagLabel = computed(() => {
   const s = props.episode?.status as EpisodeStatus | undefined
-  if (s === 'asset_prep') return '已确认（在阶段 ②）'
+  if (s === 'producing') return '已锁（生成中 ⑤）'
+  if (s === 'composing') return '已锁（合成中 ⑥）'
+  if (s === 'completed') return '已完成'
   return '已定稿'
 })
 
@@ -346,6 +384,22 @@ const approving = ref(false)
 const generating = ref(false)
 const regenSynopsis = ref(false)
 const fixingBindings = ref(false)
+// SceneListPanel 内联编辑（spec 2026-05-08 v3 — 展开即编辑）
+// savingSceneId / polishingSceneId 用 sceneId 而非 boolean，让多个展开场景的保存按钮各自独立 loading
+const sceneListPanelRef = ref<InstanceType<typeof SceneListPanel> | null>(null)
+const savingSceneId = ref<string | null>(null)
+const polishingSceneId = ref<string | null>(null)
+
+/**
+ * 专注模式（spec 2026-05-08 v5 简化）：null = 双区正常显示；
+ *   'sceneList' = SceneListPanel 占满主区，原文行折叠成一行占位（collapsed-bar）。
+ * 原文片段没有最大化 icon，所以不会出现 'excerpt' 这个状态。
+ */
+const focusedPanel = ref<'sceneList' | null>(null)
+
+function onToggleFocus(target: 'sceneList'): void {
+  focusedPanel.value = focusedPanel.value === target ? null : target
+}
 
 const canConfirmEntities = computed(() => {
   if (subState.value !== 'pending') return false
@@ -576,7 +630,11 @@ async function saveEntities(): Promise<boolean> {
   }
 }
 
-/** 确认要素 → ② 资产。从 stage-content-v2 onConfirm 拷贝并改名 + emit 通知父级。 */
+/**
+ * 确认要素 — 仅落库 status='asset_prep'，不弹 toast、不跳转 tab（spec 2026-05-08 v3）。
+ * 跳转交给用户自行点击 stage 进度条。父组件 onContentConfirmed 仅 reload header bar
+ * 让进度条状态更新，不再切 activeTab。
+ */
 async function onConfirmEntities(): Promise<void> {
   if (!props.episode) return
   if (hasDirty.value) {
@@ -589,7 +647,7 @@ async function onConfirmEntities(): Promise<void> {
       status: 'asset_prep' as EpisodeStatus,
     } as any)
     if (ok) {
-      ElMessage.success('要素已确认 → 进入 ② 资产 stage')
+      // 不弹 success toast、不跳转 — 让 header 上 "确认要素" 按钮自动消失即视觉反馈
       emit('confirmed-entities')
     } else {
       ElMessage.error('确认失败，请重试')
@@ -691,6 +749,32 @@ async function onRegenSynopsis(): Promise<void> {
   }
 }
 
+/**
+ * 章节梗概就地编辑保存（spec 2026-05-08 v3）。
+ * 与 onRegenSynopsis 区别：这个是手动编辑保存，只 patch synopsis 字段，不动 scenes。
+ */
+async function onSaveSynopsisInline(text: string): Promise<void> {
+  if (!script.value) {
+    ElMessage.warning('请先生成剧本')
+    return
+  }
+  const api = (window as any).electronAPI?.episodeProduction
+  if (!api?.updateScript) {
+    ElMessage.error('当前环境不支持 updateScript')
+    return
+  }
+  try {
+    const resp = await api.updateScript(script.value.id, { synopsis: text })
+    if (!resp?.success) {
+      ElMessage.error(resp?.error || '梗概保存失败')
+      return
+    }
+    if (script.value?.id) await scriptStore.loadScript(script.value.id)
+  } catch (e: any) {
+    ElMessage.error(e?.message ?? '梗概保存失败')
+  }
+}
+
 /** 修复缺失绑定。从 stage-script-v2 onFixBindings 拷贝。 */
 async function onFixBindings(): Promise<void> {
   if (!script.value) return
@@ -709,7 +793,10 @@ async function onFixBindings(): Promise<void> {
   }
 }
 
-/** 完成定稿 → ④ 分镜。从 stage-script-v2 onApprove 拷贝并改名 + emit。 */
+/**
+ * 完成定稿 — 仅把剧本状态改成 'approved'，不弹 toast、不跳转 tab（spec 2026-05-08 v3）。
+ * 跳转交给用户点击 stage 进度条决定。
+ */
 async function onApproveScript(): Promise<void> {
   if (!script.value) return
   approving.value = true
@@ -717,7 +804,7 @@ async function onApproveScript(): Promise<void> {
     const api = (window as any).electronAPI?.episodeProduction
     const resp = await api?.updateScript?.(script.value.id, { status: 'approved' })
     if (resp?.success) {
-      ElMessage.success('已定稿 → 可进入 ④ 分镜')
+      // 不弹 success toast、不跳转
       await scriptStore.loadScript(script.value.id)
       emit('approved-script')
     } else {
@@ -782,42 +869,64 @@ async function onAddScene(): Promise<void> {
 }
 
 /**
- * 单场景"编辑"：弹 prompt 让 user 改地点。
- * 完整 dialog（含 mood/lighting/characters）留 follow-up。
- * 从 stage-script-v2 onEditScene 拷贝。
+ * 场景就地保存（spec 2026-05-08 v3）。
+ * SceneListPanel 展开 → SceneInlineEditor 保存按钮 → 此处。
+ * 与 onSaveSceneEdit 区别：用 sceneId 维度的 loading 状态（多场景同时展开各自独立），
+ * 不弹关闭 dialog，保存成功后 reload 剧本（SceneInlineEditor 的 watch(scene) 会重 init form）。
  */
-async function onEditScene(id: string): Promise<void> {
-  const scene = scenes.value.find((s: any) => s.id === id)
-  if (!scene) {
-    ElMessage.error('场景未找到')
+async function onSaveSceneInline(
+  sceneId: string,
+  partial: Partial<SceneScript>,
+): Promise<void> {
+  const api = (window as any).electronAPI?.episodeProduction
+  if (!api?.updateScene) {
+    ElMessage.error('当前环境不支持 updateScene')
     return
   }
-  let location: string
+  savingSceneId.value = sceneId
   try {
-    const r = await ElMessageBox.prompt(
-      '修改地点名称',
-      `编辑场景 #${(scene as any).sceneNumber}`,
-      {
-        confirmButtonText: '保存',
-        cancelButtonText: '取消',
-        inputValue: (scene as any).location ?? '',
-        inputPattern: /^.{1,80}$/,
-        inputErrorMessage: '地点必填，最多 80 字符',
-      },
-    )
-    location = String(r.value ?? '').trim()
-  } catch {
+    const resp = await api.updateScene(sceneId, partial)
+    if (!resp?.success) {
+      ElMessage.error(resp?.error || '更新场景失败')
+      return
+    }
+    if (script.value?.id) await scriptStore.loadScript(script.value.id)
+  } finally {
+    savingSceneId.value = null
+  }
+}
+
+/**
+ * 场景就地 AI 润色（spec 2026-05-08 v3）。
+ * SceneListPanel 展开 → SceneInlineEditor "AI 润色"按钮 → 此处。
+ * 拿到结果后通过 sceneListPanelRef.getEditorRef(sceneId).applyPolishResult 填回对应展开的编辑器。
+ */
+async function onPolishSceneInline(sceneId: string): Promise<void> {
+  const sm = projectStore.currentProject?.config?.scriptModel
+  if (!sm?.providerConfigId || !sm?.modelId) {
+    ElMessage.warning('请先在项目设置中配置剧本生成模型')
     return
   }
   const api = (window as any).electronAPI?.episodeProduction
-  const resp = await api?.updateScene?.(id, { location })
-  if (!resp?.success) {
-    ElMessage.error(resp?.error || '更新场景失败')
+  if (!api?.polishScene) {
+    ElMessage.error('当前环境不支持 polishScene（请重启应用）')
     return
   }
-  ElMessage.success('场景已更新')
-  if (script.value?.id) await scriptStore.loadScript(script.value.id)
+  polishingSceneId.value = sceneId
+  try {
+    const resp = await api.polishScene(sceneId, sm.providerConfigId, sm.modelId)
+    if (!resp?.success || !resp.data) {
+      ElMessage.error(resp?.error || 'AI 润色失败')
+      return
+    }
+    const editorRef = sceneListPanelRef.value?.getEditorRef(sceneId)
+    editorRef?.applyPolishResult?.(resp.data as Partial<SceneScript>)
+    ElMessage.success('已润色（仅填入编辑器，点"保存"才落库）')
+  } finally {
+    polishingSceneId.value = null
+  }
 }
+
 
 // projectId 变更时加载资产（剧本 EntityRefRenderer 需要 binding 字典；
 // 当前 entityList 直接用 uploaded 三件套，但保留这一行预留 follow-up）
@@ -862,15 +971,36 @@ watch(
   gap: 8px;
   flex-shrink: 0;
   /*
-   * 固定高度 420px：
-   * StoryBackgroundPanel 自然内容估算（panel padding 24 + header 38 +
-   * 年代 form-item 68 + 地域 68 + 其他描述（含 textarea rows=6）180 +
-   * 提示 40）≈ 418px，420 留 2px 余量避免被截断。
-   *
-   * ExcerptPanel 通过 .excerpt-row > * height:100% 同高，内部 body
-   * 用 height:0 + flex:1 撑满 panel 剩余高度。
+   * 双栏：原文片段（左 flex:1）+ 故事背景卡（右 width:320px）。
+   * spec 2026-05-08 v5：原文片段没有最大化 icon；本行高度固定 340px。
+   * 场景列表最大化（focusedPanel='sceneList'）时本行整个隐藏，由 collapsed-bar 取代。
+   * ExcerptPanel 内部 body 用 height:0; flex:1 撑满 panel 剩余高度。
    */
-  height: 420px;
+  height: 340px;
+}
+
+/* 折叠占位条（专注 SceneList 时取代原文行） */
+.collapsed-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--el-fill-color-lighter);
+  border: 1px dashed var(--el-border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  transition: background 0.15s;
+
+  &:hover {
+    background: var(--el-color-primary-light-9);
+  }
+}
+
+.collapsed-title {
+  font-weight: 500;
 }
 
 .excerpt-row > * {
@@ -880,6 +1010,7 @@ watch(
 @media (max-width: 1100px) {
   .excerpt-row {
     flex-direction: column;
+    height: auto;
   }
 }
 
@@ -898,7 +1029,11 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 8px;
-  overflow: auto;
+  /*
+   * spec 2026-05-08 v4：left-col 不再是滚动容器，由 SceneListPanel 自己 overflow-y:auto
+   * （让其 sticky 标题工作）。这里 overflow:hidden 防止其它直接子元素溢出。
+   */
+  overflow: hidden;
 }
 
 .pending-hint {

@@ -188,6 +188,24 @@ async function handleGetEpisode(
   }
 }
 
+/**
+ * 创建剧集。
+ *
+ * 设计：创建即返回，**不在创建阶段调 AI**。
+ * - outline 模式：长文项目里的 binding 已存在，直接做无 AI 的关联绑定（autoBindEntities）。
+ * - uploaded 模式：仅落库 uploadedContent；要素识别 / 剧本生成等 AI 工作由用户进入
+ *   ① 内容 stage（StageContentScriptView，subState='pending'）后手动触发：
+ *     - "AI 识别要素"  → ep:identify-uploaded-entities（handleIdentifyEntities）
+ *     - "AI 生成剧本"  → ep:generate-script（依赖已识别的要素 roster）
+ *
+ * 这么设计的原因（顺手记一下，避免后续又被加回来）：
+ * 1. 创建对话框拿不到 providerConfigId / modelId（项目级配置在 projectStore.scriptModel），
+ *    历史在 createEpisode 里调 AI 实际是拿 undefined 调，必然失败，再被 try/catch 吞掉，
+ *    用户白等 30s 还看不到失败原因。
+ * 2. 要素识别和剧本生成有强耦合（剧本 prompt 把 roster 喂给 AI 输出 binding_id 引用）。
+ *    把识别延后到内容 stage，用户能：单类型重识别、人工增删要素、确认后再生成剧本，
+ *    避免"创建一次 = 一次性出全部要素"的不可控流程。
+ */
 async function handleCreateEpisode(
   _event: any,
   projectId: string,
@@ -197,8 +215,10 @@ async function handleCreateEpisode(
     uploadedContent?: string
     episodeNumber: number
     title: string
-    providerConfigId?: string
-    modelId?: string
+    // ─── 故事背景（spec 2026-05-08）：创建时收集，后续在内容 stage 可改 ───
+    storyEra?: string
+    storyRegion?: string
+    storyBackgroundExtra?: string
   }
 ): Promise<IpcResponse> {
   console.log('[handleCreateEpisode] 收到请求:', { projectId, data })
@@ -214,16 +234,16 @@ async function handleCreateEpisode(
         return { success: false, error: '关联章节模式必须提供大纲ID' }
       }
     } else if (data.sourceType === 'uploaded') {
-      if (!data.uploadedContent) {
-        return { success: false, error: '上传长文模式必须提供内容' }
-      }
-      // 字数验证
-      const wordCount = data.uploadedContent.length
-      if (wordCount < 500) {
-        return { success: false, error: `字数不足，当前 ${wordCount} 字，最少需要 500 字` }
-      }
-      if (wordCount > 15000) {
-        return { success: false, error: `字数超出限制，当前 ${wordCount} 字，最多允许 15000 字` }
+      // uploaded 模式：长文允许空（用户可在内容 stage 再粘贴）。
+      // 一旦填了内容，仍校验字数中段（500-15000），保证 AI 识别要素时有足够上下文。
+      if (data.uploadedContent && data.uploadedContent.length > 0) {
+        const wordCount = data.uploadedContent.length
+        if (wordCount < 500) {
+          return { success: false, error: `字数不足，当前 ${wordCount} 字，最少需要 500 字` }
+        }
+        if (wordCount > 15000) {
+          return { success: false, error: `字数超出限制，当前 ${wordCount} 字，最多允许 15000 字` }
+        }
       }
     }
 
@@ -234,67 +254,21 @@ async function handleCreateEpisode(
       outlineId: data.outlineId,
       uploadedContent: data.uploadedContent,
       episodeNumber: data.episodeNumber,
-      title: data.title
+      title: data.title,
+      storyEra: data.storyEra,
+      storyRegion: data.storyRegion,
+      storyBackgroundExtra: data.storyBackgroundExtra,
     })
     console.log('[handleCreateEpisode] 剧集创建成功:', episode.id)
 
-    // 如果是关联章节模式，自动绑定实体
-    console.log('[handleCreateEpisode] 检查是否需要自动绑定:', { sourceType: data.sourceType, outlineId: data.outlineId })
+    // outline 模式：长文项目里的 binding 已存在，直接做无 AI 的关联绑定。
+    // uploaded 模式：在内容 stage 由用户手动触发 AI 识别（见上方 JSDoc）。
     if (data.sourceType === 'outline' && data.outlineId) {
-      console.log('[handleCreateEpisode] 开始自动绑定...')
+      console.log('[handleCreateEpisode] outline 模式 → 自动绑定已有 binding...')
       const bindingResult = await EpisodeAutoBindingService.autoBindEntities(projectId, data.outlineId)
       console.log('[handleCreateEpisode] 自动绑定结果:', bindingResult)
-    } else if (data.sourceType === 'uploaded' && data.uploadedContent) {
-      // 上传模式：AI识别实体并创建绑定
-      console.log('[handleCreateEpisode] 开始AI识别实体...')
-      try {
-        const aiService = StoryToVideoAIService.getInstance()
-
-        // 识别角色、地点、物品
-        const characters = await aiService.identifyCharacters(
-          data.uploadedContent,
-          data.providerConfigId,
-          data.modelId
-        )
-        const locations = await aiService.identifyLocations(
-          data.uploadedContent,
-          data.providerConfigId,
-          data.modelId
-        )
-        const items = await aiService.identifyItems(
-          data.uploadedContent,
-          data.providerConfigId,
-          data.modelId
-        )
-
-        console.log('[handleCreateEpisode] AI识别完成:', {
-          characters: characters.length,
-          locations: locations.length,
-          items: items.length
-        })
-
-        // 创建实体并绑定
-        const entityResult = await UploadedEntityService.createAndBindUploadedEntities(
-          projectId,
-          episode.id,
-          characters,
-          locations,
-          items
-        )
-        console.log('[handleCreateEpisode] 实体创建完成:', entityResult)
-
-        // 更新剧集记录，保存识别的实体信息
-        await db.videoEpisodes.update(episode.id, {
-          uploadedCharacters: characters,
-          uploadedLocations: locations,
-          uploadedItems: items
-        })
-      } catch (aiError: any) {
-        console.error('[handleCreateEpisode] AI识别失败:', aiError)
-        // AI识别失败不影响剧集创建，只记录日志
-      }
     } else {
-      console.log('[handleCreateEpisode] 跳过自动绑定')
+      console.log('[handleCreateEpisode] uploaded 模式 → 创建即返回，AI 识别延后到 ① 内容 stage')
     }
 
     return { success: true, data: episode }
@@ -315,8 +289,9 @@ async function handleUpdateEpisode(
       return { success: false, error: '数据库未初始化' }
     }
 
-    // uploaded 模式编辑原文：做基本校验（与 createEpisode 同口径，避免脏数据）
-    if (typeof data.uploadedContent === 'string') {
+    // uploaded 模式编辑原文：与 createEpisode 同口径——
+    // 允许空（用户可清空原文）；填了内容则校验字数中段（500-15000，确保 AI 识别有足够上下文）
+    if (typeof data.uploadedContent === 'string' && data.uploadedContent.length > 0) {
       const wc = data.uploadedContent.length
       if (wc < 500) {
         return { success: false, error: `原文字数不足，当前 ${wc} 字，最少需要 500 字` }

@@ -69,6 +69,39 @@ export const useEpStoryboardStore = defineStore('ep-storyboard', () => {
     }
   }
 
+  /**
+   * 删除分镜（级联清理 keyframes + characters，并重排剩余分镜的 shotNumber）。
+   * 后端删完后这里只做本地列表回填：把 sceneScriptId 重新拉一次，避免本地 shotNumber 与后端重排结果不一致。
+   *
+   * 返回 { ok, error } —— UI 用 error 字段展示后端真实失败原因（之前只返 boolean，
+   * UI 只能弹通用 "删除分镜失败"，定位问题非常困难）。
+   */
+  async function deleteStoryboard(
+    storyboardId: string,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const wb = useEpWorkbenchStore()
+    wb.error = null
+    try {
+      const response = await window.electronAPI.episodeProduction.deleteStoryboard(storyboardId)
+      if (!response.success) {
+        const msg = response.error || '删除分镜失败'
+        wb.error = msg
+        return { ok: false, error: msg }
+      }
+      const sceneId = (response.data as { sceneScriptId?: string } | undefined)?.sceneScriptId
+      if (sceneId) {
+        await loadStoryboards(sceneId)
+      } else {
+        storyboards.value = storyboards.value.filter((s) => s.id !== storyboardId)
+      }
+      return { ok: true }
+    } catch (e: any) {
+      const msg = e?.message || '删除分镜失败'
+      wb.error = msg
+      return { ok: false, error: msg }
+    }
+  }
+
   // ==================== AI 生成 ====================
 
   /**
@@ -147,6 +180,7 @@ export const useEpStoryboardStore = defineStore('ep-storyboard', () => {
     storyboards,
     loadStoryboards,
     updateStoryboard,
+    deleteStoryboard,
     generateStoryboard,
     generateStoryboards,
   }

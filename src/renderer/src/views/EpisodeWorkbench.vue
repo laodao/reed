@@ -59,7 +59,6 @@
                 @open-item="(id: string) => (selectedAsset = { type: 'item', id })"
                 @open-voice="(id: string) => (selectedAsset = { type: 'voice', id })"
                 @complete="onCompleteAssetStage"
-                @goto-prev-stage="activeTab = 'pending'"
               />
               <CharacterAssetEditor
                 v-else-if="selectedAsset.type === 'character'"
@@ -250,10 +249,6 @@ import { useWorkbenchStageNavigation } from '@/composables/use-workbench-stage-n
 // FU5-E1 · ④ 分镜 stage 切到 V2（按原型 §7 + §11 修订）
 import StageStoryboardView from '@/components/episode-production/stage-storyboard-v2/StageStoryboardViewV2.vue'
 // （已合并到 StageContentScriptView · Task 10）
-import type {
-  EpisodeStatus,
-  StageEnterDecision,
-} from '../../../shared/types/episode-production'
 // V2 老 tab（剧本 / 角色绑定 / 物品绑定 / 地点绑定）已从 template 移除
 // import 也跟着删除；P6-T19/T20 新 stage view 完成后会彻底删源文件
 // P3a Task 11 · 资产盘点新页面（追加在原 4 tab 之后，不替换老 tab）
@@ -402,12 +397,11 @@ function onScriptGoAssetStage(payload: {
 }
 
 /**
- * Task 10：StageContentScriptView 剧本定稿事件 → 切到 ④ 分镜 tab
+ * StageContentScriptView 剧本定稿事件 — 仅刷新进度条（spec 2026-05-08 v3 不再跳转 tab、不弹 toast）。
+ * 跳转交由用户主动点 stage 进度条决定。
  */
 async function onScriptApproved(): Promise<void> {
-  activeTab.value = 'storyboarding'
   await headerBarRef.value?.reload()
-  ElMessage.success('剧本已定稿 → 进入 ④ 分镜')
 }
 
 // FU3：useWorkbenchStageNavigation 调用挪到 setup 末尾（所有 ref/function 声明之后）

@@ -109,6 +109,10 @@ export const useEpEpisodeStore = defineStore('ep-episode', () => {
       uploadedContent?: string
       episodeNumber: number
       title: string
+      // 故事背景（spec 2026-05-08）：创建对话框收集，落到 episode 主表的 storyEra/Region/Extra 列
+      storyEra?: string
+      storyRegion?: string
+      storyBackgroundExtra?: string
     }
   ): Promise<VideoEpisode | null> {
     const wb = useEpWorkbenchStore()

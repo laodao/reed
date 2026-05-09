@@ -11,6 +11,12 @@
     </template>
 
     <div v-loading="loading" class="gallery-body">
+      <!--
+        spec 2026-05-08：双栏布局，参考 CharacterGalleryEditor
+          左：主图卡固定 505×505
+          右：right-stack 装 视角 + 场景化（grid 1fr 1fr 平分）
+      -->
+      <div class="top-row">
       <!-- 主图 -->
       <el-card class="main-card" shadow="never">
         <template #header>
@@ -62,7 +68,8 @@
         </div>
       </el-card>
 
-      <!-- 2 个 category 网格：view / context -->
+      <!-- 右侧栈：视角 + 场景化（spec 2026-05-08） -->
+      <div class="right-stack">
       <el-card
         v-for="cat in categories"
         :key="cat.key"
@@ -124,6 +131,8 @@
           </div>
         </div>
       </el-card>
+      </div><!-- /right-stack -->
+      </div><!-- /top-row -->
     </div>
   </el-card>
 </template>
@@ -363,6 +372,61 @@ defineExpose({ reload })
   background: var(--el-bg-color);
 }
 
+/* spec 2026-05-08：双栏布局（参考 CharacterGalleryEditor） */
+.top-row {
+  display: grid;
+  grid-template-columns: 505px minmax(0, 1fr);
+  gap: 8px;
+  align-items: stretch;
+  /* 显式锁定 row 高度 = 505，让 main-card / right-stack 都跟随，
+   * 否则当 right-stack 内容自然高度（视角 4 张缩略图 + 场景化 2 张）反过来主导，
+   * 两侧底部会对不齐。 */
+  height: 505px;
+}
+
+@media (max-width: 1024px) {
+  .top-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.main-card {
+  display: flex;
+  flex-direction: column;
+  width: 505px;
+  height: 505px;
+  min-height: 0;
+}
+
+.item-gallery-editor :deep(.main-card .el-card__body) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.right-stack {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: 8px;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+}
+
+.right-stack .category-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.item-gallery-editor :deep(.right-stack .category-card .el-card__body) {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
 .section-header {
   display: flex;
   align-items: center;
@@ -390,7 +454,9 @@ defineExpose({ reload })
   align-items: center;
   justify-content: center;
   width: 100%;
-  height: 160px;
+  /* 撑满 main-card body 剩余空间 */
+  flex: 1;
+  min-height: 0;
   background: var(--el-fill-color-light);
   border-radius: 6px;
   overflow: hidden;
@@ -398,8 +464,8 @@ defineExpose({ reload })
 }
 
 .main-thumb img {
-  max-width: 100%;
-  max-height: 100%;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
 }
 
@@ -408,12 +474,17 @@ defineExpose({ reload })
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  flex-shrink: 0;
 }
 
+/* spec 2026-05-08：单行横滚 + 缩略图 160×160 */
 .thumb-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  display: flex;
+  flex-wrap: nowrap;
   gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 4px;
 }
 
 .thumb-cell {
@@ -421,12 +492,13 @@ defineExpose({ reload })
   flex-direction: column;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 .thumb-frame {
   position: relative;
-  width: 100%;
-  aspect-ratio: 1 / 1;
+  width: 160px;
+  height: 160px;
   background: var(--el-fill-color-light);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;

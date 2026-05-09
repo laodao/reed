@@ -4,24 +4,15 @@
 
     严格按对照表 §3 cell 表 + 16 条差异修订实施：
     - StageMainHeader：标题 + 副标题（4 类资产摘要 + 已就绪进度）+ 一键生成 / 跳过空缺 / 完成本阶段
-    - 整体进度卡：阶段进度（真实图谱完整度，解锁 §3.D-3 占位 0）
     - 4 节 asset-section：角色 / 地点 / 物品 / 语音
-      每节 header：图标 + 标题 + count + 批操作按钮 + + 新建 按钮
+      每节 header（沿用其他 stage 的 panel-header 风格：无下划线、无大号 icon block）
     - 卡片：缩略图 + AssetSourceTag(badge) + 状态 tag + meta 按 4 类定制 + 双按钮 actions
-    - StageGapBanner（FU4-3）顶部
     - 主题切换：全 var(--el-*)（G1）
 
     数据：FU5-C1 ep:asset:project-summary 一次性拉聚合视图。
     旧 AssetStageView.vue 暂保留作参考，下个 phase 删。
   -->
   <div class="asset-stage-v2">
-    <StageGapBanner
-      :episode-id="currentEpisode?.id ?? null"
-      :current-status="(currentEpisode?.status as string) ?? null"
-      target-status="asset_prep"
-      @goto-prev-stage="emit('goto-prev-stage')"
-    />
-
     <StageMainHeader title="② 资产盘点" :subtitle="headerSubtitle">
       <template #actions>
         <el-button
@@ -53,22 +44,7 @@
       </template>
     </StageMainHeader>
 
-    <!-- 整体进度卡 -->
-    <section class="overall-progress-card">
-      <span class="card-label">阶段进度</span>
-      <el-progress
-        class="card-progress"
-        :percentage="overallProgress"
-        :stroke-width="10"
-        :status="overallProgress >= 100 ? 'success' : ''"
-      />
-      <span class="card-meta">
-        主图齐备 <strong>{{ readyCount }}/{{ totalCount }}</strong>
-        <span class="meta-sep">·</span>
-        图谱完整度 <strong>{{ galleryCompletion }}%</strong>
-      </span>
-    </section>
-
+    <div class="content-body">
     <!-- 角色 -->
     <section class="asset-section">
       <header class="section-header">
@@ -205,6 +181,8 @@
       </div>
     </section>
 
+    </div>
+
     <!-- 声音复刻对话框（"+ 复刻新音色"按钮触发；完成后 reload summary） -->
     <VoiceCloneDialog
       v-model="voiceCloneDialogVisible"
@@ -220,13 +198,11 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { MagicStick, Plus, Right } from '@element-plus/icons-vue'
 import StageMainHeader from '../shared/StageMainHeader.vue'
-import StageGapBanner from '../workbench/StageGapBanner.vue'
 import CharacterAssetCardV2 from './CharacterAssetCardV2.vue'
 import LocationAssetCardV2 from './LocationAssetCardV2.vue'
 import ItemAssetCardV2 from './ItemAssetCardV2.vue'
 import VoiceAssetCardV2 from './VoiceAssetCardV2.vue'
 import VoiceCloneDialog from '@/components/voice/VoiceCloneDialog.vue'
-import { useEpEpisodeStore } from '@/stores/episode-production'
 
 const props = defineProps<{
   projectId: string
@@ -242,12 +218,8 @@ const emit = defineEmits<{
   (e: 'add-item'): void
   (e: 'add-voice'): void
   (e: 'generate-main', payload: { kind: 'character' | 'location' | 'item'; id: string }): void
-  (e: 'goto-prev-stage'): void
   (e: 'complete'): void
 }>()
-
-const episodeStore = useEpEpisodeStore()
-const currentEpisode = computed(() => episodeStore.currentEpisode)
 
 const summary = ref<{
   characters: any[]
@@ -281,15 +253,8 @@ const headerSubtitle = computed(() => {
 })
 
 const totalCount = computed(() => summary.value.totals.bindingTotal)
-const readyCount = computed(() => summary.value.totals.bindingWithMain)
-const missingMainCount = computed(() => totalCount.value - readyCount.value)
-const overallProgress = computed(() =>
-  totalCount.value === 0
-    ? 0
-    : Math.floor((readyCount.value / totalCount.value) * 100),
-)
-const galleryCompletion = computed(
-  () => summary.value.totals.galleryCompletionPct,
+const missingMainCount = computed(
+  () => totalCount.value - summary.value.totals.bindingWithMain,
 )
 const canComplete = computed(() => missingMainCount.value === 0 && totalCount.value > 0)
 
@@ -628,43 +593,19 @@ async function onDeleteBinding(
 .asset-stage-v2 {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 16px;
   height: 100%;
-  overflow: auto;
   background: var(--el-bg-color-page);
+  overflow: hidden;
 }
 
-.overall-progress-card {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 12px 16px;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
-}
-
-.card-label {
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--el-text-color-primary);
-  flex-shrink: 0;
-}
-
-.card-progress {
+.content-body {
   flex: 1;
-}
-
-.card-meta {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  flex-shrink: 0;
-}
-
-.meta-sep {
-  color: var(--el-text-color-placeholder);
-  margin: 0 4px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  overflow-y: auto;
 }
 
 .asset-section {
@@ -678,21 +619,20 @@ async function onDeleteBinding(
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
+  margin-bottom: 8px;
 }
 
 .section-title {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-weight: 600;
+  gap: 6px;
   font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
 }
 
 .section-icon {
-  font-size: 18px;
+  font-size: 14px;
 }
 
 .section-count {

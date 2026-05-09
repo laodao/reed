@@ -19,6 +19,7 @@ export function registerStoryboardHandlers(): void {
   ipcBridge.handle('ep:get-storyboard', handleGetStoryboard)
   ipcBridge.handle('ep:update-storyboard', handleUpdateStoryboard)
   ipcBridge.handle('ep:reorder-storyboards', handleReorderStoryboards)
+  ipcBridge.handle('ep:delete-storyboard', handleDeleteStoryboard)
 
   // ==================== AI 生成（分镜） ====================
   ipcBridge.handle('ep:generate-storyboard', handleGenerateStoryboard)
@@ -117,6 +118,79 @@ async function handleReorderStoryboards(
     return { success: true, data: { reordered: orderedIds.length } }
   } catch (error: any) {
     return { success: false, error: error.message || '调序失败' }
+  }
+}
+
+/*
+ * 删除单个分镜：级联清理 keyframes + storyboard_characters，再删 storyboard 本身，
+ * 最后把场景内剩余分镜按当前 shotNumber 升序重排为 1..N（避免出现 1,3,4 这种缝隙）。
+ *
+ * 注：repo 之间没有共享 transaction，与既有 generate-storyboards 流程
+ *（先 deleteBySceneScriptId 再批量 create）的事务粒度一致；中途失败会留下
+ * 已删的子表数据，但不会出现"分镜还在但 keyframe 不齐"的更严重不一致。
+ */
+async function handleDeleteStoryboard(
+  _event: any,
+  storyboardId: string,
+): Promise<IpcResponse> {
+  try {
+    if (!storyboardId) return { success: false, error: 'storyboardId 不能为空' }
+
+    const db = getCoreDatabaseManager()
+    if (!db.storyboards) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    const target = await db.storyboards.getById(storyboardId)
+    if (!target) {
+      return { success: false, error: '分镜不存在' }
+    }
+
+    // 级联清理子表（FK 未配 cascade，需手工删）
+    if (db.storyboardKeyframes) {
+      await db.storyboardKeyframes.deleteByStoryboard(storyboardId)
+    }
+    if (db.storyboardCharacters) {
+      await db.storyboardCharacters.deleteByStoryboardId(storyboardId)
+    }
+
+    /*
+     * 不依赖 repo.delete() 的 boolean —— 部分 typeorm 驱动（PG 某些版本）
+     * 不可靠地填充 result.affected，导致已成功 DELETE 但返回 false。
+     * 这里调完后用 getById 复查：拿不到 → 判定删除成功。
+     */
+    await db.storyboards.delete(storyboardId)
+    const stillExists = await db.storyboards.getById(storyboardId)
+    if (stillExists) {
+      console.error(
+        `[handleDeleteStoryboard] 分镜 ${storyboardId} 删除后仍存在（可能 user_id scope 不匹配）`,
+      )
+      return { success: false, error: '删除分镜失败：DB 未真正删除（user_id scope 可能不匹配）' }
+    }
+
+    // 重排剩余分镜，让 shotNumber 重新连续 1..N
+    const remaining = await db.storyboards.getBySceneScriptId(target.sceneScriptId)
+    if (remaining.length > 0) {
+      await db.storyboards.reorderInScene(
+        target.sceneScriptId,
+        remaining.map((sb) => sb.id),
+      )
+    }
+
+    return {
+      success: true,
+      data: {
+        deletedId: storyboardId,
+        sceneScriptId: target.sceneScriptId,
+        remaining: remaining.length,
+      },
+    }
+  } catch (error: any) {
+    console.error('[handleDeleteStoryboard] 异常：', error)
+    return {
+      success: false,
+      error: error?.message ? `删除分镜失败：${error.message}` : '删除分镜失败（未知异常）',
+    }
   }
 }
 

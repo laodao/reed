@@ -26,6 +26,13 @@ export interface CreateVideoEpisodeRequest {
   uploadedCharacters?: UploadedCharacter[]
   episodeNumber: number
   title: string
+  // ─── 故事背景（spec 2026-05-08）：创建对话框直接收集 ───
+  /** 故事年代（如"民国初年"/"唐代盛世"/"近未来 2080 年"） */
+  storyEra?: string
+  /** 故事地域（如"江南水乡"/"东京涩谷"/"北欧雪原"） */
+  storyRegion?: string
+  /** 其他背景描述（自由文本：阶级背景 / 文化氛围 / 时代关键事件 等） */
+  storyBackgroundExtra?: string
 }
 
 export interface UpdateVideoEpisodeRequest {
@@ -132,6 +139,10 @@ export class VideoEpisodeRepository extends BaseRepository<
       duration: 0,
       scriptId: null,
       audioTracks: [] as unknown[],
+      // 故事背景：创建对话框直接收集；空串 → null（保持列允许 null 的语义）
+      storyEra: data.storyEra ? data.storyEra : null,
+      storyRegion: data.storyRegion ? data.storyRegion : null,
+      storyBackgroundExtra: data.storyBackgroundExtra ? data.storyBackgroundExtra : null,
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
@@ -165,6 +176,11 @@ export class VideoEpisodeRepository extends BaseRepository<
             duration: 0,
             scriptId: null,
             audioTracks: [] as unknown[],
+            storyEra: data.storyEra ? data.storyEra : null,
+            storyRegion: data.storyRegion ? data.storyRegion : null,
+            storyBackgroundExtra: data.storyBackgroundExtra
+              ? data.storyBackgroundExtra
+              : null,
             createdAt: now,
             updatedAt: now,
             deletedAt: null,

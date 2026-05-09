@@ -29,6 +29,13 @@
     </template>
 
     <div v-loading="loading" class="gallery-body">
+      <!--
+        spec 2026-05-08：双栏布局，参考 CharacterGalleryEditor
+          左：主图卡固定 505×505
+          右：right-stack 装时间变体 + 天气变体（grid 1fr 1fr 平分高度）
+        下方：角度变体 + 360 全景区
+      -->
+      <div class="top-row">
       <!-- 主图 -->
       <el-card class="main-card" shadow="never">
         <template #header>
@@ -98,9 +105,82 @@
         </div>
       </el-card>
 
-      <!-- 3 个 category 网格：时间 / 天气 / 角度变体 -->
+      <!-- 右侧栈：时间变体 + 天气变体 -->
+      <div class="right-stack">
+        <el-card
+          v-for="cat in rightStackCategories"
+          :key="cat.key"
+          class="category-card"
+          shadow="never"
+        >
+          <template #header>
+            <div class="section-header">
+              <span class="section-title">
+                {{ cat.label }}
+                <span class="progress-meta">
+                  {{ getCategoryDoneCount(cat) }}/{{ cat.labels.length }}
+                </span>
+              </span>
+              <el-button
+                size="small"
+                type="primary"
+                plain
+                :loading="busyKey === `derive:${cat.key}`"
+                :disabled="(busy && busyKey !== `derive:${cat.key}`) || getMissingLabels(cat).length === 0"
+                @click="onBatchDerive(cat)"
+              >
+                ✨ 派生剩余
+              </el-button>
+            </div>
+          </template>
+
+          <div class="thumb-grid">
+            <div
+              v-for="label in cat.labels"
+              :key="`${cat.key}-${label}`"
+              class="thumb-cell"
+            >
+              <div class="thumb-frame">
+                <template v-if="getImageByLabel(cat.key, label)?.imagePath">
+                  <img
+                    :src="toImageUrl(getImageByLabel(cat.key, label)!.imagePath)"
+                    :alt="labelText(cat.key, label)"
+                    @dblclick="openPreview(getCategoryPreviewList(cat), getCategoryPreviewIndex(cat, label))"
+                  />
+                  <div class="thumb-tools" @click.stop>
+                    <el-tooltip content="下载" placement="top">
+                      <el-icon
+                        class="thumb-tool-icon"
+                        :size="14"
+                        @click="downloadImage(getImageByLabel(cat.key, label)!)"
+                      ><Download /></el-icon>
+                    </el-tooltip>
+                    <el-tooltip content="删除" placement="top">
+                      <el-icon
+                        class="thumb-tool-icon danger"
+                        :size="14"
+                        @click="onDeleteImage(getImageByLabel(cat.key, label)!)"
+                      ><Delete /></el-icon>
+                    </el-tooltip>
+                  </div>
+                </template>
+                <el-icon
+                  v-else-if="busyKey === `derive:${cat.key}`"
+                  class="thumb-loading-icon is-loading"
+                  :size="20"
+                ><Loading /></el-icon>
+                <el-icon v-else size="24" class="thumb-empty-icon"><Plus /></el-icon>
+              </div>
+              <div class="thumb-label">{{ labelText(cat.key, label) }}</div>
+            </div>
+          </div>
+        </el-card>
+      </div>
+      </div><!-- /top-row -->
+
+      <!-- 下方：剩余 category（角度变体） -->
       <el-card
-        v-for="cat in categories"
+        v-for="cat in bottomCategories"
         :key="cat.key"
         class="category-card"
         shadow="never"
@@ -359,6 +439,17 @@ const categories: CategoryConfig[] = [
     labels: [...LOCATION_ANGLE_VALUES],
   },
 ]
+
+/**
+ * 参考 CharacterGalleryEditor 的右侧布局（spec 2026-05-08）：
+ * 时间变体 / 天气变体 放右侧栈（与主图并排），角度变体 + 360 全景留下方。
+ */
+const rightStackCategories = computed<CategoryConfig[]>(
+  () => categories.filter((c) => c.key === 'time_variant' || c.key === 'weather_variant'),
+)
+const bottomCategories = computed<CategoryConfig[]>(
+  () => categories.filter((c) => c.key === 'angle_variant'),
+)
 
 /**
  * 各 category 下英文 key → 中文显示。
@@ -797,6 +888,66 @@ defineExpose({ reload })
   background: var(--el-bg-color);
 }
 
+/*
+ * spec 2026-05-08：双栏布局（参考 CharacterGalleryEditor）
+ *   左 main-card 固定 505×505
+ *   右 right-stack 用 grid 1fr 1fr 平分（时间变体 + 天气变体 等高叠放）
+ *   align-items:stretch 让两栏同高
+ */
+.top-row {
+  display: grid;
+  grid-template-columns: 505px minmax(0, 1fr);
+  gap: 8px;
+  align-items: stretch;
+  /* 锁定 row 高度防止 right-stack 内容反主导（与 ItemGalleryEditor 一致） */
+  height: 505px;
+}
+
+@media (max-width: 1024px) {
+  .top-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.main-card {
+  display: flex;
+  flex-direction: column;
+  width: 505px;
+  height: 505px;
+  min-height: 0;
+}
+
+.location-gallery-editor :deep(.main-card .el-card__body) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.right-stack {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: 8px;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+}
+
+.right-stack .category-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.location-gallery-editor :deep(.right-stack .category-card .el-card__body) {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
 .section-header {
   display: flex;
   align-items: center;
@@ -834,15 +985,17 @@ defineExpose({ reload })
   align-items: center;
   justify-content: center;
   width: 100%;
-  height: 160px;
+  /* 撑满 main-card body 剩余高度（已通过 :deep(.main-card .el-card__body) 设 flex:1） */
+  flex: 1;
+  min-height: 0;
   background: var(--el-fill-color-light);
   border-radius: 6px;
   overflow: hidden;
 }
 
 .main-thumb img {
-  max-width: 100%;
-  max-height: 100%;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
 }
 
@@ -859,10 +1012,16 @@ defineExpose({ reload })
   color: var(--el-color-primary);
 }
 
+/*
+ * spec 2026-05-08：单行横滚 + 缩略图 160×160 正方形（与 character 一致）
+ */
 .thumb-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  display: flex;
+  flex-wrap: nowrap;
   gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 4px;
 }
 
 .thumb-cell {
@@ -870,12 +1029,13 @@ defineExpose({ reload })
   flex-direction: column;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 .thumb-frame {
   position: relative;
-  width: 100%;
-  aspect-ratio: 1 / 1;
+  width: 160px;
+  height: 160px;
   background: var(--el-fill-color-light);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;

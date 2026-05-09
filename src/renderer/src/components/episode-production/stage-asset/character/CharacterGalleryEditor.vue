@@ -11,7 +11,13 @@
     </template>
 
     <div v-loading="loading" class="gallery-body">
-      <!-- 顶部并排：左侧主图（窄） + 右侧服装（带"生成服饰图"按钮） -->
+      <!--
+        顶部并排（spec 2026-05-08 v5）：
+          左：主图（撑满整个 top-row 高度）
+          右：right-stack（服装卡 + 视角卡 上下叠放）
+        服装卡限高约 200px（避免空态时撑得过大），视角卡占 right-stack 剩余高度。
+        下方循环只渲染 表情 / 姿势（视角已上移到 right-stack）。
+      -->
       <div class="top-row">
         <el-card class="main-card" shadow="never">
           <template #header>
@@ -98,70 +104,145 @@
           </div>
         </el-card>
 
-        <!-- 服装卡：仅角色资产显示，带"生成服饰图"按钮 → 弹对话框 → 走派生 IPC -->
-        <el-card v-if="assetType === 'character'" class="outfit-card" shadow="never">
-          <template #header>
-            <div class="section-header">
-              <span class="section-title">
-                服装
-                <span class="progress-meta">{{ outfitImages.length }}</span>
-              </span>
-              <el-button
-                size="small"
-                type="primary"
-                plain
-                :loading="busyKey === 'outfit-generate'"
-                :disabled="busy && busyKey !== 'outfit-generate'"
-                @click="openOutfitDialog"
-              >
-                ✨ 生成服饰图
-              </el-button>
-            </div>
-          </template>
+        <!-- 右侧栈：服装卡（高度受限）+ 视角卡（占剩余空间）。仅角色资产渲染。 -->
+        <div v-if="assetType === 'character'" class="right-stack">
+          <!-- 服装卡：紧凑高度，避免空态撑大；多张时内部 grid 横向滚动 -->
+          <el-card class="outfit-card" shadow="never">
+            <template #header>
+              <div class="section-header">
+                <span class="section-title">
+                  服装
+                  <span class="progress-meta">{{ outfitImages.length }}</span>
+                </span>
+                <el-button
+                  size="small"
+                  type="primary"
+                  plain
+                  :loading="busyKey === 'outfit-generate'"
+                  :disabled="busy && busyKey !== 'outfit-generate'"
+                  @click="openOutfitDialog"
+                >
+                  ✨ 生成服饰图
+                </el-button>
+              </div>
+            </template>
 
-          <div class="thumb-grid outfit-grid">
-            <div
-              v-for="img in outfitImages"
-              :key="img.id"
-              class="thumb-cell"
-            >
-              <div class="thumb-frame outfit-frame">
-                <img
-                  v-if="img.imagePath"
-                  :src="toImageUrl(img.imagePath)"
-                  :alt="img.label || ''"
-                  @dblclick="openPreview('outfit', outfitImages, outfitImages.indexOf(img))"
-                />
-                <div class="thumb-tools" @click.stop>
-                  <el-tooltip content="下载" placement="top">
-                    <el-icon class="thumb-tool-icon" :size="14" @click="downloadImage(img)"><Download /></el-icon>
-                  </el-tooltip>
-                  <el-tooltip content="删除" placement="top">
-                    <el-icon class="thumb-tool-icon danger" :size="14" @click="onDeleteImage(img)"><Delete /></el-icon>
-                  </el-tooltip>
+            <div class="thumb-grid outfit-grid">
+              <div
+                v-for="img in outfitImages"
+                :key="img.id"
+                class="thumb-cell"
+              >
+                <div class="thumb-frame outfit-frame">
+                  <img
+                    v-if="img.imagePath"
+                    :src="toImageUrl(img.imagePath)"
+                    :alt="img.label || ''"
+                    @dblclick="openPreview('outfit', outfitImages, outfitImages.indexOf(img))"
+                  />
+                  <div class="thumb-tools" @click.stop>
+                    <el-tooltip content="下载" placement="top">
+                      <el-icon class="thumb-tool-icon" :size="14" @click="downloadImage(img)"><Download /></el-icon>
+                    </el-tooltip>
+                    <el-tooltip content="删除" placement="top">
+                      <el-icon class="thumb-tool-icon danger" :size="14" @click="onDeleteImage(img)"><Delete /></el-icon>
+                    </el-tooltip>
+                  </div>
                 </div>
+                <div class="thumb-label">{{ img.label || '(未命名)' }}</div>
               </div>
-              <div class="thumb-label">{{ img.label || '(未命名)' }}</div>
-            </div>
-            <div
-              v-if="busyKey === 'outfit-generate'"
-              class="thumb-cell outfit-loading-cell"
-            >
-              <div class="thumb-frame outfit-frame thumb-loading-frame">
-                <el-icon class="is-loading" :size="20"><Loading /></el-icon>
+              <div
+                v-if="busyKey === 'outfit-generate'"
+                class="thumb-cell outfit-loading-cell"
+              >
+                <div class="thumb-frame outfit-frame thumb-loading-frame">
+                  <el-icon class="is-loading" :size="20"><Loading /></el-icon>
+                </div>
+                <div class="thumb-label">生成中…</div>
               </div>
-              <div class="thumb-label">生成中…</div>
+              <div v-if="outfitImages.length === 0 && busyKey !== 'outfit-generate'" class="empty-cell">
+                <el-empty description="暂无服饰图" :image-size="40" />
+              </div>
             </div>
-            <div v-if="outfitImages.length === 0 && busyKey !== 'outfit-generate'" class="empty-cell">
-              <el-empty description="暂无服饰图" :image-size="40" />
+          </el-card>
+
+          <!--
+            视角卡：从下方循环上移到 right-stack 末尾（spec 2026-05-08 v5 需求）。
+            仍走 categories 数组里 view 的那条配置，只是位置变了；下方循环 filter 出 view。
+          -->
+          <el-card
+            v-if="viewCategory"
+            class="category-card view-card"
+            shadow="never"
+          >
+            <template #header>
+              <div class="section-header">
+                <span class="section-title">
+                  {{ viewCategory.label }}
+                  <span class="progress-meta">
+                    {{ getCategoryDoneCount(viewCategory) }}/{{ viewCategory.labels.length || '∞' }}
+                  </span>
+                </span>
+                <el-button
+                  v-if="viewCategory.labels.length > 0"
+                  size="small"
+                  type="primary"
+                  plain
+                  :loading="busyKey === `derive:${viewCategory.key}`"
+                  :disabled="(busy && busyKey !== `derive:${viewCategory.key}`) || getMissingLabels(viewCategory).length === 0"
+                  @click="onBatchDerive(viewCategory)"
+                >
+                  ✨ 派生剩余
+                </el-button>
+              </div>
+            </template>
+            <div class="thumb-grid">
+              <div
+                v-for="label in viewCategory.labels"
+                :key="`${viewCategory.key}-${label}`"
+                class="thumb-cell"
+              >
+                <div class="thumb-frame">
+                  <template v-if="getImageByLabel(viewCategory.key, label)">
+                    <img
+                      :src="toImageUrl(getImageByLabel(viewCategory.key, label)!.imagePath)"
+                      :alt="labelText(viewCategory.key, label)"
+                      @dblclick="openPreview(viewCategory.key, getCategoryPreviewList(viewCategory), getCategoryPreviewIndex(viewCategory, label))"
+                    />
+                    <div class="thumb-tools" @click.stop>
+                      <el-tooltip content="下载" placement="top">
+                        <el-icon
+                          class="thumb-tool-icon"
+                          :size="14"
+                          @click="downloadImage(getImageByLabel(viewCategory.key, label)!)"
+                        ><Download /></el-icon>
+                      </el-tooltip>
+                      <el-tooltip content="删除" placement="top">
+                        <el-icon
+                          class="thumb-tool-icon danger"
+                          :size="14"
+                          @click="onDeleteImage(getImageByLabel(viewCategory.key, label)!)"
+                        ><Delete /></el-icon>
+                      </el-tooltip>
+                    </div>
+                  </template>
+                  <el-icon
+                    v-else-if="busyKey === `derive:${viewCategory.key}`"
+                    class="thumb-loading-icon is-loading"
+                    :size="20"
+                  ><Loading /></el-icon>
+                  <el-icon v-else size="24" class="thumb-empty-icon"><Plus /></el-icon>
+                </div>
+                <div class="thumb-label">{{ labelText(viewCategory.key, label) }}</div>
+              </div>
             </div>
-          </div>
-        </el-card>
+          </el-card>
+        </div>
       </div>
 
-      <!-- 下方：视角 / 表情 / 姿势 网格（服装已上移到顶部） -->
+      <!-- 下方：表情 / 姿势 网格（视角已上移到 right-stack；服装也在 top-row） -->
       <el-card
-        v-for="cat in categories"
+        v-for="cat in bottomCategories"
         :key="cat.key"
         class="category-card"
         shadow="never"
@@ -421,6 +502,17 @@ const categories: CategoryConfig[] = [
     labels: ['standing', 'walking', 'sitting', 'pointing'],
   },
 ]
+
+/**
+ * 视角单独提取（spec 2026-05-08 v5 — 上移到 top-row 右侧栈，与服装并列）。
+ * 下方 v-for 用 bottomCategories 跳过 view，避免重复渲染。
+ */
+const viewCategory = computed<CategoryConfig | null>(
+  () => categories.find((c) => c.key === 'view') ?? null,
+)
+const bottomCategories = computed<CategoryConfig[]>(
+  () => categories.filter((c) => c.key !== 'view'),
+)
 
 /**
  * 各 category 下 label 的中文显示。
@@ -791,6 +883,16 @@ defineExpose({ reload })
   padding: 8px 10px;
 }
 
+/*
+ * spec 2026-05-08 v11：main-card body — 让 main-thumb 撑满 body 宽度（width:100% +
+ * aspect-ratio:1/1，正方形随 body 宽度自适应）；padding 收紧让 thumb 紧贴边框。
+ */
+.character-gallery-editor :deep(.main-card .el-card__body) {
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+}
+
 .card-header {
   display: flex;
   justify-content: space-between;
@@ -818,7 +920,8 @@ defineExpose({ reload })
  */
 .top-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(0, 1.6fr);
+  /* 主图卡列宽固定 505 = right-stack 自然高度（实测：outfit 249 + gap 8 + view 249 - 1px 误差 = 505） */
+  grid-template-columns: 505px minmax(0, 1fr);
   gap: 8px;
   align-items: stretch;
 }
@@ -835,14 +938,61 @@ defineExpose({ reload })
   background: var(--el-bg-color);
 }
 
-/* 服饰图：3:4 竖图 + 多列网格，aspect-ratio 与全身直立约束匹配 */
-.outfit-grid {
-  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+/*
+ * 主图卡严格 340×340 正方形（固定，不随窗口变）：
+ *   - width 由 .top-row grid 列固定 340px
+ *   - height 也固定 340px
+ *   - main-card 主导 row 高度 → right-stack stretch 跟到 340 → 1fr 1fr 平分各 166
+ *   - 主图卡底部 = 视角卡底部 ✓
+ */
+.main-card {
+  display: flex;
+  flex-direction: column;
+  width: 505px;
+  height: 505px;
+  min-height: 0;
 }
 
-.outfit-frame {
-  aspect-ratio: 3 / 4;
+.character-gallery-editor :deep(.main-card .el-card__body) {
+  flex: 1;
+  min-height: 0;
 }
+
+/*
+ * spec 2026-05-08 v8：右侧栈用 grid-template-rows: 1fr 1fr 让 outfit/view 等分高度，
+ * 高度自身 100% 跟随 grid track（top-row）。
+ *   - 两卡片高度严格相等（"服饰 + 视角 高度相等"）
+ *   - 两卡片 + 间隙 = right-stack 高度 = main-card 高度（"加起来 = 主图高度"）
+ *   - grid track 高度由 main-card 的 main-thumb min-height 起底（见 .main-thumb）
+ */
+.right-stack {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: 8px;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+}
+
+.right-stack .outfit-card,
+.right-stack .view-card {
+  /* grid 子项 stretch（默认）→ 各自填满分配的 row track；内部 body 用 flex:1 撑满 */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.right-stack :deep(.outfit-card .el-card__body),
+.right-stack :deep(.view-card .el-card__body) {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* spec 2026-05-08 v10：服饰 frame 也保持正方形（与视角/表情/姿势 frame 一致）。
+ * 服饰图片是 3:4 内容，但占位框统一 180×180 正方形 — 图本身由 .thumb-frame img
+ * 的 object-fit:cover 在 frame 内适配。 */
 
 .thumb-loading-frame {
   color: var(--el-color-primary);
@@ -894,16 +1044,28 @@ defineExpose({ reload })
   display: flex;
   align-items: center;
   justify-content: center;
+  /*
+   * spec 2026-05-08 v10：
+   *   - 主图固定正方形 252×252（v9 是 280 高，−10% = 252）
+   *   - flex:none 不再撑满 body；main-card body 用 align-items:center 让 thumb 居中
+   *   - main-card 自然总高 ≈ 252 + 50 (header + padding) = 302
+   *   - grid track 302 → right-stack 1fr 1fr 平分 = (302-8)/2 = 147
+   *   - outfit/view body ≈ 147-38(header)-12(padding) ≈ 97
+   *   - thumb-frame 80×80 留出余量（80 + label 14 + gap = 98，≈ body 97），
+   *     视觉上视角/表情/姿势/服饰缩略图统一 80×80 ✓
+   *   - main-card 底部 = right-stack 底部（视角卡底部）对齐 ✓
+   */
+  flex: 1;
   width: 100%;
-  height: 160px;
+  min-height: 0;
   background: var(--el-fill-color-light);
   border-radius: 6px;
   overflow: hidden;
 }
 
 .main-thumb img {
-  max-width: 100%;
-  max-height: 100%;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
 }
 
@@ -920,10 +1082,19 @@ defineExpose({ reload })
   color: var(--el-color-primary);
 }
 
+/*
+ * spec 2026-05-08 v5：缩略图改为单行 + 横向滚动（服装 / 视角 / 表情 / 姿势 共用）。
+ * 容器从 grid 改为 flex 横排，子项 flex-shrink:0 固定宽度（160px 默认；服装在
+ * .outfit-grid .thumb-cell 覆盖为 144px）；overflow-x:auto 出现横向滚动条。
+ */
 .thumb-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  display: flex;
+  flex-wrap: nowrap;
   gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* 给滚动条留 4px 喘息空间，避免 hover 工具条 / label 与 scrollbar 重叠 */
+  padding-bottom: 4px;
 }
 
 .thumb-cell {
@@ -931,12 +1102,21 @@ defineExpose({ reload })
   flex-direction: column;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
+  /*
+   * spec 2026-05-08 v9：cell 不再固定 width，由内部 thumb-frame 用 height + aspect-ratio
+   * 反推 width。这样所有缩略图（视角/表情/姿势/服饰）高度统一，只是宽度按 aspect-ratio 不同。
+   */
 }
 
 .thumb-frame {
   position: relative;
-  width: 100%;
-  aspect-ratio: 1 / 1;
+  /*
+   * spec 2026-05-08 v10：四类缩略图（服饰/视角/表情/姿势）统一 80×80 正方形 frame，
+   * 让视角卡 body 内一行能完整放下（body 高约 97，80+label 14 ≈ 94 < 97 ✓）。
+   */
+  width: 160px;
+  height: 160px;
   background: var(--el-fill-color-light);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
@@ -1004,9 +1184,17 @@ defineExpose({ reload })
   text-overflow: ellipsis;
 }
 
+/*
+ * 空态：横向滚动容器里需要让 el-empty 撑满（之前 grid-column:1/-1 跨列）。
+ * flex-shrink:0 + flex:1 让它在窄空间也保持完整尺寸，超宽就横滚跟其它子项对齐。
+ */
 .empty-cell {
-  grid-column: 1 / -1;
+  flex: 1 0 auto;
+  min-width: 200px;
   padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 </style>
 

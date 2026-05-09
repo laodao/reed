@@ -44,7 +44,7 @@
         <el-input
           v-model="storyBg.extra"
           type="textarea"
-          :rows="6"
+          :rows="4"
           :disabled="readonly"
           placeholder="阶级背景 / 文化氛围 / 时代关键事件 等自由文本"
         />
