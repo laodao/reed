@@ -312,17 +312,30 @@
             </label>
             <label class="tool-item">
               <span class="tool-label">运镜</span>
+              <!-- spec 2026-05-09 ep-redesign §3.2 B5 · 25 命名预设 4 大类 -->
               <el-select
                 v-model="editDraft.cameraMovement"
                 size="small"
+                filterable
+                placeholder="选择或搜索"
                 @change="onEditChange('cameraMovement', $event)"
               >
-                <el-option label="固定" value="static" />
-                <el-option label="推镜" value="push" />
-                <el-option label="拉镜" value="pull" />
-                <el-option label="摇镜" value="pan" />
-                <el-option label="移镜" value="track" />
-                <el-option label="升降" value="crane" />
+                <el-option-group
+                  v-for="group in CAMERA_MOVEMENT_GROUPS"
+                  :key="group.key"
+                  :label="group.label"
+                >
+                  <el-option
+                    v-for="m in group.items"
+                    :key="m.value"
+                    :label="m.label"
+                    :value="m.value"
+                  >
+                    <el-tooltip :content="m.description" placement="right">
+                      <span>{{ m.label }}</span>
+                    </el-tooltip>
+                  </el-option>
+                </el-option-group>
               </el-select>
             </label>
             <label class="tool-item">
@@ -338,6 +351,73 @@
                 @change="onEditChange('duration', $event)"
               />
               <span class="suffix-x">s</span>
+            </label>
+
+            <!-- 摄像机参数（spec 2026-05-09 ep-redesign §3.2 B5）— 写到 metadata JSON -->
+            <label class="tool-item">
+              <span class="tool-label">焦距</span>
+              <el-select
+                :model-value="lensFocalMm"
+                size="small"
+                clearable
+                placeholder="—"
+                @update:model-value="(v) => onMetaChange('lensFocalMm', v)"
+              >
+                <el-option v-for="p in LENS_FOCAL_PRESETS" :key="p.value" :label="p.label" :value="p.value">
+                  <el-tooltip :content="p.visualEffect" placement="right">
+                    <span>{{ p.label }}</span>
+                  </el-tooltip>
+                </el-option>
+              </el-select>
+            </label>
+            <label class="tool-item">
+              <span class="tool-label">光圈</span>
+              <el-select
+                :model-value="aperture"
+                size="small"
+                clearable
+                placeholder="—"
+                @update:model-value="(v) => onMetaChange('aperture', v)"
+              >
+                <el-option v-for="p in APERTURE_PRESETS" :key="p.value" :label="p.label" :value="p.value">
+                  <el-tooltip :content="p.visualEffect" placement="right">
+                    <span>{{ p.label }}</span>
+                  </el-tooltip>
+                </el-option>
+              </el-select>
+            </label>
+            <label class="tool-item">
+              <span class="tool-label">相机风格</span>
+              <el-select
+                :model-value="cameraStyle"
+                size="small"
+                clearable
+                placeholder="—"
+                @update:model-value="(v) => onMetaChange('cameraStyle', v)"
+              >
+                <el-option v-for="p in CAMERA_STYLE_PRESETS" :key="p.value" :label="p.label" :value="p.value">
+                  <el-tooltip :content="p.visualEffect" placement="right">
+                    <span>{{ p.label }}</span>
+                  </el-tooltip>
+                </el-option>
+              </el-select>
+            </label>
+            <label class="tool-item">
+              <span class="tool-label">打光</span>
+              <el-select
+                :model-value="lighting"
+                size="small"
+                clearable
+                filterable
+                placeholder="—"
+                @update:model-value="(v) => onMetaChange('lighting', v)"
+              >
+                <el-option v-for="p in LIGHTING_PRESETS" :key="p.value" :label="p.label" :value="p.value">
+                  <el-tooltip :content="p.description" placement="right">
+                    <span>{{ p.label }}</span>
+                  </el-tooltip>
+                </el-option>
+              </el-select>
             </label>
 
             <span class="group-divider" />
@@ -417,15 +497,12 @@
             </p>
           </div>
 
-          <!-- 画面描述 -->
+          <!-- 画面描述（spec 2026-05-09 ep-redesign §3.2 B4 双模板） -->
           <div class="desc-section">
             <div class="desc-label">画面描述（AI 生成关键帧时用）</div>
-            <el-input
+            <ShotDescriptionTemplate
               v-model="editDraft.frameDescription"
-              type="textarea"
-              :rows="3"
-              placeholder="如：少年推门而入，从门口缓缓走向窗边的老者。镜头从少年脚部仰拍开始推近至面部"
-              @input="onEditChange('frameDescription', editDraft.frameDescription)"
+              @update:model-value="onEditChange('frameDescription', $event)"
             />
           </div>
 
@@ -749,6 +826,19 @@ import {
   useEpAssetStore,
 } from '@/stores/episode-production'
 import { formatGlobalShotId } from '@/utils/storyboard-id'
+// spec 2026-05-09 ep-redesign §3.2 B4 双模板画面描述
+import ShotDescriptionTemplate from './ShotDescriptionTemplate.vue'
+// spec 2026-05-09 ep-redesign §3.2 B5 镜头语言层（焦距 / 光圈 / 相机风格 / 25 运镜 / 12 打光）
+import {
+  CAMERA_MOVEMENT_GROUPS,
+  findCameraMovementPreset,
+} from '@core/modules/episode-production/assets/constants/camera-movements'
+import {
+  LENS_FOCAL_PRESETS,
+  APERTURE_PRESETS,
+  CAMERA_STYLE_PRESETS,
+} from '@core/modules/episode-production/assets/constants/lens-presets'
+import { LIGHTING_PRESETS } from '@core/modules/episode-production/assets/constants/lighting-presets'
 
 const props = defineProps<{
   episodeScriptId: string | null
@@ -816,6 +906,12 @@ const editDraft = reactive<any>({
   locationBindingIds: [] as string[],
   /** 分镜级物品 binding 列表（spec 2026-05-09） */
   itemBindingIds: [] as string[],
+  /**
+   * 镜头扩展元数据 JSON（spec 2026-05-09 ep-redesign §3.2 B5）：
+   * { lensFocalMm, aperture, cameraStyle, lighting }
+   * UI 用 metadata helper computed 读写；落库时序列化。
+   */
+  metadata: '' as string,
 })
 
 const editDirty = ref<Set<string>>(new Set())
@@ -845,6 +941,8 @@ watch(
     editDraft.itemBindingIds = Array.isArray((sb as any).itemBindingIds)
       ? [...(sb as any).itemBindingIds]
       : []
+    // spec 2026-05-09 ep-redesign §3.2 B5 镜头扩展 metadata（JSON 字符串）
+    editDraft.metadata = (sb as any).metadata ?? ''
     editDirty.value = new Set()
   },
   { immediate: true },
@@ -852,6 +950,34 @@ watch(
 
 function onGenerationModeChange(mode: 'text2image' | 'keyframes'): void {
   onEditChange('generationMode', mode)
+}
+
+// ===== 镜头扩展 metadata（spec 2026-05-09 ep-redesign §3.2 B5）=====
+// editDraft.metadata 是 JSON 字符串；UI 通过 helper 读写各 key
+function parseMeta(): Record<string, any> {
+  if (!editDraft.metadata) return {}
+  try {
+    const v = JSON.parse(editDraft.metadata)
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : {}
+  } catch {
+    return {}
+  }
+}
+
+const lensFocalMm = computed<string | undefined>(() => parseMeta().lensFocalMm ?? undefined)
+const aperture = computed<string | undefined>(() => parseMeta().aperture ?? undefined)
+const cameraStyle = computed<string | undefined>(() => parseMeta().cameraStyle ?? undefined)
+const lighting = computed<string | undefined>(() => parseMeta().lighting ?? undefined)
+
+function onMetaChange(key: string, value: string | null | undefined): void {
+  const meta = parseMeta()
+  if (value == null || value === '') {
+    delete meta[key]
+  } else {
+    meta[key] = value
+  }
+  editDraft.metadata = Object.keys(meta).length > 0 ? JSON.stringify(meta) : ''
+  onEditChange('metadata', editDraft.metadata)
 }
 
 /**
@@ -1222,10 +1348,10 @@ function cameraAngleLabel(a: string): string {
 }
 
 function cameraMovementLabel(m: string): string {
+  // spec 2026-05-09 ep-redesign §3.2 B5：先查 25 个新预设；老值 pan/track/crane 兜底翻译
+  const preset = findCameraMovementPreset(m)
+  if (preset) return preset.label
   return ({
-    static: '固定',
-    push: '推镜',
-    pull: '拉镜',
     pan: '摇镜',
     track: '移镜',
     crane: '升降',
@@ -1286,6 +1412,8 @@ async function onSaveEdit(): Promise<void> {
       characters: editDraft.characters,
       locationBindingIds: editDraft.locationBindingIds,
       itemBindingIds: editDraft.itemBindingIds,
+      // spec 2026-05-09 ep-redesign §3.2 B5 镜头扩展元数据（焦距/光圈/相机风格/打光）
+      metadata: editDraft.metadata || null,
     })
     if (resp?.success) {
       ElMessage.success('已保存')

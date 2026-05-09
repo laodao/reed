@@ -500,6 +500,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-binding-reference-image-path'
     )
     await addBindingReferenceImagePath(this.dataSource)
+    // 分镜 metadata：spec 2026-05-09 ep-redesign §3.2 B5 镜头语言层（焦距 / 光圈 / 相机风格 / 打光预设）
+    const { addStoryboardMetadata } = await import(
+      '@core/database/migrations/add-storyboard-metadata'
+    )
+    await addStoryboardMetadata(this.dataSource)
     // 分镜 location_binding_ids + item_binding_ids：分镜级地点 / 物品手动添加
     const { addStoryboardLocationItemBindings } = await import(
       '@core/database/migrations/add-storyboard-location-item-bindings'

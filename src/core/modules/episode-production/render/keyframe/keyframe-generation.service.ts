@@ -590,6 +590,8 @@ export class KeyframeGenerationService {
       timePercent: plan.timePercent,
       styleConfig,
       userPrompt,
+      // spec 2026-05-09 ep-redesign §3.2 B5 镜头扩展（焦距 / 光圈 / 相机风格 / 打光预设）
+      cameraMetadata: (storyboard as any).metadata ?? null,
     })
 
     // 调 image generator 生成图（label 用 frame 角色 + frameIndex 便于追踪）

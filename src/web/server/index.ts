@@ -59,6 +59,7 @@ import { addStoryboardUseKeyframes } from '@core/database/migrations/add-storybo
 import { addStoryboardIncludeInFinal } from '@core/database/migrations/add-storyboard-include-in-final'
 import { addStoryboardReferenceImageIds } from '@core/database/migrations/add-storyboard-reference-image-ids'
 import { addBindingReferenceImagePath } from '@core/database/migrations/add-binding-reference-image-path'
+import { addStoryboardMetadata } from '@core/database/migrations/add-storyboard-metadata'
 import { addStoryboardLocationItemBindings } from '@core/database/migrations/add-storyboard-location-item-bindings'
 import { addAssetImageVariantCategoryAndMigrate } from '@core/database/migrations/add-asset-image-variant-category-and-migrate'
 import { addLocationBindingExtraFields } from '@core/database/migrations/add-location-binding-extra-fields'
@@ -260,6 +261,8 @@ async function initDatabase(): Promise<void> {
   await addStoryboardReferenceImageIds(ds)
   // 资产 binding（character/location/item）reference_image_path：用户上传的参考图，主图生成时作为 reference
   await addBindingReferenceImagePath(ds)
+  // 分镜 metadata：spec 2026-05-09 ep-redesign §3.2 B5 镜头语言层（焦距 / 光圈 / 相机风格 / 打光预设）
+  await addStoryboardMetadata(ds)
   // 分镜 location_binding_ids + item_binding_ids：④ 分镜界面手动添加分镜内地点 / 物品（覆盖 scene 级推导）
   await addStoryboardLocationItemBindings(ds)
   // 地点资产图谱重设计（spec 2026-05-09）：location 旧三类变体合并到统一 'variant' category

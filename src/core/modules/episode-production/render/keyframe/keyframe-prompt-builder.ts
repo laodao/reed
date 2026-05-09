@@ -27,6 +27,12 @@ import type {
   EffectiveItemData,
 } from '@shared/types/episode-production'
 import {
+  findLensFocalPreset,
+  findAperturePreset,
+  findCameraStylePreset,
+} from '../../assets/constants/lens-presets'
+import { findLightingPreset } from '../../assets/constants/lighting-presets'
+import {
   describeFrameMoment,
   type KeyframeRole,
 } from './keyframe-chain-strategy'
@@ -253,6 +259,12 @@ export interface BuildKeyframePromptInput {
    * 物品 / 氛围 / 构图 等并存（不替代）。
    */
   userPrompt?: string | null
+  /**
+   * 镜头扩展元数据（spec 2026-05-09 ep-redesign §3.2 B5）：
+   * { lensFocalMm, aperture, cameraStyle, lighting } JSON 字符串或对象。
+   * builder 解析后按 promptHint 拼到镜头段末尾。
+   */
+  cameraMetadata?: string | Record<string, unknown> | null
 }
 
 /** 多帧 prompt 输出：正向 + 负向 */
@@ -342,6 +354,10 @@ export function buildKeyframePrompt(
   const angle = getCameraAnglePrompt(input.cameraAngle)
   if (angle) parts.push(angle)
 
+  // 10b. 镜头扩展（spec 2026-05-09 ep-redesign §3.2 B5）：焦距 / 光圈 / 相机风格 / 打光
+  const camMetaHints = buildCameraMetadataPromptHints(input.cameraMetadata)
+  if (camMetaHints.length > 0) parts.push(...camMetaHints)
+
   // 11. 用户额外提示词（P5-T25 · spec §4.5.7）
   // 让用户在 UI 输入的"调整方向"段进入 prompt（位于质量后缀之前，
   // 作为最高优先级的"用户意图"参考给 image provider）
@@ -356,4 +372,43 @@ export function buildKeyframePrompt(
     prompt: parts.filter(Boolean).join(', '),
     negativePrompt: input.styleConfig.negativePrompt,
   }
+}
+
+/**
+ * 拼装镜头扩展元数据 promptHint（spec 2026-05-09 ep-redesign §3.2 B5）。
+ *
+ * 接受 storyboards.metadata（JSON 字符串或对象），按 lensFocalMm / aperture /
+ * cameraStyle / lighting 顺序查 preset，返回 promptHint 数组。
+ *
+ * 老分镜 metadata=null 或字段缺失 → 返回空数组（向后兼容；不影响输出）。
+ */
+function buildCameraMetadataPromptHints(
+  raw: string | Record<string, unknown> | null | undefined,
+): string[] {
+  if (!raw) return []
+  let meta: Record<string, unknown>
+  if (typeof raw === 'string') {
+    try {
+      const v = JSON.parse(raw)
+      if (!v || typeof v !== 'object' || Array.isArray(v)) return []
+      meta = v as Record<string, unknown>
+    } catch {
+      return []
+    }
+  } else if (typeof raw === 'object' && !Array.isArray(raw)) {
+    meta = raw
+  } else {
+    return []
+  }
+
+  const hints: string[] = []
+  const focal = findLensFocalPreset(meta.lensFocalMm as string)
+  if (focal) hints.push(focal.promptHint)
+  const aperture = findAperturePreset(meta.aperture as string)
+  if (aperture) hints.push(aperture.promptHint)
+  const style = findCameraStylePreset(meta.cameraStyle as string)
+  if (style) hints.push(style.promptHint)
+  const lit = findLightingPreset(meta.lighting as string)
+  if (lit) hints.push(lit.promptHint)
+  return hints
 }

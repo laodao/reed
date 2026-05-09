@@ -171,6 +171,14 @@ export class StoryboardEntity {
   @Column({ name: 'reference_image_ids', type: 'text', nullable: true })
   referenceImageIds!: string | null
 
+  /**
+   * 镜头语言扩展元数据（spec 2026-05-09 ep-redesign §3.2 B5）。
+   * Shape：JSON 字符串（应用层 parse / stringify）含 lensFocalMm / aperture / cameraStyle / lighting 等。
+   * NULL = 老分镜或未填这些预设；keyframe-prompt-builder 解析时跳过。
+   */
+  @Column({ name: 'metadata', type: 'text', nullable: true })
+  metadata!: string | null
+
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 
