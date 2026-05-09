@@ -100,9 +100,11 @@ function describeCharacterRace(race: string): string {
  *
  * 输出顺序（与现有 main-image-generator.ts 对齐）：
  *   name, description,
- *   character 专属：别名 / 定位 / 性别 / 年龄 / 人种 / 外貌 / 服装 / 备选服装,
+ *   character 专属：性别 / 年龄 / 人种 / 外貌 / 服装 / 备选服装,
  *   风格：styleAnchors（中英双写）,
  *   故事年代 / 故事地域 / 故事背景
+ *
+ * v3 spec 2026-05-09 ep-redesign §3.2 P-2：alias / role 不进 image prompt（叙事 metadata 解耦）。
  *
  * @param assetType  资产类型
  * @param eff        effective 投影数据
@@ -120,8 +122,10 @@ export function buildAssetIdentityPrompt(
   if (eff.description) parts.push(String(eff.description).trim())
 
   if (assetType === 'character') {
-    if (eff.alias) parts.push(`别名：${String(eff.alias).trim()}`)
-    if (eff.role) parts.push(`定位：${String(eff.role).trim()}`)
+    // spec 2026-05-09 ep-redesign §3.2 P-2：alias / role 不进 image prompt
+    //   - 别名（"三爷"）对图像生成无影响，是 noise
+    //   - 定位（"主角 / 配角 / 反派"）是叙事概念非视觉概念
+    // 两者保留在 EffectiveAssetForPrompt 类型中（兼容；调用方仍可读），但不再拼进 prompt。
     if (eff.gender) parts.push(`性别：${String(eff.gender).trim()}`)
     if (eff.age != null) parts.push(`年龄：${eff.age}`)
     if (eff.race) {
