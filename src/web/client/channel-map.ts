@@ -409,6 +409,9 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.updateScene': { channel: 'ep:update-scene' },
   'episodeProduction.deleteScene': { channel: 'ep:delete-scene' },
   'episodeProduction.listStoryboards': { channel: 'ep:list-storyboards' },
+  // 9 帧故事板预览（spec 2026-05-09 ep-redesign §3.2 B7）
+  'episodeProduction.generateStoryboardThumbnails': { channel: 'ep:storyboard:generate-thumbnails' },
+  'episodeProduction.cleanupStoryboardThumbnails': { channel: 'ep:storyboard:cleanup-thumbnails' },
   'episodeProduction.getStoryboard': { channel: 'ep:get-storyboard' },
   'episodeProduction.updateStoryboard': { channel: 'ep:update-storyboard' },
   'episodeProduction.reorderStoryboards': { channel: 'ep:reorder-storyboards' },

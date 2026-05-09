@@ -292,6 +292,9 @@ const IPC_CHANNELS = {
   EP_ASSET_EXTRACT_FIELDS: 'ep:asset:extract-fields',
   /** spec 2026-05-09 ep-redesign §3.2 B3 · 角色一键多角度参考图（character bible 三视图）*/
   EP_ASSET_CHARACTER_GENERATE_THREE_VIEWS: 'ep:asset:character:generate-three-views',
+  /** spec 2026-05-09 ep-redesign §3.2 B7 · 9 帧故事板预览 */
+  EP_STORYBOARD_GENERATE_THUMBNAILS: 'ep:storyboard:generate-thumbnails',
+  EP_STORYBOARD_CLEANUP_THUMBNAILS: 'ep:storyboard:cleanup-thumbnails',
 
   // 派生（2 个）
   EP_ASSET_DERIVE_SINGLE: 'ep:asset:derive:single',
@@ -1700,6 +1703,20 @@ const electronAPI = {
       ),
     getStoryboardBackgroundRef: (storyboardId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_STORYBOARD_GET_BACKGROUND_REF, storyboardId),
+
+    /**
+     * 9 帧故事板预览（spec 2026-05-09 ep-redesign §3.2 B7）
+     * 一张大图 → sharp 切片 9 张；返回 frames + sessionDir。
+     */
+    generateStoryboardThumbnails: (input: {
+      episodeScriptId: string
+      count?: 9 | 16 | 25
+      storySynopsis: string
+      styleAnchors?: string[]
+    }) => ipcRenderer.invoke(IPC_CHANNELS.EP_STORYBOARD_GENERATE_THUMBNAILS, input),
+    /** 用户取消 / 完成挑选时清理 temp 目录 */
+    cleanupStoryboardThumbnails: (input: { sessionDir: string }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_STORYBOARD_CLEANUP_THUMBNAILS, input),
 
     // AI 生成
     generateScript: (episodeId: string, providerConfigId?: string, modelId?: string) =>
