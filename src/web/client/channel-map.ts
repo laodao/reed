@@ -540,6 +540,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.asset.panorama.generate': { channel: 'ep:asset:panorama:generate' },
   'episodeProduction.asset.panorama.upload': { channel: 'ep:asset:panorama:upload' },
   'episodeProduction.asset.panorama.uploadFile': { channel: 'ep:asset:panorama:upload-file' },
+  'episodeProduction.asset.setReferenceImage': { channel: 'ep:asset:set-reference-image' },
   'episodeProduction.asset.panorama.delete': { channel: 'ep:asset:panorama:delete' },
   'episodeProduction.asset.panorama.createSnapshot': { channel: 'ep:asset:panorama:create-snapshot' },
   'episodeProduction.asset.panorama.listSnapshots': { channel: 'ep:asset:panorama:list-snapshots' },

@@ -16,6 +16,7 @@ import {
   registerDerivationHandlers,
   registerImportHandlers,
   registerPanoramaHandlers,
+  registerAssetReferenceImageHandlers,
   registerAssetSummaryHandlers,
   registerAssetSettingEnrichmentHandlers,
 } from './asset'
@@ -46,6 +47,8 @@ export function registerEpisodeProductionHandlers(): void {
   registerImportHandlers()
   // P3c Task 4 新增：360 全景 + 视角截图
   registerPanoramaHandlers()
+  // spec 2026-05-09：资产参考图上传（主图生成 reference）
+  registerAssetReferenceImageHandlers()
   // FU5-C1 项目级资产聚合
   registerAssetSummaryHandlers()
   // spec 2026-05-07 · AI 设定反推

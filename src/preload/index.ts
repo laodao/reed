@@ -305,6 +305,7 @@ const IPC_CHANNELS = {
   EP_ASSET_PANORAMA_GENERATE: 'ep:asset:panorama:generate',
   EP_ASSET_PANORAMA_UPLOAD: 'ep:asset:panorama:upload',
   EP_ASSET_PANORAMA_UPLOAD_FILE: 'ep:asset:panorama:upload-file',
+  EP_ASSET_SET_REFERENCE_IMAGE: 'ep:asset:set-reference-image',
   EP_ASSET_PANORAMA_DELETE: 'ep:asset:panorama:delete',
   EP_ASSET_PANORAMA_CREATE_SNAPSHOT: 'ep:asset:panorama:create-snapshot',
   EP_ASSET_PANORAMA_LIST_SNAPSHOTS: 'ep:asset:panorama:list-snapshots',
@@ -2059,6 +2060,22 @@ const electronAPI = {
       // AI 设定反推（spec 2026-05-07）
       enrichSettings: (input: { projectId: string }) =>
         ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_ENRICH_SETTINGS, input),
+
+      /**
+       * 设置 / 清空资产参考图（spec 2026-05-09）：
+       *   - 上传：传 base64 + fileName + mimeType；后端存盘 → 落 binding.reference_image_path
+       *   - 清空：传 clear=true
+       * 返回 { referenceImagePath: string | null }（new 或 null）。
+       */
+      setReferenceImage: (input: {
+        assetType: 'character' | 'location' | 'item'
+        bindingId: string
+        base64?: string
+        fileName?: string
+        mimeType?: string
+        clear?: boolean
+      }) =>
+        ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_SET_REFERENCE_IMAGE, input),
     },
 
     // 视频合成进度事件监听

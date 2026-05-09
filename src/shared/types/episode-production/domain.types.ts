@@ -297,12 +297,18 @@ export interface EffectiveCharacterData {
   styleAnchors?: string[] | null
   /** 备选服装列表 */
   outfitsExtra?: string[] | null
+  /** 用户上传的参考图相对路径（spec 2026-05-09；主图生成时作为 reference） */
+  referenceImagePath?: string | null
 }
 
 export interface EffectiveLocationData {
   name: string
   description: string
   source: AssetBindingSourceType
+  /** 风格锚点（spec 2026-05-08） */
+  styleAnchors?: string[]
+  /** 用户上传的参考图相对路径（spec 2026-05-09） */
+  referenceImagePath?: string | null
 }
 
 export interface EffectiveItemData {
@@ -311,4 +317,6 @@ export interface EffectiveItemData {
   source: AssetBindingSourceType
   /** 风格锚点（spec 2026-05-08 与 character/location 对齐） */
   styleAnchors?: string[]
+  /** 用户上传的参考图相对路径（spec 2026-05-09） */
+  referenceImagePath?: string | null
 }

@@ -37,7 +37,7 @@ interface IpcResp<T> {
 async function buildPromptFromEffective(
   assetType: AssetType,
   assetId: string,
-): Promise<{ prompt: string; negativePrompt?: string }> {
+): Promise<{ prompt: string; negativePrompt?: string; referenceImagePath?: string | null }> {
   const root = (window as any).electronAPI?.episodeProduction?.asset
   if (!root) throw new Error('episodeProduction.asset API 未暴露')
 
@@ -88,12 +88,19 @@ async function buildPromptFromEffective(
     throw new Error('请先在设定卡填写名称或描述，AI 才有可生成内容')
   }
 
+  // 用户上传的参考图（spec 2026-05-09）— 透传给后端 generateMain
+  const referenceImagePath = (eff.referenceImagePath as string | null | undefined) ?? null
+
   // 角色主图硬约束（直立全身、纯色背景、无帽子无首饰），与派生侧共享同一约束源
   if (assetType === 'character') {
     prompt = appendCharacterConstraints(prompt, 'fullBody')
-    return { prompt, negativePrompt: mergeCharacterNegative(undefined, 'fullBody') }
+    return {
+      prompt,
+      negativePrompt: mergeCharacterNegative(undefined, 'fullBody'),
+      referenceImagePath,
+    }
   }
-  return { prompt }
+  return { prompt, referenceImagePath }
 }
 
 /**
@@ -144,8 +151,12 @@ function parseStyleAnchors(raw: unknown): string[] {
 }
 
 /**
- * 角色 race 枚举 → "中文 + 英文标签"双写，提升各家 provider 的命中率。
- * 与 CharacterCardFormV2.RACE_OPTIONS 一一对应。
+ * 角色 race 描述生成器 — 用于主图 / 派生图 prompt 拼接。
+ *
+ * 历史上 race 是固定枚举（east_asian / south_asian / ...），UI 用 select；
+ * spec 2026-05-08 v5 改为自由输入 → 这里走两段：
+ *   1) 已知英文 key（旧数据）走"中文 + 英文标签"双写，最大化 provider 命中率
+ *   2) 其它任意文本（用户自由输入"东亚" / "半人马" / "精灵" 等）直接原文传出
  */
 function describeCharacterRace(race: string): string {
   switch (race) {
@@ -164,7 +175,8 @@ function describeCharacterRace(race: string): string {
     case 'south_american':
       return '南美（South American, Latin American facial features）'
     default:
-      return ''
+      // 用户自由输入（spec 2026-05-08 v5 — UI 改为 input 后的开放词汇）
+      return race?.trim() ?? ''
   }
 }
 
@@ -178,7 +190,10 @@ export async function generateMainFor(
   assetType: AssetType,
   assetId: string,
 ): Promise<AssetImageEntity> {
-  const { prompt, negativePrompt } = await buildPromptFromEffective(assetType, assetId)
+  const { prompt, negativePrompt, referenceImagePath } = await buildPromptFromEffective(
+    assetType,
+    assetId,
+  )
   const root = (window as any).electronAPI?.episodeProduction?.asset
   if (!root?.image?.generateMain) {
     throw new Error('image.generateMain IPC 未暴露')
@@ -188,6 +203,7 @@ export async function generateMainFor(
     assetId,
     prompt,
     negativePrompt,
+    referenceImagePath: referenceImagePath ?? null,
   })
   if (!resp?.success || !resp.data) {
     throw new Error(resp?.error || 'AI 主图生成失败')

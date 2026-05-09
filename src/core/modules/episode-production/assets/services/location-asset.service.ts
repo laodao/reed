@@ -144,11 +144,14 @@ export class LocationAssetService {
     const b = await this.bindingRepo.findOne({ where: { id: bindingId } })
     if (!b) throw new Error(`LocationBinding not found: ${bindingId}`)
 
+    const referenceImagePath = (b as any).referenceImagePath ?? null
+
     if (b.sourceType === 'standalone') {
       return {
         name: b.standaloneName ?? b.locationName ?? '(未命名)',
         description: b.standaloneDescription ?? '',
         source: 'standalone',
+        referenceImagePath,
       }
     }
 
@@ -161,7 +164,19 @@ export class LocationAssetService {
       name: b.overrideName ?? lw?.name ?? b.locationName ?? '(未命名)',
       description: b.overrideDescription ?? lw?.description ?? '',
       source: 'linked_lw',
+      referenceImagePath,
     }
+  }
+
+  /** 设置 / 清空参考图路径（spec 2026-05-09） */
+  async setReferenceImagePath(
+    bindingId: string,
+    path: string | null,
+  ): Promise<void> {
+    await this.bindingRepo.update(bindingId, {
+      referenceImagePath: path,
+      updatedAt: new Date(),
+    } as any)
   }
 
   /**

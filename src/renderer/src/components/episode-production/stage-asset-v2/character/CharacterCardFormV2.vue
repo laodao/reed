@@ -1,11 +1,16 @@
 <template>
   <!--
-    CharacterCardFormV2 · 角色设定卡（FU5-C2 / 原型 §4.C 6 节）
+    CharacterCardFormV2 · 角色设定卡（spec 2026-05-08 v3 简化）
 
-    严格按对照表 §4 cell 表实施：
-      ① 身份（姓名 / 别名 / 定位 / 性别 / 年龄）
-      ② 外貌（自由文字 + 来自长文 hint + 添加 override）
-      ③ 服装（默认 + 备选数组）
+    spec 2026-05-08 v3 修订：原型里"外貌 + 服装（默认 + 备选）"两节合并为单一
+    "人物描述"自由文本（落到 appearance / overrideAppearance / standaloneDescription
+    同一字段位）。outfit / outfitsExtra 字段在 entity 上仍保留兼容旧数据，但 UI 不再
+    暴露——新写入永远是空，prompt builder 见空就跳过。
+
+    现在的 section：
+      ① 身份（姓名 / 别名 / 定位 / 性别 / 年龄 / 人种）
+      ② 人物描述（外貌 + 服装 + 任何其他描述合并的自由文本）
+      ③ 风格（styleAnchors 多选）
       ④ 声音（音色 — 语速 / 音调 / 情感按场景在分镜阶段配置）
       ⑤ 形象库 portrait_id 绑定
 
@@ -67,70 +72,38 @@
           />
         </el-form-item>
         <el-form-item label="人种">
-          <el-select
+          <el-input
             v-model="form.race"
-            placeholder="选择人种"
+            placeholder="如：东亚 / 欧洲 / 半人马 / 自定义种族"
             clearable
             class="full-width"
-            @change="onChange('race', form.race, form.race !== initial.race)"
-          >
-            <el-option
-              v-for="opt in RACE_OPTIONS"
-              :key="opt.value"
-              :label="opt.label"
-              :value="opt.value"
-            />
-          </el-select>
+            @input="onChange('race', form.race, form.race !== initial.race)"
+            @clear="onChange('race', null, initial.race !== null)"
+          />
         </el-form-item>
       </el-form>
     </section>
 
-    <!-- ② 外貌 -->
+    <!-- ② 人物描述（外貌 + 服装 + 其他描述合并；落 appearance / overrideAppearance / standaloneDescription） -->
     <section class="form-section">
       <div class="section-label">
-        外貌
+        人物描述
         <span v-if="isLw" class="lw-hint">基础值来自长文</span>
       </div>
       <el-input
         v-model="form.appearance"
         type="textarea"
-        :rows="3"
+        :rows="6"
         :placeholder="
           isLw
-            ? '留空 = 用长文外貌；填写 = override（仅本剧集生效）'
-            : '身高 · 身材 · 五官 · 发型 · 眼色 · 标志特征…'
+            ? '留空 = 用长文描述；填写 = override（仅本剧集生效）。可包含外貌（身高/五官/发型/眼色/标志特征）+ 服装（默认 / 备选）+ 任何其他描述。'
+            : '可包含外貌（身高 · 身材 · 五官 · 发型 · 眼色 · 标志特征）+ 服装（默认 / 备选）+ 性格 / 标签 等任何描述。'
         "
         @input="onChange('appearance', form.appearance, form.appearance !== initial.appearance)"
       />
     </section>
 
-    <!-- ③ 服装 -->
-    <section class="form-section">
-      <div class="section-label">服装</div>
-      <el-form label-width="60px" size="small" label-position="left">
-        <el-form-item label="默认">
-          <el-input
-            v-model="form.outfit"
-            placeholder="如：玄色长袍 + 玉冠 + 腰佩长剑"
-            @input="onChange('outfit', form.outfit, form.outfit !== initial.outfit)"
-          />
-        </el-form-item>
-        <el-form-item label="备选">
-          <el-select
-            v-model="form.outfitsExtra"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-            placeholder="可输入多个备选服装（按回车）"
-            class="full-width"
-            @change="onChange('outfitsExtra', form.outfitsExtra, !arraysEqual(form.outfitsExtra, initial.outfitsExtra))"
-          />
-        </el-form-item>
-      </el-form>
-    </section>
-
-    <!-- ③.5 风格 -->
+    <!-- ③ 风格 -->
     <section class="form-section">
       <div class="section-label">风格</div>
       <el-form label-width="60px" size="small" label-position="left">
@@ -179,7 +152,7 @@
     </section>
 
     <!-- ⑤ 形象库 portrait_id -->
-    <section class="form-section last">
+    <section class="form-section">
       <div class="section-label">形象库</div>
       <div class="portrait-row">
         <el-tag v-if="form.portraitId" type="info" size="small">
@@ -203,6 +176,16 @@
         </el-button>
       </div>
     </section>
+
+    <!-- ⑥ 参考图（spec 2026-05-09）— 主图生成时作为 AI reference -->
+    <section class="form-section last">
+      <ReferenceImageField
+        asset-type="character"
+        :binding-id="binding?.id"
+        :model-value="form.referenceImagePath"
+        @update:model-value="onReferenceImageChange"
+      />
+    </section>
   </div>
 </template>
 
@@ -210,6 +193,7 @@
 import { computed, reactive, ref, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { STYLE_PRESETS } from '@core/modules/episode-production/assets/constants/style-presets'
+import ReferenceImageField from '../shared/ReferenceImageField.vue'
 
 export interface FormChangePayload {
   key: string
@@ -227,6 +211,8 @@ const emit = defineEmits<{
 
 const isLw = computed(() => props.binding?.sourceType === 'linked_lw')
 
+// spec 2026-05-08 v3：UI 不再暴露 outfit / outfitsExtra；entity 上的旧字段保持向后兼容
+// 但本表单不读、不写、不 emit 这两 key（旧数据 prompt builder 见空就跳过）。
 const form = reactive<{
   name: string
   alias: string
@@ -235,14 +221,14 @@ const form = reactive<{
   age: number | null
   race: string | null
   appearance: string
-  outfit: string
-  outfitsExtra: string[]
   voiceId: string | null
   voiceSpeed: number
   voicePitch: number
   voiceEmotion: string | null
   styleAnchors: string[]
   portraitId: string | null
+  /** spec 2026-05-09：用户上传的参考图相对路径（主图生成 reference） */
+  referenceImagePath: string | null
 }>({
   name: '',
   alias: '',
@@ -251,30 +237,17 @@ const form = reactive<{
   age: null,
   race: null,
   appearance: '',
-  outfit: '',
-  outfitsExtra: [],
   voiceId: null,
   voiceSpeed: 1.0,
   voicePitch: 0,
   voiceEmotion: null,
   styleAnchors: [],
   portraitId: null,
+  referenceImagePath: null,
 })
 
-/**
- * 人种枚举（角色资产）— 与后端 race 列、prompt builder 共享同一组 value。
- * value 用英文 key 是为了让 prompt 拼接时直接映射到英文 prompt 词，
- * label 仅 UI 显示。
- */
-const RACE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
-  { value: 'east_asian', label: '东亚' },
-  { value: 'south_asian', label: '南亚' },
-  { value: 'southeast_asian', label: '东南亚' },
-  { value: 'central_asian', label: '中亚' },
-  { value: 'european', label: '欧洲' },
-  { value: 'african', label: '非洲' },
-  { value: 'south_american', label: '南美' },
-]
+// 旧版 RACE_OPTIONS 已移除（spec 2026-05-08 v5：人种改为自由输入）。
+// 旧英文 key（east_asian 等）的老数据由 main-image-generator.describeCharacterRace 兼容翻译。
 
 const initial = ref<any>({})
 
@@ -293,15 +266,14 @@ watch(
     form.race = b.race ?? null
     form.appearance =
       (isLwBinding ? b.overrideAppearance : b.standaloneDescription) ?? ''
-    form.outfit = b.overrideOutfit ?? ''
-    form.outfitsExtra = parseJsonArray(b.outfitsExtra)
     form.voiceId = b.voiceId ?? null
     form.voiceSpeed = b.voiceSpeed ?? 1.0
     form.voicePitch = b.voicePitch ?? 0
     form.voiceEmotion = b.voiceEmotion ?? null
     form.styleAnchors = parseJsonArray(b.styleAnchors)
     form.portraitId = b.portraitId ?? null
-    initial.value = { ...form, outfitsExtra: [...form.outfitsExtra], styleAnchors: [...form.styleAnchors] }
+    form.referenceImagePath = b.referenceImagePath ?? null
+    initial.value = { ...form, styleAnchors: [...form.styleAnchors] }
   },
   { immediate: true, deep: true },
 )
@@ -328,6 +300,17 @@ function onSelectPortrait(): void {
 function onClearPortrait(): void {
   form.portraitId = null
   onChange('portraitId', null, initial.value.portraitId !== null)
+}
+
+/**
+ * 参考图上传 / 清除完成回调：
+ * 子组件已通过 setReferenceImage IPC 直接落库，这里只把本地 form 同步上，
+ * 并 emit 一个 change 给父组件做必要刷新（不需要再二次走 patch 流程）。
+ */
+function onReferenceImageChange(newPath: string | null): void {
+  form.referenceImagePath = newPath
+  // dirty=false：已立即落库，没有"待保存"语义
+  emit('change', { key: 'referenceImagePath', value: newPath, dirty: false })
 }
 
 function parseJsonArray(s: string | null | undefined): string[] {

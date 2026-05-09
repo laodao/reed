@@ -495,6 +495,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-storyboard-reference-image-ids'
     )
     await addStoryboardReferenceImageIds(this.dataSource)
+    // 资产 binding reference_image_path：用户上传的参考图（主图生成 reference）
+    const { addBindingReferenceImagePath } = await import(
+      '@core/database/migrations/add-binding-reference-image-path'
+    )
+    await addBindingReferenceImagePath(this.dataSource)
   }
 
   /**

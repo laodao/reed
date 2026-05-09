@@ -115,12 +115,14 @@ export class ItemAssetService {
     if (!b) throw new Error(`ItemBinding not found: ${bindingId}`)
 
     const styleAnchors = parseJsonArray(b.styleAnchors)
+    const referenceImagePath = (b as any).referenceImagePath ?? null
     if (b.sourceType === 'standalone') {
       return {
         name: b.standaloneName ?? b.itemName ?? '(未命名)',
         description: b.standaloneDescription ?? '',
         source: 'standalone',
         styleAnchors,
+        referenceImagePath,
       }
     }
 
@@ -134,7 +136,19 @@ export class ItemAssetService {
       description: b.overrideDescription ?? lw?.description ?? '',
       source: 'linked_lw',
       styleAnchors,
+      referenceImagePath,
     }
+  }
+
+  /** 设置 / 清空参考图路径（spec 2026-05-09） */
+  async setReferenceImagePath(
+    bindingId: string,
+    path: string | null,
+  ): Promise<void> {
+    await this.bindingRepo.update(bindingId, {
+      referenceImagePath: path,
+      updatedAt: new Date(),
+    } as any)
   }
 
   /** 更新风格锚点（与 character/location 对齐 — text JSON 字符串落库） */

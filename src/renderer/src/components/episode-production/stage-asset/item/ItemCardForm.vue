@@ -60,6 +60,16 @@
         </el-select>
       </el-form-item>
 
+      <!-- 参考图（spec 2026-05-09）— 主图生成时作为 AI reference -->
+      <el-form-item>
+        <ReferenceImageField
+          asset-type="item"
+          :binding-id="binding?.id"
+          :model-value="form.referenceImagePath"
+          @update:model-value="onReferenceImageChange"
+        />
+      </el-form-item>
+
       <!-- 保存按钮 -->
       <div class="form-footer">
         <el-button type="success" :loading="saving" @click="onSave">
@@ -90,6 +100,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { STYLE_PRESETS } from '@core/modules/episode-production/assets/constants/style-presets'
+import ReferenceImageField from '../../stage-asset-v2/shared/ReferenceImageField.vue'
 
 const props = defineProps<{ bindingId: string }>()
 const emit = defineEmits<{ saved: [] }>()
@@ -102,10 +113,13 @@ const form = reactive<{
   name: string
   description: string
   styleAnchors: string[]
+  /** spec 2026-05-09 参考图相对路径 */
+  referenceImagePath: string | null
 }>({
   name: '',
   description: '',
   styleAnchors: [],
+  referenceImagePath: null,
 })
 
 const overrideEnabled = reactive({
@@ -169,6 +183,7 @@ function hydrateFromBinding(b: any) {
     overrideEnabled.description = true
   }
   form.styleAnchors = parseJsonArray(b.styleAnchors)
+  form.referenceImagePath = b.referenceImagePath ?? null
 }
 
 function parseJsonArray(raw: string | null | undefined): string[] {
@@ -179,6 +194,11 @@ function parseJsonArray(raw: string | null | undefined): string[] {
   } catch {
     return []
   }
+}
+
+/** 参考图改完直接更新本地 form；落库已由 ReferenceImageField IPC 即时完成 */
+function onReferenceImageChange(newPath: string | null): void {
+  form.referenceImagePath = newPath
 }
 
 function onToggleOverride(field: 'name' | 'description') {

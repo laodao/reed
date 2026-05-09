@@ -130,6 +130,8 @@ export class CharacterAssetService {
       outfitsExtra: parseJsonArray(b.outfitsExtra),
     }
 
+    const referenceImagePath = (b as any).referenceImagePath ?? null
+
     if (b.sourceType === 'standalone') {
       return {
         name: b.standaloneName ?? '(未命名)',
@@ -138,6 +140,7 @@ export class CharacterAssetService {
         outfit: undefined,
         voiceId: b.voiceId ?? null,
         portraitId: b.portraitId ?? null,
+        referenceImagePath,
         source: 'standalone',
         ...setupFields,
       }
@@ -157,9 +160,21 @@ export class CharacterAssetService {
       outfit: b.overrideOutfit ?? undefined,
       voiceId: b.voiceId ?? null,
       portraitId: b.portraitId ?? null,
+      referenceImagePath,
       source: 'linked_lw',
       ...setupFields,
     }
+  }
+
+  /** 设置 / 清空参考图路径（spec 2026-05-09） */
+  async setReferenceImagePath(
+    bindingId: string,
+    path: string | null,
+  ): Promise<void> {
+    await this.bindingRepo.update(bindingId, {
+      referenceImagePath: path,
+      updatedAt: new Date(),
+    } as any)
   }
 
   /** 新建 standalone 角色（独立角色，不绑定 lw） */

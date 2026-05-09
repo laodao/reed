@@ -29,6 +29,11 @@ export interface GenerateMainInput {
   prompt: string
   negativePrompt?: string
   userId?: string | null
+  /**
+   * 用户上传的参考图相对路径（spec 2026-05-09；来自 binding.reference_image_path）。
+   * 提供时会作为 imageGen.generate.referenceImagePaths 输入，让 AI 沿用参考图的视觉风格。
+   */
+  referenceImagePath?: string | null
 }
 
 export class MainImageGeneratorService {
@@ -73,8 +78,13 @@ export class MainImageGeneratorService {
       effectiveNegative = mergeLocationNoHumanNegative(input.negativePrompt)
     }
 
+    const refPaths: string[] = []
+    if (input.referenceImagePath && input.referenceImagePath.trim()) {
+      refPaths.push(input.referenceImagePath.trim())
+    }
+
     const result = await this.imageGen.generate({
-      referenceImagePaths: [],
+      referenceImagePaths: refPaths,
       prompt: effectivePrompt,
       negativePrompt: effectiveNegative,
       label: 'main',

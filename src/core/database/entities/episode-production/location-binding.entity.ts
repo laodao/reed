@@ -104,6 +104,10 @@ export class LocationBindingEntity {
   @Column({ name: 'scene_layout_id', type: 'text', nullable: true })
   sceneLayoutId!: string | null
 
+  /** 用户上传的参考图（主图生成 reference；spec 2026-05-09） */
+  @Column({ name: 'reference_image_path', type: 'text', nullable: true })
+  referenceImagePath!: string | null
+
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 

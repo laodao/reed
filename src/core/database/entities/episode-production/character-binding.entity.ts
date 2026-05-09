@@ -97,7 +97,11 @@ export class CharacterBindingEntity {
   @Column({ name: 'age', type: 'integer', nullable: true })
   age!: number | null
 
-  /** 人种 — 用于 AI 主图 / 派生图 prompt 拼接，枚举见 RACE_OPTIONS */
+  /**
+   * 人种 — 用于 AI 主图 / 派生图 prompt 拼接。
+   * spec 2026-05-08 v5：UI 从 select 改为自由输入，可填任意文本（"东亚" / "半人马" / 自定义）。
+   * 旧数据存的是英文 key（east_asian 等），由 main-image-generator.describeCharacterRace 兼容翻译。
+   */
   @Column({ name: 'race', type: 'text', nullable: true })
   race!: string | null
 
@@ -112,6 +116,14 @@ export class CharacterBindingEntity {
   /** 备选服装列表（JSON 数组字符串） */
   @Column({ name: 'outfits_extra', type: 'text', nullable: true })
   outfitsExtra!: string | null
+
+  /**
+   * 用户在 ② 资产 stage 设定卡上传的参考图（spec 2026-05-09）。
+   * 相对路径（与 image_assets.image_path 同一约定）。AI 生成主图（main）时作为 reference 输入。
+   * NULL = 没有参考图，主图按现有 prompt-only 流程生成。
+   */
+  @Column({ name: 'reference_image_path', type: 'text', nullable: true })
+  referenceImagePath!: string | null
 
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date

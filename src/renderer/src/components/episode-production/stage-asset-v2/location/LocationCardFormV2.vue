@@ -157,7 +157,17 @@
       <p class="section-note">主流风格（卡通 / 二次元 / 写实 等）会作为 prompt 锚点，影响主图与所有派生图的整体观感。</p>
     </section>
 
-    <!-- ⑥ 360 全景 + 3D 升级提示 -->
+    <!-- ⑥ 参考图（spec 2026-05-09）— 主图生成时作为 AI reference -->
+    <section class="form-section">
+      <ReferenceImageField
+        asset-type="location"
+        :binding-id="binding?.id"
+        :model-value="form.referenceImagePath"
+        @update:model-value="onReferenceImageChange"
+      />
+    </section>
+
+    <!-- ⑦ 360 全景 + 3D 升级提示 -->
     <section class="form-section last panorama-section">
       <div class="section-label">🌐 360 全景图（panorama_360）</div>
       <p class="section-body">
@@ -174,6 +184,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { STYLE_PRESETS } from '@core/modules/episode-production/assets/constants/style-presets'
+import ReferenceImageField from '../shared/ReferenceImageField.vue'
 
 export interface FormChangePayload {
   key: string
@@ -201,6 +212,8 @@ const form = reactive<{
   timeOfDay: string | null
   weather: string | null
   styleAnchors: string[]
+  /** spec 2026-05-09 参考图相对路径 */
+  referenceImagePath: string | null
 }>({
   name: '',
   description: '',
@@ -211,6 +224,7 @@ const form = reactive<{
   timeOfDay: null,
   weather: null,
   styleAnchors: [],
+  referenceImagePath: null,
 })
 
 const initial = ref<any>({})
@@ -230,6 +244,7 @@ watch(
     form.timeOfDay = b.timeOfDay ?? null
     form.weather = b.weather ?? null
     form.styleAnchors = parseJsonArray(b.styleAnchors)
+    form.referenceImagePath = b.referenceImagePath ?? null
     initial.value = {
       ...form,
       moodTags: [...form.moodTags],
@@ -241,6 +256,12 @@ watch(
 
 function onChange(key: string, value: any, dirty: boolean): void {
   emit('change', { key, value, dirty })
+}
+
+function onReferenceImageChange(newPath: string | null): void {
+  form.referenceImagePath = newPath
+  // dirty=false：子组件已通过 setReferenceImage IPC 立即落库
+  emit('change', { key: 'referenceImagePath', value: newPath, dirty: false })
 }
 
 function parseJsonArray(s: string | null | undefined): string[] {
