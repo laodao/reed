@@ -39,7 +39,7 @@
           type="textarea"
           :rows="4"
           placeholder="描述人物的外貌特征：年龄、性别、发型、肤色、体型、服装风格等..."
-          maxlength="2000"
+          maxlength="5000"
           show-word-limit
         />
         <p class="hint-text">首次生成将创建<strong>全身正面形象</strong>，之后可基于此生成侧面和背面</p>

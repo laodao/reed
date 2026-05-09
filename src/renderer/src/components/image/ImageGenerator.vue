@@ -331,8 +331,8 @@ const seed = ref(-1)
 /** 参考图片 */
 const referenceImage = ref('')
 
-/** 最大提示词长度 */
-const maxPromptLength = 1000
+/** 最大提示词长度（剧集制作 prompt 拼装结果常 >1k，加上风格锚点 / 故事背景 / 用户指令更易超） */
+const maxPromptLength = 5000
 
 // ==================== 选项配置 ====================
 
