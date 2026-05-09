@@ -75,6 +75,15 @@ export interface DeriveSingleInput {
    * 不传时回退到默认主图（is_main=1）— 兼容老 character / item 单主图调用方。
    */
   baseImageId?: string
+  /**
+   * 多基图 ID 列表（spec 2026-05-09 ep-redesign §3.2 B6）：
+   * 让 provider 多 ref（万相 1-4 张 / Seedream 多张 / 可灵 element_list）一次喂多张参考。
+   * - 优先级高于 baseImageId（同时传时用 baseImageIds）
+   * - 空数组 → fallback 到默认主图
+   * - 落库时 derivedFromImageId = baseImageIds[0]（保留单值，向后兼容现有 schema）
+   * - 全部 baseImageIds 都校验属于该资产 binding；任一非法 → 抛错
+   */
+  baseImageIds?: string[]
   /** 派生图 metadata（angle/time/weather/...），评分系统据此命中场景维度 */
   metadata?: Record<string, unknown>
   /**
@@ -153,25 +162,41 @@ export class GalleryDerivationService {
    * 4. 写入 asset_image 表，derivedFromImageId 链回基图
    */
   async deriveSingle(input: DeriveSingleInput): Promise<AssetImageEntity> {
-    let base: AssetImageEntity | null = null
-    if (input.baseImageId) {
-      // 用户在 dialog 选定基图（多主图模型下必填）
-      base = await this.imageSvc.getById(input.baseImageId)
-      if (!base) {
+    // spec 2026-05-09 ep-redesign §3.2 B6 多基图：优先级 baseImageIds (非空) > baseImageId > 默认主图
+    let baseList: AssetImageEntity[] = []
+    if (input.baseImageIds && input.baseImageIds.length > 0) {
+      // 多基图：全部校验属于该 binding
+      for (const id of input.baseImageIds) {
+        const img = await this.imageSvc.getById(id)
+        if (!img) {
+          throw new Error(`baseImageId 不存在：${id}`)
+        }
+        if (img.assetType !== input.assetType || img.assetId !== input.assetId) {
+          throw new Error(`baseImageId ${id} 不属于该资产 binding`)
+        }
+        baseList.push(img)
+      }
+    } else if (input.baseImageId) {
+      // 单基图（向后兼容）
+      const img = await this.imageSvc.getById(input.baseImageId)
+      if (!img) {
         throw new Error(`baseImageId 不存在：${input.baseImageId}`)
       }
-      if (base.assetType !== input.assetType || base.assetId !== input.assetId) {
+      if (img.assetType !== input.assetType || img.assetId !== input.assetId) {
         throw new Error('baseImageId 不属于该资产 binding')
       }
+      baseList = [img]
     } else {
       // 兼容老 character / item 调用方：回退到默认主图（isMain=1）
-      base = await this.imageSvc.getMainImage(input.assetType, input.assetId)
+      const main = await this.imageSvc.getMainImage(input.assetType, input.assetId)
+      if (main) baseList = [main]
     }
-    if (!base) {
+    if (baseList.length === 0) {
       throw new Error(
         `无法派生：${input.assetType}/${input.assetId} 没有可用基图`,
       )
     }
+    const base = baseList[0]  // 单值兼容现有 derivedFromImageId 字段
 
     let prompt = input.additionalPrompt ?? `${input.category} · ${input.label}`
     let negativePrompt = input.negativePrompt
@@ -234,8 +259,9 @@ export class GalleryDerivationService {
       prompt = appendItemIdentityPreservation(prompt)
       negativePrompt = mergeItemIdentityNegative(negativePrompt)
     }
+    // spec 2026-05-09 ep-redesign §3.2 B6：多基图全部进 referenceImagePaths
     const result = await this.imageGen.generate({
-      referenceImagePaths: [base.imagePath],
+      referenceImagePaths: baseList.map((b) => b.imagePath),
       prompt,
       negativePrompt,
       label: input.label,

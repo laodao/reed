@@ -20,13 +20,19 @@
       该地点还没有主图，请先添加至少一张主图后再派生变体
     </div>
     <el-form v-else label-position="top" @submit.prevent>
-      <el-form-item label="基主图（必选）">
-        <el-radio-group v-model="form.baseImageId" class="base-radio-group">
-          <el-radio
+      <el-form-item :label="`基主图（多选 · 已选 ${form.baseImageIds.length} / 上限 ${maxBaseImages}）`">
+        <!-- spec 2026-05-09 ep-redesign §3.2 B6 多基图：el-radio-group → el-checkbox-group -->
+        <el-checkbox-group
+          v-model="form.baseImageIds"
+          :max="maxBaseImages"
+          class="base-radio-group"
+        >
+          <el-checkbox
             v-for="img in mainImages"
             :key="img.id"
             :value="img.id"
             class="base-radio"
+            border
           >
             <span class="base-radio-inner">
               <img
@@ -40,8 +46,11 @@
                 <span v-if="img.isMain === 1" class="base-default-tag">默认</span>
               </span>
             </span>
-          </el-radio>
-        </el-radio-group>
+          </el-checkbox>
+        </el-checkbox-group>
+        <div class="multi-ref-hint">
+          多张参考能提升一致性。当前 provider 上限：{{ maxBaseImages }} 张（万相 1-4 / Seedream 多张 / 可灵 element_list）。
+        </div>
       </el-form-item>
 
       <el-form-item label="变体名称（必填）">
@@ -136,7 +145,11 @@ const mainImages = computed<AssetImageRow[]>(() =>
 )
 
 const form = reactive({
-  baseImageId: '',
+  /**
+   * spec 2026-05-09 ep-redesign §3.2 B6 多基图：
+   * 用 baseImageIds[] 替代 baseImageId 单值。打开时默认勾选默认主图（isMain=1）。
+   */
+  baseImageIds: [] as string[],
   label: '',
   userPrompt: '',
   metaAngle: '',
@@ -146,12 +159,20 @@ const form = reactive({
 
 const submitting = ref(false)
 
+/**
+ * provider 多 ref 上限：当前写死 4（万相极限）。
+ * Phase 3 加 capability 探测后可改为读 image provider capabilities.maxRefImages 动态。
+ */
+const maxBaseImages = 4
+
 watch(visible, (v) => {
   if (v) reset()
 })
 
 function reset(): void {
-  form.baseImageId = mainImages.value[0]?.id ?? ''
+  // 默认勾选默认主图（isMain=1）；没有则取第一张
+  const defaultMain = mainImages.value.find((i) => i.isMain === 1) ?? mainImages.value[0]
+  form.baseImageIds = defaultMain ? [defaultMain.id] : []
   form.label = ''
   form.userPrompt = ''
   form.metaAngle = ''
@@ -161,7 +182,7 @@ function reset(): void {
 }
 
 const canSubmit = computed(
-  () => !!form.baseImageId && form.label.trim().length > 0,
+  () => form.baseImageIds.length > 0 && form.label.trim().length > 0,
 )
 
 function buildMetadata(): Record<string, string> | undefined {
@@ -202,7 +223,7 @@ async function onSubmit(): Promise<void> {
       category: 'variant',
       label: form.label.trim(),
       additionalPrompt: form.userPrompt.trim() || undefined,
-      baseImageId: form.baseImageId,
+      baseImageIds: form.baseImageIds,
       metadata: buildMetadata(),
       storyBackground,
     })
@@ -245,8 +266,16 @@ async function onSubmit(): Promise<void> {
   cursor: pointer;
 }
 
-.base-radio :deep(.el-radio__label) {
+.base-radio :deep(.el-radio__label),
+.base-radio :deep(.el-checkbox__label) {
   padding-left: 6px;
+}
+
+.multi-ref-hint {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
+  line-height: 1.5;
 }
 
 .base-radio-inner {
