@@ -76,7 +76,7 @@
         <section class="panel lang-panel">
           <header class="panel-header lang-header">
             <span class="panel-title">
-              分镜 {{ selectedSceneIndex + 1 }}.{{ selectedStoryboard.shotNumber }}
+              {{ formatGlobalShotId({ episodeNumber: episodeStore.currentEpisode?.episodeNumber, sceneIndex: selectedSceneIndex, shotNumber: selectedStoryboard.shotNumber }) }}
             </span>
             <span class="meta-sep">·</span>
             <span class="panel-meta">
@@ -378,6 +378,7 @@ import {
   useEpProjectStore,
   useEpAssetStore,
 } from '@/stores/episode-production'
+import { formatGlobalShotId } from '@/utils/storyboard-id'
 
 const props = defineProps<{
   episodeScriptId: string | null

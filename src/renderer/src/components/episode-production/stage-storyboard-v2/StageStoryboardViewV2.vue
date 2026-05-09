@@ -140,7 +140,9 @@
               @dblclick="emit('jump-to-production', sb)"
             >
               <div class="shot-thumb" :class="getStatusClass(sb)">
-                <span class="shot-no-badge">{{ selectedSceneIndex + 1 }}.{{ sb.shotNumber }}</span>
+                <span class="shot-no-badge" :title="formatGlobalShotId({ episodeNumber: episodeStore.currentEpisode?.episodeNumber, sceneIndex: selectedSceneIndex, shotNumber: sb.shotNumber })">
+                  {{ formatGlobalShotId({ episodeNumber: episodeStore.currentEpisode?.episodeNumber, sceneIndex: selectedSceneIndex, shotNumber: sb.shotNumber }) }}
+                </span>
                 <!--
                   缩略图规则：
                     - 已生成视频（videoPath）→ <video> preload metadata，自动呈现首帧
@@ -746,6 +748,7 @@ import {
   useEpProjectStore,
   useEpAssetStore,
 } from '@/stores/episode-production'
+import { formatGlobalShotId } from '@/utils/storyboard-id'
 
 const props = defineProps<{
   episodeScriptId: string | null

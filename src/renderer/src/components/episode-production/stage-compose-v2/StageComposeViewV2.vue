@@ -151,7 +151,7 @@
                   ]"
                   :style="cellStyle(cell)"
                   :title="
-                    `${cell.includeInFinal ? '✅ 入选' : '⊘ 不入选'} · 场景 ${cell.sceneNumber} 镜 ${cell.shotNumber} · ${cell.duration}s · 同场景内可拖拽调序`
+                    `${cell.includeInFinal ? '✅ 入选' : '⊘ 不入选'} · ${formatGlobalShotId({ episodeNumber: episodeStore.currentEpisode?.episodeNumber, sceneIndex: cell.sceneNumber - 1, shotNumber: cell.shotNumber })} · ${cell.duration}s · 同场景内可拖拽调序`
                   "
                   draggable="true"
                   @dragstart="onCellDragStart($event, cell)"
@@ -167,7 +167,7 @@
                     @click.stop
                     @change="onToggleInclude(cell)"
                   />
-                  <span class="clip-name">{{ cell.sceneNumber }}.{{ cell.shotNumber }} · {{ cell.duration }}s</span>
+                  <span class="clip-name">{{ formatGlobalShotId({ episodeNumber: episodeStore.currentEpisode?.episodeNumber, sceneIndex: cell.sceneNumber - 1, shotNumber: cell.shotNumber }) }} · {{ cell.duration }}s</span>
                 </div>
                 <div
                   v-if="i < cells.length - 1"
@@ -342,6 +342,7 @@ import {
   useEpProjectStore,
   useEpScriptStore,
 } from '@/stores/episode-production'
+import { formatGlobalShotId } from '@/utils/storyboard-id'
 
 const props = defineProps<{
   episodeScriptId: string | null
