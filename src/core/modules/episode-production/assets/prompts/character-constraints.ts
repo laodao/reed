@@ -135,36 +135,19 @@ export function framingForCategory(category: string): CharacterFraming {
  *
  * 命名空间隔离：与 appendCharacterConstraints 不冲突；两者可叠加注入。
  */
-const IDENTITY_PRESERVATION_SUFFIX = [
-  '严格保持人物身份特征（preserve character identity, same face, same facial features）',
-  '同一脸型与五官（same face shape, same eyes, same nose, same mouth, same jawline）',
-  '同一肤色（same skin tone, identical complexion）',
-  '同一发色与发型轮廓（same hair color, same hairline, same hair structure）',
-  '同一体型与身高（same body type, same build, same height）',
-  '保持整体气质与年龄感（preserve overall demeanor and apparent age）',
-].join('，')
+// spec 2026-05-09 ep-redesign · §3.2 P-1：缩减为极简版（1 锚点 < 30 字 / 3 token）。
+// 原版 6 锚点 30+ 词中英双写在 2026 SOTA 模型上是过度工程：
+//   - 模型已原生支持多模态参考 + subject embedding
+//   - 长文本约束反而稀释 prompt
+//   - 与"reference image latent guidance 主导一致性"路径冲突
+// 改为 reference image 物理主导；文本只保留最弱的提醒。
+const IDENTITY_PRESERVATION_SUFFIX =
+  '保持人物身份（preserve character identity）'
 
 const IDENTITY_PRESERVATION_NEGATIVE = [
   'different face',
-  'different person',
   'face change',
-  'altered facial features',
-  'different eye color',
-  'different eye shape',
-  'different nose',
-  'different mouth',
-  'different jawline',
-  'different skin tone',
-  'darker skin',
-  'lighter skin',
-  'different hair color',
-  'different hair style',
-  'bald change',
-  'different body type',
-  'different height',
-  'different age',
-  'younger',
-  'older',
+  'different person',
 ].join(', ')
 
 /** 把身份保持约束追加到 prompt 末尾（已包含则不重复） */

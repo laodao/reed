@@ -57,29 +57,15 @@ export function mergeItemNegative(userNegative?: string | null): string {
  * 派生场景下注入身份保持：保形状 / 材质 / 标志特征 / 比例。
  * 用于派生图（基于主图 ref），让 AI 在文本侧也有"保持物品特征"的强 anchor。
  */
-const ITEM_IDENTITY_PRESERVATION_SUFFIX = [
-  '严格保持物品身份特征（preserve item identity, same object, same visual characteristics）',
-  '同一形状与轮廓（same shape, same silhouette, identical contours）',
-  '同一材质与质感（same material, same texture, same surface finish）',
-  '同一颜色与色彩饱和度（same color, same saturation, same hue）',
-  '同一标志性细节（same distinctive details, same ornaments, same engravings）',
-  '同一比例尺寸感（same proportions, identical relative size）',
-].join('，')
+// spec 2026-05-09 ep-redesign · §3.2 P-1：与 character 同步缩减。
+// 原版 6 锚点 / 13 词 negative 在 2026 SOTA 模型上属过度工程；让 reference image 主导。
+const ITEM_IDENTITY_PRESERVATION_SUFFIX =
+  '保持物品身份（preserve item identity）'
 
 const ITEM_IDENTITY_PRESERVATION_NEGATIVE = [
   'different object',
-  'different item',
   'shape change',
-  'different shape',
-  'altered silhouette',
   'different material',
-  'different texture',
-  'different color',
-  'different saturation',
-  'missing details',
-  'extra details',
-  'different proportions',
-  'different size',
 ].join(', ')
 
 export function appendItemIdentityPreservation(prompt: string): string {
