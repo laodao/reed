@@ -267,6 +267,18 @@ export interface Storyboard {
    */
   referenceImageIds?: Record<string, string> | null
 
+  /**
+   * 分镜级 location binding 列表（spec 2026-05-09）。
+   * 非空覆盖 scene.location_binding_id；空 / 缺失走 scene 默认。
+   */
+  locationBindingIds?: string[]
+
+  /**
+   * 分镜级 item binding 列表（spec 2026-05-09）。
+   * 非空覆盖 scene.characters[*].props 推导；空 / 缺失走 scene 默认。
+   */
+  itemBindingIds?: string[]
+
   createdAt: number
   updatedAt: number
 }

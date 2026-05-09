@@ -49,6 +49,21 @@ export class StoryboardEntity {
   @Column({ name: 'characters', type: 'simple-json', nullable: true })
   characters!: unknown[] | null
 
+  /**
+   * 分镜级 location 覆盖（spec 2026-05-09）：JSON 数组（binding ID 列表）。
+   * 非空 → 覆盖 scene.location_binding_id 推导；空 / NULL → 走 scene-level 默认。
+   * 一般填一个；列表形态保留多地点蒙太奇 / 复合空间扩展性。
+   */
+  @Column({ name: 'location_binding_ids', type: 'simple-json', nullable: true })
+  locationBindingIds!: string[] | null
+
+  /**
+   * 分镜级 item 覆盖（spec 2026-05-09）：JSON 数组（item binding ID 列表）。
+   * 非空 → 覆盖 scene.characters[*].props 推导；空 / NULL → 走 scene-level 默认。
+   */
+  @Column({ name: 'item_binding_ids', type: 'simple-json', nullable: true })
+  itemBindingIds!: string[] | null
+
   @Column({ name: 'narration_id', type: 'text', nullable: true })
   narrationId!: string | null
 

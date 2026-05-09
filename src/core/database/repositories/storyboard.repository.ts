@@ -64,6 +64,10 @@ export interface UpdateStoryboardRequest {
    * 传 null 表示清空所有覆盖；传 undefined 不变。
    */
   referenceImageIds?: Record<string, string> | null
+  /** 分镜级地点 binding 覆盖（spec 2026-05-09） */
+  locationBindingIds?: string[] | null
+  /** 分镜级物品 binding 覆盖（spec 2026-05-09） */
+  itemBindingIds?: string[] | null
 }
 
 export class StoryboardRepository extends BaseRepository<
@@ -129,6 +133,8 @@ export class StoryboardRepository extends BaseRepository<
       transition: this.parseTransition(e),
       status: e.status as StoryboardStatus,
       referenceImageIds: this.parseReferenceImageIds(e),
+      locationBindingIds: ((e as any).locationBindingIds as string[] | null) ?? [],
+      itemBindingIds: ((e as any).itemBindingIds as string[] | null) ?? [],
       createdAt: this.toEpochMs(e.createdAt),
       updatedAt: this.toEpochMs(e.updatedAt),
     }
@@ -287,6 +293,15 @@ export class StoryboardRepository extends BaseRepository<
     if (data.referenceImageIds !== undefined) {
       ;(existing as any).referenceImageIds =
         data.referenceImageIds === null ? null : JSON.stringify(data.referenceImageIds)
+      changed = true
+    }
+    if (data.locationBindingIds !== undefined) {
+      // simple-json 字段 entity 直接用数组；TypeORM 自行 stringify
+      ;(existing as any).locationBindingIds = data.locationBindingIds ?? null
+      changed = true
+    }
+    if (data.itemBindingIds !== undefined) {
+      ;(existing as any).itemBindingIds = data.itemBindingIds ?? null
       changed = true
     }
 

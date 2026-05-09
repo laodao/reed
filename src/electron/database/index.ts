@@ -500,6 +500,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-binding-reference-image-path'
     )
     await addBindingReferenceImagePath(this.dataSource)
+    // 分镜 location_binding_ids + item_binding_ids：分镜级地点 / 物品手动添加
+    const { addStoryboardLocationItemBindings } = await import(
+      '@core/database/migrations/add-storyboard-location-item-bindings'
+    )
+    await addStoryboardLocationItemBindings(this.dataSource)
   }
 
   /**

@@ -561,6 +561,151 @@
             </div>
           </div>
 
+          <!-- 地点（spec 2026-05-09）— 分镜级覆盖；空则继承 scene.locationBindingId -->
+          <div class="characters-section bindings-section">
+            <div class="char-label">
+              <span>镜头内地点（独立配置）</span>
+              <span class="hint-tertiary">— 覆盖场景级；为空则继承 scene.location</span>
+              <span class="header-spacer" />
+              <el-dropdown
+                v-if="availableLocationsForAdd.length > 0"
+                trigger="click"
+                @command="addStoryboardLocation"
+              >
+                <el-button size="small" type="primary" plain>
+                  <el-icon><Plus /></el-icon>
+                  添加地点
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item
+                      v-for="b in availableLocationsForAdd"
+                      :key="b.id"
+                      :command="b.id"
+                    >
+                      📍 {{ bindingDisplayName(b) }}
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+              <el-button
+                v-else
+                size="small"
+                type="primary"
+                plain
+                disabled
+                title="项目内没有可添加的地点形象"
+              >
+                <el-icon><Plus /></el-icon>
+                添加地点
+              </el-button>
+            </div>
+            <!--
+              展示规则（spec 2026-05-09）：
+                · 分镜级 locationBindingIds 非空 → 用之，chip 可 × 删
+                · 否则若场景有 locationBindingId → 显示场景继承（虚框 chip + "继承"标签，不可删）
+                · 都没有 → empty-hint
+            -->
+            <div v-if="editDraft.locationBindingIds.length > 0" class="bindings-chips">
+              <el-tag
+                v-for="(id, i) in editDraft.locationBindingIds"
+                :key="`loc-${i}-${id}`"
+                type="success"
+                effect="light"
+                closable
+                class="binding-chip"
+                @close="removeLocationAt(i)"
+              >📍 {{ resolveBindingName('location', id) }}</el-tag>
+            </div>
+            <div v-else-if="inheritedLocationIds.length > 0" class="bindings-chips">
+              <el-tag
+                v-for="id in inheritedLocationIds"
+                :key="`loc-inh-${id}`"
+                type="success"
+                effect="plain"
+                class="binding-chip inherited-chip"
+                title="继承自场景；点上方添加地点会创建独立配置覆盖场景级"
+              >
+                📍 {{ resolveBindingName('location', id) }}
+                <span class="inherited-tag">继承</span>
+              </el-tag>
+            </div>
+            <div v-else class="empty-hint-inline">
+              未配置分镜级地点；场景也未指定 → 关键帧生成只能从画面描述推
+            </div>
+          </div>
+
+          <!-- 物品（spec 2026-05-09）— 分镜级覆盖；空则继承 scene.characters[*].props -->
+          <div class="characters-section bindings-section">
+            <div class="char-label">
+              <span>镜头内物品（独立配置）</span>
+              <span class="hint-tertiary">— 覆盖场景级；为空则继承 <code>scene.props</code></span>
+              <span class="header-spacer" />
+              <el-dropdown
+                v-if="availableItemsForAdd.length > 0"
+                trigger="click"
+                @command="addStoryboardItem"
+              >
+                <el-button size="small" type="primary" plain>
+                  <el-icon><Plus /></el-icon>
+                  添加物品
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item
+                      v-for="b in availableItemsForAdd"
+                      :key="b.id"
+                      :command="b.id"
+                    >
+                      ⚔️ {{ bindingDisplayName(b) }}
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+              <el-button
+                v-else
+                size="small"
+                type="primary"
+                plain
+                disabled
+                title="项目内没有可添加的物品形象"
+              >
+                <el-icon><Plus /></el-icon>
+                添加物品
+              </el-button>
+            </div>
+            <!--
+              展示规则同地点：分镜级覆盖优先；否则展示场景级 props 推导（继承 chip）。
+            -->
+            <div v-if="editDraft.itemBindingIds.length > 0" class="bindings-chips">
+              <el-tag
+                v-for="(id, i) in editDraft.itemBindingIds"
+                :key="`it-${i}-${id}`"
+                type="warning"
+                effect="light"
+                closable
+                class="binding-chip"
+                @close="removeItemAt(i)"
+              >⚔️ {{ resolveBindingName('item', id) }}</el-tag>
+            </div>
+            <div v-else-if="inheritedItemIds.length > 0" class="bindings-chips">
+              <el-tag
+                v-for="id in inheritedItemIds"
+                :key="`it-inh-${id}`"
+                type="warning"
+                effect="plain"
+                class="binding-chip inherited-chip"
+                title="继承自场景 props；点上方添加物品会创建独立配置覆盖场景级"
+              >
+                ⚔️ {{ resolveBindingName('item', id) }}
+                <span class="inherited-tag">继承</span>
+              </el-tag>
+            </div>
+            <div v-else class="empty-hint-inline">
+              未配置分镜级物品；场景 props 也为空 → 关键帧不引用物品图
+            </div>
+          </div>
+
           <!-- 本分镜音频（旁白 + 对白）— 按 storyboard.dialogueIds / narrationId 过滤 -->
           <AudioPanel
             v-if="selectedScene && selectedStoryboard"
@@ -664,6 +809,10 @@ const editDraft = reactive<any>({
    * 但 onSaveEdit 又不传 characters 给 update API，最终 UI 改完根本不持久化。
    */
   characters: [] as any[],
+  /** 分镜级地点 binding 列表（spec 2026-05-09） */
+  locationBindingIds: [] as string[],
+  /** 分镜级物品 binding 列表（spec 2026-05-09） */
+  itemBindingIds: [] as string[],
 })
 
 const editDirty = ref<Set<string>>(new Set())
@@ -686,6 +835,12 @@ watch(
     // 深拷贝避免改回 store；JSON parse/stringify 对纯 JSON 数据足够
     editDraft.characters = Array.isArray(sb.characters)
       ? JSON.parse(JSON.stringify(sb.characters))
+      : []
+    editDraft.locationBindingIds = Array.isArray((sb as any).locationBindingIds)
+      ? [...(sb as any).locationBindingIds]
+      : []
+    editDraft.itemBindingIds = Array.isArray((sb as any).itemBindingIds)
+      ? [...(sb as any).itemBindingIds]
       : []
     editDirty.value = new Set()
   },
@@ -778,6 +933,102 @@ function removeStoryboardCharacter(idx: number | string): void {
 
 function onCharacterFieldEdit(): void {
   onEditChange('characters', null)
+}
+
+// ===== 分镜级地点 / 物品 binding（spec 2026-05-09）=====
+
+/**
+ * 场景级 location 继承：当 editDraft.locationBindingIds 为空时，
+ * 把 selectedScene.locationBindingId 投影成"继承"chip 显示，让用户看到当前生效的地点。
+ */
+const inheritedLocationIds = computed<string[]>(() => {
+  const id = (selectedScene.value as any)?.locationBindingId as string | null | undefined
+  return id ? [id] : []
+})
+
+/**
+ * 场景级 items 继承：从 selectedScene.characters[*].props 收集 itemBindingId（去重，过滤老格式 string）。
+ * 与 keyframe-generation.service.resolveSceneAssets 的 fallback 路径口径一致。
+ */
+const inheritedItemIds = computed<string[]>(() => {
+  const scene = selectedScene.value as any
+  if (!scene || !Array.isArray(scene.characters)) return []
+  const seen = new Set<string>()
+  for (const sc of scene.characters) {
+    if (!Array.isArray(sc?.props)) continue
+    for (const p of sc.props) {
+      if (typeof p === 'string') continue
+      const itemBindingId: string | null = p?.itemBindingId ?? null
+      if (itemBindingId) seen.add(itemBindingId)
+    }
+  }
+  return Array.from(seen)
+})
+
+/** 可添加到本分镜的地点（项目级 binding 减去已在分镜里的） */
+const availableLocationsForAdd = computed(() => {
+  const all = (assetStore.epAssetLocations as any[]) ?? []
+  const taken = new Set(editDraft.locationBindingIds)
+  return all.filter((b) => !taken.has(b.id))
+})
+
+/** 可添加到本分镜的物品（项目级 binding 减去已在分镜里的） */
+const availableItemsForAdd = computed(() => {
+  const all = (assetStore.epAssetItems as any[]) ?? []
+  const taken = new Set(editDraft.itemBindingIds)
+  return all.filter((b) => !taken.has(b.id))
+})
+
+/** 通用 binding 名解析 — kind=character/location/item */
+function resolveBindingName(
+  kind: 'character' | 'location' | 'item',
+  bindingId: string,
+): string {
+  const list =
+    kind === 'character'
+      ? (assetStore.epAssetCharacters as any[])
+      : kind === 'location'
+        ? (assetStore.epAssetLocations as any[])
+        : (assetStore.epAssetItems as any[])
+  const b = (list ?? []).find((x: any) => x.id === bindingId)
+  if (!b) return '(已删除)'
+  return (
+    b.standaloneName ??
+    b.overrideName ??
+    b.locationName ??
+    b.itemName ??
+    '(未命名)'
+  )
+}
+
+function addStoryboardLocation(bindingId: string): void {
+  if (!bindingId) return
+  if (editDraft.locationBindingIds.includes(bindingId)) {
+    ElMessage.warning('该地点已在镜头中')
+    return
+  }
+  editDraft.locationBindingIds.push(bindingId)
+  onEditChange('locationBindingIds', null)
+}
+
+function removeLocationAt(idx: number | string): void {
+  editDraft.locationBindingIds.splice(Number(idx), 1)
+  onEditChange('locationBindingIds', null)
+}
+
+function addStoryboardItem(bindingId: string): void {
+  if (!bindingId) return
+  if (editDraft.itemBindingIds.includes(bindingId)) {
+    ElMessage.warning('该物品已在镜头中')
+    return
+  }
+  editDraft.itemBindingIds.push(bindingId)
+  onEditChange('itemBindingIds', null)
+}
+
+function removeItemAt(idx: number | string): void {
+  editDraft.itemBindingIds.splice(Number(idx), 1)
+  onEditChange('itemBindingIds', null)
 }
 
 /*
@@ -1030,6 +1281,8 @@ async function onSaveEdit(): Promise<void> {
         direction: editDraft.transitionDirection,
       },
       characters: editDraft.characters,
+      locationBindingIds: editDraft.locationBindingIds,
+      itemBindingIds: editDraft.itemBindingIds,
     })
     if (resp?.success) {
       ElMessage.success('已保存')
@@ -1835,6 +2088,36 @@ onBeforeUnmount(() => {
 
 .cg-remove:hover {
   color: var(--el-color-danger);
+}
+
+.bindings-section {
+  margin-top: 8px;
+}
+
+.bindings-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.binding-chip {
+  font-size: 12px;
+}
+
+/* 继承自场景的 chip 用虚线边框区分，避免误以为是分镜级独立配置 */
+.inherited-chip {
+  border-style: dashed !important;
+  opacity: 0.85;
+}
+
+.inherited-tag {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 4px;
+  font-size: 10px;
+  border-radius: 2px;
+  background: var(--el-fill-color);
+  color: var(--el-text-color-secondary);
 }
 
 .char-grid-header {

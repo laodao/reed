@@ -459,11 +459,21 @@ export class KeyframeGenerationService {
     location: ResolvedLocationRef | null
     items: ResolvedItemRef[]
   }> {
-    // location（spec §4.5.2 一场景多分镜共享地点；本 task 不接 angle 变体，
-    // location 仍是场景级；spec §4.5.7 提到的"分镜级 angle 选取"留 follow-up）
+    // 加载分镜本身（含 location_binding_ids / item_binding_ids 分镜级覆盖）
+    const sb = await this.sbRepo.findOne({ where: { id: storyboardId } })
+    const sbLocationOverride = (sb as any)?.locationBindingIds as string[] | null
+    const sbItemOverride = (sb as any)?.itemBindingIds as string[] | null
+
+    // location（spec 2026-05-09 分镜级覆盖）：
+    //   - storyboard.locationBindingIds 非空 → 用第一个 binding（一般分镜只一个地点）
+    //   - 否则回退 scene.locationBindingId
     let location: ResolvedLocationRef | null = null
-    if (scene.locationBindingId) {
-      const r = await this.resolver.resolveLocation(scene.locationBindingId)
+    const effectiveLocationId =
+      sbLocationOverride && sbLocationOverride.length > 0
+        ? sbLocationOverride[0]
+        : scene.locationBindingId
+    if (effectiveLocationId) {
+      const r = await this.resolver.resolveLocation(effectiveLocationId)
       if (r) {
         location = { bindingId: r.bindingId, effective: r.effective }
       }
@@ -510,19 +520,27 @@ export class KeyframeGenerationService {
       }
     }
 
-    // items：从 scene.characters[*].props 合成（spec §4.1 道具挂在角色身上）
-    // 分镜级独立 props 暂不在 storyboard_characters entity 字段范围；留 follow-up
-    const sceneCharsForItems =
-      (scene.characters as SceneCharacter[] | null) ?? []
+    // items：分镜级覆盖优先（spec 2026-05-09），否则回退 scene.characters[*].props
     const items: ResolvedItemRef[] = []
-    for (const sc of sceneCharsForItems) {
-      const props = sc.props ?? []
-      for (const p of props) {
-        if (typeof p === 'string') continue
-        if (!p.itemBindingId) continue
-        const r = await this.resolver.resolveItem(p.itemBindingId)
+    if (sbItemOverride && sbItemOverride.length > 0) {
+      for (const itemBindingId of sbItemOverride) {
+        if (!itemBindingId) continue
+        const r = await this.resolver.resolveItem(itemBindingId)
         if (!r) continue
         items.push({ bindingId: r.bindingId, effective: r.effective })
+      }
+    } else {
+      const sceneCharsForItems =
+        (scene.characters as SceneCharacter[] | null) ?? []
+      for (const sc of sceneCharsForItems) {
+        const props = sc.props ?? []
+        for (const p of props) {
+          if (typeof p === 'string') continue
+          if (!p.itemBindingId) continue
+          const r = await this.resolver.resolveItem(p.itemBindingId)
+          if (!r) continue
+          items.push({ bindingId: r.bindingId, effective: r.effective })
+        }
       }
     }
 

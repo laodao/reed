@@ -59,6 +59,7 @@ import { addStoryboardUseKeyframes } from '@core/database/migrations/add-storybo
 import { addStoryboardIncludeInFinal } from '@core/database/migrations/add-storyboard-include-in-final'
 import { addStoryboardReferenceImageIds } from '@core/database/migrations/add-storyboard-reference-image-ids'
 import { addBindingReferenceImagePath } from '@core/database/migrations/add-binding-reference-image-path'
+import { addStoryboardLocationItemBindings } from '@core/database/migrations/add-storyboard-location-item-bindings'
 import { addLocationBindingExtraFields } from '@core/database/migrations/add-location-binding-extra-fields'
 import { addItemBindingStyleAnchors } from '@core/database/migrations/add-item-binding-style-anchors'
 import { registerCoreDatabaseManager } from '@core/database/database-manager.interface'
@@ -258,6 +259,8 @@ async function initDatabase(): Promise<void> {
   await addStoryboardReferenceImageIds(ds)
   // 资产 binding（character/location/item）reference_image_path：用户上传的参考图，主图生成时作为 reference
   await addBindingReferenceImagePath(ds)
+  // 分镜 location_binding_ids + item_binding_ids：④ 分镜界面手动添加分镜内地点 / 物品（覆盖 scene 级推导）
+  await addStoryboardLocationItemBindings(ds)
   // FU5-C3: location_bindings 加场景类型 + 规模 + 氛围 + 风格锚点字段（spec §3.2/3.3）
   await addLocationBindingExtraFields(ds)
   // spec 2026-05-08: item_bindings 加 style_anchors（与 character/location 对齐）
