@@ -3,6 +3,9 @@
     <template #header>
       <div class="card-header">
         <span class="header-title">📋 设定卡</span>
+        <el-button size="small" type="primary" plain disabled title="即将开放（spec 2026-05-09 ep-redesign §3.2 B2 AI 字段提取）">
+          ✨ AI 自动填
+        </el-button>
       </div>
     </template>
 

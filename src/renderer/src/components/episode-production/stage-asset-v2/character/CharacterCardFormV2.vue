@@ -1,57 +1,71 @@
 <template>
   <!--
-    CharacterCardFormV2 · 角色设定卡（spec 2026-05-08 v3 简化）
+    CharacterCardFormV2 · 角色设定卡
 
-    spec 2026-05-08 v3 修订：原型里"外貌 + 服装（默认 + 备选）"两节合并为单一
-    "人物描述"自由文本（落到 appearance / overrideAppearance / standaloneDescription
-    同一字段位）。outfit / outfitsExtra 字段在 entity 上仍保留兼容旧数据，但 UI 不再
-    暴露——新写入永远是空，prompt builder 见空就跳过。
+    spec 2026-05-09 ep-redesign §3.2 B1 双层 UI 重构：
+      ⭐ 生成核心（始终展开）：人物描述 / 风格 / 性别 / 年龄 / 人种 / 参考图 + ✨ AI 自动填按钮占位
+      ▼ 叙事元数据（el-collapse 默认折叠）：姓名 / 别名 / 定位 / 声音 / 形象库
+        提示："仅用于剧本调度 / 配音；不进图像生成"
 
-    现在的 section：
-      ① 身份（姓名 / 别名 / 定位 / 性别 / 年龄 / 人种）
-      ② 人物描述（外貌 + 服装 + 任何其他描述合并的自由文本）
-      ③ 风格（styleAnchors 多选）
-      ④ 声音（音色 — 语速 / 音调 / 情感按场景在分镜阶段配置）
-      ⑤ 形象库 portrait_id 绑定
+    双母语：
+      大众用户：默认看到的就是关键字段，无视折叠区也能完成创建
+      专业用户：折叠区有姓名 / 别名 / 定位 / 声音 / 形象库 — 满足 character bible 完整性
 
     每个字段独立 onChange → emit('change', { key, value, dirty })，
     父组件 EditorV2 收集成 patch 一次性提交（按 IPC 类型分发）。
+    字段绑定 / onChange 信号 / props 接口零改动；仅模板层重排。
   -->
   <div class="card-form-v2">
     <h3 class="form-title">📋 设定卡</h3>
 
-    <!-- ① 身份 -->
-    <section class="form-section">
-      <div class="section-label">身份</div>
+    <!-- ⭐ 生成核心区（始终展开） — 决定 AI 生成质量的字段 -->
+    <section class="form-section core-section">
+      <div class="core-header">
+        <span class="core-label">⭐ 生成核心</span>
+        <span class="core-hint">— 决定 AI 生成质量</span>
+        <span class="header-spacer" />
+        <el-button size="small" type="primary" plain disabled title="即将开放（C5 AI 字段提取）">
+          ✨ AI 自动填
+        </el-button>
+      </div>
+
+      <!-- 人物描述（核心字段） -->
+      <div class="field-block">
+        <div class="field-label">
+          人物描述（核心）
+          <span v-if="isLw" class="lw-hint">基础值来自长文</span>
+        </div>
+        <el-input
+          v-model="form.appearance"
+          type="textarea"
+          :rows="6"
+          :placeholder="
+            isLw
+              ? '留空 = 用长文描述；填写 = override（仅本剧集生效）。可包含外貌（身高/五官/发型/眼色/标志特征）+ 服装（默认 / 备选）+ 任何其他描述。'
+              : '可包含外貌（身高 · 身材 · 五官 · 发型 · 眼色 · 标志特征）+ 服装（默认 / 备选）+ 性格 / 标签 等任何描述。'
+          "
+          @input="onChange('appearance', form.appearance, form.appearance !== initial.appearance)"
+        />
+      </div>
+
+      <!-- 风格 -->
       <el-form label-width="60px" size="small" label-position="left">
-        <el-form-item label="姓名">
-          <el-input
-            v-model="form.name"
-            :placeholder="isLw ? '空 = 用长文姓名' : '请输入姓名'"
-            @input="onChange('name', form.name, form.name !== initial.name)"
-          />
-        </el-form-item>
-        <el-form-item label="别名">
-          <el-input
-            v-model="form.alias"
-            placeholder="如：三爷 / 浪剑客（多个用 / 分隔）"
-            @input="onChange('alias', form.alias, form.alias !== initial.alias)"
-          />
-        </el-form-item>
-        <el-form-item label="定位">
+        <el-form-item label="风格">
           <el-select
-            v-model="form.role"
-            placeholder="选择定位"
-            clearable
-            @change="onChange('role', form.role, form.role !== initial.role)"
+            v-model="form.styleAnchors"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            placeholder="选择或输入主流风格（多选；按回车自定义）"
+            class="full-width"
+            @change="onChange('styleAnchors', form.styleAnchors, !arraysEqual(form.styleAnchors, initial.styleAnchors))"
           >
-            <el-option label="主角" value="主角" />
-            <el-option label="配角" value="配角" />
-            <el-option label="反派" value="反派" />
-            <el-option label="旁白" value="旁白" />
-            <el-option label="群演" value="群演" />
+            <el-option v-for="s in STYLE_PRESETS" :key="s" :label="s" :value="s" />
           </el-select>
         </el-form-item>
+
+        <!-- 性别 / 年龄 / 人种 -->
         <el-form-item label="性别">
           <el-radio-group
             v-model="form.gender"
@@ -82,110 +96,100 @@
           />
         </el-form-item>
       </el-form>
-    </section>
 
-    <!-- ② 人物描述（外貌 + 服装 + 其他描述合并；落 appearance / overrideAppearance / standaloneDescription） -->
-    <section class="form-section">
-      <div class="section-label">
-        人物描述
-        <span v-if="isLw" class="lw-hint">基础值来自长文</span>
+      <!-- 参考图（spec 2026-05-09）— 主图生成时作为 AI reference -->
+      <div class="field-block">
+        <ReferenceImageField
+          asset-type="character"
+          :binding-id="binding?.id"
+          :model-value="form.referenceImagePath"
+          @update:model-value="onReferenceImageChange"
+        />
       </div>
-      <el-input
-        v-model="form.appearance"
-        type="textarea"
-        :rows="6"
-        :placeholder="
-          isLw
-            ? '留空 = 用长文描述；填写 = override（仅本剧集生效）。可包含外貌（身高/五官/发型/眼色/标志特征）+ 服装（默认 / 备选）+ 任何其他描述。'
-            : '可包含外貌（身高 · 身材 · 五官 · 发型 · 眼色 · 标志特征）+ 服装（默认 / 备选）+ 性格 / 标签 等任何描述。'
-        "
-        @input="onChange('appearance', form.appearance, form.appearance !== initial.appearance)"
-      />
     </section>
 
-    <!-- ③ 风格 -->
-    <section class="form-section">
-      <div class="section-label">风格</div>
-      <el-form label-width="60px" size="small" label-position="left">
-        <el-form-item label="风格">
-          <el-select
-            v-model="form.styleAnchors"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-            placeholder="选择或输入主流风格（多选；按回车自定义）"
-            class="full-width"
-            @change="onChange('styleAnchors', form.styleAnchors, !arraysEqual(form.styleAnchors, initial.styleAnchors))"
-          >
-            <el-option v-for="s in STYLE_PRESETS" :key="s" :label="s" :value="s" />
-          </el-select>
-        </el-form-item>
-        <p class="section-note">主流风格（卡通 / 二次元 / 写实 等）会作为 prompt 锚点，影响主图与所有派生图的整体观感。</p>
-      </el-form>
-    </section>
+    <!-- ▼ 叙事元数据（默认折叠） — 仅用于剧本调度 / 配音；不进图像生成 -->
+    <el-collapse class="metadata-collapse">
+      <el-collapse-item name="metadata">
+        <template #title>
+          <span class="metadata-title">▼ 叙事元数据</span>
+          <span class="metadata-hint">— 仅用于剧本调度 / 配音；不进图像生成</span>
+        </template>
 
-    <!-- ④ 声音 -->
-    <section class="form-section">
-      <div class="section-label">声音</div>
-      <el-form label-width="60px" size="small" label-position="left">
-        <el-form-item label="音色">
-          <el-select
-            v-model="form.voiceId"
-            placeholder="选择音色"
-            clearable
-            class="full-width"
-            @change="onChange('voiceId', form.voiceId, form.voiceId !== initial.voiceId)"
-          >
-            <el-option
-              v-for="v in availableVoices"
-              :key="v.id"
-              :label="v.name"
-              :value="v.id"
+        <el-form label-width="60px" size="small" label-position="left">
+          <!-- 姓名 / 别名 / 定位 -->
+          <el-form-item label="姓名">
+            <el-input
+              v-model="form.name"
+              :placeholder="isLw ? '空 = 用长文姓名' : '请输入姓名'"
+              @input="onChange('name', form.name, form.name !== initial.name)"
             />
-          </el-select>
-        </el-form-item>
-        <p class="section-note">
-          语速 / 音调 / 情感按场景在分镜阶段配置 — 同一角色不同场景可不同。
-        </p>
-      </el-form>
-    </section>
+          </el-form-item>
+          <el-form-item label="别名">
+            <el-input
+              v-model="form.alias"
+              placeholder="如：三爷 / 浪剑客（多个用 / 分隔）"
+              @input="onChange('alias', form.alias, form.alias !== initial.alias)"
+            />
+          </el-form-item>
+          <el-form-item label="定位">
+            <el-select
+              v-model="form.role"
+              placeholder="选择定位"
+              clearable
+              @change="onChange('role', form.role, form.role !== initial.role)"
+            >
+              <el-option label="主角" value="主角" />
+              <el-option label="配角" value="配角" />
+              <el-option label="反派" value="反派" />
+              <el-option label="旁白" value="旁白" />
+              <el-option label="群演" value="群演" />
+            </el-select>
+          </el-form-item>
+          <!-- 声音 -->
+          <el-form-item label="音色">
+            <el-select
+              v-model="form.voiceId"
+              placeholder="选择音色"
+              clearable
+              class="full-width"
+              @change="onChange('voiceId', form.voiceId, form.voiceId !== initial.voiceId)"
+            >
+              <el-option
+                v-for="v in availableVoices"
+                :key="v.id"
+                :label="v.name"
+                :value="v.id"
+              />
+            </el-select>
+          </el-form-item>
+        </el-form>
 
-    <!-- ⑤ 形象库 portrait_id -->
-    <section class="form-section">
-      <div class="section-label">形象库</div>
-      <div class="portrait-row">
-        <el-tag v-if="form.portraitId" type="info" size="small">
-          已绑定 portrait: {{ form.portraitId }}
-        </el-tag>
-        <span v-else class="hint-tertiary">未绑定 — 主图由本剧集独立生成</span>
-        <el-button
-          size="small"
-          @click="onSelectPortrait"
-        >
-          {{ form.portraitId ? '更换' : '选择' }} portrait
-        </el-button>
-        <el-button
-          v-if="form.portraitId"
-          size="small"
-          type="danger"
-          plain
-          @click="onClearPortrait"
-        >
-          解绑
-        </el-button>
-      </div>
-    </section>
-
-    <!-- ⑥ 参考图（spec 2026-05-09）— 主图生成时作为 AI reference -->
-    <section class="form-section last">
-      <ReferenceImageField
-        asset-type="character"
-        :binding-id="binding?.id"
-        :model-value="form.referenceImagePath"
-        @update:model-value="onReferenceImageChange"
-      />
-    </section>
+        <!-- 形象库 portrait_id -->
+        <div class="portrait-row">
+          <span class="metadata-sub-label">形象库：</span>
+          <el-tag v-if="form.portraitId" type="info" size="small">
+            已绑定 portrait: {{ form.portraitId }}
+          </el-tag>
+          <span v-else class="hint-tertiary">未绑定 — 主图由本剧集独立生成</span>
+          <el-button
+            size="small"
+            @click="onSelectPortrait"
+          >
+            {{ form.portraitId ? '更换' : '选择' }} portrait
+          </el-button>
+          <el-button
+            v-if="form.portraitId"
+            size="small"
+            type="danger"
+            plain
+            @click="onClearPortrait"
+          >
+            解绑
+          </el-button>
+        </div>
+      </el-collapse-item>
+    </el-collapse>
   </div>
 </template>
 
@@ -245,9 +249,6 @@ const form = reactive<{
   portraitId: null,
   referenceImagePath: null,
 })
-
-// 旧版 RACE_OPTIONS 已移除（spec 2026-05-08 v5：人种改为自由输入）。
-// 旧英文 key（east_asian 等）的老数据由 main-image-generator.describeCharacterRace 兼容翻译。
 
 const initial = ref<any>({})
 
@@ -363,7 +364,39 @@ function arraysEqual(a: string[], b: string[]): boolean {
   }
 }
 
-.section-label {
+.core-section {
+  background: var(--el-color-primary-light-9);
+  border-radius: 4px;
+  padding: 12px;
+}
+
+.core-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.core-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-color-primary);
+}
+
+.core-hint {
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+}
+
+.header-spacer {
+  flex: 1;
+}
+
+.field-block {
+  margin-bottom: 12px;
+}
+
+.field-label {
   font-size: 11px;
   color: var(--el-text-color-placeholder);
   letter-spacing: 0.05em;
@@ -378,21 +411,40 @@ function arraysEqual(a: string[], b: string[]): boolean {
   color: var(--el-color-primary);
 }
 
-.section-note {
-  margin: 4px 0 0 60px;
+.metadata-collapse {
+  border: none;
+  background: transparent;
+
+  :deep(.el-collapse-item__header) {
+    background: transparent;
+    padding-left: 4px;
+  }
+
+  :deep(.el-collapse-item__content) {
+    padding-bottom: 0;
+  }
+}
+
+.metadata-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--el-text-color-secondary);
+}
+
+.metadata-hint {
   font-size: 11px;
   color: var(--el-text-color-placeholder);
-  line-height: 1.5;
+  margin-left: 6px;
+}
+
+.metadata-sub-label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-right: 4px;
 }
 
 .full-width {
   width: 100%;
-}
-
-.suffix-x {
-  margin-left: 4px;
-  color: var(--el-text-color-placeholder);
-  font-size: 12px;
 }
 
 .portrait-row {
@@ -400,6 +452,7 @@ function arraysEqual(a: string[], b: string[]): boolean {
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
+  margin-top: 8px;
 }
 
 .hint-tertiary {
