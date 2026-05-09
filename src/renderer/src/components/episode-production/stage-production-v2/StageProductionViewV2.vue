@@ -19,6 +19,22 @@
   <div class="stage-production-v2">
     <StageMainHeader title="⑤ 画面+音频生成" :subtitle="headerSubtitle">
       <template #actions>
+        <!-- 局部子画布连线开关（spec 2026-05-09 ep-redesign §3.2 C2 · P-17） -->
+        <el-tooltip placement="bottom" effect="light">
+          <template #content>
+            <div style="max-width: 260px;">
+              <div>显示资产 → 关键帧 → 视频的数据流连线</div>
+              <div style="margin-top:4px;color:#aaa;font-size:11px;">debug 用 / 只读</div>
+            </div>
+          </template>
+          <el-switch
+            v-model="showLineage"
+            active-text="显示生成链路"
+            inactive-text=""
+            size="small"
+            style="margin-right: 12px;"
+          />
+        </el-tooltip>
         <el-button
           type="success"
           :disabled="!canComplete"
@@ -71,7 +87,18 @@
       </aside>
 
       <!-- 右：主区域 — 顶部 full-width 分镜信息；中部左右两栏（左叠放 关键帧+视频生成，右视频预览盛满高度）；底部资产卡 -->
-      <main class="main-area" v-if="selectedStoryboard">
+      <main ref="mainAreaRef" class="main-area" v-if="selectedStoryboard">
+        <!-- 局部子画布连线 overlay（spec 2026-05-09 ep-redesign §3.2 C2 · P-17）-->
+        <LineageOverlay
+          v-if="showLineage"
+          :panel-refs="{
+            assetCard: assetPanelRef,
+            keyframeCard: keyframePanelRef,
+            videoCard: videoPanelRef,
+            containerEl: mainAreaRef,
+          }"
+        />
+
         <!-- 分镜信息 panel · 只读展示（全部信息在 header 一行；右上角提示去 ④ 修改） -->
         <section class="panel lang-panel">
           <header class="panel-header lang-header">
@@ -118,7 +145,7 @@
         <!-- 左列：关键帧序列 + 视频生成 -->
         <div class="upper-left">
         <!-- 九宫格 KeyframeGrid wrapper · 仅"首尾帧"模式才显示；"文生图"模式整段隐藏 -->
-        <section v-if="useKeyframes" class="panel keyframes-panel">
+        <section v-if="useKeyframes" ref="keyframePanelRef" class="panel keyframes-panel">
           <header class="panel-header">
             <span class="panel-title">关键帧序列</span>
             <span class="panel-hint">
@@ -172,7 +199,7 @@
 
         <!-- 右列（1/3）：视频预览（取最新生成视频或 storyboard.videoPath） -->
         <aside class="upper-right">
-          <section class="panel video-preview-panel">
+          <section ref="videoPanelRef" class="panel video-preview-panel">
             <header class="panel-header">
               <span class="panel-title">视频预览</span>
               <span v-if="latestVideoPath" class="panel-hint">— {{ selectedSceneIndex + 1 }}.{{ selectedStoryboard.shotNumber }}</span>
@@ -196,7 +223,7 @@
        </div>
 
         <!-- 底部 full-width：本分镜引用的资产（缩略图卡片） -->
-        <section class="panel asset-ref-panel">
+        <section ref="assetPanelRef" class="panel asset-ref-panel">
           <header class="panel-header">
             <span class="panel-title">本分镜引用的资产</span>
             <span class="panel-hint">— 点击缩略图为该资产挑选参考图（覆盖默认评分挑图）</span>
@@ -379,6 +406,8 @@ import {
   useEpAssetStore,
 } from '@/stores/episode-production'
 import { formatGlobalShotId } from '@/utils/storyboard-id'
+// spec 2026-05-09 ep-redesign §3.2 C2 · 局部子画布连线
+import LineageOverlay from './LineageOverlay.vue'
 
 const props = defineProps<{
   episodeScriptId: string | null
@@ -398,6 +427,13 @@ const assetStore = useEpAssetStore()
 const selectedSceneId = ref<string | null>(null)
 const selectedStoryboardId = ref<string | null>(null)
 const kfGridRef = ref<any>(null)
+
+// 局部子画布连线（spec 2026-05-09 ep-redesign §3.2 C2 · P-17）
+const showLineage = ref(false)
+const mainAreaRef = ref<HTMLElement | null>(null)
+const keyframePanelRef = ref<HTMLElement | null>(null)
+const videoPanelRef = ref<HTMLElement | null>(null)
+const assetPanelRef = ref<HTMLElement | null>(null)
 const currentKeyframes = ref<any[]>([])
 
 const scenes = computed(() => scriptStore.scenes ?? [])
