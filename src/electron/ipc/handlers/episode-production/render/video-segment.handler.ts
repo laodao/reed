@@ -289,9 +289,11 @@ async function createAdapterForProviderWithReason(
  */
 function deriveCapabilitiesFromModel(
   model: { id?: string; type?: string; features?: any } | undefined,
-  _type: VideoProviderType,
+  type: VideoProviderType,
 ): VideoProviderCapabilities {
   const f = model?.features
+  const subjectSupport = inferSubjectSupport(type, model?.id ?? '')
+  const maxSubjects = subjectSupport ? inferMaxSubjects(type) : 0
   // Path 1：features 是 VideoModelFeatures 对象
   if (f && typeof f === 'object' && !Array.isArray(f) &&
       ('textToVideo' in f || 'imageToVideo' in f || 'maxDuration' in f)) {
@@ -301,6 +303,8 @@ function deriveCapabilitiesFromModel(
       keyframes: false,
       maxKeyframes: 0,
       maxDurationSec: typeof f.maxDuration === 'number' && f.maxDuration > 0 ? f.maxDuration : 5,
+      subjectSupport,
+      maxSubjects,
     }
   }
   // Path 2：按 model.id 命名约定推断
@@ -324,7 +328,34 @@ function deriveCapabilitiesFromModel(
     keyframes: false,
     maxKeyframes: 0,
     maxDurationSec: 5,
+    subjectSupport,
+    maxSubjects,
   }
+}
+
+/**
+ * 推断 provider 是否支持原生 subject（spec 2026-05-09 ep-redesign §3.2 C1 / P-20）。
+ *
+ * Kling O3/O1 / Midjourney V7 / Seedance 2.0+ 支持；其他默认 false。
+ * caller（keyframe-generation）按此值决定走 subjectAPI 还是通用 referenceImagePaths。
+ */
+export function inferSubjectSupport(type: string, modelId: string): boolean {
+  const id = (modelId ?? '').toLowerCase()
+  if (type === 'kling' && /^(o[13]|3\.0|2\.6)/.test(id)) return true
+  if (type === 'midjourney' && id.includes('v7')) return true
+  if (type === 'dashscope' && /seedance.*[2-9]\.\d/.test(id)) return true
+  // bailian 托管的 kling-v3 也能用 element_list（subject 接口的别名）
+  if (type === 'bailian' && id.startsWith('kling-')) return true
+  return false
+}
+
+/** Provider 同时可注入的 subject 数 */
+export function inferMaxSubjects(type: string): number {
+  if (type === 'kling') return 4
+  if (type === 'bailian') return 10  // 百炼托管的 kling element_list 支持 10
+  if (type === 'midjourney') return 1
+  if (type === 'dashscope') return 9
+  return 0
 }
 
 /** 仍保留兜底版本：handler.handleGetProviderCapabilities 在没有具体 cfg/model 时用 */
@@ -335,5 +366,7 @@ function defaultCapabilitiesFor(_type: VideoProviderType): VideoProviderCapabili
     keyframes: false,
     maxKeyframes: 0,
     maxDurationSec: 5,
+    subjectSupport: false,
+    maxSubjects: 0,
   }
 }

@@ -31,6 +31,39 @@ export interface VideoProviderCapabilities {
   maxKeyframes: number
   /** 单段视频最大时长（秒） */
   maxDurationSec: number
+  /**
+   * spec 2026-05-09 ep-redesign §3.2 C1 / P-20 · 是否支持原生 subject 概念
+   *
+   * Kling O3/O1（subject_id 参数）/ Midjourney V7（Omni Reference --cref）/
+   * Seedance 2.0（多模态参考含 figure 类型）等 provider 支持。
+   *
+   * true 时：keyframe-generation 调用前先把 character bindings 转成 SubjectInput[]
+   *           通过 generateSegment 的 subjects 字段透传，让 provider 走原生 subject API。
+   * false（默认）：走传统 referenceImagePaths 路径。
+   */
+  subjectSupport?: boolean
+  /** 同时可注入的 subject 数（subjectSupport=true 时有效；DALL-E/MJ 通常 1 个，Seedance 多个） */
+  maxSubjects?: number
+}
+
+/**
+ * SubjectInput · spec 2026-05-09 ep-redesign §3.2 C1
+ *
+ * 主体（character/location/item）注入到 provider 原生 subject API 的入参。
+ * 各 provider adapter 内部按各家 API 形态转换：
+ *   - Kling：multipart 上传 → 注册 subject API → subject_id
+ *   - Midjourney：上传中转 CDN → URL 给 --cref
+ *   - Seedance：base64 内联到 generate 的 reference_images
+ */
+export interface SubjectInput {
+  /** character_bindings.id（缓存查找用） */
+  bindingId: string
+  /** 主体多角度参考图绝对路径（多张提升一致性） */
+  imagePaths: string[]
+  /** 身份描述（character.appearance + name 拼好的字符串） */
+  description?: string
+  /** 数字人 provider（Kling 数字人）用；其他 provider 忽略 */
+  voiceId?: string
 }
 
 /** 一帧输入 */
@@ -82,6 +115,18 @@ export interface KeyframesToVideoInput {
   width?: number
   height?: number
   negativePrompt?: string
+  /**
+   * spec 2026-05-09 ep-redesign §3.2 C1：原生 subject 注入。
+   * 仅 capabilities.subjectSupport=true 时有效；caller 由 keyframe-generation 决定是否传入。
+   */
+  subjects?: SubjectInput[]
+}
+
+/**
+ * Image-to-video 也可携带 subjects（部分 provider 单图模式也支持原生 subject）。
+ */
+export interface ImageToVideoExtraInput {
+  subjects?: SubjectInput[]
 }
 
 /**
