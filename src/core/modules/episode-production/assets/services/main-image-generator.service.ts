@@ -21,6 +21,10 @@ import {
   appendLocationNoHumanConstraint,
   mergeLocationNoHumanNegative,
 } from '../prompts/location-constraints'
+import {
+  appendItemConstraints,
+  mergeItemNegative,
+} from '../prompts/item-constraints'
 
 export interface GenerateMainInput {
   assetType: AssetType
@@ -70,12 +74,17 @@ export class MainImageGeneratorService {
       throw new Error('生成主图需要 prompt（请检查资产 effective 数据）')
     }
 
-    // location 全域无人硬约束：在 service 层收口注入，renderer 不需要再单独拼
+    // 类资产硬约束（service 层收口；renderer 不重复加）：
+    //   location → 全域无人；item → 居中干净背景；character 在 renderer 层已加 framing 约束
     let effectivePrompt = input.prompt
     let effectiveNegative = input.negativePrompt
     if (input.assetType === 'location') {
       effectivePrompt = appendLocationNoHumanConstraint(input.prompt)
       effectiveNegative = mergeLocationNoHumanNegative(input.negativePrompt)
+    }
+    if (input.assetType === 'item') {
+      effectivePrompt = appendItemConstraints(input.prompt)
+      effectiveNegative = mergeItemNegative(input.negativePrompt)
     }
 
     const refPaths: string[] = []

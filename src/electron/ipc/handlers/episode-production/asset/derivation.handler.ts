@@ -36,7 +36,9 @@ function requireDataSource() {
 function buildService(): GalleryDerivationService {
   const ds = requireDataSource()
   const imageSvc = new AssetImageService(ds)
-  return new GalleryDerivationService(imageSvc, createGalleryImageGenerator())
+  // 第三个参数 ds 让 service 内部 loadEffective 取资产身份段，
+  // 给派生 prompt 自动加 name / description / styleAnchors / 故事背景（spec 2026-05-09 review）。
+  return new GalleryDerivationService(imageSvc, createGalleryImageGenerator(), ds)
 }
 
 async function handleDeriveSingle(

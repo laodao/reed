@@ -101,6 +101,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { toImageUrl } from '@/utils/asset-url'
+import { useEpEpisodeStore } from '@/stores/episode-production'
 
 interface AssetImageRow {
   id: string
@@ -180,6 +181,21 @@ async function onSubmit(): Promise<void> {
       ElMessage.error('derive.single IPC 未暴露')
       return
     }
+    // 透传当前 episode 故事背景，让派生 prompt 也带年代/地域信息（spec 2026-05-09 review）
+    let storyBackground: { era: string; region: string; extra: string } | null = null
+    try {
+      const ep: any = useEpEpisodeStore()?.currentEpisode
+      if (ep) {
+        storyBackground = {
+          era: (ep.storyEra ?? '').toString().trim(),
+          region: (ep.storyRegion ?? '').toString().trim(),
+          extra: (ep.storyBackgroundExtra ?? '').toString().trim(),
+        }
+      }
+    } catch {
+      /* store 未就绪不致命 */
+    }
+
     const resp = await api.derive.single({
       assetType: props.assetType,
       assetId: props.bindingId,
@@ -188,6 +204,7 @@ async function onSubmit(): Promise<void> {
       additionalPrompt: form.userPrompt.trim() || undefined,
       baseImageId: form.baseImageId,
       metadata: buildMetadata(),
+      storyBackground,
     })
     if (!resp?.success) {
       ElMessage.error(resp?.error || '派生失败')

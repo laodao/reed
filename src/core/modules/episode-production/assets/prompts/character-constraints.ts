@@ -120,3 +120,66 @@ export function mergeCharacterNegative(
 export function framingForCategory(category: string): CharacterFraming {
   return category === 'expression' ? 'upperBody' : 'fullBody'
 }
+
+/**
+ * 角色身份保持硬约束（spec 2026-05-09 review）：
+ *
+ * 用于派生图（基于主图 reference 出 view / expression / outfit / pose 等），
+ * 让 AI 在文本侧也有"保持人物特征"的强 anchor，而不是仅依赖 reference image
+ * 的视觉相似度。
+ *
+ * 锚点维度（中英双写）：
+ *   - 五官 / 脸型 / 肤色 / 发色发型 / 体型 / 身高 / 整体气质
+ *
+ * 不约束 outfit（服装可派生时变化）；不约束 expression（同上）；不约束 pose / view。
+ *
+ * 命名空间隔离：与 appendCharacterConstraints 不冲突；两者可叠加注入。
+ */
+const IDENTITY_PRESERVATION_SUFFIX = [
+  '严格保持人物身份特征（preserve character identity, same face, same facial features）',
+  '同一脸型与五官（same face shape, same eyes, same nose, same mouth, same jawline）',
+  '同一肤色（same skin tone, identical complexion）',
+  '同一发色与发型轮廓（same hair color, same hairline, same hair structure）',
+  '同一体型与身高（same body type, same build, same height）',
+  '保持整体气质与年龄感（preserve overall demeanor and apparent age）',
+].join('，')
+
+const IDENTITY_PRESERVATION_NEGATIVE = [
+  'different face',
+  'different person',
+  'face change',
+  'altered facial features',
+  'different eye color',
+  'different eye shape',
+  'different nose',
+  'different mouth',
+  'different jawline',
+  'different skin tone',
+  'darker skin',
+  'lighter skin',
+  'different hair color',
+  'different hair style',
+  'bald change',
+  'different body type',
+  'different height',
+  'different age',
+  'younger',
+  'older',
+].join(', ')
+
+/** 把身份保持约束追加到 prompt 末尾（已包含则不重复） */
+export function appendCharacterIdentityPreservation(prompt: string): string {
+  const trimmed = (prompt ?? '').trim()
+  if (!trimmed) return IDENTITY_PRESERVATION_SUFFIX
+  if (trimmed.includes(IDENTITY_PRESERVATION_SUFFIX)) return trimmed
+  return `${trimmed}，${IDENTITY_PRESERVATION_SUFFIX}`
+}
+
+/** 合并身份保持 negative 到现有 negativePrompt */
+export function mergeCharacterIdentityNegative(
+  userNegative?: string | null,
+): string {
+  const u = (userNegative ?? '').trim()
+  if (!u) return IDENTITY_PRESERVATION_NEGATIVE
+  return `${u}, ${IDENTITY_PRESERVATION_NEGATIVE}`
+}

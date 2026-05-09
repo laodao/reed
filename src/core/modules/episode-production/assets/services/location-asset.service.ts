@@ -145,12 +145,16 @@ export class LocationAssetService {
     if (!b) throw new Error(`LocationBinding not found: ${bindingId}`)
 
     const referenceImagePath = (b as any).referenceImagePath ?? null
+    // 投影 styleAnchors（spec 2026-05-09 review）：修补之前 main-image-generator 用 eff as any
+    // 兜底取该字段的类型契约漏洞 — 现 effective 显式投影出来，调用方按 type 拿。
+    const styleAnchors = parseLocationStyleAnchors(b.styleAnchors)
 
     if (b.sourceType === 'standalone') {
       return {
         name: b.standaloneName ?? b.locationName ?? '(未命名)',
         description: b.standaloneDescription ?? '',
         source: 'standalone',
+        styleAnchors,
         referenceImagePath,
       }
     }
@@ -164,6 +168,7 @@ export class LocationAssetService {
       name: b.overrideName ?? lw?.name ?? b.locationName ?? '(未命名)',
       description: b.overrideDescription ?? lw?.description ?? '',
       source: 'linked_lw',
+      styleAnchors,
       referenceImagePath,
     }
   }
@@ -329,5 +334,23 @@ export class LocationAssetService {
     if ('timeOfDay' in patch) update.timeOfDay = patch.timeOfDay ?? null
     if ('weather' in patch) update.weather = patch.weather ?? null
     await this.bindingRepo.update(bindingId, update)
+  }
+}
+
+/**
+ * 安全解析 location.style_anchors 为 string[]。
+ * DB 字段是 text；存的是 JSON 数组字符串（与 character / item 同口径）。
+ * 解析失败返回空数组。
+ */
+function parseLocationStyleAnchors(raw: string | null | undefined): string[] {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) {
+      return parsed.filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+    }
+    return []
+  } catch {
+    return []
   }
 }

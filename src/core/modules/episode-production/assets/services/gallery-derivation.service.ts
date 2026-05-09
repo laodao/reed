@@ -7,6 +7,7 @@
  * 底层图像生成通过依赖注入的 ImageGenerator 抽象接口完成，
  * 与具体 image.service.ts 实现解耦——便于测试 mock 和后续切换 provider。
  */
+import type { DataSource } from 'typeorm'
 import type {
   AssetImageService,
   AssetType,
@@ -17,13 +18,31 @@ import {
   appendCharacterConstraints,
   framingForCategory,
   mergeCharacterNegative,
+  appendCharacterIdentityPreservation,
+  mergeCharacterIdentityNegative,
 } from '@core/modules/episode-production/assets/prompts/character-constraints'
 import {
   appendAngleLightingLock,
   mergeAngleLightingNegative,
   appendLocationNoHumanConstraint,
   mergeLocationNoHumanNegative,
+  appendVariantDimensionLock,
+  mergeVariantDimensionLockNegative,
 } from '@core/modules/episode-production/assets/prompts/location-constraints'
+import {
+  appendItemConstraints,
+  mergeItemNegative,
+  appendItemIdentityPreservation,
+  mergeItemIdentityNegative,
+} from '@core/modules/episode-production/assets/prompts/item-constraints'
+import {
+  buildAssetIdentityPrompt,
+  prependIdentity,
+  type StoryBackground,
+} from '@core/modules/episode-production/assets/prompts/asset-identity-prompt'
+import { CharacterAssetService } from './character-asset.service'
+import { LocationAssetService } from './location-asset.service'
+import { ItemAssetService } from './item-asset.service'
 
 /**
  * 抽象图像生成器接口（依赖注入）。
@@ -58,6 +77,12 @@ export interface DeriveSingleInput {
   baseImageId?: string
   /** 派生图 metadata（angle/time/weather/...），评分系统据此命中场景维度 */
   metadata?: Record<string, unknown>
+  /**
+   * 故事背景（可选 · 来自调用方当前 episode 上下文）。
+   * 派生时附加到 identity prompt 末尾，让派生图也带年代 / 地域信息。
+   * service 内部加载 effective 但 storyBackground 在 binding 之外（episode 级），所以需上游传入。
+   */
+  storyBackground?: StoryBackground | null
 }
 
 /** 批量派生入参 */
@@ -80,10 +105,45 @@ export interface DeriveBatchInput {
  * ```
  */
 export class GalleryDerivationService {
+  /**
+   * 注入 ds（spec 2026-05-09 review 修复）— 让 deriveSingle 可以加载 effective 数据
+   * 自动注入资产身份 prompt（name / description / styleAnchors / 故事背景），
+   * 解决"派生图丢失身份信息"问题。
+   */
   constructor(
     private readonly imageSvc: AssetImageService,
     private readonly imageGen: ImageGenerator,
+    private readonly ds?: DataSource,
   ) {}
+
+  /** 按 assetType 加载 effective 数据；ds 未注入时返回 null（向后兼容） */
+  private async loadEffective(
+    assetType: AssetType,
+    assetId: string,
+  ): Promise<Record<string, unknown> | null> {
+    if (!this.ds) return null
+    try {
+      if (assetType === 'character') {
+        return (await new CharacterAssetService(this.ds).getEffectiveData(
+          assetId,
+        )) as unknown as Record<string, unknown>
+      }
+      if (assetType === 'location') {
+        return (await new LocationAssetService(this.ds, this.imageSvc).getEffectiveData(
+          assetId,
+        )) as unknown as Record<string, unknown>
+      }
+      if (assetType === 'item') {
+        return (await new ItemAssetService(this.ds).getEffectiveData(
+          assetId,
+        )) as unknown as Record<string, unknown>
+      }
+      return null
+    } catch {
+      // 加载失败不致命；继续走 label-only fallback
+      return null
+    }
+  }
 
   /**
    * 派生单张图：
@@ -115,18 +175,50 @@ export class GalleryDerivationService {
 
     let prompt = input.additionalPrompt ?? `${input.category} · ${input.label}`
     let negativePrompt = input.negativePrompt
+
+    /*
+     * spec 2026-05-09 review 修复：
+     * 派生 prompt 自动带 name / description / styleAnchors / 故事背景。
+     * 让派生图不再仅靠 reference image 维持身份，而是文本侧也有强 anchor。
+     */
+    const eff = await this.loadEffective(input.assetType, input.assetId)
+    if (eff) {
+      const identity = buildAssetIdentityPrompt(
+        input.assetType,
+        eff,
+        input.storyBackground ?? null,
+      )
+      prompt = prependIdentity(identity, prompt)
+    }
+
     // 角色资产硬约束：纯色背景 / 无帽子无首饰；
     // framing 按 category 决定（expression → 上半身；其他 → 全身）。
     if (input.assetType === 'character') {
       const framing = framingForCategory(input.category)
       prompt = appendCharacterConstraints(prompt, framing)
       negativePrompt = mergeCharacterNegative(negativePrompt, framing)
+      // 派生场景（有 base ref）注入身份保持文本约束（face / hair / build / skin tone preservation）
+      prompt = appendCharacterIdentityPreservation(prompt)
+      negativePrompt = mergeCharacterIdentityNegative(negativePrompt)
     }
-    // 地点角度变体：锁光照 / 时间 / 天气，仅改机位
-    // （time_variant / weather_variant 本来就是要换，不约束）
+
+    // 地点变体维度锁（spec 2026-05-09 review）：
+    //   - 老路径 angle_variant：保留旧光照锁（仅在迁移完成前的老数据触发）
+    //   - 新路径 'variant'：按 metadata 决定锁哪些维度
+    //     metadata.angle 有 → 锁 time + weather（保持光线 / 天气）
+    //     metadata.time 有 → 锁 angle + weather（保持机位 / 天气）
+    //     metadata.weather 有 → 锁 angle + time（保持机位 / 时间）
+    //     metadata 全部空 → 不锁任何维度（用户完全自由）
     if (input.assetType === 'location' && input.category === 'angle_variant') {
       prompt = appendAngleLightingLock(prompt)
       negativePrompt = mergeAngleLightingNegative(negativePrompt)
+    }
+    if (input.assetType === 'location' && input.category === 'variant') {
+      prompt = appendVariantDimensionLock(prompt, input.metadata)
+      negativePrompt = mergeVariantDimensionLockNegative(
+        negativePrompt,
+        input.metadata,
+      )
     }
     // 地点全域无人约束（spec §location-no-human）：
     // 所有 location 资产的派生图（angle / time / weather / pose 等所有 label）
@@ -134,6 +226,13 @@ export class GalleryDerivationService {
     if (input.assetType === 'location') {
       prompt = appendLocationNoHumanConstraint(prompt)
       negativePrompt = mergeLocationNoHumanNegative(negativePrompt)
+    }
+    // item 派生硬约束 + 身份保持（spec 2026-05-09 review）：
+    if (input.assetType === 'item') {
+      prompt = appendItemConstraints(prompt)
+      negativePrompt = mergeItemNegative(negativePrompt)
+      prompt = appendItemIdentityPreservation(prompt)
+      negativePrompt = mergeItemIdentityNegative(negativePrompt)
     }
     const result = await this.imageGen.generate({
       referenceImagePaths: [base.imagePath],

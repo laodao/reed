@@ -98,6 +98,11 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { UploadFile } from 'element-plus'
+import {
+  buildAssetIdentityPrompt,
+  prependIdentity,
+} from '@core/modules/episode-production/assets/prompts/asset-identity-prompt'
+import { useEpEpisodeStore } from '@/stores/episode-production'
 
 const PRESETS = ['平面图', '正面外景', '正面内景', '鸟瞰', '侧面', '纵深', '入口']
 
@@ -194,11 +199,11 @@ async function onSubmit(): Promise<void> {
       // 这里需要传 prompt，但 addMain 后端期待完整 prompt。先简单实现：调 effective 拼最少 label-only prompt + userPrompt
       // 完整 prompt 拼装通过 main-image-generator client 来做，避免重复逻辑
       const promptResult = await buildPrompt()
+      // location 走 generateMain 路径自动加无人约束 + negative；这里不需要 client 侧 negative
       const resp = await api.image.addMain({
         assetType: props.assetType,
         assetId: props.bindingId,
         prompt: appendUserPrompt(promptResult.prompt, form.userPrompt),
-        negativePrompt: promptResult.negativePrompt,
         referenceImagePath: promptResult.referenceImagePath ?? null,
         label: form.label.trim(),
         makeDefault: props.isFirstMain,
@@ -226,10 +231,14 @@ async function onSubmit(): Promise<void> {
   }
 }
 
-/** 轻量 prompt 拼装：调 effective 拿基础描述，与 AddMainImageDialog 自身的 user prompt 拼接 */
+/**
+ * 用共享 buildAssetIdentityPrompt 装配 prompt，让多主图入口与 generateMainFor 主入口
+ * 走同一拼装逻辑（含 styleAnchors / 故事背景 / character 身份块）。
+ *
+ * label 作为"视角：xx"一行附加到身份段后；userPrompt 由 onSubmit 再拼一层。
+ */
 async function buildPrompt(): Promise<{
   prompt: string
-  negativePrompt?: string
   referenceImagePath?: string | null
 }> {
   const root = (window as any).electronAPI?.episodeProduction?.asset
@@ -244,14 +253,28 @@ async function buildPrompt(): Promise<{
     throw new Error(resp?.error || '加载 effective 失败')
   }
   const eff = resp.data as Record<string, any>
-  const parts: string[] = []
-  if (eff.name) parts.push(String(eff.name))
-  if (eff.description) parts.push(String(eff.description))
-  // label 自身作为 prompt 一部分：让 AI 根据"平面图"/"正面外景"区分
-  parts.push(`视角：${form.label}`)
+
+  // 故事背景（与 main-image-generator.ts 同源 store）
+  let storyBg = { era: '', region: '', extra: '' }
+  try {
+    const ep: any = useEpEpisodeStore()?.currentEpisode
+    if (ep) {
+      storyBg = {
+        era: (ep.storyEra ?? '').toString().trim(),
+        region: (ep.storyRegion ?? '').toString().trim(),
+        extra: (ep.storyBackgroundExtra ?? '').toString().trim(),
+      }
+    }
+  } catch {
+    /* store 未就绪不致命，留空即可 */
+  }
+
+  const identity = buildAssetIdentityPrompt(props.assetType, eff, storyBg)
+  // label 作为"视角：xx"附加 — 让 AI 根据"平面图"/"正面外景"区分多主图
+  const prompt = prependIdentity(identity, `视角：${form.label}`)
   return {
-    prompt: parts.filter(Boolean).join('，'),
-    referenceImagePath: eff.referenceImagePath ?? null,
+    prompt,
+    referenceImagePath: (eff.referenceImagePath as string | null | undefined) ?? null,
   }
 }
 

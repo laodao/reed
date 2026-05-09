@@ -15,7 +15,7 @@ import {
   appendCharacterConstraints,
   mergeCharacterNegative,
 } from '@core/modules/episode-production/assets/prompts/character-constraints'
-import { buildStylePromptHint } from '@core/modules/episode-production/assets/constants/style-presets'
+import { buildAssetIdentityPrompt } from '@core/modules/episode-production/assets/prompts/asset-identity-prompt'
 import { useEpEpisodeStore } from '@/stores/episode-production'
 
 type AssetType = 'character' | 'location' | 'item'
@@ -54,36 +54,10 @@ async function buildPromptFromEffective(
   }
 
   const eff = resp.data as Record<string, any>
-  const parts: string[] = []
-  if (eff.name) parts.push(String(eff.name).trim())
-  if (eff.description) parts.push(String(eff.description).trim())
-  if (assetType === 'character') {
-    // 设定卡上的"剩余字段"按 effective 输出顺序拼到 prompt（与派生侧共享同一来源）
-    if (eff.alias) parts.push(`别名：${String(eff.alias).trim()}`)
-    if (eff.role) parts.push(`定位：${String(eff.role).trim()}`)
-    if (eff.gender) parts.push(`性别：${String(eff.gender).trim()}`)
-    if (eff.age != null) parts.push(`年龄：${eff.age}`)
-    if (eff.race) {
-      const raceText = describeCharacterRace(String(eff.race))
-      if (raceText) parts.push(`人种：${raceText}`)
-    }
-    if (eff.appearance) parts.push(`外貌：${String(eff.appearance).trim()}`)
-    if (eff.outfit) parts.push(`服装：${String(eff.outfit).trim()}`)
-    if (Array.isArray(eff.outfitsExtra) && eff.outfitsExtra.length > 0) {
-      parts.push(`备选服装：${eff.outfitsExtra.join(' / ')}`)
-    }
-  }
-  // 风格锚点（character/location/item 通用）：中英双写，让各家 provider 命中率更高
-  const styleHint = buildStylePromptHint(parseStyleAnchors(eff.styleAnchors))
-  if (styleHint) parts.push(`风格：${styleHint}`)
-
-  // 故事背景（spec 2026-05-08 ① 内容页）— 从当前 episode 拉年代/地域/其他描述拼进 prompt
   const storyBg = readStoryBackgroundFromCurrentEpisode()
-  if (storyBg.era) parts.push(`故事年代：${storyBg.era}`)
-  if (storyBg.region) parts.push(`故事地域：${storyBg.region}`)
-  if (storyBg.extra) parts.push(`故事背景：${storyBg.extra}`)
 
-  let prompt = parts.filter(Boolean).join('，')
+  // 收口到共享模块（与 deriveSingle / AddMainImageDialog 共享同一拼装逻辑）
+  let prompt = buildAssetIdentityPrompt(assetType, eff, storyBg)
   if (!prompt) {
     throw new Error('请先在设定卡填写名称或描述，AI 才有可生成内容')
   }
@@ -124,59 +98,6 @@ function readStoryBackgroundFromCurrentEpisode(): {
     }
   } catch {
     return { era: '', region: '', extra: '' }
-  }
-}
-
-/**
- * styleAnchors 来自 effective 投影时可能是 JSON 字符串（DB 字段是 text）或已解析的数组。
- * 安全地解析为字符串数组；非法输入返回空数组。
- */
-function parseStyleAnchors(raw: unknown): string[] {
-  if (!raw) return []
-  if (Array.isArray(raw)) return raw.filter((x): x is string => typeof x === 'string' && x.trim() !== '')
-  if (typeof raw === 'string') {
-    const t = raw.trim()
-    if (!t) return []
-    try {
-      const parsed = JSON.parse(t)
-      if (Array.isArray(parsed)) {
-        return parsed.filter((x): x is string => typeof x === 'string' && x.trim() !== '')
-      }
-    } catch {
-      // 非 JSON：当成单个风格
-      return [t]
-    }
-  }
-  return []
-}
-
-/**
- * 角色 race 描述生成器 — 用于主图 / 派生图 prompt 拼接。
- *
- * 历史上 race 是固定枚举（east_asian / south_asian / ...），UI 用 select；
- * spec 2026-05-08 v5 改为自由输入 → 这里走两段：
- *   1) 已知英文 key（旧数据）走"中文 + 英文标签"双写，最大化 provider 命中率
- *   2) 其它任意文本（用户自由输入"东亚" / "半人马" / "精灵" 等）直接原文传出
- */
-function describeCharacterRace(race: string): string {
-  switch (race) {
-    case 'east_asian':
-      return '东亚（East Asian, Han Chinese / Japanese / Korean facial features）'
-    case 'south_asian':
-      return '南亚（South Asian, Indian / Pakistani / Bangladeshi facial features）'
-    case 'southeast_asian':
-      return '东南亚（Southeast Asian, Thai / Vietnamese / Filipino facial features）'
-    case 'central_asian':
-      return '中亚（Central Asian, Kazakh / Uzbek facial features）'
-    case 'european':
-      return '欧洲（European / Caucasian facial features）'
-    case 'african':
-      return '非洲（African, dark skin tone）'
-    case 'south_american':
-      return '南美（South American, Latin American facial features）'
-    default:
-      // 用户自由输入（spec 2026-05-08 v5 — UI 改为 input 后的开放词汇）
-      return race?.trim() ?? ''
   }
 }
 
