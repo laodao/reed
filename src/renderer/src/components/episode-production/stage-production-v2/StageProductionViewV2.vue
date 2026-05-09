@@ -70,16 +70,11 @@
         </div>
       </aside>
 
-      <!-- 右：主区域 — 上半部分左右两栏，底部 full-width 资产卡 -->
+      <!-- 右：主区域 — 顶部 full-width 分镜信息；中部左右两栏（左叠放 关键帧+视频生成，右视频预览盛满高度）；底部资产卡 -->
       <main class="main-area" v-if="selectedStoryboard">
-       <div class="upper-split">
-        <!-- 左列（2/3）：分镜信息 + 关键帧序列 + 视频生成 -->
-        <div class="upper-left">
-        <!-- 分镜语言 panel · 只读展示
-             所有镜头参数 / 关键帧数 / 生成模式都在 ④ 分镜界面定稿，这里仅展示。
-             如需修改请回 ④ 分镜界面。 -->
+        <!-- 分镜信息 panel · 只读展示（全部信息在 header 一行；右上角提示去 ④ 修改） -->
         <section class="panel lang-panel">
-          <header class="panel-header">
+          <header class="panel-header lang-header">
             <span class="panel-title">
               分镜 {{ selectedSceneIndex + 1 }}.{{ selectedStoryboard.shotNumber }}
             </span>
@@ -88,35 +83,40 @@
               {{ shotTypeLabel(selectedStoryboard.shotType) }} ·
               {{ cameraAngleLabel(selectedStoryboard.cameraAngle) }} ·
               {{ cameraMovementLabel(selectedStoryboard.cameraMovement) }}
-              <el-tag type="success" size="small" effect="light" class="dur-tag">
-                {{ selectedStoryboard.duration }}s
-              </el-tag>
             </span>
-            <span class="header-spacer" />
-            <span class="panel-readonly-hint">
-              <el-icon><Lock /></el-icon>
-              如需修改请回 ④ 分镜界面
-            </span>
-          </header>
-
-          <div class="lang-readonly">
+            <el-tag type="success" size="small" effect="light" class="dur-tag">
+              {{ selectedStoryboard.duration }}s
+            </el-tag>
+            <span class="meta-sep">·</span>
             <span class="ro-item">
               <span class="ro-label">生成模式</span>
               <el-tag size="small" :type="useKeyframes ? 'success' : 'info'" effect="light">
                 {{ useKeyframes ? '首尾帧' : '文生图' }}
               </el-tag>
             </span>
-            <span v-if="useKeyframes" class="ro-item">
-              <span class="ro-label">关键帧数</span>
-              <span class="ro-value">{{ selectedStoryboard.keyframeCount ?? 3 }}</span>
+            <template v-if="useKeyframes">
+              <span class="meta-sep">·</span>
+              <span class="ro-item">
+                <span class="ro-label">关键帧数</span>
+                <span class="ro-value">{{ selectedStoryboard.keyframeCount ?? 3 }}</span>
+              </span>
+              <span class="meta-sep">·</span>
+              <span class="ro-item">
+                <span class="ro-label">3D 摆位</span>
+                <span class="ro-value">{{ has3dStaging ? '已启用' : '未启用' }}</span>
+              </span>
+            </template>
+            <span class="header-spacer" />
+            <span class="panel-readonly-hint">
+              <el-icon><Lock /></el-icon>
+              如需修改请回 ④ 分镜界面
             </span>
-            <span v-if="useKeyframes" class="ro-item">
-              <span class="ro-label">3D 摆位</span>
-              <span class="ro-value">{{ has3dStaging ? '已启用' : '未启用' }}</span>
-            </span>
-          </div>
+          </header>
         </section>
 
+       <div class="upper-split">
+        <!-- 左列：关键帧序列 + 视频生成 -->
+        <div class="upper-left">
         <!-- 九宫格 KeyframeGrid wrapper · 仅"首尾帧"模式才显示；"文生图"模式整段隐藏 -->
         <section v-if="useKeyframes" class="panel keyframes-panel">
           <header class="panel-header">
@@ -293,22 +293,19 @@
       width="80%"
       destroy-on-close
       append-to-body
+      @open="onAssetDialogOpen"
     >
       <div class="asset-images-hint">
-        💡 点击图片选定该图作为本分镜生成视频时的资产参考；再次点击取消选择回到自动评分挑图。
-        <span v-if="selectedAssetImageId" class="asset-images-cur">
-          当前已选定：<code>{{ selectedAssetImageId }}</code>
+        💡 点击图片选定为本分镜生成关键帧 / 视频时的资产参考；再次点同一张取消。
+        <span class="asset-images-cur">
+          <template v-if="assetImagesDialog.draftSelection">
+            草稿已选：<code>{{ assetImagesDialog.draftSelection }}</code>
+          </template>
+          <template v-else>
+            草稿：未选（将走自动评分挑图）
+          </template>
         </span>
-        <el-button
-          v-if="selectedAssetImageId"
-          size="small"
-          text
-          type="danger"
-          :loading="savingAssetImageSelection"
-          @click="onClearAssetImageSelection"
-        >
-          清除选择（恢复自动）
-        </el-button>
+        <span v-if="hasDraftDirty" class="asset-images-dirty">· 待确定</span>
       </div>
       <div v-if="assetImagesDialog.loading" class="asset-images-loading">
         <el-icon class="is-loading"><Loading /></el-icon>
@@ -322,17 +319,17 @@
           v-for="img in assetImagesDialog.images"
           :key="img.id"
           class="asset-images-cell"
-          :class="{ selected: selectedAssetImageId === img.id }"
-          :title="selectedAssetImageId === img.id ? '已选定 · 点击取消选择' : '点击选定为本分镜参考图'"
-          @click="onPickAssetImage(img.id)"
+          :class="{ selected: assetImagesDialog.draftSelection === img.id }"
+          :title="assetImagesDialog.draftSelection === img.id ? '已选 · 点击取消' : '点击选定'"
+          @click="onPickAssetImageDraft(img.id)"
         >
           <img
             v-if="img.imagePath"
             :src="toImageUrl(img.thumbnailPath || img.imagePath)"
             :alt="img.label || img.category"
           />
-          <span v-if="selectedAssetImageId === img.id" class="asset-images-selected-badge">
-            <el-icon><Select /></el-icon>已选定
+          <span v-if="assetImagesDialog.draftSelection === img.id" class="asset-images-selected-badge">
+            <el-icon><Select /></el-icon>已选
           </span>
           <div class="asset-images-meta">
             <span v-if="img.isMain" class="asset-images-main">主图</span>
@@ -341,6 +338,27 @@
           </div>
         </div>
       </div>
+      <template #footer>
+        <el-button
+          v-if="assetImagesDialog.draftSelection"
+          size="small"
+          plain
+          type="danger"
+          :disabled="savingAssetImageSelection"
+          @click="assetImagesDialog.draftSelection = null"
+        >
+          清除选择
+        </el-button>
+        <el-button @click="assetImagesDialog.open = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="savingAssetImageSelection"
+          :disabled="!hasDraftDirty"
+          @click="onConfirmAssetSelection"
+        >
+          确定
+        </el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -626,18 +644,21 @@ function onVideoDone(videoPath: string): void {
 }
 
 /**
- * 取某资产 binding 的"主图"作为缩略图（用于资产卡的缩略图展示）。
- * 顺序：portraitId / portrait 字段 → 第一张可见图。
- *
- * 当前 epAssetCharacters / epAssetLocations / epAssetItems 数组中每条 binding 的
- * 主图字段命名不统一（character 用 portraitId / portrait；location/item 可能用 mainImage），
- * 这里用宽松的字段查找：portrait → portraitPath → mainImagePath → mainImage.imagePath。
+ * 取资产卡的缩略图路径：
+ *   1. 用户在 ⑤ 制作 stage 挑过的 referenceImageIds 命中本资产 → 用挑的那张图（pickedImagePathCache）
+ *   2. 否则取 binding 主图（portraitPath / mainImagePath / 等多字段 fallback）
+ *   3. 都没有 → null（卡片显示 emoji 占位）
  */
 function getMainAssetThumbnail(
   kind: 'character' | 'location' | 'item',
   bindingId: string | null | undefined,
 ): string | null {
   if (!bindingId) return null
+  // 1. 选定图优先
+  const pickedKey = `${kind}:${bindingId}`
+  const picked = pickedImagePathCache.value[pickedKey]
+  if (picked) return picked
+  // 2. 回退到 binding 主图
   const list =
     kind === 'character'
       ? assetStore.epAssetCharacters
@@ -731,6 +752,11 @@ const assetImagesDialog = reactive<{
   // 当前打开的资产种类 + bindingId — 关闭时清空，避免脏数据残留
   kind: 'character' | 'location' | 'item' | null
   bindingId: string | null
+  /**
+   * 草稿选中：在 dialog 内点击图片只更新此值；点"确定"才落到 storyboard.referenceImageIds。
+   * 打开 dialog 时 = storyboard 里已持久化的选择；用户点取消则丢弃。
+   */
+  draftSelection: string | null
 }>({
   open: false,
   loading: false,
@@ -738,12 +764,13 @@ const assetImagesDialog = reactive<{
   images: [],
   kind: null,
   bindingId: null,
+  draftSelection: null,
 })
 
 const savingAssetImageSelection = ref(false)
 
-/** 当前 dialog 上下文（kind+bindingId）在 storyboard.referenceImageIds 里已选定的 imageId */
-const selectedAssetImageId = computed<string | null>(() => {
+/** 当前 dialog 上下文（kind+bindingId）在 storyboard.referenceImageIds 里已持久化的 imageId */
+const persistedAssetImageId = computed<string | null>(() => {
   if (!assetImagesDialog.kind || !assetImagesDialog.bindingId) return null
   const refs = (selectedStoryboard.value as any)?.referenceImageIds as
     | Record<string, string>
@@ -752,6 +779,11 @@ const selectedAssetImageId = computed<string | null>(() => {
   if (!refs) return null
   return refs[`${assetImagesDialog.kind}:${assetImagesDialog.bindingId}`] ?? null
 })
+
+/** 草稿与已持久化值是否不一致（"确定"按钮按这个 enable） */
+const hasDraftDirty = computed(
+  () => assetImagesDialog.draftSelection !== persistedAssetImageId.value,
+)
 
 async function openAssetImages(
   kind: 'character' | 'location' | 'item',
@@ -763,6 +795,8 @@ async function openAssetImages(
   assetImagesDialog.kind = kind
   assetImagesDialog.bindingId = bindingId
   assetImagesDialog.images = []
+  // 草稿初始 = 已持久化值
+  assetImagesDialog.draftSelection = persistedAssetImageId.value
   assetImagesDialog.open = true
   assetImagesDialog.loading = true
   try {
@@ -784,15 +818,22 @@ async function openAssetImages(
   }
 }
 
-/**
- * 用户点图：
- *   - 同一张图再次点 → 清空（回到自动评分）
- *   - 切换 / 新选 → 设为本分镜该资产的参考图
- *
- * 立即写库（不需要 "保存" 按钮），更新 storyboard.referenceImageIds JSON 字段。
- * 写完 reload storyboards 让 selectedStoryboard 同步刷新。
- */
-async function onPickAssetImage(imageId: string): Promise<void> {
+/** dialog 打开钩子：补 sync 一下草稿（防止外部状态在打开期间被改） */
+function onAssetDialogOpen(): void {
+  assetImagesDialog.draftSelection = persistedAssetImageId.value
+}
+
+/** 点图只改草稿；同 id 再点取消选中（草稿置 null） */
+function onPickAssetImageDraft(imageId: string): void {
+  if (assetImagesDialog.draftSelection === imageId) {
+    assetImagesDialog.draftSelection = null
+  } else {
+    assetImagesDialog.draftSelection = imageId
+  }
+}
+
+/** "确定"按钮：把 draftSelection 落到 storyboard.referenceImageIds 并写库 */
+async function onConfirmAssetSelection(): Promise<void> {
   if (!selectedStoryboard.value || !assetImagesDialog.kind || !assetImagesDialog.bindingId) return
   const key = `${assetImagesDialog.kind}:${assetImagesDialog.bindingId}`
   const cur = (selectedStoryboard.value as any).referenceImageIds as
@@ -800,25 +841,30 @@ async function onPickAssetImage(imageId: string): Promise<void> {
     | null
     | undefined
   const next: Record<string, string> = { ...(cur ?? {}) }
-  if (next[key] === imageId) {
-    delete next[key]
+  if (assetImagesDialog.draftSelection) {
+    next[key] = assetImagesDialog.draftSelection
   } else {
-    next[key] = imageId
+    delete next[key]
+  }
+  // 把当前 dialog 看到的图缓存到本地 thumbnail 索引（避免确认后还要拉一次接口才能显示）
+  if (assetImagesDialog.draftSelection) {
+    const hit = assetImagesDialog.images.find((x) => x.id === assetImagesDialog.draftSelection)
+    if (hit?.imagePath) {
+      pickedImagePathCache.value = {
+        ...pickedImagePathCache.value,
+        [key]: hit.thumbnailPath || hit.imagePath,
+      }
+    }
+  } else {
+    const cache = { ...pickedImagePathCache.value }
+    delete cache[key]
+    pickedImagePathCache.value = cache
   }
   await persistReferenceImageIds(Object.keys(next).length === 0 ? null : next)
-}
-
-async function onClearAssetImageSelection(): Promise<void> {
-  if (!selectedStoryboard.value || !assetImagesDialog.kind || !assetImagesDialog.bindingId) return
-  const key = `${assetImagesDialog.kind}:${assetImagesDialog.bindingId}`
-  const cur = (selectedStoryboard.value as any).referenceImageIds as
-    | Record<string, string>
-    | null
-    | undefined
-  if (!cur || cur[key] === undefined) return
-  const next = { ...cur }
-  delete next[key]
-  await persistReferenceImageIds(Object.keys(next).length === 0 ? null : next)
+  if (!savingAssetImageSelection.value) {
+    // 保存成功（persist 内部不抛错时）→ 关 dialog
+    assetImagesDialog.open = false
+  }
 }
 
 async function persistReferenceImageIds(
@@ -835,6 +881,23 @@ async function persistReferenceImageIds(
       ElMessage.error(resp?.error || '保存选图失败')
       return
     }
+    /*
+     * 落库 sanity check：用 IPC 返回的 storyboard 比对发出的 referenceImageIds，
+     * 若不一致说明后端没应用变更（多半是 web 服务没重启 / 迁移没跑 / repo 旧版本没新分支）。
+     * 这种情况静默放回 reload 会导致前端缓存被冲掉 → 视觉"一闪而过"。
+     * 直接给用户明确报错，避免假性成功。
+     */
+    const returnedRefs = (resp.data as any)?.referenceImageIds as
+      | Record<string, string>
+      | null
+      | undefined
+    const drift = !shallowEqualRefs(returnedRefs ?? null, next)
+    if (drift) {
+      ElMessage.error(
+        '保存看似成功但服务端没有应用 referenceImageIds — 多半是 web 服务（4201）没重启，新加的 storyboards.reference_image_ids 列 / repo 新分支未生效；请 kill 父子进程重启后再试',
+      )
+      return
+    }
     if (selectedScene.value) {
       await storyboardStore.loadStoryboards(selectedScene.value.id)
     }
@@ -842,6 +905,81 @@ async function persistReferenceImageIds(
     savingAssetImageSelection.value = false
   }
 }
+
+/** 浅比较两个 referenceImageIds（含 null 视同 {}） */
+function shallowEqualRefs(
+  a: Record<string, string> | null,
+  b: Record<string, string> | null,
+): boolean {
+  const A = a ?? {}
+  const B = b ?? {}
+  const ka = Object.keys(A)
+  const kb = Object.keys(B)
+  if (ka.length !== kb.length) return false
+  for (const k of ka) {
+    if (A[k] !== B[k]) return false
+  }
+  return true
+}
+
+// ===== 已选定参考图缩略图缓存 =====
+//
+// 资产卡缩略图的两种来源：
+//   1. binding 的主图（从 epAssetCharacters/Locations/Items 字段直读，不需 IPC）
+//   2. storyboard.referenceImageIds 里挑过的具体 asset_image — 需要按 imageId 反查 imagePath
+//
+// 第二种走 listAssetImages 拉一次取得 path，cache 到 pickedImagePathCache，避免每次渲染都 IPC。
+// 切换 storyboard 时（referenceImageIds 变化）触发 reload。
+
+const pickedImagePathCache = ref<Record<string, string>>({})
+
+watch(
+  () => (selectedStoryboard.value as any)?.referenceImageIds,
+  async (refs) => {
+    /*
+     * 防闪烁原则：
+     *   - 不在 await 前把 cache 清空
+     *   - 异步 fetch 完成后用 next 替换；next 以 "现有 cache 中仍在 refs 里的项" 为底，
+     *     listAssetImages 返回的新值再覆盖。这样即使后端返回失败 / 找不到图，
+     *     用户刚选的本地缓存仍然有效，不会出现"一闪而过"。
+     *   - 仅在 refs 为空 / null 时才把整个 cache 置空（清除选择场景）。
+     */
+    if (!refs || typeof refs !== 'object' || Object.keys(refs).length === 0) {
+      pickedImagePathCache.value = {}
+      return
+    }
+    const refsRecord = refs as Record<string, string>
+    // 底：保留 cache 里仍在 refs 范围内的旧值
+    const next: Record<string, string> = {}
+    for (const [k, v] of Object.entries(pickedImagePathCache.value)) {
+      if (k in refsRecord) next[k] = v
+    }
+    const api = (window as any).electronAPI?.episodeProduction
+    if (!api?.listAssetImages) {
+      pickedImagePathCache.value = next
+      return
+    }
+    // 并行拉每个 binding 的图列表（一个分镜资产引用通常 < 10）
+    const tasks = Object.entries(refsRecord).map(async ([key, imageId]) => {
+      const sep = key.indexOf(':')
+      if (sep <= 0) return
+      const kind = key.slice(0, sep)
+      const bindingId = key.slice(sep + 1)
+      try {
+        const resp = await api.listAssetImages(kind, bindingId)
+        if (resp?.success && Array.isArray(resp.data)) {
+          const hit = (resp.data as AssetImageRow[]).find((x) => x.id === imageId)
+          if (hit?.imagePath) next[key] = hit.thumbnailPath || hit.imagePath
+        }
+      } catch {
+        /* 单条失败不影响其他 — 保留 next[key] 的现有缓存（如果有） */
+      }
+    })
+    await Promise.all(tasks)
+    pickedImagePathCache.value = next
+  },
+  { immediate: true, deep: true },
+)
 </script>
 
 <style scoped lang="scss">
@@ -1010,22 +1148,24 @@ async function persistReferenceImageIds(
   flex: 1;
 }
 
-/* 镜头语言只读展示行：生成模式 / 关键帧数 / 3D 摆位 */
-.lang-readonly {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 24px;
-  padding: 10px 12px;
-  background: var(--el-fill-color-lighter);
-  border-radius: 4px;
-  font-size: 12px;
+/*
+ * 分镜信息 panel header：标题 + 镜头 meta + 时长 + 生成模式 / 关键帧数 / 3D 摆位
+ * 全部 inline 排在 header 一行；wrap-aware（窄屏自动换行）。
+ */
+.lang-header {
+  margin-bottom: 0;
+}
+
+.lang-panel {
+  /* header 已排满全部信息，panel 内部不再有 body 区，去掉 header 默认下边距 */
+  padding-bottom: 12px;
 }
 
 .ro-item {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  font-size: 12px;
 }
 
 .ro-label {
@@ -1050,12 +1190,19 @@ async function persistReferenceImageIds(
   font-size: 12px;
 }
 
-/* 上半部分左右两栏：左 2/3 装信息+关键帧+视频生成；右 1/3 视频预览 */
+/*
+ * 中部左右两栏（在 full-width 分镜信息 panel 之下）：
+ *   左列叠放 关键帧序列 + 视频片段生成
+ *   右列视频预览，高度盛满 = 左列两块加总高度
+ *
+ * align-items: stretch 让右列高度跟左列对齐；右列内部 video-preview-panel 用 flex
+ * 撑开，video 元素 flex-grow:1 占满剩余空间；预览底部因此与"视频片段生成"卡底部对齐。
+ */
 .upper-split {
   display: grid;
   grid-template-columns: 2fr 1fr;
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .upper-left {
@@ -1068,31 +1215,30 @@ async function persistReferenceImageIds(
 .upper-right {
   display: flex;
   flex-direction: column;
-  gap: 12px;
   min-width: 0;
-  position: sticky;
-  top: 0;
 }
 
 @media (max-width: 1100px) {
   .upper-split {
     grid-template-columns: 1fr;
   }
-  .upper-right {
-    position: static;
-  }
 }
 
-/* 视频预览面板 */
+/* 视频预览面板 — 高度 100% 撑满 upper-right 列；内部 flex 让 player 占满剩余 */
 .video-preview-panel {
   display: flex;
   flex-direction: column;
+  height: 100%;
+  flex: 1;
+  min-height: 0;
 }
 
 .video-preview-body {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  flex: 1;
+  min-height: 0;
 }
 
 .video-preview-player {
@@ -1101,7 +1247,9 @@ async function persistReferenceImageIds(
   border-radius: 4px;
   display: block;
   outline: none;
-  aspect-ratio: 16 / 9;
+  flex: 1;
+  min-height: 0;
+  object-fit: contain;
 }
 
 .video-preview-meta {
@@ -1117,14 +1265,17 @@ async function persistReferenceImageIds(
 }
 
 .video-preview-empty {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   padding: 30px 12px;
   font-size: 12px;
   color: var(--el-text-color-placeholder);
   text-align: center;
+  min-height: 200px;
 }
 
 .video-preview-empty .el-icon {
@@ -1342,6 +1493,11 @@ async function persistReferenceImageIds(
   border-radius: 2px;
   font-family: monospace;
   font-size: 11px;
+}
+
+.asset-images-dirty {
+  color: var(--el-color-warning);
+  font-weight: 600;
 }
 
 .asset-images-cell {
