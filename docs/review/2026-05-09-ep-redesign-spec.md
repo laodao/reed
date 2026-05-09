@@ -47,7 +47,7 @@
 
 | 域 | 能力数 | 例 |
 |---|---|---|
-| 资产域 | 11 | 字段双层 / AI 字段提取 / 透明度面板 / 三视图 / LoRA / 跨项目库 / 数字人池 / 视频提取主体 |
+| 资产域 | 11 | 字段双层 / AI 字段提取 / 透明度面板 / 三视图 / 角色形象组 / 跨项目库 / 数字人池 / 视频提取主体 |
 | 分镜域 | 7 | 双模板画面描述 / 摄像机参数化 / 运镜 25 预设 / 打光 12 预设 / 全局编号 / 多基图派生 / 局部子画布 |
 | 剧本→分镜 | 1 | 9 帧故事板草稿 |
 | 工作流入口 | 3 | AI 一键通道 / Agent 接入 / 视频解析（参考视频拆分镜） |
@@ -61,7 +61,8 @@
 | **effective** | binding 经 source_type 投影 + override 合并后的扁平字段（送给 prompt 装配用） |
 | **subject** | 部分 provider（KlingO/MJ V7 等）原生支持的"主体"概念，与通用 reference image 路径不同 |
 | **三视图** | character bible，正面 / 3q左 / 3q右（或正/侧/背）三张视角图 |
-| **LoRA** | 角色专属 latent fine-tuning 模型（5-20 张图训练 → 注入推理） |
+| **角色形象组**（Character Reference Set） | 同一 character_binding 关联的多张图集合（主图 + view + expression + outfit + pose），生图时全部作为 multi-reference 喂给 provider — 取代了"LoRA 训练"路径（调研见 §3.2 D1 决策记录） |
+| **multi-reference** | 各 cloud image API 公开的多图参考能力（Seedream 4.5 多图 / 万相 image-edit 1-4 张 / 可灵 element_list / 即梦智能参考） |
 | **数字人池** | 内置 10-30 个精选预设角色（preset_digital） |
 | **as-is / to-be** | 当前状态 / 期望状态（产品文档术语） |
 
@@ -358,7 +359,7 @@
 
 **理由**：
 1. 风险控制：V1 GalleryEditor 是当前生产稳定路径（角色派生 / 地点多主图 / 360 全景 / 物品精简），重写到 V2 工程量 1-2 周但用户感知不强；本期目标是 22 项新能力，不是重构存量
-2. 兼容路径：本期所有新功能（透明度面板 / 多角度 / 多基图派生 / LoRA 训练 panel）都挂在 V1 GalleryEditor 上 — 加 ⓘ 入口、加按钮、加 dialog；不破坏既有 5 处 / 2 处 / 2 处 thumb-tools 结构
+2. 兼容路径：本期所有新功能（透明度面板 / 多角度 / 多基图派生 / 角色形象组）都挂在 V1 GalleryEditor 上 — 加 ⓘ 入口、加按钮、加 dialog；不破坏既有 5 处 / 2 处 / 2 处 thumb-tools 结构
 3. 下一阶段：Phase 6（待规划）可考虑 GalleryEditorV2 重构 — 届时把"分镜中心化卡片布局"思路（仿 ⑤ 制作 stage）应用到 ② 资产 stage 的图谱区
 
 **例外**：
@@ -575,7 +576,7 @@ KeyframeGenerationService.generateKeyframesForStoryboard:
 | P-6 | character 三视图（character bible）需手动多次派生，多次独立调用一致性差 | libtv-comparison |
 | P-7 | 跨集 / 跨项目重复创建同一角色（无库化） | asset-generation |
 | P-8 | 新用户起步无内置数字人可选 | libtv-comparison |
-| P-9 | 没有 LoRA / IP-Adapter 等 latent conditioning 路径，仅靠文本 + reference image | asset-generation |
+| P-9 | reference image 路径已有但**没用满各 provider 的多图参数极限**（如 Seedream 4.5 / 可灵 element_list / 即梦智能参考；调研结论：4 家国内云 API 均不开放训练 LoRA 给外部 — 唯一可行路径是 multi-reference 增强）| asset-generation + 2026-05-09 LoRA 调研 |
 | P-10 | 没法从已有视频提取角色多视角 | （新增需求） |
 
 ### 分镜域问题
@@ -616,7 +617,7 @@ KeyframeGenerationService.generateKeyframesForStoryboard:
 | P-6 三视图需多次手动派生 | 一键多角度（一次推理 3 张），同 latent 内部一致性 | B3 |
 | P-7 跨集 / 跨项目无库化 | user_assets 跨项目角色库（加入我的库 / 从我的库引用） | D2 |
 | P-8 新用户起步无内置数字人 | 数字人池 10-30 个 preset_digital + 创建 dialog 加 tab | D3 |
-| P-9 无 LoRA / IP-Adapter latent 路径 | LoRA fine-tuning（多 provider 抽象层 + 国内优先 + 本地选项）| D1 |
+| P-9 reference image 没用满各 provider 多图参数 | 角色形象组（Character Reference Set）— ImageGenerationRequest.referenceImages 改为数组；各 provider adapter 适配 multi-reference / element_list / 智能参考 | D1 |
 | P-10 无视频提取角色 | E1 ffmpeg + 人脸检测 + 聚类 + 角度分类 → 多视角图自动落库 | E1 |
 | P-11 画面描述空白无引导 | 双模板（短剧 5 段 / 影视 shot-level / 自由文本） | B4 |
 | P-12 缺摄像机参数化 | 焦距 5 / 光圈 5 / 相机风格 4 预设 + visual effect tooltip | B5 |
@@ -666,7 +667,7 @@ KeyframeGenerationService.generateKeyframesForStoryboard:
 - 角色一键多角度参考图（正/侧/背 三视图，一次推理）
 - 透明度面板（GenerationDetailDialog）：每张图的 prompt / negativePrompt / 派生关系 / metadata 全可见
 - 派生支持多基图（多 ref 输入）
-- LoRA fine-tuning（角色专属模型，跨集 / 跨项目一致性）
+- 角色形象组（Character Reference Set）— 把 binding 已有的多张图标记为生图固定参考集；推理时全部喂给 provider（multi-reference / element_list / 智能参考）；解决 P-9 reference image 没用满 provider 多图能力
 - 跨项目角色库（user_assets 表，"加入我的库" / "从我的库引用"）
 - 数字人池（10-30 个 preset_digital，新用户快速起步）
 - 视频提取主体（上传短视频 → 人脸检测 + 聚类 + 角度分类 → 多视角图自动落库）
@@ -701,7 +702,7 @@ KeyframeGenerationService.generateKeyframesForStoryboard:
 **新增**：
 - Provider subject 能力探测路径（capability matcher 加 subjectSupport / maxSubjects；KlingO/MJ V7/Seedance 2.0 走原生 subject API）
 - 局部子画布连线可视化（LineageOverlay overlay 在分镜中心化布局上）
-- LoRA 注入路径（imageGen.generate 加 loras 参数）
+- ImageGenerationRequest.referenceImage 改 referenceImages: string[]（向后兼容）；各 provider adapter 适配 multi-reference 入参
 
 **保留**：现有 KeyframeGrid / VideoSegmentPanel / AudioPanel
 
@@ -737,7 +738,7 @@ KeyframeGenerationService.generateKeyframesForStoryboard:
    ★ 新：从视频提取主体（上传短视频 → 自动多视角图）
    ★ 设定卡：⭐ 核心字段 + ▼ 折叠 metadata；点 ✨ AI 自动填
    ★ 主图生成后："生成多角度参考图"一键出三视图
-   ★ 高级：训练专属 LoRA（10-15min，¥6-10）
+   ★ 高级：标记"角色形象组"（勾选哪些图作为固定生图参考，无训练成本）
    ★ GalleryEditor 缩略图 hover 加 ⓘ 详情入口（透明度面板）
    ★ 派生支持多基图（checkbox 多选）
 
@@ -749,7 +750,7 @@ KeyframeGenerationService.generateKeyframesForStoryboard:
 5. ⑤ 制作（增强）
    ★ 顶部"显示生成链路"开关 → 可视化连线
    ★ 后台自动走 provider subject 路径（如 Kling O3）
-   ★ 自动加载 binding 的 LoRA 注入推理
+   ★ 自动把 binding 的"角色形象组"喂给 provider 的 multi-reference 入参
    ★ KeyframeGrid 缩略图 hover 加 ⓘ 详情入口
 
 6. ⑥ 合成：同 as-is（保留）
@@ -766,7 +767,7 @@ AIQuickModeWizard (Step 1 输入)
    - 一句话剧本主题（textarea）
    - 时长：30s / 60s / 90s
    - 风格：现代都市 / 古风 / 奇幻 / 自定义
-   - 是否启用 LoRA（默认 false）
+   - （已废 LoRA 选项；默认走 multi-reference）
    │
    ▼
 进入 Step 2 进度（流式状态推送）
@@ -786,7 +787,7 @@ AIQuickModeWizard (Step 1 输入)
 ### 2.2.3 跨项目库通道（IP 矩阵 / 长内容）
 
 ```
-项目内已有 character "李白"（含 LoRA v2）
+项目内已有 character "李白"（含 6 张图：主图 + 三视图 + 2 套服装）
    │
    ▼
 右键 / 溢出菜单 → "⭐ 加入我的库"
@@ -797,7 +798,7 @@ AIQuickModeWizard (Step 1 输入)
    │
    ▼ 列表选 "李白" → "→ 引用到当前剧集"
    ▼
-新项目内创建 character_binding（含 source_user_asset_id 反指 + LoRA 自动绑）
+新项目内创建 character_binding（含 source_user_asset_id 反指 + 自动把 user_asset 的 image_paths 拷过来作为新 binding 的形象组）
 ```
 
 ### 2.2.4 视频起步通道（参考视频 → 完整剧集）
@@ -832,7 +833,7 @@ ReferenceVideoAnalysisService:
 | `StoryboardThumbnailDialog.vue` | `stage-content-script-v3/` | 9 帧故事板预览 + 挑骨架 | B7 |
 | `LineageOverlay.vue` | `stage-production-v2/` | 局部子画布连线 overlay | C2 |
 | `AIQuickModeWizard.vue` | `dialogs/` | AI 一键模式 wizard | C3 |
-| `LoRATrainingPanel.vue` | `stage-asset-v2/character/` | LoRA 训练 + 版本管理（嵌 CharacterAssetEditorV2） | D1 |
+| `ReferenceSetPanel.vue` | `stage-asset-v2/character/` | 角色形象组（勾选 binding 已有图作为生图参考集；嵌 CharacterAssetEditorV2） | D1 |
 | `UserAssetLibraryDialog.vue` | `dialogs/` | 跨项目角色库列表 + 引用 | D2 |
 | `ReferenceVideoImportDialog.vue` | `dialogs/` | 视频解析 → 拆分镜骨架 | D5 |
 | `VideoFaceExtractDialog.vue` | `stage-asset-v2/character/` | 视频提取主体多视角 | E1 |
@@ -844,7 +845,7 @@ ReferenceVideoAnalysisService:
 | `CharacterCardFormV2.vue` | 字段双层（核心 + 折叠 metadata）+ AI 自动填按钮 | B1, B2 |
 | `LocationCardFormV2.vue` | 同上（适配地点字段） | B1, B2 |
 | `ItemCardForm.vue` | 加 AI 自动填按钮（字段已少） | B2 |
-| `CharacterAssetEditorV2.vue` | 顶部加"生成多角度参考图"+"训练专属 LoRA"按钮 | B3, D1 |
+| `CharacterAssetEditorV2.vue` | 顶部加"生成多角度参考图"按钮；嵌入 ReferenceSetPanel | B3, D1 |
 | `CharacterGalleryEditor.vue` | 5 处 thumb-tools 加 ⓘ 详情入口 | A1 |
 | `LocationGalleryEditor.vue` | 2 处 thumb-tools 加 ⓘ | A1 |
 | `ItemGalleryEditor.vue` | 2 处 thumb-tools 加 ⓘ | A1 |
@@ -889,7 +890,7 @@ ReferenceVideoAnalysisService:
 | `src/renderer/src/components/episode-production/stage-asset-v2/character/CharacterCardFormV2.vue` | 模板重排为双层（⭐ 生成核心 + ▼ el-collapse 叙事 metadata）；加 ✨ AI 自动填按钮 + onExtractFields 实现；字段绑定 / onChange 不变 | C4, C5 | 解决 P-4, P-5 |
 | `src/renderer/src/components/episode-production/stage-asset-v2/location/LocationCardFormV2.vue` | 同上（适配地点字段） | C4, C5 | 解决 P-4, P-5 |
 | `src/renderer/src/components/episode-production/stage-asset/item/ItemCardForm.vue` | 加 ✨ AI 自动填按钮（字段少不需双层） | C5 | 解决 P-5 |
-| `src/renderer/src/components/episode-production/stage-asset-v2/character/CharacterAssetEditorV2.vue` | 顶部加"生成多角度参考图"按钮 + onGenerateThreeViews；加 LoRATrainingPanel 嵌入 | C6, D1 | 解决 P-6, P-9 |
+| `src/renderer/src/components/episode-production/stage-asset-v2/character/CharacterAssetEditorV2.vue` | 顶部加"生成多角度参考图"按钮 + onGenerateThreeViews；嵌入 ReferenceSetPanel | C6, D1 | 解决 P-6, P-9 |
 | `src/renderer/src/components/episode-production/stage-asset/location/DeriveVariantDialog.vue` | el-radio-group 改 el-checkbox-group 多选基图 + maxBaseImages 限制 | C9 | 解决 P-16 |
 
 ### 3.1.3 资产 service
@@ -899,8 +900,8 @@ ReferenceVideoAnalysisService:
 | `src/core/modules/episode-production/assets/services/asset-setting-enrichment.service.ts` | 加 `extractFieldsFromDescription(input)` 方法（character/location/item 三模板）+ `safeParseJson` / `validateAndCoerce` helper | C5 | 解决 P-5 |
 | `src/core/modules/episode-production/assets/services/main-image-generator.service.ts` | 加 `generateThreeViews(input)` 方法 | C6 | 解决 P-6 |
 | `src/core/modules/episode-production/assets/services/gallery-derivation.service.ts` | `DeriveSingleInput` 加 `baseImageIds[]` 字段；`deriveSingle` 处理多基图（向后兼容 baseImageId 单值） | C9 | 解决 P-16 |
-| `src/core/image-providers/types.ts`（或 `ImageGenerator` 接口所在） | 加可选 `loras?: Array<{id, weight?}>` 参数 | D1 | 解决 P-9 |
-| 各 image provider adapter（5 个）| 加载 LoRA 注入推理（fal/replicate/可灵/即梦/火山） | D1 | 解决 P-9 |
+| `src/shared/types/image-provider.types.ts:74-87` | `ImageGenerationRequest.referenceImage?: string` → `referenceImages?: string[]`（向后兼容：保留 referenceImage 单值，二选一）| D1 | 解决 P-9 |
+| 各 image provider adapter（dashscope / bailian / volcengine / minimax / zhipu / openai / custom 共 7 个） | 适配各自 multi-reference 入参（万相 1-4 张 / Seedream multi-ref / 智能参考 / 可灵 element_list；不支持时仅用第一张降级）| D1 | 解决 P-9 |
 
 ### 3.1.4 IPC handler
 
@@ -909,7 +910,7 @@ ReferenceVideoAnalysisService:
 | `src/electron/ipc/handlers/episode-production/asset/asset-setting-enrichment.handler.ts` | 加 `ep:asset:extract-fields` handler | C5 | 解决 P-5 |
 | `src/electron/ipc/handlers/episode-production/asset/character-asset.handler.ts` | 加 `ep:asset:character:generate-three-views` handler | C6 | 解决 P-6 |
 | `src/electron/ipc/handlers/episode-production/asset/derivation.handler.ts` | `ep:asset:derive:single` 处理 baseImageIds[]（向后兼容） | C9 | 解决 P-16 |
-| 新建 `lora.handler.ts` | 4 个 IPC（train / status / list / delete）+ 1 event（status-changed） | D1 | 解决 P-9 |
+| 扩 `character-asset.handler.ts` | 加 `ep:asset:character:set-reference-set` IPC（用户勾选哪些 image_id 作为形象组）+ `ep:asset:character:get-reference-set` | D1 | 解决 P-9 |
 | 新建 `user-asset.handler.ts` | 5 个 IPC（list / add-from-binding / create-binding / sync-back / delete） | D2 | 解决 P-7 |
 | 新建 `preset-digital.handler.ts` | 1 个 IPC（list） | D3 | 解决 P-8 |
 | 新建 `quick-mode.handler.ts` | 1 个 IPC（run）+ event（progress） | C3 | 解决 P-19 |
@@ -921,7 +922,7 @@ ReferenceVideoAnalysisService:
 
 | 文件 | 改动 | commit |
 |---|---|---|
-| `src/preload/index.ts` | 加 ~25 个新 IPC channel 常量 + namespace API（episodeProduction.asset.{extractFields,character.generateThreeViews,lora.*,...}） | C5/C6/C9/D1/D2/D3/B7/C3/D5/E1 |
+| `src/preload/index.ts` | 加 ~22 个新 IPC channel 常量 + namespace API（episodeProduction.asset.{extractFields,character.generateThreeViews,character.setReferenceSet,...}） | C5/C6/C9/D1/D2/D3/B7/C3/D5/E1 |
 | `src/web/client/channel-map.ts` | 加同等数量的 channel 映射 | 同上 |
 
 ### 3.1.6 分镜 UI
@@ -971,7 +972,7 @@ ReferenceVideoAnalysisService:
 | `CharacterCardFormV2.vue` | 2 | C4（双层 UI）→ C5（AI 自动填按钮） |
 | `LocationCardFormV2.vue` | 2 | C4 → C5 |
 | `ItemCardForm.vue` | 1 | C5（仅 AI 按钮）|
-| `CharacterAssetEditorV2.vue` | 2 | C6（多角度按钮）→ D1（LoRATrainingPanel 嵌入） |
+| `CharacterAssetEditorV2.vue` | 2 | C6（多角度按钮）→ D1（ReferenceSetPanel 嵌入） |
 | `MainImageGeneratorService` | 1 | C6 |
 | `asset-setting-enrichment.service.ts` | 1 | C5 |
 | `gallery-derivation.service.ts` | 1 | C9 |
@@ -984,7 +985,7 @@ ReferenceVideoAnalysisService:
 | `video-provider-adapter.ts` | 1 | P3-C1（capabilities 加字段）|
 | `keyframe-generation.service.ts` | 1 | P3-C1（subject 路径分流）|
 | `provider-capability-matcher.ts` | 1 | P3-C1（subject 维度匹配）|
-| `ImageGenerator` 接口 + 5 个 image adapter | 1 | D1（loras 参数注入）|
+| `image-provider.types.ts` + 7 个 image adapter | 1 | D1（referenceImages: string[] + multi-reference 适配）|
 | `preload/index.ts` | 多次 | 每个新 IPC 都加；详见 §3.3 |
 | `web/client/channel-map.ts` | 多次 | 同 preload 同步 |
 
@@ -1527,7 +1528,7 @@ export class QuickModeOrchestrator {
     // 1. createEpisode（含 storyBg）
     // 2. scriptGenerator.generate
     // 3. assetGenerator.generateAll（每 character 含三视图）
-    //    （可选）loraTraining.startTraining 异步触发
+    //    （形象组自动初始化：main + view，无训练）
     // 4. thumbnailGen.generate（9 帧故事板）
     // 5. 用全部 9 帧创建 storyboards
     // 6. 每 sb 走 keyframe gen + video gen
@@ -1552,13 +1553,172 @@ UI：Step 1 输入 + Step 2 流式进度（每步可暂停 / 重生 / 继续）�
 
 ---
 
-### D. LoRA + 跨项目库 + 数字人池 + Agent + 视频解析（Phase 4）
+### D. 角色形象组 + 跨项目库 + 数字人池 + Agent + 视频解析（Phase 4）
 
-#### D1. LoRA fine-tuning
+#### D1. 角色形象组（Character Reference Set）
 
 **问题**：P-9。
 
-**多 provider 抽象**：
+**决策记录**（2026-05-09 LoRA 调研结论）：
+
+调研 4 家国内主流云图像 API（阿里百炼 / 字节火山 / 可灵 / 即梦）后确认 **0 家提供"开放 API 训练角色 → 公开生图 API 调用"的闭环**：
+
+| 平台 | 训练能力 | 是否对外 API |
+|---|---|---|
+| 阿里百炼 | PAI ArtLab 训练 Qwen-Image LoRA | ❌ 仅 Console；产物挂不到 wanx 公开 API |
+| 火山炉米 Lumi | Seedream / Seedance LoRA | ❌ 白名单内测 |
+| 可灵 Custom Model | 视频脸部模型 | ❌ 仅 Web，订阅制 |
+| 即梦 | — | ❌ 不提供 |
+
+**结论：放弃 LoRA 训练路径**。各家公开 API 仅提供 **multi-reference image** 形态的角色一致性，本设计采用此路径。
+
+**核心方案**：
+
+> 不训练。把 character_binding **已有的多张图**（主图 + view 三视图 + expression + outfit + pose）作为"形象组"，生图时全部喂给 provider 的 multi-reference 入参。
+
+**Schema 改动**（最小）：
+
+`character_bindings` 表加一列 `reference_set_image_ids TEXT NULL`（JSON 数组，记用户标记为"形象组成员"的 asset_image.id 列表；NULL 时默认行为 = 自动用 main + 所有 view）。Migration `add-character-binding-reference-set.ts`（PG/SQLite 双库 + 幂等，参照 `add-binding-reference-image-path.ts`）。
+
+`asset_image` 表**不动**（已有多张图）。`location_bindings` / `item_bindings` 同理加列（地点 / 物品也支持形象组）。
+
+**ImageGenerationRequest 接口扩展**（`src/shared/types/image-provider.types.ts:74-87`）：
+
+```ts
+export interface ImageGenerationRequest {
+  providerConfigId?: string
+  model: string
+  prompt: string
+  negativePrompt?: string
+  width: number
+  height: number
+  // ...
+  /** @deprecated 保留兼容老调用方；新代码用 referenceImages */
+  referenceImage?: string
+  /** 多张参考图绝对路径或 URL；adapter 适配各自 multi-reference 入参 */
+  referenceImages?: string[]
+  skipHistory?: boolean
+}
+```
+
+**Provider adapter 适配**（按各家 multi-reference 真实 API 形态）：
+
+| Provider | 多图入参形态 | 数量上限 | 不支持时降级 |
+|---|---|---|---|
+| dashscope（万相 wan2.5/2.6 image-edit） | `ref_images: string[]` | 1-4 张 | 截前 4 张 |
+| volcengine（Seedream 4.5 / 5.0 lite） | `reference_images: string[]` | 多张 + 组图 | 全部 |
+| bailian（含百炼托管的可灵 kling-v3） | `element_list: [{element_id, element_image}]` | 10 张 | 转 element_list |
+| openai（DALL-E） | 不原生支持多图 | 1 张 | 仅用第一张 |
+| minimax / zhipu | 单参考 | 1 张 | 仅用第一张 |
+| custom | 用户配置决定 | 看 baseUrl | 透传 |
+
+每个 adapter 在 `generateImage()` 内部读 `request.referenceImages`（fallback `request.referenceImage`），按上表适配。
+
+**Service** — `src/core/modules/episode-production/assets/services/character-asset.service.ts` 加方法：
+
+```ts
+async setReferenceSet(input: {
+  bindingId: string
+  imageIds: string[]  // 用户勾选的 asset_image.id 列表；空数组 = 重置为默认（自动选 main + view）
+}): Promise<CharacterBindingEntity> {
+  // 1. 校验 imageIds 都属于该 binding
+  // 2. 写 character_bindings.reference_set_image_ids（JSON）
+  // 3. 返回更新后的 binding
+}
+
+async getEffectiveReferenceImages(bindingId: string): Promise<string[]> {
+  // 1. 取 binding.reference_set_image_ids；非空 → 按 id 查 asset_image.imagePath 列表
+  // 2. 为空 → fallback 到默认策略：main + 所有 view
+  // 3. 过滤掉不存在的 id（容错）
+  // 4. 返回绝对路径数组
+}
+```
+
+**集成到现有生成路径**：
+- 主图生成（`MainImageGeneratorService.generateMain`）：保留现有 `reference_image_path` 单值
+- 派生（`GalleryDerivationService.deriveSingle`）：支持 baseImageIds[]（B6 已设计）
+- 关键帧生成（`KeyframeGenerationService`）：在 `pickReferenceImage` 之后，**额外**把 binding 的形象组加到 referenceImages 数组 — **核心增强点**
+
+**IPC**：
+
+| Channel | input | output |
+|---|---|---|
+| `ep:asset:character:set-reference-set` | { bindingId, imageIds: string[] } | CharacterBindingEntity |
+| `ep:asset:character:get-reference-set` | { bindingId } | { imageIds: string[]; effective: string[] } |
+
+> 不需要 train / status / list / delete / status-changed event — 没训练任务，无异步状态。
+
+**新组件**：`ReferenceSetPanel.vue`（嵌入 CharacterAssetEditorV2 顶部）
+
+```
+┌─ 角色形象组（Character Reference Set）──────────────┐
+│  生图时用这些图作为稳定参考（multi-reference）        │
+│                                                       │
+│  ✓ [缩略图] 主图           (默认勾选)                 │
+│  ✓ [缩略图] view-front     (默认勾选)                 │
+│  ✓ [缩略图] view-3q_left   (默认勾选)                 │
+│  ✓ [缩略图] view-3q_right  (默认勾选)                 │
+│  ☐ [缩略图] expression-smile                          │
+│  ☐ [缩略图] outfit-formal                             │
+│                                                       │
+│  已选 4 张 ｜ provider 上限：4（万相）/ 多张（Seedream）│
+│  ⓘ 当前 image provider：volcengine Seedream 4.5       │
+│    支持多张参考；建议保留 4-6 张代表角度 + 表情        │
+│                                                       │
+│           [恢复默认]  [保存形象组]                    │
+└───────────────────────────────────────────────────────┘
+```
+
+**双母语**：
+- 大众用户：勾选直观；默认值合理（main + 三视图）；hint 文案解释
+- 专业用户：明确告知当前 provider 多图上限；可手动调整组合
+
+**与跨项目库（D2）配合**：
+- character_binding 加入我的库（D2.addToLibrary）时，**reference_set_image_ids 也作为 snapshot 字段保留**；user_assets.image_paths 拷的就是这些图
+- 从库引用到新项目（D2.createFromLibrary）时，新 binding 的 reference_set_image_ids 自动指向新拷过来的 asset_image.id
+
+**与 P3 subject 探测的关系**：
+- P3 的 `subjectSupport` / `maxSubjects` 仍有意义 — 部分 provider（如可灵）的 multi-reference 是 element_list 体系，需要先 register subject
+- subject 注册结果可缓存到 `provider_subject_cache` 表（保留这张表，避免每次都 register）
+- subject 缓存与"形象组"关系：形象组定义"哪些图"，subject cache 记"这组图在某 provider 的注册 ID"
+
+**provider_subject_cache 表保留**：
+
+```ts
+@Entity({ name: 'provider_subject_cache' })
+@Index('idx_psc_binding', ['bindingId'])
+@Index('idx_psc_provider', ['providerConfigId'])
+export class ProviderSubjectCacheEntity {
+  @PrimaryColumn() id!: string
+  @Column({ name: 'user_id', nullable: true }) userId!: string | null
+  @Column({ name: 'binding_id' }) bindingId!: string
+  @Column({ name: 'provider_config_id' }) providerConfigId!: string
+  @Column({ name: 'provider_subject_id' }) providerSubjectId!: string
+  @Column({ name: 'image_paths_hash' }) imagePathsHash!: string  // reference_set 解析后 imagePaths 的 SHA256
+  @Column({ name: 'created_at', type: 'bigint' }) createdAt!: number
+  @Column({ name: 'expires_at', type: 'bigint', nullable: true }) expiresAt!: number | null
+}
+```
+
+Migration `add-provider-subject-cache.ts`（同 D1 范式）。
+
+**风险**：
+
+| 风险 | 应对 |
+|---|---|
+| 各 provider 多图入参形态差异大 | adapter 层吸收差异；统一 referenceImages 接口 + 各家内部转换 |
+| provider 上限不一致（DALL-E 1 / 万相 4 / Seedream 多） | UI 显式提示当前上限；超过时按优先级（main > view > 其他）截断；不报错 |
+| subject 缓存失效（用户改了形象组） | image_paths_hash 比对自动失效；下次调用重 register |
+| 老 referenceImage 单值调用方未迁移 | 接口保留 referenceImage（@deprecated），fallback 到 referenceImages[0] |
+| reference_set_image_ids 引用的 asset_image 被删 | service 层在每次 getEffective 时过滤掉不存在的 id |
+| 长期：炉米 / 可灵 Custom Model 真开放 API | 可加新功能"训练形象组"扩展（保留现有字段 + 加 fine_tuned_model_id 列）|
+
+<!-- DEPRECATED-LORA-START：以下 LoRA 训练设计已废（调研结论：4 家国内云 API 都不开放训练 API）；改走上方的 Character Reference Set 路径。保留作历史参考。-->
+
+<details>
+<summary>展开查看已废 LoRA 训练设计（不实施）</summary>
+
+**多 provider 抽象（已废）**：
 ```
 LoRATrainingProvider (interface)
   ├ FalFluxAdapter        (海外·fal.ai)
@@ -1815,6 +1975,10 @@ export class LoRATrainingService {
 | 本地训练用户配置复杂 | local_kohya 需手动指定 ComfyUI / kohya_ss endpoint；附 setup 文档 + 检测脚本（一键 ping endpoint 验证） |
 | LoRA 权重 + binding 解关联 | 删 binding 时若 LoRA 仅被此 binding 引用 → 询问是否同删；被多 binding 引用（跨库引用） → 仅解关联，LoRA 保留 |
 
+</details>
+
+<!-- DEPRECATED-LORA-END -->
+
 #### D2. 跨项目角色库
 
 **问题**：P-7。
@@ -1833,7 +1997,8 @@ export class UserAssetEntity {
   @Column({ name: 'snapshot', type: 'simple-json' }) snapshot!: Record<string, unknown>
   /** 多张图绝对路径 */
   @Column({ name: 'image_paths', type: 'simple-json', nullable: true }) imagePaths!: string[] | null
-  @Column({ name: 'lora_model_id', type: 'varchar', nullable: true }) loraModelId!: string | null
+  /** 形象组成员的 asset_image.id 列表（snapshot 时拷过来的；createBinding 时还原） */
+  @Column({ name: 'reference_set_image_ids', type: 'simple-json', nullable: true }) referenceSetImageIds!: string[] | null
   @Column({ name: 'source_binding_id', type: 'varchar', nullable: true }) sourceBindingId!: string | null
   @Column({ name: 'created_at', type: 'bigint' }) createdAt!: number
   @Column({ name: 'updated_at', type: 'bigint' }) updatedAt!: number
@@ -1865,7 +2030,7 @@ Web:      {dataDir} / user-assets / {userAssetId} / ...
 
 **双母语**：
 - 大众用户：一次创建好的角色可在所有项目复用；不必每集 / 每剧重写
-- 专业用户：长内容 / IP 矩阵的 character bible 落地（含 LoRA + 多视角图整套打包）
+- 专业用户：长内容 / IP 矩阵的 character bible 落地（多视角图 + 形象组定义整套打包，跨项目自动还原）
 
 #### D3. 数字人池
 
@@ -1952,7 +2117,7 @@ rateLimitPerHour: 60
 | 6 | compose-episode | { episodeId } | { mp4Path, durationSec } | 10 | INCOMPLETE_TIMELINE / FFMPEG_ERROR |
 | 7 | analyze-reference-video | { videoPath } | { analysisId } (异步, 配 status) | 10 | VIDEO_TOO_LONG / VLM_UNAVAILABLE |
 | 8 | extract-character-from-video | { videoPath } | { sessionId, clusters: ExtractedCluster[] } (异步) | 10 | VIDEO_TOO_LONG / NO_FACE_DETECTED |
-| 9 | train-character-lora | { bindingId, imagePaths[], provider?, baseModel? } | LoRAModelEntity (异步) | 5 | TOO_FEW_IMAGES / QUOTA_EXCEEDED / TRAINING_FAILED |
+| 9 | set-character-reference-set | { bindingId, imageIds: string[] } | CharacterBindingEntity | 60 | BINDING_NOT_FOUND / IMAGE_NOT_OWNED |
 | 10 | export-mp4 | { episodeId, outputPath, resolution? } | { mp4Path } | 10 | INCOMPLETE_TIMELINE |
 
 每个 skill 用 yaml 描述（统一从 `src/agents/skills/<skill>.yaml` 加载），结构同上方 character-three-views 示例。
@@ -1963,9 +2128,9 @@ rateLimitPerHour: 60
 
 **双母语**：
 - 大众用户：用不到 — 但能通过 LobeChat / Claude Desktop 这种第三方客户端用自然语言操作（"帮我用李白这个角色生成 5 个分镜"）
-- 专业用户：批量自动化（脚本化生成几十集 / 批量训练 LoRA）；接 CI/CD 工作流
+- 专业用户：批量自动化（脚本化生成几十集 / 批量调整形象组）；接 CI/CD 工作流
 
-**风险**：暴露内部 service 调用 → 严格鉴权 + 限速 + 审计日志；外部调用产生的 LoRA 训练费用按 user_id 计入 monthly quota；MCP 多客户端并发限制（每 user_id 同时最多 5 个 skill 调用）。
+**风险**：暴露内部 service 调用 → 严格鉴权 + 限速 + 审计日志；外部调用产生的生图费用按 user_id 计入 monthly quota；MCP 多客户端并发限制（每 user_id 同时最多 5 个 skill 调用）。
 
 #### D5. 视频解析（参考视频 → 分镜骨架）
 
@@ -2103,11 +2268,8 @@ rateLimitPerHour: 60
 | P3 | — Provider subject 在 video adapter 内部，不暴露新 IPC（既有 `ep:synthesize-storyboard-video` 内部分流） | — | — | — |
 | P3 | `ep:project:quick-mode-run` | `episodeProduction.project.quickModeRun` | `episodeProduction.project.quickModeRun` | `quick-mode.handler.ts`（新建） |
 | P3 | `ep:quick-mode-progress`（event broadcast） | `episodeProduction.project.onQuickModeProgress(callback)` | 通过 channel-map event 转发机制 | `quick-mode.handler.ts` |
-| P4 (D1) | `ep:asset:lora:train` | `episodeProduction.asset.lora.train` | 同 preload key | `lora.handler.ts`（新建） |
-| P4 (D1) | `ep:asset:lora:status` | `episodeProduction.asset.lora.status` | 同 | 同 |
-| P4 (D1) | `ep:asset:lora:list` | `episodeProduction.asset.lora.list` | 同 | 同 |
-| P4 (D1) | `ep:asset:lora:delete` | `episodeProduction.asset.lora.delete` | 同 | 同 |
-| P4 (D1) | `ep:asset:lora:status-changed`（event） | `episodeProduction.asset.lora.onStatusChanged(callback)` | 同 | 同 |
+| P4 (D1) | `ep:asset:character:set-reference-set` | `episodeProduction.asset.character.setReferenceSet` | 同 preload key | `character-asset.handler.ts`（扩） |
+| P4 (D1) | `ep:asset:character:get-reference-set` | `episodeProduction.asset.character.getReferenceSet` | 同 | 同 |
 | P4 (D2) | `ep:user-asset:list` | `episodeProduction.userAsset.list` | 同 | `user-asset.handler.ts`（新建） |
 | P4 (D2) | `ep:user-asset:add-from-binding` | `episodeProduction.userAsset.addFromBinding` | 同 | 同 |
 | P4 (D2) | `ep:user-asset:create-binding` | `episodeProduction.userAsset.createBinding` | 同 | 同 |
@@ -2123,7 +2285,7 @@ rateLimitPerHour: 60
 | P5 (E1) | `ep:video-extract:apply-cluster` | `episodeProduction.videoExtract.applyCluster` | 同 | 同 |
 | P5 (E1) | `ep:video-extract:cancel` | `episodeProduction.videoExtract.cancel` | 同 | 同 |
 
-总计：**26 个新 IPC channel + 2 个 event broadcast**。
+总计：**23 个新 IPC channel + 1 个 event broadcast**（D1 LoRA 删后净减 4 channel + 1 event；新增 2 个 reference-set channel）。
 
 ### 双端验证 checklist（每 commit 跑一次）
 
@@ -2184,11 +2346,11 @@ rateLimitPerHour: 60
 
 解决：P-17, P-19, P-20。
 
-## Phase 4 · LoRA + 跨项目库 + 数字人池 + Agent + 视频解析（2-3 周）
+## Phase 4 · 角色形象组 + 跨项目库 + 数字人池 + Agent + 视频解析（1-1.5 周；删 LoRA 后大幅缩减）
 
 | 内容 | 文件数 |
 |---|---|
-| LoRA（migration ×2 + entity ×2 + repo ×2 + service + 5 adapter + ImageGenerator 接口扩 + 5 image adapter 注入 + 4 IPC + UI 嵌入 + polling job） | ~18 |
+| 角色形象组（migration ×2 加列 + provider_subject_cache 表 + entity + repo + service 加 setReferenceSet/getEffective 方法 + 7 image adapter 加 referenceImages 适配 + 2 IPC + ReferenceSetPanel UI） | ~12 |
 | 跨项目库（migration ×2 + entity + repo + service + 5 IPC + dialog + 卡溢出菜单 + 资产创建 dialog 加 tab） | ~9 |
 | 数字人池（migration ×3 + 80 张图 + service + IPC + dialog tab） | ~7 |
 | Agent / Skill 接入（MCP server + HTTP API + 6-10 skill yaml + registry + API key 表 + 鉴权） | ~9 |
@@ -2255,7 +2417,7 @@ rateLimitPerHour: 60
 | **P3-C1** Provider subject | `video-provider-adapter.spec.ts` + 各 adapter spec | inferSubjectSupport 矩阵正确；keyframe-generation 调用前分流；通用 ref 路径不变 |
 | **P3-C2** 局部子画布 | `LineageOverlay.spec.ts` | DOMRect 反查 + 位置变化重算；只读不可编辑；ResizeObserver 卸载时清理 |
 | **P3-C3** AI 一键 | `quick-mode-orchestrator.spec.ts` + wizard spec | 7 step 顺序；单步失败重试 1 次；取消保留草稿；进度推送格式 |
-| **D1** LoRA | `lora-training.service.spec.ts` + 各 adapter spec + `add-lora-models.spec.ts` | validate 5-20；状态机 pending→training→ready/failed；polling 幂等；migration 双跑不重复 |
+| **D1** 角色形象组 | `character-asset.service.spec.ts`（setReferenceSet / getEffective）+ 7 个 image adapter spec（referenceImages 适配）+ `add-character-binding-reference-set.spec.ts` | imageIds 校验属于该 binding；空数组 fallback 到默认（main + view）；过滤不存在的 id；各 provider 多图入参格式正确（万相 1-4 截断 / Seedream 全部 / 可灵 element_list 转换 / DALL-E 仅第一张）；migration 双跑幂等 |
 | **D2** 跨项目库 | `user-asset.service.spec.ts` + `add-user-assets.spec.ts` | addToLibrary 拷图独立目录；createFromLibrary 跨项目隔离；syncBack 不自动；删库不阻止已被引用 |
 | **D3** 数字人池 | `preset-digital.service.spec.ts` + seed migration spec | list 只返 user_id IS NULL + is_preset；createBindingFromPreset 拷图到用户目录；seed 幂等 |
 | **D4** Agent / Skill | `skill-registry.spec.ts` + 每个 skill yaml schema 验证 | yaml 加载 / schema 校验；rate limit 触发；鉴权失败返回 401 |
@@ -2372,7 +2534,9 @@ describe('Phase 1 prompt shrink', () => {
 
 | 表 | migration | 老数据处理 |
 |---|---|---|
-| `lora_models` | 新建 | 全用户 LoRA 字段为空；不影响现有 character_binding |
+| `character_bindings.reference_set_image_ids` 列 | ALTER ADD（nullable）| 现有 binding 全部 NULL；service 端 fallback 到默认（main + view），用户体验无感；用户主动勾选才填值 |
+| `location_bindings.reference_set_image_ids` 列 | ALTER ADD（nullable）| 同上 |
+| `item_bindings.reference_set_image_ids` 列 | ALTER ADD（nullable）| 同上 |
 | `provider_subject_cache` | 新建 | 同上 |
 | `user_assets` | 新建 | 用户库为空；用户主动加入我的库才填充 |
 | `character_bindings.is_preset` 列 | ALTER ADD（默认 false）| 现有 binding 全部 is_preset=0；preset 在 seed migration 单独插入 user_id=NULL 的行 |
@@ -2407,8 +2571,8 @@ PGDATABASE=the_bot_test PORT=4201 npx tsx watch -r tsconfig-paths/register src/w
 |---|---|
 | Phase 1 prompt 字面变化 | 不重生即不变，老图 prompt/imagePath 不动 |
 | Phase 3 provider subject 各家 API 形态各异 | 逐个 adapter 适配 + 完整测试；先 Kling O3 / MJ V7 / Seedance 2.0 三家 |
-| Phase 4 LoRA 训练失败 5-10% | 失败自动重试 1 次；明确错误信息（图过少 / 图重复 / 服务异常） |
-| Phase 4 LoRA 成本失控 | 每用户 monthly quota（默认 $20 或 ¥150）+ 训练前预估弹窗 |
+| Phase 4 各 provider 多图入参形态差异大 | 在 adapter 层吸收差异；统一 referenceImages 接口 + 各家 adapter 转换；7 个 adapter 都需 unit test 覆盖各自适配 |
+| Phase 4 老 referenceImage 单值调用方未迁移 | 接口保留 referenceImage（@deprecated），fallback 到 referenceImages[0]；vue-tsc 不报错 |
 | Phase 4 海外 fal.ai / Replicate 国内访问 | 默认走可灵 / 即梦原生；fal.ai 仅海外用户开放 |
 | Phase 5 视频提取算法准确率 | 用户 UI 可校准；模型可升级（face-api.js → InsightFace ONNX） |
 
