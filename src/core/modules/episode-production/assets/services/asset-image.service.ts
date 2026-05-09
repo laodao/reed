@@ -153,9 +153,71 @@ export class AssetImageService {
     )
   }
 
+  /** 按 ID 取单张图（spec 2026-05-09 派生时按 baseImageId 反查基图） */
+  async getById(imageId: string): Promise<AssetImageEntity | null> {
+    return await this.repo.findOne({ where: { id: imageId } })
+  }
+
   /** 删除单张图 */
   async deleteImage(imageId: string): Promise<void> {
     await this.repo.delete({ id: imageId })
+  }
+
+  /**
+   * spec 2026-05-09 多主图模型：仅切换"默认主图"标记（is_main 字段），不动 category。
+   *
+   * 场景：location 域允许多张 category='main'（label 区分），其中只有一张 is_main=1
+   * 作为评分都不命中时的兜底。用户切换默认主图时调本方法 — 与 setAsMain 不同，
+   * 不会把旧主图降级到 category='view'，所有主图保持 category='main'。
+   *
+   * 旧的 setAsMain 兼容老 character / item 单主图模型继续保留。
+   */
+  async switchDefaultMain(imageId: string): Promise<void> {
+    const target = await this.repo.findOne({ where: { id: imageId } })
+    if (!target) {
+      throw new Error(`AssetImage 不存在: ${imageId}`)
+    }
+
+    // 1. 把同 asset 已有的 isMain=1（除目标外）全部降为 0
+    await this.repo
+      .createQueryBuilder()
+      .update(AssetImageEntity)
+      .set({ isMain: 0 })
+      .where(
+        'asset_type = :assetType AND asset_id = :assetId AND is_main = :one AND id <> :targetId',
+        {
+          assetType: target.assetType,
+          assetId: target.assetId,
+          one: 1,
+          targetId: imageId,
+        },
+      )
+      .execute()
+
+    // 2. 目标图标记为默认主图（category 保持原值，应该为 'main'）
+    await this.repo.update(
+      { id: imageId },
+      { isMain: 1, updatedAt: new Date() },
+    )
+  }
+
+  /**
+   * 更新单图 metadata（spec 2026-05-09）— 主图 / 变体都可填维度信息（angle/time/weather/...）
+   * 让评分系统在场景维度匹配时命中。
+   *
+   * 传 null 清空 metadata。
+   */
+  async updateMetadata(
+    imageId: string,
+    metadata: Record<string, unknown> | null,
+  ): Promise<void> {
+    await this.repo.update(
+      { id: imageId },
+      {
+        metadata: metadata ? JSON.stringify(metadata) : null,
+        updatedAt: new Date(),
+      },
+    )
   }
 
   /**

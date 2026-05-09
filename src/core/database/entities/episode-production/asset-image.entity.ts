@@ -3,7 +3,14 @@ import { Column, Entity, Index, PrimaryColumn } from 'typeorm'
 /** asset_image 行的 asset_type 枚举 */
 export type AssetType = 'character' | 'location' | 'item'
 
-/** asset_image 行的 category 枚举（spec §3.8 + §P3c 360 全景） */
+/**
+ * asset_image 行的 category 枚举（spec §3.8 + §P3c 360 全景 + spec 2026-05-09 location 重设计）。
+ *
+ * 历史变体类别（time_variant / weather_variant / angle_variant）保留在枚举里只为兼容
+ * **未迁移**的老数据；spec 2026-05-09 之后的 location 域新写入只用 'main' 或 'variant'。
+ * 迁移脚本 add-asset-image-variant-category-and-migrate 会把存量 location 的旧三类
+ * UPDATE 成 'variant'，跑完后这三个值在 location 域不再出现。character / item 域仍正常使用。
+ */
 export type AssetImageCategory =
   | 'main'
   | 'view'
@@ -13,6 +20,7 @@ export type AssetImageCategory =
   | 'time_variant'
   | 'weather_variant'
   | 'angle_variant'
+  | 'variant'
   | 'context'
   | 'panorama_360'
   | 'panorama_snapshot'

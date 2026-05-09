@@ -51,6 +51,10 @@ export function registerAssetImageHandlers(): void {
   ipcBridge.handle('ep:asset:image:update', handleUpdateImage)
   ipcBridge.handle('ep:asset:image:generate-main', handleGenerateMain)
   ipcBridge.handle('ep:asset:image:upload-main-file', handleUploadMainFile)
+  // spec 2026-05-09 多主图模型新增 channel
+  ipcBridge.handle('ep:asset:image:add-main', handleAddAdditionalMain)
+  ipcBridge.handle('ep:asset:image:switch-main', handleSwitchDefaultMain)
+  ipcBridge.handle('ep:asset:image:update-metadata', handleUpdateMetadata)
 }
 
 /** 取 DataSource；未初始化则抛错 */
@@ -198,6 +202,65 @@ async function handleUploadMainFile(
     if (err instanceof MainImageUploadValidationError) {
       return { success: false, error: `[${err.code}] ${err.message}` }
     }
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+/**
+ * spec 2026-05-09 多主图模型 IPC：在已有主图基础上追加一张新主图。
+ * 与 generate-main 区别：不降级旧主图；新主图 isMain=0（除非显式 makeDefault=true）。
+ */
+async function handleAddAdditionalMain(
+  _event: any,
+  input: GenerateMainInput & {
+    label: string
+    makeDefault?: boolean
+    metadata?: Record<string, unknown> | null
+  },
+): Promise<IpcResponse> {
+  try {
+    const ds = requireDataSource()
+    const imageSvc = new AssetImageService(ds)
+    const svc = new MainImageGeneratorService(
+      imageSvc,
+      createGalleryImageGenerator(),
+      ds,
+    )
+    const data = await svc.addAdditionalMain(input)
+    return { success: true, data }
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+/**
+ * 切换默认主图（多主图模型下 is_main=1 标记的归属）。
+ * 不动 category（不像 setAsMain 会强制降旧主图为 view）。
+ */
+async function handleSwitchDefaultMain(
+  _event: any,
+  imageId: string,
+): Promise<IpcResponse> {
+  try {
+    await buildService().switchDefaultMain(imageId)
+    return { success: true, data: { switched: true } }
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+/**
+ * 更新单图 metadata（angle/time/weather/...）让评分系统按维度命中。
+ */
+async function handleUpdateMetadata(
+  _event: any,
+  imageId: string,
+  metadata: Record<string, unknown> | null,
+): Promise<IpcResponse> {
+  try {
+    await buildService().updateMetadata(imageId, metadata)
+    return { success: true, data: { updated: true } }
+  } catch (err: any) {
     return { success: false, error: err?.message ?? String(err) }
   }
 }

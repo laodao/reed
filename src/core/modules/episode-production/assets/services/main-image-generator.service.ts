@@ -124,4 +124,85 @@ export class MainImageGeneratorService {
 
     return await this.imageRepo.save(entity)
   }
+
+  /**
+   * 追加一张主图（spec 2026-05-09 多主图模型，仅 location 业务调用）。
+   *
+   * 与 generateMain 区别：
+   *   - 不降级旧 isMain=1 行；新主图 isMain=0 + category='main' + label=用户输入
+   *   - 用户可通过 AssetImageService.switchDefaultMain(imageId) 之后切换默认
+   *
+   * 用法：
+   *   1. 第一次创建该 binding 主图时，调用方可以传 makeDefault=true 使其 isMain=1（兜底主图）
+   *   2. 已有主图时再创建，传 makeDefault=false（默认）；UI 可让用户随后切默认
+   *
+   * label 必填（区分多张主图）；metadata 可选（参与评分）。
+   */
+  async addAdditionalMain(input: GenerateMainInput & {
+    label: string
+    makeDefault?: boolean
+    metadata?: Record<string, unknown> | null
+  }): Promise<AssetImageEntity> {
+    if (!input.prompt.trim()) {
+      throw new Error('生成主图需要 prompt（请检查资产 effective 数据）')
+    }
+    if (!input.label?.trim()) {
+      throw new Error('多主图必须提供 label（区分用途）')
+    }
+
+    let effectivePrompt = input.prompt
+    let effectiveNegative = input.negativePrompt
+    if (input.assetType === 'location') {
+      effectivePrompt = appendLocationNoHumanConstraint(input.prompt)
+      effectiveNegative = mergeLocationNoHumanNegative(input.negativePrompt)
+    }
+
+    const refPaths: string[] = []
+    if (input.referenceImagePath && input.referenceImagePath.trim()) {
+      refPaths.push(input.referenceImagePath.trim())
+    }
+
+    const result = await this.imageGen.generate({
+      referenceImagePaths: refPaths,
+      prompt: effectivePrompt,
+      negativePrompt: effectiveNegative,
+      label: input.label,
+    })
+
+    // makeDefault=true 时把同 asset 已有 isMain=1 降为 0，让目标成为默认
+    if (input.makeDefault) {
+      await this.imageRepo
+        .createQueryBuilder()
+        .update(AssetImageEntity)
+        .set({ isMain: 0 })
+        .where(
+          'asset_type = :t AND asset_id = :id AND is_main = 1',
+          { t: input.assetType, id: input.assetId },
+        )
+        .execute()
+    }
+
+    const entity = this.imageRepo.create({
+      id: this.generateId(),
+      userId: input.userId ?? null,
+      assetType: input.assetType,
+      assetId: input.assetId,
+      category: 'main',
+      label: input.label,
+      imagePath: result.imagePath,
+      thumbnailPath: result.thumbnailPath ?? null,
+      isMain: input.makeDefault ? 1 : 0,
+      sortOrder: 0,
+      derivedFromImageId: null,
+      prompt: effectivePrompt,
+      negativePrompt: effectiveNegative ?? null,
+      width: null,
+      height: null,
+      metadata: input.metadata ? JSON.stringify(input.metadata) : null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as Partial<AssetImageEntity>)
+
+    return await this.imageRepo.save(entity)
+  }
 }

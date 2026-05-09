@@ -527,6 +527,10 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.asset.image.update': { channel: 'ep:asset:image:update' },
   'episodeProduction.asset.image.generateMain': { channel: 'ep:asset:image:generate-main' },
   'episodeProduction.asset.image.uploadMainFile': { channel: 'ep:asset:image:upload-main-file' },
+  // spec 2026-05-09 多主图模型
+  'episodeProduction.asset.image.addMain': { channel: 'ep:asset:image:add-main' },
+  'episodeProduction.asset.image.switchMain': { channel: 'ep:asset:image:switch-main' },
+  'episodeProduction.asset.image.updateMetadata': { channel: 'ep:asset:image:update-metadata' },
   // AI 设定反推（spec 2026-05-07）
   'episodeProduction.asset.enrichSettings': { channel: 'ep:asset:enrich-settings' },
   // 派生（2 个）

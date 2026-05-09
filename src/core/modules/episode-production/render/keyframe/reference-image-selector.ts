@@ -90,11 +90,21 @@ export async function pickReferenceImage(
   input: ReferencePickInput,
 ): Promise<PickResult> {
   const all = await imageSvc.listByAsset(input.kind, input.bindingId)
-  const main = all.find((img) => img.isMain === 1) ?? null
-  const variants = all.filter((img) => img.isMain !== 1)
+  const defaultMain = all.find((img) => img.isMain === 1) ?? null
+
+  /*
+   * spec 2026-05-09 location 多主图模型：
+   *   - 主图（category='main'）也带 metadata，参与评分；带 angle / time 等命中维度的主图可以被
+   *     直接选中，省一次派生（"正面外景"主图直接命中外景分镜）
+   * character / item 仍走旧逻辑（只有非主图变体参评，主图兜底）。
+   */
+  const candidates =
+    input.kind === 'location'
+      ? all // 所有图（含主图）参评
+      : all.filter((img) => img.isMain !== 1) // 老逻辑：仅非主图
 
   let best: { image: AssetImageEntity; score: number; matchedFields: string[] } | null = null
-  for (const img of variants) {
+  for (const img of candidates) {
     const meta = parseMetadata(img.metadata)
     const evaluation = scoreVariant(input, meta)
     if (evaluation.score > 0) {
@@ -116,9 +126,9 @@ export async function pickReferenceImage(
       matchedFields: best.matchedFields,
     }
   }
-  // 兜底主图
-  if (main) {
-    return { image: main, fellBackToMain: true, score: 0, matchedFields: [] }
+  // 兜底默认主图（isMain=1）
+  if (defaultMain) {
+    return { image: defaultMain, fellBackToMain: true, score: 0, matchedFields: [] }
   }
   return { image: null, fellBackToMain: false, score: 0, matchedFields: [] }
 }

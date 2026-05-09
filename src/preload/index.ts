@@ -300,6 +300,11 @@ const IPC_CHANNELS = {
   // 主图文件上传（双端 · follow-up）
   EP_ASSET_IMAGE_UPLOAD_MAIN_FILE: 'ep:asset:image:upload-main-file',
 
+  // spec 2026-05-09 多主图模型新增
+  EP_ASSET_IMAGE_ADD_MAIN: 'ep:asset:image:add-main',
+  EP_ASSET_IMAGE_SWITCH_MAIN: 'ep:asset:image:switch-main',
+  EP_ASSET_IMAGE_UPDATE_METADATA: 'ep:asset:image:update-metadata',
+
   // 360 全景 + 视角截图（7 个 · P3c Task 4）
   EP_ASSET_PANORAMA_LIST: 'ep:asset:panorama:list',
   EP_ASSET_PANORAMA_GENERATE: 'ep:asset:panorama:generate',
@@ -2023,6 +2028,24 @@ const electronAPI = {
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_GENERATE_MAIN, input),
         uploadMainFile: (input: { fileName: string; base64: string; assetType: string; assetId: string }) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_UPLOAD_MAIN_FILE, input),
+        // spec 2026-05-09 多主图模型
+        /** 在已有主图基础上追加一张主图（不降级旧主图） */
+        addMain: (input: {
+          assetType: 'character' | 'location' | 'item'
+          assetId: string
+          prompt: string
+          negativePrompt?: string
+          referenceImagePath?: string | null
+          label: string
+          makeDefault?: boolean
+          metadata?: Record<string, unknown> | null
+        }) => ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_ADD_MAIN, input),
+        /** 切换默认主图（is_main=1 标记归属，不动 category） */
+        switchMain: (imageId: string) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_SWITCH_MAIN, imageId),
+        /** 更新单图 metadata（angle/time/weather/...） */
+        updateMetadata: (imageId: string, metadata: Record<string, unknown> | null) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_UPDATE_METADATA, imageId, metadata),
       },
       // 派生（2 个）
       derive: {

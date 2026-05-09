@@ -44,13 +44,20 @@ export interface ImageGenerator {
 export interface DeriveSingleInput {
   assetType: AssetType
   assetId: string
-  /** 派生图所属 category：'view' / 'expression' / 'outfit' / 'pose' 等（非 'main'） */
+  /** 派生图所属 category：'view' / 'expression' / 'outfit' / 'pose' / 'variant' 等（非 'main'） */
   category: AssetImageCategory
   /** 派生图标签（同 category 内唯一，作为去重 key） */
   label: string
   /** 额外 prompt 文本（不传则自动用 `${category} · ${label}`） */
   additionalPrompt?: string
   negativePrompt?: string
+  /**
+   * 基图 ID（spec 2026-05-09 多主图模型）：用户在派生 dialog 选定的某张主图。
+   * 不传时回退到默认主图（is_main=1）— 兼容老 character / item 单主图调用方。
+   */
+  baseImageId?: string
+  /** 派生图 metadata（angle/time/weather/...），评分系统据此命中场景维度 */
+  metadata?: Record<string, unknown>
 }
 
 /** 批量派生入参 */
@@ -80,19 +87,29 @@ export class GalleryDerivationService {
 
   /**
    * 派生单张图：
-   * 1. 取主图（无则抛错）
-   * 2. 调 imageGen 生成新图（参考主图）
+   * 1. 取基图（spec 2026-05-09：input.baseImageId 优先；不传时回退到默认主图）
+   * 2. 调 imageGen 生成新图（参考基图）
    * 3. 计算 sortOrder = 现有同 category 张数（追加在末尾）
-   * 4. 写入 asset_image 表，derivedFromImageId 链回主图
+   * 4. 写入 asset_image 表，derivedFromImageId 链回基图
    */
   async deriveSingle(input: DeriveSingleInput): Promise<AssetImageEntity> {
-    const main = await this.imageSvc.getMainImage(
-      input.assetType,
-      input.assetId,
-    )
-    if (!main) {
+    let base: AssetImageEntity | null = null
+    if (input.baseImageId) {
+      // 用户在 dialog 选定基图（多主图模型下必填）
+      base = await this.imageSvc.getById(input.baseImageId)
+      if (!base) {
+        throw new Error(`baseImageId 不存在：${input.baseImageId}`)
+      }
+      if (base.assetType !== input.assetType || base.assetId !== input.assetId) {
+        throw new Error('baseImageId 不属于该资产 binding')
+      }
+    } else {
+      // 兼容老 character / item 调用方：回退到默认主图（isMain=1）
+      base = await this.imageSvc.getMainImage(input.assetType, input.assetId)
+    }
+    if (!base) {
       throw new Error(
-        `无法派生：${input.assetType}/${input.assetId} 没有主图`,
+        `无法派生：${input.assetType}/${input.assetId} 没有可用基图`,
       )
     }
 
@@ -119,7 +136,7 @@ export class GalleryDerivationService {
       negativePrompt = mergeLocationNoHumanNegative(negativePrompt)
     }
     const result = await this.imageGen.generate({
-      referenceImagePaths: [main.imagePath],
+      referenceImagePaths: [base.imagePath],
       prompt,
       negativePrompt,
       label: input.label,
@@ -140,10 +157,11 @@ export class GalleryDerivationService {
       imagePath: result.imagePath,
       thumbnailPath: result.thumbnailPath ?? undefined,
       isMain: false,
-      derivedFromImageId: main.id,
+      derivedFromImageId: base.id,
       prompt: prompt,
       negativePrompt: negativePrompt ?? undefined,
       sortOrder,
+      metadata: input.metadata,
     })
   }
 

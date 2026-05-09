@@ -505,6 +505,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-storyboard-location-item-bindings'
     )
     await addStoryboardLocationItemBindings(this.dataSource)
+    // 地点资产图谱重设计（spec 2026-05-09）：旧三类变体合并到 'variant'
+    const { addAssetImageVariantCategoryAndMigrate } = await import(
+      '@core/database/migrations/add-asset-image-variant-category-and-migrate'
+    )
+    await addAssetImageVariantCategoryAndMigrate(this.dataSource)
   }
 
   /**
