@@ -510,6 +510,15 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-character-binding-reference-set'
     )
     await addCharacterBindingReferenceSet(this.dataSource)
+    // 数字人池：spec 2026-05-09 ep-redesign §3.2 D3 · 12 个预设角色
+    const { addCharacterBindingPreset } = await import(
+      '@core/database/migrations/add-character-binding-preset'
+    )
+    await addCharacterBindingPreset(this.dataSource)
+    const { seedPresetDigitalHumans } = await import(
+      '@core/database/migrations/seed-preset-digital-humans'
+    )
+    await seedPresetDigitalHumans(this.dataSource)
     // 分镜 location_binding_ids + item_binding_ids：分镜级地点 / 物品手动添加
     const { addStoryboardLocationItemBindings } = await import(
       '@core/database/migrations/add-storyboard-location-item-bindings'

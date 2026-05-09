@@ -19,8 +19,12 @@ export class CharacterBindingEntity {
   @PrimaryColumn({ name: 'id', type: 'varchar' })
   id!: string
 
-  @Column({ name: 'project_id', type: 'varchar' })
-  projectId!: string
+  /**
+   * 项目 ID（用户创建的角色必填；预设数字人为 NULL，spec 2026-05-09 ep-redesign §3.2 D3）。
+   * 老 binding 全部有 project_id；新加 nullable 不破坏现有数据。
+   */
+  @Column({ name: 'project_id', type: 'varchar', nullable: true })
+  projectId!: string | null
 
   /**
    * 关联 lw_character.id；仅 source_type='linked_lw' 时有值，standalone 必须为 null。
@@ -132,6 +136,13 @@ export class CharacterBindingEntity {
    */
   @Column({ name: 'reference_set_image_ids', type: 'text', nullable: true })
   referenceSetImageIds!: string | null
+
+  /**
+   * 是否内置预设数字人（spec 2026-05-09 ep-redesign §3.2 D3 · P-8）。
+   * 1 = 内置（user_id=NULL, project_id=NULL，全局共享）；0 = 用户创建（默认）。
+   */
+  @Column({ name: 'is_preset', type: 'integer', default: 0, nullable: true })
+  isPreset!: number | null
 
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date

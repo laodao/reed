@@ -61,6 +61,8 @@ import { addStoryboardReferenceImageIds } from '@core/database/migrations/add-st
 import { addBindingReferenceImagePath } from '@core/database/migrations/add-binding-reference-image-path'
 import { addStoryboardMetadata } from '@core/database/migrations/add-storyboard-metadata'
 import { addCharacterBindingReferenceSet } from '@core/database/migrations/add-character-binding-reference-set'
+import { addCharacterBindingPreset } from '@core/database/migrations/add-character-binding-preset'
+import { seedPresetDigitalHumans } from '@core/database/migrations/seed-preset-digital-humans'
 import { addStoryboardLocationItemBindings } from '@core/database/migrations/add-storyboard-location-item-bindings'
 import { addAssetImageVariantCategoryAndMigrate } from '@core/database/migrations/add-asset-image-variant-category-and-migrate'
 import { addLocationBindingExtraFields } from '@core/database/migrations/add-location-binding-extra-fields'
@@ -266,6 +268,9 @@ async function initDatabase(): Promise<void> {
   await addStoryboardMetadata(ds)
   // 资产 binding 形象组：spec 2026-05-09 ep-redesign §3.2 D1 · multi-reference 替代 LoRA
   await addCharacterBindingReferenceSet(ds)
+  // 数字人池：spec 2026-05-09 ep-redesign §3.2 D3 · 12 个预设角色
+  await addCharacterBindingPreset(ds)
+  await seedPresetDigitalHumans(ds)
   // 分镜 location_binding_ids + item_binding_ids：④ 分镜界面手动添加分镜内地点 / 物品（覆盖 scene 级推导）
   await addStoryboardLocationItemBindings(ds)
   // 地点资产图谱重设计（spec 2026-05-09）：location 旧三类变体合并到统一 'variant' category
