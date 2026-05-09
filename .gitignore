@@ -16,3 +16,6 @@ electron.vite.config.js
 .run/
 .staging-data/
 .claude/scheduled_tasks.lock
+
+# 数据库备份目录（不进版本库；本地恢复用）
+.backups/
