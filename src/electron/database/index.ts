@@ -519,6 +519,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/seed-preset-digital-humans'
     )
     await seedPresetDigitalHumans(this.dataSource)
+    // 跨项目角色库：spec 2026-05-09 ep-redesign §3.2 D2 · user_assets 表
+    const { addUserAssets } = await import(
+      '@core/database/migrations/add-user-assets'
+    )
+    await addUserAssets(this.dataSource)
     // 分镜 location_binding_ids + item_binding_ids：分镜级地点 / 物品手动添加
     const { addStoryboardLocationItemBindings } = await import(
       '@core/database/migrations/add-storyboard-location-item-bindings'
