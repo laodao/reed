@@ -71,6 +71,11 @@
               />
               <span v-if="img.isMain === 1" class="default-tag">★ 默认</span>
               <div class="thumb-tools" @click.stop>
+                <el-tooltip content="详情" placement="top">
+                  <el-icon class="thumb-tool-icon" :size="14" @click="openDetailDialog(img)">
+                    <InfoFilled />
+                  </el-icon>
+                </el-tooltip>
                 <el-tooltip v-if="img.isMain !== 1" content="设为默认主图" placement="top">
                   <el-icon class="thumb-tool-icon" :size="14" @click="onSwitchMain(img)">
                     <Star />
@@ -143,6 +148,11 @@
                 @dblclick="openPreview(variantImages, variantImages.indexOf(img))"
               />
               <div class="thumb-tools" @click.stop>
+                <el-tooltip content="详情" placement="top">
+                  <el-icon class="thumb-tool-icon" :size="14" @click="openDetailDialog(img)">
+                    <InfoFilled />
+                  </el-icon>
+                </el-tooltip>
                 <el-tooltip content="编辑 metadata" placement="top">
                   <el-icon class="thumb-tool-icon" :size="14" @click="onEditMeta(img)">
                     <EditPen />
@@ -332,6 +342,13 @@
         {{ previewIndex + 1 }} / {{ previewList.length }}
       </div>
     </el-dialog>
+
+    <!-- 生成详情透明度面板（spec 2026-05-09 ep-redesign §3.2 A1） -->
+    <GenerationDetailDialog
+      v-model="detailDialog.open"
+      :image="detailDialog.image"
+      :all-images="allImages"
+    />
   </el-card>
 </template>
 
@@ -358,6 +375,7 @@ import {
   Delete,
   Download,
   EditPen,
+  InfoFilled,
   Plus,
   QuestionFilled,
   Refresh,
@@ -367,6 +385,7 @@ import { useAssetImageActions } from '@/composables/use-asset-image-actions'
 import PanoramaSnapshotEditor from './PanoramaSnapshotEditor.vue'
 import AddMainImageDialog from './AddMainImageDialog.vue'
 import DeriveVariantDialog from './DeriveVariantDialog.vue'
+import GenerationDetailDialog from '../shared/GenerationDetailDialog.vue'
 import { uploadPanoramaFile } from '@/api/panorama-upload'
 import { toImageUrl } from '@/utils/asset-url'
 
@@ -384,6 +403,12 @@ interface AssetImageRow {
   isMain: number
   metadata?: string | Record<string, unknown> | null
   derivedFromImageId?: string | null
+  // spec 2026-05-09 透明度面板：以下字段后端已落 asset_image 表
+  prompt?: string | null
+  negativePrompt?: string | null
+  width?: number | null
+  height?: number | null
+  createdAt?: string | number | Date | null
 }
 
 const loading = ref(false)
@@ -716,6 +741,17 @@ const { downloadImage, onDeleteImage } = useAssetImageActions({
   itemDeleteConfirm: (img) =>
     `确认删除「${(img as any).label || (img.category === 'main' ? '默认主图' : '变体')}」？`,
 })
+
+// ===== 生成详情透明度面板（spec 2026-05-09 ep-redesign §3.2 A1） =====
+const detailDialog = ref<{ open: boolean; image: AssetImageRow | null }>({
+  open: false,
+  image: null,
+})
+
+function openDetailDialog(img: AssetImageRow | null | undefined): void {
+  if (!img) return
+  detailDialog.value = { open: true, image: img }
+}
 
 onMounted(() => {
   reload()

@@ -32,6 +32,9 @@
           <template v-if="mainImage?.imagePath || mainImage?.id">
             <img :src="toImageUrl(mainImage!.imagePath)" alt="主图" />
             <div class="thumb-tools" @click.stop>
+              <el-tooltip content="详情" placement="top">
+                <el-icon class="thumb-tool-icon" :size="14" @click="openDetailDialog(mainImage)"><InfoFilled /></el-icon>
+              </el-tooltip>
               <el-tooltip content="下载" placement="top">
                 <el-icon class="thumb-tool-icon" :size="14" @click="downloadImage(mainImage)"><Download /></el-icon>
               </el-tooltip>
@@ -109,6 +112,13 @@
                   :alt="label"
                 />
                 <div class="thumb-tools" @click.stop>
+                  <el-tooltip content="详情" placement="top">
+                    <el-icon
+                      class="thumb-tool-icon"
+                      :size="14"
+                      @click="openDetailDialog(getImageByLabel(cat.key, label)!)"
+                    ><InfoFilled /></el-icon>
+                  </el-tooltip>
                   <el-tooltip content="下载" placement="top">
                     <el-icon
                       class="thumb-tool-icon"
@@ -134,6 +144,13 @@
       </div><!-- /right-stack -->
       </div><!-- /top-row -->
     </div>
+
+    <!-- 生成详情透明度面板（spec 2026-05-09 ep-redesign §3.2 A1） -->
+    <GenerationDetailDialog
+      v-model="detailDialog.open"
+      :image="detailDialog.image"
+      :all-images="allImages"
+    />
   </el-card>
 </template>
 
@@ -154,11 +171,12 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { UploadFile } from 'element-plus'
-import { Delete, Download, Plus, Refresh } from '@element-plus/icons-vue'
+import { Delete, Download, InfoFilled, Plus, Refresh } from '@element-plus/icons-vue'
 import { generateMainFor } from '@/api/main-image-generator'
 import { uploadMainImageFile } from '@/api/main-image-upload'
 import { toImageUrl } from '@/utils/asset-url'
 import { useAssetImageActions } from '@/composables/use-asset-image-actions'
+import GenerationDetailDialog from '../shared/GenerationDetailDialog.vue'
 
 const props = defineProps<{
   bindingId: string
@@ -176,7 +194,16 @@ interface AssetImageRow {
   category: string
   label: string | null
   imagePath: string
+  thumbnailPath?: string | null
   isMain: number
+  // spec 2026-05-09 透明度面板：以下字段后端已落 asset_image 表
+  prompt?: string | null
+  negativePrompt?: string | null
+  metadata?: string | Record<string, unknown> | null
+  derivedFromImageId?: string | null
+  width?: number | null
+  height?: number | null
+  createdAt?: string | number | Date | null
 }
 
 // 视角标签：物品 4 视角
@@ -328,6 +355,17 @@ const { downloadImage, onDeleteImage } = useAssetImageActions({
   itemDeleteConfirm: (img) =>
     `确认删除"${img.label || img.category}"这张图？`,
 })
+
+// ===== 生成详情透明度面板（spec 2026-05-09 ep-redesign §3.2 A1） =====
+const detailDialog = ref<{ open: boolean; image: AssetImageRow | null }>({
+  open: false,
+  image: null,
+})
+
+function openDetailDialog(img: AssetImageRow | null | undefined): void {
+  if (!img) return
+  detailDialog.value = { open: true, image: img }
+}
 
 onMounted(reload)
 watch(() => props.bindingId, reload)

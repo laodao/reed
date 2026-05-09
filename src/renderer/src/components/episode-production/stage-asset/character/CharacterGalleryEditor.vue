@@ -88,6 +88,9 @@
                 @dblclick="openPreview('main', [mainImage], 0)"
               />
               <div class="thumb-tools" @click.stop>
+                <el-tooltip content="详情" placement="top">
+                  <el-icon class="thumb-tool-icon" :size="14" @click="openDetailDialog(mainImage)"><InfoFilled /></el-icon>
+                </el-tooltip>
                 <el-tooltip content="下载" placement="top">
                   <el-icon class="thumb-tool-icon" :size="14" @click="downloadImage(mainImage)"><Download /></el-icon>
                 </el-tooltip>
@@ -141,6 +144,9 @@
                     @dblclick="openPreview('outfit', outfitImages, outfitImages.indexOf(img))"
                   />
                   <div class="thumb-tools" @click.stop>
+                    <el-tooltip content="详情" placement="top">
+                      <el-icon class="thumb-tool-icon" :size="14" @click="openDetailDialog(img)"><InfoFilled /></el-icon>
+                    </el-tooltip>
                     <el-tooltip content="下载" placement="top">
                       <el-icon class="thumb-tool-icon" :size="14" @click="downloadImage(img)"><Download /></el-icon>
                     </el-tooltip>
@@ -210,6 +216,13 @@
                       @dblclick="openPreview(viewCategory.key, getCategoryPreviewList(viewCategory), getCategoryPreviewIndex(viewCategory, label))"
                     />
                     <div class="thumb-tools" @click.stop>
+                      <el-tooltip content="详情" placement="top">
+                        <el-icon
+                          class="thumb-tool-icon"
+                          :size="14"
+                          @click="openDetailDialog(getImageByLabel(viewCategory.key, label)!)"
+                        ><InfoFilled /></el-icon>
+                      </el-tooltip>
                       <el-tooltip content="下载" placement="top">
                         <el-icon
                           class="thumb-tool-icon"
@@ -283,6 +296,13 @@
                   @dblclick="openPreview(cat.key, getCategoryPreviewList(cat), getCategoryPreviewIndex(cat, label))"
                 />
                 <div class="thumb-tools" @click.stop>
+                  <el-tooltip content="详情" placement="top">
+                    <el-icon
+                      class="thumb-tool-icon"
+                      :size="14"
+                      @click="openDetailDialog(getImageByLabel(cat.key, label)!)"
+                    ><InfoFilled /></el-icon>
+                  </el-tooltip>
                   <el-tooltip content="下载" placement="top">
                     <el-icon
                       class="thumb-tool-icon"
@@ -325,6 +345,9 @@
                 @dblclick="openPreview(cat.key, getImagesByCategory(cat.key), getImagesByCategory(cat.key).indexOf(img))"
               />
               <div class="thumb-tools" @click.stop>
+                <el-tooltip content="详情" placement="top">
+                  <el-icon class="thumb-tool-icon" :size="14" @click="openDetailDialog(img)"><InfoFilled /></el-icon>
+                </el-tooltip>
                 <el-tooltip content="下载" placement="top">
                   <el-icon class="thumb-tool-icon" :size="14" @click="downloadImage(img)"><Download /></el-icon>
                 </el-tooltip>
@@ -425,6 +448,13 @@
         {{ previewIndex + 1 }} / {{ previewList.length }}
       </div>
     </el-dialog>
+
+    <!-- 生成详情透明度面板（spec 2026-05-09 ep-redesign §3.2 A1） -->
+    <GenerationDetailDialog
+      v-model="detailDialog.open"
+      :image="detailDialog.image"
+      :all-images="allImages"
+    />
   </el-card>
 </template>
 
@@ -447,6 +477,7 @@ import {
   ArrowRight,
   Delete,
   Download,
+  InfoFilled,
   Loading,
   Plus,
   Refresh,
@@ -455,6 +486,7 @@ import { generateMainFor } from '@/api/main-image-generator'
 import { uploadMainImageFile } from '@/api/main-image-upload'
 import { toImageUrl } from '@/utils/asset-url'
 import { useAssetImageActions } from '@/composables/use-asset-image-actions'
+import GenerationDetailDialog from '../shared/GenerationDetailDialog.vue'
 
 const props = defineProps<{
   bindingId: string
@@ -474,6 +506,14 @@ interface AssetImageRow {
   imagePath: string
   thumbnailPath?: string | null
   isMain: number
+  // spec 2026-05-09 透明度面板：以下字段后端已落 asset_image 表，前端透传到 GenerationDetailDialog
+  prompt?: string | null
+  negativePrompt?: string | null
+  metadata?: string | Record<string, unknown> | null
+  derivedFromImageId?: string | null
+  width?: number | null
+  height?: number | null
+  createdAt?: string | number | Date | null
 }
 
 /**
@@ -837,6 +877,17 @@ const { downloadImage, onDeleteImage: _onDeleteRaw } = useAssetImageActions({
   itemDeleteConfirm: (img) =>
     `确认删除"${labelText(img.category, img.label) || img.category}"这张图？`,
 })
+
+// ===== 生成详情透明度面板（spec 2026-05-09 ep-redesign §3.2 A1） =====
+const detailDialog = ref<{ open: boolean; image: AssetImageRow | null }>({
+  open: false,
+  image: null,
+})
+
+function openDetailDialog(img: AssetImageRow | null | undefined): void {
+  if (!img) return
+  detailDialog.value = { open: true, image: img }
+}
 
 /**
  * 删除单张图，删除后若当前预览正是该图则关闭预览。
