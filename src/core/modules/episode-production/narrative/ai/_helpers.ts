@@ -10,7 +10,10 @@ import { getCoreDatabaseManager } from '@core/database/database-manager.interfac
 import { createProvider } from '@core/providers'
 import { PROVIDER_TEMPLATES } from '@core/services/provider-template.service'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
+import { createLogger } from '@core/utils/logger'
 import type { ProviderTemplate, UserProviderConfig, ChatContext } from '@shared/types'
+
+const aiLogger = createLogger('ai-call')
 
 // ==================== 类型 ====================
 
@@ -147,11 +150,36 @@ export async function callAI(
     ]
   }
 
-  // 调用 AI（非流式）
-  // @ts-expect-error P3 修复 · BaseProvider.chatSync 签名仅接受 context（沿用原 service 的调用方式以保持行为一致）
-  const result = await provider.chatSync(context, { maxTokens })
+  // 调用 AI（非流式）+ 结构化日志（2026-05-10 e2e 补充）
+  const t0 = Date.now()
+  let result: { success: boolean; content?: string; error?: string }
+  try {
+    // @ts-expect-error P3 修复 · BaseProvider.chatSync 签名仅接受 context（沿用原 service 的调用方式以保持行为一致）
+    result = await provider.chatSync(context, { maxTokens })
+  } catch (e: any) {
+    aiLogger.error('text 调用失败', {
+      callType: 'text',
+      providerConfigId: config.id,
+      modelId: effectiveModelId,
+      systemPrompt,
+      userPrompt: prompt,
+      durationMs: Date.now() - t0,
+      error: e?.message ?? String(e),
+    })
+    throw e
+  }
 
-  console.log('[EpisodeProductionAI] AI 调用完成, maxTokens:', maxTokens)
+  aiLogger.info('text 调用完成', {
+    callType: 'text',
+    providerConfigId: config.id,
+    modelId: effectiveModelId,
+    systemPrompt,
+    userPrompt: prompt,
+    response: result.content,
+    durationMs: Date.now() - t0,
+    error: result.success ? undefined : result.error,
+    maxTokens,
+  })
 
   if (!result.success) {
     throw new Error(result.error || 'AI 调用失败')
@@ -212,8 +240,35 @@ export async function callVLM(
     ],
   }
 
-  // @ts-expect-error 同 callAI：BaseProvider.chatSync 签名兼容
-  const result = await provider.chatSync(context, { maxTokens })
+  const t0 = Date.now()
+  let result: { success: boolean; content?: string; error?: string }
+  try {
+    // @ts-expect-error 同 callAI：BaseProvider.chatSync 签名兼容
+    result = await provider.chatSync(context, { maxTokens })
+  } catch (e: any) {
+    aiLogger.error('vlm 调用失败', {
+      callType: 'vlm',
+      providerConfigId: config.id,
+      modelId: effectiveModelId,
+      systemPrompt,
+      userPrompt: prompt,
+      imageDataUrlLength: imageDataUrl.length,
+      durationMs: Date.now() - t0,
+      error: e?.message ?? String(e),
+    })
+    throw e
+  }
+  aiLogger.info('vlm 调用完成', {
+    callType: 'vlm',
+    providerConfigId: config.id,
+    modelId: effectiveModelId,
+    systemPrompt,
+    userPrompt: prompt,
+    imageDataUrlLength: imageDataUrl.length,
+    response: result.content,
+    durationMs: Date.now() - t0,
+    error: result.success ? undefined : result.error,
+  })
   if (!result.success) throw new Error(result.error || 'VLM 调用失败')
   return result.content || ''
 }

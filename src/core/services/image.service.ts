@@ -30,14 +30,10 @@ import type {
   ImageProviderType
 } from '@shared/types'
 
-// 配置 electron-log：禁用控制台输出，避免 EPIPE 错误
-// 跨平台 logger：包装 console，简单实现 electron-log 风格的 .scope/.info/.error API
-const logger = {
-  info: (...args: any[]) => console.log('[ImageService]', ...args),
-  warn: (...args: any[]) => console.warn('[ImageService]', ...args),
-  error: (...args: any[]) => console.error('[ImageService]', ...args),
-  debug: (...args: any[]) => console.debug('[ImageService]', ...args),
-}
+// 全局 logger（spec 2026-05-10 e2e 阶段补充：用 createLogger 取代散落的本地 console wrapper）
+import { createLogger } from '@core/utils/logger'
+const logger = createLogger('ImageService')
+const aiLogger = createLogger('ai-call')
 
 /**
  * 正在进行的轮询任务
@@ -166,9 +162,30 @@ export class ImageService {
         customParams: providerConfig.customParams
       })
 
-      // 发送生成请求
+      // 发送生成请求 + 结构化 AI 日志（spec 2026-05-10 e2e 补充）
       logger.info('[ImageService.generateImage] 调用 Provider 生成图像')
+      const t0 = Date.now()
       const response = await provider.generateImage(request)
+
+      // 收集 referenceImages（兼容单 referenceImage 和 referenceImages[]）
+      const refs = Array.isArray(request.referenceImages) && request.referenceImages.length > 0
+        ? request.referenceImages
+        : (request.referenceImage ? [request.referenceImage] : [])
+
+      aiLogger.info('image 调用完成', {
+        callType: 'image',
+        providerConfigId: providerConfig.id,
+        modelId: request.model,
+        userPrompt: request.prompt,
+        negativePrompt: request.negativePrompt,
+        referenceImages: refs.map(r => typeof r === 'string' && r.length > 200 ? r.slice(0, 200) + '...' : r),
+        size: `${request.width}x${request.height}`,
+        response: response.success && response.images?.[0]?.url
+          ? (response.images[0].url.length > 200 ? response.images[0].url.slice(0, 200) + '...' : response.images[0].url)
+          : undefined,
+        durationMs: Date.now() - t0,
+        error: response.success ? undefined : response.error,
+      })
 
       if (!response.success) {
         logger.error('[ImageService.generateImage] 生成失败:', response.error)

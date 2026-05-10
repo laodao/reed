@@ -179,39 +179,67 @@ export class VideoSegmentService {
     prompt: string
   }): Promise<VideoSegmentOutput> {
     const { mode, durationSec, width, height, keyframes, prompt } = opts
-    if (mode === 'text2video') {
-      if (!this.adapter.textToVideo) {
-        throw new Error('Provider 声明支持 text2video 但未实现 textToVideo 方法')
-      }
-      return await this.adapter.textToVideo({ prompt, durationSec, width, height })
-    }
-    if (mode === 'image2video') {
-      if (!this.adapter.imageToVideo) {
-        throw new Error('Provider 声明支持 image2video 但未实现 imageToVideo 方法')
-      }
-      const firstFrame = keyframes[0]
-      if (!firstFrame) throw new Error('image2video 需要至少一帧关键帧')
-      return await this.adapter.imageToVideo({
-        imagePath: firstFrame.imagePath,
-        prompt,
-        durationSec,
-        width,
-        height,
-      })
-    }
-    // keyframes2video
-    if (!this.adapter.keyframesToVideo) {
-      throw new Error('Provider 声明支持 keyframes2video 但未实现 keyframesToVideo 方法')
-    }
-    if (keyframes.length < 2) {
-      throw new Error('keyframes2video 需要至少 2 帧关键帧')
-    }
-    return await this.adapter.keyframesToVideo({
-      keyframes,
-      prompt,
+    // 全局 logger 结构化日志（spec 2026-05-10 e2e 补充）
+    const { createLogger } = await import('@core/utils/logger')
+    const aiLogger = createLogger('ai-call')
+    const t0 = Date.now()
+    const logCommon = {
+      callType: 'video' as const,
+      mode,
+      userPrompt: prompt,
+      referenceImages: keyframes.map(k => k.imagePath),
+      size: `${width}x${height}`,
       durationSec,
-      width,
-      height,
+    }
+    let result: VideoSegmentOutput
+    try {
+      if (mode === 'text2video') {
+        if (!this.adapter.textToVideo) {
+          throw new Error('Provider 声明支持 text2video 但未实现 textToVideo 方法')
+        }
+        result = await this.adapter.textToVideo({ prompt, durationSec, width, height })
+      } else if (mode === 'image2video') {
+        if (!this.adapter.imageToVideo) {
+          throw new Error('Provider 声明支持 image2video 但未实现 imageToVideo 方法')
+        }
+        const firstFrame = keyframes[0]
+        if (!firstFrame) throw new Error('image2video 需要至少一帧关键帧')
+        result = await this.adapter.imageToVideo({
+          imagePath: firstFrame.imagePath,
+          prompt,
+          durationSec,
+          width,
+          height,
+        })
+      } else {
+        // keyframes2video
+        if (!this.adapter.keyframesToVideo) {
+          throw new Error('Provider 声明支持 keyframes2video 但未实现 keyframesToVideo 方法')
+        }
+        if (keyframes.length < 2) {
+          throw new Error('keyframes2video 需要至少 2 帧关键帧')
+        }
+        result = await this.adapter.keyframesToVideo({
+          keyframes,
+          prompt,
+          durationSec,
+          width,
+          height,
+        })
+      }
+    } catch (e: any) {
+      aiLogger.error('video 调用失败', {
+        ...logCommon,
+        durationMs: Date.now() - t0,
+        error: e?.message ?? String(e),
+      })
+      throw e
+    }
+    aiLogger.info('video 调用完成', {
+      ...logCommon,
+      response: result.videoPath,
+      durationMs: Date.now() - t0,
     })
+    return result
   }
 }

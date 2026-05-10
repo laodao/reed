@@ -132,6 +132,9 @@ async function bootstrap(): Promise<void> {
   // 1. 平台抽象层
   WebPathProvider.getInstance({ rootDataPath: cfg.rootDataPath })
   WebSocketEventEmitter.getInstance()
+  // 全局 logger（spec 2026-05-10 e2e 阶段补充）— 初始化后所有模块用 createLogger 拿
+  const { initLogger } = await import('@core/utils/logger')
+  initLogger({ logDir: path.join(cfg.rootDataPath, 'logs'), level: 'info' })
   const secureStorage = WebSecureStorage.getInstance({ rootDataPath: cfg.rootDataPath })
   await secureStorage.initialize()
 
