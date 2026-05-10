@@ -235,11 +235,13 @@ async function handleCreateEpisode(
       }
     } else if (data.sourceType === 'uploaded') {
       // uploaded 模式：长文允许空（用户可在内容 stage 再粘贴）。
-      // 一旦填了内容，仍校验字数中段（500-15000），保证 AI 识别要素时有足够上下文。
+      // 字数下限 30 字（与 F3 AIQuickModeWizard 的 ≥30 字校验对齐）。
+      // PRD `docs/review/2026-05-09-ep-redesign-spec.md` §2.2.2 F3 通道明确：用户输入"一句话"，
+      // 后续 ① 内容 stage 用户可继续扩充。原 500 字硬门槛与 F3 设计冲突 — 已放开（2026-05-10 e2e bug #2）。
       if (data.uploadedContent && data.uploadedContent.length > 0) {
         const wordCount = data.uploadedContent.length
-        if (wordCount < 500) {
-          return { success: false, error: `字数不足，当前 ${wordCount} 字，最少需要 500 字` }
+        if (wordCount < 30) {
+          return { success: false, error: `字数不足，当前 ${wordCount} 字，最少需要 30 字` }
         }
         if (wordCount > 15000) {
           return { success: false, error: `字数超出限制，当前 ${wordCount} 字，最多允许 15000 字` }
