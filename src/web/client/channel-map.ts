@@ -426,6 +426,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.asset.preset.list': { channel: 'ep:asset:preset:list' },
   'episodeProduction.asset.preset.ensureMainImage': { channel: 'ep:asset:preset:ensure-main-image' },
   'episodeProduction.asset.preset.ensureAllImages': { channel: 'ep:asset:preset:ensure-all-images' },
+  'episodeProduction.asset.preset.useToProject': { channel: 'ep:asset:preset:use-to-project' },
   'episodeProduction.getStoryboard': { channel: 'ep:get-storyboard' },
   'episodeProduction.updateStoryboard': { channel: 'ep:update-storyboard' },
   'episodeProduction.reorderStoryboards': { channel: 'ep:reorder-storyboards' },

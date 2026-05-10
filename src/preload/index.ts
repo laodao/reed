@@ -312,6 +312,7 @@ const IPC_CHANNELS = {
   EP_ASSET_PRESET_LIST: 'ep:asset:preset:list',
   EP_ASSET_PRESET_ENSURE_MAIN_IMAGE: 'ep:asset:preset:ensure-main-image',
   EP_ASSET_PRESET_ENSURE_ALL_IMAGES: 'ep:asset:preset:ensure-all-images',
+  EP_ASSET_PRESET_USE_TO_PROJECT: 'ep:asset:preset:use-to-project',
 
   // 派生（2 个）
   EP_ASSET_DERIVE_SINGLE: 'ep:asset:derive:single',
@@ -2195,6 +2196,8 @@ const electronAPI = {
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_PRESET_ENSURE_MAIN_IMAGE, input),
         ensureAllImages: () =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_PRESET_ENSURE_ALL_IMAGES),
+        useToProject: (input: { presetId: string; targetProjectId: string; overrideName?: string }) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_PRESET_USE_TO_PROJECT, input),
       },
 
       /**

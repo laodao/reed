@@ -17,6 +17,7 @@ import { LwCharacterEntity } from '@core/database/entities/lw-character.entity'
 import { addCharacterBindingPreset } from '@core/database/migrations/add-character-binding-preset'
 import { seedPresetDigitalHumans } from '@core/database/migrations/seed-preset-digital-humans'
 import { PresetDigitalHumanService } from '@core/modules/episode-production/assets/services/preset-digital-human.service'
+import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 
 async function buildDb(): Promise<DataSource> {
   const ds = new DataSource({
@@ -27,6 +28,7 @@ async function buildDb(): Promise<DataSource> {
       LocationBindingEntity,
       ItemBindingEntity,
       LwCharacterEntity,
+      AssetImageEntity,
     ],
     synchronize: true,
   })
@@ -136,5 +138,118 @@ describe('PresetDigitalHumanService.list', () => {
     const created = list.map((b) => Number(b.createdAt))
     const sorted = [...created].sort((a, b) => a - b)
     expect(created).toEqual(sorted)
+  })
+})
+
+describe('PresetDigitalHumanService.useToProject', () => {
+  let ds: DataSource
+  let svc: PresetDigitalHumanService
+
+  beforeEach(async () => {
+    ds = await buildDb()
+    await addCharacterBindingPreset(ds)
+    await seedPresetDigitalHumans(ds)
+    svc = new PresetDigitalHumanService(ds)
+  })
+
+  afterEach(async () => {
+    if (ds.isInitialized) await ds.destroy()
+  })
+
+  it('为 preset 创建用户自己的 binding（project_id=target, user_id=current, source_type=standalone, is_preset=0）', async () => {
+    const presets = await svc.list()
+    const preset = presets[0]
+    const result = await svc.useToProject({
+      presetId: preset.id,
+      targetProjectId: 'p_user',
+      userId: 'u1',
+    })
+    expect(result.bindingId).toMatch(/^cb_/)
+
+    const repo = ds.getRepository(CharacterBindingEntity)
+    const newBinding = await repo.findOne({ where: { id: result.bindingId } })
+    expect(newBinding).not.toBeNull()
+    expect(newBinding!.userId).toBe('u1')
+    expect(newBinding!.projectId).toBe('p_user')
+    expect(newBinding!.sourceType).toBe('standalone')
+    expect(newBinding!.isPreset).toBe(0)
+    // 视觉字段保留
+    expect(newBinding!.gender).toBe(preset.gender)
+    expect(newBinding!.standaloneName).toBe(preset.standaloneName)
+  })
+
+  it('拷贝 preset 的 asset_image 行（图磁盘文件共享，行换 assetId）', async () => {
+    const presets = await svc.list()
+    const preset = presets[0]
+    // 给 preset 加一张图
+    const imageRepo = ds.getRepository(AssetImageEntity)
+    await imageRepo.save({
+      id: 'ai_preset_main',
+      userId: null,
+      assetType: 'character',
+      assetId: preset.id,
+      category: 'main',
+      label: null,
+      imagePath: '/shared/preset/main.png',
+      isMain: 1,
+      sortOrder: 0,
+      prompt: 'test prompt',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as any)
+
+    const result = await svc.useToProject({
+      presetId: preset.id,
+      targetProjectId: 'p_user',
+      userId: 'u1',
+    })
+
+    const newImages = await imageRepo.find({
+      where: { assetType: 'character', assetId: result.bindingId } as any,
+    })
+    expect(newImages.length).toBe(1)
+    expect(newImages[0].imagePath).toBe('/shared/preset/main.png')  // 共享磁盘文件
+    expect(newImages[0].userId).toBe('u1')
+    expect(newImages[0].id).not.toBe('ai_preset_main')  // 新行新 id
+    expect(newImages[0].prompt).toBe('test prompt')  // 元数据保留
+  })
+
+  it('preset 自身不动（其他用户继续可用）', async () => {
+    const presets = await svc.list()
+    const preset = presets[0]
+    await svc.useToProject({
+      presetId: preset.id,
+      targetProjectId: 'p_user',
+      userId: 'u1',
+    })
+
+    // preset 仍可被列出
+    const stillThere = await svc.list()
+    expect(stillThere.length).toBe(12)
+    expect(stillThere.find((p) => p.id === preset.id)).toBeDefined()
+  })
+
+  it('未找到 preset → 抛错', async () => {
+    await expect(
+      svc.useToProject({
+        presetId: 'nonexistent',
+        targetProjectId: 'p_user',
+        userId: 'u1',
+      }),
+    ).rejects.toThrow(/不存在|不存在或已下架/)
+  })
+
+  it('overrideName 指定时覆盖 standaloneName', async () => {
+    const presets = await svc.list()
+    const preset = presets[0]
+    const result = await svc.useToProject({
+      presetId: preset.id,
+      targetProjectId: 'p_user',
+      userId: 'u1',
+      overrideName: '我的自定义名字',
+    })
+    const repo = ds.getRepository(CharacterBindingEntity)
+    const newBinding = await repo.findOne({ where: { id: result.bindingId } })
+    expect(newBinding!.standaloneName).toBe('我的自定义名字')
   })
 })

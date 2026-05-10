@@ -63,6 +63,9 @@
             <el-icon><MagicStick /></el-icon>
             批量派生图谱
           </el-button>
+          <el-button size="small" :disabled="actionBusy" @click="presetDialogVisible = true">
+            🎭 内置形象
+          </el-button>
           <el-button size="small" :disabled="actionBusy" @click="onAddCharacter">
             <el-icon><Plus /></el-icon>
             新建角色
@@ -193,6 +196,13 @@
       @completed="onVoiceCloneCompleted"
       @failed="onVoiceCloneFailed"
     />
+
+    <!-- 内置形象对话框（角色 section 「🎭 内置形象」按钮触发） -->
+    <PresetDigitalHumanDialog
+      v-model="presetDialogVisible"
+      :project-id="props.projectId"
+      @imported="onPresetImported"
+    />
   </div>
 </template>
 
@@ -206,6 +216,7 @@ import LocationAssetCardV2 from './LocationAssetCardV2.vue'
 import ItemAssetCardV2 from './ItemAssetCardV2.vue'
 import VoiceAssetCardV2 from './VoiceAssetCardV2.vue'
 import VoiceCloneDialog from '@/components/voice/VoiceCloneDialog.vue'
+import PresetDigitalHumanDialog from '@/components/episode-production/dialogs/PresetDigitalHumanDialog.vue'
 
 const props = defineProps<{
   projectId: string
@@ -478,6 +489,14 @@ async function onBatchDerive(kind: 'character' | 'location'): Promise<void> {
  *     （上传样本 → DashScope CosyVoice → scheduler 轮询训练状态 → ready）。
  */
 const voiceCloneDialogVisible = ref(false)
+const presetDialogVisible = ref(false)
+
+/** 内置形象引用完毕 → 刷新列表 + 自动跳到该角色编辑抽屉补充剧情设定 */
+async function onPresetImported(payload: { bindingId: string }): Promise<void> {
+  await reload()
+  emit('open-character', payload.bindingId)
+  ElMessage.success('已引用内置形象到当前项目')
+}
 async function promptCreateStandalone(
   kind: 'character' | 'location' | 'item',
 ): Promise<void> {
