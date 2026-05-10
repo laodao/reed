@@ -7,9 +7,79 @@
  *              generateStoryboardsIncremental / generateStoryboards
  */
 
-import type { SceneScript } from '@shared/types/episode-production'
+import type { SceneCharacter, SceneScript } from '@shared/types/episode-production'
 import type { StoryboardGenerationResult, StoryboardResult } from './types'
 import { callAI, extractJsonFromResponse } from './_helpers'
+
+// ==================== 后处理 helpers ====================
+
+/**
+ * Bug C 修复（spec 2026-05-09 ep-redesign · e2e report-shot-1.2.md）：
+ *
+ * AI 拆分镜返回的 storyboard.characters[].characterId 经常不是真实
+ * character_binding.id（cb_xxx），而是：
+ *   - 角色中文名（"李墨" / "苏白"）
+ *   - 长文写作角色 ID（lwc_xxx）
+ *   - 占位符 / 空字符串
+ *
+ * 这导致下游 keyframe 生成 / UI 显示无法反查到 binding，prompt 丢失角色信息。
+ *
+ * 本函数后处理 AI 输出：
+ *   - characterId 已是 scene.characters[].characterBindingId 之一 → 保留
+ *   - 否则按 characterName / 兼容 characterId 反查 → 替换为对应的 characterBindingId
+ *   - 都找不到 → 保留为空字符串 + console.warn（让 service 层 fallback 接管，
+ *     不抛错避免 e2e 中断 — 仍然能生成关键帧只是少一个角色描述）
+ */
+export function normalizeAiCharacters(
+  raw: any[] | null | undefined,
+  sceneCharacters: SceneCharacter[],
+): any[] {
+  if (!Array.isArray(raw)) return []
+
+  // 建索引：bindingId set + name → bindingId map + lwcId → bindingId map
+  const validBindingIds = new Set<string>()
+  const nameToBindingId = new Map<string, string>()
+  const lwcToBindingId = new Map<string, string>()
+  for (const sc of sceneCharacters) {
+    const bid = sc.characterBindingId ?? null
+    if (bid) {
+      validBindingIds.add(bid)
+      if (sc.characterName) nameToBindingId.set(sc.characterName, bid)
+      if (sc.characterId) lwcToBindingId.set(sc.characterId, bid)
+    }
+  }
+
+  const out: any[] = []
+  for (const c of raw) {
+    if (!c || typeof c !== 'object') continue
+    const original =
+      typeof (c as any).characterId === 'string' ? (c as any).characterId : ''
+
+    let resolved: string | null = null
+    if (original) {
+      if (validBindingIds.has(original)) {
+        resolved = original
+      } else if (nameToBindingId.has(original)) {
+        resolved = nameToBindingId.get(original)!
+      } else if (lwcToBindingId.has(original)) {
+        resolved = lwcToBindingId.get(original)!
+      }
+    }
+
+    if (resolved === null) {
+      // 未识别 / 空：保留 entry（保持本分镜角色数量），characterId 设空让 fallback 接管
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[storyboard-generator] AI 输出的 characterId="${original}" 无法反查到 character_binding；` +
+          `保留为空字符串，下游按场景级 fallback 解析（report-shot-1.2.md Bug C）`,
+      )
+      out.push({ ...c, characterId: '' })
+    } else {
+      out.push({ ...c, characterId: resolved })
+    }
+  }
+  return out
+}
 
 // ==================== 提示词模板 ====================
 
@@ -354,8 +424,8 @@ ${sceneDescription}
 氛围: ${sceneScript.mood}
 光线: ${sceneScript.lighting || '未指定'}
 
-出场角色:
-${sceneScript.characters.map(c => `- ${c.characterName}: 表情(${c.expression || '无'}), 动作(${c.action || '无'})`).join('\n')}
+出场角色（characterId 必须用下方 ID 之一回填到分镜的 characters[].characterId）:
+${sceneScript.characters.map(c => `- ID: ${c.characterBindingId ?? c.characterId}, 名称: ${c.characterName}, 表情(${c.expression || '无'}), 动作(${c.action || '无'})`).join('\n')}
 
 旁白: ${sceneScript.narration}
 
@@ -376,6 +446,14 @@ ${sceneScript.actions.map(a => `- ${a.description}`).join('\n')}
 
     if (!Array.isArray(result.storyboards)) {
       throw new Error('生成的分镜格式不正确')
+    }
+
+    // Bug C 修复（同 generateSingleStoryboard 路径）：normalize 每个分镜的
+    // characters[].characterId — AI 在批量模式下更容易把 characterName 当 ID 抄
+    for (const sb of result.storyboards) {
+      if (sb && typeof sb === 'object') {
+        sb.characters = normalizeAiCharacters(sb.characters, sceneScript.characters)
+      }
     }
 
     return result as StoryboardGenerationResult
@@ -401,8 +479,8 @@ ${sceneScript.actions.map(a => `- ${a.description}`).join('\n')}
 氛围: ${sceneScript.mood}
 光线: ${sceneScript.lighting || '未指定'}
 
-出场角色:
-${sceneScript.characters.map(c => `- ID: ${c.characterId}, 名称: ${c.characterName}, 表情(${c.expression || '无'}), 动作(${c.action || '无'})`).join('\n')}
+出场角色（characterId 必须用下方 ID 之一回填到分镜的 characters[].characterId）:
+${sceneScript.characters.map(c => `- ID: ${c.characterBindingId ?? c.characterId}, 名称: ${c.characterName}, 表情(${c.expression || '无'}), 动作(${c.action || '无'})`).join('\n')}
 
 旁白: ${sceneScript.narration || '无'}
 旁白ID: narration_${sceneScript.sceneNumber}
@@ -466,6 +544,11 @@ ${sceneScript.actions.map(a => `- ID: ${a.id}, 描述: ${a.description}`).join('
       const validActionIds = sceneScript.actions.map(a => a.id)
       result.actionIds = result.actionIds.filter((id: string) => validActionIds.includes(id))
     }
+
+    // Bug C 修复：normalize AI 输出的 characters[].characterId（spec 2026-05-09
+    // ep-redesign · e2e report-shot-1.2.md）— 把名字 / 长文 ID / 占位符替换为
+    // 真实 binding.id；找不到的保留为空让下游 fallback 接管。
+    result.characters = normalizeAiCharacters(result.characters, sceneScript.characters)
 
     return result as StoryboardResult
   }

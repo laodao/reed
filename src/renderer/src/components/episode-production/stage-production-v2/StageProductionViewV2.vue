@@ -171,6 +171,7 @@
             :key="`kfgrid-${selectedStoryboardId}`"
             :storyboard-id="selectedStoryboardId"
             :keyframe-count="selectedStoryboard.keyframeCount ?? 3"
+            :storyboard-characters="(selectedStoryboard as any).characters ?? null"
             @regenerate="onKeyframeRegenRequest"
             @generate-all="onKeyframesGenerateAll"
           />

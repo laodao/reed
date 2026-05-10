@@ -335,8 +335,17 @@ const props = withDefaults(
   defineProps<{
     storyboardId: string | null
     keyframeCount?: number
+    /**
+     * 当前分镜的 characters JSON 字段（spec 2026-05-09 ep-redesign · e2e Bug B/C）。
+     * 父组件透传 `selectedStoryboard.characters` — 让 KeyframeGrid 在 sbCharOverrides
+     * 表为空时可以用本分镜级数据，而不是直接 fallback 到 scene.characters 整场角色。
+     *
+     * 旧实现 fallback 跳过该字段直接用 scene.characters → KeyframeGrid 左侧 chip
+     * 显示整场所有角色，与本分镜实际出场不符（report-shot-1.2.md 同源 UI bug）。
+     */
+    storyboardCharacters?: unknown[] | null
   }>(),
-  { keyframeCount: 3 },
+  { keyframeCount: 3, storyboardCharacters: () => null },
 )
 
 const emit = defineEmits<{
@@ -435,12 +444,19 @@ const currentScene = computed(() => {
   return scenes[0] as any
 })
 
+/**
+ * 角色 chip 数据源优先级（spec 2026-05-09 ep-redesign · e2e report-shot-1.2.md）：
+ *   1. storyboard_characters 表（分镜级独立配置 §4.5.3）
+ *   2. storyboard.characters JSON 字段（本分镜级数据 — Bug B/C 修复入口；即使 characterId 空字符串也保留 entry，避免回退整场）
+ *   3. scene.characters JSON 字段（场景级兜底）
+ */
 const characterChips = computed(() => {
-  // 优先用分镜级 storyboard_characters；回退场景级 scene.characters
   const list: Array<{ id: string; name: string; expression: string; tooltip: string }> = []
+
+  // 1. 分镜级 storyboard_characters 表
   if (sbCharOverrides.value.length > 0) {
     for (const sc of sbCharOverrides.value) {
-      const name = lookupCharName(sc.characterId)
+      const name = lookupCharName(sc.characterId) || '?'
       list.push({
         id: sc.characterId,
         name,
@@ -448,21 +464,40 @@ const characterChips = computed(() => {
         tooltip: `${name} · 分镜级配置${sc.expression ? ` · ${sc.expression}` : ''}${sc.action ? ` · ${sc.action}` : ''}`,
       })
     }
-  } else {
-    // scene 级
-    const sceneChars = (currentScene.value?.characters ?? []) as any[]
-    if (!Array.isArray(sceneChars)) return list
-    for (const sc of sceneChars) {
-      const id = sc.characterBindingId ?? sc.characterId ?? ''
-      if (!id) continue
-      const name = lookupCharName(id) || sc.characterName || sc.name || '?'
+    return list
+  }
+
+  // 2. storyboard.characters JSON 字段
+  const sbCharsJson = props.storyboardCharacters
+  if (Array.isArray(sbCharsJson) && sbCharsJson.length > 0) {
+    for (const sc of sbCharsJson as any[]) {
+      if (!sc || typeof sc !== 'object') continue
+      const id = typeof sc.characterId === 'string' ? sc.characterId : ''
+      // 即使 id 为空也保留 entry（保持本分镜角色数量），name 显示降级
+      const name = id ? lookupCharName(id) || '?' : (sc.characterName ?? '?')
       list.push({
         id,
         name,
         expression: sc.expression ?? '',
-        tooltip: `${name} · 场景级（spec §4.5.3 兜底）${sc.expression ? ` · ${sc.expression}` : ''}`,
+        tooltip: `${name} · 分镜级 JSON${sc.expression ? ` · ${sc.expression}` : ''}${sc.action ? ` · ${sc.action}` : ''}`,
       })
     }
+    return list
+  }
+
+  // 3. 场景级回退
+  const sceneChars = (currentScene.value?.characters ?? []) as any[]
+  if (!Array.isArray(sceneChars)) return list
+  for (const sc of sceneChars) {
+    const id = sc.characterBindingId ?? sc.characterId ?? ''
+    if (!id) continue
+    const name = lookupCharName(id) || sc.characterName || sc.name || '?'
+    list.push({
+      id,
+      name,
+      expression: sc.expression ?? '',
+      tooltip: `${name} · 场景级兜底${sc.expression ? ` · ${sc.expression}` : ''}`,
+    })
   }
   return list
 })

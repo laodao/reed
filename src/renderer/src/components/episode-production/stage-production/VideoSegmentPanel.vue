@@ -123,6 +123,9 @@ interface Storyboard {
    * 也可能仍是字符串；computed 都要 robust 处理。 */
   dialogueIds?: string[] | string | null
   narrationId?: string | null
+  /** 本分镜的 characters JSON 字段（spec 2026-05-09 ep-redesign §4.5.3）。
+   * characterChips computed 据此过滤本分镜角色，避免显示场景级整场角色。 */
+  characters?: unknown[] | null
 }
 
 interface VideoSegmentResult {
@@ -182,28 +185,57 @@ const currentScene = computed(() => {
   return scenes[0] as any
 })
 
+/**
+ * 角色 chip 数据源优先级（spec 2026-05-09 ep-redesign · e2e report-shot-1.2.md）：
+ *   1. storyboard_characters 表（分镜级独立配置 §4.5.3）
+ *   2. storyboard.characters JSON 字段（本分镜级数据 — Bug B/C 修复入口）
+ *   3. scene.characters JSON 字段（场景级兜底）
+ *
+ * finalPromptPreview 用 characterChips 拼【角色】段；按本分镜过滤后避免显示
+ * 整场所有角色误导用户（旧 bug：每个分镜的预览都显示苏白+李墨整场两人）。
+ */
 const characterChips = computed(() => {
   const list: Array<{ id: string; name: string; expression: string }> = []
+
+  // 1. 分镜级 storyboard_characters
   if (sbCharOverrides.value.length > 0) {
     for (const sc of sbCharOverrides.value) {
       list.push({
         id: sc.characterId,
-        name: lookupCharName(sc.characterId),
+        name: lookupCharName(sc.characterId) || '?',
         expression: sc.expression ?? '',
       })
     }
-  } else {
-    const sceneChars = (currentScene.value?.characters ?? []) as any[]
-    if (!Array.isArray(sceneChars)) return list
-    for (const sc of sceneChars) {
-      const id = sc.characterBindingId ?? sc.characterId ?? ''
-      if (!id) continue
+    return list
+  }
+
+  // 2. storyboard.characters JSON 字段
+  const sbCharsJson = (props.storyboard as any)?.characters
+  if (Array.isArray(sbCharsJson) && sbCharsJson.length > 0) {
+    for (const sc of sbCharsJson) {
+      if (!sc || typeof sc !== 'object') continue
+      const id = typeof sc.characterId === 'string' ? sc.characterId : ''
+      const name = id ? lookupCharName(id) || '?' : (sc.characterName ?? '?')
       list.push({
         id,
-        name: lookupCharName(id) || sc.characterName || sc.name || '?',
+        name,
         expression: sc.expression ?? '',
       })
     }
+    return list
+  }
+
+  // 3. 场景级回退
+  const sceneChars = (currentScene.value?.characters ?? []) as any[]
+  if (!Array.isArray(sceneChars)) return list
+  for (const sc of sceneChars) {
+    const id = sc.characterBindingId ?? sc.characterId ?? ''
+    if (!id) continue
+    list.push({
+      id,
+      name: lookupCharName(id) || sc.characterName || sc.name || '?',
+      expression: sc.expression ?? '',
+    })
   }
   return list
 })
