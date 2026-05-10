@@ -63,6 +63,9 @@
             <el-icon><MagicStick /></el-icon>
             批量派生图谱
           </el-button>
+          <el-button size="small" :disabled="actionBusy" @click="onOpenLibrary('character')">
+            📚 我的库
+          </el-button>
           <el-button size="small" :disabled="actionBusy" @click="presetDialogVisible = true">
             🎭 内置形象
           </el-button>
@@ -106,6 +109,9 @@
             <el-icon><MagicStick /></el-icon>
             批量派生变体
           </el-button>
+          <el-button size="small" :disabled="actionBusy" @click="onOpenLibrary('location')">
+            📚 我的库
+          </el-button>
           <el-button size="small" :disabled="actionBusy" @click="onAddLocation">
             <el-icon><Plus /></el-icon>
             新建地点
@@ -137,6 +143,9 @@
           <el-tag size="small" round class="section-count">{{ summary.items.length }}</el-tag>
         </span>
         <div class="section-actions">
+          <el-button size="small" :disabled="actionBusy" @click="onOpenLibrary('item')">
+            📚 我的库
+          </el-button>
           <el-button size="small" :disabled="actionBusy" @click="onAddItem">
             <el-icon><Plus /></el-icon>
             新建物品
@@ -203,6 +212,13 @@
       :project-id="props.projectId"
       @imported="onPresetImported"
     />
+
+    <!-- 我的资产库浏览（spec 2026-05-09 ep-redesign §3.2 D2 · P-7） -->
+    <UserAssetLibraryDialog
+      v-model="libraryDialogVisible"
+      :target-project-id="props.projectId"
+      @binding-created="onLibraryBindingCreated"
+    />
   </div>
 </template>
 
@@ -217,6 +233,8 @@ import ItemAssetCardV2 from './ItemAssetCardV2.vue'
 import VoiceAssetCardV2 from './VoiceAssetCardV2.vue'
 import VoiceCloneDialog from '@/components/voice/VoiceCloneDialog.vue'
 import PresetDigitalHumanDialog from '@/components/episode-production/dialogs/PresetDigitalHumanDialog.vue'
+// spec 2026-05-09 ep-redesign §3.2 D2 · 跨项目角色库浏览
+import UserAssetLibraryDialog from '@/components/episode-production/dialogs/UserAssetLibraryDialog.vue'
 
 const props = defineProps<{
   projectId: string
@@ -490,6 +508,22 @@ async function onBatchDerive(kind: 'character' | 'location'): Promise<void> {
  */
 const voiceCloneDialogVisible = ref(false)
 const presetDialogVisible = ref(false)
+const libraryDialogVisible = ref(false)
+
+/**
+ * 「📚 我的库」按钮 — 打开 UserAssetLibraryDialog。
+ * Dialog 内部自带 assetType 过滤；此处不强制过滤（用户可在 dialog 切换全部/角色/地点/物品）。
+ */
+function onOpenLibrary(_kind: 'character' | 'location' | 'item'): void {
+  void _kind  // Dialog 自带过滤；future 可把 kind 作为默认 filter 传入
+  libraryDialogVisible.value = true
+}
+
+/** 用户从库引用到当前项目 → reload 资产盘点 */
+async function onLibraryBindingCreated(payload: { bindingId: string; assetType: string }): Promise<void> {
+  ElMessage.success(`已从我的库引用${payload.assetType === 'character' ? '角色' : payload.assetType === 'location' ? '地点' : '物品'}到当前项目`)
+  await reload()
+}
 
 /** 内置形象引用完毕 → 刷新列表 + 自动跳到该角色编辑抽屉补充剧情设定 */
 async function onPresetImported(payload: { bindingId: string }): Promise<void> {
