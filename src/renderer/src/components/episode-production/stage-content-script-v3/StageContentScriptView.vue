@@ -20,6 +20,24 @@
   <div class="stage-content-script-v3">
     <StageMainHeader title="内容+剧本" :subtitle="headerSubtitle">
       <template #actions>
+        <!-- 9 帧故事板预览（spec 2026-05-09 ep-redesign §3.2 B7 · P-18） -->
+        <el-tooltip placement="bottom" effect="light">
+          <template #content>
+            <div style="max-width: 240px;">
+              <div>一次推理出 9 帧 3×3 故事板</div>
+              <div>挑骨架再走标准分镜流程</div>
+              <div style="margin-top:4px;color:#aaa;font-size:11px;">专业用户：thumbnail storyboard</div>
+            </div>
+          </template>
+          <el-button
+            v-if="props.episodeScriptId"
+            :disabled="!canGenerateThumbnails"
+            @click="thumbnailDialog.open = true"
+          >
+            <el-icon><Picture /></el-icon>
+            📋 故事板预览
+          </el-button>
+        </el-tooltip>
         <el-button
           v-if="subState === 'pending'"
           type="success"
@@ -43,6 +61,15 @@
         <el-tag v-else type="success" round>{{ readonlyTagLabel }}</el-tag>
       </template>
     </StageMainHeader>
+
+    <!-- 故事板预览 dialog（spec 2026-05-09 ep-redesign §3.2 B7） -->
+    <StoryboardThumbnailDialog
+      v-if="props.episodeScriptId"
+      v-model="thumbnailDialog.open"
+      :episode-script-id="props.episodeScriptId"
+      :default-synopsis="defaultSynopsis"
+      @created-storyboards="onThumbnailCreated"
+    />
 
     <div v-if="!episode" class="empty-state">
       <el-empty description="请先选择剧集" />
@@ -175,7 +202,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Expand, InfoFilled, MagicStick } from '@element-plus/icons-vue'
+import { Check, Expand, InfoFilled, MagicStick, Picture } from '@element-plus/icons-vue'
+// spec 2026-05-09 ep-redesign §3.2 B7 · 9 帧故事板预览
+import StoryboardThumbnailDialog from './StoryboardThumbnailDialog.vue'
 import StageMainHeader from '../shared/StageMainHeader.vue'
 import EntitySidebar from './EntitySidebar.vue'
 import SceneListPanel from './SceneListPanel.vue'
@@ -329,6 +358,19 @@ const hasDirty = computed(() => {
 const script = computed(() => scriptStore.currentScript)
 const scenes = computed(() => scriptStore.scenes ?? [])
 const synopsisDraft = computed(() => (script.value as any)?.synopsis ?? '')
+
+// ===== 9 帧故事板预览（spec 2026-05-09 ep-redesign §3.2 B7） =====
+const thumbnailDialog = ref<{ open: boolean }>({ open: false })
+const defaultSynopsis = computed(() => synopsisDraft.value)
+// 启用条件：剧本已生成 / 有 synopsis（避免空内容生成）
+const canGenerateThumbnails = computed(
+  () => !!props.episodeScriptId && (synopsisDraft.value ?? '').trim().length >= 10,
+)
+
+function onThumbnailCreated(payload: { storyboardIds: string[] }): void {
+  ElMessage.success(`已创建 ${payload.storyboardIds.length} 个分镜（去 ④ 分镜 stage 查看）`)
+  thumbnailDialog.value.open = false
+}
 
 // 实体清单（给 SceneListPanel EntityRefRenderer 用）
 const entityList = computed(() => {
