@@ -85,6 +85,7 @@
       v-model="thumbnailDialog.open"
       :episode-script-id="props.episodeScriptId"
       :default-synopsis="defaultSynopsis"
+      :scenes="sceneOptions"
       @created-storyboards="onThumbnailCreated"
     />
 

@@ -132,6 +132,71 @@ describe('ImportFromParsedShotsService', () => {
     expect(rows[0].frameDescription).toMatch(/参考视频/)
   })
 
+  describe('importThumbnails (C10 follow-up · #56)', () => {
+    it('空数组 → 返回空 storyboardIds', async () => {
+      const r = await svc.importThumbnails({
+        sceneScriptId: 'sc1',
+        thumbnails: [],
+      })
+      expect(r.storyboardIds).toEqual([])
+    })
+
+    it('thumbnails 转 storyboard 行（默认镜头字段 + frameDescription 用 user 描述）', async () => {
+      const r = await svc.importThumbnails({
+        sceneScriptId: 'sc1',
+        thumbnails: [
+          { gridIndex: 0, description: '主角入场' },
+          { gridIndex: 3, description: '冲突爆发' },
+        ],
+      })
+      expect(r.storyboardIds.length).toBe(2)
+      const rows = await ds.getRepository(StoryboardEntity).find({ order: { shotNumber: 'ASC' } })
+      expect(rows[0].frameDescription).toBe('主角入场')
+      expect(rows[1].frameDescription).toBe('冲突爆发')
+      // thumbnails 没镜头语言信息 → 默认值
+      expect(rows[0].shotType).toBe('medium')
+      expect(rows[0].cameraAngle).toBe('eye_level')
+      expect(rows[0].cameraMovement).toBe('static')
+      expect(rows[0].duration).toBe(2000)  // 默认 2 秒
+    })
+
+    it('description 缺省 → fallback "故事板帧 N"', async () => {
+      await svc.importThumbnails({
+        sceneScriptId: 'sc1',
+        thumbnails: [{ gridIndex: 5 }],
+      })
+      const row = await ds.getRepository(StoryboardEntity).findOne({ where: { sceneScriptId: 'sc1' } })
+      expect(row?.frameDescription).toBe('（故事板帧 6）')  // gridIndex+1
+    })
+
+    it('shotNumber 续号', async () => {
+      const repo = ds.getRepository(StoryboardEntity)
+      await repo.save({
+        id: 'existing',
+        sceneScriptId: 'sc1',
+        shotNumber: 3,
+        shotType: 'medium',
+        cameraAngle: 'eye_level',
+        cameraMovement: 'static',
+        frameDescription: '已有',
+        characters: [],
+        dialogueIds: [],
+        actionIds: [],
+        duration: 1000,
+        transition: '{}',
+        status: 'pending',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as any)
+      await svc.importThumbnails({
+        sceneScriptId: 'sc1',
+        thumbnails: [{ gridIndex: 0 }, { gridIndex: 1 }],
+      })
+      const all = await repo.find({ order: { shotNumber: 'ASC' } })
+      expect(all.map((r) => r.shotNumber)).toEqual([3, 4, 5])
+    })
+  })
+
   describe('mapping helpers', () => {
     it('shotType 全枚举映射', () => {
       expect(_testing.mapShotType('big_close_up')).toBe('detail')

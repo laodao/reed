@@ -80,6 +80,22 @@
         <div class="select-hint">
           已选 {{ selectedFrames.length }} 帧 · 将创建 {{ selectedFrames.length }} 个分镜
         </div>
+        <div v-if="scenes && scenes.length > 0" class="scene-picker">
+          <span class="scene-label">导入到场景：</span>
+          <el-select
+            v-model="targetSceneScriptId"
+            size="small"
+            placeholder="选择目标场景"
+            style="width: 280px"
+          >
+            <el-option
+              v-for="(s, i) in scenes"
+              :key="s.id"
+              :label="s.title ?? `场景 ${(s.index ?? i) + 1}`"
+              :value="s.id"
+            />
+          </el-select>
+        </div>
       </section>
     </div>
 
@@ -96,7 +112,7 @@
           :loading="creating"
           @click="onCreateStoryboards"
         >
-          ✓ 用选中帧创建分镜（待 follow-up 接入；本期占位）
+          ✓ 用选中帧创建分镜
         </el-button>
       </template>
     </template>
@@ -121,6 +137,8 @@ const props = defineProps<{
   episodeScriptId: string
   /** 可选：父组件传入剧本概要默认值（来自 SynopsisPanel） */
   defaultSynopsis?: string
+  /** 可选：剧本中可选场景列表（C10 follow-up · #56：用户在 dialog 内选目标 scene） */
+  scenes?: Array<{ id: string; title?: string; index?: number }>
 }>()
 
 const emit = defineEmits<{
@@ -145,6 +163,7 @@ const generating = ref(false)
 const creating = ref(false)
 const progressPct = ref(0)
 const progressLabel = ref('')
+const targetSceneScriptId = ref<string>('')
 
 const canGenerate = computed(() => form.synopsis.trim().length >= 10)
 
@@ -250,10 +269,50 @@ async function onCancel(): Promise<void> {
 }
 
 async function onCreateStoryboards(): Promise<void> {
-  // C10 follow-up：create-from-thumbnails IPC 待接入；本期占位提示
-  ElMessage.info(
-    `已选 ${selectedFrames.value.length} 帧。"用选中帧创建分镜" 功能 follow-up 接入中（需要 create-from-thumbnails IPC）。`,
-  )
+  if (selectedFrames.value.length === 0) {
+    ElMessage.warning('请先勾选要保留的帧')
+    return
+  }
+  if (!props.scenes || props.scenes.length === 0) {
+    ElMessage.error('父组件未提供 scenes — dialog 无法决定目标场景')
+    return
+  }
+  if (!targetSceneScriptId.value) {
+    targetSceneScriptId.value = props.scenes[0].id
+  }
+
+  const api = (window as any).electronAPI?.episodeProduction?.createStoryboardsFromThumbnails
+  if (!api) {
+    ElMessage.error('createStoryboardsFromThumbnails IPC 未暴露（请重启）')
+    return
+  }
+  creating.value = true
+  try {
+    const thumbnails = selectedFrames.value.map((idx) => {
+      const f = frames.value.find((x) => x.frameIndex === idx)
+      return {
+        gridIndex: idx,
+        description: f?.description ?? undefined,
+      }
+    })
+    const resp = await api({
+      sceneScriptId: targetSceneScriptId.value,
+      thumbnails,
+    })
+    if (!resp?.success) {
+      ElMessage.error(resp?.error || '创建分镜失败')
+      return
+    }
+    const ids = (resp.data?.storyboardIds ?? []) as string[]
+    ElMessage.success(`已创建 ${ids.length} 个分镜（去 ④ 分镜 stage 查看）`)
+    emit('created-storyboards', { storyboardIds: ids })
+    await cleanup()
+    visible.value = false
+  } catch (e: any) {
+    ElMessage.error('创建分镜异常：' + (e?.message ?? String(e)))
+  } finally {
+    creating.value = false
+  }
 }
 </script>
 
@@ -359,6 +418,21 @@ async function onCreateStoryboards(): Promise<void> {
 .select-hint {
   text-align: center;
   font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.scene-picker {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: var(--el-fill-color-light);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.scene-label {
+  font-size: 13px;
   color: var(--el-text-color-secondary);
 }
 </style>

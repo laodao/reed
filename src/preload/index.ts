@@ -298,6 +298,7 @@ const IPC_CHANNELS = {
   /** spec 2026-05-09 ep-redesign §3.2 B7 · 9 帧故事板预览 */
   EP_STORYBOARD_GENERATE_THUMBNAILS: 'ep:storyboard:generate-thumbnails',
   EP_STORYBOARD_CLEANUP_THUMBNAILS: 'ep:storyboard:cleanup-thumbnails',
+  EP_STORYBOARD_CREATE_FROM_THUMBNAILS: 'ep:storyboard:create-from-thumbnails',
   /** spec 2026-05-09 ep-redesign §3.2 D2 · 跨项目角色库 */
   EP_USER_ASSET_LIST: 'ep:user-asset:list',
   EP_USER_ASSET_ADD_FROM_BINDING: 'ep:user-asset:add-from-binding',
@@ -1739,6 +1740,11 @@ const electronAPI = {
     /** 用户取消 / 完成挑选时清理 temp 目录 */
     cleanupStoryboardThumbnails: (input: { sessionDir: string }) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_STORYBOARD_CLEANUP_THUMBNAILS, input),
+    /** 用选中帧创建分镜（C10 follow-up · #56） */
+    createStoryboardsFromThumbnails: (input: {
+      sceneScriptId: string
+      thumbnails: Array<{ gridIndex: number; description?: string }>
+    }) => ipcRenderer.invoke(IPC_CHANNELS.EP_STORYBOARD_CREATE_FROM_THUMBNAILS, input),
 
     // AI 生成
     generateScript: (episodeId: string, providerConfigId?: string, modelId?: string) =>

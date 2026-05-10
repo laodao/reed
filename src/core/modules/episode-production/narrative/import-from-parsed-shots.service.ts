@@ -102,6 +102,48 @@ export class ImportFromParsedShotsService {
     const saved = await repo.createMany(requests)
     return { storyboardIds: saved.map((s) => s.id) }
   }
+
+  /**
+   * 从 9 帧故事板（thumbnails）创建 storyboard 行（C10 follow-up · #56）。
+   *
+   * thumbnails 没有镜头语言推断（只是 sharp 切的图片网格），所以镜头字段全用默认；
+   * frameDescription 用 user 在 dialog 中给出的描述（缺省时 fallback "故事板帧 N"）。
+   *
+   * 不拷文件 — 当前阶段仅记录文本骨架，frame 图后续由 ④ 分镜 stage 重新生成。
+   * （拷帧到 storyboard.frameImage 留为 follow-up，需要正式 storyboard-frames 目录设计）
+   */
+  async importThumbnails(input: {
+    sceneScriptId: string
+    thumbnails: Array<{ gridIndex: number; description?: string }>
+  }): Promise<{ storyboardIds: string[] }> {
+    if (!input.sceneScriptId) throw new Error('sceneScriptId 必填')
+    if (!Array.isArray(input.thumbnails) || input.thumbnails.length === 0) {
+      return { storyboardIds: [] }
+    }
+
+    const repo = new StoryboardRepository(this.ds)
+    const existing = await repo.getBySceneScriptId(input.sceneScriptId)
+    const baseShotNumber = existing.length > 0
+      ? Math.max(...existing.map((s) => s.shotNumber))
+      : 0
+
+    const requests: CreateStoryboardRequest[] = input.thumbnails.map((t, i) => ({
+      sceneScriptId: input.sceneScriptId,
+      shotNumber: baseShotNumber + i + 1,
+      shotType: 'medium',
+      cameraAngle: 'eye_level',
+      cameraMovement: 'static',
+      frameDescription: (t.description ?? '').trim() || `（故事板帧 ${t.gridIndex + 1}）`,
+      characters: [],
+      dialogueIds: [],
+      actionIds: [],
+      duration: 2000,  // 默认 2 秒；用户在 ④ 分镜 stage 调
+      transition: { type: 'cut' } as any,
+    }))
+
+    const saved = await repo.createMany(requests)
+    return { storyboardIds: saved.map((s) => s.id) }
+  }
 }
 
 // 给测试 / 直接复用 mapping 函数 export

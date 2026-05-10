@@ -412,6 +412,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   // 9 帧故事板预览（spec 2026-05-09 ep-redesign §3.2 B7）
   'episodeProduction.generateStoryboardThumbnails': { channel: 'ep:storyboard:generate-thumbnails' },
   'episodeProduction.cleanupStoryboardThumbnails': { channel: 'ep:storyboard:cleanup-thumbnails' },
+  'episodeProduction.createStoryboardsFromThumbnails': { channel: 'ep:storyboard:create-from-thumbnails' },
   // 跨项目角色库（spec 2026-05-09 ep-redesign §3.2 D2）
   'episodeProduction.asset.userAsset.list': { channel: 'ep:user-asset:list' },
   'episodeProduction.asset.userAsset.addFromBinding': { channel: 'ep:user-asset:add-from-binding' },

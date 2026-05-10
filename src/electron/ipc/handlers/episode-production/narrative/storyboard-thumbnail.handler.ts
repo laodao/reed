@@ -19,12 +19,12 @@ import { getPathProvider } from '@core/interfaces/path.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import { StoryboardThumbnailGeneratorService } from '@core/modules/episode-production/narrative/ai/storyboard-thumbnail-generator'
 import { createGalleryImageGenerator } from '@core/modules/episode-production/assets/services/image-provider-adapter'
+import { ImportFromParsedShotsService } from '@core/modules/episode-production/narrative/import-from-parsed-shots.service'
 
 export function registerStoryboardThumbnailHandlers(): void {
   ipcBridge.handle('ep:storyboard:generate-thumbnails', handleGenerate)
   ipcBridge.handle('ep:storyboard:cleanup-thumbnails', handleCleanup)
-  // create-from-thumbnails 留 follow-up：需把选中帧拷到 asset 目录 + 创建 storyboards 行
-  // 当前 phase 仅实现"生成 + 预览 + cleanup"基础链路；用户挑选后的真实落库由后续 commit 接入
+  ipcBridge.handle('ep:storyboard:create-from-thumbnails', handleCreateFromThumbnails)
 }
 
 async function handleGenerate(
@@ -53,6 +53,33 @@ async function handleGenerate(
       count: input.count ?? 9,
       storySynopsis: input.storySynopsis,
       styleAnchors: input.styleAnchors,
+    })
+    return { success: true, data }
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+async function handleCreateFromThumbnails(
+  _event: any,
+  input: {
+    sceneScriptId: string
+    thumbnails: Array<{ gridIndex: number; description?: string }>
+  },
+): Promise<IpcResponse> {
+  try {
+    if (!input?.sceneScriptId) {
+      return { success: false, error: '参数不完整：sceneScriptId 必填' }
+    }
+    if (!Array.isArray(input.thumbnails) || input.thumbnails.length === 0) {
+      return { success: false, error: '参数不完整：thumbnails 非空数组' }
+    }
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) throw new Error('数据库未初始化')
+    const svc = new ImportFromParsedShotsService(db.dataSource)
+    const data = await svc.importThumbnails({
+      sceneScriptId: input.sceneScriptId,
+      thumbnails: input.thumbnails,
     })
     return { success: true, data }
   } catch (err: any) {
