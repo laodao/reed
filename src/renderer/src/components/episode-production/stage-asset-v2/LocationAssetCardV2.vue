@@ -26,6 +26,9 @@
         effect="dark"
         class="card-thumb-corner-tag"
       >3D</el-tag>
+      <el-tooltip content="加入我的库（跨项目复用）" placement="top">
+        <el-icon class="card-fav-icon" :size="14" @click.stop="emit('add-to-library')"><Star /></el-icon>
+      </el-tooltip>
       <el-tooltip content="删除该地点（无图也可删）" placement="top">
         <el-icon class="card-delete-icon" :size="14" @click.stop="emit('delete')"><Delete /></el-icon>
       </el-tooltip>
@@ -71,7 +74,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Delete } from '@element-plus/icons-vue'
+import { Delete, Star } from '@element-plus/icons-vue'
 import { toImageUrl } from '@/utils/asset-url'
 
 const props = defineProps<{
@@ -90,6 +93,7 @@ const emit = defineEmits<{
   (e: 'click'): void
   (e: 'generate-main'): void
   (e: 'delete'): void
+  (e: 'add-to-library'): void
 }>()
 
 const timeCount = computed(() => props.summary.categoryCounts.time_variant ?? 0)

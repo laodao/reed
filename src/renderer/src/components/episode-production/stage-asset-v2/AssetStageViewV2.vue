@@ -80,6 +80,7 @@
           @click="emit('open-character', c.bindingId)"
           @generate-main="emit('generate-main', { kind: 'character', id: c.bindingId })"
           @delete="onDeleteBinding('character', c.bindingId, c.name)"
+          @add-to-library="onAddToLibrary('character', c.bindingId, c.name)"
         />
       </div>
     </section>
@@ -119,6 +120,7 @@
           @click="emit('open-location', l.bindingId)"
           @generate-main="emit('generate-main', { kind: 'location', id: l.bindingId })"
           @delete="onDeleteBinding('location', l.bindingId, l.name)"
+          @add-to-library="onAddToLibrary('location', l.bindingId, l.name)"
         />
       </div>
     </section>
@@ -149,6 +151,7 @@
           @click="emit('open-item', it.bindingId)"
           @generate-main="emit('generate-main', { kind: 'item', id: it.bindingId })"
           @delete="onDeleteBinding('item', it.bindingId, it.name)"
+          @add-to-library="onAddToLibrary('item', it.bindingId, it.name)"
         />
       </div>
     </section>
@@ -585,6 +588,35 @@ async function onDeleteBinding(
     ElMessage.error(e?.message || `删除${label}失败`)
   } finally {
     deletingBinding.value = false
+  }
+}
+
+/**
+ * 加入我的库 — 把项目内 binding 拷到用户跨项目库（user_assets 表）。
+ * 后端 service 拷快照 + 拷主图 + 拷形象组 ref images；用户可在「我的库」浏览 / 引用到其他项目。
+ */
+async function onAddToLibrary(
+  kind: 'character' | 'location' | 'item',
+  bindingId: string,
+  name: string,
+): Promise<void> {
+  if (actionBusy.value) return
+  const labelMap = { character: '角色', location: '地点', item: '物品' } as const
+  const label = labelMap[kind]
+  const api = (window as any).electronAPI?.episodeProduction?.asset?.userAsset
+  if (!api?.addFromBinding) {
+    ElMessage.error('「加入我的库」IPC 未暴露')
+    return
+  }
+  try {
+    const resp = await api.addFromBinding({ bindingId, bindingType: kind })
+    if (!resp?.success) {
+      ElMessage.error(resp?.error || `加入库失败`)
+      return
+    }
+    ElMessage.success(`已把${label} "${name}" 加入我的库`)
+  } catch (e: any) {
+    ElMessage.error(e?.message || `加入库失败`)
   }
 }
 </script>
