@@ -13,7 +13,7 @@ import type {
   ImageTaskStatus,
   GeneratedImage
 } from '@shared/types/image-provider.types'
-import { BaseImageProvider } from '../base-image-provider'
+import { BaseImageProvider, collectReferences } from '../base-image-provider'
 
 /**
  * OpenAI DALL-E 图像 Provider
@@ -109,6 +109,19 @@ export class OpenAIImageProvider extends BaseImageProvider {
 
       // 构建尺寸字符串
       const size = `${request.width}x${request.height}` as '256x256' | '512x512' | '1024x1024' | '1792x1024' | '1024x1792'
+
+      // spec 2026-05-09 ep-redesign §3.2 D1 · P-9：多参考图适配
+      // OpenAI DALL-E 系列（dall-e-2 / dall-e-3）走 images.generate 不接受 reference image。
+      // gpt-image-1 支持多 ref 但需走 images.edit endpoint（API 形态完全不同）。
+      // 当前 provider 仅适配 generations 路径；transparently 警告用户参考图被忽略。
+      // future: 如果用户用 gpt-image-1，应根据 model 切换到 images.edit 路径并以 reference 作 base。
+      const refs = collectReferences(request)
+      if (refs.length > 0) {
+        console.warn(
+          `[OpenAI] 参考图（${refs.length} 张）将被忽略 — DALL-E generations API 不接受 reference image。` +
+          ` 如需多 ref 请使用支持的 provider（DashScope / Bailian / Volcengine Seedream）`
+        )
+      }
 
       // 调用 OpenAI SDK
       const response = await this.client.images.generate({

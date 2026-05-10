@@ -11,7 +11,7 @@ import type {
   ImageTaskStatus,
   GeneratedImage
 } from '@shared/types/image-provider.types'
-import { BaseImageProvider } from '../base-image-provider'
+import { BaseImageProvider, collectReferences } from '../base-image-provider'
 
 /**
  * 火山引擎图像生成响应格式
@@ -118,6 +118,19 @@ export class VolcengineImageProvider extends BaseImageProvider {
       // 添加风格
       if (request.style) {
         body.style = request.style
+      }
+
+      // spec 2026-05-09 ep-redesign §3.2 D1 · P-9：多参考图适配
+      // Volcengine Seedream（doubao-seedream-3-0-t2i / seedream-4-0）走 /images/generations
+      // OpenAI 兼容端点不接受 reference_image 参数；走 native 端点才支持。
+      // 火山官方文档 https://www.volcengine.com/docs/82379 将 image 字段作为参考图：
+      //   - image: string | string[]    最多 9 张
+      // 我们直接把 collectReferences() 解析出的图填进 body.image（数组形态）。
+      // 不支持的模型上游会报错，由用户根据 model 选择决定。
+      const refs = collectReferences(request)
+      if (refs.length > 0) {
+        body.image = refs.length === 1 ? refs[0] : refs
+        console.log(`[Volcengine] 多参考图（${refs.length} 张）已注入 body.image`)
       }
 
       console.log('[Volcengine] 发送图像生成请求:', { url, model: request.model, size: body.size })
