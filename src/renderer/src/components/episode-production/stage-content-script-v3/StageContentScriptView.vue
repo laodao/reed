@@ -30,7 +30,7 @@
             </div>
           </template>
           <el-button
-            v-if="props.episodeScriptId"
+            v-if="episodeScriptId"
             :disabled="!canGenerateThumbnails"
             @click="thumbnailDialog.open = true"
           >
@@ -48,7 +48,7 @@
             </div>
           </template>
           <el-button
-            v-if="props.episodeScriptId && scenes.length > 0"
+            v-if="episodeScriptId && scenes.length > 0"
             @click="referenceVideoDialog.open = true"
           >
             <el-icon><VideoCamera /></el-icon>
@@ -81,9 +81,9 @@
 
     <!-- 故事板预览 dialog（spec 2026-05-09 ep-redesign §3.2 B7） -->
     <StoryboardThumbnailDialog
-      v-if="props.episodeScriptId"
+      v-if="episodeScriptId"
       v-model="thumbnailDialog.open"
-      :episode-script-id="props.episodeScriptId"
+      :episode-script-id="episodeScriptId"
       :default-synopsis="defaultSynopsis"
       :scenes="sceneOptions"
       @created-storyboards="onThumbnailCreated"
@@ -91,7 +91,7 @@
 
     <!-- 参考视频导入分镜 dialog（spec 2026-05-09 ep-redesign §3.2 D5 · P-22） -->
     <ReferenceVideoImportDialog
-      v-if="props.episodeScriptId && scenes.length > 0"
+      v-if="episodeScriptId && scenes.length > 0"
       v-model="referenceVideoDialog.open"
       :scenes="sceneOptions"
       :default-scene-script-id="sceneOptions[0]?.id"
@@ -385,6 +385,8 @@ const hasDirty = computed(() => {
 
 // ===== 剧本 / 场景 / synopsis =====
 const script = computed(() => scriptStore.currentScript)
+/** 当前剧本 id（替代 episodeScriptId 的引用 — props 里实际没有这个字段） */
+const episodeScriptId = computed<string | undefined>(() => script.value?.id ?? undefined)
 const scenes = computed(() => scriptStore.scenes ?? [])
 const synopsisDraft = computed(() => (script.value as any)?.synopsis ?? '')
 
@@ -393,7 +395,7 @@ const thumbnailDialog = ref<{ open: boolean }>({ open: false })
 const defaultSynopsis = computed(() => synopsisDraft.value)
 // 启用条件：剧本已生成 / 有 synopsis（避免空内容生成）
 const canGenerateThumbnails = computed(
-  () => !!props.episodeScriptId && (synopsisDraft.value ?? '').trim().length >= 10,
+  () => !!episodeScriptId.value && (synopsisDraft.value ?? '').trim().length >= 10,
 )
 
 function onThumbnailCreated(payload: { storyboardIds: string[] }): void {

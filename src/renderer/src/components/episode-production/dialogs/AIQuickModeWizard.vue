@@ -111,7 +111,7 @@
 import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { STYLE_PRESETS } from '@core/modules/episode-production/assets/constants/style-presets'
-import { useEpisodeStore } from '@/stores/episode-production/episode.store'
+import { useEpEpisodeStore } from '@/stores/episode-production/episode.store'
 import { useEpProjectStore } from '@/stores/episode-production/project.store'
 
 interface ProjectLite {
@@ -181,7 +181,7 @@ const runningLabel = computed(() => {
   return cur ? `${cur.label}...` : '处理中...'
 })
 
-const episodeStore = useEpisodeStore()
+const episodeStore = useEpEpisodeStore()
 const projectStore = useEpProjectStore()
 
 function setStep(name: string, status: StepRow['status'], detail?: string): void {
