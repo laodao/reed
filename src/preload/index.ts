@@ -313,6 +313,8 @@ const IPC_CHANNELS = {
   EP_ASSET_PRESET_ENSURE_MAIN_IMAGE: 'ep:asset:preset:ensure-main-image',
   EP_ASSET_PRESET_ENSURE_ALL_IMAGES: 'ep:asset:preset:ensure-all-images',
   EP_ASSET_PRESET_USE_TO_PROJECT: 'ep:asset:preset:use-to-project',
+  EP_ASSET_CHARACTER_EXTRACT_FRAMES: 'ep:asset:character-extract:frames',
+  EP_ASSET_CHARACTER_EXTRACT_CLEANUP: 'ep:asset:character-extract:cleanup',
 
   // 派生（2 个）
   EP_ASSET_DERIVE_SINGLE: 'ep:asset:derive:single',
@@ -2203,6 +2205,18 @@ const electronAPI = {
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_PRESET_ENSURE_ALL_IMAGES),
         useToProject: (input: { presetId: string; targetProjectId: string; overrideName?: string }) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_PRESET_USE_TO_PROJECT, input),
+      },
+
+      /**
+       * 视频提取主体（spec 2026-05-09 ep-redesign §3.2 E1 · Phase 5 · P-22）
+       * 用户上传短视频 → ffmpeg 抽 N 个候选代表帧 → 用户挑要保留的帧 → 落主图。
+       * 当前为时间均匀采样降级版（face-api.js 未装）；future face-clustering。
+       */
+      characterExtract: {
+        frames: (input: { videoPath: string; frameCount?: number }) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_EXTRACT_FRAMES, input),
+        cleanup: (input: { sessionId: string }) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_EXTRACT_CLEANUP, input),
       },
 
       /**

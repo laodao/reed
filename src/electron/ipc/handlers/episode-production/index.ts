@@ -27,6 +27,7 @@ import { registerStoryboardThumbnailHandlers } from './narrative/storyboard-thum
 import { registerUserAssetHandlers } from './asset/user-asset.handler'
 import { registerReferenceVideoHandlers } from './narrative/reference-video.handler'
 import { registerPresetDigitalHandlers } from './asset/preset-digital.handler'
+import { registerCharacterExtractionHandlers } from './asset/character-extraction.handler'
 import { registerReferenceHandlers } from './narrative/reference.handler'
 import { registerKeyframeHandlers } from './render/keyframe.handler'
 import { registerVideoHandlers } from './render/video.handler'
@@ -69,6 +70,8 @@ export function registerEpisodeProductionHandlers(): void {
   registerReferenceVideoHandlers()
   // spec 2026-05-09 ep-redesign §3.2 D3 · 数字人池（list + 按需生成形象图）
   registerPresetDigitalHandlers()
+  // spec 2026-05-09 ep-redesign §3.2 E1 · Phase 5 视频提取主体
+  registerCharacterExtractionHandlers()
   // P4-T6 新增：引用解析 + 完整性校验
   registerReferenceHandlers()
   registerKeyframeHandlers()
