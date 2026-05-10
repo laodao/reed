@@ -308,6 +308,10 @@ const IPC_CHANNELS = {
   EP_REFERENCE_VIDEO_LIST: 'ep:reference-video:list',
   EP_REFERENCE_VIDEO_GET: 'ep:reference-video:get',
   EP_REFERENCE_VIDEO_DELETE: 'ep:reference-video:delete',
+  /** spec 2026-05-09 ep-redesign §3.2 D3 · 数字人池 */
+  EP_ASSET_PRESET_LIST: 'ep:asset:preset:list',
+  EP_ASSET_PRESET_ENSURE_MAIN_IMAGE: 'ep:asset:preset:ensure-main-image',
+  EP_ASSET_PRESET_ENSURE_ALL_IMAGES: 'ep:asset:preset:ensure-all-images',
 
   // 派生（2 个）
   EP_ASSET_DERIVE_SINGLE: 'ep:asset:derive:single',
@@ -2178,6 +2182,19 @@ const electronAPI = {
           ipcRenderer.invoke(IPC_CHANNELS.EP_REFERENCE_VIDEO_GET, input),
         delete: (input: { id: string }) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_REFERENCE_VIDEO_DELETE, input),
+      },
+
+      /**
+       * 数字人池（spec 2026-05-09 ep-redesign §3.2 D3 · P-8）
+       * 列内置预设角色 / 按需生成形象图（避免 seed 阶段浪费配额）。
+       */
+      preset: {
+        list: (input: { gender?: string } = {}) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_PRESET_LIST, input),
+        ensureMainImage: (input: { presetId: string }) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_PRESET_ENSURE_MAIN_IMAGE, input),
+        ensureAllImages: () =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_PRESET_ENSURE_ALL_IMAGES),
       },
 
       /**
