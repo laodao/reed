@@ -41,6 +41,9 @@ export { StoryboardCharacterEntity } from './episode-production/storyboard-chara
 export { ScenePropEntity } from './episode-production/scene-prop.entity'
 export { AssetImageEntity } from './episode-production/asset-image.entity'
 export { StoryboardKeyframeEntity } from './episode-production/storyboard-keyframe.entity'
+// Bug #4 修复（2026-05-10 e2e）：跨项目角色库 + 视频解析 entity 漏 barrel export
+export { UserAssetEntity } from './episode-production/user-asset.entity'
+export { ReferenceVideoAnalysisEntity } from './episode-production/reference-video-analysis.entity'
 export { ImageAssetEntity } from './image-asset.entity'
 export { LwCharacterEntity } from './lw-character.entity'
 export { OSSConfigEntity } from './oss-config.entity'
