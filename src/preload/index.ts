@@ -292,6 +292,9 @@ const IPC_CHANNELS = {
   EP_ASSET_EXTRACT_FIELDS: 'ep:asset:extract-fields',
   /** spec 2026-05-09 ep-redesign §3.2 B3 · 角色一键多角度参考图（character bible 三视图）*/
   EP_ASSET_CHARACTER_GENERATE_THREE_VIEWS: 'ep:asset:character:generate-three-views',
+  /** spec 2026-05-09 ep-redesign §3.2 D1 · 角色形象组（multi-reference）*/
+  EP_ASSET_CHARACTER_SET_REFERENCE_SET: 'ep:asset:character:set-reference-set',
+  EP_ASSET_CHARACTER_GET_REFERENCE_SET: 'ep:asset:character:get-reference-set',
   /** spec 2026-05-09 ep-redesign §3.2 B7 · 9 帧故事板预览 */
   EP_STORYBOARD_GENERATE_THUMBNAILS: 'ep:storyboard:generate-thumbnails',
   EP_STORYBOARD_CLEANUP_THUMBNAILS: 'ep:storyboard:cleanup-thumbnails',
@@ -1981,6 +1984,15 @@ const electronAPI = {
           negativePrompt?: string
           baseImageId?: string | null
         }) => ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_GENERATE_THREE_VIEWS, input),
+        /**
+         * 设置角色形象组（spec 2026-05-09 ep-redesign §3.2 D1）
+         * 用户在 ReferenceSetPanel 勾选 asset_image.id → 落 binding.referenceSetImageIds JSON。
+         */
+        setReferenceSet: (input: { bindingId: string; imageIds: string[] }) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_SET_REFERENCE_SET, input),
+        /** 取形象组实际生效列表（含 fallback 默认 main+view） */
+        getReferenceSet: (input: { bindingId: string }) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_GET_REFERENCE_SET, input),
       },
       // 地点资产（9 个）
       location: {

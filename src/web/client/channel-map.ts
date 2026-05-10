@@ -496,6 +496,9 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.asset.character.delete': { channel: 'ep:asset:character:delete' },
   // 一键多角度参考图（spec 2026-05-09 ep-redesign §3.2 B3）
   'episodeProduction.asset.character.generateThreeViews': { channel: 'ep:asset:character:generate-three-views' },
+  // 角色形象组（spec 2026-05-09 ep-redesign §3.2 D1）
+  'episodeProduction.asset.character.setReferenceSet': { channel: 'ep:asset:character:set-reference-set' },
+  'episodeProduction.asset.character.getReferenceSet': { channel: 'ep:asset:character:get-reference-set' },
   // 地点资产（9 个）
   'episodeProduction.asset.location.list': { channel: 'ep:asset:location:list' },
   'episodeProduction.asset.location.get': { channel: 'ep:asset:location:get' },

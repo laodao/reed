@@ -85,6 +85,9 @@
       @sync="onPullLatest"
     />
 
+    <!-- 角色形象组（spec 2026-05-09 ep-redesign §3.2 D1） -->
+    <ReferenceSetPanel v-if="binding && hasMain" :binding-id="bindingId" />
+
     <div class="body-grid">
       <CharacterCardFormV2
         v-if="binding"
@@ -115,6 +118,8 @@ import AssetSourceTag from '../../shared/AssetSourceTag.vue'
 import LwSyncReminderBanner from '../../shared/LwSyncReminderBanner.vue'
 import CharacterCardFormV2, { type FormChangePayload } from './CharacterCardFormV2.vue'
 import CharacterGalleryEditor from '../../stage-asset/character/CharacterGalleryEditor.vue'
+// spec 2026-05-09 ep-redesign §3.2 D1 · 角色形象组
+import ReferenceSetPanel from './ReferenceSetPanel.vue'
 
 const props = defineProps<{ bindingId: string }>()
 const emit = defineEmits<{

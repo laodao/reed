@@ -46,6 +46,9 @@ export function registerCharacterAssetHandlers(): void {
   ipcBridge.handle('ep:asset:character:set-voice', handleAssetCharacterSetVoice)
   ipcBridge.handle('ep:asset:character:set-portrait', handleAssetCharacterSetPortrait)
   ipcBridge.handle('ep:asset:character:delete', handleAssetCharacterDelete)
+  // spec 2026-05-09 ep-redesign §3.2 D1 · 角色形象组（multi-reference）
+  ipcBridge.handle('ep:asset:character:set-reference-set', handleSetReferenceSet)
+  ipcBridge.handle('ep:asset:character:get-reference-set', handleGetReferenceSet)
 }
 
 /** 取 DataSource；未初始化则抛错（调用方在 try/catch 里捕获后包装为 IpcResponse.error） */
@@ -403,6 +406,56 @@ async function handleAssetCharacterDelete(
     const svc = new CharacterAssetService(requireDataSource())
     await svc.delete(id)
     return { success: true, data: { deleted: true } }
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+/**
+ * spec 2026-05-09 ep-redesign §3.2 D1 · 设置角色形象组
+ *
+ * 用户在 ReferenceSetPanel UI 勾选哪些 asset_image 作为生图固定参考集 → 调本 IPC 写库。
+ */
+async function handleSetReferenceSet(
+  _event: any,
+  input: { bindingId: string; imageIds: string[] },
+): Promise<IpcResponse> {
+  try {
+    if (!input?.bindingId) {
+      return { success: false, error: '参数不完整：bindingId 必填' }
+    }
+    const svc = new CharacterAssetService(requireDataSource())
+    const data = await svc.setReferenceSet(input.bindingId, input.imageIds ?? [])
+    return { success: true, data }
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+/**
+ * spec 2026-05-09 ep-redesign §3.2 D1 · 取角色形象组实际生效 imagePath 列表
+ *
+ * UI 展示用：让用户看到 keyframe 生成时实际会喂给 provider 的图。
+ */
+async function handleGetReferenceSet(
+  _event: any,
+  input: { bindingId: string },
+): Promise<IpcResponse> {
+  try {
+    if (!input?.bindingId) {
+      return { success: false, error: '参数不完整：bindingId 必填' }
+    }
+    const svc = new CharacterAssetService(requireDataSource())
+    const binding = await svc.getById(input.bindingId)
+    let imageIds: string[] = []
+    if (binding?.referenceSetImageIds) {
+      try {
+        const v = JSON.parse(binding.referenceSetImageIds)
+        if (Array.isArray(v)) imageIds = v.filter((x: any) => typeof x === 'string')
+      } catch { /* 容错 */ }
+    }
+    const effective = await svc.getEffectiveReferenceImages(input.bindingId)
+    return { success: true, data: { imageIds, effective } }
   } catch (err: any) {
     return { success: false, error: err?.message ?? String(err) }
   }
