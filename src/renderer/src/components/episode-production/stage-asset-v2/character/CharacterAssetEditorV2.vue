@@ -63,6 +63,19 @@
           <span>多角度参考图</span>
         </el-button>
       </el-tooltip>
+      <!-- 视频提取主体（spec 2026-05-09 ep-redesign §3.2 E1 · Phase 5） -->
+      <el-tooltip placement="bottom" effect="light">
+        <template #content>
+          <div style="max-width: 240px;">
+            <div>上传短视频抽 4 帧候选 → 挑选要保留的帧</div>
+            <div>降级版（时间均匀采样；future 接 face 聚类）</div>
+          </div>
+        </template>
+        <el-button @click="extractDialogVisible = true">
+          <el-icon><VideoCamera /></el-icon>
+          <span>从视频提取</span>
+        </el-button>
+      </el-tooltip>
       <el-button
         type="success"
         :loading="saving"
@@ -102,6 +115,13 @@
         />
       </div>
     </div>
+
+    <!-- 视频提取主体对话框（spec 2026-05-09 ep-redesign §3.2 E1） -->
+    <CharacterExtractionDialog
+      v-model="extractDialogVisible"
+      :binding-id="bindingId"
+      @imported="onExtractImported"
+    />
   </div>
 </template>
 
@@ -113,6 +133,7 @@ import {
   DocumentChecked,
   Picture,
   Refresh,
+  VideoCamera,
 } from '@element-plus/icons-vue'
 import AssetSourceTag from '../../shared/AssetSourceTag.vue'
 import LwSyncReminderBanner from '../../shared/LwSyncReminderBanner.vue'
@@ -120,6 +141,8 @@ import CharacterCardFormV2, { type FormChangePayload } from './CharacterCardForm
 import CharacterGalleryEditor from '../../stage-asset/character/CharacterGalleryEditor.vue'
 // spec 2026-05-09 ep-redesign §3.2 D1 · 角色形象组
 import ReferenceSetPanel from './ReferenceSetPanel.vue'
+// spec 2026-05-09 ep-redesign §3.2 E1 · Phase 5 视频提取主体
+import CharacterExtractionDialog from '@/components/episode-production/dialogs/CharacterExtractionDialog.vue'
 
 const props = defineProps<{ bindingId: string }>()
 const emit = defineEmits<{
@@ -294,6 +317,13 @@ function onViewChanges(): void {
 
 // ===== 一键多角度参考图（spec 2026-05-09 ep-redesign §3.2 B3） =====
 const generatingThreeViews = ref(false)
+const extractDialogVisible = ref(false)
+
+/** 视频提取完成 → reload gallery 让用户看到新增帧（spec E1） */
+function onExtractImported(payload: { count: number }): void {
+  ElMessage.success(`已添加 ${payload.count} 张代表帧到角色图谱`)
+  galleryRef.value?.reload?.()
+}
 
 async function onGenerateThreeViews(): Promise<void> {
   if (!hasMain.value) {

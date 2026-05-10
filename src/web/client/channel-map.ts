@@ -430,6 +430,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   // 视频提取主体（spec 2026-05-09 ep-redesign §3.2 E1 · Phase 5）
   'episodeProduction.asset.characterExtract.frames': { channel: 'ep:asset:character-extract:frames' },
   'episodeProduction.asset.characterExtract.cleanup': { channel: 'ep:asset:character-extract:cleanup' },
+  'episodeProduction.asset.characterExtract.importFrames': { channel: 'ep:asset:character-extract:import-frames' },
   'episodeProduction.getStoryboard': { channel: 'ep:get-storyboard' },
   'episodeProduction.updateStoryboard': { channel: 'ep:update-storyboard' },
   'episodeProduction.reorderStoryboards': { channel: 'ep:reorder-storyboards' },

@@ -10,7 +10,9 @@ import path from 'path'
 import os from 'os'
 import { spawn } from 'child_process'
 import ffmpegPath from 'ffmpeg-static'
+import { DataSource } from 'typeorm'
 import { CharacterExtractionService } from '@core/modules/episode-production/reference-video/character-extraction.service'
+import { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 
 async function generateTestVideo(outPath: string, durationSec = 4): Promise<void> {
   await fs.mkdir(path.dirname(outPath), { recursive: true })
@@ -104,5 +106,100 @@ describe('CharacterExtractionService', () => {
       expect(f.timeSec).toBeGreaterThanOrEqual(dur * 0.04)  // 留 1% 浮点容差
       expect(f.timeSec).toBeLessThanOrEqual(dur * 0.96)
     }
+  })
+
+  describe('importFramesToAsset', () => {
+    let ds: DataSource
+    let projectAssetRoot: string
+
+    beforeEach(async () => {
+      ds = new DataSource({
+        type: 'better-sqlite3',
+        database: ':memory:',
+        entities: [AssetImageEntity],
+        synchronize: true,
+      })
+      await ds.initialize()
+      projectAssetRoot = path.join(tempDir, 'asset-images')
+    })
+
+    afterEach(async () => {
+      if (ds.isInitialized) await ds.destroy()
+    })
+
+    it('选中帧拷到 projectAssetRoot/${bindingId}/ + 写 asset_image 行', async () => {
+      const ext = await svc.extractFrames({ videoPath, tempDir, frameCount: 3 })
+
+      const imported = await svc.importFramesToAsset({
+        ds,
+        bindingId: 'cb_test',
+        frames: [
+          { framePath: ext.frames[0].framePath, label: '正' },
+          { framePath: ext.frames[1].framePath, label: '侧' },
+        ],
+        projectAssetRoot,
+        userId: 'u1',
+      })
+      expect(imported.imageIds.length).toBe(2)
+
+      // 拷贝文件落到正式目录
+      const destDir = path.join(projectAssetRoot, 'cb_test')
+      const files = await fs.readdir(destDir)
+      expect(files.length).toBe(2)
+
+      // asset_image 行写入正确
+      const repo = ds.getRepository(AssetImageEntity)
+      const rows = await repo.find({ where: { assetId: 'cb_test' } })
+      expect(rows.length).toBe(2)
+      for (const r of rows) {
+        expect(r.assetType).toBe('character')
+        expect(r.category).toBe('view')
+        expect(r.userId).toBe('u1')
+        expect(r.isMain).toBe(0)
+      }
+      const labels = rows.map((r) => r.label).sort()
+      expect(labels).toEqual(['侧', '正'])
+    })
+
+    it('帧文件不存在 → 跳过该帧（不致命）', async () => {
+      const ext = await svc.extractFrames({ videoPath, tempDir, frameCount: 2 })
+      const imported = await svc.importFramesToAsset({
+        ds,
+        bindingId: 'cb_test',
+        frames: [
+          { framePath: ext.frames[0].framePath, label: '正' },
+          { framePath: '/non/existent.jpg', label: '背' },
+        ],
+        projectAssetRoot,
+        userId: 'u1',
+      })
+      // 仅成功 1 帧
+      expect(imported.imageIds.length).toBe(1)
+      const rows = await ds.getRepository(AssetImageEntity).find({})
+      expect(rows.length).toBe(1)
+      expect(rows[0].label).toBe('正')
+    })
+
+    it('frames 空数组 → 返回空 imageIds', async () => {
+      const imported = await svc.importFramesToAsset({
+        ds,
+        bindingId: 'cb_test',
+        frames: [],
+        projectAssetRoot,
+      })
+      expect(imported.imageIds).toEqual([])
+    })
+
+    it('label 缺省 → fallback view-N', async () => {
+      const ext = await svc.extractFrames({ videoPath, tempDir, frameCount: 1 })
+      await svc.importFramesToAsset({
+        ds,
+        bindingId: 'cb_test',
+        frames: [{ framePath: ext.frames[0].framePath, label: '' }],
+        projectAssetRoot,
+      })
+      const row = await ds.getRepository(AssetImageEntity).findOne({ where: { assetId: 'cb_test' } })
+      expect(row?.label).toBe('view-1')
+    })
   })
 })

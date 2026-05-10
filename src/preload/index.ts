@@ -315,6 +315,7 @@ const IPC_CHANNELS = {
   EP_ASSET_PRESET_USE_TO_PROJECT: 'ep:asset:preset:use-to-project',
   EP_ASSET_CHARACTER_EXTRACT_FRAMES: 'ep:asset:character-extract:frames',
   EP_ASSET_CHARACTER_EXTRACT_CLEANUP: 'ep:asset:character-extract:cleanup',
+  EP_ASSET_CHARACTER_EXTRACT_IMPORT_FRAMES: 'ep:asset:character-extract:import-frames',
 
   // 派生（2 个）
   EP_ASSET_DERIVE_SINGLE: 'ep:asset:derive:single',
@@ -2217,6 +2218,11 @@ const electronAPI = {
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_EXTRACT_FRAMES, input),
         cleanup: (input: { sessionId: string }) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_EXTRACT_CLEANUP, input),
+        importFrames: (input: {
+          bindingId: string
+          frames: Array<{ framePath: string; label: string }>
+        }) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_CHARACTER_EXTRACT_IMPORT_FRAMES, input),
       },
 
       /**

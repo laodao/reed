@@ -9,18 +9,26 @@
  * 不需新 IPC。
  */
 
+import path from 'node:path'
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getPathProvider } from '@core/interfaces/path.interface'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { getCurrentUserId } from '@core/context/user-context'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import { CharacterExtractionService } from '@core/modules/episode-production/reference-video/character-extraction.service'
 
 export function registerCharacterExtractionHandlers(): void {
   ipcBridge.handle('ep:asset:character-extract:frames', handleExtractFrames)
   ipcBridge.handle('ep:asset:character-extract:cleanup', handleCleanup)
+  ipcBridge.handle('ep:asset:character-extract:import-frames', handleImportFrames)
 }
 
 function tempDir(): string {
   return getPathProvider().getTempPath()
+}
+
+function projectAssetRoot(): string {
+  return path.join(getPathProvider().getUserDataPath(), 'asset-images')
 }
 
 async function handleExtractFrames(
@@ -52,6 +60,34 @@ async function handleCleanup(
     const svc = new CharacterExtractionService()
     await svc.cleanup(input.sessionId, tempDir())
     return { success: true, data: { cleaned: true } }
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+async function handleImportFrames(
+  _event: any,
+  input: {
+    bindingId: string
+    frames: Array<{ framePath: string; label: string }>
+  },
+): Promise<IpcResponse> {
+  try {
+    if (!input?.bindingId) return { success: false, error: '参数不完整：bindingId 必填' }
+    if (!Array.isArray(input.frames) || input.frames.length === 0) {
+      return { success: false, error: '参数不完整：frames 数组为空' }
+    }
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) throw new Error('数据库未初始化')
+    const svc = new CharacterExtractionService()
+    const data = await svc.importFramesToAsset({
+      ds: db.dataSource,
+      bindingId: input.bindingId,
+      frames: input.frames,
+      projectAssetRoot: projectAssetRoot(),
+      userId: getCurrentUserId(),
+    })
+    return { success: true, data }
   } catch (err: any) {
     return { success: false, error: err?.message ?? String(err) }
   }

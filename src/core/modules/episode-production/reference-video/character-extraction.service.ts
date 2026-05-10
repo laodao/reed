@@ -19,7 +19,9 @@
 import { randomBytes } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
+import type { DataSource } from 'typeorm'
 import { getVideoMetadata, extractFrame } from './ffmpeg-helpers'
+import { AssetImageService } from '@core/modules/episode-production/assets/services/asset-image.service'
 
 export interface ExtractInput {
   videoPath: string
@@ -113,5 +115,60 @@ export class CharacterExtractionService {
   async cleanup(sessionId: string, tempDir: string): Promise<void> {
     const sessionDir = path.join(tempDir, 'character-extract', sessionId)
     await fs.rm(sessionDir, { recursive: true, force: true }).catch(() => {})
+  }
+
+  /**
+   * 把选中帧落到目标 character_binding 的 view 类目。
+   *
+   * 行为:
+   *   1. 把 temp 帧文件拷到正式 asset 目录 ${projectAssetRoot}/${bindingId}/extracted-${ts}-${i}.jpg
+   *   2. 写 asset_image 行（assetType='character', category='view', label=用户编辑的角度）
+   *   3. 返回写入的 asset_image id 列表
+   *
+   * 注：调用方应在前端再触发 character editor reload 让用户看到新增图。
+   */
+  async importFramesToAsset(input: {
+    ds: DataSource
+    bindingId: string
+    frames: Array<{ framePath: string; label: string }>
+    projectAssetRoot: string
+    userId?: string | null
+  }): Promise<{ imageIds: string[] }> {
+    if (!input.frames.length) return { imageIds: [] }
+    if (!input.projectAssetRoot) throw new Error('projectAssetRoot 必填')
+
+    const assetImageSvc = new AssetImageService(input.ds)
+    const destDir = path.join(input.projectAssetRoot, input.bindingId)
+    await fs.mkdir(destDir, { recursive: true })
+
+    const imageIds: string[] = []
+    const ts = Date.now()
+    for (let i = 0; i < input.frames.length; i++) {
+      const f = input.frames[i]
+      try {
+        await fs.access(f.framePath)
+      } catch {
+        console.warn(`[CharacterExtract.import] 帧文件丢失 ${f.framePath}，跳过`)
+        continue
+      }
+      const ext = (path.extname(f.framePath) || '.jpg').toLowerCase()
+      const destPath = path.join(destDir, `extracted-${ts}-${i + 1}${ext}`)
+      try {
+        await fs.copyFile(f.framePath, destPath)
+      } catch (err: any) {
+        console.warn(`[CharacterExtract.import] 拷帧 ${i + 1} 失败：${err?.message ?? err}`)
+        continue
+      }
+      const saved = await assetImageSvc.addImage({
+        assetType: 'character',
+        assetId: input.bindingId,
+        category: 'view',
+        imagePath: destPath,
+        label: f.label || `view-${i + 1}`,
+        userId: input.userId,
+      })
+      imageIds.push(saved.id)
+    }
+    return { imageIds }
   }
 }
