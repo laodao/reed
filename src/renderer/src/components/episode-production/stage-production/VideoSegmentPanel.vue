@@ -118,6 +118,11 @@ interface Storyboard {
   shotType?: string | null
   cameraAngle?: string | null
   cameraMovement?: string | null
+  /** 本分镜引用的对白 ID 列表（按 scene.dialogues[].id 过滤）。
+   * DB 是 text 字段（JSON 字符串），传到前端可能 parse 后为 string[]，
+   * 也可能仍是字符串；computed 都要 robust 处理。 */
+  dialogueIds?: string[] | string | null
+  narrationId?: string | null
 }
 
 interface VideoSegmentResult {
@@ -203,8 +208,17 @@ const characterChips = computed(() => {
   return list
 })
 
+/**
+ * 旁白显示规则（spec 2026-05-09 ep-redesign §4.5.4）：
+ *   仅当 props.storyboard.narrationId 非空时才显示场景旁白文本（同 AudioPanel.narration）。
+ *   storyboard.narrationId 为空 = 本分镜不含旁白；旧分镜没填该字段时按"显示"兜底（兼容）。
+ */
 const narration = computed<string>(() => {
-  return (currentScene.value as any)?.narration ?? ''
+  const text = (currentScene.value as any)?.narration ?? ''
+  if (!text) return ''
+  const sb = props.storyboard as any
+  if (sb && sb.narrationId !== undefined && !sb.narrationId) return ''
+  return text
 })
 
 interface DialogueItem {
@@ -212,11 +226,47 @@ interface DialogueItem {
   tone?: string
   text: string
 }
+
+/** storyboard.dialogueIds 解析：兼容 string[] / JSON 字符串 / null */
+function parseDialogueIds(raw: string[] | string | null | undefined): string[] {
+  if (!raw) return []
+  if (Array.isArray(raw)) return raw.filter((s) => typeof s === 'string')
+  if (typeof raw === 'string') {
+    try {
+      const v = JSON.parse(raw)
+      return Array.isArray(v) ? v.filter((s) => typeof s === 'string') : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
+/**
+ * 对白显示规则（spec 2026-05-09 ep-redesign §4.5.4）：
+ *   按 props.storyboard.dialogueIds 过滤 scene.dialogues，
+ *   只显示**本分镜**引用的对白。
+ *
+ *   旧实现直接 return scene.dialogues 整场所有对白 → 用户在每个分镜
+ *   看到的"最终提示词预览"都把整场 6 句对白塞进来，严重误导
+ *   （e2e 报告 report-shot-1.2.md Bug A）。
+ *
+ *   过滤规则（与 AudioPanel.dialogues 一致）：
+ *     - dialogueIds 非空 → 严格过滤
+ *     - dialogueIds 为空数组 → 本分镜不含任何对白，返回 []
+ *     - dialogueIds 字段缺失（旧分镜兼容）→ 显示全部（避免误删数据）
+ */
 const dialogues = computed<DialogueItem[]>(() => {
   const scene = currentScene.value as any
   const raw = scene?.dialogues
   if (!Array.isArray(raw)) return []
-  return raw.map((d: any) => ({
+
+  const sb = props.storyboard
+  const hasField = sb && sb.dialogueIds !== undefined && sb.dialogueIds !== null
+  const allow = hasField ? new Set(parseDialogueIds(sb.dialogueIds)) : null
+  const scoped = allow ? raw.filter((d: any) => d?.id && allow.has(d.id)) : raw
+
+  return scoped.map((d: any) => ({
     speaker:
       d?.characterName ??
       d?.speaker ??

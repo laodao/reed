@@ -63,7 +63,7 @@ async function seedScene(ds: DataSource): Promise<{ sceneId: string; sbId: strin
   // 资产 + 主图
   await ds.getRepository(CharacterBindingEntity).save({
     id: 'cb1',
-    projectId: 'p1',
+    projectId: 'proj1',
     longWritingCharacterId: null,
     sourceType: 'standalone',
     voiceConfig: {},
@@ -74,7 +74,7 @@ async function seedScene(ds: DataSource): Promise<{ sceneId: string; sbId: strin
   } as any)
   await ds.getRepository(LocationBindingEntity).save({
     id: 'lb1',
-    projectId: 'p1',
+    projectId: 'proj1',
     longWritingLocationId: null,
     sourceType: 'standalone',
     locationName: '茶馆',
@@ -376,5 +376,208 @@ describe('KeyframeGenerationService', () => {
     expect(prompt).toContain('推门')
     // 验证没有"angry"（覆盖测试中分镜级用 angry，本测试不写分镜级所以不应该出现）
     expect(prompt).not.toContain('angry')
+  })
+
+  /**
+   * Bug B 修复（spec 2026-05-09 ep-redesign · e2e report-shot-1.2.md）：
+   *
+   * 当 storyboard_characters 表为空 + storyboard.characters JSON 非空时，
+   * 应**优先用 storyboard.characters JSON 字段**（本分镜级配置），不应回退
+   * 到 scene.characters（整场所有角色）。
+   *
+   * 旧 bug：分镜 1.2 storyboard.characters JSON 只有李墨，但 fallback 跳过
+   * 直接用整场 scene.characters（李墨 + 苏白 + 茶博士），导致关键帧 prompt
+   * 错误包含本分镜根本不出现的角色，AI 生成的画面与剧本不符。
+   */
+  it('Bug B：storyboard.characters JSON 非空时优先于 scene.characters', async () => {
+    const { sbId, sceneId } = await seedScene(ds)
+
+    // 给 scene.characters 加入第二个角色（整场有两人）
+    await ds.getRepository(CharacterBindingEntity).save({
+      id: 'cb2',
+      projectId: 'proj1',
+      longWritingCharacterId: null,
+      sourceType: 'standalone',
+      voiceConfig: {},
+      standaloneName: '李四',
+      standaloneDescription: '神秘客',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as any)
+    await ds.getRepository(AssetImageEntity).save({
+      id: 'ai_char2',
+      assetType: 'character',
+      assetId: 'cb2',
+      category: 'main',
+      imagePath: '/tmp/cb2.png',
+      isMain: 1,
+      sortOrder: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as any)
+    await ds.getRepository(SceneScriptEntity).update(
+      { id: sceneId },
+      {
+        characters: [
+          {
+            characterBindingId: 'cb1',
+            characterId: 'lwc-x',
+            characterName: '张三',
+            position: 'center',
+            expression: '凝重',
+            action: '推门',
+            outfit: '蓝色长衫',
+          },
+          {
+            characterBindingId: 'cb2',
+            characterId: 'lwc-y',
+            characterName: '李四',
+            position: 'right',
+            expression: '冷漠',
+            action: '靠墙',
+            outfit: '黑色斗篷',
+          },
+        ] as any,
+      },
+    )
+
+    // storyboard.characters JSON 只含 cb1（本分镜只一人出场）
+    await ds.getRepository(StoryboardEntity).update(
+      { id: sbId },
+      {
+        characters: [
+          {
+            characterId: 'cb1',
+            position: { x: 65, y: 55, scale: 1.1 },
+            expression: '焦虑不安',
+            action: '摩挲玉佩',
+            facing: 'left',
+          },
+        ] as any,
+      },
+    )
+
+    const result = await svc.generateKeyframesForStoryboard({
+      storyboardId: sbId,
+      keyframeCountOverride: 1,
+    })
+    expect(result).toHaveLength(1)
+    const prompt = result[0].prompt ?? ''
+
+    // 必须含本分镜的角色 cb1 + 本分镜级 expression/action
+    expect(prompt).toContain('张三')
+    expect(prompt).toContain('焦虑不安')
+    expect(prompt).toContain('摩挲玉佩')
+
+    // 关键断言：不含整场另一角色 cb2 / 李四 / 冷漠 / 靠墙
+    expect(prompt).not.toContain('李四')
+    expect(prompt).not.toContain('冷漠')
+    expect(prompt).not.toContain('靠墙')
+  })
+
+  /**
+   * Bug B 配套：storyboard.characters JSON 中 characterId 是 standaloneName
+   * 时（AI 拆分镜常用名字而非 binding.id），按名字反查 character_bindings。
+   */
+  it('Bug B：storyboard.characters JSON 用角色名时按 standaloneName 反查', async () => {
+    const { sbId } = await seedScene(ds)
+
+    // storyboard.characters 用名字"张三"（不是 binding.id "cb1"）
+    await ds.getRepository(StoryboardEntity).update(
+      { id: sbId },
+      {
+        characters: [
+          {
+            characterId: '张三',
+            position: { x: 50, y: 50, scale: 1 },
+            expression: '惊愕',
+            action: '后退',
+            facing: 'front',
+          },
+        ] as any,
+      },
+    )
+
+    const result = await svc.generateKeyframesForStoryboard({
+      storyboardId: sbId,
+      keyframeCountOverride: 1,
+    })
+    const prompt = result[0].prompt ?? ''
+    // 应通过名字反查到 cb1，prompt 含张三 + 本分镜表情/动作（不是 scene 级的）
+    expect(prompt).toContain('张三')
+    expect(prompt).toContain('惊愕 expression')
+    expect(prompt).toContain('后退')
+    // 不应含 scene.characters 级 expression（凝重）
+    // 注：'推门' 出现在 storyboard.frameDescription 是正常的（画面描述 ≠ 角色动作）
+    expect(prompt).not.toContain('凝重 expression')
+  })
+
+  /**
+   * Bug B 边界：storyboard.characters JSON 中 characterId 全为空字符串
+   * （e2e 实测分镜 1.2 的真实数据）→ 单条无法 resolve 跳过；不应再回退
+   * 到 scene.characters 整场角色。
+   */
+  it('Bug B：characterId 全空时静默跳过，不回退整场', async () => {
+    const { sbId, sceneId } = await seedScene(ds)
+
+    // scene.characters 加第二个角色
+    await ds.getRepository(CharacterBindingEntity).save({
+      id: 'cb2',
+      projectId: 'proj1',
+      longWritingCharacterId: null,
+      sourceType: 'standalone',
+      voiceConfig: {},
+      standaloneName: '李四',
+      standaloneDescription: '神秘客',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as any)
+    await ds.getRepository(SceneScriptEntity).update(
+      { id: sceneId },
+      {
+        characters: [
+          {
+            characterBindingId: 'cb1',
+            characterId: 'lwc-x',
+            characterName: '张三',
+            expression: '凝重',
+            action: '推门',
+          },
+          {
+            characterBindingId: 'cb2',
+            characterId: 'lwc-y',
+            characterName: '李四',
+            expression: '冷漠',
+            action: '靠墙',
+          },
+        ] as any,
+      },
+    )
+
+    // storyboard.characters JSON 唯一一条 characterId="" 空字符串
+    await ds.getRepository(StoryboardEntity).update(
+      { id: sbId },
+      {
+        characters: [
+          {
+            characterId: '',
+            position: { x: 65, y: 55, scale: 1 },
+            expression: '焦虑',
+            action: '摩挲玉佩',
+            facing: 'left',
+          },
+        ] as any,
+      },
+    )
+
+    const result = await svc.generateKeyframesForStoryboard({
+      storyboardId: sbId,
+      keyframeCountOverride: 1,
+    })
+    const prompt = result[0].prompt ?? ''
+    // 不应包含整场另一角色（fallback 不应触发）
+    expect(prompt).not.toContain('李四')
+    expect(prompt).not.toContain('冷漠')
+    expect(prompt).not.toContain('靠墙')
   })
 })

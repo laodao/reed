@@ -500,8 +500,70 @@ export class KeyframeGenerationService {
           } as any,
         })
       }
+    } else if (Array.isArray(sb?.characters) && sb!.characters.length > 0) {
+      /*
+       * 第一级回退（spec 2026-05-09 ep-redesign · e2e Bug B 修复）：
+       *   storyboard_characters 表空 + storyboard.characters JSON 非空时，
+       *   **必须用本分镜的 JSON 字段**，不能直接跳到 scene.characters 整场角色。
+       *
+       *   旧 bug：fallback 跳过 storyboard.characters → scene.characters →
+       *   关键帧 prompt 包含本分镜根本没出场的整场角色（report-shot-1.2.md Bug B）。
+       *
+       *   解析每条 entry：
+       *     - characterId 优先当 binding.id 直接 resolve
+       *     - resolve 不到时按 standaloneName 反查（兼容 AI 拆分镜直接用名字
+       *       不是 binding.id 的常见情况）
+       *     - 都不到 / characterId 空 → 跳过该条（不回退整场）
+       *
+       *   即使所有 entry 都跳过（characterId 全空），也保持"本分镜无可识别角色"
+       *   的事实，不污染 prompt。
+       */
+      const projectId = await this.resolveProjectIdForScene(scene)
+      for (const raw of sb!.characters as Array<Record<string, unknown>>) {
+        const characterId =
+          typeof raw?.characterId === 'string' ? raw.characterId : ''
+        if (!characterId) continue
+
+        let resolved = await this.resolver.resolveCharacter(characterId)
+        if (!resolved) {
+          // 按 standaloneName 反查（项目级）
+          const found = await this.findBindingByName(projectId, characterId)
+          if (found) resolved = await this.resolver.resolveCharacter(found)
+        }
+        if (!resolved) continue
+
+        const expression =
+          typeof raw?.expression === 'string' ? raw.expression : null
+        const action = typeof raw?.action === 'string' ? raw.action : null
+        const facing = typeof raw?.facing === 'string' ? raw.facing : null
+        const positionRaw = raw?.position
+        let position: string | null = null
+        if (
+          positionRaw &&
+          typeof positionRaw === 'object' &&
+          !Array.isArray(positionRaw) &&
+          typeof (positionRaw as any).x === 'number'
+        ) {
+          position = positionToString(positionRaw as any)
+        } else if (typeof positionRaw === 'string') {
+          position = positionRaw
+        }
+
+        characters.push({
+          bindingId: resolved.bindingId,
+          effective: resolved.effective,
+          sceneRole: {
+            expression,
+            action,
+            outfit: null,
+            position,
+            facing,
+          } as any,
+        })
+      }
     } else {
-      // 回退：分镜级未配置 → 用场景级 scene.characters JSON
+      // 第二级回退（极少触发，AI 拆分镜时通常已经填了 storyboard.characters）：
+      // 场景级 scene.characters JSON
       const sceneChars = (scene.characters as SceneCharacter[] | null) ?? []
       for (const sc of sceneChars) {
         if (!sc.characterBindingId) continue
@@ -732,6 +794,29 @@ export class KeyframeGenerationService {
       if (r.image) refs.push({ id: r.image.id, imagePath: r.image.imagePath })
     }
     return refs
+  }
+
+  /**
+   * Bug B 配套：按 standaloneName 反查 character_binding.id（项目级唯一性弱约束 —
+   * 若同名多条则取第一条）。spec 2026-05-09 ep-redesign · e2e report-shot-1.2.md。
+   *
+   * 调用场景：AI 拆分镜时 storyboard.characters JSON 的 characterId 经常填角色名
+   * （如"李墨"/"su_bai"）而非真实 binding.id（cb_xxx）；resolveCharacter 直接传
+   * 名字会找不到，按 standaloneName 反查兜底。
+   */
+  private async findBindingByName(
+    projectId: string,
+    name: string,
+  ): Promise<string | null> {
+    if (!projectId || !name) return null
+    const { CharacterBindingEntity } = await import(
+      '@core/database/entities/episode-production/character-binding.entity'
+    )
+    const repo = this.ds.getRepository(CharacterBindingEntity)
+    const hit = await repo.findOne({
+      where: { projectId, standaloneName: name } as any,
+    })
+    return hit?.id ?? null
   }
 
   /**
