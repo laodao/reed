@@ -109,9 +109,15 @@ export function createGalleryImageGenerator(): ImageGenerator {
         ? `${opts.prompt}, variant: ${opts.label}`
         : opts.prompt
 
-      // 主图作参考：取第一张（派生 service 当前只传一张主图）
-      const refPath = opts.referenceImagePaths?.[0]
-      const referenceImage = refPath ? readImageAsDataUrl(refPath) : undefined
+      // spec 2026-05-09 ep-redesign §3.2 D1：multi-reference
+      // 把全部 referenceImagePaths 转为 data URLs，喂给 ImageGenerationRequest.referenceImages
+      // 各 provider adapter 的 collectReferences helper 会按各家形态适配（万相 1-4 / Seedream 多张 / 可灵 element_list）
+      const refPaths = opts.referenceImagePaths ?? []
+      const referenceImages = refPaths
+        .map((p) => readImageAsDataUrl(p))
+        .filter((url): url is string => !!url)
+      // 兼容 referenceImage 单值（旧 provider 可能仅认此字段）
+      const referenceImage = referenceImages[0]
 
       const { providerConfigId, model } = await pickImageModel()
       const resp = await ImageService.generateImage({
@@ -122,6 +128,7 @@ export function createGalleryImageGenerator(): ImageGenerator {
         width: DEFAULT_DERIVE_WIDTH,
         height: DEFAULT_DERIVE_HEIGHT,
         referenceImage,
+        referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
         skipHistory: true,
       })
 

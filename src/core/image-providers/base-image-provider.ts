@@ -174,3 +174,24 @@ export abstract class BaseImageProvider {
     }
   }
 }
+
+/**
+ * 统一收集参考图列表（spec 2026-05-09 ep-redesign §3.2 D1 · P-9）
+ *
+ * 优先级：referenceImages[] (非空) > referenceImage 单值 > 空数组
+ * - 调用方使用 referenceImages 数组，老调用方 referenceImage 单值仍兼容
+ * - 各 provider adapter 用本 helper 解析后按各自 multi-reference 入参形态适配
+ *   · DashScope（万相 wanx2.5/2.6）：ref_images: string[]，1-4 张
+ *   · Volcengine（Seedream）：reference_images: string[]，多张
+ *   · Bailian（百炼托管 kling-v3）：element_list: [{element_image}]，10 张
+ *   · OpenAI / MiniMax / Zhipu：单参考，仅用 refs[0]
+ */
+export function collectReferences(request: ImageGenerationRequest): string[] {
+  if (Array.isArray(request.referenceImages) && request.referenceImages.length > 0) {
+    return request.referenceImages.filter((p): p is string => typeof p === 'string' && p.trim() !== '')
+  }
+  if (typeof request.referenceImage === 'string' && request.referenceImage.trim() !== '') {
+    return [request.referenceImage]
+  }
+  return []
+}

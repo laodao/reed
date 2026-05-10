@@ -13,7 +13,7 @@ import type {
   ImageTaskStatus,
   GeneratedImage
 } from '@shared/types/image-provider.types'
-import { BaseImageProvider } from './base-image-provider'
+import { BaseImageProvider, collectReferences } from './base-image-provider'
 
 /**
  * 百炼平台 API 响应格式
@@ -291,9 +291,15 @@ export class BailianImageProvider extends BaseImageProvider {
       body.parameters.seed = request.seed
     }
 
-    // 添加参考图像（图生图）
-    if (request.referenceImage) {
-      body.input.image_url = request.referenceImage
+    // spec 2026-05-09 ep-redesign §3.2 D1：multi-reference
+    // 百炼托管的 kling-v3 等支持 element_list（最多 10 张）；老 image_url 兼容单值
+    const refs = collectReferences(request)
+    if (refs.length > 0) {
+      body.input.image_url = refs[0]  // 兼容老字段
+      // element_list 形态（百炼托管 kling-v3-image-generation 等）
+      if (refs.length > 1) {
+        body.input.element_list = refs.slice(0, 10).map((image_url) => ({ element_image: image_url }))
+      }
     }
 
     return body

@@ -12,7 +12,7 @@ import type {
   ImageTaskStatus,
   GeneratedImage
 } from '@shared/types/image-provider.types'
-import { BaseImageProvider } from './base-image-provider'
+import { BaseImageProvider, collectReferences } from './base-image-provider'
 
 /**
  * DashScope 原生 API 响应格式
@@ -331,13 +331,14 @@ export class DashScopeImageProvider extends BaseImageProvider {
     // 构建 content 数组
     const content: Array<{ text?: string; image?: string }> = []
 
-    // 如果有参考图片，先添加图片（图生图）
-    if (request.referenceImage) {
-      // 支持 base64 和 URL 格式
-      content.push({
-        image: request.referenceImage
-      })
-      console.log('[DashScope] 使用参考图片进行图生图')
+    // spec 2026-05-09 ep-redesign §3.2 D1：multi-reference 优先；保留 referenceImage 单值兼容
+    const refs = collectReferences(request)
+    if (refs.length > 0) {
+      // DashScope content 数组支持多张 image — 全部喂入；老调用 referenceImage 单值也走此路径
+      for (const ref of refs) {
+        content.push({ image: ref })
+      }
+      console.log(`[DashScope] 使用 ${refs.length} 张参考图（multi-reference）`)
     }
 
     // 添加文本提示词
@@ -654,9 +655,13 @@ export class DashScopeImageProvider extends BaseImageProvider {
       body.parameters.seed = request.seed
     }
 
-    // 添加参考图像（图生图）
-    if (request.referenceImage) {
-      body.input.image_url = request.referenceImage
+    // spec 2026-05-09 ep-redesign §3.2 D1：multi-reference 优先；该 wanx2.5/2.6 image-edit
+    // API 用 ref_images 数组，1-4 张；超出截前 4 张；fallback 兼容 referenceImage 单值
+    const refs = collectReferences(request)
+    if (refs.length > 0) {
+      body.input.ref_images = refs.slice(0, 4)
+      // 维持兼容老 image_url 字段（若 provider 实现仍认）
+      body.input.image_url = refs[0]
     }
 
     return body

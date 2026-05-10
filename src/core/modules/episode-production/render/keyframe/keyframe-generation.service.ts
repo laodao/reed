@@ -700,6 +700,23 @@ export class KeyframeGenerationService {
         },
       })
       if (r.image) refs.push({ id: r.image.id, imagePath: r.image.imagePath })
+
+      // spec 2026-05-09 ep-redesign §3.2 D1：把 character 的形象组其余成员也加进来
+      // 跨分镜稳定参考集，让 provider 多 ref 入参吃满（万相 4 / Seedream 多张）。
+      // 跳过已加入 refs 的 image（避免重复）。
+      try {
+        const setIds = await this.getReferenceSetImageIds(c.bindingId)
+        if (setIds.length > 0) {
+          const list = await this.imageSvc.listByAsset('character', c.bindingId)
+          for (const id of setIds) {
+            if (refs.some((rr) => rr.id === id)) continue
+            const img = list.find((i) => i.id === id)
+            if (img?.imagePath) refs.push({ id: img.id, imagePath: img.imagePath })
+          }
+        }
+      } catch {
+        // 形象组解析失败不致命；continue
+      }
     }
     for (const it of assets.items) {
       const ov = await tryOverride('item', it.bindingId)
@@ -715,6 +732,30 @@ export class KeyframeGenerationService {
       if (r.image) refs.push({ id: r.image.id, imagePath: r.image.imagePath })
     }
     return refs
+  }
+
+  /**
+   * 取 character_binding 的形象组 imageIds（spec 2026-05-09 ep-redesign §3.2 D1）。
+   *
+   * 简化：这里只读 binding.referenceSetImageIds 字段（用户标记的形象组）；
+   * 默认策略（main + view）不在这里复用 — pickReferenceImage 已经按场景维度选了一张代表，
+   * 形象组只是补充更多角度让 provider 多 ref 输入更丰富。
+   *
+   * 如果用户没标记 → 返回 []，本步骤静默跳过；只用 pickReferenceImage 的结果。
+   */
+  private async getReferenceSetImageIds(bindingId: string): Promise<string[]> {
+    const { CharacterBindingEntity } = await import(
+      '@core/database/entities/episode-production/character-binding.entity'
+    )
+    const repo = this.ds.getRepository(CharacterBindingEntity)
+    const b = await repo.findOne({ where: { id: bindingId } })
+    if (!b?.referenceSetImageIds) return []
+    try {
+      const v = JSON.parse(b.referenceSetImageIds)
+      return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []
+    } catch {
+      return []
+    }
   }
 
   /**
