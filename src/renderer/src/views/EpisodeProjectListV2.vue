@@ -261,6 +261,9 @@ async function selectProject(projectId: string): Promise<void> {
       return
     }
     selectedProject.value = projResp.data as VideoProject
+    // Bug #1 修复（2026-05-10 e2e）：同步 projectStore.currentProject，否则 SettingsDialog
+    // 内部读 projectStore.currentProject 加载的是上一项目数据。
+    await projectStore.selectProject(selectedProject.value)
     await reloadEpisodes()
   } finally {
     loadingProject.value = false
