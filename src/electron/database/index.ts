@@ -524,6 +524,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-user-assets'
     )
     await addUserAssets(this.dataSource)
+    // 视频解析：spec 2026-05-09 ep-redesign §3.2 D5 · reference_video_analyses 表
+    const { addReferenceVideoAnalyses } = await import(
+      '@core/database/migrations/add-reference-video-analyses'
+    )
+    await addReferenceVideoAnalyses(this.dataSource)
     // 分镜 location_binding_ids + item_binding_ids：分镜级地点 / 物品手动添加
     const { addStoryboardLocationItemBindings } = await import(
       '@core/database/migrations/add-storyboard-location-item-bindings'

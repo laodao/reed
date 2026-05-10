@@ -303,6 +303,11 @@ const IPC_CHANNELS = {
   EP_USER_ASSET_ADD_FROM_BINDING: 'ep:user-asset:add-from-binding',
   EP_USER_ASSET_CREATE_BINDING: 'ep:user-asset:create-binding',
   EP_USER_ASSET_DELETE: 'ep:user-asset:delete',
+  /** spec 2026-05-09 ep-redesign §3.2 D5 · 视频解析（参考视频 → 分镜骨架） */
+  EP_REFERENCE_VIDEO_ANALYZE: 'ep:reference-video:analyze',
+  EP_REFERENCE_VIDEO_LIST: 'ep:reference-video:list',
+  EP_REFERENCE_VIDEO_GET: 'ep:reference-video:get',
+  EP_REFERENCE_VIDEO_DELETE: 'ep:reference-video:delete',
 
   // 派生（2 个）
   EP_ASSET_DERIVE_SINGLE: 'ep:asset:derive:single',
@@ -2159,6 +2164,20 @@ const electronAPI = {
           ipcRenderer.invoke(IPC_CHANNELS.EP_USER_ASSET_CREATE_BINDING, input),
         delete: (input: { userAssetId: string }) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_USER_ASSET_DELETE, input),
+      },
+
+      /**
+       * 视频解析（spec 2026-05-09 ep-redesign §3.2 D5 · P-22）
+       * 上传参考视频 → ffmpeg 抽帧 / scene detection → ParsedShot[] 落库。
+       */
+      referenceVideo: {
+        analyze: (input: { videoPath: string; sceneThreshold?: number }) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_REFERENCE_VIDEO_ANALYZE, input),
+        list: () => ipcRenderer.invoke(IPC_CHANNELS.EP_REFERENCE_VIDEO_LIST),
+        get: (input: { id: string }) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_REFERENCE_VIDEO_GET, input),
+        delete: (input: { id: string }) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_REFERENCE_VIDEO_DELETE, input),
       },
 
       /**

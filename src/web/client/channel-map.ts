@@ -417,6 +417,11 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.asset.userAsset.addFromBinding': { channel: 'ep:user-asset:add-from-binding' },
   'episodeProduction.asset.userAsset.createBinding': { channel: 'ep:user-asset:create-binding' },
   'episodeProduction.asset.userAsset.delete': { channel: 'ep:user-asset:delete' },
+  // 视频解析（spec 2026-05-09 ep-redesign §3.2 D5）
+  'episodeProduction.asset.referenceVideo.analyze': { channel: 'ep:reference-video:analyze' },
+  'episodeProduction.asset.referenceVideo.list': { channel: 'ep:reference-video:list' },
+  'episodeProduction.asset.referenceVideo.get': { channel: 'ep:reference-video:get' },
+  'episodeProduction.asset.referenceVideo.delete': { channel: 'ep:reference-video:delete' },
   'episodeProduction.getStoryboard': { channel: 'ep:get-storyboard' },
   'episodeProduction.updateStoryboard': { channel: 'ep:update-storyboard' },
   'episodeProduction.reorderStoryboards': { channel: 'ep:reorder-storyboards' },
