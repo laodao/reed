@@ -14,13 +14,13 @@
  * scene 关联，独立工作量。
  */
 
-import path from 'path'
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { getCurrentUserId } from '@core/context/user-context'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import { ReferenceVideoAnalysisService } from '@core/modules/episode-production/reference-video/analysis.service'
+import { createVlmShotInferrer } from '@core/modules/episode-production/reference-video/vlm-shot-inferrer'
 
 export function registerReferenceVideoHandlers(): void {
   ipcBridge.handle('ep:reference-video:analyze', handleAnalyze)
@@ -35,7 +35,7 @@ function tempDir(): string {
 
 async function handleAnalyze(
   _event: any,
-  input: { videoPath: string; sceneThreshold?: number },
+  input: { videoPath: string; sceneThreshold?: number; vlmModelId?: string; vlmProviderConfigId?: string },
 ): Promise<IpcResponse> {
   try {
     if (!input?.videoPath) {
@@ -44,11 +44,20 @@ async function handleAnalyze(
     const db = getCoreDatabaseManager()
     if (!db.dataSource) throw new Error('数据库未初始化')
     const svc = new ReferenceVideoAnalysisService(db.dataSource)
+
+    // 注入真实 VLM 推断器（spec D5 follow-up · #48）
+    // 用户在 dialog 选 vision model（如 qwen-vl-max）；不指定时由 _helpers 用默认 provider 兜底。
+    const vlmInfer = createVlmShotInferrer({
+      providerConfigId: input.vlmProviderConfigId,
+      modelId: input.vlmModelId,
+    })
+
     const data = await svc.analyze({
       videoPath: input.videoPath,
       tempDir: tempDir(),
       userId: getCurrentUserId(),
       sceneThreshold: input.sceneThreshold,
+      vlmInfer,
     })
     return { success: true, data }
   } catch (err: any) {

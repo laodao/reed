@@ -33,6 +33,14 @@ export interface AnalyzeInput {
   userId?: string | null
   /** scene detection 阈值；0.3 较敏感 / 0.5 较保守 */
   sceneThreshold?: number
+  /**
+   * VLM 推断 callback（spec 2026-05-09 follow-up）。
+   * 接受代表帧路径，返回部分 ParsedShot 字段（shotType / cameraAngle / cameraMovement /
+   * frameDescription / emotion）。不传时 service 沿用占位字段。
+   *
+   * 依赖注入便于测试 mock 与 provider 解耦。
+   */
+  vlmInfer?: (framePath: string, durationSec: number) => Promise<Partial<ParsedShot>>
 }
 
 export interface AnalyzeResult {
@@ -107,19 +115,40 @@ export class ReferenceVideoAnalysisService {
           // 抽帧失败不致命，继续下一个 shot
           continue
         }
-        // 占位字段（VLM 接入后替换）
+
+        // 默认占位字段（无 VLM 时使用）
+        let inferredFields: Partial<ParsedShot> = {
+          shotType: 'medium',
+          cameraAngle: 'eye_level',
+          cameraMovement: 'static',
+          frameDescription: '（待 VLM 反推）',
+          emotion: '',
+        }
+
+        // VLM 推断（DI 注入时调用）
+        if (input.vlmInfer) {
+          try {
+            const inferred = await input.vlmInfer(framePath, b.durationSec)
+            inferredFields = { ...inferredFields, ...inferred }
+          } catch (vlmErr: any) {
+            console.warn(
+              `[ReferenceVideoAnalysis] VLM 推断 shot ${i + 1} 失败：${vlmErr?.message ?? vlmErr}（沿用占位字段）`,
+            )
+          }
+        }
+
         shots.push({
           shotIndex: i + 1,
           startSec: b.startSec,
           endSec: b.endSec,
           durationSec: b.durationSec,
-          shotType: 'medium',  // 占位；VLM 推断
-          cameraAngle: 'eye_level',
-          cameraMovement: 'static',
-          frameDescription: '（待 VLM 反推）',
-          emotion: '',
+          shotType: inferredFields.shotType ?? 'medium',
+          cameraAngle: inferredFields.cameraAngle ?? 'eye_level',
+          cameraMovement: inferredFields.cameraMovement ?? 'static',
+          frameDescription: inferredFields.frameDescription ?? '',
+          emotion: inferredFields.emotion ?? '',
           representativeFramePath: framePath,
-          detectedDialogue: null,
+          detectedDialogue: inferredFields.detectedDialogue ?? null,
         })
       }
 

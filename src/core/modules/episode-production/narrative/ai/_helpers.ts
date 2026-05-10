@@ -160,6 +160,64 @@ export async function callAI(
   return result.content || ''
 }
 
+/**
+ * 调用 VLM（视觉语言模型）— 把 image 作为 base64 data URL 喂给模型并取文本输出。
+ *
+ * spec 2026-05-09 ep-redesign §3.2 D5 · P-22 follow-up：参考视频解析的 VLM 推断字段。
+ *
+ * 注意：依赖 provider 是否实际支持 vision（OpenAI gpt-4o / DashScope qwen-vl-max / GLM-4v / 等）。
+ * 调用方负责选 modelId 为 vision 模型。
+ */
+export async function callVLM(
+  prompt: string,
+  imageDataUrl: string,
+  systemPrompt: string,
+  maxTokens: number = 2048,
+  providerConfigId?: string,
+  modelId?: string,
+): Promise<string> {
+  const providerInfo = await getProviderConfig(providerConfigId)
+  if (!providerInfo) {
+    throw new Error('未配置 AI 提供商，请先在设置中添加提供商配置')
+  }
+  const { config, template, apiKey } = providerInfo
+
+  // @ts-expect-error UserProviderConfig 暂无 defaultModel 字段（历史遗留访问）
+  const fromConfigDefault: string | undefined = config.defaultModel
+  const fromUserModels = pickFirstChatModelId(config.models as any)
+  const fromTemplateModels = pickFirstChatModelId((template as any).models)
+  const effectiveModelId = modelId || fromConfigDefault || fromUserModels || fromTemplateModels
+  if (!effectiveModelId) {
+    throw new Error('未指定模型 — 请选择 vision 模型（如 qwen-vl-max / gpt-4o）')
+  }
+
+  const provider = createProvider(
+    template.id,
+    { apiKey, baseUrl: config.baseUrl, defaultModel: effectiveModelId },
+    template,
+    config,
+  )
+
+  // multimodal content blocks（OpenAI / DashScope 兼容格式）
+  const context: ChatContext = {
+    systemPrompt,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt },
+          { type: 'image', image_url: { url: imageDataUrl } },
+        ] as any,
+      },
+    ],
+  }
+
+  // @ts-expect-error 同 callAI：BaseProvider.chatSync 签名兼容
+  const result = await provider.chatSync(context, { maxTokens })
+  if (!result.success) throw new Error(result.error || 'VLM 调用失败')
+  return result.content || ''
+}
+
 // ==================== JSON 解析 ====================
 
 /**

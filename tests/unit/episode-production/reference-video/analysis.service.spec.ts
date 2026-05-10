@@ -137,4 +137,79 @@ describe('ReferenceVideoAnalysisService', () => {
     expect(await fs.access(sessionDir).then(() => true).catch(() => false)).toBe(false)
     expect(await svc.getById(result.analysisId)).toBeNull()
   })
+
+  it('vlmInfer 注入 → 用 VLM 推断字段替换占位（spec D5 follow-up · #48）', async () => {
+    let invocations = 0
+    const fakeVlmInfer = async (framePath: string, durationSec: number) => {
+      invocations++
+      // 验证传入的代表帧路径能 access
+      expect(await fs.access(framePath).then(() => true).catch(() => false)).toBe(true)
+      expect(durationSec).toBeGreaterThan(0)
+      return {
+        shotType: 'close_up',
+        cameraAngle: 'low',
+        cameraMovement: 'push',
+        frameDescription: '红色画面渐入',
+        emotion: '紧张',
+      }
+    }
+
+    const result = await svc.analyze({
+      videoPath,
+      tempDir,
+      userId: 'user1',
+      sceneThreshold: 0.3,
+      vlmInfer: fakeVlmInfer,
+    })
+
+    expect(invocations).toBeGreaterThan(0)
+    expect(invocations).toBe(result.shotCount)
+
+    // 落库的 shots 应包含 VLM 推断字段
+    const row = await svc.getById(result.analysisId)
+    for (const shot of row!.shots!) {
+      expect(shot.shotType).toBe('close_up')
+      expect(shot.cameraAngle).toBe('low')
+      expect(shot.cameraMovement).toBe('push')
+      expect(shot.frameDescription).toBe('红色画面渐入')
+      expect(shot.emotion).toBe('紧张')
+    }
+  })
+
+  it('vlmInfer 抛错 → 该 shot 沿用占位字段（不致命）', async () => {
+    const fakeVlmInfer = async () => {
+      throw new Error('VLM 配额不足')
+    }
+    const result = await svc.analyze({
+      videoPath,
+      tempDir,
+      userId: 'user1',
+      vlmInfer: fakeVlmInfer,
+    })
+    const row = await svc.getById(result.analysisId)
+    // 占位字段保留
+    for (const shot of row!.shots!) {
+      expect(shot.shotType).toBe('medium')
+      expect(shot.frameDescription).toBe('（待 VLM 反推）')
+    }
+  })
+
+  it('vlmInfer 返回部分字段 → 缺失字段沿用占位', async () => {
+    const fakeVlmInfer = async () => ({
+      shotType: 'wide',
+      // 仅返回 shotType；其他字段保持默认
+    })
+    const result = await svc.analyze({
+      videoPath,
+      tempDir,
+      userId: 'user1',
+      vlmInfer: fakeVlmInfer,
+    })
+    const row = await svc.getById(result.analysisId)
+    for (const shot of row!.shots!) {
+      expect(shot.shotType).toBe('wide')         // VLM 给的
+      expect(shot.cameraAngle).toBe('eye_level') // 占位
+      expect(shot.frameDescription).toBe('（待 VLM 反推）')
+    }
+  })
 })

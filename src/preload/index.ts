@@ -2176,7 +2176,12 @@ const electronAPI = {
        * 上传参考视频 → ffmpeg 抽帧 / scene detection → ParsedShot[] 落库。
        */
       referenceVideo: {
-        analyze: (input: { videoPath: string; sceneThreshold?: number }) =>
+        analyze: (input: {
+          videoPath: string
+          sceneThreshold?: number
+          vlmModelId?: string
+          vlmProviderConfigId?: string
+        }) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_REFERENCE_VIDEO_ANALYZE, input),
         list: () => ipcRenderer.invoke(IPC_CHANNELS.EP_REFERENCE_VIDEO_LIST),
         get: (input: { id: string }) =>
