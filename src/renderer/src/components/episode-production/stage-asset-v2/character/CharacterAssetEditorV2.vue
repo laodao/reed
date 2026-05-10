@@ -99,7 +99,11 @@
     />
 
     <!-- 角色形象组（spec 2026-05-09 ep-redesign §3.2 D1） -->
-    <ReferenceSetPanel v-if="binding && hasMain" :binding-id="bindingId" />
+    <ReferenceSetPanel
+      v-if="binding && hasMain"
+      ref="referenceSetRef"
+      :binding-id="bindingId"
+    />
 
     <div class="body-grid">
       <CharacterCardFormV2
@@ -155,6 +159,7 @@ const loading = ref(false)
 const saving = ref(false)
 const pulling = ref(false)
 const galleryRef = ref<any>(null)
+const referenceSetRef = ref<any>(null)
 const hasMain = ref(false)
 
 // 表单脏检测：来自 CardFormV2 的 onChange payload
@@ -323,6 +328,7 @@ const extractDialogVisible = ref(false)
 function onExtractImported(payload: { count: number }): void {
   ElMessage.success(`已添加 ${payload.count} 张代表帧到角色图谱`)
   galleryRef.value?.reload?.()
+  referenceSetRef.value?.reload?.()
 }
 
 async function onGenerateThreeViews(): Promise<void> {
@@ -366,6 +372,9 @@ async function onGenerateThreeViews(): Promise<void> {
     ElMessage.success(`已生成 ${resp.data?.length ?? 3} 张多角度参考图`)
     // 通知 GalleryEditor reload（V1 GalleryEditor 暴露了 reload 方法）
     galleryRef.value?.reload?.()
+    // Bug #3 修复（2026-05-10 e2e）：三视图生成后同步 reload ReferenceSetPanel，
+    // 否则形象组只显示 main 一张，新生成的 view 类目图不可勾选作为参考集。
+    referenceSetRef.value?.reload?.()
   } catch (e: any) {
     ElMessage.error('生成异常：' + (e?.message ?? String(e)))
   } finally {
