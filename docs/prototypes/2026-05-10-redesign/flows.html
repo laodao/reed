@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>4 种创建方式 · 流程对比（v5）</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", sans-serif; background: #f9fafb; color: #1f2937; }
+  .mode-btn.active { background: #2563eb; color: white; }
+  .mode-btn { transition: all 0.15s; }
+  .panel { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; background: white; }
+  .panel-title { font-weight: 600; font-size: 14px; margin-bottom: 8px; }
+  .step-circle { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; flex-shrink: 0; }
+  .step-done { background: #10b981; color: white; }
+  .step-active { background: #2563eb; color: white; box-shadow: 0 0 0 4px rgba(37,99,235,0.2); }
+  .step-todo { background: #e5e7eb; color: #6b7280; }
+  .step-skip { background: #f3f4f6; color: #9ca3af; }
+  .pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
+  .pill-ok { background: #d1fae5; color: #065f46; }
+  .pill-warn { background: #fef3c7; color: #92400e; }
+  .pill-info { background: #dbeafe; color: #1e40af; }
+  .pill-purple { background: #ede9fe; color: #5b21b6; }
+  .btn { padding: 6px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; border: 1px solid transparent; }
+  .btn-primary { background: #2563eb; color: white; }
+  .btn-secondary { background: white; color: #1f2937; border-color: #d1d5db; }
+  .btn-ghost { background: transparent; color: #6b7280; }
+  .input { border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 10px; font-size: 13px; width: 100%; }
+  .step-line { width: 2px; flex: 1; background: #e5e7eb; min-height: 24px; }
+  .step-line-done { background: #10b981; }
+  .step-line-active { background: linear-gradient(to bottom, #10b981, #2563eb); }
+  .thumb { width: 100%; aspect-ratio: 16/9; background: linear-gradient(135deg, #e0e7ff, #fef3c7); border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #6b7280; font-size: 11px; }
+  .thumb-square { aspect-ratio: 1; }
+  .small-thumb { width: 56px; height: 56px; border-radius: 4px; background: linear-gradient(135deg, #fde68a, #fbcfe8); display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+  .progress-bar { height: 4px; background: #e5e7eb; border-radius: 2px; overflow: hidden; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, #10b981, #2563eb); transition: width 0.3s; }
+  details summary { cursor: pointer; user-select: none; }
+</style>
+</head>
+
+<body>
+
+<header class="bg-white border-b border-gray-200 px-6 py-3 sticky top-0 z-10">
+  <div class="flex items-center gap-4 mb-3">
+    <h1 class="text-lg font-semibold">4 种创建方式 · 流程对比 <span class="text-xs text-purple-600">（基于 v5 · 6 stage 架构）</span></h1>
+    <span class="text-xs text-gray-500">每种方式起点不同 · 进入 stage 流程的方式不同</span>
+    <a href="v5.html" class="ml-auto text-sm text-blue-600 hover:underline">→ 看 v5 主原型（6 stage）</a>
+  </div>
+  <nav class="flex gap-2">
+    <button class="mode-btn active btn btn-secondary" data-mode="quick">🪄 AI 一键</button>
+    <button class="mode-btn btn btn-secondary" data-mode="standard">📝 标准通道</button>
+    <button class="mode-btn btn btn-secondary" data-mode="reference">📹 参考视频起步</button>
+    <button class="mode-btn btn btn-secondary" data-mode="library">📚 我的库引用</button>
+  </nav>
+</header>
+
+<main class="max-w-[1400px] mx-auto p-6">
+
+<!-- ========================================================== -->
+<!-- 入口选择卡（顶部对比 4 种） -->
+<!-- ========================================================== -->
+<section class="mb-6">
+  <div class="grid grid-cols-4 gap-3">
+    <div class="panel border-amber-200 bg-amber-50">
+      <div class="text-2xl mb-2">🪄</div>
+      <div class="font-semibold text-sm">AI 一键</div>
+      <div class="text-xs text-gray-600 mt-1">输入一句话 → 全自动出片</div>
+      <div class="mt-2 flex gap-1 flex-wrap">
+        <span class="pill pill-info text-xs">自媒体</span>
+        <span class="pill pill-ok text-xs">5 分钟</span>
+      </div>
+    </div>
+    <div class="panel border-blue-200 bg-blue-50">
+      <div class="text-2xl mb-2">📝</div>
+      <div class="font-semibold text-sm">标准通道</div>
+      <div class="text-xs text-gray-600 mt-1">6 stage 逐环节手动</div>
+      <div class="mt-2 flex gap-1 flex-wrap">
+        <span class="pill pill-info text-xs">专业用户</span>
+        <span class="pill pill-warn text-xs">30 分钟+</span>
+      </div>
+    </div>
+    <div class="panel border-purple-200 bg-purple-50">
+      <div class="text-2xl mb-2">📹</div>
+      <div class="font-semibold text-sm">参考视频</div>
+      <div class="text-xs text-gray-600 mt-1">上传参考片 → AI 拆解 → 改</div>
+      <div class="mt-2 flex gap-1 flex-wrap">
+        <span class="pill pill-purple text-xs">内容仿拍</span>
+        <span class="pill pill-warn text-xs">15 分钟</span>
+      </div>
+    </div>
+    <div class="panel border-green-200 bg-green-50">
+      <div class="text-2xl mb-2">📚</div>
+      <div class="font-semibold text-sm">我的库</div>
+      <div class="text-xs text-gray-600 mt-1">复用已有角色/项目</div>
+      <div class="mt-2 flex gap-1 flex-wrap">
+        <span class="pill pill-purple text-xs">IP 矩阵</span>
+        <span class="pill pill-warn text-xs">20 分钟</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========================================================== -->
+<!-- 模式 1: AI 一键 -->
+<!-- ========================================================== -->
+<section class="mode-content" data-mode="quick">
+
+  <!-- Step 1: 输入 wizard -->
+  <div class="panel mb-4">
+    <div class="flex items-center gap-3 mb-4">
+      <div class="step-circle step-active">1</div>
+      <div class="font-semibold">输入需求（30 秒搞定）</div>
+      <span class="pill pill-info text-xs ml-auto">单页面 wizard · 不进 stage 流程</span>
+    </div>
+    <div class="ml-10 space-y-3">
+      <div>
+        <div class="text-xs text-gray-500 mb-1">一句话主题（必填）</div>
+        <textarea class="input" rows="2">书生李墨追寻丢失的家传玉佩，在京城茶馆偶遇神秘女子苏白，被卷入江湖恩怨。</textarea>
+      </div>
+      <div class="grid grid-cols-3 gap-3">
+        <div>
+          <div class="text-xs text-gray-500 mb-1">题材</div>
+          <select class="input"><option>古装短剧</option></select>
+        </div>
+        <div>
+          <div class="text-xs text-gray-500 mb-1">时长</div>
+          <select class="input"><option>60s</option></select>
+        </div>
+        <div>
+          <div class="text-xs text-gray-500 mb-1">平台</div>
+          <select class="input"><option>抖音 9:16</option></select>
+        </div>
+        <div>
+          <div class="text-xs text-gray-500 mb-1">美术风格</div>
+          <select class="input"><option>国风工笔</option></select>
+        </div>
+        <div>
+          <div class="text-xs text-gray-500 mb-1">人物名（可空 → AI 自动起）</div>
+          <input class="input" value="李墨, 苏白" />
+        </div>
+        <div>
+          <div class="text-xs text-gray-500 mb-1">声音偏好</div>
+          <select class="input"><option>男配男 / 女配女（默认）</option></select>
+        </div>
+      </div>
+      <div class="flex justify-end pt-2">
+        <button class="btn btn-primary">🪄 一键生成</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: 进度页（流式状态） -->
+  <div class="panel mb-4 bg-gradient-to-r from-amber-50 to-pink-50 border-amber-200">
+    <div class="flex items-center gap-3 mb-4">
+      <div class="step-circle step-active">2</div>
+      <div class="font-semibold">流水线自动跑（5 分钟）</div>
+      <span class="pill pill-info text-xs ml-auto">中间过程透明可见 · 任一步可暂停修改</span>
+    </div>
+    <div class="ml-10 space-y-3">
+
+      <div class="flex items-start gap-3">
+        <div class="step-circle step-done">✓</div>
+        <div class="flex-1">
+          <div class="text-sm font-medium">① 立项 · 自动套用预设</div>
+          <div class="text-xs text-gray-500 mt-0.5">题材 + 平台 + 风格 + 故事世界 → 自动填充（10s）</div>
+        </div>
+        <button class="btn btn-ghost text-xs">查看 / 改</button>
+      </div>
+
+      <div class="flex items-start gap-3">
+        <div class="step-circle step-done">✓</div>
+        <div class="flex-1">
+          <div class="text-sm font-medium">② 剧本 · AI 拆 3 个场景</div>
+          <div class="text-xs text-gray-500 mt-0.5">大纲 → 场景 + 对白 + 旁白（45s）</div>
+          <div class="mt-1 text-xs text-blue-700">💡 自动检测出 4 个出场角色：李墨 / 苏白 / 茶博士 / 路人甲</div>
+        </div>
+        <button class="btn btn-ghost text-xs">查看 / 改</button>
+      </div>
+
+      <div class="flex items-start gap-3">
+        <div class="step-circle step-done">✓</div>
+        <div class="flex-1">
+          <div class="text-sm font-medium">③ 资产 · 自动生成主图 + 多角度</div>
+          <div class="text-xs text-gray-500 mt-0.5">4 角色 · 2 地点 · 1 物品 · 每个 4 张图（90s）</div>
+          <div class="mt-1.5 flex gap-1.5">
+            <div class="small-thumb" style="width:36px;height:36px">👤</div>
+            <div class="small-thumb" style="width:36px;height:36px">🎭</div>
+            <div class="small-thumb" style="width:36px;height:36px">🏯</div>
+            <div class="small-thumb" style="width:36px;height:36px">💎</div>
+          </div>
+        </div>
+        <button class="btn btn-ghost text-xs">查看 / 改</button>
+      </div>
+
+      <div class="flex items-start gap-3">
+        <div class="step-circle step-active">⚙</div>
+        <div class="flex-1">
+          <div class="text-sm font-medium">④ 分镜 · AI 拆 13 个分镜（进行中 8/13）</div>
+          <div class="text-xs text-gray-500 mt-0.5">画面描述 + 镜头语言 + 角色配置 + 时长（预计还需 30s）</div>
+          <div class="progress-bar mt-1.5"><div class="progress-fill" style="width:62%"></div></div>
+        </div>
+        <button class="btn btn-secondary text-xs">⏸ 暂停修改</button>
+      </div>
+
+      <div class="flex items-start gap-3">
+        <div class="step-circle step-todo">5</div>
+        <div class="flex-1">
+          <div class="text-sm text-gray-500">⑤ 出片 · 关键帧 + 13 段视频片段一气呵成（预计 5 分钟）</div>
+          <div class="text-xs text-blue-700 mt-0.5">💡 v5 合并：原 ⑤ 画面 + ⑥ 视频 → ⑤ 出片</div>
+        </div>
+      </div>
+
+      <div class="flex items-start gap-3">
+        <div class="step-circle step-todo">6</div>
+        <div class="flex-1">
+          <div class="text-sm text-gray-500">⑥ 合成 · 旁白 + 对白 + BGM + 字幕 + 拼接（预计 1 分钟）</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Step 3: 完成 -->
+  <div class="panel border-emerald-200 bg-emerald-50">
+    <div class="flex items-center gap-3">
+      <div class="step-circle step-todo">3</div>
+      <div class="font-semibold">完成 · 跳到 ⑥ 合成预览</div>
+      <span class="pill pill-info text-xs ml-auto">一气呵成出片 · 不满意可在任一 stage 单独修改 + 重新合成</span>
+    </div>
+  </div>
+
+  <!-- 流程对照（与标准通道差异） -->
+  <div class="mt-6 panel bg-gray-50">
+    <div class="panel-title">🔍 与标准通道差异</div>
+    <table class="text-xs w-full">
+      <thead><tr class="text-left text-gray-500"><th class="pb-2">维度</th><th class="pb-2">标准通道</th><th class="pb-2">AI 一键</th></tr></thead>
+      <tbody class="divide-y divide-gray-200">
+        <tr><td class="py-1.5">入口 UI</td><td>项目列表 + 创建对话框</td><td><strong class="text-amber-700">单页面 wizard（不进 stage）</strong></td></tr>
+        <tr><td class="py-1.5">用户操作</td><td>每 stage 手动填字段、点生成</td><td><strong class="text-amber-700">填一次 → 等结果</strong></td></tr>
+        <tr><td class="py-1.5">中间环节</td><td>用户主导，可任意改</td><td>AI 自动 + 透明展示 + 可中途暂停修改</td></tr>
+        <tr><td class="py-1.5">出片落点</td><td>⑥ 合成 stage 用户手动 export</td><td><strong class="text-amber-700">直接跳 ⑥ 预览（已合成）</strong></td></tr>
+        <tr><td class="py-1.5">耗时</td><td>30 分钟+</td><td>5 分钟</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ========================================================== -->
+<!-- 模式 2: 标准通道 -->
+<!-- ========================================================== -->
+<section class="mode-content hidden" data-mode="standard">
+
+  <div class="panel mb-4">
+    <div class="flex items-center gap-3 mb-3">
+      <div class="font-semibold">📝 标准通道 · 6 stage 逐环节</div>
+      <a href="v5.html" class="text-xs text-blue-600 hover:underline ml-auto">→ v5 完整原型</a>
+    </div>
+
+    <!-- 流程图 -->
+    <div class="grid grid-cols-6 gap-2 text-center text-xs">
+      <div><div class="step-circle step-active mx-auto">1</div><div class="mt-2">立项</div><div class="text-gray-500 mt-0.5">2-5 min</div></div>
+      <div><div class="step-circle step-todo mx-auto">2</div><div class="mt-2">剧本</div><div class="text-gray-500 mt-0.5">5-30 min</div></div>
+      <div><div class="step-circle step-todo mx-auto">3</div><div class="mt-2">资产</div><div class="text-gray-500 mt-0.5">5-30 min</div></div>
+      <div><div class="step-circle step-todo mx-auto">4</div><div class="mt-2">分镜</div><div class="text-gray-500 mt-0.5">5-30 min</div></div>
+      <div><div class="step-circle step-todo mx-auto">5</div><div class="mt-2">出片<br /><span class="text-[10px]">画+视频</span></div><div class="text-gray-500 mt-0.5">5-15 min</div></div>
+      <div><div class="step-circle step-todo mx-auto">6</div><div class="mt-2">合成</div><div class="text-gray-500 mt-0.5">3-5 min</div></div>
+    </div>
+
+    <div class="mt-4 text-xs text-gray-600 leading-relaxed">
+      • 每 stage 用户主导，可随时回退修改前面 stage<br />
+      • 每 stage 都有"AI 辅助"按钮（如 ④ 分镜的"AI 拆分镜" / ⑤ 出片的"AI 全部生成"）<br />
+      • Stage 任意切换不强制顺序<br />
+      • 适合专业用户、内容创作者
+    </div>
+
+    <div class="mt-4 text-center">
+      <a href="v5.html" class="btn btn-primary inline-block">→ 进入 v5 完整原型（6 stage）</a>
+    </div>
+  </div>
+</section>
+
+<!-- ========================================================== -->
+<!-- 模式 3: 参考视频起步 -->
+<!-- ========================================================== -->
+<section class="mode-content hidden" data-mode="reference">
+
+  <!-- Step 1: 上传 -->
+  <div class="panel mb-4">
+    <div class="flex items-center gap-3 mb-4">
+      <div class="step-circle step-active">1</div>
+      <div class="font-semibold">上传参考视频 / 选已有项目</div>
+      <span class="pill pill-purple text-xs ml-auto">前置步骤 · 不在 stage 流程内</span>
+    </div>
+    <div class="ml-10 grid grid-cols-2 gap-4">
+      <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center bg-gray-50">
+        <div class="text-3xl mb-2">📹</div>
+        <div class="text-sm font-medium">上传参考视频</div>
+        <div class="text-xs text-gray-500 mt-1">支持 mp4 / mov · 最长 5 分钟</div>
+        <button class="btn btn-secondary mt-3">选择文件</button>
+      </div>
+      <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center bg-gray-50">
+        <div class="text-3xl mb-2">🔗</div>
+        <div class="text-sm font-medium">从 URL 导入</div>
+        <div class="text-xs text-gray-500 mt-1">B站 / YouTube / 抖音视频链接</div>
+        <input class="input mt-2" placeholder="粘贴链接..." />
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: AI 拆解 -->
+  <div class="panel mb-4 bg-gradient-to-r from-purple-50 to-blue-50 border-purple-200">
+    <div class="flex items-center gap-3 mb-4">
+      <div class="step-circle step-active">2</div>
+      <div class="font-semibold">AI 拆解参考视频（约 90 秒）</div>
+      <span class="pill pill-purple text-xs ml-auto">仅参考视频模式独有</span>
+    </div>
+    <div class="ml-10 grid grid-cols-2 gap-4">
+      <div>
+        <div class="text-xs text-gray-500 mb-2">原视频缩略图</div>
+        <div class="thumb">参考视频 · 60s</div>
+        <div class="text-xs text-gray-500 mt-2">分辨率：1080×1920 · 帧率：30fps · 时长：60s</div>
+      </div>
+      <div class="space-y-2 text-sm">
+        <div class="font-medium">检测结果：</div>
+        <div class="flex gap-2"><span class="pill pill-ok">✓</span><span>13 个分镜（按视觉切分）</span></div>
+        <div class="flex gap-2"><span class="pill pill-ok">✓</span><span>每个镜头的景别 / 角度 / 运镜 / 时长</span></div>
+        <div class="flex gap-2"><span class="pill pill-ok">✓</span><span>转场类型识别</span></div>
+        <div class="flex gap-2"><span class="pill pill-ok">✓</span><span>检测出 3 个角色（人脸聚类）</span></div>
+        <div class="flex gap-2"><span class="pill pill-ok">✓</span><span>检测出 2 个地点（场景聚类）</span></div>
+        <div class="flex gap-2"><span class="pill pill-warn">⚠</span><span>音频对白（自动识别 + 用户校对）</span></div>
+        <div class="flex gap-2"><span class="pill pill-warn">⚠</span><span>BGM 节奏（节拍识别）</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3: 进入 stage（已预填） -->
+  <div class="panel mb-4">
+    <div class="flex items-center gap-3 mb-4">
+      <div class="step-circle step-active">3</div>
+      <div class="font-semibold">进入标准 stage 流程（多数字段已自动填充）</div>
+      <span class="pill pill-purple text-xs ml-auto">用户检查 / 修改即可</span>
+    </div>
+    <div class="ml-10 space-y-2">
+      <div class="flex items-center gap-3 p-3 border border-gray-200 rounded">
+        <span class="step-circle step-done">1</span>
+        <div class="flex-1">
+          <div class="text-sm font-medium">① 立项</div>
+          <div class="text-xs text-gray-500 mt-0.5">画幅 9:16 / 时长 60s / 风格"古风工笔" → <strong class="text-purple-700">已自动从参考视频检测填充</strong></div>
+        </div>
+        <span class="pill pill-purple text-xs">从视频拆出</span>
+      </div>
+
+      <div class="flex items-center gap-3 p-3 border border-gray-200 rounded">
+        <span class="step-circle step-done">2</span>
+        <div class="flex-1">
+          <div class="text-sm font-medium">② 剧本</div>
+          <div class="text-xs text-gray-500 mt-0.5">3 个场景 · 6 段对白（来自语音识别） → <strong class="text-purple-700">用户校对对白文本即可</strong></div>
+        </div>
+        <span class="pill pill-purple text-xs">从视频拆出</span>
+      </div>
+
+      <div class="flex items-center gap-3 p-3 border border-gray-200 rounded">
+        <span class="step-circle step-active">3</span>
+        <div class="flex-1">
+          <div class="text-sm font-medium">③ 资产 · 当前位置</div>
+          <div class="text-xs text-gray-500 mt-0.5">3 角色 / 2 地点 框选出 → <strong class="text-purple-700">用户决定：用参考视频的关键帧作主图，还是重新生成？</strong></div>
+        </div>
+        <span class="pill pill-purple text-xs">从视频提取</span>
+      </div>
+
+      <div class="flex items-center gap-3 p-3 border border-gray-200 rounded">
+        <span class="step-circle step-todo">4</span>
+        <div class="flex-1">
+          <div class="text-sm font-medium">④ 分镜</div>
+          <div class="text-xs text-gray-500 mt-0.5">13 镜分镜定义 + 镜头语言 + 时长 → <strong class="text-purple-700">已全部预填，用户改画面描述即可</strong>（转场已挪到 ⑥ 合成）</div>
+        </div>
+        <span class="pill pill-purple text-xs">从视频拆出</span>
+      </div>
+
+      <div class="flex items-center gap-3 p-3 border border-gray-200 rounded">
+        <span class="step-circle step-todo">5</span>
+        <div class="flex-1">
+          <div class="text-sm text-gray-500">⑤ 出片 / ⑥ 合成（含转场+音频）</div>
+          <div class="text-xs text-gray-400 mt-0.5">同标准通道 — 因为前面字段都已填好，这两步等于直接生成；⑥ 合成时转场参数也来自参考视频</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 流程对照 -->
+  <div class="panel bg-gray-50">
+    <div class="panel-title">🔍 参考视频起步 · 与标准通道差异</div>
+    <table class="text-xs w-full">
+      <thead><tr class="text-left text-gray-500"><th class="pb-2">维度</th><th class="pb-2">标准通道</th><th class="pb-2">参考视频起步</th></tr></thead>
+      <tbody class="divide-y divide-gray-200">
+        <tr><td class="py-1.5">前置步骤</td><td>无</td><td><strong class="text-purple-700">+1 步：上传 + AI 拆解（90s）</strong></td></tr>
+        <tr><td class="py-1.5">① 立项</td><td>用户填字段</td><td>预填 80%，用户改细节</td></tr>
+        <tr><td class="py-1.5">② 剧本</td><td>用户写 / AI 拆</td><td><strong class="text-purple-700">从视频对白识别 → 用户校对</strong></td></tr>
+        <tr><td class="py-1.5">③ 资产</td><td>从 0 创建</td><td><strong class="text-purple-700">从视频提取候选 → 选用 / 重生</strong></td></tr>
+        <tr><td class="py-1.5">④ 分镜</td><td>从 0 拆 / AI 拆</td><td><strong class="text-purple-700">从视频拆 — 镜头语言 + 时长全自动；转场在 ⑥ 合成</strong></td></tr>
+        <tr><td class="py-1.5">⑤-⑥</td><td>同标准</td><td>同标准（前面已填好）</td></tr>
+        <tr><td class="py-1.5">使用场景</td><td>原创内容</td><td><strong class="text-purple-700">仿拍 / 二创 / 风格迁移</strong></td></tr>
+        <tr><td class="py-1.5">耗时</td><td>30 分钟+</td><td>15 分钟</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ========================================================== -->
+<!-- 模式 4: 我的库引用 -->
+<!-- ========================================================== -->
+<section class="mode-content hidden" data-mode="library">
+
+  <!-- Step 1: 项目创建 -->
+  <div class="panel mb-4">
+    <div class="flex items-center gap-3 mb-4">
+      <div class="step-circle step-active">1</div>
+      <div class="font-semibold">创建新项目（同标准通道）</div>
+    </div>
+    <div class="ml-10 grid grid-cols-2 gap-3">
+      <div>
+        <div class="text-xs text-gray-500 mb-1">项目名称</div>
+        <input class="input" value="杜十娘 · 第二集" />
+      </div>
+      <div>
+        <div class="text-xs text-gray-500 mb-1">关联 IP（已存在）</div>
+        <select class="input">
+          <option>杜十娘 IP（共 3 集）</option>
+          <option>武侠系列</option>
+        </select>
+      </div>
+    </div>
+    <div class="ml-10 mt-2 text-xs text-gray-500">→ 同标准通道，跳到剧本环节</div>
+  </div>
+
+  <!-- Step 2: 在 ③ 资产 stage 选择"从我的库引用" -->
+  <div class="panel mb-4 bg-gradient-to-r from-emerald-50 to-blue-50 border-emerald-200">
+    <div class="flex items-center gap-3 mb-4">
+      <div class="step-circle step-active">2</div>
+      <div class="font-semibold">在 ③ 资产 stage 选择"📚 从我的库引用"</div>
+      <span class="pill pill-purple text-xs ml-auto">仅 ③ 资产 体验不同</span>
+    </div>
+    <div class="ml-10">
+      <div class="flex gap-2 mb-3 text-xs">
+        <button class="btn btn-secondary">+ 新建角色</button>
+        <button class="btn btn-primary">📚 从我的库</button>
+        <button class="btn btn-secondary">🎭 内置形象</button>
+      </div>
+
+      <div class="grid grid-cols-3 gap-3">
+        <div class="panel border-2 border-emerald-300">
+          <div class="flex gap-3">
+            <div class="small-thumb">📷</div>
+            <div class="flex-1">
+              <div class="font-semibold text-sm">李墨</div>
+              <div class="text-xs text-gray-500">已用于 2 个项目</div>
+              <div class="mt-1 flex gap-1.5 flex-wrap">
+                <span class="pill pill-ok text-xs">主图 + 三视图</span>
+                <span class="pill pill-info text-xs">5 张形象组</span>
+              </div>
+            </div>
+          </div>
+          <button class="btn btn-primary text-xs w-full mt-2">✓ 引用到本项目</button>
+        </div>
+
+        <div class="panel">
+          <div class="flex gap-3">
+            <div class="small-thumb">🎭</div>
+            <div class="flex-1">
+              <div class="font-semibold text-sm">苏白</div>
+              <div class="text-xs text-gray-500">已用于 2 个项目</div>
+              <div class="mt-1 flex gap-1.5 flex-wrap">
+                <span class="pill pill-ok text-xs">主图 + 三视图</span>
+                <span class="pill pill-info text-xs">4 张形象组</span>
+              </div>
+            </div>
+          </div>
+          <button class="btn btn-secondary text-xs w-full mt-2">引用</button>
+        </div>
+
+        <div class="panel">
+          <div class="flex gap-3">
+            <div class="small-thumb">🏯</div>
+            <div class="flex-1">
+              <div class="font-semibold text-sm">京城茶馆</div>
+              <div class="text-xs text-gray-500">已用于 2 个项目</div>
+              <div class="mt-1 flex gap-1.5 flex-wrap">
+                <span class="pill pill-ok text-xs">主图 + 3 变体</span>
+              </div>
+            </div>
+          </div>
+          <button class="btn btn-secondary text-xs w-full mt-2">引用</button>
+        </div>
+      </div>
+
+      <div class="mt-4 text-xs text-gray-600 bg-white p-3 rounded border border-gray-200">
+        💡 <strong>引用模式</strong>：在新项目里创建一个 binding 行，<strong>反指</strong>我的库里的资产（user_assets）。引用后：
+        <ul class="ml-4 mt-1 list-disc">
+          <li>新 binding 自动拷贝原资产的所有图（主图 / 形象组 / 派生）</li>
+          <li>新项目内可独立改本 binding（不影响库中原型）</li>
+          <li>"修改同步回库"是单独操作，避免误改</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3: 后续流程 -->
+  <div class="panel mb-4">
+    <div class="flex items-center gap-3 mb-4">
+      <div class="step-circle step-active">3</div>
+      <div class="font-semibold">资产已就绪 → 直接进 ④ 分镜</div>
+    </div>
+    <div class="ml-10">
+      <div class="grid grid-cols-6 gap-1 text-center text-xs">
+        <div><div class="step-circle step-done mx-auto">✓</div><div class="mt-1.5">立项</div></div>
+        <div><div class="step-circle step-active mx-auto">2</div><div class="mt-1.5">剧本</div></div>
+        <div><div class="step-circle step-done mx-auto">✓</div><div class="mt-1.5 text-emerald-700">资产</div></div>
+        <div><div class="step-circle step-todo mx-auto">4</div><div class="mt-1.5">分镜</div></div>
+        <div><div class="step-circle step-todo mx-auto">5</div><div class="mt-1.5">出片</div></div>
+        <div><div class="step-circle step-todo mx-auto">6</div><div class="mt-1.5">合成</div></div>
+      </div>
+      <div class="mt-3 text-xs text-gray-600">
+        ③ 资产可<strong class="text-emerald-700">秒级跳过</strong>（已有图）；后续 ④-⑥ 同标准通道。
+      </div>
+    </div>
+  </div>
+
+  <!-- 流程对照 -->
+  <div class="panel bg-gray-50">
+    <div class="panel-title">🔍 我的库引用 · 与标准通道差异</div>
+    <table class="text-xs w-full">
+      <thead><tr class="text-left text-gray-500"><th class="pb-2">维度</th><th class="pb-2">标准通道</th><th class="pb-2">我的库引用</th></tr></thead>
+      <tbody class="divide-y divide-gray-200">
+        <tr><td class="py-1.5">① 立项</td><td>用户填字段</td><td>同标准 + 关联 IP（自动套用 IP 故事世界）</td></tr>
+        <tr><td class="py-1.5">② 剧本</td><td>用户写 / AI 拆</td><td>同标准</td></tr>
+        <tr><td class="py-1.5">③ 资产</td><td>从 0 创建（5-30 分钟）</td><td><strong class="text-emerald-700">从库选 + 一键引用（30 秒）</strong></td></tr>
+        <tr><td class="py-1.5">④-⑥</td><td>同标准</td><td>同标准</td></tr>
+        <tr><td class="py-1.5">使用场景</td><td>原创新内容</td><td><strong class="text-emerald-700">系列剧 / IP 矩阵 / 同人物多剧情</strong></td></tr>
+        <tr><td class="py-1.5">耗时</td><td>30 分钟+</td><td>20 分钟（资产省 10 分钟）</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ========================================================== -->
+<!-- 4 模式总对比 -->
+<!-- ========================================================== -->
+<section class="mt-8 panel">
+  <div class="panel-title">🎯 4 种模式 · 总对比表</div>
+  <table class="text-xs w-full mt-3">
+    <thead>
+      <tr class="text-left text-gray-500 border-b border-gray-200">
+        <th class="pb-2 px-2">维度</th>
+        <th class="pb-2 px-2">🪄 AI 一键</th>
+        <th class="pb-2 px-2">📝 标准通道</th>
+        <th class="pb-2 px-2">📹 参考视频</th>
+        <th class="pb-2 px-2">📚 我的库</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      <tr><td class="py-2 px-2 font-medium">入口</td>
+          <td class="px-2">单页 wizard</td>
+          <td class="px-2">6 stage</td>
+          <td class="px-2">+ 1 上传步</td>
+          <td class="px-2">6 stage（③ 不同）</td></tr>
+      <tr><td class="py-2 px-2 font-medium">用户介入</td>
+          <td class="px-2">最少（1 次输入）</td>
+          <td class="px-2">最多（每 stage 都填）</td>
+          <td class="px-2">中（校对预填）</td>
+          <td class="px-2">中（资产省）</td></tr>
+      <tr><td class="py-2 px-2 font-medium">是否进 stage</td>
+          <td class="px-2">不进（外挂 wizard）</td>
+          <td class="px-2">完整 6 stage</td>
+          <td class="px-2">进 stage（已预填）</td>
+          <td class="px-2">进 stage（资产已就绪）</td></tr>
+      <tr><td class="py-2 px-2 font-medium">起点</td>
+          <td class="px-2">一句话</td>
+          <td class="px-2">立项字段</td>
+          <td class="px-2">参考视频</td>
+          <td class="px-2">已有库</td></tr>
+      <tr><td class="py-2 px-2 font-medium">特有 service</td>
+          <td class="px-2">QuickModeOrchestrator</td>
+          <td class="px-2">无（标准）</td>
+          <td class="px-2">VideoAnalysisService</td>
+          <td class="px-2">UserAssetCloneService</td></tr>
+      <tr><td class="py-2 px-2 font-medium">核心数据动作</td>
+          <td class="px-2">编排所有 service</td>
+          <td class="px-2">每 stage 独立</td>
+          <td class="px-2">视频拆 → 预填字段</td>
+          <td class="px-2">user_asset → binding</td></tr>
+      <tr><td class="py-2 px-2 font-medium">耗时</td>
+          <td class="px-2">5 分钟</td>
+          <td class="px-2">30 分钟+</td>
+          <td class="px-2">15 分钟</td>
+          <td class="px-2">20 分钟</td></tr>
+      <tr><td class="py-2 px-2 font-medium">用户类型</td>
+          <td class="px-2">自媒体 / 大众</td>
+          <td class="px-2">专业 / 创作者</td>
+          <td class="px-2">仿拍 / 二创</td>
+          <td class="px-2">IP 矩阵 / 系列</td></tr>
+      <tr><td class="py-2 px-2 font-medium">能否中途切换到其他模式</td>
+          <td class="px-2">✓ 可暂停转标准</td>
+          <td class="px-2">✓ 可在 ③ 转"我的库"</td>
+          <td class="px-2">✓ 拆完字段后自由</td>
+          <td class="px-2">✓ 任意 stage 走</td></tr>
+    </tbody>
+  </table>
+</section>
+
+</main>
+
+<script>
+  document.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.mode
+      document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'))
+      btn.classList.add('active')
+      document.querySelectorAll('.mode-content').forEach(c => {
+        c.classList.toggle('hidden', c.dataset.mode !== mode)
+      })
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    })
+  })
+</script>
+
+</body>
+</html>
