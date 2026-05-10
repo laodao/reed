@@ -59,6 +59,22 @@
         <el-button size="small" link @click="selectAll">全选</el-button>
         <el-button size="small" link @click="clearSelection">清空</el-button>
       </header>
+      <div v-if="scenes && scenes.length > 0" class="scene-picker">
+        <span class="scene-picker-label">导入到场景：</span>
+        <el-select
+          v-model="targetSceneScriptId"
+          size="small"
+          placeholder="选择目标场景"
+          style="width: 280px"
+        >
+          <el-option
+            v-for="(s, i) in scenes"
+            :key="s.id"
+            :label="s.title ?? `场景 ${(s.index ?? i) + 1}`"
+            :value="s.id"
+          />
+        </el-select>
+      </div>
       <el-table
         :data="shots"
         border
@@ -98,10 +114,11 @@
       <el-button @click="visible = false">取消</el-button>
       <el-button
         type="primary"
-        :disabled="selectedShots.length === 0"
+        :disabled="selectedShots.length === 0 || phase === 'importing'"
+        :loading="phase === 'importing'"
         @click="onImport"
       >
-        导入选中 {{ selectedShots.length }} 个镜头
+        {{ phase === 'importing' ? '导入中...' : `导入选中 ${selectedShots.length} 个镜头` }}
       </el-button>
     </template>
   </el-dialog>
@@ -127,6 +144,10 @@ interface ParsedShot {
 
 const props = defineProps<{
   modelValue: boolean
+  /** 可选：当前剧本中可选场景列表（用户在 dialog 内选要导入到哪个 scene） */
+  scenes?: Array<{ id: string; title?: string; index?: number }>
+  /** 可选：默认选中的 sceneScriptId（父组件已知"当前场景"时传入） */
+  defaultSceneScriptId?: string
 }>()
 
 const emit = defineEmits<{
@@ -139,13 +160,14 @@ const visible = computed({
   set: (v) => emit('update:modelValue', v),
 })
 
-type Phase = 'init' | 'analyzing' | 'ready' | 'failed'
+type Phase = 'init' | 'analyzing' | 'ready' | 'failed' | 'importing'
 const phase = ref<Phase>('init')
 const videoPath = ref('')
 const sceneThreshold = ref(0.3)
 const shots = ref<ParsedShot[]>([])
 const selectedShots = ref<ParsedShot[]>([])
 const analysisId = ref<string>('')
+const targetSceneScriptId = ref<string>(props.defaultSceneScriptId ?? '')
 
 function formatSec(s: number): string {
   const m = Math.floor(s / 60)
@@ -217,14 +239,45 @@ function clearSelection(): void {
   selectedShots.value = []
 }
 
-function onImport(): void {
+async function onImport(): Promise<void> {
   if (selectedShots.value.length === 0) return
-  emit('imported', {
-    shots: selectedShots.value,
-    analysisId: analysisId.value,
-  })
-  visible.value = false
-  ElMessage.success(`已发出 ${selectedShots.value.length} 个镜头导入请求`)
+
+  // 若父组件传 scenes，要求用户挑目标场景；否则只 emit shots 让父组件处理
+  if (props.scenes && props.scenes.length > 0) {
+    if (!targetSceneScriptId.value) {
+      ElMessage.warning('请先选择目标场景')
+      return
+    }
+    const api = (window as any).electronAPI?.episodeProduction?.asset?.referenceVideo
+    if (!api?.importToScene) {
+      ElMessage.error('importToScene IPC 未暴露')
+      return
+    }
+    phase.value = 'importing'
+    try {
+      const resp = await api.importToScene({
+        sceneScriptId: targetSceneScriptId.value,
+        parsedShots: selectedShots.value,
+      })
+      if (!resp?.success) {
+        ElMessage.error(resp?.error || '导入失败')
+        phase.value = 'ready'
+        return
+      }
+      const ids = resp.data?.storyboardIds ?? []
+      ElMessage.success(`已创建 ${ids.length} 个分镜（去 ④ 分镜 stage 查看）`)
+      emit('imported', { shots: selectedShots.value, analysisId: analysisId.value })
+      visible.value = false
+    } catch (e: any) {
+      ElMessage.error(e?.message || '导入失败')
+      phase.value = 'ready'
+    }
+  } else {
+    // 无 scenes prop：仅发 emit 让父组件自行处理（向后兼容）
+    emit('imported', { shots: selectedShots.value, analysisId: analysisId.value })
+    visible.value = false
+    ElMessage.success(`已发出 ${selectedShots.value.length} 个镜头导入请求`)
+  }
 }
 </script>
 
@@ -273,5 +326,18 @@ function onImport(): void {
 }
 .empty-result {
   padding: 20px;
+}
+.scene-picker {
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  background: var(--el-fill-color-light);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.scene-picker-label {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
 }
 </style>

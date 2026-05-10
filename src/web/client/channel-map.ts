@@ -422,6 +422,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.asset.referenceVideo.list': { channel: 'ep:reference-video:list' },
   'episodeProduction.asset.referenceVideo.get': { channel: 'ep:reference-video:get' },
   'episodeProduction.asset.referenceVideo.delete': { channel: 'ep:reference-video:delete' },
+  'episodeProduction.asset.referenceVideo.importToScene': { channel: 'ep:reference-video:import-to-scene' },
   // 数字人池（spec 2026-05-09 ep-redesign §3.2 D3）
   'episodeProduction.asset.preset.list': { channel: 'ep:asset:preset:list' },
   'episodeProduction.asset.preset.ensureMainImage': { channel: 'ep:asset:preset:ensure-main-image' },

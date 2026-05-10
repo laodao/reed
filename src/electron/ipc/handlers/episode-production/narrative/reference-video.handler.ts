@@ -21,12 +21,14 @@ import { getCurrentUserId } from '@core/context/user-context'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import { ReferenceVideoAnalysisService } from '@core/modules/episode-production/reference-video/analysis.service'
 import { createVlmShotInferrer } from '@core/modules/episode-production/reference-video/vlm-shot-inferrer'
+import { ImportFromParsedShotsService } from '@core/modules/episode-production/narrative/import-from-parsed-shots.service'
 
 export function registerReferenceVideoHandlers(): void {
   ipcBridge.handle('ep:reference-video:analyze', handleAnalyze)
   ipcBridge.handle('ep:reference-video:list', handleList)
   ipcBridge.handle('ep:reference-video:get', handleGet)
   ipcBridge.handle('ep:reference-video:delete', handleDelete)
+  ipcBridge.handle('ep:reference-video:import-to-scene', handleImportToScene)
 }
 
 function tempDir(): string {
@@ -85,6 +87,30 @@ async function handleGet(_event: any, input: { id: string }): Promise<IpcRespons
     const svc = new ReferenceVideoAnalysisService(db.dataSource)
     const data = await svc.getById(input.id)
     if (!data) return { success: false, error: '解析记录不存在' }
+    return { success: true, data }
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+async function handleImportToScene(
+  _event: any,
+  input: { sceneScriptId: string; parsedShots: any[] },
+): Promise<IpcResponse> {
+  try {
+    if (!input?.sceneScriptId) {
+      return { success: false, error: '参数不完整：sceneScriptId 必填' }
+    }
+    if (!Array.isArray(input.parsedShots) || input.parsedShots.length === 0) {
+      return { success: false, error: '参数不完整：parsedShots 非空数组' }
+    }
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) throw new Error('数据库未初始化')
+    const svc = new ImportFromParsedShotsService(db.dataSource)
+    const data = await svc.importToScene({
+      sceneScriptId: input.sceneScriptId,
+      parsedShots: input.parsedShots,
+    })
     return { success: true, data }
   } catch (err: any) {
     return { success: false, error: err?.message ?? String(err) }

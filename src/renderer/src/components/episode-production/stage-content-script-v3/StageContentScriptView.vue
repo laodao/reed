@@ -38,6 +38,23 @@
             📋 故事板预览
           </el-button>
         </el-tooltip>
+        <!-- 参考视频导入分镜（spec 2026-05-09 ep-redesign §3.2 D5 · P-22） -->
+        <el-tooltip placement="bottom" effect="light">
+          <template #content>
+            <div style="max-width: 260px;">
+              <div>上传参考视频 → ffmpeg + VLM 解析镜头</div>
+              <div>挑选要保留的镜头 → 批量落到 ④ 分镜</div>
+              <div style="margin-top:4px;color:#aaa;font-size:11px;">专业用户：reverse-engineer reference</div>
+            </div>
+          </template>
+          <el-button
+            v-if="props.episodeScriptId && scenes.length > 0"
+            @click="referenceVideoDialog.open = true"
+          >
+            <el-icon><VideoCamera /></el-icon>
+            📹 参考视频导入
+          </el-button>
+        </el-tooltip>
         <el-button
           v-if="subState === 'pending'"
           type="success"
@@ -69,6 +86,15 @@
       :episode-script-id="props.episodeScriptId"
       :default-synopsis="defaultSynopsis"
       @created-storyboards="onThumbnailCreated"
+    />
+
+    <!-- 参考视频导入分镜 dialog（spec 2026-05-09 ep-redesign §3.2 D5 · P-22） -->
+    <ReferenceVideoImportDialog
+      v-if="props.episodeScriptId && scenes.length > 0"
+      v-model="referenceVideoDialog.open"
+      :scenes="sceneOptions"
+      :default-scene-script-id="sceneOptions[0]?.id"
+      @imported="onReferenceVideoImported"
     />
 
     <div v-if="!episode" class="empty-state">
@@ -202,9 +228,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Expand, InfoFilled, MagicStick, Picture } from '@element-plus/icons-vue'
+import { Check, Expand, InfoFilled, MagicStick, Picture, VideoCamera } from '@element-plus/icons-vue'
 // spec 2026-05-09 ep-redesign §3.2 B7 · 9 帧故事板预览
 import StoryboardThumbnailDialog from './StoryboardThumbnailDialog.vue'
+// spec 2026-05-09 ep-redesign §3.2 D5 · 参考视频导入分镜
+import ReferenceVideoImportDialog from '@/components/episode-production/dialogs/ReferenceVideoImportDialog.vue'
 import StageMainHeader from '../shared/StageMainHeader.vue'
 import EntitySidebar from './EntitySidebar.vue'
 import SceneListPanel from './SceneListPanel.vue'
@@ -370,6 +398,23 @@ const canGenerateThumbnails = computed(
 function onThumbnailCreated(payload: { storyboardIds: string[] }): void {
   ElMessage.success(`已创建 ${payload.storyboardIds.length} 个分镜（去 ④ 分镜 stage 查看）`)
   thumbnailDialog.value.open = false
+}
+
+// ===== 参考视频导入分镜（spec 2026-05-09 ep-redesign §3.2 D5 · P-22） =====
+const referenceVideoDialog = ref<{ open: boolean }>({ open: false })
+
+/** 把 scenes 包成 dialog scene-picker 期望的格式 */
+const sceneOptions = computed(() =>
+  scenes.value.map((s: any, i: number) => ({
+    id: s.id,
+    title: s.title ?? s.summary ?? `场景 ${i + 1}`,
+    index: i,
+  })),
+)
+
+function onReferenceVideoImported(_payload: { shots: any[]; analysisId: string }): void {
+  // dialog 内部已调 importToScene IPC + 显示 ElMessage；这里仅关闭 + 刷新
+  referenceVideoDialog.value.open = false
 }
 
 // 实体清单（给 SceneListPanel EntityRefRenderer 用）

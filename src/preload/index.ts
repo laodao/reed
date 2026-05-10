@@ -308,6 +308,7 @@ const IPC_CHANNELS = {
   EP_REFERENCE_VIDEO_LIST: 'ep:reference-video:list',
   EP_REFERENCE_VIDEO_GET: 'ep:reference-video:get',
   EP_REFERENCE_VIDEO_DELETE: 'ep:reference-video:delete',
+  EP_REFERENCE_VIDEO_IMPORT_TO_SCENE: 'ep:reference-video:import-to-scene',
   /** spec 2026-05-09 ep-redesign §3.2 D3 · 数字人池 */
   EP_ASSET_PRESET_LIST: 'ep:asset:preset:list',
   EP_ASSET_PRESET_ENSURE_MAIN_IMAGE: 'ep:asset:preset:ensure-main-image',
@@ -2191,6 +2192,8 @@ const electronAPI = {
           ipcRenderer.invoke(IPC_CHANNELS.EP_REFERENCE_VIDEO_GET, input),
         delete: (input: { id: string }) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_REFERENCE_VIDEO_DELETE, input),
+        importToScene: (input: { sceneScriptId: string; parsedShots: any[] }) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_REFERENCE_VIDEO_IMPORT_TO_SCENE, input),
       },
 
       /**
