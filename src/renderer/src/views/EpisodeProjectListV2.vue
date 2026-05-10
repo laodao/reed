@@ -16,6 +16,7 @@
         :episodes="episodes"
         @settings="dialogs.settings = true"
         @create-episode="dialogs.createEpisode = true"
+        @open-quick-mode="dialogs.quickMode = true"
         @open-episode="onOpenEpisode"
         @edit-episode="onEditEpisode"
         @delete-episode="onDeleteEpisode"
@@ -118,6 +119,15 @@
       :initial-title="dialogs.editingEpisodeTitle"
       @updated="onEpisodeUpdated"
     />
+
+    <!-- AI 一键模式 wizard（spec 2026-05-09 ep-redesign §3.2 C3 · P-19） -->
+    <AIQuickModeWizard
+      v-if="selectedProject"
+      v-model="dialogs.quickMode"
+      :project="selectedProject"
+      :next-episode-number="(episodes?.length ?? 0) + 1"
+      @done="onQuickModeDone"
+    />
   </div>
 </template>
 
@@ -131,6 +141,8 @@ import EpisodeListPanel from '@/components/episode-production/project-list/Episo
 import CreateEpisodeDialog from '@/components/episode-production/dialogs/CreateEpisodeDialog.vue'
 import EditEpisodeDialog from '@/components/episode-production/dialogs/EditEpisodeDialog.vue'
 import SettingsDialog from '@/components/episode-production/dialogs/SettingsDialog.vue'
+// spec 2026-05-09 ep-redesign §3.2 C3 · AI 一键模式
+import AIQuickModeWizard from '@/components/episode-production/dialogs/AIQuickModeWizard.vue'
 import { STYLE_PRESETS } from '@core/modules/episode-production/assets/constants/style-presets'
 import { useEpProjectStore } from '@/stores/episode-production/project.store'
 import type {
@@ -186,6 +198,8 @@ const dialogs = reactive({
   editingEpisodeId: '',
   editingEpisodeNumber: 1,
   editingEpisodeTitle: '',
+  // AI 一键模式 wizard（spec 2026-05-09 ep-redesign §3.2 C3）
+  quickMode: false,
 })
 
 // ===== 数据加载 =====
@@ -387,6 +401,15 @@ async function onDeleteEpisode(ep: EpisodeWithProgress): Promise<void> {
 async function onEpisodeCreated(): Promise<void> {
   await reloadEpisodes()
   await loadSummaries()
+}
+
+/** AI 一键 wizard 完成 → reload + 直接跳到该剧集 workbench */
+async function onQuickModeDone(payload: { episodeId: string }): Promise<void> {
+  await reloadEpisodes()
+  await loadSummaries()
+  if (selectedProjectId.value) {
+    router.push(`/episode-production/${selectedProjectId.value}/episode/${payload.episodeId}`)
+  }
 }
 
 async function onEpisodeUpdated(): Promise<void> {

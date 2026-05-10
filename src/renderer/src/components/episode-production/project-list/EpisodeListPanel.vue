@@ -10,6 +10,11 @@
           <el-icon><Setting /></el-icon>
           项目设置
         </el-button>
+        <!-- AI 一键模式（spec 2026-05-09 ep-redesign §3.2 C3 · P-19） -->
+        <el-button type="warning" class="btn-quick-mode" @click="$emit('open-quick-mode')">
+          <el-icon><Star /></el-icon>
+          ✨ AI 一键
+        </el-button>
         <el-button type="primary" class="btn-create-episode" @click="$emit('create-episode')">
           <el-icon><Plus /></el-icon>
           新建剧集
@@ -34,7 +39,7 @@
 </template>
 
 <script setup lang="ts">
-import { Setting, Plus } from '@element-plus/icons-vue'
+import { Setting, Plus, Star } from '@element-plus/icons-vue'
 import EpisodeCard from './EpisodeCard.vue'
 import type { VideoProject, VideoProjectSummary } from '../../../../../shared/types/story-to-video.types'
 import type { EpisodeWithProgress } from '../../../../../shared/types/episode-production/episode-with-progress.types'
@@ -49,6 +54,7 @@ defineProps<{
 defineEmits<{
   (e: 'settings'): void
   (e: 'create-episode'): void
+  (e: 'open-quick-mode'): void
   (e: 'open-episode', ep: EpisodeWithProgress): void
   (e: 'edit-episode', ep: EpisodeWithProgress): void
   (e: 'delete-episode', ep: EpisodeWithProgress): void
