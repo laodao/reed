@@ -539,6 +539,13 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-asset-image-variant-category-and-migrate'
     )
     await addAssetImageVariantCategoryAndMigrate(this.dataSource)
+
+    // spec 2026-05-09 ep-redesign · e2e Bug C：老 storyboard.characters[].characterId
+    // 修复（名字/长文 ID 反查 + expression 兜底；幂等）
+    const { normalizeStoryboardCharacterIds } = await import(
+      '@core/database/migrations/normalize-storyboard-character-ids'
+    )
+    await normalizeStoryboardCharacterIds(this.dataSource)
   }
 
   /**

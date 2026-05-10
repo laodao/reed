@@ -303,6 +303,13 @@ async function initDatabase(): Promise<void> {
   )
   await repairUploadedBindingToStandalone(ds)
 
+  // spec 2026-05-09 ep-redesign · e2e Bug C：老 storyboard.characters[].characterId
+  // 修复（名字/长文 ID 反查 + expression 兜底；幂等）
+  const { normalizeStoryboardCharacterIds } = await import(
+    '@core/database/migrations/normalize-storyboard-character-ids'
+  )
+  await normalizeStoryboardCharacterIds(ds)
+
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)
   console.log('[web-server] PostgreSQL 数据库初始化完成')
