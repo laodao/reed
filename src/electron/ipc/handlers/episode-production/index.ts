@@ -24,6 +24,7 @@ import { registerScriptHandlers } from './narrative/script.handler'
 import { registerStoryboardHandlers } from './narrative/storyboard.handler'
 import { registerStoryboardCharacterHandlers } from './narrative/storyboard-character.handler'
 import { registerStoryboardThumbnailHandlers } from './narrative/storyboard-thumbnail.handler'
+import { registerUserAssetHandlers } from './asset/user-asset.handler'
 import { registerReferenceHandlers } from './narrative/reference.handler'
 import { registerKeyframeHandlers } from './render/keyframe.handler'
 import { registerVideoHandlers } from './render/video.handler'
@@ -60,6 +61,8 @@ export function registerEpisodeProductionHandlers(): void {
   registerStoryboardCharacterHandlers()
   // spec 2026-05-09 ep-redesign §3.2 B7 · 9 帧故事板预览
   registerStoryboardThumbnailHandlers()
+  // spec 2026-05-09 ep-redesign §3.2 D2 · 跨项目角色库
+  registerUserAssetHandlers()
   // P4-T6 新增：引用解析 + 完整性校验
   registerReferenceHandlers()
   registerKeyframeHandlers()

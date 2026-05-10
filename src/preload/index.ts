@@ -298,6 +298,11 @@ const IPC_CHANNELS = {
   /** spec 2026-05-09 ep-redesign §3.2 B7 · 9 帧故事板预览 */
   EP_STORYBOARD_GENERATE_THUMBNAILS: 'ep:storyboard:generate-thumbnails',
   EP_STORYBOARD_CLEANUP_THUMBNAILS: 'ep:storyboard:cleanup-thumbnails',
+  /** spec 2026-05-09 ep-redesign §3.2 D2 · 跨项目角色库 */
+  EP_USER_ASSET_LIST: 'ep:user-asset:list',
+  EP_USER_ASSET_ADD_FROM_BINDING: 'ep:user-asset:add-from-binding',
+  EP_USER_ASSET_CREATE_BINDING: 'ep:user-asset:create-binding',
+  EP_USER_ASSET_DELETE: 'ep:user-asset:delete',
 
   // 派生（2 个）
   EP_ASSET_DERIVE_SINGLE: 'ep:asset:derive:single',
@@ -2138,6 +2143,23 @@ const electronAPI = {
         description: string
         projectId: string
       }) => ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_EXTRACT_FIELDS, input),
+
+      /**
+       * 跨项目角色库（spec 2026-05-09 ep-redesign §3.2 D2）
+       * 让用户在多项目间复用同一角色 / 地点 / 物品。
+       */
+      userAsset: {
+        list: (input: { assetType?: 'character' | 'location' | 'item'; keyword?: string } = {}) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_USER_ASSET_LIST, input),
+        addFromBinding: (input: {
+          bindingId: string
+          bindingType: 'character' | 'location' | 'item'
+        }) => ipcRenderer.invoke(IPC_CHANNELS.EP_USER_ASSET_ADD_FROM_BINDING, input),
+        createBinding: (input: { userAssetId: string; targetProjectId: string }) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_USER_ASSET_CREATE_BINDING, input),
+        delete: (input: { userAssetId: string }) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_USER_ASSET_DELETE, input),
+      },
 
       /**
        * 设置 / 清空资产参考图（spec 2026-05-09）：
