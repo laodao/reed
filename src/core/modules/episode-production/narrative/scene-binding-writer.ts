@@ -12,9 +12,6 @@
 import type { DataSource } from 'typeorm'
 import type {
   GeneratedScene,
-  GeneratedSceneCharacter,
-  GeneratedDialogue,
-  GeneratedAction,
   SceneScript,
 } from '@shared/types/episode-production'
 import { SceneScriptEntity } from '@core/database/entities/episode-production/scene-script.entity'
@@ -22,6 +19,8 @@ import { SceneCharacterEntity } from '@core/database/entities/episode-production
 import { SceneDialogueEntity } from '@core/database/entities/episode-production/scene-dialogue.entity'
 import { SceneActionEntity } from '@core/database/entities/episode-production/scene-action.entity'
 import { ScenePropEntity } from '@core/database/entities/episode-production/scene-prop.entity'
+import { LocationBindingEntity } from '@core/database/entities/episode-production/location-binding.entity'
+import { CharacterBindingEntity } from '@core/database/entities/episode-production/character-binding.entity'
 import { getCurrentUserId } from '@core/context/user-context'
 
 /**
@@ -210,6 +209,53 @@ export class SceneBindingWriter {
           createdAt: now.getTime(),
           updatedAt: now.getTime(),
         })
+      }
+
+      // 5. 同步更新地点绑定的 baseDescription（如果为空）
+      const locationBindingRepo = manager.getRepository(LocationBindingEntity)
+      for (const scene of scenes) {
+        if (scene.locationBindingId && scene.sceneDescription) {
+          const locationBinding = await locationBindingRepo.findOne({
+            where: { id: scene.locationBindingId },
+          })
+          if (locationBinding && !locationBinding.baseDescription) {
+            // 合成 baseDescription：sceneDescription + locationKeyObjects
+            let baseDesc = scene.sceneDescription
+            if (scene.locationKeyObjects && scene.locationKeyObjects.length > 0) {
+              baseDesc += `；关键物件：${scene.locationKeyObjects.join('、')}`
+            }
+            await locationBindingRepo.update(scene.locationBindingId, {
+              baseDescription: baseDesc,
+              updatedAt: now,
+            })
+          }
+        }
+      }
+
+      // 6. 同步更新角色绑定的 overrideOutfit（如果为空）
+      const characterBindingRepo = manager.getRepository(CharacterBindingEntity)
+      const outfitMap = new Map<string, string>()
+      for (const scene of scenes) {
+        for (const char of scene.characters) {
+          if (char.characterBindingId && char.outfit) {
+            // 只记录第一个场景的 outfit（不覆盖后续场景的）
+            if (!outfitMap.has(char.characterBindingId)) {
+              outfitMap.set(char.characterBindingId, char.outfit)
+            }
+          }
+        }
+      }
+      for (const bindingId of outfitMap.keys()) {
+        const outfit = outfitMap.get(bindingId)!
+        const characterBinding = await characterBindingRepo.findOne({
+          where: { id: bindingId },
+        })
+        if (characterBinding && !characterBinding.overrideOutfit) {
+          await characterBindingRepo.update(bindingId, {
+            overrideOutfit: outfit,
+            updatedAt: now,
+          })
+        }
       }
 
       return result

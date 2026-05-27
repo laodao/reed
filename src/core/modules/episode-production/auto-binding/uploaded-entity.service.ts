@@ -9,12 +9,9 @@ import {
   StoryCharacter,
   StoryLocation,
   StoryItem,
-  EntityImportance,
   CharacterRolePosition,
   LocationType,
-  LocationImportance,
-  ItemType,
-  ItemLevel
+  ItemType
 } from '@shared/types/longwriting.types'
 import {
   UploadedCharacter,
@@ -71,6 +68,10 @@ export class UploadedEntityService {
         projectId,
         name: char.name,
         description: char.description || undefined,
+        // 2026-05-27：AI 识别时推断的年龄/性别/人种
+        age: char.age,
+        gender: char.gender,
+        race: char.race,
       })
     }
 

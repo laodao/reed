@@ -39,6 +39,7 @@ export type EpisodeSourceType = 'outline' | 'uploaded'
 
 /**
  * 上传长文识别的角色（FU5-B2 扩展：source / confirmed / lw 关联 + 客户端临时 id）
+ * 2026-05-27 扩展：AI 识别时直接输出 age / gender / race，减少后续手动填写
  */
 export interface UploadedCharacter {
   /** 客户端临时 id，用于 v-for key + 用户取舍跟踪；服务端不强制要求 */
@@ -46,6 +47,12 @@ export interface UploadedCharacter {
   name: string
   description?: string
   role?: string // 主角、配角、反派等
+  /** AI 识别时的年龄推断（可选，减少后续手动填写） */
+  age?: number
+  /** AI 识别时的性别推断（可选） */
+  gender?: string
+  /** AI 识别时的人种/种族推断（可选） */
+  race?: string
   /** 双来源标签（spec §1.2）；缺省按 lw_*_id 是否存在推断（有→linked_lw，否→standalone） */
   sourceType?: 'linked_lw' | 'standalone'
   /** 已绑定的长文角色 id（linked_lw 时有值） */

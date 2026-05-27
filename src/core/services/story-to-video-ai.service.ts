@@ -12,7 +12,7 @@ import type {
   UploadedItem
 } from '@shared/types/story-to-video.types'
 import type { AssetRosterForScript } from '@shared/types/episode-production'
-import { callAI, extractJsonFromResponse } from '../modules/episode-production/narrative/ai/_helpers'
+import { callAI, callAIWithContinue, extractJsonFromResponse } from '../modules/episode-production/narrative/ai/_helpers'
 import { EpisodeScriptGenerator } from '../modules/episode-production/narrative/ai/script-generator'
 import { EpisodeStoryboardGenerator } from '../modules/episode-production/narrative/ai/storyboard-generator'
 
@@ -82,8 +82,11 @@ const CHARACTER_IDENTIFICATION_PROMPT = `你是一位专业的文学分析师和
   "characters": [
     {
       "name": "角色名称",
-      "description": "角色的简要描述，包括外貌、性格特点、身份等",
-      "role": "角色定位，可选值：protagonist（主角）、supporting（配角）、antagonist（反派）、minor（次要角色）"
+      "description": "角色的简要描述，包括外貌特征、性格特点、身份背景等",
+      "role": "角色定位，可选值：protagonist（主角）、supporting（配角）、antagonist（反派）、minor（次要角色）",
+      "age": 年龄（数字，如果文本中有明确年龄或可推断的大致年龄，如 25、30；无法推断则不填或填 null）,
+      "gender": 性别（男/女/其他，无法推断则不填）,
+      "race": 人种或种族（如：东亚人、欧洲人、非洲人、或虚构种族如半人马；无法推断则不填）
     }
   ]
 }
@@ -295,7 +298,7 @@ export class StoryToVideoAIService {
 
     const systemPrompt = '你是一位专业的文学分析师。请从文本中识别角色，严格按照 JSON 格式输出，不要添加任何额外的文字说明。'
 
-    const response = await callAI(prompt, systemPrompt, 2048, providerConfigId, modelId)
+    const response = await callAIWithContinue(prompt, systemPrompt, undefined, providerConfigId, modelId)
     const result = extractJsonFromResponse(response)
 
     // 验证结果格式
@@ -304,11 +307,14 @@ export class StoryToVideoAIService {
       return []
     }
 
-    // 转换为 UploadedCharacter 格式
+    // 转换为 UploadedCharacter 格式（包含 AI 推断的年龄/性别/人种）
     const characters: UploadedCharacter[] = result.characters.map((char: any) => ({
       name: char.name || '未知角色',
       description: char.description,
-      role: char.role
+      role: char.role,
+      age: typeof char.age === 'number' ? char.age : undefined,
+      gender: char.gender || undefined,
+      race: char.race || undefined
     }))
 
     console.log(`[StoryToVideoAI] 从上传长文中识别了 ${characters.length} 个角色`)
@@ -335,7 +341,7 @@ export class StoryToVideoAIService {
 
     const systemPrompt = '你是一位专业的文学分析师。请从文本中识别地点，严格按照 JSON 格式输出，不要添加任何额外的文字说明。'
 
-    const response = await callAI(prompt, systemPrompt, 2048, providerConfigId, modelId)
+    const response = await callAIWithContinue(prompt, systemPrompt, undefined, providerConfigId, modelId)
     const result = extractJsonFromResponse(response)
 
     // 验证结果格式
@@ -375,7 +381,7 @@ export class StoryToVideoAIService {
 
     const systemPrompt = '你是一位专业的文学分析师。请从文本中识别物品，严格按照 JSON 格式输出，不要添加任何额外的文字说明。'
 
-    const response = await callAI(prompt, systemPrompt, 2048, providerConfigId, modelId)
+    const response = await callAIWithContinue(prompt, systemPrompt, undefined, providerConfigId, modelId)
     const result = extractJsonFromResponse(response)
 
     // 验证结果格式

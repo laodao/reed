@@ -107,9 +107,10 @@ const SCRIPT_GENERATION_PROMPT = `你是一位拥有10年以上一线影视工�
       "locationType": "interior",
       "timeOfDay": "morning",
       "weather": "sunny",
-      "sceneDescription": "详细场景描述（含空间布局/陈设/材质/色调/关键视觉元素）",
-      "mood": "氛围",
-      "lighting": "光线描述",
+      "sceneDescription": "茶馆呈长方形，东侧柜台摆放茶罐，南侧临街大门，西侧靠墙方桌数张，北侧雅座屏风隔断。木质横梁、青花瓷茶具、水墨挂画、红木桌椅",
+      "locationKeyObjects": ["柜台", "茶罐", "方桌", "屏风", "青花瓷茶具"],
+      "mood": "市井烟火",
+      "lighting": "晨光从南侧大门斜射入，明亮暖色调，室内微尘飘浮",
       "characters": [
         {
           "characterBindingId": "cb_xxxxx",
@@ -117,7 +118,7 @@ const SCRIPT_GENERATION_PROMPT = `你是一位拥有10年以上一线影视工�
           "position": "center",
           "expression": "凝重",
           "action": "推门进入",
-          "outfit": "蓝色长衫",
+          "outfit": "蓝色长衫（深蓝色，文人风格）",
           "props": [
             { "itemBindingId": "ib_xxxxx", "name": "茶壶" }
           ]
@@ -149,6 +150,41 @@ const SCRIPT_GENERATION_PROMPT = `你是一位拥有10年以上一线影视工�
     }
   ]
 }
+
+---
+
+## ⭐ 字段输出质量要求（必须严格遵守）
+
+### sceneDescription（场景视觉描述）
+必须包含以下信息（按顺序拼接，用句号分隔）：
+1. **空间布局**：房间形状 + 各方位陈设位置（如"东侧梳妆台配铜镜，南侧临窗"）
+2. **陈设材质**：主要家具材质 + 装饰细节（如"木质横梁、雕花屏风、青花瓷茶具"）
+3. **关键物件**：本场景中会出现的道具（如"水墨画、香炉"）
+
+示例："闺房呈方形，东侧梳妆台配铜镜，南侧临窗透晨光，西侧纱幔床榻，北侧百宝箱。木质横梁、雕花屏风、青花瓷茶具、水墨画、香炉"
+
+### locationKeyObjects（地点关键物件列表）
+列出本场景中会出现的道具/物件名称（3-6个），用于地点绑定参考。
+如果场景物件少于3个，可以输出空数组 []。
+
+示例：["铜镜", "梳妆台", "窗棂", "百宝箱", "香炉"]
+
+### lighting（光线描述）
+必须包含以下信息（按顺序拼接）：
+1. **光源**：阳光/月光/室内灯光
+2. **方向**：从哪边照射
+3. **强度**：柔和/明亮/昏暗
+4. **色调**：冷色/暖色/特定色
+
+示例："晨光从南侧窗棂斜射入，柔和偏暗，冷蓝色调，室内笼罩阴影"
+
+### outfit（角色服装）
+格式要求：**服装名称（颜色，风格）**
+- 服装名称：具体服装类型（如"素色衣裙"、"红色嫁衣"）
+- 颜色：主色调（如"淡青色"、"深红色"）
+- 风格：服装风格（如"古典仕女风格"、"粗布短衣风格"）
+
+示例："素色衣裙（淡青色，古典仕女风格）"、"粗布短衣（灰褐色，市井平民风格）"
 
 ## 可用角色列表
 
@@ -470,6 +506,9 @@ export class EpisodeScriptGenerator {
         timeOfDay: scene.timeOfDay || 'morning',
         weather: scene.weather,
         sceneDescription: scene.sceneDescription || '',
+        locationKeyObjects: Array.isArray(scene.locationKeyObjects)
+          ? scene.locationKeyObjects.filter((obj: unknown) => typeof obj === 'string')
+          : [],
         mood: scene.mood || '',
         lighting: scene.lighting,
         characters,
@@ -646,9 +685,10 @@ export class EpisodeScriptGenerator {
       "locationType": "interior",
       "timeOfDay": "morning",
       "weather": "sunny",
-      "sceneDescription": "详细场景描述（含空间布局/陈设/材质/色调/关键视觉元素）",
-      "mood": "氛围",
-      "lighting": "光线描述",
+      "sceneDescription": "茶馆呈长方形，东侧柜台摆放茶罐，南侧临街大门，西侧靠墙方桌数张，北侧雅座屏风隔断。木质横梁、青花瓷茶具、水墨挂画、红木桌椅",
+      "locationKeyObjects": ["柜台", "茶罐", "方桌", "屏风", "青花瓷茶具"],
+      "mood": "市井烟火",
+      "lighting": "晨光从南侧大门斜射入，明亮暖色调，室内微尘飘浮",
       "characters": [
         {
           "characterBindingId": "cb_xxxxx",
@@ -656,7 +696,7 @@ export class EpisodeScriptGenerator {
           "position": "center",
           "expression": "凝重",
           "action": "推门进入",
-          "outfit": "蓝色长衫",
+          "outfit": "蓝色长衫（深蓝色，文人风格）",
           "props": [
             { "itemBindingId": "ib_xxxxx", "name": "茶壶" }
           ]
@@ -664,30 +704,28 @@ export class EpisodeScriptGenerator {
       ],
       "originalText": "原文片段",
       "narration": "旁白文本",
-      "dialogues": [
-        {
-          "id": "dlg_1",
-          "characterBindingId": "cb_xxxxx",
-          "characterName": "张三",
-          "text": "请来一壶碧螺春",
-          "emotion": "平静",
-          "volume": "normal",
-          "pace": "normal",
-          "pause": 0
-        }
-      ],
-      "actions": [
-        {
-          "id": "act_1",
-          "characterBindingId": "cb_xxxxx",
-          "description": "缓步走向角落座位",
-          "timing": "before",
-          "duration": 2
-        }
-      ]
+      "dialogues": [...],
+      "actions": [...]
     }
   ]
 }
+
+## ⭐ 字段输出质量要求（必须严格遵守）
+
+### sceneDescription（场景视觉描述）
+必须包含：空间布局（房间形状+各方位陈设）+ 陈设材质 + 关键物件。
+示例："闺房呈方形，东侧梳妆台配铜镜，南侧临窗，西侧纱幔床榻。木质横梁、雕花屏风、香炉"
+
+### locationKeyObjects（地点关键物件列表）
+列出本场景会出现的道具名称（3-6个），用于地点绑定参考。
+
+### lighting（光线描述）
+必须包含：光源+方向+强度+色调。
+示例："晨光从南侧窗棂斜射入，柔和偏暗，冷蓝色调"
+
+### outfit（角色服装）
+格式：服装名称（颜色，风格）
+示例："素色衣裙（淡青色，古典仕女风格）"
 
 ## 可用角色列表
 

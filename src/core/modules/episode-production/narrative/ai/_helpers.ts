@@ -280,7 +280,7 @@ export async function callVLM(
  */
 export function parseJsonString(jsonStr: string): any {
   // 移除可能存在的注释（JSON 不支持注释，但有些 AI 会添加）
-  let cleaned = jsonStr
+  const cleaned = jsonStr
     // 移除单行注释
     .replace(/\/\/.*$/gm, '')
     // 移除多行注释
@@ -297,6 +297,113 @@ export function parseJsonString(jsonStr: string): any {
 }
 
 /**
+ * 检测 JSON 是否被截断（末尾没有正确闭合）
+ */
+export function isJsonTruncated(response: string): boolean {
+  // 提取可能的 JSON 部分
+  const start = response.indexOf('{')
+  if (start === -1) return false
+
+  const jsonPart = response.substring(start)
+
+  // 统计括号数量
+  let braceCount = 0
+  let bracketCount = 0
+  let inString = false
+  let escapeNext = false
+
+  for (let i = 0; i < jsonPart.length; i++) {
+    const char = jsonPart[i]
+
+    if (escapeNext) {
+      escapeNext = false
+      continue
+    }
+
+    if (char === '\\' && inString) {
+      escapeNext = true
+      continue
+    }
+
+    if (char === '"' && !escapeNext) {
+      inString = !inString
+      continue
+    }
+
+    if (!inString) {
+      if (char === '{') braceCount++
+      if (char === '}') braceCount--
+      if (char === '[') bracketCount++
+      if (char === ']') bracketCount--
+    }
+  }
+
+  // 如果括号没有闭合，说明被截断
+  return braceCount > 0 || bracketCount > 0
+}
+
+/**
+ * 调用 AI 并支持续写（当输出被截断时自动继续）
+ * @param prompt 用户提示词
+ * @param systemPrompt 系统提示词
+ * @param maxTokens 最大 token 数
+ * @param providerConfigId 提供商配置 ID
+ * @param modelId 模型 ID
+ * @param maxContinues 最大续写次数（默认 2）
+ * @returns AI 响应内容（可能经过拼接）
+ */
+export async function callAIWithContinue(
+  prompt: string,
+  systemPrompt: string,
+  maxTokens: number = 8192,
+  providerConfigId?: string,
+  modelId?: string,
+  maxContinues: number = 2
+): Promise<string> {
+  let fullResponse = await callAI(prompt, systemPrompt, maxTokens, providerConfigId, modelId)
+
+  let continueCount = 0
+  while (continueCount < maxContinues && isJsonTruncated(fullResponse)) {
+    aiLogger.warn('JSON 输出被截断，尝试续写', { continueCount, responseLength: fullResponse.length })
+
+    // 提取已输出的 JSON 部分（去掉可能的非 JSON 内容）
+    const start = fullResponse.indexOf('{')
+    const jsonSoFar = start !== -1 ? fullResponse.substring(start) : fullResponse
+
+    // 续写提示
+    const continuePrompt = `上一轮你的 JSON 输出被截断了，请继续输出，从上次截断的地方继续完成 JSON。
+
+这是你上次输出的内容（被截断）：
+${jsonSoFar}
+
+请直接继续输出剩余的 JSON 内容，不要重复已经输出的部分，不要添加任何解释说明。`
+
+    const continueResponse = await callAI(continuePrompt, systemPrompt, maxTokens, providerConfigId, modelId)
+
+    // 拼接：去掉可能的重复开头
+    const continueStart = continueResponse.indexOf('{')
+    if (continueStart !== -1) {
+      // 检查续写内容是否重复了开头
+      const continueJson = continueResponse.substring(continueStart)
+      // 如果续写内容开头和已输出内容开头重复，尝试智能拼接
+      if (jsonSoFar.startsWith(continueJson.substring(0, 50))) {
+        // 重复了，只取续写的新部分
+        fullResponse = fullResponse.trimEnd() + '\n' + continueJson
+      } else {
+        // 没重复，直接拼接
+        fullResponse = fullResponse.trimEnd() + continueJson
+      }
+    } else {
+      fullResponse = fullResponse.trimEnd() + continueResponse
+    }
+
+    continueCount++
+  }
+
+  return fullResponse
+}
+
+/**
  * 从 AI 响应中提取 JSON
  * 支持 ```json```、``` 代码块及裸 JSON 三种格式
  */
@@ -305,7 +412,7 @@ export function extractJsonFromResponse(response: string): any {
   console.log('[EpisodeProductionAI] AI 响应前500字符:', response.substring(0, 500))
 
   // 清理响应内容
-  let cleanedResponse = response.trim()
+  const cleanedResponse = response.trim()
 
   // 尝试提取 ```json ... ``` 中的内容
   const jsonMatch = cleanedResponse.match(/```json\s*([\s\S]*?)\s*```/)

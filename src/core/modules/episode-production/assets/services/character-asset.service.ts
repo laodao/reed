@@ -22,13 +22,19 @@ import { getProjectStyleAnchorsAsJson } from './project-style.helper'
 import { LwCharacterEntity } from '@core/database/entities/lw-character.entity'
 import type { EffectiveCharacterData } from '@shared/types/episode-production/domain.types'
 
-/** 新建 standalone 角色入参 */
+/** 新建 standalone 角色入参（2026-05-27 扩展：支持 AI 识别时的年龄/性别/人种） */
 export interface CreateStandaloneInput {
   projectId: string
   name: string
   description?: string
   voiceId?: string
   userId?: string | null
+  /** AI 识别时的年龄推断 */
+  age?: number
+  /** AI 识别时的性别推断 */
+  gender?: string
+  /** AI 识别时的人种/种族推断 */
+  race?: string
 }
 
 /** 新建 linked_lw 角色入参（可携带初始 override） */
@@ -288,6 +294,10 @@ export class CharacterAssetService {
       voiceId: input.voiceId ?? null,
       standaloneName: input.name,
       standaloneDescription: input.description ?? null,
+      // 2026-05-27：AI 识别时推断的年龄/性别/人种
+      age: input.age ?? null,
+      gender: input.gender ?? null,
+      race: input.race ?? null,
       // spec 2026-05-08：新建资产默认继承项目风格（snapshot；之后改项目不影响已建资产）
       styleAnchors,
       createdAt: new Date(),

@@ -517,6 +517,8 @@ export interface GeneratedScene {
   timeOfDay: TimeOfDay
   weather?: WeatherType
   sceneDescription: string // 场景视觉描述
+  /** 地点关键物件列表（用于地点绑定 baseDescription 参考） */
+  locationKeyObjects?: string[]
   mood: string // 氛围
   lighting?: string // 光线描述
   characters: GeneratedSceneCharacter[] // 出场角色
