@@ -13,6 +13,7 @@ import type { AssetImageRepository } from './repositories/asset-image.repository
 import type { UserRepository } from './repositories/user.repository'
 import type { CharacterBindingRepository } from './repositories/character-binding.repository'
 import type { ClonedVoiceRepository } from './repositories/cloned-voice.repository'
+import type { DesignedVoiceRepository } from './repositories/designed-voice.repository'
 import type { DialogRepository } from './repositories/dialog.repository'
 import type { DiaryAttachmentRepository } from './repositories/diary-attachment.repository'
 import type { DiaryEntryRepository } from './repositories/diary-entry.repository'
@@ -112,6 +113,7 @@ export interface ICoreDatabaseManager {
   images: ImageRepository | null
   voices: VoiceRepository | null
   clonedVoices: ClonedVoiceRepository | null
+  designedVoices: DesignedVoiceRepository | null
 
   // ---- 知识库 ----
   knowledgeBases: KnowledgeBaseRepository | null

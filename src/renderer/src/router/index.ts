@@ -71,6 +71,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '声音复刻' },
   },
   {
+    path: '/voice/design',
+    name: 'VoiceDesign',
+    component: () => import('@/views/voice/VoiceDesign.vue'),
+    meta: { title: '声音设计' },
+  },
+  {
     path: '/knowledge-base',
     name: 'KnowledgeBase',
     component: () => import('@/views/KnowledgeBase.vue'),

@@ -19,6 +19,7 @@ import { ProviderConfigRepository } from '@core/database/repositories/provider-c
 import { TranslationRepository } from '@core/database/repositories/translation.repository'
 import { VoiceRepository } from '@core/database/repositories/voice.repository'
 import { ClonedVoiceRepository } from '@core/database/repositories/cloned-voice.repository'
+import { DesignedVoiceRepository } from '@core/database/repositories/designed-voice.repository'
 import { KnowledgeBaseRepository } from '@core/database/repositories/knowledge-base.repository'
 import { KbDocumentRepository } from '@core/database/repositories/kb-document.repository'
 import { KbChunkRepository } from '@core/database/repositories/kb-chunk.repository'
@@ -118,6 +119,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public translations: TranslationRepository | null = null
   public voices: VoiceRepository | null = null
   public clonedVoices: ClonedVoiceRepository | null = null
+  public designedVoices: DesignedVoiceRepository | null = null
   public knowledgeBases: KnowledgeBaseRepository | null = null
   public kbDocuments: KbDocumentRepository | null = null
   public kbChunks: KbChunkRepository | null = null
@@ -2238,6 +2240,18 @@ export class DatabaseManager implements ICoreDatabaseManager {
         FOREIGN KEY (audio_asset_id) REFERENCES audio_assets(id) ON DELETE CASCADE
       )
     `)
+    // 检查 audio_track_items 表是否有 track_id 列（旧版本可能缺失）
+    const audioTrackItemsColumns = this.db.prepare("PRAGMA table_info(audio_track_items)").all() as { name: string }[]
+    const audioTrackItemsColumnNames = audioTrackItemsColumns.map(col => col.name)
+    if (!audioTrackItemsColumnNames.includes('track_id')) {
+      console.log('[DatabaseManager] 为 audio_track_items 表添加 track_id 列...')
+      try {
+        this.db.exec('ALTER TABLE audio_track_items ADD COLUMN track_id TEXT NOT NULL DEFAULT \'\'')
+        console.log('[DatabaseManager] audio_track_items 表添加 track_id 列完成')
+      } catch (e) {
+        console.error('[DatabaseManager] 添加 track_id 列失败:', e)
+      }
+    }
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_audio_track_items_track_id ON audio_track_items(track_id)`)
 
     // 迁移类型配置表结构
@@ -3898,6 +3912,36 @@ export class DatabaseManager implements ICoreDatabaseManager {
       this.db.exec('ALTER TABLE knowledge_bases ADD COLUMN split_config TEXT')
     }
     console.log('[DatabaseManager] 知识库切分策略优化迁移完成')
+
+    // ==================== 声音设计功能迁移 ====================
+    // 检查 designed_voices 表是否存在，不存在则创建
+    const designedVoicesTableExists = this.db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'designed_voices'")
+      .get() as any
+    if (!designedVoicesTableExists) {
+      console.log('[DatabaseManager] 创建 designed_voices 表...')
+      this.db.exec(`
+        CREATE TABLE designed_voices (
+          user_id TEXT,
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          voice_prompt TEXT NOT NULL,
+          status TEXT DEFAULT 'training',
+          voice_id TEXT,
+          target_model TEXT,
+          prefix TEXT,
+          preview_audio_path TEXT,
+          provider_id TEXT,
+          error_message TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT
+        )
+      `)
+      this.db.exec('CREATE INDEX idx_designed_voices_status ON designed_voices(status)')
+      this.db.exec('CREATE INDEX idx_designed_voices_created_at ON designed_voices(created_at)')
+      this.db.exec('CREATE INDEX idx_designed_voices_user_id ON designed_voices(user_id)')
+      console.log('[DatabaseManager] designed_voices 表创建完成')
+    }
   }
 
   /**
@@ -3921,6 +3965,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.translations = new TranslationRepository(this.dataSource)
     this.voices = new VoiceRepository(this.dataSource)
     this.clonedVoices = new ClonedVoiceRepository(this.dataSource)
+    this.designedVoices = new DesignedVoiceRepository(this.dataSource)
     this.knowledgeBases = new KnowledgeBaseRepository(this.dataSource)
     this.kbDocuments = new KbDocumentRepository(this.dataSource)
     this.kbChunks = new KbChunkRepository(this.dataSource)

@@ -169,6 +169,53 @@ export class KeyframeGenerationService {
     return this.ds.getRepository(SceneScriptEntity)
   }
 
+  /**
+   * 确保分镜有关键帧记录（不生成图片）。
+   *
+   * 用于制作界面进入时自动创建空的关键帧记录，让用户可以先挑图再生成。
+   * - 如果已存在且数量匹配 → 直接返回现有记录
+   * - 如果数量不足 → 补齐缺失的帧
+   * - 如果不存在 → 创建全部帧记录
+   *
+   * @returns 关键帧列表（按 frameIndex 升序）
+   */
+  async ensureEmptyKeyframes(storyboardId: string): Promise<StoryboardKeyframe[]> {
+    const sb = await this.sbRepo.findOne({ where: { id: storyboardId } })
+    if (!sb) throw new Error(`Storyboard not found: ${storyboardId}`)
+
+    const keyframeCount = Math.max(1, sb.keyframeCount ?? 3)
+    const plan = planKeyframes(keyframeCount)
+
+    // 获取现有的关键帧记录
+    const existing = await this.keyframeRepo.listByStoryboard(storyboardId)
+    const existingIndexes = new Set(existing.map((k) => k.frameIndex))
+
+    // 找出缺失的帧索引
+    const missing = plan.filter((p) => !existingIndexes.has(p.frameIndex))
+
+    if (missing.length === 0) {
+      // 全部存在，返回排序后的列表
+      return existing.sort((a, b) => a.frameIndex - b.frameIndex)
+    }
+
+    // 创建缺失的空关键帧记录
+    for (const planItem of missing) {
+      await this.keyframeRepo.create({
+        storyboardId,
+        frameIndex: planItem.frameIndex,
+        timePercent: planItem.timePercent,
+        frameRole: planItem.frameRole,
+        imageAssetId: null,
+        prompt: null,
+        referenceOverrides: null,
+        userPromptOverride: null,
+      })
+    }
+
+    // 返回完整的列表
+    return await this.keyframeRepo.listByStoryboard(storyboardId)
+  }
+
   /** 主入口：为分镜生成全部关键帧（按 plan 链式） */
   async generateKeyframesForStoryboard(
     input: GenerateKeyframesInput,

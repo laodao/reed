@@ -12,6 +12,7 @@ import type { UpdateVideoEpisodeData } from '../../../../shared/types/episode-pr
 import { useEpWorkbenchStore } from './workbench.store'
 import { useEpScriptStore } from './script.store'
 import { useEpStoryboardStore } from './storyboard.store'
+import { useEpAssetStore } from './asset.store'
 
 /** 持久化"每个项目最后一次选中的 episodeId" */
 const LAST_SELECTED_STORAGE_KEY = 'ep-production:last-selected-episode'
@@ -287,6 +288,11 @@ export const useEpEpisodeStore = defineStore('ep-episode', () => {
         const idx = episodes.value.findIndex(e => e.id === episodeId)
         if (idx !== -1) episodes.value[idx] = ep
         if (currentEpisode.value?.id === episodeId) currentEpisode.value = ep
+        // 刷新资产列表（后端识别后自动创建了 binding，需要同步到资产界面）
+        if (ep.projectId) {
+          const assetStore = useEpAssetStore()
+          await assetStore.loadAssetsByProject(ep.projectId)
+        }
       }
       return resp.data as {
         characters: number

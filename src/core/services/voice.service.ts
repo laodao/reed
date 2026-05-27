@@ -16,6 +16,7 @@ import { getPathProvider } from '@core/interfaces/path.interface'
 import { toAssetUrl, toRelativeAssetPath, resolveAssetPath } from '@core/utils/asset-path'
 import { DashScopeTTSProvider } from '@core/voice-providers/dashscope-tts-provider'
 import { DashScopeSTTProvider } from '@core/voice-providers/dashscope-stt-provider'
+import { DashScopeCosyVoiceTTSProvider } from '@core/voice-providers/dashscope-cosyvoice-tts-provider'
 import type {
   TTSRequest,
   TTSResponse,
@@ -259,18 +260,38 @@ export class VoiceService {
 
       // 使用 DashScope TTS Provider
       // 注意：audioBaseUrl 可能配置的是其他服务的 URL，所以优先使用默认 TTS URL
-      const ttsProvider = new DashScopeTTSProvider({
-        apiKey: decryptedApiKey,
-        baseUrl: undefined // 使用默认的 DashScope TTS URL
-      })
 
-      // 调用 TTS API
-      const result = await ttsProvider.synthesize(request.text, request.voiceId, {
-        speed: request.speed,
-        pitch: request.pitch,
-        volume: request.volume,
-        language: request.language
-      })
+      // 检测是否为自定义音色（复刻/设计），需要使用 CosyVoice 模型
+      const isCustomVoice = DashScopeCosyVoiceTTSProvider.isCustomVoiceId(request.voiceId)
+
+      let result: { success: boolean; audioData?: string; error?: string }
+
+      if (isCustomVoice) {
+        // 使用 CosyVoice TTS Provider 合成自定义音色
+        console.log('[VoiceService] 检测到自定义音色，使用 CosyVoice TTS:', request.voiceId)
+        const cosyvoiceProvider = new DashScopeCosyVoiceTTSProvider({
+          apiKey: decryptedApiKey,
+          baseUrl: undefined // 使用默认 URL
+        })
+        result = await cosyvoiceProvider.synthesize(request.text, request.voiceId, {
+          speed: request.speed,
+          pitch: request.pitch,
+          volume: request.volume,
+          language: request.language
+        })
+      } else {
+        // 使用普通 TTS Provider 合成预设音色
+        const ttsProvider = new DashScopeTTSProvider({
+          apiKey: decryptedApiKey,
+          baseUrl: undefined // 使用默认的 DashScope TTS URL
+        })
+        result = await ttsProvider.synthesize(request.text, request.voiceId, {
+          speed: request.speed,
+          pitch: request.pitch,
+          volume: request.volume,
+          language: request.language
+        })
+      }
 
       if (!result.success) {
         await voiceRepo.update(record.id, {

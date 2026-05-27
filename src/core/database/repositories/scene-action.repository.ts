@@ -12,6 +12,8 @@ import { BaseRepository } from '../base-repository'
 export interface CreateSceneActionRequest {
   sceneScriptId: string
   characterId?: string
+  /** spec §4.1：执行者 character_binding.id；群像动作为 null */
+  characterBindingId?: string | null
   description: string
   timing?: 'before' | 'during' | 'after'
   duration?: number
@@ -20,6 +22,8 @@ export interface CreateSceneActionRequest {
 
 export interface UpdateSceneActionRequest {
   characterId?: string
+  /** spec §4.1：执行者 character_binding.id；群像动作为 null */
+  characterBindingId?: string | null
   description?: string
   timing?: 'before' | 'during' | 'after'
   duration?: number
@@ -37,6 +41,7 @@ export class SceneActionRepository extends BaseRepository<
   protected toDto(e: SceneActionEntity): ActionDescription {
     return {
       characterId: e.characterId || undefined,
+      characterBindingId: e.characterBindingId,
       description: e.description,
       timing: (e.timing as 'before' | 'during' | 'after') || 'during',
       duration: e.duration ?? undefined,
@@ -60,6 +65,7 @@ export class SceneActionRepository extends BaseRepository<
       id,
       sceneScriptId: data.sceneScriptId,
       characterId: data.characterId ?? null,
+      characterBindingId: data.characterBindingId ?? null,
       description: data.description,
       timing: data.timing || 'during',
       duration: data.duration ?? null,
@@ -83,6 +89,7 @@ export class SceneActionRepository extends BaseRepository<
             id,
             sceneScriptId: data.sceneScriptId,
             characterId: data.characterId ?? null,
+            characterBindingId: data.characterBindingId ?? null,
             description: data.description,
             timing: data.timing || 'during',
             duration: data.duration ?? null,
@@ -104,6 +111,7 @@ export class SceneActionRepository extends BaseRepository<
 
     let changed = false
     if (data.characterId !== undefined) { existing.characterId = data.characterId ?? null; changed = true }
+    if (data.characterBindingId !== undefined) { existing.characterBindingId = data.characterBindingId ?? null; changed = true }
     if (data.description !== undefined) { existing.description = data.description; changed = true }
     if (data.timing !== undefined) { existing.timing = data.timing; changed = true }
     if (data.duration !== undefined) { existing.duration = data.duration ?? null; changed = true }

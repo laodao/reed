@@ -174,6 +174,7 @@ const IPC_CHANNELS = {
   EP_REGENERATE_KEYFRAME: 'ep:regenerate-keyframe',
   EP_LIST_KEYFRAMES: 'ep:list-keyframes',
   EP_PLAN_KEYFRAME_REGEN: 'ep:plan-keyframe-regen',
+  EP_ENSURE_KEYFRAMES: 'ep:ensure-keyframes',
   EP_INSERT_KEYFRAME_BETWEEN: 'ep:insert-keyframe-between',
   EP_GENERATE_KEYFRAME_AT_INDEX: 'ep:generate-keyframe-at-index',
   EP_SET_KEYFRAME_REFERENCE_OVERRIDES: 'ep:set-keyframe-reference-overrides',
@@ -1797,6 +1798,9 @@ const electronAPI = {
       ),
     listKeyframes: (storyboardId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_LIST_KEYFRAMES, storyboardId),
+    /** 确保关键帧记录存在（不生成图片，用于先挑图再生成场景） */
+    ensureKeyframes: (storyboardId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_ENSURE_KEYFRAMES, storyboardId),
     insertKeyframeBetween: (
       storyboardId: string,
       afterKeyframeId: string,

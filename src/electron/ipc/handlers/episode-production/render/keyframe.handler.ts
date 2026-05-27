@@ -25,6 +25,8 @@ export function registerKeyframeHandlers(): void {
   ipcBridge.handle('ep:regenerate-keyframe', handleRegenerateKeyframe)
   ipcBridge.handle('ep:list-keyframes', handleListKeyframes)
   ipcBridge.handle('ep:plan-keyframe-regen', handlePlanKeyframeRegen)
+  // 确保关键帧记录存在（不生成图片，用于先挑图再生成场景）
+  ipcBridge.handle('ep:ensure-keyframes', handleEnsureKeyframes)
   // 在两帧之间插入一帧
   ipcBridge.handle('ep:insert-keyframe-between', handleInsertKeyframeBetween)
   // 在指定 frameIndex 生成单张关键帧（用户在 ⑤ 制作 stage "添加关键帧"对话框）
@@ -365,6 +367,26 @@ async function handleGenerateKeyframes(
     return { success: true, data }
   } catch (e: any) {
     return { success: false, error: e?.message || '生成关键帧失败' }
+  }
+}
+
+/**
+ * 确保分镜有关键帧记录（不生成图片）。
+ * 用于制作界面进入时自动创建空的关键帧记录，让用户可以先挑图再生成。
+ */
+async function handleEnsureKeyframes(
+  _event: any,
+  storyboardId: string,
+): Promise<IpcResponse> {
+  try {
+    const db = getCoreDatabaseManager()
+    if (!db.dataSource) return { success: false, error: '数据库未初始化' }
+    const svc = new KeyframeGenerationService(db.dataSource)
+    const data = await svc.ensureEmptyKeyframes(storyboardId)
+    return { success: true, data }
+  } catch (e: any) {
+    console.error('[handleEnsureKeyframes] 失败:', e)
+    return { success: false, error: e?.message || '确保关键帧记录失败' }
   }
 }
 

@@ -348,10 +348,12 @@ async function onConfirmCreateProject(): Promise<void> {
   }
   creating.value = true
   try {
+    // 使用深拷贝提取原始数据，避免传递 Vue 响应式对象导致 IPC 克隆失败
+    const config = JSON.parse(JSON.stringify(createProjectForm.config))
     const resp = await window.electronAPI.episodeProduction.createProject(
       name,
       createProjectForm.longWritingProjectId || undefined,
-      createProjectForm.config,
+      config,
     )
     if (!resp.success || !resp.data) {
       ElMessage.error(resp.error || '创建失败')

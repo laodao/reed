@@ -562,6 +562,12 @@ async function loadKeyframes(): Promise<void> {
     if (!api?.listKeyframes) {
       throw new Error('IPC listKeyframes 未暴露')
     }
+
+    // 先确保关键帧记录存在（不生成图片，让用户可以先挑图再生成）
+    if (api?.ensureKeyframes) {
+      await api.ensureKeyframes(props.storyboardId)
+    }
+
     const resp = await api.listKeyframes(props.storyboardId)
     if (!resp?.success) throw new Error(resp?.error || '加载关键帧失败')
     // P7 修复：handler 已经 join 了 image_assets 返回 imagePath 字段，无需再加工

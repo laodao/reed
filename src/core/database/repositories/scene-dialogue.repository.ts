@@ -13,6 +13,8 @@ export interface CreateSceneDialogueRequest {
   sceneScriptId: string
   characterId: string
   characterName: string
+  /** spec §4.1：character_binding.id 强引用 */
+  characterBindingId?: string | null
   text: string
   emotion?: string
   volume?: 'normal' | 'loud' | 'whisper'
@@ -26,6 +28,8 @@ export interface CreateSceneDialogueRequest {
 export interface UpdateSceneDialogueRequest {
   characterId?: string
   characterName?: string
+  /** spec §4.1：character_binding.id 强引用 */
+  characterBindingId?: string | null
   text?: string
   emotion?: string
   volume?: 'normal' | 'loud' | 'whisper'
@@ -49,6 +53,7 @@ export class SceneDialogueRepository extends BaseRepository<
       id: e.id,
       characterId: e.characterId,
       characterName: e.characterName,
+      characterBindingId: e.characterBindingId,
       text: e.text,
       emotion: e.emotion || undefined,
       volume: (e.volume as 'normal' | 'loud' | 'whisper') || 'normal',
@@ -76,6 +81,7 @@ export class SceneDialogueRepository extends BaseRepository<
       sceneScriptId: data.sceneScriptId,
       characterId: data.characterId,
       characterName: data.characterName,
+      characterBindingId: data.characterBindingId ?? null,
       text: data.text,
       emotion: data.emotion ?? null,
       volume: data.volume || 'normal',
@@ -104,6 +110,7 @@ export class SceneDialogueRepository extends BaseRepository<
             sceneScriptId: data.sceneScriptId,
             characterId: data.characterId,
             characterName: data.characterName,
+            characterBindingId: data.characterBindingId ?? null,
             text: data.text,
             emotion: data.emotion ?? null,
             volume: data.volume || 'normal',
@@ -130,6 +137,7 @@ export class SceneDialogueRepository extends BaseRepository<
     let changed = false
     if (data.characterId !== undefined) { existing.characterId = data.characterId; changed = true }
     if (data.characterName !== undefined) { existing.characterName = data.characterName; changed = true }
+    if (data.characterBindingId !== undefined) { existing.characterBindingId = data.characterBindingId ?? null; changed = true }
     if (data.text !== undefined) { existing.text = data.text; changed = true }
     if (data.emotion !== undefined) { existing.emotion = data.emotion ?? null; changed = true }
     if (data.volume !== undefined) { existing.volume = data.volume; changed = true }

@@ -20,6 +20,7 @@ import { ProviderConfigRepository } from '@core/database/repositories/provider-c
 import { TranslationRepository } from '@core/database/repositories/translation.repository'
 import { VoiceRepository } from '@core/database/repositories/voice.repository'
 import { ClonedVoiceRepository } from '@core/database/repositories/cloned-voice.repository'
+import { DesignedVoiceRepository } from '@core/database/repositories/designed-voice.repository'
 import { KnowledgeBaseRepository } from '@core/database/repositories/knowledge-base.repository'
 import { KbDocumentRepository } from '@core/database/repositories/kb-document.repository'
 import { KbChunkRepository } from '@core/database/repositories/kb-chunk.repository'
@@ -101,6 +102,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   images: ImageRepository | null
   voices: VoiceRepository | null
   clonedVoices: ClonedVoiceRepository | null
+  designedVoices: DesignedVoiceRepository | null
   // 知识库
   knowledgeBases: KnowledgeBaseRepository | null
   kbDocuments: KbDocumentRepository | null
@@ -185,6 +187,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.images = new ImageRepository(ds)
     this.voices = new VoiceRepository(ds)
     this.clonedVoices = new ClonedVoiceRepository(ds)
+    this.designedVoices = new DesignedVoiceRepository(ds)
 
     this.knowledgeBases = new KnowledgeBaseRepository(ds)
     this.kbDocuments = new KbDocumentRepository(ds)

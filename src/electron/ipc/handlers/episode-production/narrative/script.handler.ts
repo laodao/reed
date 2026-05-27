@@ -13,6 +13,8 @@ import type { SceneScript } from '@shared/types/story-to-video.types'
 import { StoryToVideoAIService } from '@core/services/story-to-video-ai.service'
 import { buildAssetRosterForProject } from '@core/modules/episode-production/narrative/asset-roster-builder'
 import { EpisodeScenePolisher } from '@core/modules/episode-production/narrative/ai/scene-polisher'
+import { EpisodeScriptGenerator } from '@core/modules/episode-production/narrative/ai/script-generator'
+import { SceneBindingWriter } from '@core/modules/episode-production/narrative/scene-binding-writer'
 
 export function registerScriptHandlers(): void {
   // ==================== 剧本管理 ====================
@@ -401,27 +403,17 @@ async function handleGenerateScript(
       await db.sceneScripts.deleteByEpisodeScriptId(existingScript.id)
     }
 
-    // 创建场景（含 P4-T1 加的 locationBindingId 强引用列）
-    const sceneRecords: SceneScript[] = []
-    for (const sceneData of result.scenes) {
-      const sceneRecord = await db.sceneScripts.create({
-        episodeScriptId: script.id,
-        sceneNumber: sceneData.sceneNumber,
-        location: sceneData.location,
-        locationBindingId: sceneData.locationBindingId ?? null,
-        locationType: sceneData.locationType,
-        timeOfDay: sceneData.timeOfDay as any,
-        weather: sceneData.weather as any,
-        sceneDescription: sceneData.sceneDescription,
-        mood: sceneData.mood,
-        lighting: sceneData.lighting,
-        characters: sceneData.characters,
-        originalText: sceneData.originalText,
-        narration: sceneData.narration,
-        dialogues: sceneData.dialogues,
-        actions: sceneData.actions
-      })
-      sceneRecords.push(sceneRecord)
+    // 创建场景及桥接表（规范化设计 · spec §4.1）
+    const sceneRecords = await SceneBindingWriter.createScenesWithBindings(
+      db.dataSource,
+      script.id,
+      result.scenes
+    )
+
+    // 更新剧集状态为 scripting（确保前端正确显示剧本内容）
+    // 如果当前是 pending/asset_prep，生成剧本后应进入 scripting 阶段
+    if (episode.status === 'pending' || episode.status === 'asset_prep') {
+      await db.videoEpisodes.update(episode.id, { status: 'scripting' })
     }
 
     return {
@@ -444,58 +436,47 @@ async function handleGenerateScenes(
 ): Promise<IpcResponse> {
   try {
     const db = getCoreDatabaseManager()
-    if (!db.episodeScripts || !db.sceneScripts) {
+    if (!db.dataSource || !db.episodeScripts || !db.sceneScripts || !db.videoEpisodes) {
       return { success: false, error: '数据库未初始化' }
     }
 
-    // 获取剧本
+    // 1. 获取剧本
     const script = await db.episodeScripts.getById(scriptId)
     if (!script) {
       return { success: false, error: '剧本不存在' }
     }
 
-    // 获取章节内容
-    let chapterContent = ''
-    // 这里需要根据 outlineId 获取章节内容
-    // 暂时使用 synopsis 作为内容
-    chapterContent = script.synopsis
-
-    // 调用 AI 拆分场景
-    const aiService = StoryToVideoAIService.getInstance()
-    const result = await aiService.splitScenes(chapterContent, providerConfigId, modelId)
-
-    // 创建场景记录
-    const sceneRecords: SceneScript[] = []
-    for (const sceneData of result.scenes) {
-      const sceneRecord = await db.sceneScripts.create({
-        episodeScriptId: scriptId,
-        sceneNumber: sceneData.sceneNumber,
-        location: sceneData.location,
-        locationType: sceneData.locationType,
-        timeOfDay: sceneData.timeOfDay as any,
-        weather: sceneData.weather as any,
-        sceneDescription: sceneData.sceneDescription,
-        mood: sceneData.mood,
-        characters: sceneData.characters.map((name: string) => ({
-          characterId: '',
-          characterName: name
-        })),
-        originalText: sceneData.originalText,
-        narration: sceneData.narration,
-        dialogues: sceneData.dialogues.map((d: any, index: number) => ({
-          id: `dlg_${index}`,
-          characterId: '',
-          characterName: d.character,
-          text: d.text,
-          emotion: d.emotion
-        })),
-        actions: []
-      })
-      sceneRecords.push(sceneRecord)
+    // 2. 获取剧集信息（需要 projectId 构建资产花名册）
+    const episode = await db.videoEpisodes.getById(script.episodeId)
+    if (!episode) {
+      return { success: false, error: '剧集不存在' }
     }
+
+    // 3. 构建资产花名册
+    const roster = await buildAssetRosterForProject(db.dataSource, episode.projectId)
+
+    // 4. 调用 AI 生成场景（带 binding 引用）
+    const scriptGenerator = EpisodeScriptGenerator.getInstance()
+    const generatedScenes = await scriptGenerator.generateScenesFromSynopsis(
+      script.synopsis,
+      roster,
+      providerConfigId,
+      modelId
+    )
+
+    // 5. 删除旧场景（包括关联的 bridge tables）
+    await db.sceneScripts.deleteByEpisodeScriptId(scriptId)
+
+    // 6. 写入新场景及桥接表
+    const sceneRecords = await SceneBindingWriter.createScenesWithBindings(
+      db.dataSource,
+      scriptId,
+      generatedScenes
+    )
 
     return { success: true, data: sceneRecords }
   } catch (error: any) {
+    console.error('[handleGenerateScenes] 错误:', error)
     return { success: false, error: error.message || '拆分场景失败' }
   }
 }

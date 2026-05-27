@@ -139,6 +139,8 @@ function entityColumnTypeToString(t: unknown): string {
  * - SQLite 历史遗留：旧库 DATETIME 列实际存的是 epoch ms 整数（Date.now()），
  *   与 TypeORM 的 bigint Entity 行为等价，单向放行；
  *   反向（Entity 是 datetime / 新库存的真日期字符串）依然按时间族走严格比对。
+ * - SQLite BOOLEAN 是 INTEGER 的别名，视为等价
+ * - SQLite DATETIME/TIMESTAMP 与 TEXT 视为等价（都存储为文本）
  */
 function affinityEquivalent(expected: string, actual: string): boolean {
   const a = normalize(expected)
@@ -149,6 +151,10 @@ function affinityEquivalent(expected: string, actual: string): boolean {
   // SQLite 数字 affinity：INTEGER 列可承载 REAL 数据，REAL 列亦可承载 INTEGER；
   //   这里允许 Entity 声明 REAL 而旧库仍是 INTEGER（运行时无损升级）
   if (a === 'REAL' && b === 'INT') return true
+  // SQLite BOOLEAN 是 INTEGER 的别名，双向放行
+  if ((a === 'INT' && b === 'BOOL') || (a === 'BOOL' && b === 'INT')) return true
+  // SQLite DATETIME/TIMESTAMP 与 TEXT 视为等价（都存储为文本）
+  if ((a === 'TIME' && b === 'TEXT') || (a === 'TEXT' && b === 'TIME')) return true
   return false
 }
 

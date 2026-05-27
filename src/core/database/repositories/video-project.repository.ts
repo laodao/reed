@@ -100,7 +100,9 @@ export class VideoProjectRepository extends BaseRepository<
       changed = true
     }
     if (data.longWritingProjectId !== undefined) {
-      existing.longWritingProjectId = data.longWritingProjectId
+      // 外键约束要求：空字符串转为 null，否则会触发 FOREIGN KEY constraint failed
+      // 因为 lw_projects 表不存在 id='' 的记录
+      existing.longWritingProjectId = data.longWritingProjectId || null
       changed = true
     }
 

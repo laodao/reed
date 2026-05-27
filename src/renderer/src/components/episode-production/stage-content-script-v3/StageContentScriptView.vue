@@ -21,7 +21,8 @@
     <StageMainHeader title="内容+剧本" :subtitle="headerSubtitle">
       <template #actions>
         <!-- 9 帧故事板预览（spec 2026-05-09 ep-redesign §3.2 B7 · P-18） -->
-        <el-tooltip placement="bottom" effect="light">
+        <!-- 修复：把 v-if 移到 tooltip 外层，避免 ElOnlyChild 错误 -->
+        <el-tooltip v-if="episodeScriptId" placement="bottom" effect="light">
           <template #content>
             <div style="max-width: 240px;">
               <div>一次推理出 9 帧 3×3 故事板</div>
@@ -30,7 +31,6 @@
             </div>
           </template>
           <el-button
-            v-if="episodeScriptId"
             :disabled="!canGenerateThumbnails"
             @click="thumbnailDialog.open = true"
           >
@@ -39,7 +39,7 @@
           </el-button>
         </el-tooltip>
         <!-- 参考视频导入分镜（spec 2026-05-09 ep-redesign §3.2 D5 · P-22） -->
-        <el-tooltip placement="bottom" effect="light">
+        <el-tooltip v-if="episodeScriptId && scenes.length > 0" placement="bottom" effect="light">
           <template #content>
             <div style="max-width: 260px;">
               <div>上传参考视频 → ffmpeg + VLM 解析镜头</div>
@@ -48,7 +48,6 @@
             </div>
           </template>
           <el-button
-            v-if="episodeScriptId && scenes.length > 0"
             @click="referenceVideoDialog.open = true"
           >
             <el-icon><VideoCamera /></el-icon>
@@ -800,6 +799,12 @@ async function onGenerateScript(): Promise<void> {
       // store.generateScript 已把 currentScript 设进 store；保险起见再 reload
       const sid = scriptStore.currentScript?.id
       if (sid) await scriptStore.loadScript(sid)
+      // 重新加载 episode 以获取更新后的 status（后端会更新为 'scripting'）
+      // 这确保 subState 正确计算，显示剧本内容而非 pending hint
+      const epResp = await window.electronAPI.episodeProduction.getEpisode(props.episode.id)
+      if (epResp.success && epResp.data) {
+        episodeStore.currentEpisode = epResp.data
+      }
     } else {
       ElMessage.error('生成失败')
     }

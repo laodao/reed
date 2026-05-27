@@ -17,6 +17,8 @@ export interface CreateSceneCharacterRequest {
   sceneScriptId: string
   characterId: string
   characterName: string
+  /** spec §4.1：character_binding.id 强引用 */
+  characterBindingId?: string | null
   position?: 'left' | 'center' | 'right' | 'foreground' | 'background'
   expression?: string
   action?: string
@@ -28,6 +30,8 @@ export interface CreateSceneCharacterRequest {
 export interface UpdateSceneCharacterRequest {
   characterId?: string
   characterName?: string
+  /** spec §4.1：character_binding.id 强引用 */
+  characterBindingId?: string | null
   position?: 'left' | 'center' | 'right' | 'foreground' | 'background'
   expression?: string
   action?: string
@@ -55,6 +59,7 @@ export class SceneCharacterRepository extends BaseRepository<
     return {
       characterId: e.characterId,
       characterName: e.characterName,
+      characterBindingId: e.characterBindingId,
       position: (e.position as
         | 'left'
         | 'center'
@@ -107,6 +112,7 @@ export class SceneCharacterRepository extends BaseRepository<
           sceneScriptId: data.sceneScriptId,
           characterId: data.characterId,
           characterName: data.characterName,
+          characterBindingId: data.characterBindingId ?? null,
           position: data.position || 'center',
           expression: data.expression ?? null,
           action: data.action ?? null,
@@ -128,6 +134,7 @@ export class SceneCharacterRepository extends BaseRepository<
       return {
         characterId: data.characterId,
         characterName: data.characterName,
+        characterBindingId: data.characterBindingId ?? null,
         position: data.position,
         expression: data.expression,
         action: data.action,
@@ -164,6 +171,7 @@ export class SceneCharacterRepository extends BaseRepository<
       let changed = false
       if (data.characterId !== undefined) { existing.characterId = data.characterId; changed = true }
       if (data.characterName !== undefined) { existing.characterName = data.characterName; changed = true }
+      if (data.characterBindingId !== undefined) { existing.characterBindingId = data.characterBindingId ?? null; changed = true }
       if (data.position !== undefined) { existing.position = data.position; changed = true }
       if (data.expression !== undefined) { existing.expression = data.expression ?? null; changed = true }
       if (data.action !== undefined) { existing.action = data.action ?? null; changed = true }

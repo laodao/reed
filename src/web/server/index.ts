@@ -14,6 +14,10 @@
  */
 
 import 'reflect-metadata'
+// 加载 .env.local 环境变量（开发环境）
+import dotenv from 'dotenv'
+dotenv.config({ path: '.env.local' })
+
 import * as http from 'http'
 import * as path from 'path'
 import * as fs from 'fs'

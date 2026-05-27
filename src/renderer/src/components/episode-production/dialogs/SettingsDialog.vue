@@ -358,7 +358,8 @@ async function handleSubmit() {
   if (!projectStore.currentProject) return
 
   const oldLwProjectId = projectStore.currentProject.longWritingProjectId || ''
-  const newLwProjectId = form.longWritingProjectId || ''
+  // 外键约束要求：空字符串转为 null，否则会触发 FOREIGN KEY constraint failed
+  const newLwProjectId = form.longWritingProjectId || null
 
   const configToSave = {
     ...form.config,
@@ -372,6 +373,7 @@ async function handleSubmit() {
   const success = await projectStore.updateProject(projectStore.currentProject.id, {
     name: form.name,
     config: configToSave,
+    // 确保 null 而不是空字符串
     longWritingProjectId: newLwProjectId
   })
 
