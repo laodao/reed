@@ -85,8 +85,7 @@
               @click="selectedStoryboardId = sb.id"
             >
               <span class="shot-status-dot" :class="getStatusClass(sb)">●</span>
-              <span class="shot-num">{{ idx + 1 }}.{{ sb.shotNumber }}</span>
-              <span class="shot-type">{{ shotTypeLabel(sb.shotType) }}</span>
+              <span class="shot-num">分镜 {{ sb.shotNumber }}</span>
               <span class="shot-dur">{{ sb.duration }}s</span>
             </li>
           </ul>
@@ -188,7 +187,7 @@
                 @change="onGenerationModeChange"
               >
                 <el-radio-button value="text2image">文生图</el-radio-button>
-                <el-radio-button value="keyframes">首尾帧</el-radio-button>
+                <el-radio-button value="keyframes">关键帧</el-radio-button>
               </el-radio-group>
             </label>
             <span class="header-spacer" />
@@ -419,8 +418,10 @@
                 </el-option>
               </el-select>
             </label>
+          </div>
 
-            <span class="group-divider" />
+          <!-- 转场 toolbar：另起一行 -->
+          <div class="lang-toolbar transition-toolbar">
             <span class="group-label">转场：</span>
             <label class="tool-item">
               <span class="tool-label">类型</span>
@@ -1500,7 +1501,7 @@ async function onGenerateForScene(): Promise<void> {
  * 完成后 reload 当前选中场景的分镜列表（其他场景待选中时按需加载）
  */
 async function onGenerateAllScenes(): Promise<void> {
-  if (!script.value?.id) {
+  if (!scriptStore.currentScript?.id) {
     ElMessage.warning('请先生成剧本')
     return
   }
