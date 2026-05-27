@@ -27,29 +27,53 @@ import { callAI, extractJsonFromResponse, parseJsonString } from './_helpers'
 
 /**
  * 剧本生成提示词（完整专业剧本格式 · spec §4.1 强引用）
+ * 优化适配 DeepSeek 等国产大模型 - 强化 JSON 输出优先级
  */
-const SCRIPT_GENERATION_PROMPT = `你是一位拥有10年以上一线影视工业经验的职业编剧，精通三幕剧结构、人物弧光设计、视觉化叙事与标准剧本格式。请将以下小说章节内容转换为专业的视频剧本。
+const SCRIPT_GENERATION_PROMPT = `你是一位拥有10年以上一线影视工业经验的职业编剧。
 
-## 输出要求
+## ⚠️⚠️⚠️ 最重要：你必须输出结构化 JSON 场景数据！
 
-请输出三部分内容，每部分使用特定分隔符标记：
+**这是你最重要的任务！如果不输出 JSON 场景数据，整个任务就是失败的！**
 
-### 第一部分：章节梗概
-使用 ===SYNOPSIS=== 作为开始标记，===SYNOPSIS_END=== 作为结束标记。
-内容为 50-100 字的章节梗概。
+输出顺序（必须严格遵守）：
+1. **先输出 JSON 场景数据**（最重要的部分）
+2. 再输出章节梗概
+3. 最后输出剧本正文
 
-### 第二部分：完整剧本正文
-使用 ===SCRIPT=== 作为开始标记，===SCRIPT_END=== 作为结束标记。
-输出标准剧本格式的完整正文（中文场景标题；动作描写现在时；角色对白居中缩进；转场标记右对齐）。
-1. 严禁使用 Markdown 格式（如加粗、斜体、列表、代码块）
-2. 仅使用纯文本标准剧本缩进与换行
-3. 严格遵循"展示而非告知"原则，对白精炼且富含潜台词
+---
 
-### 第三部分：结构化场景数据
-使用 ===SCENES_JSON=== 作为开始标记，===SCENES_JSON_END=== 作为结束标记。
-输出 JSON 格式的结构化场景数据。
+## 第一部分：结构化场景数据（JSON格式） - ⭐必须输出
 
-## ⭐ 强约束：所有引用必须使用 binding ID（不允许裸字符串）
+格式要求：
+- 开头写：【场景数据开始】
+- 结尾写：【场景数据结束】
+- 中间是完整的 JSON 数据（必须包含 scenes 数组）
+- JSON 必须合法，可直接解析
+- **这部分绝对不能跳过！如果跳过，整个生成将失败！**
+
+---
+
+## 第二部分：章节梗概
+
+格式要求：
+- 开头写：【梗概开始】
+- 结尾写：【梗概结束】
+- 中间是 50-100 字的章节概要
+
+---
+
+## 第三部分：完整剧本正文
+
+格式要求：
+- 开头写：【剧本正文开始】
+- 结尾写：【剧本正文结束】
+- 中间是标准剧本格式（中文场景标题；动作描写现在时；角色对白居中缩进）
+- 严禁使用 Markdown 格式
+- 仅使用纯文本标准剧本缩进与换行
+
+---
+
+## ⭐ 强约束：所有引用必须使用 binding ID
 
 下面给出本项目可用的 **角色 / 地点 / 物品** 资产清单。每条都有一个 binding ID。
 你输出 JSON 时必须用 ID 引用：
@@ -60,6 +84,8 @@ const SCRIPT_GENERATION_PROMPT = `你是一位拥有10年以上一线影视工�
 如果场景中出现的对象在清单里**找不到对应项**，把对应 bindingId 字段填 null（不要瞎编 ID），
 并在 location/characterName/name 字段保留实际名字以便人工补全。
 
+---
+
 ## 场景拆分原则
 
 1. 地点变化应拆分为新场景
@@ -68,7 +94,9 @@ const SCRIPT_GENERATION_PROMPT = `你是一位拥有10年以上一线影视工�
 4. 情感氛围显著变化可拆分
 5. 每个场景应有明确的视觉焦点
 
-## JSON 场景数据格式
+---
+
+## JSON 场景数据格式示例
 
 {
   "scenes": [
@@ -210,63 +238,156 @@ export class EpisodeScriptGenerator {
 
   /**
    * 从完整剧本响应中提取三部分内容
+   * 支持新旧两种格式标记：
+   * - 新格式：【梗概开始】【梗概结束】等（适配国产大模型）
+   * - 旧格式：===SYNOPSIS=== ===SYNOPSIS_END=== 等（兼容旧版）
    */
   private extractFullScriptFromResponse(
     response: string,
     roster: AssetRosterForScript,
   ): FullScriptGenerationResult {
     console.log('[EpisodeScriptGenerator] 解析完整剧本响应，长度:', response.length)
+    console.log('[EpisodeScriptGenerator] 响应前1000字符:', response.substring(0, 1000))
 
     let synopsis = ''
     let scriptContent = ''
     let scenes: GeneratedScene[] = []
 
-    const synopsisMatch = response.match(/===SYNOPSIS===\s*([\s\S]*?)\s*===SYNOPSIS_END===/)
-    if (synopsisMatch) synopsis = synopsisMatch[1].trim()
+    // 新格式：【梗概开始】【梗概结束】
+    const synopsisMatchNew = response.match(/【梗概开始】\s*([\s\S]*?)\s*【梗概结束】/)
+    if (synopsisMatchNew) synopsis = synopsisMatchNew[1].trim()
 
-    const scriptMatch = response.match(/===SCRIPT===\s*([\s\S]*?)\s*===SCRIPT_END===/)
-    if (scriptMatch) scriptContent = scriptMatch[1].trim()
+    // 旧格式兼容：===SYNOPSIS=== ===SYNOPSIS_END===
+    if (!synopsis) {
+      const synopsisMatchOld = response.match(/===SYNOPSIS===\s*([\s\S]*?)\s*===SYNOPSIS_END===/)
+      if (synopsisMatchOld) synopsis = synopsisMatchOld[1].trim()
+    }
 
-    const scenesMatch = response.match(/===SCENES_JSON===\s*([\s\S]*?)\s*===SCENES_JSON_END===/)
-    if (scenesMatch) {
-      try {
-        const scenesData = this.parseJsonString(scenesMatch[1].trim())
-        if (scenesData.scenes && Array.isArray(scenesData.scenes)) {
-          scenes = this.convertSceneDataToGeneratedScenes(scenesData.scenes, roster)
-        }
-      } catch (e) {
-        console.error('[EpisodeScriptGenerator] 解析场景 JSON 失败:', e)
-        // 备用：尝试 ```json 格式
-        const jsonMatch = response.match(/===SCENES_JSON===\s*```json\s*([\s\S]*?)\s*```/)
-        if (jsonMatch) {
+    // 新格式：【剧本正文开始】【剧本正文结束】
+    const scriptMatchNew = response.match(/【剧本正文开始】\s*([\s\S]*?)\s*【剧本正文结束】/)
+    if (scriptMatchNew) scriptContent = scriptMatchNew[1].trim()
+
+    // 旧格式兼容
+    if (!scriptContent) {
+      const scriptMatchOld = response.match(/===SCRIPT===\s*([\s\S]*?)\s*===SCRIPT_END===/)
+      if (scriptMatchOld) scriptContent = scriptMatchOld[1].trim()
+    }
+
+    // 场景数据解析（尝试多种格式）
+    // 1. 新格式：【场景数据开始】【场景数据结束】
+    const scenesMatchNew = response.match(/【场景数据开始】\s*([\s\S]*?)\s*【场景数据结束】/)
+    if (scenesMatchNew) {
+      console.log('[EpisodeScriptGenerator] 找到新格式场景标记')
+      scenes = this.parseScenesJson(scenesMatchNew[1].trim(), roster)
+    }
+
+    // 2. 旧格式：===SCENES_JSON=== ===SCENES_JSON_END===
+    if (scenes.length === 0) {
+      const scenesMatchOld = response.match(/===SCENES_JSON===\s*([\s\S]*?)\s*===SCENES_JSON_END===/)
+      if (scenesMatchOld) {
+        console.log('[EpisodeScriptGenerator] 找到旧格式场景标记')
+        scenes = this.parseScenesJson(scenesMatchOld[1].trim(), roster)
+      }
+    }
+
+    // 3. ```json 代码块格式（DeepSeek 常用）
+    if (scenes.length === 0) {
+      const jsonBlockMatch = response.match(/```json\s*([\s\S]*?)\s*```/)
+      if (jsonBlockMatch) {
+        console.log('[EpisodeScriptGenerator] 找到 json 代码块')
+        scenes = this.parseScenesJson(jsonBlockMatch[1].trim(), roster)
+      }
+    }
+
+    // 4. 直接查找 scenes 数组（兜底）
+    if (scenes.length === 0) {
+      const scenesArrayMatch = response.match(/"scenes"\s*:\s*\[/)
+      if (scenesArrayMatch) {
+        console.log('[EpisodeScriptGenerator] 尝试直接提取 scenes 数组')
+        const start = scenesArrayMatch.index!
+        const jsonStr = this.extractJsonFromPosition(response, start)
+        if (jsonStr) {
           try {
-            const scenesData = this.parseJsonString(jsonMatch[1].trim())
-            if (scenesData.scenes && Array.isArray(scenesData.scenes)) {
-              scenes = this.convertSceneDataToGeneratedScenes(scenesData.scenes, roster)
+            const data = this.parseJsonString(jsonStr)
+            if (data.scenes && Array.isArray(data.scenes)) {
+              scenes = this.convertSceneDataToGeneratedScenes(data.scenes, roster)
             }
-          } catch (e2) {
-            console.error('[EpisodeScriptGenerator] 备用解析方法也失败:', e2)
+          } catch (e) {
+            console.error('[EpisodeScriptGenerator] 直接提取 scenes 失败:', e)
           }
         }
       }
     }
 
     if (!synopsis) {
-      const fallbackMatch = response.match(/===SCENES_JSON===\s*([\s\S]*?)\s*===SCENES_JSON_END===/)
-      if (fallbackMatch) {
-        try {
-          const data = this.parseJsonString(fallbackMatch[1].trim())
+      // 从场景数据中提取 synopsis（如果 AI 把梗概放在 JSON 里）
+      try {
+        const anyJsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/) || response.match(/\{[\s\S]*"scenes"[\s\S]*\}/)
+        if (anyJsonMatch) {
+          const data = this.parseJsonString(anyJsonMatch[0])
           if (data.synopsis) synopsis = data.synopsis
-        } catch {
-          // 忽略
         }
+      } catch {
+        // 忽略
       }
     }
 
     if (!scriptContent) console.warn('[EpisodeScriptGenerator] 未找到剧本正文')
-    if (scenes.length === 0) console.warn('[EpisodeScriptGenerator] 未找到场景数据')
+    if (scenes.length === 0) {
+      console.warn('[EpisodeScriptGenerator] 未找到场景数据，请检查 AI 输出格式')
+      console.log('[EpisodeScriptGenerator] 响应后1000字符:', response.substring(Math.max(0, response.length - 1000)))
+    } else {
+      console.log('[EpisodeScriptGenerator] 成功解析场景数:', scenes.length)
+    }
 
     return { synopsis, scriptContent, scenes }
+  }
+
+  /**
+   * 解析场景 JSON 数据
+   */
+  private parseScenesJson(jsonStr: string, roster: AssetRosterForScript): GeneratedScene[] {
+    try {
+      const scenesData = this.parseJsonString(jsonStr)
+      if (scenesData.scenes && Array.isArray(scenesData.scenes)) {
+        return this.convertSceneDataToGeneratedScenes(scenesData.scenes, roster)
+      }
+    } catch (e) {
+      console.error('[EpisodeScriptGenerator] 解析场景 JSON 失败:', e)
+    }
+    return []
+  }
+
+  /**
+   * 从指定位置提取完整 JSON 对象
+   */
+  private extractJsonFromPosition(response: string, startPos: number): string | null {
+    // 找到包含 scenes 的完整 JSON 对象
+    let braceCount = 0
+    let jsonStart = -1
+    for (let i = startPos; i >= 0; i--) {
+      if (response[i] === '{') {
+        jsonStart = i
+        break
+      }
+    }
+    if (jsonStart === -1) return null
+
+    let jsonEnd = -1
+    braceCount = 0
+    for (let i = jsonStart; i < response.length; i++) {
+      if (response[i] === '{') braceCount++
+      else if (response[i] === '}') {
+        braceCount--
+        if (braceCount === 0) {
+          jsonEnd = i + 1
+          break
+        }
+      }
+    }
+    if (jsonEnd === -1) return null
+
+    return response.substring(jsonStart, jsonEnd)
   }
 
   /**
@@ -398,15 +519,45 @@ export class EpisodeScriptGenerator {
     providerConfigId?: string,
     modelId?: string,
   ): Promise<FullScriptGenerationResult> {
+    console.log('[EpisodeScriptGenerator] 开始生成剧本...')
+    console.log('[EpisodeScriptGenerator] 资产花名册:', {
+      characters: roster.characters.length,
+      locations: roster.locations.length,
+      items: roster.items.length
+    })
+
     const prompt = SCRIPT_GENERATION_PROMPT.replace('{characters}', formatRosterList(roster.characters))
       .replace('{locations}', formatRosterList(roster.locations))
       .replace('{items}', formatRosterList(roster.items))
       .replace('{chapterContent}', chapterContent)
 
     const systemPrompt =
-      '你是一位拥有10年以上一线影视工业经验的职业编剧。请严格按照要求的格式输出，不要添加任何额外的开场白或结束语。所有引用必须使用提供的 binding ID，不要瞎编 ID。'
+      '你是一位拥有10年以上一线影视工业经验的职业编剧。请严格按照要求的格式输出，不要添加任何额外的开场白或结束语。所有引用必须使用提供的 binding ID，不要瞎编 ID。必须输出【场景数据开始】【场景数据结束】标记的 JSON 场景数据！'
+
+    console.log('[EpisodeScriptGenerator] 调用 AI，提示词长度:', prompt.length)
 
     const response = await callAI(prompt, systemPrompt, 16000, providerConfigId, modelId)
+
+    // 输出完整的 AI 响应（用于诊断 DeepSeek 格式问题）
+    console.log('[EpisodeScriptGenerator] AI 响应完整内容:')
+    console.log('='.repeat(50))
+    console.log(response)
+    console.log('='.repeat(50))
+    console.log('[EpisodeScriptGenerator] AI 响应长度:', response.length)
+
+    // 检查响应中是否有场景标记
+    const hasNewFormat = response.includes('【场景数据开始】')
+    const hasOldFormat = response.includes('===SCENES_JSON===')
+    const hasJsonBlock = response.includes('```json')
+    const hasScenesArray = response.includes('"scenes"')
+
+    console.log('[EpisodeScriptGenerator] 格式检测:', {
+      '新格式【场景数据】': hasNewFormat,
+      '旧格式===SCENES_JSON===': hasOldFormat,
+      'json代码块': hasJsonBlock,
+      'scenes数组': hasScenesArray
+    })
+
     const result = this.extractFullScriptFromResponse(response, roster)
 
     if (!result.synopsis) console.warn('[EpisodeScriptGenerator] 生成的剧本缺少梗概')
@@ -415,7 +566,14 @@ export class EpisodeScriptGenerator {
     }
     if (result.scenes.length === 0) {
       console.warn('[EpisodeScriptGenerator] 生成的剧本缺少结构化场景数据')
+      console.warn('[EpisodeScriptGenerator] 这可能是因为 DeepSeek 模型没有正确输出场景 JSON 格式')
     }
+
+    console.log('[EpisodeScriptGenerator] 解析结果:', {
+      synopsisLength: result.synopsis.length,
+      scriptContentLength: result.scriptContent.length,
+      scenesCount: result.scenes.length
+    })
 
     return result
   }
@@ -446,6 +604,132 @@ export class EpisodeScriptGenerator {
     // 注：这里走的是简化模式（无正文），调用方一般用 generateFullScript
     result.scenes = this.convertSceneDataToGeneratedScenes(result.scenes, roster)
     return result as ScriptGenerationResult
+  }
+
+  /**
+   * 从章节梗概拆分场景（spec §4.1 强引用）
+   * 用于 handleGenerateScenes 场景——已有 synopsis，仅需生成结构化场景数据。
+   */
+  async generateScenesFromSynopsis(
+    synopsis: string,
+    roster: AssetRosterForScript,
+    providerConfigId?: string,
+    modelId?: string,
+  ): Promise<GeneratedScene[]> {
+    // 简化提示词：只输出场景数据，不需要剧本正文
+    const prompt = `你是一位专业的影视编剧。请将以下章节梗概拆分为结构化的场景数据。
+
+## 输出要求
+
+使用 ===SCENES_JSON=== 作为开始标记，===SCENES_JSON_END=== 作为结束标记。
+输出 JSON 格式的结构化场景数据。
+
+## ⭐ 强约束：所有引用必须使用 binding ID（不允许裸字符串）
+
+下面给出本项目可用的 **角色 / 地点 / 物品** 资产清单。每条都有一个 binding ID。
+你输出 JSON 时必须用 ID 引用：
+- locationBindingId（场景级）：从【可用地点列表】里选一项的 bindingId 填入
+- characterBindingId（出场角色 / 对话 / 动作）：从【可用角色列表】里选
+- itemBindingId（道具）：从【可用物品列表】里选
+
+如果场景中出现的对象在清单里**找不到对应项**，把对应 bindingId 字段填 null（不要瞎编 ID），
+并在 location/characterName/name 字段保留实际名字以便人工补全。
+
+## JSON 场景数据格式
+
+{
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "location": "茶馆",
+      "locationBindingId": "lb_xxxxx",
+      "locationType": "interior",
+      "timeOfDay": "morning",
+      "weather": "sunny",
+      "sceneDescription": "详细场景描述（含空间布局/陈设/材质/色调/关键视觉元素）",
+      "mood": "氛围",
+      "lighting": "光线描述",
+      "characters": [
+        {
+          "characterBindingId": "cb_xxxxx",
+          "characterName": "张三",
+          "position": "center",
+          "expression": "凝重",
+          "action": "推门进入",
+          "outfit": "蓝色长衫",
+          "props": [
+            { "itemBindingId": "ib_xxxxx", "name": "茶壶" }
+          ]
+        }
+      ],
+      "originalText": "原文片段",
+      "narration": "旁白文本",
+      "dialogues": [
+        {
+          "id": "dlg_1",
+          "characterBindingId": "cb_xxxxx",
+          "characterName": "张三",
+          "text": "请来一壶碧螺春",
+          "emotion": "平静",
+          "volume": "normal",
+          "pace": "normal",
+          "pause": 0
+        }
+      ],
+      "actions": [
+        {
+          "id": "act_1",
+          "characterBindingId": "cb_xxxxx",
+          "description": "缓步走向角落座位",
+          "timing": "before",
+          "duration": 2
+        }
+      ]
+    }
+  ]
+}
+
+## 可用角色列表
+
+${formatRosterList(roster.characters)}
+
+## 可用地点列表
+
+${formatRosterList(roster.locations)}
+
+## 可用物品列表
+
+${formatRosterList(roster.items)}
+
+## 章节梗概
+
+${synopsis}`
+
+    const systemPrompt =
+      '你是一位专业的影视编剧。请严格按照要求格式输出场景数据，所有引用使用提供的 binding ID。不要添加任何开场白或结束语。'
+
+    const response = await callAI(prompt, systemPrompt, 8192, providerConfigId, modelId)
+
+    // 解析 JSON
+    const scenesMatch = response.match(/===SCENES_JSON===\s*([\s\S]*?)\s*===SCENES_JSON_END===/)
+    if (!scenesMatch) {
+      // 尝试 ```json 格式
+      const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/)
+      if (jsonMatch) {
+        const scenesData = this.parseJsonString(jsonMatch[1].trim())
+        if (scenesData.scenes && Array.isArray(scenesData.scenes)) {
+          return this.convertSceneDataToGeneratedScenes(scenesData.scenes, roster)
+        }
+      }
+      throw new Error('AI 响应中未找到场景数据')
+    }
+
+    const scenesData = this.parseJsonString(scenesMatch[1].trim())
+    if (!scenesData.scenes || !Array.isArray(scenesData.scenes)) {
+      throw new Error('生成的场景数据格式不正确')
+    }
+
+    return this.convertSceneDataToGeneratedScenes(scenesData.scenes, roster)
   }
 }
 

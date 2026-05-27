@@ -9,12 +9,15 @@ import * as path from 'path'
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { VoiceService } from '@core/services/voice.service'
 import { VoiceCloneService } from '@core/services/voice-clone.service'
+import { VoiceDesignService } from '@core/services/voice-design.service'
 import { VoiceCloneJobScheduler } from '@core/services/voice-clone-job-scheduler'
 import type {
   TTSRequest,
   STTRequest,
   ClonedVoiceStatus,
+  DesignedVoiceStatus,
   VoiceCloneCreateRequest,
+  VoiceDesignCreateRequest,
   VoiceHistoryQuery,
 } from '@shared/types/voice.types'
 import type { IpcResponse } from '@shared/types/ipc.types'
@@ -46,6 +49,14 @@ export function registerVoiceHandlers(): void {
   ipcBridge.handle('voice:clone-refresh-status', handleRefreshCloneStatus)
   ipcBridge.handle('voice:preview', handlePreviewClonedVoice)
   ipcBridge.handle('voice:download', handleDownloadAudio)
+  // 新增：音频分析（使用 ffprobe，避免渲染进程崩溃）
+  ipcBridge.handle('voice:analyze-audio', handleAnalyzeAudio)
+  // 新增：声音设计（通过文本描述创建音色）
+  ipcBridge.handle('voice:design', handleVoiceDesign)
+  ipcBridge.handle('voice:designed-list', handleGetDesignedVoices)
+  ipcBridge.handle('voice:designed-delete', handleDeleteDesignedVoice)
+  ipcBridge.handle('voice:design-refresh-status', handleRefreshDesignStatus)
+  ipcBridge.handle('voice:design-preview', handlePreviewDesignedVoice)
 
   console.log('[VoiceHandlers] 语音 IPC 处理器已注册')
 }
@@ -125,6 +136,77 @@ async function handleSelectFile(
       name: path.basename(filePath),
       size: stats.size,
     },
+  }
+}
+
+/**
+ * 分析音频文件（使用 ffprobe）
+ * 返回时长（秒）和声道数
+ *
+ * 此处理器用于替代前端 Web Audio API 的 decodeAudioData，
+ * 避免某些音频格式导致渲染进程崩溃。
+ */
+async function handleAnalyzeAudio(
+  _event: any,
+  filePath: string,
+): Promise<IpcResponse<{ durationSec: number; channels: number }>> {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return { success: false, error: '音频文件不存在' }
+  }
+
+  try {
+    // 使用 ffprobe 分析音频
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const ffprobePath = require('@ffprobe-installer/ffprobe').path
+
+    // 使用 spawn 执行 ffprobe
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { spawnSync } = require('child_process')
+
+    const result = spawnSync(ffprobePath, [
+      '-v', 'error',
+      '-show_entries', 'format=duration:stream=channels',
+      '-of', 'json',
+      filePath,
+    ], {
+      encoding: 'utf8',
+      timeout: 10000, // 10秒超时
+    })
+
+    if (result.error) {
+      console.error('[voice:analyze-audio] ffprobe 执行错误:', result.error)
+      return { success: false, error: `音频分析失败：${result.error.message}` }
+    }
+
+    if (result.status !== 0) {
+      console.error('[voice:analyze-audio] ffprobe 返回非零状态:', result.stderr)
+      return { success: false, error: `音频分析失败：ffprobe 返回错误` }
+    }
+
+    const jsonOutput = JSON.parse(result.stdout)
+
+    // 从 format 提取时长
+    const duration = parseFloat(jsonOutput.format?.duration || '0')
+
+    // 从 stream 提取声道数（取第一个音频流）
+    const streams = jsonOutput.streams || []
+    const audioStream = streams.find((s: any) => s.channels !== undefined)
+    const channels = audioStream?.channels || 1
+
+    if (duration <= 0) {
+      return { success: false, error: '无法获取音频时长' }
+    }
+
+    return {
+      success: true,
+      data: {
+        durationSec: duration,
+        channels: channels,
+      },
+    }
+  } catch (e: any) {
+    console.error('[voice:analyze-audio] 异常:', e)
+    return { success: false, error: `音频分析异常：${e?.message || e}` }
   }
 }
 
@@ -214,4 +296,46 @@ async function handleDownloadAudio(
 
   const response = await VoiceService.copyAudio(audioPath, result.filePath)
   return response as any
+}
+
+// ===== 声音设计 handlers =====
+
+async function handleVoiceDesign(
+  _event: any,
+  request: VoiceDesignCreateRequest,
+): Promise<IpcResponse<any>> {
+  const result = await VoiceDesignService.designVoice(request)
+  return result as any
+}
+
+async function handleGetDesignedVoices(
+  _event: any,
+  status?: DesignedVoiceStatus,
+): Promise<IpcResponse<any[]>> {
+  const r = await VoiceDesignService.listDesignedVoices(status)
+  return r as any
+}
+
+async function handleDeleteDesignedVoice(
+  _event: any,
+  id: string,
+): Promise<IpcResponse<{ deleted: boolean }>> {
+  const r = await VoiceDesignService.deleteDesignedVoice(id)
+  return r as any
+}
+
+async function handleRefreshDesignStatus(
+  _event: any,
+  id: string,
+): Promise<IpcResponse<any>> {
+  const r = await VoiceDesignService.refreshDesignedVoiceStatus(id)
+  return r as any
+}
+
+async function handlePreviewDesignedVoice(
+  _event: any,
+  id: string,
+): Promise<IpcResponse<{ audioPath: string }>> {
+  const r = await VoiceDesignService.previewDesignedVoice(id)
+  return r as any
 }

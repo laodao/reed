@@ -19,6 +19,11 @@ export type VoiceRecordStatus = 'pending' | 'processing' | 'completed' | 'failed
 export type ClonedVoiceStatus = 'training' | 'ready' | 'failed'
 
 /**
+ * 设计声音状态
+ */
+export type DesignedVoiceStatus = 'training' | 'ready' | 'failed'
+
+/**
  * 支持的语言代码
  */
 export type VoiceLanguageCode =
@@ -51,6 +56,7 @@ export interface VoiceSpeaker {
   gender?: 'male' | 'female' | 'neutral'
   previewUrl?: string
   isCloned?: boolean  // 是否为复刻声音
+  isDesigned?: boolean  // 是否为设计声音
 }
 
 /**
@@ -281,4 +287,84 @@ export const VOICE_LANGUAGES: VoiceLanguage[] = [
 export function getVoiceLanguageName(code: VoiceLanguageCode): string {
   const lang = VOICE_LANGUAGES.find(l => l.code === code)
   return lang?.name || code
+}
+
+// ===== 声音设计类型（CosyVoice voice-enrollment action=create_voice with voice_prompt）=====
+
+/**
+ * 声音设计 — 创建请求（IPC voice:design 入参）
+ *
+ * 与声音复刻不同，声音设计通过文本描述创建音色，无需音频样本。
+ * DashScope API：POST customization，input.action='create_voice'，input.voice_prompt 描述声音特征。
+ */
+export interface VoiceDesignCreateRequest {
+  /** 用户起的展示名 */
+  name: string
+  /** 声音描述文本（最多 500 字符），如"年轻女性，温柔甜美，语速适中" */
+  voicePrompt: string
+  /** voice_id 前缀：仅小写字母数字、≤10 字符 */
+  prefix: string
+  /** 目标 TTS 模型（默认 cosyvoice-v3.5-plus）*/
+  targetModel?: string
+  /** 预览文本，用于生成 demo 音频（可选，默认使用系统预设）*/
+  previewText?: string
+  /** 指定 provider id，缺省走默认 */
+  providerId?: string
+}
+
+/**
+ * Provider 层 — 设计输入
+ */
+export interface VoiceDesignInput {
+  name: string
+  voicePrompt: string
+  prefix: string
+  targetModel?: string
+  /** 预览文本，用于生成 demo 音频（DashScope API 必填）*/
+  previewText?: string
+}
+
+/**
+ * Provider 层 — 创建设计后的返回值
+ */
+export interface VoiceDesignCreateResult {
+  /** provider 端真实 voice_id */
+  voiceId: string
+  /** 目标 TTS 模型 */
+  targetModel: string
+  /** 当前状态 */
+  status: DesignedVoiceStatus
+}
+
+/**
+ * Provider 层 — 查询设计音色状态返回值
+ */
+export interface VoiceDesignStatusResult {
+  status: DesignedVoiceStatus
+  /** 试听音频 URL（OK 状态时部分 provider 给）*/
+  previewAudioUrl?: string
+  /** 失败原因 */
+  errorMessage?: string
+}
+
+/**
+ * 设计声音
+ */
+export interface DesignedVoice {
+  id: string
+  name: string
+  /** 声音描述 */
+  voicePrompt: string
+  status: DesignedVoiceStatus
+  voiceId?: string
+  /** 目标模型 */
+  targetModel?: string
+  /** 前缀 */
+  prefix?: string
+  /** 本地预览音频路径 */
+  previewAudioPath?: string
+  providerId?: string
+  errorMessage?: string
+  createdAt: Date
+  updatedAt?: Date
 }
