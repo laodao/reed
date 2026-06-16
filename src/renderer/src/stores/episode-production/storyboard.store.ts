@@ -176,6 +176,63 @@ export const useEpStoryboardStore = defineStore('ep-storyboard', () => {
     }
   }
 
+  /**
+   * AI 填充单个分镜空字段（spec 2026-05-28 扩展版）
+   * 调 AI 推荐所有镜头参数，一键填充
+   * 覆盖：镜头核心参数 + metadata参数 + 转场参数 + 关键帧数
+   * @returns { ok, data, error }
+   */
+  async function aiFillStoryboard(
+    storyboardId: string,
+    fillInput: {
+      shotNumber: number
+      sceneContext: string
+      location?: string
+      timeOfDay?: string
+      mood?: string
+      existingFields: {
+        shotType?: string | null
+        cameraAngle?: string | null
+        cameraMovement?: string | null
+        duration?: number | null
+        frameDescription?: string | null
+        // 扩展字段（2026-05-28）
+        lensFocalMm?: number | null
+        aperture?: string | null
+        cameraStyle?: string | null
+        lighting?: string | null
+        transitionType?: string | null
+        transitionDuration?: number | null
+        transitionDirection?: string | null
+        keyframeCount?: number | null
+      }
+    },
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<{ ok: boolean; data?: any; error?: string }> {
+    const wb = useEpWorkbenchStore()
+    wb.error = null
+    try {
+      const response = await window.electronAPI.episodeProduction.fillStoryboard(
+        storyboardId,
+        fillInput,
+        providerConfigId,
+        modelId
+      )
+      if (response.success && response.data) {
+        return { ok: true, data: response.data }
+      } else {
+        const msg = response.error || 'AI 填充失败'
+        wb.error = msg
+        return { ok: false, error: msg }
+      }
+    } catch (e: any) {
+      const msg = e?.message || 'AI 填充失败'
+      wb.error = msg
+      return { ok: false, error: msg }
+    }
+  }
+
   return {
     storyboards,
     loadStoryboards,
@@ -183,5 +240,6 @@ export const useEpStoryboardStore = defineStore('ep-storyboard', () => {
     deleteStoryboard,
     generateStoryboard,
     generateStoryboards,
+    aiFillStoryboard,
   }
 })

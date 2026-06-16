@@ -3,6 +3,8 @@
  * 拆自 VideoProjectEditor.vue，供各组件复用
  */
 
+import { findCameraMovementPreset } from '@core/modules/episode-production/assets/constants/camera-movements'
+
 export const shotTypeLabels: Record<string, string> = {
   extreme_long: '大远景',
   long: '远景',
@@ -37,6 +39,31 @@ export const cameraMovementLabels: Record<string, string> = {
   crane: '升降'
 }
 
+export const timeOfDayLabels: Record<string, string> = {
+  morning: '早晨',
+  noon: '正午',
+  afternoon: '下午',
+  evening: '傍晚',
+  night: '夜晚',
+  dawn: '黎明',
+  dusk: '黄昏'
+}
+
+export const weatherLabels: Record<string, string> = {
+  sunny: '晴天',
+  cloudy: '多云',
+  rainy: '雨天',
+  snowy: '雪天',
+  foggy: '雾天',
+  stormy: '暴风雨'
+}
+
+export const locationTypeLabels: Record<string, string> = {
+  interior: '内景',
+  exterior: '外景',
+  mixed: '混合'
+}
+
 export const statusLabels: Record<string, string> = {
   pending: '待处理',
   generating: '生成中',
@@ -55,7 +82,23 @@ export function getCameraAngleLabel(angle: string): string {
 }
 
 export function getCameraMovementLabel(movement: string): string {
+  // 先查 25 个新预设
+  const preset = findCameraMovementPreset(movement)
+  if (preset) return preset.label
+  // 老值兜底
   return cameraMovementLabels[movement] || movement
+}
+
+export function getTimeOfDayLabel(time: string): string {
+  return timeOfDayLabels[time] || time
+}
+
+export function getWeatherLabel(weather: string): string {
+  return weatherLabels[weather] || weather
+}
+
+export function getLocationTypeLabel(type: string): string {
+  return locationTypeLabels[type] || type
 }
 
 export function getStatusLabel(status: string): string {

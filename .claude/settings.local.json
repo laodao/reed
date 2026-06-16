@@ -358,7 +358,8 @@
       "Bash(DEBUG=vite:resolve timeout 60 npm run build:renderer)",
       "Bash(tee /tmp/eb.log)",
       "Bash(kill %1)",
-      "Bash(PGDATABASE=the_bot_test npm run *)"
+      "Bash(PGDATABASE=the_bot_test npm run *)",
+      "WebFetch(domain:playwright.dev)"
     ]
   }
 }

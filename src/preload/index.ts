@@ -160,6 +160,8 @@ const IPC_CHANNELS = {
   EP_GENERATE_SCENES: 'ep:generate-scenes',
   EP_GENERATE_STORYBOARD: 'ep:generate-storyboard',
   EP_GENERATE_STORYBOARDS: 'ep:generate-storyboards',
+  // spec 2026-05-27：单分镜 AI 填充
+  EP_FILL_STORYBOARD: 'ep:fill-storyboard',
   // spec 2026-05-08：场景级 AI 润色
   EP_POLISH_SCENE: 'ep:polish-scene',
 
@@ -1756,6 +1758,36 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.EP_GENERATE_STORYBOARD, sceneId, providerConfigId, modelId),
     generateStoryboards: (scriptId: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_GENERATE_STORYBOARDS, scriptId, providerConfigId, modelId),
+    // spec 2026-05-28：单分镜 AI 填充（扩展版，覆盖所有字段）
+    fillStoryboard: (
+      storyboardId: string,
+      fillInput: {
+        shotNumber: number
+        sceneContext: string
+        location?: string
+        timeOfDay?: string
+        mood?: string
+        existingFields: {
+          shotType?: string | null
+          cameraAngle?: string | null
+          cameraMovement?: string | null
+          duration?: number | null
+          frameDescription?: string | null
+          // 扩展字段（2026-05-28）
+          lensFocalMm?: number | null
+          aperture?: string | null
+          cameraStyle?: string | null
+          lighting?: string | null
+          transitionType?: string | null
+          transitionDuration?: number | null
+          transitionDirection?: string | null
+          keyframeCount?: number | null
+        }
+      },
+      providerConfigId?: string,
+      modelId?: string,
+    ) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_FILL_STORYBOARD, storyboardId, fillInput, providerConfigId, modelId),
 
     // spec 2026-05-08：场景级 AI 润色 — 不直接落库，返回字段子集让前端 SceneEditDialog 对比
     polishScene: (sceneId: string, providerConfigId?: string, modelId?: string) =>

@@ -24,6 +24,8 @@ export function registerStoryboardHandlers(): void {
   // ==================== AI 生成（分镜） ====================
   ipcBridge.handle('ep:generate-storyboard', handleGenerateStoryboard)
   ipcBridge.handle('ep:generate-storyboards', handleGenerateStoryboards)
+  // spec 2026-05-27：单分镜 AI 填充
+  ipcBridge.handle('ep:fill-storyboard', handleFillStoryboard)
 
   // ==================== FU5-A9-L2 · 分镜背景 ref 图（panorama_snapshot 绑入分镜） ==
   ipcBridge.handle('ep:storyboard:set-background-ref', handleSetBackgroundRef)
@@ -362,5 +364,60 @@ async function handleGenerateStoryboards(
     return { success: true, data: allStoryboards }
   } catch (error: any) {
     return { success: false, error: error.message || '批量生成分镜失败' }
+  }
+}
+
+/**
+ * spec 2026-05-28：单分镜 AI 填充（扩展版）
+ * 调 AI 推荐所有镜头参数，一键填充所有空白字段
+ * 覆盖：镜头核心参数 + metadata参数 + 转场参数 + 关键帧数
+ */
+async function handleFillStoryboard(
+  _event: any,
+  storyboardId: string,
+  fillInput: {
+    shotNumber: number
+    sceneContext: string
+    location?: string
+    timeOfDay?: string
+    mood?: string
+    existingFields: {
+      shotType?: string | null
+      cameraAngle?: string | null
+      cameraMovement?: string | null
+      duration?: number | null
+      frameDescription?: string | null
+      // 扩展字段（2026-05-28）
+      lensFocalMm?: number | null
+      aperture?: string | null
+      cameraStyle?: string | null
+      lighting?: string | null
+      transitionType?: string | null
+      transitionDuration?: number | null
+      transitionDirection?: string | null
+      keyframeCount?: number | null
+    }
+  },
+  providerConfigId?: string,
+  modelId?: string
+): Promise<IpcResponse> {
+  console.log('[handleFillStoryboard] 收到IPC调用')
+  console.log('[handleFillStoryboard] fillInput:', JSON.stringify(fillInput).substring(0, 500))
+  console.log('[handleFillStoryboard] providerConfigId:', providerConfigId)
+  console.log('[handleFillStoryboard] modelId:', modelId)
+  try {
+    // 调 storyboard-generator 的 fill 方法
+    console.log('[handleFillStoryboard] 开始调用EpisodeStoryboardGenerator...')
+    const { EpisodeStoryboardGenerator } = await import('@core/modules/episode-production/narrative/ai/storyboard-generator')
+    const result = await EpisodeStoryboardGenerator.getInstance().fillStoryboardFields(
+      fillInput,
+      providerConfigId,
+      modelId
+    )
+    console.log('[handleFillStoryboard] AI返回结果:', JSON.stringify(result))
+    return { success: true, data: result }
+  } catch (error: any) {
+    console.log('[handleFillStoryboard] 错误:', error.message)
+    return { success: false, error: error.message || 'AI 填充失败' }
   }
 }

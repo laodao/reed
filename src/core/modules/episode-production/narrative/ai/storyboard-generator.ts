@@ -691,4 +691,248 @@ ${sceneScript.actions.map(a => `- ID: ${a.id}, 描述: ${a.description}`).join('
 
     return results
   }
+
+  /**
+   * AI 填充分镜空白字段（spec 2026-05-28 扩展）
+   * 根据场景内容推荐所有分镜参数，一键填充
+   *
+   * 覆盖字段：
+   * - shotType / cameraAngle / cameraMovement / duration（镜头核心参数）
+   * - frameDescription（画面描述）
+   * - lensFocalMm / aperture / cameraStyle / lighting（metadata参数）
+   * - transitionType / transitionDuration / transitionDirection（转场参数）
+   * - keyframeCount（关键帧数）
+   */
+  async fillStoryboardFields(
+    input: {
+      shotNumber: number
+      sceneContext: string
+      location?: string
+      timeOfDay?: string
+      mood?: string
+      existingFields: {
+        shotType?: string | null
+        cameraAngle?: string | null
+        cameraMovement?: string | null
+        duration?: number | null
+        frameDescription?: string | null
+        lensFocalMm?: number | null
+        aperture?: string | null
+        cameraStyle?: string | null
+        lighting?: string | null
+        transitionType?: string | null
+        transitionDuration?: number | null
+        transitionDirection?: string | null
+        keyframeCount?: number | null
+      }
+    },
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<{
+    shotType?: string
+    cameraAngle?: string
+    cameraMovement?: string
+    duration?: number
+    frameDescription?: string
+    lensFocalMm?: string  // 改为字符串（如 "24mm"）
+    aperture?: string
+    cameraStyle?: string
+    lighting?: string
+    transitionType?: string
+    transitionDuration?: number
+    transitionDirection?: string
+    keyframeCount?: number
+  }> {
+    // 构建填充提示词
+    const existingInfo = Object.entries(input.existingFields)
+      .filter(([_, v]) => v !== null && v !== '' && v !== undefined)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join('\n')
+
+    const fieldsToFill = Object.entries(input.existingFields)
+      .filter(([_, v]) => v === null || v === '' || v === undefined)
+      .map(([k]) => k)
+      .join(', ')
+
+    const prompt = `你是一个专业的影视导演和分镜师。请根据以下场景上下文，为第 ${input.shotNumber} 个分镜推荐合适的镜头参数。
+
+## 场景上下文
+${input.sceneContext}
+
+## 场景信息
+- 地点：${input.location || '未知'}
+- 时间：${input.timeOfDay || '未知'}
+- 氛围：${input.mood || '未知'}
+
+## 已有字段（不需要填充）
+${existingInfo || '（无）'}
+
+## 需要填充的字段
+${fieldsToFill}
+
+## 镜头语言说明
+
+### 景别（shotType）
+- extreme_long: 大远景 - 极远距离，展示宏大场景
+- long: 远景 - 展示完整场景，人物较小
+- full: 全景 - 人物全身，展示动作
+- medium: 中景 - 人物膝盖以上，展示互动
+- medium_close: 中近景 - 人物腰部以上，常用对话场景
+- close: 近景 - 人物胸部以上，展示表情
+- extreme_close: 特写 - 人物面部，展示情感
+- detail: 细节特写 - 物品或局部细节
+
+### 镜头角度（cameraAngle）
+- eye_level: 平视 - 客观中立
+- high: 俯拍 - 显渺小或弱势
+- low: 仰拍 - 显高大或强势
+- dutch: 斜角 - 不安或混乱
+- birds_eye: 鸟瞰 - 全局视角
+
+### 镜头运动（cameraMovement）- 使用 25 命名预设
+- basic 类：static（固定）、push_in（推近）、pull_out（拉远）、pan_left（左摇）、pan_right（右摇）、tilt_up（上仰）、tilt_down（下俯）
+- narrative 类：reveal_push（揭示推近）、reveal_pull（揭示拉远）、long_take_tracking（长镜头跟拍）、master_shot_push（大师推近）、spiral_up（螺旋上升）、pov（主观视角）、ots_left（OTS左过肩）、ots_right（OTS右过肩）
+- dynamic 类：whip_pan_left（甩镜左）、whip_pan_right（甩镜右）、crash_zoom（冲击变焦）、rack_focus（焦点切换）、dolly_zoom（移动变焦）
+- special 类：slow_motion_static（慢动作固定）、time_lapse_pan（延时摇镜）、freeze_frame（定格帧）、impact_zoom（冲击变焦）
+
+### 焦距（lensFocalMm）- 字符串（必须带mm单位）
+- 24mm: 超广角 - 空间感强，适合场景
+- 35mm: 广角 - 自然视角，适合全景/中景
+- 50mm: 标准 - 最接近人眼视角
+- 85mm: 人像焦距 - 适合特写/近景
+- 125mm: 长焦 - 压缩空间，适合远距离特写
+
+### 光圈（aperture）- 字符串
+- f/1.8: 极大光圈 - 极浅景深，梦幻效果
+- f/2.8: 大光圈 - 浅景深，突出主体
+- f/4: 中等光圈 - 平衡景深
+- f/8: 小光圈 - 较深景深，清晰细节
+- f/11: 极小光圈 - 深景深，全景清晰
+
+### 相机风格（cameraStyle）- 字符串
+- cinematic: 电影感 - 电影级色彩+颗粒感
+- digital: 数码 - 清晰/锐利/现代
+- film_35mm: 胶片35mm - 柔和颗粒+复古色调
+- vintage: 复古 - 老照片质感
+
+### 打光（lighting）- 字符串（必须从以下预设中选择）
+- rembrandt: 伦勃朗光 - 45°主光+鼻影投到对侧脸颊
+- three_point: 三点照明 - 主光+辅光+轮廓光
+- butterfly: 蝴蝶光 - 正前方高位主光→鼻下蝴蝶状阴影
+- split: 分割光 - 90°侧光→半亮半暗
+- rim_backlight: 逆光轮廓 - 主光在背后→主体边缘发光
+- flat_softbox: 平铺柔光 - 正前方大柔光箱→无阴影
+- golden_hour: 黄金时刻 - 日出/日落柔和暖光
+- blue_hour: 蓝调时刻 - 日落后/日出前的冷蓝调
+- noir_hard: 黑色电影硬光 - 强烈对比+百叶窗投影
+- cyberpunk_neon: 赛博朋克霓虹 - 紫粉霓虹+反射+雨夜
+- cozy_candle: 温暖烛光 - 低色温+跳动光斑
+- cold_clinical: 冷峻医院 - 高色温日光灯+无影
+
+### 转场类型（transitionType）
+- cut: 硬切 - 快速切换
+- fade: 淡入淡出 - 缓慢过渡
+- dissolve: 叠化 - 柔和融合
+- wipe: 划像 - 方向性过渡
+- slide: 滑动 - 平移过渡
+- zoom: 缩放转场 - 空间压缩
+- whip: 甩镜 - 快速转场
+
+### 转场时长（transitionDuration）- 数字（毫秒）
+- 硬切：0
+- 淡入淡出：500-1000
+- 叠化：300-800
+- 其他：200-500
+
+### 转场方向（transitionDirection）
+- left: 向左
+- right: 向右
+- up: 向上
+- down: 向下
+
+### 关键帧数（keyframeCount）- 数字（1-9）
+- static（固定）：2-3 帧
+- 简单运镜（推/拉/摇）：3-5 帧
+- 复杂运镜（跟拍/螺旋）：5-7 帧
+- 特殊运镜：5-9 帧
+
+## 分镜设计原则
+
+1. **开场镜头（shotNumber=1）**：用远景或全景建立场景
+2. **对话镜头**：常用中景或近景，交替使用正反打
+3. **情感镜头**：近景或特写强调情感变化
+4. **动作镜头**：全景或中景展示动作细节
+5. **节奏控制**：快节奏用短镜头（2-3秒），慢节奏用长镜头（5-8秒）
+6. **焦距匹配**：人像特写用85mm，场景全景用35mm
+7. **光圈匹配**：突出主体用大光圈f/2.8，展示环境用小光圈f/8
+8. **打光匹配**：压抑氛围用noir_hard，温馨用golden_hour或cozy_candle，紧张用blue_hour或cold_clinical
+
+## 输出要求
+
+请只输出需要填充的字段，输出 JSON 格式：
+{
+  "shotType": "建议的景别（英文值）",
+  "cameraAngle": "建议的角度（英文值）",
+  "cameraMovement": "建议的运镜预设（英文值）",
+  "duration": 建议的时长（秒，数字）,
+  "frameDescription": "画面描述（格式：【场景】...\\n【人物】...\\n【动作】...\\n【氛围】...）",
+  "lensFocalMm": "焦距（字符串，必须带mm单位，如'85mm'）",
+  "aperture": "光圈值（字符串，如f/2.8）",
+  "cameraStyle": "相机风格（英文值，如cinematic）",
+  "lighting": "打光风格（英文预设值，如blue_hour）",
+  "transitionType": "转场类型（英文值）",
+  "transitionDuration": 转场时长（毫秒，数字）,
+  "transitionDirection": "转场方向（英文值）",
+  "keyframeCount": 关键帧数（数字1-9）
+}
+
+如果某个字段不适合填充或已有值足够，可以不输出该字段。
+
+请直接输出 JSON，不要添加任何解释说明。`
+
+    const systemPrompt = '你是一个专业的影视导演。请根据场景内容推荐分镜参数，严格按照 JSON 格式输出。'
+
+    const response = await callAI(prompt, systemPrompt, 4096, providerConfigId, modelId)
+    const result = extractJsonFromResponse(response)
+
+    // 确保返回的值符合预期格式
+    const output: any = {}
+
+    // 镜头核心参数
+    if (result.shotType && typeof result.shotType === 'string') output.shotType = result.shotType
+    if (result.cameraAngle && typeof result.cameraAngle === 'string') output.cameraAngle = result.cameraAngle
+    if (result.cameraMovement && typeof result.cameraMovement === 'string') output.cameraMovement = result.cameraMovement
+    if (result.duration && typeof result.duration === 'number') output.duration = result.duration
+    if (result.frameDescription && typeof result.frameDescription === 'string') output.frameDescription = result.frameDescription
+
+    // metadata参数（焦距/光圈/相机风格/打光）- 焦距需要转换格式
+    if (result.lensFocalMm) {
+      // AI 可能返回数字或字符串，需要转换为预设格式（如 "24mm"）
+      let lensValue = result.lensFocalMm
+      if (typeof lensValue === 'number') {
+        lensValue = `${lensValue}mm`
+      } else if (typeof lensValue === 'string' && !lensValue.endsWith('mm')) {
+        lensValue = `${lensValue}mm`
+      }
+      // 验证是否为有效预设值
+      const validLensValues = ['24mm', '35mm', '50mm', '85mm', '125mm']
+      if (validLensValues.includes(lensValue)) {
+        output.lensFocalMm = lensValue
+      }
+    }
+    if (result.aperture && typeof result.aperture === 'string') output.aperture = result.aperture
+    if (result.cameraStyle && typeof result.cameraStyle === 'string') output.cameraStyle = result.cameraStyle
+    if (result.lighting && typeof result.lighting === 'string') output.lighting = result.lighting
+
+    // 转场参数
+    if (result.transitionType && typeof result.transitionType === 'string') output.transitionType = result.transitionType
+    if (result.transitionDuration && typeof result.transitionDuration === 'number') output.transitionDuration = result.transitionDuration
+    if (result.transitionDirection && typeof result.transitionDirection === 'string') output.transitionDirection = result.transitionDirection
+
+    // 关键帧数
+    if (result.keyframeCount && typeof result.keyframeCount === 'number') output.keyframeCount = result.keyframeCount
+
+    console.log('[EpisodeStoryboardGenerator] AI填充返回:', output)
+    return output
+  }
 }

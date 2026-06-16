@@ -70,7 +70,7 @@
             <span class="scene-icon">📁</span>
             <span class="scene-num">场景 {{ idx + 1 }}</span>
             <span class="scene-loc">{{ scene.location ?? '?' }}</span>
-            <span class="scene-tod">·{{ scene.timeOfDay ?? '?' }}</span>
+            <span class="scene-tod">·{{ getTimeOfDayLabel(scene.timeOfDay) ?? '?' }}</span>
             <span class="scene-cnt">({{ countSceneStoryboards(scene.id) }})</span>
           </div>
           <ul
@@ -104,7 +104,7 @@
               :entities="entityList"
             />
             <span class="meta-sep">·</span>
-            <span>{{ selectedScene.timeOfDay ?? '?' }} · {{ selectedScene.weather ?? '?' }}</span>
+            <span>{{ getTimeOfDayLabel(selectedScene.timeOfDay) ?? '?' }} · {{ getWeatherLabel(selectedScene.weather) ?? '?' }}</span>
             <span class="meta-sep">·</span>
             <span class="cast-label">出场:</span>
             <EntityRefRenderer
@@ -191,6 +191,14 @@
               </el-radio-group>
             </label>
             <span class="header-spacer" />
+            <el-button
+              size="small"
+              :loading="aiFilling"
+              @click="onAIFillStoryboard"
+            >
+              <el-icon><MagicStick /></el-icon>
+              {{ aiFilling ? 'AI 填充中...' : '✨ AI 填充' }}
+            </el-button>
             <el-button
               type="danger"
               size="small"
@@ -284,14 +292,17 @@
               <el-select
                 v-model="editDraft.shotType"
                 size="small"
+                placeholder="选择景别"
                 @change="onEditChange('shotType', $event)"
               >
+                <el-option label="大远景" value="extreme_long" />
                 <el-option label="远景" value="long" />
                 <el-option label="全景" value="full" />
                 <el-option label="中景" value="medium" />
-                <el-option label="近景" value="medium_close" />
-                <el-option label="特写" value="close" />
-                <el-option label="大特写" value="extreme_close" />
+                <el-option label="中近景" value="medium_close" />
+                <el-option label="近景" value="close" />
+                <el-option label="特写" value="extreme_close" />
+                <el-option label="细节特写" value="detail" />
               </el-select>
             </label>
             <label class="tool-item">
@@ -356,11 +367,11 @@
             <label class="tool-item">
               <span class="tool-label">焦距</span>
               <el-select
-                :model-value="lensFocalMm"
+                :model-value="lensFocalMmRef"
+                @update:model-value="(v) => updateMetadataField('lensFocalMm', v)"
                 size="small"
                 clearable
                 placeholder="—"
-                @update:model-value="(v) => onMetaChange('lensFocalMm', v)"
               >
                 <el-option v-for="p in LENS_FOCAL_PRESETS" :key="p.value" :label="p.label" :value="p.value">
                   <el-tooltip :content="p.visualEffect" placement="right">
@@ -372,11 +383,11 @@
             <label class="tool-item">
               <span class="tool-label">光圈</span>
               <el-select
-                :model-value="aperture"
+                :model-value="apertureRef"
+                @update:model-value="(v) => updateMetadataField('aperture', v)"
                 size="small"
                 clearable
                 placeholder="—"
-                @update:model-value="(v) => onMetaChange('aperture', v)"
               >
                 <el-option v-for="p in APERTURE_PRESETS" :key="p.value" :label="p.label" :value="p.value">
                   <el-tooltip :content="p.visualEffect" placement="right">
@@ -388,11 +399,11 @@
             <label class="tool-item">
               <span class="tool-label">相机风格</span>
               <el-select
-                :model-value="cameraStyle"
+                :model-value="cameraStyleRef"
+                @update:model-value="(v) => updateMetadataField('cameraStyle', v)"
                 size="small"
                 clearable
                 placeholder="—"
-                @update:model-value="(v) => onMetaChange('cameraStyle', v)"
               >
                 <el-option v-for="p in CAMERA_STYLE_PRESETS" :key="p.value" :label="p.label" :value="p.value">
                   <el-tooltip :content="p.visualEffect" placement="right">
@@ -404,12 +415,12 @@
             <label class="tool-item">
               <span class="tool-label">打光</span>
               <el-select
-                :model-value="lighting"
+                :model-value="lightingRef"
+                @update:model-value="(v) => updateMetadataField('lighting', v)"
                 size="small"
                 clearable
                 filterable
                 placeholder="—"
-                @update:model-value="(v) => onMetaChange('lighting', v)"
               >
                 <el-option v-for="p in LIGHTING_PRESETS" :key="p.value" :label="p.label" :value="p.value">
                   <el-tooltip :content="p.description" placement="right">
@@ -805,7 +816,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onBeforeUnmount, reactive, ref, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowRight,
@@ -840,6 +851,15 @@ import {
   CAMERA_STYLE_PRESETS,
 } from '@core/modules/episode-production/assets/constants/lens-presets'
 import { LIGHTING_PRESETS } from '@core/modules/episode-production/assets/constants/lighting-presets'
+import {
+  getTimeOfDayLabel,
+  getWeatherLabel,
+  getShotTypeLabel,
+  getCameraAngleLabel,
+  getCameraMovementLabel,
+  shotTypeLabels,
+  cameraAngleLabels,
+} from '../shared/shot-labels'
 
 const props = defineProps<{
   episodeScriptId: string | null
@@ -865,6 +885,7 @@ const genProgress = ref<{ shotNumber: number; total: number } | null>(null)
 let unsubStoryboardProgress: (() => void) | null = null
 const savingEdit = ref(false)
 const deleting = ref(false)
+const aiFilling = ref(false)
 const loadingStoryboards = ref(false)
 
 const selectedSceneId = ref<string | null>(null)
@@ -944,6 +965,12 @@ watch(
       : []
     // spec 2026-05-09 ep-redesign §3.2 B5 镜头扩展 metadata（JSON 字符串）
     editDraft.metadata = (sb as any).metadata ?? ''
+    // 直接更新 ref，确保 UI 显示
+    const meta = safeParseMeta(editDraft.metadata)
+    lensFocalMmRef.value = meta.lensFocalMm ?? undefined
+    apertureRef.value = meta.aperture ?? undefined
+    cameraStyleRef.value = meta.cameraStyle ?? undefined
+    lightingRef.value = meta.lighting ?? undefined
     editDirty.value = new Set()
   },
   { immediate: true },
@@ -954,24 +981,29 @@ function onGenerationModeChange(mode: 'text2image' | 'keyframes'): void {
 }
 
 // ===== 镜头扩展 metadata（spec 2026-05-09 ep-redesign §3.2 B5）=====
-// editDraft.metadata 是 JSON 字符串；UI 通过 helper 读写各 key
-function parseMeta(): Record<string, any> {
-  if (!editDraft.metadata) return {}
+// editDraft.metadata 是 JSON 字符串；使用 ref + watcher 确保 UI 响应式更新
+// 直接在 watcher 中更新 ref，避免 computed 的依赖追踪问题
+
+// 安全解析 metadata JSON
+function safeParseMeta(raw: string): Record<string, any> {
+  if (!raw) return {}
   try {
-    const v = JSON.parse(editDraft.metadata)
+    const v = JSON.parse(raw)
     return v && typeof v === 'object' && !Array.isArray(v) ? v : {}
   } catch {
     return {}
   }
 }
 
-const lensFocalMm = computed<string | undefined>(() => parseMeta().lensFocalMm ?? undefined)
-const aperture = computed<string | undefined>(() => parseMeta().aperture ?? undefined)
-const cameraStyle = computed<string | undefined>(() => parseMeta().cameraStyle ?? undefined)
-const lighting = computed<string | undefined>(() => parseMeta().lighting ?? undefined)
+// 使用 ref 存储 metadata 字段值，直接在 watcher 中更新
+const lensFocalMmRef = ref<string | undefined>(undefined)
+const apertureRef = ref<string | undefined>(undefined)
+const cameraStyleRef = ref<string | undefined>(undefined)
+const lightingRef = ref<string | undefined>(undefined)
 
-function onMetaChange(key: string, value: string | null | undefined): void {
-  const meta = parseMeta()
+// 更新 metadata 到 editDraft 和数据库
+function updateMetadataField(key: string, value: string | null | undefined): void {
+  const meta = safeParseMeta(editDraft.metadata)
   if (value == null || value === '') {
     delete meta[key]
   } else {
@@ -1316,47 +1348,28 @@ function getStatusLabel(sb: any): string {
 }
 
 function shotTypeLabel(t: string): string {
-  return ({
-    long: '远景',
-    full: '全景',
-    medium: '中景',
-    medium_close: '近景',
-    close: '特写',
-    extreme_close: '大特写',
-  } as any)[t] ?? t
+  return getShotTypeLabel(t)
 }
 
 function shotTypeEmoji(t: string): string {
   return ({
+    extreme_long: '🏞',
     long: '🏞',
     full: '🧍',
     medium: '🚶',
     medium_close: '👤',
     close: '👁',
     extreme_close: '👁',
+    detail: '🔍',
   } as any)[t] ?? '🎬'
 }
 
 function cameraAngleLabel(a: string): string {
-  return ({
-    eye_level: '平视',
-    high: '俯拍',
-    low: '仰拍',
-    dutch: '斜角',
-    birds_eye: '鸟瞰',
-    worms_eye: '蚁视',
-  } as any)[a] ?? a
+  return getCameraAngleLabel(a)
 }
 
 function cameraMovementLabel(m: string): string {
-  // spec 2026-05-09 ep-redesign §3.2 B5：先查 25 个新预设；老值 pan/track/crane 兜底翻译
-  const preset = findCameraMovementPreset(m)
-  if (preset) return preset.label
-  return ({
-    pan: '摇镜',
-    track: '移镜',
-    crane: '升降',
-  } as any)[m] ?? m
+  return getCameraMovementLabel(m)
 }
 
 /** 当前选中场景的对白 / 动作列表 helper（与剧本视图逻辑一致） */
@@ -1452,6 +1465,162 @@ async function onDeleteStoryboard(): Promise<void> {
     ElMessage.success('已删除分镜')
   } finally {
     deleting.value = false
+  }
+}
+
+/**
+ * 有效性检查：检查 shotType / cameraAngle 是否在有效值列表中
+ * 无效值（不在下拉选项中的值）视为空，需要 AI 填充
+ */
+const VALID_SHOT_TYPES = Object.keys(shotTypeLabels)
+const VALID_CAMERA_ANGLES = Object.keys(cameraAngleLabels)
+const VALID_CAMERA_MOVEMENTS = CAMERA_MOVEMENT_GROUPS.flatMap((g) => g.items.map((i) => i.value))
+
+function isValidShotType(v: string | null | undefined): boolean {
+  return v != null && v !== '' && VALID_SHOT_TYPES.includes(v)
+}
+function isValidCameraAngle(v: string | null | undefined): boolean {
+  return v != null && v !== '' && VALID_CAMERA_ANGLES.includes(v)
+}
+function isValidCameraMovement(v: string | null | undefined): boolean {
+  return v != null && v !== '' && VALID_CAMERA_MOVEMENTS.includes(v)
+}
+
+/**
+ * AI 填充分镜空字段（spec 2026-05-28 扩展版）
+ * 调 AI 推荐所有镜头参数，一键填充所有空白字段
+ * 覆盖：镜头核心参数 + metadata参数 + 转场参数 + 关键帧数
+ */
+async function onAIFillStoryboard(): Promise<void> {
+  if (!selectedStoryboard.value || !selectedScene.value) {
+    return
+  }
+  const sm = projectStore.currentProject?.config?.scriptModel
+  if (!sm?.providerConfigId || !sm?.modelId) {
+    ElMessage.warning('请先配置剧本生成模型')
+    return
+  }
+
+  aiFilling.value = true
+  try {
+    // 构建 AI 输入：场景上下文 + 当前分镜 shotNumber + 已有信息
+    const scene = selectedScene.value
+    const shotNumber = selectedStoryboard.value.shotNumber
+
+    // 构建上下文信息
+    const contextParts: string[] = []
+    if (scene.originalText) contextParts.push(`原文：${scene.originalText}`)
+    if (scene.narration) contextParts.push(`旁白：${scene.narration}`)
+    if (scene.dialogues?.length > 0) {
+      contextParts.push(`对话：${scene.dialogues.map((d: any) => `${d.characterName ?? '?'}：${d.text ?? ''}`).join(' | ')}`)
+    }
+    if (scene.actions?.length > 0) {
+      contextParts.push(`动作：${scene.actions.map((a: any) => a.description ?? a.text ?? '').join(' | ')}`)
+    }
+
+    // 获取 metadata 字段当前值
+    const meta = safeParseMeta(editDraft.metadata)
+
+    // 调 IPC：ep:fill-storyboard（单分镜 AI 填充）
+    const result = await storyboardStore.aiFillStoryboard(
+      selectedStoryboard.value.id,
+      {
+        shotNumber,
+        sceneContext: contextParts.join('\n'),
+        location: scene.location,
+        timeOfDay: scene.timeOfDay,
+        mood: scene.mood,
+        // 使用有效性检查：无效值视为空，需要 AI 填充
+        existingFields: {
+          // 镜头核心参数
+          shotType: isValidShotType(editDraft.shotType) ? editDraft.shotType : null,
+          cameraAngle: isValidCameraAngle(editDraft.cameraAngle) ? editDraft.cameraAngle : null,
+          cameraMovement: isValidCameraMovement(editDraft.cameraMovement) ? editDraft.cameraMovement : null,
+          duration: editDraft.duration || null,
+          frameDescription: editDraft.frameDescription || null,
+          // metadata参数（焦距/光圈/相机风格/打光）
+          lensFocalMm: meta.lensFocalMm || null,
+          aperture: meta.aperture || null,
+          cameraStyle: meta.cameraStyle || null,
+          lighting: meta.lighting || null,
+          // 转场参数
+          transitionType: editDraft.transitionType || null,
+          transitionDuration: editDraft.transitionDuration || null,
+          transitionDirection: editDraft.transitionDirection || null,
+          // 关键帧数
+          keyframeCount: editDraft.keyframeCount || null,
+        },
+      },
+      sm.providerConfigId,
+      sm.modelId,
+    )
+
+    if (!result.ok) {
+      ElMessage.error(result.error || 'AI 填充失败')
+      return
+    }
+
+    const aiData = result.data
+
+    // 镜头核心参数（仅填充空字段）
+    if (aiData.shotType && !isValidShotType(editDraft.shotType)) editDraft.shotType = aiData.shotType
+    if (aiData.cameraAngle && !isValidCameraAngle(editDraft.cameraAngle)) editDraft.cameraAngle = aiData.cameraAngle
+    if (aiData.cameraMovement && !isValidCameraMovement(editDraft.cameraMovement)) editDraft.cameraMovement = aiData.cameraMovement
+    if (aiData.duration && !editDraft.duration) editDraft.duration = aiData.duration
+    if (aiData.frameDescription && !editDraft.frameDescription) editDraft.frameDescription = aiData.frameDescription
+
+    // metadata参数（仅填充空字段）
+    if (aiData.lensFocalMm && !meta.lensFocalMm) {
+      updateMetadataField('lensFocalMm', aiData.lensFocalMm)
+      lensFocalMmRef.value = aiData.lensFocalMm
+    }
+    if (aiData.aperture && !meta.aperture) {
+      updateMetadataField('aperture', aiData.aperture)
+      apertureRef.value = aiData.aperture
+    }
+    if (aiData.cameraStyle && !meta.cameraStyle) {
+      updateMetadataField('cameraStyle', aiData.cameraStyle)
+      cameraStyleRef.value = aiData.cameraStyle
+    }
+    if (aiData.lighting && !meta.lighting) {
+      updateMetadataField('lighting', aiData.lighting)
+      lightingRef.value = aiData.lighting
+    }
+
+    // 转场参数
+    if (aiData.transitionType && !editDraft.transitionType) editDraft.transitionType = aiData.transitionType
+    if (aiData.transitionDuration && !editDraft.transitionDuration) editDraft.transitionDuration = aiData.transitionDuration
+    if (aiData.transitionDirection && !editDraft.transitionDirection) editDraft.transitionDirection = aiData.transitionDirection
+
+    // 关键帧数
+    if (aiData.keyframeCount && !editDraft.keyframeCount) editDraft.keyframeCount = aiData.keyframeCount
+
+    // 同步更新到数据库
+    await storyboardStore.updateStoryboard(selectedStoryboard.value.id, {
+      shotType: editDraft.shotType,
+      cameraAngle: editDraft.cameraAngle,
+      cameraMovement: editDraft.cameraMovement,
+      duration: editDraft.duration,
+      frameDescription: editDraft.frameDescription,
+      transitionType: editDraft.transitionType,
+      transition: {
+        type: editDraft.transitionType,
+        duration: editDraft.transitionDuration,
+        direction: editDraft.transitionDirection,
+      },
+      keyframeCount: editDraft.keyframeCount,
+      // metadata 需要同步更新
+      metadata: editDraft.metadata || null,
+    })
+
+    // updateStoryboard刷新了storyboards数组，watcher会自动更新editDraft
+    // computed getter会自动从editDraft.metadata读取最新值，无需手动同步
+
+    ElMessage.success('AI 已填充所有空字段')
+  } catch (e: any) {
+    ElMessage.error(e?.message || 'AI 填充失败')
+  } finally {
+    aiFilling.value = false
   }
 }
 

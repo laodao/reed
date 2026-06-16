@@ -60,20 +60,20 @@
 
     <!-- 🎬 影视 shot-level -->
     <el-form v-if="mode === 'film'" label-position="top" size="small" class="template-form">
-      <el-form-item label="Subject">
-        <el-input v-model="film.subject" placeholder="who or what is in frame" />
+      <el-form-item label="主体">
+        <el-input v-model="film.subject" placeholder="画面中的主要人物或物体" />
       </el-form-item>
-      <el-form-item label="Action">
-        <el-input v-model="film.action" type="textarea" :rows="2" placeholder="what is happening" />
+      <el-form-item label="动作">
+        <el-input v-model="film.action" type="textarea" :rows="2" placeholder="正在发生什么" />
       </el-form-item>
-      <el-form-item label="Camera">
-        <el-input v-model="film.camera" placeholder="如：MS, low angle, dolly in" />
+      <el-form-item label="镜头">
+        <el-input v-model="film.camera" placeholder="如：中景、低角度、推镜" />
       </el-form-item>
-      <el-form-item label="Lighting">
-        <el-input v-model="film.lighting" placeholder="如：rembrandt, warm key" />
+      <el-form-item label="光线">
+        <el-input v-model="film.lighting" placeholder="如：侧光、暖色调主光" />
       </el-form-item>
-      <el-form-item label="Mood">
-        <el-input v-model="film.mood" placeholder="如：tense, melancholic" />
+      <el-form-item label="氛围">
+        <el-input v-model="film.mood" placeholder="如：紧张、忧郁、温馨" />
       </el-form-item>
     </el-form>
 

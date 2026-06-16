@@ -135,6 +135,8 @@ export class StoryboardRepository extends BaseRepository<
       referenceImageIds: this.parseReferenceImageIds(e),
       locationBindingIds: ((e as any).locationBindingIds as string[] | null) ?? [],
       itemBindingIds: ((e as any).itemBindingIds as string[] | null) ?? [],
+      // spec 2026-05-09 镜头扩展元数据（焦距/光圈/相机风格/打光）
+      metadata: ((e as any).metadata as string | null) ?? '',
       createdAt: this.toEpochMs(e.createdAt),
       updatedAt: this.toEpochMs(e.updatedAt),
     }
@@ -302,6 +304,11 @@ export class StoryboardRepository extends BaseRepository<
     }
     if (data.itemBindingIds !== undefined) {
       ;(existing as any).itemBindingIds = data.itemBindingIds ?? null
+      changed = true
+    }
+    // spec 2026-05-09 镜头扩展元数据（焦距/光圈/相机风格/打光）
+    if (data.metadata !== undefined) {
+      ;(existing as any).metadata = data.metadata ?? null
       changed = true
     }
 
