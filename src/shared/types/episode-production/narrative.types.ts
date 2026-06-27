@@ -55,6 +55,78 @@ export type CameraAngle =
   | 'worms_eye' // 虫视（极低角度）
 
 /**
+ * 转场类型
+ */
+export type TransitionType =
+  | 'cut' // 硬切
+  | 'fade' // 淡入淡出
+  | 'dissolve' // 叠化
+  | 'wipe' // 划像
+  | 'slide' // 滑动
+  | 'zoom' // 缩放
+  | 'iris' // 圈入圈出
+  | 'whip' // 甩镜
+
+/**
+ * 焦距预设（字符串，带 mm 单位）
+ */
+export type LensFocalMm = '24mm' | '35mm' | '50mm' | '85mm' | '125mm'
+
+/**
+ * 光圈预设
+ */
+export type Aperture = 'f/1.8' | 'f/2.8' | 'f/4' | 'f/8' | 'f/11'
+
+/**
+ * 相机风格
+ */
+export type CameraStyle = 'cinematic' | 'digital' | 'film_35mm' | 'vintage'
+
+/**
+ * 打光预设
+ */
+export type LightingPreset =
+  | 'rembrandt' // 伦勃朗光
+  | 'three_point' // 三点照明
+  | 'butterfly' // 蝴蝶光
+  | 'split' // 分割光
+  | 'rim_backlight' // 逆光轮廓
+  | 'flat_softbox' // 平铺柔光
+  | 'golden_hour' // 黄金时刻
+  | 'blue_hour' // 蓝调时刻
+  | 'noir_hard' // 黑色电影硬光
+  | 'cyberpunk_neon' // 赛博朋克霓虹
+  | 'cozy_candle' // 温暖烛光
+  | 'cold_clinical' // 冷峻照明
+
+/**
+ * 镜头语言枚举常量（供提示词使用）
+ * @description 将所有镜头语言枚举汇总，便于提示词引用和 VLM 映射
+ */
+export const SHOT_LANGUAGE_ENUMS = {
+  shotTypes: ['extreme_long', 'long', 'full', 'medium', 'medium_close', 'close', 'extreme_close', 'detail'] as const,
+  cameraAngles: ['eye_level', 'high', 'low', 'dutch', 'birds_eye', 'worms_eye'] as const,
+  cameraMovements: ['static', 'pan_left', 'pan_right', 'tilt_up', 'tilt_down', 'dolly_in', 'dolly_out', 'truck_left', 'truck_right', 'zoom_in', 'zoom_out', 'crane_up', 'crane_down', 'handheld', 'orbit'] as const,
+  transitionTypes: ['cut', 'fade', 'dissolve', 'wipe', 'slide', 'zoom', 'iris', 'whip'] as const,
+  lensFocalMms: ['24mm', '35mm', '50mm', '85mm', '125mm'] as const,
+  apertures: ['f/1.8', 'f/2.8', 'f/4', 'f/8', 'f/11'] as const,
+  cameraStyles: ['cinematic', 'digital', 'film_35mm', 'vintage'] as const,
+  lightingPresets: ['rembrandt', 'three_point', 'butterfly', 'split', 'rim_backlight', 'flat_softbox', 'golden_hour', 'blue_hour', 'noir_hard', 'cyberpunk_neon', 'cozy_candle', 'cold_clinical'] as const,
+} as const
+
+/**
+ * VLM 景别到标准景别的映射
+ * @description VLM 模型使用的景别枚举与标准不同，需要映射转换
+ */
+export const VLM_SHOT_TYPE_MAP: Record<string, ShotType> = {
+  'big_close_up': 'extreme_close',
+  'close_up': 'close',
+  'medium': 'medium',
+  'long': 'long',
+  'wide': 'extreme_long',
+}
+
+/**
  * 剧本状态
  */
 export type ScriptStatus = 'pending' | 'generating' | 'reviewing' | 'approved'

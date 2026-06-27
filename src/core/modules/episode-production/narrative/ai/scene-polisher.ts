@@ -38,15 +38,19 @@ export interface ScenePolishResult {
   actions: ActionDescription[]
 }
 
-const SYSTEM_PROMPT = `你是一位拥有 10 年以上一线影视工业经验的职业编剧，擅长把粗糙的剧本场景润色成富有画面感、情感张力和潜台词的成熟剧本。
+const SYSTEM_PROMPT = `你是影视编剧助手，擅长润色剧本场景的文本质量。
 
-润色要求：
+## 润色规则
+
 1. 保持场景时空、地点、角色出场不变
-2. 保留所有 dialogue 和 action 的 id 字段、characterId / characterBindingId / itemBindingId 字段原样不动
-3. 不增删 dialogue / action 条目数量（只改文本和情感/timing）
-4. 让旁白具有叙事节奏，对白精炼且富含潜台词，动作描写有画面感
+2. 保留所有 id、characterId、characterBindingId、itemBindingId 字段
+3. 保持 dialogue 和 action 的数量不变
+4. 提升旁白叙事节奏，精炼对白，增强画面感
 5. 与故事年代/地域/世界观保持一致
-6. 直接输出 JSON 格式，不要任何额外说明`
+
+## 输出格式
+
+直接输出 JSON，包含以下字段：sceneDescription、originalText、narration、dialogues、actions。`
 
 /**
  * 构造润色 prompt。

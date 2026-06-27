@@ -86,7 +86,7 @@ export function normalizeAiCharacters(
 /**
  * 分镜生成提示词（批量生成模式）
  */
-const STORYBOARD_GENERATION_PROMPT = `你是一个专业的影视导演和分镜师。请根据以下场景剧本设计分镜。
+const STORYBOARD_GENERATION_PROMPT = `你是影视分镜师，擅长将剧本拆解为视觉镜头。请根据以下场景剧本设计分镜。
 
 ## 镜头语言说明
 
@@ -206,7 +206,7 @@ frameDescription 必须按以下结构化格式填写，确保画面信息完整
 /**
  * 单个分镜生成提示词（逐个生成模式）
  */
-const SINGLE_STORYBOARD_GENERATION_PROMPT = `你是一个专业的影视导演和分镜师。请为以下场景设计第 {shotNumber} 个分镜。
+const SINGLE_STORYBOARD_GENERATION_PROMPT = `你是影视分镜师，擅长将剧本拆解为视觉镜头。请为以下场景设计第 {shotNumber} 个分镜。
 
 ## 镜头语言说明
 
@@ -395,7 +395,7 @@ ${sceneDescription}
   "notes": "简要说明分镜安排的理由"
 }`
 
-    const systemPrompt = '你是一个专业的影视导演。请根据场景内容分析分镜需求，严格按照 JSON 格式输出。'
+    const systemPrompt = '你是影视分镜师。请根据场景内容分析分镜需求，直接输出 JSON。'
 
     const response = await callAI(prompt, systemPrompt, 1024, providerConfigId, modelId)
     const result = extractJsonFromResponse(response)
@@ -477,7 +477,7 @@ ${sceneScript.actions.map(a => `- ${a.description}`).join('\n')}
     // 替换提示词中的变量
     const prompt = STORYBOARD_GENERATION_PROMPT.replace('{sceneScript}', sceneDescription)
 
-    const systemPrompt = '你是一个专业的影视导演和分镜师。请严格按照 JSON 格式输出，不要添加任何额外的文字说明。'
+    const systemPrompt = '你是影视分镜师。请直接输出 JSON 格式的分镜数据。'
 
     const response = await callAI(prompt, systemPrompt, 4096, providerConfigId, modelId)
     const result = extractJsonFromResponse(response)
@@ -552,7 +552,7 @@ ${sceneScript.actions.map(a => `- ID: ${a.id}, 描述: ${a.description}`).join('
       .replace('{sceneScript}', sceneDescription)
       .replace('{contextInfo}', contextInfo)
 
-    const systemPrompt = '你是一个专业的影视导演和分镜师。请严格按照 JSON 格式输出单个分镜，不要添加任何额外的文字说明或数组包裹。'
+    const systemPrompt = '你是影视分镜师。请直接输出单个分镜的 JSON 数据。'
 
     const response = await callAI(prompt, systemPrompt, 2048, providerConfigId, modelId)
     const result = extractJsonFromResponse(response)
@@ -754,7 +754,7 @@ ${sceneScript.actions.map(a => `- ID: ${a.id}, 描述: ${a.description}`).join('
       .map(([k]) => k)
       .join(', ')
 
-    const prompt = `你是一个专业的影视导演和分镜师。请根据以下场景上下文，为第 ${input.shotNumber} 个分镜推荐合适的镜头参数。
+    const prompt = `你是影视分镜师。请根据以下场景上下文，为第 ${input.shotNumber} 个分镜推荐合适的镜头参数。
 
 ## 场景上下文
 ${input.sceneContext}
@@ -890,7 +890,7 @@ ${fieldsToFill}
 
 请直接输出 JSON，不要添加任何解释说明。`
 
-    const systemPrompt = '你是一个专业的影视导演。请根据场景内容推荐分镜参数，严格按照 JSON 格式输出。'
+    const systemPrompt = '你是影视分镜师。请直接输出 JSON 格式的镜头参数。'
 
     const response = await callAI(prompt, systemPrompt, 4096, providerConfigId, modelId)
     const result = extractJsonFromResponse(response)
