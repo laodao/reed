@@ -1,11 +1,12 @@
 # 剧集制作模块系统提示词优化方案（v2）
 
-> **版本**：2.0（v1 已回滚：commit c6351e04）
+> **版本**：2.1（v2.0 已回滚：commit c6351e04；v1 已回滚：同）
 > **最后更新**：2026-06-28
 > **状态**：待评审
 >
 > v1 失败原因：直接套用英文模型最佳实践，未经任何效果验证，存在"改了反而更差"的风险。
-> 本版本将优化项严格区分为**确定性 Bug 修复**和**待验证假设**两类，前者有代码证据证明，后者必须先做 A/B 测试再上线。
+> v2.0 失败原因：部分 BUG 声明未经代码验证即写入（BUG-3 为推断而非事实）。
+> v2.1 修正：逐文件读代码验证所有 BUG 声明，删除不成立的 BUG-3，修正 BUG-2/BUG-4 的描述精度。
 
 ---
 
@@ -108,14 +109,23 @@ VLM 推断结果无法被分镜系统直接使用，用户看到的景别/角度
 
 #### 2.2.2 代码证据
 
-`_helpers.ts` 中的 `extractJsonFromResponse()` 函数实现了多层 fallback：
-1. 先尝试正则匹配 `===XXX===...===XXX_END===` 格式
-2. 再尝试正则匹配 ``` ```json ``` ``` 代码块
-3. 再尝试 `JSON.parse()` 全文
-4. 再尝试 `parseJsonString()` 提取第一个 JSON 对象/数组
-5. 最后尝试匹配中文标记 `【XXX开始】...【XXX结束】`
+标记解析散落在各模块中，没有统一入口：
 
-每层 fallback 都是为了兼容不同模型/不同功能的输出格式，维护复杂度高。
+- `script-generator.ts` 的 `extractFullScriptFromResponse()` 方法（第 281-355 行）独立处理 6 种标记：
+  1. `【梗概开始】...【梗概结束】`（新格式）
+  2. `===SYNOPSIS===...===SYNOPSIS_END===`（旧格式）
+  3. `【剧本正文开始】...【剧本正文结束】`（新格式）
+  4. `===SCRIPT===...===SCRIPT_END===`（旧格式）
+  5. `【场景数据开始】...【场景数据结束】`（新格式）
+  6. `===SCENES_JSON===...===SCENES_JSON_END===`（旧格式）
+  7. ` ```json ``` ` 代码块格式（DeepSeek 常用）
+  8. 直接查找 `"scenes": [` 兜底
+
+- `scene-polisher.ts` 独立处理 `===SCENE_JSON===` 和 `===POLISHED_JSON===` 两种标记
+
+- `_helpers.ts` 的 `extractJsonFromResponse()` 只处理 ` ```json ` 代码块和裸 JSON，不处理上述自定义标记
+
+每增加一种新标记格式，需要在对应模块中添加新的正则匹配逻辑，维护分散。
 
 #### 2.2.3 影响
 
@@ -153,108 +163,77 @@ VLM 推断结果无法被分镜系统直接使用，用户看到的景别/角度
 
 ---
 
-### 2.3 BUG-3：剧本→分镜数据流断裂（binding ID 丢失）
+### ~~2.3 BUG-3：剧本→分镜数据流断裂（binding ID 丢失）~~（已验证：不成立）
+
+> **Review 结论**：经代码验证，此 BUG 不成立，删除。
+>
+> 实际代码（storyboard-generator.ts 第 466 行）：
+> ```typescript
+> ${sceneScript.characters.map(c => `- ID: ${c.characterBindingId ?? c.characterId}, 名称: ${c.characterName}, ...`)}
+> ```
+> 分镜生成提示词已传入 `characterBindingId ?? characterId`，不是只传 characterName。
+> 逐个生成模式（第 521 行）同样传入。文档上一版 review 时未实际读代码，基于推断写出了错误的 BUG 描述。
+
+---
+
+### 2.3 BUG-3：资产字段类型冲突（race / gender）
 
 #### 2.3.1 问题描述
 
-剧本生成（`script-generator.ts`）输出包含 `locationBindingId / characterBindingId / itemBindingId` 的结构化数据。
+两个不同功能的 race 字段定义不同：
 
-分镜生成（`storyboard-generator.ts`）的提示词中只看到 `characterName`，无法关联到具体资产 binding ID。
+| 字段 | 设定反推（enrich，5.1） | 自由文本正向提取（extractFields，6.1） |
+|------|-------------------------|--------------------------------------|
+| race | 枚举（`east_asian / south_asian / ...`，7 种） | 自由文本（如"东亚"/"欧洲"） |
+
+**注意**：这两个是不同功能——设定反推从原文推断资产设定（用枚举保证一致性），正向提取从用户自由描述中提取字段（用自由文本更灵活）。类型不一致是设计选择，不一定是 Bug。
 
 #### 2.3.2 代码证据
 
-`storyboard-generator.ts` 的 `buildSceneDescription()` 函数：
-```typescript
-// 只传入了 characterName，没有传入 characterBindingId
-const characterLines = scene.characters.map(c =>
-  `- ${c.characterName}：${c.position || '未定位'}，${c.action || '无动作'}`
-)
+`setting-enrichment-prompt.ts` 第 54 行（反推功能，enrich）：
+```
+race: 人种（"east_asian" / "south_asian" / "southeast_asian" / "central_asian" / "european" / "african" / "south_american" 之一）
 ```
 
-分镜生成时 AI 只知道"张三在说话"，不知道"张三"对应的 `characterBindingId` 是什么。
+`asset-setting-enrichment.service.ts` 第 239 行（正向提取功能，extractFieldsFromDescription）：
+```
+- race: 自由文本（如"东亚" / "欧洲"；保留中文）
+```
+
+`ExtractedFields` 接口中 `race?: string`（自由文本），`validateAndCoerceExtracted` 对 race 不做枚举校验。
 
 #### 2.3.3 影响
 
-- 分镜生成无法正确引用资产，需要在后续绑定步骤补充
-- 如果 AI 填充分镜时也需要引用 binding ID，同样面临信息缺失
+- 两个功能的输出格式不兼容，如果数据需要跨功能互操作（如反推结果与正向提取结果合并），需要额外转换
+- 用户在不同界面看到同一字段的不同表示
 
 #### 2.3.4 修复方案
 
-在 `buildSceneDescription()` 和分镜生成的 scene context 中，把 binding ID 一并传入：
-```typescript
-const characterLines = scene.characters.map(c => {
-  const binding = c.characterBindingId ? `（bindingId: ${c.characterBindingId}）` : ''
-  return `- ${c.characterName}${binding}：${c.position || '未定位'}，${c.action || '无动作'}`
-})
-```
+评估两个功能的数据是否有互操作需求：
+- **无互操作需求**：保持现状，不修改
+- **有互操作需求**：统一为枚举类型
+  1. 在 `shared/types/episode-production/domain.types.ts` 定义 `Race` 枚举类型
+  2. 正向提取的提示词改为给出枚举选项，让 AI 选择最匹配的
+  3. `validateAndCoerceExtracted` 增加 race 枚举校验
 
 #### 2.3.5 预期效果
 
-| 指标 | 修复前 | 修复后 |
-|------|--------|--------|
-| 分镜输出中 binding ID 引用率 | 0%（AI 无法引用它看不到的 ID） | > 80%（AI 可以直接引用） |
-| 后续手动绑定的工作量 | 需要额外绑定步骤 | 减少或消除 |
-
-#### 2.3.6 验证方案
-
-- 用同一场景输入，对比修复前后分镜输出中 `characterBindingId` 字段的填充率
-- 检查下游资产绑定流程是否仍能正常工作（回归测试）
-
----
-
-### 2.4 BUG-4：资产字段类型冲突（race / gender）
-
-#### 2.4.1 问题描述
-
-| 字段 | 资产设定反推（5.1） | 自由文本提取（6.1） |
-|------|---------------------|---------------------|
-| race | 枚举（`east_asian / south_asian / ...`，7 种） | 自由文本（如"东亚"） |
-| gender | 枚举（`男 / 女 / 其他`） | 自由文本（如"男性角色"） |
-
-同一字段在两个不同功能中定义不同，数据在功能间传递时需要转换。
-
-#### 2.4.2 代码证据
-
-`setting-enrichment-prompt.ts` 中：
-```typescript
-race: '"east_asian" | "south_asian" | "west_asian" | "middle_eastern" | "african" | "european" | "latin_american"'
-```
-
-`asset-setting-enrichment.service.ts` 中（自由文本提取）：
-```typescript
-race: '种族/民族（如：东亚、欧洲、非裔等）'
-```
-
-#### 2.4.3 影响
-
-- 两个功能产生的资产数据格式不兼容
-- 合并数据时需要额外转换逻辑
-- 用户在不同界面看到同一字段的不同表示
-
-#### 2.4.4 修复方案
-
-统一为枚举类型：
-1. 在 `shared/types/episode-production/domain.types.ts` 定义 `Race` 和 `Gender` 枚举类型
-2. 两个功能的提示词都引用同一套枚举
-3. 自由文本提取时，在提示词中给出枚举选项，让 AI 选择最匹配的
-
-#### 2.4.5 预期效果
-
-| 指标 | 修复前 | 修复后 |
-|------|--------|--------|
+| 指标 | 修复前 | 修复后（若统一） |
+|------|--------|-----------------|
 | 字段格式一致性 | 两种格式混用 | 统一为枚举 |
 | 跨功能数据传递 | 需要转换逻辑 | 直接传递 |
 
-#### 2.4.6 验证方案
+#### 2.3.6 验证方案
 
-- 分别用两种功能提取同一角色的 race/gender，检查输出是否属于同一枚举集合
-- 检查现有数据中是否有非枚举值（兼容处理）
+- 先确认两个功能的输出是否有合并/互操作的实际场景
+- 若有，分别用两种功能提取同一角色的 race，检查输出是否能统一到同一枚举集合
+- 检查现有数据库中 race 字段的实际值分布（是否已有非枚举值）
 
 ---
 
-### 2.5 BUG-5：分镜需求分析结果未传递给逐个分镜生成
+### 2.4 BUG-4：分镜需求分析结果未传递给逐个分镜生成
 
-#### 2.5.1 问题描述
+#### 2.4.1 问题描述
 
 分镜流程：
 1. **分镜需求分析**（3.3）：分析场景，输出建议的 shotTypes（如 `["long", "medium", "close"]`）、节奏规划
@@ -262,7 +241,7 @@ race: '种族/民族（如：东亚、欧洲、非裔等）'
 
 分析结果（整体规划）没有传递给逐个生成，导致每个分镜只看到局部信息，无法参考整体规划。
 
-#### 2.5.2 代码证据
+#### 2.4.2 代码证据
 
 `storyboard-generator.ts` 中：
 ```typescript
@@ -280,7 +259,7 @@ const contextInfo = previousShot
 // analysisResult 的 shotTypes 没有传进来
 ```
 
-#### 2.5.3 修复方案
+#### 2.4.3 修复方案
 
 在 `contextInfo` 中增加"整体分镜规划"部分：
 ```typescript
@@ -290,14 +269,14 @@ const contextInfo = [
 ].filter(Boolean).join('\n')
 ```
 
-#### 2.5.4 预期效果
+#### 2.4.4 预期效果
 
 | 指标 | 修复前 | 修复后 |
 |------|--------|--------|
 | 景别建议采纳率 | 无法测量（信息根本没传入） | > 60%（AI 可以参考） |
 | 分镜连贯性 | 每个分镜独立决策 | 参考整体规划，连贯性提升 |
 
-#### 2.5.5 验证方案
+#### 2.4.5 验证方案
 
 - 用同一场景对比修复前后，检查分镜序列的景别分布是否符合分析建议
 - 人工评估分镜连贯性是否有改善
@@ -388,10 +367,11 @@ const contextInfo = [
 
 #### 3.2.3 理论依据
 
-- **Anthropic/OpenAI 指南**：角色设定对分类/事实任务影响可忽略（negligible）
-- **BUT**：创意写作是例外场景，角色设定可以引导文风（few-shot 的轻量替代）
-- **中文模型特点**：DeepSeek/通义等中文模型对角色设定的响应可能更敏感（中文创作任务更依赖语境）
-- **反面论据**：没有针对中文模型的定量研究支持
+- **Anthropic/OpenAI 指南**：角色设定对分类/事实类结构化任务影响可忽略（negligible）
+- **BUT**：剧本生成不是纯结构化任务，而是**创意写作 + 结构化输出**的混合任务。角色设定对创意写作部分的文风有可观察的影响（few-shot 的轻量替代）
+- **中文模型特点**：DeepSeek/通义等中文模型对角色设定的响应可能更敏感（中文创作任务更依赖语境引导）
+- **反面论据**：没有针对中文模型在剧本生成场景下的定量研究；"10年经验编剧"的角色设定是否真的比"影视编剧助手"产出更好质量的剧本，无数据支撑
+- **token 成本**：详细角色设定增加约 30-50 token 的 system prompt 长度，对长 prompt 场景影响可忽略
 
 #### 3.2.4 验证方案
 
@@ -532,15 +512,14 @@ const contextInfo = [
 
 | 序号 | 编号 | 类型 | 风险 | 前置条件 |
 |------|------|------|------|----------|
-| 1 | BUG-1 | Bug 修复 | ✅ 低 | 已完成 |
-| 2 | BUG-2 | Bug 修复 | ✅ 低 | 可立即执行阶段一 |
-| 3 | BUG-3 | Bug 修复 | ✅ 低 | 可立即执行 |
-| 4 | BUG-4 | Bug 修复 | ✅ 中 | 需检查现有数据兼容性 |
-| 5 | BUG-5 | Bug 修复 | ✅ 低 | 可立即执行 |
-| 6 | HYP-3 | 待验证 | ⚠️ 中 | 先跑 A/B 测试 |
-| 7 | HYP-1 | 待验证 | ⚠️ 高 | 先跑 A/B 测试，风险最高 |
-| 8 | HYP-2 | 待验证 | ⚠️ 中 | 先跑 A/B 测试 |
-| 9 | HYP-4 | 待验证 | ⚠️ 中 | 先跑 A/B 测试 |
+| 1 | BUG-1 | Bug 修复 | ✅ 低 | 已完成（VLM 枚举映射） |
+| 2 | BUG-2 | Bug 修复 | ✅ 低 | 可立即执行阶段一（统一标记） |
+| 3 | BUG-3 | 设计评估 | ✅ 中 | 先确认是否有互操作需求（race 字段） |
+| 4 | BUG-4 | Bug 修复 | ✅ 低 | 可立即执行（分析结果传递） |
+| 5 | HYP-3 | 待验证 | ⚠️ 中 | 先跑 A/B 测试（Few-shot 示例） |
+| 6 | HYP-1 | 待验证 | ⚠️ 高 | 先跑 A/B 测试（JSON 约束精简） |
+| 7 | HYP-2 | 待验证 | ⚠️ 中 | 先跑 A/B 测试（角色设定） |
+| 8 | HYP-4 | 待验证 | ⚠️ 中 | 先跑 A/B 测试（正向表述） |
 
 ---
 
@@ -629,9 +608,27 @@ interface ABTestResult {
 
 | 类别 | 数量 | 处理方式 |
 |------|------|----------|
-| 确定性 Bug | 5 个 | 直接修复，独立 commit |
-| 待验证假设 | 4 个 | 先 A/B 测试，数据驱动决策 |
-| 已完成 | 1 个（BUG-1） | VLM 枚举映射已实施 |
+| 确定性 Bug | 3 个（BUG-1, BUG-2, BUG-4） | 直接修复，独立 commit |
+| 设计评估 | 1 个（BUG-3：race 字段） | 先确认互操作需求再决定 |
+| 待验证假设 | 4 个（HYP-1 到 HYP-4） | 先 A/B 测试，数据驱动决策 |
+| 已验证不成立 | 1 个（原 BUG-3：binding ID 丢失） | 代码已传入 binding ID，删除 |
+| 已完成 | 1 个（BUG-1：VLM 枚举映射） | 已实施并保留 |
 
 **核心原则**：不做没有依据的优化，不做没有验证的修改。
 **目标**：每次优化都可追溯、可量化、可回滚。
+
+---
+
+## 附录：Review 验证记录（v2.1）
+
+以下是对 v2.0 中所有 BUG 声明的代码验证结果：
+
+| 编号 | v2.0 声明 | 验证方法 | 验证结论 |
+|------|-----------|----------|----------|
+| BUG-1 | VLM 枚举与标准枚举不一致 | 读 `vlm-shot-inferrer.ts` + `narrative.types.ts` | ✅ 成立。VLM 用 `big_close_up` 等 5 值，标准用 `extreme_close` 等 8 值 |
+| BUG-2 | 标记系统不一致 | 读 `script-generator.ts` 第 281-355 行 | ✅ 成立。6 种标记分散在各模块解析 |
+| ~~BUG-3~~ | 剧本→分镜 binding ID 丢失 | 读 `storyboard-generator.ts` 第 466 行 | ❌ **不成立**。代码已传入 `c.characterBindingId ?? c.characterId` |
+| BUG-3（原 BUG-4） | race 字段类型冲突 | 读 `setting-enrichment-prompt.ts` + `asset-setting-enrichment.service.ts` | ⚠️ 部分成立。两个不同功能设计选择，非严格 Bug |
+| BUG-4（原 BUG-5） | 分镜分析结果未传递 | 读 `storyboard-generator.ts` 第 605-627 行 | ✅ 成立。`analysis.shotTypes` 未传入 `generateSingleStoryboard` |
+
+**v2.0 的主要教训**：BUG-3 是基于"结构推断"而非代码验证写出的。review 文档也必须逐行读代码，不能基于推断。
