@@ -1,6 +1,6 @@
 # 剧集制作模块系统提示词优化方案（v2）
 
-> **版本**：2.2（v2.0 已回滚：commit c6351e04；v1 已回滚：同）
+> **版本**：2.3（v2.0 已回滚：commit c6351e04；v1 已回滚：同）
 > **最后更新**：2026-06-28
 > **状态**：待评审
 >
@@ -8,6 +8,7 @@
 > v2.0 失败原因：部分 BUG 声明未经代码验证即写入（BUG-3 为推断而非事实）。
 > v2.1 修正：逐文件读代码验证所有 BUG 声明，删除不成立的 BUG-3，修正 BUG-2/BUG-4 的描述精度。
 > v2.2 修正：修正逻辑错误（HYP-1 因果链），删除凭空猜测的数字，补充理论依据局限性说明，调整优先级排序。
+> v2.3 修正：BUG-3（race 字段）升级为确定性 Bug（深入验证发现两个功能写入同一字段）；BUG-2 拆分为加监控和数据驱动决策两步。
 
 ---
 
@@ -168,7 +169,41 @@ VLM 推断结果无法被分镜系统直接使用，用户看到的景别/角度
 - 如果迁移后解析成功率下降超过 5%，回滚该迁移
 - 旧格式兼容代码移除前，统计线上数据确认无流量
 
-**状态**：⏳ 待执行（技术债务，非紧急）
+**状态**：⏳ 待执行前置监控（技术债务，非紧急）
+
+#### 2.2.7 前置工作：添加结构化监控日志
+
+> **目的**：收集每种解析路径的实际命中频率，判断是否有必要做标记统一。
+
+**现有代码已有日志**（`script-generator.ts` 第 285-598 行），但都是非结构化的 `console.log`，无法统计。
+
+**改造方案**：在 `extractFullScriptFromResponse` 方法中，为每层 fallback 添加结构化计数器：
+
+```typescript
+// 新增：解析路径统计
+interface ParsePathStats {
+  synopsisNew: number     // 【梗概开始】命中次数
+  synopsisOld: number     // ===SYNOPSIS=== 命中次数
+  scriptNew: number       // 【剧本正文开始】命中次数
+  scriptOld: number       // ===SCRIPT=== 命中次数
+  scenesNew: number       // 【场景数据开始】命中次数
+  scenesOld: number       // ===SCENES_JSON=== 命中次数
+  scenesJsonBlock: number // ```json``` 命中次数
+  scenesFallback: number  // 直接提取 scenes 数组命中次数
+  scenesFailed: number    // 所有路径都失败次数
+}
+```
+
+**收集方式**：
+- 在 Electron 主进程中，每次解析后 `console.log` 一条 JSON 格式的统计信息
+- 用户可通过 DevTools 查看，或在需要时手动统计
+
+**决策标准**：
+- 如果旧格式（synopsisOld/scriptOld/scenesOld）命中率为 0 → 可以安全移除旧格式兼容代码
+- 如果 `scenesJsonBlock` 命中率 > 20% → 说明 DeepSeek 等模型确实偏好代码块格式，应该把代码块格式作为主要格式之一
+- 如果 `scenesFailed` > 5% → 说明确实有解析失败问题，需要优先修复标记系统
+
+**状态**：⏳ 待执行（添加监控后运行一段时间，再决定是否修复）
 
 ---
 
@@ -185,58 +220,86 @@ VLM 推断结果无法被分镜系统直接使用，用户看到的景别/角度
 
 ---
 
-### 2.3 BUG-3：资产字段类型冲突（race / gender）
+### 2.3 BUG-3：资产字段类型冲突（race 字段双写不一致）
 
-#### 2.3.1 问题描述
+#### 2.3.1 问题描述（v2.3 修正：已确认为实际 Bug）
 
-两个不同功能的 race 字段定义不同：
+> **v2.2 → v2.3 更新**：之前认为是"设计评估"，但深入读代码后发现两个功能**写入同一个数据库字段** `CharacterBindingEntity.race`，造成实际数据不一致。
 
-| 字段 | 设定反推（enrich，5.1） | 自由文本正向提取（extractFields，6.1） |
-|------|-------------------------|--------------------------------------|
-| race | 枚举（`east_asian / south_asian / ...`，7 种） | 自由文本（如"东亚"/"欧洲"） |
+两个不同功能的 race 字段定义不同，且**写入同一个字段**：
 
-**注意**：这两个是不同功能——设定反推从原文推断资产设定（用枚举保证一致性），正向提取从用户自由描述中提取字段（用自由文本更灵活）。类型不一致是设计选择，不一定是 Bug。
+| 功能 | 代码位置 | 输出格式 | 写入字段 |
+|------|----------|----------|----------|
+| 设定反推（enrich） | `setting-enrichment-prompt.ts` 第 54 行 | 枚举（`"east_asian"` / `"south_asian"` / ...） | `CharacterBindingEntity.race` |
+| 正向文本提取（extractFields） | `asset-setting-enrichment.service.ts` 第 239 行 | 自由文本（如 `"东亚"` / `"欧洲"`） | `CharacterBindingEntity.race`（同一字段） |
 
 #### 2.3.2 代码证据
 
-`setting-enrichment-prompt.ts` 第 54 行（反推功能，enrich）：
+**写入路径 1（enrich）**：
+`setting-enrichment-prompt.ts` 第 54 行，提示词要求输出枚举值：
 ```
 race: 人种（"east_asian" / "south_asian" / "southeast_asian" / "central_asian" / "european" / "african" / "south_american" 之一）
 ```
+`asset-setting-enrichment.service.ts` 第 469 行，写入数据库：
+```typescript
+if (!b.race && typeof f.race === 'string' && f.race.trim()) patch.race = f.race.trim()
+// patch.race = "east_asian"  ← 枚举值
+```
 
-`asset-setting-enrichment.service.ts` 第 239 行（正向提取功能，extractFieldsFromDescription）：
+**写入路径 2（extractFields）**：
+`asset-setting-enrichment.service.ts` 第 239 行，提示词要求输出自由文本：
 ```
 - race: 自由文本（如"东亚" / "欧洲"；保留中文）
 ```
-
-`ExtractedFields` 接口中 `race?: string`（自由文本），`validateAndCoerceExtracted` 对 race 不做枚举校验。
+第 325 行，校验后写入（不做枚举校验）：
+```typescript
+if (typeof data.race === 'string' && data.race.trim()) out.race = data.race.trim()
+// out.race = "东亚"  ← 自由文本
+```
+然后通过 `applyCharacter` 写入同一个 `CharacterBindingEntity.race` 字段。
 
 #### 2.3.3 影响
 
-- 两个功能的输出格式不兼容，如果数据需要跨功能互操作（如反推结果与正向提取结果合并），需要额外转换
-- 用户在不同界面看到同一字段的不同表示
+- **同一字段两种格式**：用户先用"设定反推"得到 `"east_asian"`，再用"正向提取"可能被覆盖为 `"东亚"`，格式不一致
+- **下游消费方困惑**：分镜生成、图片生成提示词使用 `character.race` 时，拿到的可能是英文枚举或中文文本，无法统一处理
+- **数据迁移风险**：如果未来统一为枚举，需要清洗已有数据库中所有自由文本格式的 race 值
 
 #### 2.3.4 修复方案
 
-评估两个功能的数据是否有互操作需求：
-- **无互操作需求**：保持现状，不修改
-- **有互操作需求**：统一为枚举类型
-  1. 在 `shared/types/episode-production/domain.types.ts` 定义 `Race` 枚举类型
-  2. 正向提取的提示词改为给出枚举选项，让 AI 选择最匹配的
-  3. `validateAndCoerceExtracted` 增加 race 枚举校验
+**目标**：统一为枚举格式，两个功能输出相同格式。
+
+**方案**：修改正向提取的提示词，使用与设定反推相同的枚举值：
+```typescript
+// 修改 buildExtractFieldsSystemPrompt 中的 race 描述
+- race: 自由文本（如"东亚" / "欧洲"；保留中文）
++ race: 人种（"east_asian" / "south_asian" / "southeast_asian" / "central_asian" / "european" / "african" / "south_american" 之一）
+```
+并在 `validateAndCoerceExtracted` 中增加枚举校验：
+```typescript
+const validRaces = ['east_asian', 'south_asian', 'southeast_asian', 'central_asian', 'european', 'african', 'south_american']
+if (typeof data.race === 'string' && validRaces.includes(data.race)) {
+  out.race = data.race as ExtractedFields['race']
+}
+```
+
+**数据迁移**：修复后，需要清洗已有数据库中非枚举格式的 race 值：
+- 检查 `CharacterBindingEntity` 中所有 race 值
+- 将中文文本（如"东亚"）映射回枚举（如"east_asian"）
+- 无法映射的值保留，但标记为待人工校验
 
 #### 2.3.5 预期效果
 
-| 指标 | 修复前 | 修复后（若统一） |
-|------|--------|-----------------|
-| 字段格式一致性 | 两种格式混用 | 统一为枚举 |
-| 跨功能数据传递 | 需要转换逻辑 | 直接传递 |
+| 指标 | 修复前 | 修复后 |
+|------|--------|--------|
+| race 字段格式 | 两种格式混用（枚举 + 自由文本） | 统一为枚举 |
+| 跨功能数据一致性 | 可能互相覆盖 | 格式一致 |
+| 下游消费方处理 | 需要判断格式 | 直接使用 |
 
 #### 2.3.6 验证方案
 
-- 先确认两个功能的输出是否有合并/互操作的实际场景
-- 若有，分别用两种功能提取同一角色的 race，检查输出是否能统一到同一枚举集合
-- 检查现有数据库中 race 字段的实际值分布（是否已有非枚举值）
+- 用同一角色分别调用两个功能，检查 race 字段是否为相同枚举值
+- 检查现有数据库中 race 字段的实际值分布
+- 数据迁移后，验证所有 race 值都符合枚举定义
 
 ---
 
@@ -551,19 +614,19 @@ const contextInfo = [
 | 序号 | 编号 | 类型 | 风险 | 前置条件 | 优先级 |
 |------|------|------|------|----------|--------|
 | 1 | BUG-1 | Bug 修复 | ✅ 低 | 已完成（VLM 枚举映射） | P0（已完成） |
-| 2 | BUG-4 | Bug 修复 | ✅ 低 | 可立即执行（分析结果传递） | P1（高） |
-| 3 | BUG-2 | 技术债务 | ✅ 低 | 先统计解析失败率，确认是否有实际影响 | P2（中） |
-| 4 | BUG-3 | 设计评估 | ✅ 中 | 先确认是否有互操作需求（race 字段） | P2（中） |
-| 5 | HYP-3 | 待验证 | ⚠️ 中 | 先跑 A/B 测试（Few-shot 示例） | P2（中） |
-| 6 | HYP-1 | 待验证 | ⚠️ 高 | 先跑 A/B/C 测试（JSON 强调程度） | P3（低） |
-| 7 | HYP-2 | 待验证 | ⚠️ 中 | 先跑 A/B 测试（角色设定） | P4（很低，收益小） |
-| 8 | HYP-4 | 待验证 | ⚠️ 中 | 先跑 A/B 测试（正向表述） | P4（很低，理论依据弱） |
+| 2 | BUG-4 | Bug 修复 | ✅ 低 | 已完成（分析结果传递） | P0（已完成） |
+| 3 | BUG-3 | Bug 修复 | ✅ 低 | 可立即执行（正向提取 race 改枚举） | P1（高） |
+| 4 | BUG-2-监控 | 技术债务 | ✅ 低 | 添加结构化监控日志，运行一段时间 | P2（中） |
+| 5 | BUG-2-统一 | 技术债务 | ⚠️ 中 | 依赖 BUG-2-监控 数据决定是否执行 | P3（低） |
+| 6 | HYP-3 | 待验证 | ⚠️ 中 | 先跑 A/B 测试（Few-shot 示例） | P3（低） |
+| 7 | HYP-1 | 待验证 | ⚠️ 高 | 先跑 A/B/C 测试（JSON 强调程度） | P4（低） |
+| 8 | HYP-2 | 待验证 | ⚠️ 中 | 先跑 A/B 测试（角色设定，收益小） | P5（很低） |
+| 9 | HYP-4 | 待验证 | ⚠️ 中 | 先跑 A/B 测试（正向表述，理论依据弱） | P5（很低） |
 
-> **优先级调整说明**：
-> - BUG-4 提升为 P1：代码结构问题明确，修复风险低
-> - BUG-2 降级为 P2：技术债务，需要先确认是否有实际影响
-> - HYP-2 降级为 P4：收益太小（仅节省 30-50 token）
-> - HYP-4 降级为 P4：理论依据最弱（心理学概念不能直接推导到 LLM）
+> **优先级调整说明（v2.3）**：
+> - BUG-3 升级为 P1：已确认两个功能写入同一数据库字段，是实际数据一致性问题，修复风险低
+> - BUG-2 拆分为两步：先加监控（P2），收集数据后决定是否统一（P3）
+> - 其他优先级不变
 
 ---
 
@@ -652,15 +715,19 @@ interface ABTestResult {
 
 | 类别 | 数量 | 处理方式 | 优先级 |
 |------|------|----------|--------|
-| 确定性 Bug | 2 个（BUG-1, BUG-4） | 直接修复，独立 commit | P0-P1 |
-| 技术债务 | 1 个（BUG-2：标记不一致） | 先统计解析失败率，确认是否有实际影响 | P2 |
-| 设计评估 | 1 个（BUG-3：race 字段） | 先确认互操作需求再决定 | P2 |
-| 待验证假设 | 4 个（HYP-1 到 HYP-4） | 先 A/B 测试，数据驱动决策 | P2-P4 |
+| 确定性 Bug | 3 个（BUG-1, BUG-3, BUG-4） | 直接修复，独立 commit | P0-P1 |
+| 技术债务 | 1 个（BUG-2：标记不一致） | 先加监控收集数据，再决定是否统一 | P2-P3 |
+| 待验证假设 | 4 个（HYP-1 到 HYP-4） | 先 A/B 测试，数据驱动决策 | P3-P5 |
 | 已验证不成立 | 1 个（原 BUG-3：binding ID 丢失） | 代码已传入 binding ID，删除 | - |
-| 已完成 | 1 个（BUG-1：VLM 枚举映射） | 已实施并保留 | - |
+| 已完成 | 2 个（BUG-1：VLM 枚举映射，BUG-4：分析结果传递） | 已实施并保留 | - |
 
 **核心原则**：不做没有依据的优化，不做没有验证的修改。
 **目标**：每次优化都可追溯、可量化、可回滚。
+
+**v2.3 更新要点**：
+1. BUG-3（race 字段）从"设计评估"升级为"确定性 Bug"：经深入代码验证，发现两个功能写入同一数据库字段
+2. BUG-2 拆分为"加监控"（P2）和"统一标记"（P3）两步，先收集数据再决策
+3. BUG-4 已完成（commit 1054e0dc）
 
 **重要提醒**：
 - 所有预期效果中的数字都是**推测**，需要通过实际测试验证
@@ -673,22 +740,23 @@ interface ABTestResult {
 
 以下是对优化方案中所有条目的验证和修正记录：
 
-### 代码验证（v2.1）
+### 代码验证（v2.3）
 
 | 编号 | 声明 | 验证方法 | 验证结论 |
 |------|------|----------|----------|
 | BUG-1 | VLM 枚举与标准枚举不一致 | 读 `vlm-shot-inferrer.ts` + `narrative.types.ts` | ✅ 成立。VLM 用 `big_close_up` 等 5 值，标准用 `extreme_close` 等 8 值 |
-| BUG-2 | 标记系统不一致 | 读 `script-generator.ts` 第 281-355 行 | ✅ 成立。6 种标记分散在各模块解析 |
+| BUG-2 | 标记系统不一致 | 读 `script-generator.ts` 第 281-380 行 | ✅ 成立。6 种标记分散在各模块解析，但有结构化日志可作为前置监控 |
 | ~~BUG-3~~ | 剧本→分镜 binding ID 丢失 | 读 `storyboard-generator.ts` 第 466 行 | ❌ **不成立**。代码已传入 `c.characterBindingId ?? c.characterId` |
-| BUG-3（原 BUG-4） | race 字段类型冲突 | 读 `setting-enrichment-prompt.ts` + `asset-setting-enrichment.service.ts` | ⚠️ 部分成立。两个不同功能设计选择，非严格 Bug |
-| BUG-4（原 BUG-5） | 分镜分析结果未传递 | 读 `storyboard-generator.ts` 第 605-627 行 | ✅ 成立。`analysis.shotTypes` 未传入 `generateSingleStoryboard` |
+| BUG-3（v2.3 升级） | race 字段双写不一致 | 读 `asset-setting-enrichment.service.ts` 第 239/325/469 行 | ✅ **成立（v2.3 新发现）**。两个功能写入同一字段 `CharacterBindingEntity.race`，一个输出枚举，一个输出自由文本 |
+| BUG-4 | 分镜分析结果未传递 | 读 `storyboard-generator.ts` 第 605-627 行 | ✅ 成立。`analysis.shotTypes` 未传入 `generateSingleStoryboard`（已修复 commit 1054e0dc） |
 
-### 逻辑审查（v2.2）
+### 逻辑审查（v2.3）
 
 | 编号 | 问题 | 修正内容 |
 |------|------|----------|
-| BUG-2 | 定位为"确定性 Bug"不准确 | 降级为"技术债务"，需先确认是否有实际影响 |
-| BUG-4 | 预期效果"> 60%"是凭空猜测 | 删除数字，改为"预期改善，需验证" |
+| BUG-2 | 定位为"确定性 Bug"不准确 | 降级为"技术债务"，拆分为加监控（P2）和数据驱动统一决策（P3） |
+| BUG-3（v2.3） | race 字段类型冲突 | **升级为确定性 Bug**：深入读代码发现两个功能写入同一字段 `CharacterBindingEntity.race`，格式不一致 |
+| BUG-4 | 预期效果"> 60%"是凭空猜测 | 删除数字，改为"预期改善，需验证"（已完成 commit 1054e0dc） |
 | HYP-1 | "有 fallback 说明强调无效"是逻辑错误 | 修正因果链，增加"无强调"对照组 |
 | HYP-2 | 收益描述不准确 | 明确说明收益很小（仅节省 30-50 token） |
 | HYP-3 | GPT-3 论文局限性未说明 | 补充英文模型、简单任务的局限性说明 |
@@ -702,6 +770,7 @@ interface ABTestResult {
 2. **v2.0 教训**：部分 BUG 声明未经代码验证即写入（BUG-3 为推断而非事实）
 3. **v2.1 教训**：混淆了"代码结构不一致"、"用户可感知问题"、"需要优化"三个层次
 4. **v2.2 教训**：预期效果数字不能凭空猜测，理论依据的局限性必须说明
+5. **v2.3 教训**：读代码要深入到"写入同一个字段"这种粒度，才能发现真实的数据一致性问题（BUG-3 的升级）
 
 **核心原则**：每个优化项都要回答三个问题：
 1. 问题来源是什么？（用户反馈？日志？代码审查？）

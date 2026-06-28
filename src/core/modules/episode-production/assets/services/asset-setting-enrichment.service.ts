@@ -59,6 +59,25 @@ interface AIResult {
  * Service 层职责：调 callAI、parse JSON（带 fenced code 兜底）、校验枚举值。
  * 不覆盖逻辑放在前端（service 只返回 LLM 结果）。
  */
+
+/**
+ * race 枚举值（与 setting-enrichment-prompt.ts 保持一致）。
+ *
+ * BUG-3 修复（v2.3）：两个功能（enrich / extractFields）写入同一字段
+ * CharacterBindingEntity.race，必须使用相同枚举格式，避免数据不一致。
+ */
+const VALID_RACE_VALUES = [
+  'east_asian',
+  'south_asian',
+  'southeast_asian',
+  'central_asian',
+  'european',
+  'african',
+  'south_american',
+] as const
+
+type RaceEnum = (typeof VALID_RACE_VALUES)[number]
+
 export interface ExtractFieldsInput {
   assetType: 'character' | 'location' | 'item'
   description: string
@@ -77,7 +96,7 @@ export interface ExtractedFields {
   // character 专属
   gender?: '男' | '女' | '其他'
   age?: number
-  race?: string
+  race?: RaceEnum
   // location 专属
   description?: string
   locationType?: 'interior' | 'exterior' | 'mixed' | 'fantasy' | 'urban' | 'rural'
@@ -236,7 +255,7 @@ function buildExtractFieldsSystemPrompt(assetType: 'character' | 'location' | 'i
 - name: 姓名（如有）
 - gender: '男' | '女' | '其他'（推断）
 - age: 数字（推断）
-- race: 自由文本（如"东亚" / "欧洲"；保留中文）
+- race: 人种（"east_asian" / "south_asian" / "southeast_asian" / "central_asian" / "european" / "african" / "south_american" 之一，必须从枚举中选择）
 - styleAnchors: 风格数组（从描述中提取，如"国风工笔"）
 
 只输出 JSON，不要解释，不要 markdown 围栏。不能确定的字段不输出。`
@@ -322,7 +341,10 @@ function validateAndCoerceExtracted(
   if (assetType === 'character') {
     if (data.gender === '男' || data.gender === '女' || data.gender === '其他') out.gender = data.gender
     if (typeof data.age === 'number' && data.age >= 0 && data.age <= 200) out.age = data.age
-    if (typeof data.race === 'string' && data.race.trim()) out.race = data.race.trim()
+    // BUG-3 修复（v2.3）：race 必须使用枚举值，与 setting-enrichment-prompt.ts 保持一致
+    if (typeof data.race === 'string' && VALID_RACE_VALUES.includes(data.race as RaceEnum)) {
+      out.race = data.race as RaceEnum
+    }
   } else if (assetType === 'location') {
     const validLoc = ['interior', 'exterior', 'mixed', 'fantasy', 'urban', 'rural']
     if (typeof data.locationType === 'string' && validLoc.includes(data.locationType)) {

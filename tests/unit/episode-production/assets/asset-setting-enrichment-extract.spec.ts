@@ -38,13 +38,13 @@ async function buildDb(): Promise<DataSource> {
 }
 
 describe('AssetSettingEnrichmentService.extractFieldsFromDescription', () => {
-  it('character: LLM 返回完整 JSON → 全字段抽取', async () => {
+  it('character: LLM 返回完整 JSON → 全字段抽取（race 使用枚举值）', async () => {
     const ds = await buildDb()
     const callAI = vi.fn().mockResolvedValue(JSON.stringify({
       name: '李白',
       gender: '男',
       age: 25,
-      race: '东亚',
+      race: 'east_asian',  // BUG-3 修复（v2.3）：race 必须使用枚举值
       styleAnchors: ['国风工笔'],
     }))
     const svc = new AssetSettingEnrichmentService(ds, callAI as any)
@@ -58,7 +58,7 @@ describe('AssetSettingEnrichmentService.extractFieldsFromDescription', () => {
     expect(out.name).toBe('李白')
     expect(out.gender).toBe('男')
     expect(out.age).toBe(25)
-    expect(out.race).toBe('东亚')
+    expect(out.race).toBe('east_asian')
     expect(out.styleAnchors).toEqual(['国风工笔'])
     await ds.destroy()
   })
@@ -100,6 +100,26 @@ describe('AssetSettingEnrichmentService.extractFieldsFromDescription', () => {
     })
 
     expect(out.gender).toBeUndefined()
+    expect(out.age).toBe(25)
+    await ds.destroy()
+  })
+
+  it('character: LLM 返回自由文本 race（如"东亚"）→ 丢弃（必须用枚举值）', async () => {
+    const ds = await buildDb()
+    const callAI = vi.fn().mockResolvedValue(JSON.stringify({
+      race: '东亚',  // 旧格式自由文本，不符合枚举定义
+      age: 25,
+    }))
+    const svc = new AssetSettingEnrichmentService(ds, callAI as any)
+
+    const out = await svc.extractFieldsFromDescription({
+      assetType: 'character',
+      description: '随便',
+      projectId: 'p1',
+    })
+
+    // BUG-3 修复（v2.3）：非法 race 值被丢弃
+    expect(out.race).toBeUndefined()
     expect(out.age).toBe(25)
     await ds.destroy()
   })
