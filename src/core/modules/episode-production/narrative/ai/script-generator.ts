@@ -27,35 +27,72 @@ import { callAI, extractJsonFromResponse, parseJsonString } from './_helpers'
 
 /**
  * 剧本生成提示词（完整专业剧本格式 · spec §4.1 强引用）
- * @version 2.0 - 精简 JSON 约束、正向表述、统一角色设定
+ * 优化适配 DeepSeek 等国产大模型 - 强化 JSON 输出优先级
  */
-const SCRIPT_GENERATION_PROMPT = `你是影视编剧助手，擅长将小说转换为结构化剧本。
+const SCRIPT_GENERATION_PROMPT = `你是一位拥有10年以上一线影视工业经验的职业编剧。
 
-## 输出格式
+## ⚠️⚠️⚠️ 最重要：你必须输出结构化 JSON 场景数据！
 
-请按以下顺序输出三部分内容，每部分用对应标记包裹：
+**这是你最重要的任务！如果不输出 JSON 场景数据，整个任务就是失败的！**
 
-1. 【场景数据开始】JSON 场景数据【场景数据结束】
-2. 【梗概开始】50-100 字章节概要【梗概结束】
-3. 【剧本正文开始】标准剧本格式正文【剧本正文结束】
+输出顺序（必须严格遵守）：
+1. **先输出 JSON 场景数据**（最重要的部分）
+2. 再输出章节梗概
+3. 最后输出剧本正文
 
-## 资产引用规则
+---
 
-下面给出本项目的角色/地点/物品资产清单，每项都有 bindingId。
-输出 JSON 时，使用以下规则引用资产：
-- locationBindingId：从【可用地点列表】选择一项的 bindingId
-- characterBindingId：从【可用角色列表】选择一项的 bindingId
-- itemBindingId：从【可用物品列表】选择一项的 bindingId
+## 第一部分：结构化场景数据（JSON格式） - ⭐必须输出
 
-如果场景中出现的对象在清单中找不到，将 bindingId 设为 null，保留实际名字便于后续人工补全。
+格式要求：
+- 开头写：【场景数据开始】
+- 结尾写：【场景数据结束】
+- 中间是完整的 JSON 数据（必须包含 scenes 数组）
+- JSON 必须合法，可直接解析
+- **这部分绝对不能跳过！如果跳过，整个生成将失败！**
+
+---
+
+## 第二部分：章节梗概
+
+格式要求：
+- 开头写：【梗概开始】
+- 结尾写：【梗概结束】
+- 中间是 50-100 字的章节概要
+
+---
+
+## 第三部分：完整剧本正文
+
+格式要求：
+- 开头写：【剧本正文开始】
+- 结尾写：【剧本正文结束】
+- 中间是标准剧本格式（中文场景标题；动作描写现在时；角色对白居中缩进）
+- 严禁使用 Markdown 格式
+- 仅使用纯文本标准剧本缩进与换行
+
+---
+
+## ⭐ 强约束：所有引用必须使用 binding ID
+
+下面给出本项目可用的 **角色 / 地点 / 物品** 资产清单。每条都有一个 binding ID。
+你输出 JSON 时必须用 ID 引用：
+- locationBindingId（场景级）：从【可用地点列表】里选一项的 bindingId 填入
+- characterBindingId（出场角色 / 对话 / 动作）：从【可用角色列表】里选
+- itemBindingId（道具）：从【可用物品列表】里选
+
+如果场景中出现的对象在清单里**找不到对应项**，把对应 bindingId 字段填 null（不要瞎编 ID），
+并在 location/characterName/name 字段保留实际名字以便人工补全。
+
+---
 
 ## 场景拆分原则
 
-1. 地点变化 → 新场景
-2. 时间跳跃 → 新场景
-3. 角色组合显著变化 → 考虑拆分
-4. 情感氛围显著变化 → 考虑拆分
-5. 每个场景有明确视觉焦点
+1. 地点变化应拆分为新场景
+2. 时间跳跃应拆分为新场景
+3. 主要角色组合变化可考虑拆分
+4. 情感氛围显著变化可拆分
+5. 每个场景应有明确的视觉焦点
 
 ---
 
@@ -534,7 +571,7 @@ export class EpisodeScriptGenerator {
       .replace('{chapterContent}', chapterContent)
 
     const systemPrompt =
-      '你是影视编剧助手。请按指定格式输出三部分：场景 JSON 数据、章节梗概、剧本正文。使用提供的 binding ID 引用资产。直接输出内容，无需开场白或结束语。'
+      '你是一位拥有10年以上一线影视工业经验的职业编剧。请严格按照要求的格式输出，不要添加任何额外的开场白或结束语。所有引用必须使用提供的 binding ID，不要瞎编 ID。必须输出【场景数据开始】【场景数据结束】标记的 JSON 场景数据！'
 
     console.log('[EpisodeScriptGenerator] 调用 AI，提示词长度:', prompt.length)
 
@@ -595,7 +632,7 @@ export class EpisodeScriptGenerator {
       .replace('{chapterContent}', chapterContent)
 
     const systemPrompt =
-      '你是影视编剧助手。请按指定格式输出场景 JSON 数据，使用提供的 binding ID 引用资产。直接输出 JSON。'
+      '你是一个专业的影视编剧，擅长将小说转换为视频剧本。请严格按照要求格式输出，所有引用使用提供的 binding ID。'
 
     const response = await callAI(prompt, systemPrompt, 8192, providerConfigId, modelId)
     const result = extractJsonFromResponse(response)
@@ -707,7 +744,7 @@ ${formatRosterList(roster.items)}
 ${synopsis}`
 
     const systemPrompt =
-      '你是影视编剧助手。请按指定格式输出场景 JSON 数据，使用提供的 binding ID 引用资产。直接输出内容。'
+      '你是一位专业的影视编剧。请严格按照要求格式输出场景数据，所有引用使用提供的 binding ID。不要添加任何开场白或结束语。'
 
     const response = await callAI(prompt, systemPrompt, 8192, providerConfigId, modelId)
 
