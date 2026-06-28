@@ -62,11 +62,12 @@ export function createDirectCallAI(
     switch (provider) {
       case 'deepseek':
         apiKey = process.env.AB_TEST_DEEPSEEK_API_KEY
-        baseUrl = process.env.AB_TEST_DEEPSEEK_BASE_URL || 'https://api.deepseek.com'
+        baseUrl = process.env.AB_TEST_DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1'
         break
       case 'qwen':
         apiKey = process.env.AB_TEST_QWEN_API_KEY
-        baseUrl = process.env.AB_TEST_QWEN_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode'
+        // 通义千问使用 DashScope 的 OpenAI 兼容模式
+        baseUrl = process.env.AB_TEST_QWEN_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1'
         break
     }
 

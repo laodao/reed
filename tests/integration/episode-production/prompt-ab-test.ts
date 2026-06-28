@@ -398,17 +398,41 @@ export function generateTestReport(results: ABTestResult[]): string {
   for (const result of results) {
     lines.push(`## ${result.testName} - ${result.modelId}\n`)
 
+    lines.push('### 所有指标对比\n')
+    lines.push('| 指标 | 版本 | 平均值 | 标准差 | 95% CI |')
+    lines.push('|------|------|--------|--------|--------|')
+
+    for (const [metricName, controlMetric] of Object.entries(result.controlMetrics)) {
+      const expMetric = result.experimentMetrics[metricName]
+      if (expMetric) {
+        lines.push(`| ${metricName} | 对照组 | ${controlMetric.mean.toFixed(3)} | ${controlMetric.stdDev.toFixed(3)} | [${controlMetric.confidenceInterval.lower.toFixed(3)}, ${controlMetric.confidenceInterval.upper.toFixed(3)}] |`)
+        lines.push(`| ${metricName} | 实验组 | ${expMetric.mean.toFixed(3)} | ${expMetric.stdDev.toFixed(3)} | [${expMetric.confidenceInterval.lower.toFixed(3)}, ${expMetric.confidenceInterval.upper.toFixed(3)}] |`)
+      }
+    }
+
+    lines.push('')
+    lines.push(`**主要指标**: ${result.testName}`)
+    lines.push(`**统计显著性**: p = ${result.statisticalSignificance.toFixed(4)}`)
+    lines.push(`**效果量**: Cohen's d = ${result.effectSize.toFixed(3)}`)
+    lines.push(`**建议**: ${result.recommendation}`)
+    lines.push('')
+  }
+
+  return lines.join('\n')
+}
+
     lines.push('### 主要指标\n')
     const primaryMetric = Object.values(result.controlMetrics)[0]
     const expPrimaryMetric = Object.values(result.experimentMetrics)[0]
     if (primaryMetric && expPrimaryMetric) {
       lines.push(`| 版本 | 平均值 | 标准差 | 95% CI |`)
       lines.push(`|------|--------|--------|--------|`)
-      lines.push(`| 对照组 | ${primaryMetric.mean.toFixed(3)} | ${primaryMetric.stdDev.toFixed(3)} | [${primaryMetric.confidenceInterval.lower.toFixed(3)}, ${primaryMetric.confidenceInterval.upper.toFixed(3)}] |`)
-      lines.push(`| 实验组 | ${expPrimaryMetric.mean.toFixed(3)} | ${expPrimaryMetric.stdDev.toFixed(3)} | [${expPrimaryMetric.confidenceInterval.lower.toFixed(3)}, ${expPrimaryMetric.confidenceInterval.upper.toFixed(3)}] |`)
+      lines.push(`| 对照组 | ${controlMetric.mean.toFixed(3)} | ${controlMetric.stdDev.toFixed(3)} | [${controlMetric.confidenceInterval.lower.toFixed(3)}, ${controlMetric.confidenceInterval.upper.toFixed(3)}] |`)
+      lines.push(`| 实验组 | ${expMetric.mean.toFixed(3)} | ${expMetric.stdDev.toFixed(3)} | [${expMetric.confidenceInterval.lower.toFixed(3)}, ${expMetric.confidenceInterval.upper.toFixed(3)}] |`)
     }
 
     lines.push('')
+    lines.push(`**主要指标**: ${result.testName}`)
     lines.push(`**统计显著性**: p = ${result.statisticalSignificance.toFixed(4)}`)
     lines.push(`**效果量**: Cohen's d = ${result.effectSize.toFixed(3)}`)
     lines.push(`**建议**: ${result.recommendation}`)

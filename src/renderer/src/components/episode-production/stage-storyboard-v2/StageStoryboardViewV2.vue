@@ -94,29 +94,87 @@
 
       <!-- 中 + 右：主区域 -->
       <main class="main-area">
-        <!-- 场景概览 banner：场景信息 + 出场同行；下方一行场景说明（替代原文） -->
+        <!-- 场景概览：保留场景基础信息；剧情内容默认折叠 -->
         <section v-if="selectedScene" class="scene-overview">
-          <div class="overview-line">
-            <strong>场景 {{ selectedSceneIndex + 1 }}</strong>
-            <span class="meta-sep">·</span>
-            <EntityRefRenderer
-              :text="`📍 @${selectedScene.location ?? '?'}`"
-              :entities="entityList"
-            />
-            <span class="meta-sep">·</span>
-            <span>{{ getTimeOfDayLabel(selectedScene.timeOfDay) ?? '?' }} · {{ getWeatherLabel(selectedScene.weather) ?? '?' }}</span>
-            <span class="meta-sep">·</span>
-            <span class="cast-label">出场:</span>
-            <EntityRefRenderer
-              v-if="sceneCastNames(selectedScene).length > 0"
-              :text="sceneCastNames(selectedScene).map(n => `@${n}`).join(' ')"
-              :entities="entityList"
-            />
-            <span v-else class="hint-tertiary">未识别</span>
-          </div>
-          <div v-if="selectedScene.sceneDescription" class="overview-line muted">
-            说明: {{ selectedScene.sceneDescription }}
-          </div>
+          <el-collapse class="scene-context-collapse compact-scene-context">
+            <el-collapse-item name="ctx">
+              <template #title>
+                <div class="overview-line">
+                  <strong>场景 {{ selectedSceneIndex + 1 }}</strong>
+                  <span class="meta-sep">·</span>
+                  <EntityRefRenderer
+                    :text="`📍 @${selectedScene.location ?? '?'}`"
+                    :entities="entityList"
+                  />
+                  <span class="meta-sep">·</span>
+                  <span>{{ getTimeOfDayLabel(selectedScene.timeOfDay) ?? '?' }} · {{ getWeatherLabel(selectedScene.weather) ?? '?' }}</span>
+                  <span class="meta-sep">·</span>
+                  <span class="cast-label">出场:</span>
+                  <EntityRefRenderer
+                    v-if="sceneCastNames(selectedScene).length > 0"
+                    :text="sceneCastNames(selectedScene).map(n => `@${n}`).join(' ')"
+                    :entities="entityList"
+                  />
+                  <span v-else class="hint-tertiary">未识别</span>
+                </div>
+              </template>
+              <div class="scene-ctx-body">
+                <div v-if="selectedScene.sceneDescription" class="ctx-row">
+                  <span class="ctx-label">描述</span>
+                  <span class="ctx-text muted">{{ selectedScene.sceneDescription }}</span>
+                </div>
+                <div v-if="selectedScene.originalText" class="ctx-row">
+                  <span class="ctx-label">原文</span>
+                  <span class="ctx-text muted">{{ selectedScene.originalText }}</span>
+                </div>
+                <div v-if="selectedScene.narration" class="ctx-row">
+                  <span class="ctx-label">旁白</span>
+                  <span class="ctx-text">
+                    <EntityRefRenderer :text="selectedScene.narration" :entities="entityList" />
+                  </span>
+                </div>
+                <div
+                  v-for="(d, di) in sceneDialoguesOf(selectedScene)"
+                  :key="`ctx-d-${di}`"
+                  class="ctx-row"
+                >
+                  <span class="ctx-label">对话</span>
+                  <span class="ctx-text">
+                    <strong>
+                      <EntityRefRenderer
+                        :text="`@${d.characterName ?? '?'}`"
+                        :entities="entityList"
+                      />
+                    </strong>
+                    <span v-if="d.emotion" class="ctx-attr">· {{ d.emotion }}</span>
+                    <span class="ctx-dlg">· "{{ d.text }}"</span>
+                  </span>
+                </div>
+                <div
+                  v-for="(a, ai) in sceneActionsOf(selectedScene)"
+                  :key="`ctx-a-${ai}`"
+                  class="ctx-row"
+                >
+                  <span class="ctx-label">动作</span>
+                  <span class="ctx-text">
+                    <EntityRefRenderer :text="a.description ?? a.text ?? ''" :entities="entityList" />
+                  </span>
+                </div>
+                <div
+                  v-if="
+                    !selectedScene.sceneDescription &&
+                    !selectedScene.originalText &&
+                    !selectedScene.narration &&
+                    sceneDialoguesOf(selectedScene).length === 0 &&
+                    sceneActionsOf(selectedScene).length === 0
+                  "
+                  class="ctx-empty"
+                >
+                  该场景没有描述 / 原文 / 旁白 / 对话 / 动作信息
+                </div>
+              </div>
+            </el-collapse-item>
+          </el-collapse>
         </section>
 
         <!-- 分镜网格 -->
@@ -192,6 +250,15 @@
             </label>
             <span class="header-spacer" />
             <el-button
+              type="primary"
+              size="small"
+              :disabled="!hasUnsavedEditChanges"
+              :loading="savingEdit"
+              @click="onSaveEdit"
+            >
+              保存修改
+            </el-button>
+            <el-button
               size="small"
               :loading="aiFilling"
               @click="onAIFillStoryboard"
@@ -219,596 +286,504 @@
             </el-button>
           </header>
 
-          <!-- 所属场景剧情快照（默认收起；提供编辑分镜时的剧本上下文） -->
-          <el-collapse v-if="selectedScene" class="scene-context-collapse">
-            <el-collapse-item name="ctx">
-              <template #title>
-                <span class="scene-ctx-title">
-                  📖 所属场景剧情
-                  <span class="scene-ctx-meta">
-                    · 场景 {{ selectedSceneIndex + 1 }}
-                    <template v-if="selectedScene.location">· 📍 {{ selectedScene.location }}</template>
-                  </span>
-                </span>
-              </template>
-              <div class="scene-ctx-body">
-                <div v-if="selectedScene.originalText" class="ctx-row">
-                  <span class="ctx-label">原文</span>
-                  <span class="ctx-text muted">{{ selectedScene.originalText }}</span>
-                </div>
-                <div v-if="selectedScene.narration" class="ctx-row">
-                  <span class="ctx-label">旁白</span>
-                  <span class="ctx-text">
-                    <EntityRefRenderer :text="selectedScene.narration" :entities="entityList" />
-                  </span>
-                </div>
-                <div
-                  v-for="(d, di) in sceneDialoguesOf(selectedScene)"
-                  :key="`ctx-d-${di}`"
-                  class="ctx-row"
-                >
-                  <span class="ctx-label">对话</span>
-                  <span class="ctx-text">
-                    <strong>
-                      <EntityRefRenderer
-                        :text="`@${d.characterName ?? '?'}`"
-                        :entities="entityList"
-                      />
-                    </strong>
-                    <span v-if="d.emotion" class="ctx-attr">· {{ d.emotion }}</span>
-                    <span class="ctx-dlg">· "{{ d.text }}"</span>
-                  </span>
-                </div>
-                <div
-                  v-for="(a, ai) in sceneActionsOf(selectedScene)"
-                  :key="`ctx-a-${ai}`"
-                  class="ctx-row"
-                >
-                  <span class="ctx-label">动作</span>
-                  <span class="ctx-text">
-                    <EntityRefRenderer :text="a.description ?? a.text ?? ''" :entities="entityList" />
-                  </span>
-                </div>
-                <div
-                  v-if="
-                    !selectedScene.originalText &&
-                    !selectedScene.narration &&
-                    sceneDialoguesOf(selectedScene).length === 0 &&
-                    sceneActionsOf(selectedScene).length === 0
-                  "
-                  class="ctx-empty"
-                >
-                  该场景没有原文 / 旁白 / 对话 / 动作信息
-                </div>
-              </div>
-            </el-collapse-item>
-          </el-collapse>
-
-          <!-- 镜头语言 toolbar：分镜头组 + 转场组，组前各加分组标签 -->
-          <div class="lang-toolbar">
-            <span class="group-label">镜头：</span>
-            <label class="tool-item">
-              <span class="tool-label">景别</span>
-              <el-select
-                v-model="editDraft.shotType"
-                size="small"
-                placeholder="选择景别"
-                @change="onEditChange('shotType', $event)"
-              >
-                <el-option label="大远景" value="extreme_long" />
-                <el-option label="远景" value="long" />
-                <el-option label="全景" value="full" />
-                <el-option label="中景" value="medium" />
-                <el-option label="中近景" value="medium_close" />
-                <el-option label="近景" value="close" />
-                <el-option label="特写" value="extreme_close" />
-                <el-option label="细节特写" value="detail" />
-              </el-select>
-            </label>
-            <label class="tool-item">
-              <span class="tool-label">角度</span>
-              <el-select
-                v-model="editDraft.cameraAngle"
-                size="small"
-                @change="onEditChange('cameraAngle', $event)"
-              >
-                <el-option label="平视" value="eye_level" />
-                <el-option label="俯拍" value="high" />
-                <el-option label="仰拍" value="low" />
-                <el-option label="鸟瞰" value="birds_eye" />
-                <el-option label="蚁视" value="worms_eye" />
-                <el-option label="斜角" value="dutch" />
-              </el-select>
-            </label>
-            <label class="tool-item">
-              <span class="tool-label">运镜</span>
-              <!-- spec 2026-05-09 ep-redesign §3.2 B5 · 25 命名预设 4 大类 -->
-              <el-select
-                v-model="editDraft.cameraMovement"
-                size="small"
-                filterable
-                placeholder="选择或搜索"
-                @change="onEditChange('cameraMovement', $event)"
-              >
-                <el-option-group
-                  v-for="group in CAMERA_MOVEMENT_GROUPS"
-                  :key="group.key"
-                  :label="group.label"
-                >
-                  <el-option
-                    v-for="m in group.items"
-                    :key="m.value"
-                    :label="m.label"
-                    :value="m.value"
-                  >
-                    <el-tooltip :content="m.description" placement="right">
-                      <span>{{ m.label }}</span>
-                    </el-tooltip>
-                  </el-option>
-                </el-option-group>
-              </el-select>
-            </label>
-            <label class="tool-item">
-              <span class="tool-label">时长</span>
-              <el-input-number
-                v-model="editDraft.duration"
-                :min="0.5"
-                :max="60"
-                :step="0.1"
-                :precision="1"
-                size="small"
-                controls-position="right"
-                @change="onEditChange('duration', $event)"
+          <div class="edit-layout">
+            <div class="edit-left-column">
+                <!-- 画面描述（自动汇总右侧表单参数，作为 AI 生成关键帧提示词） -->
+                <div class="desc-section prompt-focus-section">
+              <div class="desc-label">画面描述 / 自由提示词（右侧表单参数会自动汇总到这里，可用 @资产名 引用）</div>
+              <ShotDescriptionTemplate
+                v-model="editDraft.frameDescription"
+                :entities="entityList"
+                @update:model-value="onEditChange('frameDescription', $event)"
               />
-              <span class="suffix-x">s</span>
-            </label>
-
-            <!-- 摄像机参数（spec 2026-05-09 ep-redesign §3.2 B5）— 写到 metadata JSON -->
-            <label class="tool-item">
-              <span class="tool-label">焦距</span>
-              <el-select
-                :model-value="lensFocalMmRef"
-                @update:model-value="(v) => updateMetadataField('lensFocalMm', v)"
-                size="small"
-                clearable
-                placeholder="—"
-              >
-                <el-option v-for="p in LENS_FOCAL_PRESETS" :key="p.value" :label="p.label" :value="p.value">
-                  <el-tooltip :content="p.visualEffect" placement="right">
-                    <span>{{ p.label }}</span>
-                  </el-tooltip>
-                </el-option>
-              </el-select>
-            </label>
-            <label class="tool-item">
-              <span class="tool-label">光圈</span>
-              <el-select
-                :model-value="apertureRef"
-                @update:model-value="(v) => updateMetadataField('aperture', v)"
-                size="small"
-                clearable
-                placeholder="—"
-              >
-                <el-option v-for="p in APERTURE_PRESETS" :key="p.value" :label="p.label" :value="p.value">
-                  <el-tooltip :content="p.visualEffect" placement="right">
-                    <span>{{ p.label }}</span>
-                  </el-tooltip>
-                </el-option>
-              </el-select>
-            </label>
-            <label class="tool-item">
-              <span class="tool-label">相机风格</span>
-              <el-select
-                :model-value="cameraStyleRef"
-                @update:model-value="(v) => updateMetadataField('cameraStyle', v)"
-                size="small"
-                clearable
-                placeholder="—"
-              >
-                <el-option v-for="p in CAMERA_STYLE_PRESETS" :key="p.value" :label="p.label" :value="p.value">
-                  <el-tooltip :content="p.visualEffect" placement="right">
-                    <span>{{ p.label }}</span>
-                  </el-tooltip>
-                </el-option>
-              </el-select>
-            </label>
-            <label class="tool-item">
-              <span class="tool-label">打光</span>
-              <el-select
-                :model-value="lightingRef"
-                @update:model-value="(v) => updateMetadataField('lighting', v)"
-                size="small"
-                clearable
-                filterable
-                placeholder="—"
-              >
-                <el-option v-for="p in LIGHTING_PRESETS" :key="p.value" :label="p.label" :value="p.value">
-                  <el-tooltip :content="p.description" placement="right">
-                    <span>{{ p.label }}</span>
-                  </el-tooltip>
-                </el-option>
-              </el-select>
-            </label>
-          </div>
-
-          <!-- 转场 toolbar：另起一行 -->
-          <div class="lang-toolbar transition-toolbar">
-            <span class="group-label">转场：</span>
-            <label class="tool-item">
-              <span class="tool-label">类型</span>
-              <el-select
-                v-model="editDraft.transitionType"
-                size="small"
-                @change="onEditChange('transitionType', $event)"
-              >
-                <el-option label="硬切" value="cut" />
-                <el-option label="淡入淡出" value="fade" />
-                <el-option label="溶解" value="dissolve" />
-                <el-option label="擦除" value="wipe" />
-                <el-option label="滑动" value="slide" />
-                <el-option label="缩放" value="zoom" />
-                <el-option label="光圈" value="iris" />
-                <el-option label="甩镜" value="whip" />
-              </el-select>
-            </label>
-            <label class="tool-item">
-              <span class="tool-label">时长</span>
-              <el-input-number
-                v-model="editDraft.transitionDuration"
-                :min="0"
-                :max="3000"
-                :step="100"
-                size="small"
-                controls-position="right"
-                @change="onEditChange('transitionDuration', $event)"
-              />
-              <span class="suffix-x">ms</span>
-            </label>
-            <label class="tool-item">
-              <span class="tool-label">方向</span>
-              <el-select
-                v-model="editDraft.transitionDirection"
-                size="small"
-                placeholder="—"
-                clearable
-                @change="onEditChange('transitionDirection', $event)"
-              >
-                <el-option label="向左" value="left" />
-                <el-option label="向右" value="right" />
-                <el-option label="向上" value="up" />
-                <el-option label="向下" value="down" />
-              </el-select>
-            </label>
-          </div>
-
-          <!-- 关键帧数 1-9 visual 按钮组（§7.D-5 P0）— 文生图模式不需要关键帧，隐藏 -->
-          <div v-if="editDraft.generationMode === 'keyframes'" class="kf-section">
-            <div class="kf-label">
-              关键帧数
-              <span class="hint-tertiary">
-                · 按复杂度选；UI 默认呈"九宫格"形态
-              </span>
             </div>
-            <div class="kf-buttons">
-              <button
-                v-for="n in 9"
-                :key="n"
-                class="kf-btn"
-                :class="{
-                  active: editDraft.keyframeCount === n,
-                  recommended: n === 5,
-                }"
-                @click="setKeyframeCount(n)"
-              >
-                {{ n }}
-                <span v-if="n === 5" class="recommend-tip">建议</span>
-              </button>
-            </div>
-            <p class="kf-tip">
-              💡 <strong>{{ kfTipForMovement(editDraft.cameraMovement) }}</strong>
-            </p>
-          </div>
-
-          <!-- 画面描述（spec 2026-05-09 ep-redesign §3.2 B4 双模板） -->
-          <div class="desc-section">
-            <div class="desc-label">画面描述（AI 生成关键帧时用）</div>
-            <ShotDescriptionTemplate
-              v-model="editDraft.frameDescription"
-              @update:model-value="onEditChange('frameDescription', $event)"
-            />
-          </div>
-
-          <!-- 镜头内角色站位 / 表情 / 朝向 / 动作 inline 5 列 grid（§7.D-6 P1 / spec §4.5.3） -->
-          <div class="characters-section">
-            <div class="char-label">
-              <span>镜头内角色（独立配置）</span>
-              <span class="hint-tertiary">— 覆盖场景级；为空则继承 scene.characters</span>
-              <span class="header-spacer" />
-              <el-dropdown
-                v-if="availableBindingsForAdd.length > 0"
-                trigger="click"
-                @command="addStoryboardCharacter"
-              >
-                <el-button size="small" type="primary" plain>
+            <!-- 镜头内角色站位 / 表情 / 朝向 / 动作 inline 5 列 grid（§7.D-6 P1 / spec §4.5.3） -->
+            <div class="characters-section">
+              <div class="char-label">
+                <span>镜头内角色</span>
+                <span class="header-spacer" />
+                <el-dropdown
+                  v-if="availableBindingsForAdd.length > 0"
+                  trigger="click"
+                  @command="addStoryboardCharacter"
+                >
+                  <el-button size="small" type="primary" plain>
+                    <el-icon><Plus /></el-icon>
+                    添加角色
+                  </el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item
+                        v-for="b in availableBindingsForAdd"
+                        :key="b.id"
+                        :command="b.id"
+                      >
+                        @{{ bindingDisplayName(b) }}
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+                <el-button
+                  v-else
+                  size="small"
+                  type="primary"
+                  plain
+                  disabled
+                  title="没有可添加的角色 — 项目已无未占用的角色形象"
+                >
                   <el-icon><Plus /></el-icon>
                   添加角色
                 </el-button>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item
-                      v-for="b in availableBindingsForAdd"
-                      :key="b.id"
-                      :command="b.id"
-                    >
-                      @{{ bindingDisplayName(b) }}
-                    </el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-              <el-button
-                v-else
-                size="small"
-                type="primary"
-                plain
-                disabled
-                title="没有可添加的角色 — 项目已无未占用的角色形象"
-              >
-                <el-icon><Plus /></el-icon>
-                添加角色
-              </el-button>
-            </div>
-            <div v-if="editDraft.characters.length === 0" class="empty-hint-inline">
-              未配置分镜级独立角色 → 关键帧生成回退到场景级
-              <code>scene.characters</code>
-            </div>
-            <div v-else class="characters-grid">
-              <div class="char-grid-header">
-                <span>角色</span>
-                <span>位置</span>
-                <span>表情</span>
-                <span>朝向</span>
-                <span>动作</span>
-                <span />
               </div>
-              <div
-                v-for="(c, i) in editDraft.characters"
-                :key="i"
-                class="char-grid-row"
-              >
-                <span class="cg-name">
-                  <!--
-                    通过 characterId 反查 binding 取真名（resolveCharName 含 3 层 fallback）。
-                  -->
-                  <EntityRefRenderer
-                    :text="`@${resolveCharName(c) ?? '(未绑定)'}`"
-                    :entities="entityList"
+              <div v-if="editDraft.characters.length === 0" class="empty-hint-inline">
+                未配置分镜级独立角色 → 关键帧生成回退到场景级
+                <code>scene.characters</code>
+              </div>
+              <div v-else class="characters-grid">
+                <div class="char-grid-header">
+                  <span>角色</span>
+                  <span>位置</span>
+                  <span>表情</span>
+                  <span>朝向</span>
+                  <span>动作</span>
+                  <span />
+                </div>
+                <div
+                  v-for="(c, i) in editDraft.characters"
+                  :key="i"
+                  class="char-grid-row"
+                >
+                  <span class="cg-name">
+                    <!--
+                      通过 characterId 反查 binding 取真名（resolveCharName 含 3 层 fallback）。
+                    -->
+                    <EntityRefRenderer
+                      :text="`@${resolveCharName(c) ?? '(未绑定)'}`"
+                      :entities="entityList"
+                    />
+                  </span>
+                  <el-select
+                    v-model="c.position"
+                    size="small"
+                    placeholder="位置"
+                    @change="onCharacterFieldEdit"
+                  >
+                    <el-option label="左" value="left" />
+                    <el-option label="中" value="center" />
+                    <el-option label="右" value="right" />
+                    <el-option label="前" value="front" />
+                    <el-option label="后" value="back" />
+                  </el-select>
+                  <el-select
+                    v-model="c.expression"
+                    size="small"
+                    placeholder="表情"
+                    @change="onCharacterFieldEdit"
+                  >
+                    <el-option label="neutral" value="neutral" />
+                    <el-option label="angry" value="angry" />
+                    <el-option label="happy" value="happy" />
+                    <el-option label="sad" value="sad" />
+                    <el-option label="surprised" value="surprised" />
+                    <el-option label="confused" value="confused" />
+                  </el-select>
+                  <el-select
+                    v-model="c.facing"
+                    size="small"
+                    placeholder="朝向"
+                    @change="onCharacterFieldEdit"
+                  >
+                    <el-option label="正面" value="front" />
+                    <el-option label="左前侧" value="3q_left" />
+                    <el-option label="右前侧" value="3q_right" />
+                    <el-option label="左侧" value="side_l" />
+                    <el-option label="右侧" value="side_r" />
+                    <el-option label="背面" value="back" />
+                  </el-select>
+                  <el-input
+                    v-model="c.action"
+                    size="small"
+                    placeholder="如：持折扇 / 站立"
+                    @input="onCharacterFieldEdit"
                   />
-                </span>
-                <el-select
-                  v-model="c.position"
-                  size="small"
-                  placeholder="位置"
-                  @change="onCharacterFieldEdit"
+                  <el-button
+                    text
+                    size="small"
+                    class="cg-remove"
+                    title="移除该角色"
+                    @click="removeStoryboardCharacter(i)"
+                  >
+                    <el-icon><Close /></el-icon>
+                  </el-button>
+                </div>
+              </div>
+            </div>
+            <div class="binding-row-sections">
+            <!-- 地点（spec 2026-05-09）— 分镜级覆盖；空则继承 scene.locationBindingId -->
+            <div class="characters-section bindings-section">
+              <div class="char-label">
+                <span>镜头内地点</span>
+              </div>
+              <div class="bindings-chips">
+                <template v-if="editDraft.locationBindingIds.length > 0">
+                  <el-tag
+                    v-for="(id, i) in editDraft.locationBindingIds"
+                    :key="`loc-${i}-${id}`"
+                    type="success"
+                    effect="light"
+                    closable
+                    class="binding-chip"
+                    @close="removeLocationAt(i)"
+                  >📍 {{ resolveBindingName('location', id) }}</el-tag>
+                </template>
+                <template v-else-if="inheritedLocationIds.length > 0">
+                  <el-tag
+                    v-for="id in inheritedLocationIds"
+                    :key="`loc-inh-${id}`"
+                    type="success"
+                    effect="plain"
+                    class="binding-chip inherited-chip"
+                    title="继承自场景；点击加号会创建独立配置覆盖场景级"
+                  >
+                    📍 {{ resolveBindingName('location', id) }}
+                    <span class="inherited-tag">继承</span>
+                  </el-tag>
+                </template>
+                <span v-else class="empty-hint-inline compact-empty">未配置地点</span>
+                <el-dropdown
+                  v-if="availableLocationsForAdd.length > 0"
+                  trigger="click"
+                  @command="addStoryboardLocation"
                 >
-                  <el-option label="左" value="left" />
-                  <el-option label="中" value="center" />
-                  <el-option label="右" value="right" />
-                  <el-option label="前" value="front" />
-                  <el-option label="后" value="back" />
-                </el-select>
-                <el-select
-                  v-model="c.expression"
-                  size="small"
-                  placeholder="表情"
-                  @change="onCharacterFieldEdit"
-                >
-                  <el-option label="neutral" value="neutral" />
-                  <el-option label="angry" value="angry" />
-                  <el-option label="happy" value="happy" />
-                  <el-option label="sad" value="sad" />
-                  <el-option label="surprised" value="surprised" />
-                  <el-option label="confused" value="confused" />
-                </el-select>
-                <el-select
-                  v-model="c.facing"
-                  size="small"
-                  placeholder="朝向"
-                  @change="onCharacterFieldEdit"
-                >
-                  <el-option label="正面" value="front" />
-                  <el-option label="左前侧" value="3q_left" />
-                  <el-option label="右前侧" value="3q_right" />
-                  <el-option label="左侧" value="side_l" />
-                  <el-option label="右侧" value="side_r" />
-                  <el-option label="背面" value="back" />
-                </el-select>
-                <el-input
-                  v-model="c.action"
-                  size="small"
-                  placeholder="如：持折扇 / 站立"
-                  @input="onCharacterFieldEdit"
-                />
+                  <el-button size="small" type="primary" plain circle class="binding-add-btn" title="添加地点">
+                    <el-icon><Plus /></el-icon>
+                  </el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item
+                        v-for="b in availableLocationsForAdd"
+                        :key="b.id"
+                        :command="b.id"
+                      >
+                        📍 {{ bindingDisplayName(b) }}
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
                 <el-button
-                  text
+                  v-else
                   size="small"
-                  class="cg-remove"
-                  title="移除该角色"
-                  @click="removeStoryboardCharacter(i)"
+                  type="primary"
+                  plain
+                  circle
+                  disabled
+                  class="binding-add-btn"
+                  title="项目内没有可添加的地点形象"
                 >
-                  <el-icon><Close /></el-icon>
+                  <el-icon><Plus /></el-icon>
                 </el-button>
               </div>
             </div>
-            <div class="char-actions">
-              <el-button
-                v-if="hasUnsavedEditChanges"
-                type="primary"
-                size="small"
-                :loading="savingEdit"
-                @click="onSaveEdit"
-              >
-                保存修改
-              </el-button>
-            </div>
-          </div>
 
-          <!-- 地点（spec 2026-05-09）— 分镜级覆盖；空则继承 scene.locationBindingId -->
-          <div class="characters-section bindings-section">
-            <div class="char-label">
-              <span>镜头内地点（独立配置）</span>
-              <span class="hint-tertiary">— 覆盖场景级；为空则继承 scene.location</span>
-              <span class="header-spacer" />
-              <el-dropdown
-                v-if="availableLocationsForAdd.length > 0"
-                trigger="click"
-                @command="addStoryboardLocation"
-              >
-                <el-button size="small" type="primary" plain>
-                  <el-icon><Plus /></el-icon>
-                  添加地点
-                </el-button>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item
-                      v-for="b in availableLocationsForAdd"
-                      :key="b.id"
-                      :command="b.id"
-                    >
-                      📍 {{ bindingDisplayName(b) }}
-                    </el-dropdown-item>
-                  </el-dropdown-menu>
+            <!-- 物品（spec 2026-05-09）— 分镜级覆盖；空则继承 scene.characters[*].props -->
+            <div class="characters-section bindings-section">
+              <div class="char-label">
+                <span>镜头内物品</span>
+              </div>
+              <div class="bindings-chips">
+                <template v-if="editDraft.itemBindingIds.length > 0">
+                  <el-tag
+                    v-for="(id, i) in editDraft.itemBindingIds"
+                    :key="`it-${i}-${id}`"
+                    type="warning"
+                    effect="light"
+                    closable
+                    class="binding-chip"
+                    @close="removeItemAt(i)"
+                  >⚔️ {{ resolveBindingName('item', id) }}</el-tag>
                 </template>
-              </el-dropdown>
-              <el-button
-                v-else
-                size="small"
-                type="primary"
-                plain
-                disabled
-                title="项目内没有可添加的地点形象"
-              >
-                <el-icon><Plus /></el-icon>
-                添加地点
-              </el-button>
-            </div>
-            <!--
-              展示规则（spec 2026-05-09）：
-                · 分镜级 locationBindingIds 非空 → 用之，chip 可 × 删
-                · 否则若场景有 locationBindingId → 显示场景继承（虚框 chip + "继承"标签，不可删）
-                · 都没有 → empty-hint
-            -->
-            <div v-if="editDraft.locationBindingIds.length > 0" class="bindings-chips">
-              <el-tag
-                v-for="(id, i) in editDraft.locationBindingIds"
-                :key="`loc-${i}-${id}`"
-                type="success"
-                effect="light"
-                closable
-                class="binding-chip"
-                @close="removeLocationAt(i)"
-              >📍 {{ resolveBindingName('location', id) }}</el-tag>
-            </div>
-            <div v-else-if="inheritedLocationIds.length > 0" class="bindings-chips">
-              <el-tag
-                v-for="id in inheritedLocationIds"
-                :key="`loc-inh-${id}`"
-                type="success"
-                effect="plain"
-                class="binding-chip inherited-chip"
-                title="继承自场景；点上方添加地点会创建独立配置覆盖场景级"
-              >
-                📍 {{ resolveBindingName('location', id) }}
-                <span class="inherited-tag">继承</span>
-              </el-tag>
-            </div>
-            <div v-else class="empty-hint-inline">
-              未配置分镜级地点；场景也未指定 → 关键帧生成只能从画面描述推
-            </div>
-          </div>
-
-          <!-- 物品（spec 2026-05-09）— 分镜级覆盖；空则继承 scene.characters[*].props -->
-          <div class="characters-section bindings-section">
-            <div class="char-label">
-              <span>镜头内物品（独立配置）</span>
-              <span class="hint-tertiary">— 覆盖场景级；为空则继承 <code>scene.props</code></span>
-              <span class="header-spacer" />
-              <el-dropdown
-                v-if="availableItemsForAdd.length > 0"
-                trigger="click"
-                @command="addStoryboardItem"
-              >
-                <el-button size="small" type="primary" plain>
-                  <el-icon><Plus /></el-icon>
-                  添加物品
-                </el-button>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item
-                      v-for="b in availableItemsForAdd"
-                      :key="b.id"
-                      :command="b.id"
-                    >
-                      ⚔️ {{ bindingDisplayName(b) }}
-                    </el-dropdown-item>
-                  </el-dropdown-menu>
+                <template v-else-if="inheritedItemIds.length > 0">
+                  <el-tag
+                    v-for="id in inheritedItemIds"
+                    :key="`it-inh-${id}`"
+                    type="warning"
+                    effect="plain"
+                    class="binding-chip inherited-chip"
+                    title="继承自场景 props；点击加号会创建独立配置覆盖场景级"
+                  >
+                    ⚔️ {{ resolveBindingName('item', id) }}
+                    <span class="inherited-tag">继承</span>
+                  </el-tag>
                 </template>
-              </el-dropdown>
-              <el-button
-                v-else
-                size="small"
-                type="primary"
-                plain
-                disabled
-                title="项目内没有可添加的物品形象"
-              >
-                <el-icon><Plus /></el-icon>
-                添加物品
-              </el-button>
+                <span v-else class="empty-hint-inline compact-empty">未配置物品</span>
+                <el-dropdown
+                  v-if="availableItemsForAdd.length > 0"
+                  trigger="click"
+                  @command="addStoryboardItem"
+                >
+                  <el-button size="small" type="primary" plain circle class="binding-add-btn" title="添加物品">
+                    <el-icon><Plus /></el-icon>
+                  </el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item
+                        v-for="b in availableItemsForAdd"
+                        :key="b.id"
+                        :command="b.id"
+                      >
+                        ⚔️ {{ bindingDisplayName(b) }}
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+                <el-button
+                  v-else
+                  size="small"
+                  type="primary"
+                  plain
+                  circle
+                  disabled
+                  class="binding-add-btn"
+                  title="项目内没有可添加的物品形象"
+                >
+                  <el-icon><Plus /></el-icon>
+                </el-button>
+              </div>
             </div>
-            <!--
-              展示规则同地点：分镜级覆盖优先；否则展示场景级 props 推导（继承 chip）。
-            -->
-            <div v-if="editDraft.itemBindingIds.length > 0" class="bindings-chips">
-              <el-tag
-                v-for="(id, i) in editDraft.itemBindingIds"
-                :key="`it-${i}-${id}`"
-                type="warning"
-                effect="light"
-                closable
-                class="binding-chip"
-                @close="removeItemAt(i)"
-              >⚔️ {{ resolveBindingName('item', id) }}</el-tag>
-            </div>
-            <div v-else-if="inheritedItemIds.length > 0" class="bindings-chips">
-              <el-tag
-                v-for="id in inheritedItemIds"
-                :key="`it-inh-${id}`"
-                type="warning"
-                effect="plain"
-                class="binding-chip inherited-chip"
-                title="继承自场景 props；点上方添加物品会创建独立配置覆盖场景级"
-              >
-                ⚔️ {{ resolveBindingName('item', id) }}
-                <span class="inherited-tag">继承</span>
-              </el-tag>
-            </div>
-            <div v-else class="empty-hint-inline">
-              未配置分镜级物品；场景 props 也为空 → 关键帧不引用物品图
-            </div>
-          </div>
 
-          <!-- 本分镜音频（旁白 + 对白）— 按 storyboard.dialogueIds / narrationId 过滤 -->
-          <AudioPanel
-            v-if="selectedScene && selectedStoryboard"
-            :key="`audio-${selectedStoryboard.id}`"
-            :scene-id="selectedScene.id"
-            :scene="selectedScene"
-            :storyboard="{
-              id: selectedStoryboard.id,
-              dialogueIds: selectedStoryboard.dialogueIds,
-              narrationId: selectedStoryboard.narrationId,
-            }"
-          />
+            </div>
+            </div>
+
+            <aside class="edit-right-column">
+              <div class="edit-side-card">
+                <div class="edit-side-title">镜头参数</div>
+                <!-- 镜头语言 toolbar：分镜头组 + 转场组，组前各加分组标签 -->
+                <div class="lang-toolbar side-toolbar">
+                  <label class="tool-item">
+                    <span class="tool-label">景别</span>
+                    <el-select
+                      v-model="editDraft.shotType"
+                      size="small"
+                      placeholder="选择景别"
+                      @change="onEditChange('shotType', $event)"
+                    >
+                      <el-option label="大远景" value="extreme_long" />
+                      <el-option label="远景" value="long" />
+                      <el-option label="全景" value="full" />
+                      <el-option label="中景" value="medium" />
+                      <el-option label="中近景" value="medium_close" />
+                      <el-option label="近景" value="close" />
+                      <el-option label="特写" value="extreme_close" />
+                      <el-option label="细节特写" value="detail" />
+                    </el-select>
+                  </label>
+                  <label class="tool-item">
+                    <span class="tool-label">角度</span>
+                    <el-select
+                      v-model="editDraft.cameraAngle"
+                      size="small"
+                      @change="onEditChange('cameraAngle', $event)"
+                    >
+                      <el-option label="平视" value="eye_level" />
+                      <el-option label="俯拍" value="high" />
+                      <el-option label="仰拍" value="low" />
+                      <el-option label="鸟瞰" value="birds_eye" />
+                      <el-option label="蚁视" value="worms_eye" />
+                      <el-option label="斜角" value="dutch" />
+                    </el-select>
+                  </label>
+                  <label class="tool-item">
+                    <span class="tool-label">运镜</span>
+                    <!-- spec 2026-05-09 ep-redesign §3.2 B5 · 25 命名预设 4 大类 -->
+                    <el-select
+                      v-model="editDraft.cameraMovement"
+                      size="small"
+                      filterable
+                      placeholder="选择或搜索"
+                      @change="onEditChange('cameraMovement', $event)"
+                    >
+                      <el-option-group
+                        v-for="group in CAMERA_MOVEMENT_GROUPS"
+                        :key="group.key"
+                        :label="group.label"
+                      >
+                        <el-option
+                          v-for="m in group.items"
+                          :key="m.value"
+                          :label="m.label"
+                          :value="m.value"
+                        >
+                          <el-tooltip :content="m.description" placement="right">
+                            <span>{{ m.label }}</span>
+                          </el-tooltip>
+                        </el-option>
+                      </el-option-group>
+                    </el-select>
+                  </label>
+                  <label class="tool-item">
+                    <span class="tool-label">时长</span>
+                    <el-input-number
+                      v-model="editDraft.duration"
+                      :min="0.5"
+                      :max="60"
+                      :step="0.1"
+                      :precision="1"
+                      size="small"
+                      controls-position="right"
+                      @change="onEditChange('duration', $event)"
+                    />
+                    <span class="suffix-x">s</span>
+                  </label>
+
+                  <!-- 摄像机参数（spec 2026-05-09 ep-redesign §3.2 B5）— 写到 metadata JSON -->
+                  <label class="tool-item">
+                    <span class="tool-label">焦距</span>
+                    <el-select
+                      :model-value="lensFocalMmRef"
+                      @update:model-value="(v) => updateMetadataField('lensFocalMm', v)"
+                      size="small"
+                      clearable
+                      placeholder="—"
+                    >
+                      <el-option v-for="p in LENS_FOCAL_PRESETS" :key="p.value" :label="p.label" :value="p.value">
+                        <el-tooltip :content="p.visualEffect" placement="right">
+                          <span>{{ p.label }}</span>
+                        </el-tooltip>
+                      </el-option>
+                    </el-select>
+                  </label>
+                  <label class="tool-item">
+                    <span class="tool-label">光圈</span>
+                    <el-select
+                      :model-value="apertureRef"
+                      @update:model-value="(v) => updateMetadataField('aperture', v)"
+                      size="small"
+                      clearable
+                      placeholder="—"
+                    >
+                      <el-option v-for="p in APERTURE_PRESETS" :key="p.value" :label="p.label" :value="p.value">
+                        <el-tooltip :content="p.visualEffect" placement="right">
+                          <span>{{ p.label }}</span>
+                        </el-tooltip>
+                      </el-option>
+                    </el-select>
+                  </label>
+                  <label class="tool-item">
+                    <span class="tool-label">相机风格</span>
+                    <el-select
+                      :model-value="cameraStyleRef"
+                      @update:model-value="(v) => updateMetadataField('cameraStyle', v)"
+                      size="small"
+                      clearable
+                      placeholder="—"
+                    >
+                      <el-option v-for="p in CAMERA_STYLE_PRESETS" :key="p.value" :label="p.label" :value="p.value">
+                        <el-tooltip :content="p.visualEffect" placement="right">
+                          <span>{{ p.label }}</span>
+                        </el-tooltip>
+                      </el-option>
+                    </el-select>
+                  </label>
+                  <label class="tool-item">
+                    <span class="tool-label">打光</span>
+                    <el-select
+                      :model-value="lightingRef"
+                      @update:model-value="(v) => updateMetadataField('lighting', v)"
+                      size="small"
+                      clearable
+                      filterable
+                      placeholder="—"
+                    >
+                      <el-option v-for="p in LIGHTING_PRESETS" :key="p.value" :label="p.label" :value="p.value">
+                        <el-tooltip :content="p.description" placement="right">
+                          <span>{{ p.label }}</span>
+                        </el-tooltip>
+                      </el-option>
+                    </el-select>
+                  </label>
+                </div>
+              </div>
+
+              <div class="edit-side-card">
+                <div class="edit-side-title">转场与关键帧</div>
+                <!-- 转场 toolbar：另起一行 -->
+                <div class="lang-toolbar transition-toolbar side-toolbar">
+                  <label class="tool-item">
+                    <span class="tool-label">类型</span>
+                    <el-select
+                      v-model="editDraft.transitionType"
+                      size="small"
+                      @change="onEditChange('transitionType', $event)"
+                    >
+                      <el-option label="硬切" value="cut" />
+                      <el-option label="淡入淡出" value="fade" />
+                      <el-option label="溶解" value="dissolve" />
+                      <el-option label="擦除" value="wipe" />
+                      <el-option label="滑动" value="slide" />
+                      <el-option label="缩放" value="zoom" />
+                      <el-option label="光圈" value="iris" />
+                      <el-option label="甩镜" value="whip" />
+                    </el-select>
+                  </label>
+                  <label class="tool-item">
+                    <span class="tool-label">时长</span>
+                    <el-input-number
+                      v-model="editDraft.transitionDuration"
+                      :min="0"
+                      :max="3000"
+                      :step="100"
+                      size="small"
+                      controls-position="right"
+                      @change="onEditChange('transitionDuration', $event)"
+                    />
+                    <span class="suffix-x">ms</span>
+                  </label>
+                  <label class="tool-item">
+                    <span class="tool-label">方向</span>
+                    <el-select
+                      v-model="editDraft.transitionDirection"
+                      size="small"
+                      placeholder="—"
+                      clearable
+                      @change="onEditChange('transitionDirection', $event)"
+                    >
+                      <el-option label="向左" value="left" />
+                      <el-option label="向右" value="right" />
+                      <el-option label="向上" value="up" />
+                      <el-option label="向下" value="down" />
+                    </el-select>
+                  </label>
+                  <label v-if="editDraft.generationMode === 'keyframes'" class="tool-item keyframe-tool-item">
+                    <span class="tool-label">关键帧</span>
+                    <div class="kf-buttons inline-kf-buttons">
+                      <button
+                        v-for="n in 9"
+                        :key="n"
+                        class="kf-btn"
+                        :class="{ active: editDraft.keyframeCount === n }"
+                        @click="setKeyframeCount(n)"
+                      >
+                        {{ n }}
+                      </button>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <!-- 本分镜音频（旁白 + 对白）— 按 storyboard.dialogueIds / narrationId 过滤 -->
+              <AudioPanel
+                v-if="selectedScene && selectedStoryboard"
+                :key="`audio-${selectedStoryboard.id}`"
+                :scene-id="selectedScene.id"
+                :scene="selectedScene"
+                :storyboard="{
+                  id: selectedStoryboard.id,
+                  dialogueIds: selectedStoryboard.dialogueIds,
+                  narrationId: selectedStoryboard.narrationId,
+                }"
+              />
+            </aside>
+          </div>
         </section>
       </main>
     </div>
@@ -840,6 +815,13 @@ import {
 import { formatGlobalShotId } from '@/utils/storyboard-id'
 // spec 2026-05-09 ep-redesign §3.2 B4 双模板画面描述
 import ShotDescriptionTemplate from './ShotDescriptionTemplate.vue'
+import {
+  type MetadataPromptKey,
+  type PromptSyncReason,
+  mergeFormPromptDescription,
+  shouldMarkSyncedPromptDirty,
+  shouldResetStoryboardDraft,
+} from './storyboard-prompt-draft'
 // spec 2026-05-09 ep-redesign §3.2 B5 镜头语言层（焦距 / 光圈 / 相机风格 / 25 运镜 / 12 打光）
 import {
   CAMERA_MOVEMENT_GROUPS,
@@ -938,11 +920,21 @@ const editDraft = reactive<any>({
 
 const editDirty = ref<Set<string>>(new Set())
 const hasUnsavedEditChanges = computed(() => editDirty.value.size > 0)
+let lastSyncedStoryboardId: string | null = null
+let lastSyncedFormPrompt = ''
 
 watch(
   () => selectedStoryboard.value,
   (sb) => {
     if (!sb) return
+    if (!shouldResetStoryboardDraft({
+      currentStoryboardId: lastSyncedStoryboardId,
+      nextStoryboardId: sb.id,
+      dirtyFieldCount: editDirty.value.size,
+    })) {
+      return
+    }
+    lastSyncedStoryboardId = sb.id
     editDraft.shotType = sb.shotType
     editDraft.cameraAngle = sb.cameraAngle
     editDraft.cameraMovement = sb.cameraMovement
@@ -972,6 +964,11 @@ watch(
     cameraStyleRef.value = meta.cameraStyle ?? undefined
     lightingRef.value = meta.lighting ?? undefined
     editDirty.value = new Set()
+    lastSyncedFormPrompt = ''
+    void nextTick(() => {
+      if (selectedStoryboard.value?.id !== sb.id) return
+      syncFrameDescriptionFromForm('initialize', sb.frameDescription ?? '')
+    })
   },
   { immediate: true },
 )
@@ -1002,12 +999,18 @@ const cameraStyleRef = ref<string | undefined>(undefined)
 const lightingRef = ref<string | undefined>(undefined)
 
 // 更新 metadata 到 editDraft 和数据库
-function updateMetadataField(key: string, value: string | null | undefined): void {
+function updateMetadataField(key: MetadataPromptKey, value: string | null | undefined): void {
+  const normalizedValue = value == null || value === '' ? undefined : value
+  if (key === 'lensFocalMm') lensFocalMmRef.value = normalizedValue
+  if (key === 'aperture') apertureRef.value = normalizedValue
+  if (key === 'cameraStyle') cameraStyleRef.value = normalizedValue
+  if (key === 'lighting') lightingRef.value = normalizedValue
+
   const meta = safeParseMeta(editDraft.metadata)
-  if (value == null || value === '') {
+  if (normalizedValue == null) {
     delete meta[key]
   } else {
-    meta[key] = value
+    meta[key] = normalizedValue
   }
   editDraft.metadata = Object.keys(meta).length > 0 ? JSON.stringify(meta) : ''
   onEditChange('metadata', editDraft.metadata)
@@ -1396,17 +1399,102 @@ function setKeyframeCount(n: number): void {
 
 function onEditChange(key: string, _value: any): void {
   editDirty.value = new Set([...editDirty.value, key])
+  if (key !== 'frameDescription') syncFrameDescriptionFromForm()
 }
 
-function kfTipForMovement(m: string): string {
-  if (m === 'push' || m === 'pull') return '推/拉镜推荐 3-5 帧 → keyframesToVideo（首尾 + 中间过渡）'
-  if (m === 'pan' || m === 'track') return '摇/移镜推荐 5-7 帧（捕捉路径关键节点）'
-  if (m === 'static') return '固定镜头推荐 2-3 帧（首 + 尾即可）'
-  return '按运镜复杂度选关键帧数量；推荐 5 帧'
+function labelFromOptions<T extends Record<string, string>>(options: T, value: string | null | undefined): string {
+  if (!value) return ''
+  return options[value] ?? value
+}
+
+function metadataLabel(presets: Array<{ value: string; label: string }>, value: any): string {
+  if (value == null || value === '') return ''
+  const text = String(value)
+  return presets.find((p) => p.value === text)?.label ?? text
+}
+
+function selectedStoryboardCharacterNames(): string[] {
+  return editDraft.characters
+    .map((c: any) => resolveCharName(c) ?? c?.characterName ?? c?.characterId ?? '')
+    .filter((v: string) => !!String(v).trim())
+}
+
+function buildFormPromptDescription(): string {
+  const meta = safeParseMeta(editDraft.metadata)
+  const parts: string[] = []
+  const shotId = selectedStoryboard.value
+    ? `分镜 ${selectedSceneIndex.value + 1}.${selectedStoryboard.value.shotNumber}`
+    : '当前分镜'
+
+  const shotLine = [
+    `【${shotId}】`,
+    `景别：${labelFromOptions(shotTypeLabels, editDraft.shotType) || '未设置'}`,
+    `角度：${labelFromOptions(cameraAngleLabels, editDraft.cameraAngle) || '未设置'}`,
+    `运镜：${findCameraMovementPreset(editDraft.cameraMovement)?.label ?? getCameraMovementLabel(editDraft.cameraMovement) ?? '未设置'}`,
+    `时长：${editDraft.duration ?? '未设置'}秒`,
+  ]
+  parts.push(shotLine.join('｜'))
+
+  const lens = metadataLabel(LENS_FOCAL_PRESETS, meta.lensFocalMm)
+  const aperture = metadataLabel(APERTURE_PRESETS, meta.aperture)
+  const cameraStyle = metadataLabel(CAMERA_STYLE_PRESETS, meta.cameraStyle)
+  const lighting = metadataLabel(LIGHTING_PRESETS, meta.lighting)
+  const cameraParams = [lens && `焦距：${lens}`, aperture && `光圈：${aperture}`, cameraStyle && `相机风格：${cameraStyle}`, lighting && `打光：${lighting}`].filter(Boolean)
+  if (cameraParams.length > 0) parts.push(cameraParams.join('｜'))
+
+  const generationParams = [
+    `生成模式：${editDraft.generationMode === 'keyframes' ? '关键帧' : '文生图'}`,
+    editDraft.generationMode === 'keyframes' ? `关键帧数：${editDraft.keyframeCount}` : '',
+    `转场：${editDraft.transitionType || '未设置'}，${editDraft.transitionDuration ?? 0}ms${editDraft.transitionDirection ? `，方向 ${editDraft.transitionDirection}` : ''}`,
+  ].filter(Boolean)
+  parts.push(generationParams.join('｜'))
+
+  const entityParams: string[] = []
+  const characterNames = selectedStoryboardCharacterNames()
+  if (characterNames.length > 0) entityParams.push(`镜头内角色：${characterNames.map((n) => `@${n}`).join('、')}`)
+  const locationIds = editDraft.locationBindingIds.length > 0 ? editDraft.locationBindingIds : inheritedLocationIds.value
+  if (locationIds.length > 0) entityParams.push(`镜头内地点：${locationIds.map((id) => `@${resolveBindingName('location', id)}`).join('、')}`)
+  const itemIds = editDraft.itemBindingIds.length > 0 ? editDraft.itemBindingIds : inheritedItemIds.value
+  if (itemIds.length > 0) entityParams.push(`镜头内物品：${itemIds.map((id) => `@${resolveBindingName('item', id)}`).join('、')}`)
+  if (entityParams.length > 0) parts.push(entityParams.join('｜'))
+
+  const charActions = editDraft.characters
+    .map((c: any) => {
+      const name = resolveCharName(c) ?? c?.characterName ?? c?.characterId ?? ''
+      const details = [c?.position && `位置${c.position}`, c?.expression && `表情${c.expression}`, c?.facing && `朝向${c.facing}`, c?.action && `动作${c.action}`]
+        .filter(Boolean)
+        .join('，')
+      return name && details ? `@${name}（${details}）` : ''
+    })
+    .filter(Boolean)
+  if (charActions.length > 0) parts.push(`角色调度：${charActions.join('；')}`)
+
+  return parts.join('\n')
+}
+
+function syncFrameDescriptionFromForm(
+  reason: PromptSyncReason = 'user-edit',
+  savedText = selectedStoryboard.value?.frameDescription ?? '',
+): void {
+  const nextFormPrompt = buildFormPromptDescription()
+  editDraft.frameDescription = mergeFormPromptDescription({
+    currentText: String(editDraft.frameDescription ?? ''),
+    nextFormPrompt,
+    previousFormPrompt: lastSyncedFormPrompt,
+  })
+  lastSyncedFormPrompt = nextFormPrompt
+  if (shouldMarkSyncedPromptDirty({
+    syncReason: reason,
+    syncedText: editDraft.frameDescription,
+    savedText,
+  })) {
+    editDirty.value = new Set([...editDirty.value, 'frameDescription'])
+  }
 }
 
 async function onSaveEdit(): Promise<void> {
   if (!selectedStoryboard.value) return
+  syncFrameDescriptionFromForm('save')
   savingEdit.value = true
   try {
     const api = (window as any).electronAPI?.episodeProduction
@@ -1572,19 +1660,15 @@ async function onAIFillStoryboard(): Promise<void> {
     // metadata参数（仅填充空字段）
     if (aiData.lensFocalMm && !meta.lensFocalMm) {
       updateMetadataField('lensFocalMm', aiData.lensFocalMm)
-      lensFocalMmRef.value = aiData.lensFocalMm
     }
     if (aiData.aperture && !meta.aperture) {
       updateMetadataField('aperture', aiData.aperture)
-      apertureRef.value = aiData.aperture
     }
     if (aiData.cameraStyle && !meta.cameraStyle) {
       updateMetadataField('cameraStyle', aiData.cameraStyle)
-      cameraStyleRef.value = aiData.cameraStyle
     }
     if (aiData.lighting && !meta.lighting) {
       updateMetadataField('lighting', aiData.lighting)
-      lightingRef.value = aiData.lighting
     }
 
     // 转场参数
@@ -1594,6 +1678,9 @@ async function onAIFillStoryboard(): Promise<void> {
 
     // 关键帧数
     if (aiData.keyframeCount && !editDraft.keyframeCount) editDraft.keyframeCount = aiData.keyframeCount
+
+    // 重新按当前表单参数生成最终自由提示词，保证保存内容与界面一致
+    syncFrameDescriptionFromForm('save')
 
     // 同步更新到数据库
     await storyboardStore.updateStoryboard(selectedStoryboard.value.id, {
@@ -1692,7 +1779,7 @@ async function onGenerateAllScenes(): Promise<void> {
       return
     }
     const resp = await api.generateStoryboards(
-      script.value.id,
+      scriptStore.currentScript.id,
       sm.providerConfigId,
       sm.modelId,
     )
@@ -1781,8 +1868,8 @@ onBeforeUnmount(() => {
   flex: 1;
   display: grid;
   grid-template-columns: 220px 1fr;
-  gap: 12px;
-  padding: 12px;
+  gap: 6px;
+  padding: 6px 12px 12px;
   overflow: hidden;
   min-height: 0;
 }
@@ -1889,21 +1976,23 @@ onBeforeUnmount(() => {
 .main-area {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 6px;
   overflow-y: auto;
   min-height: 0;
 }
 
-/* 场景概览 banner */
+.hint-tertiary {
+  color: var(--el-text-color-placeholder);
+  font-size: 12px;
+}
+
+/* 顶部场景概览 */
 .scene-overview {
   background: var(--el-color-primary-light-9);
   border-left: 3px solid var(--el-color-primary);
   border-radius: 0 4px 4px 0;
-  padding: 10px 14px;
+  padding: 0;
   font-size: 13px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
 }
 
 .overview-line {
@@ -1911,12 +2000,6 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-}
-
-.overview-line.muted {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  font-style: italic;
 }
 
 .cast-label {
@@ -1927,9 +2010,31 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-placeholder);
 }
 
-.hint-tertiary {
-  color: var(--el-text-color-placeholder);
-  font-size: 12px;
+.compact-scene-context {
+  margin-bottom: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.compact-scene-context :deep(.el-collapse-item__header) {
+  min-height: 0;
+  height: auto;
+  line-height: normal;
+  padding: 10px 14px;
+  border-bottom: none;
+}
+
+.compact-scene-context :deep(.el-collapse-item__arrow) {
+  margin-left: auto;
+}
+
+.compact-scene-context :deep(.el-collapse-item__wrap) {
+  border-bottom: none;
+}
+
+.compact-scene-context :deep(.el-collapse-item__content) {
+  padding: 0 14px 10px;
 }
 
 /* 分镜网格 */
@@ -2070,16 +2175,17 @@ onBeforeUnmount(() => {
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
-  padding: 12px 14px;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .edit-header {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .edit-title {
@@ -2125,7 +2231,7 @@ onBeforeUnmount(() => {
 .scene-context-collapse {
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 4px;
-  margin-bottom: 10px;
+  margin-bottom: 4px;
   background: var(--el-fill-color-lighter);
 }
 
@@ -2210,12 +2316,13 @@ onBeforeUnmount(() => {
 
 .lang-toolbar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 10px 16px;
-  padding: 10px 12px;
+  gap: 6px;
+  padding: 6px 8px;
   background: var(--el-fill-color-lighter);
   border-radius: 4px;
+  overflow-x: auto;
 }
 
 .group-label {
@@ -2236,22 +2343,42 @@ onBeforeUnmount(() => {
 .tool-item {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 3px;
   flex: 0 0 auto;
   white-space: nowrap;
 }
 
 .tool-label {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--el-text-color-secondary);
   flex-shrink: 0;
 }
 
-/* 控件给最小宽度，避免标签 + 控件挤变形 */
+.group-label {
+  font-size: 11px;
+}
+
+/* 控件压缩宽度，尽量保持镜头参数一行展示 */
 .tool-item :deep(.el-select),
 .tool-item :deep(.el-input-number) {
-  min-width: 110px;
-  width: 110px;
+  min-width: 76px;
+  width: 76px;
+}
+
+.tool-item :deep(.el-select__wrapper),
+.tool-item :deep(.el-input__wrapper) {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.tool-item :deep(.el-input-number .el-input__inner) {
+  padding-left: 2px;
+  padding-right: 18px;
+}
+
+.tool-item :deep(.el-input-number__decrease),
+.tool-item :deep(.el-input-number__increase) {
+  width: 16px;
 }
 
 .suffix-x {
@@ -2260,33 +2387,111 @@ onBeforeUnmount(() => {
   margin-left: -2px;
 }
 
-/* 关键帧数 1-9 visual 按钮 */
-.kf-section {
-  border-top: 1px solid var(--el-border-color-lighter);
-  padding-top: 10px;
+.edit-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 360px);
+  gap: 10px;
+  align-items: start;
 }
 
-.kf-label {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
+.edit-left-column,
+.edit-right-column {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.edit-side-card {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background: var(--el-fill-color-lighter);
+  padding: 8px;
+}
+
+.edit-side-title {
   margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.side-toolbar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  overflow-x: visible;
+}
+
+.side-toolbar .tool-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 3px 4px;
+  min-width: 0;
+  white-space: normal;
+}
+
+.side-toolbar .tool-label {
+  grid-column: 1 / -1;
+}
+
+.side-toolbar .tool-item :deep(.el-select),
+.side-toolbar .tool-item :deep(.el-input-number) {
+  min-width: 0;
+  width: 100%;
+}
+
+.side-toolbar .suffix-x {
+  margin-left: 0;
+  line-height: 24px;
+}
+
+.side-toolbar .keyframe-tool-item {
+  grid-column: 1 / -1;
+}
+
+.side-toolbar .inline-kf-buttons {
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+}
+
+.audio-side-card {
+  background: var(--el-bg-color);
+}
+
+.prompt-focus-section {
+  border: 1px solid var(--el-color-primary-light-7);
+  border-radius: 6px;
+  padding: 8px;
+  background: linear-gradient(180deg, var(--el-color-primary-light-9), var(--el-bg-color));
+}
+
+/* 关键帧数按钮 */
+.inline-kf-buttons {
+  display: inline-flex;
+  gap: 3px;
+  flex-wrap: nowrap;
 }
 
 .kf-buttons {
   display: flex;
-  gap: 6px;
-  margin-bottom: 6px;
+  gap: 4px;
+  margin-bottom: 4px;
   flex-wrap: wrap;
 }
 
 .kf-btn {
   position: relative;
-  width: 36px;
-  height: 36px;
+  width: 26px;
+  height: 26px;
   border-radius: 4px;
   border: 1px solid var(--el-border-color);
   background: var(--el-bg-color);
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--el-text-color-regular);
   cursor: pointer;
@@ -2309,46 +2514,31 @@ onBeforeUnmount(() => {
   color: var(--el-color-primary);
 }
 
-.recommend-tip {
-  position: absolute;
-  bottom: -14px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 9px;
-  color: var(--el-color-primary);
-  white-space: nowrap;
-}
-
-.kf-tip {
-  margin: 0;
-  font-size: 11px;
-  color: var(--el-text-color-secondary);
-  margin-top: 12px;
-}
-
 .desc-section {
   border-top: 1px solid var(--el-border-color-lighter);
-  padding-top: 10px;
+  padding-top: 6px;
 }
 
 .desc-label {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
-  margin-bottom: 6px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  margin-bottom: 4px;
 }
 
 .characters-section {
   border-top: 1px solid var(--el-border-color-lighter);
-  padding-top: 10px;
+  padding-top: 6px;
 }
 
 .char-label {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   font-size: 12px;
-  color: var(--el-text-color-secondary);
-  margin-bottom: 8px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  margin-bottom: 4px;
 }
 
 .empty-hint-inline {
@@ -2391,8 +2581,31 @@ onBeforeUnmount(() => {
   color: var(--el-color-danger);
 }
 
+.binding-row-sections {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  border-top: 1px solid var(--el-border-color-lighter);
+  padding-top: 6px;
+}
+
+.binding-row-sections .characters-section {
+  border-top: none;
+  padding-top: 0;
+}
+
 .bindings-section {
-  margin-top: 8px;
+  margin-top: 0;
+}
+
+@media (max-width: 1100px) {
+  .edit-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .binding-row-sections {
+    grid-template-columns: 1fr;
+  }
 }
 
 .bindings-chips {
@@ -2403,6 +2616,17 @@ onBeforeUnmount(() => {
 
 .binding-chip {
   font-size: 12px;
+}
+
+.binding-add-btn {
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+}
+
+.compact-empty {
+  padding: 0;
+  line-height: 24px;
 }
 
 /* 继承自场景的 chip 用虚线边框区分，避免误以为是分镜级独立配置 */

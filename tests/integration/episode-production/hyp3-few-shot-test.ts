@@ -23,6 +23,29 @@ import { createDirectCallAI, canRunRealTest } from './direct-call-ai'
 import * as fs from 'fs'
 import * as path from 'path'
 
+// ==================== 加载 .env.local 中的 API 密钥 ====================
+// 在导入其他模块之前先加载环境变量
+function loadEnvLocal() {
+  const envPath = path.join(__dirname, '../../../.env.local')
+  if (!fs.existsSync(envPath)) return
+
+  const content = fs.readFileSync(envPath, 'utf-8')
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const match = trimmed.match(/^([^=]+)=(.*)$/)
+    if (match) {
+      const key = match[1].trim()
+      const value = match[2].trim()
+      // 只设置尚未存在的环境变量（命令行优先）
+      if (!process.env[key]) {
+        process.env[key] = value
+      }
+    }
+  }
+}
+loadEnvLocal()
+
 // ==================== Mock callAI（用于演示 / 无 API 密钥时降级） ====================
 
 async function mockCallAI(

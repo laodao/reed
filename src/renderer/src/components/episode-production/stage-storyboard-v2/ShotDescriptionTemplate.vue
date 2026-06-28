@@ -1,240 +1,200 @@
 <template>
-  <!--
-    ShotDescriptionTemplate · 双模板单镜画面描述（spec 2026-05-09 ep-redesign §3.2 B4 · P-11）
-
-    替代分镜 stage 的空白 textarea，给用户两种结构化模板 + 自由文本：
-      ⚡ 短剧 5 段（默认）：角色 / 场景情境 / 戏剧冲突 / 节奏 / 镜头偏好
-      🎬 影视 shot-level：subject / action / camera / lighting / mood
-      ✏️ 自由文本：保留原 textarea
-
-    双母语：
-      大众用户 → 短剧 5 段模板，placeholder 提供示例
-      专业用户 → 影视 shot-level 用电影行业母语 / 自由文本完全自定义
-
-    存储：仍写到 storyboards.frame_description（不动 schema）；
-    模板字段折叠拼装到一行文本。模式选择不持久化到 metadata（保持简化；用户切换无副作用）。
-  -->
   <div class="shot-desc-template">
-    <header class="template-header">
-      <el-radio-group v-model="mode" size="small">
-        <el-radio-button value="short_drama">⚡ 短剧 5 段</el-radio-button>
-        <el-radio-button value="film">🎬 影视 shot-level</el-radio-button>
-        <el-radio-button value="free">✏️ 自由文本</el-radio-button>
-      </el-radio-group>
-      <el-tooltip placement="bottom-start" effect="light">
-        <el-icon class="help-icon"><QuestionFilled /></el-icon>
-        <template #content>
-          <div style="max-width: 280px; line-height: 1.6;">
-            <div><strong>短剧 5 段</strong>：大众短剧用户母语（角色/情境/冲突/节奏/镜头偏好）</div>
-            <div><strong>影视 shot-level</strong>：电影分镜表标准（subject/action/camera/lighting/mood）</div>
-            <div><strong>自由文本</strong>：完全自定义</div>
-            <div style="margin-top: 4px; color: #aaa;">三种模板都拼装到 frame_description；切换不丢失数据</div>
-          </div>
-        </template>
-      </el-tooltip>
-    </header>
-
-    <!-- ⚡ 短剧 5 段 -->
-    <el-form v-if="mode === 'short_drama'" label-position="top" size="small" class="template-form">
-      <el-form-item label="角色">
-        <el-input v-model="shortDrama.character" placeholder="如：少年阿白" />
-      </el-form-item>
-      <el-form-item label="场景情境">
-        <el-input v-model="shortDrama.scene" type="textarea" :rows="2" placeholder="如：黄昏的酒馆，煤油灯昏黄" />
-      </el-form-item>
-      <el-form-item label="戏剧冲突">
-        <el-input v-model="shortDrama.conflict" type="textarea" :rows="2" placeholder="如：突遇追兵闯入" />
-      </el-form-item>
-      <el-form-item label="节奏">
-        <el-radio-group v-model="shortDrama.pace" size="small">
-          <el-radio-button value="slow">慢</el-radio-button>
-          <el-radio-button value="medium">中</el-radio-button>
-          <el-radio-button value="fast">快</el-radio-button>
-          <el-radio-button value="twist">反转</el-radio-button>
-        </el-radio-group>
-      </el-form-item>
-      <el-form-item label="镜头偏好">
-        <el-input v-model="shortDrama.cameraHint" placeholder="如：低角度推镜 / 特写 / 全景" />
-      </el-form-item>
-    </el-form>
-
-    <!-- 🎬 影视 shot-level -->
-    <el-form v-if="mode === 'film'" label-position="top" size="small" class="template-form">
-      <el-form-item label="主体">
-        <el-input v-model="film.subject" placeholder="画面中的主要人物或物体" />
-      </el-form-item>
-      <el-form-item label="动作">
-        <el-input v-model="film.action" type="textarea" :rows="2" placeholder="正在发生什么" />
-      </el-form-item>
-      <el-form-item label="镜头">
-        <el-input v-model="film.camera" placeholder="如：中景、低角度、推镜" />
-      </el-form-item>
-      <el-form-item label="光线">
-        <el-input v-model="film.lighting" placeholder="如：侧光、暖色调主光" />
-      </el-form-item>
-      <el-form-item label="氛围">
-        <el-input v-model="film.mood" placeholder="如：紧张、忧郁、温馨" />
-      </el-form-item>
-    </el-form>
-
-    <!-- ✏️ 自由文本 -->
-    <el-input
-      v-if="mode === 'free'"
-      v-model="freeText"
-      type="textarea"
-      :rows="4"
-      placeholder="如：少年推门而入，雨水顺着帽檐滴落..."
+    <div
+      ref="editorRef"
+      class="rich-prompt-editor"
+      contenteditable="true"
+      role="textbox"
+      aria-multiline="true"
+      spellcheck="false"
+      :data-placeholder="placeholder"
+      @compositionstart="onCompositionStart"
+      @compositionend="onCompositionEnd"
+      @input="onInput"
     />
-
-    <!-- 拼装预览（短剧 / 影视模式下显示） -->
-    <div v-if="mode !== 'free'" class="preview">
-      <span class="preview-label">📄 拼装结果：</span>
-      <code class="preview-text">{{ assembled || '（暂无）' }}</code>
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
-import { QuestionFilled } from '@element-plus/icons-vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
+import {
+  parseEntityRefs,
+  type EntityRefMeta,
+} from '../shared/entity-ref-parser'
 
-const props = defineProps<{ modelValue: string }>()
+const props = defineProps<{
+  modelValue: string
+  entities?: EntityRefMeta[]
+}>()
+
 const emit = defineEmits<{ 'update:modelValue': [string] }>()
 
-type ShotMode = 'short_drama' | 'film' | 'free'
-const mode = ref<ShotMode>('short_drama')
+const editorRef = ref<HTMLElement | null>(null)
+const placeholder = '请输入自由提示词；可用 @角色名 / @地点 / @物品 引用资产...'
+let rendering = false
+let composing = false
 
-const shortDrama = reactive<{
-  character: string
-  scene: string
-  conflict: string
-  pace: 'slow' | 'medium' | 'fast' | 'twist'
-  cameraHint: string
-}>({
-  character: '',
-  scene: '',
-  conflict: '',
-  pace: 'medium',
-  cameraHint: '',
-})
-
-const film = reactive<{
-  subject: string
-  action: string
-  camera: string
-  lighting: string
-  mood: string
-}>({
-  subject: '',
-  action: '',
-  camera: '',
-  lighting: '',
-  mood: '',
-})
-
-const freeText = ref('')
-
-// 初始化：从 modelValue 同步到 freeText（默认 mode=short_drama，但 modelValue 可能是老的非结构化文本）
-watch(
-  () => props.modelValue,
-  (v) => {
-    if (mode.value === 'free') {
-      if (v !== freeText.value) freeText.value = v ?? ''
-    }
-  },
-  { immediate: true },
-)
-
-const PACE_LABELS: Record<typeof shortDrama.pace, string> = {
-  slow: '慢',
-  medium: '中',
-  fast: '快',
-  twist: '反转',
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
-const assembled = computed(() => {
-  if (mode.value === 'short_drama') {
-    const s = shortDrama
-    const parts: string[] = []
-    if (s.character.trim()) parts.push(s.character.trim())
-    if (s.scene.trim()) parts.push(`场景情境：${s.scene.trim()}`)
-    if (s.conflict.trim()) parts.push(`戏剧冲突：${s.conflict.trim()}`)
-    if (s.pace) parts.push(`节奏：${PACE_LABELS[s.pace]}`)
-    if (s.cameraHint.trim()) parts.push(`镜头偏好：${s.cameraHint.trim()}`)
-    return parts.join('；')
-  }
-  if (mode.value === 'film') {
-    const f = film
-    const parts: string[] = []
-    if (f.subject.trim()) parts.push(`Subject: ${f.subject.trim()}`)
-    if (f.action.trim()) parts.push(`Action: ${f.action.trim()}`)
-    if (f.camera.trim()) parts.push(`Camera: ${f.camera.trim()}`)
-    if (f.lighting.trim()) parts.push(`Lighting: ${f.lighting.trim()}`)
-    if (f.mood.trim()) parts.push(`Mood: ${f.mood.trim()}`)
-    return parts.join('. ')
-  }
-  return freeText.value
-})
+function toEditorHtml(text: string): string {
+  if (!text) return ''
+  return parseEntityRefs(text, props.entities ?? [])
+    .map((seg) => {
+      if (seg.type === 'text') return escapeHtml(seg.text)
+      const typeClass = seg.sourceType === 'linked_lw' ? 'linked-lw' : 'standalone'
+      return `<span class="entity-ref-token ${typeClass}" data-entity-id="${escapeHtml(seg.id ?? '')}">@${escapeHtml(seg.name)}</span>`
+    })
+    .join('')
+}
 
-watch(assembled, (v) => emit('update:modelValue', v))
+function currentText(): string {
+  const el = editorRef.value
+  if (!el) return ''
+  return (el.innerText ?? '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\u00a0/g, ' ')
+    .replace(/\n$/, '')
+}
 
-// 切换模式时不主动写入（保持当前值；切回模式时各自字段保留）
-watch(mode, (m) => {
-  if (m === 'free') {
-    // 切到自由文本时，把当前 assembled 拷到 freeText（让用户能继续编辑）
-    if (!freeText.value) freeText.value = props.modelValue ?? ''
+function caretOffset(root: HTMLElement): number | null {
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0) return null
+  const range = selection.getRangeAt(0)
+  if (!root.contains(range.endContainer)) return null
+  const preRange = range.cloneRange()
+  preRange.selectNodeContents(root)
+  preRange.setEnd(range.endContainer, range.endOffset)
+  return preRange.toString().length
+}
+
+function restoreCaret(root: HTMLElement, offset: number): void {
+  const selection = window.getSelection()
+  if (!selection) return
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  let remaining = offset
+  let node = walker.nextNode() as Text | null
+  while (node) {
+    const length = node.textContent?.length ?? 0
+    if (remaining <= length) {
+      const range = document.createRange()
+      range.setStart(node, remaining)
+      range.collapse(true)
+      selection.removeAllRanges()
+      selection.addRange(range)
+      return
+    }
+    remaining -= length
+    node = walker.nextNode() as Text | null
   }
-})
+  const range = document.createRange()
+  range.selectNodeContents(root)
+  range.collapse(false)
+  selection.removeAllRanges()
+  selection.addRange(range)
+}
+
+function render(text: string): void {
+  const el = editorRef.value
+  if (!el) return
+  const offset = document.activeElement === el ? caretOffset(el) : null
+  rendering = true
+  el.innerHTML = toEditorHtml(text)
+  void nextTick(() => {
+    if (offset != null) restoreCaret(el, Math.min(offset, text.length))
+    rendering = false
+  })
+}
+
+function onCompositionStart(): void {
+  composing = true
+}
+
+function onCompositionEnd(): void {
+  composing = false
+  onInput()
+}
+
+function onInput(): void {
+  if (rendering) return
+  const text = currentText()
+  emit('update:modelValue', text)
+  if (!composing) render(text)
+}
+
+watch(
+  () => [props.modelValue, props.entities] as const,
+  () => {
+    if (composing) return
+    const el = editorRef.value
+    if (el && document.activeElement === el && currentText() === (props.modelValue ?? '')) return
+    render(props.modelValue ?? '')
+  },
+  { deep: true },
+)
+
+onMounted(() => render(props.modelValue ?? ''))
 </script>
 
 <style scoped lang="scss">
 .shot-desc-template {
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 
-.template-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.help-icon {
-  cursor: help;
-  color: var(--el-text-color-placeholder);
-  font-size: 14px;
-}
-
-.template-form {
-  background: var(--el-fill-color-lighter);
+.rich-prompt-editor {
+  min-height: 180px;
+  max-height: 360px;
+  overflow-y: auto;
+  box-sizing: border-box;
+  width: 100%;
   padding: 8px 10px;
+  border: 1px solid var(--el-border-color);
   border-radius: 4px;
-}
-
-.template-form :deep(.el-form-item) {
-  margin-bottom: 8px;
-}
-
-.preview {
-  display: flex;
-  gap: 6px;
-  align-items: flex-start;
-  font-size: 11px;
-  padding: 6px 8px;
-  background: var(--el-color-primary-light-9);
-  border-radius: 4px;
-}
-
-.preview-label {
-  color: var(--el-text-color-secondary);
-  flex-shrink: 0;
-}
-
-.preview-text {
-  font-family: ui-monospace, monospace;
+  background: var(--el-bg-color);
   color: var(--el-text-color-primary);
+  font-size: 12px;
+  line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
+  outline: none;
+}
+
+.rich-prompt-editor:focus {
+  border-color: var(--el-color-primary);
+  box-shadow: 0 0 0 1px var(--el-color-primary-light-7);
+}
+
+.rich-prompt-editor:empty::before {
+  content: attr(data-placeholder);
+  color: var(--el-text-color-placeholder);
+  pointer-events: none;
+}
+
+.rich-prompt-editor :deep(.entity-ref-token) {
+  display: inline-block;
+  margin: 0 2px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.rich-prompt-editor :deep(.entity-ref-token.linked-lw) {
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  border: 1px solid var(--el-color-primary-light-5);
+}
+
+.rich-prompt-editor :deep(.entity-ref-token.standalone) {
+  color: var(--el-color-warning);
+  background: var(--el-color-warning-light-9);
+  border: 1px solid var(--el-color-warning-light-5);
 }
 </style>

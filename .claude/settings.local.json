@@ -359,7 +359,16 @@
       "Bash(tee /tmp/eb.log)",
       "Bash(kill %1)",
       "Bash(PGDATABASE=the_bot_test npm run *)",
-      "WebFetch(domain:playwright.dev)"
+      "WebFetch(domain:playwright.dev)",
+      "mcp__codegraph__codegraph_explore",
+      "mcp__codegraph__codegraph_node",
+      "WebFetch(domain:www.promptingguide.ai)",
+      "WebFetch(domain:www.supercharge.io)",
+      "WebFetch(domain:thomas-wiegold.com)",
+      "WebFetch(domain:cdn.prod.website-files.com)",
+      "Bash(find packages:*)",
+      "Bash(AB_TEST_RUNS_PER_SAMPLE=2 npm run test:hyp3 2>&1)",
+      "Bash(AB_TEST_RUNS_PER_SAMPLE=5 npm run test:hyp3 2>&1)"
     ]
   }
 }
