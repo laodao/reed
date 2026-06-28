@@ -277,6 +277,9 @@ export class EpisodeScriptGenerator {
    * 支持新旧两种格式标记：
    * - 新格式：【梗概开始】【梗概结束】等（适配国产大模型）
    * - 旧格式：===SYNOPSIS=== ===SYNOPSIS_END=== 等（兼容旧版）
+   *
+   * BUG-2 前置（v2.3）：添加结构化路径追踪，统计每种解析路径的命中频率。
+   * 这些数据用于判断是否有必要做标记系统统一。
    */
   private extractFullScriptFromResponse(
     response: string,
@@ -285,28 +288,48 @@ export class EpisodeScriptGenerator {
     console.log('[EpisodeScriptGenerator] 解析完整剧本响应，长度:', response.length)
     console.log('[EpisodeScriptGenerator] 响应前1000字符:', response.substring(0, 1000))
 
+    // BUG-2 前置：解析路径追踪
+    const pathTrace = {
+      synopsisPath: 'none' as 'new' | 'old' | 'json-fallback' | 'none',
+      scriptPath: 'new' | 'old' | 'none',
+      scenesPath: 'none' as 'new' | 'old' | 'json-block' | 'fallback' | 'failed',
+      scenesCount: 0,
+    }
+
     let synopsis = ''
     let scriptContent = ''
     let scenes: GeneratedScene[] = []
 
     // 新格式：【梗概开始】【梗概结束】
     const synopsisMatchNew = response.match(/【梗概开始】\s*([\s\S]*?)\s*【梗概结束】/)
-    if (synopsisMatchNew) synopsis = synopsisMatchNew[1].trim()
+    if (synopsisMatchNew) {
+      synopsis = synopsisMatchNew[1].trim()
+      pathTrace.synopsisPath = 'new'
+    }
 
     // 旧格式兼容：===SYNOPSIS=== ===SYNOPSIS_END===
     if (!synopsis) {
       const synopsisMatchOld = response.match(/===SYNOPSIS===\s*([\s\S]*?)\s*===SYNOPSIS_END===/)
-      if (synopsisMatchOld) synopsis = synopsisMatchOld[1].trim()
+      if (synopsisMatchOld) {
+        synopsis = synopsisMatchOld[1].trim()
+        pathTrace.synopsisPath = 'old'
+      }
     }
 
     // 新格式：【剧本正文开始】【剧本正文结束】
     const scriptMatchNew = response.match(/【剧本正文开始】\s*([\s\S]*?)\s*【剧本正文结束】/)
-    if (scriptMatchNew) scriptContent = scriptMatchNew[1].trim()
+    if (scriptMatchNew) {
+      scriptContent = scriptMatchNew[1].trim()
+      pathTrace.scriptPath = 'new'
+    }
 
     // 旧格式兼容
     if (!scriptContent) {
       const scriptMatchOld = response.match(/===SCRIPT===\s*([\s\S]*?)\s*===SCRIPT_END===/)
-      if (scriptMatchOld) scriptContent = scriptMatchOld[1].trim()
+      if (scriptMatchOld) {
+        scriptContent = scriptMatchOld[1].trim()
+        pathTrace.scriptPath = 'old'
+      }
     }
 
     // 场景数据解析（尝试多种格式）
@@ -315,6 +338,7 @@ export class EpisodeScriptGenerator {
     if (scenesMatchNew) {
       console.log('[EpisodeScriptGenerator] 找到新格式场景标记')
       scenes = this.parseScenesJson(scenesMatchNew[1].trim(), roster)
+      pathTrace.scenesPath = 'new'
     }
 
     // 2. 旧格式：===SCENES_JSON=== ===SCENES_JSON_END===
@@ -323,6 +347,7 @@ export class EpisodeScriptGenerator {
       if (scenesMatchOld) {
         console.log('[EpisodeScriptGenerator] 找到旧格式场景标记')
         scenes = this.parseScenesJson(scenesMatchOld[1].trim(), roster)
+        pathTrace.scenesPath = 'old'
       }
     }
 
@@ -332,6 +357,7 @@ export class EpisodeScriptGenerator {
       if (jsonBlockMatch) {
         console.log('[EpisodeScriptGenerator] 找到 json 代码块')
         scenes = this.parseScenesJson(jsonBlockMatch[1].trim(), roster)
+        pathTrace.scenesPath = 'json-block'
       }
     }
 
@@ -347,6 +373,7 @@ export class EpisodeScriptGenerator {
             const data = this.parseJsonString(jsonStr)
             if (data.scenes && Array.isArray(data.scenes)) {
               scenes = this.convertSceneDataToGeneratedScenes(data.scenes, roster)
+              pathTrace.scenesPath = 'fallback'
             }
           } catch (e) {
             console.error('[EpisodeScriptGenerator] 直接提取 scenes 失败:', e)
@@ -361,12 +388,19 @@ export class EpisodeScriptGenerator {
         const anyJsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/) || response.match(/\{[\s\S]*"scenes"[\s\S]*\}/)
         if (anyJsonMatch) {
           const data = this.parseJsonString(anyJsonMatch[0])
-          if (data.synopsis) synopsis = data.synopsis
+          if (data.synopsis) {
+            synopsis = data.synopsis
+            pathTrace.synopsisPath = 'json-fallback'
+          }
         }
       } catch {
         // 忽略
       }
     }
+
+    // 记录场景数
+    pathTrace.scenesCount = scenes.length
+    if (scenes.length === 0) pathTrace.scenesPath = 'failed'
 
     if (!scriptContent) console.warn('[EpisodeScriptGenerator] 未找到剧本正文')
     if (scenes.length === 0) {
@@ -375,6 +409,9 @@ export class EpisodeScriptGenerator {
     } else {
       console.log('[EpisodeScriptGenerator] 成功解析场景数:', scenes.length)
     }
+
+    // BUG-2 前置：输出结构化路径追踪日志（JSON 格式，便于后续统计）
+    console.log('[EpisodeScriptGenerator] 解析路径追踪:', JSON.stringify(pathTrace))
 
     return { synopsis, scriptContent, scenes }
   }
