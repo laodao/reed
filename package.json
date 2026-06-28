@@ -40,6 +40,7 @@
     "test:e2e:debug": "playwright test --debug",
     "test:e2e:web": "playwright test --config=playwright.web.config.ts",
     "test:e2e:web:ui": "playwright test --config=playwright.web.config.ts --ui",
+    "test:hyp3": "tsx -r tsconfig-paths/register tests/integration/episode-production/hyp3-few-shot-test.ts",
     "pg:up": "bash scripts/test-pg-up.sh",
     "pg:down": "bash scripts/test-pg-down.sh",
     "fix-encoding": "electron scripts/fix-chunk-encoding.js"

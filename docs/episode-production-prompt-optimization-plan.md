@@ -1,6 +1,6 @@
 # 剧集制作模块系统提示词优化方案（v2）
 
-> **版本**：2.3（v2.0 已回滚：commit c6351e04；v1 已回滚：同）
+> **版本**：2.4（v2.0 已回滚：commit c6351e04；v1 已回滚：同）
 > **最后更新**：2026-06-28
 > **状态**：待评审
 >
@@ -9,6 +9,7 @@
 > v2.1 修正：逐文件读代码验证所有 BUG 声明，删除不成立的 BUG-3，修正 BUG-2/BUG-4 的描述精度。
 > v2.2 修正：修正逻辑错误（HYP-1 因果链），删除凭空猜测的数字，补充理论依据局限性说明，调整优先级排序。
 > v2.3 修正：BUG-3（race 字段）升级为确定性 Bug（深入验证发现两个功能写入同一字段）；BUG-2 拆分为加监控和数据驱动决策两步。
+> v2.4 修正：完成 A/B 测试基础设施（类型定义、核心框架、直接调用 AI、HYP-3 测试用例），HYP-3 可随时运行。
 
 ---
 
@@ -617,7 +618,7 @@ const contextInfo = [
 | 3 | BUG-3 | Bug 修复 | ✅ 低 | 已完成（正向提取 race 改枚举） | P1（已完成） |
 | 4 | BUG-2-监控 | 技术债务 | ✅ 低 | 已完成（添加结构化日志） | P2（已完成） |
 | 5 | BUG-2-统一 | 技术债务 | ⚠️ 中 | 依赖 BUG-2-监控 数据决定是否执行 | P3（待决策） |
-| 6 | HYP-3 | 待验证 | ⚠️ 中 | 先跑 A/B 测试（Few-shot 示例） | P3（低） |
+| 6 | HYP-3 | 待验证 | ⚠️ 中 | A/B 测试基础设施已完成，可运行 | P3（低） |
 | 7 | HYP-1 | 待验证 | ⚠️ 高 | 先跑 A/B/C 测试（JSON 强调程度） | P4（低） |
 | 8 | HYP-2 | 待验证 | ⚠️ 中 | 先跑 A/B 测试（角色设定，收益小） | P5（很低） |
 | 9 | HYP-4 | 待验证 | ⚠️ 中 | 先跑 A/B 测试（正向表述，理论依据弱） | P5（很低） |
@@ -632,39 +633,34 @@ const contextInfo = [
 ## 5. A/B 测试基础设施
 
 > 在做任何 HYP 验证之前，需要先建立测试基础设施。
+>
+> **状态**：✅ 基础设施已完成（commit `TBD`）
 
-### 5.1 测试框架
+### 5.1 已完成的文件
 
-```typescript
-// tests/integration/episode-production/prompt-ab-test.ts
+| 文件 | 功能 |
+|------|------|
+| `tests/integration/episode-production/types.ts` | 类型定义（PromptABTestConfig、ABTestResult 等） |
+| `tests/integration/episode-production/prompt-ab-test.ts` | 核心框架：统计函数、测试运行器、报告生成器 |
+| `tests/integration/episode-production/direct-call-ai.ts` | 直接调用 AI API（不依赖 Electron 数据库，通过环境变量配置） |
+| `tests/integration/episode-production/hyp3-few-shot-test.ts` | HYP-3 测试用例（Few-shot 示例） |
 
-interface PromptABTestConfig {
-  name: string
-  targetModels: string[]         // 目标模型（如 ['deepseek-v3', 'qwen-max']）
-  controlPrompt: string          // 对照组提示词（当前版本）
-  experimentPrompt: string       // 实验组提示词
-  samples: Array<{               // 测试样本
-    input: string                // 输入文本
-    expectedOutput?: any         // 预期输出（可选）
-  }>
-  runsPerSample: number          // 每样本运行次数
-  metrics: {
-    primary: 'parseSuccessRate' | 'fieldCompleteness' | 'enumCompliance' | 'humanScore'
-    secondary?: string[]
-  }
-}
+### 5.2 测试框架设计
 
-interface ABTestResult {
-  testName: string
-  model: string
-  controlMetrics: MetricSummary
-  experimentMetrics: MetricSummary
-  statisticalSignificance: number  // p-value
-  recommendation: 'adopt' | 'reject' | 'inconclusive'
-}
+```bash
+# Mock 模式（验证框架逻辑）
+npm run test:hyp3
+
+# 真实 AI 模式（需要设置 API 密钥）
+AB_TEST_DEEPSEEK_API_KEY=xxx AB_TEST_QWEN_API_KEY=xxx npm run test:hyp3
+
+# 调整运行次数（默认 10 次/样本）
+AB_TEST_RUNS_PER_SAMPLE=30 AB_TEST_DEEPSEEK_API_KEY=xxx npm run test:hyp3
 ```
 
-### 5.2 自动化指标采集
+测试报告自动生成到 `tests/reports/hyp3-few-shot-test-report.md`。
+
+### 5.3 自动化指标采集
 
 | 指标 | 采集方式 |
 |------|----------|
@@ -674,7 +670,7 @@ interface ABTestResult {
 | Token 数 | `tiktoken` 或模型 API 返回的 `usage` 字段 |
 | 人工评分 | 导出 A/B 输出到评审界面，由人工打分 |
 
-### 5.3 统计方法
+### 5.4 统计方法
 
 - 使用**双样本 t 检验**（连续指标，如解析成功率）
 - 显著性水平 α = 0.05
@@ -716,12 +712,17 @@ interface ABTestResult {
 |------|------|----------|--------|
 | 确定性 Bug | 3 个（BUG-1, BUG-3, BUG-4） | 直接修复，独立 commit | P0-P1（全部完成） |
 | 技术债务 | 1 个（BUG-2：标记不一致） | 监控已添加，待收集数据后决策 | P2（监控完成）→ P3（待决策） |
+| A/B 测试基础设施 | 1 套 | 类型/框架/直调AI/测试用例 | ✅ 已完成 |
 | 待验证假设 | 4 个（HYP-1 到 HYP-4） | 先 A/B 测试，数据驱动决策 | P3-P5 |
 | 已验证不成立 | 1 个（原 BUG-3：binding ID 丢失） | 代码已传入 binding ID，删除 | - |
-| 已完成 | 3 个（BUG-1/3/4）+ BUG-2 监控 | 已实施并保留 | - |
+| 已完成 | 3 个（BUG-1/3/4）+ BUG-2 监控 + A/B 基础设施 | 已实施并保留 | - |
 
 **核心原则**：不做没有依据的优化，不做没有验证的修改。
 **目标**：每次优化都可追溯、可量化、可回滚。
+
+**v2.4 更新要点**：
+1. A/B 测试基础设施完成：类型定义、核心框架（统计检验+报告生成）、直接调用 AI（环境变量配置，不依赖 Electron）、HYP-3 测试用例
+2. 运行命令：`AB_TEST_DEEPSEEK_API_KEY=xxx AB_TEST_QWEN_API_KEY=xxx npm run test:hyp3`
 
 **v2.3 更新要点**：
 1. BUG-3（race 字段）从"设计评估"升级为"确定性 Bug"：经深入代码验证，发现两个功能写入同一数据库字段（已修复 commit 5478db18）
