@@ -169,7 +169,7 @@ VLM 推断结果无法被分镜系统直接使用，用户看到的景别/角度
 - 如果迁移后解析成功率下降超过 5%，回滚该迁移
 - 旧格式兼容代码移除前，统计线上数据确认无流量
 
-**状态**：⏳ 待执行前置监控（技术债务，非紧急）
+**状态**：✅ 监控已添加（commit `af46a352`），待收集数据后决策是否统一
 
 #### 2.2.7 前置工作：添加结构化监控日志
 
@@ -177,21 +177,20 @@ VLM 推断结果无法被分镜系统直接使用，用户看到的景别/角度
 
 **现有代码已有日志**（`script-generator.ts` 第 285-598 行），但都是非结构化的 `console.log`，无法统计。
 
-**改造方案**：在 `extractFullScriptFromResponse` 方法中，为每层 fallback 添加结构化计数器：
+**改造方案（已实施）**：在 `extractFullScriptFromResponse` 方法中，添加了 `pathTrace` 对象：
 
 ```typescript
-// 新增：解析路径统计
-interface ParsePathStats {
-  synopsisNew: number     // 【梗概开始】命中次数
-  synopsisOld: number     // ===SYNOPSIS=== 命中次数
-  scriptNew: number       // 【剧本正文开始】命中次数
-  scriptOld: number       // ===SCRIPT=== 命中次数
-  scenesNew: number       // 【场景数据开始】命中次数
-  scenesOld: number       // ===SCENES_JSON=== 命中次数
-  scenesJsonBlock: number // ```json``` 命中次数
-  scenesFallback: number  // 直接提取 scenes 数组命中次数
-  scenesFailed: number    // 所有路径都失败次数
+const pathTrace = {
+  synopsisPath: 'new' | 'old' | 'json-fallback' | 'none',
+  scriptPath: 'new' | 'old' | 'none',
+  scenesPath: 'new' | 'old' | 'json-block' | 'fallback' | 'failed',
+  scenesCount: number,
 }
+```
+
+每次解析后输出一条 JSON 格式的日志：
+```
+[EpisodeScriptGenerator] 解析路径追踪: {"synopsisPath":"new","scriptPath":"new","scenesPath":"new","scenesCount":5}
 ```
 
 **收集方式**：
@@ -203,7 +202,7 @@ interface ParsePathStats {
 - 如果 `scenesJsonBlock` 命中率 > 20% → 说明 DeepSeek 等模型确实偏好代码块格式，应该把代码块格式作为主要格式之一
 - 如果 `scenesFailed` > 5% → 说明确实有解析失败问题，需要优先修复标记系统
 
-**状态**：⏳ 待执行（添加监控后运行一段时间，再决定是否修复）
+**状态**：✅ 已完成（commit `af46a352`），待收集数据
 
 ---
 
@@ -615,18 +614,18 @@ const contextInfo = [
 |------|------|------|------|----------|--------|
 | 1 | BUG-1 | Bug 修复 | ✅ 低 | 已完成（VLM 枚举映射） | P0（已完成） |
 | 2 | BUG-4 | Bug 修复 | ✅ 低 | 已完成（分析结果传递） | P0（已完成） |
-| 3 | BUG-3 | Bug 修复 | ✅ 低 | 可立即执行（正向提取 race 改枚举） | P1（高） |
-| 4 | BUG-2-监控 | 技术债务 | ✅ 低 | 添加结构化监控日志，运行一段时间 | P2（中） |
-| 5 | BUG-2-统一 | 技术债务 | ⚠️ 中 | 依赖 BUG-2-监控 数据决定是否执行 | P3（低） |
+| 3 | BUG-3 | Bug 修复 | ✅ 低 | 已完成（正向提取 race 改枚举） | P1（已完成） |
+| 4 | BUG-2-监控 | 技术债务 | ✅ 低 | 已完成（添加结构化日志） | P2（已完成） |
+| 5 | BUG-2-统一 | 技术债务 | ⚠️ 中 | 依赖 BUG-2-监控 数据决定是否执行 | P3（待决策） |
 | 6 | HYP-3 | 待验证 | ⚠️ 中 | 先跑 A/B 测试（Few-shot 示例） | P3（低） |
 | 7 | HYP-1 | 待验证 | ⚠️ 高 | 先跑 A/B/C 测试（JSON 强调程度） | P4（低） |
 | 8 | HYP-2 | 待验证 | ⚠️ 中 | 先跑 A/B 测试（角色设定，收益小） | P5（很低） |
 | 9 | HYP-4 | 待验证 | ⚠️ 中 | 先跑 A/B 测试（正向表述，理论依据弱） | P5（很低） |
 
-> **优先级调整说明（v2.3）**：
-> - BUG-3 升级为 P1：已确认两个功能写入同一数据库字段，是实际数据一致性问题，修复风险低
-> - BUG-2 拆分为两步：先加监控（P2），收集数据后决定是否统一（P3）
-> - 其他优先级不变
+> **优先级调整说明（v2.3 最终版）**：
+> - BUG-1/3/4 全部完成
+> - BUG-2 监控已添加，待收集数据后决定是否统一标记
+> - 下一步：运行一段时间收集数据，然后根据决策标准判断是否执行 BUG-2-统一
 
 ---
 
@@ -715,18 +714,18 @@ interface ABTestResult {
 
 | 类别 | 数量 | 处理方式 | 优先级 |
 |------|------|----------|--------|
-| 确定性 Bug | 3 个（BUG-1, BUG-3, BUG-4） | 直接修复，独立 commit | P0-P1 |
-| 技术债务 | 1 个（BUG-2：标记不一致） | 先加监控收集数据，再决定是否统一 | P2-P3 |
+| 确定性 Bug | 3 个（BUG-1, BUG-3, BUG-4） | 直接修复，独立 commit | P0-P1（全部完成） |
+| 技术债务 | 1 个（BUG-2：标记不一致） | 监控已添加，待收集数据后决策 | P2（监控完成）→ P3（待决策） |
 | 待验证假设 | 4 个（HYP-1 到 HYP-4） | 先 A/B 测试，数据驱动决策 | P3-P5 |
 | 已验证不成立 | 1 个（原 BUG-3：binding ID 丢失） | 代码已传入 binding ID，删除 | - |
-| 已完成 | 2 个（BUG-1：VLM 枚举映射，BUG-4：分析结果传递） | 已实施并保留 | - |
+| 已完成 | 3 个（BUG-1/3/4）+ BUG-2 监控 | 已实施并保留 | - |
 
 **核心原则**：不做没有依据的优化，不做没有验证的修改。
 **目标**：每次优化都可追溯、可量化、可回滚。
 
 **v2.3 更新要点**：
-1. BUG-3（race 字段）从"设计评估"升级为"确定性 Bug"：经深入代码验证，发现两个功能写入同一数据库字段
-2. BUG-2 拆分为"加监控"（P2）和"统一标记"（P3）两步，先收集数据再决策
+1. BUG-3（race 字段）从"设计评估"升级为"确定性 Bug"：经深入代码验证，发现两个功能写入同一数据库字段（已修复 commit 5478db18）
+2. BUG-2 拆分为"加监控"（已完成 commit af46a352）和"数据驱动统一决策"（待收集数据）两步
 3. BUG-4 已完成（commit 1054e0dc）
 
 **重要提醒**：
