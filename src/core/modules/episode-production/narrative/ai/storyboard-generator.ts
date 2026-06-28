@@ -505,7 +505,8 @@ ${sceneScript.actions.map(a => `- ${a.description}`).join('\n')}
     shotNumber: number,
     previousStoryboards: StoryboardResult[] = [],
     providerConfigId?: string,
-    modelId?: string
+    modelId?: string,
+    analysisResult?: { shotCount: number; shotTypes: string[]; notes: string }
   ): Promise<StoryboardResult> {
     // 构建场景剧本描述
     const sceneDescription = `
@@ -532,11 +533,22 @@ ${sceneScript.actions.map(a => `- ID: ${a.id}, 描述: ${a.description}`).join('
 
     // 构建上下文信息
     let contextInfo = ''
+
+    // 如果有整体分析结果，先加入整体规划信息
+    if (analysisResult && analysisResult.shotTypes.length > 0) {
+      contextInfo += `整体分镜规划：本场景预计 ${analysisResult.shotCount} 个镜头，建议景别序列为 [${analysisResult.shotTypes.join(', ')}]。`
+      if (analysisResult.notes) {
+        contextInfo += `规划说明：${analysisResult.notes}`
+      }
+      contextInfo += '\n\n'
+    }
+
+    // 再加入镜头位置信息
     if (shotNumber === 1) {
-      contextInfo = '这是场景的第一个镜头（开场镜头），需要建立场景环境，展示空间关系和人物位置。'
+      contextInfo += '这是场景的第一个镜头（开场镜头），需要建立场景环境，展示空间关系和人物位置。'
     } else if (previousStoryboards.length > 0) {
       const lastStoryboard = previousStoryboards[previousStoryboards.length - 1]
-      contextInfo = `上一个镜头（第${lastStoryboard.shotNumber}号）：
+      contextInfo += `上一个镜头（第${lastStoryboard.shotNumber}号）：
 - 景别: ${lastStoryboard.shotType}
 - 角度: ${lastStoryboard.cameraAngle}
 - 运镜: ${lastStoryboard.cameraMovement}
@@ -623,7 +635,8 @@ ${sceneScript.actions.map(a => `- ID: ${a.id}, 描述: ${a.description}`).join('
           i,
           storyboards,
           providerConfigId,
-          modelId
+          modelId,
+          analysis
         )
         storyboards.push(storyboard)
 
