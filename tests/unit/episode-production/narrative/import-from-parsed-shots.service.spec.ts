@@ -200,9 +200,9 @@ describe('ImportFromParsedShotsService', () => {
   describe('mapping helpers', () => {
     it('shotType 全枚举映射', () => {
       expect(_testing.mapShotType('big_close_up')).toBe('detail')
-      expect(_testing.mapShotType('close_up')).toBe('close')
-      expect(_testing.mapShotType('medium')).toBe('medium')
-      expect(_testing.mapShotType('long')).toBe('long')
+      expect(_testing.mapShotType('close_up')).toBe('extreme_close')
+      expect(_testing.mapShotType('medium')).toBe('medium_close')
+      expect(_testing.mapShotType('long')).toBe('full')
       expect(_testing.mapShotType('wide')).toBe('extreme_long')
       expect(_testing.mapShotType('unknown')).toBe('medium')  // fallback
       expect(_testing.mapShotType(undefined)).toBe('medium')
@@ -221,8 +221,8 @@ describe('ImportFromParsedShotsService', () => {
       expect(_testing.mapCameraMovement('static')).toBe('static')
       expect(_testing.mapCameraMovement('push')).toBe('dolly_in')
       expect(_testing.mapCameraMovement('pull')).toBe('dolly_out')
-      expect(_testing.mapCameraMovement('pan')).toBe('pan_right')
-      expect(_testing.mapCameraMovement('track')).toBe('truck_left')
+      expect(_testing.mapCameraMovement('pan')).toBe('pan_left')
+      expect(_testing.mapCameraMovement('track')).toBe('truck_right')
       expect(_testing.mapCameraMovement('handheld')).toBe('handheld')
       expect(_testing.mapCameraMovement('unknown')).toBe('static')
     })

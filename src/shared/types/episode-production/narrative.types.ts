@@ -117,12 +117,19 @@ export const SHOT_LANGUAGE_ENUMS = {
 /**
  * VLM 景别到标准景别的映射
  * @description VLM 模型使用的景别枚举与标准不同，需要映射转换
+ *
+ * 映射依据（VLM 提示词定义）：
+ * - big_close_up: "局部脸部/眼睛/手部细节" → detail（极小细节）
+ * - close_up: "完整面部，展示表情" → extreme_close（人物面部）
+ * - medium: "腰部以上，展示互动" → medium_close（人物腰部以上）
+ * - long: "人物全身，展示动作" → full（人物全身）
+ * - wide: "环境为主，人物较小" → extreme_long（展示宏大环境）
  */
 export const VLM_SHOT_TYPE_MAP: Record<string, ShotType> = {
-  'big_close_up': 'extreme_close',
-  'close_up': 'close',
-  'medium': 'medium',
-  'long': 'long',
+  'big_close_up': 'detail',
+  'close_up': 'extreme_close',
+  'medium': 'medium_close',
+  'long': 'full',
   'wide': 'extreme_long',
 }
 

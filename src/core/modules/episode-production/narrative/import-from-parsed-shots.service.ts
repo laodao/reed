@@ -12,6 +12,7 @@ import type {
   CameraAngle,
   CameraMovement,
 } from '@shared/types/episode-production/narrative.types'
+import { VLM_SHOT_TYPE_MAP } from '@shared/types/episode-production/narrative.types'
 import { StoryboardRepository, type CreateStoryboardRequest } from '@core/database/repositories/storyboard.repository'
 
 /**
@@ -19,14 +20,12 @@ import { StoryboardRepository, type CreateStoryboardRequest } from '@core/databa
  *
  * VLM prompt 约束输出 5 类景别 / 5 类角度 / 6 类运镜（vlm-shot-inferrer 中定义）；
  * 项目枚举更细。这里做最近邻映射，未识别值兜底到默认。
+ *
+ * 景别映射复用 VLM_SHOT_TYPE_MAP（narrative.types.ts），保持一致。
  */
-const SHOT_TYPE_MAP: Record<string, ShotType> = {
-  big_close_up: 'detail',
-  close_up: 'close',
-  medium: 'medium',
-  long: 'long',
-  wide: 'extreme_long',
-}
+/**
+ * 景别映射直接复用 VLM_SHOT_TYPE_MAP，避免重复定义
+ */
 
 const CAMERA_ANGLE_MAP: Record<string, CameraAngle> = {
   eye_level: 'eye_level',
@@ -40,13 +39,13 @@ const CAMERA_MOVEMENT_MAP: Record<string, CameraMovement> = {
   static: 'static',
   push: 'dolly_in',
   pull: 'dolly_out',
-  pan: 'pan_right',
-  track: 'truck_left',
+  pan: 'pan_left',
+  track: 'truck_right',
   handheld: 'handheld',
 }
 
 function mapShotType(s: string | undefined): ShotType {
-  return SHOT_TYPE_MAP[s ?? ''] ?? 'medium'
+  return VLM_SHOT_TYPE_MAP[s ?? ''] ?? 'medium'
 }
 
 function mapCameraAngle(a: string | undefined): CameraAngle {
