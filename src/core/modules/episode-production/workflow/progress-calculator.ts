@@ -13,7 +13,7 @@
  * 整剧总进度 = 6 个阶段平均（不含 'completed' 终态，避免重复计数）。
  */
 
-import type { DataSource } from 'typeorm'
+import { IsNull, type DataSource } from 'typeorm'
 import type {
   EpisodeStatus,
   StageProgress,
@@ -50,7 +50,7 @@ export class ProgressCalculator {
       .findOne({ where: { id: episodeId } })
     if (!ep) throw new Error(`Episode not found: ${episodeId}`)
 
-    const currentStatus = (ep as any).status as EpisodeStatus
+    const currentStatus = ((ep as any).status === 'draft' ? 'pending' : (ep as any).status) as EpisodeStatus
     const stages: StageProgress[] = []
     // 只算 6 个生产阶段（不含 'completed' 终态）
     const productionStages = ALL_EPISODE_STATUSES.filter(
@@ -96,14 +96,14 @@ export class ProgressCalculator {
     const eps = await this.ds
       .getRepository(VideoEpisodeEntity)
       .find({
-        where: { projectId } as any, // entity 含 unknown[] 字段致 FindOptionsWhere 推导失败
+        where: { projectId, deletedAt: IsNull() } as any, // 过滤已逻辑删除的剧集（与 VideoEpisodeRepository.getByProjectId 一致）
         order: { episodeNumber: 'ASC' } as any, // 同上
       })
 
     const result: EpisodeWithProgress[] = []
     for (const ep of eps) {
       const progress = await this.calculateEpisodeProgress(ep.id)
-      const status = ep.status as EpisodeStatus
+      const status = (ep.status === 'draft' ? 'pending' : ep.status) as EpisodeStatus
       result.push({
         id: ep.id,
         projectId: ep.projectId,

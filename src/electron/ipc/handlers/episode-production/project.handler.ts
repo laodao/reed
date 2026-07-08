@@ -150,8 +150,18 @@ async function handleDeleteProject(
 ): Promise<IpcResponse> {
   try {
     const db = getCoreDatabaseManager()
-    if (!db.videoProjects) {
+    if (!db.videoProjects || !db.videoEpisodes) {
       return { success: false, error: '数据库未初始化' }
+    }
+
+    // 引用完整性检查：项目下还有剧集时禁止删除，要求先删剧集
+    // getByProjectId 已过滤 deletedAt: IsNull()，只统计未删除的剧集
+    const episodes = await db.videoEpisodes.getByProjectId(projectId)
+    if (episodes.length > 0) {
+      return {
+        success: false,
+        error: `项目下还有 ${episodes.length} 个剧集，请先删除所有剧集后再删除项目`,
+      }
     }
 
     const success = await db.videoProjects.delete(projectId)

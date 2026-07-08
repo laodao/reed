@@ -85,7 +85,7 @@ export class VideoEpisodeRepository extends BaseRepository<
         ((e as any).uploadedItems as UploadedItem[] | null) ?? undefined,
       episodeNumber: e.episodeNumber,
       title: e.title,
-      status: e.status as EpisodeStatus,
+      status: (e.status === 'draft' ? 'pending' : e.status) as EpisodeStatus,
       duration: e.duration,
       scriptId: e.scriptId || undefined,
       audioTracks: ((e.audioTracks as AudioTrack[] | null) ?? []) as AudioTrack[],

@@ -40,4 +40,8 @@ export class VideoProjectEntity {
 
   @Column({ name: 'updated_at', type: Date })
   updatedAt!: Date
+
+  /** 逻辑删除标记（与 VideoEpisodeEntity 对齐；查询需过滤 deletedAt: IsNull()） */
+  @Column({ name: 'deleted_at', type: Date, nullable: true })
+  deletedAt!: Date | null
 }

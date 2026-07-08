@@ -4,7 +4,7 @@
  * @description 基于 TypeORM 实现，所有方法异步。
  */
 
-import type { DataSource } from 'typeorm'
+import { IsNull, type DataSource } from 'typeorm'
 import {
   VideoProject,
   VideoProjectConfig,
@@ -53,20 +53,24 @@ export class VideoProjectRepository extends BaseRepository<
   }
 
   async getAll(): Promise<VideoProject[]> {
-    return this.findManyByWhere({} as any, { createdAt: 'DESC' })
+    // 过滤已逻辑删除的项目（与 VideoEpisodeRepository.getByProjectId 一致）
+    return this.findManyByWhere(
+      { deletedAt: IsNull() } as any,
+      { createdAt: 'DESC' },
+    )
   }
 
   async getByLongWritingProjectId(
     longWritingProjectId: string,
   ): Promise<VideoProject[]> {
     return this.findManyByWhere(
-      { longWritingProjectId } as any,
+      { longWritingProjectId, deletedAt: IsNull() } as any,
       { createdAt: 'DESC' },
     )
   }
 
   async getById(id: string): Promise<VideoProject | null> {
-    return this.findOneByWhere({ id } as any)
+    return this.findOneByWhere({ id, deletedAt: IsNull() } as any)
   }
 
   async create(data: CreateVideoProjectRequest): Promise<VideoProject> {
@@ -113,13 +117,15 @@ export class VideoProjectRepository extends BaseRepository<
     return this.toDto(saved)
   }
 
+  /** 逻辑删除（UPDATE deleted_at，不删行不触发外键，与 VideoEpisodeRepository.delete 一致） */
   async delete(id: string): Promise<boolean> {
-    const affected = await this.scoped.delete({ id } as any)
+    const now = new Date()
+    const affected = await this.scoped.update({ id } as any, { deletedAt: now, updatedAt: now } as any)
     return affected > 0
   }
 
   async exists(id: string): Promise<boolean> {
-    return this.existsByWhere({ id } as any)
+    return this.existsByWhere({ id, deletedAt: IsNull() } as any)
   }
 
   private generateId(): string {
