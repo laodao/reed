@@ -75,7 +75,7 @@ describe('ImportFromParsedShotsService', () => {
     expect(rows.length).toBe(1)
     expect(rows[0].sceneScriptId).toBe('sc1')
     expect(rows[0].shotNumber).toBe(1)
-    expect(rows[0].shotType).toBe('close')          // close_up → close
+    expect(rows[0].shotType).toBe('extreme_close')          // close_up → extreme_close
     expect(rows[0].cameraAngle).toBe('low')
     expect(rows[0].cameraMovement).toBe('dolly_in') // push → dolly_in
     expect(rows[0].frameDescription).toBe('主角眼神特写')

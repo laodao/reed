@@ -293,7 +293,7 @@ const assetStore = useEpAssetStore()
 const subState = computed<'pending' | 'scripting' | 'readonly'>(() => {
   const s = props.episode?.status as EpisodeStatus | undefined
   if (!s) return 'pending'
-  if (s === 'pending') return 'pending'
+  if (s === 'pending' || s === 'draft') return 'pending'  // draft 也视为 pending（兼容旧数据）
   if (s === 'asset_prep' || s === 'scripting' || s === 'storyboarding') return 'scripting'
   return 'readonly'
 })

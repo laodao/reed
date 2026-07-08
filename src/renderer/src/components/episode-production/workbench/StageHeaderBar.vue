@@ -54,7 +54,8 @@ interface MergedSegment {
   clickStatus: EpisodeStatus
 }
 
-const STAGE_ORDER: Record<EpisodeStatus, number> = {
+const STAGE_ORDER: Record<string, number> = {
+  draft: 0,       // 兼容旧数据（早期版本可能创建 draft 状态）
   pending: 0,
   asset_prep: 1,
   scripting: 2,
@@ -65,7 +66,7 @@ const STAGE_ORDER: Record<EpisodeStatus, number> = {
 }
 
 const SEGMENTS: MergedSegment[] = [
-  { label: '内容+剧本', statuses: ['pending', 'scripting'], clickStatus: 'pending' },
+  { label: '内容+剧本', statuses: ['draft' as EpisodeStatus, 'pending', 'scripting'], clickStatus: 'pending' },
   { label: '资产', statuses: ['asset_prep'], clickStatus: 'asset_prep' },
   { label: '分镜', statuses: ['storyboarding'], clickStatus: 'storyboarding' },
   { label: '制作', statuses: ['producing'], clickStatus: 'producing' },

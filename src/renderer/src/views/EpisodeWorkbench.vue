@@ -342,7 +342,7 @@ watch(
   () => episodeStore.currentEpisode?.status,
   (s) => {
     if (!s) return
-    if (s === 'pending' || s === 'scripting') {
+    if (s === 'pending' || s === 'draft' || s === 'scripting') {  // draft 也映射到 pending（兼容旧数据）
       activeTab.value = 'pending'
     } else if (
       s === 'asset_prep' ||

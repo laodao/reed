@@ -182,8 +182,9 @@ export class ElectronTestHelper {
 
     // 解析方法路径，如 'image.getProviders' -> ['image', 'getProviders']
     const parts = method.split('.')
+    // 使用普通 function 而非箭头函数，以保留 arguments 对象
     const code = `
-      (async () => {
+      (async function() {
         let obj = window.electronAPI;
         ${parts.map((p, i) => `obj = obj['${p}'];`).join('\n        ')}
         return await obj(${args.map((_, i) => `arguments[${i}]`).join(', ')});
