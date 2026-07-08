@@ -20,6 +20,7 @@
     "postinstall": "electron-builder install-app-deps",
     "package": "electron-vite build && electron-builder",
     "package:win": "electron-vite build && electron-builder --win",
+    "package:win:portable": "electron-vite build && electron-builder --win dir",
     "package:mac": "electron-vite build && electron-builder --mac",
     "package:linux": "electron-vite build && electron-builder --linux",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx,.vue",
@@ -147,7 +148,31 @@
       "output": "dist"
     },
     "files": [
-      "out/**/*"
+      "out/**/*",
+      "node_modules/**/*",
+      "!**/node_modules/**/{README,readme,README.md,readme.md,CHANGELOG,CHANGELOG.md,HISTORY,LICENSE,LICENSE.md,NOTICE}",
+      "!**/node_modules/**/{test,tests,__tests__,docs,doc,examples,example,coverage,.github}",
+      "!**/node_modules/**/*.{md,markdown,ts,flow,coffee,map,markdown}",
+      "!**/node_modules/**/*.d.ts"
+    ],
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**",
+      "**/node_modules/@lancedb/**",
+      "**/node_modules/nodejieba/**",
+      "**/node_modules/canvas/**",
+      "**/node_modules/sharp/**",
+      "**/node_modules/@img/**"
+    ],
+    "asar": true,
+    "npmRebuild": true,
+    "nodeGypRebuild": false,
+    "buildDependenciesFromSource": false,
+    "extraResources": [
+      {
+        "from": "resources/seed/the_bot.db",
+        "to": "seed/the_bot.db",
+        "filter": ["**/*"]
+      }
     ],
     "win": {
       "target": [

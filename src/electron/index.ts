@@ -92,7 +92,7 @@ process.on('uncaughtException', (err: any) => {
 import { setFlagsFromString } from 'v8'
 setFlagsFromString('--max-old-space-size=4096')
 
-import { app, BrowserWindow, shell, ipcMain, protocol, net } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, protocol, net, dialog } from 'electron'
 import { join } from 'path'
 import * as path from 'path'
 import { DataPathService } from './services/data-path.service'
@@ -375,8 +375,22 @@ app.whenReady().then(async () => {
     const dbManager = getDatabaseManager()
     await dbManager.initialize()
     console.log('数据库初始化成功')
-  } catch (error) {
+  } catch (error: any) {
+    // 数据库初始化失败会导致所有依赖数据库的功能（对话/图像/角色等）报"数据库未初始化"。
+    // 此前仅打印日志、继续创建窗口，用户会看到 UI 正常但功能全坏且毫无提示。
+    // 这里改为弹窗明确告知，并记录完整错误栈，避免再次出现"症状与根因脱节"的情况。
     console.error('数据库初始化失败:', error)
+    const errMsg = error?.message || String(error)
+    const detail =
+      (error?.stack || String(error)) +
+      '\n\n常见原因：\n' +
+      '1) native 模块（better-sqlite3 / lancedb / nodejieba）未正确解包或未针对 Electron 重编译\n' +
+      '2) 数据目录无写入权限\n' +
+      '3) 数据库文件损坏'
+    dialog.showErrorBox(
+      'The Bot 数据库初始化失败',
+      `应用启动失败：${errMsg}\n\n${detail}`
+    )
   }
 
   // 注册 IPC 处理器

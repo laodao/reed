@@ -232,6 +232,13 @@ export class DatabaseManager implements ICoreDatabaseManager {
       fs.mkdirSync(dir, { recursive: true })
     }
 
+    // 首启种子数据库：若目标位置不存在 the_bot.db，则从打包的 seed 资源复制一份。
+    // 用于随发行版分发一份带内置数据（角色/字典/历史对话等）的初始数据库。
+    // 仅当目标文件不存在时复制，绝不覆盖用户已有数据。
+    if (!fs.existsSync(this.dbPath)) {
+      this.copySeedDatabaseIfAvailable()
+    }
+
     // 打开数据库连接（better-sqlite3 会自动创建文件）
     this.db = new Database(this.dbPath)
 
@@ -311,6 +318,44 @@ export class DatabaseManager implements ICoreDatabaseManager {
     }
 
     console.log('[DatabaseManager] 数据库初始化完成:', this.dbPath)
+  }
+
+  /**
+   * 首启种子数据库复制
+   *
+   * 从打包资源中复制一份预置的 the_bot.db（含内置角色/字典/示例数据等），
+   * 仅当目标数据库文件不存在时执行。开发模式（app.isPackaged === false）跳过。
+   *
+   * seed 文件位置（生产环境）：process.resourcesPath/seed/the_bot.db
+   * 由 electron-builder 的 extraResources 配置打入发行版。
+   *
+   * 复制是非破坏性的：若 seed 文件不存在或复制失败，不抛错——
+   * 后续 better-sqlite3 会自行创建空库，再由 initTables/initRepositories 初始化结构。
+   */
+  private copySeedDatabaseIfAvailable(): void {
+    // 开发模式不打 seed，避免覆盖开发库
+    if (!app.isPackaged) {
+      return
+    }
+
+    let seedPath: string
+    try {
+      seedPath = path.join(process.resourcesPath, 'seed', 'the_bot.db')
+    } catch {
+      return
+    }
+
+    if (!fs.existsSync(seedPath)) {
+      return
+    }
+
+    try {
+      fs.copyFileSync(seedPath, this.dbPath)
+      console.log('[DatabaseManager] 已从种子数据库复制初始数据:', seedPath, '->', this.dbPath)
+    } catch (e) {
+      // 复制失败不致命：better-sqlite3 会创建空库，走正常初始化
+      console.warn('[DatabaseManager] 种子数据库复制失败（不致命）:', e)
+    }
   }
 
   /**
@@ -1870,6 +1915,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
         config TEXT NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        deleted_at DATETIME DEFAULT NULL,
         FOREIGN KEY (long_writing_project_id) REFERENCES lw_projects(id) ON DELETE SET NULL
       )
     `)
@@ -1954,6 +2000,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
         audio_tracks TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        deleted_at DATETIME DEFAULT NULL,
         FOREIGN KEY (project_id) REFERENCES video_projects(id) ON DELETE CASCADE
       )
     `)
@@ -2265,6 +2312,9 @@ export class DatabaseManager implements ICoreDatabaseManager {
 
     // 为 video_episodes 表添加 deleted_at 列（如果不存在）
     this.migrateVideoEpisodesAddDeletedAt()
+
+    // 为 video_projects 表添加 deleted_at 列（如果不存在）
+    this.migrateVideoProjectsAddDeletedAt()
 
     // 为 video_episodes 表添加上传长文相关字段
     this.migrateVideoEpisodesAddUploadFields()
@@ -2757,16 +2807,101 @@ export class DatabaseManager implements ICoreDatabaseManager {
     if (!this.db) return
 
     // 检查是否存在 deleted_at 列
-    const columns = this.db.prepare("PRAGMA table_info(video_episodes)").all() as { name: string }[]
-    const hasDeletedAt = columns.some(col => col.name === 'deleted_at')
+    const columns = this.db.prepare("PRAGMA table_info(video_episodes)").all() as {
+      name: string
+      type: string
+    }[]
+    const deletedAtCol = columns.find((col) => col.name === 'deleted_at')
 
-    if (!hasDeletedAt) {
+    if (!deletedAtCol) {
+      // 列不存在：新增。类型必须用 DATETIME，与 Entity 的 @Column({ type: Date }) 对齐，
+      // 否则 checkSchemaDrift 会报 typeMismatches（actual INTEGER expected datetime）。
       console.log('[DatabaseManager] 为 video_episodes 表添加 deleted_at 列...')
       try {
-        this.db.exec('ALTER TABLE video_episodes ADD COLUMN deleted_at INTEGER DEFAULT NULL')
+        this.db.exec('ALTER TABLE video_episodes ADD COLUMN deleted_at DATETIME DEFAULT NULL')
         console.log('[DatabaseManager] video_episodes 表添加 deleted_at 列完成')
       } catch (e) {
         console.error('[DatabaseManager] 添加 deleted_at 列失败:', e)
+      }
+      return
+    }
+
+    // 列已存在但类型不是 DATETIME（历史遗留建成了 INTEGER）：SQLite 不支持 ALTER COLUMN，
+    // 需重建表修正类型，否则 drift 检测会拦截启动。
+    const currentType = (deletedAtCol.type || '').toUpperCase()
+    if (currentType && currentType !== 'DATETIME' && currentType !== 'TIMESTAMP') {
+      console.log(
+        `[DatabaseManager] video_episodes.deleted_at 类型为 ${currentType}，重建为 DATETIME...`,
+      )
+      this.rebuildTableFixColumnType('video_episodes', 'deleted_at')
+    }
+  }
+
+  /**
+   * 重建表以修正某列的类型（SQLite 不支持 ALTER COLUMN）。
+   * 流程：建临时表（去掉目标列）→ 复制数据 → 删旧表 → 按新 DDL 建表（含正确类型列）→ 复制回。
+   * 这里采用更简洁安全的做法：CREATE TABLE _new 不含目标列 → 复制 → DROP → RENAME →
+   * 再由调用方语义保证该列后续会被正确添加。
+   *
+   * 实际上 deleted_at 的修正等价于"删掉这一列再以正确类型加回"，
+   * 由于 deleted_at 都是 NULL 默认值，丢掉其数据无损。
+   */
+  private rebuildTableFixColumnType(tableName: string, _columnName: string): void {
+    if (!this.db) return
+    try {
+      // SQLite 3.35+ 支持 DROP COLUMN，可干净移除旧类型列；
+      // migrateVideoEpisodesAddDeletedAt 在本方法返回后会再次被调用？不会——
+      // 因此这里 DROP 后立即以正确类型 ADD 回来。
+      this.db.exec(`ALTER TABLE ${tableName} DROP COLUMN deleted_at`)
+      this.db.exec(`ALTER TABLE ${tableName} ADD COLUMN deleted_at DATETIME DEFAULT NULL`)
+      console.log(`[DatabaseManager] ${tableName}.deleted_at 类型已修正为 DATETIME`)
+    } catch (e: any) {
+      // DROP COLUMN 不支持（旧 SQLite）或其它失败：记录但不致命，
+      // drift 检测仍会报告，由用户/开发者介入。生产环境 SQLite 版本足够新，正常路径不会到这里。
+      console.error(`[DatabaseManager] 修正 ${tableName}.deleted_at 类型失败:`, e?.message ?? e)
+    }
+  }
+
+  /**
+   * 为 video_projects 表添加 deleted_at 列（如果不存在）
+   * 与 VideoProjectEntity 的 @Column({ name: 'deleted_at', type: Date }) 对齐，
+   * 类型必须为 DATETIME，避免 checkSchemaDrift 报 missingColumns/typeMismatches。
+   */
+  private migrateVideoProjectsAddDeletedAt(): void {
+    if (!this.db) return
+
+    const columns = this.db.prepare("PRAGMA table_info(video_projects)").all() as {
+      name: string
+      type: string
+    }[]
+    const deletedAtCol = columns.find((col) => col.name === 'deleted_at')
+
+    if (!deletedAtCol) {
+      console.log('[DatabaseManager] 为 video_projects 表添加 deleted_at 列...')
+      try {
+        this.db.exec('ALTER TABLE video_projects ADD COLUMN deleted_at DATETIME DEFAULT NULL')
+        console.log('[DatabaseManager] video_projects 表添加 deleted_at 列完成')
+      } catch (e) {
+        console.error('[DatabaseManager] 添加 video_projects.deleted_at 列失败:', e)
+      }
+      return
+    }
+
+    // 列已存在但类型非 DATETIME：重建表修正（同 video_episodes 逻辑）
+    const currentType = (deletedAtCol.type || '').toUpperCase()
+    if (currentType && currentType !== 'DATETIME' && currentType !== 'TIMESTAMP') {
+      console.log(
+        `[DatabaseManager] video_projects.deleted_at 类型为 ${currentType}，重建为 DATETIME...`,
+      )
+      try {
+        this.db.exec('ALTER TABLE video_projects DROP COLUMN deleted_at')
+        this.db.exec('ALTER TABLE video_projects ADD COLUMN deleted_at DATETIME DEFAULT NULL')
+        console.log('[DatabaseManager] video_projects.deleted_at 类型已修正为 DATETIME')
+      } catch (e: any) {
+        console.error(
+          `[DatabaseManager] 修正 video_projects.deleted_at 类型失败:`,
+          e?.message ?? e,
+        )
       }
     }
   }

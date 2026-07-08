@@ -19,3 +19,7 @@ electron.vite.config.js
 
 # 数据库备份目录（不进版本库；本地恢复用）
 .backups/
+
+# 随包分发的种子数据库（本地数据，不进版本库；由 scripts/prepare-seed-db.js 生成）
+resources/seed/*.db
+resources/seed/*.db-*
