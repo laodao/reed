@@ -55,6 +55,9 @@ const coverEmoji = computed(() => COVER_EMOJI[props.episode.episodeNumber % COVE
   overflow: hidden;
   cursor: pointer;
   transition: all 0.15s;
+  min-height: 360px;
+  display: flex;
+  flex-direction: column;
 }
 
 .episode-card:hover {
@@ -68,7 +71,8 @@ const coverEmoji = computed(() => COVER_EMOJI[props.episode.episodeNumber % COVE
 }
 
 .cover {
-  height: 130px;
+  height: 220px;
+  flex-shrink: 0;
   position: relative;
   display: flex;
   align-items: center;
@@ -97,8 +101,8 @@ const coverEmoji = computed(() => COVER_EMOJI[props.episode.episodeNumber % COVE
 }
 
 .hover-actions button {
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.45);
   color: #fff;
@@ -113,18 +117,19 @@ const coverEmoji = computed(() => COVER_EMOJI[props.episode.episodeNumber % COVE
 .hover-actions .edit-btn:hover { background: var(--el-color-primary); }
 .hover-actions .delete-btn:hover { background: var(--el-color-danger); }
 
-.body { padding: 14px; }
+.body {
+  padding: 18px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
 
 .title {
-  margin: 0 0 10px;
-  font-size: 14px;
+  margin: 0 0 12px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--el-text-color-primary);
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  line-height: 1.5;
   word-break: break-word;
 }
 

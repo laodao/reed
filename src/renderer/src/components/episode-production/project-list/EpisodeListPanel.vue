@@ -115,10 +115,11 @@ defineEmits<{
 
 .episode-grid {
   flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: 20px 24px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 16px;
   align-content: start;
 }
