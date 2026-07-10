@@ -19,8 +19,8 @@ export class StructureDetector {
   // Markdown 标题正则：匹配 # ## ### 等
   private readonly markdownHeadingRegex = /^(#{1,6})\s+(.+)$/gm
 
-  // 小说章节正则（中文）：匹配 第一章、第二章等
-  private readonly novelChapterChineseRegex = /^第[一二三四五六七八九十百千万\d]+[章节回]\s*[：:\s]*(.*)$/gm
+  // 小说章节正则（中文）：匹配 第一章、第二节、第三回、第四集 等
+  private readonly novelChapterChineseRegex = /^第[一二三四五六七八九十百千万\d]+[章节回集]\s*[：:\s]*(.*)$/gm
 
   // 小说章节正则（英文）：匹配 Chapter 1, Chapter 2 等
   private readonly novelChapterEnglishRegex = /^Chapter\s+(\d+)[：:\s]*(.*)$/gm

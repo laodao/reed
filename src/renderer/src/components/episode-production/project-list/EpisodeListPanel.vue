@@ -19,6 +19,10 @@
           <el-icon><Plus /></el-icon>
           新建剧集
         </el-button>
+        <el-button class="btn-batch-create" @click="$emit('batch-create-episode')">
+          <el-icon><Upload /></el-icon>
+          批量创建
+        </el-button>
       </div>
     </div>
     <div class="episode-grid">
@@ -39,7 +43,7 @@
 </template>
 
 <script setup lang="ts">
-import { Setting, Plus, Star } from '@element-plus/icons-vue'
+import { Setting, Plus, Star, Upload } from '@element-plus/icons-vue'
 import EpisodeCard from './EpisodeCard.vue'
 import type { VideoProject, VideoProjectSummary } from '../../../../../shared/types/story-to-video.types'
 import type { EpisodeWithProgress } from '../../../../../shared/types/episode-production/episode-with-progress.types'
@@ -54,6 +58,7 @@ defineProps<{
 defineEmits<{
   (e: 'settings'): void
   (e: 'create-episode'): void
+  (e: 'batch-create-episode'): void
   (e: 'open-quick-mode'): void
   (e: 'open-episode', ep: EpisodeWithProgress): void
   (e: 'edit-episode', ep: EpisodeWithProgress): void

@@ -62,35 +62,55 @@ export class UploadedEntityService {
     const locSvc = new LocationAssetService(ds, imageSvc)
     const itemSvc = new ItemAssetService(ds)
 
+    // 跨集去重：取项目已有的 binding 名字集合，避免逐集识别产生同名重复资产。
+    // 资产是 project 级（binding 无 episodeId），同项目同名只应保留一份。
+    const [existingChars, existingLocs, existingItems] = await Promise.all([
+      db.characterBindings?.getByProjectId(projectId) ?? [],
+      db.locationBindings?.getByProjectId(projectId) ?? [],
+      db.itemBindings?.getByProjectId(projectId) ?? [],
+    ])
+    const charNames = new Set(existingChars.map((c) => c.name).filter((n): n is string => !!n))
+    const locNames = new Set(existingLocs.map((l) => l.name).filter((n): n is string => !!n))
+    const itemNames = new Set(existingItems.map((i) => i.name).filter((n): n is string => !!n))
+
     // 创建 standalone 角色 binding（不再 INSERT lw_story_characters）
     for (const char of characters) {
+      const name = char.name?.trim()
+      if (!name || charNames.has(name)) continue // 去重：项目内已存在同名则跳过
       await charSvc.createStandalone({
         projectId,
-        name: char.name,
+        name,
         description: char.description || undefined,
         // 2026-05-27：AI 识别时推断的年龄/性别/人种
         age: char.age,
         gender: char.gender,
         race: char.race,
       })
+      charNames.add(name) // 本批次内也去重
     }
 
     // 创建 standalone 地点 binding
     for (const loc of locations) {
+      const name = loc.name?.trim()
+      if (!name || locNames.has(name)) continue
       await locSvc.createStandalone({
         projectId,
-        name: loc.name,
+        name,
         description: loc.description || undefined,
       })
+      locNames.add(name)
     }
 
     // 创建 standalone 物品 binding
     for (const item of items) {
+      const name = item.name?.trim()
+      if (!name || itemNames.has(name)) continue
       await itemSvc.createStandalone({
         projectId,
-        name: item.name,
+        name,
         description: item.description || undefined,
       })
+      itemNames.add(name)
     }
 
     console.log('[UploadedEntityService] 实体创建完成（standalone 模式，binding.sourceType=standalone）')

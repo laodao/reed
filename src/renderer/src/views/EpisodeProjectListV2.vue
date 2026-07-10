@@ -16,6 +16,7 @@
         :episodes="episodes"
         @settings="dialogs.settings = true"
         @create-episode="dialogs.createEpisode = true"
+        @batch-create-episode="dialogs.batchCreateEpisode = true"
         @open-quick-mode="dialogs.quickMode = true"
         @open-episode="onOpenEpisode"
         @edit-episode="onEditEpisode"
@@ -128,6 +129,14 @@
       :next-episode-number="(episodes?.length ?? 0) + 1"
       @done="onQuickModeDone"
     />
+
+    <!-- 批量创建剧集 dialog（上传剧本 → 按章拆分 → 批量建集） -->
+    <BatchCreateEpisodesDialog
+      v-if="selectedProjectId"
+      v-model="dialogs.batchCreateEpisode"
+      :project-id="selectedProjectId"
+      @created="onEpisodeCreated"
+    />
   </div>
 </template>
 
@@ -143,6 +152,8 @@ import EditEpisodeDialog from '@/components/episode-production/dialogs/EditEpiso
 import SettingsDialog from '@/components/episode-production/dialogs/SettingsDialog.vue'
 // spec 2026-05-09 ep-redesign §3.2 C3 · AI 一键模式
 import AIQuickModeWizard from '@/components/episode-production/dialogs/AIQuickModeWizard.vue'
+// 批量创建剧集（上传剧本文件 → 按章节拆分 → 批量建集）
+import BatchCreateEpisodesDialog from '@/components/episode-production/dialogs/BatchCreateEpisodesDialog.vue'
 import { STYLE_PRESETS } from '@core/modules/episode-production/assets/constants/style-presets'
 import { useEpProjectStore } from '@/stores/episode-production/project.store'
 import type {
@@ -200,6 +211,8 @@ const dialogs = reactive({
   editingEpisodeTitle: '',
   // AI 一键模式 wizard（spec 2026-05-09 ep-redesign §3.2 C3）
   quickMode: false,
+  // 批量创建剧集（上传剧本 → 按章拆分 → 批量建集）
+  batchCreateEpisode: false,
 })
 
 // ===== 数据加载 =====

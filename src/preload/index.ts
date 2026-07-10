@@ -6,6 +6,7 @@
 
 import { contextBridge, ipcRenderer } from 'electron'
 import type { DocumentSource } from '@shared/types/knowledge-base.types'
+import type { EpAiGenerateTextRequest, EpBatchCreateEpisodesRequest, EpBatchIdentifyEntitiesRequest } from '@shared/types/episode-production'
 
 // IPC 通道名称常量
 const IPC_CHANNELS = {
@@ -216,6 +217,12 @@ const IPC_CHANNELS = {
 
   // FU4-1 ① 内容 stage AI 识别要素
   EP_IDENTIFY_UPLOADED_ENTITIES: 'ep:identify-uploaded-entities',
+  // 「AI 写剧本」生成故事原文
+  EP_AI_GENERATE_TEXT: 'ep:ai-generate-text',
+  // 「批量创建剧集」分析剧本文件 + 批量建集
+  EP_ANALYZE_SCRIPT_FILE: 'ep:analyze-script-file',
+  EP_BATCH_CREATE_EPISODES: 'ep:batch-create-episodes',
+  EP_BATCH_IDENTIFY_ENTITIES: 'ep:batch-identify-entities',
   // FU5-B2 ① 内容 stage 整理 / 取舍（覆写三数组）
   EP_UPDATE_UPLOADED_ENTITIES: 'ep:update-uploaded-entities',
 
@@ -1940,6 +1947,18 @@ const electronAPI = {
         modelId,
         kinds,
       ),
+    /** 「AI 写剧本」：提示词 + 故事背景 → 生成故事原文（回填 uploadedContent） */
+    aiGenerateText: (req: EpAiGenerateTextRequest) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_AI_GENERATE_TEXT, req),
+    /** 「批量创建剧集」：选剧本文件 → 按章节拆分预览 */
+    analyzeScriptFile: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_ANALYZE_SCRIPT_FILE),
+    /** 「批量创建剧集」：确认后批量建集 */
+    batchCreateEpisodes: (req: EpBatchCreateEpisodesRequest) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_BATCH_CREATE_EPISODES, req),
+    /** 「批量识别资产」：对指定剧集逐集识别角色/地点/物品（跨集去重） */
+    batchIdentifyEntities: (req: EpBatchIdentifyEntitiesRequest) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_BATCH_IDENTIFY_ENTITIES, req),
     /** FU5-B2 ① 内容 stage 整理 / 取舍（覆写 episode.uploadedX） */
     updateUploadedEntities: (
       episodeId: string,

@@ -42,6 +42,13 @@
 
       <!-- 上传长文模式：长文可不在创建时填写（用户可在 ① 内容 stage 再粘贴） -->
       <template v-if="form.sourceType === 'uploaded'">
+        <el-form-item label="AI 辅助">
+          <el-button type="primary" plain @click="aiDialogVisible = true">
+            <el-icon><MagicStick /></el-icon>
+            ✨ AI 写剧本
+          </el-button>
+          <span class="ai-hint">凭一句提示词让 AI 写出故事原文，回填到下方长文内容</span>
+        </el-form-item>
         <el-form-item label="长文内容">
           <el-input
             v-model="form.uploadedContent"
@@ -90,6 +97,13 @@
         />
       </el-form-item>
     </el-form>
+    <AiWriteScriptPromptDialog
+      v-model="aiDialogVisible"
+      :story-era="form.storyEra"
+      :story-region="form.storyRegion"
+      :story-background-extra="form.storyBackgroundExtra"
+      @generated="onAiGenerated"
+    />
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
       <el-button type="primary" :loading="loading" :disabled="!isFormValid" @click="handleSubmit">
@@ -102,8 +116,9 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { InfoFilled } from '@element-plus/icons-vue'
+import { InfoFilled, MagicStick } from '@element-plus/icons-vue'
 import { useEpWorkbenchStore, useEpProjectStore, useEpEpisodeStore } from '@/stores/episode-production'
+import AiWriteScriptPromptDialog from './AiWriteScriptPromptDialog.vue'
 import {
   outlineCascaderProps,
   buildOutlineCascaderData,
@@ -132,6 +147,9 @@ const workbenchStore = useEpWorkbenchStore()
 const projectStore = useEpProjectStore()
 const episodeStore = useEpEpisodeStore()
 const loading = computed(() => workbenchStore.loading)
+
+/** 「AI 写剧本」子对话框显隐 */
+const aiDialogVisible = ref(false)
 
 const hasLinkedLongWriting = computed(() => !!projectStore.currentProject?.longWritingProjectId)
 
@@ -233,6 +251,12 @@ function handleOutlineCascaderChange(value: string) {
   form.title = selectedNode.name
 }
 
+/** AI 写剧本生成完成 → 回填到长文内容（并兜底切到 uploaded 模式） */
+function onAiGenerated(text: string) {
+  form.uploadedContent = text
+  form.sourceType = 'uploaded'
+}
+
 async function handleSubmit() {
   if (!form.title.trim()) {
     ElMessage.warning('请输入剧集标题')
@@ -268,6 +292,12 @@ async function handleSubmit() {
 </script>
 
 <style scoped lang="scss">
+.ai-hint {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
 .form-hint {
   margin-top: 4px;
   font-size: 12px;

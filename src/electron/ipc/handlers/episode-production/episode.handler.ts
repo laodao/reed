@@ -4,13 +4,25 @@
  * @description 双端共用 handler — PC 由 electron/index.ts 注册，Web 由 register-channels.ts 注册。
  */
 
+import * as path from 'path'
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import type { IpcResponse } from '@shared/types/ipc.types'
-import type { UpdateVideoEpisodeData } from '@shared/types/episode-production'
+import type { UpdateVideoEpisodeData, EpAiGenerateTextRequest, EpBatchCreateEpisodesRequest, EpBatchIdentifyEntitiesRequest } from '@shared/types/episode-production'
 import { StoryToVideoAIService } from '@core/services/story-to-video-ai.service'
+import { generateStoryText } from '@core/modules/episode-production/narrative/ai/story-text-generator'
 import { EpisodeAutoBindingService } from '@core/modules/episode-production/auto-binding/episode-auto-binding.service'
 import { UploadedEntityService } from '@core/modules/episode-production/auto-binding/uploaded-entity.service'
+import { analyzeScriptToEpisodes } from '@core/modules/episode-production/narrative/services/script-splitter.service'
+import { extractTextFromFile, inferFileType } from '@core/utils/extract-text'
+
+const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
+function loadElectron(): { BrowserWindow?: any; dialog?: any } {
+  if (!isElectron) return {}
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const e = require('electron')
+  return { BrowserWindow: e.BrowserWindow, dialog: e.dialog }
+}
 
 export function registerEpisodeHandlers(): void {
   // ==================== 剧集管理 ====================
@@ -21,6 +33,13 @@ export function registerEpisodeHandlers(): void {
   ipcBridge.handle('ep:delete-episode', handleDeleteEpisode)
   // FU4-1 ① 内容 stage AI 识别要素
   ipcBridge.handle('ep:identify-uploaded-entities', handleIdentifyEntities)
+  // 「AI 写剧本」：提示词 + 故事背景 → 生成故事原文（前端回填 uploadedContent）
+  ipcBridge.handle('ep:ai-generate-text', handleAIGenerateText)
+  // 「批量创建剧集」：选剧本文件 → 按章节拆分预览；确认后批量建集
+  ipcBridge.handle('ep:analyze-script-file', handleAnalyzeScriptFile)
+  ipcBridge.handle('ep:batch-create-episodes', handleBatchCreateEpisodes)
+  // 「批量识别资产」：对指定剧集逐集跑 AI 识别角色/地点/物品（跨集去重）
+  ipcBridge.handle('ep:batch-identify-entities', handleBatchIdentifyEntities)
   // FU5-B2 ① 内容 stage 整理 / 取舍（覆写三数组）
   ipcBridge.handle('ep:update-uploaded-entities', handleUpdateUploadedEntities)
 }
@@ -140,6 +159,195 @@ async function handleIdentifyEntities(
   } catch (e: any) {
     console.error('[handleIdentifyEntities] 异常:', e)
     return { success: false, error: e?.message ?? 'AI 识别失败' }
+  }
+}
+
+// ==================== 「AI 写剧本」生成故事原文 ====================
+
+/**
+ * 根据用户提示词 + 故事背景，生成小说体裁的故事原文。
+ * 用于「创建剧集」对话框的「AI 写剧本」按钮：生成后由前端回填到 uploadedContent，
+ * 后续在剧本 stage 由 EpisodeScriptGenerator 拆成结构化场景。
+ *
+ * 设计上独立于 createEpisode（其 JSDoc 明确"创建即返回，不在创建阶段调 AI"）；
+ * 本 handler 是纯粹的"文本生成工具"，前端按需调用、拿到文本后自行回填。
+ */
+async function handleAIGenerateText(
+  _event: any,
+  req: EpAiGenerateTextRequest,
+): Promise<IpcResponse> {
+  try {
+    if (!req?.prompt?.trim()) {
+      return { success: false, error: '请输入提示词' }
+    }
+    const text = await generateStoryText(req)
+    return { success: true, data: { text } }
+  } catch (e: any) {
+    console.error('[handleAIGenerateText] 异常:', e)
+    return { success: false, error: e?.message ?? 'AI 生成剧本失败' }
+  }
+}
+
+// ==================== 「批量创建剧集」分析 + 批量建集 ====================
+
+/**
+ * 选择剧本文件 → 提取文本 → 按章节拆分 → 返回剧集预览。
+ * 桌面端用原生 dialog 选文件；支持 txt/md/docx/pdf/epub。
+ * 无章节结构时返回明确提示，要求用户用「第X章」等标记分隔每集。
+ */
+async function handleAnalyzeScriptFile(event: any): Promise<IpcResponse> {
+  if (!isElectron) {
+    return { success: false, error: '该功能仅在桌面端可用' }
+  }
+  try {
+    const { BrowserWindow, dialog } = loadElectron()
+    const window = BrowserWindow?.fromWebContents(event?.sender)
+    if (!window) return { success: false, error: '窗口不存在' }
+
+    const result = await dialog.showOpenDialog(window, {
+      title: '选择剧本文件',
+      filters: [{ name: '剧本文件', extensions: ['txt', 'md', 'docx', 'pdf', 'epub'] }],
+      properties: ['openFile'],
+    })
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, error: '未选择文件' }
+    }
+
+    const filePath = result.filePaths[0]
+    const fileName = path.basename(filePath)
+    const fileType = inferFileType(fileName)
+    if (!fileType) {
+      return { success: false, error: `不支持的文件类型：${fileName}` }
+    }
+
+    const text = await extractTextFromFile(filePath, fileType)
+    if (!text || !text.trim()) {
+      return { success: false, error: '文件内容为空，无法分析' }
+    }
+
+    const analysis = analyzeScriptToEpisodes(text)
+    if (!analysis.hasStructure || analysis.episodes.length === 0) {
+      return {
+        success: false,
+        error: '未识别到章节结构，请在剧本中用「第X章 / Chapter N / # 标题」分隔每集',
+      }
+    }
+
+    return {
+      success: true,
+      data: {
+        fileName,
+        hasStructure: analysis.hasStructure,
+        structureType: analysis.structureType,
+        episodes: analysis.episodes,
+      },
+    }
+  } catch (e: any) {
+    console.error('[handleAnalyzeScriptFile] 异常:', e)
+    return { success: false, error: e?.message ?? '分析剧本文件失败' }
+  }
+}
+
+/**
+ * 批量创建剧集：把预览确认后的剧集候选循环落库（uploaded 模式）。
+ * episodeNumber 从项目当前最大值 +1 续号；uploaded 模式不触发 AI，与 createEpisode 一致。
+ */
+async function handleBatchCreateEpisodes(
+  _event: any,
+  req: EpBatchCreateEpisodesRequest,
+): Promise<IpcResponse> {
+  try {
+    if (!req?.projectId) return { success: false, error: 'projectId 不能为空' }
+    if (!Array.isArray(req.episodes) || req.episodes.length === 0) {
+      return { success: false, error: '没有可创建的剧集' }
+    }
+
+    const db = getCoreDatabaseManager()
+    if (!db.videoEpisodes) return { success: false, error: '数据库未初始化' }
+
+    // 续号：当前项目最大 episodeNumber + 1
+    const existing = await db.videoEpisodes.getByProjectId(req.projectId)
+    let nextNumber = existing.reduce((max, ep) => Math.max(max, ep.episodeNumber), 0) + 1
+
+    const createdIds: string[] = []
+    for (const ep of req.episodes) {
+      const title = ep.title?.trim() || `第 ${nextNumber} 集`
+      const episode = await db.videoEpisodes.create({
+        projectId: req.projectId,
+        sourceType: 'uploaded',
+        uploadedContent: ep.content,
+        episodeNumber: nextNumber,
+        title,
+      })
+      if (episode) createdIds.push(episode.id)
+      nextNumber++
+    }
+
+    return { success: true, data: { created: createdIds.length, episodeIds: createdIds } }
+  } catch (e: any) {
+    console.error('[handleBatchCreateEpisodes] 异常:', e)
+    return { success: false, error: e?.message ?? '批量创建剧集失败' }
+  }
+}
+
+/**
+ * 批量识别资产：对指定剧集逐集跑 AI 识别角色/地点/物品，创建 project 级 binding（跨集去重）。
+ * 复用 identifyCharacters/Locations/Items + createAndBindUploadedEntities（含去重）。
+ */
+async function handleBatchIdentifyEntities(
+  _event: any,
+  req: EpBatchIdentifyEntitiesRequest,
+): Promise<IpcResponse> {
+  try {
+    if (!req?.projectId) return { success: false, error: 'projectId 不能为空' }
+    if (!Array.isArray(req.episodeIds) || req.episodeIds.length === 0) {
+      return { success: false, error: '没有可识别的剧集' }
+    }
+    if (!req.providerConfigId || !req.modelId) {
+      return { success: false, error: '请先在项目设置中配置剧本生成模型' }
+    }
+
+    const db = getCoreDatabaseManager()
+    if (!db.videoEpisodes) return { success: false, error: '数据库未初始化' }
+
+    const aiService = StoryToVideoAIService.getInstance()
+    let processed = 0
+    let totalChars = 0
+    let totalLocs = 0
+    let totalItems = 0
+
+    for (const episodeId of req.episodeIds) {
+      const episode = await db.videoEpisodes.getById(episodeId)
+      if (!episode || episode.sourceType !== 'uploaded' || !episode.uploadedContent) continue
+
+      const [characters, locations, items] = await Promise.all([
+        aiService.identifyCharacters(episode.uploadedContent, req.providerConfigId, req.modelId),
+        aiService.identifyLocations(episode.uploadedContent, req.providerConfigId, req.modelId),
+        aiService.identifyItems(episode.uploadedContent, req.providerConfigId, req.modelId),
+      ])
+
+      // createAndBindUploadedEntities 内部跨集去重（同 project 同名只建一份）
+      await UploadedEntityService.createAndBindUploadedEntities(
+        req.projectId,
+        episodeId,
+        characters ?? [],
+        locations ?? [],
+        items ?? [],
+      )
+
+      totalChars += characters?.length ?? 0
+      totalLocs += locations?.length ?? 0
+      totalItems += items?.length ?? 0
+      processed++
+    }
+
+    return {
+      success: true,
+      data: { episodes: processed, characters: totalChars, locations: totalLocs, items: totalItems },
+    }
+  } catch (e: any) {
+    console.error('[handleBatchIdentifyEntities] 异常:', e)
+    return { success: false, error: e?.message ?? '批量识别资产失败' }
   }
 }
 

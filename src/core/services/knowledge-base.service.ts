@@ -14,6 +14,7 @@ import { getEventEmitter } from '@core/interfaces/event.interface'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { HybridSplitter, EmbeddingService, SplitConfig, DEFAULT_SPLIT_CONFIG, SplitChunk } from '@core/services/chunk-splitter'
+import { extractTextFromFile, inferFileType } from '@core/utils/extract-text'
 import type {
   KnowledgeBase,
   CreateKnowledgeBaseRequest,
@@ -562,61 +563,13 @@ export class KnowledgeBaseService {
     }
   }
 
+  /**
+   * 提取文件纯文本（委托 @core/utils/extract-text，逻辑同源）。
+   * 支持 txt/md/pdf/epub/docx/xlsx；中文编码自动检测。
+   * 注：原 decodeTextFile/hasGarbledChars 已迁入 extract-text，此处仅保留 parseFile 入口。
+   */
   private async parseFile(filePath: string, fileType: FileType): Promise<string> {
-    const buffer = await fs.promises.readFile(filePath)
-
-    switch (fileType) {
-      case 'txt':
-      case 'md':
-      case 'webpage':  // 网页内容存储为 txt 格式
-        // 尝试多种编码解析文本文件
-        return this.decodeTextFile(buffer)
-
-      case 'pdf': {
-        const pdfParse = require('pdf-parse')
-        const data = await pdfParse(buffer)
-        return data.text
-      }
-
-      case 'epub': {
-        const EPub = require('epub-parser')
-        const epub = await EPub.parse(filePath)
-        let text = ''
-        for (const section of epub.sections) {
-          if (section.html) {
-            // 简单提取文本，去除 HTML 标签
-            const html = section.html
-            const plainText = html
-              .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-              .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-              .replace(/<[^>]+>/g, ' ')
-              .replace(/\s+/g, ' ')
-              .trim()
-            text += plainText + '\n\n'
-          }
-        }
-        return text
-      }
-
-      case 'docx': {
-        const mammoth = require('mammoth')
-        const result = await mammoth.extractRawText({ buffer })
-        return result.value
-      }
-
-      case 'xlsx':
-      case 'xls': {
-        const XLSX = require('xlsx')
-        const wb = XLSX.read(buffer)
-        return wb.SheetNames.map(name => {
-          const sheet = wb.Sheets[name]
-          return `## ${name}\n${XLSX.utils.sheet_to_csv(sheet)}`
-        }).join('\n\n')
-      }
-
-      default:
-        throw new Error(`不支持的文件类型: ${fileType}`)
-    }
+    return extractTextFromFile(filePath, fileType)
   }
 
   /**
@@ -1191,8 +1144,7 @@ export class KnowledgeBaseService {
   }
 
   private getFileType(name: string): FileType | null {
-    const ext = path.extname(name).toLowerCase().slice(1)
-    const map: Record<string, FileType> = { docx: 'docx', doc: 'doc', txt: 'txt', md: 'md', xlsx: 'xlsx', xls: 'xls' }
-    return map[ext] || null
+    // 复用 extract-text 的推断（含 pdf/epub，修复历史遗漏）
+    return inferFileType(name)
   }
 }

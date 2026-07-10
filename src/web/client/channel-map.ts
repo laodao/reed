@@ -486,6 +486,12 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.createMissingScriptBindings': { channel: 'ep:create-missing-script-bindings' },
   // FU4-1 ① 内容 stage AI 识别要素
   'episodeProduction.identifyUploadedEntities': { channel: 'ep:identify-uploaded-entities' },
+  // 「AI 写剧本」生成故事原文
+  'episodeProduction.aiGenerateText': { channel: 'ep:ai-generate-text' },
+  // 「批量创建剧集」分析剧本文件 + 批量建集
+  'episodeProduction.analyzeScriptFile': { channel: 'ep:analyze-script-file' },
+  'episodeProduction.batchCreateEpisodes': { channel: 'ep:batch-create-episodes' },
+  'episodeProduction.batchIdentifyEntities': { channel: 'ep:batch-identify-entities' },
   // FU5-B2 ① 内容 stage 整理 / 取舍
   'episodeProduction.updateUploadedEntities': { channel: 'ep:update-uploaded-entities' },
   'episodeProduction.getStylePresets': { channel: 'ep:get-style-presets' },
