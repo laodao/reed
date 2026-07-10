@@ -92,7 +92,7 @@ const coverEmoji = computed(() => COVER_EMOJI[props.episode.episodeNumber % COVE
   right: 8px;
   display: flex;
   gap: 6px;
-  opacity: 0;
+  opacity: 1;
   transition: opacity 0.15s;
 }
 
@@ -121,9 +121,11 @@ const coverEmoji = computed(() => COVER_EMOJI[props.episode.episodeNumber % COVE
   font-weight: 600;
   color: var(--el-text-color-primary);
   line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  word-break: break-word;
 }
 
 .progress-row {

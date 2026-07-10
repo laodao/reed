@@ -118,7 +118,7 @@ defineEmits<{
   overflow: auto;
   padding: 20px 24px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: 16px;
   align-content: start;
 }

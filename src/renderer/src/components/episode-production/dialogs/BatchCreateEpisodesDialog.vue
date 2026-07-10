@@ -11,7 +11,7 @@
   <el-dialog
     v-model="visible"
     title="批量创建剧集"
-    width="780px"
+    width="980px"
     :close-on-click-modal="false"
     @close="onClose"
   >
@@ -35,17 +35,17 @@
           <span>已识别 <b>{{ episodes.length }}</b> 集（来源：{{ fileName }}）</span>
           <el-button text @click="onReset">重新选择</el-button>
         </div>
-        <el-table :data="episodes" border size="small" max-height="360">
-          <el-table-column label="序号" type="index" width="60" />
-          <el-table-column label="剧集标题" min-width="200">
+        <el-table :data="episodes" border size="small" max-height="500">
+          <el-table-column label="序号" type="index" width="64" align="center" />
+          <el-table-column label="剧集标题" min-width="420">
             <template #default="{ row }">
-              <el-input v-model="row.title" size="small" />
+              <el-input v-model="row.title" size="small" placeholder="剧集标题" style="width: 100%" />
             </template>
           </el-table-column>
           <el-table-column label="字数" width="90" align="center">
             <template #default="{ row }">{{ row.content.length }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="70" align="center">
+          <el-table-column label="操作" width="96" align="center" fixed="right">
             <template #default="{ $index }">
               <el-button text type="danger" size="small" @click="removeEpisode($index)">删行</el-button>
             </template>
