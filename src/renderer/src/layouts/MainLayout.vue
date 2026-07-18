@@ -55,18 +55,25 @@
                 :class="{ active: isItemActive(item) }"
                 @click="navigateTo(item.path)"
               >
-                <div class="nav-item-content">
-                  <div class="nav-icon-wrapper">
-                    <component :is="item.icon" class="nav-icon" />
-                    <div v-if="isItemActive(item)" class="nav-glow"></div>
+                <el-tooltip
+                  :content="item.label"
+                  placement="right"
+                  :show-after="300"
+                  :disabled="!isCollapsed"
+                >
+                  <div class="nav-item-content">
+                    <div class="nav-icon-wrapper">
+                      <component :is="item.icon" class="nav-icon" />
+                      <div v-if="isItemActive(item)" class="nav-glow"></div>
+                    </div>
+                    <transition name="slide-fade">
+                      <span v-if="!isCollapsed" class="nav-label">{{ item.label }}</span>
+                    </transition>
+                    <transition name="indicator">
+                      <div v-if="isItemActive(item)" class="nav-indicator"></div>
+                    </transition>
                   </div>
-                  <transition name="slide-fade">
-                    <span v-if="!isCollapsed" class="nav-label">{{ item.label }}</span>
-                  </transition>
-                  <transition name="indicator">
-                    <div v-if="isItemActive(item)" class="nav-indicator"></div>
-                  </transition>
-                </div>
+                </el-tooltip>
               </li>
 
               <!-- 父项（带子菜单），点击展开 / 收起 -->
@@ -76,25 +83,32 @@
                   :class="{ active: isItemActive(item) || isAnyChildActive(item) }"
                   @click="onParentClick(item)"
                 >
-                  <div class="nav-item-content">
-                    <div class="nav-icon-wrapper">
-                      <component :is="item.icon" class="nav-icon" />
-                      <div
-                        v-if="isItemActive(item) || isAnyChildActive(item)"
-                        class="nav-glow"
-                      ></div>
+                  <el-tooltip
+                    :content="item.label"
+                    placement="right"
+                    :show-after="300"
+                    :disabled="!isCollapsed"
+                  >
+                    <div class="nav-item-content">
+                      <div class="nav-icon-wrapper">
+                        <component :is="item.icon" class="nav-icon" />
+                        <div
+                          v-if="isItemActive(item) || isAnyChildActive(item)"
+                          class="nav-glow"
+                        ></div>
+                      </div>
+                      <transition name="slide-fade">
+                        <span v-if="!isCollapsed" class="nav-label">{{ item.label }}</span>
+                      </transition>
+                      <el-icon
+                        v-if="!isCollapsed"
+                        class="nav-caret"
+                        :class="{ 'is-open': expandedMenus.has(item.path) }"
+                      >
+                        <ArrowRight />
+                      </el-icon>
                     </div>
-                    <transition name="slide-fade">
-                      <span v-if="!isCollapsed" class="nav-label">{{ item.label }}</span>
-                    </transition>
-                    <el-icon
-                      v-if="!isCollapsed"
-                      class="nav-caret"
-                      :class="{ 'is-open': expandedMenus.has(item.path) }"
-                    >
-                      <ArrowRight />
-                    </el-icon>
-                  </div>
+                  </el-tooltip>
                 </li>
                 <!-- 子菜单 -->
                 <li
@@ -132,15 +146,22 @@
             :class="{ active: currentRoute === item.path }"
             @click="navigateTo(item.path)"
           >
-            <div class="nav-item-content">
-              <div class="nav-icon-wrapper">
-                <component :is="item.icon" class="nav-icon" />
-                <div v-if="currentRoute === item.path" class="nav-glow"></div>
+            <el-tooltip
+              :content="item.label"
+              placement="right"
+              :show-after="300"
+              :disabled="!isCollapsed"
+            >
+              <div class="nav-item-content">
+                <div class="nav-icon-wrapper">
+                  <component :is="item.icon" class="nav-icon" />
+                  <div v-if="currentRoute === item.path" class="nav-glow"></div>
+                </div>
+                <transition name="slide-fade">
+                  <span v-if="!isCollapsed" class="nav-label">{{ item.label }}</span>
+                </transition>
               </div>
-              <transition name="slide-fade">
-                <span v-if="!isCollapsed" class="nav-label">{{ item.label }}</span>
-              </transition>
-            </div>
+            </el-tooltip>
           </li>
         </ul>
       </div>
@@ -197,7 +218,8 @@ const router = useRouter()
 const { currentTheme } = useTheme()
 const tabsStore = useTabsStore()
 
-const isCollapsed = ref(false)
+// 默认折叠：只显示 icon，悬停显示菜单名 tooltip
+const isCollapsed = ref(true)
 const pageTransition = ref('slide-fade')
 // 需要缓存的页面组件名称（对应 defineOptions 中的 name）
 const cachedViews = ['Home', 'Chat', 'StoryEditor', 'CommentEditor', 'Settings']
@@ -306,10 +328,20 @@ function isAnyChildActive(item: MenuItem): boolean {
   return item.children.some((c) => currentRoute.value === c.path)
 }
 
-/** 父项点击：有 children 切换展开 / 收起；不导航（避免触发 redirect）*/
+/**
+ * 父项点击：
+ * - 无 children：直接导航
+ * - 有 children 且当前折叠：先展开侧边栏，再展开该父项子菜单（折叠态下点击父项无可见效果，需展开）
+ * - 有 children 且已展开：切换子菜单展开 / 收起（不导航，避免触发 redirect）
+ */
 function onParentClick(item: MenuItem): void {
   if (!item.children || item.children.length === 0) {
     router.push(item.path)
+    return
+  }
+  if (isCollapsed.value) {
+    isCollapsed.value = false
+    expandedMenus.value.add(item.path)
     return
   }
   if (expandedMenus.value.has(item.path)) {
@@ -517,6 +549,12 @@ watch(
   margin: 4px 0;
   cursor: pointer;
   transition: all var(--transition-fast);
+
+  // el-tooltip 触发器包裹层：撑满 li，保证 hover 区与背景一致
+  :deep(.el-tooltip__trigger) {
+    display: block;
+    width: 100%;
+  }
 
   &.active {
     .nav-item-content {
