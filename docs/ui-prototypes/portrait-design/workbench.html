@@ -47,65 +47,47 @@
           <!-- 左：预览 -->
           <div style="position:sticky; top:0;">
             <!-- framing 切换：半身 / 全身 -->
-            <div style="display:flex; gap:6px; margin-bottom:11px; background:var(--c-bg-2); padding:4px; border-radius:var(--r-md);">
-              <span style="flex:1; text-align:center; padding:7px; border-radius:var(--r-sm); background:var(--c-surface); font-size:13px; font-weight:600; box-shadow:var(--shadow-xs);">半身像</span>
-              <span style="flex:1; text-align:center; padding:7px; border-radius:var(--r-sm); font-size:13px; color:var(--c-text-3);">全身像</span>
+            <div id="framingTabs" style="display:flex; gap:6px; margin-bottom:11px; background:var(--c-bg-2); padding:4px; border-radius:var(--r-md);">
+              <span data-tab="half" style="flex:1; text-align:center; padding:7px; border-radius:var(--r-sm); background:var(--c-surface); font-size:13px; font-weight:600; box-shadow:var(--shadow-xs); cursor:pointer;">半身像</span>
+              <span data-tab="full" style="flex:1; text-align:center; padding:7px; border-radius:var(--r-sm); font-size:13px; color:var(--c-text-3); cursor:pointer;">全身像</span>
             </div>
-            <div class="portrait-preview">
-              <div class="gradient t1"></div>
-              <div class="figure"><svg viewBox="0 0 100 140" fill="none"><circle cx="50" cy="38" r="20" fill="rgba(255,255,255,0.92)"/><path d="M14 140c0-22 16-40 36-40s36 18 36 40" fill="rgba(255,255,255,0.92)"/></svg></div>
-              <span style="position:absolute; top:11px; left:11px; background:rgba(15,20,25,0.55); backdrop-filter:blur(8px); color:#fff; font-size:11px; padding:3px 9px; border-radius:var(--r-pill); font-weight:500;">半身 · 正面</span>
+
+            <!-- 半身视图 -->
+            <div id="viewHalf">
+              <div class="portrait-preview">
+                <div class="gradient t1"></div>
+                <div class="figure"><svg viewBox="0 0 100 140" fill="none"><circle cx="50" cy="38" r="20" fill="rgba(255,255,255,0.92)"/><path d="M14 140c0-22 16-40 36-40s36 18 36 40" fill="rgba(255,255,255,0.92)"/></svg></div>
+                <span style="position:absolute; top:11px; left:11px; background:rgba(15,20,25,0.55); backdrop-filter:blur(8px); color:#fff; font-size:11px; padding:3px 9px; border-radius:var(--r-pill); font-weight:500;">半身 · 正面</span>
+              </div>
+              <div class="thumb-strip">
+                <div class="thumb-item active"><div class="gradient t1"></div></div>
+                <div class="thumb-item"><div class="gradient t3"></div></div>
+                <div class="thumb-item"><div class="gradient t2"></div></div>
+              </div>
+              <div class="info-block mt-16">
+                <div class="row"><div class="k">取景</div><div class="v">半身像 · 正面</div></div>
+                <div class="row"><div class="k">尺寸</div><div class="v">768 × 1024</div></div>
+                <div class="row"><div class="k">种子</div><div class="v">8392041</div></div>
+                <div class="row"><div class="k">模型</div><div class="v">wan2.6</div></div>
+              </div>
+              <button class="btn btn-block btn-sm mt-12">🔍 大图预览</button>
             </div>
-            <div class="thumb-strip">
-              <div class="thumb-item active"><div class="gradient t1"></div></div>
-              <div class="thumb-item"><div class="gradient t3"></div></div>
-              <div class="thumb-item"><div class="gradient t2"></div></div>
+
+            <!-- 全身视图（尚未生成 → 空状态） -->
+            <div id="viewFull" hidden>
+              <div class="portrait-preview" style="border-style:dashed; background:var(--c-bg-2);">
+                <div class="figure dim"><svg viewBox="0 0 100 140" fill="none"><circle cx="50" cy="34" r="17" fill="rgba(20,24,31,0.18)"/><path d="M10 140c0-26 18-46 40-46s40 20 40 46" fill="rgba(20,24,31,0.18)"/></svg></div>
+              </div>
+              <div class="info-block mt-16" style="background:var(--c-primary-soft);">
+                <div class="row"><div class="k">状态</div><div class="v" style="color:var(--c-primary);">尚未生成全身像</div></div>
+                <div class="row"><div class="k">来源</div><div class="v">基于当前半身扩展 · 面部一致</div></div>
+              </div>
+              <button class="btn btn-primary btn-block mt-12" onclick="document.getElementById('genFullBodyDlg').style.display='flex'">⬇ 生成全身像</button>
             </div>
-            <div class="info-block mt-16">
-              <div class="row"><div class="k">取景</div><div class="v">半身像 · 正面</div></div>
-              <div class="row"><div class="k">尺寸</div><div class="v">768 × 1024</div></div>
-              <div class="row"><div class="k">种子</div><div class="v">8392041</div></div>
-              <div class="row"><div class="k">模型</div><div class="v">wan2.6</div></div>
-            </div>
-            <button class="btn btn-block btn-sm mt-12">🔍 大图预览</button>
           </div>
 
           <!-- 右：操作 -->
           <div style="display:flex; flex-direction:column; gap:16px;">
-
-            <!-- 下一步引导：轻量提示条（不抢视觉） -->
-            <div style="display:flex; align-items:center; gap:10px; padding:11px 14px; background:var(--c-primary-soft); border-radius:var(--r-md); border:1px solid var(--c-primary-tint);">
-              <span style="font-size:15px;">💡</span>
-              <span style="font-size:12.5px; color:var(--c-text-2); flex:1;">半身已就绪。把脸调满意后，可基于它<strong style="color:var(--c-primary);">扩展为全身像</strong>（保持面部一致）。</span>
-              <button class="btn btn-sm btn-primary" onclick="var p=document.getElementById('genFullBody'); p.hidden=!p.hidden; this.textContent=p.hidden?'生成全身 ↓':'收起 ↑';">生成全身 ↓</button>
-            </div>
-
-            <!-- 生成全身（完整参数，默认折叠，点引导展开） -->
-            <div class="panel" id="genFullBody" hidden style="border-left:3px solid var(--c-primary);">
-              <div class="panel-title"><span class="ico-lg">⬇</span> 生成全身像 <span class="tag tag-primary">基于当前半身</span></div>
-              <div class="form-row">
-                <div class="form-label">全身构图提示词</div>
-                <textarea class="textarea" rows="3" placeholder="描述全身构图、姿势、服装...">same person as reference, full body shot, standing upright, complete figure from head to toe, natural relaxed posture, consistent face and hairstyle</textarea>
-              </div>
-              <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
-                <div class="form-row" style="margin:0;">
-                  <div class="form-label">输出尺寸</div>
-                  <div class="size-grid"><span class="size-chip active">1024×1792</span><span class="size-chip">896×1152</span></div>
-                </div>
-                <div class="form-row" style="margin:0;">
-                  <div class="form-label">提示词模板</div>
-                  <select class="input"><option value="">不使用</option><option>少年清爽风 · 8 头身全身</option></select>
-                </div>
-              </div>
-              <div class="form-row" style="margin-top:14px;"><div class="form-label">参考图片</div>
-                <div class="ref-grid">
-                  <div class="ref-item"><div class="ph g1"><svg width="30" height="30" viewBox="0 0 100 140" fill="none"><circle cx="50" cy="38" r="22" fill="rgba(255,255,255,0.85)"/><path d="M14 140c0-22 16-40 36-40s36 18 36 40" fill="rgba(255,255,255,0.85)"/></svg></div><span class="tag-type">当前半身</span><button class="remove">×</button></div>
-                  <div class="ref-upload"><span class="plus">＋</span><span>追加</span></div>
-                </div>
-              </div>
-              <div class="form-row"><div class="slider-row"><span class="lbl">重绘强度</span><input type="range" min="0" max="100" value="55"><span class="val">0.55</span></div></div>
-              <button class="btn btn-primary btn-block">⬇ 生成全身像</button>
-            </div>
 
             <!-- 修改面部（核心新功能） -->
             <div class="panel panel-accent">
@@ -199,11 +181,16 @@
         <div class="variant-group" style="border-left:3px solid var(--c-primary);">
           <div class="variant-group-head">
             <div class="variant-group-title">全身像 · 基础形象 <span class="tag tag-primary">全身</span> <span class="tag">由半身扩展 · 面部一致</span></div>
-            <div style="display:flex;gap:7px;"><button class="btn btn-sm">🔄 重新生成</button><button class="btn btn-sm">📐 补齐角度</button></div>
+            <button class="btn btn-sm btn-primary" onclick="document.getElementById('genFullBodyDlg').style.display='flex'">＋ 生成全身像</button>
           </div>
-          <div class="variant-row">
-            <div class="variant-card"><div class="img"><div class="gradient t2"></div><div class="figure"><svg viewBox="0 0 100 140" fill="none"><circle cx="50" cy="34" r="17" fill="rgba(255,255,255,0.92)"/><path d="M10 140c0-26 18-46 40-46s40 20 40 46" fill="rgba(255,255,255,0.92)"/></svg></div></div><div class="meta"><span class="angle-label">正面</span><div class="acts"><button class="mini">⬇</button><button class="mini">✏</button><button class="mini danger">🗑</button></div></div></div>
-            <div class="variant-card"><div class="img"><div class="gradient t2"></div><div class="figure"><svg viewBox="0 0 100 140" fill="none"><circle cx="50" cy="34" r="17" fill="rgba(255,255,255,0.92)"/><path d="M10 140c0-26 18-46 40-46s40 20 40 46" fill="rgba(255,255,255,0.92)"/></svg></div></div><div class="meta"><span class="angle-label">左侧</span><div class="acts"><button class="mini">⬇</button><button class="mini">✏</button><button class="mini danger">🗑</button></div></div></div>
+          <!-- 空状态：尚无全身像 -->
+          <div style="display:flex; align-items:center; gap:14px; padding:18px 20px; background:var(--c-primary-softer); border:1px dashed var(--c-primary-tint); border-radius:var(--r-md);">
+            <div style="width:48px; height:48px; border-radius:var(--r-md); background:var(--c-primary); color:#fff; display:flex; align-items:center; justify-content:center; font-size:22px; flex-shrink:0;">⬇</div>
+            <div style="flex:1;">
+              <div style="font-size:13.5px; font-weight:600; color:var(--c-text);">尚未生成全身像</div>
+              <div style="font-size:12px; color:var(--c-text-2); margin-top:2px;">基于当前半身扩展，保持面部一致 →</div>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="document.getElementById('genFullBodyDlg').style.display='flex'">生成全身像</button>
           </div>
         </div>
 
@@ -229,6 +216,50 @@
       </div>
     </div>
   </main>
+</div>
+
+<!-- 生成全身像对话框 -->
+<div class="modal-mask" id="genFullBodyDlg" style="display:none;">
+  <div class="modal" style="width:560px;">
+    <div class="modal-head">
+      <h3>生成全身像</h3>
+      <button class="close-x" onclick="document.getElementById('genFullBodyDlg').style.display='none'">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex; align-items:center; gap:10px; padding:11px 14px; background:var(--c-primary-soft); border-radius:var(--r-md); margin-bottom:16px;">
+        <span style="font-size:15px;">🔗</span>
+        <span style="font-size:12.5px; color:var(--c-text-2);">以当前<strong style="color:var(--c-primary);">半身像</strong>为参考，保持面部一致，扩展为全身。</span>
+      </div>
+      <div class="form-row">
+        <div class="form-label">全身构图提示词</div>
+        <textarea class="textarea" rows="3">same person as reference, full body shot, standing upright, complete figure from head to toe, natural relaxed posture, consistent face and hairstyle</textarea>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+        <div class="form-row" style="margin:0;">
+          <div class="form-label">输出尺寸</div>
+          <div class="size-grid"><span class="size-chip active">1024×1792</span><span class="size-chip">896×1152</span></div>
+        </div>
+        <div class="form-row" style="margin:0;">
+          <div class="form-label">提示词模板</div>
+          <select class="input"><option value="">不使用</option><option>少年清爽风 · 8 头身全身</option></select>
+        </div>
+      </div>
+      <div class="form-row" style="margin-top:16px;">
+        <div class="form-label">参考图片</div>
+        <div class="ref-grid">
+          <div class="ref-item"><div class="ph g1"><svg width="30" height="30" viewBox="0 0 100 140" fill="none"><circle cx="50" cy="38" r="22" fill="rgba(255,255,255,0.85)"/><path d="M14 140c0-22 16-40 36-40s36 18 36 40" fill="rgba(255,255,255,0.85)"/></svg></div><span class="tag-type">当前半身</span><button class="remove">×</button></div>
+          <div class="ref-upload"><span class="plus">＋</span><span>追加</span></div>
+        </div>
+      </div>
+      <div class="form-row" style="margin-bottom:0;">
+        <div class="slider-row" style="margin:0;"><span class="lbl">重绘强度</span><input type="range" min="0" max="100" value="55"><span class="val">0.55</span></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="document.getElementById('genFullBodyDlg').style.display='none'">取消</button>
+      <button class="btn btn-primary" onclick="document.getElementById('genFullBodyDlg').style.display='none'">⬇ 生成全身像</button>
+    </div>
+  </div>
 </div>
 
 <!-- 导出对话框 -->
@@ -258,5 +289,29 @@
   <a href="edit-face.html">修改面部</a>
   <a href="templates.html">模板库</a>
 </div>
+
+<script>
+// 半身/全身 tab 切换
+(function () {
+  const tabs = document.querySelectorAll('#framingTabs [data-tab]');
+  const viewHalf = document.getElementById('viewHalf');
+  const viewFull = document.getElementById('viewFull');
+  const ACTIVE = { background: 'var(--c-surface)', fontWeight: '600', boxShadow: 'var(--shadow-xs)', color: '' };
+  const IDLE = { background: '', fontWeight: '', boxShadow: '', color: 'var(--c-text-3)' };
+
+  function switchTab(name) {
+    viewHalf.hidden = name !== 'half';
+    viewFull.hidden = name !== 'full';
+    tabs.forEach(t => {
+      const on = t.dataset.tab === name;
+      t.style.background = on ? ACTIVE.background : IDLE.background;
+      t.style.fontWeight = on ? ACTIVE.fontWeight : IDLE.fontWeight;
+      t.style.boxShadow = on ? ACTIVE.boxShadow : IDLE.boxShadow;
+      t.style.color = on ? ACTIVE.color : IDLE.color;
+    });
+  }
+  tabs.forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+})();
+</script>
 </body>
 </html>
