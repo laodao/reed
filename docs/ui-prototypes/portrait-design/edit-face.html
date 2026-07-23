@@ -62,13 +62,26 @@
           </div>
 
           <div class="panel mt-16">
-            <div class="panel-title">面部专业模板预览 <span class="tag">来自 prompt.txt</span></div>
-            <div style="font-size:12.5px; line-height:1.85; color:var(--c-text-2); background:var(--c-bg-2); border-radius:var(--r-md); padding:14px 16px; max-height:240px; overflow-y:auto;">
-              <div style="color:var(--c-accent); font-weight:650; margin-bottom:6px;">【面部专业描述】</div>
-              <div style="margin-bottom:9px;"><strong style="color:var(--c-text);">纵向三庭比例</strong>：三庭基本均衡，中庭轻微偏短，上庭舒展干净，下庭颏部短小紧致；面部重心轻盈，弱化成熟硬朗质感，凸显少年清爽感。</div>
-              <div style="margin-bottom:9px;"><strong style="color:var(--c-text);">横向五眼比例</strong>：五眼排布匀称，眼距适中偏疏；鼻翼小巧规整，宽度适配内眼角间距；唇幅窄小适中。</div>
-              <div style="margin-bottom:9px;"><strong style="color:var(--c-text);">骨骼与皮肉</strong>：骨相偏弱、线条柔和，颧骨平缓内收，下颌转折圆润，无锋利棱角。</div>
-              <div><strong style="color:var(--c-text);">眉眼</strong>：浅淡平眉；标准圆杏眼，眼神清澈干净、灵动清爽。</div>
+            <div class="panel-title">
+              模板预览
+              <span class="tag tag-accent" style="margin-left:auto;">联动右侧选择</span>
+            </div>
+            <div style="font-size:11.5px; color:var(--c-text-3); margin-bottom:10px;">下方内容随右侧「面部模板」下拉选择实时变化 —— 选中的模板即目标脸型蓝图。</div>
+            <div style="font-size:12.5px; line-height:1.85; color:var(--c-text-2); background:var(--c-bg-2); border-radius:var(--r-md); padding:14px 16px; max-height:220px; overflow-y:auto;">
+              <div style="color:var(--c-accent); font-weight:650; margin-bottom:6px;">【成熟硬朗风 · 面部专业描述】</div>
+              <div style="margin-bottom:9px;"><strong style="color:var(--c-text);">纵向三庭</strong>：三庭比例端正，中庭饱满，下庭颏部方正有力，面部重心下沉，凸显成熟硬朗气场。</div>
+              <div style="margin-bottom:9px;"><strong style="color:var(--c-text);">骨骼与皮肉</strong>：骨相突出、线条分明，颧骨立体，下颌角明确，颏部棱角清晰，无柔弱感。</div>
+              <div style="margin-bottom:9px;"><strong style="color:var(--c-text);">眉眼</strong>：浓眉剑眉，眉骨突出；目光深邃坚毅，眼窝略深，眼神锐利有神。</div>
+              <div><strong style="color:var(--c-text);">鼻部 / 下颌</strong>：鼻梁高挺，鼻翼略宽；下颌线条硬朗，方正下颌角。</div>
+            </div>
+          </div>
+
+          <!-- 关系说明：模板 vs 指令 -->
+          <div class="panel mt-16" style="background:var(--c-accent-soft); border-color:var(--c-accent-tint);">
+            <div style="font-size:13px; font-weight:600; color:var(--c-accent); margin-bottom:8px;">💡 模板与指令如何配合</div>
+            <div style="font-size:12.5px; color:var(--c-text-2); line-height:1.7;">
+              <div style="margin-bottom:6px;"><strong style="color:var(--c-text);">模板</strong> = 目标脸型蓝图（把脸改成什么样），<strong style="color:var(--c-text);">指令</strong> = 在当前脸上做微调（改哪里）。</div>
+              <div>两者可叠加：模板定基调 + 指令做细节微调。只填其一也可。</div>
             </div>
           </div>
         </div>
@@ -87,8 +100,8 @@
 
           <div class="form-row"><div class="form-label">面部修改描述</div><textarea class="textarea" rows="3" placeholder="如：下颌线更硬朗、浓眉、单眼皮、嘴角微扬">下颌线略加硬朗，眉峰提高，眼神更坚毅</textarea></div>
 
-          <div class="form-row"><div class="form-label">面部模板</div>
-            <select class="input"><option selected>少年清爽风 · 面部专业描述</option><option>成熟硬朗风 · 面部</option><option>温婉柔美风 · 面部</option><option value="">— 不使用模板 —</option></select>
+          <div class="form-row"><div class="form-label">面部模板 <span style="font-size:11px; color:var(--c-text-3); font-weight:400;">（选中后左侧预览联动）</span></div>
+            <select class="input"><option>少年清爽风 · 面部</option><option selected>成熟硬朗风 · 面部</option><option>温婉柔美风 · 面部</option><option value="">— 不使用模板 —</option></select>
           </div>
 
           <div class="form-row"><div class="form-label">面部参考图</div>

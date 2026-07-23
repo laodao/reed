@@ -68,6 +68,27 @@
         <div class="panel">
           <div class="panel-title"><span class="ico-lg">✨</span> 生成形象</div>
 
+          <!-- 取景范围：默认半身，先定脸再扩全身 -->
+          <div class="form-row">
+            <div class="form-label">取景范围</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+              <label style="display:flex; gap:10px; padding:12px 14px; border:1.5px solid var(--c-primary); border-radius:var(--r-md); background:var(--c-primary-softer); cursor:pointer; align-items:flex-start;">
+                <input type="radio" name="framing" checked style="margin-top:3px; accent-color:var(--c-primary);">
+                <div>
+                  <div style="font-weight:600; font-size:13.5px; color:var(--c-primary);">半身像（推荐先做）</div>
+                  <div style="font-size:11.5px; color:var(--c-text-2); margin-top:3px; line-height:1.5;">面部细节清晰，便于定脸。满意后再扩展为全身。</div>
+                </div>
+              </label>
+              <label style="display:flex; gap:10px; padding:12px 14px; border:1px solid var(--c-border-strong); border-radius:var(--r-md); background:var(--c-surface); cursor:pointer; align-items:flex-start;">
+                <input type="radio" name="framing" style="margin-top:3px; accent-color:var(--c-primary);">
+                <div>
+                  <div style="font-weight:600; font-size:13.5px;">全身像</div>
+                  <div style="font-size:11.5px; color:var(--c-text-3); margin-top:3px; line-height:1.5;">从头到脚完整形象。建议基于半身生成，保证面部一致。</div>
+                </div>
+              </label>
+            </div>
+          </div>
+
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
             <div class="form-row" style="margin:0;">
               <div class="form-label">生成模型</div>
@@ -141,7 +162,8 @@
             </div>
           </div>
 
-          <button class="btn btn-primary btn-lg btn-block" onclick="location.href='workbench.html'">✨ 开始生成（正面）</button>
+          <button class="btn btn-primary btn-lg btn-block" onclick="location.href='workbench.html'">✨ 生成半身像（正面）</button>
+          <div style="text-align:center; margin-top:10px; font-size:12px; color:var(--c-text-3);">生成后可在工作台编辑微调，满意后再「基于此半身生成全身」</div>
         </div>
       </div>
     </div>

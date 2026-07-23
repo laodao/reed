@@ -46,9 +46,15 @@
 
           <!-- 左：预览 -->
           <div style="position:sticky; top:0;">
+            <!-- framing 切换：半身 / 全身 -->
+            <div style="display:flex; gap:6px; margin-bottom:11px; background:var(--c-bg-2); padding:4px; border-radius:var(--r-md);">
+              <span style="flex:1; text-align:center; padding:7px; border-radius:var(--r-sm); background:var(--c-surface); font-size:13px; font-weight:600; box-shadow:var(--shadow-xs);">半身像</span>
+              <span style="flex:1; text-align:center; padding:7px; border-radius:var(--r-sm); font-size:13px; color:var(--c-text-3);">全身像</span>
+            </div>
             <div class="portrait-preview">
               <div class="gradient t1"></div>
               <div class="figure"><svg viewBox="0 0 100 140" fill="none"><circle cx="50" cy="38" r="20" fill="rgba(255,255,255,0.92)"/><path d="M14 140c0-22 16-40 36-40s36 18 36 40" fill="rgba(255,255,255,0.92)"/></svg></div>
+              <span style="position:absolute; top:11px; left:11px; background:rgba(15,20,25,0.55); backdrop-filter:blur(8px); color:#fff; font-size:11px; padding:3px 9px; border-radius:var(--r-pill); font-weight:500;">半身 · 正面</span>
             </div>
             <div class="thumb-strip">
               <div class="thumb-item active"><div class="gradient t1"></div></div>
@@ -56,7 +62,7 @@
               <div class="thumb-item"><div class="gradient t2"></div></div>
             </div>
             <div class="info-block mt-16">
-              <div class="row"><div class="k">类型</div><div class="v">基础形象 · 正面</div></div>
+              <div class="row"><div class="k">取景</div><div class="v">半身像 · 正面</div></div>
               <div class="row"><div class="k">尺寸</div><div class="v">768 × 1024</div></div>
               <div class="row"><div class="k">种子</div><div class="v">8392041</div></div>
               <div class="row"><div class="k">模型</div><div class="v">wan2.6</div></div>
@@ -67,7 +73,25 @@
           <!-- 右：操作 -->
           <div style="display:flex; flex-direction:column; gap:16px;">
 
-            <!-- 修改面部（核心新功能，置顶） -->
+            <!-- 引导：基于此半身生成全身（核心流程，置顶最醒目） -->
+            <div class="panel" style="border:1.5px solid var(--c-primary); border-left:4px solid var(--c-primary); background:linear-gradient(135deg, var(--c-primary-softer), var(--c-surface));">
+              <div style="display:flex; align-items:center; gap:14px;">
+                <div style="width:44px; height:44px; border-radius:var(--r-md); background:var(--c-primary); color:#fff; display:flex; align-items:center; justify-content:center; font-size:22px; flex-shrink:0; box-shadow:var(--shadow-glow);">⬇</div>
+                <div style="flex:1; min-width:0;">
+                  <div style="font-weight:650; font-size:14.5px;">基于此半身生成全身像</div>
+                  <div style="font-size:12px; color:var(--c-text-2); margin-top:2px;">以当前半身为参考，保持面部一致，扩展为完整全身形象</div>
+                </div>
+                <button class="btn btn-primary" style="flex-shrink:0;">生成全身 →</button>
+              </div>
+              <div style="margin-top:12px; display:flex; gap:10px; align-items:center;">
+                <span style="font-size:12px; color:var(--c-text-3); flex-shrink:0;">全身尺寸</span>
+                <span class="size-chip active">1024×1792</span>
+                <span class="size-chip">896×1152</span>
+                <span style="margin-left:auto;" class="tag tag-primary">推荐：先把脸调满意再生成</span>
+              </div>
+            </div>
+
+            <!-- 修改面部（核心新功能） -->
             <div class="panel panel-accent">
               <div class="panel-title"><span class="ico-lg">🎯</span> 修改面部 <span class="tag tag-accent">新</span></div>
               <div class="form-row"><div class="form-label">面部修改描述</div><textarea class="textarea" rows="2" placeholder="如：更硬朗的下颌线、单眼皮、浓眉、嘴角微扬..."></textarea></div>
@@ -84,56 +108,57 @@
               </div>
             </div>
 
-            <!-- 重新生成 -->
-            <div class="panel">
-              <div class="panel-title"><span class="ico-lg">🔄</span> 重新生成</div>
-              <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
-                <div><div class="form-label">输出尺寸</div><div class="size-grid"><span class="size-chip active">768×1024</span><span class="size-chip">896×1152</span><span class="size-chip">1024×1792</span></div></div>
-                <div><div class="form-label">提示词模板</div><select class="input"><option value="">沿用当前</option><option>少年清爽风 · 全身</option></select></div>
-              </div>
-              <div class="form-row" style="margin-top:14px;">
-                <div class="form-label">提示词 / 反向提示词</div>
-                <textarea class="textarea" rows="2">portrait of a young Asian male, age 18, clean and refreshing temperament...</textarea>
-                <textarea class="textarea" rows="1" style="margin-top:7px;" placeholder="反向提示词（可选）">cropped, half body, low quality</textarea>
-              </div>
-              <div class="form-row"><div class="form-label">参考图片</div>
-                <div class="ref-grid">
-                  <div class="ref-item"><div class="ph g2"><svg width="30" height="30" viewBox="0 0 100 140" fill="none"><circle cx="50" cy="38" r="22" fill="rgba(255,255,255,0.85)"/><path d="M14 140c0-22 16-40 36-40s36 18 36 40" fill="rgba(255,255,255,0.85)"/></svg></div><span class="tag-type">当前形象</span><button class="remove">×</button></div>
-                  <div class="ref-item"><div class="ph g1"><svg width="30" height="30" viewBox="0 0 100 140" fill="none"><circle cx="50" cy="38" r="22" fill="rgba(255,255,255,0.85)"/><path d="M14 140c0-22 16-40 36-40s36 18 36 40" fill="rgba(255,255,255,0.85)"/></svg></div><span class="tag-type">人物</span><button class="remove">×</button></div>
-                  <div class="ref-upload"><span class="plus">＋</span><span>追加</span></div>
+            <!-- 更多编辑（折叠，收纳低频操作） -->
+            <div class="panel" style="padding:0; overflow:hidden;">
+              <div class="collapse-head" onclick="var b=this.nextElementSibling, a=this.querySelector('.ch-arrow'); b.hidden=!b.hidden; this.classList.toggle('open', !b.hidden);">
+                <div class="ch-icon">⚙️</div>
+                <div style="flex:1;">
+                  <div class="ch-title">更多编辑</div>
+                  <div class="ch-sub">重新生成 · 换衣 · 换背景 · 多角度</div>
                 </div>
+                <span class="ch-arrow">▶</span>
               </div>
-              <div class="form-row"><div class="slider-row"><span class="lbl">重绘强度</span><input type="range" min="0" max="100" value="100"><span class="val">1.0</span></div></div>
-              <button class="btn btn-primary">🔄 重新生成（替换当前正面）</button>
-            </div>
+              <div class="collapse-body" hidden style="padding-top:8px;">
 
-            <!-- 换衣 / 换背景 -->
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
-              <div class="panel">
-                <div class="panel-title"><span class="ico-lg">👔</span> 换衣</div>
-                <textarea class="textarea" rows="2" placeholder="服装描述，如：red suit, white shirt"></textarea>
-                <div class="ref-grid mt-8"><div class="ref-upload" style="width:62px;height:62px;"><span class="plus">＋</span><span>服装参考</span></div></div>
-                <button class="btn btn-primary btn-block btn-sm mt-12">应用换衣</button>
-              </div>
-              <div class="panel">
-                <div class="panel-title"><span class="ico-lg">🏞️</span> 换背景</div>
-                <select class="input"><option>纯色背景</option><option>预设 · 室内</option><option>预设 · 工作室</option><option>自定义描述</option><option>上传背景图</option></select>
-                <div class="ref-grid mt-8"><div class="ref-upload" style="width:62px;height:62px;"><span class="plus">＋</span><span>背景参考</span></div></div>
-                <button class="btn btn-primary btn-block btn-sm mt-12">应用换背景</button>
-              </div>
-            </div>
-
-            <!-- 多角度 -->
-            <div class="panel">
-              <div class="panel-title"><span class="ico-lg">📐</span> 生成其他角度</div>
-              <div style="display:flex; align-items:center; gap:18px;">
-                <div class="angle-checks">
-                  <label class="angle-check"><input type="checkbox" checked> 左侧</label>
-                  <label class="angle-check"><input type="checkbox" checked> 右侧</label>
-                  <label class="angle-check"><input type="checkbox"> 背面</label>
+                <!-- 重新生成（紧凑） -->
+                <div style="padding:12px; background:var(--c-bg-2); border-radius:var(--r-md); margin-bottom:12px;">
+                  <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+                    <span style="font-weight:600; font-size:13px;">🔄 重新生成</span>
+                    <span style="font-size:11px; color:var(--c-text-3);">替换当前半身</span>
+                  </div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
+                    <select class="input"><option>沿用当前提示词</option><option>少年清爽风</option></select>
+                    <div class="size-grid"><span class="size-chip active">768×1024</span><span class="size-chip">896×1152</span></div>
+                  </div>
+                  <div class="slider-row" style="margin:0 0 10px;"><span class="lbl">重绘强度</span><input type="range" min="0" max="100" value="100"><span class="val">1.0</span></div>
+                  <button class="btn btn-primary btn-block btn-sm">🔄 重新生成</button>
                 </div>
-                <span class="size-chip active">768×1024</span>
-                <button class="btn btn-primary" style="margin-left:auto;">生成角度</button>
+
+                <!-- 换衣 / 换背景（紧凑并列） -->
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;">
+                  <div style="padding:12px; background:var(--c-bg-2); border-radius:var(--r-md);">
+                    <div style="font-weight:600; font-size:13px; margin-bottom:8px;">👔 换衣</div>
+                    <input class="input" placeholder="red suit, white shirt" style="margin-bottom:8px;">
+                    <button class="btn btn-soft btn-block btn-sm">应用换衣</button>
+                  </div>
+                  <div style="padding:12px; background:var(--c-bg-2); border-radius:var(--r-md);">
+                    <div style="font-weight:600; font-size:13px; margin-bottom:8px;">🏞️ 换背景</div>
+                    <select class="input" style="margin-bottom:8px;"><option>纯色背景</option><option>预设 · 室内</option><option>自定义</option></select>
+                    <button class="btn btn-soft btn-block btn-sm">应用换背景</button>
+                  </div>
+                </div>
+
+                <!-- 多角度（紧凑） -->
+                <div style="padding:12px; background:var(--c-bg-2); border-radius:var(--r-md);">
+                  <div style="display:flex; align-items:center; gap:14px;">
+                    <span style="font-weight:600; font-size:13px;">📐 补角度</span>
+                    <label class="angle-check"><input type="checkbox" checked> 左</label>
+                    <label class="angle-check"><input type="checkbox" checked> 右</label>
+                    <label class="angle-check"><input type="checkbox"> 背</label>
+                    <button class="btn btn-soft btn-sm" style="margin-left:auto;">生成</button>
+                  </div>
+                </div>
+
               </div>
             </div>
           </div>
@@ -144,7 +169,7 @@
 
         <div class="variant-group">
           <div class="variant-group-head">
-            <div class="variant-group-title">基础形象 <span class="tag tag-success">完整四角度</span></div>
+            <div class="variant-group-title">半身像 · 基础形象 <span class="tag tag-primary">半身</span> <span class="tag tag-success">完整四角度</span></div>
             <div style="display:flex;gap:7px;"><button class="btn btn-sm">🔄 重新生成</button><button class="btn btn-sm">📐 补齐角度</button></div>
           </div>
           <div class="variant-row">
@@ -155,9 +180,20 @@
           </div>
         </div>
 
+        <div class="variant-group" style="border-left:3px solid var(--c-primary);">
+          <div class="variant-group-head">
+            <div class="variant-group-title">全身像 · 基础形象 <span class="tag tag-primary">全身</span> <span class="tag">由半身扩展 · 面部一致</span></div>
+            <div style="display:flex;gap:7px;"><button class="btn btn-sm">🔄 重新生成</button><button class="btn btn-sm">📐 补齐角度</button></div>
+          </div>
+          <div class="variant-row">
+            <div class="variant-card"><div class="img"><div class="gradient t2"></div><div class="figure"><svg viewBox="0 0 100 140" fill="none"><circle cx="50" cy="34" r="17" fill="rgba(255,255,255,0.92)"/><path d="M10 140c0-26 18-46 40-46s40 20 40 46" fill="rgba(255,255,255,0.92)"/></svg></div></div><div class="meta"><span class="angle-label">正面</span><div class="acts"><button class="mini">⬇</button><button class="mini">✏</button><button class="mini danger">🗑</button></div></div></div>
+            <div class="variant-card"><div class="img"><div class="gradient t2"></div><div class="figure"><svg viewBox="0 0 100 140" fill="none"><circle cx="50" cy="34" r="17" fill="rgba(255,255,255,0.92)"/><path d="M10 140c0-26 18-46 40-46s40 20 40 46" fill="rgba(255,255,255,0.92)"/></svg></div></div><div class="meta"><span class="angle-label">左侧</span><div class="acts"><button class="mini">⬇</button><button class="mini">✏</button><button class="mini danger">🗑</button></div></div></div>
+          </div>
+        </div>
+
         <div class="variant-group">
           <div class="variant-group-head">
-            <div class="variant-group-title">换衣：red suit <span class="tag">正面 · 待补角度</span></div>
+            <div class="variant-group-title">换衣：red suit（半身）<span class="tag">正面 · 待补角度</span></div>
             <button class="btn btn-sm">📐 生成其他角度</button>
           </div>
           <div class="variant-row">
