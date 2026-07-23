@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>人像设计 · 项目</title>
+  <link rel="stylesheet" href="portrait.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- ========== 左主导航 ========== -->
+  <aside class="app-sidebar">
+    <div class="app-logo">
+      <div class="logo-mark"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l4 4L19 6" stroke="white" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <span>The Bot</span>
+    </div>
+    <nav class="app-nav">
+      <div class="nav-group-label">工作台</div>
+      <div class="nav-item"><span class="ico">💬</span><span>对话</span></div>
+      <div class="nav-item"><span class="ico">📝</span><span>长文写作</span></div>
+      <div class="nav-item"><span class="ico">🎬</span><span>剧集制作</span></div>
+      <div class="nav-group-label">创作</div>
+      <div class="nav-item active"><span class="ico">👤</span><span>人像设计</span></div>
+      <div class="nav-item"><span class="ico">🖼️</span><span>图像生成</span></div>
+      <div class="nav-item"><span class="ico">🎙️</span><span>语音</span></div>
+      <div class="nav-group-label">工具</div>
+      <div class="nav-item"><span class="ico">🌐</span><span>翻译</span></div>
+      <div class="nav-item"><span class="ico">📚</span><span>知识库</span></div>
+      <div class="nav-item"><span class="ico">📖</span><span>日记</span></div>
+    </nav>
+    <div class="app-sidebar-footer">
+      <div class="avatar">羽</div>
+      <div><div class="u-name">羽毛</div><div class="u-plan">个人版</div></div>
+    </div>
+  </aside>
+
+  <!-- ========== 内容：项目列表 ========== -->
+  <main class="app-content">
+    <div class="page">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">人像设计</h1>
+        </div>
+        <div style="margin-left:14px; display:flex; gap:8px;">
+          <span class="tag">3 个项目</span>
+          <span class="tag">8 个形象</span>
+          <span class="tag tag-accent">64 张图片</span>
+        </div>
+        <div class="page-header-actions">
+          <button class="btn btn-ghost btn-sm" onclick="location.href='templates.html'">📚 模板库</button>
+          <button class="btn btn-primary" onclick="document.getElementById('newProject').style.display='flex'">＋ 新建项目</button>
+        </div>
+      </div>
+
+      <div class="page-body">
+        <div class="card-grid">
+
+          <div class="project-card" onclick="location.href='characters.html'">
+            <div class="card-cover"><div class="gradient t1"></div>
+              <div class="figure"><svg viewBox="0 0 100 140" fill="none"><circle cx="50" cy="38" r="20" fill="rgba(255,255,255,0.92)"/><path d="M14 140c0-22 16-40 36-40s36 18 36 40" fill="rgba(255,255,255,0.92)"/></svg></div>
+              <span class="count-badge">3 个形象</span>
+            </div>
+            <div class="card-body">
+              <h3 class="card-name">江湖传 · 角色设定</h3>
+              <div class="card-meta">更新于 07-22</div>
+            </div>
+            <div class="card-actions">
+              <button class="btn-icon" title="重命名" onclick="event.stopPropagation()">✏</button>
+              <button class="btn-icon" title="删除" onclick="event.stopPropagation()">🗑</button>
+            </div>
+          </div>
+
+          <div class="project-card" onclick="location.href='characters.html'">
+            <div class="card-cover"><div class="gradient t2"></div>
+              <div class="figure"><svg viewBox="0 0 100 140" fill="none"><circle cx="50" cy="38" r="20" fill="rgba(255,255,255,0.92)"/><path d="M14 140c0-22 16-40 36-40s36 18 36 40" fill="rgba(255,255,255,0.92)"/></svg></div>
+              <span class="count-badge">2 个形象</span>
+            </div>
+            <div class="card-body">
+              <h3 class="card-name">校园漫画人物</h3>
+              <div class="card-meta">更新于 07-18</div>
+            </div>
+            <div class="card-actions"><button class="btn-icon" onclick="event.stopPropagation()">✏</button><button class="btn-icon" onclick="event.stopPropagation()">🗑</button></div>
+          </div>
+
+          <div class="project-card" onclick="location.href='characters.html'">
+            <div class="card-cover"><div class="gradient t3"></div>
+              <div class="figure"><svg viewBox="0 0 100 140" fill="none"><circle cx="50" cy="38" r="20" fill="rgba(255,255,255,0.92)"/><path d="M14 140c0-22 16-40 36-40s36 18 36 40" fill="rgba(255,255,255,0.92)"/></svg></div>
+              <span class="count-badge">3 个形象</span>
+            </div>
+            <div class="card-body">
+              <h3 class="card-name">奇幻 NPC 立绘</h3>
+              <div class="card-meta">更新于 07-10</div>
+            </div>
+            <div class="card-actions"><button class="btn-icon" onclick="event.stopPropagation()">✏</button><button class="btn-icon" onclick="event.stopPropagation()">🗑</button></div>
+          </div>
+
+          <div class="project-card card-add" onclick="document.getElementById('newProject').style.display='flex'">
+            <div class="add-inner"><div class="plus">＋</div><div class="label">新建项目</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- 新建项目对话框 -->
+<div class="modal-mask" id="newProject" style="display:none;">
+  <div class="modal" style="width:440px;">
+    <div class="modal-head"><h3>新建人像项目</h3><button class="close-x" onclick="document.getElementById('newProject').style.display='none'">×</button></div>
+    <div class="modal-body">
+      <div class="form-row"><div class="form-label">项目名称</div><input class="input" placeholder="给项目起个名字" value="新项目"></div>
+      <div class="form-row"><div class="form-label">项目简介</div><textarea class="textarea" rows="2" placeholder="可选，描述项目用途..."></textarea></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="document.getElementById('newProject').style.display='none'">取消</button>
+      <button class="btn btn-primary" onclick="location.href='characters.html'">创建项目</button>
+    </div>
+  </div>
+</div>
+
+<div class="proto-nav">
+  <a href="projects.html" class="active">项目</a>
+  <a href="characters.html">角色</a>
+  <a href="workbench-new.html">生成</a>
+  <a href="workbench.html">工作台</a>
+  <a href="edit-face.html">修改面部</a>
+  <a href="templates.html">模板库</a>
+</div>
+</body>
+</html>

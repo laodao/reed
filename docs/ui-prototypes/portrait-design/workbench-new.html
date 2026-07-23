@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>人像设计 · 生成形象</title>
+  <link rel="stylesheet" href="portrait.css">
+</head>
+<body>
+<div class="app">
+
+  <aside class="app-sidebar">
+    <div class="app-logo"><div class="logo-mark"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l4 4L19 6" stroke="white" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><span>The Bot</span></div>
+    <nav class="app-nav">
+      <div class="nav-group-label">工作台</div>
+      <div class="nav-item"><span class="ico">💬</span><span>对话</span></div>
+      <div class="nav-item"><span class="ico">📝</span><span>长文写作</span></div>
+      <div class="nav-item"><span class="ico">🎬</span><span>剧集制作</span></div>
+      <div class="nav-group-label">创作</div>
+      <div class="nav-item active"><span class="ico">👤</span><span>人像设计</span></div>
+      <div class="nav-item"><span class="ico">🖼️</span><span>图像生成</span></div>
+      <div class="nav-item"><span class="ico">🎙️</span><span>语音</span></div>
+      <div class="nav-group-label">工具</div>
+      <div class="nav-item"><span class="ico">🌐</span><span>翻译</span></div>
+      <div class="nav-item"><span class="ico">📚</span><span>知识库</span></div>
+      <div class="nav-item"><span class="ico">📖</span><span>日记</span></div>
+    </nav>
+    <div class="app-sidebar-footer"><div class="avatar">羽</div><div><div class="u-name">羽毛</div><div class="u-plan">个人版</div></div></div>
+  </aside>
+
+  <main class="app-content">
+    <div class="page">
+      <div class="page-header">
+        <div class="breadcrumb">
+          <a href="projects.html">人像设计</a><span class="sep">/</span>
+          <a href="characters.html">江湖传 · 角色设定</a><span class="sep">/</span>
+          <span class="current">李四</span>
+        </div>
+      </div>
+
+      <div class="page-body" style="display:grid; grid-template-columns: 320px 1fr; gap:20px; align-items:start;">
+
+        <!-- 左：角色信息 + 预览 -->
+        <div style="position:sticky; top:0;">
+          <div class="panel">
+            <div class="panel-title">角色信息</div>
+            <div class="info-block primary">
+              <div class="row"><div class="k" style="width:48px;">姓名</div><div class="v">李四</div></div>
+              <div class="row"><div class="k" style="width:48px;">性别</div><div class="v">男</div></div>
+              <div class="row"><div class="k" style="width:48px;">年龄</div><div class="v">25</div></div>
+              <div class="row"><div class="k" style="width:48px;">身高</div><div class="v">172 cm</div></div>
+              <div class="row"><div class="k" style="width:48px;">体重</div><div class="v">60 kg</div></div>
+              <div class="row"><div class="k" style="width:48px;">人种</div><div class="v">亚洲人</div></div>
+            </div>
+            <div class="fs-12 text-3 mt-12">简介</div>
+            <div class="fs-13 mt-8" style="line-height:1.6;">江湖侠客，性格豪爽，剑眉星目。</div>
+          </div>
+
+          <div class="panel mt-16">
+            <div class="panel-title">预览</div>
+            <div class="portrait-preview">
+              <div class="gradient empty"></div>
+              <div class="figure dim"><svg viewBox="0 0 100 140" fill="none"><circle cx="50" cy="38" r="20" fill="rgba(20,24,31,0.25)"/><path d="M14 140c0-22 16-40 36-40s36 18 36 40" fill="rgba(20,24,31,0.25)"/></svg></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 右：生成参数 -->
+        <div class="panel">
+          <div class="panel-title"><span class="ico-lg">✨</span> 生成形象</div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+            <div class="form-row" style="margin:0;">
+              <div class="form-label">生成模型</div>
+              <select class="input">
+                <optgroup label="百炼"><option>万相 wan2.6 image-edit</option><option>万相 wan2.5</option></optgroup>
+                <optgroup label="火山引擎"><option>Seedream 5.0 lite</option><option>Seedream 4.5</option></optgroup>
+              </select>
+            </div>
+            <div class="form-row" style="margin:0;">
+              <div class="form-label">输出尺寸</div>
+              <div class="size-grid">
+                <span class="size-chip active">768×1024</span>
+                <span class="size-chip">896×1152</span>
+                <span class="size-chip">1024×1792</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-row mt-16">
+            <div class="form-label">提示词模板 <span class="tag tag-accent" style="margin-left:6px;">新</span></div>
+            <div class="template-picker">
+              <select class="input">
+                <option value="">— 不使用模板 —</option>
+                <optgroup label="面部"><option>少年清爽风 · 面部</option><option>成熟硬朗风 · 面部</option></optgroup>
+                <optgroup label="全身"><option>少年清爽风 · 8 头身全身</option></optgroup>
+                <optgroup label="发型+服装"><option>韩式清爽碎盖 + 日系少年</option></optgroup>
+              </select>
+              <button class="btn btn-sm">套用</button>
+              <button class="btn btn-sm btn-soft">追加</button>
+            </div>
+            <div class="template-chips">
+              <span class="template-chip active">写实摄影</span>
+              <span class="template-chip">二次元</span>
+              <span class="template-chip">国风工笔</span>
+              <span class="template-chip">3D 渲染</span>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-label">提示词（正向）</div>
+            <textarea class="textarea" rows="4">portrait of a young Asian male, age 25, heroic and bold temperament, strong eyebrows, bright starry eyes, black short hair, traditional Chinese swordsman robe, full body shot, standing upright, solid light background, photorealistic, high detail</textarea>
+          </div>
+
+          <div class="form-row">
+            <div class="form-label">反向提示词</div>
+            <textarea class="textarea" rows="2">cropped, half body, close-up, missing feet, multiple people, different person, low quality, blurry, distorted</textarea>
+          </div>
+
+          <div class="form-row">
+            <div class="form-label">参考图片</div>
+            <div class="ref-grid">
+              <div class="ref-item"><div class="ph g1"><svg width="30" height="30" viewBox="0 0 100 140" fill="none"><circle cx="50" cy="38" r="22" fill="rgba(255,255,255,0.85)"/><path d="M14 140c0-22 16-40 36-40s36 18 36 40" fill="rgba(255,255,255,0.85)"/></svg></div><span class="tag-type">人物</span><button class="remove">×</button></div>
+              <div class="ref-item"><div class="ph g3"><svg width="30" height="30" viewBox="0 0 100 140" fill="none"><circle cx="50" cy="38" r="22" fill="rgba(255,255,255,0.85)"/><path d="M14 140c0-22 16-40 36-40s36 18 36 40" fill="rgba(255,255,255,0.85)"/></svg></div><span class="tag-type">服装</span><button class="remove">×</button></div>
+              <div class="ref-upload"><span class="plus">＋</span><span>上传</span></div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <span class="adv-toggle" onclick="document.getElementById('adv').hidden=!document.getElementById('adv').hidden;this.querySelector('.arr').textContent=document.getElementById('adv').hidden?'▸':'▾'">
+              <span class="arr">▸</span> 高级参数（质量 / 风格 / 种子 / 采样）
+            </span>
+            <div id="adv" class="adv-body" hidden>
+              <div class="param-grid">
+                <div><div class="form-label">质量</div><select class="input"><option>standard</option><option selected>hd</option></select></div>
+                <div><div class="form-label">风格</div><select class="input"><option value="">默认</option><option>写实</option><option>二次元</option></select></div>
+              </div>
+              <div class="slider-row" style="margin-top:14px;"><span class="lbl">随机种子</span><input type="range" min="0" max="100"><span class="val">随机</span></div>
+              <div class="slider-row"><span class="lbl">相关性</span><input type="range" min="1" max="20" value="7"><span class="val">7.0</span></div>
+              <div class="slider-row"><span class="lbl">采样步数</span><input type="range" min="10" max="50" value="30"><span class="val">30</span></div>
+              <div class="slider-row"><span class="lbl">重绘强度</span><input type="range" min="0" max="100" value="100"><span class="val">1.0</span></div>
+            </div>
+          </div>
+
+          <button class="btn btn-primary btn-lg btn-block" onclick="location.href='workbench.html'">✨ 开始生成（正面）</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="proto-nav">
+  <a href="projects.html">项目</a>
+  <a href="characters.html">角色</a>
+  <a href="workbench-new.html" class="active">生成</a>
+  <a href="workbench.html">工作台</a>
+  <a href="edit-face.html">修改面部</a>
+  <a href="templates.html">模板库</a>
+</div>
+</body>
+</html>

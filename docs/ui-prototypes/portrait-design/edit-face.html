@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>人像设计 · 修改面部</title>
+  <link rel="stylesheet" href="portrait.css">
+</head>
+<body>
+<div class="app">
+
+  <aside class="app-sidebar">
+    <div class="app-logo"><div class="logo-mark"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l4 4L19 6" stroke="white" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><span>The Bot</span></div>
+    <nav class="app-nav">
+      <div class="nav-group-label">工作台</div>
+      <div class="nav-item"><span class="ico">💬</span><span>对话</span></div>
+      <div class="nav-item"><span class="ico">📝</span><span>长文写作</span></div>
+      <div class="nav-item"><span class="ico">🎬</span><span>剧集制作</span></div>
+      <div class="nav-group-label">创作</div>
+      <div class="nav-item active"><span class="ico">👤</span><span>人像设计</span></div>
+      <div class="nav-item"><span class="ico">🖼️</span><span>图像生成</span></div>
+      <div class="nav-item"><span class="ico">🎙️</span><span>语音</span></div>
+      <div class="nav-group-label">工具</div>
+      <div class="nav-item"><span class="ico">🌐</span><span>翻译</span></div>
+      <div class="nav-item"><span class="ico">📚</span><span>知识库</span></div>
+      <div class="nav-item"><span class="ico">📖</span><span>日记</span></div>
+    </nav>
+    <div class="app-sidebar-footer"><div class="avatar">羽</div><div><div class="u-name">羽毛</div><div class="u-plan">个人版</div></div></div>
+  </aside>
+
+  <main class="app-content">
+    <div class="page">
+      <div class="page-header">
+        <div class="breadcrumb">
+          <a href="projects.html">人像设计</a><span class="sep">/</span>
+          <a href="characters.html">江湖传 · 角色设定</a><span class="sep">/</span>
+          <a href="workbench.html">张三</a><span class="sep">/</span>
+          <span class="current">修改面部</span>
+        </div>
+        <div class="page-header-actions">
+          <span class="tag tag-accent">仅修改面部区域</span>
+        </div>
+      </div>
+
+      <div class="page-body" style="display:grid; grid-template-columns: 1fr 380px; gap:20px; align-items:start;">
+
+        <!-- 左：对比 + 模板预览 -->
+        <div>
+          <div class="panel">
+            <div class="panel-title">前后对比</div>
+            <div class="compare-row">
+              <div class="compare-cell">
+                <div class="label">原图（基础形象 · 正面）</div>
+                <div class="portrait-preview"><div class="gradient t1"></div><div class="figure"><svg viewBox="0 0 100 140" fill="none"><circle cx="50" cy="38" r="20" fill="rgba(255,255,255,0.92)"/><path d="M14 140c0-22 16-40 36-40s36 18 36 40" fill="rgba(255,255,255,0.92)"/></svg></div></div>
+              </div>
+              <div class="compare-arrow">→</div>
+              <div class="compare-cell">
+                <div class="label">面部变体（生成结果）</div>
+                <div class="portrait-preview"><div class="gradient t2"></div><div class="figure"><svg viewBox="0 0 100 140" fill="none"><circle cx="50" cy="38" r="20" fill="rgba(255,255,255,0.92)"/><path d="M14 140c0-22 16-40 36-40s36 18 36 40" fill="rgba(255,255,255,0.92)"/></svg></div></div>
+              </div>
+            </div>
+            <div style="text-align:center; margin-top:14px;"><span class="tag tag-success tag-dot">面部已替换 · 服装/背景一致</span></div>
+          </div>
+
+          <div class="panel mt-16">
+            <div class="panel-title">面部专业模板预览 <span class="tag">来自 prompt.txt</span></div>
+            <div style="font-size:12.5px; line-height:1.85; color:var(--c-text-2); background:var(--c-bg-2); border-radius:var(--r-md); padding:14px 16px; max-height:240px; overflow-y:auto;">
+              <div style="color:var(--c-accent); font-weight:650; margin-bottom:6px;">【面部专业描述】</div>
+              <div style="margin-bottom:9px;"><strong style="color:var(--c-text);">纵向三庭比例</strong>：三庭基本均衡，中庭轻微偏短，上庭舒展干净，下庭颏部短小紧致；面部重心轻盈，弱化成熟硬朗质感，凸显少年清爽感。</div>
+              <div style="margin-bottom:9px;"><strong style="color:var(--c-text);">横向五眼比例</strong>：五眼排布匀称，眼距适中偏疏；鼻翼小巧规整，宽度适配内眼角间距；唇幅窄小适中。</div>
+              <div style="margin-bottom:9px;"><strong style="color:var(--c-text);">骨骼与皮肉</strong>：骨相偏弱、线条柔和，颧骨平缓内收，下颌转折圆润，无锋利棱角。</div>
+              <div><strong style="color:var(--c-text);">眉眼</strong>：浅淡平眉；标准圆杏眼，眼神清澈干净、灵动清爽。</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 右：参数 -->
+        <div class="panel panel-accent" style="position:sticky; top:0;">
+          <div class="panel-title" style="color:var(--c-accent);"><span class="ico-lg">🎯</span> 面部修改参数</div>
+
+          <div class="form-row"><div class="form-label">基础形象</div>
+            <div class="info-block" style="margin:0;">
+              <div class="row"><div class="k">来源</div><div class="v">基础形象 · 正面</div></div>
+              <div class="row"><div class="k">尺寸</div><div class="v">768 × 1024</div></div>
+              <div class="row"><div class="k">种子</div><div class="v">8392041（沿用）</div></div>
+            </div>
+          </div>
+
+          <div class="form-row"><div class="form-label">面部修改描述</div><textarea class="textarea" rows="3" placeholder="如：下颌线更硬朗、浓眉、单眼皮、嘴角微扬">下颌线略加硬朗，眉峰提高，眼神更坚毅</textarea></div>
+
+          <div class="form-row"><div class="form-label">面部模板</div>
+            <select class="input"><option selected>少年清爽风 · 面部专业描述</option><option>成熟硬朗风 · 面部</option><option>温婉柔美风 · 面部</option><option value="">— 不使用模板 —</option></select>
+          </div>
+
+          <div class="form-row"><div class="form-label">面部参考图</div>
+            <div class="ref-grid">
+              <div class="ref-item"><div class="ph g4"><svg width="30" height="30" viewBox="0 0 100 100" fill="none"><circle cx="50" cy="42" r="24" fill="rgba(255,255,255,0.85)"/></svg></div><span class="tag-type">面部</span><button class="remove">×</button></div>
+              <div class="ref-upload"><span class="plus">＋</span><span>上传</span></div>
+            </div>
+          </div>
+
+          <div class="form-row"><div class="slider-row"><span class="lbl">重绘强度</span><input type="range" min="0" max="100" value="55"><span class="val">0.55</span></div></div>
+
+          <div class="form-row"><div class="form-label">重绘范围</div>
+            <select class="input"><option selected>face · 仅面部</option><option>face_and_hair · 面部 + 发型</option><option>upper · 上半身</option></select>
+          </div>
+
+          <div class="form-row"><div class="form-label">输出尺寸</div>
+            <div class="size-grid"><span class="size-chip active">768×1024</span><span class="size-chip">1024×1792</span></div>
+          </div>
+
+          <button class="btn btn-accent btn-block btn-lg">🎯 生成面部变体</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="proto-nav">
+  <a href="projects.html">项目</a>
+  <a href="characters.html">角色</a>
+  <a href="workbench-new.html">生成</a>
+  <a href="workbench.html">工作台</a>
+  <a href="edit-face.html" class="active">修改面部</a>
+  <a href="templates.html">模板库</a>
+</div>
+</body>
+</html>

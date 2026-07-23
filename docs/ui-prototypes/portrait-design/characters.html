@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>人像设计 · 角色</title>
+  <link rel="stylesheet" href="portrait.css">
+</head>
+<body>
+<div class="app">
+
+  <aside class="app-sidebar">
+    <div class="app-logo"><div class="logo-mark"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l4 4L19 6" stroke="white" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><span>The Bot</span></div>
+    <nav class="app-nav">
+      <div class="nav-group-label">工作台</div>
+      <div class="nav-item"><span class="ico">💬</span><span>对话</span></div>
+      <div class="nav-item"><span class="ico">📝</span><span>长文写作</span></div>
+      <div class="nav-item"><span class="ico">🎬</span><span>剧集制作</span></div>
+      <div class="nav-group-label">创作</div>
+      <div class="nav-item active"><span class="ico">👤</span><span>人像设计</span></div>
+      <div class="nav-item"><span class="ico">🖼️</span><span>图像生成</span></div>
+      <div class="nav-item"><span class="ico">🎙️</span><span>语音</span></div>
+      <div class="nav-group-label">工具</div>
+      <div class="nav-item"><span class="ico">🌐</span><span>翻译</span></div>
+      <div class="nav-item"><span class="ico">📚</span><span>知识库</span></div>
+      <div class="nav-item"><span class="ico">📖</span><span>日记</span></div>
+    </nav>
+    <div class="app-sidebar-footer"><div class="avatar">羽</div><div><div class="u-name">羽毛</div><div class="u-plan">个人版</div></div></div>
+  </aside>
+
+  <main class="app-content">
+    <div class="page">
+      <div class="page-header">
+        <div class="breadcrumb">
+          <a href="projects.html">人像设计</a><span class="sep">/</span>
+          <span class="current">江湖传 · 角色设定</span>
+        </div>
+        <div class="page-header-actions">
+          <button class="btn btn-primary" onclick="document.getElementById('newChar').style.display='flex'">＋ 创建人物形象</button>
+        </div>
+      </div>
+
+      <div class="page-body">
+        <div class="card-grid">
+
+          <div class="character-card" onclick="location.href='workbench.html'">
+            <div class="card-cover"><div class="gradient t1"></div>
+              <div class="figure"><svg viewBox="0 0 100 140" fill="none"><circle cx="50" cy="38" r="20" fill="rgba(255,255,255,0.92)"/><path d="M14 140c0-22 16-40 36-40s36 18 36 40" fill="rgba(255,255,255,0.92)"/></svg></div>
+              <span class="count-badge">12 张</span>
+            </div>
+            <div class="card-body">
+              <h3 class="card-name">张三</h3>
+              <div class="card-meta">男 · 32岁 · 178cm · 亚洲人</div>
+              <div class="card-tags"><span class="tag tag-success">形象齐备</span><span class="tag">4 角度</span></div>
+            </div>
+            <div class="card-actions"><button class="btn-icon" onclick="event.stopPropagation()">✏</button><button class="btn-icon" onclick="event.stopPropagation()">🗑</button></div>
+          </div>
+
+          <div class="character-card" onclick="location.href='workbench.html'">
+            <div class="card-cover"><div class="gradient t2"></div>
+              <div class="figure"><svg viewBox="0 0 100 140" fill="none"><circle cx="50" cy="38" r="20" fill="rgba(255,255,255,0.92)"/><path d="M14 140c0-22 16-40 36-40s36 18 36 40" fill="rgba(255,255,255,0.92)"/></svg></div>
+              <span class="count-badge">8 张</span>
+            </div>
+            <div class="card-body">
+              <h3 class="card-name">老板娘</h3>
+              <div class="card-meta">女 · 28岁 · 165cm · 亚洲人</div>
+              <div class="card-tags"><span class="tag tag-success">形象齐备</span><span class="tag">3 角度</span></div>
+            </div>
+            <div class="card-actions"><button class="btn-icon" onclick="event.stopPropagation()">✏</button><button class="btn-icon" onclick="event.stopPropagation()">🗑</button></div>
+          </div>
+
+          <div class="character-card" onclick="location.href='workbench-new.html'">
+            <div class="card-cover empty"><div class="placeholder-icon">
+              <svg width="52" height="52" viewBox="0 0 100 140" fill="none"><circle cx="50" cy="38" r="20" fill="currentColor" opacity="0.4"/><path d="M14 140c0-22 16-40 36-40s36 18 36 40" fill="currentColor" opacity="0.4"/></svg>
+            </div><span class="count-badge">未生成</span></div>
+            <div class="card-body">
+              <h3 class="card-name">李四</h3>
+              <div class="card-meta">男 · 25岁 · 172cm · 亚洲人</div>
+              <div class="card-tags"><span class="tag tag-warning tag-dot">待生成形象</span></div>
+            </div>
+            <div class="card-actions"><button class="btn-icon" onclick="event.stopPropagation()">✏</button><button class="btn-icon" onclick="event.stopPropagation()">🗑</button></div>
+          </div>
+
+          <div class="character-card card-add" onclick="document.getElementById('newChar').style.display='flex'">
+            <div class="add-inner"><div class="plus">＋</div><div class="label">创建人物形象</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- 创建人物形象 -->
+<div class="modal-mask" id="newChar" style="display:none;">
+  <div class="modal" style="width:600px;">
+    <div class="modal-head"><h3>创建人物形象</h3><button class="close-x" onclick="document.getElementById('newChar').style.display='none'">×</button></div>
+    <div class="modal-body">
+      <div class="form-row"><div class="form-label">姓名</div><input class="input" placeholder="请输入人物姓名" value="王五"></div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+        <div class="form-row"><div class="form-label">性别</div>
+          <div style="display:flex; gap:16px;">
+            <label class="angle-check"><input type="radio" name="g" checked> 男</label>
+            <label class="angle-check"><input type="radio" name="g"> 女</label>
+          </div>
+        </div>
+        <div class="form-row"><div class="form-label">人种</div><select class="input"><option>亚洲人</option><option>欧洲人</option></select></div>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px;">
+        <div class="form-row"><div class="form-label">年龄</div><input class="input" type="number" value="25"></div>
+        <div class="form-row"><div class="form-label">身高 (cm)</div><input class="input" type="number" value="172"></div>
+        <div class="form-row"><div class="form-label">体重 (kg)</div><input class="input" type="number" value="60"></div>
+      </div>
+      <div class="form-row"><div class="form-label">简介</div><textarea class="textarea" rows="3" placeholder="可选，描述人物特征、职业、性格..."></textarea></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="document.getElementById('newChar').style.display='none'">取消</button>
+      <button class="btn btn-primary" onclick="location.href='workbench-new.html'">创建并生成</button>
+    </div>
+  </div>
+</div>
+
+<div class="proto-nav">
+  <a href="projects.html">项目</a>
+  <a href="characters.html" class="active">角色</a>
+  <a href="workbench-new.html">生成</a>
+  <a href="workbench.html">工作台</a>
+  <a href="edit-face.html">修改面部</a>
+  <a href="templates.html">模板库</a>
+</div>
+</body>
+</html>
