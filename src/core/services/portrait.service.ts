@@ -755,6 +755,9 @@ export class PortraitService {
           width: imageWidth,
           height: imageHeight,
           seed: baseSeed,
+          // 可选质量参数（additive，不传 = 现状行为；透传给支持 quality 的 provider）
+          quality: request.config.quality,
+          referenceImages: request.referenceImages?.length ? request.referenceImages : undefined,
           skipHistory: true
         })
 
