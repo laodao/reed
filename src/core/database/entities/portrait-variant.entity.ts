@@ -34,6 +34,9 @@ export class PortraitVariantEntity {
   @Column({ name: 'angle', type: 'varchar' })
   angle!: string
 
+  @Column({ name: 'framing', type: 'varchar', nullable: true })
+  framing!: string | null
+
   @Column({ name: 'image_path', type: 'text' })
   imagePath!: string
 

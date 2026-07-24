@@ -9,9 +9,21 @@
 export type PortraitAngle = 'front' | 'left' | 'right' | 'back'
 
 /**
+ * 取景范围类型
+ * half = 半身（ bust，面部细节优先，便于先定脸）
+ * full = 全身（完整形象）
+ */
+export type PortraitFraming = 'half' | 'full'
+
+/**
+ * 参考图语义角色（每张参考图标注用途）
+ */
+export type ReferenceImageRole = 'character' | 'face' | 'pose' | 'clothing' | 'background'
+
+/**
  * 变体类型
  */
-export type PortraitVariantType = 'base' | 'clothes' | 'background'
+export type PortraitVariantType = 'base' | 'clothes' | 'background' | 'face'
 
 /**
  * 背景类型
@@ -72,6 +84,7 @@ export interface PortraitVariant {
   type: PortraitVariantType
   parentId?: string
   angle: PortraitAngle
+  framing?: PortraitFraming       // 取景范围；undefined 视为 'full'（存量数据）
   imagePath: string
   prompt: string
   config: Record<string, any>
@@ -88,6 +101,8 @@ export interface PortraitVariantInfo {
   backgroundType?: 'solid' | 'preset' | 'custom' | 'image'
   backgroundColor?: string
   presetScene?: string
+  faceDescription?: string        // 面部修改描述（type='face' 时记录）
+  faceTemplateId?: string         // 使用的面部模板 ID（type='face' 时记录）
 }
 
 /**
@@ -258,16 +273,6 @@ export interface GenerateAnglesRequest {
 }
 
 /**
- * 生成多角度响应
- */
-export interface GenerateAnglesResponse {
-  success: boolean
-  variants?: PortraitVariant[]
-  warning?: string
-  error?: string
-}
-
-/**
  * 编辑图片请求（基于已有 variant 编辑，保留人物一致性）
  */
 export interface EditImageRequest {
@@ -284,6 +289,16 @@ export interface EditImageRequest {
 export interface EditImageResponse {
   success: boolean
   variant?: PortraitVariant
+  error?: string
+}
+
+/**
+ * 生成多角度响应
+ */
+export interface GenerateAnglesResponse {
+  success: boolean
+  variants?: PortraitVariant[]
+  warning?: string
   error?: string
 }
 
@@ -401,7 +416,24 @@ export const ANGLE_LABELS: Record<PortraitAngle, string> = {
 export const VARIANT_TYPE_LABELS: Record<PortraitVariantType, string> = {
   base: '基础形象',
   clothes: '换衣变体',
-  background: '换背景变体'
+  background: '换背景变体',
+  face: '面部变体'
+}
+
+/**
+ * 取景范围显示名称
+ */
+export const FRAMING_LABELS: Record<PortraitFraming, string> = {
+  half: '半身',
+  full: '全身'
+}
+
+/**
+ * framing 对应的 prompt 取景后缀（默认值，可被调用方覆盖）
+ */
+export const FRAMING_PROMPT_SUFFIX: Record<PortraitFraming, string> = {
+  half: 'upper body shot, bust portrait, head and shoulders visible',
+  full: 'full body shot, standing upright, complete figure from head to toe'
 }
 
 /**

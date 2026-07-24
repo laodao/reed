@@ -58,6 +58,7 @@ import { relaxEpisodeScriptOutlineId } from '@core/database/migrations/relax-epi
 import { addKeyframeUserPromptOverride } from '@core/database/migrations/add-keyframe-user-prompt-override'
 import { addCharacterBindingExtraFields } from '@core/database/migrations/add-character-binding-extra-fields'
 import { addCharacterBindingRace } from '@core/database/migrations/add-character-binding-race'
+import { addPortraitVariantFraming } from '@core/database/migrations/add-portrait-variant-framing'
 import { addStoryboardKeyframeCount } from '@core/database/migrations/add-storyboard-keyframe-count'
 import { addKbDocumentSource } from '@core/database/migrations/add-kb-document-source'
 import { addKeyframeReferenceOverrides } from '@core/database/migrations/add-keyframe-reference-overrides'
@@ -263,6 +264,8 @@ async function initDatabase(): Promise<void> {
   await addCharacterBindingExtraFields(ds)
   // 角色资产 race（人种）字段：用于 AI 主图 / 派生图 prompt 拼接
   await addCharacterBindingRace(ds)
+  // 人像变体 framing（取景范围 half/full）字段：新版人像设计（spec 2026-07-24）
+  await addPortraitVariantFraming(ds)
   // 分镜 keyframe_count 字段（前端编辑面板有按钮组但保存链路缺）
   await addStoryboardKeyframeCount(ds)
   // 知识库文档来源字段

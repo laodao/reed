@@ -10,6 +10,7 @@ import type {
   PortraitVariant,
   PortraitVariantType,
   PortraitAngle,
+  PortraitFraming,
   PortraitVariantInfo,
 } from '@shared/types/portrait.types'
 import { randomUUID } from 'crypto'
@@ -23,6 +24,7 @@ interface CreateVariantInput {
   type: PortraitVariantType
   parentId?: string
   angle: PortraitAngle
+  framing?: PortraitFraming
   imagePath: string
   prompt: string
   config?: Record<string, unknown>
@@ -53,6 +55,7 @@ export class PortraitVariantRepository extends BaseRepository<
       angle: e.angle as PortraitAngle,
       imagePath: e.imagePath,
       prompt: e.prompt,
+      framing: (e.framing as PortraitVariant['framing']) ?? 'full',
       config: (e.config as Record<string, unknown> | null) ?? {},
       variantInfo:
         e.variantInfo === null
@@ -93,6 +96,7 @@ export class PortraitVariantRepository extends BaseRepository<
       type: data.type,
       parentId: data.parentId ?? null,
       angle: data.angle,
+      framing: data.framing ?? 'full',
       imagePath: data.imagePath,
       prompt: data.prompt,
       config: data.config ?? {},
@@ -117,6 +121,7 @@ export class PortraitVariantRepository extends BaseRepository<
             type: data.type,
             parentId: data.parentId ?? null,
             angle: data.angle,
+            framing: data.framing ?? 'full',
             imagePath: data.imagePath,
             prompt: data.prompt,
             config: data.config ?? {},

@@ -512,6 +512,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-character-binding-race'
     )
     await addCharacterBindingRace(this.dataSource)
+    // 人像变体 framing（取景范围 half/full）字段：新版人像设计（spec 2026-07-24）
+    const { addPortraitVariantFraming } = await import(
+      '@core/database/migrations/add-portrait-variant-framing'
+    )
+    await addPortraitVariantFraming(this.dataSource)
     // 分镜 keyframe_count 字段（前端编辑面板有按钮组但保存链路缺）
     const { addStoryboardKeyframeCount } = await import(
       '@core/database/migrations/add-storyboard-keyframe-count'
