@@ -96,6 +96,10 @@ export interface ImageGenerationRequest {
    * 本字段优先于 referenceImage 单值；都为空时 fallback 到 referenceImage（兼容老调用）。
    */
   referenceImages?: string[]
+  /** 重绘强度 0-1（图生图/局部重绘；provider 不支持时忽略）。spec 2026-07-24 新版人像设计 */
+  strength?: number
+  /** 聚焦区域（不支持蒙版的 provider 用 prompt 引导）。spec 2026-07-24 新版人像设计 */
+  focusRegion?: 'face' | 'face_and_hair' | 'upper' | 'full'
   skipHistory?: boolean  // 是否跳过历史记录（用于其他模块调用，如人像设计）
 }
 

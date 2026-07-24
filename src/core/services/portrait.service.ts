@@ -34,6 +34,10 @@ import type {
   GenerateAnglesResponse,
   EditImageRequest,
   EditImageResponse,
+  GenerateFullBodyRequest,
+  GenerateFullBodyResponse,
+  EditFaceRequest,
+  EditFaceResponse,
   ANGLE_PROMPTS,
   PortraitGender,
   PortraitRace
@@ -244,6 +248,88 @@ export class PortraitService {
     if (existing.builtin) return { success: false as const, error: '内置模板不可删除' }
     await db.portraitPromptTemplates.remove(id)
     return { success: true as const }
+  }
+
+  // ==================== 新版人像设计：生成全身 / 修改面部（spec 2026-07-24） ====================
+
+  /**
+   * 读取图片为 base64 data-url（供参考图使用）。
+   * DB 中 imagePath 存相对路径，需 resolveAssetPath 拼绝对路径；绝对路径输入兼容旧数据。
+   * 与 generateAngles 内既有读取逻辑一致，抽取共用。
+   */
+  private static readImageAsBase64(imagePath: string): string | null {
+    if (!imagePath) return null
+    const absPath = resolveAssetPath(imagePath)
+    if (!absPath || !fs.existsSync(absPath)) return null
+    const imageBuffer = fs.readFileSync(absPath)
+    return `data:image/png;base64,${imageBuffer.toString('base64')}`
+  }
+
+  /**
+   * 基于半身扩展全身（spec 2026-07-24 §5.2）：
+   * 以源半身 variant 为首参考图，保持面部一致，产出 type=base / framing=full variant。
+   */
+  static async generateFullBody(request: GenerateFullBodyRequest): Promise<GenerateFullBodyResponse> {
+    const db = getCoreDatabaseManager()
+    if (!db.portraitVariants || !db.portraitCharacters) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    try {
+      const source = await db.portraitVariants.getById(request.sourceVariantId)
+      if (!source) return { success: false, error: '源形象不存在' }
+      const character = await db.portraitCharacters.getById(request.characterId)
+      if (!character) return { success: false, error: '角色不存在' }
+
+      const sourceImage = this.readImageAsBase64(source.imagePath)
+      if (!sourceImage) return { success: false, error: '源形象图片读取失败' }
+
+      const userPrompt = request.prompt?.trim() ||
+        'same person as reference, natural relaxed posture, consistent face and hairstyle'
+      const prompt = this.buildPortraitPrompt({
+        basePrompt: userPrompt,
+        framing: 'full',
+        overrides: { suffix: 'solid background' },
+      })
+
+      const width = request.width ?? (source.config?.width as number) ?? DEFAULT_PORTRAIT_WIDTH
+      const height = request.height ?? (source.config?.height as number) ?? DEFAULT_PORTRAIT_HEIGHT
+      const strength = request.strength ?? 0.55
+
+      const result = await ImageService.generateImage({
+        providerConfigId: request.providerId ?? character.providerId,
+        model: request.modelId ?? character.modelId,
+        prompt,
+        negativePrompt: request.negativePrompt ?? PORTRAIT_PROMPT_DEFAULTS.negativePrompt,
+        width,
+        height,
+        seed: source.config?.seed as number | undefined,
+        referenceImages: [sourceImage, ...(request.referenceImages ?? [])],
+        strength,
+        skipHistory: true,
+      } as Parameters<typeof ImageService.generateImage>[0])
+
+      if (!result.success || !result.images?.[0]) {
+        return { success: false, error: result.error || '生成失败' }
+      }
+
+      const variant = await db.portraitVariants.create({
+        characterId: request.characterId,
+        type: 'base',
+        framing: 'full',
+        parentId: source.id,
+        angle: 'front',
+        imagePath: result.images[0].filePath || '',
+        prompt,
+        config: { width, height, seed: source.config?.seed, strength },
+      })
+
+      this.sendPortraitEvent({ type: 'generation-completed', characterId: request.characterId } as Parameters<typeof this.sendPortraitEvent>[0])
+      return { success: true, variant }
+    } catch (error: unknown) {
+      console.error('[PortraitService.generateFullBody] 错误:', error)
+      return { success: false, error: error instanceof Error ? error.message : '生成失败' }
+    }
   }
 
   // ==================== 项目管理 ====================

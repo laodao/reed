@@ -298,6 +298,57 @@ export interface EditImageResponse {
 }
 
 /**
+ * 基于半身扩展全身请求（spec 2026-07-24 §5.2）
+ * 以指定半身 variant 为首参考图，保持面部一致，扩展为全身形象
+ */
+export interface GenerateFullBodyRequest {
+  characterId: string
+  sourceVariantId: string         // 源半身 variant
+  prompt?: string                 // 全身构图提示词（缺省用默认）
+  negativePrompt?: string
+  referenceImages?: string[]      // 追加参考（源半身图自动置首）
+  providerId?: string
+  modelId?: string
+  strength?: number               // 重绘强度，默认 0.55
+  width?: number
+  height?: number
+}
+
+/**
+ * 基于半身扩展全身响应
+ */
+export interface GenerateFullBodyResponse {
+  success: boolean
+  variant?: PortraitVariant
+  error?: string
+}
+
+/**
+ * 只修改面部请求（spec 2026-07-24 §5.2）
+ * 模板（目标脸型蓝图）+ 指令（微调描述）叠加；产出独立 type='face' variant，原图不变
+ */
+export interface EditFaceRequest {
+  characterId: string
+  variantId: string
+  facePrompt?: string             // 面部修改指令（可选，留空则只套用模板）
+  faceTemplateId?: string         // 面部模板 ID（可选）
+  referenceImages?: string[]      // 面部参考图（可选，源形象图自动置首）
+  strength?: number               // 重绘强度，默认 0.5
+  focusRegion?: 'face' | 'face_and_hair' | 'upper'  // 重绘范围，默认 face
+  width?: number
+  height?: number
+}
+
+/**
+ * 只修改面部响应
+ */
+export interface EditFaceResponse {
+  success: boolean
+  variant?: PortraitVariant
+  error?: string
+}
+
+/**
  * 生成多角度响应
  */
 export interface GenerateAnglesResponse {
