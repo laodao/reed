@@ -89,8 +89,8 @@
           <!-- 右：操作 -->
           <div style="display:flex; flex-direction:column; gap:16px;">
 
-            <!-- 修改面部（核心新功能） -->
-            <div class="panel panel-accent">
+            <!-- 主编辑面板 · 半身时：修改面部 -->
+            <div class="panel panel-accent" id="editPanelHalf">
               <div class="panel-title"><span class="ico-lg">🎯</span> 修改面部 <span class="tag tag-accent">新</span></div>
               <div class="form-row"><div class="form-label">面部修改描述</div><textarea class="textarea" rows="2" placeholder="如：更硬朗的下颌线、单眼皮、浓眉、嘴角微扬..."></textarea></div>
               <div class="form-row">
@@ -104,6 +104,26 @@
                 <button class="btn btn-accent">🎯 只改面部</button>
                 <a href="edit-face.html" class="btn">展开完整面部编辑 →</a>
               </div>
+            </div>
+
+            <!-- 主编辑面板 · 全身时：修改全身（同一卡槽，默认隐藏） -->
+            <div class="panel panel-accent" id="editPanelFull" hidden>
+              <div class="panel-title"><span class="ico-lg">✏️</span> 修改全身</div>
+              <div class="form-row"><div class="form-label">修改描述</div><textarea class="textarea" rows="2" placeholder="如：改成走路姿势、双手插兜、把外套脱掉..."></textarea></div>
+              <div class="form-row">
+                <div class="template-picker">
+                  <select class="input"><option value="">全身模板（比例/姿势/服装）</option><option>少年清爽风 · 8 头身全身</option><option>韩式清爽碎盖 + 日系少年</option></select>
+                  <button class="btn btn-sm">套用</button>
+                </div>
+              </div>
+              <div class="form-row"><div class="form-label">参考图片</div>
+                <div class="ref-grid">
+                  <div class="ref-item"><div class="ph g2"><svg width="30" height="30" viewBox="0 0 100 140" fill="none"><circle cx="50" cy="34" r="20" fill="rgba(255,255,255,0.85)"/><path d="M10 140c0-26 18-46 40-46s40 20 40 46" fill="rgba(255,255,255,0.85)"/></svg></div><span class="tag-type">姿势</span><button class="remove">×</button></div>
+                  <div class="ref-upload"><span class="plus">＋</span><span>上传</span></div>
+                </div>
+              </div>
+              <div class="form-row"><div class="slider-row"><span class="lbl">重绘强度</span><input type="range" min="0" max="100" value="60"><span class="val">0.6</span></div></div>
+              <button class="btn btn-accent">✏️ 修改全身</button>
             </div>
 
             <!-- 更多编辑（折叠，收纳低频操作） -->
@@ -137,11 +157,20 @@
                   <div style="padding:12px; background:var(--c-bg-2); border-radius:var(--r-md);">
                     <div style="font-weight:600; font-size:13px; margin-bottom:8px;">👔 换衣</div>
                     <input class="input" placeholder="red suit, white shirt" style="margin-bottom:8px;">
+                    <textarea class="textarea" rows="2" placeholder="补充提示词（可选）：如 overall style, fabric texture..." style="margin-bottom:8px;"></textarea>
+                    <div class="ref-grid" style="margin-bottom:8px;">
+                      <div class="ref-item" style="width:52px;height:52px;"><div class="ph g3"><svg width="22" height="22" viewBox="0 0 100 140" fill="none"><circle cx="50" cy="38" r="22" fill="rgba(255,255,255,0.85)"/><path d="M14 140c0-22 16-40 36-40s36 18 36 40" fill="rgba(255,255,255,0.85)"/></svg></div><span class="tag-type">服装</span><button class="remove" style="width:16px;height:16px;font-size:10px;">×</button></div>
+                      <div class="ref-upload" style="width:52px;height:52px;"><span class="plus" style="font-size:16px;">＋</span><span>服装图</span></div>
+                    </div>
                     <button class="btn btn-soft btn-block btn-sm">应用换衣</button>
                   </div>
                   <div style="padding:12px; background:var(--c-bg-2); border-radius:var(--r-md);">
                     <div style="font-weight:600; font-size:13px; margin-bottom:8px;">🏞️ 换背景</div>
                     <select class="input" style="margin-bottom:8px;"><option>纯色背景</option><option>预设 · 室内</option><option>自定义</option></select>
+                    <textarea class="textarea" rows="2" placeholder="背景描述提示词（可选）：如 beach sunset, soft bokeh..." style="margin-bottom:8px;"></textarea>
+                    <div class="ref-grid" style="margin-bottom:8px;">
+                      <div class="ref-upload" style="width:52px;height:52px;"><span class="plus" style="font-size:16px;">＋</span><span>背景图</span></div>
+                    </div>
                     <button class="btn btn-soft btn-block btn-sm">应用换背景</button>
                   </div>
                 </div>
@@ -291,17 +320,22 @@
 </div>
 
 <script>
-// 半身/全身 tab 切换
+// 半身/全身 tab 切换：预览区 + 主编辑面板联动
 (function () {
   const tabs = document.querySelectorAll('#framingTabs [data-tab]');
   const viewHalf = document.getElementById('viewHalf');
   const viewFull = document.getElementById('viewFull');
+  const editHalf = document.getElementById('editPanelHalf');
+  const editFull = document.getElementById('editPanelFull');
   const ACTIVE = { background: 'var(--c-surface)', fontWeight: '600', boxShadow: 'var(--shadow-xs)', color: '' };
   const IDLE = { background: '', fontWeight: '', boxShadow: '', color: 'var(--c-text-3)' };
 
   function switchTab(name) {
     viewHalf.hidden = name !== 'half';
     viewFull.hidden = name !== 'full';
+    // 主编辑面板跟随 framing：半身→修改面部，全身→修改全身
+    if (editHalf) editHalf.hidden = name !== 'half';
+    if (editFull) editFull.hidden = name !== 'full';
     tabs.forEach(t => {
       const on = t.dataset.tab === name;
       t.style.background = on ? ACTIVE.background : IDLE.background;

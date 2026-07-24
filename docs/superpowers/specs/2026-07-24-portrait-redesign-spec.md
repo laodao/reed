@@ -39,12 +39,13 @@
 | D2 | 推荐流程 | 引导式两阶段：生成半身 → 微调（编辑/修改面部）→ 满意后基于半身扩展全身（当前半身作为参考图，保面部一致） |
 | D3 | 生成全身入口 | 就地操作：套图区「全身像 · 基础形象」卡片——无全身像时显示「生成全身像」按钮，有则「重新生成」；点击弹对话框（提示词/尺寸/模板/参考图/强度） |
 | D4 | 预览区 framing tab | 半身/全身可点击切换；无全身像时全身 tab 显示空状态 + 生成按钮 |
-| D5 | 修改面部 | 模板（目标脸型蓝图）+ 指令（微调描述）+ 面部参考图（可选）+ 重绘强度 + 重绘范围（focusRegion）；模板下拉与预览联动；结果存为新 variant（`type='face'`），不改原图 |
+| D5 | 主编辑面板（framing 联动） | 主编辑面板是**同一卡槽，跟随左侧 framing tab 切换**：半身 tab →「修改面部」（模板+指令+面部参考图+强度+focusRegion，调 `editFace`，产出 `type='face'` variant）；全身 tab →「修改全身」（指令+全身模板+参考图+强度，**复用现有 `editImage`**）。与「更多编辑」不重复：换衣/换背景是专门化操作（专属参数、产出独立 variant 组），多角度是生成类操作 |
+| D5b | 换衣 / 换背景增强 | 两者都允许**上传参考图（多张）+ 填写补充提示词**；请求类型新增 `prompt?` 与 `referenceImages?`（只新增，现有 `referenceImage` 单值保留兼容） |
 | D6 | 提示词模板 | 独立模板库：内置（来自 `docs/prompt.txt`）+ 用户自定义；分类（face/body/clothing/background）；支持 `{name}/{gender}/{age}` 占位符；生成/重新生成/修改面部/换衣 各入口可「套用（覆盖）/追加（拼接）」 |
 | D7 | 参考图语义 | 多参考图，每张标注用途：`character` / `face` / `pose` / `clothing` / `background` |
-| D8 | 工作台信息架构 | 右操作区按频率分层：修改面部（主）→ 更多编辑（折叠：重新生成/换衣/换背景/多角度）；套图区分半身组/全身组 |
+| D8 | 工作台信息架构 | 右操作区：主编辑面板（framing 联动，D5）→ 更多编辑（折叠：重新生成/换衣/换背景/多角度）；套图区分半身组/全身组 |
 | D9 | 样式规范 | 前端全部样式使用 CSS token（`var(--*)`），零硬编码色值/圆角/阴影（皮肤方案 D5） |
-| D10 | 架构 | 数据结构复用现有三层（Project→Character→Variant）；Service 只在 `src/core`；字段名=DB 字段名，禁止映射函数；后端只新增不破坏；迁移双端注册；TDD |
+| D10 | 架构 | 数据结构复用现有三层（Project→Character→Variant）；Service 只在 `src/core`；字段名=DB 字段名，禁止映射函数；**后端只新增行为，不修改现有方法的行为**；现有功能能复用复用（如 `editImage` 复用为"修改全身"），不能复用的新增；迁移双端注册；TDD |
 
 ## 4. 数据模型变更
 
@@ -99,15 +100,20 @@ provider adapter 现状：dashscope/volcengine 参考图链路已支持；streng
 
 ### 5.2 PortraitService 改造与新增
 
+**总原则（评审确认）：后端只新增行为，不修改现有方法的行为。** `generatePortrait` / `changeClothes` / `changeBackground` / `generateAngles` / `editImage` 的现有逻辑与默认值保持不变；新能力通过**新增方法**或**新增可选参数**（缺省值=现状行为）实现。
+
 | 方法 | 类型 | 说明 |
 |------|------|------|
-| `buildPortraitPrompt(params)` | 重构（private） | 统一 prompt 拼装：角度词、framing 后缀、一致性前后缀从**默认配置对象**读取且可被调用方覆盖，消除 `FULL_BODY_SUFFIX` 等写死常量的硬拼接；`framing='half'` 用 `upper body shot, bust portrait` 类后缀 |
-| `generatePortrait` | 修改 | 请求类型加 `framing`（默认 `half`，**行为变化：新默认半身**，在 changelog 与 UI 引导中明确）；透传扩展参数 |
+| `buildPortraitPrompt(params)` | **新增**（public static） | 统一 prompt 拼装入口，供**新方法**使用；角度词、framing 后缀、一致性前后缀从 `PORTRAIT_PROMPT_DEFAULTS` 配置对象读取且可被 overrides 覆盖（新代码不写死）。`framing='half'` 用 `upper body shot, bust portrait` 类后缀。**现有方法的内部拼装逻辑不动** |
+| `generatePortrait` | 仅加可选参数 | `GeneratePortraitRequest` 新增可选 `framing?: PortraitFraming`，**缺省 = 现状行为（full）**；传 `framing='half'` 时用 buildPortraitPrompt 的半身后缀。新工作台生成面板显式传 `half`；存量调用方零影响 |
 | `generateFullBody(request)` | **新增** | 基于指定半身 variant 扩展全身：参考图=该半身图，framing=full，strength 默认 0.55，prompt 默认带 `same person as reference, full body shot, ... consistent face and hairstyle`；产出 `type='base', framing='full'` variant，parentId 指向源半身 variant |
-| `editFace(request)` | **新增** | `EditFaceRequest{ characterId, variantId, facePrompt?, faceTemplateId?, referenceImages?, strength?, focusRegion?, width?, height? }`；模板内容经 `applyTemplate` 解析占位符后与 facePrompt 叠加；产出 `type='face'` variant |
+| `editFace(request)` | **新增** | `EditFaceRequest{ characterId, variantId, facePrompt?, faceTemplateId?, referenceImages?, strength?, focusRegion?, width?, height? }`；模板内容经 `applyTemplate` 解析占位符后与 facePrompt 叠加；产出 `type='face'` variant，原图不变 |
+| `changeClothes` / `changeBackground` | 仅加可选参数 | 请求类型新增 `prompt?: string`（补充提示词，拼接到现有拼装结果后）与 `referenceImages?: string[]`（多参考图，与现有 `referenceImage` 单值合并使用）；**不传时行为与现状完全一致** |
 | `listPromptTemplates(category?)` | **新增** | 按分类/场景过滤 |
 | `applyTemplate(templateId, vars)` | **新增** | 占位符替换 |
 | `savePromptTemplate / deletePromptTemplate` | **新增** | 用户自定义模板 CRUD（builtin 不可删改） |
+
+「修改全身」**不新增后端方法**：复用现有 `editImage`（前端全身 tab 的主编辑面板直接调用它，传 focusRegion 语义由 prompt 承担）。
 
 尺寸取值维持现有三级优先级惯例（request > variant.config > DEFAULT），与现有测试对齐。
 
@@ -131,15 +137,15 @@ provider adapter 现状：dashscope/volcengine 参考图链路已支持；streng
 
 | 组件 | 职责 |
 |------|------|
-| `PortraitWorkbench.vue` | 工作台容器：无形象→生成态；有形象→编辑态；framing tab 切换 |
+| `PortraitWorkbench.vue` | 工作台容器：无形象→生成态；有形象→编辑态；framing tab 切换（预览区 + 主编辑面板联动） |
 | `GeneratePanel.vue` | 生成态面板：取景范围（默认半身）、模型、尺寸、模板选择、prompt、negativePrompt、多参考图（语义标注）、高级参数折叠 |
-| `FaceEditPanel.vue` | 修改面部：指令、模板下拉（联动预览）、面部参考图、强度、focusRegion |
-| `MoreEditPanel.vue` | 更多编辑折叠区：重新生成/换衣/换背景/多角度（复用现有逻辑迁移） |
-| `VariantGallery.vue` | 套图画廊：按 framing 分组（半身组/全身组），全身组空状态+生成按钮 |
+| `EditPanel.vue` | **主编辑面板（framing 联动）**：`framing='half'` → 修改面部（指令、面部模板下拉联动预览、面部参考图、强度、focusRegion，调 `editFace`）；`framing='full'` → 修改全身（指令、全身模板、参考图、强度，调现有 `editImage`） |
+| `MoreEditPanel.vue` | 更多编辑折叠区：重新生成 / 换衣（描述+补充提示词+服装参考图）/ 换背景（类型+背景描述提示词+背景参考图）/ 多角度（复用现有逻辑迁移） |
+| `VariantGallery.vue` | 套图画廊：按 framing 分组（半身组/全身组），全身组空状态+生成按钮，有图时重新生成按钮 |
 | `GenerateFullBodyDialog.vue` | 生成全身对话框（提示词/尺寸/模板/参考图含当前半身/强度） |
 | `TemplatePicker.vue` | 模板选择器（下拉+套用/追加+联动预览） |
 | `TemplateLibrary.vue`（视图或对话框） | 模板库管理：分类筛选、预览、复制、新建/编辑/删除自定义 |
-| `ReferenceImagePicker.vue` | 参考图上传网格（语义标注角色） |
+| `ReferenceImagePicker.vue` | 参考图上传网格（每张可标注语义角色） |
 
 `Portrait.vue` 仅把 `<CharacterEditor>` 替换为 `<PortraitWorkbench>`；`CharacterEditor.vue` 及其子组件在本阶段保留不删（回退余地），新版稳定后再清理。
 
@@ -167,13 +173,16 @@ provider adapter 现状：dashscope/volcengine 参考图链路已支持；streng
 
 ## 9. 验收标准
 
-1. 新建角色默认生成**半身像**；工作台可在半身/全身 tab 间切换
-2. 无全身像时套图区全身组显示「生成全身像」入口，弹窗可改提示词/尺寸/模板/参考图/强度；生成后面部与半身一致（视觉验收）
-3. 修改面部：选模板左侧预览联动；生成结果为独立 `type='face'` variant，原图不变，服装/背景不变
-4. 模板库：内置模板可用，可新建/编辑/删除自定义模板；各生成入口可套用/追加
-5. 重新生成/换衣/换背景/多角度收纳于「更多编辑」折叠区，功能不缺失
-6. `npm test` 全绿；`npm run lint` 通过；新增样式零硬编码直接量
-7. 双端迁移幂等（Electron 启动自动执行；web-server 启动自动执行）
+1. 新建角色默认生成**半身像**（新工作台显式传 `framing='half'`；存量调用方行为不变）；工作台可在半身/全身 tab 间切换
+2. 主编辑面板跟随 tab：半身→修改面部，全身→修改全身（复用 editImage）
+3. 无全身像时套图区全身组显示「生成全身像」入口，弹窗可改提示词/尺寸/模板/参考图/强度；生成后面部与半身一致（视觉验收）
+4. 修改面部：选模板预览联动；生成结果为独立 `type='face'` variant，原图不变，服装/背景不变
+5. 换衣/换背景均可上传参考图（多张）并填写补充提示词
+6. 模板库：内置模板可用，可新建/编辑/删除自定义模板；各生成入口可套用/追加
+7. 重新生成/换衣/换背景/多角度收纳于「更多编辑」折叠区，功能不缺失
+8. `npm test` 全绿（含现有 `portrait.service.spec.ts` 回归）；`npm run lint` 通过；新增样式零硬编码直接量
+9. 双端迁移幂等（Electron 启动自动执行；web-server 启动自动执行）
+10. 存量功能回归：旧生成/换衣/换背景/多角度/editImage 不传新参数时行为与现状一致
 
 ## 10. 分阶段交付
 

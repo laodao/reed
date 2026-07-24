@@ -589,9 +589,12 @@ git commit -m "feat(portrait): 内置提示词模板 seeder（抽取 docs/prompt
 
 ## M2 核心服务（TDD）
 
-### Task 4: buildPortraitPrompt 重构（framing 后缀 + 可覆盖默认值）
+### Task 4: buildPortraitPrompt 新增 + generatePortrait 可选 framing 参数（不动现有行为）
+
+> 原则（评审确认）：后端只新增行为。`generatePortrait` 现有拼装逻辑**不重构**；仅新增可选 `framing` 参数，缺省 = 现状（full）。`buildPortraitPrompt` 是新方法，供新方法与"传了 framing 的 generatePortrait"使用。
 
 **Files:**
+- Modify: `src/shared/types/portrait.types.ts`
 - Modify: `src/core/services/portrait.service.ts`
 - Test: `tests/unit/services/portrait-framing.spec.ts`
 
@@ -641,6 +644,16 @@ describe('buildPortraitPrompt', () => {
     expect(p).toContain('custom framing words')
     expect(p).not.toContain('bust portrait')
   })
+
+  it('generatePortrait 不传 framing 时行为与现状一致（full 后缀）', async () => {
+    // mock db + ImageService 走通 generatePortrait（复用现有 spec 的 mock 结构）
+    // 断言 ImageService.generateImage 收到的 prompt 含 'full body shot'
+    // —— 该用例锁定"存量行为不变"
+  })
+
+  it('generatePortrait 传 framing=half 时用半身后缀', async () => {
+    // 同上 mock；断言 prompt 含 'upper body shot, bust portrait' 且不含 'full body shot'
+  })
 })
 ```
 
@@ -651,14 +664,16 @@ Expected: FAIL（`buildPortraitPrompt is not a function`）
 
 - [ ] **Step 3: 实现**
 
+`src/shared/types/portrait.types.ts`：`GeneratePortraitRequest` 加 `framing?: PortraitFraming`。
+
 `src/core/services/portrait.service.ts`：
 
-1. 顶部常量区替换为可覆盖默认配置（保留旧常量名作为别名以避免大面积改动，新增统一入口）：
+1. 新增默认配置对象（旧常量 `FULL_BODY_SUFFIX`/`DEFAULT_NEGATIVE_PROMPT`/`CONSISTENCY_PREFIX` 等**保留不动**，现有方法继续用它们）：
 
 ```ts
 import { FRAMING_PROMPT_SUFFIX, type PortraitFraming } from '@shared/types/portrait.types'
 
-/** prompt 拼装默认配置：可通过 buildPortraitPrompt 的 overrides 覆盖，禁止在调用处写死 */
+/** 新方法专用的 prompt 默认配置：可通过 buildPortraitPrompt 的 overrides 覆盖，新代码不写死 */
 export const PORTRAIT_PROMPT_DEFAULTS = {
   consistencyPrefix: 'generate the exact same person as shown in the reference image',
   backgroundConsistencySuffix:
@@ -672,7 +687,7 @@ export const PORTRAIT_PROMPT_DEFAULTS = {
 
 ```ts
   /**
-   * 统一人像 prompt 拼装。framing 决定取景后缀；overrides 可覆盖任一默认片段。
+   * 统一人像 prompt 拼装（新方法专用）。framing 决定取景后缀；overrides 可覆盖任一默认片段。
    */
   static buildPortraitPrompt(params: {
     basePrompt: string
@@ -693,18 +708,94 @@ export const PORTRAIT_PROMPT_DEFAULTS = {
   }
 ```
 
-3. `generatePortrait` 内现有 `fullPrompt` 拼装改为调用 `buildPortraitPrompt({ basePrompt: request.prompt, anglePrompt, framing: request.framing ?? 'half' })`，负面词改读 `PORTRAIT_PROMPT_DEFAULTS.negativePrompt`。`GeneratePortraitRequest` 类型加 `framing?: PortraitFraming`。**新默认 framing='half'。**
+3. `generatePortrait` 内部**仅加条件分支**（其余逻辑一行不动）：
+
+```ts
+// 原：const fullPrompt = `${request.prompt}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, consistent character, same person, solid background`
+// 改为：
+const fullPrompt = request.framing
+  ? this.buildPortraitPrompt({
+      basePrompt: request.prompt,
+      anglePrompt,
+      framing: request.framing,
+      overrides: { suffix: 'consistent character, same person, solid background' },
+    })
+  : `${request.prompt}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, consistent character, same person, solid background`
+```
 
 - [ ] **Step 4: 运行确认通过 + 回归**
 
 Run: `npm test -- tests/unit/services/portrait-framing.spec.ts && npm test -- tests/unit/services/portrait.service.spec.ts`
-Expected: 全部 PASS
+Expected: 全部 PASS（现有 spec 零改动通过 = 存量行为未变）
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add src/core/services/portrait.service.ts src/shared/types/portrait.types.ts tests/unit/services/portrait-framing.spec.ts
-git commit -m "refactor(portrait): 统一 buildPortraitPrompt，framing 后缀可覆盖，新默认半身"
+git commit -m "feat(portrait): buildPortraitPrompt 新方法 + generatePortrait 可选 framing 参数（存量行为不变）"
+```
+
+---
+
+### Task 4b: 换衣/换背景可选参数（补充提示词 + 多参考图）
+
+**Files:**
+- Modify: `src/shared/types/portrait.types.ts`
+- Modify: `src/core/services/portrait.service.ts`
+- Test: `tests/unit/services/portrait-clothes-background-params.spec.ts`
+
+- [ ] **Step 1: 类型（只新增可选字段）**
+
+`src/shared/types/portrait.types.ts`：
+
+```ts
+// ChangeClothesRequest 加
+  prompt?: string                 // 补充提示词，拼接到现有拼装结果后
+  referenceImages?: string[]      // 多参考图；与现有 referenceImage 单值合并
+
+// ChangeBackgroundRequest 加同样两个字段
+```
+
+- [ ] **Step 2: 写失败测试**
+
+```ts
+describe('changeClothes / changeBackground 可选参数', () => {
+  it('不传新参数时 prompt 与现状一致', async () => {
+    // 走通 changeClothes（mock 同现有 spec），断言 prompt 不含追加内容
+  })
+  it('传 prompt 时追加到拼装结果末尾', async () => {
+    // 断言 ImageService.generateImage 收到的 prompt 以 ', <补充提示词>' 结尾
+  })
+  it('referenceImages 与 referenceImage 合并传入', async () => {
+    // 断言 referenceImages 参数 = [referenceImage, ...referenceImages]
+  })
+})
+```
+
+- [ ] **Step 3: 运行确认失败 → Step 4: 实现**
+
+`portrait.service.ts` 的 `changeClothes` / `changeBackground` 内部：
+
+```ts
+// fullPrompt 拼装行后追加（两个方法各自处理）：
+if (request.prompt?.trim()) fullPrompt += `, ${request.prompt.trim()}`
+// 参考图合并（沿用现有 referenceImage 处理处）：
+const referenceImages = [
+  ...(request.referenceImage ? [request.referenceImage] : []),
+  ...(request.referenceImages ?? []),
+]
+```
+
+- [ ] **Step 5: 运行确认通过 + 回归**
+
+Run: `npm test -- tests/unit/services/portrait-clothes-background-params.spec.ts && npm test -- tests/unit/services/portrait.service.spec.ts`
+Expected: 全部 PASS
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/shared/types/portrait.types.ts src/core/services/portrait.service.ts tests/unit/services/portrait-clothes-background-params.spec.ts
+git commit -m "feat(portrait): 换衣/换背景支持补充提示词与多参考图（可选参数，存量不变）"
 ```
 
 ---
@@ -1242,14 +1333,21 @@ git commit -m "feat(portrait): IPC 新增 generate-full-body / edit-face / promp
 - [ ] 提交调 `portrait.generate({ ..., framing })`；生成中 loading、事件 `portrait.onGenerationEvent` 刷新
 - [ ] Commit
 
-### Task 11: FaceEditPanel + MoreEditPanel
+### Task 11: EditPanel（framing 联动主编辑面板）+ MoreEditPanel
 
 **Files:**
-- Create `src/renderer/src/components/portrait/workbench/FaceEditPanel.vue`
+- Create `src/renderer/src/components/portrait/workbench/EditPanel.vue`
 - Create `src/renderer/src/components/portrait/workbench/MoreEditPanel.vue`
 
-- [ ] FaceEditPanel：指令输入、TemplatePicker(category=face，选中联动预览框显示模板内容)、面部 ReferenceImagePicker、强度滑块、focusRegion 下拉、调 `portrait.editFace`
-- [ ] MoreEditPanel：折叠收纳重新生成（沿用现有 `handleRegenerateFront` 逻辑迁移）/换衣/换背景/多角度（复用现有 `ChangeClothesDialog`/`ChangeBackgroundDialog`/generateAngles）
+- [ ] EditPanel：props `{ framing: PortraitFraming, characterId: string, variant: PortraitVariant }`
+  - `framing='half'` → 修改面部：指令输入、TemplatePicker(category=face，选中联动预览框显示模板内容)、面部 ReferenceImagePicker、强度滑块、focusRegion 下拉、调 `portrait.editFace`
+  - `framing='full'` → 修改全身：指令输入、TemplatePicker(category=body/clothing)、ReferenceImagePicker、强度滑块、**调现有 `portrait.editImage`**（复用，不新增后端）
+  - 视觉与交互以原型 `workbench.html` 的 `#editPanelHalf` / `#editPanelFull` 为准（同一卡槽，tab 切换联动）
+- [ ] MoreEditPanel：折叠收纳
+  - 重新生成（沿用现有 `handleRegenerateFront` 逻辑迁移）
+  - 换衣：服装描述 + **补充提示词 textarea + 服装 ReferenceImagePicker**（调 `changeClothes` 传 `prompt` + `referenceImages`，Task 4b）
+  - 换背景：类型/场景 + **背景描述提示词 textarea + 背景 ReferenceImagePicker**（同上）
+  - 多角度（复用现有 generateAngles）
 - [ ] Commit
 
 ### Task 12: VariantGallery + GenerateFullBodyDialog
@@ -1283,6 +1381,7 @@ git commit -m "feat(portrait): IPC 新增 generate-full-body / edit-face / promp
 
 ## Self-Review 记录
 
-- **Spec 覆盖**：§4 数据模型→T1/T2/T3；§5.1→T7 Step1；§5.2 buildPrompt→T4、模板服务→T5、generateFullBody→T6、editFace→T7；§5.3→T8；§6 前端→T9-T13；§7 测试→各 TDD 步骤+T14；§9 验收→T14。无遗漏。
+- **Spec 覆盖**：§4 数据模型→T1/T2/T3；§5.1→T7 Step1；§5.2 buildPrompt→T4、模板服务→T5、generateFullBody→T6、editFace→T7、换衣/换背景可选参数→T4b；§5.3→T8；§6 前端→T9-T13；§7 测试→各 TDD 步骤+T14；§9 验收→T14。无遗漏。
 - **类型一致性**：`PortraitFraming`/`ReferenceImageRole`/`PromptTemplateCategory`/`PortraitGenerationScene`/`GenerateFullBodyRequest`/`EditFaceRequest` 在 T1/T6 定义，后续任务引用一致；`readImageAsBase64` 在 T6 定义为私有抽取方法，T7 复用同一方法。
-- **风险点**：BaseRepository `scoped` API 签名以实际文件为准（T2 Step4 已注明）；存量行 framing 回填 'full' 与新默认 'half' 的交互已在校验清单。
+- **只增不改（评审要求）**：T4/T4b 均为新增方法或可选参数（缺省=现状行为），现有 `generatePortrait`/`changeClothes`/`changeBackground`/`generateAngles`/`editImage` 内部逻辑不重构；"修改全身"复用 `editImage`（T11），不新增后端方法；存量回归由 T4 Step4/T4b Step5 的现有 spec 零改动通过来锁定。
+- **风险点**：BaseRepository `scoped` API 签名以实际文件为准（T2 Step4 已注明）；存量行 framing 回填 'full' 与新工作台显式传 'half' 的交互已在校验清单。
