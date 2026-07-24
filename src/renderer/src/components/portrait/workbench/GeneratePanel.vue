@@ -236,6 +236,8 @@ models.load()
 </script>
 
 <style lang="scss" scoped>
+@use './workbench-card.scss' as wb;
+
 .generate-panel {
   max-width: 760px;
   margin: 0 auto;
@@ -243,18 +245,13 @@ models.load()
 }
 
 .panel-card {
-  background: var(--bg-color-card);
-  border: 1px solid var(--border-color-lighter);
-  border-radius: var(--radius-lg);
+  @include wb.card;
   padding: var(--spacing-lg, 24px);
-  box-shadow: var(--shadow-sm);
 }
 
 .panel-title {
-  margin: 0 0 var(--spacing-md, 16px);
+  @include wb.card-title;
   font-size: var(--font-size-large, 16px);
-  font-weight: 600;
-  color: var(--text-primary);
 }
 
 .form-row {

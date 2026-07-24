@@ -29,19 +29,15 @@ defineEmits<{
 </script>
 
 <style lang="scss" scoped>
+@use './workbench-card.scss' as wb;
+
 .panel-card {
-  background: var(--bg-color-card);
-  border: 1px solid var(--border-color-lighter);
-  border-radius: var(--radius-lg);
+  @include wb.card;
   padding: var(--spacing-md, 18px);
-  box-shadow: var(--shadow-sm);
 }
 
 .panel-title {
-  margin: 0 0 var(--spacing-md, 14px);
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
+  @include wb.card-title;
 }
 
 .action-grid {
@@ -56,22 +52,39 @@ defineEmits<{
   align-items: center;
   gap: 6px;
   padding: 14px 8px;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border-color-lighter);
   border-radius: var(--radius-md);
   background: var(--bg-color-card);
-  color: var(--text-primary);
+  color: var(--text-regular);
   font-size: 13px;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast),
+    color var(--transition-fast),
+    background var(--transition-fast);
 
   .ico {
     font-size: 20px;
+    transition: transform var(--transition-fast);
   }
 
   &:hover {
-    border-color: var(--color-primary);
+    border-color: var(--color-primary-light-5);
     color: var(--color-primary);
     background: var(--color-primary-light-9);
+    box-shadow: var(--shadow-sm);
+    transform: translateY(-2px);
+
+    .ico {
+      transform: scale(1.12);
+    }
+  }
+
+  &:active {
+    transform: translateY(0);
+    box-shadow: none;
   }
 }
 </style>

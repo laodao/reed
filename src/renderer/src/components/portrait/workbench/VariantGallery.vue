@@ -220,6 +220,8 @@ async function remove(variant: PortraitVariant) {
 </script>
 
 <style lang="scss" scoped>
+@use './workbench-card.scss' as wb;
+
 .variant-gallery {
   display: flex;
   flex-direction: column;
@@ -227,15 +229,8 @@ async function remove(variant: PortraitVariant) {
 }
 
 .variant-group {
-  background: var(--bg-color-card);
-  border: 1px solid var(--border-color-lighter);
-  border-radius: var(--radius-lg);
+  @include wb.card;
   padding: var(--spacing-md, 16px);
-  box-shadow: var(--shadow-xs, var(--shadow-sm));
-}
-
-.full-group {
-  border-left: 3px solid var(--color-primary);
 }
 
 .group-head {
@@ -246,12 +241,9 @@ async function remove(variant: PortraitVariant) {
 }
 
 .group-title {
+  @include wb.card-title;
+  margin-bottom: 0;
   font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 .tag {
@@ -330,10 +322,19 @@ async function remove(variant: PortraitVariant) {
   border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--bg-color-card);
-  transition: box-shadow var(--transition-fast);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
 
   &:hover {
-    box-shadow: var(--shadow-md);
+    border-color: var(--color-primary-light-7);
+    box-shadow: var(--shadow-card-hover);
+    transform: translateY(-2px);
+
+    .v-img :deep(img) {
+      transform: scale(1.04);
+    }
   }
 }
 
@@ -342,6 +343,10 @@ async function remove(variant: PortraitVariant) {
   height: 196px;
   cursor: pointer;
   background: var(--fill-color);
+
+  :deep(img) {
+    transition: transform var(--transition-normal);
+  }
 }
 
 .v-meta {

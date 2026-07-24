@@ -137,11 +137,10 @@ defineExpose({ reload: loadTemplates })
   font-size: 12px;
   line-height: 1.7;
   color: var(--text-regular);
-  background: var(--fill-color-light);
+  background: var(--color-purple-light-9);
   border-radius: var(--radius-sm);
   padding: 10px 12px;
   max-height: 120px;
   overflow-y: auto;
-  border-left: 3px solid var(--color-purple);
 }
 </style>

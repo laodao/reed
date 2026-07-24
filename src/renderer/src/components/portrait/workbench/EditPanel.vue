@@ -186,23 +186,15 @@ async function handleEditImage() {
 </script>
 
 <style lang="scss" scoped>
+@use './workbench-card.scss' as wb;
+
 .panel-card {
-  background: var(--bg-color-card);
-  border: 1px solid var(--border-color-lighter);
-  border-left: 3px solid var(--color-purple);
-  border-radius: var(--radius-lg);
+  @include wb.card;
   padding: var(--spacing-md, 18px);
-  box-shadow: var(--shadow-sm);
 }
 
 .panel-title {
-  margin: 0 0 var(--spacing-md, 16px);
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  @include wb.card-title;
 
   &.accent {
     color: var(--color-purple);
