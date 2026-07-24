@@ -28,6 +28,7 @@ import { KbInvertedIndexRepository } from '@core/database/repositories/kb-invert
 import { PortraitProjectRepository } from '@core/database/repositories/portrait-project.repository'
 import { PortraitCharacterRepository } from '@core/database/repositories/portrait-character.repository'
 import { PortraitVariantRepository } from '@core/database/repositories/portrait-variant.repository'
+import { PortraitPromptTemplateRepository } from '@core/database/repositories/portrait-prompt-template.repository'
 import { SearchEngineConfigRepository } from '@core/database/repositories/search-engine-config.repository'
 import { LwProjectRepository } from '@core/database/repositories/lw-project.repository'
 import { LwStoryOverviewRepository } from '@core/database/repositories/lw-story-overview.repository'
@@ -517,6 +518,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-portrait-variant-framing'
     )
     await addPortraitVariantFraming(this.dataSource)
+    // 人像提示词模板表：新版人像设计（spec 2026-07-24）
+    const { createPortraitPromptTemplates } = await import(
+      '@core/database/migrations/create-portrait-prompt-templates'
+    )
+    await createPortraitPromptTemplates(this.dataSource)
     // 分镜 keyframe_count 字段（前端编辑面板有按钮组但保存链路缺）
     const { addStoryboardKeyframeCount } = await import(
       '@core/database/migrations/add-storyboard-keyframe-count'
@@ -4115,6 +4121,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.portraitProjects = new PortraitProjectRepository(this.dataSource)
     this.portraitCharacters = new PortraitCharacterRepository(this.dataSource)
     this.portraitVariants = new PortraitVariantRepository(this.dataSource)
+    this.portraitPromptTemplates = new PortraitPromptTemplateRepository(this.dataSource)
     this.searchEngineConfigs = new SearchEngineConfigRepository(this.dataSource)
     this.lwProjects = new LwProjectRepository(this.dataSource)
     this.lwStoryOverviews = new LwStoryOverviewRepository(this.dataSource)

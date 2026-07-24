@@ -29,6 +29,7 @@ import { KbInvertedIndexRepository } from '@core/database/repositories/kb-invert
 import { PortraitProjectRepository } from '@core/database/repositories/portrait-project.repository'
 import { PortraitCharacterRepository } from '@core/database/repositories/portrait-character.repository'
 import { PortraitVariantRepository } from '@core/database/repositories/portrait-variant.repository'
+import { PortraitPromptTemplateRepository } from '@core/database/repositories/portrait-prompt-template.repository'
 import { SearchEngineConfigRepository } from '@core/database/repositories/search-engine-config.repository'
 import { LwProjectRepository } from '@core/database/repositories/lw-project.repository'
 import { LwStoryOverviewRepository } from '@core/database/repositories/lw-story-overview.repository'
@@ -113,6 +114,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   portraitProjects: PortraitProjectRepository | null
   portraitCharacters: PortraitCharacterRepository | null
   portraitVariants: PortraitVariantRepository | null
+  portraitPromptTemplates: PortraitPromptTemplateRepository | null
   // 长文写作
   lwProjects: LwProjectRepository | null
   lwStoryOverviews: LwStoryOverviewRepository | null
@@ -198,6 +200,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.portraitProjects = new PortraitProjectRepository(ds)
     this.portraitCharacters = new PortraitCharacterRepository(ds)
     this.portraitVariants = new PortraitVariantRepository(ds)
+    this.portraitPromptTemplates = new PortraitPromptTemplateRepository(ds)
 
     this.lwProjects = new LwProjectRepository(ds)
     this.lwStoryOverviews = new LwStoryOverviewRepository(ds)

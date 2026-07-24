@@ -436,6 +436,43 @@ export const FRAMING_PROMPT_SUFFIX: Record<PortraitFraming, string> = {
   full: 'full body shot, standing upright, complete figure from head to toe'
 }
 
+// ==================== 提示词模板 ====================
+
+/**
+ * 提示词模板分类
+ */
+export type PromptTemplateCategory = 'face' | 'body' | 'clothing' | 'background'
+
+/**
+ * 模板适用的生成场景
+ */
+export type PortraitGenerationScene = 'generate' | 'regenerate' | 'face' | 'clothes'
+
+/**
+ * 人像提示词模板
+ */
+export interface PortraitPromptTemplate {
+  id: string
+  name: string                    // 模板名
+  category: PromptTemplateCategory
+  content: string                 // 模板正文，支持 {name}/{gender}/{age} 占位符
+  applyTo: PortraitGenerationScene[]
+  builtin: boolean                // 内置（不可改删）vs 用户自定义
+  sortOrder: number
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * 模板分类显示名称
+ */
+export const PROMPT_TEMPLATE_CATEGORY_LABELS: Record<PromptTemplateCategory, string> = {
+  face: '面部',
+  body: '全身比例',
+  clothing: '发型+服装',
+  background: '背景'
+}
+
 /**
  * 性别显示名称
  */

@@ -66,6 +66,7 @@ import type { OSSConfigRepository } from './repositories/oss-config.repository'
 import type { PortraitCharacterRepository } from './repositories/portrait-character.repository'
 import type { PortraitProjectRepository } from './repositories/portrait-project.repository'
 import type { PortraitVariantRepository } from './repositories/portrait-variant.repository'
+import type { PortraitPromptTemplateRepository } from './repositories/portrait-prompt-template.repository'
 import type { ProviderConfigRepository } from './repositories/provider-config.repository'
 import type { RoleRepository } from './repositories/role.repository'
 import type { SceneActionRepository } from './repositories/scene-action.repository'
@@ -126,6 +127,7 @@ export interface ICoreDatabaseManager {
   portraitProjects: PortraitProjectRepository | null
   portraitCharacters: PortraitCharacterRepository | null
   portraitVariants: PortraitVariantRepository | null
+  portraitPromptTemplates: PortraitPromptTemplateRepository | null
 
   // ---- 长文写作主表 ----
   lwProjects: LwProjectRepository | null

@@ -59,6 +59,7 @@ import { addKeyframeUserPromptOverride } from '@core/database/migrations/add-key
 import { addCharacterBindingExtraFields } from '@core/database/migrations/add-character-binding-extra-fields'
 import { addCharacterBindingRace } from '@core/database/migrations/add-character-binding-race'
 import { addPortraitVariantFraming } from '@core/database/migrations/add-portrait-variant-framing'
+import { createPortraitPromptTemplates } from '@core/database/migrations/create-portrait-prompt-templates'
 import { addStoryboardKeyframeCount } from '@core/database/migrations/add-storyboard-keyframe-count'
 import { addKbDocumentSource } from '@core/database/migrations/add-kb-document-source'
 import { addKeyframeReferenceOverrides } from '@core/database/migrations/add-keyframe-reference-overrides'
@@ -266,6 +267,8 @@ async function initDatabase(): Promise<void> {
   await addCharacterBindingRace(ds)
   // 人像变体 framing（取景范围 half/full）字段：新版人像设计（spec 2026-07-24）
   await addPortraitVariantFraming(ds)
+  // 人像提示词模板表：新版人像设计（spec 2026-07-24）
+  await createPortraitPromptTemplates(ds)
   // 分镜 keyframe_count 字段（前端编辑面板有按钮组但保存链路缺）
   await addStoryboardKeyframeCount(ds)
   // 知识库文档来源字段
