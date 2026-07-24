@@ -99,11 +99,11 @@
             </div>
             <div class="form-row" style="margin:0;">
               <div class="form-label">输出尺寸</div>
-              <div class="size-grid">
-                <span class="size-chip active">768×1024</span>
-                <span class="size-chip">896×1152</span>
-                <span class="size-chip">1024×1792</span>
-              </div>
+              <select class="input">
+                <optgroup label="竖版"><option selected>768×1024（3:4）</option><option>896×1152（7:9）</option><option>1024×1536（2:3）</option><option>1024×1792（9:16）</option><option>1080×1920（9:16 高清）</option></optgroup>
+                <optgroup label="方形"><option>1024×1024（1:1）</option><option>512×512（1:1）</option></optgroup>
+                <optgroup label="横版"><option>1536×1024（3:2）</option><option>1920×1080（16:9）</option><option>1280×720（16:9）</option></optgroup>
+              </select>
             </div>
           </div>
 

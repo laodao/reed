@@ -126,66 +126,22 @@
               <button class="btn btn-accent">✏️ 修改全身</button>
             </div>
 
-            <!-- 更多编辑（折叠，收纳低频操作） -->
-            <div class="panel" style="padding:0; overflow:hidden;">
-              <div class="collapse-head" onclick="var b=this.nextElementSibling, a=this.querySelector('.ch-arrow'); b.hidden=!b.hidden; this.classList.toggle('open', !b.hidden);">
-                <div class="ch-icon">⚙️</div>
-                <div style="flex:1;">
-                  <div class="ch-title">更多编辑</div>
-                  <div class="ch-sub">重新生成 · 换衣 · 换背景 · 多角度</div>
-                </div>
-                <span class="ch-arrow">▶</span>
-              </div>
-              <div class="collapse-body" hidden style="padding-top:8px;">
-
-                <!-- 重新生成（紧凑） -->
-                <div style="padding:12px; background:var(--c-bg-2); border-radius:var(--r-md); margin-bottom:12px;">
-                  <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
-                    <span style="font-weight:600; font-size:13px;">🔄 重新生成</span>
-                    <span style="font-size:11px; color:var(--c-text-3);">替换当前半身</span>
-                  </div>
-                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
-                    <select class="input"><option>沿用当前提示词</option><option>少年清爽风</option></select>
-                    <div class="size-grid"><span class="size-chip active">768×1024</span><span class="size-chip">896×1152</span></div>
-                  </div>
-                  <div class="slider-row" style="margin:0 0 10px;"><span class="lbl">重绘强度</span><input type="range" min="0" max="100" value="100"><span class="val">1.0</span></div>
-                  <button class="btn btn-primary btn-block btn-sm">🔄 重新生成</button>
-                </div>
-
-                <!-- 换衣 / 换背景（紧凑并列） -->
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;">
-                  <div style="padding:12px; background:var(--c-bg-2); border-radius:var(--r-md);">
-                    <div style="font-weight:600; font-size:13px; margin-bottom:8px;">👔 换衣</div>
-                    <input class="input" placeholder="red suit, white shirt" style="margin-bottom:8px;">
-                    <textarea class="textarea" rows="2" placeholder="补充提示词（可选）：如 overall style, fabric texture..." style="margin-bottom:8px;"></textarea>
-                    <div class="ref-grid" style="margin-bottom:8px;">
-                      <div class="ref-item" style="width:52px;height:52px;"><div class="ph g3"><svg width="22" height="22" viewBox="0 0 100 140" fill="none"><circle cx="50" cy="38" r="22" fill="rgba(255,255,255,0.85)"/><path d="M14 140c0-22 16-40 36-40s36 18 36 40" fill="rgba(255,255,255,0.85)"/></svg></div><span class="tag-type">服装</span><button class="remove" style="width:16px;height:16px;font-size:10px;">×</button></div>
-                      <div class="ref-upload" style="width:52px;height:52px;"><span class="plus" style="font-size:16px;">＋</span><span>服装图</span></div>
-                    </div>
-                    <button class="btn btn-soft btn-block btn-sm">应用换衣</button>
-                  </div>
-                  <div style="padding:12px; background:var(--c-bg-2); border-radius:var(--r-md);">
-                    <div style="font-weight:600; font-size:13px; margin-bottom:8px;">🏞️ 换背景</div>
-                    <select class="input" style="margin-bottom:8px;"><option>纯色背景</option><option>预设 · 室内</option><option>自定义</option></select>
-                    <textarea class="textarea" rows="2" placeholder="背景描述提示词（可选）：如 beach sunset, soft bokeh..." style="margin-bottom:8px;"></textarea>
-                    <div class="ref-grid" style="margin-bottom:8px;">
-                      <div class="ref-upload" style="width:52px;height:52px;"><span class="plus" style="font-size:16px;">＋</span><span>背景图</span></div>
-                    </div>
-                    <button class="btn btn-soft btn-block btn-sm">应用换背景</button>
-                  </div>
-                </div>
-
-                <!-- 多角度（紧凑） -->
-                <div style="padding:12px; background:var(--c-bg-2); border-radius:var(--r-md);">
-                  <div style="display:flex; align-items:center; gap:14px;">
-                    <span style="font-weight:600; font-size:13px;">📐 补角度</span>
-                    <label class="angle-check"><input type="checkbox" checked> 左</label>
-                    <label class="angle-check"><input type="checkbox" checked> 右</label>
-                    <label class="angle-check"><input type="checkbox"> 背</label>
-                    <button class="btn btn-soft btn-sm" style="margin-left:auto;">生成</button>
-                  </div>
-                </div>
-
+            <!-- 更多操作（弹窗入口） -->
+            <div class="panel">
+              <div class="panel-title"><span class="ico-lg">⚙️</span> 更多操作</div>
+              <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:10px;">
+                <button class="btn" style="flex-direction:column; gap:6px; padding:14px 8px; height:auto;" onclick="document.getElementById('regenDlg').style.display='flex'">
+                  <span style="font-size:20px;">🔄</span><span>重新生成</span>
+                </button>
+                <button class="btn" style="flex-direction:column; gap:6px; padding:14px 8px; height:auto;" onclick="document.getElementById('clothesDlg').style.display='flex'">
+                  <span style="font-size:20px;">👔</span><span>换衣</span>
+                </button>
+                <button class="btn" style="flex-direction:column; gap:6px; padding:14px 8px; height:auto;" onclick="document.getElementById('backgroundDlg').style.display='flex'">
+                  <span style="font-size:20px;">🏞️</span><span>换背景</span>
+                </button>
+                <button class="btn" style="flex-direction:column; gap:6px; padding:14px 8px; height:auto;" onclick="document.getElementById('anglesDlg').style.display='flex'">
+                  <span style="font-size:20px;">📐</span><span>多角度</span>
+                </button>
               </div>
             </div>
           </div>
@@ -247,6 +203,133 @@
   </main>
 </div>
 
+<!-- 重新生成对话框 -->
+<div class="modal-mask" id="regenDlg" style="display:none;">
+  <div class="modal" style="width:560px;">
+    <div class="modal-head"><h3>重新生成</h3><button class="close-x" onclick="document.getElementById('regenDlg').style.display='none'">×</button></div>
+    <div class="modal-body">
+      <div class="form-row"><div class="form-label">提示词</div>
+        <textarea class="textarea" rows="3">portrait of a young Asian male, age 18, clean and refreshing temperament...</textarea>
+      </div>
+      <div class="form-row"><div class="form-label">反向提示词</div>
+        <textarea class="textarea" rows="1">cropped, half body, low quality</textarea>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+        <div class="form-row" style="margin:0;"><div class="form-label">输出尺寸</div>
+          <select class="input">
+            <optgroup label="竖版"><option selected>768×1024（3:4）</option><option>896×1152（7:9）</option><option>1024×1536（2:3）</option><option>1024×1792（9:16）</option><option>1080×1920（9:16 高清）</option></optgroup>
+            <optgroup label="方形"><option>1024×1024（1:1）</option><option>512×512（1:1）</option></optgroup>
+            <optgroup label="横版"><option>1536×1024（3:2）</option><option>1920×1080（16:9）</option><option>1280×720（16:9）</option></optgroup>
+          </select>
+        </div>
+        <div class="form-row" style="margin:0;"><div class="form-label">提示词模板</div>
+          <select class="input"><option value="">沿用当前</option><option>少年清爽风 · 面部</option><option>少年清爽风 · 8 头身全身</option></select>
+        </div>
+      </div>
+      <div class="form-row" style="margin-top:16px;"><div class="form-label">参考图片</div>
+        <div class="ref-grid">
+          <div class="ref-item"><div class="ph g1"><svg width="30" height="30" viewBox="0 0 100 140" fill="none"><circle cx="50" cy="38" r="22" fill="rgba(255,255,255,0.85)"/><path d="M14 140c0-22 16-40 36-40s36 18 36 40" fill="rgba(255,255,255,0.85)"/></svg></div><span class="tag-type">当前形象</span><button class="remove">×</button></div>
+          <div class="ref-upload"><span class="plus">＋</span><span>追加</span></div>
+        </div>
+      </div>
+      <div class="form-row" style="margin-bottom:0;"><div class="slider-row" style="margin:0;"><span class="lbl">重绘强度</span><input type="range" min="0" max="100" value="100"><span class="val">1.0</span></div></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="document.getElementById('regenDlg').style.display='none'">取消</button>
+      <button class="btn btn-primary" onclick="document.getElementById('regenDlg').style.display='none'">🔄 重新生成（替换当前）</button>
+    </div>
+  </div>
+</div>
+
+<!-- 换衣对话框 -->
+<div class="modal-mask" id="clothesDlg" style="display:none;">
+  <div class="modal" style="width:560px;">
+    <div class="modal-head"><h3>换衣</h3><button class="close-x" onclick="document.getElementById('clothesDlg').style.display='none'">×</button></div>
+    <div class="modal-body">
+      <div class="form-row"><div class="form-label">服装描述</div>
+        <textarea class="textarea" rows="2" placeholder="如：red suit, white shirt, black tie"></textarea>
+      </div>
+      <div class="form-row"><div class="form-label">补充提示词（可选）</div>
+        <textarea class="textarea" rows="2" placeholder="如 overall style, fabric texture, slim fit..."></textarea>
+      </div>
+      <div class="form-row"><div class="form-label">服装参考图（可选）</div>
+        <div class="ref-grid">
+          <div class="ref-item"><div class="ph g3"><svg width="30" height="30" viewBox="0 0 100 140" fill="none"><circle cx="50" cy="38" r="22" fill="rgba(255,255,255,0.85)"/><path d="M14 140c0-22 16-40 36-40s36 18 36 40" fill="rgba(255,255,255,0.85)"/></svg></div><span class="tag-type">服装</span><button class="remove">×</button></div>
+          <div class="ref-upload"><span class="plus">＋</span><span>上传</span></div>
+        </div>
+      </div>
+      <div class="form-row" style="margin-bottom:0;"><div class="form-label">输出尺寸</div>
+        <select class="input">
+          <optgroup label="竖版"><option selected>768×1024（3:4）</option><option>896×1152（7:9）</option><option>1024×1536（2:3）</option><option>1024×1792（9:16）</option><option>1080×1920（9:16 高清）</option></optgroup>
+          <optgroup label="方形"><option>1024×1024（1:1）</option><option>512×512（1:1）</option></optgroup>
+          <optgroup label="横版"><option>1536×1024（3:2）</option><option>1920×1080（16:9）</option><option>1280×720（16:9）</option></optgroup>
+        </select>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="document.getElementById('clothesDlg').style.display='none'">取消</button>
+      <button class="btn btn-primary" onclick="document.getElementById('clothesDlg').style.display='none'">👔 应用换衣</button>
+    </div>
+  </div>
+</div>
+
+<!-- 换背景对话框 -->
+<div class="modal-mask" id="backgroundDlg" style="display:none;">
+  <div class="modal" style="width:560px;">
+    <div class="modal-head"><h3>换背景</h3><button class="close-x" onclick="document.getElementById('backgroundDlg').style.display='none'">×</button></div>
+    <div class="modal-body">
+      <div class="form-row"><div class="form-label">背景类型</div>
+        <select class="input"><option>纯色背景</option><option>预设 · 室内</option><option>预设 · 工作室</option><option>自定义描述</option><option>上传背景图</option></select>
+      </div>
+      <div class="form-row"><div class="form-label">背景描述提示词</div>
+        <textarea class="textarea" rows="2" placeholder="如 beach sunset, soft bokeh, warm light..."></textarea>
+      </div>
+      <div class="form-row"><div class="form-label">背景参考图（可选）</div>
+        <div class="ref-grid">
+          <div class="ref-upload"><span class="plus">＋</span><span>上传</span></div>
+        </div>
+      </div>
+      <div class="form-row" style="margin-bottom:0;"><div class="form-label">输出尺寸</div>
+        <select class="input">
+          <optgroup label="竖版"><option selected>768×1024（3:4）</option><option>896×1152（7:9）</option><option>1024×1536（2:3）</option><option>1024×1792（9:16）</option><option>1080×1920（9:16 高清）</option></optgroup>
+          <optgroup label="方形"><option>1024×1024（1:1）</option><option>512×512（1:1）</option></optgroup>
+          <optgroup label="横版"><option>1536×1024（3:2）</option><option>1920×1080（16:9）</option><option>1280×720（16:9）</option></optgroup>
+        </select>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="document.getElementById('backgroundDlg').style.display='none'">取消</button>
+      <button class="btn btn-primary" onclick="document.getElementById('backgroundDlg').style.display='none'">🏞️ 应用换背景</button>
+    </div>
+  </div>
+</div>
+
+<!-- 多角度对话框 -->
+<div class="modal-mask" id="anglesDlg" style="display:none;">
+  <div class="modal" style="width:480px;">
+    <div class="modal-head"><h3>生成其他角度</h3><button class="close-x" onclick="document.getElementById('anglesDlg').style.display='none'">×</button></div>
+    <div class="modal-body">
+      <div class="form-row"><div class="form-label">选择角度（基于当前形象保持一致）</div>
+        <div class="angle-checks">
+          <label class="angle-check"><input type="checkbox" checked> 左侧</label>
+          <label class="angle-check"><input type="checkbox" checked> 右侧</label>
+          <label class="angle-check"><input type="checkbox"> 背面</label>
+        </div>
+      </div>
+      <div class="form-row" style="margin-bottom:0;"><div class="form-label">输出尺寸</div>
+        <select class="input">
+          <optgroup label="竖版"><option selected>768×1024（3:4）</option><option>896×1152（7:9）</option><option>1024×1536（2:3）</option><option>1024×1792（9:16）</option></optgroup>
+          <optgroup label="方形"><option>1024×1024（1:1）</option></optgroup>
+        </select>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="document.getElementById('anglesDlg').style.display='none'">取消</button>
+      <button class="btn btn-primary" onclick="document.getElementById('anglesDlg').style.display='none'">📐 生成角度</button>
+    </div>
+  </div>
+</div>
+
 <!-- 生成全身像对话框 -->
 <div class="modal-mask" id="genFullBodyDlg" style="display:none;">
   <div class="modal" style="width:560px;">
@@ -266,7 +349,10 @@
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
         <div class="form-row" style="margin:0;">
           <div class="form-label">输出尺寸</div>
-          <div class="size-grid"><span class="size-chip active">1024×1792</span><span class="size-chip">896×1152</span></div>
+          <select class="input">
+            <optgroup label="竖版（全身推荐）"><option selected>1024×1792（9:16）</option><option>1080×1920（9:16 高清）</option><option>1024×1536（2:3）</option><option>896×1152（7:9）</option><option>768×1024（3:4）</option></optgroup>
+            <optgroup label="方形"><option>1024×1024（1:1）</option></optgroup>
+          </select>
         </div>
         <div class="form-row" style="margin:0;">
           <div class="form-label">提示词模板</div>

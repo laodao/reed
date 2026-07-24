@@ -1313,41 +1313,66 @@ git commit -m "feat(portrait): IPC 新增 generate-full-body / edit-face / promp
 
 > 视觉以 `docs/ui-prototypes/portrait-design/` 对应页面为唯一标准；所有样式写 `var(--*)`，缺 token 先在 `src/renderer/src/styles/index.scss :root` 补（classic=接近现状，modern=原型值）。
 
-### Task 9: token 补充 + 两个基础组件（ReferenceImagePicker / TemplatePicker）
+### Task 9: token 补充 + 三个基础组件（ReferenceImagePicker / TemplatePicker / SizeSelect）
 
 **Files:**
 - Modify: `src/renderer/src/styles/index.scss`（补 `--c-accent*`、`--c-bg-2`、`--sidebar-*` 等皮肤方案 D3 列出的 token）
 - Create: `src/renderer/src/components/portrait/workbench/ReferenceImagePicker.vue`
 - Create: `src/renderer/src/components/portrait/workbench/TemplatePicker.vue`
+- Create: `src/renderer/src/components/portrait/workbench/SizeSelect.vue`
+- Modify: `src/shared/types/portrait.types.ts`（主流分辨率常量）
 
 - [ ] **Step 1:** `index.scss :root` 补充 token（accent 紫系、bg-2、surface-2、sidebar 系列、shadow 细化档），值取皮肤方案 D3 表。
-- [ ] **Step 2:** `ReferenceImagePicker.vue`：props `{ modelValue: { data: string; role: ReferenceImageRole }[], max?: number }`，网格展示（缩略图+角色角标+删除），`+` 上传（走 `window.electronAPI.image.selectFile`），role 下拉切换；emits `update:modelValue`。样式全部 token。
-- [ ] **Step 3:** `TemplatePicker.vue`：props `{ category?: PromptTemplateCategory; scene: PortraitGenerationScene; character?: PortraitCharacter }`；加载 `promptTemplate.list`，下拉 + 「套用(emit replace) / 追加(emit append)」；选中时 emit `preview(content)` 供父级联动预览。
-- [ ] **Step 4:** `npm run lint` 通过；Commit `feat(portrait-ui): token 补充 + ReferenceImagePicker/TemplatePicker 基础组件`
+- [ ] **Step 2:** 主流分辨率常量（组件不写死）——`src/shared/types/portrait.types.ts` 追加：
+
+```ts
+/** 主流分辨率（尺寸下拉候选基准；与模型 supportedSizes 取并集展示） */
+export const MAINSTREAM_PORTRAIT_SIZES: { value: string; ratio: string; group: 'portrait' | 'square' | 'landscape' }[] = [
+  { value: '768x1024', ratio: '3:4', group: 'portrait' },
+  { value: '896x1152', ratio: '7:9', group: 'portrait' },
+  { value: '1024x1536', ratio: '2:3', group: 'portrait' },
+  { value: '1024x1792', ratio: '9:16', group: 'portrait' },
+  { value: '1080x1920', ratio: '9:16', group: 'portrait' },
+  { value: '1024x1024', ratio: '1:1', group: 'square' },
+  { value: '512x512', ratio: '1:1', group: 'square' },
+  { value: '1536x1024', ratio: '3:2', group: 'landscape' },
+  { value: '1920x1080', ratio: '16:9', group: 'landscape' },
+  { value: '1280x720', ratio: '16:9', group: 'landscape' },
+]
+```
+
+- [ ] **Step 3:** `SizeSelect.vue`：props `{ modelValue: string; modelSizes?: string[] }`，el-select 分组下拉（竖版/方形/横版），候选 = `modelSizes ∪ MAINSTREAM_PORTRAIT_SIZES`（去重），选项文案 `768×1024（3:4）`；emits `update:modelValue`。**复用替换**现有 `SizeSelector.vue` 的使用点仅在新工作台内（旧组件不动）。
+- [ ] **Step 4:** `ReferenceImagePicker.vue`：props `{ modelValue: { data: string; role: ReferenceImageRole }[], max?: number }`，网格展示（缩略图+角色角标+删除），`+` 上传（走 `window.electronAPI.image.selectFile`），role 下拉切换；emits `update:modelValue`。样式全部 token。
+- [ ] **Step 5:** `TemplatePicker.vue`：props `{ category?: PromptTemplateCategory; scene: PortraitGenerationScene; character?: PortraitCharacter }`；加载 `promptTemplate.list`，下拉 + 「套用(emit replace) / 追加(emit append)」；选中时 emit `preview(content)` 供父级联动预览。
+- [ ] **Step 6:** `npm run lint` 通过；Commit `feat(portrait-ui): token 补充 + ReferenceImagePicker/TemplatePicker/SizeSelect 基础组件`
 
 ### Task 10: GeneratePanel（生成态，默认半身）
 
 **Files:** Create `src/renderer/src/components/portrait/workbench/GeneratePanel.vue`
 
-- [ ] 取景范围 radio 卡（半身默认选中，视觉同原型 `workbench-new.html`）、模型选择、尺寸 SizeSelector、TemplatePicker、prompt/negativePrompt、ReferenceImagePicker、高级参数折叠（quality/style/seed/guidanceScale/steps/strength）
+- [ ] 取景范围 radio 卡（半身默认选中，视觉同原型 `workbench-new.html`）、模型选择、SizeSelect、TemplatePicker、prompt/negativePrompt、ReferenceImagePicker、高级参数折叠（quality/style/seed/guidanceScale/steps/strength）
 - [ ] 提交调 `portrait.generate({ ..., framing })`；生成中 loading、事件 `portrait.onGenerationEvent` 刷新
 - [ ] Commit
 
-### Task 11: EditPanel（framing 联动主编辑面板）+ MoreEditPanel
+### Task 11: EditPanel（framing 联动主编辑面板）+ MoreActionsPanel 与四个对话框
 
 **Files:**
 - Create `src/renderer/src/components/portrait/workbench/EditPanel.vue`
-- Create `src/renderer/src/components/portrait/workbench/MoreEditPanel.vue`
+- Create `src/renderer/src/components/portrait/workbench/MoreActionsPanel.vue`
+- Create `src/renderer/src/components/portrait/workbench/RegenerateDialog.vue`
+- Create `src/renderer/src/components/portrait/workbench/ClothesDialog.vue`
+- Create `src/renderer/src/components/portrait/workbench/BackgroundDialog.vue`
+- Create `src/renderer/src/components/portrait/workbench/AnglesDialog.vue`
 
 - [ ] EditPanel：props `{ framing: PortraitFraming, characterId: string, variant: PortraitVariant }`
   - `framing='half'` → 修改面部：指令输入、TemplatePicker(category=face，选中联动预览框显示模板内容)、面部 ReferenceImagePicker、强度滑块、focusRegion 下拉、调 `portrait.editFace`
   - `framing='full'` → 修改全身：指令输入、TemplatePicker(category=body/clothing)、ReferenceImagePicker、强度滑块、**调现有 `portrait.editImage`**（复用，不新增后端）
   - 视觉与交互以原型 `workbench.html` 的 `#editPanelHalf` / `#editPanelFull` 为准（同一卡槽，tab 切换联动）
-- [ ] MoreEditPanel：折叠收纳
-  - 重新生成（沿用现有 `handleRegenerateFront` 逻辑迁移）
-  - 换衣：服装描述 + **补充提示词 textarea + 服装 ReferenceImagePicker**（调 `changeClothes` 传 `prompt` + `referenceImages`，Task 4b）
-  - 换背景：类型/场景 + **背景描述提示词 textarea + 背景 ReferenceImagePicker**（同上）
-  - 多角度（复用现有 generateAngles）
+- [ ] MoreActionsPanel：四个图标按钮（重新生成/换衣/换背景/多角度），各开对应对话框；视觉以原型"更多操作"按钮行为准
+- [ ] RegenerateDialog：提示词/反向词/TemplatePicker/SizeSelect/参考图（含当前形象）/强度滑块；提交逻辑迁移自现有 `handleRegenerateFront`
+- [ ] ClothesDialog：服装描述 + 补充提示词 + 服装 ReferenceImagePicker + SizeSelect；调 `portrait.changeClothes` 传 `clothesDescription` + `prompt` + `referenceImages`（Task 4b 参数）
+- [ ] BackgroundDialog：背景类型/场景 + 背景描述提示词 + 背景 ReferenceImagePicker + SizeSelect；调 `portrait.changeBackground` 传对应新参数
+- [ ] AnglesDialog：角度勾选 + SizeSelect；调现有 `portrait.generate-angles`
 - [ ] Commit
 
 ### Task 12: VariantGallery + GenerateFullBodyDialog
@@ -1357,7 +1382,7 @@ git commit -m "feat(portrait): IPC 新增 generate-full-body / edit-face / promp
 - Create `src/renderer/src/components/portrait/workbench/GenerateFullBodyDialog.vue`
 
 - [ ] VariantGallery：按 framing 分两组（半身组/全身组），组内按现有 variantGroups 逻辑；全身组空状态显示「生成全身像」按钮，有图时显示「重新生成」；卡片操作（下载/删除/预览）迁移现有逻辑
-- [ ] GenerateFullBodyDialog：提示词（默认 `same person as reference, full body shot, ...`）、尺寸、TemplatePicker(body)、参考图（首项=当前半身，只读标识）、强度；调 `portrait.generateFullBody`
+- [ ] GenerateFullBodyDialog：提示词（默认 `same person as reference, full body shot, ...`）、SizeSelect（竖版全身优先）、TemplatePicker(body)、参考图（首项=当前半身，只读标识）、强度；调 `portrait.generateFullBody`
 - [ ] Commit
 
 ### Task 13: PortraitWorkbench 容器 + Portrait.vue 接入

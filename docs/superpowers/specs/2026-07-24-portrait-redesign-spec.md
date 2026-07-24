@@ -43,7 +43,8 @@
 | D5b | 换衣 / 换背景增强 | 两者都允许**上传参考图（多张）+ 填写补充提示词**；请求类型新增 `prompt?` 与 `referenceImages?`（只新增，现有 `referenceImage` 单值保留兼容） |
 | D6 | 提示词模板 | 独立模板库：内置（来自 `docs/prompt.txt`）+ 用户自定义；分类（face/body/clothing/background）；支持 `{name}/{gender}/{age}` 占位符；生成/重新生成/修改面部/换衣 各入口可「套用（覆盖）/追加（拼接）」 |
 | D7 | 参考图语义 | 多参考图，每张标注用途：`character` / `face` / `pose` / `clothing` / `background` |
-| D8 | 工作台信息架构 | 右操作区：主编辑面板（framing 联动，D5）→ 更多编辑（折叠：重新生成/换衣/换背景/多角度）；套图区分半身组/全身组 |
+| D8 | 工作台信息架构 | 右操作区：主编辑面板（framing 联动，D5）→ 更多操作（**按钮行：重新生成 / 换衣 / 换背景 / 多角度，均弹对话框**，复用现有对话框模式）；套图区分半身组/全身组 |
+| D8b | 尺寸选择 | 全部改为**下拉选择**，按 竖版 / 方形 / 横版 分组的主流分辨率（768×1024、896×1152、1024×1536、1024×1792、1080×1920、1024×1024、512×512、1536×1024、1920×1080、1280×720 等，带宽高比标注）；候选集 = 模型 supportedSizes ∪ 主流分辨率，不写死在组件里 |
 | D9 | 样式规范 | 前端全部样式使用 CSS token（`var(--*)`），零硬编码色值/圆角/阴影（皮肤方案 D5） |
 | D10 | 架构 | 数据结构复用现有三层（Project→Character→Variant）；Service 只在 `src/core`；字段名=DB 字段名，禁止映射函数；**后端只新增行为，不修改现有方法的行为**；现有功能能复用复用（如 `editImage` 复用为"修改全身"），不能复用的新增；迁移双端注册；TDD |
 
@@ -140,9 +141,14 @@ provider adapter 现状：dashscope/volcengine 参考图链路已支持；streng
 | `PortraitWorkbench.vue` | 工作台容器：无形象→生成态；有形象→编辑态；framing tab 切换（预览区 + 主编辑面板联动） |
 | `GeneratePanel.vue` | 生成态面板：取景范围（默认半身）、模型、尺寸、模板选择、prompt、negativePrompt、多参考图（语义标注）、高级参数折叠 |
 | `EditPanel.vue` | **主编辑面板（framing 联动）**：`framing='half'` → 修改面部（指令、面部模板下拉联动预览、面部参考图、强度、focusRegion，调 `editFace`）；`framing='full'` → 修改全身（指令、全身模板、参考图、强度，调现有 `editImage`） |
-| `MoreEditPanel.vue` | 更多编辑折叠区：重新生成 / 换衣（描述+补充提示词+服装参考图）/ 换背景（类型+背景描述提示词+背景参考图）/ 多角度（复用现有逻辑迁移） |
+| `MoreActionsPanel.vue` | 更多操作按钮行：重新生成 / 换衣 / 换背景 / 多角度，各开对应对话框 |
+| `RegenerateDialog.vue` | 重新生成：提示词/反向词/模板/尺寸下拉/参考图（含当前形象）/强度 |
+| `ClothesDialog.vue` | 换衣：服装描述 + 补充提示词 + 服装参考图 + 尺寸下拉（在现有 `ChangeClothesDialog.vue` 基础上增强，或新版重写后替换） |
+| `BackgroundDialog.vue` | 换背景：类型 + 背景描述提示词 + 背景参考图 + 尺寸下拉（同上） |
+| `AnglesDialog.vue` | 多角度：角度勾选 + 尺寸下拉（复用现有 `GenerateAnglesDialog.vue` 逻辑迁移） |
 | `VariantGallery.vue` | 套图画廊：按 framing 分组（半身组/全身组），全身组空状态+生成按钮，有图时重新生成按钮 |
-| `GenerateFullBodyDialog.vue` | 生成全身对话框（提示词/尺寸/模板/参考图含当前半身/强度） |
+| `GenerateFullBodyDialog.vue` | 生成全身对话框（提示词/尺寸下拉/模板/参考图含当前半身/强度） |
+| `SizeSelect.vue` | 尺寸下拉组件：竖版/方形/横版分组，候选 = 模型 supportedSizes ∪ 主流分辨率（常量定义在 shared/types，不写死在组件） |
 | `TemplatePicker.vue` | 模板选择器（下拉+套用/追加+联动预览） |
 | `TemplateLibrary.vue`（视图或对话框） | 模板库管理：分类筛选、预览、复制、新建/编辑/删除自定义 |
 | `ReferenceImagePicker.vue` | 参考图上传网格（每张可标注语义角色） |
