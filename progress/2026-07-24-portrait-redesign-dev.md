@@ -64,3 +64,29 @@
 - 模板库管理 UI（TemplateLibrary 视图）：本次完成 list/apply/save/delete 全链路，管理界面可后续补
 - 皮肤方案 P1（data-skin 切换机制）：docs/design/theme-skin-system-design.md，本 feature 已满足其 D5（新代码 token 驱动）
 - 旧 CharacterEditor.vue 及其子组件在新版稳定后清理
+
+---
+
+## 第二阶段：Provider 能力模型与参数治理（2026-07-24 晚）
+
+基于研究（docs/design/image-provider-api-params-research.md）与设计
+（docs/design/image-provider-capability-model-design.md）完成 5 个任务：
+
+- **Task 1 能力模型**：ImageModelCapabilities 类型 + model-capabilities.ts 注册表
+  （覆盖 dashscope/bailian/volcengine/openai 全部模型，前缀匹配，模型级差异）；
+  未登记抛 UnregisteredModelCapabilityError（不隐瞒原则）。单测 11 例。
+- **Task 2 可灵修正**：kling/* 路由到官方 image-generation 端点 + 异步头
+  （修正在先错误：一切模型落 image-synthesis）；参数集只发
+  n/aspect_ratio/resolution/watermark，负面词并入正向 prompt；size 映射三档宽高比；
+  getModels 增加可灵 v3/v3 omni。单测 7 例。
+- **Task 3 火山/万相修正**：火山显式 watermark:false（修官方默认带水印）+ 停发
+  未列参数；万相 multimodal 透传 prompt_extend（缺省 true 保现状）。单测 4 例。
+- **Task 4 service 感知**：generateImage 生成边界未登记显式报错；capabilities
+  单点注入三处模型列表；人像一致性场景 promptExtend:false。单测 2 例 + 断言 2 例。
+- **Task 5 UI 能力渲染**：GeneratePanel 参数按能力显隐、参考图上限驱动；
+  SizeSelect 可灵三档模式；撤掉强度滑块（三家官方均无 strength，
+  面容一致性=参考图+focusRegion prompt 保障）。
+
+验证：image-providers 22 例 + services 42 例全绿；lint 0 error；dev 启动正常。
+注：image.service/portrait.service 等文件 11 个 unused-vars lint error 为预存
+问题（HEAD 同样存在），与本次改动无关；误纳入的 e2e WIP 文件已从提交中剔除。
