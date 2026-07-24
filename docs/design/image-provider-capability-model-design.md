@@ -110,26 +110,49 @@ export function getModelCapabilities(providerType: string, modelId: string): Ima
 
 ### 4.3 能力透出到前端
 
-`image.getProviders` 的模型 `features` 里加 `capabilities`（`ImageModelFeatures` 扩展一个可选字段），adapter 的 `getModels()` 返回时查注册表注入。前端零新增 IPC。
+**单点注入**：在 `ImageService.getProviders/getModels` 聚合模型列表时查注册表，把 `capabilities` 写进模型 `features`（`ImageModelFeatures` 扩展可选字段）返回给前端。**不在各 adapter 的 getModels 里分别注入**（避免 N 处重复 + 漏注）。前端零新增 IPC。
+
+未登记模型在此处不抛错（列表要照常渲染），只在生成调用边界报错（§8）——让用户能看见模型、选下去、得到明确错误，而不是列表神秘消失。
 
 ## 5. 各 adapter 修正
 
-### 5.1 可灵（bailian-image.provider.ts）—— 重写 buildRequestBody 参数集
+### 5.1 可灵（bailian-image.provider.ts）—— 端点路由 + 参数集重写（两处错误）
+
+**错误 A：端点错误（比参数更严重，review 新发现）。** 官方可灵端点为
+`https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/image-generation/generation`
+（异步，必须 `X-DashScope-Async: enable`，任务轮询走 maas 路径，且**仅华北2北京地域**），
+而 adapter 现把一切模型发往 dashscope 通用 `image-synthesis` 端点。修正：
 
 ```ts
-// 只发官方支持参数
+private getApiUrl(model: string): string {
+  if (model.startsWith('kling/')) {
+    // 可灵走百炼托管 maas 端点（workspace 从 config 解析；缺失则报错，不猜默认）
+    return `${this.maasHost()}/api/v1/services/aigc/image-generation/generation`
+  }
+  // ...现有逻辑
+}
+// 请求头对 kling 增加 'X-DashScope-Async': 'enable'
+// 任务状态查询同样按模型分路径
+// 地域限制：无 WorkspaceId / 非北京地域配置 → 显式报错（§8 原则）
+```
+
+**错误 B：参数集错误。** 只发官方支持参数：
+
+```ts
 body.parameters.n = request.count || 1
-// size 宽x高 → aspect_ratio + resolution 映射
+// size 宽x高 → aspect_ratio + resolution 映射（注意：3:4 不在官方集合内，竖版一律归 9:16）
 const { aspectRatio, resolution } = mapPixelsToKlingSize(request.width, request.height)
-body.parameters.aspect_ratio = aspectRatio   // 竖版(3:4/9:16)→'9:16'；方→'1:1'；横→'16:9'
+body.parameters.aspect_ratio = aspectRatio   // 竖版(3:4/2:3/9:16)→'9:16'；方→'1:1'；横→'16:9'
 body.parameters.resolution = resolution      // 短边≥1500 → '2k'，否则 '1k'
 body.parameters.watermark = false
-// 负面词：官方不支持 → 并入正向 prompt（官方建议写法）
+// 负面词：官方不支持 → 并入正向 prompt（官方建议写法；措辞为常量便于实测微调）
 if (request.negativePrompt) {
-  body.input.prompt = `${request.prompt}. Avoid: ${request.negativePrompt}`
+  body.input.prompt = `${request.prompt}${KLING_NEGATIVE_JOINER}${request.negativePrompt}`
 }
 // 不再发送 seed / style / quality / size
 ```
+
+`mapPixelsToKlingSize` 必须配单测：覆盖 MAINSTREAM_PORTRAIT_SIZES 全部 10 个尺寸的映射结果。
 
 ### 5.2 火山（volcengine-image.provider.ts）
 
@@ -142,8 +165,9 @@ body.watermark = false        // 修复"默认带水印"（产品默认关，后
 ### 5.3 万相（dashscope-image.provider.ts）
 
 ```ts
-// 编辑/参考图场景显式关闭提示词改写，保护一致性 prompt：
-body.parameters.prompt_extend = request.promptExtend ?? false   // 新增可选字段，人像场景传 false
+// 缺省保持现状（官方默认 true），不破坏存量调用方；
+// 人像一致性场景由 service 显式传 false：
+body.parameters.prompt_extend = request.promptExtend ?? true
 // wan2.6-image 端点路由实测后确认（multimodal vs image-synthesis），失败则并入 multimodal 路由
 ```
 
@@ -174,36 +198,47 @@ promptExtend: false
 | 质量 | `caps.quality=false` → 隐藏 |
 | **重绘强度** | 三家 `strength=false` → **从 GenerateFullBodyDialog / EditPanel 移除**；面容一致说明文案改为"由参考图 + 一致性提示词保障" |
 | 参考图 | `maxReferenceImages` 驱动上传上限；=0 时隐藏 |
-| 尺寸 | `sizeMode='aspect_ratio_resolution'` → SizeSelect 该模型下只显示 16:9/9:16/1:1 可选项并标注"按宽高比生成" |
+| 尺寸 | `sizeMode='aspect_ratio_resolution'` → SizeSelect 切换为三档：**9:16（竖版）/ 1:1（方形）/ 16:9（横版）** + 标注"该模型按宽高比生成"；主流分辨率里的 3:4/2:3/3:2 等可灵给不出，不展示 |
+| 参考图 | `maxReferenceImages` 驱动 ReferenceImagePicker 实际上传上限（可灵 v3=1，omni=10，万相=4，Seedream=14）；=0 时整个隐藏 |
 | focusRegion | 保留（prompt 引导语义，非 provider 参数，现在实现正确） |
 
 ### 7.2 模型能力提示
 
 生成全身对话框加一行说明（D2 决策）："面容一致性由参考图驱动，建议使用支持参考图编辑的模型（万相 / Seedream）"。
 
-## 8. 兼容与回退
+## 8. 错误处理原则（评审修订）
 
-- 能力注册表查询失败 → 返回"全支持"默认能力（= 现状行为），老模型不受影响
-- `ImageGenerationRequest` 只新增 `promptExtend`，其余字段不动；adapter 对不支持字段的"静默丢弃"改为"丢弃 + 日志"（可观测，不报错）
-- 现有测试全绿约束不变；新增能力注册表单测 + 可灵 adapter 参数集单测
+**不隐瞒问题：能力查询失败 = 显式报错，绝不静默回退。**
+
+- 能力注册表必须覆盖**当前系统支持的全部 provider/模型**（含 openai / minimax / zhipu / custom 兼容路径），随 adapter 上线同步登记，缺一不可
+- `getModelCapabilities(providerType, modelId)` 查不到 → **抛错**（`UnregisteredModelCapabilityError`，消息含模型 id 与登记位置指引）
+- Service 各生成入口捕获后原样返回 `{ success: false, error: '模型 X 未登记生成能力，请在 model-capabilities.ts 登记' }`，前端 ElMessage 直接呈现——用户看到的是可行动的错误，而不是"生成了但参数没生效"的假象
+- adapter 对"模型不支持但调用方传了"的字段：**丢弃 + warn 日志**（可观测，不静默）
+- wan2.6-image 端点路由疑点 → 实测验真，不靠猜
+
+## 8b. 兼容约束
+
+- `ImageGenerationRequest` 只新增 `promptExtend` 可选字段，其余不动
+- 现有 40 例测试全绿约束不变；新增能力注册表/可灵 adapter/火山 adapter 单测
 
 ## 9. 任务分解与工作量
 
 | # | 任务 | 内容 | 工作量 |
 |---|------|------|--------|
-| 1 | 能力模型 | 类型 + 注册表 + `getModelCapabilities` + 单测 | 0.5 天 |
-| 2 | 可灵 adapter 修正 | 参数集重写 + size 映射 + 负面词并入 + 单测 | 0.5 天 |
-| 3 | 火山/万相 adapter 修正 | watermark:false / 停传未列参数 / promptExtend 字段 | 0.5 天 |
-| 4 | service 感知 | 人像链路传 promptExtend:false + 双保险 | 0.5 天 |
-| 5 | UI 能力渲染 | features.capabilities 透出 + 参数区按能力显隐 + 撤强度控件 + 可灵尺寸模式 | 1 天 |
-| 6 | 回归 | 三家模型各跑一次真实生成（人工验收） | 0.5 天 |
+| 1 | 能力模型 | 类型 + 注册表（**覆盖全部现有 provider/模型**）+ `getModelCapabilities`（未登记抛错）+ 单测 | 0.5 天 |
+| 2 | 可灵 adapter 修正 | **端点路由（maas+异步头+地域校验）** + 参数集重写 + size 映射 + 负面词并入 + 单测 | 1 天 |
+| 3 | 火山/万相 adapter 修正 | watermark:false / 停传未列参数 / promptExtend 字段（缺省 true 保现状） | 0.5 天 |
+| 4 | service 感知 | 人像链路传 promptExtend:false + 未登记错误透传 | 0.5 天 |
+| 5 | UI 能力渲染 | ImageService 单点注入 capabilities + 参数区按能力显隐 + 撤强度控件 + 可灵尺寸模式 + 参考图上限 | 1 天 |
+| 6 | 回归 | 三家模型各跑一次真实生成（人工验收）+ wan2.6 端点实测 | 0.5 天 |
 
-**合计 ≈ 3 天。** 任务 1-4 为后端（TDD），任务 5 前端，任务 6 人工。
+**合计 ≈ 4 天。** 任务 1-4 为后端（TDD），任务 5 前端，任务 6 人工。
 
 ## 10. 验收标准
 
-1. 可灵模型生成：请求体只含 n/aspect_ratio/resolution/watermark（日志可证），竖版人像出 9:16/2k
+1. 可灵模型生成：请求发往 maas 端点带异步头，请求体只含 n/aspect_ratio/resolution/watermark（日志可证），竖版人像出 9:16/2k
 2. Seedream 4.5 生成：图无"AI生成"水印
-3. 万相编辑模式：request_id 级别日志显示 prompt_extend=false，prompt 未被改写
-4. UI：选可灵模型时负面词/种子/质量/强度控件不可见；选万相时可见且生效
-5. 人像 40 例单测保持全绿 + 新增能力/可灵测试全绿
+3. 万相编辑模式（人像链路）：日志显示 prompt_extend=false，prompt 未被改写；存量调用（未传 promptExtend）行为与现状一致（默认 true）
+4. UI：选可灵模型时负面词/种子/质量/强度控件不可见、尺寸仅三档宽高比、参考图上限 1 张；选万相时各控件可见且生效
+5. **未登记模型调用生成：返回明确错误"模型 X 未登记生成能力"，前端原样呈现（不静默、不假成功）**
+6. 人像 40 例单测保持全绿 + 新增能力/可灵/火山测试全绿
