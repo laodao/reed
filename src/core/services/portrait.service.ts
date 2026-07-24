@@ -628,6 +628,8 @@ export class PortraitService {
         if (baseVariant) {
           const anglePrompt = ANGLE_PROMPT_MAP['front']
           let fullPrompt = `${character.prompt}, wearing ${request.clothesDescription}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, same person, solid background`
+          // 补充提示词（spec 2026-07-24 D5b，可选；不传 = 现状行为）
+          if (request.prompt?.trim()) fullPrompt += `, ${request.prompt.trim()}`
 
           let referenceImageBase64: string | undefined = undefined
           if (request.referenceImage) {
@@ -636,6 +638,11 @@ export class PortraitService {
             const imageBuffer = fs.readFileSync(resolveAssetPath(baseVariant.imagePath))
             referenceImageBase64 = `data:image/png;base64,${imageBuffer.toString('base64')}`
           }
+          // 多参考图（D5b）：base 参考置首，追加参考随后；空则 undefined（现状行为）
+          const mergedRefs = [
+            ...(referenceImageBase64 ? [referenceImageBase64] : []),
+            ...(request.referenceImages ?? []),
+          ]
 
           const imageWidth = request.width || baseVariant.config?.width || DEFAULT_PORTRAIT_WIDTH
           const imageHeight = request.height || baseVariant.config?.height || DEFAULT_PORTRAIT_HEIGHT
@@ -648,7 +655,7 @@ export class PortraitService {
             width: imageWidth,
             height: imageHeight,
             seed: baseVariant.config?.seed,
-            referenceImage: referenceImageBase64,
+            referenceImages: mergedRefs.length > 0 ? mergedRefs : undefined,
             skipHistory: true
           })
 
@@ -682,6 +689,8 @@ export class PortraitService {
 
         const anglePrompt = ANGLE_PROMPT_MAP[angle]
         let fullPrompt = `${character.prompt}, wearing ${request.clothesDescription}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, same person, solid background`
+        // 补充提示词（spec 2026-07-24 D5b，可选；不传 = 现状行为）
+        if (request.prompt?.trim()) fullPrompt += `, ${request.prompt.trim()}`
 
         let referenceImageBase64: string | undefined = undefined
         if (request.referenceImage) {
@@ -690,6 +699,11 @@ export class PortraitService {
           const imageBuffer = fs.readFileSync(resolveAssetPath(baseVariant.imagePath))
           referenceImageBase64 = `data:image/png;base64,${imageBuffer.toString('base64')}`
         }
+        // 多参考图（D5b）：base 参考置首，追加参考随后；空则 undefined（现状行为）
+        const mergedRefs = [
+          ...(referenceImageBase64 ? [referenceImageBase64] : []),
+          ...(request.referenceImages ?? []),
+        ]
 
         const imageWidth = request.width || baseVariant.config?.width || DEFAULT_PORTRAIT_WIDTH
         const imageHeight = request.height || baseVariant.config?.height || DEFAULT_PORTRAIT_HEIGHT
@@ -702,7 +716,7 @@ export class PortraitService {
           width: imageWidth,
           height: imageHeight,
           seed: baseVariant.config?.seed,
-          referenceImage: referenceImageBase64,
+          referenceImages: mergedRefs.length > 0 ? mergedRefs : undefined,
           skipHistory: true
         })
 
@@ -803,13 +817,17 @@ export class PortraitService {
         const baseVariant = baseVariants.find(v => v.angle === 'front')
         if (baseVariant) {
           const anglePrompt = ANGLE_PROMPT_MAP['front']
-          const fullPrompt = `${character.prompt}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, same person, ${backgroundDescription}`
+          let fullPrompt = `${character.prompt}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, same person, ${backgroundDescription}`
+          // 补充提示词（spec 2026-07-24 D5b，可选；不传 = 现状行为）
+          if (request.prompt?.trim()) fullPrompt += `, ${request.prompt.trim()}`
 
           let refImage = referenceImageBase64
           if (!refImage && baseVariant.imagePath && fs.existsSync(resolveAssetPath(baseVariant.imagePath))) {
             const imageBuffer = fs.readFileSync(resolveAssetPath(baseVariant.imagePath))
             refImage = `data:image/png;base64,${imageBuffer.toString('base64')}`
           }
+          // 多参考图（D5b）：base 参考置首，追加参考随后；空则 undefined（现状行为）
+          const mergedRefs = [...(refImage ? [refImage] : []), ...(request.referenceImages ?? [])]
 
           const imageWidth = request.width || baseVariant.config?.width || DEFAULT_PORTRAIT_WIDTH
           const imageHeight = request.height || baseVariant.config?.height || DEFAULT_PORTRAIT_HEIGHT
@@ -822,7 +840,7 @@ export class PortraitService {
             width: imageWidth,
             height: imageHeight,
             seed: baseVariant.config?.seed,
-            referenceImage: refImage,
+            referenceImages: mergedRefs.length > 0 ? mergedRefs : undefined,
             skipHistory: true
           })
 
@@ -858,13 +876,17 @@ export class PortraitService {
         if (!baseVariant) continue
 
         const anglePrompt = ANGLE_PROMPT_MAP[angle]
-        const fullPrompt = `${character.prompt}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, same person, ${backgroundDescription}`
+        let fullPrompt = `${character.prompt}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, same person, ${backgroundDescription}`
+        // 补充提示词（spec 2026-07-24 D5b，可选；不传 = 现状行为）
+        if (request.prompt?.trim()) fullPrompt += `, ${request.prompt.trim()}`
 
         let refImage = referenceImageBase64
         if (!refImage && baseVariant.imagePath && fs.existsSync(resolveAssetPath(baseVariant.imagePath))) {
           const imageBuffer = fs.readFileSync(resolveAssetPath(baseVariant.imagePath))
           refImage = `data:image/png;base64,${imageBuffer.toString('base64')}`
         }
+        // 多参考图（D5b）：base 参考置首，追加参考随后；空则 undefined（现状行为）
+        const mergedRefs = [...(refImage ? [refImage] : []), ...(request.referenceImages ?? [])]
 
         const imageWidth = request.width || baseVariant.config?.width || DEFAULT_PORTRAIT_WIDTH
         const imageHeight = request.height || baseVariant.config?.height || DEFAULT_PORTRAIT_HEIGHT
@@ -877,7 +899,7 @@ export class PortraitService {
           width: imageWidth,
           height: imageHeight,
           seed: baseVariant.config?.seed,
-          referenceImage: refImage,
+          referenceImages: mergedRefs.length > 0 ? mergedRefs : undefined,
           skipHistory: true
         })
 

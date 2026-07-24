@@ -217,6 +217,8 @@ export interface ChangeClothesRequest {
   angles: PortraitAngle[]
   width?: number                   // 生成图片宽度（不传则继承 baseVariant.config / 默认值）
   height?: number                  // 生成图片高度
+  prompt?: string                  // 补充提示词（可选，拼接到现有拼装结果后；不传 = 现状行为）
+  referenceImages?: string[]       // 多参考图（可选，与 referenceImage 单值合并）
 }
 
 /**
@@ -242,6 +244,8 @@ export interface ChangeBackgroundRequest {
   angles: PortraitAngle[]
   width?: number                   // 生成图片宽度（不传则继承 baseVariant.config / 默认值）
   height?: number                  // 生成图片高度
+  prompt?: string                  // 补充提示词（可选，拼接到现有拼装结果后；不传 = 现状行为）
+  referenceImages?: string[]       // 多参考图（可选，与 backgroundImage 单值合并）
 }
 
 /**
