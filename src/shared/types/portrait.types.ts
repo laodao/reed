@@ -193,6 +193,7 @@ export interface GeneratePortraitRequest {
   providerId: string
   modelId: string
   config: PortraitGenerateConfig
+  framing?: PortraitFraming        // 取景范围（可选；不传 = 现状行为 full，新工作台显式传 half）
 }
 
 /**

@@ -38,7 +38,8 @@ import type {
   PortraitGender,
   PortraitRace
 } from '@shared/types/portrait.types'
-import { DEFAULT_PORTRAIT_WIDTH, DEFAULT_PORTRAIT_HEIGHT } from '@shared/types/portrait.types'
+import { DEFAULT_PORTRAIT_WIDTH, DEFAULT_PORTRAIT_HEIGHT, FRAMING_PROMPT_SUFFIX } from '@shared/types/portrait.types'
+import type { PortraitFraming } from '@shared/types/portrait.types'
 import { randomUUID } from 'crypto'
 import sharp from 'sharp'
 import archiver from 'archiver'
@@ -72,6 +73,18 @@ const CONSISTENCY_PREFIX = 'generate the exact same person as shown in the refer
  * 背景一致性提示词
  */
 const BACKGROUND_CONSISTENCY_SUFFIX = 'Keep the exact same background as in the reference image, same background color, same background style, no background change'
+
+/**
+ * 新方法专用的 prompt 默认配置（spec 2026-07-24 §5.2）：
+ * 可通过 buildPortraitPrompt 的 overrides 覆盖，新代码不写死。
+ * 注意：上面的 FULL_BODY_SUFFIX / DEFAULT_NEGATIVE_PROMPT / CONSISTENCY_PREFIX 等
+ * 旧常量保留不动，现有方法继续使用（后端只新增行为，不改现有行为）。
+ */
+export const PORTRAIT_PROMPT_DEFAULTS = {
+  consistencyPrefix: CONSISTENCY_PREFIX,
+  backgroundConsistencySuffix: BACKGROUND_CONSISTENCY_SUFFIX,
+  negativePrompt: DEFAULT_NEGATIVE_PROMPT,
+}
 
 /**
  * 从角色信息提取基本英文描述
@@ -147,6 +160,31 @@ function urlToLocalPath(url: string): string {
  * 人像设计服务
  */
 export class PortraitService {
+  // ==================== prompt 拼装（新方法专用入口） ====================
+
+  /**
+   * 统一人像 prompt 拼装（spec 2026-07-24 §5.2，新方法专用）。
+   * framing 决定取景后缀（默认 full）；overrides 可覆盖任一默认片段。
+   */
+  static buildPortraitPrompt(params: {
+    basePrompt: string
+    anglePrompt?: string
+    framing?: PortraitFraming
+    consistencyPrefix?: boolean
+    overrides?: { framingSuffix?: string; prefix?: string; suffix?: string }
+  }): string {
+    const framing = params.framing ?? 'full'
+    const framingSuffix = params.overrides?.framingSuffix ?? FRAMING_PROMPT_SUFFIX[framing]
+    const parts: string[] = []
+    if (params.overrides?.prefix) parts.push(params.overrides.prefix)
+    if (params.consistencyPrefix) parts.push(PORTRAIT_PROMPT_DEFAULTS.consistencyPrefix)
+    parts.push(params.basePrompt)
+    if (params.anglePrompt) parts.push(params.anglePrompt)
+    parts.push(framingSuffix)
+    if (params.overrides?.suffix) parts.push(params.overrides.suffix)
+    return parts.join(', ')
+  }
+
   // ==================== 项目管理 ====================
 
   /**
@@ -453,8 +491,16 @@ export class PortraitService {
 
         // 构建角度特定的提示词（纯英文避免内容审核）
         const anglePrompt = ANGLE_PROMPT_MAP[angle]
-        // 强制添加全身照片要求
-        const fullPrompt = `${request.prompt}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, consistent character, same person, solid background`
+        // framing 可选参数（spec 2026-07-24 §5.2）：不传时保持现状（full 后缀）；
+        // 传入时走 buildPortraitPrompt（新工作台显式传 'half'）
+        const fullPrompt = request.framing
+          ? this.buildPortraitPrompt({
+              basePrompt: request.prompt,
+              anglePrompt,
+              framing: request.framing,
+              overrides: { suffix: 'consistent character, same person, solid background' },
+            })
+          : `${request.prompt}, ${anglePrompt}, ${FULL_BODY_SUFFIX}, consistent character, same person, solid background`
         // 组合负面提示词，确保排除半身照
         const fullNegativePrompt = request.negativePrompt
           ? `${request.negativePrompt}, ${DEFAULT_NEGATIVE_PROMPT}`
@@ -489,6 +535,7 @@ export class PortraitService {
           characterId: character.id,
           type: 'base',
           angle: angle,
+          framing: request.framing ?? 'full',
           imagePath: actualImagePath,
           prompt: fullPrompt,
           config: {
