@@ -272,6 +272,13 @@ export class DatabaseManager implements ICoreDatabaseManager {
     // 初始化仓库（内部可能跑 initializeDefaultData，依赖上面已 set 的 userId）
     await this.initRepositories()
 
+    // 人像内置提示词模板 seeder（幂等）：新版人像设计（spec 2026-07-24）。
+    // 依赖 portraitPromptTemplates 仓库，必须在 initRepositories 之后。
+    const { PortraitTemplateSeederService } = await import(
+      '@core/services/portrait-template-seeder.service'
+    )
+    await PortraitTemplateSeederService.seed()
+
     // 写入本地默认用户记录到 users 表（依赖 this.users，必须在 initRepositories 之后）
     if (this.users) {
       const { LOCAL_DEFAULT_USER_ID } = await import('@core/context/user-context')

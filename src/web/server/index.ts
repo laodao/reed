@@ -60,6 +60,7 @@ import { addCharacterBindingExtraFields } from '@core/database/migrations/add-ch
 import { addCharacterBindingRace } from '@core/database/migrations/add-character-binding-race'
 import { addPortraitVariantFraming } from '@core/database/migrations/add-portrait-variant-framing'
 import { createPortraitPromptTemplates } from '@core/database/migrations/create-portrait-prompt-templates'
+import { PortraitTemplateSeederService } from '@core/services/portrait-template-seeder.service'
 import { addStoryboardKeyframeCount } from '@core/database/migrations/add-storyboard-keyframe-count'
 import { addKbDocumentSource } from '@core/database/migrations/add-kb-document-source'
 import { addKeyframeReferenceOverrides } from '@core/database/migrations/add-keyframe-reference-overrides'
@@ -323,6 +324,10 @@ async function initDatabase(): Promise<void> {
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)
   console.log('[web-server] PostgreSQL 数据库初始化完成')
+
+  // 人像内置提示词模板 seeder（幂等）：新版人像设计（spec 2026-07-24）。
+  // 依赖 portraitPromptTemplates 仓库与 core dbManager 注册，必须在此之后。
+  await PortraitTemplateSeederService.seed()
 }
 
 /**
