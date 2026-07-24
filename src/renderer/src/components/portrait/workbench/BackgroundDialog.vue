@@ -50,7 +50,7 @@
 
       <div class="form-row">
         <div class="form-label">输出尺寸</div>
-        <SizeSelect v-model="size" :model-sizes="modelSizes" />
+        <SizeSelect v-model="size" :model-sizes="modelSizes" :capabilities="capabilities" />
       </div>
     </div>
     <template #footer>
@@ -73,6 +73,7 @@ import type {
   PortraitVariant,
   ReferenceImageRole
 } from '../../../../../shared/types/portrait.types'
+import type { ImageModelCapabilities } from '../../../../../shared/types/image-provider.types'
 
 /**
  * 换背景对话框（spec 2026-07-24 D5b/D8）：
@@ -83,9 +84,11 @@ const props = withDefaults(defineProps<{
   character: PortraitCharacter
   variant?: PortraitVariant
   modelSizes?: string[]
+  capabilities?: ImageModelCapabilities
 }>(), {
   variant: undefined,
-  modelSizes: () => []
+  modelSizes: () => [],
+  capabilities: undefined
 })
 
 const emit = defineEmits<{

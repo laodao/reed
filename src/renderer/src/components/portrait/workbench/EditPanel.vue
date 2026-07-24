@@ -29,13 +29,6 @@
         <ReferenceImagePicker v-model="faceRefs" :max="2" />
       </div>
       <div class="form-row">
-        <div class="slider-row">
-          <span class="lbl">重绘强度</span>
-          <el-slider v-model="strength" :min="0" :max="1" :step="0.05" :format-tooltip="v => v.toFixed(2)" />
-          <span class="val">{{ strength.toFixed(2) }}</span>
-        </div>
-      </div>
-      <div class="form-row">
         <div class="form-label">重绘范围</div>
         <el-select v-model="focusRegion">
           <el-option label="face · 仅面部" value="face" />
@@ -76,7 +69,7 @@
       </div>
       <div class="form-row">
         <div class="form-label">输出尺寸</div>
-        <SizeSelect v-model="editSize" :model-sizes="modelSizes" />
+        <SizeSelect v-model="editSize" :model-sizes="modelSizes" :capabilities="capabilities" />
       </div>
       <el-button
         class="submit-btn face-btn"
@@ -103,14 +96,17 @@ import type {
   PortraitFraming,
   ReferenceImageRole
 } from '../../../../../shared/types/portrait.types'
+import type { ImageModelCapabilities } from '../../../../../shared/types/image-provider.types'
 
 const props = withDefaults(defineProps<{
   framing: PortraitFraming
   character: PortraitCharacter
   variant: PortraitVariant
   modelSizes?: string[]
+  capabilities?: ImageModelCapabilities
 }>(), {
-  modelSizes: () => []
+  modelSizes: () => [],
+  capabilities: undefined
 })
 
 const emit = defineEmits<{
@@ -122,18 +118,18 @@ const editing = ref(false)
 // ---- 修改面部（half） ----
 const facePrompt = ref('')
 const faceRefs = ref<{ data: string; role: ReferenceImageRole }[]>([])
-const strength = ref(0.5)
 const focusRegion = ref<'face' | 'face_and_hair' | 'upper'>('face')
 
 async function handleEditFace() {
   editing.value = true
   try {
+    // design D1：strength 三家官方均不支持，UI 不提供（service 用默认 0.5）；
+    // 面容一致性由 参考图 + focusRegion prompt 引导 保障
     const result = await window.electronAPI.portrait.editFace({
       characterId: props.character.id,
       variantId: props.variant.id,
       facePrompt: facePrompt.value.trim() || undefined,
       referenceImages: faceRefs.value.length ? faceRefs.value.map(r => r.data) : undefined,
-      strength: strength.value,
       focusRegion: focusRegion.value
     })
     if (result.success) {

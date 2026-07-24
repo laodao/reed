@@ -17,7 +17,7 @@
       <div class="form-grid">
         <div class="form-row">
           <div class="form-label">输出尺寸</div>
-          <SizeSelect v-model="size" :model-sizes="modelSizes" />
+          <SizeSelect v-model="size" :model-sizes="modelSizes" :capabilities="capabilities" />
         </div>
         <div class="form-row">
           <div class="form-label">提示词模板</div>
@@ -54,6 +54,7 @@ import type {
   PortraitVariant,
   ReferenceImageRole
 } from '../../../../../shared/types/portrait.types'
+import type { ImageModelCapabilities } from '../../../../../shared/types/image-provider.types'
 
 /**
  * 重新生成对话框（spec 2026-07-24 D8）：
@@ -64,8 +65,10 @@ const props = withDefaults(defineProps<{
   character: PortraitCharacter
   variant: PortraitVariant
   modelSizes?: string[]
+  capabilities?: ImageModelCapabilities
 }>(), {
-  modelSizes: () => []
+  modelSizes: () => [],
+  capabilities: undefined
 })
 
 const emit = defineEmits<{

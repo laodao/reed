@@ -81,6 +81,7 @@
               :character="character"
               :variant="currentVariant"
               :model-sizes="models.modelSizes.value"
+              :capabilities="models.capabilities.value"
               @success="loadVariants"
             />
             <MoreActionsPanel @open="openDialog" />
@@ -104,6 +105,7 @@
       :character="character"
       :variant="currentVariant"
       :model-sizes="models.modelSizes.value"
+      :capabilities="models.capabilities.value"
       @success="loadVariants"
     />
     <ClothesDialog
@@ -112,6 +114,7 @@
       :character="character"
       :variant="currentVariant"
       :model-sizes="models.modelSizes.value"
+      :capabilities="models.capabilities.value"
       @success="loadVariants"
     />
     <BackgroundDialog
@@ -120,6 +123,7 @@
       :character="character"
       :variant="currentVariant"
       :model-sizes="models.modelSizes.value"
+      :capabilities="models.capabilities.value"
       @success="loadVariants"
     />
     <AnglesDialog
@@ -128,6 +132,7 @@
       :character="character"
       :variant="currentVariant"
       :model-sizes="models.modelSizes.value"
+      :capabilities="models.capabilities.value"
       @success="loadVariants"
     />
     <GenerateFullBodyDialog
@@ -136,6 +141,7 @@
       :character="character"
       :source-variant="halfSourceVariant"
       :model-sizes="models.modelSizes.value"
+      :capabilities="models.capabilities.value"
       @success="loadVariants"
     />
     <ExportDialog

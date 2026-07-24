@@ -6,6 +6,7 @@
  */
 import { ref, computed, type Ref } from 'vue'
 import type { PortraitProject } from '../../../../../shared/types/portrait.types'
+import type { ImageModelCapabilities } from '../../../../../shared/types/image-provider.types'
 
 export interface ImageModelItem {
   key: string            // providerId:modelId
@@ -13,12 +14,13 @@ export interface ImageModelItem {
   providerId: string
   modelId: string
   supportedSizes: string[]
+  capabilities?: ImageModelCapabilities
 }
 
 export interface ProviderModelGroup {
   id: string
   name: string
-  models: { id: string; name: string; maxResolution?: string; supportedSizes?: string[] }[]
+  models: { id: string; name: string; maxResolution?: string; supportedSizes?: string[]; capabilities?: ImageModelCapabilities }[]
 }
 
 export function useImageModels(project?: Ref<PortraitProject | undefined>) {
@@ -51,6 +53,11 @@ export function useImageModels(project?: Ref<PortraitProject | undefined>) {
   /** 当前模型的 supportedSizes（透传给 SizeSelect） */
   const modelSizes = computed<string[]>(() => selectedModel.value?.supportedSizes ?? [])
 
+  /** 当前模型的生成能力（design §7 UI 按能力渲染；undefined = 未登记/未知，控件按现状全显） */
+  const capabilities = computed<ImageModelCapabilities | undefined>(
+    () => selectedModel.value?.capabilities
+  )
+
   function filterModels(keyword: string): void {
     modelSearchKeyword.value = keyword
   }
@@ -61,7 +68,7 @@ export function useImageModels(project?: Ref<PortraitProject | undefined>) {
       if (!result.success || !result.data) return
       const providers = result.data.filter((p: any) => p.configured && p.models?.length > 0)
 
-      // 按 Provider 分组（maxResolution / supportedSizes 在 model.features 下）
+      // 按 Provider 分组（maxResolution / supportedSizes / capabilities 在 model.features 下）
       providerModels.value = providers.map((provider: any) => ({
         id: provider.id,
         name: provider.name,
@@ -69,7 +76,8 @@ export function useImageModels(project?: Ref<PortraitProject | undefined>) {
           id: model.id,
           name: model.name,
           maxResolution: model.features?.maxResolution,
-          supportedSizes: model.features?.supportedSizes ?? []
+          supportedSizes: model.features?.supportedSizes ?? [],
+          capabilities: model.features?.capabilities
         }))
       }))
 
@@ -82,7 +90,8 @@ export function useImageModels(project?: Ref<PortraitProject | undefined>) {
             label: `${provider.name} - ${model.name}`,
             providerId: provider.id,
             modelId: model.id,
-            supportedSizes: model.features?.supportedSizes ?? []
+            supportedSizes: model.features?.supportedSizes ?? [],
+            capabilities: model.features?.capabilities
           })
         }
       }
@@ -126,6 +135,7 @@ export function useImageModels(project?: Ref<PortraitProject | undefined>) {
     selectedModelKey,
     selectedModel,
     modelSizes,
+    capabilities,
     filterModels,
     load,
     onModelChange

@@ -18,7 +18,7 @@
       <div class="form-grid">
         <div class="form-row">
           <div class="form-label">输出尺寸</div>
-          <SizeSelect v-model="size" :model-sizes="modelSizes" />
+          <SizeSelect v-model="size" :model-sizes="modelSizes" :capabilities="capabilities" />
         </div>
         <div class="form-row">
           <div class="form-label">提示词模板</div>
@@ -37,12 +37,8 @@
         <ReferenceImagePicker v-model="extraRefs" :max="3" upload-text="追加" />
       </div>
 
-      <div class="form-row">
-        <div class="slider-row">
-          <span class="lbl">重绘强度</span>
-          <el-slider v-model="strength" :min="0" :max="1" :step="0.05" :format-tooltip="v => v.toFixed(2)" />
-          <span class="val">{{ strength.toFixed(2) }}</span>
-        </div>
+      <div class="consistency-note">
+        🎯 面容一致性由「半身参考图 + 一致性提示词」驱动保障
       </div>
     </div>
     <template #footer>
@@ -65,6 +61,7 @@ import type {
   PortraitVariant,
   ReferenceImageRole
 } from '../../../../../shared/types/portrait.types'
+import type { ImageModelCapabilities } from '../../../../../shared/types/image-provider.types'
 
 /**
  * 生成全身像对话框（spec 2026-07-24 D3）：
@@ -75,8 +72,10 @@ const props = withDefaults(defineProps<{
   character: PortraitCharacter
   sourceVariant: PortraitVariant
   modelSizes?: string[]
+  capabilities?: ImageModelCapabilities
 }>(), {
-  modelSizes: () => []
+  modelSizes: () => [],
+  capabilities: undefined
 })
 
 const emit = defineEmits<{
@@ -89,14 +88,12 @@ const DEFAULT_PROMPT = 'same person as reference, natural relaxed posture, consi
 const prompt = ref(DEFAULT_PROMPT)
 const size = ref('1024x1792')
 const extraRefs = ref<{ data: string; role: ReferenceImageRole }[]>([])
-const strength = ref(0.55)
 const generating = ref(false)
 
 watch(() => props.modelValue, (open) => {
   if (!open) return
   prompt.value = DEFAULT_PROMPT
   extraRefs.value = []
-  strength.value = 0.55
   // 全身优先竖版大画布
   size.value = '1024x1792'
 })
@@ -105,6 +102,7 @@ async function handleGenerate() {
   generating.value = true
   try {
     const [width, height] = size.value.split('x').map(Number)
+    // design D1：strength 三家官方均不支持，UI 不提供（service 用默认 0.55）
     const result = await window.electronAPI.portrait.generateFullBody({
       characterId: props.character.id,
       sourceVariantId: props.sourceVariant.id,
@@ -112,7 +110,6 @@ async function handleGenerate() {
       referenceImages: toRaw(extraRefs.value).length
         ? toRaw(extraRefs.value).map(r => r.data)
         : undefined,
-      strength: strength.value,
       width,
       height
     })
@@ -164,6 +161,14 @@ async function handleGenerate() {
   font-weight: 500;
   color: var(--text-primary);
   margin-bottom: 7px;
+}
+
+.consistency-note {
+  font-size: 12px;
+  color: var(--color-purple);
+  padding: 8px 12px;
+  background: var(--color-purple-light-9);
+  border-radius: var(--radius-sm);
 }
 
 .slider-row {

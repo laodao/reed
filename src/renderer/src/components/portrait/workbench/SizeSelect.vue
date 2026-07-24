@@ -1,5 +1,19 @@
 <template>
+  <!-- 可灵模式（aspect_ratio_resolution）：官方仅三档宽高比 -->
   <el-select
+    v-if="isAspectRatioMode"
+    :model-value="modelValue"
+    style="width: 100%"
+    @update:model-value="$emit('update:modelValue', $event)"
+  >
+    <el-option label="1080×1920（9:16 竖版）" value="1080x1920" />
+    <el-option label="1024×1024（1:1 方形）" value="1024x1024" />
+    <el-option label="1920×1080（16:9 横版）" value="1920x1080" />
+  </el-select>
+
+  <!-- 常规模式（pixels）：竖版/方形/横版分组 -->
+  <el-select
+    v-else
     :model-value="modelValue"
     style="width: 100%"
     @update:model-value="$emit('update:modelValue', $event)"
@@ -18,22 +32,31 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { MAINSTREAM_PORTRAIT_SIZES } from '../../../../../shared/types/portrait.types'
+import type { ImageModelCapabilities } from '../../../../../shared/types/image-provider.types'
 
 /**
- * 尺寸下拉（spec 2026-07-24 D8b）：
- * 竖版/方形/横版分组，候选 = 模型 supportedSizes ∪ MAINSTREAM_PORTRAIT_SIZES（去重）。
+ * 尺寸下拉（spec 2026-07-24 D8b + design §7.1）：
+ * - 常规（pixels）：竖版/方形/横版分组，候选 = 模型 supportedSizes ∪ MAINSTREAM_PORTRAIT_SIZES
+ * - 可灵（aspect_ratio_resolution）：官方仅三档宽高比，不展示给不出的尺寸
  */
 const props = withDefaults(defineProps<{
   modelValue: string
   /** 当前模型 supportedSizes（'WxH' 数组），与主流分辨率取并集 */
   modelSizes?: string[]
+  /** 当前模型能力（design §7；undefined = 按常规 pixels 渲染） */
+  capabilities?: ImageModelCapabilities
 }>(), {
-  modelSizes: () => []
+  modelSizes: () => [],
+  capabilities: undefined
 })
 
 defineEmits<{
   'update:modelValue': [value: string]
 }>()
+
+const isAspectRatioMode = computed(
+  () => props.capabilities?.sizeMode === 'aspect_ratio_resolution'
+)
 
 interface SizeItem { value: string; label: string }
 

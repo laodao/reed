@@ -16,7 +16,7 @@
       </div>
       <div class="form-row">
         <div class="form-label">输出尺寸</div>
-        <SizeSelect v-model="size" :model-sizes="modelSizes" />
+        <SizeSelect v-model="size" :model-sizes="modelSizes" :capabilities="capabilities" />
         <div class="size-hint">建议与正面图保持一致尺寸，避免比例不协调</div>
       </div>
     </div>
@@ -43,6 +43,7 @@ import type {
   PortraitVariant,
   PortraitAngle
 } from '../../../../../shared/types/portrait.types'
+import type { ImageModelCapabilities } from '../../../../../shared/types/image-provider.types'
 
 /**
  * 多角度对话框（spec 2026-07-24 D8）：
@@ -53,9 +54,11 @@ const props = withDefaults(defineProps<{
   character: PortraitCharacter
   variant?: PortraitVariant
   modelSizes?: string[]
+  capabilities?: ImageModelCapabilities
 }>(), {
   variant: undefined,
-  modelSizes: () => []
+  modelSizes: () => [],
+  capabilities: undefined
 })
 
 const emit = defineEmits<{

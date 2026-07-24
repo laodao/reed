@@ -46,7 +46,7 @@
         </div>
         <div class="form-row">
           <div class="form-label">输出尺寸</div>
-          <SizeSelect v-model="size" :model-sizes="models.modelSizes.value" />
+          <SizeSelect v-model="size" :model-sizes="models.modelSizes.value" :capabilities="models.capabilities.value" />
         </div>
       </div>
 
@@ -70,7 +70,8 @@
         />
       </div>
 
-      <div class="form-row">
+      <!-- 反向提示词：仅当前模型支持时显示（design §7.1 按能力渲染） -->
+      <div v-if="showNegativePrompt" class="form-row">
         <div class="form-label">反向提示词</div>
         <el-input
           v-model="negativePrompt"
@@ -79,27 +80,31 @@
           placeholder="不想出现的内容，如：模糊、低质量、变形..."
         />
       </div>
-
-      <div class="form-row">
-        <div class="form-label">参考图片</div>
-        <ReferenceImagePicker v-model="referenceImages" :max="4" />
+      <div v-else-if="models.capabilities.value" class="form-row capability-note">
+        当前模型不支持反向提示词，排除内容请写进正向提示词。
       </div>
 
-      <!-- 高级参数（只放真实生效的：质量/风格会透传给支持的 provider，种子保证可复现） -->
-      <div class="form-row">
+      <!-- 参考图片：上限按模型能力驱动；不支持时整体隐藏（design §7.1） -->
+      <div v-if="maxRefs > 0" class="form-row">
+        <div class="form-label">参考图片</div>
+        <ReferenceImagePicker v-model="referenceImages" :max="maxRefs" />
+      </div>
+
+      <!-- 高级参数（只放当前模型真实支持的：design §7.1） -->
+      <div v-if="hasAdvancedParams" class="form-row">
         <span class="adv-toggle" @click="showAdvanced = !showAdvanced">
           {{ showAdvanced ? '▾' : '▸' }} 高级参数
         </span>
         <div v-show="showAdvanced" class="adv-body">
           <div class="adv-grid">
-            <div>
+            <div v-if="supportsQuality">
               <div class="form-label">质量</div>
               <el-select v-model="quality">
                 <el-option label="standard · 标准" value="standard" />
                 <el-option label="hd · 高清" value="hd" />
               </el-select>
             </div>
-            <div>
+            <div v-if="supportsSeed">
               <div class="form-label">随机种子（留空随机）</div>
               <el-input-number v-model="seed" :min="0" :max="2147483647" :controls="false" placeholder="随机" style="width: 100%" />
             </div>
@@ -122,7 +127,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, toRaw } from 'vue'
+import { ref, computed, watch, toRaw } from 'vue'
 import { ElMessage } from 'element-plus'
 import SizeSelect from './SizeSelect.vue'
 import TemplatePicker from './TemplatePicker.vue'
@@ -158,6 +163,14 @@ const showAdvanced = ref(false)
 const quality = ref<'standard' | 'hd'>('standard')
 const seed = ref<number | undefined>(undefined)
 const generating = ref(false)
+
+// ---- 能力驱动渲染（design §7.1）：capabilities 未登记（undefined）时按现状全显 ----
+const caps = models.capabilities
+const showNegativePrompt = computed(() => caps.value?.negativePrompt !== false)
+const supportsQuality = computed(() => caps.value?.quality !== false)
+const supportsSeed = computed(() => caps.value?.seed !== false)
+const maxRefs = computed(() => caps.value?.maxReferenceImages ?? 4)
+const hasAdvancedParams = computed(() => supportsQuality.value || supportsSeed.value)
 
 // 根据人物信息生成默认英文提示词（避免云服务中文审核问题）
 function buildDefaultPrompt(): string {
@@ -323,6 +336,14 @@ models.load()
   &:hover {
     color: var(--color-primary);
   }
+}
+
+.capability-note {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  background: var(--fill-color-light);
+  border-radius: var(--radius-sm);
 }
 
 .adv-body {
