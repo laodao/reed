@@ -332,6 +332,97 @@ export class PortraitService {
     }
   }
 
+  /**
+   * 只修改面部（spec 2026-07-24 §5.2 D5）：
+   * 模板（目标脸型蓝图，占位符解析）+ 指令（微调）叠加，源形象为首参考图，
+   * 产出独立 type='face' variant；原图不变，身体/服装/背景不变。
+   */
+  static async editFace(request: EditFaceRequest): Promise<EditFaceResponse> {
+    const db = getCoreDatabaseManager()
+    if (!db.portraitVariants || !db.portraitCharacters) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    try {
+      const source = await db.portraitVariants.getById(request.variantId)
+      if (!source) return { success: false, error: '源形象不存在' }
+      const character = await db.portraitCharacters.getById(request.characterId)
+      if (!character) return { success: false, error: '角色不存在' }
+
+      // 模板解析（可选；模板不存在按无模板继续，不阻断）
+      let templateText = ''
+      if (request.faceTemplateId) {
+        const applied = await this.applyTemplate(request.faceTemplateId, {
+          name: character.name,
+          gender: character.gender,
+          age: character.age,
+        })
+        if (applied.success && applied.data) templateText = applied.data
+      }
+
+      const focusRegion = request.focusRegion ?? 'face'
+      const regionWords: Record<string, string> = {
+        face: 'modify only the face, keep hair, clothing, body, pose and background exactly the same',
+        face_and_hair: 'modify only the face and hair, keep clothing, body, pose and background exactly the same',
+        upper: 'modify the upper body, keep pose and background exactly the same',
+      }
+      const prompt = [
+        PORTRAIT_PROMPT_DEFAULTS.consistencyPrefix,
+        templateText,
+        request.facePrompt?.trim() ?? '',
+        regionWords[focusRegion],
+      ]
+        .filter(Boolean)
+        .join(', ')
+
+      const sourceImage = this.readImageAsBase64(source.imagePath)
+      if (!sourceImage) return { success: false, error: '源形象图片读取失败' }
+
+      const width = request.width ?? (source.config?.width as number) ?? DEFAULT_PORTRAIT_WIDTH
+      const height = request.height ?? (source.config?.height as number) ?? DEFAULT_PORTRAIT_HEIGHT
+      const strength = request.strength ?? 0.5
+
+      const result = await ImageService.generateImage({
+        providerConfigId: character.providerId,
+        model: character.modelId,
+        prompt,
+        negativePrompt: PORTRAIT_PROMPT_DEFAULTS.negativePrompt,
+        width,
+        height,
+        seed: source.config?.seed as number | undefined,
+        referenceImages: [sourceImage, ...(request.referenceImages ?? [])],
+        strength,
+        focusRegion,
+        skipHistory: true,
+      })
+
+      if (!result.success || !result.images?.[0]) {
+        return { success: false, error: result.error || '生成失败' }
+      }
+
+      const variant = await db.portraitVariants.create({
+        characterId: request.characterId,
+        type: 'face',
+        framing: source.framing ?? 'full',
+        parentId: source.parentId ?? source.id,
+        angle: source.angle,
+        imagePath: result.images[0].filePath || '',
+        prompt,
+        config: { width, height, seed: source.config?.seed, strength, focusRegion },
+        variantInfo: {
+          faceDescription: request.facePrompt,
+          faceTemplateId: request.faceTemplateId,
+        },
+      })
+
+      this.sendPortraitEvent({ type: 'generation-completed', characterId: request.characterId } as Parameters<typeof this.sendPortraitEvent>[0])
+      return { success: true, variant }
+    } catch (error: unknown) {
+      console.error('[PortraitService.editFace] 错误:', error)
+      return { success: false, error: error instanceof Error ? error.message : '生成失败' }
+    }
+  }
+
   // ==================== 项目管理 ====================
 
   /**
