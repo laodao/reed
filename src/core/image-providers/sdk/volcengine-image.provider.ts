@@ -107,18 +107,14 @@ export class VolcengineImageProvider extends BaseImageProvider {
         prompt: request.prompt,
         n: request.count || 1,
         size: `${request.width}x${request.height}`,
-        response_format: 'url'
+        response_format: 'url',
+        // design §5.2 修正：官方 Seedream 4.5 watermark 默认 true（生成图默认带
+        // "AI生成"水印），显式关闭；后续如需可在设置中暴露开关
+        watermark: false,
       }
 
-      // 添加负面提示词
-      if (request.negativePrompt) {
-        body.negative_prompt = request.negativePrompt
-      }
-
-      // 添加风格
-      if (request.style) {
-        body.style = request.style
-      }
+      // design §5.2 修正：negative_prompt / style 不在官方 Seedream 参数表中，
+      // 停止发送（此前盲传，上游忽略或 400）
 
       // spec 2026-05-09 ep-redesign §3.2 D1 · P-9：多参考图适配
       // Volcengine Seedream（doubao-seedream-3-0-t2i / seedream-4-0）走 /images/generations

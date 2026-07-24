@@ -133,6 +133,12 @@ export interface ImageGenerationRequest {
   strength?: number
   /** 聚焦区域（不支持蒙版的 provider 用 prompt 引导）。spec 2026-07-24 新版人像设计 */
   focusRegion?: 'face' | 'face_and_hair' | 'upper' | 'full'
+  /**
+   * 提示词智能改写开关（万相 prompt_extend；缺省 = 官方默认 true，保现状）。
+   * 人像一致性场景（editFace/generateFullBody/带参考图生成）应显式传 false，
+   * 防止一致性约束被 LLM 改写。design image-provider-capability-model-design §5.3
+   */
+  promptExtend?: boolean
   skipHistory?: boolean  // 是否跳过历史记录（用于其他模块调用，如人像设计）
 }
 

@@ -467,7 +467,10 @@ export class DashScopeImageProvider extends BaseImageProvider {
       },
       parameters: {
         size: `${request.width}*${request.height}`,
-        watermark: false
+        watermark: false,
+        // design §5.3：缺省 = 官方默认 true（保现状）；
+        // 人像一致性场景由 service 显式传 false，防止一致性 prompt 被 LLM 改写
+        prompt_extend: request.promptExtend ?? true
       }
     }
 
