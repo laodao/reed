@@ -306,6 +306,8 @@ export class PortraitService {
         seed: source.config?.seed as number | undefined,
         referenceImages: [sourceImage, ...(request.referenceImages ?? [])],
         strength,
+        // design §5.3：人像一致性场景显式关闭提示词改写，保护一致性 prompt
+        promptExtend: false,
         skipHistory: true,
       } as Parameters<typeof ImageService.generateImage>[0])
 
@@ -393,6 +395,8 @@ export class PortraitService {
         referenceImages: [sourceImage, ...(request.referenceImages ?? [])],
         strength,
         focusRegion,
+        // design §5.3：人像一致性场景显式关闭提示词改写，保护一致性 prompt
+        promptExtend: false,
         skipHistory: true,
       })
 
@@ -758,6 +762,8 @@ export class PortraitService {
           // 可选质量参数（additive，不传 = 现状行为；透传给支持 quality 的 provider）
           quality: request.config.quality,
           referenceImages: request.referenceImages?.length ? request.referenceImages : undefined,
+          // design §5.3：带参考图的一致性生成场景显式关闭提示词改写
+          ...(request.referenceImages?.length ? { promptExtend: false } : {}),
           skipHistory: true
         })
 

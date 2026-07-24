@@ -149,6 +149,8 @@ describe('editFace', () => {
     expect(call.strength).toBe(0.5)
     expect(call.focusRegion).toBe('face')
     expect(call.referenceImages?.length).toBeGreaterThan(0)
+    // design §5.3：人像一致性场景显式关闭提示词改写
+    expect((call as { promptExtend?: boolean }).promptExtend).toBe(false)
 
     const created = db.portraitVariants.create.mock.calls[0][0]
     expect(created.type).toBe('face')

@@ -19,6 +19,7 @@ import {
   IMAGE_PROVIDER_DEFINITIONS,
   isProviderImplemented
 } from '@core/image-providers'
+import { getModelCapabilities } from '@core/image-providers/model-capabilities'
 import type { BaseImageProvider } from '@core/image-providers'
 import type {
   ImageRecord,
@@ -27,13 +28,31 @@ import type {
   ImageGenerationRequest,
   ImageGenerationResponse,
   ImageTaskStatus,
-  ImageProviderType
+  ImageProviderType,
+  ImageModelCapabilities
 } from '@shared/types'
 
 // 全局 logger（spec 2026-05-10 e2e 阶段补充：用 createLogger 取代散落的本地 console wrapper）
 import { createLogger } from '@core/utils/logger'
 const logger = createLogger('ImageService')
 const aiLogger = createLogger('ai-call')
+
+/**
+ * 注入模型级生成能力（design image-provider-capability-model-design §4.3 单点注入）。
+ * 未登记模型 capabilities 留 undefined——模型列表照常渲染；
+ * 生成调用边界（generateImage）会显式报错（§8 不隐瞒原则）。
+ */
+function withCapabilities(providerType: string, models: ImageModel[]): ImageModel[] {
+  return models.map(m => {
+    let capabilities: ImageModelCapabilities | undefined
+    try {
+      capabilities = getModelCapabilities(providerType, m.id)
+    } catch {
+      capabilities = undefined
+    }
+    return { ...m, features: { ...m.features, capabilities } }
+  })
+}
 
 /**
  * 正在进行的轮询任务
@@ -141,6 +160,17 @@ export class ImageService {
       if (providerType === 'zhipu' || providerType === 'minimax') {
         logger.info(`[ImageService.generateImage] ${providerType} 使用 OpenAI 兼容格式`)
         providerType = 'openai'
+      }
+
+      // design §8 不隐瞒原则：未登记模型在生成边界显式报错（不静默、不假成功）
+      try {
+        getModelCapabilities(providerType, request.model ?? '')
+      } catch (capError) {
+        logger.error('[ImageService.generateImage] 模型能力校验失败:', capError)
+        return {
+          success: false,
+          error: capError instanceof Error ? capError.message : '模型未登记生成能力'
+        }
       }
 
       // 获取模板中的 imageBaseUrl
@@ -913,7 +943,7 @@ export class ImageService {
             id: config.id,
             name: config.name,
             configured: !!config.apiKey,
-            models: imageModels.map(m => ({
+            models: withCapabilities(providerType, imageModels.map(m => ({
               id: m.id,
               name: m.name || m.id,
               providerId: config.id,
@@ -925,7 +955,7 @@ export class ImageService {
                 maxResolution: m.contextWindow ? `${m.contextWindow}x${m.contextWindow}` : '1024x1024',
                 supportedSizes: ['512x512', '1024x1024', '1024x768', '768x1024']
               }
-            }))
+            })))
           })
         }
       }
@@ -1035,9 +1065,11 @@ export class ImageService {
 
       // 如果配置中有图像模型，直接返回
       if (imageModels.length > 0) {
+        // providerType 在下面第 ~1057 行才解析，这里提前解析用于能力注入
+        const capsProviderType = config.templateId.replace('image-', '')
         return {
           success: true,
-          data: imageModels.map(m => ({
+          data: withCapabilities(capsProviderType, imageModels.map(m => ({
             id: m.id,
             name: m.name || m.id,
             providerId: config.id,
@@ -1049,7 +1081,7 @@ export class ImageService {
               maxResolution: m.contextWindow ? `${m.contextWindow}x${m.contextWindow}` : '1024x1024',
               supportedSizes: ['512x512', '1024x1024', '1024x768', '768x1024']
             }
-          }))
+          })))
         }
       }
 
@@ -1089,7 +1121,7 @@ export class ImageService {
       // 获取模型列表
       const models = await provider.getModels()
 
-      return { success: true, data: models }
+      return { success: true, data: withCapabilities(providerType, models) }
     } catch (error: any) {
       logger.error('[ImageService.getModels] 错误:', error)
       return { success: false, error: error.message || '获取模型列表失败' }

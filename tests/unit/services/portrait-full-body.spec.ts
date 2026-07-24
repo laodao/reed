@@ -140,6 +140,8 @@ describe('generateFullBody', () => {
     expect(call.strength).toBe(0.55)
     expect(call.width).toBe(768)
     expect(call.height).toBe(1024)
+    // design §5.3：人像一致性场景显式关闭提示词改写
+    expect((call as { promptExtend?: boolean }).promptExtend).toBe(false)
     // 产出 variant：framing=full、parentId=v1、继承 seed
     const created = db.portraitVariants.create.mock.calls[0][0]
     expect(created.type).toBe('base')
