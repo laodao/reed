@@ -39,7 +39,7 @@ import type {
   PortraitRace
 } from '@shared/types/portrait.types'
 import { DEFAULT_PORTRAIT_WIDTH, DEFAULT_PORTRAIT_HEIGHT, FRAMING_PROMPT_SUFFIX } from '@shared/types/portrait.types'
-import type { PortraitFraming } from '@shared/types/portrait.types'
+import type { PortraitFraming, PromptTemplateCategory, PortraitGenerationScene } from '@shared/types/portrait.types'
 import { randomUUID } from 'crypto'
 import sharp from 'sharp'
 import archiver from 'archiver'
@@ -183,6 +183,67 @@ export class PortraitService {
     parts.push(framingSuffix)
     if (params.overrides?.suffix) parts.push(params.overrides.suffix)
     return parts.join(', ')
+  }
+
+  // ==================== 提示词模板（spec 2026-07-24 §5.2） ====================
+
+  /** 模板列表（可按分类过滤） */
+  static async listPromptTemplates(category?: PromptTemplateCategory) {
+    const db = getCoreDatabaseManager()
+    if (!db.portraitPromptTemplates) return { success: false as const, error: '数据库未初始化' }
+    const data = await db.portraitPromptTemplates.list(category)
+    return { success: true as const, data }
+  }
+
+  /** 应用模板：{name}/{gender}/{age} 等占位符替换；未知占位符保留原文 */
+  static async applyTemplate(templateId: string, vars: Record<string, string | number>) {
+    const db = getCoreDatabaseManager()
+    if (!db.portraitPromptTemplates) return { success: false as const, error: '数据库未初始化' }
+    const tpl = await db.portraitPromptTemplates.getById(templateId)
+    if (!tpl) return { success: false as const, error: '模板不存在' }
+    const data = tpl.content.replace(/\{(\w+)\}/g, (m, key) =>
+      vars[key] !== undefined ? String(vars[key]) : m,
+    )
+    return { success: true as const, data }
+  }
+
+  /** 保存模板：无 id 新建（强制非内置）；有 id 更新（内置模板拒绝） */
+  static async savePromptTemplate(input: {
+    id?: string
+    name: string
+    category: PromptTemplateCategory
+    content: string
+    applyTo: PortraitGenerationScene[]
+    sortOrder?: number
+  }) {
+    const db = getCoreDatabaseManager()
+    if (!db.portraitPromptTemplates) return { success: false as const, error: '数据库未初始化' }
+    if (input.id) {
+      const existing = await db.portraitPromptTemplates.getById(input.id)
+      if (!existing) return { success: false as const, error: '模板不存在' }
+      if (existing.builtin) return { success: false as const, error: '内置模板不可修改' }
+      const data = await db.portraitPromptTemplates.update(input.id, {
+        name: input.name,
+        category: input.category,
+        content: input.content,
+        applyTo: input.applyTo,
+        sortOrder: input.sortOrder,
+      })
+      return { success: true as const, data }
+    }
+    const data = await db.portraitPromptTemplates.create({ ...input, builtin: false })
+    return { success: true as const, data }
+  }
+
+  /** 删除模板（内置模板拒绝） */
+  static async deletePromptTemplate(id: string) {
+    const db = getCoreDatabaseManager()
+    if (!db.portraitPromptTemplates) return { success: false as const, error: '数据库未初始化' }
+    const existing = await db.portraitPromptTemplates.getById(id)
+    if (!existing) return { success: false as const, error: '模板不存在' }
+    if (existing.builtin) return { success: false as const, error: '内置模板不可删除' }
+    await db.portraitPromptTemplates.remove(id)
+    return { success: true as const }
   }
 
   // ==================== 项目管理 ====================
