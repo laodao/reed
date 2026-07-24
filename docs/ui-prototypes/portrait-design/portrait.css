@@ -288,6 +288,11 @@ a { color: inherit; text-decoration: none; }
   border-radius: var(--r-lg);
   padding: 20px;
   box-shadow: var(--shadow-xs);
+  transition: border-color .2s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow .2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.panel:hover {
+  border-color: var(--c-border-strong);
+  box-shadow: var(--shadow-sm);
 }
 .panel.flush { padding: 0; overflow: hidden; }
 .panel-title {
@@ -297,8 +302,6 @@ a { color: inherit; text-decoration: none; }
   letter-spacing: -0.005em;
 }
 .panel-title .ico-lg { font-size: 17px; }
-.panel-accent { border-left: 3px solid var(--c-accent); }
-.panel-primary { border-left: 3px solid var(--c-primary); }
 
 /* ============================================================
    表单
@@ -589,8 +592,12 @@ select.input { cursor: pointer; appearance: none;
   padding: 16px;
   margin-bottom: 14px;
   box-shadow: var(--shadow-xs);
+  transition: border-color .2s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow .2s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.variant-group.accent { border-left: 3px solid var(--c-accent); }
+.variant-group:hover {
+  border-color: var(--c-border-strong);
+  box-shadow: var(--shadow-sm);
+}
 .variant-group-head {
   display: flex; align-items: center; justify-content: space-between; margin-bottom: 13px;
 }
@@ -604,9 +611,10 @@ select.input { cursor: pointer; appearance: none;
   border-radius: var(--r-md);
   overflow: hidden;
   background: var(--c-surface);
-  transition: all .15s;
+  transition: border-color .2s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow .2s cubic-bezier(0.2, 0.8, 0.2, 1), transform .2s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .variant-card:hover { border-color: var(--c-primary-tint); box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.variant-card:hover .img .figure svg { transform: scale(1.04); }
 .variant-card .img {
   height: 196px; position: relative;
 }
@@ -621,7 +629,7 @@ select.input { cursor: pointer; appearance: none;
   radial-gradient(at 50% 20%, rgba(255,255,255,0.3) 0%, transparent 46%),
   linear-gradient(165deg, var(--tone-3), var(--tone-3-2)); }
 .variant-card .img .figure { position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: center; }
-.variant-card .img .figure svg { width: 64%; height: 88%; filter: drop-shadow(0 6px 16px rgba(0,0,0,0.2)); }
+.variant-card .img .figure svg { width: 64%; height: 88%; filter: drop-shadow(0 6px 16px rgba(0,0,0,0.2)); transition: transform .25s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .variant-card .meta {
   padding: 8px 10px; display: flex; justify-content: space-between; align-items: center;
   font-size: 12.5px; background: var(--c-surface);
