@@ -1,184 +1,402 @@
-# 人像模块下一阶段增量开发计划
+# 人像模块下一阶段增量开发计划（v2 · 深度完善版）
 
 > 状态：待评审
-> 日期：2026-07-24
+> 日期：2026-07-24（v2 深度完善：覆盖 / 粒度 / 验收量化）
 > 前置：新版人像设计 M1-M4 已交付（`docs/superpowers/plans/2026-07-24-portrait-redesign.md`）、
-> Provider 能力治理已交付（`docs/design/image-provider-capability-model-design.md`）
+> Provider 能力治理已交付（`docs/design/image-provider-capability-model-design.md`）、
+> 本计划 v1 及深度 review 修订已合并
 
 ## 0. 现状基线
 
 **已交付**：
-- 人像工作台全链路（framing 半身/全身、修改面部 editFace、生成全身 generateFullBody、
-  模板系统后端、IPC、token 驱动 UI）
+- 人像工作台全链路（framing 半身/全身、editFace、generateFullBody、模板系统后端、IPC、token 驱动 UI）
 - Provider 能力模型（注册表/未登记报错/可灵端点+参数集修正/火山水印/万相 promptExtend）
+- 测试基线：**64 例全绿**（image-providers 22 + services 42），全程不得破
 
-**遗留主线**（本计划覆盖）：
+## 1. 范围与边界
 
-| 主线 | 出处 | 价值 |
-|------|------|------|
-| A. 真机实测与链路验证 | 能力治理 Task 6 未做的人工环节 | 堵住"按文档实现但未经真机验证"的最大风险 |
-| B. 模板库管理 UI | spec §6.1 组件表中的 TemplateLibrary，后端已通 | 用户可自建/编辑模板，模板系统闭环 |
-| C. 皮肤机制 P1 | `docs/design/theme-skin-system-design.md` | 人像模块已 token 就绪，做首个双皮肤试点 |
-| D. 旧组件清理 | spec §6.1「新版稳定后清理」 | 删除旧 CharacterEditor 系列，消除双套并存 |
+### 本期做（4 条主线）
 
-**执行顺序理由**：A 先行（最便宜，且实测暴露的问题会影响后续排期）→ B（用户价值最高）→ C（独立基建，不与 A/B 冲突）→ D（最后，确保新版稳定再删）。
+| 主线 | 内容 |
+|------|------|
+| A | 先行修复 A0 + 真机实测与链路验证（9 项） |
+| B | 模板库管理 UI |
+| C | 皮肤机制 P1+P2（含 MainLayout 侧栏 token 化） |
+| D | 旧组件清理 |
 
----
+### 本期明确不做（边界，防误读为遗漏）
 
-## Phase A：真机实测与链路验证（≈1 天，人工 + 修补）
+| 项 | 原因 | 何时做 |
+|----|------|--------|
+| 皮肤方案 P3（全应用 184 组件 QA sweep） | 皮肤方案排期在本期试点验收之后 | C 验收通过后另行排期 |
+| Web 端人像模块（Controller/前端） | spec 2026-07-24 §2 明确非目标；web-server 本无人像模块 | 产品决定后立项 |
+| 组图能力（sequentialGeneration） | 人像场景不需要 | 有场景再议 |
+| 模板库跨页直接套用（库内一键套用到当前角色） | 涉及跨页状态，B 阶段改为回到面板使用 | 后续迭代 |
+| strength 落地 | 三家官方 API 均无此参数（研究报告实证） | 官方支持后再议 |
 
-> 目标：用真实 key 把三条核心链路各跑通一次，发现问题当场修。
-> 分工：用户配好真实 key（可灵需华北2北京地域）并执行生成/目检；agent 负责日志断言、定位、修复、补测。
+## 2. 执行约定（全程适用）
 
-### A0. 先行修复（review 发现的实锤缺陷，实测前必须做）
-
-| # | 缺陷 | 说明 | 修复 |
-|---|------|------|------|
-| A0-1 | **native 路径未传 prompt_extend** | Task 3 只在 multimodal 路径（qwen-image）传了 prompt_extend；wan2.5/2.6-image-edit 走 native（image-synthesis）路径，`buildNativeRequestBody` 未传 → 官方默认 true → **带参考图生成时一致性 prompt 仍会被 LLM 改写** | `buildNativeRequestBody` 加 `body.parameters.prompt_extend = request.promptExtend ?? true` + 单测（同 multimodal 两例） |
-| A0-2 | **可灵参考图可能只接受 URL** | 官方文档：可灵参考图为 URL（JPEG/PNG，≤10MB）；当前链路全用 base64 data URL。火山 image 字段官方明确支持 Base64；万相 ref_images 待实测 | A1-4 实测含此验证；若可灵拒绝 data URL，预案：参考图先落盘为本地文件再经 asset URL/OSS 提供 http URL（不动本次架构，先记录结论） |
-
-- [ ] **A0-1 修复 + 单测**：native 路径 prompt_extend 缺省 true / 显式 false 各一例
-- [ ] Commit `fix(image): native 路径补传 prompt_extend（review A0-1）`
-
-### A1. 实测清单与执行
-
-| # | 实测项 | 操作 | 通过标准 | 失败时的处置 |
-|---|--------|------|----------|--------------|
-| A1-1 | 万相编辑模式 prompt_extend | qwen-image 与 wan2.5/2.6-image-edit 各带参考图生成一张，查主进程日志 | 两条路径日志都显示 `prompt_extend: false`，prompt 未被改写 | 依 A0-1 修复情况复查 |
-| A1-2 | 万相 半身→全身 面容一致性 | 生成半身 → 生成全身对话框生成 | 全身图面部与半身肉眼可辨一致（机器初筛 + 人工拍板） | 强化 prompt / 检查参考图是否到达 provider（日志 ref_images） |
-| A1-3 | 火山 Seedream 4.5 水印 | 生成一张 | 图无"AI生成"水印 | 检查 watermark 字段是否到达（日志 body） |
-| A1-4 | 可灵端点连通性 + 参考图形态 | 选 kling/kling-v3-image-generation，无参考图生成一张 + 带 base64 参考图生成一张 | 无参考图：返回 taskId 且轮询出图；带参考图：记录上游是否接受 data URL | 按官方文档核对端点/地域/异步头修路由；data URL 被拒则走 A0-2 预案 |
-| A1-5 | 可灵出图比例 | 选 9:16 竖版尺寸生成 | 出图为竖版（非默认 16:9） | 修 mapPixelsToKlingSize |
-| A1-6 | 未登记模型报错 | 在 provider 配置里加一个未登记模型 id 并选其生成 | UI 弹出"模型 X 未登记生成能力"（含登记指引） | — |
-
-### A2. 实测记录
-
-- 结果记录到 `progress/2026-07-2x-portrait-provider-verification.md`，模板：每项 = 操作 / 期望 / 实际（日志或截图摘录）/ 结论（通过|修复后通过|遗留）
-- 每个失败项 → 当场定位修复 + 补/改单测，修复单独成 commit
+1. **TDD**：后端改动先写失败测试；前端以 lint 0 error + 手动走查验收
+2. **进度记录（CLAUDE.md 铁律）**：每个 Phase 完成即更新 `progress/2026-07-24-portrait-redesign-dev.md`（追加小节：改动点 / 验证结果 / 遗留）
+3. **commit 规范**：每个任务一个 commit，中文 message，格式 `type(scope): 主题`
+4. **测试基线**：64 例全程保持全绿；新增功能必须带新测试（后端）
+5. **不隐瞒原则**：任何"按文档实现但未真机验证"的项，必须在验收矩阵中标注验证状态
 
 ---
 
-## Phase B：模板库管理 UI（≈1.5 天，TDD）
+## Phase A：先行修复 + 真机实测（≈1 天）
 
-> 目标：模板系统用户闭环。后端已就绪（list/apply/save/delete + seeder + IPC），只做前端与入口。
-> 视觉以原型 `docs/ui-prototypes/portrait-design/templates.html` 为准。
+> 分工：agent 负责 A0 修复、日志断言、定位修复、补测；用户负责配真实 key（可灵需华北2北京地域）并执行生成与目检拍板。
+
+### A0. 先行修复（review 发现的实锤缺陷，实测前必做）
+
+**缺陷**：Task 3 只在 multimodal 路径传了 `prompt_extend`；wan2.5/2.6-image-edit 走的 native（image-synthesis）路径未传 → 官方默认 true → 参考图一致性 prompt 仍被改写。
+
+**Files:** Modify `src/core/image-providers/dashscope-image.provider.ts`（`buildNativeRequestBody`）；Test `tests/unit/image-providers/volcengine-dashscope-params.spec.ts`
+
+- [ ] **Step 1: 写失败测试**（追加到 volcengine-dashscope-params.spec.ts）
+
+```ts
+it('native 路径：promptExtend=false 时写入 prompt_extend: false', async () => {
+  const calls = mockFetchCapture({ output: { task_id: 't1', task_status: 'PENDING' } })
+  const provider = makeProvider()
+  await provider.generateImage({
+    model: 'wan2.6-image', prompt: 'same person', width: 768, height: 1024,
+    promptExtend: false,
+  } as ImageGenerationRequest)
+  const body = JSON.parse(calls[0].init.body as string)
+  expect(body.parameters.prompt_extend).toBe(false)
+})
+
+it('native 路径：缺省写入 prompt_extend: true（保现状）', async () => {
+  const calls = mockFetchCapture({ output: { task_id: 't1', task_status: 'PENDING' } })
+  const provider = makeProvider()
+  await provider.generateImage({
+    model: 'wan2.6-image', prompt: 'a cat', width: 768, height: 1024,
+  } as ImageGenerationRequest)
+  const body = JSON.parse(calls[0].init.body as string)
+  expect(body.parameters.prompt_extend).toBe(true)
+})
+```
+
+- [ ] **Step 2: 运行确认失败**
+Run: `npx vitest run tests/unit/image-providers/volcengine-dashscope-params.spec.ts`
+Expected: 新增 2 例 FAIL（prompt_extend undefined）
+
+- [ ] **Step 3: 实现**（`buildNativeRequestBody` 的 parameters 块追加）
+
+```ts
+// design §5.3 + plan A0-1：native 路径同 multimodal 透传 prompt_extend
+// 缺省 = 官方默认 true（保现状）；人像一致性场景由 service 显式传 false
+body.parameters.prompt_extend = request.promptExtend ?? true
+```
+
+- [ ] **Step 4: 运行确认通过 + 全量回归**
+Run: `npx vitest run tests/unit/image-providers/ tests/unit/services/`
+Expected: image-providers 24 例全绿；services 42 例全绿（knowledge-base / voice-clone 两个预存环境问题文件除外）
+
+- [ ] **Step 5: Commit**
+```bash
+git add src/core/image-providers/dashscope-image.provider.ts tests/unit/image-providers/volcengine-dashscope-params.spec.ts
+git commit -m "fix(image): native(image-synthesis) 路径补传 prompt_extend（plan A0-1）"
+```
+
+### A1. 真机实测清单（9 项）
+
+> 每项注明：操作 / 通过线（量化）/ 失败处置。
+> 执行入口：应用内人像工作台 + 主进程日志（dev 控制台输出）。
+
+| # | 实测项 | 操作 | 通过线 | 失败处置 |
+|---|--------|------|--------|----------|
+| A1-1 | 双路径 prompt_extend | qwen-image（multimodal 路径）带参考图生成 1 张；wan2.6-image（native 路径）带参考图生成 1 张 | 主进程日志两个请求体均含 `"prompt_extend":false` | 按 A0-1 复查传参位置 |
+| A1-2 | 半身→全身面容一致性 | 生成半身 → 全身对话框生成 | **清单式目检：发型发色 / 脸型轮廓 / 眼型 / 眉形 / 显著特征（痣疤等）5 项中 ≥4 项一致**；不满足记失败 | 查日志确认参考图到达 provider（`ref_images`/`image` 字段非空）；到达但仍不像 → 加强 prompt 一致性措辞 |
+| A1-3 | 火山水印 | Seedream 4.5 生成 1 张 | 目检图无"AI生成"水印 且 日志 body 含 `"watermark":false` | 查 adapter body 组装 |
+| A1-4 | 可灵端点连通 | kling/kling-v3-image-generation 无参考图生成 | 返回 taskId 且轮询 ≤60s 出图 | 核对端点/地域/异步头；修路由 |
+| A1-5 | 可灵 base64 参考图 | 带 1 张 base64 参考图生成 | 记录上游接受与否：接受=通过；拒绝=记录错误原文并启用 A0-2 预案（落盘 http URL） | 预案另立任务 |
+| A1-6 | 可灵出图比例 | 选 1080×1920（9:16）生成 | 出图实际为竖版（非默认 16:9） | 修 mapPixelsToKlingSize |
+| A1-7 | 可灵负面词并入效果 | prompt 含明显元素 + 负面词写该元素（如"不要红色"）生成 | 目检图中该元素被抑制（记录 是/部分/否） | 调整 KLING_NEGATIVE_JOINER 措辞 |
+| A1-8 | wan2.6-image 端点归属 | 用 wan2.6-image 走 native 路径生成 1 张 | 成功出图 = 当前路由正确；报错（如 model not supported on endpoint）→ 改入 multimodal 路由 | 改 isMultimodalImageModel 覆盖 wan2.6-image + 单测 |
+| A1-9 | 未登记模型报错 | provider 配置加未登记模型 id 并选其生成 | UI 弹出"模型 X 未登记生成能力…model-capabilities.ts" | — |
+
+### A2. 实测记录模板
+
+写入 `progress/2026-07-2x-portrait-provider-verification.md`，每项按此格式：
+
+```
+### A1-x 项目名
+- 操作：（模型 / 参数 / 步骤）
+- 期望：（通过线）
+- 实际：（日志摘录 / 截图路径 / 出图描述）
+- 结论：通过 | 修复后通过（commit hash）| 遗留（原因+后续任务）
+```
+
+---
+
+## Phase B：模板库管理 UI（≈1.5 天）
+
+> 视觉以原型 `docs/ui-prototypes/portrait-design/templates.html` 为准；样式复用 `workbench-card.scss` mixin，零硬编码。
 
 ### B1. 路由与入口
 
 **Files:**
-- Create: `src/renderer/src/views/PortraitTemplates.vue`
-- Modify: `src/renderer/src/router/index.ts`（加 `/portrait-templates` 路由）
-- Modify: `src/renderer/src/views/Portrait.vue`（头部加"模板库"入口按钮）
-- Modify: `src/renderer/src/components/portrait/workbench/PortraitWorkbench.vue`（头部加模板库入口）
+- Create `src/renderer/src/views/PortraitTemplates.vue`
+- Modify `src/renderer/src/router/index.ts`
+- Modify `src/renderer/src/views/Portrait.vue`（项目列表头部）
+- Modify `src/renderer/src/components/portrait/workbench/PortraitWorkbench.vue`（工作台头部）
 
-- [ ] **Step 1:** 路由 `/portrait-templates` 懒加载 `PortraitTemplates.vue`
-- [ ] **Step 2:** Portrait.vue 项目列表头部 + 工作台头部各加入口（`el-button` → `router.push`）
-- [ ] **Step 3:** Commit `feat(portrait-ui): 模板库路由与入口`
+- [ ] **Step 1:** 路由（懒加载）：
 
-### B2. TemplateLibrary 视图
+```ts
+{
+  path: '/portrait-templates',
+  name: 'PortraitTemplates',
+  component: () => import('@/views/PortraitTemplates.vue'),
+  meta: { title: '提示词模板库' }
+}
+```
+
+- [ ] **Step 2:** PortraitTemplates.vue 骨架：页头（返回按钮 `router.back()` + 标题 + 搜索框 + 新建按钮）+ `<TemplateLibrary />`
+- [ ] **Step 3:** Portrait.vue 头部"模板库"按钮（在"新建"左侧，`router.push('/portrait-templates')`）；PortraitWorkbench 头部 wb-actions 加同款
+- [ ] **Step 4:** Commit `feat(portrait-ui): 模板库路由与入口`
+
+### B2. TemplateLibrary（分类侧栏 + 卡片网格）
 
 **Files:**
-- Create: `src/renderer/src/components/portrait/templates/TemplateLibrary.vue`（分类侧栏 + 卡片网格）
-- Create: `src/renderer/src/components/portrait/templates/TemplateCard.vue`（预览/复制/套用/编辑/删除）
-- Create: `src/renderer/src/components/portrait/templates/TemplateEditDialog.vue`（新建/编辑：名称/分类/适用场景/正文/占位符说明）
+- Create `src/renderer/src/components/portrait/templates/TemplateLibrary.vue`
+- Create `src/renderer/src/components/portrait/templates/TemplateCard.vue`
 
-- [ ] **Step 1:** 分类侧栏（全部/面部/全身/发型服装/背景 + 内置/我的）；**先一次性 `list()` 拉全量，客户端分组计数**（避免逐分类多次 IPC）
-- [ ] **Step 2:** TemplateCard：名称/分类/来源 tag/正文预览（截断 3 行）/操作按钮；**内置模板只读**（编辑/删除按钮禁用并 tooltip"内置模板不可修改"）
-- [ ] **Step 3:** 复制提示词——**剪贴板 fallback 链**：`navigator.clipboard?.writeText` → `document.execCommand('copy')`（textarea 临时节点）。**review 注：Electron 生产环境 file:// 下 navigator.clipboard 可能为 undefined，必须有兜底**
-- [ ] **Step 4:** TemplateEditDialog：表单 + 校验（名称必填、分类必选、正文必填、applyTo 多选）；新建/更新走 `promptTemplate.save`；删除走 `promptTemplate.delete` + 确认框
-- [ ] **Step 5:** 新建/编辑/删除后刷新列表；样式全 token（复用 workbench-card.scss mixin）；**页头含返回按钮**（router.back）
-- [ ] **Step 6:** `npm run lint` 0 error；Commit `feat(portrait-ui): 模板库管理界面（分类/预览/新建/编辑/删除）`
+**组件接口：**
 
-### B3. 占位符提示
+```ts
+// TemplateLibrary.vue
+state: {
+  templates: PortraitPromptTemplate[]      // 一次性全量拉取，客户端分组（避免多次 IPC）
+  activeCategory: 'all' | PromptTemplateCategory
+  activeSource: 'all' | 'builtin' | 'custom'
+  keyword: string
+  loading: boolean
+  editing: PortraitPromptTemplate | null   // null=新建 / 对象=编辑
+  showEditDialog: boolean
+}
+computed: {
+  filtered(): 按 category + source + keyword 过滤
+  counts(): { all, face, body, clothing, background, builtin, custom }
+}
+methods: {
+  loadAll(): portrait.promptTemplate.list()（无参全量）
+  onEdit(tpl) / onDelete(tpl) / onSaved(): 刷新
+}
 
-- [ ] 编辑对话框内固定展示占位符说明卡：`{name} {gender} {age}` 会在套用时替换为角色信息
+// TemplateCard.vue
+props: { template: PortraitPromptTemplate }
+emits: {
+  preview: [template]     // 展开完整内容（el-dialog 只读展示）
+  copy: [template]        // 复制提示词（见 B4 剪贴板 fallback 链）
+  edit: [template]        // 内置时禁用 + tooltip '内置模板不可修改'
+  delete: [template]      // 内置时禁用 + tooltip
+}
+```
+
+- [ ] **Step 1:** TemplateCard：名称/分类标签/来源标签（内置=紫，自定义=灰）/正文截断 3 行/操作按钮组
+- [ ] **Step 2:** TemplateLibrary：分类侧栏（计数徽标）+ 卡片网格 + 空状态；加载走 loadAll
+- [ ] **Step 3:** 预览 dialog（只读完整内容）+ 删除确认（ElMessageBox）
+- [ ] **Step 4:** Commit `feat(portrait-ui): 模板库分类浏览与卡片操作`
+
+### B3. TemplateEditDialog（新建/编辑）
+
+**Files:** Create `src/renderer/src/components/portrait/templates/TemplateEditDialog.vue`
+
+**组件接口：**
+
+```ts
+props: {
+  modelValue: boolean
+  template?: PortraitPromptTemplate   // 不传=新建；传=编辑
+}
+emits: {
+  'update:modelValue': [boolean]
+  saved: []                            // 父级刷新
+}
+form: {
+  name: string          // 必填
+  category: PromptTemplateCategory  // 必选
+  applyTo: PortraitGenerationScene[] // 至少选 1
+  content: string       // 必填；占位符说明卡固定展示：{name} {gender} {age}
+}
+submit: 新建 → promptTemplate.save({...form}); 编辑 → save({id, ...form})
+```
+
+- [ ] **Step 1:** 表单 + 校验（名称必填/分类必选/正文必填/applyTo ≥1）
+- [ ] **Step 2:** 提交后 emit saved，父级刷新列表并关闭
+- [ ] **Step 3:** Commit `feat(portrait-ui): 模板新建/编辑对话框`
+
+### B4. 剪贴板 fallback 链（review 修正）
+
+Electron 生产 file:// 下 `navigator.clipboard` 可能为 undefined：
+
+```ts
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch { /* fallthrough */ }
+  // fallback：临时 textarea + execCommand
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.style.position = 'fixed'
+  ta.style.opacity = '0'
+  document.body.appendChild(ta)
+  ta.select()
+  const ok = document.execCommand('copy')
+  document.body.removeChild(ta)
+  return ok
+}
+```
+
+### B5. 模板库 → TemplatePicker 联动时序（review 修正）
+
+**问题**：模板库新建模板后，工作台各面板的 TemplatePicker 已加载的列表是旧的。
+
+**约定**（简单可靠，不做跨页状态）：TemplatePicker 在**每次所在面板/对话框打开时重新加载**——
+- 生成面板 / 编辑面板：所在视图 onMounted 已加载；新增：`watch(() => props.character?.id, reload)`
+- 各对话框（Regenerate/Clothes/Background/GenerateFullBody）：`watch(() => props.modelValue, open => open && reload())`
+- 模板库页返回工作台后，由路由切回触发面板重挂载或上述 watch 生效
+
+- [ ] TemplatePicker 已有 `defineExpose({ reload })`；各宿主按上表接线
+- [ ] Commit `feat(portrait-ui): TemplatePicker 打开时重载模板列表`
 
 ---
 
-## Phase C：皮肤机制（≈1.5 天，按皮肤方案 P1+P2 执行）
+## Phase C：皮肤机制 P1+P2（≈1.5 天）
 
-> 目标：`data-skin` 双皮肤（classic/modern）切换机制落地，人像模块为首个试点。
-> 严格按 `docs/design/theme-skin-system-design.md` §4 P1-P2 执行。
-> **review 修正：原计划只做 P1（token+EP），但 MainLayout 侧栏未 token 化，
-> 深色侧栏恰是现代皮肤最大视觉差异点——必须含 P2，否则 modern 皮肤几乎无感。**
+> 按 `docs/design/theme-skin-system-design.md` §4 P1-P2 与 §5 D1-D6 执行；token 值直接取该文档 D3 表，不另造。
 
 ### C1. 结构 token 双皮肤定义
 
-**Files:**
-- Modify: `src/renderer/src/styles/index.scss`
-- Modify: `src/renderer/src/styles/element-plus.scss`
+**Files:** Modify `src/renderer/src/styles/index.scss`、`src/renderer/src/styles/element-plus.scss`
 
-- [ ] **Step 1:** `:root`（=classic 现状值）与 `[data-skin="modern"]` 两套结构 token（侧栏系列/阴影尺度/动效开关），值取皮肤方案 D3
-- [ ] **Step 2:** `element-plus.scss` 加 `[data-skin="modern"]` 覆盖块（EP 圆角变量 + 关闭经典 hover 动效）
+- [ ] **Step 1:** index.scss：`:root`（=classic 现状值）+ `[data-skin="modern"]` 两套结构 token（--sidebar-bg/--sidebar-text/--sidebar-item-active-bg/--shadow-*/--card-hover-transform），值取皮肤方案 D3
+- [ ] **Step 2:** element-plus.scss：`[data-skin="modern"]` 覆盖块（--el-border-radius-base 等 + 关闭经典 hover 动效选择器 gate）
 
-### C2. MainLayout 侧栏 token 化（皮肤方案 P2）
+### C2. MainLayout 侧栏 token 化（P2）
 
-**Files:**
-- Modify: `src/renderer/src/layouts/MainLayout.vue`
+**Files:** Modify `src/renderer/src/layouts/MainLayout.vue`
 
-- [ ] **Step 1:** 侧栏背景/文字/菜单项 hover/active/logo 区样式全部改走 `--sidebar-*` token（classic = 现有主题渐变表现，modern = 深色纯色 + 左侧指示条）
-- [ ] **Step 2:** classic 皮肤下逐像素对比（见 C4 验证手段）
+- [ ] **Step 1:** 侧栏背景 / 文字色 / 菜单项 hover/active / logo 区样式全部改走 `--sidebar-*` token；classic 下视觉与现状一致（token 值=现值）
+- [ ] **Step 2:** modern 下为深色纯色 + 左侧激活指示条（皮肤方案 D3）
 
 ### C3. useSkin + 设置入口
 
-**Files:**
-- Create: `src/renderer/src/composables/useSkin.ts`
-- Modify: 设置页主题区所在文件（实施时先定位 Settings 视图中主题选择的位置）
+**Files:** Create `src/renderer/src/composables/useSkin.ts`；Modify 设置页主题区（实施第一步先 grep 定位主题选择 UI 所在文件）
 
-- [ ] **Step 1:** `useSkin.ts`：`data-skin` 切换 + `settings.get/set('skin')` 持久化（复用 useTheme 模式）
-- [ ] **Step 2:** 设置页加"界面皮肤：经典/现代"选择（与颜色主题正交）
+**useSkin 接口（复刻 useTheme 模式）：**
+
+```ts
+export type SkinId = 'classic' | 'modern'
+
+export function useSkin() {
+  const currentSkin = ref<SkinId>('classic')
+
+  function applySkin(skin: SkinId) {
+    document.documentElement.setAttribute('data-skin', skin)
+  }
+  async function setSkin(skin: SkinId) {
+    currentSkin.value = skin
+    applySkin(skin)
+    await window.electronAPI.settings.set('skin', skin)
+  }
+  async function loadSkin() {
+    const r = await window.electronAPI.settings.get('skin')
+    const skin: SkinId = (r.success && r.data === 'modern') ? 'modern' : 'classic'
+    currentSkin.value = skin
+    applySkin(skin)
+  }
+  onMounted(loadSkin)
+  return { currentSkin, setSkin }
+}
+```
+
+- [ ] **Step 1:** useSkin.ts 实现 + App 级生效（MainLayout 内调用）
+- [ ] **Step 2:** 设置页加"界面皮肤：经典 / 现代"（与颜色主题正交，不联动）
 - [ ] **Step 3:** Commit `feat(theme): data-skin 双皮肤机制（P1+P2，人像模块试点）`
 
-### C4. 回归验证手段（review 补充，机械化）
+### C4. 回归验证（机械化流程）
 
-- [ ] 改造前对关键页面（人像工作台/对话页/设置页）在 classic 皮肤下截图存档；改造后同页面同皮肤截图，人工比对零差异（或写像素对比脚本）
-- [ ] modern 皮肤下人像工作台目视验收（token 驱动组件应整体符合原型观感）
+- [ ] **改造前**：在 main 分支或改造前 commit 启动应用，对 人像工作台 / 项目列表 / 对话页 各截 1 张 classic 截图，存 `progress/screenshots/before-skin/`
+- [ ] **改造后**：classic 皮肤下同页面截图存 `progress/screenshots/after-skin/`，人工比对零差异（差异处必须能解释原因，否则视为回归修复）
+- [ ] modern 皮肤下人像工作台目视验收（对照原型观感）；颜色主题 × 皮肤 4 组合抽查不破坏布局
 
 ---
 
 ## Phase D：旧组件清理（≈0.5 天）
 
-> 前置：Phase A 实测通过 + 新版工作台稳定使用。
+> 前置：Phase A 实测通过（A1-1 ~ A1-9 全部有结论）。
 
-- [ ] **Step 1:** 全局搜索确认无引用后删除：
-  - `src/renderer/src/components/portrait/CharacterEditor.vue`
-  - `src/renderer/src/components/portrait/ChangeClothesDialog.vue`
-  - `src/renderer/src/components/portrait/ChangeBackgroundDialog.vue`
-  - `src/renderer/src/components/portrait/GenerateAnglesDialog.vue`
-  - `src/renderer/src/components/portrait/PortraitGenerator.vue`
-  - 保留：`ExportDialog.vue`（新版复用）、`CreateCharacterDialog.vue` / `EditCharacterDialog.vue`（列表页在用）、`SizeSelector.vue`（先 grep 确认无引用再删）
-- [ ] **Step 2:** `npm run lint` + `npm run dev` 启动验证 + 人像模块全流程手测一遍
-- [ ] **Step 3:** Commit `chore(portrait): 移除旧版人像编辑器组件（已被 workbench 取代）`
+### D1. 引用清查（先查后删，候选清单）
+
+- [ ] **Step 1:** 逐个 grep 确认引用方（命令 + 预期）：
+
+```bash
+grep -rn "CharacterEditor" src/renderer/src --include="*.vue" --include="*.ts"      # 预期：无（Portrait.vue 已换 PortraitWorkbench）
+grep -rn "ChangeClothesDialog\|ChangeBackgroundDialog\|GenerateAnglesDialog" src/renderer/src # 预期：仅文件自身
+grep -rn "PortraitGenerator" src/renderer/src                                       # 预期：仅文件自身
+grep -rn "SizeSelector" src/renderer/src                                            # 预期：旧 CharacterEditor + 待确认的 EditCharacterDialog
+```
+
+### D2. 删除与验证
+
+- [ ] **Step 1:** 删除（在 Step 1 全部"仅自身/无引用"后）：
+  `CharacterEditor.vue` / `ChangeClothesDialog.vue` / `ChangeBackgroundDialog.vue` / `GenerateAnglesDialog.vue` / `PortraitGenerator.vue`；
+  `SizeSelector.vue` 仅在确认 EditCharacterDialog 等无引用后删除，有引用则保留并记录
+- [ ] **Step 2:** 保留清单（不动）：`ExportDialog.vue`（新版复用）、`CreateCharacterDialog.vue` / `EditCharacterDialog.vue`（列表页在用）
+- [ ] **Step 3:** `npm run lint` 0 error + `npm run dev` 启动 + 人像全流程手测（列表→角色→生成→编辑→弹窗→套图→导出）
+- [ ] **Step 4:** Commit `chore(portrait): 移除旧版人像编辑器组件（已被 workbench 取代）`
 
 ---
 
-## 验收标准
+## 3. 验收矩阵（每项：验证方法 / 通过线 / 执行者 / 记录位置）
 
-| # | 标准 |
-|---|------|
-| 1 | Phase A 六项实测全部有结论记录；失败项均已修复并补单测 |
-| 2 | 模板库可新建/编辑/删除自定义模板，内置模板只读；工作台 TemplatePicker 能套用到新模板 |
-| 3 | 设置页可切换经典/现代皮肤，重启保持；经典皮肤视觉零回归 |
-| 4 | 旧组件删除后 lint 0 error、人像全流程正常 |
-| 5 | 全程测试保持全绿（当前基线 64 例） |
+| # | 验收项 | 验证方法 | 通过线 | 执行者 | 记录 |
+|---|--------|----------|--------|--------|------|
+| V1 | A0-1 修复 | 单测 2 例 | 全绿 | agent | commit message |
+| V2 | A1-1 双路径 prompt_extend | 主进程日志 grep | 两请求体均含 `prompt_extend:false` | agent 查日志 | verification.md |
+| V3 | A1-2 面容一致性 | 清单式目检（5 特征项） | ≥4/5 项一致 | **用户拍板** | verification.md |
+| V4 | A1-3 水印 | 目检 + 日志 | 无水印 且 body.watermark=false | agent+用户 | verification.md |
+| V5 | A1-4 可灵连通 | taskId + 轮询出图 | ≤60s 出图 | 用户执行 agent 看日志 | verification.md |
+| V6 | A1-5 可灵 base64 参考图 | 上游响应 | 明确 接受/拒绝 + 证据 | agent | verification.md |
+| V7 | A1-6 可灵比例 | 出图目检 | 竖版 | 用户 | verification.md |
+| V8 | A1-7 可灵负面词 | 目检元素抑制 | 是/部分/否 有结论 | 用户 | verification.md |
+| V9 | A1-8 wan2.6 端点 | 生成成败 | 成功 或 改路由后成功 | agent | verification.md |
+| V10 | A1-9 未登记报错 | UI 弹错 | 含模型 id + 登记指引 | agent | verification.md |
+| V11 | B 模板库功能 | 走查：新建/编辑/删除/内置只读/复制 | 全通过 + lint 0 error | agent | progress |
+| V12 | B 联动时序 | 库内新建 → 回工作台打开对话框 | 新模板出现在下拉 | agent | progress |
+| V13 | C classic 零回归 | 改造前后截图比对 | 零差异或可解释 | agent+用户抽看 | progress/screenshots |
+| V14 | C modern 观感 | 对照原型 | 用户认可 | **用户拍板** | progress |
+| V15 | D 清理 | lint 0 error + 全流程手测 | 通过 | agent | progress |
+| V16 | 全程测试基线 | vitest run | 64+N 例全绿 | agent | 每个 commit 前 |
 
-## 工作量汇总
+## 4. 工作量汇总
 
 | Phase | 内容 | 工作量 |
 |-------|------|--------|
-| A | 先行修复 A0（native prompt_extend）+ 真机实测与修补 | ≈1 天 |
-| B | 模板库管理 UI | ≈1.5 天 |
-| C | 皮肤机制 P1+P2（含 MainLayout 侧栏 token 化） | ≈1.5 天 |
-| D | 旧组件清理 | ≈0.5 天 |
+| A | A0 修复 + 9 项实测 + 记录 | ≈1 天 |
+| B | 模板库 UI（B1-B5） | ≈1.5 天 |
+| C | 皮肤 P1+P2 + C4 回归 | ≈1.5 天 |
+| D | 清查 + 删除 + 验证 | ≈0.5 天 |
 | **合计** | | **≈4.5 天** |
 
----
+## 5. Review 修订记录
 
-## Review 修订记录（2026-07-24 深度 review）
+**v1 → v1.1（深度 review）**：A0-1 native prompt_extend 缺陷、A0-2 可灵 URL 风险、Phase C 扩 P2、剪贴板 fallback、分类计数改全量、补返回按钮。
 
-1. **A0-1（真缺陷）**：Task 3 只在 multimodal 路径传 prompt_extend；wan2.5/2.6-image-edit 走的 native（image-synthesis）路径未传 → 官方默认 true，参考图一致性 prompt 仍会被改写。列为实测前先行修复。
-2. **A0-2（风险预案）**：可灵官方参考图为 URL，当前链路全用 base64 data URL，上游可能拒绝；A1-4 实测显式验证，被拒则走"落盘+http URL"预案。
-3. **Phase C 范围修正**：只做 P1 则 modern 皮肤几乎无感（MainLayout 侧栏未 token 化，而深色侧栏是最大差异点）→ 扩为 P1+P2，工时 1d→1.5d，并补 C4 机械化回归验证（改造前后截图比对）。
-4. **B2 剪贴板**：Electron file:// 下 navigator.clipboard 可能为 undefined → 强制 fallback 链。
-5. **B 细节**：分类计数改为全量拉取客户端分组（避免多次 IPC）；补页头返回按钮；C3 设置页文件需实施时先定位。
-6. **A1-1 验证口径**：从单模型改为 qwen-image + wan2.5/2.6-image-edit 双路径各验一次。
+**v1.1 → v2（覆盖/粒度/验收量化完善）**：
+1. 新增 §1 范围与边界：P3 / web 端 / 组图 / 跨页套用 / strength 五项明确不做及原因，防误读为遗漏
+2. 新增 §2 执行约定：TDD / progress 记录铁律 / commit 规范 / 64 例基线 / 不隐瞒原则
+3. A1 实测 6 项 → 9 项：补 wan2.6 端点归属（A1-8）、可灵负面词真机效果（A1-7）、可灵 base64 参考图独立成项（A1-5）；A1-1 改双路径
+4. 面容一致性验收量化：清单式 5 特征项 ≥4 判定标准（V3）
+5. Phase B 粒度升至接口级：TemplateLibrary/TemplateCard/TemplateEditDialog 的 props/emits/state/关键逻辑骨架；补 B5 联动时序方案；B4 剪贴板 fallback 代码
+6. Phase C 补 useSkin 完整接口代码 + C4 截图比对流程（目录、页面、比对口径）
+7. Phase D 补引用清查命令与预期 + SizeSelector 条件删除规则 + 保留清单
+8. 新增 §3 验收矩阵：16 项，每项 验证方法/通过线/执行者/记录位置 四要素齐全，用户拍板项明确标出
