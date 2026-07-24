@@ -106,7 +106,21 @@ export class DashScopeImageProvider extends BaseImageProvider {
   private static NATIVE_PATH = '/api/v1/services/aigc/text2image/image-synthesis'
   private static MULTIMODAL_PATH = '/api/v1/services/aigc/multimodal-generation/generation'
   private static OPENAI_PATH = '/compatible-mode/v1/images/generations'
+  private static KLING_PATH = '/api/v1/services/aigc/image-generation/generation'
   private static TASK_PATH = '/api/v1/tasks'
+
+  /**
+   * 可灵负面词并入正向 prompt 的连接语（官方建议把排除内容写进正向 prompt；
+   * 措辞独立为常量便于实测微调）。design §5.1
+   */
+  private static KLING_NEGATIVE_JOINER = '. Avoid: '
+
+  /**
+   * 判断是否为可灵模型（百炼托管 kling/*，走 image-generation 端点 + 异步头）
+   */
+  private isKlingModel(model: string): boolean {
+    return model.startsWith('kling/')
+  }
 
   /**
    * 判断是否使用多模态图像生成格式
@@ -167,7 +181,11 @@ export class DashScopeImageProvider extends BaseImageProvider {
   private getApiUrl(model: string): string {
     const host = this.resolveHost()
     let endpointPath: string
-    if (this.isMultimodalImageModel(model)) {
+    if (this.isKlingModel(model)) {
+      // 可灵走官方 image-generation 端点（design §5.1 修正错误 A：
+      // 此前一切模型都落 image-synthesis，可灵在该端点不可用）
+      endpointPath = DashScopeImageProvider.KLING_PATH
+    } else if (this.isMultimodalImageModel(model)) {
       endpointPath = DashScopeImageProvider.MULTIMODAL_PATH
     } else if (this.isOpenAIFormat(model)) {
       endpointPath = DashScopeImageProvider.OPENAI_PATH
@@ -268,6 +286,32 @@ export class DashScopeImageProvider extends BaseImageProvider {
           maxResolution: '2048x2048',
           supportedSizes: ['512x512', '1024x1024', '1024x768', '768x1024', '2048x2048']
         }
+      },
+      {
+        id: 'kling/kling-v3-image-generation',
+        name: '可灵 v3 图像（单参考图）',
+        providerId: 'dashscope',
+        providerName: this.name,
+        features: {
+          textToImage: true,
+          imageToImage: true,
+          imageEdit: false,
+          maxResolution: '2k',
+          supportedSizes: ['1080x1920', '1024x1024', '1920x1080']
+        }
+      },
+      {
+        id: 'kling/kling-v3-omni-image-generation',
+        name: '可灵 v3 Omni 图像（多参考图/组图）',
+        providerId: 'dashscope',
+        providerName: this.name,
+        features: {
+          textToImage: true,
+          imageToImage: true,
+          imageEdit: false,
+          maxResolution: '4k',
+          supportedSizes: ['1080x1920', '1024x1024', '1920x1080']
+        }
       }
     ]
   }
@@ -299,7 +343,9 @@ export class DashScopeImageProvider extends BaseImageProvider {
         'isOpenAI:', this.isOpenAIFormat(model),
         'isNative:', this.isNativeFormat(model))
 
-      if (this.isMultimodalImageModel(model)) {
+      if (this.isKlingModel(model)) {
+        return await this.generateImageKling(request)
+      } else if (this.isMultimodalImageModel(model)) {
         return await this.generateImageMultimodal(request)
       } else if (this.isOpenAIFormat(model)) {
         return await this.generateImageOpenAI(request)
@@ -315,6 +361,69 @@ export class DashScopeImageProvider extends BaseImageProvider {
       return {
         success: false,
         error: `图像生成失败: ${errorMessage}`
+      }
+    }
+  }
+
+  /**
+   * 使用可灵官方参数集生成图像（kling/* 模型）
+   *
+   * design §5.1：只发官方支持参数（n/aspect_ratio/resolution/watermark），
+   * 负面词并入正向 prompt；seed/style/quality/size 一律不发。
+   * 官方强制异步（X-DashScope-Async: enable），返回 task_id 走统一轮询。
+   */
+  private async generateImageKling(request: ImageGenerationRequest): Promise<ImageGenerationResponse> {
+    const model = request.model!
+    const url = this.getApiUrl(model)
+    const body = this.buildKlingRequestBody(request)
+
+    console.log('[DashScope] 使用可灵格式, URL:', url, 'Body:', body)
+
+    const response = await this.sendRequest<DashScopeApiResponse>(
+      url, 'POST', body, { 'X-DashScope-Async': 'enable' },
+    )
+
+    if (response.code && response.code !== 'Success' && response.code !== '200') {
+      return {
+        success: false,
+        error: response.message || '图像生成请求失败'
+      }
+    }
+
+    if (response.output?.task_id) {
+      return { success: true, taskId: response.output.task_id }
+    }
+
+    return { success: false, error: '未获取到任务 ID' }
+  }
+
+  /**
+   * 构建可灵官方请求体（messages 格式 + 可灵参数集）
+   */
+  private buildKlingRequestBody(request: ImageGenerationRequest): Record<string, any> {
+    // 负面词并入正向 prompt（官方：排除内容写进正向 prompt）
+    const text = request.negativePrompt
+      ? `${request.prompt}${DashScopeImageProvider.KLING_NEGATIVE_JOINER}${request.negativePrompt}`
+      : request.prompt
+
+    const content: Array<{ text?: string; image?: string }> = [{ text }]
+    const refs = collectReferences(request)
+    for (const ref of refs) {
+      content.push({ image: ref })
+    }
+
+    const { aspectRatio, resolution } = mapPixelsToKlingSize(request.width, request.height)
+
+    return {
+      model: request.model,
+      input: {
+        messages: [{ role: 'user', content }]
+      },
+      parameters: {
+        n: request.count || 1,
+        aspect_ratio: aspectRatio,
+        resolution,
+        watermark: false,
       }
     }
   }
@@ -703,9 +812,10 @@ export class DashScopeImageProvider extends BaseImageProvider {
   private async sendRequest<T>(
     url: string,
     method: string,
-    body?: Record<string, any>
+    body?: Record<string, any>,
+    extraHeaders?: Record<string, string>
   ): Promise<T> {
-    const headers = this.buildHeaders()
+    const headers = { ...this.buildHeaders(), ...(extraHeaders ?? {}) }
 
     // 检查 API Key
     if (!this.config.apiKey) {
@@ -766,4 +876,25 @@ export class DashScopeImageProvider extends BaseImageProvider {
       supportsImageEdit: false
     }
   }
+}
+/**
+ * 可灵尺寸映射（design §5.1）：宽x高像素 → 官方 aspect_ratio + resolution。
+ * 官方宽高比集合仅 16:9 / 9:16 / 1:1（3:4、2:3 等竖版一律归 9:16）。
+ * 分辨率规则：长边 ≥1792 → 2k，否则 1k。
+ */
+export function mapPixelsToKlingSize(
+  width: number,
+  height: number,
+): { aspectRatio: '16:9' | '9:16' | '1:1'; resolution: '1k' | '2k' } {
+  const ratio = width / height
+  let aspectRatio: '16:9' | '9:16' | '1:1'
+  if (Math.abs(ratio - 1) < 0.12) {
+    aspectRatio = '1:1'
+  } else if (ratio > 1) {
+    aspectRatio = '16:9'
+  } else {
+    aspectRatio = '9:16'
+  }
+  const longEdge = Math.max(width, height)
+  return { aspectRatio, resolution: longEdge >= 1792 ? '2k' : '1k' }
 }
