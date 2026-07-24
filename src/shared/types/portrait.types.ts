@@ -433,6 +433,24 @@ export const DEFAULT_PORTRAIT_WIDTH = 768
 export const DEFAULT_PORTRAIT_HEIGHT = 1024
 
 /**
+ * 主流分辨率（尺寸下拉候选基准；与模型 supportedSizes 取并集展示）。
+ * 新版人像设计（spec 2026-07-24 D8b）：尺寸下拉按 竖版/方形/横版 分组，
+ * 候选集 = 模型 supportedSizes ∪ 本常量，组件不写死。
+ */
+export const MAINSTREAM_PORTRAIT_SIZES: { value: string; ratio: string; group: 'portrait' | 'square' | 'landscape' }[] = [
+  { value: '768x1024', ratio: '3:4', group: 'portrait' },
+  { value: '896x1152', ratio: '7:9', group: 'portrait' },
+  { value: '1024x1536', ratio: '2:3', group: 'portrait' },
+  { value: '1024x1792', ratio: '9:16', group: 'portrait' },
+  { value: '1080x1920', ratio: '9:16', group: 'portrait' },
+  { value: '1024x1024', ratio: '1:1', group: 'square' },
+  { value: '512x512', ratio: '1:1', group: 'square' },
+  { value: '1536x1024', ratio: '3:2', group: 'landscape' },
+  { value: '1920x1080', ratio: '16:9', group: 'landscape' },
+  { value: '1280x720', ratio: '16:9', group: 'landscape' },
+]
+
+/**
  * 预设背景场景
  */
 export interface PresetBackgroundScene {
