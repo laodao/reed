@@ -142,9 +142,9 @@
         </div>
       </template>
 
-      <!-- 已选择角色：显示编辑界面 -->
+      <!-- 已选择角色：显示编辑界面（新版工作台，spec 2026-07-24） -->
       <template v-else>
-        <CharacterEditor
+        <PortraitWorkbench
           :character-id="selectedCharacterId"
           :project="selectedProject"
           @back="selectedCharacterId = ''"
@@ -192,7 +192,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Folder, MoreFilled, User, Delete, ArrowLeft, Edit } from '@element-plus/icons-vue'
 import CreateCharacterDialog from '@/components/portrait/CreateCharacterDialog.vue'
 import EditCharacterDialog from '@/components/portrait/EditCharacterDialog.vue'
-import CharacterEditor from '@/components/portrait/CharacterEditor.vue'
+import PortraitWorkbench from '@/components/portrait/workbench/PortraitWorkbench.vue'
 import { GENDER_LABELS, RACE_LABELS } from '../../../shared/types/portrait.types'
 import type { PortraitProject, PortraitCharacter, PortraitVariant } from '../../../shared/types/portrait.types'
 
@@ -219,10 +219,6 @@ const creating = ref(false)
 
 const selectedProject = computed(() =>
   projects.value.find(p => p.id === selectedProjectId.value)
-)
-
-const selectedCharacter = computed(() =>
-  characters.value.find(c => c.id === selectedCharacterId.value)
 )
 
 // ==================== 方法 ====================
