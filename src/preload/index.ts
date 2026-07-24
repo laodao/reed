@@ -1095,6 +1095,50 @@ const electronAPI = {
       height?: number
     }) => ipcRenderer.invoke('portrait:generate-angles', request),
 
+    // 新版人像设计（spec 2026-07-24）：基于半身扩展全身
+    generateFullBody: (request: {
+      characterId: string
+      sourceVariantId: string
+      prompt?: string
+      negativePrompt?: string
+      referenceImages?: string[]
+      providerId?: string
+      modelId?: string
+      strength?: number
+      width?: number
+      height?: number
+    }) => ipcRenderer.invoke('portrait:generate-full-body', request),
+
+    // 新版人像设计：只修改面部
+    editFace: (request: {
+      characterId: string
+      variantId: string
+      facePrompt?: string
+      faceTemplateId?: string
+      referenceImages?: string[]
+      strength?: number
+      focusRegion?: 'face' | 'face_and_hair' | 'upper'
+      width?: number
+      height?: number
+    }) => ipcRenderer.invoke('portrait:edit-face', request),
+
+    // 新版人像设计：提示词模板
+    promptTemplate: {
+      list: (category?: 'face' | 'body' | 'clothing' | 'background') =>
+        ipcRenderer.invoke('portrait:prompt-template:list', category),
+      apply: (templateId: string, vars: Record<string, string | number>) =>
+        ipcRenderer.invoke('portrait:prompt-template:apply', templateId, vars),
+      save: (input: {
+        id?: string
+        name: string
+        category: 'face' | 'body' | 'clothing' | 'background'
+        content: string
+        applyTo: ('generate' | 'regenerate' | 'face' | 'clothes')[]
+        sortOrder?: number
+      }) => ipcRenderer.invoke('portrait:prompt-template:save', input),
+      delete: (id: string) => ipcRenderer.invoke('portrait:prompt-template:delete', id)
+    },
+
     // 导出
     export: (request: {
       characterId: string

@@ -18,7 +18,11 @@ import type {
   ChangeBackgroundRequest,
   ExportPortraitRequest,
   GenerateAnglesRequest,
-  EditImageRequest
+  EditImageRequest,
+  GenerateFullBodyRequest,
+  EditFaceRequest,
+  PromptTemplateCategory,
+  PortraitGenerationScene
 } from '@shared/types/portrait.types'
 
 /**
@@ -52,6 +56,14 @@ export function registerPortraitHandlers(): void {
 
   // 生成多角度（第二步）
   ipcBridge.handle('portrait:generate-angles', handleGenerateAngles)
+
+  // 新版人像设计（spec 2026-07-24）：生成全身 / 修改面部 / 提示词模板
+  ipcBridge.handle('portrait:generate-full-body', handleGenerateFullBody)
+  ipcBridge.handle('portrait:edit-face', handleEditFace)
+  ipcBridge.handle('portrait:prompt-template:list', handlePromptTemplateList)
+  ipcBridge.handle('portrait:prompt-template:apply', handlePromptTemplateApply)
+  ipcBridge.handle('portrait:prompt-template:save', handlePromptTemplateSave)
+  ipcBridge.handle('portrait:prompt-template:delete', handlePromptTemplateDelete)
 
   // 导出
   ipcBridge.handle('portrait:export', handleExportPortraits)
@@ -88,6 +100,14 @@ export function unregisterPortraitHandlers(): void {
 
   // 多角度
   ipcBridge.removeHandler('portrait:generate-angles')
+
+  // 新版人像设计
+  ipcBridge.removeHandler('portrait:generate-full-body')
+  ipcBridge.removeHandler('portrait:edit-face')
+  ipcBridge.removeHandler('portrait:prompt-template:list')
+  ipcBridge.removeHandler('portrait:prompt-template:apply')
+  ipcBridge.removeHandler('portrait:prompt-template:save')
+  ipcBridge.removeHandler('portrait:prompt-template:delete')
 
   // 导出
   ipcBridge.removeHandler('portrait:export')
@@ -404,6 +424,130 @@ async function handleEditImage(
         success: true,
         data: result.variant
       }
+    }
+    return { success: false, error: result.error }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '未知错误'
+    return { success: false, error: errorMessage }
+  }
+}
+
+// ==================== 新版人像设计（spec 2026-07-24） ====================
+
+/**
+ * 处理基于半身扩展全身请求
+ */
+async function handleGenerateFullBody(
+  _event: any,
+  request: GenerateFullBodyRequest
+): Promise<IpcResponse<any>> {
+  try {
+    const result = await PortraitService.generateFullBody(request)
+    if (result.success) {
+      return { success: true, data: result.variant }
+    }
+    return { success: false, error: result.error }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '未知错误'
+    return { success: false, error: errorMessage }
+  }
+}
+
+/**
+ * 处理只修改面部请求
+ */
+async function handleEditFace(
+  _event: any,
+  request: EditFaceRequest
+): Promise<IpcResponse<any>> {
+  try {
+    const result = await PortraitService.editFace(request)
+    if (result.success) {
+      return { success: true, data: result.variant }
+    }
+    return { success: false, error: result.error }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '未知错误'
+    return { success: false, error: errorMessage }
+  }
+}
+
+/**
+ * 处理模板列表请求
+ */
+async function handlePromptTemplateList(
+  _event: any,
+  category?: PromptTemplateCategory
+): Promise<IpcResponse<any>> {
+  try {
+    const result = await PortraitService.listPromptTemplates(category)
+    if (result.success) {
+      return { success: true, data: result.data }
+    }
+    return { success: false, error: result.error }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '未知错误'
+    return { success: false, error: errorMessage }
+  }
+}
+
+/**
+ * 处理模板应用（占位符解析）请求
+ */
+async function handlePromptTemplateApply(
+  _event: any,
+  templateId: string,
+  vars: Record<string, string | number>
+): Promise<IpcResponse<any>> {
+  try {
+    const result = await PortraitService.applyTemplate(templateId, vars)
+    if (result.success) {
+      return { success: true, data: result.data }
+    }
+    return { success: false, error: result.error }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '未知错误'
+    return { success: false, error: errorMessage }
+  }
+}
+
+/**
+ * 处理模板保存（新建/更新）请求
+ */
+async function handlePromptTemplateSave(
+  _event: any,
+  input: {
+    id?: string
+    name: string
+    category: PromptTemplateCategory
+    content: string
+    applyTo: PortraitGenerationScene[]
+    sortOrder?: number
+  }
+): Promise<IpcResponse<any>> {
+  try {
+    const result = await PortraitService.savePromptTemplate(input)
+    if (result.success) {
+      return { success: true, data: result.data }
+    }
+    return { success: false, error: result.error }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '未知错误'
+    return { success: false, error: errorMessage }
+  }
+}
+
+/**
+ * 处理模板删除请求
+ */
+async function handlePromptTemplateDelete(
+  _event: any,
+  id: string
+): Promise<IpcResponse<any>> {
+  try {
+    const result = await PortraitService.deletePromptTemplate(id)
+    if (result.success) {
+      return { success: true }
     }
     return { success: false, error: result.error }
   } catch (error) {
