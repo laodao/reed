@@ -33,6 +33,39 @@ export interface ImageModelFeatures {
   imageEdit: boolean
   maxResolution: string
   supportedSizes: string[]
+  /** 模型级生成能力（design image-provider-capability-model-design §4.3，由 ImageService 聚合层注入） */
+  capabilities?: ImageModelCapabilities
+}
+
+/**
+ * 尺寸控制模式
+ * - pixels：直接 宽*高（万相、Seedream、OpenAI）
+ * - aspect_ratio_resolution：宽高比 + 分辨率档位（可灵）
+ * - tiered：仅档位 1K/2K/4K
+ */
+export type ImageSizeMode = 'pixels' | 'aspect_ratio_resolution' | 'tiered'
+
+/**
+ * 模型级图像生成能力声明（design image-provider-capability-model-design §4.1）
+ * 能力是模型级而非 provider 级（如 seedream-3.0-t2i 支持 seed，4.5 不支持）。
+ */
+export interface ImageModelCapabilities {
+  negativePrompt: boolean
+  seed: boolean
+  quality: boolean
+  style: boolean
+  guidanceScale: boolean
+  /** 重绘强度（目前万相/Seedream/可灵官方均不支持） */
+  strength: boolean
+  sizeMode: ImageSizeMode
+  /** 参考图上限；0 = 不支持参考图 */
+  maxReferenceImages: number
+  /** default_on = 官方默认带水印（需显式关闭） */
+  watermark: 'not_supported' | 'optional' | 'default_on'
+  /** 提示词优化（万相 prompt_extend / 火山 optimize_prompt）；optional_default_on = 官方默认开启会改写提示词 */
+  promptRewrite: 'none' | 'optional' | 'optional_default_on'
+  /** 组图能力（人像场景暂不需要，预留） */
+  sequentialGeneration: boolean
 }
 
 /**
