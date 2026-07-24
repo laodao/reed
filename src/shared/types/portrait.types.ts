@@ -199,6 +199,8 @@ export interface ChangeClothesRequest {
   clothesDescription: string
   referenceImage?: string
   angles: PortraitAngle[]
+  width?: number                   // 生成图片宽度（不传则继承 baseVariant.config / 默认值）
+  height?: number                  // 生成图片高度
 }
 
 /**
@@ -222,6 +224,8 @@ export interface ChangeBackgroundRequest {
   customDescription?: string
   backgroundImage?: string
   angles: PortraitAngle[]
+  width?: number                   // 生成图片宽度（不传则继承 baseVariant.config / 默认值）
+  height?: number                  // 生成图片高度
 }
 
 /**
@@ -249,6 +253,8 @@ export interface GenerateAnglesRequest {
   characterId: string              // 改为人物角色ID
   angles: PortraitAngle[]
   variantId?: string
+  width?: number                   // 生成图片宽度（不传则继承 referenceVariant.config / 默认值）
+  height?: number                  // 生成图片高度
 }
 
 /**
@@ -258,6 +264,26 @@ export interface GenerateAnglesResponse {
   success: boolean
   variants?: PortraitVariant[]
   warning?: string
+  error?: string
+}
+
+/**
+ * 编辑图片请求（基于已有 variant 编辑，保留人物一致性）
+ */
+export interface EditImageRequest {
+  characterId: string
+  variantId: string
+  editPrompt: string
+  width?: number                   // 生成图片宽度（不传则继承 variant.config / 默认值）
+  height?: number                  // 生成图片高度
+}
+
+/**
+ * 编辑图片响应
+ */
+export interface EditImageResponse {
+  success: boolean
+  variant?: PortraitVariant
   error?: string
 }
 
@@ -310,6 +336,30 @@ export interface ListPortraitVariantsResponse {
 }
 
 // ==================== 常量 ====================
+
+/**
+ * 人像生成默认可选尺寸列表（前端尺寸下拉候选的回退基准 + 后端尺寸 fallback 的基准）
+ *
+ * 设计：前端 SizeSelector 在模型未提供 supportedSizes 时回退到此列表，
+ * 并与模型 supportedSizes 取并集展示；后端 Service 在 request/variant.config
+ * 均无尺寸时回退到 DEFAULT_PORTRAIT_SIZES[0]（768x1024，竖版更适合全身照）。
+ */
+export const DEFAULT_PORTRAIT_SIZES: string[] = [
+  '768x1024',   // 竖版全身（默认）
+  '896x1152',   // 竖版全身
+  '1024x1792',  // 竖版全身（高清）
+  '1024x1024',  // 正方形
+  '512x512',
+  '768x768',
+  '1024x768',   // 横版
+  '1792x1024'   // 横版
+]
+
+/**
+ * 人像生成默认尺寸（前端/后端 fallback 基准，对应 DEFAULT_PORTRAIT_SIZES[0]）
+ */
+export const DEFAULT_PORTRAIT_WIDTH = 768
+export const DEFAULT_PORTRAIT_HEIGHT = 1024
 
 /**
  * 预设背景场景

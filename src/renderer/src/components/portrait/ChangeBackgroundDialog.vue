@@ -18,6 +18,11 @@
           </el-radio-group>
         </el-form-item>
 
+        <el-form-item label="图片尺寸">
+          <SizeSelector v-model="form.size" :sizes="props.availableSizes" />
+          <p class="input-hint">默认沿用当前形象尺寸，可按需调整</p>
+        </el-form-item>
+
         <!-- 纯色背景 -->
         <el-form-item v-if="form.backgroundType === 'solid'" label="背景颜色">
           <el-color-picker v-model="form.backgroundColor" show-alpha />
@@ -88,12 +93,15 @@
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus, Close } from '@element-plus/icons-vue'
-import { PRESET_BACKGROUNDS } from '../../../../shared/types/portrait.types'
+import SizeSelector from '@/components/portrait/SizeSelector.vue'
+import { PRESET_BACKGROUNDS, DEFAULT_PORTRAIT_SIZES } from '../../../../shared/types/portrait.types'
 
 const props = defineProps<{
   modelValue: boolean
   characterId: string
   variantId?: string  // 可选：基于哪个变体换背景，不指定则使用基础正面变体
+  defaultSize?: string  // 默认尺寸（'WxH'），由父级从当前正面形象透传
+  availableSizes?: string[]  // 候选尺寸（由父级透传，避免本组件各发一次 IPC）
 }>()
 
 const emit = defineEmits<{
@@ -108,7 +116,8 @@ const form = ref({
   backgroundColor: '#FFFFFF',
   presetScene: '',
   customDescription: '',
-  backgroundImage: ''
+  backgroundImage: '',
+  size: DEFAULT_PORTRAIT_SIZES[0]
 })
 
 const loading = ref(false)
@@ -142,6 +151,9 @@ async function handleSubmit() {
   loading.value = true
 
   try {
+    // 解析所选尺寸
+    const [width, height] = form.value.size.split('x').map(Number)
+
     const result = await window.electronAPI.portrait.changeBackground({
       characterId: props.characterId,
       variantId: props.variantId,  // 传递变体 ID
@@ -149,7 +161,9 @@ async function handleSubmit() {
       backgroundColor: form.value.backgroundColor,
       presetScene: form.value.presetScene,
       customDescription: form.value.customDescription,
-      angles: ['front'] // 只针对正面照片
+      angles: ['front'], // 只针对正面照片
+      width,
+      height
     })
 
     if (result.success) {
@@ -173,7 +187,9 @@ function resetForm() {
     backgroundColor: '#FFFFFF',
     presetScene: '',
     customDescription: '',
-    backgroundImage: ''
+    backgroundImage: '',
+    // 默认沿用当前正面形象尺寸
+    size: props.defaultSize ?? DEFAULT_PORTRAIT_SIZES[0]
   }
 }
 

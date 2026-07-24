@@ -1057,6 +1057,8 @@ const electronAPI = {
       variantId?: string
       clothesDescription: string
       angles: ('front' | 'left' | 'right' | 'back')[]
+      width?: number
+      height?: number
     }) => ipcRenderer.invoke('portrait:change-clothes', request),
 
     // 换背景
@@ -1068,6 +1070,8 @@ const electronAPI = {
       presetScene?: string
       customDescription?: string
       angles: ('front' | 'left' | 'right' | 'back')[]
+      width?: number
+      height?: number
     }) => ipcRenderer.invoke('portrait:change-background', request),
 
     // 变体管理
@@ -1078,6 +1082,8 @@ const electronAPI = {
       characterId: string
       variantId: string
       editPrompt: string
+      width?: number
+      height?: number
     }) => ipcRenderer.invoke('portrait:edit-image', request),
 
     // 生成多角度（第二步）
@@ -1085,6 +1091,8 @@ const electronAPI = {
       characterId: string
       angles: ('front' | 'left' | 'right' | 'back')[]
       variantId?: string // 可选：基于哪个变体生成
+      width?: number
+      height?: number
     }) => ipcRenderer.invoke('portrait:generate-angles', request),
 
     // 导出

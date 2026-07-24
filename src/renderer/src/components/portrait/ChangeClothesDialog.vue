@@ -19,6 +19,11 @@
           <p class="input-hint">建议使用英文描述以避免部分云服务的内容审核问题</p>
         </el-form-item>
 
+        <el-form-item label="图片尺寸">
+          <SizeSelector v-model="form.size" :sizes="props.availableSizes" />
+          <p class="input-hint">默认沿用当前形象尺寸，可按需调整</p>
+        </el-form-item>
+
         <el-form-item label="参考图片">
           <div class="upload-section">
             <div v-if="form.referenceImage" class="image-preview">
@@ -56,11 +61,15 @@
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus, Close } from '@element-plus/icons-vue'
+import SizeSelector from '@/components/portrait/SizeSelector.vue'
+import { DEFAULT_PORTRAIT_SIZES } from '../../../../shared/types/portrait.types'
 
 const props = defineProps<{
   modelValue: boolean
   characterId: string
   variantId?: string  // 可选：基于哪个变体换衣，不指定则使用基础正面变体
+  defaultSize?: string  // 默认尺寸（'WxH'），由父级从当前正面形象透传
+  availableSizes?: string[]  // 候选尺寸（由父级透传，避免本组件各发一次 IPC）
 }>()
 
 const emit = defineEmits<{
@@ -70,7 +79,8 @@ const emit = defineEmits<{
 
 const form = ref({
   clothesDescription: '',
-  referenceImage: ''
+  referenceImage: '',
+  size: DEFAULT_PORTRAIT_SIZES[0]
 })
 
 const loading = ref(false)
@@ -100,11 +110,16 @@ async function handleSubmit() {
   loading.value = true
 
   try {
+    // 解析所选尺寸
+    const [width, height] = form.value.size.split('x').map(Number)
+
     const result = await window.electronAPI.portrait.changeClothes({
       characterId: props.characterId,
       variantId: props.variantId,  // 传递变体 ID
       clothesDescription: form.value.clothesDescription,
-      angles: ['front'] // 只针对正面照片
+      angles: ['front'], // 只针对正面照片
+      width,
+      height
     })
 
     if (result.success) {
@@ -128,6 +143,8 @@ watch(() => props.modelValue, (val) => {
   if (val) {
     form.value.clothesDescription = ''
     form.value.referenceImage = ''
+    // 默认沿用当前正面形象尺寸
+    form.value.size = props.defaultSize ?? DEFAULT_PORTRAIT_SIZES[0]
   }
 })
 </script>

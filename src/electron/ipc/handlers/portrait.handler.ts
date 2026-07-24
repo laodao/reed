@@ -17,7 +17,8 @@ import type {
   ChangeClothesRequest,
   ChangeBackgroundRequest,
   ExportPortraitRequest,
-  GenerateAnglesRequest
+  GenerateAnglesRequest,
+  EditImageRequest
 } from '@shared/types/portrait.types'
 
 /**
@@ -394,11 +395,7 @@ async function handleDeleteVariant(
  */
 async function handleEditImage(
   _event: any,
-  request: {
-    characterId: string
-    variantId: string
-    editPrompt: string
-  }
+  request: EditImageRequest
 ): Promise<IpcResponse<any>> {
   try {
     const result = await PortraitService.editImage(request)

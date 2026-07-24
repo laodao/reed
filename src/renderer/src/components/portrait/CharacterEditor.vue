@@ -89,14 +89,7 @@
           <!-- 尺寸选择 -->
           <div class="form-row">
             <div class="form-label">图片尺寸</div>
-            <el-select v-model="generateConfig.size" class="size-select">
-              <el-option
-                v-for="size in sizeOptions"
-                :key="size.value"
-                :label="size.label"
-                :value="size.value"
-              />
-            </el-select>
+            <SizeSelector v-model="generateConfig.size" :sizes="sizeValues" class="size-select" />
           </div>
 
           <!-- 提示词 -->
@@ -228,6 +221,11 @@
               换背景
             </el-button>
           </div>
+          <!-- 重新生成尺寸（默认继承当前形象尺寸，可改） -->
+          <div class="regenerate-size-row">
+            <span class="regenerate-size-label">重新生成尺寸</span>
+            <SizeSelector v-model="regenerateSize" :sizes="sizeValues" class="regenerate-size-select" />
+          </div>
         </div>
 
         <!-- 右侧：操作面板 -->
@@ -271,6 +269,10 @@
           <!-- 编辑形象 -->
           <div class="panel-section">
             <h4>编辑形象</h4>
+            <div class="edit-size-row">
+              <span class="edit-size-label">输出尺寸</span>
+              <SizeSelector v-model="editSize" :sizes="sizeValues" class="edit-size-select" />
+            </div>
             <el-input
               v-model="editPrompt"
               type="textarea"
@@ -294,6 +296,10 @@
           <!-- 多角度生成 -->
           <div class="panel-section">
             <h4>生成其他角度</h4>
+            <div class="edit-size-row">
+              <span class="edit-size-label">输出尺寸</span>
+              <SizeSelector v-model="anglesSize" :sizes="sizeValues" class="edit-size-select" />
+            </div>
             <div class="angle-row">
               <el-checkbox-group v-model="anglesToGenerate" class="angle-checkbox-group">
                 <el-checkbox value="left">左侧</el-checkbox>
@@ -309,6 +315,7 @@
                 生成
               </el-button>
             </div>
+            <div class="sync-hint">建议与正面图保持一致尺寸，避免比例不协调</div>
           </div>
 
           <!-- 同步长文角色信息 -->
@@ -381,6 +388,8 @@
       v-model="showClothesDialog"
       :character-id="characterId"
       :variant-id="currentFrontVariant?.id"
+      :default-size="currentVariantSize"
+      :available-sizes="sizeValues"
       @success="loadVariants"
     />
 
@@ -388,6 +397,8 @@
       v-model="showBackgroundDialog"
       :character-id="characterId"
       :variant-id="currentFrontVariant?.id"
+      :default-size="currentVariantSize"
+      :available-sizes="sizeValues"
       @success="loadVariants"
     />
 
@@ -450,7 +461,8 @@ import { ArrowLeft, ArrowRight, User, Download, EditPen, PictureFilled, Delete, 
 import ChangeClothesDialog from '@/components/portrait/ChangeClothesDialog.vue'
 import ChangeBackgroundDialog from '@/components/portrait/ChangeBackgroundDialog.vue'
 import ExportDialog from '@/components/portrait/ExportDialog.vue'
-import { ANGLE_LABELS, GENDER_LABELS, RACE_LABELS } from '../../../../shared/types/portrait.types'
+import SizeSelector from '@/components/portrait/SizeSelector.vue'
+import { ANGLE_LABELS, GENDER_LABELS, RACE_LABELS, DEFAULT_PORTRAIT_SIZES } from '../../../../shared/types/portrait.types'
 import type { PortraitProject, PortraitCharacter, PortraitVariant, PortraitAngle } from '../../../../shared/types/portrait.types'
 import type { StoryCharacter } from '../../../../shared/types/longwriting.types'
 
@@ -523,13 +535,13 @@ const currentPreviewList = ref<PortraitVariant[]>([])
 const defaultModel = ref<{ providerId: string; modelId: string } | null>(null)
 
 // 可用的模型列表（扁平化，用于判断是否有模型）
-const availableModels = ref<Array<{ key: string; label: string; providerId: string; modelId: string }>>([])
+const availableModels = ref<Array<{ key: string; label: string; providerId: string; modelId: string; supportedSizes: string[] }>>([])
 
 // 按提供商分组的模型列表
 const providerModels = ref<Array<{
   id: string;
   name: string;
-  models: Array<{ id: string; name: string; maxResolution?: string }>;
+  models: Array<{ id: string; name: string; maxResolution?: string; supportedSizes?: string[] }>;
 }>>([])
 
 // 模型搜索关键词
@@ -557,17 +569,26 @@ const filteredProviderModels = computed(() => {
 // 选中的模型
 const selectedModelKey = ref<string>('')
 
-// 尺寸选项 - 优先显示适合全身照的竖版尺寸
-const sizeOptions = [
-  { label: '768×1024 (竖版全身)', value: '768x1024' },
-  { label: '896×1152 (竖版全身)', value: '896x1152' },
-  { label: '1024×1792 (竖版全身)', value: '1024x1792' },
-  { label: '1024×1024 (正方形)', value: '1024x1024' },
-  { label: '512×512', value: '512x512' },
-  { label: '768×768', value: '768x768' },
-  { label: '1024×768 (横版)', value: '1024x768' },
-  { label: '1792×1024 (横版)', value: '1792x1024' }
-]
+// 尺寸候选值（'WxH' 字符串数组）：当前模型 supportedSizes ∪ 默认列表（去重）
+// 用于透传给 SizeSelector，避免每个选择器各发一次 IPC
+const sizeValues = computed<string[]>(() => {
+  const model = availableModels.value.find(m => m.key === selectedModelKey.value)
+  const modelSizes = model?.supportedSizes ?? []
+  return Array.from(new Set([...modelSizes, ...DEFAULT_PORTRAIT_SIZES]))
+})
+
+// 当前正面 variant 已存的尺寸（'WxH'），作为"重新生成/编辑/多角度"等入口的默认值来源；
+// 没有 variant 或未存尺寸时回退到默认列表第一项（768x1024，竖版更适合全身照）
+const currentVariantSize = computed(() => {
+  const cfg = currentFrontVariant.value?.config as { width?: number; height?: number } | undefined
+  if (cfg?.width && cfg?.height) return `${cfg.width}x${cfg.height}`
+  return DEFAULT_PORTRAIT_SIZES[0]
+})
+
+// 重新生成 / 编辑形象 / 多角度 三个入口的尺寸选择（默认继承当前正面形象尺寸）
+const regenerateSize = ref(DEFAULT_PORTRAIT_SIZES[0])
+const editSize = ref(DEFAULT_PORTRAIT_SIZES[0])
+const anglesSize = ref(DEFAULT_PORTRAIT_SIZES[0])
 
 // 生成配置
 const generateConfig = ref({
@@ -721,13 +742,15 @@ async function loadDefaultModel() {
       const providers = result.data.filter((p: any) => p.configured && p.models?.length > 0)
 
       // 构建按提供商分组的模型列表
+      // 注意：maxResolution / supportedSizes 在 model.features 下（见 image-provider.types.ts ImageModelFeatures）
       providerModels.value = providers.map((provider: any) => ({
         id: provider.id,
         name: provider.name,
         models: (provider.models || []).map((model: any) => ({
           id: model.id,
           name: model.name,
-          maxResolution: model.maxResolution
+          maxResolution: model.features?.maxResolution,
+          supportedSizes: model.features?.supportedSizes ?? []
         }))
       }))
 
@@ -739,7 +762,8 @@ async function loadDefaultModel() {
             key: `${provider.id}:${model.id}`,
             label: `${provider.name} - ${model.name}`,
             providerId: provider.id,
-            modelId: model.id
+            modelId: model.id,
+            supportedSizes: model.features?.supportedSizes ?? []
           })
         }
       }
@@ -1011,6 +1035,9 @@ async function handleRegenerateFront() {
     // 使用 toRaw 确保传递普通对象
     const char = toRaw(character.value)
 
+    // 解析重新生成尺寸（用户可在卡片上调整）
+    const [regenWidth, regenHeight] = regenerateSize.value.split('x').map(Number)
+
     // 重新生成
     const result = await window.electronAPI.portrait.generate({
       characterId: props.characterId,
@@ -1020,7 +1047,9 @@ async function handleRegenerateFront() {
       modelId: char.modelId,
       config: {
         angles: ['front'],
-        backgroundType: 'solid'
+        backgroundType: 'solid',
+        width: regenWidth,
+        height: regenHeight
       }
     })
 
@@ -1042,10 +1071,15 @@ async function handleEditFront() {
 
   editing.value = true
   try {
+    // 解析编辑输出尺寸
+    const [editWidth, editHeight] = editSize.value.split('x').map(Number)
+
     const result = await window.electronAPI.portrait.editImage({
       characterId: props.characterId,
       variantId: currentFrontVariant.value.id,
-      editPrompt: editPrompt.value.trim()
+      editPrompt: editPrompt.value.trim(),
+      width: editWidth,
+      height: editHeight
     })
 
     if (result.success) {
@@ -1081,7 +1115,9 @@ async function handleGenerateAngles() {
     const result = await window.electronAPI.portrait.generateAngles({
       characterId: props.characterId,
       angles: toRaw(anglesToGenerate.value),
-      variantId: currentFrontVariant.value?.id
+      variantId: currentFrontVariant.value?.id,
+      width: anglesSize.value.split('x').map(Number)[0],
+      height: anglesSize.value.split('x').map(Number)[1]
     })
 
     if (result.success) {
@@ -1240,6 +1276,14 @@ watch(() => props.characterId, () => {
   loadCharacter()
   loadVariants()
   loadDefaultModel()
+}, { immediate: true })
+
+// 当前正面形象变化时，同步"重新生成/编辑/多角度"尺寸默认值为其已存尺寸，
+// 用户仍可随时手动改选。immediate 让首次加载也生效。
+watch(currentVariantSize, (val) => {
+  regenerateSize.value = val
+  editSize.value = val
+  anglesSize.value = val
 }, { immediate: true })
 
 onMounted(() => {
@@ -1586,6 +1630,26 @@ onMounted(() => {
     justify-content: center;
     gap: 8px;
   }
+
+  .regenerate-size-row {
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 300px;
+
+    .regenerate-size-label {
+      flex-shrink: 0;
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+      white-space: nowrap;
+    }
+
+    .regenerate-size-select {
+      flex: 1;
+      min-width: 0;
+    }
+  }
 }
 
 .actions-panel {
@@ -1692,6 +1756,25 @@ onMounted(() => {
     margin: 0 0 12px;
     font-size: 14px;
     color: var(--el-text-color-primary);
+  }
+
+  .edit-size-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+
+    .edit-size-label {
+      flex-shrink: 0;
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+      white-space: nowrap;
+    }
+
+    .edit-size-select {
+      flex: 1;
+      min-width: 0;
+    }
   }
 
   .hint-text {

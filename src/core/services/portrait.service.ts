@@ -32,10 +32,13 @@ import type {
   ExportPortraitResponse,
   GenerateAnglesRequest,
   GenerateAnglesResponse,
+  EditImageRequest,
+  EditImageResponse,
   ANGLE_PROMPTS,
   PortraitGender,
   PortraitRace
 } from '@shared/types/portrait.types'
+import { DEFAULT_PORTRAIT_WIDTH, DEFAULT_PORTRAIT_HEIGHT } from '@shared/types/portrait.types'
 import { randomUUID } from 'crypto'
 import sharp from 'sharp'
 import archiver from 'archiver'
@@ -587,8 +590,8 @@ export class PortraitService {
             referenceImageBase64 = `data:image/png;base64,${imageBuffer.toString('base64')}`
           }
 
-          const imageWidth = baseVariant.config?.width || 1920
-          const imageHeight = baseVariant.config?.height || 1920
+          const imageWidth = request.width || baseVariant.config?.width || DEFAULT_PORTRAIT_WIDTH
+          const imageHeight = request.height || baseVariant.config?.height || DEFAULT_PORTRAIT_HEIGHT
 
           const imageResult = await ImageService.generateImage({
             providerConfigId: character.providerId,
@@ -611,7 +614,7 @@ export class PortraitService {
               angle: 'front',
               imagePath: (image.filePath || ''),
               prompt: fullPrompt,
-              config: baseVariant.config,
+              config: { ...baseVariant.config, width: imageWidth, height: imageHeight },
               variantInfo: {
                 clothesDescription: request.clothesDescription
               }
@@ -641,8 +644,8 @@ export class PortraitService {
           referenceImageBase64 = `data:image/png;base64,${imageBuffer.toString('base64')}`
         }
 
-        const imageWidth = baseVariant.config?.width || 1920
-        const imageHeight = baseVariant.config?.height || 1920
+        const imageWidth = request.width || baseVariant.config?.width || DEFAULT_PORTRAIT_WIDTH
+        const imageHeight = request.height || baseVariant.config?.height || DEFAULT_PORTRAIT_HEIGHT
 
         const imageResult = await ImageService.generateImage({
           providerConfigId: character.providerId,
@@ -669,7 +672,7 @@ export class PortraitService {
           angle: angle,
           imagePath: (image.filePath || ''),
           prompt: fullPrompt,
-          config: baseVariant.config,
+          config: { ...baseVariant.config, width: imageWidth, height: imageHeight },
           variantInfo: {
             clothesDescription: request.clothesDescription
           }
@@ -761,8 +764,8 @@ export class PortraitService {
             refImage = `data:image/png;base64,${imageBuffer.toString('base64')}`
           }
 
-          const imageWidth = baseVariant.config?.width || 1920
-          const imageHeight = baseVariant.config?.height || 1920
+          const imageWidth = request.width || baseVariant.config?.width || DEFAULT_PORTRAIT_WIDTH
+          const imageHeight = request.height || baseVariant.config?.height || DEFAULT_PORTRAIT_HEIGHT
 
           const imageResult = await ImageService.generateImage({
             providerConfigId: character.providerId,
@@ -785,7 +788,7 @@ export class PortraitService {
               angle: 'front',
               imagePath: (image.filePath || ''),
               prompt: fullPrompt,
-              config: baseVariant.config,
+              config: { ...baseVariant.config, width: imageWidth, height: imageHeight },
               variantInfo: {
                 backgroundDescription: backgroundDescription,
                 backgroundType: request.backgroundType,
@@ -816,8 +819,8 @@ export class PortraitService {
           refImage = `data:image/png;base64,${imageBuffer.toString('base64')}`
         }
 
-        const imageWidth = baseVariant.config?.width || 1920
-        const imageHeight = baseVariant.config?.height || 1920
+        const imageWidth = request.width || baseVariant.config?.width || DEFAULT_PORTRAIT_WIDTH
+        const imageHeight = request.height || baseVariant.config?.height || DEFAULT_PORTRAIT_HEIGHT
 
         const imageResult = await ImageService.generateImage({
           providerConfigId: character.providerId,
@@ -844,7 +847,7 @@ export class PortraitService {
           angle: angle,
           imagePath: (image.filePath || ''),
           prompt: fullPrompt,
-          config: baseVariant.config,
+          config: { ...baseVariant.config, width: imageWidth, height: imageHeight },
           variantInfo: {
             backgroundDescription: backgroundDescription,
             backgroundType: request.backgroundType,
@@ -986,8 +989,8 @@ export class PortraitService {
 
         console.log(`[PortraitService.generateAngles] 角度 ${angle} 提示词:`, fullPrompt)
 
-        const imageWidth = referenceVariant.config?.width || 768
-        const imageHeight = referenceVariant.config?.height || 1024
+        const imageWidth = request.width || referenceVariant.config?.width || DEFAULT_PORTRAIT_WIDTH
+        const imageHeight = request.height || referenceVariant.config?.height || DEFAULT_PORTRAIT_HEIGHT
 
         // 添加重试机制
         let imageResult: any = null
@@ -1038,7 +1041,7 @@ export class PortraitService {
           angle: angle,
           imagePath: imagePath,
           prompt: fullPrompt,
-          config: referenceVariant.config,
+          config: { ...referenceVariant.config, width: imageWidth, height: imageHeight },
           variantInfo: referenceVariant.variantInfo
         })
 
@@ -1085,12 +1088,8 @@ export class PortraitService {
   /**
    * 编辑图像
    */
-  static async editImage(    request: {
-      characterId: string
-      variantId: string
-      editPrompt: string
-    }
-  ): Promise<{ success: boolean; variant?: PortraitVariant; error?: string }> {
+  static async editImage(    request: EditImageRequest
+  ): Promise<EditImageResponse> {
     console.log('[PortraitService.editImage] 开始编辑图像')
 
     const dbManager = getCoreDatabaseManager()
@@ -1122,8 +1121,8 @@ export class PortraitService {
       // 编辑提示词：在原有基础上添加编辑指令（纯英文避免内容审核）
       const editPrompt = `${basePrompt}, ${request.editPrompt}, same person, ${FULL_BODY_SUFFIX}, solid background`
 
-      const imageWidth = variant.config?.width || 1920
-      const imageHeight = variant.config?.height || 1920
+      const imageWidth = request.width || variant.config?.width || DEFAULT_PORTRAIT_WIDTH
+      const imageHeight = request.height || variant.config?.height || DEFAULT_PORTRAIT_HEIGHT
 
       const imageResult = await ImageService.generateImage({
         providerConfigId: character.providerId,
@@ -1144,7 +1143,10 @@ export class PortraitService {
       const image = imageResult.images[0]
       const updatedVariant = await dbManager.portraitVariants.update(variant.id, {
         imagePath: (image.filePath || ''),
-        prompt: editPrompt
+        prompt: editPrompt,
+        // 回写实际生效尺寸到 config（simple-json 整列替换，必须展开保留 seed 等字段）。
+        // 修复：此前 update 不写 config，导致用户改尺寸后下次编辑丢失所选尺寸。
+        config: { ...variant.config, width: imageWidth, height: imageHeight }
       })
 
       if (!updatedVariant) {
