@@ -160,3 +160,34 @@ describe('万相 promptExtend 透传', () => {
     expect(body.parameters.prompt_extend).toBe(false)
   })
 })
+
+describe('normalizeSeedreamSize（Seedream 最小像素约束）', () => {
+  it('768×1024 低于下限 → 按比例放大到 ≥3686400 且保持 3:4', async () => {
+    const { normalizeSeedreamSize } = await import('@core/image-providers/sdk/volcengine-image.provider')
+    const r = normalizeSeedreamSize(768, 1024)
+    expect(r.width * r.height).toBeGreaterThanOrEqual(3686400)
+    expect(Math.abs(r.width / r.height - 768 / 1024)).toBeLessThan(0.01)
+    expect(r.width % 2).toBe(0)
+    expect(r.height % 2).toBe(0)
+  })
+
+  it('1024×1792 低于下限 → 放大保持 4:7', async () => {
+    const { normalizeSeedreamSize } = await import('@core/image-providers/sdk/volcengine-image.provider')
+    const r = normalizeSeedreamSize(1024, 1792)
+    expect(r.width * r.height).toBeGreaterThanOrEqual(3686400)
+    expect(Math.abs(r.width / r.height - 1024 / 1792)).toBeLessThan(0.01)
+  })
+
+  it('2048×2048 已达标 → 不变', async () => {
+    const { normalizeSeedreamSize } = await import('@core/image-providers/sdk/volcengine-image.provider')
+    const r = normalizeSeedreamSize(2048, 2048)
+    expect(r.width).toBe(2048)
+    expect(r.height).toBe(2048)
+  })
+
+  it('超过 4096 边长 → 按比例缩小到 4096', async () => {
+    const { normalizeSeedreamSize } = await import('@core/image-providers/sdk/volcengine-image.provider')
+    const r = normalizeSeedreamSize(5000, 5000)
+    expect(Math.max(r.width, r.height)).toBeLessThanOrEqual(4096)
+  })
+})

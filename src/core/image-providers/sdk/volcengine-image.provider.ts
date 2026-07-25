@@ -101,12 +101,17 @@ export class VolcengineImageProvider extends BaseImageProvider {
 
       const url = this.getApiUrl()
 
+      // Seedream 4.x/5.x 尺寸约束（官方文档）：总像素 ≥ 3,686,400（约 2K）、
+      // ≤ 4096×4096，宽高比 [1/16, 16]。人像主流尺寸（768×1024 等）低于下限，
+      // 按比例放大到下限（保持宽高比）并打日志明示（不隐瞒）。
+      const { width, height } = normalizeSeedreamSize(request.width, request.height)
+
       // 构建请求体（OpenAI 兼容格式）
       const body: Record<string, any> = {
         model: request.model,
         prompt: request.prompt,
         n: request.count || 1,
-        size: `${request.width}x${request.height}`,
+        size: `${width}x${height}`,
         response_format: 'url',
         // design §5.2 修正：官方 Seedream 4.5 watermark 默认 true（生成图默认带
         // "AI生成"水印），显式关闭；后续如需可在设置中暴露开关
@@ -301,4 +306,40 @@ export class VolcengineImageProvider extends BaseImageProvider {
       supportsImageEdit: false
     }
   }
+}
+/** Seedream 4.x/5.x 最小总像素（约 2K，官方约束） */
+const SEEDREAM_MIN_PIXELS = 3686400
+/** Seedream 最大边长 */
+const SEEDREAM_MAX_EDGE = 4096
+
+/**
+ * Seedream 尺寸规范化：低于最小总像素时按比例放大（保持宽高比），
+ * 超过最大边长时按比例缩小；结果取偶数像素。
+ * 日志明示放大行为（不隐瞒）。
+ */
+export function normalizeSeedreamSize(width: number, height: number): { width: number; height: number } {
+  let w = width
+  let h = height
+  const pixels = w * h
+
+  if (pixels < SEEDREAM_MIN_PIXELS) {
+    const scale = Math.sqrt(SEEDREAM_MIN_PIXELS / pixels)
+    // 向上取偶，保证放大后总像素 ≥ 下限（偶数取整向下会差几十像素）
+    w = Math.ceil((w * scale) / 2) * 2
+    h = Math.ceil((h * scale) / 2) * 2
+    console.log(
+      `[Volcengine] Seedream 最小像素限制（≥${SEEDREAM_MIN_PIXELS}），` +
+      `尺寸按比例放大：${width}x${height} → ${w}x${h}`
+    )
+  }
+
+  const maxEdge = Math.max(w, h)
+  if (maxEdge > SEEDREAM_MAX_EDGE) {
+    const shrink = SEEDREAM_MAX_EDGE / maxEdge
+    w = Math.round((w * shrink) / 2) * 2
+    h = Math.round((h * shrink) / 2) * 2
+    console.log(`[Volcengine] 超过最大边长 ${SEEDREAM_MAX_EDGE}，尺寸按比例缩小：→ ${w}x${h}`)
+  }
+
+  return { width: w, height: h }
 }
