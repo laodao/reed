@@ -5,7 +5,7 @@
  *              避免下脸拉伸失真（spec 2026-07-25 §F3 review 修正）。
  *              几何计算为纯函数可单测；canvas 合成层薄封装。
  */
-import { LM_GLABELLA, LM_SUBNASALE } from './landmarkIndices'
+import { LM_GLABELLA, LM_SUBNASALE, LM_CHIN_BOTTOM, LM_JAW_ANGLE_RIGHT, LM_JAW_ANGLE_LEFT, LM_RIGHT_EYE_OUTER, LM_RIGHT_EYE_INNER, LM_LEFT_EYE_OUTER, LM_LEFT_EYE_INNER } from './landmarkIndices'
 import type { Point } from './faceMetrics'
 
 /** 变形参数（比例，-1 ~ 1；如 -0.06 = 缩短 6%） */
@@ -92,6 +92,136 @@ export function transformPointY(
   return glabellaY + midDstH + (y - subnasaleY) * lowScale
 }
 
+/** 下颌带水平缩放几何（纯函数）：围绕面中心 cx 缩放，返回目标矩形 */
+export function jawBandDst(
+  cx: number,
+  imageWidth: number,
+  jaw: number,
+): { dstX: number; dstW: number } {
+  const scale = 1 + jaw
+  const dstW = imageWidth * scale
+  return { dstX: cx - dstW / 2, dstW }
+}
+
+/** 眼距位移量（纯函数）：eyeSpacing 比例 × 眼裂宽 */
+export function eyeShiftDx(eyeSpacing: number, eyeWidth: number): number {
+  return eyeSpacing * eyeWidth
+}
+
+/**
+ * 眼部区域（含边距）用于位移。
+ */
+export interface EyeRegion {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+export function computeEyeRegions(landmarks: Point[]): { right: EyeRegion; left: EyeRegion; eyeWidth: number } {
+  const rOut = landmarks[LM_RIGHT_EYE_OUTER]
+  const rIn = landmarks[LM_RIGHT_EYE_INNER]
+  const lOut = landmarks[LM_LEFT_EYE_OUTER]
+  const lIn = landmarks[LM_LEFT_EYE_INNER]
+  const eyeWidth = (Math.hypot(rOut.x - rIn.x, rOut.y - rIn.y) + Math.hypot(lOut.x - lIn.x, lOut.y - lIn.y)) / 2
+  const padX = eyeWidth * 0.25
+  const padY = eyeWidth * 0.7
+
+  const rightCx = (rOut.x + rIn.x) / 2
+  const rightCy = (rOut.y + rIn.y) / 2
+  const leftCx = (lOut.x + lIn.x) / 2
+  const leftCy = (lOut.y + lIn.y) / 2
+
+  const w = Math.max(Math.abs(rOut.x - rIn.x), eyeWidth) + padX * 2
+  const h = padY * 2
+  return {
+    right: { x: rightCx - w / 2, y: rightCy - padY, w, h },
+    left: { x: leftCx - w / 2, y: leftCy - padY, w, h },
+    eyeWidth,
+  }
+}
+
+/**
+ * 横向变形合成（在纵向变形结果之上）：
+ * - 下颌：下颌带围绕面中心水平缩放，让出区域用背景色填充
+ * - 眼距：双眼区域水平位移，让出区域用邻域肤色均值填充
+ */
+export function applyHorizontalWarp(
+  warped: HTMLCanvasElement,
+  landmarks: Point[],
+  params: WarpParams,
+  bgColor: [number, number, number],
+): HTMLCanvasElement {
+  const jaw = params.jaw ?? 0
+  const eyeSpacing = params.eyeSpacing ?? 0
+  if (jaw === 0 && eyeSpacing === 0) return warped
+
+  const W = warped.width
+  const H = warped.height
+  const out = document.createElement('canvas')
+  out.width = W
+  out.height = H
+  const ctx = out.getContext('2d')!
+
+  // 底图：先铺背景色（下颌压缩让出的两侧区域），再整体画回
+  ctx.fillStyle = `rgb(${bgColor[0]}, ${bgColor[1]}, ${bgColor[2]})`
+  ctx.fillRect(0, 0, W, H)
+  ctx.drawImage(warped, 0, 0)
+
+  // ---- 下颌宽 ----
+  if (jaw !== 0) {
+    const jawTopY = (landmarks[LM_JAW_ANGLE_RIGHT].y + landmarks[LM_JAW_ANGLE_LEFT].y) / 2
+    const chinY = landmarks[LM_CHIN_BOTTOM].y
+    const cx = landmarks[LM_GLABELLA].x
+    const { dstX, dstW } = jawBandDst(cx, W, jaw)
+    const bandH = chinY - jawTopY
+    if (bandH > 0) {
+      // 先恢复该带背景色，再画缩放后的下颌带
+      ctx.fillRect(0, jawTopY, W, bandH)
+      ctx.drawImage(warped, 0, jawTopY, W, bandH, dstX, jawTopY, dstW, bandH)
+    }
+  }
+
+  // ---- 眼距 ----
+  if (eyeSpacing !== 0) {
+    const { right, left, eyeWidth } = computeEyeRegions(landmarks)
+    const dx = eyeShiftDx(eyeSpacing, eyeWidth)
+
+    // 邻域肤色均值（取眼区上缘一条带的均值作为填补色）
+    const skin = sampleSkinTone(warped, right, left)
+    ctx.fillStyle = skin
+
+    // 右脸（图左）眼睛向 -dx 移，左脸（图右）向 +dx 移
+    ctx.fillRect(right.x, right.y, right.w, right.h)
+    ctx.fillRect(left.x, left.y, left.w, left.h)
+    ctx.drawImage(warped, right.x, right.y, right.w, right.h, right.x - dx, right.y, right.w, right.h)
+    ctx.drawImage(warped, left.x, left.y, left.w, left.h, left.x + dx, left.y, left.w, left.h)
+  }
+
+  return out
+}
+
+/** 邻域肤色估计：两眼区上缘像素均值 */
+function sampleSkinTone(
+  canvas: HTMLCanvasElement,
+  right: EyeRegion,
+  left: EyeRegion,
+): string {
+  const ctx = canvas.getContext('2d')!
+  let r = 0, g = 0, b = 0, n = 0
+  const sample = (x: number, y: number) => {
+    const d = ctx.getImageData(Math.max(0, Math.min(canvas.width - 1, Math.round(x))), Math.max(0, Math.min(canvas.height - 1, Math.round(y))), 1, 1).data
+    r += d[0]; g += d[1]; b += d[2]; n++
+  }
+  for (let i = 0; i <= 6; i++) {
+    sample(right.x + (right.w * i) / 6, right.y - 2)
+    sample(left.x + (left.w * i) / 6, left.y - 2)
+    sample(right.x + (right.w * i) / 6, right.y + right.h + 2)
+    sample(left.x + (left.w * i) / 6, left.y + left.h + 2)
+  }
+  return `rgb(${Math.round(r / n)}, ${Math.round(g / n)}, ${Math.round(b / n)})`
+}
+
 /** 采样颜色（可注入，便于单测） */
 export type PixelGetter = (x: number, y: number) => [number, number, number]
 
@@ -141,8 +271,6 @@ export function warpFaceBands(
   const glabellaY = landmarks[LM_GLABELLA].y
   const subnasaleY = landmarks[LM_SUBNASALE].y
 
-  // 横向参数（下颌/眼距）暂在一期并入：先在离屏 canvas 做横向局部处理（简化：
-  // 一期先实现纵向三段变形；横向参数由 computeBandLayout 不变、合成层后续扩展）。
   const layout = computeBandLayout(glabellaY, subnasaleY, srcH, params)
 
   // 背景色
@@ -168,7 +296,7 @@ export function warpFaceBands(
   ctx.fillStyle = `rgb(${bg[0]}, ${bg[1]}, ${bg[2]})`
   ctx.fillRect(0, 0, srcW, srcH)
 
-  // 逐带合成
+  // 逐带合成（纵向）
   for (const band of layout.bands) {
     ctx.drawImage(
       source,
@@ -177,7 +305,8 @@ export function warpFaceBands(
     )
   }
 
-  return out
+  // 横向（下颌宽 / 眼距）
+  return applyHorizontalWarp(out, landmarks, params, bg)
 }
 
 /**

@@ -76,3 +76,25 @@ describe('estimateBackgroundColor', () => {
     expect(bg).toEqual([210, 210, 210])
   })
 })
+
+describe('jawBandDst / eyeShiftDx（横向几何）', () => {
+  it('下颌 -10%：目标宽 = 0.9W，围绕 cx 居中', async () => {
+    const { jawBandDst } = await import('@/components/portrait/geometry/bandWarp')
+    const r = jawBandDst(400, 768, -0.1)
+    expect(r.dstW).toBeCloseTo(768 * 0.9, 5)
+    expect(r.dstX).toBeCloseTo(400 - (768 * 0.9) / 2, 5)
+  })
+
+  it('下颌 +10%：目标宽 = 1.1W', async () => {
+    const { jawBandDst } = await import('@/components/portrait/geometry/bandWarp')
+    const r = jawBandDst(400, 768, 0.1)
+    expect(r.dstW).toBeCloseTo(768 * 1.1, 5)
+    expect(r.dstX).toBeCloseTo(400 - (768 * 1.1) / 2, 5)
+  })
+
+  it('眼距位移 = 比例 × 眼裂宽', async () => {
+    const { eyeShiftDx } = await import('@/components/portrait/geometry/bandWarp')
+    expect(eyeShiftDx(0.08, 50)).toBeCloseTo(4, 5)
+    expect(eyeShiftDx(-0.06, 50)).toBeCloseTo(-3, 5)
+  })
+})

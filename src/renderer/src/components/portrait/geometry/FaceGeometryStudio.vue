@@ -23,17 +23,14 @@
       <!-- 主体 -->
       <div v-else-if="landmarks.length && metrics" class="studio-main">
         <div class="studio-left">
-          <div class="preview-toggle">
-            <span
-              class="pt-tab"
-              :class="{ active: !showWarped }"
-              @click="showWarped = false"
-            >原图</span>
-            <span
-              class="pt-tab"
-              :class="{ active: showWarped }"
-              @click="showWarped = true"
-            >变形预览</span>
+          <div class="preview-switch">
+            <el-switch
+              v-model="showWarped"
+              :disabled="!hasParams"
+              inline-prompt
+              active-text="变形"
+              inactive-text="原图"
+            />
           </div>
           <FaceAnnotator
             :image-src="displaySrc"
@@ -358,30 +355,10 @@ watch(() => props.modelValue, (open) => {
 </style>
 
 <style lang="scss" scoped>
-.preview-toggle {
-  display: flex;
-  gap: 4px;
-  background: var(--fill-color);
-  border-radius: var(--radius-md);
-  padding: 3px;
+.preview-switch {
   margin-bottom: 10px;
-  width: fit-content;
-}
-
-.pt-tab {
-  padding: 5px 14px;
-  font-size: 12px;
-  color: var(--text-secondary);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-
-  &.active {
-    background: var(--bg-color-card);
-    color: var(--text-primary);
-    font-weight: 600;
-    box-shadow: var(--shadow-sm);
-  }
+  display: flex;
+  justify-content: flex-end;
 }
 </style>
 
