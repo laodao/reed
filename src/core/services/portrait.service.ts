@@ -903,6 +903,8 @@ export class PortraitService {
             height: imageHeight,
             seed: baseVariant.config?.seed,
             referenceImages: mergedRefs.length > 0 ? mergedRefs : undefined,
+            // design §5.3：一致性场景关闭提示词改写
+            promptExtend: false,
             skipHistory: true
           })
 
@@ -964,6 +966,8 @@ export class PortraitService {
           height: imageHeight,
           seed: baseVariant.config?.seed,
           referenceImages: mergedRefs.length > 0 ? mergedRefs : undefined,
+          // design §5.3：一致性场景关闭提示词改写
+          promptExtend: false,
           skipHistory: true
         })
 
@@ -1088,6 +1092,8 @@ export class PortraitService {
             height: imageHeight,
             seed: baseVariant.config?.seed,
             referenceImages: mergedRefs.length > 0 ? mergedRefs : undefined,
+            // design §5.3：一致性场景关闭提示词改写
+            promptExtend: false,
             skipHistory: true
           })
 
@@ -1147,6 +1153,8 @@ export class PortraitService {
           height: imageHeight,
           seed: baseVariant.config?.seed,
           referenceImages: mergedRefs.length > 0 ? mergedRefs : undefined,
+          // design §5.3：一致性场景关闭提示词改写
+          promptExtend: false,
           skipHistory: true
         })
 
@@ -1323,6 +1331,10 @@ export class PortraitService {
             height: imageHeight,
             seed: referenceVariant.config?.seed,
             referenceImage: referenceImageBase64,
+            // design §5.3：多角度是一致性场景，显式关闭提示词改写，
+            // 防止 "keep the exact same background/facial features" 约束被 LLM 稀释
+            // （用户反馈：全身多角度背景变化、噪点多，主因即此）
+            promptExtend: false,
             skipHistory: true
           })
 
