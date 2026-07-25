@@ -113,3 +113,18 @@
 
 测试基线：image-providers 25 例 + services 42 例全绿。
 **遗留待用户执行**：Phase A1 真机实测 9 项（需真实 key，可灵需华北2）。
+
+---
+
+## 第四阶段：面容几何工作室（2026-07-25，spec/plan 2026-07-25）
+
+完整交付 P1-P4：
+- P1：@mediapipe/tasks-vision（本地 WASM+模型，不走 CDN）+ faceMetrics
+  （三庭五眼/脸型，上庭外推标估计）+ 检测器封装（真实半身像实测 478 点检出）
+- P2：标注层（关键点/三庭线可开关）+ 指标面板 + 工作室容器 + EditPanel 入口
+- P3：bandWarp 分段变形（压缩+平移+背景色补齐，避免下脸拉伸失真）+
+  参数滑块实时预览（<16ms，变形关键点/指标同步）
+- P4：paramPrompt 双通道翻译（文字短语+变形图参考）+ saveDataUrlImage/
+  saveFaceVariantFromDataUrl + FaceCompareDialog 复用 + AI 结果自动复测
+验证：97 例测试全绿；lint 0 error；检测管线经浏览器 harness 实测。
+待用户验收：spec §8 六项（标注/变形无拉伸/算法保存/双通道日志/复测/降级）。
