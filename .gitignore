@@ -23,3 +23,7 @@ electron.vite.config.js
 # 随包分发的种子数据库（本地数据，不进版本库；由 scripts/prepare-seed-db.js 生成）
 resources/seed/*.db
 resources/seed/*.db-*
+tests/reports/*
+# Claude Code 本地文件：只忽略个人/临时产物，保留 commands/skills 等团队共享文件
+.claude/settings.local.json
+.claude/worktrees/
