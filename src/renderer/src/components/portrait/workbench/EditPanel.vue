@@ -37,14 +37,19 @@
           <el-option label="upper · 上半身" value="upper" />
         </el-select>
       </div>
-      <el-button
-        class="submit-btn face-btn"
-        :loading="editing"
-        :disabled="!facePrompt.trim()"
-        @click="handleEditFace"
-      >
-        🎯 只改面部
-      </el-button>
+      <div class="face-action-row">
+        <el-button
+          class="submit-btn face-btn"
+          :loading="editing"
+          :disabled="!facePrompt.trim()"
+          @click="handleEditFace"
+        >
+          🎯 只改面部
+        </el-button>
+        <el-button class="geometry-btn" @click="showGeometryStudio = true">
+          📐 面容分析
+        </el-button>
+      </div>
     </template>
 
     <!-- 全身：修改全身（复用 editImage，参数以其真实支持为准：指令 + 尺寸） -->
@@ -92,6 +97,13 @@
     @keep="onFaceCompareDone"
     @discarded="onFaceCompareDone"
   />
+
+  <!-- 面容几何工作室（分析/指标/变形，spec 2026-07-25） -->
+  <FaceGeometryStudio
+    v-if="framing === 'half'"
+    v-model="showGeometryStudio"
+    :variant="variant"
+  />
 </template>
 
 <script setup lang="ts">
@@ -101,6 +113,7 @@ import TemplatePicker from './TemplatePicker.vue'
 import ReferenceImagePicker from './ReferenceImagePicker.vue'
 import SizeSelect from './SizeSelect.vue'
 import FaceCompareDialog from './FaceCompareDialog.vue'
+import FaceGeometryStudio from '../geometry/FaceGeometryStudio.vue'
 import { DEFAULT_PORTRAIT_SIZES } from '../../../../../shared/types/portrait.types'
 import type {
   PortraitCharacter,
@@ -143,6 +156,9 @@ const focusRegion = ref<'face' | 'face_and_hair' | 'upper'>('face')
 // 前后对比确认：生成成功后先弹对比框，用户确认才保留新图（原图始终不动）
 const showFaceCompare = ref(false)
 const newFaceVariant = ref<PortraitVariant | null>(null)
+
+// 面容几何工作室
+const showGeometryStudio = ref(false)
 
 async function handleEditFace() {
   editing.value = true
@@ -282,6 +298,17 @@ async function handleEditImage() {
   &:hover {
     background: var(--color-purple-dark-2);
     border-color: var(--color-purple-dark-2);
+  }
+}
+</style>
+
+<style lang="scss" scoped>
+.face-action-row {
+  display: flex;
+  gap: 8px;
+
+  .face-btn {
+    flex: 1;
   }
 }
 </style>
