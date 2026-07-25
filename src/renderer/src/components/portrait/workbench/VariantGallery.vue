@@ -176,15 +176,9 @@ const derivedGroups = computed(() => {
 
 async function download(variant: PortraitVariant) {
   try {
-    let imagePath = variant.imagePath
-    if (imagePath.startsWith('local-image:///')) {
-      imagePath = imagePath.replace('local-image:///', '')
-      if (imagePath.includes('/') && !imagePath.includes('\\')) {
-        imagePath = imagePath.replace(/\//g, '\\')
-      }
-    }
-    const parts = imagePath.replace(/\\/g, '/').split('/')
-    const fileName = parts[parts.length - 1] || `portrait_${variant.angle}.png`
+    // 文件名从 URL/路径提取；实际文件系统路径由主进程 toFsPath 统一解析
+    // （asset URL / 相对路径 / 绝对路径 均兼容，渲染端不做字符串剥离）
+    const fileName = variant.imagePath.replace(/\\/g, '/').split('/').pop() || `portrait_${variant.angle}.png`
 
     const saveResult = await window.electronAPI.file.saveFile({
       defaultPath: fileName,
@@ -192,7 +186,7 @@ async function download(variant: PortraitVariant) {
     })
     if (!saveResult.success || !saveResult.filePath) return
 
-    const copyResult = await window.electronAPI.file.copyFile(imagePath, saveResult.filePath)
+    const copyResult = await window.electronAPI.file.copyFile(variant.imagePath, saveResult.filePath)
     if (copyResult.success) {
       ElMessage.success(`保存成功：${saveResult.filePath}`)
     } else {

@@ -6,6 +6,24 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { ipcBridge } from '@core/ipc/bridge-adapter'
+import { resolveAssetPath } from '@core/utils/asset-path'
+
+/**
+ * 把渲染端传来的路径统一解析为文件系统绝对路径：
+ * - 'local-image://images/2026/x.png'（相对形态的 asset URL）→ 剥协议 → dataPath 拼接
+ * - 'local-image:///C:/abs/x.png'（绝对形态的 asset URL）→ 剥协议 → 原样
+ * - 普通绝对路径 → 原样
+ * - 相对路径 → dataPath 拼接
+ *
+ * 此前由渲染端做字符串剥离（只处理了 'local-image:///' 三斜杠形态），
+ * 新版相对路径 URL（两斜杠）剥不掉 → ENOENT（2026-07-25 下载报错修复）。
+ */
+function toFsPath(p: string): string {
+  if (!p) return p
+  const m = p.match(/^[a-z][a-z0-9+.-]*:\/\/\/?(.*)$/i)
+  const stripped = m ? m[1] : p
+  return resolveAssetPath(stripped)
+}
 
 const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
 
@@ -216,7 +234,7 @@ async function handleCopy(
   data: { sourcePath: string; targetPath: string }
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    fs.copyFileSync(data.sourcePath, data.targetPath)
+    fs.copyFileSync(toFsPath(data.sourcePath), data.targetPath)
     return { success: true }
   } catch (error: any) {
     console.error('[file:copy] 错误:', error)
