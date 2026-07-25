@@ -90,3 +90,26 @@
 验证：image-providers 22 例 + services 42 例全绿；lint 0 error；dev 启动正常。
 注：image.service/portrait.service 等文件 11 个 unused-vars lint error 为预存
 问题（HEAD 同样存在），与本次改动无关；误纳入的 e2e WIP 文件已从提交中剔除。
+
+---
+
+## 第三阶段：增量计划执行（2026-07-25，plan 2026-07-24-portrait-next-phase v2）
+
+- **A0-1 prompt_extend**：TDD 过程中发现缺陷分析不准确——wan2.6-image 实际走
+  "未知模型 → multimodal 兜底"路径（Task 3 已传 prompt_extend，本就生效）。
+  实际改动：native（wanx-v1）路径补传 prompt_extend + 3 例测试锁定真实路由行为。
+  教训：先写测试暴露了我自己的错误分析。
+- **B 模板库 UI**：/portrait-templates 路由 + 两个入口；TemplateLibrary（全量
+  拉取客户端分组）/TemplateCard（内置只读锁）/TemplateEditDialog（校验+占位符
+  说明）；剪贴板 fallback 链；对话框打开/切换形象时 TemplatePicker 重载。
+- **C 皮肤机制**：index.scss 侧栏结构 token（classic=现状值）+ modern 深色 token；
+  element-plus.scss modern 覆盖（EP 圆角+关经典动效）；MainLayout 侧栏全部
+  token 化（classic 视觉零变化 by construction）；useSkin composable（持久化）；
+  Settings 外观页"界面皮肤"选择；MainLayout 启动接入。
+  **待用户验收**：classic 零回归目检 + modern 观感拍板（V13/V14）。
+- **D 旧件清理**：引用清查后删除 6 个旧组件（CharacterEditor 系列 +
+  PortraitGenerator + SizeSelector）；保留 ExportDialog/Create/EditCharacterDialog。
+  lint 0 error、测试全绿、dev 重启正常。
+
+测试基线：image-providers 25 例 + services 42 例全绿。
+**遗留待用户执行**：Phase A1 真机实测 9 项（需真实 key，可灵需华北2）。
