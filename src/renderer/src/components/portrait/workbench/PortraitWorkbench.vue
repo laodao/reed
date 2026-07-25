@@ -172,36 +172,21 @@
       :variants="variants"
     />
 
-    <!-- 图片预览（双击套图卡打开，左右切换） -->
-    <el-dialog
-      v-model="showPreviewDialog"
-      width="auto"
-      class="image-preview-dialog"
-      append-to-body
-      destroy-on-close
-    >
-      <div class="preview-wrap">
-        <div
-          class="preview-nav prev"
-          :class="{ disabled: previewIndex === 0 }"
-          @click="previewPrev"
-        >‹</div>
-        <img :src="previewCurrentSrc" class="preview-img-lg" alt="预览" />
-        <div
-          class="preview-nav next"
-          :class="{ disabled: previewIndex >= previewSrcList.length - 1 }"
-          @click="previewNext"
-        >›</div>
-      </div>
-      <div v-if="previewSrcList.length > 1" class="preview-counter">
-        {{ previewIndex + 1 }} / {{ previewSrcList.length }}
-      </div>
-    </el-dialog>
+    <!-- 图片预览（双击套图卡打开）：与主图一致的 Element Plus 原生查看器，
+         隐藏触发器 + 程序化 clickHandler -->
+    <el-image
+      ref="previewImageRef"
+      :src="previewCurrentSrc"
+      :preview-src-list="previewSrcList"
+      :initial-index="previewIndex"
+      preview-teleported
+      class="hidden-preview-trigger"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, nextTick, type ComponentPublicInstance } from 'vue'
 import GeneratePanel from './GeneratePanel.vue'
 import EditPanel from './EditPanel.vue'
 import MoreActionsPanel from './MoreActionsPanel.vue'
@@ -295,9 +280,9 @@ const currentVariant = computed<PortraitVariant | undefined>(() => {
 
 const previewList = computed(() => (currentVariant.value ? [currentVariant.value.imagePath] : []))
 
-// ---- 套图双击预览（双击卡片打开，支持左右切换） ----
-const showPreviewDialog = ref(false)
+// ---- 套图双击预览（与主图一致的 EP 原生查看器） ----
 const previewIndex = ref(0)
+const previewImageRef = ref<ComponentPublicInstance | null>(null)
 
 const previewSrcList = computed(() => variants.value.map(v => v.imagePath))
 const previewCurrentSrc = computed(() => previewSrcList.value[previewIndex.value] ?? '')
@@ -305,15 +290,10 @@ const previewCurrentSrc = computed(() => previewSrcList.value[previewIndex.value
 function previewVariant(v: PortraitVariant) {
   const idx = variants.value.findIndex(x => x.id === v.id)
   previewIndex.value = idx >= 0 ? idx : 0
-  showPreviewDialog.value = true
-}
-
-function previewPrev() {
-  if (previewIndex.value > 0) previewIndex.value--
-}
-
-function previewNext() {
-  if (previewIndex.value < previewSrcList.value.length - 1) previewIndex.value++
+  // 等 initial-index/src 更新后，程序化触发 el-image 的原生查看器
+  nextTick(() => {
+    (previewImageRef.value as unknown as { clickHandler?: () => void })?.clickHandler?.()
+  })
 }
 
 function openDialog(dialog: 'regenerate' | 'clothes' | 'background' | 'angles') {
@@ -521,85 +501,19 @@ onMounted(() => {
 }
 </style>
 
-<style lang="scss">
-// 图片预览对话框（全局，append-to-body）
-.image-preview-dialog {
-  .el-dialog__body {
-    padding: 0;
-    background: rgba(15, 20, 25, 0.92);
-  }
-}
-
-.preview-wrap {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  min-width: 40vw;
-  max-width: 86vw;
-  min-height: 40vh;
-  max-height: 82vh;
-}
-
-.preview-img-lg {
-  max-width: 86vw;
-  max-height: 82vh;
-  object-fit: contain;
-  user-select: none;
-  -webkit-user-drag: none;
-}
-
-.preview-nav {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 48px;
-  height: 72px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 36px;
-  color: rgba(255, 255, 255, 0.7);
-  cursor: pointer;
-  user-select: none;
-  border-radius: var(--radius-md);
-  transition: background var(--transition-fast), color var(--transition-fast);
-  z-index: 2;
-
-  &:hover:not(.disabled) {
-    color: #fff;
-    background: rgba(255, 255, 255, 0.12);
-  }
-
-  &.disabled {
-    color: rgba(255, 255, 255, 0.25);
-    cursor: not-allowed;
-  }
-
-  &.prev {
-    left: 8px;
-  }
-
-  &.next {
-    right: 8px;
-  }
-}
-
-.preview-counter {
-  position: absolute;
-  bottom: 14px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
-  font-size: 12px;
-  padding: 4px 12px;
-  border-radius: var(--radius-full);
-}
-</style>
 
 <style lang="scss" scoped>
 .model-select {
   width: 200px;
 }
+
+.hidden-preview-trigger {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
 </style>
+
