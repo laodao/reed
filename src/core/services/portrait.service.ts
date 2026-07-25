@@ -368,8 +368,11 @@ export class PortraitService {
         face_and_hair: 'modify only the face and hair, keep clothing, body, pose and background exactly the same',
         upper: 'modify the upper body, keep pose and background exactly the same',
       }
+      // prompt 采用「编辑指令式」措辞（用户反馈：旧措辞 'generate the exact same person'
+      // 约束过强，把修改指令中和掉导致零变化）。
+      // 结构：编辑意图 → 模板/指令 → 身份保持 → 范围约束。
       const prompt = [
-        PORTRAIT_PROMPT_DEFAULTS.consistencyPrefix,
+        'edit this portrait photo, apply the following facial changes while keeping the exact same person and identity',
         templateText,
         request.facePrompt?.trim() ?? '',
         regionWords[focusRegion],

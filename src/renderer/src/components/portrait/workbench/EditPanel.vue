@@ -83,6 +83,15 @@
       </el-button>
     </template>
   </div>
+
+  <!-- 面部修改前后对比确认（生成成功后弹出，确认才保留新图） -->
+  <FaceCompareDialog
+    v-model="showFaceCompare"
+    :original-src="variant.imagePath"
+    :new-variant="newFaceVariant"
+    @keep="onFaceCompareDone"
+    @discarded="onFaceCompareDone"
+  />
 </template>
 
 <script setup lang="ts">
@@ -91,6 +100,7 @@ import { ElMessage } from 'element-plus'
 import TemplatePicker from './TemplatePicker.vue'
 import ReferenceImagePicker from './ReferenceImagePicker.vue'
 import SizeSelect from './SizeSelect.vue'
+import FaceCompareDialog from './FaceCompareDialog.vue'
 import { DEFAULT_PORTRAIT_SIZES } from '../../../../../shared/types/portrait.types'
 import type {
   PortraitCharacter,
@@ -130,6 +140,10 @@ const facePrompt = ref('')
 const faceRefs = ref<{ data: string; role: ReferenceImageRole }[]>([])
 const focusRegion = ref<'face' | 'face_and_hair' | 'upper'>('face')
 
+// 前后对比确认：生成成功后先弹对比框，用户确认才保留新图（原图始终不动）
+const showFaceCompare = ref(false)
+const newFaceVariant = ref<PortraitVariant | null>(null)
+
 async function handleEditFace() {
   editing.value = true
   try {
@@ -142,10 +156,10 @@ async function handleEditFace() {
       referenceImages: faceRefs.value.length ? faceRefs.value.map(r => r.data) : undefined,
       focusRegion: focusRegion.value
     })
-    if (result.success) {
-      ElMessage.success('面部修改成功')
+    if (result.success && result.data) {
+      newFaceVariant.value = result.data
+      showFaceCompare.value = true
       facePrompt.value = ''
-      emit('success')
     } else {
       ElMessage.error(result.error || '修改失败')
     }
@@ -154,6 +168,11 @@ async function handleEditFace() {
   } finally {
     editing.value = false
   }
+}
+
+function onFaceCompareDone() {
+  newFaceVariant.value = null
+  emit('success')
 }
 
 // ---- 修改全身（full，复用 editImage） ----

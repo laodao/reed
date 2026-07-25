@@ -144,6 +144,9 @@ describe('editFace', () => {
     expect(call.prompt).toContain('sharp jawline')
     expect(call.prompt).toContain('male')
     expect(call.prompt).toContain('眼神更坚毅')
+    // 编辑指令式措辞（修改意图优先，不再用"完全同一个人"的强约束开头）
+    expect(call.prompt).toContain('edit this portrait photo')
+    expect(call.prompt).toContain('keeping the exact same person')
     // 保持面部以外不变
     expect(call.prompt).toContain('keep hair, clothing, body, pose and background exactly the same')
     expect(call.strength).toBe(0.5)
