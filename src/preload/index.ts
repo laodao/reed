@@ -1141,6 +1141,14 @@ const electronAPI = {
       delete: (id: string) => ipcRenderer.invoke('portrait:prompt-template:delete', id)
     },
 
+    // 面容几何工作室：算法变形结果保存（spec 2026-07-25）
+    saveFaceVariant: (request: {
+      characterId: string
+      sourceVariantId: string
+      dataUrl: string
+      faceParams?: Record<string, number>
+    }) => ipcRenderer.invoke('portrait:save-face-variant', request),
+
     // 导出
     export: (request: {
       characterId: string

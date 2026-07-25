@@ -335,6 +335,54 @@ export class PortraitService {
   }
 
   /**
+   * 保存算法变形结果为面部变体（spec 2026-07-25 面容几何工作室 §F5）。
+   * 零 AI 成本：canvas 变形结果直接落盘建 face 变体；原图不变。
+   */
+  static async saveFaceVariantFromDataUrl(request: {
+    characterId: string
+    sourceVariantId: string
+    dataUrl: string
+    faceParams?: Record<string, number>
+  }): Promise<{ success: boolean; variant?: PortraitVariant; error?: string }> {
+    const db = getCoreDatabaseManager()
+    if (!db.portraitVariants || !db.portraitCharacters) {
+      return { success: false, error: '数据库未初始化' }
+    }
+
+    try {
+      const source = await db.portraitVariants.getById(request.sourceVariantId)
+      if (!source) return { success: false, error: '源形象不存在' }
+      const character = await db.portraitCharacters.getById(request.characterId)
+      if (!character) return { success: false, error: '角色不存在' }
+
+      const saved = await ImageService.saveDataUrlImage(request.dataUrl)
+      if (!saved.success || !saved.filePath) {
+        return { success: false, error: saved.error || '保存图像失败' }
+      }
+
+      const variant = await db.portraitVariants.create({
+        characterId: request.characterId,
+        type: 'face',
+        framing: source.framing ?? 'full',
+        parentId: source.parentId ?? source.id,
+        angle: source.angle,
+        imagePath: saved.filePath,
+        prompt: `algorithmic face warp: ${JSON.stringify(request.faceParams ?? {})}`,
+        config: { ...source.config, faceParams: request.faceParams },
+        variantInfo: {
+          faceDescription: `算法变形（中庭 ${((request.faceParams?.midface ?? 0) * 100).toFixed(0)}%）`,
+        },
+      })
+
+      this.sendPortraitEvent({ type: 'generation-completed', characterId: request.characterId } as Parameters<typeof this.sendPortraitEvent>[0])
+      return { success: true, variant }
+    } catch (error: unknown) {
+      console.error('[PortraitService.saveFaceVariantFromDataUrl] 错误:', error)
+      return { success: false, error: error instanceof Error ? error.message : '保存失败' }
+    }
+  }
+
+  /**
    * 只修改面部（spec 2026-07-24 §5.2 D5）：
    * 模板（目标脸型蓝图，占位符解析）+ 指令（微调）叠加，源形象为首参考图，
    * 产出独立 type='face' variant；原图不变，身体/服装/背景不变。

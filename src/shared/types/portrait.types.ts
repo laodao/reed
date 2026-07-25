@@ -549,6 +549,36 @@ export const PROMPT_TEMPLATE_CATEGORY_LABELS: Record<PromptTemplateCategory, str
   background: '背景'
 }
 
+// ==================== 面容几何工作室（spec 2026-07-25） ====================
+
+/**
+ * 面容参数 → AI 提示词短语映射（双通道之文字通道）。
+ * negative = 参数为负（缩短/收窄）时的短语；positive = 参数为正时的短语。
+ * 全部为解剖学视觉短语（图像模型可理解），不写百分比数值。
+ */
+export const PARAM_PROMPT_MAP: Record<string, { negative: string; positive: string }> = {
+  midface: {
+    negative: 'shorter mid-face, more compact proportions between eyebrows and nose',
+    positive: 'longer mid-face, more elongated proportions between eyebrows and nose',
+  },
+  lowerface: {
+    negative: 'shorter lower face, slightly higher chin position',
+    positive: 'longer lower face, slightly lower chin position',
+  },
+  faceLength: {
+    negative: 'shorter face, more compact overall proportions',
+    positive: 'longer face, more elongated overall proportions',
+  },
+  jaw: {
+    negative: 'narrower, slimmer jawline',
+    positive: 'wider, stronger jawline',
+  },
+  eyeSpacing: {
+    negative: 'closer-set eyes',
+    positive: 'wider-set eyes',
+  },
+}
+
 /**
  * 性别显示名称
  */

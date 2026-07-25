@@ -103,6 +103,7 @@
     v-if="framing === 'half'"
     v-model="showGeometryStudio"
     :variant="variant"
+    @saved="emit('success')"
   />
 </template>
 

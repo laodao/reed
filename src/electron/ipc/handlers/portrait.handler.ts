@@ -64,6 +64,7 @@ export function registerPortraitHandlers(): void {
   ipcBridge.handle('portrait:prompt-template:apply', handlePromptTemplateApply)
   ipcBridge.handle('portrait:prompt-template:save', handlePromptTemplateSave)
   ipcBridge.handle('portrait:prompt-template:delete', handlePromptTemplateDelete)
+  ipcBridge.handle('portrait:save-face-variant', handleSaveFaceVariant)
 
   // 导出
   ipcBridge.handle('portrait:export', handleExportPortraits)
@@ -108,6 +109,7 @@ export function unregisterPortraitHandlers(): void {
   ipcBridge.removeHandler('portrait:prompt-template:apply')
   ipcBridge.removeHandler('portrait:prompt-template:save')
   ipcBridge.removeHandler('portrait:prompt-template:delete')
+  ipcBridge.removeHandler('portrait:save-face-variant')
 
   // 导出
   ipcBridge.removeHandler('portrait:export')
@@ -548,6 +550,30 @@ async function handlePromptTemplateDelete(
     const result = await PortraitService.deletePromptTemplate(id)
     if (result.success) {
       return { success: true }
+    }
+    return { success: false, error: result.error }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '未知错误'
+    return { success: false, error: errorMessage }
+  }
+}
+
+/**
+ * 处理算法变形结果保存（spec 2026-07-25 面容几何工作室）
+ */
+async function handleSaveFaceVariant(
+  _event: any,
+  request: {
+    characterId: string
+    sourceVariantId: string
+    dataUrl: string
+    faceParams?: Record<string, number>
+  }
+): Promise<IpcResponse<any>> {
+  try {
+    const result = await PortraitService.saveFaceVariantFromDataUrl(request)
+    if (result.success) {
+      return { success: true, data: result.variant }
     }
     return { success: false, error: result.error }
   } catch (error) {

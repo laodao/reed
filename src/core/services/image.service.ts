@@ -563,6 +563,23 @@ export class ImageService {
   }
 
   /**
+   * 公开的数据 URL 图片保存入口（additive，spec 2026-07-25 面容几何工作室）。
+   * 复用 saveImagesWithoutHistory 的路径/写盘逻辑，不另起炉灶。
+   *
+   * @param dataUrl - data:image/png;base64,... 或 http(s) URL
+   * @returns 相对路径（写库用）
+   */
+  static async saveDataUrlImage(dataUrl: string): Promise<{ success: boolean; filePath?: string; error?: string }> {
+    try {
+      const saved = await this.saveImagesWithoutHistory([{ url: dataUrl }])
+      if (!saved.length) return { success: false, error: '保存图像失败' }
+      return { success: true, filePath: saved[0].filePath }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : '保存图像失败' }
+    }
+  }
+
+  /**
    * 保存图像但不记录到历史（用于其他模块调用）
    *
    * @param images - 生成的图像列表
