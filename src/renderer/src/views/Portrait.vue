@@ -72,6 +72,9 @@
               返回
             </el-button>
             <h2>{{ selectedProject?.name }}</h2>
+            <el-button @click="$router.push('/portrait-templates')">
+              📚 模板库
+            </el-button>
             <el-button type="primary" @click="showCreateCharacterDialog = true">
               <el-icon><Plus /></el-icon>
               创建人物形象

@@ -22,6 +22,7 @@
         <div class="form-row">
           <div class="form-label">提示词模板</div>
           <TemplatePicker
+            ref="pickerRef"
             scene="regenerate"
             :character="character"
             @replace="content => prompt = content"
@@ -48,6 +49,7 @@ import { ref, watch, toRaw } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import SizeSelect from './SizeSelect.vue'
 import TemplatePicker from './TemplatePicker.vue'
+import type { ComponentPublicInstance } from 'vue'
 import ReferenceImagePicker from './ReferenceImagePicker.vue'
 import type {
   PortraitCharacter,
@@ -83,8 +85,12 @@ const referenceImages = ref<{ data: string; role: ReferenceImageRole }[]>([])
 const regenerating = ref(false)
 
 // 打开时初始化：沿用当前形象参数
+const pickerRef = ref<ComponentPublicInstance<{ reload: () => Promise<void> }> | null>(null)
+
 watch(() => props.modelValue, (open) => {
   if (!open) return
+  // plan B5：对话框每次打开重载模板列表（模板库可能刚编辑过）
+  pickerRef.value?.reload()
   prompt.value = props.character.prompt || props.variant.prompt || ''
   negativePrompt.value = ''
   const cfg = props.variant.config

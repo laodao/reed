@@ -42,6 +42,14 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/portrait-templates',
+    name: 'PortraitTemplates',
+    component: () => import('@/views/PortraitTemplates.vue'),
+    meta: {
+      title: '提示词模板库'
+    }
+  },
+  {
     path: '/translate',
     name: 'Translate',
     component: () => import('@/views/Translate.vue'),

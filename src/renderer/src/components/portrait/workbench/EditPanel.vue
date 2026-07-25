@@ -17,6 +17,7 @@
       <div class="form-row">
         <div class="form-label">面部模板</div>
         <TemplatePicker
+          ref="facePickerRef"
           category="face"
           scene="face"
           :character="character"
@@ -61,6 +62,7 @@
       <div class="form-row">
         <div class="form-label">全身模板</div>
         <TemplatePicker
+          ref="bodyPickerRef"
           scene="regenerate"
           :character="character"
           @replace="content => editPrompt = content"
@@ -84,7 +86,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch, type ComponentPublicInstance } from 'vue'
 import { ElMessage } from 'element-plus'
 import TemplatePicker from './TemplatePicker.vue'
 import ReferenceImagePicker from './ReferenceImagePicker.vue'
@@ -114,6 +116,14 @@ const emit = defineEmits<{
 }>()
 
 const editing = ref(false)
+
+// plan B5：切换形象时重载模板列表（模板库可能刚编辑过）
+const facePickerRef = ref<ComponentPublicInstance<{ reload: () => Promise<void> }> | null>(null)
+const bodyPickerRef = ref<ComponentPublicInstance<{ reload: () => Promise<void> }> | null>(null)
+watch(() => props.variant.id, () => {
+  facePickerRef.value?.reload()
+  bodyPickerRef.value?.reload()
+})
 
 // ---- 修改面部（half） ----
 const facePrompt = ref('')

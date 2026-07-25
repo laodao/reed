@@ -8,6 +8,7 @@
         <span class="meta">{{ GENDER_LABELS[character.gender] }} · {{ character.age }}岁</span>
       </div>
       <div class="wb-actions">
+        <el-button size="small" @click="$router.push('/portrait-templates')">📚 模板库</el-button>
         <el-button v-if="hasAnyVariant" size="small" @click="showExportDialog = true">⬇ 导出</el-button>
       </div>
     </div>

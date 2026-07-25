@@ -23,6 +23,7 @@
         <div class="form-row">
           <div class="form-label">提示词模板</div>
           <TemplatePicker
+            ref="pickerRef"
             category="body"
             scene="generate"
             :character="character"
@@ -55,6 +56,7 @@ import { ref, watch, toRaw } from 'vue'
 import { ElMessage } from 'element-plus'
 import SizeSelect from './SizeSelect.vue'
 import TemplatePicker from './TemplatePicker.vue'
+import type { ComponentPublicInstance } from 'vue'
 import ReferenceImagePicker from './ReferenceImagePicker.vue'
 import type {
   PortraitCharacter,
@@ -90,8 +92,12 @@ const size = ref('1024x1792')
 const extraRefs = ref<{ data: string; role: ReferenceImageRole }[]>([])
 const generating = ref(false)
 
+const pickerRef = ref<ComponentPublicInstance<{ reload: () => Promise<void> }> | null>(null)
+
 watch(() => props.modelValue, (open) => {
   if (!open) return
+  // plan B5：对话框每次打开重载模板列表（模板库可能刚编辑过）
+  pickerRef.value?.reload()
   prompt.value = DEFAULT_PROMPT
   extraRefs.value = []
   // 全身优先竖版大画布
