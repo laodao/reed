@@ -109,4 +109,54 @@ describe('万相 promptExtend 透传', () => {
     const body = JSON.parse(calls[0].init.body as string)
     expect(body.parameters.prompt_extend).toBe(false)
   })
+
+  // 注：wan2.6-image 在 generateImage 分发中不匹配任何已知格式，
+  // 实际走"未知模型 → multimodal 兜底"路径（该路径 Task 3 已传 prompt_extend），
+  // 下面两例锁定该行为不回退
+  it('wan2.6-image（multimodal 兜底路径）：promptExtend=false 生效（plan A0-1）', async () => {
+    const calls = mockFetchCapture({ output: { task_id: 't1', task_status: 'PENDING' } })
+    const provider = makeProvider()
+
+    await provider.generateImage({
+      model: 'wan2.6-image',
+      prompt: 'same person as reference',
+      width: 768,
+      height: 1024,
+      promptExtend: false,
+    } as ImageGenerationRequest)
+
+    const body = JSON.parse(calls[0].init.body as string)
+    expect(body.parameters.prompt_extend).toBe(false)
+  })
+
+  it('wan2.6-image（multimodal 兜底路径）：缺省为 true（保现状）', async () => {
+    const calls = mockFetchCapture({ output: { task_id: 't1', task_status: 'PENDING' } })
+    const provider = makeProvider()
+
+    await provider.generateImage({
+      model: 'wan2.6-image',
+      prompt: 'a cat',
+      width: 768,
+      height: 1024,
+    } as ImageGenerationRequest)
+
+    const body = JSON.parse(calls[0].init.body as string)
+    expect(body.parameters.prompt_extend).toBe(true)
+  })
+
+  it('wanx-v1（native 路径）：promptExtend=false 生效（plan A0-1 补齐）', async () => {
+    const calls = mockFetchCapture({ output: { task_id: 't1', task_status: 'PENDING' } })
+    const provider = makeProvider()
+
+    await provider.generateImage({
+      model: 'wanx-v1',
+      prompt: 'same person as reference',
+      width: 768,
+      height: 1024,
+      promptExtend: false,
+    } as ImageGenerationRequest)
+
+    const body = JSON.parse(calls[0].init.body as string)
+    expect(body.parameters.prompt_extend).toBe(false)
+  })
 })

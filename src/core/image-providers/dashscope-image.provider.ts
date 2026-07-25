@@ -767,6 +767,11 @@ export class DashScopeImageProvider extends BaseImageProvider {
       body.parameters.seed = request.seed
     }
 
+    // design §5.3 + plan A0-1：native 路径与 multimodal 一致透传 prompt_extend。
+    // 缺省 = 官方默认 true（与"不传"行为一致，仅日志更明确）；
+    // 人像一致性场景由 service 显式传 false
+    body.parameters.prompt_extend = request.promptExtend ?? true
+
     // spec 2026-05-09 ep-redesign §3.2 D1：multi-reference 优先；该 wanx2.5/2.6 image-edit
     // API 用 ref_images 数组，1-4 张；超出截前 4 张；fallback 兼容 referenceImage 单值
     const refs = collectReferences(request)
