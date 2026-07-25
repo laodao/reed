@@ -128,3 +128,17 @@
   saveFaceVariantFromDataUrl + FaceCompareDialog 复用 + AI 结果自动复测
 验证：97 例测试全绿；lint 0 error；检测管线经浏览器 harness 实测。
 待用户验收：spec §8 六项（标注/变形无拉伸/算法保存/双通道日志/复测/降级）。
+
+### 工作室排障记录（2026-07-25 晚）
+
+- **检测失败根因链**（CDP 远程调试逐层定位）：
+  ① 表象 404 → 模型放错 public（应在 src/renderer/public，命中 SPA fallback 返回 text/html）
+  ② 归位后仍失败 → 逐级探测真根因：CSP `script-src 'self'` 拒绝 WASM 编译
+  （'unsafe-eval' is not allowed）。修复：index.html meta + 主进程 header 注入
+  同步加 `wasm-unsafe-eval`（CSP3 定向放行）。CDP 实测检测成功、指标正确。
+  教训：先看日志（用户指正），404 不一定是文件缺失，content-type 探针破 SPA fallback 迷局。
+- **下颌宽/眼距无效**（用户反馈，属实）：此前只实现纵向变形。补 applyHorizontalWarp
+  （下颌带水平缩放+背景填充、眼区位移+邻域肤色填充），几何纯函数配 3 例单测。
+- 预览切换改 el-switch 小开关（用户反馈太大）。
+- 失败处理改进：失败不再被 Map 永久缓存的现象说明（模块级缓存会缓存 DetectFailure，
+  需刷新页面清除）——已知，后续可将缓存限定为仅成功结果。
