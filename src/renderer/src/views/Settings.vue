@@ -44,6 +44,29 @@
           </div>
 
           <div class="settings-section">
+            <h3>界面皮肤</h3>
+            <p class="section-desc">选择界面整体风格，与主题颜色自由组合</p>
+            <div class="skin-options">
+              <div
+                v-for="skin in SKIN_OPTIONS"
+                :key="skin.id"
+                class="skin-card"
+                :class="{ active: currentSkin === skin.id }"
+                @click="setSkin(skin.id)"
+              >
+                <div class="skin-preview" :class="skin.id">
+                  <div class="skin-preview-sidebar"></div>
+                  <div class="skin-preview-main"></div>
+                </div>
+                <div class="skin-info">
+                  <span class="skin-name">{{ skin.name }}</span>
+                  <span class="skin-desc">{{ skin.description }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-section">
             <h3>界面设置</h3>
             <el-form label-width="100px">
               <el-form-item label="字体大小">
@@ -554,6 +577,7 @@ import { ref, reactive, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, FolderOpened, Download, Upload, Delete, Plus, Folder, InfoFilled, MoreFilled } from '@element-plus/icons-vue'
 import { useTheme, availableThemes, type ThemeConfig } from '@/composables/useTheme'
+import { useSkin, SKIN_OPTIONS } from '@/composables/useSkin'
 import { useAppSettings, fontSizeConfig, languageConfig, type FontSize, type Language } from '@/composables/useAppSettings'
 import AddProviderDialog from '@/components/settings/AddProviderDialog.vue'
 import AddSearchEngineDialog from '@/components/settings/AddSearchEngineDialog.vue'
@@ -594,6 +618,7 @@ const themeNames: Record<string, string> = {
 
 // 主题
 const { currentTheme, setTheme } = useTheme()
+const { currentSkin, setSkin } = useSkin()
 
 // 应用设置
 const { settings: appSettings, loadSettings: loadAppSettings, setFontSize, setLanguage } = useAppSettings()
@@ -1432,6 +1457,75 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 16px;
+}
+
+
+/* 界面皮肤选择（data-skin） */
+.skin-options {
+  display: flex;
+  gap: 16px;
+}
+
+.skin-card {
+  width: 200px;
+  border: 2px solid var(--border-color-lighter);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+
+  &:hover {
+    border-color: var(--color-primary-light-5);
+  }
+
+  &.active {
+    border-color: var(--el-color-primary);
+    box-shadow: 0 0 0 2px var(--color-primary-light-8);
+  }
+}
+
+.skin-preview {
+  display: flex;
+  height: 72px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border-color-lighter);
+  margin-bottom: 8px;
+
+  .skin-preview-sidebar {
+    width: 34%;
+  }
+
+  .skin-preview-main {
+    flex: 1;
+  }
+
+  &.classic {
+    .skin-preview-sidebar { background: linear-gradient(180deg, #4a7570, #3a5a56); }
+    .skin-preview-main { background: #faf9f7; }
+  }
+
+  &.modern {
+    .skin-preview-sidebar { background: #0f1419; }
+    .skin-preview-main { background: #f7f8fa; }
+  }
+}
+
+.skin-info {
+  display: flex;
+  flex-direction: column;
+
+  .skin-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .skin-desc {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+  }
 }
 
 .theme-card {

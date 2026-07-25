@@ -210,12 +210,15 @@ import {
   Promotion,
 } from '@element-plus/icons-vue'
 import { useTheme } from '@/composables/useTheme'
+import { useSkin } from '@/composables/useSkin'
 import { useTabsStore } from '@/stores/tabs'
 import TabBar from '@/components/common/TabBar.vue'
 
 const route = useRoute()
 const router = useRouter()
 const { currentTheme } = useTheme()
+// 皮肤（data-skin）启动加载与持久化由 useSkin 负责
+useSkin()
 const tabsStore = useTabsStore()
 
 // 默认折叠：只显示 icon，悬停显示菜单名 tooltip
@@ -420,7 +423,7 @@ watch(
 .sidebar {
   width: var(--sidebar-width);
   height: 100%;
-  background: var(--color-sidebar-gradient);
+  background: var(--sidebar-bg);
   display: flex;
   flex-direction: column;
   transition: width var(--transition-smooth);
@@ -435,7 +438,7 @@ watch(
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--sidebar-glass);
     backdrop-filter: blur(10px);
     pointer-events: none;
   }
@@ -558,8 +561,8 @@ watch(
 
   &.active {
     .nav-item-content {
-      background: rgba(255, 255, 255, 0.15);
-      box-shadow: var(--shadow-glow);
+      background: var(--sidebar-item-active-bg);
+      box-shadow: var(--sidebar-item-active-shadow);
     }
 
     .nav-icon {
@@ -575,7 +578,7 @@ watch(
 
   &:not(.active):hover {
     .nav-item-content {
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--sidebar-item-hover-bg);
     }
 
     .nav-icon {
@@ -639,7 +642,7 @@ watch(
 .nav-icon {
   width: 20px;
   height: 20px;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--sidebar-text);
   transition: all var(--transition-normal);
 }
 
@@ -657,7 +660,7 @@ watch(
 }
 
 .nav-label {
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--sidebar-text);
   font-size: 14px;
   white-space: nowrap;
   transition: all var(--transition-normal);
@@ -679,7 +682,7 @@ watch(
 
 .sidebar-footer {
   padding: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid var(--sidebar-footer-border);
   position: relative;
   z-index: 1;
 }

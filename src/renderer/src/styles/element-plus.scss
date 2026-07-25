@@ -313,3 +313,25 @@
     stroke-dashoffset: 0;
   }
 }
+
+// ==================== 现代皮肤覆盖（data-skin="modern"，皮肤方案 D3/D4） ====================
+// classic（默认）保持现有行为；modern 调整 EP 组件圆角并关闭经典 hover 动效
+[data-skin="modern"] {
+  // EP 圆角收紧到现代皮肤尺度
+  --el-border-radius-base: 6px;
+  --el-border-radius-small: 4px;
+  --el-border-radius-round: 999px;
+
+  // 关闭经典皮肤的浮起/弹跳类 hover 动效
+  .el-card,
+  .el-button--primary {
+    &:hover {
+      transform: none;
+      box-shadow: var(--shadow-sm);
+    }
+
+    &:active {
+      transform: none;
+    }
+  }
+}

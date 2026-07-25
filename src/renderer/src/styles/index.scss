@@ -105,6 +105,32 @@
   // 字体大小（可通过 JS 动态修改）
   --font-size-base: 12px;
   --line-height-base: 1.55;
+
+  // ==================== 结构 token · 侧栏（classic 默认 = 现状值；皮肤方案 D3） ====================
+  --sidebar-bg: var(--color-sidebar-gradient);
+  --sidebar-glass: rgba(255, 255, 255, 0.05);
+  --sidebar-text: rgba(255, 255, 255, 0.8);
+  --sidebar-text-strong: #ffffff;
+  --sidebar-text-dim: rgba(255, 255, 255, 0.55);
+  --sidebar-item-hover-bg: rgba(255, 255, 255, 0.08);
+  --sidebar-item-active-bg: rgba(255, 255, 255, 0.15);
+  --sidebar-item-active-shadow: var(--shadow-glow);
+  --sidebar-footer-border: rgba(255, 255, 255, 0.1);
+}
+
+// ==================== 现代皮肤（data-skin="modern"，皮肤方案 D3） ====================
+// 切换机制：useSkin composable 在 documentElement 上设置 data-skin。
+// classic（:root 默认）视觉必须与改造前一致；modern 为深色侧栏 + 克制动效。
+[data-skin="modern"] {
+  --sidebar-bg: #0f1419;
+  --sidebar-glass: transparent;
+  --sidebar-text: #8a94a6;
+  --sidebar-text-strong: #ffffff;
+  --sidebar-text-dim: #5a6577;
+  --sidebar-item-hover-bg: rgba(255, 255, 255, 0.05);
+  --sidebar-item-active-bg: linear-gradient(90deg, rgba(44, 95, 246, 0.22), rgba(44, 95, 246, 0.08));
+  --sidebar-item-active-shadow: none;
+  --sidebar-footer-border: rgba(255, 255, 255, 0.06);
 }
 
 // ==================== 惊艳主题系列（中国传统色） ====================
