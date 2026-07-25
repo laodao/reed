@@ -101,3 +101,31 @@ describe('getModelCapabilities · 未登记报错（不隐瞒）', () => {
       .toThrow(UnregisteredModelCapabilityError)
   })
 })
+
+describe('getModelCapabilities · ep-* 接入点名称兜底（火山方舟）', () => {
+  it('ep-* + 名称 "seedream-5.0-lite"：解析为 Seedream 5 能力', () => {
+    const caps = getModelCapabilities('volcengine', 'ep-20260324195047-cnpvj', 'seedream-5.0-lite')
+    expect(caps.maxReferenceImages).toBe(14)
+    expect(caps.watermark).toBe('default_on')
+  })
+
+  it('ep-* + 名称 "Seedream 5.0 lite"（空格/大小写）也命中', () => {
+    const caps = getModelCapabilities('volcengine', 'ep-20260324195047-cnpvj', 'Seedream 5.0 lite')
+    expect(caps.maxReferenceImages).toBe(14)
+  })
+
+  it('ep-* + 名称 "Seedream 3.0 t2i"：解析为 3.0 能力（支持 seed）', () => {
+    const caps = getModelCapabilities('volcengine', 'ep-x', 'seedream-3.0-t2i')
+    expect(caps.seed).toBe(true)
+  })
+
+  it('ep-* + 无法识别的名称：仍然抛错（不隐瞒）', () => {
+    expect(() => getModelCapabilities('volcengine', 'ep-x', '某个自定义名字'))
+      .toThrow(UnregisteredModelCapabilityError)
+  })
+
+  it('ep-* 且无名称：仍然抛错', () => {
+    expect(() => getModelCapabilities('volcengine', 'ep-x'))
+      .toThrow(UnregisteredModelCapabilityError)
+  })
+})

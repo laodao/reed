@@ -69,14 +69,14 @@ const MODEL_CAPABILITIES: CapabilityEntry[] = [
   { provider: 'bailian', match: /^wan/, caps: WAN_CAPS },
 
   // ==================== volcengine（Seedream，模型级差异） ====================
-  { provider: 'volcengine', match: /^doubao-seedream-3-0/, caps: {
+  { provider: 'volcengine', match: /^(doubao-)?seedream-3-0/, caps: {
     negativePrompt: true, seed: true, quality: false, style: false,
     guidanceScale: true, strength: false,
     sizeMode: 'pixels', maxReferenceImages: 9,
     watermark: 'optional', promptRewrite: 'none', sequentialGeneration: false,
   }},
   // Seedream 4.x / 5.x：无 seed/guidance，参考图 14 张，官方默认带水印
-  { provider: 'volcengine', match: /^doubao-seedream-[45]|^seedream-[45]/, caps: {
+  { provider: 'volcengine', match: /^(doubao-)?seedream-[45]/, caps: {
     negativePrompt: false, seed: false, quality: false, style: false,
     guidanceScale: false, strength: false,
     sizeMode: 'pixels', maxReferenceImages: 14,
@@ -113,17 +113,38 @@ const MODEL_CAPABILITIES: CapabilityEntry[] = [
 
 /**
  * 查询模型生成能力。
+ *
+ * 解析顺序（不隐瞒原则，全部为显式匹配，无静默默认）：
+ * 1. 按模型 id 前缀匹配（doubao-seedream-4-5-251128 等标准模型名）
+ * 2. 按模型名称匹配（火山方舟推理接入点 ep-* 的 id 不含模型信息，
+ *    用 provider 配置里用户填写的名称兜底，如 "Seedream 5.0 lite"）
+ * 3. 均失败 → 抛 UnregisteredModelCapabilityError
+ *
  * @param providerType - provider 类型（dashscope / bailian / volcengine / openai）
- * @param modelId - 模型 id
- * @returns 能力集
- * @throws UnregisteredModelCapabilityError 未登记（含未登记 provider 类型）
+ * @param modelId - 模型 id（可能是 ep-* 接入点 id）
+ * @param modelName - 模型显示名（可选，provider 配置里的名称，用于 ep-* 兜底解析）
  */
-export function getModelCapabilities(providerType: string, modelId: string): ImageModelCapabilities {
-  const entry = MODEL_CAPABILITIES.find(
+export function getModelCapabilities(
+  providerType: string,
+  modelId: string,
+  modelName?: string,
+): ImageModelCapabilities {
+  // 1. 按 id 匹配
+  const byId = MODEL_CAPABILITIES.find(
     e => e.provider === providerType && e.match.test(modelId),
   )
-  if (!entry) {
-    throw new UnregisteredModelCapabilityError(providerType, modelId)
+  if (byId) return byId.caps
+
+  // 2. 按名称匹配（ep-* 接入点兜底；名称规范化：小写、空格/下划线/点转连字符，
+  //    兼容 "Seedream 5.0 lite" → seedream-5-0-lite、"seedream-3.0-t2i" → seedream-3-0-t2i）
+  if (modelName) {
+    const normalized = modelName.toLowerCase().replace(/[\s_.]+/g, '-')
+    const byName = MODEL_CAPABILITIES.find(
+      e => e.provider === providerType && e.match.test(normalized),
+    )
+    if (byName) return byName.caps
   }
-  return entry.caps
+
+  // 3. 显式报错
+  throw new UnregisteredModelCapabilityError(providerType, modelId)
 }

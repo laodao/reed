@@ -163,8 +163,11 @@ export class ImageService {
       }
 
       // design §8 不隐瞒原则：未登记模型在生成边界显式报错（不静默、不假成功）
+      // 火山方舟等场景模型 id 是 ep-* 接入点 id（不含模型信息），
+      // 用 provider 配置里该模型的名称兜底解析能力
+      const configuredModel = providerConfig.models?.find(m => m.id === request.model)
       try {
-        getModelCapabilities(providerType, request.model ?? '')
+        getModelCapabilities(providerType, request.model ?? '', configuredModel?.name)
       } catch (capError) {
         logger.error('[ImageService.generateImage] 模型能力校验失败:', capError)
         return {
