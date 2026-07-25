@@ -150,6 +150,32 @@
       :character-id="characterId"
       :variants="variants"
     />
+
+    <!-- 图片预览（双击套图卡打开，左右切换） -->
+    <el-dialog
+      v-model="showPreviewDialog"
+      width="auto"
+      class="image-preview-dialog"
+      append-to-body
+      destroy-on-close
+    >
+      <div class="preview-wrap">
+        <div
+          class="preview-nav prev"
+          :class="{ disabled: previewIndex === 0 }"
+          @click="previewPrev"
+        >‹</div>
+        <img :src="previewCurrentSrc" class="preview-img-lg" alt="预览" />
+        <div
+          class="preview-nav next"
+          :class="{ disabled: previewIndex >= previewSrcList.length - 1 }"
+          @click="previewNext"
+        >›</div>
+      </div>
+      <div v-if="previewSrcList.length > 1" class="preview-counter">
+        {{ previewIndex + 1 }} / {{ previewSrcList.length }}
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -248,6 +274,27 @@ const currentVariant = computed<PortraitVariant | undefined>(() => {
 
 const previewList = computed(() => (currentVariant.value ? [currentVariant.value.imagePath] : []))
 
+// ---- 套图双击预览（双击卡片打开，支持左右切换） ----
+const showPreviewDialog = ref(false)
+const previewIndex = ref(0)
+
+const previewSrcList = computed(() => variants.value.map(v => v.imagePath))
+const previewCurrentSrc = computed(() => previewSrcList.value[previewIndex.value] ?? '')
+
+function previewVariant(v: PortraitVariant) {
+  const idx = variants.value.findIndex(x => x.id === v.id)
+  previewIndex.value = idx >= 0 ? idx : 0
+  showPreviewDialog.value = true
+}
+
+function previewPrev() {
+  if (previewIndex.value > 0) previewIndex.value--
+}
+
+function previewNext() {
+  if (previewIndex.value < previewSrcList.value.length - 1) previewIndex.value++
+}
+
 function openDialog(dialog: 'regenerate' | 'clothes' | 'background' | 'angles') {
   if (!currentVariant.value) return
   if (dialog === 'regenerate') showRegenerateDialog.value = true
@@ -256,9 +303,6 @@ function openDialog(dialog: 'regenerate' | 'clothes' | 'background' | 'angles') 
   else if (dialog === 'angles') showAnglesDialog.value = true
 }
 
-function previewVariant(_v: PortraitVariant) {
-  // el-image 自带预览已覆盖；套图卡双击走 @preview，这里无需额外处理
-}
 
 // ---- 生命周期 ----
 
@@ -431,5 +475,82 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md, 16px);
+}
+</style>
+
+<style lang="scss">
+// 图片预览对话框（全局，append-to-body）
+.image-preview-dialog {
+  .el-dialog__body {
+    padding: 0;
+    background: rgba(15, 20, 25, 0.92);
+  }
+}
+
+.preview-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  min-width: 40vw;
+  max-width: 86vw;
+  min-height: 40vh;
+  max-height: 82vh;
+}
+
+.preview-img-lg {
+  max-width: 86vw;
+  max-height: 82vh;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.preview-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 48px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  user-select: none;
+  border-radius: var(--radius-md);
+  transition: background var(--transition-fast), color var(--transition-fast);
+  z-index: 2;
+
+  &:hover:not(.disabled) {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  &.disabled {
+    color: rgba(255, 255, 255, 0.25);
+    cursor: not-allowed;
+  }
+
+  &.prev {
+    left: 8px;
+  }
+
+  &.next {
+    right: 8px;
+  }
+}
+
+.preview-counter {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
 }
 </style>
