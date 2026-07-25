@@ -2,7 +2,7 @@
   <el-dialog
     :model-value="modelValue"
     title="生成其他角度"
-    width="480px"
+    width="560px"
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <div class="dlg-body">
@@ -13,6 +13,23 @@
           <el-checkbox value="right">右侧</el-checkbox>
           <el-checkbox value="back">背面</el-checkbox>
         </el-checkbox-group>
+      </div>
+      <div class="form-row">
+        <div class="form-label">提示词（可选，追加到一致性提示词后）</div>
+        <el-input
+          v-model="prompt"
+          type="textarea"
+          :rows="2"
+          placeholder="如：clean solid white studio background, soft even lighting"
+        />
+      </div>
+      <div class="form-row">
+        <div class="form-label">反向提示词（抑制噪点，可编辑）</div>
+        <el-input
+          v-model="negativePrompt"
+          type="textarea"
+          :rows="2"
+        />
       </div>
       <div class="form-row">
         <div class="form-label">输出尺寸</div>
@@ -67,13 +84,21 @@ const emit = defineEmits<{
 }>()
 
 const angles = ref<PortraitAngle[]>(['left', 'right', 'back'])
+const prompt = ref('')
+const negativePrompt = ref('')
 const size = ref('768x1024')
 const loading = ref(false)
+
+// 默认反向提示词：抑制噪点（用户可编辑）
+const DEFAULT_ANTI_NOISE = 'noise, grain, speckles, jpeg artifacts, distorted background, messy background'
 
 watch(() => props.modelValue, (open) => {
   if (!open) return
   const cfg = props.variant?.config
   size.value = cfg?.width && cfg?.height ? `${cfg.width}x${cfg.height}` : '768x1024'
+  // 每次打开重置提示词（反向词给抗噪点默认值）
+  prompt.value = ''
+  negativePrompt.value = DEFAULT_ANTI_NOISE
 })
 
 async function handleSubmit() {
@@ -85,6 +110,8 @@ async function handleSubmit() {
       characterId: props.character.id,
       angles: [...angles.value],
       variantId: props.variant?.id,
+      prompt: prompt.value.trim() || undefined,
+      negativePrompt: negativePrompt.value.trim() || undefined,
       width,
       height
     })

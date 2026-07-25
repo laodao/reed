@@ -1091,6 +1091,8 @@ const electronAPI = {
       characterId: string
       angles: ('front' | 'left' | 'right' | 'back')[]
       variantId?: string // 可选：基于哪个变体生成
+      prompt?: string // 追加提示词（可选）
+      negativePrompt?: string // 追加反向提示词（可选）
       width?: number
       height?: number
     }) => ipcRenderer.invoke('portrait:generate-angles', request),

@@ -1309,7 +1309,13 @@ export class PortraitService {
         // 4. 全身照要求
         // 5. 背景一致性（确保背景不变）
         // 6. 人物特征一致性
-        const fullPrompt = `${CONSISTENCY_PREFIX}. ${basicInfo}. ${anglePrompt}. ${FULL_BODY_SUFFIX}. ${BACKGROUND_CONSISTENCY_SUFFIX}. Keep the same facial features, hairstyle, clothing, and posture as in the reference image.`
+        let fullPrompt = `${CONSISTENCY_PREFIX}. ${basicInfo}. ${anglePrompt}. ${FULL_BODY_SUFFIX}. ${BACKGROUND_CONSISTENCY_SUFFIX}. Keep the same facial features, hairstyle, clothing, and posture as in the reference image.`
+        // 追加提示词（可选；用户可用于加强背景/质感约束，如 clean solid background）
+        if (request.prompt?.trim()) fullPrompt += `, ${request.prompt.trim()}`
+        // 追加反向提示词（可选；置于默认反向词前，用户可用于抑制噪点）
+        const fullNegativePrompt = request.negativePrompt?.trim()
+          ? `${request.negativePrompt.trim()}, ${DEFAULT_NEGATIVE_PROMPT}`
+          : DEFAULT_NEGATIVE_PROMPT
 
         console.log(`[PortraitService.generateAngles] 角度 ${angle} 提示词:`, fullPrompt)
 
@@ -1326,7 +1332,7 @@ export class PortraitService {
             providerConfigId: character.providerId,
             model: character.modelId,
             prompt: fullPrompt,
-            negativePrompt: DEFAULT_NEGATIVE_PROMPT,
+            negativePrompt: fullNegativePrompt,
             width: imageWidth,
             height: imageHeight,
             seed: referenceVariant.config?.seed,

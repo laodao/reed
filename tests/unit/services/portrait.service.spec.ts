@@ -289,6 +289,65 @@ describe('PortraitService.changeBackground 尺寸优先级', () => {
 // 用 request.variantId + imagePath='' 仍会触发"参考图不存在"分支。
 // 故此处用 getById 命中一个有 imagePath 的 variant，并 mock fs 存在）
 // ====================================================================
+describe('PortraitService.generateAngles 提示词参数（追加式）', () => {
+  function setupAngles() {
+    const db = installMockDb()
+    const genSpy = mockImageSuccess()
+    mockVariantCreateUpdate(db)
+    db.portraitCharacters.getById.mockResolvedValue(makeCharacter())
+    db.portraitVariants.getById.mockResolvedValue(
+      makeVariant({
+        id: 'ref-var',
+        angle: 'front',
+        imagePath: 'images/ref.png',
+        config: { width: 768, height: 1024, seed: 1 },
+      }),
+    )
+    return { db, genSpy }
+  }
+
+  it('prompt 追加到一致性提示词末尾', async () => {
+    const { genSpy } = setupAngles()
+    await PortraitService.generateAngles({
+      characterId: 'char-1',
+      angles: ['left'],
+      variantId: 'ref-var',
+      prompt: 'clean solid white studio background',
+    })
+
+    const arg = genSpy.mock.calls[0][0]
+    expect(arg.prompt).toContain('Keep the same facial features')
+    expect(arg.prompt.endsWith('clean solid white studio background')).toBe(true)
+  })
+
+  it('negativePrompt 置于默认反向词之前', async () => {
+    const { genSpy } = setupAngles()
+    await PortraitService.generateAngles({
+      characterId: 'char-1',
+      angles: ['left'],
+      variantId: 'ref-var',
+      negativePrompt: 'noise, grain, jpeg artifacts',
+    })
+
+    const arg = genSpy.mock.calls[0][0]
+    expect(arg.negativePrompt.startsWith('noise, grain, jpeg artifacts, ')).toBe(true)
+    expect(arg.negativePrompt).toContain('low quality')
+  })
+
+  it('不传新参数时行为与现状一致', async () => {
+    const { genSpy } = setupAngles()
+    await PortraitService.generateAngles({
+      characterId: 'char-1',
+      angles: ['left'],
+      variantId: 'ref-var',
+    })
+
+    const arg = genSpy.mock.calls[0][0]
+    expect(arg.prompt).not.toContain('clean solid white studio background')
+    expect(arg.negativePrompt).not.toContain('noise, grain')
+  })
+})
+
 describe('PortraitService.generateAngles 尺寸优先级', () => {
   it('优先使用 request.width/height，并写回 config', async () => {
     const db = installMockDb()

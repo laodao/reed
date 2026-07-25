@@ -275,6 +275,8 @@ export interface GenerateAnglesRequest {
   variantId?: string
   width?: number                   // 生成图片宽度（不传则继承 referenceVariant.config / 默认值）
   height?: number                  // 生成图片高度
+  prompt?: string                  // 追加提示词（可选，拼接到一致性提示词后；不传 = 现状行为）
+  negativePrompt?: string          // 追加反向提示词（可选，置于默认反向词之前；不传 = 现状行为）
 }
 
 /**
