@@ -6,8 +6,13 @@
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <div class="dlg-body">
-      <div class="source-hint">
-        🔗 以当前<strong>半身像</strong>为参考，保持面部一致，扩展为全身。
+      <!-- 参考来源：当前半身像（只读展示，无需用户上传） -->
+      <div class="source-ref">
+        <el-image :src="sourceVariant.imagePath" fit="cover" class="source-thumb" />
+        <div class="source-text">
+          <div class="source-title">参考：当前半身像</div>
+          <div class="source-desc">自动作为参考图，保持面容不变，无需上传</div>
+        </div>
       </div>
 
       <div class="form-row">
@@ -33,11 +38,6 @@
         </div>
       </div>
 
-      <div class="form-row">
-        <div class="form-label">追加参考图（可选；当前半身自动置首）</div>
-        <ReferenceImagePicker v-model="extraRefs" :max="3" upload-text="追加" />
-      </div>
-
       <div class="consistency-note">
         🎯 面容一致性由「半身参考图 + 一致性提示词」驱动保障
       </div>
@@ -52,16 +52,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, toRaw } from 'vue'
+import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import SizeSelect from './SizeSelect.vue'
 import TemplatePicker from './TemplatePicker.vue'
 import type { ComponentPublicInstance } from 'vue'
-import ReferenceImagePicker from './ReferenceImagePicker.vue'
 import type {
   PortraitCharacter,
-  PortraitVariant,
-  ReferenceImageRole
+  PortraitVariant
 } from '../../../../../shared/types/portrait.types'
 import type { ImageModelCapabilities } from '../../../../../shared/types/image-provider.types'
 
@@ -85,11 +83,11 @@ const emit = defineEmits<{
   success: []
 }>()
 
-const DEFAULT_PROMPT = 'same person as reference, natural relaxed posture, consistent face and hairstyle'
+// 默认提示词：明确 面容不变 + 正面（全身/直立由 service 的 framing 后缀补齐，不重复）
+const DEFAULT_PROMPT = 'same person as reference, consistent face and facial features unchanged, front view, facing camera'
 
 const prompt = ref(DEFAULT_PROMPT)
 const size = ref('1024x1792')
-const extraRefs = ref<{ data: string; role: ReferenceImageRole }[]>([])
 const generating = ref(false)
 
 const pickerRef = ref<ComponentPublicInstance<{ reload: () => Promise<void> }> | null>(null)
@@ -99,7 +97,6 @@ watch(() => props.modelValue, (open) => {
   // plan B5：对话框每次打开重载模板列表（模板库可能刚编辑过）
   pickerRef.value?.reload()
   prompt.value = DEFAULT_PROMPT
-  extraRefs.value = []
   // 全身优先竖版大画布
   size.value = '1024x1792'
 })
@@ -113,9 +110,6 @@ async function handleGenerate() {
       characterId: props.character.id,
       sourceVariantId: props.sourceVariant.id,
       prompt: prompt.value.trim() || undefined,
-      referenceImages: toRaw(extraRefs.value).length
-        ? toRaw(extraRefs.value).map(r => r.data)
-        : undefined,
       width,
       height
     })
@@ -136,22 +130,6 @@ async function handleGenerate() {
 </script>
 
 <style lang="scss" scoped>
-.source-hint {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 11px 14px;
-  background: var(--color-primary-light-9);
-  border-radius: var(--radius-md);
-  font-size: 12.5px;
-  color: var(--text-regular);
-  margin-bottom: var(--spacing-md, 16px);
-
-  strong {
-    color: var(--color-primary);
-  }
-}
-
 .form-row {
   margin-bottom: var(--spacing-md, 14px);
 }
@@ -200,5 +178,42 @@ async function handleGenerate() {
     width: 40px;
     text-align: right;
   }
+}
+</style>
+
+<style lang="scss" scoped>
+.source-ref {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--color-primary-light-9);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--spacing-md, 16px);
+}
+
+.source-thumb {
+  width: 44px;
+  height: 58px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-primary-light-5);
+  flex-shrink: 0;
+}
+
+.source-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.source-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.source-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
 }
 </style>

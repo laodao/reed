@@ -285,7 +285,7 @@ export class PortraitService {
       if (!sourceImage) return { success: false, error: '源形象图片读取失败' }
 
       const userPrompt = request.prompt?.trim() ||
-        'same person as reference, natural relaxed posture, consistent face and hairstyle'
+        'same person as reference, consistent face and facial features unchanged, front view, facing camera'
       const prompt = this.buildPortraitPrompt({
         basePrompt: userPrompt,
         framing: 'full',
