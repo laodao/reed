@@ -8,6 +8,27 @@
         <span class="meta">{{ GENDER_LABELS[character.gender] }} · {{ character.age }}岁</span>
       </div>
       <div class="wb-actions">
+        <el-select
+          v-model="models.selectedModelKey.value"
+          placeholder="选择模型"
+          class="model-select"
+          filterable
+          :filter-method="models.filterModels"
+          @change="onHeaderModelChange"
+        >
+          <el-option-group
+            v-for="provider in models.filteredProviderModels.value"
+            :key="provider.id"
+            :label="provider.name"
+          >
+            <el-option
+              v-for="model in provider.models"
+              :key="`${provider.id}:${model.id}`"
+              :label="model.name"
+              :value="`${provider.id}:${model.id}`"
+            />
+          </el-option-group>
+        </el-select>
         <el-button size="small" @click="$router.push('/portrait-templates')">📚 模板库</el-button>
         <el-button v-if="hasAnyVariant" size="small" @click="showExportDialog = true">⬇ 导出</el-button>
       </div>
@@ -303,6 +324,28 @@ function openDialog(dialog: 'regenerate' | 'clothes' | 'background' | 'angles') 
   else if (dialog === 'angles') showAnglesDialog.value = true
 }
 
+/**
+ * 头部模型切换：
+ * 1. 保存为项目默认（useImageModels.onModelChange）
+ * 2. 写回角色 providerId/modelId —— editFace / generateFullBody / 重新生成
+ *    都读 DB 里的 character.providerId/modelId，必须同步否则换模型不生效
+ */
+async function onHeaderModelChange(key: string) {
+  const model = models.availableModels.value.find(m => m.key === key)
+  if (!model || !character.value) return
+
+  models.onModelChange(key)
+
+  const result = await window.electronAPI.portrait.updateCharacter({
+    id: character.value.id,
+    providerId: model.providerId,
+    modelId: model.modelId
+  })
+  if (result.success) {
+    await loadCharacter()
+  }
+}
+
 
 // ---- 生命周期 ----
 
@@ -552,5 +595,11 @@ onMounted(() => {
   font-size: 12px;
   padding: 4px 12px;
   border-radius: var(--radius-full);
+}
+</style>
+
+<style lang="scss" scoped>
+.model-select {
+  width: 200px;
 }
 </style>
