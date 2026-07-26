@@ -142,3 +142,130 @@
 - 预览切换改 el-switch 小开关（用户反馈太大）。
 - 失败处理改进：失败不再被 Map 永久缓存的现象说明（模块级缓存会缓存 DetectFailure，
   需刷新页面清除）——已知，后续可将缓存限定为仅成功结果。
+
+---
+
+## 第五阶段：3D mesh 形变重构（2026-07-25，消除横向变形裂缝）
+
+用户反馈：调整下颌宽/眼距导致图片裂缝。根因：旧 applyHorizontalWarp 用"硬切矩形 + 位移 +
+单色填"，边界断层 + fillRect/drawImage 错位补丁。经讨论选定路 A（3D 关键点 mesh 形变），
+弃用路 B（3DMM 真重建，需 Python+GPU，成本不符）。
+
+架构：478 个 3D 关键点（保留 z）+ 内置 mesh 拓扑 -> 顶点位移场（连续）-> 逐三角仿射纹理
+渲染。顶点位移连续 -> 三角形共享顶点一致 -> 无内部裂缝。P4 双通道 AI 生成链路零改动
+（3D 渲染图替换 bandWarp 输出，paramPrompt/复测/对比对话框全复用）。
+
+- **T1 faceMeshTopology.ts**：临时装 @mediapipe/face_mesh 提取 FACEMESH_TESSELATION
+  （2556 边对 = 852 三角，每 3 边对 [a,b],[b,c],[c,a] 重建一三角，bad=0 全闭合，468 顶点
+  全覆盖）+ 语义分组（FACE_OVAL/LEFT_EYE/RIGHT_EYE/LEFT_EYEBROW/RIGHT_EYEBROW/LIPS）。
+  提取后卸载包。6 例测试。
+- **T2 Point 升级保留 z**：faceMetrics Point 加可选 z（computeFaceMetrics 零改动），
+  useFaceLandmarks 保留 p.z（此前被丢弃）。7 例测试（含 z 回归保护）。
+- **T3 vertexWarp.ts**：computeVertexDisplacements 顶点位移场。纵向分段线性（位置连续，
+  修掉旧纵向/横向叠加 y 对齐 bug）；jaw 下颌带内 weight=1 向上 smoothstep 衰减、围绕 cx
+  沿 x 缩放；eyeSpacing 径向高斯（左眼 +dx / 右眼 -dx）。14 例测试。
+- **T4 meshRenderer.ts**：renderWarpedMesh 逐三角仿射纹理映射（computeAffineTransform
+  纯函数算 6 参数矩阵 + ctx.setTransform + clip + drawImage）+ 背景色填充让出区 + 降采样。
+  6 例测试（仿射矩阵；渲染靠 CDP 实测）。
+- **T5 bandWarp.ts 重写**为 3D mesh 入口（warpFaceBands = 位移场 + 渲染），删除旧 2D 实现
+  （computeBandLayout/jawBandDst/eyeShiftDx/computeEyeRegions/applyHorizontalWarp/transformPointY）。
+  FaceGeometryStudio 预览降采样 scale=0.25、保存全量 scale=1。6 例测试。
+- **T6 验证**：geometry 6 个 spec 47 例全绿；lint 0 error（4 warning 为预存 attributes-order/
+  catch any）；electron-vite build 通过（renderer 含 Portrait 模块）。
+
+关键设计决策：
+- jaw 让出区（jaw<0 两侧露出）用 bgFillBands 填背景色（复刻旧 bandWarp 行为，避免露出原图
+  宽脸）；眼距用高斯衰减到 0，无让出区、无接缝。
+- 降采样预览（1/4 分辨率，852 三角约 5-10ms）+ 全量保存，兼顾实时性与清晰度。
+- 零新运行时依赖（复用 tasks-vision 的 478 点 + 内置拓扑常量 + canvas 2D）。
+
+待用户手动验收：CDP 实测下颌宽/眼距无裂缝、纵向+横向叠加无错位、实时预览 <16ms、
+editFace AI 生成链路回归。
+
+### 修复（T7，2026-07-25 晚）：下颌让出区误覆盖脖子衣领
+
+用户实测：下颌调整后下颌左右两侧 + 脖子衣领全变背景色。根因：computeJawFillBand 返回
+全宽矩形（jawTopY~chinY 整宽），renderWarpedMesh 用 fillRect 全宽填背景色，但 mesh 只
+覆盖脸区（468 点内），下颌带里的脸外区域（脖子、衣领、脸侧）被背景色覆盖且未恢复。
+
+修复：移除全宽 bgFillBand 逻辑，改为 evenodd 规则填"原脸三角并集 − 仅 jaw 变形脸三角
+并集"差区背景色。letoutDisplacements 仅含 jaw 位移（隔离眼距/纵向），差区只在下颌内缩
+区出现；脸外（脖子衣领）不在原脸三角并集内，保留原图。jaw<0 才填让出区，jaw>0 脸变宽
+无让出区。删除 computeJawFillBand。测试 45/45 绿、lint 0 error。
+
+待用户重新实测：下颌调整脖子衣领保留、让出区背景色正确。
+
+后续优化（同晚）：让出区纯背景色与旁边脖子衣领断层成"空隙"。改为 evenodd clip 差区 +
+以面中心 cx 为锚 x 缩小原图（scaleX=1+jaw<1）drawImage，脸外像素（脖子/衣领/背景）向内
+移覆盖让出区，与周围连续，不再是纯色块。LetoutFill 配置（letoutDisplacements + scaleX
++ cx）由 warpFaceBands 计算，renderWarpedMesh 步骤2 消费。测试 45/45 绿、lint 0 error。
+
+待用户重新实测：下颌缩窄让出区用旁边像素填充、无纯色空隙。
+
+后续优化（同晚，统一修复两处让出区）：
+- 问题1 jaw 空隙残留：evenodd 三角形并集做差区时共享边被抵消成 1px 缝隙。改用 mask canvas
+  （destination-in 原脸三角并集 + destination-out 变形脸三角并集），source-over 画三角形共享边
+  重叠无缝隙。
+- 问题2 双下巴：纵向缩短（lowerface/faceLength<0）下巴上移，原下巴位置纹理保留成双下巴，此前
+  只对 jaw<0 填让出区。扩展 letoutFill 支持 scaleY（1+faceLength+lowerface），以鼻底 y 为锚 y 缩放
+  原图，下方脖子像素上移覆盖原下巴位置。jaw + 纵向统一进 2D 缩放（scaleX, scaleY）。
+- letoutDisplacements 含 jaw + 纵向（隔离 eyeSpacing），差区只反映这两类变形。
+测试 45/45 绿、lint 0 error。待用户重新实测：jaw 空隙消除、纵向缩短无双下巴。
+
+---
+
+## 第六阶段：MLS 变形 + 双 canvas 渲染（2026-07-25 晚，**未完成，方向需反思**）
+
+用户反馈 3D mesh 形变"只是简单的把脸做了缩放，效果还不如做 3D 之前"。确实，
+computeVertexDisplacements 用 `dy=y*scale`/`dx=(x-cx)*jaw*w` 做纯线性位移，
+renderWarpedMesh 逐三角仿射只是把线性缩放切成三角形拼回去——没有真正的 3D 变形。
+
+### 尝试的改进
+
+1. **MLS (Moving Least Squares) 变形**：新建 `mlsWarp.ts`，用 14 个控制点
+   （3 锚点 + 11 变形点）+ MLS Similarity 算法代替线性位移。20 例测试全绿。
+
+2. **让出区填充变更**：尝试了多种方案——
+   - 全局 scaleX 缩放（旧方案，全图压缩）
+   - 左右分侧水平平移（有空白带）
+   - 左右分侧从边缘缩放
+   - 擦除原脸再画变脸（destination-out 后是透明，不是背景）
+   - 双 canvas 叠加（底层原图 + 上层变脸透明底）
+
+3. **最终状态**：双 canvas 叠加方案（`bandWarp.ts` 去掉所有 letout fill 和 bgColor；
+   `meshRenderer.ts` 底层画原图、上层画变脸 mesh、叠加输出）。
+
+全部 65 例测试通过。
+
+### 未解决的问题
+
+- 双 canvas 叠加需要刷新浏览器验证（Playwright 权限被拒绝）
+- 用户反馈仍有双下巴、白色空隙——方案架构有问题，需要重新检讨
+- 用户认为"完全没有思路"——MLS + 各种让出区填充的迭代方向可能不对
+
+### 业界研究结论（待深入）
+
+初步搜索发现：
+- 业界主流：三角剖分 + 仿射 warping + **seamless cloning / Poisson blending**（Rhinoplasty AI、
+  ComfyUI_FaceProcessor），而非手动填让出区
+- ARAP 比 MLS 变形质量更好但需要流形 mesh 且可能折叠
+- 关键缺失：缺少**融合/羽化**步骤——变脸与背景之间没有平滑过渡
+
+### 建议的后续方向
+
+1. **放弃自研让出区填充**，改用 OpenCV seamlessClone / poisson blending 将变脸融合回原图
+2. **研究 ComfyUI_FaceProcessor** 的完整 pipeline（2025 年的开源实现，同样基于
+   MediaPipe mesh 三角 warping，有 CPU/CUDA 双实现）
+3. **简化变形算法**——MLS 过度设计了，14 个控制点的 Mapping 未经验证
+
+### 文件变更清单（当前工作区）
+
+| 文件 | 状态 |
+|------|------|
+| `src/renderer/src/components/portrait/geometry/mlsWarp.ts` | 新建（MLS 变形核心） |
+| `src/renderer/src/components/portrait/geometry/bandWarp.ts` | 修改（接入 MLS，去 letout fill/bgColor） |
+| `src/renderer/src/components/portrait/geometry/meshRenderer.ts` | 修改（双 canvas 叠加，去 LetoutFill/bgColor） |
+| `tests/unit/geometry/mlsWarp.spec.ts` | 新建（20 例测试全绿） |
+
+未改动：`vertexWarp.ts`（旧线性位移保留）、`faceMeshTopology.ts`、`landmarkIndices.ts`、
+`FaceGeometryStudio.vue`

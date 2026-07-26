@@ -94,4 +94,13 @@ describe('computeFaceMetrics', () => {
     const m = computeFaceMetrics(base)
     expect(m.upperThird.px).toBeCloseTo((100 - 20) * FOREHEAD_EXTRAPOLATION, 1)
   })
+
+  it('带 z 深度的 landmarks 不干扰指标计算（3D 升级回归保护）', () => {
+    const withZ: Point[] = base.map(p => ({ ...p, z: 0.5 }))
+    const m1 = computeFaceMetrics(base)
+    const m2 = computeFaceMetrics(withZ)
+    expect(m2.thirdsRatio).toBe(m1.thirdsRatio)
+    expect(m2.eyeWidth).toBe(m1.eyeWidth)
+    expect(m2.jawWidthRatio).toBe(m1.jawWidthRatio)
+  })
 })

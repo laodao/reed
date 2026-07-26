@@ -139,7 +139,8 @@ function rebuildPreview() {
     warpedSrc.value = ''
     return
   }
-  const canvas = warpFaceBands(sourceImage.value, landmarks.value, warpParams.value)
+  // 预览降采样（1/4 分辨率）保证实时性；保存时另用全量渲染
+  const canvas = warpFaceBands(sourceImage.value, landmarks.value, warpParams.value, { scale: 0.25 })
   warpedSrc.value = canvas.toDataURL('image/png')
   // 有参数时自动切到变形预览
   showWarped.value = true
@@ -172,10 +173,15 @@ function requireWarped(): string | null {
 
 /** 用算法结果保存（零 AI 成本） */
 async function saveAlgorithmic() {
-  const dataUrl = requireWarped()
-  if (!dataUrl) return
+  if (!sourceImage.value || !hasParams.value) {
+    ElMessage.warning('请先拖动参数生成变形预览')
+    return
+  }
   saving.value = true
   try {
+    // 保存用全量渲染（预览为降采样，保存需清晰）
+    const canvas = warpFaceBands(sourceImage.value, landmarks.value, warpParams.value, { scale: 1 })
+    const dataUrl = canvas.toDataURL('image/png')
     const result = await window.electronAPI.portrait.saveFaceVariant({
       characterId: props.variant.characterId,
       sourceVariantId: props.variant.id,

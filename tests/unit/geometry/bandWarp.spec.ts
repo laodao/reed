@@ -1,75 +1,21 @@
 /**
- * bandWarp 单元测试
+ * bandWarp 单元测试（3D mesh 版入口层）
  * @see src/renderer/src/components/portrait/geometry/bandWarp.ts
+ *
+ * 入口层纯函数：estimateBackgroundColor / transformLandmarks。
+ * warpFaceBands 依赖 canvas DOM，由 CDP 实测覆盖（spec §8）。
  */
 import { describe, expect, it } from 'vitest'
 import {
-  computeBandLayout,
-  transformPointY,
   estimateBackgroundColor,
+  transformLandmarks,
 } from '@/components/portrait/geometry/bandWarp'
-
-// 基准：眉心 y=100，鼻底 y=200，图高 1024
-const G = 100
-const N = 200
-const H = 1024
-
-describe('computeBandLayout', () => {
-  it('中庭 -10%：中带压缩 10%，下部分上移，底部留补色区', () => {
-    const l = computeBandLayout(G, N, H, { midface: -0.1 })
-    // 带A 不动
-    expect(l.bands[0]).toEqual({ srcY: 0, srcH: 100, dstY: 0, dstH: 100 })
-    // 中带 100 → 90
-    expect(l.bands[1].dstH).toBeCloseTo(90, 5)
-    // 下部分：源不变、目标上移
-    expect(l.bands[2].srcY).toBe(200)
-    expect(l.bands[2].dstY).toBeCloseTo(190, 5)
-    expect(l.bands[2].dstH).toBeCloseTo(824, 5)
-    // 缺口 1024 - (100+90+824) = 10
-    expect(l.gap).not.toBeNull()
-    expect(l.gap!.dstH).toBeCloseTo(10, 5)
-  })
-
-  it('中庭 +10%：中带拉伸，下部分下移，无缺口', () => {
-    const l = computeBandLayout(G, N, H, { midface: 0.1 })
-    expect(l.bands[1].dstH).toBeCloseTo(110, 5)
-    expect(l.bands[2].dstY).toBeCloseTo(210, 5)
-    expect(l.gap).toBeNull()
-  })
-
-  it('下庭 -20%：下部分缩放，中带不动', () => {
-    const l = computeBandLayout(G, N, H, { lowerface: -0.2 })
-    expect(l.bands[1].dstH).toBeCloseTo(100, 5)
-    expect(l.bands[2].dstH).toBeCloseTo(824 * 0.8, 5)
-    expect(l.gap!.dstH).toBeCloseTo(H - (100 + 100 + 824 * 0.8), 4)
-  })
-
-  it('faceLength 与分段叠加（总缩放）', () => {
-    const l = computeBandLayout(G, N, H, { faceLength: -0.1, midface: -0.05 })
-    // 中带缩放 = 1 - 0.1 - 0.05 = 0.85
-    expect(l.bands[1].dstH).toBeCloseTo(85, 5)
-    // 下部分缩放 = 1 - 0.1 - 0 = 0.9（lowerface 未给）
-    expect(l.bands[2].dstH).toBeCloseTo(824 * 0.9, 5)
-  })
-})
-
-describe('transformPointY', () => {
-  it('各区域关键点按布局变换', () => {
-    const p = { midface: -0.1 }
-    // 眉心以上：不变
-    expect(transformPointY(50, G, N, p)).toBe(50)
-    // 中带内：y=150 → 100 + 50*0.9 = 145
-    expect(transformPointY(150, G, N, p)).toBeCloseTo(145, 5)
-    // 下部分：y=200 → 100 + 90 = 190；y=600 → 190 + 400 = 590
-    expect(transformPointY(200, G, N, p)).toBeCloseTo(190, 5)
-    expect(transformPointY(600, G, N, p)).toBeCloseTo(590, 5)
-  })
-})
+import type { Point } from '@/components/portrait/geometry/faceMetrics'
 
 describe('estimateBackgroundColor', () => {
   it('四角均值', () => {
     const bg = estimateBackgroundColor(
-      (x, y) => (x < 400 ? [200, 200, 200] : [220, 220, 220]),
+      (x) => (x < 400 ? [200, 200, 200] : [220, 220, 220]),
       768,
       1024,
     )
@@ -77,24 +23,40 @@ describe('estimateBackgroundColor', () => {
   })
 })
 
-describe('jawBandDst / eyeShiftDx（横向几何）', () => {
-  it('下颌 -10%：目标宽 = 0.9W，围绕 cx 居中', async () => {
-    const { jawBandDst } = await import('@/components/portrait/geometry/bandWarp')
-    const r = jawBandDst(400, 768, -0.1)
-    expect(r.dstW).toBeCloseTo(768 * 0.9, 5)
-    expect(r.dstX).toBeCloseTo(400 - (768 * 0.9) / 2, 5)
+describe('transformLandmarks', () => {
+  function makeLandmarks(over: Record<number, Point>): Point[] {
+    return Array.from({ length: 478 }, (_, i) => over[i] ?? { x: 300, y: 250 })
+  }
+  const base = makeLandmarks({
+    [9]: { x: 300, y: 100 },   // LM_GLABELLA
+    [2]: { x: 300, y: 200 },   // LM_SUBNASALE
+    [152]: { x: 300, y: 400 }, // LM_CHIN_BOTTOM
+    [136]: { x: 220, y: 330 }, // LM_JAW_ANGLE_RIGHT
+    [365]: { x: 380, y: 330 }, // LM_JAW_ANGLE_LEFT
+    [33]: { x: 200, y: 90 },   // LM_RIGHT_EYE_OUTER
+    [133]: { x: 250, y: 90 },  // LM_RIGHT_EYE_INNER
+    [263]: { x: 400, y: 90 },  // LM_LEFT_EYE_OUTER
+    [362]: { x: 350, y: 90 },  // LM_LEFT_EYE_INNER
   })
 
-  it('下颌 +10%：目标宽 = 1.1W', async () => {
-    const { jawBandDst } = await import('@/components/portrait/geometry/bandWarp')
-    const r = jawBandDst(400, 768, 0.1)
-    expect(r.dstW).toBeCloseTo(768 * 1.1, 5)
-    expect(r.dstX).toBeCloseTo(400 - (768 * 1.1) / 2, 5)
+  it('参数全 0：返回原坐标（位移全 0）', () => {
+    const out = transformLandmarks(base, {})
+    expect(out[0].x).toBe(base[0].x)
+    expect(out[0].y).toBe(base[0].y)
   })
 
-  it('眼距位移 = 比例 × 眼裂宽', async () => {
-    const { eyeShiftDx } = await import('@/components/portrait/geometry/bandWarp')
-    expect(eyeShiftDx(0.08, 50)).toBeCloseTo(4, 5)
-    expect(eyeShiftDx(-0.06, 50)).toBeCloseTo(-3, 5)
+  it('下颌宽 +10%：下颌带顶点 x 变化，眉心 x 不变', () => {
+    const lms = base.slice()
+    lms[50] = { x: 400, y: 380 } // 下颌带内
+    const out = transformLandmarks(lms, { jaw: 0.1 })
+    expect(out[50].x).not.toBe(lms[50].x)
+    expect(out[9].x).toBe(lms[9].x) // 眉心 x 不变
+  })
+
+  it('保留 z 深度', () => {
+    const lms = base.slice()
+    lms[50] = { x: 400, y: 380, z: -0.1 }
+    const out = transformLandmarks(lms, { jaw: 0.1 })
+    expect(out[50].z).toBe(-0.1)
   })
 })

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Warp 测试</title>
+  <style>
+    body { font-family: sans-serif; padding: 10px; }
+    .row { display: flex; gap: 12px; align-items: flex-start; }
+    .col { display: flex; flex-direction: column; gap: 4px; }
+    img, canvas { max-width: 420px; border: 1px solid #ccc; display: block; }
+    label { display: inline-block; margin-right: 12px; }
+    input[type=range] { width: 160px; vertical-align: middle; }
+    .status { color: #666; font-size: 12px; }
+    .err { color: red; }
+  </style>
+</head>
+<body>
+  <h3>3D mesh 变形测试</h3>
+  <div>
+    <label>图片
+      <select id="imgSel">
+        <option value="/test-face.png">小刚（半身）</option>
+        <option value="/test-face-ming.png">小明（半身）</option>
+        <option value="/test-face.jpg">旧测试图</option>
+      </select>
+    </label>
+    <label>脸长 <input type="range" id="faceLength" min="-10" max="10" value="-8" step="1"><span id="flv"></span>%</label>
+    <label>下庭 <input type="range" id="lowerface" min="-15" max="15" value="0" step="1"><span id="lfv"></span>%</label>
+    <label>下颌宽 <input type="range" id="jaw" min="-10" max="10" value="-8" step="1"><span id="jv"></span>%</label>
+    <label>中庭 <input type="range" id="midface" min="-15" max="15" value="0" step="1"><span id="mv"></span>%</label>
+    <label>眼距 <input type="range" id="eyeSpacing" min="-8" max="8" value="0" step="1"><span id="ev"></span>%</label>
+  </div>
+  <div class="status" id="status">检测中...</div>
+  <div class="row">
+    <div class="col"><div>原图</div><img id="src" crossorigin="anonymous"></div>
+    <div class="col"><div>变形（全量 scale=1）</div><img id="out"></div>
+  </div>
+  <script type="module">
+    import { detectFaceLandmarks, isDetectFailure } from '@/components/portrait/geometry/useFaceLandmarks'
+    import { warpFaceBands } from '@/components/portrait/geometry/bandWarp'
+
+    const outImg = document.getElementById('out')
+    const srcImg = document.getElementById('src')
+    const status = document.getElementById('status')
+    const imgSel = document.getElementById('imgSel')
+    let landmarks = null
+    let srcImage = null
+    let curUrl = imgSel.value
+
+    function getParams() {
+      const v = (id) => +document.getElementById(id).value / 100
+      return {
+        faceLength: v('faceLength'),
+        lowerface: v('lowerface'),
+        jaw: v('jaw'),
+        midface: v('midface'),
+        eyeSpacing: v('eyeSpacing'),
+      }
+    }
+
+    function rebuild() {
+      if (!landmarks || !srcImage) return
+      try {
+        const canvas = warpFaceBands(srcImage, landmarks, getParams(), { scale: 1 })
+        outImg.src = canvas.toDataURL('image/png')
+        status.textContent = '已生成（' + canvas.width + 'x' + canvas.height + '）'
+        status.className = 'status'
+      } catch (e) {
+        status.textContent = '生成失败: ' + e.message
+        status.className = 'err'
+      }
+    }
+
+    async function init() {
+      const url = curUrl
+      status.textContent = '检测中... (' + url + ')'
+      status.className = 'status'
+      srcImg.src = url
+      // 加载源图
+      srcImage = await new Promise((resolve, reject) => {
+        const img = new Image()
+        img.crossOrigin = 'anonymous'
+        img.onload = () => resolve(img)
+        img.onerror = () => reject(new Error('图片加载失败'))
+        img.src = url
+      })
+      // 检测（cacheKey 带时间戳避免切换图片时命中缓存）
+      const result = await detectFaceLandmarks(url, 'test-warp-' + url + '-' + Date.now())
+      if (isDetectFailure(result)) {
+        status.textContent = '检测失败: ' + result.message
+        status.className = 'err'
+        landmarks = null
+        return
+      }
+      landmarks = result.landmarks
+      status.textContent = '检测成功，' + landmarks.length + ' 点，面框 ' +
+        Math.round(result.faceBox.width) + 'x' + Math.round(result.faceBox.height)
+      rebuild()
+    }
+
+    ;['faceLength', 'lowerface', 'jaw', 'midface', 'eyeSpacing'].forEach((k) => {
+      const el = document.getElementById(k)
+      const sp = document.getElementById({ faceLength: 'flv', lowerface: 'lfv', jaw: 'jv', midface: 'mv', eyeSpacing: 'ev' }[k])
+      const update = () => { sp.textContent = el.value; rebuild() }
+      el.addEventListener('input', update)
+      sp.textContent = el.value
+    })
+
+    imgSel.addEventListener('change', () => { curUrl = imgSel.value; init().catch((e) => {
+      status.textContent = '初始化失败: ' + e.message
+      status.className = 'err'
+    }) })
+
+    init().catch((e) => {
+      status.textContent = '初始化失败: ' + e.message
+      status.className = 'err'
+    })
+  </script>
+</body>
+</html>

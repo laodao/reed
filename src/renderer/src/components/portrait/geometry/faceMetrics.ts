@@ -25,6 +25,8 @@ import {
 export interface Point {
   x: number
   y: number
+  /** 相对深度（MediaPipe 归一化 z，以头部中心为原点）。3D 变形用，指标计算不用 */
+  z?: number
 }
 
 export interface ThirdMetric {

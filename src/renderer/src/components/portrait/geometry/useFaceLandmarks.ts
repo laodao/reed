@@ -74,7 +74,7 @@ export async function detectFaceLandmarks(
       const points = detection.faceLandmarks[0]
       const w = img.naturalWidth
       const h = img.naturalHeight
-      const landmarks: Point[] = points.map(p => ({ x: p.x * w, y: p.y * h }))
+      const landmarks: Point[] = points.map(p => ({ x: p.x * w, y: p.y * h, z: p.z }))
 
       const xs = landmarks.map(p => p.x)
       const ys = landmarks.map(p => p.y)
