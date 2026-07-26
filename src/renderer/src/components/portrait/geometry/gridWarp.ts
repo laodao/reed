@@ -35,9 +35,14 @@ export function renderGridWarp(
   const renderW = Math.max(1, Math.round(srcW * scale))
   const renderH = Math.max(1, Math.round(srcH * scale))
 
-  // 网格密度：face-sculpt-demo 的 120×150 / 512px 基准，按渲染尺寸等比缩放
-  const gw = Math.max(15, Math.round(BASE_GW * renderW / BASE_W))
-  const gh = Math.max(15, Math.round(BASE_GH * renderH / (BASE_W * srcH / srcW)))
+  // 预览用小网格（< 2000 三角），全量用 face-sculpt-demo 密度
+  const isPreview = scale < 1
+  const gw = isPreview
+    ? Math.max(12, Math.round(30 * renderW / BASE_W))
+    : Math.max(20, Math.round(BASE_GW * renderW / BASE_W))
+  const gh = isPreview
+    ? Math.max(12, Math.round(40 * renderH / (BASE_W * srcH / srcW)))
+    : Math.max(20, Math.round(BASE_GH * renderH / (BASE_W * srcH / srcW)))
   const nx = gw + 1, ny = gh + 1
 
   // ── 计算网格变形后像素坐标 ──

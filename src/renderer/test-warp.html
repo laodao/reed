@@ -132,21 +132,27 @@ function getParams() {
   return p
 }
 
+let rebuildPending = false
 function rebuild() {
   if (!landmarks || !srcImage) return
-  const t0 = performance.now()
-  try {
-    const canvas = warpFaceBands(srcImage, landmarks, getParams(), {
-      scale: +document.getElementById('scale').value / 100,
-    })
-    outImg.src = canvas.toDataURL('image/png')
-    const ms = Math.round(performance.now() - t0)
-    status.textContent = `已生成 ${canvas.width}x${canvas.height}（${ms}ms）`
-    status.className = 'status ok'
-  } catch (e) {
-    status.textContent = '生成失败: ' + e.message
-    status.className = 'status err'
-  }
+  if (rebuildPending) return
+  rebuildPending = true
+  requestAnimationFrame(() => {
+    rebuildPending = false
+    const t0 = performance.now()
+    try {
+      const canvas = warpFaceBands(srcImage, landmarks, getParams(), {
+        scale: +document.getElementById('scale').value / 100,
+      })
+      outImg.src = canvas.toDataURL('image/png')
+      const ms = Math.round(performance.now() - t0)
+      status.textContent = `已生成 ${canvas.width}x${canvas.height}（${ms}ms）`
+      status.className = 'status ok'
+    } catch (e) {
+      status.textContent = '生成失败: ' + e.message
+      status.className = 'status err'
+    }
+  })
 }
 
 async function init() {
