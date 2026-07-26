@@ -169,20 +169,41 @@ export function computeVertexDisplacements(
       disp[i].dy = ny - y
     }
   } else if (hasOldVertical) {
-    // 旧 3 段纵向（向后兼容）
+    // 旧 3 段纵向（向后兼容），眼部保护带 [glabella, noseBridge197] scale=1
     const midScale = 1 + (params.faceLength ?? 0) + (params.midface ?? 0)
     const lowScale = 1 + (params.faceLength ?? 0) + (params.lowerface ?? 0)
-    const midSrcH = subnasaleY - glabellaY
-    const midDstH = midSrcH * midScale
+
+    // 眼部保护带：眼睛不参与纵向缩放，保持原始大小
+    const noseBridgeY = landmarks[LM_NOSE_BRIDGE_197].y
+    const eyeSrcH = noseBridgeY - glabellaY      // 眼部带高度（不缩放）
+    const noseSrcH = subnasaleY - noseBridgeY     // 鼻部高度（midScale）
+    const noseDstH = noseSrcH * midScale          // 鼻部缩放后高度
+    const lowSrcH = chinY - subnasaleY            // 下庭高度（lowScale）
+    const lowDstH = lowSrcH * lowScale
+
+    // 累积锚点（glabella 以上不动）
+    const dstGlabella = glabellaY
+    const dstNoseBridge = dstGlabella + eyeSrcH   // eye 带 scale=1
+    const dstSubnasale = dstNoseBridge + noseDstH
+    const dstChin = dstSubnasale + lowDstH
+
     for (let i = 0; i < n; i++) {
       const y = landmarks[i].y
       let ny = y
       if (y < glabellaY) {
         ny = y
+      } else if (y < noseBridgeY) {
+        // 眼部保护带——不缩放
+        ny = y
       } else if (y < subnasaleY) {
-        ny = glabellaY + (y - glabellaY) * midScale
+        // 鼻部缩放
+        ny = dstNoseBridge + (y - noseBridgeY) * midScale
+      } else if (y < chinY) {
+        // 下庭缩放
+        ny = dstSubnasale + (y - subnasaleY) * lowScale
       } else {
-        ny = glabellaY + midDstH + (y - subnasaleY) * lowScale
+        // chin 以下刚性平移
+        ny = y + (dstChin - chinY)
       }
       disp[i].dy = ny - y
     }

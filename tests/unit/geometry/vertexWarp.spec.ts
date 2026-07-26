@@ -110,14 +110,14 @@ describe('computeVertexDisplacements · 眼距', () => {
 })
 
 describe('computeVertexDisplacements · 纵向', () => {
-  it('中庭 -10%：中带顶点 dy=-5（压缩），下带顶点 dy=-10（整体上移）', () => {
+  it('中庭 -10%：眼部带 dy=0（不缩放），鼻部（y=150）dy=-2，下巴 dy=-7', () => {
     const lms = base.slice()
-    lms[60] = { x: 300, y: 150 } // 中带内
+    lms[60] = { x: 300, y: 150 } // 鼻部带内 [130,200)
     const disp = computeVertexDisplacements(lms, { midface: -0.1 })
-    // 中带 y=150 -> 100+(150-100)*0.9=145, dy=-5
-    expect(disp[60].dy).toBeCloseTo(-5, 1)
-    // chin y=400 -> 100+90+(400-200)*1=390, dy=-10
-    expect(disp[LM_CHIN_BOTTOM].dy).toBeCloseTo(-10, 1)
+    // 眼部带 [100,130) scale=1 → dy=0；鼻部 y=150 → 130+(150-130)*0.9=148, dy=-2
+    expect(disp[60].dy).toBeCloseTo(-2, 1)
+    // chin y=400 → dstSubnasale(130+70*0.9=193)+(400-200)*1=393, dy=-7
+    expect(disp[LM_CHIN_BOTTOM].dy).toBeCloseTo(-7, 1)
   })
 
   it('眉心以上顶点 dy=0（不动）', () => {
@@ -127,12 +127,12 @@ describe('computeVertexDisplacements · 纵向', () => {
     expect(disp[70].dy).toBe(0)
   })
 
-  it('分段边界位置连续：眉心 dy=0，鼻底 dy=midDstH-midSrcH', () => {
+  it('分段边界位置连续：眉心 dy=0（眼部带不缩放），鼻底 dy=-7（仅鼻部缩放）', () => {
     const disp = computeVertexDisplacements(base, { midface: -0.1 })
-    // 眉心 y=100（上带/中带边界）dy=0
+    // 眉心 y=100，眼部带 scale=1 → dy=0
     expect(disp[LM_GLABELLA].dy).toBe(0)
-    // 鼻底 y=200（中带/下带边界）dy = midDstH - midSrcH = 90 - 100 = -10
-    expect(disp[LM_SUBNASALE].dy).toBeCloseTo(-10, 1)
+    // 鼻底 y=200，dstSubnasale = noseBridge(130) + noseSrcH*0.9(63) = 193, dy=-7
+    expect(disp[LM_SUBNASALE].dy).toBeCloseTo(-7, 1)
   })
 })
 
@@ -200,15 +200,14 @@ describe('computeVertexDisplacements · 6 段纵向', () => {
     expect(disp[LM_GLABELLA].dy).toBeCloseTo(8, 0)
   })
 
-  it('新参数全 0 且旧参数有值时回退到旧 3 段（向后兼容）', () => {
+  it('新参数全 0 且旧参数有值时回退到旧路径（眼部保护生效）', () => {
     const lms = base.slice()
-    lms[60] = { x: 300, y: 150 } // 中带内
+    lms[60] = { x: 300, y: 150 } // 鼻部带内 [130,200)
     const disp = computeVertexDisplacements(lms, { midface: -0.1 })
-    // 旧逻辑：midScale=0.9, midSrcH=200-100=100
-    // y=150（中带内）: ny = 100+(150-100)*0.9 = 145, dy=-5
-    expect(disp[60].dy).toBeCloseTo(-5, 0)
-    // chin: ny = 100+90+(400-200)*1=390, dy=-10
-    expect(disp[LM_CHIN_BOTTOM].dy).toBeCloseTo(-10, 0)
+    // 眼部带 [100,130) scale=1 → dy=0；鼻部 y=150 → dy=-2
+    expect(disp[60].dy).toBeCloseTo(-2, 0)
+    // chin: dstSubnasale(130+70*0.9=193)+(400-200)*1=393, dy=-7
+    expect(disp[LM_CHIN_BOTTOM].dy).toBeCloseTo(-7, 0)
   })
 
   it('新参数存在时忽略旧参数（上庭拉伸级联下移所有后续段）', () => {
