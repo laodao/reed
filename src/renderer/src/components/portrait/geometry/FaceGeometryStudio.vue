@@ -107,8 +107,19 @@ const showWarped = ref(false)
 const warpedSrc = ref('')
 const sourceImage = ref<HTMLImageElement | null>(null)
 
+// 23 参数中性值（scale 类为 1，offset 类为 0）
+const NEUTRAL: Record<string, number> = {
+  faceW: 1, jaw: 1, eye: 0,
+  foreH: 1, eyeH: 1, noseH: 1, philH: 1, mouthH: 1, chinH: 1,
+  bridgeW: 1, alaW: 1, philW: 1, mouthW: 1, chinW: 1, cheekW: 1,
+  eyeSize: 1, eyeTilt: 0, eyeLen: 1,
+  noseTipLift: 0, noseTipSize: 1,
+  lip: 1, cupidH: 0, mouthCorner: 0, cheekUp: 0, cheekProject: 0,
+}
 const hasParams = computed(() =>
-  Object.values(warpParams.value).some(v => typeof v === 'number' && v !== 0),
+  Object.entries(warpParams.value).some(([k, v]) =>
+    typeof v === 'number' && Math.abs((v as number) - (NEUTRAL[k] ?? 0)) > 0.001,
+  ),
 )
 
 // 展示源：有参数且切到变形预览时用变形结果
