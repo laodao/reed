@@ -15,6 +15,8 @@ import { buildFieldParams, evalField } from './displacementField'
 import type { FaceMeasure } from './faceMeasure'
 import type { FieldParams } from './displacementField'
 import { renderGridWarp } from './gridWarp'
+import { renderMakeup, defaultMakeup } from './makeupRenderer'
+import type { MakeupState } from './makeupRenderer'
 
 /** 变形参数（23 个参数，4 组，照搬 face-sculpt-demo SLIDER_DEFS） */
 export interface WarpParams {
@@ -55,6 +57,8 @@ export interface WarpParams {
 export interface WarpOptions {
   /** 降采样因子（0.25 = 1/4 分辨率）；预览用低值加速，保存用 1 全量 */
   scale?: number
+  /** 妆容参数（在原图空间上妆后变形） */
+  makeup?: MakeupState
 }
 
 /** 采样颜色（可注入，便于单测） */
@@ -104,8 +108,19 @@ export function warpFaceBands(
   const M = measureFace(normLM)
   // 2. 构建位移场参数
   const F = buildFieldParams(M, params)
-  // 3. 规则网格变形渲染
-  return renderGridWarp(source, M, F, {
+
+  // 3. 妆容前置：在原图空间合成妆容 → 作为变形纹理源
+  let warpSource: HTMLImageElement | HTMLCanvasElement = source
+  if (opts?.makeup) {
+    const makeupCanvas = document.createElement('canvas')
+    makeupCanvas.width = srcW; makeupCanvas.height = srcH
+    const mctx = makeupCanvas.getContext('2d')!
+    renderMakeup(mctx, source, normLM, srcW, srcH, opts.makeup)
+    warpSource = makeupCanvas
+  }
+
+  // 4. 规则网格变形渲染
+  return renderGridWarp(warpSource, M, F, {
     scale: opts?.scale ?? 1,
   })
 }
