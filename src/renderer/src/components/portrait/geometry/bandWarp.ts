@@ -15,11 +15,28 @@ import { renderWarpedMesh } from './meshRenderer'
 
 /** 变形参数（比例，-1 ~ 1；如 -0.06 = 缩短 6%） */
 export interface WarpParams {
+  // ---- 旧版 3 段参数（向后兼容，当 6 段参数全为 0 时生效） ----
   midface?: number      // 中庭
   lowerface?: number    // 下庭
   faceLength?: number   // 脸长（眉心以下整体）
   jaw?: number          // 下颌宽（横向）
   eyeSpacing?: number   // 眼距（横向）
+
+  // ---- 新版 6 段纵向高度 ----
+  foreheadH?: number    // 上庭高度 -0.15 ~ 0.15
+  eyeAreaH?: number     // 眼部带高度 -0.10 ~ 0.10
+  noseH?: number        // 鼻部高度 -0.10 ~ 0.10
+  philtrumH?: number    // 人中高度 -0.15 ~ 0.15
+  lipH?: number         // 嘴唇高度 -0.15 ~ 0.15
+  chinH?: number        // 下巴高度 -0.15 ~ 0.15
+
+  // ---- 新版 6 段横向宽度 ----
+  foreheadW?: number    // 上庭宽度 -0.10 ~ 0.10
+  eyeAreaW?: number     // 眼部带宽度 -0.08 ~ 0.08
+  noseW?: number        // 鼻部宽度 -0.15 ~ 0.15
+  philtrumW?: number    // 人中宽度 -0.10 ~ 0.10
+  lipW?: number         // 嘴唇宽度 -0.15 ~ 0.15
+  chinW?: number        // 下巴宽度 -0.15 ~ 0.15
 }
 
 export interface WarpOptions {

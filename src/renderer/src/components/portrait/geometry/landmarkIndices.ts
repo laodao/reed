@@ -38,6 +38,19 @@ export const LM_JAW_ANGLE_RIGHT = 136
 /** 左下颌角（近似） */
 export const LM_JAW_ANGLE_LEFT = 365
 
+/** 鼻梁中上段（鼻梁纵线 6→197→195→5→168 的第二节，眼鼻分界） */
+export const LM_NOSE_BRIDGE_197 = 197
+/** 上唇中点（外唇轮廓 Cupid's bow 中央，上下唇高度分界之上锚点） */
+export const LM_UPPER_LIP_MID = 0
+/** 下唇中点（下唇内缘底部中央，嘴唇段与下巴段分界） */
+export const LM_LOWER_LIP_MID = 14
+/** 鼻尖（pronasale，最突出点） */
+export const LM_NOSE_TIP = 4
+/** 左嘴角 */
+export const LM_MOUTH_CORNER_LEFT = 61
+/** 右嘴角 */
+export const LM_MOUTH_CORNER_RIGHT = 291
+
 /** 上庭外推系数：额头轮廓顶点 → 发际线的距离 ≈ (顶点→眉心) × 系数。
  *  正面人像经验值 1.5-1.7，取中值 1.6（spec D3，上庭一律标 estimated） */
 export const FOREHEAD_EXTRAPOLATION = 1.6

@@ -18,6 +18,11 @@ import {
   LM_RIGHT_EYE_INNER,
   LM_LEFT_EYE_OUTER,
   LM_LEFT_EYE_INNER,
+  LM_FOREHEAD_TOP,
+  LM_NOSE_BRIDGE_197,
+  LM_UPPER_LIP_MID,
+  LM_LOWER_LIP_MID,
+  FOREHEAD_EXTRAPOLATION,
 } from './landmarkIndices'
 import type { Point } from './faceMetrics'
 import type { WarpParams } from './bandWarp'
@@ -93,11 +98,80 @@ export function computeVertexDisplacements(
   const subnasaleY = subnasale.y
   const chinY = chin.y
 
-  // ---- 纵向（分段线性缩放，位置连续）----
-  const midScale = 1 + (params.faceLength ?? 0) + (params.midface ?? 0)
-  const lowScale = 1 + (params.faceLength ?? 0) + (params.lowerface ?? 0)
-  const hasVertical = (params.midface ?? 0) !== 0 || (params.lowerface ?? 0) !== 0 || (params.faceLength ?? 0) !== 0
-  if (hasVertical) {
+  // ---- 纵向（6 段分段线性缩放 + 位置连续；旧 3 段向后兼容）----
+  //   优先使用新 6 段参数；当所有新参数为零时，回退到旧 faceLength/midface/lowerface。
+  const hasNewVertical = (params.foreheadH ?? 0) !== 0 || (params.eyeAreaH ?? 0) !== 0
+    || (params.noseH ?? 0) !== 0 || (params.philtrumH ?? 0) !== 0
+    || (params.lipH ?? 0) !== 0 || (params.chinH ?? 0) !== 0
+  const hasOldVertical = !hasNewVertical && (
+    (params.midface ?? 0) !== 0 || (params.lowerface ?? 0) !== 0 || (params.faceLength ?? 0) !== 0
+  )
+
+  if (hasNewVertical) {
+    const foreheadTop = landmarks[LM_FOREHEAD_TOP]
+    const noseBridge = landmarks[LM_NOSE_BRIDGE_197]
+    const upperLip = landmarks[LM_UPPER_LIP_MID]
+    const lowerLip = landmarks[LM_LOWER_LIP_MID]
+
+    const foreheadTopExtY = glabellaY - (glabellaY - foreheadTop.y) * FOREHEAD_EXTRAPOLATION
+    const noseBridgeY = noseBridge.y
+    const upperLipY = upperLip.y
+    const lowerLipY = lowerLip.y
+
+    // 7 段锚点（按 y 升序，首段覆盖 [0, foreheadTopExt) 比例 1；末段覆盖 [chinY,+∞) 刚性移位）
+    const anchors = [0, foreheadTopExtY, glabellaY, noseBridgeY, subnasaleY, upperLipY, lowerLipY, chinY]
+    const scales = [
+      1,
+      1 + (params.foreheadH ?? 0),
+      1 + (params.eyeAreaH ?? 0),
+      1 + (params.noseH ?? 0),
+      1 + (params.philtrumH ?? 0),
+      1 + (params.lipH ?? 0),
+      1 + (params.chinH ?? 0),
+    ]
+
+    // 累积目标锚点（从 y=0 起；末段后图像下部刚性平移 dt）
+    const srcH = scales.map((_, i) => anchors[i + 1] - anchors[i]) // 每段源高（末段不含∞）
+    const dstH = srcH.map((h, i) => h * scales[i])
+    const dstAnchor = [0]
+    for (let i = 0; i < dstH.length; i++) {
+      dstAnchor.push(dstAnchor[i] + dstH[i])
+    }
+    // dstAnchor[i] 对应 anchors[i] 在输出中的 y；dstAnchor[7] 是变形后 chinY
+
+    for (let i = 0; i < n; i++) {
+      const y = landmarks[i].y
+      let ny = y
+      if (y < anchors[1]) {
+        ny = y // 上庭以上不变
+      } else if (y < anchors[2]) {
+        // 上庭
+        ny = dstAnchor[1] + (y - anchors[1]) * scales[1]
+      } else if (y < anchors[3]) {
+        // 眼部
+        ny = dstAnchor[2] + (y - anchors[2]) * scales[2]
+      } else if (y < anchors[4]) {
+        // 鼻部
+        ny = dstAnchor[3] + (y - anchors[3]) * scales[3]
+      } else if (y < anchors[5]) {
+        // 人中
+        ny = dstAnchor[4] + (y - anchors[4]) * scales[4]
+      } else if (y < anchors[6]) {
+        // 嘴唇
+        ny = dstAnchor[5] + (y - anchors[5]) * scales[5]
+      } else if (y < anchors[7]) {
+        // 下巴
+        ny = dstAnchor[6] + (y - anchors[6]) * scales[6]
+      } else {
+        // 下巴以下刚性平移
+        ny = y + (dstAnchor[7] - anchors[7])
+      }
+      disp[i].dy = ny - y
+    }
+  } else if (hasOldVertical) {
+    // 旧 3 段纵向（向后兼容）
+    const midScale = 1 + (params.faceLength ?? 0) + (params.midface ?? 0)
+    const lowScale = 1 + (params.faceLength ?? 0) + (params.lowerface ?? 0)
     const midSrcH = subnasaleY - glabellaY
     const midDstH = midSrcH * midScale
     for (let i = 0; i < n; i++) {
@@ -111,6 +185,53 @@ export function computeVertexDisplacements(
         ny = glabellaY + midDstH + (y - subnasaleY) * lowScale
       }
       disp[i].dy = ny - y
+    }
+  }
+
+  // ---- 6 段横向宽度（每段独立，以 cx 为中心 smoothstep 缩放）----
+  const hasNewWidth = (params.foreheadW ?? 0) !== 0 || (params.eyeAreaW ?? 0) !== 0
+    || (params.noseW ?? 0) !== 0 || (params.philtrumW ?? 0) !== 0
+    || (params.lipW ?? 0) !== 0 || (params.chinW ?? 0) !== 0
+  if (hasNewWidth) {
+    // 复用 6 段锚点（与纵向一致）
+    const foreheadTop = landmarks[LM_FOREHEAD_TOP]
+    const foreheadTopExtY = glabellaY - (glabellaY - foreheadTop.y) * FOREHEAD_EXTRAPOLATION
+    const noseBridgeY = landmarks[LM_NOSE_BRIDGE_197].y
+    const upperLipY = landmarks[LM_UPPER_LIP_MID].y
+    const lowerLipY = landmarks[LM_LOWER_LIP_MID].y
+    const segAnchors = [foreheadTopExtY, glabellaY, noseBridgeY, subnasaleY, upperLipY, lowerLipY, chinY]
+    const segWidths = [
+      params.foreheadW ?? 0,
+      params.eyeAreaW ?? 0,
+      params.noseW ?? 0,
+      params.philtrumW ?? 0,
+      params.lipW ?? 0,
+      params.chinW ?? 0,
+    ]
+
+    for (let i = 0; i < n; i++) {
+      const p = landmarks[i]
+      // 确定顶点属于哪一段（y 上的）并计算 smoothstep 权重
+      let w = 0, factor = 0
+      for (let s = 0; s < segWidths.length; s++) {
+        if (segWidths[s] === 0) continue
+        const lo = s === 0 ? segAnchors[0] : segAnchors[s]
+        const hi = segWidths.length === 1 ? segAnchors[segAnchors.length - 1] : segAnchors[s + 1] || segAnchors[segAnchors.length - 1]
+        // 在段内为 1，段外为 0；段边界 smoothstep 过渡
+        const fadeH = Math.max(2, (hi - lo) * 0.08) // 8% 的过渡区
+        if (p.y < lo - fadeH || p.y > hi + fadeH) continue
+        let sw: number
+        if (p.y < lo) sw = 1 - smoothstep((lo - p.y) / fadeH)
+        else if (p.y < lo + fadeH) sw = smoothstep((p.y - lo) / fadeH)
+        else if (p.y < hi - fadeH) sw = 1
+        else if (p.y < hi) sw = 1 - smoothstep((p.y - (hi - fadeH)) / fadeH)
+        else sw = 0
+        w = Math.max(w, sw)
+        factor = segWidths[s]
+      }
+      if (w > 0 && factor !== 0) {
+        disp[i].dx += (p.x - cx) * factor * w
+      }
     }
   }
 
