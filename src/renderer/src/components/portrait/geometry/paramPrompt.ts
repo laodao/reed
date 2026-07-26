@@ -17,14 +17,20 @@ export function degreeOf(pct: number): string {
 }
 
 /**
- * 单参数 → 短语（如 "slightly shorter mid-face, more compact proportions..."）。
- * 零值返回空串（调用方过滤）。
+ * 单参数 → 短语（如 "slightly shorter nose, more compact proportions..."）。
+ * 中性值时返回空串（调用方过滤）。scale 类（W/H）中性=1，offset 类中性=0。
  */
 export function paramToPhrase(key: string, value: number): string {
   const map = PARAM_PROMPT_MAP[key]
-  if (!map || value === 0) return ''
-  const phrase = value < 0 ? map.negative : map.positive
-  return `${degreeOf(value)} ${phrase}`
+  if (!map) return ''
+  const isScale = key.endsWith('W') || key.endsWith('H') || key === 'jaw' || key === 'lip'
+    || key === 'eyeSize' || key === 'eyeLen' || key === 'noseTipSize'
+  const neutral = isScale ? 1 : 0
+  if (Math.abs(value - neutral) < 0.001) return ''
+  const isAbove = value > neutral
+  const delta = Math.abs(value - neutral)
+  const phrase = isAbove ? map.positive : map.negative
+  return `${degreeOf(delta)} ${phrase}`
 }
 
 /**

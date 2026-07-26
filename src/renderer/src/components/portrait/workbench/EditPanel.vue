@@ -98,10 +98,9 @@
     @discarded="onFaceCompareDone"
   />
 
-  <!-- 面容几何工作室（分析/指标/变形，spec 2026-07-25） -->
+  <!-- 面容几何工作室（三栏布局：妆造 | 图像 | 捏脸） -->
   <FaceGeometryStudio
-    v-if="framing === 'half'"
-    v-model="showGeometryStudio"
+    v-if="framing === 'half' && showGeometryStudio"
     :variant="variant"
     @saved="emit('success')"
   />

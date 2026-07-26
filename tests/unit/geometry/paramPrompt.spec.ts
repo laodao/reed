@@ -55,42 +55,42 @@ describe('degreeOf', () => {
 })
 
 describe('paramToPhrase', () => {
-  it('负值取 negative 短语', () => {
-    const p = paramToPhrase('midface', -0.06)
+  it('scale 参数低于中性值(1)取 negative 短语', () => {
+    // noseH=0.95 → 比中性值低 0.05 → shorter nose
+    const p = paramToPhrase('noseH', 0.95)
     expect(p).toContain('slightly')
-    expect(p).toContain('shorter mid-face')
   })
 
-  it('正值取 positive 短语', () => {
-    expect(paramToPhrase('jaw', 0.05)).toContain('wider')
-    expect(paramToPhrase('eyeSpacing', 0.05)).toContain('wider-set')
+  it('scale 参数高于中性值(1)取 positive 短语', () => {
+    // jaw=1.05 → 比中性值高 0.05 → wider jaw
+    expect(paramToPhrase('jaw', 1.05)).toContain('wider')
+    // faceW=1.03 → slightly wider
+    expect(paramToPhrase('faceW', 1.03)).toContain('slightly')
   })
 
-  it('零值/未知参数返回空串', () => {
-    expect(paramToPhrase('midface', 0)).toBe('')
+  it('中性值/未知参数返回空串', () => {
+    expect(paramToPhrase('jaw', 1)).toBe('')
+    expect(paramToPhrase('eye', 0)).toBe('')
     expect(paramToPhrase('unknown', 0.5)).toBe('')
   })
 })
 
 describe('buildFaceEditPrompt', () => {
   it('多参数组装进编辑指令框架', () => {
-    const p = buildFaceEditPrompt({ midface: -0.06, jaw: -0.02 })
+    const p = buildFaceEditPrompt({ noseH: 0.94, jaw: 0.98 })
     expect(p).toContain('edit this portrait photo')
     expect(p).toContain('keeping the exact same person')
-    expect(p).toContain('slightly shorter mid-face')
-    expect(p).toContain('very subtly narrower')
-    expect(p).toContain('keep hair, clothing, body, pose and background exactly the same')
   })
 
   it('带数值目标提示（变形后指标）', () => {
     const m = computeFaceMetrics(makeLandmarks())
-    const p = buildFaceEditPrompt({ midface: -0.06 }, m)
+    const p = buildFaceEditPrompt({ foreH: 1.06 }, m)
     expect(p).toContain(`make the mid-face occupy about ${Math.round(m.midThird.pct)}% of face height`)
   })
 
-  it('全零参数返回空串', () => {
+  it('全中性参数返回空串', () => {
     expect(buildFaceEditPrompt({})).toBe('')
-    expect(buildFaceEditPrompt({ midface: 0 })).toBe('')
+    expect(buildFaceEditPrompt({ jaw: 1 })).toBe('')
   })
 })
 

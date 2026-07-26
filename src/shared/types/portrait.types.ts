@@ -577,6 +577,103 @@ export const PARAM_PROMPT_MAP: Record<string, { negative: string; positive: stri
     negative: 'closer-set eyes',
     positive: 'wider-set eyes',
   },
+  // ── 新版 23 参数（face-sculpt-demo） ──
+  faceW: {
+    negative: 'narrower face, slimmer facial width',
+    positive: 'wider face, broader facial width',
+  },
+  eye: {
+    negative: 'closer-set eyes, narrower eye spacing',
+    positive: 'wider-set eyes, wider eye spacing',
+  },
+  foreH: {
+    negative: 'shorter forehead, lower hairline',
+    positive: 'longer forehead, higher hairline',
+  },
+  eyeH: {
+    negative: 'more compact eye area',
+    positive: 'more elongated eye area',
+  },
+  noseH: {
+    negative: 'shorter nose',
+    positive: 'longer nose',
+  },
+  philH: {
+    negative: 'shorter philtrum, shorter space between nose and lip',
+    positive: 'longer philtrum, longer space between nose and lip',
+  },
+  mouthH: {
+    negative: 'shorter mouth area, more compact lips',
+    positive: 'longer mouth area',
+  },
+  chinH: {
+    negative: 'shorter chin',
+    positive: 'longer chin, more prominent chin',
+  },
+  bridgeW: {
+    negative: 'narrower nose bridge',
+    positive: 'wider nose bridge',
+  },
+  alaW: {
+    negative: 'narrower nose wings, more refined nose',
+    positive: 'wider nose wings',
+  },
+  philW: {
+    negative: 'narrower philtrum width',
+    positive: 'wider philtrum width',
+  },
+  mouthW: {
+    negative: 'narrower mouth, smaller lips width',
+    positive: 'wider mouth, broader lips',
+  },
+  chinW: {
+    negative: 'narrower chin, more V-shaped face',
+    positive: 'wider chin, squarer jaw',
+  },
+  cheekW: {
+    negative: 'narrower cheekbones, less prominent cheeks',
+    positive: 'wider cheekbones, more prominent cheek structure',
+  },
+  eyeSize: {
+    negative: 'smaller eyes',
+    positive: 'larger eyes, more open eyes',
+  },
+  eyeTilt: {
+    negative: 'downward tilted eyes, puppy eyes',
+    positive: 'upward tilted eyes, cat eyes, foxy eyes',
+  },
+  eyeLen: {
+    negative: 'shorter eyes, more rounded eyes',
+    positive: 'longer eyes, more elongated eyes',
+  },
+  noseTipLift: {
+    negative: 'lower nose tip, drooping nasal tip',
+    positive: 'upturned nose tip, more refined nose tip',
+  },
+  noseTipSize: {
+    negative: 'smaller nose tip',
+    positive: 'larger, more prominent nose tip',
+  },
+  lip: {
+    negative: 'thinner lips',
+    positive: 'fuller, thicker lips',
+  },
+  cupidH: {
+    negative: 'lower cupid bow, less defined lip shape',
+    positive: 'higher cupid bow, more defined lip shape',
+  },
+  mouthCorner: {
+    negative: 'downturned mouth corners, sad expression',
+    positive: 'upturned mouth corners, subtle smile',
+  },
+  cheekUp: {
+    negative: 'lower cheekbones, less defined cheek structure',
+    positive: 'higher cheekbones, more lifted cheeks',
+  },
+  cheekProject: {
+    negative: 'flatter cheeks, less cheekbone prominence',
+    positive: 'more prominent, more projected cheekbones',
+  },
 }
 
 /**
