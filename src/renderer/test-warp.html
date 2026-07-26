@@ -1,120 +1,210 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-  <meta charset="utf-8">
-  <title>Warp 测试</title>
+  <meta charset="utf-8"><title>捏脸测试（23 参数网格位移场）</title>
   <style>
-    body { font-family: sans-serif; padding: 10px; }
-    .row { display: flex; gap: 12px; align-items: flex-start; }
-    .col { display: flex; flex-direction: column; gap: 4px; }
-    img, canvas { max-width: 420px; border: 1px solid #ccc; display: block; }
-    label { display: inline-block; margin-right: 12px; }
-    input[type=range] { width: 160px; vertical-align: middle; }
-    .status { color: #666; font-size: 12px; }
-    .err { color: red; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, 'Segoe UI', sans-serif; background: #1a1c20; color: #d4d6da; padding: 12px; }
+    .layout { display: flex; gap: 12px; }
+    .left { flex: 0 0 340px; overflow-y: auto; max-height: calc(100vh - 24px); }
+    .center { flex: 1; min-width: 0; }
+    .group { background: #252830; border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; }
+    .group h4 { font-size: 13px; margin-bottom: 4px; color: #9ab5e0; }
+    .slider-row { display: flex; align-items: center; gap: 6px; font-size: 12px; margin: 2px 0; }
+    .slider-row label { flex: 0 0 72px; text-align: right; color: #aaa; }
+    input[type=range] { flex: 1; height: 4px; accent-color: #6c8cd9; }
+    .val { flex: 0 0 36px; text-align: left; color: #ddd; font-variant-numeric: tabular-nums; }
+    .img-row { display: flex; gap: 8px; }
+    .img-panel { flex: 1; min-width: 0; }
+    .img-panel img, .img-panel canvas { width: 100%; border: 1px solid #3a3d45; border-radius: 4px; display: block; }
+    .img-panel .lbl { font-size: 11px; color: #777; margin-bottom: 3px; }
+    .status { font-size: 12px; padding: 4px 0; }
+    .status.ok { color: #7eb77f; } .status.err { color: #d46a6a; }
+    select { background: #2a2d35; color: #ccc; border: 1px solid #444; border-radius: 3px; padding: 2px 6px; }
+    button { background: #3a4a6a; color: #ccc; border: none; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
+    button:hover { background: #4a5a7a; }
+    .btn-row { display: flex; gap: 6px; margin-top: 8px; }
   </style>
 </head>
 <body>
-  <h3>3D mesh 变形测试</h3>
-  <div>
-    <label>图片
-      <select id="imgSel">
+<div class="layout">
+  <!-- 左栏：参数滑块 -->
+  <div class="left">
+    <div class="group">
+      <h4>图片 &amp; 缩放</h4>
+      <select id="imgSel" style="width:100%">
         <option value="/test-face.png">小刚（半身）</option>
         <option value="/test-face-ming.png">小明（半身）</option>
         <option value="/test-face.jpg">旧测试图</option>
       </select>
-    </label>
-    <label>脸长 <input type="range" id="faceLength" min="-10" max="10" value="-8" step="1"><span id="flv"></span>%</label>
-    <label>下庭 <input type="range" id="lowerface" min="-15" max="15" value="0" step="1"><span id="lfv"></span>%</label>
-    <label>下颌宽 <input type="range" id="jaw" min="-10" max="10" value="-8" step="1"><span id="jv"></span>%</label>
-    <label>中庭 <input type="range" id="midface" min="-15" max="15" value="0" step="1"><span id="mv"></span>%</label>
-    <label>眼距 <input type="range" id="eyeSpacing" min="-8" max="8" value="0" step="1"><span id="ev"></span>%</label>
+      <div class="slider-row">
+        <label>预览缩放</label><input type="range" id="scale" min="10" max="100" value="35" step="5"><span class="val" id="sv">0.35</span>
+      </div>
+    </div>
+    <!-- 组1：整体 -->
+    <div class="group">
+      <h4>整体</h4>
+      <div class="slider-row"><label>脸宽</label><input type="range" id="faceW" min="80" max="120" value="100" step="1"><span class="val" id="fv_faceW">1.00</span></div>
+      <div class="slider-row"><label>下颌宽</label><input type="range" id="jaw" min="70" max="115" value="100" step="1"><span class="val" id="fv_jaw">1.00</span></div>
+      <div class="slider-row"><label>眼距</label><input type="range" id="eye" min="-15" max="15" value="0" step="1"><span class="val" id="fv_eye">0.00</span></div>
+    </div>
+    <!-- 组2：纵向 -->
+    <div class="group">
+      <h4>纵向 6 带高度</h4>
+      <div class="slider-row"><label>上庭</label><input type="range" id="foreH" min="70" max="130" value="100" step="1"><span class="val" id="fv_foreH">1.00</span></div>
+      <div class="slider-row"><label>眼部</label><input type="range" id="eyeH" min="70" max="130" value="100" step="1"><span class="val" id="fv_eyeH">1.00</span></div>
+      <div class="slider-row"><label>鼻部</label><input type="range" id="noseH" min="70" max="130" value="100" step="1"><span class="val" id="fv_noseH">1.00</span></div>
+      <div class="slider-row"><label>人中</label><input type="range" id="philH" min="60" max="140" value="100" step="1"><span class="val" id="fv_philH">1.00</span></div>
+      <div class="slider-row"><label>嘴部</label><input type="range" id="mouthH" min="70" max="130" value="100" step="1"><span class="val" id="fv_mouthH">1.00</span></div>
+      <div class="slider-row"><label>下巴</label><input type="range" id="chinH" min="70" max="130" value="100" step="1"><span class="val" id="fv_chinH">1.00</span></div>
+    </div>
+    <!-- 组3：横向 -->
+    <div class="group">
+      <h4>横向 6 带宽度</h4>
+      <div class="slider-row"><label>鼻梁宽</label><input type="range" id="bridgeW" min="70" max="130" value="100" step="1"><span class="val" id="fv_bridgeW">1.00</span></div>
+      <div class="slider-row"><label>鼻翼宽</label><input type="range" id="alaW" min="70" max="130" value="100" step="1"><span class="val" id="fv_alaW">1.00</span></div>
+      <div class="slider-row"><label>人中宽</label><input type="range" id="philW" min="70" max="130" value="100" step="1"><span class="val" id="fv_philW">1.00</span></div>
+      <div class="slider-row"><label>嘴宽</label><input type="range" id="mouthW" min="75" max="130" value="100" step="1"><span class="val" id="fv_mouthW">1.00</span></div>
+      <div class="slider-row"><label>下巴宽</label><input type="range" id="chinW" min="70" max="130" value="100" step="1"><span class="val" id="fv_chinW">1.00</span></div>
+      <div class="slider-row"><label>颧骨宽</label><input type="range" id="cheekW" min="85" max="120" value="100" step="1"><span class="val" id="fv_cheekW">1.00</span></div>
+    </div>
+    <!-- 组4：五官精调 -->
+    <div class="group">
+      <h4>五官精调</h4>
+      <div class="slider-row"><label>眼睛大小</label><input type="range" id="eyeSize" min="70" max="140" value="100" step="1"><span class="val" id="fv_eyeSize">1.00</span></div>
+      <div class="slider-row"><label>眼角上扬</label><input type="range" id="eyeTilt" min="-25" max="25" value="0" step="1"><span class="val" id="fv_eyeTilt">0.00</span></div>
+      <div class="slider-row"><label>眼睛拉长</label><input type="range" id="eyeLen" min="85" max="120" value="100" step="1"><span class="val" id="fv_eyeLen">1.00</span></div>
+      <div class="slider-row"><label>鼻尖上翘</label><input type="range" id="noseTipLift" min="-2" max="2" value="0" step="1"><span class="val" id="fv_noseTipLift">0.00</span></div>
+      <div class="slider-row"><label>鼻尖大小</label><input type="range" id="noseTipSize" min="80" max="120" value="100" step="1"><span class="val" id="fv_noseTipSize">1.00</span></div>
+      <div class="slider-row"><label>嘴唇厚薄</label><input type="range" id="lip" min="60" max="160" value="100" step="1"><span class="val" id="fv_lip">1.00</span></div>
+      <div class="slider-row"><label>唇峰高低</label><input type="range" id="cupidH" min="-1" max="1" value="0" step="1"><span class="val" id="fv_cupidH">0.000</span></div>
+      <div class="slider-row"><label>嘴角上扬</label><input type="range" id="mouthCorner" min="-2" max="2" value="0" step="1"><span class="val" id="fv_mouthCorner">0.00</span></div>
+      <div class="slider-row"><label>颧骨高低</label><input type="range" id="cheekUp" min="-2" max="2" value="0" step="1"><span class="val" id="fv_cheekUp">0.00</span></div>
+      <div class="slider-row"><label>颧骨突起</label><input type="range" id="cheekProject" min="-15" max="25" value="0" step="1"><span class="val" id="fv_cheekProject">0.00</span></div>
+    </div>
+    <div class="btn-row">
+      <button id="reset">全部重置</button>
+      <button id="holdOrig">按住看原图</button>
+    </div>
+    <div class="status" id="status">检测中...</div>
   </div>
-  <div class="status" id="status">检测中...</div>
-  <div class="row">
-    <div class="col"><div>原图</div><img id="src" crossorigin="anonymous"></div>
-    <div class="col"><div>变形（全量 scale=1）</div><img id="out"></div>
+  <!-- 中栏：图片 -->
+  <div class="center">
+    <div class="img-row">
+      <div class="img-panel"><div class="lbl">原图</div><img id="src" crossorigin="anonymous"></div>
+      <div class="img-panel"><div class="lbl">变形</div><img id="out"></div>
+    </div>
   </div>
-  <script type="module">
-    import { detectFaceLandmarks, isDetectFailure } from '@/components/portrait/geometry/useFaceLandmarks'
-    import { warpFaceBands } from '@/components/portrait/geometry/bandWarp'
+</div>
 
-    const outImg = document.getElementById('out')
-    const srcImg = document.getElementById('src')
-    const status = document.getElementById('status')
-    const imgSel = document.getElementById('imgSel')
-    let landmarks = null
-    let srcImage = null
-    let curUrl = imgSel.value
+<script type="module">
+import { detectFaceLandmarks, isDetectFailure } from '@/components/portrait/geometry/useFaceLandmarks'
+import { warpFaceBands } from '@/components/portrait/geometry/bandWarp'
 
-    function getParams() {
-      const v = (id) => +document.getElementById(id).value / 100
-      return {
-        faceLength: v('faceLength'),
-        lowerface: v('lowerface'),
-        jaw: v('jaw'),
-        midface: v('midface'),
-        eyeSpacing: v('eyeSpacing'),
-      }
-    }
+const outImg = document.getElementById('out'), srcImg = document.getElementById('src')
+const status = document.getElementById('status'), imgSel = document.getElementById('imgSel')
+let landmarks = null, srcImage = null, curUrl = imgSel.value
 
-    function rebuild() {
-      if (!landmarks || !srcImage) return
-      try {
-        const canvas = warpFaceBands(srcImage, landmarks, getParams(), { scale: 1 })
-        outImg.src = canvas.toDataURL('image/png')
-        status.textContent = '已生成（' + canvas.width + 'x' + canvas.height + '）'
-        status.className = 'status'
-      } catch (e) {
-        status.textContent = '生成失败: ' + e.message
-        status.className = 'err'
-      }
-    }
+// ── 参数：从滑块读取 ──
+const PARAM_DEFS = {
+  // 整体
+  faceW: { div: 100 }, jaw: { div: 100 }, eye: { div: 100 },
+  // 纵向
+  foreH: { div: 100 }, eyeH: { div: 100 }, noseH: { div: 100 },
+  philH: { div: 100 }, mouthH: { div: 100 }, chinH: { div: 100 },
+  // 横向
+  bridgeW: { div: 100 }, alaW: { div: 100 }, philW: { div: 100 },
+  mouthW: { div: 100 }, chinW: { div: 100 }, cheekW: { div: 100 },
+  // 精调
+  eyeSize: { div: 100 }, eyeTilt: { div: 100 }, eyeLen: { div: 100 },
+  noseTipLift: { div: 100 }, noseTipSize: { div: 100 },
+  lip: { div: 100 },
+  cupidH: { div: 1000 }, mouthCorner: { div: 100 },
+  cheekUp: { div: 100 }, cheekProject: { div: 100 },
+}
 
-    async function init() {
-      const url = curUrl
-      status.textContent = '检测中... (' + url + ')'
-      status.className = 'status'
-      srcImg.src = url
-      // 加载源图
-      srcImage = await new Promise((resolve, reject) => {
-        const img = new Image()
-        img.crossOrigin = 'anonymous'
-        img.onload = () => resolve(img)
-        img.onerror = () => reject(new Error('图片加载失败'))
-        img.src = url
-      })
-      // 检测（cacheKey 带时间戳避免切换图片时命中缓存）
-      const result = await detectFaceLandmarks(url, 'test-warp-' + url + '-' + Date.now())
-      if (isDetectFailure(result)) {
-        status.textContent = '检测失败: ' + result.message
-        status.className = 'err'
-        landmarks = null
-        return
-      }
-      landmarks = result.landmarks
-      status.textContent = '检测成功，' + landmarks.length + ' 点，面框 ' +
-        Math.round(result.faceBox.width) + 'x' + Math.round(result.faceBox.height)
-      rebuild()
-    }
+function getParams() {
+  const p = {}
+  for (const [k, def] of Object.entries(PARAM_DEFS)) {
+    const el = document.getElementById(k)
+    if (el) p[k] = +el.value / def.div
+  }
+  return p
+}
 
-    ;['faceLength', 'lowerface', 'jaw', 'midface', 'eyeSpacing'].forEach((k) => {
-      const el = document.getElementById(k)
-      const sp = document.getElementById({ faceLength: 'flv', lowerface: 'lfv', jaw: 'jv', midface: 'mv', eyeSpacing: 'ev' }[k])
-      const update = () => { sp.textContent = el.value; rebuild() }
-      el.addEventListener('input', update)
-      sp.textContent = el.value
+function rebuild() {
+  if (!landmarks || !srcImage) return
+  const t0 = performance.now()
+  try {
+    const canvas = warpFaceBands(srcImage, landmarks, getParams(), {
+      scale: +document.getElementById('scale').value / 100,
     })
+    outImg.src = canvas.toDataURL('image/png')
+    const ms = Math.round(performance.now() - t0)
+    status.textContent = `已生成 ${canvas.width}x${canvas.height}（${ms}ms）`
+    status.className = 'status ok'
+  } catch (e) {
+    status.textContent = '生成失败: ' + e.message
+    status.className = 'status err'
+  }
+}
 
-    imgSel.addEventListener('change', () => { curUrl = imgSel.value; init().catch((e) => {
-      status.textContent = '初始化失败: ' + e.message
-      status.className = 'err'
-    }) })
+async function init() {
+  const url = curUrl
+  status.textContent = '检测中... (' + url + ')'; status.className = 'status'
+  srcImg.src = url
+  srcImage = await new Promise((resolve, reject) => {
+    const img = new Image(); img.crossOrigin = 'anonymous'
+    img.onload = () => resolve(img); img.onerror = () => reject(new Error('图片加载失败'))
+    img.src = url
+  })
+  const result = await detectFaceLandmarks(url, 'warp-' + url + '-' + Date.now())
+  if (isDetectFailure(result)) {
+    status.textContent = '检测失败: ' + result.message; status.className = 'status err'
+    landmarks = null; return
+  }
+  landmarks = result.landmarks
+  rebuild()
+}
 
-    init().catch((e) => {
-      status.textContent = '初始化失败: ' + e.message
-      status.className = 'err'
-    })
-  </script>
+// ── 绑定所有滑块 ──
+for (const k of Object.keys(PARAM_DEFS)) {
+  const el = document.getElementById(k), sp = document.getElementById('fv_' + k)
+  if (!el || !sp) continue
+  const update = () => {
+    const v = +el.value / PARAM_DEFS[k].div
+    sp.textContent = v.toFixed(3)
+    rebuild()
+  }
+  el.addEventListener('input', update)
+  sp.textContent = (+el.value / PARAM_DEFS[k].div).toFixed(3)
+}
+// 缩放滑块
+const scaleEl = document.getElementById('scale')
+document.getElementById('sv').textContent = (+scaleEl.value / 100).toFixed(2)
+scaleEl.addEventListener('input', () => {
+  document.getElementById('sv').textContent = (+scaleEl.value / 100).toFixed(2)
+  rebuild()
+})
+// 图片切换
+imgSel.addEventListener('change', () => { curUrl = imgSel.value; init().catch(e => { status.textContent = '初始化失败: ' + e.message; status.className = 'status err' }) })
+// 重置
+document.getElementById('reset').addEventListener('click', () => {
+  for (const [k, def] of Object.entries(PARAM_DEFS)) {
+    const el = document.getElementById(k), sp = document.getElementById('fv_' + k)
+    if (!el || !sp) continue
+    el.value = k === 'philH' ? 100 : 100
+    sp.textContent = '1.000'
+  }
+  rebuild()
+})
+// 按住看原图
+const hold = document.getElementById('holdOrig')
+hold.addEventListener('pointerdown', () => { outImg.src = srcImg.src })
+hold.addEventListener('pointerup', rebuild)
+hold.addEventListener('pointerleave', rebuild)
+
+init().catch(e => { status.textContent = '初始化失败: ' + e.message; status.className = 'status err' })
+</script>
 </body>
 </html>
