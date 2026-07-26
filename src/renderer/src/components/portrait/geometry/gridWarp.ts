@@ -64,7 +64,8 @@ export function renderGridWarp(
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
 
-  // 三角形全覆盖——不画背景避免鬼影
+  // 源图做底——三角形即使有抗锯齿微缝也透原图内容，不显网纹
+  ctx.drawImage(source, 0, 0, srcW, srcH, 0, 0, renderW, renderH)
   for (let j = 0; j < gh; j++) {
     for (let i = 0; i < gw; i++) {
       const a = j * nx + i, b = a + 1, c = a + nx, d = c + 1
@@ -93,7 +94,7 @@ function renderCell(
 function expandOutward(center: Point, vert: Point): Point {
   const dx = vert.x - center.x, dy = vert.y - center.y
   const len = Math.hypot(dx, dy) || 1
-  const push = 0.6 // 向外扩 0.6px
+  const push = 1.5 // 向外扩 1.5px——消除抗锯齿接缝
   return { x: vert.x + (dx / len) * push, y: vert.y + (dy / len) * push }
 }
 
