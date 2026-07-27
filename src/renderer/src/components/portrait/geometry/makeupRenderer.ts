@@ -127,7 +127,10 @@ function pathFromIndices(ctx: CanvasRenderingContext2D, lm: Point[], indices: nu
 }
 
 function eyeWidthPx(lm: Point[], W: number): number {
-  return Math.max(2, Math.abs(lm[P.eyeInnerR].x - lm[P.eyeInnerL].x)) * W
+  // 关键：Math.max 下限必须包在 * W 之后。归一化 landmarks 差值通常 < 1，
+  // 若写成 max(2, |差值|) * W，则 max(2, 0.16)=2，再 *W 恒等于 2W（与真实眼宽无关），
+  // 导致眼线线宽≈2W*0.07（粗黑条）、腮红半径≈2W*0.95（覆盖全画布）。
+  return Math.max(2, Math.abs(lm[P.eyeInnerR].x - lm[P.eyeInnerL].x) * W)
 }
 
 /** 皮肤区域：脸轮廓，额头顶部向上延伸（MediaPipe 顶点 10 在发际线以下） */
