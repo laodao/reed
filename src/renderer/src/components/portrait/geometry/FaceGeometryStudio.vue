@@ -11,13 +11,14 @@
         <MakeupPanel v-model="makeupState" />
       </div>
 
-      <!-- 中：图像 + 按钮 -->
+      <!-- 中：图像 + 指标 + 按钮 -->
       <div class="studio-center">
         <FaceAnnotator
           :image-src="displaySrc"
           :landmarks="displayLandmarks"
           :metrics="displayMetrics"
         />
+        <MetricsPanel :metrics="displayMetrics" :changed-keys="changedKeys" />
         <div class="center-actions">
           <el-button :disabled="!hasParams" @click="resetParams" size="small">重置</el-button>
           <el-button :loading="saving" :disabled="!hasParams" @click="saveAsNew" size="small">另存为新变体</el-button>
@@ -25,12 +26,11 @@
           <el-button :loading="prompting" :disabled="!hasParams" @click="copyPrompt" size="small">复制 AI 提示词</el-button>
           <el-button type="primary" :loading="generating" :disabled="!hasParams" @click="aiGenerate" size="small">AI 生成</el-button>
         </div>
-        <div v-if="remeasuredMetrics" class="remeasure-tag">? 已复测：AI 结果 vs 目标</div>
+        <div v-if="remeasuredMetrics" class="remeasure-tag">已复测：AI 结果 vs 目标</div>
       </div>
 
-      <!-- 右：指标 + 滑块 -->
+      <!-- 右：滑块 -->
       <div class="studio-right">
-        <MetricsPanel :metrics="displayMetrics" :changed-keys="changedKeys" />
         <div v-if="!hasParams" class="studio-note">拖动参数滑块查看实时变形预览</div>
         <ParamSliders v-model="warpParams" />
       </div>
@@ -243,7 +243,7 @@ onMounted(runDetect)
 </script>
 
 <style lang="scss" scoped>
-.studio-page { height: 100%; display: flex; flex-direction: column; }
+.studio-page { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
 .studio-status {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 12px; padding: 60px 20px; color: var(--text-secondary);
@@ -254,27 +254,28 @@ onMounted(runDetect)
   align-items: start; height: 100%; overflow: hidden;
 }
 .studio-left {
-  overflow-y: auto; max-height: calc(100vh - 120px);
+  overflow-y: auto; height: 100%;
   border-right: 1px solid var(--border-color-light, #e4e7ed);
   padding-right: 8px;
 }
 .studio-center {
-  display: flex; flex-direction: column; align-items: center; gap: 10px;
-  overflow-y: auto; max-height: calc(100vh - 120px);
+  display: flex; flex-direction: column; gap: 8px; overflow: hidden; height: 100%;
+  :deep(.base-img) { max-height: 55vh; object-fit: contain; }
+  :deep(.annotator) { max-height: 55vh; }
 }
 .studio-right {
-  display: flex; flex-direction: column; gap: 10px;
-  overflow-y: auto; max-height: calc(100vh - 120px);
+  display: flex; flex-direction: column; gap: 8px;
+  overflow-y: auto; height: 100%;
   border-left: 1px solid var(--border-color-light, #e4e7ed);
   padding-left: 8px;
 }
 .center-actions {
-  display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 6px 0;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 4px 0; flex-shrink: 0;
 }
-.studio-note { font-size: 11.5px; color: var(--text-placeholder); text-align: center; margin-bottom: 8px; }
+.studio-note { font-size: 11.5px; color: var(--text-placeholder); text-align: center; margin-bottom: 6px; flex-shrink: 0; }
 .remeasure-tag {
   font-size: 11.5px; color: var(--color-success);
   background: var(--color-success-light-9, #f0f9eb);
-  border-radius: var(--radius-sm); padding: 5px 10px; text-align: center;
+  border-radius: var(--radius-sm); padding: 5px 10px; text-align: center; flex-shrink: 0;
 }
 </style>
