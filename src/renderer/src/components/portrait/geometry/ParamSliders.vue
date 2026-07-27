@@ -93,7 +93,7 @@ function fmtVal(key: keyof WarpParams) { const m = getMeta(key); const raw = pro
 </script>
 
 <style lang="scss" scoped>
-.param-sliders { background: var(--fill-color-light); border-radius: var(--radius-md); padding: 10px 12px; max-height: 480px; overflow-y: auto; }
+.param-sliders { background: var(--fill-color-light); border-radius: var(--radius-md); padding: 10px 12px; height: 100%; overflow-y: auto; }
 .ps-title { font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
 .ps-group { margin-bottom: 6px; &:last-of-type { margin-bottom: 0; } }
 .ps-group-title { font-size: 10.5px; color: var(--color-primary, #6c8cd9); margin-bottom: 2px; font-weight: 500; letter-spacing: 0.3px; }

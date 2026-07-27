@@ -250,21 +250,22 @@ onMounted(runDetect)
 .studio-layout {
   display: grid; grid-template-columns: 220px 1fr 240px; gap: 14px;
   height: 100%; overflow: hidden;
+  align-items: start;
 }
 .studio-left {
-  overflow-y: auto; height: 100%; min-width: 0;
+  overflow-y: auto; overflow-x: hidden; height: 100%; min-width: 0;
   border-right: 1px solid var(--border-color-light, #e4e7ed);
   padding-right: 8px;
 }
 .studio-center {
-  display: flex; flex-direction: column; align-items: center; gap: 8px;
-  height: 100%; min-width: 0; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  min-width: 0; overflow: hidden;
   :deep(.base-img) { max-height: 70vh; max-width: 100%; object-fit: contain; }
-  :deep(.annotator) { max-height: 70vh; flex: 1; min-height: 0; display: flex; justify-content: center; }
+  :deep(.annotator) { max-height: 70vh; min-height: 0; flex-shrink: 1; }
 }
 .studio-right {
   display: flex; flex-direction: column; height: 100%; min-width: 0;
-  overflow-y: auto;
+  overflow-y: auto; overflow-x: hidden;
   border-left: 1px solid var(--border-color-light, #e4e7ed);
   padding-left: 8px;
 }
