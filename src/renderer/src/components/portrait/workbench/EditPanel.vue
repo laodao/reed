@@ -155,9 +155,15 @@ import { useRouter } from 'vue-router'
 const router = useRouter()
 
 function openGeometryStudio() {
+  const v = props.variant
   router.push({
     path: '/portrait/geometry',
-    query: { characterId: props.character.id, variantId: props.variant.id },
+    query: {
+      characterId: props.character.id,
+      variantId: v.id,
+      imagePath: encodeURIComponent(v.imagePath),
+      angle: v.angle,
+    },
   })
 }
 

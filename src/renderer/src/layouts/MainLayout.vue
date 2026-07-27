@@ -377,6 +377,7 @@ const pathTitleMap: Record<string, string> = {
   '/voice/stt': '语音转文本',
   '/voice/clone': '声音复刻',
   '/knowledge-base': '知识库',
+  '/portrait/geometry': '面容分析',
   '/assistant': '智能助手',
   '/settings': '设置'
 }
