@@ -1,6 +1,6 @@
 <template>
   <div class="param-sliders">
-    <div class="ps-title">参数调整</div>
+    <div class="ps-title">面容编辑</div>
 
     <div class="ps-group"><div class="ps-group-title">整体</div>
       <div v-for="item in groupOverall" :key="item.key" class="ps-row">

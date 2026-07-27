@@ -28,10 +28,8 @@
         <div v-if="remeasuredMetrics" class="remeasure-tag">? 已复测：AI 结果 vs 目标</div>
       </div>
 
-      <!-- 右：指标 + 滑块 -->
+      <!-- 右：滑块 -->
       <div class="studio-right">
-        <MetricsPanel :metrics="displayMetrics" :changed-keys="changedKeys" />
-        <div v-if="!hasParams" class="studio-note">拖动参数滑块查看实时变形预览</div>
         <ParamSliders v-model="warpParams" />
       </div>
     </div>
@@ -250,31 +248,32 @@ onMounted(runDetect)
   &.failure { color: var(--text-regular); .fail-ico { font-size: 44px; opacity: 0.6; } }
 }
 .studio-layout {
-  display: grid; grid-template-columns: 200px 1fr 240px; gap: 14px;
-  align-items: start; height: 100%; overflow: hidden;
+  display: grid; grid-template-columns: 220px 1fr 240px; gap: 14px;
+  height: 100%; overflow: hidden;
 }
 .studio-left {
-  overflow-y: auto; max-height: calc(100vh - 120px);
+  overflow-y: auto; height: 100%; min-width: 0;
   border-right: 1px solid var(--border-color-light, #e4e7ed);
   padding-right: 8px;
 }
 .studio-center {
-  display: flex; flex-direction: column; align-items: center; gap: 10px;
-  overflow-y: auto; max-height: calc(100vh - 120px);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  height: 100%; min-width: 0; overflow: hidden;
+  :deep(.base-img) { max-height: 38vh; object-fit: contain; }
+  :deep(.annotator) { max-height: 38vh; flex-shrink: 1; min-height: 0; }
 }
 .studio-right {
-  display: flex; flex-direction: column; gap: 10px;
-  overflow-y: auto; max-height: calc(100vh - 120px);
+  display: flex; flex-direction: column; height: 100%; min-width: 0;
+  overflow-y: auto;
   border-left: 1px solid var(--border-color-light, #e4e7ed);
   padding-left: 8px;
 }
 .center-actions {
-  display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 6px 0;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 4px 0; flex-shrink: 0;
 }
-.studio-note { font-size: 11.5px; color: var(--text-placeholder); text-align: center; margin-bottom: 8px; }
 .remeasure-tag {
   font-size: 11.5px; color: var(--color-success);
   background: var(--color-success-light-9, #f0f9eb);
-  border-radius: var(--radius-sm); padding: 5px 10px; text-align: center;
+  border-radius: var(--radius-sm); padding: 5px 10px; text-align: center; flex-shrink: 0;
 }
 </style>
