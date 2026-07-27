@@ -180,7 +180,9 @@
       -->
       <div class="page-container" id="page-container">
         <router-view v-slot="{ Component, route }">
-          <component :is="Component" :key="route.path" />
+          <keep-alive :include="cachedViews">
+            <component :is="Component" :key="route.path" />
+          </keep-alive>
         </router-view>
       </div>
     </main>
@@ -225,7 +227,7 @@ const tabsStore = useTabsStore()
 const isCollapsed = ref(true)
 const pageTransition = ref('slide-fade')
 // 需要缓存的页面组件名称（对应 defineOptions 中的 name）
-const cachedViews = ['Home', 'Chat', 'StoryEditor', 'CommentEditor', 'Settings']
+const cachedViews = ['Home', 'Chat', 'StoryEditor', 'CommentEditor', 'Settings', 'Portrait', 'PortraitTemplates', 'FaceGeometryPage']
 
 // 主菜单项
 const mainMenuItems = [
