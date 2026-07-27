@@ -11,7 +11,7 @@
         <MakeupPanel v-model="makeupState" />
       </div>
 
-      <!-- 中：图像 + 指标 + 按钮 -->
+      <!-- 中：图像 + 按钮 -->
       <div class="studio-center">
         <FaceAnnotator
           :image-src="displaySrc"
@@ -25,11 +25,12 @@
           <el-button :loading="prompting" :disabled="!hasParams" @click="copyPrompt" size="small">复制 AI 提示词</el-button>
           <el-button type="primary" :loading="generating" :disabled="!hasParams" @click="aiGenerate" size="small">AI 生成</el-button>
         </div>
-        <div v-if="remeasuredMetrics" class="remeasure-tag">已复测：AI 结果 vs 目标</div>
+        <div v-if="remeasuredMetrics" class="remeasure-tag">? 已复测：AI 结果 vs 目标</div>
       </div>
 
-      <!-- 右：滑块 -->
+      <!-- 右：指标 + 滑块 -->
       <div class="studio-right">
+        <MetricsPanel :metrics="displayMetrics" :changed-keys="changedKeys" />
         <div v-if="!hasParams" class="studio-note">拖动参数滑块查看实时变形预览</div>
         <ParamSliders v-model="warpParams" />
       </div>
@@ -45,6 +46,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import FaceAnnotator from './FaceAnnotator.vue'
+import MetricsPanel from './MetricsPanel.vue'
 import ParamSliders from './ParamSliders.vue'
 import MakeupPanel from './MakeupPanel.vue'
 import FaceCompareDialog from '../workbench/FaceCompareDialog.vue'
@@ -241,39 +243,38 @@ onMounted(runDetect)
 </script>
 
 <style lang="scss" scoped>
-.studio-page { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+.studio-page { height: 100%; display: flex; flex-direction: column; }
 .studio-status {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 12px; padding: 60px 20px; color: var(--text-secondary);
   &.failure { color: var(--text-regular); .fail-ico { font-size: 44px; opacity: 0.6; } }
 }
 .studio-layout {
-  display: grid; grid-template-columns: 220px 1fr 240px; gap: 12px;
-  height: 100%; overflow: hidden;
+  display: grid; grid-template-columns: 200px 1fr 240px; gap: 14px;
+  align-items: start; height: 100%; overflow: hidden;
 }
 .studio-left {
-  overflow-y: auto; height: 100%; min-width: 0;
+  overflow-y: auto; max-height: calc(100vh - 120px);
   border-right: 1px solid var(--border-color-light, #e4e7ed);
-  padding-right: 6px;
+  padding-right: 8px;
 }
 .studio-center {
-  display: flex; flex-direction: column; gap: 6px; min-width: 0; height: 100%;
-  :deep(.base-img) { max-height: 42vh; object-fit: contain; }
-  :deep(.annotator) { max-height: 42vh; min-height: 0; flex-shrink: 1; overflow: hidden; }
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  overflow-y: auto; max-height: calc(100vh - 120px);
 }
 .studio-right {
-  display: flex; flex-direction: column; min-width: 0;
-  overflow-y: auto; height: 100%;
+  display: flex; flex-direction: column; gap: 10px;
+  overflow-y: auto; max-height: calc(100vh - 120px);
   border-left: 1px solid var(--border-color-light, #e4e7ed);
-  padding-left: 6px;
+  padding-left: 8px;
 }
 .center-actions {
-  display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 4px 0; flex-shrink: 0;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 6px 0;
 }
-.studio-note { font-size: 11.5px; color: var(--text-placeholder); text-align: center; margin-bottom: 4px; flex-shrink: 0; }
+.studio-note { font-size: 11.5px; color: var(--text-placeholder); text-align: center; margin-bottom: 8px; }
 .remeasure-tag {
   font-size: 11.5px; color: var(--color-success);
   background: var(--color-success-light-9, #f0f9eb);
-  border-radius: var(--radius-sm); padding: 4px 10px; text-align: center; flex-shrink: 0;
+  border-radius: var(--radius-sm); padding: 5px 10px; text-align: center;
 }
 </style>

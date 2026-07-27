@@ -152,7 +152,7 @@ function updateFound(v: number) {
 </script>
 
 <style lang="scss" scoped>
-.makeup-panel { padding: 8px 4px; width: 100%; }
+.makeup-panel { padding: 8px 4px; }
 .mp-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 10px; }
 .mp-section { margin-bottom: 14px; }
 .mp-section-title { font-size: 11.5px; color: var(--color-primary, #6c8cd9); margin-bottom: 4px; }
