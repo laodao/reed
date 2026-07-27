@@ -46,9 +46,6 @@
         >
           🎯 只改面部
         </el-button>
-        <el-button class="geometry-btn" @click="showGeometryStudio = true">
-          📐 面容分析
-        </el-button>
       </div>
     </template>
 
@@ -98,12 +95,6 @@
     @discarded="onFaceCompareDone"
   />
 
-  <!-- 面容几何工作室（三栏布局：妆造 | 图像 | 捏脸） -->
-  <FaceGeometryStudio
-    v-if="framing === 'half' && showGeometryStudio"
-    :variant="variant"
-    @saved="emit('success')"
-  />
 </template>
 
 <script setup lang="ts">
@@ -113,7 +104,7 @@ import TemplatePicker from './TemplatePicker.vue'
 import ReferenceImagePicker from './ReferenceImagePicker.vue'
 import SizeSelect from './SizeSelect.vue'
 import FaceCompareDialog from './FaceCompareDialog.vue'
-import FaceGeometryStudio from '../geometry/FaceGeometryStudio.vue'
+
 import { DEFAULT_PORTRAIT_SIZES } from '../../../../../shared/types/portrait.types'
 import type {
   PortraitCharacter,
@@ -156,9 +147,6 @@ const focusRegion = ref<'face' | 'face_and_hair' | 'upper'>('face')
 // 前后对比确认：生成成功后先弹对比框，用户确认才保留新图（原图始终不动）
 const showFaceCompare = ref(false)
 const newFaceVariant = ref<PortraitVariant | null>(null)
-
-// 面容几何工作室
-const showGeometryStudio = ref(false)
 
 async function handleEditFace() {
   editing.value = true
