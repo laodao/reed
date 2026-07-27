@@ -255,13 +255,14 @@ onMounted(runDetect)
 .studio-left {
   overflow-y: auto; overflow-x: hidden; height: 100%; min-width: 0;
   border-right: 1px solid var(--border-color-light, #e4e7ed);
-  padding-right: 8px;
+  padding: 0 8px 0 0;
 }
 .studio-center {
   display: flex; flex-direction: column; align-items: center; gap: 6px;
   min-width: 0; overflow: hidden;
   :deep(.base-img) { max-height: 70vh; max-width: 100%; object-fit: contain; }
-  :deep(.annotator) { max-height: 70vh; min-height: 0; flex-shrink: 1; }
+  :deep(.annotator) { max-height: 70vh; min-height: 0; flex-shrink: 1; overflow: hidden; }
+  :deep(.overlay) { display: none; }
 }
 .studio-right {
   display: flex; flex-direction: column; height: 100%; min-width: 0;
