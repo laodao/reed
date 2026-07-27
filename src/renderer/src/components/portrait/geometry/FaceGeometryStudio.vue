@@ -18,7 +18,6 @@
           :landmarks="displayLandmarks"
           :metrics="displayMetrics"
         />
-        <MetricsPanel :metrics="displayMetrics" :changed-keys="changedKeys" />
         <div class="center-actions">
           <el-button :disabled="!hasParams" @click="resetParams" size="small">重置</el-button>
           <el-button :loading="saving" :disabled="!hasParams" @click="saveAsNew" size="small">另存为新变体</el-button>
@@ -46,7 +45,6 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import FaceAnnotator from './FaceAnnotator.vue'
-import MetricsPanel from './MetricsPanel.vue'
 import ParamSliders from './ParamSliders.vue'
 import MakeupPanel from './MakeupPanel.vue'
 import FaceCompareDialog from '../workbench/FaceCompareDialog.vue'
@@ -250,32 +248,32 @@ onMounted(runDetect)
   &.failure { color: var(--text-regular); .fail-ico { font-size: 44px; opacity: 0.6; } }
 }
 .studio-layout {
-  display: grid; grid-template-columns: 200px 1fr 240px; gap: 14px;
-  align-items: start; height: 100%; overflow: hidden;
+  display: grid; grid-template-columns: 220px 1fr 240px; gap: 12px;
+  height: 100%; overflow: hidden;
 }
 .studio-left {
-  overflow-y: auto; height: 100%;
+  overflow-y: auto; height: 100%; min-width: 0;
   border-right: 1px solid var(--border-color-light, #e4e7ed);
-  padding-right: 8px;
+  padding-right: 6px;
 }
 .studio-center {
-  display: flex; flex-direction: column; gap: 8px; overflow: hidden; height: 100%;
-  :deep(.base-img) { max-height: 55vh; object-fit: contain; }
-  :deep(.annotator) { max-height: 55vh; }
+  display: flex; flex-direction: column; gap: 6px; min-width: 0; height: 100%;
+  :deep(.base-img) { max-height: 42vh; object-fit: contain; }
+  :deep(.annotator) { max-height: 42vh; min-height: 0; flex-shrink: 1; overflow: hidden; }
 }
 .studio-right {
-  display: flex; flex-direction: column; gap: 8px;
+  display: flex; flex-direction: column; min-width: 0;
   overflow-y: auto; height: 100%;
   border-left: 1px solid var(--border-color-light, #e4e7ed);
-  padding-left: 8px;
+  padding-left: 6px;
 }
 .center-actions {
   display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 4px 0; flex-shrink: 0;
 }
-.studio-note { font-size: 11.5px; color: var(--text-placeholder); text-align: center; margin-bottom: 6px; flex-shrink: 0; }
+.studio-note { font-size: 11.5px; color: var(--text-placeholder); text-align: center; margin-bottom: 4px; flex-shrink: 0; }
 .remeasure-tag {
   font-size: 11.5px; color: var(--color-success);
   background: var(--color-success-light-9, #f0f9eb);
-  border-radius: var(--radius-sm); padding: 5px 10px; text-align: center; flex-shrink: 0;
+  border-radius: var(--radius-sm); padding: 4px 10px; text-align: center; flex-shrink: 0;
 }
 </style>
