@@ -52,7 +52,6 @@
             <div class="framing-tabs">
               <span class="ft-tab" :class="{ active: currentTab === 'half' }" @click="currentTab = 'half'">半身像</span>
               <span class="ft-tab" :class="{ active: currentTab === 'full' }" @click="currentTab = 'full'">全身像</span>
-              <span class="ft-tab" :class="{ active: currentTab === 'geometry' }" @click="currentTab = 'geometry'">🎨 面容分析</span>
             </div>
 
             <!-- 当前 tab 有图 -->
@@ -88,17 +87,8 @@
             </template>
           </div>
 
-          <!-- 面容分析 tab：全宽工作室 -->
-          <template v-if="currentTab === 'geometry'">
-            <FaceGeometryStudio
-              v-if="currentVariant"
-              :variant="currentVariant"
-              @saved="loadVariants"
-            />
-          </template>
-
-          <!-- 右：操作（非面容分析 tab） -->
-          <div v-if="currentTab !== 'geometry'" class="wb-ops">
+          <!-- 右：操作 -->
+          <div class="wb-ops">
             <EditPanel
               v-if="currentVariant"
               :framing="currentTab"
@@ -191,7 +181,7 @@
 import { ref, computed, watch, onMounted, nextTick, type ComponentPublicInstance } from 'vue'
 import GeneratePanel from './GeneratePanel.vue'
 import EditPanel from './EditPanel.vue'
-import FaceGeometryStudio from '../geometry/FaceGeometryStudio.vue'
+
 import MoreActionsPanel from './MoreActionsPanel.vue'
 import VariantGallery from './VariantGallery.vue'
 import RegenerateDialog from './RegenerateDialog.vue'
@@ -230,8 +220,8 @@ const variants = ref<PortraitVariant[]>([])
 const projectRef = computed(() => props.project)
 const models = useImageModels(projectRef as never)
 
-// framing tab（默认半身），扩展 'geometry' 为面容分析 tab
-const currentTab = ref<PortraitFraming | 'geometry'>('half')
+// framing tab（默认半身）
+const currentTab = ref<PortraitFraming>('half')
 
 // 对话框状态
 const showRegenerateDialog = ref(false)

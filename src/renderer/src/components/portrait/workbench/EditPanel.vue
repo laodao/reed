@@ -46,6 +46,9 @@
         >
           🎯 只改面部
         </el-button>
+        <el-button class="geometry-btn" @click="openGeometryStudio">
+          📐 面容分析
+        </el-button>
       </div>
     </template>
 
@@ -147,6 +150,16 @@ const focusRegion = ref<'face' | 'face_and_hair' | 'upper'>('face')
 // 前后对比确认：生成成功后先弹对比框，用户确认才保留新图（原图始终不动）
 const showFaceCompare = ref(false)
 const newFaceVariant = ref<PortraitVariant | null>(null)
+
+import { useRouter } from 'vue-router'
+const router = useRouter()
+
+function openGeometryStudio() {
+  router.push({
+    path: '/portrait/geometry',
+    query: { characterId: props.character.id, variantId: props.variant.id },
+  })
+}
 
 async function handleEditFace() {
   editing.value = true
