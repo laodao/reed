@@ -35,6 +35,7 @@
           <span>✨ 一键生成所有缺失主图（{{ missingMainCount }}）</span>
         </el-button>
         <el-button
+          v-if="!hideStageComplete"
           type="success"
           :disabled="!canComplete || actionBusy"
           @click="emit('complete')"
@@ -238,6 +239,8 @@ import UserAssetLibraryDialog from '@/components/episode-production/dialogs/User
 
 const props = defineProps<{
   projectId: string
+  /** 项目级独立入口时隐藏「完成本阶段」按钮（项目级无阶段概念） */
+  hideStageComplete?: boolean
 }>()
 
 const emit = defineEmits<{

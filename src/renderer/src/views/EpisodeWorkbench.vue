@@ -49,42 +49,7 @@
               />
             </el-tab-pane>
 
-            <!-- ② 资产 -->
-            <el-tab-pane label="② 资产" name="asset_prep">
-              <AssetStageView
-                v-if="!selectedAsset"
-                :project-id="projectId"
-                @open-character="(id: string) => (selectedAsset = { type: 'character', id })"
-                @open-location="(id: string) => (selectedAsset = { type: 'location', id })"
-                @open-item="(id: string) => (selectedAsset = { type: 'item', id })"
-                @open-voice="(id: string) => (selectedAsset = { type: 'voice', id })"
-                @complete="onCompleteAssetStage"
-              />
-              <CharacterAssetEditor
-                v-else-if="selectedAsset.type === 'character'"
-                :binding-id="selectedAsset.id"
-                @close="selectedAsset = null"
-                @saved="onAssetSaved"
-              />
-              <LocationAssetEditor
-                v-else-if="selectedAsset.type === 'location'"
-                :binding-id="selectedAsset.id"
-                @close="selectedAsset = null"
-                @saved="onAssetSaved"
-              />
-              <ItemAssetEditor
-                v-else-if="selectedAsset.type === 'item'"
-                :binding-id="selectedAsset.id"
-                @close="selectedAsset = null"
-                @saved="onAssetSaved"
-              />
-              <VoiceAssetEditor
-                v-else-if="selectedAsset.type === 'voice'"
-                :voice-id="selectedAsset.id"
-                @close="selectedAsset = null"
-                @saved="onAssetSaved"
-              />
-            </el-tab-pane>
+            <!-- ② 资产 stage 已移除：资产入口迁至项目列表页右侧顶部按钮（项目级全局数据） -->
 
             <!-- ④ 分镜（P6-T20 · spec §2.2 第 436 行 + §4.5） -->
             <el-tab-pane label="④ 分镜" name="storyboarding">
@@ -119,52 +84,10 @@
         <el-empty v-else description="请选择或创建剧集" :image-size="120" />
       </div>
 
-      <!--
-        右侧资产侧栏（FU5-A7 · user 5/6 决策）
-
-        - ① 内容、② 资产 stage 隐藏（资产未就绪 / 主区即资产清单）
-        - ③ 剧本 / ④ 分镜 / ⑤ 画面+音频 / ⑥ 合成 显示在右侧（不是原型左侧）
-      -->
-      <AssetSidebar
-        v-if="projectId && showAssetSidebar"
-        :project-id="projectId"
-        class="asset-sidebar-right"
-        @select-character="(id: string) => openAssetEditDrawer('character', id)"
-        @select-location="(id: string) => openAssetEditDrawer('location', id)"
-        @select-item="(id: string) => openAssetEditDrawer('item', id)"
-        @select-voice="(id: string) => openAssetEditDrawer('voice', id)"
-        @add-character="onAddAsset('character')"
-        @add-location="onAddAsset('location')"
-        @add-item="onAddAsset('item')"
-        @add-voice="onAddAsset('voice')"
-      />
+      <!-- 资产侧栏已移除：资产入口迁至项目列表页右侧顶部按钮（项目级全局数据） -->
     </div>
 
     <!-- ===== Dialogs ===== -->
-
-    <!-- 绑定角色 -->
-    <BindCharacterDialog
-      v-model="dialogs.bindCharacter"
-      :project-id="projectId"
-      :available-characters="availableCharacters"
-      @bound="onAssetBound"
-    />
-
-    <!-- 绑定物品 -->
-    <BindItemDialog
-      v-model="dialogs.bindItem"
-      :project-id="projectId"
-      :available-items="availableItems"
-      @bound="onAssetBound"
-    />
-
-    <!-- 绑定地点 -->
-    <BindLocationDialog
-      v-model="dialogs.bindLocation"
-      :project-id="projectId"
-      :available-locations="availableLocations"
-      @bound="onAssetBound"
-    />
 
     <!-- 分镜编辑（StageStoryboardView 触发） -->
     <StoryboardEditDialog
@@ -198,13 +121,7 @@
       @saved="onEntitySaved"
     />
 
-    <!-- FU5-A8 · 资产编辑右抽屉（B2 决策；③④⑤⑥ stage 用） -->
-    <AssetEditDrawer
-      v-model:open="assetEditDrawer.open"
-      :asset-type="assetEditDrawer.type"
-      :binding-id="assetEditDrawer.id"
-      @saved="onAssetEditDrawerSaved"
-    />
+    <!-- 资产编辑抽屉已移除：资产编辑在项目级 ProjectAssetView 内完成 -->
   </div>
 </template>
 
@@ -223,7 +140,7 @@ import {
 } from '@/stores/episode-production'
 import { useTabsStore } from '@/stores/tabs'
 import type {
-  VideoEpisode, Storyboard, CharacterBinding, LocationBinding, ItemBinding
+  VideoEpisode, Storyboard
 } from '../../../shared/types/story-to-video.types'
 import type { UserProviderConfig, ProviderTemplate } from '../../../shared/types'
 import type { StoryCharacter, StoryLocation, StoryItem } from '../../../shared/types/longwriting.types'
@@ -241,42 +158,19 @@ import StageComposeView from '@/components/episode-production/stage-compose-v2/S
 import StageContentScriptView from '@/components/episode-production/stage-content-script-v3/StageContentScriptView.vue'
 // FU7 顶部进度条 → StageHeaderBar（内嵌于 header 单行）
 import StageHeaderBar from '@/components/episode-production/workbench/StageHeaderBar.vue'
-// P6-T14 左侧资产侧栏（spec §2.1 第 414-418 行）
-import AssetSidebar from '@/components/episode-production/workbench/AssetSidebar.vue'
 // FU3 stage 切换 + 门控 composable
 import { useWorkbenchStageNavigation } from '@/composables/use-workbench-stage-navigation'
 // P6-T20 ④ 分镜 stage view（spec §2.2 第 436 行 + §4.5）
 // FU5-E1 · ④ 分镜 stage 切到 V2（按原型 §7 + §11 修订）
 import StageStoryboardView from '@/components/episode-production/stage-storyboard-v2/StageStoryboardViewV2.vue'
-// （已合并到 StageContentScriptView · Task 10）
-// V2 老 tab（剧本 / 角色绑定 / 物品绑定 / 地点绑定）已从 template 移除
-// import 也跟着删除；P6-T19/T20 新 stage view 完成后会彻底删源文件
-// P3a Task 11 · 资产盘点新页面（追加在原 4 tab 之后，不替换老 tab）
-// FU5-C1 · ② 资产盘点 stage 切到 V2（按原型 §3 + §11 修订）
-import AssetStageView from '@/components/episode-production/stage-asset-v2/AssetStageViewV2.vue'
-// P3a Task 12 · 角色资产编辑器（双栏：设定卡 + 图谱）
-// FU5-C2 · 角色编辑器切到 V2（身份块 + 长文同步 banner + 风格锚点 + 显式保存）
-import CharacterAssetEditor from '@/components/episode-production/stage-asset-v2/character/CharacterAssetEditorV2.vue'
-// P3a Task 13 · 地点资产编辑器（双栏：设定卡 + 图谱）
-// FU5-C3 · 地点编辑器切到 V2（设定卡 6 节 + 一致性优先级 banner + 3D 摆位 Phase 8 占位）
-import LocationAssetEditor from '@/components/episode-production/stage-asset-v2/location/LocationAssetEditorV2.vue'
-// P3a Task 14 · 物品资产编辑器（双栏：设定卡 + 图谱 view+context）
-import ItemAssetEditor from '@/components/episode-production/stage-asset/item/ItemAssetEditor.vue'
-// P3a Task 14 · 语音资产编辑器（单栏：声音卡，无图谱）
-import VoiceAssetEditor from '@/components/episode-production/stage-asset/voice/VoiceAssetEditor.vue'
-
-// Dialogs
-import BindCharacterDialog from '@/components/episode-production/dialogs/BindCharacterDialog.vue'
-import BindItemDialog from '@/components/episode-production/dialogs/BindItemDialog.vue'
-import BindLocationDialog from '@/components/episode-production/dialogs/BindLocationDialog.vue'
+// 资产盘点 AssetStageView + 4 类资产 sub-editor + BindXxxDialog 已迁至项目级
+// ProjectAssetView（资产是项目级全局数据，入口在项目列表页右侧顶部按钮）
 import StoryboardEditDialog from '@/components/episode-production/dialogs/StoryboardEditDialog.vue'
 import CharacterDetailDialog from '@/components/episode-production/dialogs/CharacterDetailDialog.vue'
 import ItemDetailDialog from '@/components/episode-production/dialogs/ItemDetailDialog.vue'
 import LocationDetailDialog from '@/components/episode-production/dialogs/LocationDetailDialog.vue'
 import EntityEditDialog from '@/components/episode-production/dialogs/EntityEditDialog.vue'
-import AssetEditDrawer from '@/components/episode-production/shared/AssetEditDrawer.vue'
-
-type AssetEditDrawerType = 'character' | 'location' | 'item' | 'voice'
+// AssetEditDrawer + AssetEditDrawerType 已移除（资产编辑迁项目级 ProjectAssetView）
 // V2 老 dialog 已删除（GenerateImagesDialog / SynthesisDialog /
 // ImagePreviewDialog / RegenerateDialog）— 之前由右侧 V2 panel 触发，
 // 右侧 panel 删除后这些 dialog 无触发点
@@ -309,13 +203,13 @@ const episodeIdParam = computed(() => route.params.episodeId as string | undefin
  * Task 10：① 内容 + ③ 剧本 合并为同一 tab（name='pending'），故 WorkbenchStage
  * 去掉 scripting，只剩 5 个值。scripting status 在进度条点击时映射到 pending。
  */
-type WorkbenchStage = 'pending' | 'asset_prep' | 'storyboarding' | 'producing' | 'composing'
-const activeTab = ref<WorkbenchStage>('asset_prep')
+type WorkbenchStage = 'pending' | 'storyboarding' | 'producing' | 'composing'
+const activeTab = ref<WorkbenchStage>('pending')
 
 /**
- * AssetSidebar 显隐逻辑：⑤⑥ 都已自含资产展示，全 stage 隐藏侧栏。
+ * AssetSidebar 已移除：资产入口迁至项目列表页右侧顶部按钮（项目级全局数据）。
+ * 旧 showAssetSidebar 显隐逻辑不再需要。
  */
-const showAssetSidebar = computed(() => false)
 
 // FU7 StageHeaderBar 引用（用于剧集状态变化后主动 reload）
 const headerBarRef = ref<{ reload: () => Promise<void> } | null>(null)
@@ -329,7 +223,7 @@ const activeContextStore = useEpActiveContextStore()
  * ③④⑤ 的 setContext 由对应 stage view 内部处理。
  */
 watch(activeTab, (s) => {
-  if (s === 'pending' || s === 'asset_prep' || s === 'composing') {
+  if (s === 'pending' || s === 'composing') {
     activeContextStore.clear()
   }
 })
@@ -342,10 +236,10 @@ watch(
   () => episodeStore.currentEpisode?.status,
   (s) => {
     if (!s) return
-    if (s === 'pending' || s === 'draft' || s === 'scripting') {  // draft 也映射到 pending（兼容旧数据）
+    // 资产入口已迁项目级：asset_prep 视为内容/剧本阶段子状态，映射到 pending tab
+    if (s === 'pending' || s === 'draft' || s === 'scripting' || s === 'asset_prep') {  // draft 也映射到 pending（兼容旧数据）
       activeTab.value = 'pending'
     } else if (
-      s === 'asset_prep' ||
       s === 'storyboarding' ||
       s === 'producing' ||
       s === 'composing'
@@ -357,7 +251,7 @@ watch(
 )
 
 // FU3：selectedAsset 提前声明（多个 composable + 模板共享）
-const selectedAsset = ref<{ type: 'character' | 'location' | 'item' | 'voice'; id: string } | null>(null)
+// selectedAsset 已移除（资产编辑迁项目级 ProjectAssetView）
 
 /**
  * FU5-A8 · 资产编辑右抽屉（B2 决策）。
@@ -365,20 +259,10 @@ const selectedAsset = ref<{ type: 'character' | 'location' | 'item' | 'voice'; i
  * - ② 资产 stage 内部点击仍走 sub-page（selectedAsset；主区即资产管理）
  * - ③④⑤⑥ stage 右侧 sidebar 点击 → 弹本抽屉（不脱离当前 stage）
  */
-const assetEditDrawer = ref<{
-  open: boolean
-  type: AssetEditDrawerType | null
-  id: string | null
-}>({ open: false, type: null, id: null })
+// assetEditDrawer ref 已移除（资产编辑迁项目级）
 
-function openAssetEditDrawer(type: AssetEditDrawerType, id: string): void {
-  assetEditDrawer.value = { open: true, type, id }
-}
+// openAssetEditDrawer 已移除
 
-function onAssetEditDrawerSaved(): void {
-  // 抽屉内 *AssetEditor saved 事件冒泡到此 — 后续可触发 sidebar 刷新
-  // 当前暂无副作用（sidebar 自身按需 reload）
-}
 
 /*
  * FU6-T4 剧本完整性 → 主图类违例 → 切到 ② 资产 stage 并选中对应 binding，
@@ -388,12 +272,14 @@ function onScriptGoAssetStage(payload: {
   kind: 'character' | 'location' | 'item' | 'voice'
   bindingId?: string
 }): void {
-  activeTab.value = 'asset_prep'
-  if (payload.kind !== 'voice' && payload.bindingId) {
-    selectedAsset.value = { type: payload.kind, id: payload.bindingId }
-  } else {
-    selectedAsset.value = null
-  }
+  router.push({
+    path: '/episode-production',
+    query: {
+      view: 'assets',
+      kind: payload.kind,
+      ...(payload.bindingId ? { binding: payload.bindingId } : {}),
+    },
+  })
 }
 
 /**
@@ -461,22 +347,9 @@ const dialogs = reactive({
   editingEntityData: null as StoryCharacter | StoryLocation | StoryItem | null,
 })
 
-// ===== 可绑定资产（排除已绑定的） =====
-
-const availableCharacters = computed(() => {
-  const boundIds = assetStore.characterBindings.map((b: CharacterBinding) => b.longWritingCharacterId)
-  return longWritingCharacters.value.filter(c => !boundIds.includes(c.id))
-})
-
-const availableItems = computed(() => {
-  const boundIds = assetStore.itemBindings.map((b: ItemBinding) => b.longWritingItemId)
-  return longWritingItems.value.filter(item => !boundIds.includes(item.id))
-})
-
-const availableLocations = computed(() => {
-  const boundIds = assetStore.locationBindings.map((b: LocationBinding) => b.longWritingLocationId)
-  return longWritingLocations.value.filter(loc => !boundIds.includes(loc.id))
-})
+// ===== 可绑定资产（已移除） =====
+// availableCharacters/Items/Locations 已移除：资产绑定迁项目级 ProjectAssetView，
+// BindXxxDialog 已删，此处 computed 不再需要
 
 // ===== 子组件 open-dialog 路由 =====
 
@@ -561,13 +434,6 @@ function goBack() {
 // V3 用 ⑤ 制作 stage tab 替代）
 
 // ===== Dialog 事件回调 =====
-
-async function onAssetBound() {
-  // 刷新绑定列表
-  await assetStore.loadCharacterBindings(projectId.value)
-  await assetStore.loadLocationBindings(projectId.value)
-  await assetStore.loadItemBindings(projectId.value)
-}
 
 async function onEntitySaved() {
   await assetStore.loadCharacterBindings(projectId.value)
@@ -698,13 +564,7 @@ async function loadProviderConfigs(): Promise<void> {
 // 通过 selectedAsset 状态在 stage view ↔ editor 切换。
 // FU3：selectedAsset 已提前声明（line 432 上方）
 
-function onAssetSaved() {
-  ElMessage.success('保存成功')
-}
-
-function onCompleteAssetStage() {
-  ElMessage.success('阶段完成（暂未持久化）')
-}
+// onAssetSaved / onCompleteAssetStage 已移除（资产 handlers 迁项目级 ProjectAssetView）
 
 /** FU5-F1 · ⑤ 制作完成 → 切到 ⑥ 合成 tab */
 function onProductionComplete(): void {
@@ -715,16 +575,11 @@ function onProductionComplete(): void {
 // ===== FU3 stage 切换 + 门控 composable（放最末避免 TDZ） =====
 const {
   onNavigateStage,
-  onOpenAsset,
-  onAddAsset,
-  onPreviewEpisode,
-  onSelectStoryboard,
   onEditStoryboardFromStage,
   onJumpToProductionWithSb,
   onContentConfirmed,
 } = useWorkbenchStageNavigation({
   activeTab,
-  selectedAsset,
   dialogs,
   headerBarRef,
   selectEpisode,

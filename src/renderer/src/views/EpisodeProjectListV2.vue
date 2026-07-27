@@ -10,14 +10,23 @@
     />
 
     <main class="main-area">
+      <!-- 项目级资产盘点（资产是项目级全局数据，所有剧集共享） -->
+      <ProjectAssetView
+        v-if="viewMode === 'assets' && selectedProjectId"
+        :project-id="selectedProjectId"
+        :initial-selected="assetInitialSelected"
+        @back="onBackToEpisodes"
+      />
+      <!-- 剧集列表 -->
       <EpisodeListPanel
-        v-if="selectedProject && episodes !== null"
+        v-else-if="selectedProject && episodes !== null"
         :project="selectedProject"
         :episodes="episodes"
         @settings="dialogs.settings = true"
         @create-episode="dialogs.createEpisode = true"
         @batch-create-episode="dialogs.batchCreateEpisode = true"
         @open-quick-mode="dialogs.quickMode = true"
+        @open-assets="onOpenAssets"
         @open-episode="onOpenEpisode"
         @edit-episode="onEditEpisode"
         @delete-episode="onDeleteEpisode"
@@ -141,12 +150,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, watch, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Folder } from '@element-plus/icons-vue'
 import ProjectSidebar from '@/components/episode-production/project-list/ProjectSidebar.vue'
 import EpisodeListPanel from '@/components/episode-production/project-list/EpisodeListPanel.vue'
+import ProjectAssetView from '@/components/episode-production/project-list/ProjectAssetView.vue'
 import CreateEpisodeDialog from '@/components/episode-production/dialogs/CreateEpisodeDialog.vue'
 import EditEpisodeDialog from '@/components/episode-production/dialogs/EditEpisodeDialog.vue'
 import SettingsDialog from '@/components/episode-production/dialogs/SettingsDialog.vue'
@@ -165,8 +175,12 @@ import type { EpisodeWithProgress } from '../../../shared/types/episode-producti
 import type { UserProviderConfig, ProviderTemplate } from '../../../shared/types'
 import type { OutlineTreeNode } from '@/components/episode-production/shared/outline-utils'
 
+const route = useRoute()
 const router = useRouter()
 const projectStore = useEpProjectStore()
+
+/** 资产类型（与 ProjectAssetView 一致） */
+type AssetKind = 'character' | 'location' | 'item' | 'voice'
 
 // ===== 项目列表 =====
 const summaries = ref<VideoProjectSummary[]>([])
@@ -177,6 +191,34 @@ const longWritingProjects = ref<Array<{ id: string; name: string }>>([])
 // ===== 集列表 =====
 const episodes = ref<EpisodeWithProgress[] | null>(null)
 const loadingProject = ref(false)
+
+// ===== 主区域视图模式：剧集列表 / 项目资产 =====
+// 资产是项目级全局数据，入口从 episode 工作台「② 资产」stage 迁移到此处顶部按钮
+const viewMode = ref<'episodes' | 'assets'>('episodes')
+const assetInitialSelected = ref<{ type: AssetKind; id: string } | null>(null)
+
+// 路由 query 驱动视图模式：支持从 episode 工作台剧本违例深链跳入资产并定位 sub-editor
+// query: { view: 'assets', kind: AssetKind, binding: string }
+watch(
+  () => route.query,
+  (q) => {
+    if (q.view === 'assets') {
+      viewMode.value = 'assets'
+      if (q.kind && q.binding) {
+        assetInitialSelected.value = {
+          type: q.kind as AssetKind,
+          id: q.binding as string,
+        }
+      } else {
+        assetInitialSelected.value = null
+      }
+    } else {
+      viewMode.value = 'episodes'
+      assetInitialSelected.value = null
+    }
+  },
+  { immediate: true },
+)
 
 // ===== 项目设置 dialog 所需上下文 =====
 const providerConfigs = ref<UserProviderConfig[]>([])
@@ -265,6 +307,7 @@ async function selectProject(projectId: string): Promise<void> {
   selectedProjectId.value = projectId
   selectedProject.value = null
   episodes.value = null
+  // viewMode / assetInitialSelected 由 route.query 驱动；用户主动切项目走 onSelectProject 清空定位
   try {
     const api = window.electronAPI.episodeProduction
     const projResp = await api.getProject(projectId)
@@ -303,6 +346,8 @@ async function reloadEpisodes(): Promise<void> {
 // ===== 项目操作 =====
 
 function onSelectProject(p: VideoProjectSummary): void {
+  // 用户主动切项目：清空资产定位（新项目无该 binding）
+  assetInitialSelected.value = null
   void selectProject(p.id)
 }
 
@@ -387,6 +432,21 @@ async function onConfirmCreateProject(): Promise<void> {
 
 function onOpenEpisode(ep: EpisodeWithProgress): void {
   router.push(`/episode-production/${ep.projectId}/episode/${ep.id}`)
+}
+
+/** 顶部「资产」按钮 -> 切到项目级资产盘点视图 */
+function onOpenAssets(): void {
+  viewMode.value = 'assets'
+  assetInitialSelected.value = null
+}
+
+/** 资产视图「返回」-> 回到剧集列表，并清除 query 残留避免刷新后又跳资产 */
+function onBackToEpisodes(): void {
+  viewMode.value = 'episodes'
+  assetInitialSelected.value = null
+  if (route.query.view) {
+    router.replace({ path: route.path, query: {} })
+  }
 }
 
 function onEditEpisode(ep: EpisodeWithProgress): void {

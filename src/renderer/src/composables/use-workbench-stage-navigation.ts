@@ -8,13 +8,11 @@
  *
  * 接收：
  *   - activeTab：父组件持有的 ref（当前 stage）
- *   - selectedAsset：父组件持有的 ref（② 资产 stage 选中编辑的资产）
  *   - dialogs：父组件 reactive（StoryboardEditDialog 触发用）
  *   - headerBarRef：父组件 StageHeaderBar 引用（reload 进度）
  *
- * 返回 8 个 handler：
- *   onNavigateStage, onOpenAsset, onAddAsset,
- *   onPreviewEpisode, onSelectStoryboard, onEditStoryboardFromStage,
+ * 返回 6 个 handler：
+ *   onNavigateStage, onPreviewEpisode, onSelectStoryboard, onEditStoryboardFromStage,
  *   onJumpToProductionWithSb, onContentConfirmed
  */
 
@@ -32,13 +30,16 @@ import type {
  * Task 10：① 内容 + ③ 剧本 合并后，tab name 只有 5 个（无 scripting）。
  * scripting status 在进度条点击时映射到 pending tab。
  */
-type WorkbenchStage = 'pending' | 'asset_prep' | 'storyboarding' | 'producing' | 'composing'
+type WorkbenchStage = 'pending' | 'storyboarding' | 'producing' | 'composing'
 
 /** scripting status 映射到合并 tab pending；其余 status 直接用作 tab name */
 function toTabName(status: EpisodeStatus): WorkbenchStage {
-  return status === 'scripting' ? 'pending' : (status as WorkbenchStage)
+  // scripting / asset_prep 都映射到 pending：
+  // - scripting：① 内容 + ③ 剧本 合并（Task 10）
+  // - asset_prep：资产入口已迁项目级，episode 无资产 tab
+  if (status === 'scripting' || status === 'asset_prep') return 'pending'
+  return status as WorkbenchStage
 }
-type AssetKind = 'character' | 'location' | 'item' | 'voice'
 
 interface DialogsState {
   storyboardEdit: boolean
@@ -47,7 +48,6 @@ interface DialogsState {
 
 interface UseWorkbenchStageNavigationInput {
   activeTab: Ref<WorkbenchStage>
-  selectedAsset: Ref<{ type: AssetKind; id: string } | null>
   dialogs: DialogsState
   headerBarRef: Ref<{ reload: () => Promise<void> } | null>
   /** 父组件 selectEpisode（episodeStore.selectEpisode 包装），让路由
@@ -73,33 +73,7 @@ export function useWorkbenchStageNavigation(
     input.activeTab.value = toTabName(status)
   }
 
-  /** P6-T14 左侧资产侧栏点击单条资产 */
-  function onOpenAsset(kind: AssetKind, id: string): void {
-    input.activeTab.value = 'asset_prep'
-    input.selectedAsset.value = { type: kind, id }
-  }
-
-  /**
-   * 右侧资产侧栏"+ 添加 X"。
-   * FU6-T3：跳到 ② 资产 stage —— 真正的新建按钮在 AssetStageViewV2 里
-   * （v2 已内置 promptCreateStandalone + voice 复刻 dialog），跳过去 user 立刻就能点。
-   *
-   * 2026-05-08 T12：voice 不再 toast 跳走 — 资产 stage 的「+ 复刻新音色」按钮
-   * 已直接打开 VoiceCloneDialog 走完整复刻链路。这里统一只做切 tab + 提示。
-   */
-  function onAddAsset(kind: AssetKind): void {
-    input.activeTab.value = 'asset_prep'
-    input.selectedAsset.value = null
-    // 2026-05-08 T12：voice 不再 toast 跳走 — 资产 stage 的「+ 复刻新音色」
-    // 按钮已直接打开 VoiceCloneDialog 走完整复刻链路。这里统一只做切 tab。
-    const labelMap = {
-      character: '角色',
-      location: '地点',
-      item: '物品',
-      voice: '复刻新音色',
-    } as const
-    ElMessage.info(`已切到 ② 资产，点列表头部"+ ${labelMap[kind]}"创建`)
-  }
+  // onOpenAsset / onAddAsset 已移除（资产编辑迁项目级 ProjectAssetView，AssetSidebar 已删）
 
   /** P6-T15 底部时间线"⏵ 试播" */
   function onPreviewEpisode(): void {
@@ -135,8 +109,6 @@ export function useWorkbenchStageNavigation(
 
   return {
     onNavigateStage,
-    onOpenAsset,
-    onAddAsset,
     onPreviewEpisode,
     onSelectStoryboard,
     onEditStoryboardFromStage,

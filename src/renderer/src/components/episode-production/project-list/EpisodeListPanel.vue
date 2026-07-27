@@ -10,6 +10,10 @@
           <el-icon><Setting /></el-icon>
           项目设置
         </el-button>
+        <el-button class="btn-assets" @click="$emit('open-assets')">
+          <el-icon><Files /></el-icon>
+          资产
+        </el-button>
         <!-- AI 一键模式（spec 2026-05-09 ep-redesign §3.2 C3 · P-19） -->
         <el-button type="warning" class="btn-quick-mode" @click="$emit('open-quick-mode')">
           <el-icon><Star /></el-icon>
@@ -43,7 +47,7 @@
 </template>
 
 <script setup lang="ts">
-import { Setting, Plus, Star, Upload } from '@element-plus/icons-vue'
+import { Setting, Plus, Star, Upload, Files } from '@element-plus/icons-vue'
 import EpisodeCard from './EpisodeCard.vue'
 import type { VideoProject, VideoProjectSummary } from '../../../../../shared/types/story-to-video.types'
 import type { EpisodeWithProgress } from '../../../../../shared/types/episode-production/episode-with-progress.types'
@@ -57,6 +61,7 @@ defineProps<{
 
 defineEmits<{
   (e: 'settings'): void
+  (e: 'open-assets'): void
   (e: 'create-episode'): void
   (e: 'batch-create-episode'): void
   (e: 'open-quick-mode'): void

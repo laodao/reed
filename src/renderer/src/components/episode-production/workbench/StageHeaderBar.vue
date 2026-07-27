@@ -38,9 +38,9 @@ const errorMessage = ref<string | null>(null)
 /**
  * 合并段定义（spec 2026-05-08-content-script-merged §2.1）
  *
- * 6 个生产 status + 1 个 completed 终态映射到 5 个 UI 段：
- *   { pending, scripting }   → 内容+剧本
- *   { asset_prep }           → 资产
+ * 资产入口已迁移到项目级（项目列表页右侧顶部按钮），episode 进度条不再含「资产」段。
+ * 6 个生产 status + 1 个 completed 终态映射到 4 个 UI 段：
+ *   { draft, pending, asset_prep, scripting } → 内容+剧本（资产入口已迁项目级）
  *   { storyboarding }        → 分镜
  *   { producing }            → 制作
  *   { composing, completed } → 合成
@@ -66,8 +66,8 @@ const STAGE_ORDER: Record<string, number> = {
 }
 
 const SEGMENTS: MergedSegment[] = [
-  { label: '内容+剧本', statuses: ['draft' as EpisodeStatus, 'pending', 'scripting'], clickStatus: 'pending' },
-  { label: '资产', statuses: ['asset_prep'], clickStatus: 'asset_prep' },
+  // asset_prep 并入「内容+剧本」段：资产入口已迁项目级，episode 无资产 tab
+  { label: '内容+剧本', statuses: ['draft' as EpisodeStatus, 'pending', 'asset_prep', 'scripting'], clickStatus: 'pending' },
   { label: '分镜', statuses: ['storyboarding'], clickStatus: 'storyboarding' },
   { label: '制作', statuses: ['producing'], clickStatus: 'producing' },
   { label: '合成', statuses: ['composing', 'completed'], clickStatus: 'composing' },
