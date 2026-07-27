@@ -257,10 +257,10 @@ onMounted(runDetect)
   padding-right: 8px;
 }
 .studio-center {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
   height: 100%; min-width: 0; overflow: hidden;
-  :deep(.base-img) { max-height: 38vh; object-fit: contain; }
-  :deep(.annotator) { max-height: 38vh; flex-shrink: 1; min-height: 0; }
+  :deep(.base-img) { max-height: 70vh; max-width: 100%; object-fit: contain; }
+  :deep(.annotator) { max-height: 70vh; flex: 1; min-height: 0; display: flex; justify-content: center; }
 }
 .studio-right {
   display: flex; flex-direction: column; height: 100%; min-width: 0;
