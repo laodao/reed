@@ -105,15 +105,19 @@ function loadSourceImage(url: string): Promise<HTMLImageElement> {
   })
 }
 
+let rebuildTimer = 0
 function rebuildPreview() {
   if (!sourceImage.value) { warpedSrc.value = ''; return }
-  try {
-    const canvas = warpFaceBands(sourceImage.value, landmarks.value, warpParams.value, {
-      scale: 0.25,
-      makeup: makeupState.value,
-    })
-    warpedSrc.value = canvas.toDataURL('image/png')
-  } catch (e) { console.warn('[FaceGeometryStudio] warp 失败:', e) }
+  clearTimeout(rebuildTimer)
+  rebuildTimer = window.setTimeout(() => {
+    try {
+      const canvas = warpFaceBands(sourceImage.value, landmarks.value, warpParams.value, {
+        scale: 0.15,
+        makeup: makeupState.value,
+      })
+      warpedSrc.value = canvas.toDataURL('image/png')
+    } catch (e) { console.warn('[FaceGeometryStudio] warp 失败:', e) }
+  }, 80) // 80ms 防抖——拖动停止后渲染
 }
 watch([warpParams, makeupState], rebuildPreview, { deep: true })
 
