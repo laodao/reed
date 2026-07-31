@@ -284,7 +284,11 @@ const CHANNELS = {
   GET_CHAPTER_STATE_SUMMARY_BY_OUTLINE: 'longwriting:getChapterStateSummaryByOutline',
   GET_LATEST_CHAPTER_STATE_SUMMARY: 'longwriting:getLatestChapterStateSummary',
   EXTRACT_CHAPTER_STATE_SUMMARY: 'longwriting:extractChapterStateSummary',
-  SAVE_CHAPTER_STATE_SUMMARY: 'longwriting:saveChapterStateSummary'
+  SAVE_CHAPTER_STATE_SUMMARY: 'longwriting:saveChapterStateSummary',
+  // 步骤0：向量索引（步骤6 前端面板消费）
+  VECTOR_INDEX_REBUILD: 'longwriting:vectorIndex:rebuildProject',
+  VECTOR_INDEX_SEARCH: 'longwriting:vectorIndex:search',
+  VECTOR_INDEX_STATS: 'longwriting:vectorIndex:stats'
 }
 
 /**
@@ -2850,6 +2854,76 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       return { success: true, data: summary }
     } catch (error: any) {
       console.error('[IPC] 保存章节状态摘要失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 步骤0：向量索引 ====================
+
+  // 全量重建项目向量索引（进度通过事件流推送）
+  ipcBridge.handle(CHANNELS.VECTOR_INDEX_REBUILD, async (event, eventId: string, projectId: string) => {
+    try {
+      const { LwVectorIndexService } = await import('@core/services/longwriting/lw-vector-index.service')
+      const { getEventEmitter } = await import('@core/interfaces/event.interface')
+      const svc = LwVectorIndexService.getInstance()
+      const win = getBrowserWindowFromEvent(event)
+
+      const result = await svc.rebuildProjectIndex(projectId, (done, total) => {
+        getEventEmitter().emit(`longwriting:vectorIndex:progress:${eventId}`, {
+          type: 'progress',
+          done,
+          total,
+        })
+        if (win && !win.isDestroyed()) {
+          win.webContents.send(`longwriting:vectorIndex:progress:${eventId}`, { done, total })
+        }
+      })
+
+      getEventEmitter().emit(`longwriting:vectorIndex:progress:${eventId}`, {
+        type: 'done',
+        ...result,
+      })
+      if (win && !win.isDestroyed()) {
+        win.webContents.send(`longwriting:vectorIndex:progress:${eventId}`, { type: 'done', ...result })
+      }
+
+      return { success: true, data: result }
+    } catch (error: any) {
+      console.error('[IPC] 重建向量索引失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 向量语义检索
+  ipcBridge.handle(
+    CHANNELS.VECTOR_INDEX_SEARCH,
+    async (_event, projectId: string, query: string, opts?: {
+      entityType?: string
+      chapterNumberLte?: number
+      topK?: number
+      scoreThreshold?: number
+    }) => {
+      try {
+        const { LwVectorIndexService } = await import('@core/services/longwriting/lw-vector-index.service')
+        const svc = LwVectorIndexService.getInstance()
+        const results = await svc.search(projectId, query, opts || {})
+        return { success: true, data: results }
+      } catch (error: any) {
+        console.error('[IPC] 向量检索失败:', error)
+        return { success: false, error: error.message }
+      }
+    },
+  )
+
+  // 向量索引统计
+  ipcBridge.handle(CHANNELS.VECTOR_INDEX_STATS, async (_event, projectId: string) => {
+    try {
+      const { LwVectorIndexService } = await import('@core/services/longwriting/lw-vector-index.service')
+      const svc = LwVectorIndexService.getInstance()
+      const stats = await svc.getStats(projectId)
+      return { success: true, data: stats }
+    } catch (error: any) {
+      console.error('[IPC] 获取向量统计失败:', error)
       return { success: false, error: error.message }
     }
   })

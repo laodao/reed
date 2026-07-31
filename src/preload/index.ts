@@ -1647,6 +1647,31 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:saveChapterStateSummary', data)
   },
 
+  // 步骤0：向量索引（步骤6 前端面板消费）
+  vectorIndex: {
+    rebuildProject: (eventId: string, projectId: string) =>
+      ipcRenderer.invoke('longwriting:vectorIndex:rebuildProject', eventId, projectId),
+    search: (
+      projectId: string,
+      query: string,
+      opts?: {
+        entityType?: string
+        chapterNumberLte?: number
+        topK?: number
+        scoreThreshold?: number
+      },
+    ) => ipcRenderer.invoke('longwriting:vectorIndex:search', projectId, query, opts),
+    stats: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:vectorIndex:stats', projectId),
+    // 进度事件订阅（返回取消订阅函数）
+    onProgress: (eventId: string, callback: (data: any) => void) => {
+      const channel = `longwriting:vectorIndex:progress:${eventId}`
+      const listener = (_event: any, data: any) => callback(data)
+      ipcRenderer.on(channel, listener)
+      return () => ipcRenderer.removeListener(channel, listener)
+    },
+  },
+
   // 日记相关
   diary: {
     listFolders: (parentId?: string) =>
