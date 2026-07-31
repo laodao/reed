@@ -46,10 +46,33 @@
         >
           完成本阶段 → ⑤ 制作
         </el-button>
+        <el-button
+          :type="prototypeMode ? 'warning' : 'default'"
+          @click="prototypeMode = !prototypeMode"
+        >
+          {{ prototypeMode ? '退出原型' : '原型预览' }}
+        </el-button>
       </template>
     </StageMainHeader>
 
-    <div v-if="scenes.length === 0" class="empty-state">
+    <!-- 简化原型模式（隐藏参数表单，PromptEditor + 关键帧 + 视频预览） -->
+    <StageStoryboardPrototype
+      v-if="prototypeMode"
+      :edit-draft="editDraft"
+      :entity-list="entityList"
+      :selected-storyboard="selectedStoryboard"
+      :selected-scene="selectedScene"
+      :selected-scene-index="selectedSceneIndex"
+      :provider-config-id="videoModelConfig?.providerConfigId ?? null"
+      :model-id="videoModelConfig?.modelId ?? null"
+      :submitting-video="submittingVideo"
+      @edit-change="onProtoEditChange"
+      @save="onSaveEdit"
+      @select-storyboard="onProtoSelectStoryboard"
+      @submit="onProtoSubmit"
+    />
+
+    <div v-else-if="scenes.length === 0" class="empty-state">
       <el-empty description="该剧集还没有场景。请先在 ③ 剧本 stage 生成场景剧本" />
     </div>
 
@@ -815,6 +838,7 @@ import {
 import { formatGlobalShotId } from '@/utils/storyboard-id'
 // spec 2026-05-09 ep-redesign §3.2 B4 双模板画面描述
 import ShotDescriptionTemplate from './ShotDescriptionTemplate.vue'
+import StageStoryboardPrototype from './StageStoryboardPrototype.vue'
 import {
   type MetadataPromptKey,
   type PromptSyncReason,
@@ -862,6 +886,12 @@ const assetStore = useEpAssetStore()
 
 const generating = ref(false)
 const generatingAll = ref(false)
+// 简化原型模式开关：切换到 StageStoryboardPrototype（隐藏参数表单 + 合并关键帧/视频预览）
+const prototypeMode = ref(false)
+/** 视频生成模型配置（传给原型 VideoSegmentPanel） */
+const videoModelConfig = computed<any>(
+  () => projectStore.currentProject?.config?.videoModel ?? null,
+)
 /** 分镜生成进度（来自 ep:storyboard-progress 事件，逐个分镜推送） */
 const genProgress = ref<{ shotNumber: number; total: number } | null>(null)
 let unsubStoryboardProgress: (() => void) | null = null
@@ -1400,6 +1430,86 @@ function setKeyframeCount(n: number): void {
 function onEditChange(key: string, _value: any): void {
   editDirty.value = new Set([...editDirty.value, key])
   if (key !== 'frameDescription') syncFrameDescriptionFromForm()
+}
+
+/**
+ * 原型模式字段变更：mutate editDraft + 标 dirty，但不调 syncFrameDescriptionFromForm
+ *（原型模式 frameDescription 是用户自由文本，不应被参数表单覆盖）。
+ */
+function onProtoEditChange(key: string, value: any): void {
+  editDraft[key] = value
+  editDirty.value = new Set([...editDirty.value, key])
+}
+
+/** 原型分镜规划列表点击分镜 -> 切换选中分镜（清空 dirty 强制 watch 重建 editDraft） */
+function onProtoSelectStoryboard(id: string): void {
+  if (!id || id === selectedStoryboardId.value) return
+  editDirty.value = new Set()
+  selectedStoryboardId.value = id
+}
+
+/** 原型提交按钮 loading 状态（保存 + 生成视频期间） */
+const submittingVideo = ref(false)
+
+/**
+ * 原型「提交」按钮：保存 editDraft（不调 syncFrameDescriptionFromForm，保留自由文本 frameDescription）
+ * -> 调 generateVideoSegment 生成视频 -> 刷新分镜列表拿新 videoPath。
+ */
+async function onProtoSubmit(): Promise<void> {
+  const sb = selectedStoryboard.value
+  const scene = selectedScene.value
+  const config = videoModelConfig.value
+  if (!sb) {
+    ElMessage.warning('请先选择分镜')
+    return
+  }
+  if (!config?.providerConfigId || !config?.modelId) {
+    ElMessage.warning('请先在项目配置里设置视频模型')
+    return
+  }
+  submittingVideo.value = true
+  try {
+    const api = (window as any).electronAPI?.episodeProduction
+    // 1. 保存 editDraft（保留自由文本 frameDescription，不走 syncFrameDescriptionFromForm）
+    await api?.updateStoryboard?.(sb.id, {
+      shotType: editDraft.shotType,
+      cameraAngle: editDraft.cameraAngle,
+      cameraMovement: editDraft.cameraMovement,
+      duration: editDraft.duration,
+      keyframeCount: editDraft.keyframeCount,
+      frameDescription: editDraft.frameDescription,
+      useKeyframes: editDraft.generationMode === 'keyframes',
+      transition: {
+        type: editDraft.transitionType,
+        duration: editDraft.transitionDuration,
+        direction: editDraft.transitionDirection,
+      },
+      characters: editDraft.characters,
+      locationBindingIds: editDraft.locationBindingIds,
+      itemBindingIds: editDraft.itemBindingIds,
+      metadata: editDraft.metadata || null,
+    })
+    editDirty.value = new Set()
+    // 2. 生成视频片段（基于分镜记录）
+    const resp = await api?.generateVideoSegment?.(sb.id, {
+      providerConfigId: config.providerConfigId,
+      modelId: config.modelId,
+    })
+    if (resp?.success) {
+      ElMessage.success('视频已生成')
+    } else {
+      ElMessage.error(resp?.error || '视频生成失败')
+    }
+    // 3. 刷新分镜列表拿到新 videoPath
+    if (scene) {
+      await storyboardStore.loadStoryboards(scene.id)
+    }
+  } catch (err) {
+    console.error('[onProtoSubmit] 生成视频失败:', err)
+    ElMessage.error('视频生成失败')
+  } finally {
+    submittingVideo.value = false
+  }
 }
 
 function labelFromOptions<T extends Record<string, string>>(options: T, value: string | null | undefined): string {
