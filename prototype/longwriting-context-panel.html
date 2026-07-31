@@ -1,0 +1,1232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>长文写作 · 章节工作台（原型 v2 · 可交互）</title>
+<style>
+/* ===== 真实系统主题变量（抄自 src/renderer/src/styles/index.scss :root） ===== */
+:root {
+  --color-primary: #5b8c85;
+  --color-primary-light: #7ba39c;
+  --color-primary-dark: #4a7570;
+  --color-primary-rgb: 91, 140, 133;
+  --color-gradient: linear-gradient(135deg, #5b8c85 0%, #7ba39c 100%);
+  --color-success: #67c23a;
+  --color-warning: #e6a23c;
+  --color-danger: #f56c6c;
+  --color-info: #909399;
+  --color-success-light-9: #f0f9eb;
+  --color-warning-light-9: #fdf6ec;
+  --color-danger-light-9: #fef0f0;
+  --color-info-light-9: #f4f4f5;
+  --color-primary-light-3: #7ba39c;
+  --color-primary-light-5: #9cb8b3;
+  --color-primary-light-7: #bdcdc9;
+  --color-primary-light-8: #ced9d7;
+  --color-primary-light-9: #e8f0ef;
+  --text-primary: #303133;
+  --text-regular: #606266;
+  --text-secondary: #909399;
+  --text-placeholder: #c0c4cc;
+  --text-color-primary: var(--text-primary);
+  --text-color-regular: var(--text-regular);
+  --text-color-secondary: var(--text-secondary);
+  --text-color-placeholder: var(--text-placeholder);
+  --border-color: #dcdfe6;
+  --border-color-light: #e4e7ed;
+  --border-color-lighter: #ebeef5;
+  --fill-color: #f0f2f5;
+  --fill-color-light: #f5f7fa;
+  --fill-color-lighter: #fafafa;
+  --fill-color-blank: #ffffff;
+  --bg-color: #ffffff;
+  --bg-color-page: #faf9f7;
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --font-size-base: 12px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: var(--font-size-base);
+  background: var(--bg-color-page);
+  color: var(--text-color-primary);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* ===== 顶栏（模拟） ===== */
+.app-header {
+  height: 56px;
+  background: linear-gradient(180deg, #4a7570 0%, #3a5f5a 100%);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  color: #fff;
+  gap: 16px;
+  flex-shrink: 0;
+}
+.app-header .logo { font-size: 16px; font-weight: 600; }
+.app-header .crumb { font-size: 13px; opacity: 0.85; }
+.app-header .spacer { flex: 1; }
+.model-select {
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.25);
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* ===== 工作台主体 ===== */
+.workbench {
+  display: flex;
+  height: calc(100vh - 56px);
+}
+
+/* —— 左：章节步骤导航（模拟 LongWriting.vue 的步骤条） —— */
+.stage-steps {
+  width: 180px;
+  flex-shrink: 0;
+  background: var(--fill-color-lighter);
+  border-right: 1px solid var(--border-color-lighter);
+  padding: 16px 12px;
+  overflow-y: auto;
+}
+.stage-steps h4 { font-size: 12px; color: var(--text-color-secondary); margin-bottom: 12px; font-weight: 500; }
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--text-color-regular);
+  cursor: pointer;
+  margin-bottom: 4px;
+  transition: all 0.2s;
+}
+.step-item:hover { background: var(--fill-color-light); }
+.step-item.active {
+  background: var(--color-primary-light-9);
+  color: var(--color-primary);
+  font-weight: 500;
+}
+.step-item .num {
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: var(--fill-color);
+  color: var(--text-color-secondary);
+  font-size: 11px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.step-item.active .num { background: var(--color-primary); color: #fff; }
+.step-item.done .num { background: var(--color-success); color: #fff; }
+
+/* —— 右：章节工作台主区（复刻 ChapterStage.vue） —— */
+.chapter-stage {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 24px;
+  overflow: hidden;
+}
+.stage-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+.stage-header h2 { font-size: 16px; font-weight: 600; color: var(--text-color-primary); margin: 0 0 4px 0; }
+.stage-header .desc { font-size: 13px; color: var(--text-color-secondary); flex: 1; }
+
+.stage-content {
+  background: var(--bg-color);
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color-light);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ===== 三栏布局（大纲树 | 编辑器 | 上下文预览） ===== */
+.chapter-layout {
+  display: flex;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* —— 左栏：大纲树（复刻 .outline-tree-panel） —— */
+.outline-tree-panel {
+  width: 240px;
+  flex-shrink: 0;
+  border: 1px solid var(--border-color-lighter);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--fill-color-blank);
+}
+.tree-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--fill-color-lighter);
+  border-bottom: 1px solid var(--border-color-lighter);
+}
+.tree-header h3 { font-size: 13px; font-weight: 500; color: var(--text-color-primary); }
+.tree-header .text-btn { font-size: 12px; color: var(--color-primary); background: none; border: none; cursor: pointer; padding: 2px 4px; }
+.outline-tree { flex: 1; overflow-y: auto; padding: 8px; }
+.tree-node {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  gap: 8px;
+  font-size: 13px;
+}
+.tree-node:hover { background: var(--fill-color-light); }
+.tree-node.active { background: var(--color-primary-light-9); }
+.tree-node.active .node-name { color: var(--color-primary); font-weight: 500; }
+.tree-node .node-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-color-primary); }
+.tree-node.indent-1 { padding-left: 24px; }
+.tree-node.indent-2 { padding-left: 40px; }
+.node-status {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.node-status.pending { background: var(--color-info-light-9); color: var(--color-info); }
+.node-status.progressing { background: var(--color-warning-light-9); color: var(--color-warning); }
+.node-status.completed { background: var(--color-success-light-9); color: var(--color-success); }
+
+/* —— 中栏：章节编辑区（复刻 .chapters-panel / .chapter-card） —— */
+.chapters-panel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.chapter-nav {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  padding: 8px;
+  background: var(--fill-color-lighter);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+.chapter-nav .pos { font-size: 13px; color: var(--text-color-secondary); min-width: 120px; text-align: center; }
+
+.chapter-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--fill-color-blank);
+  border: 1px solid var(--border-color-lighter);
+  border-radius: 8px;
+  min-height: 0;
+  overflow: hidden;
+}
+.chapter-card.active {
+  border-color: var(--color-primary-light-3);
+  box-shadow: 0 2px 12px rgba(var(--color-primary-rgb), 0.12);
+}
+.chapter-title-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  background: var(--fill-color-lighter);
+  border-bottom: 1px solid var(--border-color-lighter);
+  flex-shrink: 0;
+  gap: 8px;
+}
+.title-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.title-left .chapter-type {
+  font-size: 11px; padding: 2px 6px; border-radius: 3px;
+  background: var(--color-primary-light-9); color: var(--color-primary); flex-shrink: 0;
+}
+.title-left .chapter-title { font-size: 14px; font-weight: 500; color: var(--text-color-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.title-left .word-count { font-size: 12px; color: var(--text-color-secondary); flex-shrink: 0; }
+.title-actions { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+
+.chapter-info {
+  padding: 8px 16px;
+  background: var(--bg-color);
+  border-bottom: 1px solid var(--border-color-lighter);
+  flex-shrink: 0;
+}
+.chapter-info .summary { font-size: 12px; color: var(--text-color-secondary); line-height: 1.5; margin-bottom: 6px; }
+.chapter-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+
+.chapter-editor-wrapper {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px;
+}
+.editor-textarea {
+  width: 100%;
+  height: 100%;
+  min-height: 240px;
+  border: none;
+  outline: none;
+  resize: none;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.9;
+  color: var(--text-color-primary);
+  background: transparent;
+}
+
+/* ===== 右栏：上下文预览面板（新增核心） ===== */
+.context-panel {
+  width: 340px;
+  flex-shrink: 0;
+  border: 1px solid var(--border-color-lighter);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--fill-color-blank);
+  transition: width 0.25s cubic-bezier(0.4,0,0.2,1);
+}
+.context-panel.collapsed { width: 44px; }
+.context-panel.collapsed .panel-body,
+.context-panel.collapsed .panel-footer,
+.context-panel.collapsed .panel-header .title-text,
+.context-panel.collapsed .panel-header .preview-trigger { display: none; }
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--fill-color-lighter);
+  border-bottom: 1px solid var(--border-color-lighter);
+  flex-shrink: 0;
+}
+.panel-header .icon-btn {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-color-secondary);
+  font-size: 14px;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex; align-items: center;
+}
+.panel-header .icon-btn:hover { color: var(--color-primary); background: var(--fill-color-light); }
+.panel-header .title-text { font-size: 13px; font-weight: 500; color: var(--text-color-primary); flex: 1; }
+
+.panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+.panel-body::-webkit-scrollbar { width: 6px; }
+.panel-body::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+
+/* 空状态 */
+.empty-state {
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--text-color-placeholder);
+}
+.empty-state .empty-icon { font-size: 36px; margin-bottom: 8px; opacity: 0.5; }
+.empty-state p { font-size: 13px; margin-bottom: 16px; }
+
+/* token 预算条 */
+.budget-bar-wrap {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  background: var(--fill-color-lighter);
+  border-radius: 6px;
+}
+.budget-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-color-secondary);
+  margin-bottom: 6px;
+}
+.budget-label .used { color: var(--color-primary); font-weight: 600; }
+.budget-label .used.over { color: var(--color-danger); }
+.budget-track {
+  height: 6px;
+  background: var(--border-color-lighter);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.budget-fill {
+  height: 100%;
+  background: var(--color-gradient);
+  border-radius: 3px;
+  transition: width 0.3s, background 0.3s;
+}
+.budget-fill.over { background: var(--color-danger); }
+.over-budget-hint {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--color-warning);
+  display: none;
+}
+.over-budget-hint.show { display: block; }
+
+/* 上下文分区（section） */
+.ctx-section { margin-bottom: 4px; border: 1px solid var(--border-color-lighter); border-radius: 6px; overflow: hidden; }
+.ctx-section-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--fill-color-lighter);
+  cursor: pointer;
+  user-select: none;
+}
+.ctx-section-head:hover { background: var(--fill-color-light); }
+.ctx-section-head .arrow { font-size: 10px; color: var(--text-color-secondary); transition: transform 0.2s; width: 10px; }
+.ctx-section.collapsed .arrow { transform: rotate(-90deg); }
+.ctx-section-head .sec-title { font-size: 12px; font-weight: 500; color: var(--text-color-primary); flex: 1; }
+.ctx-section-head .priority-tag {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.priority-tag.must { background: var(--color-danger-light-9); color: var(--color-danger); }
+.priority-tag.high { background: var(--color-warning-light-9); color: var(--color-warning); }
+.priority-tag.mid { background: var(--color-info-light-9); color: var(--color-info); }
+.priority-tag.low { background: var(--fill-color); color: var(--text-color-secondary); }
+.ctx-section-head .sec-tokens { font-size: 11px; color: var(--text-color-secondary); flex-shrink: 0; }
+.ctx-section-body { padding: 4px 6px 6px; display: flex; flex-direction: column; gap: 2px; }
+.ctx-section.collapsed .ctx-section-body { display: none; }
+
+/* 单个上下文项（item row） */
+.ctx-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 8px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.ctx-item:hover { background: var(--fill-color-lighter); }
+.ctx-item.excluded { opacity: 0.45; }
+
+/* 复选框（自绘，Element Plus 风格） */
+.checkbox {
+  width: 16px; height: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  cursor: pointer;
+  position: relative;
+  background: #fff;
+  transition: all 0.15s;
+}
+.checkbox:hover { border-color: var(--color-primary); }
+.checkbox.checked {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+.checkbox.checked::after {
+  content: '';
+  position: absolute;
+  left: 4px; top: 1px;
+  width: 4px; height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.item-main { flex: 1; min-width: 0; }
+.item-top { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; flex-wrap: wrap; }
+.type-tag {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.type-tag.character { background: var(--color-primary-light-9); color: var(--color-primary); }
+.type-tag.state { background: var(--color-warning-light-9); color: var(--color-warning); }
+.type-tag.memory { background: var(--color-info-light-9); color: var(--color-info); }
+.type-tag.chapter { background: var(--color-success-light-9); color: var(--color-success); }
+.type-tag.outline { background: var(--color-danger-light-9); color: var(--color-danger); }
+.type-tag.conflict { background: var(--color-danger-light-9); color: var(--color-danger); }
+.type-tag.summary { background: var(--color-primary-light-9); color: var(--color-primary); }
+.type-tag.bg { background: var(--fill-color); color: var(--text-color-secondary); }
+.item-title { font-size: 12px; color: var(--text-color-primary); font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-meta { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-color-secondary); }
+.score { color: var(--color-primary); }
+.edit-btn {
+  background: none;
+  border: none;
+  color: var(--text-color-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.edit-btn:hover { color: var(--color-primary); background: var(--fill-color-light); }
+.item-summary { font-size: 11px; color: var(--text-color-secondary); line-height: 1.5; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.item-edited-badge { font-size: 10px; color: var(--color-warning); }
+
+/* 提取状态徽章 */
+.extraction-badge {
+  margin: 4px 0 12px;
+  padding: 8px 10px;
+  background: var(--fill-color-lighter);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.extraction-badge .label { font-size: 11px; color: var(--text-color-secondary); margin-right: 4px; }
+.ext-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--fill-color-blank);
+  border: 1px solid var(--border-color-lighter);
+}
+.ext-chip.success { color: var(--color-success); }
+.ext-chip.failed { color: var(--color-danger); }
+.ext-chip.running { color: var(--color-primary); }
+.ext-chip.running .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-primary);
+  animation: pulse 1.2s infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+.ext-chip.failed .retry {
+  background: none; border: none; color: var(--color-danger); cursor: pointer;
+  font-size: 10px; padding: 0 2px; text-decoration: underline;
+}
+
+/* 面板底部 */
+.panel-footer {
+  padding: 10px 12px;
+  border-top: 1px solid var(--border-color-lighter);
+  background: var(--fill-color-blank);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ===== 按钮（复刻 Element Plus 风格） ===== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  background: var(--fill-color-blank);
+  color: var(--text-color-regular);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  font-family: inherit;
+}
+.btn:hover { color: var(--color-primary); border-color: var(--color-primary-light-5); background: var(--color-primary-light-9); }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+.btn-primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+.btn-primary:hover { background: var(--color-primary-light); border-color: var(--color-primary-light); color: #fff; }
+.btn-primary:disabled { background: var(--color-primary-light-5); border-color: var(--color-primary-light-5); cursor: not-allowed; opacity: 0.7; }
+.btn-danger { color: var(--color-danger); border-color: var(--color-danger-light-9); background: var(--color-danger-light-9); }
+.btn-danger:hover { background: var(--color-danger); color: #fff; border-color: var(--color-danger); }
+.btn-text { background: none; border: none; color: var(--text-color-secondary); padding: 4px 6px; }
+.btn-text:hover { color: var(--color-primary); background: none; }
+.btn-block { width: 100%; }
+
+/* ===== Tag（复刻 el-tag） ===== */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 4px;
+  border: 1px solid;
+}
+.tag-info { background: var(--color-info-light-9); color: var(--color-info); border-color: var(--color-info-light-9); }
+.tag-warning { background: var(--color-warning-light-9); color: var(--color-warning); border-color: var(--color-warning-light-9); }
+.tag-success { background: var(--color-success-light-9); color: var(--color-success); border-color: var(--color-success-light-9); }
+
+/* ===== 模态框（复刻 el-dialog） ===== */
+.modal-mask {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.modal-mask.show { display: flex; }
+.modal {
+  background: var(--bg-color);
+  border-radius: 8px;
+  width: 560px;
+  max-width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-sm);
+}
+.modal-head {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color-lighter);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-color-primary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.modal-head .close { background: none; border: none; cursor: pointer; color: var(--text-color-secondary); font-size: 18px; padding: 0; }
+.modal-body { padding: 16px 20px; overflow-y: auto; flex: 1; }
+.modal-body .edit-meta { font-size: 12px; color: var(--text-color-secondary); margin-bottom: 8px; }
+.modal-body textarea {
+  width: 100%;
+  min-height: 180px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 10px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.7;
+  resize: vertical;
+  outline: none;
+  color: var(--text-color-primary);
+}
+.modal-body textarea:focus { border-color: var(--color-primary); }
+.modal-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-color-lighter);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Toast */
+.toast {
+  position: fixed;
+  top: 76px; left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-primary);
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  z-index: 200;
+  box-shadow: var(--shadow-sm);
+  opacity: 0;
+  transition: opacity 0.3s, top 0.3s;
+  pointer-events: none;
+}
+.toast.show { opacity: 1; top: 80px; }
+.toast.error { background: var(--color-danger); }
+.toast.warning { background: var(--color-warning); }
+
+/* 加载骨架 */
+.skeleton { padding: 8px; }
+.skeleton-line {
+  height: 14px;
+  background: linear-gradient(90deg, var(--fill-color-light) 25%, var(--fill-color) 37%, var(--fill-color-light) 63%);
+  background-size: 400% 100%;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  animation: shimmer 1.4s infinite;
+}
+@keyframes shimmer { 0%{background-position:100% 50%} 100%{background-position:0% 50%} }
+</style>
+</head>
+<body>
+
+<!-- 顶栏 -->
+<div class="app-header">
+  <span class="logo">AI 工具箱</span>
+  <span class="crumb">长文写作 / 《暗夜追凶》/ 章节写作</span>
+  <div class="spacer"></div>
+  <button class="model-select">模型：DeepSeek-Chat · 32K 窗口 ▾</button>
+</div>
+
+<div class="workbench">
+  <!-- 步骤导航 -->
+  <aside class="stage-steps">
+    <h4>创作流程</h4>
+    <div class="step-item done"><span class="num">✓</span> 故事概要</div>
+    <div class="step-item done"><span class="num">✓</span> 世界背景</div>
+    <div class="step-item done"><span class="num">✓</span> 角色设计</div>
+    <div class="step-item done"><span class="num">✓</span> 大纲设计</div>
+    <div class="step-item active"><span class="num">5</span> 章节写作</div>
+    <div class="step-item"><span class="num">6</span> 审阅润色</div>
+  </aside>
+
+  <!-- 章节工作台 -->
+  <main class="chapter-stage">
+    <div class="stage-header">
+      <div>
+        <h2>章节写作</h2>
+        <p class="desc">根据大纲生成章节内容，支持手动编辑和版本管理</p>
+      </div>
+      <button class="btn btn-sm">⤓ 导出全部</button>
+    </div>
+
+    <div class="stage-content">
+      <div class="chapter-layout">
+
+        <!-- 左：大纲树 -->
+        <div class="outline-tree-panel">
+          <div class="tree-header">
+            <h3>大纲目录</h3>
+            <button class="text-btn">折叠</button>
+          </div>
+          <div class="outline-tree" id="outlineTree"></div>
+        </div>
+
+        <!-- 中：章节编辑器 -->
+        <div class="chapters-panel">
+          <div class="chapter-nav">
+            <button class="btn btn-sm" id="prevBtn">‹ 上一节</button>
+            <span class="pos" id="chapterPos">第3章 · 3.1 码头夜话</span>
+            <button class="btn btn-sm" id="nextBtn">下一节 ›</button>
+          </div>
+
+          <div class="chapter-card active">
+            <div class="chapter-title-bar">
+              <div class="title-left">
+                <span class="chapter-type">节</span>
+                <span class="chapter-title">3.1 码头夜话</span>
+                <span class="word-count" id="liveWordCount">0 字</span>
+              </div>
+              <div class="title-actions">
+                <button class="btn btn-primary btn-sm" id="aiGenBtn">✦ AI 生成</button>
+                <button class="btn btn-sm">版本</button>
+                <button class="btn btn-sm">导出</button>
+                <button class="btn btn-sm">保存</button>
+              </div>
+            </div>
+            <div class="chapter-info">
+              <p class="summary">林锋在码头与线人碰头，得知六年前凶案的关键物证下落。陈雪暗中跟踪，两人产生冲突。</p>
+              <div class="chapter-tags">
+                <span class="tag tag-info">林锋</span>
+                <span class="tag tag-warning">陈雪</span>
+                <span class="tag tag-info">码头仓库</span>
+              </div>
+            </div>
+            <div class="chapter-editor-wrapper">
+              <textarea class="editor-textarea" id="chapterEditor" placeholder="编写「3.1 码头夜话」的内容，或点击右侧「预览上下文」后由 AI 生成..."></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- 右：上下文预览面板（新增） -->
+        <div class="context-panel" id="contextPanel">
+          <div class="panel-header">
+            <button class="icon-btn" id="collapseBtn" title="折叠/展开">☰</button>
+            <span class="title-text">上下文预览</span>
+            <button class="btn btn-sm preview-trigger" id="previewBtn">⚡ 预览</button>
+          </div>
+          <div class="panel-body" id="panelBody"></div>
+          <div class="panel-footer" id="panelFooter" style="display:none;">
+            <button class="btn btn-text btn-block" id="resetBtn">↺ 重置选择</button>
+            <button class="btn btn-primary btn-block" id="generateBtn">✦ 生成章节（含上下文）</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- 编辑模态框 -->
+<div class="modal-mask" id="editModal">
+  <div class="modal">
+    <div class="modal-head">
+      <span id="editModalTitle">编辑上下文项</span>
+      <button class="close" id="editCloseBtn">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="edit-meta" id="editMeta"></div>
+      <textarea id="editTextarea"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" id="editCancelBtn">取消</button>
+      <button class="btn btn-primary" id="saveEditBtn">保存修改</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   数据：模拟 buildPreview 返回的 ContextManifest
+   ============================================================ */
+const OUTLINE_NODES = [
+  { id:'v1', name:'第一卷 · 暗夜初启', type:'volume', status:'progressing', indent:0 },
+  { id:'c1', name:'第1章 旧案重提', type:'chapter', status:'completed', indent:1 },
+  { id:'c2', name:'第2章 档案室', type:'chapter', status:'completed', indent:1 },
+  { id:'c3', name:'第3章 暗夜追踪', type:'chapter', status:'progressing', indent:1 },
+  { id:'s31', name:'3.1 码头夜话', type:'section', status:'progressing', indent:2, active:true },
+  { id:'s32', name:'3.2 仓库对峙', type:'section', status:'pending', indent:2 },
+  { id:'c4', name:'第4章 真相', type:'chapter', status:'pending', indent:1 },
+];
+
+const STATUS_NAME = { pending:'待写', progressing:'进行中', completed:'已完成' };
+
+/* buildPreview 返回的分区数据（priority: 1最高-11最低） */
+let manifest = {
+  modelContextWindow: 32000,
+  reservedForGeneration: 7000,
+  availableForContext: 24000,
+  sections: [
+    {
+      key:'overview', title:'一、故事宏观背景', priority:4, priorityLabel:'必填', priorityClass:'must',
+      items:[
+        { id:'summary:overview', type:'summary', typeLabel:'概要', title:'暗线追凶 · 故事概要', summary:'重案组刑警林锋因六年前一桩悬案被调离一线，新线索浮现后暗中复查…', tokens:120, included:true, score:null },
+        { id:'conflict:main', type:'conflict', typeLabel:'冲突', title:'核心冲突：真相 vs 权力', summary:'揭露真相将动摇高层，林锋面临抉择', tokens:80, included:true, score:null },
+      ]
+    },
+    {
+      key:'character', title:'三、涉及角色 + 实体状态', priority:2, priorityLabel:'必填', priorityClass:'must',
+      items:[
+        { id:'character:linfeng', type:'character', typeLabel:'角色', title:'林锋（主角）', summary:'前重案组刑警，执着、冷静，因旧案被边缘化', tokens:200, included:true, score:null },
+        { id:'state:linfeng', type:'state', typeLabel:'状态', title:'林锋 · 当前状态', summary:'左臂旧伤未愈；与陈雪关系紧张；掌握码头线索', tokens:60, included:true, score:null },
+        { id:'character:chenxue', type:'character', typeLabel:'角色', title:'陈雪（配角）', summary:'调查记者，动机不明，暗中跟踪林锋', tokens:150, included:true, score:null },
+      ]
+    },
+    {
+      key:'previous', title:'五、前文衔接', priority:3, priorityLabel:'必填', priorityClass:'must',
+      items:[
+        { id:'chapter:c2:end', type:'chapter', typeLabel:'上一章结尾', title:'第2章 结尾原文', summary:'林锋合上档案，窗外的雨越下越大。他拨通了一个号码…', tokens:550, included:true, score:null },
+        { id:'summary:c2:state', type:'summary', typeLabel:'章节状态', title:'第2章 结束状态', summary:'故事时间：D3 夜；地点：刑警队；林锋获线索指向码头', tokens:120, included:true, score:null },
+      ]
+    },
+    {
+      key:'memory', title:'六、关键记忆', priority:6, priorityLabel:'高', priorityClass:'high',
+      items:[
+        { id:'memory:m1', type:'memory', typeLabel:'记忆', title:'林锋被迫离职', summary:'六年前因坚持复查被调离', tokens:100, included:true, score:0.92 },
+        { id:'memory:m2', type:'memory', typeLabel:'记忆', title:'陈雪提供过证据', summary:'三个月前匿名邮件', tokens:90, included:true, score:0.86 },
+        { id:'memory:m3', type:'memory', typeLabel:'记忆', title:'老局长谈话', summary:'“别再查了”', tokens:80, included:false, score:0.71 },
+      ]
+    },
+    {
+      key:'history', title:'七、相关历史片段', priority:8, priorityLabel:'中', priorityClass:'mid',
+      items:[
+        { id:'chapter:chunk:c1:0', type:'chapter', typeLabel:'章节片段', title:'第1章 · 码头初次现身', summary:'…那个雨夜，黑影就是从这里消失的', tokens:150, included:true, score:0.81 },
+      ]
+    },
+    {
+      key:'background', title:'十、世界背景设定', priority:10, priorityLabel:'低', priorityClass:'low',
+      items:[
+        { id:'bg:city', type:'bg', typeLabel:'背景', title:'城市设定 · 江城', summary:'虚构港口城市，雨季漫长，黑帮与官商勾结', tokens:180, included:true, score:null },
+      ]
+    },
+  ]
+};
+
+/* 用户操作累积（forcedContext） */
+let forcedContext = {};
+let panelCollapsed = false;
+let previewLoaded = false;
+let editingItemId = null;
+
+/* ============================================================
+   渲染：大纲树
+   ============================================================ */
+function renderOutlineTree() {
+  const root = document.getElementById('outlineTree');
+  root.textContent = '';
+  OUTLINE_NODES.forEach(n => {
+    const row = document.createElement('div');
+    row.className = 'tree-node' + (n.active ? ' active' : '') + (n.indent ? ' indent-'+n.indent : '');
+    const name = document.createElement('span');
+    name.className = 'node-name';
+    name.textContent = n.name;
+    const st = document.createElement('span');
+    st.className = 'node-status ' + n.status;
+    st.textContent = STATUS_NAME[n.status];
+    row.appendChild(name);
+    row.appendChild(st);
+    row.onclick = () => {
+      OUTLINE_NODES.forEach(x => x.active = false);
+      n.active = true;
+      renderOutlineTree();
+      document.getElementById('chapterPos').textContent = n.name;
+      if (previewLoaded) { showToast('已切换章节，上下文需重新预览', 'warning'); resetPreview(); }
+    };
+    root.appendChild(row);
+  });
+}
+
+/* ============================================================
+   渲染：上下文预览面板
+   ============================================================ */
+function renderEmptyState() {
+  const body = document.getElementById('panelBody');
+  body.textContent = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'empty-state';
+  const icon = document.createElement('div');
+  icon.className = 'empty-icon';
+  icon.textContent = '⚡';
+  const p = document.createElement('p');
+  p.textContent = '点击「预览」查看本章将注入的角色、状态、记忆与历史片段';
+  const btn = document.createElement('button');
+  btn.className = 'btn btn-primary btn-sm';
+  btn.textContent = '⚡ 预览上下文';
+  btn.onclick = loadPreview;
+  wrap.appendChild(icon);
+  wrap.appendChild(p);
+  wrap.appendChild(btn);
+  body.appendChild(wrap);
+  document.getElementById('panelFooter').style.display = 'none';
+}
+
+function renderSkeleton() {
+  const body = document.getElementById('panelBody');
+  body.textContent = '';
+  const sk = document.createElement('div');
+  sk.className = 'skeleton';
+  for (let i=0;i<6;i++) {
+    const l = document.createElement('div');
+    l.className = 'skeleton-line';
+    l.style.width = (60 + (i*7)%40) + '%';
+    sk.appendChild(l);
+  }
+  body.appendChild(sk);
+}
+
+function loadPreview() {
+  renderSkeleton();
+  // 模拟异步 IPC buildPreview
+  setTimeout(() => {
+    previewLoaded = true;
+    renderManifest();
+    document.getElementById('panelFooter').style.display = 'flex';
+    showToast('已加载上下文清单：6 分区 · '+ countItems() +' 项');
+  }, 700);
+}
+
+function countItems() {
+  return manifest.sections.reduce((acc,s)=>acc+s.items.length, 0);
+}
+
+function totalTokens() {
+  let t = 0;
+  manifest.sections.forEach(s => s.items.forEach(it => { if (it.included) t += it.tokens; }));
+  return t;
+}
+
+function countIncluded() {
+  let n = 0;
+  manifest.sections.forEach(s => s.items.forEach(it => { if (it.included) n++; }));
+  return n;
+}
+
+function renderManifest() {
+  const body = document.getElementById('panelBody');
+  body.textContent = '';
+
+  /* 提取状态徽章 */
+  const badge = document.createElement('div');
+  badge.className = 'extraction-badge';
+  const label = document.createElement('span');
+  label.className = 'label';
+  label.textContent = '提取状态：';
+  badge.appendChild(label);
+  [
+    { key:'memory', text:'记忆', cls:'success', icon:'✓' },
+    { key:'entityState', text:'状态', cls:'success', icon:'✓' },
+    { key:'summary', text:'摘要', cls:'failed', icon:'✗', retry:true },
+    { key:'vector', text:'向量', cls:'running', icon:'' },
+  ].forEach(e => {
+    const chip = document.createElement('span');
+    chip.className = 'ext-chip ' + e.cls;
+    if (e.cls === 'running') {
+      const dot = document.createElement('span'); dot.className='dot'; chip.appendChild(dot);
+    } else {
+      chip.appendChild(document.createTextNode(e.icon + ' '));
+    }
+    chip.appendChild(document.createTextNode(e.text));
+    if (e.retry) {
+      const r = document.createElement('button'); r.className='retry'; r.textContent='重试';
+      r.onclick = (ev) => { ev.stopPropagation(); showToast('重试提取：'+e.text+'…'); };
+      chip.appendChild(r);
+    }
+    badge.appendChild(chip);
+  });
+  body.appendChild(badge);
+
+  /* token 预算条 */
+  const used = totalTokens();
+  const avail = manifest.availableForContext;
+  const over = used > avail;
+  const budgetWrap = document.createElement('div');
+  budgetWrap.className = 'budget-bar-wrap';
+  const bl = document.createElement('div');
+  bl.className = 'budget-label';
+  const blLabel = document.createElement('span');
+  blLabel.textContent = 'Token 预算';
+  bl.appendChild(blLabel);
+  const usedSpan = document.createElement('span');
+  usedSpan.className = 'used' + (over ? ' over' : '');
+  usedSpan.textContent = used + ' / ' + avail;
+  bl.appendChild(usedSpan);
+  budgetWrap.appendChild(bl);
+  const track = document.createElement('div');
+  track.className = 'budget-track';
+  const fill = document.createElement('div');
+  fill.className = 'budget-fill' + (over ? ' over' : '');
+  fill.style.width = Math.min(100, used/avail*100) + '%';
+  track.appendChild(fill);
+  budgetWrap.appendChild(track);
+  const hint = document.createElement('div');
+  hint.className = 'over-budget-hint' + (over ? ' show' : '');
+  hint.textContent = '⚠ 超出预算 ' + (used-avail) + ' tokens，生成时将自动压缩低优先级分区';
+  budgetWrap.appendChild(hint);
+  body.appendChild(budgetWrap);
+
+  /* 分区 */
+  manifest.sections.forEach(sec => {
+    const section = document.createElement('div');
+    section.className = 'ctx-section';
+    const head = document.createElement('div');
+    head.className = 'ctx-section-head';
+    const arrow = document.createElement('span'); arrow.className='arrow'; arrow.textContent='▼';
+    const title = document.createElement('span'); title.className='sec-title'; title.textContent = sec.title;
+    const pt = document.createElement('span'); pt.className='priority-tag '+sec.priorityClass; pt.textContent = sec.priorityLabel;
+    const secTok = document.createElement('span'); secTok.className='sec-tokens';
+    const secTokSum = sec.items.reduce((a,it)=> it.included?a+it.tokens:a, 0);
+    secTok.textContent = secTokSum + ' tok';
+    head.appendChild(arrow); head.appendChild(title); head.appendChild(pt); head.appendChild(secTok);
+    head.onclick = () => { section.classList.toggle('collapsed'); };
+    section.appendChild(head);
+
+    const sbody = document.createElement('div');
+    sbody.className = 'ctx-section-body';
+    sec.items.forEach(it => {
+      sbody.appendChild(renderItem(it));
+    });
+    section.appendChild(sbody);
+    body.appendChild(section);
+  });
+}
+
+function renderItem(it) {
+  const row = document.createElement('div');
+  row.className = 'ctx-item' + (it.included ? '' : ' excluded');
+
+  const cb = document.createElement('div');
+  cb.className = 'checkbox' + (it.included ? ' checked' : '');
+  cb.onclick = () => {
+    it.included = !it.included;
+    forcedContext[it.id] = { action: it.included ? 'include' : 'exclude' };
+    renderManifest();
+  };
+
+  const main = document.createElement('div');
+  main.className = 'item-main';
+
+  const top = document.createElement('div');
+  top.className = 'item-top';
+  const tt = document.createElement('span');
+  tt.className = 'type-tag ' + it.type;
+  tt.textContent = it.typeLabel;
+  const title = document.createElement('span');
+  title.className = 'item-title';
+  title.textContent = it.title;
+  top.appendChild(tt); top.appendChild(title);
+
+  if (forcedContext[it.id] && forcedContext[it.id].action === 'edit') {
+    const eb = document.createElement('span');
+    eb.className = 'item-edited-badge';
+    eb.textContent = '✎ 已编辑';
+    top.appendChild(eb);
+  }
+
+  const meta = document.createElement('div');
+  meta.className = 'item-meta';
+  const tokSpan = document.createElement('span');
+  tokSpan.textContent = it.tokens + ' tok';
+  meta.appendChild(tokSpan);
+  if (it.score != null) {
+    meta.appendChild(document.createTextNode(' · '));
+    const sc = document.createElement('span'); sc.className='score'; sc.textContent = '相关性 ' + it.score.toFixed(2);
+    meta.appendChild(sc);
+  }
+  const editBtn = document.createElement('button');
+  editBtn.className = 'edit-btn';
+  editBtn.textContent = '✎ 编辑';
+  editBtn.onclick = (ev) => { ev.stopPropagation(); openEditModal(it); };
+  meta.appendChild(editBtn);
+
+  const summary = document.createElement('div');
+  summary.className = 'item-summary';
+  summary.textContent = it.summary;
+
+  main.appendChild(top);
+  main.appendChild(meta);
+  main.appendChild(summary);
+
+  row.appendChild(cb);
+  row.appendChild(main);
+  return row;
+}
+
+/* ============================================================
+   编辑模态框
+   ============================================================ */
+function openEditModal(it) {
+  editingItemId = it.id;
+  document.getElementById('editModalTitle').textContent = '编辑：' + it.title;
+  document.getElementById('editMeta').textContent = it.typeLabel + ' · ' + it.tokens + ' tokens';
+  const ta = document.getElementById('editTextarea');
+  ta.value = forcedContext[it.id] && forcedContext[it.id].editedContent
+    ? forcedContext[it.id].editedContent
+    : it.summary;
+  document.getElementById('editModal').classList.add('show');
+  setTimeout(()=>ta.focus(), 50);
+}
+function closeEditModal() {
+  document.getElementById('editModal').classList.remove('show');
+  editingItemId = null;
+}
+document.getElementById('saveEditBtn').onclick = () => {
+  if (!editingItemId) return;
+  const val = document.getElementById('editTextarea').value;
+  forcedContext[editingItemId] = { action:'edit', editedContent: val };
+  // 同步到 manifest 便于展示
+  let found = false;
+  for (const sec of manifest.sections) {
+    for (const it of sec.items) {
+      if (it.id === editingItemId) { it.summary = val; it.included = true; found = true; break; }
+    }
+    if (found) break;
+  }
+  closeEditModal();
+  renderManifest();
+  showToast('已保存编辑，生成时将使用修改后的内容');
+};
+document.getElementById('editCloseBtn').onclick = closeEditModal;
+document.getElementById('editCancelBtn').onclick = closeEditModal;
+
+/* ============================================================
+   面板交互
+   ============================================================ */
+document.getElementById('collapseBtn').onclick = () => {
+  panelCollapsed = !panelCollapsed;
+  document.getElementById('contextPanel').classList.toggle('collapsed', panelCollapsed);
+};
+
+document.getElementById('previewBtn').onclick = loadPreview;
+
+document.getElementById('resetBtn').onclick = () => {
+  forcedContext = {};
+  // 恢复默认 included
+  manifest.sections.forEach(s => s.items.forEach((it, idx) => {
+    if (s.key === 'memory' && idx === 2) it.included = false;
+    else it.included = true;
+  }));
+  renderManifest();
+  showToast('已重置为默认选择');
+};
+
+document.getElementById('generateBtn').onclick = () => {
+  const fcList = Object.keys(forcedContext);
+  const payload = {
+    outlineId: 's31',
+    targetWords: 3500,
+    manifestBuildId: 's31:abc123',
+    forcedContext: fcList.map(k => ({ itemId:k, ...forcedContext[k] })),
+  };
+  console.log('[生成章节] payload =', payload);
+  showToast('已提交生成：'+ countIncluded() +' 项上下文 · ' + totalTokens() +' tokens');
+};
+
+document.getElementById('prevBtn').onclick = () => shiftChapter(-1);
+document.getElementById('nextBtn').onclick = () => shiftChapter(1);
+function shiftChapter(delta) {
+  const active = OUTLINE_NODES.findIndex(n => n.active);
+  const secs = OUTLINE_NODES.map((n,i)=>({i})).filter(s => OUTLINE_NODES[s.i].type==='section').map(s=>s.i);
+  const curIdx = secs.indexOf(active);
+  if (curIdx < 0) return;
+  const next = secs[curIdx+delta];
+  if (next == null) { showToast('已是边界', 'warning'); return; }
+  OUTLINE_NODES.forEach(x => x.active=false);
+  OUTLINE_NODES[next].active = true;
+  renderOutlineTree();
+  document.getElementById('chapterPos').textContent = OUTLINE_NODES[next].name;
+  if (previewLoaded) { showToast('已切换章节，上下文需重新预览', 'warning'); resetPreview(); }
+}
+
+function resetPreview() {
+  previewLoaded = false;
+  forcedContext = {};
+  renderEmptyState();
+}
+
+/* 编辑器字数实时统计 */
+const editor = document.getElementById('chapterEditor');
+const wc = document.getElementById('liveWordCount');
+editor.addEventListener('input', () => {
+  wc.textContent = editor.value.length + ' 字';
+});
+
+document.getElementById('aiGenBtn').onclick = () => {
+  if (!previewLoaded) {
+    showToast('请先点击「预览」确认注入内容', 'warning');
+    return;
+  }
+  document.getElementById('generateBtn').click();
+};
+
+/* Toast */
+let toastTimer = null;
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (type ? ' '+type : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ t.className = 'toast'; }, 2200);
+}
+
+/* 初始化 */
+renderOutlineTree();
+renderEmptyState();
+</script>
+</body>
+</html>
