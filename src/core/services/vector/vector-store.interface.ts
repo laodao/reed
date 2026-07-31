@@ -28,6 +28,15 @@ export interface VectorRecord {
   model?: string
   /** ISO 字符串或 Date */
   createdAt: Date | string
+  // ===== 长文写作向量元数据（步骤0 新增，均可选 → 旧 KB 数据天然兼容）=====
+  /** 所属项目 ID（长文模块隔离键；旧 KB 数据为空） */
+  projectId?: string
+  /** 实体类型（character/location/item/chapter/memory/...） */
+  entityType?: string
+  /** 实体 ID（对应 lw_* 表的 id；chapter 切片时为 outlineId） */
+  entityId?: string
+  /** 章节号（chapter 切片用，检索历史章节 chapterNumberLte） */
+  chapterNumber?: number | null
 }
 
 export interface VectorSearchResult {
@@ -35,6 +44,48 @@ export interface VectorSearchResult {
   chunkId: string
   /** 0-1，越接近 1 越相似（cosine：1 - distance） */
   score: number
+}
+
+/**
+ * 元数据过滤条件（长文模块专用，步骤0 新增）
+ * 用于 searchByMetadata
+ */
+export interface VectorMetadataFilter {
+  projectId?: string
+  entityType?: string
+  entityId?: string
+  /** 章节号精确匹配 */
+  chapterNumber?: number
+  /** 章节号 <= 该值（检索历史章节片段） */
+  chapterNumberLte?: number
+  /** 章节号 >= 该值 */
+  chapterNumberGte?: number
+}
+
+/**
+ * 元数据删除条件（步骤0 新增）
+ * 字段含义同 VectorMetadataFilter，但不含范围（删除按精确匹配）
+ */
+export interface VectorDeleteByFilter {
+  projectId?: string
+  entityType?: string
+  entityId?: string
+  chapterNumber?: number
+}
+
+/**
+ * 带元数据的检索结果（searchByMetadata 用，步骤0 新增）
+ */
+export interface VectorMetadataSearchResult {
+  chunkId: string
+  score: number
+  metadata: {
+    projectId?: string
+    entityType?: string
+    entityId?: string
+    chapterNumber?: number | null
+    knowledgeBaseId?: string
+  }
 }
 
 export type VectorDistanceMetric = 'cosine' | 'l2' | 'inner_product'
@@ -75,6 +126,34 @@ export interface IVectorStore {
 
   /** 统计某 KB 的向量数量 */
   countByKnowledgeBaseId(knowledgeBaseId: string): Promise<number>
+
+  // ===== 长文模块专用方法（步骤0 新增，不影响旧 KB 接口）=====
+
+  /**
+   * 按元数据过滤的语义检索（长文模块用）
+   * 与 searchSimilar 的区别：按 projectId/entityType/chapterNumber 过滤，而非 knowledgeBaseId。
+   * 旧 KB 数据 projectId 为空，长文检索 projectId 非空 → 天然隔离。
+   * @param queryVector 查询向量
+   * @param filter 元数据过滤条件（projectId 通常必传以保证隔离）
+   * @param topK 返回条数
+   * @param scoreThreshold 相关性阈值 0-1，低于此值过滤（可选）
+   */
+  searchByMetadata(
+    queryVector: number[],
+    filter: VectorMetadataFilter,
+    topK: number,
+    scoreThreshold?: number,
+  ): Promise<VectorMetadataSearchResult[]>
+
+  /**
+   * 按元数据批量删除（返回删除条数）
+   */
+  deleteByMetadata(filter: VectorDeleteByFilter): Promise<number>
+
+  /**
+   * 按 projectId 统计向量数量
+   */
+  countByProject(projectId: string): Promise<number>
 }
 
 let _accessor: (() => IVectorStore) | null = null

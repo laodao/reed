@@ -21,6 +21,7 @@ export type StoryStage =
   | 'skills'        // 技能与物品（可选）
   | 'outline'       // 大纲设计
   | 'chapters'      // 章节写作
+  | 'embedding'     // 向量化模型配置（向量索引基础设施用，非创作步骤）
 
 /**
  * 评论类创作阶段
@@ -1612,4 +1613,62 @@ export interface ExtractChapterStateSummaryResponse {
   success: boolean
   summary?: ExtractedChapterStateData
   error?: string
+}
+
+// ==================== 向量索引相关类型（步骤0 基础设施） ====================
+
+/**
+ * 长文向量索引的实体类型
+ * 开放式联合：后续步骤 3/4/5 新增图谱/时间线/伏笔时追加取值即可
+ */
+export type LwVectorEntityType =
+  | 'character'
+  | 'location'
+  | 'item'
+  | 'faction'
+  | 'skill'
+  | 'plot'
+  | 'outline'
+  | 'chapter'
+  | 'memory'
+  | 'event'
+  // 以下为后续步骤预留（步骤3/4/5 实现时启用）
+  | 'graph_edge'
+  | 'timeline'
+  | 'foreshadow'
+
+/**
+ * 长文向量语义检索选项
+ */
+export interface LwVectorSearchOptions {
+  /** 限定实体类型（不传 = 全类型） */
+  entityType?: LwVectorEntityType
+  /** 章节号 <= 该值（检索历史章节片段，不检索未写章节） */
+  chapterNumberLte?: number
+  /** 返回条数，默认 10 */
+  topK?: number
+  /** 相关性阈值 0-1，低于此值过滤 */
+  scoreThreshold?: number
+}
+
+/**
+ * 长文向量检索结果
+ */
+export interface LwVectorSearchResult {
+  entityType: LwVectorEntityType
+  entityId: string
+  chunkId: string
+  /** 0-1，越接近 1 越相关 */
+  score: number
+  /** 命中片段预览（前 200 字） */
+  preview: string
+}
+
+/**
+ * 章节号（用于向量检索 chapterNumberLte 过滤）
+ */
+export interface LwVectorIndexStats {
+  entityCount: number
+  chapterCount: number
+  totalChunks: number
 }
