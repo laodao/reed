@@ -42,6 +42,9 @@ import type {
   VectorRecord,
   VectorSearchResult,
   VectorDistanceMetric,
+  VectorMetadataFilter,
+  VectorDeleteByFilter,
+  VectorMetadataSearchResult,
 } from './vector-store.interface'
 
 /** 全局向量维度上限（写表时统一 zero-pad 到此长度） */
@@ -69,6 +72,11 @@ export class PgVectorStore implements IVectorStore {
         '[PgVectorStore] PG 未安装 vector 扩展（pgvector）—— 请先跑 migration ensure-pgvector-extension',
       )
     }
+    // 步骤0：确保 kb_vectors 含长文元数据列（幂等）
+    const { extendKbVectorsMetadata } = await import(
+      '@core/database/migrations/extend-kb-vectors-metadata'
+    )
+    await extendKbVectorsMetadata(ds)
     this.ready = true
   }
 
@@ -87,8 +95,9 @@ export class PgVectorStore implements IVectorStore {
     for (const r of records) {
       const vec = padOrTruncate(r.vector)
       const id = r.id || randomUUID()
+      // 11 列：原 7 列 + 长文元数据 4 列（project_id/entity_type/entity_id/chapter_number）
       placeholders.push(
-        `($${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}::halfvec, $${idx++}, $${idx++})`,
+        `($${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}::halfvec, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++})`,
       )
       params.push(
         id,
@@ -98,24 +107,35 @@ export class PgVectorStore implements IVectorStore {
         formatHalfvec(vec),
         r.model ?? null,
         normalizeCreatedAt(r.createdAt),
+        // 长文元数据（旧 KB 数据这些字段 undefined → 存 null）
+        r.projectId ?? null,
+        r.entityType ?? null,
+        r.entityId ?? null,
+        r.chapterNumber ?? null,
       )
     }
     const sql = `INSERT INTO kb_vectors
-      (id, chunk_id, knowledge_base_id, user_id, embedding, model, created_at)
+      (id, chunk_id, knowledge_base_id, user_id, embedding, model, created_at,
+       project_id, entity_type, entity_id, chapter_number)
       VALUES ${placeholders.join(', ')}
       ON CONFLICT (chunk_id) DO UPDATE
         SET embedding = EXCLUDED.embedding,
             knowledge_base_id = EXCLUDED.knowledge_base_id,
             user_id = EXCLUDED.user_id,
             model = EXCLUDED.model,
-            created_at = EXCLUDED.created_at`
+            created_at = EXCLUDED.created_at,
+            project_id = EXCLUDED.project_id,
+            entity_type = EXCLUDED.entity_type,
+            entity_id = EXCLUDED.entity_id,
+            chapter_number = EXCLUDED.chapter_number`
     await ds.query(sql, params)
   }
 
   async getByChunkId(chunkId: string): Promise<VectorRecord | null> {
     const ds = this.requireDs()
     const rows = await ds.query(
-      `SELECT id, chunk_id, knowledge_base_id, user_id, embedding::text AS embedding, model, created_at
+      `SELECT id, chunk_id, knowledge_base_id, user_id, embedding::text AS embedding, model, created_at,
+              project_id, entity_type, entity_id, chapter_number
        FROM kb_vectors WHERE chunk_id = $1 LIMIT 1`,
       [chunkId],
     )
@@ -177,6 +197,122 @@ export class PgVectorStore implements IVectorStore {
     return rows[0]?.n ?? 0
   }
 
+  // ==================== 长文模块专用（步骤0 新增）====================
+
+  async searchByMetadata(
+    queryVector: number[],
+    filter: VectorMetadataFilter,
+    topK: number,
+    scoreThreshold?: number,
+  ): Promise<VectorMetadataSearchResult[]> {
+    const ds = this.requireDs()
+    const vec = padOrTruncate(queryVector)
+
+    // 全参数化 WHERE（防注入）。构造 WHERE 子句 + 参数列表
+    const conditions: string[] = []
+    const params: unknown[] = []
+    let idx = 1
+    if (filter.projectId !== undefined) {
+      conditions.push(`project_id = $${idx++}`)
+      params.push(filter.projectId)
+    }
+    if (filter.entityType !== undefined) {
+      conditions.push(`entity_type = $${idx++}`)
+      params.push(filter.entityType)
+    }
+    if (filter.entityId !== undefined) {
+      conditions.push(`entity_id = $${idx++}`)
+      params.push(filter.entityId)
+    }
+    if (filter.chapterNumber !== undefined) {
+      conditions.push(`chapter_number = $${idx++}`)
+      params.push(filter.chapterNumber)
+    }
+    if (filter.chapterNumberLte !== undefined) {
+      conditions.push(`chapter_number <= $${idx++}`)
+      params.push(filter.chapterNumberLte)
+    }
+    if (filter.chapterNumberGte !== undefined) {
+      conditions.push(`chapter_number >= $${idx++}`)
+      params.push(filter.chapterNumberGte)
+    }
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+
+    // halfvec 向量参数放最后（KNN ORDER BY 用 <=>）
+    const vecParamIdx = idx++
+    params.push(formatHalfvec(vec))
+
+    const rows = await ds.query(
+      `SELECT chunk_id, embedding <=> $${vecParamIdx}::halfvec AS distance,
+              project_id, entity_type, entity_id, chapter_number, knowledge_base_id
+       FROM kb_vectors
+       ${whereClause}
+       ORDER BY embedding <=> $${vecParamIdx}::halfvec
+       LIMIT $${idx}`,
+      [...params, topK],
+    )
+
+    const results: VectorMetadataSearchResult[] = []
+    for (const r of rows) {
+      const dist = typeof r.distance === 'number' ? r.distance : Number(r.distance)
+      // cosine distance ∈ [0, 2]，score = 1 - distance/2 → ∈ [0, 1]
+      const score = Math.max(0, Math.min(1, 1 - dist / 2))
+      if (scoreThreshold !== undefined && score < scoreThreshold) continue
+      results.push({
+        chunkId: r.chunk_id,
+        score,
+        metadata: {
+          projectId: r.project_id ?? undefined,
+          entityType: r.entity_type ?? undefined,
+          entityId: r.entity_id ?? undefined,
+          chapterNumber: r.chapter_number ?? null,
+          knowledgeBaseId: r.knowledge_base_id ?? undefined,
+        },
+      })
+    }
+    return results
+  }
+
+  async deleteByMetadata(filter: VectorDeleteByFilter): Promise<number> {
+    const ds = this.requireDs()
+    const conditions: string[] = []
+    const params: unknown[] = []
+    let idx = 1
+    if (filter.projectId !== undefined) {
+      conditions.push(`project_id = $${idx++}`)
+      params.push(filter.projectId)
+    }
+    if (filter.entityType !== undefined) {
+      conditions.push(`entity_type = $${idx++}`)
+      params.push(filter.entityType)
+    }
+    if (filter.entityId !== undefined) {
+      conditions.push(`entity_id = $${idx++}`)
+      params.push(filter.entityId)
+    }
+    if (filter.chapterNumber !== undefined) {
+      conditions.push(`chapter_number = $${idx++}`)
+      params.push(filter.chapterNumber)
+    }
+    if (conditions.length === 0) {
+      throw new Error('[PgVectorStore.deleteByMetadata] 必须提供至少一个过滤条件（避免误删全表）')
+    }
+    const rows = await ds.query(
+      `DELETE FROM kb_vectors WHERE ${conditions.join(' AND ')} RETURNING id`,
+      params,
+    )
+    return rows.length
+  }
+
+  async countByProject(projectId: string): Promise<number> {
+    const ds = this.requireDs()
+    const rows = await ds.query(
+      `SELECT COUNT(*)::int AS n FROM kb_vectors WHERE project_id = $1`,
+      [projectId],
+    )
+    return rows[0]?.n ?? 0
+  }
+
   private requireDs(): DataSource {
     const db = getCoreDatabaseManager()
     if (!db.dataSource) throw new Error('数据库未初始化（PgVectorStore.requireDs）')
@@ -233,6 +369,10 @@ function rowToRecord(row: {
   embedding: string | null
   model: string | null
   created_at: string | Date
+  project_id?: string | null
+  entity_type?: string | null
+  entity_id?: string | null
+  chapter_number?: number | null
 }): VectorRecord {
   // embedding::text 出来是 '[v1,v2,...]'，去括号 split
   const vec: number[] = row.embedding
@@ -250,5 +390,10 @@ function rowToRecord(row: {
     dim: vec.length,
     model: row.model ?? undefined,
     createdAt: row.created_at,
+    // 长文元数据（旧 KB 行这些列为 NULL → undefined）
+    projectId: row.project_id ?? undefined,
+    entityType: row.entity_type ?? undefined,
+    entityId: row.entity_id ?? undefined,
+    chapterNumber: row.chapter_number ?? null,
   }
 }
