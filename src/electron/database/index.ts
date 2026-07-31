@@ -62,6 +62,7 @@ import { LwTempCharacterTemplateRepository } from '@core/database/repositories/l
 import { LwTempLocationTemplateRepository } from '@core/database/repositories/lw-temp-location-template.repository'
 import { LwProjectModelConfigRepository } from '@core/database/repositories/lw-project-model-config.repository'
 import { LwChapterStateSummaryRepository } from '@core/database/repositories/lw-chapter-state-summary.repository'
+import { LwVectorIndexRepository } from '@core/database/repositories/lw-vector-index.repository'
 import { DiaryFolderRepository } from '@core/database/repositories/diary-folder.repository'
 import { DiaryEntryRepository } from '@core/database/repositories/diary-entry.repository'
 import { DiaryLinkRepository } from '@core/database/repositories/diary-link.repository'
@@ -151,6 +152,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public lwMemories: LwMemoryRepository | null = null
   public lwEntityStates: LwEntityStateRepository | null = null
   public lwChapterStateSummaries: LwChapterStateSummaryRepository | null = null
+  public lwVectorIndices: LwVectorIndexRepository | null = null
 
   // 新增：符合第三范式的长文写作关联表仓库
   public lwPlotCharacters: LwPlotCharacterRepository | null = null
@@ -611,6 +613,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/normalize-storyboard-character-ids'
     )
     await normalizeStoryboardCharacterIds(this.dataSource)
+    // 步骤0：长文向量索引记录表（lw_vector_indices）—— 向量本体在 LanceDB，本表存 chunkId↔实体映射
+    const { createLwVectorIndices } = await import(
+      '@core/database/migrations/create-lw-vector-indices'
+    )
+    await createLwVectorIndices(this.dataSource)
   }
 
   /**
@@ -4151,6 +4158,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.lwMemories = new LwMemoryRepository(this.dataSource)
     this.lwEntityStates = new LwEntityStateRepository(this.dataSource)
     this.lwChapterStateSummaries = new LwChapterStateSummaryRepository(this.dataSource)
+    this.lwVectorIndices = new LwVectorIndexRepository(this.dataSource)
 
     // 初始化符合第三范式的长文写作关联表仓库
     this.lwPlotCharacters = new LwPlotCharacterRepository(this.dataSource)

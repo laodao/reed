@@ -349,6 +349,15 @@ async function initWebVectorStore(rootDataPath: string): Promise<void> {
       const ds = getCoreDatabaseManager().dataSource
       if (!ds) throw new Error('PG DataSource 尚未初始化')
       await ensurePgvectorKbVectors(ds)
+      // 步骤0：kb_vectors 加长文元数据列 + 建 lw_vector_indices 表（PG 端，幂等）
+      const { extendKbVectorsMetadata } = await import(
+        '@core/database/migrations/extend-kb-vectors-metadata'
+      )
+      const { createLwVectorIndices } = await import(
+        '@core/database/migrations/create-lw-vector-indices'
+      )
+      await extendKbVectorsMetadata(ds)
+      await createLwVectorIndices(ds)
       await initVectorStore({ mode: 'pgvector' })
       // 标识全局已切换（其他模块如有自检逻辑可读此 flag）
       ;(globalThis as any).__VECTOR_STORE__ = 'pgvector'

@@ -61,6 +61,7 @@ import type { LwStoryOverviewRepository } from './repositories/lw-story-overview
 import type { LwTempCharacterTemplateRepository } from './repositories/lw-temp-character-template.repository'
 import type { LwTempLocationTemplateRepository } from './repositories/lw-temp-location-template.repository'
 import type { LwTypeConfigRepository } from './repositories/lw-type-config.repository'
+import type { LwVectorIndexRepository } from './repositories/lw-vector-index.repository'
 import type { MessageRepository } from './repositories/message.repository'
 import type { OSSConfigRepository } from './repositories/oss-config.repository'
 import type { PortraitCharacterRepository } from './repositories/portrait-character.repository'
@@ -152,6 +153,8 @@ export interface ICoreDatabaseManager {
   lwEntityStates: LwEntityStateRepository | null
   lwChapterStateSummaries: LwChapterStateSummaryRepository | null
   lwProjectModelConfigs: LwProjectModelConfigRepository | null
+  /** 长文向量索引记录（步骤0 新增：chunkId↔实体映射 + contentHash） */
+  lwVectorIndices: LwVectorIndexRepository | null
 
   // ---- 长文写作关联表（第三范式） ----
   lwPlotCharacters: LwPlotCharacterRepository | null

@@ -51,6 +51,7 @@ import { LwPrewriteRepository } from '@core/database/repositories/lw-prewrite.re
 import { LwMemoryRepository } from '@core/database/repositories/lw-memory.repository'
 import { LwEntityStateRepository } from '@core/database/repositories/lw-entity-state.repository'
 import { LwChapterStateSummaryRepository } from '@core/database/repositories/lw-chapter-state-summary.repository'
+import { LwVectorIndexRepository } from '@core/database/repositories/lw-vector-index.repository'
 import { LwPlotCharacterRepository } from '@core/database/repositories/lw-plot-character.repository'
 import { LwPlotLocationRepository } from '@core/database/repositories/lw-plot-location.repository'
 import { LwOutlineCharacterRepository } from '@core/database/repositories/lw-outline-character.repository'
@@ -137,6 +138,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   lwEntityStates: LwEntityStateRepository | null
   lwChapterStateSummaries: LwChapterStateSummaryRepository | null
   lwProjectModelConfigs: LwProjectModelConfigRepository | null
+  lwVectorIndices: LwVectorIndexRepository | null
   // 长文关联表
   lwPlotCharacters: LwPlotCharacterRepository | null
   lwPlotLocations: LwPlotLocationRepository | null
@@ -223,6 +225,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.lwEntityStates = new LwEntityStateRepository(ds)
     this.lwChapterStateSummaries = new LwChapterStateSummaryRepository(ds)
     this.lwProjectModelConfigs = new LwProjectModelConfigRepository(ds)
+    this.lwVectorIndices = new LwVectorIndexRepository(ds)
 
     this.lwPlotCharacters = new LwPlotCharacterRepository(ds)
     this.lwPlotLocations = new LwPlotLocationRepository(ds)
