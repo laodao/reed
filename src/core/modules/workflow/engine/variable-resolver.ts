@@ -4,25 +4,25 @@
  * @description {{nodeId.path.to.field}} / {{start.inputKey}} / {{loopNode.item}} 的
  *              解析。纯逻辑、无 IO——每个 RunExecution 持有一个实例。
  *
+ *              作用域链（片4 作用域架构）：解析时可传入 LocalLookup——
+ *              循环迭代作用域的 body 节点输出与循环伪变量（item/index/list）
+ *              优先从局部查，未命中回退根命名空间变量。
+ *
  *              语义：
  *              - 字符串内多处占位 → 依次替换拼接为字符串
  *              - 整个字符串恰为单个占位 → 原样返回解析值（保留类型：
  *                对象/数组/数字/布尔——loop.listExpression 依赖此行为）
- *              - 引用缺失 → 字符串模式渲染为 ''，值模式返回 undefined（记警告）
- *              - 循环体内引用 body 节点 → 自动映射到当前迭代版本
- *                （nodeId → nodeId:i，由 iterationContext 提供）
+ *              - 引用缺失 → 字符串模式渲染为 ''，值模式返回 undefined
  */
 
-/** 迭代上下文：解析发生在循环体第 iteration 轮 */
-export interface IterationContext {
-  iterationIndex: number
-  /** body 节点集合（引用这些节点时映射到带迭代后缀的键） */
-  bodyNodeIds: Set<string>
+/** 局部查找接口（引擎按作用域提供：body 输出 + 循环伪变量） */
+export interface LocalLookup {
+  lookup(rootId: string): { hit: boolean; value: unknown }
 }
 
 /** 变量解析上下文（RunExecution 构建，节点执行期间只读） */
 export interface VariableResolverContext {
-  /** nodeKey（nodeId 或 nodeId:iteration）→ 输出对象 */
+  /** nodeId → 输出对象（根命名空间） */
   variables: Map<string, Record<string, unknown>>
   /** 开始节点输入 */
   startInputs: Record<string, unknown>
@@ -37,13 +37,12 @@ export class VariableResolver {
   /**
    * 解析模板字符串。
    * @param template 含 {{}} 占位的字符串（或已是非字符串——直接原样返回）
-   * @param iteration 迭代上下文（循环体内解析时提供）
+   * @param local 作用域局部查找（循环体内解析时提供）
    * @returns 单一完整占位时返回原始类型值；否则返回拼接字符串
    */
-  resolve(template: string, iteration?: IterationContext): unknown {
+  resolve(template: string, local?: LocalLookup): unknown {
     if (typeof template !== 'string') return template
 
-    // 找出全部占位符
     const matches: Array<{ full: string; path: string }> = []
     TEMPLATE_RE.lastIndex = 0
     let m: RegExpExecArray | null
@@ -52,20 +51,18 @@ export class VariableResolver {
     }
     if (matches.length === 0) return template
 
-    // 整串恰为单个占位 → 值透传（保留类型）
     if (matches.length === 1 && matches[0].full === template) {
-      return this.lookup(matches[0].path, iteration)
+      return this.lookup(matches[0].path, local)
     }
 
-    // 多占位 / 混合文本 → 字符串拼接
     return template.replace(TEMPLATE_RE, (_full, path: string) => {
-      const value = this.lookup(path, iteration)
-      return this.stringify(value)
+      const value = this.lookup(path, local)
+      return stringifyValue(value)
     })
   }
 
-  /** 路径查找：root 是 nodeId / 'start' / 循环节点伪命名空间 */
-  private lookup(path: string, iteration?: IterationContext): unknown {
+  /** 路径查找：root 是 nodeId / 'start'；local 命中优先，回退根命名空间 */
+  private lookup(path: string, local?: LocalLookup): unknown {
     const segments = path.split('.')
     const root = segments[0]
 
@@ -73,8 +70,11 @@ export class VariableResolver {
     if (root === 'start') {
       source = this.ctx.startInputs
     } else {
-      const key = this.nodeKeyFor(root, iteration)
-      source = this.ctx.variables.get(key)
+      source = this.ctx.variables.get(root)
+      if (source === undefined && local) {
+        const found = local.lookup(root)
+        if (found.hit) source = found.value
+      }
     }
     if (source === undefined || source === null) {
       return undefined
@@ -86,18 +86,6 @@ export class VariableResolver {
       current = (current as Record<string, unknown>)[segments[i]]
     }
     return current
-  }
-
-  /** 引用的节点是否在当前迭代上下文的 body 内 → 键加迭代后缀 */
-  private nodeKeyFor(nodeId: string, iteration?: IterationContext): string {
-    if (iteration && iteration.bodyNodeIds.has(nodeId)) {
-      return `${nodeId}:${iteration.iterationIndex}`
-    }
-    return nodeId
-  }
-
-  private stringify(value: unknown): string {
-    return stringifyValue(value)
   }
 }
 

@@ -1,34 +1,16 @@
 /**
- * 工作流执行引擎（核心调度器）
+ * 工作流执行作用域（片4：循环/审核/取消/续跑）
  * @module core/modules/workflow/engine/workflow-engine.service
- * @description 一次运行（Run）的完整调度：就绪判定 → 并发受限启动 → 节点执行 →
- *              边激活 → 再调度，直到运行终态。
+ * @description 作用域架构：
+ *              - 根作用域跑图主体；每个循环迭代是独立作用域（自己的
+ *                states/activatedEdges/merge 语义），循环体节点只在迭代作用域内执行
+ *              - 作用域静默（无 running/无 ready）或挂起（waiting_review）时收敛
+ *              - 挂起时 execute() 返回 waiting_review（不占住调用方），
+ *                RunExecution 留在 activeExecutions 占互斥；resumeReview 续驱
+ *              - 续跑：根作用域按 succeeded checkpoint 装配变量与已激活边；
+ *                未完成循环整体重跑（body 检查点作废，已完成循环经 loop 输出复用）
  *
- *              调度语义（片3 范围；循环/审核挂起/续跑见片4）：
- *              1. 事件驱动 pump()：节点终态触发重算就绪集；重入用 pumping 守卫 +
- *                 requeue 标记（微任务级收敛，防递归风暴）
- *              2. 就绪判定：普通节点任一入边激活即就绪（条件分支汇合处不死锁）；
- *                 parallel-merge(waitPolicy=all) 等齐全部入边，运行静默时
- *                 已有≥1 路到达的 merge 强制收敛执行，零到达的视为未执行
- *              3. 边激活：succeeded 按 route（条件/审核）或全部 normal 出边；
- *                 failed_recovered 走 fail 出边；failed 终止运行
- *              4. 失败语义（严格）：重试耗尽且有 fail 边 → failed_recovered 继续；
- *                 无 fail 边 → 中止同运行其余节点 → run failed
- *              5. 输出截断：节点 settle 后统一截断（防失控），加 __truncated 标记
- *              6. 终态：任何未恢复失败 ⇒ failed；静默且无失败 ⇒ succeeded（宽容收敛）
- *              7. 防失控看门狗：maxDurationMs 到点强制 abort + finalize('timed_out')，
- *                 并放行 execute() 返回（不等待永不返回的悬挂任务）
- *
- *              健壮性纪律（review 修复）：
- *              - execute 全程 try/catch：任何写库异常 → 兜底 finalize('failed')，
- *                运行记录绝不悬死 running（否则同工作流互斥被永久占用）
- *              - 所有 settle 路径（成功/失败/重试醒转/启动后）都复查
- *                finished/aborted，杜绝"运行终态后仍执行节点/发事件/写库"
- *              - execute 返回值 = finalize 落库的终态（不按 states 插入序推导，
- *                消除返回值与持久化状态不一致）
- *
- *              ALS 纪律：调用方（服务层）必须以 runWithUserAsync(run.userId) 包裹
- *              execute()；引擎对每个任务执行链再包一层（防御性，幂等）。
+ *              ALS 纪律不变：execute/续驱均须 runWithUserAsync(run.userId)。
  */
 
 import { runWithUserAsync } from '@core/context/user-context'
@@ -49,7 +31,7 @@ import {
   resolveNodeRetrySettings,
   type ResolvedExecutionSettings,
 } from './execution-settings'
-import { buildNodeMap } from './graph-topology'
+import { buildNodeMap, computeLoopBody, type LoopBodyInfo } from './graph-topology'
 
 /** 运行统计（落库 stats 列的形状） */
 export interface RunExecutionStats {
@@ -66,13 +48,30 @@ export interface ExecuteRunInput {
   definitionId: string
   graph: WorkflowGraph
   startInputs: Record<string, unknown>
-  /** 工作流级设置（未解析的原样传入；引擎内部走默认值→上限解析） */
   settings?: import('@shared/types/workflow.types').WorkflowExecutionSettings | null
+  /**
+   * 续跑装配数据（resumeRun 用）：源运行中 succeeded 且有输出的节点行。
+   * 引擎按 (nodeId, iterationIndex=0) 重建根作用域变量与已激活边。
+   */
+  resumedCheckpoints?: Array<{
+    nodeId: string
+    nodeType: string
+    nodeName: string
+    output: Record<string, unknown>
+    routeTaken?: string | null
+  }>
 }
 
-/** 节点内存态 */
+/** 审核决策输入 */
+export interface ReviewDecisionInput {
+  decision: 'approve' | 'approve_with_changes' | 'reject'
+  comment?: string
+  /** approve_with_changes 时的修改值（浅覆盖 payload 顶层字段） */
+  editedValues?: Record<string, unknown>
+}
+
+/** 节点内存态（作用域内以 nodeId 为键） */
 interface NodeExecutionState {
-  nodeKey: string
   nodeId: string
   iterationIndex: number
   status: WorkflowNodeRunStatus
@@ -80,37 +79,91 @@ interface NodeExecutionState {
   error?: string
   output?: Record<string, unknown>
   routeTaken?: string | null
+  /** 挂起审核的载荷与超时策略 */
+  reviewPayload?: Record<string, unknown>
+  reviewTimeoutMs?: number | null
+  reviewTimeoutPolicy?: 'approve' | 'reject' | 'fail'
+  waitExpiresAt?: Date | null
   startedAtMs: number
+}
+
+interface Deferred {
+  promise: Promise<void>
+  resolve: () => void
+  done: boolean
+}
+
+function makeDeferred(): Deferred {
+  let resolve!: () => void
+  const promise = new Promise<void>(r => {
+    resolve = r
+  })
+  return { promise, resolve, done: false }
+}
+
+/** 执行作用域：根作用域或某循环迭代 */
+class ScopeState {
+  readonly states = new Map<string, NodeExecutionState>()
+  readonly activatedEdges = new Set<string>()
+  readonly mergeArrivals = new Map<string, Map<string, Record<string, unknown>>>()
+  readonly forcedMergeNodeIds = new Set<string>()
+  /** 本作用域循环节点的迭代伪输出：loopNodeId → { item, index, list } */
+  readonly loopPseudoVars = new Map<string, Record<string, unknown>>()
+  runningTasks = 0
+  pumping = false
+  requeue = false
+  /** 静默或挂起收敛标记 */
+  settledAt: Deferred | null = null
+  failed = false
+
+  constructor(
+    /** 作用域键：'root' 或 `${loopNodeId}:${iterationIndex}` */
+    readonly key: string,
+    readonly iterationIndex: number,
+    /** 循环作用域的 body 节点集合；根作用域为 null */
+    readonly bodyNodeIds: Set<string> | null
+  ) {}
+
+  get isRoot(): boolean {
+    return this.key === 'root'
+  }
+
+  /** 作用域静默（无在飞任务且未在 pumping 中被调度）由 pump 判定并 resolve settledAt */
+}
+
+/** 循环驱动进度（挂起后续驱用） */
+interface LoopDriver {
+  node: WorkflowNode
+  state: NodeExecutionState
+  list: unknown[]
+  results: unknown[]
+  parentScope: ScopeState
 }
 
 /** 一次运行的完整内存态 */
 class RunExecution {
   readonly nodeById: Map<string, WorkflowNode>
-  /** 入边/出边邻接表（构建一次，pump 每轮 O(度) 查询） */
   readonly incomingByNode: Map<string, WorkflowEdge[]>
   readonly outgoingByNode: Map<string, WorkflowEdge[]>
   readonly resolver: VariableResolver
   readonly variables = new Map<string, Record<string, unknown>>()
-  readonly states = new Map<string, NodeExecutionState>()
-  readonly activatedEdges = new Set<string>()
-  /** merge 节点到达记录：mergeNodeId → (来源nodeId → 来源输出) */
-  readonly mergeArrivals = new Map<string, Map<string, Record<string, unknown>>>()
-  /** 静默时被强制收敛的 merge（已按部分到达执行） */
-  readonly forcedMergeNodeIds = new Set<string>()
+  readonly rootScope = new ScopeState('root', 0, null)
+  /** 循环迭代作用域：scopeKey → scope */
+  readonly loopScopes = new Map<string, ScopeState>()
+  /** 循环驱动进度：loopNodeId → driver（挂起/续驱用） */
+  readonly loopDrivers = new Map<string, LoopDriver>()
+  /** 循环节点的 body 信息（启动时一次计算） */
+  readonly loopBodies = new Map<string, LoopBodyInfo>()
   readonly abortController = new AbortController()
   readonly settings: ResolvedExecutionSettings
 
-  runningTasks = 0
-  pumping = false
-  requeue = false
+  suspended = false
   finished = false
-  /** finalize 实际落库的终态（execute 返回值的唯一来源） */
   finalStatus?: WorkflowRunStatus
-  /** 看门狗触发后置位：不再等待在飞任务排空，放行 execute 返回 */
+  /** 看门狗触发后置位：不等待在飞任务排空，放行 execute 返回 */
   forceRelease = false
   startedAtMs = Date.now()
-  /** execute 主流程等待的完成信号（deferred；finalize / 任务排空时 resolve） */
-  readonly settled: { promise: Promise<void>; resolve: () => void; done: boolean }
+  settled = makeDeferred()
 
   constructor(readonly input: ExecuteRunInput) {
     this.nodeById = buildNodeMap(input.graph)
@@ -129,11 +182,28 @@ class RunExecution {
       variables: this.variables,
       startInputs: input.startInputs,
     })
-    let resolveSettled!: () => void
-    const promise = new Promise<void>(resolve => {
-      resolveSettled = resolve
-    })
-    this.settled = { promise, resolve: resolveSettled, done: false }
+    // 预计算全部循环节点的 body 信息（与校验器同一实现）
+    for (const node of input.graph.nodes) {
+      if (node.type !== 'loop') continue
+      const bodyEdge = (this.outgoingByNode.get(node.id) ?? []).find(e => e.kind === 'loop-body')
+      if (bodyEdge) {
+        this.loopBodies.set(
+          node.id,
+          computeLoopBody(input.graph, this.nodeById, node.id, bodyEdge)
+        )
+      }
+    }
+  }
+
+  /** 作用域归属：节点在给定作用域可见（根作用域=非任何 body 的节点；循环作用域=body 节点） */
+  nodeBelongsToScope(nodeId: string, scope: ScopeState): boolean {
+    if (scope.isRoot) {
+      for (const body of this.loopBodies.values()) {
+        if (body.bodySet.has(nodeId)) return false
+      }
+      return true
+    }
+    return (scope.bodyNodeIds as Set<string>).has(nodeId)
   }
 
   incomingOf(nodeId: string): WorkflowEdge[] {
@@ -145,15 +215,49 @@ class RunExecution {
     return kind === undefined ? all : all.filter(e => e.kind === kind)
   }
 
-  /** 节点执行键：循环体内节点恒带迭代后缀（含第 0 轮）；其余节点无后缀 */
-  nodeKey(nodeId: string, iterationIndex: number, isBodyNode = false): string {
-    return isBodyNode ? `${nodeId}:${iterationIndex}` : nodeId
+  /** 汇总各作用域统计 */
+  stats(): RunExecutionStats {
+    let done = 0
+    let failed = 0
+    let recovered = 0
+    const count = (scope: ScopeState) => {
+      for (const s of scope.states.values()) {
+        if (s.status === 'succeeded') done++
+        else if (s.status === 'failed') failed++
+        else if (s.status === 'failed_recovered') recovered++
+      }
+    }
+    count(this.rootScope)
+    for (const scope of this.loopScopes.values()) count(scope)
+    return {
+      totalNodes: this.input.graph.nodes.length,
+      doneNodes: done,
+      failedNodes: failed,
+      recoveredNodes: recovered,
+    }
   }
 
-  /** 终态且（任务排空 或 看门狗放行）→ resolve settled */
+  anyUnrecoveredFailure(): boolean {
+    const check = (scope: ScopeState) => {
+      for (const s of scope.states.values()) if (s.status === 'failed') return true
+      return false
+    }
+    if (check(this.rootScope)) return true
+    for (const scope of this.loopScopes.values()) if (check(scope)) return true
+    return false
+  }
+
+  /** 全部作用域的在飞任务数 */
+  totalRunningTasks(): number {
+    let n = this.rootScope.runningTasks
+    for (const scope of this.loopScopes.values()) n += scope.runningTasks
+    return n
+  }
+
+  /** 终态且（任务排空或看门狗放行）→ resolve settled */
   maybeSettled(): void {
     if (this.settled.done) return
-    if (this.finished && (this.runningTasks === 0 || this.forceRelease)) {
+    if (this.finished && (this.totalRunningTasks() === 0 || this.forceRelease)) {
       this.settled.done = true
       this.settled.resolve()
     }
@@ -161,7 +265,6 @@ class RunExecution {
 }
 
 export class WorkflowEngineService {
-  /** 活动运行（片4 的取消/审核恢复按 runId 定位） */
   private activeExecutions = new Map<string, RunExecution>()
 
   constructor(
@@ -169,29 +272,28 @@ export class WorkflowEngineService {
     private readonly registry: WorkflowNodeRegistry
   ) {}
 
-  /** 当前活动运行数（服务层全局并发控制用） */
   get activeCount(): number {
     return this.activeExecutions.size
   }
 
+  isWaitingReview(runId: string): boolean {
+    const exec = this.activeExecutions.get(runId)
+    return !!exec && exec.suspended
+  }
+
   /**
-   * 执行一次运行直至终态（succeeded / failed / timed_out）。
-   * 返回值恒等于 finalize 落库的终态。挂起（waiting_review）与取消在片4 扩展。
-   *
+   * 执行一次运行直至终态或挂起。
+   * 返回值恒等于落库终态；waiting_review 表示挂起（互斥仍占用，resumeReview 续驱）。
    * ⚠️ 必须在 runWithUserAsync(run.userId) 上下文内调用。
    */
   async execute(input: ExecuteRunInput): Promise<WorkflowRunStatus> {
     const exec = new RunExecution(input)
     this.activeExecutions.set(input.runId, exec)
 
-    // 防失控看门狗：最长时长到点强制终态（不清除的 setTimeout 会阻止进程退出）
-    const watchdog = setTimeout(() => {
-      void this.fireWatchdog(exec)
-    }, exec.settings.maxDurationMs)
+    const watchdog = setTimeout(() => void this.fireWatchdog(exec), exec.settings.maxDurationMs)
     watchdog.unref?.()
 
     try {
-      // 启动前置检查：图中节点类型必须全部已注册（未注册=引擎无法执行）
       const unregistered = input.graph.nodes.filter(n => !this.registry.get(n.type))
       if (unregistered.length > 0) {
         const error = `图中存在未注册的节点类型：${[
@@ -207,38 +309,248 @@ export class WorkflowEngineService {
       })
       this.emitRunStatus(exec, 'running')
 
+      // 续跑装配：恢复已成功节点的变量与已激活边（已成功节点不再执行）
+      if (input.resumedCheckpoints?.length) {
+        this.hydrateCheckpoints(exec, input.resumedCheckpoints)
+      }
+
       try {
-        await this.pump(exec)
+        await this.pump(exec, exec.rootScope)
       } catch (e) {
-        // pump 链路异常（多为写库失败）：兜底终态，绝不悬死 running
         console.error('[WorkflowEngine] pump 异常，兜底失败终态', e)
         await this.finalize(exec, 'failed', `引擎调度异常: ${errorMessage(e)}`)
+      }
+
+      // 挂起：execute 返回，exec 留在 activeExecutions 占互斥
+      if (exec.suspended && !exec.finished) {
+        exec.settled.done = true
+        exec.settled.resolve()
+        return 'waiting_review'
       }
 
       await exec.settled.promise
       return this.statusOf(exec)
     } catch (e) {
-      // patchRun/finalize 等自身异常：尽力落终态后原样上抛（服务层兜底）
       console.error('[WorkflowEngine] execute 异常', e)
       try {
         await this.finalize(exec, 'failed', `引擎执行异常: ${errorMessage(e)}`)
       } catch (finalizeError) {
-        console.error('[WorkflowEngine] 兜底 finalize 也失败', finalizeError)
+        console.error('[WorkflowEngine] 兜底 finalize 失败', finalizeError)
       }
       return this.statusOf(exec)
     } finally {
       clearTimeout(watchdog)
-      exec.maybeSettled()
-      this.activeExecutions.delete(input.runId)
+      if (!exec.suspended) {
+        exec.maybeSettled()
+        this.activeExecutions.delete(input.runId)
+      }
     }
   }
 
-  /** execute 返回值唯一来源：finalize 落库的终态 */
   private statusOf(exec: RunExecution): WorkflowRunStatus {
     return exec.finalStatus ?? 'failed'
   }
 
-  /** 看门狗：超时长死线 → abort 在飞 + timed_out 终态 + 放行返回 */
+  // ==================== 审核：挂起 / 恢复 / 超时 ====================
+
+  /**
+   * 审核决策（挂起中的运行）。应用决策后后台续驱（不阻塞调用方）。
+   * 返回是否成功应用（运行不活跃/节点非挂起态 → false，由服务层兜底 DB 直改）。
+   */
+  async resumeReview(
+    runId: string,
+    nodeId: string,
+    decision: ReviewDecisionInput
+  ): Promise<boolean> {
+    const exec = this.activeExecutions.get(runId)
+    if (!exec || !exec.suspended) return false
+
+    const scope = this.findScopeOfNode(exec, nodeId)
+    const state = scope?.states.get(nodeId)
+    if (!scope || !state || state.status !== 'waiting_review') return false
+
+    await this.applyReviewDecision(exec, scope, state, {
+      decision: decision.decision,
+      comment: decision.comment,
+      editedValues: decision.editedValues,
+      decidedAt: new Date().toISOString(),
+    })
+    // 决策已应用 → 后台续驱到终态（驳回无承接边时 applyReviewDecision 内已 finalize，
+    // 不再续驱）；不阻塞调用方
+    if (!exec.finished) {
+      void this.resumeSuspended(exec).catch(e =>
+        console.error('[WorkflowEngine] 审核续驱异常', e)
+      )
+    }
+    return true
+  }
+
+  /** 应用审核结果：节点 succeeded + route 激活 + 恢复运行 */
+  private async applyReviewDecision(
+    exec: RunExecution,
+    scope: ScopeState,
+    state: NodeExecutionState,
+    review: {
+      decision: 'approve' | 'approve_with_changes' | 'reject' | 'timeout_approve' | 'timeout_reject'
+      comment?: string
+      editedValues?: Record<string, unknown>
+      decidedAt: string
+    }
+  ): Promise<void> {
+    const node = exec.nodeById.get(state.nodeId)
+    if (!node) return
+    const payload = state.reviewPayload ?? {}
+    const isReject = review.decision === 'reject' || review.decision === 'timeout_reject'
+    let output: Record<string, unknown>
+    if (isReject) {
+      output = { rejected: true, payload }
+    } else if (review.editedValues) {
+      output = { ...payload, ...review.editedValues }
+    } else {
+      output = payload
+    }
+    output = truncateOutput({ ...output, decision: review.decision }, exec.settings.maxOutputChars)
+    const route = isReject ? 'reject' : 'approve'
+
+    state.status = 'succeeded'
+    state.output = output
+    state.routeTaken = route
+    state.waitExpiresAt = null
+    this.setScopeVariable(exec, scope, state.nodeId, output)
+
+    await this.deps.nodeRuns.patchNode(exec.input.runId, state.nodeId, state.iterationIndex, {
+      status: 'succeeded',
+      output,
+      routeTaken: route,
+      waitExpiresAt: null,
+      review: { decision: review.decision, comment: review.comment, editedValues: review.editedValues, decidedAt: review.decidedAt },
+      finishedAt: new Date(),
+      durationMs: Date.now() - state.startedAtMs,
+    })
+    this.emitNodeStatus(exec, state)
+    this.activateOutgoing(exec, scope, node, route)
+    // 驳回但无 reject 出边：运行终止（功能定稿：驳回无承接边 ⇒ failed）
+    if (isReject) {
+      const hasRejectEdge = exec.outgoingOf(node.id, 'reject').length > 0
+      if (!hasRejectEdge && !exec.finished) {
+        await this.finalize(exec, 'failed', `人工审核驳回（节点 ${node.name ?? node.id}，无驳回承接边）`)
+      }
+    }
+  }
+
+  /**
+   * 恢复挂起运行：节点决策已应用（resumeReview/超时路径调用），后台续驱到终态。
+   */
+  private async resumeSuspended(exec: RunExecution): Promise<void> {
+    if (exec.finished) return // 决策路径已终结运行（如驳回无承接边）
+    exec.suspended = false
+    await this.deps.runs.patchRun(exec.input.runId, { status: 'running' })
+    this.emitRunStatus(exec, 'running')
+    exec.settled = makeDeferred()
+
+    try {
+      // 找到挂起时所在作用域：循环作用域先续驱完迭代，再回到根作用域
+      for (const [scopeKey, scope] of [...exec.loopScopes]) {
+        if (scope.settledAt?.done) continue
+        await this.pump(exec, scope)
+        if (exec.suspended) return // 又挂起了
+        if (scope.failed || exec.finished) return
+        // 迭代收敛：继续驱动所属循环
+        const loopNodeId = scopeKey.split(':')[0]
+        const driver = exec.loopDrivers.get(loopNodeId)
+        if (driver) {
+          await this.continueLoop(exec, driver, scope)
+          if (exec.suspended || exec.finished) return
+          exec.loopScopes.delete(scopeKey)
+        }
+      }
+      await this.pump(exec, exec.rootScope)
+    } catch (e) {
+      console.error('[WorkflowEngine] 续驱异常', e)
+      await this.finalize(exec, 'failed', `续驱异常: ${errorMessage(e)}`)
+    } finally {
+      if (!exec.suspended && !exec.finished) {
+        // 作用域全部静默且无失败 → 终态
+        await this.finalize(exec, exec.anyUnrecoveredFailure() ? 'failed' : 'succeeded')
+      }
+      if (exec.finished) {
+        exec.maybeSettled()
+        this.activeExecutions.delete(exec.input.runId)
+      }
+    }
+  }
+
+  /**
+   * ticker 周期调用：扫描内存中挂起审核的超时（按 timeoutPolicy 处理）。
+   * 返回处理的数量（服务层可记日志）。
+   */
+  async tickReviewTimeouts(now = new Date()): Promise<number> {
+    let handled = 0
+    for (const exec of [...this.activeExecutions.values()]) {
+      if (!exec.suspended) continue
+      const scope = this.findWaitingScope(exec)
+      if (!scope) continue
+      for (const state of [...scope.states.values()]) {
+        if (state.status !== 'waiting_review') continue
+        if (!state.waitExpiresAt || state.waitExpiresAt > now) continue
+        const policy = state.reviewTimeoutPolicy ?? 'fail'
+        if (policy === 'approve') {
+          await this.applyReviewDecision(exec, scope, state, {
+            decision: 'timeout_approve',
+            decidedAt: now.toISOString(),
+          })
+        } else if (policy === 'reject') {
+          await this.applyReviewDecision(exec, scope, state, {
+            decision: 'timeout_reject',
+            decidedAt: now.toISOString(),
+          })
+        } else {
+          await this.handleNodeFailure(exec, scope, exec.nodeById.get(state.nodeId)!, state, '审核超时（timeoutPolicy=fail）', false)
+        }
+        handled++
+        if (exec.suspended) {
+          // 挂起解除，续驱
+          void this.resumeSuspended(exec)
+        }
+        break
+      }
+    }
+    return handled
+  }
+
+  // ==================== 取消 ====================
+
+  /**
+   * 取消运行（活动/挂起均可）。在飞任务取消标记后收敛；返回是否命中活动运行。
+   * 非活动运行（排队/已终态）由服务层直接改库。
+   */
+  async cancelRun(runId: string, reason = '用户取消'): Promise<boolean> {
+    const exec = this.activeExecutions.get(runId)
+    if (!exec) return false
+    exec.forceRelease = true
+    exec.abortController.abort()
+    if (exec.suspended) {
+      exec.suspended = false
+      // 挂起节点标 cancelled
+      const scope = this.findWaitingScope(exec)
+      if (scope) {
+        for (const state of scope.states.values()) {
+          if (state.status === 'waiting_review') {
+            await this.markCancelled(exec, state)
+          }
+        }
+      }
+    }
+    await this.finalize(exec, 'cancelled', reason)
+    if (exec.finished) {
+      exec.maybeSettled()
+      this.activeExecutions.delete(runId)
+    }
+    return true
+  }
+
+  // ==================== 看门狗 ====================
+
   private async fireWatchdog(exec: RunExecution): Promise<void> {
     if (exec.finished) return
     console.warn(
@@ -246,6 +558,11 @@ export class WorkflowEngineService {
     )
     exec.forceRelease = true
     exec.abortController.abort()
+    if (exec.suspended) {
+      // 挂起中不强制超时（审核等待不计入执行时长；run 的 timeout_at 死线由服务层管控）
+      exec.forceRelease = false
+      return
+    }
     try {
       await this.finalize(exec, 'timed_out', '运行超过最长时长限制')
     } catch (e) {
@@ -253,106 +570,100 @@ export class WorkflowEngineService {
     }
   }
 
-  // ==================== 调度循环 ====================
+  // ==================== 调度循环（作用域内） ====================
 
-  /**
-   * 就绪计算 + 受限启动。重入收敛：pumping 期间再次调用只置 requeue。
-   */
-  private async pump(exec: RunExecution): Promise<void> {
-    if (exec.finished) return
-    if (exec.pumping) {
-      exec.requeue = true
+  private async pump(exec: RunExecution, scope: ScopeState): Promise<void> {
+    if (exec.finished || scope.failed) return
+    if (scope.pumping) {
+      scope.requeue = true
       return
     }
-    exec.pumping = true
+    scope.pumping = true
     try {
-      while (!exec.finished) {
-        if (exec.abortController.signal.aborted) {
+      while (!exec.finished && !scope.failed && !exec.suspended) {
+        if (exec.abortController.signal.aborted && !exec.suspended) {
           await this.finalize(exec, 'cancelled')
           return
         }
-        const ready = this.computeReady(exec)
+        const ready = this.computeReady(exec, scope)
         if (ready.length === 0) {
-          if (exec.runningTasks === 0) {
-            // 静默：部分到达的 merge 强制收敛（等齐语义的防死锁分支）。
-            // forcedMergeNodeIds 幂等累积——已执行的 merge 会被 states.has 跳过，
-            // 不需要清理（清理反而会造成"加进去又被清掉"的无限循环）
-            const forced = this.collectForcedMerges(exec)
+          if (scope.runningTasks === 0) {
+            const forced = this.collectForcedMerges(exec, scope)
             if (forced.length > 0) continue
-            await this.finalize(exec, this.quiesceStatus(exec))
+            this.settleScope(exec, scope)
             return
           }
           return // 有任务在飞，settle 后会再次 pump
         }
-        const slots = exec.settings.maxParallelNodes - exec.runningTasks
-        if (slots <= 0) return // 并发已满，任务完成时再 pump
+        const slots = exec.settings.maxParallelNodes - scope.runningTasks
+        if (slots <= 0) return
         const batch = ready.slice(0, slots)
         for (const node of batch) {
-          await this.launchNode(exec, node)
-          if (exec.finished) return // 内联节点可能已把运行推向终态
+          await this.launchNode(exec, scope, node)
+          if (exec.finished || scope.failed || exec.suspended) return
         }
       }
     } finally {
-      exec.pumping = false
-      if (exec.requeue && !exec.finished) {
-        exec.requeue = false
-        void this.pump(exec).catch(e =>
+      scope.pumping = false
+      if (scope.requeue && !exec.finished && !scope.failed && !exec.suspended) {
+        scope.requeue = false
+        void this.pump(exec, scope).catch(e =>
           console.error('[WorkflowEngine] requeue pump 异常', e)
         )
       }
     }
   }
 
-  /** 静默终态：failed 优先于 cancelled（与失败中止语义一致），否则宽容 succeeded */
-  private quiesceStatus(exec: RunExecution): WorkflowRunStatus {
-    let cancelled = false
-    for (const s of exec.states.values()) {
-      if (s.status === 'failed') return 'failed'
-      if (s.status === 'cancelled') cancelled = true
+  /** 作用域静默收敛：resolve settledAt（循环驱动据此推进下一迭代） */
+  private settleScope(exec: RunExecution, scope: ScopeState): void {
+    if (exec.anyUnrecoveredFailure()) scope.failed = true
+    if (!scope.settledAt || scope.settledAt.done) {
+      scope.settledAt = makeDeferred()
     }
-    return cancelled ? 'cancelled' : 'succeeded'
+    scope.settledAt.done = true
+    scope.settledAt.resolve()
+    // 根作用域静默 → 运行终态
+    if (scope.isRoot && !exec.suspended && !exec.finished) {
+      void this.finalize(exec, exec.anyUnrecoveredFailure() ? 'failed' : 'succeeded')
+    }
   }
 
-  /** computeReady 里识别可强制收敛的 merge 并登记（下一轮 pump 视为就绪） */
-  private collectForcedMerges(exec: RunExecution): string[] {
+  private collectForcedMerges(exec: RunExecution, scope: ScopeState): string[] {
     const forced: string[] = []
     for (const node of exec.input.graph.nodes) {
       if (node.type !== 'parallel-merge') continue
-      const key = exec.nodeKey(node.id, 0)
-      if (exec.states.has(key)) continue // 已执行/执行中
-      const arrivals = exec.mergeArrivals.get(node.id)
+      if (!exec.nodeBelongsToScope(node.id, scope)) continue
+      if (scope.states.has(node.id)) continue
+      const arrivals = scope.mergeArrivals.get(node.id)
       if (arrivals && arrivals.size > 0) {
-        exec.forcedMergeNodeIds.add(node.id)
+        scope.forcedMergeNodeIds.add(node.id)
         forced.push(node.id)
       }
     }
     return forced
   }
 
-  /**
-   * 就绪集计算：
-   * - start：未执行即就绪
-   * - parallel-merge：waitPolicy=any 任一到达；all 等齐（或被强制收敛）
-   * - 其余节点：任一入边激活即就绪（防条件分支未走分支侧死锁）
-   */
-  private computeReady(exec: RunExecution): WorkflowNode[] {
+  private computeReady(exec: RunExecution, scope: ScopeState): WorkflowNode[] {
     const ready: WorkflowNode[] = []
     for (const node of exec.input.graph.nodes) {
-      const key = exec.nodeKey(node.id, 0)
-      const state = exec.states.get(key)
-      if (state && state.status !== 'pending') continue // 已启动过
+      if (!exec.nodeBelongsToScope(node.id, scope)) continue
+      const state = scope.states.get(node.id)
+      if (state && state.status !== 'pending') continue
       if (node.type === 'start') {
-        ready.push(node)
+        if (scope.isRoot) ready.push(node)
         continue
       }
-      const incoming = exec.incomingOf(node.id)
-      if (incoming.length === 0) continue // 不可达（校验器已警告；引擎跳过）
-      const activated = incoming.filter(e => exec.activatedEdges.has(e.id))
+      if (node.type === 'loop' && !scope.isRoot) continue // 校验器已禁止嵌套；防御
+      const incoming = exec
+        .incomingOf(node.id)
+        .filter(e => e.kind !== 'loop-back')
+      if (incoming.length === 0) continue
+      const activated = incoming.filter(e => scope.activatedEdges.has(e.id))
       if (activated.length === 0) continue
 
-      if (node.type === 'parallel-merge' && !exec.forcedMergeNodeIds.has(node.id)) {
+      if (node.type === 'parallel-merge' && !scope.forcedMergeNodeIds.has(node.id)) {
         const waitAll = (node.config as { waitPolicy?: string }).waitPolicy !== 'any'
-        if (waitAll && activated.length < incoming.length) continue // 等齐
+        if (waitAll && activated.length < incoming.length) continue
       }
       ready.push(node)
     }
@@ -361,150 +672,140 @@ export class WorkflowEngineService {
 
   // ==================== 节点启动与执行 ====================
 
-  /** 启动一个节点：control 内联执行；task 进并发池（信号量由 runningTasks 计数） */
-  private async launchNode(exec: RunExecution, node: WorkflowNode): Promise<void> {
-    const handler = this.registry.getOrThrow(node.type)
-    const nodeKey = exec.nodeKey(node.id, 0)
-    const resolvedConfig = resolveConfigDeep(node.config, t => exec.resolver.resolve(t))
+  private async launchNode(exec: RunExecution, scope: ScopeState, node: WorkflowNode): Promise<void> {
+    const resolvedConfig = resolveConfigDeep(node.config, t =>
+      exec.resolver.resolve(t, this.localContextFor(exec, scope))
+    )
 
     const state: NodeExecutionState = {
-      nodeKey,
       nodeId: node.id,
-      iterationIndex: 0,
+      iterationIndex: scope.iterationIndex,
       status: 'running',
       retryCount: 0,
       startedAtMs: Date.now(),
     }
-    exec.states.set(nodeKey, state)
+    scope.states.set(node.id, state)
 
     await this.deps.nodeRuns.startNode({
       runId: exec.input.runId,
       nodeId: node.id,
       nodeType: node.type,
       nodeName: node.name,
-      iterationIndex: 0,
+      iterationIndex: scope.iterationIndex,
       input: resolvedConfig as Record<string, unknown>,
     })
-    // 写库挂起期间运行可能已被中止（失败/超时）：不再发射该节点
     if (exec.finished || exec.abortController.signal.aborted) {
-      await this.markCancelled(exec, node, state)
+      await this.markCancelled(exec, state)
       return
     }
     this.emitNodeStatus(exec, state)
 
+    if (node.type === 'loop') {
+      await this.executeLoopNode(exec, scope, node, state, resolvedConfig)
+      return
+    }
+
+    const handler = this.registry.getOrThrow(node.type)
     if (handler.controlKind === 'control') {
-      await this.runNode(exec, node, resolvedConfig, state)
+      await this.runNode(exec, scope, node, state, resolvedConfig)
     } else {
-      exec.runningTasks++
+      scope.runningTasks++
       void runWithUserAsync(exec.input.userId, () =>
-        this.runNode(exec, node, resolvedConfig, state)
+        this.runNode(exec, scope, node, state, resolvedConfig)
       )
         .catch(async e => {
-          // runNode 内部已兜底 handler 异常；这里防的是兜底代码自身的异常
           console.error(`[WorkflowEngine] 节点 ${node.id} 执行链异常`, e)
-          await this.handleNodeFailure(exec, node, state, `节点执行链异常: ${errorMessage(e)}`).catch(
+          await this.handleNodeFailure(exec, scope, node, state, `节点执行链异常: ${errorMessage(e)}`).catch(
             fe => console.error('[WorkflowEngine] 异常兜底失败', fe)
           )
         })
         .finally(() => {
-          exec.runningTasks--
+          scope.runningTasks--
           exec.maybeSettled()
-          void this.pump(exec).catch(e =>
+          void this.pump(exec, scope).catch(e =>
             console.error('[WorkflowEngine] settle 后 pump 异常', e)
           )
         })
     }
   }
 
-  /** 单次执行一个节点（含 settle） */
   private async runNode(
     exec: RunExecution,
+    scope: ScopeState,
     node: WorkflowNode,
-    resolvedConfig: unknown,
-    state: NodeExecutionState
+    state: NodeExecutionState,
+    resolvedConfig: unknown
   ): Promise<void> {
     const handler = this.registry.getOrThrow(node.type)
-    const ctx = this.buildContext(exec, node, state, resolvedConfig)
+    const ctx = this.buildContext(exec, scope, node, state, resolvedConfig)
     let result: WorkflowNodeExecutionResult
     try {
       result = await handler.execute(ctx)
     } catch (e) {
       result = { status: 'failed', error: errorMessage(e) }
     }
-    await this.settle(exec, node, state, result)
+    await this.settle(exec, scope, node, state, result)
   }
 
-  /** settle 入口：运行已终态/中止 → 统一取消标记（所有异常窗口的最后防线） */
   private async settle(
     exec: RunExecution,
+    scope: ScopeState,
     node: WorkflowNode,
     state: NodeExecutionState,
     result: WorkflowNodeExecutionResult
   ): Promise<void> {
     if (exec.finished || exec.abortController.signal.aborted) {
-      await this.markCancelled(exec, node, state)
+      await this.markCancelled(exec, state)
       return
     }
     switch (result.status) {
       case 'succeeded':
-        await this.handleNodeSuccess(exec, node, state, result)
+        await this.handleNodeSuccess(exec, scope, node, state, result)
         break
       case 'waiting_review':
-        // 片4 实现挂起；当前版本的注册表不会产出该结果，防御性处理
-        await this.handleNodeFailure(
-          exec,
-          node,
-          state,
-          '引擎当前版本不支持挂起（waiting_review）'
-        )
+        await this.handleReviewSuspend(exec, scope, node, state, result)
         break
       case 'failed':
-        await this.handleNodeFailure(exec, node, state, result.error, result.retryable)
+        await this.handleNodeFailure(exec, scope, node, state, result.error, result.retryable)
         break
     }
   }
 
-  /** 节点取消标记（settle 各异常窗口共用） */
-  private async markCancelled(
-    exec: RunExecution,
-    node: WorkflowNode,
-    state: NodeExecutionState
-  ): Promise<void> {
+  private async markCancelled(exec: RunExecution, state: NodeExecutionState): Promise<void> {
     state.status = 'cancelled'
     try {
-      await this.deps.nodeRuns.patchNode(exec.input.runId, node.id, state.iterationIndex, {
+      await this.deps.nodeRuns.patchNode(exec.input.runId, state.nodeId, state.iterationIndex, {
         status: 'cancelled',
         finishedAt: new Date(),
         durationMs: Date.now() - state.startedAtMs,
       })
       this.emitNodeStatus(exec, state)
     } catch (e) {
-      console.error(`[WorkflowEngine] 节点 ${node.id} 取消标记失败`, e)
+      console.error(`[WorkflowEngine] 节点 ${state.nodeId} 取消标记失败`, e)
     }
   }
 
-  /** 成功 settle：截断输出 → checkpoint → 激活出边 */
   private async handleNodeSuccess(
     exec: RunExecution,
+    scope: ScopeState,
     node: WorkflowNode,
     state: NodeExecutionState,
     result: Extract<WorkflowNodeExecutionResult, { status: 'succeeded' }>
   ): Promise<void> {
     if (exec.finished || exec.abortController.signal.aborted) {
-      await this.markCancelled(exec, node, state)
+      await this.markCancelled(exec, state)
       return
     }
-    // merge 节点输出由引擎按到达记录构造（handler 输出为空壳）
     let output = result.output
     if (node.type === 'parallel-merge') {
-      output = this.buildMergeOutput(exec, node)
+      output = this.buildMergeOutput(exec, scope, node)
     }
     output = truncateOutput(output, exec.settings.maxOutputChars)
 
     state.status = 'succeeded'
     state.output = output
     state.routeTaken = result.route ?? null
-    exec.variables.set(state.nodeKey, output)
+    this.setScopeVariable(exec, scope, node.id, output)
 
     await this.deps.nodeRuns.patchNode(exec.input.runId, node.id, state.iterationIndex, {
       status: 'succeeded',
@@ -514,13 +815,58 @@ export class WorkflowEngineService {
       durationMs: Date.now() - state.startedAtMs,
     })
     this.emitNodeStatus(exec, state)
-
-    this.activateOutgoing(exec, node, result.route)
+    this.activateOutgoing(exec, scope, node, result.route)
   }
 
-  /** 失败 settle：重试 → fail 边恢复 → 否则中止运行 */
+  /** 审核挂起：节点等待 + 运行挂起（互斥保持）+ 事件通知 */
+  private async handleReviewSuspend(
+    exec: RunExecution,
+    scope: ScopeState,
+    node: WorkflowNode,
+    state: NodeExecutionState,
+    result: Extract<WorkflowNodeExecutionResult, { status: 'waiting_review' }>
+  ): Promise<void> {
+    const cfg = node.config as {
+      timeoutMs?: number | null
+      timeoutPolicy?: 'approve' | 'reject' | 'fail'
+    }
+    state.status = 'waiting_review'
+    state.reviewPayload = result.payload
+    state.reviewTimeoutMs = cfg.timeoutMs ?? null
+    state.reviewTimeoutPolicy = cfg.timeoutPolicy ?? 'fail'
+    state.waitExpiresAt =
+      state.reviewTimeoutMs != null && state.reviewTimeoutMs > 0
+        ? new Date(Date.now() + state.reviewTimeoutMs)
+        : null
+
+    exec.suspended = true
+    await this.deps.nodeRuns.patchNode(exec.input.runId, node.id, state.iterationIndex, {
+      status: 'waiting_review',
+      output: result.payload,
+      waitExpiresAt: state.waitExpiresAt,
+    })
+    await this.deps.runs.patchRun(exec.input.runId, { status: 'waiting_review' })
+    this.emitNodeStatus(exec, state)
+    this.deps.events.emit({
+      type: 'run-status',
+      runId: exec.input.runId,
+      definitionId: exec.input.definitionId,
+      status: 'waiting_review',
+    })
+    this.deps.events.emit({
+      type: 'review-requested',
+      runId: exec.input.runId,
+      definitionId: exec.input.definitionId,
+      nodeId: node.id,
+      nodeName: node.name,
+      payload: result.payload,
+      waitExpiresAt: state.waitExpiresAt?.getTime(),
+    })
+  }
+
   private async handleNodeFailure(
     exec: RunExecution,
+    scope: ScopeState,
     node: WorkflowNode,
     state: NodeExecutionState,
     error: string,
@@ -542,23 +888,23 @@ export class WorkflowEngineService {
       if (retry.retryDelayMs > 0) {
         await this.sleep(retry.retryDelayMs, exec)
       }
-      // 重试等待期间运行可能已被中止：补取消标记（否则 node_run 悬死 running）
       if (exec.finished || exec.abortController.signal.aborted) {
-        await this.markCancelled(exec, node, state)
+        await this.markCancelled(exec, state)
         return
       }
-      const resolvedConfig = resolveConfigDeep(node.config, t => exec.resolver.resolve(t))
-      await this.runNode(exec, node, resolvedConfig, state)
+      const resolvedConfig = resolveConfigDeep(node.config, t =>
+        exec.resolver.resolve(t, this.localContextFor(exec, scope))
+      )
+      await this.runNode(exec, scope, node, state, resolvedConfig)
       return
     }
 
-    // 重试耗尽：有 fail 出边 → 恢复；无 → 运行失败
     const failEdges = exec.outgoingOf(node.id, 'fail')
     if (failEdges.length > 0) {
       state.status = 'failed_recovered'
       state.error = error
       state.output = { error, recovered: true }
-      exec.variables.set(state.nodeKey, state.output)
+      this.setScopeVariable(exec, scope, node.id, state.output)
       await this.deps.nodeRuns.patchNode(exec.input.runId, node.id, state.iterationIndex, {
         status: 'failed_recovered',
         error,
@@ -568,12 +914,11 @@ export class WorkflowEngineService {
       })
       this.emitNodeStatus(exec, state)
       for (const edge of failEdges) {
-        this.activateEdge(exec, edge)
+        this.activateEdge(exec, scope, edge)
       }
       return
     }
 
-    // 未恢复失败：取消其余节点 → 终止运行
     state.status = 'failed'
     state.error = error
     await this.deps.nodeRuns.patchNode(exec.input.runId, node.id, state.iterationIndex, {
@@ -583,50 +928,210 @@ export class WorkflowEngineService {
       durationMs: Date.now() - state.startedAtMs,
     })
     this.emitNodeStatus(exec, state)
-    exec.abortController.abort() // 在飞任务的 settle 会走取消分支
-    await this.finalize(exec, 'failed', error)
+    // 作用域失败：中止本作用域在飞任务；根作用域失败 → 终止运行
+    scope.failed = true
+    exec.abortController.abort()
+    if (scope.isRoot) {
+      await this.finalize(exec, 'failed', error)
+    }
+    // 循环作用域失败：由循环驱动器感知（scope.failed）并处理 loop 节点失败
+  }
+
+  // ==================== 循环节点 ====================
+
+  private async executeLoopNode(
+    exec: RunExecution,
+    scope: ScopeState,
+    node: WorkflowNode,
+    state: NodeExecutionState,
+    resolvedConfig: unknown
+  ): Promise<void> {
+    const cfg = resolvedConfig as { listExpression: unknown; emptyPolicy?: 'skip' | 'fail' }
+    const list = cfg.listExpression
+    if (!Array.isArray(list)) {
+      await this.handleNodeFailure(exec, scope, node, state, 'listExpression 必须解析为数组', false)
+      return
+    }
+    if (list.length > exec.settings.maxLoopIterations) {
+      await this.handleNodeFailure(
+        exec,
+        scope,
+        node,
+        state,
+        `迭代数 ${list.length} 超过上限 ${exec.settings.maxLoopIterations}`,
+        false
+      )
+      return
+    }
+    if (list.length === 0) {
+      const policy = cfg.emptyPolicy ?? 'skip'
+      if (policy === 'fail') {
+        await this.handleNodeFailure(exec, scope, node, state, '遍历列表为空（emptyPolicy=fail）', false)
+        return
+      }
+      await this.completeLoop(exec, scope, node, state, [], list)
+      return
+    }
+
+    const driver: LoopDriver = { node, state, list, results: [], parentScope: scope }
+    exec.loopDrivers.set(node.id, driver)
+    await this.driveLoop(exec, driver)
+  }
+
+  /** 从 results.length 迭代开始驱动（首次与续驱共用） */
+  private async driveLoop(exec: RunExecution, driver: LoopDriver): Promise<void> {
+    const { node, state, list, parentScope } = driver
+    for (let i = driver.results.length; i < list.length; i++) {
+      if (exec.finished || exec.abortController.signal.aborted || exec.suspended) return
+      if (parentScope.failed) break
+
+      const scopeKey = `${node.id}:${i}`
+      const bodyInfo = exec.loopBodies.get(node.id)
+      if (!bodyInfo?.bodySet.size) {
+        // 空 body（校验器要求 loop-body 边存在，防御）
+        driver.results.push(undefined)
+        continue
+      }
+      const loopScope = new ScopeState(scopeKey, i, bodyInfo.bodySet)
+      loopScope.loopPseudoVars.set(node.id, { item: list[i], index: i, list })
+      exec.loopScopes.set(scopeKey, loopScope)
+
+      // 激活 loop-body 入口边（作用域内）
+      for (const edge of exec.outgoingOf(node.id, 'loop-body')) {
+        loopScope.activatedEdges.add(edge.id)
+      }
+
+      await this.pump(exec, loopScope)
+      if (exec.suspended) return // 挂起：resumeSuspended 从本迭代续驱
+      if (loopScope.failed) break
+      if (exec.finished) return
+
+      driver.results.push(this.collectIterationResult(exec, loopScope, node))
+    }
+
+    if (parentScope.failed || exec.finished) return
+    if (this.anyScopeFailure(exec)) {
+      // body 存在未恢复失败 → 循环节点失败（走 loop 的 fail 边或运行失败）
+      await this.handleNodeFailure(
+        exec,
+        parentScope,
+        node,
+        state,
+        '循环体内节点失败且未恢复',
+        false
+      )
+      return
+    }
+    await this.completeLoop(exec, parentScope, node, state, driver.results, list)
+  }
+
+  /** 续驱已推进部分迭代的循环（resumeSuspended 调用） */
+  private async continueLoop(exec: RunExecution, driver: LoopDriver, completedScope: ScopeState): Promise<void> {
+    // 收集刚收敛迭代的产出
+    if (driver.results.length < driver.list.length) {
+      const idx = completedScope.iterationIndex
+      if (driver.results.length === idx) {
+        driver.results.push(this.collectIterationResult(exec, completedScope, driver.node))
+      }
+    }
+    await this.driveLoop(exec, driver)
+  }
+
+  /** 迭代产出：body 中 loop-back 边源节点的输出（无回边则取 body 汇聚结果） */
+  private collectIterationResult(
+    exec: RunExecution,
+    loopScope: ScopeState,
+    _loopNode: WorkflowNode
+  ): unknown {
+    for (const edge of exec.input.graph.edges) {
+      if (edge.kind !== 'loop-back') continue
+      if (!loopScope.bodyNodeIds?.has(edge.sourceNodeId)) continue
+      const st = loopScope.states.get(edge.sourceNodeId)
+      if (st?.status === 'succeeded') return st.output
+    }
+    // 无回边：取 body 最后成功的节点输出（按状态表插入序）
+    let last: Record<string, unknown> | undefined
+    for (const st of loopScope.states.values()) {
+      if (st.status === 'succeeded') last = st.output
+    }
+    return last
+  }
+
+  private async completeLoop(
+    exec: RunExecution,
+    scope: ScopeState,
+    node: WorkflowNode,
+    state: NodeExecutionState,
+    results: unknown[],
+    list: unknown[]
+  ): Promise<void> {
+    const output = truncateOutput(
+      { results, count: list.length },
+      exec.settings.maxOutputChars
+    )
+    state.status = 'succeeded'
+    state.output = output
+    state.routeTaken = 'loop-done'
+    exec.variables.set(node.id, output)
+    await this.deps.nodeRuns.patchNode(exec.input.runId, node.id, state.iterationIndex, {
+      status: 'succeeded',
+      output,
+      routeTaken: 'loop-done',
+      finishedAt: new Date(),
+      durationMs: Date.now() - state.startedAtMs,
+    })
+    this.emitNodeStatus(exec, state)
+    for (const edge of exec.outgoingOf(node.id, 'loop-done')) {
+      this.activateEdge(exec, scope, edge)
+    }
   }
 
   // ==================== 边激活 ====================
 
-  /** 成功后的出边激活：route 优先（条件/审核），否则全部 normal 出边 */
-  private activateOutgoing(exec: RunExecution, node: WorkflowNode, route?: string): void {
+  private activateOutgoing(
+    exec: RunExecution,
+    scope: ScopeState,
+    node: WorkflowNode,
+    route?: string
+  ): void {
     for (const edge of exec.outgoingOf(node.id)) {
       if (edge.kind === 'loop-back' || edge.kind === 'fail') continue
+      if (edge.kind === 'loop-body' || edge.kind === 'loop-done') continue // 循环专有，由驱动器激活
       if (route) {
         const matches =
           edge.kind === 'branch'
             ? route === encodeWorkflowHandleId('branch', edge.branchId)
             : route === encodeWorkflowHandleId(edge.kind)
-        if (matches) this.activateEdge(exec, edge)
+        if (matches) this.activateEdge(exec, scope, edge)
       } else if (edge.kind === 'normal') {
-        this.activateEdge(exec, edge)
+        this.activateEdge(exec, scope, edge)
       }
     }
   }
 
-  /** 激活一条边（记录 + merge 到达登记） */
-  private activateEdge(exec: RunExecution, edge: WorkflowEdge): void {
-    if (exec.activatedEdges.has(edge.id)) return
-    exec.activatedEdges.add(edge.id)
-
+  private activateEdge(exec: RunExecution, scope: ScopeState, edge: WorkflowEdge): void {
+    if (scope.activatedEdges.has(edge.id)) return
+    scope.activatedEdges.add(edge.id)
     const target = exec.nodeById.get(edge.targetNodeId)
-    if (target?.type === 'parallel-merge') {
-      const sourceState = exec.states.get(exec.nodeKey(edge.sourceNodeId, 0))
+    if (target?.type === 'parallel-merge' && exec.nodeBelongsToScope(target.id, scope)) {
+      const sourceState = scope.states.get(edge.sourceNodeId)
       if (sourceState) {
-        let arrivals = exec.mergeArrivals.get(target.id)
+        let arrivals = scope.mergeArrivals.get(target.id)
         if (!arrivals) {
           arrivals = new Map()
-          exec.mergeArrivals.set(target.id, arrivals)
+          scope.mergeArrivals.set(target.id, arrivals)
         }
         arrivals.set(edge.sourceNodeId, sourceState.output ?? {})
       }
     }
   }
 
-  /** merge 输出构造：merge=按来源展开；first=首达（到达序） */
-  private buildMergeOutput(exec: RunExecution, node: WorkflowNode): Record<string, unknown> {
-    const arrivals = exec.mergeArrivals.get(node.id) ?? new Map()
+  private buildMergeOutput(
+    exec: RunExecution,
+    scope: ScopeState,
+    node: WorkflowNode
+  ): Record<string, unknown> {
+    const arrivals = scope.mergeArrivals.get(node.id) ?? new Map()
     const outputMode = (node.config as { outputMode?: string }).outputMode ?? 'merge'
     if (outputMode === 'first') {
       const first = [...arrivals.values()][0]
@@ -639,56 +1144,131 @@ export class WorkflowEngineService {
     return merged
   }
 
-  // ==================== 终态 ====================
+  // ==================== 续跑装配 ====================
 
-  private buildStats(exec: RunExecution): RunExecutionStats {
-    let done = 0
-    let failed = 0
-    let recovered = 0
-    for (const s of exec.states.values()) {
-      if (s.status === 'succeeded') done++
-      else if (s.status === 'failed') failed++
-      else if (s.status === 'failed_recovered') recovered++
-    }
-    return {
-      totalNodes: exec.input.graph.nodes.length,
-      doneNodes: done,
-      failedNodes: failed,
-      recoveredNodes: recovered,
-    }
-  }
-
-  private async finalize(
+  /** 恢复 checkpoint：根作用域变量 + 按 routeTaken 重放已激活边 */
+  private hydrateCheckpoints(
     exec: RunExecution,
-    status: WorkflowRunStatus,
-    error?: string
-  ): Promise<void> {
-    if (exec.finished) return
-    exec.finished = true
-    exec.finalStatus = status
-    const stats = this.buildStats(exec)
-    await this.deps.runs.patchRun(exec.input.runId, {
-      status,
-      error: error ?? null,
-      finishedAt: new Date(),
-      durationMs: Date.now() - exec.startedAtMs,
-      stats,
-    })
-    this.emitRunStatus(exec, status, stats, error)
-    exec.maybeSettled()
+    checkpoints: ExecuteRunInput['resumedCheckpoints']
+  ): void {
+    if (!checkpoints) return
+    for (const cp of checkpoints) {
+      const state: NodeExecutionState = {
+        nodeId: cp.nodeId,
+        iterationIndex: 0,
+        status: cp.nodeType === 'loop' ? 'succeeded' : 'succeeded',
+        retryCount: 0,
+        output: cp.output,
+        routeTaken: cp.routeTaken ?? null,
+        startedAtMs: Date.now(),
+      }
+      exec.rootScope.states.set(cp.nodeId, state)
+      exec.variables.set(cp.nodeId, cp.output)
+      // 重放边激活（按留痕的 route）
+      const node = exec.nodeById.get(cp.nodeId)
+      if (!node) continue
+      if (node.type === 'loop') {
+        for (const edge of exec.outgoingOf(node.id, 'loop-done')) {
+          exec.rootScope.activatedEdges.add(edge.id)
+        }
+        continue
+      }
+      const route = cp.routeTaken ?? undefined
+      for (const edge of exec.outgoingOf(cp.nodeId)) {
+        if (edge.kind === 'loop-back' || edge.kind === 'loop-body' || edge.kind === 'loop-done') continue
+        if (edge.kind === 'fail') continue // failed_recovered 的 fail 边：checkpoint 只含 succeeded
+        if (route) {
+          const matches =
+            edge.kind === 'branch'
+              ? route === encodeWorkflowHandleId('branch', edge.branchId)
+              : route === encodeWorkflowHandleId(edge.kind)
+          if (matches) exec.rootScope.activatedEdges.add(edge.id)
+        } else if (edge.kind === 'normal') {
+          exec.rootScope.activatedEdges.add(edge.id)
+        }
+      }
+    }
   }
 
-  // ==================== 上下文与工具 ====================
+  // ==================== 工具 ====================
+
+  private anyScopeFailure(exec: RunExecution): boolean {
+    for (const scope of exec.loopScopes.values()) {
+      if (scope.failed) return true
+    }
+    return false
+  }
+
+  private findScopeOfNode(exec: RunExecution, nodeId: string): ScopeState | null {
+    // 优先命中 waiting_review 状态的作用域（同名节点在多个迭代作用域都有 state，
+    // 决策只能作用于挂起中的那个）
+    for (const scope of [exec.rootScope, ...exec.loopScopes.values()]) {
+      const st = scope.states.get(nodeId)
+      if (st?.status === 'waiting_review') return scope
+    }
+    if (exec.rootScope.states.has(nodeId)) return exec.rootScope
+    for (const scope of exec.loopScopes.values()) {
+      if (scope.states.has(nodeId)) return scope
+    }
+    return null
+  }
+
+  private findWaitingScope(exec: RunExecution): ScopeState | null {
+    if (exec.rootScope.states.has) {
+      for (const s of exec.rootScope.states.values()) {
+        if (s.status === 'waiting_review') return exec.rootScope
+      }
+    }
+    for (const scope of exec.loopScopes.values()) {
+      for (const s of scope.states.values()) {
+        if (s.status === 'waiting_review') return scope
+      }
+    }
+    return null
+  }
+
+  /** 作用域变量写入：body 节点写作用域局部表；其余写根命名空间 */
+  private setScopeVariable(
+    exec: RunExecution,
+    scope: ScopeState,
+    nodeId: string,
+    output: Record<string, unknown>
+  ): void {
+    if (scope.isRoot) {
+      exec.variables.set(nodeId, output)
+    }
+    // 局部变量经 localContextFor 动态读 scope.states，无需单独表
+  }
+
+  /** 变量解析的局部上下文：作用域内 body 节点输出 + 循环伪变量优先 */
+  private localContextFor(
+    exec: RunExecution,
+    scope: ScopeState
+  ): import('./variable-resolver').LocalLookup {
+    return {
+      lookup(rootId: string): { hit: boolean; value: unknown } {
+        if (scope.loopPseudoVars.has(rootId)) {
+          return { hit: true, value: scope.loopPseudoVars.get(rootId) }
+        }
+        if (!scope.isRoot) {
+          const st = scope.states.get(rootId)
+          if (st) return { hit: true, value: st.output ?? {} }
+        }
+        return { hit: false, value: undefined }
+      },
+    }
+  }
 
   private buildContext(
     exec: RunExecution,
+    scope: ScopeState,
     node: WorkflowNode,
     state: NodeExecutionState,
     resolvedConfig: unknown
   ): WorkflowNodeContext {
     return {
       runId: exec.input.runId,
-      runKey: state.nodeKey,
+      runKey: scope.isRoot ? node.id : `${node.id}:${scope.iterationIndex}`,
       nodeId: node.id,
       nodeType: node.type,
       iterationIndex: state.iterationIndex,
@@ -711,8 +1291,10 @@ export class WorkflowEngineService {
           message,
         })
       },
-      resolveTemplate: <T>(template: string) => exec.resolver.resolve(template) as T,
-      getVariable: (path: string) => exec.resolver.resolve(`{{${path}}}`),
+      resolveTemplate: <T>(template: string) =>
+        exec.resolver.resolve(template, this.localContextFor(exec, scope)) as T,
+      getVariable: (path: string) =>
+        exec.resolver.resolve(`{{${path}}}`, this.localContextFor(exec, scope)),
     }
   }
 
@@ -744,7 +1326,26 @@ export class WorkflowEngineService {
     })
   }
 
-  /** 可中断 sleep（取消后立即醒） */
+  private async finalize(
+    exec: RunExecution,
+    status: WorkflowRunStatus,
+    error?: string
+  ): Promise<void> {
+    if (exec.finished) return
+    exec.finished = true
+    exec.finalStatus = status
+    const stats = exec.stats()
+    await this.deps.runs.patchRun(exec.input.runId, {
+      status,
+      error: error ?? null,
+      finishedAt: new Date(),
+      durationMs: Date.now() - exec.startedAtMs,
+      stats,
+    })
+    this.emitRunStatus(exec, status, stats, error)
+    exec.maybeSettled()
+  }
+
   private sleep(ms: number, exec: RunExecution): Promise<void> {
     return new Promise(resolve => {
       const timer = setTimeout(() => {
@@ -761,11 +1362,7 @@ export class WorkflowEngineService {
   }
 }
 
-/**
- * 节点输出统一截断（防失控）：保留全部字段键，各字段均分预算、超长截断。
- * 均分而非顺序贪吃——避免先处理的大字段把预算耗尽、后面的小字段被饿死。
- * 键数量过多导致均分下限失效时，整体降级为"只留键名预览"的有界对象。
- */
+/** 有界截断：保留全部字段键，均分预算；键过多时整体降级为键名预览 */
 function truncateOutput(
   output: Record<string, unknown>,
   maxChars: number
@@ -778,12 +1375,7 @@ function truncateOutput(
   const keys = Object.keys(output)
   const perFieldCap = Math.floor((maxChars - 256) / Math.max(1, keys.length))
   if (perFieldCap < 64) {
-    // 键太多：任何均分都超限 → 只保留键名列表（有界）
-    return {
-      __truncated: true,
-      keyCount: keys.length,
-      keysPreview: keys.slice(0, 50),
-    }
+    return { __truncated: true, keyCount: keys.length, keysPreview: keys.slice(0, 50) }
   }
   const truncated: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(output)) {

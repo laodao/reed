@@ -242,6 +242,39 @@ const assignNode: WorkflowNodeHandler<any, 'assign'> = {
   },
 }
 
+// ==================== 循环（引擎直接调度的特殊节点） ====================
+
+/**
+ * loop 的占位 handler：引擎 launchNode 对 type==='loop' 特判走 executeLoopNode，
+ * 永不调用本 execute。占位的职责：注册表/目录一致性 + config 深度校验。
+ */
+const loopNode: WorkflowNodeHandler<any, 'loop'> = {
+  type: 'loop',
+  controlKind: 'control',
+  cancellable: true,
+  outputSchema: [
+    { key: 'item', type: 'json', desc: '当前迭代元素（循环体内引用）' },
+    { key: 'index', type: 'number', desc: '当前迭代下标（循环体内引用）' },
+    { key: 'results', type: 'json', desc: '各迭代汇聚输出的数组' },
+    { key: 'count', type: 'number', desc: '迭代总数' },
+  ],
+  validateConfig(config) {
+    const cfg = config as { listExpression?: unknown }
+    if (typeof cfg.listExpression !== 'string' || cfg.listExpression.trim() === '') {
+      return ['listExpression 必须是非空模板表达式']
+    }
+    const policy = (config as { emptyPolicy?: string }).emptyPolicy
+    if (policy !== undefined && !['skip', 'fail'].includes(policy)) {
+      return ['emptyPolicy 只能是 skip 或 fail']
+    }
+    return []
+  },
+  async execute() {
+    // 引擎特判在前，正常调度不可能到这里
+    return { status: 'failed', error: '循环节点由引擎直接调度', retryable: false }
+  },
+}
+
 /** 全部控制节点（注册表装配用） */
 export const CONTROL_NODE_HANDLERS: WorkflowNodeHandler[] = [
   startNode,
@@ -250,4 +283,5 @@ export const CONTROL_NODE_HANDLERS: WorkflowNodeHandler[] = [
   parallelNode,
   parallelMergeNode,
   assignNode,
+  loopNode,
 ]
