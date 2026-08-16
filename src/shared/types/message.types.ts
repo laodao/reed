@@ -127,6 +127,8 @@ export interface WebSearchConfig {
   engine: SearchEngineType
   /** 搜索引擎配置 ID（快速搜索使用模板 ID，配置型使用用户配置 ID） */
   configId?: SearchEngineConfigId
+  /** 搜索结果数量（默认 5） */
+  topK?: number
 }
 
 /**

@@ -406,6 +406,7 @@ import type { Message, Attachment } from '../../../shared/types'
 import ModelSelectDialog from './ModelSelectDialog.vue'
 import ExportToObsidianDialog from './ExportToObsidianDialog.vue'
 import { saveBlobAs } from '@/utils/file-saver'
+import { extractCodeBlocks, restoreCodeBlocks, escapeHtmlKeepPlaceholders } from './code-block'
 
 // 初始化 Mermaid
 mermaid.initialize({
@@ -814,68 +815,14 @@ function formatContent(content: string): string {
   if (!content) return ''
 
   try {
-    // 检查是否存在未闭合的代码块
-    // 通过统计 ``` 的数量来判断（成对则为偶数）
-    const codeBlockMarkers = content.match(/```/g)
-    const hasOpenCodeBlock = codeBlockMarkers && codeBlockMarkers.length % 2 === 1
+    // 先把所有代码块（含流式输出中的未闭合块）提取为占位符：
+    // 1. 避免代码内容被 marked 二次解析（代码里的 markdown 语法应原样显示）
+    // 2. 未闭合代码块也能统一交给占位符机制渲染，无需特判分支
+    const { blocks, contentWithPlaceholders } = extractCodeBlocks(content)
 
-    if (hasOpenCodeBlock) {
-      // 找到最后一个未闭合的代码块
-      // 先处理已闭合的代码块，用占位符替换
-      const closedBlocks: { language: string; code: string }[] = []
-      let processedContent = content.replace(
-        /```(\w*)\n([\s\S]*?)```/g,
-        (match, language, code) => {
-          const index = closedBlocks.length
-          closedBlocks.push({ language, code: code.trim() })
-          return `__CLOSED_CODE_BLOCK_${index}__`
-        }
-      )
-
-      // 现在处理剩余的未闭合代码块（如果有）
-      const openMatch = processedContent.match(/```(\w*)\n([\s\S]*)$/)
-      if (openMatch) {
-        const language = openMatch[1] || ''
-        const code = openMatch[2] || ''
-
-        // 使用占位符替换未闭合的代码块部分
-        const placeholder = `__OPEN_CODE_BLOCK__`
-        processedContent = processedContent.replace(/```(\w*)\n[\s\S]*$/, placeholder)
-
-        // 使用 marked 解析
-        const renderer = new marked.Renderer()
-        renderer.code = ({ text, lang }: { text: string; lang?: string }) => {
-          const langValue = lang || ''
-          return renderCodeBlock(langValue, text, false)
-        }
-        renderer.codespan = ({ text }: { text: string }) => {
-          return `<code class="inline-code">${text}</code>`
-        }
-
-        let result = marked.parse(processedContent, {
-          breaks: true,
-          gfm: true,
-          renderer
-        }) as string
-
-        // 还原已闭合的代码块
-        closedBlocks.forEach((block, index) => {
-          const blockHtml = renderCodeBlock(block.language, block.code, false)
-          result = result.replace(`__CLOSED_CODE_BLOCK_${index}__`, blockHtml)
-        })
-
-        // 还原未闭合的代码块
-        const openCodeBlockHtml = renderCodeBlock(language, code.trim(), true)
-        result = result.replace(placeholder, openCodeBlockHtml)
-
-        return result
-      }
-    }
-
-    // 没有未闭合的代码块，直接解析
     const renderer = new marked.Renderer()
 
-    // 自定义代码块渲染
+    // 自定义代码块渲染（理论上不会再触发——代码块已被占位符替换，保留作兜底）
     renderer.code = ({ text, lang }: { text: string; lang?: string }) => {
       const language = lang || ''
       return renderCodeBlock(language, text)
@@ -886,11 +833,16 @@ function formatContent(content: string): string {
       return `<code class="inline-code">${text}</code>`
     }
 
-    return marked.parse(content, {
+    const parsed = marked.parse(contentWithPlaceholders, {
       breaks: true,
       gfm: true,
       renderer
     }) as string
+
+    // 还原代码块（未闭合的显示"输出中"状态）
+    return restoreCodeBlocks(parsed, blocks, block =>
+      renderCodeBlock(block.language, block.code, !block.closed)
+    )
   } catch (error) {
     console.error('Markdown 解析错误:', error)
     return escapeHtml(content).replace(/\n/g, '<br>')
@@ -901,33 +853,11 @@ function formatContent(content: string): string {
 function formatSourceContent(content: string): string {
   if (!content) return ''
 
-  // 先处理完整的代码块，用占位符替换
-  const codeBlocks: { language: string; code: string; closed: boolean }[] = []
-  let processedContent = content.replace(
-    /```(\w*)\n([\s\S]*?)```/g,
-    (match, language, code) => {
-      const index = codeBlocks.length
-      codeBlocks.push({ language, code: code.trim(), closed: true })
-      return `__CODE_BLOCK_${index}__`
-    }
-  )
+  // 提取代码块为占位符（兼容 CRLF / c++ 等语言名 / 未闭合流式代码块）
+  const { blocks, contentWithPlaceholders } = extractCodeBlocks(content)
 
-  // 处理未闭合的代码块（流式输出时）
-  // 匹配 ```lang\ncode 但没有闭合的情况
-  processedContent = processedContent.replace(
-    /```(\w*)\n([\s\S]*)$/g,
-    (match, language, code) => {
-      const index = codeBlocks.length
-      codeBlocks.push({ language, code: code.trim(), closed: false })
-      return `__CODE_BLOCK_${index}__`
-    }
-  )
-
-  // 转义 HTML
-  processedContent = processedContent
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
+  // 转义 HTML（占位符由字母数字组成，转义不受影响）
+  let processedContent = escapeHtmlKeepPlaceholders(contentWithPlaceholders)
 
   // 处理行内代码
   processedContent = processedContent.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
@@ -936,12 +866,9 @@ function formatSourceContent(content: string): string {
   processedContent = processedContent.replace(/\n/g, '<br>')
 
   // 还原代码块 - 源码模式下所有代码块都用普通样式显示
-  codeBlocks.forEach((block, index) => {
-    const codeBlockHtml = renderSourceCodeBlock(block.language, block.code, !block.closed)
-    processedContent = processedContent.replace(`__CODE_BLOCK_${index}__`, codeBlockHtml)
-  })
-
-  return processedContent
+  return restoreCodeBlocks(processedContent, blocks, block =>
+    renderSourceCodeBlock(block.language, block.code, !block.closed)
+  )
 }
 
 // 渲染源码模式的代码块（mermaid不渲染，显示为普通代码）

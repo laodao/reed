@@ -38,6 +38,7 @@
 import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import MessageItem from './MessageItem.vue'
+import { extractCodeBlocks, restoreCodeBlocks, escapeHtmlKeepPlaceholders } from './code-block'
 import type { Message, StreamState } from '../../../shared/types'
 
 // 模型选项接口
@@ -166,22 +167,11 @@ function findNextAnswerIndex(currentIndex: number): number {
 function formatStreamContent(content: string): string {
   if (!content) return ''
 
-  // 先处理代码块，用占位符替换
-  const codeBlocks: { language: string; code: string }[] = []
-  let processedContent = content.replace(
-    /```(\w*)\n([\s\S]*?)```/g,
-    (match, language, code) => {
-      const index = codeBlocks.length
-      codeBlocks.push({ language, code: code.trim() })
-      return `__CODE_BLOCK_${index}__`
-    }
-  )
+  // 提取代码块为占位符（含流式输出中的未闭合块）
+  const { blocks, contentWithPlaceholders } = extractCodeBlocks(content)
 
-  // 转义 HTML
-  processedContent = processedContent
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
+  // 转义 HTML（占位符由字母数字组成，转义不受影响）
+  let processedContent = escapeHtmlKeepPlaceholders(contentWithPlaceholders)
 
   // 处理行内代码
   processedContent = processedContent.replace(/`([^`]+)`/g, '<code>$1</code>')
@@ -189,26 +179,24 @@ function formatStreamContent(content: string): string {
   // 处理换行
   processedContent = processedContent.replace(/\n/g, '<br>')
 
-  // 还原代码块为组件渲染
-  codeBlocks.forEach((block, index) => {
-    const codeBlockHtml = renderCodeBlock(block.language, block.code)
-    processedContent = processedContent.replace(`__CODE_BLOCK_${index}__`, codeBlockHtml)
-  })
-
-  return processedContent
+  // 还原代码块为组件渲染（未闭合的显示"输出中"状态）
+  return restoreCodeBlocks(processedContent, blocks, block =>
+    renderCodeBlock(block.language, block.code, !block.closed)
+  )
 }
 
 // 渲染代码块 HTML
-function renderCodeBlock(language: string, code: string): string {
+function renderCodeBlock(language: string, code: string, isOpen: boolean = false): string {
   const lines = code.split('\n')
   const lineNumbers = lines.map((_, i) => `<span class="line-number">${i + 1}</span>`).join('')
   const codeLines = lines.map(line => escapeHtml(line)).join('\n')
+  const openClass = isOpen ? 'code-block-open' : ''
 
   return `
-    <div class="code-block-wrapper">
+    <div class="code-block-wrapper ${openClass}">
       <div class="code-header">
-        <span class="language">${language || 'code'}</span>
-        <button class="copy-btn" onclick="copyCodeFromBlock(this)">
+        <span class="language">${language || 'code'}${isOpen ? ' (输出中...)' : ''}</span>
+        <button class="copy-btn" onclick="copyCodeFromBlock(this)" ${isOpen ? 'disabled title="代码块尚未完成"' : ''}>
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
           <span>复制</span>
         </button>

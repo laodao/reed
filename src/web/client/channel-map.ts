@@ -89,6 +89,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'file.readAsBase64': { channel: 'file:read-base64' },
   'file.saveFile': { channel: 'file:save-dialog' },
   'file.writeTextFile': { channel: 'file:write-text', wrap: (filePath, content) => [{ filePath, content }] },
+  'file.writeBinaryFile': { channel: 'file:write-binary', wrap: (filePath, base64) => [{ filePath, base64 }] },
   'file.openFolderDialog': { channel: 'file:open-folder-dialog' },
   'file.copyFile': { channel: 'file:copy', wrap: (sourcePath, targetPath) => [{ sourcePath, targetPath }] },
   'export.messageAsImage': { channel: 'export:message-image' },
