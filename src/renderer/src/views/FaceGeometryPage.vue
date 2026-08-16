@@ -5,6 +5,9 @@
 </template>
 
 <script setup lang="ts">
+
+// 组件名与路由 name 对齐，供 <keep-alive :include> 匹配（缺失会导致缓存失效、切换重新挂载）
+defineOptions({ name: 'FaceGeometryPage' })
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import FaceGeometryStudio from '@/components/portrait/geometry/FaceGeometryStudio.vue'

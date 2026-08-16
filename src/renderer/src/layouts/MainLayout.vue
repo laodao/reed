@@ -1,137 +1,52 @@
 <template>
   <div class="main-layout" :data-theme="currentTheme">
-    <!-- 侧边栏 -->
-    <aside class="sidebar" :class="{ collapsed: isCollapsed }">
+    <!-- 侧边栏：纯图标模式，悬停显示菜单名 tooltip -->
+    <aside class="sidebar">
       <!-- Logo 区域 -->
       <div class="sidebar-header">
-        <transition name="logo-fade" mode="out-in">
-          <div v-if="!isCollapsed" class="logo" key="full">
-            <div class="logo-icon">
-              <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="16" cy="16" r="14" fill="url(#logoGradient)" />
-                <path d="M10 16L14 20L22 12" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-                <defs>
-                  <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" style="stop-color:var(--color-primary-light)"/>
-                    <stop offset="100%" style="stop-color:var(--color-primary-dark)"/>
-                  </linearGradient>
-                </defs>
-              </svg>
-            </div>
-            <span class="logo-text gradient-text">The Bot</span>
+        <div class="logo-mini">
+          <div class="logo-icon-mini">
+            <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="16" cy="16" r="14" fill="url(#logoGradientMini)" />
+              <path d="M10 16L14 20L22 12" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <defs>
+                <linearGradient id="logoGradientMini" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" style="stop-color:var(--color-primary-light)"/>
+                  <stop offset="100%" style="stop-color:var(--color-primary-dark)"/>
+                </linearGradient>
+              </defs>
+            </svg>
           </div>
-          <div v-else class="logo-mini" key="mini">
-            <div class="logo-icon-mini">
-              <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="16" cy="16" r="14" fill="url(#logoGradientMini)" />
-                <path d="M10 16L14 20L22 12" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-                <defs>
-                  <linearGradient id="logoGradientMini" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" style="stop-color:var(--color-primary-light)"/>
-                    <stop offset="100%" style="stop-color:var(--color-primary-dark)"/>
-                  </linearGradient>
-                </defs>
-              </svg>
-            </div>
-          </div>
-        </transition>
-        <el-button
-          class="collapse-btn"
-          :icon="isCollapsed ? Expand : Fold"
-          circle
-          @click="toggleCollapse"
-        />
+        </div>
       </div>
 
-      <!-- 导航菜单 -->
+      <!-- 导航菜单（平铺：父项 + 子项都是独立图标项） -->
       <nav class="sidebar-nav">
         <div class="nav-section">
           <ul class="nav-list">
-            <template v-for="item in mainMenuItems" :key="item.path">
-              <!-- 普通项（无子菜单） -->
-              <li
-                v-if="!item.children || item.children.length === 0"
-                class="nav-item"
-                :class="{ active: isItemActive(item) }"
-                @click="navigateTo(item.path)"
+            <li
+              v-for="item in flatMenuItems"
+              :key="item.path"
+              class="nav-item"
+              :class="{ active: currentRoute === item.path }"
+              @click="navigateTo(item.path)"
+            >
+              <el-tooltip
+                :content="item.label"
+                placement="right"
+                :show-after="300"
               >
-                <el-tooltip
-                  :content="item.label"
-                  placement="right"
-                  :show-after="300"
-                  :disabled="!isCollapsed"
-                >
-                  <div class="nav-item-content">
-                    <div class="nav-icon-wrapper">
-                      <component :is="item.icon" class="nav-icon" />
-                      <div v-if="isItemActive(item)" class="nav-glow"></div>
-                    </div>
-                    <transition name="slide-fade">
-                      <span v-if="!isCollapsed" class="nav-label">{{ item.label }}</span>
-                    </transition>
-                    <transition name="indicator">
-                      <div v-if="isItemActive(item)" class="nav-indicator"></div>
-                    </transition>
+                <div class="nav-item-content">
+                  <div class="nav-icon-wrapper">
+                    <component :is="item.icon" class="nav-icon" />
+                    <div v-if="currentRoute === item.path" class="nav-glow"></div>
                   </div>
-                </el-tooltip>
-              </li>
-
-              <!-- 父项（带子菜单），点击展开 / 收起 -->
-              <template v-else>
-                <li
-                  class="nav-item"
-                  :class="{ active: isItemActive(item) || isAnyChildActive(item) }"
-                  @click="onParentClick(item)"
-                >
-                  <el-tooltip
-                    :content="item.label"
-                    placement="right"
-                    :show-after="300"
-                    :disabled="!isCollapsed"
-                  >
-                    <div class="nav-item-content">
-                      <div class="nav-icon-wrapper">
-                        <component :is="item.icon" class="nav-icon" />
-                        <div
-                          v-if="isItemActive(item) || isAnyChildActive(item)"
-                          class="nav-glow"
-                        ></div>
-                      </div>
-                      <transition name="slide-fade">
-                        <span v-if="!isCollapsed" class="nav-label">{{ item.label }}</span>
-                      </transition>
-                      <el-icon
-                        v-if="!isCollapsed"
-                        class="nav-caret"
-                        :class="{ 'is-open': expandedMenus.has(item.path) }"
-                      >
-                        <ArrowRight />
-                      </el-icon>
-                    </div>
-                  </el-tooltip>
-                </li>
-                <!-- 子菜单 -->
-                <li
-                  v-for="sub in item.children"
-                  v-show="!isCollapsed && expandedMenus.has(item.path)"
-                  :key="sub.path"
-                  class="nav-item nav-sub-item"
-                  :class="{ active: currentRoute === sub.path }"
-                  @click.stop="navigateTo(sub.path)"
-                >
-                  <div class="nav-item-content">
-                    <div class="nav-icon-wrapper">
-                      <component :is="sub.icon" class="nav-icon" />
-                      <div v-if="currentRoute === sub.path" class="nav-glow"></div>
-                    </div>
-                    <span class="nav-label">{{ sub.label }}</span>
-                    <transition name="indicator">
-                      <div v-if="currentRoute === sub.path" class="nav-indicator"></div>
-                    </transition>
-                  </div>
-                </li>
-              </template>
-            </template>
+                  <transition name="indicator">
+                    <div v-if="currentRoute === item.path" class="nav-indicator"></div>
+                  </transition>
+                </div>
+              </el-tooltip>
+            </li>
           </ul>
         </div>
       </nav>
@@ -150,16 +65,12 @@
               :content="item.label"
               placement="right"
               :show-after="300"
-              :disabled="!isCollapsed"
             >
               <div class="nav-item-content">
                 <div class="nav-icon-wrapper">
                   <component :is="item.icon" class="nav-icon" />
                   <div v-if="currentRoute === item.path" class="nav-glow"></div>
                 </div>
-                <transition name="slide-fade">
-                  <span v-if="!isCollapsed" class="nav-label">{{ item.label }}</span>
-                </transition>
               </div>
             </el-tooltip>
           </li>
@@ -190,31 +101,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, markRaw, onMounted, watch } from 'vue'
+import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import {
-  HomeFilled,
-  ChatDotRound,
-  Picture,
-  Document,
-  Microphone,
-  Headset,
-  MagicStick,
-  Setting,
-  Expand,
-  Fold,
-  FolderOpened,
-  User,
-  EditPen,
-  Notebook,
-  VideoCamera,
-  ArrowRight,
-  Promotion,
-} from '@element-plus/icons-vue'
 import { useTheme } from '@/composables/useTheme'
 import { useSkin } from '@/composables/useSkin'
 import { useTabsStore } from '@/stores/tabs'
 import TabBar from '@/components/common/TabBar.vue'
+import {
+  mainMenuItems,
+  footerMenuItems,
+  flattenMenuItems,
+  type MenuItem
+} from '@/config/menu'
 
 const route = useRoute()
 const router = useRouter()
@@ -223,142 +121,26 @@ const { currentTheme } = useTheme()
 useSkin()
 const tabsStore = useTabsStore()
 
-// 默认折叠：只显示 icon，悬停显示菜单名 tooltip
-const isCollapsed = ref(true)
-const pageTransition = ref('slide-fade')
-// 需要缓存的页面组件名称（对应 defineOptions 中的 name）
-const cachedViews = ['Home', 'Chat', 'StoryEditor', 'CommentEditor', 'Settings', 'Portrait', 'PortraitTemplates', 'FaceGeometryPage']
-
-// 主菜单项
-const mainMenuItems = [
-  {
-    path: '/',
-    label: '首页',
-    icon: markRaw(HomeFilled)
-  },
-  {
-    path: '/chat',
-    label: 'AI 对话',
-    icon: markRaw(ChatDotRound)
-  },
-  {
-    path: '/image',
-    label: '图像生成',
-    icon: markRaw(Picture)
-  },
-  {
-    path: '/portrait',
-    label: '人像设计',
-    icon: markRaw(User)
-  },
-  {
-    path: '/longwriting',
-    label: '长文写作',
-    icon: markRaw(EditPen)
-  },
-  {
-    path: '/episode-production',
-    label: '剧集制作',
-    icon: markRaw(VideoCamera)
-  },
-  {
-    path: '/translate',
-    label: '文档翻译',
-    icon: markRaw(Document)
-  },
-  {
-    path: '/voice',
-    label: '语音助手',
-    icon: markRaw(Microphone),
-    children: [
-      {
-        path: '/voice/tts',
-        label: '文本转语音',
-        icon: markRaw(Promotion),
-      },
-      {
-        path: '/voice/stt',
-        label: '语音转文本',
-        icon: markRaw(Headset),
-      },
-      {
-        path: '/voice/clone',
-        label: '声音复刻',
-        icon: markRaw(MagicStick),
-      },
-    ],
-  },
-  {
-    path: '/knowledge-base',
-    label: '知识库',
-    icon: markRaw(FolderOpened)
-  },
-  {
-    path: '/diary',
-    label: '日记',
-    icon: markRaw(Notebook)
-  }
-]
-
-// 底部菜单项
-const footerMenuItems = [
-  {
-    path: '/settings',
-    label: '设置',
-    icon: markRaw(Setting)
-  }
-]
+/**
+ * 需要缓存的页面组件名（对应各页面 defineOptions({ name })）。
+ * 由路由表 meta.keepAlive 驱动 —— 在 router/index.ts 给页面加 keepAlive: true 即可缓存，
+ * 不再手写组件名清单（历史上清单与组件 name 漂移，导致 keep-alive 静默失效、切换变慢）。
+ */
+const cachedViews = computed<string[]>(() =>
+  router
+    .getRoutes()
+    .filter(r => r.meta?.keepAlive && r.name)
+    .map(r => String(r.name))
+)
 
 const currentRoute = computed(() => route.path)
 
 /**
- * 子菜单展开状态。
- * 默认：当前路由命中某父项的子菜单时，对应父项展开（mount 后 watch 路由维护）。
+ * 平铺菜单（来自共享数据源 @/config/menu）：
+ * 父项 + 子项都作为独立图标项渲染，hidden/hideSelf 过滤规则见该模块。
+ * 侧边栏为纯图标模式（无展开功能），子菜单若不平铺将不可达。
  */
-const expandedMenus = ref<Set<string>>(new Set())
-
-interface MenuItem {
-  path: string
-  label: string
-  icon: any
-  children?: MenuItem[]
-}
-
-function isItemActive(item: MenuItem): boolean {
-  return currentRoute.value === item.path
-}
-
-function isAnyChildActive(item: MenuItem): boolean {
-  if (!item.children) return false
-  return item.children.some((c) => currentRoute.value === c.path)
-}
-
-/**
- * 父项点击：
- * - 无 children：直接导航
- * - 有 children 且当前折叠：先展开侧边栏，再展开该父项子菜单（折叠态下点击父项无可见效果，需展开）
- * - 有 children 且已展开：切换子菜单展开 / 收起（不导航，避免触发 redirect）
- */
-function onParentClick(item: MenuItem): void {
-  if (!item.children || item.children.length === 0) {
-    router.push(item.path)
-    return
-  }
-  if (isCollapsed.value) {
-    isCollapsed.value = false
-    expandedMenus.value.add(item.path)
-    return
-  }
-  if (expandedMenus.value.has(item.path)) {
-    expandedMenus.value.delete(item.path)
-  } else {
-    expandedMenus.value.add(item.path)
-  }
-}
-
-const toggleCollapse = () => {
-  isCollapsed.value = !isCollapsed.value
-}
+const flatMenuItems = computed<MenuItem[]>(() => flattenMenuItems(mainMenuItems))
 
 const navigateTo = (path: string) => {
   router.push(path)
@@ -384,7 +166,7 @@ const pathTitleMap: Record<string, string> = {
   '/settings': '设置'
 }
 
-// 监听路由变化，添加标签页 + 自动展开父菜单
+// 监听路由变化，添加标签页
 watch(
   () => route.path,
   (path) => {
@@ -400,13 +182,6 @@ watch(
       query: {},
       redirectedFrom: null
     } as any)
-
-    // 子路由 → 父菜单自动展开（避免用户进 /voice/tts 时父项是收起的）
-    for (const item of mainMenuItems) {
-      if (item.children && item.children.some((c) => c.path === path)) {
-        expandedMenus.value.add(item.path)
-      }
-    }
   },
   { immediate: true }
 )
@@ -421,15 +196,14 @@ watch(
   background-color: var(--bg-color-page);
 }
 
-// ==================== 侧边栏样式 ====================
+// ==================== 侧边栏样式（纯图标模式，固定窄宽） ====================
 
 .sidebar {
-  width: var(--sidebar-width);
+  width: var(--sidebar-collapsed-width);
   height: 100%;
   background: var(--sidebar-bg);
   display: flex;
   flex-direction: column;
-  transition: width var(--transition-smooth);
   position: relative;
   overflow: hidden;
 
@@ -445,35 +219,25 @@ watch(
     backdrop-filter: blur(10px);
     pointer-events: none;
   }
-
-  &.collapsed {
-    width: var(--sidebar-collapsed-width);
-
-    .sidebar-header {
-      justify-content: center;
-      padding: 12px 8px;
-    }
-  }
 }
 
 .sidebar-header {
   height: 64px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 16px;
+  justify-content: center;
+  padding: 12px 8px;
   position: relative;
   z-index: 1;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.logo {
+.logo-mini {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: center;
 }
 
-.logo-icon,
 .logo-icon-mini {
   width: 36px;
   height: 36px;
@@ -485,38 +249,6 @@ watch(
   svg {
     width: 100%;
     height: 100%;
-  }
-}
-
-.logo-text {
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.5px;
-  background: linear-gradient(135deg, #fff 0%, rgba(255, 255, 255, 0.8) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.logo-mini {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.collapse-btn {
-  background: rgba(255, 255, 255, 0.1) !important;
-  border: none !important;
-  color: rgba(255, 255, 255, 0.9) !important;
-  transition: all var(--transition-normal);
-
-  &:hover {
-    background: rgba(255, 255, 255, 0.2) !important;
-    transform: scale(1.1);
-  }
-
-  &:active {
-    transform: scale(0.95);
   }
 }
 
@@ -556,11 +288,10 @@ watch(
   cursor: pointer;
   transition: all var(--transition-fast);
 
-  // el-tooltip 触发器包裹层：撑满 li，保证 hover 区与背景一致
-  :deep(.el-tooltip__trigger) {
-    display: block;
-    width: 100%;
-  }
+  // 注意：不要在这里用 :deep(.el-tooltip__trigger) 设 display ——
+  // tooltip trigger 就是 .nav-item-content 本身，display:block 会以更高优先级
+  // 覆盖 .nav-item-content 的 flex 居中，导致图标偏左。
+  // 撑满 li 的需求由 .nav-item-content 自身的 width:100% 实现。
 
   &.active {
     .nav-item-content {
@@ -571,11 +302,6 @@ watch(
     .nav-icon {
       color: #fff;
       transform: scale(1.1);
-    }
-
-    .nav-label {
-      color: #fff;
-      font-weight: 600;
     }
   }
 
@@ -593,43 +319,12 @@ watch(
 .nav-item-content {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
+  justify-content: center;
+  width: 100%;
+  padding: 12px 0;
   border-radius: var(--radius-md);
   position: relative;
   transition: all var(--transition-normal);
-}
-
-/* 子菜单缩进 + 字号略小 */
-.nav-sub-item {
-  margin-left: 8px;
-
-  .nav-item-content {
-    padding: 9px 14px;
-    padding-left: 20px;
-  }
-
-  .nav-icon {
-    width: 16px;
-    height: 16px;
-  }
-
-  .nav-label {
-    font-size: 13px;
-  }
-}
-
-/* 父项展开箭头：默认朝右；展开时旋转 90° 朝下 */
-.nav-caret {
-  margin-left: auto;
-  width: 12px;
-  height: 12px;
-  color: rgba(255, 255, 255, 0.55);
-  transition: transform var(--transition-fast);
-
-  &.is-open {
-    transform: rotate(90deg);
-  }
 }
 
 .nav-icon-wrapper {
@@ -660,13 +355,6 @@ watch(
   border-radius: 50%;
   animation: glow-pulse 2s ease-in-out infinite;
   pointer-events: none;
-}
-
-.nav-label {
-  color: var(--sidebar-text);
-  font-size: 14px;
-  white-space: nowrap;
-  transition: all var(--transition-normal);
 }
 
 .nav-indicator {
@@ -731,34 +419,6 @@ watch(
 
 // ==================== 过渡动画 ====================
 
-// Logo 过渡
-.logo-fade-enter-active,
-.logo-fade-leave-active {
-  transition: all 0.3s ease;
-}
-
-.logo-fade-enter-from,
-.logo-fade-leave-to {
-  opacity: 0;
-  transform: scale(0.8);
-}
-
-// 文字滑入滑出
-.slide-fade-enter-active,
-.slide-fade-leave-active {
-  transition: all 0.25s ease;
-}
-
-.slide-fade-enter-from {
-  opacity: 0;
-  transform: translateX(-10px);
-}
-
-.slide-fade-leave-to {
-  opacity: 0;
-  transform: translateX(10px);
-}
-
 // 指示器动画
 .indicator-enter-active {
   animation: indicator-in 0.3s ease-out;
@@ -777,21 +437,5 @@ watch(
     opacity: 1;
     height: 24px;
   }
-}
-
-// 页面过渡
-.slide-fade-enter-active,
-.slide-fade-leave-active {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.slide-fade-enter-from {
-  opacity: 0;
-  transform: translateX(20px);
-}
-
-.slide-fade-leave-to {
-  opacity: 0;
-  transform: translateX(-20px);
 }
 </style>

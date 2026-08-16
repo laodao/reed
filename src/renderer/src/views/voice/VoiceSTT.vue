@@ -5,6 +5,9 @@
 </template>
 
 <script setup lang="ts">
+
+// 组件名与路由 name 对齐，供 <keep-alive :include> 匹配（缺失会导致缓存失效、切换重新挂载）
+defineOptions({ name: 'VoiceSTT' })
 /**
  * 语音转文本独立页（/voice/stt）
  * @module views/voice/VoiceSTT

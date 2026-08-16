@@ -34,7 +34,7 @@
             <div class="icon-glow"></div>
           </div>
           <div class="feature-content">
-            <h3 class="feature-title">{{ feature.title }}</h3>
+            <h3 class="feature-title">{{ feature.label }}</h3>
             <p class="feature-desc">{{ feature.description }}</p>
           </div>
           <div class="feature-arrow">
@@ -55,81 +55,25 @@
 </template>
 
 <script setup lang="ts">
-import { ref, markRaw } from 'vue'
+
+// 组件名与路由 name 对齐，供 <keep-alive :include> 匹配（缺失会导致缓存失效、切换重新挂载）
+defineOptions({ name: 'Home' })
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import {
-  ChatDotRound,
-  Picture,
-  User,
-  EditPen,
-  Notebook,
-  VideoCamera,
-  Document,
-  Microphone,
-  FolderOpened,
-  ArrowRight
-} from '@element-plus/icons-vue'
+import { ArrowRight } from '@element-plus/icons-vue'
+import { mainMenuItems, flattenMenuItems } from '@/config/menu'
 
 const router = useRouter()
 const hoveredCard = ref<string | null>(null)
 
-// 功能列表
-const features = [
-  {
-    path: '/chat',
-    title: 'AI 对话',
-    description: '与 AI 进行智能对话，支持多种大模型',
-    icon: markRaw(ChatDotRound)
-  },
-  {
-    path: '/image',
-    title: '图像生成',
-    description: '使用 AI 生成创意图像',
-    icon: markRaw(Picture)
-  },
-  {
-    path: '/portrait',
-    title: '人像设计',
-    description: 'AI 角色人像设计与生成',
-    icon: markRaw(User)
-  },
-  {
-    path: '/longwriting',
-    title: '长文写作',
-    description: 'AI 辅助长篇小说创作',
-    icon: markRaw(EditPen)
-  },
-  {
-    path: '/episode-production',
-    title: '剧集制作',
-    description: '剧本生成与视频制作',
-    icon: markRaw(VideoCamera)
-  },
-  {
-    path: '/translate',
-    title: '文档翻译',
-    description: '智能翻译多种语言文档',
-    icon: markRaw(Document)
-  },
-  {
-    path: '/voice',
-    title: '语音助手',
-    description: '语音识别与语音合成',
-    icon: markRaw(Microphone)
-  },
-  {
-    path: '/knowledge-base',
-    title: '知识库',
-    description: '个人知识管理与检索',
-    icon: markRaw(FolderOpened)
-  },
-  {
-    path: '/diary',
-    title: '日记',
-    description: '智能日记记录与管理',
-    icon: markRaw(Notebook)
-  }
-]
+/**
+ * 功能卡片列表：与侧边栏共用同一份菜单数据源（@/config/menu），
+ * 应用 hidden/hideSelf 过滤后，两处入口天然保持一致。
+ * 首页不展示"首页"自身入口。
+ */
+const features = computed(() =>
+  flattenMenuItems(mainMenuItems).filter(item => item.path !== '/')
+)
 
 const navigateTo = (path: string) => {
   router.push(path)

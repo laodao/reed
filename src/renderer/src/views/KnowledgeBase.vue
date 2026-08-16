@@ -150,7 +150,18 @@
             <el-table-column prop="status" label="状态" width="160">
               <template #default="{ row }">
                 <div class="status-cell">
-                  <el-tag :type="getStatusType(row.status)" size="small">
+                  <!-- 失败时 hover 显示具体错误信息 -->
+                  <el-tooltip
+                    v-if="row.status === 'failed' && row.errorMessage"
+                    :content="row.errorMessage"
+                    placement="top"
+                    :show-after="200"
+                  >
+                    <el-tag :type="getStatusType(row.status)" size="small" class="status-tag-error">
+                      {{ getStatusText(row.status) }} ?
+                    </el-tag>
+                  </el-tooltip>
+                  <el-tag v-else :type="getStatusType(row.status)" size="small">
                     {{ getStatusText(row.status) }}
                   </el-tag>
                   <template v-if="row.status === 'processing'">
@@ -188,14 +199,16 @@
                   >
                     查看
                   </el-button>
+                  <!-- pending/processing 之外都能重新处理：
+                       failed 重试；completed 重建索引；pending（首次处理中断卡住的）手动触发 -->
                   <el-button
-                    v-if="row.status === 'failed'"
+                    v-if="row.status === 'failed' || row.status === 'completed' || row.status === 'pending'"
                     text
                     type="primary"
                     size="small"
-                    @click="reprocessDocument(row.id)"
+                    @click="handleReprocessDocument(row.id)"
                   >
-                    重试
+                    {{ row.status === 'failed' ? '重试' : (row.status === 'pending' ? '处理' : '重新处理') }}
                   </el-button>
                   <el-button
                     text
@@ -485,6 +498,9 @@
 </template>
 
 <script setup lang="ts">
+
+// 组件名与路由 name 对齐，供 <keep-alive :include> 匹配（缺失会导致缓存失效、切换重新挂载）
+defineOptions({ name: 'KnowledgeBase' })
 import { ref, computed, onMounted, toRaw } from 'vue'
 import {
   Plus,
@@ -729,6 +745,19 @@ async function handleViewChunks(doc: KbDocument): Promise<void> {
   showChunksDialog.value = true
   chunksCurrentPage.value = 1
   await loadChunksPage()
+}
+
+/**
+ * 重新处理文档（页面级包装：带成功/失败提示，失败原因直接展示给用户）
+ */
+async function handleReprocessDocument(documentId: string): Promise<void> {
+  const ok = await reprocessDocument(documentId)
+  if (ok) {
+    ElMessage.success('已开始处理文档')
+  } else {
+    // store 把失败原因写进 error，这里显式弹出（此前只写不显示，点击像"无效"）
+    ElMessage.error(error.value || '处理文档失败')
+  }
 }
 
 /**

@@ -14,6 +14,7 @@ const routes: RouteRecordRaw[] = [
     name: 'Home',
     component: () => import('@/views/Home.vue'),
     meta: {
+      keepAlive: true,
       title: '首页'
     }
   },
@@ -22,6 +23,7 @@ const routes: RouteRecordRaw[] = [
     name: 'Chat',
     component: () => import('@/views/Chat.vue'),
     meta: {
+      keepAlive: true,
       title: 'AI 对话'
     }
   },
@@ -30,6 +32,7 @@ const routes: RouteRecordRaw[] = [
     name: 'Image',
     component: () => import('@/views/Image.vue'),
     meta: {
+      keepAlive: true,
       title: '图像生成'
     }
   },
@@ -38,20 +41,22 @@ const routes: RouteRecordRaw[] = [
     name: 'Portrait',
     component: () => import('@/views/Portrait.vue'),
     meta: {
+      keepAlive: true,
       title: '人像设计'
     }
   },
   {
     path: '/portrait/geometry',
-    name: 'FaceGeometry',
+    name: 'FaceGeometryPage',
     component: () => import('@/views/FaceGeometryPage.vue'),
-    meta: { title: '面容分析' },
+    meta: { keepAlive: true, title: '面容分析' },
   },
   {
     path: '/portrait-templates',
     name: 'PortraitTemplates',
     component: () => import('@/views/PortraitTemplates.vue'),
     meta: {
+      keepAlive: true,
       title: '提示词模板库'
     }
   },
@@ -60,6 +65,7 @@ const routes: RouteRecordRaw[] = [
     name: 'Translate',
     component: () => import('@/views/Translate.vue'),
     meta: {
+      keepAlive: true,
       title: '文档翻译'
     }
   },
@@ -70,19 +76,19 @@ const routes: RouteRecordRaw[] = [
     path: '/voice/tts',
     name: 'VoiceTTS',
     component: () => import('@/views/voice/VoiceTTS.vue'),
-    meta: { title: '文本转语音' },
+    meta: { keepAlive: true, title: '文本转语音' },
   },
   {
     path: '/voice/stt',
     name: 'VoiceSTT',
     component: () => import('@/views/voice/VoiceSTT.vue'),
-    meta: { title: '语音转文本' },
+    meta: { keepAlive: true, title: '语音转文本' },
   },
   {
     path: '/voice/clone',
     name: 'VoiceClone',
     component: () => import('@/views/voice/VoiceClone.vue'),
-    meta: { title: '声音复刻' },
+    meta: { keepAlive: true, title: '声音复刻' },
   },
   {
     path: '/voice/design',
@@ -95,6 +101,7 @@ const routes: RouteRecordRaw[] = [
     name: 'KnowledgeBase',
     component: () => import('@/views/KnowledgeBase.vue'),
     meta: {
+      keepAlive: true,
       title: '知识库'
     }
   },
@@ -135,6 +142,7 @@ const routes: RouteRecordRaw[] = [
     name: 'Diary',
     component: () => import('@/views/Diary.vue'),
     meta: {
+      keepAlive: true,
       title: '日记'
     }
   },
@@ -202,6 +210,7 @@ const routes: RouteRecordRaw[] = [
     name: 'Settings',
     component: () => import('@/views/Settings.vue'),
     meta: {
+      keepAlive: true,
       title: '设置'
     }
   }
