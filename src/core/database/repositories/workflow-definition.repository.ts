@@ -1,0 +1,229 @@
+/**
+ * 工作流定义仓库
+ * @module database/repositories/workflow-definition.repository
+ *
+ * 维护 workflow_definitions 表：草稿/发布双图、触发器、防失控设置、cron 调度状态。
+ * JSON 列在 DTO 层做解析/序列化；损坏 JSON 容错降级（null/[]），不抛错。
+ *
+ * 多租户：继承 BaseRepository，user_id 自动注入（Web ALS / PC null）。
+ *
+ * ⚠️ 唯一跨租户例外：scanDueCronTriggers 用裸 repo 扫描全部用户的到期触发器
+ *    （cron 调度器 tick 不在任何用户请求上下文内）。返回结果必须按 userId
+ *    分组后逐用户 runWithUserAsync 再执行，否则 Web 端数据隔离失效。
+ */
+
+import type { DataSource, FindOptionsWhere } from 'typeorm'
+import type {
+  WorkflowExecutionSettings,
+  WorkflowGraph,
+  WorkflowTrigger,
+} from '@shared/types/workflow.types'
+import { WorkflowDefinitionEntity } from '../entities/workflow-definition.entity'
+import { BaseRepository } from '../base-repository'
+
+/** 工作流定义 DTO（JSON 列已解析） */
+export interface WorkflowDefinitionRecord {
+  id: string
+  name: string
+  description: string | null
+  category: string | null
+  draftGraph: WorkflowGraph | null
+  publishedGraph: WorkflowGraph | null
+  publishedVersion: number
+  publishedAt: Date | null
+  triggers: WorkflowTrigger[]
+  settings: WorkflowExecutionSettings | null
+  nextFireAt: Date | null
+  lastFireAt: Date | null
+  lastRunAt: Date | null
+  createdAt: Date | null
+  updatedAt: Date | null
+}
+
+/** 创建入参 */
+export interface CreateWorkflowDefinitionInput {
+  name: string
+  description?: string | null
+  category?: string | null
+  draftGraph?: WorkflowGraph | null
+  triggers?: WorkflowTrigger[]
+  settings?: WorkflowExecutionSettings | null
+}
+
+/** 更新入参（浅合并，未提供的字段不动） */
+export interface UpdateWorkflowDefinitionInput {
+  name?: string
+  description?: string | null
+  category?: string | null
+  draftGraph?: WorkflowGraph | null
+  /** 发布动作：发布图 + 版本号 + 触发器/设置快照（由 service 计算后传入） */
+  publishedGraph?: WorkflowGraph | null
+  publishedVersion?: number
+  publishedAt?: Date | null
+  triggers?: WorkflowTrigger[]
+  settings?: WorkflowExecutionSettings | null
+  nextFireAt?: Date | null
+  lastFireAt?: Date | null
+  lastRunAt?: Date | null
+}
+
+/** 到期 cron 触发器扫描结果（跨租户） */
+export interface DueCronTriggerRow {
+  id: string
+  userId: string | null
+  nextFireAt: Date
+  lastFireAt: Date | null
+  triggers: WorkflowTrigger[]
+}
+
+/** JSON 列安全解析（损坏数据降级为 fallback，不抛错） */
+function safeParse<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    console.warn('[WorkflowDefinitionRepository] JSON 列解析失败，降级处理')
+    return fallback
+  }
+}
+
+export class WorkflowDefinitionRepository extends BaseRepository<
+  WorkflowDefinitionEntity,
+  WorkflowDefinitionRecord
+> {
+  constructor(dataSource: DataSource) {
+    super(dataSource, WorkflowDefinitionEntity)
+  }
+
+  protected toDto(e: WorkflowDefinitionEntity): WorkflowDefinitionRecord {
+    return {
+      id: e.id,
+      name: e.name,
+      description: e.description,
+      category: e.category,
+      draftGraph: safeParse<WorkflowGraph | null>(e.draftGraph, null),
+      publishedGraph: safeParse<WorkflowGraph | null>(e.publishedGraph, null),
+      publishedVersion: e.publishedVersion,
+      publishedAt: e.publishedAt,
+      triggers: safeParse<WorkflowTrigger[]>(e.triggers, []),
+      settings: safeParse<WorkflowExecutionSettings | null>(e.settings, null),
+      nextFireAt: e.nextFireAt,
+      lastFireAt: e.lastFireAt,
+      lastRunAt: e.lastRunAt,
+      createdAt: e.createdAt,
+      updatedAt: e.updatedAt,
+    }
+  }
+
+  async create(data: CreateWorkflowDefinitionInput): Promise<WorkflowDefinitionRecord> {
+    const now = new Date()
+    const entity = await this.scoped.save({
+      id: this.generateId(),
+      name: data.name,
+      description: data.description ?? null,
+      category: data.category ?? null,
+      draftGraph: data.draftGraph ? JSON.stringify(data.draftGraph) : null,
+      publishedGraph: null,
+      publishedVersion: 0,
+      publishedAt: null,
+      triggers: data.triggers ? JSON.stringify(data.triggers) : null,
+      settings: data.settings ? JSON.stringify(data.settings) : null,
+      nextFireAt: null,
+      lastFireAt: null,
+      lastRunAt: null,
+      createdAt: now,
+      updatedAt: now,
+    } as Partial<WorkflowDefinitionEntity>)
+    return this.toDto(entity as WorkflowDefinitionEntity)
+  }
+
+  async getById(id: string): Promise<WorkflowDefinitionRecord | null> {
+    const e = await this.scoped.findOne({ id } as FindOptionsWhere<WorkflowDefinitionEntity>)
+    return e ? this.toDto(e) : null
+  }
+
+  /** 分页列表（按更新时间倒序；keyword 模糊匹配名称/描述） */
+  async list(params: {
+    keyword?: string
+    page: number
+    pageSize: number
+  }): Promise<{ items: WorkflowDefinitionRecord[]; total: number }> {
+    const qb = this.scoped
+      .qb('d')
+      .orderBy('d.updated_at', 'DESC')
+      .skip((params.page - 1) * params.pageSize)
+      .take(params.pageSize)
+    if (params.keyword) {
+      qb.andWhere('(d.name LIKE :kw OR d.description LIKE :kw)', {
+        kw: `%${params.keyword}%`,
+      })
+    }
+    const [rows, total] = await qb.getManyAndCount()
+    return { items: this.toDtoList(rows), total }
+  }
+
+  async update(
+    id: string,
+    patch: UpdateWorkflowDefinitionInput
+  ): Promise<WorkflowDefinitionRecord | null> {
+    const partial: Partial<WorkflowDefinitionEntity> = { updatedAt: new Date() }
+    if (patch.name !== undefined) partial.name = patch.name
+    if (patch.description !== undefined) partial.description = patch.description
+    if (patch.category !== undefined) partial.category = patch.category
+    if (patch.draftGraph !== undefined) {
+      partial.draftGraph = patch.draftGraph ? JSON.stringify(patch.draftGraph) : null
+    }
+    if (patch.publishedGraph !== undefined) {
+      partial.publishedGraph = patch.publishedGraph
+        ? JSON.stringify(patch.publishedGraph)
+        : null
+    }
+    if (patch.publishedVersion !== undefined) partial.publishedVersion = patch.publishedVersion
+    if (patch.publishedAt !== undefined) partial.publishedAt = patch.publishedAt
+    if (patch.triggers !== undefined) {
+      partial.triggers = patch.triggers ? JSON.stringify(patch.triggers) : null
+    }
+    if (patch.settings !== undefined) {
+      partial.settings = patch.settings ? JSON.stringify(patch.settings) : null
+    }
+    if (patch.nextFireAt !== undefined) partial.nextFireAt = patch.nextFireAt
+    if (patch.lastFireAt !== undefined) partial.lastFireAt = patch.lastFireAt
+    if (patch.lastRunAt !== undefined) partial.lastRunAt = patch.lastRunAt
+
+    await this.scoped.update({ id } as FindOptionsWhere<WorkflowDefinitionEntity>, partial)
+    return this.getById(id)
+  }
+
+  async delete(id: string): Promise<number> {
+    return this.scoped.delete({ id } as FindOptionsWhere<WorkflowDefinitionEntity>)
+  }
+
+  /**
+   * 扫描到期的 cron 触发器（跨租户，供调度器 tick）。
+   * 只命中已发布且 next_fire_at 到期的行；JSON 过滤在 JS 层做
+   * （SQLite/PG 的 JSON 查询函数不同，避免方言分叉）。
+   *
+   * ⚠️ 返回行含所有用户——调用方必须按 userId 分组后 runWithUserAsync 执行。
+   */
+  async scanDueCronTriggers(now: Date): Promise<DueCronTriggerRow[]> {
+    const rows = await this.repo
+      .createQueryBuilder('d')
+      .where('d.published_version > 0')
+      .andWhere('d.next_fire_at IS NOT NULL')
+      .andWhere('d.next_fire_at <= :now', { now })
+      .getMany()
+    return rows
+      .map(e => ({
+        id: e.id,
+        userId: e.userId,
+        nextFireAt: e.nextFireAt as Date,
+        lastFireAt: e.lastFireAt,
+        triggers: safeParse<WorkflowTrigger[]>(e.triggers, []),
+      }))
+      .filter(row => row.triggers.some(t => t.type === 'cron' && t.enabled))
+  }
+
+  private generateId(): string {
+    return `wfdef_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
+  }
+}

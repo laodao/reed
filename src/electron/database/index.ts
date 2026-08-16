@@ -63,6 +63,9 @@ import { LwTempLocationTemplateRepository } from '@core/database/repositories/lw
 import { LwProjectModelConfigRepository } from '@core/database/repositories/lw-project-model-config.repository'
 import { LwChapterStateSummaryRepository } from '@core/database/repositories/lw-chapter-state-summary.repository'
 import { LwVectorIndexRepository } from '@core/database/repositories/lw-vector-index.repository'
+import { WorkflowDefinitionRepository } from '@core/database/repositories/workflow-definition.repository'
+import { WorkflowRunRepository } from '@core/database/repositories/workflow-run.repository'
+import { WorkflowNodeRunRepository } from '@core/database/repositories/workflow-node-run.repository'
 import { DiaryFolderRepository } from '@core/database/repositories/diary-folder.repository'
 import { DiaryEntryRepository } from '@core/database/repositories/diary-entry.repository'
 import { DiaryLinkRepository } from '@core/database/repositories/diary-link.repository'
@@ -153,6 +156,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public lwEntityStates: LwEntityStateRepository | null = null
   public lwChapterStateSummaries: LwChapterStateSummaryRepository | null = null
   public lwVectorIndices: LwVectorIndexRepository | null = null
+
+  // 工作流引擎（三表）
+  public workflowDefinitions: WorkflowDefinitionRepository | null = null
+  public workflowRuns: WorkflowRunRepository | null = null
+  public workflowNodeRuns: WorkflowNodeRunRepository | null = null
 
   // 新增：符合第三范式的长文写作关联表仓库
   public lwPlotCharacters: LwPlotCharacterRepository | null = null
@@ -618,6 +626,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-lw-vector-indices'
     )
     await createLwVectorIndices(this.dataSource)
+
+    // 工作流引擎：definitions / runs / node_runs 三表（幂等，双语种）
+    const { createWorkflowTables } = await import(
+      '@core/database/migrations/create-workflow-tables'
+    )
+    await createWorkflowTables(this.dataSource)
   }
 
   /**
@@ -4159,6 +4173,9 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.lwEntityStates = new LwEntityStateRepository(this.dataSource)
     this.lwChapterStateSummaries = new LwChapterStateSummaryRepository(this.dataSource)
     this.lwVectorIndices = new LwVectorIndexRepository(this.dataSource)
+    this.workflowDefinitions = new WorkflowDefinitionRepository(this.dataSource)
+    this.workflowRuns = new WorkflowRunRepository(this.dataSource)
+    this.workflowNodeRuns = new WorkflowNodeRunRepository(this.dataSource)
 
     // 初始化符合第三范式的长文写作关联表仓库
     this.lwPlotCharacters = new LwPlotCharacterRepository(this.dataSource)

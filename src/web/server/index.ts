@@ -321,6 +321,13 @@ async function initDatabase(): Promise<void> {
   )
   await normalizeStoryboardCharacterIds(ds)
 
+  // 工作流引擎：definitions / runs / node_runs 三表（synchronize 已建表，此处幂等补索引；
+  // 与 Electron 端 runMultiTenantMigrations 的调用保持同构）
+  const { createWorkflowTables } = await import(
+    '@core/database/migrations/create-workflow-tables'
+  )
+  await createWorkflowTables(ds)
+
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)
   console.log('[web-server] PostgreSQL 数据库初始化完成')

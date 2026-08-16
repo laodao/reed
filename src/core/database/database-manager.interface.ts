@@ -62,6 +62,9 @@ import type { LwTempCharacterTemplateRepository } from './repositories/lw-temp-c
 import type { LwTempLocationTemplateRepository } from './repositories/lw-temp-location-template.repository'
 import type { LwTypeConfigRepository } from './repositories/lw-type-config.repository'
 import type { LwVectorIndexRepository } from './repositories/lw-vector-index.repository'
+import type { WorkflowDefinitionRepository } from './repositories/workflow-definition.repository'
+import type { WorkflowRunRepository } from './repositories/workflow-run.repository'
+import type { WorkflowNodeRunRepository } from './repositories/workflow-node-run.repository'
 import type { MessageRepository } from './repositories/message.repository'
 import type { OSSConfigRepository } from './repositories/oss-config.repository'
 import type { PortraitCharacterRepository } from './repositories/portrait-character.repository'
@@ -155,6 +158,14 @@ export interface ICoreDatabaseManager {
   lwProjectModelConfigs: LwProjectModelConfigRepository | null
   /** 长文向量索引记录（步骤0 新增：chunkId↔实体映射 + contentHash） */
   lwVectorIndices: LwVectorIndexRepository | null
+
+  // ---- 工作流引擎（三表） ----
+  /** 工作流定义（草稿/发布双图 + 触发器 + cron 调度状态） */
+  workflowDefinitions: WorkflowDefinitionRepository | null
+  /** 工作流运行实例（图快照 + 状态机 + 防失控死线） */
+  workflowRuns: WorkflowRunRepository | null
+  /** 节点级 checkpoint（断点续跑事实源） */
+  workflowNodeRuns: WorkflowNodeRunRepository | null
 
   // ---- 长文写作关联表（第三范式） ----
   lwPlotCharacters: LwPlotCharacterRepository | null
