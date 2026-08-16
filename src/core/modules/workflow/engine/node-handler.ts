@@ -42,8 +42,14 @@ export interface WorkflowNodeContext<TConfig = Record<string, unknown>> {
   logger: WorkflowNodeLogger
   /** 节点级进度推送（0-100；经引擎转发 wf:run-event 的 node-progress） */
   emitProgress(progress: number, message?: string): void
-  /** 按需解析二级模板（config 之外动态生成的模板字符串） */
-  resolveTemplate<T = string>(template: string): Promise<T>
+  /**
+   * 按需解析二级模板（同步；config 之外动态生成的模板字符串）。
+   * ⚠️ config 字段已由引擎统一解析——handler 不得对 config 字段再调此方法，
+   * 否则上游输出中的字面 {{...}} 会被二次展开（注入）。
+   */
+  resolveTemplate<T = string>(template: string): T
+  /** 变量上下文只读视图（按路径取值；优先 resolveTemplate） */
+  getVariable(path: string): unknown
 }
 
 /** 节点日志接口（引擎实现：写 node_run.error/logs + console） */

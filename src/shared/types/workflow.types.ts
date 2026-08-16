@@ -426,6 +426,57 @@ export type WorkflowNodeRunStatus =
 /** 触发方式（workflow_runs.trigger_type） */
 export type WorkflowTriggerType = 'manual' | 'cron' | 'event' | 'resume'
 
+// ==================== 运行事件（wf:run-event 通道载荷） ====================
+
+/**
+ * 运行事件统一载荷（单通道复用，type 判别）。
+ * 引擎产生 → IEventEmitter 推前端；Web 端按 ALS userId 路由。
+ */
+export type WorkflowRunEvent =
+  | {
+      type: 'run-status'
+      runId: string
+      definitionId: string
+      status: WorkflowRunStatus
+      stats?: { totalNodes: number; doneNodes: number; failedNodes: number; recoveredNodes: number }
+      error?: string
+    }
+  | {
+      type: 'node-status'
+      runId: string
+      nodeId: string
+      iterationIndex: number
+      status: WorkflowNodeRunStatus
+      error?: string
+      routeTaken?: string
+      startedAt?: number
+      finishedAt?: number
+    }
+  | {
+      type: 'node-progress'
+      runId: string
+      nodeId: string
+      iterationIndex: number
+      progress: number
+      message?: string
+    }
+  | {
+      type: 'review-requested'
+      runId: string
+      definitionId: string
+      nodeId: string
+      nodeName: string
+      payload: Record<string, unknown>
+      waitExpiresAt?: number
+    }
+  | {
+      type: 'notify'
+      runId: string
+      level: 'info' | 'success' | 'warning' | 'error'
+      title: string
+      message: string
+    }
+
 // ==================== handleId 编码（编辑器 ↔ 引擎共用） ====================
 
 /** normal 出边的 handleId（Vue Flow sourceHandle） */

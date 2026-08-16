@@ -274,6 +274,61 @@ describe('validateGraph 条件分支约束', () => {
     expect(result.valid).toBe(true)
   })
 
+  it('声明的分支没有连接出边报错（防运行时静默吞分支）', () => {
+    const graph = makeGraph(
+      [
+        makeNode('start', 'start'),
+        makeNode('cond1', 'condition', {
+          config: {
+            branches: [
+              { branchId: 'br1', label: '一', conditions: [{ left: 'a', operator: 'eq', right: 'b' }] },
+              { branchId: 'br2', label: '二', conditions: [{ left: 'a', operator: 'ne', right: 'b' }] }, // 未连线
+            ],
+            noMatchPolicy: 'fail',
+          },
+        }),
+        makeNode('a', 'llm-chat'),
+        makeNode('end', 'end'),
+      ],
+      [
+        { source: 'start', target: 'cond1' },
+        { source: 'cond1', target: 'a', kind: 'branch', branchId: 'br1' },
+        { source: 'a', target: 'end' },
+      ]
+    )
+    const result = validateGraph(graph)
+    expect(result.valid).toBe(false)
+    expect(result.errors.some(e => e.includes('br2'))).toBe(true)
+  })
+
+  it('fallback 分支没有出边报错', () => {
+    const graph = makeGraph(
+      [
+        makeNode('start', 'start'),
+        makeNode('cond1', 'condition', {
+          config: {
+            branches: [
+              { branchId: 'br1', label: '一', conditions: [{ left: 'a', operator: 'eq', right: 'b' }] },
+              { branchId: 'fb', label: '兜底', conditions: [] },
+            ],
+            noMatchPolicy: 'fallback',
+            fallbackBranchId: 'fb',
+          },
+        }),
+        makeNode('a', 'llm-chat'),
+        makeNode('end', 'end'),
+      ],
+      [
+        { source: 'start', target: 'cond1' },
+        { source: 'cond1', target: 'a', kind: 'branch', branchId: 'br1' },
+        { source: 'a', target: 'end' },
+      ]
+    )
+    const result = validateGraph(graph)
+    expect(result.valid).toBe(false)
+    expect(result.errors.some(e => e.includes('fb'))).toBe(true)
+  })
+
   it('同一 branchId 不允许接多条出边（显式并行原则）', () => {
     const graph = makeGraph(
       [

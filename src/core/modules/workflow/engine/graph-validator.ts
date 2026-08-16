@@ -29,6 +29,7 @@ import type {
   WorkflowValidationResult,
 } from '@shared/types/workflow.types'
 import { NODE_TYPE_CATALOG_MAP } from '@shared/types/workflow-node-catalog'
+import { computeLoopBody, computeReachableSet } from './graph-topology'
 
 /** 可选的节点配置校验钩子（引擎启动前由 NodeRegistry 注入 handler.validateConfig） */
 export interface ValidateGraphOptions {
@@ -174,7 +175,7 @@ export function validateGraph(
       addError(`branchId「${edge.branchId}」未在节点 ${source.id} 的分支配置中声明`)
     }
   }
-  // 同一 branchId 只允许一条出边（显式并行原则）
+  // 同一 branchId 只允许一条出边（显式并行原则）+ 声明的分支必须有出边（防静默吞分支）
   for (const node of graph.nodes.filter(n => n.type === 'condition')) {
     const seen = new Map<string, number>()
     for (const e of outgoingOf(node.id, 'branch')) {
@@ -185,49 +186,40 @@ export function validateGraph(
         addError(`分支「${branchId}」接了 ${count} 条出边（每个分支只允许一条，扇出请用并行节点）`)
       }
     }
+    // 反向：config 中声明的每个分支都必须有对应出边，否则运行时命中该分支
+    // 会被静默吞掉（下游零到达 → 宽容收敛 succeeded，无任何告警）
+    const branches = (node.config as { branches?: Array<{ branchId: string }> }).branches ?? []
+    for (const br of branches) {
+      if (br.branchId && (seen.get(br.branchId) ?? 0) === 0) {
+        addError(`节点 ${node.id} 的分支「${br.branchId}」已声明但没有连接出边`)
+      }
+    }
+    const cfg = node.config as { noMatchPolicy?: string; fallbackBranchId?: string }
+    if (cfg.noMatchPolicy === 'fallback' && cfg.fallbackBranchId) {
+      if ((seen.get(cfg.fallbackBranchId) ?? 0) === 0) {
+        addError(
+          `节点 ${node.id} 的 fallback 分支「${cfg.fallbackBranchId}」没有连接出边`
+        )
+      }
+    }
   }
 
-  // ---------- 6. 循环体规则（支配节点定义） ----------
-  /**
-   * body 子图定义（防歧义的关键）：
-   *   body = { n | n 从 body 入口沿非 loop-back 边可达 } ∩ { n | 去掉本循环的
-   *          loop-body 边后，n 从 start 不可达 }
-   * 即 body 只包含"必须经由 loop-body 边才能进入"的节点（入口被 loop-body 边支配）。
-   * 这使得"循环体外节点"（如 loop-done 的目标）即使被 body 内出边指向也不属于 body，
-   * 逃逸检测因此是良定义的。
-   */
+  // ---------- 6. 循环体规则（支配节点定义，拓扑计算见 graph-topology.computeLoopBody） ----------
   const startNodeId = startNodes[0]?.id
   if (startNodeId) {
     for (const loopNode of graph.nodes.filter(n => n.type === 'loop')) {
       const bodyEntryEdges = outgoingOf(loopNode.id, 'loop-body')
       if (bodyEntryEdges.length !== 1) continue // 数量约束已在步骤 4 报错
-      const bodyEntryEdge = bodyEntryEdges[0]
-      const bodyEntry = bodyEntryEdge.targetNodeId
 
-      // 去掉本循环 loop-body 边后从 start 的可达集（可绕过循环体进入的节点）
-      const bypassReachable = computeReachableSet(
-        startNodeId,
-        edges.filter(e => e !== bodyEntryEdge),
-        () => true,
-        nodeById
+      const { bodyEntry, bodySet, dominated } = computeLoopBody(
+        graph,
+        nodeById,
+        loopNode.id,
+        bodyEntryEdges[0]
       )
-      // 从 body 入口沿非 loop-back 边可达的候选集（含入口自身）
-      const fromEntry = computeReachableSet(
-        bodyEntry,
-        edges,
-        e => e.kind !== 'loop-back',
-        nodeById
-      )
-      const bodySet = new Set<string>([bodyEntry, ...fromEntry])
-      for (const id of [...bodySet]) {
-        if (id === startNodeId || bypassReachable.has(id)) bodySet.delete(id)
-      }
-
       // 入口必须被 loop-body 边支配（存在绕过路径 = 循环体边界含糊）
-      if (!bodySet.has(bodyEntry)) {
-        addError(
-          `循环体入口 ${bodyEntry} 存在绕过循环节点 ${loopNode.id} 的直接进入路径`
-        )
+      if (!dominated) {
+        addError(`循环体入口 ${bodyEntry} 存在绕过循环节点 ${loopNode.id} 的直接进入路径`)
         continue
       }
 
@@ -303,45 +295,6 @@ export function validateGraph(
 /** 边 kind 的本地别名（避免与函数内变量遮蔽） */
 type WorkflowEdgeKindOf = WorkflowEdge['kind']
 
-/**
- * 计算从起点出发沿满足条件的边可达的节点集合（不含起点自身）。
- * @param startNodeId 起始节点
- * @param edges 全部边
- * @param edgeFilter 边过滤（返回 false 的边不参与传播）
- * @param nodeById 节点表（终点不存在时跳过该边，容错）
- */
-function computeReachableSet(
-  startNodeId: string,
-  edges: WorkflowEdge[],
-  edgeFilter: (e: WorkflowEdge) => boolean,
-  nodeById: Map<string, WorkflowNode>
-): Set<string> {
-  const visited = new Set<string>()
-  const queue: string[] = []
-  // 用边表建邻接表（图规模小，直接过滤也可，这里一次遍历建表）
-  const adjacency = new Map<string, WorkflowEdge[]>()
-  for (const e of edges) {
-    if (!edgeFilter(e)) continue
-    const list = adjacency.get(e.sourceNodeId) ?? []
-    list.push(e)
-    adjacency.set(e.sourceNodeId, list)
-  }
-  const seedEdges = adjacency.get(startNodeId) ?? []
-  for (const e of seedEdges) {
-    if (nodeById.has(e.targetNodeId)) queue.push(e.targetNodeId)
-  }
-  while (queue.length > 0) {
-    const current = queue.shift()!
-    if (visited.has(current)) continue
-    visited.add(current)
-    for (const e of adjacency.get(current) ?? []) {
-      if (nodeById.has(e.targetNodeId) && !visited.has(e.targetNodeId)) {
-        queue.push(e.targetNodeId)
-      }
-    }
-  }
-  return visited
-}
 
 /**
  * 三色 DFS 环检测（沿全部边，包括 loop-back）。
