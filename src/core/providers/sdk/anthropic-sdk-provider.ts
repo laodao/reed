@@ -30,9 +30,12 @@ export class AnthropicSdkProvider extends BaseProvider {
     super(config, template, userConfig)
 
     // 初始化 Anthropic SDK 客户端
+    // 收敛超时并禁用重试，避免网络挂起长时间静默
     this.client = new Anthropic({
       apiKey: config.apiKey,
-      baseURL: config.baseUrl
+      baseURL: config.baseUrl,
+      timeout: 60_000,
+      maxRetries: 0
     })
   }
 
@@ -162,7 +165,8 @@ export class AnthropicSdkProvider extends BaseProvider {
   async chatStream(
     context: ChatContext,
     onEvent: StreamCallback,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options?: ChatOptions
   ): Promise<string> {
     const model = this.getDefaultModel()
     const messages = this.buildMessages(context)
@@ -174,10 +178,11 @@ export class AnthropicSdkProvider extends BaseProvider {
       onEvent({ type: 'start' })
 
       // 创建流式请求
+      // max_tokens 优先级：options > 模板模型定义 > 8192（Claude 默认应 8192，原 4096 偏低）
       const stream = this.client.messages.stream(
         {
           model,
-          max_tokens: this.template?.models?.find((m) => m.id === model)?.maxOutputTokens || 4096,
+          max_tokens: options?.maxTokens || this.template?.models?.find((m) => m.id === model)?.maxOutputTokens || 8192,
           messages,
           system: context.systemPrompt
         },

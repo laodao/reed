@@ -234,7 +234,9 @@ export class LongWritingAIService {
           }
         },
         undefined,
-        { maxTokens: maxTokens || 4096 }
+        // max_tokens 兜底：优先调用方传入，其次读模型定义的 maxOutputTokens，最后 8192。
+        // 原写死 4096 会在长 JSON 生成时被截断。
+        { maxTokens: maxTokens || config.models?.find(m => m.id === effectiveModelId)?.maxOutputTokens || 8192 }
       )
 
       // 发送完成事件
@@ -1088,7 +1090,7 @@ ${itemTypesInfo || '暂无配置'}
 
 评论主题：${overview?.title || '未命名'}
 核心观点：${overview?.coreIdea || '未指定'}
-目标字数：${0 || 5000}字
+目标字数：${(overview?.estimatedChapters || 2) * 2500}字
 已收集素材：${materialInfo || '暂无'}
 
 请直接返回 JSON 数组格式的结果。`

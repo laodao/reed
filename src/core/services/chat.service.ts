@@ -153,7 +153,7 @@ export class ChatService {
           request.content,
           request.webSearch.engine,
           request.webSearch.configId,
-          5
+          request.webSearch.topK ?? 5
         )
 
         if (searchResponse.success && searchResponse.results.length > 0) {
@@ -260,10 +260,20 @@ export class ChatService {
       })
 
       // 构建聊天选项
+      // temperature 从角色配置注入（role.temperature，DB 默认 0.7），
+      // 让 provider 层不再写死 0.7，用户可在角色里调节生成随机性。
+      let roleTemperature: number | undefined
+      if (dialog.roleId && dbManager.roles) {
+        const roleForTemp = await dbManager.roles.getById(dialog.roleId)
+        if (roleForTemp?.temperature != null) {
+          roleTemperature = roleForTemp.temperature
+        }
+      }
       const chatOptions = {
         enableThinking: request.enableThinkingChain,
         webSearchContext: webSearchContext || undefined,
-        knowledgeContext: knowledgeContext || undefined
+        knowledgeContext: knowledgeContext || undefined,
+        temperature: roleTemperature
       }
 
       // 流式调用 AI

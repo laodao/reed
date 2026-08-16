@@ -7,9 +7,11 @@
 import OpenAI from 'openai'
 import type { Stream } from 'openai/streaming'
 import { BaseProvider, ProviderConfig, StreamCallback, ChatOptions } from '../base-provider'
+import { resolveCapabilities, resolveMaxTokens } from '../model-capability'
 import type {
   ChatContext,
   ChatCompletionResponse,
+  ModelDefinition,
   ProviderTemplate,
   UserProviderConfig
 } from '@shared/types'
@@ -47,7 +49,12 @@ export class OpenAISdkProvider extends BaseProvider {
 
     this.client = new OpenAI({
       apiKey: config.apiKey,
-      baseURL: normalizedBase
+      baseURL: normalizedBase,
+      // SDK 默认 timeout=10min、maxRetries=2，遇到网络挂起会长时间静默不报错，
+      // 表现为前端"发了消息一直不返回"。这里收敛超时并禁用重试，
+      // 让失败能尽快以明确的超时/错误暴露出来（错误细节由 chatStream 的 catch 打印）。
+      timeout: 60_000,
+      maxRetries: 0
     })
   }
 
@@ -138,49 +145,22 @@ export class OpenAISdkProvider extends BaseProvider {
   }
 
   /**
+   * 从落库的用户配置中查找当前模型的定义
+   * 能力字段（type/supportsThinking 等）由 testConnection 检测后写入 UserProviderConfig.models
+   */
+  private findModelDefinition(modelId: string): ModelDefinition | undefined {
+    return this.userConfig?.models?.find(m => m.id === modelId)
+  }
+
+  /**
    * 检测模型是否支持视觉
-   * @param modelId 模型 ID
-   * @returns 是否支持视觉
+   *
+   * 优先读落库 ModelDefinition 的 type 字段（type==='multimodal' 即支持视觉，
+   * 与 testConnection 落库、前端展示标准一致）；缺失时回退模型名兜底。
+   * 不再硬编码模型名清单，避免新多模态模型对不上。
    */
   private supportsVision(modelId: string): boolean {
-    const id = modelId.toLowerCase()
-
-    // OpenAI GPT-4 系列（带 vision 或 turbo 的，以及 gpt-4o）
-    if (id.includes('gpt-4o') ||
-        id.includes('gpt-4-turbo') ||
-        id.includes('gpt-4-vision') ||
-        id.includes('gpt-4-1106-vision') ||
-        id.includes('gpt-4-0125-preview') ||
-        id.includes('gpt-4-1106-preview')) {
-      return true
-    }
-
-    // Anthropic Claude 3 系列
-    if (id.includes('claude-3') || id.includes('claude-sonnet') || id.includes('claude-opus') || id.includes('claude-haiku')) {
-      return true
-    }
-
-    // Google Gemini 系列
-    if (id.includes('gemini')) {
-      return true
-    }
-
-    // 阿里通义千问视觉模型
-    if (id.includes('qwen-vl') || id.includes('qwen2-vl') || id.includes('qwen2.5-vl')) {
-      return true
-    }
-
-    // 智谱视觉模型
-    if (id.includes('glm-4v') || id.includes('glm-4-vision')) {
-      return true
-    }
-
-    // 其他 OpenAI 兼容平台的视觉模型
-    if (id.includes('vision') || id.includes('-vl') || id.includes('-v-')) {
-      return true
-    }
-
-    return false
+    return resolveCapabilities(modelId, this.findModelDefinition(modelId)).supportsVision
   }
 
   /**
@@ -409,9 +389,11 @@ export class OpenAISdkProvider extends BaseProvider {
     let fullThinkingContent = ''
     let messageId = ''
 
-    // 检测是否为 DeepSeek R1 模型（支持思维链）
-    const isDeepSeekR1 = model.toLowerCase().includes('deepseek-reasoner') ||
-                         model.toLowerCase().includes('deepseek-r1')
+    // 是否解析思维链：优先读落库能力字段（supportsThinking），缺失回退模型名兜底。
+    // 历史上 isDeepSeekR1 只认 deepseek-reasoner/r1，导致 deepseek-v4-pro 等新模型
+    // 的 reasoning_content 被丢弃、内容为 0。改为统一读能力字段。
+    const caps = resolveCapabilities(model, this.findModelDefinition(model))
+    const shouldParseReasoning = caps.supportsThinking
 
     // ===== 详细日志：打印网络请求参数 =====
     console.log('[OpenAISdkProvider.chatStream] ========== 网络请求参数 ==========')
@@ -421,7 +403,7 @@ export class OpenAISdkProvider extends BaseProvider {
     console.log('[OpenAISdkProvider.chatStream] 实际使用的 baseURL:', this.client.baseURL)
     console.log('[OpenAISdkProvider.chatStream] apiKey 前缀:', this.client.apiKey?.substring(0, 10) + '***')
     console.log('[OpenAISdkProvider.chatStream] 使用的模型:', model)
-    console.log('[OpenAISdkProvider.chatStream] 是否 DeepSeek R1:', isDeepSeekR1)
+    console.log('[OpenAISdkProvider.chatStream] 是否解析思维链:', shouldParseReasoning, '(supportsThinking=', caps.supportsThinking, ')')
     console.log('[OpenAISdkProvider.chatStream] 启用深度思考:', options?.enableThinking)
     console.log('[OpenAISdkProvider.chatStream] 消息数量:', messages.length)
     console.log('[OpenAISdkProvider.chatStream] ====================================')
@@ -429,39 +411,102 @@ export class OpenAISdkProvider extends BaseProvider {
     try {
       onEvent({ type: 'start' })
 
-      const stream = await this.client.chat.completions.create(
-        {
-          model,
-          messages,
-          stream: true,
-          max_tokens: this.template?.supportedParams?.maxTokens ? 4096 : undefined,
-          temperature: this.template?.supportedParams?.temperature ? 0.7 : undefined
-        },
-        {
-          signal
+      console.log('[OpenAISdkProvider.chatStream] 准备发起请求...')
+      const requestStartAt = Date.now()
+
+      // 计算 max_tokens：思维链模型（deepseek-v4-pro 等）的 reasoning_content 也计入 token，
+      // 写死 4096 会在思考阶段就撞顶（finish_reason:length），导致正文 content 还没开始输出流就结束。
+      // 优先级：调用方传入 > 模型定义的 maxOutputTokens > 默认值；
+      // 且思维链模型有下限保护 —— 即便模型定义里 maxOutputTokens 偏小（如 4096），
+      // 也会被抬高到 MIN（思维链几千 token + 正文，4096 必然截断）。
+      let maxTokens: number | undefined
+      if (this.template?.supportedParams?.maxTokens) {
+        const modelDef = this.findModelDefinition(model)
+        const resolved = resolveMaxTokens(model, options?.maxTokens, modelDef?.maxOutputTokens, true)
+        maxTokens = resolved
+        if (resolved !== (options?.maxTokens ?? modelDef?.maxOutputTokens)) {
+          console.warn('[OpenAISdkProvider.chatStream] max_tokens 已应用思维链下限保护:', resolved)
         }
-      )
+      }
+      // temperature：优先 options（来自 role.temperature），否则默认 0.7
+      const temperature = this.template?.supportedParams?.temperature
+        ? (options?.temperature ?? 0.7)
+        : undefined
+      console.log('[OpenAISdkProvider.chatStream] max_tokens:', maxTokens, ', temperature:', temperature)
+
+      let stream: any
+      try {
+        stream = await this.client.chat.completions.create(
+          {
+            model,
+            messages,
+            stream: true,
+            max_tokens: maxTokens,
+            temperature
+          },
+          {
+            signal
+          }
+        )
+        console.log('[OpenAISdkProvider.chatStream] 请求已建立, 耗时(ms):', Date.now() - requestStartAt, ', 流类型:', stream?.constructor?.name)
+      } catch (createError: any) {
+        // create() 阶段失败（鉴权、超时、网络、模型不存在等）—— 打印完整错误对象，避免被 formatError 吞掉细节
+        console.error('[OpenAISdkProvider.chatStream] 创建请求失败, 耗时(ms):', Date.now() - requestStartAt)
+        console.error('[OpenAISdkProvider.chatStream] 错误对象:', {
+          name: createError?.name,
+          message: createError?.message,
+          status: createError?.status,
+          code: createError?.code,
+          cause: createError?.cause?.message,
+          stack: createError?.stack?.split('\n').slice(0, 3).join(' | ')
+        })
+        throw createError
+      }
+
+      let chunkCount = 0
+      let lastFinishReason: string | null = null
+      console.log('[OpenAISdkProvider.chatStream] 开始遍历流...')
 
       for await (const chunk of stream) {
+        chunkCount++
+        // 记录最后一个 chunk 的 finish_reason（验证是否因 length/max_tokens 截断）
+        const _fr = chunk.choices?.[0]?.finish_reason
+        if (_fr) lastFinishReason = _fr
+        // ===== DEBUG: 打印每个 chunk 的原始结构，定位空响应问题 =====
+        if (chunkCount <= 3) {
+          const _debugDelta = chunk.choices?.[0]?.delta as any
+          console.log(
+            '[DEBUG chunk#' + chunkCount + '] keys:',
+            JSON.stringify(Object.keys(_debugDelta || {})),
+            '| finish_reason:',
+            chunk.choices?.[0]?.finish_reason,
+            '| content:',
+            JSON.stringify((_debugDelta?.content || '').substring(0, 30)),
+            '| reasoning_content:',
+            JSON.stringify((_debugDelta?.reasoning_content || '').substring(0, 30)),
+            '| reasoning:',
+            JSON.stringify((_debugDelta?.reasoning || '').substring(0, 30))
+          )
+        }
         // 获取消息 ID
         if (chunk.id && !messageId) {
           messageId = chunk.id
         }
 
-        // 处理 DeepSeek R1 的思维链内容（reasoning_content）
-        // 注意：OpenAI SDK 可能需要特殊处理来获取 reasoning_content
-        if (isDeepSeekR1) {
-          const delta = chunk.choices[0]?.delta as any
-          const thinkingContent = delta?.reasoning_content || ''
-          if (thinkingContent) {
-            console.log('[OpenAISdkProvider.chatStream] 收到思维链内容, 长度:', thinkingContent.length)
-            fullThinkingContent += thinkingContent
-            onEvent({
-              type: 'thinking',
-              messageId,
-              thinkingContent
-            })
-          }
+        // 处理思维链内容（reasoning_content）
+        // 最强兜底：只要 API 返回了 reasoning_content 字段就解析，不再受
+        // shouldParseReasoning/模型名限制 —— 即便能力字段标错也不会丢内容，
+        // 从根上避免"内容为 0 一直不返回"。
+        const delta = chunk.choices[0]?.delta as any
+        const thinkingContent = delta?.reasoning_content || ''
+        if (thinkingContent) {
+          console.log('[OpenAISdkProvider.chatStream] 收到思维链内容, 长度:', thinkingContent.length)
+          fullThinkingContent += thinkingContent
+          onEvent({
+            type: 'thinking',
+            messageId,
+            thinkingContent
+          })
         }
 
         // 处理增量内容
@@ -476,7 +521,20 @@ export class OpenAISdkProvider extends BaseProvider {
         }
       }
 
-      console.log('[OpenAISdkProvider.chatStream] 完成, 内容长度:', fullContent.length, ', 思维链长度:', fullThinkingContent.length)
+      console.log('[OpenAISdkProvider.chatStream] 流遍历结束, chunk 总数:', chunkCount, ', 最后 finish_reason:', lastFinishReason, ', 内容长度:', fullContent.length, ', 思维链长度:', fullThinkingContent.length, ', 总耗时(ms):', Date.now() - requestStartAt)
+
+      // 空响应检测：流正常结束但一个字都没收到。
+      // 常见原因：模型名错误、模型默认走思考但 content 字段为空、API 静默失败。
+      // 必须以 error 暴露，否则前端表现为"发了消息一直不返回"。
+      if (fullContent.length === 0 && fullThinkingContent.length === 0) {
+        const hint = chunkCount === 0
+          ? `API 未返回任何数据（chunk 数为 0）。请检查模型名 "${model}" 是否正确、API Key 是否有效、网络是否正常`
+          : `API 返回了 ${chunkCount} 个 chunk 但内容为空。模型 "${model}" 可能将回复放在了未识别的字段（如 reasoning_content），或被安全策略拦截`
+        console.error('[OpenAISdkProvider.chatStream] 空响应:', hint)
+        onEvent({ type: 'error', messageId, error: hint })
+        throw new Error(hint)
+      }
+
       onEvent({ type: 'done', messageId })
       return fullContent
     } catch (error: any) {
@@ -485,6 +543,16 @@ export class OpenAISdkProvider extends BaseProvider {
         onEvent({ type: 'error', error: '请求已取消' })
         return fullContent
       }
+
+      // 打印完整错误对象，避免被 formatError 压缩成一行后丢失关键定位信息
+      console.error('[OpenAISdkProvider.chatStream] 捕获异常:', {
+        name: error?.name,
+        message: error?.message,
+        status: error?.status,
+        code: error?.code,
+        cause: error?.cause?.message,
+        stack: error?.stack?.split('\n').slice(0, 3).join(' | ')
+      })
 
       // 处理 API 错误
       const errorMessage = this.formatError(error)
@@ -501,12 +569,17 @@ export class OpenAISdkProvider extends BaseProvider {
     const messages = this.buildMessages(context, options)
 
     try {
+      const maxTokens = this.template?.supportedParams?.maxTokens
+        ? (options?.maxTokens || this.findModelDefinition(model)?.maxOutputTokens || 8192)
+        : undefined
       const response = await this.client.chat.completions.create({
         model,
         messages,
         stream: false,
-        max_tokens: this.template?.supportedParams?.maxTokens ? (options?.maxTokens || 8192) : undefined,
-        temperature: this.template?.supportedParams?.temperature ? 0.7 : undefined
+        max_tokens: maxTokens,
+        temperature: this.template?.supportedParams?.temperature
+          ? (options?.temperature ?? 0.7)
+          : undefined
       })
 
       const choice = response.choices[0]

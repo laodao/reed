@@ -10,7 +10,8 @@ import type {
   ChatContext,
   ChatCompletionResponse,
   ProviderTemplate,
-  UserProviderConfig
+  UserProviderConfig,
+  ModelDefinition
 } from '@shared/types'
 
 /**
@@ -90,6 +91,28 @@ export class GoogleSdkProvider extends BaseProvider {
   }
 
   /**
+   * 从落库的用户配置中查找当前模型的定义
+   */
+  private findModelDefinition(modelId: string): ModelDefinition | undefined {
+    return this.userConfig?.models?.find(m => m.id === modelId)
+  }
+
+  /**
+   * 计算 maxOutputTokens：优先 options > 模型定义 > 默认 8192
+   */
+  private resolveMaxTokens(modelId: string, options?: ChatOptions): number {
+    const modelDef = this.findModelDefinition(modelId)
+    return options?.maxTokens || modelDef?.maxOutputTokens || 8192
+  }
+
+  /**
+   * 计算 temperature：优先 options > 默认 0.7
+   */
+  private resolveTemperature(options?: ChatOptions): number {
+    return options?.temperature ?? 0.7
+  }
+
+  /**
    * 构建对话历史
    * Google Gemini 使用特定的 Content 格式
    * 支持多模态内容（图片）
@@ -165,8 +188,10 @@ export class GoogleSdkProvider extends BaseProvider {
   async chatStream(
     context: ChatContext,
     onEvent: StreamCallback,
-    _signal?: AbortSignal
+    _signal?: AbortSignal,
+    options?: ChatOptions
   ): Promise<string> {
+    const modelId = this.getDefaultModel()
     const model = this.getModel()
     const history = this.buildHistory(context)
 
@@ -179,8 +204,8 @@ export class GoogleSdkProvider extends BaseProvider {
       const chat = model.startChat({
         history: history.length > 1 ? history.slice(0, -1) : [],
         generationConfig: {
-          maxOutputTokens: 8192,
-          temperature: 0.7
+          maxOutputTokens: this.resolveMaxTokens(modelId, options),
+          temperature: this.resolveTemperature(options)
         }
       })
 
@@ -213,6 +238,7 @@ export class GoogleSdkProvider extends BaseProvider {
    * 非流式聊天
    */
   async chatSync(context: ChatContext, options?: ChatOptions): Promise<ChatCompletionResponse> {
+    const modelId = this.getDefaultModel()
     const model = this.getModel()
     const history = this.buildHistory(context)
 
@@ -221,8 +247,8 @@ export class GoogleSdkProvider extends BaseProvider {
       const chat = model.startChat({
         history: history.length > 1 ? history.slice(0, -1) : [],
         generationConfig: {
-          maxOutputTokens: options?.maxTokens || 8192,
-          temperature: 0.7
+          maxOutputTokens: this.resolveMaxTokens(modelId, options),
+          temperature: this.resolveTemperature(options)
         }
       })
 

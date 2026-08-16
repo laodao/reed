@@ -78,10 +78,35 @@ export class VolcEngineSdkProvider extends BaseProvider {
 
     // 初始化 OpenAI SDK 客户端（用于对话）
     // OpenAI SDK 会在 baseURL 后面追加 /chat/completions
+    // 收敛超时并禁用重试：SDK 默认 timeout=10min、maxRetries=2，网络挂起会长时间静默。
     this.client = new OpenAI({
       apiKey: config.apiKey,
-      baseURL: this.actualBaseUrl
+      baseURL: this.actualBaseUrl,
+      timeout: 60_000,
+      maxRetries: 0
     })
+  }
+
+  /**
+   * 从落库的用户配置中查找当前模型的定义
+   */
+  private findModelDefinition(modelId: string): ModelDefinition | undefined {
+    return this.userConfig?.models?.find(m => m.id === modelId)
+  }
+
+  /**
+   * 计算 max_tokens：优先 options > 模型定义 maxOutputTokens > 默认 8192
+   */
+  private resolveMaxTokens(model: string, options?: ChatOptions): number {
+    const modelDef = this.findModelDefinition(model)
+    return options?.maxTokens || modelDef?.maxOutputTokens || 8192
+  }
+
+  /**
+   * 计算 temperature：优先 options > 默认 0.7
+   */
+  private resolveTemperature(options?: ChatOptions): number {
+    return options?.temperature ?? 0.7
   }
 
   get id(): string {
@@ -325,12 +350,14 @@ export class VolcEngineSdkProvider extends BaseProvider {
     const messages = this.buildMessages(context, options)
 
     // 构建请求体
+    const maxTokens = this.resolveMaxTokens(model, options)
+    const temperature = this.resolveTemperature(options)
     const requestBody = {
       model,
       messages,
       stream: true,
-      max_tokens: 4096,
-      temperature: 0.7
+      max_tokens: maxTokens,
+      temperature
     }
 
     console.log('[VolcEngineSdkProvider.chatStream] ========== 发送对话请求 ==========')
@@ -349,8 +376,8 @@ export class VolcEngineSdkProvider extends BaseProvider {
           model,
           messages,
           stream: true,
-          max_tokens: 4096,
-          temperature: 0.7
+          max_tokens: maxTokens,
+          temperature
         },
         {
           signal
@@ -407,8 +434,8 @@ export class VolcEngineSdkProvider extends BaseProvider {
         model,
         messages,
         stream: false,
-        max_tokens: options?.maxTokens || 8192,
-        temperature: 0.7
+        max_tokens: this.resolveMaxTokens(model, options),
+        temperature: this.resolveTemperature(options)
       })
 
       const choice = response.choices[0]

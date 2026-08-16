@@ -39,6 +39,12 @@ export interface ChatOptions {
   knowledgeContext?: string
   /** 最大生成 token 数 */
   maxTokens?: number
+  /** 采样温度（覆盖 provider 默认值；来源通常是角色配置 role.temperature） */
+  temperature?: number
+  /** 核采样（top_p） */
+  topP?: number
+  /** Top-K 采样 */
+  topK?: number
 }
 
 /**
@@ -97,7 +103,8 @@ export abstract class BaseProvider {
   abstract chat(
     context: ChatContext,
     onDelta: (content: string) => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options?: ChatOptions
   ): Promise<string>
 
   /**
@@ -118,9 +125,10 @@ export abstract class BaseProvider {
   /**
    * 非流式聊天
    * @param context - 对话上下文
+   * @param options - 聊天选项（maxTokens/temperature 等）
    * @returns Promise<ChatCompletionResponse>
    */
-  abstract chatSync(context: ChatContext): Promise<ChatCompletionResponse>
+  abstract chatSync(context: ChatContext, options?: ChatOptions): Promise<ChatCompletionResponse>
 
   /**
    * 测试连接

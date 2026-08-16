@@ -5,6 +5,7 @@
  */
 
 import { BaseProvider, ProviderConfig, StreamCallback, ChatOptions } from './base-provider'
+import { resolveCapabilities } from './model-capability'
 import type { ChatContext, ChatCompletionResponse, ProviderTemplate, UserProviderConfig, ModelDefinition } from '@shared/types'
 
 /**
@@ -76,49 +77,20 @@ export class OpenAICompatibleProvider extends BaseProvider {
   }
 
   /**
+   * 从落库的用户配置中查找当前模型的定义
+   */
+  private findModelDefinition(modelId: string): ModelDefinition | undefined {
+    return this.userConfig?.models?.find(m => m.id === modelId)
+  }
+
+  /**
    * 检测模型是否支持视觉
-   * @param modelId 模型 ID
-   * @returns 是否支持视觉
+   *
+   * 优先读落库 ModelDefinition 的 type 字段（type==='multimodal' 即支持视觉），
+   * 缺失时回退模型名兜底。不再硬编码模型名清单。
    */
   private supportsVision(modelId: string): boolean {
-    const id = modelId.toLowerCase()
-
-    // OpenAI GPT-4 系列（带 vision 或 turbo 的，以及 gpt-4o）
-    if (id.includes('gpt-4o') ||
-        id.includes('gpt-4-turbo') ||
-        id.includes('gpt-4-vision') ||
-        id.includes('gpt-4-1106-vision') ||
-        id.includes('gpt-4-0125-preview') ||
-        id.includes('gpt-4-1106-preview')) {
-      return true
-    }
-
-    // Anthropic Claude 3 系列
-    if (id.includes('claude-3') || id.includes('claude-sonnet') || id.includes('claude-opus') || id.includes('claude-haiku')) {
-      return true
-    }
-
-    // Google Gemini 系列
-    if (id.includes('gemini')) {
-      return true
-    }
-
-    // 阿里通义千问视觉模型
-    if (id.includes('qwen-vl') || id.includes('qwen2-vl') || id.includes('qwen2.5-vl')) {
-      return true
-    }
-
-    // 智谱视觉模型
-    if (id.includes('glm-4v') || id.includes('glm-4-vision')) {
-      return true
-    }
-
-    // 其他 OpenAI 兼容平台的视觉模型
-    if (id.includes('vision') || id.includes('-vl') || id.includes('-v-')) {
-      return true
-    }
-
-    return false
+    return resolveCapabilities(modelId, this.findModelDefinition(modelId)).supportsVision
   }
 
   /**
@@ -304,11 +276,12 @@ export class OpenAICompatibleProvider extends BaseProvider {
     // 添加支持的参数
     if (this.template?.supportedParams) {
       if (this.template.supportedParams.maxTokens) {
-        // 使用传入的 maxTokens 或默认 8192
-        body.max_tokens = options?.maxTokens || 8192
+        // 优先级：options > 模型定义 maxOutputTokens > 默认 8192
+        body.max_tokens = options?.maxTokens || this.findModelDefinition(model)?.maxOutputTokens || 8192
       }
       if (this.template.supportedParams.temperature) {
-        body.temperature = 0.7
+        // 优先 options（来自 role.temperature），否则默认 0.7
+        body.temperature = options?.temperature ?? 0.7
       }
     }
 
@@ -379,9 +352,11 @@ export class OpenAICompatibleProvider extends BaseProvider {
     let messageId = ''
     let tokenUsage: { promptTokens: number; completionTokens: number; totalTokens: number } | undefined
 
-    // 检测是否为 DeepSeek R1 模型（支持思维链）
-    const isDeepSeekR1 = model.toLowerCase().includes('deepseek-reasoner') ||
-                         model.toLowerCase().includes('deepseek-r1')
+    // 是否解析思维链：优先读落库能力字段，缺失回退模型名兜底。
+    // 最强兜底见循环体：只要返回了 reasoning_content 就解析，不受此值限制。
+    const caps = resolveCapabilities(model, this.findModelDefinition(model))
+    const shouldParseReasoning = caps.supportsThinking
+    console.log('[OpenAICompatibleProvider.chatStream] 是否解析思维链:', shouldParseReasoning, '(supportsThinking=', caps.supportsThinking, ')')
 
     try {
       onEvent({ type: 'start' })
@@ -450,8 +425,10 @@ export class OpenAICompatibleProvider extends BaseProvider {
                 }
               }
 
-              // 处理 DeepSeek R1 的思维链内容（reasoning_content）
-              if (isDeepSeekR1 && data.choices && data.choices[0]?.delta?.reasoning_content) {
+              // 处理思维链内容（reasoning_content）
+              // 最强兜底：只要返回了 reasoning_content 就解析，不受 shouldParseReasoning/模型名限制，
+              // 即便能力字段标错也不丢内容，避免"内容为 0 一直不返回"。
+              if (data.choices && data.choices[0]?.delta?.reasoning_content) {
                 const thinkingContent = data.choices[0].delta.reasoning_content
                 fullThinkingContent += thinkingContent
                 onEvent({

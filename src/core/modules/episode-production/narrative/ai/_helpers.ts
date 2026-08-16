@@ -154,7 +154,6 @@ export async function callAI(
   const t0 = Date.now()
   let result: { success: boolean; content?: string; error?: string }
   try {
-    // @ts-expect-error P3 修复 · BaseProvider.chatSync 签名仅接受 context（沿用原 service 的调用方式以保持行为一致）
     result = await provider.chatSync(context, { maxTokens })
   } catch (e: any) {
     aiLogger.error('text 调用失败', {
@@ -243,7 +242,6 @@ export async function callVLM(
   const t0 = Date.now()
   let result: { success: boolean; content?: string; error?: string }
   try {
-    // @ts-expect-error 同 callAI：BaseProvider.chatSync 签名兼容
     result = await provider.chatSync(context, { maxTokens })
   } catch (e: any) {
     aiLogger.error('vlm 调用失败', {
