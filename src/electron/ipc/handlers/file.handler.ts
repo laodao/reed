@@ -64,6 +64,7 @@ export function registerFileHandlers(): void {
   ipcBridge.handle('file:read-base64', handleReadBase64)
   ipcBridge.handle('file:save-dialog', handleSaveDialog)
   ipcBridge.handle('file:write-text', handleWriteText)
+  ipcBridge.handle('file:write-binary', handleWriteBinary)
   ipcBridge.handle('file:open-folder-dialog', handleOpenFolderDialog)
   ipcBridge.handle('file:copy', handleCopy)
 }
@@ -196,6 +197,25 @@ async function handleWriteText(
     return { success: true }
   } catch (error: any) {
     console.error('[file:write-text] 错误:', error)
+    return { success: false, error: error.message }
+  }
+}
+
+/**
+ * 写入二进制文件（base64 编码传输，用于图片等 Blob 落盘）
+ */
+async function handleWriteBinary(
+  _event: any,
+  data: { filePath: string; base64: string }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    // 兼容带 data URI 前缀的 base64（如 data:image/png;base64,...）
+    const base64Data = data.base64.replace(/^data:[^;,]*;base64,/, '')
+    const buffer = Buffer.from(base64Data, 'base64')
+    fs.writeFileSync(data.filePath, buffer)
+    return { success: true }
+  } catch (error: any) {
+    console.error('[file:write-binary] 错误:', error)
     return { success: false, error: error.message }
   }
 }

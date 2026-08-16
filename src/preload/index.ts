@@ -680,6 +680,9 @@ const electronAPI = {
     // 写入文本文件
     writeTextFile: (filePath: string, content: string) =>
       ipcRenderer.invoke('file:write-text', { filePath, content }),
+    // 写入二进制文件（base64 编码传输，用于图片等 Blob 落盘）
+    writeBinaryFile: (filePath: string, base64: string) =>
+      ipcRenderer.invoke('file:write-binary', { filePath, base64 }),
     // 打开文件夹选择对话框
     openFolderDialog: () => ipcRenderer.invoke('file:open-folder-dialog'),
     // 复制文件
