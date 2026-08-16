@@ -365,7 +365,7 @@ export class KnowledgeBaseService {
 
       const kbId = doc.knowledgeBaseId
 
-      if (fs.existsSync(doc.filePath)) fs.unlinkSync(doc.filePath)
+      this.deleteDocumentFile(doc.filePath)
 
       await db.kbVectors.deleteByDocumentId(docId)
       await db.kbInvertedIndex.deleteByDocumentId(docId)
@@ -407,6 +407,33 @@ export class KnowledgeBaseService {
       return { success: true }
     } catch (e: any) {
       return { success: false, error: e.message }
+    }
+  }
+
+  /**
+   * 删除文档对应的物理文件副本。
+   * 只删应用数据目录里的副本（上传时 copyFile 复制而来），不会碰用户原始文件。
+   * - 历史数据的 file_path 可能是相对路径（按进程 CWD 解析会误判不存在）→ 先规范化
+   * - Windows 上 copyFile 会保留源文件只读属性，unlink 会 EPERM → 先去掉只读再删
+   * - 文件删除失败不应阻断删除流程（DB 记录/向量/切片照常清理），仅记日志
+   */
+  private deleteDocumentFile(filePath: string): void {
+    try {
+      let resolved = filePath
+      if (!path.isAbsolute(resolved)) {
+        resolved = path.join(getPathProvider().getDataPath(), '..', resolved)
+      }
+      if (fs.existsSync(resolved)) {
+        try {
+          fs.unlinkSync(resolved)
+        } catch {
+          // 只读属性（如从只读源 copyFile 保留下来）→ 去只读后重试
+          fs.chmodSync(resolved, 0o666)
+          fs.unlinkSync(resolved)
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[KB] 删除文档文件失败（不阻断删除流程）: ${filePath}`, e?.message)
     }
   }
 
@@ -981,7 +1008,9 @@ export class KnowledgeBaseService {
     return {
       maxFileSize: 50 * 1024 * 1024,
       maxFilesPerUpload: 20,
-      supportedTypes: ['docx', 'doc', 'txt', 'md', 'xlsx', 'xls']
+      // 注意：doc（Word 97-2003 二进制格式）解析未实现（mammoth 仅支持 docx），
+      // 不要列在这里 —— 上传收下却处理不了会永远卡 pending。
+      supportedTypes: ['docx', 'txt', 'md', 'xlsx', 'xls']
     }
   }
 
@@ -1145,6 +1174,10 @@ export class KnowledgeBaseService {
 
   private getFileType(name: string): FileType | null {
     // 复用 extract-text 的推断（含 pdf/epub，修复历史遗漏）
-    return inferFileType(name)
+    const type = inferFileType(name)
+    // doc（Word 97-2003）解析未实现：这里拒绝，避免上传后永远卡 pending。
+    // 用户请将 .doc 另存为 .docx 后上传。
+    if (type === 'doc') return null
+    return type
   }
 }

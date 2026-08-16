@@ -320,7 +320,8 @@ async function handleSelectFiles(
 
   const result = await dialog.showOpenDialog(window, {
     title: '选择文档',
-    filters: [{ name: '文档', extensions: ['docx', 'doc', 'txt', 'md', 'xlsx', 'xls'] }],
+    // doc（Word 97-2003）解析未实现，不提供选择；请另存为 docx 后上传
+    filters: [{ name: '文档', extensions: ['docx', 'txt', 'md', 'xlsx', 'xls'] }],
     properties: ['multiSelections', 'openFile'],
   })
 

@@ -15,6 +15,7 @@ import type {
 } from '@shared/types/knowledge-base.types'
 import { KbDocumentEntity } from '../entities/kb-document.entity'
 import { BaseRepository } from '../base-repository'
+import { getCurrentUserId } from '@core/context/user-context'
 
 export class KbDocumentRepository extends BaseRepository<
   KbDocumentEntity,
@@ -94,6 +95,10 @@ export class KbDocumentRepository extends BaseRepository<
   ): Promise<KbDocument[]> {
     if (requests.length === 0) return []
     const now = new Date()
+    // 多租户：事务里的 manager.getRepository 绕过了 scoped API 的 user_id 自动注入，
+    // 必须显式带上当前 ALS userId，否则写入 user_id=NULL，
+    // 查询按 user_id 过滤时整批文档不可见（列表为空）。
+    const userId = getCurrentUserId()
     return this.dataSource.transaction(async manager => {
       const repo = manager.getRepository(KbDocumentEntity)
       const documents: KbDocument[] = []
@@ -102,6 +107,7 @@ export class KbDocumentRepository extends BaseRepository<
         const saved = await repo.save(
           repo.create({
             id,
+            userId,
             knowledgeBaseId: request.knowledgeBaseId,
             name: request.name,
             filePath: request.filePath,
@@ -125,28 +131,45 @@ export class KbDocumentRepository extends BaseRepository<
   }
 
   async updateProgress(id: string, progress: number): Promise<void> {
-    await this.scoped.update({ id } as any, {
+    const res = await this.scoped.update({ id } as any, {
       progress,
       status: 'processing',
       updatedAt: new Date(),
     })
+    this.assertUpdated(id, res, 'updateProgress')
   }
 
   async markCompleted(id: string, chunkCount: number): Promise<void> {
-    await this.scoped.update({ id } as any, {
+    const res = await this.scoped.update({ id } as any, {
       status: 'completed',
       progress: 100,
       chunkCount,
       updatedAt: new Date(),
     })
+    this.assertUpdated(id, res, 'markCompleted')
   }
 
   async markFailed(id: string, errorMessage: string): Promise<void> {
-    await this.scoped.update({ id } as any, {
+    const res = await this.scoped.update({ id } as any, {
       status: 'failed',
       errorMessage,
       updatedAt: new Date(),
     })
+    this.assertUpdated(id, res, 'markFailed')
+  }
+
+  /**
+   * 状态回写行数校验：scoped.update 按 ALS user_id 过滤，若目标行 user_id 不匹配
+   * （历史脏数据 / 写入路径漏注入）会静默更新 0 行 —— 文档状态永远停在 pending，
+   * 且上层只打"处理完成"日志，完全无法察觉。这里显式抛错，让问题第一时间暴露。
+   * 注意：ScopedRepoApi.update 返回的是 affected 行数（number），不是 UpdateResult。
+   */
+  private assertUpdated(id: string, affectedRows: number, op: string): void {
+    if (!affectedRows || affectedRows <= 0) {
+      throw new Error(
+        `[KbDocumentRepository] ${op} 未更新任何行（id=${id}）：目标文档 user_id 与当前用户不匹配或不存在`,
+      )
+    }
   }
 
   async updateMetadata(id: string, metadata: DocumentMetadata): Promise<void> {
