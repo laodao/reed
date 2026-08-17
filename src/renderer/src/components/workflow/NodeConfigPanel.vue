@@ -87,18 +87,23 @@ async function loadDynamicOptions() {
   if (fields.value.some(f => f.type === 'model-pair')) {
     try {
       const resp = await api.providerConfig.list()
-      if (resp.success && Array.isArray(resp.data)) {
-        dynamicOptions.value.providers = (resp.data as any[])
-          .filter(c => c.isEnabled !== false)
+      // 通道返回形状是 { success, configs }（apiKey 已脱敏）
+      const list: any[] = (resp as any).configs ?? []
+      if (resp.success && Array.isArray(list)) {
+        dynamicOptions.value.providers = list
+          .filter(c => c.isEnabled !== false && c.isEnabled !== 0)
           .map(c => ({
             id: c.id,
-            name: c.name,
+            name: c.name || c.shortId || c.id,
             models: (c.models ?? [])
               .filter((m: any) => !m.type || m.type === 'text' || m.type === 'chat')
               .map((m: any) => ({ label: m.name || m.id, value: m.id })),
           }))
+          .filter(p => p.models.length > 0 || true) // 无模型的 Provider 仍可选（引擎有 fallback 链）
       }
-    } catch { /* 列表失败时退化为手填 */ }
+    } catch (e) {
+      console.warn('[WorkflowEditor] Provider 列表加载失败', e)
+    }
   }
   if (sources.has('knowledgeBases')) {
     try {
