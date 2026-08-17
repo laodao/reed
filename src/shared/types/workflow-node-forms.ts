@@ -238,6 +238,36 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     { key: 'maxLength', label: '正文最大长度', type: 'number', group: '参数', help: '超长截断（默认 100000）' },
   ],
 
+  'kb-qa': [
+    { key: 'knowledgeBaseId', label: '知识库', type: 'select-dynamic', source: 'knowledgeBases' },
+    T('question', '问题', { type: 'textarea', templateHint: true, placeholder: '{{start.question}}' }),
+    T('systemPrompt', '系统提示词', {
+      type: 'textarea', group: '生成', collapsible: true,
+      help: '留空使用默认 RAG 提示词（仅依据资料回答，不编造）',
+    }),
+    { key: 'providerConfigId', label: '模型', type: 'model-pair', group: '生成' },
+    { key: 'temperature', label: '温度', type: 'slider', min: 0, max: 2, step: 0.1, group: '生成' },
+    { key: 'topK', label: '返回条数', type: 'number', min: 1, max: 50, group: '检索' },
+    { key: 'threshold', label: '相似度阈值', type: 'slider', min: 0, max: 1, step: 0.05, group: '检索' },
+    { key: 'resultMaxLength', label: '资料最大长度（字符）', type: 'number', group: '检索', help: '超限整条丢弃（默认 8000）' },
+  ],
+  'report': [
+    T('title', '报告标题', { templateHint: true }),
+    T('template', '模板（markdown）', {
+      type: 'textarea', templateHint: true,
+      placeholder: '# {{start.topic}} 报告\n\n{{llm1.content}}',
+      help: '支持 markdown 图片/表格语法；多变量占位拼接为全文',
+    }),
+    T('format', '输出格式', {
+      type: 'select',
+      options: [
+        { label: 'Markdown（双端）', value: 'markdown' },
+        { label: 'Word 文档（桌面端本地文件）', value: 'docx' },
+      ],
+      help: 'PDF 导出：运行详情页预览后打印（双端可用）',
+    }),
+  ],
+
   'app-notify': [
     T('title', '通知标题', { templateHint: true }),
     T('message', '通知内容', { type: 'textarea', templateHint: true }),

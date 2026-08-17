@@ -79,6 +79,7 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
     defaultConfig: { inputs: [] },
     outputSchema: [
       { key: '*', type: 'json', desc: '输入参数按 key 展开（{{start.参数key}}）' },
+
     ],
   },
   {
@@ -476,6 +477,41 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
       { key: 'title', type: 'string', desc: '页面标题' },
       { key: 'text', type: 'string', desc: '正文文本' },
       { key: 'length', type: 'number', desc: '文本长度' },
+    ],
+  },
+  // ==================== A2 扩展 ====================
+  {
+    type: 'kb-qa',
+    label: '知识库问答',
+    description: '检索+生成一体（RAG）：选知识库提问，引用来源一并输出',
+    category: 'ai',
+    icon: 'ChatLineSquare',
+    controlKind: 'task',
+    cancellable: true,
+    ports: [{ kind: 'normal', label: '出', max: 1 }, { kind: 'fail', label: '失败' }],
+    requiredConfigKeys: ['knowledgeBaseId', 'question'],
+    defaultConfig: { knowledgeBaseId: '', question: '{{start.question}}' },
+    outputSchema: [
+      { key: 'answer', type: 'string', desc: '基于知识库的回答' },
+      { key: 'sources', type: 'json', desc: '引用来源 [{documentName, score}]' },
+    ],
+  },
+  {
+    type: 'report',
+    label: '报告生成',
+    description: '模板渲染为 markdown / docx 报告（docx 落盘桌面端）',
+    category: 'general',
+    icon: 'Notebook',
+    controlKind: 'task',
+    cancellable: false,
+    ports: [{ kind: 'normal', label: '出', max: 1 }, { kind: 'fail', label: '失败' }],
+    requiredConfigKeys: ['template'],
+    defaultConfig: { title: '报告', template: '', format: 'markdown' },
+    outputSchema: [
+      { key: 'markdown', type: 'string', desc: '渲染后全文' },
+      { key: 'format', type: 'string', desc: 'markdown / docx' },
+      { key: 'filePath', type: 'string', desc: 'docx 路径（桌面端）' },
+      { key: 'title', type: 'string', desc: '报告标题' },
     ],
   },
 

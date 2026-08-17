@@ -44,6 +44,10 @@
             <el-button text type="warning" size="small" @click="doReviewEdit(row)">修改后批准</el-button>
             <el-button text type="danger" size="small" @click="doReview(row, 'reject')">驳回</el-button>
           </template>
+          <template v-else-if="isReportRow(row)">
+            <el-button text type="primary" size="small" @click="previewReport(row)">预览</el-button>
+            <el-button text size="small" @click="printReport(row)">打印/PDF</el-button>
+          </template>
           <el-button v-else text size="small" @click="showOutput(row)">输出</el-button>
         </template>
       </el-table-column>
@@ -120,6 +124,23 @@ async function doReviewEdit(row: any) {
 
 async function showOutput(row: any) {
   await ElMessageBox.alert(`<pre style="max-height:400px;overflow:auto">${escapeHtml(JSON.stringify(row.output ?? {}, null, 2))}</pre>`, `${row.nodeName} 输出`, { dangerouslyUseHTMLString: true })
+}
+
+function isReportRow(row: any): boolean {
+  return row.nodeType === 'report' && !!row.output?.markdown
+}
+function previewReport(row: any) {
+  const w = window.open('', '_blank')
+  if (!w) { ElMessage.error('弹窗被拦截，请允许弹窗后重试'); return }
+  w.document.write(`<pre style="white-space:pre-wrap;font-family:inherit;padding:24px">${escapeHtml(row.output.markdown)}</pre>`)
+  w.document.close()
+}
+function printReport(row: any) {
+  const w = window.open('', '_blank')
+  if (!w) { ElMessage.error('弹窗被拦截'); return }
+  w.document.write(`<pre style="white-space:pre-wrap;font-family:inherit;padding:24px">${escapeHtml(row.output.markdown)}</pre>`)
+  w.document.close()
+  w.print()
 }
 
 function escapeHtml(s: string) {

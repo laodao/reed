@@ -75,6 +75,8 @@ export type WorkflowNodeType =
   | 'template-transform'
   | 'parameter-extractor'
   | 'web-extract'
+  | 'kb-qa'
+  | 'report'
 
 // ==================== 开始节点输入参数 ====================
 
@@ -331,6 +333,26 @@ export interface WorkflowNodeConfigMap {
     /** 正文最大长度（默认 100_000） */
     maxLength?: number
   }
+
+  'kb-qa': {
+    knowledgeBaseId: string
+    question: string
+    systemPrompt?: string
+    topK?: number
+    threshold?: number
+    /** 检索上下文最大字符（默认 WORKFLOW_DEFAULTS.kbQaContextMaxChars） */
+    resultMaxLength?: number
+    providerConfigId?: string
+    modelId?: string
+    temperature?: number
+  }
+
+  'report': {
+    title: string
+    /** markdown 模板（引擎深解析后即为全文） */
+    template: string
+    format: 'markdown' | 'docx'
+  }
 }
 
 // ==================== 图结构 ====================
@@ -582,6 +604,8 @@ export const WORKFLOW_NODE_TYPES = {
   'template-transform': 'template-transform',
   'parameter-extractor': 'parameter-extractor',
   'web-extract': 'web-extract',
+  'kb-qa': 'kb-qa',
+  'report': 'report',
 } as const satisfies Record<WorkflowNodeType, WorkflowNodeType>
 
 /** 出边类型常量（键=值，与 WorkflowEdgeKind 一一对应） */
@@ -757,6 +781,8 @@ export const WORKFLOW_DEFAULTS = {
   /** 知识库入库等待：轮询间隔 / 总超时 */
   kbIngestPollIntervalMs: 500,
   kbIngestWaitTimeoutMs: 120_000,
+  /** kb-qa 检索上下文最大字符（P4 常量化，禁止 handler 写死） */
+  kbQaContextMaxChars: 8_000,
   /** 图像生成等待：轮询间隔 / 总超时 */
   imagePollIntervalMs: 2_000,
   imagePollTimeoutMs: 300_000,
