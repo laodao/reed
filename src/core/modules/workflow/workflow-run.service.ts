@@ -12,7 +12,7 @@
 import { LOCAL_DEFAULT_USER_ID, runWithUserAsync } from '@core/context/user-context'
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import type { WorkflowGraph, WorkflowRunStatus, WorkflowTriggerType } from '@shared/types/workflow.types'
-import { WORKFLOW_DEFAULTS } from '@shared/types/workflow.types'
+import { WORKFLOW_DEFAULTS, WORKFLOW_RUN_EVENT_CHANNEL } from '@shared/types/workflow.types'
 import { WorkflowEngineService, type ExecuteRunInput, type ReviewDecisionInput } from './engine/workflow-engine.service'
 import type { WorkflowEngineDeps } from './engine/ports'
 import type {
@@ -80,13 +80,29 @@ export class WorkflowRunService {
       (input.triggerType === 'manual' && def.draftGraph) || def.publishedGraph || def.draftGraph
     if (!graph || graph.nodes.length === 0) throw new Error('工作流没有可执行的图')
 
+    // start 输入参数：required 校验 + defaultValue 合并（定时/事件触发无来源时用默认值）
+    const startNode = graph.nodes.find(n => n.type === 'start')
+    const inputDefs = (startNode?.config as { inputs?: Array<{ key: string; required?: boolean; defaultValue?: unknown }> } | undefined)?.inputs ?? []
+    const mergedInputs: Record<string, unknown> = { ...(input.inputs ?? {}) }
+    for (const def2 of inputDefs) {
+      if (mergedInputs[def2.key] === undefined && def2.defaultValue !== undefined) {
+        mergedInputs[def2.key] = def2.defaultValue
+      }
+    }
+    const missing = inputDefs
+      .filter(d => d.required && (mergedInputs[d.key] === undefined || mergedInputs[d.key] === null || String(mergedInputs[d.key]).trim() === ''))
+      .map(d => d.key)
+    if (missing.length > 0) {
+      throw new Error(`缺少必填的输入参数：${missing.join('、')}`)
+    }
+
     const run = await this.deps.runs.create({
       definitionId: input.definitionId,
       definitionVersion: def.publishedVersion,
       graphSnapshot: graph,
       triggerType: input.triggerType,
       triggerInfo: input.triggerInfo,
-      startInputs: input.inputs,
+      startInputs: mergedInputs,
       status: 'pending',
       timeoutAt: new Date(Date.now() + (def.settings?.maxDurationMs ?? WORKFLOW_DEFAULTS.maxDurationMs)),
     })
@@ -359,7 +375,7 @@ export function makeEngineDeps(
     events: {
       emit: event => {
         try {
-          getEventEmitter().emit('wf:run-event', event)
+          getEventEmitter().emit(WORKFLOW_RUN_EVENT_CHANNEL, event)
         } catch (e) {
           console.warn('[WorkflowRunService] 事件推送失败（不影响执行）', e)
         }

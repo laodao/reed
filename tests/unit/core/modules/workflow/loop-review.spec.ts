@@ -203,12 +203,33 @@ describe('人工审核', () => {
     expect(nodeRuns.outputOf('after')).toMatchObject({ text: '章节1' })
   })
 
-  it('修改后批准：editedValues 覆盖 payload 顶层字段', async () => {
+  it('修改后批准：白名单内字段覆盖，白名单外字段被忽略', async () => {
     const { engine, nodeRuns } = makeEngine()
-    await exec2(engine, input(reviewGraph(), { topic: '原文' }))
-    await runWithUser('u1', () => engine.resumeReview('run_1', 'r1', { decision: 'approve_with_changes', editedValues: { content: '改后' } }))
+    // reviewGraph 的 r1 节点补 editableFields 白名单（content 允许改，其他不允许）
+    const graph = reviewGraph()
+    const r1 = graph.nodes.find(nd => nd.id === 'r1')!
+    r1.config = { ...r1.config, editableFields: [{ key: 'content', label: '内容', type: 'string' }] }
+    await exec2(engine, input(graph, { topic: '原文' }))
+    await runWithUser('u1', () =>
+      engine.resumeReview('run_1', 'r1', {
+        decision: 'approve_with_changes',
+        editedValues: { content: '改后', malicious: '注入' },
+      })
+    )
     await waitMs(30)
     expect(nodeRuns.outputOf('after')).toMatchObject({ text: '改后' })
+    // 白名单外字段被过滤
+    expect(nodeRuns.outputOf('r1')!.malicious).toBeUndefined()
+  })
+
+  it('未声明 editableFields 的审核节点：editedValues 全部被忽略（缺省不允许修改）', async () => {
+    const { engine, nodeRuns } = makeEngine()
+    await exec2(engine, input(reviewGraph(), { topic: '原文' }))
+    await runWithUser('u1', () =>
+      engine.resumeReview('run_1', 'r1', { decision: 'approve_with_changes', editedValues: { content: '篡改' } })
+    )
+    await waitMs(30)
+    expect(nodeRuns.outputOf('after')).toMatchObject({ text: '原文' })
   })
 
   it('驳回且无 reject 边 → run failed', async () => {

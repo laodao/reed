@@ -20,6 +20,7 @@ import { LongWritingAIService } from '../../../services/longwriting-ai.service'
 import type { WorkflowNodeContext } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
+import { WORKFLOW_RUN_EVENT_CHANNEL } from '@shared/types/workflow.types'
 
 /** 信号已取消则抛错（可取消节点的检查点） */
 function throwIfAborted(signal: AbortSignal): void {
@@ -532,7 +533,7 @@ const appNotifyNode: WorkflowNodeHandler = {
     }
     // 经引擎事件通道推送（前端 ElNotification 呈现）
     const { getEventEmitter } = await import('../../../interfaces/event.interface')
-    getEventEmitter().emit('wf:run-event', {
+    getEventEmitter().emit(WORKFLOW_RUN_EVENT_CHANNEL, {
       type: 'notify',
       runId: ctx.runId,
       level: cfg.level ?? 'info',

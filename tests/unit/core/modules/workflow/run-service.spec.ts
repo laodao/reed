@@ -243,4 +243,32 @@ describe('WorkflowRunService', () => {
     // 源运行自身挂起占互斥 → 续跑应被拒绝且提示出路
     await expect(runWithUser('u1', () => service.resumeRun(run.id))).rejects.toThrow('请先取消')
   })
+
+  it('start 参数：required 缺失抛错；defaultValue 自动填充', async () => {
+    const { service, runs, definitions } = setup()
+    const graph = g(
+      [
+        n('start', 'start', {
+          inputs: [
+            { key: 'topic', label: '主题', type: 'string', required: true },
+            { key: 'count', label: '数量', type: 'number', defaultValue: 5 },
+          ],
+        }),
+        n('d', 'delay', { durationMs: 5 }),
+        n('end', 'end'),
+      ],
+      [['start', 'd'], ['d', 'end']]
+    )
+    definitions.rows.set('def1', def('def1', graph))
+    // 必填缺失 → 抛错
+    await expect(
+      runWithUser('u1', () => service.startRun({ definitionId: 'def1', triggerType: 'manual' }))
+    ).rejects.toThrow('topic')
+    // 传 topic（count 走默认值）
+    const run = await runWithUser('u1', () =>
+      service.startRun({ definitionId: 'def1', triggerType: 'cron', inputs: { topic: 'AI' } })
+    )
+    expect(run.startInputs).toEqual({ topic: 'AI', count: 5 })
+    void runs
+  })
 })

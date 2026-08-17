@@ -16,6 +16,7 @@ import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { HybridSplitter, EmbeddingService, SplitConfig, DEFAULT_SPLIT_CONFIG, SplitChunk } from '@core/services/chunk-splitter'
 import { extractTextFromFile, inferFileType } from '@core/utils/extract-text'
 import { publishDomainEvent } from '@core/modules/workflow/trigger/domain-event-bus'
+import { WORKFLOW_EVENT_NAMES } from '@shared/types/workflow.types'
 import type {
   KnowledgeBase,
   CreateKnowledgeBaseRequest,
@@ -79,7 +80,7 @@ export class KnowledgeBaseService {
     // 工作流事件触发埋点：文档处理终态（不影响主流程）
     if (status === 'completed' || status === 'failed') {
       publishDomainEvent(
-        status === 'completed' ? 'kb:document-completed' : 'kb:document-failed',
+        status === 'completed' ? WORKFLOW_EVENT_NAMES.kbDocumentCompleted : WORKFLOW_EVENT_NAMES.kbDocumentFailed,
         { documentId, status }
       )
     }

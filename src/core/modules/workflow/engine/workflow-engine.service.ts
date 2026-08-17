@@ -162,6 +162,8 @@ class RunExecution {
   finalStatus?: WorkflowRunStatus
   /** 看门狗触发后置位：不等待在飞任务排空，放行 execute 返回 */
   forceRelease = false
+  /** 看门狗句柄（挂起时清除、续驱时重建——防失控时长对恢复后的运行仍生效） */
+  watchdogHandle: ReturnType<typeof setTimeout> | null = null
   startedAtMs = Date.now()
   settled = makeDeferred()
 
@@ -303,8 +305,8 @@ export class WorkflowEngineService {
     const exec = new RunExecution(input)
     this.activeExecutions.set(input.runId, exec)
 
-    const watchdog = setTimeout(() => void this.fireWatchdog(exec), exec.settings.maxDurationMs)
-    watchdog.unref?.()
+    // 防失控看门狗：最长时长到点强制终态
+    this.armWatchdog(exec)
 
     try {
       const unregistered = input.graph.nodes.filter(n => !this.registry.get(n.type))
@@ -352,8 +354,8 @@ export class WorkflowEngineService {
       }
       return this.statusOf(exec)
     } finally {
-      clearTimeout(watchdog)
       if (!exec.suspended) {
+        this.clearWatchdog(exec)
         exec.maybeSettled()
         this.activeExecutions.delete(input.runId)
       }
@@ -414,11 +416,20 @@ export class WorkflowEngineService {
     if (!node) return
     const payload = state.reviewPayload ?? {}
     const isReject = review.decision === 'reject' || review.decision === 'timeout_reject'
+    // editableFields 白名单：未声明的字段不允许修改（缺省=完全不允许修改）
+    const editableKeys = new Set(
+      ((node.config as { editableFields?: Array<{ key: string }> }).editableFields ?? []).map(
+        f => f.key
+      )
+    )
+    const filteredEdits = review.editedValues
+      ? Object.fromEntries(Object.entries(review.editedValues).filter(([k]) => editableKeys.has(k)))
+      : undefined
     let output: Record<string, unknown>
     if (isReject) {
       output = { rejected: true, payload }
-    } else if (review.editedValues) {
-      output = { ...payload, ...review.editedValues }
+    } else if (filteredEdits && Object.keys(filteredEdits).length > 0) {
+      output = { ...payload, ...filteredEdits }
     } else {
       output = payload
     }
@@ -436,7 +447,7 @@ export class WorkflowEngineService {
       output,
       routeTaken: route,
       waitExpiresAt: null,
-      review: { decision: review.decision, comment: review.comment, editedValues: review.editedValues, decidedAt: review.decidedAt },
+      review: { decision: review.decision, comment: review.comment, editedValues: filteredEdits, decidedAt: review.decidedAt },
       finishedAt: new Date(),
       durationMs: Date.now() - state.startedAtMs,
     })
@@ -457,6 +468,8 @@ export class WorkflowEngineService {
   private async resumeSuspended(exec: RunExecution): Promise<void> {
     if (exec.finished) return // 决策路径已终结运行（如驳回无承接边）
     exec.suspended = false
+    // 重建看门狗：审核等待不计时长，但恢复后的执行重新受防失控上限约束
+    this.armWatchdog(exec)
     await this.deps.runs.patchRun(exec.input.runId, { status: 'running' })
     this.emitRunStatus(exec, 'running')
     exec.settled = makeDeferred()
@@ -566,6 +579,21 @@ export class WorkflowEngineService {
   }
 
   // ==================== 看门狗 ====================
+
+  /** 装备看门狗（幂等：先清旧句柄） */
+  private armWatchdog(exec: RunExecution): void {
+    this.clearWatchdog(exec)
+    const handle = setTimeout(() => void this.fireWatchdog(exec), exec.settings.maxDurationMs)
+    handle.unref?.()
+    exec.watchdogHandle = handle
+  }
+
+  private clearWatchdog(exec: RunExecution): void {
+    if (exec.watchdogHandle !== null) {
+      clearTimeout(exec.watchdogHandle)
+      exec.watchdogHandle = null
+    }
+  }
 
   private async fireWatchdog(exec: RunExecution): Promise<void> {
     if (exec.finished) return
@@ -1357,6 +1385,7 @@ export class WorkflowEngineService {
   ): Promise<void> {
     if (exec.finished) return
     exec.finished = true
+    this.clearWatchdog(exec)
     exec.finalStatus = status
     const stats = exec.stats()
     await this.deps.runs.patchRun(exec.input.runId, {

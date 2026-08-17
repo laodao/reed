@@ -5,8 +5,7 @@
  *              剩余 AI 节点（kb/web-search/translate/image/voice/lw）在下一批补齐。
  */
 
-import { getProviderConfig } from '../../episode-production/narrative/ai/_helpers'
-import { createProvider } from '../../../providers'
+import { callAIStream } from '../../../services/ai-call'
 import type { WorkflowNodeContext } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
@@ -155,54 +154,21 @@ const llmChatNode: WorkflowNodeHandler = {
       maxTokens?: number
       jsonMode?: boolean
     }
-    const providerInfo = await getProviderConfig(cfg.providerConfigId)
-    if (!providerInfo) {
-      return { status: 'failed', error: '未找到可用的 AI Provider 配置', retryable: false }
-    }
-    const provider = createProvider(
-      providerInfo.config.templateId,
-      {
-        apiKey: providerInfo.apiKey,
-        baseUrl: providerInfo.config.baseUrl,
-        defaultModel: cfg.modelId,
-      },
-      providerInfo.template,
-      providerInfo.config
-    )
-    let content = ''
-    let usage: { promptTokens: number; completionTokens: number } | undefined
-    try {
-      content = await provider.chatStream(
-        {
-          messages: [
-            ...(cfg.systemPrompt
-              ? [{ role: 'system' as const, content: cfg.systemPrompt }]
-              : []),
-            { role: 'user' as const, content: String(cfg.prompt) },
-          ],
-        },
-        event => {
-          if (event.type === 'delta' && event.content) {
-            content += event.content
-            ctx.emitProgress(-1, content.slice(-50))
-          }
-          if (event.type === 'done' && event.usage) {
-            usage = {
-              promptTokens: event.usage.promptTokens,
-              completionTokens: event.usage.completionTokens,
-            }
-          }
-        },
-        ctx.signal,
-        {
-          ...(cfg.temperature !== undefined ? { temperature: cfg.temperature } : {}),
-          ...(cfg.maxTokens !== undefined ? { maxTokens: cfg.maxTokens } : {}),
-        }
-      )
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      return { status: 'failed', error: `LLM 调用失败: ${msg}` }
-    }
+    // 公共 AI 调用层：统一 modelId fallback 链（显式→config 默认→用户启用→模板内置）
+    // + AbortSignal 真取消 + 增量进度回调
+    const { content, usage } = await callAIStream({
+      prompt: String(cfg.prompt),
+      systemPrompt: cfg.systemPrompt,
+      providerConfigId: cfg.providerConfigId,
+      modelId: cfg.modelId,
+      temperature: cfg.temperature,
+      maxTokens: cfg.maxTokens,
+      signal: ctx.signal,
+      onDelta: delta => ctx.emitProgress(-1, delta.slice(-50)),
+    }).catch(e => {
+      throw new Error(`LLM 调用失败: ${e instanceof Error ? e.message : String(e)}`)
+    })
+
     const output: Record<string, unknown> = { content }
     if (cfg.jsonMode) {
       try {

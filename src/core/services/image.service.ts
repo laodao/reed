@@ -35,6 +35,7 @@ import type {
 // 全局 logger（spec 2026-05-10 e2e 阶段补充：用 createLogger 取代散落的本地 console wrapper）
 import { createLogger } from '@core/utils/logger'
 import { publishDomainEvent } from '@core/modules/workflow/trigger/domain-event-bus'
+import { WORKFLOW_EVENT_NAMES } from '@shared/types/workflow.types'
 const logger = createLogger('ImageService')
 const aiLogger = createLogger('ai-call')
 
@@ -1223,7 +1224,7 @@ export class ImageService {
     getEventEmitter().emit('image:generation-event', event)
     // 工作流事件触发埋点：图像生成完成（不影响主流程）
     if (event.type === 'generation-completed') {
-      publishDomainEvent('image:generation-completed', { taskId: event.taskId })
+      publishDomainEvent(WORKFLOW_EVENT_NAMES.imageGenerationCompleted, { taskId: event.taskId })
     }
   }
 }

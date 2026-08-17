@@ -22,6 +22,7 @@ import type {
 } from '@shared/types/translation.types'
 import type { ChatContext } from '@shared/types'
 import { publishDomainEvent } from '@core/modules/workflow/trigger/domain-event-bus'
+import { WORKFLOW_EVENT_NAMES } from '@shared/types/workflow.types'
 
 /**
  * 翻译提供商
@@ -374,7 +375,7 @@ export class TranslationService {
         targetFile: targetPath
       })
       // 工作流事件触发埋点（不影响主流程）
-      publishDomainEvent('translation:completed', { translationId: recordId })
+      publishDomainEvent(WORKFLOW_EVENT_NAMES.translationCompleted, { translationId: recordId })
     } catch (error: any) {
       // 更新失败状态
       if (repo) {
@@ -389,7 +390,7 @@ export class TranslationService {
         error: error.message
       })
       // 工作流事件触发埋点（不影响主流程）
-      publishDomainEvent('translation:failed', { translationId: recordId })
+      publishDomainEvent(WORKFLOW_EVENT_NAMES.translationFailed, { translationId: recordId })
     }
   }
 

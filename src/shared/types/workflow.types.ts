@@ -519,6 +519,20 @@ export function decodeWorkflowHandleId(handleId: string): {
 
 // ==================== 领域事件目录（事件触发器可选源） ====================
 
+/** 运行事件通道名（引擎→前端单通道；双端共用，禁止裸字符串） */
+export const WORKFLOW_RUN_EVENT_CHANNEL = 'wf:run-event'
+
+/** 领域事件名常量（埋点处与触发目录同源引用，防拼写漂移静默失配） */
+export const WORKFLOW_EVENT_NAMES = {
+  kbDocumentCompleted: 'kb:document-completed',
+  kbDocumentFailed: 'kb:document-failed',
+  imageGenerationCompleted: 'image:generation-completed',
+  translationCompleted: 'translation:completed',
+  translationFailed: 'translation:failed',
+  voiceTtsCompleted: 'voice:tts-completed',
+  voiceSttCompleted: 'voice:stt-completed',
+} as const
+
 /** 可触发工作流的领域事件（进程内事件总线发布；新增埋点时同步维护此目录） */
 export const WORKFLOW_TRIGGERABLE_EVENTS: ReadonlyArray<{
   name: string
@@ -526,37 +540,37 @@ export const WORKFLOW_TRIGGERABLE_EVENTS: ReadonlyArray<{
   payloadKeys: string[]
 }> = [
   {
-    name: 'kb:document-completed',
+    name: WORKFLOW_EVENT_NAMES.kbDocumentCompleted,
     label: '知识库文档入库完成',
     payloadKeys: ['documentId', 'status'],
   },
   {
-    name: 'kb:document-failed',
+    name: WORKFLOW_EVENT_NAMES.kbDocumentFailed,
     label: '知识库文档入库失败',
     payloadKeys: ['documentId', 'status'],
   },
   {
-    name: 'image:generation-completed',
+    name: WORKFLOW_EVENT_NAMES.imageGenerationCompleted,
     label: '图像生成完成',
     payloadKeys: ['taskId'],
   },
   {
-    name: 'translation:completed',
+    name: WORKFLOW_EVENT_NAMES.translationCompleted,
     label: '翻译完成',
     payloadKeys: ['translationId'],
   },
   {
-    name: 'translation:failed',
+    name: WORKFLOW_EVENT_NAMES.translationFailed,
     label: '翻译失败',
     payloadKeys: ['translationId'],
   },
   {
-    name: 'voice:tts-completed',
+    name: WORKFLOW_EVENT_NAMES.voiceTtsCompleted,
     label: '语音合成完成',
     payloadKeys: ['recordId', 'text'],
   },
   {
-    name: 'voice:stt-completed',
+    name: WORKFLOW_EVENT_NAMES.voiceSttCompleted,
     label: '语音识别完成',
     payloadKeys: ['recordId', 'text'],
   },

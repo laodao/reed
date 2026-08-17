@@ -18,6 +18,7 @@ import { DashScopeTTSProvider } from '@core/voice-providers/dashscope-tts-provid
 import { DashScopeSTTProvider } from '@core/voice-providers/dashscope-stt-provider'
 import { DashScopeCosyVoiceTTSProvider } from '@core/voice-providers/dashscope-cosyvoice-tts-provider'
 import { publishDomainEvent } from '@core/modules/workflow/trigger/domain-event-bus'
+import { WORKFLOW_EVENT_NAMES } from '@shared/types/workflow.types'
 import type {
   TTSRequest,
   TTSResponse,
@@ -342,7 +343,7 @@ export class VoiceService {
         audioPath: audioUrl
       })
       // 工作流事件触发埋点（不影响主流程）
-      publishDomainEvent('voice:tts-completed', { recordId: record.id })
+      publishDomainEvent(WORKFLOW_EVENT_NAMES.voiceTtsCompleted, { recordId: record.id })
 
       return {
         success: true,
@@ -464,7 +465,7 @@ export class VoiceService {
         text: recognizedText
       })
       // 工作流事件触发埋点（不影响主流程）
-      publishDomainEvent('voice:stt-completed', { recordId: record.id, text: recognizedText })
+      publishDomainEvent(WORKFLOW_EVENT_NAMES.voiceSttCompleted, { recordId: record.id, text: recognizedText })
 
       return {
         success: true,
