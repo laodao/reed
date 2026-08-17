@@ -148,6 +148,8 @@ const navigateTo = (path: string) => {
 
 // 路由路径到标题的映射
 const pathTitleMap: Record<string, string> = {
+  '/workflow': '工作流',
+  '/workflow/run/:runId': '运行详情',
   '/': '首页',
   '/chat': 'AI 对话',
   '/image': '图像生成',

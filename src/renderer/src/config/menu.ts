@@ -121,6 +121,13 @@ export const mainMenuItems: MenuItem[] = [
     icon: markRaw(FolderOpened)
   },
   {
+    path: '/workflow',
+    label: '工作流',
+    description: '可视化流程编排与自动化执行',
+    icon: markRaw(FolderOpened),
+    hidden: true // 片8 画布编辑器完成后放开
+  },
+  {
     path: '/diary',
     label: '日记',
     description: '智能日记记录与管理',

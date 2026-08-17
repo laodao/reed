@@ -97,6 +97,18 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '声音设计' },
   },
   {
+    path: '/workflow',
+    name: 'WorkflowList',
+    component: () => import('@/views/workflow/WorkflowList.vue'),
+    meta: { title: '工作流' },
+  },
+  {
+    path: '/workflow/run/:runId',
+    name: 'WorkflowRunDetail',
+    component: () => import('@/views/workflow/WorkflowRunDetail.vue'),
+    meta: { title: '运行详情' },
+  },
+  {
     path: '/knowledge-base',
     name: 'KnowledgeBase',
     component: () => import('@/views/KnowledgeBase.vue'),

@@ -118,6 +118,7 @@ import { registerExportHandlers } from './ipc/handlers/export.handler'
 import { registerPortraitHandlers } from './ipc/handlers/portrait.handler'
 import { registerSearchEngineHandlers } from './ipc/handlers/search-engine.handler'
 import { registerLongWritingHandlers } from './ipc/handlers/longwriting.handler'
+import { registerWorkflowHandlers } from './ipc/handlers/workflow.handler'
 import { registerDiaryHandlers } from './ipc/handlers/diary.handler'
 import { registerEpisodeProductionHandlers } from './ipc/handlers/episode-production'
 import { registerOSSHandlers } from './ipc/handlers/oss.handler'
@@ -341,6 +342,7 @@ function initIpcHandlers(): void {
   registerPortraitHandlers()
   registerSearchEngineHandlers()
   registerLongWritingHandlers()
+  registerWorkflowHandlers()
   registerDiaryHandlers()
   registerEpisodeProductionHandlers()
   registerOSSHandlers()

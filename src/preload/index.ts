@@ -664,6 +664,51 @@ const electronAPI = {
   },
 
   // 文件对话框
+  workflow: {
+    // ==================== 定义 ====================
+    listDefinitions: (p: { keyword?: string; page: number; pageSize: number }) =>
+      ipcRenderer.invoke('wf:list-definitions', p),
+    getDefinition: (id: string) => ipcRenderer.invoke('wf:get-definition', { id }),
+    createDefinition: (p: { name: string; description?: string }) =>
+      ipcRenderer.invoke('wf:create-definition', p),
+    updateDefinition: (id: string, patch: Record<string, unknown>) =>
+      ipcRenderer.invoke('wf:update-definition', { id, patch }),
+    saveDraft: (id: string, graph: unknown) => ipcRenderer.invoke('wf:save-draft', { id, graph }),
+    deleteDefinition: (id: string) => ipcRenderer.invoke('wf:delete-definition', { id }),
+    publishDefinition: (p: { id: string; triggers?: unknown[]; settings?: unknown }) =>
+      ipcRenderer.invoke('wf:publish-definition', p),
+    validateGraph: (graph: unknown) => ipcRenderer.invoke('wf:validate-graph', { graph }),
+    validateTriggers: (triggers: unknown[]) => ipcRenderer.invoke('wf:validate-triggers', { triggers }),
+    exportDefinition: (id: string) => ipcRenderer.invoke('wf:export-definition', { id }),
+    importDefinition: (p: { content: string; duplicatePolicy?: 'copy' | 'overwrite' }) =>
+      ipcRenderer.invoke('wf:import-definition', p),
+    // ==================== 运行 ====================
+    startRun: (p: { definitionId: string; inputs?: Record<string, unknown> }) =>
+      ipcRenderer.invoke('wf:start-run', p),
+    cancelRun: (runId: string) => ipcRenderer.invoke('wf:cancel-run', { runId }),
+    resumeRun: (p: { runId: string; forceRerunNodeIds?: string[] }) => ipcRenderer.invoke('wf:resume-run', p),
+    reviewDecide: (p: {
+      runId: string
+      nodeId: string
+      decision: 'approve' | 'approve_with_changes' | 'reject'
+      comment?: string
+      editedValues?: Record<string, unknown>
+    }) => ipcRenderer.invoke('wf:review-decide', p),
+    getRun: (runId: string) => ipcRenderer.invoke('wf:get-run', { runId }),
+    listRuns: (p: { definitionId?: string; status?: string; page: number; pageSize: number }) =>
+      ipcRenderer.invoke('wf:list-runs', p),
+    deleteRun: (runId: string) => ipcRenderer.invoke('wf:delete-run', { runId }),
+    getPendingReviews: () => ipcRenderer.invoke('wf:get-pending-reviews'),
+    // ==================== 触发器 ====================
+    triggerPreview: (expression: string) => ipcRenderer.invoke('wf:trigger-preview', { expression }),
+    // ==================== 实时事件（返回取消订阅函数） ====================
+    onRunEvent: (callback: (data: any) => void) => {
+      const handler = (_event: any, data: any) => callback(data)
+      ipcRenderer.on('wf:run-event', handler)
+      return () => ipcRenderer.removeListener('wf:run-event', handler)
+    },
+  },
+
   file: {
     // 打开文件选择对话框
     openDialog: (options?: {
