@@ -334,10 +334,10 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
       { kind: 'fail', label: '失败' },
     ],
     requiredConfigKeys: ['text'],
-    defaultConfig: { text: '{{start.text}}' },
+    defaultConfig: { text: '{{start.text}}', voiceId: '' },
     outputSchema: [
-      { key: 'audioPath', type: 'string', desc: '音频文件路径' },
-      { key: 'audioBase64', type: 'string', desc: '音频 base64（供 STT 节点串联）' },
+      { key: 'audioPath', type: 'string', desc: '音频文件路径（供 STT 节点串联）' },
+      { key: 'durationMs', type: 'number', desc: '音频时长（毫秒）' },
     ],
   },
   {

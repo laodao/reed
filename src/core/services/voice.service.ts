@@ -17,6 +17,7 @@ import { toAssetUrl, toRelativeAssetPath, resolveAssetPath } from '@core/utils/a
 import { DashScopeTTSProvider } from '@core/voice-providers/dashscope-tts-provider'
 import { DashScopeSTTProvider } from '@core/voice-providers/dashscope-stt-provider'
 import { DashScopeCosyVoiceTTSProvider } from '@core/voice-providers/dashscope-cosyvoice-tts-provider'
+import { publishDomainEvent } from '@core/modules/workflow/trigger/domain-event-bus'
 import type {
   TTSRequest,
   TTSResponse,
@@ -340,6 +341,8 @@ export class VoiceService {
         recordId: record.id,
         audioPath: audioUrl
       })
+      // 工作流事件触发埋点（不影响主流程）
+      publishDomainEvent('voice:tts-completed', { recordId: record.id })
 
       return {
         success: true,
@@ -460,6 +463,8 @@ export class VoiceService {
         recordId: record.id,
         text: recognizedText
       })
+      // 工作流事件触发埋点（不影响主流程）
+      publishDomainEvent('voice:stt-completed', { recordId: record.id, text: recognizedText })
 
       return {
         success: true,

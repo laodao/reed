@@ -15,6 +15,7 @@ import { getPathProvider } from '@core/interfaces/path.interface'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { HybridSplitter, EmbeddingService, SplitConfig, DEFAULT_SPLIT_CONFIG, SplitChunk } from '@core/services/chunk-splitter'
 import { extractTextFromFile, inferFileType } from '@core/utils/extract-text'
+import { publishDomainEvent } from '@core/modules/workflow/trigger/domain-event-bus'
 import type {
   KnowledgeBase,
   CreateKnowledgeBaseRequest,
@@ -75,6 +76,13 @@ export class KnowledgeBaseService {
 
   private emitStatus(documentId: string, status: string, chunkCount?: number, errorMessage?: string): void {
     getEventEmitter().emit(KB_EVENTS.DOCUMENT_STATUS, { documentId, status, chunkCount, errorMessage })
+    // 工作流事件触发埋点：文档处理终态（不影响主流程）
+    if (status === 'completed' || status === 'failed') {
+      publishDomainEvent(
+        status === 'completed' ? 'kb:document-completed' : 'kb:document-failed',
+        { documentId, status }
+      )
+    }
   }
 
   private async emitKnowledgeBaseStats(kbId: string): Promise<void> {

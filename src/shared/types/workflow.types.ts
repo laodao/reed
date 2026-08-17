@@ -255,7 +255,7 @@ export interface WorkflowNodeConfigMap {
   }
 
   stt: {
-    /** 音频来源模板：base64 字符串或上游输出引用，如 "{{tts1.audioBase64}}" */
+    /** 音频来源模板：文件路径或 base64 数据，如 "{{tts1.audioPath}}" */
     audio: string
     language?: string
     providerConfigId?: string
@@ -528,17 +528,17 @@ export const WORKFLOW_TRIGGERABLE_EVENTS: ReadonlyArray<{
   {
     name: 'kb:document-completed',
     label: '知识库文档入库完成',
-    payloadKeys: ['documentId', 'knowledgeBaseId', 'title'],
+    payloadKeys: ['documentId', 'status'],
   },
   {
     name: 'kb:document-failed',
     label: '知识库文档入库失败',
-    payloadKeys: ['documentId', 'knowledgeBaseId', 'title'],
+    payloadKeys: ['documentId', 'status'],
   },
   {
     name: 'image:generation-completed',
     label: '图像生成完成',
-    payloadKeys: ['taskId', 'prompt'],
+    payloadKeys: ['taskId'],
   },
   {
     name: 'translation:completed',

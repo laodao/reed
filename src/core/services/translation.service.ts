@@ -21,6 +21,7 @@ import type {
   LanguageCode
 } from '@shared/types/translation.types'
 import type { ChatContext } from '@shared/types'
+import { publishDomainEvent } from '@core/modules/workflow/trigger/domain-event-bus'
 
 /**
  * 翻译提供商
@@ -372,6 +373,8 @@ export class TranslationService {
         translationId: recordId,
         targetFile: targetPath
       })
+      // 工作流事件触发埋点（不影响主流程）
+      publishDomainEvent('translation:completed', { translationId: recordId })
     } catch (error: any) {
       // 更新失败状态
       if (repo) {
@@ -385,6 +388,8 @@ export class TranslationService {
         translationId: recordId,
         error: error.message
       })
+      // 工作流事件触发埋点（不影响主流程）
+      publishDomainEvent('translation:failed', { translationId: recordId })
     }
   }
 
