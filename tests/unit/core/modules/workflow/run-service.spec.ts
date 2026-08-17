@@ -1,0 +1,232 @@
+/**
+ * 工作流运行服务测试：互斥跳过 / 启动到终态 / 审核委托 / 续跑
+ * @module tests/workflow/run-service
+ */
+import { describe, it, expect } from 'vitest'
+import { WorkflowRunService } from '@core/modules/workflow/workflow-run.service'
+import { WorkflowEngineService } from '@core/modules/workflow/engine/workflow-engine.service'
+import { createNodeRegistry } from '@core/modules/workflow/engine/node-registry'
+import { CONTROL_NODE_HANDLERS } from '@core/modules/workflow/nodes/control-nodes'
+import { TASK_NODE_HANDLERS } from '@core/modules/workflow/nodes/task-nodes'
+import type { WorkflowGraph, WorkflowNode } from '@shared/types/workflow.types'
+import type { WorkflowNodeHandler } from '@core/modules/workflow/engine/node-handler'
+import { runWithUser } from '@core/context/user-context'
+
+// ---- 内存假仓库（结构与真仓库公共方法对齐的最小子集） ----
+
+class MemRuns {
+  rows: Map<string, any> = new Map()
+  seq = 0
+  async create(i: any) {
+    const id = `r${++this.seq}`
+    this.rows.set(id, { id, userId: 'u1', status: i.status ?? 'pending', ...i, createdAt: new Date() })
+    return this.rows.get(id)
+  }
+  async getById(id: string) {
+    return this.rows.get(id) ?? null
+  }
+  async update(id: string, patch: any) {
+    const row = this.rows.get(id)
+    if (!row) return null
+    Object.assign(row, patch)
+    return row
+  }
+  async findMutexHolders(defId: string) {
+    return [...this.rows.values()].filter(
+      (r: any) => r.definitionId === defId && ['pending', 'running', 'waiting_review'].includes(r.status)
+    )
+  }
+  async scanBootRecoverable() {
+    return [...this.rows.values()].filter((r: any) =>
+      ['pending', 'running', 'waiting_review'].includes(r.status)
+    )
+  }
+  async listByDefinition(defId: string, p: any) {
+    const items = [...this.rows.values()].filter((r: any) => r.definitionId === defId)
+    return { items: items.slice((p.page - 1) * p.pageSize, p.page * p.pageSize), total: items.length }
+  }
+  async deleteById(id: string) {
+    return this.rows.delete(id) ? 1 : 0
+  }
+}
+
+class MemNodeRuns {
+  rows: any[] = []
+  async getByRun(runId: string) {
+    return this.rows.filter(r => r.runId === runId)
+  }
+  async findSucceededWithOutput(runId: string) {
+    return this.rows.filter(r => r.runId === runId && r.status === 'succeeded' && r.output)
+  }
+  async findWaitingReview() {
+    return this.rows.filter(r => r.status === 'waiting_review')
+  }
+  async deleteByRun(runId: string) {
+    const n = this.rows.filter(r => r.runId === runId).length
+    this.rows = this.rows.filter(r => r.runId !== runId)
+    return n
+  }
+  // 引擎端口适配会调 start/update —— 由 EnginePortSpy 转发到内存行
+  async start(i: any) {
+    this.rows.push({ ...i, status: 'running' })
+  }
+  async update(runId: string, nodeId: string, iter: number, patch: any) {
+    const row = this.rows.find(r => r.runId === runId && r.nodeId === nodeId && r.iterationIndex === iter)
+    if (row) Object.assign(row, patch)
+  }
+}
+
+class MemDefinitions {
+  rows: Map<string, any> = new Map()
+  async getById(id: string) {
+    return this.rows.get(id) ?? null
+  }
+  async update(id: string, patch: any) {
+    const row = this.rows.get(id)
+    if (!row) return null
+    Object.assign(row, patch)
+    return row
+  }
+}
+
+// ---- 装配 ----
+
+const boomOnce: WorkflowNodeHandler = {
+  type: 'boom' as any,
+  controlKind: 'task',
+  cancellable: false,
+  outputSchema: [],
+  validateConfig: () => [],
+  async execute() {
+    return { status: 'failed', error: '必失败', retryable: false }
+  },
+}
+
+function setup(extraHandlers: WorkflowNodeHandler[] = []) {
+  const runs = new MemRuns()
+  const nodeRuns = new MemNodeRuns()
+  const definitions = new MemDefinitions()
+  const events: any[] = []
+  const registry = createNodeRegistry([...CONTROL_NODE_HANDLERS, ...TASK_NODE_HANDLERS, boomOnce, ...extraHandlers])
+  const engine = new WorkflowEngineService(
+    {
+      runs: { patchRun: (id, p) => runs.update(id, p).then(() => undefined) },
+      nodeRuns: {
+        startNode: i => nodeRuns.start(i),
+        patchNode: (r, n, it, p) => nodeRuns.update(r, n, it, p),
+      },
+      events: { emit: (e: any) => events.push(e) },
+    },
+    registry
+  )
+  const service = new WorkflowRunService({
+    runs: runs as any,
+    nodeRuns: nodeRuns as any,
+    definitions: definitions as any,
+    engine,
+  })
+  return { service, runs, nodeRuns, definitions, engine, events }
+}
+
+let seq = 0
+function n(id: string, type: string, config: Record<string, unknown> = {}): WorkflowNode {
+  return { id, type, name: id, position: { x: 0, y: 0 }, config: config as any }
+}
+function g(nodes: WorkflowNode[], edges: Array<[string, string, string?]>): WorkflowGraph {
+  return {
+    version: 1,
+    nodes,
+    edges: edges.map(([s, t, k]) => ({ id: `e${seq++}`, sourceNodeId: s, targetNodeId: t, kind: (k ?? 'normal') as any })),
+  }
+}
+const wait = (ms: number) => new Promise(r => setTimeout(r, ms))
+
+function def(id: string, graph: WorkflowGraph, published = false) {
+  return {
+    id,
+    name: '测试工作流',
+    description: null,
+    category: null,
+    draftGraph: graph,
+    publishedGraph: published ? graph : null,
+    publishedVersion: published ? 1 : 0,
+    publishedAt: null,
+    triggers: [],
+    settings: null,
+    nextFireAt: null,
+    lastFireAt: null,
+    lastRunAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }
+}
+
+describe('WorkflowRunService', () => {
+  it('startRun：跑通到终态，运行记录 succeeded', async () => {
+    const { service, runs, definitions } = setup()
+    const graph = g(
+      [n('start', 'start'), n('d', 'delay', { durationMs: 5 }), n('end', 'end')],
+      [['start', 'd'], ['d', 'end']]
+    )
+    definitions.rows.set('def1', def('def1', graph))
+    const run = await runWithUser('u1', () => service.startRun({ definitionId: 'def1', triggerType: 'manual' }))
+    await wait(80)
+    // startRun 返回启动时刻快照：快任务可能已完成
+    expect(['pending', 'running', 'succeeded']).toContain(run.status)
+    const final = await runs.getById(run.id)
+    expect(final.status).toBe('succeeded')
+  })
+
+  it('互斥：同工作流运行中 → 新启动记 skipped（含原因）', async () => {
+    const { service, runs, definitions } = setup()
+    const graph = g(
+      [n('start', 'start'), n('d', 'delay', { durationMs: 200 }), n('end', 'end')],
+      [['start', 'd'], ['d', 'end']]
+    )
+    definitions.rows.set('def1', def('def1', graph))
+    await runWithUser('u1', () => service.startRun({ definitionId: 'def1', triggerType: 'manual' }))
+    await wait(20)
+    const second = await runWithUser('u1', () => service.startRun({ definitionId: 'def1', triggerType: 'cron' }))
+    expect(second.status).toBe('skipped')
+    expect(second.skipReason).toContain('运行中')
+  })
+
+  it('审核：human-review 挂起 → reviewDecide 批准 → 终态 succeeded', async () => {
+    const { service, runs, definitions } = setup()
+    const graph = g(
+      [n('start', 'start'), n('r1', 'human-review', { payload: '请审阅' }), n('end', 'end')],
+      [['start', 'r1'], ['r1', 'end', 'approve']]
+    )
+    definitions.rows.set('def1', def('def1', graph))
+    const run = await runWithUser('u1', () => service.startRun({ definitionId: 'def1', triggerType: 'manual' }))
+    await wait(50)
+    expect((await runs.getById(run.id)).status).toBe('waiting_review')
+    const ok = await runWithUser('u1', () => service.reviewDecide(run.id, 'r1', { decision: 'approve' }, 'u1'))
+    expect(ok.success).toBe(true)
+    await wait(50)
+    expect((await runs.getById(run.id)).status).toBe('succeeded')
+  })
+
+  it('续跑：新运行 resumed_from_run_id 链接源运行，triggerType=resume', async () => {
+    const { service, runs, definitions } = setup()
+    const graph = g(
+      [n('start', 'start'), n('d', 'delay', { durationMs: 5 }), n('bad', 'boom'), n('end', 'end')],
+      [['start', 'd'], ['d', 'bad'], ['bad', 'end']]
+    )
+    definitions.rows.set('def1', def('def1', graph))
+    const first = await runWithUser('u1', () => service.startRun({ definitionId: 'def1', triggerType: 'manual' }))
+    await wait(60)
+    expect((await runs.getById(first.id)).status).toBe('failed')
+    const resumed = await runWithUser('u1', () => service.resumeRun(first.id))
+    expect(resumed.resumedFromRunId).toBe(first.id)
+    expect(resumed.triggerType).toBe('resume')
+  })
+
+  it('boot 恢复：running 未超时 → interrupted；waiting_review 保持', async () => {
+    const { service, runs } = setup()
+    await runs.create({ definitionId: 'd1', definitionVersion: 1, graphSnapshot: g([], []), triggerType: 'manual', status: 'running', timeoutAt: new Date(Date.now() + 60000) })
+    await runs.create({ definitionId: 'd2', definitionVersion: 1, graphSnapshot: g([], []), triggerType: 'manual', status: 'waiting_review', timeoutAt: null })
+    const result = await service.recoverOnBoot()
+    expect(result).toEqual({ timedOut: 0, interrupted: 1, keptWaiting: 1 })
+  })
+})

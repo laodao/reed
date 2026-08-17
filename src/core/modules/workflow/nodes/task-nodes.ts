@@ -1,0 +1,271 @@
+/**
+ * 任务节点（首批：delay / http-request / llm-chat / human-review）
+ * @module core/modules/workflow/nodes/task-nodes
+ * @description config 由引擎统一深解析（实参）；handler 不再解析 config 字段。
+ *              剩余 AI 节点（kb/web-search/translate/image/voice/lw）在下一批补齐。
+ */
+
+import { getProviderConfig } from '../../episode-production/narrative/ai/_helpers'
+import { createProvider } from '../../../providers'
+import type { WorkflowNodeContext } from '../engine/node-handler'
+import type { WorkflowNodeHandler } from '../engine/node-handler'
+import { stringifyValue } from '../engine/variable-resolver'
+
+/** signal 感知的 sleep */
+function sleepAbortable(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(finish, ms)
+    function finish() {
+      clearTimeout(t)
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }
+    function onAbort() {
+      clearTimeout(t)
+      reject(new Error('已取消'))
+    }
+    if (signal.aborted) onAbort()
+    else signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+// ==================== 延时 ====================
+
+const delayNode: WorkflowNodeHandler = {
+  type: 'delay',
+  controlKind: 'task',
+  cancellable: true,
+  outputSchema: [{ key: 'waitedMs', type: 'number', desc: '实际等待毫秒' }],
+  validateConfig(config) {
+    const v = (config as { durationMs?: unknown }).durationMs
+    const n = Number(v)
+    if (v === undefined || v === null || Number.isNaN(n) || n < 0) {
+      return ['durationMs 必须是非负数字（模板解析后）']
+    }
+    return []
+  },
+  async execute(ctx: WorkflowNodeContext) {
+    const ms = Number((ctx.config as { durationMs: number }).durationMs)
+    const t0 = Date.now()
+    await sleepAbortable(ms, ctx.signal)
+    return { status: 'succeeded', output: { waitedMs: Date.now() - t0 } }
+  },
+}
+
+// ==================== HTTP 请求 ====================
+
+const httpRequestNode: WorkflowNodeHandler = {
+  type: 'http-request',
+  controlKind: 'task',
+  cancellable: true,
+  outputSchema: [
+    { key: 'status', type: 'number', desc: 'HTTP 状态码' },
+    { key: 'body', type: 'string', desc: '响应体文本' },
+    { key: 'json', type: 'json', desc: 'JSON 响应解析结果' },
+    { key: 'headers', type: 'json', desc: '响应头' },
+  ],
+  validateConfig(config) {
+    const cfg = config as { method?: string; url?: string; timeoutMs?: number }
+    const errors: string[] = []
+    if (!cfg.method || !['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(cfg.method)) {
+      errors.push('method 必须是 GET/POST/PUT/PATCH/DELETE')
+    }
+    if (!cfg.url || !/^https?:\/\//.test(String(cfg.url))) {
+      errors.push('url 必须是 http(s):// 开头的完整地址')
+    }
+    if (cfg.timeoutMs !== undefined && (!Number.isFinite(cfg.timeoutMs) || cfg.timeoutMs <= 0)) {
+      errors.push('timeoutMs 必须是正数')
+    }
+    return errors
+  },
+  async execute(ctx: WorkflowNodeContext) {
+    const cfg = ctx.config as {
+      method: string
+      url: string
+      headers?: Array<{ key: string; value: string }>
+      body?: string
+      timeoutMs?: number
+    }
+    const timeout = Math.min(cfg.timeoutMs ?? 30_000, 300_000)
+    // 运行取消信号 + 超时信号合并
+    const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(timeout)])
+    let res: Response
+    try {
+      res = await fetch(cfg.url, {
+        method: cfg.method,
+        headers: Object.fromEntries((cfg.headers ?? []).map(h => [h.key, h.value])),
+        body: cfg.body && cfg.method !== 'GET' ? cfg.body : undefined,
+        signal,
+      })
+    } catch (e) {
+      return { status: 'failed', error: `请求失败: ${e instanceof Error ? e.message : String(e)}` }
+    }
+    const body = await res.text()
+    let json: unknown
+    try {
+      json = JSON.parse(body)
+    } catch {
+      json = undefined
+    }
+    const headers: Record<string, string> = {}
+    res.headers.forEach((v, k) => {
+      headers[k] = v
+    })
+    return {
+      status: 'succeeded',
+      output: {
+        status: res.status,
+        body,
+        ...(json !== undefined ? { json } : {}),
+        headers,
+      },
+    }
+  },
+}
+
+// ==================== LLM 对话 ====================
+
+const llmChatNode: WorkflowNodeHandler = {
+  type: 'llm-chat',
+  controlKind: 'task',
+  cancellable: true,
+  outputSchema: [
+    { key: 'content', type: 'string', desc: '模型回复全文' },
+    { key: 'parsed', type: 'json', desc: 'jsonMode 时的解析结果' },
+    { key: 'usage', type: 'json', desc: 'token 用量' },
+  ],
+  validateConfig(config) {
+    const cfg = config as { prompt?: string; temperature?: number }
+    const errors: string[] = []
+    if (cfg.prompt === undefined || cfg.prompt === null || String(cfg.prompt).trim() === '') {
+      errors.push('prompt 不能为空')
+    }
+    if (cfg.temperature !== undefined && (cfg.temperature < 0 || cfg.temperature > 2)) {
+      errors.push('temperature 范围 0-2')
+    }
+    return errors
+  },
+  async execute(ctx: WorkflowNodeContext) {
+    const cfg = ctx.config as {
+      providerConfigId?: string
+      modelId?: string
+      systemPrompt: string
+      prompt: string
+      temperature?: number
+      maxTokens?: number
+      jsonMode?: boolean
+    }
+    const providerInfo = await getProviderConfig(cfg.providerConfigId)
+    if (!providerInfo) {
+      return { status: 'failed', error: '未找到可用的 AI Provider 配置', retryable: false }
+    }
+    const provider = createProvider(
+      providerInfo.config.templateId,
+      {
+        apiKey: providerInfo.apiKey,
+        baseUrl: providerInfo.config.baseUrl,
+        defaultModel: cfg.modelId,
+      },
+      providerInfo.template,
+      providerInfo.config
+    )
+    let content = ''
+    let usage: { promptTokens: number; completionTokens: number } | undefined
+    try {
+      content = await provider.chatStream(
+        {
+          messages: [
+            ...(cfg.systemPrompt
+              ? [{ role: 'system' as const, content: cfg.systemPrompt }]
+              : []),
+            { role: 'user' as const, content: String(cfg.prompt) },
+          ],
+        },
+        event => {
+          if (event.type === 'delta' && event.content) {
+            content += event.content
+            ctx.emitProgress(-1, content.slice(-50))
+          }
+          if (event.type === 'done' && event.usage) {
+            usage = {
+              promptTokens: event.usage.promptTokens,
+              completionTokens: event.usage.completionTokens,
+            }
+          }
+        },
+        ctx.signal,
+        {
+          ...(cfg.temperature !== undefined ? { temperature: cfg.temperature } : {}),
+          ...(cfg.maxTokens !== undefined ? { maxTokens: cfg.maxTokens } : {}),
+        }
+      )
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      return { status: 'failed', error: `LLM 调用失败: ${msg}` }
+    }
+    const output: Record<string, unknown> = { content }
+    if (cfg.jsonMode) {
+      try {
+        // 容错提取（模型可能带 ```json 包裹）
+        const match = content.match(/```(?:json)?\s*([\s\S]*?)```/)
+        output.parsed = JSON.parse((match ? match[1] : content).trim())
+      } catch {
+        return { status: 'failed', error: 'jsonMode 输出不是有效 JSON', retryable: false }
+      }
+    }
+    if (usage) output.usage = usage
+    return { status: 'succeeded', output }
+  },
+}
+
+// ==================== 人工审核 ====================
+
+const humanReviewNode: WorkflowNodeHandler = {
+  type: 'human-review',
+  controlKind: 'task',
+  cancellable: false,
+  outputSchema: [
+    { key: 'payload', type: 'json', desc: '送审内容（修改后批准时为修改版）' },
+    { key: 'decision', type: 'string', desc: 'approved / approved_with_changes / rejected' },
+    { key: 'rejected', type: 'boolean', desc: '驳回路径时为 true' },
+  ],
+  validateConfig(config) {
+    const cfg = config as { payload?: unknown }
+    if (cfg.payload === undefined || cfg.payload === null || stringifyValue(cfg.payload).trim() === '') {
+      return ['payload 不能为空']
+    }
+    return []
+  },
+  async execute(ctx: WorkflowNodeContext) {
+    const cfg = ctx.config as {
+      payload: unknown
+      timeoutMs?: number | null
+    }
+    // payload 已由引擎解析：单占位透传可能是对象；字符串形态尝试 JSON 解析
+    let payload: Record<string, unknown>
+    if (typeof cfg.payload === 'string') {
+      try {
+        payload = JSON.parse(cfg.payload)
+      } catch {
+        payload = { content: cfg.payload }
+      }
+    } else if (cfg.payload && typeof cfg.payload === 'object') {
+      payload = cfg.payload as Record<string, unknown>
+    } else {
+      payload = { value: cfg.payload }
+    }
+    const timeoutMs =
+      cfg.timeoutMs !== undefined && cfg.timeoutMs !== null && Number(cfg.timeoutMs) > 0
+        ? Number(cfg.timeoutMs)
+        : null
+    return { status: 'waiting_review', payload, timeoutMs }
+  },
+}
+
+/** 首批任务节点 */
+export const TASK_NODE_HANDLERS: WorkflowNodeHandler[] = [
+  delayNode,
+  httpRequestNode,
+  llmChatNode,
+  humanReviewNode,
+]
