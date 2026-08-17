@@ -12,7 +12,7 @@
  */
 
 import { markRaw } from 'vue'
-import {
+import { Connection,
   HomeFilled,
   ChatDotRound,
   Picture,
@@ -124,7 +124,7 @@ export const mainMenuItems: MenuItem[] = [
     path: '/workflow',
     label: '工作流',
     description: '可视化流程编排与自动化执行',
-    icon: markRaw(FolderOpened),
+    icon: markRaw(Connection),
   },
   {
     path: '/diary',

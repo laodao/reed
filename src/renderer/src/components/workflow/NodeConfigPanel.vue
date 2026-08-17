@@ -1,0 +1,117 @@
+<template>
+  <div class="config-panel">
+    <div class="panel-header">
+      <span class="node-icon" :class="category">{{ catalogEntry?.icon }}</span>
+      <div>
+        <div class="node-type">{{ catalogEntry?.label }}</div>
+        <div class="node-id">{{ node?.id }}</div>
+      </div>
+    </div>
+
+    <el-form label-position="top" size="small" @submit.prevent>
+      <el-form-item label="节点名称">
+        <el-input v-model="wfNode.name" @change="emitChange" />
+      </el-form-item>
+
+      <template v-for="field in visibleFields" :key="field.key">
+        <!-- 分组标题 -->
+        <div v-if="field.group && field.group !== currentGroup" class="group-divider">{{ field.group }}</div>
+        <!-- 折叠分组 -->
+        <template v-if="field.collapsible">
+          <el-collapse>
+            <el-collapse-item :title="field.label" :name="field.key">
+              <FieldRenderer :field="field" :model="wfNode.config" :dynamic-options="dynamicOptions" @change="emitChange" />
+            </el-collapse-item>
+          </el-collapse>
+        </template>
+        <el-form-item v-else>
+          <template #label>
+            {{ field.label }}
+            <el-tag v-if="field.templateHint" size="small" type="info" effect="plain" class="tpl-tag">支持 {{ '{{}}' }}</el-tag>
+          </template>
+          <FieldRenderer :field="field" :model="wfNode.config" :dynamic-options="dynamicOptions" @change="emitChange" />
+          <div v-if="field.help" class="field-help">{{ field.help }}</div>
+        </el-form-item>
+      </template>
+
+      <div v-if="!fields.length || !visibleFields.length" class="no-config">该节点无需配置</div>
+    </el-form>
+
+    <div class="panel-footer">
+      <el-button size="small" type="danger" plain @click="$emit('remove')">删除节点</el-button>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+/**
+ * 节点配置面板：按 NODE_CONFIG_FORMS Schema 渲染表单（组件化——新组件带 Schema 即有表单）
+ */
+import { computed, ref, watch } from 'vue'
+import type { Node } from '@vue-flow/core'
+import { NODE_TYPE_CATALOG_MAP } from '@shared/types/workflow-node-catalog'
+import { NODE_CONFIG_FORMS, type CatalogFormField } from '@shared/types/workflow-node-forms'
+import FieldRenderer from './FormFieldRenderer.vue'
+
+const props = defineProps<{ node: Node }>()
+const emit = defineEmits<{ (e: 'change'): void; (e: 'remove'): void }>()
+
+const wfNode = computed(() => (props.node.data as any).wfNode)
+const catalogEntry = computed(() => NODE_TYPE_CATALOG_MAP[wfNode.value.type])
+const category = computed(() => catalogEntry.value?.category)
+const fields = computed(() => NODE_CONFIG_FORMS[wfNode.value.type as keyof typeof NODE_CONFIG_FORMS] ?? [])
+
+/** 动态选项数据（按 source 拉取） */
+const dynamicOptions = ref<Record<string, Array<{ label: string; value: string }>>>({})
+
+/** 折叠字段过滤（折叠的仍渲染在 collapse 内，不隐藏）；提示占位字段过滤 */
+const visibleFields = computed(() => fields.value.filter(f => f.key !== '_hint'))
+
+/** 分组标记（渲染分组标题一次） */
+const currentGroup = ref('')
+watch(visibleFields, list => {
+  currentGroup.value = ''
+}, { immediate: true })
+
+function groupTitleOf(field: CatalogFormField, idx: number): string {
+  const prev = idx > 0 ? visibleFields.value[idx - 1] : undefined
+  return field.group && prev?.group !== field.group ? field.group : ''
+}
+void groupTitleOf
+
+async function loadDynamicOptions() {
+  const api = (window as never as { electronAPI: any }).electronAPI
+  const sources = new Set(fields.value.filter(f => f.type === 'select-dynamic').map(f => f.source))
+  if (sources.has('knowledgeBases')) {
+    try {
+      const resp = await api.knowledgeBase.list()
+      if (resp.success && resp.data) {
+        dynamicOptions.value.knowledgeBases = resp.data.map((kb: any) => ({
+          label: kb.name,
+          value: kb.id,
+        }))
+      }
+    } catch { /* 列表失败时退化为手填 */ }
+  }
+}
+watch(() => props.node.id, loadDynamicOptions, { immediate: true })
+
+function emitChange() {
+  // 同步画布节点标题
+  ;(props.node.data as any).label = `${catalogEntry.value?.label}: ${wfNode.value.name}`
+  emit('change')
+}
+</script>
+
+<style scoped>
+.config-panel { height: 100%; overflow: auto; padding: 14px; display: flex; flex-direction: column; }
+.panel-header { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--el-border-color-lighter); }
+.node-icon { font-size: 10px; }
+.node-type { font-weight: 600; }
+.node-id { font-size: 11px; color: var(--el-text-color-secondary); }
+.group-divider { font-size: 12px; color: var(--el-text-color-secondary); margin: 14px 0 2px; font-weight: 600; }
+.tpl-tag { margin-left: 6px; }
+.field-help { font-size: 11px; color: var(--el-text-color-secondary); margin-top: 4px; line-height: 1.4; }
+.no-config { color: var(--el-text-color-secondary); text-align: center; padding: 24px 0; }
+.panel-footer { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--el-border-color-lighter); }
+</style>

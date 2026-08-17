@@ -43,4 +43,15 @@ describe('全节点目录一致性', () => {
       expect(handler.validateConfig(config as never).length, `${type} 空配置应报错`).toBeGreaterThan(0)
     }
   })
+
+describe('表单 Schema 完整性（NODE_CONFIG_FORMS）', () => {
+  it('21 个组件全部有表单声明', async () => {
+    const { NODE_CONFIG_FORMS } = await import('@shared/types/workflow-node-forms')
+    const { NODE_TYPE_CATALOG } = await import('@shared/types/workflow-node-catalog')
+    for (const entry of NODE_TYPE_CATALOG) {
+      expect(NODE_CONFIG_FORMS[entry.type], `${entry.type} 缺表单 Schema`).toBeDefined()
+    }
+    expect(Object.keys(NODE_CONFIG_FORMS)).toHaveLength(NODE_TYPE_CATALOG.length)
+  })
+})
 })
