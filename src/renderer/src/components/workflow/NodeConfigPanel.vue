@@ -27,7 +27,7 @@
         <el-form-item v-else>
           <template #label>
             {{ field.label }}
-            <el-tag v-if="field.templateHint" size="small" type="info" effect="plain" class="tpl-tag">支持 {{ '{{}}' }}</el-tag>
+            <el-tag v-if="field.templateHint" size="small" type="info" effect="plain" class="tpl-tag">支持 <span v-pre>{{ }}</span></el-tag>
           </template>
           <FieldRenderer :field="field" :model="wfNode.config" :dynamic-options="dynamicOptions" @change="emitChange" />
           <div v-if="field.help" class="field-help">{{ field.help }}</div>
