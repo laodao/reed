@@ -43,3 +43,28 @@
 ## 待续（任务清单）
 
 C1 成环（先细化设计评审）→ C2 对话集成 → C3 REST API → C4 临时知识库 → C5 OAS → D1 QA 知识库 → D2 rerank → D3 权重暴露
+
+
+---
+
+# 增量：C1 成环交付（2026-08-18，提交 cc505794 + 9221ffbd + 5824f7f9）
+
+## 深审修复（A+B 批复查，12 项发现中 6 项修复）
+
+- pendingFailureError 类型声明（编译级）/ choose 模式 reject 死锁 / kb threshold 下游虚设
+  （KB search 落实 score 过滤）/ vision 多图只取一张且不浪费 IO / provide 数组快照失同步 → ref / toImageDataUrl base64 字符集守卫 / DEBUG 日志清理
+
+评审确认真实完成清单：kb-qa 8 字段、report 3 字段全接线；choose/input 引擎级真驱动；
+maxNodeRuns 计数语义实证；试运行抽屉前后端接线一致；架构纪律齐整。
+
+## C1 成环（134/134 全绿）
+
+边激活序号机制（activationSeqs + completedSeq）实现"完成后新激活→重执行"语义；
+校验器环检测降为警告；loop 节点豁免（驱动器管理）。TDD 抓出四项交互缺陷（审核决策/fail-recovered
+漏记序号、护栏被 fail 边恢复死循环、loop 被旧激活拉回）全部修复。
+
+语义变更（有意）：多入边节点的后续到达触发新一轮（Bisheng '连线即流程图'）。
+
+## 待续
+
+C2 对话集成 → C3 REST API → C4 临时知识库 → C5 OAS → D1 QA 知识库 → D2 rerank → D3 权重
