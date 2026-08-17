@@ -185,6 +185,8 @@ class RunExecution {
   finalStatus?: WorkflowRunStatus
   /** 看门狗触发后置位：不等待在飞任务排空，放行 execute 返回 */
   forceRelease = false
+  /** 节点执行实例计数（护栏依据；P5：唯一计数点在 launchNode——重试/审核恢复不计） */
+  readonly runCounts = new Map<string, number>()
   /** 看门狗句柄（挂起时清除、续驱时重建——防失控时长对恢复后的运行仍生效） */
   watchdogHandle: ReturnType<typeof setTimeout> | null = null
   startedAtMs = Date.now()
@@ -658,7 +660,12 @@ export class WorkflowEngineService {
     try {
       while (!exec.finished && !scope.failed && !exec.suspended) {
         if (exec.abortController.signal.aborted && !exec.suspended) {
-          await this.finalize(exec, WORKFLOW_RUN_STATUSES.cancelled)
+          // 失败中止（pendingFailureError 已同步置位）→ failed；否则为用户取消
+          await this.finalize(
+            exec,
+            exec.pendingFailureError ? WORKFLOW_RUN_STATUSES.failed : WORKFLOW_RUN_STATUSES.cancelled,
+            exec.pendingFailureError
+          )
           return
         }
         const ready = this.computeReady(exec, scope)
@@ -778,6 +785,17 @@ export class WorkflowEngineService {
     })
     if (exec.finished || exec.abortController.signal.aborted) {
       await this.markCancelled(exec, state)
+      return
+    }
+    // maxNodeRuns 护栏（P5：唯一计数点——重试/审核恢复不经过 launchNode，天然单实例单计数）
+    const runsSoFar = (exec.runCounts.get(node.id) ?? 0) + 1
+    exec.runCounts.set(node.id, runsSoFar)
+    if (runsSoFar > exec.settings.maxNodeRuns) {
+      await this.handleNodeFailure(
+        exec, scope, node, state,
+        `节点「${node.name}」超出最大运行次数 ${exec.settings.maxNodeRuns}（疑似死循环）`,
+        false
+      )
       return
     }
     this.emitNodeStatus(exec, state)
@@ -1003,8 +1021,13 @@ export class WorkflowEngineService {
       return
     }
 
+    // ⚠️ 同步置位（先于下方首个 await）：abort 后漂浮的重入 pump 会立刻跑，
+    // 必须让它们能区分"失败中止"与"用户取消"（见 pump 顶部 aborted 分支）
     state.status = 'failed'
     state.error = error
+    scope.failed = true
+    exec.pendingFailureError = error
+    exec.abortController.abort() // 在飞任务的 settle 会走取消分支
     await this.deps.nodeRuns.patchNode(exec.input.runId, node.id, state.iterationIndex, {
       status: WORKFLOW_NODE_RUN_STATUSES.failed,
       error,
@@ -1012,9 +1035,6 @@ export class WorkflowEngineService {
       durationMs: Date.now() - state.startedAtMs,
     })
     this.emitNodeStatus(exec, state)
-    // 作用域失败：中止本作用域在飞任务；根作用域失败 → 终止运行
-    scope.failed = true
-    exec.abortController.abort()
     if (scope.isRoot) {
       await this.finalize(exec, WORKFLOW_RUN_STATUSES.failed, error)
     }

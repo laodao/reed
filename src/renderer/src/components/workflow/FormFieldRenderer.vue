@@ -59,6 +59,7 @@
           <el-option label="小于" value="lt" /><el-option label="≤" value="lte" />
           <el-option label="包含" value="contains" /><el-option label="不包含" value="not_contains" />
           <el-option label="为空" value="is_empty" /><el-option label="非空" value="not_empty" />
+          <el-option label="正则" value="regex" /><el-option label="开始为" value="starts_with" /><el-option label="结束为" value="ends_with" />
         </el-select>
         <el-input v-if="!['is_empty', 'not_empty'].includes(cond.operator)" v-model="cond.right"
           placeholder="右值" size="small" @change="syncBranches" />
@@ -73,16 +74,30 @@
 
   <!-- 开始节点输入参数编辑器 -->
   <div v-else-if="field.type === 'inputs-list'" class="kv-list">
-    <div v-for="(item, i) in inputs" :key="i" class="kv-row inputs-row">
+    <template v-for="(item, i) in inputs" :key="i">
+    <div class="kv-row inputs-row">
       <el-input v-model="item.key" placeholder="参数键" size="small" @change="syncInputs" />
       <el-input v-model="item.label" placeholder="显示名" size="small" @change="syncInputs" />
       <el-select v-model="item.type" size="small" style="width: 90px" @change="syncInputs">
         <el-option label="文本" value="string" /><el-option label="数字" value="number" />
         <el-option label="布尔" value="boolean" /><el-option label="JSON" value="json" />
+        <el-option label="下拉" value="select" />
       </el-select>
       <el-checkbox v-model="item.required" size="small" @change="syncInputs">必填</el-checkbox>
       <el-button text type="danger" size="small" @click="inputs.splice(i, 1); syncInputs()">✕</el-button>
     </div>
+    <div v-if="item.type === 'select'" class="options-sub">
+      <div class="kv-row" style="padding-left: 12px">
+        <el-checkbox v-model="item.multi" size="small" @change="syncInputs">多选</el-checkbox>
+        <el-button size="small" text type="primary" @click="(item.options ??= []).push({ label: '', value: '' }); syncInputs()">+ 选项</el-button>
+      </div>
+      <div v-for="(opt, j) in item.options ?? []" :key="j" class="kv-row" style="padding-left: 24px">
+        <el-input v-model="opt.label" placeholder="显示名" size="small" style="width: 110px" @change="syncInputs" />
+        <el-input v-model="opt.value" placeholder="值" size="small" style="width: 110px" @change="syncInputs" />
+        <el-button text type="danger" size="small" @click="item.options!.splice(j, 1); syncInputs()">✕</el-button>
+      </div>
+    </div>
+    </template>
     <div v-for="(item, i) in inputs" :key="'d' + i" class="kv-row">
       <span class="default-label">默认值</span>
       <el-input :model-value="String(item.defaultValue ?? '')" placeholder="定时触发时使用" size="small"
@@ -188,6 +203,7 @@ function syncFields() { emit('change') }
 .slider-value { font-size: 12px; min-width: 30px; text-align: right; }
 .kv-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
 .inputs-row { flex-wrap: wrap; }
+.options-sub { margin: -2px 0 6px; }
 .default-label { font-size: 12px; color: var(--el-text-color-secondary); white-space: nowrap; }
 .model-pair { display: flex; gap: 6px; }
 .branch-card { border: 1px solid var(--el-border-color-lighter); border-radius: 6px; padding: 8px; margin-bottom: 8px; }

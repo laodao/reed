@@ -30,6 +30,7 @@ import type {
 } from '@shared/types/workflow.types'
 import { NODE_TYPE_CATALOG_MAP } from '@shared/types/workflow-node-catalog'
 import { computeLoopBody, computeReachableSet } from './graph-topology'
+import { WORKFLOW_RESERVED_NODE_ID, WORKFLOW_NODE_TYPES } from '@shared/types/workflow.types'
 
 /** 可选的节点配置校验钩子（引擎启动前由 NodeRegistry 注入 handler.validateConfig） */
 export interface ValidateGraphOptions {
@@ -69,6 +70,10 @@ export function validateGraph(
       continue
     }
     nodeById.set(node.id, node)
+    // 保留字：sys=系统变量根；start 仅开始节点可用（变量命名空间冲突防护）
+    if (node.id === WORKFLOW_RESERVED_NODE_ID || (node.id === WORKFLOW_NODE_TYPES.start && node.type !== WORKFLOW_NODE_TYPES.start)) {
+      addError(`节点 id 不能使用保留字：${node.id}`)
+    }
     if (!NODE_TYPE_CATALOG_MAP[node.type as keyof typeof NODE_TYPE_CATALOG_MAP]) {
       addError(`未知节点类型：${node.type}（节点 ${node.id}）`)
     }

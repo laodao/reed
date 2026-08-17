@@ -84,7 +84,11 @@ export interface WorkflowStartInput {
   key: string
   /** 显示名 */
   label: string
-  type: 'string' | 'number' | 'boolean' | 'json'
+  type: 'string' | 'number' | 'boolean' | 'json' | 'select'
+  /** type='select' 时的选项 */
+  options?: Array<{ label: string; value: string | number }>
+  /** type='select' 时是否多选（提交值为数组） */
+  multi?: boolean
   /** 是否必填 */
   required?: boolean
   /** 默认值（定时触发无来源时使用） */
@@ -118,6 +122,9 @@ export interface WorkflowConditionItem {
     | 'not_contains'
     | 'is_empty'
     | 'not_empty'
+    | 'regex'
+    | 'starts_with'
+    | 'ends_with'
   /** 右值模板（is_empty / not_empty 时可省略） */
   right?: string
 }
@@ -396,6 +403,8 @@ export interface WorkflowExecutionSettings {
   maxRetryCount?: number
   /** 单运行内最大并行节点数（封顶 20） */
   maxParallelNodes?: number
+  /** 单节点最大执行次数（防环/重入失控；封顶 1000） */
+  maxNodeRuns?: number
 }
 
 // ==================== 触发器 ====================
@@ -656,6 +665,9 @@ export function decodeWorkflowHandleId(handleId: string): {
 
 // ==================== 领域事件目录（事件触发器可选源） ====================
 
+/** 节点 id 保留字（变量命名空间冲突：sys=系统变量根；start 已被开始节点语义占用） */
+export const WORKFLOW_RESERVED_NODE_ID = 'sys'
+
 /** 运行事件通道名（引擎→前端单通道；双端共用，禁止裸字符串） */
 export const WORKFLOW_RUN_EVENT_CHANNEL = 'wf:run-event'
 
@@ -732,6 +744,8 @@ export const WORKFLOW_DEFAULTS = {
   maxParallelNodes: 5,
   /** 全局并发运行数 3 */
   maxConcurrentRuns: 3,
+  /** 单节点最大执行次数 50（对齐 Bisheng max_steps，防成环死循环） */
+  maxNodeRuns: 50,
   /** cron 调度间隔 30s */
   cronTickMs: 30_000,
   /** cron 错过宽限窗口 = 2 × tick（超过视为错过，推进到未来首个触发点） */
@@ -756,6 +770,7 @@ export const WORKFLOW_LIMITS = {
   maxRetryCount: 10,
   maxParallelNodes: 20,
   maxConcurrentRuns: 10,
+  maxNodeRuns: 1000,
   retryDelayMs: 60_000,
   httpTimeoutMs: 300_000,
   imagePollTimeoutMs: 600_000,

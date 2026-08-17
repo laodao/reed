@@ -69,6 +69,16 @@ function evalCondition(cond: WorkflowConditionItem, resolvedLeft: unknown, resol
       return stringifyValue(left).includes(stringifyValue(right))
     case 'not_contains':
       return !stringifyValue(left).includes(stringifyValue(right))
+    case 'regex':
+      try {
+        return new RegExp(stringifyValue(right)).test(stringifyValue(left))
+      } catch {
+        return false // 非法正则容错：条件不成立而非崩溃
+      }
+    case 'starts_with':
+      return stringifyValue(left).startsWith(stringifyValue(right))
+    case 'ends_with':
+      return stringifyValue(left).endsWith(stringifyValue(right))
     case 'is_empty':
       return isEmpty(left)
     case 'not_empty':

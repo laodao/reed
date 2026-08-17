@@ -99,8 +99,15 @@ export class WorkflowRunService {
         mergedInputs[def2.key] = def2.defaultValue
       }
     }
+    // P8：类型感知判空——空串/空数组/空对象均视为缺失（json 传 {} 不再漏检）
+    const isEmptyInput = (v: unknown): boolean =>
+      v === undefined ||
+      v === null ||
+      (typeof v === 'string' && v.trim() === '') ||
+      (Array.isArray(v) && v.length === 0) ||
+      (typeof v === 'object' && Object.keys(v).length === 0)
     const missing = inputDefs
-      .filter(d => d.required && (mergedInputs[d.key] === undefined || mergedInputs[d.key] === null || String(mergedInputs[d.key]).trim() === ''))
+      .filter(d => d.required && isEmptyInput(mergedInputs[d.key]))
       .map(d => d.key)
     if (missing.length > 0) {
       throw new Error(`缺少必填的输入参数：${missing.join('、')}`)

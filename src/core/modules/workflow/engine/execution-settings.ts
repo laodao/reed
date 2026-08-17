@@ -16,7 +16,7 @@ import {
   type WorkflowNodeSettings,
 } from '@shared/types/workflow.types'
 
-const { maxDurationMs, maxLoopIterations, maxOutputChars, maxRetryCount, maxParallelNodes } =
+const { maxDurationMs, maxLoopIterations, maxOutputChars, maxRetryCount, maxParallelNodes, maxNodeRuns } =
   WORKFLOW_DEFAULTS
 
 /** 引擎实际生效的运行级设置（已解析、已封顶） */
@@ -26,6 +26,7 @@ export interface ResolvedExecutionSettings {
   maxOutputChars: number
   maxRetryCount: number
   maxParallelNodes: number
+  maxNodeRuns: number
 }
 
 const clamp = (value: number | undefined, fallback: number, limit: number): number => {
@@ -52,6 +53,7 @@ export function resolveExecutionSettings(
     maxOutputChars: clamp(s.maxOutputChars, maxOutputChars, WORKFLOW_LIMITS.maxOutputChars),
     maxRetryCount: clamp(s.maxRetryCount, maxRetryCount, WORKFLOW_LIMITS.maxRetryCount),
     maxParallelNodes: clamp(s.maxParallelNodes, maxParallelNodes, WORKFLOW_LIMITS.maxParallelNodes),
+    maxNodeRuns: clamp(s.maxNodeRuns, maxNodeRuns, WORKFLOW_LIMITS.maxNodeRuns),
   }
 }
 

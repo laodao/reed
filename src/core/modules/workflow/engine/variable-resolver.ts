@@ -28,6 +28,25 @@ export interface VariableResolverContext {
   startInputs: Record<string, unknown>
 }
 
+/** 系统变量根（保留，不可被节点 id 遮蔽——校验器同源限制） */
+const SYS_VAR_ROOT = 'sys'
+
+/**
+ * 系统变量快照：每次解析时求值（同一运行内不同节点取值可差几秒，可接受语义）。
+ * - now：ISO 时间字符串
+ * - today：本地 yyyy-MM-dd
+ * - ts：epoch 毫秒
+ */
+function sysVarsSnapshot(): Record<string, unknown> {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return {
+    now: d.toISOString(),
+    today: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+    ts: d.getTime(),
+  }
+}
+
 /** 占位符语法：{{ root.field.nested }}，允许空白 */
 const TEMPLATE_RE = /\{\{\s*([^{}\s]+(?:\.[^{}\s]+)*)\s*\}\}/g
 
@@ -61,13 +80,15 @@ export class VariableResolver {
     })
   }
 
-  /** 路径查找：root 是 nodeId / 'start'；local 命中优先，回退根命名空间 */
+  /** 路径查找：root 是 nodeId / 'start' / 'sys'；sys 不可遮蔽（先于变量表），local 命中优先回退根命名空间 */
   private lookup(path: string, local?: LocalLookup): unknown {
     const segments = path.split('.')
     const root = segments[0]
 
     let source: unknown
-    if (root === 'start') {
+    if (root === SYS_VAR_ROOT) {
+      source = sysVarsSnapshot()
+    } else if (root === 'start') {
       source = this.ctx.startInputs
     } else {
       source = this.ctx.variables.get(root)

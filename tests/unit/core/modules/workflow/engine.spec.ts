@@ -465,7 +465,8 @@ describe('WorkflowEngineService 核心调度', () => {
     const status = await execute(engine, runInput(graph))
     expect(status).toBe('failed')
     expect(nodeRuns.statusOf('bad')).toBe('failed')
-    expect(nodeRuns.statusOf('slow')).toBe('cancelled') // 在飞被中止
+    // 失败同步中止后，slow 可能在启动前被拦下（无行）或已启动被标 cancelled——均为正确行为
+    expect([undefined, 'cancelled']).toContain(nodeRuns.statusOf('slow'))
     expect(runs.finalPatch.status).toBe('failed')
     expect(events.runStatuses()).toContain('failed')
   })
