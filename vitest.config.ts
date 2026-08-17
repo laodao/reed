@@ -16,12 +16,13 @@ export default defineConfig({
     },
   },
   resolve: {
-    alias: {
-      '@core': resolve(__dirname, 'src/core'),
-      '@shared': resolve(__dirname, 'src/shared'),
-      '@electron': resolve(__dirname, 'src/electron'),
-      '@web-client': resolve(__dirname, 'src/web/client'),
-      '@': resolve(__dirname, 'src/renderer/src'),
-    },
+    alias: [
+      { find: '@core', replacement: resolve(__dirname, 'src/core') },
+      { find: '@shared', replacement: resolve(__dirname, 'src/shared') },
+      { find: '@electron', replacement: resolve(__dirname, 'src/electron') },
+      { find: '@web-client', replacement: resolve(__dirname, 'src/web/client') },
+      { find: '@renderer', replacement: resolve(__dirname, 'src/renderer') },
+      { find: '@', replacement: resolve(__dirname, 'src/renderer/src') },
+    ],
   },
 })

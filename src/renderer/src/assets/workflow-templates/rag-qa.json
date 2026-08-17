@@ -1,0 +1,21 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "知识库问答（RAG）",
+  "description": "用户提问 → 知识库检索增强生成回答（含引用来源）",
+  "category": null,
+  "graph": {
+    "version": 1,
+    "nodes": [
+      { "id": "start", "type": "start", "name": "开始", "position": { "x": 80, "y": 200 }, "config": { "inputs": [{ "key": "question", "label": "你的问题", "type": "string", "required": true }] } },
+      { "id": "kbqa_1", "type": "kb-qa", "name": "知识库问答", "position": { "x": 360, "y": 200 }, "config": { "knowledgeBaseId": "", "question": "{{start.question}}", "topK": 5, "threshold": 0.5 } },
+      { "id": "end", "type": "end", "name": "结束", "position": { "x": 640, "y": 200 }, "config": {} }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "kbqa_1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "kbqa_1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": null
+}

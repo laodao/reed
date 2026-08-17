@@ -4,6 +4,7 @@
       <h2>工作流</h2>
       <div class="actions">
         <el-button @click="showImport = true">导入</el-button>
+        <el-button @click="showTemplates = true">从模板创建</el-button>
         <el-button type="primary" @click="handleCreate">新建工作流</el-button>
       </div>
     </div>
@@ -72,6 +73,17 @@
       </template>
     </el-dialog>
 
+    <!-- 模板选择对话框 -->
+    <el-dialog v-model="showTemplates" title="从模板创建" width="560px">
+      <div v-for="tpl in builtinTemplates" :key="tpl.name" class="tpl-card" @click="createFromTemplate(tpl)">
+        <div class="tpl-head">
+          <span class="tpl-name">{{ tpl.title }}</span>
+          <el-tag size="small" type="info">{{ tpl.nodeCount }} 个组件</el-tag>
+        </div>
+        <div class="tpl-desc">{{ tpl.desc }}</div>
+      </div>
+    </el-dialog>
+
     <!-- 导入对话框 -->
     <el-dialog v-model="showImport" title="导入工作流" width="520px">
       <input type="file" accept=".json" @change="onImportFile" />
@@ -98,6 +110,30 @@ const runningDef = ref<any>(null)
 const starting = ref(false)
 
 const api = () => (window as never as { electronAPI: any }).electronAPI.workflow
+
+// 内置模板（B6：编辑器搭好→导出→置于此处；模板即数据资产）
+import ragTpl from '@renderer/assets/workflow-templates/rag-qa.json'
+import translateTpl from '@renderer/assets/workflow-templates/batch-translate.json'
+import reviewTpl from '@renderer/assets/workflow-templates/content-review.json'
+import digestTpl from '@renderer/assets/workflow-templates/daily-digest.json'
+
+const showTemplates = ref(false)
+const builtinTemplates = [
+  { name: ragTpl.name, title: ragTpl.name, desc: ragTpl.description, nodeCount: ragTpl.graph.nodes.length, raw: ragTpl },
+  { name: translateTpl.name, title: translateTpl.name, desc: translateTpl.description, nodeCount: translateTpl.graph.nodes.length, raw: translateTpl },
+  { name: reviewTpl.name, title: reviewTpl.name, desc: reviewTpl.description, nodeCount: reviewTpl.graph.nodes.length, raw: reviewTpl },
+  { name: digestTpl.name, title: digestTpl.name, desc: digestTpl.description, nodeCount: digestTpl.graph.nodes.length, raw: digestTpl },
+]
+
+async function createFromTemplate(tpl: any) {
+  const resp = await api().importDefinition({ content: JSON.stringify(tpl.raw), duplicatePolicy: 'copy' })
+  if (resp.success) {
+    ElMessage.success('已从模板创建')
+    showTemplates.value = false
+    await load()
+    if (resp.data?.id) router.push(`/workflow/editor/${resp.data.id}`)
+  } else ElMessage.error(resp.error)
+}
 
 async function load() {
   loading.value = true
@@ -206,5 +242,10 @@ onMounted(load)
 .page-container { padding: 20px; height: 100%; overflow: auto; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .hint { color: var(--el-text-color-secondary); font-size: 12px; margin: 8px 0; }
+.tpl-card { border: 1px solid var(--el-border-color); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; cursor: pointer; transition: border-color .15s; }
+.tpl-card:hover { border-color: var(--el-color-primary); }
+.tpl-head { display: flex; justify-content: space-between; align-items: center; }
+.tpl-name { font-weight: 600; }
+.tpl-desc { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 6px; }
 .el-table .el-button + .el-button { margin-left: 6px; }
 </style>
