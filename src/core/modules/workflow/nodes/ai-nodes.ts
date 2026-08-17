@@ -20,8 +20,11 @@ import { LongWritingAIService } from '../../../services/longwriting-ai.service'
 import type { WorkflowNodeContext } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
-import { WORKFLOW_DEFAULTS, WORKFLOW_RUN_EVENT_CHANNEL } from '@shared/types/workflow.types'
+import { WORKFLOW_DEFAULTS, WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_EVENT_TYPES } from '@shared/types/workflow.types'
 import { pollUntil } from '../engine/async-utils'
+
+/** 长任务节点'提交即返回'的输出状态值（三处共用唯一写法） */
+const NODE_SUBMITTED_STATUS = 'submitted'
 
 /** 长文节点 eventId 工厂（下游 longwriting:generate:{eventId} 事件订阅依赖此格式） */
 function makeLwEventId(ctx: WorkflowNodeContext): string {
@@ -123,7 +126,7 @@ const kbIngestNode: WorkflowNodeHandler = {
       ?? ''
 
     if (!cfg.waitForCompletion) {
-      return { status: 'succeeded', output: { documentId, status: 'submitted' } }
+      return { status: 'succeeded', output: { documentId, status: NODE_SUBMITTED_STATUS } }
     }
     // 等待后台解析/向量化完成（轮询文档状态）
     const doc = await pollUntil(
@@ -446,7 +449,7 @@ const lwGenerateChapterNode: WorkflowNodeHandler = {
     // 提交即成功：后台跑生成（流式进度经 longwriting:generate:${eventId} 事件），
     // 失败只记日志（下游按 eventId 自行订阅进度）
     void run().catch(e => ctx.logger.error('章节生成（后台）失败', e))
-    return { status: 'succeeded', output: { eventId, status: 'submitted' } }
+    return { status: 'succeeded', output: { eventId, status: NODE_SUBMITTED_STATUS } }
   },
 }
 
@@ -489,7 +492,7 @@ const lwPolishNode: WorkflowNodeHandler = {
     if (cfg.waitForCompletion === false) {
       // 提交即成功：后台跑润色（失败只记日志），与 lw-generate-chapter 同模式
       void run().catch(e => ctx.logger.error('润色（后台）失败', e))
-      return { status: 'succeeded', output: { eventId, status: 'submitted' } }
+      return { status: 'succeeded', output: { eventId, status: NODE_SUBMITTED_STATUS } }
     }
     const resp = await run()
     if (!resp.success) {
@@ -526,7 +529,7 @@ const appNotifyNode: WorkflowNodeHandler = {
     // 经引擎事件通道推送（前端 ElNotification 呈现）
     const { getEventEmitter } = await import('../../../interfaces/event.interface')
     getEventEmitter().emit(WORKFLOW_RUN_EVENT_CHANNEL, {
-      type: 'notify',
+      type: WORKFLOW_RUN_EVENT_TYPES.notify,
       runId: ctx.runId,
       level: cfg.level ?? 'info',
       title: stringifyValue(cfg.title),

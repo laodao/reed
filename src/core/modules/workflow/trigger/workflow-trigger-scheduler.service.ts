@@ -21,7 +21,7 @@
 import { CronExpressionParser } from 'cron-parser'
 import { LOCAL_DEFAULT_USER_ID, runWithUserAsync } from '@core/context/user-context'
 import type { WorkflowTrigger } from '@shared/types/workflow.types'
-import { WORKFLOW_DEFAULTS } from '@shared/types/workflow.types'
+import { WORKFLOW_DEFAULTS, WORKFLOW_TRIGGER_TYPES } from '@shared/types/workflow.types'
 import { subscribeDomainEvents, type DomainEvent } from './domain-event-bus'
 import type { WorkflowDefinitionRepository } from '../../../database/repositories/workflow-definition.repository'
 import type { WorkflowRunService } from '../workflow-run.service'
@@ -117,7 +117,7 @@ export class WorkflowTriggerScheduler {
     const graceMs = this.tickMs * WORKFLOW_DEFAULTS.cronGraceFactor
     for (const row of due) {
       const cronTriggers = row.triggers.filter(
-        (t): t is Extract<WorkflowTrigger, { type: 'cron' }> => t.type === 'cron' && t.enabled
+        (t): t is Extract<WorkflowTrigger, { type: 'cron' }> => t.type === WORKFLOW_TRIGGER_TYPES.cron && t.enabled
       )
       if (cronTriggers.length === 0) continue
       // 多个 cron 触发器：逐个判定；任一在 grace 内即触发
@@ -133,7 +133,7 @@ export class WorkflowTriggerScheduler {
             try {
               await this.deps.runService.startRun({
                 definitionId: row.id,
-                triggerType: 'cron',
+                triggerType: WORKFLOW_TRIGGER_TYPES.cron,
                 triggerInfo: { expression: t.expression },
               })
               fired = true
@@ -165,7 +165,7 @@ export class WorkflowTriggerScheduler {
     const def = await this.deps.definitions.getById(definitionId)
     if (!def) return
     const cron = def.triggers.find(
-      (t): t is Extract<WorkflowTrigger, { type: 'cron' }> => t.type === 'cron' && t.enabled
+      (t): t is Extract<WorkflowTrigger, { type: 'cron' }> => t.type === WORKFLOW_TRIGGER_TYPES.cron && t.enabled
     )
     if (cron && def.publishedVersion > 0) {
       const next = this.computeNext(cron.expression, new Date())
@@ -188,7 +188,7 @@ export class WorkflowTriggerScheduler {
       }>>()
       for (const row of rows) {
         for (const t of row.triggers) {
-          if (t.type !== 'event' || !t.enabled) continue
+          if (t.type !== WORKFLOW_TRIGGER_TYPES.event || !t.enabled) continue
           const list = index.get(t.eventName) ?? []
           list.push({ definitionId: row.id, userId: row.userId, match: t.match })
           index.set(t.eventName, list)
@@ -214,7 +214,7 @@ export class WorkflowTriggerScheduler {
         await runWithUserAsync(t.userId ?? LOCAL_DEFAULT_USER_ID, () =>
           this.deps.runService.startRun({
             definitionId: t.definitionId,
-            triggerType: 'event',
+            triggerType: WORKFLOW_TRIGGER_TYPES.event,
             triggerInfo: { eventName: event.name, payload: event.payload },
           })
         )

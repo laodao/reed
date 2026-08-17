@@ -27,6 +27,9 @@ import {
   WORKFLOW_RUN_STATUSES,
   WORKFLOW_NODE_RUN_STATUSES,
   WORKFLOW_EDGE_KINDS,
+  WORKFLOW_REVIEW_DECISIONS,
+  WORKFLOW_REVIEW_TIMEOUT_POLICIES,
+  WORKFLOW_RUN_EVENT_TYPES,
 } from '@shared/types/workflow.types'
 import { semOf } from './control-semantics'
 import type { WorkflowNodeContext, WorkflowNodeExecutionResult } from './node-handler'
@@ -98,6 +101,15 @@ interface NodeExecutionState {
   startedAtMs: number
 }
 
+/** 根作用域键（作用域键编解码唯一实现） */
+const ROOT_SCOPE_KEY = 'root'
+function makeScopeKey(loopNodeId: string, iterationIndex: number): string {
+  return `${loopNodeId}:${iterationIndex}`
+}
+function parseScopeLoopNodeId(scopeKey: string): string {
+  return scopeKey.split(':')[0]
+}
+
 interface Deferred {
   promise: Promise<void>
   resolve: () => void
@@ -136,7 +148,7 @@ class ScopeState {
   ) {}
 
   get isRoot(): boolean {
-    return this.key === 'root'
+    return this.key === ROOT_SCOPE_KEY
   }
 
   /** 作用域静默（无在飞任务且未在 pumping 中被调度）由 pump 判定并 resolve settledAt */
@@ -158,7 +170,7 @@ class RunExecution {
   readonly outgoingByNode: Map<string, WorkflowEdge[]>
   readonly resolver: VariableResolver
   readonly variables = new Map<string, Record<string, unknown>>()
-  readonly rootScope = new ScopeState('root', 0, null)
+  readonly rootScope = new ScopeState(ROOT_SCOPE_KEY, 0, null)
   /** 循环迭代作用域：scopeKey → scope */
   readonly loopScopes = new Map<string, ScopeState>()
   /** 循环驱动进度：loopNodeId → driver（挂起/续驱用） */
@@ -434,7 +446,7 @@ export class WorkflowEngineService {
     const node = exec.nodeById.get(state.nodeId)
     if (!node) return
     const payload = state.reviewPayload ?? {}
-    const isReject = review.decision === 'reject' || review.decision === 'timeout_reject'
+    const isReject = review.decision === WORKFLOW_REVIEW_DECISIONS.reject || review.decision === WORKFLOW_REVIEW_DECISIONS.timeoutReject
     // editableFields 白名单：未声明的字段不允许修改（缺省=完全不允许修改）
     const editableKeys = new Set(
       ((node.config as { editableFields?: Array<{ key: string }> }).editableFields ?? []).map(
@@ -453,7 +465,7 @@ export class WorkflowEngineService {
       output = payload
     }
     output = truncateOutput({ ...output, decision: review.decision }, exec.settings.maxOutputChars)
-    const route = isReject ? 'reject' : 'approve'
+    const route = isReject ? encodeWorkflowHandleId(WORKFLOW_EDGE_KINDS.reject) : encodeWorkflowHandleId(WORKFLOW_EDGE_KINDS.approve)
 
     state.status = 'succeeded'
     state.output = output
@@ -474,7 +486,7 @@ export class WorkflowEngineService {
     this.activateOutgoing(exec, scope, node, route)
     // 驳回但无 reject 出边：运行终止（功能定稿：驳回无承接边 ⇒ failed）
     if (isReject) {
-      const hasRejectEdge = exec.outgoingOf(node.id, 'reject').length > 0
+      const hasRejectEdge = exec.outgoingOf(node.id, WORKFLOW_EDGE_KINDS.reject).length > 0
       if (!hasRejectEdge && !exec.finished) {
         await this.finalize(exec, WORKFLOW_RUN_STATUSES.failed, `人工审核驳回（节点 ${node.name ?? node.id}，无驳回承接边）`)
       }
@@ -501,7 +513,7 @@ export class WorkflowEngineService {
         if (exec.suspended) return // 又挂起了
         if (scope.failed || exec.finished) return
         // 迭代收敛：继续驱动所属循环
-        const loopNodeId = scopeKey.split(':')[0]
+        const loopNodeId = parseScopeLoopNodeId(scopeKey)
         const driver = exec.loopDrivers.get(loopNodeId)
         if (driver) {
           await this.continueLoop(exec, driver, scope)
@@ -541,14 +553,14 @@ export class WorkflowEngineService {
           if (state.status !== WORKFLOW_NODE_RUN_STATUSES.waiting_review) continue
           if (!state.waitExpiresAt || state.waitExpiresAt > now) continue
           const policy = state.reviewTimeoutPolicy ?? 'fail'
-          if (policy === 'approve') {
+          if (policy === WORKFLOW_REVIEW_TIMEOUT_POLICIES.approve) {
             await this.applyReviewDecision(exec, scope, state, {
-              decision: 'timeout_approve',
+              decision: WORKFLOW_REVIEW_DECISIONS.timeoutApprove,
               decidedAt: now.toISOString(),
             })
-          } else if (policy === 'reject') {
+          } else if (policy === WORKFLOW_REVIEW_TIMEOUT_POLICIES.reject) {
             await this.applyReviewDecision(exec, scope, state, {
-              decision: 'timeout_reject',
+              decision: WORKFLOW_REVIEW_DECISIONS.timeoutReject,
               decidedAt: now.toISOString(),
             })
           } else {
@@ -920,13 +932,13 @@ export class WorkflowEngineService {
     await this.deps.runs.patchRun(exec.input.runId, { status: WORKFLOW_NODE_RUN_STATUSES.waiting_review })
     this.emitNodeStatus(exec, state)
     this.deps.events.emit({
-      type: 'run-status',
+      type: WORKFLOW_RUN_EVENT_TYPES.runStatus,
       runId: exec.input.runId,
       definitionId: exec.input.definitionId,
       status: WORKFLOW_NODE_RUN_STATUSES.waiting_review,
     })
     this.deps.events.emit({
-      type: 'review-requested',
+      type: WORKFLOW_RUN_EVENT_TYPES.reviewRequested,
       runId: exec.input.runId,
       definitionId: exec.input.definitionId,
       nodeId: node.id,
@@ -1057,7 +1069,7 @@ export class WorkflowEngineService {
       if (exec.finished || exec.abortController.signal.aborted || exec.suspended) return
       if (parentScope.failed) break
 
-      const scopeKey = `${node.id}:${i}`
+      const scopeKey = makeScopeKey(node.id, i)
       const bodyInfo = exec.loopBodies.get(node.id)
       if (!bodyInfo?.bodySet.size) {
         // 空 body（校验器要求 loop-body 边存在，防御）
@@ -1353,7 +1365,7 @@ export class WorkflowEngineService {
       },
       emitProgress: (progress, message) => {
         this.deps.events.emit({
-          type: 'node-progress',
+          type: WORKFLOW_RUN_EVENT_TYPES.nodeProgress,
           runId: exec.input.runId,
           nodeId: node.id,
           iterationIndex: state.iterationIndex,
@@ -1370,7 +1382,7 @@ export class WorkflowEngineService {
 
   private emitNodeStatus(exec: RunExecution, state: NodeExecutionState): void {
     this.deps.events.emit({
-      type: 'node-status',
+      type: WORKFLOW_RUN_EVENT_TYPES.nodeStatus,
       runId: exec.input.runId,
       nodeId: state.nodeId,
       iterationIndex: state.iterationIndex,
@@ -1387,7 +1399,7 @@ export class WorkflowEngineService {
     error?: string
   ): void {
     this.deps.events.emit({
-      type: 'run-status',
+      type: WORKFLOW_RUN_EVENT_TYPES.runStatus,
       runId: exec.input.runId,
       definitionId: exec.input.definitionId,
       status,

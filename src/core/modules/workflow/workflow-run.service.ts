@@ -12,7 +12,7 @@
 import { LOCAL_DEFAULT_USER_ID, runWithUserAsync } from '@core/context/user-context'
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import type { WorkflowGraph, WorkflowRunStatus, WorkflowTriggerType } from '@shared/types/workflow.types'
-import { WORKFLOW_DEFAULTS, WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_STATUSES, WORKFLOW_NODE_TYPES } from '@shared/types/workflow.types'
+import { WORKFLOW_DEFAULTS, WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_STATUSES, WORKFLOW_NODE_TYPES, WORKFLOW_TRIGGER_TYPES } from '@shared/types/workflow.types'
 import { WorkflowEngineService, type ExecuteRunInput, type ReviewDecisionInput } from './engine/workflow-engine.service'
 import type { WorkflowEngineDeps } from './engine/ports'
 import type {
@@ -87,7 +87,7 @@ export class WorkflowRunService {
 
     // 图快照：已发布用发布图；未发布允许手动跑草稿（触发必须已发布，片6 校验）
     const graph: WorkflowGraph =
-      (input.triggerType === 'manual' && def.draftGraph) || def.publishedGraph || def.draftGraph
+      (input.triggerType === WORKFLOW_TRIGGER_TYPES.manual && def.draftGraph) || def.publishedGraph || def.draftGraph
     if (!graph || graph.nodes.length === 0) throw new Error('工作流没有可执行的图')
 
     // start 输入参数：required 校验 + defaultValue 合并（定时/事件触发无来源时用默认值）
@@ -257,7 +257,7 @@ export class WorkflowRunService {
       definitionId: source.definitionId,
       definitionVersion: source.definitionVersion,
       graphSnapshot: graph,
-      triggerType: 'resume',
+      triggerType: WORKFLOW_TRIGGER_TYPES.resume,
       triggerInfo: { resumedFrom: sourceRunId },
       startInputs: source.startInputs,
       status: WORKFLOW_RUN_STATUSES.pending,

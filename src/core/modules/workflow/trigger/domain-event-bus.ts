@@ -21,6 +21,8 @@ export interface DomainEvent {
 
 /** 事件总线监听上限（量级假设见构造内注释） */
 const EVENT_BUS_MAX_LISTENERS = 50
+/** 总线内部事件名（publish/subscribe 同文件唯一写法） */
+const BUS_EVENT = 'event'
 
 class WorkflowDomainEventBus {
   private emitter = new EventEmitter()
@@ -37,12 +39,12 @@ class WorkflowDomainEventBus {
       payload,
       occurredAt: Date.now(),
     }
-    this.emitter.emit('event', event)
+    this.emitter.emit(BUS_EVENT, event)
   }
 
   subscribe(handler: (event: DomainEvent) => void): () => void {
-    this.emitter.on('event', handler)
-    return () => this.emitter.off('event', handler)
+    this.emitter.on(BUS_EVENT, handler)
+    return () => this.emitter.off(BUS_EVENT, handler)
   }
 }
 

@@ -9,7 +9,11 @@ import type { WorkflowGraph, WorkflowNode, WorkflowValidationResult } from '@sha
 import { validateGraph } from './engine/graph-validator'
 import { WorkflowNodeRegistry } from './engine/node-registry'
 import { NODE_TYPE_CATALOG_MAP } from '@shared/types/workflow-node-catalog'
+
+/** 导入副本的名称后缀（用户可识别非原创定义） */
+const IMPORT_NAME_SUFFIX = '（导入）'
 import { previewCronExpression } from './trigger/workflow-trigger-scheduler.service'
+import { WORKFLOW_TRIGGER_TYPES, WORKFLOW_EXPORT_KIND, WORKFLOW_EXPORT_FORMAT_VERSION } from '@shared/types/workflow.types'
 import type {
   CreateWorkflowDefinitionInput,
   DueCronTriggerRow,
@@ -23,7 +27,7 @@ const logger = createLogger('WorkflowDefinitionService')
 
 /** 导出文件格式（导入导出 JSON 契约） */
 export interface WorkflowExportFormat {
-  kind: 'the-bot-workflow'
+  kind: WORKFLOW_EXPORT_KIND
   formatVersion: 1
   name: string
   description: string | null
@@ -123,7 +127,7 @@ export class WorkflowDefinitionService {
   validateTriggers(triggers: unknown[]): string[] {
     const errors: string[] = []
     const list = triggers as Array<{ type?: string; expression?: string; enabled?: boolean; eventName?: string }>
-    const enabledCron = list.filter(t => t.type === 'cron' && t.enabled)
+    const enabledCron = list.filter(t => t.type === WORKFLOW_TRIGGER_TYPES.cron && t.enabled)
     if (enabledCron.length > 1) {
       errors.push('V1 限制：每个工作流只能启用 1 个定时触发器')
     }
@@ -131,7 +135,7 @@ export class WorkflowDefinitionService {
       const preview = previewCronExpression(t.expression ?? '')
       if (!preview.valid) errors.push(`cron 表达式无效：${t.expression}（${preview.error}）`)
     }
-    for (const t of list.filter(x => x.type === 'event' && x.enabled)) {
+    for (const t of list.filter(x => x.type === WORKFLOW_TRIGGER_TYPES.event && x.enabled)) {
       if (!t.eventName) errors.push('事件触发器缺少 eventName')
     }
     return errors
@@ -190,8 +194,8 @@ export class WorkflowDefinitionService {
     const def = await this.repo.getById(id)
     if (!def?.draftGraph) return null
     return {
-      kind: 'the-bot-workflow',
-      formatVersion: 1,
+      kind: WORKFLOW_EXPORT_KIND,
+      formatVersion: WORKFLOW_EXPORT_FORMAT_VERSION,
       name: def.name,
       description: def.description,
       category: def.category,
@@ -215,7 +219,7 @@ export class WorkflowDefinitionService {
     } catch {
       return { success: false, error: 'JSON 解析失败' }
     }
-    if (parsed.kind !== 'the-bot-workflow' || parsed.formatVersion !== 1) {
+    if (parsed.kind !== WORKFLOW_EXPORT_KIND || parsed.formatVersion !== WORKFLOW_EXPORT_FORMAT_VERSION) {
       return { success: false, error: '不是有效的工作流导出文件' }
     }
     const graph = parsed.graph
@@ -253,7 +257,7 @@ export class WorkflowDefinitionService {
       // 无同名 → 落到新建
     }
     const created = await this.create({
-      name: opts?.duplicatePolicy === 'overwrite' ? parsed.name : `${parsed.name}（导入）`,
+      name: opts?.duplicatePolicy === 'overwrite' ? parsed.name : IMPORT_NAME_SUFFIX ? `${parsed.name}${IMPORT_NAME_SUFFIX}` : parsed.name,
       description: parsed.description,
       category: parsed.category,
       draftGraph: graph,

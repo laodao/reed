@@ -478,6 +478,44 @@ export type WorkflowRunEvent =
     }
 
 
+
+/** 触发方式常量（与 WorkflowTriggerType 一一对应） */
+export const WORKFLOW_TRIGGER_TYPES = {
+  manual: 'manual',
+  cron: 'cron',
+  event: 'event',
+  resume: 'resume',
+} as const satisfies Record<WorkflowTriggerType, WorkflowTriggerType>
+
+/** 审核决策常量（含超时自动决策） */
+export const WORKFLOW_REVIEW_DECISIONS = {
+  approve: 'approve',
+  approveWithChanges: 'approve_with_changes',
+  reject: 'reject',
+  timeoutApprove: 'timeout_approve',
+  timeoutReject: 'timeout_reject',
+} as const
+
+/** 审核超时策略常量 */
+export const WORKFLOW_REVIEW_TIMEOUT_POLICIES = {
+  approve: 'approve',
+  reject: 'reject',
+  fail: 'fail',
+} as const
+
+/** wf:run-event 载荷判别常量（引擎产生、前端消费，双端契约） */
+export const WORKFLOW_RUN_EVENT_TYPES = {
+  runStatus: 'run-status',
+  nodeStatus: 'node-status',
+  nodeProgress: 'node-progress',
+  reviewRequested: 'review-requested',
+  notify: 'notify',
+} as const
+
+/** 导入导出文件格式标识 */
+export const WORKFLOW_EXPORT_KIND = 'the-bot-workflow'
+export const WORKFLOW_EXPORT_FORMAT_VERSION = 1
+
 // ==================== 常量唯一源（禁止裸字符串比较/赋值） ====================
 
 /**
