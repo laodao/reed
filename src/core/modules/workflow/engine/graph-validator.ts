@@ -51,6 +51,14 @@ export function validateGraph(
   const addError = (msg: string) => errors.push(msg)
   const addWarning = (msg: string) => warnings.push(msg)
 
+  /** review-choose 模式判定（P1：branch 来源对 choose 交互的审核节点放行） */
+  function isChooseReview(node: WorkflowNode): boolean {
+    return (
+      node.type === WORKFLOW_NODE_TYPES['human-review'] &&
+      (node.config as { interaction?: string }).interaction === 'choose'
+    )
+  }
+
   // ---------- 0. 基本形态 ----------
   if (!graph || graph.version !== 1) {
     addError(`图格式版本不支持（当前 ${graph?.version}，需要 1）`)
@@ -142,6 +150,9 @@ export function validateGraph(
     }
 
     const allowedKinds = new Set(catalog.ports.map(p => p.kind))
+    // choose 模式审核：branch 合法 + approve 不再必填（选项边取代批准边）
+    const chooseMode = isChooseReview(node)
+    if (chooseMode) allowedKinds.add('branch')
     // kind 合法性
     for (const [kind, list] of byKind) {
       if (!allowedKinds.has(kind)) {
@@ -151,7 +162,7 @@ export function validateGraph(
     // required / max
     for (const port of catalog.ports) {
       const list = byKind.get(port.kind) ?? []
-      if (list.length === 0 && port.required) {
+      if (list.length === 0 && port.required && !(chooseMode && port.kind === 'approve')) {
         addError(`节点 ${node.id}（${catalog.label}）缺少必需的「${port.label}」(${port.kind}) 出边`)
       }
       const max = port.max ?? 1
@@ -164,20 +175,30 @@ export function validateGraph(
   }
 
   // ---------- 5. branch 出边细节 ----------
+
+
   for (const edge of edges.filter(e => e.kind === 'branch')) {
     const source = nodeById.get(edge.sourceNodeId)
     if (!source) continue
-    if (source.type !== 'condition') {
-      addError(`branch 出边只能来自条件分支节点（${source.id} 是 ${source.type}）`)
+    if (source.type !== 'condition' && !isChooseReview(source)) {
+      addError(`branch 出边只能来自条件分支或 choose 模式审核节点（${source.id} 是 ${source.type}）`)
       continue
     }
     if (!edge.branchId) {
       addError(`条件分支 ${source.id} 的 branch 出边缺少 branchId`)
       continue
     }
-    const branches = (source.config as { branches?: Array<{ branchId: string }> }).branches ?? []
-    if (!branches.some(b => b.branchId === edge.branchId)) {
-      addError(`branchId「${edge.branchId}」未在节点 ${source.id} 的分支配置中声明`)
+    if (isChooseReview(source)) {
+      // choose 审核：branchId 必须在 options 中声明
+      const options = (source.config as { options?: Array<{ key: string }> }).options ?? []
+      if (!options.some(o => o.key === edge.branchId)) {
+        addError(`选项「${edge.branchId}」未在审核节点 ${source.id} 的选项配置中声明`)
+      }
+    } else {
+      const branches = (source.config as { branches?: Array<{ branchId: string }> }).branches ?? []
+      if (!branches.some(b => b.branchId === edge.branchId)) {
+        addError(`branchId「${edge.branchId}」未在节点 ${source.id} 的分支配置中声明`)
+      }
     }
   }
   // 同一 branchId 只允许一条出边（显式并行原则）+ 声明的分支必须有出边（防静默吞分支）
@@ -205,6 +226,21 @@ export function validateGraph(
         addError(
           `节点 ${node.id} 的 fallback 分支「${cfg.fallbackBranchId}」没有连接出边`
         )
+      }
+    }
+  }
+  // choose 模式审核：选项声明与出边配对校验（防静默吞选项——P1 配套）
+  for (const node of graph.nodes.filter(isChooseReview)) {
+    const optSeen = new Set<string>()
+    for (const e of outgoingOf(node.id, 'branch')) optSeen.add(e.branchId ?? '')
+    const options = (node.config as { options?: Array<{ key: string }> }).options ?? []
+    if (options.length === 0) {
+      addError(`choose 模式审核节点 ${node.id} 至少需要一个选项`)
+    }
+    for (const opt of options) {
+      if (!opt.key) addError(`审核节点 ${node.id} 的选项缺少 key`)
+      else if (!optSeen.has(opt.key)) {
+        addError(`审核节点 ${node.id} 的选项「${opt.key}」已声明但没有连接出边`)
       }
     }
   }

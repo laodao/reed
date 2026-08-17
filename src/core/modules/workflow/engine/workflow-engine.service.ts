@@ -82,6 +82,8 @@ export interface ReviewDecisionInput {
   comment?: string
   /** approve_with_changes 时的修改值（浅覆盖 payload 顶层字段） */
   editedValues?: Record<string, unknown>
+  /** choose 交互模式：用户选择的选项 key（route=branch:{choice}） */
+  choice?: string
 }
 
 /** 节点内存态（作用域内以 nodeId 为键） */
@@ -417,12 +419,19 @@ export class WorkflowEngineService {
     const state = scope?.states.get(nodeId)
     if (!scope || !state || state.status !== WORKFLOW_NODE_RUN_STATUSES.waiting_review) return false
 
-    await this.applyReviewDecision(exec, scope, state, {
-      decision: decision.decision,
-      comment: decision.comment,
-      editedValues: decision.editedValues,
-      decidedAt: new Date().toISOString(),
-    })
+    // choose 模式无效 choice → 拒绝并保持挂起（不炸调用方）
+    try {
+      await this.applyReviewDecision(exec, scope, state, {
+        decision: decision.decision,
+        comment: decision.comment,
+        editedValues: decision.editedValues,
+        choice: decision.choice,
+        decidedAt: new Date().toISOString(),
+      })
+    } catch (e) {
+      logger.warn(`审核决策被拒绝（运行保持挂起）: ${e instanceof Error ? e.message : String(e)}`)
+      return false
+    }
     // 决策已应用 → 后台续驱到终态（驳回无承接边时 applyReviewDecision 内已 finalize，
     // 不再续驱）；不阻塞调用方
     if (!exec.finished) {
@@ -442,6 +451,7 @@ export class WorkflowEngineService {
       decision: 'approve' | 'approve_with_changes' | 'reject' | 'timeout_approve' | 'timeout_reject'
       comment?: string
       editedValues?: Record<string, unknown>
+      choice?: string
       decidedAt: string
     }
   ): Promise<void> {
@@ -455,6 +465,9 @@ export class WorkflowEngineService {
         f => f.key
       )
     )
+    // P2：input 交互模式的输出字段天然可编辑（用户提交的文本就是产物）
+    const interaction = (node.config as { interaction?: string }).interaction
+    if (interaction === 'input') editableKeys.add('output_result')
     const filteredEdits = review.editedValues
       ? Object.fromEntries(Object.entries(review.editedValues).filter(([k]) => editableKeys.has(k)))
       : undefined
@@ -467,7 +480,20 @@ export class WorkflowEngineService {
       output = payload
     }
     output = truncateOutput({ ...output, decision: review.decision }, exec.settings.maxOutputChars)
-    const route = isReject ? encodeWorkflowHandleId(WORKFLOW_EDGE_KINDS.reject) : encodeWorkflowHandleId(WORKFLOW_EDGE_KINDS.approve)
+    // choose 交互：用户所选选项决定路由（复用 branch 边机制，key=branchId）
+    let route: string
+    const interaction2 = (node.config as { interaction?: string }).interaction
+    if (interaction2 === 'choose') {
+      const options = (node.config as { options?: Array<{ key: string }> }).options ?? []
+      const choice = (review as { choice?: string }).choice
+      if (!choice || !options.some(o => o.key === choice)) {
+        throw new Error(`无效的选项：${choice ?? '(空)'}`)
+      }
+      output = { ...output, choice }
+      route = encodeWorkflowHandleId(WORKFLOW_EDGE_KINDS.branch, choice)
+    } else {
+      route = isReject ? encodeWorkflowHandleId(WORKFLOW_EDGE_KINDS.reject) : encodeWorkflowHandleId(WORKFLOW_EDGE_KINDS.approve)
+    }
 
     state.status = 'succeeded'
     state.output = output
@@ -528,8 +554,13 @@ export class WorkflowEngineService {
       logger.error('[WorkflowEngine] 续驱异常', e)
       await this.finalize(exec, WORKFLOW_RUN_STATUSES.failed, `续驱异常: ${errorMessage(e)}`)
     } finally {
+      // ⚠️ 不能在任务在飞时立即 finalize（会把后续任务误标 cancelled）——
+      // pump 返回≠运行结束：任务 settle 的泵链会推进并在静默时 finalize。
       if (!exec.suspended && !exec.finished) {
-        // 作用域全部静默且无失败 → 终态
+        await exec.settled.promise
+      }
+      // 兜底：settled 未 resolve 且非挂起（泵链异常死亡）→ 直接收敛
+      if (!exec.suspended && !exec.finished) {
         await this.finalize(exec, exec.anyUnrecoveredFailure() ? WORKFLOW_RUN_STATUSES.failed : WORKFLOW_RUN_STATUSES.succeeded)
       }
       if (exec.finished) {

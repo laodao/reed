@@ -194,6 +194,10 @@ export interface WorkflowNodeConfigMap {
       label: string
       type: 'string' | 'number' | 'boolean' | 'json'
     }>
+    /** 交互模式：review=批准/驳回（默认）| choose=选项路由 | input=文本编辑提交 */
+    interaction?: 'review' | 'choose' | 'input'
+    /** choose 模式的选项（每项对应一条 branch 出边，key=branchId——复用条件分支边机制） */
+    options?: Array<{ key: string; label: string }>
   }
 
   assign: {
