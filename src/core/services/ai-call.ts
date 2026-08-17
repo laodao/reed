@@ -584,5 +584,10 @@ export async function toImageDataUrl(input: string, fetchFn: typeof fetch = fetc
     const buf = readFileSync(raw)
     return `data:${mimeOf(raw)};base64,${buf.toString('base64')}`
   }
+  // 裸输入必须是合法 base64 字符集——否则（相对路径/UNC 路径等误用）尽早报错，
+  // 而不是把路径文本当 base64 喂给模型
+  if (!/^[A-Za-z0-9+/=]+$/.test(raw)) {
+    throw new Error(`无法识别的图片输入（支持 dataUrl / http(s) URL / 绝对路径 / base64）：${raw.slice(0, 60)}`)
+  }
   return `data:image/png;base64,${raw}`
 }

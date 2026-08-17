@@ -144,16 +144,19 @@ const llmChatNode: WorkflowNodeHandler = {
     // 视觉模式：走 VLM（注意：当前底层 chatSync 暂不支持 signal——视觉模式不可中断，
     // 取消时由引擎按"结果丢弃"降级；chatSync 加 signal 为后续独立小改进）
     if (cfg.vision) {
-      const imageUrls = String(cfg.imageInput ?? '')
+      // VLM 单图（callVLM 协议限制）；多张输入取第一张，其余忽略不产生 IO
+      const firstImage = String(cfg.imageInput ?? '')
         .split(/[\n,]/)
         .map(x => x.trim())
-        .filter(Boolean)
-        .slice(0, 4)
-      const dataUrls = await Promise.all(imageUrls.map(u => toImageDataUrl(u)))
-      ctx.emitProgress(30, `视觉输入 ${dataUrls.length} 张`)
+        .filter(Boolean)[0]
+      if (!firstImage) {
+        return { status: 'failed', error: '视觉模式必须提供图片输入', retryable: false }
+      }
+      const dataUrl = await toImageDataUrl(firstImage)
+      ctx.emitProgress(30, '视觉输入已就绪')
       const content = await callVLM(
         String(cfg.prompt),
-        dataUrls[0],
+        dataUrl,
         cfg.systemPrompt ?? '',
         4096,
         cfg.providerConfigId,

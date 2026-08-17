@@ -189,6 +189,8 @@ class RunExecution {
   forceRelease = false
   /** 节点执行实例计数（护栏依据；P5：唯一计数点在 launchNode——重试/审核恢复不计） */
   readonly runCounts = new Map<string, number>()
+  /** 未恢复失败进行中：同步置位（先于任何 await），防漂浮 pump 把失败中止误判为用户取消 */
+  pendingFailureError?: string
   /** 看门狗句柄（挂起时清除、续驱时重建——防失控时长对恢复后的运行仍生效） */
   watchdogHandle: ReturnType<typeof setTimeout> | null = null
   startedAtMs = Date.now()
@@ -480,10 +482,12 @@ export class WorkflowEngineService {
       output = payload
     }
     output = truncateOutput({ ...output, decision: review.decision }, exec.settings.maxOutputChars)
-    // choose 交互：用户所选选项决定路由（复用 branch 边机制，key=branchId）
+    // choose 交互：用户所选选项决定路由（复用 branch 边机制，key=branchId）。
+    // reject 决策优先处理（choose 模式驳回走 reject 边，无 reject 边则运行失败——
+    // 避免不带 choice 的 reject 进入选项校验而永久卡死挂起）
     let route: string
     const interaction2 = (node.config as { interaction?: string }).interaction
-    if (interaction2 === 'choose') {
+    if (interaction2 === 'choose' && !isReject) {
       const options = (node.config as { options?: Array<{ key: string }> }).options ?? []
       const choice = (review as { choice?: string }).choice
       if (!choice || !options.some(o => o.key === choice)) {

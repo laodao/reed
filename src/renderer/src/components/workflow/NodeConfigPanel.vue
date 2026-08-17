@@ -47,7 +47,7 @@
 /**
  * 节点配置面板：按 NODE_CONFIG_FORMS Schema 渲染表单（组件化——新组件带 Schema 即有表单）
  */
-import { computed, inject, provide, ref, watch } from 'vue'
+import { computed, inject, provide, ref, watch, type Ref } from 'vue'
 import type { Node } from '@vue-flow/core'
 import { NODE_TYPE_CATALOG_MAP } from '@shared/types/workflow-node-catalog'
 import { NODE_CONFIG_FORMS, type CatalogFormField } from '@shared/types/workflow-node-forms'
@@ -57,7 +57,8 @@ const props = defineProps<{ node: Node }>()
 const emit = defineEmits<{ (e: 'change'): void; (e: 'remove'): void }>()
 
 /** 变量选择器上下文：画布节点（编辑器 provide）+ 当前节点 id */
-const canvasNodes = inject<any[]>('wfCanvasNodes', [])
+const canvasNodesRef = inject<Ref<any[]>>('wfCanvasNodes', ref([]))
+const canvasNodes = canvasNodesRef
 provide('wfPickerContext', {
   nodes: canvasNodes,
   excludeNodeId: computed(() => props.node.id),

@@ -132,10 +132,11 @@
 import type { CatalogFormField } from '@shared/types/workflow-node-forms'
 import type { WorkflowConditionBranch, WorkflowStartInput } from '@shared/types/workflow.types'
 import VariablePicker from './VariablePicker.vue'
-import { computed, inject, ref, type ComponentPublicInstance } from 'vue'
+import { computed, inject, ref, unref, type ComponentPublicInstance, type Ref } from 'vue'
 
 // 变量选择器数据（NodeConfigPanel provide；缺省退化为空）
-const pickerNodes = inject<{ nodes: any[]; excludeNodeId: string }>('wfPickerContext', { nodes: [], excludeNodeId: '' })
+const pickerCtx = inject<{ nodes: Ref<any[]>; excludeNodeId: unknown }>('wfPickerContext', { nodes: ref([]), excludeNodeId: '' })
+const pickerNodes = computed(() => ({ nodes: unref(pickerCtx.nodes), excludeNodeId: pickerCtx.excludeNodeId }))
 const inputRef = ref<ComponentPublicInstance | null>(null)
 
 /** 光标处插入 {{path}}（P10：拿不到原生 ref 时追加末尾兜底） */

@@ -873,7 +873,11 @@ export class KnowledgeBaseService {
       const vectors = await this.getEmbeddingVectors([req.query], config, req.signal)
       if (!vectors) return { success: false, error: '生成查询向量失败' }
 
-      const results = await db.kbVectors.searchSimilar(req.knowledgeBaseId, vectors[0], req.topK || 5)
+      const rawResults = await db.kbVectors.searchSimilar(req.knowledgeBaseId, vectors[0], req.topK || 5)
+      // 相似度阈值过滤：低于阈值的结果剔除（工作流 kb-retrieve/kb-qa 的 threshold 参数在此生效）
+      const results = req.threshold != null && req.threshold > 0
+        ? rawResults.filter(r => r.score >= (req.threshold as number))
+        : rawResults
 
       const searchResults: SearchResult[] = []
       for (const r of results) {
