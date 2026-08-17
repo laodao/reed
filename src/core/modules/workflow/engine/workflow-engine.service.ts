@@ -32,6 +32,10 @@ import {
   type ResolvedExecutionSettings,
 } from './execution-settings'
 import { buildNodeMap, computeLoopBody, type LoopBodyInfo } from './graph-topology'
+import { errorMessage, sleepAbortable } from './async-utils'
+import { createLogger } from '@core/utils/logger'
+
+const logger = createLogger('WorkflowEngine')
 
 /** 运行统计（落库 stats 列的形状） */
 export interface RunExecutionStats {
@@ -232,11 +236,19 @@ class RunExecution {
     count(this.rootScope)
     for (const scope of this.loopScopes.values()) count(scope)
     return {
-      totalNodes: this.input.graph.nodes.length,
+      // 口径：totalNodes/doneNodes 均按"执行实例"计（循环体每迭代各 1），二者可比
+      totalNodes: this.totalInstanceCount(),
       doneNodes: done,
       failedNodes: failed,
       recoveredNodes: recovered,
     }
+  }
+
+  /** 执行实例总数（根 + 各迭代作用域的 states 之和） */
+  totalInstanceCount(): number {
+    let n = this.rootScope.states.size
+    for (const scope of this.loopScopes.values()) n += scope.states.size
+    return n
   }
 
   anyUnrecoveredFailure(): boolean {
@@ -332,7 +344,7 @@ export class WorkflowEngineService {
       try {
         await this.pump(exec, exec.rootScope)
       } catch (e) {
-        console.error('[WorkflowEngine] pump 异常，兜底失败终态', e)
+        logger.error('[WorkflowEngine] pump 异常，兜底失败终态', e)
         await this.finalize(exec, 'failed', `引擎调度异常: ${errorMessage(e)}`)
       }
 
@@ -346,11 +358,11 @@ export class WorkflowEngineService {
       await exec.settled.promise
       return this.statusOf(exec)
     } catch (e) {
-      console.error('[WorkflowEngine] execute 异常', e)
+      logger.error('[WorkflowEngine] execute 异常', e)
       try {
         await this.finalize(exec, 'failed', `引擎执行异常: ${errorMessage(e)}`)
       } catch (finalizeError) {
-        console.error('[WorkflowEngine] 兜底 finalize 失败', finalizeError)
+        logger.error('[WorkflowEngine] 兜底 finalize 失败', finalizeError)
       }
       return this.statusOf(exec)
     } finally {
@@ -394,7 +406,7 @@ export class WorkflowEngineService {
     // 不再续驱）；不阻塞调用方
     if (!exec.finished) {
       void this.resumeSuspended(exec).catch(e =>
-        console.error('[WorkflowEngine] 审核续驱异常', e)
+        logger.error('[WorkflowEngine] 审核续驱异常', e)
       )
     }
     return true
@@ -492,7 +504,7 @@ export class WorkflowEngineService {
       }
       await this.pump(exec, exec.rootScope)
     } catch (e) {
-      console.error('[WorkflowEngine] 续驱异常', e)
+      logger.error('[WorkflowEngine] 续驱异常', e)
       await this.finalize(exec, 'failed', `续驱异常: ${errorMessage(e)}`)
     } finally {
       if (!exec.suspended && !exec.finished) {
@@ -603,7 +615,7 @@ export class WorkflowEngineService {
       // 挂起中不强制超时（审核等待不计入执行时长；run 的 timeout_at 死线由服务层管控）
       return
     }
-    console.warn(
+    logger.warn(
       `[WorkflowEngine] 运行 ${exec.input.runId} 超过最长时长(${exec.settings.maxDurationMs}ms)，强制超时`
     )
     exec.forceRelease = true
@@ -611,7 +623,7 @@ export class WorkflowEngineService {
     try {
       await this.finalize(exec, 'timed_out', '运行超过最长时长限制')
     } catch (e) {
-      console.error('[WorkflowEngine] 看门狗 finalize 失败', e)
+      logger.error('[WorkflowEngine] 看门狗 finalize 失败', e)
     }
   }
 
@@ -653,9 +665,9 @@ export class WorkflowEngineService {
       if (scope.requeue && !exec.finished && !scope.failed && !exec.suspended) {
         scope.requeue = false
         void this.pump(exec, scope).catch(async e => {
-          console.error('[WorkflowEngine] requeue pump 异常，兜底失败终态', e)
+          logger.error('[WorkflowEngine] requeue pump 异常，兜底失败终态', e)
           await this.finalize(exec, 'failed', `引擎调度异常: ${errorMessage(e)}`).catch(fe =>
-            console.error('[WorkflowEngine] requeue 兜底 finalize 失败', fe)
+            logger.error('[WorkflowEngine] requeue 兜底 finalize 失败', fe)
           )
         })
       }
@@ -673,7 +685,7 @@ export class WorkflowEngineService {
     // 根作用域静默 → 运行终态
     if (scope.isRoot && !exec.suspended && !exec.finished) {
       void this.finalize(exec, exec.anyUnrecoveredFailure() ? 'failed' : 'succeeded').catch(fe =>
-        console.error('[WorkflowEngine] 静默收敛 finalize 失败', fe)
+        logger.error('[WorkflowEngine] 静默收敛 finalize 失败', fe)
       )
     }
   }
@@ -764,16 +776,16 @@ export class WorkflowEngineService {
         this.runNode(exec, scope, node, state, resolvedConfig)
       )
         .catch(async e => {
-          console.error(`[WorkflowEngine] 节点 ${node.id} 执行链异常`, e)
+          logger.error(`[WorkflowEngine] 节点 ${node.id} 执行链异常`, e)
           await this.handleNodeFailure(exec, scope, node, state, `节点执行链异常: ${errorMessage(e)}`).catch(
-            fe => console.error('[WorkflowEngine] 异常兜底失败', fe)
+            fe => logger.error('[WorkflowEngine] 异常兜底失败', fe)
           )
         })
         .finally(() => {
           scope.runningTasks--
           exec.maybeSettled()
           void this.pump(exec, scope).catch(e =>
-            console.error('[WorkflowEngine] settle 后 pump 异常', e)
+            logger.error('[WorkflowEngine] settle 后 pump 异常', e)
           )
         })
     }
@@ -831,7 +843,7 @@ export class WorkflowEngineService {
       })
       this.emitNodeStatus(exec, state)
     } catch (e) {
-      console.error(`[WorkflowEngine] 节点 ${state.nodeId} 取消标记失败`, e)
+      logger.error(`[WorkflowEngine] 节点 ${state.nodeId} 取消标记失败`, e)
     }
   }
 
@@ -1208,7 +1220,7 @@ export class WorkflowEngineService {
       const state: NodeExecutionState = {
         nodeId: cp.nodeId,
         iterationIndex: 0,
-        status: cp.nodeType === 'loop' ? 'succeeded' : 'succeeded',
+        status: 'succeeded',
         retryCount: 0,
         output: cp.output,
         routeTaken: cp.routeTaken ?? null,
@@ -1266,10 +1278,8 @@ export class WorkflowEngineService {
   }
 
   private findWaitingScope(exec: RunExecution): ScopeState | null {
-    if (exec.rootScope.states.has) {
-      for (const s of exec.rootScope.states.values()) {
-        if (s.status === 'waiting_review') return exec.rootScope
-      }
+    for (const s of exec.rootScope.states.values()) {
+      if (s.status === 'waiting_review') return exec.rootScope
     }
     for (const scope of exec.loopScopes.values()) {
       for (const s of scope.states.values()) {
@@ -1330,8 +1340,8 @@ export class WorkflowEngineService {
       logger: {
         debug: (msg, extra) => console.debug(`[wf:${node.id}] ${msg}`, extra ?? ''),
         info: (msg, extra) => console.info(`[wf:${node.id}] ${msg}`, extra ?? ''),
-        warn: (msg, extra) => console.warn(`[wf:${node.id}] ${msg}`, extra ?? ''),
-        error: (msg, extra) => console.error(`[wf:${node.id}] ${msg}`, extra ?? ''),
+        warn: (msg, extra) => logger.warn(`[wf:${node.id}] ${msg}`, extra ?? ''),
+        error: (msg, extra) => logger.error(`[wf:${node.id}] ${msg}`, extra ?? ''),
       },
       emitProgress: (progress, message) => {
         this.deps.events.emit({
@@ -1399,19 +1409,9 @@ export class WorkflowEngineService {
     exec.maybeSettled()
   }
 
+  /** 可中断 sleep（resolve 语义——醒后由调用方自查 aborted） */
   private sleep(ms: number, exec: RunExecution): Promise<void> {
-    return new Promise(resolve => {
-      const timer = setTimeout(() => {
-        exec.abortController.signal.removeEventListener('abort', onAbort)
-        resolve()
-      }, ms)
-      const onAbort = () => {
-        clearTimeout(timer)
-        resolve()
-      }
-      if (exec.abortController.signal.aborted) onAbort()
-      else exec.abortController.signal.addEventListener('abort', onAbort, { once: true })
-    })
+    return sleepAbortable(ms, exec.abortController.signal, 'resolve')
   }
 }
 
@@ -1449,8 +1449,4 @@ function truncateOutput(
   }
   truncated.__truncated = true
   return truncated
-}
-
-function errorMessage(e: unknown): string {
-  return e instanceof Error ? e.message : String(e)
 }

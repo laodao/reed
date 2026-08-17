@@ -20,26 +20,12 @@ import { LongWritingAIService } from '../../../services/longwriting-ai.service'
 import type { WorkflowNodeContext } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
-import { WORKFLOW_RUN_EVENT_CHANNEL } from '@shared/types/workflow.types'
+import { WORKFLOW_DEFAULTS, WORKFLOW_RUN_EVENT_CHANNEL } from '@shared/types/workflow.types'
+import { pollUntil } from '../engine/async-utils'
 
-/** 信号已取消则抛错（可取消节点的检查点） */
-function throwIfAborted(signal: AbortSignal): void {
-  if (signal.aborted) throw new Error('已取消')
-}
-
-/** 信号感知轮询等待：每 intervalMs 检查一次直到 predicate 返回非 undefined 或超时 */
-async function pollUntil<T>(
-  check: () => Promise<T | undefined>,
-  opts: { intervalMs: number; timeoutMs: number; signal: AbortSignal }
-): Promise<T> {
-  const deadline = Date.now() + opts.timeoutMs
-  while (Date.now() < deadline) {
-    throwIfAborted(opts.signal)
-    const result = await check()
-    if (result !== undefined) return result
-    await new Promise(r => setTimeout(r, opts.intervalMs))
-  }
-  throw new Error('等待超时')
+/** 长文节点 eventId 工厂（下游 longwriting:generate:{eventId} 事件订阅依赖此格式） */
+function makeLwEventId(ctx: WorkflowNodeContext): string {
+  return `wf_${ctx.runId}_${ctx.nodeId}_${ctx.iterationIndex}`
 }
 
 /** 通用的服务响应解包：{success, data?, error?} → 失败抛错/成功返 data */
@@ -72,15 +58,16 @@ const kbRetrieveNode: WorkflowNodeHandler = {
       topK?: number
       threshold?: number
     }
-    throwIfAborted(ctx.signal)
+    if (ctx.signal.aborted) throw new Error('已取消')
     const service = new KnowledgeBaseService()
     const resp = await service.search({
       knowledgeBaseId: cfg.knowledgeBaseId,
       query: stringifyValue(cfg.query),
       topK: cfg.topK,
       threshold: cfg.threshold,
+      signal: ctx.signal, // HTTP 级取消（透传到嵌入调用）
     })
-    throwIfAborted(ctx.signal)
+    if (ctx.signal.aborted) throw new Error('已取消')
     const results = unwrap(resp, '知识库检索') ?? []
     return {
       status: 'succeeded',
@@ -150,7 +137,7 @@ const kbIngestNode: WorkflowNodeHandler = {
         if (doc.status === 'completed' || doc.status === 'failed') return doc
         return undefined
       },
-      { intervalMs: 500, timeoutMs: 120_000, signal: ctx.signal }
+      { intervalMs: WORKFLOW_DEFAULTS.kbIngestPollIntervalMs, timeoutMs: WORKFLOW_DEFAULTS.kbIngestWaitTimeoutMs, signal: ctx.signal }
     )
     if (doc.status === 'failed') {
       return { status: 'failed', error: '知识库文档处理失败', retryable: true }
@@ -281,8 +268,8 @@ const imageGenNode: WorkflowNodeHandler = {
       model: cfg.modelId,
       prompt: stringifyValue(cfg.prompt),
       ...(cfg.negativePrompt ? { negativePrompt: cfg.negativePrompt } : {}),
-      width: cfg.width ?? 1024,
-      height: cfg.height ?? 1024,
+      width: cfg.width,
+      height: cfg.height,
       ...(cfg.count ? { count: cfg.count } : {}),
       ...(cfg.providerConfigId ? { providerConfigId: cfg.providerConfigId } : {}),
     } as never)
@@ -301,7 +288,7 @@ const imageGenNode: WorkflowNodeHandler = {
           if (st.status === 'failed') throw new Error(st.error ?? '图像生成失败')
           return undefined
         },
-        { intervalMs: 2000, timeoutMs: 300_000, signal: ctx.signal }
+        { intervalMs: WORKFLOW_DEFAULTS.imagePollIntervalMs, timeoutMs: WORKFLOW_DEFAULTS.imagePollTimeoutMs, signal: ctx.signal }
       )
       images = task.images ?? []
       ctx.emitProgress(100)
@@ -430,7 +417,7 @@ const lwGenerateChapterNode: WorkflowNodeHandler = {
       modelId?: string
       waitForCompletion?: boolean
     }
-    const eventId = `wf_${ctx.runId}_${ctx.nodeId}_${ctx.iterationIndex}`
+    const eventId = makeLwEventId(ctx)
     const service = LongWritingAIService.getInstance()
     const run = () =>
       service.generateChapter(
@@ -488,7 +475,7 @@ const lwPolishNode: WorkflowNodeHandler = {
       modelId?: string
       waitForCompletion?: boolean
     }
-    const eventId = `wf_${ctx.runId}_${ctx.nodeId}_${ctx.iterationIndex}`
+    const eventId = makeLwEventId(ctx)
     const run = () =>
       LongWritingAIService.getInstance().polishBackground(
         eventId,
@@ -499,6 +486,11 @@ const lwPolishNode: WorkflowNodeHandler = {
         cfg.providerConfigId,
         cfg.modelId
       )
+    if (cfg.waitForCompletion === false) {
+      // 提交即成功：后台跑润色（失败只记日志），与 lw-generate-chapter 同模式
+      void run().catch(e => ctx.logger.error('润色（后台）失败', e))
+      return { status: 'succeeded', output: { eventId, status: 'submitted' } }
+    }
     const resp = await run()
     if (!resp.success) {
       return { status: 'failed', error: `润色失败: ${resp.error ?? '未知错误'}` }

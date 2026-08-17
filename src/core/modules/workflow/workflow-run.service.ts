@@ -24,6 +24,9 @@ import type {
 import type { WorkflowRunRepository } from '../../database/repositories/workflow-run.repository'
 import type { WorkflowNodeRunRepository, WorkflowNodeRunRecord } from '../../database/repositories/workflow-node-run.repository'
 import type { WorkflowDefinitionRepository } from '../../database/repositories/workflow-definition.repository'
+import { createLogger } from '@core/utils/logger'
+
+const logger = createLogger('WorkflowRunService')
 
 /** 全局并发上限来源：构造入参（片6 接 settings 表后由调用方解析传入） */
 export interface WorkflowRunServiceDeps {
@@ -33,6 +36,8 @@ export interface WorkflowRunServiceDeps {
   engine: WorkflowEngineService
   /** 全局并发运行上限（默认 WORKFLOW_DEFAULTS.maxConcurrentRuns） */
   maxConcurrentRuns?: number
+  /** settings 表 wf:defaults 的全局执行设置覆盖层（boot 读取注入；优先级介于默认值与 definition.settings 之间） */
+  globalSettings?: import('@shared/types/workflow.types').WorkflowExecutionSettings | null
 }
 
 /** 启动入参 */
@@ -50,6 +55,11 @@ export class WorkflowRunService {
 
   constructor(private readonly deps: WorkflowRunServiceDeps) {
     this.maxConcurrentRuns = deps.maxConcurrentRuns ?? WORKFLOW_DEFAULTS.maxConcurrentRuns
+  }
+
+  /** 合并配置链：definition.settings 覆盖全局层（globalSettings） */
+  private effectiveSettings(definitionSettings: unknown): import('@shared/types/workflow.types').WorkflowExecutionSettings | null {
+    return { ...(this.deps.globalSettings ?? {}), ...((definitionSettings as object) ?? {}) }
   }
 
   /**
@@ -106,7 +116,7 @@ export class WorkflowRunService {
       status: 'pending',
       timeoutAt: new Date(Date.now() + (def.settings?.maxDurationMs ?? WORKFLOW_DEFAULTS.maxDurationMs)),
     })
-    await this.launch(run.id, run.userId ?? LOCAL_DEFAULT_USER_ID, input.definitionId, graph, def.settings, input.inputs)
+    await this.launch(run.id, run.userId ?? LOCAL_DEFAULT_USER_ID, input.definitionId, graph, this.effectiveSettings(def.settings), input.inputs)
     return (await this.deps.runs.getById(run.id)) ?? run
   }
 
@@ -116,7 +126,7 @@ export class WorkflowRunService {
     userId: string,
     definitionId: string,
     graph: WorkflowGraph,
-    settings: unknown,
+    settings: import('@shared/types/workflow.types').WorkflowExecutionSettings | null,
     startInputs: Record<string, unknown> | null,
     resumedCheckpoints?: ExecuteRunInput['resumedCheckpoints']
   ): Promise<void> {
@@ -126,7 +136,7 @@ export class WorkflowRunService {
       definitionId,
       graph,
       startInputs: startInputs ?? {},
-      settings: settings as never,
+      settings,
       resumedCheckpoints,
     }
     if (this.deps.engine.activeRunningCount >= this.maxConcurrentRuns) {
@@ -141,7 +151,7 @@ export class WorkflowRunService {
     try {
       await runWithUserAsync(userId, () => this.deps.engine.execute(execInput))
     } catch (e) {
-      console.error('[WorkflowRunService] 引擎执行异常', e)
+      logger.error('[WorkflowRunService] 引擎执行异常', e)
       // 引擎兜底失败时的最后防线：落 failed 终态
       try {
         await runWithUserAsync(userId, () =>
@@ -152,7 +162,7 @@ export class WorkflowRunService {
           })
         )
       } catch (e2) {
-        console.error('[WorkflowRunService] 兜底落库失败', e2)
+        logger.error('[WorkflowRunService] 兜底落库失败', e2)
       }
     } finally {
       // 触发来源定义的 last_run_at 触达 + 队列出队
@@ -160,7 +170,7 @@ export class WorkflowRunService {
       if (defId) {
         void runWithUserAsync(userId, () =>
           this.deps.definitions.update(defId, { lastRunAt: new Date() })
-        ).catch(() => {})
+        ).catch(e => logger.warn('[WorkflowRunService] lastRunAt 更新失败（不影响运行）', e))
       }
       this.drainQueue()
     }
@@ -220,7 +230,12 @@ export class WorkflowRunService {
    * 断点续跑：新运行（resumed_from_run_id 链接），装配源运行 succeeded checkpoint。
    * 互斥同样适用（源运行必须是终态才可续跑）。
    */
-  async resumeRun(sourceRunId: string): Promise<WorkflowRunRecord> {
+  /**
+   * 断点续跑：新运行（resumed_from_run_id 链接），装配源运行 succeeded checkpoint。
+   * @param forceRerunNodeIds 强制重跑的节点（其 checkpoint 不装配，执行时重跑）——
+   *        功能定稿"强制重跑指定节点"选项
+   */
+  async resumeRun(sourceRunId: string, forceRerunNodeIds?: string[]): Promise<WorkflowRunRecord> {
     const source = await this.deps.runs.getById(sourceRunId)
     if (!source) throw new Error('源运行不存在')
     if (!['failed', 'cancelled', 'interrupted', 'timed_out', 'waiting_review'].includes(source.status)) {
@@ -256,7 +271,9 @@ export class WorkflowRunService {
       null,
       source.startInputs,
       // 只装配根作用域 checkpoint（iteration 0）；循环体迭代行随未完成循环重跑
-      checkpoints.filter(cp => cp.iterationIndex === 0).map(cp => ({
+      checkpoints
+        .filter(cp => cp.iterationIndex === 0 && !(forceRerunNodeIds ?? []).includes(cp.nodeId))
+        .map(cp => ({
         nodeId: cp.nodeId,
         nodeType: cp.nodeType,
         nodeName: cp.nodeName,
@@ -319,7 +336,7 @@ export class WorkflowRunService {
         }
       }
     } catch (e) {
-      console.error('[WorkflowRunService] 过期审核清理失败（继续 boot 恢复）', e)
+      logger.error('[WorkflowRunService] 过期审核清理失败（继续 boot 恢复）', e)
     }
     const recoverable = await this.deps.runs.scanBootRecoverable()
     const result = { timedOut: 0, interrupted: 0, keptWaiting: 0 }
@@ -370,14 +387,14 @@ export function makeEngineDeps(
     nodeRuns: {
       startNode: input => nodeRuns.start(input),
       patchNode: (runId, nodeId, iterationIndex, patch) =>
-        nodeRuns.update(runId, nodeId, iterationIndex, patch as never).then(() => undefined),
+        nodeRuns.update(runId, nodeId, iterationIndex, patch).then(() => undefined),
     },
     events: {
       emit: event => {
         try {
           getEventEmitter().emit(WORKFLOW_RUN_EVENT_CHANNEL, event)
         } catch (e) {
-          console.warn('[WorkflowRunService] 事件推送失败（不影响执行）', e)
+          logger.warn('[WorkflowRunService] 事件推送失败（不影响执行）', e)
         }
       },
     },

@@ -16,6 +16,9 @@ import { makeEngineDeps, WorkflowRunService } from './workflow-run.service'
 import { WorkflowDefinitionService } from './workflow-definition.service'
 import { assertNodeRegistryConsistent, createFullNodeRegistry } from './nodes'
 import { WorkflowTriggerScheduler } from './trigger/workflow-trigger-scheduler.service'
+import { createLogger } from '@core/utils/logger'
+
+const logger = createLogger('WorkflowBoot')
 
 /** 子系统单例（boot 后可用；未 boot 时 getter 抛错提示） */
 interface WorkflowSubsystem {
@@ -49,11 +52,22 @@ export async function initWorkflowSubsystem(): Promise<WorkflowSubsystem> {
     makeEngineDeps(db.workflowRuns, db.workflowNodeRuns),
     registry
   )
+  // settings 表 wf:defaults 全局执行设置（配置链：默认值 → 全局层 → definition 覆盖）
+  let globalSettings: import('@shared/types/workflow.types').WorkflowExecutionSettings | null = null
+  try {
+    const raw = db.settings ? await db.settings.get('wf:defaults') : null
+    if (raw && typeof raw === 'object') {
+      globalSettings = raw as import('@shared/types/workflow.types').WorkflowExecutionSettings
+    }
+  } catch (e) {
+    logger.warn('[workflow-boot] 读取 wf:defaults 失败（使用内置默认值）', e)
+  }
   const runService = new WorkflowRunService({
     runs: db.workflowRuns,
     nodeRuns: db.workflowNodeRuns,
     definitions: db.workflowDefinitions,
     engine,
+    globalSettings,
   })
   const definitionService = new WorkflowDefinitionService(db.workflowDefinitions, registry)
 
@@ -62,16 +76,16 @@ export async function initWorkflowSubsystem(): Promise<WorkflowSubsystem> {
   try {
     const recovered = await runService.recoverOnBoot()
     if (recovered.interrupted + recovered.timedOut + recovered.keptWaiting > 0) {
-      console.log(
+      logger.info(
         `[workflow-boot] boot 恢复：interrupted=${recovered.interrupted} timedOut=${recovered.timedOut} waitingReview=${recovered.keptWaiting}`
       )
     }
   } catch (e) {
-    console.error('[workflow-boot] boot 恢复失败（继续启动）', e)
+    logger.error('[workflow-boot] boot 恢复失败（继续启动）', e)
   }
 
   // 4. 触发调度器（cron tick + 事件订阅）
-  const scheduler = WorkflowTriggerScheduler.getInstance({
+  const scheduler = new WorkflowTriggerScheduler({
     definitions: db.workflowDefinitions,
     runService,
   })
@@ -79,16 +93,16 @@ export async function initWorkflowSubsystem(): Promise<WorkflowSubsystem> {
   // 发布/触发器变更 → 刷新调度状态与事件索引（否则 cron 发布后永不触发）
   definitionService.setTriggerScheduler(scheduler)
 
-  // 5. 审核超时 ticker（30s 扫描挂起审核的 wait_expires_at）
+  // 5. 审核超时 ticker（间隔独立于 cronTick 可单独调优）
   reviewTickerHandle = setInterval(() => {
     void engine.tickReviewTimeouts().catch(e =>
-      console.error('[workflow-boot] 审核超时扫描失败', e)
+      logger.error('[workflow-boot] 审核超时扫描失败', e)
     )
-  }, WORKFLOW_DEFAULTS.cronTickMs)
+  }, WORKFLOW_DEFAULTS.reviewTimeoutTickMs)
   reviewTickerHandle.unref?.()
 
   subsystem = { engine, runService, definitionService, scheduler }
-  console.log('[workflow-boot] 工作流子系统已启动')
+  logger.info('[workflow-boot] 工作流子系统已启动')
   return subsystem
 }
 
@@ -106,5 +120,4 @@ export function resetWorkflowSubsystem(): void {
   if (reviewTickerHandle !== null) clearInterval(reviewTickerHandle)
   reviewTickerHandle = null
   subsystem = null
-  WorkflowTriggerScheduler.resetInstance()
 }

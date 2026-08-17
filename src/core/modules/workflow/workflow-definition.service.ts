@@ -9,6 +9,7 @@ import type { WorkflowGraph, WorkflowNode, WorkflowValidationResult } from '@sha
 import { validateGraph } from './engine/graph-validator'
 import { WorkflowNodeRegistry } from './engine/node-registry'
 import { NODE_TYPE_CATALOG_MAP } from '@shared/types/workflow-node-catalog'
+import { previewCronExpression } from './trigger/workflow-trigger-scheduler.service'
 import type {
   CreateWorkflowDefinitionInput,
   DueCronTriggerRow,
@@ -16,6 +17,9 @@ import type {
   WorkflowDefinitionRecord,
 } from '../../database/repositories/workflow-definition.repository'
 import type { WorkflowDefinitionRepository } from '../../database/repositories/workflow-definition.repository'
+import { createLogger } from '@core/utils/logger'
+
+const logger = createLogger('WorkflowDefinitionService')
 
 /** 导出文件格式（导入导出 JSON 契约） */
 export interface WorkflowExportFormat {
@@ -55,7 +59,7 @@ export class WorkflowDefinitionService {
     try {
       await this.schedulerHook.recomputeOne(definitionId)
     } catch (e) {
-      console.error('[WorkflowDefinitionService] 调度状态刷新失败（不影响发布结果）', e)
+      logger.error('[WorkflowDefinitionService] 调度状态刷新失败（不影响发布结果）', e)
     }
   }
 
@@ -110,6 +114,29 @@ export class WorkflowDefinitionService {
     return this.repo.delete(id)
   }
 
+  /**
+   * 触发器校验（发布时调用）：
+   * - V1 限制：每个定义至多 1 个启用的 cron 触发器（定义级单列 next_fire_at
+   *   无法独立调度多个表达式；per-trigger 状态表为 V2 项）
+   * - cron 表达式合法性、事件触发器 eventName 必填
+   */
+  validateTriggers(triggers: unknown[]): string[] {
+    const errors: string[] = []
+    const list = triggers as Array<{ type?: string; expression?: string; enabled?: boolean; eventName?: string }>
+    const enabledCron = list.filter(t => t.type === 'cron' && t.enabled)
+    if (enabledCron.length > 1) {
+      errors.push('V1 限制：每个工作流只能启用 1 个定时触发器')
+    }
+    for (const t of enabledCron) {
+      const preview = previewCronExpression(t.expression ?? '')
+      if (!preview.valid) errors.push(`cron 表达式无效：${t.expression}（${preview.error}）`)
+    }
+    for (const t of list.filter(x => x.type === 'event' && x.enabled)) {
+      if (!t.eventName) errors.push('事件触发器缺少 eventName')
+    }
+    return errors
+  }
+
   /** 图校验（编辑器实时调用；含 handler config 深度校验） */
   validate(graph: WorkflowGraph): WorkflowValidationResult {
     return validateGraph(graph, {
@@ -136,6 +163,12 @@ export class WorkflowDefinitionService {
     const result = this.validate(graph)
     if (!result.valid) {
       return { success: false, error: `图校验未通过：${result.errors.slice(0, 5).join('；')}` }
+    }
+    // 触发器合法性（发布时固化——含 V1 单 cron 限制）
+    const effectiveTriggers = triggers ?? def.triggers
+    const triggerErrors = this.validateTriggers(effectiveTriggers)
+    if (triggerErrors.length > 0) {
+      return { success: false, error: `触发器配置无效：${triggerErrors.join('；')}` }
     }
     const updated = await this.repo.update(id, {
       publishedGraph: graph,
@@ -173,7 +206,8 @@ export class WorkflowDefinitionService {
    * 名称加"（导入）"后缀避免混淆。
    */
   async importDefinition(
-    content: string
+    content: string,
+    opts?: { duplicatePolicy?: 'copy' | 'overwrite' }
   ): Promise<{ success: boolean; error?: string; definition?: WorkflowDefinitionRecord }> {
     let parsed: WorkflowExportFormat
     try {
@@ -196,8 +230,30 @@ export class WorkflowDefinitionService {
         error: `包含未知的节点类型：${[...new Set(unknown.map(n => n.type))].join(', ')}`,
       }
     }
+    // 结构校验（导入即给反馈——草稿也应是合法图）
+    const structure = this.validate(graph)
+    if (!structure.valid) {
+      return { success: false, error: `图结构校验未通过：${structure.errors.slice(0, 5).join('；')}` }
+    }
+    // 覆盖策略：overwrite = 更新同名工作流的草稿（保留 id/版本/运行历史）
+    if (opts?.duplicatePolicy === 'overwrite') {
+      const existing = await this.repo.list({ keyword: parsed.name, page: 1, pageSize: 50 })
+      const match = existing.items.find(d => d.name === parsed.name)
+      if (match) {
+        const updated = await this.repo.update(match.id, {
+          name: parsed.name,
+          description: parsed.description,
+          category: parsed.category,
+          draftGraph: graph,
+          triggers: Array.isArray(parsed.triggers) ? (parsed.triggers as never) : undefined,
+          settings: (parsed.settings as never) ?? undefined,
+        })
+        return { success: true, definition: updated ?? undefined }
+      }
+      // 无同名 → 落到新建
+    }
     const created = await this.create({
-      name: `${parsed.name}（导入）`,
+      name: opts?.duplicatePolicy === 'overwrite' ? parsed.name : `${parsed.name}（导入）`,
       description: parsed.description,
       category: parsed.category,
       draftGraph: graph,

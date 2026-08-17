@@ -413,7 +413,7 @@ app.whenReady().then(async () => {
     const { initWorkflowSubsystem } = await import('@core/modules/workflow/workflow-boot')
     await initWorkflowSubsystem()
   } catch (e: any) {
-    console.warn('[boot] 工作流子系统启动失败（不致命）:', e?.message ?? e)
+    console.warn('[boot] 工作流子系统启动失败（不致命）', e)
   }
 
   // 创建窗口

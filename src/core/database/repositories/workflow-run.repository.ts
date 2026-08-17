@@ -18,6 +18,9 @@ import type {
 } from '@shared/types/workflow.types'
 import { WorkflowRunEntity } from '../entities/workflow-run.entity'
 import { BaseRepository } from '../base-repository'
+import { createLogger } from '@core/utils/logger'
+
+const logger = createLogger('WorkflowRunRepository')
 
 /** 运行统计 */
 export interface WorkflowRunStats {
@@ -84,12 +87,13 @@ export const MUTEX_RUN_STATUSES: readonly WorkflowRunStatus[] = [
   'waiting_review',
 ]
 
-function safeParse<T>(raw: string | null, fallback: T): T {
+/** JSON 列安全解析（context 传实体定位信息，损坏可排查） */
+function safeParse<T>(raw: string | null, fallback: T, context = ''): T {
   if (!raw) return fallback
   try {
     return JSON.parse(raw) as T
   } catch {
-    console.warn('[WorkflowRunRepository] JSON 列解析失败，降级处理')
+    logger.warn(`[WorkflowRunRepository] JSON 列解析失败（${context}），降级处理`)
     return fallback
   }
 }
@@ -105,7 +109,7 @@ export class WorkflowRunRepository extends BaseRepository<WorkflowRunEntity, Wor
       userId: e.userId,
       definitionId: e.definitionId,
       definitionVersion: e.definitionVersion,
-      graphSnapshot: safeParse<WorkflowGraph | null>(e.graphSnapshot, null),
+      graphSnapshot: safeParse<WorkflowGraph | null>(e.graphSnapshot, null, `id=${e.id}.graphSnapshot`),
       triggerType: e.triggerType as WorkflowTriggerType,
       triggerInfo: safeParse<Record<string, unknown> | null>(e.triggerInfo, null),
       startInputs: safeParse<Record<string, unknown> | null>(e.startInputs, null),

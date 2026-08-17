@@ -15,10 +15,13 @@ import { type DataSource, type FindOptionsWhere } from 'typeorm'
 import type { WorkflowNodeRunStatus } from '@shared/types/workflow.types'
 import { WorkflowNodeRunEntity } from '../entities/workflow-node-run.entity'
 import { BaseRepository } from '../base-repository'
+import { createLogger } from '@core/utils/logger'
+
+const logger = createLogger('WorkflowNodeRunRepository')
 
 /** 审核操作留痕 */
 export interface WorkflowReviewRecord {
-  decision: 'approve' | 'approve_with_changes' | 'reject'
+  decision: 'approve' | 'approve_with_changes' | 'reject' | 'timeout_approve' | 'timeout_reject'
   comment?: string
   editedValues?: Record<string, unknown>
   decidedAt: string
@@ -71,12 +74,13 @@ export interface UpdateNodeRunInput {
   durationMs?: number | null
 }
 
-function safeParse<T>(raw: string | null, fallback: T): T {
+/** JSON 列安全解析（context 传实体定位信息，损坏可排查） */
+function safeParse<T>(raw: string | null, fallback: T, context = ''): T {
   if (!raw) return fallback
   try {
     return JSON.parse(raw) as T
   } catch {
-    console.warn('[WorkflowNodeRunRepository] JSON 列解析失败，降级处理')
+    logger.warn(`[WorkflowNodeRunRepository] JSON 列解析失败（${context}），降级处理`)
     return fallback
   }
 }
@@ -100,7 +104,7 @@ export class WorkflowNodeRunRepository extends BaseRepository<
       iterationIndex: e.iterationIndex,
       status: e.status as WorkflowNodeRunStatus,
       input: safeParse<Record<string, unknown> | null>(e.inputJson, null),
-      output: safeParse<Record<string, unknown> | null>(e.outputJson, null),
+      output: safeParse<Record<string, unknown> | null>(e.outputJson, null, `id=${e.id}.output`),
       error: e.error,
       retryCount: e.retryCount,
       routeTaken: e.routeTaken,

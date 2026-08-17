@@ -762,7 +762,7 @@ export class KnowledgeBaseService {
     return result
   }
 
-  async getEmbeddingVectors(texts: string[], config: EmbeddingConfig): Promise<number[][] | null> {
+  async getEmbeddingVectors(texts: string[], config: EmbeddingConfig, signal?: AbortSignal): Promise<number[][] | null> {
     try {
       if (!config.providerConfigId) throw new Error('未配置 Embedding 提供商')
 
@@ -796,7 +796,8 @@ export class KnowledgeBaseService {
       const res = await fetch(url, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ model, input: texts })
+        body: JSON.stringify({ model, input: texts }),
+        ...(signal ? { signal } : {})
       })
 
       if (!res.ok) {
@@ -869,7 +870,7 @@ export class KnowledgeBaseService {
       if (!kb) return { success: false, error: '知识库不存在' }
 
       const config: EmbeddingConfig = kb.embeddingConfig ? JSON.parse(kb.embeddingConfig) : {}
-      const vectors = await this.getEmbeddingVectors([req.query], config)
+      const vectors = await this.getEmbeddingVectors([req.query], config, req.signal)
       if (!vectors) return { success: false, error: '生成查询向量失败' }
 
       const results = await db.kbVectors.searchSimilar(req.knowledgeBaseId, vectors[0], req.topK || 5)

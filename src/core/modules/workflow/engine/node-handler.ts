@@ -10,7 +10,7 @@
  *              2. execute 必须可重入：同一 handler 实例可能被多个运行并发调用，
  *                 禁止在 handler 内保存跨调用的可变状态。
  *              3. signal.aborted 后禁止产生副作用（写库/发事件/落盘）——
- *                 setlle 前自查（引擎对不可取消节点有 orphan 兜底，但 handler 自律是第一道防线）。
+ *                 settle 前自查（引擎对不可取消节点有 orphan 兜底，但 handler 自律是第一道防线）。
  *              4. 返回 'failed' 时不要自行重试——重试由引擎统一管理（retryCount/retryDelayMs）。
  *              5. 输出对象必须是可 JSON 序列化的纯对象（将作为 checkpoint 与变量上下文存储）。
  */

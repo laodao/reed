@@ -599,6 +599,16 @@ export const WORKFLOW_DEFAULTS = {
   cronTickMs: 30_000,
   /** cron 错过宽限窗口 = 2 × tick（超过视为错过，推进到未来首个触发点） */
   cronGraceFactor: 2,
+  /** 审核超时扫描间隔（独立于 cronTick——语义无关，可独立调优） */
+  reviewTimeoutTickMs: 30_000,
+  /** HTTP 请求节点默认超时（封顶 WORKFLOW_LIMITS.httpTimeoutMs） */
+  httpRequestTimeoutMs: 30_000,
+  /** 知识库入库等待：轮询间隔 / 总超时 */
+  kbIngestPollIntervalMs: 500,
+  kbIngestWaitTimeoutMs: 120_000,
+  /** 图像生成等待：轮询间隔 / 总超时 */
+  imagePollIntervalMs: 2_000,
+  imagePollTimeoutMs: 300_000,
 } as const
 
 /** 硬性上限（任何层级的配置都不可超过；防失控的最终防线） */
@@ -611,4 +621,5 @@ export const WORKFLOW_LIMITS = {
   maxConcurrentRuns: 10,
   retryDelayMs: 60_000,
   httpTimeoutMs: 300_000,
+  imagePollTimeoutMs: 600_000,
 } as const

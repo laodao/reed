@@ -20,6 +20,10 @@ import { Column, Entity, Index, PrimaryColumn, Unique } from 'typeorm'
 @Index('idx_wf_noderun_wait', ['waitExpiresAt'])
 @Unique('uq_wf_noderun_exec', ['runId', 'nodeId', 'iterationIndex'])
 export class WorkflowNodeRunEntity {
+  /**
+   * 所属用户 ID（多租户隔离）。Web 端 ALS 注入；Electron 单用户为 null。
+   * BaseRepository 在所有查询/写入前注入 WHERE user_id 与默认 user_id。
+   */
   @Column({ name: 'user_id', type: 'varchar', nullable: true })
   userId!: string | null
 

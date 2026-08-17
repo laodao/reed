@@ -20,6 +20,9 @@ import type {
 } from '@shared/types/workflow.types'
 import { WorkflowDefinitionEntity } from '../entities/workflow-definition.entity'
 import { BaseRepository } from '../base-repository'
+import { createLogger } from '@core/utils/logger'
+
+const logger = createLogger('WorkflowDefinitionRepository')
 
 /** 工作流定义 DTO（JSON 列已解析） */
 export interface WorkflowDefinitionRecord {
@@ -76,13 +79,13 @@ export interface DueCronTriggerRow {
   triggers: WorkflowTrigger[]
 }
 
-/** JSON 列安全解析（损坏数据降级为 fallback，不抛错） */
-function safeParse<T>(raw: string | null, fallback: T): T {
+/** JSON 列安全解析（context 传实体定位信息，损坏可排查；损坏数据降级为 fallback 不抛错） */
+function safeParse<T>(raw: string | null, fallback: T, context = ''): T {
   if (!raw) return fallback
   try {
     return JSON.parse(raw) as T
   } catch {
-    console.warn('[WorkflowDefinitionRepository] JSON 列解析失败，降级处理')
+    logger.warn(`[WorkflowDefinitionRepository] JSON 列解析失败（${context}），降级处理`)
     return fallback
   }
 }
@@ -101,11 +104,11 @@ export class WorkflowDefinitionRepository extends BaseRepository<
       name: e.name,
       description: e.description,
       category: e.category,
-      draftGraph: safeParse<WorkflowGraph | null>(e.draftGraph, null),
-      publishedGraph: safeParse<WorkflowGraph | null>(e.publishedGraph, null),
+      draftGraph: safeParse<WorkflowGraph | null>(e.draftGraph, null, `id=${e.id}.draftGraph`),
+      publishedGraph: safeParse<WorkflowGraph | null>(e.publishedGraph, null, `id=${e.id}.publishedGraph`),
       publishedVersion: e.publishedVersion,
       publishedAt: e.publishedAt,
-      triggers: safeParse<WorkflowTrigger[]>(e.triggers, []),
+      triggers: safeParse<WorkflowTrigger[]>(e.triggers, [], `id=${e.id}.triggers`),
       settings: safeParse<WorkflowExecutionSettings | null>(e.settings, null),
       nextFireAt: e.nextFireAt,
       lastFireAt: e.lastFireAt,
@@ -154,7 +157,8 @@ export class WorkflowDefinitionRepository extends BaseRepository<
       .skip((params.page - 1) * params.pageSize)
       .take(params.pageSize)
     if (params.keyword) {
-      qb.andWhere('(d.name LIKE :kw OR d.description LIKE :kw)', {
+      // LOWER 双方言统一大小写不敏感（SQLite LIKE 本就不敏感，PG LIKE 敏感）
+      qb.andWhere('(LOWER(d.name) LIKE LOWER(:kw) OR LOWER(d.description) LIKE LOWER(:kw))', {
         kw: `%${params.keyword}%`,
       })
     }

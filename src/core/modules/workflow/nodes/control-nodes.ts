@@ -16,6 +16,7 @@ import type {
 } from '@shared/types/workflow.types'
 import type { WorkflowNodeExecutionResult, WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
+import { encodeWorkflowHandleId } from '@shared/types/workflow.types'
 
 // ==================== 开始 ====================
 
@@ -139,7 +140,7 @@ const conditionNode: WorkflowNodeHandler<any, 'condition'> = {
     return errors
   },
   async execute(ctx): Promise<WorkflowNodeExecutionResult> {
-    const cfg = ctx.config as unknown as {
+    const cfg = ctx.config as {
       branches: WorkflowConditionBranch[]
       noMatchPolicy: 'fallback' | 'fail'
       fallbackBranchId?: string
@@ -155,7 +156,7 @@ const conditionNode: WorkflowNodeHandler<any, 'condition'> = {
         return {
           status: 'succeeded',
           output: { matchedBranch: br.branchId },
-          route: `branch:${br.branchId}`,
+          route: encodeWorkflowHandleId('branch', br.branchId),
         }
       }
     }
@@ -164,7 +165,7 @@ const conditionNode: WorkflowNodeHandler<any, 'condition'> = {
       return {
         status: 'succeeded',
         output: { matchedBranch: cfg.fallbackBranchId, fallback: true },
-        route: `branch:${cfg.fallbackBranchId}`,
+        route: encodeWorkflowHandleId('branch', cfg.fallbackBranchId),
       }
     }
     return { status: 'failed', error: '所有分支条件均未命中（noMatchPolicy=fail）', retryable: false }
@@ -229,7 +230,7 @@ const assignNode: WorkflowNodeHandler<any, 'assign'> = {
     return errors
   },
   async execute(ctx) {
-    const cfg = ctx.config as unknown as {
+    const cfg = ctx.config as {
       assignments: Array<{ key: string; value: string }>
     }
     // value 已由引擎 resolveConfigDeep 解析（单占位透传保留类型）——直接使用，

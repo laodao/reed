@@ -300,6 +300,8 @@ export interface SearchRequest {
   knowledgeBaseId: string
   /** 查询文本 */
   query: string
+  /** 取消信号（透传到嵌入 HTTP 调用，向后兼容可选） */
+  signal?: AbortSignal
   /** 返回结果数量 */
   topK?: number
   /** 向量检索权重 */

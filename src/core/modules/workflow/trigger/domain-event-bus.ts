@@ -19,11 +19,15 @@ export interface DomainEvent {
   occurredAt: number
 }
 
+/** 事件总线监听上限（量级假设见构造内注释） */
+const EVENT_BUS_MAX_LISTENERS = 50
+
 class WorkflowDomainEventBus {
   private emitter = new EventEmitter()
 
   constructor() {
-    this.emitter.setMaxListeners(50)
+    // 监听上限：当前订阅方仅调度器 1 个；预留给多模块订阅（超限 Node 告警而非静默漏收）
+    this.emitter.setMaxListeners(EVENT_BUS_MAX_LISTENERS)
   }
 
   publish(name: string, payload: Record<string, unknown>): void {

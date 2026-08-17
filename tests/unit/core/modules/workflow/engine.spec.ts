@@ -565,7 +565,8 @@ describe('WorkflowEngineService 核心调度', () => {
     )
     await execute(engine, runInput(graph))
     expect(nodeRuns.statusOf('orphan')).toBeUndefined()
-    expect(runs.finalPatch.stats).toMatchObject({ totalNodes: 4, doneNodes: 3 })
+    // 口径：totalNodes/doneNodes 均按执行实例计（不可达节点不执行、不计入）
+    expect(runs.finalPatch.stats).toMatchObject({ totalNodes: 3, doneNodes: 3 })
   })
 
   it('事件序列：run running → … → succeeded；节点状态可见', async () => {

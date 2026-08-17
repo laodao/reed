@@ -25,6 +25,9 @@ import { WORKFLOW_DEFAULTS } from '@shared/types/workflow.types'
 import { subscribeDomainEvents, type DomainEvent } from './domain-event-bus'
 import type { WorkflowDefinitionRepository } from '../../../database/repositories/workflow-definition.repository'
 import type { WorkflowRunService } from '../workflow-run.service'
+import { createLogger } from '@core/utils/logger'
+
+const logger = createLogger('WorkflowTriggerScheduler')
 
 /** 定时器注入接口（测试用 fake timers） */
 export interface SchedulerTimer {
@@ -55,9 +58,8 @@ export function previewCronExpression(expression: string): {
   }
 }
 
+/** 生命周期由 workflow-boot 持有（构造注入依赖；测试直接 new） */
 export class WorkflowTriggerScheduler {
-  private static instance: WorkflowTriggerScheduler | null = null
-
   private tickHandle: unknown = null
   private unsubscribeEvents: (() => void) | null = null
   /** 事件触发器内存索引：事件名 → 触发器列表 */
@@ -77,18 +79,6 @@ export class WorkflowTriggerScheduler {
     private readonly tickMs: number = WORKFLOW_DEFAULTS.cronTickMs
   ) {}
 
-  static getInstance(deps?: ConstructorParameters<typeof WorkflowTriggerScheduler>[0]): WorkflowTriggerScheduler {
-    if (!WorkflowTriggerScheduler.instance) {
-      if (!deps) throw new Error('[WorkflowTriggerScheduler] 未初始化（首次 getInstance 需传入依赖）')
-      WorkflowTriggerScheduler.instance = new WorkflowTriggerScheduler(deps)
-    }
-    return WorkflowTriggerScheduler.instance
-  }
-
-  static resetInstance(): void {
-    WorkflowTriggerScheduler.instance = null
-  }
-
   /** 双端 boot 启动（幂等） */
   async start(): Promise<void> {
     if (this.started) return
@@ -96,7 +86,7 @@ export class WorkflowTriggerScheduler {
     this.tickHandle = this.timer.setInterval(() => void this.tick(), this.tickMs)
     await this.refreshEventIndex()
     this.unsubscribeEvents = subscribeDomainEvents(event => void this.handleDomainEvent(event))
-    console.log(`[WorkflowTriggerScheduler] 已启动（tick=${this.tickMs}ms）`)
+    logger.info(`[WorkflowTriggerScheduler] 已启动（tick=${this.tickMs}ms）`)
   }
 
   stop(): void {
@@ -112,7 +102,7 @@ export class WorkflowTriggerScheduler {
     try {
       await this.tickInner(now)
     } catch (e) {
-      console.error('[WorkflowTriggerScheduler] tick 异常', e)
+      logger.error('[WorkflowTriggerScheduler] tick 异常', e)
     }
   }
 
@@ -121,7 +111,7 @@ export class WorkflowTriggerScheduler {
     try {
       due = await this.deps.definitions.scanDueCronTriggers(now)
     } catch (e) {
-      console.error('[WorkflowTriggerScheduler] 扫描到期触发器失败', e)
+      logger.error('[WorkflowTriggerScheduler] 扫描到期触发器失败', e)
       return
     }
     const graceMs = this.tickMs * WORKFLOW_DEFAULTS.cronGraceFactor
@@ -148,10 +138,10 @@ export class WorkflowTriggerScheduler {
               })
               fired = true
             } catch (e) {
-              console.error(`[WorkflowTriggerScheduler] 定时触发失败: ${row.id}`, e)
+              logger.error(`[WorkflowTriggerScheduler] 定时触发失败: ${row.id}`, e)
             }
           } else {
-            console.warn(
+            logger.warn(
               `[WorkflowTriggerScheduler] 错过触发点（${Math.round(overdueMs / 1000)}s 前），跳过不补跑: ${row.id}`
             )
           }
@@ -206,7 +196,7 @@ export class WorkflowTriggerScheduler {
       }
       this.eventIndex = index
     } catch (e) {
-      console.error('[WorkflowTriggerScheduler] 重建事件索引失败', e)
+      logger.error('[WorkflowTriggerScheduler] 重建事件索引失败', e)
     }
   }
 
@@ -229,7 +219,7 @@ export class WorkflowTriggerScheduler {
           })
         )
       } catch (e) {
-        console.error(`[WorkflowTriggerScheduler] 事件触发失败: ${t.definitionId}`, e)
+        logger.error(`[WorkflowTriggerScheduler] 事件触发失败: ${t.definitionId}`, e)
       }
     }
   }
@@ -239,7 +229,7 @@ export class WorkflowTriggerScheduler {
     try {
       return CronExpressionParser.parse(expression, { currentDate: fromDate }).next().toDate()
     } catch (e) {
-      console.error(`[WorkflowTriggerScheduler] cron 表达式无效: ${expression}`, e)
+      logger.error(`[WorkflowTriggerScheduler] cron 表达式无效: ${expression}`, e)
       return null
     }
   }

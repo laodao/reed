@@ -6,27 +6,11 @@
  */
 
 import { callAIStream } from '../../../services/ai-call'
+import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from '@shared/types/workflow.types'
+import { sleepAbortable } from '../engine/async-utils'
 import type { WorkflowNodeContext } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
-
-/** signal 感知的 sleep */
-function sleepAbortable(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const t = setTimeout(finish, ms)
-    function finish() {
-      clearTimeout(t)
-      signal.removeEventListener('abort', onAbort)
-      resolve()
-    }
-    function onAbort() {
-      clearTimeout(t)
-      reject(new Error('已取消'))
-    }
-    if (signal.aborted) onAbort()
-    else signal.addEventListener('abort', onAbort, { once: true })
-  })
-}
 
 // ==================== 延时 ====================
 
@@ -46,7 +30,7 @@ const delayNode: WorkflowNodeHandler = {
   async execute(ctx: WorkflowNodeContext) {
     const ms = Number((ctx.config as { durationMs: number }).durationMs)
     const t0 = Date.now()
-    await sleepAbortable(ms, ctx.signal)
+    await sleepAbortable(ms, ctx.signal, 'reject')
     return { status: 'succeeded', output: { waitedMs: Date.now() - t0 } }
   },
 }
@@ -85,7 +69,7 @@ const httpRequestNode: WorkflowNodeHandler = {
       body?: string
       timeoutMs?: number
     }
-    const timeout = Math.min(cfg.timeoutMs ?? 30_000, 300_000)
+    const timeout = Math.min(cfg.timeoutMs ?? WORKFLOW_DEFAULTS.httpRequestTimeoutMs, WORKFLOW_LIMITS.httpTimeoutMs)
     // 运行取消信号 + 超时信号合并
     const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(timeout)])
     let res: Response
