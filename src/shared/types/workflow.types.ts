@@ -477,6 +477,76 @@ export type WorkflowRunEvent =
       message: string
     }
 
+
+// ==================== 常量唯一源（禁止裸字符串比较/赋值） ====================
+
+/**
+ * 节点类型常量：键=值，satisfies 保证与 WorkflowNodeType 联合一一对应——
+ * 新增类型必须同时加联合与此表（漏加编译报错），杜绝第二套写法。
+ */
+export const WORKFLOW_NODE_TYPES = {
+  start: 'start',
+  end: 'end',
+  condition: 'condition',
+  parallel: 'parallel',
+  'parallel-merge': 'parallel-merge',
+  loop: 'loop',
+  delay: 'delay',
+  'human-review': 'human-review',
+  assign: 'assign',
+  'llm-chat': 'llm-chat',
+  'kb-retrieve': 'kb-retrieve',
+  'kb-ingest': 'kb-ingest',
+  'web-search': 'web-search',
+  translate: 'translate',
+  'image-gen': 'image-gen',
+  tts: 'tts',
+  stt: 'stt',
+  'lw-generate-chapter': 'lw-generate-chapter',
+  'lw-polish': 'lw-polish',
+  'http-request': 'http-request',
+  'app-notify': 'app-notify',
+} as const satisfies Record<WorkflowNodeType, WorkflowNodeType>
+
+/** 出边类型常量（键=值，与 WorkflowEdgeKind 一一对应） */
+export const WORKFLOW_EDGE_KINDS = {
+  normal: 'normal',
+  fail: 'fail',
+  approve: 'approve',
+  reject: 'reject',
+  branch: 'branch',
+  'loop-body': 'loop-body',
+  'loop-back': 'loop-back',
+  'loop-done': 'loop-done',
+} as const satisfies Record<WorkflowEdgeKind, WorkflowEdgeKind>
+
+/** 运行状态常量（键=值，与 WorkflowRunStatus 一一对应） */
+export const WORKFLOW_RUN_STATUSES = {
+  pending: 'pending',
+  running: 'running',
+  waiting_review: 'waiting_review',
+  succeeded: 'succeeded',
+  failed: 'failed',
+  cancelled: 'cancelled',
+  interrupted: 'interrupted',
+  skipped: 'skipped',
+  timed_out: 'timed_out',
+} as const satisfies Record<WorkflowRunStatus, WorkflowRunStatus>
+
+/** 节点运行状态常量（键=值，与 WorkflowNodeRunStatus 一一对应） */
+export const WORKFLOW_NODE_RUN_STATUSES = {
+  pending: 'pending',
+  running: 'running',
+  waiting_review: 'waiting_review',
+  succeeded: 'succeeded',
+  failed: 'failed',
+  failed_recovered: 'failed_recovered',
+  cancelled: 'cancelled',
+  interrupted: 'interrupted',
+  skipped: 'skipped',
+  timed_out: 'timed_out',
+} as const satisfies Record<WorkflowNodeRunStatus, WorkflowNodeRunStatus>
+
 // ==================== handleId 编码（编辑器 ↔ 引擎共用） ====================
 
 /** normal 出边的 handleId（Vue Flow sourceHandle） */

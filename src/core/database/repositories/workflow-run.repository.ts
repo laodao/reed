@@ -11,6 +11,7 @@
  */
 
 import { In, type DataSource, type FindOptionsWhere } from 'typeorm'
+import { WORKFLOW_RUN_STATUSES } from '@shared/types/workflow.types'
 import type {
   WorkflowGraph,
   WorkflowRunStatus,
@@ -80,11 +81,11 @@ export interface UpdateWorkflowRunInput {
   cancelRequestedAt?: Date | null
 }
 
-/** 占用同工作流互斥的状态集合（新触发命中即跳过） */
+/** 占用同工作流互斥的状态集合（新触发命中即跳过）——从唯一常量源构建 */
 export const MUTEX_RUN_STATUSES: readonly WorkflowRunStatus[] = [
-  'pending',
-  'running',
-  'waiting_review',
+  WORKFLOW_RUN_STATUSES.pending,
+  WORKFLOW_RUN_STATUSES.running,
+  WORKFLOW_RUN_STATUSES.waiting_review,
 ]
 
 /** JSON 列安全解析（context 传实体定位信息，损坏可排查） */

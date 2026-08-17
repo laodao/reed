@@ -12,7 +12,7 @@
 import { LOCAL_DEFAULT_USER_ID, runWithUserAsync } from '@core/context/user-context'
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import type { WorkflowGraph, WorkflowRunStatus, WorkflowTriggerType } from '@shared/types/workflow.types'
-import { WORKFLOW_DEFAULTS, WORKFLOW_RUN_EVENT_CHANNEL } from '@shared/types/workflow.types'
+import { WORKFLOW_DEFAULTS, WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_STATUSES, WORKFLOW_NODE_TYPES } from '@shared/types/workflow.types'
 import { WorkflowEngineService, type ExecuteRunInput, type ReviewDecisionInput } from './engine/workflow-engine.service'
 import type { WorkflowEngineDeps } from './engine/ports'
 import type {
@@ -80,7 +80,7 @@ export class WorkflowRunService {
         triggerType: input.triggerType,
         triggerInfo: input.triggerInfo,
         startInputs: input.inputs,
-        status: 'skipped',
+        status: WORKFLOW_RUN_STATUSES.skipped,
         skipReason: '同工作流已有运行中实例',
       })
     }
@@ -91,7 +91,7 @@ export class WorkflowRunService {
     if (!graph || graph.nodes.length === 0) throw new Error('工作流没有可执行的图')
 
     // start 输入参数：required 校验 + defaultValue 合并（定时/事件触发无来源时用默认值）
-    const startNode = graph.nodes.find(n => n.type === 'start')
+    const startNode = graph.nodes.find(n => n.type === WORKFLOW_NODE_TYPES.start)
     const inputDefs = (startNode?.config as { inputs?: Array<{ key: string; required?: boolean; defaultValue?: unknown }> } | undefined)?.inputs ?? []
     const mergedInputs: Record<string, unknown> = { ...(input.inputs ?? {}) }
     for (const def2 of inputDefs) {
@@ -113,7 +113,7 @@ export class WorkflowRunService {
       triggerType: input.triggerType,
       triggerInfo: input.triggerInfo,
       startInputs: mergedInputs,
-      status: 'pending',
+      status: WORKFLOW_RUN_STATUSES.pending,
       timeoutAt: new Date(Date.now() + (def.settings?.maxDurationMs ?? WORKFLOW_DEFAULTS.maxDurationMs)),
     })
     await this.launch(run.id, run.userId ?? LOCAL_DEFAULT_USER_ID, input.definitionId, graph, this.effectiveSettings(def.settings), input.inputs)
@@ -156,7 +156,7 @@ export class WorkflowRunService {
       try {
         await runWithUserAsync(userId, () =>
           this.deps.runs.update(runId, {
-            status: 'failed',
+            status: WORKFLOW_RUN_STATUSES.failed,
             error: `引擎执行异常: ${e instanceof Error ? e.message : String(e)}`,
             finishedAt: new Date(),
           })
@@ -196,9 +196,9 @@ export class WorkflowRunService {
     if (idx >= 0) this.queue.splice(idx, 1)
     const run = await this.deps.runs.getById(runId)
     if (!run) return false
-    if (['pending', 'waiting_review'].includes(run.status)) {
+    if ([WORKFLOW_RUN_STATUSES.pending, WORKFLOW_RUN_STATUSES.waiting_review].includes(run.status)) {
       await this.deps.runs.update(runId, {
-        status: 'cancelled',
+        status: WORKFLOW_RUN_STATUSES.cancelled,
         finishedAt: new Date(),
         cancelRequestedAt: new Date(),
       })
@@ -238,7 +238,7 @@ export class WorkflowRunService {
   async resumeRun(sourceRunId: string, forceRerunNodeIds?: string[]): Promise<WorkflowRunRecord> {
     const source = await this.deps.runs.getById(sourceRunId)
     if (!source) throw new Error('源运行不存在')
-    if (!['failed', 'cancelled', 'interrupted', 'timed_out', 'waiting_review'].includes(source.status)) {
+    if (![WORKFLOW_RUN_STATUSES.failed, WORKFLOW_RUN_STATUSES.cancelled, WORKFLOW_RUN_STATUSES.interrupted, WORKFLOW_RUN_STATUSES.timed_out, WORKFLOW_RUN_STATUSES.waiting_review].includes(source.status)) {
       throw new Error(`源运行状态 ${source.status} 不可续跑`)
     }
     // 互斥与 startRun 同语义：同工作流已有在途/挂起运行则拒绝
@@ -260,7 +260,7 @@ export class WorkflowRunService {
       triggerType: 'resume',
       triggerInfo: { resumedFrom: sourceRunId },
       startInputs: source.startInputs,
-      status: 'pending',
+      status: WORKFLOW_RUN_STATUSES.pending,
       resumedFromRunId: sourceRunId,
     })
     await this.launch(
@@ -330,7 +330,7 @@ export class WorkflowRunService {
         const run = await this.deps.runs.getById(runId)
         if (run?.status === 'waiting_review') {
           await this.deps.runs.update(runId, {
-            status: 'interrupted',
+            status: WORKFLOW_RUN_STATUSES.interrupted,
             error: '审核等待已超时（应用重启后中断）',
           })
         }
@@ -357,7 +357,7 @@ export class WorkflowRunService {
           }
           const timedOut = run.timeoutAt ? run.timeoutAt.getTime() < now : false
           await this.deps.runs.update(run.id, {
-            status: timedOut ? 'timed_out' : 'interrupted',
+            status: timedOut ? WORKFLOW_RUN_STATUSES.timed_out : WORKFLOW_RUN_STATUSES.interrupted,
             finishedAt: timedOut ? new Date() : null,
             error: timedOut ? '应用退出前已超时' : null,
           })
