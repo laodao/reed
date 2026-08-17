@@ -32,15 +32,23 @@
 - PG 测试需 `PGHOST` 等环境（SKIP_PG_TESTS=1 跳过）
 - 既有失败与本次无关：panorama 等 better-sqlite3 ABI 相关、episode-production 资产服务若干
 
-## 片5 进行中（5e3bcb9d 已交付上半，77/77 全绿）
+## 片5 ✅ 完成（6bc079e1，80/80 全绿）
 
-已交付：definition/run 服务（互斥/并发/续跑/boot恢复）、makeEngineDeps 端口适配、
-domain-event-bus、首批任务节点（delay/http-request/llm-chat/human-review）。
+全部 21 节点就绪（ai-nodes 10 个 + task 4 个 + control 9 个 - delay 归 control）；
+createFullNodeRegistry 工厂 + assertNodeRegistryConsistent 启动自检；
+8 处领域事件埋点（kb/image/translation/voice）；事件目录 payloadKeys 对齐。
+遗留优化：kb-retrieve 取消为边界检查点语义（HTTP 级中断需 KB search 透传 signal）。
 
-片5 剩余（下轮继续）：
-- 9 个 AI 任务节点：kb-retrieve/kb-ingest/web-search/translate/image-gen/tts/stt/lw-generate-chapter/lw-polish
-- 8 处领域事件埋点（kb/image/translation/voice 终态处各一行 safePublish）
-- KnowledgeBaseService.search 加可选 signal（向后兼容）
-- 全目录一致性测试（21 节点 handler 与 catalog 对齐）
+## 片6 ✅ 完成（0000bf5c，87/87 全绿）
 
-片6-8：cron 调度器+事件触发接线 / IPC 19 通道+前端列表详情 / Vue Flow 编辑器
+cron 调度器（grace 错过跳过/只触发时写库/recomputeOne）+ 事件触发（内存索引/
+同租户匹配/payload 过滤）+ workflow-boot 双端装配（boot 恢复/调度器/审核超时
+ticker）+ Electron/Web 启动接线。
+
+## 片7-8 待做
+
+- 片7：workflow.handler.ts（wf: 19 通道）→ electron initIpcHandlers + web
+  register-channels 双注册 → preload workflow 命名空间 + channel-map 严格同步
+  → stores/workflow.ts + WorkflowList.vue + WorkflowRunDetail.vue + 路由/菜单
+- 片8：@vue-flow 四包 + WorkflowEditor.vue 组件树 + catalog 驱动配置面板 +
+  TriggerPanel（previewCronExpression）+ PublishDialog + 回放画布
