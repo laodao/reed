@@ -16,6 +16,7 @@
       <div class="spacer" />
       <el-button size="small" @click="saveDraft" :loading="saving">保存草稿</el-button>
       <el-button size="small" @click="doValidate">校验</el-button>
+      <el-button size="small" type="warning" plain @click="showDebug = true">试运行</el-button>
       <el-button size="small" type="primary" @click="doPublish">发布</el-button>
     </div>
 
@@ -50,7 +51,7 @@
 
           <!-- 自定义节点 -->
           <template #node-wf="nodeProps">
-            <div class="wf-node" :class="[nodeProps.data.category, { selected: nodeProps.selected }]"
+            <div class="wf-node" :class="[nodeProps.data.category, nodeRunState(nodeProps.id), { selected: nodeProps.selected }]"
               @click="selectedNode = findNode(nodeProps.id)">
               <div class="wf-node-head">
                 <span class="wf-node-icon">{{ ICONS[nodeProps.data.category] }}</span>
@@ -63,6 +64,24 @@
           </template>
         </VueFlow>
       </div>
+
+      <!-- 试运行抽屉 -->
+      <el-drawer v-model="showDebug" title="试运行" size="380px" :append-to-body="true">
+        <div class="debug-panel">
+          <RunInputForm ref="debugInputRef" :inputs="debugInputs" @valid="v => debugValid = v" />
+          <el-button type="primary" size="small" style="width: 100%; margin-top: 12px"
+            :loading="debugStarting" :disabled="!debugValid" @click="debugRun">
+            {{ debugStatus ? '重新运行' : '开始运行' }}
+          </el-button>
+          <div v-if="debugRunId" class="debug-status">
+            <el-tag :type="debugStatus === 'succeeded' ? 'success' : debugStatus === 'failed' || debugStatus === 'timed_out' ? 'danger' : 'warning'" size="small">
+              {{ debugStatus }}
+            </el-tag>
+            <el-button text size="small" @click="router.push(`/workflow/run/${debugRunId}`)">详情 →</el-button>
+          </div>
+          <div class="debug-hint">画布节点边框实时显示执行状态（灰=待执行/蓝=执行中/绿=成功/红=失败）</div>
+        </div>
+      </el-drawer>
 
       <!-- 配置面板 -->
       <div class="config-area">
@@ -94,6 +113,8 @@ import { NODE_TYPE_CATALOG, NODE_TYPE_CATALOG_MAP } from '@shared/types/workflow
 import { WORKFLOW_EDGE_KINDS } from '@shared/types/workflow.types'
 import type { WorkflowGraph, WorkflowNodeType, WorkflowEdgeKind } from '@shared/types/workflow.types'
 import NodeConfigPanel from '@/components/workflow/NodeConfigPanel.vue'
+import RunInputForm from '@/components/workflow/RunInputForm.vue'
+import { useWorkflowStore } from '@/stores/workflow'
 
 const route = useRoute()
 const router = useRouter()
@@ -154,8 +175,39 @@ function summaryOf(type: WorkflowNodeType, config: Record<string, unknown>): str
   return String(v).slice(0, 22)
 }
 
+// ── 试运行（B5）──
+const showDebug = ref(false)
+const debugInputRef = ref<any>(null)
+const debugValid = ref(true)
+const debugStarting = ref(false)
+const debugRunId = ref('')
+const debugStatus = ref('')
+const wfStore = useWorkflowStore()
+
+const debugInputs = computed(() => {
+  const startNode = nodes.value.find(n => (n.data as any)?.wfNode?.type === 'start')
+  return (startNode?.data as any)?.wfNode?.config?.inputs ?? []
+})
+
+async function debugRun() {
+  const inputs = debugInputRef.value?.getValues() ?? {}
+  if (!debugValid.value) { ElMessage.warning('请填写必填参数'); return }
+  await saveDraftSilent()
+  debugStarting.value = true
+  try {
+    const resp = api().startRun({ definitionId: definition.value.id, inputs })
+    const respR = await resp
+    if (respR.success) {
+      debugRunId.value = respR.data.id
+      debugStatus.value = respR.data.status ?? 'running'
+      ElMessage.success(respR.data.status === 'skipped' ? '已有运行中实例' : '已启动，画布实时显示进度')
+    } else ElMessage.error(respR.error)
+  } finally { debugStarting.value = false }
+}
+
 // ── 加载 / 序列化 ──
 onMounted(async () => {
+  wfStore.subscribe()
   const resp = await api().getDefinition(route.params.id as string)
   if (!resp.success || !resp.data) { ElMessage.error(resp.error ?? '加载失败'); return }
   definition.value = resp.data
@@ -272,6 +324,19 @@ function onDrop(e: DragEvent) {
   dragType.value = ''
 }
 
+/** 试运行实时状态 → 节点着色 class（store key 为 `${nodeId}:${iteration}`，按前缀匹配） */
+function nodeRunState(nodeId: string): string {
+  if (!debugRunId.value) return ''
+  const m = wfStore.nodeStatusMap.get(debugRunId.value)
+  if (!m) return ''
+  let latest = ''
+  for (const [key, st] of m) {
+    if (!key.startsWith(`${nodeId}:`)) continue
+    latest = st.status
+  }
+  return latest ? `run-${latest}` : ''
+}
+
 function findNode(id: string) { return nodes.value.find(n => n.id === id) ?? null }
 
 /** 智能语义连线：按源节点类型弹出连线类型选择 */
@@ -365,5 +430,16 @@ function removeSelected() {
 .wf-node.flow { border-color: #6366f1; } .wf-node.ai { border-color: #10b981; } .wf-node.general { border-color: #f59e0b; }
 .wf-node-head { display: flex; align-items: center; gap: 6px; padding: 7px 10px; font-weight: 600; }
 .wf-node.flow .wf-node-head { color: #4f46e5; } .wf-node.ai .wf-node-head { color: #059669; } .wf-node.general .wf-node-head { color: #d97706; }
+/* 试运行状态着色（B5） */
+.wf-node.run-running { border-color: #3b82f6 !important; box-shadow: 0 0 0 3px rgba(59,130,246,.2); }
+.wf-node.run-succeeded { border-color: #10b981 !important; }
+.wf-node.run-failed, .wf-node.run-timed_out { border-color: #ef4444 !important; }
+.wf-node.run-failed_recovered { border-color: #f59e0b !important; }
+.wf-node.run-waiting_review { border-color: #8b5cf6 !important; }
+.wf-node.run-cancelled, .wf-node.run-skipped { opacity: .55; }
+.debug-panel { padding: 0 4px; }
+.debug-status { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.debug-hint { font-size: 11px; color: var(--el-text-color-placeholder); margin-top: 12px; line-height: 1.5; }
+
 .wf-node-summary { padding: 0 10px 7px; font-size: 11px; color: #6b7280; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

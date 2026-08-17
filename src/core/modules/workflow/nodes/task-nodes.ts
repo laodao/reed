@@ -5,7 +5,7 @@
  *              剩余 AI 节点（kb/web-search/translate/image/voice/lw）在下一批补齐。
  */
 
-import { callAIStream } from '../../../services/ai-call'
+import { callAIStream, callVLM, toImageDataUrl } from '../../../services/ai-call'
 import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from '@shared/types/workflow.types'
 import { sleepAbortable } from '../engine/async-utils'
 import type { WorkflowNodeContext } from '../engine/node-handler'
@@ -118,13 +118,16 @@ const llmChatNode: WorkflowNodeHandler = {
     { key: 'usage', type: 'json', desc: 'token 用量' },
   ],
   validateConfig(config) {
-    const cfg = config as { prompt?: string; temperature?: number }
+    const cfg = config as { prompt?: string; temperature?: number; vision?: boolean; imageInput?: string }
     const errors: string[] = []
     if (cfg.prompt === undefined || cfg.prompt === null || String(cfg.prompt).trim() === '') {
       errors.push('prompt 不能为空')
     }
     if (cfg.temperature !== undefined && (cfg.temperature < 0 || cfg.temperature > 2)) {
       errors.push('temperature 范围 0-2')
+    }
+    if (cfg.vision && !String(cfg.imageInput ?? '').trim()) {
+      errors.push('视觉模式必须提供图片输入')
     }
     return errors
   },
@@ -138,6 +141,27 @@ const llmChatNode: WorkflowNodeHandler = {
       maxTokens?: number
       jsonMode?: boolean
     }
+    // 视觉模式：走 VLM（注意：当前底层 chatSync 暂不支持 signal——视觉模式不可中断，
+    // 取消时由引擎按"结果丢弃"降级；chatSync 加 signal 为后续独立小改进）
+    if (cfg.vision) {
+      const imageUrls = String(cfg.imageInput ?? '')
+        .split(/[\n,]/)
+        .map(x => x.trim())
+        .filter(Boolean)
+        .slice(0, 4)
+      const dataUrls = await Promise.all(imageUrls.map(u => toImageDataUrl(u)))
+      ctx.emitProgress(30, `视觉输入 ${dataUrls.length} 张`)
+      const content = await callVLM(
+        String(cfg.prompt),
+        dataUrls[0],
+        cfg.systemPrompt ?? '',
+        4096,
+        cfg.providerConfigId,
+        cfg.modelId
+      )
+      return { status: 'succeeded', output: { content } }
+    }
+
     // 公共 AI 调用层：统一 modelId fallback 链（显式→config 默认→用户启用→模板内置）
     // + AbortSignal 真取消 + 增量进度回调
     const { content, usage } = await callAIStream({

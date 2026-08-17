@@ -552,3 +552,37 @@ export async function callAIStream(opts: CallAIStreamOptions): Promise<CallAIStr
 
   return { content, usage }
 }
+
+// ==================== VLM 输入归一化（B5） ====================
+
+/** 按扩展名推 MIME */
+function mimeOf(path: string): string {
+  const ext = path.toLowerCase().replace(/.*\./, '')
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg'
+  if (ext === 'webp') return 'image/webp'
+  if (ext === 'bmp') return 'image/bmp'
+  return 'image/png'
+}
+
+/**
+ * 图片输入归一化为 dataUrl（B5/P6）：
+ * - data: 开头原样；http(s) 拉取（30s 超时）；绝对路径读文件；其余视为裸 base64（默认 png）
+ */
+export async function toImageDataUrl(input: string, fetchFn: typeof fetch = fetch): Promise<string> {
+  const raw = String(input ?? '').trim()
+  if (raw.startsWith('data:')) return raw
+  if (/^https?:\/\//.test(raw)) {
+    const res = await fetchFn(raw, { signal: AbortSignal.timeout(30_000) })
+    if (!res.ok) throw new Error(`图片拉取失败：HTTP ${res.status}`)
+    const buf = Buffer.from(await res.arrayBuffer())
+    const mime = res.headers.get('content-type')?.split(';')[0] || 'image/png'
+    return `data:${mime};base64,${buf.toString('base64')}`
+  }
+  if (/^[a-zA-Z]:[\\/]/.test(raw) || raw.startsWith('/')) {
+    // 动态引入 fs（浏览器端不可用，此函数仅在 Node 端调用）
+    const { readFileSync } = await import('fs')
+    const buf = readFileSync(raw)
+    return `data:${mimeOf(raw)};base64,${buf.toString('base64')}`
+  }
+  return `data:image/png;base64,${raw}`
+}

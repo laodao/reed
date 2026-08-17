@@ -144,6 +144,11 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     { key: 'temperature', label: '温度', type: 'slider', min: 0, max: 2, step: 0.1, group: '参数' },
     { key: 'maxTokens', label: '最大 Token', type: 'number', group: '参数' },
     { key: 'jsonMode', label: 'JSON 输出模式', type: 'switch', group: '参数', help: '输出自动解析为 parsed 字段，非 JSON 则节点失败' },
+    { key: 'vision', label: '视觉模式', type: 'switch', group: '视觉', help: '开启后走视觉模型（当前不可中断）' },
+    T('imageInput', '图片输入', {
+      type: 'textarea', group: '视觉', templateHint: true,
+      placeholder: '本地路径 / http(s) URL / base64，多张用逗号或换行分隔（最多4张，当前取第一张）',
+    }),
   ],
   'kb-retrieve': [
     { key: 'knowledgeBaseId', label: '知识库', type: 'select-dynamic', source: 'knowledgeBases' },
