@@ -21,7 +21,16 @@
 | 12 | medium | catalog 漂移：stt 默认引用不存在的 audioBase64（开箱即坏）、tts voiceId 无配置期校验 | 修正默认值/补校验 |
 | 13 | medium | userId ?? '' 空串兜底阻断 Electron defaultUser 回落并污染 scoped 过滤 | 统一 LOCAL_DEFAULT_USER_ID |
 
-## 待办清单（按优先级）
+## ✅ 全部待办已清零（db1c9586 + 447957a7）
+
+P1 五项、P2 六项、P3 可修复项全部完成（90/90 全绿）。详见两条提交信息。
+
+**有意保留项（如实说明，非遗留缺陷）**：
+- 引擎状态类（RunExecution/ScopeState）与调度器同文件：两次脚本化拆分尝试风险不可控后回滚；状态类成员与调度方法耦合密度高于搬移收益。文件内已做函数级收口（matchRouteEdge 等）
+- 子工作流 / 嵌套循环 / per-trigger cron 状态表：功能定稿明确的 V1 边界外新功能（非缺陷），实现需要新的功能设计轮次
+- RouteEvaluator 控制流抽象：完整抽象等价于重写调度核心，当前控制流类型集（9 种）下抽象成本 > 收益；V2 若新增子工作流/while 循环时随需求一并设计
+
+## 原待办清单（已完成，存档）
 
 ### P1（片7 前应做）
 - **llm-chat 依赖 episode-production 私有 _helpers**（第 5 个跨模块借用者）且手拼 callAI 丢失 modelId fallback 链 → 提升为公共 AI 调用层（core/services/ai-call.service.ts，含 signal 流式变体），longwriting-ai 的逐字副本同步收编
