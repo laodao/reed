@@ -23,6 +23,8 @@ export interface CatalogFormField {
     | 'number'
     | 'select'
     | 'select-dynamic'
+    /** Provider+模型联动下拉（写 providerConfigId 与 modelId 两键） */
+    | 'model-pair'
     | 'switch'
     | 'slider'
     /** 键值对列表（assignments / headers） */
@@ -136,11 +138,7 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
   ],
 
   'llm-chat': [
-    T('providerConfigId', 'Provider 配置 ID', {
-      group: '模型',
-      help: '留空 = 用户默认 Provider（设置页可查看配置 ID）',
-    }),
-    T('modelId', '模型 ID', { group: '模型', help: '留空 = 按配置自动回退选择' }),
+    { key: 'providerConfigId', label: '模型', type: 'model-pair', group: '模型', help: '留空 = 按默认 Provider 自动回退选择' },
     T('systemPrompt', '系统提示词', { type: 'textarea', group: '对话' }),
     T('prompt', '用户消息', { type: 'textarea', templateHint: true, group: '对话', placeholder: '{{start.topic}}' }),
     { key: 'temperature', label: '温度', type: 'slider', min: 0, max: 2, step: 0.1, group: '参数' },
@@ -221,6 +219,25 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     T('body', '请求体', { type: 'textarea', templateHint: true, collapsible: true, help: 'GET 以外的方法可用' }),
     { key: 'timeoutMs', label: '超时（毫秒）', type: 'number', group: '参数' },
   ],
+  'template-transform': [
+    T('template', '输出模板', {
+      type: 'textarea',
+      templateHint: true,
+      placeholder: '{{llm1.content}}\n\n—— 由 {{start.topic}} 生成',
+      help: '多个变量占位拼接为一段文本输出',
+    }),
+  ],
+  'parameter-extractor': [
+    T('input', '待抽取文本', { type: 'textarea', templateHint: true, placeholder: '{{start.text}} 或 {{web1.text}}' }),
+    T('instruction', '抽取要求', { type: 'textarea', placeholder: '例如：抽出人名、地点和时间', collapsible: true }),
+    { key: 'fields', label: '抽取字段', type: 'fields-list', help: '字段将展开为本节点输出（{{本节点ID.字段}}）' },
+    { key: 'providerConfigId', label: 'Provider 配置', type: 'model-pair', group: '模型' },
+  ],
+  'web-extract': [
+    T('url', '网页地址', { templateHint: true, placeholder: 'https://...' }),
+    { key: 'maxLength', label: '正文最大长度', type: 'number', group: '参数', help: '超长截断（默认 100000）' },
+  ],
+
   'app-notify': [
     T('title', '通知标题', { templateHint: true }),
     T('message', '通知内容', { type: 'textarea', templateHint: true }),

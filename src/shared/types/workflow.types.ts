@@ -71,6 +71,10 @@ export type WorkflowNodeType =
   // 通用
   | 'http-request'
   | 'app-notify'
+  // 扩展（第三批：对齐 Dify/Bisheng 核心组件面）
+  | 'template-transform'
+  | 'parameter-extractor'
+  | 'web-extract'
 
 // ==================== 开始节点输入参数 ====================
 
@@ -297,6 +301,28 @@ export interface WorkflowNodeConfigMap {
     title: string
     message: string
     level?: 'info' | 'success' | 'warning' | 'error'
+  }
+
+  'template-transform': {
+    /** 输出文本模板：多占位拼接（{{a.x}}-{{b.y}}） */
+    template: string
+  }
+
+  'parameter-extractor': {
+    /** 待抽取的文本来源模板 */
+    input: string
+    /** 抽取要求（补充给 LLM 的指令） */
+    instruction?: string
+    /** 抽取字段声明 */
+    fields: Array<{ key: string; type?: 'string' | 'number' | 'boolean'; required?: boolean }>
+    providerConfigId?: string
+    modelId?: string
+  }
+
+  'web-extract': {
+    url: string
+    /** 正文最大长度（默认 100_000） */
+    maxLength?: number
   }
 }
 
@@ -544,6 +570,9 @@ export const WORKFLOW_NODE_TYPES = {
   'lw-polish': 'lw-polish',
   'http-request': 'http-request',
   'app-notify': 'app-notify',
+  'template-transform': 'template-transform',
+  'parameter-extractor': 'parameter-extractor',
+  'web-extract': 'web-extract',
 } as const satisfies Record<WorkflowNodeType, WorkflowNodeType>
 
 /** 出边类型常量（键=值，与 WorkflowEdgeKind 一一对应） */

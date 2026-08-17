@@ -11,7 +11,7 @@ import { checkRegistryConsistency } from '@core/modules/workflow/engine/node-reg
 import { NODE_TYPE_CATALOG } from '@shared/types/workflow-node-catalog'
 
 describe('全节点目录一致性', () => {
-  it('21 个节点全部注册且元数据一致（assert 不抛错）', () => {
+  it('全部节点注册且元数据一致（assert 不抛错）', () => {
     const registry = createFullNodeRegistry()
     expect(registry.list()).toHaveLength(NODE_TYPE_CATALOG.length)
     expect(() => assertNodeRegistryConsistent(registry)).not.toThrow()
@@ -45,7 +45,7 @@ describe('全节点目录一致性', () => {
   })
 
 describe('表单 Schema 完整性（NODE_CONFIG_FORMS）', () => {
-  it('21 个组件全部有表单声明', async () => {
+  it('全部组件都有表单声明', async () => {
     const { NODE_CONFIG_FORMS } = await import('@shared/types/workflow-node-forms')
     const { NODE_TYPE_CATALOG } = await import('@shared/types/workflow-node-catalog')
     for (const entry of NODE_TYPE_CATALOG) {

@@ -81,7 +81,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
-import { VueFlow, Handle, Position, MarkerType } from '@vue-flow/core'
+import { VueFlow, Handle, Position, MarkerType, useVueFlow } from '@vue-flow/core'
 import type { Node, Edge, Connection } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
@@ -107,6 +107,9 @@ const saving = ref(false)
 const validation = ref<{ valid: boolean; errors: string[]; warnings: string[] } | null>(null)
 
 const api = () => (window as never as { electronAPI: any }).electronAPI.workflow
+
+/** 屏幕坐标 → 画布流坐标（拖放落点精确） */
+const { screenToFlowCoordinate } = useVueFlow()
 
 /** 分类 → 展示（颜色 / 图标字符） */
 const CATEGORY_META: Record<string, { label: string; icon: string }> = {
@@ -136,6 +139,7 @@ const SUMMARY_FIELD: Partial<Record<WorkflowNodeType, string>> = {
   translate: 'text', 'image-gen': 'prompt', tts: 'text', stt: 'audio', delay: 'durationMs',
   'http-request': 'url', 'app-notify': 'title', loop: 'listExpression', 'human-review': 'payload',
   'lw-generate-chapter': 'outlineId', 'lw-polish': 'field', assign: '',
+  'template-transform': 'template', 'parameter-extractor': 'input', 'web-extract': 'url',
 }
 function summaryOf(type: WorkflowNodeType, config: Record<string, unknown>): string {
   const key = SUMMARY_FIELD[type]
@@ -258,7 +262,8 @@ function addNode(type: WorkflowNodeType, pos?: { x: number; y: number }) {
 
 function onDrop(e: DragEvent) {
   if (!dragType.value) return
-  addNode(dragType.value, { x: e.offsetX, y: e.offsetY })
+  const pos = screenToFlowCoordinate({ x: e.clientX, y: e.clientY })
+  addNode(dragType.value, { x: pos.x, y: pos.y })
   dragType.value = ''
 }
 

@@ -21,6 +21,18 @@
     <span class="slider-value">{{ num(modelValue) }}</span>
   </div>
 
+  <!-- Provider + 模型联动下拉 -->
+  <div v-else-if="field.type === 'model-pair'" class="model-pair">
+    <el-select :model-value="modelValue as string" placeholder="Provider" clearable filterable
+      size="small" style="flex: 1" @update:model-value="v => { set(v); setKey('modelId', undefined) }">
+      <el-option v-for="p in providers" :key="p.id" :label="p.name" :value="p.id" />
+    </el-select>
+    <el-select :model-value="props.model['modelId'] as string" placeholder="模型（留空自动）" clearable
+      filterable size="small" style="flex: 1" @update:model-value="v => setKey('modelId', v)">
+      <el-option v-for="m in currentProviderModels" :key="m.value" :label="m.label" :value="m.value" />
+    </el-select>
+  </div>
+
   <!-- 键值对列表 -->
   <div v-else-if="field.type === 'kv-list'" class="kv-list">
     <div v-for="(item, i) in kvList" :key="i" class="kv-row">
@@ -116,6 +128,16 @@ function num(v: unknown): number | undefined {
   return v === undefined || v === null || v === '' || Number.isNaN(n) ? undefined : n
 }
 
+// ── model-pair ──
+const providers = computed<any[]>(() => props.dynamicOptions.providers ?? [])
+const currentProviderModels = computed(() =>
+  providers.value.find(p => p.id === modelValue.value)?.models ?? []
+)
+function setKey(key: string, v: unknown) {
+  props.model[key] = v
+  emit('change')
+}
+
 // ── kv-list ──
 const kvList = computed<any[]>(() => {
   const raw = props.model[props.field.key]
@@ -167,6 +189,7 @@ function syncFields() { emit('change') }
 .kv-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
 .inputs-row { flex-wrap: wrap; }
 .default-label { font-size: 12px; color: var(--el-text-color-secondary); white-space: nowrap; }
+.model-pair { display: flex; gap: 6px; }
 .branch-card { border: 1px solid var(--el-border-color-lighter); border-radius: 6px; padding: 8px; margin-bottom: 8px; }
 .branch-head { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
 .cond-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }

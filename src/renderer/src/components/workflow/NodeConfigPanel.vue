@@ -62,7 +62,8 @@ const category = computed(() => catalogEntry.value?.category)
 const fields = computed(() => NODE_CONFIG_FORMS[wfNode.value.type as keyof typeof NODE_CONFIG_FORMS] ?? [])
 
 /** 动态选项数据（按 source 拉取） */
-const dynamicOptions = ref<Record<string, Array<{ label: string; value: string }>>>({})
+/** 动态选项：普通源为选项数组；providers 为 providerConfigs+models 结构 */
+const dynamicOptions = ref<Record<string, any>>({})
 
 /** 折叠字段过滤（折叠的仍渲染在 collapse 内，不隐藏）；提示占位字段过滤 */
 const visibleFields = computed(() => fields.value.filter(f => f.key !== '_hint'))
@@ -82,6 +83,23 @@ void groupTitleOf
 async function loadDynamicOptions() {
   const api = (window as never as { electronAPI: any }).electronAPI
   const sources = new Set(fields.value.filter(f => f.type === 'select-dynamic').map(f => f.source))
+  // model-pair 联动下拉的 Provider/模型数据
+  if (fields.value.some(f => f.type === 'model-pair')) {
+    try {
+      const resp = await api.providerConfig.list()
+      if (resp.success && Array.isArray(resp.data)) {
+        dynamicOptions.value.providers = (resp.data as any[])
+          .filter(c => c.isEnabled !== false)
+          .map(c => ({
+            id: c.id,
+            name: c.name,
+            models: (c.models ?? [])
+              .filter((m: any) => !m.type || m.type === 'text' || m.type === 'chat')
+              .map((m: any) => ({ label: m.name || m.id, value: m.id })),
+          }))
+      }
+    } catch { /* 列表失败时退化为手填 */ }
+  }
   if (sources.has('knowledgeBases')) {
     try {
       const resp = await api.knowledgeBase.list()

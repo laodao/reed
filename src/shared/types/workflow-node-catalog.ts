@@ -431,6 +431,54 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
     defaultConfig: { title: '', message: '', level: 'info' },
     outputSchema: [{ key: 'sent', type: 'boolean', desc: '是否已发送' }],
   },
+  // ==================== 扩展 ====================
+  {
+    type: 'template-transform',
+    label: '模板转换',
+    description: '把变量填充进模板输出文本（拼接/格式化）',
+    category: 'general',
+    icon: 'DocumentCopy',
+    controlKind: 'task',
+    cancellable: false,
+    ports: [{ kind: 'normal', label: '出', max: 1 }, { kind: 'fail', label: '失败' }],
+    requiredConfigKeys: ['template'],
+    defaultConfig: { template: '' },
+    outputSchema: [{ key: 'text', type: 'string', desc: '渲染后的文本' }],
+  },
+  {
+    type: 'parameter-extractor',
+    label: '参数提取',
+    description: 'LLM 从文本中抽取结构化参数（按声明字段）',
+    category: 'ai',
+    icon: 'Key',
+    controlKind: 'task',
+    cancellable: true,
+    ports: [{ kind: 'normal', label: '出', max: 1 }, { kind: 'fail', label: '失败' }],
+    requiredConfigKeys: ['input', 'fields'],
+    defaultConfig: { input: '', instruction: '', fields: [] },
+    outputSchema: [
+      { key: '*', type: 'json', desc: '按声明字段展开' },
+      { key: '_raw', type: 'string', desc: '模型原始回复' },
+    ],
+  },
+  {
+    type: 'web-extract',
+    label: '网页正文',
+    description: '抓取 URL 并提取正文文本（去标签）',
+    category: 'general',
+    icon: 'Reading',
+    controlKind: 'task',
+    cancellable: true,
+    ports: [{ kind: 'normal', label: '出', max: 1 }, { kind: 'fail', label: '失败' }],
+    requiredConfigKeys: ['url'],
+    defaultConfig: { url: '', maxLength: 100_000 },
+    outputSchema: [
+      { key: 'title', type: 'string', desc: '页面标题' },
+      { key: 'text', type: 'string', desc: '正文文本' },
+      { key: 'length', type: 'number', desc: '文本长度' },
+    ],
+  },
+
 ]
 
 /** 目录查找表：type → 条目（O(1)，校验器/编辑器用） */
