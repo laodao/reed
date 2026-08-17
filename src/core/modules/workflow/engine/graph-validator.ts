@@ -306,7 +306,10 @@ export function validateGraph(
   // ---------- 7. 环检测（豁免 loop-back） ----------
   const cycleNode = detectCycle(graph.nodes.map(n => n.id), edges)
   if (cycleNode) {
-    addError(`图中存在环（经过节点 ${cycleNode}）；除循环体的 loop-back 外不允许成环`)
+    // C1：自由环合法（重执行语义），警告提示确保可跳出
+    addWarning(
+      `图中存在环（经过节点 ${cycleNode}）：请确保环内有条件分支或人工交互节点可跳出，超出最大运行次数将自动停止`
+    )
   }
 
   // ---------- 8. 可达性（warning） ----------

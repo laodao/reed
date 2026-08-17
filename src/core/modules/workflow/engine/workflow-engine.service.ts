@@ -3,7 +3,7 @@
  * @module core/modules/workflow/engine/workflow-engine.service
  * @description 作用域架构：
  *              - 根作用域跑图主体；每个循环迭代是独立作用域（自己的
- *                states/activatedEdges/merge 语义），循环体节点只在迭代作用域内执行
+ *                states/activationSeqs/merge 语义——C1 起边激活带序号支持自由环），循环体节点只在迭代作用域内执行
  *              - 作用域静默（无 running/无 ready）或挂起（waiting_review）时收敛
  *              - 挂起时 execute() 返回 waiting_review（不占住调用方），
  *                RunExecution 留在 activeExecutions 占互斥；resumeReview 续驱
@@ -100,6 +100,8 @@ interface NodeExecutionState {
   reviewTimeoutMs?: number | null
   reviewTimeoutPolicy?: 'approve' | 'reject' | 'fail'
   waitExpiresAt?: Date | null
+  /** 节点进入终态时的激活序号（C1 环：seq 更大的入边激活触发重执行） */
+  completedSeq?: number
   startedAtMs: number
 }
 
@@ -129,7 +131,10 @@ function makeDeferred(): Deferred {
 /** 执行作用域：根作用域或某循环迭代 */
 class ScopeState {
   readonly states = new Map<string, NodeExecutionState>()
-  readonly activatedEdges = new Set<string>()
+  /** 边激活序号（C1 环支持：完成后的新激活触发重执行） */
+  readonly activationSeqs = new Map<string, number>()
+  /** 激活计数器（单调递增） */
+  activationCounter = 0
   readonly mergeArrivals = new Map<string, Map<string, Record<string, unknown>>>()
   readonly forcedMergeNodeIds = new Set<string>()
   /** 本作用域循环节点的迭代伪输出：loopNodeId → { item, index, list } */
@@ -189,6 +194,8 @@ class RunExecution {
   forceRelease = false
   /** 节点执行实例计数（护栏依据；P5：唯一计数点在 launchNode——重试/审核恢复不计） */
   readonly runCounts = new Map<string, number>()
+  /** C1 重执行节点集（本作用域内）：launchNode 对这些节点复用 node_run 行重置而非新建（唯一索引约束） */
+  readonly reexecNodeIds = new Set<string>()
   /** 未恢复失败进行中：同步置位（先于任何 await），防漂浮 pump 把失败中止误判为用户取消 */
   pendingFailureError?: string
   /** 看门狗句柄（挂起时清除、续驱时重建——防失控时长对恢复后的运行仍生效） */
@@ -503,6 +510,7 @@ export class WorkflowEngineService {
     state.output = output
     state.routeTaken = route
     state.waitExpiresAt = null
+    state.completedSeq = ++scope.activationCounter // C1：审核决策路径同样记完成序号（防重执行误判）
     this.setScopeVariable(exec, scope, state.nodeId, output)
 
     await this.deps.nodeRuns.patchNode(exec.input.runId, state.nodeId, state.iterationIndex, {
@@ -771,7 +779,33 @@ export class WorkflowEngineService {
     for (const node of exec.input.graph.nodes) {
       if (!exec.nodeBelongsToScope(node.id, scope)) continue
       const state = scope.states.get(node.id)
-      if (state && state.status !== 'pending') continue
+      if (state) {
+        // 引擎驱动的节点（loop）与 start 永不重执行——loop 重执行由驱动器管理
+        if (semOf(node.type).engineDriven) continue
+        // C1 环重执行：终态节点 + 完成后有新激活的入边 → 清 state 重新入队
+        const isTerminal = [
+          WORKFLOW_NODE_RUN_STATUSES.succeeded,
+          WORKFLOW_NODE_RUN_STATUSES.failed,
+          WORKFLOW_NODE_RUN_STATUSES.failed_recovered,
+          WORKFLOW_NODE_RUN_STATUSES.cancelled,
+          WORKFLOW_NODE_RUN_STATUSES.timed_out,
+        ].includes(state.status as never)
+        if (!isTerminal) continue // running / waiting
+        const hasNewActivation = exec
+          .incomingOf(node.id)
+          .some(e => (scope.activationSeqs.get(e.id) ?? 0) > (state.completedSeq ?? 0))
+        if (hasNewActivation) {
+          // 重执行：清 state（variables 保留旧输出直至新执行覆盖——多轮迭代语义）
+          scope.states.delete(node.id)
+          scope.mergeArrivals.delete(node.id)
+          scope.forcedMergeNodeIds.delete(node.id)
+          exec.reexecNodeIds.add(node.id) // launchNode 据此走"行重置"而非新建行（防唯一索引冲突）
+          // 清除该节点全部出边激活记录：其下游（含环回连边）在新一轮 settle 后重新激活
+          for (const out of exec.outgoingOf(node.id)) scope.activationSeqs.delete(out.id)
+        } else {
+          continue
+        }
+      }
       const sem = semOf(node.type)
       if (sem.rootOnly) {
         if (scope.isRoot) ready.push(node)
@@ -782,7 +816,7 @@ export class WorkflowEngineService {
         .incomingOf(node.id)
         .filter(e => e.kind !== WORKFLOW_EDGE_KINDS[WORKFLOW_EDGE_KINDS['loop-back']])
       if (incoming.length === 0) continue
-      const activated = incoming.filter(e => scope.activatedEdges.has(e.id))
+      const activated = incoming.filter(e => (scope.activationSeqs.get(e.id) ?? 0) > 0)
       if (activated.length === 0) continue
 
       if (semOf(node.type).mergeOutput && !scope.forcedMergeNodeIds.has(node.id)) {
@@ -810,14 +844,30 @@ export class WorkflowEngineService {
     }
     scope.states.set(node.id, state)
 
-    await this.deps.nodeRuns.startNode({
-      runId: exec.input.runId,
-      nodeId: node.id,
-      nodeType: node.type,
-      nodeName: node.name,
-      iterationIndex: scope.iterationIndex,
-      input: resolvedConfig as Record<string, unknown>,
-    })
+    const reexec = exec.reexecNodeIds.has(node.id)
+    if (reexec) {
+      // C1 重执行：复用同一 node_run 行（唯一索引约束），重置状态与输出
+      exec.reexecNodeIds.delete(node.id)
+      await this.deps.nodeRuns.patchNode(exec.input.runId, node.id, scope.iterationIndex, {
+        status: WORKFLOW_NODE_RUN_STATUSES.running,
+        input: resolvedConfig as Record<string, unknown>,
+        output: null,
+        error: null,
+        routeTaken: null,
+        review: null,
+        finishedAt: null,
+        durationMs: null,
+      })
+    } else {
+      await this.deps.nodeRuns.startNode({
+        runId: exec.input.runId,
+        nodeId: node.id,
+        nodeType: node.type,
+        nodeName: node.name,
+        iterationIndex: scope.iterationIndex,
+        input: resolvedConfig as Record<string, unknown>,
+      })
+    }
     if (exec.finished || exec.abortController.signal.aborted) {
       await this.markCancelled(exec, state)
       return
@@ -826,11 +876,24 @@ export class WorkflowEngineService {
     const runsSoFar = (exec.runCounts.get(node.id) ?? 0) + 1
     exec.runCounts.set(node.id, runsSoFar)
     if (runsSoFar > exec.settings.maxNodeRuns) {
-      await this.handleNodeFailure(
-        exec, scope, node, state,
-        `节点「${node.name}」超出最大运行次数 ${exec.settings.maxNodeRuns}（疑似死循环）`,
-        false
-      )
+      // 护栏失败不可恢复（不走 fail 边——否则 fail 边回环会让护栏自身死循环）
+      const guardError = `节点「${node.name}」超出最大运行次数 ${exec.settings.maxNodeRuns}（疑似死循环）`
+      state.status = WORKFLOW_NODE_RUN_STATUSES.failed
+      state.error = guardError
+      state.completedSeq = ++scope.activationCounter
+      await this.deps.nodeRuns.patchNode(exec.input.runId, node.id, scope.iterationIndex, {
+        status: WORKFLOW_NODE_RUN_STATUSES.failed,
+        error: guardError,
+        finishedAt: new Date(),
+        durationMs: Date.now() - state.startedAtMs,
+      })
+      this.emitNodeStatus(exec, state)
+      scope.failed = true
+      exec.pendingFailureError = guardError
+      exec.abortController.abort()
+      if (scope.isRoot) {
+        await this.finalize(exec, WORKFLOW_RUN_STATUSES.failed, guardError)
+      }
       return
     }
     this.emitNodeStatus(exec, state)
@@ -858,7 +921,7 @@ export class WorkflowEngineService {
           scope.runningTasks--
           exec.maybeSettled()
           void this.pump(exec, scope).catch(e =>
-            logger.error('[WorkflowEngine] settle 后 pump 异常', e)
+            logger.error(`[WorkflowEngine] settle 后 pump 异常: ${e instanceof Error ? e.stack : String(e)}`)
           )
         })
     }
@@ -940,6 +1003,7 @@ export class WorkflowEngineService {
     state.status = 'succeeded'
     state.output = output
     state.routeTaken = result.route ?? null
+    state.completedSeq = ++scope.activationCounter // C1：记录完成序号（后续新激活触发重执行）
     this.setScopeVariable(exec, scope, node.id, output)
 
     await this.deps.nodeRuns.patchNode(exec.input.runId, node.id, state.iterationIndex, {
@@ -1041,6 +1105,7 @@ export class WorkflowEngineService {
       state.status = 'failed_recovered'
       state.error = error
       state.output = { error, recovered: true }
+      state.completedSeq = ++scope.activationCounter // C1：失败恢复路径同样记完成序号
       this.setScopeVariable(exec, scope, node.id, state.output)
       await this.deps.nodeRuns.patchNode(exec.input.runId, node.id, state.iterationIndex, {
         status: WORKFLOW_NODE_RUN_STATUSES.failed_recovered,
@@ -1060,6 +1125,7 @@ export class WorkflowEngineService {
     // 必须让它们能区分"失败中止"与"用户取消"（见 pump 顶部 aborted 分支）
     state.status = 'failed'
     state.error = error
+    state.completedSeq = ++scope.activationCounter // C1：失败终态同样记完成序号
     scope.failed = true
     exec.pendingFailureError = error
     exec.abortController.abort() // 在飞任务的 settle 会走取消分支
@@ -1137,7 +1203,7 @@ export class WorkflowEngineService {
 
       // 激活 loop-body 入口边（作用域内）
       for (const edge of exec.outgoingOf(node.id, WORKFLOW_EDGE_KINDS['loop-body'])) {
-        loopScope.activatedEdges.add(edge.id)
+        void loopScope.activationSeqs.set(edge.id, ++loopScope.activationCounter)
       }
 
       await this.pump(exec, loopScope)
@@ -1249,8 +1315,11 @@ export class WorkflowEngineService {
   }
 
   private activateEdge(exec: RunExecution, scope: ScopeState, edge: WorkflowEdge): void {
-    if (scope.activatedEdges.has(edge.id)) return
-    scope.activatedEdges.add(edge.id)
+    // C1：首次激活记序号；重复激活跳过（防 pump 轮次间无限推进 counter 造成死循环）。
+    // 环回连的"第二轮"激活由重执行清理（computeReady 删除 state 时同步清除该节点
+    // 出边的激活记录——见 computeReady 重执行块）后自然产生
+    if ((scope.activationSeqs.get(edge.id) ?? 0) > 0) return
+    void scope.activationSeqs.set(edge.id, ++scope.activationCounter)
     const target = exec.nodeById.get(edge.targetNodeId)
     if (target && semOf(target.type).mergeOutput && exec.nodeBelongsToScope(target.id, scope)) {
       const sourceState = scope.states.get(edge.sourceNodeId)
@@ -1308,7 +1377,7 @@ export class WorkflowEngineService {
       if (!node) continue
       if (semOf(node.type).engineDriven) {
         for (const edge of exec.outgoingOf(node.id, WORKFLOW_EDGE_KINDS['loop-done'])) {
-          exec.rootScope.activatedEdges.add(edge.id)
+          void exec.rootScope.activationSeqs.set(edge.id, ++exec.rootScope.activationCounter)
         }
         continue
       }
@@ -1321,9 +1390,9 @@ export class WorkflowEngineService {
             edge.kind === 'branch'
               ? route === encodeWorkflowHandleId('branch', edge.branchId)
               : route === encodeWorkflowHandleId(edge.kind)
-          if (matches) exec.rootScope.activatedEdges.add(edge.id)
+          if (matches) void exec.rootScope.activationSeqs.set(edge.id, ++exec.rootScope.activationCounter)
         } else if (edge.kind === 'normal') {
-          exec.rootScope.activatedEdges.add(edge.id)
+          void exec.rootScope.activationSeqs.set(edge.id, ++exec.rootScope.activationCounter)
         }
       }
     }

@@ -114,24 +114,33 @@ describe('validateGraph 基础结构', () => {
 })
 
 describe('validateGraph 环检测', () => {
-  it('普通节点形成的环报错', () => {
+  it('C1：普通环合法但警告提示（自由环支持）', () => {
+    // b 用 condition（branch 出边不占 normal 名额——显式并行原则不冲突）
     const graph = makeGraph(
       [
         makeNode('start', 'start'),
         makeNode('a', 'llm-chat'),
-        makeNode('b', 'llm-chat'),
+        makeNode('b', 'condition', {
+          config: {
+            branches: [
+              { branchId: 'br1', label: '回环', conditions: [{ left: '{{a.text}}', operator: 'ne', right: 'done' }] },
+              { branchId: 'br2', label: '跳出', conditions: [{ left: '{{a.text}}', operator: 'eq', right: 'done' }] },
+            ],
+            noMatchPolicy: 'fail',
+          },
+        }),
         makeNode('end', 'end'),
       ],
       [
         { source: 'start', target: 'a' },
         { source: 'a', target: 'b' },
-        { source: 'b', target: 'a' }, // 环
-        { source: 'b', target: 'end' },
+        { source: 'b', target: 'a', kind: 'branch', branchId: 'br1' }, // 环（回连，条件一）
+        { source: 'b', target: 'end', kind: 'branch', branchId: 'br2' }, // 跳出（条件二）
       ]
     )
     const result = validateGraph(graph)
-    expect(result.valid).toBe(false)
-    expect(result.errors.some(e => e.includes('环'))).toBe(true)
+    expect(result.valid).toBe(true)
+    expect(result.warnings.some(w => w.includes('环'))).toBe(true)
   })
 
   it('loop-back 边指向循环节点被豁免（合法）', () => {

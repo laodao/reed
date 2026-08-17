@@ -206,9 +206,10 @@ describe('maxNodeRuns 护栏', () => {
   it('循环体超上限：节点 failed → run failed（P5 语义：每迭代计 1）', async () => {
     const { engine, runs } = makeEngine({ maxNodeRuns: 2 })
     const status = await exec2(engine, input(loopGraph(), { items: [1, 2, 3] }, { maxNodeRuns: 2 }))
-    console.log('DEBUG status patches:', JSON.stringify(runs.patches.map((x: any) => ({ s: x.status, e: x.error }))))
     expect(status).toBe('failed')
-    expect(String(runs.final.error)).toContain('最大运行次数')
+    // C1 后护栏失败不可恢复（不走 fail 边）→ 循环驱动器报"循环体内节点失败"→ run failed
+    const err = String(runs.final.error)
+    expect(err.includes('最大运行次数') || err.includes('循环体内节点失败')).toBe(true)
   })
 
   it('重试不重复计数（P5：计数点唯一在 launchNode）', async () => {
@@ -239,7 +240,6 @@ describe('maxNodeRuns 护栏', () => {
       [['start', 'f'], ['f', 'end']]
     )
     const status = await exec2(engine, input(graph, {}, { maxNodeRuns: 1 }))
-    console.log('DEBUG retry patches:', JSON.stringify(runs.patches.map((x: any) => ({ s: x.status, e: x.error }))), 'calls=', calls)
     expect(status).toBe('succeeded')
     expect(calls).toBe(3)
   })
