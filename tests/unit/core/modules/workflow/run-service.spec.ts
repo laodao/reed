@@ -229,4 +229,18 @@ describe('WorkflowRunService', () => {
     const result = await service.recoverOnBoot()
     expect(result).toEqual({ timedOut: 0, interrupted: 1, keptWaiting: 1 })
   })
+
+  it('续跑互斥：同工作流有挂起运行时拒绝续跑（waiting_review 源也占互斥）', async () => {
+    const { service, runs, definitions } = setup()
+    const graph = g(
+      [n('start', 'start'), n('r1', 'human-review', { payload: 'x' }), n('end', 'end')],
+      [['start', 'r1'], ['r1', 'end', 'approve']]
+    )
+    definitions.rows.set('def1', def('def1', graph))
+    const run = await runWithUser('u1', () => service.startRun({ definitionId: 'def1', triggerType: 'manual' }))
+    await wait(50)
+    expect((await runs.getById(run.id)).status).toBe('waiting_review')
+    // 源运行自身挂起占互斥 → 续跑应被拒绝且提示出路
+    await expect(runWithUser('u1', () => service.resumeRun(run.id))).rejects.toThrow('请先取消')
+  })
 })

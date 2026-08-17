@@ -19,7 +19,7 @@
  */
 
 import { CronExpressionParser } from 'cron-parser'
-import { runWithUserAsync } from '@core/context/user-context'
+import { LOCAL_DEFAULT_USER_ID, runWithUserAsync } from '@core/context/user-context'
 import type { WorkflowTrigger } from '@shared/types/workflow.types'
 import { WORKFLOW_DEFAULTS } from '@shared/types/workflow.types'
 import { subscribeDomainEvents, type DomainEvent } from './domain-event-bus'
@@ -107,8 +107,16 @@ export class WorkflowTriggerScheduler {
     this.started = false
   }
 
-  /** cron tick：扫描到期 → 按 userId 分组 → 触发或推进 */
+  /** cron tick：扫描到期 → 按 userId 分组 → 触发或推进（整体兜底，绝不外抛） */
   async tick(now = new Date()): Promise<void> {
+    try {
+      await this.tickInner(now)
+    } catch (e) {
+      console.error('[WorkflowTriggerScheduler] tick 异常', e)
+    }
+  }
+
+  private async tickInner(now: Date): Promise<void> {
     let due: Awaited<ReturnType<WorkflowDefinitionRepository['scanDueCronTriggers']>>
     try {
       due = await this.deps.definitions.scanDueCronTriggers(now)
@@ -123,11 +131,12 @@ export class WorkflowTriggerScheduler {
       )
       if (cronTriggers.length === 0) continue
       // 多个 cron 触发器：逐个判定；任一在 grace 内即触发
-      await runWithUserAsync(row.userId ?? '', async () => {
+      await runWithUserAsync(row.userId ?? LOCAL_DEFAULT_USER_ID, async () => {
         let fired = false
         for (const t of cronTriggers) {
-          const next = this.computeNext(t.expression, row.lastFireAt ?? row.nextFireAt)
-          if (next === null) continue
+          // V1：仅首个 cron 触发器生效（定义级单列 next_fire_at 无法独立调度多个
+          // 表达式——per-trigger 状态表为 V2 项；校验层应限制单 cron 触发器）
+          if (t !== cronTriggers[0]) continue
           const overdueMs = now.getTime() - row.nextFireAt.getTime()
           if (overdueMs <= graceMs) {
             // grace 内：正常触发（互斥跳过由 runService 记 skipped）
@@ -212,7 +221,7 @@ export class WorkflowTriggerScheduler {
       // 可选 payload 等值过滤（AND）
       if (t.match && !matchPayload(t.match, event.payload)) continue
       try {
-        await runWithUserAsync(t.userId ?? '', () =>
+        await runWithUserAsync(t.userId ?? LOCAL_DEFAULT_USER_ID, () =>
           this.deps.runService.startRun({
             definitionId: t.definitionId,
             triggerType: 'event',

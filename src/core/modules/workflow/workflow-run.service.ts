@@ -9,7 +9,7 @@
  *                waiting_review 保持挂起（重启后的审核决策 V1 不支持，需续跑重驱）
  */
 
-import { runWithUserAsync } from '@core/context/user-context'
+import { LOCAL_DEFAULT_USER_ID, runWithUserAsync } from '@core/context/user-context'
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import type { WorkflowGraph, WorkflowRunStatus, WorkflowTriggerType } from '@shared/types/workflow.types'
 import { WORKFLOW_DEFAULTS } from '@shared/types/workflow.types'
@@ -90,7 +90,7 @@ export class WorkflowRunService {
       status: 'pending',
       timeoutAt: new Date(Date.now() + (def.settings?.maxDurationMs ?? WORKFLOW_DEFAULTS.maxDurationMs)),
     })
-    await this.launch(run.id, run.userId ?? '', input.definitionId, graph, def.settings, input.inputs)
+    await this.launch(run.id, run.userId ?? LOCAL_DEFAULT_USER_ID, input.definitionId, graph, def.settings, input.inputs)
     return (await this.deps.runs.getById(run.id)) ?? run
   }
 
@@ -113,7 +113,7 @@ export class WorkflowRunService {
       settings: settings as never,
       resumedCheckpoints,
     }
-    if (this.deps.engine.activeCount >= this.maxConcurrentRuns) {
+    if (this.deps.engine.activeRunningCount >= this.maxConcurrentRuns) {
       this.queue.push({ runId, userId, execInput })
       return
     }
@@ -152,7 +152,7 @@ export class WorkflowRunService {
 
   /** FIFO 出队一个排队运行 */
   private drainQueue(): void {
-    while (this.queue.length > 0 && this.deps.engine.activeCount < this.maxConcurrentRuns) {
+    while (this.queue.length > 0 && this.deps.engine.activeRunningCount < this.maxConcurrentRuns) {
       const next = this.queue.shift()
       if (!next) break
       void this.executeRun(next.runId, next.userId, next.execInput)
@@ -207,8 +207,16 @@ export class WorkflowRunService {
   async resumeRun(sourceRunId: string): Promise<WorkflowRunRecord> {
     const source = await this.deps.runs.getById(sourceRunId)
     if (!source) throw new Error('源运行不存在')
-    if (!['failed', 'cancelled', 'interrupted', 'timed_out'].includes(source.status)) {
+    if (!['failed', 'cancelled', 'interrupted', 'timed_out', 'waiting_review'].includes(source.status)) {
       throw new Error(`源运行状态 ${source.status} 不可续跑`)
+    }
+    // 互斥与 startRun 同语义：同工作流已有在途/挂起运行则拒绝
+    // （waiting_review 源运行自身就占用互斥，需先取消才能续跑——错误消息说明出路）
+    const holders = await this.deps.runs.findMutexHolders(source.definitionId)
+    if (holders.length > 0) {
+      throw new Error(
+        `同工作流已有运行中实例（${holders[0].status}），请先取消或等待其结束后再续跑`
+      )
     }
     const graph = source.graphSnapshot
     if (!graph) throw new Error('源运行缺少图快照')
@@ -226,7 +234,7 @@ export class WorkflowRunService {
     })
     await this.launch(
       run.id,
-      run.userId ?? '',
+      run.userId ?? LOCAL_DEFAULT_USER_ID,
       source.definitionId,
       graph,
       null,
@@ -281,11 +289,27 @@ export class WorkflowRunService {
    * - waiting_review → 保持（重启后审核决策 V1 不支持，需续跑重驱）
    */
   async recoverOnBoot(): Promise<{ timedOut: number; interrupted: number; keptWaiting: number }> {
+    // 先处理已过期的挂起审核：标 interrupted（引擎内存态已丢失，续跑重驱）
+    try {
+      const expired = await this.deps.nodeRuns.scanExpiredWaitingReview(new Date())
+      const expiredRunIds = [...new Set(expired.map(r => r.runId))]
+      for (const runId of expiredRunIds) {
+        const run = await this.deps.runs.getById(runId)
+        if (run?.status === 'waiting_review') {
+          await this.deps.runs.update(runId, {
+            status: 'interrupted',
+            error: '审核等待已超时（应用重启后中断）',
+          })
+        }
+      }
+    } catch (e) {
+      console.error('[WorkflowRunService] 过期审核清理失败（继续 boot 恢复）', e)
+    }
     const recoverable = await this.deps.runs.scanBootRecoverable()
     const result = { timedOut: 0, interrupted: 0, keptWaiting: 0 }
     const byUser = new Map<string, WorkflowRunRecord[]>()
     for (const run of recoverable) {
-      const uid = run.userId ?? ''
+      const uid = run.userId ?? LOCAL_DEFAULT_USER_ID
       const list = byUser.get(uid) ?? []
       list.push(run)
       byUser.set(uid, list)

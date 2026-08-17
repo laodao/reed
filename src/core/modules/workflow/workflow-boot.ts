@@ -57,7 +57,8 @@ export async function initWorkflowSubsystem(): Promise<WorkflowSubsystem> {
   })
   const definitionService = new WorkflowDefinitionService(db.workflowDefinitions, registry)
 
-  // 3. boot 恢复：在途运行标记 interrupted/timed_out（waiting 保持）
+  // 3. boot 恢复：在途运行标记 interrupted/timed_out；已过期的挂起审核标 interrupted
+  //    （重启后引擎内存态丢失，未过期的 waiting 保持等待用户续跑）
   try {
     const recovered = await runService.recoverOnBoot()
     if (recovered.interrupted + recovered.timedOut + recovered.keptWaiting > 0) {
@@ -75,6 +76,8 @@ export async function initWorkflowSubsystem(): Promise<WorkflowSubsystem> {
     runService,
   })
   await scheduler.start()
+  // 发布/触发器变更 → 刷新调度状态与事件索引（否则 cron 发布后永不触发）
+  definitionService.setTriggerScheduler(scheduler)
 
   // 5. 审核超时 ticker（30s 扫描挂起审核的 wait_expires_at）
   reviewTickerHandle = setInterval(() => {

@@ -29,11 +29,35 @@ export interface WorkflowExportFormat {
   settings: unknown
 }
 
+/** 调度器钩子（boot 装配后注入，避免服务层↔调度器循环依赖） */
+export interface TriggerSchedulerHook {
+  recomputeOne(definitionId: string): Promise<void>
+}
+
 export class WorkflowDefinitionService {
+  /** 由 workflow-boot 注入：发布/触发器变更后刷新 next_fire_at 与事件索引。
+   *  不注入时发布只落库（调度不生效）——boot 装配是完整启用的必要条件。 */
+  private schedulerHook: TriggerSchedulerHook | null = null
+
   constructor(
     private readonly repo: WorkflowDefinitionRepository,
     private readonly registry: WorkflowNodeRegistry
   ) {}
+
+  /** boot 装配后注入调度器钩子 */
+  setTriggerScheduler(hook: TriggerSchedulerHook): void {
+    this.schedulerHook = hook
+  }
+
+  /** 发布/触发器变更后的调度状态刷新（有钩子才生效） */
+  private async refreshSchedule(definitionId: string): Promise<void> {
+    if (!this.schedulerHook) return
+    try {
+      await this.schedulerHook.recomputeOne(definitionId)
+    } catch (e) {
+      console.error('[WorkflowDefinitionService] 调度状态刷新失败（不影响发布结果）', e)
+    }
+  }
 
   /** 新建：含 start→end 骨架草稿图 */
   async create(input: CreateWorkflowDefinitionInput): Promise<WorkflowDefinitionRecord> {
@@ -74,7 +98,12 @@ export class WorkflowDefinitionService {
   }
 
   async update(id: string, patch: UpdateWorkflowDefinitionInput) {
-    return this.repo.update(id, patch)
+    const updated = await this.repo.update(id, patch)
+    // 触发器或发布图变更会影响调度——刷新
+    if (patch.triggers !== undefined || patch.publishedGraph !== undefined) {
+      await this.refreshSchedule(id)
+    }
+    return updated
   }
 
   async delete(id: string): Promise<number> {
@@ -118,6 +147,8 @@ export class WorkflowDefinitionService {
       nextFireAt: null,
       lastFireAt: null,
     })
+    // 发布后刷新调度状态与事件索引（否则 cron 永不触发、事件触发器不生效）
+    await this.refreshSchedule(id)
     return { success: true, definition: updated ?? undefined }
   }
 

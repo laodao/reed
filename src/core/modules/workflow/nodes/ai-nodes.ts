@@ -334,9 +334,11 @@ const ttsNode: WorkflowNodeHandler = {
     { key: 'durationMs', type: 'number', desc: '音频时长（毫秒）' },
   ],
   validateConfig(config) {
-    const cfg = config as { text?: string }
-    if (stringifyValue(cfg.text).trim() === '') return ['合成文本不能为空']
-    return []
+    const cfg = config as { text?: string; voiceId?: string }
+    const errors: string[] = []
+    if (stringifyValue(cfg.text).trim() === '') errors.push('合成文本不能为空')
+    if (!cfg.voiceId) errors.push('必须指定音色（voiceId）')
+    return errors
   },
   async execute(ctx: WorkflowNodeContext) {
     const cfg = ctx.config as {

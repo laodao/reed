@@ -276,6 +276,19 @@ export class WorkflowEngineService {
     return this.activeExecutions.size
   }
 
+  /**
+   * 正在执行（非挂起）的运行数——全局并发上限的判定依据。
+   * 挂起等待审核的运行不占并发槽（否则数个挂起即堵死全子系统）；
+   * 其互斥由 MUTEX_RUN_STATUSES 的库级查询保证。
+   */
+  get activeRunningCount(): number {
+    let n = 0
+    for (const exec of this.activeExecutions.values()) {
+      if (!exec.suspended) n++
+    }
+    return n
+  }
+
   isWaitingReview(runId: string): boolean {
     const exec = this.activeExecutions.get(runId)
     return !!exec && exec.suspended
@@ -488,32 +501,35 @@ export class WorkflowEngineService {
     let handled = 0
     for (const exec of [...this.activeExecutions.values()]) {
       if (!exec.suspended) continue
-      const scope = this.findWaitingScope(exec)
-      if (!scope) continue
-      for (const state of [...scope.states.values()]) {
-        if (state.status !== 'waiting_review') continue
-        if (!state.waitExpiresAt || state.waitExpiresAt > now) continue
-        const policy = state.reviewTimeoutPolicy ?? 'fail'
-        if (policy === 'approve') {
-          await this.applyReviewDecision(exec, scope, state, {
-            decision: 'timeout_approve',
-            decidedAt: now.toISOString(),
-          })
-        } else if (policy === 'reject') {
-          await this.applyReviewDecision(exec, scope, state, {
-            decision: 'timeout_reject',
-            decidedAt: now.toISOString(),
-          })
-        } else {
-          await this.handleNodeFailure(exec, scope, exec.nodeById.get(state.nodeId)!, state, '审核超时（timeoutPolicy=fail）', false)
+      // ALS 纪律：ticker 无请求上下文，按运行归属用户重建（Web 端写库/事件路由依赖）
+      await runWithUserAsync(exec.input.userId, async () => {
+        const scope = this.findWaitingScope(exec)
+        if (!scope) return
+        for (const state of [...scope.states.values()]) {
+          if (state.status !== 'waiting_review') continue
+          if (!state.waitExpiresAt || state.waitExpiresAt > now) continue
+          const policy = state.reviewTimeoutPolicy ?? 'fail'
+          if (policy === 'approve') {
+            await this.applyReviewDecision(exec, scope, state, {
+              decision: 'timeout_approve',
+              decidedAt: now.toISOString(),
+            })
+          } else if (policy === 'reject') {
+            await this.applyReviewDecision(exec, scope, state, {
+              decision: 'timeout_reject',
+              decidedAt: now.toISOString(),
+            })
+          } else {
+            await this.handleNodeFailure(exec, scope, exec.nodeById.get(state.nodeId)!, state, '审核超时（timeoutPolicy=fail）', false)
+          }
+          handled++
+          if (exec.suspended) {
+            // 挂起解除，续驱
+            void this.resumeSuspended(exec)
+          }
+          break
         }
-        handled++
-        if (exec.suspended) {
-          // 挂起解除，续驱
-          void this.resumeSuspended(exec)
-        }
-        break
-      }
+      })
     }
     return handled
   }
@@ -553,16 +569,17 @@ export class WorkflowEngineService {
 
   private async fireWatchdog(exec: RunExecution): Promise<void> {
     if (exec.finished) return
+    // ⚠️ 挂起检查必须在 abort() 之前——否则挂起运行的取消信号被永久污染，
+    // 审核批准后续驱会被 pump 的 aborted 检查误转为 cancelled
+    if (exec.suspended) {
+      // 挂起中不强制超时（审核等待不计入执行时长；run 的 timeout_at 死线由服务层管控）
+      return
+    }
     console.warn(
       `[WorkflowEngine] 运行 ${exec.input.runId} 超过最长时长(${exec.settings.maxDurationMs}ms)，强制超时`
     )
     exec.forceRelease = true
     exec.abortController.abort()
-    if (exec.suspended) {
-      // 挂起中不强制超时（审核等待不计入执行时长；run 的 timeout_at 死线由服务层管控）
-      exec.forceRelease = false
-      return
-    }
     try {
       await this.finalize(exec, 'timed_out', '运行超过最长时长限制')
     } catch (e) {
@@ -607,9 +624,12 @@ export class WorkflowEngineService {
       scope.pumping = false
       if (scope.requeue && !exec.finished && !scope.failed && !exec.suspended) {
         scope.requeue = false
-        void this.pump(exec, scope).catch(e =>
-          console.error('[WorkflowEngine] requeue pump 异常', e)
-        )
+        void this.pump(exec, scope).catch(async e => {
+          console.error('[WorkflowEngine] requeue pump 异常，兜底失败终态', e)
+          await this.finalize(exec, 'failed', `引擎调度异常: ${errorMessage(e)}`).catch(fe =>
+            console.error('[WorkflowEngine] requeue 兜底 finalize 失败', fe)
+          )
+        })
       }
     }
   }
@@ -624,7 +644,9 @@ export class WorkflowEngineService {
     scope.settledAt.resolve()
     // 根作用域静默 → 运行终态
     if (scope.isRoot && !exec.suspended && !exec.finished) {
-      void this.finalize(exec, exec.anyUnrecoveredFailure() ? 'failed' : 'succeeded')
+      void this.finalize(exec, exec.anyUnrecoveredFailure() ? 'failed' : 'succeeded').catch(fe =>
+        console.error('[WorkflowEngine] 静默收敛 finalize 失败', fe)
+      )
     }
   }
 
@@ -827,15 +849,17 @@ export class WorkflowEngineService {
     result: Extract<WorkflowNodeExecutionResult, { status: 'waiting_review' }>
   ): Promise<void> {
     const cfg = node.config as {
-      timeoutMs?: number | null
       timeoutPolicy?: 'approve' | 'reject' | 'fail'
     }
     state.status = 'waiting_review'
     state.reviewPayload = result.payload
-    state.reviewTimeoutMs = cfg.timeoutMs ?? null
+    // 超时时长用 handler 返回的 result.timeoutMs（已含模板解析与 >0 规范化）——
+    // 直接读原始 node.config 会拿到未解析的模板字符串 → Invalid Date → 永不超时
+    state.reviewTimeoutMs =
+      result.timeoutMs != null && Number(result.timeoutMs) > 0 ? Number(result.timeoutMs) : null
     state.reviewTimeoutPolicy = cfg.timeoutPolicy ?? 'fail'
     state.waitExpiresAt =
-      state.reviewTimeoutMs != null && state.reviewTimeoutMs > 0
+      state.reviewTimeoutMs != null
         ? new Date(Date.now() + state.reviewTimeoutMs)
         : null
 

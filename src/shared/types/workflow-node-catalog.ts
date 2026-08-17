@@ -353,7 +353,7 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
       { kind: 'fail', label: '失败' },
     ],
     requiredConfigKeys: ['audio'],
-    defaultConfig: { audio: '{{tts1.audioBase64}}' },
+    defaultConfig: { audio: '{{tts1.audioPath}}' },
     outputSchema: [{ key: 'text', type: 'string', desc: '识别文本' }],
   },
   {
