@@ -1,9 +1,17 @@
 <template>
   <!-- 按 Schema 字段类型分发渲染 -->
-  <el-input v-if="field.type === 'text'" :model-value="modelValue as string" :placeholder="field.placeholder"
-    @update:model-value="v => set(v)" />
-  <el-input v-else-if="field.type === 'textarea'" :model-value="modelValue as string" :placeholder="field.placeholder"
-    type="textarea" :rows="4" @update:model-value="v => set(v)" />
+  <div v-if="field.type === 'text'" class="field-with-picker">
+    <el-input ref="inputRef" :model-value="modelValue as string" :placeholder="field.placeholder"
+      @update:model-value="v => set(v)" />
+    <VariablePicker v-if="field.templateHint" :nodes="pickerNodes.nodes" :exclude-node-id="pickerNodes.excludeNodeId" @insert="p => insertAtCursor(p)" />
+  </div>
+  <div v-else-if="field.type === 'textarea'" class="field-with-picker column">
+    <div class="picker-row">
+      <VariablePicker v-if="field.templateHint" :nodes="pickerNodes.nodes" :exclude-node-id="pickerNodes.excludeNodeId" @insert="p => insertAtCursor(p)" />
+    </div>
+    <el-input ref="inputRef" :model-value="modelValue as string" :placeholder="field.placeholder"
+      type="textarea" :rows="4" @update:model-value="v => set(v)" />
+  </div>
   <el-input-number v-else-if="field.type === 'number'" :model-value="num(modelValue)" :min="field.min" :max="field.max"
     :placeholder="field.placeholder" style="width: 100%" @update:model-value="v => set(v)" />
   <el-select v-else-if="field.type === 'select'" :model-value="modelValue" :placeholder="field.placeholder || '请选择'"
@@ -124,6 +132,34 @@
 import { computed } from 'vue'
 import type { CatalogFormField } from '@shared/types/workflow-node-forms'
 import type { WorkflowConditionBranch, WorkflowStartInput } from '@shared/types/workflow.types'
+import VariablePicker from './VariablePicker.vue'
+import { computed, inject, ref, type ComponentPublicInstance } from 'vue'
+
+// 变量选择器数据（NodeConfigPanel provide；缺省退化为空）
+const pickerNodes = inject<{ nodes: any[]; excludeNodeId: string }>('wfPickerContext', { nodes: [], excludeNodeId: '' })
+const inputRef = ref<ComponentPublicInstance | null>(null)
+
+/** 光标处插入 {{path}}（P10：拿不到原生 ref 时追加末尾兜底） */
+function insertAtCursor(path: string) {
+  const comp: any = inputRef.value
+  const el: HTMLInputElement | HTMLTextAreaElement | undefined =
+    comp?.textarea ?? comp?.input ?? comp?.$el?.querySelector?.('textarea, input')
+  const text = String(props.model[props.field.key] ?? '')
+  const snippet = `{{${path}}}`
+  if (el && typeof el.selectionStart === 'number') {
+    const start = el.selectionStart
+    props.model[props.field.key] = text.slice(0, start) + snippet + text.slice(el.selectionEnd ?? start)
+    emit('change')
+    requestAnimationFrame(() => {
+      el.focus()
+      const pos = start + snippet.length
+      if (el.setSelectionRange) el.setSelectionRange(pos, pos)
+    })
+  } else {
+    props.model[props.field.key] = text + snippet
+    emit('change')
+  }
+}
 
 const props = defineProps<{
   field: CatalogFormField
@@ -206,6 +242,9 @@ function syncFields() { emit('change') }
 .options-sub { margin: -2px 0 6px; }
 .default-label { font-size: 12px; color: var(--el-text-color-secondary); white-space: nowrap; }
 .model-pair { display: flex; gap: 6px; }
+.field-with-picker { display: flex; align-items: center; gap: 4px; }
+.field-with-picker.column { flex-direction: column; }
+.picker-row { align-self: flex-end; }
 .branch-card { border: 1px solid var(--el-border-color-lighter); border-radius: 6px; padding: 8px; margin-bottom: 8px; }
 .branch-head { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
 .cond-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }

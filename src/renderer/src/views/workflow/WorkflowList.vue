@@ -65,8 +65,7 @@
 
     <!-- 运行输入对话框 -->
     <el-dialog v-model="showRunInputs" :title="`运行：${runningDef?.name ?? ''}`" width="480px">
-      <p class="hint">输入参数（JSON 对象，对应开始节点定义；无参数可直接运行）</p>
-      <el-input v-model="runInputsJson" type="textarea" :rows="5" placeholder='{ "topic": "AI" }' />
+      <RunInputForm ref="runInputRef" :inputs="runInputDefs" @valid="v => runInputsValid = v" />
       <template #footer>
         <el-button @click="showRunInputs = false">取消</el-button>
         <el-button type="primary" :loading="starting" @click="confirmRun">开始运行</el-button>
@@ -88,6 +87,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { VideoPlay, Edit, Clock, Upload, Download, Delete } from '@element-plus/icons-vue'
 import { saveBlobAs } from '@/utils/file-saver'
+import RunInputForm from '@/components/workflow/RunInputForm.vue'
 
 const router = useRouter()
 const items = ref<any[]>([])
@@ -95,7 +95,6 @@ const loading = ref(false)
 const showRunInputs = ref(false)
 const showImport = ref(false)
 const runningDef = ref<any>(null)
-const runInputsJson = ref('')
 const starting = ref(false)
 
 const api = () => (window as never as { electronAPI: any }).electronAPI.workflow
@@ -121,21 +120,25 @@ async function handleCreate() {
   } else ElMessage.error(resp.error)
 }
 
-function handleRun(row: any) {
+const runInputRef = ref<any>(null)
+const runInputsValid = ref(true)
+const runInputDefs = ref<any[]>([])
+
+async function handleRun(row: any) {
   runningDef.value = row
-  runInputsJson.value = ''
+  // 拉取定义以取 start inputs（列表行不含图）
+  const resp = await api().getDefinition(row.id)
+  const graph = resp.success ? resp.data?.draftGraph ?? resp.data?.publishedGraph : null
+  const startNode = graph?.nodes?.find((nd: any) => nd.type === 'start')
+  runInputDefs.value = startNode?.config?.inputs ?? []
   showRunInputs.value = true
 }
 
 async function confirmRun() {
-  let inputs: Record<string, unknown> | undefined
-  if (runInputsJson.value.trim()) {
-    try {
-      inputs = JSON.parse(runInputsJson.value)
-    } catch {
-      ElMessage.error('输入参数不是有效 JSON')
-      return
-    }
+  const inputs = runInputRef.value?.getValues() ?? {}
+  if (!runInputsValid.value) {
+    ElMessage.warning('请填写必填参数')
+    return
   }
   starting.value = true
   try {

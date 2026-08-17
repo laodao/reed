@@ -77,7 +77,7 @@
 
 <script setup lang="ts">
 defineOptions({ name: 'WorkflowEditor' })
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, provide, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
@@ -107,6 +107,11 @@ const saving = ref(false)
 const validation = ref<{ valid: boolean; errors: string[]; warnings: string[] } | null>(null)
 
 const api = () => (window as never as { electronAPI: any }).electronAPI.workflow
+
+/** 变量选择器数据源：画布节点（响应式转发给配置面板） */
+const canvasNodesRef = ref<any[]>([])
+watch(nodes, (list: any) => { canvasNodesRef.value = list }, { immediate: true, deep: true })
+provide('wfCanvasNodes', canvasNodesRef.value)
 
 /** 屏幕坐标 → 画布流坐标（拖放落点精确） */
 const { screenToFlowCoordinate } = useVueFlow()
