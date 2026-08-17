@@ -103,6 +103,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '工作流' },
   },
   {
+    path: '/workflow/editor/:id',
+    name: 'WorkflowEditor',
+    component: () => import('@/views/workflow/WorkflowEditor.vue'),
+    meta: { title: '工作流编辑器' },
+  },
+  {
     path: '/workflow/run/:runId',
     name: 'WorkflowRunDetail',
     component: () => import('@/views/workflow/WorkflowRunDetail.vue'),

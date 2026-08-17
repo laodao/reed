@@ -125,7 +125,6 @@ export const mainMenuItems: MenuItem[] = [
     label: '工作流',
     description: '可视化流程编排与自动化执行',
     icon: markRaw(FolderOpened),
-    hidden: true // 片8 画布编辑器完成后放开
   },
   {
     path: '/diary',

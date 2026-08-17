@@ -23,6 +23,7 @@
       <el-table-column label="操作" width="320" fixed="right">
         <template #default="{ row }">
           <el-button text type="primary" size="small" @click="handleRun(row)">运行</el-button>
+          <el-button text type="primary" size="small" @click="router.push(`/workflow/editor/${row.id}`)">编辑</el-button>
           <el-button text size="small" @click="handleHistory(row)">历史</el-button>
           <el-button text size="small" @click="handlePublish(row)">发布</el-button>
           <el-button text size="small" @click="handleExport(row)">导出</el-button>
