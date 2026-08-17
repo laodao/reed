@@ -32,9 +32,15 @@
 - PG 测试需 `PGHOST` 等环境（SKIP_PG_TESTS=1 跳过）
 - 既有失败与本次无关：panorama 等 better-sqlite3 ABI 相关、episode-production 资产服务若干
 
-## 待做（片 5-8，见任务清单）
+## 片5 进行中（5e3bcb9d 已交付上半，77/77 全绿）
 
-- 片5：服务层（definition/run service、引擎端口适配仓库、启动互斥/全局并发/boot 恢复接线）+ 21 任务节点 + 领域事件埋点 + KnowledgeBaseService.search 加 signal
-- 片6：cron-parser 调度器 + 事件总线 + 双端 boot
-- 片7：19 个 wf: IPC 通道 + preload/channel-map + 前端列表/运行详情
-- 片8：Vue Flow 编辑器画布
+已交付：definition/run 服务（互斥/并发/续跑/boot恢复）、makeEngineDeps 端口适配、
+domain-event-bus、首批任务节点（delay/http-request/llm-chat/human-review）。
+
+片5 剩余（下轮继续）：
+- 9 个 AI 任务节点：kb-retrieve/kb-ingest/web-search/translate/image-gen/tts/stt/lw-generate-chapter/lw-polish
+- 8 处领域事件埋点（kb/image/translation/voice 终态处各一行 safePublish）
+- KnowledgeBaseService.search 加可选 signal（向后兼容）
+- 全目录一致性测试（21 节点 handler 与 catalog 对齐）
+
+片6-8：cron 调度器+事件触发接线 / IPC 19 通道+前端列表详情 / Vue Flow 编辑器
