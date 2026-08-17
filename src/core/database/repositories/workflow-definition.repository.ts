@@ -223,6 +223,27 @@ export class WorkflowDefinitionRepository extends BaseRepository<
       .filter(row => row.triggers.some(t => t.type === 'cron' && t.enabled))
   }
 
+  /**
+   * 扫描全部已发布且含启用事件触发器的定义（跨租户，供事件触发器索引构建）。
+   * ⚠️ 返回行含所有用户——调用方必须按 userId 匹配事件上下文。
+   */
+  async scanEventTriggers(): Promise<
+    Array<{ id: string; userId: string | null; triggers: WorkflowTrigger[] }>
+  > {
+    const rows = await this.repo
+      .createQueryBuilder('d')
+      .where('d.published_version > 0')
+      .andWhere('d.triggers IS NOT NULL')
+      .getMany()
+    return rows
+      .map(e => ({
+        id: e.id,
+        userId: e.userId,
+        triggers: safeParse<WorkflowTrigger[]>(e.triggers, []),
+      }))
+      .filter(row => row.triggers.some(t => t.type === 'event' && t.enabled))
+  }
+
   private generateId(): string {
     return `wfdef_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }

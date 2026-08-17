@@ -408,6 +408,14 @@ app.whenReady().then(async () => {
     console.warn('[boot] VoiceCloneJobScheduler 启动失败（不致命）:', e?.message ?? e)
   }
 
+  // 工作流子系统：引擎装配 + boot 恢复 + 触发调度器（失败不致命）
+  try {
+    const { initWorkflowSubsystem } = await import('@core/modules/workflow/workflow-boot')
+    await initWorkflowSubsystem()
+  } catch (e: any) {
+    console.warn('[boot] 工作流子系统启动失败（不致命）:', e?.message ?? e)
+  }
+
   // 创建窗口
   createWindow()
 
