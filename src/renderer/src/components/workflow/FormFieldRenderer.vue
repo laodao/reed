@@ -129,7 +129,6 @@
 /**
  * 单字段渲染器：按 CatalogFormField.type 分发到 Element Plus 组件或专用编辑器
  */
-import { computed } from 'vue'
 import type { CatalogFormField } from '@shared/types/workflow-node-forms'
 import type { WorkflowConditionBranch, WorkflowStartInput } from '@shared/types/workflow.types'
 import VariablePicker from './VariablePicker.vue'
