@@ -77,6 +77,7 @@ export type WorkflowNodeType =
   | 'web-extract'
   | 'kb-qa'
   | 'report'
+  | 'oas-tool'
 
 // ==================== 开始节点输入参数 ====================
 
@@ -609,6 +610,7 @@ export const WORKFLOW_NODE_TYPES = {
   'parameter-extractor': 'parameter-extractor',
   'web-extract': 'web-extract',
   'kb-qa': 'kb-qa',
+  'oas-tool': 'oas-tool',
   'report': 'report',
 } as const satisfies Record<WorkflowNodeType, WorkflowNodeType>
 

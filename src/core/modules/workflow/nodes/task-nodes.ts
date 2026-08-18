@@ -6,7 +6,8 @@
  */
 
 import { callAIStream, callVLM, toImageDataUrl } from '../../../services/ai-call'
-import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from '@shared/types/workflow.types'
+import { WORKFLOW_DEFAULTS } from '@shared/types/workflow.types'
+import { executeHttpFetch } from './http-fetch'
 import { sleepAbortable } from '../engine/async-utils'
 import type { WorkflowNodeContext } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
@@ -69,40 +70,19 @@ const httpRequestNode: WorkflowNodeHandler = {
       body?: string
       timeoutMs?: number
     }
-    const timeout = Math.min(cfg.timeoutMs ?? WORKFLOW_DEFAULTS.httpRequestTimeoutMs, WORKFLOW_LIMITS.httpTimeoutMs)
-    // 运行取消信号 + 超时信号合并
-    const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(timeout)])
-    let res: Response
-    try {
-      res = await fetch(cfg.url, {
+    // C5：抽出共享执行（oas-tool 复用超时/取消/输出形状）
+    const result = await executeHttpFetch(
+      {
         method: cfg.method,
+        url: cfg.url,
         headers: Object.fromEntries((cfg.headers ?? []).map(h => [h.key, h.value])),
-        body: cfg.body && cfg.method !== 'GET' ? cfg.body : undefined,
-        signal,
-      })
-    } catch (e) {
-      return { status: 'failed', error: `请求失败: ${e instanceof Error ? e.message : String(e)}` }
-    }
-    const body = await res.text()
-    let json: unknown
-    try {
-      json = JSON.parse(body)
-    } catch {
-      json = undefined
-    }
-    const headers: Record<string, string> = {}
-    res.headers.forEach((v, k) => {
-      headers[k] = v
-    })
-    return {
-      status: 'succeeded',
-      output: {
-        status: res.status,
-        body,
-        ...(json !== undefined ? { json } : {}),
-        headers,
+        body: cfg.body,
+        timeoutMs: cfg.timeoutMs,
       },
-    }
+      ctx.signal
+    )
+    if (!result.ok) return { status: 'failed', error: result.error }
+    return { status: 'succeeded', output: result.output }
   },
 }
 

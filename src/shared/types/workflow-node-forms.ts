@@ -35,6 +35,10 @@ export interface CatalogFormField {
     | 'inputs-list'
     /** 审核可编辑字段专用编辑器 */
     | 'fields-list'
+    /** OAS 接口下拉（选项从同节点 config.oasSpec 本地解析） */
+    | 'oas-operations'
+    /** OAS 参数编辑（kv-list + 按接口声明生成参数行） */
+    | 'oas-params'
   placeholder?: string
   /** select 的静态选项 */
   options?: Array<{ label: string; value: string | number }>
@@ -215,6 +219,17 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     { key: 'waitForCompletion', label: '等待完成', type: 'switch', group: '参数' },
   ],
 
+  'oas-tool': [
+    T('oasSpec', 'OpenAPI JSON', {
+      type: 'textarea',
+      help: '粘贴接口文档的 OpenAPI/Swagger JSON（V1 不支持 $ref 引用）',
+    }),
+    { key: 'operationId', label: '接口', type: 'oas-operations', help: '从上方 JSON 解析出的接口列表' },
+    { key: 'params', label: '参数', type: 'oas-params', help: '值支持 {{模板}}；点「按接口定义生成」自动带出参数行' },
+    T('baseUrlOverride', 'BaseURL 覆盖', { placeholder: '留空用文档里的 servers/host', collapsible: true }),
+    { key: 'headers', label: '附加请求头', type: 'kv-list', keyPlaceholder: 'Header（如 Authorization）', valuePlaceholder: '值，支持 {{模板}}', collapsible: true },
+    { key: 'timeoutMs', label: '超时（毫秒）', type: 'number', group: '参数' },
+  ],
   'http-request': [
     T('method', '请求方法', {
       type: 'select',

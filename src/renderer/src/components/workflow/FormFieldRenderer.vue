@@ -123,6 +123,31 @@
     </div>
     <el-button size="small" text type="primary" @click="editableFields.push({ key: '', label: '', type: 'string' }); syncFields()">+ 字段</el-button>
   </div>
+
+  <!-- OAS 接口下拉（从同节点 oasSpec 本地解析） -->
+  <div v-else-if="field.type === 'oas-operations'" class="oas-ops">
+    <el-select :model-value="String(modelValue ?? '')" placeholder="请先粘贴 OpenAPI JSON" clearable filterable
+      style="width: 100%" @update:model-value="v => set(v)">
+      <el-option v-for="op in oasOperations" :key="op.operationId"
+        :label="`${op.method}  ${op.path}${op.summary ? ' — ' + op.summary : ''}`" :value="op.operationId" />
+    </el-select>
+    <div v-if="oasError" class="oas-error">{{ oasError }}</div>
+    <div v-else-if="!oasOperations.length && model['oasSpec']" class="oas-hint">JSON 中没有可调用的接口</div>
+  </div>
+
+  <!-- OAS 参数编辑（kv-list + 按接口声明生成） -->
+  <div v-else-if="field.type === 'oas-params'" class="kv-list">
+    <div v-for="(item, i) in kvList" :key="i" class="kv-row">
+      <el-input v-model="item.key" placeholder="参数名" size="small" @change="syncKv" />
+      <el-input v-model="item.value" placeholder="值，支持变量模板" size="small" @change="syncKv" />
+      <el-button text type="danger" size="small" @click="kvList.splice(i, 1); syncKv()">✕</el-button>
+    </div>
+    <div class="kv-row" style="justify-content: flex-start">
+      <el-button size="small" text type="primary" @click="kvList.push({ key: '', value: '' }); syncKv()">+ 参数</el-button>
+      <el-button size="small" text type="primary" @click="generateOasParams">⟳ 按接口定义生成</el-button>
+    </div>
+    <div v-if="oasParamHint" class="oas-hint">{{ oasParamHint }}</div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -130,6 +155,7 @@
  * 单字段渲染器：按 CatalogFormField.type 分发到 Element Plus 组件或专用编辑器
  */
 import type { CatalogFormField } from '@shared/types/workflow-node-forms'
+import { listOperations, listParameters } from '@shared/utils/openapi-parser'
 import type { WorkflowConditionBranch, WorkflowStartInput } from '@shared/types/workflow.types'
 import VariablePicker from './VariablePicker.vue'
 import { computed, inject, ref, unref, type ComponentPublicInstance, type Ref } from 'vue'
@@ -232,6 +258,39 @@ const editableFields = computed<any[]>(() => {
   return raw as any[]
 })
 function syncFields() { emit('change') }
+
+// ── OAS（C5 自定义接口）：解析纯函数来自 @shared，双端同源 ──
+const oasSpecText = computed(() => String(props.model['oasSpec'] ?? ''))
+const oasResult = computed(() => {
+  if (!oasSpecText.value.trim()) return { operations: [] as Array<{ operationId: string; method: string; path: string; summary?: string }>, error: '' }
+  const r = listOperations(oasSpecText.value)
+  return r.ok ? { operations: r.operations, error: '' } : { operations: [], error: r.error }
+})
+const oasOperations = computed(() => oasResult.value.operations)
+const oasError = computed(() => oasResult.value.error)
+
+const oasParamHint = ref('')
+/** 按所选 operationId 的 OAS 声明生成参数行（保留已填值；必填标记进 hint） */
+function generateOasParams() {
+  const opId = String(props.model['operationId'] ?? '')
+  if (!oasSpecText.value.trim() || !opId) {
+    oasParamHint.value = '请先粘贴 OpenAPI JSON 并选择接口'
+    return
+  }
+  const declared = listParameters(oasSpecText.value, opId)
+  if (declared.length === 0) {
+    oasParamHint.value = '该接口没有声明参数（可手动添加自由参数进请求体）'
+    return
+  }
+  const existing = new Map(kvList.value.map((x: any) => [String(x.key), x]))
+  props.model[props.field.key] = declared.map(d => ({
+    key: d.name,
+    value: existing.get(d.name)?.value ?? '',
+  }))
+  const missing = declared.filter(d => d.required).map(d => d.name)
+  oasParamHint.value = `已生成 ${declared.length} 个参数` + (missing.length ? `；必填：${missing.join('、')}` : '')
+  emit('change')
+}
 </script>
 
 <style scoped>
@@ -248,4 +307,6 @@ function syncFields() { emit('change') }
 .branch-card { border: 1px solid var(--el-border-color-lighter); border-radius: 6px; padding: 8px; margin-bottom: 8px; }
 .branch-head { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
 .cond-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
+.oas-error { color: var(--el-color-danger); font-size: 12px; margin-top: 4px; }
+.oas-hint { color: var(--el-text-color-secondary); font-size: 12px; margin-top: 4px; }
 </style>

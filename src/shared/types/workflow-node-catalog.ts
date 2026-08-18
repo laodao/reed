@@ -417,6 +417,27 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
     ],
   },
   {
+    type: 'oas-tool',
+    label: '自定义接口',
+    description: '粘贴 OpenAPI JSON 选择接口调用（参数按接口声明自动生成；V1 不支持 $ref）',
+    category: 'general',
+    icon: 'Connection',
+    controlKind: 'task',
+    cancellable: true,
+    ports: [
+      { kind: 'normal', label: '出', max: 1 },
+      { kind: 'fail', label: '失败' },
+    ],
+    requiredConfigKeys: ['oasSpec', 'operationId'],
+    defaultConfig: { oasSpec: '', operationId: '', params: [], baseUrlOverride: '', timeoutMs: 30_000 },
+    outputSchema: [
+      { key: 'status', type: 'number', desc: 'HTTP 状态码' },
+      { key: 'body', type: 'string', desc: '响应体文本' },
+      { key: 'json', type: 'json', desc: 'JSON 响应的解析结果' },
+      { key: 'headers', type: 'json', desc: '响应头' },
+    ],
+  },
+  {
     type: 'app-notify',
     label: '应用通知',
     description: '向用户推送应用内通知',
