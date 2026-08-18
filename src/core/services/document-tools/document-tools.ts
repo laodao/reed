@@ -80,3 +80,18 @@ export class DocumentToolsService {
     return { buffer, html: await this.renderHtml(input), format: 'docx' }
   }
 }
+
+// ==================== 全局访问器（各端 boot 时注入平台渲染器） ====================
+
+let _instance: DocumentToolsService | null = null
+
+/** 注册全局文档工具实例（Electron boot 传 ElectronDocumentRenderer；Web 端传 null 走降级） */
+export function registerDocumentTools(instance: DocumentToolsService): void {
+  _instance = instance
+}
+
+/** 取全局文档工具（未注册时返回仅 html/docx 能力的降级实例——renderImage/renderPdf 产出 HTML） */
+export function getDocumentTools(): DocumentToolsService {
+  if (!_instance) _instance = new DocumentToolsService(null)
+  return _instance
+}

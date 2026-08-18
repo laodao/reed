@@ -294,6 +294,22 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     }),
   ],
 
+  'report-image': [
+    T('title', '报告标题', { templateHint: true }),
+    T('template', '模板（markdown）', {
+      type: 'textarea', templateHint: true,
+      placeholder: '# 每日早间新闻\n\n{{llm1.content}}',
+      help: '支持 markdown；渲染为竖版长图',
+    }),
+    {
+      key: 'templateId', label: '排版模板', type: 'select', group: '版式',
+      options: [
+        { label: '通用文档', value: 'generic' },
+        { label: '早报长图（红头卡片）', value: 'morningReport' },
+      ],
+    },
+  ],
+
   'app-notify': [
     T('title', '通知标题', { templateHint: true }),
     T('message', '通知内容', { type: 'textarea', templateHint: true }),

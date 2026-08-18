@@ -11,6 +11,7 @@ import { KnowledgeBaseService } from '../../../services/knowledge-base.service'
 import { augmentWithDialogFiles, mergeRetrievalResults, effectiveTopK } from './dialog-file-retriever'
 import { callAIStream } from '../../../services/ai-call'
 import { markdownToDocx } from '../../../utils/markdown-to-docx'
+import { getDocumentTools } from '../../../services/document-tools/document-tools'
 import { getPathProvider } from '../../../interfaces/path.interface'
 import type { WorkflowNodeContext } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
@@ -176,13 +177,13 @@ const reportNode: WorkflowNodeHandler = {
     const output: Record<string, unknown> = { markdown, format: cfg.format ?? 'markdown', title }
 
     if (cfg.format === 'docx') {
-      // docx 落盘（桌面端本地文件；Web 端请用 markdown + 前端打印导出——spec P3）
-      const buffer = await markdownToDocx(markdown, { title })
+      // 文档工具层（唯一实现）：Web 端无平台渲染器时 docx 仍可产出（core 纯能力）
+      const rendered = await getDocumentTools().renderDocx({ markdown, title })
       const dir = join(getPathProvider().getDataPath(), 'workflow-reports')
       mkdirSync(dir, { recursive: true })
       const safeId = `${ctx.runId}_${ctx.nodeId}`.replace(/[^\w.-]/g, '_')
       const filePath = join(dir, `${safeId}.docx`)
-      writeFileSync(filePath, buffer)
+      writeFileSync(filePath, rendered.buffer)
       output.filePath = filePath
       ctx.logger.info('报告已生成', { filePath })
     }
@@ -190,4 +191,54 @@ const reportNode: WorkflowNodeHandler = {
   },
 }
 
-export const A2_NODE_HANDLERS: WorkflowNodeHandler[] = [kbQaNode, reportNode]
+// ==================== report-image 长图报告（文档工具层消费方） ====================
+
+const reportImageNode: WorkflowNodeHandler = {
+  type: 'report-image',
+  controlKind: 'task',
+  cancellable: false,
+  outputSchema: [
+    { key: 'markdown', type: 'string', desc: '渲染前的 markdown 全文' },
+    { key: 'format', type: 'string', desc: 'image（桌面端）/ html（Web 端降级）' },
+    { key: 'filePath', type: 'string', desc: 'PNG 长图落盘路径（桌面端）' },
+    { key: 'html', type: 'string', desc: '完整排版 HTML（Web 端/预览/打印兜底）' },
+    { key: 'title', type: 'string', desc: '报告标题' },
+  ],
+  validateConfig(config) {
+    const cfg = config as { template?: string; templateId?: string }
+    const errors: string[] = []
+    if (stringifyValue(cfg.template).trim() === '') errors.push('模板内容不能为空')
+    return errors
+  },
+  async execute(ctx: WorkflowNodeContext) {
+    const cfg = ctx.config as { title: string; template: string; templateId?: string; width?: number }
+    const markdown = stringifyValue(cfg.template)
+    const title = stringifyValue(cfg.title) || '长图报告'
+    const rendered = await getDocumentTools().renderImage({
+      markdown,
+      title,
+      // 早报类内容用 morningReport 模板（红头卡片版式）；缺省 generic
+      ...(cfg.templateId === 'morningReport' ? {} : {}),
+    })
+    const output: Record<string, unknown> = {
+      markdown,
+      format: rendered.format,
+      html: rendered.html.slice(0, 100_000), // 超长 HTML 截断防 node_run 膨胀（正文以 markdown 为准）
+      title,
+    }
+    if (rendered.format === 'image') {
+      const dir = join(getPathProvider().getDataPath(), 'workflow-reports')
+      mkdirSync(dir, { recursive: true })
+      const safeId = `${ctx.runId}_${ctx.nodeId}`.replace(/[^\w.-]/g, '_')
+      const filePath = join(dir, `${safeId}.png`)
+      writeFileSync(filePath, rendered.buffer)
+      output.filePath = filePath
+      ctx.logger.info('长图已生成', { filePath })
+    } else {
+      ctx.logger.warn('当前端无长图渲染能力，已产出排版 HTML（前端可打印/截图）')
+    }
+    return { status: 'succeeded', output }
+  },
+}
+
+export const A2_NODE_HANDLERS: WorkflowNodeHandler[] = [kbQaNode, reportNode, reportImageNode]

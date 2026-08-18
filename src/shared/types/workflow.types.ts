@@ -77,6 +77,7 @@ export type WorkflowNodeType =
   | 'web-extract'
   | 'kb-qa'
   | 'report'
+  | 'report-image'
   | 'oas-tool'
 
 // ==================== 开始节点输入参数 ====================
@@ -612,6 +613,7 @@ export const WORKFLOW_NODE_TYPES = {
   'kb-qa': 'kb-qa',
   'oas-tool': 'oas-tool',
   'report': 'report',
+  'report-image': 'report-image',
 } as const satisfies Record<WorkflowNodeType, WorkflowNodeType>
 
 /** 出边类型常量（键=值，与 WorkflowEdgeKind 一一对应） */

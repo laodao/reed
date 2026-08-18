@@ -535,6 +535,25 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
       { key: 'title', type: 'string', desc: '报告标题' },
     ],
   },
+  {
+    type: 'report-image',
+    label: '长图报告',
+    description: '把内容渲染成竖版 PNG 长图（早报/简报场景；Web 端降级为排版 HTML）',
+    category: 'ai',
+    icon: 'PictureFilled',
+    controlKind: 'task',
+    cancellable: false,
+    ports: [{ kind: 'normal', label: '出', max: 1 }],
+    requiredConfigKeys: ['template'],
+    defaultConfig: { title: '', template: '# 报告\n\n{{llm1.content}}', templateId: 'generic' },
+    outputSchema: [
+      { key: 'markdown', type: 'string', desc: 'markdown 全文' },
+      { key: 'format', type: 'string', desc: 'image / html' },
+      { key: 'filePath', type: 'string', desc: 'PNG 落盘路径（桌面端）' },
+      { key: 'html', type: 'string', desc: '完整排版 HTML（Web 端/打印兜底）' },
+      { key: 'title', type: 'string', desc: '报告标题' },
+    ],
+  },
 
 ]
 

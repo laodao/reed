@@ -412,6 +412,11 @@ app.whenReady().then(async () => {
 
   // 工作流子系统：引擎装配 + boot 恢复 + 触发调度器（失败不致命）
   try {
+    // 文档工具层：注入 Electron 渲染器（长图/PDF 平台能力）
+    const { registerDocumentTools, DocumentToolsService } = await import('@core/services/document-tools/document-tools')
+    const { ElectronDocumentRenderer } = await import('./platform/electron-document-renderer')
+    registerDocumentTools(new DocumentToolsService(new ElectronDocumentRenderer()))
+
     const { initWorkflowSubsystem } = await import('@core/modules/workflow/workflow-boot')
     await initWorkflowSubsystem()
   } catch (e: any) {
