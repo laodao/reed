@@ -8,6 +8,7 @@
 import { mkdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { KnowledgeBaseService } from '../../../services/knowledge-base.service'
+import { augmentWithDialogFiles } from './dialog-file-retriever'
 import { callAIStream } from '../../../services/ai-call'
 import { markdownToDocx } from '../../../utils/markdown-to-docx'
 import { getPathProvider } from '../../../interfaces/path.interface'
@@ -61,6 +62,7 @@ const kbQaNode: WorkflowNodeHandler = {
       providerConfigId?: string
       modelId?: string
       temperature?: number
+      includeDialogFiles?: boolean
     }
     // 1. 检索（signal 透传——HTTP 级取消）
     const service = new KnowledgeBaseService()
@@ -75,13 +77,16 @@ const kbQaNode: WorkflowNodeHandler = {
       return { status: 'failed', error: `知识库检索失败: ${searchResp.error ?? '未知错误'}` }
     }
     const results = searchResp.data ?? []
-    ctx.emitProgress(30, `检索到 ${results.length} 条`)
+    // C4：追加对话附件命中（与 KB 结果同形状合并入 context 与 sources）
+    const topK = cfg.topK && cfg.topK > 0 ? cfg.topK : 5
+    const dialogHits = await augmentWithDialogFiles(ctx, cfg.includeDialogFiles, stringifyValue(cfg.question), topK)
+    ctx.emitProgress(30, `检索到 ${results.length + dialogHits.length} 条`)
 
     // 2. 拼接 context（P4：默认走 WORKFLOW_DEFAULTS.kbQaContextMaxChars）
     const maxChars = cfg.resultMaxLength && cfg.resultMaxLength > 0
       ? cfg.resultMaxLength
       : WORKFLOW_DEFAULTS.kbQaContextMaxChars
-    const context = buildKbContext(results, maxChars)
+    const context = buildKbContext([...results, ...dialogHits], maxChars)
     const systemPrompt = `${cfg.systemPrompt?.trim() || DEFAULT_KB_QA_SYSTEM_PROMPT}\n\n===== 参考资料 =====\n${context}`
 
     // 3. 生成（signal + 进度）
@@ -100,7 +105,10 @@ const kbQaNode: WorkflowNodeHandler = {
       status: 'succeeded',
       output: {
         answer: content,
-        sources: results.map(r => ({ documentName: r.documentName, score: r.score })),
+        sources: [
+          ...results.map(r => ({ documentName: r.documentName, score: r.score })),
+          ...dialogHits.map(h => ({ documentName: h.documentName, score: h.score })),
+        ],
       },
     }
   },

@@ -36,6 +36,11 @@ export interface WorkflowNodeContext<TConfig = Record<string, unknown>> {
   config: TConfig
   /** 开始节点输入实参（{{start.key}} 的数据源） */
   startInputs: Record<string, unknown>
+  /**
+   * 触发来源信息（运行只读快照）：{ source?, dialogId?, shareToken?, expression?, eventName? ... }。
+   * C4 临时知识库（dialogId 定位对话附件）与 C2 会话上下文（historyTurns）消费。
+   */
+  triggerInfo: Readonly<Record<string, unknown>>
   /** 取消信号（不可取消节点也应接收，由 handler 决定如何降级） */
   signal: AbortSignal
   /** 结构化日志（写 node_run 留痕） */

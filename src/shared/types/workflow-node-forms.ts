@@ -155,6 +155,7 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     T('query', '查询内容', { type: 'textarea', templateHint: true, placeholder: '{{start.question}}' }),
     { key: 'topK', label: '返回条数', type: 'number', min: 1, max: 50, group: '参数' },
     { key: 'threshold', label: '相似度阈值', type: 'slider', min: 0, max: 1, step: 0.05, group: '参数' },
+    { key: 'includeDialogFiles', label: '包含本对话上传的文件', type: 'switch', group: '参数', help: '把对话附件也纳入检索范围（仅从 AI 对话中触发时生效）' },
   ],
   'kb-ingest': [
     { key: 'knowledgeBaseId', label: '知识库', type: 'select-dynamic', source: 'knowledgeBases' },
@@ -255,6 +256,7 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     { key: 'topK', label: '返回条数', type: 'number', min: 1, max: 50, group: '检索' },
     { key: 'threshold', label: '相似度阈值', type: 'slider', min: 0, max: 1, step: 0.05, group: '检索' },
     { key: 'resultMaxLength', label: '资料最大长度（字符）', type: 'number', group: '检索', help: '超限整条丢弃（默认 8000）' },
+    { key: 'includeDialogFiles', label: '包含本对话上传的文件', type: 'switch', group: '检索', help: '把对话附件也纳入检索范围（仅从 AI 对话中触发时生效）' },
   ],
   'report': [
     T('title', '报告标题', { templateHint: true }),

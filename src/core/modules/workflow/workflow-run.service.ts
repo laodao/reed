@@ -125,7 +125,7 @@ export class WorkflowRunService {
       status: WORKFLOW_RUN_STATUSES.pending,
       timeoutAt: new Date(Date.now() + (def.settings?.maxDurationMs ?? WORKFLOW_DEFAULTS.maxDurationMs)),
     })
-    await this.launch(run.id, run.userId ?? LOCAL_DEFAULT_USER_ID, input.definitionId, graph, this.effectiveSettings(def.settings), input.inputs ?? {}, undefined, input.configOverrides)
+    await this.launch(run.id, run.userId ?? LOCAL_DEFAULT_USER_ID, input.definitionId, graph, this.effectiveSettings(def.settings), input.inputs ?? {}, undefined, input.configOverrides, input.triggerInfo)
     return (await this.deps.runs.getById(run.id)) ?? run
   }
 
@@ -138,7 +138,8 @@ export class WorkflowRunService {
     settings: import('@shared/types/workflow.types').WorkflowExecutionSettings | null,
     startInputs: Record<string, unknown> | null,
     resumedCheckpoints?: ExecuteRunInput['resumedCheckpoints'],
-    configOverrides?: Record<string, Record<string, unknown>>
+    configOverrides?: Record<string, Record<string, unknown>>,
+    triggerInfo?: Record<string, unknown>
   ): Promise<void> {
     const execInput: ExecuteRunInput = {
       runId,
@@ -149,6 +150,7 @@ export class WorkflowRunService {
       settings,
       resumedCheckpoints,
       configOverrides,
+      triggerInfo,
     }
     if (this.deps.engine.activeRunningCount >= this.maxConcurrentRuns) {
       this.queue.push({ runId, userId, execInput })
@@ -269,7 +271,8 @@ export class WorkflowRunService {
       definitionVersion: source.definitionVersion,
       graphSnapshot: graph,
       triggerType: WORKFLOW_TRIGGER_TYPES.resume,
-      triggerInfo: { resumedFrom: sourceRunId },
+      // 继承源运行触发来源（C4 dialogId 等）+ 续跑溯源
+      triggerInfo: { ...((source.triggerInfo as Record<string, unknown> | null) ?? {}), resumedFrom: sourceRunId },
       startInputs: source.startInputs,
       status: WORKFLOW_RUN_STATUSES.pending,
       resumedFromRunId: sourceRunId,
@@ -290,7 +293,9 @@ export class WorkflowRunService {
         nodeName: cp.nodeName,
         output: cp.output ?? {},
         routeTaken: cp.routeTaken,
-      }))
+      })),
+      undefined,
+      run.triggerInfo
     )
     return (await this.deps.runs.getById(run.id)) ?? run
   }

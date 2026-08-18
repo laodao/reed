@@ -17,6 +17,7 @@ import { runWithUser } from '@core/context/user-context'
 
 // ---- 捕获 config 的探针节点 ----
 const probeCalls: Array<Record<string, unknown>> = []
+const probeCtxs: Array<{ triggerInfo: Record<string, unknown> }> = []
 const probe: WorkflowNodeHandler = {
   type: 'probe' as any,
   controlKind: 'task',
@@ -25,6 +26,7 @@ const probe: WorkflowNodeHandler = {
   validateConfig: () => [],
   async execute(ctx) {
     probeCalls.push(ctx.config)
+    probeCtxs.push({ triggerInfo: ctx.triggerInfo })
     return { status: 'succeeded', output: { seen: ctx.config } }
   },
 }
@@ -140,5 +142,18 @@ describe('C3 override：configOverrides 一次性配置覆盖', () => {
     )
     await wait(80)
     expect(probeCalls.at(-1)).toMatchObject({ topic: '前缀-hello' })
+  })
+})
+
+describe('C4 前置：ctx.triggerInfo 暴露', () => {
+  it('startRun 的 triggerInfo 透传到节点执行上下文', async () => {
+    const { service, definitions } = setup()
+    const graph = g([n('start', 'start'), n('p', 'probe', {}), n('end', 'end')], [['start', 'p'], ['p', 'end']])
+    setupDef(definitions, graph)
+    await runWithUser('u1', () =>
+      service.startRun({ definitionId: 'd1', triggerType: 'manual' as any, inputs: {}, triggerInfo: { dialogId: 'dlg_9' } })
+    )
+    await wait(80)
+    expect(probeCtxs.at(-1)?.triggerInfo).toEqual({ dialogId: 'dlg_9' })
   })
 })

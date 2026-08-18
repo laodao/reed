@@ -69,6 +69,8 @@ export interface ExecuteRunInput {
    * 仅影响本次运行，不修改定义图（REST invoke 实验参数；对齐 Bisheng override）。
    */
   configOverrides?: Record<string, Record<string, unknown>>
+  /** 触发来源信息快照（startRun 透传；C4 dialogId / C2 会话上下文消费） */
+  triggerInfo?: Record<string, unknown>
   /**
    * 续跑装配数据（resumeRun 用）：源运行中 succeeded 且有输出的节点行。
    * 引擎按 (nodeId, iterationIndex=0) 重建根作用域变量与已激活边。
@@ -1489,6 +1491,7 @@ export class WorkflowEngineService {
       iterationIndex: state.iterationIndex,
       config: resolvedConfig as Record<string, unknown>,
       startInputs: exec.input.startInputs,
+      triggerInfo: exec.input.triggerInfo ?? {},
       signal: exec.abortController.signal,
       logger: {
         debug: (msg, extra) => console.debug(`[wf:${node.id}] ${msg}`, extra ?? ''),
