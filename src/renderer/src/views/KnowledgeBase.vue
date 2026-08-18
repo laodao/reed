@@ -117,8 +117,14 @@
           </div>
         </div>
 
+        <!-- D1：文档 / QA 问答对 两个数据面切换 -->
+        <el-radio-group v-model="activeDataTab" size="small" style="margin-bottom: 12px">
+          <el-radio-button value="docs">文档</el-radio-button>
+          <el-radio-button value="qa">QA 问答对</el-radio-button>
+        </el-radio-group>
+
         <!-- 文档列表 -->
-        <div class="document-section">
+        <div v-show="activeDataTab === 'docs'" class="document-section">
           <div class="section-header">
             <h3>文档列表</h3>
             <span class="doc-count">共 {{ documentCount }} 个文档</span>
@@ -223,8 +229,56 @@
             </el-table-column>
           </el-table>
         </div>
+
+        <!-- D1 QA 问答对列表 -->
+        <div v-if="activeDataTab === 'qa'" class="document-section">
+          <div class="section-header">
+            <h3>QA 问答对</h3>
+            <span class="doc-count">共 {{ qaPairs.length }} 条（命中即直出答案，未命中走文档 RAG）</span>
+            <div style="display: flex; gap: 8px">
+              <el-button size="small" type="primary" @click="openQaDialog()">新增问答</el-button>
+              <el-button size="small" @click="qaImportInput?.click()">导入 xlsx</el-button>
+              <el-button size="small" @click="handleExportQa">导出 xlsx</el-button>
+            </div>
+          </div>
+          <input ref="qaImportInput" type="file" accept=".xlsx" style="display: none" @change="handleImportQa" />
+          <el-table :data="qaPairs" v-loading="qaLoading" style="width: 100%">
+            <el-table-column prop="question" label="问题" min-width="220" show-overflow-tooltip />
+            <el-table-column prop="answer" label="答案" min-width="260" show-overflow-tooltip />
+            <el-table-column label="相似问题" min-width="180">
+              <template #default="{ row }">
+                <span>{{ (row.similarQuestions ?? []).join('；') || '—' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="130">
+              <template #default="{ row }">
+                <el-button text type="primary" size="small" @click="openQaDialog(row)">编辑</el-button>
+                <el-button text type="danger" size="small" @click="handleDeleteQa(row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
       </template>
     </div>
+
+    <!-- D1 QA 编辑对话框 -->
+    <el-dialog v-model="qaDialogVisible" :title="qaEditingId ? '编辑问答' : '新增问答'" width="560px">
+      <el-form label-position="top">
+        <el-form-item label="问题" required>
+          <el-input v-model="qaForm.question" placeholder="标准问法（检索主向量）" />
+        </el-form-item>
+        <el-form-item label="答案" required>
+          <el-input v-model="qaForm.answer" type="textarea" :rows="3" placeholder="命中后直出的标准答案" />
+        </el-form-item>
+        <el-form-item label="相似问题（每行一个，同样向量化提升召回）">
+          <el-input v-model="qaForm.similarText" type="textarea" :rows="3" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="qaDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="qaSaving" @click="handleSaveQa">保存</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 创建知识库对话框 -->
     <el-dialog
@@ -501,7 +555,7 @@
 
 // 组件名与路由 name 对齐，供 <keep-alive :include> 匹配（缺失会导致缓存失效、切换重新挂载）
 defineOptions({ name: 'KnowledgeBase' })
-import { ref, computed, onMounted, toRaw } from 'vue'
+import { ref, reactive, computed, onMounted, toRaw, watch } from 'vue'
 import {
   Plus,
   FolderOpened,
@@ -516,6 +570,7 @@ import {
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { useKnowledgeBase } from '@/composables'
+import { saveBlobAs } from '@/utils/file-saver'
 import type { KnowledgeBase, KbDocument, KbChunk } from '../../../shared/types/knowledge-base.types'
 
 // 使用知识库 composable
@@ -568,6 +623,113 @@ const {
   formatEstimatedTime,
   getEstimatedTime
 } = useKnowledgeBase()
+
+// ==================== D1 QA 问答对 ====================
+const activeDataTab = ref<'docs' | 'qa'>('docs')
+const qaPairs = ref<Array<{ id: string; question: string; answer: string; similarQuestions: string[] }>>([])
+const qaLoading = ref(false)
+const qaDialogVisible = ref(false)
+const qaSaving = ref(false)
+const qaEditingId = ref<string | null>(null)
+const qaImportInput = ref<HTMLInputElement>()
+const qaForm = reactive({ question: '', answer: '', similarText: '' })
+
+/** 加载当前 KB 的 QA 对（切到 QA tab / 保存删除后刷新） */
+async function loadQaPairs(): Promise<void> {
+  if (!currentKnowledgeBase.value) return
+  qaLoading.value = true
+  try {
+    const resp = await window.electronAPI.knowledgeBase.listQaPairs(currentKnowledgeBase.value.id)
+    if (resp.success) qaPairs.value = resp.data ?? []
+    else ElMessage.error(resp.error ?? '加载 QA 对失败')
+  } finally {
+    qaLoading.value = false
+  }
+}
+
+watch(activeDataTab, tab => {
+  if (tab === 'qa') void loadQaPairs()
+})
+
+function openQaDialog(row?: { id: string; question: string; answer: string; similarQuestions: string[] }): void {
+  qaEditingId.value = row?.id ?? null
+  qaForm.question = row?.question ?? ''
+  qaForm.answer = row?.answer ?? ''
+  qaForm.similarText = (row?.similarQuestions ?? []).join('\n')
+  qaDialogVisible.value = true
+}
+
+async function handleSaveQa(): Promise<void> {
+  if (!currentKnowledgeBase.value) return
+  if (!qaForm.question.trim() || !qaForm.answer.trim()) {
+    ElMessage.warning('问题和答案都不能为空')
+    return
+  }
+  qaSaving.value = true
+  try {
+    const payload = {
+      question: qaForm.question.trim(),
+      answer: qaForm.answer.trim(),
+      similarQuestions: qaForm.similarText.split('\n').map(x => x.trim()).filter(Boolean),
+    }
+    const resp = qaEditingId.value
+      ? await window.electronAPI.knowledgeBase.updateQaPair({ id: qaEditingId.value, ...payload })
+      : await window.electronAPI.knowledgeBase.addQaPair({ knowledgeBaseId: currentKnowledgeBase.value.id, ...payload })
+    if (resp.success) {
+      ElMessage.success('已保存')
+      qaDialogVisible.value = false
+      await loadQaPairs()
+    } else {
+      ElMessage.error(resp.error ?? '保存失败')
+    }
+  } finally {
+    qaSaving.value = false
+  }
+}
+
+async function handleDeleteQa(row: { id: string; question: string }): Promise<void> {
+  await ElMessageBox.confirm(`删除问答对「${row.question}」？`, '删除')
+  const resp = await window.electronAPI.knowledgeBase.deleteQaPair(row.id)
+  if (resp.success) { ElMessage.success('已删除'); await loadQaPairs() }
+  else ElMessage.error(resp.error ?? '删除失败')
+}
+
+/** xlsx 导入：文件读 base64 后走 IPC */
+async function handleImportQa(e: Event): Promise<void> {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = '' // 允许重复选同一文件
+  if (!file || !currentKnowledgeBase.value) return
+  const base64 = (await fileToBase64(file)).split(',')[1] ?? ''
+  const resp = await window.electronAPI.knowledgeBase.importQaXlsx(currentKnowledgeBase.value.id, base64)
+  if (resp.success) {
+    ElMessage.success(`导入成功 ${resp.data?.imported ?? 0} 条，失败 ${resp.data?.failed ?? 0} 条`)
+    await loadQaPairs()
+  } else {
+    ElMessage.error(resp.error ?? '导入失败')
+  }
+}
+
+async function handleExportQa(): Promise<void> {
+  if (!currentKnowledgeBase.value) return
+  const resp = await window.electronAPI.knowledgeBase.exportQaXlsx(currentKnowledgeBase.value.id)
+  if (!resp.success || !resp.data) { ElMessage.error(resp.error ?? '导出失败'); return }
+  const bin = atob(resp.data.base64)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  await saveBlobAs(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), {
+    defaultName: resp.data.fileName,
+  })
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
 
 // 表单引用
 const createFormRef = ref<FormInstance>()

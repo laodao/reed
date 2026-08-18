@@ -943,6 +943,14 @@ const electronAPI = {
   knowledgeBase: {
     // 获取知识库列表
     list: () => ipcRenderer.invoke('knowledge-base:list'),
+    // D1 QA 问答对
+    listQaPairs: (knowledgeBaseId: string, keyword?: string) => ipcRenderer.invoke('kb-qa:list', { knowledgeBaseId, keyword }),
+    addQaPair: (p: { knowledgeBaseId: string; question: string; answer: string; similarQuestions?: string[] }) => ipcRenderer.invoke('kb-qa:add', p),
+    updateQaPair: (p: { id: string; question?: string; answer?: string; similarQuestions?: string[] }) => ipcRenderer.invoke('kb-qa:update', p),
+    deleteQaPair: (id: string) => ipcRenderer.invoke('kb-qa:delete', { id }),
+    searchQa: (p: { knowledgeBaseId: string; query: string; topK?: number; threshold?: number }) => ipcRenderer.invoke('kb-qa:search', p),
+    importQaXlsx: (knowledgeBaseId: string, base64: string) => ipcRenderer.invoke('kb-qa:import-xlsx', { knowledgeBaseId, base64 }),
+    exportQaXlsx: (knowledgeBaseId: string) => ipcRenderer.invoke('kb-qa:export-xlsx', { knowledgeBaseId }),
     // 获取知识库详情
     get: (id: string) => ipcRenderer.invoke('knowledge-base:get', id),
     // 创建知识库

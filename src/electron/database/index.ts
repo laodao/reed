@@ -24,6 +24,7 @@ import { KnowledgeBaseRepository } from '@core/database/repositories/knowledge-b
 import { KbDocumentRepository } from '@core/database/repositories/kb-document.repository'
 import { KbChunkRepository } from '@core/database/repositories/kb-chunk.repository'
 import { KbVectorRepository } from '@core/database/repositories/kb-vector.repository'
+import { KbQaPairRepository } from '@core/database/repositories/kb-qa-pair.repository'
 import { KbInvertedIndexRepository } from '@core/database/repositories/kb-inverted-index.repository'
 import { PortraitProjectRepository } from '@core/database/repositories/portrait-project.repository'
 import { PortraitCharacterRepository } from '@core/database/repositories/portrait-character.repository'
@@ -129,6 +130,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public kbDocuments: KbDocumentRepository | null = null
   public kbChunks: KbChunkRepository | null = null
   public kbVectors: KbVectorRepository | null = null
+  public kbQaPairs: KbQaPairRepository | null = null
   public kbInvertedIndex: KbInvertedIndexRepository | null = null
   public portraitProjects: PortraitProjectRepository | null = null
   public portraitCharacters: PortraitCharacterRepository | null = null
@@ -638,6 +640,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/add-workflow-share-token'
     )
     await addWorkflowShareToken(this.dataSource)
+
+    // D1 QA 知识库：kb_qa_pairs 问答对表（幂等，双语种）
+    const { createKbQaPairs } = await import(
+      '@core/database/migrations/create-kb-qa-pairs'
+    )
+    await createKbQaPairs(this.dataSource)
   }
 
   /**
@@ -4151,6 +4159,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.kbChunks = new KbChunkRepository(this.dataSource)
     // KbVectorRepository 使用 LanceDB，不再需要 SQLite 连接
     this.kbVectors = new KbVectorRepository()
+    this.kbQaPairs = new KbQaPairRepository(this.dataSource)
     this.kbInvertedIndex = new KbInvertedIndexRepository(this.dataSource)
     this.portraitProjects = new PortraitProjectRepository(this.dataSource)
     this.portraitCharacters = new PortraitCharacterRepository(this.dataSource)

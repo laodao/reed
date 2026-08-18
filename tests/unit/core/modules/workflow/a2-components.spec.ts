@@ -6,9 +6,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // ---- mock 依赖（KB 检索 / AI 调用 / docx / 路径） ----
 const kbSearchMock = vi.fn()
+const kbSearchQaMock = vi.fn()
 vi.mock('@core/services/knowledge-base.service', () => ({
   KnowledgeBaseService: class {
     search = (...a: any[]) => kbSearchMock(...a)
+    searchQa = (...a: any[]) => kbSearchQaMock(...a)
   },
 }))
 const callAIStreamMock = vi.fn()
@@ -41,6 +43,7 @@ const makeCtx = (config: Record<string, unknown>, extra: Partial<WorkflowNodeCon
   iterationIndex: 0,
   config,
   startInputs: {},
+  triggerInfo: {},
   signal: new AbortController().signal,
   logger: { debug() {}, info() {}, warn() {}, error() {} },
   emitProgress: () => {},
@@ -51,6 +54,8 @@ const makeCtx = (config: Record<string, unknown>, extra: Partial<WorkflowNodeCon
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // QA 直出路径默认未命中（旧用例语义不变；双路径用例自行覆盖）
+  kbSearchQaMock.mockResolvedValue({ success: true, data: [] })
 })
 
 // ==================== 一致性（自动覆盖新组件） ====================
@@ -181,5 +186,37 @@ describe('report 节点', () => {
     }) as never)
     // 单占位透传语义：字符串原样输出（引擎已解析）
     expect((result as any).output.markdown).toContain('{{llm1.content}}')
+  })
+})
+
+// ==================== D1 双路径（QA 直出 / 未命中走 RAG） ====================
+describe('kb-qa 节点：D1 QA 直出双路径', () => {
+  const handler = A2_NODE_HANDLERS.find(h => h.type === 'kb-qa')!
+
+  it('QA 命中 → 答案直出（不调 LLM），sources 标 source:qa', async () => {
+    kbSearchQaMock.mockResolvedValue({ success: true, data: [{ pairId: 'p1', question: '退货政策', answer: '7 天无理由', score: 0.92 }] })
+    const result = await handler.execute(makeCtx({ knowledgeBaseId: 'kb1', question: '怎么退货' }) as never)
+    expect(result).toMatchObject({ status: 'succeeded' })
+    const output = (result as any).output
+    expect(output.answer).toBe('7 天无理由')
+    expect(output.sources).toEqual([{ documentName: '退货政策', score: 0.92, source: 'qa' }])
+    expect(callAIStreamMock).not.toHaveBeenCalled()
+  })
+
+  it('QA 未命中 → 降级 RAG（检索+LLM 正常链路）', async () => {
+    kbSearchQaMock.mockResolvedValue({ success: true, data: [] })
+    kbSearchMock.mockResolvedValue({ success: true, data: [{ content: '片段', score: 0.8, documentId: 'd1', documentName: '手册' }] })
+    callAIStreamMock.mockResolvedValue({ content: 'RAG 答案' })
+    const result = await handler.execute(makeCtx({ knowledgeBaseId: 'kb1', question: '什么是X' }) as never)
+    expect((result as any).output.answer).toBe('RAG 答案')
+    expect(callAIStreamMock).toHaveBeenCalled()
+  })
+
+  it('searchQa 失败 → 降级 RAG（QA 路径不阻断主链路）', async () => {
+    kbSearchQaMock.mockResolvedValue({ success: false, error: '嵌入失败' })
+    kbSearchMock.mockResolvedValue({ success: true, data: [] })
+    callAIStreamMock.mockResolvedValue({ content: 'RAG 答案' })
+    const result = await handler.execute(makeCtx({ knowledgeBaseId: 'kb1', question: 'q' }) as never)
+    expect((result as any).output.answer).toBe('RAG 答案')
   })
 })

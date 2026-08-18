@@ -66,6 +66,15 @@ export function registerKnowledgeBaseHandlers(): void {
   // 删除知识库
   ipcBridge.handle('knowledge-base:delete', handleDeleteKnowledgeBase)
 
+  // ==================== D1 QA 问答对 ====================
+  ipcBridge.handle('kb-qa:list', handleListQaPairs)
+  ipcBridge.handle('kb-qa:add', handleAddQaPair)
+  ipcBridge.handle('kb-qa:update', handleUpdateQaPair)
+  ipcBridge.handle('kb-qa:delete', handleDeleteQaPair)
+  ipcBridge.handle('kb-qa:search', handleSearchQa)
+  ipcBridge.handle('kb-qa:import-xlsx', handleImportQaXlsx)
+  ipcBridge.handle('kb-qa:export-xlsx', handleExportQaXlsx)
+
   // ==================== 文档管理 ====================
 
   // 上传文档
@@ -354,4 +363,68 @@ async function handleGetFileLimits(
   const service = getKnowledgeBaseService()
   const limits = service.getFileLimits()
   return { success: true, data: limits }
+}
+// ==================== D1 QA 问答对处理函数 ====================
+
+/** 列出 QA 对 */
+async function handleListQaPairs(
+  _event: any,
+  p: { knowledgeBaseId: string; keyword?: string }
+): Promise<IpcResponse<unknown>> {
+  const service = getKnowledgeBaseService()
+  return await service.listQaPairs(p.knowledgeBaseId, p.keyword)
+}
+
+/** 新增 QA 对（question+similarQuestions 全部向量化） */
+async function handleAddQaPair(
+  _event: any,
+  p: { knowledgeBaseId: string; question: string; answer: string; similarQuestions?: string[] }
+): Promise<IpcResponse<unknown>> {
+  const service = getKnowledgeBaseService()
+  return await service.addQaPair(p.knowledgeBaseId, p)
+}
+
+/** 更新 QA 对（变体向量确定性重建） */
+async function handleUpdateQaPair(
+  _event: any,
+  p: { id: string; question?: string; answer?: string; similarQuestions?: string[] }
+): Promise<IpcResponse<unknown>> {
+  const service = getKnowledgeBaseService()
+  return await service.updateQaPair(p.id, p)
+}
+
+/** 删除 QA 对 */
+async function handleDeleteQaPair(
+  _event: any,
+  p: { id: string }
+): Promise<IpcResponse<unknown>> {
+  const service = getKnowledgeBaseService()
+  return await service.deleteQaPair(p.id)
+}
+
+/** QA 直出检索（测试面板用） */
+async function handleSearchQa(
+  _event: any,
+  p: { knowledgeBaseId: string; query: string; topK?: number; threshold?: number }
+): Promise<IpcResponse<unknown>> {
+  const service = getKnowledgeBaseService()
+  return await service.searchQa(p)
+}
+
+/** xlsx 批量导入（fileBuffer 为 base64——IPC 可序列化） */
+async function handleImportQaXlsx(
+  _event: any,
+  p: { knowledgeBaseId: string; base64: string }
+): Promise<IpcResponse<{ imported: number; failed: number }>> {
+  const service = getKnowledgeBaseService()
+  return await service.importQaPairs(p.knowledgeBaseId, Buffer.from(p.base64, 'base64'))
+}
+
+/** xlsx 导出（返回 base64，前端 saveBlobAs 落盘） */
+async function handleExportQaXlsx(
+  _event: any,
+  p: { knowledgeBaseId: string }
+): Promise<IpcResponse<{ base64: string; fileName: string }>> {
+  const service = getKnowledgeBaseService()
+  return await service.exportQaPairs(p.knowledgeBaseId)
 }

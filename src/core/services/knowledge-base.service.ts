@@ -10,6 +10,7 @@ import { randomUUID } from 'crypto'
 import nodejieba from 'nodejieba'
 import { parse } from 'node-html-parser'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import type { KbQaPairRecord } from '@core/database/repositories/kb-qa-pair.repository'
 import { getEventEmitter } from '@core/interfaces/event.interface'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
@@ -180,6 +181,8 @@ export class KnowledgeBaseService {
       }
       await db.kbChunks.deleteByKnowledgeBaseId(id)
       await db.kbDocuments.deleteByKnowledgeBaseId(id)
+      // D1：QA 对级联（向量已随 deleteByKnowledgeBaseId 整库删除）
+      if (db.kbQaPairs) await db.kbQaPairs.deleteByKnowledgeBaseId(id)
       await db.knowledgeBases.delete(id)
 
       return { success: true }
@@ -1193,5 +1196,251 @@ export class KnowledgeBaseService {
     // 用户请将 .doc 另存为 .docx 后上传。
     if (type === 'doc') return null
     return type
+  }
+
+  // ==================== D1 QA 知识库（问答对 + 双路径检索） ====================
+
+  /** QA 对的向量 chunkId 命名空间：qa:<pairId>:<variantIndex>（question=0，相似问题 1..n） */
+  private static qaVectorChunkId(pairId: string, variantIndex: number): string {
+    return `qa:${pairId}:${variantIndex}`
+  }
+
+  private qaVariantCount(pair: { similarQuestions: string[] }): number {
+    return 1 + pair.similarQuestions.length
+  }
+
+  /** 解析 KB 的嵌入配置 */
+  private parseEmbeddingConfig(kb: KnowledgeBase): EmbeddingConfig {
+    return kb.embeddingConfig ? JSON.parse(kb.embeddingConfig) : {}
+  }
+
+  /** 为 QA 对生成并写入变体向量；返回写入条数 */
+  private async embedQaPair(
+    kb: KnowledgeBase,
+    pairId: string,
+    question: string,
+    similarQuestions: string[]
+  ): Promise<number> {
+    const db = getCoreDatabaseManager()
+    if (!db.kbVectors) throw new Error('数据库未初始化')
+    const variants = [question, ...similarQuestions].map(t => t.trim()).filter(Boolean)
+    if (variants.length === 0) throw new Error('问题不能为空')
+    const vectors = await this.getEmbeddingVectors(variants, this.parseEmbeddingConfig(kb))
+    if (!vectors) throw new Error('生成 QA 向量失败')
+    await db.kbVectors.createBatch(
+      vectors.map((vector, i) => ({
+        chunkId: KnowledgeBaseService.qaVectorChunkId(pairId, i),
+        knowledgeBaseId: kb.id,
+        vector,
+      }))
+    )
+    return vectors.length
+  }
+
+  async addQaPair(knowledgeBaseId: string, input: {
+    question: string
+    answer: string
+    similarQuestions?: string[]
+  }): Promise<{ success: boolean; data?: KbQaPairRecord; error?: string }> {
+    try {
+      const db = getCoreDatabaseManager()
+      if (!db.knowledgeBases || !db.kbQaPairs || !db.kbVectors) {
+        return { success: false, error: '数据库未初始化' }
+      }
+      const kb = await db.knowledgeBases.findById(knowledgeBaseId)
+      if (!kb) return { success: false, error: '知识库不存在' }
+      const question = input.question.trim()
+      const answer = input.answer.trim()
+      if (!question || !answer) return { success: false, error: '问题和答案都不能为空' }
+      const similar = (input.similarQuestions ?? []).map(x => x.trim()).filter(Boolean)
+
+      const pair = await db.kbQaPairs.create({ knowledgeBaseId, question, answer, similarQuestions: similar })
+      const added = await this.embedQaPair(kb, pair.id, question, similar)
+      await db.knowledgeBases.updateStats(knowledgeBaseId, {
+        documentCount: kb.documentCount,
+        vectorCount: (kb.vectorCount ?? 0) + added,
+        totalSize: kb.totalSize,
+      })
+      return { success: true, data: pair }
+    } catch (e: any) {
+      console.error('[KB] 新增 QA 对失败:', e)
+      return { success: false, error: e.message }
+    }
+  }
+
+  async updateQaPair(id: string, patch: {
+    question?: string
+    answer?: string
+    similarQuestions?: string[]
+  }): Promise<{ success: boolean; data?: KbQaPairRecord; error?: string }> {
+    try {
+      const db = getCoreDatabaseManager()
+      if (!db.knowledgeBases || !db.kbQaPairs || !db.kbVectors) {
+        return { success: false, error: '数据库未初始化' }
+      }
+      const old = await db.kbQaPairs.findById(id)
+      if (!old) return { success: false, error: 'QA 对不存在' }
+      const kb = await db.knowledgeBases.findById(old.knowledgeBaseId)
+      if (!kb) return { success: false, error: '知识库不存在' }
+
+      const question = (patch.question ?? old.question).trim()
+      const answer = (patch.answer ?? old.answer).trim()
+      const similar = (patch.similarQuestions ?? old.similarQuestions).map(x => x.trim()).filter(Boolean)
+      if (!question || !answer) return { success: false, error: '问题和答案都不能为空' }
+
+      // 删旧变体向量（确定性重建：按旧变体数枚举 chunkId）
+      const oldChunkIds = Array.from({ length: this.qaVariantCount(old) }, (_, i) =>
+        KnowledgeBaseService.qaVectorChunkId(id, i)
+      )
+      for (const chunkId of oldChunkIds) await db.kbVectors.deleteByChunkId(chunkId)
+
+      const updated = await db.kbQaPairs.update(id, { question, answer, similarQuestions: similar })
+      const added = await this.embedQaPair(kb, id, question, similar)
+      await db.knowledgeBases.updateStats(kb.id, {
+        documentCount: kb.documentCount,
+        vectorCount: Math.max(0, (kb.vectorCount ?? 0) - oldChunkIds.length) + added,
+        totalSize: kb.totalSize,
+      })
+      return { success: true, data: updated ?? undefined }
+    } catch (e: any) {
+      console.error('[KB] 更新 QA 对失败:', e)
+      return { success: false, error: e.message }
+    }
+  }
+
+  async deleteQaPair(id: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const db = getCoreDatabaseManager()
+      if (!db.knowledgeBases || !db.kbQaPairs || !db.kbVectors) {
+        return { success: false, error: '数据库未初始化' }
+      }
+      const pair = await db.kbQaPairs.findById(id)
+      if (!pair) return { success: true } // 幂等
+      const kb = await db.knowledgeBases.findById(pair.knowledgeBaseId)
+      for (let i = 0; i < this.qaVariantCount(pair); i++) {
+        await db.kbVectors.deleteByChunkId(KnowledgeBaseService.qaVectorChunkId(id, i))
+      }
+      await db.kbQaPairs.delete(id)
+      if (kb) {
+        await db.knowledgeBases.updateStats(kb.id, {
+          documentCount: kb.documentCount,
+          vectorCount: Math.max(0, (kb.vectorCount ?? 0) - this.qaVariantCount(pair)),
+          totalSize: kb.totalSize,
+        })
+      }
+      return { success: true }
+    } catch (e: any) {
+      console.error('[KB] 删除 QA 对失败:', e)
+      return { success: false, error: e.message }
+    }
+  }
+
+  async listQaPairs(knowledgeBaseId: string, keyword?: string): Promise<{ success: boolean; data?: KbQaPairRecord[]; error?: string }> {
+    try {
+      const db = getCoreDatabaseManager()
+      if (!db.kbQaPairs) return { success: false, error: '数据库未初始化' }
+      return { success: true, data: await db.kbQaPairs.listByKnowledgeBaseId(knowledgeBaseId, keyword) }
+    } catch (e: any) {
+      return { success: false, error: e.message }
+    }
+  }
+
+  /** QA 直出检索：命中返回标准答案（不查文档、不过 LLM）——Bisheng 双路径的 QA 路 */
+  async searchQa(req: {
+    knowledgeBaseId: string
+    query: string
+    topK?: number
+    threshold?: number
+    signal?: AbortSignal
+  }): Promise<{ success: boolean; data?: Array<{ pairId: string; question: string; answer: string; score: number }>; error?: string }> {
+    try {
+      const db = getCoreDatabaseManager()
+      if (!db.knowledgeBases || !db.kbQaPairs || !db.kbVectors) {
+        return { success: false, error: '数据库未初始化' }
+      }
+      // 无 QA 对时快速返回（省一次嵌入调用）
+      if ((await db.kbQaPairs.countByKnowledgeBaseId(req.knowledgeBaseId)) === 0) {
+        return { success: true, data: [] }
+      }
+      const kb = await db.knowledgeBases.findById(req.knowledgeBaseId)
+      if (!kb) return { success: false, error: '知识库不存在' }
+
+      const vectors = await this.getEmbeddingVectors([req.query], this.parseEmbeddingConfig(kb), req.signal)
+      if (!vectors) return { success: false, error: '生成查询向量失败' }
+
+      const raw = await db.kbVectors.searchSimilar(req.knowledgeBaseId, vectors[0], req.topK || 3)
+      const minScore = req.threshold ?? 0
+      // QA 命中：chunkId 命名空间过滤 + 按 pair 去重（保留最高分变体）
+      const best = new Map<string, { pairId: string; score: number }>()
+      for (const r of raw) {
+        if (r.score < minScore) continue
+        const m = /^qa:([^:]+):\d+$/.exec(r.chunkId)
+        if (!m) continue // 文档向量不参与 QA 直出
+        const prev = best.get(m[1])
+        if (!prev || r.score > prev.score) best.set(m[1], { pairId: m[1], score: r.score })
+      }
+      const out: Array<{ pairId: string; question: string; answer: string; score: number }> = []
+      for (const { pairId, score } of best.values()) {
+        const pair = await db.kbQaPairs.findById(pairId)
+        if (pair) out.push({ pairId, question: pair.question, answer: pair.answer, score })
+      }
+      out.sort((a, b) => b.score - a.score)
+      return { success: true, data: out }
+    } catch (e: any) {
+      console.error('[KB] QA 检索失败:', e)
+      return { success: false, error: e.message }
+    }
+  }
+
+  /** xlsx 批量导入（表头：question / answer / similarQuestions——分号分隔的多问法） */
+  async importQaPairs(knowledgeBaseId: string, fileBuffer: Buffer): Promise<{ success: boolean; data?: { imported: number; failed: number }; error?: string }> {
+    try {
+      const XLSX = await import('xlsx')
+      const wb = XLSX.read(fileBuffer)
+      const sheet = wb.Sheets[wb.SheetNames[0]]
+      if (!sheet) return { success: false, error: 'xlsx 中没有工作表' }
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet)
+      let imported = 0
+      let failed = 0
+      for (const row of rows) {
+        const question = String(row['question'] ?? '').trim()
+        const answer = String(row['answer'] ?? '').trim()
+        const similar = String(row['similarQuestions'] ?? row['similar_questions'] ?? '')
+          .split(/[;；]/).map(x => x.trim()).filter(Boolean)
+        if (!question || !answer) { failed++; continue }
+        const r = await this.addQaPair(knowledgeBaseId, { question, answer, similarQuestions: similar })
+        if (r.success) imported++
+        else failed++
+      }
+      return { success: true, data: { imported, failed } }
+    } catch (e: any) {
+      console.error('[KB] QA xlsx 导入失败:', e)
+      return { success: false, error: e.message }
+    }
+  }
+
+  /** xlsx 导出（返回 base64——双端 IPC 可序列化；前端 saveBlobAs 落盘） */
+  async exportQaPairs(knowledgeBaseId: string): Promise<{ success: boolean; data?: { base64: string; fileName: string }; error?: string }> {
+    try {
+      const db = getCoreDatabaseManager()
+      if (!db.knowledgeBases || !db.kbQaPairs) return { success: false, error: '数据库未初始化' }
+      const kb = await db.knowledgeBases.findById(knowledgeBaseId)
+      if (!kb) return { success: false, error: '知识库不存在' }
+      const pairs = await db.kbQaPairs.listByKnowledgeBaseId(knowledgeBaseId)
+      const XLSX = await import('xlsx')
+      const ws = XLSX.utils.json_to_sheet(pairs.map(p => ({
+        question: p.question,
+        answer: p.answer,
+        similarQuestions: p.similarQuestions.join('；'),
+      })))
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'QA')
+      const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer
+      const safeName = kb.name.replace(/[\\/:*?"<>|]/g, '_')
+      return { success: true, data: { base64: buf.toString('base64'), fileName: `${safeName}-QA.xlsx` } }
+    } catch (e: any) {
+      console.error('[KB] QA xlsx 导出失败:', e)
+      return { success: false, error: e.message }
+    }
   }
 }

@@ -17,6 +17,9 @@ import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
 import { WORKFLOW_DEFAULTS, WORKFLOW_RUN_EVENT_TYPES } from '@shared/types/workflow.types'
 
+/** D1 QA 直出缺省相似度阈值（比 RAG 检索更严——直出答案不容含糊） */
+const QA_DIRECT_MIN_SCORE = 0.75
+
 /** 默认 RAG 系统提示词（用户可覆盖） */
 const DEFAULT_KB_QA_SYSTEM_PROMPT = `你是知识库问答助手。仅依据下面的参考资料回答用户问题；资料中没有的内容请如实说明未找到，不要编造。`
 
@@ -64,6 +67,28 @@ const kbQaNode: WorkflowNodeHandler = {
       temperature?: number
       includeDialogFiles?: boolean
     }
+    // 0. D1 QA 直出路径：命中标准问答对 → 答案直出（不过 LLM）；未命中 → 走 RAG
+    //    （searchQa 内部对无 QA 对的知识库快速返回，无额外嵌入开销）
+    const qaResp = await new KnowledgeBaseService().searchQa({
+      knowledgeBaseId: cfg.knowledgeBaseId,
+      query: stringifyValue(cfg.question),
+      topK: 1,
+      // 直出阈值更严（跳过 LLM 的答案不容含糊）：复用 threshold 覆盖，缺省 0.75
+      threshold: cfg.threshold && cfg.threshold > 0 ? cfg.threshold : QA_DIRECT_MIN_SCORE,
+      signal: ctx.signal,
+    })
+    if (qaResp.success && qaResp.data && qaResp.data.length > 0) {
+      const hit = qaResp.data[0]
+      ctx.emitProgress(100, 'QA 直出')
+      return {
+        status: 'succeeded',
+        output: {
+          answer: hit.answer,
+          sources: [{ documentName: hit.question, score: hit.score, source: 'qa' }],
+        },
+      }
+    }
+
     // 1. 检索（signal 透传——HTTP 级取消）
     const service = new KnowledgeBaseService()
     const searchResp = await service.search({

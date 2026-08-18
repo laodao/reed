@@ -346,6 +346,12 @@ async function initDatabase(): Promise<void> {
   )
   await addWorkflowShareToken(ds)
 
+  // D1 QA 知识库：kb_qa_pairs 问答对表（与 Electron 端同构）
+  const { createKbQaPairs } = await import(
+    '@core/database/migrations/create-kb-qa-pairs'
+  )
+  await createKbQaPairs(ds)
+
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)
   console.log('[web-server] PostgreSQL 数据库初始化完成')
