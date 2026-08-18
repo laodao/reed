@@ -164,3 +164,40 @@ D1 QA 知识库 → D2 rerank → D3 权重 → C2 对话集成（最后）
 ## 待续
 
 C2 对话集成（最后一片）
+
+---
+
+# 增量：对抗 review 修复批次（2026-08-19）
+
+三个对抗性 review 代理逐条深读调用链后提出 ~40 项发现，按严重度全部修复高危/中危（251 全绿，构建通过）：
+
+## 高危（上线阻断级）
+- **H1** kb_qa_pairs 迁移 PG 分支 datetime→timestamp（原样会导致 Web 端启动即崩）
+- **H2** bailian rerank 请求体改嵌套 {model,input:{query,documents},parameters}（原扁平体必 400 静默失效）；默认模型 gte-rerank→gte-rerank-v2；回归测试锁定两形态
+- **H3** threshold 语义回归：阈值改在原始余弦上过滤（原归一化使 top-1 恒 1.0 拦不住）；回显 score 用原始分
+- **H4** QA 向量污染文档检索：召回后剔除 qa: 命名空间 + 补偿多召回
+- **H5** 删 KB 时 QA 向量泄漏：按变体枚举逐条删除
+- **#1** 分享执行草稿图：StartRunInput.usePublishedGraph，访客只跑 publishedGraph
+- **#2** 匿名 invoke 无限流：每 token 滑动窗口（60s/6 次，429）
+- **#5** defaultValue 合并值未进引擎：launch 改传 mergedInputs
+
+## 中危
+- **#3** SSE 订阅窗口漏终态竞态：订阅后复查 run 状态兜底；顺带抽 streamRunEvents 共享函数消除 authed/guest 重复
+- **#7** guest 快照脱敏：nodeRuns 白名单（input 不回传——模板解析后含所有者内部配置）
+- **M1** addQaPair 嵌入失败回滚孤儿行
+- **M3** BM25 长度归一：tf/avgLen 代理→chunk 真实分词长度（标准公式）
+- **M4** getEmbeddingModels/getRerankModels 复制粘贴→listModelsByType
+- **M5b** QA 直出阈值与 RAG threshold 解耦（固定常量）
+- **F1** dialog 命中合并策略：dialog 优先 + 整体截断 topK（原"同量纲可比"不成立，kb-qa 截断系统性牺牲附件命中）
+- **F2** 附件解析 run 级缓存（16 条 LRU；多 kb 节点不重复解析 PDF）
+- **F10** OAS path-item 级 parameters 合并（原共享参数写法完全被忽略）
+- **F11** 参数按声明类型转换（number/integer/boolean；原 JSON body 全字符串）
+
+## 低危
+- F4 扩展名回退 filePath / F6 documentId 用 filePath / F8 'document' 常量 / F5 真实 Message 类型
+- F9 path 参数 replaceAll / F12 base URL scheme 校验 / F13 重复 operationId 消歧 / F14 query.size 兼容
+- F16 生成参数保留自由参数 / F19 模板值跳过必填校验 / topK 默认值唯一计算点 effectiveTopK
+- 'manual' 字面量收敛 WORKFLOW_TRIGGER_TYPES
+
+## 明确不修（记录理由）
+- 分享可设总次数/有效期（产品级增强，待用户需求）；M2 vectorCount 并发漂移（单用户桌面场景无并发写）；M5 双嵌入（需 searchQa 返回向量重构，C2 时一并做）；M6 FK CASCADE（应用层级联已闭环，SQLite 迁移加 FK 成本高）；spec 路径回写（实现为 invoke/:id 更 RESTful，spec 文档随 C2 一并更新）
