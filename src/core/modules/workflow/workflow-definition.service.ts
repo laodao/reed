@@ -5,6 +5,7 @@
  *              导出剥离 userId 与运行数据、不含密钥（节点只引用 providerConfigId）。
  */
 
+import crypto from 'node:crypto'
 import type { WorkflowGraph, WorkflowNode, WorkflowValidationResult } from '@shared/types/workflow.types'
 import { validateGraph } from './engine/graph-validator'
 import { WorkflowNodeRegistry } from './engine/node-registry'
@@ -116,6 +117,32 @@ export class WorkflowDefinitionService {
 
   async delete(id: string): Promise<number> {
     return this.repo.delete(id)
+  }
+
+  // ==================== C3 分享（免登录独立页） ====================
+
+  /** 启用分享：仅已发布定义可分享；生成 256bit 随机令牌（幂等——已分享则原样返回） */
+  async enableShare(id: string): Promise<WorkflowDefinitionRecord | null> {
+    const def = await this.repo.getById(id)
+    if (!def) throw new Error('工作流不存在')
+    if (def.publishedVersion <= 0) throw new Error('只有已发布的工作流才能分享')
+    if (def.shareToken) return def
+    const token = crypto.randomBytes(32).toString('hex')
+    return this.repo.update(id, { shareToken: token })
+  }
+
+  /** 停止分享：清除令牌（历史分享链接立即失效） */
+  async disableShare(id: string): Promise<WorkflowDefinitionRecord | null> {
+    return this.repo.update(id, { shareToken: null })
+  }
+
+  /**
+   * 按令牌取已分享定义（跨租户；REST 免登录入口用）。
+   * 调用方拿到 userId 后必须 runWithUserAsync(该 userId) 再启动运行。
+   */
+  async getByShareToken(token: string): Promise<WorkflowDefinitionRecord | null> {
+    if (!token || !/^[0-9a-f]{16,128}$/i.test(token)) return null // 令牌形态守卫
+    return this.repo.findByShareToken(token)
   }
 
   /**

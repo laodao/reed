@@ -159,6 +159,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'workflow.deleteRun': { channel: 'wf:delete-run' },
   'workflow.getPendingReviews': { channel: 'wf:get-pending-reviews' },
   'workflow.triggerPreview': { channel: 'wf:trigger-preview' },
+  'workflow.enableShare': { channel: 'wf:enable-share' },
+  'workflow.disableShare': { channel: 'wf:disable-share' },
   'workflow.onRunEvent': { channel: 'wf:run-event' },
   'knowledgeBase.list': { channel: 'knowledge-base:list' },
   'knowledgeBase.get': { channel: 'knowledge-base:get' },

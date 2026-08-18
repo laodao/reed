@@ -17,6 +17,7 @@ import { Column, Entity, Index, PrimaryColumn } from 'typeorm'
 @Entity({ name: 'workflow_definitions' })
 @Index('idx_wf_def_user', ['userId'])
 @Index('idx_wf_def_next_fire', ['nextFireAt'])
+@Index('idx_wf_def_share_token', ['shareToken'], { unique: true })
 export class WorkflowDefinitionEntity {
   /**
    * 所属用户 ID（多租户隔离）。Web 端 ALS 注入；Electron 单用户为 null。
@@ -72,6 +73,13 @@ export class WorkflowDefinitionEntity {
   /** 最近一次运行时间（列表页展示冗余列） */
   @Column({ name: 'last_run_at', type: 'datetime', nullable: true })
   lastRunAt!: Date | null
+
+  /**
+   * C3 分享令牌（免登录独立页）：启用分享时生成的随机 token；null = 未分享。
+   * 唯一索引（NULL 不参与唯一性，SQLite/PG 均允许多行 NULL）。
+   */
+  @Column({ name: 'share_token', type: 'varchar', nullable: true })
+  shareToken!: string | null
 
   @Column({ name: 'created_at', type: 'datetime', nullable: true })
   createdAt!: Date | null

@@ -27,6 +27,8 @@ const logger = createLogger('WorkflowDefinitionRepository')
 /** 工作流定义 DTO（JSON 列已解析） */
 export interface WorkflowDefinitionRecord {
   id: string
+  /** 所有者（C3 分享运行需以所有者身份启动；列表页等场景忽略） */
+  userId: string | null
   name: string
   description: string | null
   category: string | null
@@ -39,6 +41,7 @@ export interface WorkflowDefinitionRecord {
   nextFireAt: Date | null
   lastFireAt: Date | null
   lastRunAt: Date | null
+  shareToken: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -68,6 +71,8 @@ export interface UpdateWorkflowDefinitionInput {
   nextFireAt?: Date | null
   lastFireAt?: Date | null
   lastRunAt?: Date | null
+  /** C3 分享令牌（service 生成/清除；null = 停止分享） */
+  shareToken?: string | null
 }
 
 /** 到期 cron 触发器扫描结果（跨租户） */
@@ -101,6 +106,7 @@ export class WorkflowDefinitionRepository extends BaseRepository<
   protected toDto(e: WorkflowDefinitionEntity): WorkflowDefinitionRecord {
     return {
       id: e.id,
+      userId: e.userId,
       name: e.name,
       description: e.description,
       category: e.category,
@@ -113,6 +119,7 @@ export class WorkflowDefinitionRepository extends BaseRepository<
       nextFireAt: e.nextFireAt,
       lastFireAt: e.lastFireAt,
       lastRunAt: e.lastRunAt,
+      shareToken: e.shareToken,
       createdAt: e.createdAt,
       updatedAt: e.updatedAt,
     }
@@ -134,6 +141,7 @@ export class WorkflowDefinitionRepository extends BaseRepository<
       nextFireAt: null,
       lastFireAt: null,
       lastRunAt: null,
+      shareToken: null,
       createdAt: now,
       updatedAt: now,
     } as Partial<WorkflowDefinitionEntity>)
@@ -193,6 +201,7 @@ export class WorkflowDefinitionRepository extends BaseRepository<
     if (patch.nextFireAt !== undefined) partial.nextFireAt = patch.nextFireAt
     if (patch.lastFireAt !== undefined) partial.lastFireAt = patch.lastFireAt
     if (patch.lastRunAt !== undefined) partial.lastRunAt = patch.lastRunAt
+    if (patch.shareToken !== undefined) partial.shareToken = patch.shareToken
 
     await this.scoped.update({ id } as FindOptionsWhere<WorkflowDefinitionEntity>, partial)
     return this.getById(id)
@@ -200,6 +209,22 @@ export class WorkflowDefinitionRepository extends BaseRepository<
 
   async delete(id: string): Promise<number> {
     return this.scoped.delete({ id } as FindOptionsWhere<WorkflowDefinitionEntity>)
+  }
+
+  /**
+   * 按分享令牌查定义（跨租户，C3 免登录页入口）。
+   * 令牌本身是 256bit 随机串（不可枚举）；只返回已发布且已分享的行。
+   *
+   * ⚠️ 跨租户例外（与 scanDueCronTriggers 同纪律）：调用方拿到 userId 后必须
+   * runWithUserAsync(该 userId) 再执行后续业务（以定义所有者身份运行）。
+   */
+  async findByShareToken(token: string): Promise<WorkflowDefinitionRecord | null> {
+    const e = await this.repo
+      .createQueryBuilder('d')
+      .where('d.share_token = :token', { token })
+      .andWhere('d.published_version > 0')
+      .getOne()
+    return e ? this.toDto(e) : null
   }
 
   /**

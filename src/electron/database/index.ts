@@ -632,6 +632,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-workflow-tables'
     )
     await createWorkflowTables(this.dataSource)
+
+    // C3 免登录独立页：definitions 加 share_token 列 + 唯一索引（幂等，双语种）
+    const { addWorkflowShareToken } = await import(
+      '@core/database/migrations/add-workflow-share-token'
+    )
+    await addWorkflowShareToken(this.dataSource)
   }
 
   /**

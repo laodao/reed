@@ -7,6 +7,11 @@
  *              - POST /api/workflow/run/:runId/stop        取消运行
  *              - GET  /api/workflow/run/:runId/events      SSE 实时事件流（wf:run-event 载荷）
  *
+ *              免登录分享（C3 spec v2 §7；share_token 为 256bit 不可枚举随机串）：
+ *              - GET  /api/workflow/share/:token                    定义元信息 + start 输入 schema
+ *              - POST /api/workflow/share/:token/invoke             以定义所有者身份启动（禁 override）
+ *              - GET  /api/workflow/share/:token/run/:runId/events  SSE（token↔run 配对校验）
+ *
  *              override：{ [nodeId]: { [configKey]: value } } 一次性配置覆盖，
  *              引擎在模板解析前浅合并，不修改定义图（对齐 Bisheng override）。
  *
@@ -21,11 +26,21 @@ import { requireAuth } from '../auth/middleware'
 import { WebSocketEventEmitter } from '../platform/web-event-emitter'
 import { getWorkflowSubsystem } from '@core/modules/workflow/workflow-boot'
 import {
+  WORKFLOW_NODE_TYPES,
   WORKFLOW_RUN_EVENT_CHANNEL,
   WORKFLOW_RUN_EVENT_TYPES,
   WORKFLOW_RUN_STATUSES,
   WORKFLOW_TRIGGER_TYPES,
 } from '@shared/types/workflow.types'
+
+/** 免登录分享面返回的定义最小面（getByShareToken 契约） */
+interface ShareDefinition {
+  id: string
+  name: string
+  description: string | null
+  userId: string | null
+  publishedGraph: unknown
+}
 
 /** 路由依赖的最小服务面（boot 子系统子集；测试可注入假实现） */
 export interface WorkflowApiDeps {
@@ -38,7 +53,11 @@ export interface WorkflowApiDeps {
       configOverrides?: Record<string, Record<string, unknown>>
     }): Promise<{ id: string; status: string; skipReason?: string | null }>
     cancelRun(runId: string, userId: string): Promise<boolean>
-    getRunDetail(runId: string): Promise<{ run: { id: string; userId?: string | null; status: string } ; nodeRuns: unknown[] } | null>
+    getRunDetail(runId: string): Promise<{ run: { id: string; userId?: string | null; status: string; triggerInfo?: Record<string, unknown> | null } ; nodeRuns: unknown[] } | null>
+  }
+  /** C3 免登录分享面（getByShareToken 跨租户；返回含 userId 供所有者身份运行） */
+  definitions?: {
+    getByShareToken(token: string): Promise<ShareDefinition | null>
   }
 }
 
@@ -189,6 +208,139 @@ export function createWorkflowApiRouter(deps: {
     })
   })
 
+  // ==================== C3 免登录分享（spec v2 §7） ====================
+
+  /** 解析分享令牌 → (定义, 所有者)；无效返回 null（404 不泄露存在性） */
+  const resolveShare = async (token: string): Promise<ShareDefinition | null> => {
+    const { definitions } = deps.getDeps()
+    if (!definitions) return null
+    return definitions.getByShareToken(token)
+  }
+
+  /** 从已发布图提取 start 输入 schema（免登录表单渲染用） */
+  const shareInputSchema = (graph: unknown): Array<Record<string, unknown>> => {
+    const nodes = (graph as { nodes?: Array<{ type?: string; config?: { inputs?: Array<Record<string, unknown>> } }> } | null)?.nodes ?? []
+    const start = nodes.find(n => n.type === WORKFLOW_NODE_TYPES.start)
+    return Array.isArray(start?.config?.inputs) ? start.config.inputs : []
+  }
+
+  // ---- 分享定义元信息（免登录） ----
+  router.get('/share/:token', async (req: Request, res: Response) => {
+    try {
+      const found = await resolveShare(String(req.params.token))
+      if (!found) {
+        res.status(404).json({ ok: false, error: '分享链接无效或已停止分享' })
+        return
+      }
+      res.json({
+        ok: true,
+        data: {
+          definitionId: found.id,
+          name: found.name,
+          description: found.description,
+          inputs: shareInputSchema(found.publishedGraph),
+        },
+      })
+    } catch (e) {
+      fail(res, e)
+    }
+  })
+
+  // ---- 免登录启动（以定义所有者身份；禁 override——实验参数不对访客开放） ----
+  router.post('/share/:token/invoke', async (req: Request, res: Response) => {
+    try {
+      const { runService } = deps.getDeps()
+      const found = await resolveShare(String(req.params.token))
+      if (!found) {
+        res.status(404).json({ ok: false, error: '分享链接无效或已停止分享' })
+        return
+      }
+      if (!found.userId) {
+        res.status(400).json({ ok: false, error: '该工作流不支持分享运行' })
+        return
+      }
+      const body = (req.body ?? {}) as { inputs?: Record<string, unknown> }
+      // 以定义所有者身份运行（跨租户例外由 token 授权——所有者主动分享了该定义）
+      const run = await runWithUserAsync(found.userId, () =>
+        runService.startRun({
+          definitionId: found.id,
+          triggerType: WORKFLOW_TRIGGER_TYPES.manual,
+          triggerInfo: { source: 'share', shareToken: String(req.params.token) },
+          inputs: body.inputs,
+        })
+      )
+      res.json({ ok: true, data: { runId: run.id, status: run.status } })
+    } catch (e) {
+      fail(res, e)
+    }
+  })
+
+  // ---- 免登录 SSE（token↔run 配对校验：run.triggerInfo.shareToken 必须等于 token） ----
+  router.get('/share/:token/run/:runId/events', (req: Request, res: Response) => {
+    const token = String(req.params.token)
+    const runId = String(req.params.runId)
+
+    void (async () => {
+      const { runService } = deps.getDeps()
+      const found = await resolveShare(token)
+      if (!found || !found.userId) {
+        res.status(404).json({ ok: false, error: '分享链接无效或已停止分享' })
+        return
+      }
+      const detail = await runWithUserAsync(found.userId, () => runService.getRunDetail(runId))
+      const triggerInfo = detail?.run.triggerInfo as { shareToken?: string } | null | undefined
+      if (!detail || detail.run.userId !== found.userId || triggerInfo?.shareToken !== token) {
+        res.status(404).json({ ok: false, error: '运行不存在' })
+        return
+      }
+
+      res.writeHead(200, SSE_HEADERS)
+      const send = (event: string, data: unknown): void => {
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+      }
+
+      // 快照脱敏（免登录面不回传 userId 等租户信息）
+      const { userId: _omit, ...runSafe } = detail.run as Record<string, unknown>
+      send('snapshot', { run: runSafe, nodeRuns: detail.nodeRuns })
+      if (TERMINAL_STATUSES.has(detail.run.status)) {
+        send('done', { status: detail.run.status })
+        res.end()
+        return
+      }
+
+      let closed = false
+      const close = (): void => {
+        if (closed) return
+        closed = true
+        unsubscribe()
+        clearInterval(heartbeat)
+        res.end()
+      }
+      // 事件过滤：所有者租户 + runId（token 已在入口校验）
+      const unsubscribe = tapSource.tapEvents((channel, data, emitUserId) => {
+        if (closed || channel !== WORKFLOW_RUN_EVENT_CHANNEL) return
+        if (emitUserId !== found.userId) return
+        const payload = data as RunEventPayload
+        if (payload?.runId !== runId) return
+        send(payload.type, payload)
+        if (payload.type === WORKFLOW_RUN_EVENT_TYPES.runStatus && typeof payload.status === 'string'
+          && TERMINAL_STATUSES.has(payload.status)) {
+          send('done', { status: payload.status })
+          close()
+        }
+      })
+      const heartbeat = setInterval(() => {
+        if (!closed) res.write(': heartbeat\n\n')
+      }, 25_000)
+      heartbeat.unref?.()
+
+      req.on('close', close)
+    })().catch(e => {
+      if (!res.headersSent) fail(res, e)
+      else res.end()
+    })
+  })
+
   return router
 }
 
@@ -201,7 +353,7 @@ export default function workflowApiRouter(): Router {
     getDeps: () => {
       // 静态导入的模块在 initWorkflowSubsystem 调用前无副作用（单例惰性）
       const sub = getWorkflowSubsystem()
-      return { runService: sub.runService }
+      return { runService: sub.runService, definitions: sub.definitionService }
     },
   })
 }

@@ -701,6 +701,8 @@ const electronAPI = {
     getPendingReviews: () => ipcRenderer.invoke('wf:get-pending-reviews'),
     // ==================== 触发器 ====================
     triggerPreview: (expression: string) => ipcRenderer.invoke('wf:trigger-preview', { expression }),
+    enableShare: (id: string) => ipcRenderer.invoke('wf:enable-share', { id }),
+    disableShare: (id: string) => ipcRenderer.invoke('wf:disable-share', { id }),
     // ==================== 实时事件（返回取消订阅函数） ====================
     onRunEvent: (callback: (data: any) => void) => {
       const handler = (_event: any, data: any) => callback(data)

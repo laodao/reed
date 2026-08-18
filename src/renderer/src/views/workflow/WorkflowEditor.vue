@@ -18,6 +18,7 @@
       <el-button size="small" @click="doValidate">校验</el-button>
       <el-button size="small" type="warning" plain @click="showDebug = true">试运行</el-button>
       <el-button size="small" type="primary" @click="doPublish">发布</el-button>
+      <el-button size="small" type="info" plain @click="openShare">分享</el-button>
     </div>
 
     <div class="body">
@@ -211,6 +212,7 @@ onMounted(async () => {
   const resp = await api().getDefinition(route.params.id as string)
   if (!resp.success || !resp.data) { ElMessage.error(resp.error ?? '加载失败'); return }
   definition.value = resp.data
+  shareToken.value = resp.data.shareToken ?? null
   if (resp.data.draftGraph) loadGraph(resp.data.draftGraph)
 })
 
@@ -303,6 +305,45 @@ async function doPublish() {
   const resp = await api().publishDefinition({ id: definition.value.id })
   if (resp.success) { ElMessage.success('已发布'); definition.value.publishedVersion = (definition.value.publishedVersion ?? 0) + 1 }
   else ElMessage.error(resp.error)
+}
+
+// ── 分享（C3 免登录独立页；仅 Web 端生效，PC 端提示） ──
+const shareToken = ref<string | null>(null)
+const shareLoading = ref(false)
+
+async function openShare() {
+  if (!definition.value) return
+  if ((window as unknown as { __APP_PLATFORM__?: string }).__APP_PLATFORM__ !== 'web') {
+    ElMessage.info('分享为 Web 端功能：请部署 Web 服务后使用')
+    return
+  }
+  shareLoading.value = true
+  try {
+    if (!shareToken.value) {
+      const resp = await api().enableShare({ id: definition.value.id })
+      if (!resp.success) { ElMessage.error(resp.error); return }
+      shareToken.value = resp.data?.shareToken ?? null
+    }
+    if (!shareToken.value) { ElMessage.error('分享令牌生成失败'); return }
+    const link = `${window.location.origin}/#/workflow-run/${shareToken.value}`
+    try {
+      await ElMessageBox.alert(link, '分享链接（任何人都可运行）', {
+        confirmButtonText: '复制链接',
+        distinguishCancelAndClose: true,
+        cancelButtonText: '停止分享',
+      })
+      await navigator.clipboard.writeText(link)
+      ElMessage.success('链接已复制')
+    } catch (action) {
+      if (action === 'cancel') {
+        const resp = await api().disableShare({ id: definition.value.id })
+        if (resp.success) { shareToken.value = null; ElMessage.success('已停止分享') }
+        else ElMessage.error(resp.error)
+      }
+    }
+  } finally {
+    shareLoading.value = false
+  }
 }
 
 // ── 画布交互 ──

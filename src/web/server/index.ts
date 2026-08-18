@@ -340,6 +340,12 @@ async function initDatabase(): Promise<void> {
   )
   await createWorkflowTables(ds)
 
+  // C3 免登录独立页：definitions 加 share_token 列 + 唯一索引（与 Electron 端同构）
+  const { addWorkflowShareToken } = await import(
+    '@core/database/migrations/add-workflow-share-token'
+  )
+  await addWorkflowShareToken(ds)
+
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)
   console.log('[web-server] PostgreSQL 数据库初始化完成')

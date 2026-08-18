@@ -76,6 +76,14 @@ export function registerWorkflowHandlers(): void {
       })
   )
 
+  // ==================== 分享（C3 免登录独立页） ====================
+  ipcBridge.handle('wf:enable-share', (_e, p: { id: string }) =>
+    wrap(() => subsystem().definitionService.enableShare(p.id))
+  )
+  ipcBridge.handle('wf:disable-share', (_e, p: { id: string }) =>
+    wrap(() => subsystem().definitionService.disableShare(p.id))
+  )
+
   // ==================== 运行 ====================
   ipcBridge.handle(
     'wf:start-run',

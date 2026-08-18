@@ -16,7 +16,7 @@ beforeAll(() => configureJwtSecret('test-secret'))
 
 // ---- 假 runService ----
 const startedInputs: any[] = []
-let runDetail: any = { run: { id: 'run_1', userId: 'u1', status: 'running' }, nodeRuns: [] }
+let runDetail: any = { run: { id: 'run_1', userId: 'u1', status: 'running', triggerInfo: { shareToken: 'tok123' } }, nodeRuns: [] }
 const fakeRunService = {
   async startRun(input: any) {
     startedInputs.push(input)
@@ -28,6 +28,19 @@ const fakeRunService = {
   },
   async getRunDetail(runId: string) {
     return runId === 'run_1' ? runDetail : null
+  },
+}
+
+// ---- 假 definitions（分享面） ----
+const sharedDef = {
+  id: 'd1', name: '分享的流', description: 'desc', userId: 'u1',
+  publishedGraph: { nodes: [{ type: 'start', config: { inputs: [{ key: 'q', type: 'string', required: true }] } }] },
+}
+const fakeDefinitions = {
+  async getByShareToken(token: string) {
+    if (token === 'tok123') return sharedDef
+    if (token === 'notshared') return { ...sharedDef, id: 'd2', userId: null }
+    return null
   },
 }
 
@@ -44,7 +57,7 @@ const app: Express = express()
 app.use(express.json())
 app.use(cookieParser())
 app.use(attachUser)
-app.use('/api/workflow', createWorkflowApiRouter({ getDeps: () => ({ runService: fakeRunService as any }), tapSource }))
+app.use('/api/workflow', createWorkflowApiRouter({ getDeps: () => ({ runService: fakeRunService as any, definitions: fakeDefinitions }), tapSource }))
 
 const server = http.createServer(app)
 let baseUrl = ''
@@ -182,6 +195,62 @@ describe('C3 REST：GET /run/:runId/events（SSE）', () => {
   it('他人运行 → 404', async () => {
     await ensureListen()
     const res = await fetch(`${baseUrl}/api/workflow/run/run_1/events`, { headers: authHeaders('u2') })
+    expect(res.status).toBe(404)
+  })
+})
+
+describe('C3 免登录分享：GET /share/:token', () => {
+  it('返回元信息 + start 输入 schema（无需登录）', async () => {
+    await ensureListen()
+    const res = await fetch(`${baseUrl}/api/workflow/share/tok123`)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body).toMatchObject({ ok: true, data: { definitionId: 'd1', name: '分享的流', inputs: [{ key: 'q' }] } })
+  })
+
+  it('无效令牌 → 404', async () => {
+    await ensureListen()
+    const res = await fetch(`${baseUrl}/api/workflow/share/badtoken`)
+    expect(res.status).toBe(404)
+  })
+})
+
+describe('C3 免登录分享：POST /share/:token/invoke', () => {
+  it('以定义所有者身份启动并带 share 触发信息（禁 override）', async () => {
+    await ensureListen()
+    const res = await fetch(`${baseUrl}/api/workflow/share/tok123/invoke`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inputs: { q: 'x' }, override: { n: { a: 1 } } }),
+    })
+    expect(res.status).toBe(200)
+    const last = startedInputs.at(-1)
+    expect(last).toMatchObject({ definitionId: 'd1', triggerInfo: { source: 'share', shareToken: 'tok123' }, inputs: { q: 'x' } })
+    // override 不透传（实验参数不对访客开放）
+    expect(last.configOverrides).toBeUndefined()
+  })
+
+  it('无所有者的定义（PC 单机数据）→ 400', async () => {
+    await ensureListen()
+    const res = await fetch(`${baseUrl}/api/workflow/share/notshared/invoke`, { method: 'POST' })
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('C3 免登录分享：GET /share/:token/run/:runId/events（SSE）', () => {
+  it('token↔run 配对校验 + 快照脱敏 + 终态关流', async () => {
+    await ensureListen()
+    runDetail = { run: { id: 'run_1', userId: 'u1', status: 'succeeded', triggerInfo: { shareToken: 'tok123' } }, nodeRuns: [] }
+    const res = await fetch(`${baseUrl}/api/workflow/share/tok123/run/run_1/events`)
+    const text = await res.text()
+    expect(text).toContain('event: snapshot')
+    expect(text).toContain('event: done')
+    expect(text).not.toContain('"userId"') // 快照脱敏：免登录面不回传租户信息
+  })
+
+  it('run 的 shareToken 与路径 token 不匹配 → 404', async () => {
+    await ensureListen()
+    const res = await fetch(`${baseUrl}/api/workflow/share/tok123/run/run_2/events`)
     expect(res.status).toBe(404)
   })
 })

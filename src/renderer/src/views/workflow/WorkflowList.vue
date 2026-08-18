@@ -112,10 +112,10 @@ const starting = ref(false)
 const api = () => (window as never as { electronAPI: any }).electronAPI.workflow
 
 // 内置模板（B6：编辑器搭好→导出→置于此处；模板即数据资产）
-import ragTpl from '@renderer/assets/workflow-templates/rag-qa.json'
-import translateTpl from '@renderer/assets/workflow-templates/batch-translate.json'
-import reviewTpl from '@renderer/assets/workflow-templates/content-review.json'
-import digestTpl from '@renderer/assets/workflow-templates/daily-digest.json'
+import ragTpl from '@/assets/workflow-templates/rag-qa.json'
+import translateTpl from '@/assets/workflow-templates/batch-translate.json'
+import reviewTpl from '@/assets/workflow-templates/content-review.json'
+import digestTpl from '@/assets/workflow-templates/daily-digest.json'
 
 const showTemplates = ref(false)
 const builtinTemplates = [
