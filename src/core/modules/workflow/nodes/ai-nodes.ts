@@ -12,7 +12,7 @@
  */
 
 import { KnowledgeBaseService } from '../../../services/knowledge-base.service'
-import { augmentWithDialogFiles } from './dialog-file-retriever'
+import { augmentWithDialogFiles, mergeRetrievalResults, effectiveTopK } from './dialog-file-retriever'
 import { getSearchEngineService } from '../../../services/search-engine.service'
 import { TranslationService } from '../../../services/translation.service'
 import { ImageService } from '../../../services/image.service'
@@ -78,13 +78,14 @@ const kbRetrieveNode: WorkflowNodeHandler = {
     })
     if (ctx.signal.aborted) throw new Error('已取消')
     const results = unwrap(resp, '知识库检索') ?? []
-    // C4：追加对话附件命中（TF 打分；KB 与 dialog 命中同形状合并）
-    const topK = cfg.topK && cfg.topK > 0 ? cfg.topK : 5
+    // C4：合并对话附件命中（F1：dialog 优先——用户刚上传的文件最相关；整体截断 topK）
+    const topK = effectiveTopK(cfg.topK)
     const dialogHits = await augmentWithDialogFiles(ctx, cfg.includeDialogFiles, stringifyValue(cfg.query), topK)
-    const merged = [
-      ...results.map(r => ({ content: r.content, score: r.score, documentId: r.documentId, documentName: r.documentName, source: 'kb' as const })),
-      ...dialogHits,
-    ]
+    const merged = mergeRetrievalResults(
+      results.map(r => ({ content: r.content, score: r.score, documentId: r.documentId, documentName: r.documentName, source: 'kb' as const })),
+      dialogHits,
+      topK
+    )
     return {
       status: 'succeeded',
       output: {

@@ -8,7 +8,7 @@
 import { mkdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { KnowledgeBaseService } from '../../../services/knowledge-base.service'
-import { augmentWithDialogFiles } from './dialog-file-retriever'
+import { augmentWithDialogFiles, mergeRetrievalResults, effectiveTopK } from './dialog-file-retriever'
 import { callAIStream } from '../../../services/ai-call'
 import { markdownToDocx } from '../../../utils/markdown-to-docx'
 import { getPathProvider } from '../../../interfaces/path.interface'
@@ -76,7 +76,8 @@ const kbQaNode: WorkflowNodeHandler = {
       query: stringifyValue(cfg.question),
       topK: 1,
       // 直出阈值更严（跳过 LLM 的答案不容含糊）：复用 threshold 覆盖，缺省 0.75
-      threshold: cfg.threshold && cfg.threshold > 0 ? cfg.threshold : QA_DIRECT_MIN_SCORE,
+      // M5b：直出阈值固定常量，与 RAG threshold 解耦（放宽 RAG 不应连带放宽直出）
+      threshold: QA_DIRECT_MIN_SCORE,
       signal: ctx.signal,
     })
     if (qaResp.success && qaResp.data && qaResp.data.length > 0) {
@@ -107,7 +108,7 @@ const kbQaNode: WorkflowNodeHandler = {
     }
     const results = searchResp.data ?? []
     // C4：追加对话附件命中（与 KB 结果同形状合并入 context 与 sources）
-    const topK = cfg.topK && cfg.topK > 0 ? cfg.topK : 5
+    const topK = effectiveTopK(cfg.topK)
     const dialogHits = await augmentWithDialogFiles(ctx, cfg.includeDialogFiles, stringifyValue(cfg.question), topK)
     ctx.emitProgress(30, `检索到 ${results.length + dialogHits.length} 条`)
 
@@ -115,7 +116,8 @@ const kbQaNode: WorkflowNodeHandler = {
     const maxChars = cfg.resultMaxLength && cfg.resultMaxLength > 0
       ? cfg.resultMaxLength
       : WORKFLOW_DEFAULTS.kbQaContextMaxChars
-    const context = buildKbContext([...results, ...dialogHits], maxChars)
+    // F1：dialog 命中优先入 context（maxChars 截断"超限整条丢弃"不再系统性牺牲附件命中）
+    const context = buildKbContext(mergeRetrievalResults(results, dialogHits, topK), maxChars)
     const systemPrompt = `${cfg.systemPrompt?.trim() || DEFAULT_KB_QA_SYSTEM_PROMPT}\n\n===== 参考资料 =====\n${context}`
 
     // 3. 生成（signal + 进度）

@@ -9,7 +9,7 @@
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getWorkflowSubsystem } from '@core/modules/workflow/workflow-boot'
 import { getCurrentUserId, LOCAL_DEFAULT_USER_ID } from '@core/context/user-context'
-import { WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_STATUSES } from '@shared/types/workflow.types'
+import { WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_STATUSES, WORKFLOW_TRIGGER_TYPES } from '@shared/types/workflow.types'
 import type { IpcResponse } from '@shared/types/ipc.types'
 import { previewCronExpression } from '@core/modules/workflow/trigger/workflow-trigger-scheduler.service'
 import type { WorkflowGraph, WorkflowTrigger, WorkflowExecutionSettings } from '@shared/types/workflow.types'
@@ -91,7 +91,7 @@ export function registerWorkflowHandlers(): void {
       wrap(() =>
         subsystem().runService.startRun({
           definitionId: p.definitionId,
-          triggerType: 'manual',
+          triggerType: WORKFLOW_TRIGGER_TYPES.manual,
           inputs: p.inputs,
         })
       )

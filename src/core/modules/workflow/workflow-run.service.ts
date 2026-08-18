@@ -48,6 +48,11 @@ export interface StartRunInput {
   inputs?: Record<string, unknown>
   /** C3 一次性配置覆盖（REST invoke 实验参数；透传引擎，不落定义） */
   configOverrides?: Record<string, Record<string, unknown>>
+  /**
+   * 强制执行发布图（C3b 分享页）：访客只跑 publishedGraph——不受草稿改动影响。
+   * 手动触发缺省允许跑草稿（编辑器试运行的既有语义）。
+   */
+  usePublishedGraph?: boolean
 }
 
 export class WorkflowRunService {
@@ -87,9 +92,11 @@ export class WorkflowRunService {
       })
     }
 
-    // 图快照：已发布用发布图；未发布允许手动跑草稿（触发必须已发布，片6 校验）
-    const graph: WorkflowGraph =
-      (input.triggerType === WORKFLOW_TRIGGER_TYPES.manual && def.draftGraph) || def.publishedGraph || def.draftGraph
+    // 图快照：已发布用发布图；未发布允许手动跑草稿（触发必须已发布，片6 校验）。
+    // C3b：分享/外部入口强制发布图——访客不能执行未发布的草稿内容
+    const graph: WorkflowGraph = input.usePublishedGraph
+      ? (def.publishedGraph || def.draftGraph)
+      : ((input.triggerType === WORKFLOW_TRIGGER_TYPES.manual && def.draftGraph) || def.publishedGraph || def.draftGraph)
     if (!graph || graph.nodes.length === 0) throw new Error('工作流没有可执行的图')
 
     // start 输入参数：required 校验 + defaultValue 合并（定时/事件触发无来源时用默认值）
@@ -125,7 +132,7 @@ export class WorkflowRunService {
       status: WORKFLOW_RUN_STATUSES.pending,
       timeoutAt: new Date(Date.now() + (def.settings?.maxDurationMs ?? WORKFLOW_DEFAULTS.maxDurationMs)),
     })
-    await this.launch(run.id, run.userId ?? LOCAL_DEFAULT_USER_ID, input.definitionId, graph, this.effectiveSettings(def.settings), input.inputs ?? {}, undefined, input.configOverrides, input.triggerInfo)
+    await this.launch(run.id, run.userId ?? LOCAL_DEFAULT_USER_ID, input.definitionId, graph, this.effectiveSettings(def.settings), mergedInputs, undefined, input.configOverrides, input.triggerInfo)
     return (await this.deps.runs.getById(run.id)) ?? run
   }
 

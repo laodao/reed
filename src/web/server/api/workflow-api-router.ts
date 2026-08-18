@@ -66,6 +66,26 @@ export interface EventTapSource {
   tapEvents(cb: (channel: string, data: unknown, userId: string | null) => void): () => void
 }
 
+/**
+ * 匿名分享 invoke 限流（review#2）：每 token 滑动窗口。
+ * 分享页 URL 天然会被转发/嵌入——持 token 者可无限以所有者身份消耗 LLM/API 配额。
+ * 单实例内存实现（与 tapEvents 同部署约束）；命中限流返回 429。
+ */
+const SHARE_RATE_LIMIT = { windowMs: 60_000, max: 6 }
+const shareInvokeLog = new Map<string, number[]>()
+
+function shareRateLimited(token: string): boolean {
+  const now = Date.now()
+  const hits = (shareInvokeLog.get(token) ?? []).filter(t => now - t < SHARE_RATE_LIMIT.windowMs)
+  if (hits.length >= SHARE_RATE_LIMIT.max) {
+    shareInvokeLog.set(token, hits)
+    return true
+  }
+  hits.push(now)
+  shareInvokeLog.set(token, hits)
+  return false
+}
+
 /** run 终态集合（SSE 关流依据） */
 const TERMINAL_STATUSES = new Set<string>([
   WORKFLOW_RUN_STATUSES.succeeded,
@@ -89,6 +109,83 @@ const SSE_HEADERS = {
   Connection: 'keep-alive',
   'X-Accel-Buffering': 'no', // nginx 等反代不缓冲
 } as const
+
+/**
+ * SSE 运行事件流（authed 与 share 端点共用实现）。
+ *
+ * 竞态防护（review#3）：快照判定非终态 → 订阅 tap 之间存在窗口，终态事件可能恰好
+ * 在窗口内发出而被错过——订阅后**复查一次** run 状态，已终态则补 done 关流。
+ *
+ * @param sanitize 快照脱敏函数（免登录面用：剔除 userId 等租户字段）；缺省原样
+ */
+async function streamRunEvents(opts: {
+  res: Response
+  req: Request
+  runId: string
+  ownerUserId: string
+  runService: WorkflowApiDeps['runService']
+  tapSource: EventTapSource
+  fetchDetail: () => Promise<NonNullable<Awaited<ReturnType<WorkflowApiDeps['runService']['getRunDetail']>>>> | null
+  sanitize?: <T>(snapshot: T) => T
+}): Promise<void> {
+  const { res, req, runId, ownerUserId, runService, tapSource } = opts
+  const detail = await opts.fetchDetail()
+  if (!detail) {
+    res.status(404).json({ ok: false, error: '运行不存在' })
+    return
+  }
+
+  res.writeHead(200, SSE_HEADERS)
+  const send = (event: string, data: unknown): void => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+  }
+
+  // 1) 快照先行（晚订阅不丢状态）
+  send('snapshot', opts.sanitize ? opts.sanitize(detail) : detail)
+  if (TERMINAL_STATUSES.has(detail.run.status)) {
+    send('done', { status: detail.run.status })
+    res.end()
+    return
+  }
+
+  // 2) 订阅后续事件（ALS userId + runId 双重过滤）
+  let closed = false
+  const close = (): void => {
+    if (closed) return
+    closed = true
+    unsubscribe()
+    clearInterval(heartbeat)
+    res.end()
+  }
+  const finishIfTerminal = (status: string): boolean => {
+    if (!TERMINAL_STATUSES.has(status)) return false
+    send('done', { status })
+    close()
+    return true
+  }
+  const unsubscribe = tapSource.tapEvents((channel, data, emitUserId) => {
+    if (closed || channel !== WORKFLOW_RUN_EVENT_CHANNEL) return
+    if (emitUserId !== ownerUserId) return // 跨租户事件不推
+    const payload = data as RunEventPayload
+    if (payload?.runId !== runId) return
+    send(payload.type, payload)
+    if (payload.type === WORKFLOW_RUN_EVENT_TYPES.runStatus && typeof payload.status === 'string') {
+      finishIfTerminal(payload.status)
+    }
+  })
+  // 3) 心跳注释（防中间层空闲断连）
+  const heartbeat = setInterval(() => {
+    if (!closed) res.write(': heartbeat\n\n')
+  }, 25_000)
+  heartbeat.unref?.()
+  req.on('close', close)
+
+  // 4) 订阅后复查（窗口内到达终态的事件已错过——查库兜底）
+  const recheck = await runService.getRunDetail(runId)
+  if (recheck && TERMINAL_STATUSES.has(recheck.run.status)) {
+    finishIfTerminal(recheck.run.status)
+  }
+}
 
 export function createWorkflowApiRouter(deps: {
   getDeps: () => WorkflowApiDeps
@@ -150,59 +247,16 @@ export function createWorkflowApiRouter(deps: {
   router.get('/run/:runId/events', requireAuth, (req: Request, res: Response) => {
     const runId = String(req.params.runId)
     const userId = req.user!.userId
-
-    void (async () => {
-      // 租户校验（异步——getRunDetail 走 ALS）
-      const { runService } = deps.getDeps()
-      const detail = await runWithUserAsync(userId, () => runService.getRunDetail(runId))
-      if (!detail || detail.run.userId !== userId) {
-        res.status(404).json({ ok: false, error: '运行不存在' })
-        return
-      }
-
-      res.writeHead(200, SSE_HEADERS)
-      const send = (event: string, data: unknown): void => {
-        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
-      }
-
-      // 1) 先推快照（晚订阅不丢状态；若已终态直接推完关流）
-      send('snapshot', { run: detail.run, nodeRuns: detail.nodeRuns })
-      if (TERMINAL_STATUSES.has(detail.run.status)) {
-        send('done', { status: detail.run.status })
-        res.end()
-        return
-      }
-
-      // 2) 订阅后续事件（ALS userId + runId 双重过滤）
-      let closed = false
-      const close = (): void => {
-        if (closed) return
-        closed = true
-        unsubscribe()
-        clearInterval(heartbeat)
-        res.end()
-      }
-      const unsubscribe = tapSource.tapEvents((channel, data, emitUserId) => {
-        if (closed || channel !== WORKFLOW_RUN_EVENT_CHANNEL) return
-        if (emitUserId !== userId) return // 跨租户事件不推
-        const payload = data as RunEventPayload
-        if (payload?.runId !== runId) return
-        send(payload.type, payload)
-        // runStatus 终态 → 推 done 并关流
-        if (payload.type === WORKFLOW_RUN_EVENT_TYPES.runStatus && typeof (payload as { status?: string }).status === 'string'
-          && TERMINAL_STATUSES.has((payload as { status: string }).status)) {
-          send('done', { status: (payload as { status: string }).status })
-          close()
-        }
-      })
-      // 3) 心跳注释（防中间层空闲断连）
-      const heartbeat = setInterval(() => {
-        if (!closed) res.write(': heartbeat\n\n')
-      }, 25_000)
-      heartbeat.unref?.()
-
-      req.on('close', close)
-    })().catch(e => {
+    void streamRunEvents({
+      res, req, runId, ownerUserId: userId,
+      runService: deps.getDeps().runService,
+      tapSource,
+      fetchDetail: async () => {
+        // 租户校验：非本人运行返回 404（不泄露存在性）
+        const d = await runWithUserAsync(userId, () => deps.getDeps().runService.getRunDetail(runId))
+        return d && d.run.userId === userId ? d : null
+      },
+    }).catch(e => {
       if (!res.headersSent) fail(res, e)
       else res.end()
     })
@@ -259,6 +313,10 @@ export function createWorkflowApiRouter(deps: {
         res.status(400).json({ ok: false, error: '该工作流不支持分享运行' })
         return
       }
+      if (shareRateLimited(String(req.params.token))) {
+        res.status(429).json({ ok: false, error: '请求过于频繁，请稍后再试' })
+        return
+      }
       const body = (req.body ?? {}) as { inputs?: Record<string, unknown> }
       // 以定义所有者身份运行（跨租户例外由 token 授权——所有者主动分享了该定义）
       const run = await runWithUserAsync(found.userId, () =>
@@ -267,6 +325,8 @@ export function createWorkflowApiRouter(deps: {
           triggerType: WORKFLOW_TRIGGER_TYPES.manual,
           triggerInfo: { source: 'share', shareToken: String(req.params.token) },
           inputs: body.inputs,
+          // 访客只跑发布图：不受所有者草稿改动影响（表单 schema 也来自 publishedGraph）
+          usePublishedGraph: true,
         })
       )
       res.json({ ok: true, data: { runId: run.id, status: run.status } })
@@ -287,54 +347,41 @@ export function createWorkflowApiRouter(deps: {
         res.status(404).json({ ok: false, error: '分享链接无效或已停止分享' })
         return
       }
-      const detail = await runWithUserAsync(found.userId, () => runService.getRunDetail(runId))
-      const triggerInfo = detail?.run.triggerInfo as { shareToken?: string } | null | undefined
-      if (!detail || detail.run.userId !== found.userId || triggerInfo?.shareToken !== token) {
-        res.status(404).json({ ok: false, error: '运行不存在' })
-        return
-      }
-
-      res.writeHead(200, SSE_HEADERS)
-      const send = (event: string, data: unknown): void => {
-        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
-      }
-
-      // 快照脱敏（免登录面不回传 userId 等租户信息）
-      const { userId: _omit, ...runSafe } = detail.run as Record<string, unknown>
-      send('snapshot', { run: runSafe, nodeRuns: detail.nodeRuns })
-      if (TERMINAL_STATUSES.has(detail.run.status)) {
-        send('done', { status: detail.run.status })
-        res.end()
-        return
-      }
-
-      let closed = false
-      const close = (): void => {
-        if (closed) return
-        closed = true
-        unsubscribe()
-        clearInterval(heartbeat)
-        res.end()
-      }
-      // 事件过滤：所有者租户 + runId（token 已在入口校验）
-      const unsubscribe = tapSource.tapEvents((channel, data, emitUserId) => {
-        if (closed || channel !== WORKFLOW_RUN_EVENT_CHANNEL) return
-        if (emitUserId !== found.userId) return
-        const payload = data as RunEventPayload
-        if (payload?.runId !== runId) return
-        send(payload.type, payload)
-        if (payload.type === WORKFLOW_RUN_EVENT_TYPES.runStatus && typeof payload.status === 'string'
-          && TERMINAL_STATUSES.has(payload.status)) {
-          send('done', { status: payload.status })
-          close()
+      const owner = found.userId
+      // 快照脱敏：免登录面不回传 userId 等租户信息（nodeRuns 只保留展示字段）
+      const sanitize = <T extends { run?: Record<string, unknown>; nodeRuns?: unknown[] }>(snap: T): T => {
+        if (snap.run) {
+          const { userId: _omit, triggerInfo: _omit2, ...runSafe } = snap.run
+          snap.run = runSafe as T['run']
         }
+        snap.nodeRuns = (snap.nodeRuns ?? []).map((n) => {
+          const row = n as Record<string, unknown>
+          return {
+            nodeId: row.nodeId,
+            nodeName: row.nodeName,
+            iterationIndex: row.iterationIndex,
+            nodeType: row.nodeType,
+            status: row.status,
+            error: row.error,
+            durationMs: row.durationMs,
+            // input 是模板解析后的完整配置——可能含所有者内部 URL/参数，免登录面不回传
+            output: typeof row.output === 'string' ? row.output : undefined,
+          }
+        })
+        return snap
+      }
+      await streamRunEvents({
+        res, req, runId, ownerUserId: owner,
+        runService,
+        tapSource,
+        sanitize,
+        fetchDetail: async () => {
+          const detail = await runWithUserAsync(owner, () => runService.getRunDetail(runId))
+          const triggerInfo = detail?.run.triggerInfo as { shareToken?: string } | null | undefined
+          if (!detail || detail.run.userId !== owner || triggerInfo?.shareToken !== token) return null
+          return detail
+        },
       })
-      const heartbeat = setInterval(() => {
-        if (!closed) res.write(': heartbeat\n\n')
-      }, 25_000)
-      heartbeat.unref?.()
-
-      req.on('close', close)
     })().catch(e => {
       if (!res.headersSent) fail(res, e)
       else res.end()

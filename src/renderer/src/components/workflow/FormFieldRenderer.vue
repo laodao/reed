@@ -283,12 +283,18 @@ function generateOasParams() {
     return
   }
   const existing = new Map(kvList.value.map((x: any) => [String(x.key), x]))
-  props.model[props.field.key] = declared.map(d => ({
+  // F16：声明参数生成行 + 保留用户手动加的自由参数（进请求体的透传键）
+  const declaredRows = declared.map(d => ({
     key: d.name,
     value: existing.get(d.name)?.value ?? '',
   }))
-  const missing = declared.filter(d => d.required).map(d => d.name)
-  oasParamHint.value = `已生成 ${declared.length} 个参数` + (missing.length ? `；必填：${missing.join('、')}` : '')
+  const declaredNames = new Set(declared.map(d => d.name))
+  const freeRows = kvList.value.filter((x: any) => x.key && !declaredNames.has(String(x.key)))
+  props.model[props.field.key] = [...declaredRows, ...freeRows]
+  const missing = declared.filter(d => d.required && !String(existing.get(d.name)?.value ?? '').trim()).map(d => d.name)
+  oasParamHint.value = `已生成 ${declared.length} 个参数`
+    + (freeRows.length ? `，保留 ${freeRows.length} 个自由参数` : '')
+    + (missing.length ? `；必填未填：${missing.join('、')}` : '')
   emit('change')
 }
 </script>

@@ -62,6 +62,11 @@ function tokenizeForIndex(text: string): string[] {
     .filter(t => t.length >= 2 && !INDEX_STOP_WORDS.has(t))
 }
 
+/** QA 对向量的 chunkId 命名空间前缀（与 addQaPair 写入一致；文档检索须剔除） */
+const QA_CHUNK_ID_PREFIX = 'qa:'
+/** 文档召回补偿条数：抵偿 QA 命名空间向量占用的 topK 名额 */
+const QA_VECTOR_FETCH_PADDING = 10
+
 /** BM25 参数（k1 词频饱和、b 长度归一；业界标准值） */
 const BM25_K1 = 1.2
 const BM25_B = 0.75
@@ -205,8 +210,16 @@ export class KnowledgeBaseService {
       }
       await db.kbChunks.deleteByKnowledgeBaseId(id)
       await db.kbDocuments.deleteByKnowledgeBaseId(id)
-      // D1：QA 对级联（向量已随 deleteByKnowledgeBaseId 整库删除）
-      if (db.kbQaPairs) await db.kbQaPairs.deleteByKnowledgeBaseId(id)
+      // D1：QA 对级联——QA 向量按 chunkId 命名空间逐条删（与文档向量无 documentId 关联）
+      if (db.kbQaPairs) {
+        const pairs = await db.kbQaPairs.listByKnowledgeBaseId(id)
+        for (const pair of pairs) {
+          for (let i = 0; i < 1 + pair.similarQuestions.length; i++) {
+            await db.kbVectors.deleteByChunkId(KnowledgeBaseService.qaVectorChunkId(pair.id, i))
+          }
+        }
+        await db.kbQaPairs.deleteByKnowledgeBaseId(id)
+      }
       await db.knowledgeBases.delete(id)
 
       return { success: true }
@@ -847,14 +860,7 @@ export class KnowledgeBaseService {
     const items: Array<{ term: string; chunkId: string; knowledgeBaseId: string; termFrequency: number }> = []
 
     for (const chunk of chunks) {
-      // 使用 nodejieba 进行中文分词（搜索引擎模式）
-      const chineseText = chunk.content.replace(/[a-zA-Z0-9\s]+/g, ' ')
-      const chineseTerms = nodejieba.cutForSearch(chineseText)
-
-      // 提取英文单词
-      const englishWords = chunk.content.toLowerCase().match(/[a-z]+/g) || []
-
-      // 合并中英文词汇，过滤停用词和单字（中文单字除非是特定字否则过滤）
+      // 分词与检索同源（tokenizeForIndex：jieba cutForSearch + 英文词元，去停用词/单字）
       const allTerms = tokenizeForIndex(chunk.content)
 
       const freq = new Map<string, number>()
@@ -883,39 +889,48 @@ export class KnowledgeBaseService {
       const config: EmbeddingConfig = kb.embeddingConfig ? JSON.parse(kb.embeddingConfig) : {}
       // D3 混合检索权重：1（缺省）= 纯向量（旧行为）；0 = 纯关键词；中间值 = 加权融合
       const vectorWeight = req.vectorWeight != null ? Math.min(1, Math.max(0, req.vectorWeight)) : 1
+      const topK = req.topK || 5
+      const threshold = req.threshold != null && req.threshold > 0 ? req.threshold : null
 
-      // 向量召回（weight=0 时跳过嵌入调用省一次 API）
+      // 向量召回（weight=0 时跳过嵌入调用省一次 API）。
+      // H4：QA 命名空间（qa: 前缀）不参与文档检索——多召回以补偿被剔除的名额。
       const vecScores = new Map<string, number>()
       if (vectorWeight > 0) {
         const vectors = await this.getEmbeddingVectors([req.query], config, req.signal)
         if (!vectors) return { success: false, error: '生成查询向量失败' }
-        // 混合时多召回（融合需要候选并集）
-        const raw = await db.kbVectors.searchSimilar(req.knowledgeBaseId, vectors[0], vectorWeight < 1 ? (req.topK || 5) * 3 : (req.topK || 5))
-        for (const r of raw) vecScores.set(r.chunkId, r.score)
+        // 混合时 3 倍召回（融合需要候选并集）+ QA 前缀剔除补偿
+        const fetchK = (vectorWeight < 1 ? topK * 3 : topK) + QA_VECTOR_FETCH_PADDING
+        const raw = await db.kbVectors.searchSimilar(req.knowledgeBaseId, vectors[0], fetchK)
+        for (const r of raw) {
+          if (r.chunkId.startsWith(QA_CHUNK_ID_PREFIX)) continue
+          if (threshold !== null && r.score < threshold) continue // H3：阈值作用于原始余弦（保留既有语义）
+          vecScores.set(r.chunkId, r.score)
+          if (vecScores.size >= topK) break
+        }
       }
 
       // 关键词召回（BM25；无倒排索引/无命中时降级空——纯向量路径不受影响）
       const bm25 = vectorWeight < 1 ? await this.bm25Scores(req.knowledgeBaseId, req.query) : new Map<string, number>()
 
-      // 候选并集 → 融合打分（两路各自按最大值归一到 0-1 再加权，保证量纲可比）
+      // 候选并集 → 融合打分。
+      // H3 语义：阈值已在各路原始分上过滤（上方的余弦阈值 + BM25 的 idf 加权分无
+      // 绝对含义，不做阈值过滤）；融合分只用于排序，不回写为结果 score——
+      // 纯向量路径的 score 保持原始余弦，下游展示/过滤不失真。
       const maxVec = Math.max(0, ...vecScores.values())
       const maxBm = Math.max(0, ...bm25.values())
       const candidates = new Set([...vecScores.keys(), ...bm25.keys()])
-      const fused: Array<{ chunkId: string; score: number }> = []
+      const fused: Array<{ chunkId: string; score: number; raw: number }> = []
       for (const chunkId of candidates) {
         const v = maxVec > 0 ? (vecScores.get(chunkId) ?? 0) / maxVec : 0
         const b = maxBm > 0 ? (bm25.get(chunkId) ?? 0) / maxBm : 0
-        fused.push({ chunkId, score: vectorWeight * v + (1 - vectorWeight) * b })
+        // 融合分用于排序；回显 score 用原始最高分（向量优先，纯关键词路径用 BM25 分）
+        const raw = vecScores.get(chunkId) ?? bm25.get(chunkId) ?? 0
+        fused.push({ chunkId, score: vectorWeight * v + (1 - vectorWeight) * b, raw })
       }
       fused.sort((a, b) => b.score - a.score)
 
-      // 相似度阈值过滤：低于阈值的结果剔除（工作流 kb-retrieve/kb-qa 的 threshold 参数在此生效）
-      const results = req.threshold != null && req.threshold > 0
-        ? fused.filter(r => r.score >= (req.threshold as number))
-        : fused
-
       const searchResults: SearchResult[] = []
-      for (const r of results.slice(0, req.topK || 5)) {
+      for (const r of fused.slice(0, topK)) {
         const chunk = await db.kbChunks.findById(r.chunkId)
         if (!chunk) continue
         const doc = await db.kbDocuments.findById(chunk.documentId)
@@ -926,7 +941,7 @@ export class KnowledgeBaseService {
           documentId: doc.id,
           documentName: doc.name,
           content: chunk.content,
-          score: Number(r.score.toFixed(4))
+          score: Number(r.raw.toFixed(4))
         })
       }
 
@@ -961,6 +976,17 @@ export class KnowledgeBaseService {
     ])
     if (totalChunks === 0 || avgLen === 0) return new Map()
 
+    // M3：长度归一需要候选 chunk 的真实文档长度（倒排索引不存 chunk 长度，
+    // 从 kb_chunks 现取——候选集是命中的少量 chunk，代价可控）
+    const candidateIds = new Set<string>()
+    for (const items of postings.values()) for (const item of items) candidateIds.add(item.chunkId)
+    const docLen = new Map<string, number>()
+    for (const chunkId of candidateIds) {
+      const chunk = await db.kbChunks?.findById(chunkId)
+      // 长度用分词口径（与建索引的 avgLen 同口径：索引项频次和）——取 content 长度做近似
+      if (chunk) docLen.set(chunkId, Math.max(1, tokenizeForIndex(chunk.content).length))
+    }
+
     const scores = new Map<string, number>()
     for (const [term, items] of postings) {
       const df = dfMap.get(term) ?? 0
@@ -968,8 +994,9 @@ export class KnowledgeBaseService {
       const idf = Math.log(1 + (totalChunks - df + 0.5) / (df + 0.5))
       for (const item of items) {
         const tf = item.termFrequency
-        // 长度近似：该 chunk 的索引项频次和（倒排索引不存 chunk 长度，用项频和做长度代理）
-        const norm = tf * (BM25_K1 + 1) / (tf + BM25_K1 * (1 - BM25_B + BM25_B * tf / avgLen))
+        const len = docLen.get(item.chunkId) ?? avgLen
+        // BM25 tf 饱和 + 文档长度归一（标准公式：tf 在分子，docLen 只进分母衰减项）
+        const norm = tf * (BM25_K1 + 1) / (tf + BM25_K1 * (1 - BM25_B + BM25_B * len / avgLen))
         scores.set(item.chunkId, (scores.get(item.chunkId) ?? 0) + idf * norm)
       }
     }
@@ -1018,15 +1045,26 @@ export class KnowledgeBaseService {
           url = `${provider.baseUrl || 'https://api.jina.ai/v1'}/rerank`
       }
 
+      // 请求体按提供商形态分叉：Jina/Cohere 兼容扁平 {model,query,documents,top_n}；
+      // bailian/dashscope Text Rerank 要求嵌套 {model, input:{query,documents}, parameters:{top_n}}
+      const isBailian = provider.templateId === 'bailian' || provider.templateId === 'dashscope'
+      const body = isBailian
+        ? {
+            model: cfg.modelId || 'gte-rerank-v2',
+            input: { query, documents: results.map(r => r.content) },
+            parameters: { top_n: results.length, return_documents: false },
+          }
+        : {
+            model: cfg.modelId || 'gte-rerank-v2',
+            query,
+            documents: results.map(r => r.content),
+            top_n: results.length,
+          }
+
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: cfg.modelId || 'gte-rerank',
-          query,
-          documents: results.map(r => r.content),
-          top_n: results.length,
-        }),
+        body: JSON.stringify(body),
         ...(signal ? { signal } : {}),
       })
       if (!res.ok) {
@@ -1136,38 +1174,20 @@ export class KnowledgeBaseService {
   // ==================== 其他 ====================
 
   async getEmbeddingModels(): Promise<{ success: boolean; data?: EmbeddingModel[]; error?: string }> {
-    try {
-      const db = getCoreDatabaseManager()
-      if (!db.providerConfigs) return { success: false, error: '数据库未初始化' }
-
-      const configs = await db.providerConfigs.getEnabled()
-      const models: EmbeddingModel[] = []
-
-      for (const cfg of configs) {
-        if (!cfg.models) continue
-        for (const m of cfg.models) {
-          if (m.type === 'embedding') {
-            models.push({
-              id: m.id,
-              name: `${cfg.name} - ${m.name}`,
-              provider: 'cloud',
-              dimension: m.contextWindow || 1536,
-              maxTokens: m.maxOutputTokens || 8192,
-              providerConfigId: cfg.id,
-              providerTemplateId: cfg.templateId
-            })
-          }
-        }
-      }
-
-      return { success: true, data: models }
-    } catch (e: any) {
-      return { success: false, error: e.message }
-    }
+    return this.listModelsByType('embedding', 1536, 8192)
   }
 
-  /** D2：列出可选 rerank 模型（rerank 类型的已启用提供商模型） */
+  /** D2：列出可选 rerank 模型（复用 listModelsByType——维度/token 上限对 rerank 无意义，置 0） */
   async getRerankModels(): Promise<{ success: boolean; data?: EmbeddingModel[]; error?: string }> {
+    return this.listModelsByType('rerank', 0, 0)
+  }
+
+  /** 按模型类型列出已启用提供商的模型（embedding/rerank 共用；严禁复制粘贴两份） */
+  private async listModelsByType(
+    type: string,
+    defaultDimension: number,
+    defaultMaxTokens: number
+  ): Promise<{ success: boolean; data?: EmbeddingModel[]; error?: string }> {
     try {
       const db = getCoreDatabaseManager()
       if (!db.providerConfigs) return { success: false, error: '数据库未初始化' }
@@ -1176,13 +1196,13 @@ export class KnowledgeBaseService {
       for (const cfg of configs) {
         if (!cfg.models) continue
         for (const m of cfg.models) {
-          if (m.type === 'rerank') {
+          if (m.type === type) {
             models.push({
               id: m.id,
               name: `${cfg.name} - ${m.name}`,
               provider: 'cloud',
-              dimension: m.contextWindow || 0,
-              maxTokens: m.maxOutputTokens || 0,
+              dimension: m.contextWindow || defaultDimension,
+              maxTokens: m.maxOutputTokens || defaultMaxTokens,
               providerConfigId: cfg.id,
               providerTemplateId: cfg.templateId,
             })
@@ -1379,7 +1399,7 @@ export class KnowledgeBaseService {
 
   /** QA 对的向量 chunkId 命名空间：qa:<pairId>:<variantIndex>（question=0，相似问题 1..n） */
   private static qaVectorChunkId(pairId: string, variantIndex: number): string {
-    return `qa:${pairId}:${variantIndex}`
+    return `${QA_CHUNK_ID_PREFIX}${pairId}:${variantIndex}`
   }
 
   private qaVariantCount(pair: { similarQuestions: string[] }): number {
@@ -1432,7 +1452,14 @@ export class KnowledgeBaseService {
       const similar = (input.similarQuestions ?? []).map(x => x.trim()).filter(Boolean)
 
       const pair = await db.kbQaPairs.create({ knowledgeBaseId, question, answer, similarQuestions: similar })
-      const added = await this.embedQaPair(kb, pair.id, question, similar)
+      let added: number
+      try {
+        added = await this.embedQaPair(kb, pair.id, question, similar)
+      } catch (e) {
+        // M1：向量化失败回滚行（不留"有行无向量"的孤儿——检索永不命中却在 UI 显示）
+        await db.kbQaPairs.delete(pair.id).catch(() => {})
+        throw e
+      }
       await db.knowledgeBases.updateStats(knowledgeBaseId, {
         documentCount: kb.documentCount,
         vectorCount: (kb.vectorCount ?? 0) + added,

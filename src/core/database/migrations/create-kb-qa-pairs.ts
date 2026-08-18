@@ -27,8 +27,8 @@ export async function createKbQaPairs(ds: DataSource): Promise<void> {
         question            text NOT NULL,
         answer              text NOT NULL,
         similar_questions   text,
-        created_at          datetime,
-        updated_at          datetime
+        created_at          timestamp,
+        updated_at          timestamp
       )
     `)
   } else {

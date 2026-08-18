@@ -52,7 +52,10 @@ const oasToolNode: WorkflowNodeHandler = {
     for (const p of listParameters(String(cfg.oasSpec), cfg.operationId)) {
       if (!p.required) continue
       const provided = (cfg.params ?? []).find(x => x.key === p.name)
-      if (!provided || provided.value === undefined || provided.value === null || String(provided.value).trim() === '') {
+      const raw = provided?.value
+      // F19：模板值（运行时才解析）跳过必填校验——设计期必填误报会逼用户填占位符
+      if (typeof raw === 'string' && raw.includes('{{')) continue
+      if (raw === undefined || raw === null || String(raw).trim() === '') {
         errors.push(`缺少必填参数：${p.name}（${p.in}）`)
       }
     }
