@@ -1,0 +1,82 @@
+/**
+ * 文档工具层（底层能力沉淀，2026-08-19 架构指示）
+ * @module core/services/document-tools
+ * @description 生成图片（长图）/ PDF / Word / HTML 是系统级文档输出能力：
+ *              - 接口与模板渲染放 core（双端共用的纯逻辑）
+ *              - 页面渲染（BrowserWindow printToPDF / capturePage）是平台能力，
+ *                由各端注入 IHtmlRenderer 实现（Electron 隐藏窗口；Web V1 降级
+ *                返回 HTML 由前端打印）
+ *              - 消费方：工作流 report / report-image 节点、对话导出、日记导出、
+ *                未来 harness 工具注册——同一套实现，严禁各建一套
+ */
+
+import { markdownToDocx } from '@core/utils/markdown-to-docx'
+import type { DocumentTemplate } from './templates'
+import { renderTemplateHtml, DOCUMENT_TEMPLATES } from './templates'
+
+/** HTML→二进制产物的平台渲染器（Electron 注入；Web 端可缺省降级） */
+export interface IHtmlRenderer {
+  /** HTML → PDF Buffer（A4 分页排版） */
+  htmlToPdf(html: string, opts?: { width?: number }): Promise<Buffer>
+  /** HTML → PNG 长图 Buffer（按内容高度整页截图，不分页） */
+  htmlToImage(html: string, opts?: { width?: number }): Promise<Buffer>
+}
+
+export interface RenderDocumentInput {
+  /** markdown 正文（模板负责转 HTML 与排版） */
+  markdown: string
+  /** 排版模板（决定字体/配色/页眉页脚）；缺省 generic */
+  template?: DocumentTemplate
+  /** 文档标题（页眉/文件名用） */
+  title?: string
+}
+
+export interface RenderedDocument {
+  /** 产物 Buffer（对应 format） */
+  buffer: Buffer
+  /** 完整排版 HTML（前端打印兜底 / 预览复用） */
+  html: string
+}
+
+export type DocumentOutputFormat = 'image' | 'pdf' | 'docx' | 'html'
+
+/**
+ * 文档工具服务：markdown/HTML → 排版产物。
+ * docx/html 为纯 core 能力；image/pdf 依赖注入的平台渲染器。
+ */
+export class DocumentToolsService {
+  constructor(private readonly renderer: IHtmlRenderer | null) {}
+
+  /** 平台渲染器是否可用（Web 端未注入时 image/pdf 走 HTML 降级） */
+  canRenderBinary(): boolean {
+    return this.renderer !== null
+  }
+
+  /** markdown → 完整排版 HTML（双端纯函数；前端预览/打印兜底共用） */
+  async renderHtml(input: RenderDocumentInput): Promise<string> {
+    return await renderTemplateHtml(input.markdown, {
+      template: input.template ?? DOCUMENT_TEMPLATES.generic,
+      title: input.title,
+    })
+  }
+
+  /** markdown → PNG 长图（无平台渲染器时降级返回 HTML，格式标 html） */
+  async renderImage(input: RenderDocumentInput & { width?: number }): Promise<RenderedDocument & { format: DocumentOutputFormat }> {
+    const html = await this.renderHtml(input)
+    if (!this.renderer) return { buffer: Buffer.from(html, 'utf-8'), html, format: 'html' }
+    return { buffer: await this.renderer.htmlToImage(html, { width: input.width }), html, format: 'image' }
+  }
+
+  /** markdown → PDF（无平台渲染器时降级返回 HTML） */
+  async renderPdf(input: RenderDocumentInput & { width?: number }): Promise<RenderedDocument & { format: DocumentOutputFormat }> {
+    const html = await this.renderHtml(input)
+    if (!this.renderer) return { buffer: Buffer.from(html, 'utf-8'), html, format: 'html' }
+    return { buffer: await this.renderer.htmlToPdf(html, { width: input.width }), html, format: 'pdf' }
+  }
+
+  /** markdown → docx（core 纯能力，双端一致） */
+  async renderDocx(input: RenderDocumentInput): Promise<RenderedDocument & { format: DocumentOutputFormat }> {
+    const buffer = await markdownToDocx(input.markdown, { title: input.title })
+    return { buffer, html: await this.renderHtml(input), format: 'docx' }
+  }
+}
