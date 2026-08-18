@@ -46,6 +46,8 @@ export interface StartRunInput {
   triggerType: WorkflowTriggerType
   triggerInfo?: Record<string, unknown>
   inputs?: Record<string, unknown>
+  /** C3 一次性配置覆盖（REST invoke 实验参数；透传引擎，不落定义） */
+  configOverrides?: Record<string, Record<string, unknown>>
 }
 
 export class WorkflowRunService {
@@ -123,7 +125,7 @@ export class WorkflowRunService {
       status: WORKFLOW_RUN_STATUSES.pending,
       timeoutAt: new Date(Date.now() + (def.settings?.maxDurationMs ?? WORKFLOW_DEFAULTS.maxDurationMs)),
     })
-    await this.launch(run.id, run.userId ?? LOCAL_DEFAULT_USER_ID, input.definitionId, graph, this.effectiveSettings(def.settings), input.inputs)
+    await this.launch(run.id, run.userId ?? LOCAL_DEFAULT_USER_ID, input.definitionId, graph, this.effectiveSettings(def.settings), input.inputs ?? {}, undefined, input.configOverrides)
     return (await this.deps.runs.getById(run.id)) ?? run
   }
 
@@ -135,7 +137,8 @@ export class WorkflowRunService {
     graph: WorkflowGraph,
     settings: import('@shared/types/workflow.types').WorkflowExecutionSettings | null,
     startInputs: Record<string, unknown> | null,
-    resumedCheckpoints?: ExecuteRunInput['resumedCheckpoints']
+    resumedCheckpoints?: ExecuteRunInput['resumedCheckpoints'],
+    configOverrides?: Record<string, Record<string, unknown>>
   ): Promise<void> {
     const execInput: ExecuteRunInput = {
       runId,
@@ -145,6 +148,7 @@ export class WorkflowRunService {
       startInputs: startInputs ?? {},
       settings,
       resumedCheckpoints,
+      configOverrides,
     }
     if (this.deps.engine.activeRunningCount >= this.maxConcurrentRuns) {
       this.queue.push({ runId, userId, execInput })

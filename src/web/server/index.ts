@@ -32,6 +32,8 @@ import assetsRouter from './api/assets-router'
 import uploadRouter from './api/upload-router'
 // spec 2026-05-09 ep-redesign §3.2 D4 · Agent / Skill HTTP API
 import agentsRouter from '../../agents/api/router'
+// C3 工作流 REST API（invoke/stop/SSE）
+import workflowApiRouter from './api/workflow-api-router'
 import { attachWebSocketServer } from './ws/ws-server'
 
 import { WebPathProvider } from './platform/web-path.provider'
@@ -168,6 +170,8 @@ async function bootstrap(): Promise<void> {
   app.use('/api/upload', uploadRouter)
   // spec 2026-05-09 ep-redesign §3.2 D4 · Agent Skill HTTP API
   app.use('/api/agents', agentsRouter)
+  // C3 spec v2 §6 · 工作流 REST API
+  app.use('/api/workflow', workflowApiRouter())
 
   // 顺序关键：vite 构建产物（/assets/index-*.js 等哈希命名 chunk）必须先于
   // /assets 用户文件路由匹配——否则前端入口 JS 被 assetsRouter 401 拦截，

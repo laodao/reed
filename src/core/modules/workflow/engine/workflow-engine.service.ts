@@ -64,6 +64,12 @@ export interface ExecuteRunInput {
   startInputs: Record<string, unknown>
   settings?: import('@shared/types/workflow.types').WorkflowExecutionSettings | null
   /**
+   * C3 一次性配置覆盖：{ [nodeId]: { [configKey]: value } }。
+   * 在 launchNode 解析模板前按顶层 key 浅合并——override 值本身支持模板引用。
+   * 仅影响本次运行，不修改定义图（REST invoke 实验参数；对齐 Bisheng override）。
+   */
+  configOverrides?: Record<string, Record<string, unknown>>
+  /**
    * 续跑装配数据（resumeRun 用）：源运行中 succeeded 且有输出的节点行。
    * 引擎按 (nodeId, iterationIndex=0) 重建根作用域变量与已激活边。
    */
@@ -831,7 +837,10 @@ export class WorkflowEngineService {
   // ==================== 节点启动与执行 ====================
 
   private async launchNode(exec: RunExecution, scope: ScopeState, node: WorkflowNode): Promise<void> {
-    const resolvedConfig = resolveConfigDeep(node.config, t =>
+    // C3 override：模板解析前浅合并一次性覆盖（不修改定义图；值可含模板）
+    const overrides = exec.input.configOverrides?.[node.id]
+    const rawConfig = overrides && Object.keys(overrides).length > 0 ? { ...node.config, ...overrides } : node.config
+    const resolvedConfig = resolveConfigDeep(rawConfig, t =>
       exec.resolver.resolve(t, this.localContextFor(exec, scope))
     )
 

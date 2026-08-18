@@ -59,10 +59,36 @@ export class WebSocketEventEmitter implements IEventEmitter {
     }
   }
 
+  // ---- 服务端事件 tap（本进程消费者：REST SSE 等） ----
+
+  private taps = new Set<(channel: string, data: unknown, userId: string | null) => void>()
+
+  /**
+   * 注册服务端事件监听（本进程内）：每次 emit 都回调（含无 WS 客户端时），
+   * 回调携带 emit 时刻的 ALS userId（供消费者做租户路由）。
+   * 返回注销函数。回调抛错不影响其它 tap / WS 推送。
+   */
+  tapEvents(cb: (channel: string, data: unknown, userId: string | null) => void): () => void {
+    this.taps.add(cb)
+    return () => {
+      this.taps.delete(cb)
+    }
+  }
+
   // ---- IEventEmitter ----
 
   emit(channel: string, data: unknown): void {
     const uid = getCurrentUserId()
+    // 服务端 tap 先行（不依赖 WS 客户端在线与否）
+    if (this.taps.size > 0) {
+      for (const tap of this.taps) {
+        try {
+          tap(channel, data, uid)
+        } catch {
+          // 单个 tap 异常不影响其它消费者
+        }
+      }
+    }
     if (!uid) return // 无用户上下文时不广播（防止串数据）
     const targets = this.clientsByUser.get(uid)
     if (!targets || targets.size === 0) return
