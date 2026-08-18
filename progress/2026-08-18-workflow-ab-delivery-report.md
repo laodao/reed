@@ -68,3 +68,32 @@ maxNodeRuns 计数语义实证；试运行抽屉前后端接线一致；架构�
 ## 待续
 
 C2 对话集成 → C3 REST API → C4 临时知识库 → C5 OAS → D1 QA 知识库 → D2 rerank → D3 权重
+
+---
+
+# 增量：C3 REST API + override + 免登录分享页（2026-08-18，2 个提交）
+
+## C3a 引擎 override + REST（invoke/stop/SSE）
+
+- `ExecuteRunInput.configOverrides`：launchNode 模板解析**前**浅合并（override 值支持模板引用），不修改定义图
+- `POST /api/workflow/invoke/:definitionId`（JWT）：inputs + override 透传，triggerInfo.source=api
+- `POST /api/workflow/run/:runId/stop`：租户校验（他人 404 不泄露存在性）
+- `GET /api/workflow/run/:runId/events`：SSE——web-event-emitter 新增服务端 `tapEvents`（不依赖 WS 在线），
+  ALS userId + runId 双重过滤；连接先推 snapshot（晚订阅不丢终态）；终态推 done 关流；25s 心跳
+- 测试 11 个：override 生效/零回归/模板、invoke 透传/401/400、stop 租户、SSE 过滤/终态关流/快照
+
+## C3b 分享令牌 + 免登录独立页
+
+- `workflow_definitions.share_token` 列 + 唯一索引（双语种幂等迁移，双端注册）；256bit hex 令牌不可枚举
+- 服务层 enableShare（仅已发布；幂等）/ disableShare（链接立即失效）/ getByShareToken（形态守卫）
+- Guest REST（免登录）：GET /share/:token（元信息+输入 schema）、POST invoke（**以定义所有者身份**运行，
+  禁 override）、GET SSE（token↔run 配对校验 + 快照脱敏不回传 userId）
+- IPC：wf:enable-share / wf:disable-share 三处接线（handler/preload/channel-map）
+- 前端：编辑器"分享"按钮（复制链接/停止分享）；`/workflow-run/:token` 免登录页（RunInputForm 复用 +
+  EventSource 实时节点状态 + 终态快照取结果）；main-web 访客路由白名单跳过登录门
+- 顺带修复：B6 模板导入 `@renderer` 别名错误（构建阻断级）
+- 测试：分享服务 5 个 + 路由 share 组 6 个，合计 152 全绿；electron-vite build 通过
+
+## 待续
+
+C4 临时知识库 → C5 OAS → D1 QA → D2 rerank → D3 权重 → C2 对话集成（用户要求最后做）
