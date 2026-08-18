@@ -97,3 +97,30 @@ C2 对话集成 → C3 REST API → C4 临时知识库 → C5 OAS → D1 QA 知�
 ## 待续
 
 C4 临时知识库 → C5 OAS → D1 QA → D2 rerank → D3 权重 → C2 对话集成（用户要求最后做）
+
+---
+
+# 增量：C4 临时知识库 + C5 OAS 自定义接口（2026-08-18，2 个提交）
+
+## C4 临时知识库（spec v2 §4）
+
+- 前置：`WorkflowNodeContext.triggerInfo` 暴露（ExecuteRunInput → buildContext；续跑继承源运行 triggerInfo 并加 resumedFrom）
+- `dialog-file-retriever`（core）：collectDialogFileTexts（扫对话 document 附件 → extract-text 现场解析，去重/单文件降级）+
+  retrieveFromDialogFiles（800/100 分块 + CJK 双字滑窗 TF 打分，score=occ/(occ+1) 与余弦同量纲）
+- kb-retrieve / kb-qa：`includeDialogFiles` 开关（默认关，向后兼容）→ 命中带 `source:'dialog-file'` 合并输出/context/sources；
+  无 dialogId 警告降级
+- 测试 10 个（收集/去重/降级/分词/打分/topK/入口降级/目录契约/triggerInfo 透传）
+
+## C5 OAS 自定义接口（spec v2 §5）
+
+- `@shared/utils/openapi-parser`（纯函数双端共用）：Swagger 2.0（host/basePath）+ OpenAPI 3（servers）；
+  listOperations / listParameters / buildRequest（path 替换、query 拼接、header 并入、未声明参数进 JSON body、$ref 拒绝）
+- `http-fetch.ts` 抽出共享执行（超时封顶/取消合并/统一输出形状），http-request 改用（去重）
+- `oas-tool` handler：校验（spec 合法/operation 存在/必填参数）→ buildRequest → executeHttpFetch；附加 headers（鉴权头）
+- 表单：`oas-operations`（本地解析接口下拉）+ `oas-params`（「按接口定义生成」参数行 + 必填提示）
+- 测试 10 个（解析合法/非法/组装 GET/POST/Swagger2/覆盖/$ref/handler 校验/执行 mock fetch/目录表单契约）
+- 组件总数 27（+oas-tool）；173 全绿；electron-vite build 通过
+
+## 待续
+
+D1 QA 知识库 → D2 rerank → D3 权重 → C2 对话集成（最后）
