@@ -67,6 +67,7 @@ const kbQaNode: WorkflowNodeHandler = {
       temperature?: number
       includeDialogFiles?: boolean
       useRerank?: boolean
+      vectorWeight?: number
     }
     // 0. D1 QA 直出路径：命中标准问答对 → 答案直出（不过 LLM）；未命中 → 走 RAG
     //    （searchQa 内部对无 QA 对的知识库快速返回，无额外嵌入开销）
@@ -98,6 +99,7 @@ const kbQaNode: WorkflowNodeHandler = {
       topK: cfg.topK,
       threshold: cfg.threshold,
       useRerank: cfg.useRerank,
+      vectorWeight: cfg.vectorWeight,
       signal: ctx.signal,
     })
     if (!searchResp.success) {

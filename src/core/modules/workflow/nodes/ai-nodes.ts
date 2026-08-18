@@ -63,6 +63,7 @@ const kbRetrieveNode: WorkflowNodeHandler = {
       threshold?: number
       includeDialogFiles?: boolean
       useRerank?: boolean
+      vectorWeight?: number
     }
     if (ctx.signal.aborted) throw new Error('已取消')
     const service = new KnowledgeBaseService()
@@ -72,6 +73,7 @@ const kbRetrieveNode: WorkflowNodeHandler = {
       topK: cfg.topK,
       threshold: cfg.threshold,
       useRerank: cfg.useRerank,
+      vectorWeight: cfg.vectorWeight,
       signal: ctx.signal, // HTTP 级取消（透传到嵌入调用）
     })
     if (ctx.signal.aborted) throw new Error('已取消')

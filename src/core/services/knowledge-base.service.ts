@@ -42,6 +42,30 @@ const CHUNK_SIZE = 800
 const OVERLAP = 80
 const BATCH_SIZE = 10
 
+/** D3：索引分词停用词（buildIndex 与 BM25 检索共用——同一套词表才能对得上） */
+const INDEX_STOP_WORDS = new Set([
+  '的', '了', '和', '是', '就', '都', '而', '及', '与', '着',
+  '或', '一个', '没有', '我们', '你们', '他们', '它们', '这个', '那个',
+  '这些', '那些', '不是', '什么', '怎么', '如何', '为什么', '因为',
+  '所以', '但是', '如果', '虽然', '可以', '可能', '应该', '需要',
+  '会', '能', '要', '有', '在', '上', '下', '里', '外', '中',
+  '很', '太', '更', '最', '非常', '十分', '极其', '相当',
+])
+
+/** D3：索引分词（jieba cutForSearch 中文 + 英文词元，去停用词/单字）——建索引与查询同源 */
+function tokenizeForIndex(text: string): string[] {
+  const chineseText = text.replace(/[a-zA-Z0-9\s]+/g, ' ')
+  const chineseTerms = nodejieba.cutForSearch(chineseText)
+  const englishWords = text.toLowerCase().match(/[a-z]+/g) || []
+  return [...chineseTerms, ...englishWords]
+    .map(t => t.trim())
+    .filter(t => t.length >= 2 && !INDEX_STOP_WORDS.has(t))
+}
+
+/** BM25 参数（k1 词频饱和、b 长度归一；业界标准值） */
+const BM25_K1 = 1.2
+const BM25_B = 0.75
+
 // IPC 事件通道
 const KB_EVENTS = {
   DOCUMENT_PROGRESS: 'kb:document-progress',
@@ -820,16 +844,6 @@ export class KnowledgeBaseService {
     const db = getCoreDatabaseManager()
     if (!db.kbInvertedIndex) return
 
-    // 中文停用词列表
-    const stopWords = new Set([
-      '的', '了', '和', '是', '就', '都', '而', '及', '与', '着',
-      '或', '一个', '没有', '我们', '你们', '他们', '它们', '这个', '那个',
-      '这些', '那些', '不是', '什么', '怎么', '如何', '为什么', '因为',
-      '所以', '但是', '如果', '虽然', '可以', '可能', '应该', '需要',
-      '会', '能', '要', '有', '在', '上', '下', '里', '外', '中',
-      '很', '太', '更', '最', '非常', '十分', '极其', '相当'
-    ])
-
     const items: Array<{ term: string; chunkId: string; knowledgeBaseId: string; termFrequency: number }> = []
 
     for (const chunk of chunks) {
@@ -841,13 +855,7 @@ export class KnowledgeBaseService {
       const englishWords = chunk.content.toLowerCase().match(/[a-z]+/g) || []
 
       // 合并中英文词汇，过滤停用词和单字（中文单字除非是特定字否则过滤）
-      const allTerms = [...chineseTerms, ...englishWords]
-        .map(t => t.trim())
-        .filter(t => {
-          if (t.length < 2) return false // 过滤单字
-          if (stopWords.has(t)) return false // 过滤停用词
-          return true
-        })
+      const allTerms = tokenizeForIndex(chunk.content)
 
       const freq = new Map<string, number>()
       for (const t of allTerms) freq.set(t, (freq.get(t) || 0) + 1)
@@ -873,17 +881,41 @@ export class KnowledgeBaseService {
       if (!kb) return { success: false, error: '知识库不存在' }
 
       const config: EmbeddingConfig = kb.embeddingConfig ? JSON.parse(kb.embeddingConfig) : {}
-      const vectors = await this.getEmbeddingVectors([req.query], config, req.signal)
-      if (!vectors) return { success: false, error: '生成查询向量失败' }
+      // D3 混合检索权重：1（缺省）= 纯向量（旧行为）；0 = 纯关键词；中间值 = 加权融合
+      const vectorWeight = req.vectorWeight != null ? Math.min(1, Math.max(0, req.vectorWeight)) : 1
 
-      const rawResults = await db.kbVectors.searchSimilar(req.knowledgeBaseId, vectors[0], req.topK || 5)
+      // 向量召回（weight=0 时跳过嵌入调用省一次 API）
+      const vecScores = new Map<string, number>()
+      if (vectorWeight > 0) {
+        const vectors = await this.getEmbeddingVectors([req.query], config, req.signal)
+        if (!vectors) return { success: false, error: '生成查询向量失败' }
+        // 混合时多召回（融合需要候选并集）
+        const raw = await db.kbVectors.searchSimilar(req.knowledgeBaseId, vectors[0], vectorWeight < 1 ? (req.topK || 5) * 3 : (req.topK || 5))
+        for (const r of raw) vecScores.set(r.chunkId, r.score)
+      }
+
+      // 关键词召回（BM25；无倒排索引/无命中时降级空——纯向量路径不受影响）
+      const bm25 = vectorWeight < 1 ? await this.bm25Scores(req.knowledgeBaseId, req.query) : new Map<string, number>()
+
+      // 候选并集 → 融合打分（两路各自按最大值归一到 0-1 再加权，保证量纲可比）
+      const maxVec = Math.max(0, ...vecScores.values())
+      const maxBm = Math.max(0, ...bm25.values())
+      const candidates = new Set([...vecScores.keys(), ...bm25.keys()])
+      const fused: Array<{ chunkId: string; score: number }> = []
+      for (const chunkId of candidates) {
+        const v = maxVec > 0 ? (vecScores.get(chunkId) ?? 0) / maxVec : 0
+        const b = maxBm > 0 ? (bm25.get(chunkId) ?? 0) / maxBm : 0
+        fused.push({ chunkId, score: vectorWeight * v + (1 - vectorWeight) * b })
+      }
+      fused.sort((a, b) => b.score - a.score)
+
       // 相似度阈值过滤：低于阈值的结果剔除（工作流 kb-retrieve/kb-qa 的 threshold 参数在此生效）
       const results = req.threshold != null && req.threshold > 0
-        ? rawResults.filter(r => r.score >= (req.threshold as number))
-        : rawResults
+        ? fused.filter(r => r.score >= (req.threshold as number))
+        : fused
 
       const searchResults: SearchResult[] = []
-      for (const r of results) {
+      for (const r of results.slice(0, req.topK || 5)) {
         const chunk = await db.kbChunks.findById(r.chunkId)
         if (!chunk) continue
         const doc = await db.kbDocuments.findById(chunk.documentId)
@@ -894,7 +926,7 @@ export class KnowledgeBaseService {
           documentId: doc.id,
           documentName: doc.name,
           content: chunk.content,
-          score: r.score
+          score: Number(r.score.toFixed(4))
         })
       }
 
@@ -909,6 +941,39 @@ export class KnowledgeBaseService {
       console.error('[KB] 检索失败:', e)
       return { success: false, error: e.message }
     }
+  }
+
+  /**
+   * D3 BM25 关键词打分：返回 chunkId -> 分数（未归一）。
+   * 依赖倒排索引（文档入库时 buildIndex 写入）；索引缺失/无命中返回空 Map（调用方降级）。
+   */
+  private async bm25Scores(knowledgeBaseId: string, query: string): Promise<Map<string, number>> {
+    const db = getCoreDatabaseManager()
+    if (!db.kbInvertedIndex) return new Map()
+    const terms = [...new Set(tokenizeForIndex(query))]
+    if (terms.length === 0) return new Map()
+
+    const [postings, dfMap, totalChunks, avgLen] = await Promise.all([
+      db.kbInvertedIndex.findByTerms(knowledgeBaseId, terms),
+      db.kbInvertedIndex.getDocumentFrequencies(knowledgeBaseId),
+      db.kbInvertedIndex.getChunkCount(knowledgeBaseId),
+      db.kbInvertedIndex.getAverageChunkLength(knowledgeBaseId),
+    ])
+    if (totalChunks === 0 || avgLen === 0) return new Map()
+
+    const scores = new Map<string, number>()
+    for (const [term, items] of postings) {
+      const df = dfMap.get(term) ?? 0
+      if (df === 0) continue
+      const idf = Math.log(1 + (totalChunks - df + 0.5) / (df + 0.5))
+      for (const item of items) {
+        const tf = item.termFrequency
+        // 长度近似：该 chunk 的索引项频次和（倒排索引不存 chunk 长度，用项频和做长度代理）
+        const norm = tf * (BM25_K1 + 1) / (tf + BM25_K1 * (1 - BM25_B + BM25_B * tf / avgLen))
+        scores.set(item.chunkId, (scores.get(item.chunkId) ?? 0) + idf * norm)
+      }
+    }
+    return scores
   }
 
   // ==================== D2 rerank 重排序 ====================

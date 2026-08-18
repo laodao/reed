@@ -161,6 +161,7 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     { key: 'threshold', label: '相似度阈值', type: 'slider', min: 0, max: 1, step: 0.05, group: '参数' },
     { key: 'includeDialogFiles', label: '包含本对话上传的文件', type: 'switch', group: '参数', help: '把对话附件也纳入检索范围（仅从 AI 对话中触发时生效）' },
     { key: 'useRerank', label: '重排序（rerank）', type: 'switch', group: '参数', help: '知识库配置了 rerank 模型时对检索结果重排（默认开）' },
+    { key: 'vectorWeight', label: '向量/关键词权重', type: 'slider', min: 0, max: 1, step: 0.05, group: '参数', help: '1=纯向量语义检索（默认）；0=纯 BM25 关键词；中间值=混合加权' },
   ],
   'kb-ingest': [
     { key: 'knowledgeBaseId', label: '知识库', type: 'select-dynamic', source: 'knowledgeBases' },
@@ -274,6 +275,7 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     { key: 'resultMaxLength', label: '资料最大长度（字符）', type: 'number', group: '检索', help: '超限整条丢弃（默认 8000）' },
     { key: 'includeDialogFiles', label: '包含本对话上传的文件', type: 'switch', group: '检索', help: '把对话附件也纳入检索范围（仅从 AI 对话中触发时生效）' },
     { key: 'useRerank', label: '重排序（rerank）', type: 'switch', group: '检索', help: '知识库配置了 rerank 模型时对检索结果重排（默认开）' },
+    { key: 'vectorWeight', label: '向量/关键词权重', type: 'slider', min: 0, max: 1, step: 0.05, group: '检索', help: '1=纯向量语义检索（默认）；0=纯 BM25 关键词；中间值=混合加权' },
   ],
   'report': [
     T('title', '报告标题', { templateHint: true }),
