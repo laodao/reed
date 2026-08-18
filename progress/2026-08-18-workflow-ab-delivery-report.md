@@ -124,3 +124,43 @@ C4 临时知识库 → C5 OAS → D1 QA → D2 rerank → D3 权重 → C2 对�
 ## 待续
 
 D1 QA 知识库 → D2 rerank → D3 权重 → C2 对话集成（最后）
+
+---
+
+# 增量：D1/D2/D3 知识库模块批次（2026-08-18，3 个提交）
+
+## D1 QA 知识库（spec v2 §8）
+
+- `kb_qa_pairs` 表（双语种幂等迁移）+ KbQaPairRepository（双端数据库管理器接线）
+- 服务：addQaPair/updateQaPair/deleteQaPair/listQaPairs/searchQa/importQaPairs(xlsx)/exportQaPairs(xlsx base64)
+- 向量化：question+相似问题全部入 IVectorStore（chunkId 命名空间 `qa:<pairId>:<i>`）；
+  变更时确定性重建（按旧变体数枚举删除）；searchQa 按 pair 去重取最高分变体
+- kb-qa 节点双路径：先 QA 直出（阈值缺省 0.75 比 RAG 更严）→ 未命中走 RAG（Bisheng 双路径）
+- 前端：KnowledgeBase 页加 文档/QA tab 切换 + QA 表格 CRUD + xlsx 导入导出（saveBlobAs）
+- IPC：kb-qa:* 7 通道三处接线；删 KB 级联 QA 对
+
+## D2 rerank（spec v2 §9）
+
+- `knowledge_bases.rerank_config` 列（JSON {providerConfigId, modelId}；null=关）
+- search 后 applyRerank：兼容 Jina/Cohere `results:[{index,relevance_score}]` 与 bailian `output.results`
+  两种响应；失败降级原序不阻断；`useRerank:false` 强制关
+- getRerankModels + 编辑知识库对话框 rerank 模型下拉；kb-retrieve/kb-qa `useRerank` 开关（默认开）
+- 修复：C4 提交时 kb-retrieve 的对话附件合并被编辑器缓冲区回写丢失——本批补回
+
+## D3 混合检索权重（spec v2 §10）
+
+- 调研修正：vectorWeight 此前仅类型存在、从未实现——本批真实现
+- BM25 关键词路：复用入库时写的倒排索引（jieba 分词；停用词提取为 INDEX_STOP_WORDS 唯一源，
+  建索引与查询同源 tokenizeForIndex）；k1=1.2/b=0.75
+- 融合：候选并集，两路各自按最大值归一后 `w*vec + (1-w)*bm25`；w=0 跳过嵌入调用（省 API）；
+  索引缺失/无命中降级纯向量
+- kb-retrieve/kb-qa 表单 vectorWeight 滑杆（0=纯关键词~1=纯向量，默认 1 向后兼容）
+
+## 测试与验证
+
+- 新增 23 个测试（QA 8 + 双路径 3 + rerank 5 + 混合 5 + 此前批次增量），全量 247 全绿
+- electron-vite build 通过；tsc 新改动文件零错误
+
+## 待续
+
+C2 对话集成（最后一片）
