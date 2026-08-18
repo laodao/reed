@@ -243,7 +243,7 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
       { kind: 'fail', label: '失败' },
     ],
     requiredConfigKeys: ['knowledgeBaseId', 'query'],
-    defaultConfig: { knowledgeBaseId: '', query: '{{start.query}}', topK: 5, threshold: 0.5, includeDialogFiles: false },
+    defaultConfig: { knowledgeBaseId: '', query: '{{start.query}}', topK: 5, threshold: 0.5, includeDialogFiles: false, useRerank: true },
     outputSchema: [
       { key: 'results', type: 'json', desc: '[{ content, score, documentId, documentName }]' },
       { key: 'count', type: 'number', desc: '命中数量' },
@@ -511,7 +511,7 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
     cancellable: true,
     ports: [{ kind: 'normal', label: '出', max: 1 }, { kind: 'fail', label: '失败' }],
     requiredConfigKeys: ['knowledgeBaseId', 'question'],
-    defaultConfig: { knowledgeBaseId: '', question: '{{start.question}}', includeDialogFiles: false },
+    defaultConfig: { knowledgeBaseId: '', question: '{{start.question}}', includeDialogFiles: false, useRerank: true },
     outputSchema: [
       { key: 'answer', type: 'string', desc: '基于知识库的回答' },
       { key: 'sources', type: 'json', desc: '引用来源 [{documentName, score}]' },

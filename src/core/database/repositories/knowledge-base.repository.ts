@@ -31,6 +31,7 @@ export class KnowledgeBaseRepository extends BaseRepository<
       embeddingModel: e.embeddingModel,
       embeddingDimension: e.embeddingDimension,
       embeddingConfig: e.embeddingConfig || undefined,
+      rerankConfig: e.rerankConfig || undefined,
       documentCount: e.documentCount,
       vectorCount: e.vectorCount,
       totalSize: e.totalSize,
@@ -91,6 +92,10 @@ export class KnowledgeBaseRepository extends BaseRepository<
     }
     if (request.description !== undefined) {
       existing.description = request.description ?? null
+      changed = true
+    }
+    if (request.rerankConfig !== undefined) {
+      existing.rerankConfig = request.rerankConfig ?? null
       changed = true
     }
 

@@ -898,10 +898,92 @@ export class KnowledgeBaseService {
         })
       }
 
+      // D2 rerank：KB 配置了 rerank 且未被显式关闭 → 相关度重排（失败降级原序不阻断）
+      if (kb.rerankConfig && req.useRerank !== false && searchResults.length > 1) {
+        const reranked = await this.applyRerank(kb, req.query, searchResults, req.signal)
+        if (reranked) return { success: true, data: reranked }
+      }
+
       return { success: true, data: searchResults }
     } catch (e: any) {
       console.error('[KB] 检索失败:', e)
       return { success: false, error: e.message }
+    }
+  }
+
+  // ==================== D2 rerank 重排序 ====================
+
+  /** rerank 配置面（kb.rerankConfig JSON） */
+  private parseRerankConfig(kb: KnowledgeBase): { providerConfigId: string; modelId?: string } | null {
+    if (!kb.rerankConfig) return null
+    try {
+      const cfg = JSON.parse(kb.rerankConfig)
+      if (cfg && typeof cfg.providerConfigId === 'string' && cfg.providerConfigId) return cfg
+    } catch {
+      // 损坏配置降级为未启用
+    }
+    return null
+  }
+
+/** 对检索结果执行 rerank（公开入口：search 内联调用） */
+  private async applyRerank(
+    kb: KnowledgeBase,
+    query: string,
+    results: SearchResult[],
+    signal?: AbortSignal
+  ): Promise<SearchResult[] | null> {
+    const cfg = this.parseRerankConfig(kb)
+    if (!cfg || results.length < 2) return null
+    try {
+      const db = getCoreDatabaseManager()
+      const provider = await db.providerConfigs?.getById(cfg.providerConfigId)
+      if (!provider) throw new Error('rerank 提供商配置不存在')
+      const storage = getSecureStorage()
+      if (!storage.isInitialized()) await storage.initialize()
+      const apiKey = storage.decrypt(provider.apiKey || '')
+
+      // rerank 端点：主流（Jina/Cohere/Bailian 兼容）形态 POST {model, query, documents}
+      let url: string
+      switch (provider.templateId) {
+        case 'bailian':
+        case 'dashscope':
+          url = 'https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank'
+          break
+        default:
+          url = `${provider.baseUrl || 'https://api.jina.ai/v1'}/rerank`
+      }
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: cfg.modelId || 'gte-rerank',
+          query,
+          documents: results.map(r => r.content),
+          top_n: results.length,
+        }),
+        ...(signal ? { signal } : {}),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error?.message || err.message || 'rerank API 调用失败')
+      }
+      const data = await res.json()
+      // 兼容 results:[{index, relevance_score|score}] 与 bailian output.results:[{index, relevanceScore}]
+      const rows: Array<{ index: number; relevance_score?: number; score?: number; relevanceScore?: number }> =
+        data.results ?? data.output?.results ?? []
+      if (!Array.isArray(rows) || rows.length === 0) throw new Error('rerank 响应格式不识别')
+      return rows
+        .map(r => ({
+          result: results[r.index],
+          score: r.relevance_score ?? r.score ?? r.relevanceScore ?? 0,
+        }))
+        .filter(x => x.result)
+        .sort((a, b) => b.score - a.score)
+        .map(x => ({ ...x.result, score: x.score }))
+    } catch (e) {
+      console.error('[KB] rerank 失败（降级原序）:', e)
+      return null
     }
   }
 
@@ -1018,6 +1100,36 @@ export class KnowledgeBaseService {
       return { success: false, error: e.message }
     }
   }
+
+  /** D2：列出可选 rerank 模型（rerank 类型的已启用提供商模型） */
+  async getRerankModels(): Promise<{ success: boolean; data?: EmbeddingModel[]; error?: string }> {
+    try {
+      const db = getCoreDatabaseManager()
+      if (!db.providerConfigs) return { success: false, error: '数据库未初始化' }
+      const configs = await db.providerConfigs.getEnabled()
+      const models: EmbeddingModel[] = []
+      for (const cfg of configs) {
+        if (!cfg.models) continue
+        for (const m of cfg.models) {
+          if (m.type === 'rerank') {
+            models.push({
+              id: m.id,
+              name: `${cfg.name} - ${m.name}`,
+              provider: 'cloud',
+              dimension: m.contextWindow || 0,
+              maxTokens: m.maxOutputTokens || 0,
+              providerConfigId: cfg.id,
+              providerTemplateId: cfg.templateId,
+            })
+          }
+        }
+      }
+      return { success: true, data: models }
+    } catch (e: any) {
+      return { success: false, error: e.message }
+    }
+  }
+
 
   // selectFiles 已移到 IPC handler（dialog.showOpenDialog 是 Electron 平台特性）
 

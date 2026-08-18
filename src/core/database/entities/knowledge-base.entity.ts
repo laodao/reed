@@ -45,6 +45,10 @@ export class KnowledgeBaseEntity {
   @Column({ name: 'embedding_config', type: 'text', nullable: true })
   embeddingConfig!: string | null
 
+  /** D2 重排序配置 JSON：{ providerConfigId, modelId }；null = 未启用 rerank */
+  @Column({ name: 'rerank_config', type: 'text', nullable: true })
+  rerankConfig!: string | null
+
   @Column({ name: 'document_count', type: 'integer', default: 0 })
   documentCount!: number
 

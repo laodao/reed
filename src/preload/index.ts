@@ -1009,6 +1009,7 @@ const electronAPI = {
     }) => ipcRenderer.invoke('knowledge-base:search', request),
     // 获取可用的 Embedding 模型
     getEmbeddingModels: () => ipcRenderer.invoke('knowledge-base:get-embedding-models'),
+    getRerankModels: () => ipcRenderer.invoke('knowledge-base:get-rerank-models'),
     // 选择文件
     selectFiles: () => ipcRenderer.invoke('knowledge-base:select-files'),
     // 获取文件限制信息

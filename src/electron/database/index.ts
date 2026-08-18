@@ -646,6 +646,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-kb-qa-pairs'
     )
     await createKbQaPairs(this.dataSource)
+
+    // D2 rerank：knowledge_bases 加 rerank_config 列（幂等，双语种）
+    const { addKbRerankConfig } = await import(
+      '@core/database/migrations/add-kb-rerank-config'
+    )
+    await addKbRerankConfig(this.dataSource)
   }
 
   /**

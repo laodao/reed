@@ -44,6 +44,8 @@ export interface KnowledgeBase {
   embeddingDimension: number
   /** Embedding 配置（JSON） */
   embeddingConfig?: string
+  /** D2 重排序配置 JSON 字符串（{ providerConfigId, modelId }）；null/空 = 未启用 */
+  rerankConfig?: string | null
   /** 切分策略 */
   splitStrategy?: SplitStrategy
   /** 切分配置（JSON） */
@@ -84,6 +86,8 @@ export interface UpdateKnowledgeBaseRequest {
   name?: string
   /** 描述 */
   description?: string
+  /** D2 重排序配置 JSON（null = 关闭 rerank） */
+  rerankConfig?: string | null
 }
 
 /**
@@ -308,6 +312,8 @@ export interface SearchRequest {
   vectorWeight?: number
   /** 相似度阈值 */
   threshold?: number
+  /** D2 是否启用 rerank 重排（缺省跟随 KB 配置；false = 强制关闭） */
+  useRerank?: boolean
 }
 
 /**

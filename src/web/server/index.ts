@@ -352,6 +352,12 @@ async function initDatabase(): Promise<void> {
   )
   await createKbQaPairs(ds)
 
+  // D2 rerank：knowledge_bases 加 rerank_config 列（幂等，双语种）
+  const { addKbRerankConfig } = await import(
+      '@core/database/migrations/add-kb-rerank-config'
+    )
+  await addKbRerankConfig(ds)
+
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)
   console.log('[web-server] PostgreSQL 数据库初始化完成')

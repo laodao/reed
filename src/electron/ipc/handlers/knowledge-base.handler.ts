@@ -113,6 +113,7 @@ export function registerKnowledgeBaseHandlers(): void {
 
   // 获取可用的 Embedding 模型
   ipcBridge.handle('knowledge-base:get-embedding-models', handleGetEmbeddingModels)
+  ipcBridge.handle('knowledge-base:get-rerank-models', handleGetRerankModels)
 
   // ==================== 文件选择 ====================
 
@@ -427,4 +428,10 @@ async function handleExportQaXlsx(
 ): Promise<IpcResponse<{ base64: string; fileName: string }>> {
   const service = getKnowledgeBaseService()
   return await service.exportQaPairs(p.knowledgeBaseId)
+}
+
+/** D2：列出可选 rerank 模型 */
+async function handleGetRerankModels(_event: any): Promise<IpcResponse<unknown>> {
+  const service = getKnowledgeBaseService()
+  return await service.getRerankModels()
 }

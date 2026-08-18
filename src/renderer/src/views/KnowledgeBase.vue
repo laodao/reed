@@ -362,6 +362,14 @@
             placeholder="请输入知识库描述（可选）"
           />
         </el-form-item>
+        <el-form-item label="重排序模型">
+          <el-select v-model="editRerankValue" clearable placeholder="不重排（默认）" style="width: 100%"
+            @change="v => { editForm.rerankConfig = v ? JSON.stringify({ providerConfigId: v.split('::')[0], modelId: v.split('::')[1] }) : null }">
+            <el-option v-for="m in rerankModels" :key="m.providerConfigId + '::' + m.id"
+              :label="m.name" :value="m.providerConfigId + '::' + m.id" />
+          </el-select>
+          <div class="rerank-hint">检索后按相关度重排（需提供商含 rerank 类型模型）</div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showEditDialog = false">取消</el-button>
@@ -624,6 +632,25 @@ const {
   getEstimatedTime
 } = useKnowledgeBase()
 
+// ==================== D2 rerank 重排序 ====================
+const rerankModels = ref<Array<{ id: string; name: string; providerConfigId: string }>>([])
+const editRerankValue = ref('')
+
+async function loadRerankModels(): Promise<void> {
+  const resp = await window.electronAPI.knowledgeBase.getRerankModels()
+  if (resp.success) rerankModels.value = resp.data ?? []
+}
+
+/** rerankConfig JSON -> providerConfigId::modelId 选择值 */
+function rerankValueOf(raw: string): string {
+  try {
+    const cfg = JSON.parse(raw)
+    return cfg?.providerConfigId && cfg?.modelId ? `${cfg.providerConfigId}::${cfg.modelId}` : ''
+  } catch {
+    return ''
+  }
+}
+
 // ==================== D1 QA 问答对 ====================
 const activeDataTab = ref<'docs' | 'qa'>('docs')
 const qaPairs = ref<Array<{ id: string; question: string; answer: string; similarQuestions: string[] }>>([])
@@ -791,6 +818,9 @@ function handleKbAction(action: string, kb: KnowledgeBase): void {
       description: kb.description || ''
     }
     showEditDialog.value = true
+    // D2：回填 rerank 选择值
+    editRerankValue.value = kb.rerankConfig ? rerankValueOf(kb.rerankConfig) : ''
+    loadRerankModels()
   } else if (action === 'delete') {
     ElMessageBox.confirm(
       `确定要删除知识库 "${kb.name}" 吗？删除后将无法恢复，所有文档和向量数据都将被删除。`,
@@ -1446,4 +1476,5 @@ async function handleAddWebpage(): Promise<void> {
 .webpage-tips p {
   margin: 4px 0;
 }
+.rerank-hint { font-size: 12px; color: var(--el-text-color-secondary); line-height: 1.4; }
 </style>

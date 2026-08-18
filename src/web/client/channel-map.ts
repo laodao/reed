@@ -185,6 +185,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'knowledgeBase.getChunk': { channel: 'knowledge-base:get-chunk' },
   'knowledgeBase.search': { channel: 'knowledge-base:search' },
   'knowledgeBase.getEmbeddingModels': { channel: 'knowledge-base:get-embedding-models' },
+  'knowledgeBase.getRerankModels': { channel: 'knowledge-base:get-rerank-models' },
   'knowledgeBase.selectFiles': { channel: 'knowledge-base:select-files' },
   'knowledgeBase.getFileLimits': { channel: 'knowledge-base:get-file-limits' },
   'portrait.createProject': { channel: 'portrait:create-project' },
