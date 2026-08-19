@@ -115,6 +115,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '工作流运行', guest: true },
   },
   {
+    path: '/workflow/runs/:definitionId',
+    name: 'WorkflowRunsHistory',
+    component: () => import('@/views/workflow/WorkflowRunsHistory.vue'),
+    meta: { title: '运行历史' },
+  },
+  {
     path: '/workflow/run/:runId',
     name: 'WorkflowRunDetail',
     component: () => import('@/views/workflow/WorkflowRunDetail.vue'),
