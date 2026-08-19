@@ -172,7 +172,8 @@ const pathTitleMap: Record<string, string> = {
 watch(
   () => route.path,
   (path) => {
-    const title = pathTitleMap[path] || '未命名'
+    // 优先路由 meta.title（动态路由如 /workflow/editor/:id 精确匹配 map 永远落空——曾致 tab 全部"未命名"）
+    const title = (route.meta?.title as string) || pathTitleMap[path] || '未命名'
     tabsStore.addTab({
       path,
       name: title,
