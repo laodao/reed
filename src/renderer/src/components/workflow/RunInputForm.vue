@@ -93,7 +93,7 @@ function setFileUploadContext(ctx: { runId: string; nodeId: string }): void {
   fileUploadContext.runId = ctx.runId
   fileUploadContext.nodeId = ctx.nodeId
 }
-defineExpose({ getValues, isValid, setFileUploadContext })
+
 /** 数字值（el-input-number 需要 number|null） */
 const numValues = reactive<Record<string, number | undefined>>({})
 
@@ -140,6 +140,7 @@ function getValues(): Record<string, unknown> {
   return out
 }
 
+defineExpose({ getValues, isValid, setFileUploadContext })
 </script>
 
 <style scoped>

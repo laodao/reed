@@ -59,8 +59,8 @@
       </el-table-column>
     </el-table>
     <!-- E1 form-collect 挂起表单 -->
-    <el-dialog v-model="formDialogVisible" :title="formRow?.payload?.formTitle || '请填写'" width="520px" :close-on-click-modal="false">
-      <RunInputForm ref="formInputRef" :inputs="formRow?.payload?.fields ?? []" @valid="v => formValid = v" />
+    <el-dialog v-model="formDialogVisible" :title="formRow?.input?.formTitle || '请填写'" width="520px" :close-on-click-modal="false">
+      <RunInputForm ref="formInputRef" :inputs="formRow?.input?.fields ?? []" @valid="v => formValid = v" />
       <template #footer>
         <el-button @click="cancelForm">取消流程</el-button>
         <el-button type="primary" :disabled="!formValid" :loading="formSubmitting" @click="submitForm">提交并继续</el-button>
@@ -94,7 +94,8 @@ const formValid = ref(false)
 const formSubmitting = ref(false)
 
 function isFormRow(row: any): boolean {
-  return row.status === 'waiting_review' && !!row.payload?.form
+  // form schema 在 node_run.input（已解析 config：formTitle/fields）；payload 只在引擎内存态
+  return row.status === 'waiting_review' && row.nodeType === 'form-collect'
 }
 function openForm(row: any): void {
   formRow.value = row
