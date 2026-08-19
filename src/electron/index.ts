@@ -309,8 +309,13 @@ function createWindow(): void {
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
-    return { action: 'deny' }
+    // 只把真实网页交给系统浏览器；about:blank（报告预览等本应用弹窗）放行——
+    // 否则 shell.openExternal('about:blank') 会让 Windows 弹"应用商店"选择器
+    if (/^https?:/i.test(details.url)) {
+      void shell.openExternal(details.url)
+      return { action: 'deny' }
+    }
+    return { action: 'allow' }
   })
 
   // 开发模式下加载开发服务器，生产模式下加载本地文件

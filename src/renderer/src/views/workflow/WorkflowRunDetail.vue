@@ -21,6 +21,9 @@
 
     <h4>节点执行记录</h4>
     <el-table :data="nodeRuns" size="small" empty-text="暂无执行记录">
+      <el-table-column label="#" width="56">
+        <template #default="{ $index }">{{ $index + 1 }}</template>
+      </el-table-column>
       <el-table-column prop="nodeName" label="节点" min-width="140" />
       <el-table-column label="迭代" width="60">
         <template #default="{ row }">{{ row.iterationIndex > 0 ? `#${row.iterationIndex}` : '—' }}</template>
@@ -46,7 +49,7 @@
           </template>
           <template v-else-if="isReportRow(row)">
             <el-button text type="primary" size="small" @click="previewReport(row)">预览</el-button>
-            <el-button text size="small" @click="printReport(row)">打印/PDF</el-button>
+            <el-button text size="small" :loading="exporting" @click="printReport(row)">导出PDF</el-button>
           </template>
           <el-button v-else text size="small" @click="showOutput(row)">输出</el-button>
         </template>
@@ -61,12 +64,14 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useWorkflowStore } from '@/stores/workflow'
+import { saveBlobAs } from '@/utils/file-saver'
 
 const route = useRoute()
 const router = useRouter()
 const store = useWorkflowStore()
 const run = ref<any>(null)
-const nodeRuns = ref<any[]>([])
+const nodeRuns = ref
+const exporting = ref(false)<any[]>([])
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 const runId = computed(() => route.params.runId as string)
@@ -164,11 +169,21 @@ async function renderMarkdown(md: string): Promise<string> {
 async function previewReport(row: any) {
   if (!(await openReportWindow(row))) ElMessage.error('弹窗被拦截，请允许弹窗后重试')
 }
+/** 导出 PDF：文档工具层排版（中文字体/表格/代码块），saveBlobAs 落盘 */
 async function printReport(row: any) {
-  const w = await openReportWindow(row)
-  if (!w) { ElMessage.error('弹窗被拦截'); return }
-  await new Promise(r => setTimeout(r, 400)) // 等渲染稳定再拉起打印
-  w.print()
+  exporting.value = true
+  try {
+    const resp = await api().reportToPdf({ markdown: row.output.markdown, title: row.output.title })
+    if (!resp.success) { ElMessage.error(resp.error ?? 'PDF 生成失败'); return }
+    const bin = atob(resp.data.base64)
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    const name = (row.output.title || '报告').replace(/[\/:*?"<>|]/g, '_')
+    const saved = await saveBlobAs(new Blob([bytes], { type: 'application/pdf' }), { defaultName: `${name}.pdf` })
+    if (saved.success) ElMessage.success('PDF 已保存')
+  } finally {
+    exporting.value = false
+  }
 }
 
 function escapeHtml(s: string) {

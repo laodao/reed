@@ -37,8 +37,16 @@
       </el-table-column>
       <el-table-column label="操作" width="120">
         <template #default="{ row }">
-          <el-button text type="primary" size="small" @click="router.push(`/workflow/run/${row.id}`)">详情</el-button>
-          <el-button text type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+          <el-tooltip content="详情" placement="top">
+            <el-button circle size="small" type="primary" plain @click="router.push(`/workflow/run/${row.id}`)">
+              <el-icon><View /></el-icon>
+            </el-button>
+          </el-tooltip>
+          <el-tooltip content="删除" placement="top">
+            <el-button circle size="small" type="danger" plain @click="handleDelete(row)">
+              <el-icon><Delete /></el-icon>
+            </el-button>
+          </el-tooltip>
         </template>
       </el-table-column>
     </el-table>
@@ -57,7 +65,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft } from '@element-plus/icons-vue'
+import { ArrowLeft, View, Delete } from '@element-plus/icons-vue'
 
 const STATUS_LABEL: Record<string, string> = {
   pending: '排队中', running: '运行中', waiting_review: '待审核', succeeded: '成功',

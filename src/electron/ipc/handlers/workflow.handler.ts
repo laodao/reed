@@ -84,6 +84,16 @@ export function registerWorkflowHandlers(): void {
     wrap(() => subsystem().definitionService.disableShare(p.id))
   )
 
+  // 报告导出 PDF（文档工具层：markdown → 排版 PDF，Electron 平台渲染器）
+  ipcBridge.handle('wf:report-to-pdf', (_e, p: { markdown: string; title?: string }) =>
+    wrap(async () => {
+      const { getDocumentTools } = await import('@core/services/document-tools/document-tools')
+      const rendered = await getDocumentTools().renderPdf({ markdown: p.markdown, title: p.title })
+      if (rendered.format !== 'pdf') throw new Error('当前环境不支持 PDF 渲染')
+      return { base64: rendered.buffer.toString('base64') }
+    })
+  )
+
   // ==================== 运行 ====================
   ipcBridge.handle(
     'wf:start-run',
