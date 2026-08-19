@@ -195,7 +195,23 @@ export abstract class BaseProvider {
     if (!baseUrl) {
       baseUrl = this.getDefaultBaseUrl()
     }
-    return `${baseUrl}${endpoint}`
+    return BaseProvider.joinUrl(baseUrl, endpoint)
+  }
+
+  /**
+   * baseUrl + endpoint 规整拼接（模型列表 404 的常见根因）：
+   * 用户 baseUrl 常已含版本段（如 vLLM/OneAPI 填 http://host:8000/v1），
+   * 模板 endpoint 又是 /v1/models → 拼出 /v1/v1/models 404。
+   * 版本段去重只作用于两侧都带 /vN 的情况；/v1beta 等其它前缀不受影响。
+   */
+  static joinUrl(baseUrl: string, endpoint: string): string {
+    const base = baseUrl.replace(/\/+$/, '')
+    const versionOverlap = /^\/(v\d+)\//.exec(endpoint)
+    if (versionOverlap && base.endsWith('/' + versionOverlap[1])) {
+      // 两侧同版本段：只保留 baseUrl 的一份
+      return base + endpoint.slice(versionOverlap[0].length - 1)
+    }
+    return base + endpoint
   }
 
   /**
