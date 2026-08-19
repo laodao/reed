@@ -23,13 +23,13 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     icon: '🟢',
     isOfficial: true,
     apiConfig: {
-      baseUrl: 'https://api.openai.com',
+      baseUrl: 'https://api.openai.com/v1',
       authType: 'bearer',
       authHeader: 'Authorization',
       authPrefix: 'Bearer ',
       requestFormat: 'openai',
-      chatEndpoint: '/v1/chat/completions',
-      modelsEndpoint: '/v1/models'
+      chatEndpoint: '/chat/completions',
+      modelsEndpoint: '/models'
     },
     supportedParams: {
       stream: true,
@@ -51,13 +51,13 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     icon: '🔵',
     isOfficial: true,
     apiConfig: {
-      baseUrl: 'https://api.deepseek.com',
+      baseUrl: 'https://api.deepseek.com/v1',
       authType: 'bearer',
       authHeader: 'Authorization',
       authPrefix: 'Bearer ',
       requestFormat: 'openai',
-      chatEndpoint: '/v1/chat/completions',
-      modelsEndpoint: '/v1/models'
+      chatEndpoint: '/chat/completions',
+      modelsEndpoint: '/models'
     },
     supportedParams: {
       stream: true,
@@ -299,8 +299,8 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
       authHeader: 'Authorization',
       authPrefix: 'Bearer ',
       requestFormat: 'openai',
-      chatEndpoint: '/v1/chat/completions',
-      modelsEndpoint: '/v1/models'
+      chatEndpoint: '/chat/completions',
+      modelsEndpoint: '/models'
     },
     supportedParams: {
       stream: true,
@@ -415,8 +415,8 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
       authHeader: 'Authorization',
       authPrefix: 'Bearer ',
       requestFormat: 'openai',
-      chatEndpoint: '/v1/chat/completions',
-      modelsEndpoint: '/v1/models'
+      chatEndpoint: '/chat/completions',
+      modelsEndpoint: '/models'
     },
     supportedParams: {
       stream: true,

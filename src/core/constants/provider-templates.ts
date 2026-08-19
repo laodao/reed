@@ -20,13 +20,13 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     icon: '🟢',
     isOfficial: true,
     apiConfig: {
-      baseUrl: 'https://api.openai.com',
+      baseUrl: 'https://api.openai.com/v1',
       authType: 'bearer',
       authHeader: 'Authorization',
       authPrefix: 'Bearer ',
       requestFormat: 'openai',
-      chatEndpoint: '/v1/chat/completions',
-      modelsEndpoint: '/v1/models'
+      chatEndpoint: '/chat/completions',
+      modelsEndpoint: '/models'
     },
     supportedParams: {
       stream: true,
@@ -47,13 +47,13 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     icon: '🔵',
     isOfficial: true,
     apiConfig: {
-      baseUrl: 'https://api.deepseek.com',
+      baseUrl: 'https://api.deepseek.com/v1',
       authType: 'bearer',
       authHeader: 'Authorization',
       authPrefix: 'Bearer ',
       requestFormat: 'openai',
-      chatEndpoint: '/v1/chat/completions',
-      modelsEndpoint: '/v1/models'
+      chatEndpoint: '/chat/completions',
+      modelsEndpoint: '/models'
     },
     supportedParams: {
       stream: true,
@@ -208,14 +208,14 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     icon: '✨',
     isOfficial: true,
     apiConfig: {
-      baseUrl: 'https://api.minimax.chat',
+      baseUrl: 'https://api.minimax.chat/v1',
       imageBaseUrl: 'https://api.minimax.chat/v1/images/generations',
       authType: 'bearer',
       authHeader: 'Authorization',
       authPrefix: 'Bearer ',
       requestFormat: 'openai',
-      chatEndpoint: '/v1/chat/completions',
-      modelsEndpoint: '/v1/models'
+      chatEndpoint: '/chat/completions',
+      modelsEndpoint: '/models'
     },
     supportedParams: {
       stream: true,
@@ -242,12 +242,12 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     icon: '🟤',
     isOfficial: true,
     apiConfig: {
-      baseUrl: 'https://api.anthropic.com',
+      baseUrl: 'https://api.anthropic.com/v1',
       authType: 'api-key',
       authHeader: 'x-api-key',
       authPrefix: '',
       requestFormat: 'anthropic',
-      chatEndpoint: '/v1/messages',
+      chatEndpoint: '/messages',
       defaultHeaders: {
         'anthropic-version': '2023-06-01'
       }
@@ -273,13 +273,13 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     icon: '🔷',
     isOfficial: true,
     apiConfig: {
-      baseUrl: 'https://generativelanguage.googleapis.com',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
       authType: 'query',
       authHeader: '',
       authPrefix: '',
       queryAuthKey: 'key',
       requestFormat: 'google',
-      chatEndpoint: '/v1beta/models/{model}:generateContent'
+      chatEndpoint: '/models/{model}:generateContent'
     },
     supportedParams: {
       stream: true,
@@ -307,8 +307,8 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
       authHeader: 'Authorization',
       authPrefix: 'Bearer ',
       requestFormat: 'openai',
-      chatEndpoint: '/v1/chat/completions',
-      modelsEndpoint: '/v1/models'
+      chatEndpoint: '/chat/completions',
+      modelsEndpoint: '/models'
     },
     supportedParams: {
       stream: true,

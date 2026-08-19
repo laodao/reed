@@ -131,6 +131,19 @@ async function handleGetConfig(
 /**
  * 处理创建配置请求
  */
+/**
+ * baseUrl 规范校验（标准化决策：版本段必须在 baseUrl，如 http://host:8000/v1）。
+ * 不带版本段的地址直接拒绝——避免静默拼错 URL 后以 404 等晦涩错误暴露，用户无所适从。
+ */
+function validateBaseUrl(baseUrl: string | undefined): string | null {
+  if (!baseUrl) return null // 留空则用模板默认值（模板 baseUrl 均已含版本段）
+  const trimmed = baseUrl.trim().replace(/\/+$/, '')
+  if (!/^https?:\/\/.+\/v\d+[a-z]*$/i.test(trimmed)) {
+    return `BaseURL 必须以版本段结尾（如 http://host:8000/v1、https://api.xx.com/v4）——当前：${baseUrl}`
+  }
+  return null
+}
+
 async function handleCreateConfig(
   _event: any,
   request: SaveProviderConfigRequest
@@ -146,6 +159,9 @@ async function handleCreateConfig(
     if (!template) {
       return { success: false, error: '模板不存在' }
     }
+
+    const baseUrlError = validateBaseUrl(request.baseUrl)
+    if (baseUrlError) return { success: false, error: baseUrlError }
 
     // 加密 API 密钥
     let encryptedApiKey: string | undefined
@@ -241,7 +257,11 @@ async function handleUpdateConfig(
 
     if (data.name !== undefined) updates.name = data.name
     if (data.shortId !== undefined) updates.shortId = data.shortId
-    if (data.baseUrl !== undefined) updates.baseUrl = data.baseUrl
+    if (data.baseUrl !== undefined) {
+      const baseUrlError = validateBaseUrl(data.baseUrl)
+      if (baseUrlError) return { success: false, error: baseUrlError }
+      updates.baseUrl = data.baseUrl
+    }
     if (data.imageBaseUrl !== undefined) updates.imageBaseUrl = data.imageBaseUrl
     if (data.videoBaseUrl !== undefined) updates.videoBaseUrl = data.videoBaseUrl
     if (data.audioBaseUrl !== undefined) updates.audioBaseUrl = data.audioBaseUrl
