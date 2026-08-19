@@ -70,8 +70,8 @@ const route = useRoute()
 const router = useRouter()
 const store = useWorkflowStore()
 const run = ref<any>(null)
-const nodeRuns = ref
-const exporting = ref(false)<any[]>([])
+const nodeRuns = ref<any[]>([])
+const exporting = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 const runId = computed(() => route.params.runId as string)
