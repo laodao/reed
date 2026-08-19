@@ -129,17 +129,45 @@ async function showOutput(row: any) {
 function isReportRow(row: any): boolean {
   return row.nodeType === 'report' && !!row.output?.markdown
 }
-function previewReport(row: any) {
+/** 打开带标题的报告窗口（修复：原实现无 <title> 导致窗口全部"未命名"） */
+async function openReportWindow(row: any): Promise<Window | null> {
   const w = window.open('', '_blank')
-  if (!w) { ElMessage.error('弹窗被拦截，请允许弹窗后重试'); return }
-  w.document.write(`<pre style="white-space:pre-wrap;font-family:inherit;padding:24px">${escapeHtml(row.output.markdown)}</pre>`)
+  if (!w) return null
+  const title = `${row.output?.title || row.nodeName || '报告'} - The Bot`
+  const markdown = row.output.markdown as string
+  w.document.write(`<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>${escapeHtml(title)}</title>
+<style>
+  body { font-family: 'Microsoft YaHei', sans-serif; max-width: 860px; margin: 0 auto; padding: 32px 24px; line-height: 1.8; color: #2c3e50; }
+  pre { background: #f6f8fa; padding: 14px; border-radius: 8px; overflow-x: auto; }
+  code { background: #f6f8fa; padding: 0.15em 0.4em; border-radius: 4px; }
+  table { border-collapse: collapse; } th, td { border: 1px solid #ddd; padding: 6px 12px; }
+  img { max-width: 100%; }
+  blockquote { border-left: 4px solid #ddd; margin: 12px 0; padding: 4px 16px; color: #666; }
+</style></head><body>
+${await renderMarkdown(markdown)}
+</body></html>`)
   w.document.close()
+  w.document.title = title
+  return w
 }
-function printReport(row: any) {
-  const w = window.open('', '_blank')
+
+/** markdown → HTML（报告预览/打印共用；marked 动态加载） */
+async function renderMarkdown(md: string): Promise<string> {
+  try {
+    const { marked } = await import('marked')
+    return await marked.marked(md, { gfm: true, breaks: true, async: true })
+  } catch {
+    return `<pre style="white-space:pre-wrap">${escapeHtml(md)}</pre>`
+  }
+}
+
+async function previewReport(row: any) {
+  if (!(await openReportWindow(row))) ElMessage.error('弹窗被拦截，请允许弹窗后重试')
+}
+async function printReport(row: any) {
+  const w = await openReportWindow(row)
   if (!w) { ElMessage.error('弹窗被拦截'); return }
-  w.document.write(`<pre style="white-space:pre-wrap;font-family:inherit;padding:24px">${escapeHtml(row.output.markdown)}</pre>`)
-  w.document.close()
+  await new Promise(r => setTimeout(r, 400)) // 等渲染稳定再拉起打印
   w.print()
 }
 
