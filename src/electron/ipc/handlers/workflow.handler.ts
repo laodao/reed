@@ -76,6 +76,30 @@ export function registerWorkflowHandlers(): void {
       })
   )
 
+  // 表单文件上传（E1 form-collect：落盘 workflow-uploads + 尽力解析文本）
+  ipcBridge.handle('wf:form-upload', (_e, p: { runId: string; nodeId: string; fileName: string; base64: string }) =>
+    wrap(async () => {
+      const { join } = await import('path')
+      const { mkdirSync, writeFileSync } = await import('fs')
+      const { getPathProvider } = await import('@core/interfaces/path.interface')
+      const { extractTextFromFile, inferFileType } = await import('@core/utils/extract-text')
+      const dir = join(getPathProvider().getDataPath(), 'workflow-uploads', p.runId)
+      mkdirSync(dir, { recursive: true })
+      const safeName = p.fileName.replace(/[\/:*?"<>|]/g, '_')
+      const filePath = join(dir, `${p.nodeId}_${Date.now().toString(36)}_${safeName}`)
+      writeFileSync(filePath, Buffer.from(p.base64, 'base64'))
+      // 尽力解析文本（pdf/docx/xlsx/txt...）；解析失败不影响上传（值仍有 path/name）
+      let text: string | undefined
+      try {
+        const type = inferFileType(p.fileName)
+        if (type) text = await extractTextFromFile(filePath, type)
+      } catch {
+        // 二进制/不支持类型：无文本
+      }
+      return { path: filePath, name: p.fileName, text }
+    })
+  )
+
   // ==================== 分享（C3 免登录独立页） ====================
   ipcBridge.handle('wf:enable-share', (_e, p: { id: string }) =>
     wrap(() => subsystem().definitionService.enableShare(p.id))

@@ -485,11 +485,20 @@ export class WorkflowEngineService {
     // P2：input 交互模式的输出字段天然可编辑（用户提交的文本就是产物）
     const interaction = (node.config as { interaction?: string }).interaction
     if (interaction === 'input') editableKeys.add('output_result')
+    // E1 form-collect：声明字段全部可编辑（用户提交的表单值就是产物），输出统一组装 { values }
+    const isFormCollect = node.type === WORKFLOW_NODE_TYPES['form-collect']
+    if (isFormCollect) {
+      for (const f of (node.config as { fields?: Array<{ key: string }> }).fields ?? []) {
+        editableKeys.add(f.key)
+      }
+    }
     const filteredEdits = review.editedValues
       ? Object.fromEntries(Object.entries(review.editedValues).filter(([k]) => editableKeys.has(k)))
       : undefined
     let output: Record<string, unknown>
-    if (isReject) {
+    if (isFormCollect) {
+      output = { values: { ...filteredEdits }, cancelled: isReject }
+    } else if (isReject) {
       output = { rejected: true, payload }
     } else if (filteredEdits && Object.keys(filteredEdits).length > 0) {
       output = { ...payload, ...filteredEdits }

@@ -13,10 +13,11 @@ import { AI_NODE_HANDLERS } from './ai-nodes'
 import { EXTRA_NODE_HANDLERS } from './extra-nodes'
 import { A2_NODE_HANDLERS } from './a2-nodes'
 import { OAS_NODE_HANDLERS } from './oas-nodes'
+import { INTERACTION_NODE_HANDLERS } from './interaction-nodes'
 
 /** 创建注册了全部 21 个内置节点的注册表 */
 export function createFullNodeRegistry(): WorkflowNodeRegistry {
-  return createNodeRegistry([...CONTROL_NODE_HANDLERS, ...TASK_NODE_HANDLERS, ...AI_NODE_HANDLERS, ...EXTRA_NODE_HANDLERS, ...A2_NODE_HANDLERS, ...OAS_NODE_HANDLERS])
+  return createNodeRegistry([...CONTROL_NODE_HANDLERS, ...TASK_NODE_HANDLERS, ...AI_NODE_HANDLERS, ...EXTRA_NODE_HANDLERS, ...A2_NODE_HANDLERS, ...OAS_NODE_HANDLERS, ...INTERACTION_NODE_HANDLERS])
 }
 
 /** 启动自检：目录与 handler 全量一致性（有问题说明代码与目录漂移，拒绝启动） */

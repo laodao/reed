@@ -78,6 +78,8 @@ export type WorkflowNodeType =
   | 'kb-qa'
   | 'report'
   | 'report-image'
+  | 'form-collect'
+  | 'message'
   | 'oas-tool'
 
 // ==================== 开始节点输入参数 ====================
@@ -88,7 +90,7 @@ export interface WorkflowStartInput {
   key: string
   /** 显示名 */
   label: string
-  type: 'string' | 'number' | 'boolean' | 'json' | 'select'
+  type: 'string' | 'number' | 'boolean' | 'json' | 'select' | 'file'
   /** type='select' 时的选项 */
   options?: Array<{ label: string; value: string | number }>
   /** type='select' 时是否多选（提交值为数组） */
@@ -614,6 +616,8 @@ export const WORKFLOW_NODE_TYPES = {
   'oas-tool': 'oas-tool',
   'report': 'report',
   'report-image': 'report-image',
+  'form-collect': 'form-collect',
+  'message': 'message',
 } as const satisfies Record<WorkflowNodeType, WorkflowNodeType>
 
 /** 出边类型常量（键=值，与 WorkflowEdgeKind 一一对应） */

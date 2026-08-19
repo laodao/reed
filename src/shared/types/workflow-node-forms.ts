@@ -294,6 +294,14 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     }),
   ],
 
+  'form-collect': [
+    T('formTitle', '表单标题', { templateHint: true, placeholder: '例如：请上传待翻译文件' }),
+    { key: 'fields', label: '表单字段', type: 'inputs-list', help: '字段值经 {{本节点.values.字段key}} 引用；文件字段值为 { path, name, text }' },
+    { key: 'timeoutMs', label: '等待超时（毫秒）', type: 'number', group: '参数', help: '留空 = 一直等待用户提交' },
+  ],
+  'message': [
+    T('content', '消息内容', { type: 'textarea', templateHint: true, placeholder: '例如：已完成翻译，请查看 {{report.filePath}}' }),
+  ],
   'report-image': [
     T('title', '报告标题', { templateHint: true }),
     T('template', '模板（markdown）', {

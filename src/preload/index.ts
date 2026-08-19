@@ -703,6 +703,7 @@ const electronAPI = {
     triggerPreview: (expression: string) => ipcRenderer.invoke('wf:trigger-preview', { expression }),
     enableShare: (id: string) => ipcRenderer.invoke('wf:enable-share', { id }),
     reportToPdf: (p: { markdown: string; title?: string }) => ipcRenderer.invoke('wf:report-to-pdf', p),
+    uploadFormFile: (p: { runId: string; nodeId: string; fileName: string; base64: string }) => ipcRenderer.invoke('wf:form-upload', p),
     disableShare: (id: string) => ipcRenderer.invoke('wf:disable-share', { id }),
     // ==================== 实时事件（返回取消订阅函数） ====================
     onRunEvent: (callback: (data: any) => void) => {

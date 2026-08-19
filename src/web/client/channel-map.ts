@@ -161,6 +161,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'workflow.triggerPreview': { channel: 'wf:trigger-preview' },
   'workflow.enableShare': { channel: 'wf:enable-share' },
   'workflow.reportToPdf': { channel: 'wf:report-to-pdf' },
+  'workflow.uploadFormFile': { channel: 'wf:form-upload' },
   'workflow.disableShare': { channel: 'wf:disable-share' },
   'workflow.onRunEvent': { channel: 'wf:run-event' },
   'knowledgeBase.list': { channel: 'knowledge-base:list' },

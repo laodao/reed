@@ -90,6 +90,7 @@
         <el-option label="文本" value="string" /><el-option label="数字" value="number" />
         <el-option label="布尔" value="boolean" /><el-option label="JSON" value="json" />
         <el-option label="下拉" value="select" />
+        <el-option label="文件" value="file" />
       </el-select>
       <el-checkbox v-model="item.required" size="small" @change="syncInputs">必填</el-checkbox>
       <el-button text type="danger" size="small" @click="inputs.splice(i, 1); syncInputs()">✕</el-button>

@@ -42,7 +42,10 @@
       </el-table-column>
       <el-table-column label="操作" width="220" fixed="right">
         <template #default="{ row }">
-          <template v-if="row.status === 'waiting_review'">
+          <template v-if="isFormRow(row)">
+            <el-button text type="primary" size="small" @click="openForm(row)">填写表单</el-button>
+          </template>
+          <template v-else-if="row.status === 'waiting_review'">
             <el-button text type="success" size="small" @click="doReview(row, 'approve')">批准</el-button>
             <el-button text type="warning" size="small" @click="doReviewEdit(row)">修改后批准</el-button>
             <el-button text type="danger" size="small" @click="doReview(row, 'reject')">驳回</el-button>
@@ -55,6 +58,15 @@
         </template>
       </el-table-column>
     </el-table>
+    <!-- E1 form-collect 挂起表单 -->
+    <el-dialog v-model="formDialogVisible" :title="formRow?.payload?.formTitle || '请填写'" width="520px" :close-on-click-modal="false">
+      <RunInputForm ref="formInputRef" :inputs="formRow?.payload?.fields ?? []" @valid="v => formValid = v" />
+      <template #footer>
+        <el-button @click="cancelForm">取消流程</el-button>
+        <el-button type="primary" :disabled="!formValid" :loading="formSubmitting" @click="submitForm">提交并继续</el-button>
+      </template>
+    </el-dialog>
+
   </div>
 </template>
 
@@ -65,6 +77,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useWorkflowStore } from '@/stores/workflow'
 import { saveBlobAs } from '@/utils/file-saver'
+import RunInputForm from '@/components/workflow/RunInputForm.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -72,6 +85,50 @@ const store = useWorkflowStore()
 const run = ref<any>(null)
 const nodeRuns = ref<any[]>([])
 const exporting = ref(false)
+
+// E1 form-collect：挂起表单
+const formDialogVisible = ref(false)
+const formRow = ref<any>(null)
+const formInputRef = ref<InstanceType<typeof RunInputForm>>()
+const formValid = ref(false)
+const formSubmitting = ref(false)
+
+function isFormRow(row: any): boolean {
+  return row.status === 'waiting_review' && !!row.payload?.form
+}
+function openForm(row: any): void {
+  formRow.value = row
+  formDialogVisible.value = true
+  formInputRef.value?.setFileUploadContext({ runId: String(route.params.runId), nodeId: row.nodeId })
+}
+async function submitForm(): Promise<void> {
+  if (!formRow.value || !formInputRef.value) return
+  formSubmitting.value = true
+  try {
+    const edited = formInputRef.value.getValues()
+    const resp = await api().reviewDecide({
+      runId: String(route.params.runId),
+      nodeId: formRow.value.nodeId,
+      decision: 'approve_with_changes',
+      editedValues: edited,
+    })
+    if (resp.success) { ElMessage.success('已提交，流程继续'); formDialogVisible.value = false; await load() }
+    else ElMessage.error(resp.error ?? '提交失败')
+  } finally {
+    formSubmitting.value = false
+  }
+}
+async function cancelForm(): Promise<void> {
+  if (!formRow.value) return
+  await ElMessageBox.confirm('取消后流程走「取消」分支，确认？', '取消表单')
+  const resp = await api().reviewDecide({
+    runId: String(route.params.runId),
+    nodeId: formRow.value.nodeId,
+    decision: 'reject',
+  })
+  if (resp.success) { ElMessage.success('已取消'); formDialogVisible.value = false; await load() }
+  else ElMessage.error(resp.error ?? '操作失败')
+}
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 const runId = computed(() => route.params.runId as string)
