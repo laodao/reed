@@ -69,16 +69,17 @@ npx vitest run tests/unit/core/modules/ App名  # 见下
 - `src/web/server/platform/web-event-emitter.ts`：已实现，不动（仅核对签名一致）
 
 ### 2.2 新建：会话服务
-`src/core/modules/app/app-session.service.ts`：
+`src/core/modules/app/app-session.service.ts`（构造注 deps：`{ appSessions, messages, runService, engine }`——runService/engine 取自 workflow-boot 同构注入）：
 - `createSession(appId, startInputs?)`：校验 app enabled+channel_session；status=idle；写首条 assistant 消息 `{card: WORKFLOW_SESSION_CARDS.startForm, form: 发布图 start.inputs}`（`messages.create`）
 - `listSessions` / `getSession` / `renameSession` / `getSessionMessages`（`messages.getByDialogId(sessionId)` ASC）
 - `startRun(sessionId, inputs?)`：
   - app 校验 → `definitions.getById(app.source_id)` → `workflowRunService.startRun({ definitionId, triggerType: manual, inputs: 合并 last_start_inputs+defaultValue, triggerInfo: { source:'app-session', appId, sessionId } })`
-  - 互斥：捕获"同工作流已有运行中实例"→ 抛类型化错误（前端给排队/取消选择）
+  - 互斥：startRun 互斥是**返回 skipped 运行**（非抛错）——检查 `run.status===APP_RUN_STATUSES.skipped` → 抛类型化错误"运行进行中"（前端给排队/取消选择）
   - 成功：登记 `runToSession.set(runId, sessionId)`；更新 session（status=running/lastRunId/lastStartInputs）；写 run-status 卡片
 - `reviewDecide(sessionId, nodeId, decision, editedValues?, choice?)`：取 session.lastRunId → `engine/resumeReview` 透传；成功由事件桥更新消息
-- `handleRunEvent(ev)`：按 `WORKFLOW_RUN_EVENT_TYPES` 分派——reviewRequested 写 review 卡片（kind 判别 form/choose/approve/input）；nodeStatus 更新 run-status 卡片 nodes；runStatus 终态（succeeded→聚合 report/message 节点输出写结果卡片；failed→标 error+session.status=failed）
+- `handleRunEvent(ev)`：按 `WORKFLOW_RUN_EVENT_TYPES` 分派——reviewRequested 写 review 卡片（kind 判别 form/choose/approve/input）；nodeStatus 追加一条节点态消息（`{card:node-status, nodeId, status}`；messages 无 update 能力，以追加曲线还原进度）；runStatus 终态（succeeded→聚合 report/message 节点输出写结果卡片；failed→error 卡片+session.status=failed）；终态后从 runToSession Map 清除 runId（防泄漏）
 - `attach(tap: (cb)=>unsubscribe)`：boot 时注入 `getEventEmitter().tapEvents`，命中 runToSession 内 runId 才处理
+- **装配**：`src/core/modules/workflow/workflow-boot.ts` 增 `appSessionService`（依赖 runService/engine 已装配）并 `attach(getEventEmitter().tapEvents)`；`getWorkflowSubsystem()` 返回它（app.handler 取用）
 
 ### 2.3 新建：测试
 `tests/unit/core/modules/app/app-session.spec.ts`（mock 仓库 + 可编程 tap 源）：
@@ -92,6 +93,7 @@ npx vitest run tests/unit/core/modules/ App名  # 见下
 8. handleRunEvent runStatus failed → session.status=failed + 卡片 error
 9. renameSession 更新 title
 门禁：全绿 + tsc 通过；`electron-event-emitter` tap 补充后现工作流事件单测不回归。
+（注：run-status 卡片 = 启动时创建起始节点态消息，后随 node-status 事件追加——无 in-place 更新）
 
 ---
 
