@@ -103,6 +103,30 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '工作流' },
   },
   {
+    path: '/apps',
+    name: 'AppList',
+    component: () => import('@/views/app/AppList.vue'),
+    meta: { title: '应用' },
+  },
+  {
+    path: '/apps/:id',
+    name: 'AppDetail',
+    component: () => import('@/views/app/AppDetail.vue'),
+    meta: { title: '应用详情' },
+  },
+  {
+    path: '/apps/:id/session',
+    name: 'AppSession',
+    component: () => import('@/views/app/AppSession.vue'),
+    meta: { title: '应用会话' },
+  },
+  {
+    path: '/apps/:id/session/:sessionId',
+    name: 'AppSessionDetail',
+    component: () => import('@/views/app/AppSession.vue'),
+    meta: { title: '应用会话' },
+  },
+  {
     path: '/workflow/editor/:id',
     name: 'WorkflowEditor',
     component: () => import('@/views/workflow/WorkflowEditor.vue'),

@@ -27,6 +27,7 @@ import { Connection,
   Notebook,
   VideoCamera,
   Promotion,
+  Box,
 } from '@element-plus/icons-vue'
 
 export interface MenuItem {
@@ -125,6 +126,12 @@ export const mainMenuItems: MenuItem[] = [
     label: '工作流',
     description: '可视化流程编排与自动化执行',
     icon: markRaw(Connection),
+  },
+  {
+    path: '/apps',
+    label: '应用',
+    description: '已发布的工作流应用——会话/分享/API 分发',
+    icon: markRaw(Box),
   },
   {
     path: '/diary',
