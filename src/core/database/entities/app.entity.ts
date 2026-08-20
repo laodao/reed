@@ -11,7 +11,7 @@ import { Column, Entity, Index, PrimaryColumn } from 'typeorm'
  */
 @Entity({ name: 'apps' })
 @Index('idx_apps_user', ['userId'])
-@Index('idx_apps_source', ['sourceKind', 'sourceId'])
+@Index('idx_apps_source', ['sourceKind', 'sourceId'], { unique: true })  // 同定义只允许一个应用（幂等兜底）
 @Index('idx_apps_share_token', ['shareToken'], { unique: true })
 export class AppEntity {
   @Column({ name: 'user_id', type: 'varchar', nullable: true })

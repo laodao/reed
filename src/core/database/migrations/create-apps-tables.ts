@@ -36,7 +36,7 @@ export async function createAppsTables(ds: DataSource): Promise<void> {
       )
     `)
     await ds.query(`CREATE INDEX idx_apps_user ON apps (user_id)`)
-    await ds.query(`CREATE INDEX idx_apps_source ON apps (source_kind, source_id)`)
+    await ds.query(`CREATE UNIQUE INDEX idx_apps_source ON apps (source_kind, source_id)`)
     await ds.query(`CREATE UNIQUE INDEX idx_apps_share_token ON apps (share_token)`)
     console.log('[create-apps-tables] 表 apps 创建完成')
   }

@@ -64,15 +64,22 @@ export class AppDefinitionService {
     const existing = await this.apps.findBySource(APPLICATION_SOURCE_KINDS.workflow, definitionId)
     if (existing) return existing
 
-    const app = await this.apps.create({
-      name: opts?.name?.trim() || def.name,
-      icon: opts?.icon ?? null,
-      sourceKind: APPLICATION_SOURCE_KINDS.workflow,
-      sourceId: definitionId,
-      sourceVersion: def.publishedVersion,
-    })
-    logger.info(`[App] 应用创建：${app.name}（source=${definitionId} v${def.publishedVersion}）`)
-    return app
+    try {
+      const app = await this.apps.create({
+        name: opts?.name?.trim() || def.name,
+        icon: opts?.icon ?? null,
+        sourceKind: APPLICATION_SOURCE_KINDS.workflow,
+        sourceId: definitionId,
+        sourceVersion: def.publishedVersion,
+      })
+      logger.info(`[App] 应用创建：${app.name}（source=${definitionId} v${def.publishedVersion}）`)
+      return app
+    } catch (e) {
+      // 唯一索引兜底：并发下另有请求已建同定义应用 → 回退返回既有（幂等语义）
+      const winner = await this.apps.findBySource(APPLICATION_SOURCE_KINDS.workflow, definitionId)
+      if (winner) return winner
+      throw e
+    }
   }
 
   /** 渠道开关（浅合并——只改传入字段） */
