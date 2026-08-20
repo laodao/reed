@@ -274,8 +274,8 @@ export function createWorkflowApiRouter(deps: {
     const { definitions, apps } = deps.getDeps()
     // 应用分享优先：应用令牌命中 → 用其 sourceId 的定义（发布图）
     const app = apps ? await apps.getByShareToken(token) : null
-    if (app?.sourceId && definitions && 'getById' in definitions) {
-      const ownerDef = await (definitions as { getById(id: string): Promise<ShareDefinition | null> }).getById(app.sourceId)
+    if (app?.sourceId && definitions?.getById) {
+      const ownerDef = await definitions.getById(app.sourceId)
       if (ownerDef) {
         return { id: ownerDef.id, name: app.name || ownerDef.name, description: ownerDef.description, userId: app.userId, publishedGraph: ownerDef.publishedGraph }
       }

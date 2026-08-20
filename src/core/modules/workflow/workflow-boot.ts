@@ -47,6 +47,10 @@ export async function initWorkflowSubsystem(): Promise<WorkflowSubsystem> {
   if (!db.workflowDefinitions || !db.workflowRuns || !db.workflowNodeRuns) {
     throw new Error('工作流数据仓库未初始化（数据库管理器缺少 workflow_* 仓库）')
   }
+  // 应用模块仓库（片1）：未接线则 fail-fast——避免 as any 掩盖 null 至首个调用才崩
+  if (!db.appDefinitions || !db.appSessions || !db.messages) {
+    throw new Error('应用模块仓库未初始化（数据库管理器缺少 apps/app_sessions/messages 仓库）')
+  }
 
   // 1. 节点注册表 + 一致性自检（目录↔handler 漂移拒绝启动）
   const registry = createFullNodeRegistry()
@@ -108,14 +112,14 @@ export async function initWorkflowSubsystem(): Promise<WorkflowSubsystem> {
 
   // 6. 应用模块：应用定义/会话服务（片1/片2），事件桥挂到全局事件发射器
   const appDefinitionService = new AppDefinitionService(
-    db.appDefinitions as any,
-    db.appSessions as any,
+    db.appDefinitions,
+    db.appSessions,
     db.workflowDefinitions,
-    db.messages as any
+    db.messages
   )
   const appSessionService = new AppSessionService(
-    { appSessions: db.appSessions as any, messages: db.messages as any, runService, engine },
-    db.appDefinitions as any,
+    { appSessions: db.appSessions, messages: db.messages, runService, engine },
+    db.appDefinitions,
     db.workflowDefinitions,
   )
   appSessionService.attach(getEventEmitter().tapEvents)
