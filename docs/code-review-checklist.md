@@ -21,7 +21,10 @@
 | R1 | **多租户隔离** | 读数据访问层：是否走 `BaseRepository.scoped`（自动注入 userId）；`IsNull()` 处理 userId 为空；跨租户例外（裸 `this.repo`）是否有「调用方 runWithUserAsync」注释 | 新 Repository 未走 scoped / 裸查无纪律注释 = BLOCKER |
 | R2 | **双端 Service/Repo 统一** | 业务逻辑是否只在 core 层一份；Electron/Web 是否各只做平台实现（不复制业务）；Web Controller 不写 SQL | Web 端另起一套服务/写 SQL = BLOCKER |
 | R3 | **字段零映射** | `toDto`/前端类型与数据库列名是否同名直传；有没有 `entityToRecord` 类转换函数 | 出现映射/重命名 = BLOCKER |
-| R4 | **常量唯一源** | grep 状态/类型是否用 shared 常量（WORKFLOW_* / APPLICATION_* 等）；有无裸字符串比较/赋值 | 同一种状态多处字面量 = MAJOR~BLOCKER |
+| R4 | **多处共用的字面量禁止写死（铁律）** | ① grep 状态/类型值（'succeeded'/'failed'/'running'、边类型、角色、错误码、URL 端点）——同一语义字符串/数字出现在 **≥2 处**即视为共用；② 共用值是否已抽为 shared 枚举/静态常量（WORKFLOW_* / APPLICATION_* 等）或字典；③ 可调参数（阈值/超时/大小上限）是否进 settings/WORKFLOW_DEFAULTS 配置链而非代码常量 | **同语义值 <2 处散落 = BLOCKER**（对比/赋值处与定义处分离，改一处漏一处 = 机制分裂）；可调参数写死 = MAJOR（应配置化） |
+| R8 | **IPC 三处契约同步** | Electron handler / preload / channel-map 三处通道名是否严格一致；是否有「一致性遍历测试」守护（先例：channel-map spec） | 缺一环或未测 = MAJOR；Web 404 根因 = BLOCKER |
+| R9 | **ALS 异步入口纪律** | 所有跨请求异步入口（引擎 execute/resume、事件回调、调度触发）是否 `runWithUserAsync(userId)` 包裹；事件 emit 是否依赖 ALS 路由 | 异步点漏包 = BLOCKER（Web 事件不推/串租户） |
+| R10 | **API 兼容铁律** | 改动是否尽量只新增；修改既有接口签名/返回/字段是否同步双端（electron handler + web controller）+ 文档 | 未双端同步 = BLOCKER |
 | R5 | **禁复制粘贴/重复实现** | 相同能力是否 ≥2 处实现（如 fetch 封装、markdown 渲染、url→base64）；新代码是否应调用既有工具层 | 同类第二套 = MAJOR |
 | R6 | **双端迁移/接线完整** | 新表迁移是否 Electron `runMultiTenantMigrations` + Web `initDatabase` 都注册；database-manager 双端实例化 | 缺一端 = BLOCKER |
 | R7 | **口语即界面（可测性）** | 新增能力是否带单测（TDD 先红后绿）；测试是否测真实语义而非同义反复 | 关键路径无测试/测试自证 = MAJOR |
@@ -40,6 +43,8 @@
 | C6 | **资源泄漏** | timer/订阅/窗口/连接/文件句柄是否释放；`unref`；finally 清理；跨进程 tap 是否 unsubscribe | 长活资源未释放 = MAJOR |
 | C7 | **数据一致性** | 多表写入是否有事务/回滚；级联删除是否完整；孤儿数据路径 | 部分写入无回滚 = MAJOR |
 | C8 | **日期/时区** | new Date 一致性；本地时区 vs UTC 存储；字符串化往返 | 时间语义漂移 = MAJOR |
+| C9 | **IPC 序列化往返** | 过 IPC 的对象是否纯可序列化（无 Date/Map/Set/函数/循环引用）；是否 `JSON.parse(JSON.stringify)` 规范化 | "object could not be cloned" / 丢失类型 = MAJOR |
+| C10 | **正则/字符串处理** | `replace` 含首个 vs `replaceAll`；正则用错（未转义/贪婪/失锚）；`URLSearchParams` 兼容；HTML 转义 | 只换首处/注入面 = MAJOR |
 
 ---
 
@@ -66,6 +71,10 @@
 | S4 | **不限流**：匿名入口（分享 invoke/API）是否有速率限制/配额 | 可刷爆 = MAJOR |
 | S5 | 输入校验：length/type/白名单；XSS（渲染用户内容时转义）| 反射 XSS/超限输入 = MAJOR |
 | S6 | 错误信息泄露：内部异常原文回显给匿名访客 | 泄露栈/路径/内部结构 = MINOR~MAJOR |
+| S7 | 路径/文件安全：文件名 sanitize（`../`/非法字符）、上传类型白名单、落盘路径穿越 | 任意写/穿越 = BLOCKER |
+| S8 | SSRF：分享/API 触发的请求节点（http-request/oas-tool/web-extract）能否访问内网/元数据地址 | 可达内网 = MAJOR（外接场景评估）|
+| S9 | CSRF：cookie 鉴权路由有无同源/校验防护 | 跨站利用 = MAJOR |
+| S10 | 依赖安全：`npm audit` 高危/中危、已知 CVE 版本 | 高危未处理 = MAJOR |
 
 ---
 
@@ -93,6 +102,7 @@
 | T3 | mock 是否与真实契约一致（签名/返回形状超集）| mock 走样掩盖 bug = MAJOR |
 | T4 | 命名/断言是否可读（Given-When-Then、明确预期 vs 松散）| 断言过松（|| true）= NIT |
 | T5 | 是否有集成/真实环境验证（迁移幂等、E2E、跨端一致）| 纯单元无端到端 = MINOR |
+| T6 | 测试间隔离：beforeEach 重置 mock/状态；mock 残留是否串测；async cleanup 返回值不被误当函数 | 测试互相污染 = MAJOR（表现为偶发失败）|
 
 ---
 
@@ -103,7 +113,7 @@
 3. **逐项过清单**（R → C → L → S → M → T 顺序：铁律优先）
 4. **每个发现**：file:line + 失败场景（什么输入/状态 → 什么错误/崩溃）+ 严重度
 5. **verify**：对 MAJOR 以上逐条由第二人/独立视角复核，拒绝猜测
-6. **处置**：BLOCKER/MAJOR 合入前修完；MINOR 记 TODO；输出报告（发现表 + 结论）
+6. **处置**：BLOCKER/MAJOR 合入前修完；MINOR 记 TODO；输出报告（发现表 + 结论）写入 `progress/` 交付记录（对齐本项目"每片 review 留报告"纪律）
 
 ### 门禁（每片提交前）
 ```
