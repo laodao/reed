@@ -80,7 +80,7 @@
 /**
  * 应用会话页（片3b 骨架 + 片4 完整卡片）：start 表单 / 审核 / 结果 以消息流呈现
  */
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
@@ -168,7 +168,27 @@ function viewRun(m: any): void {
   if (runId) router.push(`/workflow/run/${runId}`)
 }
 
-onMounted(loadMessages)
+// ---- 实时刷新：订阅 wf:run-event，命中本会话 last_run_id 则重拉消息（事件桥写卡后同步显示） ----
+let unsub: (() => void) | null = null
+function subscribeRunEvents(): void {
+  const api = (window as never as { electronAPI: { workflow: { onRunEvent: (cb: (e: any) => void) => () => void } } }).electronAPI
+  unsub = api.workflow.onRunEvent((e: any) => {
+    if (!session.value?.lastRunId || e?.runId !== session.value.lastRunId) return
+    void loadMessages()  // 事件桥已写卡——重拉即实时
+  })
+}
+async function ensureSession(): Promise<void> {
+  if (session.value?.lastRunId) return
+  const s = await api().appSession.get(sessionId.value)
+  if (s.success && s.data?.lastRunId) session.value = s.data
+}
+
+onMounted(async () => {
+  await loadMessages()
+  await ensureSession()
+  subscribeRunEvents()
+})
+onUnmounted(() => { unsub?.() })
 </script>
 
 <style scoped>

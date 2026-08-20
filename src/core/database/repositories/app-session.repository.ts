@@ -13,6 +13,8 @@ import { createLogger } from '@core/utils/logger'
 const logger = createLogger('AppSessionRepository')
 
 export interface CreateAppSessionInput {
+  /** 会话 id 与 dialog 行 id 一致（messages.dialog_id 外键指向 dialogs；双表同主键） */
+  id?: string
   appId: string
   title: string
   status?: string
@@ -30,6 +32,10 @@ export interface UpdateAppSessionInput {
 export class AppSessionRepository extends BaseRepository<AppSessionEntity, AppSessionRecord> {
   constructor(dataSource: DataSource) {
     super(dataSource, AppSessionEntity)
+  }
+
+  private generateId(): string {
+    return `apps_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
   }
 
   protected toDto(e: AppSessionEntity): AppSessionRecord {
@@ -76,7 +82,7 @@ export class AppSessionRepository extends BaseRepository<AppSessionEntity, AppSe
   async create(data: CreateAppSessionInput): Promise<AppSessionRecord> {
     const now = new Date()
     const entity = await this.scoped.save({
-      id: this.generateId(),
+      id: data.id ?? this.generateId(),
       appId: data.appId,
       title: data.title,
       status: data.status ?? APP_SESSION_STATUSES.idle,

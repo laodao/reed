@@ -118,11 +118,14 @@ export async function initWorkflowSubsystem(): Promise<WorkflowSubsystem> {
     db.messages
   )
   const appSessionService = new AppSessionService(
-    { appSessions: db.appSessions, messages: db.messages, runService, engine },
+    { appSessions: db.appSessions, messages: db.messages, dialogs: db.dialogs, runService, engine },
     db.appDefinitions,
     db.workflowDefinitions,
   )
-  appSessionService.attach(getEventEmitter().tapEvents)
+  // 事件桥：闭包捕获 getEventEmitter() 的 tapEvents（直接传方法引用会丢 this）
+  appSessionService.attach((cb: (c: string, d: unknown, u: string | null) => void) =>
+    getEventEmitter().tapEvents?.(cb)
+  )
 
   subsystem = { engine, runService, definitionService, scheduler, appDefinitionService, appSessionService }
   logger.info('[workflow-boot] 工作流子系统已启动')

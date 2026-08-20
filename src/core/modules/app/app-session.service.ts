@@ -40,11 +40,14 @@ type EngineLike = {
 export interface AppSessionDeps {
   appSessions: {
     findById(id: string): Promise<AppSessionRecord | null>
-    create(i: { appId: string; title: string; status?: string }): Promise<AppSessionRecord>
+    create(i: { id?: string; appId: string; title: string; status?: string }): Promise<AppSessionRecord>
     update(id: string, patch: { title?: string; status?: string; lastRunId?: string | null; lastStartInputs?: Record<string, unknown> | null }): Promise<AppSessionRecord | null>
   }
   messages: {
     create(m: { dialogId: string; role: string; content: string; metadata?: Record<string, unknown> }): Promise<unknown>
+  }
+  dialogs: {
+    create(d: { title: string; modelId: string | null; roleId?: string | null }): Promise<{ id: string }>
   }
   runService: RunServiceLike
   engine: EngineLike
@@ -72,6 +75,7 @@ export class AppSessionService {
   /** boot 装配：注入事件桥（web/electron 均经 getEventEmitter().tapEvents） */
   attach(tap: (cb: (channel: string, data: unknown, userId: string | null) => void) => () => void): void {
     tap((channel, data, _userId) => {
+      logger.debug('[AppSessionService] tap 事件', { channel, type: (data as any)?.type, runId: (data as any)?.runId })
       if (channel !== WORKFLOW_RUN_EVENT_CHANNEL) return
       try {
         this.handleRunEvent(data as WorkflowRunEvent)
@@ -93,7 +97,10 @@ export class AppSessionService {
     const startNode = def?.publishedGraph?.nodes?.find(n => n.type === 'start')
     const form = Array.isArray(startNode?.config?.inputs) ? startNode.config.inputs : []
 
-    const session = await this.deps.appSessions.create({ appId, title: `会话 ${new Date().toLocaleDateString('zh-CN')}` })
+    const title = `会话 ${new Date().toLocaleDateString('zh-CN')}`
+    // messages.dialog_id 有外键指向 dialogs——先落 dialog（话题）行，其 id 复用为会话 id（双表同主键）
+    const dialog = await this.deps.dialogs.create({ title, modelId: '' })
+    const session = await this.deps.appSessions.create({ id: dialog.id, appId, title })
     await this.writeCard(session.id, {
       card: WORKFLOW_SESSION_CARDS.startForm,
       appId,
@@ -141,6 +148,7 @@ export class AppSessionService {
     }
 
     this.runToSession.set(run.id, sessionId)
+    logger.info('[AppSessionService] startRun 已登记', { runId: run.id, sessionId })
     await this.deps.appSessions.update(sessionId, {
       status: APP_SESSION_STATUSES.running,
       lastRunId: run.id,
@@ -167,7 +175,11 @@ export class AppSessionService {
   handleRunEvent(ev: WorkflowRunEvent): void {
     if (!ev || typeof ev.runId !== 'string') return
     const sessionId = this.runToSession.get(ev.runId)
-    if (!sessionId) return // 非应用会话触发的运行（分享页/API/编辑器）不写会话卡
+    if (!sessionId) {
+      logger.warn('[AppSessionService] 事件未命中会话', { runId: ev.runId, type: ev.type })
+      return // 非应用会话触发的运行（分享页/API/编辑器）不写会话卡
+    }
+    logger.info('[AppSessionService] 事件命中写卡', { runId: ev.runId, type: ev.type })
 
     switch (ev.type) {
       case WORKFLOW_RUN_EVENT_TYPES.reviewRequested: {

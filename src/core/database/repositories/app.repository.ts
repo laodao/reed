@@ -39,6 +39,10 @@ export class AppRepository extends BaseRepository<AppEntity, AppRecord> {
     super(dataSource, AppEntity)
   }
 
+  private generateId(): string {
+    return `app_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
+  }
+
   protected toDto(e: AppEntity): AppRecord {
     return {
       id: e.id,

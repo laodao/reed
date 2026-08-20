@@ -12,7 +12,7 @@ class MemSessions {
   rows: Map<string, any> = new Map()
   seq = 0
   async create(i: any) {
-    const id = `s${++this.seq}`
+    const id = i.id ?? `s${++this.seq}`
     const row = { id, userId: 'u1', status: 'idle', lastStartInputs: null, lastRunId: null, createdAt: new Date(), updatedAt: new Date(), ...i }
     this.rows.set(id, row)
     return { ...row }
@@ -25,6 +25,10 @@ class MemSessions {
     return { ...row }
   }
   async listByApp(appId: string) { return [...this.rows.values()].filter(r => r.appId === appId) }
+}
+class MemDialogs {
+  rows: any[] = []
+  async create(d: any) { const row = { id: `dlg${this.rows.length + 1}`, ...d }; this.rows.push(row); return row }
 }
 class MemMessages {
   rows: any[] = []
@@ -55,8 +59,9 @@ function makeService() {
   const sessions = new MemSessions()
   const messages = new MemMessages()
   const apps = new MemApps()
+  const dialogs = new MemDialogs()
   const svc = new AppSessionService(
-    { appSessions: sessions as any, messages: messages as any, runService: fakeRunService as any, engine: fakeEngine as any },
+    { appSessions: sessions as any, messages: messages as any, dialogs: dialogs as any, runService: fakeRunService as any, engine: fakeEngine as any },
     apps as any,     // 构造签名：deps, apps, defs, tapSource
     defs as any,
     tapSource as any
