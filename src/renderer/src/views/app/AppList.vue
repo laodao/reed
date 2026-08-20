@@ -112,7 +112,11 @@ async function handleCreate(): Promise<void> {
 }
 
 async function handleDelete(row: any): Promise<void> {
-  await ElMessageBox.confirm(`删除应用「${row.name}」？其会话与记录将一并删除，不可恢复。`, '删除应用', { type: 'warning' })
+  try {
+    await ElMessageBox.confirm(`删除应用「${row.name}」？其会话与记录将一并删除，不可恢复。`, '删除应用', { type: 'warning' })
+  } catch {
+    return // 用户取消——不继续
+  }
   const resp = await api().app.delete(row.id)
   if (resp.success) { ElMessage.success('已删除'); await load() }
   else ElMessage.error(resp.error ?? '删除失败')

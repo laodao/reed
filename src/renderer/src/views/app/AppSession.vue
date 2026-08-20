@@ -10,7 +10,7 @@
         <!-- 每类卡片渲染 -->
         <template v-for="(m, i) in messages" :key="i">
           <!-- start-form 启动表单 -->
-          <div v-if="m.metadata?.sessionCard?.card === 'start-form'" class="msg">
+          <div v-if="m.metadata?.sessionCard?.card === CARDS.startForm" class="msg">
             <div class="bubble">
               <div class="card">
                 <div class="card-title">启动参数 <span class="badge blue">可填写后运行</span></div>
@@ -23,16 +23,16 @@
           </div>
 
           <!-- run-status 运行状态 -->
-          <div v-else-if="m.metadata?.sessionCard?.card === 'run-status' || m.metadata?.sessionCard?.card === 'node-status'" class="msg">
+          <div v-else-if="m.metadata?.sessionCard?.card === CARDS.runStatus || m.metadata?.sessionCard?.card === CARDS.nodeStatus" class="msg">
             <div class="bubble">
-              <span class="badge" :class="m.metadata.sessionCard.card === 'node-status' && m.metadata.sessionCard.status === 'running' ? 'orange' : 'blue'">
+              <span class="badge" :class="m.metadata.sessionCard.card === CARDS.nodeStatus && m.metadata.sessionCard.status === 'running' ? 'orange' : 'blue'">
                 {{ cardSummary(m) }}
               </span>
             </div>
           </div>
 
           <!-- review 审核/表单卡片 -->
-          <div v-else-if="m.metadata?.sessionCard?.card === 'review'" class="msg">
+          <div v-else-if="m.metadata?.sessionCard?.card === CARDS.review" class="msg">
             <div class="bubble">
               <div class="card">
                 <div class="card-title">等待操作 <span class="badge orange">{{ kindLabel(m.metadata.sessionCard.kind) }}</span></div>
@@ -48,7 +48,7 @@
           </div>
 
           <!-- report 结果 -->
-          <div v-else-if="m.metadata?.sessionCard?.card === 'report'" class="msg">
+          <div v-else-if="m.metadata?.sessionCard?.card === CARDS.report" class="msg">
             <div class="bubble">
               <div class="card">
                 <div class="card-title">📄 {{ m.metadata.sessionCard.title }}</div>
@@ -62,7 +62,7 @@
 
           <!-- message 普通输出 -->
           <div v-else class="msg">
-            <div class="bubble">{{ m.metadata?.sessionCard?.card === 'message' ? m.metadata.sessionCard.content : m.content }}</div>
+            <div class="bubble">{{ m.metadata?.sessionCard?.card === CARDS.message ? m.metadata.sessionCard.content : m.content }}</div>
           </div>
         </template>
         <div v-if="!loading && messages.length === 0" class="empty">暂无消息，请先在应用页开始会话</div>
@@ -85,6 +85,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import RunInputForm from '@/components/workflow/RunInputForm.vue'
+import { WORKFLOW_SESSION_CARDS as CARDS } from '@shared/types/app.types'
 
 const route = useRoute()
 const router = useRouter()
@@ -106,8 +107,8 @@ const msgBox = ref<HTMLElement>()
 const cardSummary = (m: any): string => {
   const c = m.metadata?.sessionCard
   if (!c) return m.content || ''
-  if (c.card === 'run-status') return `⚡ 运行中：${c.status}`
-  if (c.card === 'node-status') return `节点 ${c.nodeId}：${c.status}`
+  if (c.card === CARDS.runStatus) return `⚡ 运行中：${c.status}`
+  if (c.card === CARDS.nodeStatus) return `节点 ${c.nodeId}：${c.status}`
   return ''
 }
 const kindLabel = (k: string): string => ({ form: '请填写表单', choose: '请选择', approve: '请批准', input: '请输入' })[k] ?? k
