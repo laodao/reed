@@ -1,0 +1,70 @@
+/**
+ * 应用模块类型与常量（片1）
+ * @module shared/types/app.types
+ * @description 应用 = 发布单元（来源：已发布工作流），四渠道（会话/分享/API/定时）。
+ *              会话消息复用 messages 表：messages.dialog_id = app_session.id，
+ *              卡片类型存 messages.metadata（WORKFLOW_SESSION_CARDS 判别联合）。
+ *              常量与类型同处——core 写库与前端渲染双端同源，严禁另起一套。
+ */
+
+/** 应用来源类型（V1 仅 workflow；harness 等未来在此扩展） */
+export const APPLICATION_SOURCE_KINDS = {
+  workflow: 'workflow',
+} as const
+
+/** 应用会话状态 */
+export const APP_SESSION_STATUSES = {
+  idle: 'idle',
+  running: 'running',
+  failed: 'failed',
+} as const
+
+/** 会话卡片类型（messages.metadata.card） */
+export const WORKFLOW_SESSION_CARDS = {
+  startForm: 'start-form',
+  runStatus: 'run-status',
+  review: 'review',
+  message: 'message',
+  report: 'report',
+} as const
+
+/** 会话消息 metadata 判别联合（写库与渲染共用） */
+export type SessionCardMeta =
+  | { card: typeof WORKFLOW_SESSION_CARDS.startForm; appId: string; form: unknown[]; runId?: string }
+  | { card: typeof WORKFLOW_SESSION_CARDS.runStatus; runId: string; status: string }
+  | { card: typeof WORKFLOW_SESSION_CARDS.review; runId: string; nodeId: string; kind: 'form' | 'approve' | 'choose' | 'input'; schema?: unknown }
+  | { card: typeof WORKFLOW_SESSION_CARDS.message; runId: string; content: string }
+  | { card: typeof WORKFLOW_SESSION_CARDS.report; runId: string; title: string; markdown: string; format?: string; filePath?: string; imageBase64?: string }
+
+/** 应用记录（apps 表字段同名直出，零映射） */
+export interface AppRecord {
+  id: string
+  userId: string | null
+  name: string
+  icon: string | null
+  description: string | null
+  sourceKind: string
+  sourceId: string
+  sourceVersion: number | null
+  channelSession: number
+  channelShare: number
+  channelApi: number
+  shareToken: string | null
+  enabled: number
+  lastRunAt: Date | null
+  createdAt: Date | null
+  updatedAt: Date | null
+}
+
+/** 应用会话记录（app_sessions 表字段同名直出） */
+export interface AppSessionRecord {
+  id: string
+  userId: string | null
+  appId: string
+  title: string
+  status: string
+  lastRunId: string | null
+  lastStartInputs: Record<string, unknown> | null
+  createdAt: Date | null
+  updatedAt: Date | null
+}

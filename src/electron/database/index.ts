@@ -25,6 +25,8 @@ import { KbDocumentRepository } from '@core/database/repositories/kb-document.re
 import { KbChunkRepository } from '@core/database/repositories/kb-chunk.repository'
 import { KbVectorRepository } from '@core/database/repositories/kb-vector.repository'
 import { KbQaPairRepository } from '@core/database/repositories/kb-qa-pair.repository'
+import { AppRepository } from '@core/database/repositories/app.repository'
+import { AppSessionRepository } from '@core/database/repositories/app-session.repository'
 import { KbInvertedIndexRepository } from '@core/database/repositories/kb-inverted-index.repository'
 import { PortraitProjectRepository } from '@core/database/repositories/portrait-project.repository'
 import { PortraitCharacterRepository } from '@core/database/repositories/portrait-character.repository'
@@ -131,6 +133,8 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public kbChunks: KbChunkRepository | null = null
   public kbVectors: KbVectorRepository | null = null
   public kbQaPairs: KbQaPairRepository | null = null
+  public appDefinitions: AppRepository | null = null
+  public appSessions: AppSessionRepository | null = null
   public kbInvertedIndex: KbInvertedIndexRepository | null = null
   public portraitProjects: PortraitProjectRepository | null = null
   public portraitCharacters: PortraitCharacterRepository | null = null
@@ -646,6 +650,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-kb-qa-pairs'
     )
     await createKbQaPairs(this.dataSource)
+    // 应用模块：apps / app_sessions 表（幂等，双语种；消息复用 messages 无需建表）
+    const { createAppsTables } = await import(
+      '@core/database/migrations/create-apps-tables'
+    )
+    await createAppsTables(this.dataSource)
 
     // D2 rerank：knowledge_bases 加 rerank_config 列（幂等，双语种）
     const { addKbRerankConfig } = await import(
@@ -4166,6 +4175,8 @@ export class DatabaseManager implements ICoreDatabaseManager {
     // KbVectorRepository 使用 LanceDB，不再需要 SQLite 连接
     this.kbVectors = new KbVectorRepository()
     this.kbQaPairs = new KbQaPairRepository(this.dataSource)
+    this.appDefinitions = new AppRepository(this.dataSource)
+    this.appSessions = new AppSessionRepository(this.dataSource)
     this.kbInvertedIndex = new KbInvertedIndexRepository(this.dataSource)
     this.portraitProjects = new PortraitProjectRepository(this.dataSource)
     this.portraitCharacters = new PortraitCharacterRepository(this.dataSource)

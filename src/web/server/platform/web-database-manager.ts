@@ -26,6 +26,8 @@ import { KbDocumentRepository } from '@core/database/repositories/kb-document.re
 import { KbChunkRepository } from '@core/database/repositories/kb-chunk.repository'
 import { KbVectorRepository } from '@core/database/repositories/kb-vector.repository'
 import { KbQaPairRepository } from '@core/database/repositories/kb-qa-pair.repository'
+import { AppRepository } from '@core/database/repositories/app.repository'
+import { AppSessionRepository } from '@core/database/repositories/app-session.repository'
 import { KbInvertedIndexRepository } from '@core/database/repositories/kb-inverted-index.repository'
 import { PortraitProjectRepository } from '@core/database/repositories/portrait-project.repository'
 import { PortraitCharacterRepository } from '@core/database/repositories/portrait-character.repository'
@@ -116,6 +118,8 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   kbInvertedIndex: KbInvertedIndexRepository | null
   kbVectors: KbVectorRepository | null
   kbQaPairs: KbQaPairRepository | null
+  appDefinitions: AppRepository | null
+  appSessions: AppSessionRepository | null
   // 人像
   portraitProjects: PortraitProjectRepository | null
   portraitCharacters: PortraitCharacterRepository | null
@@ -208,6 +212,8 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.kbInvertedIndex = new KbInvertedIndexRepository(ds)
     this.kbVectors = new KbVectorRepository()
     this.kbQaPairs = new KbQaPairRepository(ds)
+    this.appDefinitions = new AppRepository(ds)
+    this.appSessions = new AppSessionRepository(ds)
 
     this.portraitProjects = new PortraitProjectRepository(ds)
     this.portraitCharacters = new PortraitCharacterRepository(ds)

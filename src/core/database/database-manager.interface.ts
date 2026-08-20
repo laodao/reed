@@ -28,6 +28,8 @@ import type { KbDocumentRepository } from './repositories/kb-document.repository
 import type { KbInvertedIndexRepository } from './repositories/kb-inverted-index.repository'
 import type { KbVectorRepository } from './repositories/kb-vector.repository'
 import type { KbQaPairRepository } from './repositories/kb-qa-pair.repository'
+import type { AppRepository } from './repositories/app.repository'
+import type { AppSessionRepository } from './repositories/app-session.repository'
 import type { KnowledgeBaseRepository } from './repositories/knowledge-base.repository'
 import type { LocationBindingRepository } from './repositories/location-binding.repository'
 import type { LwBackgroundRepository } from './repositories/lw-background.repository'
@@ -128,6 +130,8 @@ export interface ICoreDatabaseManager {
   kbInvertedIndex: KbInvertedIndexRepository | null
   kbVectors: KbVectorRepository | null
   kbQaPairs: KbQaPairRepository | null
+  appDefinitions: AppRepository | null
+  appSessions: AppSessionRepository | null
 
   // ---- 人像 ----
   portraitProjects: PortraitProjectRepository | null
