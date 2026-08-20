@@ -18,14 +18,14 @@ const GRAPH = {
   version: 1,
   nodes: [
     { id: 'start', type: 'start', name: '开始', position: { x: 60, y: 300 }, config: { inputs: [{ key: 'topic', label: '新闻主题', type: 'string', required: true, defaultValue: '时政与财经' }] } },
-    { id: 'search', type: 'web-search', name: '政经新闻搜索', position: { x: 320, y: 300 }, config: { query: '{{start.topic}} 最新新闻 今日', maxResults: 8 } },
-    { id: 'digest', type: 'llm-chat', name: '汇总早报', position: { x: 580, y: 300 }, config: { systemPrompt: '你是新闻编辑。把搜索结果整理成一份每日早间新闻简报（markdown）：按重要性排序，每条一行摘要，最后给一段主编点评。不得编造搜索结果之外的信息。', prompt: '主题：{{start.topic}}\n\n搜索结果：\n{{search.result}}', temperature: 0.3 } },
-    { id: 'report', type: 'report', name: '早报输出', position: { x: 840, y: 300 }, config: { title: '每日早间新闻', template: '# 每日早间新闻\n\n{{digest.content}}' } },
+    { id: 'news', type: 'http-request', name: '抓取新闻数据', position: { x: 320, y: 300 }, config: { method: 'GET', url: 'https://news-at.zhihu.com/api/4/news/latest', timeoutMs: 20000 } },
+    { id: 'digest', type: 'llm-chat', name: '汇总早报', position: { x: 580, y: 300 }, config: { systemPrompt: '你是新闻编辑。把下面的新闻数据（JSON）整理成每日早间新闻简报（markdown）：按重要性排序，每条一行摘要，最后一段主编点评。不得编造数据之外的信息。', prompt: '新闻数据：\n{{news.body}}', temperature: 0.3 } },
+    { id: 'report', type: 'report-image', name: '早报长图', position: { x: 840, y: 300 }, config: { title: '每日早间新闻', template: '# 每日早间新闻\n\n{{digest.content}}', templateId: 'morningReport' } },
     { id: 'end', type: 'end', name: '结束', position: { x: 1100, y: 300 }, config: {} },
   ],
   edges: [
-    { id: 'e1', sourceNodeId: 'start', targetNodeId: 'search', kind: 'normal' },
-    { id: 'e2', sourceNodeId: 'search', targetNodeId: 'digest', kind: 'normal' },
+    { id: 'e1', sourceNodeId: 'start', targetNodeId: 'news', kind: 'normal' },
+    { id: 'e2', sourceNodeId: 'news', targetNodeId: 'digest', kind: 'normal' },
     { id: 'e3', sourceNodeId: 'digest', targetNodeId: 'report', kind: 'normal' },
     { id: 'e4', sourceNodeId: 'report', targetNodeId: 'end', kind: 'normal' },
   ],
@@ -104,7 +104,7 @@ const GRAPH = {
       await page.waitForTimeout(3000)
       status = await page.evaluate(async rid => {
         const resp = await window.electronAPI.workflow.getRun(rid)
-        return resp.success ? resp.data.status : 'unknown'
+        return resp.success ? resp.data.run.status : 'unknown'
       }, runId)
       console.log(`   [${i * 3}s] ${status}`)
       if (['succeeded', 'failed', 'cancelled', 'timed_out', 'interrupted'].includes(status)) break
@@ -119,8 +119,8 @@ const GRAPH = {
       return resp.success ? resp.data : null
     }, runId)
     assert(detail, '取运行详情失败')
-    console.log('   stats:', JSON.stringify(detail.stats))
-    assert((detail.stats?.doneNodes ?? 0) >= 4, `完成节点数不足: ${JSON.stringify(detail.stats)}`)
+    console.log('   stats:', JSON.stringify(detail.run?.stats))
+    assert((detail.run?.stats?.doneNodes ?? 0) >= 4, `完成节点数不足: ${JSON.stringify(detail.run?.stats)}`)
   })
 
   await step('8. 运行详情页时间线渲染', async () => {
