@@ -13,7 +13,7 @@
 
 import type { AppSessionRecord } from '@shared/types/app.types'
 import { APP_SESSION_STATUSES, WORKFLOW_SESSION_CARDS, type SessionCardMeta } from '@shared/types/app.types'
-import { WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_EVENT_TYPES, WORKFLOW_RUN_STATUSES, WORKFLOW_TRIGGER_TYPES, type WorkflowRunEvent } from '@shared/types/workflow.types'
+import { WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_EVENT_TYPES, WORKFLOW_RUN_STATUSES, WORKFLOW_RUN_TERMINAL_STATUSES, WORKFLOW_TRIGGER_TYPES, type WorkflowRunEvent } from '@shared/types/workflow.types'
 import type { WorkflowRunRepository } from '../../database/repositories/workflow-run.repository'
 import { createLogger } from '@core/utils/logger'
 
@@ -26,7 +26,8 @@ type RunServiceLike = {
     inputs?: Record<string, unknown>
     triggerInfo?: Record<string, unknown>
   }): Promise<{ id: string; status: string; skipReason?: string | null }>
-  getRun?(runId: string): Promise<{ run: { status: string; error?: string | null }; nodeRuns: Array<{ nodeType?: string; output?: Record<string, unknown> | null }> } | null>
+  /** 运行详情（含节点执行记录）——finishSucceeded 聚合 report/message 输出用 */
+  getRunDetail?(runId: string): Promise<{ run: { status: string; error?: string | null }; nodeRuns: Array<{ nodeType?: string; output?: Record<string, unknown> | null }> } | null>
 }
 
 type EngineLike = {
@@ -64,6 +65,11 @@ type TapSource = { tapEvents(cb: (channel: string, data: unknown, userId: string
 export class AppSessionService {
   /** runId → sessionId（事件桥定位；终态清除防泄漏） */
   private readonly runToSession = new Map<string, string>()
+  /**
+   * 事件桥写卡串行队列（better-sqlite3 单连接：多个事务并发启动会交错，
+   * 后发 COMMIT 报 "no transaction is active"——事件必须按序落库）
+   */
+  private cardQueue: Promise<void> = Promise.resolve()
 
   constructor(
     private readonly deps: AppSessionDeps,
@@ -71,6 +77,17 @@ export class AppSessionService {
     private readonly defs: DefsLike,
     private readonly tapSource?: TapSource
   ) {}
+
+  /** 串行化写卡（FIFO 保序；失败隔离不阻断后续卡片） */
+  private enqueueCard(fn: () => Promise<unknown>): void {
+    const next = this.cardQueue.then(() => fn()).catch(e => {
+      logger.error('[AppSessionService] 写卡失败', e)
+    })
+    this.cardQueue = next.then(
+      () => undefined,
+      () => undefined
+    )
+  }
 
   /** boot 装配：注入事件桥（web/electron 均经 getEventEmitter().tapEvents） */
   attach(tap: (cb: (channel: string, data: unknown, userId: string | null) => void) => () => void): void {
@@ -188,32 +205,31 @@ export class AppSessionService {
         const kind = p.form ? 'form' as const
           : Array.isArray(p.options) && p.options.length ? 'choose' as const
           : p.interaction === 'input' ? 'input' as const : 'approve' as const
-        this.writeCard(sessionId, {
+        this.enqueueCard(() => this.writeCard(sessionId, {
           card: WORKFLOW_SESSION_CARDS.review,
           runId: ev.runId,
           nodeId: (ev as { nodeId?: string }).nodeId ?? '',
           kind,
           schema: p,
-        }).catch(e => logger.error('[AppSessionService] 写 review 卡片失败', e))
+        }))
         break
       }
       case WORKFLOW_RUN_EVENT_TYPES.nodeStatus: {
         const ns = ev as { nodeId?: string; status?: string }
-        this.writeCard(sessionId, { card: WORKFLOW_SESSION_CARDS.nodeStatus, runId: ev.runId, nodeId: ns.nodeId ?? '', status: ns.status ?? '' })
-          .catch(e => logger.error('[AppSessionService] 写 node-status 卡片失败', e))
+        this.enqueueCard(() => this.writeCard(sessionId, { card: WORKFLOW_SESSION_CARDS.nodeStatus, runId: ev.runId, nodeId: ns.nodeId ?? '', status: ns.status ?? '' }))
         break
       }
       case WORKFLOW_RUN_EVENT_TYPES.runStatus: {
         const rs = ev as { status?: string; error?: string }
         if (rs.status === WORKFLOW_RUN_STATUSES.succeeded) {
-          void this.finishSucceeded(sessionId, ev.runId!).catch(e =>
-            logger.error('[AppSessionService] finishSucceeded 顶层拒绝兜底', e)
-          )
-        } else if (rs.status && WORKFLOW_RUN_STATUSES.succeeded !== rs.status) {
-          // 终态（failed/cancelled/timed_out/interrupted）统一收口
-          this.writeCard(sessionId, { card: WORKFLOW_SESSION_CARDS.message, runId: ev.runId!, content: `运行${rs.status}：${rs.error ?? '已结束'}` })
-            .then(() => this.deps.appSessions.update(sessionId, { status: APP_SESSION_STATUSES.failed }))
-            .catch(e => logger.error('[AppSessionService] 终态写卡失败', e))
+          this.enqueueCard(() => this.finishSucceeded(sessionId, ev.runId!))
+        } else if (rs.status && WORKFLOW_RUN_TERMINAL_STATUSES.has(rs.status)) {
+          // 非成功终态（failed/cancelled/timed_out/interrupted）统一收口；
+          // running/waiting_review 等中间态不写卡（引擎启动时也会 emit run-status）
+          this.enqueueCard(async () => {
+            await this.writeCard(sessionId, { card: WORKFLOW_SESSION_CARDS.message, runId: ev.runId!, content: `运行${rs.status}：${rs.error ?? '已结束'}` })
+            await this.deps.appSessions.update(sessionId, { status: APP_SESSION_STATUSES.failed })
+          })
           this.runToSession.delete(ev.runId!)
         }
         break
@@ -226,7 +242,7 @@ export class AppSessionService {
   /** 成功终态：聚合 run 详情的报告/消息节点输出写结果卡片 */
   private async finishSucceeded(sessionId: string, runId: string): Promise<void> {
     try {
-      const detail = await this.deps.runService.getRun?.(runId)
+      const detail = await this.deps.runService.getRunDetail?.(runId)
       const report = detail?.nodeRuns?.find(n => n.nodeType === 'report' && n.output?.markdown)
       if (report?.output) {
         await this.writeCard(sessionId, {
@@ -250,10 +266,12 @@ export class AppSessionService {
       logger.warn('[AppSessionService] 成功终态聚合失败（写占位卡片）', e)
       await this.writeCard(sessionId, { card: WORKFLOW_SESSION_CARDS.message, runId, content: '运行完成' })
     } finally {
-      // 终态收尾不得让 update 抛出的拒绝逃出（void 调用无 catch → Unhandled Rejection）
-      await this.deps.appSessions.update(sessionId, { status: APP_SESSION_STATUSES.idle }).catch(e =>
+      // 终态收尾不得让 update 抛出的拒绝逃出（队列 catch 已兜底，此处再防一层）
+      try {
+        await this.deps.appSessions.update(sessionId, { status: APP_SESSION_STATUSES.idle })
+      } catch (e) {
         logger.error('[AppSessionService] 会话归 idle 失败（runId 已清除）', e)
-      )
+      }
       this.runToSession.delete(runId)
     }
   }

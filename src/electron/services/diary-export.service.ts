@@ -9,6 +9,7 @@ import * as path from 'path'
 import * as os from 'os'
 import { DiaryService } from '@core/services/diary.service'
 import { markdownToDocx } from '@core/utils/markdown-to-docx'
+import { getPathProvider } from '@core/interfaces/path.interface'
 import type { DiaryIpcResponse } from '@shared/types/diary.types'
 
 // 缓存 marked 模块
@@ -216,8 +217,6 @@ export class DiaryExportService {
     }
     // Web 端：用户数据目录的 exports 子文件夹（前端通过 /assets/exports/... 下载）
     // 这里依赖 IPathProvider 已注册（web-server bootstrap 已完成）
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { getPathProvider } = require('@core/interfaces/path.interface')
     const dataPath = getPathProvider().getDataPath()
     const exportsDir = path.join(dataPath, 'exports')
     if (!fs.existsSync(exportsDir)) fs.mkdirSync(exportsDir, { recursive: true })

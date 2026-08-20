@@ -50,8 +50,8 @@ let tapCb: ((c: string, d: unknown, u: string | null) => void) | null = null
 const tapSource = { tapEvents: (cb: any) => { tapCb = cb; return () => { tapCb = null } } }
 
 let startRunImpl: (input: any) => Promise<any>
-let getRunImpl: (runId: string) => Promise<any>
-const fakeRunService = { startRun: (i: any) => startRunImpl(i), getRun: (r: string) => getRunImpl(r) }
+let getRunDetailImpl: (runId: string) => Promise<any>
+const fakeRunService = { startRun: (i: any) => startRunImpl(i), getRunDetail: (r: string) => getRunDetailImpl(r) }
 const fakeEngine = { resumeReview: vi.fn(async () => true) }
 const defs = { getById: vi.fn(async () => ({ id: 'd1', publishedGraph: { version: 1, nodes: [{ id: 'start', type: 'start', config: { inputs: [{ key: 'q', type: 'string' }] } }], edges: [] } })) }
 
@@ -74,7 +74,7 @@ function seedApp(apps: MemApps, over: Record<string, unknown> = {}) {
 async function bootRun(apps: MemApps, svc: AppSessionService) {
   seedApp(apps)
   startRunImpl = async () => ({ id: 'run_1', status: 'running' })
-  getRunImpl = async () => ({ run: { status: 'running' }, nodeRuns: [] })
+  getRunDetailImpl = async () => ({ run: { status: 'running' }, nodeRuns: [] })
   const s = await svc.createSession('a1')
   await svc.startRun(s.id, { q: 'hi' })
   return s
@@ -128,7 +128,7 @@ describe('AppSessionService：startRun 与多轮', () => {
   it('startRun 互斥（返回 skipped）→ 抛"运行进行中"', async () => {
     const { apps, svc } = makeService()
     startRunImpl = async () => ({ id: 'r', status: 'skipped', skipReason: '同工作流已有运行中实例' })
-    getRunImpl = async () => ({ run: { status: 'skipped' }, nodeRuns: [] })
+    getRunDetailImpl = async () => ({ run: { status: 'skipped' }, nodeRuns: [] })
     seedApp(apps)
     const s = await svc.createSession('a1')
     await expect(svc.startRun(s.id, {})).rejects.toThrow('运行进行中')
@@ -139,7 +139,7 @@ describe('AppSessionService：startRun 与多轮', () => {
     seedApp(apps)
     const s = await svc.createSession('a1')
     startRunImpl = async (_i: any) => ({ id: 'r1', status: 'running' })
-    getRunImpl = async () => ({ run: { status: 'running' }, nodeRuns: [] })
+    getRunDetailImpl = async () => ({ run: { status: 'running' }, nodeRuns: [] })
     await svc.startRun(s.id, { q: 'first' })
     let captured: any
     startRunImpl = async (i: any) => { captured = i; return { id: 'r2', status: 'running' } }
@@ -168,7 +168,12 @@ describe('AppSessionService：事件桥', () => {
       type: 'review-requested', runId: 'run_1', nodeId: 'form', nodeName: '表单',
       payload: { form: true, fields: [{ key: 'doc', type: 'file' }] },
     }, 'u1')
-    const cards = await svc.getSessionMessages(s.id)
+    // 写卡走串行队列（异步）——轮询等卡片落库
+    let cards = await svc.getSessionMessages(s.id)
+    for (let i = 0; i < 20 && !cards.some(c => c.metadata?.sessionCard?.card === WORKFLOW_SESSION_CARDS.review); i++) {
+      await new Promise(r => setTimeout(r, 10))
+      cards = await svc.getSessionMessages(s.id)
+    }
     const rc = cards.find(c => c.metadata?.sessionCard?.card === WORKFLOW_SESSION_CARDS.review)
     expect(rc.metadata.sessionCard).toMatchObject({ nodeId: 'form', kind: 'form', schema: { fields: [{ key: 'doc', type: 'file' }] } })
   })
@@ -178,7 +183,11 @@ describe('AppSessionService：事件桥', () => {
     attachBridge(svc)
     const s = await bootRun(apps, svc)
     tapCb!('wf:run-event', { type: 'node-status', runId: 'run_1', nodeId: 'llm', status: 'running' }, 'u1')
-    const cards = await svc.getSessionMessages(s.id)
+    let cards = await svc.getSessionMessages(s.id)
+    for (let i = 0; i < 20 && !cards.some(c => c.metadata?.sessionCard?.card === WORKFLOW_SESSION_CARDS.nodeStatus); i++) {
+      await new Promise(r => setTimeout(r, 10))
+      cards = await svc.getSessionMessages(s.id)
+    }
     const ns = cards.filter(c => c.metadata?.sessionCard?.card === WORKFLOW_SESSION_CARDS.nodeStatus)
     expect(ns).toHaveLength(1)
     expect(ns[0].metadata.sessionCard).toMatchObject({ nodeId: 'llm', status: 'running' })
@@ -188,7 +197,7 @@ describe('AppSessionService：事件桥', () => {
     const { messages, apps, svc } = makeService()
     attachBridge(svc)
     const s = await bootRun(apps, svc)
-    getRunImpl = async () => ({ run: { status: 'succeeded' }, nodeRuns: [{ nodeType: 'report', output: { markdown: '# 报告', title: 'R', format: 'markdown' } }] })
+    getRunDetailImpl = async () => ({ run: { status: 'succeeded' }, nodeRuns: [{ nodeType: 'report', output: { markdown: '# 报告', title: 'R', format: 'markdown' } }] })
     tapCb!('wf:run-event', { type: 'run-status', runId: 'run_1', status: 'succeeded' }, 'u1')
     // 终态聚合是异步（void finishSucceeded）——轮询等卡片落库
     let cards = await svc.getSessionMessages(s.id)
@@ -211,7 +220,7 @@ describe('AppSessionService：事件桥', () => {
     const { apps, svc } = makeService()
     attachBridge(svc)
     const s = await bootRun(apps, svc)
-    getRunImpl = async () => ({ run: { status: 'failed', error: 'boom' }, nodeRuns: [] })
+    getRunDetailImpl = async () => ({ run: { status: 'failed', error: 'boom' }, nodeRuns: [] })
     tapCb!('wf:run-event', { type: 'run-status', runId: 'run_1', status: 'failed' }, 'u1')
     const updated = await svc.getSession(s.id)
     expect(updated.status).toBe(APP_SESSION_STATUSES.failed)
@@ -226,5 +235,27 @@ describe('AppSessionService：事件桥', () => {
     const acc = (await svc.getSessionMessages(s.id)).length
     tapCb!('wf:run-event', { type: 'node-status', runId: 'OTHER_RUN', nodeId: 'y' }, 'u1')
     expect((await svc.getSessionMessages(s.id)).length).toBe(acc) // 不新增
+  })
+
+  it('runStatus 中间态(running/waiting_review) → 不写卡、不删映射（后续终态仍命中）', async () => {
+    const { messages, apps, svc } = makeService()
+    attachBridge(svc)
+    const s = await bootRun(apps, svc)
+    // 引擎启动时也会 emit run-status running——不得误判为终态写"运行running"卡
+    tapCb!('wf:run-event', { type: 'run-status', runId: 'run_1', status: 'running' }, 'u1')
+    tapCb!('wf:run-event', { type: 'run-status', runId: 'run_1', status: 'waiting_review' }, 'u1')
+    let cards = await svc.getSessionMessages(s.id)
+    expect(cards.some(c => c.metadata?.sessionCard?.card === WORKFLOW_SESSION_CARDS.message)).toBe(false)
+    // 映射仍在 → 终态 succeeded 仍能聚合写结果卡
+    getRunDetailImpl = async () => ({ run: { status: 'succeeded' }, nodeRuns: [{ nodeType: 'message', output: { content: 'ok' } }] })
+    tapCb!('wf:run-event', { type: 'run-status', runId: 'run_1', status: 'succeeded' }, 'u1')
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 10))
+      cards = await svc.getSessionMessages(s.id)
+      if (cards.some(c => c.metadata?.sessionCard?.card === WORKFLOW_SESSION_CARDS.message)) break
+    }
+    const msg = cards.find(c => c.metadata?.sessionCard?.card === WORKFLOW_SESSION_CARDS.message)
+    expect(msg?.metadata?.sessionCard?.content).toBe('ok')
+    expect((await svc.getSession(s.id))!.status).toBe(APP_SESSION_STATUSES.idle)
   })
 })

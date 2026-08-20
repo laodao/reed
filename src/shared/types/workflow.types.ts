@@ -645,6 +645,20 @@ export const WORKFLOW_RUN_STATUSES = {
   timed_out: 'timed_out',
 } as const satisfies Record<WorkflowRunStatus, WorkflowRunStatus>
 
+/**
+ * 运行终态集合（单一事实源，双端共用）：
+ * run-status 事件到达这些状态即不再推进——事件桥/SSE 关流/前端轮询兜底均以此判定。
+ * 注意：running/waiting_review 是中间态，不得与终态混判。
+ */
+export const WORKFLOW_RUN_TERMINAL_STATUSES: ReadonlySet<string> = new Set([
+  WORKFLOW_RUN_STATUSES.succeeded,
+  WORKFLOW_RUN_STATUSES.failed,
+  WORKFLOW_RUN_STATUSES.cancelled,
+  WORKFLOW_RUN_STATUSES.skipped,
+  WORKFLOW_RUN_STATUSES.timed_out,
+  WORKFLOW_RUN_STATUSES.interrupted,
+])
+
 /** 节点运行状态常量（键=值，与 WorkflowNodeRunStatus 一一对应） */
 export const WORKFLOW_NODE_RUN_STATUSES = {
   pending: 'pending',

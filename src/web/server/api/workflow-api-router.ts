@@ -29,7 +29,7 @@ import {
   WORKFLOW_NODE_TYPES,
   WORKFLOW_RUN_EVENT_CHANNEL,
   WORKFLOW_RUN_EVENT_TYPES,
-  WORKFLOW_RUN_STATUSES,
+  WORKFLOW_RUN_TERMINAL_STATUSES,
   WORKFLOW_TRIGGER_TYPES,
 } from '@shared/types/workflow.types'
 
@@ -91,15 +91,8 @@ function shareRateLimited(token: string): boolean {
   return false
 }
 
-/** run 终态集合（SSE 关流依据） */
-const TERMINAL_STATUSES = new Set<string>([
-  WORKFLOW_RUN_STATUSES.succeeded,
-  WORKFLOW_RUN_STATUSES.failed,
-  WORKFLOW_RUN_STATUSES.cancelled,
-  WORKFLOW_RUN_STATUSES.skipped,
-  WORKFLOW_RUN_STATUSES.timed_out,
-  WORKFLOW_RUN_STATUSES.interrupted,
-])
+/** run 终态集合（SSE 关流依据；单一事实源 WORKFLOW_RUN_TERMINAL_STATUSES） */
+const TERMINAL_STATUSES = WORKFLOW_RUN_TERMINAL_STATUSES
 
 /** wf:run-event 载荷最小面（runStatus/nodeStatus 等判别联合的公共字段） */
 interface RunEventPayload {

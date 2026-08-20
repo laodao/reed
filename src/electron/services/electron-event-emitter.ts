@@ -12,6 +12,7 @@ import type {
   StatusEvent,
 } from '@core/interfaces/event.interface'
 import { registerEventEmitter } from '@core/interfaces/event.interface'
+import { getCurrentUserId } from '@core/context/user-context'
 
 export class ElectronBroadcastEventEmitter implements IEventEmitter {
   private static instance: ElectronBroadcastEventEmitter
@@ -36,7 +37,6 @@ export class ElectronBroadcastEventEmitter implements IEventEmitter {
 
   emit(channel: string, data: unknown): void {
     if (this.taps.size > 0) {
-      const { getCurrentUserId } = require('@core/context/user-context') as typeof import('@core/context/user-context')
       const uid = getCurrentUserId()
       for (const tap of this.taps) {
         try { tap(channel, data, uid) } catch { /* 单个 tap 异常不影响广播 */ }
