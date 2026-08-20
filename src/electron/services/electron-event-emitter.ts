@@ -26,7 +26,22 @@ export class ElectronBroadcastEventEmitter implements IEventEmitter {
     return ElectronBroadcastEventEmitter.instance
   }
 
+  // 服务端 tap（与 web 端 WebSocketEventEmitter 同语义：emit 时先回调 taps）
+  private taps = new Set<(channel: string, data: unknown, userId: string | null) => void>()
+
+  tapEvents(cb: (channel: string, data: unknown, userId: string | null) => void): () => void {
+    this.taps.add(cb)
+    return () => { this.taps.delete(cb) }
+  }
+
   emit(channel: string, data: unknown): void {
+    if (this.taps.size > 0) {
+      const { getCurrentUserId } = require('@core/context/user-context') as typeof import('@core/context/user-context')
+      const uid = getCurrentUserId()
+      for (const tap of this.taps) {
+        try { tap(channel, data, uid) } catch { /* 单个 tap 异常不影响广播 */ }
+      }
+    }
     const windows = BrowserWindow.getAllWindows()
     for (const win of windows) {
       if (!win.isDestroyed()) {

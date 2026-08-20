@@ -48,6 +48,13 @@ export interface IEventEmitter {
    * @param status - 状态数据
    */
   emitStatus(channel: string, status: StatusEvent): void
+
+  /**
+   * 服务端事件监听（可选能力，供核心内消费者如 AppSessionService 事件桥）：
+   * 每次 emit 都回调（携带 emit 时刻 ALS userId 供租户路由），返回注销函数。
+   * web 端 WebSocketEventEmitter 与 Electron 实现均已支持；实现缺失时调用方应降级。
+   */
+  tapEvents?(cb: (channel: string, data: unknown, userId: string | null) => void): () => void
 }
 
 /**

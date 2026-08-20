@@ -94,6 +94,8 @@ export interface MessageMetadata {
   thinkingChain?: string  // 思维链内容
   webSearch?: WebSearchResult[]  // 联网搜索结果
   knowledgeBase?: KnowledgeBaseReference[]  // 知识库引用
+  /** 工作流会话卡片（应用模块；见 app.types SessionCardMeta——含 card 判别字段） */
+  sessionCard?: import('./app.types').SessionCardMeta
 }
 
 /**
