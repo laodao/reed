@@ -23,6 +23,7 @@ export const APP_SESSION_STATUSES = {
 export const WORKFLOW_SESSION_CARDS = {
   startForm: 'start-form',
   runStatus: 'run-status',
+  nodeStatus: 'node-status',
   review: 'review',
   message: 'message',
   report: 'report',
@@ -32,6 +33,7 @@ export const WORKFLOW_SESSION_CARDS = {
 export type SessionCardMeta =
   | { card: typeof WORKFLOW_SESSION_CARDS.startForm; appId: string; form: unknown[]; runId?: string }
   | { card: typeof WORKFLOW_SESSION_CARDS.runStatus; runId: string; status: string }
+  | { card: typeof WORKFLOW_SESSION_CARDS.nodeStatus; runId: string; nodeId: string; status: string }
   | { card: typeof WORKFLOW_SESSION_CARDS.review; runId: string; nodeId: string; kind: 'form' | 'approve' | 'choose' | 'input'; schema?: unknown }
   | { card: typeof WORKFLOW_SESSION_CARDS.message; runId: string; content: string }
   | { card: typeof WORKFLOW_SESSION_CARDS.report; runId: string; title: string; markdown: string; format?: string; filePath?: string; imageBase64?: string }

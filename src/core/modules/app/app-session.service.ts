@@ -187,14 +187,16 @@ export class AppSessionService {
       }
       case WORKFLOW_RUN_EVENT_TYPES.nodeStatus: {
         const ns = ev as { nodeId?: string; status?: string }
-        this.writeCard(sessionId, { card: 'node-status', runId: ev.runId, nodeId: ns.nodeId ?? '', status: ns.status ?? '' })
+        this.writeCard(sessionId, { card: WORKFLOW_SESSION_CARDS.nodeStatus, runId: ev.runId, nodeId: ns.nodeId ?? '', status: ns.status ?? '' })
           .catch(e => logger.error('[AppSessionService] 写 node-status 卡片失败', e))
         break
       }
       case WORKFLOW_RUN_EVENT_TYPES.runStatus: {
         const rs = ev as { status?: string; error?: string }
         if (rs.status === WORKFLOW_RUN_STATUSES.succeeded) {
-          void this.finishSucceeded(sessionId, ev.runId!)
+          void this.finishSucceeded(sessionId, ev.runId!).catch(e =>
+            logger.error('[AppSessionService] finishSucceeded 顶层拒绝兜底', e)
+          )
         } else if (rs.status && WORKFLOW_RUN_STATUSES.succeeded !== rs.status) {
           // 终态（failed/cancelled/timed_out/interrupted）统一收口
           this.writeCard(sessionId, { card: WORKFLOW_SESSION_CARDS.message, runId: ev.runId!, content: `运行${rs.status}：${rs.error ?? '已结束'}` })
@@ -235,9 +237,13 @@ export class AppSessionService {
     } catch (e) {
       logger.warn('[AppSessionService] 成功终态聚合失败（写占位卡片）', e)
       await this.writeCard(sessionId, { card: WORKFLOW_SESSION_CARDS.message, runId, content: '运行完成' })
+    } finally {
+      // 终态收尾不得让 update 抛出的拒绝逃出（void 调用无 catch → Unhandled Rejection）
+      await this.deps.appSessions.update(sessionId, { status: APP_SESSION_STATUSES.idle }).catch(e =>
+        logger.error('[AppSessionService] 会话归 idle 失败（runId 已清除）', e)
+      )
+      this.runToSession.delete(runId)
     }
-    await this.deps.appSessions.update(sessionId, { status: APP_SESSION_STATUSES.idle })
-    this.runToSession.delete(runId)
   }
 
   /** 写会话卡片消息（metadata.sessionCard） */

@@ -174,7 +174,7 @@ describe('AppSessionService：事件桥', () => {
     const s = await bootRun(apps, svc)
     tapCb!('wf:run-event', { type: 'node-status', runId: 'run_1', nodeId: 'llm', status: 'running' }, 'u1')
     const cards = await svc.getSessionMessages(s.id)
-    const ns = cards.filter(c => c.metadata?.sessionCard?.card === 'node-status')
+    const ns = cards.filter(c => c.metadata?.sessionCard?.card === WORKFLOW_SESSION_CARDS.nodeStatus)
     expect(ns).toHaveLength(1)
     expect(ns[0].metadata.sessionCard).toMatchObject({ nodeId: 'llm', status: 'running' })
   })
