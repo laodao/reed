@@ -29,7 +29,12 @@ Web:      Controller  ─┘    服务层（唯一）   └─ 复用: workflow-
 
 会话消息复用 messages 表（dialog_id=app_session.id）；
 引擎事件经 AppSessionService 的事件订阅器 → 写会话消息（不依赖前端在线）；
-前端会话页与运行详情页共用 RunInputForm / 审核卡片渲染逻辑。
+前端会话页与运行详情页共用 RunInputForm / SessionMessageCard 卡片组件。
+
+**事件 tap 源（review 修正）**：`tapEvents` 现仅存在于 web 端 WebSocketEventEmitter（非接口成员）。
+方案：提升为 core `IEventEmitter` 的**可选方法** `tapEvents(cb): () => void`（emit 时先回调 taps，
+CB 携带 emit 时刻 ALS userId）；Electron 的 ElectronEventEmitter 同步实现同语义（进程内集合）。
+AppSessionService 经 `getEventEmitter()` 统一取，不依赖平台具体类；与 C3 SSE 同源（web 已实现，仅补 Electron）。
 ```
 
 铁律对照：
@@ -105,8 +110,8 @@ role 与内容：用户侧（表单提交摘要 / 普通消息）role='user'；�
 
 ```ts
 export class AppDefinitionService {
-  // 列表/详情
-  listApps(params: { page; pageSize; keyword? }): Promise<{ items: AppRecord[]; total }>
+  // 列表/详情（review：列表项聚合 sessionCount/runCount——会话数查 app_sessions，运行计数按 source_id 查 workflow_runs）
+  listApps(params: { page; pageSize; keyword? }): Promise<{ items: Array<AppRecord & { sessionCount: number; runCount: number }>; total }>
   getApp(id): Promise<AppRecord | null>
   getAppByDefinitionId(definitionId): Promise<AppRecord | null>   // 编辑器"已发布为应用？"检测
 
@@ -141,6 +146,7 @@ export class AppSessionService {
   listSessions(appId): Promise<AppSessionRecord[]>
   getSession(sessionId): Promise<AppSessionRecord | null>
   getSessionMessages(sessionId): Promise<Message[]>    // dialog_id=sessionId ASC
+  renameSession(sessionId, title): Promise<AppSessionRecord | null>   // review：标题可改名
 
   // 启动/多轮
   async startRun(sessionId, inputs?: Record<string, unknown>): Promise<{ runId; status }>
@@ -175,6 +181,10 @@ wf:run-event（runId 维度）→ AppSessionService.handleRunEvent：
 
 事件桥测试要点：mock tap 源注入事件序列 → 断言 messages 表按序写入对应卡片 metadata。
 
+**runId↔会话映射**：startRun 时 service 内存 Map 登记 `runId→sessionId`；会话页刷新时按该会话 `last_run_id` 兜底重拉挂起态（不依赖内存，重启不丢恢复路径）。
+**review 卡片文件字段**：挂起表单文件上传仍走 `wf:form-upload`（runId=会话 last_run_id + nodeId=卡片 nodeId，对话框渲染注入——复用 E1 RunInputForm.setFileUploadContext）。
+**导出 PDF**：report 卡片「导出 PDF」复用 `wf:report-to-pdf`（markdown→Buffer→saveBlobAs），不新开通道。
+
 ### 4.4 删除联动
 - `deleteApp`：删 app → 删该应用全部 app_sessions → 并删对应 messages（`deleteByDialogId` 复用现有 message.repository 方法）
 - 工作流被删除：应用保留但 `source_id` 悬空 → 会话启动时报"源工作流已删除"，前端显示只读提示
@@ -196,6 +206,7 @@ app:disable-share           disableShare(id)
 app:set-enabled             setEnabled(id, enabled)
 app:delete                  deleteApp(id)
 app-session:list            listSessions(appId)
+app-session:rename          renameSession(sessionId, title)
 app-session:create          createSession(appId, startInputs?)
 app-session:get             getSession(sessionId)
 app-session:messages        getSessionMessages(sessionId)
@@ -235,7 +246,8 @@ app-session:review          reviewDecide(sessionId, nodeId, decision, editedValu
 |------|------|------|
 | `/apps` | AppList.vue | 应用卡片网格（对齐原型①；图标/来源/版本/渠道点/统计）|
 | `/apps/:id` | AppDetail.vue | 概览 + 渠道 Tab（对齐原型②；4 渠道开关、分享令牌复制/重置、会话列表、「开始会话」）|
-| `/apps/:id/session` | AppSession.vue | 会话界面（对齐原型③）；复用 RunInputForm、审核卡片渲染逻辑（自 WorkflowRunDetail 抽出共享卡片组件）|
+| `/apps/:id/session` | AppSession.vue | 会话界面（对齐原型③）；复用 RunInputForm |
+| 共享卡片组件 | `components/workflow/SessionMessageCard.vue` | 三态卡片：StartFormCard / ReviewCard（form/choose/approve/input）/ ResultCard（message/report+长图）；Actions 组合式 `useWorkflowRunActions`（doReview/doCancel/previewPdf）；WorkflowRunDetail 与 AppSession 共用 |
 | `/app-share/:token` | 复用 WorkflowGuestRun 改造 | 应用级托管分享 |
 
 菜单：`config/menu.ts` 新增「应用」入口（`hidden:false`，icon 对齐侧边栏）；`pathTitleMap/router meta.title` 覆盖（运营 tab 命名修复已有）。
@@ -256,7 +268,7 @@ app-session:review          reviewDecide(sessionId, nodeId, decision, editedValu
 | 应用删除 | 级联删会话与消息 |
 | 超长报告 | markdown 全量（消息存储上限内），长图 base64 走文件落盘+路径（复用 report-image 机制） |
 
-常量（shared，收敛字面量）：`APPLICATION_SOURCE_KINDS = { workflow: 'workflow' }`、`APP_SESSION_STATUSES`、`WORKFLOW_SESSION_CARDS`（card 判别联合）。
+常量（shared，类型与值同处）：`APPLICATION_SOURCE_KINDS`、`APP_SESSION_STATUSES`、`WORKFLOW_SESSION_CARDS` + `SessionCardMeta` 判别联合——core 写库与前端渲染双端同源，严禁另起一套。
 
 ---
 
