@@ -14,6 +14,9 @@ import { WORKFLOW_DEFAULTS } from '@shared/types/workflow.types'
 import { WorkflowEngineService } from './engine/workflow-engine.service'
 import { makeEngineDeps, WorkflowRunService } from './workflow-run.service'
 import { WorkflowDefinitionService } from './workflow-definition.service'
+import { AppDefinitionService } from '../app/app-definition.service'
+import { AppSessionService } from '../app/app-session.service'
+import { getEventEmitter } from '@core/interfaces/event.interface'
 import { assertNodeRegistryConsistent, createFullNodeRegistry } from './nodes'
 import { WorkflowTriggerScheduler } from './trigger/workflow-trigger-scheduler.service'
 import { createLogger } from '@core/utils/logger'
@@ -26,6 +29,8 @@ interface WorkflowSubsystem {
   runService: WorkflowRunService
   definitionService: WorkflowDefinitionService
   scheduler: WorkflowTriggerScheduler
+  appDefinitionService: AppDefinitionService
+  appSessionService: AppSessionService
 }
 
 let subsystem: WorkflowSubsystem | null = null
@@ -101,7 +106,21 @@ export async function initWorkflowSubsystem(): Promise<WorkflowSubsystem> {
   }, WORKFLOW_DEFAULTS.reviewTimeoutTickMs)
   reviewTickerHandle.unref?.()
 
-  subsystem = { engine, runService, definitionService, scheduler }
+  // 6. 应用模块：应用定义/会话服务（片1/片2），事件桥挂到全局事件发射器
+  const appDefinitionService = new AppDefinitionService(
+    db.appDefinitions as any,
+    db.appSessions as any,
+    db.workflowDefinitions,
+    db.messages as any
+  )
+  const appSessionService = new AppSessionService(
+    { appSessions: db.appSessions as any, messages: db.messages as any, runService, engine },
+    db.appDefinitions as any,
+    db.workflowDefinitions,
+  )
+  appSessionService.attach(getEventEmitter().tapEvents)
+
+  subsystem = { engine, runService, definitionService, scheduler, appDefinitionService, appSessionService }
   logger.info('[workflow-boot] 工作流子系统已启动')
   return subsystem
 }

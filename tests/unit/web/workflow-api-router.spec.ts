@@ -42,6 +42,14 @@ const fakeDefinitions = {
     if (token === 'notshared') return { ...sharedDef, id: 'd2', userId: null }
     return null
   },
+  async getById(id: string) { return id === 'd1' ? sharedDef : null },
+}
+// 应用分享面（片3）
+const fakeApps = {
+  async getByShareToken(token: string) {
+    if (token === 'app_tok') return { id: 'appx', name: '应用分享', userId: 'u1', sourceId: 'd1' }
+    return null
+  },
 }
 
 // ---- 可编程事件 tap 源 ----
@@ -57,7 +65,7 @@ const app: Express = express()
 app.use(express.json())
 app.use(cookieParser())
 app.use(attachUser)
-app.use('/api/workflow', createWorkflowApiRouter({ getDeps: () => ({ runService: fakeRunService as any, definitions: fakeDefinitions }), tapSource }))
+app.use('/api/workflow', createWorkflowApiRouter({ getDeps: () => ({ runService: fakeRunService as any, definitions: fakeDefinitions, apps: fakeApps as any }), tapSource }))
 
 const server = http.createServer(app)
 let baseUrl = ''
@@ -252,5 +260,15 @@ describe('C3 免登录分享：GET /share/:token/run/:runId/events（SSE）', ()
     await ensureListen()
     const res = await fetch(`${baseUrl}/api/workflow/share/tok123/run/run_2/events`)
     expect(res.status).toBe(404)
+  })
+})
+
+describe('C3 应用分享（片3）：resolveShare 应用优先', () => {
+  it('应用令牌命中 → 用应用 sourceId 取定义（名字用应用名）', async () => {
+    await ensureListen()
+    const res = await fetch(`${baseUrl}/api/workflow/share/app_tok`)
+    const body = await res.json()
+    expect(body.data.name).toBe('应用分享')   // 应用名优先
+    expect(body.data.definitionId).toBe('d1')  // sourceId 落定义
   })
 })

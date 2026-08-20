@@ -713,6 +713,28 @@ const electronAPI = {
     },
   },
 
+  // ==================== 应用模块（片3） ====================
+  app: {
+    list: (p: { keyword?: string; page: number; pageSize: number }) => ipcRenderer.invoke('app:list', p),
+    get: (id: string) => ipcRenderer.invoke('app:get', { id }),
+    getByDefinition: (definitionId: string) => ipcRenderer.invoke('app:get-by-definition', { definitionId }),
+    createFromWorkflow: (p: { definitionId: string; name?: string; icon?: string }) => ipcRenderer.invoke('app:create-from-workflow', p),
+    updateChannels: (p: { id: string; channelSession?: boolean; channelShare?: boolean; channelApi?: boolean }) => ipcRenderer.invoke('app:update-channels', p),
+    enableShare: (id: string) => ipcRenderer.invoke('app:enable-share', { id }),
+    disableShare: (id: string) => ipcRenderer.invoke('app:disable-share', { id }),
+    setEnabled: (id: string, enabled: boolean) => ipcRenderer.invoke('app:set-enabled', { id, enabled }),
+    delete: (id: string) => ipcRenderer.invoke('app:delete', { id }),
+  },
+  appSession: {
+    list: (appId: string) => ipcRenderer.invoke('app-session:list', { appId }),
+    create: (p: { appId: string; startInputs?: Record<string, unknown> }) => ipcRenderer.invoke('app-session:create', p),
+    get: (sessionId: string) => ipcRenderer.invoke('app-session:get', { sessionId }),
+    rename: (sessionId: string, title: string) => ipcRenderer.invoke('app-session:rename', { sessionId, title }),
+    messages: (sessionId: string) => ipcRenderer.invoke('app-session:messages', { sessionId }),
+    start: (p: { sessionId: string; inputs?: Record<string, unknown> }) => ipcRenderer.invoke('app-session:start', p),
+    review: (p: { sessionId: string; nodeId: string; decision: string; editedValues?: Record<string, unknown>; choice?: string }) => ipcRenderer.invoke('app-session:review', p),
+  },
+
   file: {
     // 打开文件选择对话框
     openDialog: (options?: {

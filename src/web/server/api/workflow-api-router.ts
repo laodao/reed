@@ -58,6 +58,11 @@ export interface WorkflowApiDeps {
   /** C3 免登录分享面（getByShareToken 跨租户；返回含 userId 供所有者身份运行） */
   definitions?: {
     getByShareToken(token: string): Promise<ShareDefinition | null>
+    getById?(id: string): Promise<ShareDefinition | null>
+  }
+  /** 应用模块分享面（片3：应用优先；回退工作流令牌） */
+  apps?: {
+    getByShareToken(token: string): Promise<{ id: string; name: string; userId: string | null; sourceId: string } | null>
   }
 }
 
@@ -266,7 +271,16 @@ export function createWorkflowApiRouter(deps: {
 
   /** 解析分享令牌 → (定义, 所有者)；无效返回 null（404 不泄露存在性） */
   const resolveShare = async (token: string): Promise<ShareDefinition | null> => {
-    const { definitions } = deps.getDeps()
+    const { definitions, apps } = deps.getDeps()
+    // 应用分享优先：应用令牌命中 → 用其 sourceId 的定义（发布图）
+    const app = apps ? await apps.getByShareToken(token) : null
+    if (app?.sourceId && definitions && 'getById' in definitions) {
+      const ownerDef = await (definitions as { getById(id: string): Promise<ShareDefinition | null> }).getById(app.sourceId)
+      if (ownerDef) {
+        return { id: ownerDef.id, name: app.name || ownerDef.name, description: ownerDef.description, userId: app.userId, publishedGraph: ownerDef.publishedGraph }
+      }
+      return null
+    }
     if (!definitions) return null
     return definitions.getByShareToken(token)
   }
