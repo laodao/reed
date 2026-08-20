@@ -8,6 +8,9 @@ import type { AppSessionRecord } from '@shared/types/app.types'
 import { APP_SESSION_STATUSES } from '@shared/types/app.types'
 import { AppSessionEntity } from '../entities/app-session.entity'
 import { BaseRepository } from '../base-repository'
+import { createLogger } from '@core/utils/logger'
+
+const logger = createLogger('AppSessionRepository')
 
 export interface CreateAppSessionInput {
   appId: string
@@ -35,8 +38,9 @@ export class AppSessionRepository extends BaseRepository<AppSessionEntity, AppSe
       try {
         const parsed = JSON.parse(e.lastStartInputs)
         if (parsed && typeof parsed === 'object') lastStartInputs = parsed
-      } catch {
-        // 损坏数据降级为 null
+      } catch (err) {
+        // 损坏数据降级 + 留痕（对齐 workflow-definition.safeParse 的 logger.warn 纪律）
+        logger.warn(`[AppSessionRepository] last_start_inputs 解析失败（id=${e.id}），降级为 null`, err)
       }
     }
     return {

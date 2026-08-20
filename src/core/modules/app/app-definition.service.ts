@@ -32,9 +32,14 @@ export class AppDefinitionService {
     total: number
   }> {
     const { items, total } = await this.apps.listApp(params)
-    const withCount = await Promise.all(items.map(async app => ({
-      ...app,
-      sessionCount: await this.sessions.countByApp(app.id),
+    const withCount = await Promise.all(items.map(async app => {
+      try {
+        return { ...app, sessionCount: await this.sessions.countByApp(app.id) }
+      } catch (e) {
+        // 单独应用的会话计数失败不整查崩溃 → 降级 0 并留痕
+        logger.warn(`[App] 会话计数失败（app=${app.id}），按 0 展示`, e)
+        return { ...app, sessionCount: 0 }
+      }
     })))
     return { items: withCount, total }
   }
@@ -75,9 +80,14 @@ export class AppDefinitionService {
       logger.info(`[App] 应用创建：${app.name}（source=${definitionId} v${def.publishedVersion}）`)
       return app
     } catch (e) {
-      // 唯一索引兜底：并发下另有请求已建同定义应用 → 回退返回既有（幂等语义）
+      // 唯一索引兜底：并发下另有请求已建同定义应用 → 回退返回既有（幂等语义）；
+      // 非冲突异常必须上抛——带日志避免静默吞
       const winner = await this.apps.findBySource(APPLICATION_SOURCE_KINDS.workflow, definitionId)
-      if (winner) return winner
+      if (winner) {
+        logger.warn(`[App] 应用创建发现并发重复（source=${definitionId}），回退既有`)
+        return winner
+      }
+      logger.error(`[App] 应用创建失败（source=${definitionId}）`, e)
       throw e
     }
   }
@@ -125,7 +135,12 @@ export class AppDefinitionService {
   async deleteApp(id: string): Promise<void> {
     const sessions = await this.sessions.listByApp(id)
     for (const s of sessions) {
-      await this.messages.deleteByDialogId(s.id)
+      try {
+        await this.messages.deleteByDialogId(s.id)
+      } catch (e) {
+        // 消息清理失败不阻断会话/应用删除（数据孤儿可接受度低 → 记 error 留痕）
+        logger.error(`[App] 删除会话 ${s.id} 的消息失败（级联继续）`, e)
+      }
     }
     await this.sessions.deleteByApp(id)
     await this.apps.delete(id)
