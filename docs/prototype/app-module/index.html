@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>应用模块原型 - The Bot</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Microsoft YaHei', sans-serif; background: #f2f3f5; color: #303133; font-size: 14px; }
+  .layout { display: flex; height: 100vh; }
+  /* 侧边栏 */
+  .sidebar { width: 64px; background: #1d2129; display: flex; flex-direction: column; align-items: center; padding: 12px 0; gap: 6px; }
+  .nav-item { width: 44px; height: 44px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #a9aeb8; cursor: pointer; font-size: 20px; position: relative; }
+  .nav-item:hover { background: #2a2f3a; }
+  .nav-item.active { background: #409eff; color: #fff; }
+  .nav-item .dot { position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: #f56c6c; }
+  .nav-label { font-size: 10px; color: #a9aeb8; }
+  /* 主区 */
+  .main { flex: 1; overflow: auto; padding: 20px 24px; }
+  .page-title { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+  .page-desc { color: #909399; font-size: 13px; margin-bottom: 18px; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 6px; border: 1px solid #dcdfe6; background: #fff; cursor: pointer; font-size: 13px; transition: all .15s; }
+  .btn:hover { border-color: #409eff; color: #409eff; }
+  .btn.primary { background: #409eff; border-color: #409eff; color: #fff; }
+  .btn.primary:hover { background: #66b1ff; }
+  .btn.success { background: #67c23a; border-color: #67c23a; color: #fff; }
+  .btn.danger-text { color: #f56c6c; border: none; background: none; }
+  .btn.small { padding: 4px 10px; font-size: 12px; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ===== 屏幕1：应用列表 ===== */
+  .app-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+  .app-card { background: #fff; border-radius: 10px; padding: 18px; border: 1px solid #e4e7ed; cursor: pointer; transition: all .15s; }
+  .app-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.08); transform: translateY(-2px); }
+  .app-card .head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .app-icon { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #fff; }
+  .app-name { font-weight: 600; font-size: 15px; }
+  .app-ver { font-size: 12px; color: #909399; }
+  .channel-dots { display: flex; gap: 6px; margin: 8px 0; }
+  .cdot { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #f0f2f5; color: #909399; }
+  .cdot.on { background: #e1f3d8; color: #67c23a; }
+  .app-stats { display: flex; gap: 16px; color: #909399; font-size: 12px; margin-top: 8px; }
+  .toolbar { display: flex; justify-content: space-between; margin-bottom: 16px; }
+
+  /* ===== 屏幕2：应用详情 ===== */
+  .detail-header { background: #fff; border-radius: 10px; padding: 20px; display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+  .detail-header .info { flex: 1; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; background: #fff; border-radius: 10px 10px 0 0; padding: 0 8px; border-bottom: 2px solid #e4e7ed; }
+  .tab { padding: 12px 18px; cursor: pointer; color: #606266; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+  .tab.active { color: #409eff; border-bottom-color: #409eff; font-weight: 600; }
+  .tab-body { background: #fff; border-radius: 0 0 10px 10px; padding: 20px; }
+  .channel-row { display: flex; align-items: center; gap: 14px; padding: 16px; border: 1px solid #e4e7ed; border-radius: 8px; margin-bottom: 12px; }
+  .channel-row .c-info { flex: 1; }
+  .channel-row .c-name { font-weight: 600; margin-bottom: 2px; }
+  .channel-row .c-desc { color: #909399; font-size: 12px; }
+  .switch { width: 40px; height: 22px; border-radius: 11px; background: #dcdfe6; position: relative; cursor: pointer; transition: .2s; }
+  .switch.on { background: #409eff; }
+  .switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: .2s; }
+  .switch.on::after { left: 20px; }
+  .link-pill { background: #f5f7fa; border: 1px dashed #c0c4cc; padding: 6px 12px; border-radius: 6px; font-size: 12px; color: #606266; font-family: monospace; }
+  .stat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .stat-card { background: #f7f8fa; border-radius: 8px; padding: 14px; text-align: center; }
+  .stat-card .num { font-size: 22px; font-weight: 700; color: #409eff; }
+  .stat-card .lbl { font-size: 12px; color: #909399; }
+
+  /* ===== 屏幕3：会话界面 ===== */
+  .chat-wrap { display: flex; height: calc(100vh - 40px); background: #fff; border-radius: 12px; overflow: hidden; }
+  .chat-side { width: 240px; background: #f7f8fa; border-right: 1px solid #e4e7ed; padding: 14px; }
+  .chat-side .s-title { font-weight: 600; margin-bottom: 10px; }
+  .session-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; margin-bottom: 4px; }
+  .session-item:hover { background: #eceef2; }
+  .session-item.active { background: #d9ecff; color: #409eff; }
+  .chat-main { flex: 1; display: flex; flex-direction: column; }
+  .chat-head { padding: 14px 20px; border-bottom: 1px solid #e4e7ed; display: flex; align-items: center; gap: 10px; }
+  .chat-msgs { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+  .msg-row { display: flex; gap: 10px; }
+  .msg-row.user { flex-direction: row-reverse; }
+  .avatar { width: 34px; height: 34px; border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 16px; color: #fff; }
+  .bubble { max-width: 72%; border-radius: 10px; padding: 12px 14px; }
+  .msg-row.user .bubble { background: #409eff; color: #fff; }
+  .msg-row.ai .bubble { background: #f7f8fa; flex: 1; max-width: 640px; }
+  .card { border: 1px solid #e4e7ed; border-radius: 10px; background: #fff; padding: 14px; margin-top: 8px; }
+  .card-title { font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 8px; }
+  .badge.blue { background: #d9ecff; color: #409eff; }
+  .badge.green { background: #e1f3d8; color: #67c23a; }
+  .badge.orange { background: #faecd8; color: #e6a23c; }
+  .form-item { margin-bottom: 12px; }
+  .form-item label { display: block; font-size: 13px; margin-bottom: 4px; color: #606266; }
+  .input { border: 1px solid #dcdfe6; border-radius: 6px; padding: 8px 10px; width: 100%; font-size: 13px; background: #fff; }
+  .file-drop { border: 1.5px dashed #c0c4cc; border-radius: 8px; padding: 18px; text-align: center; color: #909399; cursor: pointer; background: #fafafa; }
+  .file-drop.has { border-color: #67c23a; color: #67c23a; background: #f0f9eb; }
+  .select { border: 1px solid #dcdfe6; border-radius: 6px; padding: 8px 10px; background: #fff; width: 100%; font-size: 13px; color: #303133; }
+  .card-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+  .progress-track { display: flex; align-items: center; gap: 4px; padding: 10px 12px; background: #f7f8fa; border-radius: 8px; font-size: 12px; }
+  .pnode { padding: 3px 10px; border-radius: 12px; background: #e4e7ed; color: #909399; }
+  .pnode.run { background: #d9ecff; color: #409eff; }
+  .pnode.done { background: #e1f3d8; color: #67c23a; }
+  .collapsed-summary { font-size: 12px; color: #909399; background: #f0f2f5; border-radius: 6px; padding: 8px 12px; margin-top: 6px; cursor: pointer; }
+  .chat-input { border-top: 1px solid #e4e7ed; padding: 14px 20px; display: flex; gap: 10px; align-items: center; }
+  .chat-input .input { flex: 1; }
+  .result-md { background: #fff; border-radius: 8px; font-size: 13px; line-height: 1.8; }
+  .result-md h2 { font-size: 16px; margin: 8px 0; color: #c0392b; }
+  .result-img { width: 100%; border-radius: 8px; margin-top: 8px; background: linear-gradient(135deg,#c0392b,#e74c3c); color: #fff; padding: 22px 24px; }
+  .review-actions { display: flex; gap: 8px; }
+
+  /* 屏幕切换 */
+  .screen { display: none; }
+  .screen.show { display: block; }
+  .screen.show.chat-screen { display: flex; }
+  .proto-bar { position: fixed; bottom: 16px; right: 16px; background: #1d2129; color: #fff; border-radius: 10px; padding: 8px 12px; display: flex; gap: 6px; z-index: 99; box-shadow: 0 4px 16px rgba(0,0,0,.2); }
+  .proto-bar button { background: none; border: none; color: #a9aeb8; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .proto-bar button.active { background: #409eff; color: #fff; }
+  .tip { background: #ecf5ff; border-left: 3px solid #409eff; padding: 10px 14px; border-radius: 0 6px 6px 0; font-size: 12px; color: #409eff; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <div class="sidebar">
+    <div class="nav-item">💬</div>
+    <div class="nav-item">🖼</div>
+    <div class="nav-item">📖</div>
+    <div class="nav-item">🔗</div>
+    <div class="nav-item">📝</div>
+    <div class="nav-item active" onclick="show('s1')">📦<div class="nav-label" style="font-size:10px;color:#a9aeb8">应用</div></div>
+    <div class="nav-item">⚙</div>
+  </div>
+
+  <!-- ========== 屏幕1：应用列表 ========== -->
+  <div class="main screen show" id="s1">
+    <div class="page-title">应用</div>
+    <div class="page-desc">已发布的工作流应用——分发到会话、分享链接、API 或定时运行</div>
+    <div class="tip">💡 应用来自工作流的「发布为应用」。纯自用的定时/本地运行无需建应用。</div>
+    <div class="toolbar">
+      <input class="input" style="width:260px" placeholder="搜索应用..." />
+      <button class="btn primary">＋ 从工作流创建应用</button>
+    </div>
+    <div class="app-grid">
+      <div class="app-card" onclick="show('s2')">
+        <div class="head">
+          <div class="app-icon" style="background:linear-gradient(135deg,#c0392b,#e74c3c)">📰</div>
+          <div><div class="app-name">每日早间新闻</div><div class="app-ver">来自工作流 · v3</div></div>
+        </div>
+        <div class="channel-dots">
+          <span class="cdot on">会话</span><span class="cdot on">分享链接</span><span class="cdot">API</span><span class="cdot on">定时 07:30</span>
+        </div>
+        <div class="app-stats"><span>运行 128 次</span><span>今日 1 次</span><span>3 个会话</span></div>
+      </div>
+      <div class="app-card" onclick="show('s2')">
+        <div class="head">
+          <div class="app-icon" style="background:linear-gradient(135deg,#409eff,#66b1ff)">🌐</div>
+          <div><div class="app-name">文档翻译收集</div><div class="app-ver">来自工作流 · v1</div></div>
+        </div>
+        <div class="channel-dots"><span class="cdot">会话</span><span class="cdot on">分享链接</span><span class="cdot">API</span></div>
+        <div class="app-stats"><span>运行 47 次</span><span>昨日 5 次</span></div>
+      </div>
+      <div class="app-card" onclick="show('s2')">
+        <div class="head">
+          <div class="app-icon" style="background:linear-gradient(135deg,#67c23a,#95d475)">🔍</div>
+          <div><div class="app-name">合同智能审查</div><div class="app-ver">来自工作流 · v2</div></div>
+        </div>
+        <div class="channel-dots"><span class="cdot on">会话</span><span class="cdot">分享链接</span><span class="cdot on">API</span></div>
+        <div class="app-stats"><span>运行 312 次</span><span>12 个会话</span></div>
+      </div>
+      <div class="app-card" style="border-style:dashed; display:flex; align-items:center; justify-content:center; color:#909399; min-height:130px" onclick="alert('选择一个已发布的工作流 → 预填名称 → 创建')">
+        ＋ 从已发布工作流创建
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 屏幕2：应用详情（渠道Tab） ========== -->
+  <div class="main screen" id="s2">
+    <button class="btn small" onclick="show('s1')">← 返回应用列表</button>
+    <div class="detail-header" style="margin-top:12px">
+      <div class="app-icon" style="background:linear-gradient(135deg,#c0392b,#e74c3c); width:52px; height:52px; font-size:26px">📰</div>
+      <div class="info">
+        <div class="page-title">每日早间新闻 <span class="badge green" style="vertical-align:3px">已启用</span></div>
+        <div class="page-desc">来自工作流「每日早间新闻」v3 · 累计运行 128 次 · 创建于 2026-08-15</div>
+      </div>
+      <button class="btn primary" onclick="show('s3')">▶ 开始会话</button>
+      <button class="btn">查看工作流</button>
+    </div>
+    <div class="tabs">
+      <div class="tab">概览</div>
+      <div class="tab active">渠道</div>
+      <div class="tab">会话记录 <span style="color:#909399">(3)</span></div>
+      <div class="tab">版本</div>
+    </div>
+    <div class="tab-body">
+      <div class="channel-row">
+        <div class="c-info"><div class="c-name">💬 会话</div><div class="c-desc">在本机以对话方式使用：表单填写、审核确认、查看结果</div></div>
+        <div class="switch on" onclick="this.classList.toggle('on')"></div>
+      </div>
+      <div class="channel-row">
+        <div class="c-info"><div class="c-name">🔗 分享链接</div><div class="c-desc">任何人可通过链接填写运行（免登录独立页）</div></div>
+        <span class="link-pill">http://host:4201/#/app/ab3f9c…</span>
+        <button class="btn small">复制</button>
+        <button class="btn small danger-text">重置令牌</button>
+        <div class="switch on" onclick="this.classList.toggle('on')"></div>
+      </div>
+      <div class="channel-row">
+        <div class="c-info"><div class="c-name">🔌 API</div><div class="c-desc">外部系统调用：POST /api/app/ab3f9c/invoke + SSE 事件流</div></div>
+        <button class="btn small">查看调用文档</button>
+        <div class="switch on" onclick="this.classList.toggle('on')"></div>
+      </div>
+      <div class="channel-row">
+        <div class="c-info"><div class="c-name">⏰ 定时</div><div class="c-desc">每天 07:30 自动运行（结果落盘 workflow-reports）</div></div>
+        <button class="btn small">配置触发器</button>
+        <div class="switch on" onclick="this.classList.toggle('on')"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 屏幕3：会话界面 ========== -->
+  <div class="main screen chat-screen" id="s3" style="padding:20px">
+    <div class="chat-wrap" style="width:100%">
+      <div class="chat-side">
+        <div class="s-title">📰 每日早间新闻</div>
+        <button class="btn primary small" style="width:100%; justify-content:center; margin-bottom:10px">＋ 新会话</button>
+        <div class="session-item active">今天的早报</div>
+        <div class="session-item">测试-政经专题</div>
+        <div class="session-item">08-16 早报</div>
+      </div>
+      <div class="chat-main">
+        <div class="chat-head">
+          <b>今天的早报</b><span class="badge blue">运行中</span>
+          <span style="flex:1"></span>
+          <button class="btn small" onclick="show('s2')">应用详情</button>
+        </div>
+        <div class="chat-msgs">
+          <!-- 启动表单（已折叠） -->
+          <div class="msg-row ai">
+            <div class="avatar" style="background:#409eff">📰</div>
+            <div class="bubble">
+              <b style="font-size:13px">启动参数</b>
+              <div class="collapsed-summary">主题：时政与财经 · 渠道：知乎日报 ▸ 已提交 08-17 07:30</div>
+            </div>
+          </div>
+          <!-- 中途表单卡片 -->
+          <div class="msg-row ai">
+            <div class="avatar" style="background:#e6a23c">📋</div>
+            <div class="bubble">
+              <div class="card">
+                <div class="card-title">请上传待翻译文件并选择目标语言 <span class="badge orange">等待填写</span></div>
+                <div class="form-item">
+                  <label>待翻译文件 <span style="color:#f56c6c">*</span></label>
+                  <div class="file-drop">📄 拖拽文件到此处，或点击选择（pdf/docx/txt）</div>
+                </div>
+                <div class="form-item">
+                  <label>目标语言 <span style="color:#f56c6c">*</span></label>
+                  <select class="select"><option>英语</option><option>日语</option></select>
+                </div>
+                <div class="card-footer">
+                  <button class="btn small">取消流程</button>
+                  <button class="btn small primary">提交并继续</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- 审核卡片 -->
+          <div class="msg-row ai">
+            <div class="avatar" style="background:#67c23a">✅</div>
+            <div class="bubble">
+              <div class="card">
+                <div class="card-title">人工审核：请确认早报标题 <span class="badge green">已批准</span></div>
+                <div style="font-size:13px; padding:6px 0">「8月17日全球政经要览：三大信号值得关注」</div>
+                <div class="review-actions">
+                  <button class="btn small" disabled>批准</button>
+                  <button class="btn small" disabled>修改后批准</button>
+                  <button class="btn small" disabled>驳回</button>
+                  <span style="color:#67c23a; font-size:12px; align-self:center">✓ 你在 07:31 批准</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- 运行进度 -->
+          <div class="msg-row ai">
+            <div class="avatar" style="background:#909399">⚡</div>
+            <div class="bubble" style="max-width:640px">
+              <div class="progress-track">
+                <span class="pnode done">开始</span>›<span class="pnode done">抓取新闻</span>›<span class="pnode done">汇总早报</span>›<span class="pnode done">审核</span>›<span class="pnode run">生成长图…</span>
+              </div>
+            </div>
+          </div>
+          <!-- 结果卡片 -->
+          <div class="msg-row ai">
+            <div class="avatar" style="background:#c0392b">📰</div>
+            <div class="bubble">
+              <div class="card">
+                <div class="card-title">2026-08-17 每日早间新闻 <span class="badge blue">长图已生成</span></div>
+                <div class="result-md">
+                  <h2>主编点评</h2>
+                  <p>今日重点关注：美联储降息信号、稀土出口新规、AI 芯片格局变化……</p>
+                </div>
+                <div class="result-img">
+                  <div style="font-size:18px; font-weight:700">每日早间新闻</div>
+                  <div style="font-size:12px; opacity:.85; margin-top:4px">2026年8月17日 · 星期一</div>
+                  <div style="margin-top:14px; font-size:13px; opacity:.9">▸ 全球政经要览：三大信号值得关注<br>▸ 主编点评：市场情绪转向……</div>
+                </div>
+                <div class="card-footer">
+                  <button class="btn small">下载长图</button>
+                  <button class="btn small">导出 PDF</button>
+                  <button class="btn small">查看运行详情</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="chat-input">
+          <button class="btn small">＋</button>
+          <input class="input" placeholder="发消息以新参数再次运行（如：今天聚焦科技新闻）" />
+          <button class="btn primary">发送</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 原型导航条 -->
+<div class="proto-bar">
+  <span style="align-self:center; font-size:11px; color:#a9aeb8; padding:0 4px">原型</span>
+  <button class="active" onclick="show('s1', this)">① 应用列表</button>
+  <button onclick="show('s2', this)">② 应用详情·渠道</button>
+  <button onclick="show('s3', this)">③ 会话界面</button>
+</div>
+
+<script>
+  function show(id, btn) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('show'))
+    document.getElementById(id).classList.add('show')
+    document.querySelectorAll('.proto-bar button').forEach(b => b.classList.remove('active'))
+    if (btn) btn.classList.add('active')
+  }
+</script>
+</body>
+</html>
