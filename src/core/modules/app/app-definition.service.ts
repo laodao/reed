@@ -40,7 +40,7 @@ export class AppDefinitionService {
         logger.warn(`[App] 会话计数失败（app=${app.id}），按 0 展示`, e)
         return { ...app, sessionCount: 0 }
       }
-    })))
+    }))
     return { items: withCount, total }
   }
 
