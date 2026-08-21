@@ -78,6 +78,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useWorkflowStore } from '@/stores/workflow'
 import { saveBlobAs } from '@/utils/file-saver'
 import RunInputForm from '@/components/workflow/RunInputForm.vue'
+import { WORKFLOW_RUN_TERMINAL_STATUSES } from '@shared/types/workflow.types'
 
 const route = useRoute()
 const router = useRouter()
@@ -268,7 +269,7 @@ onMounted(() => {
   void load()
   // 终态后停止轮询（事件驱动为主，轮询兜底）
   pollTimer = setInterval(() => {
-    if (!run.value || !['succeeded', 'failed', 'cancelled', 'timed_out', 'interrupted'].includes(run.value.status)) {
+    if (!run.value || !WORKFLOW_RUN_TERMINAL_STATUSES.has(run.value.status)) {
       void load()
     }
   }, 3000)

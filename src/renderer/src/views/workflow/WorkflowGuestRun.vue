@@ -71,6 +71,7 @@ import { useRoute } from 'vue-router'
 import { Loading, CircleCloseFilled, CircleCheckFilled, WarningFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import RunInputForm from '@/components/workflow/RunInputForm.vue'
+import { WORKFLOW_RUN_TERMINAL_STATUSES } from '@shared/types/workflow.types'
 
 /** 节点状态中文标签（与 RunDetail 一致口径） */
 const NODE_STATUS_LABEL: Record<string, string> = {
@@ -107,8 +108,7 @@ const runStatus = ref('running')
 const nodes = ref<NodeRunRow[]>([])
 const resultText = ref('')
 
-const TERMINAL = new Set(['succeeded', 'failed', 'cancelled', 'skipped', 'timed_out', 'interrupted'])
-const isTerminal = computed(() => TERMINAL.has(runStatus.value))
+const isTerminal = computed(() => WORKFLOW_RUN_TERMINAL_STATUSES.has(runStatus.value))
 const runStatusTone = computed(() => (runStatus.value === 'succeeded' ? 'ok' : isTerminal.value ? 'bad' : 'busy'))
 
 let es: EventSource | null = null

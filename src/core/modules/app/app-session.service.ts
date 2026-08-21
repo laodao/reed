@@ -14,7 +14,6 @@
 import type { AppSessionRecord } from '@shared/types/app.types'
 import { APP_SESSION_STATUSES, WORKFLOW_SESSION_CARDS, type SessionCardMeta } from '@shared/types/app.types'
 import { WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_EVENT_TYPES, WORKFLOW_RUN_STATUSES, WORKFLOW_RUN_TERMINAL_STATUSES, WORKFLOW_TRIGGER_TYPES, type WorkflowRunEvent } from '@shared/types/workflow.types'
-import type { WorkflowRunRepository } from '../../database/repositories/workflow-run.repository'
 import { createLogger } from '@core/utils/logger'
 
 const logger = createLogger('AppSessionService')
@@ -79,9 +78,9 @@ export class AppSessionService {
   ) {}
 
   /** 串行化写卡（FIFO 保序；失败隔离不阻断后续卡片） */
-  private enqueueCard(fn: () => Promise<unknown>): void {
+  private enqueueCard(sessionId: string, fn: () => Promise<unknown>): void {
     const next = this.cardQueue.then(() => fn()).catch(e => {
-      logger.error('[AppSessionService] 写卡失败', e)
+      logger.error(`[AppSessionService] 写卡失败（session=${sessionId}）`, e)
     })
     this.cardQueue = next.then(
       () => undefined,
@@ -193,10 +192,11 @@ export class AppSessionService {
     if (!ev || typeof ev.runId !== 'string') return
     const sessionId = this.runToSession.get(ev.runId)
     if (!sessionId) {
-      logger.warn('[AppSessionService] 事件未命中会话', { runId: ev.runId, type: ev.type })
-      return // 非应用会话触发的运行（分享页/API/编辑器）不写会话卡
+      // 非应用会话触发的运行（分享页/API/编辑器）不写会话卡——warn 便于排查
+      // 漏登记 / 误删映射问题（事件桥调试期定位过此路径）
+      logger.debug('[AppSessionService] 事件未命中会话', { runId: ev.runId, type: ev.type })
+      return
     }
-    logger.info('[AppSessionService] 事件命中写卡', { runId: ev.runId, type: ev.type })
 
     switch (ev.type) {
       case WORKFLOW_RUN_EVENT_TYPES.reviewRequested: {
@@ -205,7 +205,7 @@ export class AppSessionService {
         const kind = p.form ? 'form' as const
           : Array.isArray(p.options) && p.options.length ? 'choose' as const
           : p.interaction === 'input' ? 'input' as const : 'approve' as const
-        this.enqueueCard(() => this.writeCard(sessionId, {
+        this.enqueueCard(sessionId, () => this.writeCard(sessionId, {
           card: WORKFLOW_SESSION_CARDS.review,
           runId: ev.runId,
           nodeId: (ev as { nodeId?: string }).nodeId ?? '',
@@ -216,17 +216,17 @@ export class AppSessionService {
       }
       case WORKFLOW_RUN_EVENT_TYPES.nodeStatus: {
         const ns = ev as { nodeId?: string; status?: string }
-        this.enqueueCard(() => this.writeCard(sessionId, { card: WORKFLOW_SESSION_CARDS.nodeStatus, runId: ev.runId, nodeId: ns.nodeId ?? '', status: ns.status ?? '' }))
+        this.enqueueCard(sessionId, () => this.writeCard(sessionId, { card: WORKFLOW_SESSION_CARDS.nodeStatus, runId: ev.runId, nodeId: ns.nodeId ?? '', status: ns.status ?? '' }))
         break
       }
       case WORKFLOW_RUN_EVENT_TYPES.runStatus: {
         const rs = ev as { status?: string; error?: string }
         if (rs.status === WORKFLOW_RUN_STATUSES.succeeded) {
-          this.enqueueCard(() => this.finishSucceeded(sessionId, ev.runId!))
+          this.enqueueCard(sessionId, () => this.finishSucceeded(sessionId, ev.runId!))
         } else if (rs.status && WORKFLOW_RUN_TERMINAL_STATUSES.has(rs.status)) {
           // 非成功终态（failed/cancelled/timed_out/interrupted）统一收口；
           // running/waiting_review 等中间态不写卡（引擎启动时也会 emit run-status）
-          this.enqueueCard(async () => {
+          this.enqueueCard(sessionId, async () => {
             await this.writeCard(sessionId, { card: WORKFLOW_SESSION_CARDS.message, runId: ev.runId!, content: `运行${rs.status}：${rs.error ?? '已结束'}` })
             await this.deps.appSessions.update(sessionId, { status: APP_SESSION_STATUSES.failed })
           })
