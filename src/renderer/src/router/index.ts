@@ -139,6 +139,14 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '工作流运行', guest: true },
   },
   {
+    // 应用分享页（片4）：复用 WorkflowGuestRun——后端 resolveShare 应用优先
+    // （apps 表 share_token → sourceId 回源定义），数据面纯 REST 免登录，与 token 渠道无关
+    path: '/app-share/:token',
+    name: 'AppShare',
+    component: () => import('@/views/workflow/WorkflowGuestRun.vue'),
+    meta: { title: '应用运行', guest: true },
+  },
+  {
     path: '/workflow/runs/:definitionId',
     name: 'WorkflowRunsHistory',
     component: () => import('@/views/workflow/WorkflowRunsHistory.vue'),
