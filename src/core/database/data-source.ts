@@ -7,6 +7,7 @@
 import { DataSource, type DataSourceOptions } from 'typeorm'
 import type { DbConfig } from './config'
 import * as entities from './entities'
+import { installSqliteSerialGate } from './sqlite-serial-gate'
 
 export interface CreateDataSourceOptions {
   config: DbConfig
@@ -22,6 +23,9 @@ export interface CreateDataSourceOptions {
 export async function createDataSource(opts: CreateDataSourceOptions): Promise<DataSource> {
   const ds = new DataSource(buildDataSourceOptions(opts))
   await ds.initialize()
+  // SQLite 单连接串行门（better-sqlite3 单写者：事务/普通语句互斥，防并发交错踩踏）
+  // 仅 sqlite 方言生效；postgres 走连接池并发，不挂门
+  installSqliteSerialGate(ds)
   if (opts.synchronizeOnInit) {
     await ds.synchronize()
   }
