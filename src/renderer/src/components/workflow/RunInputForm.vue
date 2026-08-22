@@ -209,6 +209,8 @@ defineExpose({ getValues, isValid, setFileUploadContext })
 </script>
 
 <style scoped>
+:deep(.el-form-item) { margin-bottom: 16px; }
+:deep(.el-form-item__label) { font-size: 12px; font-weight: 600; color: var(--el-text-color-regular); padding-bottom: 6px; line-height: 1.2; }
 .multi-hint { font-size: 11px; color: var(--el-text-color-secondary); margin-top: 2px; }
 .no-inputs { color: var(--el-text-color-secondary); text-align: center; padding: 16px 0; }
 .file-field { display: flex; align-items: center; gap: 8px; }

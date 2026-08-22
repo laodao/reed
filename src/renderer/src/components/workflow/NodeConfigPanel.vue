@@ -129,14 +129,18 @@ function emitChange() {
 </script>
 
 <style scoped>
-.config-panel { height: 100%; overflow: auto; padding: 14px; display: flex; flex-direction: column; }
-.panel-header { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--el-border-color-lighter); }
-.node-icon { font-size: 10px; }
-.node-type { font-weight: 600; }
-.node-id { font-size: 11px; color: var(--el-text-color-secondary); }
-.group-divider { font-size: 12px; color: var(--el-text-color-secondary); margin: 14px 0 2px; font-weight: 600; }
+.config-panel { height: 100%; overflow: auto; padding: 16px; display: flex; flex-direction: column; }
+.panel-header { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--el-border-color-lighter); }
+.node-icon { font-size: 16px; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 8px; background: var(--el-fill-color-light); flex-shrink: 0; }
+.node-type { font-weight: 600; font-size: 14px; line-height: 1.3; }
+.node-id { font-size: 11px; color: var(--el-text-color-secondary); margin-top: 2px; }
+.group-divider { font-size: 12px; font-weight: 600; color: var(--el-text-color-primary); margin: 18px 0 10px; display: flex; align-items: center; gap: 8px; }
+.group-divider::after { content: ''; flex: 1; height: 1px; background: var(--el-border-color-lighter); }
+.config-panel :deep(.el-form-item) { margin-bottom: 16px; }
+.config-panel :deep(.el-form-item__label) { font-size: 12px; font-weight: 600; color: var(--el-text-color-regular); padding-bottom: 6px; line-height: 1.2; }
 .tpl-tag { margin-left: 6px; }
 .field-help { font-size: 11px; color: var(--el-text-color-secondary); margin-top: 4px; line-height: 1.4; }
 .no-config { color: var(--el-text-color-secondary); text-align: center; padding: 24px 0; }
-.panel-footer { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--el-border-color-lighter); }
+.panel-footer { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--el-border-color-lighter); }
+.panel-footer :deep(.el-button) { width: 100%; }
 </style>

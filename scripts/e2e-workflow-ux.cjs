@@ -59,13 +59,13 @@ function queryDb(sql, params = []) {
       return {
         hasInputsList: html.includes('输入参数'),
         hasValidationBtn: html.includes('校验'),
-        hasTypeSelect: !!panel?.querySelector('.inputs-row .el-select'),
+        hasTypeSelect: !!panel?.querySelector('.input-card .el-select'),
       }
     })
     assert(ui.hasInputsList && ui.hasTypeSelect, `配置面板缺 inputs-list（${JSON.stringify(ui)}）`)
     assert(ui.hasValidationBtn, 'inputs-list 每行应有「校验」配置入口')
     const hasTextarea = await page.evaluate(async () => {
-      const sel = document.querySelector('.inputs-row .el-select')
+      const sel = document.querySelector('.input-card .el-select')
       if (!sel) return false
       sel.click()
       await new Promise(r => setTimeout(r, 400))

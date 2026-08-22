@@ -534,23 +534,26 @@ function removeSelected() {
 .val-warn { color: var(--el-color-warning); font-size: 12px; }
 .body { flex: 1; display: flex; min-height: 0; }
 
-.palette { width: 210px; border-right: 1px solid var(--el-border-color); padding: 10px; display: flex; flex-direction: column; }
-.palette-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
-.palette-list { flex: 1; overflow: auto; }
-.palette-group { font-size: 11px; color: var(--el-text-color-secondary); margin: 10px 0 4px; }
-.palette-item { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; margin-bottom: 6px; cursor: grab; transition: border-color .15s; }
-.palette-item:hover { border-color: var(--el-color-primary); }
+.palette { width: 210px; border-right: 1px solid var(--el-border-color); padding: 12px 10px; display: flex; flex-direction: column; background: var(--el-fill-color-light); }
+.palette-title { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+.palette-list { flex: 1; overflow: auto; padding-right: 2px; }
+.palette-group { font-size: 11px; font-weight: 600; color: var(--el-text-color-secondary); margin: 12px 0 6px; letter-spacing: .03em; }
+.palette-item { display: flex; gap: 8px; align-items: flex-start; padding: 7px 9px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; margin-bottom: 6px; cursor: grab; background: #fff; transition: border-color .15s, box-shadow .15s; }
+.palette-item:hover { border-color: var(--el-color-primary); box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+.palette-item:active { cursor: grabbing; }
 .pi-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
 .pi-dot.flow { background: #6366f1; } .pi-dot.ai { background: #10b981; } .pi-dot.general { background: #f59e0b; }
-.pi-text { font-size: 13px; line-height: 1.3; }
-.pi-desc { font-size: 11px; color: var(--el-text-color-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 140px; }
+.pi-text { font-size: 13px; line-height: 1.3; min-width: 0; }
+.pi-text > div:first-child { font-weight: 600; }
+.pi-desc { font-size: 11px; font-weight: 400; color: var(--el-text-color-secondary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 .canvas { flex: 1; position: relative; background: #fafafa; }
-.config-area { width: 320px; border-left: 1px solid var(--el-border-color); }
+.config-area { width: 340px; border-left: 1px solid var(--el-border-color); background: var(--el-bg-color); }
 .config-empty { height: 100%; display: flex; align-items: center; justify-content: center; color: var(--el-text-color-placeholder); text-align: center; line-height: 1.8; }
 
 /* ── 自定义节点卡片 ── */
-.wf-node { min-width: 150px; max-width: 210px; background: #fff; border: 2px solid #d1d5db; border-radius: 10px; padding: 0; box-shadow: 0 1px 3px rgba(0,0,0,.08); font-size: 13px; }
+.wf-node { min-width: 150px; max-width: 210px; background: #fff; border: 2px solid #d1d5db; border-radius: 10px; padding: 0; box-shadow: 0 1px 3px rgba(0,0,0,.08); font-size: 13px; transition: box-shadow .15s; }
+.wf-node:hover { box-shadow: 0 4px 14px rgba(0,0,0,.12); }
 .wf-node.selected { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.18); }
 .wf-node.flow { border-color: #6366f1; } .wf-node.ai { border-color: #10b981; } .wf-node.general { border-color: #f59e0b; }
 .wf-node-head { display: flex; align-items: center; gap: 6px; padding: 7px 10px; font-weight: 600; }
@@ -562,7 +565,7 @@ function removeSelected() {
 .wf-node.run-failed_recovered { border-color: #f59e0b !important; }
 .wf-node.run-waiting_review { border-color: #8b5cf6 !important; }
 .wf-node.run-cancelled, .wf-node.run-skipped { opacity: .55; }
-.debug-panel { padding: 0 4px; }
+.debug-panel { padding: 4px 6px; }
 .debug-status { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
 .debug-hint { font-size: 11px; color: var(--el-text-color-placeholder); margin-top: 12px; line-height: 1.5; }
 .channel-options { display: flex; flex-direction: column; gap: 8px; }
