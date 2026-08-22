@@ -139,6 +139,12 @@ import translateTpl from '@/assets/workflow-templates/batch-translate.json'
 import reviewTpl from '@/assets/workflow-templates/content-review.json'
 import digestTpl from '@/assets/workflow-templates/daily-digest.json'
 import videoTpl from '@/assets/workflow-templates/video-transcript.json'
+// 能力应用模板（阶段二：图像生成/翻译/TTS/STT/语音复刻 → 发布为应用）
+import imageGenAppTpl from '@/assets/workflow-templates/image-gen-app.json'
+import translateAppTpl from '@/assets/workflow-templates/translate-app.json'
+import ttsAppTpl from '@/assets/workflow-templates/tts-app.json'
+import sttAppTpl from '@/assets/workflow-templates/stt-app.json'
+import voiceCloneAppTpl from '@/assets/workflow-templates/voice-clone-app.json'
 
 const showTemplates = ref(false)
 const builtinTemplates = [
@@ -147,6 +153,11 @@ const builtinTemplates = [
   { name: reviewTpl.name, title: reviewTpl.name, desc: reviewTpl.description, nodeCount: reviewTpl.graph.nodes.length, raw: reviewTpl },
   { name: digestTpl.name, title: digestTpl.name, desc: digestTpl.description, nodeCount: digestTpl.graph.nodes.length, raw: digestTpl },
   { name: videoTpl.name, title: videoTpl.name, desc: videoTpl.description, nodeCount: videoTpl.graph.nodes.length, raw: videoTpl },
+  { name: imageGenAppTpl.name, title: imageGenAppTpl.name, desc: imageGenAppTpl.description, nodeCount: imageGenAppTpl.graph.nodes.length, raw: imageGenAppTpl },
+  { name: translateAppTpl.name, title: translateAppTpl.name, desc: translateAppTpl.description, nodeCount: translateAppTpl.graph.nodes.length, raw: translateAppTpl },
+  { name: ttsAppTpl.name, title: ttsAppTpl.name, desc: ttsAppTpl.description, nodeCount: ttsAppTpl.graph.nodes.length, raw: ttsAppTpl },
+  { name: sttAppTpl.name, title: sttAppTpl.name, desc: sttAppTpl.description, nodeCount: sttAppTpl.graph.nodes.length, raw: sttAppTpl },
+  { name: voiceCloneAppTpl.name, title: voiceCloneAppTpl.name, desc: voiceCloneAppTpl.description, nodeCount: voiceCloneAppTpl.graph.nodes.length, raw: voiceCloneAppTpl },
 ]
 
 async function createFromTemplate(tpl: any) {

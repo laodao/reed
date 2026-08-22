@@ -66,6 +66,7 @@ export type WorkflowNodeType =
   | 'image-gen'
   | 'tts'
   | 'stt'
+  | 'voice-clone'
   | 'video-extract-audio'
   | 'lw-generate-chapter'
   | 'lw-polish'
@@ -290,6 +291,19 @@ export interface WorkflowNodeConfigMap {
     language?: string
     providerConfigId?: string
     modelId?: string
+  }
+
+  'voice-clone': {
+    /** 样本音频路径模板（start 表单 file 字段的 .path，如 "{{start.sample.path}}"） */
+    samplePath: string
+    /** 音色展示名 */
+    name: string
+    /** voice_id 前缀（仅小写字母数字 ≤10 字符；DashScope 硬约束） */
+    prefix?: string
+    /** 语种 hint（默认 zh） */
+    language?: string
+    /** 是否等待训练完成（false=提交即成功输出 clonedVoiceId；默认 true） */
+    waitForCompletion?: boolean
   }
 
   'video-extract-audio': {
@@ -698,6 +712,7 @@ export const WORKFLOW_NODE_TYPES = {
   'image-gen': 'image-gen',
   tts: 'tts',
   stt: 'stt',
+  'voice-clone': 'voice-clone',
   'video-extract-audio': 'video-extract-audio',
   'lw-generate-chapter': 'lw-generate-chapter',
   'lw-polish': 'lw-polish',
@@ -913,6 +928,9 @@ export const WORKFLOW_DEFAULTS = {
   /** 图像生成等待：轮询间隔 / 总超时 */
   imagePollIntervalMs: 2_000,
   imagePollTimeoutMs: 300_000,
+  /** 语音复刻训练等待：轮询间隔 / 总超时 */
+  voiceClonePollIntervalMs: 3_000,
+  voiceCloneWaitTimeoutMs: 600_000,
 } as const
 
 /** 硬性上限（任何层级的配置都不可超过；防失控的最终防线） */

@@ -196,6 +196,8 @@ export interface UserProviderConfig {
   isEnabled: boolean
   /** 是否为默认提供商 */
   isDefault: boolean
+  /** 默认文本模型 ID（服务无显式 modelId 时使用；如翻译/知识库检索） */
+  defaultModelId?: string
   /** 上次测试时间 */
   lastTested?: string
   /** 测试结果 */
@@ -262,6 +264,8 @@ export interface SaveProviderConfigRequest {
   models?: ModelDefinition[]
   isEnabled?: boolean
   isDefault?: boolean
+  /** 默认文本模型 ID（服务无显式 modelId 时使用） */
+  defaultModelId?: string
 }
 
 /**

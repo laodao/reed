@@ -50,6 +50,7 @@ export class ProviderConfigRepository extends BaseRepository<
       customHeaders: (e.customHeaders as Record<string, string> | null) ?? undefined,
       customParams: (e.customParams as Record<string, unknown> | null) ?? undefined,
       models: (e.models as ModelDefinition[] | null) ?? undefined,
+      defaultModelId: e.defaultModel || undefined,
       isEnabled: e.isEnabled === 1,
       isDefault: e.isDefault === 1,
       lastTested: this.dateToIso(e.lastTested),
@@ -96,6 +97,7 @@ export class ProviderConfigRepository extends BaseRepository<
       customHeaders: (config.customHeaders as Record<string, unknown> | undefined) ?? null,
       customParams: (config.customParams as Record<string, unknown> | undefined) ?? null,
       models: (config.models as unknown[] | undefined) ?? null,
+      defaultModel: config.defaultModelId ?? null,
       isEnabled: config.isEnabled ? 1 : 0,
       isDefault: config.isDefault ? 1 : 0,
       lastTested: this.isoToDate(config.lastTested),
@@ -146,6 +148,9 @@ export class ProviderConfigRepository extends BaseRepository<
     }
     if (updates.models !== undefined) {
       existing.models = (updates.models as unknown[]) ?? null
+    }
+    if (updates.defaultModelId !== undefined) {
+      existing.defaultModel = updates.defaultModelId || null
     }
     if (updates.isEnabled !== undefined) {
       existing.isEnabled = updates.isEnabled ? 1 : 0

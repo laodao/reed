@@ -196,6 +196,13 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     T('audio', '音频来源', { type: 'textarea', templateHint: true, placeholder: '{{tts1.audioPath}} 或 base64' }),
     T('language', '语言', { help: '留空 = 自动' }),
   ],
+  'voice-clone': [
+    T('samplePath', '样本音频路径', { type: 'textarea', templateHint: true, placeholder: '{{start.sample.path}}（10-20 秒人声样本）' }),
+    T('name', '音色名称', { placeholder: '例如：我的声音' }),
+    T('prefix', 'voice_id 前缀', { help: '仅小写字母数字、≤10 字符（DashScope 硬约束）；留空自动生成' }),
+    T('language', '语种', { help: '默认 zh' }),
+    { key: 'waitForCompletion', label: '等待训练完成', type: 'switch', group: '参数', help: '长任务：关闭 = 提交即成功（输出 clonedVoiceId，下游轮询 refreshClonedVoiceStatus）' },
+  ],
   'video-extract-audio': [
     T('videoPath', '本地视频文件路径', { type: 'textarea', templateHint: true, placeholder: '{{start.video.path}}（表单 file 字段的路径）' }),
     T('videoUrl', '视频链接', { type: 'textarea', templateHint: true, placeholder: 'https://...（mp4 直链 / B站 BV 链接；抖音请手动下载后本地导入）', help: '本地文件与链接二选一；支持常规直链与 B站（公开 API 解析音频直链），抖音受风控不支持自动解析' }),

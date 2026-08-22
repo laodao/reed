@@ -1,0 +1,32 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "图像生成",
+  "description": "按提示词生成图片并自动保存到资产库（图片分类）",
+  "category": null,
+  "graph": {
+    "version": 1,
+    "nodes": [
+      { "id": "start", "type": "start", "name": "开始", "position": { "x": 60, "y": 200 }, "config": { "inputs": [
+        { "key": "prompt", "label": "提示词", "type": "string", "required": true },
+        { "key": "negativePrompt", "label": "负面提示词", "type": "string" },
+        { "key": "modelId", "label": "图像模型 ID", "type": "string", "required": true },
+        { "key": "width", "label": "宽度", "type": "number", "defaultValue": 1024 },
+        { "key": "height", "label": "高度", "type": "number", "defaultValue": 1024 },
+        { "key": "count", "label": "生成数量", "type": "number", "defaultValue": 1 }
+      ] } },
+      { "id": "img1", "type": "image-gen", "name": "生成图片", "position": { "x": 300, "y": 200 }, "config": { "prompt": "{{start.prompt}}", "negativePrompt": "{{start.negativePrompt}}", "width": "{{start.width}}", "height": "{{start.height}}", "count": "{{start.count}}", "modelId": "{{start.modelId}}" } },
+      { "id": "save1", "type": "save-asset", "name": "保存到资产库", "position": { "x": 540, "y": 200 }, "config": { "content": "{{img1.images[0].url}}", "kind": "auto", "category": "auto", "name": "生成的图片", "tags": "图像生成" } },
+      { "id": "msg1", "type": "message", "name": "提示", "position": { "x": 780, "y": 200 }, "config": { "content": "图片已保存到资产库：{{save1.name}}（资产 ID：{{save1.assetId}}）" } },
+      { "id": "end", "type": "end", "name": "结束", "position": { "x": 1000, "y": 200 }, "config": {} }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "img1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "img1", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "save1", "targetNodeId": "msg1", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "msg1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": null
+}

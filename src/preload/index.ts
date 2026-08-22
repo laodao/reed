@@ -422,6 +422,7 @@ const electronAPI = {
       }>
       isEnabled?: boolean
       isDefault?: boolean
+      defaultModelId?: string
     }) => ipcRenderer.invoke(IPC_CHANNELS.PROVIDER_CONFIG_CREATE, data),
     update: (
       id: string,
@@ -437,6 +438,7 @@ const electronAPI = {
         audioBaseUrl: string
         customHeaders: Record<string, string>
         customParams: Record<string, unknown>
+        defaultModelId?: string
         models?: Array<{
           id: string
           name: string

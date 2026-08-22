@@ -51,6 +51,10 @@ export class ProviderConfigEntity {
   @Column({ name: 'models', type: 'simple-json', nullable: true })
   models!: unknown[] | null
 
+  /** 默认文本模型 ID（服务无显式 modelId 时使用） */
+  @Column({ name: 'default_model', type: 'text', nullable: true })
+  defaultModel!: string | null
+
   @Column({ name: 'is_enabled', type: 'integer', default: 1 })
   isEnabled!: number
 

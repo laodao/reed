@@ -358,6 +358,27 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
     outputSchema: [{ key: 'text', type: 'string', desc: '识别文本' }],
   },
   {
+    type: 'voice-clone',
+    label: '语音复刻',
+    description: '上传样本音频训练专属音色（长任务，可等待完成）',
+    category: 'ai',
+    icon: 'MagicStick',
+    controlKind: 'task',
+    cancellable: false,
+    ports: [
+      { kind: 'normal', label: '出', max: 1 },
+      { kind: 'fail', label: '失败' },
+    ],
+    requiredConfigKeys: ['samplePath', 'name'],
+    defaultConfig: { samplePath: '{{start.sample.path}}', name: '', prefix: '', waitForCompletion: true },
+    outputSchema: [
+      { key: 'clonedVoiceId', type: 'string', desc: '复刻记录 ID' },
+      { key: 'voiceId', type: 'string', desc: '训练完成后的音色 ID（tts 节点引用）' },
+      { key: 'status', type: 'string', desc: 'ready / training / failed' },
+      { key: 'name', type: 'string', desc: '音色名' },
+    ],
+  },
+  {
     type: 'video-extract-audio',
     label: '视频提取音频',
     description: '从视频文件提取 16kHz 单声道 wav 音频（供语音识别 stt 节点转写文案）',

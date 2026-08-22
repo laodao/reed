@@ -10,6 +10,7 @@ import type { WorkflowNodeRegistry } from '../engine/node-registry'
 import { CONTROL_NODE_HANDLERS } from './control-nodes'
 import { TASK_NODE_HANDLERS } from './task-nodes'
 import { AI_NODE_HANDLERS } from './ai-nodes'
+import { VOICE_CLONE_NODE_HANDLERS } from './voice-clone-nodes'
 import { EXTRA_NODE_HANDLERS } from './extra-nodes'
 import { A2_NODE_HANDLERS } from './a2-nodes'
 import { OAS_NODE_HANDLERS } from './oas-nodes'
@@ -23,7 +24,7 @@ import { ASSET_NODE_HANDLERS } from './asset-nodes'
 
 /** 创建注册了全部内置节点的注册表 */
 export function createFullNodeRegistry(): WorkflowNodeRegistry {
-  return createNodeRegistry([...CONTROL_NODE_HANDLERS, ...TASK_NODE_HANDLERS, ...AI_NODE_HANDLERS, ...EXTRA_NODE_HANDLERS, ...A2_NODE_HANDLERS, ...OAS_NODE_HANDLERS, ...INTERACTION_NODE_HANDLERS, ...MEDIA_NODE_HANDLERS, ...TOOL_NODE_HANDLERS, ...CODE_NODE_HANDLERS, ...SUB_WORKFLOW_NODE_HANDLERS, ...VARIABLE_NODE_HANDLERS, ...ASSET_NODE_HANDLERS])
+  return createNodeRegistry([...CONTROL_NODE_HANDLERS, ...TASK_NODE_HANDLERS, ...AI_NODE_HANDLERS, ...VOICE_CLONE_NODE_HANDLERS, ...EXTRA_NODE_HANDLERS, ...A2_NODE_HANDLERS, ...OAS_NODE_HANDLERS, ...INTERACTION_NODE_HANDLERS, ...MEDIA_NODE_HANDLERS, ...TOOL_NODE_HANDLERS, ...CODE_NODE_HANDLERS, ...SUB_WORKFLOW_NODE_HANDLERS, ...VARIABLE_NODE_HANDLERS, ...ASSET_NODE_HANDLERS])
 }
 
 /** 启动自检：目录与 handler 全量一致性（有问题说明代码与目录漂移，拒绝启动） */

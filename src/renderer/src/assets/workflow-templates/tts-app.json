@@ -1,0 +1,28 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "文本转语音",
+  "description": "把文字合成为语音，并自动保存到资产库（音频分类）",
+  "category": null,
+  "graph": {
+    "version": 1,
+    "nodes": [
+      { "id": "start", "type": "start", "name": "开始", "position": { "x": 60, "y": 200 }, "config": { "inputs": [
+        { "key": "text", "label": "合成文本", "type": "string", "required": true },
+        { "key": "voiceId", "label": "音色 ID", "type": "string", "required": true }
+      ] } },
+      { "id": "tts1", "type": "tts", "name": "语音合成", "position": { "x": 300, "y": 200 }, "config": { "text": "{{start.text}}", "voiceId": "{{start.voiceId}}" } },
+      { "id": "save1", "type": "save-asset", "name": "保存到资产库", "position": { "x": 540, "y": 200 }, "config": { "content": "{{tts1.audioPath}}", "kind": "file", "category": "audio", "name": "合成语音.wav", "tags": "语音合成" } },
+      { "id": "msg1", "type": "message", "name": "提示", "position": { "x": 780, "y": 200 }, "config": { "content": "语音已保存到资产库：{{save1.name}}（资产 ID：{{save1.assetId}}）" } },
+      { "id": "end", "type": "end", "name": "结束", "position": { "x": 1000, "y": 200 }, "config": {} }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "tts1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "tts1", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "save1", "targetNodeId": "msg1", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "msg1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": null
+}

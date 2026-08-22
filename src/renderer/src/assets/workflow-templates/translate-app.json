@@ -1,0 +1,29 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "文档翻译",
+  "description": "把一段文本翻译成目标语言，并自动保存到资产库（文本分类）",
+  "category": null,
+  "graph": {
+    "version": 1,
+    "nodes": [
+      { "id": "start", "type": "start", "name": "开始", "position": { "x": 60, "y": 200 }, "config": { "inputs": [
+        { "key": "text", "label": "待翻译内容", "type": "string", "required": true },
+        { "key": "targetLang", "label": "目标语言", "type": "string", "required": true, "defaultValue": "zh" },
+        { "key": "sourceLang", "label": "源语言", "type": "string" }
+      ] } },
+      { "id": "tr1", "type": "translate", "name": "翻译", "position": { "x": 300, "y": 200 }, "config": { "text": "{{start.text}}", "sourceLang": "{{start.sourceLang}}", "targetLang": "{{start.targetLang}}" } },
+      { "id": "save1", "type": "save-asset", "name": "保存到资产库", "position": { "x": 540, "y": 200 }, "config": { "content": "{{tr1.text}}", "kind": "text", "category": "text", "name": "翻译结果", "tags": "翻译" } },
+      { "id": "msg1", "type": "message", "name": "输出译文", "position": { "x": 780, "y": 200 }, "config": { "content": "译文：{{tr1.text}}" } },
+      { "id": "end", "type": "end", "name": "结束", "position": { "x": 1000, "y": 200 }, "config": {} }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "tr1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "tr1", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "save1", "targetNodeId": "msg1", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "msg1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": null
+}
