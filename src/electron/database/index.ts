@@ -30,6 +30,7 @@ import { AppSessionRepository } from '@core/database/repositories/app-session.re
 import { AssetRepository } from '@core/database/repositories/asset.repository'
 import { ToolCredentialRepository } from '@core/database/repositories/tool-credential.repository'
 import { CustomToolRepository } from '@core/database/repositories/custom-tool.repository'
+import { EmailAccountRepository } from '@core/database/repositories/email-account.repository'
 import { VariableRepository, DataTableDefRepository, DataTableRowRepository } from '@core/database/repositories/variable.repositories'
 import { KbInvertedIndexRepository } from '@core/database/repositories/kb-inverted-index.repository'
 import { PortraitProjectRepository } from '@core/database/repositories/portrait-project.repository'
@@ -142,6 +143,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public assets: AssetRepository | null = null
   public toolCredentials: ToolCredentialRepository | null = null
   public customTools: CustomToolRepository | null = null
+  public emailAccounts: EmailAccountRepository | null = null
   public variables: VariableRepository | null = null
   public dataTableDefs: DataTableDefRepository | null = null
   public dataTableRows: DataTableRowRepository | null = null
@@ -675,6 +677,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-tool-tables'
     )
     await createToolTables(this.dataSource)
+    // 邮件收发：email_accounts 表（幂等，双语种；IMAP/SMTP 分列 + pass_enc 加密存储）
+    const { createEmailTables } = await import(
+      '@core/database/migrations/create-email-tables'
+    )
+    await createEmailTables(this.dataSource)
     // P0 变量与数据表：wf_variables / wf_data_table_defs / wf_data_table_rows（幂等，双语种）
     const { createVariableTables } = await import(
       '@core/database/migrations/create-variable-tables'
@@ -4205,6 +4212,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.assets = new AssetRepository(this.dataSource)
     this.toolCredentials = new ToolCredentialRepository(this.dataSource)
     this.customTools = new CustomToolRepository(this.dataSource)
+    this.emailAccounts = new EmailAccountRepository(this.dataSource)
     this.variables = new VariableRepository(this.dataSource)
     this.dataTableDefs = new DataTableDefRepository(this.dataSource)
     this.dataTableRows = new DataTableRowRepository(this.dataSource)

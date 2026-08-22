@@ -376,6 +376,12 @@ async function initDatabase(): Promise<void> {
   )
   await createAssetsTables(ds)
 
+  // 邮件收发：email_accounts 表（synchronize 已建表，此处幂等补索引；与 Electron 端同构）
+  const { createEmailTables } = await import(
+    '@core/database/migrations/create-email-tables'
+  )
+  await createEmailTables(ds)
+
   // D2 rerank：knowledge_bases 加 rerank_config 列（幂等，双语种）
   const { addKbRerankConfig } = await import(
       '@core/database/migrations/add-kb-rerank-config'

@@ -30,6 +30,7 @@ import { AppRepository } from '@core/database/repositories/app.repository'
 import { AppSessionRepository } from '@core/database/repositories/app-session.repository'
 import { ToolCredentialRepository } from '@core/database/repositories/tool-credential.repository'
 import { CustomToolRepository } from '@core/database/repositories/custom-tool.repository'
+import { EmailAccountRepository } from '@core/database/repositories/email-account.repository'
 import { VariableRepository, DataTableDefRepository, DataTableRowRepository } from '@core/database/repositories/variable.repositories'
 import { KbInvertedIndexRepository } from '@core/database/repositories/kb-inverted-index.repository'
 import { PortraitProjectRepository } from '@core/database/repositories/portrait-project.repository'
@@ -127,6 +128,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   assets: AssetRepository | null
   toolCredentials: ToolCredentialRepository | null
   customTools: CustomToolRepository | null
+  emailAccounts: EmailAccountRepository | null
   variables: VariableRepository | null
   dataTableDefs: DataTableDefRepository | null
   dataTableRows: DataTableRowRepository | null
@@ -227,6 +229,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.assets = new AssetRepository(ds)
     this.toolCredentials = new ToolCredentialRepository(ds)
     this.customTools = new CustomToolRepository(ds)
+    this.emailAccounts = new EmailAccountRepository(ds)
     this.variables = new VariableRepository(ds)
     this.dataTableDefs = new DataTableDefRepository(ds)
     this.dataTableRows = new DataTableRowRepository(ds)

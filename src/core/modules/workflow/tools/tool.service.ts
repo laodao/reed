@@ -11,6 +11,7 @@ import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { executeHttpFetch, type HttpResponseType } from '../nodes/http-fetch'
 import { PRESET_TOOL_MAP, PRESET_TOOLS } from './preset-tools'
 import { TOOL_AUTH_TYPES, TOOL_KINDS, type CustomTool, type PresetTool, type ToolCredential } from '@shared/types/tool.types'
+import type { EmailSearchParams } from '@shared/types/email.types'
 import { createLogger } from '@core/utils/logger'
 import { spawn } from 'node:child_process'
 
@@ -187,6 +188,11 @@ export class ToolService {
       return this.runCli(tool, input.params ?? {}, input.signal)
     }
 
+    // 邮件工具：分派到 EmailService（SMTP 发 / IMAP 收，不走 HTTP 逻辑）
+    if (tool.kind === TOOL_KINDS.email) {
+      return this.runEmail(tool, input.params ?? {}, input.signal)
+    }
+
     // 2. 凭据（可选）
     let apiKey = ''
     if (input.credentialId) {
@@ -256,10 +262,106 @@ export class ToolService {
     }
   }
 
+  // ==================== 邮件工具执行 ====================
+
+  /**
+   * 邮件工具（kind=email）：从 params 取 accountId/operation，分派到 EmailService 对应方法。
+   * EmailService 为静态类，自行通过 getCoreDatabaseManager() 访问数据库（同 translation.service 模式），
+   * 因此这里无需额外注入 repo。结果规整成 ExecuteToolResult：结构化 JSON 放 json，text 放 JSON 字符串。
+   * 注意：imapflow/nodemailer 不支持 AbortSignal，取消依赖 socketTimeout（60s）兜底，入口先做一次中止检查。
+   */
+  private async runEmail(tool: CustomTool | PresetTool, params: Record<string, unknown>, signal: AbortSignal): Promise<ExecuteToolResult> {
+    const start = Date.now()
+    try {
+      if (signal?.aborted) throw new Error('邮件工具已取消')
+      const accountId = (params.accountId as string) ?? tool.emailAccountId ?? ''
+      if (!accountId) throw new Error('缺少邮箱账号参数 accountId（请选择工具绑定的邮箱账号）')
+      const operation = (params.operation as string) ?? tool.operation ?? 'list'
+      const folder = toStr(params.folder, 'INBOX')
+      const uid = toNum(params.uid)
+
+      const { EmailService } = await import('@core/services/email.service')
+      let result: unknown
+      switch (operation) {
+        case 'send': {
+          const to = toStrArray(params.to)
+          if (to.length === 0) throw new Error('收件人 to 不能为空（支持逗号分隔或 JSON 数组）')
+          result = await EmailService.send({
+            accountId,
+            to,
+            cc: params.cc !== undefined ? toStrArray(params.cc) : undefined,
+            bcc: params.bcc !== undefined ? toStrArray(params.bcc) : undefined,
+            subject: toStr(params.subject, ''),
+            text: params.text !== undefined ? String(params.text) : undefined,
+            html: params.html !== undefined ? String(params.html) : undefined,
+            attachments: toAttachments(params.attachments),
+          })
+          break
+        }
+        case 'list':
+        case 'search': {
+          const p: EmailSearchParams = {
+            accountId,
+            folder,
+            from: params.from !== undefined ? String(params.from) : undefined,
+            subject: params.subject !== undefined ? String(params.subject) : undefined,
+            since: params.since !== undefined ? String(params.since) : undefined,
+            before: params.before !== undefined ? String(params.before) : undefined,
+            unreadOnly: params.unreadOnly !== undefined ? Boolean(params.unreadOnly) : undefined,
+            limit: params.limit !== undefined ? Number(params.limit) : undefined,
+          }
+          result = operation === 'list' ? await EmailService.list(p) : await EmailService.search(p)
+          break
+        }
+        case 'read': {
+          if (!Number.isFinite(uid)) throw new Error('缺少邮件 uid')
+          result = await EmailService.read({ accountId, uid, folder })
+          break
+        }
+        case 'mark_seen': {
+          if (!Number.isFinite(uid)) throw new Error('缺少邮件 uid')
+          result = await EmailService.markSeen({ accountId, uid, seen: Boolean(params.seen), folder })
+          break
+        }
+        case 'delete': {
+          if (!Number.isFinite(uid)) throw new Error('缺少邮件 uid')
+          result = await EmailService.delete({ accountId, uid, folder })
+          break
+        }
+        case 'status': {
+          result = await EmailService.status({ accountId })
+          break
+        }
+        case 'download_attachment': {
+          if (!Number.isFinite(uid)) throw new Error('缺少邮件 uid')
+          const filename = toStr(params.filename, '')
+          if (!filename) throw new Error('缺少附件文件名 filename')
+          result = await EmailService.downloadAttachment({
+            accountId,
+            uid,
+            filename,
+            folder,
+            outputDir: params.outputDir !== undefined ? String(params.outputDir) : undefined,
+          })
+          break
+        }
+        default:
+          throw new Error(`未知邮件操作：${operation}`)
+      }
+
+      const durationMs = Date.now() - start
+      // EmailService 统一返回 { success, ... }；success=true → 200，否则 500
+      const ok = !!(result && typeof result === 'object' && (result as { success?: boolean }).success === true)
+      return { status: ok ? 200 : 500, ok, json: result, text: JSON.stringify(result), durationMs }
+    } catch (e) {
+      logger.error('[ToolService] 邮件工具执行失败', e)
+      return { status: 500, ok: false, text: e instanceof Error ? e.message : String(e), durationMs: Date.now() - start }
+    }
+  }
+
   // ==================== CLI 工具执行 ====================
 
-  /** 本地命令工具：参数映射到 argsTemplate 的 {{param}} 占位 → spawn 执行，捕获 stdout/stderr */
-  private runCli(tool: CustomTool | PresetTool, params: Record<string, unknown>, signal: AbortSignal): Promise<ExecuteToolResult> {
+  /** 本地命令工具：参数映射到 argsTemplate 的 {{param}} 占位 → spawn 执行，捕获 stdout/stderr */  private runCli(tool: CustomTool | PresetTool, params: Record<string, unknown>, signal: AbortSignal): Promise<ExecuteToolResult> {
     const command = (tool.command ?? '').trim()
     if (!command) throw new Error('CLI 工具未配置命令行')
     const rendered = (tool.argsTemplate ?? '').replace(/\{\{([\w.]+)\}\}/g, (_m, k: string) =>
@@ -312,4 +414,56 @@ function splitArgs(s: string): string[] {
   const m = s.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)
   if (!m) return []
   return m.map(t => t.replace(/^["']|["']$/g, ''))
+}
+
+// ==================== 邮件参数规整 helper ====================
+
+/** 转字符串（缺省用 dflt） */
+function toStr(v: unknown, dflt: string): string {
+  if (v === undefined || v === null) return dflt
+  return String(v)
+}
+
+/** 转数字（非法返回 NaN，调用方用 Number.isFinite 校验） */
+function toNum(v: unknown): number {
+  if (v === undefined || v === null) return NaN
+  const n = Number(v)
+  return Number.isFinite(n) ? n : NaN
+}
+
+/** 收件人/抄送等：JSON 数组 | 逗号分隔字符串 → string[] */
+function toStrArray(v: unknown): string[] {
+  if (v === undefined || v === null) return []
+  if (Array.isArray(v)) return v.map(String).filter(Boolean)
+  if (typeof v === 'string') {
+    const t = v.trim()
+    if (!t) return []
+    if (t.startsWith('[')) {
+      try {
+        const p = JSON.parse(t)
+        if (Array.isArray(p)) return p.map(String).filter(Boolean)
+      } catch { /* 不是 JSON，走逗号拆分 */ }
+    }
+    return t.split(',').map(s => s.trim()).filter(Boolean)
+  }
+  return [String(v)]
+}
+
+/** 附件参数：JSON 数组或字符串 → {filename, contentBase64?, path?}[] */
+function toAttachments(v: unknown): Array<{ filename: string; contentBase64?: string; path?: string }> | undefined {
+  if (v === undefined || v === null) return undefined
+  let arr: unknown = v
+  if (typeof v === 'string') {
+    const t = v.trim()
+    if (!t) return undefined
+    try { arr = JSON.parse(t) } catch { return undefined }
+  }
+  if (!Array.isArray(arr)) return undefined
+  return arr
+    .filter((it): it is Record<string, unknown> => !!it && typeof it === 'object')
+    .map(it => ({
+      filename: String(it.filename ?? 'attachment'),
+      contentBase64: it.contentBase64 !== undefined ? String(it.contentBase64) : undefined,
+      path: it.path !== undefined ? String(it.path) : undefined,
+    }))
 }

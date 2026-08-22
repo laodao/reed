@@ -34,8 +34,8 @@ export interface ToolParamField {
   default?: unknown
 }
 
-/** 自定义工具类型：api=HTTP 接口 / cli=本地命令行/脚本 */
-export const TOOL_KINDS = { api: 'api', cli: 'cli' } as const
+/** 自定义工具类型：api=HTTP 接口 / cli=本地命令行/脚本 / email=邮件收发（SMTP 发 + IMAP 收） */
+export const TOOL_KINDS = { api: 'api', cli: 'cli', email: 'email' } as const
 export type ToolKind = (typeof TOOL_KINDS)[keyof typeof TOOL_KINDS]
 
 /** 自定义工具（custom_tools 表字段同名直出） */
@@ -65,6 +65,11 @@ export interface CustomTool {
   timeoutMs?: number | null
   /** stdout 解析：text=纯文本 / json=JSON 对象 */
   stdoutType?: 'text' | 'json' | null
+  // ---- 邮箱工具字段（kind=email）----
+  /** 工具绑定的邮箱账号（email_accounts.id） */
+  emailAccountId?: string | null
+  /** email 工具的操作名：send/list/read/search/mark_seen/delete/status/download_attachment */
+  operation?: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }

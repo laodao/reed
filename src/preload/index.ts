@@ -783,6 +783,26 @@ const electronAPI = {
     presets: () => ipcRenderer.invoke('tool:presets'),
   },
 
+  // ==================== P0 邮箱模块（邮件收发工具：邮箱账号配置） ====================
+  email: {
+    listAccounts: () => ipcRenderer.invoke('email:list-accounts'),
+    saveAccount: (p: {
+      id?: string
+      name: string
+      imapHost: string
+      imapPort: number
+      imapSecure: boolean
+      smtpHost: string
+      smtpPort: number
+      smtpSecure: boolean
+      user: string
+      pass?: string
+      fromName: string
+    }) => ipcRenderer.invoke('email:save-account', p),
+    deleteAccount: (id: string) => ipcRenderer.invoke('email:delete-account', { id }),
+    testAccount: (id: string) => ipcRenderer.invoke('email:test-account', { id }),
+  },
+
   file: {
     // 打开文件选择对话框
     openDialog: (options?: {

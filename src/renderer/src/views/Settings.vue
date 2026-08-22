@@ -164,6 +164,11 @@
           <ToolSettings />
         </el-tab-pane>
 
+        <!-- 邮箱账号（邮件收发工具账号配置） -->
+        <el-tab-pane label="邮箱账号" name="email">
+          <EmailSettings />
+        </el-tab-pane>
+
         <!-- 数据管理 -->
         <el-tab-pane label="数据路径" name="data">
           <div class="settings-section">
@@ -587,6 +592,7 @@ import { useAppSettings, fontSizeConfig, languageConfig, type FontSize, type Lan
 import AddProviderDialog from '@/components/settings/AddProviderDialog.vue'
 import AddSearchEngineDialog from '@/components/settings/AddSearchEngineDialog.vue'
 import ToolSettings from '@/components/settings/ToolSettings.vue'
+import EmailSettings from '@/components/settings/EmailSettings.vue'
 import type {
   ProviderTemplate,
   UserProviderConfig

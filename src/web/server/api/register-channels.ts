@@ -27,6 +27,7 @@ import { registerLongWritingHandlers } from '@electron/ipc/handlers/longwriting.
 import { registerWorkflowHandlers } from '@electron/ipc/handlers/workflow.handler'
 import { registerAppHandlers } from '@electron/ipc/handlers/app.handler'
 import { registerToolHandlers } from '@electron/ipc/handlers/tool.handler'
+import { registerEmailHandlers } from '@electron/ipc/handlers/email.handler'
 import { registerAssetHandlers } from '@electron/ipc/handlers/asset.handler'
 import { registerDiaryHandlers } from '@electron/ipc/handlers/diary.handler'
 import { registerPortraitHandlers } from '@electron/ipc/handlers/portrait.handler'
@@ -55,6 +56,7 @@ export async function registerAllWebChannels(): Promise<void> {
   registerWorkflowHandlers()
   registerAppHandlers()
   registerToolHandlers()
+  registerEmailHandlers()
   registerAssetHandlers()
   registerDiaryHandlers()
   registerPortraitHandlers()

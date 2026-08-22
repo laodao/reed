@@ -33,6 +33,7 @@ import type { AppSessionRepository } from './repositories/app-session.repository
 import type { AssetRepository } from './repositories/asset.repository'
 import type { ToolCredentialRepository } from './repositories/tool-credential.repository'
 import type { CustomToolRepository } from './repositories/custom-tool.repository'
+import type { EmailAccountRepository } from './repositories/email-account.repository'
 import type { VariableRepository, DataTableDefRepository, DataTableRowRepository } from './repositories/variable.repositories'
 import type { KnowledgeBaseRepository } from './repositories/knowledge-base.repository'
 import type { LocationBindingRepository } from './repositories/location-binding.repository'
@@ -140,6 +141,8 @@ export interface ICoreDatabaseManager {
   assets: AssetRepository | null
   toolCredentials: ToolCredentialRepository | null
   customTools: CustomToolRepository | null
+  /** 邮箱账号（邮件收发：SMTP 发 / IMAP 收） */
+  emailAccounts: EmailAccountRepository | null
   variables: VariableRepository | null
   dataTableDefs: DataTableDefRepository | null
   dataTableRows: DataTableRowRepository | null
