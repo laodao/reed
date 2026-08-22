@@ -59,6 +59,8 @@ export interface WorkflowApiDeps {
   definitions?: {
     getByShareToken(token: string): Promise<ShareDefinition | null>
     getById?(id: string): Promise<ShareDefinition | null>
+    /** P0 片5：webhook 免签触发（triggers JSON 含 token 且启用） */
+    findByWebhookToken?(token: string): Promise<ShareDefinition | null>
   }
   /** 应用模块分享面（片3：应用优先；回退工作流令牌） */
   apps?: {
@@ -262,20 +264,29 @@ export function createWorkflowApiRouter(deps: {
 
   // ==================== C3 免登录分享（spec v2 §7） ====================
 
-  /** 解析分享令牌 → (定义, 所有者)；无效返回 null（404 不泄露存在性） */
-  const resolveShare = async (token: string): Promise<ShareDefinition | null> => {
+  /** 解析应用分享令牌（P1 语义拆分：应用令牌 → 用其 sourceId 定义的发布图） */
+  const resolveAppShare = async (token: string): Promise<ShareDefinition | null> => {
     const { definitions, apps } = deps.getDeps()
-    // 应用分享优先：应用令牌命中 → 用其 sourceId 的定义（发布图）
     const app = apps ? await apps.getByShareToken(token) : null
-    if (app?.sourceId && definitions?.getById) {
-      const ownerDef = await definitions.getById(app.sourceId)
-      if (ownerDef) {
-        return { id: ownerDef.id, name: app.name || ownerDef.name, description: ownerDef.description, userId: app.userId, publishedGraph: ownerDef.publishedGraph }
-      }
-      return null
-    }
+    if (!app?.sourceId || !definitions?.getById) return null
+    const ownerDef = await definitions.getById(app.sourceId)
+    if (!ownerDef) return null
+    return { id: ownerDef.id, name: app.name || ownerDef.name, description: ownerDef.description, userId: app.userId, publishedGraph: ownerDef.publishedGraph }
+  }
+
+  /** 解析工作流分享令牌（旧分享面：直接取定义） */
+  const resolveWorkflowShare = async (token: string): Promise<ShareDefinition | null> => {
+    const { definitions } = deps.getDeps()
     if (!definitions) return null
     return definitions.getByShareToken(token)
+  }
+
+  /** 解析分享令牌（应用优先回退工作流），并标注来源 appMode 供前端区分品牌 */
+  const resolveShare = async (token: string): Promise<ShareDefinition & { appMode: boolean } | null> => {
+    const appShare = await resolveAppShare(token)
+    if (appShare) return { ...appShare, appMode: true }
+    const wfShare = await resolveWorkflowShare(token)
+    return wfShare ? { ...wfShare, appMode: false } : null
   }
 
   /** 从已发布图提取 start 输入 schema（免登录表单渲染用） */
@@ -299,6 +310,7 @@ export function createWorkflowApiRouter(deps: {
           definitionId: found.id,
           name: found.name,
           description: found.description,
+          appMode: found.appMode,
           inputs: shareInputSchema(found.publishedGraph),
         },
       })
@@ -393,6 +405,64 @@ export function createWorkflowApiRouter(deps: {
       if (!res.headersSent) fail(res, e)
       else res.end()
     })
+  })
+
+  return router
+}
+
+/**
+ * P0 片5：Webhook 免签触发路由（挂载在 workflowApiRouter 之后或独立挂载）
+ * POST /api/workflow/webhook/:token —— 请求体即 start inputs（JSON），以定义所有者身份运行发布图。
+ * 令牌为 256bit 不可枚举随机串（triggers 中配置）；未命中/停用返回 404（不泄露存在性）。
+ */
+export function createWebhookTriggerRouter(deps: {
+  definitions: {
+    findByWebhookToken(token: string): Promise<{ id: string; userId: string | null; name: string } | null>
+  }
+  runService: {
+    startRun(input: {
+      definitionId: string
+      triggerType: string
+      triggerInfo?: Record<string, unknown>
+      inputs?: Record<string, unknown>
+      usePublishedGraph?: boolean
+    }): Promise<{ id: string; status: string; skipReason?: string | null }>
+  }
+}): Router {
+  const router = Router({ mergeParams: true })
+
+  router.post('/:token', async (req: Request, res: Response) => {
+    try {
+      const token = String(req.params.token)
+      // 形态守卫：32B hex（与 share_token 同纪律，防超长输入扫库）
+      if (!/^[0-9a-f]{32,128}$/i.test(token)) {
+        res.status(404).json({ ok: false, error: 'webhook 不存在或已停用' })
+        return
+      }
+      const found = await deps.definitions.findByWebhookToken(token)
+      if (!found || !found.userId) {
+        res.status(404).json({ ok: false, error: 'webhook 不存在或已停用' })
+        return
+      }
+      if (shareRateLimited(`webhook:${token}`)) {
+        res.status(429).json({ ok: false, error: '请求过于频繁，请稍后再试' })
+        return
+      }
+      const body = (req.body ?? {}) as Record<string, unknown>
+      // 以定义所有者身份运行（跨租户例外由 webhook token 授权）
+      const run = await runWithUserAsync(found.userId, () =>
+        deps.runService.startRun({
+          definitionId: found.id,
+          triggerType: WORKFLOW_TRIGGER_TYPES.manual,
+          triggerInfo: { source: 'webhook', token },
+          inputs: body,
+          usePublishedGraph: true,
+        })
+      )
+      res.json({ ok: true, data: { runId: run.id, status: run.status } })
+    } catch (e) {
+      fail(res, e)
+    }
   })
 
   return router

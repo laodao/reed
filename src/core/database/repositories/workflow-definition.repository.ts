@@ -228,6 +228,26 @@ export class WorkflowDefinitionRepository extends BaseRepository<
   }
 
   /**
+   * 按 webhook 令牌查定义（跨租户，P0 片5：免签触发入口）。
+   * 只命中已发布且 triggers 含该 token 的启用 webhook（JSON 过滤在 JS 层，避免方言分叉）。
+   * ⚠️ 跨租户例外纪律同 findByShareToken：调用方必须 runWithUserAsync(所有者)。
+   */
+  async findByWebhookToken(token: string): Promise<WorkflowDefinitionRecord | null> {
+    const rows = await this.repo
+      .createQueryBuilder('d')
+      .where('d.published_version > 0')
+      .andWhere('d.triggers LIKE :tok', { tok: `%${token}%` })
+      .getMany()
+    for (const e of rows) {
+      const triggers = safeParse<WorkflowTrigger[]>(e.triggers, [])
+      if (triggers.some(t => t.type === 'webhook' && t.enabled && t.token === token)) {
+        return this.toDto(e)
+      }
+    }
+    return null
+  }
+
+  /**
    * 扫描到期的 cron 触发器（跨租户，供调度器 tick）。
    * 只命中已发布且 next_fire_at 到期的行；JSON 过滤在 JS 层做
    * （SQLite/PG 的 JSON 查询函数不同，避免方言分叉）。

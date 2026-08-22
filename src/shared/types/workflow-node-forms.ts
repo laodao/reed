@@ -196,6 +196,11 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     T('audio', '音频来源', { type: 'textarea', templateHint: true, placeholder: '{{tts1.audioPath}} 或 base64' }),
     T('language', '语言', { help: '留空 = 自动' }),
   ],
+  'video-extract-audio': [
+    T('videoPath', '本地视频文件路径', { type: 'textarea', templateHint: true, placeholder: '{{start.video.path}}（表单 file 字段的路径）' }),
+    T('videoUrl', '视频链接', { type: 'textarea', templateHint: true, placeholder: 'https://...（mp4 直链 / B站 BV 链接；抖音请手动下载后本地导入）', help: '本地文件与链接二选一；支持常规直链与 B站（公开 API 解析音频直链），抖音受风控不支持自动解析' }),
+    T('language', '语言', { help: '透传给下游 stt 的语言提示（本节点仅提取音频）' }),
+  ],
   'lw-generate-chapter': [
     T('projectId', '长文项目 ID', { group: '目标' }),
     T('outlineId', '章节大纲 ID', { group: '目标' }),
@@ -231,6 +236,40 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     T('baseUrlOverride', 'BaseURL 覆盖', { placeholder: '留空用文档里的 servers/host', collapsible: true }),
     { key: 'headers', label: '附加请求头', type: 'kv-list', keyPlaceholder: 'Header（如 Authorization）', valuePlaceholder: '值，支持 {{模板}}', collapsible: true },
     { key: 'timeoutMs', label: '超时（毫秒）', type: 'number', group: '参数' },
+  ],
+  'tool-call': [
+    { key: 'toolType', label: '工具来源', type: 'select', options: [
+      { label: '自定义工具', value: 'custom' },
+      { label: '预设工具', value: 'preset' },
+    ] },
+    { key: 'toolId', label: '工具', type: 'tool-select', help: '选择自定义工具或预设工具；选中后参数表单按工具 schema 生成' },
+    { key: 'credentialId', label: '凭据', type: 'tool-credential-select', help: '工具为 credential 鉴权时选择（可选，未选则按工具默认）' },
+    { key: 'params', label: '参数', type: 'tool-params', help: '值支持 {{模板}}；按工具参数 schema 生成' },
+  ],
+  'code': [
+    T('code', '代码', { type: 'textarea', help: '输入在 inputs 对象（键=下方参数键）；return 一个对象作为节点输出，如 return { sum: inputs.a + inputs.b }。V1 不暴露 require/process/fs，5s 超时' }),
+    { key: 'inputs', label: '输入参数', type: 'kv-list', keyPlaceholder: '参数键（inputs.键 引用）', valuePlaceholder: '值，支持 {{模板}}' },
+  ],
+  'sub-workflow': [
+    T('definitionId', '子工作流 ID', { placeholder: '在子工作流详情/导出中查看（运行其发布图）', templateHint: true }),
+    { key: 'inputs', label: '入参', type: 'kv-list', keyPlaceholder: '子工作流 start 参数键', valuePlaceholder: '值，支持 {{模板}}' },
+  ],
+  'variable': [
+    { key: 'op', label: '操作', type: 'select', options: [{ label: '读取 get', value: 'get' }, { label: '写入 set', value: 'set' }] },
+    { key: 'scope', label: '作用域', type: 'select', options: [{ label: '全局', value: 'global' }, { label: '当前用户', value: 'user' }] },
+    T('key', '变量键', { templateHint: true }),
+    { key: 'value', label: '写入值', type: 'textarea', templateHint: true, help: 'set 时写入（JSON 字符串或文本；模板可用）' },
+    T('defaultValue', '兜底值', { help: 'get 无值时返回此值' }),
+  ],
+  'data-table': [
+    { key: 'op', label: '操作', type: 'select', options: [
+      { label: '插入行 insert', value: 'insert' }, { label: '查询 query', value: 'query' },
+      { label: '更新 update', value: 'update' }, { label: '删除 delete', value: 'delete' },
+    ] },
+    T('tableId', '表 ID', { help: 'insert 可留空按 tableName 自动建表；query/update/delete 必填其一' }),
+    T('tableName', '表名', { help: '表不存在时 insert 自动创建（列从 row 键推导）' }),
+    T('row', '行 JSON', { type: 'textarea', templateHint: true, help: 'insert/update 用，如 {"name":"{{start.name}}","qty":3}' }),
+    T('rowId', '行 ID', { help: 'update/delete 用' }),
   ],
   'http-request': [
     T('method', '请求方法', {
@@ -329,6 +368,52 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
         { label: '警告', value: 'warning' },
         { label: '错误', value: 'error' },
       ],
+    }),
+  ],
+  'save-asset': [
+    T('content', '内容', {
+      type: 'textarea', templateHint: true,
+      placeholder: '{{imageGen1.images[0].url}} / {{tts1.audioPath}} / 文本 / JSON',
+      help: '文件路径、http(s)/data:/local-*:// 链接、文本或 JSON；auto 模式自动识别',
+    }),
+    T('kind', '内容形态', {
+      type: 'select',
+      options: [
+        { label: '自动识别（推荐）', value: 'auto' },
+        { label: '文件', value: 'file' },
+        { label: '链接', value: 'url' },
+        { label: '文本', value: 'text' },
+        { label: 'JSON', value: 'json' },
+      ],
+    }),
+    T('category', '资产分类', {
+      type: 'select',
+      options: [
+        { label: '自动按文件类型', value: 'auto' },
+        { label: '图片', value: 'image' },
+        { label: '音频', value: 'audio' },
+        { label: '视频', value: 'video' },
+        { label: '文档', value: 'document' },
+        { label: '文本', value: 'text' },
+        { label: '数据', value: 'json' },
+        { label: '其他', value: 'other' },
+      ],
+    }),
+    T('name', '资产名', { help: '留空按文件名/内容自动生成', placeholder: '例如：今日早报图' }),
+    T('tags', '标签', { help: '逗号分隔，资产中心可按标签搜索' }),
+    T('description', '描述', { group: '其他' }),
+  ],
+  'read-asset': [
+    T('assetId', '资产 ID', { templateHint: true, placeholder: '{{saveAsset1.assetId}} 或 {{start.assetId}}' }),
+    T('output', '输出模式', {
+      type: 'select',
+      options: [
+        { label: '可访问链接 url', value: 'url' },
+        { label: '本地文件路径 path（文件型）', value: 'path' },
+        { label: '内容 content（文本/JSON 型）', value: 'content' },
+        { label: '全部元数据 metadata', value: 'metadata' },
+      ],
+      help: 'url=前端可加载链接；path=供下游节点直接使用的本地路径',
     }),
   ],
 }

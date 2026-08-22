@@ -27,6 +27,10 @@ import { KbVectorRepository } from '@core/database/repositories/kb-vector.reposi
 import { KbQaPairRepository } from '@core/database/repositories/kb-qa-pair.repository'
 import { AppRepository } from '@core/database/repositories/app.repository'
 import { AppSessionRepository } from '@core/database/repositories/app-session.repository'
+import { AssetRepository } from '@core/database/repositories/asset.repository'
+import { ToolCredentialRepository } from '@core/database/repositories/tool-credential.repository'
+import { CustomToolRepository } from '@core/database/repositories/custom-tool.repository'
+import { VariableRepository, DataTableDefRepository, DataTableRowRepository } from '@core/database/repositories/variable.repositories'
 import { KbInvertedIndexRepository } from '@core/database/repositories/kb-inverted-index.repository'
 import { PortraitProjectRepository } from '@core/database/repositories/portrait-project.repository'
 import { PortraitCharacterRepository } from '@core/database/repositories/portrait-character.repository'
@@ -135,6 +139,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public kbQaPairs: KbQaPairRepository | null = null
   public appDefinitions: AppRepository | null = null
   public appSessions: AppSessionRepository | null = null
+  public assets: AssetRepository | null = null
+  public toolCredentials: ToolCredentialRepository | null = null
+  public customTools: CustomToolRepository | null = null
+  public variables: VariableRepository | null = null
+  public dataTableDefs: DataTableDefRepository | null = null
+  public dataTableRows: DataTableRowRepository | null = null
   public kbInvertedIndex: KbInvertedIndexRepository | null = null
   public portraitProjects: PortraitProjectRepository | null = null
   public portraitCharacters: PortraitCharacterRepository | null = null
@@ -655,6 +665,21 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-apps-tables'
     )
     await createAppsTables(this.dataSource)
+    // 通用资产库：assets 表（幂等，双语种；文件型资产落盘 dataPath/assets）
+    const { createAssetsTables } = await import(
+      '@core/database/migrations/create-assets-tables'
+    )
+    await createAssetsTables(this.dataSource)
+    // P0 工具：tool_credentials / custom_tools 表（幂等，双语种）
+    const { createToolTables } = await import(
+      '@core/database/migrations/create-tool-tables'
+    )
+    await createToolTables(this.dataSource)
+    // P0 变量与数据表：wf_variables / wf_data_table_defs / wf_data_table_rows（幂等，双语种）
+    const { createVariableTables } = await import(
+      '@core/database/migrations/create-variable-tables'
+    )
+    await createVariableTables(this.dataSource)
 
     // D2 rerank：knowledge_bases 加 rerank_config 列（幂等，双语种）
     const { addKbRerankConfig } = await import(
@@ -4177,6 +4202,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.kbQaPairs = new KbQaPairRepository(this.dataSource)
     this.appDefinitions = new AppRepository(this.dataSource)
     this.appSessions = new AppSessionRepository(this.dataSource)
+    this.assets = new AssetRepository(this.dataSource)
+    this.toolCredentials = new ToolCredentialRepository(this.dataSource)
+    this.customTools = new CustomToolRepository(this.dataSource)
+    this.variables = new VariableRepository(this.dataSource)
+    this.dataTableDefs = new DataTableDefRepository(this.dataSource)
+    this.dataTableRows = new DataTableRowRepository(this.dataSource)
     this.kbInvertedIndex = new KbInvertedIndexRepository(this.dataSource)
     this.portraitProjects = new PortraitProjectRepository(this.dataSource)
     this.portraitCharacters = new PortraitCharacterRepository(this.dataSource)

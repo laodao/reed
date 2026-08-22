@@ -159,6 +159,11 @@
           </div>
         </el-tab-pane>
 
+        <!-- 工具设置（P0：第三方 API 凭据/自定义工具/预设工具） -->
+        <el-tab-pane label="工具" name="tools">
+          <ToolSettings />
+        </el-tab-pane>
+
         <!-- 数据管理 -->
         <el-tab-pane label="数据路径" name="data">
           <div class="settings-section">
@@ -581,6 +586,7 @@ import { useSkin, SKIN_OPTIONS } from '@/composables/useSkin'
 import { useAppSettings, fontSizeConfig, languageConfig, type FontSize, type Language } from '@/composables/useAppSettings'
 import AddProviderDialog from '@/components/settings/AddProviderDialog.vue'
 import AddSearchEngineDialog from '@/components/settings/AddSearchEngineDialog.vue'
+import ToolSettings from '@/components/settings/ToolSettings.vue'
 import type {
   ProviderTemplate,
   UserProviderConfig

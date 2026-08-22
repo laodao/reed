@@ -1,0 +1,89 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "视频文案提取",
+  "description": "上传视频或填视频链接 → 提取音频 → 语音识别转写 → LLM 整理成文案（按风格润色/分段）→ 输出报告。支持本地文件与常规直链/B站链接；抖音受风控请手动下载后本地导入",
+  "category": "media",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 60, "y": 220 },
+        "config": {
+          "inputs": [
+            { "key": "video", "label": "本地视频文件（可选）", "type": "file", "required": false },
+            { "key": "videoUrl", "label": "视频链接（可选，与文件二选一）", "type": "string", "required": false, "defaultValue": "" },
+            { "key": "language", "label": "语音语言", "type": "select", "defaultValue": "auto", "options": [
+              { "label": "自动检测", "value": "auto" },
+              { "label": "中文", "value": "zh" },
+              { "label": "英文", "value": "en" }
+            ] },
+            { "key": "style", "label": "输出风格", "type": "select", "defaultValue": "polished", "options": [
+              { "label": "精炼润色", "value": "polished" },
+              { "label": "口语原味", "value": "raw" },
+              { "label": "要点速记", "value": "bullets" }
+            ] }
+          ]
+        }
+      },
+      {
+        "id": "video1",
+        "type": "video-extract-audio",
+        "name": "提取音频",
+        "position": { "x": 280, "y": 220 },
+        "config": { "videoPath": "{{start.video.path}}", "videoUrl": "{{start.videoUrl}}", "language": "{{start.language}}" }
+      },
+      {
+        "id": "stt1",
+        "type": "stt",
+        "name": "语音识别",
+        "position": { "x": 500, "y": 220 },
+        "config": { "audio": "{{video1.audioPath}}", "language": "{{start.language}}" }
+      },
+      {
+        "id": "llm1",
+        "type": "llm-chat",
+        "name": "整理文案",
+        "position": { "x": 720, "y": 220 },
+        "config": {
+          "systemPrompt": "你是视频文案整理助手。把语音识别得到的口语转录整理成通顺的文案。",
+          "prompt": "输出风格：{{start.style}}\n- 精炼润色：修正口语、分段、去重复\n- 口语原味：尽量保留原话，仅去掉明显的口头禅\n- 要点速记：提炼核心观点列表\n\n语音转录文本：\n{{stt1.text}}"
+        }
+      },
+      {
+        "id": "report1",
+        "type": "report",
+        "name": "文案输出",
+        "position": { "x": 940, "y": 220 },
+        "config": { "title": "视频文案：{{video1.videoName}}", "template": "{{llm1.content}}", "format": "markdown" }
+      },
+      {
+        "id": "notify1",
+        "type": "app-notify",
+        "name": "完成通知",
+        "position": { "x": 1140, "y": 220 },
+        "config": { "title": "文案已生成", "message": "视频文案提取完成：{{video1.videoName}}", "level": "success" }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 1340, "y": 220 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "video1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "video1", "targetNodeId": "stt1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "stt1", "targetNodeId": "llm1", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "llm1", "targetNodeId": "report1", "kind": "normal" },
+      { "id": "e5", "sourceNodeId": "report1", "targetNodeId": "notify1", "kind": "normal" },
+      { "id": "e6", "sourceNodeId": "notify1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": null
+}

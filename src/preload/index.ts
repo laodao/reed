@@ -718,7 +718,7 @@ const electronAPI = {
     list: (p: { keyword?: string; page: number; pageSize: number }) => ipcRenderer.invoke('app:list', p),
     get: (id: string) => ipcRenderer.invoke('app:get', { id }),
     getByDefinition: (definitionId: string) => ipcRenderer.invoke('app:get-by-definition', { definitionId }),
-    createFromWorkflow: (p: { definitionId: string; name?: string; icon?: string }) => ipcRenderer.invoke('app:create-from-workflow', p),
+    createFromWorkflow: (p: { definitionId: string; name?: string; icon?: string; channelSession?: boolean; channelShare?: boolean; channelApi?: boolean }) => ipcRenderer.invoke('app:create-from-workflow', p),
     updateChannels: (p: { id: string; channelSession?: boolean; channelShare?: boolean; channelApi?: boolean }) => ipcRenderer.invoke('app:update-channels', p),
     enableShare: (id: string) => ipcRenderer.invoke('app:enable-share', { id }),
     disableShare: (id: string) => ipcRenderer.invoke('app:disable-share', { id }),
@@ -733,6 +733,45 @@ const electronAPI = {
     messages: (sessionId: string) => ipcRenderer.invoke('app-session:messages', { sessionId }),
     start: (p: { sessionId: string; inputs?: Record<string, unknown> }) => ipcRenderer.invoke('app-session:start', p),
     review: (p: { sessionId: string; nodeId: string; decision: string; editedValues?: Record<string, unknown>; choice?: string }) => ipcRenderer.invoke('app-session:review', p),
+    delete: (sessionId: string) => ipcRenderer.invoke('app-session:delete', { sessionId }),
+  },
+
+  // ==================== 通用资产库（保存资产/读取资产/资产中心） ====================
+  assets: {
+    list: (p: { category?: string; keyword?: string; page: number; pageSize: number }) => ipcRenderer.invoke('asset:list', p),
+    get: (id: string) => ipcRenderer.invoke('asset:get', { id }),
+    create: (p: {
+      category?: string
+      name?: string
+      description?: string
+      tags?: string[]
+      content: { kind: 'file'; path: string } | { kind: 'url'; url: string } | { kind: 'text'; text: string } | { kind: 'json'; json: string }
+    }) => ipcRenderer.invoke('asset:create', p),
+    update: (p: { id: string; name?: string; description?: string | null; tags?: string[]; category?: string }) => ipcRenderer.invoke('asset:update', p),
+    delete: (id: string) => ipcRenderer.invoke('asset:delete', { id }),
+    stats: () => ipcRenderer.invoke('asset:stats'),
+    openFolder: (id: string) => ipcRenderer.invoke('asset:open-folder', { id }),
+  },
+
+  // ==================== P0 工具模块（片1：第三方 API 工具） ====================
+  tools: {
+    listCredentials: () => ipcRenderer.invoke('tool:list-credentials'),
+    saveCredential: (p: { name: string; apiKey: string; baseUrl?: string }) => ipcRenderer.invoke('tool:save-credential', p),
+    deleteCredential: (id: string) => ipcRenderer.invoke('tool:delete-credential', { id }),
+    listCustom: () => ipcRenderer.invoke('tool:list-custom'),
+    saveCustom: (p: {
+      name: string
+      description?: string
+      method: string
+      url: string
+      headers?: Array<{ key: string; value: string }>
+      paramsSchema?: Array<{ key: string; label?: string; type?: string; required?: boolean; options?: Array<{ label: string; value: string | number }>; default?: unknown }>
+      authType?: string
+      credentialId?: string | null
+    }) => ipcRenderer.invoke('tool:save-custom', p),
+    updateCustom: (id: string, patch: Record<string, unknown>) => ipcRenderer.invoke('tool:update-custom', { id, patch }),
+    deleteCustom: (id: string) => ipcRenderer.invoke('tool:delete-custom', { id }),
+    presets: () => ipcRenderer.invoke('tool:presets'),
   },
 
   file: {

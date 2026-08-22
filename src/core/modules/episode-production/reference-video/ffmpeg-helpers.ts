@@ -47,12 +47,23 @@ function runFfmpeg(args: string[]): Promise<{ stderr: string }> {
 }
 
 /** 解析视频 metadata（用 ffmpeg -i 让 stderr 输出 metadata；exit code 1 但 stderr 含信息）*/
-export async function getVideoMetadata(videoPath: string): Promise<{
+export async function getVideoMetadata(
+  videoPath: string,
+  opts?: { headers?: Record<string, string> },
+): Promise<{
   durationSec: number
   width: number
   height: number
 }> {
-  const proc = nodeSpawn(FFMPEG_BIN, ['-i', videoPath], {
+  const args: string[] = []
+  if (opts?.headers && Object.keys(opts.headers).length > 0) {
+    const headerText = Object.entries(opts.headers)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join('\r\n')
+    args.push('-headers', headerText)
+  }
+  args.push('-i', videoPath)
+  const proc = nodeSpawn(FFMPEG_BIN, args, {
     stdio: ['ignore', 'ignore', 'pipe'],
     shell: false,
   })
@@ -130,17 +141,21 @@ export async function extractFrame(
   ])
 }
 
-/** 抽音频流到 wav（用于 STT；本期不用，留接口） */
+/** 抽音频流到 wav（用于 STT；URL 输入时可用 headers 带 Referer/UA 防盗链） */
 export async function extractAudio(
   videoPath: string,
   outPath: string,
+  opts?: { headers?: Record<string, string> },
 ): Promise<void> {
   await fs.mkdir(path.dirname(outPath), { recursive: true })
-  await runFfmpeg([
-    '-i', videoPath,
-    '-vn',
-    '-ar', '16000',
-    '-ac', '1',
-    '-y', outPath,
-  ])
+  const args: string[] = []
+  if (opts?.headers && Object.keys(opts.headers).length > 0) {
+    // ffmpeg -headers 多行："Key: Value\r\n..."（一次传所有头）
+    const headerText = Object.entries(opts.headers)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join('\r\n')
+    args.push('-headers', headerText)
+  }
+  args.push('-i', videoPath, '-vn', '-ar', '16000', '-ac', '1', '-y', outPath)
+  await runFfmpeg(args)
 }

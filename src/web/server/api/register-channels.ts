@@ -26,6 +26,8 @@ import { registerKnowledgeBaseHandlers } from '@electron/ipc/handlers/knowledge-
 import { registerLongWritingHandlers } from '@electron/ipc/handlers/longwriting.handler'
 import { registerWorkflowHandlers } from '@electron/ipc/handlers/workflow.handler'
 import { registerAppHandlers } from '@electron/ipc/handlers/app.handler'
+import { registerToolHandlers } from '@electron/ipc/handlers/tool.handler'
+import { registerAssetHandlers } from '@electron/ipc/handlers/asset.handler'
 import { registerDiaryHandlers } from '@electron/ipc/handlers/diary.handler'
 import { registerPortraitHandlers } from '@electron/ipc/handlers/portrait.handler'
 import { registerEpisodeProductionHandlers } from '@electron/ipc/handlers/episode-production'
@@ -52,6 +54,8 @@ export async function registerAllWebChannels(): Promise<void> {
   registerLongWritingHandlers()
   registerWorkflowHandlers()
   registerAppHandlers()
+  registerToolHandlers()
+  registerAssetHandlers()
   registerDiaryHandlers()
   registerPortraitHandlers()
   registerEpisodeProductionHandlers()

@@ -23,6 +23,7 @@ import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
 import { WORKFLOW_DEFAULTS, WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_EVENT_TYPES } from '@shared/types/workflow.types'
 import { pollUntil } from '../engine/async-utils'
+import { getEventEmitter } from '@core/interfaces/event.interface'
 
 /** 长任务节点'提交即返回'的输出状态值（三处共用唯一写法） */
 const NODE_SUBMITTED_STATUS = 'submitted'
@@ -535,8 +536,7 @@ const appNotifyNode: WorkflowNodeHandler = {
       message: string
       level?: 'info' | 'success' | 'warning' | 'error'
     }
-    // 经引擎事件通道推送（前端 ElNotification 呈现）
-    const { getEventEmitter } = await import('../../../interfaces/event.interface')
+    // 经引擎事件通道推送（前端 ElNotification 呈现）——静态 import 统一事件发射器实例（防双实例分离）
     getEventEmitter().emit(WORKFLOW_RUN_EVENT_CHANNEL, {
       type: WORKFLOW_RUN_EVENT_TYPES.notify,
       runId: ctx.runId,

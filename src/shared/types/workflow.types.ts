@@ -66,6 +66,7 @@ export type WorkflowNodeType =
   | 'image-gen'
   | 'tts'
   | 'stt'
+  | 'video-extract-audio'
   | 'lw-generate-chapter'
   | 'lw-polish'
   // 通用
@@ -81,6 +82,14 @@ export type WorkflowNodeType =
   | 'form-collect'
   | 'message'
   | 'oas-tool'
+  | 'tool-call'
+  | 'code'
+  | 'sub-workflow'
+  | 'variable'
+  | 'data-table'
+  // 资产（通用资产库：工作流成果沉淀与复用）
+  | 'save-asset'
+  | 'read-asset'
 
 // ==================== 开始节点输入参数 ====================
 
@@ -283,6 +292,15 @@ export interface WorkflowNodeConfigMap {
     modelId?: string
   }
 
+  'video-extract-audio': {
+    /** 视频文件路径模板：来自 start 表单 file 字段的 .path，如 "{{start.video}}" */
+    videoPath?: string
+    /** 视频链接模板：http(s) 视频 URL（常规直链 / B站 BV 链接）；videoPath 优先 */
+    videoUrl?: string
+    /** 输出采样语言提示（透传 stt 用；本节点仅提取音频） */
+    language?: string
+  }
+
   'lw-generate-chapter': {
     projectId: string
     outlineId: string
@@ -360,6 +378,75 @@ export interface WorkflowNodeConfigMap {
     /** markdown 模板（引擎深解析后即为全文） */
     template: string
     format: 'markdown' | 'docx'
+  }
+
+  'tool-call': {
+    /** 工具来源：custom=自定义工具 / preset=预设工具 */
+    toolType: 'custom' | 'preset'
+    toolId: string
+    /** 引用凭据（authType=credential 时注入） */
+    credentialId?: string
+    /** 工具参数（值支持 {{模板}}） */
+    params?: Array<{ key: string; value: string }>
+  }
+
+  'code': {
+    /** V1 仅支持 JavaScript */
+    language: 'js'
+    /** 用户代码：return 一个对象作为输出（inputs 为入参） */
+    code: string
+    /** 输入参数（值支持 {{模板}}，作为 inputs 对象注入代码） */
+    inputs?: Array<{ key: string; label?: string; type?: string; value: string }>
+  }
+
+  'sub-workflow': {
+    /** 被调用的工作流定义 id（运行其发布图） */
+    definitionId: string
+    /** 子工作流入参（对应子工作流 start inputs；值支持 {{模板}}） */
+    inputs?: Array<{ key: string; value: string }>
+  }
+
+  'variable': {
+    /** get=读取 / set=写入（scope+key 跨运行持久化） */
+    op: 'get' | 'set'
+    scope?: 'global' | 'user'
+    key: string
+    /** set 时写入的值（模板可用）；get 时忽略 */
+    value?: string
+    /** get 无值时的兜底 */
+    defaultValue?: string
+  }
+
+  'data-table': {
+    /** insert=插入行（表不存在按名自动建）/ query=查全部 / update=按 rowId 更新 / delete=按 rowId 删 */
+    op: 'insert' | 'query' | 'update' | 'delete'
+    tableId?: string
+    tableName?: string
+    /** insert/update 的行 JSON（模板可用，如 {"name":"{{start.name}}"}） */
+    row?: string
+    rowId?: string
+  }
+
+  'save-asset': {
+    /** 内容来源（模板可用）：本地路径 / http(s) URL / data: URI / local-*:// URL / 文本 / JSON */
+    content: string
+    /** 内容形态：auto=自动探测（推荐） | file | url | text | json */
+    kind: 'auto' | 'file' | 'url' | 'text' | 'json'
+    /** 资产大类（image/audio/video/document/text/json/other）；auto=按文件名探测 */
+    category?: string
+    /** 资产名（缺省按来源自动生成） */
+    name?: string
+    /** 标签（逗号分隔） */
+    tags?: string
+    /** 描述 */
+    description?: string
+  }
+
+  'read-asset': {
+    /** 资产 ID（模板可用，如 {{saveAsset1.assetId}}） */
+    assetId: string
+    /** 输出模式：url=可访问链接 | path=本地文件路径（文件型） | content=文本/JSON 内容 | metadata=全部元数据 */
+    output?: 'url' | 'path' | 'content' | 'metadata'
   }
 }
 
@@ -457,6 +544,12 @@ export type WorkflowTrigger =
       eventName: string
       /** 可选过滤：事件 payload 字段 === 期望值（等值匹配，AND 关系） */
       match?: Record<string, string | number | boolean>
+      enabled: boolean
+    }
+  | {
+      type: 'webhook'
+      /** 32B hex 免签令牌（URL 路径即鉴权；不可枚举） */
+      token: string
       enabled: boolean
     }
 
@@ -605,6 +698,7 @@ export const WORKFLOW_NODE_TYPES = {
   'image-gen': 'image-gen',
   tts: 'tts',
   stt: 'stt',
+  'video-extract-audio': 'video-extract-audio',
   'lw-generate-chapter': 'lw-generate-chapter',
   'lw-polish': 'lw-polish',
   'http-request': 'http-request',
@@ -618,6 +712,13 @@ export const WORKFLOW_NODE_TYPES = {
   'report-image': 'report-image',
   'form-collect': 'form-collect',
   'message': 'message',
+  'tool-call': 'tool-call',
+  'code': 'code',
+  'sub-workflow': 'sub-workflow',
+  'variable': 'variable',
+  'data-table': 'data-table',
+  'save-asset': 'save-asset',
+  'read-asset': 'read-asset',
 } as const satisfies Record<WorkflowNodeType, WorkflowNodeType>
 
 /** 出边类型常量（键=值，与 WorkflowEdgeKind 一一对应） */
@@ -826,4 +927,8 @@ export const WORKFLOW_LIMITS = {
   retryDelayMs: 60_000,
   httpTimeoutMs: 300_000,
   imagePollTimeoutMs: 600_000,
+  /** 代码节点沙箱执行超时（防死循环拖垮引擎） */
+  codeTimeoutMs: 5_000,
+  /** 子工作流节点等待子运行终态的超时 */
+  subflowTimeoutMs: 600_000,
 } as const

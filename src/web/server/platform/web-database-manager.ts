@@ -28,6 +28,9 @@ import { KbVectorRepository } from '@core/database/repositories/kb-vector.reposi
 import { KbQaPairRepository } from '@core/database/repositories/kb-qa-pair.repository'
 import { AppRepository } from '@core/database/repositories/app.repository'
 import { AppSessionRepository } from '@core/database/repositories/app-session.repository'
+import { ToolCredentialRepository } from '@core/database/repositories/tool-credential.repository'
+import { CustomToolRepository } from '@core/database/repositories/custom-tool.repository'
+import { VariableRepository, DataTableDefRepository, DataTableRowRepository } from '@core/database/repositories/variable.repositories'
 import { KbInvertedIndexRepository } from '@core/database/repositories/kb-inverted-index.repository'
 import { PortraitProjectRepository } from '@core/database/repositories/portrait-project.repository'
 import { PortraitCharacterRepository } from '@core/database/repositories/portrait-character.repository'
@@ -89,6 +92,7 @@ import { StoryboardKeyframeRepository } from '@core/database/repositories/storyb
 import { ImageAssetRepository } from '@core/database/repositories/image-asset.repository'
 import { OSSConfigRepository } from '@core/database/repositories/oss-config.repository'
 import { AssetImageRepository } from '@core/database/repositories/asset-image.repository'
+import { AssetRepository } from '@core/database/repositories/asset.repository'
 
 export class WebDatabaseManager implements ICoreDatabaseManager {
   readonly dataSource: DataSource | null
@@ -120,6 +124,12 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   kbQaPairs: KbQaPairRepository | null
   appDefinitions: AppRepository | null
   appSessions: AppSessionRepository | null
+  assets: AssetRepository | null
+  toolCredentials: ToolCredentialRepository | null
+  customTools: CustomToolRepository | null
+  variables: VariableRepository | null
+  dataTableDefs: DataTableDefRepository | null
+  dataTableRows: DataTableRowRepository | null
   // 人像
   portraitProjects: PortraitProjectRepository | null
   portraitCharacters: PortraitCharacterRepository | null
@@ -214,6 +224,12 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.kbQaPairs = new KbQaPairRepository(ds)
     this.appDefinitions = new AppRepository(ds)
     this.appSessions = new AppSessionRepository(ds)
+    this.assets = new AssetRepository(ds)
+    this.toolCredentials = new ToolCredentialRepository(ds)
+    this.customTools = new CustomToolRepository(ds)
+    this.variables = new VariableRepository(ds)
+    this.dataTableDefs = new DataTableDefRepository(ds)
+    this.dataTableRows = new DataTableRowRepository(ds)
 
     this.portraitProjects = new PortraitProjectRepository(ds)
     this.portraitCharacters = new PortraitCharacterRepository(ds)

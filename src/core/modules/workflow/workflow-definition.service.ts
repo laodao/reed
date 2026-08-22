@@ -145,6 +145,12 @@ export class WorkflowDefinitionService {
     return this.repo.findByShareToken(token)
   }
 
+  /** 按 webhook 令牌取定义（P0 片5；跨租户，调用方须 runWithUserAsync 所有者） */
+  async findByWebhookToken(token: string): Promise<WorkflowDefinitionRecord | null> {
+    if (!token || !/^[0-9a-f]{32,128}$/i.test(token)) return null // 形态守卫
+    return this.repo.findByWebhookToken(token)
+  }
+
   /**
    * 触发器校验（发布时调用）：
    * - V1 限制：每个定义至多 1 个启用的 cron 触发器（定义级单列 next_fire_at

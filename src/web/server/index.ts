@@ -33,7 +33,7 @@ import uploadRouter from './api/upload-router'
 // spec 2026-05-09 ep-redesign §3.2 D4 · Agent / Skill HTTP API
 import agentsRouter from '../../agents/api/router'
 // C3 工作流 REST API（invoke/stop/SSE）
-import workflowApiRouter from './api/workflow-api-router'
+import workflowApiRouter, { createWebhookTriggerRouter } from './api/workflow-api-router'
 import { attachWebSocketServer } from './ws/ws-server'
 
 import { WebPathProvider } from './platform/web-path.provider'
@@ -172,7 +172,21 @@ async function bootstrap(): Promise<void> {
   app.use('/api/agents', agentsRouter)
   // C3 spec v2 §6 · 工作流 REST API
   app.use('/api/workflow', workflowApiRouter())
-
+  // P0 片5 · Webhook 免签触发（POST /api/workflow/webhook/:token，token 即鉴权）
+  app.use('/api/workflow/webhook', createWebhookTriggerRouter({
+    definitions: {
+      findByWebhookToken: async (token) => {
+        const { getWorkflowSubsystem } = await import('@core/modules/workflow/workflow-boot')
+        return getWorkflowSubsystem().definitionService.findByWebhookToken(token)
+      },
+    },
+    runService: {
+      startRun: async (input) => {
+        const { getWorkflowSubsystem } = await import('@core/modules/workflow/workflow-boot')
+        return getWorkflowSubsystem().runService.startRun(input as never)
+      },
+    },
+  }))
   // 顺序关键：vite 构建产物（/assets/index-*.js 等哈希命名 chunk）必须先于
   // /assets 用户文件路由匹配——否则前端入口 JS 被 assetsRouter 401 拦截，
   // 浏览器收到 application/json 拒绝当 module 加载，整个页面空白。
@@ -356,6 +370,11 @@ async function initDatabase(): Promise<void> {
     '@core/database/migrations/create-apps-tables'
   )
   await createAppsTables(ds)
+  // 通用资产库：assets 表（与 Electron 端同构；文件型资产落盘 rootDataPath/assets）
+  const { createAssetsTables } = await import(
+    '@core/database/migrations/create-assets-tables'
+  )
+  await createAssetsTables(ds)
 
   // D2 rerank：knowledge_bases 加 rerank_config 列（幂等，双语种）
   const { addKbRerankConfig } = await import(

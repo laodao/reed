@@ -126,6 +126,45 @@ export async function initWorkflowSubsystem(): Promise<WorkflowSubsystem> {
   appSessionService.attach((cb: (c: string, d: unknown, u: string | null) => void) =>
     getEventEmitter().tapEvents?.(cb)
   )
+  // boot 恢复：重建 runId→session 映射 + running 会话终态收口（引擎 recoverOnBoot 已执行，失败不阻断启动）
+  try {
+    await appSessionService.recoverOnBoot()
+  } catch (e) {
+    logger.error('[workflow-boot] 应用会话 boot 恢复失败（继续启动）', e)
+  }
+
+  // 7. P0 工具：第三方 API 工具服务（凭据加密 + 自定义工具 + 预设工具 + 执行），注册全局取用
+  try {
+    const { ToolService } = await import('./tools/tool.service')
+    const { registerToolService } = await import('./tools/tool-registry')
+    registerToolService(new ToolService(db.toolCredentials, db.customTools))
+  } catch (e) {
+    logger.error('[workflow-boot] 工具服务装配失败（继续启动）', e)
+  }
+  // 8. P0 子工作流：runService 访问注册（sub-workflow 节点取用，避免循环依赖）
+  try {
+    const { registerRunServiceAccess } = await import('./run-service-access')
+    registerRunServiceAccess(runService)
+  } catch (e) {
+    logger.error('[workflow-boot] runService 访问注册失败（继续启动）', e)
+  }
+  // 9. P0 变量与数据表：持久化服务注册（variable/data-table 节点取用）
+  try {
+    const { VariableDataService, registerVariableDataService } = await import('./variables/variable-data.service')
+    registerVariableDataService(new VariableDataService(db.variables, db.dataTableDefs, db.dataTableRows))
+  } catch (e) {
+    logger.error('[workflow-boot] 变量/数据表服务装配失败（继续启动）', e)
+  }
+  // 10. 通用资产库：保存资产/读取资产节点与资产中心 IPC 取用
+  if (!db.assets) {
+    throw new Error('资产仓库未初始化（数据库管理器缺少 assets 仓库）')
+  }
+  try {
+    const { AssetService, AssetStorageService, registerAssetService } = await import('../assets')
+    registerAssetService(new AssetService(new AssetStorageService(), db.assets))
+  } catch (e) {
+    logger.error('[workflow-boot] 资产服务装配失败（继续启动）', e)
+  }
 
   subsystem = { engine, runService, definitionService, scheduler, appDefinitionService, appSessionService }
   logger.info('[workflow-boot] 工作流子系统已启动')

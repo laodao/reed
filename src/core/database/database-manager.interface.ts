@@ -30,6 +30,10 @@ import type { KbVectorRepository } from './repositories/kb-vector.repository'
 import type { KbQaPairRepository } from './repositories/kb-qa-pair.repository'
 import type { AppRepository } from './repositories/app.repository'
 import type { AppSessionRepository } from './repositories/app-session.repository'
+import type { AssetRepository } from './repositories/asset.repository'
+import type { ToolCredentialRepository } from './repositories/tool-credential.repository'
+import type { CustomToolRepository } from './repositories/custom-tool.repository'
+import type { VariableRepository, DataTableDefRepository, DataTableRowRepository } from './repositories/variable.repositories'
 import type { KnowledgeBaseRepository } from './repositories/knowledge-base.repository'
 import type { LocationBindingRepository } from './repositories/location-binding.repository'
 import type { LwBackgroundRepository } from './repositories/lw-background.repository'
@@ -132,6 +136,13 @@ export interface ICoreDatabaseManager {
   kbQaPairs: KbQaPairRepository | null
   appDefinitions: AppRepository | null
   appSessions: AppSessionRepository | null
+  /** 通用资产库（工作流「保存资产」节点 / 资产中心） */
+  assets: AssetRepository | null
+  toolCredentials: ToolCredentialRepository | null
+  customTools: CustomToolRepository | null
+  variables: VariableRepository | null
+  dataTableDefs: DataTableDefRepository | null
+  dataTableRows: DataTableRowRepository | null
 
   // ---- 人像 ----
   portraitProjects: PortraitProjectRepository | null
