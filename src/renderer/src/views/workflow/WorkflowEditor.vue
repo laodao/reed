@@ -535,7 +535,7 @@ function removeSelected() {
 .palette-title { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
 .palette-list { flex: 1; overflow: auto; padding-right: 2px; }
 .palette-group { font-size: 11px; font-weight: 600; color: var(--el-text-color-secondary); margin: 12px 0 6px; letter-spacing: .03em; }
-.palette-item { display: flex; gap: 8px; align-items: flex-start; padding: 7px 9px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; margin-bottom: 6px; cursor: grab; background: #fff; transition: border-color .15s, box-shadow .15s; }
+.palette-item { display: flex; gap: 8px; align-items: center; padding: 8px 9px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; margin-bottom: 6px; cursor: grab; background: #fff; transition: border-color .15s, box-shadow .15s; }
 .palette-item:hover { border-color: var(--el-color-primary); box-shadow: 0 2px 8px rgba(0,0,0,.06); }
 .palette-item:active { cursor: grabbing; }
 .pi-icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 7px; flex-shrink: 0; background: var(--el-fill-color); }
