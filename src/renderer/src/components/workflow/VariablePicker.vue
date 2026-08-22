@@ -1,7 +1,9 @@
 <template>
   <el-popover placement="left" :width="320" trigger="click">
     <template #reference>
-      <el-button text size="small" class="picker-btn" title="插入变量">✕变量</el-button>
+      <el-button text size="small" class="picker-btn" title="插入变量">
+        <span class="var-brace">{ }</span>
+      </el-button>
     </template>
     <div class="var-tree">
       <div v-for="group in groups" :key="group.label" class="var-group">
@@ -84,7 +86,9 @@ const groups = computed(() => {
 </script>
 
 <style scoped>
-.picker-btn { padding: 0 6px; font-size: 12px; }
+.picker-btn { padding: 0 6px; font-size: 12px; color: var(--el-text-color-secondary); height: 20px; }
+.picker-btn:hover { color: var(--el-color-primary); }
+.var-brace { font-family: 'JetBrains Mono', Consolas, monospace; font-size: 11px; letter-spacing: .04em; }
 .var-tree { max-height: 360px; overflow: auto; }
 .var-group-title { font-size: 11px; color: var(--el-text-color-secondary); margin: 8px 0 4px; font-weight: 600; }
 .var-item { display: flex; justify-content: space-between; gap: 8px; padding: 5px 6px; border-radius: 4px; cursor: pointer; }

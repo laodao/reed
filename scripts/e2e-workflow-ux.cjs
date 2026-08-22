@@ -98,14 +98,13 @@ function queryDb(sql, params = []) {
         const panel = document.querySelector('.config-area')
         const html = panel?.textContent ?? ''
         return {
-          hasPicker: html.includes('✕变量'),
-          hasTplTag: html.includes('支持'),
+          hasPicker: html.includes('{ }') || html.includes('✕变量'),
           hasPromptLabel: html.includes('系统提示词'),
         }
       })
       assert(ui.hasPromptLabel, '未选中 LLM 节点配置')
-      assert(ui.hasPicker && ui.hasTplTag, `文本字段缺变量选择器/角标（picker=${ui.hasPicker} tag=${ui.hasTplTag}）`)
-      console.log('   系统提示词/用户消息字段均有变量选择器 + 支持{{}}角标')
+      assert(ui.hasPicker, `文本字段缺变量选择器（picker=${ui.hasPicker}）`)
+      console.log('   系统提示词/用户消息字段提供变量选择器（内嵌 { } 图标）')
     })
   } else {
     console.log('   ⚠ 无 llm-chat 工作流，跳过变量选择器检查')

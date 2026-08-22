@@ -1,16 +1,21 @@
 <template>
   <!-- 按 Schema 字段类型分发渲染 -->
+  <!-- 单行文本：变量选择器内嵌输入框右侧（suffix） -->
   <div v-if="field.type === 'text'" class="field-with-picker">
     <el-input ref="inputRef" :model-value="modelValue as string" :placeholder="field.placeholder"
-      @update:model-value="v => set(v)" />
-    <VariablePicker v-if="fieldSupportsTemplate(field)" :nodes="pickerNodes.nodes" :exclude-node-id="pickerNodes.excludeNodeId" @insert="p => insertAtCursor(p)" />
+      @update:model-value="v => set(v)">
+      <template v-if="fieldSupportsTemplate(field)" #suffix>
+        <VariablePicker :nodes="pickerNodes.nodes" :exclude-node-id="pickerNodes.excludeNodeId" @insert="p => insertAtCursor(p)" />
+      </template>
+    </el-input>
   </div>
-  <div v-else-if="field.type === 'textarea'" class="field-with-picker column">
-    <div class="picker-row">
-      <VariablePicker v-if="fieldSupportsTemplate(field)" :nodes="pickerNodes.nodes" :exclude-node-id="pickerNodes.excludeNodeId" @insert="p => insertAtCursor(p)" />
-    </div>
+  <!-- 多行文本：变量选择器紧贴输入框右上角（textarea 的 suffix slot 不生效，用绝对定位） -->
+  <div v-else-if="field.type === 'textarea'" class="field-textarea">
     <el-input ref="inputRef" :model-value="modelValue as string" :placeholder="field.placeholder"
       type="textarea" :rows="4" @update:model-value="v => set(v)" />
+    <div v-if="fieldSupportsTemplate(field)" class="ta-picker">
+      <VariablePicker :nodes="pickerNodes.nodes" :exclude-node-id="pickerNodes.excludeNodeId" @insert="p => insertAtCursor(p)" />
+    </div>
   </div>
   <el-input-number v-else-if="field.type === 'number'" :model-value="num(modelValue)" :min="field.min" :max="field.max"
     :placeholder="field.placeholder" style="width: 100%" @update:model-value="v => set(v)" />
@@ -99,8 +104,10 @@
           <el-checkbox v-model="item.required" size="small" @change="syncInputs">必填</el-checkbox>
           <el-button text size="small" :class="{ 'card-more-on': validationOpen[i] }" @click="validationOpen[i] = !validationOpen[i]">校验{{ validationOpen[i] ? ' ▾' : ' ▴' }}</el-button>
           <span class="card-spacer" />
-          <span class="default-label">默认</span>
-          <el-input :model-value="String(item.defaultValue ?? '')" placeholder="定时触发时用" size="small" class="card-default"
+        </div>
+        <div class="input-card-default">
+          <span class="default-label">默认值</span>
+          <el-input :model-value="String(item.defaultValue ?? '')" placeholder="定时触发时用" size="small"
             @update:model-value="v => { item.defaultValue = v; syncInputs() }" />
         </div>
         <div v-if="item.type === 'select'" class="options-sub">
@@ -442,17 +449,21 @@ onMounted(loadTools)
 .input-card:hover { border-color: var(--el-border-color); }
 .input-card-head { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
 .input-card-head > .el-input { flex: 1 1 0; width: auto; min-width: 0; }
-.input-card-sub { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.input-card-sub { display: flex; gap: 8px; align-items: center; }
 .card-spacer { flex: 1; }
-.input-card-sub > .el-input.card-default { flex: 0 1 130px; width: auto; min-width: 80px; }
+/* 默认值独立一行：标签与输入框始终同行，避免 flex 换行分离 */
+.input-card-default { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+.input-card-default .el-input { flex: 1 1 0; width: auto; min-width: 0; }
 .card-more-on { color: var(--el-color-primary); }
 .options-sub { margin: 6px 0 2px; }
 .validation-sub { border-left: 2px solid var(--el-border-color-lighter); margin-bottom: 4px; padding-top: 2px; }
 .default-label { font-size: 12px; color: var(--el-text-color-secondary); white-space: nowrap; }
 .model-pair { display: flex; gap: 6px; }
 .field-with-picker { display: flex; align-items: center; gap: 4px; }
-.field-with-picker.column { flex-direction: column; }
-.picker-row { align-self: flex-end; }
+/* 多行文本容器：变量按钮右上角贴边，textarea 右下留白避免遮挡 */
+.field-textarea { position: relative; }
+.field-textarea :deep(.el-textarea__inner) { padding-right: 40px; }
+.ta-picker { position: absolute; top: 2px; right: 4px; z-index: 2; }
 .branch-card { border: 1px solid var(--el-border-color-lighter); border-radius: 6px; padding: 8px; margin-bottom: 8px; }
 .branch-head { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
 .cond-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }

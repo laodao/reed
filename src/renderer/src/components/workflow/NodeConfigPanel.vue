@@ -1,7 +1,9 @@
 <template>
   <div class="config-panel">
     <div class="panel-header">
-      <span class="node-icon" :class="category">{{ catalogEntry?.icon }}</span>
+      <span class="node-icon" :class="category">
+        <el-icon :size="18"><component :is="catalogEntry?.icon" /></el-icon>
+      </span>
       <div>
         <div class="node-type">{{ catalogEntry?.label }}</div>
         <div class="node-id">{{ node?.id }}</div>
@@ -25,10 +27,7 @@
           </el-collapse>
         </template>
         <el-form-item v-else>
-          <template #label>
-            {{ field.label }}
-            <el-tag v-if="fieldSupportsTemplate(field)" size="small" type="info" effect="plain" class="tpl-tag">支持 <span v-pre>{{ }}</span></el-tag>
-          </template>
+          <template #label>{{ field.label }}</template>
           <FieldRenderer :field="field" :model="wfNode.config" :dynamic-options="dynamicOptions" @change="emitChange" />
           <div v-if="field.help" class="field-help">{{ field.help }}</div>
         </el-form-item>
@@ -50,7 +49,7 @@
 import { computed, inject, provide, ref, watch, type Ref } from 'vue'
 import type { Node } from '@vue-flow/core'
 import { NODE_TYPE_CATALOG_MAP } from '@shared/types/workflow-node-catalog'
-import { NODE_CONFIG_FORMS, fieldSupportsTemplate, type CatalogFormField } from '@shared/types/workflow-node-forms'
+import { NODE_CONFIG_FORMS, type CatalogFormField } from '@shared/types/workflow-node-forms'
 import FieldRenderer from './FormFieldRenderer.vue'
 
 const props = defineProps<{ node: Node }>()
@@ -136,10 +135,10 @@ function emitChange() {
 .node-id { font-size: 11px; color: var(--el-text-color-secondary); margin-top: 2px; }
 .group-divider { font-size: 12px; font-weight: 600; color: var(--el-text-color-primary); margin: 18px 0 10px; display: flex; align-items: center; gap: 8px; }
 .group-divider::after { content: ''; flex: 1; height: 1px; background: var(--el-border-color-lighter); }
-.config-panel :deep(.el-form-item) { margin-bottom: 16px; }
-.config-panel :deep(.el-form-item__label) { font-size: 12px; font-weight: 600; color: var(--el-text-color-regular); padding-bottom: 6px; line-height: 1.2; }
-.tpl-tag { margin-left: 6px; }
-.field-help { font-size: 11px; color: var(--el-text-color-secondary); margin-top: 4px; line-height: 1.4; }
+.config-panel :deep(.el-form-item) { margin-bottom: 14px; }
+.config-panel :deep(.el-form-item__label) { font-size: 12px; font-weight: 600; color: var(--el-text-color-regular); padding-bottom: 4px; line-height: 1.2; }
+/* el-form-item__content 是 flex：help 小字强制换行占整行，避免挤到控件右侧 */
+.field-help { flex: 1 1 100%; width: 100%; font-size: 11px; color: var(--el-text-color-secondary); margin-top: 3px; line-height: 1.4; }
 .no-config { color: var(--el-text-color-secondary); text-align: center; padding: 24px 0; }
 .panel-footer { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--el-border-color-lighter); }
 .panel-footer :deep(.el-button) { width: 100%; }
