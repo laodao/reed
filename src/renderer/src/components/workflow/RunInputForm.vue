@@ -138,7 +138,7 @@ const numValues = reactive<Record<string, number | undefined>>({})
 // ── 模型字段（type='model'）：Provider+模型联动，值 = { providerConfigId, modelId } ──
 
 /** 启用 Provider 列表（含按 modelTypes 过滤后的模型选项） */
-const modelProviders = ref<Array<{ id: string; name: string; isDefault: boolean; models: Array<{ label: string; value: string }> }>>([])
+const modelProviders = ref<Array<{ id: string; name: string; isDefault: boolean; models: Array<{ label: string; value: string; type?: string }> }>>([])
 /** 字段 key → 所选 { providerConfigId, modelId } */
 const modelSelections = reactive<Record<string, { providerConfigId?: string; modelId?: string }>>({})
 
@@ -154,14 +154,14 @@ async function loadModelProviders(): Promise<void> {
     const resp = await api.list()
     const list: Array<Record<string, any>> = resp.success ? (resp.configs ?? []) : []
     const enabled = list.filter(c => c.isEnabled !== false && c.isEnabled !== 0)
-    // 全局候选（不按字段过滤，字段粒度在 currentModelOptions 过滤）
+    // 全局候选（不按字段过滤，字段粒度在 currentModelOptions 过滤）；保留模型 type 供匹配
     modelProviders.value = enabled.map(c => ({
       id: c.id,
       name: c.name || c.shortId || c.id,
       isDefault: c.isDefault === 1 || c.isDefault === true,
-      models: (c.models ?? []).map((m: any) => ({ label: m.name || m.id, value: m.id })),
+      models: (c.models ?? []).map((m: any) => ({ label: m.name || m.id, value: m.id, type: m.type })),
     }))
-    // 预填默认值：优先字段内置 defaultValue；否则用默认 Provider 的默认模型（或首个可用模型）
+    // 预填默认值：优先字段内置 defaultValue；否则选一个「有匹配模型」的 Provider 的默认模型
     await nextTick()
     for (const item of props.inputs) {
       if (item.type !== 'model') continue
@@ -176,11 +176,18 @@ async function loadModelProviders(): Promise<void> {
         }
         continue
       }
-      // 默认 Provider（或第一个启用）
       const mix = item.modelTypes?.length ? item.modelTypes : undefined
-      const defaultProvider = modelProviders.value.find(p => p.isDefault) || modelProviders.value[0]
+      const hasMatch = (p: { models: Array<{ value: string; type?: string }> }): boolean =>
+        p.models.some(m => modelMatches(item, m))
+      // 默认 Provider 需真正有匹配模型；否则取第一个有匹配模型的启用 Provider
+      //（避免 TTS/STT 这类需 audio 模型的应用被"全局默认但无音频模型"的 Provider 选中）
+      const defaultProvider =
+        modelProviders.value.find(p => p.isDefault && hasMatch(p)) ||
+        modelProviders.value.find(p => hasMatch(p)) ||
+        modelProviders.value.find(p => p.isDefault) ||
+        modelProviders.value[0]
       if (defaultProvider) {
-        const allowed = defaultProvider.models.filter(m => !mix || item.modelTypes!.includes(m.value as never))
+        const allowed = defaultProvider.models.filter(m => modelMatches(item, m))
         modelSelections[item.key] = {
           providerConfigId: defaultProvider.id,
           modelId: (dv as { modelId?: string })?.modelId ?? allowed[0]?.value ?? defaultProvider.models[0]?.value,
@@ -192,6 +199,13 @@ async function loadModelProviders(): Promise<void> {
   }
 }
 
+/** 该模型是否匹配字段的 modelTypes（按模型 type；无 type 时按 id 兜底） */
+function modelMatches(item: WorkflowStartInput, m: { value: string; type?: string }): boolean {
+  const mix = item.modelTypes
+  if (!mix?.length) return true
+  return mix.includes((m.type || m.value) as never)
+}
+
 /** 供模板读取的字段模型值（无则默认空对象） */
 function modelValue(item: WorkflowStartInput): Record<string, unknown> {
   return modelSelections[item.key] ?? {}
@@ -201,8 +215,7 @@ function modelValue(item: WorkflowStartInput): Record<string, unknown> {
 function currentModelOptions(item: WorkflowStartInput): Array<{ label: string; value: string }> {
   const p = modelProviders.value.find(x => x.id === modelSelections[item.key]?.providerConfigId)
   if (!p) return []
-  const allowed = item.modelTypes
-  return allowed?.length ? p.models.filter(m => allowed.includes(m.value as never)) : p.models
+  return p.models.filter(m => modelMatches(item, m))
 }
 
 /** 设置模型子键并同步触发校验 */
