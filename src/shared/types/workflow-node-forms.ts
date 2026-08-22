@@ -43,7 +43,7 @@ export interface CatalogFormField {
   /** select 的静态选项 */
   options?: Array<{ label: string; value: string | number }>
   /** select-dynamic 的数据源标识 */
-  source?: 'knowledgeBases'
+  source?: 'knowledgeBases' | 'newsTopics' | 'assets'
   help?: string
   /** 字段值支持 {{}} 模板的提示标记（表单角标） */
   templateHint?: boolean
@@ -320,6 +320,18 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
   'web-extract': [
     T('url', '网页地址', { templateHint: true, placeholder: 'https://...' }),
     { key: 'maxLength', label: '正文最大长度', type: 'number', group: '参数', help: '超长截断（默认 100000）' },
+    { key: 'maxLinks', label: '链接提取数量上限', type: 'number', group: '参数', help: '页面内链接提取上限（默认 30，0=不提取）' },
+  ],
+
+  'crawl-news': [
+    { key: 'topicId', label: '预置主题', type: 'select-dynamic', source: 'newsTopics', help: '选择内置主题自动带出全球媒体源列表（可与自定义 URL 合并）' },
+    T('customUrls', '自定义 URL 列表', {
+      type: 'textarea', group: '自定义源',
+      placeholder: '["https://...","https://..."] 或每行一个 URL',
+      help: 'JSON 数组（string[] 或 [{name,url}]）或逗号/换行分隔的 URL 列表',
+    }),
+    { key: 'maxLinks', label: '每源链接上限', type: 'number', group: '参数', min: 1, max: 50, help: '每源提取链接上限（默认 30）' },
+    { key: 'maxSources', label: '并行源数量', type: 'number', group: '参数', min: 1, max: 10, help: '并行抓取的源数量上限（默认 10）' },
   ],
 
   'kb-qa': [
@@ -418,9 +430,11 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
         { label: '文档', value: 'document' },
         { label: '文本', value: 'text' },
         { label: '数据', value: 'json' },
+        { label: '模板', value: 'template' },
         { label: '其他', value: 'other' },
       ],
     }),
+    T('subCategory', '子分类', { help: '资产中心二级分组（如模板场景/文档类型/项目名），可选' }),
     T('name', '资产名', { help: '留空按文件名/内容自动生成', placeholder: '例如：今日早报图' }),
     T('tags', '标签', { help: '逗号分隔，资产中心可按标签搜索' }),
     T('description', '描述', { group: '其他' }),

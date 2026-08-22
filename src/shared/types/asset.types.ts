@@ -20,6 +20,8 @@ export const ASSET_CATEGORIES = {
   document: 'document',
   text: 'text',
   json: 'json',
+  /** 模板（报告模板等：markdown/HTML 文本，供 read-asset 引用渲染） */
+  template: 'template',
   other: 'other',
 } as const
 
@@ -33,6 +35,7 @@ export const ASSET_CATEGORY_LABELS: Record<AssetCategory, string> = {
   document: '文档',
   text: '文本',
   json: '数据',
+  template: '模板',
   other: '其他',
 }
 
@@ -66,6 +69,8 @@ export interface AssetRecord {
   userId: string | null
   /** 大类（ASSET_CATEGORIES） */
   category: AssetCategory
+  /** 子分类（自由文本，资产中心二级分组；如模板场景/文档类型/项目名） */
+  subCategory?: string | null
   /** 资产名（文件型缺省取文件名） */
   name: string
   description?: string | null
@@ -89,6 +94,8 @@ export interface AssetRecord {
   sourceType?: string | null
   /** 来源引用（工作流运行 id / 应用 id） */
   sourceRef?: string | null
+  /** 内置资产（全局共享、禁删禁改，允许复制为自有） */
+  isBuiltin?: boolean
   createdAt: string
   updatedAt: string
 }
@@ -97,6 +104,8 @@ export interface AssetRecord {
 export interface SaveAssetInput {
   /** 大类；缺省按内容自动探测 */
   category?: AssetCategory
+  /** 子分类（自由文本，资产中心二级分组） */
+  subCategory?: string
   /** 资产名；缺省按文件名/内容自动生成 */
   name?: string
   description?: string

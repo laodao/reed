@@ -59,6 +59,7 @@ const saveAssetNode: WorkflowNodeHandler = {
     { key: 'assetId', type: 'string', desc: '资产 ID（read-asset 节点引用）' },
     { key: 'name', type: 'string', desc: '资产名' },
     { key: 'category', type: 'string', desc: '资产大类' },
+    { key: 'subCategory', type: 'string', desc: '资产子分类（资产中心二级分组）' },
     { key: 'kind', type: 'string', desc: '存储形态（file/url/text/json）' },
     { key: 'url', type: 'string', desc: '可访问链接（文件型/链接型）' },
   ],
@@ -79,6 +80,7 @@ const saveAssetNode: WorkflowNodeHandler = {
       content: string
       kind?: 'auto' | 'file' | 'url' | 'text' | 'json'
       category?: string
+      subCategory?: string
       name?: string
       tags?: string
       description?: string
@@ -90,6 +92,7 @@ const saveAssetNode: WorkflowNodeHandler = {
     const service = getAssetService()
     const record = await service.createAsset({
       category: resolveCategory(cfg.category),
+      subCategory: cfg.subCategory?.trim() || undefined,
       name: cfg.name?.trim() || undefined,
       description: cfg.description,
       tags: parseTags(cfg.tags),
@@ -111,6 +114,7 @@ const saveAssetNode: WorkflowNodeHandler = {
         assetId: record.id,
         name: record.name,
         category: record.category,
+        subCategory: record.subCategory ?? '',
         kind: record.kind,
         url: service.assetPreviewUrl(record),
       },

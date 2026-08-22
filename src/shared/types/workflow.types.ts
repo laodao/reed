@@ -91,6 +91,8 @@ export type WorkflowNodeType =
   // 资产（通用资产库：工作流成果沉淀与复用）
   | 'save-asset'
   | 'read-asset'
+  // 新闻采集（内置应用 C1 早报 / C2 周报数据层：预置主题多源抓取链接）
+  | 'crawl-news'
 
 // ==================== 开始节点输入参数 ====================
 
@@ -100,11 +102,18 @@ export interface WorkflowStartInput {
   key: string
   /** 显示名 */
   label: string
-  type: 'string' | 'textarea' | 'number' | 'boolean' | 'json' | 'select' | 'file' | 'model'
+  type: 'string' | 'textarea' | 'number' | 'boolean' | 'json' | 'select' | 'file' | 'model' | 'select-dynamic'
   /** type='select' 时的选项 */
   options?: Array<{ label: string; value: string | number }>
   /** type='select' 时是否多选（提交值为数组） */
   multi?: boolean
+  /**
+   * type='select-dynamic' 时的数据源标识：
+   * - 'assets:template'：模板资产列表（值=资产 ID；read-asset 节点引用 {{start.键}}）
+   * - 'newsTopics'：预置新闻主题列表（值=主题 id；crawl-news 节点 {{start.键}}）
+   * - 'knowledgeBases'：用户知识库列表（值=知识库 ID；kb-ingest/kb-qa 节点引用）
+   */
+  source?: 'assets:template' | 'newsTopics' | 'knowledgeBases'
   /**
    * type='model' 时的模型类型过滤（留空=全部可用模型）。
    * 提交值为 { providerConfigId, modelId }，节点配置用 {{start.键.providerConfigId}} / {{start.键.modelId}} 引用。
@@ -466,6 +475,17 @@ export interface WorkflowNodeConfigMap {
     /** 输出模式：url=可访问链接 | path=本地文件路径（文件型） | content=文本/JSON 内容 | metadata=全部元数据 */
     output?: 'url' | 'path' | 'content' | 'metadata'
   }
+
+  'crawl-news': {
+    /** 预置主题 id（NEWS_TOPICS；与 customUrls 二选一，可都填合并） */
+    topicId?: string
+    /** 自定义 URL 列表（JSON：string[] 或 [{name,url}]，或逗号/换行分隔） */
+    customUrls?: string
+    /** 每源链接提取上限（默认 30，上限 50） */
+    maxLinks?: number
+    /** 并行抓取的源数量上限（默认 10，上限 10） */
+    maxSources?: number
+  }
 }
 
 // ==================== 图结构 ====================
@@ -736,6 +756,7 @@ export const WORKFLOW_NODE_TYPES = {
   'data-table': 'data-table',
   'save-asset': 'save-asset',
   'read-asset': 'read-asset',
+  'crawl-news': 'crawl-news',
 } as const satisfies Record<WorkflowNodeType, WorkflowNodeType>
 
 /** 出边类型常量（键=值，与 WorkflowEdgeKind 一一对应） */

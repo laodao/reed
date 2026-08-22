@@ -60,6 +60,8 @@ export interface AppRecord {
   channelApi: number
   shareToken: string | null
   enabled: number
+  /** 内置应用（全局共享、禁删禁改，允许复制为自有） */
+  isBuiltin?: boolean
   lastRunAt: Date | null
   createdAt: Date | null
   updatedAt: Date | null

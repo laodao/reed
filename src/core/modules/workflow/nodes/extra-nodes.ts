@@ -12,6 +12,7 @@ import type { WorkflowNodeContext } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
 import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from '@shared/types/workflow.types'
+import { parse } from 'node-html-parser'
 
 // ==================== 模板转换 ====================
 
@@ -134,6 +135,7 @@ const webExtractNode: WorkflowNodeHandler = {
     { key: 'title', type: 'string', desc: '页面标题' },
     { key: 'text', type: 'string', desc: '正文文本' },
     { key: 'length', type: 'number', desc: '文本长度' },
+    { key: 'links', type: 'json', desc: '页面内链接 [{ title, url }]（去重/过滤，最多 maxLinks 条）' },
   ],
   validateConfig(config) {
     const cfg = config as { url?: string }
@@ -141,7 +143,7 @@ const webExtractNode: WorkflowNodeHandler = {
     return []
   },
   async execute(ctx: WorkflowNodeContext) {
-    const cfg = ctx.config as { url: string; maxLength?: number }
+    const cfg = ctx.config as { url: string; maxLength?: number; maxLinks?: number }
     const timeout = Math.min(WORKFLOW_DEFAULTS.httpRequestTimeoutMs, WORKFLOW_LIMITS.httpTimeoutMs)
     const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(timeout)])
     let html: string
@@ -155,8 +157,41 @@ const webExtractNode: WorkflowNodeHandler = {
     const { title, text } = htmlToText(html)
     const max = cfg.maxLength && cfg.maxLength > 0 ? cfg.maxLength : 100_000
     const trimmed = text.length > max ? text.slice(0, max) + '…[已截断]' : text
-    return { status: 'succeeded', output: { title, text: trimmed, length: trimmed.length } }
+    const links = extractPageLinks(html, String(cfg.url), cfg.maxLinks ?? 30)
+    return { status: 'succeeded', output: { title, text: trimmed, length: trimmed.length, links } }
   },
+}
+
+/**
+ * 从 HTML 提取页面内链接列表（新闻首页/专栏页 → 条目候选）。
+ * - 去重（按 href 归一化后的绝对 URL）
+ * - 过滤：空/非 http(s)/javascript:/mailto:/纯锚点/站外忽略（站外保留，便于跨源抓取）
+ * - 可见文本为空时用 URL 兜底
+ * - 最多 maxLinks 条（0 = 不提取）
+ */
+export function extractPageLinks(html: string, baseUrl: string, maxLinks: number): Array<{ title: string; url: string }> {
+  if (!maxLinks || maxLinks <= 0) return []
+  const root = parse(html)
+  const seen = new Set<string>()
+  const out: Array<{ title: string; url: string }> = []
+  for (const a of root.querySelectorAll('a[href]')) {
+    if (out.length >= maxLinks) break
+    const href = (a.getAttribute('href') ?? '').trim()
+    if (!href || /^(javascript:|mailto:|tel:|#)/i.test(href)) continue
+    let abs: string
+    try {
+      abs = new URL(href, baseUrl).href
+    } catch {
+      continue
+    }
+    if (!/^https?:\/\//i.test(abs)) continue
+    if (seen.has(abs)) continue
+    seen.add(abs)
+    const title = (a.text ?? '').replace(/\s+/g, ' ').trim()
+    if (!title) continue
+    out.push({ title: title.slice(0, 200), url: abs })
+  }
+  return out
 }
 
 export const EXTRA_NODE_HANDLERS: WorkflowNodeHandler[] = [
