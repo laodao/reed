@@ -28,7 +28,7 @@
         </template>
         <el-form-item v-else>
           <template #label>{{ field.label }}</template>
-          <FieldRenderer :field="field" :model="wfNode.config" :dynamic-options="dynamicOptions" @change="emitChange" />
+          <div class="field-wrap"><FieldRenderer :field="field" :model="wfNode.config" :dynamic-options="dynamicOptions" @change="emitChange" /></div>
           <div v-if="field.help" class="field-help">{{ field.help }}</div>
         </el-form-item>
       </template>
@@ -137,7 +137,9 @@ function emitChange() {
 .group-divider::after { content: ''; flex: 1; height: 1px; background: var(--el-border-color-lighter); }
 .config-panel :deep(.el-form-item) { margin-bottom: 14px; }
 .config-panel :deep(.el-form-item__label) { font-size: 12px; font-weight: 600; color: var(--el-text-color-regular); padding-bottom: 4px; line-height: 1.2; }
-/* el-form-item__content 是 flex：help 小字强制换行占整行，避免挤到控件右侧 */
+/* el-form-item__content 是 flex：字段容器默认只按内容宽度（导致多行框只有一半）——
+   强制占满整行 */
+.field-wrap { flex: 1 1 100%; width: 100%; min-width: 0; }
 .field-help { flex: 1 1 100%; width: 100%; font-size: 11px; color: var(--el-text-color-secondary); margin-top: 3px; line-height: 1.4; }
 .no-config { color: var(--el-text-color-secondary); text-align: center; padding: 24px 0; }
 .panel-footer { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--el-border-color-lighter); }

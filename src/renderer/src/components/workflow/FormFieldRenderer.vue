@@ -470,9 +470,10 @@ onMounted(loadTools)
 .validation-sub { border-left: 2px solid var(--el-border-color-lighter); margin-bottom: 4px; padding-top: 2px; }
 .default-label { font-size: 12px; color: var(--el-text-color-secondary); white-space: nowrap; }
 .model-pair { display: flex; gap: 6px; }
-.field-with-picker { display: flex; align-items: center; gap: 4px; }
+.field-with-picker { display: flex; align-items: center; gap: 4px; width: 100%; }
+.field-with-picker > .el-input { flex: 1 1 0; width: auto; min-width: 0; }
 /* 多行文本容器：变量按钮右上角贴边，textarea 右下留白避免遮挡 */
-.field-textarea { position: relative; }
+.field-textarea { position: relative; width: 100%; }
 .field-textarea :deep(.el-textarea__inner) { padding-right: 40px; }
 .ta-picker { position: absolute; top: 2px; right: 4px; z-index: 2; }
 .branch-card { border: 1px solid var(--el-border-color-lighter); border-radius: 6px; padding: 8px; margin-bottom: 8px; }
