@@ -86,9 +86,9 @@ const groups = computed(() => {
 </script>
 
 <style scoped>
-.picker-btn { padding: 0 7px; font-size: 12px; color: var(--el-text-color-regular); height: 22px; border: 1px solid var(--el-border-color); border-radius: 4px; background: var(--el-fill-color-blank); }
-.picker-btn:hover { color: var(--el-color-primary); border-color: var(--el-color-primary); }
-.var-brace { font-family: 'JetBrains Mono', Consolas, monospace; font-size: 11px; letter-spacing: .04em; }
+.picker-btn { padding: 0 6px; font-size: 12px; color: var(--el-text-color-secondary); height: 20px; }
+.picker-btn:hover { color: var(--el-color-primary); }
+.var-brace { font-family: 'JetBrains Mono', Consolas, monospace; font-size: 12px; letter-spacing: .04em; }
 .var-tree { max-height: 360px; overflow: auto; }
 .var-group-title { font-size: 11px; color: var(--el-text-color-secondary); margin: 8px 0 4px; font-weight: 600; }
 .var-item { display: flex; justify-content: space-between; gap: 8px; padding: 5px 6px; border-radius: 4px; cursor: pointer; }

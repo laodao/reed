@@ -33,11 +33,8 @@
             <div v-for="entry in group.items" :key="entry.type" class="palette-item"
               draggable="true" :title="entry.description"
               @dragstart="dragType = entry.type" @click="addNode(entry.type)">
-              <span class="pi-dot" :class="entry.category" />
-              <div class="pi-text">
-                <div>{{ entry.label }}</div>
-                <div class="pi-desc">{{ entry.description }}</div>
-              </div>
+              <span class="pi-icon" :class="entry.category"><el-icon :size="16"><component :is="entry.icon" /></el-icon></span>
+              <div class="pi-text">{{ entry.label }}</div>
             </div>
           </template>
         </div>
@@ -541,11 +538,9 @@ function removeSelected() {
 .palette-item { display: flex; gap: 8px; align-items: flex-start; padding: 7px 9px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; margin-bottom: 6px; cursor: grab; background: #fff; transition: border-color .15s, box-shadow .15s; }
 .palette-item:hover { border-color: var(--el-color-primary); box-shadow: 0 2px 8px rgba(0,0,0,.06); }
 .palette-item:active { cursor: grabbing; }
-.pi-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
-.pi-dot.flow { background: #6366f1; } .pi-dot.ai { background: #10b981; } .pi-dot.general { background: #f59e0b; }
-.pi-text { font-size: 13px; line-height: 1.3; min-width: 0; }
-.pi-text > div:first-child { font-weight: 600; }
-.pi-desc { font-size: 11px; font-weight: 400; color: var(--el-text-color-secondary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pi-icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 7px; flex-shrink: 0; background: var(--el-fill-color); }
+.pi-icon.flow { color: #6366f1; background: rgba(99,102,241,.1); } .pi-icon.ai { color: #10b981; background: rgba(16,185,129,.1); } .pi-icon.general { color: #f59e0b; background: rgba(245,158,11,.1); }
+.pi-text { font-size: 13px; font-weight: 600; line-height: 1.3; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .canvas { flex: 1; position: relative; background: #fafafa; }
 .config-area { width: 400px; border-left: 1px solid var(--el-border-color); background: var(--el-bg-color); }
