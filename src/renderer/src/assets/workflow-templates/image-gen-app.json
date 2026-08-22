@@ -8,8 +8,8 @@
     "version": 1,
     "nodes": [
       { "id": "start", "type": "start", "name": "开始", "position": { "x": 60, "y": 200 }, "config": { "inputs": [
-        { "key": "prompt", "label": "提示词", "type": "string", "required": true },
-        { "key": "negativePrompt", "label": "负面提示词", "type": "string" },
+        { "key": "prompt", "label": "提示词", "type": "textarea", "required": true, "validation": { "minLength": 3, "maxLength": 800 } },
+        { "key": "negativePrompt", "label": "负面提示词", "type": "textarea" },
         { "key": "modelId", "label": "图像模型 ID", "type": "string", "required": true },
         { "key": "width", "label": "宽度", "type": "number", "defaultValue": 1024 },
         { "key": "height", "label": "高度", "type": "number", "defaultValue": 1024 },

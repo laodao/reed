@@ -47,6 +47,11 @@ export interface CatalogFormField {
   help?: string
   /** 字段值支持 {{}} 模板的提示标记（表单角标） */
   templateHint?: boolean
+  /**
+   * 显式排除模板（text/textarea 默认全部支持 {{}} 插值——引擎对 config
+   * 字符串统一深解析；此标记用于少数"纯配置"字段，如 OAS 接口 operationId）
+   */
+  noTemplate?: boolean
   min?: number
   max?: number
   step?: number
@@ -62,6 +67,16 @@ const T = (key: string, label: string, extra: Partial<CatalogFormField> = {}): C
   type: 'text',
   ...extra,
 })
+
+/**
+ * 字段是否支持 {{}} 模板（编辑器据此显示变量选择器与"支持{{}}"角标）。
+ * 规则统一：text/textarea 文本类字段默认全部支持——引擎对 config 字符串
+ * 统一深解析（resolveConfigDeep），UI 不再靠手动 templateHint 打标；
+ * noTemplate 仅用于少数纯配置字段显式排除。
+ */
+export function fieldSupportsTemplate(field: CatalogFormField): boolean {
+  return (field.type === 'text' || field.type === 'textarea') && !field.noTemplate
+}
 
 /** 全部 21 个组件的表单 Schema */
 export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
@@ -208,31 +223,6 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     T('videoUrl', '视频链接', { type: 'textarea', templateHint: true, placeholder: 'https://...（mp4 直链 / B站 BV 链接；抖音请手动下载后本地导入）', help: '本地文件与链接二选一；支持常规直链与 B站（公开 API 解析音频直链），抖音受风控不支持自动解析' }),
     T('language', '语言', { help: '透传给下游 stt 的语言提示（本节点仅提取音频）' }),
   ],
-  'lw-generate-chapter': [
-    T('projectId', '长文项目 ID', { group: '目标' }),
-    T('outlineId', '章节大纲 ID', { group: '目标' }),
-    { key: 'targetWords', label: '目标字数', type: 'number', group: '参数' },
-    { key: 'waitForCompletion', label: '等待生成完成', type: 'switch', group: '参数', help: '长任务：关闭 = 提交即成功（输出 eventId）' },
-  ],
-  'lw-polish': [
-    T('projectId', '长文项目 ID', { group: '目标' }),
-    T('field', '润色字段', {
-      type: 'select',
-      group: '目标',
-      options: [
-        { label: '时代描述', value: 'eraDescription' },
-        { label: '社会结构', value: 'socialStructure' },
-        { label: '科技水平', value: 'techLevel' },
-        { label: '特殊规则', value: 'specialRules' },
-        { label: '势力分布', value: 'factionDistribution' },
-        { label: '地理导向', value: 'geographicOrientation' },
-      ],
-    }),
-    T('eraType', '时代类型', { group: '目标', help: '可选' }),
-    T('content', '原文内容', { type: 'textarea', templateHint: true, group: '目标' }),
-    { key: 'waitForCompletion', label: '等待完成', type: 'switch', group: '参数' },
-  ],
-
   'oas-tool': [
     T('oasSpec', 'OpenAPI JSON', {
       type: 'textarea',

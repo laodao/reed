@@ -8,7 +8,7 @@
     "version": 1,
     "nodes": [
       { "id": "start", "type": "start", "name": "开始", "position": { "x": 60, "y": 200 }, "config": { "inputs": [
-        { "key": "text", "label": "待翻译内容", "type": "string", "required": true },
+        { "key": "text", "label": "待翻译内容", "type": "textarea", "required": true, "validation": { "minLength": 1, "maxLength": 5000 } },
         { "key": "targetLang", "label": "目标语言", "type": "string", "required": true, "defaultValue": "zh" },
         { "key": "sourceLang", "label": "源语言", "type": "string" }
       ] } },

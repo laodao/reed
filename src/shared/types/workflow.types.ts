@@ -68,8 +68,6 @@ export type WorkflowNodeType =
   | 'stt'
   | 'voice-clone'
   | 'video-extract-audio'
-  | 'lw-generate-chapter'
-  | 'lw-polish'
   // 通用
   | 'http-request'
   | 'app-notify'
@@ -100,15 +98,35 @@ export interface WorkflowStartInput {
   key: string
   /** 显示名 */
   label: string
-  type: 'string' | 'number' | 'boolean' | 'json' | 'select' | 'file'
+  type: 'string' | 'textarea' | 'number' | 'boolean' | 'json' | 'select' | 'file'
   /** type='select' 时的选项 */
   options?: Array<{ label: string; value: string | number }>
   /** type='select' 时是否多选（提交值为数组） */
   multi?: boolean
   /** 是否必填 */
   required?: boolean
+  /** 扩展校验规则（除必填外；前端实时提示 + 服务端启动时兜底） */
+  validation?: WorkflowStartInputValidation
   /** 默认值（定时触发无来源时使用） */
   defaultValue?: unknown
+}
+
+/** 开始节点输入参数的扩展校验规则 */
+export interface WorkflowStartInputValidation {
+  /** 最小长度（string/textarea；计入空白字符） */
+  minLength?: number
+  /** 最大长度（string/textarea；计入空白字符） */
+  maxLength?: number
+  /** 正则校验（string/textarea；JS 正则字面量文本，如 "^\\d{11}$"） */
+  pattern?: string
+  /** 正则不匹配时的提示文案（缺省为"格式不符合要求"） */
+  patternMessage?: string
+  /** 最小值（number） */
+  min?: number
+  /** 最大值（number） */
+  max?: number
+  /** 自定义错误提示（覆盖按规则生成的默认文案） */
+  message?: string
 }
 
 // ==================== 节点级执行设置 ====================
@@ -313,27 +331,6 @@ export interface WorkflowNodeConfigMap {
     videoUrl?: string
     /** 输出采样语言提示（透传 stt 用；本节点仅提取音频） */
     language?: string
-  }
-
-  'lw-generate-chapter': {
-    projectId: string
-    outlineId: string
-    targetWords?: number
-    providerConfigId?: string
-    modelId?: string
-    /** 是否等待生成完成（长任务，false=提交即成功并输出 eventId；默认 false） */
-    waitForCompletion?: boolean
-  }
-
-  'lw-polish': {
-    projectId: string
-    /** 润色字段（长文模块的 6 个背景字段之一） */
-    field: string
-    /** 原文内容（模板可用） */
-    content: string
-    providerConfigId?: string
-    modelId?: string
-    waitForCompletion?: boolean
   }
 
   'http-request': {
@@ -718,8 +715,6 @@ export const WORKFLOW_NODE_TYPES = {
   stt: 'stt',
   'voice-clone': 'voice-clone',
   'video-extract-audio': 'video-extract-audio',
-  'lw-generate-chapter': 'lw-generate-chapter',
-  'lw-polish': 'lw-polish',
   'http-request': 'http-request',
   'app-notify': 'app-notify',
   'template-transform': 'template-transform',

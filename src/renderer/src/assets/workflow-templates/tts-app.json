@@ -8,7 +8,7 @@
     "version": 1,
     "nodes": [
       { "id": "start", "type": "start", "name": "开始", "position": { "x": 60, "y": 200 }, "config": { "inputs": [
-        { "key": "text", "label": "合成文本", "type": "string", "required": true },
+        { "key": "text", "label": "合成文本", "type": "textarea", "required": true, "validation": { "minLength": 1, "maxLength": 2000 } },
         { "key": "voiceId", "label": "音色 ID", "type": "string", "required": true }
       ] } },
       { "id": "tts1", "type": "tts", "name": "语音合成", "position": { "x": 300, "y": 200 }, "config": { "text": "{{start.text}}", "voiceId": "{{start.voiceId}}" } },

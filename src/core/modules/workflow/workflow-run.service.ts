@@ -11,7 +11,7 @@
 
 import { LOCAL_DEFAULT_USER_ID, runWithUserAsync } from '@core/context/user-context'
 import { getEventEmitter } from '@core/interfaces/event.interface'
-import type { WorkflowGraph, WorkflowRunStatus, WorkflowTriggerType } from '@shared/types/workflow.types'
+import type { WorkflowGraph, WorkflowRunStatus, WorkflowStartInput, WorkflowTriggerType } from '@shared/types/workflow.types'
 import { WORKFLOW_DEFAULTS, WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_STATUSES, WORKFLOW_NODE_TYPES, WORKFLOW_TRIGGER_TYPES } from '@shared/types/workflow.types'
 import { WorkflowEngineService, type ExecuteRunInput, type ReviewDecisionInput } from './engine/workflow-engine.service'
 import type { WorkflowEngineDeps } from './engine/ports'
@@ -99,9 +99,9 @@ export class WorkflowRunService {
       : ((input.triggerType === WORKFLOW_TRIGGER_TYPES.manual && def.draftGraph) || def.publishedGraph || def.draftGraph)
     if (!graph || graph.nodes.length === 0) throw new Error('工作流没有可执行的图')
 
-    // start 输入参数：required 校验 + defaultValue 合并（定时/事件触发无来源时用默认值）
+    // start 输入参数：required + 扩展规则校验，defaultValue 合并（定时/事件触发无来源时用默认值）
     const startNode = graph.nodes.find(n => n.type === WORKFLOW_NODE_TYPES.start)
-    const inputDefs = (startNode?.config as { inputs?: Array<{ key: string; required?: boolean; defaultValue?: unknown }> } | undefined)?.inputs ?? []
+    const inputDefs = (startNode?.config as { inputs?: WorkflowStartInput[] } | undefined)?.inputs ?? []
     const mergedInputs: Record<string, unknown> = { ...(input.inputs ?? {}) }
     for (const def2 of inputDefs) {
       if (mergedInputs[def2.key] === undefined && def2.defaultValue !== undefined) {
@@ -115,11 +115,34 @@ export class WorkflowRunService {
       (typeof v === 'string' && v.trim() === '') ||
       (Array.isArray(v) && v.length === 0) ||
       (typeof v === 'object' && Object.keys(v).length === 0)
-    const missing = inputDefs
-      .filter(d => d.required && isEmptyInput(mergedInputs[d.key]))
-      .map(d => d.key)
-    if (missing.length > 0) {
-      throw new Error(`缺少必填的输入参数：${missing.join('、')}`)
+    // 必填 + 扩展规则（minLength/maxLength/pattern/min/max，与前端 RunInputForm 同规则）
+    const problems: string[] = []
+    for (const def2 of inputDefs) {
+      const label = def2.label || def2.key
+      const v = mergedInputs[def2.key]
+      if (def2.required && isEmptyInput(v)) {
+        problems.push(`缺少必填的输入参数「${label}」`)
+        continue
+      }
+      if (isEmptyInput(v)) continue
+      const rule = def2.validation
+      if (!rule) continue
+      if (def2.type === 'string' || def2.type === 'textarea' || !def2.type) {
+        const s = String(v)
+        if (rule.minLength != null && s.length < rule.minLength) problems.push(`「${label}」长度不足：至少 ${rule.minLength} 个字符`)
+        if (rule.maxLength != null && s.length > rule.maxLength) problems.push(`「${label}」超出长度：最多 ${rule.maxLength} 个字符`)
+        if (rule.pattern) {
+          try {
+            if (!new RegExp(rule.pattern).test(s)) problems.push(`「${label}」${rule.patternMessage || '格式不符合要求'}`)
+          } catch { /* 非法正则容错：不拦截 */ }
+        }
+      } else if (def2.type === 'number' && typeof v === 'number') {
+        if (rule.min != null && v < rule.min) problems.push(`「${label}」不能小于 ${rule.min}`)
+        if (rule.max != null && v > rule.max) problems.push(`「${label}」不能大于 ${rule.max}`)
+      }
+    }
+    if (problems.length > 0) {
+      throw new Error(`输入参数校验失败：${problems.join('；')}`)
     }
 
     const run = await this.deps.runs.create({

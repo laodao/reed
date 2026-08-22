@@ -27,7 +27,7 @@
         <el-form-item v-else>
           <template #label>
             {{ field.label }}
-            <el-tag v-if="field.templateHint" size="small" type="info" effect="plain" class="tpl-tag">支持 <span v-pre>{{ }}</span></el-tag>
+            <el-tag v-if="fieldSupportsTemplate(field)" size="small" type="info" effect="plain" class="tpl-tag">支持 <span v-pre>{{ }}</span></el-tag>
           </template>
           <FieldRenderer :field="field" :model="wfNode.config" :dynamic-options="dynamicOptions" @change="emitChange" />
           <div v-if="field.help" class="field-help">{{ field.help }}</div>
@@ -50,7 +50,7 @@
 import { computed, inject, provide, ref, watch, type Ref } from 'vue'
 import type { Node } from '@vue-flow/core'
 import { NODE_TYPE_CATALOG_MAP } from '@shared/types/workflow-node-catalog'
-import { NODE_CONFIG_FORMS, type CatalogFormField } from '@shared/types/workflow-node-forms'
+import { NODE_CONFIG_FORMS, fieldSupportsTemplate, type CatalogFormField } from '@shared/types/workflow-node-forms'
 import FieldRenderer from './FormFieldRenderer.vue'
 
 const props = defineProps<{ node: Node }>()

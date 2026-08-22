@@ -10,7 +10,7 @@
       { "id": "start", "type": "start", "name": "开始", "position": { "x": 60, "y": 200 }, "config": { "inputs": [
         { "key": "sample", "label": "人声样本（10-20 秒）", "type": "file", "required": true },
         { "key": "name", "label": "音色名称", "type": "string", "required": true },
-        { "key": "text", "label": "要合成的文本", "type": "string", "required": true },
+        { "key": "text", "label": "要合成的文本", "type": "textarea", "required": true, "validation": { "minLength": 1, "maxLength": 2000 } },
         { "key": "prefix", "label": "voice_id 前缀", "type": "string" }
       ] } },
       { "id": "clone1", "type": "voice-clone", "name": "训练音色", "position": { "x": 300, "y": 200 }, "config": { "samplePath": "{{start.sample.path}}", "name": "{{start.name}}", "prefix": "{{start.prefix}}", "waitForCompletion": true } },

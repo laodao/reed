@@ -3,11 +3,11 @@
   <div v-if="field.type === 'text'" class="field-with-picker">
     <el-input ref="inputRef" :model-value="modelValue as string" :placeholder="field.placeholder"
       @update:model-value="v => set(v)" />
-    <VariablePicker v-if="field.templateHint" :nodes="pickerNodes.nodes" :exclude-node-id="pickerNodes.excludeNodeId" @insert="p => insertAtCursor(p)" />
+    <VariablePicker v-if="fieldSupportsTemplate(field)" :nodes="pickerNodes.nodes" :exclude-node-id="pickerNodes.excludeNodeId" @insert="p => insertAtCursor(p)" />
   </div>
   <div v-else-if="field.type === 'textarea'" class="field-with-picker column">
     <div class="picker-row">
-      <VariablePicker v-if="field.templateHint" :nodes="pickerNodes.nodes" :exclude-node-id="pickerNodes.excludeNodeId" @insert="p => insertAtCursor(p)" />
+      <VariablePicker v-if="fieldSupportsTemplate(field)" :nodes="pickerNodes.nodes" :exclude-node-id="pickerNodes.excludeNodeId" @insert="p => insertAtCursor(p)" />
     </div>
     <el-input ref="inputRef" :model-value="modelValue as string" :placeholder="field.placeholder"
       type="textarea" :rows="4" @update:model-value="v => set(v)" />
@@ -86,13 +86,14 @@
     <div class="kv-row inputs-row">
       <el-input v-model="item.key" placeholder="参数键" size="small" @change="syncInputs" />
       <el-input v-model="item.label" placeholder="显示名" size="small" @change="syncInputs" />
-      <el-select v-model="item.type" size="small" style="width: 90px" @change="syncInputs">
-        <el-option label="文本" value="string" /><el-option label="数字" value="number" />
-        <el-option label="布尔" value="boolean" /><el-option label="JSON" value="json" />
-        <el-option label="下拉" value="select" />
+      <el-select v-model="item.type" size="small" style="width: 100px" @change="syncInputs">
+        <el-option label="单行文本" value="string" /><el-option label="多行文本" value="textarea" />
+        <el-option label="数字" value="number" /><el-option label="布尔" value="boolean" />
+        <el-option label="JSON" value="json" /><el-option label="下拉" value="select" />
         <el-option label="文件" value="file" />
       </el-select>
       <el-checkbox v-model="item.required" size="small" @change="syncInputs">必填</el-checkbox>
+      <el-button text size="small" @click="validationOpen[i] = !validationOpen[i]">校验{{ validationOpen[i] ? ' ▾' : ' ▴' }}</el-button>
       <el-button text type="danger" size="small" @click="inputs.splice(i, 1); syncInputs()">✕</el-button>
     </div>
     <div v-if="item.type === 'select'" class="options-sub">
@@ -106,13 +107,42 @@
         <el-button text type="danger" size="small" @click="item.options!.splice(j, 1); syncInputs()">✕</el-button>
       </div>
     </div>
+    <!-- 校验规则配置（除必填外的扩展校验） -->
+    <div v-if="validationOpen[i]" class="options-sub validation-sub">
+      <template v-if="isTextInput(item)">
+        <div class="kv-row" style="padding-left: 12px">
+          <span class="default-label">最小长度</span>
+          <el-input-number v-model="item.validation!.minLength" :min="0" size="small" controls-position="right" style="width: 90px" @change="syncInputs" />
+          <span class="default-label">最大长度</span>
+          <el-input-number v-model="item.validation!.maxLength" :min="0" size="small" controls-position="right" style="width: 90px" @change="syncInputs" />
+        </div>
+        <div class="kv-row" style="padding-left: 12px">
+          <span class="default-label">正则</span>
+          <el-input v-model="item.validation!.pattern" size="small" style="width: 180px" placeholder='如 ^\d{11}$' @change="syncInputs" />
+          <span class="default-label">正则提示</span>
+          <el-input v-model="item.validation!.patternMessage" size="small" style="width: 160px" placeholder="不匹配时的提示" @change="syncInputs" />
+        </div>
+      </template>
+      <template v-else-if="item.type === 'number'">
+        <div class="kv-row" style="padding-left: 12px">
+          <span class="default-label">最小值</span>
+          <el-input-number v-model="item.validation!.min" size="small" controls-position="right" style="width: 110px" @change="syncInputs" />
+          <span class="default-label">最大值</span>
+          <el-input-number v-model="item.validation!.max" size="small" controls-position="right" style="width: 110px" @change="syncInputs" />
+        </div>
+      </template>
+      <div class="kv-row" style="padding-left: 12px">
+        <span class="default-label">错误提示</span>
+        <el-input v-model="item.validation!.message" size="small" style="width: 240px" placeholder="自定义错误文案（缺省自动生成）" @change="syncInputs" />
+      </div>
+    </div>
     </template>
     <div v-for="(item, i) in inputs" :key="'d' + i" class="kv-row">
       <span class="default-label">默认值</span>
       <el-input :model-value="String(item.defaultValue ?? '')" placeholder="定时触发时使用" size="small"
         @update:model-value="v => { item.defaultValue = v; syncInputs() }" />
     </div>
-    <el-button size="small" text type="primary" @click="inputs.push({ key: '', label: '', type: 'string' }); syncInputs()">+ 参数</el-button>
+    <el-button size="small" text type="primary" @click="inputs.push({ key: '', label: '', type: 'string', validation: {} }); syncInputs()">+ 参数</el-button>
   </div>
 
   <!-- 审核可编辑字段编辑器 -->
@@ -184,11 +214,11 @@
 /**
  * 单字段渲染器：按 CatalogFormField.type 分发到 Element Plus 组件或专用编辑器
  */
-import type { CatalogFormField } from '@shared/types/workflow-node-forms'
+import { fieldSupportsTemplate, type CatalogFormField } from '@shared/types/workflow-node-forms'
 import { listOperations, listParameters } from '@shared/utils/openapi-parser'
 import type { WorkflowConditionBranch, WorkflowStartInput } from '@shared/types/workflow.types'
 import VariablePicker from './VariablePicker.vue'
-import { computed, inject, onMounted, ref, unref, type ComponentPublicInstance, type Ref } from 'vue'
+import { computed, inject, onMounted, reactive, ref, unref, type ComponentPublicInstance, type Ref } from 'vue'
 
 // 变量选择器数据（NodeConfigPanel provide；缺省退化为空）
 const pickerCtx = inject<{ nodes: Ref<any[]>; excludeNodeId: unknown }>('wfPickerContext', { nodes: ref([]), excludeNodeId: '' })
@@ -274,9 +304,21 @@ const inputs = computed<WorkflowStartInput[]>(() => {
     props.model[props.field.key] = []
     return props.model[props.field.key] as WorkflowStartInput[]
   }
+  // 渲染前兜底初始化 validation（旧数据无此字段）
+  for (const it of raw as WorkflowStartInput[]) {
+    if (!it.validation) it.validation = {}
+  }
   return raw as WorkflowStartInput[]
 })
 function syncInputs() { emit('change') }
+
+/** 校验配置面板展开状态（按行 index；简单场景删除错位可接受） */
+const validationOpen = reactive<Record<number, boolean>>({})
+
+/** 文本类输入（string/textarea）才有长度/正则校验 */
+function isTextInput(item: WorkflowStartInput): boolean {
+  return item.type === 'string' || item.type === 'textarea'
+}
 
 // ── fields-list ──
 const editableFields = computed<any[]>(() => {
@@ -391,6 +433,7 @@ onMounted(loadTools)
 .kv-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
 .inputs-row { flex-wrap: wrap; }
 .options-sub { margin: -2px 0 6px; }
+.validation-sub { border-left: 2px solid var(--el-border-color-lighter); margin-bottom: 8px; padding-top: 4px; }
 .default-label { font-size: 12px; color: var(--el-text-color-secondary); white-space: nowrap; }
 .model-pair { display: flex; gap: 6px; }
 .field-with-picker { display: flex; align-items: center; gap: 4px; }
