@@ -5,13 +5,14 @@
 import { describe, it, expect, vi } from 'vitest'
 
 import { AppSessionService } from '@core/modules/app/app-session.service'
-import { APP_SESSION_DIALOG_ROLE_ID, APP_SESSION_STATUSES, WORKFLOW_SESSION_CARDS } from '@shared/types/app.types'
+// 隔离重构后不再有 dialog 占位行，APP_SESSION_DIALOG_ROLE_ID 不再被测试引用
+import { APP_SESSION_STATUSES, WORKFLOW_SESSION_CARDS } from '@shared/types/app.types'
 
 // ---- 内存假仓库 ----
 class MemSessions {
   rows: Map<string, any> = new Map()
   seq = 0
-  /** 可编程失败开关（孤儿清理用例：session 创建抛错） */
+  /** 可编程失败开关（错误传递用例：session 创建抛错） */
   failCreate = false
   async create(i: any) {
     if (this.failCreate) throw new Error('create failed')
@@ -31,21 +32,25 @@ class MemSessions {
   async listByStatus(status: string) { return [...this.rows.values()].filter(r => r.status === status) }
   async delete(id: string) { return this.rows.delete(id) ? 1 : 0 }
 }
-class MemDialogs {
-  rows: any[] = []
-  deleted: string[] = []
-  async create(d: any) { const row = { id: `dlg${this.rows.length + 1}`, ...d }; this.rows.push(row); return row }
-  async delete(id: string) { this.deleted.push(id); this.rows = this.rows.filter(r => r.id !== id) }
-}
-class MemMessages {
+/**
+ * 应用会话独立消息仓库假实现（隔离重构：会话消息不再写 AI 对话 messages/dialogs 表）
+ * 对外 getBySessionId 做 DTO 兼容：sessionId → dialogId（与真实仓库 Message.dialogId 映射一致）
+ */
+class MemAppSessionMessages {
   rows: any[] = []
   seq = 0
   async create(m: any) {
-    const row = { id: `m${++this.seq}`, ...m, createdAt: new Date() }
+    const row = { id: `m${++this.seq}`, sessionId: m.sessionId, role: m.role, content: m.content, metadata: m.metadata ?? null, createdAt: new Date() }
     this.rows.push(row)
     return row
   }
-  async getByDialogId(dialogId: string) { return this.rows.filter(r => r.dialogId === dialogId) }
+  async getBySessionId(sessionId: string) {
+    return this.rows.filter(r => r.sessionId === sessionId).map(r => ({ ...r, dialogId: r.sessionId }))
+  }
+  async deleteBySessionId(sessionId: string) {
+    this.rows = this.rows.filter(r => r.sessionId !== sessionId)
+    return 1
+  }
 }
 class MemApps {
   rows: Map<string, any> = new Map()
@@ -64,16 +69,16 @@ const defs = { getById: vi.fn(async () => ({ id: 'd1', publishedGraph: { version
 
 function makeService() {
   const sessions = new MemSessions()
-  const messages = new MemMessages()
+  const appMsg = new MemAppSessionMessages()
   const apps = new MemApps()
-  const dialogs = new MemDialogs()
   const svc = new AppSessionService(
-    { appSessions: sessions as any, messages: messages as any, dialogs: dialogs as any, runService: fakeRunService as any, engine: fakeEngine as any },
+    // 隔离重构后的 deps：appSessionMessages 替代 messages/dialogs（会话消息独立存储）
+    { appSessions: sessions as any, appSessionMessages: appMsg as any, runService: fakeRunService as any, engine: fakeEngine as any },
     apps as any,     // 构造签名：deps, apps, defs, tapSource
     defs as any,
     tapSource as any
   )
-  return { sessions, messages, apps, dialogs, svc }
+  return { sessions, appMsg, apps, svc }
 }
 function seedApp(apps: MemApps, over: Record<string, unknown> = {}) {
   apps.rows.set('a1', { id: 'a1', sourceId: 'd1', channelSession: 1, enabled: 1, ...over })
@@ -86,16 +91,17 @@ async function bootRun(apps: MemApps, svc: AppSessionService) {
   await svc.startRun(s.id, { q: 'hi' })
   return s
 }
-// bootRun 使用示例：事件桥用例统一从 makeService 解构 messages/sessions —— 保持本测试数据源一致
+// bootRun 使用示例：事件桥用例统一从 makeService 解构 appMsg/sessions —— 保持本测试数据源一致
 
 describe('AppSessionService：创建会话', () => {
   it('createSession 写首条 start-form 卡片（form=发布图 start.inputs）', async () => {
-    const { apps, messages, svc } = makeService()
+    const { apps, appMsg, svc } = makeService()
     seedApp(apps)
     const s = await svc.createSession('a1')
     expect(s.status).toBe(APP_SESSION_STATUSES.idle)
-    const msg = messages.rows[0]
-    expect(msg.dialogId).toBe(s.id)
+    // 首条卡片写入独立会话消息仓库（sessionId 维度，不再写 AI 对话 messages 表）
+    const msg = appMsg.rows[0]
+    expect(msg.sessionId).toBe(s.id)
     expect(msg.role).toBe('assistant')
     expect(msg.metadata.sessionCard.card).toBe(WORKFLOW_SESSION_CARDS.startForm)
     expect(Array.isArray(msg.metadata.sessionCard.form)).toBe(true)
@@ -110,22 +116,16 @@ describe('AppSessionService：创建会话', () => {
     await expect(svc.createSession('a1')).rejects.toThrow('会话渠道')
   })
 
-  it('getSessionMessages 按 dialogId 隔离', async () => {
-    const { apps, messages, svc } = makeService()
+  it('getSessionMessages 按 sessionId 隔离', async () => {
+    const { apps, appMsg, svc } = makeService()
     seedApp(apps)
     const s = await svc.createSession('a1')
-    await messages.create({ dialogId: 'other', role: 'user', content: 'x', metadata: null })
+    // 其它会话的消息不混入本会话
+    await appMsg.create({ sessionId: 'other', role: 'user', content: 'x', metadata: null })
     const msgs = await svc.getSessionMessages(s.id)
     expect(msgs).toHaveLength(1)
+    // DTO 兼容：仓库按 sessionId 存储，对外映射为 dialogId（前端兼容）
     expect(msgs[0].dialogId).toBe(s.id)
-  })
-
-  it('dialog 行带专属 roleId 标记（应用会话不混入对话页列表）', async () => {
-    const { apps, dialogs, svc } = makeService()
-    seedApp(apps)
-    const s = await svc.createSession('a1')
-    const dlg = dialogs.rows.find(d => d.id === s.id)
-    expect(dlg?.roleId).toBe(APP_SESSION_DIALOG_ROLE_ID)
   })
 
   it('createSession 带 startInputs → 落 lastStartInputs（创建后沿用首轮参数）', async () => {
@@ -135,23 +135,24 @@ describe('AppSessionService：创建会话', () => {
     expect(sessions.rows.get(s.id).lastStartInputs).toEqual({ topic: '预填' })
   })
 
-  it('session 创建失败 → 清理孤儿 dialog（不污染对话表）', async () => {
-    const { apps, dialogs, sessions, svc } = makeService()
+  it('session 创建失败 → 错误向上传递（隔离后无孤儿 dialog 需要清理）', async () => {
+    const { apps, sessions, appMsg, svc } = makeService()
     seedApp(apps)
     sessions.failCreate = true
     await expect(svc.createSession('a1')).rejects.toThrow('create failed')
-    expect(dialogs.deleted).toHaveLength(1)      // 孤儿 dialog 已清理
-    expect(dialogs.rows).toHaveLength(0)
+    expect(sessions.rows.size).toBe(0)
+    expect(appMsg.rows).toHaveLength(0) // 会话未创建，不写任何消息
   })
 })
 
 describe('AppSessionService：删除会话', () => {
-  it('deleteSession 级联删 dialog 行 + 会话行', async () => {
-    const { apps, sessions, dialogs, svc } = makeService()
+  it('deleteSession 级联删会话消息 + 会话行', async () => {
+    const { apps, sessions, appMsg, svc } = makeService()
     seedApp(apps)
     const s = await svc.createSession('a1')
+    expect(appMsg.rows.length).toBeGreaterThan(0) // 首条 start-form 卡片已落库
     await svc.deleteSession(s.id)
-    expect(dialogs.deleted).toContain(s.id)
+    expect(appMsg.rows).toHaveLength(0)           // 独立消息仓库按 sessionId 清空（不再删 dialog）
     expect(sessions.rows.has(s.id)).toBe(false)
   })
 
@@ -232,7 +233,7 @@ describe('AppSessionService：boot 恢复（recoverOnBoot）', () => {
 
 describe('AppSessionService：startRun 与多轮', () => {
   it('透传 triggerInfo + inputs；成功写 run-status 卡片；会话 status=running+lastRunId', async () => {
-    const { apps, messages, svc, sessions } = makeService()
+    const { apps, svc, sessions } = makeService()
     const s = await bootRun(apps, svc)
     expect(sessions.rows.get(s.id).status).toBe('running')
     // 通过公共面验证：卡片
@@ -277,25 +278,24 @@ describe('AppSessionService：审核恢复', () => {
 describe('AppSessionService：事件桥', () => {
   const attachBridge = (svc: AppSessionService) => { svc.attach(tapSource.tapEvents) }
   it('reviewRequested(form) → 写 review 卡片（kind=form + schema）', async () => {
-    const { messages, apps, svc } = makeService()
+    const { appMsg, apps, svc } = makeService()
     attachBridge(svc)
     const s = await bootRun(apps, svc)
     tapCb!('wf:run-event', {
       type: 'review-requested', runId: 'run_1', nodeId: 'form', nodeName: '表单',
       payload: { form: true, fields: [{ key: 'doc', type: 'file' }] },
     }, 'u1')
-    // 写卡走串行队列（异步）——轮询等卡片落库
-    let cards = await svc.getSessionMessages(s.id)
-    for (let i = 0; i < 20 && !cards.some(c => c.metadata?.sessionCard?.card === WORKFLOW_SESSION_CARDS.review); i++) {
+    // 写卡走串行队列（异步）——轮询等卡片落库（直接查独立仓库 rows）
+    for (let i = 0; i < 20 && !appMsg.rows.some(r => r.metadata?.sessionCard?.card === WORKFLOW_SESSION_CARDS.review); i++) {
       await new Promise(r => setTimeout(r, 10))
-      cards = await svc.getSessionMessages(s.id)
     }
-    const rc = cards.find(c => c.metadata?.sessionCard?.card === WORKFLOW_SESSION_CARDS.review)
+    const rc = appMsg.rows.find(r => r.metadata?.sessionCard?.card === WORKFLOW_SESSION_CARDS.review)
+    expect(rc.sessionId).toBe(s.id) // 卡片归属本会话（sessionId 匹配）
     expect(rc.metadata.sessionCard).toMatchObject({ nodeId: 'form', kind: 'form', schema: { fields: [{ key: 'doc', type: 'file' }] } })
   })
 
   it('nodeStatus → 追加 node-status 卡片（进度曲线，无 in-place 更新）', async () => {
-    const { messages, apps, svc } = makeService()
+    const { apps, svc } = makeService()
     attachBridge(svc)
     const s = await bootRun(apps, svc)
     tapCb!('wf:run-event', { type: 'node-status', runId: 'run_1', nodeId: 'llm', status: 'running' }, 'u1')
@@ -310,7 +310,7 @@ describe('AppSessionService：事件桥', () => {
   })
 
   it('runStatus 终态(succeeded) → 聚合 getRun 的 report 输出写结果卡片 + 会话归 idle + 后续事件不再写', async () => {
-    const { messages, apps, svc } = makeService()
+    const { apps, svc } = makeService()
     attachBridge(svc)
     const s = await bootRun(apps, svc)
     getRunDetailImpl = async () => ({ run: { status: 'succeeded' }, nodeRuns: [{ nodeType: 'report', output: { markdown: '# 报告', title: 'R', format: 'markdown' } }] })
@@ -345,7 +345,7 @@ describe('AppSessionService：事件桥', () => {
   })
 
   it('非本会话 runId 的事件被忽略（runToSession 隔离）', async () => {
-    const { messages, apps, svc } = makeService()
+    const { apps, svc } = makeService()
     attachBridge(svc)
     const s = await bootRun(apps, svc)
     const acc = (await svc.getSessionMessages(s.id)).length
@@ -354,7 +354,7 @@ describe('AppSessionService：事件桥', () => {
   })
 
   it('runStatus 中间态(running/waiting_review) → 不写卡、不删映射（后续终态仍命中）', async () => {
-    const { messages, apps, svc } = makeService()
+    const { apps, svc } = makeService()
     attachBridge(svc)
     const s = await bootRun(apps, svc)
     // 引擎启动时也会 emit run-status running——不得误判为终态写"运行running"卡
