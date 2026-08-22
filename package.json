@@ -212,5 +212,8 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
     }
+  },
+  "overrides": {
+    "pino": "^9.0.0"
   }
 }
