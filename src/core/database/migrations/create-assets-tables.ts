@@ -20,6 +20,7 @@ export async function createAssetsTables(ds: DataSource): Promise<void> {
         id            ${vc} PRIMARY KEY,
         user_id       ${vc},
         category      ${vc} NOT NULL,
+        sub_category  ${vc},
         name          ${vc} NOT NULL,
         description   ${vc},
         tags          ${vc},
@@ -40,10 +41,40 @@ export async function createAssetsTables(ds: DataSource): Promise<void> {
     console.log('[create-assets-tables] 表 assets 创建完成')
   }
 
+  // 幂等补列：老库 assets 表缺 sub_category（资产中心二级分类）
+  await ensureColumn(ds, 'assets', 'sub_category', `${vc}`, isPg)
+
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_assets_user ON assets (user_id)`)
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_assets_category ON assets (category)`)
+  await ds.query(`CREATE INDEX IF NOT EXISTS idx_assets_sub_category ON assets (sub_category)`)
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_assets_created ON assets (created_at)`)
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_assets_source ON assets (source_type, source_ref)`)
+}
+
+/** 幂等补列（SQLite: PRAGMA 查列；PG: information_schema） */
+async function ensureColumn(
+  ds: DataSource,
+  table: string,
+  column: string,
+  colDef: string,
+  isPg: boolean,
+): Promise<void> {
+  if (isPg) {
+    const rows = await ds.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name = $2 AND table_schema = current_schema() LIMIT 1`,
+      [table, column],
+    )
+    if (rows.length === 0) {
+      await ds.query(`ALTER TABLE ${table} ADD COLUMN ${column} ${colDef}`)
+      console.log(`[create-assets-tables] ${table} 补列 ${column}`)
+    }
+    return
+  }
+  const cols = await ds.query(`PRAGMA table_info(${table})`)
+  if (!cols.some((c: { name: string }) => c.name === column)) {
+    await ds.query(`ALTER TABLE ${table} ADD COLUMN ${column} ${colDef}`)
+    console.log(`[create-assets-tables] ${table} 补列 ${column}`)
+  }
 }
 
 async function checkTableExists(ds: DataSource, table: string, isPg: boolean): Promise<boolean> {

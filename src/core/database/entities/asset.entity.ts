@@ -26,6 +26,10 @@ export class AssetEntity {
   @Column({ name: 'category', type: 'varchar' })
   category!: string
 
+  /** 子分类（自由文本，资产中心二级分组；模板资产可用 sub_category='报告模板' 等） */
+  @Column({ name: 'sub_category', type: 'varchar', nullable: true })
+  subCategory!: string | null
+
   @Column({ name: 'name', type: 'varchar' })
   name!: string
 
@@ -69,6 +73,10 @@ export class AssetEntity {
   /** 来源类型（workflow|app|manual|import） */
   @Column({ name: 'source_type', type: 'varchar', nullable: true })
   sourceType!: string | null
+
+  /** 内置资产（1=user_id NULL 全局共享，禁删禁改；0=用户自有） */
+  @Column({ name: 'is_builtin', type: 'integer', default: 0, nullable: true })
+  isBuiltin!: number | null
 
   /** 来源引用（工作流运行 id / 应用 id） */
   @Column({ name: 'source_ref', type: 'varchar', nullable: true })

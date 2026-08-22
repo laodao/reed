@@ -9,6 +9,7 @@ import type { DataSource, FindOptionsWhere } from 'typeorm'
 import type { AppRecord } from '@shared/types/app.types'
 import { AppEntity } from '../entities/app.entity'
 import { BaseRepository } from '../base-repository'
+import { getCurrentUserId } from '@core/context/user-context'
 
 export interface CreateAppInput {
   name: string
@@ -60,6 +61,7 @@ export class AppRepository extends BaseRepository<AppEntity, AppRecord> {
       channelApi: e.channelApi,
       shareToken: e.shareToken,
       enabled: e.enabled,
+      isBuiltin: e.isBuiltin === 1,
       lastRunAt: e.lastRunAt,
       createdAt: e.createdAt,
       updatedAt: e.updatedAt,
@@ -67,13 +69,29 @@ export class AppRepository extends BaseRepository<AppEntity, AppRecord> {
   }
 
   async findById(id: string): Promise<AppRecord | null> {
-    const e = await this.scoped.findOne({ id } as FindOptionsWhere<AppEntity>)
+    // 自己的 + 内置（全局共享）
+    const userId = getCurrentUserId()
+    const qb = this.repo.createQueryBuilder('a').where('a.id = :id', { id })
+    if (userId) {
+      qb.andWhere('(a.user_id = :userId OR a.is_builtin = 1)', { userId })
+    } else {
+      qb.andWhere('(a.user_id IS NULL OR a.is_builtin = 1)')
+    }
+    const e = await qb.getOne()
     return e ? this.toDto(e) : null
   }
 
-  /** 分页列表（更新时间倒序；keyword 模糊名称/描述） */
+  /** 分页列表（更新时间倒序；keyword 模糊名称/描述；含全局内置） */
   async listApp(params: { keyword?: string; page: number; pageSize: number }): Promise<{ items: AppRecord[]; total: number }> {
-    const qb = this.scoped.qb('a').orderBy('a.updated_at', 'DESC')
+    const userId = getCurrentUserId()
+    const qb = this.repo
+      .createQueryBuilder('a')
+      .where(
+        userId ? '(a.user_id = :userId OR a.is_builtin = 1)' : '(a.user_id IS NULL OR a.is_builtin = 1)',
+        userId ? { userId } : {},
+      )
+      .orderBy('a.is_builtin', 'ASC')
+      .addOrderBy('a.updated_at', 'DESC')
       .skip((params.page - 1) * params.pageSize)
       .take(params.pageSize)
     if (params.keyword?.trim()) {
@@ -113,6 +131,14 @@ export class AppRepository extends BaseRepository<AppEntity, AppRecord> {
   }
 
   async update(id: string, patch: UpdateAppInput): Promise<AppRecord | null> {
+    // 内置应用：只允许启停（enabled），其余字段禁改（全局共享，改影响所有用户）
+    const existing = await this.findById(id)
+    if (existing?.isBuiltin) {
+      if (patch.enabled !== undefined) {
+        await this.scoped.update({ id } as FindOptionsWhere<AppEntity>, { enabled: patch.enabled, updatedAt: new Date() } as Partial<AppEntity>)
+      }
+      return this.findById(id)
+    }
     const partial: Partial<AppEntity> = { updatedAt: new Date() }
     if (patch.name !== undefined) partial.name = patch.name
     if (patch.icon !== undefined) partial.icon = patch.icon
@@ -130,6 +156,9 @@ export class AppRepository extends BaseRepository<AppEntity, AppRecord> {
   }
 
   async delete(id: string): Promise<number> {
+    // 内置应用禁删（复制为自有后可删副本）
+    const existing = await this.findById(id)
+    if (existing?.isBuiltin) return 0
     return this.scoped.delete({ id } as FindOptionsWhere<AppEntity>)
   }
 

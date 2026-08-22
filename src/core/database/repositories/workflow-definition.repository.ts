@@ -20,6 +20,7 @@ import type {
 } from '@shared/types/workflow.types'
 import { WorkflowDefinitionEntity } from '../entities/workflow-definition.entity'
 import { BaseRepository } from '../base-repository'
+import { getCurrentUserId } from '@core/context/user-context'
 import { createLogger } from '@core/utils/logger'
 
 const logger = createLogger('WorkflowDefinitionRepository')
@@ -42,6 +43,8 @@ export interface WorkflowDefinitionRecord {
   lastFireAt: Date | null
   lastRunAt: Date | null
   shareToken: string | null
+  /** 内置工作流（全局共享，禁删禁改；1=内置） */
+  isBuiltin?: boolean
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -120,6 +123,7 @@ export class WorkflowDefinitionRepository extends BaseRepository<
       lastFireAt: e.lastFireAt,
       lastRunAt: e.lastRunAt,
       shareToken: e.shareToken,
+      isBuiltin: e.isBuiltin === 1,
       createdAt: e.createdAt,
       updatedAt: e.updatedAt,
     }
@@ -149,19 +153,34 @@ export class WorkflowDefinitionRepository extends BaseRepository<
   }
 
   async getById(id: string): Promise<WorkflowDefinitionRecord | null> {
-    const e = await this.scoped.findOne({ id } as FindOptionsWhere<WorkflowDefinitionEntity>)
+    // 自己的 + 内置（全局共享）
+    const userId = getCurrentUserId()
+    const qb = this.repo.createQueryBuilder('d').where('d.id = :id', { id })
+    if (userId) {
+      qb.andWhere('(d.user_id = :userId OR d.is_builtin = 1)', { userId })
+    } else {
+      qb.andWhere('(d.user_id IS NULL OR d.is_builtin = 1)')
+    }
+    const e = await qb.getOne()
     return e ? this.toDto(e) : null
   }
 
-  /** 分页列表（按更新时间倒序；keyword 模糊匹配名称/描述） */
+  /** 分页列表（按更新时间倒序；keyword 模糊匹配名称/描述；含全局内置） */
   async list(params: {
     keyword?: string
     page: number
     pageSize: number
   }): Promise<{ items: WorkflowDefinitionRecord[]; total: number }> {
-    const qb = this.scoped
-      .qb('d')
-      .orderBy('d.updated_at', 'DESC')
+    // 内置（is_builtin=1）全局共享 + 用户自有；userId 为 null 时兼容 IS NULL 旧数据
+    const userId = getCurrentUserId()
+    const qb = this.repo
+      .createQueryBuilder('d')
+      .where(
+        userId ? '(d.user_id = :userId OR d.is_builtin = 1)' : '(d.user_id IS NULL OR d.is_builtin = 1)',
+        userId ? { userId } : {},
+      )
+      .orderBy('d.is_builtin', 'ASC') // 内置靠前（展示优先）
+      .addOrderBy('d.updated_at', 'DESC')
       .skip((params.page - 1) * params.pageSize)
       .take(params.pageSize)
     if (params.keyword) {
@@ -178,6 +197,9 @@ export class WorkflowDefinitionRepository extends BaseRepository<
     id: string,
     patch: UpdateWorkflowDefinitionInput
   ): Promise<WorkflowDefinitionRecord | null> {
+    // 内置工作流禁改（全局共享，改影响所有用户；用户需复制为自有后修改）
+    const existing = await this.getById(id)
+    if (existing?.isBuiltin) return existing
     const partial: Partial<WorkflowDefinitionEntity> = { updatedAt: new Date() }
     if (patch.name !== undefined) partial.name = patch.name
     if (patch.description !== undefined) partial.description = patch.description
@@ -208,6 +230,9 @@ export class WorkflowDefinitionRepository extends BaseRepository<
   }
 
   async delete(id: string): Promise<number> {
+    // 内置工作流禁删（复制为自有后可删副本）
+    const existing = await this.getById(id)
+    if (existing?.isBuiltin) return 0
     return this.scoped.delete({ id } as FindOptionsWhere<WorkflowDefinitionEntity>)
   }
 

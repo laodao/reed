@@ -62,6 +62,7 @@ const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp']
 export function registerFileHandlers(): void {
   ipcBridge.handle('file:open-dialog', handleOpenDialog)
   ipcBridge.handle('file:read-base64', handleReadBase64)
+  ipcBridge.handle('file:read-text', handleReadText)
   ipcBridge.handle('file:save-dialog', handleSaveDialog)
   ipcBridge.handle('file:write-text', handleWriteText)
   ipcBridge.handle('file:write-binary', handleWriteBinary)
@@ -146,6 +147,22 @@ async function handleReadBase64(
     return { success: true, base64: `data:${mimeType};base64,${base64}` }
   } catch (error: any) {
     console.error('[file:read-base64] 错误:', error)
+    return { success: false, error: error.message }
+  }
+}
+
+/**
+ * 读取文本文件内容（UTF-8；模板上传用）
+ */
+async function handleReadText(
+  _event: any,
+  data: { filePath: string }
+): Promise<{ success: boolean; data?: string; error?: string }> {
+  try {
+    const content = fs.readFileSync(data.filePath, 'utf-8')
+    return { success: true, data: content }
+  } catch (error: any) {
+    console.error('[file:read-text] 错误:', error)
     return { success: false, error: error.message }
   }
 }

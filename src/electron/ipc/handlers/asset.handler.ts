@@ -15,9 +15,10 @@ import type { IpcResponse } from '@shared/types/ipc.types'
 const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
 
 export function registerAssetHandlers(): void {
-  ipcBridge.handle('asset:list', (_e, p: { category?: string; keyword?: string; page: number; pageSize: number }) =>
+  ipcBridge.handle('asset:list', (_e, p: { category?: string; subCategory?: string; keyword?: string; page: number; pageSize: number }) =>
     wrap(() => getAssetService().listAssets({
       category: (p.category || '') as never,
+      subCategory: p.subCategory || '',
       keyword: p.keyword,
       page: p.page ?? 1,
       pageSize: p.pageSize ?? 20,
@@ -29,12 +30,13 @@ export function registerAssetHandlers(): void {
   ipcBridge.handle('asset:create', (_e, p: SaveAssetInput) =>
     wrap(() => getAssetService().createAsset(p))
   )
-  ipcBridge.handle('asset:update', (_e, p: { id: string; name?: string; description?: string | null; tags?: string[]; category?: string }) =>
+  ipcBridge.handle('asset:update', (_e, p: { id: string; name?: string; description?: string | null; tags?: string[]; category?: string; subCategory?: string | null }) =>
     wrap(() => getAssetService().updateAsset(p.id, {
       name: p.name,
       description: p.description,
       tags: p.tags,
       category: p.category as never,
+      subCategory: p.subCategory,
     }))
   )
   ipcBridge.handle('asset:delete', (_e, p: { id: string }) =>
@@ -42,6 +44,9 @@ export function registerAssetHandlers(): void {
   )
   ipcBridge.handle('asset:stats', () =>
     wrap(() => getAssetService().getStats())
+  )
+  ipcBridge.handle('asset:sub-category-stats', (_e, p: { category: string }) =>
+    wrap(() => getAssetService().getSubCategoryStats(p.category as never))
   )
   ipcBridge.handle('asset:open-folder', (_e, p: { id: string }) =>
     wrap(() => openAssetFolder(p.id))

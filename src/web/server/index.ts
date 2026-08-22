@@ -380,6 +380,11 @@ async function initDatabase(): Promise<void> {
     '@core/database/migrations/create-assets-tables'
   )
   await createAssetsTables(ds)
+  // 内置高频应用（迁移直接内置：8 工作流 + 8 应用 + 默认模板资产；与 Electron 端同构）
+  const { createBuiltinApps } = await import(
+    '@core/database/migrations/create-builtin-apps'
+  )
+  await createBuiltinApps(ds)
 
   // 邮件收发：email_accounts 表（synchronize 已建表，此处幂等补索引；与 Electron 端同构）
   const { createEmailTables } = await import(

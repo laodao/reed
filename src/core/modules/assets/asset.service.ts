@@ -83,6 +83,7 @@ export class AssetService {
 
     return this.repo.create({
       category: category as AssetCategory,
+      subCategory: input.subCategory ?? null,
       name: name as string,
       description: input.description?.trim() || null,
       tags: input.tags ?? [],
@@ -109,7 +110,7 @@ export class AssetService {
     return this.repo.findById(id)
   }
 
-  /** 更新（名称/描述/标签/分类） */
+  /** 更新（名称/描述/标签/分类/子分类） */
   async updateAsset(id: string, patch: UpdateAssetInput): Promise<AssetRecord | null> {
     return this.repo.update(id, patch)
   }
@@ -135,6 +136,11 @@ export class AssetService {
       total += r.count
     }
     return { total, byCategory }
+  }
+
+  /** 指定大类下的子分类计数（资产中心二级分组） */
+  async getSubCategoryStats(category: AssetCategory): Promise<Array<{ subCategory: string | null; count: number }>> {
+    return this.repo.countBySubCategory(category)
   }
 
   /** 资产可访问 URL（前端预览用；返回空串表示不可预览） */

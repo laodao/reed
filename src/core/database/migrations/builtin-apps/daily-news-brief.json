@@ -1,0 +1,148 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 每日热点早报",
+  "description": "从全球各大新闻媒体（按主题预置源）采集 → AI 筛选有价值链接 → 抓取正文 → 按你的效果描述生成早报长图（模板可自定义）",
+  "category": "news",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 40, "y": 200 },
+        "config": {
+          "inputs": [
+            { "key": "topic", "label": "关注主题", "type": "select-dynamic", "source": "newsTopics", "required": true },
+            { "key": "customUrls", "label": "自定义媒体源 URL（可选）", "type": "json", "required": false, "defaultValue": [] },
+            { "key": "maxItems", "label": "每主题条数", "type": "number", "defaultValue": 8 },
+            { "key": "request", "label": "效果描述", "type": "textarea", "required": true, "defaultValue": "聚焦今日重要进展，按主题分组，每条含来源与一句话要点，500 字内" },
+            { "key": "templateAssetId", "label": "报告模板（可选）", "type": "select-dynamic", "source": "assets:template" },
+            { "key": "model", "label": "模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
+          ]
+        }
+      },
+      {
+        "id": "crawl1",
+        "type": "crawl-news",
+        "name": "全球媒体采集",
+        "position": { "x": 300, "y": 200 },
+        "config": { "topicId": "{{start.topic}}", "customUrls": "{{start.customUrls}}", "maxLinks": 30, "maxSources": 10 }
+      },
+      {
+        "id": "filter1",
+        "type": "llm-chat",
+        "name": "AI 筛选有价值链接",
+        "position": { "x": 560, "y": 200 },
+        "config": {
+          "systemPrompt": "你是新闻编辑。从候选链接中挑选与主题最相关、最有新闻价值的条目，最多 15 条。只输出 JSON 数组，不要解释：[{title, url, reason}]。理由不超过 20 字。",
+          "prompt": "主题：{{start.topic}}\n\n候选链接（标题+来源+URL）：\n{{crawl1.links}}\n\n用户效果要求：{{start.request}}\n\n请挑选并输出 JSON 数组。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "loop1",
+        "type": "loop",
+        "name": "逐条抓取正文",
+        "position": { "x": 820, "y": 200 },
+        "config": { "listExpression": "{{filter1.parsed}}", "emptyPolicy": "skip" }
+      },
+      {
+        "id": "extract1",
+        "type": "web-extract",
+        "name": "抓取正文",
+        "position": { "x": 1060, "y": 260 },
+        "config": { "url": "{{loop1.item.url}}", "maxLength": 8000, "maxLinks": 0 }
+      },
+      {
+        "id": "gen1",
+        "type": "llm-chat",
+        "name": "生成早报",
+        "position": { "x": 560, "y": 460 },
+        "config": {
+          "systemPrompt": "你是早报编辑。按用户效果要求，把素材整理成结构化早报 markdown：\n- 主题分组，每组 3-5 条\n- 每条：标题加粗 + 一句话要点 + 来源\n- 文末附「更多请查看完整链接」\n\n只输出 markdown 正文，不要额外解释。",
+          "prompt": "主题：{{start.topic}}\n日期：{{sys.today}}\n用户效果要求：{{start.request}}\n\n已抓取素材（标题+来源+要点）：\n{{loop1.results}}\n\n请生成早报 markdown。",
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "cond1",
+        "type": "condition",
+        "name": "是否有自定义模板",
+        "position": { "x": 820, "y": 460 },
+        "config": {
+          "branches": [
+            { "branchId": "hasTemplate", "label": "使用自定义模板", "conditions": [{ "left": "{{start.templateAssetId}}", "operator": "not_empty" }] },
+            { "branchId": "noTemplate", "label": "使用内置版式", "conditions": [{ "left": "{{start.templateAssetId}}", "operator": "is_empty" }] }
+          ],
+          "noMatchPolicy": "fallback",
+          "fallbackBranchId": "noTemplate"
+        }
+      },
+      {
+        "id": "read1",
+        "type": "read-asset",
+        "name": "读取模板",
+        "position": { "x": 1060, "y": 520 },
+        "config": { "assetId": "{{start.templateAssetId}}", "output": "content" }
+      },
+      {
+        "id": "report_custom",
+        "type": "report-image",
+        "name": "早报长图（自定义模板）",
+        "position": { "x": 1300, "y": 520 },
+        "config": { "title": "{{start.topic}} 热点早报 {{sys.today}}", "template": "{{read1.content}}", "templateId": "morningReport" }
+      },
+      {
+        "id": "report_default",
+        "type": "report-image",
+        "name": "早报长图（内置版式）",
+        "position": { "x": 1300, "y": 400 },
+        "config": { "title": "{{start.topic}} 热点早报 {{sys.today}}", "template": "# {{start.topic}} 热点早报（{{sys.today}}）\n\n{{gen1.content}}", "templateId": "morningReport" }
+      },
+      {
+        "id": "save1",
+        "type": "save-asset",
+        "name": "保存到资产库",
+        "position": { "x": 1540, "y": 460 },
+        "config": { "content": "# {{start.topic}} 热点早报（{{sys.today}}）\n\n{{gen1.content}}", "kind": "text", "category": "text", "subCategory": "早报", "name": "{{start.topic}}早报-{{sys.today}}", "tags": "早报,{{start.topic}}" }
+      },
+      {
+        "id": "notify1",
+        "type": "app-notify",
+        "name": "完成通知",
+        "position": { "x": 1780, "y": 460 },
+        "config": { "title": "早报已生成", "message": "{{start.topic}} 热点早报（{{sys.today}}）已生成，资产 ID：{{save1.assetId}}", "level": "success" }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 2020, "y": 460 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "crawl1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "crawl1", "targetNodeId": "filter1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "filter1", "targetNodeId": "loop1", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "loop1", "targetNodeId": "extract1", "kind": "loop-body" },
+      { "id": "e5", "sourceNodeId": "extract1", "targetNodeId": "loop1", "kind": "loop-back" },
+      { "id": "e6", "sourceNodeId": "loop1", "targetNodeId": "gen1", "kind": "loop-done" },
+      { "id": "e7", "sourceNodeId": "gen1", "targetNodeId": "cond1", "kind": "normal" },
+      { "id": "e8", "sourceNodeId": "cond1", "targetNodeId": "read1", "kind": "branch", "branchId": "hasTemplate" },
+      { "id": "e9", "sourceNodeId": "cond1", "targetNodeId": "report_default", "kind": "branch", "branchId": "noTemplate" },
+      { "id": "e10", "sourceNodeId": "read1", "targetNodeId": "report_custom", "kind": "normal" },
+      { "id": "e11", "sourceNodeId": "report_custom", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e12", "sourceNodeId": "report_default", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e13", "sourceNodeId": "save1", "targetNodeId": "notify1", "kind": "normal" },
+      { "id": "e14", "sourceNodeId": "notify1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [{ "type": "cron", "expression": "0 8 * * *", "preset": "daily", "enabled": false }],
+  "settings": null
+}

@@ -1,0 +1,122 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 多平台文案生成",
+  "description": "先提炼内容策略（核心主张+支撑论点）→ 逐平台生成适配文案 → 统一审核修改 → 平台×策略对照报告",
+  "category": "writing",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 40, "y": 200 },
+        "config": {
+          "inputs": [
+            { "key": "topic", "label": "主题", "type": "textarea", "required": true },
+            { "key": "keyPoints", "label": "核心卖点/信息点（每行一个）", "type": "textarea" },
+            { "key": "targetAudience", "label": "目标人群", "type": "string" },
+            { "key": "platforms", "label": "目标平台", "type": "select", "multi": true, "required": true, "options": [
+              { "label": "公众号", "value": "wechat" },
+              { "label": "小红书", "value": "xiaohongshu" },
+              { "label": "微博", "value": "weibo" },
+              { "label": "知乎", "value": "zhihu" },
+              { "label": "抖音", "value": "douyin" }
+            ] },
+            { "key": "tone", "label": "语气", "type": "select", "defaultValue": "professional", "options": [
+              { "label": "专业", "value": "professional" },
+              { "label": "活泼", "value": "lively" },
+              { "label": "文艺", "value": "artistic" },
+              { "label": "营销", "value": "marketing" }
+            ] },
+            { "key": "length", "label": "篇幅", "type": "select", "defaultValue": "standard", "options": [
+              { "label": "精简", "value": "short" },
+              { "label": "标准", "value": "standard" },
+              { "label": "详尽", "value": "long" }
+            ] },
+            { "key": "request", "label": "效果描述", "type": "textarea" },
+            { "key": "model", "label": "模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
+          ]
+        }
+      },
+      {
+        "id": "strategy1",
+        "type": "llm-chat",
+        "name": "内容策略提炼",
+        "position": { "x": 320, "y": 200 },
+        "config": {
+          "systemPrompt": "你是内容策略师。基于主题/卖点/人群，提炼：1 个核心主张 + 3 个支撑论点 + 1 个差异化角度。只输出 JSON 对象，不要解释：{claim, points: [3 个], angle}",
+          "prompt": "主题：{{start.topic}}\n核心卖点：{{start.keyPoints}}\n目标人群：{{start.targetAudience}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "loop1",
+        "type": "loop",
+        "name": "逐平台生成",
+        "position": { "x": 560, "y": 200 },
+        "config": { "listExpression": "{{start.platforms}}", "emptyPolicy": "skip" }
+      },
+      {
+        "id": "gen1",
+        "type": "llm-chat",
+        "name": "平台文案",
+        "position": { "x": 800, "y": 260 },
+        "config": {
+          "systemPrompt": "你是文案写手，为指定平台撰写适配文案。平台调性：\n- wechat 公众号：长文结构、小标题、信息密度高\n- xiaohongshu 小红书：emoji+标题党+标签、口语化、种草感\n- weibo 微博：140 字内、带话题、简洁有力\n- zhihu 知乎：专业段落、逻辑严谨、可引用\n- douyin 抖音：短平快、钩子开头、画面感\n\n遵守平台调性与篇幅要求，只输出文案正文。",
+          "prompt": "平台：{{loop1.item}}\n语气：{{start.tone}}\n篇幅：{{start.length}}\n核心主张：{{strategy1.parsed.claim}}\n支撑论点：{{strategy1.parsed.points}}\n差异化角度：{{strategy1.parsed.angle}}\n用户效果要求：{{start.request}}\n\n请撰写该平台文案。",
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "review1",
+        "type": "human-review",
+        "name": "统一审核",
+        "position": { "x": 560, "y": 460 },
+        "config": {
+          "payload": "{{loop1.results}}",
+          "interaction": "input",
+          "editableFields": [{ "key": "output_result", "label": "文案", "type": "string" }]
+        }
+      },
+      {
+        "id": "report1",
+        "type": "report",
+        "name": "文案报告",
+        "position": { "x": 800, "y": 460 },
+        "config": { "title": "{{start.topic}} 多平台文案", "template": "# {{start.topic}} 多平台文案\n\n## 内容策略\n- 核心主张：{{strategy1.parsed.claim}}\n- 支撑论点：{{strategy1.parsed.points}}\n- 差异化角度：{{strategy1.parsed.angle}}\n\n## 各平台文案\n\n{{review1.output_result}}", "format": "markdown" }
+      },
+      {
+        "id": "save1",
+        "type": "save-asset",
+        "name": "保存到资产库",
+        "position": { "x": 1040, "y": 460 },
+        "config": { "content": "# {{start.topic}} 多平台文案\n\n{{review1.output_result}}", "kind": "text", "category": "text", "subCategory": "文案", "name": "{{start.topic}}文案", "tags": "文案,{{start.platforms}}" }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 1280, "y": 460 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "strategy1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "strategy1", "targetNodeId": "loop1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "loop1", "targetNodeId": "gen1", "kind": "loop-body" },
+      { "id": "e4", "sourceNodeId": "gen1", "targetNodeId": "loop1", "kind": "loop-back" },
+      { "id": "e5", "sourceNodeId": "loop1", "targetNodeId": "review1", "kind": "loop-done" },
+      { "id": "e6", "sourceNodeId": "review1", "targetNodeId": "report1", "kind": "approve" },
+      { "id": "e7", "sourceNodeId": "review1", "targetNodeId": "end", "kind": "reject" },
+      { "id": "e8", "sourceNodeId": "report1", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e9", "sourceNodeId": "save1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": null
+}

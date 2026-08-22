@@ -679,6 +679,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-assets-tables'
     )
     await createAssetsTables(this.dataSource)
+    // 内置高频应用（迁移直接内置：8 工作流 + 8 应用 + 默认模板资产，user_id=NULL + is_builtin=1）
+    // 依赖 workflow_definitions / apps / assets 三表已建（分别在片7/片1/资产库迁移之后）
+    const { createBuiltinApps } = await import(
+      '@core/database/migrations/create-builtin-apps'
+    )
+    await createBuiltinApps(this.dataSource)
     // P0 工具：tool_credentials / custom_tools 表（幂等，双语种）
     const { createToolTables } = await import(
       '@core/database/migrations/create-tool-tables'

@@ -39,6 +39,10 @@ export class WorkflowDefinitionEntity {
   @Column({ name: 'category', type: 'varchar', nullable: true })
   category!: string | null
 
+  /** 内置工作流（1=user_id NULL 全局共享，禁删禁改，允许复制；0=用户自有） */
+  @Column({ name: 'is_builtin', type: 'integer', default: 0, nullable: true })
+  isBuiltin!: number | null
+
   /** 草稿图（WorkflowGraph JSON；新建时可含 start/end 骨架） */
   @Column({ name: 'draft_graph', type: 'text', nullable: true })
   draftGraph!: string | null

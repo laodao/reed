@@ -61,6 +61,10 @@ export class AppEntity {
   @Column({ name: 'enabled', type: 'integer', default: 1 })
   enabled!: number
 
+  /** 内置应用（1=user_id NULL 全局共享，禁删禁改，允许复制；0=用户自有） */
+  @Column({ name: 'is_builtin', type: 'integer', default: 0, nullable: true })
+  isBuiltin!: number | null
+
   @Column({ name: 'last_run_at', type: 'datetime', nullable: true })
   lastRunAt!: Date | null
 

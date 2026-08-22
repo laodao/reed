@@ -1,0 +1,113 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 图文卡片生成",
+  "description": "主题 → 内容规划（标题/正文/行动号召/画面提示）→ AI 配图 → 审核 → 长图卡片 + 存资产",
+  "category": "writing",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 40, "y": 200 },
+        "config": {
+          "inputs": [
+            { "key": "topic", "label": "主题", "type": "string", "required": true },
+            { "key": "audience", "label": "受众", "type": "string" },
+            { "key": "cardStyle", "label": "卡片风格", "type": "select", "defaultValue": "business", "options": [
+              { "label": "简洁商务", "value": "business" },
+              { "label": "活泼插画", "value": "illustration" },
+              { "label": "国风", "value": "chinese" },
+              { "label": "科技感", "value": "tech" }
+            ] },
+            { "key": "imageModel", "label": "图像模型", "type": "model", "modelTypes": ["image"], "required": true },
+            { "key": "textModel", "label": "文案模型", "type": "model", "modelTypes": ["text", "multimodal"] },
+            { "key": "imageCount", "label": "配图候选数", "type": "number", "defaultValue": 2 },
+            { "key": "request", "label": "效果描述", "type": "textarea" },
+            { "key": "templateAssetId", "label": "报告模板（可选）", "type": "select-dynamic", "source": "assets:template" }
+          ]
+        }
+      },
+      {
+        "id": "plan1",
+        "type": "llm-chat",
+        "name": "内容规划",
+        "position": { "x": 340, "y": 200 },
+        "config": {
+          "systemPrompt": "你是卡片内容策划。输出 JSON：{headline: 标题, body: 正文（3-5 句）, cta: 行动号召, visualHint: 画面提示（供 AI 生图，含主体/构图/风格词）}。",
+          "prompt": "主题：{{start.topic}}\n受众：{{start.audience}}\n用户效果要求：{{start.request}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.textModel.providerConfigId}}",
+          "modelId": "{{start.textModel.modelId}}"
+        }
+      },
+      {
+        "id": "img1",
+        "type": "image-gen",
+        "name": "生成配图",
+        "position": { "x": 580, "y": 200 },
+        "config": {
+          "prompt": "卡片风格：{{start.cardStyle}}\n画面提示：{{plan1.parsed.visualHint}}\n\n请生成适合卡片封面的插画/图片，无文字。",
+          "width": 1024,
+          "height": 1024,
+          "count": "{{start.imageCount}}",
+          "providerConfigId": "{{start.imageModel.providerConfigId}}",
+          "modelId": "{{start.imageModel.modelId}}"
+        }
+      },
+      {
+        "id": "review1",
+        "type": "human-review",
+        "name": "审核卡片内容",
+        "position": { "x": 820, "y": 200 },
+        "config": {
+          "payload": "{\"headline\":\"{{plan1.parsed.headline}}\",\"body\":\"{{plan1.parsed.body}}\",\"cta\":\"{{plan1.parsed.cta}}\",\"images\":\"{{img1.images}}\"}",
+          "interaction": "input",
+          "editableFields": [
+            { "key": "headline", "label": "标题", "type": "string" },
+            { "key": "body", "label": "正文", "type": "string" },
+            { "key": "cta", "label": "行动号召", "type": "string" }
+          ]
+        }
+      },
+      {
+        "id": "report1",
+        "type": "report-image",
+        "name": "长图卡片",
+        "position": { "x": 1060, "y": 200 },
+        "config": {
+          "title": "{{start.topic}}",
+          "template": "# {{review1.headline}}\n\n{{review1.body}}\n\n![配图]({{img1.images[0].url}})\n\n---\n\n**{{review1.cta}}**",
+          "templateId": "generic"
+        }
+      },
+      {
+        "id": "save1",
+        "type": "save-asset",
+        "name": "保存到资产库",
+        "position": { "x": 1300, "y": 200 },
+        "config": { "content": "# {{review1.headline}}\n\n{{review1.body}}\n\n{{review1.cta}}", "kind": "text", "category": "text", "subCategory": "图文卡片", "name": "{{start.topic}}卡片", "tags": "图文卡片,{{start.cardStyle}}" }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 1540, "y": 200 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "plan1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "plan1", "targetNodeId": "img1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "img1", "targetNodeId": "review1", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "review1", "targetNodeId": "report1", "kind": "approve" },
+      { "id": "e5", "sourceNodeId": "review1", "targetNodeId": "end", "kind": "reject" },
+      { "id": "e6", "sourceNodeId": "report1", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e7", "sourceNodeId": "save1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": null
+}

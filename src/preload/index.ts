@@ -740,18 +740,20 @@ const electronAPI = {
 
   // ==================== 通用资产库（保存资产/读取资产/资产中心） ====================
   assets: {
-    list: (p: { category?: string; keyword?: string; page: number; pageSize: number }) => ipcRenderer.invoke('asset:list', p),
+    list: (p: { category?: string; subCategory?: string; keyword?: string; page: number; pageSize: number }) => ipcRenderer.invoke('asset:list', p),
     get: (id: string) => ipcRenderer.invoke('asset:get', { id }),
     create: (p: {
       category?: string
+      subCategory?: string
       name?: string
       description?: string
       tags?: string[]
       content: { kind: 'file'; path: string } | { kind: 'url'; url: string } | { kind: 'text'; text: string } | { kind: 'json'; json: string }
     }) => ipcRenderer.invoke('asset:create', p),
-    update: (p: { id: string; name?: string; description?: string | null; tags?: string[]; category?: string }) => ipcRenderer.invoke('asset:update', p),
+    update: (p: { id: string; name?: string; description?: string | null; tags?: string[]; category?: string; subCategory?: string | null }) => ipcRenderer.invoke('asset:update', p),
     delete: (id: string) => ipcRenderer.invoke('asset:delete', { id }),
     stats: () => ipcRenderer.invoke('asset:stats'),
+    subCategoryStats: (category: string) => ipcRenderer.invoke('asset:sub-category-stats', { category }),
     openFolder: (id: string) => ipcRenderer.invoke('asset:open-folder', { id }),
   },
 
@@ -811,6 +813,8 @@ const electronAPI = {
     }) => ipcRenderer.invoke('file:open-dialog', options),
     // 读取文件内容（用于预览）
     readAsBase64: (filePath: string) => ipcRenderer.invoke('file:read-base64', filePath),
+    // 读取文本文件内容（UTF-8；模板上传用）
+    readTextFile: (p: { path: string }) => ipcRenderer.invoke('file:read-text', { filePath: p.path }),
     // 保存文件对话框
     saveFile: (options?: {
       defaultPath?: string
