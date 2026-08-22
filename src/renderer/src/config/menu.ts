@@ -28,6 +28,7 @@ import { Connection,
   VideoCamera,
   Promotion,
   Box,
+  Collection,
 } from '@element-plus/icons-vue'
 
 export interface MenuItem {
@@ -138,6 +139,12 @@ export const mainMenuItems: MenuItem[] = [
     label: '日记',
     description: '智能日记记录与管理',
     icon: markRaw(Notebook)
+  },
+  {
+    path: '/assets',
+    label: '资产管理',
+    description: '工作流成果统一沉淀——按分类查看、预览、复用',
+    icon: markRaw(Collection)
   }
 ]
 

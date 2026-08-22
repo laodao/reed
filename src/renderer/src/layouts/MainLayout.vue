@@ -165,6 +165,7 @@ const pathTitleMap: Record<string, string> = {
   '/knowledge-base': '知识库',
   '/portrait/geometry': '面容分析',
   '/assistant': '智能助手',
+  '/assets': '资产管理',
   '/settings': '设置'
 }
 

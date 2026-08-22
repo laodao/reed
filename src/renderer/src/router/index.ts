@@ -115,14 +115,16 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '应用详情' },
   },
   {
-    path: '/apps/:id/session',
-    name: 'AppSession',
-    component: () => import('@/views/app/AppSession.vue'),
-    meta: { title: '应用会话' },
+    path: '/assets',
+    name: 'AssetCenter',
+    component: () => import('@/views/asset/AssetCenter.vue'),
+    // 不缓存：资产实时变化（工作流随时保存新资产），每次进入取最新数据
+    meta: { title: '资产管理' },
   },
   {
+    // 会话页必须有 sessionId（新建会话由列表/详情页创建后跳转；无 id 路由已废弃）
     path: '/apps/:id/session/:sessionId',
-    name: 'AppSessionDetail',
+    name: 'AppSession',
     component: () => import('@/views/app/AppSession.vue'),
     meta: { title: '应用会话' },
   },
