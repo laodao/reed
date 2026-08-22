@@ -6,6 +6,24 @@
 import { createRouter, createWebHashHistory, RouteRecordRaw } from 'vue-router'
 
 /**
+ * 能力应用重定向：按应用名称反查已发布应用（阶段三——旧能力入口迁移到应用模块）。
+ * 应用 id 运行时生成，无法静态写死；找不到时兜底进应用列表。
+ */
+function redirectToApp(appName: string) {
+  return async (): Promise<string> => {
+    try {
+      const api = (window as unknown as { electronAPI?: { app?: { list: (p: { page: number; pageSize: number }) => Promise<{ success: boolean; data?: { items: Array<{ id: string; name: string }> } }> } } }).electronAPI?.app
+      const resp = await api?.list({ page: 1, pageSize: 200 })
+      const app = (resp?.success ? resp.data?.items ?? [] : []).find(a => a.name === appName)
+      if (app?.id) return `/apps/${app.id}`
+    } catch {
+      /* 反查失败兜底进应用列表 */
+    }
+    return '/apps'
+  }
+}
+
+/**
  * 路由配置
  */
 const routes: RouteRecordRaw[] = [
@@ -25,15 +43,6 @@ const routes: RouteRecordRaw[] = [
     meta: {
       keepAlive: true,
       title: 'AI 对话'
-    }
-  },
-  {
-    path: '/image',
-    name: 'Image',
-    component: () => import('@/views/Image.vue'),
-    meta: {
-      keepAlive: true,
-      title: '图像生成'
     }
   },
   {
@@ -60,35 +69,33 @@ const routes: RouteRecordRaw[] = [
       title: '提示词模板库'
     }
   },
+  // ==================== 能力应用迁移（阶段三） ====================
+  // 旧能力入口（图像生成/文档翻译/语音助手）→ 已发布的应用（按名称反查，失败兜底应用列表）
+  {
+    path: '/image',
+    beforeEnter: redirectToApp('图像生成'),
+    component: { template: '<div />' },
+  },
   {
     path: '/translate',
-    name: 'Translate',
-    component: () => import('@/views/Translate.vue'),
-    meta: {
-      keepAlive: true,
-      title: '文档翻译'
-    }
+    beforeEnter: redirectToApp('文档翻译'),
+    component: { template: '<div />' },
   },
-  // 语音助手 —— 2026-05-08 拆 3 个独立页面 + 主菜单子菜单
-  // /voice 兼容跳转：默认进文本转语音
-  { path: '/voice', redirect: '/voice/tts' },
+  { path: '/voice', redirect: '/apps' },
   {
     path: '/voice/tts',
-    name: 'VoiceTTS',
-    component: () => import('@/views/voice/VoiceTTS.vue'),
-    meta: { keepAlive: true, title: '文本转语音' },
+    beforeEnter: redirectToApp('文本转语音'),
+    component: { template: '<div />' },
   },
   {
     path: '/voice/stt',
-    name: 'VoiceSTT',
-    component: () => import('@/views/voice/VoiceSTT.vue'),
-    meta: { keepAlive: true, title: '语音转文本' },
+    beforeEnter: redirectToApp('语音转文本'),
+    component: { template: '<div />' },
   },
   {
     path: '/voice/clone',
-    name: 'VoiceClone',
-    component: () => import('@/views/voice/VoiceClone.vue'),
-    meta: { keepAlive: true, title: '声音复刻' },
+    beforeEnter: redirectToApp('语音复刻'),
+    component: { template: '<div />' },
   },
   {
     path: '/voice/design',

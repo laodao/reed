@@ -15,18 +15,12 @@ import { markRaw } from 'vue'
 import { Connection,
   HomeFilled,
   ChatDotRound,
-  Picture,
-  Document,
-  Microphone,
-  Headset,
-  MagicStick,
   Setting,
   FolderOpened,
   User,
   EditPen,
   Notebook,
   VideoCamera,
-  Promotion,
   Box,
   Collection,
 } from '@element-plus/icons-vue'
@@ -58,12 +52,6 @@ export const mainMenuItems: MenuItem[] = [
     icon: markRaw(ChatDotRound)
   },
   {
-    path: '/image',
-    label: '图像生成',
-    description: '使用 AI 生成创意图像',
-    icon: markRaw(Picture)
-  },
-  {
     path: '/portrait',
     label: '人像设计',
     description: 'AI 角色人像设计与生成',
@@ -82,39 +70,6 @@ export const mainMenuItems: MenuItem[] = [
     description: '剧本生成与视频制作',
     icon: markRaw(VideoCamera),
     hidden: true // 功能开发中，暂不显示入口
-  },
-  {
-    path: '/translate',
-    label: '文档翻译',
-    description: '智能翻译多种语言文档',
-    icon: markRaw(Document)
-  },
-  {
-    path: '/voice',
-    label: '语音助手',
-    description: '语音识别与语音合成',
-    icon: markRaw(Microphone),
-    hideSelf: true, // 纯分组父项：不显示自身，只列出子项
-    children: [
-      {
-        path: '/voice/tts',
-        label: '文本转语音',
-        description: '将文本合成为自然语音',
-        icon: markRaw(Promotion),
-      },
-      {
-        path: '/voice/stt',
-        label: '语音转文本',
-        description: '识别语音并转写为文字',
-        icon: markRaw(Headset),
-      },
-      {
-        path: '/voice/clone',
-        label: '声音复刻',
-        description: '克隆定制专属音色',
-        icon: markRaw(MagicStick),
-      },
-    ],
   },
   {
     path: '/knowledge-base',
