@@ -103,6 +103,7 @@
     "pdfjs-dist": "^4.0.379",
     "pg": "^8.20.0",
     "pinia": "^2.1.7",
+    "pino": "^9.14.0",
     "sharp": "^0.34.5",
     "tesseract.js": "^7.0.0",
     "typeorm": "^0.3.28",
@@ -212,8 +213,5 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
     }
-  },
-  "overrides": {
-    "pino": "^9.0.0"
   }
 }
