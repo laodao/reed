@@ -28,6 +28,7 @@ import { KbVectorRepository } from '@core/database/repositories/kb-vector.reposi
 import { KbQaPairRepository } from '@core/database/repositories/kb-qa-pair.repository'
 import { AppRepository } from '@core/database/repositories/app.repository'
 import { AppSessionRepository } from '@core/database/repositories/app-session.repository'
+import { AppSessionMessageRepository } from '@core/database/repositories/app-session-message.repository'
 import { ToolCredentialRepository } from '@core/database/repositories/tool-credential.repository'
 import { CustomToolRepository } from '@core/database/repositories/custom-tool.repository'
 import { EmailAccountRepository } from '@core/database/repositories/email-account.repository'
@@ -125,6 +126,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   kbQaPairs: KbQaPairRepository | null
   appDefinitions: AppRepository | null
   appSessions: AppSessionRepository | null
+  appSessionMessages: AppSessionMessageRepository | null
   assets: AssetRepository | null
   toolCredentials: ToolCredentialRepository | null
   customTools: CustomToolRepository | null
@@ -226,6 +228,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.kbQaPairs = new KbQaPairRepository(ds)
     this.appDefinitions = new AppRepository(ds)
     this.appSessions = new AppSessionRepository(ds)
+    this.appSessionMessages = new AppSessionMessageRepository(ds)
     this.assets = new AssetRepository(ds)
     this.toolCredentials = new ToolCredentialRepository(ds)
     this.customTools = new CustomToolRepository(ds)

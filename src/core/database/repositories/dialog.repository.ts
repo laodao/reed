@@ -16,6 +16,7 @@ import { DialogEntity } from '../entities/dialog.entity'
 import { MessageEntity } from '../entities/message.entity'
 import { BaseRepository } from '../base-repository'
 import { getCurrentUserId } from '@core/context/user-context'
+import { APP_SESSION_DIALOG_ROLE_ID } from '@shared/types/app.types'
 
 export class DialogRepository extends BaseRepository<DialogEntity, Dialog> {
   constructor(dataSource: DataSource) {
@@ -35,7 +36,9 @@ export class DialogRepository extends BaseRepository<DialogEntity, Dialog> {
       modelId: e.modelId,
       providerConfigId: e.providerConfigId || undefined,
       roleId:
-        e.roleId && e.roleId !== 'default-assistant' ? e.roleId : null,
+        e.roleId && e.roleId !== 'default-assistant' && e.roleId !== APP_SESSION_DIALOG_ROLE_ID
+          ? e.roleId
+          : null,
       systemPrompt: e.systemPrompt || undefined,
       contextConfig:
         (e.contextConfig as ContextConfig | null) ?? undefined,
@@ -49,8 +52,12 @@ export class DialogRepository extends BaseRepository<DialogEntity, Dialog> {
   }
 
   async getAll(): Promise<Dialog[]> {
-    const entities = await this.scoped.find({ order: { updatedAt: 'DESC' } as any })
-    return this.toDtoList(entities)
+    // 排除应用会话占位行（role_id='__app_session__'）：它们复用 messages 表外键，
+    // 属于工作流应用会话，不应混入 AI 对话列表。
+    const qb = this.scoped.qb('d')
+    qb.andWhere('d.role_id != :appSessionRole', { appSessionRole: APP_SESSION_DIALOG_ROLE_ID })
+    qb.orderBy('d.updated_at', 'DESC')
+    return this.toDtoList(await qb.getMany())
   }
 
   async getByRoleId(roleId: string | null): Promise<Dialog[]> {

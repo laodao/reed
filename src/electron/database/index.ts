@@ -27,6 +27,7 @@ import { KbVectorRepository } from '@core/database/repositories/kb-vector.reposi
 import { KbQaPairRepository } from '@core/database/repositories/kb-qa-pair.repository'
 import { AppRepository } from '@core/database/repositories/app.repository'
 import { AppSessionRepository } from '@core/database/repositories/app-session.repository'
+import { AppSessionMessageRepository } from '@core/database/repositories/app-session-message.repository'
 import { AssetRepository } from '@core/database/repositories/asset.repository'
 import { ToolCredentialRepository } from '@core/database/repositories/tool-credential.repository'
 import { CustomToolRepository } from '@core/database/repositories/custom-tool.repository'
@@ -140,6 +141,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public kbQaPairs: KbQaPairRepository | null = null
   public appDefinitions: AppRepository | null = null
   public appSessions: AppSessionRepository | null = null
+  public appSessionMessages: AppSessionMessageRepository | null = null
   public assets: AssetRepository | null = null
   public toolCredentials: ToolCredentialRepository | null = null
   public customTools: CustomToolRepository | null = null
@@ -667,6 +669,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-apps-tables'
     )
     await createAppsTables(this.dataSource)
+    // 应用会话独立消息表（隔离 AI 对话表，杜绝工作流会话混入 dialogs/messages）
+    const { createAppSessionMessages } = await import(
+      '@core/database/migrations/create-app-session-messages'
+    )
+    await createAppSessionMessages(this.dataSource)
     // 通用资产库：assets 表（幂等，双语种；文件型资产落盘 dataPath/assets）
     const { createAssetsTables } = await import(
       '@core/database/migrations/create-assets-tables'
@@ -4209,6 +4216,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.kbQaPairs = new KbQaPairRepository(this.dataSource)
     this.appDefinitions = new AppRepository(this.dataSource)
     this.appSessions = new AppSessionRepository(this.dataSource)
+    this.appSessionMessages = new AppSessionMessageRepository(this.dataSource)
     this.assets = new AssetRepository(this.dataSource)
     this.toolCredentials = new ToolCredentialRepository(this.dataSource)
     this.customTools = new CustomToolRepository(this.dataSource)

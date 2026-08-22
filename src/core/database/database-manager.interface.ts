@@ -30,6 +30,7 @@ import type { KbVectorRepository } from './repositories/kb-vector.repository'
 import type { KbQaPairRepository } from './repositories/kb-qa-pair.repository'
 import type { AppRepository } from './repositories/app.repository'
 import type { AppSessionRepository } from './repositories/app-session.repository'
+import type { AppSessionMessageRepository } from './repositories/app-session-message.repository'
 import type { AssetRepository } from './repositories/asset.repository'
 import type { ToolCredentialRepository } from './repositories/tool-credential.repository'
 import type { CustomToolRepository } from './repositories/custom-tool.repository'
@@ -137,6 +138,8 @@ export interface ICoreDatabaseManager {
   kbQaPairs: KbQaPairRepository | null
   appDefinitions: AppRepository | null
   appSessions: AppSessionRepository | null
+  /** 应用会话消息（独立表，隔离 AI 对话表） */
+  appSessionMessages: AppSessionMessageRepository | null
   /** 通用资产库（工作流「保存资产」节点 / 资产中心） */
   assets: AssetRepository | null
   toolCredentials: ToolCredentialRepository | null

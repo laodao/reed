@@ -118,7 +118,7 @@ export async function initWorkflowSubsystem(): Promise<WorkflowSubsystem> {
     db.messages
   )
   const appSessionService = new AppSessionService(
-    { appSessions: db.appSessions, messages: db.messages, dialogs: db.dialogs, runService, engine },
+    { appSessions: db.appSessions, messages: db.messages, appSessionMessages: db.appSessionMessages, runService, engine },
     db.appDefinitions,
     db.workflowDefinitions,
   )

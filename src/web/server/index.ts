@@ -370,6 +370,11 @@ async function initDatabase(): Promise<void> {
     '@core/database/migrations/create-apps-tables'
   )
   await createAppsTables(ds)
+  // 应用会话独立消息表（隔离 AI 对话表；与 Electron 端同构）
+  const { createAppSessionMessages } = await import(
+    '@core/database/migrations/create-app-session-messages'
+  )
+  await createAppSessionMessages(ds)
   // 通用资产库：assets 表（与 Electron 端同构；文件型资产落盘 rootDataPath/assets）
   const { createAssetsTables } = await import(
     '@core/database/migrations/create-assets-tables'

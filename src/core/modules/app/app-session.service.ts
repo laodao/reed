@@ -12,7 +12,7 @@
  */
 
 import type { AppSessionRecord } from '@shared/types/app.types'
-import { APP_SESSION_DIALOG_ROLE_ID, APP_SESSION_STATUSES, WORKFLOW_SESSION_CARDS, type SessionCardMeta } from '@shared/types/app.types'
+import { APP_SESSION_STATUSES, WORKFLOW_SESSION_CARDS, type SessionCardMeta } from '@shared/types/app.types'
 import { WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_EVENT_TYPES, WORKFLOW_RUN_STATUSES, WORKFLOW_RUN_TERMINAL_STATUSES, WORKFLOW_TRIGGER_TYPES, type WorkflowRunEvent } from '@shared/types/workflow.types'
 import { createLogger } from '@core/utils/logger'
 
@@ -51,9 +51,14 @@ export interface AppSessionDeps {
     create(m: { dialogId: string; role: string; content: string; metadata?: Record<string, unknown> }): Promise<unknown>
     getByDialogId(dialogId: string): Promise<unknown[]>
   }
-  dialogs: {
-    create(d: { title: string; modelId: string | null; roleId?: string | null }): Promise<{ id: string }>
-    delete(id: string): Promise<void>
+  /**
+   * 应用会话独立消息仓库（隔离 AI 对话表）。createSession 不再往 dialogs 表建占位行，
+   * 所有会话消息写/读都走此仓库。
+   */
+  appSessionMessages: {
+    create(m: { sessionId: string; role: string; content: string; metadata?: Record<string, unknown> | null }): Promise<unknown>
+    getBySessionId(sessionId: string): Promise<unknown[]>
+    deleteBySessionId(sessionId: string): Promise<number>
   }
   runService: RunServiceLike
   engine: EngineLike
@@ -120,35 +125,19 @@ export class AppSessionService {
     const form = Array.isArray(startNode?.config?.inputs) ? startNode.config.inputs : []
 
     const title = `会话 ${new Date().toLocaleDateString('zh-CN')}`
-    // messages.dialog_id 有外键指向 dialogs——先落 dialog（话题）行，其 id 复用为会话 id（双表同主键）。
-    // roleId 用专属标记隔离：对话页（默认助手/角色列表）按 roleId 过滤，应用会话不混入对话列表。
-    const dialog = await this.deps.dialogs.create({
+    // 隔离：应用会话独立存储，不再往 dialogs 表建占位行（避免污染 AI 对话）。
+    // 会话 id 由仓库自生成，消息写入 app_session_messages（session_id）。
+    const session = await this.deps.appSessions.create({
+      appId,
       title,
-      modelId: '',
-      roleId: APP_SESSION_DIALOG_ROLE_ID,
+      lastStartInputs: startInputs ?? null,
     })
-    try {
-      const session = await this.deps.appSessions.create({
-        id: dialog.id,
-        appId,
-        title,
-        lastStartInputs: startInputs ?? null,
-      })
-      await this.writeCard(session.id, {
-        card: WORKFLOW_SESSION_CARDS.startForm,
-        appId,
-        form,
-      })
-      return session
-    } catch (e) {
-      // app_session 创建失败（如并发唯一冲突）→ 清理孤儿 dialog 行，避免污染对话表；清理失败不掩盖原错误
-      try {
-        await this.deps.dialogs.delete(dialog.id)
-      } catch (cleanupErr) {
-        logger.error(`[AppSessionService] 孤儿 dialog 清理失败（dialog=${dialog.id}）`, cleanupErr)
-      }
-      throw e
-    }
+    await this.writeCard(session.id, {
+      card: WORKFLOW_SESSION_CARDS.startForm,
+      appId,
+      form,
+    })
+    return session
   }
 
   async listSessions(appId: string): Promise<AppSessionRecord[]> {
@@ -163,21 +152,21 @@ export class AppSessionService {
     return this.deps.appSessions.update(sessionId, { title })
   }
 
-  /** 删除会话：级联删会话消息 + dialog 行（同主键） + 会话行；运行中的会话先拒绝删除 */
+  /** 删除会话：级联删会话消息（独立表）+ 会话行；运行中的会话先拒绝删除 */
   async deleteSession(sessionId: string): Promise<void> {
     const session = await this.deps.appSessions.findById(sessionId)
     if (!session) return
     if (session.status === APP_SESSION_STATUSES.running) {
       throw new Error('会话正在运行中，请等待结束或取消后删除')
     }
-    // 会话消息经 dialog 级联删除（dialog 行与 app_session 同主键）
-    await this.deps.dialogs.delete(sessionId)
+    // 会话消息在独立表（app_session_messages），不再依赖 dialog 级联删除
+    await this.deps.appSessionMessages.deleteBySessionId(sessionId)
     await this.deps.appSessions.delete(sessionId)
     logger.info(`[AppSessionService] 会话删除：${sessionId}`)
   }
 
   async getSessionMessages(sessionId: string): Promise<unknown[]> {
-    return this.deps.messages.getByDialogId(sessionId)
+    return this.deps.appSessionMessages.getBySessionId(sessionId)
   }
 
   /**
@@ -257,9 +246,9 @@ export class AppSessionService {
       lastRunId: run.id,
       lastStartInputs: effectiveInputs,
     })
-    // 回显用户提交的参数（role=user 消息，前端渲染为"我"侧气泡；P2 角色区分）
-    await this.deps.messages.create({
-      dialogId: sessionId,
+    // 回显用户提交的参数（role=user 消息，前端渲染为"我"侧气泡；写入独立会话消息表）
+    await this.deps.appSessionMessages.create({
+      sessionId,
       role: 'user',
       content: this.formatInputsSummary(effectiveInputs),
       metadata: null,
@@ -380,10 +369,10 @@ export class AppSessionService {
     }
   }
 
-  /** 写会话卡片消息（metadata.sessionCard） */
-  private writeCard(dialogId: string, card: SessionCardMeta): Promise<unknown> {
-    return this.deps.messages.create({
-      dialogId,
+  /** 写会话卡片消息（metadata.sessionCard；写入独立会话消息表） */
+  private writeCard(sessionId: string, card: SessionCardMeta): Promise<unknown> {
+    return this.deps.appSessionMessages.create({
+      sessionId,
       role: 'assistant',
       content: '',
       metadata: { sessionCard: card },
