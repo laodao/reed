@@ -192,6 +192,7 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     T('text', '待翻译内容', { type: 'textarea', templateHint: true, placeholder: '{{start.text}}' }),
     T('sourceLang', '源语言', { help: '留空 = 自动检测', group: '语言' }),
     T('targetLang', '目标语言', { group: '语言', placeholder: 'en / zh / ja ...' }),
+    { key: 'providerConfigId', label: '模型', type: 'model-pair', group: '模型', help: '留空 = 按默认 Provider 自动回退选择' },
   ],
   'image-gen': [
     T('prompt', '提示词', { type: 'textarea', templateHint: true }),
@@ -205,10 +206,12 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     T('text', '合成文本', { type: 'textarea', templateHint: true, placeholder: '{{llm1.content}}' }),
     T('voiceId', '音色 ID', { help: '语音页可查看音色列表' }),
     { key: 'speed', label: '语速', type: 'slider', min: 0.5, max: 2, step: 0.1, group: '参数' },
+    { key: 'providerConfigId', label: '模型', type: 'model-pair', group: '模型', help: '留空 = 按默认 Provider 自动回退选择' },
   ],
   stt: [
     T('audio', '音频来源', { type: 'textarea', templateHint: true, placeholder: '{{tts1.audioPath}} 或 base64' }),
     T('language', '语言', { help: '留空 = 自动' }),
+    { key: 'providerConfigId', label: '模型', type: 'model-pair', group: '模型', help: '留空 = 按默认 Provider 自动回退选择' },
   ],
   'voice-clone': [
     T('samplePath', '样本音频路径', { type: 'textarea', templateHint: true, placeholder: '{{start.sample.path}}（10-20 秒人声样本）' }),

@@ -81,23 +81,38 @@ function groupTitleOf(field: CatalogFormField, idx: number): string {
   return field.group && prev?.group !== field.group ? field.group : ''
 }
 
+/** 节点类型 → 允许的模型类型（model-pair 联动下拉按节点过滤：文本节点看文本模型，语音节点看音频模型） */
+const NODE_MODEL_TYPES: Record<string, string[]> = {
+  'llm-chat': ['text', 'chat', 'multimodal'],
+  translate: ['text', 'multimodal'],
+  'kb-qa': ['text', 'multimodal'],
+  'parameter-extractor': ['text', 'multimodal'],
+  'web-extract': ['text', 'multimodal'],
+  tts: ['audio', 'multimodal'],
+  stt: ['audio', 'multimodal'],
+  'voice-clone': ['audio', 'multimodal'],
+  'image-gen': ['image'],
+}
+
 async function loadDynamicOptions() {
   const api = (window as never as { electronAPI: any }).electronAPI
   const sources = new Set(fields.value.filter(f => f.type === 'select-dynamic').map(f => f.source))
-  // model-pair 联动下拉的 Provider/模型数据
+  // model-pair 联动下拉的 Provider/模型数据（按节点类型过滤模型：文本节点只看文本模型，语音节点看音频模型）
   if (fields.value.some(f => f.type === 'model-pair')) {
     try {
       const resp = await api.providerConfig.list()
       // 通道返回形状是 { success, configs }（apiKey 已脱敏）
       const list: any[] = (resp as any).configs ?? []
       if (resp.success && Array.isArray(list)) {
+        const nodeType: string = wfNode.value.type
+        const allowed = NODE_MODEL_TYPES[nodeType] ?? ['text', 'chat', 'multimodal', 'audio', 'image', 'embedding', 'rerank']
         dynamicOptions.value.providers = list
           .filter(c => c.isEnabled !== false && c.isEnabled !== 0)
           .map(c => ({
             id: c.id,
             name: c.name || c.shortId || c.id,
             models: (c.models ?? [])
-              .filter((m: any) => !m.type || m.type === 'text' || m.type === 'chat')
+              .filter((m: any) => !m.type || allowed.includes(m.type))
               .map((m: any) => ({ label: m.name || m.id, value: m.id })),
           }))
           .filter(p => p.models.length > 0 || true) // 无模型的 Provider 仍可选（引擎有 fallback 链）
