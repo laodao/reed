@@ -51,7 +51,8 @@
 
       <el-tab-pane label="会话记录" name="sessions">
         <el-button size="small" type="primary" plain style="margin-bottom: 10px" @click="newSession">＋ 新会话</el-button>
-        <el-table :data="sessions" v-loading="sessionLoading" empty-text="暂无会话">
+        <el-table :data="pagedSessions" v-loading="sessionLoading" empty-text="暂无会话">
+          <el-table-column type="index" label="#" width="52" align="center" :index="sessionIndex" />
           <el-table-column prop="title" label="标题" min-width="180" />
           <el-table-column label="状态" width="100">
             <template #default="{ row }"><el-tag :type="row.status === 'running' ? 'warning' : row.status === 'failed' ? 'danger' : 'info'" size="small">{{ row.status }}</el-tag></template>
@@ -65,6 +66,16 @@
             </template>
           </el-table-column>
         </el-table>
+        <div class="session-pager" v-if="sessions.length > 0">
+          <el-pagination
+            v-model:current-page="sessionPage"
+            v-model:page-size="sessionPageSize"
+            :total="sessions.length"
+            :page-sizes="[10, 20, 50]"
+            layout="total, sizes, prev, pager, next"
+            background
+          />
+        </div>
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -91,6 +102,19 @@ const activeTab = ref('channels')
 const sessions = ref<AppSessionRecord[]>([])
 const sessionLoading = ref(false)
 
+// ---- 会话记录分页（前端切片；会话量小，一次性拉取后本地分页） ----
+const sessionPage = ref(1)
+const sessionPageSize = ref(10)
+/** 当前页会话（按 page/pageSize 切片） */
+const pagedSessions = computed<AppSessionRecord[]>(() => {
+  const start = (sessionPage.value - 1) * sessionPageSize.value
+  return sessions.value.slice(start, start + sessionPageSize.value)
+})
+/** 序号列：跨页连续（`(page-1)*pageSize + index + 1`） */
+function sessionIndex(index: number): number {
+  return (sessionPage.value - 1) * sessionPageSize.value + index + 1
+}
+
 async function load(): Promise<void> {
   const resp = await api.app.get(appId.value)
   if (resp.success) app.value = resp.data ?? null
@@ -103,7 +127,14 @@ async function loadSessions(): Promise<void> {
   try {
     const resp = await api.appSession.list(appId.value)
     if (resp.success) sessions.value = resp.data ?? []
+    clampSessionPage()
   } finally { sessionLoading.value = false }
+}
+
+/** 修正页码越界（删除/刷新后总条数变化导致当前页超出） */
+function clampSessionPage(): void {
+  const maxPage = Math.max(1, Math.ceil(sessions.value.length / sessionPageSize.value))
+  if (sessionPage.value > maxPage) sessionPage.value = maxPage
 }
 
 async function toggleChannel(kind: 'session' | 'share' | 'api', val: boolean): Promise<void> {
@@ -198,4 +229,5 @@ onMounted(load)
 .link-pill { font-family: monospace; font-size: 12px; background: var(--el-fill-color); padding: 4px 8px; border-radius: 4px; }
 .api-endpoint { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
 .api-endpoint code { font-size: 12px; background: var(--el-fill-color); padding: 3px 6px; border-radius: 4px; }
+.session-pager { display: flex; justify-content: flex-end; padding-top: 14px; }
 </style>
