@@ -9,63 +9,80 @@
       </div>
     </div>
 
-    <el-table :data="items" v-loading="loading" empty-text="暂无工作流，点击右上角新建">
-      <el-table-column type="index" label="#" width="50" align="center" />
-      <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
-      <el-table-column label="发布状态" width="110" align="center">
-        <template #default="{ row }">
-          <el-tag :type="row.publishedVersion > 0 ? 'success' : 'info'" size="small">
-            {{ row.publishedVersion > 0 ? `已发布 v${row.publishedVersion}` : '未发布' }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="创建时间" width="160">
-        <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
-      </el-table-column>
-      <el-table-column label="发布时间" width="160">
-        <template #default="{ row }">{{ formatTime(row.publishedAt) }}</template>
-      </el-table-column>
-      <el-table-column label="最近运行" width="160">
-        <template #default="{ row }">{{ formatTime(row.lastRunAt) }}</template>
-      </el-table-column>
-      <el-table-column label="操作" width="230" fixed="right" align="center">
-        <template #default="{ row }">
-          <el-tooltip content="运行" placement="top">
-            <el-button circle size="small" type="primary" @click="handleRun(row)">
-              <el-icon><VideoPlay /></el-icon>
-            </el-button>
-          </el-tooltip>
-          <el-tooltip content="编辑" placement="top">
-            <el-button circle size="small" @click="router.push(`/workflow/editor/${row.id}`)">
-              <el-icon><Edit /></el-icon>
-            </el-button>
-          </el-tooltip>
-          <el-tooltip content="历史" placement="top">
-            <el-button circle size="small" @click="handleHistory(row)">
-              <el-icon><Clock /></el-icon>
-            </el-button>
-          </el-tooltip>
-          <el-tooltip content="发布" placement="top">
-            <el-button circle size="small" type="success" plain @click="handlePublish(row)">
-              <el-icon><Upload /></el-icon>
-            </el-button>
-          </el-tooltip>
-          <el-tooltip content="导出" placement="top">
-            <el-button circle size="small" @click="handleExport(row)">
-              <el-icon><Download /></el-icon>
-            </el-button>
-          </el-tooltip>
-          <el-tooltip content="删除" placement="top">
-            <el-button circle size="small" type="danger" plain @click="handleDelete(row)">
-              <el-icon><Delete /></el-icon>
-            </el-button>
-          </el-tooltip>
-        </template>
-      </el-table-column>
-    </el-table>
+    <!-- 表格区：固定高度内部滚动，表头 sticky（分页固定在底部） -->
+    <div class="table-wrap">
+      <el-table :data="items" v-loading="loading" height="100%" empty-text="暂无工作流，点击右上角新建">
+        <el-table-column type="index" label="#" width="50" align="center" />
+        <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
+        <el-table-column label="发布状态" width="110" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.publishedVersion > 0 ? 'success' : 'info'" size="small">
+              {{ row.publishedVersion > 0 ? `已发布 v${row.publishedVersion}` : '未发布' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="创建时间" width="160">
+          <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+        </el-table-column>
+        <el-table-column label="发布时间" width="160">
+          <template #default="{ row }">{{ formatTime(row.publishedAt) }}</template>
+        </el-table-column>
+        <el-table-column label="最近运行" width="160">
+          <template #default="{ row }">{{ formatTime(row.lastRunAt) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="230" fixed="right" align="center">
+          <template #default="{ row }">
+            <el-tooltip content="运行" placement="top">
+              <el-button circle size="small" type="primary" @click="handleRun(row)">
+                <el-icon><VideoPlay /></el-icon>
+              </el-button>
+            </el-tooltip>
+            <el-tooltip content="编辑" placement="top">
+              <el-button circle size="small" @click="router.push(`/workflow/editor/${row.id}`)">
+                <el-icon><Edit /></el-icon>
+              </el-button>
+            </el-tooltip>
+            <el-tooltip content="历史" placement="top">
+              <el-button circle size="small" @click="handleHistory(row)">
+                <el-icon><Clock /></el-icon>
+              </el-button>
+            </el-tooltip>
+            <el-tooltip content="发布" placement="top">
+              <el-button circle size="small" type="success" plain @click="handlePublish(row)">
+                <el-icon><Upload /></el-icon>
+              </el-button>
+            </el-tooltip>
+            <el-tooltip content="导出" placement="top">
+              <el-button circle size="small" @click="handleExport(row)">
+                <el-icon><Download /></el-icon>
+              </el-button>
+            </el-tooltip>
+            <el-tooltip content="删除" placement="top">
+              <el-button circle size="small" type="danger" plain @click="handleDelete(row)">
+                <el-icon><Delete /></el-icon>
+              </el-button>
+            </el-tooltip>
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
 
-    <!-- 运行输入对话框 -->
-    <el-dialog v-model="showRunInputs" :title="`运行：${runningDef?.name ?? ''}`" width="480px">
+    <!-- 分页固定底部 -->
+    <div class="pager">
+      <el-pagination
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :total="total"
+        :page-sizes="[10, 20, 50, 100]"
+        layout="total, sizes, prev, pager, next"
+        background
+        @current-change="handlePageChange"
+        @size-change="handlePageChange"
+      />
+    </div>
+
+    <!-- 运行输入对话框（宽度容纳复杂表单字段） -->
+    <el-dialog v-model="showRunInputs" :title="`运行：${runningDef?.name ?? ''}`" width="min(640px, 92vw)">
       <RunInputForm ref="runInputRef" :inputs="runInputDefs" @valid="v => runInputsValid = v" />
       <template #footer>
         <el-button @click="showRunInputs = false">取消</el-button>
@@ -109,6 +126,11 @@ const showImport = ref(false)
 const runningDef = ref<any>(null)
 const starting = ref(false)
 
+// ---- 分页（表头/分页固定，表格内部滚动） ----
+const page = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
+
 const api = () => (window as never as { electronAPI: any }).electronAPI.workflow
 
 // 内置模板（B6：编辑器搭好→导出→置于此处；模板即数据资产）
@@ -116,6 +138,7 @@ import ragTpl from '@/assets/workflow-templates/rag-qa.json'
 import translateTpl from '@/assets/workflow-templates/batch-translate.json'
 import reviewTpl from '@/assets/workflow-templates/content-review.json'
 import digestTpl from '@/assets/workflow-templates/daily-digest.json'
+import videoTpl from '@/assets/workflow-templates/video-transcript.json'
 
 const showTemplates = ref(false)
 const builtinTemplates = [
@@ -123,6 +146,7 @@ const builtinTemplates = [
   { name: translateTpl.name, title: translateTpl.name, desc: translateTpl.description, nodeCount: translateTpl.graph.nodes.length, raw: translateTpl },
   { name: reviewTpl.name, title: reviewTpl.name, desc: reviewTpl.description, nodeCount: reviewTpl.graph.nodes.length, raw: reviewTpl },
   { name: digestTpl.name, title: digestTpl.name, desc: digestTpl.description, nodeCount: digestTpl.graph.nodes.length, raw: digestTpl },
+  { name: videoTpl.name, title: videoTpl.name, desc: videoTpl.description, nodeCount: videoTpl.graph.nodes.length, raw: videoTpl },
 ]
 
 async function createFromTemplate(tpl: any) {
@@ -138,12 +162,18 @@ async function createFromTemplate(tpl: any) {
 async function load() {
   loading.value = true
   try {
-    const resp = await api().listDefinitions({ page: 1, pageSize: 50 })
-    if (resp.success && resp.data) items.value = resp.data.items
-    else if (resp.error) ElMessage.error(resp.error)
+    const resp = await api().listDefinitions({ page: page.value, pageSize: pageSize.value })
+    if (resp.success && resp.data) {
+      items.value = resp.data.items
+      total.value = resp.data.total ?? 0
+    } else if (resp.error) ElMessage.error(resp.error)
   } finally {
     loading.value = false
   }
+}
+
+function handlePageChange() {
+  void load()
 }
 
 async function handleCreate() {
@@ -239,8 +269,12 @@ onMounted(load)
 </script>
 
 <style scoped>
-.page-container { padding: 20px; height: 100%; overflow: auto; }
-.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+/* 三区固定布局：header 固定 / 表格内部滚动（表头 sticky）/ 分页固定底部 */
+.page-container { padding: 20px; height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-shrink: 0; }
+.table-wrap { flex: 1; min-height: 0; overflow: hidden; }
+.table-wrap :deep(.el-table) { width: 100%; }
+.pager { flex-shrink: 0; display: flex; justify-content: flex-end; padding-top: 14px; }
 .hint { color: var(--el-text-color-secondary); font-size: 12px; margin: 8px 0; }
 .tpl-card { border: 1px solid var(--el-border-color); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; cursor: pointer; transition: border-color .15s; }
 .tpl-card:hover { border-color: var(--el-color-primary); }

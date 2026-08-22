@@ -43,6 +43,11 @@ class MemSessionRepo {
   async countByApp(appId: string) {
     return [...this.rows.values()].filter(r => r.appId === appId).length
   }
+  async countByAppIds(appIds: string[]) {
+    const m = new Map<string, number>()
+    for (const id of appIds) m.set(id, [...this.rows.values()].filter(r => r.appId === id).length)
+    return m
+  }
   async deleteByApp(appId: string) { this.deletedByApp.push(appId); return 0 }
 }
 class MemDefs {
@@ -87,6 +92,19 @@ describe('AppDefinitionService：createFromWorkflow', () => {
     const first = await service.createFromWorkflow('d1')
     const second = await service.createFromWorkflow('d1')
     expect(second.id).toBe(first.id)
+    expect(apps.rows.size).toBe(1)
+  })
+
+  it('同定义重复创建且已发布新版本 → 幂等返回既有并更新 sourceVersion（版本演进，不新增应用）', async () => {
+    const { defs, apps, service } = setup()
+    defs.rows.set('d1', def('d1', 2))
+    const first = await service.createFromWorkflow('d1')
+    expect(first.sourceVersion).toBe(2)
+    // 工作流发布 v3 后再创建 → 应用跟随版本（本体不变）
+    defs.rows.set('d1', def('d1', 3))
+    const second = await service.createFromWorkflow('d1')
+    expect(second.id).toBe(first.id)
+    expect(second.sourceVersion).toBe(3)
     expect(apps.rows.size).toBe(1)
   })
 

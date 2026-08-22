@@ -19,6 +19,13 @@ export const APP_SESSION_STATUSES = {
   failed: 'failed',
 } as const
 
+/**
+ * 应用会话对应 dialog 行的 roleId 标记（双表同主键方案的隔离手段）：
+ * 对话页（默认助手/角色列表）均按 roleId 过滤——该标记不匹配任何真实角色，
+ * 应用会话因此不混入对话列表。严禁改成普通角色 id。
+ */
+export const APP_SESSION_DIALOG_ROLE_ID = '__app_session__'
+
 /** 会话卡片类型（messages.metadata.card） */
 export const WORKFLOW_SESSION_CARDS = {
   startForm: 'start-form',

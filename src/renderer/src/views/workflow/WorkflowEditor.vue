@@ -18,6 +18,7 @@
       <el-button size="small" @click="doValidate">校验</el-button>
       <el-button size="small" type="warning" plain @click="showDebug = true">试运行</el-button>
       <el-button size="small" type="primary" @click="doPublish">发布</el-button>
+      <el-button size="small" type="success" plain @click="openAppPublish">发布为应用</el-button>
       <el-button size="small" type="info" plain @click="openShare">分享</el-button>
     </div>
 
@@ -66,8 +67,8 @@
         </VueFlow>
       </div>
 
-      <!-- 试运行抽屉 -->
-      <el-drawer v-model="showDebug" title="试运行" size="380px" :append-to-body="true">
+      <!-- 试运行抽屉（宽度容纳复杂表单：label 在上方 + 数字/下拉/文件控件） -->
+      <el-drawer v-model="showDebug" title="试运行" size="min(560px, 92vw)" :append-to-body="true">
         <div class="debug-panel">
           <RunInputForm ref="debugInputRef" :inputs="debugInputs" @valid="v => debugValid = v" />
           <el-button type="primary" size="small" style="width: 100%; margin-top: 12px"
@@ -92,6 +93,32 @@
         </div>
       </div>
     </div>
+
+    <!-- 发布为应用配置对话框（发布即配置渠道，无需事后进详情改） -->
+    <el-dialog v-model="showAppPublish" :title="appPublishMode === 'edit' ? '更新应用配置' : '发布为应用'" width="480px" :close-on-click-modal="false">
+      <el-form label-width="90px" label-position="left">
+        <el-form-item label="应用名称">
+          <el-input v-model="appForm.name" placeholder="默认取工作流名称" />
+        </el-form-item>
+        <el-form-item label="图标">
+          <el-input v-model="appForm.icon" placeholder="emoji，如 📦" maxlength="4" />
+        </el-form-item>
+        <el-form-item label="渠道">
+          <div class="channel-options">
+            <el-checkbox v-model="appForm.channelSession">💬 会话（应用内对话）</el-checkbox>
+            <el-checkbox v-model="appForm.channelShare">🔗 分享（免登录链接）</el-checkbox>
+            <el-checkbox v-model="appForm.channelApi">🔌 API（外部调用）</el-checkbox>
+          </div>
+          <p class="app-hint">一个工作流对应一个应用；发布后可在应用列表直接启动，或到详情页调整渠道</p>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showAppPublish = false">取消</el-button>
+        <el-button type="primary" :loading="appPublishing" @click="doAppPublish">
+          {{ appPublishMode === 'edit' ? '保存配置' : '发布应用' }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -167,6 +194,7 @@ const SUMMARY_FIELD: Partial<Record<WorkflowNodeType, string>> = {
   'http-request': 'url', 'app-notify': 'title', loop: 'listExpression', 'human-review': 'payload',
   'lw-generate-chapter': 'outlineId', 'lw-polish': 'field', assign: '',
   'template-transform': 'template', 'parameter-extractor': 'input', 'web-extract': 'url',
+  'video-extract-audio': 'videoPath',
 }
 function summaryOf(type: WorkflowNodeType, config: Record<string, unknown>): string {
   const key = SUMMARY_FIELD[type]
@@ -346,6 +374,62 @@ async function openShare() {
   }
 }
 
+// ── 发布为应用（P0：发布入口迁移到工作流编辑器，发布即配置渠道） ──
+const showAppPublish = ref(false)
+const appPublishing = ref(false)
+const appPublishMode = ref<'create' | 'edit'>('create')
+const appForm = reactive({ name: '', icon: '', channelSession: true, channelShare: false, channelApi: true })
+
+async function openAppPublish() {
+  if (!definition.value) return
+  if ((definition.value.publishedVersion ?? 0) <= 0) {
+    ElMessage.warning('请先「发布」工作流，再发布为应用')
+    return
+  }
+  const appApi = (window as never as { electronAPI: { app: any } }).electronAPI.app
+  const existing = await appApi.getByDefinition(definition.value.id)
+  if (existing.success && existing.data) {
+    // 已发布过 → 编辑模式（预填现有配置；保存=幂等更新渠道/名称）
+    appPublishMode.value = 'edit'
+    appForm.name = existing.data.name ?? ''
+    appForm.icon = existing.data.icon ?? ''
+    appForm.channelSession = existing.data.channelSession === 1
+    appForm.channelShare = existing.data.channelShare === 1
+    appForm.channelApi = existing.data.channelApi === 1
+  } else {
+    appPublishMode.value = 'create'
+    appForm.name = definition.value.name ?? ''
+    appForm.icon = ''
+    appForm.channelSession = true
+    appForm.channelShare = false
+    appForm.channelApi = true
+  }
+  showAppPublish.value = true
+}
+
+async function doAppPublish() {
+  if (!definition.value) return
+  appPublishing.value = true
+  try {
+    const appApi = (window as never as { electronAPI: { app: any } }).electronAPI.app
+    const resp = await appApi.createFromWorkflow({
+      definitionId: definition.value.id,
+      name: appForm.name.trim() || undefined,
+      icon: appForm.icon.trim() || undefined,
+      channelSession: appForm.channelSession,
+      channelShare: appForm.channelShare,
+      channelApi: appForm.channelApi,
+    })
+    if (resp.success) {
+      ElMessage.success(appPublishMode.value === 'edit' ? '应用配置已更新' : '应用已发布')
+      showAppPublish.value = false
+      router.push(`/apps/${resp.data?.id}`)
+    } else ElMessage.error(resp.error ?? '发布失败')
+  } finally {
+    appPublishing.value = false
+  }
+}
+
 // ── 画布交互 ──
 function addNode(type: WorkflowNodeType, pos?: { x: number; y: number }) {
   const catalog = NODE_TYPE_CATALOG_MAP[type]
@@ -481,6 +565,8 @@ function removeSelected() {
 .debug-panel { padding: 0 4px; }
 .debug-status { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
 .debug-hint { font-size: 11px; color: var(--el-text-color-placeholder); margin-top: 12px; line-height: 1.5; }
+.channel-options { display: flex; flex-direction: column; gap: 8px; }
+.app-hint { font-size: 12px; color: var(--el-text-color-secondary); margin: 8px 0 0; line-height: 1.5; }
 
 .wf-node-summary { padding: 0 10px 7px; font-size: 11px; color: #6b7280; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

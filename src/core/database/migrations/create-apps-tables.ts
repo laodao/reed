@@ -35,9 +35,6 @@ export async function createAppsTables(ds: DataSource): Promise<void> {
         updated_at      ${dt}
       )
     `)
-    await ds.query(`CREATE INDEX idx_apps_user ON apps (user_id)`)
-    await ds.query(`CREATE UNIQUE INDEX idx_apps_source ON apps (source_kind, source_id)`)
-    await ds.query(`CREATE UNIQUE INDEX idx_apps_share_token ON apps (share_token)`)
     console.log('[create-apps-tables] 表 apps 创建完成')
   }
 
@@ -55,9 +52,15 @@ export async function createAppsTables(ds: DataSource): Promise<void> {
         updated_at        ${dt}
       )
     `)
-    await ds.query(`CREATE INDEX idx_app_sessions_app ON app_sessions (app_id)`)
     console.log('[create-apps-tables] 表 app_sessions 创建完成')
   }
+
+  // 索引幂等补建（IF NOT EXISTS）：表已存在但索引缺失（半失败迁移/历史库）的场景也能补齐；
+  // sqlite 与 postgres 均支持 IF NOT EXISTS（PG 9.5+ / SQLite 3.3+）
+  await ds.query(`CREATE INDEX IF NOT EXISTS idx_apps_user ON apps (user_id)`)
+  await ds.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_apps_source ON apps (source_kind, source_id)`)
+  await ds.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_apps_share_token ON apps (share_token)`)
+  await ds.query(`CREATE INDEX IF NOT EXISTS idx_app_sessions_app ON app_sessions (app_id)`)
 }
 
 async function checkTableExists(ds: DataSource, table: string, isPg: boolean): Promise<boolean> {

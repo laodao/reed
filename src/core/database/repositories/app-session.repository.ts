@@ -75,8 +75,35 @@ export class AppSessionRepository extends BaseRepository<AppSessionEntity, AppSe
     return this.toDtoList(rows)
   }
 
+  /** 按状态列会话（boot 恢复扫描 running 会话用） */
+  async listByStatus(status: string): Promise<AppSessionRecord[]> {
+    const rows = await this.scoped.qb('s')
+      .where('s.status = :status', { status })
+      .getMany()
+    return this.toDtoList(rows)
+  }
+
+  /** 单会话删除（调用方负责级联清理 dialog/messages） */
+  async delete(id: string): Promise<number> {
+    return this.scoped.delete({ id } as FindOptionsWhere<AppSessionEntity>)
+  }
+
   async countByApp(appId: string): Promise<number> {
     return this.scoped.count({ appId } as FindOptionsWhere<AppSessionEntity>)
+  }
+
+  /** 批量会话计数（listApps 聚合用，一条 GROUP BY 替代 N 次 countByApp） */
+  async countByAppIds(appIds: string[]): Promise<Map<string, number>> {
+    const map = new Map<string, number>()
+    if (appIds.length === 0) return map
+    const rows = await this.scoped.qb('s')
+      .select('s.app_id', 'appId')
+      .addSelect('COUNT(*)', 'cnt')
+      .where('s.app_id IN (:...appIds)', { appIds })
+      .groupBy('s.app_id')
+      .getRawMany<{ appId: string; cnt: string | number }>()
+    for (const r of rows) map.set(r.appId, Number(r.cnt))
+    return map
   }
 
   async create(data: CreateAppSessionInput): Promise<AppSessionRecord> {

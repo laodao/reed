@@ -12,7 +12,7 @@
  */
 
 import type { AppSessionRecord } from '@shared/types/app.types'
-import { APP_SESSION_STATUSES, WORKFLOW_SESSION_CARDS, type SessionCardMeta } from '@shared/types/app.types'
+import { APP_SESSION_DIALOG_ROLE_ID, APP_SESSION_STATUSES, WORKFLOW_SESSION_CARDS, type SessionCardMeta } from '@shared/types/app.types'
 import { WORKFLOW_RUN_EVENT_CHANNEL, WORKFLOW_RUN_EVENT_TYPES, WORKFLOW_RUN_STATUSES, WORKFLOW_RUN_TERMINAL_STATUSES, WORKFLOW_TRIGGER_TYPES, type WorkflowRunEvent } from '@shared/types/workflow.types'
 import { createLogger } from '@core/utils/logger'
 
@@ -40,14 +40,20 @@ type EngineLike = {
 export interface AppSessionDeps {
   appSessions: {
     findById(id: string): Promise<AppSessionRecord | null>
-    create(i: { id?: string; appId: string; title: string; status?: string }): Promise<AppSessionRecord>
+    create(i: { id?: string; appId: string; title: string; status?: string; lastStartInputs?: Record<string, unknown> | null }): Promise<AppSessionRecord>
     update(id: string, patch: { title?: string; status?: string; lastRunId?: string | null; lastStartInputs?: Record<string, unknown> | null }): Promise<AppSessionRecord | null>
+    listByApp(appId: string): Promise<AppSessionRecord[]>
+    listByStatus(status: string): Promise<AppSessionRecord[]>
+    deleteByApp(appId: string): Promise<number>
+    delete(id: string): Promise<number>
   }
   messages: {
     create(m: { dialogId: string; role: string; content: string; metadata?: Record<string, unknown> }): Promise<unknown>
+    getByDialogId(dialogId: string): Promise<unknown[]>
   }
   dialogs: {
     create(d: { title: string; modelId: string | null; roleId?: string | null }): Promise<{ id: string }>
+    delete(id: string): Promise<void>
   }
   runService: RunServiceLike
   engine: EngineLike
@@ -104,8 +110,8 @@ export class AppSessionService {
 
   // ==================== 会话 CRUD ====================
 
-  /** 创建会话 + 写首条 start-form 卡片（form=发布图 start.inputs） */
-  async createSession(appId: string, _startInputs?: Record<string, unknown>): Promise<AppSessionRecord> {
+  /** 创建会话 + 写首条 start-form 卡片（form=发布图 start.inputs）；startInputs 落库供首轮沿用 */
+  async createSession(appId: string, startInputs?: Record<string, unknown>): Promise<AppSessionRecord> {
     const app = await this.apps.findById(appId)
     if (!app || app.enabled !== 1) throw new Error('应用不可用或已停用')
     if (app.channelSession !== 1) throw new Error('应用未开启会话渠道')
@@ -114,19 +120,39 @@ export class AppSessionService {
     const form = Array.isArray(startNode?.config?.inputs) ? startNode.config.inputs : []
 
     const title = `会话 ${new Date().toLocaleDateString('zh-CN')}`
-    // messages.dialog_id 有外键指向 dialogs——先落 dialog（话题）行，其 id 复用为会话 id（双表同主键）
-    const dialog = await this.deps.dialogs.create({ title, modelId: '' })
-    const session = await this.deps.appSessions.create({ id: dialog.id, appId, title })
-    await this.writeCard(session.id, {
-      card: WORKFLOW_SESSION_CARDS.startForm,
-      appId,
-      form,
+    // messages.dialog_id 有外键指向 dialogs——先落 dialog（话题）行，其 id 复用为会话 id（双表同主键）。
+    // roleId 用专属标记隔离：对话页（默认助手/角色列表）按 roleId 过滤，应用会话不混入对话列表。
+    const dialog = await this.deps.dialogs.create({
+      title,
+      modelId: '',
+      roleId: APP_SESSION_DIALOG_ROLE_ID,
     })
-    return session
+    try {
+      const session = await this.deps.appSessions.create({
+        id: dialog.id,
+        appId,
+        title,
+        lastStartInputs: startInputs ?? null,
+      })
+      await this.writeCard(session.id, {
+        card: WORKFLOW_SESSION_CARDS.startForm,
+        appId,
+        form,
+      })
+      return session
+    } catch (e) {
+      // app_session 创建失败（如并发唯一冲突）→ 清理孤儿 dialog 行，避免污染对话表；清理失败不掩盖原错误
+      try {
+        await this.deps.dialogs.delete(dialog.id)
+      } catch (cleanupErr) {
+        logger.error(`[AppSessionService] 孤儿 dialog 清理失败（dialog=${dialog.id}）`, cleanupErr)
+      }
+      throw e
+    }
   }
 
   async listSessions(appId: string): Promise<AppSessionRecord[]> {
-    return (this.deps.appSessions as unknown as { listByApp(appId: string): Promise<AppSessionRecord[]> }).listByApp(appId)
+    return this.deps.appSessions.listByApp(appId)
   }
 
   async getSession(sessionId: string): Promise<AppSessionRecord | null> {
@@ -137,8 +163,69 @@ export class AppSessionService {
     return this.deps.appSessions.update(sessionId, { title })
   }
 
+  /** 删除会话：级联删会话消息 + dialog 行（同主键） + 会话行；运行中的会话先拒绝删除 */
+  async deleteSession(sessionId: string): Promise<void> {
+    const session = await this.deps.appSessions.findById(sessionId)
+    if (!session) return
+    if (session.status === APP_SESSION_STATUSES.running) {
+      throw new Error('会话正在运行中，请等待结束或取消后删除')
+    }
+    // 会话消息经 dialog 级联删除（dialog 行与 app_session 同主键）
+    await this.deps.dialogs.delete(sessionId)
+    await this.deps.appSessions.delete(sessionId)
+    logger.info(`[AppSessionService] 会话删除：${sessionId}`)
+  }
+
   async getSessionMessages(sessionId: string): Promise<unknown[]> {
-    return (this.deps.messages as unknown as { getByDialogId(dialogId: string): Promise<unknown[]> }).getByDialogId(sessionId)
+    return this.deps.messages.getByDialogId(sessionId)
+  }
+
+  /**
+   * boot 恢复（workflow-boot 在引擎 recoverOnBoot 之后调用）：
+   * 重建 runId→session 内存映射（进程重启后 Map 丢失）并对 running 会话收口——
+   * - lastRunId 已终态（引擎 boot 已把在途 run 标 interrupted/timed_out，此处大概率命中）：
+   *   succeeded → 补写结果卡片并归 idle；其余 → 写错误卡并置 failed
+   * - 仍非终态（如挂起审核等待续跑）：重新登记 runToSession，事件桥继续接管
+   * - 无 lastRunId 的 running 会话（异常态）：直接归 idle
+   */
+  async recoverOnBoot(): Promise<{ sessions: number; recovered: number; finalized: number }> {
+    const sessions = await this.deps.appSessions.listByStatus(APP_SESSION_STATUSES.running)
+    let recovered = 0
+    let finalized = 0
+    for (const s of sessions) {
+      try {
+        const runId = s.lastRunId
+        if (!runId) {
+          await this.deps.appSessions.update(s.id, { status: APP_SESSION_STATUSES.idle })
+          continue
+        }
+        const detail = await this.deps.runService.getRunDetail?.(runId)
+        const status = detail?.run?.status
+        if (status && WORKFLOW_RUN_TERMINAL_STATUSES.has(status)) {
+          if (status === WORKFLOW_RUN_STATUSES.succeeded) {
+            await this.finishSucceeded(s.id, runId)
+          } else {
+            await this.writeCard(s.id, {
+              card: WORKFLOW_SESSION_CARDS.message,
+              runId,
+              content: `运行${status}：${detail?.run?.error ?? '已结束'}`,
+            })
+            await this.deps.appSessions.update(s.id, { status: APP_SESSION_STATUSES.failed })
+          }
+          finalized++
+        } else {
+          this.runToSession.set(runId, s.id)
+          recovered++
+        }
+      } catch (e) {
+        // 单个会话恢复失败不阻断其余（boot 纪律：故障不致命）
+        logger.error(`[AppSessionService] 会话恢复失败（session=${s.id}）`, e)
+      }
+    }
+    if (sessions.length > 0) {
+      logger.info(`[AppSessionService] boot 恢复：会话 ${sessions.length}（终态补写 ${finalized} / 映射重建 ${recovered}）`)
+    }
+    return { sessions: sessions.length, recovered, finalized }
   }
 
   // ==================== 启动/多轮 ====================
@@ -170,8 +257,25 @@ export class AppSessionService {
       lastRunId: run.id,
       lastStartInputs: effectiveInputs,
     })
+    // 回显用户提交的参数（role=user 消息，前端渲染为"我"侧气泡；P2 角色区分）
+    await this.deps.messages.create({
+      dialogId: sessionId,
+      role: 'user',
+      content: this.formatInputsSummary(effectiveInputs),
+      metadata: null,
+    })
     await this.writeCard(sessionId, { card: WORKFLOW_SESSION_CARDS.runStatus, runId: run.id, status: run.status })
     return { runId: run.id, status: run.status }
+  }
+
+  /** 提交参数摘要（user 消息回显用；截断防超长） */
+  private formatInputsSummary(inputs: Record<string, unknown>): string {
+    try {
+      const text = JSON.stringify(inputs)
+      return text.length > 300 ? text.slice(0, 300) + '…' : text
+    } catch {
+      return '（参数无法序列化）'
+    }
   }
 
   /** 审核恢复（runId 从会话 last_run_id 取；成功后由事件桥继续） */

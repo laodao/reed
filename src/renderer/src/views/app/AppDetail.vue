@@ -33,7 +33,14 @@
           <el-switch :model-value="app?.channelShare === 1" @change="v => toggleChannel('share', v)" />
         </div>
         <div class="channel-row">
-          <div class="c-info"><div class="c-name">🔌 API</div><div class="c-desc">外部系统调用：POST /api/workflow/invoke/:id + SSE 事件流</div></div>
+          <div class="c-info">
+            <div class="c-name">🔌 API</div>
+            <div class="c-desc">外部系统调用（需登录鉴权）</div>
+            <div v-if="app?.sourceId" class="api-endpoint">
+              <code>POST /api/workflow/invoke/{{ app.sourceId.slice(-12) }}</code>
+              <el-button text size="small" @click="copyApiUrl">复制</el-button>
+            </div>
+          </div>
           <el-switch :model-value="app?.channelApi === 1" @change="v => toggleChannel('api', v)" />
         </div>
         <div class="channel-row">
@@ -50,9 +57,11 @@
             <template #default="{ row }"><el-tag :type="row.status === 'running' ? 'warning' : row.status === 'failed' ? 'danger' : 'info'" size="small">{{ row.status }}</el-tag></template>
           </el-table-column>
           <el-table-column prop="lastRunId" label="最近运行" min-width="200" show-overflow-tooltip />
-          <el-table-column label="操作" width="150">
+          <el-table-column label="操作" width="220">
             <template #default="{ row }">
               <el-button text type="primary" size="small" @click="router.push(`/apps/${appId}/session/${row.id}`)">打开</el-button>
+              <el-button text size="small" @click="renameSession(row)">重命名</el-button>
+              <el-button text type="danger" size="small" @click="deleteSession(row)">删除</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -67,22 +76,24 @@
  */
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
+import type { AppRecord, AppSessionRecord } from '@shared/types/app.types'
+import { electronApi } from '@/types/electron-api'
 
 const route = useRoute()
 const router = useRouter()
 const appId = computed(() => String(route.params.id))
-const api = () => (window as never as { electronAPI: { app: any; appSession: any } }).electronAPI
+const api = electronApi()
 
-const app = ref<any>(null)
+const app = ref<AppRecord | null>(null)
 const activeTab = ref('channels')
-const sessions = ref<any[]>([])
+const sessions = ref<AppSessionRecord[]>([])
 const sessionLoading = ref(false)
 
 async function load(): Promise<void> {
-  const resp = await api().app.get(appId.value)
-  if (resp.success) app.value = resp.data
+  const resp = await api.app.get(appId.value)
+  if (resp.success) app.value = resp.data ?? null
   else ElMessage.error(resp.error ?? '加载失败')
   await loadSessions()
 }
@@ -90,46 +101,83 @@ async function load(): Promise<void> {
 async function loadSessions(): Promise<void> {
   sessionLoading.value = true
   try {
-    const resp = await api().appSession.list(appId.value)
+    const resp = await api.appSession.list(appId.value)
     if (resp.success) sessions.value = resp.data ?? []
   } finally { sessionLoading.value = false }
 }
 
 async function toggleChannel(kind: 'session' | 'share' | 'api', val: boolean): Promise<void> {
-  const resp = await api().app.updateChannels({
+  const resp = await api.app.updateChannels({
     id: appId.value,
     channelSession: kind === 'session' ? val : undefined,
     channelShare: kind === 'share' ? val : undefined,
     channelApi: kind === 'api' ? val : undefined,
   })
-  if (resp.success) app.value = resp.data
+  if (resp.success) app.value = resp.data ?? app.value
   else ElMessage.error(resp.error ?? '更新失败')
 }
 
 async function enableShare(): Promise<void> {
-  const resp = await api().app.enableShare(appId.value)
-  if (resp.success) { app.value = resp.data; ElMessage.success('分享链接已生成') }
+  const resp = await api.app.enableShare(appId.value)
+  if (resp.success) { app.value = resp.data ?? app.value; ElMessage.success('分享链接已生成') }
   else ElMessage.error(resp.error ?? '生成失败')
 }
 async function disableShare(): Promise<void> {
-  const resp = await api().app.disableShare(appId.value)
-  if (resp.success) { app.value = resp.data; ElMessage.success('已停用分享') }
+  const resp = await api.app.disableShare(appId.value)
+  if (resp.success) { app.value = resp.data ?? app.value; ElMessage.success('已停用分享') }
   else ElMessage.error(resp.error ?? '操作失败')
 }
 async function copyShareLink(): Promise<void> {
   if (!app.value?.shareToken) return
   const link = `${window.location.origin}/#/app-share/${app.value.shareToken}`
   await navigator.clipboard.writeText(link)
-  ElMessage.success('链接已复制')
+  ElMessage.success('链接已复制（面向 Web 部署；本机预览请用详情页）')
+}
+
+/** 复制 API invoke URL（P1：API 渠道补可复制入口） */
+async function copyApiUrl(): Promise<void> {
+  if (!app.value?.sourceId) return
+  const url = `${window.location.origin}/api/workflow/invoke/${app.value.sourceId}`
+  await navigator.clipboard.writeText(`POST ${url}`)
+  ElMessage.success('API 调用地址已复制（需登录鉴权）')
 }
 
 async function newSession(): Promise<void> {
-  const resp = await api().appSession.create(appId.value)
+  const resp = await api.appSession.create({ appId: appId.value })
   if (resp.success) {
     ElMessage.success('会话已创建')
     await loadSessions()
-    router.push(`/apps/${appId.value}/session/${resp.data.id}`)
+    router.push(`/apps/${appId.value}/session/${resp.data?.id}`)
   } else ElMessage.error(resp.error ?? '创建失败')
+}
+
+/** 重命名会话（prompt 输入；空输入/取消不动作） */
+async function renameSession(row: AppSessionRecord): Promise<void> {
+  let title: string
+  try {
+    const r = await ElMessageBox.prompt('输入新的会话标题', '重命名会话', {
+      inputValue: row.title,
+      inputValidator: v => (v?.trim() ? true : '标题不能为空'),
+    })
+    title = r.value.trim()
+  } catch {
+    return // 取消
+  }
+  const resp = await api.appSession.rename(row.id, title)
+  if (resp.success) { ElMessage.success('已重命名'); await loadSessions() }
+  else ElMessage.error(resp.error ?? '重命名失败')
+}
+
+/** 删除会话（级联消息；运行中由后端拒绝） */
+async function deleteSession(row: AppSessionRecord): Promise<void> {
+  try {
+    await ElMessageBox.confirm(`删除会话「${row.title}」？其消息记录将一并删除，不可恢复。`, '删除会话', { type: 'warning' })
+  } catch {
+    return // 取消
+  }
+  const resp = await api.appSession.delete(row.id)
+  if (resp.success) { ElMessage.success('已删除'); await loadSessions() }
+  else ElMessage.error(resp.error ?? '删除失败')
 }
 
 onMounted(load)
@@ -148,4 +196,6 @@ onMounted(load)
 .c-name { font-weight: 600; }
 .c-desc { color: var(--el-text-color-secondary); font-size: 12px; }
 .link-pill { font-family: monospace; font-size: 12px; background: var(--el-fill-color); padding: 4px 8px; border-radius: 4px; }
+.api-endpoint { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.api-endpoint code { font-size: 12px; background: var(--el-fill-color); padding: 3px 6px; border-radius: 4px; }
 </style>

@@ -26,21 +26,18 @@ export class AppDefinitionService {
     private readonly messages: { deleteByDialogId(dialogId: string): Promise<number> }
   ) {}
 
-  /** 分页列表（聚合 sessionCount；runCount 经 source_id 由前端二次查询或 V2 完善） */
+  /** 分页列表（聚合 sessionCount：一条 GROUP BY 替代逐条计数；runCount 经 source_id 由前端二次查询或 V2 完善） */
   async listApps(params: { keyword?: string; page: number; pageSize: number }): Promise<{
     items: Array<AppRecord & { sessionCount: number }>
     total: number
   }> {
     const { items, total } = await this.apps.listApp(params)
-    const withCount = await Promise.all(items.map(async app => {
-      try {
-        return { ...app, sessionCount: await this.sessions.countByApp(app.id) }
-      } catch (e) {
-        // 单独应用的会话计数失败不整查崩溃 → 降级 0 并留痕
-        logger.warn(`[App] 会话计数失败（app=${app.id}），按 0 展示`, e)
-        return { ...app, sessionCount: 0 }
-      }
-    }))
+    // 聚合失败整体降级为 0（单条 SQL，失败概率低；降级不整查崩溃并留痕）
+    const counts = await this.sessions.countByAppIds(items.map(a => a.id)).catch(e => {
+      logger.warn('[App] 会话计数聚合失败（按 0 展示）', e)
+      return new Map<string, number>()
+    })
+    const withCount = items.map(app => ({ ...app, sessionCount: counts.get(app.id) ?? 0 }))
     return { items: withCount, total }
   }
 
@@ -54,20 +51,56 @@ export class AppDefinitionService {
   }
 
   /**
-   * 从已发布工作流创建应用。
+   * 从已发布工作流创建应用（工作流编辑器"发布为应用"入口）。
    * - 定义不存在 / 未发布 → 抛错
-   * - 同定义已存在 → 幂等返回既有（一个工作流只允许一个应用）
+   * - 同定义已存在 → 幂等返回既有（一个工作流只允许一个应用），
+   *   工作流发布新版本后跟随更新 sourceVersion；再次发布应用时按配置更新渠道
+   * - 发布配置：名称/图标/渠道开关（会话/分享/API）——发布即配置，无需事后进详情改
    */
   async createFromWorkflow(
     definitionId: string,
-    opts?: { name?: string; icon?: string }
+    opts?: {
+      name?: string
+      icon?: string
+      channelSession?: boolean
+      channelShare?: boolean
+      channelApi?: boolean
+    }
   ): Promise<AppRecord> {
     const def = await this.definitions.getById(definitionId)
     if (!def) throw new Error('工作流不存在')
     if (def.publishedVersion <= 0) throw new Error('只有已发布的工作流才能创建应用')
 
+    const channelPatch = {
+      ...(opts?.channelSession !== undefined ? { channelSession: opts.channelSession } : {}),
+      ...(opts?.channelShare !== undefined ? { channelShare: opts.channelShare } : {}),
+      ...(opts?.channelApi !== undefined ? { channelApi: opts.channelApi } : {}),
+    }
+    const hasChannelConfig = Object.keys(channelPatch).length > 0
+
     const existing = await this.apps.findBySource(APPLICATION_SOURCE_KINDS.workflow, definitionId)
-    if (existing) return existing
+    if (existing) {
+      // 版本演进：工作流发布了新版本 → 应用 sourceVersion 跟随更新（应用本体不变）
+      let current = existing
+      if (current.sourceVersion !== def.publishedVersion) {
+        logger.info(`[App] 应用跟随工作流版本：${current.name} v${current.sourceVersion ?? 0} → v${def.publishedVersion}`)
+        const updated = await this.apps.update(current.id, { sourceVersion: def.publishedVersion })
+        if (updated) current = updated
+      }
+      // 再次发布应用：名称/图标/渠道按本次配置更新（发布配置即生效）
+      const patch: Record<string, unknown> = {}
+      if (opts?.name?.trim()) patch.name = opts.name.trim()
+      if (opts?.icon !== undefined) patch.icon = opts.icon
+      if (hasChannelConfig) {
+        for (const [k, v] of Object.entries(channelPatch)) patch[k] = v ? 1 : 0
+      }
+      if (Object.keys(patch).length > 0) {
+        logger.info(`[App] 应用发布配置更新：${current.id}`, patch)
+        const updated = await this.apps.update(current.id, patch as UpdateAppInput)
+        if (updated) return updated
+      }
+      return current
+    }
 
     try {
       const app = await this.apps.create({
@@ -76,6 +109,9 @@ export class AppDefinitionService {
         sourceKind: APPLICATION_SOURCE_KINDS.workflow,
         sourceId: definitionId,
         sourceVersion: def.publishedVersion,
+        channelSession: hasChannelConfig ? (channelPatch.channelSession ? 1 : 0) : undefined,
+        channelShare: hasChannelConfig ? (channelPatch.channelShare ? 1 : 0) : undefined,
+        channelApi: hasChannelConfig ? (channelPatch.channelApi ? 1 : 0) : undefined,
       })
       logger.info(`[App] 应用创建：${app.name}（source=${definitionId} v${def.publishedVersion}）`)
       return app

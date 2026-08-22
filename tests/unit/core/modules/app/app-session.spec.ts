@@ -5,13 +5,16 @@
 import { describe, it, expect, vi } from 'vitest'
 
 import { AppSessionService } from '@core/modules/app/app-session.service'
-import { APP_SESSION_STATUSES, WORKFLOW_SESSION_CARDS } from '@shared/types/app.types'
+import { APP_SESSION_DIALOG_ROLE_ID, APP_SESSION_STATUSES, WORKFLOW_SESSION_CARDS } from '@shared/types/app.types'
 
 // ---- 内存假仓库 ----
 class MemSessions {
   rows: Map<string, any> = new Map()
   seq = 0
+  /** 可编程失败开关（孤儿清理用例：session 创建抛错） */
+  failCreate = false
   async create(i: any) {
+    if (this.failCreate) throw new Error('create failed')
     const id = i.id ?? `s${++this.seq}`
     const row = { id, userId: 'u1', status: 'idle', lastStartInputs: null, lastRunId: null, createdAt: new Date(), updatedAt: new Date(), ...i }
     this.rows.set(id, row)
@@ -25,10 +28,14 @@ class MemSessions {
     return { ...row }
   }
   async listByApp(appId: string) { return [...this.rows.values()].filter(r => r.appId === appId) }
+  async listByStatus(status: string) { return [...this.rows.values()].filter(r => r.status === status) }
+  async delete(id: string) { return this.rows.delete(id) ? 1 : 0 }
 }
 class MemDialogs {
   rows: any[] = []
+  deleted: string[] = []
   async create(d: any) { const row = { id: `dlg${this.rows.length + 1}`, ...d }; this.rows.push(row); return row }
+  async delete(id: string) { this.deleted.push(id); this.rows = this.rows.filter(r => r.id !== id) }
 }
 class MemMessages {
   rows: any[] = []
@@ -66,7 +73,7 @@ function makeService() {
     defs as any,
     tapSource as any
   )
-  return { sessions, messages, apps, svc }
+  return { sessions, messages, apps, dialogs, svc }
 }
 function seedApp(apps: MemApps, over: Record<string, unknown> = {}) {
   apps.rows.set('a1', { id: 'a1', sourceId: 'd1', channelSession: 1, enabled: 1, ...over })
@@ -111,6 +118,115 @@ describe('AppSessionService：创建会话', () => {
     const msgs = await svc.getSessionMessages(s.id)
     expect(msgs).toHaveLength(1)
     expect(msgs[0].dialogId).toBe(s.id)
+  })
+
+  it('dialog 行带专属 roleId 标记（应用会话不混入对话页列表）', async () => {
+    const { apps, dialogs, svc } = makeService()
+    seedApp(apps)
+    const s = await svc.createSession('a1')
+    const dlg = dialogs.rows.find(d => d.id === s.id)
+    expect(dlg?.roleId).toBe(APP_SESSION_DIALOG_ROLE_ID)
+  })
+
+  it('createSession 带 startInputs → 落 lastStartInputs（创建后沿用首轮参数）', async () => {
+    const { apps, sessions, svc } = makeService()
+    seedApp(apps)
+    const s = await svc.createSession('a1', { topic: '预填' })
+    expect(sessions.rows.get(s.id).lastStartInputs).toEqual({ topic: '预填' })
+  })
+
+  it('session 创建失败 → 清理孤儿 dialog（不污染对话表）', async () => {
+    const { apps, dialogs, sessions, svc } = makeService()
+    seedApp(apps)
+    sessions.failCreate = true
+    await expect(svc.createSession('a1')).rejects.toThrow('create failed')
+    expect(dialogs.deleted).toHaveLength(1)      // 孤儿 dialog 已清理
+    expect(dialogs.rows).toHaveLength(0)
+  })
+})
+
+describe('AppSessionService：删除会话', () => {
+  it('deleteSession 级联删 dialog 行 + 会话行', async () => {
+    const { apps, sessions, dialogs, svc } = makeService()
+    seedApp(apps)
+    const s = await svc.createSession('a1')
+    await svc.deleteSession(s.id)
+    expect(dialogs.deleted).toContain(s.id)
+    expect(sessions.rows.has(s.id)).toBe(false)
+  })
+
+  it('运行中会话拒绝删除', async () => {
+    const { apps, sessions, svc } = makeService()
+    const s = await bootRun(apps, svc)
+    sessions.rows.get(s.id).status = 'running'
+    await expect(svc.deleteSession(s.id)).rejects.toThrow('运行中')
+  })
+
+  it('不存在的会话删除是 no-op', async () => {
+    const { svc } = makeService()
+    await expect(svc.deleteSession('ghost')).resolves.toBeUndefined()
+  })
+})
+
+describe('AppSessionService：boot 恢复（recoverOnBoot）', () => {
+  async function seedRunningSession(apps: MemApps, svc: AppSessionService, lastRunId: string) {
+    seedApp(apps)
+    startRunImpl = async () => ({ id: lastRunId, status: 'running' })
+    getRunDetailImpl = async () => ({ run: { status: 'running' }, nodeRuns: [] })
+    const s = await svc.createSession('a1')
+    await svc.startRun(s.id, { q: 'hi' })
+    return s
+  }
+
+  it('lastRunId 已终态(succeeded) → 补写结果卡 + 会话归 idle', async () => {
+    const { apps, svc } = makeService()
+    const s = await seedRunningSession(apps, svc, 'run_recover_1')
+    getRunDetailImpl = async () => ({ run: { status: 'succeeded' }, nodeRuns: [{ nodeType: 'message', output: { content: '恢复完成' } }] })
+    const r = await svc.recoverOnBoot()
+    expect(r.finalized).toBe(1)
+    expect(r.recovered).toBe(0)
+    const cards = await svc.getSessionMessages(s.id)
+    const msg = cards.find(c => c.metadata?.sessionCard?.card === WORKFLOW_SESSION_CARDS.message)
+    expect(msg?.metadata?.sessionCard?.content).toBe('恢复完成')
+    expect((await svc.getSession(s.id))!.status).toBe(APP_SESSION_STATUSES.idle)
+  })
+
+  it('lastRunId 已终态(failed) → 写错误卡 + 会话 failed', async () => {
+    const { apps, svc } = makeService()
+    const s = await seedRunningSession(apps, svc, 'run_recover_2')
+    getRunDetailImpl = async () => ({ run: { status: 'failed', error: 'boom' }, nodeRuns: [] })
+    const r = await svc.recoverOnBoot()
+    expect(r.finalized).toBe(1)
+    expect((await svc.getSession(s.id))!.status).toBe(APP_SESSION_STATUSES.failed)
+  })
+
+  it('非终态（挂起审核）→ 重建 runToSession 映射，事件桥继续接管', async () => {
+    const { apps, svc } = makeService()
+    const s = await seedRunningSession(apps, svc, 'run_recover_3')
+    getRunDetailImpl = async () => ({ run: { status: 'waiting_review' }, nodeRuns: [] })
+    const r = await svc.recoverOnBoot()
+    expect(r.recovered).toBe(1)
+    // 映射重建后事件桥能命中：终态 succeeded → 写卡（直接走 handleRunEvent 公共面）
+    getRunDetailImpl = async () => ({ run: { status: 'succeeded' }, nodeRuns: [{ nodeType: 'message', output: { content: 'ok' } }] })
+    svc.handleRunEvent({ type: 'run-status', runId: 'run_recover_3', status: 'succeeded' } as never)
+    let cards = await svc.getSessionMessages(s.id)
+    for (let i = 0; i < 20 && !cards.some(c => c.metadata?.sessionCard?.card === WORKFLOW_SESSION_CARDS.message); i++) {
+      await new Promise(r => setTimeout(r, 10))
+      cards = await svc.getSessionMessages(s.id)
+    }
+    expect(cards.some(c => c.metadata?.sessionCard?.card === WORKFLOW_SESSION_CARDS.message)).toBe(true)
+  })
+
+  it('无 lastRunId 的 running 会话 → 直接归 idle', async () => {
+    const { apps, sessions, svc } = makeService()
+    seedApp(apps)
+    const s = await svc.createSession('a1')
+    sessions.rows.get(s.id).status = 'running' // 异常态：running 但无 lastRunId
+    const r = await svc.recoverOnBoot()
+    expect(r.sessions).toBe(1)
+    expect(r.finalized).toBe(0)
+    expect(r.recovered).toBe(0)
+    expect((await svc.getSession(s.id))!.status).toBe(APP_SESSION_STATUSES.idle)
   })
 })
 

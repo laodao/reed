@@ -25,8 +25,11 @@ export function registerAppHandlers(): void {
   ipcBridge.handle('app:get-by-definition', (_e, p: { definitionId: string }) =>
     wrap(() => subsystem().appDefinitionService.getAppByDefinitionId(p.definitionId))
   )
-  ipcBridge.handle('app:create-from-workflow', (_e, p: { definitionId: string; name?: string; icon?: string }) =>
-    wrap(() => subsystem().appDefinitionService.createFromWorkflow(p.definitionId, { name: p.name, icon: p.icon }))
+  ipcBridge.handle('app:create-from-workflow', (_e, p: { definitionId: string; name?: string; icon?: string; channelSession?: boolean; channelShare?: boolean; channelApi?: boolean }) =>
+    wrap(() => subsystem().appDefinitionService.createFromWorkflow(p.definitionId, {
+      name: p.name, icon: p.icon,
+      channelSession: p.channelSession, channelShare: p.channelShare, channelApi: p.channelApi,
+    }))
   )
   ipcBridge.handle('app:update-channels', (_e, p: { id: string; channelSession?: boolean; channelShare?: boolean; channelApi?: boolean }) =>
     wrap(() => subsystem().appDefinitionService.updateChannels(p.id, { channelSession: p.channelSession, channelShare: p.channelShare, channelApi: p.channelApi }))
@@ -65,6 +68,9 @@ export function registerAppHandlers(): void {
   )
   ipcBridge.handle('app-session:review', (_e, p: { sessionId: string; nodeId: string; decision: 'approve' | 'approve_with_changes' | 'reject'; editedValues?: Record<string, unknown>; choice?: string }) =>
     wrap(() => subsystem().appSessionService.reviewDecide(p.sessionId, p.nodeId, p))
+  )
+  ipcBridge.handle('app-session:delete', (_e, p: { sessionId: string }) =>
+    wrap(async () => { await subsystem().appSessionService.deleteSession(p.sessionId); return { deleted: true } })
   )
 }
 

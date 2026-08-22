@@ -149,6 +149,35 @@
     </div>
     <div v-if="oasParamHint" class="oas-hint">{{ oasParamHint }}</div>
   </div>
+
+  <!-- P0 工具：工具下拉（预设 + 自定义，选中后按 schema 预生成参数） -->
+  <div v-else-if="field.type === 'tool-select'" class="field-with-picker">
+    <el-select :model-value="String(modelValue ?? '')" placeholder="选择工具" clearable filterable
+      style="width: 100%" @update:model-value="onToolSelected">
+      <el-option-group v-for="g in toolGroups" :key="g" :label="g">
+        <el-option v-for="t in toolList.filter(x => x.group === g)" :key="t.id" :label="t.label" :value="t.id" />
+      </el-option-group>
+    </el-select>
+    <div v-if="selectedTool?.description" class="oas-hint">{{ selectedTool.description }}</div>
+  </div>
+
+  <!-- P0 工具：凭据下拉 -->
+  <div v-else-if="field.type === 'tool-credential-select'" class="field-with-picker">
+    <el-select :model-value="String(modelValue ?? '')" placeholder="选择凭据（可选）" clearable filterable
+      style="width: 100%" @update:model-value="v => set(v)">
+      <el-option v-for="c in credentialList" :key="c.id" :label="c.name" :value="c.id" />
+    </el-select>
+    <div v-if="!credentialList.length" class="oas-hint">暂无凭据，请到「设置 → 工具」添加（API Key 加密存储）</div>
+  </div>
+
+  <!-- P0 工具：参数编辑（按选中工具 schema 生成行，值支持 {{模板}}） -->
+  <div v-else-if="field.type === 'tool-params'" class="kv-list">
+    <div v-for="(item, i) in toolParamRows" :key="i" class="kv-row">
+      <span class="param-key">{{ item.label }}<span v-if="item.required" class="req">*</span></span>
+      <el-input v-model="item.value" :placeholder="typeHint(item.type)" size="small" @change="syncToolParams" />
+    </div>
+    <div v-if="!toolParamRows.length" class="oas-hint">选择工具后按参数 schema 生成；值支持 {{模板}} 变量引用</div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -159,7 +188,7 @@ import type { CatalogFormField } from '@shared/types/workflow-node-forms'
 import { listOperations, listParameters } from '@shared/utils/openapi-parser'
 import type { WorkflowConditionBranch, WorkflowStartInput } from '@shared/types/workflow.types'
 import VariablePicker from './VariablePicker.vue'
-import { computed, inject, ref, unref, type ComponentPublicInstance, type Ref } from 'vue'
+import { computed, inject, onMounted, ref, unref, type ComponentPublicInstance, type Ref } from 'vue'
 
 // 变量选择器数据（NodeConfigPanel provide；缺省退化为空）
 const pickerCtx = inject<{ nodes: Ref<any[]>; excludeNodeId: unknown }>('wfPickerContext', { nodes: ref([]), excludeNodeId: '' })
@@ -298,6 +327,62 @@ function generateOasParams() {
     + (missing.length ? `；必填未填：${missing.join('、')}` : '')
   emit('change')
 }
+
+// ── P0 工具（tool-call 节点：工具下拉 / 凭据下拉 / 参数按 schema 生成） ──
+const toolList = ref<Array<Record<string, unknown> & { group: string }>>([])
+const credentialList = ref<any[]>([])
+const toolGroups = computed(() => [...new Set(toolList.value.map(t => t.group))])
+const selectedTool = computed(() => toolList.value.find(t => t.id === String(props.model['toolId'] ?? '')))
+
+async function loadTools() {
+  try {
+    const api = (window as never as { electronAPI: { tools: any } }).electronAPI.tools
+    const [presets, customs, creds] = await Promise.all([
+      api.presets(), api.listCustom(), api.listCredentials(),
+    ])
+    toolList.value = [
+      ...(customs.data ?? []).map((t: any) => ({ ...t, group: '自定义工具', label: `[自定义] ${t.name}` })),
+      ...(presets.data ?? []).map((t: any) => ({ ...t, group: '预设工具', label: `[预设] ${t.name}` })),
+    ]
+    credentialList.value = creds.data ?? []
+  } catch {
+    // 工具列表拉取失败静默（节点配置仍可手填）
+  }
+}
+
+function onToolSelected(toolId: unknown) {
+  set(toolId)
+  const t = toolList.value.find(x => x.id === String(toolId ?? ''))
+  const schema = t?.paramsSchema ?? []
+  if (schema.length && !(props.model['params'] as any[] ?? []).length) {
+    props.model['params'] = schema.map((f: any) => ({ key: f.key, value: '' }))
+    emit('change')
+  }
+}
+
+/** 参数行：schema 与已填值合并（label/required 来自工具定义） */
+const toolParamRows = computed<Array<{ key: string; label: string; required: boolean; type: string; value: string }>>(() => {
+  const schema = selectedTool.value?.paramsSchema ?? []
+  const filled = new Map((props.model['params'] as Array<{ key: string; value: string }> ?? []).map(p => [p.key, p.value]))
+  return schema.map((f: any) => ({
+    key: f.key,
+    label: f.label || f.key,
+    required: !!f.required,
+    type: f.type ?? 'string',
+    value: filled.get(f.key) ?? '',
+  }))
+})
+
+function syncToolParams() {
+  props.model['params'] = toolParamRows.value.map(r => ({ key: r.key, value: r.value }))
+  emit('change')
+}
+
+function typeHint(t: string): string {
+  return { string: '文本，支持 {{模板}}', number: '数字', boolean: 'true/false', json: 'JSON', select: '下拉选项值' }[t] ?? '值，支持 {{模板}}'
+}
+
+onMounted(loadTools)
 </script>
 
 <style scoped>
@@ -316,4 +401,6 @@ function generateOasParams() {
 .cond-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
 .oas-error { color: var(--el-color-danger); font-size: 12px; margin-top: 4px; }
 .oas-hint { color: var(--el-text-color-secondary); font-size: 12px; margin-top: 4px; }
+.param-key { font-size: 12px; min-width: 90px; color: var(--el-text-color-regular); }
+.param-key .req { color: var(--el-color-danger); margin-left: 2px; }
 </style>

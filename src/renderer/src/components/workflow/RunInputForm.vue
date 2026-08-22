@@ -1,7 +1,7 @@
 <template>
-  <el-form label-position="top" size="small" @submit.prevent>
+  <el-form label-position="top" size="small" @submit.prevent :class="{ 'two-col': useColumns }">
     <template v-for="item in inputs" :key="item.key">
-      <el-form-item>
+      <el-form-item :class="{ 'span-2': isWideField(item) }">
         <template #label>
           {{ item.label || item.key }}
           <el-tag v-if="item.required" size="small" type="danger" effect="plain">必填</el-tag>
@@ -53,8 +53,19 @@
 import { reactive, computed, watch } from 'vue'
 import type { WorkflowStartInput } from '@shared/types/workflow.types'
 
-const props = defineProps<{ inputs: WorkflowStartInput[] }>()
+const props = defineProps<{
+  inputs: WorkflowStartInput[]
+  /** 字段较多时自动两列（会话页 start-form/审核表单用；运行对话框等保持单列） */
+  autoColumns?: boolean
+}>()
 const emit = defineEmits<{ (e: 'valid', ok: boolean): void }>()
+
+/** 两列布局：开启 autoColumns 且字段 >=4 时生效（宽字段跨列） */
+const useColumns = computed(() => !!props.autoColumns && props.inputs.length >= 4)
+/** 宽字段（文件/JSON/多行文本）跨两列，避免窄格难用 */
+function isWideField(item: WorkflowStartInput): boolean {
+  return item.type === 'file' || item.type === 'json'
+}
 
 /** 字符串/布尔/下拉/json 的值（json 以文本暂存） */
 const values = reactive<Record<string, unknown>>({})
@@ -149,4 +160,7 @@ defineExpose({ getValues, isValid, setFileUploadContext })
 .file-field { display: flex; align-items: center; gap: 8px; }
 .file-name { color: var(--el-color-success); font-size: 13px; }
 .file-hint { color: var(--el-text-color-secondary); font-size: 12px; }
+/* 自动两列：字段多时网格排布，宽字段跨列 */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; }
+.two-col :deep(.span-2) { grid-column: 1 / -1; }
 </style>

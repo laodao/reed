@@ -15,6 +15,9 @@
     <template v-else>
       <header class="guest-run__header">
         <h1>{{ meta.name }}</h1>
+        <el-tag size="small" :type="meta.appMode ? 'success' : 'info'" effect="plain">
+          {{ meta.appMode ? '应用分享' : '工作流分享' }}
+        </el-tag>
         <p v-if="meta.description">{{ meta.description }}</p>
       </header>
 

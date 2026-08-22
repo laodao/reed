@@ -32,6 +32,8 @@ export interface UpdateAppInput {
   shareToken?: string | null
   enabled?: number
   lastRunAt?: Date | null
+  /** 来源工作流的发布版本快照（createFromWorkflow 版本演进时更新） */
+  sourceVersion?: number | null
 }
 
 export class AppRepository extends BaseRepository<AppEntity, AppRecord> {
@@ -121,6 +123,7 @@ export class AppRepository extends BaseRepository<AppEntity, AppRecord> {
     if (patch.shareToken !== undefined) partial.shareToken = patch.shareToken
     if (patch.enabled !== undefined) partial.enabled = patch.enabled
     if (patch.lastRunAt !== undefined) partial.lastRunAt = patch.lastRunAt
+    if (patch.sourceVersion !== undefined) partial.sourceVersion = patch.sourceVersion
 
     await this.scoped.update({ id } as FindOptionsWhere<AppEntity>, partial)
     return this.findById(id)
