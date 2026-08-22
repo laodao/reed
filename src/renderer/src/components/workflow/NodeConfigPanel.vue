@@ -13,9 +13,9 @@
         <el-input v-model="wfNode.name" @change="emitChange" />
       </el-form-item>
 
-      <template v-for="field in visibleFields" :key="field.key">
-        <!-- 分组标题 -->
-        <div v-if="field.group && field.group !== currentGroup" class="group-divider">{{ field.group }}</div>
+      <template v-for="(field, idx) in visibleFields" :key="field.key">
+        <!-- 分组标题（仅组切换时显示一次） -->
+        <div v-if="groupTitleOf(field, idx)" class="group-divider">{{ groupTitleOf(field, idx) }}</div>
         <!-- 折叠分组 -->
         <template v-if="field.collapsible">
           <el-collapse>
@@ -76,17 +76,11 @@ const dynamicOptions = ref<Record<string, any>>({})
 /** 折叠字段过滤（折叠的仍渲染在 collapse 内，不隐藏）；提示占位字段过滤 */
 const visibleFields = computed(() => fields.value.filter(f => f.key !== '_hint'))
 
-/** 分组标记（渲染分组标题一次） */
-const currentGroup = ref('')
-watch(visibleFields, list => {
-  currentGroup.value = ''
-}, { immediate: true })
-
+/** 分组标记（渲染分组标题一次：组切换才显示，避免每行重复） */
 function groupTitleOf(field: CatalogFormField, idx: number): string {
   const prev = idx > 0 ? visibleFields.value[idx - 1] : undefined
   return field.group && prev?.group !== field.group ? field.group : ''
 }
-void groupTitleOf
 
 async function loadDynamicOptions() {
   const api = (window as never as { electronAPI: any }).electronAPI

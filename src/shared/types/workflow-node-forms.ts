@@ -81,7 +81,7 @@ export function fieldSupportsTemplate(field: CatalogFormField): boolean {
 /** 全部 21 个组件的表单 Schema */
 export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
   start: [
-    { key: 'inputs', label: '输入参数', type: 'inputs-list', help: '运行时以表单填写；定时触发用默认值' },
+    { key: 'inputs', label: '输入参数', type: 'inputs-list', help: '定时触发时用默认值' },
   ],
   end: [],
   condition: [
@@ -139,7 +139,6 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
       type: 'textarea',
       templateHint: true,
       placeholder: '对象 JSON 或 {{上游节点.字段}}',
-      help: '单占位模板会透传对象；纯文本会包成 { content }',
     }),
     { key: 'timeoutMs', label: '超时（毫秒）', type: 'number', placeholder: '留空 = 无限等待' },
     T('timeoutPolicy', '超时策略', {
@@ -200,7 +199,7 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     { key: 'width', label: '宽度', type: 'number', group: '参数' },
     { key: 'height', label: '高度', type: 'number', group: '参数' },
     { key: 'count', label: '生成数量', type: 'number', min: 1, max: 4, group: '参数' },
-    T('modelId', '图像模型 ID', { group: '模型', help: '必填（图像服务暂无默认模型机制）' }),
+    T('modelId', '图像模型 ID', { group: '模型', help: '必填' }),
   ],
   tts: [
     T('text', '合成文本', { type: 'textarea', templateHint: true, placeholder: '{{llm1.content}}' }),
@@ -216,12 +215,12 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     T('name', '音色名称', { placeholder: '例如：我的声音' }),
     T('prefix', 'voice_id 前缀', { help: '仅小写字母数字、≤10 字符（DashScope 硬约束）；留空自动生成' }),
     T('language', '语种', { help: '默认 zh' }),
-    { key: 'waitForCompletion', label: '等待训练完成', type: 'switch', group: '参数', help: '长任务：关闭 = 提交即成功（输出 clonedVoiceId，下游轮询 refreshClonedVoiceStatus）' },
+    { key: 'waitForCompletion', label: '等待训练完成', type: 'switch', group: '参数', help: '关闭 = 提交即成功（长任务）' },
   ],
   'video-extract-audio': [
     T('videoPath', '本地视频文件路径', { type: 'textarea', templateHint: true, placeholder: '{{start.video.path}}（表单 file 字段的路径）' }),
-    T('videoUrl', '视频链接', { type: 'textarea', templateHint: true, placeholder: 'https://...（mp4 直链 / B站 BV 链接；抖音请手动下载后本地导入）', help: '本地文件与链接二选一；支持常规直链与 B站（公开 API 解析音频直链），抖音受风控不支持自动解析' }),
-    T('language', '语言', { help: '透传给下游 stt 的语言提示（本节点仅提取音频）' }),
+    T('videoUrl', '视频链接', { type: 'textarea', templateHint: true, placeholder: 'https://...（mp4 直链 / B站 BV 链接；抖音请手动下载后本地导入）', help: '本地文件与链接二选一；B站/直链可用，抖音需手动下载' }),
+    T('language', '语言', { help: '透传给下游 stt' }),
   ],
   'oas-tool': [
     T('oasSpec', 'OpenAPI JSON', {
@@ -229,7 +228,7 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
       help: '粘贴接口文档的 OpenAPI/Swagger JSON（V1 不支持 $ref 引用）',
     }),
     { key: 'operationId', label: '接口', type: 'oas-operations', help: '从上方 JSON 解析出的接口列表' },
-    { key: 'params', label: '参数', type: 'oas-params', help: '值支持 {{模板}}；点「按接口定义生成」自动带出参数行' },
+    { key: 'params', label: '参数', type: 'oas-params', help: '点「按接口定义生成」自动带出参数行' },
     T('baseUrlOverride', 'BaseURL 覆盖', { placeholder: '留空用文档里的 servers/host', collapsible: true }),
     { key: 'headers', label: '附加请求头', type: 'kv-list', keyPlaceholder: 'Header（如 Authorization）', valuePlaceholder: '值，支持 {{模板}}', collapsible: true },
     { key: 'timeoutMs', label: '超时（毫秒）', type: 'number', group: '参数' },
@@ -239,9 +238,9 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
       { label: '自定义工具', value: 'custom' },
       { label: '预设工具', value: 'preset' },
     ] },
-    { key: 'toolId', label: '工具', type: 'tool-select', help: '选择自定义工具或预设工具；选中后参数表单按工具 schema 生成' },
+    { key: 'toolId', label: '工具', type: 'tool-select', help: '选择工具，参数表单按 schema 自动生成' },
     { key: 'credentialId', label: '凭据', type: 'tool-credential-select', help: '工具为 credential 鉴权时选择（可选，未选则按工具默认）' },
-    { key: 'params', label: '参数', type: 'tool-params', help: '值支持 {{模板}}；按工具参数 schema 生成' },
+    { key: 'params', label: '参数', type: 'tool-params' },
     T('responseType', '响应模式', {
       type: 'select',
       options: [
@@ -251,11 +250,11 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
         { label: 'base64（二进制转字符串）', value: 'base64' },
         { label: '文件落盘 file', value: 'file' },
       ],
-      help: 'TTS/图片等二进制 API 建议 file：输出 filePath 直接接「保存资产」节点；auto 模式对二进制响应同样落盘',
+      help: '二进制 API（TTS/图片）建议 file，filePath 可直接接「保存资产」节点',
     }),
   ],
   'code': [
-    T('code', '代码', { type: 'textarea', help: '输入在 inputs 对象（键=下方参数键）；return 一个对象作为节点输出，如 return { sum: inputs.a + inputs.b }。V1 不暴露 require/process/fs，5s 超时' }),
+    T('code', '代码', { type: 'textarea', help: '输入在 inputs（键=下方参数键）；return 节点输出。V1 无 fs/网络，5s 超时' }),
     { key: 'inputs', label: '输入参数', type: 'kv-list', keyPlaceholder: '参数键（inputs.键 引用）', valuePlaceholder: '值，支持 {{模板}}' },
   ],
   'sub-workflow': [
@@ -286,7 +285,7 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     }),
     T('url', 'URL', { placeholder: 'https://...', templateHint: true }),
     { key: 'headers', label: '请求头', type: 'kv-list', keyPlaceholder: 'Header', valuePlaceholder: '值或 {{模板}}', collapsible: true },
-    T('body', '请求体', { type: 'textarea', templateHint: true, collapsible: true, help: 'GET 以外的方法可用' }),
+    T('body', '请求体', { type: 'textarea', templateHint: true, collapsible: true }),
     { key: 'timeoutMs', label: '超时（毫秒）', type: 'number', group: '参数' },
     T('responseType', '响应模式', {
       type: 'select',
@@ -298,7 +297,7 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
         { label: 'base64（二进制转字符串）', value: 'base64' },
         { label: '文件落盘 file', value: 'file' },
       ],
-      help: '二进制响应（音频/图片等）走 file 落盘，输出 filePath 可直接接「保存资产」节点',
+      help: '二进制响应建议 file，filePath 可直接接「保存资产」节点',
     }),
   ],
   'template-transform': [
@@ -341,7 +340,7 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     T('template', '模板（markdown）', {
       type: 'textarea', templateHint: true,
       placeholder: '# {{start.topic}} 报告\n\n{{llm1.content}}',
-      help: '支持 markdown 图片/表格语法；多变量占位拼接为全文',
+      help: '支持 markdown；多变量占位拼接为全文',
     }),
     T('format', '输出格式', {
       type: 'select',
@@ -355,7 +354,7 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
 
   'form-collect': [
     T('formTitle', '表单标题', { templateHint: true, placeholder: '例如：请上传待翻译文件' }),
-    { key: 'fields', label: '表单字段', type: 'inputs-list', help: '字段值经 {{本节点.values.字段key}} 引用；文件字段值为 { path, name, text }' },
+    { key: 'fields', label: '表单字段', type: 'inputs-list', help: '字段值经 {{本节点.values.字段key}} 引用' },
     { key: 'timeoutMs', label: '等待超时（毫秒）', type: 'number', group: '参数', help: '留空 = 一直等待用户提交' },
   ],
   'message': [
@@ -394,7 +393,7 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     T('content', '内容', {
       type: 'textarea', templateHint: true,
       placeholder: '{{imageGen1.images[0].url}} / {{tts1.audioPath}} / 文本 / JSON',
-      help: '文件路径、http(s)/data:/local-*:// 链接、文本或 JSON；auto 模式自动识别',
+      help: '文件路径/链接/文本/JSON；auto 自动识别',
     }),
     T('kind', '内容形态', {
       type: 'select',
