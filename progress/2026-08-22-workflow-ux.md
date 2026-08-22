@@ -143,6 +143,44 @@
 验证：e2e-cli-tool.cjs 通过（node -e 输出 JSON，sum=7 参数映射成功）；e2e-tool-call（API 工具）
 与 e2e-workflow-ux 回归全绿；前后端 tsc 通过。
 
+## 9. 能力应用运行时选择模型（模型即变量）
+
+> 用户痛点：翻译 / 文本转语音 / 语音转文本 / 语音复刻这类**独立应用**运行时没有选择模型的能力
+>（只能读取节点配置里写死的默认 Provider）。用户明确方向：**模型就是变量**——启动时选模型存成
+> start 变量，环节里用模板引用，无需 configOverrides。
+
+### 设计（对齐"变量"思路，复用引擎现有模板解析）
+- `WorkflowStartInput.type` 新增 `model`：值为 `{ providerConfigId, modelId }`，
+  附带 `modelTypes`（可选，过滤该字段可选的模型类型：text/audio/image/multimodal）。
+- 节点配置用 `{{start.键.providerConfigId}}` / `{{start.键.modelId}}` 引用，`VariableResolver.lookup`
+  天然支持点路径逐级下钻（`start` 根映射 `startInputs`），零新增解析逻辑。
+- 因此开始节点输入列表（编辑器 inputs-list）增加「模型」类型 + 模型类型过滤 + 引用提示；
+  变量选择器对 model 字段列出 `.providerConfigId` / `.modelId` 两个子路径。
+
+### 运行时表单（RunInputForm）
+- 检测到 `type='model'` 字段即拉取启用 Provider 列表，渲染 Provider + 模型联动下拉。
+- **默认值**：优先字段内置 defaultValue；否则用默认 Provider（isDefault）的默认模型
+  （或该 Provider 首个可用模型）——用户打开即已选好，无需每次操作。
+- **无可用模型**：Provider 列表为空时提示「没有可用模型，请先配置并启用提供方」。
+- 校验：必填时两者需有值；`getValues()` 输出 `{ providerConfigId, modelId }`。
+- 后端 `workflow-run.service` 同步兜底：model 必填但缺 provider/model 时报错。
+
+### 应用与模板
+- 官方能力应用模板（translate-app / tts-app / stt-app / voice-clone-app）start 节点加 `model` 字段，
+  模型类节点（translate/tts/stt）配置改为引用 `{{start.model.providerConfigId}}` / `{{start.model.modelId}}`。
+- 已导入并发布的 4 个应用定义（文档翻译/文本转语音/语音转文本/语音复刻）经脚本
+  `scripts/patch-app-models.cjs` 直接改写 draft+published 图（start 输入 + 节点引用），
+  立即可用；后续新建时走模板同样生效。
+
+### 验证
+- 应用页『文档翻译』会话表单出现「模型」字段，默认选中 DeepSeek / deepseek-v4-flash；
+  填写文本运行 → 翻译成功输出（`start_inputs.model = {providerConfigId, modelId}` 正确沉淀，
+  translate 节点经模板解析取到具体模型）。
+- 文本转语音/语音转文本/语音复刻 会话表单均出现模型字段（默认值已预选）。
+- 编辑器 start 节点输入列表支持「模型」类型；translate 节点模型字段显示已填充的模板引用。
+- 前后端 tsc 通过（仅存量的 TS6305）。注：run-service.spec 的「必填缺失抛错」用例断言
+  中文标签，早于本批次已存在的不一致，与本次改动无关。
+
 ## 备注
 
 - 移除 lw 节点前已确认存量工作流（11 个 workflow_definitions）均未引用

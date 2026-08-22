@@ -43,6 +43,23 @@
           <span v-else class="file-hint">未选择文件</span>
         </div>
 
+        <!-- 模型（Provider+模型联动，值 = { providerConfigId, modelId }，节点用 {{start.键.providerConfigId}} 引用） -->
+        <div v-else-if="item.type === 'model'">
+          <div v-if="modelProviders.length === 0" class="no-model-hint">
+            没有可用模型。请先在「设置 → AI 提供商」中配置并启用提供方。
+          </div>
+          <div v-else class="model-pair">
+            <el-select :model-value="(modelValue(item) as { providerConfigId?: string })?.providerConfigId"
+              placeholder="Provider" clearable filterable size="small" style="flex: 1" @change="v => setModel(item, 'providerConfigId', v)">
+              <el-option v-for="p in modelProviders" :key="p.id" :label="p.name" :value="p.id" />
+            </el-select>
+            <el-select :model-value="(modelValue(item) as { modelId?: string })?.modelId"
+              placeholder="模型" clearable filterable size="small" style="flex: 1" @change="v => setModel(item, 'modelId', v)">
+              <el-option v-for="m in modelValue(item) ? currentModelOptions(item) : []" :key="m.value" :label="m.label" :value="m.value" />
+            </el-select>
+          </div>
+        </div>
+
         <div v-if="item.multi" class="multi-hint">可多选</div>
       </el-form-item>
     </template>
@@ -60,7 +77,7 @@
  *       WorkflowStartInput.validation）。错误在字段被触碰（或提交取值）后显示，
  *       避免打开表单就满屏红。
  */
-import { reactive, computed, watch } from 'vue'
+import { reactive, computed, ref, watch, nextTick } from 'vue'
 import type { WorkflowStartInput } from '@shared/types/workflow.types'
 
 const props = defineProps<{
@@ -72,9 +89,9 @@ const emit = defineEmits<{ (e: 'valid', ok: boolean): void }>()
 
 /** 两列布局：开启 autoColumns 且字段 >=4 时生效（宽字段跨列） */
 const useColumns = computed(() => !!props.autoColumns && props.inputs.length >= 4)
-/** 宽字段（文件/JSON/多行文本）跨两列，避免窄格难用 */
+/** 宽字段（文件/JSON/多行文本/模型）跨两列，避免窄格难用 */
 function isWideField(item: WorkflowStartInput): boolean {
-  return item.type === 'file' || item.type === 'json' || item.type === 'textarea'
+  return item.type === 'file' || item.type === 'json' || item.type === 'textarea' || item.type === 'model'
 }
 
 /** 字符串/布尔/下拉/json 的值（json 以文本暂存） */
@@ -118,6 +135,90 @@ function setFileUploadContext(ctx: { runId: string; nodeId: string }): void {
 /** 数字值（el-input-number 需要 number|null） */
 const numValues = reactive<Record<string, number | undefined>>({})
 
+// ── 模型字段（type='model'）：Provider+模型联动，值 = { providerConfigId, modelId } ──
+
+/** 启用 Provider 列表（含按 modelTypes 过滤后的模型选项） */
+const modelProviders = ref<Array<{ id: string; name: string; isDefault: boolean; models: Array<{ label: string; value: string }> }>>([])
+/** 字段 key → 所选 { providerConfigId, modelId } */
+const modelSelections = reactive<Record<string, { providerConfigId?: string; modelId?: string }>>({})
+
+/** 是否含 model 字段（决定拉取 Provider） */
+function hasModel(keys: WorkflowStartInput[]): boolean {
+  return keys.some(i => i.type === 'model')
+}
+
+/** 拉取启用 Provider 列表，按各字段 modelTypes 过滤模型；同时按默认 Provider 预填默认值 */
+async function loadModelProviders(): Promise<void> {
+  const api = (window as never as { electronAPI: { providerConfig: { list: () => Promise<{ success: boolean; configs?: Array<Record<string, any>> }> } } }).electronAPI.providerConfig
+  try {
+    const resp = await api.list()
+    const list: Array<Record<string, any>> = resp.success ? (resp.configs ?? []) : []
+    const enabled = list.filter(c => c.isEnabled !== false && c.isEnabled !== 0)
+    // 全局候选（不按字段过滤，字段粒度在 currentModelOptions 过滤）
+    modelProviders.value = enabled.map(c => ({
+      id: c.id,
+      name: c.name || c.shortId || c.id,
+      isDefault: c.isDefault === 1 || c.isDefault === true,
+      models: (c.models ?? []).map((m: any) => ({ label: m.name || m.id, value: m.id })),
+    }))
+    // 预填默认值：优先字段内置 defaultValue；否则用默认 Provider 的默认模型（或首个可用模型）
+    await nextTick()
+    for (const item of props.inputs) {
+      if (item.type !== 'model') continue
+      const cur = modelSelections[item.key]
+      if (cur && (cur.providerConfigId || cur.modelId)) continue // 已有选择不覆盖
+      const dv = item.defaultValue as { providerConfigId?: string; modelId?: string } | undefined
+      const dvProvider = dv?.providerConfigId ? modelProviders.value.find(p => p.id === dv.providerConfigId) : undefined
+      if (dvProvider) {
+        modelSelections[item.key] = {
+          providerConfigId: dv.providerConfigId,
+          modelId: dv.modelId ?? dvProvider.models[0]?.value,
+        }
+        continue
+      }
+      // 默认 Provider（或第一个启用）
+      const mix = item.modelTypes?.length ? item.modelTypes : undefined
+      const defaultProvider = modelProviders.value.find(p => p.isDefault) || modelProviders.value[0]
+      if (defaultProvider) {
+        const allowed = defaultProvider.models.filter(m => !mix || item.modelTypes!.includes(m.value as never))
+        modelSelections[item.key] = {
+          providerConfigId: defaultProvider.id,
+          modelId: (dv as { modelId?: string })?.modelId ?? allowed[0]?.value ?? defaultProvider.models[0]?.value,
+        }
+      }
+    }
+  } catch {
+    modelProviders.value = []
+  }
+}
+
+/** 供模板读取的字段模型值（无则默认空对象） */
+function modelValue(item: WorkflowStartInput): Record<string, unknown> {
+  return modelSelections[item.key] ?? {}
+}
+
+/** 当前字段可见模型选项（按字段 modelTypes 过滤） */
+function currentModelOptions(item: WorkflowStartInput): Array<{ label: string; value: string }> {
+  const p = modelProviders.value.find(x => x.id === modelSelections[item.key]?.providerConfigId)
+  if (!p) return []
+  const allowed = item.modelTypes
+  return allowed?.length ? p.models.filter(m => allowed.includes(m.value as never)) : p.models
+}
+
+/** 设置模型子键并同步触发校验 */
+function setModel(item: WorkflowStartInput, key: 'providerConfigId' | 'modelId', v: unknown): void {
+  const cur = modelSelections[item.key] ?? {}
+  const next = { ...cur, [key]: v ?? undefined }
+  // 切换 Provider 时清空模型（防跨 Provider 误用）
+  if (key === 'providerConfigId' && cur.providerConfigId !== v) next.modelId = undefined
+  modelSelections[item.key] = next
+  touch(item.key)
+}
+
+watch(() => props.inputs, list => {
+  if (hasModel(list) && modelProviders.value.length === 0) void loadModelProviders()
+}, { immediate: true, deep: true })
+
 /** defaultValue 预填 */
 watch(() => props.inputs, list => {
   for (const item of list) {
@@ -143,6 +244,13 @@ const isEmptyValue = (v: unknown): boolean =>
 
 /** 单字段完整校验（不依赖 touched）：返回错误消息，空串=通过；错误提示按规则自动生成 */
 function validateItem(item: WorkflowStartInput): string {
+  if (item.type === 'model') {
+    if (!item.required) return ''
+    const v = modelSelections[item.key]
+    if (!v?.providerConfigId) return '请选择 Provider'
+    if (!v?.modelId) return '请选择模型'
+    return ''
+  }
   const v = item.type === 'number' ? numValues[item.key] : values[item.key]
   const rule = item.validation
   if (item.required && isEmptyValue(v)) return '必填'
@@ -185,15 +293,25 @@ function textLimitHint(item: WorkflowStartInput): string {
 }
 
 /** 整体有效性（驱动运行按钮；与显示无关的完整校验） */
-const isValid = computed(() => props.inputs.every(it => validateItem(it) === ''))
+const isValid = computed(() => props.inputs.every(it => {
+  if (it.type === 'model') {
+    if (!it.required) return true
+    const v = modelSelections[it.key]
+    return !!v?.providerConfigId && !!v?.modelId
+  }
+  return validateItem(it) === ''
+}))
 watch(isValid, ok => emit('valid', ok), { immediate: true })
 
-/** 导出提交值（json 解析、number 归位、multi 保数组）；同时触发全量错误显示 */
+/** 导出提交值（json 解析、number 归位、multi 保数组、model 保对象）；同时触发全量错误显示 */
 function getValues(): Record<string, unknown> {
   for (const item of props.inputs) touched[item.key] = true
   const out: Record<string, unknown> = {}
   for (const item of props.inputs) {
-    if (item.type === 'number') {
+    if (item.type === 'model') {
+      const v = modelSelections[item.key]
+      if (v?.providerConfigId || v?.modelId) out[item.key] = { ...v }
+    } else if (item.type === 'number') {
       if (numValues[item.key] !== undefined) out[item.key] = numValues[item.key]
     } else if (item.type === 'json') {
       const raw = values[item.key]
@@ -218,6 +336,9 @@ defineExpose({ getValues, isValid, setFileUploadContext })
 .file-field { display: flex; align-items: center; gap: 8px; }
 .file-name { color: var(--el-color-success); font-size: 13px; }
 .file-hint { color: var(--el-text-color-secondary); font-size: 12px; }
+/* 模型选择（Provider+模型联动下拉） */
+.model-pair { display: flex; gap: 8px; width: 100%; }
+.no-model-hint { font-size: 12px; color: var(--el-color-warning); line-height: 1.5; padding: 2px 0; }
 /* 自动两列：字段多时网格排布，宽字段跨列 */
 .two-col { display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; }
 .two-col :deep(.span-2) { grid-column: 1 / -1; }

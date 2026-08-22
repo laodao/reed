@@ -10,9 +10,10 @@
       { "id": "start", "type": "start", "name": "开始", "position": { "x": 60, "y": 200 }, "config": { "inputs": [
         { "key": "text", "label": "待翻译内容", "type": "textarea", "required": true, "validation": { "minLength": 1, "maxLength": 5000 } },
         { "key": "targetLang", "label": "目标语言", "type": "string", "required": true, "defaultValue": "zh" },
-        { "key": "sourceLang", "label": "源语言", "type": "string" }
+        { "key": "sourceLang", "label": "源语言", "type": "string" },
+        { "key": "model", "label": "模型", "type": "model", "modelTypes": ["text", "multimodal"] }
       ] } },
-      { "id": "tr1", "type": "translate", "name": "翻译", "position": { "x": 300, "y": 200 }, "config": { "text": "{{start.text}}", "sourceLang": "{{start.sourceLang}}", "targetLang": "{{start.targetLang}}" } },
+      { "id": "tr1", "type": "translate", "name": "翻译", "position": { "x": 300, "y": 200 }, "config": { "text": "{{start.text}}", "sourceLang": "{{start.sourceLang}}", "targetLang": "{{start.targetLang}}", "providerConfigId": "{{start.model.providerConfigId}}", "modelId": "{{start.model.modelId}}" } },
       { "id": "save1", "type": "save-asset", "name": "保存到资产库", "position": { "x": 540, "y": 200 }, "config": { "content": "{{tr1.text}}", "kind": "text", "category": "text", "name": "翻译结果", "tags": "翻译" } },
       { "id": "msg1", "type": "message", "name": "输出译文", "position": { "x": 780, "y": 200 }, "config": { "content": "译文：{{tr1.text}}" } },
       { "id": "end", "type": "end", "name": "结束", "position": { "x": 1000, "y": 200 }, "config": {} }

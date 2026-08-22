@@ -9,9 +9,10 @@
     "nodes": [
       { "id": "start", "type": "start", "name": "开始", "position": { "x": 60, "y": 200 }, "config": { "inputs": [
         { "key": "text", "label": "合成文本", "type": "textarea", "required": true, "validation": { "minLength": 1, "maxLength": 2000 } },
-        { "key": "voiceId", "label": "音色 ID", "type": "string", "required": true }
+        { "key": "voiceId", "label": "音色 ID", "type": "string", "required": true },
+        { "key": "model", "label": "模型", "type": "model", "modelTypes": ["audio", "multimodal"] }
       ] } },
-      { "id": "tts1", "type": "tts", "name": "语音合成", "position": { "x": 300, "y": 200 }, "config": { "text": "{{start.text}}", "voiceId": "{{start.voiceId}}" } },
+      { "id": "tts1", "type": "tts", "name": "语音合成", "position": { "x": 300, "y": 200 }, "config": { "text": "{{start.text}}", "voiceId": "{{start.voiceId}}", "providerConfigId": "{{start.model.providerConfigId}}", "modelId": "{{start.model.modelId}}" } },
       { "id": "save1", "type": "save-asset", "name": "保存到资产库", "position": { "x": 540, "y": 200 }, "config": { "content": "{{tts1.audioPath}}", "kind": "file", "category": "audio", "name": "合成语音.wav", "tags": "语音合成" } },
       { "id": "msg1", "type": "message", "name": "提示", "position": { "x": 780, "y": 200 }, "config": { "content": "语音已保存到资产库：{{save1.name}}（资产 ID：{{save1.assetId}}）" } },
       { "id": "end", "type": "end", "name": "结束", "position": { "x": 1000, "y": 200 }, "config": {} }

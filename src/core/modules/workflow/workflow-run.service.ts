@@ -134,6 +134,14 @@ export class WorkflowRunService {
       if (def2.type === 'json') {
         try { JSON.parse(String(v)) } catch { problems.push(`「${label}」类型不正确：JSON 格式无效`); continue }
       }
+      // 模型字段：值为 { providerConfigId, modelId }，必填时两者都需有值
+      if (def2.type === 'model') {
+        const mv = v as { providerConfigId?: string; modelId?: string } | null | undefined
+        if (def2.required && (!mv?.providerConfigId || !mv?.modelId)) {
+          problems.push(`「${label}」需选择 Provider 与模型`)
+        }
+        continue
+      }
       if (!rule) continue
       if (def2.type === 'string' || def2.type === 'textarea' || !def2.type) {
         const s = String(v)

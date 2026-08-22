@@ -61,8 +61,17 @@ const groups = computed(() => {
   const inputs = ((startNode?.data as any)?.wfNode?.config?.inputs ?? []) as Array<{
     key: string
     label?: string
+    type?: string
   }>
-  for (const i of inputs) startInputs.push({ path: `start.${i.key}`, desc: i.label || i.key })
+  for (const i of inputs) {
+    if (i.type === 'model') {
+      // 模型字段：拆成 providerConfigId / modelId 两个可引用路径
+      startInputs.push({ path: `start.${i.key}.providerConfigId`, desc: `${i.label || i.key}·Provider` })
+      startInputs.push({ path: `start.${i.key}.modelId`, desc: `${i.label || i.key}·模型` })
+    } else {
+      startInputs.push({ path: `start.${i.key}`, desc: i.label || i.key })
+    }
+  }
   if (startInputs.length) result.push({ label: '输入参数', items: startInputs })
 
   // 各节点输出（outputSchema 目录驱动 + loop 特殊字段）

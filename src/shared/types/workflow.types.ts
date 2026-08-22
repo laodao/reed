@@ -20,6 +20,8 @@
  *                 ⇒ 运行失败，即使其它分支已到达 end 节点。
  */
 
+import type { ModelType } from './provider-template.types'
+
 // ==================== 出边类型 ====================
 
 /**
@@ -98,11 +100,16 @@ export interface WorkflowStartInput {
   key: string
   /** 显示名 */
   label: string
-  type: 'string' | 'textarea' | 'number' | 'boolean' | 'json' | 'select' | 'file'
+  type: 'string' | 'textarea' | 'number' | 'boolean' | 'json' | 'select' | 'file' | 'model'
   /** type='select' 时的选项 */
   options?: Array<{ label: string; value: string | number }>
   /** type='select' 时是否多选（提交值为数组） */
   multi?: boolean
+  /**
+   * type='model' 时的模型类型过滤（留空=全部可用模型）。
+   * 提交值为 { providerConfigId, modelId }，节点配置用 {{start.键.providerConfigId}} / {{start.键.modelId}} 引用。
+   */
+  modelTypes?: ModelType[]
   /** 是否必填 */
   required?: boolean
   /** 扩展校验规则（除必填外；前端实时提示 + 服务端启动时兜底） */

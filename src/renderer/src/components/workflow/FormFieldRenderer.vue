@@ -99,13 +99,21 @@
             <el-option label="单行文本" value="string" /><el-option label="多行文本" value="textarea" />
             <el-option label="数字" value="number" /><el-option label="布尔" value="boolean" />
             <el-option label="JSON" value="json" /><el-option label="下拉" value="select" />
-            <el-option label="文件" value="file" />
+            <el-option label="文件" value="file" /><el-option label="模型" value="model" />
           </el-select>
           <el-checkbox v-model="item.required" size="small" @change="syncInputs">必填</el-checkbox>
           <el-button text size="small" :class="{ 'card-more-on': validationOpen[i] }" @click="validationOpen[i] = !validationOpen[i]">校验{{ validationOpen[i] ? ' ▾' : ' ▴' }}</el-button>
           <span class="card-spacer" />
         </div>
-        <div v-if="item.type !== 'select'" class="input-card-default">
+        <div v-if="item.type === 'model'" class="input-card-modeltypes">
+          <span class="default-label">模型类型</span>
+          <el-select v-model="item.modelTypes" size="small" multiple collapse-tags clearable placeholder="全部（含文本/音频/图像等）" style="width: 220px" @change="syncInputs">
+            <el-option label="文本" value="text" /><el-option label="音频" value="audio" />
+            <el-option label="图像" value="image" /><el-option label="多模态" value="multimodal" />
+          </el-select>
+          <span class="model-types-hint">{{ modelRefHint(item) }}</span>
+        </div>
+        <div v-if="item.type !== 'select' && item.type !== 'model'" class="input-card-default">
           <span class="default-label">默认值</span>
           <el-input :model-value="String(item.defaultValue ?? '')" placeholder="定时触发时用" size="small"
             @update:model-value="v => { item.defaultValue = v; syncInputs() }" />
@@ -331,6 +339,12 @@ const validationOpen = reactive<Record<number, boolean>>({})
 /** 文本类输入（string/textarea）才有长度/正则校验 */
 function isTextInput(item: WorkflowStartInput): boolean {
   return item.type === 'string' || item.type === 'textarea'
+}
+
+/** 模型字段的引用提示（用反引号规避模板里 {{}} 与插值歧义） */
+function modelRefHint(item: WorkflowStartInput): string {
+  const k = item.key || '键'
+  return `节点用 \`{{start.${k}.providerConfigId}}\` / \`{{start.${k}.modelId}}\` 引用`
 }
 
 // ── fields-list ──
