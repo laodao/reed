@@ -9,6 +9,8 @@ import type { WorkflowNodeContext } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
 import { getToolService } from '../tools/tool-registry'
+import { getPathProvider } from '@core/interfaces/path.interface'
+import type { HttpResponseType } from './http-fetch'
 
 const toolCallNode: WorkflowNodeHandler = {
   type: 'tool-call',
@@ -20,15 +22,23 @@ const toolCallNode: WorkflowNodeHandler = {
     { key: 'json', type: 'json', desc: '响应 JSON（非 JSON 为 null）' },
     { key: 'text', type: 'string', desc: '响应原文' },
     { key: 'durationMs', type: 'number', desc: '耗时毫秒' },
+    { key: 'base64', type: 'string', desc: 'base64 模式：二进制响应内容' },
+    { key: 'dataUrl', type: 'string', desc: 'base64 模式：data:<mime>;base64,...（可直接接保存资产节点）' },
+    { key: 'filePath', type: 'string', desc: 'file/auto 模式：二进制响应落盘路径（可直接接保存资产节点）' },
+    { key: 'mimeType', type: 'string', desc: '二进制响应的 MIME 类型' },
+    { key: 'sizeBytes', type: 'number', desc: '二进制响应字节数' },
   ],
   validateConfig(config) {
-    const cfg = config as { toolType?: string; toolId?: string }
+    const cfg = config as { toolType?: string; toolId?: string; responseType?: string }
     const errors: string[] = []
     if (!cfg.toolType || !['custom', 'preset'].includes(cfg.toolType)) {
       errors.push('工具类型必须是 custom 或 preset')
     }
     if (!cfg.toolId || !stringifyValue(cfg.toolId).trim()) {
       errors.push('工具不能为空')
+    }
+    if (cfg.responseType && !['auto', 'text', 'json', 'base64', 'file'].includes(cfg.responseType)) {
+      errors.push('responseType 必须是 auto/text/json/base64/file')
     }
     return errors
   },
@@ -38,6 +48,7 @@ const toolCallNode: WorkflowNodeHandler = {
       toolId: string
       credentialId?: string
       params?: Array<{ key: string; value: string }>
+      responseType?: HttpResponseType
     }
     const params: Record<string, unknown> = {}
     for (const p of cfg.params ?? []) {
@@ -49,19 +60,31 @@ const toolCallNode: WorkflowNodeHandler = {
       credentialId: cfg.credentialId || null,
       params,
       signal: ctx.signal,
+      responseType: cfg.responseType,
+      // 落盘目录：每次运行独立，防并发互踩（与 media-nodes 同模式）
+      outputDir: `${getPathProvider().getDataPath()}/workflow-media/${ctx.runId.replace(/[^\w.-]/g, '_')}/tools`,
     })
+    const out: Record<string, unknown> = {
+      status: result.status,
+      ok: result.ok,
+      json: result.json ?? null,
+      text: result.text,
+      durationMs: result.durationMs,
+      ...(result.base64 !== undefined ? { base64: result.base64 } : {}),
+      ...(result.dataUrl !== undefined ? { dataUrl: result.dataUrl } : {}),
+      ...(result.filePath !== undefined ? { filePath: result.filePath } : {}),
+      ...(result.mimeType !== undefined ? { mimeType: result.mimeType } : {}),
+      ...(result.sizeBytes !== undefined ? { sizeBytes: result.sizeBytes } : {}),
+    }
     if (result.ok) {
-      return {
-        status: 'succeeded',
-        output: { status: result.status, ok: true, json: result.json ?? null, text: result.text, durationMs: result.durationMs },
-      }
+      return { status: 'succeeded', output: out }
     }
     // 网络失败（status=0）可重试；HTTP 错误码不重试
     return {
       status: 'failed',
       error: result.text,
       retryable: result.status === 0,
-      output: { status: result.status, ok: false, json: null, text: result.text, durationMs: result.durationMs },
+      output: out,
     }
   },
 }

@@ -8,7 +8,7 @@
  */
 
 import { getSecureStorage } from '@core/interfaces/storage.interface'
-import { executeHttpFetch } from '../nodes/http-fetch'
+import { executeHttpFetch, type HttpResponseType } from '../nodes/http-fetch'
 import { PRESET_TOOL_MAP, PRESET_TOOLS } from './preset-tools'
 import { TOOL_AUTH_TYPES, type CustomTool, type PresetTool, type ToolCredential } from '@shared/types/tool.types'
 import { createLogger } from '@core/utils/logger'
@@ -45,6 +45,10 @@ export interface ExecuteToolInput {
   credentialId?: string | null
   params?: Record<string, unknown>
   signal: AbortSignal
+  /** 响应处理模式（缺省 auto：二进制→落盘路径） */
+  responseType?: HttpResponseType
+  /** file 模式落盘目录（缺省 dataPath/workflow-media/http） */
+  outputDir?: string
 }
 
 export interface ExecuteToolResult {
@@ -53,6 +57,14 @@ export interface ExecuteToolResult {
   json?: unknown
   text: string
   durationMs: number
+  /** 二进制响应（base64 模式） */
+  base64?: string
+  /** 二进制响应（base64 模式）：data:<mime>;base64,... */
+  dataUrl?: string
+  /** 二进制响应（file/auto 模式）落盘路径 */
+  filePath?: string
+  mimeType?: string
+  sizeBytes?: number
 }
 
 export class ToolService {
@@ -169,10 +181,20 @@ export class ToolService {
       headers['Authorization'] = `Bearer ${apiKey}`
     }
 
-    // 5. 执行（复用 http-fetch：超时封顶/取消合并/统一输出）
+    // 5. 执行（复用 http-fetch：超时封顶/取消合并/统一输出；responseType 透传支持二进制响应）
     const body = tool.method === 'GET' || Object.keys(bodyParams).length === 0 ? undefined : JSON.stringify(bodyParams)
     const start = Date.now()
-    const resp = await executeHttpFetch({ method: tool.method, url, headers, body }, input.signal)
+    const resp = await executeHttpFetch(
+      {
+        method: tool.method,
+        url,
+        headers,
+        body,
+        responseType: input.responseType,
+        outputDir: input.outputDir,
+      },
+      input.signal
+    )
     const durationMs = Date.now() - start
     if (!resp.ok) {
       return { status: 0, ok: false, text: resp.error, durationMs }
@@ -182,6 +204,11 @@ export class ToolService {
       ok: resp.output.status >= 200 && resp.output.status < 300,
       json: resp.output.json,
       text: resp.output.body,
+      base64: resp.output.base64,
+      dataUrl: resp.output.dataUrl,
+      filePath: resp.output.filePath,
+      mimeType: resp.output.mimeType,
+      sizeBytes: resp.output.sizeBytes,
       durationMs,
     }
   }

@@ -252,6 +252,17 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     { key: 'toolId', label: '工具', type: 'tool-select', help: '选择自定义工具或预设工具；选中后参数表单按工具 schema 生成' },
     { key: 'credentialId', label: '凭据', type: 'tool-credential-select', help: '工具为 credential 鉴权时选择（可选，未选则按工具默认）' },
     { key: 'params', label: '参数', type: 'tool-params', help: '值支持 {{模板}}；按工具参数 schema 生成' },
+    T('responseType', '响应模式', {
+      type: 'select',
+      options: [
+        { label: '自动（二进制自动落盘）', value: 'auto' },
+        { label: '文本 text', value: 'text' },
+        { label: 'JSON json', value: 'json' },
+        { label: 'base64（二进制转字符串）', value: 'base64' },
+        { label: '文件落盘 file', value: 'file' },
+      ],
+      help: 'TTS/图片等二进制 API 建议 file：输出 filePath 直接接「保存资产」节点；auto 模式对二进制响应同样落盘',
+    }),
   ],
   'code': [
     T('code', '代码', { type: 'textarea', help: '输入在 inputs 对象（键=下方参数键）；return 一个对象作为节点输出，如 return { sum: inputs.a + inputs.b }。V1 不暴露 require/process/fs，5s 超时' }),
@@ -287,6 +298,18 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     { key: 'headers', label: '请求头', type: 'kv-list', keyPlaceholder: 'Header', valuePlaceholder: '值或 {{模板}}', collapsible: true },
     T('body', '请求体', { type: 'textarea', templateHint: true, collapsible: true, help: 'GET 以外的方法可用' }),
     { key: 'timeoutMs', label: '超时（毫秒）', type: 'number', group: '参数' },
+    T('responseType', '响应模式', {
+      type: 'select',
+      group: '参数',
+      options: [
+        { label: '自动（二进制自动落盘）', value: 'auto' },
+        { label: '文本 text', value: 'text' },
+        { label: 'JSON json', value: 'json' },
+        { label: 'base64（二进制转字符串）', value: 'base64' },
+        { label: '文件落盘 file', value: 'file' },
+      ],
+      help: '二进制响应（音频/图片等）走 file 落盘，输出 filePath 可直接接「保存资产」节点',
+    }),
   ],
   'template-transform': [
     T('template', '输出模板', {

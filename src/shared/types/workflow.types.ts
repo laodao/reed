@@ -344,6 +344,8 @@ export interface WorkflowNodeConfigMap {
     body?: string
     /** 超时毫秒（默认 30s；封顶 WORKFLOW_LIMITS.httpTimeoutMs） */
     timeoutMs?: number
+    /** 响应处理模式：auto=按 content-type（二进制→落盘 filePath）| text | json | base64 | file */
+    responseType?: 'auto' | 'text' | 'json' | 'base64' | 'file'
   }
 
   'app-notify': {
@@ -402,6 +404,8 @@ export interface WorkflowNodeConfigMap {
     credentialId?: string
     /** 工具参数（值支持 {{模板}}） */
     params?: Array<{ key: string; value: string }>
+    /** 响应处理模式：auto=按 content-type（二进制→落盘 filePath）| text | json | base64 | file */
+    responseType?: 'auto' | 'text' | 'json' | 'base64' | 'file'
   }
 
   'code': {

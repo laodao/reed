@@ -1,11 +1,24 @@
 /**
  * 节点共享 HTTP 执行（C5 从 http-request 抽出）
  * @module core/modules/workflow/nodes/http-fetch
- * @description http-request 与 oas-tool 共用：超时封顶、取消信号合并、
+ * @description http-request / tool-call / oas-tool 共用：超时封顶、取消信号合并、
  *              响应统一 { status, body, json?, headers } 输出形状。
+ *
+ *              响应处理模式（responseType）：
+ *              - auto（默认）：按 content-type 判断——文本/JSON 走 body/json，二进制落盘 filePath
+ *              - text / json：强制按文本/JSON 处理（JSON 解析失败不报错，json 为 undefined）
+ *              - base64：二进制响应转 base64 字符串（小 payload 内联用，Web/桌面通吃）
+ *              - file：二进制响应落盘（大文件推荐；落盘目录 outputDir，缺省 dataPath/workflow-media/http）
+ *
+ *              二进制走 arrayBuffer 整体读入（TTS 音频等 MB 级无压力）；超大响应将来可换流式管道。
  */
 
+import * as fs from 'fs'
+import * as path from 'path'
+import { getPathProvider } from '@core/interfaces/path.interface'
 import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from '@shared/types/workflow.types'
+
+export type HttpResponseType = 'auto' | 'text' | 'json' | 'base64' | 'file'
 
 export interface HttpFetchInput {
   method: string
@@ -13,13 +26,55 @@ export interface HttpFetchInput {
   headers?: Record<string, string>
   body?: string
   timeoutMs?: number
+  /** 响应处理模式（缺省 auto） */
+  responseType?: HttpResponseType
+  /** file 模式的落盘目录（缺省 dataPath/workflow-media/http） */
+  outputDir?: string
 }
 
 export interface HttpFetchOutput {
   status: number
+  /** 文本模式下的响应体（二进制模式为空串） */
   body: string
   json?: unknown
   headers: Record<string, string>
+  /** 二进制响应（base64 模式）：base64 字符串 */
+  base64?: string
+  /** 二进制响应（base64 模式）：data:<mime>;base64,...（可直接接保存资产节点） */
+  dataUrl?: string
+  /** 二进制响应（file/auto 模式）：落盘绝对路径 */
+  filePath?: string
+  /** 二进制响应：MIME 类型（来自 content-type 头） */
+  mimeType?: string
+  /** 二进制响应：字节数 */
+  sizeBytes?: number
+}
+
+/** 按 content-type 判断是否为二进制内容（文本/JSON/XML/表单 之外视为二进制） */
+function isBinaryContentType(contentType: string): boolean {
+  const ct = contentType.split(';')[0].trim().toLowerCase()
+  if (!ct) return false
+  if (ct.startsWith('text/')) return false
+  if (ct === 'application/json' || ct.endsWith('+json')) return false
+  if (ct === 'application/xml' || ct.endsWith('+xml')) return false
+  if (ct === 'application/x-www-form-urlencoded') return false
+  if (ct === 'application/javascript') return false
+  return true
+}
+
+/** 常见 MIME → 扩展名（落盘文件命名用，让 save-asset 能按扩展名自动分类） */
+const MIME_EXT: Record<string, string> = {
+  'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/flac': 'flac',
+  'audio/ogg': 'ogg', 'audio/mp4': 'm4a', 'audio/aac': 'aac', 'audio/opus': 'opus',
+  'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp',
+  'image/svg+xml': 'svg', 'image/bmp': 'bmp',
+  'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov',
+  'application/pdf': 'pdf', 'application/zip': 'zip',
+}
+
+function extForMime(mimeType: string): string {
+  const key = mimeType.split(';')[0].trim().toLowerCase()
+  return MIME_EXT[key] ?? 'bin'
 }
 
 /**
@@ -43,17 +98,63 @@ export async function executeHttpFetch(
   } catch (e) {
     return { ok: false, error: `请求失败: ${e instanceof Error ? e.message : String(e)}` }
   }
-  const body = await res.text()
-  let json: unknown
-  try {
-    json = JSON.parse(body)
-  } catch {
-    json = undefined
-  }
+
+  const contentType = res.headers.get('content-type') ?? ''
+  const mimeType = contentType.split(';')[0].trim() || 'application/octet-stream'
   const headers: Record<string, string> = {}
   res.headers.forEach((v, k) => {
     headers[k] = v
   })
+
+  // 决定模式：显式指定 > auto 按 content-type 判断
+  const mode: HttpResponseType = input.responseType ?? 'auto'
+  const binaryMode = mode === 'base64' || mode === 'file' || (mode === 'auto' && isBinaryContentType(contentType))
+
+  if (binaryMode) {
+    const buf = Buffer.from(await res.arrayBuffer())
+    if (mode === 'base64') {
+      const base64 = buf.toString('base64')
+      return {
+        ok: true,
+        output: {
+          status: res.status,
+          body: '',
+          headers,
+          base64,
+          dataUrl: `data:${mimeType};base64,${base64}`,
+          mimeType,
+          sizeBytes: buf.length,
+        },
+      }
+    }
+    // file 模式（含 auto 命中二进制）：落盘，节点只输出几十字节的路径
+    const dir = input.outputDir ?? path.join(getPathProvider().getDataPath(), 'workflow-media', 'http')
+    fs.mkdirSync(dir, { recursive: true })
+    const filePath = path.join(dir, `http-${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${extForMime(mimeType)}`)
+    fs.writeFileSync(filePath, buf)
+    return {
+      ok: true,
+      output: {
+        status: res.status,
+        body: '',
+        headers,
+        filePath,
+        mimeType,
+        sizeBytes: buf.length,
+      },
+    }
+  }
+
+  // 文本 / JSON 模式
+  const body = await res.text()
+  let json: unknown
+  if (mode !== 'text') {
+    try {
+      json = JSON.parse(body)
+    } catch {
+      json = undefined
+    }
+  }
   return {
     ok: true,
     output: {

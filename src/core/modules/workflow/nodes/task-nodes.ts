@@ -6,6 +6,7 @@
  */
 
 import { callAIStream, callVLM, toImageDataUrl } from '../../../services/ai-call'
+import { getPathProvider } from '@core/interfaces/path.interface'
 import { WORKFLOW_DEFAULTS } from '@shared/types/workflow.types'
 import { executeHttpFetch } from './http-fetch'
 import { sleepAbortable } from '../engine/async-utils'
@@ -44,12 +45,17 @@ const httpRequestNode: WorkflowNodeHandler = {
   cancellable: true,
   outputSchema: [
     { key: 'status', type: 'number', desc: 'HTTP 状态码' },
-    { key: 'body', type: 'string', desc: '响应体文本' },
+    { key: 'body', type: 'string', desc: '响应体文本（二进制响应为空串）' },
     { key: 'json', type: 'json', desc: 'JSON 响应解析结果' },
     { key: 'headers', type: 'json', desc: '响应头' },
+    { key: 'base64', type: 'string', desc: 'base64 模式：二进制响应内容' },
+    { key: 'dataUrl', type: 'string', desc: 'base64 模式：data:<mime>;base64,...（可直接接保存资产节点）' },
+    { key: 'filePath', type: 'string', desc: 'file/auto 模式：二进制响应落盘路径' },
+    { key: 'mimeType', type: 'string', desc: '二进制响应的 MIME 类型' },
+    { key: 'sizeBytes', type: 'number', desc: '二进制响应字节数' },
   ],
   validateConfig(config) {
-    const cfg = config as { method?: string; url?: string; timeoutMs?: number }
+    const cfg = config as { method?: string; url?: string; timeoutMs?: number; responseType?: string }
     const errors: string[] = []
     if (!cfg.method || !['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(cfg.method)) {
       errors.push('method 必须是 GET/POST/PUT/PATCH/DELETE')
@@ -60,6 +66,9 @@ const httpRequestNode: WorkflowNodeHandler = {
     if (cfg.timeoutMs !== undefined && (!Number.isFinite(cfg.timeoutMs) || cfg.timeoutMs <= 0)) {
       errors.push('timeoutMs 必须是正数')
     }
+    if (cfg.responseType && !['auto', 'text', 'json', 'base64', 'file'].includes(cfg.responseType)) {
+      errors.push('responseType 必须是 auto/text/json/base64/file')
+    }
     return errors
   },
   async execute(ctx: WorkflowNodeContext) {
@@ -69,6 +78,7 @@ const httpRequestNode: WorkflowNodeHandler = {
       headers?: Array<{ key: string; value: string }>
       body?: string
       timeoutMs?: number
+      responseType?: 'auto' | 'text' | 'json' | 'base64' | 'file'
     }
     // C5：抽出共享执行（oas-tool 复用超时/取消/输出形状）
     const result = await executeHttpFetch(
@@ -78,6 +88,9 @@ const httpRequestNode: WorkflowNodeHandler = {
         headers: Object.fromEntries((cfg.headers ?? []).map(h => [h.key, h.value])),
         body: cfg.body,
         timeoutMs: cfg.timeoutMs,
+        responseType: cfg.responseType,
+        // 落盘目录：每次运行独立，防并发互踩（与 media-nodes 同模式）
+        outputDir: `${getPathProvider().getDataPath()}/workflow-media/${ctx.runId.replace(/[^\w.-]/g, '_')}/http`,
       },
       ctx.signal
     )
