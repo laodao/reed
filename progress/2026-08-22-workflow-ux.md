@@ -120,6 +120,29 @@
 
 验证：vue-tsc 通过；e2e-workflow-ux 全绿（预设错误文案与断言一致）。
 
+## 补充：第 8 点 —— 能力节点模型选择 + 本地命令行工具接入
+
+用户需求：① 翻译/文本转语音/语音转文本走默认模型不可见 → 加模型选择；② 支持用户自写
+程序/脚本/CLI 接入工具系统（现有仅 API 工具）。
+
+### A. 能力节点模型选择（提交 3a7dce26）
+- translate/tts/stt 节点表单补 model-pair（Provider+模型联动），不选走系统默认
+- model-pair 联动下拉按节点类型过滤模型：文本节点看 text/multimodal，语音节点看 audio/multimodal
+
+### B. 本地命令行工具（kind=cli）
+- 类型：custom_tools 加 kind（api/cli）+ command/args_template/cwd/timeout_ms/stdout_type 列
+  （create-tool-tables 迁移对新库建列、旧库幂等 ALTER 补列；已存表自动补齐）
+- 执行器：tool.service.executeTool 按 kind 分发；cli 走 spawn(command, args, {cwd,timeout})，
+  argsTemplate 的 {{param}} 占位映射工作流 tool-call 传入参数，捕获 stdout/stderr；
+  stdoutType=json 时解析 JSON 输出
+- 已装程序扫描：scanInstalledCommands 枚举 PATH 下可执行文件（Windows .exe/.cmd/.bat/.ps1/.com）
+- 工具界面：ToolSettings 新建/编辑工具增加「类型」切换（API 接口 / 本地命令）；本地命令表单含
+  命令（可手动填或从已装程序下拉选）、参数模板、工作目录、超时、输出解析
+- tool-call 节点：toolType 仍为 custom，params 经引擎深解析后传入 → 映射 argsTemplate 占位
+
+验证：e2e-cli-tool.cjs 通过（node -e 输出 JSON，sum=7 参数映射成功）；e2e-tool-call（API 工具）
+与 e2e-workflow-ux 回归全绿；前后端 tsc 通过。
+
 ## 备注
 
 - 移除 lw 节点前已确认存量工作流（11 个 workflow_definitions）均未引用

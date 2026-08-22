@@ -10,8 +10,9 @@
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { executeHttpFetch, type HttpResponseType } from '../nodes/http-fetch'
 import { PRESET_TOOL_MAP, PRESET_TOOLS } from './preset-tools'
-import { TOOL_AUTH_TYPES, type CustomTool, type PresetTool, type ToolCredential } from '@shared/types/tool.types'
+import { TOOL_AUTH_TYPES, TOOL_KINDS, type CustomTool, type PresetTool, type ToolCredential } from '@shared/types/tool.types'
 import { createLogger } from '@core/utils/logger'
+import { spawn } from 'node:child_process'
 
 const logger = createLogger('ToolService')
 
@@ -112,14 +113,24 @@ export class ToolService {
   async saveCustomTool(input: {
     name: string
     description?: string
+    kind?: 'api' | 'cli'
     method: string
     url: string
     headers?: Array<{ key: string; value: string }>
     paramsSchema?: Array<{ key: string; label?: string; type?: string; required?: boolean; options?: unknown[]; default?: unknown }>
     authType?: string
     credentialId?: string | null
+    command?: string
+    argsTemplate?: string
+    cwd?: string
+    timeoutMs?: number
+    stdoutType?: 'text' | 'json'
   }): Promise<CustomTool> {
-    return this.customTools.create({ ...input, authType: input.authType ?? TOOL_AUTH_TYPES.none })
+    return this.customTools.create({
+      ...input,
+      kind: input.kind ?? TOOL_KINDS.api,
+      authType: input.authType ?? TOOL_AUTH_TYPES.none,
+    })
   }
 
   async updateCustomTool(id: string, patch: Record<string, unknown>): Promise<CustomTool | null> {
@@ -128,6 +139,33 @@ export class ToolService {
 
   async deleteCustomTool(id: string): Promise<void> {
     await this.customTools.delete(id)
+  }
+
+  // ==================== 本地命令工具 ====================
+
+  /** 扫描 PATH 下可执行程序（供"已装程序选择"下拉） */
+  async scanInstalledCommands(): Promise<Array<{ name: string; path: string }>> {
+    const fsMod = await import('node:fs')
+    const pathMod = await import('node:path')
+    const sep = pathMod.delimiter
+    const dirs = (process.env.PATH ?? '').split(sep).filter(Boolean)
+    const exts = process.platform === 'win32' ? ['.exe', '.cmd', '.bat', '.ps1', '.com'] : ['']
+    const seen = new Map<string, string>()
+    for (const dir of dirs) {
+      let entries: string[]
+      try { entries = fsMod.readdirSync(dir) } catch { continue }
+      for (const f of entries) {
+        const full = pathMod.join(dir, f)
+        const lower = f.toLowerCase()
+        if (!exts.some(e => lower.endsWith(e))) continue
+        const base = f.replace(/\.[^.]+$/, '')
+        if (!base || seen.has(base)) continue
+        seen.set(base, full)
+      }
+    }
+    return Array.from(seen.entries())
+      .map(([name, path]) => ({ name, path }))
+      .sort((a, b) => a.name.localeCompare(b.name))
   }
 
   // ==================== 预设工具 ====================
@@ -140,9 +178,14 @@ export class ToolService {
 
   async executeTool(input: ExecuteToolInput): Promise<ExecuteToolResult> {
     // 1. 取工具定义
-    const tool: { method: string; url: string; headers: Array<{ key: string; value: string }>; authType: string } | null =
+    const tool: CustomTool | PresetTool | null =
       input.type === 'preset' ? PRESET_TOOL_MAP[input.toolId] ?? null : await this.customTools.findById(input.toolId)
     if (!tool) throw new Error(`工具不存在：${input.toolId}`)
+
+    // CLI 工具：spawn 本地命令（参数按 argsTemplate 的 {{param}} 占位映射）
+    if (tool.kind === TOOL_KINDS.cli) {
+      return this.runCli(tool, input.params ?? {}, input.signal)
+    }
 
     // 2. 凭据（可选）
     let apiKey = ''
@@ -212,4 +255,61 @@ export class ToolService {
       durationMs,
     }
   }
+
+  // ==================== CLI 工具执行 ====================
+
+  /** 本地命令工具：参数映射到 argsTemplate 的 {{param}} 占位 → spawn 执行，捕获 stdout/stderr */
+  private runCli(tool: CustomTool | PresetTool, params: Record<string, unknown>, signal: AbortSignal): Promise<ExecuteToolResult> {
+    const command = (tool.command ?? '').trim()
+    if (!command) throw new Error('CLI 工具未配置命令行')
+    const rendered = (tool.argsTemplate ?? '').replace(/\{\{([\w.]+)\}\}/g, (_m, k: string) =>
+      params[k] !== undefined ? String(params[k]) : ''
+    )
+    const args = splitArgs(rendered)
+    const start = Date.now()
+    const timeoutMs = tool.timeoutMs ?? 30000
+    return new Promise<ExecuteToolResult>((resolve) => {
+      let child = spawn(command, args, { cwd: tool.cwd || undefined, shell: false })
+      let stdout = ''
+      let stderr = ''
+      let settled = false
+      const finish = (r: ExecuteToolResult) => { if (!settled) { settled = true; resolve(r) } }
+      const timer = setTimeout(() => { try { child.kill('SIGKILL') } catch { /* 已退出 */ } }, timeoutMs)
+      const onAbort = () => { try { child.kill('SIGKILL') } catch { /* 已退出 */ } }
+      if (signal) {
+        if (signal.aborted) onAbort()
+        else signal.addEventListener('abort', onAbort, { once: true })
+      }
+      child.once('error', err => {
+        clearTimeout(timer)
+        if (signal) signal.removeEventListener('abort', onAbort)
+        finish({ status: 0, ok: false, text: `启动命令失败：${err.message}`, durationMs: Date.now() - start })
+      })
+      child.stdout?.on('data', d => { stdout += String(d) })
+      child.stderr?.on('data', d => { stderr += String(d) })
+      child.once('close', code => {
+        clearTimeout(timer)
+        if (signal) signal.removeEventListener('abort', onAbort)
+        const ok = code === 0
+        let json: unknown = null
+        if (ok && tool.stdoutType === 'json') {
+          try { json = JSON.parse(stdout) } catch { /* 非 JSON，json 保持 null */ }
+        }
+        finish({
+          status: code ?? 0,
+          ok,
+          json: json,
+          text: (stdout || stderr).trim(),
+          durationMs: Date.now() - start,
+        })
+      })
+    })
+  }
+}
+
+/** 简单命令行参数拆分（支持空格/引号包裹，V1） */
+function splitArgs(s: string): string[] {
+  const m = s.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)
+  if (!m) return []
+  return m.map(t => t.replace(/^["']|["']$/g, ''))
 }

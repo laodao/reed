@@ -18,6 +18,9 @@ export class CustomToolEntity {
   @Column({ name: 'description', type: 'varchar', nullable: true })
   description!: string | null
 
+  @Column({ name: 'kind', type: 'varchar' })
+  kind!: string
+
   @Column({ name: 'method', type: 'varchar' })
   method!: string
 
@@ -35,6 +38,21 @@ export class CustomToolEntity {
 
   @Column({ name: 'credential_id', type: 'varchar', nullable: true })
   credentialId!: string | null
+
+  @Column({ name: 'command', type: 'varchar', nullable: true })
+  command!: string | null
+
+  @Column({ name: 'args_template', type: 'varchar', nullable: true })
+  argsTemplate!: string | null
+
+  @Column({ name: 'cwd', type: 'varchar', nullable: true })
+  cwd!: string | null
+
+  @Column({ name: 'timeout_ms', type: 'int', nullable: true })
+  timeoutMs!: number | null
+
+  @Column({ name: 'stdout_type', type: 'varchar', nullable: true })
+  stdoutType!: string | null
 
   @Column({ name: 'created_at', type: 'datetime', nullable: true })
   createdAt!: Date | null

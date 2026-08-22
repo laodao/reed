@@ -29,15 +29,24 @@ export function registerToolHandlers(): void {
   ipcBridge.handle('tool:list-custom', () =>
     wrap(() => svc().listCustomTools())
   )
+  ipcBridge.handle('tool:scan-installed', () =>
+    wrap(() => svc().scanInstalledCommands())
+  )
   ipcBridge.handle('tool:save-custom', (_e, p: {
     name: string
     description?: string
+    kind?: 'api' | 'cli'
     method: string
     url: string
     headers?: Array<{ key: string; value: string }>
     paramsSchema?: Array<{ key: string; label?: string; type?: string; required?: boolean; options?: Array<{ label: string; value: string | number }>; default?: unknown }>
     authType?: string
     credentialId?: string | null
+    command?: string
+    argsTemplate?: string
+    cwd?: string
+    timeoutMs?: number
+    stdoutType?: 'text' | 'json'
   }) =>
     wrap(() => svc().saveCustomTool(p))
   )

@@ -34,25 +34,44 @@ export interface ToolParamField {
   default?: unknown
 }
 
+/** 自定义工具类型：api=HTTP 接口 / cli=本地命令行/脚本 */
+export const TOOL_KINDS = { api: 'api', cli: 'cli' } as const
+export type ToolKind = (typeof TOOL_KINDS)[keyof typeof TOOL_KINDS]
+
 /** 自定义工具（custom_tools 表字段同名直出） */
 export interface CustomTool {
   id: string
   name: string
   description: string | null
+  /** 工具类型：api / cli */
+  kind: ToolKind
+  // ---- API 工具字段 ----
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   url: string
   /** 请求头（value 支持 {{param}} 与 {{credential}} 占位） */
   headers: Array<{ key: string; value: string }>
-  /** 参数 schema（编辑器生成参数表单 + 执行时映射 path/query/body） */
+  /** 参数 schema（编辑器生成参数表单 + 执行时映射 path/query/body 或 cli 参数） */
   paramsSchema: ToolParamField[]
   authType: ToolAuthType
   credentialId: string | null
+  // ---- CLI 工具字段 ----
+  /** 可执行名或完整路径（如 python、ffmpeg、C:\\my\\script.bat） */
+  command?: string | null
+  /** 命令行参数模板，{{param}} 占位从工作流输入映射，如 "script.py --lang {{lang}}" */
+  argsTemplate?: string | null
+  /** 工作目录（留空用工具服务默认可写目录） */
+  cwd?: string | null
+  /** 超时毫秒（默认 30000） */
+  timeoutMs?: number | null
+  /** stdout 解析：text=纯文本 / json=JSON 对象 */
+  stdoutType?: 'text' | 'json' | null
   createdAt: Date | null
   updatedAt: Date | null
 }
 
-/** 预设工具（内置资产，只读）：结构同 CustomTool + 分类 */
-export interface PresetTool extends Omit<CustomTool, 'id'> {
+/** 预设工具（内置资产，只读）：结构同 CustomTool + 分类（kind 默认 api） */
+export interface PresetTool extends Omit<CustomTool, 'id' | 'kind'> {
   id: string
   category: string
+  kind?: ToolKind
 }

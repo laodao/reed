@@ -41,10 +41,13 @@
       </div>
       <div v-if="tools.length" class="tool-list">
         <div v-for="t in tools" :key="t.id" class="tool-item">
-          <span class="item-icon">🧩</span>
+          <span class="item-icon">{{ t.kind === 'cli' ? '🖥️' : '🧩' }}</span>
           <div class="item-info">
-            <span class="item-name">{{ t.name }}</span>
-            <span class="item-desc">{{ t.method }} {{ t.url }}</span>
+            <span class="item-name">
+              {{ t.name }}
+              <el-tag size="small" :type="t.kind === 'cli' ? 'warning' : 'primary'" effect="plain">{{ t.kind === 'cli' ? '本地命令' : 'API' }}</el-tag>
+            </span>
+            <span class="item-desc">{{ t.kind === 'cli' ? (t.command ?? '') : `${t.method} ${t.url}` }}</span>
           </div>
           <div class="item-actions">
             <el-button text size="small" @click="openToolDialog(t)">编辑</el-button>
@@ -99,36 +102,70 @@
         <el-form-item label="描述">
           <el-input v-model="toolForm.description" placeholder="一句话说明用途" />
         </el-form-item>
-        <el-form-item label="方法">
-          <el-select v-model="toolForm.method" style="width: 100%">
-            <el-option v-for="m in ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']" :key="m" :label="m" :value="m" />
-          </el-select>
+        <el-form-item label="类型">
+          <el-radio-group v-model="toolForm.kind">
+            <el-radio-button value="api">API 接口</el-radio-button>
+            <el-radio-button value="cli">本地命令</el-radio-button>
+          </el-radio-group>
         </el-form-item>
-        <el-form-item label="URL" required>
-          <el-input v-model="toolForm.url" placeholder="https://api.example.com/items/{{id}}" />
-        </el-form-item>
-        <el-form-item label="鉴权方式">
-          <el-select v-model="toolForm.authType" style="width: 100%" @change="toolForm.credentialId = toolForm.authType === 'credential' ? toolForm.credentialId : undefined">
-            <el-option label="无" value="none" />
-            <el-option label="引用凭据（{{credential}} 占位或自动 Bearer）" value="credential" />
-            <el-option label="请求头手填" value="header" />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="toolForm.authType === 'credential'" label="凭据">
-          <el-select v-model="toolForm.credentialId" clearable placeholder="选择凭据" style="width: 100%">
-            <el-option v-for="c in credentials" :key="c.id" :label="c.name" :value="c.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="请求头">
-          <div class="kv-editor">
-            <div v-for="(h, i) in toolForm.headers" :key="i" class="kv-row">
-              <el-input v-model="h.key" placeholder="Header 名（如 X-API-KEY）" size="small" />
-              <el-input v-model="h.value" placeholder="值，支持 {{param}} / {{credential}}" size="small" />
-              <el-button text type="danger" size="small" @click="toolForm.headers.splice(i, 1)">✕</el-button>
+        <template v-if="toolForm.kind === 'api'">
+          <el-form-item label="方法">
+            <el-select v-model="toolForm.method" style="width: 100%">
+              <el-option v-for="m in ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']" :key="m" :label="m" :value="m" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="URL" required>
+            <el-input v-model="toolForm.url" placeholder="https://api.example.com/items/{{id}}" />
+          </el-form-item>
+          <el-form-item label="鉴权方式">
+            <el-select v-model="toolForm.authType" style="width: 100%" @change="toolForm.credentialId = toolForm.authType === 'credential' ? toolForm.credentialId : undefined">
+              <el-option label="无" value="none" />
+              <el-option label="引用凭据（{{credential}} 占位或自动 Bearer）" value="credential" />
+              <el-option label="请求头手填" value="header" />
+            </el-select>
+          </el-form-item>
+          <el-form-item v-if="toolForm.authType === 'credential'" label="凭据">
+            <el-select v-model="toolForm.credentialId" clearable placeholder="选择凭据" style="width: 100%">
+              <el-option v-for="c in credentials" :key="c.id" :label="c.name" :value="c.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="请求头">
+            <div class="kv-editor">
+              <div v-for="(h, i) in toolForm.headers" :key="i" class="kv-row">
+                <el-input v-model="h.key" placeholder="Header 名（如 X-API-KEY）" size="small" />
+                <el-input v-model="h.value" placeholder="值，支持 {{param}} / {{credential}}" size="small" />
+                <el-button text type="danger" size="small" @click="toolForm.headers.splice(i, 1)">✕</el-button>
+              </div>
+              <el-button size="small" text type="primary" @click="toolForm.headers.push({ key: '', value: '' })">+ 请求头</el-button>
             </div>
-            <el-button size="small" text type="primary" @click="toolForm.headers.push({ key: '', value: '' })">+ 请求头</el-button>
-          </div>
-        </el-form-item>
+          </el-form-item>
+        </template>
+        <template v-else>
+          <el-form-item label="命令" required>
+            <el-input v-model="toolForm.command" placeholder="如 python / ffmpeg / C:\my\script.bat" />
+          </el-form-item>
+          <el-form-item label="已装程序">
+            <el-select v-model="toolForm.command" filterable clearable placeholder="从已安装程序中选（可搜索）" style="width: 100%">
+              <el-option v-for="c in installedCommands" :key="c.path" :label="`${c.name} — ${c.path}`" :value="c.path" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="参数模板">
+            <el-input v-model="toolForm.argsTemplate" placeholder='如 script.py --lang {{lang}} {{text}}' />
+            <div class="sub-hint">{{param}} 从工作流 tool-call 节点传入的参数映射；引号内的空格会保留</div>
+          </el-form-item>
+          <el-form-item label="工作目录">
+            <el-input v-model="toolForm.cwd" placeholder="留空用默认可写目录" />
+          </el-form-item>
+          <el-form-item label="超时(ms)">
+            <el-input-number v-model="toolForm.timeoutMs" :min="1000" :step="1000" style="width: 200px" />
+          </el-form-item>
+          <el-form-item label="输出解析">
+            <el-select v-model="toolForm.stdoutType" style="width: 200px">
+              <el-option label="纯文本" value="text" />
+              <el-option label="JSON 对象" value="json" />
+            </el-select>
+          </el-form-item>
+        </template>
         <el-form-item label="参数 Schema">
           <div class="schema-editor">
             <div v-for="(f, i) in toolForm.paramsSchema" :key="i" class="schema-row">
@@ -158,7 +195,7 @@
       </el-form>
       <template #footer>
         <el-button @click="toolVisible = false">取消</el-button>
-        <el-button type="primary" :disabled="!toolForm.name || !toolForm.url" @click="saveTool">保存</el-button>
+        <el-button type="primary" :disabled="!toolForm.name || (toolForm.kind === 'api' ? !toolForm.url : !toolForm.command)" @click="saveTool">保存</el-button>
       </template>
     </el-dialog>
   </div>
@@ -219,30 +256,52 @@ async function deleteCredential(c: any) {
 const toolVisible = ref(false)
 const editingTool = ref<any>(null)
 const toolForm = reactive<any>({
-  name: '', description: '', method: 'GET', url: '', headers: [], paramsSchema: [], authType: 'none', credentialId: undefined,
+  kind: 'api', name: '', description: '', method: 'GET', url: '', headers: [], paramsSchema: [], authType: 'none', credentialId: undefined,
+  command: '', argsTemplate: '', cwd: '', timeoutMs: 30000, stdoutType: 'text',
 })
+/** 已安装程序（PATH 扫描，供本地命令工具下拉选择） */
+const installedCommands = ref<Array<{ name: string; path: string }>>([])
+async function loadInstalled() {
+  const r = await api().scanInstalled()
+  if (r.success) installedCommands.value = r.data ?? []
+}
 
 function openToolDialog(t?: any) {
   editingTool.value = t ?? null
   if (t) {
     Object.assign(toolForm, {
-      name: t.name, description: t.description ?? '', method: t.method, url: t.url,
+      kind: t.kind ?? 'api', name: t.name, description: t.description ?? '', method: t.method, url: t.url,
       headers: (t.headers ?? []).map((h: any) => ({ ...h })),
       paramsSchema: (t.paramsSchema ?? []).map((f: any) => ({ ...f, options: f.options ? f.options.map((o: any) => ({ ...o })) : undefined })),
       authType: t.authType, credentialId: t.credentialId ?? undefined,
+      command: t.command ?? '', argsTemplate: t.argsTemplate ?? '', cwd: t.cwd ?? '',
+      timeoutMs: t.timeoutMs ?? 30000, stdoutType: t.stdoutType ?? 'text',
     })
   } else {
-    Object.assign(toolForm, { name: '', description: '', method: 'GET', url: '', headers: [], paramsSchema: [], authType: 'none', credentialId: undefined })
+    Object.assign(toolForm, {
+      kind: 'api', name: '', description: '', method: 'GET', url: '', headers: [], paramsSchema: [], authType: 'none', credentialId: undefined,
+      command: '', argsTemplate: '', cwd: '', timeoutMs: 30000, stdoutType: 'text',
+    })
   }
   toolVisible.value = true
 }
 
 async function saveTool() {
-  const payload = {
-    name: toolForm.name, description: toolForm.description || undefined, method: toolForm.method, url: toolForm.url,
-    headers: toolForm.headers.filter((h: any) => h.key || h.value),
+  const payload: any = {
+    kind: toolForm.kind, name: toolForm.name, description: toolForm.description || undefined,
     paramsSchema: toolForm.paramsSchema.filter((f: any) => f.key),
-    authType: toolForm.authType, credentialId: toolForm.authType === 'credential' ? (toolForm.credentialId ?? null) : null,
+  }
+  if (toolForm.kind === 'api') {
+    Object.assign(payload, {
+      method: toolForm.method, url: toolForm.url,
+      headers: toolForm.headers.filter((h: any) => h.key || h.value),
+      authType: toolForm.authType, credentialId: toolForm.authType === 'credential' ? (toolForm.credentialId ?? null) : null,
+    })
+  } else {
+    Object.assign(payload, {
+      command: toolForm.command, argsTemplate: toolForm.argsTemplate, cwd: toolForm.cwd || undefined,
+      timeoutMs: toolForm.timeoutMs, stdoutType: toolForm.stdoutType,
+    })
   }
   const r = editingTool.value
     ? await api().updateCustom(editingTool.value.id, payload)
@@ -263,7 +322,7 @@ async function deleteTool(t: any) {
   else ElMessage.error(r.error ?? '删除失败')
 }
 
-onMounted(load)
+onMounted(() => { load(); loadInstalled() })
 </script>
 
 <style scoped>
@@ -286,4 +345,5 @@ onMounted(load)
 .kv-row > .el-input { flex: 1; }
 .schema-row { border: 1px solid var(--el-border-color-lighter); border-radius: 6px; padding: 8px; margin-bottom: 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .schema-options { width: 100%; padding-left: 12px; margin-top: 4px; }
+.sub-hint { color: var(--el-text-color-secondary); font-size: 12px; margin-top: 4px; }
 </style>

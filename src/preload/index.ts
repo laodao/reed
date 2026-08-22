@@ -761,15 +761,22 @@ const electronAPI = {
     saveCredential: (p: { name: string; apiKey: string; baseUrl?: string }) => ipcRenderer.invoke('tool:save-credential', p),
     deleteCredential: (id: string) => ipcRenderer.invoke('tool:delete-credential', { id }),
     listCustom: () => ipcRenderer.invoke('tool:list-custom'),
+    scanInstalled: () => ipcRenderer.invoke('tool:scan-installed'),
     saveCustom: (p: {
       name: string
       description?: string
+      kind?: 'api' | 'cli'
       method: string
       url: string
       headers?: Array<{ key: string; value: string }>
       paramsSchema?: Array<{ key: string; label?: string; type?: string; required?: boolean; options?: Array<{ label: string; value: string | number }>; default?: unknown }>
       authType?: string
       credentialId?: string | null
+      command?: string
+      argsTemplate?: string
+      cwd?: string
+      timeoutMs?: number
+      stdoutType?: 'text' | 'json'
     }) => ipcRenderer.invoke('tool:save-custom', p),
     updateCustom: (id: string, patch: Record<string, unknown>) => ipcRenderer.invoke('tool:update-custom', { id, patch }),
     deleteCustom: (id: string) => ipcRenderer.invoke('tool:delete-custom', { id }),
