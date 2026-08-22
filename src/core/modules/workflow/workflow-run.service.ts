@@ -115,7 +115,7 @@ export class WorkflowRunService {
       (typeof v === 'string' && v.trim() === '') ||
       (Array.isArray(v) && v.length === 0) ||
       (typeof v === 'object' && Object.keys(v).length === 0)
-    // 必填 + 扩展规则（minLength/maxLength/pattern/min/max，与前端 RunInputForm 同规则）
+    // 必填 + 扩展规则（minLength/maxLength/pattern/min/max，与前端 RunInputForm 同规则；错误提示自动生成）
     const problems: string[] = []
     for (const def2 of inputDefs) {
       const label = def2.label || def2.key
@@ -126,6 +126,14 @@ export class WorkflowRunService {
       }
       if (isEmptyInput(v)) continue
       const rule = def2.validation
+      // 类型校验：数字字段收到非数字即报"类型不正确"
+      if (def2.type === 'number' && typeof v !== 'number') {
+        problems.push(`「${label}」类型不正确：应为数字`)
+        continue
+      }
+      if (def2.type === 'json') {
+        try { JSON.parse(String(v)) } catch { problems.push(`「${label}」类型不正确：JSON 格式无效`); continue }
+      }
       if (!rule) continue
       if (def2.type === 'string' || def2.type === 'textarea' || !def2.type) {
         const s = String(v)
@@ -133,12 +141,13 @@ export class WorkflowRunService {
         if (rule.maxLength != null && s.length > rule.maxLength) problems.push(`「${label}」超出长度：最多 ${rule.maxLength} 个字符`)
         if (rule.pattern) {
           try {
-            if (!new RegExp(rule.pattern).test(s)) problems.push(`「${label}」${rule.patternMessage || '格式不符合要求'}`)
+            if (!new RegExp(rule.pattern).test(s)) problems.push(`「${label}」格式不匹配`)
           } catch { /* 非法正则容错：不拦截 */ }
         }
-      } else if (def2.type === 'number' && typeof v === 'number') {
-        if (rule.min != null && v < rule.min) problems.push(`「${label}」不能小于 ${rule.min}`)
-        if (rule.max != null && v > rule.max) problems.push(`「${label}」不能大于 ${rule.max}`)
+      } else if (def2.type === 'number') {
+        const n = v as number
+        if (rule.min != null && n < rule.min) problems.push(`「${label}」不能小于 ${rule.min}`)
+        if (rule.max != null && n > rule.max) problems.push(`「${label}」不能大于 ${rule.max}`)
       }
     }
     if (problems.length > 0) {

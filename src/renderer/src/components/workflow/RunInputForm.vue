@@ -141,27 +141,29 @@ const isEmptyValue = (v: unknown): boolean =>
   (typeof v === 'string' && v.trim() === '') ||
   (Array.isArray(v) && v.length === 0)
 
-/** 单字段完整校验（不依赖 touched）：返回错误消息，空串=通过 */
+/** 单字段完整校验（不依赖 touched）：返回错误消息，空串=通过；错误提示按规则自动生成 */
 function validateItem(item: WorkflowStartInput): string {
   const v = item.type === 'number' ? numValues[item.key] : values[item.key]
   const rule = item.validation
-  const customMsg = rule?.message
-  if (item.required && isEmptyValue(v)) return customMsg || '必填'
+  if (item.required && isEmptyValue(v)) return '必填'
   if (isEmptyValue(v)) return ''
+  if (item.type === 'json') {
+    const raw = String(v ?? '').trim()
+    if (raw) { try { JSON.parse(raw) } catch { return 'JSON 格式不正确' } }
+    return ''
+  }
   if (item.type === 'string' || item.type === 'textarea' || !item.type) {
     const s = String(v)
-    if (rule?.minLength != null && s.length < rule.minLength) return customMsg || `至少 ${rule.minLength} 个字符`
-    if (rule?.maxLength != null && s.length > rule.maxLength) return customMsg || `最多 ${rule.maxLength} 个字符`
+    if (rule?.minLength != null && s.length < rule.minLength) return `至少 ${rule.minLength} 个字符`
+    if (rule?.maxLength != null && s.length > rule.maxLength) return `最多 ${rule.maxLength} 个字符`
     if (rule?.pattern) {
-      try {
-        if (!new RegExp(rule.pattern).test(s)) return rule.patternMessage || customMsg || '格式不符合要求'
-      } catch { /* 非法正则容错：不拦截 */ }
+      try { if (!new RegExp(rule.pattern).test(s)) return '格式不匹配' } catch { return '正则表达式无效' }
     }
   } else if (item.type === 'number') {
     const n = numValues[item.key]
     if (n !== undefined && n !== null) {
-      if (rule?.min != null && n < rule.min) return customMsg || `不能小于 ${rule.min}`
-      if (rule?.max != null && n > rule.max) return customMsg || `不能大于 ${rule.max}`
+      if (rule?.min != null && n < rule.min) return `不能小于 ${rule.min}`
+      if (rule?.max != null && n > rule.max) return `不能大于 ${rule.max}`
     }
   }
   return ''

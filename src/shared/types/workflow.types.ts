@@ -111,7 +111,7 @@ export interface WorkflowStartInput {
   defaultValue?: unknown
 }
 
-/** 开始节点输入参数的扩展校验规则 */
+/** 开始节点输入参数的扩展校验规则（错误提示由系统按规则自动生成，无需人工填写） */
 export interface WorkflowStartInputValidation {
   /** 最小长度（string/textarea；计入空白字符） */
   minLength?: number
@@ -119,14 +119,10 @@ export interface WorkflowStartInputValidation {
   maxLength?: number
   /** 正则校验（string/textarea；JS 正则字面量文本，如 "^\\d{11}$"） */
   pattern?: string
-  /** 正则不匹配时的提示文案（缺省为"格式不符合要求"） */
-  patternMessage?: string
   /** 最小值（number） */
   min?: number
   /** 最大值（number） */
   max?: number
-  /** 自定义错误提示（覆盖按规则生成的默认文案） */
-  message?: string
 }
 
 // ==================== 节点级执行设置 ====================

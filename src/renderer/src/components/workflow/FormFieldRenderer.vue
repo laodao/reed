@@ -105,23 +105,32 @@
           <el-button text size="small" :class="{ 'card-more-on': validationOpen[i] }" @click="validationOpen[i] = !validationOpen[i]">校验{{ validationOpen[i] ? ' ▾' : ' ▴' }}</el-button>
           <span class="card-spacer" />
         </div>
-        <div class="input-card-default">
+        <div v-if="item.type !== 'select'" class="input-card-default">
           <span class="default-label">默认值</span>
           <el-input :model-value="String(item.defaultValue ?? '')" placeholder="定时触发时用" size="small"
             @update:model-value="v => { item.defaultValue = v; syncInputs() }" />
         </div>
-        <div v-if="item.type === 'select'" class="options-sub">
-          <div class="kv-row" style="padding-left: 4px">
+        <div v-if="item.type === 'select'" class="options-table">
+          <div class="options-table-row options-table-head">
+            <span class="opt-idx">#</span>
+            <span class="opt-label">选项</span>
+            <span class="opt-value">值</span>
+            <span class="opt-default">默认</span>
+            <span class="opt-del"></span>
+          </div>
+          <div v-for="(opt, j) in item.options ?? []" :key="j" class="options-table-row">
+            <span class="opt-idx">{{ j + 1 }}</span>
+            <el-input v-model="opt.label" placeholder="选项" size="small" class="opt-label" @change="syncInputs" />
+            <el-input v-model="opt.value" placeholder="值" size="small" class="opt-value" @change="syncInputs" />
+            <el-radio v-model="item.defaultValue" :value="opt.value" class="opt-default" @change="syncInputs" />
+            <el-button text type="danger" size="small" class="opt-del" @click="item.options!.splice(j, 1); syncInputs()">✕</el-button>
+          </div>
+          <div class="kv-row" style="padding-left: 4px; margin-bottom: 0">
             <el-checkbox v-model="item.multi" size="small" @change="syncInputs">多选</el-checkbox>
             <el-button size="small" text type="primary" @click="(item.options ??= []).push({ label: '', value: '' }); syncInputs()">+ 选项</el-button>
           </div>
-          <div v-for="(opt, j) in item.options ?? []" :key="j" class="kv-row" style="padding-left: 16px">
-            <el-input v-model="opt.label" placeholder="显示名" size="small" style="width: 110px" @change="syncInputs" />
-            <el-input v-model="opt.value" placeholder="值" size="small" style="width: 110px" @change="syncInputs" />
-            <el-button text type="danger" size="small" @click="item.options!.splice(j, 1); syncInputs()">✕</el-button>
-          </div>
         </div>
-        <!-- 校验规则配置（除必填外的扩展校验） -->
+        <!-- 校验规则配置（除必填外；错误提示由系统按规则自动生成） -->
         <div v-if="validationOpen[i]" class="options-sub validation-sub">
           <template v-if="isTextInput(item)">
             <div class="kv-row" style="padding-left: 4px">
@@ -132,9 +141,7 @@
             </div>
             <div class="kv-row" style="padding-left: 4px">
               <span class="default-label">正则</span>
-              <el-input v-model="item.validation!.pattern" size="small" style="width: 160px" placeholder='如 ^\d{11}$' @change="syncInputs" />
-              <span class="default-label">正则提示</span>
-              <el-input v-model="item.validation!.patternMessage" size="small" style="width: 130px" placeholder="不匹配时的提示" @change="syncInputs" />
+              <el-input v-model="item.validation!.pattern" size="small" style="width: 180px" placeholder='如 ^\d{11}$' @change="syncInputs" />
             </div>
           </template>
           <template v-else-if="item.type === 'number'">
@@ -145,10 +152,6 @@
               <el-input-number v-model="item.validation!.max" size="small" controls-position="right" style="width: 110px" @change="syncInputs" />
             </div>
           </template>
-          <div class="kv-row" style="padding-left: 4px">
-            <span class="default-label">错误提示</span>
-            <el-input v-model="item.validation!.message" size="small" style="width: 220px" placeholder="自定义错误文案（缺省自动生成）" @change="syncInputs" />
-          </div>
         </div>
       </div>
     </template>
@@ -445,8 +448,9 @@ onMounted(loadTools)
 .kv-list > .kv-row > .el-input { flex: 1 1 0; width: auto; min-width: 0; }
 .kv-list > .kv-row > .el-select { flex: 0 0 auto; }
 /* 开始节点输入参数：参数卡片（键/名/类型/必填/校验/默认值 归属清晰，一行并排） */
-.input-card { border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 8px; margin-bottom: 8px; background: var(--el-fill-color-blank); transition: border-color .15s; }
+.input-card { border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 8px; margin-bottom: 8px; background: var(--el-fill-color-lighter); transition: border-color .15s; }
 .input-card:hover { border-color: var(--el-border-color); }
+.input-card .el-input, .input-card .el-select { background: #fff; }
 .input-card-head { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
 .input-card-head > .el-input { flex: 1 1 0; width: auto; min-width: 0; }
 .input-card-sub { display: flex; gap: 8px; align-items: center; }
@@ -455,6 +459,13 @@ onMounted(loadTools)
 .input-card-default { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
 .input-card-default .el-input { flex: 1 1 0; width: auto; min-width: 0; }
 .card-more-on { color: var(--el-color-primary); }
+/* 下拉选项表格：# / 选项 / 值 / 默认值（单选） */
+.options-table { margin-top: 6px; }
+.options-table-row { display: grid; grid-template-columns: 24px 1fr 1fr 40px 24px; gap: 6px; align-items: center; margin-bottom: 4px; }
+.options-table-head { font-size: 11px; color: var(--el-text-color-secondary); font-weight: 600; }
+.options-table-row .el-input { width: 100%; }
+.opt-idx, .opt-default, .opt-del { text-align: center; }
+.options-table-row .no-absorber { text-align: center; }
 .options-sub { margin: 6px 0 2px; }
 .validation-sub { border-left: 2px solid var(--el-border-color-lighter); margin-bottom: 4px; padding-top: 2px; }
 .default-label { font-size: 12px; color: var(--el-text-color-secondary); white-space: nowrap; }

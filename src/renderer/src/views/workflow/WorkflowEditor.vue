@@ -548,7 +548,7 @@ function removeSelected() {
 .pi-desc { font-size: 11px; font-weight: 400; color: var(--el-text-color-secondary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 .canvas { flex: 1; position: relative; background: #fafafa; }
-.config-area { width: 340px; border-left: 1px solid var(--el-border-color); background: var(--el-bg-color); }
+.config-area { width: 400px; border-left: 1px solid var(--el-border-color); background: var(--el-bg-color); }
 .config-empty { height: 100%; display: flex; align-items: center; justify-content: center; color: var(--el-text-color-placeholder); text-align: center; line-height: 1.8; }
 
 /* ── 自定义节点卡片 ── */
