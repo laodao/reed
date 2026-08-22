@@ -100,6 +100,7 @@
             <el-option label="数字" value="number" /><el-option label="布尔" value="boolean" />
             <el-option label="JSON" value="json" /><el-option label="下拉" value="select" />
             <el-option label="文件" value="file" /><el-option label="模型" value="model" />
+            <el-option label="动态下拉" value="select-dynamic" />
           </el-select>
           <el-checkbox v-model="item.required" size="small" @change="syncInputs">必填</el-checkbox>
           <el-button text size="small" :class="{ 'card-more-on': validationOpen[i] }" @click="validationOpen[i] = !validationOpen[i]">校验{{ validationOpen[i] ? ' ▾' : ' ▴' }}</el-button>
@@ -112,6 +113,15 @@
             <el-option label="图像" value="image" /><el-option label="多模态" value="multimodal" />
           </el-select>
           <span class="model-types-hint">{{ modelRefHint(item) }}</span>
+        </div>
+        <div v-if="item.type === 'select-dynamic'" class="input-card-modeltypes">
+          <span class="default-label">数据源</span>
+          <el-select v-model="item.source" size="small" placeholder="选择动态数据源" style="width: 220px" @change="syncInputs">
+            <el-option label="模板资产（资产中心·模板）" value="assets:template" />
+            <el-option label="预置新闻主题" value="newsTopics" />
+            <el-option label="知识库" value="knowledgeBases" />
+          </el-select>
+          <span class="model-types-hint">{{ dynamicRefHint(item) }}</span>
         </div>
         <div v-if="item.type !== 'select' && item.type !== 'model'" class="input-card-default">
           <span class="default-label">默认值</span>
@@ -345,6 +355,12 @@ function isTextInput(item: WorkflowStartInput): boolean {
 function modelRefHint(item: WorkflowStartInput): string {
   const k = item.key || '键'
   return `节点用 \`{{start.${k}.providerConfigId}}\` / \`{{start.${k}.modelId}}\` 引用`
+}
+
+/** 动态下拉字段的引用提示（值=资产 ID/主题 id/知识库 id） */
+function dynamicRefHint(item: WorkflowStartInput): string {
+  const k = item.key || '键'
+  return `运行表单下拉选择，值经 \`{{start.${k}}}\` 引用`
 }
 
 // ── fields-list ──

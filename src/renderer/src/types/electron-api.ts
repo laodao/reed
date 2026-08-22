@@ -29,7 +29,7 @@ export interface AppApi {
     list(p: { keyword?: string; page: number; pageSize: number }): Promise<IpcResp<{ items: Array<AppRecord & { sessionCount: number }>; total: number }>>
     get(id: string): Promise<IpcResp<AppRecord | null>>
     getByDefinition(definitionId: string): Promise<IpcResp<AppRecord | null>>
-    createFromWorkflow(p: { definitionId: string; name?: string; icon?: string }): Promise<IpcResp<AppRecord | null>>
+    createFromWorkflow(p: { definitionId: string; name?: string; icon?: string; channelSession?: boolean; channelShare?: boolean; channelApi?: boolean }): Promise<IpcResp<AppRecord | null>>
     updateChannels(p: { id: string; channelSession?: boolean; channelShare?: boolean; channelApi?: boolean }): Promise<IpcResp<AppRecord | null>>
     enableShare(id: string): Promise<IpcResp<AppRecord | null>>
     disableShare(id: string): Promise<IpcResp<AppRecord | null>>
@@ -51,18 +51,20 @@ export interface AppApi {
     onRunEvent(cb: (e: { runId?: string } & Record<string, unknown>) => void): () => void
   }
   assets: {
-    list(p: { category?: string; keyword?: string; page: number; pageSize: number }): Promise<IpcResp<{ items: AssetRecord[]; total: number }>>
+    list(p: { category?: string; subCategory?: string; keyword?: string; page: number; pageSize: number }): Promise<IpcResp<{ items: AssetRecord[]; total: number }>>
     get(id: string): Promise<IpcResp<AssetRecord | null>>
     create(p: {
       category?: string
+      subCategory?: string
       name?: string
       description?: string
       tags?: string[]
       content: { kind: 'file'; path: string } | { kind: 'url'; url: string } | { kind: 'text'; text: string } | { kind: 'json'; json: string }
     }): Promise<IpcResp<AssetRecord | null>>
-    update(p: { id: string; name?: string; description?: string | null; tags?: string[]; category?: string }): Promise<IpcResp<AssetRecord | null>>
+    update(p: { id: string; name?: string; description?: string | null; tags?: string[]; category?: string; subCategory?: string | null }): Promise<IpcResp<AssetRecord | null>>
     delete(id: string): Promise<IpcResp<{ deleted: boolean }>>
     stats(): Promise<IpcResp<{ total: number; byCategory: Record<string, number> }>>
+    subCategoryStats(category: string): Promise<IpcResp<Array<{ subCategory: string | null; count: number }>>>
     openFolder(id: string): Promise<IpcResp<{ opened: boolean }>>
   }
   file: {
@@ -71,6 +73,7 @@ export interface AppApi {
       error?: string
       files: Array<{ id: string; fileName: string; filePath: string; fileSize: number; mimeType: string; type: string }>
     }>
+    readTextFile(p: { path: string }): Promise<{ success: boolean; data?: string; error?: string }>
   }
 }
 

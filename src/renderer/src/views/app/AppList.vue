@@ -14,7 +14,9 @@
           <div class="card-head">
             <span class="app-emoji">{{ app.icon || '📦' }}</span>
             <div class="card-info">
-              <div class="app-name" :title="app.name">{{ app.name }}</div>
+              <div class="app-name" :title="app.name">{{ app.name }}
+                <el-tag v-if="app.isBuiltin" size="small" type="warning" effect="plain" style="margin-left: 6px">内置</el-tag>
+              </div>
               <div class="app-ver">工作流 · v{{ app.sourceVersion ?? 0 }} · {{ app.sessionCount ?? 0 }} 会话</div>
             </div>
             <el-tag :type="app.enabled === 1 ? 'success' : 'info'" size="small">{{ app.enabled === 1 ? '启用' : '停用' }}</el-tag>
@@ -31,7 +33,8 @@
               ▶ 启动
             </el-button>
             <el-button size="small" @click="router.push(`/apps/${app.id}`)">详情</el-button>
-            <el-button text type="danger" size="small" @click="handleDelete(app)">删除</el-button>
+            <el-button v-if="app.isBuiltin" size="small" @click="handleCopyBuiltin(app)">📋 复制为自有</el-button>
+            <el-button text type="danger" size="small" :disabled="app.isBuiltin" @click="handleDelete(app)">删除</el-button>
           </div>
           <div v-if="app.enabled === 1 && app.channelSession !== 1" class="launch-tip">未开启会话渠道，无法直接启动</div>
         </div>
@@ -119,6 +122,26 @@ async function handleDelete(row: AppRecord): Promise<void> {
   const resp = await api.app.delete(row.id)
   if (resp.success) { ElMessage.success('已删除'); await load() }
   else ElMessage.error(resp.error ?? '删除失败')
+}
+
+/** 复制内置应用为自有：导出内置定义 → 导入副本草稿 → 发布 → 创建应用 */
+async function handleCopyBuiltin(row: AppRecord): Promise<void> {
+  const wfApi = (window as unknown as { electronAPI: { workflow: any } }).electronAPI.workflow
+  try {
+    const exp = await wfApi.exportDefinition(row.sourceId)
+    if (!exp.success || !exp.data?.content) { ElMessage.error(exp.error ?? '导出内置定义失败'); return }
+    const imp = await wfApi.importDefinition({ content: exp.data.content, duplicatePolicy: 'copy' })
+    if (!imp.success || !imp.data?.id) { ElMessage.error(imp.error ?? '创建副本失败'); return }
+    const pub = await wfApi.publishDefinition({ id: imp.data.id })
+    if (!pub.success) { ElMessage.error(pub.error ?? '发布副本失败'); return }
+    const appResp = await api.app.createFromWorkflow({ definitionId: imp.data.id, name: `${row.name}（我的）`, channelSession: true, channelShare: false, channelApi: false })
+    if (appResp.success) {
+      ElMessage.success('已复制为自有应用（可自由修改/删除）')
+      await load()
+    } else ElMessage.error(appResp.error ?? '创建应用失败')
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '复制失败')
+  }
 }
 
 onMounted(load)

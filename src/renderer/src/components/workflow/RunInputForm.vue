@@ -60,6 +60,18 @@
           </div>
         </div>
 
+        <!-- 动态下拉（type='select-dynamic'，如模板资产） -->
+        <el-select v-else-if="item.type === 'select-dynamic'" v-model="values[item.key]"
+          clearable filterable placeholder="请选择" style="width: 100%" @change="touch(item.key)">
+          <el-option v-for="o in dynamicOptions(item)" :key="o.value" :label="o.label" :value="o.value" />
+          <template v-if="dynamicLoading(item)">
+            <el-option disabled><span class="dyn-loading">加载中…</span></el-option>
+          </template>
+          <template v-else-if="dynamicOptions(item).length === 0">
+            <el-option disabled><span class="no-model-hint">暂无可选{{ dynamicLabel(item) }}，请先在资产中心创建</span></el-option>
+          </template>
+        </el-select>
+
         <div v-if="item.multi" class="multi-hint">可多选</div>
       </el-form-item>
     </template>
@@ -134,6 +146,97 @@ function setFileUploadContext(ctx: { runId: string; nodeId: string }): void {
 
 /** 数字值（el-input-number 需要 number|null） */
 const numValues = reactive<Record<string, number | undefined>>({})
+
+// ── 动态下拉（type='select-dynamic'）：模板资产等 ──
+
+/** 动态选项缓存：source → 选项列表（label/value） */
+const dynamicCache = reactive<Record<string, Array<{ label: string; value: string }>>>({})
+/** 加载中标记：source → boolean */
+const dynamicBusy = reactive<Record<string, boolean>>({})
+
+/** 字段的动态数据源标识（当前仅 assets:template） */
+function dynamicSourceOf(item: WorkflowStartInput): string {
+  return item.source ?? ''
+}
+
+/** 字段动态选项（按 source 缓存取；assets:template → 模板资产列表） */
+function dynamicOptions(item: WorkflowStartInput): Array<{ label: string; value: string }> {
+  const src = dynamicSourceOf(item)
+  return dynamicCache[src] ?? []
+}
+
+function dynamicLoading(item: WorkflowStartInput): boolean {
+  return !!dynamicBusy[dynamicSourceOf(item)]
+}
+
+/** 动态下拉的空态文案（assets:template → 模板） */
+function dynamicLabel(item: WorkflowStartInput): string {
+  return dynamicSourceOf(item) === 'assets:template' ? '模板' : '选项'
+}
+
+/** 是否有动态下拉字段 */
+function hasDynamic(keys: WorkflowStartInput[]): boolean {
+  return keys.some(i => i.type === 'select-dynamic')
+}
+
+/** 拉取动态选项：assets:template → 资产中心模板大类列表（值=资产 ID）；newsTopics → 预置新闻主题（值=主题 id） */
+async function loadDynamicOptions(keys: WorkflowStartInput[]): Promise<void> {
+  for (const item of keys) {
+    if (item.type !== 'select-dynamic') continue
+    const src = dynamicSourceOf(item)
+    if (dynamicCache[src] || dynamicBusy[src]) continue
+    if (src === 'assets:template') {
+      dynamicBusy[src] = true
+      try {
+        const api = (window as never as { electronAPI: { assets: { list: (p: Record<string, unknown>) => Promise<{ success: boolean; data?: { items?: Array<{ id: string; name: string; subCategory?: string | null }> } }> } } }).electronAPI.assets
+        const resp = await api.list({ category: 'template', page: 1, pageSize: 200 })
+        if (resp.success && resp.data?.items) {
+          dynamicCache[src] = resp.data.items.map(a => ({
+            label: a.subCategory ? `${a.name}（${a.subCategory}）` : a.name,
+            value: a.id,
+          }))
+        } else {
+          dynamicCache[src] = []
+        }
+      } catch {
+        dynamicCache[src] = []
+      } finally {
+        dynamicBusy[src] = false
+      }
+    } else if (src === 'newsTopics') {
+      dynamicBusy[src] = true
+      try {
+        const { NEWS_TOPIC_LABELS } = await import('@shared/types/news-topics')
+        dynamicCache[src] = NEWS_TOPIC_LABELS.map(t => ({ label: t.label, value: t.value }))
+      } catch {
+        dynamicCache[src] = []
+      } finally {
+        dynamicBusy[src] = false
+      }
+    } else if (src === 'knowledgeBases') {
+      dynamicBusy[src] = true
+      try {
+        const api = (window as never as { electronAPI: { knowledgeBase: { list: () => Promise<{ success: boolean; data?: Array<{ id: string; name: string }> }> } } }).electronAPI.knowledgeBase
+        const resp = await api.list()
+        if (resp.success && resp.data) {
+          dynamicCache[src] = resp.data.map(kb => ({ label: kb.name, value: kb.id }))
+        } else {
+          dynamicCache[src] = []
+        }
+      } catch {
+        dynamicCache[src] = []
+      } finally {
+        dynamicBusy[src] = false
+      }
+    } else {
+      dynamicCache[src] = []
+    }
+  }
+}
+
+watch(() => props.inputs, list => {
+  if (hasDynamic(list)) void loadDynamicOptions(list)
+}, { immediate: true, deep: true })
 
 // ── 模型字段（type='model'）：Provider+模型联动，值 = { providerConfigId, modelId } ──
 

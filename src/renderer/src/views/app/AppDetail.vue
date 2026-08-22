@@ -8,10 +8,12 @@
       <span class="app-emoji">{{ app.icon || '📦' }}</span>
       <div class="info">
         <div class="page-title">{{ app.name }}
+          <el-tag v-if="app.isBuiltin" type="warning" effect="plain" size="small" style="margin-left: 8px">内置</el-tag>
           <el-tag :type="app.enabled === 1 ? 'success' : 'info'" size="small" style="margin-left: 8px">{{ app.enabled === 1 ? '已启用' : '已停用' }}</el-tag>
         </div>
         <div class="page-desc">来自工作流 · v{{ app.sourceVersion ?? 0 }} · 会话数 {{ sessions.length }}</div>
       </div>
+      <el-button v-if="app.isBuiltin" size="small" @click="handleCopyBuiltin">📋 复制为自有</el-button>
       <el-button v-if="app.channelSession === 1" type="primary" @click="newSession">▶ 开始会话</el-button>
       <el-button @click="router.push(`/workflow/editor/${app.sourceId}`)">查看工作流</el-button>
     </div>
@@ -171,6 +173,27 @@ async function copyApiUrl(): Promise<void> {
   const url = `${window.location.origin}/api/workflow/invoke/${app.value.sourceId}`
   await navigator.clipboard.writeText(`POST ${url}`)
   ElMessage.success('API 调用地址已复制（需登录鉴权）')
+}
+
+/** 复制内置应用为自有：导出内置定义 → 导入副本草稿 → 发布 → 创建应用 */
+async function handleCopyBuiltin(): Promise<void> {
+  if (!app.value) return
+  const wfApi = (window as unknown as { electronAPI: { workflow: any } }).electronAPI.workflow
+  try {
+    const exp = await wfApi.exportDefinition(app.value.sourceId)
+    if (!exp.success || !exp.data?.content) { ElMessage.error(exp.error ?? '导出内置定义失败'); return }
+    const imp = await wfApi.importDefinition({ content: exp.data.content, duplicatePolicy: 'copy' })
+    if (!imp.success || !imp.data?.id) { ElMessage.error(imp.error ?? '创建副本失败'); return }
+    const pub = await wfApi.publishDefinition({ id: imp.data.id })
+    if (!pub.success) { ElMessage.error(pub.error ?? '发布副本失败'); return }
+    const resp = await api.app.createFromWorkflow({ definitionId: imp.data.id, name: `${app.value.name}（我的）`, channelSession: true, channelShare: false, channelApi: false })
+    if (resp.success) {
+      ElMessage.success('已复制为自有应用（可自由修改/删除）')
+      await load()
+    } else ElMessage.error(resp.error ?? '创建应用失败')
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '复制失败')
+  }
 }
 
 async function newSession(): Promise<void> {
