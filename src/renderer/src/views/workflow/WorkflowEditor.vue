@@ -192,7 +192,7 @@ const SUMMARY_FIELD: Partial<Record<WorkflowNodeType, string>> = {
   'llm-chat': 'prompt', 'kb-retrieve': 'query', 'kb-ingest': 'title', 'web-search': 'query',
   translate: 'text', 'image-gen': 'prompt', tts: 'text', stt: 'audio', delay: 'durationMs',
   'http-request': 'url', 'app-notify': 'title', loop: 'listExpression', 'human-review': 'payload',
-  'lw-generate-chapter': 'outlineId', 'lw-polish': 'field', assign: '',
+  assign: '',
   'template-transform': 'template', 'parameter-extractor': 'input', 'web-extract': 'url',
   'video-extract-audio': 'videoPath',
 }

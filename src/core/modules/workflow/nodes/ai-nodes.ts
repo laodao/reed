@@ -17,7 +17,6 @@ import { getSearchEngineService } from '../../../services/search-engine.service'
 import { TranslationService } from '../../../services/translation.service'
 import { ImageService } from '../../../services/image.service'
 import { VoiceService } from '../../../services/voice.service'
-import { LongWritingAIService } from '../../../services/longwriting-ai.service'
 import type { WorkflowNodeContext } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
@@ -27,11 +26,6 @@ import { getEventEmitter } from '@core/interfaces/event.interface'
 
 /** 长任务节点'提交即返回'的输出状态值（三处共用唯一写法） */
 const NODE_SUBMITTED_STATUS = 'submitted'
-
-/** 长文节点 eventId 工厂（下游 longwriting:generate:{eventId} 事件订阅依赖此格式） */
-function makeLwEventId(ctx: WorkflowNodeContext): string {
-  return `wf_${ctx.runId}_${ctx.nodeId}_${ctx.iterationIndex}`
-}
 
 /** 通用的服务响应解包：{success, data?, error?} → 失败抛错/成功返 data */
 function unwrap<T>(resp: { success: boolean; data?: T; error?: string }, what: string): T {
@@ -403,119 +397,6 @@ const sttNode: WorkflowNodeHandler = {
   },
 }
 
-// ==================== 长文·生成章节 ====================
-
-const lwGenerateChapterNode: WorkflowNodeHandler = {
-  type: 'lw-generate-chapter',
-  controlKind: 'task',
-  cancellable: false,
-  outputSchema: [
-    { key: 'eventId', type: 'string', desc: '生成事件 ID' },
-    { key: 'chapterId', type: 'string', desc: 'waitForCompletion=true 时' },
-    { key: 'content', type: 'string', desc: 'waitForCompletion=true 时章节内容' },
-  ],
-  validateConfig(config) {
-    const cfg = config as { projectId?: string; outlineId?: string }
-    const errors: string[] = []
-    if (!cfg.projectId) errors.push('必须指定长文项目')
-    if (!cfg.outlineId) errors.push('必须指定章节大纲')
-    return errors
-  },
-  async execute(ctx: WorkflowNodeContext) {
-    const cfg = ctx.config as {
-      projectId: string
-      outlineId: string
-      targetWords?: number
-      providerConfigId?: string
-      modelId?: string
-      waitForCompletion?: boolean
-    }
-    const eventId = makeLwEventId(ctx)
-    const service = LongWritingAIService.getInstance()
-    const run = () =>
-      service.generateChapter(
-        eventId,
-        cfg.projectId,
-        cfg.outlineId,
-        cfg.targetWords,
-        cfg.providerConfigId,
-        cfg.modelId
-      )
-    if (cfg.waitForCompletion) {
-      const resp = await run()
-      if (!resp.success) {
-        return { status: 'failed', error: `章节生成失败: ${resp.error ?? '未知错误'}` }
-      }
-      const data = resp.data as { id?: string; content?: string; chapterId?: string } | undefined
-      return {
-        status: 'succeeded',
-        output: {
-          eventId,
-          chapterId: data?.chapterId ?? data?.id ?? '',
-          content: stringifyValue(data?.content ?? ''),
-        },
-      }
-    }
-    // 提交即成功：后台跑生成（流式进度经 longwriting:generate:${eventId} 事件），
-    // 失败只记日志（下游按 eventId 自行订阅进度）
-    void run().catch(e => ctx.logger.error('章节生成（后台）失败', e))
-    return { status: 'succeeded', output: { eventId, status: NODE_SUBMITTED_STATUS } }
-  },
-}
-
-// ==================== 长文·润色 ====================
-
-const lwPolishNode: WorkflowNodeHandler = {
-  type: 'lw-polish',
-  controlKind: 'task',
-  cancellable: false,
-  outputSchema: [{ key: 'content', type: 'string', desc: '润色后内容' }],
-  validateConfig(config) {
-    const cfg = config as { projectId?: string; field?: string; content?: string }
-    const errors: string[] = []
-    if (!cfg.projectId) errors.push('必须指定长文项目')
-    if (!cfg.field) errors.push('必须指定润色字段')
-    if (stringifyValue(cfg.content).trim() === '') errors.push('待润色内容不能为空')
-    return errors
-  },
-  async execute(ctx: WorkflowNodeContext) {
-    const cfg = ctx.config as {
-      projectId: string
-      field: string
-      content: string
-      eraType?: string
-      providerConfigId?: string
-      modelId?: string
-      waitForCompletion?: boolean
-    }
-    const eventId = makeLwEventId(ctx)
-    const run = () =>
-      LongWritingAIService.getInstance().polishBackground(
-        eventId,
-        cfg.projectId,
-        cfg.field as never,
-        cfg.eraType ?? '',
-        stringifyValue(cfg.content),
-        cfg.providerConfigId,
-        cfg.modelId
-      )
-    if (cfg.waitForCompletion === false) {
-      // 提交即成功：后台跑润色（失败只记日志），与 lw-generate-chapter 同模式
-      void run().catch(e => ctx.logger.error('润色（后台）失败', e))
-      return { status: 'succeeded', output: { eventId, status: NODE_SUBMITTED_STATUS } }
-    }
-    const resp = await run()
-    if (!resp.success) {
-      return { status: 'failed', error: `润色失败: ${resp.error ?? '未知错误'}` }
-    }
-    const data = resp.data as { content?: string; polished?: string; text?: string } | undefined
-    return {
-      status: 'succeeded',
-      output: { content: data?.content ?? data?.polished ?? data?.text ?? '' },
-    }
-  },
-}
-
 // ==================== 应用内通知 ====================
 
 const appNotifyNode: WorkflowNodeHandler = {
@@ -557,7 +438,5 @@ export const AI_NODE_HANDLERS: WorkflowNodeHandler[] = [
   imageGenNode,
   ttsNode,
   sttNode,
-  lwGenerateChapterNode,
-  lwPolishNode,
   appNotifyNode,
 ]

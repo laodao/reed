@@ -398,43 +398,6 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
       { key: 'durationMs', type: 'number', desc: '视频时长毫秒（未知为 0）' },
     ],
   },
-  {
-    type: 'lw-generate-chapter',
-    label: '长文·生成章节',
-    description: '调用长文写作服务生成章节（长任务，默认提交即返回）',
-    category: 'ai',
-    icon: 'Document',
-    controlKind: 'task',
-    cancellable: false,
-    ports: [
-      { kind: 'normal', label: '出', max: 1 },
-      { kind: 'fail', label: '失败' },
-    ],
-    requiredConfigKeys: ['projectId', 'outlineId'],
-    defaultConfig: { projectId: '', outlineId: '', waitForCompletion: false },
-    outputSchema: [
-      { key: 'eventId', type: 'string', desc: '生成事件 ID（流式进度用它订阅）' },
-      { key: 'chapterId', type: 'string', desc: 'waitForCompletion=true 时章节 ID' },
-      { key: 'content', type: 'string', desc: 'waitForCompletion=true 时章节内容' },
-    ],
-  },
-  {
-    type: 'lw-polish',
-    label: '长文·润色',
-    description: '润色长文背景字段内容（不可中断，取消时降级）',
-    category: 'ai',
-    icon: 'MagicStick',
-    controlKind: 'task',
-    cancellable: false,
-    ports: [
-      { kind: 'normal', label: '出', max: 1 },
-      { kind: 'fail', label: '失败' },
-    ],
-    requiredConfigKeys: ['projectId', 'field', 'content'],
-    defaultConfig: { projectId: '', field: '', content: '', waitForCompletion: true },
-    outputSchema: [{ key: 'content', type: 'string', desc: '润色后内容' }],
-  },
-
   // ==================== 通用 ====================
   {
     type: 'http-request',
