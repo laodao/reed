@@ -86,11 +86,21 @@
 
           <!-- 操作区 -->
           <div class="card-actions">
-            <el-button size="small" :disabled="!canPreview(asset)" @click="openPreview(asset)">预览</el-button>
-            <el-button v-if="asset.category === 'template'" size="small" @click="openTemplateEditor(asset)">编辑</el-button>
-            <el-button size="small" :disabled="asset.kind !== 'file'" @click="openFolder(asset)">打开目录</el-button>
-            <el-button size="small" :disabled="!previewUrl(asset)" @click="copyUrl(asset)">复制链接</el-button>
-            <el-button text type="danger" size="small" :disabled="asset.isBuiltin" @click="handleDelete(asset)">删除</el-button>
+            <el-button size="small" type="primary" plain :disabled="!canPreview(asset)" @click="openPreview(asset)">预览</el-button>
+            <div class="icon-actions">
+              <el-tooltip v-if="asset.category === 'template'" content="编辑模板" placement="top">
+                <el-button text size="small" @click="openTemplateEditor(asset)"><el-icon><EditPen /></el-icon></el-button>
+              </el-tooltip>
+              <el-tooltip content="打开所在目录" placement="top">
+                <el-button text size="small" :disabled="asset.kind !== 'file'" @click="openFolder(asset)"><el-icon><FolderOpened /></el-icon></el-button>
+              </el-tooltip>
+              <el-tooltip content="复制链接" placement="top">
+                <el-button text size="small" :disabled="!previewUrl(asset)" @click="copyUrl(asset)"><el-icon><Link /></el-icon></el-button>
+              </el-tooltip>
+              <el-tooltip content="删除" placement="top">
+                <el-button text type="danger" size="small" :disabled="asset.isBuiltin" @click="handleDelete(asset)"><el-icon><Delete /></el-icon></el-button>
+              </el-tooltip>
+            </div>
           </div>
         </div>
       </div>
@@ -249,7 +259,7 @@
  */
 import { ref, onMounted, computed, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search } from '@element-plus/icons-vue'
+import { Search, EditPen, FolderOpened, Link, Delete } from '@element-plus/icons-vue'
 import { toFileUrl, toImageUrl, toVideoUrl } from '@/utils/asset-url'
 import {
   ASSET_CATEGORY_LABELS, ASSET_PREVIEW_MODES, ASSET_PREVIEW_MODE_LABELS,
@@ -738,7 +748,9 @@ onMounted(load)
 .tag { font-size: 11px; color: var(--el-color-primary); background: var(--el-color-primary-light-9); padding: 1px 6px; border-radius: 8px; }
 .desc { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.card-actions { display: flex; align-items: center; gap: 4px; padding: 8px 10px; border-top: 1px solid var(--el-border-color-lighter); }
+.card-actions { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 6px 8px 6px 12px; border-top: 1px solid var(--el-border-color-lighter); }
+.icon-actions { display: flex; align-items: center; gap: 2px; }
+.icon-actions :deep(.el-button) { padding: 4px; }
 
 .pager { flex-shrink: 0; display: flex; justify-content: flex-end; padding-top: 14px; }
 .empty { color: var(--el-text-color-secondary); text-align: center; padding: 60px 0; }
