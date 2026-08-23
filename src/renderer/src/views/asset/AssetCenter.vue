@@ -91,11 +91,11 @@
               <el-tooltip v-if="asset.category === 'template'" content="编辑模板" placement="top">
                 <el-button text size="small" @click="openTemplateEditor(asset)"><el-icon><EditPen /></el-icon></el-button>
               </el-tooltip>
-              <el-tooltip content="打开所在目录" placement="top">
-                <el-button text size="small" :disabled="asset.kind !== 'file'" @click="openFolder(asset)"><el-icon><FolderOpened /></el-icon></el-button>
+              <el-tooltip v-if="asset.kind === 'file'" content="打开所在目录" placement="top">
+                <el-button text size="small" @click="openFolder(asset)"><el-icon><FolderOpened /></el-icon></el-button>
               </el-tooltip>
-              <el-tooltip content="复制链接" placement="top">
-                <el-button text size="small" :disabled="!previewUrl(asset)" @click="copyUrl(asset)"><el-icon><Link /></el-icon></el-button>
+              <el-tooltip :content="copyActionLabel(asset)" placement="top">
+                <el-button text size="small" :disabled="!copyable(asset)" @click="copyAction(asset)"><el-icon><CopyDocument /></el-icon></el-button>
               </el-tooltip>
               <el-tooltip content="删除" placement="top">
                 <el-button text type="danger" size="small" :disabled="asset.isBuiltin" @click="handleDelete(asset)"><el-icon><Delete /></el-icon></el-button>
@@ -259,7 +259,7 @@
  */
 import { ref, onMounted, computed, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, EditPen, FolderOpened, Link, Delete } from '@element-plus/icons-vue'
+import { Search, EditPen, FolderOpened, CopyDocument, Delete } from '@element-plus/icons-vue'
 import { toFileUrl, toImageUrl, toVideoUrl } from '@/utils/asset-url'
 import {
   ASSET_CATEGORY_LABELS, ASSET_PREVIEW_MODES, ASSET_PREVIEW_MODE_LABELS,
@@ -499,6 +499,36 @@ async function copyUrl(asset: AssetRecord): Promise<void> {
   try {
     await navigator.clipboard.writeText(url)
     ElMessage.success('链接已复制')
+  } catch {
+    ElMessage.error('复制失败')
+  }
+}
+
+/** 复制按钮是否可用：文件/链接型复制链接；文本/数据/模板型复制内容 */
+function copyable(asset: AssetRecord): boolean {
+  if (asset.kind === 'file' || asset.kind === 'url') return !!previewUrl(asset)
+  if (asset.kind === 'text') return !!asset.textContent
+  if (asset.kind === 'json') return !!asset.jsonContent
+  return false
+}
+
+/** 复制按钮提示（按类型区分语义） */
+function copyActionLabel(asset: AssetRecord): string {
+  if (asset.kind === 'file' || asset.kind === 'url') return '复制链接'
+  if (asset.kind === 'text' || asset.kind === 'json') return '复制内容'
+  return '复制'
+}
+
+/** 复制：文件/链接型复制链接；文本/数据/模板型复制内容到剪贴板 */
+async function copyAction(asset: AssetRecord): Promise<void> {
+  if (asset.kind === 'file' || asset.kind === 'url') {
+    return copyUrl(asset)
+  }
+  const content = asset.kind === 'json' ? (asset.jsonContent ?? '') : (asset.textContent ?? '')
+  if (!content) return
+  try {
+    await navigator.clipboard.writeText(content)
+    ElMessage.success(asset.kind === 'json' ? '数据已复制' : '内容已复制')
   } catch {
     ElMessage.error('复制失败')
   }
