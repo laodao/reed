@@ -1400,9 +1400,9 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
   ipcBridge.handle(
     CHANNELS.GENERATE_CHAPTER,
-    async (event, eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string) => {
+    async (event, eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string, style?: string, extraPrompt?: string) => {
       try {
-        const result = await aiService.generateChapter(eventId, projectId, outlineId, targetWords, providerConfigId, modelId)
+        const result = await aiService.generateChapter(eventId, projectId, outlineId, targetWords, providerConfigId, modelId, style, extraPrompt)
         return { ...result, eventId }
       } catch (error: any) {
         return { success: false, error: error.message }

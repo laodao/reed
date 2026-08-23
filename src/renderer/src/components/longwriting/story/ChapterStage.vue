@@ -865,6 +865,8 @@ async function saveChapter(outlineId: string) {
       }
 
       updateProgress()
+      // 图谱动态更新：章节保存后跑统一流水线（事件提取/状态快照/自动建边/章节摘要）
+      void runChapterGraphPipeline(outlineId)
     } else {
       ElMessage.error(result.error || '保存失败')
     }
@@ -873,56 +875,43 @@ async function saveChapter(outlineId: string) {
   }
 }
 
-// 处理章节生成完成后的自动保存和状态摘要提取
-async function handleChapterGenerated(outlineId: string) {
+/**
+ * 章节图谱流水线（与向导流程一致，ChapterGraphProcessor 完整链路）：
+ * 提取事件 → 实体状态快照 → 自动建边 → 章节状态摘要，失败不影响正文保存。
+ * 图谱时间线/状态历史的数据来源：每章保存后自动更新。
+ */
+async function runChapterGraphPipeline(outlineId: string): Promise<void> {
+  const content = chapterContentMap.value[outlineId] || ''
+  if (!content.trim() || content.length < 100) return
   try {
-    // 先保存章节
-    await saveChapter(outlineId)
-
-    // 获取章节内容和计算章节序号
-    const content = chapterContentMap.value[outlineId]
-    if (!content || content.length < 100) {
-      console.log('[ChapterStage] 内容太短，跳过状态摘要提取')
-      return
-    }
-
-    const chapterNumber = calculateChapterNumber(outlineId)
-    console.log('[ChapterStage] 开始提取章节状态摘要，章节序号:', chapterNumber)
-
-    // 调用 AI 提取章节状态摘要
-    const extractResult = await window.electronAPI.longwriting.extractChapterStateSummary(
+    const chapterNo = calculateChapterNumber(outlineId)
+    const r = await window.electronAPI.longwriting.graphExtractChapter(
       props.projectId,
       outlineId,
-      chapterNumber,
       content,
+      chapterNo,
       selectedModel.value?.providerId,
-      selectedModel.value?.modelId
+      selectedModel.value?.modelId,
     )
-
-    if (extractResult.success && extractResult.data) {
-      // 保存提取的状态摘要
-      const saveResult = await window.electronAPI.longwriting.saveChapterStateSummary({
-        projectId: props.projectId,
-        outlineId: outlineId,
-        chapterNumber: chapterNumber,
-        storyTime: extractResult.data.storyTime,
-        currentLocation: extractResult.data.currentLocation,
-        characterStates: extractResult.data.characterStates,
-        pendingEvents: extractResult.data.pendingEvents,
-        keyChanges: extractResult.data.keyChanges
-      })
-
-      if (saveResult.success) {
-        console.log('[ChapterStage] 章节状态摘要已保存:', saveResult.data)
-        ElMessage.success('已提取并保存章节状态摘要')
-      } else {
-        console.error('[ChapterStage] 保存状态摘要失败:', saveResult.error)
-      }
-    } else {
-      console.error('[ChapterStage] 提取状态摘要失败:', extractResult.error)
+    if (r.success && r.data) {
+      const { events, stateCount } = r.data
+      const parts: string[] = []
+      if (events?.length) parts.push(`${events.length} 个事件`)
+      if (stateCount) parts.push(`${stateCount} 条状态更新`)
+      if (parts.length) console.log('[ChapterStage] 图谱已更新（' + parts.join('，') + '）')
     }
-  } catch (error) {
-    console.error('[ChapterStage] 处理生成完成后发生错误:', error)
+  } catch (e) {
+    console.error('[ChapterStage] 章节图谱流水线失败（不影响正文保存）:', e)
+  }
+}
+
+// 处理章节生成完成后的自动保存（图谱流水线由 saveChapter 统一触发）
+async function handleChapterGenerated(outlineId: string) {
+  try {
+    // 先保存章节（内部会触发章节图谱流水线）
+    await saveChapter(outlineId)
+  } catch (e) {
+    console.error('[ChapterStage] handleChapterGenerated 失败:', e)
   }
 }
 
@@ -1361,14 +1350,16 @@ async function executeGeneration() {
     }
   )
 
-  // 调用 AI API
+  // 调用 AI API（写作风格/附加提示激活：传入后端并入章节 prompt）
   const result = await window.electronAPI.longwriting.generateChapter(
     eventId,
     props.projectId,
     outlineId,
     generateForm.value.targetWords,
     selectedModel.value!.providerId,
-    selectedModel.value!.modelId
+    selectedModel.value!.modelId,
+    generateForm.value.style || undefined,
+    generateForm.value.extraPrompt || undefined
   )
 
   if (!result.success) {

@@ -1595,8 +1595,8 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:generateOutlineStory', eventId, projectId, providerConfigId, modelId, structureLevel),
     generateOutlineComment: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generateOutlineComment', eventId, projectId, providerConfigId, modelId),
-    generateChapter: (eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string) =>
-      ipcRenderer.invoke('longwriting:generateChapter', eventId, projectId, outlineId, targetWords, providerConfigId, modelId),
+    generateChapter: (eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string, style?: string, extraPrompt?: string) =>
+      ipcRenderer.invoke('longwriting:generateChapter', eventId, projectId, outlineId, targetWords, providerConfigId, modelId, style, extraPrompt),
     generateSection: (eventId: string, projectId: string, outlineId: string, targetWords?: number, providerConfigId?: string, modelId?: string) =>
       ipcRenderer.invoke('longwriting:generateSection', eventId, projectId, outlineId, targetWords, providerConfigId, modelId),
     generateChapterPrewrite: (eventId: string, projectId: string, outlineId: string, providerConfigId?: string, modelId?: string) =>

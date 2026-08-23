@@ -581,8 +581,10 @@ async function executeWriteChapter(ctx: AgentExecutionContext, action: AgentActi
   }
 
   const targetWords = action.params?.targetWords
+  const style = action.params?.style
+  const extraPrompt = action.params?.extraPrompt
   const eventId = makeEventId(projectId, 'chapter')
-  const resp = await ai.generateChapter(eventId, projectId, outlineId, targetWords, providerConfigId, modelId)
+  const resp = await ai.generateChapter(eventId, projectId, outlineId, targetWords, providerConfigId, modelId, style, extraPrompt)
   if (!resp.success) {
     return { type: 'write_chapter', status: 'error', message: resp.error || '章节生成失败' }
   }

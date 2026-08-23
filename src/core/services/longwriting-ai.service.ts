@@ -1282,7 +1282,9 @@ ${plotInfo || '暂无相关情节'}
     outlineId: string,
     targetWords?: number,
     providerConfigId?: string,
-    modelId?: string
+    modelId?: string,
+    style?: string,
+    extraPrompt?: string
   ): Promise<GenerateResponse> {
     const dbManager = getCoreDatabaseManager()
 
@@ -1498,6 +1500,12 @@ ${prewriteSection}
 ${graphSection || '暂无图谱数据'}
 ${recallSection}
 ---
+${style ? `## 八、写作风格要求
+
+本章要求以「${style}」的风格写作。请贯彻到遣词造句、节奏与氛围中。` : ''}
+${extraPrompt && extraPrompt.trim() ? `## 九、附加要求
+
+${extraPrompt.trim()}` : ''}
 
 请根据以上所有信息，撰写章节正文内容。直接开始写作，不需要标题。`
 
@@ -1541,6 +1549,16 @@ ${recallSection}
       // 1. 生效关系边（本章时间点）
       const edgeLines: string[] = []
       const seenEdges = new Set<string>()
+      // 实体 ID → 名称缓存（避免向 prompt 注入 UUID）
+      const nameCache = new Map<string, string>()
+      const nameOf = async (type: string, id: string): Promise<string> => {
+        const key = `${type}:${id}`
+        if (nameCache.has(key)) return nameCache.get(key)!
+        const node = await graph.getNode(projectId, type as any, id)
+        const name = node?.name || id
+        nameCache.set(key, name)
+        return name
+      }
       for (const ent of involvedIds) {
         const edges = await graph.edgesAt(projectId, ent.id, chapterNumber)
         for (const e of edges) {
@@ -1549,7 +1567,9 @@ ${recallSection}
           seenEdges.add(key)
           const validFrom = e.validFromChapter !== undefined ? `自第${e.validFromChapter}章起` : ''
           const validUntil = e.validUntilChapter !== undefined ? `，至第${e.validUntilChapter}章失效` : ''
-          edgeLines.push(`- ${e.sourceId} → ${e.targetId}：${e.relationType}${e.label ? `（${e.label}）` : ''}（${validFrom}${validUntil}）`)
+          const srcName = await nameOf(e.sourceType, e.sourceId)
+          const tgtName = await nameOf(e.targetType, e.targetId)
+          edgeLines.push(`- ${srcName} → ${tgtName}：${e.relationType}${e.label ? `（${e.label}）` : ''}（${validFrom}${validUntil}）`)
         }
       }
 
