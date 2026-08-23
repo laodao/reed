@@ -399,57 +399,16 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, watch, onMounted } from 'vue'
-import html2canvas from 'html2canvas'
 import { Document, Edit, CopyDocument, Delete, Refresh, Switch, Coin, Collection, More, Picture, Notebook, ArrowRight, View, Tickets, Folder, Check, ArrowUp, ArrowDown, Top } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElImageViewer } from 'element-plus'
 import { marked } from 'marked'
-import mermaid from 'mermaid'
 import type { Message, Attachment } from '../../../shared/types'
 import ModelSelectDialog from './ModelSelectDialog.vue'
 import ExportToObsidianDialog from './ExportToObsidianDialog.vue'
 import { saveBlobAs } from '@/utils/file-saver'
 import { extractCodeBlocks, restoreCodeBlocks, escapeHtmlKeepPlaceholders } from './code-block'
-
-// 初始化 Mermaid
-mermaid.initialize({
-  startOnLoad: false,
-  theme: 'default',
-  securityLevel: 'loose',
-  suppressErrorRendering: true, // 禁用默认错误渲染，我们自己处理
-  flowchart: {
-    useMaxWidth: true,
-    htmlLabels: true,
-    curve: 'basis',
-    padding: 15
-  },
-  sequence: {
-    useMaxWidth: true,
-    diagramMarginX: 10,
-    diagramMarginY: 10,
-    actorMargin: 40,
-    width: 120,
-    height: 50
-  },
-  gantt: {
-    useMaxWidth: true,
-    leftPadding: 50,
-    gridLineStartPadding: 25,
-    fontSize: 12,
-    sectionFontSize: 12
-  },
-  class: {
-    useMaxWidth: true
-  },
-  state: {
-    useMaxWidth: true
-  },
-  er: {
-    useMaxWidth: true
-  },
-  pie: {
-    useMaxWidth: true
-  }
-})
+// 重型库（html2canvas/mermaid）按需加载：避免阻塞聊天页首次打开（模块求值耗时大）
+import { loadHtml2Canvas, loadMermaid } from '@/utils/lazy-libs'
 
 interface ModelOption {
   id: string
@@ -616,7 +575,7 @@ const currentKbRef = ref<{ documentId: string; documentName: string; score: numb
 // 消息内容容器引用
 const messageContentRef = ref<HTMLElement | null>(null)
 
-// 渲染 Mermaid 图表
+// 渲染 Mermaid 图表（按需加载 mermaid：仅当消息确实包含 mermaid 代码块时）
 async function renderMermaidCharts(): Promise<void> {
   if (!messageContentRef.value) return
 
@@ -625,6 +584,9 @@ async function renderMermaidCharts(): Promise<void> {
 
   const mermaidWrappers = messageContentRef.value.querySelectorAll('.mermaid-wrapper')
   if (mermaidWrappers.length === 0) return
+
+  // 惰性加载 mermaid（首次使用才 import + initialize，之后复用单例）
+  const mermaid = await loadMermaid()
 
   // 为每个 mermaid wrapper 处理渲染
   for (let i = 0; i < mermaidWrappers.length; i++) {
@@ -1169,7 +1131,8 @@ async function exportAsImage(): Promise<void> {
     // 渲染 Mermaid 图表
     await renderMermaidInExportContainer()
 
-    // 使用 html2canvas 截图
+    // 使用 html2canvas 截图（按需加载）
+    const html2canvas = await loadHtml2Canvas()
     const canvas = await html2canvas(imageExportContainer.value, {
       backgroundColor: '#ffffff',
       scale: 2,
@@ -1212,6 +1175,9 @@ async function renderMermaidInExportContainer(): Promise<void> {
 
   const mermaidWrappers = imageExportContainer.value.querySelectorAll('.mermaid-wrapper')
   if (mermaidWrappers.length === 0) return
+
+  // 惰性加载 mermaid（与消息内渲染共用单例）
+  const mermaid = await loadMermaid()
 
   for (let i = 0; i < mermaidWrappers.length; i++) {
     const wrapper = mermaidWrappers[i] as HTMLElement

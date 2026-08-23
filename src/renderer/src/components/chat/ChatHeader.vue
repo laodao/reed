@@ -111,9 +111,10 @@
 import { ref, reactive, watch, computed, onMounted, onUnmounted } from 'vue'
 import { Setting, Delete, Cpu, Search, SetUp, Download, Document, Picture } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import html2canvas from 'html2canvas'
 import type { Dialog, ContextConfig, UserProviderConfig, ModelDefinition, ProviderTemplate, Message } from '../../../shared/types'
 import { useDialogStore } from '../../stores/dialog'
+// html2canvas 按需加载：模块求值耗时大（约 400ms），只在导出长图时才加载
+import { loadHtml2Canvas } from '@/utils/lazy-libs'
 
 const props = defineProps<{
   dialog: Dialog
@@ -645,7 +646,8 @@ async function exportToImage(): Promise<void> {
       scrollHeight: messageListEl.scrollHeight
     })
 
-    // 使用 html2canvas 截图
+    // 使用 html2canvas 截图（按需加载，仅导出时）
+    const html2canvas = await loadHtml2Canvas()
     const canvas = await html2canvas(messageListEl, {
       backgroundColor: '#f8fafc',
       scale: 2,

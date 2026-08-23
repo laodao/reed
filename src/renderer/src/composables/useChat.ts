@@ -102,17 +102,17 @@ export function useChat() {
 
   /**
    * 选择最后一个对话
+   * 注意：不再重复调用 dialog.list() / loadDialogsByRole()——initialize() 已通过
+   * dialogStore.loadDialogs() 拿到全量列表（按 updated_at DESC），直接复用即可；
+   * 侧边栏话题列表由 currentRoleDialogs computed 按选中角色客户端过滤，无需再按角色回源。
    */
   async function selectLastDialog(): Promise<void> {
-    // 直接从数据库加载所有对话（按 updated_at DESC 排序）
-    const response = await window.electronAPI.dialog.list()
-    if (!response.success || !response.dialogs || response.dialogs.length === 0) {
+    // 全量列表第一个即最近对话（loadDialogs 已按 updated_at DESC 排序）
+    const lastDialog = dialogStore.dialogs[0]
+    if (!lastDialog) {
       // 没有对话，保持默认状态
       return
     }
-
-    // 列表已经是按 updated_at DESC 排序的，第一个就是最近的对话
-    const lastDialog = response.dialogs[0]
 
     // 根据对话的 roleId 找到对应的助手并设置 selectedRole
     if (lastDialog.roleId) {
@@ -130,15 +130,11 @@ export function useChat() {
       selectedRole.value = null
     }
 
-    // 加载该角色的对话列表（会更新 dialogStore.dialogs）
-    await dialogStore.loadDialogsByRole(lastDialog.roleId || null)
-
     // 切换到话题 tab
     currentTab.value = 'topics'
 
-    // 从更新后的列表中找到该对话（使用 id 匹配，因为对象引用可能不同）
-    const dialogToSelect = dialogStore.dialogs.find(d => d.id === lastDialog.id) || lastDialog
-    await dialogStore.selectDialog(dialogToSelect)
+    // 选中最近对话（消息按需从数据库加载）
+    await dialogStore.selectDialog(lastDialog)
   }
 
   /**
