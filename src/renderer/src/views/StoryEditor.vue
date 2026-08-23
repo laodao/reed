@@ -1,14 +1,21 @@
 <template>
   <div class="story-editor">
-    <!-- 对话式工作流（默认入口）：一个对话框 + AI 逐步完成创作 -->
-    <AgentWorkspace
-      v-if="showAgent"
-      :project-id="projectId"
-      :project-name="project?.name || '加载中...'"
-      @enter-advanced="showAgent = false"
-    />
+    <!-- 知识图谱视图（新 Tab，非对话框）：图谱与高级模式编辑共享同一份数据 -->
+    <div v-if="currentView === 'graph'" class="graph-tab">
+      <div class="graph-tab-header">
+        <el-button text @click="currentView = 'stage'">
+          <el-icon><ArrowLeft /></el-icon>
+          返回编辑
+        </el-button>
+        <span class="graph-tab-title">知识图谱</span>
+        <span class="graph-tab-project">{{ project?.name || '' }}</span>
+      </div>
+      <div class="graph-tab-body">
+        <GraphView :project-id="projectId" />
+      </div>
+    </div>
 
-    <!-- 高级模式（保留完整 7 阶段界面，与对话工作流共享同一份数据） -->
+    <!-- 高级模式（默认入口）：完整 7 阶段编辑界面 -->
     <template v-else>
     <!-- 顶部导航栏 -->
     <div class="editor-header">
@@ -22,11 +29,7 @@
         <span class="project-title">{{ project?.name || '加载中...' }}</span>
       </div>
       <div class="header-right">
-        <el-button @click="showAgent = true">
-          <el-icon><ChatDotRound /></el-icon>
-          对话
-        </el-button>
-        <el-button @click="showGraph = true">
+        <el-button @click="currentView = 'graph'">
           <el-icon><Share /></el-icon>
           图谱
         </el-button>
@@ -124,17 +127,6 @@
       </div>
     </el-dialog>
 
-    <!-- 知识图谱对话框（懒加载：GraphView 较重，首次打开才加载） -->
-    <el-dialog
-      v-model="showGraph"
-      title="知识图谱"
-      width="90%"
-      top="4vh"
-      destroy-on-close
-    >
-      <GraphView v-if="showGraph" :project-id="projectId" />
-    </el-dialog>
-
     <!-- 项目设定对话框 -->
     <ProjectSettingsDialog
       v-model:visible="showSettingsDialog"
@@ -149,7 +141,7 @@
 import { ref, computed, onMounted, provide } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, View, Setting, ChatDotRound, Share } from '@element-plus/icons-vue'
+import { ArrowLeft, View, Setting, Share } from '@element-plus/icons-vue'
 import { useTabsStore } from '@/stores/tabs'
 import type { LongWritingProject, StoryStage } from '../../../../shared/types/longwriting.types'
 import type { UserProviderConfig, ProviderTemplate } from '../../../shared/types'
@@ -159,9 +151,7 @@ defineOptions({
   name: 'StoryEditor'
 })
 
-// 对话式工作流（默认入口）
-import AgentWorkspace from '@/components/longwriting/agent/AgentWorkspace.vue'
-// 知识图谱（懒加载：仅打开图谱对话框时才加载组件）
+// 知识图谱（懒加载：仅打开图谱 Tab 时才加载组件）
 import { defineAsyncComponent } from 'vue'
 const GraphView = defineAsyncComponent(() => import('@/components/longwriting/graph/GraphView.vue'))
 
@@ -188,15 +178,12 @@ const project = ref<LongWritingProject | null>(null)
 // 当前阶段
 const currentStage = ref<StoryStage>('overview')
 
-// 对话式工作流开关（默认进入；右上角可切换高级模式）
-const showAgent = ref(true)
-const initialStage = ref<string | undefined>(undefined)
-const initialSkipped = ref<string[] | undefined>(undefined)
+// 当前视图：'stage'（高级模式编辑）| 'graph'（知识图谱 Tab）
+const currentView = ref<'stage' | 'graph'>('stage')
 
 // 对话框状态
 const showPreview = ref(false)
 const showSettingsDialog = ref(false)
-const showGraph = ref(false)
 
 // ==================== 统一模型选择 ====================
 const providerConfigs = ref<UserProviderConfig[]>([])
@@ -462,9 +449,6 @@ async function loadProject() {
   if (result.success && result.data) {
     project.value = result.data
     currentStage.value = result.data.stage as StoryStage
-    // 向导初始状态：最后到达的步骤 + 跳过的步骤
-    initialStage.value = result.data.stage as string
-    initialSkipped.value = result.data.wizardState?.skipped
     // 更新标签页标题为项目名称
     tabsStore.updateTabTitle(route.path, result.data.name)
 
@@ -632,5 +616,41 @@ onMounted(() => {
 
 .preview-content {
   min-height: 400px;
+}
+
+// ==================== 图谱 Tab ====================
+
+.graph-tab {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+
+  .graph-tab-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    background: var(--bg-color);
+    border-bottom: 1px solid var(--border-color-lighter);
+
+    .graph-tab-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-color-primary);
+    }
+
+    .graph-tab-project {
+      font-size: 12px;
+      color: var(--text-color-placeholder);
+    }
+  }
+
+  .graph-tab-body {
+    flex: 1;
+    min-height: 0;
+    padding: 12px;
+    background: var(--bg-color-page);
+  }
 }
 </style>

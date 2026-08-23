@@ -329,6 +329,30 @@ async function parsePlotsResult(content: string) {
       console.log('[PlotStage] 情节创建成功, 数量:', plots.value.length)
       ElMessage.success(`成功生成 ${plots.value.length} 个情节`)
       updateProgress()
+
+      // 图谱动态更新：情节中体现的实体间关系 → 幂等落库（初步关系网络）
+      try {
+        const relations: any[] = []
+        for (const plot of data) {
+          for (const rel of plot.entityRelations || []) {
+            if (!rel?.sourceName || !rel?.targetName) continue
+            relations.push({
+              sourceType: rel.sourceType || 'character',
+              sourceName: String(rel.sourceName).trim(),
+              targetType: rel.targetType || 'character',
+              targetName: String(rel.targetName).trim(),
+              relationType: rel.relationType || '关联',
+              description: rel.description || '',
+            })
+          }
+        }
+        if (relations.length > 0) {
+          const sync = await window.electronAPI.longwriting.graphSyncRelations(props.projectId, relations)
+          console.log('[PlotStage] 实体关系同步:', sync)
+        }
+      } catch (e) {
+        console.error('[PlotStage] 实体关系同步失败（不影响情节保存）:', e)
+      }
     } else {
       console.error('[PlotStage] 创建情节失败:', createResult.error)
       ElMessage.error(createResult.error || '保存情节失败')

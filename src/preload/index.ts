@@ -1843,6 +1843,12 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:graph:getStateAtChapter', projectId, entityType, entityId, chapterNumber),
     graphGetEdgesAtChapter: (projectId: string, entityId: string, chapterNumber: number) =>
       ipcRenderer.invoke('longwriting:graph:getEdgesAtChapter', projectId, entityId, chapterNumber),
+    graphGetRelations: (projectId: string, entityType: string, entityId: string, chapterNumber?: number) =>
+      ipcRenderer.invoke('longwriting:graph:getRelations', projectId, entityType, entityId, chapterNumber),
+    graphGenerateRelations: (eventId: string, projectId: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:graph:generateRelations', eventId, projectId, providerConfigId, modelId),
+    graphSyncRelations: (projectId: string, relations: any[]) =>
+      ipcRenderer.invoke('longwriting:graph:syncRelations', projectId, relations),
     graphAddEdge: (input: any) =>
       ipcRenderer.invoke('longwriting:graph:addEdge', input),
     graphUpdateEdge: (id: string, patch: any) =>

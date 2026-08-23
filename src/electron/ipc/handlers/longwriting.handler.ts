@@ -298,6 +298,9 @@ const CHANNELS = {
   GRAPH_GET_TIMELINE: 'longwriting:graph:getTimeline',
   GRAPH_GET_STATE_AT_CHAPTER: 'longwriting:graph:getStateAtChapter',
   GRAPH_GET_EDGES_AT_CHAPTER: 'longwriting:graph:getEdgesAtChapter',
+  GRAPH_GET_RELATIONS: 'longwriting:graph:getRelations',
+  GRAPH_GENERATE_RELATIONS: 'longwriting:graph:generateRelations',
+  GRAPH_SYNC_RELATIONS: 'longwriting:graph:syncRelations',
   GRAPH_ADD_EDGE: 'longwriting:graph:addEdge',
   GRAPH_UPDATE_EDGE: 'longwriting:graph:updateEdge',
   GRAPH_DELETE_EDGE: 'longwriting:graph:deleteEdge',
@@ -3050,6 +3053,47 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     try {
       const g = await graphService()
       return { success: true, data: await g.edgesAt(projectId, entityId, chapterNumber) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 实体的全部关系（含已失效；可带章节过滤）
+  ipcBridge.handle(CHANNELS.GRAPH_GET_RELATIONS, async (_event, projectId: string, entityType: string, entityId: string, chapterNumber?: number) => {
+    try {
+      const g = await graphService()
+      return { success: true, data: await g.getRelations(projectId, entityType as any, entityId, chapterNumber) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // AI 生成实体关系并幂等落库（图谱关系构建）
+  ipcBridge.handle(CHANNELS.GRAPH_GENERATE_RELATIONS, async (
+    _event,
+    eventId: string,
+    projectId: string,
+    providerConfigId?: string,
+    modelId?: string
+  ) => {
+    try {
+      const aiService = LongWritingAIService.getInstance()
+      const resp = await aiService.generateEntityRelations(eventId, projectId, providerConfigId, modelId)
+      if (!resp.success) return resp
+      const g = await graphService()
+      const sync = await g.syncEntityRelations(projectId, Array.isArray(resp.data) ? resp.data : [])
+      return { success: true, data: sync }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 直接落库实体关系（角色/故事线生成时顺带输出，名称→ID 幂等）
+  ipcBridge.handle(CHANNELS.GRAPH_SYNC_RELATIONS, async (_event, projectId: string, relations: any[]) => {
+    try {
+      const g = await graphService()
+      const sync = await g.syncEntityRelations(projectId, Array.isArray(relations) ? relations : [])
+      return { success: true, data: sync }
     } catch (error: any) {
       return { success: false, error: error.message }
     }

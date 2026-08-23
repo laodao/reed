@@ -464,11 +464,12 @@ ${input}
 12. personality - 性格特点
 13. abilities - 能力特长
 14. majorEvents - 角色在故事中的主要事件（这是必需字段，描述该角色参与的关键剧情）
+15. relations - 该角色与其他角色的关系数组（可选，没有明确关系可留空数组）。每项：{"targetName": "对方角色名（必须是本项目角色名）", "relationType": "关系类型（师徒/宿敌/恋人/同门/主仆/父子/挚友/竞争对手等）", "description": "关系说明（20-40字）"}
 
 示例返回格式：
-[{"name":"张三","gender":"male","age":28,"height":175,"weight":70,"race":"asian","occupation":"剑客","position":"掌门弟子","rolePosition":"protagonist","appearance":"瓜子脸，小麦色皮肤，剑眉星目","background":"出身寒门，自幼被掌门收养","personality":"沉稳内敛，重情重义","abilities":"剑法高超，轻功卓越","majorEvents":"在门派大比中击败宿敌，揭开身世之谜"}]
+[{"name":"张三","gender":"male","age":28,"height":175,"weight":70,"race":"asian","occupation":"剑客","position":"掌门弟子","rolePosition":"protagonist","appearance":"瓜子脸，小麦色皮肤，剑眉星目","background":"出身寒门，自幼被掌门收养","personality":"沉稳内敛，重情重义","abilities":"剑法高超，轻功卓越","majorEvents":"在门派大比中击败宿敌，揭开身世之谜","relations":[{"targetName":"李四","relationType":"师徒","description":"李四是张三的授业恩师"}]}]
 
-请确保每个角色都包含全部14个字段，尤其是majorEvents字段不能遗漏。`
+请确保每个角色都包含全部必需字段（1-14），relations（第15项）按需填写。`
 
     // 构建提示词上下文
     const storyTypeNames: Record<string, string> = {
@@ -1772,8 +1773,17 @@ ${recallSection}
     if (background.socialStructure) {
       context += `- 社会结构：${background.socialStructure}\n`
     }
+    if (background.techLevel) {
+      context += `- 技术水平：${background.techLevel}\n`
+    }
     if (background.specialRules) {
       context += `- 特殊规则：${background.specialRules}\n`
+    }
+    if (background.factionDistribution) {
+      context += `- 势力分布：${background.factionDistribution}\n`
+    }
+    if (background.geographicOrientation) {
+      context += `- 地理方位：${background.geographicOrientation}\n`
     }
 
     return context
@@ -1924,6 +1934,7 @@ ${materialContext || '无特定素材'}
 - title: 情节标题（不超过 15 字）
 - summary: 情节概要（50-100 字）
 - involvedCharacters: 涉及的角色名称列表（字符串数组）
+- entityRelations: 本情节中体现的实体间**确定关系**（可选数组，没有可留空）。每项：{"sourceType": "character/location/item/faction", "sourceName": "源实体名（必须与项目中实体名逐字一致）", "targetType": "character/location/item/faction", "targetName": "目标实体名（逐字一致）", "relationType": "关系类型（师徒/宿敌/所在/持有等）", "description": "关系说明（20-40字）"}
 
 要求：
 1. 情节按时间顺序排列，有起承转合
@@ -1932,6 +1943,7 @@ ${materialContext || '无特定素材'}
 4. 每个情节要明确涉及的角色
 5. 充分利用背景设定中的时代、社会结构等元素
 6. 可以融入技能、物品等元素增加故事丰富度
+7. entityRelations 只输出情节中明确体现的关系，用于构建人物/地点/物品关系网络
 
 请直接输出 JSON 数组，不要有任何额外文字。`
 
@@ -3109,6 +3121,105 @@ ${entityRef(factions, 'faction') || '暂无'}
           }
         } catch (parseError: any) {
           console.error('[LongWritingAI] extractChapterEvents JSON 解析失败:', parseError.message)
+          return { success: true, data: result }
+        }
+      }
+      return { success: false, error: 'AI 返回格式错误' }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  }
+
+  // ==================== 图谱关系构建（设定层面实体关系网络） ====================
+
+  /**
+   * AI 识别实体间关系（图谱关系构建的"关系提案"）。
+   * 读项目当前全部设定 → AI 输出关系网络（人物-人物/人物-地点/人物-物品/人物-势力/物品-地点…），
+   * 由 GraphService.syncEntityRelations 做名称→ID 解析并幂等落库 lw_graph_edges。
+   * 与章节流水线的"事件 involves"边互补：这里是静态设定关系，那边是动态故事事实。
+   */
+  async generateEntityRelations(
+    eventId: string,
+    projectId: string,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<GenerateResponse> {
+    const dbManager = getCoreDatabaseManager()
+
+    const [overview, characters, locations, items, factions, skills, plots] = await Promise.all([
+      dbManager.lwStoryOverviews?.getByProjectId(projectId) ?? Promise.resolve(null),
+      dbManager.lwCharacters?.getByProjectId(projectId) ?? Promise.resolve([]),
+      dbManager.lwLocations?.getByProjectId(projectId) ?? Promise.resolve([]),
+      dbManager.lwItems?.getByProjectId(projectId) ?? Promise.resolve([]),
+      dbManager.lwFactions?.getByProjectId(projectId) ?? Promise.resolve([]),
+      dbManager.lwSkills?.getByProjectId(projectId) ?? Promise.resolve([]),
+      dbManager.lwPlots?.getByProjectId(projectId) ?? Promise.resolve([]),
+    ])
+
+    // 实体清单（名称必须逐字匹配，供 AI 引用）
+    const listBlock = (title: string, list: Array<{ name: string; description?: string | null }>, fields: string[]): string => {
+      if (list.length === 0) return ''
+      return `【${title}】\n${list.map((e: any) => {
+        const parts = fields.map(f => (e[f] ? `${f}:${e[f]}` : '')).filter(Boolean)
+        return `- ${e.name}（${parts.join('，')}）`
+      }).join('\n')}`
+    }
+
+    const systemPrompt = `你是一位专业的小说设定分析师。请分析项目的全部设定，识别实体之间**确定且有意义**的关系，构建故事的关系网络。
+
+## 输出格式
+返回 JSON 数组，每条关系一条记录：
+{
+  "sourceType": "character/location/item/faction/skill",
+  "sourceName": "源实体名称（必须与下方清单逐字完全一致）",
+  "targetType": "character/location/item/faction/skill",
+  "targetName": "目标实体名称（必须与下方清单逐字完全一致）",
+  "relationType": "关系类型（如：师徒/宿敌/恋人/同门/主仆/父子/所属/所在/持有/使用/存放/出产/相邻/隶属…）",
+  "description": "关系说明（20-40 字，说明这段关系的由来或意义）"
+}
+
+## 关系类型参考（不限于此，但要贴合故事）
+- 人物→人物：师徒、宿敌、恋人、同门、主仆、父子、挚友、竞争对手、恩人、仇人…
+- 人物→地点：所在、常驻、出生地、求学地、镇守地…
+- 人物→物品：持有、使用、守护、追寻、宿命之物…
+- 人物→势力：所属、敌对、效忠、出身…
+- 物品→地点：存放、出产、埋藏…
+- 地点→地点：相邻、隶属、对峙…
+
+## 要求
+1. 只输出**确定**的关系（从设定文本中能直接读出）；不确定的不要编造
+2. sourceName/targetName 必须与下方实体清单**逐字完全一致**（否则无法入库）
+3. 不要输出"人物 A 与人物 B 是同一人"这类无意义关系；不要自环
+4. 每条关系都应能支撑后续创作（写作时作为"已建立的关系"约束）
+5. 关系数量 10-40 条，质量优先
+6. 请直接输出 JSON 数组，不要有任何额外文字`
+
+    const prompt = `【故事概要】
+${overview ? `标题：${overview.title || '未命名'}，摘要：${overview.summary || ''}，核心冲突：${overview.coreConflict || ''}` : '暂无'}
+
+${listBlock('人物', characters, ['rolePosition', 'personality', 'occupation'])}
+${listBlock('地点', locations, ['type', 'description'])}
+${listBlock('物品', items, ['type', 'description'])}
+${listBlock('势力', factions, ['factionType', 'description'])}
+${listBlock('技能', skills, ['type', 'description'])}
+
+${plots.length > 0 ? `【故事线】\n${plots.map((p: any) => `- ${p.title}：${p.summary}`).join('\n')}` : ''}
+
+请基于以上设定，识别实体间确定且有意义的关系，直接返回 JSON 数组。`
+
+    try {
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, 4096, providerConfigId, modelId)
+
+      // 容错解析 JSON 数组
+      const jsonMatch = result.match(/\[[\s\S]*\]/)
+      if (jsonMatch) {
+        try {
+          const data = JSON.parse(jsonMatch[0])
+          if (Array.isArray(data)) {
+            return { success: true, data }
+          }
+        } catch (parseError: any) {
+          console.error('[LongWritingAI] generateEntityRelations JSON 解析失败:', parseError.message)
           return { success: true, data: result }
         }
       }

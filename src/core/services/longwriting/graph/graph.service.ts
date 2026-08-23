@@ -31,6 +31,8 @@ export interface GraphNode {
   name: string
   /** 描述/摘要（实体详情的第一段，供图谱展示） */
   description?: string
+  /** 事件节点的发生章节（时间轴按章节过滤节点用） */
+  chapterNumber?: number
 }
 
 export interface GraphData {
@@ -128,7 +130,7 @@ export class GraphService {
       ...items.map(i => ({ id: i.id, type: 'item' as const, name: i.name, description: i.description })),
       ...factions.map(f => ({ id: f.id, type: 'faction' as const, name: f.name, description: f.description })),
       ...skills.map(s => ({ id: s.id, type: 'skill' as const, name: s.name, description: s.description })),
-      ...events.map(e => ({ id: e.id, type: 'event' as const, name: e.name, description: e.description })),
+      ...events.map(e => ({ id: e.id, type: 'event' as const, name: e.name, description: e.description, chapterNumber: e.chapterNumber })),
     ]
     return { nodes, edges }
   }
@@ -237,6 +239,95 @@ export class GraphService {
     const m = this.manager()
     if (!m?.lwGraphEdges) return null
     return m.lwGraphEdges.endRelation(id, chapterNumber)
+  }
+
+  /**
+   * 关系网络落库（图谱关系构建）：AI 关系提案 → 名称解析 → 幂等写入 lw_graph_edges。
+   * - 名称解析失败（实体不存在）跳过
+   * - 自环跳过
+   * - 同 source+target+relation 已存在则跳过（幂等，重复分析不产生重复边）
+   */
+  async syncEntityRelations(
+    projectId: string,
+    relations: Array<{
+      sourceType: GraphEntityType
+      sourceName: string
+      targetType: GraphEntityType
+      targetName: string
+      relationType: string
+      description?: string
+    }>,
+  ): Promise<{ created: number; skipped: number; edges: GraphEdge[] }> {
+    const m = this.manager()
+    if (!m?.lwGraphEdges || relations.length === 0) {
+      return { created: 0, skipped: relations.length, edges: [] }
+    }
+
+    // 名称 → ID（分批解析源/目标）
+    const sources = await this.resolveEntities(
+      projectId,
+      relations.map(r => ({ type: r.sourceType, name: r.sourceName })),
+    )
+    const targets = await this.resolveEntities(
+      projectId,
+      relations.map(r => ({ type: r.targetType, name: r.targetName })),
+    )
+
+    // 已存在边（幂等去重键：sourceType:sourceId|targetType:targetId|relationType）
+    const existing = await m.lwGraphEdges.getByProjectId(projectId)
+    const keySet = new Set(
+      existing.map(e => `${e.sourceType}:${e.sourceId}|${e.targetType}:${e.targetId}|${e.relationType}`),
+    )
+
+    let skipped = 0
+    const toCreate: Array<{
+      projectId: string
+      sourceType: GraphEntityType
+      sourceId: string
+      targetType: GraphEntityType
+      targetId: string
+      relationType: string
+      label?: string
+      description?: string
+      validFromChapter: number
+    }> = []
+
+    for (let i = 0; i < relations.length; i++) {
+      const r = relations[i]
+      const s = sources[i]
+      const t = targets[i]
+      if (!s?.resolved || !s.id || !t?.resolved || !t.id) {
+        skipped++
+        continue
+      }
+      if (s.id === t.id) {
+        skipped++
+        continue
+      }
+      const key = `${s.type}:${s.id}|${t.type}:${t.id}|${r.relationType}`
+      if (keySet.has(key)) {
+        skipped++
+        continue
+      }
+      keySet.add(key)
+      toCreate.push({
+        projectId,
+        sourceType: s.type,
+        sourceId: s.id,
+        targetType: t.type,
+        targetId: t.id,
+        relationType: r.relationType,
+        label: r.relationType,
+        description: r.description,
+        validFromChapter: 1,
+      })
+    }
+
+    if (toCreate.length === 0) {
+      return { created: 0, skipped, edges: [] }
+    }
+    const edges = await m.lwGraphEdges.batchCreate(toCreate)
+    return { created: edges.length, skipped, edges }
   }
 
   // ==================== 内部工具 ====================

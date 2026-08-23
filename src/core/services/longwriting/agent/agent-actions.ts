@@ -219,6 +219,18 @@ async function executeGenerateCharacters(ctx: AgentExecutionContext, action: Age
     if (saved) created.push(saved)
   }
 
+  // 图谱动态更新：角色间关系（AI 输出 relations）→ 幂等落库
+  await syncRelationsFromInput(db, projectId, newChars, (c: any) =>
+    (c.relations || []).map((rel: any) => ({
+      sourceType: 'character',
+      sourceName: c.name.trim(),
+      targetType: 'character',
+      targetName: String(rel.targetName || '').trim(),
+      relationType: rel.relationType || '关联',
+      description: rel.description || '',
+    })),
+  )
+
   return {
     type: 'generate_characters',
     status: 'ok',
@@ -391,12 +403,67 @@ async function executeGeneratePlots(ctx: AgentExecutionContext): Promise<AgentAc
     })),
   )
 
+  // 图谱动态更新：情节中体现的实体关系 → 幂等落库
+  await syncRelationsFromInput(db, projectId, newPlots, (p: any) =>
+    (p.entityRelations || []).map((rel: any) => ({
+      sourceType: rel.sourceType || 'character',
+      sourceName: String(rel.sourceName || '').trim(),
+      targetType: rel.targetType || 'character',
+      targetName: String(rel.targetName || '').trim(),
+      relationType: rel.relationType || '关联',
+      description: rel.description || '',
+    })),
+  )
+
   return {
     type: 'generate_plots',
     status: 'ok',
     message: `新增故事线 ${newPlots.length} 条：${newPlots.map((p: any) => p.title).join('、')}`,
     changed: ['plots'],
     data: newPlots.map((p: any) => ({ title: p.title })),
+  }
+}
+
+/**
+ * 从生成结果提取实体关系并幂等落库（图谱动态更新）。
+ * 提取器失败/无关系时不抛错（不阻断主流程）。
+ */
+async function syncRelationsFromInput(
+  db: any,
+  projectId: string,
+  items: any[],
+  extractor: (item: any) => Array<{
+    sourceType: string
+    sourceName: string
+    targetType: string
+    targetName: string
+    relationType: string
+    description?: string
+  }>,
+): Promise<void> {
+  if (!db?.lwGraphEdges || !Array.isArray(items) || items.length === 0) return
+  try {
+    const relations: any[] = []
+    for (const item of items) {
+      for (const rel of extractor(item)) {
+        const src = rel.sourceName.trim()
+        const tgt = rel.targetName.trim()
+        if (!src || !tgt || src === tgt) continue
+        relations.push({
+          sourceType: rel.sourceType || 'character',
+          sourceName: src,
+          targetType: rel.targetType || 'character',
+          targetName: tgt,
+          relationType: rel.relationType || '关联',
+          description: rel.description || '',
+        })
+      }
+    }
+    if (relations.length === 0) return
+    const { GraphService } = await import('../graph/graph.service')
+    await new GraphService(db).syncEntityRelations(projectId, relations)
+  } catch (e) {
+    console.error('[AgentAction] 实体关系同步失败（不影响主流程）:', e)
   }
 }
 

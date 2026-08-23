@@ -1129,6 +1129,33 @@ async function parseAndHandleSuggestions(content: string) {
       await loadCharacters()
       updateProgress()
 
+      // 图谱动态更新：角色生成时顺带输出角色间关系 → 幂等落库（初步人物关系网络）
+      try {
+        const relations: any[] = []
+        for (const suggested of suggestedCharacters) {
+          const srcName = (suggested.name || '').trim()
+          if (!srcName) continue
+          for (const rel of suggested.relations || []) {
+            const targetName = (rel.targetName || '').trim()
+            if (!targetName || targetName === srcName) continue
+            relations.push({
+              sourceType: 'character',
+              sourceName: srcName,
+              targetType: 'character',
+              targetName,
+              relationType: rel.relationType || '关联',
+              description: rel.description || '',
+            })
+          }
+        }
+        if (relations.length > 0) {
+          const sync = await window.electronAPI.longwriting.graphSyncRelations(props.projectId, relations)
+          console.log('[CharacterStage] 角色关系同步:', sync)
+        }
+      } catch (e) {
+        console.error('[CharacterStage] 角色关系同步失败（不影响角色添加）:', e)
+      }
+
       if (failCount === 0) {
         ElMessage.success(`已成功添加 ${successCount} 个角色`)
       } else if (successCount > 0) {
