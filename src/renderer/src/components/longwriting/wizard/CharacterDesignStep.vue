@@ -176,7 +176,8 @@ async function confirmDraft(): Promise<void> {
   let success = 0
   let failed = 0
   for (const c of valid) {
-    const r = await window.electronAPI.longwriting.createCharacter({
+    // 深拷贝为纯对象（响应式 proxy → IPC 序列化失败）
+    const r = await window.electronAPI.longwriting.createCharacter(JSON.parse(JSON.stringify({
       projectId: props.projectId,
       name: c.name.trim(),
       gender: c.gender as any,
@@ -186,7 +187,7 @@ async function confirmDraft(): Promise<void> {
       personality: c.personality,
       background: c.background,
       abilities: c.abilities,
-    })
+    })))
     if (r.success) success++
     else failed++
   }

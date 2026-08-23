@@ -58,10 +58,16 @@
       </div>
 
       <div class="idea-actions">
-        <el-button type="primary" size="large" :disabled="!coreIdea.trim() || generating" @click="generateBlueprint">
-          <el-icon><MagicStick /></el-icon>
-          {{ generating ? '生成中...' : '开始创作' }}
+        <el-button type="primary" size="large" :loading="generating" :disabled="!coreIdea.trim() || generating" @click="generateBlueprint">
+          <el-icon v-if="!generating"><MagicStick /></el-icon>
+          {{ generating ? 'AI 正在创作故事蓝图...' : '开始创作' }}
         </el-button>
+      </div>
+
+      <!-- 生成进度提示（蓝图生成通常需 20-40 秒） -->
+      <div v-if="generating" class="generating-progress">
+        <el-progress :percentage="100" :indeterminate="true" :stroke-width="4" />
+        <p class="progress-text">AI 正在分析你的想法并生成故事蓝图（标题/冲突/角色/场景），通常需要 20-40 秒，请稍候...</p>
       </div>
     </div>
 
@@ -74,7 +80,7 @@
             <el-tag
               v-for="t in blueprint.titleSuggestions"
               :key="t"
-              :type="blueprint.selectedTitle === t ? 'primary' : 'default'"
+              :type="blueprint.selectedTitle === t ? 'primary' : 'info'"
               class="title-tag"
               @click="blueprint.selectedTitle = t"
             >
@@ -186,7 +192,8 @@ async function generateBlueprint(): Promise<void> {
   if (generating.value) return
 
   // 先保存基础构思（写 story_overview，供后续生成读取）
-  const saveResp = await window.electronAPI.longwriting.updateStoryOverview(props.projectId, {
+  // 注意：必须深拷贝为纯对象，避免 Vue 响应式 proxy 导致 Electron IPC 序列化失败（An object could not be cloned）
+  const saveResp = await window.electronAPI.longwriting.updateStoryOverview(props.projectId, JSON.parse(JSON.stringify({
     storyType: form.value.storyType as StoryType,
     coreIdea: coreIdea.value.trim(),
     style: form.value.style || undefined,
@@ -194,7 +201,7 @@ async function generateBlueprint(): Promise<void> {
     estimatedLength: form.value.estimatedLength || undefined,
     enabledFeatures: form.value.enabledFeatures,
     isSaved: true,
-  })
+  })))
   if (!saveResp.success) {
     ElMessage.error(saveResp.error || '保存构思失败')
     return
@@ -267,7 +274,8 @@ async function confirmBlueprint(): Promise<void> {
   const b = blueprint.value
   const finalTitle = b.selectedTitle?.replace(/[《》]/g, '') || '未命名故事'
 
-  const result = await window.electronAPI.longwriting.updateStoryOverview(props.projectId, {
+  // 深拷贝为纯对象（响应式 proxy → IPC 序列化失败）
+  const result = await window.electronAPI.longwriting.updateStoryOverview(props.projectId, JSON.parse(JSON.stringify({
     title: finalTitle,
     storyType: form.value.storyType as StoryType,
     coreIdea: coreIdea.value.trim(),
@@ -286,7 +294,7 @@ async function confirmBlueprint(): Promise<void> {
     estimatedChapters: b.estimatedChapters,
     isSaved: true,
     isLocked: true,
-  })
+  })))
 
   if (result.success) {
     ElMessage.success('故事蓝图已确认')
@@ -370,6 +378,20 @@ onMounted(async () => {
   display: flex;
   justify-content: center;
   margin-top: 20px;
+}
+
+.generating-progress {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--fill-color-lighter);
+  border-radius: 8px;
+
+  .progress-text {
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--text-color-secondary);
+    text-align: center;
+  }
 }
 
 .blueprint-card {

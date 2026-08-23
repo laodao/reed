@@ -135,13 +135,14 @@ async function confirmDraft(): Promise<void> {
     ElMessage.warning('没有有效情节')
     return
   }
+  // 深拷贝为纯对象（响应式 proxy → IPC 序列化失败）
   const r = await window.electronAPI.longwriting.batchCreatePlots(
     props.projectId,
-    valid.map(p => ({
+    JSON.parse(JSON.stringify(valid.map(p => ({
       title: p.title.trim(),
       summary: p.summary.trim(),
       involvedCharacters: p.involvedCharacters,
-    })),
+    }))))
   )
   if (r.success) {
     draft.value = []
