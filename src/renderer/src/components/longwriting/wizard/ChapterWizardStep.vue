@@ -67,7 +67,7 @@
  * 写前校验/提取更新图谱留待阶段 2；本步实现：章节列表 → 生成（generateChapter 流式）→ 编辑 → 保存
  */
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { MagicStick, Check } from '@element-plus/icons-vue'
 import { useAiGeneration } from '@/composables/useAiGeneration'
 
@@ -129,6 +129,11 @@ async function selectChapter(leaf: any): Promise<void> {
 
 async function generateCurrent(): Promise<void> {
   if (!currentLeaf.value) return
+
+  // 阶段2：写前校验（目标章节时间点的实体状态冲突检测）
+  const conflicts = await runPreGenerationCheck(currentLeaf.value.id)
+  if (conflicts === null) return // 用户取消
+
   const outlineId = currentLeaf.value.id
   const eventId = `chapter-${outlineId}-${Date.now()}`
   content.value = ''
@@ -161,6 +166,47 @@ async function generateCurrent(): Promise<void> {
   await saveCurrent(true)
 }
 
+/**
+ * 阶段2 写前校验：调用 validateBeforeGeneration，有冲突时弹窗让用户确认。
+ * @returns true=继续生成 / false=用户取消 / null=校验失败但放行
+ */
+async function runPreGenerationCheck(outlineId: string): Promise<boolean | null> {
+  try {
+    const chapterNo = calcChapterNo(outlineId)
+    const r = await window.electronAPI.longwriting.graphValidateBeforeGeneration(props.projectId, outlineId, chapterNo)
+    if (!r.success || !Array.isArray(r.data) || r.data.length === 0) return true
+
+    const errors = r.data.filter((c: any) => c.severity === 'error')
+    const warnings = r.data.filter((c: any) => c.severity === 'warning')
+    const lines = [
+      ...errors.map((c: any) => `❌ ${c.message}`),
+      ...warnings.map((c: any) => `⚠️ ${c.message}`),
+    ]
+    try {
+      await ElMessageBox.confirm(
+        `检测到 ${r.data.length} 处可能的时间线冲突：\n\n${lines.join('\n')}\n\n仍要继续生成吗？`,
+        '时间线一致性检查',
+        { confirmButtonText: '继续生成', cancelButtonText: '取消', type: 'warning' },
+      )
+      return true
+    } catch {
+      return false
+    }
+  } catch {
+    // 校验服务异常不阻断生成（降级放行）
+    return null
+  }
+}
+
+function calcChapterNo(outlineId: string): number {
+  let count = 0
+  for (const n of outlineNodes.value) {
+    if (n.nodeType === 'chapter') count++
+    if (n.id === outlineId) return count
+  }
+  return count || 1
+}
+
 async function saveCurrent(auto = false): Promise<void> {
   if (!currentLeaf.value || !content.value.trim()) return
   const r = await window.electronAPI.longwriting.saveChapter(currentLeaf.value.id, content.value)
@@ -170,8 +216,37 @@ async function saveCurrent(auto = false): Promise<void> {
     savedAt.value = new Date().toLocaleTimeString()
     emit('stateChanged')
     if (!auto) ElMessage.success('章节已保存')
+    // 阶段2：章节确认后跑图谱流水线（事件/状态/建边/摘要），失败不影响保存
+    void runChapterGraphPipeline(currentLeaf.value.id)
   } else {
     ElMessage.error(r.error || '保存失败')
+  }
+}
+
+/**
+ * 阶段2：章节确认流水线——提取本章事件/实体状态/自动建边/章节摘要，更新图谱。
+ */
+async function runChapterGraphPipeline(outlineId: string): Promise<void> {
+  const outline = outlineNodes.value.find(n => n.id === outlineId)
+  const chapterContent = contentMap.value[outlineId] || ''
+  if (!outline || !chapterContent.trim() || chapterContent.length < 100) return
+  try {
+    const chapterNo = calcChapterNo(outlineId)
+    const r = await window.electronAPI.longwriting.graphExtractChapter(
+      props.projectId,
+      outlineId,
+      chapterContent,
+      chapterNo,
+    )
+    if (r.success && r.data) {
+      const { events, stateCount } = r.data
+      const parts: string[] = []
+      if (events?.length) parts.push(`${events.length} 个事件`)
+      if (stateCount) parts.push(`${stateCount} 条状态更新`)
+      if (parts.length) ElMessage.success(`图谱已更新（${parts.join('，')}）`)
+    }
+  } catch (e) {
+    console.error('[ChapterWizardStep] 图谱流水线失败:', e)
   }
 }
 

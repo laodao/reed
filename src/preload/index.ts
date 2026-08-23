@@ -1855,6 +1855,15 @@ const electronAPI = {
       ipcRenderer.invoke('longwriting:graph:validateBeforeGeneration', projectId, outlineId, chapterNumber),
     graphScanContradictions: (projectId: string) =>
       ipcRenderer.invoke('longwriting:graph:scanContradictions', projectId),
+    graphExtractChapter: (
+      projectId: string,
+      outlineId: string,
+      chapterContent: string,
+      chapterNumber: number,
+      providerConfigId?: string,
+      modelId?: string
+    ) =>
+      ipcRenderer.invoke('longwriting:graph:extractChapterGraph', projectId, outlineId, chapterContent, chapterNumber, providerConfigId, modelId),
 
     eventGetByChapter: (projectId: string, chapterNumber: number) =>
       ipcRenderer.invoke('longwriting:event:getByChapter', projectId, chapterNumber),

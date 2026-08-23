@@ -28,6 +28,10 @@
           <el-icon><MagicStick /></el-icon>
           向导
         </el-button>
+        <el-button @click="showGraph = true">
+          <el-icon><Share /></el-icon>
+          图谱
+        </el-button>
         <el-button @click="showPreview = true">
           <el-icon><View /></el-icon>
           设定集
@@ -122,6 +126,17 @@
       </div>
     </el-dialog>
 
+    <!-- 知识图谱对话框（懒加载：GraphView 较重，首次打开才加载） -->
+    <el-dialog
+      v-model="showGraph"
+      title="知识图谱"
+      width="90%"
+      top="4vh"
+      destroy-on-close
+    >
+      <GraphView v-if="showGraph" :project-id="projectId" />
+    </el-dialog>
+
     <!-- 项目设定对话框 -->
     <ProjectSettingsDialog
       v-model:visible="showSettingsDialog"
@@ -136,7 +151,7 @@
 import { ref, computed, onMounted, provide } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, View, Setting, MagicStick } from '@element-plus/icons-vue'
+import { ArrowLeft, View, Setting, MagicStick, Share } from '@element-plus/icons-vue'
 import { useTabsStore } from '@/stores/tabs'
 import type { LongWritingProject, StoryStage } from '../../../../shared/types/longwriting.types'
 import type { UserProviderConfig, ProviderTemplate } from '../../../shared/types'
@@ -148,6 +163,9 @@ defineOptions({
 
 // 向导容器（默认入口）
 import WizardContainer from '@/components/longwriting/wizard/WizardContainer.vue'
+// 知识图谱（懒加载：仅打开图谱对话框时才加载组件）
+import { defineAsyncComponent } from 'vue'
+const GraphView = defineAsyncComponent(() => import('@/components/longwriting/graph/GraphView.vue'))
 
 // 子组件
 import OverviewStage from '@/components/longwriting/story/OverviewStage.vue'
@@ -157,7 +175,6 @@ import CharacterStage from '@/components/longwriting/story/CharacterStage.vue'
 import SkillItemStage from '@/components/longwriting/story/SkillItemStage.vue'
 import OutlineStage from '@/components/longwriting/story/OutlineStage.vue'
 import ChapterStage from '@/components/longwriting/story/ChapterStage.vue'
-import ExportDialog from '@/components/longwriting/ExportDialog.vue'
 import ProjectSettingsDialog from '@/components/longwriting/ProjectSettingsDialog.vue'
 
 const route = useRoute()
@@ -181,6 +198,7 @@ const initialSkipped = ref<string[] | undefined>(undefined)
 // 对话框状态
 const showPreview = ref(false)
 const showSettingsDialog = ref(false)
+const showGraph = ref(false)
 
 // ==================== 统一模型选择 ====================
 const providerConfigs = ref<UserProviderConfig[]>([])

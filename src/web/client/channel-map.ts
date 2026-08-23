@@ -443,6 +443,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'longwriting.graphEndRelation': { channel: 'longwriting:graph:endRelation' },
   'longwriting.graphValidateBeforeGeneration': { channel: 'longwriting:graph:validateBeforeGeneration' },
   'longwriting.graphScanContradictions': { channel: 'longwriting:graph:scanContradictions' },
+  'longwriting.graphExtractChapter': { channel: 'longwriting:graph:extractChapterGraph' },
   'longwriting.eventGetByChapter': { channel: 'longwriting:event:getByChapter' },
   'longwriting.eventUpdate': { channel: 'longwriting:event:update' },
   'longwriting.eventDelete': { channel: 'longwriting:event:delete' },

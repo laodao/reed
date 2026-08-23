@@ -303,6 +303,7 @@ const CHANNELS = {
   GRAPH_END_RELATION: 'longwriting:graph:endRelation',
   GRAPH_VALIDATE_BEFORE_GENERATION: 'longwriting:graph:validateBeforeGeneration',
   GRAPH_SCAN_CONTRADICTIONS: 'longwriting:graph:scanContradictions',
+  GRAPH_EXTRACT_CHAPTER: 'longwriting:graph:extractChapterGraph',
 
   // 阶段2：事件节点
   EVENT_GET_BY_CHAPTER: 'longwriting:event:getByChapter',
@@ -3071,6 +3072,32 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
     try {
       const { ConsistencyService } = await import('@core/services/longwriting/graph/consistency.service')
       return { success: true, data: await ConsistencyService.getInstance().scanContradictions(projectId) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 章节确认流水线（事件/状态/建边/摘要 一键执行）
+  ipcBridge.handle(CHANNELS.GRAPH_EXTRACT_CHAPTER, async (
+    _event,
+    projectId: string,
+    outlineId: string,
+    chapterContent: string,
+    chapterNumber: number,
+    providerConfigId?: string,
+    modelId?: string
+  ) => {
+    try {
+      const { ChapterGraphProcessor } = await import('@core/services/longwriting/graph/chapter-graph.processor')
+      const result = await new ChapterGraphProcessor().process({
+        projectId,
+        outlineId,
+        chapterContent,
+        chapterNumber,
+        providerConfigId,
+        modelId,
+      })
+      return { success: true, data: result }
     } catch (error: any) {
       return { success: false, error: error.message }
     }
