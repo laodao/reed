@@ -43,7 +43,7 @@
         </div>
       </section>
 
-      <!-- 全部功能：紧凑入口，不占空间 -->
+      <!-- 全部功能：大卡片入口 -->
       <section class="section">
         <div class="section-head">
           <h2 class="section-title">功能</h2>
@@ -54,11 +54,20 @@
             :key="feature.path"
             class="feature-card"
             @click="navigateTo(feature.path)"
+            @mouseenter="hoveredCard = feature.path"
+            @mouseleave="hoveredCard = null"
           >
-            <span class="feature-icon">
+            <div class="feature-icon" :class="{ hovered: hoveredCard === feature.path }">
               <component :is="feature.icon" />
-            </span>
-            <span class="feature-label">{{ feature.label }}</span>
+              <div class="icon-glow"></div>
+            </div>
+            <div class="feature-content">
+              <h3 class="feature-title">{{ feature.label }}</h3>
+              <p class="feature-desc">{{ feature.description }}</p>
+            </div>
+            <div class="feature-arrow">
+              <el-icon :size="20"><ArrowRight /></el-icon>
+            </div>
           </div>
         </div>
       </section>
@@ -80,6 +89,7 @@ import type { AppRecord } from '@shared/types/app.types'
 
 const router = useRouter()
 const api = electronApi()
+const hoveredCard = ref<string | null>(null)
 
 /** 固定到首页的应用（快捷入口；每次进入首页刷新） */
 const pinnedApps = ref<Array<AppRecord & { sessionCount: number }>>([])
@@ -302,60 +312,129 @@ onActivated(async () => {
   font-size: 18px;
 }
 
-// 全部功能（紧凑小卡片：图标 + 名称）
+// 全部功能（大卡片：图标 + 标题 + 描述 + 箭头）
 .feature-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
 }
 
 .feature-card {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
+  gap: 18px;
+  padding: 20px 22px;
   background: var(--bg-color);
   border: 1px solid var(--border-color-lighter);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   cursor: pointer;
   transition: all var(--transition-normal);
+  position: relative;
+  overflow: hidden;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--color-gradient);
+    opacity: 0;
+    transition: opacity var(--transition-normal);
+    pointer-events: none;
+  }
 
   &:hover {
-    border-color: var(--color-primary);
-    color: var(--color-primary);
-    transform: translateY(-1px);
+    transform: translateY(-3px);
     box-shadow: var(--shadow-card-hover);
+    border-color: transparent;
+
+    &::before {
+      opacity: 0.03;
+    }
 
     .feature-icon {
       background: var(--color-gradient);
       color: #fff;
+      box-shadow: var(--shadow-glow);
+
+      .icon-glow {
+        opacity: 1;
+      }
+    }
+
+    .feature-arrow {
+      transform: translateX(4px);
+      color: var(--color-primary);
     }
   }
 }
 
 .feature-icon {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-md);
+  background: var(--bg-color-page);
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--color-primary);
-  background: var(--bg-color-page);
   flex-shrink: 0;
   transition: all var(--transition-normal);
+  position: relative;
 
   :deep(svg) {
-    width: 16px;
-    height: 16px;
+    width: 26px;
+    height: 26px;
+  }
+
+  &.hovered {
+    background: var(--color-gradient);
+    color: #fff;
   }
 }
 
-.feature-label {
+.icon-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-glow);
+  filter: blur(12px);
+  opacity: 0;
+  transition: opacity var(--transition-normal);
+  pointer-events: none;
+}
+
+.feature-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.feature-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 4px 0;
+}
+
+.feature-desc {
   font-size: 13px;
-  font-weight: 500;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.5;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.feature-arrow {
+  color: var(--text-placeholder);
+  transition: all var(--transition-normal);
+  flex-shrink: 0;
 }
 </style>
