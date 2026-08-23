@@ -9,6 +9,7 @@ import * as fs from 'fs'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { LongWritingService } from '@core/services/longwriting.service'
 import { LongWritingAIService } from '@core/services/longwriting-ai.service'
+import { AgentWorkflowService } from '@core/services/longwriting/agent/agent-workflow.service'
 import { MaterialProcessorService } from '@core/services/material-processor.service'
 import { markdownToDocx } from '@core/utils/markdown-to-docx'
 import {
@@ -313,7 +314,13 @@ const CHANNELS = {
   // 阶段2：向导状态 / 生成取消
   WIZARD_GET_STATE: 'longwriting:wizard:getState',
   GENERATE_CANCEL: 'longwriting:generate:cancel',
-  EXTRACT_CHAPTER_EVENTS: 'longwriting:extractChapterEvents'
+  EXTRACT_CHAPTER_EVENTS: 'longwriting:extractChapterEvents',
+
+  // 对话式工作流 Agent
+  AGENT_SEND: 'longwriting:agent:send',
+  AGENT_HISTORY: 'longwriting:agent:history',
+  AGENT_CANCEL: 'longwriting:agent:cancel',
+  AGENT_STATE: 'longwriting:agent:state'
 }
 
 /**
@@ -3208,6 +3215,43 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
         modelId
       )
       return result
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 对话式工作流 Agent ====================
+
+  ipcBridge.handle(CHANNELS.AGENT_SEND, async (_event, projectId: string, message: string, providerConfigId?: string, modelId?: string) => {
+    try {
+      const result = await AgentWorkflowService.getInstance().sendMessage(projectId, message, { providerConfigId, modelId })
+      return { success: true, data: result }
+    } catch (error: any) {
+      console.error('[LongWritingHandler] agent:send 失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcBridge.handle(CHANNELS.AGENT_HISTORY, async (_event, projectId: string) => {
+    try {
+      return { success: true, data: await AgentWorkflowService.getInstance().getHistory(projectId) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcBridge.handle(CHANNELS.AGENT_CANCEL, async (_event, projectId: string) => {
+    try {
+      AgentWorkflowService.getInstance().cancel(projectId)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcBridge.handle(CHANNELS.AGENT_STATE, async (_event, projectId: string) => {
+    try {
+      return { success: true, data: await AgentWorkflowService.getInstance().getState(projectId) }
     } catch (error: any) {
       return { success: false, error: error.message }
     }

@@ -450,6 +450,15 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'longwriting.wizardGetState': { channel: 'longwriting:wizard:getState' },
   'longwriting.generateCancel': { channel: 'longwriting:generate:cancel' },
   'longwriting.extractChapterEvents': { channel: 'longwriting:extractChapterEvents' },
+  // 对话式工作流 Agent
+  'longwriting.agentSend': { channel: 'longwriting:agent:send' },
+  'longwriting.agentHistory': { channel: 'longwriting:agent:history' },
+  'longwriting.agentCancel': { channel: 'longwriting:agent:cancel' },
+  'longwriting.agentState': { channel: 'longwriting:agent:state' },
+  // longwriting.onAgentEvent(projectId, cb) — 后端 emit(`longwriting:agent:${projectId}`, ...)
+  'longwriting.onAgentEvent': {
+    eventChannel: (projectId) => `longwriting:agent:${projectId}`,
+  },
   'diary.listFolders': { channel: 'diary:list-folders' },
   'diary.getAllFolders': { channel: 'diary:get-all-folders' },
   'diary.createFolder': { channel: 'diary:create-folder' },

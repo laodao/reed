@@ -87,6 +87,32 @@ export class LongWritingAIService {
     if (ctrl) ctrl.abort()
   }
 
+  // ==================== Agent 对话基础能力（对话式工作流） ====================
+
+  /**
+   * Agent 决策调用：非流式短输出（AI 返回 JSON：reply + actions）。
+   * maxTokens 1280：决策 JSON 短小，防止长输出拖慢。
+   */
+  async agentDecide(
+    context: { systemPrompt: string; userPrompt: string },
+    providerConfigId?: string,
+    modelId?: string,
+  ): Promise<string> {
+    return this.callAI(context.userPrompt, context.systemPrompt, 1280, providerConfigId, modelId)
+  }
+
+  /**
+   * Agent 总结调用：流式输出（正文经 longwriting:generate:${eventId} 推送，返回全文）。
+   */
+  async agentSummarize(
+    eventId: string,
+    context: { systemPrompt: string; userPrompt: string },
+    providerConfigId?: string,
+    modelId?: string,
+  ): Promise<string> {
+    return this.callAIStream(eventId, context.userPrompt, context.systemPrompt, 2048, providerConfigId, modelId)
+  }
+
   /**
    * 获取提供商配置
    */

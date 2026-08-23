@@ -1884,7 +1884,23 @@ const electronAPI = {
       providerConfigId?: string,
       modelId?: string
     ) =>
-      ipcRenderer.invoke('longwriting:extractChapterEvents', projectId, outlineId, chapterContent, chapterNumber, providerConfigId, modelId)
+      ipcRenderer.invoke('longwriting:extractChapterEvents', projectId, outlineId, chapterContent, chapterNumber, providerConfigId, modelId),
+
+    // 对话式工作流 Agent
+    agentSend: (projectId: string, message: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('longwriting:agent:send', projectId, message, providerConfigId, modelId),
+    agentHistory: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:agent:history', projectId),
+    agentCancel: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:agent:cancel', projectId),
+    agentState: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:agent:state', projectId),
+    onAgentEvent: (projectId: string, callback: (event: any, data: any) => void) => {
+      const channel = `longwriting:agent:${projectId}`
+      const listener = (_event: any, data: any) => callback(data)
+      ipcRenderer.on(channel, listener)
+      return () => ipcRenderer.removeListener(channel, listener)
+    }
   },
 
   // 步骤0：向量索引（步骤6 前端面板消费）
