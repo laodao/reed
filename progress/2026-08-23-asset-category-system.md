@@ -78,3 +78,16 @@
 
 - 新增：src/core/database/migrations/create-asset-categories.ts、entities/asset-category.entity.ts、repositories/asset-category.repository.ts、tests/unit/migrations/create-asset-categories.spec.ts、tests/unit/core/database/asset-category.repository.spec.ts、tests/unit/core/modules/assets/asset-service-category.spec.ts
 - 修改：shared/types/asset.types.ts（预览模式/分类定义/预览结果）、workflow-node-forms.ts、workflow.types.ts、core/modules/assets/asset.service.ts、asset-storage.service.ts（readStoredText）、workflow-boot.ts、database/entities/index.ts、database-manager.interface.ts、electron/database/index.ts、web/server/index.ts、web/server/platform/web-database-manager.ts、electron/ipc/handlers/asset.handler.ts、preload/index.ts、renderer/types/electron-api.ts、renderer/views/asset/AssetCenter.vue、renderer/components/workflow/NodeConfigPanel.vue、RunInputForm.vue
+
+## 追加（同日）：应用列表内置应用排序修复
+
+问题：用户反馈「视频文案提取为什么没有发布成应用」——实为已发布（builtin_app_video_transcript，会话渠道开启、启用），
+但 8 个内置应用由迁移同批插入（updated_at 相同），listApp 次级排序不稳定，视频文案提取随机落到第 2 页（16 个中第 16 位），第 1 页看不到。
+
+修复（app.repository.listApp）：
+- 内置应用置顶（is_builtin DESC，官方开箱即用能力优先），8 个内置必在第 1 页 12 容量内
+- 内置之间按 id 稳定排序（同批 updated_at 相同不随机）
+- 用户应用保持 updated_at DESC（新发布在前）
+
+测试：tests/unit/core/database/app.repository.spec.ts（4 项：内置置顶/内置稳定排序/用户按更新倒序/混合场景首页可见）。
+实测（CDP）：应用列表第 1 页 = 8 内置（含视频文案提取）+ 4 用户应用。

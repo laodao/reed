@@ -81,7 +81,7 @@ export class AppRepository extends BaseRepository<AppEntity, AppRecord> {
     return e ? this.toDto(e) : null
   }
 
-  /** 分页列表（更新时间倒序；keyword 模糊名称/描述；含全局内置） */
+  /** 分页列表（内置应用置顶 + 更新时间倒序；keyword 模糊名称/描述；含全局内置） */
   async listApp(params: { keyword?: string; page: number; pageSize: number }): Promise<{ items: AppRecord[]; total: number }> {
     const userId = getCurrentUserId()
     const qb = this.repo
@@ -90,8 +90,11 @@ export class AppRepository extends BaseRepository<AppEntity, AppRecord> {
         userId ? '(a.user_id = :userId OR a.is_builtin = 1)' : '(a.user_id IS NULL OR a.is_builtin = 1)',
         userId ? { userId } : {},
       )
-      .orderBy('a.is_builtin', 'ASC')
+      // 内置应用（官方开箱即用能力）优先展示；内置之间 updated_at 同批插入无区分，
+      // 用 id 稳定排序（消除随机顺序）；用户应用按最近更新倒序
+      .orderBy('a.is_builtin', 'DESC')
       .addOrderBy('a.updated_at', 'DESC')
+      .addOrderBy('a.id', 'ASC')
       .skip((params.page - 1) * params.pageSize)
       .take(params.pageSize)
     if (params.keyword?.trim()) {
