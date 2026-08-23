@@ -42,6 +42,7 @@ import { SearchEngineConfigRepository } from '@core/database/repositories/search
 import { LwProjectRepository } from '@core/database/repositories/lw-project.repository'
 import { LwStoryOverviewRepository } from '@core/database/repositories/lw-story-overview.repository'
 import { LwCharacterRepository } from '@core/database/repositories/lw-character.repository'
+import { LwCharacterRelationRepository } from '@core/database/repositories/lw-character-relation.repository'
 import { LwOutlineRepository } from '@core/database/repositories/lw-outline.repository'
 import { LwChapterRepository } from '@core/database/repositories/lw-chapter.repository'
 import { LwBackgroundRepository } from '@core/database/repositories/lw-background.repository'
@@ -95,6 +96,7 @@ import { ImageAssetRepository } from '@core/database/repositories/image-asset.re
 import { OSSConfigRepository } from '@core/database/repositories/oss-config.repository'
 import { AssetImageRepository } from '@core/database/repositories/asset-image.repository'
 import { AssetRepository } from '@core/database/repositories/asset.repository'
+import { NewsSourceRepository } from '@core/database/repositories/news-source.repository'
 
 export class WebDatabaseManager implements ICoreDatabaseManager {
   readonly dataSource: DataSource | null
@@ -128,6 +130,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   appSessions: AppSessionRepository | null
   appSessionMessages: AppSessionMessageRepository | null
   assets: AssetRepository | null
+  newsSources: NewsSourceRepository | null
   toolCredentials: ToolCredentialRepository | null
   customTools: CustomToolRepository | null
   emailAccounts: EmailAccountRepository | null
@@ -143,6 +146,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   lwProjects: LwProjectRepository | null
   lwStoryOverviews: LwStoryOverviewRepository | null
   lwCharacters: LwCharacterRepository | null
+  lwCharacterRelations: LwCharacterRelationRepository | null
   lwOutlines: LwOutlineRepository | null
   lwChapters: LwChapterRepository | null
   lwBackgrounds: LwBackgroundRepository | null
@@ -230,6 +234,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.appSessions = new AppSessionRepository(ds)
     this.appSessionMessages = new AppSessionMessageRepository(ds)
     this.assets = new AssetRepository(ds)
+    this.newsSources = new NewsSourceRepository(ds)
     this.toolCredentials = new ToolCredentialRepository(ds)
     this.customTools = new CustomToolRepository(ds)
     this.emailAccounts = new EmailAccountRepository(ds)
@@ -245,6 +250,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.lwProjects = new LwProjectRepository(ds)
     this.lwStoryOverviews = new LwStoryOverviewRepository(ds)
     this.lwCharacters = new LwCharacterRepository(ds)
+    this.lwCharacterRelations = new LwCharacterRelationRepository(ds)
     this.lwOutlines = new LwOutlineRepository(ds)
     this.lwChapters = new LwChapterRepository(ds)
     this.lwBackgrounds = new LwBackgroundRepository(ds)

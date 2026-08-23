@@ -15,14 +15,20 @@
 
 import { promises as fs } from 'fs'
 import path from 'path'
+import { existsSync } from 'fs'
 import { spawn as nodeSpawn } from 'child_process'
 import ffmpegPath from 'ffmpeg-static'
 
-if (!ffmpegPath) {
-  throw new Error('[ffmpeg-helpers] ffmpeg-static 未安装或未解析到二进制路径')
+/**
+ * ffmpeg 可执行文件：优先随包 ffmpeg-static 二进制；缺失时回退系统 PATH 的 ffmpeg
+ * （打包/CI 未下载二进制时仍可用，spawn 数组参数无 shell 注入风险）。
+ */
+function resolveFfmpegBin(): string {
+  if (ffmpegPath && existsSync(ffmpegPath)) return ffmpegPath
+  return 'ffmpeg' // 系统 PATH（Windows scoop/choco 等均提供）
 }
 
-const FFMPEG_BIN: string = ffmpegPath
+const FFMPEG_BIN: string = resolveFfmpegBin()
 
 /**
  * 跑 ffmpeg 命令（args 数组形式，不走 shell；无命令注入风险）。
@@ -158,4 +164,20 @@ export async function extractAudio(
   }
   args.push('-i', videoPath, '-vn', '-ar', '16000', '-ac', '1', '-y', outPath)
   await runFfmpeg(args)
+}
+
+/** 从音频文件截取片段（超长音频分段转写：按 startSec 起、durationSec 长切一段 16kHz wav） */
+export async function extractAudioSegment(
+  inputPath: string,
+  outPath: string,
+  startSec: number,
+  durationSec: number,
+): Promise<void> {
+  await fs.mkdir(path.dirname(outPath), { recursive: true })
+  await runFfmpeg([
+    '-ss', String(startSec),
+    '-i', inputPath,
+    '-t', String(durationSec),
+    '-vn', '-ar', '16000', '-ac', '1', '-y', outPath,
+  ])
 }

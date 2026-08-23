@@ -2,7 +2,7 @@
   "kind": "the-bot-workflow",
   "formatVersion": 1,
   "name": "[内置] 视频文案提取",
-  "description": "B站/YouTube/直链/本地视频 → 提取音频 → 转写 → AI 按风格整理成文案（支持超长分段转写）→ 报告 + 存资产",
+  "description": "B站/YouTube/直链/本地视频 → 提取音频 → 语音识别转写（超长自动分段）→ AI 按风格整理成文案 → 报告 + 存资产",
   "category": "media",
   "graph": {
     "version": 1,
@@ -29,7 +29,8 @@
             ] },
             { "key": "segmentMinutes", "label": "分段时长（分钟）", "type": "number", "defaultValue": 5 },
             { "key": "request", "label": "效果描述", "type": "textarea" },
-            { "key": "model", "label": "模型", "type": "model", "modelTypes": ["audio", "multimodal"] }
+            { "key": "asrModel", "label": "语音识别模型", "type": "model", "modelTypes": ["audio"], "required": true },
+            { "key": "chatModel", "label": "文案整理模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
           ]
         }
       },
@@ -45,7 +46,7 @@
         "type": "stt",
         "name": "语音识别",
         "position": { "x": 580, "y": 200 },
-        "config": { "audio": "{{audio1.audioPath}}", "language": "{{start.language}}", "providerConfigId": "{{start.model.providerConfigId}}", "modelId": "{{start.model.modelId}}" }
+        "config": { "audio": "{{audio1.audioPath}}", "language": "{{start.language}}", "segmentMinutes": "{{start.segmentMinutes}}", "providerConfigId": "{{start.asrModel.providerConfigId}}", "modelId": "{{start.asrModel.modelId}}" }
       },
       {
         "id": "polish1",
@@ -55,8 +56,8 @@
         "config": {
           "systemPrompt": "你是视频文案整理助手。把语音识别转录整理为通顺文案。输出风格：\n- 精炼润色：修正口语、分段、去重复\n- 口语原味：保留原话，去口头禅\n- 要点速记：提炼核心观点列表\n- 带时间戳分段：按内容主题分段并标注时间\n\n只输出文案正文。",
           "prompt": "输出风格：{{start.style}}\n用户效果要求：{{start.request}}\n\n语音转录：\n{{stt1.text}}",
-          "providerConfigId": "{{start.model.providerConfigId}}",
-          "modelId": "{{start.model.modelId}}"
+          "providerConfigId": "{{start.chatModel.providerConfigId}}",
+          "modelId": "{{start.chatModel.modelId}}"
         }
       },
       {

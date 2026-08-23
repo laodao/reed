@@ -17,6 +17,8 @@ import { getSearchEngineService } from '../../../services/search-engine.service'
 import { TranslationService } from '../../../services/translation.service'
 import { ImageService } from '../../../services/image.service'
 import { VoiceService } from '../../../services/voice.service'
+import { getVideoMetadata, extractAudioSegment } from '../../episode-production/reference-video/ffmpeg-helpers'
+import { dirname, basename, join } from 'path'
 import type { WorkflowNodeContext } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
@@ -366,6 +368,49 @@ const ttsNode: WorkflowNodeHandler = {
 
 // ==================== 语音识别（STT） ====================
 
+/**
+ * 分段转写缺省段长（分钟）：DashScope 同步识别单次 data-uri 上限 20MB，
+ * 16kHz 单声道 wav 约 8 分钟即触顶（base64 膨胀 4/3），取 4 分钟留足余量。
+ */
+const STT_SEGMENT_DEFAULT_MINUTES = 4
+
+/**
+ * 超长音频分段转写：按段切 wav → 逐段识别 → 合并（多段时以「第 N 段」标注保留时序）。
+ * 失败即抛错（段错误不静默吞掉）。
+ */
+async function transcribeLongAudio(
+  audioPath: string,
+  segmentMinutes: number,
+  opts: { language?: string; providerId?: string; modelId?: string },
+  ctx: WorkflowNodeContext,
+): Promise<string> {
+  const meta = await getVideoMetadata(audioPath)
+  const totalSec = meta.durationSec > 0 ? meta.durationSec : segmentMinutes * 60
+  const segmentSec = segmentMinutes * 60
+  const totalSegs = Math.max(1, Math.ceil(totalSec / segmentSec))
+  const dir = dirname(audioPath)
+  const base = basename(audioPath).replace(/\.wav$/i, '')
+  const texts: string[] = []
+  for (let i = 0; i < totalSegs; i++) {
+    const startSec = i * segmentSec
+    const segPath = join(dir, `${base}_seg${i + 1}.wav`)
+    await extractAudioSegment(audioPath, segPath, startSec, segmentSec)
+    ctx.emitProgress(Math.round(((i + 1) / totalSegs) * 90), `转写第 ${i + 1}/${totalSegs} 段`)
+    const resp = await VoiceService.recognizeSpeech({
+      audioPath: segPath,
+      ...(opts.language ? { language: opts.language as never } : {}),
+      ...(opts.providerId ? { providerId: opts.providerId } : {}),
+      ...(opts.modelId ? { modelId: opts.modelId } : {}),
+    } as never)
+    const data = unwrap(resp, `语音识别（第 ${i + 1} 段）`)
+    texts.push(data.text ?? '')
+  }
+  const joined = texts
+    .map((t, i) => (t.trim() ? (totalSegs > 1 ? `【第 ${i + 1} 段】\n${t.trim()}` : t.trim()) : ''))
+    .filter(Boolean)
+  return joined.join('\n\n')
+}
+
 const sttNode: WorkflowNodeHandler = {
   type: 'stt',
   controlKind: 'task',
@@ -382,10 +427,35 @@ const sttNode: WorkflowNodeHandler = {
       language?: string
       providerConfigId?: string
       modelId?: string
+      segmentMinutes?: number
     }
     const audio = stringifyValue(cfg.audio)
     // 音频来源支持：文件路径（含 file:// 前缀）或 base64 数据
     const isPath = !audio.startsWith('data:')
+
+    // 超长音频自动分段转写（防单次 data-uri 20MB 超限）；元数据读取失败则降级单段
+    let audioMeta: { durationSec: number } | null = null
+    if (isPath) {
+      try {
+        audioMeta = await getVideoMetadata(audio)
+      } catch {
+        audioMeta = null // 元数据失败不阻断：走单段（真正失败由 VoiceService 明确报错）
+      }
+    }
+    if (audioMeta && isPath) {
+      const segMin = cfg.segmentMinutes !== undefined && Number(cfg.segmentMinutes) > 0
+        ? Number(cfg.segmentMinutes)
+        : STT_SEGMENT_DEFAULT_MINUTES
+      if (audioMeta.durationSec > segMin * 60) {
+        const text = await transcribeLongAudio(audio, segMin, {
+          language: cfg.language,
+          providerId: cfg.providerConfigId,
+          modelId: cfg.modelId,
+        }, ctx)
+        return { status: 'succeeded', output: { text } }
+      }
+    }
+
     const resp = await VoiceService.recognizeSpeech({
       ...(isPath ? { audioPath: audio } : { audioData: audio.replace(/^data:[^,]*,/, '') }),
       ...(cfg.language ? { language: cfg.language as never } : {}),

@@ -260,10 +260,10 @@ describe('WorkflowRunService', () => {
       [['start', 'd'], ['d', 'end']]
     )
     definitions.rows.set('def1', def('def1', graph))
-    // 必填缺失 → 抛错
+    // 必填缺失 → 抛错（提示用字段中文标签）
     await expect(
       runWithUser('u1', () => service.startRun({ definitionId: 'def1', triggerType: 'manual' }))
-    ).rejects.toThrow('topic')
+    ).rejects.toThrow('「主题」')
     // 传 topic（count 走默认值）
     const run = await runWithUser('u1', () =>
       service.startRun({ definitionId: 'def1', triggerType: 'cron', inputs: { topic: 'AI' } })

@@ -81,10 +81,11 @@ describe('video-extract-audio：execute', () => {
 })
 
 describe('video-extract-audio：目录与注册契约', () => {
-  it('catalog 含 video-extract-audio 且 requiredConfigKeys=videoPath', () => {
+  it('catalog 含 video-extract-audio 且 videoPath/videoUrl 二选一（无强制必填键）', () => {
     const entry = NODE_TYPE_CATALOG_MAP[WORKFLOW_NODE_TYPES['video-extract-audio']]
     expect(entry.label).toBe('视频提取音频')
-    expect(entry.requiredConfigKeys).toEqual(['videoPath'])
+    // videoPath 与 videoUrl 任一即可（validateConfig 兜底），因此 requiredConfigKeys 为空
+    expect(entry.requiredConfigKeys).toEqual([])
     expect(NODE_TYPE_CATALOG.some(e => e.type === 'video-extract-audio')).toBe(true)
   })
 

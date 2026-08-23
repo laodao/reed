@@ -23,6 +23,48 @@ const MIXIN_KEY_ENC_TAB = [
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
 const BILI_REFERER = 'https://www.bilibili.com/'
 
+/** B站匿名会话（buvid3/b_nut Cookie + Origin） */
+export interface BilibiliSession {
+  cookie: string
+  origin: string
+}
+
+/**
+ * 获取 B站匿名会话：finger/spi 拿 buvid3（公开接口，无需登录）。
+ * 目的：view/playurl 接口带 Cookie + Origin 可显著降低 412 风控概率。
+ * 失败时返回空会话（不阻断：无风控环境/直链场景仍可解析）。
+ */
+export async function getBilibiliSession(): Promise<BilibiliSession> {
+  try {
+    const res = await fetch('https://api.bilibili.com/x/frontend/finger/spi', {
+      headers: { 'User-Agent': UA },
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (!res.ok) return { cookie: '', origin: '' }
+    const data = (await res.json()) as { code: number; data?: { b_3?: string } }
+    const b3 = data.data?.b_3
+    if (!b3) return { cookie: '', origin: '' }
+    return {
+      cookie: `buvid3=${b3}; b_nut=${Math.floor(Date.now() / 1000)}`,
+      origin: 'https://www.bilibili.com',
+    }
+  } catch {
+    return { cookie: '', origin: '' }
+  }
+}
+
+/** 拼装 B站 API 请求头（会话 Cookie + Origin + UA/Referer） */
+function biliApiHeaders(session: BilibiliSession): Record<string, string> {
+  const headers: Record<string, string> = {
+    'User-Agent': UA,
+    Referer: BILI_REFERER,
+    'Accept-Language': 'zh-CN,zh;q=0.9',
+  }
+  if (session.cookie) headers.Cookie = session.cookie
+  if (session.origin) headers.Origin = session.origin
+  return headers
+}
+
 export type VideoSourceKind = 'direct' | 'bilibili' | 'douyin' | 'ytdlp' | 'unsupported'
 
 export interface ResolvedVideoSource {
@@ -63,9 +105,12 @@ export function detectVideoSource(rawUrl: string): VideoSourceKind {
 const DIRECT_EXT = /\.(mp4|webm|mov|m4v|flv|mkv|avi|m3u8|mp3|m4a|aac|wav)(\?|#|$)/i
 
 /** B站 WBI 签名（公开算法：nav 取 img/sub key → 置换表取 mixinKey → 参数排序拼接 + md5） */
-export async function bilibiliWbiSign(params: Record<string, string>): Promise<Record<string, string>> {
+export async function bilibiliWbiSign(
+  params: Record<string, string>,
+  headers?: Record<string, string>,
+): Promise<Record<string, string>> {
   const navRes = await fetch('https://api.bilibili.com/x/web-interface/nav', {
-    headers: { 'User-Agent': UA },
+    headers: headers ?? { 'User-Agent': UA },
     signal: AbortSignal.timeout(10_000),
   })
   if (!navRes.ok) throw new Error('B站 nav 接口失败（可能被风控，稍后再试）')
@@ -89,13 +134,29 @@ export async function resolveBilibili(inputUrl: string): Promise<ResolvedVideoSo
   const bvid = extractBilibiliBvid(inputUrl)
   if (!bvid) throw new Error('无法从链接提取 B站 BV 号：' + inputUrl)
 
-  // 1. view 接口拿 cid + 标题
-  const viewRes = await fetch(`https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`, {
-    headers: { 'User-Agent': UA, Referer: BILI_REFERER },
+  // 匿名会话（finger/spi 拿 buvid3）→ 所有请求带 Cookie + Origin，防 412 风控
+  const session = await getBilibiliSession()
+  const apiHeaders = biliApiHeaders(session)
+
+  // 1. view 接口拿 cid + 标题：优先普通接口；412/失败回退 WBI 签名版（wbi/view）
+  let viewRes = await fetch(`https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`, {
+    headers: apiHeaders,
     signal: AbortSignal.timeout(10_000),
   })
-  if (!viewRes.ok) throw new Error('B站 view 接口失败')
-  const view = (await viewRes.json()) as { code: number; data?: { cid?: number; title?: string } }
+  let view = viewRes.ok
+    ? ((await viewRes.json()) as { code: number; data?: { cid?: number; title?: string } })
+    : null
+  if (!view || view.code !== 0) {
+    // WBI 签名回退（新端点同样受签名保护）
+    const signed = await bilibiliWbiSign({ bvid }, apiHeaders)
+    const qs = new URLSearchParams(signed).toString()
+    viewRes = await fetch(`https://api.bilibili.com/x/web-interface/wbi/view?${qs}`, {
+      headers: apiHeaders,
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (!viewRes.ok) throw new Error('B站 view 接口失败')
+    view = (await viewRes.json()) as { code: number; data?: { cid?: number; title?: string } }
+  }
   if (view.code !== 0 || !view.data?.cid) {
     throw new Error(`B站视频信息获取失败（code=${view.code}；可能是分区限制或风控）`)
   }
@@ -103,10 +164,10 @@ export async function resolveBilibili(inputUrl: string): Promise<ResolvedVideoSo
   const title = view.data.title ?? bvid
 
   // 2. playurl（WBI 签名；fnval=16 开启 DASH）
-  const signed = await bilibiliWbiSign({ bvid, cid: String(cid), fnval: '16', fourk: '1' })
+  const signed = await bilibiliWbiSign({ bvid, cid: String(cid), fnval: '16', fourk: '1' }, apiHeaders)
   const qs = new URLSearchParams(signed).toString()
   const playRes = await fetch(`https://api.bilibili.com/x/player/wbi/playurl?${qs}`, {
-    headers: { 'User-Agent': UA, Referer: BILI_REFERER },
+    headers: apiHeaders,
     signal: AbortSignal.timeout(10_000),
   })
   if (!playRes.ok) throw new Error('B站 playurl 接口失败')

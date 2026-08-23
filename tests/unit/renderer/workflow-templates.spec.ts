@@ -1,5 +1,5 @@
 /**
- * B6 内置模板合法性测试：4 份模板经 importDefinition 全部成功（结构校验即测试）
+ * B6 内置模板合法性测试：模板经 importDefinition 全部成功（结构校验即测试）
  * @module tests/renderer/workflow-templates
  * @description P11：模板纳入单测——踩到校验器规则（保留字/边约束/choose 配对）在测试期暴露。
  */
@@ -8,6 +8,7 @@ import rawRag from '../../../src/renderer/src/assets/workflow-templates/rag-qa.j
 import rawTranslate from '../../../src/renderer/src/assets/workflow-templates/batch-translate.json'
 import rawReview from '../../../src/renderer/src/assets/workflow-templates/content-review.json'
 import rawDigest from '../../../src/renderer/src/assets/workflow-templates/daily-digest.json'
+import rawVideo from '../../../src/renderer/src/assets/workflow-templates/video-transcript.json'
 import { validateGraph } from '@core/modules/workflow/engine/graph-validator'
 import { NODE_TYPE_CATALOG_MAP } from '@shared/types/workflow-node-catalog'
 import { previewCronExpression } from '@core/modules/workflow/trigger/workflow-trigger-scheduler.service'
@@ -18,10 +19,11 @@ const templates = [
   { name: 'batch-translate', raw: rawTranslate },
   { name: 'content-review', raw: rawReview },
   { name: 'daily-digest', raw: rawDigest },
+  { name: 'video-transcript', raw: rawVideo },
 ]
 
 describe('内置模板库（B6/P11）', () => {
-  it('4 份模板全部为合法导出格式', () => {
+  it('5 份模板全部为合法导出格式', () => {
     for (const t of templates) {
       expect(t.raw.kind).toBe('the-bot-workflow')
       expect(t.raw.formatVersion).toBe(1)

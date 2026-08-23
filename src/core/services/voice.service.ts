@@ -438,9 +438,10 @@ export class VoiceService {
         baseUrl: undefined // 使用默认 URL
       })
 
-      // 调用 STT API
+      // 调用 STT API（modelId 透传 → provider 归一化为同步 ASR 模型名）
       const result = await sttProvider.transcribe(audioData, {
-        language: request.language
+        language: request.language,
+        modelId: request.modelId,
       })
 
       if (!result.success) {
