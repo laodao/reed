@@ -83,7 +83,7 @@ import { ref, computed, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowRight, Box } from '@element-plus/icons-vue'
-import { mainMenuItems, flattenMenuItems } from '@/config/menu'
+import { mainMenuItems, footerMenuItems, flattenMenuItems } from '@/config/menu'
 import { electronApi } from '@/types/electron-api'
 import type { AppRecord } from '@shared/types/app.types'
 
@@ -99,7 +99,10 @@ const pinnedApps = ref<Array<AppRecord & { sessionCount: number }>>([])
  * 应用 hidden/hideSelf 过滤后，两处入口天然保持一致；不展示"首页"自身。
  */
 const features = computed(() =>
-  flattenMenuItems(mainMenuItems).filter((item: { path: string }) => item.path !== '/')
+  flattenMenuItems(mainMenuItems)
+    .filter((item: { path: string }) => item.path !== '/')
+    // 首页同时提供「设置」入口（侧边栏底部菜单；两处共用同一份配置）
+    .concat(flattenMenuItems(footerMenuItems))
 )
 
 /** 时段问候（页面更生动） */
