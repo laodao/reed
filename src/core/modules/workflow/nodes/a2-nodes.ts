@@ -10,13 +10,13 @@ import { join } from 'path'
 import { KnowledgeBaseService } from '../../../services/knowledge-base.service'
 import { augmentWithDialogFiles, mergeRetrievalResults, effectiveTopK } from './dialog-file-retriever'
 import { callAIStream } from '../../../services/ai-call'
-import { markdownToDocx } from '../../../utils/markdown-to-docx'
 import { getDocumentTools } from '../../../services/document-tools/document-tools'
+import { DOCUMENT_TEMPLATES } from '../../../services/document-tools/templates'
 import { getPathProvider } from '../../../interfaces/path.interface'
 import type { WorkflowNodeContext } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
-import { WORKFLOW_DEFAULTS, WORKFLOW_RUN_EVENT_TYPES } from '@shared/types/workflow.types'
+import { WORKFLOW_DEFAULTS } from '@shared/types/workflow.types'
 
 /** D1 QA 直出缺省相似度阈值（比 RAG 检索更严——直出答案不容含糊） */
 const QA_DIRECT_MIN_SCORE = 0.75
@@ -214,11 +214,12 @@ const reportImageNode: WorkflowNodeHandler = {
     const cfg = ctx.config as { title: string; template: string; templateId?: string; width?: number }
     const markdown = stringifyValue(cfg.template)
     const title = stringifyValue(cfg.title) || '长图报告'
+    // 排版模板：按 templateId 选择（早报/周报/通用版式），未知 id 回退通用文档
+    const layout = DOCUMENT_TEMPLATES[cfg.templateId ?? ''] ?? DOCUMENT_TEMPLATES.generic
     const rendered = await getDocumentTools().renderImage({
       markdown,
       title,
-      // 早报类内容用 morningReport 模板（红头卡片版式）；缺省 generic
-      ...(cfg.templateId === 'morningReport' ? {} : {}),
+      template: layout,
     })
     const output: Record<string, unknown> = {
       markdown,

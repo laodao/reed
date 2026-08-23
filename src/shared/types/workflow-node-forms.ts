@@ -389,7 +389,12 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
       key: 'templateId', label: '排版模板', type: 'select', group: '版式',
       options: [
         { label: '通用文档', value: 'generic' },
-        { label: '早报长图（红头卡片）', value: 'morningReport' },
+        { label: '早报·红头卡片', value: 'morningReport' },
+        { label: '早报·商务蓝', value: 'morningReportBlue' },
+        { label: '早报·极简', value: 'morningReportMinimal' },
+        { label: '周报·商务金', value: 'industryWeekly' },
+        { label: '周报·墨绿', value: 'industryWeeklyGreen' },
+        { label: '周报·深色', value: 'industryWeeklyDark' },
       ],
     },
   ],

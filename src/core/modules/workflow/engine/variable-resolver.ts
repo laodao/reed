@@ -35,14 +35,19 @@ const SYS_VAR_ROOT = 'sys'
  * 系统变量快照：每次解析时求值（同一运行内不同节点取值可差几秒，可接受语义）。
  * - now：ISO 时间字符串
  * - today：本地 yyyy-MM-dd
+ * - week：周次标签（YYYY年第N周，与报告模板页眉同源口径）
  * - ts：epoch 毫秒
  */
 function sysVarsSnapshot(): Record<string, unknown> {
   const d = new Date()
   const pad = (n: number) => String(n).padStart(2, '0')
+  // ISO 周计数（周报等场景的周次口径）
+  const startOfYear = new Date(d.getFullYear(), 0, 1)
+  const week = Math.ceil((((d.getTime() - startOfYear.getTime()) / 86_400_000) + startOfYear.getDay() + 1) / 7)
   return {
     now: d.toISOString(),
     today: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+    week: `${d.getFullYear()}年第${week}周`,
     ts: d.getTime(),
   }
 }

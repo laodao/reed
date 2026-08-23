@@ -29,7 +29,7 @@ const BUILTIN_APP_PREFIX = 'builtin_app_'
 /** 内置工作流模板清单：文件 → { 定义 id, 应用 id, 应用名, 图标, 描述, 原始 JSON } */
 const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; icon: string; name: string; description: string }> = [
   { file: 'daily-news-brief.json', raw: dailyNewsBrief, appId: `${BUILTIN_APP_PREFIX}daily_news`, icon: '📰', name: '每日热点早报', description: '全球媒体采集 + AI 生成早报长图' },
-  { file: 'industry-weekly.json', raw: industryWeekly, appId: `${BUILTIN_APP_PREFIX}industry_weekly`, icon: '📈', name: '行业动态周报', description: '行业趋势分析周报（可导出 Word）' },
+  { file: 'industry-weekly.json', raw: industryWeekly, appId: `${BUILTIN_APP_PREFIX}industry_weekly`, icon: '📈', name: '行业动态周报', description: '行业趋势分析周报长图（模板可自定义）' },
   { file: 'multi-platform-copy.json', raw: multiPlatformCopy, appId: `${BUILTIN_APP_PREFIX}multi_platform`, icon: '✍️', name: '多平台文案生成', description: '公众号/小红书/微博/知乎/抖音 文案' },
   { file: 'webpage-summary.json', raw: webpageSummary, appId: `${BUILTIN_APP_PREFIX}webpage_summary`, icon: '📄', name: '网页摘要入库', description: '网页结构化摘要 → 知识库 + 资产库' },
   { file: 'article-polish.json', raw: articlePolish, appId: `${BUILTIN_APP_PREFIX}article_polish`, icon: '🪄', name: '文章润色改写', description: '诊断 + 润色 + 对比报告' },
@@ -51,6 +51,12 @@ const DEFAULT_TEMPLATES = [
     name: '通用报告模板（内置）',
     subCategory: '报告模板',
     content: '# {{start.topic}}\n\n{{gen1.content}}',
+  },
+  {
+    id: 'builtin_tpl_industry_weekly',
+    name: '行业周报模板（内置）',
+    subCategory: '报告模板',
+    content: '# {{start.topic}} 行业周报（{{sys.week}}）\n\n> 数据周期：{{sys.week}}\n\n{{gen1.content}}\n\n---\n\n*由 The Bot 自动生成*',
   },
 ]
 

@@ -65,9 +65,9 @@ describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
     }
   })
 
-  it('插入 2 个默认模板资产（template 大类 + 报告模板子分类）', async () => {
+  it('插入 3 个默认模板资产（template 大类 + 报告模板子分类）', async () => {
     const rows = await ds.query(`SELECT id, name, category, sub_category, is_builtin, kind FROM assets WHERE is_builtin = 1`)
-    expect(rows.length).toBe(2)
+    expect(rows.length).toBe(3)
     for (const r of rows) {
       expect(r.category).toBe('template')
       expect(r.sub_category).toBe('报告模板')
@@ -83,7 +83,7 @@ describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
     const tpls = await ds.query(`SELECT count(*) c FROM assets WHERE is_builtin = 1`)
     expect(defs[0].c).toBe(8)
     expect(apps[0].c).toBe(8)
-    expect(tpls[0].c).toBe(2)
+    expect(tpls[0].c).toBe(3)
   })
 
   it('内置工作流名称带 [内置] 前缀、应用名称不带前缀', async () => {

@@ -2,7 +2,7 @@
   "kind": "the-bot-workflow",
   "formatVersion": 1,
   "name": "[内置] 行业动态周报",
-  "description": "每周定时从全球财经/科技媒体按行业关键词采集 → AI 趋势分析（不止列新闻）→ 模板渲染周报（可导出 Word）",
+  "description": "每周定时从全球财经/科技媒体按行业关键词采集 → AI 趋势分析（不止列新闻）→ 模板渲染周报长图（模板可自定义）",
   "category": "news",
   "graph": {
     "version": 1,
@@ -93,17 +93,17 @@
       },
       {
         "id": "report_custom",
-        "type": "report",
-        "name": "周报（自定义模板）",
+        "type": "report-image",
+        "name": "周报长图（自定义模板）",
         "position": { "x": 1300, "y": 520 },
-        "config": { "title": "{{start.topic}} 行业周报 {{sys.week}}", "template": "{{read1.content}}", "format": "markdown" }
+        "config": { "title": "{{start.topic}} 行业周报 {{sys.week}}", "template": "{{read1.content}}", "templateId": "industryWeekly" }
       },
       {
         "id": "report_default",
-        "type": "report",
-        "name": "周报（内置版式）",
+        "type": "report-image",
+        "name": "周报长图（内置版式）",
         "position": { "x": 1300, "y": 400 },
-        "config": { "title": "{{start.topic}} 行业周报 {{sys.week}}", "template": "{{gen1.content}}", "format": "markdown" }
+        "config": { "title": "{{start.topic}} 行业周报 {{sys.week}}", "template": "# {{start.topic}} 行业周报（{{sys.week}}）\n\n{{gen1.content}}", "templateId": "industryWeekly" }
       },
       {
         "id": "save1",

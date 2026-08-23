@@ -104,6 +104,10 @@ describe('sys 系统变量', () => {
     expect(typeof v).toBe('number')
     expect(v).toBeGreaterThan(1_700_000_000_000)
   })
+  it('{{sys.week}} 返回周次标签（YYYY年第N周，行业周报用）', () => {
+    const v = resolver.resolve('{{sys.week}}') as string
+    expect(v).toMatch(/^\d{4}年第\d+周$/)
+  })
   it('sys 不可被节点输出遮蔽（变量表同名键被忽略）', () => {
     const r2 = new VariableResolver({
       variables: new Map([['sys', { now: '假的' } as any]]),
@@ -328,10 +332,10 @@ describe('start select 参数与 required 类型感知校验（P8）', () => {
     definitions.set('d1', def)
     await expect(
       runWithUser('u1', () => s2.startRun({ definitionId: 'd1', triggerType: 'manual', inputs: { lang: 'en', cfg: {} } }))
-    ).rejects.toThrow('cfg')
+    ).rejects.toThrow('「配置」')
     await expect(
       runWithUser('u1', () => s2.startRun({ definitionId: 'd1', triggerType: 'manual', inputs: { lang: '', cfg: { a: 1 } } }))
-    ).rejects.toThrow('lang')
+    ).rejects.toThrow('「语言」')
     void service
   })
 
@@ -340,7 +344,7 @@ describe('start select 参数与 required 类型感知校验（P8）', () => {
     const def = { id: 'd1', name: 't', draftGraph: selectGraph(), publishedGraph: null, publishedVersion: 0, triggers: [], settings: null }
     definitions.set('d1', def)
     const run = await runWithUser('u1', () =>
-      s.startRun({ definitionId: 'd1', triggerType: 'manual', inputs: { lang: 'en', tags: ['a', 'b'], cfg: { x: 1 } } })
+      s.startRun({ definitionId: 'd1', triggerType: 'manual', inputs: { lang: 'en', tags: ['a', 'b'], cfg: '{"x": 1}' } })
     )
     expect(run.startInputs).toMatchObject({ lang: 'en', tags: ['a', 'b'] })
     void runs
