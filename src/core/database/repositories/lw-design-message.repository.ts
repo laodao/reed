@@ -10,6 +10,7 @@ import { DesignMessage } from '@shared/types/longwriting.types'
 import { LwDesignMessageEntity } from '../entities/lw-design-message.entity'
 import { LwDesignConversationEntity } from '../entities/lw-design-conversation.entity'
 import { BaseRepository } from '../base-repository'
+import { getCurrentUserId } from '@core/context/user-context'
 
 export class LwDesignMessageRepository extends BaseRepository<
   LwDesignMessageEntity,
@@ -24,16 +25,17 @@ export class LwDesignMessageRepository extends BaseRepository<
       role: e.role as 'user' | 'assistant',
       content: e.content,
       timestamp: e.timestamp,
+      metadata: e.metadata ?? undefined,
     }
   }
 
   async getByConversationId(conversationId: string): Promise<DesignMessage[]> {
-    const entities = await this.repo
-      .createQueryBuilder('m')
-      .where('m.conversation_id = :cid', { cid: conversationId })
-      .orderBy('m.sort_order', 'ASC')
-      .addOrderBy('m.timestamp', 'ASC')
-      .getMany()
+    // 注意：用 scoped.find（自动合并 user_id 过滤），不能用裸 qb 的 .where()——
+    // TypeORM 的 .where() 会覆盖 scoped.qb 内部注入的 andWhere(user_id)，导致跨用户泄露。
+    const entities = await this.scoped.find({
+      where: { conversationId } as any,
+      order: { sortOrder: 'ASC' as const, timestamp: 'ASC' as const },
+    })
     return this.toDtoList(entities)
   }
 
@@ -67,11 +69,13 @@ export class LwDesignMessageRepository extends BaseRepository<
         content: message.content,
         timestamp,
         sortOrder,
+        metadata: message.metadata ?? null,
       })
     return {
       role: message.role as 'user' | 'assistant',
       content: message.content,
       timestamp,
+      metadata: message.metadata,
     }
   }
 
@@ -82,6 +86,8 @@ export class LwDesignMessageRepository extends BaseRepository<
     if (messages.length === 0) return
     await this.dataSource.transaction(async manager => {
       const repo = manager.getRepository(LwDesignMessageEntity)
+      // 事务内裸 repo 不会自动注入 user_id，手动注入（否则消息跨用户不可见/泄露）
+      const userId = getCurrentUserId()
       for (let i = 0; i < messages.length; i++) {
         const msg = messages[i]
         await repo.save(
@@ -92,6 +98,8 @@ export class LwDesignMessageRepository extends BaseRepository<
             content: msg.content,
             timestamp: msg.timestamp,
             sortOrder: i,
+            metadata: msg.metadata ?? null,
+            userId,
           }),
         )
       }
@@ -104,6 +112,7 @@ export class LwDesignMessageRepository extends BaseRepository<
   ): Promise<void> {
     await this.dataSource.transaction(async manager => {
       const repo = manager.getRepository(LwDesignMessageEntity)
+      const userId = getCurrentUserId()
       await repo.delete({ conversationId } as any)
       for (let i = 0; i < messages.length; i++) {
         const msg = messages[i]
@@ -115,6 +124,8 @@ export class LwDesignMessageRepository extends BaseRepository<
             content: msg.content,
             timestamp: msg.timestamp,
             sortOrder: i,
+            metadata: msg.metadata ?? null,
+            userId,
           }),
         )
       }

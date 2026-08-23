@@ -39,4 +39,11 @@ export class LwDesignMessageEntity {
 
   @Column({ name: 'sort_order', type: 'integer', default: 0 })
   sortOrder!: number
+
+  /**
+   * 对话式工作流元数据（JSON 字符串）：动作执行摘要 / 关联实体 id 列表 / 下一步建议 chips。
+   * 老数据为 NULL，兼容读取。
+   */
+  @Column({ name: 'metadata', type: 'text', nullable: true })
+  metadata!: string | null
 }

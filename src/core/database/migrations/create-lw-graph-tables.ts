@@ -32,6 +32,9 @@ export async function createLwGraphTables(ds: DataSource): Promise<void> {
   // lw_projects 补 wizard_state 列（向导跳过标记 JSON）
   await ensureColumn(ds, 'lw_projects', 'wizard_state', isPg ? 'text' : 'TEXT', isPg)
 
+  // lw_design_messages 补 metadata 列（对话式工作流：动作摘要/关联实体/建议 chips 元数据）
+  await ensureColumn(ds, 'lw_design_messages', 'metadata', isPg ? 'text' : 'TEXT', isPg)
+
   // character_relation 收编（幂等：不重复插入）
   await migrateCharacterRelations(ds, isPg)
 

@@ -118,6 +118,24 @@ describe('createLwGraphTables 迁移', () => {
     await ds.destroy()
   })
 
+  it('lw_design_messages 老库补 metadata 列（幂等）', async () => {
+    const ds = await buildDs(false)
+    // 老库：对话容器 + 消息表（无 metadata 列）
+    await ds.query(`CREATE TABLE lw_design_conversations (
+      id TEXT PRIMARY KEY, user_id TEXT, project_id TEXT NOT NULL, stage TEXT NOT NULL,
+      messages TEXT, created_at DATETIME, updated_at DATETIME
+    )`)
+    await ds.query(`CREATE TABLE lw_design_messages (
+      id TEXT PRIMARY KEY, user_id TEXT, conversation_id TEXT NOT NULL,
+      role TEXT NOT NULL, content TEXT NOT NULL, timestamp INTEGER, sort_order INTEGER DEFAULT 0
+    )`)
+    await createLwGraphTables(ds)
+    const cols = (await ds.query(`SELECT name FROM pragma_table_info('lw_design_messages')`)).map((r: any) => r.name)
+    expect(cols).toContain('metadata')
+    await createLwGraphTables(ds) // 幂等重跑
+    await ds.destroy()
+  })
+
   it('无老表时不报错（干净库直接跑）', async () => {
     const ds = await buildDs(false)
     await createLwGraphTables(ds)

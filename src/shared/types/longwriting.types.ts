@@ -900,6 +900,11 @@ export interface DesignMessage {
   role: 'user' | 'assistant'
   content: string
   timestamp: number
+  /**
+   * 对话式工作流元数据（JSON 字符串）：动作执行摘要 / 关联实体 id 列表 / 下一步建议 chips。
+   * 老数据为 undefined，兼容读取。
+   */
+  metadata?: string
 }
 
 /**
