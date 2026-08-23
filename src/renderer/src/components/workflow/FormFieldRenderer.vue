@@ -24,7 +24,8 @@
     <el-option v-for="o in field.options" :key="String(o.value)" :label="o.label" :value="o.value" />
   </el-select>
   <el-select v-else-if="field.type === 'select-dynamic'" :model-value="modelValue"
-    :placeholder="field.placeholder || '请选择'" clearable filterable style="width: 100%" @update:model-value="v => set(v)">
+    :placeholder="field.placeholder || '请选择'" clearable filterable :multiple="!!field.multi" style="width: 100%"
+    @update:model-value="v => set(v)">
     <el-option v-for="o in dynamicOptions[field.source ?? ''] ?? []" :key="o.value" :label="o.label" :value="o.value" />
   </el-select>
   <el-switch v-else-if="field.type === 'switch'" :model-value="!!modelValue" @update:model-value="v => set(v)" />
@@ -119,6 +120,7 @@
           <el-select v-model="item.source" size="small" placeholder="选择动态数据源" style="width: 220px" @change="syncInputs">
             <el-option label="模板资产（资产中心·模板）" value="assets:template" />
             <el-option label="预置新闻主题" value="newsTopics" />
+            <el-option label="新闻来源库（可多选）" value="newsSources" />
             <el-option label="知识库" value="knowledgeBases" />
           </el-select>
           <span class="model-types-hint">{{ dynamicRefHint(item) }}</span>

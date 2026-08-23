@@ -60,9 +60,9 @@
           </div>
         </div>
 
-        <!-- 动态下拉（type='select-dynamic'，如模板资产） -->
+        <!-- 动态下拉（type='select-dynamic'，如模板资产/新闻来源） -->
         <el-select v-else-if="item.type === 'select-dynamic'" v-model="values[item.key]"
-          clearable filterable placeholder="请选择" style="width: 100%" @change="touch(item.key)">
+          clearable filterable :multiple="!!item.multi" placeholder="请选择" style="width: 100%" @change="touch(item.key)">
           <el-option v-for="o in dynamicOptions(item)" :key="o.value" :label="o.label" :value="o.value" />
           <template v-if="dynamicLoading(item)">
             <el-option disabled><span class="dyn-loading">加载中…</span></el-option>
@@ -220,6 +220,25 @@ async function loadDynamicOptions(keys: WorkflowStartInput[]): Promise<void> {
         const resp = await api.list()
         if (resp.success && resp.data) {
           dynamicCache[src] = resp.data.map(kb => ({ label: kb.name, value: kb.id }))
+        } else {
+          dynamicCache[src] = []
+        }
+      } catch {
+        dynamicCache[src] = []
+      } finally {
+        dynamicBusy[src] = false
+      }
+    } else if (src === 'newsSources') {
+      dynamicBusy[src] = true
+      try {
+        const api = (window as never as { electronAPI: { newsSource: { list: (p: Record<string, unknown>) => Promise<{ success: boolean; data?: Array<{ id: string; topicId: string; name: string; isBuiltin: boolean }> }> } } }).electronAPI.newsSource
+        const resp = await api.list({})
+        const TOPIC_LABELS: Record<string, string> = { ai: '人工智能', finance: '全球财经', energy: '新能源', tech: '科技产业', world: '国际时政' }
+        if (resp.success && resp.data) {
+          dynamicCache[src] = resp.data.map(s => ({
+            label: `${TOPIC_LABELS[s.topicId] ?? s.topicId} · ${s.name}${s.isBuiltin ? '' : '（自定义）'}`,
+            value: s.id,
+          }))
         } else {
           dynamicCache[src] = []
         }

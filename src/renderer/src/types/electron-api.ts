@@ -67,6 +67,14 @@ export interface AppApi {
     subCategoryStats(category: string): Promise<IpcResp<Array<{ subCategory: string | null; count: number }>>>
     openFolder(id: string): Promise<IpcResp<{ opened: boolean }>>
   }
+  /** 新闻来源库（内置应用 C1 早报 / C2 周报的数据源管理） */
+  newsSource: {
+    list(p: { topicId?: string; keyword?: string }): Promise<IpcResp<Array<{ id: string; topicId: string; name: string; url: string; isBuiltin: boolean; enabled: boolean; sortOrder: number }>>>
+    get(id: string): Promise<IpcResp<{ id: string; topicId: string; name: string; url: string; isBuiltin: boolean; enabled: boolean } | null>>
+    create(p: { topicId: string; name: string; url: string }): Promise<IpcResp<{ id: string; topicId: string; name: string; url: string } | null>>
+    update(p: { id: string; topicId?: string; name?: string; url?: string; enabled?: boolean }): Promise<IpcResp<{ id: string; topicId: string; name: string; url: string } | null>>
+    delete(id: string): Promise<IpcResp<{ deleted: boolean }>>
+  }
   file: {
     openDialog(options?: { multiple?: boolean; filters?: Array<{ name: string; extensions: string[] }> }): Promise<{
       success: boolean

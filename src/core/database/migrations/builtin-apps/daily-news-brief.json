@@ -15,6 +15,7 @@
         "config": {
           "inputs": [
             { "key": "topic", "label": "关注主题", "type": "select-dynamic", "source": "newsTopics", "required": true },
+            { "key": "sourceIds", "label": "新闻来源（可多选，可选）", "type": "select-dynamic", "source": "newsSources", "multi": true },
             { "key": "customUrls", "label": "自定义媒体源 URL（可选）", "type": "json", "required": false, "defaultValue": [] },
             { "key": "maxItems", "label": "每主题条数", "type": "number", "defaultValue": 8 },
             { "key": "request", "label": "效果描述", "type": "textarea", "required": true, "defaultValue": "聚焦今日重要进展，按主题分组，每条含来源与一句话要点，500 字内" },
@@ -28,7 +29,7 @@
         "type": "crawl-news",
         "name": "全球媒体采集",
         "position": { "x": 300, "y": 200 },
-        "config": { "topicId": "{{start.topic}}", "customUrls": "{{start.customUrls}}", "maxLinks": 30, "maxSources": 10 }
+        "config": { "topicId": "{{start.topic}}", "sourceIds": "{{start.sourceIds}}", "customUrls": "{{start.customUrls}}", "maxLinks": 30, "maxSources": 10 }
       },
       {
         "id": "filter1",

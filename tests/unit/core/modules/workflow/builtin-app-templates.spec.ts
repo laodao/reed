@@ -78,7 +78,7 @@ describe('内置应用模板库（8 个深度场景）', () => {
       const inputs = start?.config?.inputs ?? []
       for (const input of inputs as Array<{ key?: string; type?: string; source?: string }>) {
         if (input.type === 'select-dynamic') {
-          expect(['assets:template', 'newsTopics', 'knowledgeBases'], `${t.name}/${input.key}`).toContain(input.source)
+          expect(['assets:template', 'newsTopics', 'knowledgeBases', 'newsSources'], `${t.name}/${input.key}`).toContain(input.source)
         }
       }
     }

@@ -15,6 +15,7 @@
         "config": {
           "inputs": [
             { "key": "topic", "label": "行业主题", "type": "select-dynamic", "source": "newsTopics", "required": true },
+            { "key": "sourceIds", "label": "新闻来源（可多选，可选）", "type": "select-dynamic", "source": "newsSources", "multi": true },
             { "key": "customUrls", "label": "自定义媒体源 URL（可选）", "type": "json", "required": false, "defaultValue": [] },
             { "key": "maxItems", "label": "每行业条数", "type": "number", "defaultValue": 15 },
             { "key": "request", "label": "效果描述", "type": "textarea", "required": true, "defaultValue": "总结本周行业趋势、关键事件与数据点，给出下周展望，1500 字内" },
@@ -28,7 +29,7 @@
         "type": "crawl-news",
         "name": "行业媒体采集",
         "position": { "x": 300, "y": 200 },
-        "config": { "topicId": "{{start.topic}}", "customUrls": "{{start.customUrls}}", "maxLinks": 40, "maxSources": 10 }
+        "config": { "topicId": "{{start.topic}}", "sourceIds": "{{start.sourceIds}}", "customUrls": "{{start.customUrls}}", "maxLinks": 40, "maxSources": 10 }
       },
       {
         "id": "filter1",

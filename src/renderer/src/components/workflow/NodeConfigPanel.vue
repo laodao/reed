@@ -132,6 +132,19 @@ async function loadDynamicOptions() {
       }
     } catch { /* 列表失败时退化为手填 */ }
   }
+  if (sources.has('newsSources')) {
+    try {
+      const resp = await api.newsSource.list({})
+      if (resp.success && resp.data) {
+        // 按主题分组显示：label = 主题前缀 + 名称
+        const TOPIC_LABELS: Record<string, string> = { ai: '人工智能', finance: '全球财经', energy: '新能源', tech: '科技产业', world: '国际时政' }
+        dynamicOptions.value.newsSources = resp.data.map((s: any) => ({
+          label: `${TOPIC_LABELS[s.topicId] ?? s.topicId} · ${s.name}${s.isBuiltin ? '' : '（自定义）'}`,
+          value: s.id,
+        }))
+      }
+    } catch { /* 列表失败时退化为手填 */ }
+  }
 }
 watch(() => props.node.id, loadDynamicOptions, { immediate: true })
 

@@ -371,6 +371,54 @@
           </div>
         </el-tab-pane>
 
+        <!-- 新闻来源设置 -->
+        <el-tab-pane label="新闻来源" name="newsSources">
+          <div class="settings-section">
+            <div class="section-header">
+              <div>
+                <h3>新闻来源</h3>
+                <p class="section-desc">管理早报/行业动态的数据源——按主题分组，工作流「新闻采集」节点可多选引用</p>
+              </div>
+              <el-button type="primary" @click="openAddNewsSourceDialog">
+                <el-icon><Plus /></el-icon>
+                添加来源
+              </el-button>
+            </div>
+
+            <!-- 按主题分组展示 -->
+            <div v-for="topic in newsSourceTopics" :key="topic.id" class="search-engine-group">
+              <h4 class="group-title">{{ topic.label }}（{{ sourcesOfTopic(topic.id).length }}）</h4>
+              <p class="group-desc">预置全球知名媒体源（不可删除）；自定义来源可编辑/删除</p>
+              <div v-if="sourcesOfTopic(topic.id).length" class="provider-config-list">
+                <div
+                  v-for="source in sourcesOfTopic(topic.id)"
+                  :key="source.id"
+                  class="provider-config-item"
+                  :class="{ disabled: !source.enabled, 'is-default': false }"
+                >
+                  <div class="config-icon">📰</div>
+                  <div class="config-info">
+                    <div class="config-header">
+                      <span class="config-name">{{ source.name }}</span>
+                      <el-tag v-if="source.isBuiltin" type="warning" size="small" effect="plain">内置</el-tag>
+                      <el-tag v-else type="success" size="small" effect="plain">自定义</el-tag>
+                    </div>
+                    <div class="config-details">
+                      <span class="config-template" :title="source.url">{{ source.url }}</span>
+                    </div>
+                  </div>
+                  <div class="config-actions">
+                    <el-switch v-model="source.enabled" @change="toggleNewsSourceEnabled(source)" />
+                    <el-button text size="small" :disabled="source.isBuiltin" @click="editNewsSource(source)">编辑</el-button>
+                    <el-button text type="danger" size="small" :disabled="source.isBuiltin" @click="deleteNewsSource(source)">删除</el-button>
+                  </div>
+                </div>
+              </div>
+              <div v-else class="empty-config"><p>该主题暂无来源</p></div>
+            </div>
+          </div>
+        </el-tab-pane>
+
         <!-- 图床设置 -->
         <el-tab-pane label="图床设置" name="oss">
           <div class="settings-section">
@@ -514,6 +562,32 @@
       :existing-configs="searchEngineConfigs"
       @saved="loadSearchEngineConfigs"
     />
+
+    <!-- 添加/编辑新闻来源对话框 -->
+    <el-dialog
+      v-model="showAddNewsSourceDialog"
+      :title="editingNewsSource ? '编辑新闻来源' : '添加新闻来源'"
+      width="480px"
+      append-to-body
+    >
+      <el-form label-width="80px" size="small">
+        <el-form-item label="主题">
+          <el-select v-model="newsSourceForm.topicId" style="width: 100%">
+            <el-option v-for="t in newsSourceTopics" :key="t.id" :label="t.label" :value="t.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="名称">
+          <el-input v-model="newsSourceForm.name" placeholder="如 MIT Technology Review / 量子位" />
+        </el-form-item>
+        <el-form-item label="URL">
+          <el-input v-model="newsSourceForm.url" placeholder="https://..." />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showAddNewsSourceDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveNewsSource">保存</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 添加/编辑 OSS 配置对话框 -->
     <el-dialog
@@ -675,6 +749,100 @@ const quickSearchEngines = ref<SearchEngineTemplate[]>([])
 const disabledQuickEngines = ref<string[]>([])
 const showAddSearchEngineDialog = ref(false)
 const editingSearchEngineConfig = ref<UserSearchEngineConfig | undefined>(undefined)
+
+// 新闻来源配置
+interface NewsSourceItem {
+  id: string
+  topicId: string
+  name: string
+  url: string
+  isBuiltin: boolean
+  enabled: boolean
+  sortOrder: number
+}
+const newsSources = ref<NewsSourceItem[]>([])
+const showAddNewsSourceDialog = ref(false)
+const editingNewsSource = ref<NewsSourceItem | undefined>(undefined)
+const newsSourceForm = reactive({ topicId: 'ai', name: '', url: '' })
+/** 新闻主题分组（与 NEWS_TOPICS 对齐；自定义来源按 topicId 归组） */
+const newsSourceTopics = [
+  { id: 'ai', label: '人工智能' },
+  { id: 'finance', label: '全球财经' },
+  { id: 'energy', label: '新能源' },
+  { id: 'tech', label: '科技产业' },
+  { id: 'world', label: '国际时政' },
+]
+
+function sourcesOfTopic(topicId: string): NewsSourceItem[] {
+  return newsSources.value.filter(s => s.topicId === topicId)
+}
+
+async function loadNewsSources(): Promise<void> {
+  const api = (window as unknown as { electronAPI: any }).electronAPI
+  try {
+    const resp = await api.newsSource.list({})
+    if (resp.success) newsSources.value = resp.data ?? []
+    else console.warn('[Settings] 新闻来源加载失败', resp.error)
+  } catch (e) {
+    console.warn('[Settings] 新闻来源加载异常', e)
+  }
+}
+
+function openAddNewsSourceDialog(): void {
+  editingNewsSource.value = undefined
+  newsSourceForm.topicId = 'ai'
+  newsSourceForm.name = ''
+  newsSourceForm.url = ''
+  showAddNewsSourceDialog.value = true
+}
+
+function editNewsSource(source: NewsSourceItem): void {
+  editingNewsSource.value = source
+  newsSourceForm.topicId = source.topicId
+  newsSourceForm.name = source.name
+  newsSourceForm.url = source.url
+  showAddNewsSourceDialog.value = true
+}
+
+async function saveNewsSource(): Promise<void> {
+  const api = (window as unknown as { electronAPI: any }).electronAPI
+  if (!newsSourceForm.name.trim() || !newsSourceForm.url.trim()) {
+    ElMessage.warning('请填写名称与 URL')
+    return
+  }
+  const payload = { topicId: newsSourceForm.topicId, name: newsSourceForm.name.trim(), url: newsSourceForm.url.trim() }
+  const resp = editingNewsSource.value
+    ? await api.newsSource.update({ id: editingNewsSource.value.id, ...payload })
+    : await api.newsSource.create(payload)
+  if (resp.success) {
+    ElMessage.success(editingNewsSource.value ? '已更新' : '已添加')
+    showAddNewsSourceDialog.value = false
+    await loadNewsSources()
+  } else {
+    ElMessage.error(resp.error ?? '保存失败')
+  }
+}
+
+async function deleteNewsSource(source: NewsSourceItem): Promise<void> {
+  const api = (window as unknown as { electronAPI: any }).electronAPI
+  try {
+    await ElMessageBox.confirm(`删除新闻来源「${source.name}」？`, '删除来源', { type: 'warning' })
+  } catch {
+    return
+  }
+  const resp = await api.newsSource.delete(source.id)
+  if (resp.success) { ElMessage.success('已删除'); await loadNewsSources() }
+  else ElMessage.error(resp.error ?? '删除失败')
+}
+
+async function toggleNewsSourceEnabled(source: NewsSourceItem): Promise<void> {
+  const api = (window as unknown as { electronAPI: any }).electronAPI
+  const resp = await api.newsSource.update({ id: source.id, enabled: source.enabled })
+  if (!resp.success) {
+    source.enabled = !source.enabled // 回滚
+    ElMessage.error(resp.error ?? '更新失败')
+  }
+}
 
 // OSS 配置
 interface OSSConfigWithState extends OSSConfig {
@@ -1352,6 +1520,8 @@ onMounted(async () => {
   await loadDisabledQuickEngines()
   // 加载 OSS 配置
   await loadOSSConfigs()
+  // 加载新闻来源
+  await loadNewsSources()
 })
 </script>
 
