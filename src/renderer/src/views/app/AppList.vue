@@ -57,12 +57,20 @@
             <el-button type="primary" size="small" :disabled="app.enabled !== 1 || app.channelSession !== 1" @click="launch(app)">
               ▶ 启动
             </el-button>
-            <el-button size="small" @click="router.push(`/apps/${app.id}`)">详情</el-button>
-            <el-button size="small" :type="app.pinned === 1 ? 'warning' : 'default'" @click="togglePinned(app)">
-              {{ app.pinned === 1 ? '📌 已固定' : '📌 固定' }}
-            </el-button>
-            <el-button v-if="app.isBuiltin" size="small" @click="handleCopyBuiltin(app)">📋 复制为自有</el-button>
-            <el-button text type="danger" size="small" :disabled="app.isBuiltin" @click="handleDelete(app)">删除</el-button>
+            <div class="icon-actions">
+              <el-tooltip content="详情" placement="top">
+                <el-button text size="small" @click="router.push(`/apps/${app.id}`)"><el-icon><View /></el-icon></el-button>
+              </el-tooltip>
+              <el-tooltip :content="app.pinned === 1 ? '取消固定到首页' : '固定到首页'" placement="top">
+                <el-button text size="small" :type="app.pinned === 1 ? 'warning' : ''" @click="togglePinned(app)"><el-icon><Star /></el-icon></el-button>
+              </el-tooltip>
+              <el-tooltip v-if="app.isBuiltin" content="复制为自有" placement="top">
+                <el-button text size="small" @click="handleCopyBuiltin(app)"><el-icon><CopyDocument /></el-icon></el-button>
+              </el-tooltip>
+              <el-tooltip content="删除" placement="top">
+                <el-button text type="danger" size="small" :disabled="app.isBuiltin" @click="handleDelete(app)"><el-icon><Delete /></el-icon></el-button>
+              </el-tooltip>
+            </div>
           </div>
           <div v-if="app.enabled === 1 && app.channelSession !== 1" class="launch-tip">未开启会话渠道，无法直接启动</div>
         </div>
@@ -96,7 +104,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search } from '@element-plus/icons-vue'
+import { Search, View, Star, CopyDocument, Delete } from '@element-plus/icons-vue'
 import type { AppRecord } from '@shared/types/app.types'
 import { electronApi } from '@/types/electron-api'
 
@@ -245,7 +253,9 @@ onMounted(load)
 .channels { display: flex; gap: 6px; }
 .cdot { font-size: 11px; padding: 2px 8px; border-radius: 8px; background: var(--el-fill-color); color: var(--el-text-color-secondary); }
 .cdot.on { background: var(--el-color-success-light-9); color: var(--el-color-success); }
-.card-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.card-actions { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+.icon-actions { display: flex; align-items: center; gap: 2px; }
+.icon-actions :deep(.el-button) { padding: 4px; }
 .launch-tip { font-size: 11px; color: var(--el-text-color-secondary); margin-top: -6px; }
 .pager { flex-shrink: 0; display: flex; justify-content: flex-end; padding-top: 14px; }
 .empty { color: var(--el-text-color-secondary); text-align: center; padding: 60px 0; }
