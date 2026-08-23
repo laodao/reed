@@ -461,7 +461,13 @@ export function registerLongWritingHandlers(): void {
 
   ipcBridge.handle(CHANNELS.DELETE_CHARACTER, async (_event, id: string) => {
     try {
+      const dbManager = getCoreDatabaseManager()
+      const char = await dbManager.lwCharacters?.getById(id)
       const result = await service.deleteCharacter(id)
+      if (result && char) {
+        // 阶段2：实体删除级联清理图谱边（人物/地点/物品/技能/势力）
+        await cleanupEntityGraphEdges(char.projectId, 'character', id)
+      }
       return { success: result }
     } catch (error: any) {
       return { success: false, error: error.message }
@@ -549,7 +555,12 @@ export function registerLongWritingHandlers(): void {
 
   ipcBridge.handle(CHANNELS.DELETE_LOCATION, async (_event, id: string) => {
     try {
+      const dbManager = getCoreDatabaseManager()
+      const loc = await dbManager.lwLocations?.getById(id)
       const result = await service.deleteLocation(id)
+      if (result && loc) {
+        await cleanupEntityGraphEdges(loc.projectId, 'location', id)
+      }
       return { success: result }
     } catch (error: any) {
       return { success: false, error: error.message }
@@ -999,7 +1010,12 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
   ipcBridge.handle(CHANNELS.DELETE_ITEM, async (_event, id: string) => {
     try {
+      const dbManager = getCoreDatabaseManager()
+      const item = await dbManager.lwItems?.getById(id)
       const result = await service.deleteItem(id)
+      if (result && item) {
+        await cleanupEntityGraphEdges(item.projectId, 'item', id)
+      }
       return { success: result }
     } catch (error: any) {
       return { success: false, error: error.message }
@@ -2954,6 +2970,18 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
   })
 
   // ==================== 阶段2：图谱（节点/边/时间线/一致性） ====================
+
+  /**
+   * 实体删除时级联清理其图谱边（source/target 双向）。
+   */
+  async function cleanupEntityGraphEdges(projectId: string, entityType: string, entityId: string): Promise<void> {
+    try {
+      const dbManager = getCoreDatabaseManager()
+      await dbManager.lwGraphEdges?.deleteByEntity(projectId, entityType as any, entityId)
+    } catch (e) {
+      console.error('[LongWritingHandler] 清理图谱边失败（不影响实体删除）:', e)
+    }
+  }
 
   const graphService = async () => {
     const { GraphService } = await import('@core/services/longwriting/graph/graph.service')
