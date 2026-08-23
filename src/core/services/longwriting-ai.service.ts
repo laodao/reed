@@ -61,6 +61,12 @@ export interface GenerationStreamEvent {
 export class LongWritingAIService {
   private static instance: LongWritingAIService
 
+  /** 生成中的 AbortController 表（cancelGeneration 中断流式） */
+  private readonly abortControllers = new Map<string, AbortController>()
+
+  /** 回忆/闪回语义关键词（buildRecallSection 用） */
+  private readonly recallKeywords = ['回忆', '闪回', '回想', '往事', '记忆深处']
+
   private constructor() {}
 
   /**
@@ -71,6 +77,14 @@ export class LongWritingAIService {
       LongWritingAIService.instance = new LongWritingAIService()
     }
     return LongWritingAIService.instance
+  }
+
+  /**
+   * 取消指定 eventId 的流式生成（中断 provider 请求）
+   */
+  cancelGeneration(eventId: string): void {
+    const ctrl = this.abortControllers.get(eventId)
+    if (ctrl) ctrl.abort()
   }
 
   /**
@@ -218,6 +232,10 @@ export class LongWritingAIService {
       type: 'start'
     } as GenerationStreamEvent)
 
+    // 取消支持：eventId → AbortController（cancelGeneration 触发 abort）
+    const controller = new AbortController()
+    this.abortControllers.set(eventId, controller)
+
     // 流式调用 AI
     let fullContent = ''
     try {
@@ -233,7 +251,7 @@ export class LongWritingAIService {
             } as GenerationStreamEvent)
           }
         },
-        undefined,
+        controller.signal,
         // max_tokens 兜底：优先调用方传入，其次读模型定义的 maxOutputTokens，最后 8192。
         // 原写死 4096 会在长 JSON 生成时被截断。
         { maxTokens: maxTokens || config.models?.find(m => m.id === effectiveModelId)?.maxOutputTokens || 8192 }
@@ -251,6 +269,8 @@ export class LongWritingAIService {
         error: error.message || 'AI 生成失败'
       } as GenerationStreamEvent)
       throw error
+    } finally {
+      this.abortControllers.delete(eventId)
     }
 
     return fullContent
@@ -1388,6 +1408,12 @@ ${plotInfo || '暂无相关情节'}
       ? `\n## 七、预写提纲\n\n${prewrite.content}\n`
       : ''
 
+    // 阶段2：图谱关系与事件段（时间线一致性注入）
+    const graphSection = await this.buildGraphContextSection(projectId, outline, chapterNumber)
+
+    // 阶段2：回忆/闪回场景提示（回忆时间点的实体状态以历史切片为准）
+    const recallSection = this.buildRecallSection(outline, projectId, characters, locations, chapterNumber)
+
     // 新用户提示词结构
     const prompt = `# 章节写作任务
 
@@ -1441,6 +1467,11 @@ ${memoryContext}${entityStateContext}${chapterStateSummaryContext}
 ${prewriteSection}
 ---
 
+## 七、图谱关系与事件（时间线一致性）
+${graphSection || '暂无图谱数据'}
+${recallSection}
+---
+
 请根据以上所有信息，撰写章节正文内容。直接开始写作，不需要标题。`
 
     try {
@@ -1457,6 +1488,93 @@ ${prewriteSection}
     } catch (error: any) {
       return { success: false, error: error.message }
     }
+  }
+
+  /**
+   * 构建"图谱关系与事件"上下文段（阶段2）：
+   * - 本章涉及实体的"生效关系边"（edgesAt，带有效期）
+   * - 本项目已发生的事件摘要（涉及本章实体的，按章节倒序取最近 5 条）
+   */
+  private async buildGraphContextSection(
+    projectId: string,
+    outline: any,
+    chapterNumber: number,
+  ): Promise<string> {
+    try {
+      const { GraphService } = await import('@core/services/longwriting/graph/graph.service')
+      const dbManager = getCoreDatabaseManager()
+      const graph = new GraphService(dbManager)
+
+      const involvedIds = [
+        ...(outline.involvedCharacters || []).map((id: string) => ({ type: 'character' as const, id })),
+        ...(outline.involvedLocations || []).map((id: string) => ({ type: 'location' as const, id })),
+        ...(outline.involvedItems || []).map((id: string) => ({ type: 'item' as const, id })),
+      ]
+
+      // 1. 生效关系边（本章时间点）
+      const edgeLines: string[] = []
+      const seenEdges = new Set<string>()
+      for (const ent of involvedIds) {
+        const edges = await graph.edgesAt(projectId, ent.id, chapterNumber)
+        for (const e of edges) {
+          const key = `${e.sourceId}:${e.targetId}:${e.relationType}`
+          if (seenEdges.has(key)) continue
+          seenEdges.add(key)
+          const validFrom = e.validFromChapter !== undefined ? `自第${e.validFromChapter}章起` : ''
+          const validUntil = e.validUntilChapter !== undefined ? `，至第${e.validUntilChapter}章失效` : ''
+          edgeLines.push(`- ${e.sourceId} → ${e.targetId}：${e.relationType}${e.label ? `（${e.label}）` : ''}（${validFrom}${validUntil}）`)
+        }
+      }
+
+      // 2. 相关事件摘要（本章之前发生的，涉及本章实体）
+      const events = (await dbManager.lwEvents?.getByProjectId(projectId)) || []
+      const involvedIdSet = new Set(involvedIds.map(x => x.id))
+      const relatedEvents = events
+        .filter(e => e.chapterNumber < chapterNumber && (e.involvedEntities || []).some(ent => involvedIdSet.has(ent.id)))
+        .sort((a, b) => b.chapterNumber - a.chapterNumber)
+        .slice(0, 5)
+        .map(e => `- 第${e.chapterNumber}章：${e.name}${e.description ? `（${e.description.slice(0, 60)}）` : ''}`)
+
+      const parts: string[] = []
+      if (edgeLines.length > 0) {
+        parts.push(`【生效关系（第 ${chapterNumber} 章时间点）】\n${edgeLines.join('\n')}`)
+      }
+      if (relatedEvents.length > 0) {
+        parts.push(`【已发生事件（涉及本章实体）】\n${relatedEvents.join('\n')}`)
+      }
+      if (parts.length > 0) {
+        parts.push('注意：写作须符合上述关系与事件的时间线状态（已失效关系不得沿用，已发生事件不得重复）。')
+        return parts.join('\n\n')
+      }
+      return ''
+    } catch (e) {
+      console.error('[LongWritingAI] 图谱上下文构建失败:', e)
+      return ''
+    }
+  }
+
+  /**
+   * 回忆/闪回场景提示（阶段2）：
+   * 大纲概要含回忆关键词时，提示 AI 以"回忆时间点"的实体状态为准，避免与当前时间线冲突。
+   */
+  private buildRecallSection(
+    outline: any,
+    projectId: string,
+    characters: any[],
+    locations: any[],
+    chapterNumber: number,
+  ): string {
+    const summary = outline?.summary || ''
+    if (!this.recallKeywords.some(kw => summary.includes(kw))) return ''
+
+    const involvedNames = [
+      ...(outline.involvedCharacters || []).map((id: string) => characters.find((c: any) => c.id === id)?.name).filter(Boolean),
+      ...(outline.involvedLocations || []).map((id: string) => locations.find((l: any) => l.id === id)?.name).filter(Boolean),
+    ]
+    return `\n【回忆场景提示】本章为回忆/闪回内容（概要：${summary.slice(0, 40)}…）。写作时：
+1. 涉及实体（${involvedNames.join('、') || '相关角色'}）的状态以"回忆发生的时间点"为准，而非当前章节状态
+2. 回忆内容不得与既定时间线冲突（如回忆中人物已死亡/关系已破裂则矛盾）
+3. 若无法确定回忆时间点，默认使用故事早期状态，并避免与本章后续情节矛盾`
   }
 
   /**
@@ -2880,6 +2998,98 @@ ${previousInfo}
     context += '3. 待处理事件可在本章继续发展或解决\n'
 
     return context
+  }
+
+  // ==================== 章节事件提取（图谱：故事内已发生的事实） ====================
+
+  /**
+   * 从章节正文提取"故事内事件"（图谱事件节点数据）。
+   * 事件 = 已发生的事实（谁/在哪/发生什么/结果），随章节确认累积；
+   * 与创作层情节（plot，计划中的故事线）区分。
+   */
+  async extractChapterEvents(
+    eventId: string,
+    projectId: string,
+    outlineId: string,
+    chapterContent: string,
+    chapterNumber: number,
+    providerConfigId?: string,
+    modelId?: string
+  ): Promise<GenerateResponse> {
+    const dbManager = getCoreDatabaseManager()
+
+    // 读项目实体作参考（名称→ID 匹配用）
+    const characters = (await dbManager.lwCharacters?.getByProjectId(projectId)) || []
+    const locations = (await dbManager.lwLocations?.getByProjectId(projectId)) || []
+    const items = (await dbManager.lwItems?.getByProjectId(projectId)) || []
+    const factions = (await dbManager.lwFactions?.getByProjectId(projectId)) || []
+
+    const entityRef = (list: Array<{ id: string; name: string }>, type: string): string =>
+      list.length > 0
+        ? list.map(e => `- ${e.name}（ID: ${e.id}）`).join('\n')
+        : ''
+
+    const systemPrompt = `你是一位专业的小说内容分析师。请分析章节正文，提取本章发生的"故事事件"。
+每个事件是故事内已经发生的事实（谁、在哪里、发生了什么事、结果如何）。
+事件示例："林家在比武大会夺魁"、"顾言向林晓提出和离"、"无名剑在拍卖会被神秘人拍走"。
+
+**重要**：请控制回复长度，总字数不超过 1200 字。
+
+## 输出格式
+返回 JSON 数组，每个事件一条记录：
+{
+  "name": "事件名（不超过 15 字）",
+  "description": "事件经过描述（50-100 字）",
+  "involvedEntities": [
+    {"type": "character/location/item/faction/skill", "id": "实体ID（必须使用提供的ID）", "name": "实体名"}
+  ],
+  "stateBefore": "事件发生前相关实体的关键状态（如：林晓重伤未愈）",
+  "stateAfter": "事件发生后相关实体的关键状态（如：林晓夺魁扬名）"
+}
+
+要求：
+1. 只提取本章实际发生的事件（2-6 个），不要提取计划/回忆中的内容
+2. involvedEntities 必须使用下方提供的实体 ID；未匹配到项目的实体不填
+3. 状态变化是"结果"而非"过程"
+4. 请直接输出 JSON 数组，不要有任何额外文字`
+
+    const prompt = `【本章正文】
+${chapterContent.substring(0, 6000)}${chapterContent.length > 6000 ? '...(内容已截断)' : ''}
+
+【项目角色】
+${entityRef(characters, 'character') || '暂无'}
+
+【项目地点】
+${entityRef(locations, 'location') || '暂无'}
+
+【项目物品】
+${entityRef(items, 'item') || '暂无'}
+
+【项目势力】
+${entityRef(factions, 'faction') || '暂无'}
+
+请提取本章发生的 2-6 个故事事件，直接返回 JSON 数组。`
+
+    try {
+      const result = await this.callAIStream(eventId, prompt, systemPrompt, 2048, providerConfigId, modelId)
+
+      // 容错解析 JSON 数组
+      const jsonMatch = result.match(/\[[\s\S]*\]/)
+      if (jsonMatch) {
+        try {
+          const data = JSON.parse(jsonMatch[0])
+          if (Array.isArray(data)) {
+            return { success: true, data }
+          }
+        } catch (parseError: any) {
+          console.error('[LongWritingAI] extractChapterEvents JSON 解析失败:', parseError.message)
+          return { success: true, data: result }
+        }
+      }
+      return { success: false, error: 'AI 返回格式错误' }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
   }
 }
 

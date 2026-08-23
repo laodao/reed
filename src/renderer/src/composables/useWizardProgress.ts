@@ -10,7 +10,7 @@
  * - 持久化：onStateChange 回调（由调用方写 lw_projects.stage/progress/wizard_state）
  */
 
-import { ref, computed } from 'vue'
+import { ref, computed, type ComputedRef } from 'vue'
 
 export interface WizardStepDef {
   key: string
@@ -50,13 +50,13 @@ export interface UseWizardProgressOptions {
 export interface UseWizardProgressReturn {
   steps: WizardStepDef[]
   currentIndex: ReturnType<typeof ref<number>>
-  currentStep: ReturnType<typeof computed<WizardStepDef>>
+  currentStep: ComputedRef<WizardStepDef>
   skipped: ReturnType<typeof ref<string[]>>
   /** 各步完成判定缓存（数据存在性） */
   doneCache: Map<string, boolean>
-  progress: ReturnType<typeof computed<number>>
-  canNext: ReturnType<typeof computed<boolean>>
-  canPrev: ReturnType<typeof computed<boolean>>
+  progress: ComputedRef<number>
+  canNext: ComputedRef<boolean>
+  canPrev: ComputedRef<boolean>
   isStepDone: (key: string) => boolean
   isStepSkipped: (key: string) => boolean
   isStepActive: (key: string) => boolean

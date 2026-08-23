@@ -288,7 +288,31 @@ const CHANNELS = {
   // 步骤0：向量索引（步骤6 前端面板消费）
   VECTOR_INDEX_REBUILD: 'longwriting:vectorIndex:rebuildProject',
   VECTOR_INDEX_SEARCH: 'longwriting:vectorIndex:search',
-  VECTOR_INDEX_STATS: 'longwriting:vectorIndex:stats'
+  VECTOR_INDEX_STATS: 'longwriting:vectorIndex:stats',
+
+  // 阶段2：图谱（节点/边/时间线/一致性）
+  GRAPH_GET: 'longwriting:graph:getGraph',
+  GRAPH_GET_NODE: 'longwriting:graph:getNode',
+  GRAPH_RESOLVE_ENTITIES: 'longwriting:graph:resolveEntities',
+  GRAPH_GET_TIMELINE: 'longwriting:graph:getTimeline',
+  GRAPH_GET_STATE_AT_CHAPTER: 'longwriting:graph:getStateAtChapter',
+  GRAPH_GET_EDGES_AT_CHAPTER: 'longwriting:graph:getEdgesAtChapter',
+  GRAPH_ADD_EDGE: 'longwriting:graph:addEdge',
+  GRAPH_UPDATE_EDGE: 'longwriting:graph:updateEdge',
+  GRAPH_DELETE_EDGE: 'longwriting:graph:deleteEdge',
+  GRAPH_END_RELATION: 'longwriting:graph:endRelation',
+  GRAPH_VALIDATE_BEFORE_GENERATION: 'longwriting:graph:validateBeforeGeneration',
+  GRAPH_SCAN_CONTRADICTIONS: 'longwriting:graph:scanContradictions',
+
+  // 阶段2：事件节点
+  EVENT_GET_BY_CHAPTER: 'longwriting:event:getByChapter',
+  EVENT_UPDATE: 'longwriting:event:update',
+  EVENT_DELETE: 'longwriting:event:delete',
+
+  // 阶段2：向导状态 / 生成取消
+  WIZARD_GET_STATE: 'longwriting:wizard:getState',
+  GENERATE_CANCEL: 'longwriting:generate:cancel',
+  EXTRACT_CHAPTER_EVENTS: 'longwriting:extractChapterEvents'
 }
 
 /**
@@ -2924,6 +2948,212 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
       return { success: true, data: stats }
     } catch (error: any) {
       console.error('[IPC] 获取向量统计失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 阶段2：图谱（节点/边/时间线/一致性） ====================
+
+  const graphService = async () => {
+    const { GraphService } = await import('@core/services/longwriting/graph/graph.service')
+    return GraphService.getInstance()
+  }
+
+  // 全图
+  ipcBridge.handle(CHANNELS.GRAPH_GET, async (_event, projectId: string) => {
+    try {
+      const g = await graphService()
+      return { success: true, data: await g.getGraph(projectId) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 单节点（含最新状态 + 关联事件）
+  ipcBridge.handle(CHANNELS.GRAPH_GET_NODE, async (_event, projectId: string, entityType: string, entityId: string) => {
+    try {
+      const g = await graphService()
+      return { success: true, data: await g.getNode(projectId, entityType as any, entityId) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 名称→ID 解析
+  ipcBridge.handle(CHANNELS.GRAPH_RESOLVE_ENTITIES, async (_event, projectId: string, inputs: Array<{ type: string; name: string }>) => {
+    try {
+      const g = await graphService()
+      return { success: true, data: await g.resolveEntities(projectId, inputs as any) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 实体状态时间线
+  ipcBridge.handle(CHANNELS.GRAPH_GET_TIMELINE, async (_event, projectId: string, entityType: string, entityId: string) => {
+    try {
+      const g = await graphService()
+      return { success: true, data: await g.getTimeline(projectId, entityType as any, entityId) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 指定章节时间点状态
+  ipcBridge.handle(CHANNELS.GRAPH_GET_STATE_AT_CHAPTER, async (_event, projectId: string, entityType: string, entityId: string, chapterNumber: number) => {
+    try {
+      const g = await graphService()
+      return { success: true, data: await g.stateAt(projectId, entityType as any, entityId, chapterNumber) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 指定章节生效边
+  ipcBridge.handle(CHANNELS.GRAPH_GET_EDGES_AT_CHAPTER, async (_event, projectId: string, entityId: string, chapterNumber: number) => {
+    try {
+      const g = await graphService()
+      return { success: true, data: await g.edgesAt(projectId, entityId, chapterNumber) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 边 CRUD
+  ipcBridge.handle(CHANNELS.GRAPH_ADD_EDGE, async (_event, input: any) => {
+    try {
+      const g = await graphService()
+      return { success: true, data: await g.addEdge(input) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcBridge.handle(CHANNELS.GRAPH_UPDATE_EDGE, async (_event, id: string, patch: any) => {
+    try {
+      const g = await graphService()
+      return { success: true, data: await g.updateEdge(id, patch) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcBridge.handle(CHANNELS.GRAPH_DELETE_EDGE, async (_event, id: string) => {
+    try {
+      const g = await graphService()
+      return { success: true, data: await g.deleteEdge(id) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcBridge.handle(CHANNELS.GRAPH_END_RELATION, async (_event, id: string, chapterNumber: number) => {
+    try {
+      const g = await graphService()
+      return { success: true, data: await g.endRelation(id, chapterNumber) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 写前校验
+  ipcBridge.handle(CHANNELS.GRAPH_VALIDATE_BEFORE_GENERATION, async (_event, projectId: string, outlineId: string, chapterNumber?: number) => {
+    try {
+      const { ConsistencyService } = await import('@core/services/longwriting/graph/consistency.service')
+      return { success: true, data: await ConsistencyService.getInstance().validateBeforeGeneration(projectId, outlineId, chapterNumber) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 矛盾扫描
+  ipcBridge.handle(CHANNELS.GRAPH_SCAN_CONTRADICTIONS, async (_event, projectId: string) => {
+    try {
+      const { ConsistencyService } = await import('@core/services/longwriting/graph/consistency.service')
+      return { success: true, data: await ConsistencyService.getInstance().scanContradictions(projectId) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 阶段2：事件节点 ====================
+
+  ipcBridge.handle(CHANNELS.EVENT_GET_BY_CHAPTER, async (_event, projectId: string, chapterNumber: number) => {
+    try {
+      const dbManager = getCoreDatabaseManager()
+      if (!dbManager.lwEvents) return { success: false, error: '数据库未初始化' }
+      return { success: true, data: await dbManager.lwEvents.getByChapter(projectId, chapterNumber) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcBridge.handle(CHANNELS.EVENT_UPDATE, async (_event, id: string, patch: any) => {
+    try {
+      const dbManager = getCoreDatabaseManager()
+      if (!dbManager.lwEvents) return { success: false, error: '数据库未初始化' }
+      return { success: true, data: await dbManager.lwEvents.update(id, patch) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcBridge.handle(CHANNELS.EVENT_DELETE, async (_event, id: string) => {
+    try {
+      const dbManager = getCoreDatabaseManager()
+      if (!dbManager.lwEvents) return { success: false, error: '数据库未初始化' }
+      return { success: true, data: await dbManager.lwEvents.delete(id) }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 阶段2：向导状态 / 生成取消 / 事件提取 ====================
+
+  ipcBridge.handle(CHANNELS.WIZARD_GET_STATE, async (_event, projectId: string) => {
+    try {
+      const dbManager = getCoreDatabaseManager()
+      if (!dbManager.lwProjects) return { success: false, error: '数据库未初始化' }
+      const project = await dbManager.lwProjects.getById(projectId)
+      if (!project) return { success: false, error: '项目不存在' }
+      return { success: true, data: { stage: project.stage, skipped: project.wizardState?.skipped || [], progress: project.progress } }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcBridge.handle(CHANNELS.GENERATE_CANCEL, async (_event, eventId: string) => {
+    try {
+      LongWritingAIService.getInstance().cancelGeneration(eventId)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 章节事件提取（AI 返回结构化事件，前端落库 lw_events）
+  ipcBridge.handle(CHANNELS.EXTRACT_CHAPTER_EVENTS, async (
+    _event,
+    projectId: string,
+    outlineId: string,
+    chapterContent: string,
+    chapterNumber: number,
+    providerConfigId?: string,
+    modelId?: string
+  ) => {
+    try {
+      const aiService = LongWritingAIService.getInstance()
+      const result = await aiService.extractChapterEvents(
+        `extract-events-${Date.now()}`,
+        projectId,
+        outlineId,
+        chapterContent,
+        chapterNumber,
+        providerConfigId,
+        modelId
+      )
+      return result
+    } catch (error: any) {
       return { success: false, error: error.message }
     }
   })

@@ -1798,3 +1798,26 @@ export interface EntityTimelineEntry {
   keyChanges: string[]
   createdAt: number
 }
+
+/**
+ * AI 提取的章节事件数据（写入 lw_events 前）
+ */
+export interface ExtractedChapterEventData {
+  name: string
+  description?: string
+  involvedEntities?: MemoryEntity[]
+  stateBefore?: string
+  stateAfter?: string
+}
+
+/**
+ * 提取章节事件请求/响应
+ */
+export interface ExtractChapterEventsRequest {
+  projectId: string
+  outlineId: string
+  chapterContent: string
+  chapterNumber: number
+  providerConfigId?: string
+  modelId?: string
+}

@@ -1828,7 +1828,54 @@ const electronAPI = {
       pendingEvents: string
       keyChanges: string
     }) =>
-      ipcRenderer.invoke('longwriting:saveChapterStateSummary', data)
+      ipcRenderer.invoke('longwriting:saveChapterStateSummary', data),
+
+    // ============ 阶段2：图谱 / 事件 / 向导 / 取消 ============
+    graphGet: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:graph:getGraph', projectId),
+    graphGetNode: (projectId: string, entityType: string, entityId: string) =>
+      ipcRenderer.invoke('longwriting:graph:getNode', projectId, entityType, entityId),
+    graphResolveEntities: (projectId: string, inputs: Array<{ type: string; name: string }>) =>
+      ipcRenderer.invoke('longwriting:graph:resolveEntities', projectId, inputs),
+    graphGetTimeline: (projectId: string, entityType: string, entityId: string) =>
+      ipcRenderer.invoke('longwriting:graph:getTimeline', projectId, entityType, entityId),
+    graphGetStateAtChapter: (projectId: string, entityType: string, entityId: string, chapterNumber: number) =>
+      ipcRenderer.invoke('longwriting:graph:getStateAtChapter', projectId, entityType, entityId, chapterNumber),
+    graphGetEdgesAtChapter: (projectId: string, entityId: string, chapterNumber: number) =>
+      ipcRenderer.invoke('longwriting:graph:getEdgesAtChapter', projectId, entityId, chapterNumber),
+    graphAddEdge: (input: any) =>
+      ipcRenderer.invoke('longwriting:graph:addEdge', input),
+    graphUpdateEdge: (id: string, patch: any) =>
+      ipcRenderer.invoke('longwriting:graph:updateEdge', id, patch),
+    graphDeleteEdge: (id: string) =>
+      ipcRenderer.invoke('longwriting:graph:deleteEdge', id),
+    graphEndRelation: (id: string, chapterNumber: number) =>
+      ipcRenderer.invoke('longwriting:graph:endRelation', id, chapterNumber),
+    graphValidateBeforeGeneration: (projectId: string, outlineId: string, chapterNumber?: number) =>
+      ipcRenderer.invoke('longwriting:graph:validateBeforeGeneration', projectId, outlineId, chapterNumber),
+    graphScanContradictions: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:graph:scanContradictions', projectId),
+
+    eventGetByChapter: (projectId: string, chapterNumber: number) =>
+      ipcRenderer.invoke('longwriting:event:getByChapter', projectId, chapterNumber),
+    eventUpdate: (id: string, patch: any) =>
+      ipcRenderer.invoke('longwriting:event:update', id, patch),
+    eventDelete: (id: string) =>
+      ipcRenderer.invoke('longwriting:event:delete', id),
+
+    wizardGetState: (projectId: string) =>
+      ipcRenderer.invoke('longwriting:wizard:getState', projectId),
+    generateCancel: (eventId: string) =>
+      ipcRenderer.invoke('longwriting:generate:cancel', eventId),
+    extractChapterEvents: (
+      projectId: string,
+      outlineId: string,
+      chapterContent: string,
+      chapterNumber: number,
+      providerConfigId?: string,
+      modelId?: string
+    ) =>
+      ipcRenderer.invoke('longwriting:extractChapterEvents', projectId, outlineId, chapterContent, chapterNumber, providerConfigId, modelId)
   },
 
   // 步骤0：向量索引（步骤6 前端面板消费）
