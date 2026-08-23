@@ -1,9 +1,8 @@
 /**
- * 应用仓库排序测试（统一时间降序）
+ * 应用仓库测试（时间降序排序 + 分类/标签/固定新列）
  * @module tests/core/database/app.repository
- * @description 真实 sqlite：列表按 created_at 降序——用户应用最新创建在前；
- *              内置应用 created_at 按发布顺序错开（迁移保证），最新发布的内置在前；
- *              混合场景下整体时间降序，最新发布的内置（视频文案提取）首页容量内可见。
+ * @description 真实 sqlite：列表按 created_at 降序；category/tags/pinned 列 CRUD、
+ *              category 筛选、tags 关键字搜索、pinned 筛选、分类计数聚合。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { DataSource } from 'typeorm'
@@ -106,6 +105,103 @@ describe('AppRepository.listApp 排序（时间降序）', () => {
       for (let i = 1; i < times.length; i++) {
         expect(times[i - 1]).toBeGreaterThanOrEqual(times[i])
       }
+    })
+  })
+})
+
+describe('AppRepository 分类/标签/固定（新列）', () => {
+  let ds: DataSource
+  let repo: AppRepository
+
+  beforeEach(async () => {
+    ds = await buildDs()
+    repo = new AppRepository(ds)
+  })
+  afterEach(async () => {
+    await ds.destroy()
+  })
+
+  it('create 写入 category/tags，toDto 还原数组', async () => {
+    await runWithUserAsync('user-1', async () => {
+      const rec = await repo.create({
+        name: '早报应用', category: '新闻资讯', tags: ['早报', '新闻'], sourceKind: 'workflow', sourceId: 'd1',
+      })
+      expect(rec.category).toBe('新闻资讯')
+      expect(rec.tags).toEqual(['早报', '新闻'])
+      expect(rec.pinned).toBe(0)
+      const got = await repo.findById(rec.id)
+      expect(got?.category).toBe('新闻资讯')
+      expect(got?.tags).toEqual(['早报', '新闻'])
+    })
+  })
+
+  it('update 修改分类/标签/固定', async () => {
+    await runWithUserAsync('user-1', async () => {
+      const rec = await repo.create({ name: 'A', sourceKind: 'workflow', sourceId: 'd1' })
+      const upd = await repo.update(rec.id, { category: '视频处理', tags: ['视频'], pinned: 1 })
+      expect(upd?.category).toBe('视频处理')
+      expect(upd?.tags).toEqual(['视频'])
+      expect(upd?.pinned).toBe(1)
+    })
+  })
+
+  it('listApp 支持 category 筛选', async () => {
+    await runWithUserAsync('user-1', async () => {
+      await repo.create({ name: '新闻A', category: '新闻资讯', sourceKind: 'workflow', sourceId: 'd1' })
+      await repo.create({ name: '新闻B', category: '新闻资讯', sourceKind: 'workflow', sourceId: 'd2' })
+      await repo.create({ name: '视频C', category: '视频处理', sourceKind: 'workflow', sourceId: 'd3' })
+      const r1 = await repo.listApp({ category: '新闻资讯', page: 1, pageSize: 20 })
+      expect(r1.total).toBe(2)
+      const r2 = await repo.listApp({ page: 1, pageSize: 20 })
+      expect(r2.total).toBe(3)
+    })
+  })
+
+  it('listApp 关键字搜索命中名称/分类/标签', async () => {
+    await runWithUserAsync('user-1', async () => {
+      await repo.create({ name: '视频文案提取', category: '视频处理', tags: ['视频', '文案'], sourceKind: 'workflow', sourceId: 'd1' })
+      await repo.create({ name: '早报', category: '新闻资讯', tags: ['新闻'], sourceKind: 'workflow', sourceId: 'd2' })
+      const byName = await repo.listApp({ keyword: '文案', page: 1, pageSize: 20 })
+      expect(byName.total).toBe(1)
+      expect(byName.items[0].name).toBe('视频文案提取')
+      const byTag = await repo.listApp({ keyword: '新闻', page: 1, pageSize: 20 })
+      expect(byTag.total).toBe(1)
+      const byCat = await repo.listApp({ keyword: '视频处理', page: 1, pageSize: 20 })
+      expect(byCat.total).toBe(1)
+    })
+  })
+
+  it('listApp 支持 pinned 筛选（首页固定应用入口数据源）', async () => {
+    await runWithUserAsync('user-1', async () => {
+      const a = await repo.create({ name: 'A', sourceKind: 'workflow', sourceId: 'd1' })
+      await repo.create({ name: 'B', sourceKind: 'workflow', sourceId: 'd2' })
+      await repo.update(a.id, { pinned: 1 })
+      const pinned = await repo.listApp({ pinned: true, page: 1, pageSize: 20 })
+      expect(pinned.total).toBe(1)
+      expect(pinned.items[0].name).toBe('A')
+      const all = await repo.listApp({ page: 1, pageSize: 20 })
+      expect(all.total).toBe(2)
+    })
+  })
+
+  it('countByCategory 分类计数聚合（含内置）', async () => {
+    await runWithUserAsync('user-1', async () => {
+      await repo.create({ name: 'A', category: '新闻资讯', sourceKind: 'workflow', sourceId: 'd1' })
+      await repo.create({ name: 'B', category: '新闻资讯', sourceKind: 'workflow', sourceId: 'd2' })
+      await repo.create({ name: 'C', category: '视频处理', sourceKind: 'workflow', sourceId: 'd3' })
+      const stats = await repo.countByCategory()
+      const byCat = Object.fromEntries(stats.map(s => [s.category, s.count]))
+      expect(byCat['新闻资讯']).toBe(2)
+      expect(byCat['视频处理']).toBe(1)
+    })
+  })
+
+  it('内置应用允许 pinned 更新（首页入口是用户个人行为），其余字段禁改', async () => {
+    await runWithUserAsync('user-1', async () => {
+      await insertBuiltin(ds, 'builtin_app_video_transcript', '-1 minutes')
+      const upd = await repo.update('builtin_app_video_transcript', { pinned: 1, name: '篡改名' })
+      expect(upd?.pinned).toBe(1)
+      expect(upd?.name).toBe('builtin_app_video_transcript') // 名称未被篡改
     })
   })
 })

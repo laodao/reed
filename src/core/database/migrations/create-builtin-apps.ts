@@ -27,15 +27,15 @@ const BUILTIN_DEF_PREFIX = 'builtin_def_'
 const BUILTIN_APP_PREFIX = 'builtin_app_'
 
 /** 内置工作流模板清单：文件 → { 定义 id, 应用 id, 应用名, 图标, 描述, 原始 JSON } */
-const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; icon: string; name: string; description: string }> = [
-  { file: 'daily-news-brief.json', raw: dailyNewsBrief, appId: `${BUILTIN_APP_PREFIX}daily_news`, icon: '📰', name: '每日热点早报', description: '全球媒体采集 + AI 生成早报长图' },
-  { file: 'industry-weekly.json', raw: industryWeekly, appId: `${BUILTIN_APP_PREFIX}industry_weekly`, icon: '📈', name: '行业动态周报', description: '行业趋势分析周报长图（模板可自定义）' },
-  { file: 'multi-platform-copy.json', raw: multiPlatformCopy, appId: `${BUILTIN_APP_PREFIX}multi_platform`, icon: '✍️', name: '多平台文案生成', description: '公众号/小红书/微博/知乎/抖音 文案' },
-  { file: 'webpage-summary.json', raw: webpageSummary, appId: `${BUILTIN_APP_PREFIX}webpage_summary`, icon: '📄', name: '网页摘要入库', description: '网页结构化摘要 → 知识库 + 资产库' },
-  { file: 'article-polish.json', raw: articlePolish, appId: `${BUILTIN_APP_PREFIX}article_polish`, icon: '🪄', name: '文章润色改写', description: '诊断 + 润色 + 对比报告' },
-  { file: 'image-card.json', raw: imageCard, appId: `${BUILTIN_APP_PREFIX}image_card`, icon: '🖼️', name: '图文卡片生成', description: '内容规划 + AI 配图 + 长图卡片' },
-  { file: 'webpage-transcribe.json', raw: webpageTranscribe, appId: `${BUILTIN_APP_PREFIX}webpage_transcribe`, icon: '📑', name: '网页正文转写', description: '网页 → 干净 markdown + 元数据' },
-  { file: 'video-transcript-app.json', raw: videoTranscriptApp, appId: `${BUILTIN_APP_PREFIX}video_transcript`, icon: '🎬', name: '视频文案提取', description: 'B站/YouTube/本地视频 → 文案' },
+const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; icon: string; name: string; description: string; category: string; tags: string[] }> = [
+  { file: 'daily-news-brief.json', raw: dailyNewsBrief, appId: `${BUILTIN_APP_PREFIX}daily_news`, icon: '📰', name: '每日热点早报', description: '全球媒体采集 + AI 生成早报长图', category: '新闻资讯', tags: ['早报', '新闻'] },
+  { file: 'industry-weekly.json', raw: industryWeekly, appId: `${BUILTIN_APP_PREFIX}industry_weekly`, icon: '📈', name: '行业动态周报', description: '行业趋势分析周报长图（模板可自定义）', category: '新闻资讯', tags: ['周报', '行业'] },
+  { file: 'multi-platform-copy.json', raw: multiPlatformCopy, appId: `${BUILTIN_APP_PREFIX}multi_platform`, icon: '✍️', name: '多平台文案生成', description: '公众号/小红书/微博/知乎/抖音 文案', category: '文案写作', tags: ['文案', '自媒体'] },
+  { file: 'webpage-summary.json', raw: webpageSummary, appId: `${BUILTIN_APP_PREFIX}webpage_summary`, icon: '📄', name: '网页摘要入库', description: '网页结构化摘要 → 知识库 + 资产库', category: '网页工具', tags: ['摘要'] },
+  { file: 'article-polish.json', raw: articlePolish, appId: `${BUILTIN_APP_PREFIX}article_polish`, icon: '🪄', name: '文章润色改写', description: '诊断 + 润色 + 对比报告', category: '文案写作', tags: ['润色', '写作'] },
+  { file: 'image-card.json', raw: imageCard, appId: `${BUILTIN_APP_PREFIX}image_card`, icon: '🖼️', name: '图文卡片生成', description: '内容规划 + AI 配图 + 长图卡片', category: '图文设计', tags: ['卡片', '配图'] },
+  { file: 'webpage-transcribe.json', raw: webpageTranscribe, appId: `${BUILTIN_APP_PREFIX}webpage_transcribe`, icon: '📑', name: '网页正文转写', description: '网页 → 干净 markdown + 元数据', category: '网页工具', tags: ['转写'] },
+  { file: 'video-transcript-app.json', raw: videoTranscriptApp, appId: `${BUILTIN_APP_PREFIX}video_transcript`, icon: '🎬', name: '视频文案提取', description: 'B站/YouTube/本地视频 → 文案', category: '视频处理', tags: ['视频', '文案'] },
 ]
 
 /** 默认模板资产（user_id=NULL，可复制修改） */
@@ -118,15 +118,15 @@ export async function createBuiltinApps(ds: DataSource): Promise<void> {
     if (appExisting.length === 0) {
       await ds.query(
         `INSERT INTO apps
-          (id, user_id, name, icon, description, source_kind, source_id, source_version, channel_session, channel_share, channel_api, enabled, is_builtin, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [app.appId, null, app.name, app.icon, app.description, 'workflow', defId, 1, 1, 0, 0, 1, 1, publishedAt(appIndex), now]
+          (id, user_id, name, icon, description, category, tags, source_kind, source_id, source_version, channel_session, channel_share, channel_api, enabled, is_builtin, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [app.appId, null, app.name, app.icon, app.description, app.category, JSON.stringify(app.tags), 'workflow', defId, 1, 1, 0, 0, 1, 1, publishedAt(appIndex), now]
       )
       insertedApps++
     } else {
       await ds.query(
-        `UPDATE apps SET name = ?, icon = ?, description = ?, source_version = ?, created_at = ?, updated_at = ? WHERE id = ?`,
-        [app.name, app.icon, app.description, 1, publishedAt(appIndex), now, app.appId]
+        `UPDATE apps SET name = ?, icon = ?, description = ?, category = ?, tags = ?, source_version = ?, created_at = ?, updated_at = ? WHERE id = ?`,
+        [app.name, app.icon, app.description, app.category, JSON.stringify(app.tags), 1, publishedAt(appIndex), now, app.appId]
       )
     }
   }

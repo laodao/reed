@@ -12,11 +12,35 @@
           <el-tag :type="app.enabled === 1 ? 'success' : 'info'" size="small" style="margin-left: 8px">{{ app.enabled === 1 ? '已启用' : '已停用' }}</el-tag>
         </div>
         <div class="page-desc">来自工作流 · v{{ app.sourceVersion ?? 0 }} · 会话数 {{ sessions.length }}</div>
+        <div class="meta-row">
+          <el-tag v-if="app.category" size="small" type="primary" effect="plain">{{ app.category }}</el-tag>
+          <span v-for="t in app.tags" :key="t" class="tag">#{{ t }}</span>
+          <el-button text size="small" :type="app.pinned === 1 ? 'warning' : 'primary'" @click="togglePinned">
+            {{ app.pinned === 1 ? '📌 已固定到首页' : '📌 固定到首页' }}
+          </el-button>
+          <el-button v-if="!app.isBuiltin" text size="small" @click="openMetaEditor">✏️ 编辑分类/标签</el-button>
+        </div>
       </div>
       <el-button v-if="app.isBuiltin" size="small" @click="handleCopyBuiltin">📋 复制为自有</el-button>
       <el-button v-if="app.channelSession === 1" type="primary" @click="newSession">▶ 开始会话</el-button>
       <el-button @click="router.push(`/workflow/editor/${app.sourceId}`)">查看工作流</el-button>
     </div>
+
+    <!-- 分类/标签编辑弹窗 -->
+    <el-dialog v-model="metaEditorVisible" title="编辑应用分类与标签" width="460px" append-to-body>
+      <el-form label-width="72px" label-position="left">
+        <el-form-item label="分类">
+          <el-input v-model="metaDraft.category" placeholder="如 新闻资讯 / 文案写作 / 视频处理" />
+        </el-form-item>
+        <el-form-item label="标签">
+          <el-input v-model="metaDraft.tagsText" placeholder="逗号分隔，如 视频,文案" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="metaEditorVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveMeta">保存</el-button>
+      </template>
+    </el-dialog>
 
     <el-tabs v-model="activeTab">
       <el-tab-pane label="渠道" name="channels">
@@ -234,6 +258,40 @@ async function deleteSession(row: AppSessionRecord): Promise<void> {
   else ElMessage.error(resp.error ?? '删除失败')
 }
 
+// ---- 固定到首页 + 分类/标签编辑 ----
+async function togglePinned(): Promise<void> {
+  if (!app.value) return
+  const next = app.value.pinned !== 1
+  const resp = await api.app.setPinned(appId.value, next)
+  if (resp.success) {
+    app.value = resp.data ?? app.value
+    ElMessage.success(next ? '已固定到首页（首页「我的应用」快捷启动）' : '已取消固定')
+  } else ElMessage.error(resp.error ?? '操作失败')
+}
+
+const metaEditorVisible = ref(false)
+const metaDraft = ref<{ category: string; tagsText: string }>({ category: '', tagsText: '' })
+
+function openMetaEditor(): void {
+  if (!app.value) return
+  metaDraft.value = {
+    category: app.value.category ?? '',
+    tagsText: app.value.tags.join(','),
+  }
+  metaEditorVisible.value = true
+}
+
+async function saveMeta(): Promise<void> {
+  const category = metaDraft.value.category.trim() || null
+  const tags = metaDraft.value.tagsText.split(/[,，]/).map(t => t.trim()).filter(Boolean)
+  const resp = await api.app.updateMeta({ id: appId.value, category, tags })
+  if (resp.success) {
+    app.value = resp.data ?? app.value
+    metaEditorVisible.value = false
+    ElMessage.success('已保存')
+  } else ElMessage.error(resp.error ?? '保存失败')
+}
+
 onMounted(load)
 </script>
 
@@ -245,6 +303,8 @@ onMounted(load)
 .info { flex: 1; }
 .page-title { font-size: 19px; font-weight: 600; }
 .page-desc { color: var(--el-text-color-secondary); font-size: 13px; margin-top: 2px; }
+.meta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 8px; }
+.tag { font-size: 11px; color: var(--el-color-primary); background: var(--el-color-primary-light-9); padding: 1px 6px; border-radius: 8px; }
 .channel-row { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--el-border-color); border-radius: 8px; margin-bottom: 10px; }
 .c-info { flex: 1; }
 .c-name { font-weight: 600; }

@@ -16,8 +16,19 @@ function subsystem() {
 
 export function registerAppHandlers(): void {
   // ==================== 应用定义 ====================
-  ipcBridge.handle('app:list', (_e, p: { keyword?: string; page: number; pageSize: number }) =>
+  ipcBridge.handle('app:list', (_e, p: { keyword?: string; category?: string; pinned?: boolean; page: number; pageSize: number }) =>
     wrap(() => subsystem().appDefinitionService.listApps(p ?? { page: 1, pageSize: 20 }))
+  )
+  ipcBridge.handle('app:categories', () =>
+    wrap(() => subsystem().appDefinitionService.listAppCategories())
+  )
+  ipcBridge.handle('app:set-pinned', (_e, p: { id: string; pinned: boolean }) =>
+    wrap(() => subsystem().appDefinitionService.setPinned(p.id, p.pinned))
+  )
+  ipcBridge.handle('app:update-meta', (_e, p: { id: string; name?: string; icon?: string | null; description?: string | null; category?: string | null; tags?: string[] }) =>
+    wrap(() => subsystem().appDefinitionService.updateMeta(p.id, {
+      name: p.name, icon: p.icon, description: p.description, category: p.category, tags: p.tags,
+    }))
   )
   ipcBridge.handle('app:get', (_e, p: { id: string }) =>
     wrap(() => subsystem().appDefinitionService.getApp(p.id))

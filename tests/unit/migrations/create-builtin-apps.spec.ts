@@ -92,4 +92,25 @@ describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
     for (const d of defNames) expect(d.name).toMatch(/^\[内置\]/)
     for (const a of appNames) expect(a.name).not.toMatch(/^\[内置\]/)
   })
+
+  it('内置应用带分类与标签种子（视频文案提取 → 视频处理/视频,文案）', async () => {
+    const rows = await ds.query(`SELECT id, category, tags FROM apps WHERE is_builtin = 1`)
+    expect(rows.length).toBe(8)
+    for (const r of rows) {
+      expect(r.category).toBeTruthy()
+      const tags = JSON.parse(r.tags)
+      expect(Array.isArray(tags)).toBe(true)
+      expect(tags.length).toBeGreaterThan(0)
+    }
+    const video = rows.find(r => r.id === 'builtin_app_video_transcript')
+    expect(video.category).toBe('视频处理')
+    expect(JSON.parse(video.tags)).toEqual(['视频', '文案'])
+    const daily = rows.find(r => r.id === 'builtin_app_daily_news')
+    expect(daily.category).toBe('新闻资讯')
+  })
+
+  it('内置应用 pinned 缺省为 0（固定到首页需用户主动操作）', async () => {
+    const rows = await ds.query(`SELECT pinned FROM apps WHERE is_builtin = 1`)
+    for (const r of rows) expect(r.pinned ?? 0).toBe(0)
+  })
 })

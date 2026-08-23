@@ -717,11 +717,14 @@ const electronAPI = {
 
   // ==================== 应用模块（片3） ====================
   app: {
-    list: (p: { keyword?: string; page: number; pageSize: number }) => ipcRenderer.invoke('app:list', p),
+    list: (p: { keyword?: string; category?: string; pinned?: boolean; page: number; pageSize: number }) => ipcRenderer.invoke('app:list', p),
     get: (id: string) => ipcRenderer.invoke('app:get', { id }),
     getByDefinition: (definitionId: string) => ipcRenderer.invoke('app:get-by-definition', { definitionId }),
-    createFromWorkflow: (p: { definitionId: string; name?: string; icon?: string; channelSession?: boolean; channelShare?: boolean; channelApi?: boolean }) => ipcRenderer.invoke('app:create-from-workflow', p),
+    createFromWorkflow: (p: { definitionId: string; name?: string; icon?: string; category?: string; tags?: string[]; channelSession?: boolean; channelShare?: boolean; channelApi?: boolean }) => ipcRenderer.invoke('app:create-from-workflow', p),
     updateChannels: (p: { id: string; channelSession?: boolean; channelShare?: boolean; channelApi?: boolean }) => ipcRenderer.invoke('app:update-channels', p),
+    setPinned: (id: string, pinned: boolean) => ipcRenderer.invoke('app:set-pinned', { id, pinned }),
+    updateMeta: (p: { id: string; name?: string; icon?: string | null; description?: string | null; category?: string | null; tags?: string[] }) => ipcRenderer.invoke('app:update-meta', p),
+    categories: () => ipcRenderer.invoke('app:categories'),
     enableShare: (id: string) => ipcRenderer.invoke('app:enable-share', { id }),
     disableShare: (id: string) => ipcRenderer.invoke('app:disable-share', { id }),
     setEnabled: (id: string, enabled: boolean) => ipcRenderer.invoke('app:set-enabled', { id, enabled }),

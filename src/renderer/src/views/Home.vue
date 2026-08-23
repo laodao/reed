@@ -19,29 +19,57 @@
         <p class="welcome-subtitle">AI 工具箱 - 集成多种 AI 能力的跨平台桌面应用</p>
       </div>
 
-      <!-- 功能网格 -->
-      <div class="feature-grid">
-        <div
-          v-for="feature in features"
-          :key="feature.path"
-          class="feature-card"
-          @click="navigateTo(feature.path)"
-          @mouseenter="hoveredCard = feature.path"
-          @mouseleave="hoveredCard = null"
-        >
-          <div class="feature-icon" :class="{ hovered: hoveredCard === feature.path }">
-            <component :is="feature.icon" />
-            <div class="icon-glow"></div>
-          </div>
-          <div class="feature-content">
-            <h3 class="feature-title">{{ feature.label }}</h3>
-            <p class="feature-desc">{{ feature.description }}</p>
-          </div>
-          <div class="feature-arrow">
-            <el-icon :size="20"><ArrowRight /></el-icon>
+      <!-- 我的应用（用户固定到首页的快捷入口） -->
+      <section v-if="pinnedApps.length" class="section">
+        <div class="section-head">
+          <h2 class="section-title">📌 我的应用</h2>
+          <el-button text type="primary" size="small" @click="navigateTo('/apps')">管理应用 →</el-button>
+        </div>
+        <div class="pinned-grid">
+          <div
+            v-for="app in pinnedApps"
+            :key="app.id"
+            class="pinned-card"
+            @click="launchApp(app)"
+          >
+            <span class="pinned-emoji">{{ app.icon || '📦' }}</span>
+            <div class="pinned-info">
+              <div class="pinned-name" :title="app.name">{{ app.name }}</div>
+              <div class="pinned-desc" :title="app.description ?? ''">{{ app.category || app.description || '点击启动' }}</div>
+            </div>
+            <el-icon class="pinned-arrow" :size="16"><ArrowRight /></el-icon>
           </div>
         </div>
-      </div>
+      </section>
+
+      <!-- 功能网格 -->
+      <section class="section">
+        <div class="section-head">
+          <h2 class="section-title">功能</h2>
+        </div>
+        <div class="feature-grid">
+          <div
+            v-for="feature in features"
+            :key="feature.path"
+            class="feature-card"
+            @click="navigateTo(feature.path)"
+            @mouseenter="hoveredCard = feature.path"
+            @mouseleave="hoveredCard = null"
+          >
+            <div class="feature-icon" :class="{ hovered: hoveredCard === feature.path }">
+              <component :is="feature.icon" />
+              <div class="icon-glow"></div>
+            </div>
+            <div class="feature-content">
+              <h3 class="feature-title">{{ feature.label }}</h3>
+              <p class="feature-desc">{{ feature.description }}</p>
+            </div>
+            <div class="feature-arrow">
+              <el-icon :size="20"><ArrowRight /></el-icon>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
 
     <!-- 底部信息 -->
@@ -58,13 +86,20 @@
 
 // 组件名与路由 name 对齐，供 <keep-alive :include> 匹配（缺失会导致缓存失效、切换重新挂载）
 defineOptions({ name: 'Home' })
-import { ref, computed } from 'vue'
+import { ref, computed, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { ArrowRight } from '@element-plus/icons-vue'
 import { mainMenuItems, flattenMenuItems } from '@/config/menu'
+import { electronApi } from '@/types/electron-api'
+import type { AppRecord } from '@shared/types/app.types'
 
 const router = useRouter()
+const api = electronApi()
 const hoveredCard = ref<string | null>(null)
+
+/** 固定到首页的应用（快捷入口；登录即拉取） */
+const pinnedApps = ref<Array<AppRecord & { sessionCount: number }>>([])
 
 /**
  * 功能卡片列表：与侧边栏共用同一份菜单数据源（@/config/menu），
@@ -78,6 +113,26 @@ const features = computed(() =>
 const navigateTo = (path: string) => {
   router.push(path)
 }
+
+/** 首页固定应用：点击启动会话（不可启动时进详情） */
+async function launchApp(app: AppRecord): Promise<void> {
+  if (app.enabled === 1 && app.channelSession === 1) {
+    const resp = await api.appSession.create({ appId: app.id })
+    if (resp.success) {
+      router.push(`/apps/${app.id}/session/${resp.data?.id}?from=home`)
+      return
+    }
+    ElMessage.error(resp.error ?? '启动失败')
+    return
+  }
+  router.push(`/apps/${app.id}`)
+}
+
+// keep-alive 下每次进入首页都刷新固定应用（用户在应用列表固定/取消后回首页即时生效）
+onActivated(async () => {
+  const resp = await api.app.list({ pinned: true, page: 1, pageSize: 50 })
+  if (resp.success) pinnedApps.value = resp.data?.items ?? []
+})
 </script>
 
 <style lang="scss" scoped>
@@ -92,7 +147,7 @@ const navigateTo = (path: string) => {
 .home-content {
   flex: 1;
   overflow-y: auto;
-  padding: 48px;
+  padding: 40px 48px 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -101,13 +156,13 @@ const navigateTo = (path: string) => {
 // 欢迎区域
 .welcome-section {
   text-align: center;
-  margin-bottom: 48px;
+  margin-bottom: 36px;
 }
 
 .welcome-icon {
-  width: 72px;
-  height: 72px;
-  margin: 0 auto 24px;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 20px;
   animation: float 3s ease-in-out infinite;
 
   svg {
@@ -118,16 +173,108 @@ const navigateTo = (path: string) => {
 }
 
 .welcome-title {
-  font-size: 36px;
+  font-size: 32px;
   font-weight: 700;
-  margin: 0 0 12px 0;
+  margin: 0 0 10px 0;
   letter-spacing: -0.5px;
 }
 
 .welcome-subtitle {
-  font-size: 16px;
+  font-size: 15px;
   color: var(--text-secondary);
   margin: 0;
+}
+
+// 分区
+.section {
+  width: 100%;
+  max-width: 1200px;
+  margin-bottom: 32px;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.section-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+// 固定应用（我的应用）
+.pinned-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.pinned-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color-lighter);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-normal);
+
+  &:hover {
+    transform: translateY(-2px);
+    border-color: var(--color-primary);
+    box-shadow: var(--shadow-card-hover);
+
+    .pinned-arrow {
+      color: var(--color-primary);
+      transform: translateX(2px);
+    }
+  }
+}
+
+.pinned-emoji {
+  font-size: 26px;
+  width: 46px;
+  height: 46px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-color-page);
+  flex-shrink: 0;
+}
+
+.pinned-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.pinned-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pinned-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pinned-arrow {
+  color: var(--text-placeholder);
+  transition: all var(--transition-normal);
+  flex-shrink: 0;
 }
 
 // 功能网格
@@ -135,8 +282,6 @@ const navigateTo = (path: string) => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 20px;
-  width: 100%;
-  max-width: 1200px;
 }
 
 .feature-card {

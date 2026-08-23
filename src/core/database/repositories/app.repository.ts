@@ -15,6 +15,8 @@ export interface CreateAppInput {
   name: string
   icon?: string | null
   description?: string | null
+  category?: string | null
+  tags?: string[]
   sourceKind: string
   sourceId: string
   sourceVersion?: number | null
@@ -27,6 +29,9 @@ export interface UpdateAppInput {
   name?: string
   icon?: string | null
   description?: string | null
+  category?: string | null
+  tags?: string[]
+  pinned?: number
   channelSession?: number
   channelShare?: number
   channelApi?: number
@@ -35,6 +40,17 @@ export interface UpdateAppInput {
   lastRunAt?: Date | null
   /** 来源工作流的发布版本快照（createFromWorkflow 版本演进时更新） */
   sourceVersion?: number | null
+}
+
+/** 应用列表查询参数 */
+export interface ListAppParams {
+  keyword?: string
+  /** 分类筛选（空=全部） */
+  category?: string
+  /** pinned 筛选（undefined=全部；true=已固定；false=未固定） */
+  pinned?: boolean
+  page: number
+  pageSize: number
 }
 
 export class AppRepository extends BaseRepository<AppEntity, AppRecord> {
@@ -53,6 +69,9 @@ export class AppRepository extends BaseRepository<AppEntity, AppRecord> {
       name: e.name,
       icon: e.icon,
       description: e.description,
+      category: e.category,
+      tags: parseTags(e.tags),
+      pinned: e.pinned ?? 0,
       sourceKind: e.sourceKind,
       sourceId: e.sourceId,
       sourceVersion: e.sourceVersion,
@@ -82,7 +101,8 @@ export class AppRepository extends BaseRepository<AppEntity, AppRecord> {
   }
 
   /** 分页列表（创建时间降序——最新发布的在前；含全局内置） */
-  async listApp(params: { keyword?: string; page: number; pageSize: number }): Promise<{ items: AppRecord[]; total: number }> {
+  /** 分页列表（创建时间降序——最新发布的在前；含全局内置；keyword/category/pinned 筛选） */
+  async listApp(params: ListAppParams): Promise<{ items: AppRecord[]; total: number }> {
     const userId = getCurrentUserId()
     const qb = this.repo
       .createQueryBuilder('a')
@@ -96,11 +116,37 @@ export class AppRepository extends BaseRepository<AppEntity, AppRecord> {
       .addOrderBy('a.id', 'ASC')
       .skip((params.page - 1) * params.pageSize)
       .take(params.pageSize)
-    if (params.keyword?.trim()) {
-      qb.andWhere('(LOWER(a.name) LIKE LOWER(:kw) OR LOWER(a.description) LIKE LOWER(:kw))', { kw: `%${params.keyword.trim()}%` })
+    const kw = params.keyword?.trim()
+    if (kw) {
+      // 名称/描述/分类/标签 模糊匹配（标签为 JSON 数组文本，含该词即命中）
+      qb.andWhere('(LOWER(a.name) LIKE LOWER(:kw) OR LOWER(a.description) LIKE LOWER(:kw) OR LOWER(a.category) LIKE LOWER(:kw) OR LOWER(a.tags) LIKE LOWER(:kw))', { kw: `%${kw}%` })
+    }
+    if (params.category) {
+      qb.andWhere('a.category = :cat', { cat: params.category })
+    }
+    if (params.pinned !== undefined) {
+      qb.andWhere(params.pinned ? 'a.pinned = 1' : '(a.pinned IS NULL OR a.pinned = 0)')
     }
     const [rows, total] = await qb.getManyAndCount()
     return { items: this.toDtoList(rows), total }
+  }
+
+  /** 分类计数（AppList 分类筛选 tabs / 首页分组；含全局内置） */
+  async countByCategory(): Promise<Array<{ category: string; count: number }>> {
+    const userId = getCurrentUserId()
+    const qb = this.repo
+      .createQueryBuilder('a')
+      .select('a.category', 'category')
+      .addSelect('COUNT(*)', 'count')
+      .where("a.category IS NOT NULL AND a.category <> ''")
+    if (userId) {
+      qb.andWhere('(a.user_id = :userId OR a.is_builtin = 1)', { userId })
+    } else {
+      qb.andWhere('(a.user_id IS NULL OR a.is_builtin = 1)')
+    }
+    qb.groupBy('a.category')
+    const rows = await qb.getRawMany()
+    return rows.map(r => ({ category: r.category as string, count: Number(r.count ?? 0) }))
   }
 
   /** 同源（来源类型+来源 id）查询——createFromWorkflow 幂等判定用 */
@@ -117,6 +163,9 @@ export class AppRepository extends BaseRepository<AppEntity, AppRecord> {
       name: data.name,
       icon: data.icon ?? null,
       description: data.description ?? null,
+      category: data.category ?? null,
+      tags: data.tags?.length ? JSON.stringify(data.tags) : null,
+      pinned: 0,
       sourceKind: data.sourceKind,
       sourceId: data.sourceId,
       sourceVersion: data.sourceVersion ?? null,
@@ -133,11 +182,16 @@ export class AppRepository extends BaseRepository<AppEntity, AppRecord> {
   }
 
   async update(id: string, patch: UpdateAppInput): Promise<AppRecord | null> {
-    // 内置应用：只允许启停（enabled），其余字段禁改（全局共享，改影响所有用户）
+    // 内置应用（user_id=NULL 全局共享行）：只允许启停（enabled）与固定（pinned），
+    // 其余字段禁改（全局共享，改影响所有用户）。⚠️ 必须用裸 repo.update——
+    // scoped.update 会附加 user_id 条件，对 user_id=NULL 的内置行永远影响 0 行
     const existing = await this.findById(id)
     if (existing?.isBuiltin) {
-      if (patch.enabled !== undefined) {
-        await this.scoped.update({ id } as FindOptionsWhere<AppEntity>, { enabled: patch.enabled, updatedAt: new Date() } as Partial<AppEntity>)
+      if (patch.enabled !== undefined || patch.pinned !== undefined) {
+        const partial: Partial<AppEntity> = { updatedAt: new Date() }
+        if (patch.enabled !== undefined) partial.enabled = patch.enabled
+        if (patch.pinned !== undefined) partial.pinned = patch.pinned
+        await this.repo.update({ id } as FindOptionsWhere<AppEntity>, partial)
       }
       return this.findById(id)
     }
@@ -145,6 +199,9 @@ export class AppRepository extends BaseRepository<AppEntity, AppRecord> {
     if (patch.name !== undefined) partial.name = patch.name
     if (patch.icon !== undefined) partial.icon = patch.icon
     if (patch.description !== undefined) partial.description = patch.description
+    if (patch.category !== undefined) partial.category = patch.category
+    if (patch.tags !== undefined) partial.tags = patch.tags.length ? JSON.stringify(patch.tags) : null
+    if (patch.pinned !== undefined) partial.pinned = patch.pinned
     if (patch.channelSession !== undefined) partial.channelSession = patch.channelSession
     if (patch.channelShare !== undefined) partial.channelShare = patch.channelShare
     if (patch.channelApi !== undefined) partial.channelApi = patch.channelApi
@@ -177,5 +234,16 @@ export class AppRepository extends BaseRepository<AppEntity, AppRecord> {
       .andWhere('a.channel_share = 1')
       .getOne()
     return e ? this.toDto(e) : null
+  }
+}
+
+/** 解析标签 JSON 数组列（缺省/非法 → []） */
+function parseTags(raw: string | null | undefined): string[] {
+  if (!raw) return []
+  try {
+    const v = JSON.parse(raw)
+    return Array.isArray(v) ? v.map(String) : []
+  } catch {
+    return []
   }
 }

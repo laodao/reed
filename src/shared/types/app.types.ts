@@ -52,6 +52,12 @@ export interface AppRecord {
   name: string
   icon: string | null
   description: string | null
+  /** 应用分类（自由文本，如 新闻资讯/文案写作/视频处理；AppList 分类筛选/首页分组用） */
+  category?: string | null
+  /** 标签列表（DB 存 JSON 数组字符串；搜索/展示用） */
+  tags: string[]
+  /** 固定到首页（1=首页显示快捷入口） */
+  pinned?: number
   sourceKind: string
   sourceId: string
   sourceVersion: number | null

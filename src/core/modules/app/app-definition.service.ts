@@ -26,8 +26,8 @@ export class AppDefinitionService {
     private readonly messages: { deleteByDialogId(dialogId: string): Promise<number> }
   ) {}
 
-  /** 分页列表（聚合 sessionCount：一条 GROUP BY 替代逐条计数；runCount 经 source_id 由前端二次查询或 V2 完善） */
-  async listApps(params: { keyword?: string; page: number; pageSize: number }): Promise<{
+  /** 分页列表（聚合 sessionCount：一条 GROUP BY 替代逐条计数；keyword/category/pinned 筛选） */
+  async listApps(params: { keyword?: string; category?: string; pinned?: boolean; page: number; pageSize: number }): Promise<{
     items: Array<AppRecord & { sessionCount: number }>
     total: number
   }> {
@@ -39,6 +39,30 @@ export class AppDefinitionService {
     })
     const withCount = items.map(app => ({ ...app, sessionCount: counts.get(app.id) ?? 0 }))
     return { items: withCount, total }
+  }
+
+  /** 分类计数（AppList 分类筛选 tabs；含全局内置） */
+  async listAppCategories(): Promise<Array<{ category: string; count: number }>> {
+    return this.apps.countByCategory()
+  }
+
+  /** 固定/取消固定到首页（内置应用同样允许——首页入口是用户个人行为） */
+  async setPinned(id: string, pinned: boolean): Promise<AppRecord | null> {
+    return this.apps.update(id, { pinned: pinned ? 1 : 0 })
+  }
+
+  /** 更新应用元信息（名称/图标/描述/分类/标签；内置应用除 pinned 外禁改由 repository 保证） */
+  async updateMeta(
+    id: string,
+    patch: { name?: string; icon?: string | null; description?: string | null; category?: string | null; tags?: string[] }
+  ): Promise<AppRecord | null> {
+    const update: UpdateAppInput = {}
+    if (patch.name !== undefined) update.name = patch.name
+    if (patch.icon !== undefined) update.icon = patch.icon
+    if (patch.description !== undefined) update.description = patch.description
+    if (patch.category !== undefined) update.category = patch.category
+    if (patch.tags !== undefined) update.tags = patch.tags
+    return this.apps.update(id, update)
   }
 
   async getApp(id: string): Promise<AppRecord | null> {
@@ -62,6 +86,8 @@ export class AppDefinitionService {
     opts?: {
       name?: string
       icon?: string
+      category?: string
+      tags?: string[]
       channelSession?: boolean
       channelShare?: boolean
       channelApi?: boolean
@@ -87,10 +113,12 @@ export class AppDefinitionService {
         const updated = await this.apps.update(current.id, { sourceVersion: def.publishedVersion })
         if (updated) current = updated
       }
-      // 再次发布应用：名称/图标/渠道按本次配置更新（发布配置即生效）
+      // 再次发布应用：名称/图标/分类/标签/渠道按本次配置更新（发布配置即生效）
       const patch: Record<string, unknown> = {}
       if (opts?.name?.trim()) patch.name = opts.name.trim()
       if (opts?.icon !== undefined) patch.icon = opts.icon
+      if (opts?.category !== undefined) patch.category = opts.category?.trim() || null
+      if (opts?.tags !== undefined) patch.tags = opts.tags
       if (hasChannelConfig) {
         for (const [k, v] of Object.entries(channelPatch)) patch[k] = v ? 1 : 0
       }
@@ -106,6 +134,10 @@ export class AppDefinitionService {
       const app = await this.apps.create({
         name: opts?.name?.trim() || def.name,
         icon: opts?.icon ?? null,
+        description: def.description ?? null,
+        // 分类缺省继承工作流分类（发布时可覆盖）；标签发布时可选
+        category: opts?.category?.trim() || def.category || null,
+        tags: opts?.tags ?? [],
         sourceKind: APPLICATION_SOURCE_KINDS.workflow,
         sourceId: definitionId,
         sourceVersion: def.publishedVersion,

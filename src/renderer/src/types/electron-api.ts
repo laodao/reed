@@ -26,11 +26,14 @@ export interface WorkflowSummary {
 
 export interface AppApi {
   app: {
-    list(p: { keyword?: string; page: number; pageSize: number }): Promise<IpcResp<{ items: Array<AppRecord & { sessionCount: number }>; total: number }>>
+    list(p: { keyword?: string; category?: string; pinned?: boolean; page: number; pageSize: number }): Promise<IpcResp<{ items: Array<AppRecord & { sessionCount: number }>; total: number }>>
     get(id: string): Promise<IpcResp<AppRecord | null>>
     getByDefinition(definitionId: string): Promise<IpcResp<AppRecord | null>>
-    createFromWorkflow(p: { definitionId: string; name?: string; icon?: string; channelSession?: boolean; channelShare?: boolean; channelApi?: boolean }): Promise<IpcResp<AppRecord | null>>
+    createFromWorkflow(p: { definitionId: string; name?: string; icon?: string; category?: string; tags?: string[]; channelSession?: boolean; channelShare?: boolean; channelApi?: boolean }): Promise<IpcResp<AppRecord | null>>
     updateChannels(p: { id: string; channelSession?: boolean; channelShare?: boolean; channelApi?: boolean }): Promise<IpcResp<AppRecord | null>>
+    setPinned(id: string, pinned: boolean): Promise<IpcResp<AppRecord | null>>
+    updateMeta(p: { id: string; name?: string; icon?: string | null; description?: string | null; category?: string | null; tags?: string[] }): Promise<IpcResp<AppRecord | null>>
+    categories(): Promise<IpcResp<Array<{ category: string; count: number }>>>
     enableShare(id: string): Promise<IpcResp<AppRecord | null>>
     disableShare(id: string): Promise<IpcResp<AppRecord | null>>
     setEnabled(id: string, enabled: boolean): Promise<IpcResp<AppRecord | null>>

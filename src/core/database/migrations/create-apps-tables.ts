@@ -61,6 +61,39 @@ export async function createAppsTables(ds: DataSource): Promise<void> {
   await ds.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_apps_source ON apps (source_kind, source_id)`)
   await ds.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_apps_share_token ON apps (share_token)`)
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_app_sessions_app ON app_sessions (app_id)`)
+
+  // 幂等补列：分类（自由文本）/ 标签（JSON 数组）/ 固定到首页（0/1）
+  await ensureColumn(ds, 'apps', 'category', vc, isPg)
+  await ensureColumn(ds, 'apps', 'tags', vc, isPg)
+  await ensureColumn(ds, 'apps', 'pinned', isPg ? 'integer DEFAULT 0' : 'INTEGER DEFAULT 0', isPg)
+  await ds.query(`CREATE INDEX IF NOT EXISTS idx_apps_category ON apps (category)`)
+  await ds.query(`CREATE INDEX IF NOT EXISTS idx_apps_pinned ON apps (pinned)`)
+}
+
+/** 幂等补列（SQLite: PRAGMA 查列；PG: information_schema） */
+async function ensureColumn(
+  ds: DataSource,
+  table: string,
+  column: string,
+  colDef: string,
+  isPg: boolean,
+): Promise<void> {
+  if (isPg) {
+    const rows = await ds.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name = $2 AND table_schema = current_schema() LIMIT 1`,
+      [table, column],
+    )
+    if (rows.length === 0) {
+      await ds.query(`ALTER TABLE ${table} ADD COLUMN ${column} ${colDef}`)
+      console.log(`[create-apps-tables] ${table} 补列 ${column}`)
+    }
+    return
+  }
+  const cols = await ds.query(`PRAGMA table_info(${table})`)
+  if (!cols.some((c: { name: string }) => c.name === column)) {
+    await ds.query(`ALTER TABLE ${table} ADD COLUMN ${column} ${colDef}`)
+    console.log(`[create-apps-tables] ${table} 补列 ${column}`)
+  }
 }
 
 async function checkTableExists(ds: DataSource, table: string, isPg: boolean): Promise<boolean> {

@@ -29,6 +29,18 @@ export class AppEntity {
   @Column({ name: 'description', type: 'text', nullable: true })
   description!: string | null
 
+  /** 应用分类（自由文本，如 新闻资讯/文案写作/视频处理；AppList 分类筛选/首页分组用） */
+  @Column({ name: 'category', type: 'varchar', nullable: true })
+  category!: string | null
+
+  /** 标签列表（JSON 数组字符串；搜索/展示用） */
+  @Column({ name: 'tags', type: 'text', nullable: true })
+  tags!: string | null
+
+  /** 固定到首页（1=首页显示快捷入口） */
+  @Column({ name: 'pinned', type: 'integer', default: 0, nullable: true })
+  pinned!: number | null
+
   /** 来源类型（APPLICATION_SOURCE_KINDS） */
   @Column({ name: 'source_kind', type: 'varchar' })
   sourceKind!: string
