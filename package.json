@@ -133,6 +133,7 @@
     "@typescript-eslint/eslint-plugin": "^7.0.2",
     "@typescript-eslint/parser": "^7.0.2",
     "@vitejs/plugin-vue": "^5.0.4",
+    "@vitest/coverage-v8": "^1.6.1",
     "@vue/test-utils": "^2.4.4",
     "autoprefixer": "^10.4.17",
     "electron": "^28.2.3",

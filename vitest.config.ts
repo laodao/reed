@@ -14,6 +14,23 @@ export default defineConfig({
     environmentOptions: {
       happy_dom: {},
     },
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html', 'json-summary'],
+      reportsDirectory: 'coverage',
+      include: [
+        'src/core/modules/workflow/nodes/extra-nodes.ts',
+        'src/core/modules/workflow/nodes/news-nodes.ts',
+        'src/core/modules/workflow/nodes/asset-nodes.ts',
+        'src/shared/types/news-topics.ts',
+        'src/core/database/migrations/create-builtin-apps.ts',
+        'src/core/database/migrations/create-assets-tables.ts',
+        'src/core/database/repositories/asset.repository.ts',
+        'src/core/database/repositories/app.repository.ts',
+        'src/core/database/repositories/workflow-definition.repository.ts',
+        'src/core/modules/assets/asset.service.ts',
+      ],
+    },
   },
   resolve: {
     alias: [

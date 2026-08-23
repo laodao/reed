@@ -1,16 +1,31 @@
 /**
  * 通用资产库 subCategory 细化测试（内置应用模板资产/资产中心二级分类）
  * @module tests/migrations/assets-sub-category
- * @description 验证 createAssetsTables 迁移：新库 CREATE TABLE 含 sub_category 列、
- *              幂等补列逻辑存在（老库 ALTER）；以及 asset.types 的 template 大类。
- *              注：真实 sqlite DataSource 测试依赖 better-sqlite3 native ABI
- *              （Electron 编译 119 vs Node 127），在本 CI 环境不可用，
- *              仓库读写逻辑由 tsc + 端到端验证覆盖。
+ * @description 真实 sqlite DataSource 执行：建表含 sub_category、老库幂等补列、
+ *              AssetRepository subCategory 读写/筛选/统计、内置资产合并查询与禁删。
  */
-import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { DataSource } from 'typeorm'
+import { createAssetsTables } from '@core/database/migrations/create-assets-tables'
+import { AssetEntity } from '@core/database/entities/asset.entity'
+import { AssetRepository } from '@core/database/repositories/asset.repository'
+import { runWithUserAsync } from '@core/context/user-context'
 import { ASSET_CATEGORIES, ASSET_CATEGORY_LABELS, type AssetRecord, type SaveAssetInput } from '@shared/types/asset.types'
+
+async function buildDs(legacy = false): Promise<DataSource> {
+  const ds = new DataSource({ type: 'better-sqlite3', database: ':memory:', entities: [AssetEntity], synchronize: false })
+  await ds.initialize()
+  if (legacy) {
+    // 老库：无 sub_category / is_builtin 列
+    await ds.query(`CREATE TABLE assets (
+      id TEXT PRIMARY KEY, user_id TEXT, category TEXT NOT NULL, name TEXT NOT NULL,
+      description TEXT, tags TEXT, kind TEXT NOT NULL, storage_path TEXT, url TEXT,
+      text_content TEXT, json_content TEXT, mime_type TEXT, size_bytes INTEGER,
+      metadata TEXT, source_type TEXT, source_ref TEXT, created_at DATETIME, updated_at DATETIME
+    )`)
+  }
+  return ds
+}
 
 describe('ASSET_CATEGORIES 增加 template 大类', () => {
   it('template 存在且标签为「模板」', () => {
@@ -30,18 +45,96 @@ describe('ASSET_CATEGORIES 增加 template 大类', () => {
 })
 
 describe('createAssetsTables 迁移（sub_category 列）', () => {
-  const source = readFileSync(resolve(__dirname, '../../../src/core/database/migrations/create-assets-tables.ts'), 'utf-8')
-
-  it('CREATE TABLE assets 含 sub_category 列', () => {
-    expect(source).toMatch(/sub_category\s+\$\{vc\}/)
-    expect(source).toMatch(/CREATE TABLE assets[\s\S]*?sub_category/)
+  it('新库建表含 sub_category 列', async () => {
+    const ds = await buildDs()
+    await createAssetsTables(ds)
+    const cols = (await ds.query(`SELECT name FROM pragma_table_info('assets')`)).map((r: any) => r.name)
+    expect(cols).toContain('sub_category')
+    await ds.destroy()
   })
 
-  it('老库幂等补列（ensureColumn 调用）', () => {
-    expect(source).toContain('ensureColumn(ds, \'assets\', \'sub_category\'')
+  it('老库幂等补列且重跑不报错', async () => {
+    const ds = await buildDs(true)
+    await createAssetsTables(ds)
+    const cols = (await ds.query(`SELECT name FROM pragma_table_info('assets')`)).map((r: any) => r.name)
+    expect(cols).toContain('sub_category')
+    await createAssetsTables(ds) // 幂等
+    await ds.destroy()
+  })
+})
+
+describe('AssetRepository subCategory（真实 sqlite）', () => {
+  let ds: DataSource
+  let repo: AssetRepository
+
+  beforeEach(async () => {
+    ds = await buildDs()
+    await createAssetsTables(ds)
+    // is_builtin 列由 create-builtin-apps 迁移补（本测试聚焦 subCategory，手动补齐）
+    await ds.query(`ALTER TABLE assets ADD COLUMN is_builtin INTEGER DEFAULT 0`)
+    repo = new AssetRepository(ds)
   })
 
-  it('sub_category 索引', () => {
-    expect(source).toContain('idx_assets_sub_category')
+  afterEach(async () => {
+    await ds.destroy()
+  })
+
+  it('create 写入 subCategory，toDto 还原', async () => {
+    const rec = await repo.create({
+      category: 'template',
+      subCategory: '报告模板',
+      name: '早报模板',
+      kind: 'text',
+      textContent: '# {{topics}} 早报\n\n{{llm1.content}}',
+    })
+    expect(rec.subCategory).toBe('报告模板')
+    const got = await repo.findById(rec.id)
+    expect(got?.subCategory).toBe('报告模板')
+    expect(got?.category).toBe('template')
+  })
+
+  it('listAsset 支持 subCategory 筛选', async () => {
+    await repo.create({ category: 'template', subCategory: '报告模板', name: 'A', kind: 'text' })
+    await repo.create({ category: 'template', subCategory: '报告模板', name: 'B', kind: 'text' })
+    await repo.create({ category: 'template', subCategory: '其他', name: 'C', kind: 'text' })
+    const r1 = await repo.listAsset({ category: 'template', subCategory: '报告模板', page: 1, pageSize: 20 })
+    expect(r1.total).toBe(2)
+    const r2 = await repo.listAsset({ category: 'template', page: 1, pageSize: 20 })
+    expect(r2.total).toBe(3)
+    await repo.update(r1.items[0].id, { subCategory: '已归档' })
+    const r3 = await repo.listAsset({ category: 'template', subCategory: '报告模板', page: 1, pageSize: 20 })
+    expect(r3.total).toBe(1)
+  })
+
+  it('countBySubCategory 分组计数', async () => {
+    await repo.create({ category: 'template', subCategory: '报告模板', name: 'A', kind: 'text' })
+    await repo.create({ category: 'template', subCategory: '报告模板', name: 'B', kind: 'text' })
+    await repo.create({ category: 'template', subCategory: '海报模板', name: 'C', kind: 'text' })
+    await repo.create({ category: 'image', subCategory: '项目图', name: 'D', kind: 'file', storagePath: 'x.png' })
+    const stats = await repo.countBySubCategory('template')
+    const bySub = Object.fromEntries(stats.map(s => [s.subCategory ?? '(未分组)', s.count]))
+    expect(bySub['报告模板']).toBe(2)
+    expect(bySub['海报模板']).toBe(1)
+  })
+
+  it('内置资产（is_builtin=1, user_id=NULL）对任意用户可见且禁删', async () => {
+    // 模拟内置资产（迁移插入的行）
+    await ds.query(
+      `INSERT INTO assets (id, user_id, category, sub_category, name, kind, text_content, source_type, is_builtin, created_at, updated_at)
+       VALUES ('builtin_tpl_1', NULL, 'template', '报告模板', '内置模板', 'text', '# 模板', 'builtin', 1, datetime('now'), datetime('now'))`
+    )
+    await runWithUserAsync('user-A', async () => {
+      const got = await repo.findById('builtin_tpl_1')
+      expect(got?.isBuiltin).toBe(true)
+      expect(got?.name).toBe('内置模板')
+      // 禁删
+      const del = await repo.delete('builtin_tpl_1')
+      expect(del).toBe(0)
+      const still = await repo.findById('builtin_tpl_1')
+      expect(still).not.toBeNull()
+      // 列表合并（内置 + 自有）
+      const list = await repo.listAsset({ page: 1, pageSize: 50 })
+      expect(list.items.some(a => a.id === 'builtin_tpl_1')).toBe(true)
+    })
   })
 })
