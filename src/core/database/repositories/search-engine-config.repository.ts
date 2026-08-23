@@ -58,7 +58,7 @@ export class SearchEngineConfigRepository extends BaseRepository<
     const entities = await this.repo
       .createQueryBuilder('c')
       .orderBy('c.is_default', 'DESC')
-      .addOrderBy('c.created_at', 'ASC')
+      .addOrderBy('c.created_at', 'DESC')
       .getMany()
     return this.toDtoList(entities)
   }
@@ -146,7 +146,7 @@ export class SearchEngineConfigRepository extends BaseRepository<
       .createQueryBuilder('c')
       .where('c.is_enabled = :enabled', { enabled: 1 })
       .orderBy('c.is_default', 'DESC')
-      .addOrderBy('c.created_at', 'ASC')
+      .addOrderBy('c.created_at', 'DESC')
       .getMany()
     return this.toDtoList(entities)
   }

@@ -64,7 +64,7 @@ export class ProviderConfigRepository extends BaseRepository<
     const entities = await this.repo
       .createQueryBuilder('p')
       .orderBy('p.is_default', 'DESC')
-      .addOrderBy('p.created_at', 'ASC')
+      .addOrderBy('p.created_at', 'DESC')
       .getMany()
     return this.toDtoList(entities)
   }
@@ -192,7 +192,7 @@ export class ProviderConfigRepository extends BaseRepository<
       .createQueryBuilder('p')
       .where('p.is_enabled = :e', { e: 1 })
       .orderBy('p.is_default', 'DESC')
-      .addOrderBy('p.created_at', 'ASC')
+      .addOrderBy('p.created_at', 'DESC')
       .getMany()
     return this.toDtoList(entities)
   }

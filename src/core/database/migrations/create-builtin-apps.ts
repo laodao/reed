@@ -70,10 +70,15 @@ export async function createBuiltinApps(ds: DataSource): Promise<void> {
 
   // 2. 内置工作流 + 内置应用（模板 JSON 已静态引入，规避打包路径问题）
   const now = new Date().toISOString()
+  // 内置应用按发布顺序错开 created_at：列表统一时间降序时，最新发布的内置（如视频文案提取）在前。
+  // 用固定发布基准（平台出厂时间）而非当前时刻——迁移幂等，避免每次启动刷新时间戳把内置顶到最前
+  const BUILTIN_APP_PUBLISH_BASE = Date.parse('2026-08-01T00:00:00.000Z')
+  const publishedAt = (i: number): string =>
+    new Date(BUILTIN_APP_PUBLISH_BASE + i * 1000).toISOString()
   let insertedDefs = 0
   let insertedApps = 0
 
-  for (const app of BUILTIN_APPS) {
+  for (const [appIndex, app] of BUILTIN_APPS.entries()) {
     const raw = app.raw as { name?: string; description?: string; category?: string | null; graph?: { nodes?: unknown[] }; triggers?: unknown; settings?: unknown }
     const graph = raw.graph
     if (!graph?.nodes?.length) {
@@ -115,13 +120,13 @@ export async function createBuiltinApps(ds: DataSource): Promise<void> {
         `INSERT INTO apps
           (id, user_id, name, icon, description, source_kind, source_id, source_version, channel_session, channel_share, channel_api, enabled, is_builtin, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [app.appId, null, app.name, app.icon, app.description, 'workflow', defId, 1, 1, 0, 0, 1, 1, now, now]
+        [app.appId, null, app.name, app.icon, app.description, 'workflow', defId, 1, 1, 0, 0, 1, 1, publishedAt(appIndex), now]
       )
       insertedApps++
     } else {
       await ds.query(
-        `UPDATE apps SET name = ?, icon = ?, description = ?, source_version = ?, updated_at = ? WHERE id = ?`,
-        [app.name, app.icon, app.description, 1, now, app.appId]
+        `UPDATE apps SET name = ?, icon = ?, description = ?, source_version = ?, created_at = ?, updated_at = ? WHERE id = ?`,
+        [app.name, app.icon, app.description, 1, publishedAt(appIndex), now, app.appId]
       )
     }
   }

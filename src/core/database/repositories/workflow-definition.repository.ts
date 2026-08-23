@@ -179,8 +179,9 @@ export class WorkflowDefinitionRepository extends BaseRepository<
         userId ? '(d.user_id = :userId OR d.is_builtin = 1)' : '(d.user_id IS NULL OR d.is_builtin = 1)',
         userId ? { userId } : {},
       )
-      .orderBy('d.is_builtin', 'ASC') // 内置靠前（展示优先）
-      .addOrderBy('d.updated_at', 'DESC')
+      // 统一时间降序：最近更新的工作流在前（含全局内置）
+      .orderBy('d.updated_at', 'DESC')
+      .addOrderBy('d.id', 'ASC')
       .skip((params.page - 1) * params.pageSize)
       .take(params.pageSize)
     if (params.keyword) {

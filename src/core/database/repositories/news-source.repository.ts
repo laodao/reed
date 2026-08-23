@@ -75,10 +75,11 @@ export class NewsSourceRepository extends BaseRepository<NewsSourceEntity, NewsS
         userId ? '(n.user_id = :userId OR n.is_builtin = 1)' : '(n.user_id IS NULL OR n.is_builtin = 1)',
         userId ? { userId } : {},
       )
+      // 业务分组：主题 → 内置优先 → 手动排序；组内按时间降序（最新添加的源在前）
       .orderBy('n.topic_id', 'ASC')
       .addOrderBy('n.is_builtin', 'DESC')
       .addOrderBy('n.sort_order', 'ASC')
-      .addOrderBy('n.created_at', 'ASC')
+      .addOrderBy('n.created_at', 'DESC')
     if (params.topicId) {
       qb.andWhere('n.topic_id = :topic', { topic: params.topicId })
     }

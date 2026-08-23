@@ -63,7 +63,7 @@ export class KbQaPairRepository extends BaseRepository<KbQaPairEntity, KbQaPairR
     const qb = this.scoped
       .qb('q')
       .where('q.knowledge_base_id = :kbId', { kbId })
-      .orderBy('q.created_at', 'ASC')
+      .orderBy('q.created_at', 'DESC')
     if (keyword?.trim()) {
       qb.andWhere('(LOWER(q.question) LIKE LOWER(:kw) OR LOWER(q.answer) LIKE LOWER(:kw))', {
         kw: `%${keyword.trim()}%`,

@@ -92,7 +92,7 @@ export class AssetRepository extends BaseRepository<AssetEntity, AssetRecord> {
     return e ? this.toDto(e) : null
   }
 
-  /** 分页列表（创建时间倒序；category/subCategory 筛选 + keyword 模糊；含全局内置） */
+  /** 分页列表（创建时间倒序——最新资产在前；含全局内置） */
   async listAsset(params: ListAssetParams): Promise<{ items: AssetRecord[]; total: number }> {
     const userId = getCurrentUserId()
     const qb = this.repo
@@ -101,8 +101,10 @@ export class AssetRepository extends BaseRepository<AssetEntity, AssetRecord> {
         userId ? '(a.user_id = :userId OR a.is_builtin = 1)' : '(a.user_id IS NULL OR a.is_builtin = 1)',
         userId ? { userId } : {},
       )
-      .orderBy('a.is_builtin', 'ASC')
-      .addOrderBy('a.created_at', 'DESC')
+      // 统一时间降序：创建时间倒序；is_builtin 仅作同时间稳定次级（内置资产放后）
+      .orderBy('a.created_at', 'DESC')
+      .addOrderBy('a.is_builtin', 'ASC')
+      .addOrderBy('a.id', 'ASC')
       .skip((params.page - 1) * params.pageSize)
       .take(params.pageSize)
     if (params.category) {

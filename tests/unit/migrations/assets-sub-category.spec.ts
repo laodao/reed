@@ -117,6 +117,17 @@ describe('AssetRepository subCategory（真实 sqlite）', () => {
     expect(bySub['海报模板']).toBe(1)
   })
 
+  it('listAsset 按创建时间降序（最新资产在前，含内置稳定次级）', async () => {
+    const a = await repo.create({ category: 'text', name: '最早', kind: 'text' })
+    const b = await repo.create({ category: 'text', name: '中间', kind: 'text' })
+    const c = await repo.create({ category: 'text', name: '最新', kind: 'text' })
+    void a; void b
+    // 模拟 c 稍后创建
+    await ds.query(`UPDATE assets SET created_at = datetime('now', '+1 minute') WHERE id = '${c.id}'`)
+    const r = await repo.listAsset({ page: 1, pageSize: 20 })
+    expect(r.items.map(i => i.name)).toEqual(['最新', '中间', '最早'])
+  })
+
   it('内置资产（is_builtin=1, user_id=NULL）对任意用户可见且禁删', async () => {
     // 模拟内置资产（迁移插入的行）
     await ds.query(

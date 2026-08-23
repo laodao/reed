@@ -66,8 +66,9 @@ export class RoleRepository extends BaseRepository<RoleEntity, Role> {
     const userId = getCurrentUserId()
     const qb = this.repo
       .createQueryBuilder('r')
+      // 业务分组：内置角色优先；组内按时间降序（最新创建的自有角色在前）
       .orderBy('r.is_builtin', 'DESC')
-      .addOrderBy('r.created_at', 'ASC')
+      .addOrderBy('r.created_at', 'DESC')
     if (userId) {
       qb.where('(r.user_id = :userId OR r.is_builtin = 1)', { userId })
     } else {
