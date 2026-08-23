@@ -145,6 +145,17 @@ async function loadDynamicOptions() {
       }
     } catch { /* 列表失败时退化为手填 */ }
   }
+  if (sources.has('assetCategories')) {
+    try {
+      const resp = await api.assets.listCategories()
+      if (resp.success && resp.data) {
+        dynamicOptions.value.assetCategories = resp.data.map((c: any) => ({
+          label: c.previewMode === 'report' ? `${c.name}（报告渲染）` : c.name,
+          value: c.name,
+        }))
+      }
+    } catch { /* 列表失败时退化为手填 */ }
+  }
 }
 watch(() => props.node.id, loadDynamicOptions, { immediate: true })
 

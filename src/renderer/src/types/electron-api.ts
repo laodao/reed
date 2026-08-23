@@ -8,7 +8,7 @@
 
 import type { AppRecord, AppSessionRecord } from '@shared/types/app.types'
 import type { Message } from '@shared/types/message.types'
-import type { AssetRecord } from '@shared/types/asset.types'
+import type { AssetCategoryDef, AssetPreviewResult, AssetPreviewTemplateOption, AssetRecord } from '@shared/types/asset.types'
 
 /** 统一 IPC 返回（preload invoke 经 ipcBridge 包裹） */
 export interface IpcResp<T> {
@@ -66,6 +66,33 @@ export interface AppApi {
     stats(): Promise<IpcResp<{ total: number; byCategory: Record<string, number> }>>
     subCategoryStats(category: string): Promise<IpcResp<Array<{ subCategory: string | null; count: number }>>>
     openFolder(id: string): Promise<IpcResp<{ opened: boolean }>>
+    /** 分类定义（业务分类实体：驱动资产中心分组与预览） */
+    listCategories(p?: { category?: string }): Promise<IpcResp<AssetCategoryDef[]>>
+    createCategory(p: {
+      name: string
+      code?: string
+      allowedKinds?: string[]
+      allowedCategories?: string[]
+      previewable?: boolean
+      previewMode?: string
+      previewTemplateId?: string | null
+      sortOrder?: number
+    }): Promise<IpcResp<AssetCategoryDef | null>>
+    updateCategory(p: {
+      id: string
+      name?: string
+      code?: string | null
+      allowedKinds?: string[]
+      allowedCategories?: string[]
+      previewable?: boolean
+      previewMode?: string
+      previewTemplateId?: string | null
+      sortOrder?: number
+    }): Promise<IpcResp<AssetCategoryDef | null>>
+    deleteCategory(id: string): Promise<IpcResp<{ deleted: boolean }>>
+    /** 分类驱动预览渲染（早报/周报 → 长图 data URL；Web → HTML） */
+    previewRender(assetId: string): Promise<IpcResp<AssetPreviewResult | null>>
+    previewTemplates(): Promise<IpcResp<AssetPreviewTemplateOption[]>>
   }
   /** 新闻来源库（内置应用 C1 早报 / C2 周报的数据源管理） */
   newsSource: {

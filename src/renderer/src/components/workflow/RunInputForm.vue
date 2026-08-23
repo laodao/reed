@@ -247,6 +247,24 @@ async function loadDynamicOptions(keys: WorkflowStartInput[]): Promise<void> {
       } finally {
         dynamicBusy[src] = false
       }
+    } else if (src === 'assetCategories') {
+      dynamicBusy[src] = true
+      try {
+        const api = (window as never as { electronAPI: { assets: { listCategories: (p?: Record<string, unknown>) => Promise<{ success: boolean; data?: Array<{ name: string; previewMode: string }> }> } } }).electronAPI.assets
+        const resp = await api.listCategories()
+        if (resp.success && resp.data) {
+          dynamicCache[src] = resp.data.map(c => ({
+            label: c.previewMode === 'report' ? `${c.name}（报告渲染）` : c.name,
+            value: c.name,
+          }))
+        } else {
+          dynamicCache[src] = []
+        }
+      } catch {
+        dynamicCache[src] = []
+      } finally {
+        dynamicBusy[src] = false
+      }
     } else {
       dynamicCache[src] = []
     }

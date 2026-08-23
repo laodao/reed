@@ -755,6 +755,22 @@ const electronAPI = {
     stats: () => ipcRenderer.invoke('asset:stats'),
     subCategoryStats: (category: string) => ipcRenderer.invoke('asset:sub-category-stats', { category }),
     openFolder: (id: string) => ipcRenderer.invoke('asset:open-folder', { id }),
+    // 分类定义（业务分类实体：驱动资产中心分组与预览）
+    listCategories: (p?: { category?: string }) => ipcRenderer.invoke('asset:categories-list', p ?? {}),
+    createCategory: (p: {
+      name: string
+      code?: string
+      allowedKinds?: string[]
+      allowedCategories?: string[]
+      previewable?: boolean
+      previewMode?: string
+      previewTemplateId?: string | null
+      sortOrder?: number
+    }) => ipcRenderer.invoke('asset:category-create', p),
+    updateCategory: (p: { id: string; name?: string; code?: string | null; allowedKinds?: string[]; allowedCategories?: string[]; previewable?: boolean; previewMode?: string; previewTemplateId?: string | null; sortOrder?: number }) => ipcRenderer.invoke('asset:category-update', p),
+    deleteCategory: (id: string) => ipcRenderer.invoke('asset:category-delete', { id }),
+    previewRender: (assetId: string) => ipcRenderer.invoke('asset:preview-render', { assetId }),
+    previewTemplates: () => ipcRenderer.invoke('asset:preview-templates'),
   },
 
   // ==================== 新闻来源库（内置应用 C1 早报 / C2 周报的数据源） ====================

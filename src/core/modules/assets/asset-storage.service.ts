@@ -108,6 +108,18 @@ export class AssetStorageService {
     }
   }
 
+  /** 读取文件型资产文本内容（md/html/txt/json 等；文件缺失/读取失败返回空串） */
+  readStoredText(storagePath: string | null | undefined): string {
+    if (!storagePath) return ''
+    try {
+      const abs = this.resolveStoredPath(storagePath)
+      if (!fs.existsSync(abs)) return ''
+      return fs.readFileSync(abs, 'utf-8')
+    } catch {
+      return ''
+    }
+  }
+
   /** 本地内容落盘：data: URI / local-*:// URL / 本地路径 */
   private async saveLocalContent(source: string, category: AssetCategory, name?: string): Promise<SavedFileInfo> {
     const buffer = this.readLocalSourceBuffer(source)

@@ -96,6 +96,7 @@ import { ImageAssetRepository } from '@core/database/repositories/image-asset.re
 import { OSSConfigRepository } from '@core/database/repositories/oss-config.repository'
 import { AssetImageRepository } from '@core/database/repositories/asset-image.repository'
 import { AssetRepository } from '@core/database/repositories/asset.repository'
+import { AssetCategoryRepository } from '@core/database/repositories/asset-category.repository'
 import { NewsSourceRepository } from '@core/database/repositories/news-source.repository'
 
 export class WebDatabaseManager implements ICoreDatabaseManager {
@@ -130,6 +131,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   appSessions: AppSessionRepository | null
   appSessionMessages: AppSessionMessageRepository | null
   assets: AssetRepository | null
+  assetCategories: AssetCategoryRepository | null
   newsSources: NewsSourceRepository | null
   toolCredentials: ToolCredentialRepository | null
   customTools: CustomToolRepository | null
@@ -234,6 +236,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.appSessions = new AppSessionRepository(ds)
     this.appSessionMessages = new AppSessionMessageRepository(ds)
     this.assets = new AssetRepository(ds)
+    this.assetCategories = new AssetCategoryRepository(ds)
     this.newsSources = new NewsSourceRepository(ds)
     this.toolCredentials = new ToolCredentialRepository(ds)
     this.customTools = new CustomToolRepository(ds)

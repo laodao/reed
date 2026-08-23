@@ -29,6 +29,7 @@ import { AppRepository } from '@core/database/repositories/app.repository'
 import { AppSessionRepository } from '@core/database/repositories/app-session.repository'
 import { AppSessionMessageRepository } from '@core/database/repositories/app-session-message.repository'
 import { AssetRepository } from '@core/database/repositories/asset.repository'
+import { AssetCategoryRepository } from '@core/database/repositories/asset-category.repository'
 import { NewsSourceRepository } from '@core/database/repositories/news-source.repository'
 import { ToolCredentialRepository } from '@core/database/repositories/tool-credential.repository'
 import { CustomToolRepository } from '@core/database/repositories/custom-tool.repository'
@@ -144,6 +145,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public appSessions: AppSessionRepository | null = null
   public appSessionMessages: AppSessionMessageRepository | null = null
   public assets: AssetRepository | null = null
+  public assetCategories: AssetCategoryRepository | null = null
   public newsSources: NewsSourceRepository | null = null
   public toolCredentials: ToolCredentialRepository | null = null
   public customTools: CustomToolRepository | null = null
@@ -681,6 +683,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-assets-tables'
     )
     await createAssetsTables(this.dataSource)
+    // 资产分类定义：asset_categories 表 + 内置业务分类种子（驱动资产中心分组与预览）
+    const { createAssetCategories } = await import(
+      '@core/database/migrations/create-asset-categories'
+    )
+    await createAssetCategories(this.dataSource)
     // 内置高频应用（迁移直接内置：8 工作流 + 8 应用 + 默认模板资产，user_id=NULL + is_builtin=1）
     // 依赖 workflow_definitions / apps / assets 三表已建（分别在片7/片1/资产库迁移之后）
     const { createBuiltinApps } = await import(
@@ -4231,6 +4238,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.appSessions = new AppSessionRepository(this.dataSource)
     this.appSessionMessages = new AppSessionMessageRepository(this.dataSource)
     this.assets = new AssetRepository(this.dataSource)
+    this.assetCategories = new AssetCategoryRepository(this.dataSource)
     this.newsSources = new NewsSourceRepository(this.dataSource)
     this.toolCredentials = new ToolCredentialRepository(this.dataSource)
     this.customTools = new CustomToolRepository(this.dataSource)

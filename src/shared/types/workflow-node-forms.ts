@@ -45,7 +45,7 @@ export interface CatalogFormField {
   /** select / select-dynamic 是否多选（提交值为数组） */
   multi?: boolean
   /** select-dynamic 的数据源标识 */
-  source?: 'knowledgeBases' | 'newsTopics' | 'assets' | 'newsSources'
+  source?: 'knowledgeBases' | 'newsTopics' | 'assets' | 'newsSources' | 'assetCategories'
   help?: string
   /** 字段值支持 {{}} 模板的提示标记（表单角标） */
   templateHint?: boolean
@@ -442,7 +442,11 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
         { label: '其他', value: 'other' },
       ],
     }),
-    T('subCategory', '子分类', { help: '资产中心二级分组（如模板场景/文档类型/项目名），可选' }),
+    T('subCategory', '业务分类', {
+      type: 'select-dynamic',
+      source: 'assetCategories',
+      help: '从资产中心已定义的业务分类中选择（可在资产中心「分类管理」添加新分类，定义预览行为）；留空 = 不分组',
+    }),
     T('name', '资产名', { help: '留空按文件名/内容自动生成', placeholder: '例如：今日早报图' }),
     T('tags', '标签', { help: '逗号分隔，资产中心可按标签搜索' }),
     T('description', '描述', { group: '其他' }),

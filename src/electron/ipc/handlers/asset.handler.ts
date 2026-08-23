@@ -9,7 +9,7 @@
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
 import { getAssetService } from '@core/modules/assets'
-import type { SaveAssetInput } from '@shared/types/asset.types'
+import type { SaveAssetCategoryInput, SaveAssetInput, UpdateAssetCategoryInput } from '@shared/types/asset.types'
 import type { IpcResponse } from '@shared/types/ipc.types'
 
 const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
@@ -50,6 +50,40 @@ export function registerAssetHandlers(): void {
   )
   ipcBridge.handle('asset:open-folder', (_e, p: { id: string }) =>
     wrap(() => openAssetFolder(p.id))
+  )
+
+  // ==================== 分类定义（业务分类实体：分组与预览驱动） ====================
+  ipcBridge.handle('asset:categories-list', (_e, p: { category?: string }) =>
+    wrap(() => getAssetService().listAssetCategories((p.category || undefined) as never))
+  )
+  ipcBridge.handle('asset:category-create', (_e, p: SaveAssetCategoryInput) =>
+    wrap(() => getAssetService().createAssetCategory(p))
+  )
+  ipcBridge.handle('asset:category-update', (_e, p: { id: string } & UpdateAssetCategoryInput) =>
+    wrap(() => getAssetService().updateAssetCategory(p.id, {
+      name: p.name,
+      code: p.code,
+      allowedKinds: p.allowedKinds,
+      allowedCategories: p.allowedCategories,
+      previewable: p.previewable,
+      previewMode: p.previewMode,
+      previewTemplateId: p.previewTemplateId,
+      sortOrder: p.sortOrder,
+    }))
+  )
+  ipcBridge.handle('asset:category-delete', (_e, p: { id: string }) =>
+    wrap(async () => ({ deleted: await getAssetService().deleteAssetCategory(p.id) }))
+  )
+  // 分类预览渲染（早报/周报 → 长图；Web 降级 HTML）
+  ipcBridge.handle('asset:preview-render', (_e, p: { assetId: string }) =>
+    wrap(async () => {
+      const record = await getAssetService().getAsset(p.assetId)
+      if (!record) throw new Error('资产不存在')
+      return getAssetService().renderAssetPreview(record)
+    })
+  )
+  ipcBridge.handle('asset:preview-templates', () =>
+    wrap(() => getAssetService().listPreviewTemplates())
   )
 }
 

@@ -43,6 +43,115 @@ export const ASSET_CATEGORY_LABELS: Record<AssetCategory, string> = {
 export const ASSET_CATEGORY_OPTIONS: Array<{ label: string; value: AssetCategory }> =
   Object.entries(ASSET_CATEGORY_LABELS).map(([value, label]) => ({ label, value: value as AssetCategory }))
 
+/**
+ * 资产分类的预览模式（分类定义驱动：资产中心按 subCategory 命中分类定义后，
+ * 按 previewMode 决定预览呈现——auto 沿用按存储形态的旧逻辑）
+ */
+export const ASSET_PREVIEW_MODES = {
+  /** 按存储形态自动推断（缺省） */
+  auto: 'auto',
+  /** 不可预览（仅展示元数据） */
+  none: 'none',
+  /** 纯文本（pre 显示） */
+  text: 'text',
+  /** Markdown 排版（generic 模板渲染 HTML 预览） */
+  markdown: 'markdown',
+  /** HTML 原样显示 */
+  html: 'html',
+  /** JSON 格式化显示 */
+  json: 'json',
+  /** 图片 */
+  image: 'image',
+  /** 音频 */
+  audio: 'audio',
+  /** 视频 */
+  video: 'video',
+  /** 报告：markdown + 业务排版模板 → 长图（桌面端）/ HTML（Web 端降级） */
+  report: 'report',
+} as const
+
+export type AssetPreviewMode = keyof typeof ASSET_PREVIEW_MODES
+
+/** 预览模式中文名（资产中心分类管理 / 节点表单共用） */
+export const ASSET_PREVIEW_MODE_LABELS: Record<AssetPreviewMode, string> = {
+  auto: '按存储形态自动',
+  none: '不可预览',
+  text: '纯文本',
+  markdown: 'Markdown 排版',
+  html: 'HTML 原样',
+  json: 'JSON 格式化',
+  image: '图片',
+  audio: '音频',
+  video: '视频',
+  report: '报告长图（模板渲染）',
+}
+
+/** 分类定义允许的文件形态/大类为空数组时表示不限 */
+export type AssetCategoryAllowed = {
+  kinds: AssetStorageKind[]
+  categories: AssetCategory[]
+}
+
+/** 资产分类定义（asset_categories 表 DTO；业务每增一类即增一条，驱动资产中心分组与预览） */
+export interface AssetCategoryDef {
+  id: string
+  /** 分类名（唯一；与资产 sub_category 匹配） */
+  name: string
+  /** 业务编码（可选，如 morning_report） */
+  code?: string | null
+  /** 允许的存储形态（空=不限） */
+  allowedKinds: AssetStorageKind[]
+  /** 允许的大类（空=不限） */
+  allowedCategories: AssetCategory[]
+  /** 是否可预览 */
+  previewable: boolean
+  /** 预览模式 */
+  previewMode: AssetPreviewMode
+  /** 预览渲染模板 ID（previewMode=report 时必填；对应 DOCUMENT_TEMPLATES key） */
+  previewTemplateId?: string | null
+  sortOrder: number
+  /** 内置分类（禁删禁改，允许复制为自有） */
+  isBuiltin?: boolean
+  /** 该分类下资产数（资产中心 tab 计数；列表接口聚合返回） */
+  count?: number
+  createdAt: string
+  updatedAt: string
+}
+
+/** 新建/更新分类的输入（service 层契约） */
+export interface SaveAssetCategoryInput {
+  name: string
+  code?: string
+  allowedKinds?: AssetStorageKind[]
+  allowedCategories?: AssetCategory[]
+  previewable?: boolean
+  previewMode?: AssetPreviewMode
+  previewTemplateId?: string | null
+  sortOrder?: number
+}
+
+export interface UpdateAssetCategoryInput {
+  name?: string
+  code?: string | null
+  allowedKinds?: AssetStorageKind[]
+  allowedCategories?: AssetCategory[]
+  previewable?: boolean
+  previewMode?: AssetPreviewMode
+  previewTemplateId?: string | null
+  sortOrder?: number
+}
+
+/** 资产渲染预览结果（桌面端 report 类 → 长图；Web 端 → HTML） */
+export type AssetPreviewResult =
+  | { mode: 'image'; url: string; html?: string }
+  | { mode: 'html'; html: string }
+
+/** 分类定义携带的预览渲染模板选项（分类管理表单用；值=DOCUMENT_TEMPLATES key） */
+export interface AssetPreviewTemplateOption {
+  value: string
+  label: string
+}
+
 /** 存储形态 */
 export const ASSET_STORAGE_KINDS = {
   file: 'file',

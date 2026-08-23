@@ -32,6 +32,7 @@ import type { AppRepository } from './repositories/app.repository'
 import type { AppSessionRepository } from './repositories/app-session.repository'
 import type { AppSessionMessageRepository } from './repositories/app-session-message.repository'
 import type { AssetRepository } from './repositories/asset.repository'
+import type { AssetCategoryRepository } from './repositories/asset-category.repository'
 import type { NewsSourceRepository } from './repositories/news-source.repository'
 import type { ToolCredentialRepository } from './repositories/tool-credential.repository'
 import type { CustomToolRepository } from './repositories/custom-tool.repository'
@@ -143,6 +144,8 @@ export interface ICoreDatabaseManager {
   appSessionMessages: AppSessionMessageRepository | null
   /** 通用资产库（工作流「保存资产」节点 / 资产中心） */
   assets: AssetRepository | null
+  /** 资产分类定义（业务分类实体：驱动资产中心分组与预览） */
+  assetCategories: AssetCategoryRepository | null
   /** 新闻来源库（内置应用 C1 早报 / C2 周报的数据源） */
   newsSources: NewsSourceRepository | null
   toolCredentials: ToolCredentialRepository | null

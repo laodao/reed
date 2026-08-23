@@ -112,8 +112,9 @@ export interface WorkflowStartInput {
    * - 'assets:template'：模板资产列表（值=资产 ID；read-asset 节点引用 {{start.键}}）
    * - 'newsTopics'：预置新闻主题列表（值=主题 id；crawl-news 节点 {{start.键}}）
    * - 'knowledgeBases'：用户知识库列表（值=知识库 ID；kb-ingest/kb-qa 节点引用）
+   * - 'assetCategories'：已定义业务分类列表（值=分类名；save-asset 节点 subCategory）
    */
-  source?: 'assets:template' | 'newsTopics' | 'knowledgeBases'
+  source?: 'assets:template' | 'newsTopics' | 'knowledgeBases' | 'assetCategories'
   /**
    * type='model' 时的模型类型过滤（留空=全部可用模型）。
    * 提交值为 { providerConfigId, modelId }，节点配置用 {{start.键.providerConfigId}} / {{start.键.modelId}} 引用。
