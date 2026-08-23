@@ -1,16 +1,14 @@
 <template>
   <div class="story-editor">
-    <!-- 向导模式（默认）：创意 → 人物 → 世界 → 故事线 → 大纲 → 章节 -->
-    <WizardContainer
-      v-if="showWizard"
+    <!-- 对话式工作流（默认入口）：一个对话框 + AI 逐步完成创作 -->
+    <AgentWorkspace
+      v-if="showAgent"
       :project-id="projectId"
       :project-name="project?.name || '加载中...'"
-      :initial-stage="initialStage"
-      :initial-skipped="initialSkipped"
-      @enter-advanced="showWizard = false"
+      @enter-advanced="showAgent = false"
     />
 
-    <!-- 高级模式（保留完整 7 阶段界面，与向导共享同一份数据） -->
+    <!-- 高级模式（保留完整 7 阶段界面，与对话工作流共享同一份数据） -->
     <template v-else>
     <!-- 顶部导航栏 -->
     <div class="editor-header">
@@ -24,9 +22,9 @@
         <span class="project-title">{{ project?.name || '加载中...' }}</span>
       </div>
       <div class="header-right">
-        <el-button @click="showWizard = true">
-          <el-icon><MagicStick /></el-icon>
-          向导
+        <el-button @click="showAgent = true">
+          <el-icon><ChatDotRound /></el-icon>
+          对话
         </el-button>
         <el-button @click="showGraph = true">
           <el-icon><Share /></el-icon>
@@ -151,7 +149,7 @@
 import { ref, computed, onMounted, provide } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, View, Setting, MagicStick, Share } from '@element-plus/icons-vue'
+import { ArrowLeft, View, Setting, ChatDotRound, Share } from '@element-plus/icons-vue'
 import { useTabsStore } from '@/stores/tabs'
 import type { LongWritingProject, StoryStage } from '../../../../shared/types/longwriting.types'
 import type { UserProviderConfig, ProviderTemplate } from '../../../shared/types'
@@ -161,8 +159,8 @@ defineOptions({
   name: 'StoryEditor'
 })
 
-// 向导容器（默认入口）
-import WizardContainer from '@/components/longwriting/wizard/WizardContainer.vue'
+// 对话式工作流（默认入口）
+import AgentWorkspace from '@/components/longwriting/agent/AgentWorkspace.vue'
 // 知识图谱（懒加载：仅打开图谱对话框时才加载组件）
 import { defineAsyncComponent } from 'vue'
 const GraphView = defineAsyncComponent(() => import('@/components/longwriting/graph/GraphView.vue'))
@@ -190,8 +188,8 @@ const project = ref<LongWritingProject | null>(null)
 // 当前阶段
 const currentStage = ref<StoryStage>('overview')
 
-// 向导模式开关（默认进入向导；右上角可切换高级模式）
-const showWizard = ref(true)
+// 对话式工作流开关（默认进入；右上角可切换高级模式）
+const showAgent = ref(true)
 const initialStage = ref<string | undefined>(undefined)
 const initialSkipped = ref<string[] | undefined>(undefined)
 

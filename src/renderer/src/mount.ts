@@ -10,6 +10,7 @@ import { createApp } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
+import 'element-plus/theme-chalk/dark/css-vars.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 
 import App from './App.vue'
@@ -19,6 +20,7 @@ import { useUserStore, type CurrentUser } from './stores/user'
 import './styles/index.scss'
 
 import { appSettings } from './composables/useAppSettings'
+import { initThemeMode } from './composables/useThemeMode'
 
 declare global {
   interface Window {
@@ -53,5 +55,7 @@ export async function mountApp(opts: MountOptions = {}): Promise<void> {
   }
 
   await appSettings.loadSettings()
+  // 主题模式（跟随系统深浅色）在挂载前初始化，避免首屏闪烁
+  await initThemeMode()
   app.mount('#app')
 }

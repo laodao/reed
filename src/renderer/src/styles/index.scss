@@ -498,3 +498,43 @@ body {
     box-shadow: var(--shadow-card-hover);
   }
 }
+
+// ==================== 深色模式（html.dark，跟随系统主题，useThemeMode 切换） ====================
+// Element Plus 组件变量由 element-plus/theme-chalk/dark/css-vars.css 提供（html.dark 生效）。
+// 这里只重映射应用自有变量（--bg-* / --text-* / --border-* / --fill-*），新界面全部用变量即自动适配。
+html.dark {
+  --bg-color: #1d1e1f;
+  --bg-color-page: #151617;
+  --bg-color-hover: #26282a;
+  --bg-color-card: #1d1e1f;
+
+  --text-primary: #e5eaf3;
+  --text-regular: #cfd3dc;
+  --text-secondary: #a3a6ad;
+  --text-placeholder: #8d9095;
+  --text-color-primary: var(--text-primary);
+  --text-color-regular: var(--text-regular);
+  --text-color-secondary: var(--text-secondary);
+  --text-color-placeholder: var(--text-placeholder);
+
+  --border-color: #4c4d4f;
+  --border-color-light: #414243;
+  --border-color-lighter: #363738;
+  --border-color-extra-light: #2b2c2d;
+
+  --fill-color: #303133;
+  --fill-color-light: #262728;
+  --fill-color-lighter: #1f2021;
+  --fill-color-blank: #1d1e1f;
+
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.4);
+  --shadow-card-hover: 0 8px 30px rgba(0, 0, 0, 0.5);
+
+  // 玻璃效果在深色下的底色
+  .glass {
+    background: rgba(30, 31, 32, 0.8);
+  }
+}

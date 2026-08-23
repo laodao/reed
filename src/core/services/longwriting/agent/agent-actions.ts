@@ -121,8 +121,8 @@ async function dispatchAction(ctx: AgentExecutionContext, action: AgentAction): 
   switch (action.type) {
     case 'generate_overview': return executeGenerateOverview(ctx, action)
     case 'generate_characters': return executeGenerateCharacters(ctx, action)
-    case 'generate_world': return executeGenerateWorld(ctx, action)
-    case 'generate_plots': return executeGeneratePlots(ctx, action)
+    case 'generate_world': return executeGenerateWorld(ctx)
+    case 'generate_plots': return executeGeneratePlots(ctx)
     case 'generate_outline': return executeGenerateOutline(ctx, action)
     case 'write_chapter': return executeWriteChapter(ctx, action)
     case 'update_entity': return executeUpdateEntity(ctx, action)
@@ -228,7 +228,7 @@ async function executeGenerateCharacters(ctx: AgentExecutionContext, action: Age
   }
 }
 
-async function executeGenerateWorld(ctx: AgentExecutionContext, action: AgentAction): Promise<AgentActionSummary> {
+async function executeGenerateWorld(ctx: AgentExecutionContext): Promise<AgentActionSummary> {
   const { db, ai, projectId, providerConfigId, modelId } = ctx
   const done: string[] = []
   const changed: any[] = ['world']
@@ -361,7 +361,7 @@ async function executeGenerateWorld(ctx: AgentExecutionContext, action: AgentAct
   }
 }
 
-async function executeGeneratePlots(ctx: AgentExecutionContext, action: AgentAction): Promise<AgentActionSummary> {
+async function executeGeneratePlots(ctx: AgentExecutionContext): Promise<AgentActionSummary> {
   const { db, ai, projectId, providerConfigId, modelId } = ctx
 
   const eventId = makeEventId(projectId, 'plots')
