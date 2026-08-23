@@ -27,3 +27,5 @@ tests/reports/*
 # Claude Code 本地文件：只忽略个人/临时产物，保留 commands/skills 等团队共享文件
 .claude/settings.local.json
 .claude/worktrees/
+# 测试覆盖率报告
+coverage/
