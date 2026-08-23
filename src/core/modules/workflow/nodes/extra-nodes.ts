@@ -166,7 +166,8 @@ const webExtractNode: WorkflowNodeHandler = {
  * 从 HTML 提取页面内链接列表（新闻首页/专栏页 → 条目候选）。
  * - 去重（按 href 归一化后的绝对 URL）
  * - 过滤：空/非 http(s)/javascript:/mailto:/纯锚点/站外忽略（站外保留，便于跨源抓取）
- * - 可见文本为空时用 URL 兜底
+ * - 导航链接过滤：短文本（首页/资讯/更多/登录等菜单项）、纯图标/纯数字、href 指向站点根
+ * - 新闻特征优先：标题较长或含日期/编号特征的链接排在前面（maxLinks 截断时优先保留真实条目）
  * - 最多 maxLinks 条（0 = 不提取）
  */
 export function extractPageLinks(html: string, baseUrl: string, maxLinks: number): Array<{ title: string; url: string }> {
@@ -174,8 +175,13 @@ export function extractPageLinks(html: string, baseUrl: string, maxLinks: number
   const root = parse(html)
   const seen = new Set<string>()
   const out: Array<{ title: string; url: string }> = []
+  let base: URL
+  try {
+    base = new URL(baseUrl)
+  } catch {
+    return []
+  }
   for (const a of root.querySelectorAll('a[href]')) {
-    if (out.length >= maxLinks) break
     const href = (a.getAttribute('href') ?? '').trim()
     if (!href || /^(javascript:|mailto:|tel:|#)/i.test(href)) continue
     let abs: string
@@ -189,9 +195,50 @@ export function extractPageLinks(html: string, baseUrl: string, maxLinks: number
     seen.add(abs)
     const title = (a.text ?? '').replace(/\s+/g, ' ').trim()
     if (!title) continue
+    // 导航链接过滤（短菜单项/纯图标/纯数字）
+    if (isNavLink(title, abs, base)) continue
     out.push({ title: title.slice(0, 200), url: abs })
   }
-  return out
+  // 新闻特征优先：长标题/含日期或编号 → 前置；保持原顺序稳定
+  out.sort((x, y) => newsScore(y) - newsScore(x))
+  return out.slice(0, maxLinks)
+}
+
+/** 导航链接判定：短菜单项 / 纯符号 / 指向站点根路径 */
+function isNavLink(title: string, absUrl: string, base: URL): boolean {
+  const t = title.trim()
+  if (!t) return true
+  // 纯符号/纯数字/纯图标（emoji）
+  if (/^[\d\s·\-—|/\\.,，。、()[\]{}<>《》""''【】★☆●○]+$/.test(t)) return true
+  if (/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]+$/u.test(t)) return true
+  // 单字符且非汉字（如 '1'/'x'/'©'）→ 导航；单汉字（如 '上'/'读'）保留
+  if (t.length === 1 && !/[\u4e00-\u9fff]/.test(t)) return true
+  // 常见导航词（中英）
+  const navWords = ['首页', '资讯', '新闻', '更多', '登录', '注册', '搜索', '关于', '联系我们', '设为首页', '加入收藏',
+    'home', 'news', 'more', 'login', 'sign in', 'sign up', 'register', 'search', 'about', 'contact', 'menu', 'navigation', 'back', 'top']
+  if (navWords.includes(t.toLowerCase())) return true
+  // 指向站点根（首页/栏目根）的短链接
+  try {
+    const u = new URL(absUrl)
+    if (u.origin === base.origin && (u.pathname === '/' || u.pathname === '')) return true
+  } catch {
+    /* 忽略解析失败 */
+  }
+  return false
+}
+
+/** 新闻特征打分：标题越长越像条目；含日期/编号特征加分 */
+function newsScore(link: { title: string; url: string }): number {
+  let score = 0
+  const t = link.title
+  if (t.length >= 8) score += 2
+  else if (t.length >= 4) score += 1
+  // 中文日期（2026年/08-23/8月23日）——位于标题开头（新闻头条常见格式）额外加分
+  if (/\d{4}年|\d{1,2}-\d{1,2}|\d{1,2}月\d{1,2}日/.test(t)) score += 3
+  if (/^\d{4}年|^\d{1,2}-\d{1,2}|^\d{1,2}月\d{1,2}日/.test(t)) score += 2
+  // 编号/序号特征
+  if (/^(第?[一二三四五六七八九十\d]+[章篇期集]|No\.?\s*\d+|#\d+)/.test(t)) score += 2
+  return score
 }
 
 export const EXTRA_NODE_HANDLERS: WorkflowNodeHandler[] = [

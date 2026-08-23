@@ -1227,6 +1227,10 @@ export class WorkflowEngineService {
       }
 
       await this.pump(exec, loopScope)
+      // 异步任务节点：pump 对任务 fire-and-forget（runningTasks>0 时直接返回），
+      // 需等待作用域静默（settleScope resolve）——否则 collectIterationResult
+      // 读到的是 running 状态（输出未落），results 汇聚为 null（C1 早报复现）。
+      await this.waitScopeSettled(exec, loopScope)
       if (exec.suspended) return // 挂起：resumeSuspended 从本迭代续驱
       if (loopScope.failed) break
       if (exec.finished) return
@@ -1260,6 +1264,22 @@ export class WorkflowEngineService {
       }
     }
     await this.driveLoop(exec, driver)
+  }
+
+  /**
+   * 等待作用域静默（所有在飞异步任务完成并 settle）。
+   * pump 对任务 fire-and-forget：runningTasks>0 时 pump 直接返回，任务 .finally 后
+   * 再 pump 直至 settleScope resolve settledAt。此处等待该收敛信号。
+   */
+  private async waitScopeSettled(exec: RunExecution, scope: ScopeState): Promise<void> {
+    while (!exec.finished && !exec.suspended && !scope.failed && scope.runningTasks > 0) {
+      // settledAt 可能尚未创建（任务在飞）；done=true 表示已收敛 → 退出
+      if (scope.settledAt?.done) break
+      await Promise.race([
+        scope.settledAt ? scope.settledAt.promise : new Promise(resolve => setTimeout(resolve, 50)),
+        new Promise(resolve => setTimeout(resolve, 50)),
+      ])
+    }
   }
 
   /** 迭代产出：body 中 loop-back 边源节点的输出（无回边则取 body 汇聚结果） */
