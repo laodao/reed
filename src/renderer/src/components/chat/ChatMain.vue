@@ -22,8 +22,9 @@
       @regenerate="handleMessageRegenerate"
     />
 
-    <!-- 输入区域 -->
+    <!-- 输入区域（key=对话 id：切换助手时重建，清空输入/弹层/附件，避免残留到其它对话） -->
     <ChatInput
+      :key="dialog.id"
       :disabled="isGenerating"
       :current-model="currentModelInfo"
       :all-knowledge-bases="allKnowledgeBases"

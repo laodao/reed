@@ -201,8 +201,8 @@
 
     <!-- 输入区域 -->
     <div class="input-area">
-      <!-- @ 资产选择弹层 -->
-      <div v-if="atMenuVisible" class="at-menu">
+      <!-- @ 资产选择弹层（mousedown.prevent：点击弹层不触发输入框 blur，保证选中事件先于失焦） -->
+      <div v-if="atMenuVisible" class="at-menu" @mousedown.prevent>
         <div class="at-search">
           <el-input v-model="atKeyword" size="small" placeholder="搜索资产名称 / 分类 / 标签" clearable autofocus @input="onAtSearch" @keydown.esc="closeAtMenu" @keydown.enter.prevent="chooseFirstAsset" />
         </div>
@@ -235,6 +235,7 @@
         :disabled="disabled"
         resize="none"
         @keydown="handleKeydown"
+        @blur="handleTextareaBlur"
         class="input-textarea"
       />
 
@@ -283,7 +284,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { Paperclip, Search, Cpu, Collection, VideoPause, Promotion, Close, Document, Check, Setting } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { Message, Attachment, SearchEngineType, SearchEngineConfigId } from '../../../shared/types'
@@ -416,6 +417,38 @@ function closeAtMenu(): void {
   atKeyword.value = ''
 }
 
+/** 输入框失焦：延时检查焦点是否移入弹层（搜索框 autofocus）——在弹层内不关闭，点击外部关闭 */
+function handleTextareaBlur(): void {
+  setTimeout(() => {
+    if (atMenuVisible.value) {
+      const menu = document.querySelector('.at-menu')
+      const active = document.activeElement
+      if (!menu || !menu.contains(active)) {
+        closeAtMenu()
+      }
+    }
+  }, 120)
+}
+
+/** 全局点击关闭：点击弹层外任意处（含输入框失焦、切换助手/页面）→ 关闭 @ 弹层 */
+function handleGlobalMousedown(e: MouseEvent): void {
+  if (atMenuVisible.value) {
+    const target = e.target as HTMLElement | null
+    if (!target || !target.closest('.at-menu')) {
+      closeAtMenu()
+    }
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('mousedown', handleGlobalMousedown)
+  loadSearchEngines()
+})
+
+onUnmounted(() => {
+  document.removeEventListener('mousedown', handleGlobalMousedown)
+})
+
 /** 选中资产：移除输入框中的 @ 词 + 添加资产附件 */
 async function chooseAsset(asset: { id: string; name: string; category: string; subCategory?: string | null }): Promise<void> {
   // 移除 inputContent 末尾的 @搜索词
@@ -482,11 +515,6 @@ async function loadSearchEngines(): Promise<void> {
     console.error('加载搜索引擎配置失败:', error)
   }
 }
-
-// 组件挂载时加载搜索引擎配置
-onMounted(() => {
-  loadSearchEngines()
-})
 
 // 计算属性：快速搜索引擎列表（网页抓取型，过滤掉被禁用的）
 const quickSearchEngines = computed(() => {
