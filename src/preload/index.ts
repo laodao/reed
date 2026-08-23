@@ -757,6 +757,15 @@ const electronAPI = {
     openFolder: (id: string) => ipcRenderer.invoke('asset:open-folder', { id }),
   },
 
+  // ==================== 新闻来源库（内置应用 C1 早报 / C2 周报的数据源） ====================
+  newsSource: {
+    list: (p: { topicId?: string; keyword?: string }) => ipcRenderer.invoke('newsSource:list', p),
+    get: (id: string) => ipcRenderer.invoke('newsSource:get', { id }),
+    create: (p: { topicId: string; name: string; url: string }) => ipcRenderer.invoke('newsSource:create', p),
+    update: (p: { id: string; topicId?: string; name?: string; url?: string; enabled?: boolean }) => ipcRenderer.invoke('newsSource:update', p),
+    delete: (id: string) => ipcRenderer.invoke('newsSource:delete', { id }),
+  },
+
   // ==================== P0 工具模块（片1：第三方 API 工具） ====================
   tools: {
     listCredentials: () => ipcRenderer.invoke('tool:list-credentials'),

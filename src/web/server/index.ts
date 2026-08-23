@@ -385,6 +385,11 @@ async function initDatabase(): Promise<void> {
     '@core/database/migrations/create-builtin-apps'
   )
   await createBuiltinApps(ds)
+  // 新闻来源库：news_sources 表 + 预置 5 主题 × 10 全球 top10 源（与 Electron 端同构）
+  const { createNewsSources } = await import(
+    '@core/database/migrations/create-news-sources'
+  )
+  await createNewsSources(ds)
 
   // 邮件收发：email_accounts 表（synchronize 已建表，此处幂等补索引；与 Electron 端同构）
   const { createEmailTables } = await import(

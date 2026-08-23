@@ -42,8 +42,10 @@ export interface CatalogFormField {
   placeholder?: string
   /** select 的静态选项 */
   options?: Array<{ label: string; value: string | number }>
+  /** select / select-dynamic 是否多选（提交值为数组） */
+  multi?: boolean
   /** select-dynamic 的数据源标识 */
-  source?: 'knowledgeBases' | 'newsTopics' | 'assets'
+  source?: 'knowledgeBases' | 'newsTopics' | 'assets' | 'newsSources'
   help?: string
   /** 字段值支持 {{}} 模板的提示标记（表单角标） */
   templateHint?: boolean
@@ -324,7 +326,8 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
   ],
 
   'crawl-news': [
-    { key: 'topicId', label: '预置主题', type: 'select-dynamic', source: 'newsTopics', help: '选择内置主题自动带出全球媒体源列表（可与自定义 URL 合并）' },
+    { key: 'sourceIds', label: '新闻来源（多选）', type: 'select-dynamic', source: 'newsSources', multi: true, help: '从「设置 → 新闻来源」管理的来源库中多选；与预置主题/自定义 URL 合并去重' },
+    { key: 'topicId', label: '预置主题', type: 'select-dynamic', source: 'newsTopics', help: '选择内置主题自动带出全球媒体源列表（可与来源库/自定义 URL 合并）' },
     T('customUrls', '自定义 URL 列表', {
       type: 'textarea', group: '自定义源',
       placeholder: '["https://...","https://..."] 或每行一个 URL',

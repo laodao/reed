@@ -29,6 +29,7 @@ import { registerAppHandlers } from '@electron/ipc/handlers/app.handler'
 import { registerToolHandlers } from '@electron/ipc/handlers/tool.handler'
 import { registerEmailHandlers } from '@electron/ipc/handlers/email.handler'
 import { registerAssetHandlers } from '@electron/ipc/handlers/asset.handler'
+import { registerNewsSourceHandlers } from '@electron/ipc/handlers/news-source.handler'
 import { registerDiaryHandlers } from '@electron/ipc/handlers/diary.handler'
 import { registerPortraitHandlers } from '@electron/ipc/handlers/portrait.handler'
 import { registerEpisodeProductionHandlers } from '@electron/ipc/handlers/episode-production'
@@ -58,6 +59,7 @@ export async function registerAllWebChannels(): Promise<void> {
   registerToolHandlers()
   registerEmailHandlers()
   registerAssetHandlers()
+  registerNewsSourceHandlers()
   registerDiaryHandlers()
   registerPortraitHandlers()
   registerEpisodeProductionHandlers()

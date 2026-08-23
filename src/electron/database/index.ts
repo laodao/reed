@@ -29,6 +29,7 @@ import { AppRepository } from '@core/database/repositories/app.repository'
 import { AppSessionRepository } from '@core/database/repositories/app-session.repository'
 import { AppSessionMessageRepository } from '@core/database/repositories/app-session-message.repository'
 import { AssetRepository } from '@core/database/repositories/asset.repository'
+import { NewsSourceRepository } from '@core/database/repositories/news-source.repository'
 import { ToolCredentialRepository } from '@core/database/repositories/tool-credential.repository'
 import { CustomToolRepository } from '@core/database/repositories/custom-tool.repository'
 import { EmailAccountRepository } from '@core/database/repositories/email-account.repository'
@@ -143,6 +144,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public appSessions: AppSessionRepository | null = null
   public appSessionMessages: AppSessionMessageRepository | null = null
   public assets: AssetRepository | null = null
+  public newsSources: NewsSourceRepository | null = null
   public toolCredentials: ToolCredentialRepository | null = null
   public customTools: CustomToolRepository | null = null
   public emailAccounts: EmailAccountRepository | null = null
@@ -685,6 +687,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-builtin-apps'
     )
     await createBuiltinApps(this.dataSource)
+    // 新闻来源库：news_sources 表 + 预置 5 主题 × 10 全球 top10 源（内置应用 C1/C2 数据源）
+    const { createNewsSources } = await import(
+      '@core/database/migrations/create-news-sources'
+    )
+    await createNewsSources(this.dataSource)
     // P0 工具：tool_credentials / custom_tools 表（幂等，双语种）
     const { createToolTables } = await import(
       '@core/database/migrations/create-tool-tables'
@@ -4224,6 +4231,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.appSessions = new AppSessionRepository(this.dataSource)
     this.appSessionMessages = new AppSessionMessageRepository(this.dataSource)
     this.assets = new AssetRepository(this.dataSource)
+    this.newsSources = new NewsSourceRepository(this.dataSource)
     this.toolCredentials = new ToolCredentialRepository(this.dataSource)
     this.customTools = new CustomToolRepository(this.dataSource)
     this.emailAccounts = new EmailAccountRepository(this.dataSource)

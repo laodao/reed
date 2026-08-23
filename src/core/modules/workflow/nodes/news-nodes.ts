@@ -16,11 +16,16 @@ import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
 import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from '@shared/types/workflow.types'
 import { extractPageLinks } from './extra-nodes'
+import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 
 const UA = 'Mozilla/5.0 (compatible; the-bot-workflow)'
 
-/** 解析输入源列表：预置主题 + 自定义 URL（去重） */
-export function resolveSourceUrls(topicId: string | undefined, customUrlsRaw: unknown): Array<{ name: string; url: string }> {
+/** 解析输入源列表：预置主题 + 新闻来源库（sourceIds 多选）+ 自定义 URL（去重） */
+export async function resolveSourceUrls(
+  topicId: string | undefined,
+  sourceIdsRaw: unknown,
+  customUrlsRaw: unknown,
+): Promise<Array<{ name: string; url: string }>> {
   const out: Array<{ name: string; url: string }> = []
   const seen = new Set<string>()
   const push = (name: string, url: string) => {
@@ -29,10 +34,25 @@ export function resolveSourceUrls(topicId: string | undefined, customUrlsRaw: un
     seen.add(u)
     out.push({ name, url: u })
   }
+  // 1. 新闻来源库（sourceIds 多选：用户设置页管理，工作流中直接选）
+  const ids = parseSourceIds(sourceIdsRaw)
+  if (ids.length > 0) {
+    try {
+      const db = getCoreDatabaseManager()
+      if (db.newsSources) {
+        const rows = await db.newsSources.listByIds(ids)
+        for (const r of rows) push(r.name, r.url)
+      }
+    } catch (e) {
+      // 来源库不可用时降级（不影响预置主题/自定义 URL 路径）
+      console.warn('[crawl-news] 新闻来源库读取失败（降级）', e)
+    }
+  }
+  // 2. 预置主题源（topicId）
   for (const s of getNewsTopicSources((topicId ?? '').trim())) {
     push(s.name, s.url)
   }
-  // 自定义 URL：JSON 数组（string[] 或 [{name,url}]）或逗号分隔
+  // 3. 自定义 URL（JSON 数组（string[] 或 [{name,url}]）或逗号分隔）
   const raw = customUrlsRaw
   if (typeof raw === 'string') {
     const trimmed = raw.trim()
@@ -67,6 +87,23 @@ export function resolveSourceUrls(topicId: string | undefined, customUrlsRaw: un
   return out
 }
 
+/** 解析 sourceIds：字符串数组（JSON/逗号分隔）或数组 */
+function parseSourceIds(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw.map(String).filter(Boolean)
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim()
+    if (!trimmed) return []
+    try {
+      const parsed = JSON.parse(trimmed)
+      if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean)
+    } catch {
+      // 非 JSON → 逗号分隔
+      return trimmed.split(/[,，]/).map(s => s.trim()).filter(Boolean)
+    }
+  }
+  return []
+}
+
 const crawlNewsNode: WorkflowNodeHandler = {
   type: 'crawl-news',
   controlKind: 'task',
@@ -77,20 +114,21 @@ const crawlNewsNode: WorkflowNodeHandler = {
     { key: 'failedSources', type: 'json', desc: '抓取失败的源 [{ name, url, error }]' },
   ],
   validateConfig(config) {
-    const cfg = config as { topicId?: string; customUrls?: string }
-    if (!cfg.topicId && !stringifyValue(cfg.customUrls).trim()) {
-      return ['需要选择预置主题（topicId）或提供自定义 URL 列表（customUrls）']
+    const cfg = config as { topicId?: string; sourceIds?: string; customUrls?: string }
+    if (!cfg.topicId && !stringifyValue(cfg.sourceIds).trim() && !stringifyValue(cfg.customUrls).trim()) {
+      return ['需要选择新闻来源（sourceIds）、预置主题（topicId）或提供自定义 URL（customUrls）']
     }
     return []
   },
   async execute(ctx: WorkflowNodeContext) {
     const cfg = ctx.config as {
       topicId?: string
+      sourceIds?: string
       customUrls?: string
       maxLinks?: number
       maxSources?: number
     }
-    const sources = resolveSourceUrls(cfg.topicId, cfg.customUrls)
+    const sources = await resolveSourceUrls(cfg.topicId, cfg.sourceIds, cfg.customUrls)
     if (sources.length === 0) {
       return { status: 'failed', error: '没有可抓取的来源（预置主题为空或自定义 URL 为空）', retryable: false }
     }
