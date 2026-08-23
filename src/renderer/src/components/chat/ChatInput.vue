@@ -148,8 +148,25 @@
         :key="file.id"
         class="attachment-item"
       >
+        <!-- 资产引用（@ 资产） -->
+        <div v-if="file.assetId" class="attachment-asset">
+          <span class="asset-icon">{{ assetIcon(file.assetCategory) }}</span>
+          <div class="file-info">
+            <span class="file-name" :title="file.fileName">{{ file.fileName }}</span>
+            <span class="file-size">{{ assetCategoryLabel(file.assetCategory) }}</span>
+          </div>
+          <el-button
+            type="danger"
+            size="small"
+            circle
+            class="remove-btn"
+            @click="removeAttachment(file.id)"
+          >
+            <el-icon><Close /></el-icon>
+          </el-button>
+        </div>
         <!-- 图片预览 -->
-        <div v-if="file.type === 'image'" class="attachment-image">
+        <div v-else-if="file.type === 'image'" class="attachment-image">
           <img :src="file.previewUrl" :alt="file.fileName" />
           <div class="attachment-overlay">
             <el-button
@@ -184,11 +201,37 @@
 
     <!-- 输入区域 -->
     <div class="input-area">
+      <!-- @ 资产选择弹层 -->
+      <div v-if="atMenuVisible" class="at-menu">
+        <div class="at-search">
+          <el-input v-model="atKeyword" size="small" placeholder="搜索资产名称 / 分类 / 标签" clearable autofocus @input="onAtSearch" @keydown.esc="closeAtMenu" @keydown.enter.prevent="chooseFirstAsset" />
+        </div>
+        <div class="at-list" v-loading="atLoading">
+          <div
+            v-for="asset in atOptions"
+            :key="asset.id"
+            class="at-item"
+            @click="chooseAsset(asset)"
+          >
+            <span class="at-icon">{{ assetIcon(asset.category) }}</span>
+            <div class="at-info">
+              <div class="at-name">{{ asset.name }}</div>
+              <div class="at-meta">{{ assetCategoryLabel(asset.category) }}<template v-if="asset.subCategory"> · {{ asset.subCategory }}</template></div>
+            </div>
+          </div>
+          <div v-if="!atLoading && atOptions.length === 0" class="at-empty">
+            <span>没有匹配的资产——资产中心「保存资产」后即可在此引用</span>
+            <el-button text type="primary" size="small" @click="goAssets">去资产管理</el-button>
+          </div>
+        </div>
+        <div class="at-hint">输入 <kbd>@</kbd> 引用资产，继续输入过滤；<kbd>Esc</kbd> 关闭</div>
+      </div>
+
       <el-input
         v-model="inputContent"
         type="textarea"
         :rows="3"
-        :placeholder="disabled ? '请等待 AI 响应完成...' : '输入消息...'"
+        :placeholder="disabled ? '请等待 AI 响应完成...' : '输入消息，@ 引用资产...'"
         :disabled="disabled"
         resize="none"
         @keydown="handleKeydown"
@@ -247,8 +290,8 @@ import type { Message, Attachment, SearchEngineType, SearchEngineConfigId } from
 import type { SearchEngineTemplate, UserSearchEngineConfig } from '../../../shared/types/search-engine.types'
 import type { DialogWebSearchConfig } from '../../../shared/types/dialog.types'
 
-// 扩展的附件类型（包含预览 URL）
-interface AttachmentWithPreview extends Attachment {
+// 扩展的附件类型（包含预览 URL；资产引用附件带 assetId/assetCategory）
+type AttachmentWithPreview = Attachment & {
   previewUrl?: string
 }
 
@@ -265,6 +308,8 @@ const props = defineProps<{
   currentModel?: {
     supportsThinking?: boolean
     supportsWebSearch?: boolean
+    /** 多模态（vision）模型可接收图片输入（@ 图片资产校验用） */
+    supportsVision?: boolean
   }
   /** 所有可用的知识库列表 */
   allKnowledgeBases?: Array<{
@@ -300,6 +345,113 @@ const inputContent = ref('')
 
 // 附件列表
 const attachments = ref<AttachmentWithPreview[]>([])
+
+// ==================== @ 引用资产（AI 对话引用资产中心成果） ====================
+/** @ 弹层可见 */
+const atMenuVisible = ref(false)
+/** @ 后搜索词 */
+const atKeyword = ref('')
+/** 资产搜索结果 */
+const atOptions = ref<Array<{ id: string; name: string; category: string; subCategory?: string | null }>>([])
+const atLoading = ref(false)
+let atSearchTimer: ReturnType<typeof setTimeout> | null = null
+
+/** 资产大类图标 */
+function assetIcon(category?: string): string {
+  switch (category) {
+    case 'image': return '🖼️'
+    case 'audio': return '🎵'
+    case 'video': return '🎬'
+    case 'json': return '📊'
+    case 'template': return '📋'
+    case 'document': return '📄'
+    case 'text': return '📝'
+    default: return '📦'
+  }
+}
+
+/** 资产大类中文名 */
+function assetCategoryLabel(category?: string): string {
+  const labels: Record<string, string> = { image: '图片', audio: '音频', video: '视频', document: '文档', text: '文本', json: '数据', template: '模板', other: '其他' }
+  return labels[category ?? ''] ?? '资产'
+}
+
+/** 监听输入：检测末尾 @ 触发资产选择（@ 后无空格即激活，支持继续输入过滤） */
+watch(inputContent, (v) => {
+  const atIdx = v.lastIndexOf('@')
+  if (atIdx >= 0 && !v.slice(atIdx + 1).includes(' ')) {
+    atKeyword.value = v.slice(atIdx + 1)
+    atMenuVisible.value = true
+    scheduleAssetSearch(atKeyword.value)
+  } else {
+    atMenuVisible.value = false
+  }
+})
+
+/** 防抖搜索资产 */
+function scheduleAssetSearch(keyword: string): void {
+  if (atSearchTimer) clearTimeout(atSearchTimer)
+  atSearchTimer = setTimeout(() => void loadAssetOptions(keyword), 200)
+}
+
+async function loadAssetOptions(keyword: string): Promise<void> {
+  atLoading.value = true
+  try {
+    const api = (window as unknown as { electronAPI: { assets: { list: (p: Record<string, unknown>) => Promise<{ success: boolean; data?: { items?: Array<{ id: string; name: string; category: string; subCategory?: string | null }> } }> } } }).electronAPI.assets
+    const resp = await api.list({ keyword: keyword || undefined, page: 1, pageSize: 20 })
+    atOptions.value = resp.success ? (resp.data?.items ?? []) : []
+  } catch {
+    atOptions.value = []
+  } finally {
+    atLoading.value = false
+  }
+}
+
+function onAtSearch(): void {
+  scheduleAssetSearch(atKeyword.value)
+}
+
+function closeAtMenu(): void {
+  atMenuVisible.value = false
+  atKeyword.value = ''
+}
+
+/** 选中资产：移除输入框中的 @ 词 + 添加资产附件 */
+async function chooseAsset(asset: { id: string; name: string; category: string; subCategory?: string | null }): Promise<void> {
+  // 移除 inputContent 末尾的 @搜索词
+  const atIdx = inputContent.value.lastIndexOf('@')
+  if (atIdx >= 0) {
+    inputContent.value = inputContent.value.slice(0, atIdx)
+  }
+
+  // 多模态校验提醒：图片/音频/视频资产需要模型支持
+  if ((asset.category === 'image' || asset.category === 'audio' || asset.category === 'video')
+    && !props.currentModel?.supportsVision) {
+    ElMessage.warning(`「${asset.name}」是${assetCategoryLabel(asset.category)}资产，当前模型可能无法解析——建议切换到支持多模态的模型（如 qwen-vl / gpt-4o）`)
+  }
+
+  attachments.value.push({
+    id: `asset-${asset.id}`,
+    type: 'document',
+    fileName: asset.name,
+    filePath: '',
+    fileSize: 0,
+    mimeType: '',
+    assetId: asset.id,
+    assetCategory: asset.category,
+  })
+  closeAtMenu()
+}
+
+/** Enter 快速选择第一个结果 */
+function chooseFirstAsset(): void {
+  if (atOptions.value.length > 0) void chooseAsset(atOptions.value[0])
+}
+
+function goAssets(): void {
+  closeAtMenu()
+  window.location.hash = '/assets'
+}
 
 // 搜索引擎相关
 const searchEngineSelection = ref<SearchEngineSelection | null>(null)
@@ -545,14 +697,15 @@ function handleSend(): void {
   // 必须有内容或附件
   if (!content && attachments.value.length === 0) return
 
-  // 构建附件数据（不包含 previewUrl）
+  // 构建附件数据（不包含 previewUrl；保留资产引用字段）
   const messageAttachments = attachments.value.map(a => ({
     id: a.id,
     type: a.type,
     fileName: a.fileName,
     filePath: a.filePath,
     fileSize: a.fileSize,
-    mimeType: a.mimeType
+    mimeType: a.mimeType,
+    ...(a.assetId ? { assetId: a.assetId, assetCategory: a.assetCategory } : {})
   }))
 
   emit('send', content, {
@@ -724,8 +877,150 @@ function handleKeydown(event: KeyboardEvent): void {
   }
 }
 
+// 资产引用附件（@ 资产）
+.attachment-asset {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--el-color-primary-light-9);
+  border: 1px solid var(--el-color-primary-light-5);
+  border-radius: 8px;
+  min-width: 180px;
+  max-width: 250px;
+
+  .asset-icon {
+    font-size: 22px;
+  }
+
+  .file-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .file-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: #1e293b;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .file-size {
+    font-size: 11px;
+    color: var(--el-color-primary);
+  }
+
+  .remove-btn {
+    flex-shrink: 0;
+  }
+}
+
 .input-area {
   position: relative;
+}
+
+// @ 资产选择弹层
+.at-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  z-index: 30;
+  overflow: hidden;
+}
+
+.at-search {
+  padding: 8px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.at-list {
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.at-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+
+  &:hover {
+    background: var(--el-color-primary-light-9);
+  }
+}
+
+.at-icon {
+  font-size: 20px;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8fafc;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.at-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.at-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.at-meta {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 1px;
+}
+
+.at-empty {
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: #94a3b8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.at-hint {
+  padding: 6px 10px;
+  font-size: 11px;
+  color: #94a3b8;
+  border-top: 1px solid #f1f5f9;
+
+  kbd {
+    display: inline-block;
+    padding: 1px 5px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: inherit;
+  }
 }
 
 .input-textarea {

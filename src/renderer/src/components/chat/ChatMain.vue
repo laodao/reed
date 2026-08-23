@@ -132,14 +132,16 @@ const allKnowledgeBases = computed(() => {
 })
 
 // 获取模型能力信息
-function getModelCapabilities(providerConfig: UserProviderConfig, modelId: string): { supportsThinking?: boolean; supportsWebSearch?: boolean } | undefined {
+function getModelCapabilities(providerConfig: UserProviderConfig, modelId: string): { supportsThinking?: boolean; supportsWebSearch?: boolean; supportsVision?: boolean } | undefined {
   // 从 models 中查找
   if (providerConfig.models) {
     const model = providerConfig.models.find(m => m.id === modelId)
     if (model) {
       return {
         supportsThinking: model.supportsThinking,
-        supportsWebSearch: model.supportsWebSearch
+        supportsWebSearch: model.supportsWebSearch,
+        // 多模态（vision）模型可接收图片输入（AI 对话 @ 图片资产校验用）
+        supportsVision: model.type === 'multimodal'
       }
     }
   }

@@ -54,6 +54,10 @@ export interface Attachment {
   filePath: string
   fileSize: number
   mimeType: string
+  /** 引用资产 ID（AI 对话 @ 资产；由 FileService 经资产服务解析内容；缺省为本地文件） */
+  assetId?: string
+  /** 资产大类（image/audio/video/text/json/template；@ 资产时填充，用于多模态能力校验与展示） */
+  assetCategory?: string
 }
 
 /**

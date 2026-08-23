@@ -131,7 +131,8 @@ export class ChatService {
         dialog,
         request.dialogId,
         dbManager,
-        { content: request.content, attachments: request.attachments }
+        { content: request.content, attachments: request.attachments },
+        effectiveModelId
       )
 
       // 保存用户消息到数据库
@@ -438,12 +439,14 @@ export class ChatService {
    * @param dialogId 对话 ID
    * @param dbManager 数据库管理器
    * @param currentMessage 当前消息（可选，用于处理当前发送的附件）
+   * @param modelId 当前模型 ID（多模态能力校验：图片附件需 vision 模型）
    */
   private static async buildContext(
     dialog: Dialog,
     dialogId: string,
     dbManager: any,
-    currentMessage?: { content: string; attachments?: Attachment[] }
+    currentMessage?: { content: string; attachments?: Attachment[] },
+    modelId?: string
   ): Promise<ChatContext> {
     // 获取上下文配置
     const maxMessages = dialog.contextConfig?.maxMessages || 20
@@ -511,6 +514,16 @@ export class ChatService {
           currentAttachmentContents = await FileService.readAttachments(currentMessage.attachments)
         } catch (error) {
           console.error('[ChatService.buildContext] 读取当前消息附件失败:', error)
+        }
+      }
+
+      // 多模态能力校验：图片附件（含 @ 图片资产）要求模型支持 vision
+      if (currentAttachmentContents?.some(a => a.type === 'image')) {
+        const { detectVisionSupport } = await import('@core/services/model-detector.service')
+        if (modelId && !detectVisionSupport(modelId)) {
+          throw new Error(
+            '当前模型不支持图片输入，无法引用图片资产——请切换到支持多模态的模型（如 qwen-vl / gpt-4o），或移除图片附件'
+          )
         }
       }
 

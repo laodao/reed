@@ -7,6 +7,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import type { Attachment, AttachmentContent, MessageContent, MessageContentBlock } from '@shared/types'
+import { getAssetService } from '@core/modules/assets/asset-registry'
 
 /**
  * 文件服务
@@ -40,10 +41,15 @@ export class FileService {
 
   /**
    * 读取单个附件内容
-   * @param attachment 附件信息
+   * @param attachment 附件信息（含资产引用时从资产中心解析）
    * @returns 附件内容
    */
   static async readAttachment(attachment: Attachment): Promise<AttachmentContent> {
+    // 资产引用（AI 对话 @ 资产）：从资产中心解析内容
+    if (attachment.assetId) {
+      return this.readAssetAttachment(attachment)
+    }
+
     const { id, type, fileName, filePath, mimeType } = attachment
 
     // 检查文件是否存在
@@ -70,6 +76,62 @@ export class FileService {
     }
 
     return content
+  }
+
+  /**
+   * 读取资产引用为附件内容：
+   * - 图片资产（file 型 + image 大类）→ image（base64 data，需模型支持 vision）
+   * - 音频/视频资产 → document + 元信息文本（对话模型无法直接解析音视频内容）
+   * - 文本/JSON/模板资产 → document + 内容文本
+   */
+  private static async readAssetAttachment(attachment: Attachment): Promise<AttachmentContent> {
+    const asset = await getAssetService().getAsset(attachment.assetId!)
+    if (!asset) throw new Error(`资产不存在: ${attachment.assetId}`)
+
+    // 图片资产：读落盘文件 → image 附件
+    if (asset.category === 'image' && asset.kind === 'file' && asset.storagePath) {
+      const abs = getAssetService().resolveAssetPath(asset)
+      const buffer = fs.readFileSync(abs)
+      return {
+        id: attachment.id,
+        type: 'image',
+        fileName: asset.name,
+        mimeType: asset.mimeType ?? 'image/png',
+        base64Data: buffer.toString('base64'),
+      }
+    }
+
+    // 音频/视频资产：仅元信息（对话模型无法直接解析音视频内容）
+    if (asset.category === 'audio' || asset.category === 'video') {
+      const label = asset.category === 'audio' ? '音频' : '视频'
+      return {
+        id: attachment.id,
+        type: 'document',
+        fileName: asset.name,
+        mimeType: asset.mimeType ?? '',
+        base64Data: '',
+        textContent: `[${label}资产：${asset.name}（当前对话模型无法直接解析${label}内容，仅提供资产元信息）]`,
+      }
+    }
+
+    // 文本类资产（text/json/template）：内容文本（json 取 jsonContent）
+    let text = asset.textContent ?? ''
+    if (!text && asset.kind === 'json') text = asset.jsonContent ?? ''
+    if (!text && asset.kind === 'file' && asset.storagePath) {
+      try {
+        text = fs.readFileSync(getAssetService().resolveAssetPath(asset), 'utf-8')
+      } catch {
+        text = ''
+      }
+    }
+    return {
+      id: attachment.id,
+      type: 'document',
+      fileName: asset.name,
+      mimeType: asset.mimeType ?? 'text/plain',
+      base64Data: '',
+      textContent: text || `[资产：${asset.name}]`,
+    }
   }
 
   /**

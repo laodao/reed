@@ -114,9 +114,11 @@
             </div>
             <!-- 文档附件 -->
             <div v-else class="attachment-item">
-              <el-icon><Document /></el-icon>
+              <span v-if="attachment.assetId" class="attachment-asset-icon">{{ assetIcon(attachment.assetCategory) }}</span>
+              <el-icon v-else><Document /></el-icon>
               <span class="attachment-name">{{ attachment.fileName }}</span>
-              <span class="attachment-size">{{ formatFileSize(attachment.fileSize) }}</span>
+              <span v-if="attachment.assetId" class="attachment-size">{{ assetCategoryLabel(attachment.assetCategory) }} 资产</span>
+              <span v-else class="attachment-size">{{ formatFileSize(attachment.fileSize) }}</span>
             </div>
           </template>
         </div>
@@ -792,6 +794,26 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
+// 资产大类图标（@ 资产附件展示）
+function assetIcon(category?: string): string {
+  switch (category) {
+    case 'image': return '🖼️'
+    case 'audio': return '🎵'
+    case 'video': return '🎬'
+    case 'json': return '📊'
+    case 'template': return '📋'
+    case 'document': return '📄'
+    case 'text': return '📝'
+    default: return '📦'
+  }
+}
+
+// 资产大类中文名（@ 资产附件展示）
+function assetCategoryLabel(category?: string): string {
+  const labels: Record<string, string> = { image: '图片', audio: '音频', video: '视频', document: '文档', text: '文本', json: '数据', template: '模板', other: '其他' }
+  return labels[category ?? ''] ?? '资产'
 }
 
 // 获取模型名称
@@ -1962,6 +1984,11 @@ function showKnowledgeBaseSnippet(ref: { documentId: string; documentName: strin
   .el-icon {
     font-size: 18px;
     color: var(--el-color-primary);
+  }
+
+  .attachment-asset-icon {
+    font-size: 18px;
+    line-height: 1;
   }
 
   .attachment-name {
