@@ -230,6 +230,28 @@ export class WorkflowDefinitionRepository extends BaseRepository<
     return this.getById(id)
   }
 
+  /**
+   * 仅更新触发器与调度状态（应用详情页「配置定时」入口；内置定义同样允许——
+   * 定时是全局调度配置，不触及其他字段，内置定义的图/名称等仍禁改）。
+   * ⚠️ 内置行 user_id=NULL，scoped 更新附加 user_id 条件会命中 0 行 → 用裸 repo.update；
+   *    调用方必须先经 getById 确认该定义对当前用户可见（自己的或内置）。
+   */
+  async updateTriggersOnly(
+    id: string,
+    patch: { triggers: WorkflowTrigger[]; nextFireAt?: Date | null; lastFireAt?: Date | null }
+  ): Promise<WorkflowDefinitionRecord | null> {
+    const existing = await this.getById(id)
+    if (!existing) return null
+    const partial: Partial<WorkflowDefinitionEntity> = {
+      triggers: JSON.stringify(patch.triggers),
+      updatedAt: new Date(),
+    }
+    if (patch.nextFireAt !== undefined) partial.nextFireAt = patch.nextFireAt
+    if (patch.lastFireAt !== undefined) partial.lastFireAt = patch.lastFireAt
+    await this.repo.update({ id } as FindOptionsWhere<WorkflowDefinitionEntity>, partial)
+    return this.getById(id)
+  }
+
   async delete(id: string): Promise<number> {
     // 内置工作流禁删（复制为自有后可删副本）
     const existing = await this.getById(id)

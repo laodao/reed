@@ -68,4 +68,26 @@ describe('WorkflowDefinitionRepository.list 排序（时间降序）', () => {
       expect(items.map(d => d.name)).toEqual(['用户工作流', '内置工作流'])
     })
   })
+
+  it('updateTriggersOnly：内置定义（user_id=NULL）允许更新触发器（全局调度配置）', async () => {
+    await runWithUserAsync('user-1', async () => {
+      await insertDef(ds, 'builtin_def_x', '内置定义', minutesAgo(10), null, 1)
+      // 普通 update 对内置禁改
+      const blocked = await repo.update('builtin_def_x', { name: '篡改名' })
+      expect(blocked?.name).toBe('内置定义')
+      // 专用触发器更新生效（裸 repo.update 命中 user_id=NULL 行）
+      const upd = await repo.updateTriggersOnly('builtin_def_x', {
+        triggers: [{ type: 'cron', expression: '0 8 * * *', preset: 'daily', enabled: true }],
+        nextFireAt: null,
+        lastFireAt: null,
+      })
+      expect(upd?.triggers).toEqual([{ type: 'cron', expression: '0 8 * * *', preset: 'daily', enabled: true }])
+    })
+  })
+
+  it('updateTriggersOnly：不存在返回 null', async () => {
+    await runWithUserAsync('user-1', async () => {
+      expect(await repo.updateTriggersOnly('nope', { triggers: [] })).toBeNull()
+    })
+  })
 })

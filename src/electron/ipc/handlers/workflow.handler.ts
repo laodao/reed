@@ -57,6 +57,13 @@ export function registerWorkflowHandlers(): void {
   ipcBridge.handle('wf:validate-triggers', (_e, p: { triggers: WorkflowTrigger[] }) =>
     wrap(() => subsystem().definitionService.validateTriggers(p.triggers))
   )
+  ipcBridge.handle('wf:update-triggers', (_e, p: { id: string; triggers: WorkflowTrigger[] }) =>
+    wrap(async () => {
+      const result = await subsystem().definitionService.updateTriggers(p.id, p.triggers)
+      if (!result.success) throw new Error(result.error)
+      return { updated: true }
+    })
+  )
   ipcBridge.handle('wf:export-definition', (_e, p: { id: string }) =>
     wrap(async () => {
       const data = await subsystem().definitionService.exportDefinition(p.id)

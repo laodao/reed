@@ -185,6 +185,26 @@ export class WorkflowDefinitionService {
   }
 
   /**
+   * 仅更新触发器（应用详情页「配置定时」入口）：
+   * 不改图、不 +1 发布版本（与 publish 不同），校验后落库并刷新调度状态，
+   * 使 cron 立即生效 / 停用立即失效。内置定义同样允许（定时是全局调度配置）。
+   */
+  async updateTriggers(id: string, triggers: WorkflowTrigger[]): Promise<{ success: boolean; error?: string }> {
+    const def = await this.repo.getById(id)
+    if (!def) return { success: false, error: '工作流不存在' }
+    const errors = this.validateTriggers(triggers)
+    if (errors.length > 0) return { success: false, error: errors.join('；') }
+    await this.repo.updateTriggersOnly(id, {
+      triggers,
+      // 清调度状态：停用/变更后由调度器按新配置重建（与 publish 同纪律）
+      nextFireAt: null,
+      lastFireAt: null,
+    })
+    await this.refreshSchedule(id)
+    return { success: true }
+  }
+
+  /**
    * 发布：校验通过才可发布；草稿复制进 published_graph，版本 +1（不可变语义）。
    * 触发器与设置随发布固化（对发布版生效）。
    */

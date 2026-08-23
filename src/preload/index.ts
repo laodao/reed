@@ -681,6 +681,7 @@ const electronAPI = {
       ipcRenderer.invoke('wf:publish-definition', p),
     validateGraph: (graph: unknown) => ipcRenderer.invoke('wf:validate-graph', { graph }),
     validateTriggers: (triggers: unknown[]) => ipcRenderer.invoke('wf:validate-triggers', { triggers }),
+    updateTriggers: (id: string, triggers: unknown[]) => ipcRenderer.invoke('wf:update-triggers', { id, triggers }),
     exportDefinition: (id: string) => ipcRenderer.invoke('wf:export-definition', { id }),
     importDefinition: (p: { content: string; duplicatePolicy?: 'copy' | 'overwrite' }) =>
       ipcRenderer.invoke('wf:import-definition', p),

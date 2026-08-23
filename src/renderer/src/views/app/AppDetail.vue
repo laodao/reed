@@ -69,9 +69,25 @@
           </div>
           <el-switch :model-value="app?.channelApi === 1" @change="v => toggleChannel('api', v)" />
         </div>
-        <div class="channel-row">
-          <div class="c-info"><div class="c-name">⏰ 定时</div><div class="c-desc">在工作流编辑器中配置定时触发器</div></div>
-          <el-button size="small" @click="router.push(`/workflow/editor/${app?.sourceId}`)">配置触发器</el-button>
+        <div class="channel-row cron-row">
+          <div class="c-info">
+            <div class="c-name">⏰ 定时</div>
+            <div class="c-desc">按预设周期自动运行（每天/每周/每月/自定义 cron）</div>
+            <div v-if="cronNextText" class="cron-next">下次触发：{{ cronNextText }}</div>
+          </div>
+          <div class="cron-config">
+            <el-select v-model="cronDraft.preset" size="small" style="width: 110px" @change="onPresetChange">
+              <el-option label="不启用" value="none" />
+              <el-option label="每小时" value="hourly" />
+              <el-option label="每天" value="daily" />
+              <el-option label="每周" value="weekly" />
+              <el-option label="每月" value="monthly" />
+              <el-option label="自定义" value="custom" />
+            </el-select>
+            <el-input v-model="cronDraft.expression" size="small" placeholder="分 时 日 月 周，如 0 8 * * *" style="width: 180px" :disabled="cronDraft.preset === 'none'" />
+            <el-switch v-model="cronDraft.enabled" :disabled="cronDraft.preset === 'none'" />
+            <el-button size="small" type="primary" plain :loading="cronSaving" @click="saveCron">保存</el-button>
+          </div>
         </div>
       </el-tab-pane>
 
@@ -143,7 +159,10 @@ function sessionIndex(index: number): number {
 
 async function load(): Promise<void> {
   const resp = await api.app.get(appId.value)
-  if (resp.success) app.value = resp.data ?? null
+  if (resp.success) {
+    app.value = resp.data ?? null
+    await loadTriggers()
+  }
   else ElMessage.error(resp.error ?? '加载失败')
   await loadSessions()
 }
@@ -269,6 +288,100 @@ async function togglePinned(): Promise<void> {
   } else ElMessage.error(resp.error ?? '操作失败')
 }
 
+// ---- 定时触发（应用详情页直接配置，不跳工作流编辑器） ----
+/** cron 预设 → 表达式（分 时 日 月 周） */
+const CRON_PRESETS: Record<string, { expression: string; label: string }> = {
+  hourly: { expression: '0 * * * *', label: '每小时整点' },
+  daily: { expression: '0 8 * * *', label: '每天 08:00' },
+  weekly: { expression: '0 9 * * 1', label: '每周一 09:00' },
+  monthly: { expression: '0 10 1 * *', label: '每月 1 日 10:00' },
+  custom: { expression: '', label: '自定义表达式' },
+}
+
+const cronDraft = ref<{ preset: string; expression: string; enabled: boolean }>({ preset: 'none', expression: '', enabled: false })
+const cronNextText = ref('')
+const cronSaving = ref(false)
+
+/** 读取应用来源工作流的 triggers（展示当前定时状态） */
+async function loadTriggers(): Promise<void> {
+  if (!app.value?.sourceId) return
+  const resp = await (window as unknown as { electronAPI: { workflow: any } }).electronAPI.workflow.getDefinition(app.value.sourceId)
+  const triggers: Array<{ type?: string; expression?: string; preset?: string; enabled?: boolean }> = resp?.success ? (resp.data?.triggers ?? []) : []
+  const cron = triggers.find(t => t.type === 'cron')
+  if (cron?.enabled) {
+    // 反解预设（匹配预设表达式则显示对应预设，否则自定义）
+    const matched = Object.entries(CRON_PRESETS).find(([, v]) => v.expression === cron.expression && v.expression)
+    cronDraft.value = {
+      preset: matched ? matched[0] : 'custom',
+      expression: cron.expression ?? '',
+      enabled: true,
+    }
+    await refreshCronNext(cron.expression ?? '')
+  } else {
+    cronDraft.value = { preset: 'none', expression: cron?.expression ?? '', enabled: false }
+    cronNextText.value = ''
+  }
+}
+
+function onPresetChange(preset: string): void {
+  if (preset === 'none') {
+    cronDraft.value.enabled = false
+  } else {
+    // 选预设即意图启用定时：填充表达式并默认打开启用开关
+    if (preset !== 'custom') {
+      cronDraft.value.expression = CRON_PRESETS[preset]?.expression ?? ''
+    }
+    cronDraft.value.enabled = true
+  }
+}
+
+/** 下次触发时间预览（调度器同源解析：next5[0] 格式化） */
+async function refreshCronNext(expression: string): Promise<void> {
+  if (!expression.trim()) { cronNextText.value = ''; return }
+  const resp = await (window as unknown as { electronAPI: { workflow: any } }).electronAPI.workflow.triggerPreview(expression)
+  const data = resp?.data
+  if (resp?.success && data?.valid && Array.isArray(data.next5) && data.next5.length) {
+    const d = new Date(data.next5[0])
+    cronNextText.value = Number.isNaN(d.getTime())
+      ? ''
+      : d.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', weekday: 'short' })
+  } else {
+    cronNextText.value = data?.error ? `表达式无效：${data.error}` : ''
+  }
+}
+
+async function saveCron(): Promise<void> {
+  if (!app.value?.sourceId) return
+  const wfApi = (window as unknown as { electronAPI: { workflow: any } }).electronAPI.workflow
+  // 组装新 triggers：保留非 cron 触发器（如事件/webhook），替换 cron 触发器
+  const defResp = await wfApi.getDefinition(app.value.sourceId)
+  const existing: Array<any> = defResp?.success ? (defResp.data?.triggers ?? []) : []
+  const others = existing.filter(t => t.type !== 'cron')
+  const enabled = cronDraft.value.enabled && cronDraft.value.preset !== 'none'
+  const cron: Array<any> = enabled
+    ? [{ type: 'cron', expression: cronDraft.value.expression.trim(), preset: cronDraft.value.preset, enabled: true }]
+    : []
+  const triggers = [...others, ...cron]
+
+  // 客户端预校验（V1 单 cron / 表达式合法性）
+  const check = await wfApi.validateTriggers(triggers)
+  if (check?.success && Array.isArray(check.data) && check.data.length > 0) {
+    ElMessage.error(`定时配置无效：${check.data.join('；')}`)
+    return
+  }
+  cronSaving.value = true
+  try {
+    const resp = await wfApi.updateTriggers(app.value.sourceId, triggers)
+    if (resp.success) {
+      ElMessage.success(enabled ? '定时已启用' : '定时已关闭')
+      if (enabled) await refreshCronNext(cronDraft.value.expression.trim())
+      else cronNextText.value = ''
+    } else ElMessage.error(resp.error ?? '保存失败')
+  } finally {
+    cronSaving.value = false
+  }
+}
+
 const metaEditorVisible = ref(false)
 const metaDraft = ref<{ category: string; tagsText: string }>({ category: '', tagsText: '' })
 
@@ -310,6 +423,9 @@ onMounted(load)
 .c-name { font-weight: 600; }
 .c-desc { color: var(--el-text-color-secondary); font-size: 12px; }
 .link-pill { font-family: monospace; font-size: 12px; background: var(--el-fill-color); padding: 4px 8px; border-radius: 4px; }
+.cron-row { flex-wrap: wrap; }
+.cron-config { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cron-next { font-size: 12px; color: var(--el-color-success); margin-top: 4px; }
 .api-endpoint { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
 .api-endpoint code { font-size: 12px; background: var(--el-fill-color); padding: 3px 6px; border-radius: 4px; }
 .session-pager { display: flex; justify-content: flex-end; padding-top: 14px; }
