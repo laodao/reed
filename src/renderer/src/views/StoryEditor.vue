@@ -1,5 +1,17 @@
 <template>
   <div class="story-editor">
+    <!-- 向导模式（默认）：创意 → 人物 → 世界 → 故事线 → 大纲 → 章节 -->
+    <WizardContainer
+      v-if="showWizard"
+      :project-id="projectId"
+      :project-name="project?.name || '加载中...'"
+      :initial-stage="initialStage"
+      :initial-skipped="initialSkipped"
+      @enter-advanced="showWizard = false"
+    />
+
+    <!-- 高级模式（保留完整 7 阶段界面，与向导共享同一份数据） -->
+    <template v-else>
     <!-- 顶部导航栏 -->
     <div class="editor-header">
       <div class="header-left">
@@ -12,6 +24,10 @@
         <span class="project-title">{{ project?.name || '加载中...' }}</span>
       </div>
       <div class="header-right">
+        <el-button @click="showWizard = true">
+          <el-icon><MagicStick /></el-icon>
+          向导
+        </el-button>
         <el-button @click="showPreview = true">
           <el-icon><View /></el-icon>
           设定集
@@ -112,14 +128,15 @@
       :project-id="projectId"
       @model-configs-changed="loadStageModelConfigs"
     />
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, provide, watch } from 'vue'
+import { ref, computed, onMounted, provide } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, View, Download, Setting } from '@element-plus/icons-vue'
+import { ArrowLeft, View, Setting, MagicStick } from '@element-plus/icons-vue'
 import { useTabsStore } from '@/stores/tabs'
 import type { LongWritingProject, StoryStage } from '../../../../shared/types/longwriting.types'
 import type { UserProviderConfig, ProviderTemplate } from '../../../shared/types'
@@ -128,6 +145,9 @@ import type { UserProviderConfig, ProviderTemplate } from '../../../shared/types
 defineOptions({
   name: 'StoryEditor'
 })
+
+// 向导容器（默认入口）
+import WizardContainer from '@/components/longwriting/wizard/WizardContainer.vue'
 
 // 子组件
 import OverviewStage from '@/components/longwriting/story/OverviewStage.vue'
@@ -152,6 +172,11 @@ const project = ref<LongWritingProject | null>(null)
 
 // 当前阶段
 const currentStage = ref<StoryStage>('overview')
+
+// 向导模式开关（默认进入向导；右上角可切换高级模式）
+const showWizard = ref(true)
+const initialStage = ref<string | undefined>(undefined)
+const initialSkipped = ref<string[] | undefined>(undefined)
 
 // 对话框状态
 const showPreview = ref(false)
@@ -421,6 +446,9 @@ async function loadProject() {
   if (result.success && result.data) {
     project.value = result.data
     currentStage.value = result.data.stage as StoryStage
+    // 向导初始状态：最后到达的步骤 + 跳过的步骤
+    initialStage.value = result.data.stage as string
+    initialSkipped.value = result.data.wizardState?.skipped
     // 更新标签页标题为项目名称
     tabsStore.updateTabTitle(route.path, result.data.name)
 
