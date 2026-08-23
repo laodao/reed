@@ -33,10 +33,10 @@ afterEach(() => {
 })
 
 describe('NEWS_TOPICS 预置主题目录', () => {
-  it('5 个主题且每主题源数 >= 8', () => {
+  it('5 个主题且每主题源数 = 15（国外 10 + 国内 5）', () => {
     expect(NEWS_TOPICS.length).toBe(5)
     for (const t of NEWS_TOPICS) {
-      expect(t.sources.length, `${t.label} 源数`).toBeGreaterThanOrEqual(8)
+      expect(t.sources.length, `${t.label} 源数`).toBe(15)
     }
   })
 
