@@ -61,8 +61,7 @@ export const mainMenuItems: MenuItem[] = [
     path: '/longwriting',
     label: '长文写作',
     description: 'AI 辅助长篇小说创作',
-    icon: markRaw(EditPen),
-    hidden: true // 功能开发中，暂不显示入口
+    icon: markRaw(EditPen)
   },
   {
     path: '/episode-production',
