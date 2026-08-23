@@ -43,18 +43,75 @@
       </div>
     </div>
 
-    <!-- 工作台导航（高级模式：设定库 / 创作台） -->
-    <div class="workbench-nav">
-      <el-radio-group v-model="activeWorkbench" size="default">
-        <el-radio-button value="settings">设定库</el-radio-button>
-        <el-radio-button value="workbench">创作台</el-radio-button>
-      </el-radio-group>
+    <!-- 阶段导航 -->
+    <div class="stage-nav">
+      <div class="stage-list">
+        <div
+          v-for="(stage, index) in storyStages"
+          :key="stage.key"
+          class="stage-item"
+          :class="{ active: currentStage === stage.key, completed: isStageCompleted(stage.key) }"
+          @click="setStage(stage.key)"
+        >
+          <div class="stage-number">{{ index + 1 }}</div>
+          <div class="stage-info">
+            <span class="stage-label">{{ stage.label }}</span>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- 工作台内容 -->
-    <div class="workbench-content">
-      <SettingsLibrary v-if="activeWorkbench === 'settings'" :project-id="projectId" />
-      <WritingWorkbench v-else :project-id="projectId" />
+    <!-- 内容区域 -->
+    <div class="editor-content" :class="{ 'no-scroll': currentStage === 'chapters' }">
+      <!-- 阶段一：故事概要 -->
+      <OverviewStage
+        v-if="currentStage === 'overview'"
+        :project-id="projectId"
+        @update:progress="updateProgress"
+      />
+
+      <!-- 阶段二：故事情节 -->
+      <PlotStage
+        v-if="currentStage === 'plot'"
+        :project-id="projectId"
+        @update:progress="updateProgress"
+      />
+
+      <!-- 阶段三：背景设定 -->
+      <BackgroundStage
+        v-if="currentStage === 'background'"
+        :project-id="projectId"
+        @update:progress="updateProgress"
+      />
+
+      <!-- 阶段四：角色设定 -->
+      <CharacterStage
+        v-if="currentStage === 'characters'"
+        :project-id="projectId"
+        @update:progress="updateProgress"
+      />
+
+      <!-- 阶段五：技能物品 -->
+      <SkillItemStage
+        v-if="currentStage === 'skills'"
+        :project-id="projectId"
+        @update:progress="updateProgress"
+        @skip="skipToOutline"
+      />
+
+      <!-- 阶段六：大纲设计 -->
+      <OutlineStage
+        v-if="currentStage === 'outline'"
+        :project-id="projectId"
+        @update:progress="updateProgress"
+      />
+
+      <!-- 阶段七：章节写作 -->
+      <ChapterStage
+        v-if="currentStage === 'chapters'"
+        :project-id="projectId"
+        @update:progress="updateProgress"
+      />
     </div>
 
     <!-- 设定集预览对话框 -->
@@ -106,13 +163,18 @@ defineOptions({
 
 // 向导容器（默认入口）
 import WizardContainer from '@/components/longwriting/wizard/WizardContainer.vue'
-// 高级模式工作台：设定库（统一实体管理）+ 创作台（大纲+章节流水线）
-import SettingsLibrary from '@/components/longwriting/settings/SettingsLibrary.vue'
-import WritingWorkbench from '@/components/longwriting/workbench/WritingWorkbench.vue'
 // 知识图谱（懒加载：仅打开图谱对话框时才加载组件）
 import { defineAsyncComponent } from 'vue'
 const GraphView = defineAsyncComponent(() => import('@/components/longwriting/graph/GraphView.vue'))
-// 项目设定对话框（模型/技能物品类型配置）
+
+// 子组件
+import OverviewStage from '@/components/longwriting/story/OverviewStage.vue'
+import PlotStage from '@/components/longwriting/story/PlotStage.vue'
+import BackgroundStage from '@/components/longwriting/story/BackgroundStage.vue'
+import CharacterStage from '@/components/longwriting/story/CharacterStage.vue'
+import SkillItemStage from '@/components/longwriting/story/SkillItemStage.vue'
+import OutlineStage from '@/components/longwriting/story/OutlineStage.vue'
+import ChapterStage from '@/components/longwriting/story/ChapterStage.vue'
 import ProjectSettingsDialog from '@/components/longwriting/ProjectSettingsDialog.vue'
 
 const route = useRoute()
@@ -348,6 +410,17 @@ provide('imageProviderModels', imageProviderModels)
 
 // ==================== 阶段配置 ====================
 
+// 故事阶段配置
+const storyStages = [
+  { key: 'overview', label: '故事概要' },
+  { key: 'background', label: '背景设定' },
+  { key: 'characters', label: '角色设定' },
+  { key: 'skills', label: '技能物品' },
+  { key: 'plot', label: '故事情节' },
+  { key: 'outline', label: '大纲设计' },
+  { key: 'chapters', label: '章节写作' }
+]
+
 // 提供项目 ID 给子组件
 provide('projectId', projectId)
 
@@ -355,12 +428,34 @@ provide('projectId', projectId)
 const enabledFeatures = ref<string[]>([])
 provide('enabledFeatures', enabledFeatures)
 
-// 高级模式工作台切换（设定库 / 创作台）
-const activeWorkbench = ref<'settings' | 'workbench'>('settings')
-
 // 返回项目列表
 function goBack() {
   router.push('/longwriting')
+}
+
+// 设置当前阶段
+function setStage(stage: StoryStage) {
+  currentStage.value = stage
+}
+
+// 判断阶段是否完成
+function isStageCompleted(stage: string): boolean {
+  // 使用 storyStages 配置的顺序，确保与界面显示一致
+  const stageOrder = storyStages.map(s => s.key)
+  const currentIndex = stageOrder.indexOf(currentStage.value)
+  const stageIndex = stageOrder.indexOf(stage)
+  return stageIndex < currentIndex
+}
+
+// 更新进度
+function updateProgress(progress: number) {
+  // TODO: 更新项目进度
+  console.log('更新进度:', progress)
+}
+
+// 跳过大纲
+function skipToOutline() {
+  setStage('outline')
 }
 
 // 加载项目数据
