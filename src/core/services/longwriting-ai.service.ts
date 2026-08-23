@@ -458,6 +458,24 @@ ${input}
 ${keyCharactersInfo ? `关键角色：${keyCharactersInfo}` : ''}
 ${keyLocationsInfo ? `主要场景：${keyLocationsInfo}` : ''}`
 
+    // 故事线（情节）注入：角色设计应与已确认的故事情节呼应
+    const plots = await dbManager.lwPlots?.getByProjectId(projectId) || []
+    if (plots.length > 0) {
+      prompt += `
+
+已确认的故事线（生成角色时请呼应这些情节）：
+${plots.map(p => `- ${p.title}：${p.summary}`).join('\n')}`
+    }
+
+    // 已有角色注入：避免重复生成同名角色
+    const existingCharacters = await dbManager.lwCharacters?.getByProjectId(projectId) || []
+    if (existingCharacters.length > 0) {
+      prompt += `
+
+项目已有角色（请不要重复生成这些角色）：
+${existingCharacters.map(c => `- ${c.name}（${c.rolePosition || '未定位'}）`).join('\n')}`
+    }
+
     // 如果有额外要求，添加到提示词中
     if (requirements && requirements.trim()) {
       prompt += `
@@ -765,13 +783,20 @@ ${itemTypesInfo || '暂无配置'}
       `${c.name}（${c.rolePosition === 'protagonist' ? '主角' : c.rolePosition === 'antagonist' ? '反派' : '配角'}）`
     ).join('、')
 
+    // 故事线（情节）注入：大纲结构应承接已确认的故事情节
+    const plots = await dbManager.lwPlots?.getByProjectId(projectId) || []
+    const plotsSummary = plots.length > 0
+      ? plots.map(p => `${p.title}：${p.summary}`).join('\n')
+      : ''
+
     const storyInfo = {
       title: overview?.title || '未命名',
       coreTheme: overview?.coreIdea || '未指定',
       summary: overview?.summary || '未指定',
       targetWords: (overview?.estimatedChapters || 20) * 5000,
       characterInfo: characterInfo || '暂无',
-      eraDescription: background?.eraDescription || '未指定'
+      eraDescription: background?.eraDescription || '未指定',
+      plotsSummary,
     }
 
     try {
@@ -820,6 +845,7 @@ ${itemTypesInfo || '暂无配置'}
     const volumePrompt = `故事标题：${storyInfo.title}
 核心主题：${storyInfo.coreTheme}
 故事摘要：${storyInfo.summary}
+故事线：${storyInfo.plotsSummary || '暂无'}
 目标字数：${storyInfo.targetWords}字
 主要角色：${storyInfo.characterInfo}
 时代背景：${storyInfo.eraDescription}
@@ -893,6 +919,7 @@ ${itemTypesInfo || '暂无配置'}
     const chapterPrompt = `故事标题：${storyInfo.title}
 核心主题：${storyInfo.coreTheme}
 故事摘要：${storyInfo.summary}
+故事线：${storyInfo.plotsSummary || '暂无'}
 目标字数：${storyInfo.targetWords}字
 主要角色：${storyInfo.characterInfo}
 时代背景：${storyInfo.eraDescription}
@@ -944,6 +971,7 @@ ${itemTypesInfo || '暂无配置'}
     const chapterPrompt = `故事标题：${storyInfo.title}
 核心主题：${storyInfo.coreTheme}
 故事摘要：${storyInfo.summary}
+故事线：${storyInfo.plotsSummary || '暂无'}
 目标字数：${storyInfo.targetWords}字
 主要角色：${storyInfo.characterInfo}
 时代背景：${storyInfo.eraDescription}
@@ -1003,6 +1031,7 @@ ${itemTypesInfo || '暂无配置'}
 卷名：${volume.name}
 卷概要：${volume.summary}
 卷预估字数：${volume.estimatedWords}字
+故事线：${storyInfo.plotsSummary || '暂无'}
 主要角色：${storyInfo.characterInfo}
 
 请为本卷生成章节大纲（只返回JSON数组）：`
