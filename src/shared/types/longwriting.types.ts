@@ -53,6 +53,8 @@ export interface LongWritingProject {
   type: LongWritingProjectType
   stage: StoryStage | CommentStage
   progress: number         // 进度百分比 0-100
+  /** 向导状态（跳过的步骤 key 列表；旧项目无数据时按数据存在性回推） */
+  wizardState?: { skipped: string[] }
   createdAt: number
   updatedAt: number
 }
@@ -929,6 +931,7 @@ export interface UpdateProjectRequest {
   name?: string
   stage?: StoryStage | CommentStage
   progress?: number
+  wizardState?: { skipped: string[] }
 }
 
 /**
@@ -1671,4 +1674,127 @@ export interface LwVectorIndexStats {
   entityCount: number
   chapterCount: number
   totalChunks: number
+}
+
+// ==================== 图谱类型（人物/地点/物品/势力/技能/事件节点 + 关系边 + 时间线） ====================
+
+/**
+ * 图谱实体类型（节点类型；事件为新增节点）
+ */
+export type GraphEntityType = 'character' | 'location' | 'item' | 'faction' | 'skill' | 'event'
+
+/**
+ * 故事事件（图谱事件节点）
+ * 与创作层情节（plot，计划中的故事线）区分：事件是"故事内已发生的事实"，随章节确认累积。
+ */
+export interface StoryEvent {
+  id: string
+  projectId: string
+  name: string               // 事件名（如"林家在比武大会夺魁"）
+  description?: string       // 经过描述
+  chapterNumber: number      // 发生章节（时间线锚点）
+  storyTime?: string         // 故事内时间文本（如"第三年春"）
+  involvedEntities?: MemoryEntity[]  // 涉及实体 [{type,id,name}]
+  stateBefore?: string       // 事件前关键状态摘要
+  stateAfter?: string        // 事件后关键状态摘要
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * 创建故事事件请求
+ */
+export interface CreateStoryEventRequest {
+  projectId: string
+  name: string
+  description?: string
+  chapterNumber: number
+  storyTime?: string
+  involvedEntities?: MemoryEntity[]
+  stateBefore?: string
+  stateAfter?: string
+}
+
+/**
+ * 更新故事事件请求
+ */
+export interface UpdateStoryEventRequest {
+  name?: string
+  description?: string
+  storyTime?: string
+  involvedEntities?: MemoryEntity[]
+  stateBefore?: string
+  stateAfter?: string
+}
+
+/**
+ * 图谱关系边（带时间线有效期）
+ * 关系变化不改边：旧边写 valid_until_chapter，新边自 valid_from_chapter 起。
+ */
+export interface GraphEdge {
+  id: string
+  projectId: string
+  sourceType: GraphEntityType
+  sourceId: string
+  targetType: GraphEntityType
+  targetId: string
+  relationType: string       // 见 spec §3.4 relation_type 集合
+  label?: string             // 关系标签（如"夫妻"）
+  validFromChapter?: number  // 关系建立章节（NULL=自第 1 章起）
+  validUntilChapter?: number // 关系失效章节（NULL=至今有效）
+  description?: string
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * 创建关系边请求
+ */
+export interface CreateGraphEdgeRequest {
+  projectId: string
+  sourceType: GraphEntityType
+  sourceId: string
+  targetType: GraphEntityType
+  targetId: string
+  relationType: string
+  label?: string
+  validFromChapter?: number
+  validUntilChapter?: number
+  description?: string
+}
+
+/**
+ * 更新关系边请求
+ */
+export interface UpdateGraphEdgeRequest {
+  relationType?: string
+  label?: string
+  validFromChapter?: number
+  validUntilChapter?: number
+  description?: string
+}
+
+/**
+ * 名称→ID 实体解析（图谱建边前置：现有前端多处存名称，边必须 ID）
+ */
+export interface ResolveEntityInput {
+  type: GraphEntityType
+  name: string
+}
+
+export interface ResolvedEntity {
+  type: GraphEntityType
+  name: string
+  id?: string               // 匹配失败时缺省（unresolved）
+  resolved: boolean
+}
+
+/**
+ * 实体状态时间线查询（GraphService 原语）
+ */
+export interface EntityTimelineEntry {
+  chapterNumber: number
+  stateSummary: string
+  keyChanges: string[]
+  createdAt: number
 }

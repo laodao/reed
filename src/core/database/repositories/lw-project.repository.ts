@@ -35,8 +35,20 @@ export class LwProjectRepository extends BaseRepository<
       type: e.type as LongWritingProject['type'],
       stage: e.stage as LongWritingProject['stage'],
       progress: e.progress,
+      wizardState: this.parseWizardState(e.wizardState),
       createdAt: this.toEpochMs(e.createdAt),
       updatedAt: this.toEpochMs(e.updatedAt),
+    }
+  }
+
+  private parseWizardState(jsonStr: string | null): { skipped: string[] } | undefined {
+    if (!jsonStr) return undefined
+    try {
+      const data = JSON.parse(jsonStr)
+      if (data && Array.isArray(data.skipped)) return { skipped: data.skipped }
+      return undefined
+    } catch {
+      return undefined
     }
   }
 
@@ -82,6 +94,10 @@ export class LwProjectRepository extends BaseRepository<
     if (data.name !== undefined) { existing.name = data.name; changed = true }
     if (data.stage !== undefined) { existing.stage = data.stage; changed = true }
     if (data.progress !== undefined) { existing.progress = data.progress; changed = true }
+    if (data.wizardState !== undefined) {
+      existing.wizardState = JSON.stringify(data.wizardState)
+      changed = true
+    }
 
     if (!changed) return this.toDto(existing)
 

@@ -48,6 +48,8 @@ import type { LwCharacterRelationRepository } from './repositories/lw-character-
 import type { LwDesignMessageRepository } from './repositories/lw-design-message.repository'
 import type { LwDictionaryRepository } from './repositories/lw-dictionary.repository'
 import type { LwEntityStateRepository } from './repositories/lw-entity-state.repository'
+import type { LwEventRepository } from './repositories/lw-event.repository'
+import type { LwGraphEdgeRepository } from './repositories/lw-graph-edge.repository'
 import type { LwFactionRepository } from './repositories/lw-faction.repository'
 import type { LwGlobalSettingsRepository } from './repositories/lw-global-settings.repository'
 import type { LwItemRepository } from './repositories/lw-item.repository'
@@ -187,6 +189,10 @@ export interface ICoreDatabaseManager {
   lwProjectModelConfigs: LwProjectModelConfigRepository | null
   /** 长文向量索引记录（步骤0 新增：chunkId↔实体映射 + contentHash） */
   lwVectorIndices: LwVectorIndexRepository | null
+  /** 长文图谱：故事事件节点（章节确认时创建） */
+  lwEvents: LwEventRepository | null
+  /** 长文图谱：关系边（带 valid_from/valid_until_chapter 时间线） */
+  lwGraphEdges: LwGraphEdgeRepository | null
 
   // ---- 工作流引擎（三表） ----
   /** 工作流定义（草稿/发布双图 + 触发器 + cron 调度状态） */

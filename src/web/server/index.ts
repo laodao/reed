@@ -408,6 +408,12 @@ async function initDatabase(): Promise<void> {
     )
   await addKbRerankConfig(ds)
 
+  // 长文图谱表（lw_events + lw_graph_edges + lw_projects.wizard_state + character_relation 收编，幂等，双语种）
+  const { createLwGraphTables } = await import(
+    '@core/database/migrations/create-lw-graph-tables'
+  )
+  await createLwGraphTables(ds)
+
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)
   console.log('[web-server] PostgreSQL 数据库初始化完成')

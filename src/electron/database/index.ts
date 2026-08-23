@@ -61,6 +61,8 @@ import { LwMapRepository } from '@core/database/repositories/lw-map.repository'
 import { LwPrewriteRepository } from '@core/database/repositories/lw-prewrite.repository'
 import { LwMemoryRepository } from '@core/database/repositories/lw-memory.repository'
 import { LwEntityStateRepository } from '@core/database/repositories/lw-entity-state.repository'
+import { LwEventRepository } from '@core/database/repositories/lw-event.repository'
+import { LwGraphEdgeRepository } from '@core/database/repositories/lw-graph-edge.repository'
 import { LwPlotCharacterRepository } from '@core/database/repositories/lw-plot-character.repository'
 import { LwPlotLocationRepository } from '@core/database/repositories/lw-plot-location.repository'
 import { LwOutlineCharacterRepository } from '@core/database/repositories/lw-outline-character.repository'
@@ -180,6 +182,8 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public lwEntityStates: LwEntityStateRepository | null = null
   public lwChapterStateSummaries: LwChapterStateSummaryRepository | null = null
   public lwVectorIndices: LwVectorIndexRepository | null = null
+  public lwEvents: LwEventRepository | null = null
+  public lwGraphEdges: LwGraphEdgeRepository | null = null
 
   // 工作流引擎（三表）
   public workflowDefinitions: WorkflowDefinitionRepository | null = null
@@ -650,6 +654,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-lw-vector-indices'
     )
     await createLwVectorIndices(this.dataSource)
+    // 阶段0：长文图谱表（lw_events + lw_graph_edges + lw_projects.wizard_state + character_relation 收编）
+    const { createLwGraphTables } = await import(
+      '@core/database/migrations/create-lw-graph-tables'
+    )
+    await createLwGraphTables(this.dataSource)
 
     // 工作流引擎：definitions / runs / node_runs 三表（幂等，双语种）
     const { createWorkflowTables } = await import(
@@ -4274,6 +4283,8 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.lwEntityStates = new LwEntityStateRepository(this.dataSource)
     this.lwChapterStateSummaries = new LwChapterStateSummaryRepository(this.dataSource)
     this.lwVectorIndices = new LwVectorIndexRepository(this.dataSource)
+    this.lwEvents = new LwEventRepository(this.dataSource)
+    this.lwGraphEdges = new LwGraphEdgeRepository(this.dataSource)
     this.workflowDefinitions = new WorkflowDefinitionRepository(this.dataSource)
     this.workflowRuns = new WorkflowRunRepository(this.dataSource)
     this.workflowNodeRuns = new WorkflowNodeRunRepository(this.dataSource)

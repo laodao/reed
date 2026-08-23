@@ -31,6 +31,10 @@ export class LwProjectEntity {
   @Column({ name: 'progress', type: 'integer', default: 0 })
   progress!: number
 
+  /** 向导状态 JSON（{skipped: string[]}）；旧数据为 NULL */
+  @Column({ name: 'wizard_state', type: 'text', nullable: true })
+  wizardState!: string | null
+
   @Column({ name: 'created_at', type: Date })
   createdAt!: Date
 
