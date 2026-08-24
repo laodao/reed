@@ -58,6 +58,7 @@
         "position": { "x": 800, "y": 200 },
         "config": {
           "payload": "{{write1.content}}",
+          "interaction": "input",
           "editableFields": [{ "key": "output_result", "label": "周报正文", "type": "string" }]
         }
       },
