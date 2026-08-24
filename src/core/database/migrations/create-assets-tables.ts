@@ -43,12 +43,38 @@ export async function createAssetsTables(ds: DataSource): Promise<void> {
 
   // 幂等补列：老库 assets 表缺 sub_category（资产中心二级分类）
   await ensureColumn(ds, 'assets', 'sub_category', `${vc}`, isPg)
+  // 资产分组（套图/组图）：group_id 归属组，group_role=cover|member
+  await ensureColumn(ds, 'assets', 'group_id', `${vc}`, isPg)
+  await ensureColumn(ds, 'assets', 'group_role', `${vc}`, isPg)
+
+  // 资产组表（套图/组图：一次流程多图归为一组）
+  if (!(await checkTableExists(ds, 'asset_groups', isPg))) {
+    await ds.query(`
+      CREATE TABLE asset_groups (
+        id            ${vc} PRIMARY KEY,
+        user_id       ${vc},
+        name          ${vc} NOT NULL,
+        category      ${vc},
+        sub_category  ${vc},
+        description   ${vc},
+        cover_asset_id ${vc},
+        source_type   ${vc},
+        source_ref    ${vc},
+        created_at    ${dt},
+        updated_at    ${dt}
+      )
+    `)
+    console.log('[create-assets-tables] 表 asset_groups 创建完成')
+  }
 
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_assets_user ON assets (user_id)`)
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_assets_category ON assets (category)`)
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_assets_sub_category ON assets (sub_category)`)
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_assets_created ON assets (created_at)`)
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_assets_source ON assets (source_type, source_ref)`)
+  await ds.query(`CREATE INDEX IF NOT EXISTS idx_assets_group ON assets (group_id)`)
+  await ds.query(`CREATE INDEX IF NOT EXISTS idx_asset_groups_user ON asset_groups (user_id)`)
+  await ds.query(`CREATE INDEX IF NOT EXISTS idx_asset_groups_source ON asset_groups (source_type, source_ref)`)
 }
 
 /** 幂等补列（SQLite: PRAGMA 查列；PG: information_schema） */

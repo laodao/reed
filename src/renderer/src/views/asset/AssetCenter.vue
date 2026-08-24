@@ -44,64 +44,90 @@
 
     <!-- 资产网格 -->
     <div class="grid-wrap" v-loading="loading">
-      <div v-if="items.length" class="asset-grid">
-        <div v-for="asset in items" :key="asset.id" class="asset-card">
-          <!-- 预览区 -->
-          <div class="preview" @click="openPreview(asset)">
-            <!-- 分类驱动：report 模式 → 渲染长图缩略图（异步） -->
-            <img v-if="previewModeOf(asset) === 'report' && previewImageUrl(asset.id)" :src="previewImageUrl(asset.id)!" loading="lazy" alt="" />
-            <div v-else-if="previewModeOf(asset) === 'report'" class="report-placeholder">
-              <span class="report-icon">📋</span>
-              <span class="report-hint">{{ previewCache[asset.id]?.mode === 'html' ? '渲染 HTML 预览' : '报告 · 点击预览渲染效果' }}</span>
+      <div v-if="displayItems.length" class="asset-grid">
+        <div v-for="item in displayItems" :key="item.key" class="asset-card">
+          <!-- 组卡片：封面 + 组名 + 成员数，点击展开画廊 -->
+          <template v-if="item.type === 'group'">
+            <div class="preview group-preview" @click="openGroupGallery(item.groupId!)">
+              <img v-if="item.coverUrl" :src="item.coverUrl" loading="lazy" alt="" />
+              <div v-else class="group-placeholder"><span class="report-icon">🖼️</span></div>
+              <div class="group-badge">{{ item.memberCount }} 张</div>
             </div>
-            <img v-else-if="asset.category === 'image' && previewUrl(asset)" :src="previewUrl(asset)" loading="lazy" alt="" />
-            <audio v-else-if="asset.category === 'audio' && previewUrl(asset)" :src="previewUrl(asset)" controls preload="none" @click.stop />
-            <video v-else-if="asset.category === 'video' && previewUrl(asset)" :src="previewUrl(asset)" controls preload="none" @click.stop />
-            <div v-else-if="asset.category === 'template'" class="template-preview">{{ (asset.textContent ?? '').slice(0, 200) }}</div>
-            <div v-else-if="asset.category === 'text'" class="text-preview">{{ asset.textContent ?? '' }}</div>
-            <div v-else-if="asset.category === 'json'" class="text-preview json">{{ asset.jsonContent ?? '' }}</div>
-            <div v-else-if="asset.kind === 'url' && asset.url" class="url-preview">
+            <div class="card-body">
+              <div class="name-row">
+                <span class="asset-name" :title="item.name">{{ item.name }}</span>
+                <el-tag size="small" type="primary" effect="plain">组</el-tag>
+              </div>
+              <div class="meta">{{ formatDate(item.createdAt) }}</div>
+              <div v-if="item.subCategory" class="meta sub-meta">📁 {{ item.subCategory }}</div>
+              <div v-if="item.sourceLabel" class="meta source-meta" @click.stop="goSource(item.cover!)">🔗 {{ item.sourceLabel }}</div>
+            </div>
+            <div class="card-actions">
+              <el-button size="small" type="primary" plain @click="openGroupGallery(item.groupId!)">查看套图</el-button>
+              <el-button size="small" text type="danger" @click="handleDeleteGroup(item.groupId!)">删除组</el-button>
+            </div>
+          </template>
+
+          <!-- 普通资产卡片 -->
+          <template v-else>
+          <!-- 预览区 -->
+          <div class="preview" @click="openPreview(item.asset)">
+            <!-- 分类驱动：report 模式 → 渲染长图缩略图（异步） -->
+            <img v-if="previewModeOf(item.asset) === 'report' && previewImageUrl(item.asset.id)" :src="previewImageUrl(item.asset.id)!" loading="lazy" alt="" />
+            <div v-else-if="previewModeOf(item.asset) === 'report'" class="report-placeholder">
+              <span class="report-icon">📋</span>
+              <span class="report-hint">{{ previewCache[item.asset.id]?.mode === 'html' ? '渲染 HTML 预览' : '报告 · 点击预览渲染效果' }}</span>
+            </div>
+            <img v-else-if="item.asset.category === 'image' && previewUrl(item.asset)" :src="previewUrl(item.asset)" loading="lazy" alt="" />
+            <audio v-else-if="item.asset.category === 'audio' && previewUrl(item.asset)" :src="previewUrl(item.asset)" controls preload="none" @click.stop />
+            <video v-else-if="item.asset.category === 'video' && previewUrl(item.asset)" :src="previewUrl(item.asset)" controls preload="none" @click.stop />
+            <div v-else-if="item.asset.category === 'template'" class="template-preview">{{ (item.asset.textContent ?? '').slice(0, 200) }}</div>
+            <div v-else-if="item.asset.category === 'text'" class="text-preview">{{ item.asset.textContent ?? '' }}</div>
+            <div v-else-if="item.asset.category === 'json'" class="text-preview json">{{ item.asset.jsonContent ?? '' }}</div>
+            <div v-else-if="item.asset.kind === 'url' && item.asset.url" class="url-preview">
               <span class="url-icon">🔗</span>
-              <span class="url-text">{{ asset.url }}</span>
+              <span class="url-text">{{ item.asset.url }}</span>
             </div>
             <div v-else class="doc-preview">
-              <span class="doc-icon">{{ docIcon(asset) }}</span>
+              <span class="doc-icon">{{ docIcon(item.asset) }}</span>
             </div>
           </div>
 
           <!-- 信息区 -->
           <div class="card-body">
             <div class="name-row">
-              <span class="asset-name" :title="asset.name">{{ asset.name }}</span>
-              <el-tag v-if="asset.isBuiltin" size="small" type="warning" effect="plain">内置</el-tag>
-              <el-tag size="small" type="info">{{ categoryLabel(asset.category) }}</el-tag>
+              <span class="asset-name" :title="item.asset.name">{{ item.asset.name }}</span>
+              <el-tag v-if="item.asset.isBuiltin" size="small" type="warning" effect="plain">内置</el-tag>
+              <el-tag size="small" type="info">{{ categoryLabel(item.asset.category) }}</el-tag>
             </div>
-            <div class="meta">{{ formatSize(asset.sizeBytes) }} · {{ formatDate(asset.createdAt) }}</div>
-            <div v-if="asset.subCategory" class="meta sub-meta">📁 {{ asset.subCategory }}<el-tag v-if="previewModeOf(asset) !== 'auto'" size="small" type="success" effect="plain" class="mode-tag">{{ previewModeLabelOf(asset) }}</el-tag></div>
-            <div v-if="asset.tags.length" class="tags">
-              <span v-for="t in asset.tags" :key="t" class="tag">#{{ t }}</span>
+            <div class="meta">{{ formatSize(item.asset.sizeBytes) }} · {{ formatDate(item.asset.createdAt) }}</div>
+            <div v-if="item.asset.subCategory" class="meta sub-meta">📁 {{ item.asset.subCategory }}<el-tag v-if="previewModeOf(item.asset) !== 'auto'" size="small" type="success" effect="plain" class="mode-tag">{{ previewModeLabelOf(item.asset) }}</el-tag></div>
+            <div v-if="item.asset.tags.length" class="tags">
+              <span v-for="t in item.asset.tags" :key="t" class="tag">#{{ t }}</span>
             </div>
-            <div v-if="asset.description" class="desc" :title="asset.description">{{ asset.description }}</div>
+            <div v-if="item.sourceLabel" class="meta source-meta" @click.stop="goSource(item.asset)">🔗 {{ item.sourceLabel }}</div>
+            <div v-if="item.asset.description" class="desc" :title="item.asset.description">{{ item.asset.description }}</div>
           </div>
 
           <!-- 操作区 -->
           <div class="card-actions">
-            <el-button size="small" type="primary" plain :disabled="!canPreview(asset)" @click="openPreview(asset)">预览</el-button>
+            <el-button size="small" type="primary" plain :disabled="!canPreview(item.asset)" @click="openPreview(item.asset)">预览</el-button>
             <div class="icon-actions">
-              <el-tooltip v-if="asset.category === 'template'" content="编辑模板" placement="top">
-                <el-button text size="small" @click="openTemplateEditor(asset)"><el-icon><EditPen /></el-icon></el-button>
+              <el-tooltip v-if="item.asset.category === 'template'" content="编辑模板" placement="top">
+                <el-button text size="small" @click="openTemplateEditor(item.asset)"><el-icon><EditPen /></el-icon></el-button>
               </el-tooltip>
-              <el-tooltip v-if="asset.kind === 'file'" content="打开所在目录" placement="top">
-                <el-button text size="small" @click="openFolder(asset)"><el-icon><FolderOpened /></el-icon></el-button>
+              <el-tooltip v-if="item.asset.kind === 'file'" content="打开所在目录" placement="top">
+                <el-button text size="small" @click="openFolder(item.asset)"><el-icon><FolderOpened /></el-icon></el-button>
               </el-tooltip>
-              <el-tooltip :content="copyActionLabel(asset)" placement="top">
-                <el-button text size="small" :disabled="!copyable(asset)" @click="copyAction(asset)"><el-icon><CopyDocument /></el-icon></el-button>
+              <el-tooltip :content="copyActionLabel(item.asset)" placement="top">
+                <el-button text size="small" :disabled="!copyable(item.asset)" @click="copyAction(item.asset)"><el-icon><CopyDocument /></el-icon></el-button>
               </el-tooltip>
               <el-tooltip content="删除" placement="top">
-                <el-button text type="danger" size="small" :disabled="asset.isBuiltin" @click="handleDelete(asset)"><el-icon><Delete /></el-icon></el-button>
+                <el-button text type="danger" size="small" :disabled="item.asset.isBuiltin" @click="handleDelete(item.asset)"><el-icon><Delete /></el-icon></el-button>
               </el-tooltip>
             </div>
           </div>
+          </template>
         </div>
       </div>
       <div v-else-if="!loading" class="empty">
@@ -109,6 +135,20 @@
         <p class="hint">在工作流里加一个「保存资产」节点，生成的结果会自动出现在这里；也可点右上角「导入文件」</p>
       </div>
     </div>
+
+    <!-- 套图画廊（组资产展开） -->
+    <el-dialog v-model="groupDialogVisible" :title="groupDialogName" width="860px" append-to-body>
+      <div class="group-gallery" v-loading="groupLoading">
+        <div v-if="groupDetail" class="gallery-grid">
+          <div v-for="m in groupDetail.members" :key="m.id" class="gallery-item">
+            <img v-if="m.category === 'image' && previewUrl(m)" :src="previewUrl(m)" loading="lazy" alt="" @click="openPreview(m)" />
+            <div v-else class="gallery-text">{{ m.category === 'text' ? (m.textContent ?? '').slice(0, 300) : m.name }}</div>
+            <div class="gallery-name">{{ m.name }}</div>
+          </div>
+        </div>
+        <div v-else-if="!groupLoading" class="empty"><p>组内暂无资产</p></div>
+      </div>
+    </el-dialog>
 
     <!-- 分页固定底部 -->
     <div class="pager">
@@ -281,6 +321,70 @@ const total = ref(0)
 const stats = ref<Record<string, number>>({})
 const subStats = ref<Array<{ subCategory: string | null; count: number }>>([])
 
+/** 来源跳转缓存：assetId → 来源链接（需求 3） */
+const sourceLinks = reactive<Record<string, { type: string; label: string; appId?: string; sessionId?: string; runId?: string } | null>>({})
+/** 组画廊状态（需求 2） */
+const groupDialogVisible = ref(false)
+const groupDialogName = ref('')
+const groupDetail = ref<{ group: any; members: AssetRecord[] } | null>(null)
+const groupLoading = ref(false)
+
+/** 组内成员（按 groupId 聚合，用于组卡片） */
+interface DisplayItem {
+  key: string
+  type: 'asset' | 'group'
+  asset?: AssetRecord
+  groupId?: string
+  name?: string
+  cover?: AssetRecord
+  coverUrl?: string
+  memberCount?: number
+  subCategory?: string
+  createdAt?: string
+  sourceLabel?: string
+}
+
+/** 列表项：同组资产聚合成一个组卡片（封面=cover 成员），其余单个展示 */
+const displayItems = computed<DisplayItem[]>(() => {
+  const groups = new Map<string, AssetRecord[]>()
+  const singles: AssetRecord[] = []
+  for (const a of items.value) {
+    if (a.groupId) {
+      const list = groups.get(a.groupId) ?? []
+      list.push(a)
+      groups.set(a.groupId, list)
+    } else {
+      singles.push(a)
+    }
+  }
+  const out: DisplayItem[] = []
+  for (const [gid, members] of groups) {
+    const cover = members.find(m => m.groupRole === 'cover') ?? members[0]
+    const sorted = [...members].sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))
+    out.push({
+      key: `group:${gid}`,
+      type: 'group',
+      groupId: gid,
+      name: members[0].name ? `${members[0].name} 等` : '套图',
+      cover,
+      coverUrl: cover && cover.category === 'image' ? previewUrl(cover) : '',
+      memberCount: members.length,
+      subCategory: members[0].subCategory ?? undefined,
+      createdAt: sorted[0]?.createdAt,
+      sourceLabel: sourceLinks[cover?.id ?? '']?.label,
+    })
+  }
+  for (const a of singles) {
+    out.push({ key: `asset:${a.id}`, type: 'asset', asset: a, sourceLabel: sourceLinks[a.id]?.label })
+  }
+  // 保持与后端一致的顺序：新→旧（同组内取最新时间）
+  return out.sort((a, b) => {
+    const ta = a.type === 'group' ? a.createdAt : a.asset?.createdAt
+    const tb = b.type === 'group' ? b.createdAt : b.asset?.createdAt
+    return (tb ?? '') < (ta ?? '') ? -1 : 1
+  })
+})
+
 /** 当前大类下的已定义分类（带资产计数；listCategories 返回） */
 const definedCategories = ref<AssetCategoryDef[]>([])
 /** 全量分类定义（分类管理弹窗 + 预览模式查询共用） */
@@ -421,6 +525,8 @@ async function load(): Promise<void> {
   }
   // 当前页 report 类资产：后台预渲染缩略图（渲染器全局串行，不阻塞列表）
   void warmPreviewThumbs()
+  // 来源跳转信息（需求 3）
+  void loadSourceLinks()
 }
 
 /** 当前页 report 类资产后台预渲染（串行渲染队列由主进程保证，前端并行发起） */
@@ -435,6 +541,73 @@ async function renderPreviewFor(asset: AssetRecord): Promise<void> {
   const resp = await api.assets.previewRender(asset.id)
   if (resp.success && resp.data) {
     previewCache[asset.id] = resp.data
+  }
+}
+
+/** 加载当前页资产的来源跳转信息（需求 3：资产 → 产出它的功能） */
+async function loadSourceLinks(): Promise<void> {
+  const targets = items.value.filter(a => a.sourceRef && a.sourceRef !== '')
+  await Promise.all(targets.map(async (a) => {
+    if (sourceLinks[a.id] !== undefined) return
+    const resp = await api.assets.sourceLink(a.id)
+    if (resp.success && resp.data) sourceLinks[a.id] = resp.data
+    else sourceLinks[a.id] = null
+  }))
+}
+
+/** 组画廊：拉组详情（组 + 成员） */
+async function openGroupGallery(groupId: string): Promise<void> {
+  groupDialogVisible.value = true
+  groupLoading.value = true
+  groupDetail.value = null
+  try {
+    const resp = await api.assets.groupDetail(groupId)
+    if (resp.success && resp.data) {
+      groupDetail.value = resp.data
+      groupDialogName.value = resp.data.group.name || '套图'
+    } else {
+      ElMessage.error(resp.error ?? '加载组失败')
+      groupDialogVisible.value = false
+    }
+  } finally {
+    groupLoading.value = false
+  }
+}
+
+/** 来源跳转：app → 应用会话页；workflow → 运行详情（执行历史） */
+async function goSource(asset: AssetRecord): Promise<void> {
+  const link = sourceLinks[asset.id]
+  if (!link) return
+  if (link.type === 'app' && link.appId) {
+    if (link.sessionId) {
+      window.location.hash = `#/apps/${link.appId}/session/${link.sessionId}`
+    } else {
+      window.location.hash = `#/apps/${link.appId}`
+    }
+  } else if (link.type === 'workflow' && link.runId) {
+    window.location.hash = `#/workflow/run/${link.runId}`
+  }
+}
+
+/** 删除组（连带成员资产；内置跳过） */
+async function handleDeleteGroup(groupId: string): Promise<void> {
+  const detail = groupDetail.value
+  const members = detail?.members ?? []
+  if (members.some(m => m.isBuiltin)) {
+    ElMessage.warning('内置资产不可删除')
+    return
+  }
+  await ElMessageBox.confirm(`删除该组（${members.length} 个资产）？`, '删除套图', { type: 'warning' })
+  try {
+    for (const m of members) {
+      const resp = await api.assets.delete(m.id)
+      if (!resp.success) ElMessage.error(resp.error ?? `删除 ${m.name} 失败`)
+    }
+    groupDialogVisible.value = false
+    ElMessage.success('组已删除')
+    await load()
+  } catch {
+    /* 用户取消 */
   }
 }
 

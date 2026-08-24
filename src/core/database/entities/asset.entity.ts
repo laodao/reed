@@ -82,6 +82,14 @@ export class AssetEntity {
   @Column({ name: 'source_ref', type: 'varchar', nullable: true })
   sourceRef!: string | null
 
+  /** 资产组 ID（套图/组图：一次流程多图归为一组，asset_groups.id） */
+  @Column({ name: 'group_id', type: 'varchar', nullable: true })
+  groupId!: string | null
+
+  /** 组内角色（cover=封面图 | member=组内成员；非组资产为 null） */
+  @Column({ name: 'group_role', type: 'varchar', nullable: true })
+  groupRole!: string | null
+
   @Column({ name: 'created_at', type: 'datetime', nullable: true })
   createdAt!: Date | null
 

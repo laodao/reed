@@ -84,6 +84,15 @@ const saveAssetNode: WorkflowNodeHandler = {
       name?: string
       tags?: string
       description?: string
+      enabled?: boolean
+      groupName?: string
+    }
+    // 保存开关：false = 不落库（流程继续），输出空资产标记
+    if (cfg.enabled === false) {
+      return {
+        status: 'succeeded',
+        output: { assetId: '', name: '', category: '', subCategory: '', kind: '', url: '', skipped: true },
+      }
     }
     const content = stringifyValue(cfg.content)
     const explicitKind = cfg.kind ?? 'auto'
@@ -106,6 +115,7 @@ const saveAssetNode: WorkflowNodeHandler = {
               : { kind: 'file', path: content },
       sourceType: 'workflow',
       sourceRef: ctx.runId,
+      groupName: cfg.groupName?.trim() || undefined,
     })
 
     return {
@@ -117,6 +127,7 @@ const saveAssetNode: WorkflowNodeHandler = {
         subCategory: record.subCategory ?? '',
         kind: record.kind,
         url: service.assetPreviewUrl(record),
+        groupId: record.groupId ?? '',
       },
     }
   },

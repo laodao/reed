@@ -45,6 +45,10 @@
               { "label": "自然", "value": "natural" }
             ] },
             { "key": "slogan", "label": "广告语（可选）", "type": "string" },
+            { "key": "outputMode", "label": "产物方式", "type": "select", "defaultValue": "only_images", "options": [
+              { "label": "仅图片（套图归组，不存清单）", "value": "only_images" },
+              { "label": "图文文档（图片归组 + 保存套图清单）", "value": "document" }
+            ] },
             { "key": "model", "label": "图像模型", "type": "model", "modelTypes": ["image"], "required": true },
             { "key": "textModel", "label": "文案模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
           ]
@@ -97,7 +101,8 @@
           "category": "image",
           "subCategory": "电商套图",
           "name": "{{loop1.item.posterType}}-{{loop1.index}}",
-          "tags": "电商,套图,{{loop1.item.posterType}},{{start.productCategory}}"
+          "tags": "电商,套图,{{loop1.item.posterType}},{{start.productCategory}}",
+          "groupName": "套图-{{sys.today}}"
         }
       },
       {
@@ -122,17 +127,32 @@
         }
       },
       {
+        "id": "condSave",
+        "type": "condition",
+        "name": "产物方式分流",
+        "position": { "x": 1160, "y": 60 },
+        "config": {
+          "branches": [
+            { "branchId": "saveDoc", "label": "图文文档", "conditions": [{ "left": "{{start.outputMode}}", "operator": "eq", "right": "document" }] },
+            { "branchId": "skipDoc", "label": "仅图片", "conditions": [] }
+          ],
+          "noMatchPolicy": "fallback",
+          "fallbackBranchId": "skipDoc"
+        }
+      },
+      {
         "id": "save1",
         "type": "save-asset",
-        "name": "保存清单",
-        "position": { "x": 1280, "y": 60 },
+        "name": "保存清单文档",
+        "position": { "x": 1340, "y": 0 },
         "config": {
           "content": "{{report1.markdown}}",
           "kind": "text",
           "category": "text",
           "subCategory": "电商套图",
           "name": "电商套图清单",
-          "tags": "电商套图,{{start.productCategory}}"
+          "tags": "电商套图,{{start.productCategory}}",
+          "groupName": "套图-{{sys.today}}"
         }
       },
       {
@@ -151,9 +171,11 @@
       { "id": "e5", "sourceNodeId": "saveImg", "targetNodeId": "loop1", "kind": "loop-back" },
       { "id": "e6", "sourceNodeId": "loop1", "targetNodeId": "report1", "kind": "loop-done" },
       { "id": "e7", "sourceNodeId": "report1", "targetNodeId": "review1", "kind": "normal" },
-      { "id": "e8", "sourceNodeId": "review1", "targetNodeId": "save1", "kind": "approve" },
+      { "id": "e8", "sourceNodeId": "review1", "targetNodeId": "condSave", "kind": "approve" },
       { "id": "e9", "sourceNodeId": "review1", "targetNodeId": "end", "kind": "reject" },
-      { "id": "e10", "sourceNodeId": "save1", "targetNodeId": "end", "kind": "normal" }
+      { "id": "e10", "sourceNodeId": "condSave", "targetNodeId": "save1", "kind": "branch", "branchId": "saveDoc" },
+      { "id": "e11", "sourceNodeId": "condSave", "targetNodeId": "end", "kind": "branch", "branchId": "skipDoc" },
+      { "id": "e12", "sourceNodeId": "save1", "targetNodeId": "end", "kind": "normal" }
     ]
   },
   "triggers": [],

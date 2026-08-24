@@ -9,6 +9,7 @@
 import type { DataSource } from 'typeorm'
 
 import type { ApiKeyRepository } from './repositories/api-key.repository'
+import type { AssetGroupRepository } from './repositories/asset-group.repository'
 import type { AssetImageRepository } from './repositories/asset-image.repository'
 import type { UserRepository } from './repositories/user.repository'
 import type { CharacterBindingRepository } from './repositories/character-binding.repository'
@@ -146,6 +147,8 @@ export interface ICoreDatabaseManager {
   appSessionMessages: AppSessionMessageRepository | null
   /** 通用资产库（工作流「保存资产」节点 / 资产中心） */
   assets: AssetRepository | null
+  /** 资产组（套图/组图：一次流程多图归为一组） */
+  assetGroups: AssetGroupRepository | null
   /** 资产分类定义（业务分类实体：驱动资产中心分组与预览） */
   assetCategories: AssetCategoryRepository | null
   /** 新闻来源库（内置应用 C1 早报 / C2 周报的数据源） */

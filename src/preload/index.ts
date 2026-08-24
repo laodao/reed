@@ -775,6 +775,8 @@ const electronAPI = {
     deleteCategory: (id: string) => ipcRenderer.invoke('asset:category-delete', { id }),
     previewRender: (assetId: string) => ipcRenderer.invoke('asset:preview-render', { assetId }),
     previewTemplates: () => ipcRenderer.invoke('asset:preview-templates'),
+    sourceLink: (assetId: string) => ipcRenderer.invoke('asset:source-link', { assetId }),
+    groupDetail: (groupId: string) => ipcRenderer.invoke('asset:group-detail', { groupId }),
   },
 
   // ==================== 新闻来源库（内置应用 C1 早报 / C2 周报的数据源） ====================

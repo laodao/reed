@@ -29,6 +29,7 @@ import { AppRepository } from '@core/database/repositories/app.repository'
 import { AppSessionRepository } from '@core/database/repositories/app-session.repository'
 import { AppSessionMessageRepository } from '@core/database/repositories/app-session-message.repository'
 import { AssetRepository } from '@core/database/repositories/asset.repository'
+import { AssetGroupRepository } from '@core/database/repositories/asset-group.repository'
 import { AssetCategoryRepository } from '@core/database/repositories/asset-category.repository'
 import { NewsSourceRepository } from '@core/database/repositories/news-source.repository'
 import { ToolCredentialRepository } from '@core/database/repositories/tool-credential.repository'
@@ -147,6 +148,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public appSessions: AppSessionRepository | null = null
   public appSessionMessages: AppSessionMessageRepository | null = null
   public assets: AssetRepository | null = null
+  public assetGroups: AssetGroupRepository | null = null
   public assetCategories: AssetCategoryRepository | null = null
   public newsSources: NewsSourceRepository | null = null
   public toolCredentials: ToolCredentialRepository | null = null
@@ -4247,6 +4249,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.appSessions = new AppSessionRepository(this.dataSource)
     this.appSessionMessages = new AppSessionMessageRepository(this.dataSource)
     this.assets = new AssetRepository(this.dataSource)
+    this.assetGroups = new AssetGroupRepository(this.dataSource)
     this.assetCategories = new AssetCategoryRepository(this.dataSource)
     this.newsSources = new NewsSourceRepository(this.dataSource)
     this.toolCredentials = new ToolCredentialRepository(this.dataSource)

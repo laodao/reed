@@ -8,7 +8,7 @@
 
 import type { AppRecord, AppSessionRecord } from '@shared/types/app.types'
 import type { Message } from '@shared/types/message.types'
-import type { AssetCategoryDef, AssetPreviewResult, AssetPreviewTemplateOption, AssetRecord } from '@shared/types/asset.types'
+import type { AssetCategoryDef, AssetGroupRecord, AssetPreviewResult, AssetPreviewTemplateOption, AssetRecord, AssetSourceLink } from '@shared/types/asset.types'
 
 /** 统一 IPC 返回（preload invoke 经 ipcBridge 包裹） */
 export interface IpcResp<T> {
@@ -96,6 +96,10 @@ export interface AppApi {
     /** 分类驱动预览渲染（早报/周报 → 长图 data URL；Web → HTML） */
     previewRender(assetId: string): Promise<IpcResp<AssetPreviewResult | null>>
     previewTemplates(): Promise<IpcResp<AssetPreviewTemplateOption[]>>
+    /** 资产来源跳转（需求 3：资产 → 产出它的应用/工作流执行历史） */
+    sourceLink(assetId: string): Promise<IpcResp<AssetSourceLink | null>>
+    /** 资产组详情（需求 2：组卡片 → 组内成员画廊） */
+    groupDetail(groupId: string): Promise<IpcResp<{ group: AssetGroupRecord; members: AssetRecord[] } | null>>
   }
   /** 新闻来源库（内置应用 C1 早报 / C2 周报的数据源管理） */
   newsSource: {

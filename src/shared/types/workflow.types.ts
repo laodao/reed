@@ -466,12 +466,18 @@ export interface WorkflowNodeConfigMap {
     kind: 'auto' | 'file' | 'url' | 'text' | 'json'
     /** 资产大类（image/audio/video/document/text/json/other）；auto=按文件名探测 */
     category?: string
+    /** 资产子分类（资产中心二级分组） */
+    subCategory?: string
     /** 资产名（缺省按来源自动生成） */
     name?: string
     /** 标签（逗号分隔） */
     tags?: string
     /** 描述 */
     description?: string
+    /** 保存开关（false=不落库，流程继续；用于"中间产物/清单不存资产"） */
+    enabled?: boolean
+    /** 资产组名（套图：同一次来源内同名组自动归组；缺省不分组） */
+    groupName?: string
   }
 
   'read-asset': {

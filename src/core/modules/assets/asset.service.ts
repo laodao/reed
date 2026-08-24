@@ -11,8 +11,9 @@
  *              - json：结构化数据（序列化后入库，读取时解析）
  */
 
-import { ASSET_CATEGORIES, ASSET_PREVIEW_MODES, ASSET_STORAGE_KINDS, type AssetCategory, type AssetCategoryDef, type AssetPreviewResult, type AssetPreviewTemplateOption, type AssetRecord, type SaveAssetCategoryInput, type SaveAssetInput, type UpdateAssetCategoryInput } from '@shared/types/asset.types'
+import { ASSET_CATEGORIES, ASSET_PREVIEW_MODES, ASSET_STORAGE_KINDS, type AssetCategory, type AssetCategoryDef, type AssetGroupRecord, type AssetPreviewResult, type AssetPreviewTemplateOption, type AssetRecord, type AssetSourceLink, type SaveAssetCategoryInput, type SaveAssetInput, type UpdateAssetCategoryInput } from '@shared/types/asset.types'
 import { AssetRepository, type ListAssetParams, type UpdateAssetInput } from '@core/database/repositories/asset.repository'
+import { AssetGroupRepository } from '@core/database/repositories/asset-group.repository'
 import { AssetCategoryRepository } from '@core/database/repositories/asset-category.repository'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { AssetStorageService } from './asset-storage.service'
@@ -25,14 +26,55 @@ export interface AssetStats {
   byCategory: Record<string, number>
 }
 
+/** 组查询结果（组 + 成员资产） */
+export interface AssetGroupDetail {
+  group: AssetGroupRecord
+  members: AssetRecord[]
+}
+
+/**
+ * 资产来源 → 功能界面跳转解析器（需求 3）。
+ * 由装配方（workflow-boot）注入：workflow/app 模块有 runService/appDefinitionService 访问权，
+ * 资产模块保持独立——通过本接口解耦。
+ */
+export interface AssetSourceLinkResolver {
+  /** 按运行 id 反查：app 触发 → 应用会话跳转；工作流触发 → 运行详情跳转 */
+  resolve(runId: string): Promise<AssetSourceLink | null>
+}
+
 export class AssetService {
   constructor(
     private readonly storage: AssetStorageService,
     private readonly repo: AssetRepository,
     private readonly categoryRepo: AssetCategoryRepository,
+    private readonly groupRepo?: AssetGroupRepository,
+    private readonly sourceLinkResolver?: AssetSourceLinkResolver,
   ) {}
 
-  /** 保存资产（四种形态统一入口） */
+  /** 资产来源跳转（需求 3：资产 → 产出它的功能/执行历史） */
+  async resolveSourceLink(record: AssetRecord): Promise<AssetSourceLink | null> {
+    if (!record.sourceRef) return null
+    // 手动/导入来源无可跳转
+    if (record.sourceType === 'manual' || record.sourceType === 'import') return null
+    if (!this.sourceLinkResolver) return null
+    try {
+      return await this.sourceLinkResolver.resolve(record.sourceRef)
+    } catch (e) {
+      console.warn('[AssetService] 来源解析失败（忽略）:', e)
+      return null
+    }
+  }
+
+  /** 资产组详情（组 + 成员；供资产中心组卡片/画廊） */
+  async getGroupDetail(groupId: string): Promise<AssetGroupDetail | null> {
+    if (!this.groupRepo) return null
+    const group = await this.groupRepo.findById(groupId)
+    if (!group) return null
+    const members = await this.repo.findByGroup(groupId)
+    return { group, members }
+  }
+
+  /** 保存资产（四种形态统一入口；groupName 归组支持） */
   async createAsset(input: SaveAssetInput): Promise<AssetRecord> {
     const content = input.content
     let category = input.category
@@ -85,7 +127,39 @@ export class AssetService {
       sizeBytes = Buffer.byteLength(jsonContent, 'utf-8')
     }
 
-    return this.repo.create({
+    // 套图归组：groupName 非空时，按「来源 + 组名」查/建组，本资产成为组内成员
+    let groupId: string | null = null
+    let groupRole: string | null = null
+    const groupName = input.groupName?.trim()
+    if (groupName && this.groupRepo) {
+      const sourceType = input.sourceType ?? null
+      const sourceRef = input.sourceRef ?? null
+      // 同一来源（运行）内同名组复用；跨来源不合并（避免不同运行串组）
+      let group = sourceRef ? await this.groupRepo.findBySource(sourceType, sourceRef) : null
+      // 同名不同源：按名称在组表里找本来源下是否已有（findBySource 已按 source 定位，
+      // 若组名不同则需新建——先查本来源是否已有该组名）
+      if (!group) {
+        // 简易实现：组名直接作为组标识的一部分（同名组在同来源内唯一）
+        const created = await this.groupRepo.create({
+          name: groupName,
+          category: category,
+          subCategory: input.subCategory ?? null,
+          sourceType,
+          sourceRef,
+          coverAssetId: null,
+        })
+        group = created
+      }
+      groupId = group.id
+      // 组内第一张资产作为封面
+      if (!group.coverAssetId) {
+        groupRole = 'cover'
+      } else {
+        groupRole = 'member'
+      }
+    }
+
+    const record = await this.repo.create({
       category: category as AssetCategory,
       subCategory: input.subCategory ?? null,
       name: name as string,
@@ -101,7 +175,16 @@ export class AssetService {
       metadata,
       sourceType: input.sourceType,
       sourceRef: input.sourceRef,
+      groupId,
+      groupRole,
     })
+
+    // 组封面回填（首成员作封面）
+    if (groupId && groupRole === 'cover' && this.groupRepo) {
+      await this.groupRepo.update(groupId, { coverAssetId: record.id })
+    }
+
+    return record
   }
 
   /** 分页列表 */

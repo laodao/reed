@@ -85,6 +85,18 @@ export function registerAssetHandlers(): void {
   ipcBridge.handle('asset:preview-templates', () =>
     wrap(() => getAssetService().listPreviewTemplates())
   )
+  // 资产来源跳转（需求 3：资产 → 产出它的应用/工作流执行历史）
+  ipcBridge.handle('asset:source-link', (_e, p: { assetId: string }) =>
+    wrap(async () => {
+      const record = await getAssetService().getAsset(p.assetId)
+      if (!record) return null
+      return getAssetService().resolveSourceLink(record)
+    })
+  )
+  // 资产组详情（需求 2：组卡片 → 组内成员画廊）
+  ipcBridge.handle('asset:group-detail', (_e, p: { groupId: string }) =>
+    wrap(() => getAssetService().getGroupDetail(p.groupId))
+  )
 }
 
 /** 打开资产所在目录（桌面端 shell.showItemInFolder；Web 端不可用） */

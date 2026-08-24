@@ -19,8 +19,30 @@
 
     <el-alert v-if="run?.error" :title="run.error" type="error" :closable="false" style="margin-bottom: 12px" />
 
+    <!-- 用户提交数据（startInputs） -->
+    <el-collapse v-if="run?.startInputs && Object.keys(run.startInputs).length" style="margin-bottom: 12px">
+      <el-collapse-item title="📋 用户提交数据" name="inputs">
+        <pre class="io-json">{{ formatJson(run.startInputs) }}</pre>
+      </el-collapse-item>
+    </el-collapse>
+
     <h4>节点执行记录</h4>
-    <el-table :data="nodeRuns" size="small" empty-text="暂无执行记录">
+    <el-table :data="nodeRuns" size="small" empty-text="暂无执行记录" :row-key="rowKeyOf">
+      <el-table-column type="expand">
+        <template #default="{ row }">
+          <div class="node-io">
+            <div class="io-block" v-if="row.input && Object.keys(row.input).length">
+              <div class="io-title">输入</div>
+              <pre class="io-json">{{ formatJson(row.input) }}</pre>
+            </div>
+            <div class="io-block" v-if="row.output && Object.keys(row.output).length">
+              <div class="io-title">输出</div>
+              <pre class="io-json">{{ formatJson(row.output) }}</pre>
+            </div>
+            <div v-if="(!row.input || !Object.keys(row.input).length) && (!row.output || !Object.keys(row.output).length)" class="io-empty">无输入输出</div>
+          </div>
+        </template>
+      </el-table-column>
       <el-table-column label="#" width="56">
         <template #default="{ $index }">{{ $index + 1 }}</template>
       </el-table-column>
@@ -264,6 +286,24 @@ function formatTime(t: string | null) {
   return t ? new Date(t).toLocaleString('zh-CN') : '—'
 }
 
+/** 表格行唯一键（同节点多迭代区分） */
+function rowKeyOf(row: any): string {
+  return `${row.nodeId}:${row.iterationIndex ?? 0}`
+}
+
+/** JSON 格式化展示（大对象截断防卡顿；文件字段显示文件名） */
+function formatJson(v: unknown): string {
+  if (v === undefined || v === null) return ''
+  const pretty = JSON.stringify(v, (_k, val) => {
+    // 文件输入 {path,name,text} → 显示文件名
+    if (val && typeof val === 'object' && typeof val.path === 'string' && typeof val.name === 'string' && 'text' in val) {
+      return `[文件] ${val.name}`
+    }
+    return val
+  }, 2)
+  return pretty && pretty.length > 20000 ? pretty.slice(0, 20000) + '\n…（已截断）' : pretty
+}
+
 onMounted(() => {
   store.subscribe()
   void load()
@@ -286,4 +326,13 @@ onUnmounted(() => {
 .meta { color: var(--el-text-color-secondary); font-size: 13px; }
 .sep { margin-left: 12px; }
 h4 { margin: 12px 0 8px; }
+.node-io { padding: 4px 8px 8px 16px; }
+.io-block { margin-bottom: 8px; }
+.io-title { font-size: 12px; color: var(--el-text-color-secondary); margin-bottom: 4px; }
+.io-json {
+  margin: 0; padding: 10px 12px; background: var(--el-fill-color-light);
+  border-radius: 6px; font-size: 12px; line-height: 1.6;
+  max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-all;
+}
+.io-empty { font-size: 12px; color: var(--el-text-color-placeholder); padding: 8px 0; }
 </style>

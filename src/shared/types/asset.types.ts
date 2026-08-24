@@ -203,10 +203,43 @@ export interface AssetRecord {
   sourceType?: string | null
   /** 来源引用（工作流运行 id / 应用 id） */
   sourceRef?: string | null
+  /** 资产组 ID（套图/组图：一次流程多图归为一组，asset_groups.id） */
+  groupId?: string | null
+  /** 组内角色（cover=封面图 | member=组内成员；非组资产为 null） */
+  groupRole?: string | null
   /** 内置资产（全局共享、禁删禁改，允许复制为自有） */
   isBuiltin?: boolean
   createdAt: string
   updatedAt: string
+}
+
+/** 资产组记录（asset_groups DTO） */
+export interface AssetGroupRecord {
+  id: string
+  userId: string | null
+  name: string
+  category?: string | null
+  subCategory?: string | null
+  description?: string | null
+  coverAssetId?: string | null
+  sourceType?: string | null
+  sourceRef?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+/** 资产来源跳转（需求 3：资产 → 产出它的功能） */
+export interface AssetSourceLink {
+  /** 跳转类型：app=应用会话 | workflow=工作流运行 */
+  type: 'app' | 'workflow'
+  /** 应用会话跳转参数 */
+  appId?: string
+  sessionId?: string
+  /** 工作流运行跳转参数 */
+  runId?: string
+  definitionId?: string
+  /** 展示名（如「电商商品套图」/「周报生成器」） */
+  label: string
 }
 
 /** 保存资产的输入（service 层契约；IPC 与节点 handler 共用） */
@@ -225,4 +258,6 @@ export interface SaveAssetInput {
   /** 来源类型/引用（工作流节点保存时注入 runId） */
   sourceType?: string
   sourceRef?: string
+  /** 资产组名（套图：同一次来源内同名组自动归组；缺省不分组） */
+  groupName?: string
 }

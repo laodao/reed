@@ -27,6 +27,8 @@ export interface CreateAssetInput {
   metadata?: Record<string, unknown> | null
   sourceType?: string | null
   sourceRef?: string | null
+  groupId?: string | null
+  groupRole?: string | null
 }
 
 export interface UpdateAssetInput {
@@ -73,6 +75,8 @@ export class AssetRepository extends BaseRepository<AssetEntity, AssetRecord> {
       metadata: parseJsonObject(e.metadata),
       sourceType: e.sourceType,
       sourceRef: e.sourceRef,
+      groupId: e.groupId,
+      groupRole: e.groupRole,
       isBuiltin: e.isBuiltin === 1,
       createdAt: e.createdAt ? new Date(e.createdAt).toISOString() : '',
       updatedAt: e.updatedAt ? new Date(e.updatedAt).toISOString() : '',
@@ -139,6 +143,22 @@ export class AssetRepository extends BaseRepository<AssetEntity, AssetRecord> {
     return rows.map(r => ({ subCategory: (r.subCategory as string | null) ?? null, count: Number(r.count ?? 0) }))
   }
 
+  /** 组内成员资产（组卡片画廊；创建时间升序——封面在前） */
+  async findByGroup(groupId: string): Promise<AssetRecord[]> {
+    const userId = getCurrentUserId()
+    const qb = this.repo
+      .createQueryBuilder('a')
+      .where('a.group_id = :gid', { gid: groupId })
+    if (userId) {
+      qb.andWhere('(a.user_id = :userId OR a.is_builtin = 1)', { userId })
+    } else {
+      qb.andWhere('(a.user_id IS NULL OR a.is_builtin = 1)')
+    }
+    qb.orderBy('a.created_at', 'ASC').addOrderBy('a.id', 'ASC')
+    const rows = await qb.getMany()
+    return this.toDtoList(rows)
+  }
+
   /** 各分类数量统计（资产中心头部；含内置） */
   async countByCategory(): Promise<Array<{ category: string; count: number }>> {
     const userId = getCurrentUserId()
@@ -176,6 +196,8 @@ export class AssetRepository extends BaseRepository<AssetEntity, AssetRecord> {
       metadata: data.metadata ? JSON.stringify(data.metadata) : null,
       sourceType: data.sourceType ?? null,
       sourceRef: data.sourceRef ?? null,
+      groupId: data.groupId ?? null,
+      groupRole: data.groupRole ?? null,
       createdAt: now,
       updatedAt: now,
     } as Partial<AssetEntity>)

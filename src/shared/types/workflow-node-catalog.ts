@@ -720,14 +720,14 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
   {
     type: 'save-asset',
     label: '保存资产',
-    description: '把上游输出（文件/链接/文本/JSON）按分类保存到资产库，资产中心统一管理',
+    description: '把上游输出（文件/链接/文本/JSON）按分类保存到资产库，资产中心统一管理；支持组（套图）与保存开关',
     category: 'general',
     icon: 'Collection',
     controlKind: 'task',
     cancellable: false,
     ports: [{ kind: 'normal', label: '出', max: 1 }, { kind: 'fail', label: '失败' }],
     requiredConfigKeys: ['content'],
-    defaultConfig: { content: '', kind: 'auto', category: 'auto', subCategory: '' },
+    defaultConfig: { content: '', kind: 'auto', category: 'auto', subCategory: '', enabled: true, groupName: '' },
     outputSchema: [
       { key: 'assetId', type: 'string', desc: '资产 ID（read-asset 节点引用）' },
       { key: 'name', type: 'string', desc: '资产名' },

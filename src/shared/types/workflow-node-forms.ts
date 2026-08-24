@@ -449,6 +449,15 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     }),
     T('name', '资产名', { help: '留空按文件名/内容自动生成', placeholder: '例如：今日早报图' }),
     T('tags', '标签', { help: '逗号分隔，资产中心可按标签搜索' }),
+    T('groupName', '资产组名（套图）', {
+      help: '同一次流程内同名组自动归为一组（资产中心以组卡片展示）；留空不分组',
+      placeholder: '例如：电商套图-主图+场景图',
+    }),
+    T('enabled', '保存到资产', {
+      type: 'switch',
+      help: '关闭后本节点不写资产库（流程继续）；用于中间产物/清单不存资产',
+      defaultValue: true,
+    }),
     T('description', '描述', { group: '其他' }),
   ],
   'read-asset': [
