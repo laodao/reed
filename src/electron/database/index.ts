@@ -32,6 +32,7 @@ import { AssetRepository } from '@core/database/repositories/asset.repository'
 import { AssetGroupRepository } from '@core/database/repositories/asset-group.repository'
 import { AssetCategoryRepository } from '@core/database/repositories/asset-category.repository'
 import { NewsSourceRepository } from '@core/database/repositories/news-source.repository'
+import { NewsTopicRepository } from '@core/database/repositories/news-topic.repository'
 import { ToolCredentialRepository } from '@core/database/repositories/tool-credential.repository'
 import { CustomToolRepository } from '@core/database/repositories/custom-tool.repository'
 import { EmailAccountRepository } from '@core/database/repositories/email-account.repository'
@@ -151,6 +152,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public assetGroups: AssetGroupRepository | null = null
   public assetCategories: AssetCategoryRepository | null = null
   public newsSources: NewsSourceRepository | null = null
+  public newsTopics: NewsTopicRepository | null = null
   public toolCredentials: ToolCredentialRepository | null = null
   public customTools: CustomToolRepository | null = null
   public emailAccounts: EmailAccountRepository | null = null
@@ -4252,6 +4254,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.assetGroups = new AssetGroupRepository(this.dataSource)
     this.assetCategories = new AssetCategoryRepository(this.dataSource)
     this.newsSources = new NewsSourceRepository(this.dataSource)
+    this.newsTopics = new NewsTopicRepository(this.dataSource)
     this.toolCredentials = new ToolCredentialRepository(this.dataSource)
     this.customTools = new CustomToolRepository(this.dataSource)
     this.emailAccounts = new EmailAccountRepository(this.dataSource)

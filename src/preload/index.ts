@@ -789,6 +789,14 @@ const electronAPI = {
     delete: (id: string) => ipcRenderer.invoke('newsSource:delete', { id }),
   },
 
+  // ==================== 新闻主题（入库可增删） ====================
+  newsTopic: {
+    list: () => ipcRenderer.invoke('newsTopic:list'),
+    create: (p: { name: string }) => ipcRenderer.invoke('newsTopic:create', p),
+    update: (p: { id: string; name?: string }) => ipcRenderer.invoke('newsTopic:update', p),
+    delete: (id: string) => ipcRenderer.invoke('newsTopic:delete', { id }),
+  },
+
   // ==================== P0 工具模块（片1：第三方 API 工具） ====================
   tools: {
     listCredentials: () => ipcRenderer.invoke('tool:list-credentials'),

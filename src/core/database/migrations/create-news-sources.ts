@@ -98,10 +98,56 @@ const BUILTIN_SOURCES: Array<{ id: string; topicId: string; name: string; url: s
   { id: 'ns_wld_15', topicId: 'world', name: '观察者网', url: 'https://www.guancha.cn/' },
 ]
 
+/** 预置新闻主题（id 与 news_sources.topic_id 对应；可被用户新增扩展） */
+const BUILTIN_TOPICS: Array<{ id: string; name: string }> = [
+  { id: 'ai', name: '人工智能' },
+  { id: 'finance', name: '全球财经' },
+  { id: 'energy', name: '新能源' },
+  { id: 'tech', name: '科技产业' },
+  { id: 'world', name: '国际时政' },
+]
+
 export async function createNewsSources(ds: DataSource): Promise<void> {
   const isPg = ds.options.type === 'postgres'
   const vc = isPg ? 'varchar' : 'TEXT'
   const dt = isPg ? 'timestamp' : 'datetime'
+
+  // 0. 主题表（news_topics）：主题入库，设置界面可增删自定义主题
+  if (!(await checkTableExists(ds, 'news_topics', isPg))) {
+    await ds.query(`
+      CREATE TABLE news_topics (
+        id          ${vc} PRIMARY KEY,
+        user_id     ${vc},
+        name        ${vc} NOT NULL,
+        is_builtin  INTEGER DEFAULT 0,
+        created_at  ${dt},
+        updated_at  ${dt}
+      )
+    `)
+    console.log('[create-news-sources] 表 news_topics 创建完成')
+  }
+  await ds.query(`CREATE INDEX IF NOT EXISTS idx_news_topics_user ON news_topics (user_id)`)
+  // 预置 5 内置主题（幂等：缺失补插；名称同步更新）
+  {
+    const now = new Date().toISOString()
+    let inserted = 0
+    for (const t of BUILTIN_TOPICS) {
+      const existing = await ds.query(
+        isPg ? `SELECT 1 FROM news_topics WHERE id = $1 LIMIT 1` : `SELECT 1 FROM news_topics WHERE id = ? LIMIT 1`,
+        [t.id]
+      )
+      if (existing.length === 0) {
+        await ds.query(
+          `INSERT INTO news_topics (id, user_id, name, is_builtin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+          [t.id, null, t.name, 1, now, now]
+        )
+        inserted++
+      } else {
+        await ds.query(`UPDATE news_topics SET name = ?, updated_at = ? WHERE id = ?`, [t.name, now, t.id])
+      }
+    }
+    console.log(`[create-news-sources] 预置主题完成：新增 ${inserted} 个内置主题（共 ${BUILTIN_TOPICS.length}）`)
+  }
 
   // 1. 建表（幂等）
   if (!(await checkTableExists(ds, 'news_sources', isPg))) {

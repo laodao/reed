@@ -35,6 +35,7 @@ import type { AppSessionMessageRepository } from './repositories/app-session-mes
 import type { AssetRepository } from './repositories/asset.repository'
 import type { AssetCategoryRepository } from './repositories/asset-category.repository'
 import type { NewsSourceRepository } from './repositories/news-source.repository'
+import type { NewsTopicRepository } from './repositories/news-topic.repository'
 import type { ToolCredentialRepository } from './repositories/tool-credential.repository'
 import type { CustomToolRepository } from './repositories/custom-tool.repository'
 import type { EmailAccountRepository } from './repositories/email-account.repository'
@@ -153,6 +154,7 @@ export interface ICoreDatabaseManager {
   assetCategories: AssetCategoryRepository | null
   /** 新闻来源库（内置应用 C1 早报 / C2 周报的数据源） */
   newsSources: NewsSourceRepository | null
+  newsTopics: NewsTopicRepository | null
   toolCredentials: ToolCredentialRepository | null
   customTools: CustomToolRepository | null
   /** 邮箱账号（邮件收发：SMTP 发 / IMAP 收） */

@@ -14,6 +14,7 @@ export type SearchEngineType =
   | 'zhipu'       // 智谱 AI - API
   | 'tavily'      // Tavily - API
   | 'model'       // 模型内置搜索
+  | 'custom-api'  // 通用 API 型（OpenAI 兼容 /chat/completions；可配置 URL/Key/模型）
 
 /**
  * 搜索引擎分类

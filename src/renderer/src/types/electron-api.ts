@@ -111,6 +111,13 @@ export interface AppApi {
     update(p: { id: string; topicId?: string; name?: string; url?: string; enabled?: boolean }): Promise<IpcResp<{ id: string; topicId: string; name: string; url: string } | null>>
     delete(id: string): Promise<IpcResp<{ deleted: boolean }>>
   }
+  /** 新闻主题（入库可增删：来源分组） */
+  newsTopic: {
+    list(): Promise<IpcResp<Array<{ id: string; name: string; isBuiltin: boolean }>>>
+    create(p: { name: string }): Promise<IpcResp<{ id: string; name: string; isBuiltin: boolean } | null>>
+    update(p: { id: string; name?: string }): Promise<IpcResp<{ id: string; name: string; isBuiltin: boolean } | null>>
+    delete(id: string): Promise<IpcResp<{ deleted: boolean }>>
+  }
   file: {
     openDialog(options?: { multiple?: boolean; filters?: Array<{ name: string; extensions: string[] }> }): Promise<{
       success: boolean

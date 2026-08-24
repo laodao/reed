@@ -101,6 +101,7 @@ import { AssetRepository } from '@core/database/repositories/asset.repository'
 import { AssetGroupRepository } from '@core/database/repositories/asset-group.repository'
 import { AssetCategoryRepository } from '@core/database/repositories/asset-category.repository'
 import { NewsSourceRepository } from '@core/database/repositories/news-source.repository'
+import { NewsTopicRepository } from '@core/database/repositories/news-topic.repository'
 
 export class WebDatabaseManager implements ICoreDatabaseManager {
   readonly dataSource: DataSource | null
@@ -137,6 +138,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   assetGroups: AssetGroupRepository | null
   assetCategories: AssetCategoryRepository | null
   newsSources: NewsSourceRepository | null
+  newsTopics: NewsTopicRepository | null
   toolCredentials: ToolCredentialRepository | null
   customTools: CustomToolRepository | null
   emailAccounts: EmailAccountRepository | null
@@ -245,6 +247,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.assetGroups = new AssetGroupRepository(ds)
     this.assetCategories = new AssetCategoryRepository(ds)
     this.newsSources = new NewsSourceRepository(ds)
+    this.newsTopics = new NewsTopicRepository(ds)
     this.toolCredentials = new ToolCredentialRepository(ds)
     this.customTools = new CustomToolRepository(ds)
     this.emailAccounts = new EmailAccountRepository(ds)

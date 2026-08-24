@@ -15,6 +15,12 @@ function repo() {
   return db.newsSources
 }
 
+function topicRepo() {
+  const db = getCoreDatabaseManager()
+  if (!db.newsTopics) throw new Error('新闻主题仓库未初始化')
+  return db.newsTopics
+}
+
 export function registerNewsSourceHandlers(): void {
   ipcBridge.handle('newsSource:list', (_e, p: { topicId?: string; keyword?: string }) =>
     wrap(() => repo().list({ topicId: p.topicId ?? '', keyword: p.keyword }))
@@ -30,6 +36,32 @@ export function registerNewsSourceHandlers(): void {
   )
   ipcBridge.handle('newsSource:delete', (_e, p: { id: string }) =>
     wrap(async () => ({ deleted: await repo().delete(p.id) }))
+  )
+
+  // ==================== 新闻主题（入库可增删；内置有来源禁删，删除级联删来源） ====================
+  ipcBridge.handle('newsTopic:list', () =>
+    wrap(() => topicRepo().listAll())
+  )
+  ipcBridge.handle('newsTopic:create', (_e, p: { name: string }) =>
+    wrap(() => topicRepo().create({ name: p.name }))
+  )
+  ipcBridge.handle('newsTopic:update', (_e, p: { id: string; name?: string }) =>
+    wrap(() => topicRepo().update(p.id, { name: p.name }))
+  )
+  ipcBridge.handle('newsTopic:delete', (_e, p: { id: string }) =>
+    wrap(async () => {
+      const topic = await topicRepo().findById(p.id)
+      if (!topic) throw new Error('主题不存在')
+      if (topic.isBuiltin) {
+        // 内置主题：其下仍有来源时禁删（防止误删预置源目录）
+        const remaining = await repo().list({ topicId: p.id })
+        if (remaining.length > 0) throw new Error('内置主题仍有来源，请先删除其下来源')
+      }
+      // 级联删除主题下全部来源（含用户自有）
+      const sources = await repo().list({ topicId: p.id })
+      for (const s of sources) await repo().delete(s.id)
+      return { deleted: await topicRepo().delete(p.id) }
+    })
   )
 }
 

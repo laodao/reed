@@ -387,8 +387,14 @@
 
             <!-- 按主题分组展示 -->
             <div v-for="topic in newsSourceTopics" :key="topic.id" class="search-engine-group">
-              <h4 class="group-title">{{ topic.label }}（{{ sourcesOfTopic(topic.id).length }}）</h4>
-              <p class="group-desc">预置全球知名媒体源（不可删除）；自定义来源可编辑/删除</p>
+              <div class="group-title-row">
+                <h4 class="group-title">{{ topic.label }}（{{ sourcesOfTopic(topic.id).length }}）</h4>
+                <div class="group-title-actions">
+                  <el-button v-if="!topic.isBuiltin" text size="small" @click="editNewsTopic(topic)">改主题名</el-button>
+                  <el-button v-if="!topic.isBuiltin" text type="danger" size="small" @click="deleteNewsTopic(topic)">删除主题</el-button>
+                </div>
+              </div>
+              <p class="group-desc">内置主题预置全球知名媒体源；可新增自定义主题，来源按主题归组</p>
               <div v-if="sourcesOfTopic(topic.id).length" class="provider-config-list">
                 <div
                   v-for="source in sourcesOfTopic(topic.id)"
@@ -415,6 +421,12 @@
                 </div>
               </div>
               <div v-else class="empty-config"><p>该主题暂无来源</p></div>
+            </div>
+            <div class="news-topic-add">
+              <el-button type="primary" plain size="small" @click="openAddNewsTopicDialog">
+                <el-icon><Plus /></el-icon>
+                添加主题
+              </el-button>
             </div>
           </div>
         </el-tab-pane>
@@ -586,6 +598,19 @@
       <template #footer>
         <el-button @click="showAddNewsSourceDialog = false">取消</el-button>
         <el-button type="primary" @click="saveNewsSource">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 添加/编辑新闻主题对话框 -->
+    <el-dialog v-model="showNewsTopicDialog" :title="editingNewsTopic ? '编辑主题' : '添加主题'" width="420px" :close-on-click-modal="false">
+      <el-form label-width="80px" label-position="left">
+        <el-form-item label="主题名" required>
+          <el-input v-model="newsTopicName" placeholder="如：医疗健康 / 游戏电竞" @keyup.enter="saveNewsTopic" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showNewsTopicDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveNewsTopic">保存</el-button>
       </template>
     </el-dialog>
 
@@ -764,14 +789,69 @@ const newsSources = ref<NewsSourceItem[]>([])
 const showAddNewsSourceDialog = ref(false)
 const editingNewsSource = ref<NewsSourceItem | undefined>(undefined)
 const newsSourceForm = reactive({ topicId: 'ai', name: '', url: '' })
-/** 新闻主题分组（与 NEWS_TOPICS 对齐；自定义来源按 topicId 归组） */
-const newsSourceTopics = [
-  { id: 'ai', label: '人工智能' },
-  { id: 'finance', label: '全球财经' },
-  { id: 'energy', label: '新能源' },
-  { id: 'tech', label: '科技产业' },
-  { id: 'world', label: '国际时政' },
-]
+/** 新闻主题（从数据库加载：内置 5 主题 + 用户自定义，可增删） */
+const newsSourceTopics = ref<Array<{ id: string; label: string; isBuiltin: boolean }>>([])
+/** 主题编辑弹窗 */
+const showNewsTopicDialog = ref(false)
+const editingNewsTopic = ref<{ id: string; isBuiltin: boolean } | undefined>(undefined)
+const newsTopicName = ref('')
+
+async function loadNewsTopics(): Promise<void> {
+  const api = (window as unknown as { electronAPI: any }).electronAPI
+  try {
+    const resp = await api.newsTopic.list()
+    if (resp.success) {
+      newsSourceTopics.value = (resp.data ?? []).map(t => ({ id: t.id, label: t.name, isBuiltin: t.isBuiltin }))
+      // 默认选中第一个主题（表单新建来源用）
+      if (newsSourceTopics.value.length && !newsSourceTopics.value.some(t => t.id === newsSourceForm.topicId)) {
+        newsSourceForm.topicId = newsSourceTopics.value[0].id
+      }
+    } else console.warn('[Settings] 新闻主题加载失败', resp.error)
+  } catch (e) {
+    console.warn('[Settings] 新闻主题加载异常', e)
+  }
+}
+
+function openAddNewsTopicDialog(): void {
+  editingNewsTopic.value = undefined
+  newsTopicName.value = ''
+  showNewsTopicDialog.value = true
+}
+
+function editNewsTopic(topic: { id: string; isBuiltin: boolean }): void {
+  if (topic.isBuiltin) return
+  editingNewsTopic.value = topic
+  const found = newsSourceTopics.value.find(t => t.id === topic.id)
+  newsTopicName.value = found?.label ?? ''
+  showNewsTopicDialog.value = true
+}
+
+async function saveNewsTopic(): Promise<void> {
+  const name = newsTopicName.value.trim()
+  if (!name) { ElMessage.warning('请输入主题名'); return }
+  const api = (window as unknown as { electronAPI: any }).electronAPI
+  if (editingNewsTopic.value) {
+    const resp = await api.newsTopic.update({ id: editingNewsTopic.value.id, name })
+    if (resp.success) ElMessage.success('主题已更新')
+    else { ElMessage.error(resp.error ?? '更新失败'); return }
+  } else {
+    const resp = await api.newsTopic.create({ name })
+    if (resp.success) ElMessage.success('主题已创建')
+    else { ElMessage.error(resp.error ?? '创建失败'); return }
+  }
+  showNewsTopicDialog.value = false
+  await loadNewsTopics()
+  await loadNewsSources()
+}
+
+async function deleteNewsTopic(topic: { id: string; isBuiltin: boolean }): Promise<void> {
+  if (topic.isBuiltin) return
+  await ElMessageBox.confirm(`删除主题「${topic.label}」？其下全部来源将一并删除。`, '删除主题', { type: 'warning' })
+  const api = (window as unknown as { electronAPI: any }).electronAPI
+  const resp = await api.newsTopic.delete(topic.id)
+  if (resp.success) { ElMessage.success('主题已删除'); await loadNewsTopics(); await loadNewsSources() }
+  else ElMessage.error(resp.error ?? '删除失败')
+}
 
 function sourcesOfTopic(topicId: string): NewsSourceItem[] {
   return newsSources.value.filter(s => s.topicId === topicId)
@@ -1521,6 +1601,7 @@ onMounted(async () => {
   // 加载 OSS 配置
   await loadOSSConfigs()
   // 加载新闻来源
+  await loadNewsTopics()
   await loadNewsSources()
 })
 </script>
@@ -2122,6 +2203,12 @@ onMounted(async () => {
   color: var(--text-primary);
   margin: 0 0 4px 0;
 }
+
+/* 新闻主题：标题行（名称 + 操作按钮） */
+.group-title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.group-title-row .group-title { margin: 0; }
+.group-title-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.news-topic-add { margin-top: 14px; display: flex; justify-content: flex-end; }
 
 // OSS 配置列表样式
 .oss-config-list {

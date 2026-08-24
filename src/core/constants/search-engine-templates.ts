@@ -109,6 +109,42 @@ export const SEARCH_ENGINE_TEMPLATES: SearchEngineTemplate[] = [
     isOfficial: true,
     priority: 11
   },
+  {
+    id: 'custom-api',
+    name: '通用 API 搜索',
+    description: '接入任意 OpenAI 兼容搜索 API（Perplexity/Exa/DeepSeek 联网等）——填 API 地址 + Key + 模型名',
+    category: 'api',
+    icon: '🔌',
+    authConfig: {
+      requiresApiKey: true,
+      apiKeyLabel: 'API Key',
+      apiKeyPlaceholder: '请输入 API Key',
+      requiresExtraConfig: true,
+      extraConfigFields: [
+        {
+          key: 'apiUrl',
+          label: 'API 地址',
+          type: 'string',
+          default: 'https://api.perplexity.ai',
+          placeholder: 'https://api.perplexity.ai',
+          required: true,
+          description: 'OpenAI 兼容 /chat/completions 端点的基础地址（不带 /chat/completions）'
+        },
+        {
+          key: 'model',
+          label: '模型名',
+          type: 'string',
+          default: 'sonar',
+          placeholder: 'sonar / sonar-pro / 或服务商提供的搜索模型名',
+          description: '该端点用于联网搜索的模型名'
+        }
+      ]
+    },
+    defaultMaxResults: 5,
+    maxResultsLimit: 10,
+    isOfficial: false,
+    priority: 12
+  },
 
   // ========== 模型内置搜索 ==========
   {
