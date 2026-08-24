@@ -115,4 +115,66 @@ describe('loop 内跨节点变量引用（电商套图场景）', () => {
       expect(c.content).toBe('C:/x/img.png')
     }
   })
+
+  it('双 loop 串联（电商套图 v2：非场景 loop1 → loop-done → 场景 loop2）', async () => {
+    saveCalls.length = 0
+    registerPathProvider(() => ({
+      getDataPath: () => tmpdir(),
+      getUserDataPath: () => tmpdir(),
+      getAppDataPath: () => tmpdir(),
+      getTempPath: () => tmpdir(),
+      getSubDirectories: () => ({}) as never,
+      getSubDirectoryPath: () => tmpdir(),
+      toAssetUrl: (p: string) => 'local-image://' + p,
+    }))
+    const graph = g(
+      [
+        n('start', 'start'),
+        n('loop1', 'loop', { listExpression: '{{start.nonSceneShots}}' }),
+        n('img1', 'image-gen'),
+        n('saveImg1', 'save-asset', { content: '{{img1.images.0.path}}', kind: 'file', name: '{{loop1.item.posterType}}-{{loop1.index}}' }),
+        n('loop2', 'loop', { listExpression: '{{start.scenes}}' }),
+        n('img2', 'image-gen'),
+        n('saveImg2', 'save-asset', { content: '{{img2.images.0.path}}', kind: 'file', name: '场景{{loop2.index}}-{{loop2.item.title}}' }),
+        n('end', 'end'),
+      ],
+      [
+        ['start', 'loop1'],
+        ['loop1', 'img1', 'loop-body'],
+        ['img1', 'saveImg1'],
+        ['saveImg1', 'loop1', 'loop-back'],
+        ['loop1', 'loop2', 'loop-done'],   // 串联：非场景 loop 完成后进入场景 loop
+        ['loop2', 'img2', 'loop-body'],
+        ['img2', 'saveImg2'],
+        ['saveImg2', 'loop2', 'loop-back'],
+        ['loop2', 'end', 'loop-done'],
+      ]
+    )
+    const engine = makeEngine()
+    const status = await runWithUser('u1', () =>
+      engine.execute({
+        runId: 'run_2', userId: 'u1', definitionId: 'd1', graph,
+        startInputs: {
+          nonSceneShots: [
+            { posterType: 'main' },
+            { posterType: 'promo' },
+          ],
+          scenes: [
+            { title: '通勤时刻', desc: '地铁上' },
+            { title: '居家客厅', desc: '沙发旁' },
+            { title: '户外野餐', desc: '草地上' },
+          ],
+        },
+      } as ExecuteRunInput)
+    )
+    expect(status).toBe('succeeded')
+    // 非场景 2 张 + 场景 3 张
+    expect(saveCalls.length).toBe(5)
+    const names = saveCalls.map(c => c.name)
+    expect(names).toContain('main-0')
+    expect(names).toContain('promo-1')
+    expect(names).toContain('场景2-户外野餐')
+    expect(names).toContain('场景0-通勤时刻')
+    expect(names).toContain('场景1-居家客厅')
+  })
 })

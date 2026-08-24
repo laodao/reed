@@ -29,6 +29,10 @@
       <div class="card">
         <div class="card-title">等待操作 <span class="badge orange">{{ kindLabel(card.kind) }}</span></div>
         <RunInputForm v-if="card.kind === 'form'" ref="reviewFormRef" auto-columns :inputs="reviewFields ?? []" @valid="v => (reviewValid = v)" />
+        <!-- 送审内容展示（approve/input/choose 的 payload；文本按 markdown 渲染） -->
+        <div v-else-if="reviewPayloadText" class="review-payload">
+          <div class="md-body" v-html="renderedReviewPayload"></div>
+        </div>
         <div v-else class="review-hint">节点 {{ card.nodeId }} 等待操作</div>
         <div class="card-footer">
           <el-button size="small" @click="decide('reject')">取消流程</el-button>
@@ -87,6 +91,34 @@ const reviewFields = computed(() => {
   const f = (card.value.schema as { fields?: unknown } | null | undefined)?.fields
   return Array.isArray(f) ? (f as Array<Record<string, unknown>>) : undefined
 })
+
+/** 送审内容文本（approve/input/choose 的 payload：content 字段优先，其余 stringify） */
+const reviewPayloadText = computed(() => {
+  if (card.value?.card !== CARDS.review) return ''
+  const schema = (card.value.schema ?? {}) as Record<string, unknown>
+  if (typeof schema.content === 'string' && schema.content.trim()) return schema.content
+  // 无 content 字段时，把其余可读字段拼成文本（避免盲批）
+  const readable = Object.entries(schema).filter(([k]) => !['form', 'fields', 'options', 'interaction'].includes(k))
+  if (readable.length === 0) return ''
+  return readable.map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`).join('\n\n')
+})
+
+/** 送审内容 markdown 渲染（与 report 卡片同源） */
+const renderedReviewPayload = ref('')
+watch(
+  reviewPayloadText,
+  async text => {
+    renderedReviewPayload.value = ''
+    if (!text) return
+    try {
+      const { marked } = await import('marked')
+      renderedReviewPayload.value = await marked.marked(text, { gfm: true, breaks: true, async: true })
+    } catch {
+      renderedReviewPayload.value = text
+    }
+  },
+  { immediate: true },
+)
 
 const statusSummary = computed(() => {
   const c = card.value
@@ -162,5 +194,7 @@ watch(
 .badge.orange { background: #faecd8; color: #e6a23c; }
 .card-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .review-hint { color: var(--el-text-color-secondary); font-size: 13px; }
+.review-payload { max-height: 320px; overflow-y: auto; background: var(--el-fill-color-lighter); border-radius: 6px; padding: 10px 12px; }
+.review-payload .md-body { font-size: 13px; line-height: 1.7; color: var(--el-text-color-primary); }
 .md-body { white-space: pre-wrap; font-size: 13px; line-height: 1.8; }
 </style>

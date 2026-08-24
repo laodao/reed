@@ -2,7 +2,7 @@
   "kind": "the-bot-workflow",
   "formatVersion": 1,
   "name": "[内置] 电商商品套图",
-  "description": "商品图+卖点 → 按类型×数量生成整套电商图（主图/白底/场景/促销/详情/社媒），产品类型驱动真实使用场景",
+  "description": "商品图+卖点 → 先设计并确认 n 个使用场景（可配置数量）→ 按场景生成场景图 + 按类型生成主图/白底/促销等，整套归组",
   "category": "ecommerce",
   "graph": {
     "version": 1,
@@ -35,7 +35,8 @@
               { "label": "详情头图", "value": "detail" },
               { "label": "社媒推广图", "value": "social" }
             ] },
-            { "key": "countPerType", "label": "每类数量", "type": "number", "defaultValue": 1, "validation": { "min": 1, "max": 6 } },
+            { "key": "countPerType", "label": "每类数量（场景图除外）", "type": "number", "defaultValue": 1, "validation": { "min": 1, "max": 6 } },
+            { "key": "sceneCount", "label": "场景数量", "type": "number", "defaultValue": 4, "validation": { "min": 1, "max": 8 }, "description": "设计并确认几个使用场景（场景图按此数量生成）" },
             { "key": "style", "label": "风格", "type": "select", "defaultValue": "minimal", "options": [
               { "label": "简约", "value": "minimal" },
               { "label": "高端", "value": "premium" },
@@ -57,11 +58,59 @@
       {
         "id": "plan1",
         "type": "llm-chat",
-        "name": "套图规划",
-        "position": { "x": 320, "y": 200 },
+        "name": "套图规划（非场景）",
+        "position": { "x": 320, "y": 60 },
         "config": {
-          "systemPrompt": "你是资深电商视觉规划师。根据商品信息、产品类型、所选海报类型与每类数量，规划整套电商图的生成方案。\n\n【商品外观锁定（最高优先级，所有 shot 必须遵守）】\n商品外观以用户上传的商品参考图为准（生成阶段会传入参考图），本规划阶段看不到参考图，因此：\n- 基于商品信息写一段【商品外观描述段】（英文，40-70 词）：只描述商品本身客观特征（品名、材质、配色、形态、关键部件，仅写商品信息中明确提及的），不臆造细节、不编造图案文字；\n- 所有 shot 的 prompt 必须逐字复用同一段【商品外观描述段】（不得改写、不得增删特征）；\n- 只允许改变：背景/场景、光线、角度、构图、氛围、道具与人物互动；商品本体的形状、颜色、材质、图案、logo、部件绝对禁止改变；\n- negativePrompt 固定追加：different product, changed product, altered design, variant product, wrong color, wrong shape（商品一致性否定词）。\n\n【数量约束】shots 数组长度必须 = 所选海报类型数 × 每类数量，逐类型展开（如选 主图+场景图、每类 2 张 → 共 4 个 shot）。\n\n【各类型设计规范】\n- main 主图：纯色或渐变背景，商品居中占画面 60-70%，顶部留白放卖点文案；强调质感与清晰度\n- white 白底图：纯白背景、商品完整入画、无阴影或极浅阴影，电商规范白底图\n- scene 场景图：按产品类型联想真实使用场景（见下），人/环境与商品自然互动，生活感强\n- promo 促销海报：促销氛围（打折/优惠/活动感），醒目构图，可含价格联想元素\n- detail 详情头图：品牌调性大图，产品+核心卖点融合，适合详情页顶部\n- social 社媒推广图：竖版社交传播感，视觉冲击力强，适合小红书/朋友圈\n\n【产品类型 → 场景联想（scene 必用，其他类型可选借鉴）】\n- 数码家电：办公桌工作台/客厅沙发茶几/卧室床头/通勤地铁/咖啡馆/智能家居环境\n- 美妆个护：梳妆台/浴室洗漱/通勤包内/旅行行李箱/闺蜜聚会/晨间护肤\n- 食品饮料：餐桌正餐/周末野餐/办公室下午茶/厨房烹饪/咖啡馆角落/聚会分享\n- 服饰鞋包：都市街拍/通勤路上/健身房/旅行打卡/聚会晚宴/居家休闲\n- 家居日用：客厅/卧室/厨房/阳台/书房/浴室\n- 母婴玩具：婴儿房/客厅游戏区/户外公园/亲子互动/幼儿园\n- 运动户外：健身房/户外跑步/露营/骑行/徒步/球场\n- 宠物用品：家中客厅/阳台/户外遛宠/宠物互动玩耍\n- 其他：与产品调性匹配的通用生活场景\n\n【每张图输出要求】\n每个 shot 输出：{id: 序号, posterType, scene: 中文场景说明, width, height, prompt: 完整英文图像提示词, negativePrompt}。\n\nprompt 编写要求（英文）：① 以【商品外观描述段】开头完整描述商品（所有 shot 逐字一致；生成时以参考图为准，文字与参考图冲突时以参考图为准）② 再描述背景/场景/光线/氛围 ③ 融入整体风格（{{start.style}} 对应：minimal=极简留白, premium=奢华质感, vibrant=高饱和活力, guochao=国潮元素, tech=科技感, natural=自然光线）④ 构图指导（主图商品居中留白、场景图人与环境互动）⑤ 适合电商展示的写实质感。\n\nnegativePrompt 通用：low quality, blurry, deformed, extra fingers, watermark, text artifacts, distorted product, wrong proportions, different product, changed product, altered design, variant product\n\n只输出 JSON 对象：{shots: [...]}。",
+          "systemPrompt": "你是资深电商视觉规划师。根据商品信息、产品类型、所选海报类型与每类数量，规划【非场景类】电商图的生成方案。\n\n【范围约束】只规划除「scene 场景图」以外的所选类型（main 主图 / white 白底图 / promo 促销海报 / detail 详情头图 / social 社媒推广图）；scene 场景图由专门的场景设计环节负责，绝不要输出 scene 类型。若所选类型只有 scene，则 shots 输出空数组 []。\n\n【数量约束】shots 数组长度 = 所选非 scene 类型数 × 每类数量，逐类型展开（如选 主图+促销、每类 2 张 → 共 4 个 shot）。\n\n【商品外观锁定（最高优先级）】\n商品外观以用户上传的商品参考图为准（生成阶段会传入参考图），本规划阶段看不到参考图，因此：\n- 基于商品信息写一段【商品外观描述段】（英文，40-70 词）：只描述商品本身客观特征（品名、材质、配色、形态、关键部件，仅写商品信息中明确提及的），不臆造细节、不编造图案文字；\n- 所有 shot 的 prompt 必须逐字复用同一段【商品外观描述段】（不得改写、不得增删特征）；\n- 只允许改变：背景/场景、光线、角度、构图、氛围、道具与人物互动；商品本体的形状、颜色、材质、图案、logo、部件绝对禁止改变；\n- negativePrompt 固定追加：different product, changed product, altered design, variant product, wrong color, wrong shape（商品一致性否定词）。\n\n【各类型设计规范】\n- main 主图：纯色或渐变背景，商品居中占画面 60-70%，顶部留白放卖点文案；强调质感与清晰度\n- white 白底图：纯白背景、商品完整入画、无阴影或极浅阴影，电商规范白底图\n- promo 促销海报：促销氛围（打折/优惠/活动感），醒目构图，可含价格联想元素\n- detail 详情头图：品牌调性大图，产品+核心卖点融合，适合详情页顶部\n- social 社媒推广图：竖版社交传播感，视觉冲击力强，适合小红书/朋友圈\n\n【每张图输出要求】\n每个 shot 输出：{id: 序号, posterType, scene: 中文场景说明, width, height, prompt: 完整英文图像提示词, negativePrompt}。\n\nprompt 编写要求（英文）：① 以【商品外观描述段】开头完整描述商品（所有 shot 逐字一致；生成时以参考图为准，文字与参考图冲突时以参考图为准）② 再描述背景/场景/光线/氛围 ③ 融入整体风格（{{start.style}} 对应：minimal=极简留白, premium=奢华质感, vibrant=高饱和活力, guochao=国潮元素, tech=科技感, natural=自然光线）④ 构图指导（主图商品居中留白、场景图人与环境互动）⑤ 适合电商展示的写实质感。\n\nnegativePrompt 通用：low quality, blurry, deformed, extra fingers, watermark, text artifacts, distorted product, wrong proportions, different product, changed product, altered design, variant product\n\n只输出 JSON 对象：{shots: [...]}。",
           "prompt": "商品信息：{{start.productInfo}}\n产品类型：{{start.productCategory}}\n所选海报类型：{{start.posterTypes}}\n每类数量：{{start.countPerType}}\n风格：{{start.style}}\n广告语（可选）：{{start.slogan}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.textModel.providerConfigId}}",
+          "modelId": "{{start.textModel.modelId}}"
+        }
+      },
+      {
+        "id": "scenePlan",
+        "type": "llm-chat",
+        "name": "场景设计",
+        "position": { "x": 320, "y": 260 },
+        "config": {
+          "systemPrompt": "你是资深电商场景规划师。根据商品信息、产品类型、风格与场景数量，设计一套真实、有差异化的使用场景（每个场景 = 一张场景图的拍摄/构图方案）。\n\n【数量约束】scenes 数组长度必须严格等于 {{start.sceneCount}}（用户指定场景数量），不得多不得少。\n\n【场景设计原则】\n- 每个场景是一个【真实使用场景】：地点 + 人物行为/环境 + 商品在其中的角色，生活感强，避免同质化（如 4 个场景应覆盖办公/居家/户外/聚会等不同时空，不要 4 个都是办公桌）；\n- 按产品类型联想匹配场景（如 数码家电：办公桌/客厅/通勤/咖啡馆；食品饮料：餐桌/野餐/下午茶/厨房；服饰鞋包：街拍/通勤/健身房/聚会；家居日用：客厅/卧室/厨房/阳台；其他类型类推）；\n- 每个场景输出 {title: 中文场景名（如「通勤地铁上的暖手时刻」）, desc: 中文场景描述（80-120 字，写清地点/人物/氛围/商品角色）, prompt: 完整英文图像提示词, negativePrompt, width, height}。\n\n【商品外观锁定（最高优先级）】\n商品外观以用户上传的商品参考图为准（生成阶段会传入参考图），本规划阶段看不到参考图，因此：\n- 基于商品信息写一段【商品外观描述段】（英文，40-70 词）：只描述商品本身客观特征（品名、材质、配色、形态、关键部件，仅写商品信息中明确提及的），不臆造细节；\n- 所有场景的 prompt 必须逐字复用同一段【商品外观描述段】；\n- 只允许改变：背景/场景、光线、角度、构图、氛围、道具与人物互动；商品本体的形状、颜色、材质、图案、logo、部件绝对禁止改变；\n- negativePrompt 固定追加：different product, changed product, altered design, variant product, wrong color, wrong shape。\n\n【prompt 编写要求（英文）】① 以【商品外观描述段】开头（逐字一致）② 再描述场景地点/人物/光线/氛围 ③ 融入整体风格（{{start.style}}）④ 写实商品摄影质感，场景图人物与商品自然互动。\n\n尺寸建议：场景图默认 1024x1024；竖版社交感场景（如通勤/街拍）可用 768x1024。\n\nnegativePrompt 通用：low quality, blurry, deformed, extra fingers, watermark, text artifacts, distorted product, wrong proportions, different product, changed product, altered design, variant product\n\n只输出 JSON 对象：{scenes: [...]}。",
+          "prompt": "商品信息：{{start.productInfo}}\n产品类型：{{start.productCategory}}\n风格：{{start.style}}\n场景数量：{{start.sceneCount}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.textModel.providerConfigId}}",
+          "modelId": "{{start.textModel.modelId}}"
+        }
+      },
+      {
+        "id": "sceneText",
+        "type": "llm-chat",
+        "name": "场景清单渲染",
+        "position": { "x": 560, "y": 260 },
+        "config": {
+          "systemPrompt": "你是电商场景清单排版助手。把给定的场景 JSON 数组转换为人类可读的中文 markdown 清单，供用户确认。\n\n格式要求：\n- 第一行：# 📋 场景清单（共 N 个）\n- 每个场景一节：### N. 标题\n\n  场景描述（保留原 desc 内容）\n- 末尾一行：请确认以下场景是否满意（批准后按此生成场景图）。\n\n只输出清单文本，不要输出 JSON 或多余解释。",
+          "prompt": "场景 JSON：{{scenePlan.parsed.scenes}}",
+          "providerConfigId": "{{start.textModel.providerConfigId}}",
+          "modelId": "{{start.textModel.modelId}}"
+        }
+      },
+      {
+        "id": "sceneReview",
+        "type": "human-review",
+        "name": "场景确认",
+        "position": { "x": 800, "y": 260 },
+        "config": {
+          "payload": "{{sceneText.content}}",
+          "editableFields": [{ "key": "content", "label": "场景清单", "type": "string" }]
+        }
+      },
+      {
+        "id": "sceneParse",
+        "type": "llm-chat",
+        "name": "场景结构化",
+        "position": { "x": 1040, "y": 260 },
+        "config": {
+          "systemPrompt": "你是结构化解析器。把用户提供的场景清单文本解析为 JSON 数组对象，供图像生成循环使用。\n\n只输出 JSON 对象：{scenes: [{title: 中文场景名, desc: 中文场景描述, prompt: 完整英文图像提示词, negativePrompt, width, height}]}。\n\n要求：\n- 数量以清单中的场景数为准（每节一个场景）；\n- 每个场景补全 prompt：英文，开头描述商品（以清单商品信息为准：品名/材质/配色/形态），再描述该场景地点/人物/光线/氛围，写实商品摄影质感；\n- negativePrompt 固定：low quality, blurry, deformed, extra fingers, watermark, text artifacts, distorted product, wrong proportions, different product, changed product, altered design, variant product；\n- 尺寸：默认 1024x1024，竖版社交感场景 768x1024。",
+          "prompt": "商品信息：{{start.productInfo}}\n场景清单：\n{{sceneReview.content}}\n\n请输出 JSON 对象。",
           "jsonMode": true,
           "providerConfigId": "{{start.textModel.providerConfigId}}",
           "modelId": "{{start.textModel.modelId}}"
@@ -70,15 +119,15 @@
       {
         "id": "loop1",
         "type": "loop",
-        "name": "逐张生成",
-        "position": { "x": 560, "y": 200 },
+        "name": "逐张生成（非场景）",
+        "position": { "x": 560, "y": 40 },
         "config": { "listExpression": "{{plan1.parsed.shots}}", "emptyPolicy": "skip" }
       },
       {
         "id": "img1",
         "type": "image-gen",
-        "name": "生成单图",
-        "position": { "x": 800, "y": 300 },
+        "name": "生成单图（非场景）",
+        "position": { "x": 800, "y": 80 },
         "config": {
           "prompt": "{{loop1.item.prompt}}",
           "negativePrompt": "{{loop1.item.negativePrompt}}",
@@ -92,10 +141,10 @@
         }
       },
       {
-        "id": "saveImg",
+        "id": "saveImg1",
         "type": "save-asset",
-        "name": "保存单图",
-        "position": { "x": 1040, "y": 300 },
+        "name": "保存单图（非场景）",
+        "position": { "x": 1040, "y": 80 },
         "config": {
           "content": "{{img1.images.0.path}}",
           "kind": "file",
@@ -107,13 +156,52 @@
         }
       },
       {
+        "id": "loop2",
+        "type": "loop",
+        "name": "逐张生成（场景）",
+        "position": { "x": 1280, "y": 260 },
+        "config": { "listExpression": "{{sceneParse.parsed.scenes}}", "emptyPolicy": "skip" }
+      },
+      {
+        "id": "img2",
+        "type": "image-gen",
+        "name": "生成场景图",
+        "position": { "x": 1520, "y": 260 },
+        "config": {
+          "prompt": "{{loop2.item.prompt}}",
+          "negativePrompt": "{{loop2.item.negativePrompt}}",
+          "width": "{{loop2.item.width}}",
+          "height": "{{loop2.item.height}}",
+          "count": 1,
+          "referenceImages": "{{start.productImage.path}}",
+          "promptExtend": false,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "saveImg2",
+        "type": "save-asset",
+        "name": "保存场景图",
+        "position": { "x": 1760, "y": 260 },
+        "config": {
+          "content": "{{img2.images.0.path}}",
+          "kind": "file",
+          "category": "image",
+          "subCategory": "电商套图",
+          "name": "场景{{loop2.index}}-{{loop2.item.title}}",
+          "tags": "电商,套图,场景图,{{start.productCategory}}",
+          "groupName": "套图-{{sys.today}}"
+        }
+      },
+      {
         "id": "report1",
         "type": "report",
         "name": "套图清单报告",
-        "position": { "x": 800, "y": 60 },
+        "position": { "x": 800, "y": -120 },
         "config": {
           "title": "电商套图生成清单",
-          "template": "# 电商套图生成清单\n\n商品：{{start.productInfo}}\n产品类型：{{start.productCategory}}\n风格：{{start.style}}\n\n共生成 {{loop1.count}} 张图。\n\n## 生成明细\n\n{{loop1.results}}",
+          "template": "# 电商套图生成清单\n\n商品：{{start.productInfo}}\n产品类型：{{start.productCategory}}\n风格：{{start.style}}\n\n非场景图 {{loop1.count}} 张，场景图 {{loop2.count}} 张。\n\n## 非场景图明细\n\n{{loop1.results}}\n\n## 场景图明细\n\n{{loop2.results}}",
           "format": "markdown"
         }
       },
@@ -121,7 +209,7 @@
         "id": "review1",
         "type": "human-review",
         "name": "人工确认",
-        "position": { "x": 1040, "y": 60 },
+        "position": { "x": 1040, "y": -120 },
         "config": {
           "payload": "{{report1.markdown}}",
           "editableFields": [{ "key": "output_result", "label": "清单全文", "type": "string" }]
@@ -131,7 +219,7 @@
         "id": "condSave",
         "type": "condition",
         "name": "产物方式分流",
-        "position": { "x": 1160, "y": 60 },
+        "position": { "x": 1160, "y": -120 },
         "config": {
           "branches": [
             { "branchId": "saveDoc", "label": "图文文档", "conditions": [{ "left": "{{start.outputMode}}", "operator": "eq", "right": "document" }] },
@@ -145,7 +233,7 @@
         "id": "save1",
         "type": "save-asset",
         "name": "保存清单文档",
-        "position": { "x": 1340, "y": 0 },
+        "position": { "x": 1340, "y": -200 },
         "config": {
           "content": "{{report1.markdown}}",
           "kind": "text",
@@ -160,23 +248,32 @@
         "id": "end",
         "type": "end",
         "name": "结束",
-        "position": { "x": 1520, "y": 60 },
+        "position": { "x": 1520, "y": -120 },
         "config": {}
       }
     ],
     "edges": [
-      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "plan1", "kind": "normal" },
-      { "id": "e2", "sourceNodeId": "plan1", "targetNodeId": "loop1", "kind": "normal" },
-      { "id": "e3", "sourceNodeId": "loop1", "targetNodeId": "img1", "kind": "loop-body" },
-      { "id": "e4", "sourceNodeId": "img1", "targetNodeId": "saveImg", "kind": "normal" },
-      { "id": "e5", "sourceNodeId": "saveImg", "targetNodeId": "loop1", "kind": "loop-back" },
-      { "id": "e6", "sourceNodeId": "loop1", "targetNodeId": "report1", "kind": "loop-done" },
-      { "id": "e7", "sourceNodeId": "report1", "targetNodeId": "review1", "kind": "normal" },
-      { "id": "e8", "sourceNodeId": "review1", "targetNodeId": "condSave", "kind": "approve" },
-      { "id": "e9", "sourceNodeId": "review1", "targetNodeId": "end", "kind": "reject" },
-      { "id": "e10", "sourceNodeId": "condSave", "targetNodeId": "save1", "kind": "branch", "branchId": "saveDoc" },
-      { "id": "e11", "sourceNodeId": "condSave", "targetNodeId": "end", "kind": "branch", "branchId": "skipDoc" },
-      { "id": "e12", "sourceNodeId": "save1", "targetNodeId": "end", "kind": "normal" }
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "scenePlan", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "scenePlan", "targetNodeId": "sceneText", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "sceneText", "targetNodeId": "sceneReview", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "sceneReview", "targetNodeId": "sceneParse", "kind": "approve" },
+      { "id": "e5", "sourceNodeId": "sceneReview", "targetNodeId": "end", "kind": "reject" },
+      { "id": "e6", "sourceNodeId": "sceneParse", "targetNodeId": "plan1", "kind": "normal" },
+      { "id": "e7", "sourceNodeId": "plan1", "targetNodeId": "loop1", "kind": "normal" },
+      { "id": "e8", "sourceNodeId": "loop1", "targetNodeId": "img1", "kind": "loop-body" },
+      { "id": "e9", "sourceNodeId": "img1", "targetNodeId": "saveImg1", "kind": "normal" },
+      { "id": "e10", "sourceNodeId": "saveImg1", "targetNodeId": "loop1", "kind": "loop-back" },
+      { "id": "e11", "sourceNodeId": "loop1", "targetNodeId": "loop2", "kind": "loop-done" },
+      { "id": "e12", "sourceNodeId": "loop2", "targetNodeId": "img2", "kind": "loop-body" },
+      { "id": "e13", "sourceNodeId": "img2", "targetNodeId": "saveImg2", "kind": "normal" },
+      { "id": "e14", "sourceNodeId": "saveImg2", "targetNodeId": "loop2", "kind": "loop-back" },
+      { "id": "e15", "sourceNodeId": "loop2", "targetNodeId": "report1", "kind": "loop-done" },
+      { "id": "e16", "sourceNodeId": "report1", "targetNodeId": "review1", "kind": "normal" },
+      { "id": "e17", "sourceNodeId": "review1", "targetNodeId": "condSave", "kind": "approve" },
+      { "id": "e18", "sourceNodeId": "review1", "targetNodeId": "end", "kind": "reject" },
+      { "id": "e19", "sourceNodeId": "condSave", "targetNodeId": "save1", "kind": "branch", "branchId": "saveDoc" },
+      { "id": "e20", "sourceNodeId": "condSave", "targetNodeId": "end", "kind": "branch", "branchId": "skipDoc" },
+      { "id": "e21", "sourceNodeId": "save1", "targetNodeId": "end", "kind": "normal" }
     ]
   },
   "triggers": [],
