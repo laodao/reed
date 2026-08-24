@@ -506,43 +506,57 @@ start → llm-chat 研究规划(jsonMode: {subQuestions: []})
 - rounds 与 subQuestions 关系需说明：rounds 字段废弃或改为"子问题数量"（建议改名 subQuestionCount，规划段按此生成问题数）。
 - 综合段 prompt 需注入 focus 维度；来源去重由综合段处理。
 
-### 4.2 🛍️ 电商商品海报/主图生成 ⚠️ 需扩展能力
+### 4.2 🛍️ 电商商品套图生成（复杂版——用户 2026-08-23 升级要求）
 
-**目标**：商品图 + 商品信息/卖点 → AI 生成电商海报/主图 + 配套文案。
+**目标**：商品图 + 卖点 → 按「海报类型（多选）× 每类数量」生成**整套电商图**：主图/白底图/场景图/促销海报/详情头图/社媒图，并按**产品类型**自动设计真实使用场景。
 
-**⚠️ 扩展点**：现有 `image-gen` 节点 config 无参考图参数。扩展方案：
-- 在 `image-gen` 节点 config 增加 `referenceImages?: string[]`（模板可用，指向 `{{start.productImage.path}}` 等 file 输出路径）。
-- handler 执行时读取文件转 base64 data URL，透传 `ImageService.generateImage({ referenceImages })`。
-- 服务层已支持 referenceImages（base-image-provider 已实现），**仅节点层透传**，改动小。
+**核心设计（区别于简单版）**：
+1. **海报类型多选**：main 主图 / white 白底图 / scene 场景图 / promo 促销海报 / detail 详情头图 / social 社媒推广图
+2. **每类可配数量**：`countPerType`（每类 1-6 张，默认 1）→ 总张数 = 类型数 × 每类数量
+3. **套图概念**：一次运行产出整套图，逐张保存资产，清单报告
+4. **产品类型驱动场景**：`productCategory` 决定场景图的真实使用场景（AI 按产品类型联想）
+
+**⚠️ 扩展点**：`image-gen` 节点已扩展 referenceImages（第二批已实现，文件→base64 透传）。
 
 **输入表单**：
 
-| key | label | type | required |
-|---|---|---|---|
-| productImage | 商品图片 | file | 是 |
-| productInfo | 商品信息/卖点 | textarea | 是 |
-| posterType | 海报类型 | select | 是（主图/促销海报/详情头图/社媒图） |
-| style | 风格 | select | 否（简约/高端/活力/国潮/科技感） |
-| slogan | 广告语（可选） | string | 否 |
-| size | 尺寸 | select | 否（1:1 主图/3:4 社媒/16:9 详情） |
-| model | 图像模型 | model(image) | 是 |
+| key | label | type | required | 说明 |
+|---|---|---|---|---|
+| productImage | 商品图片 | file | 是 | 参考图（保商品主体） |
+| productInfo | 商品信息/卖点 | textarea | 是 | 名称/规格/卖点/目标人群 |
+| productCategory | 产品类型 | select | 是 | 数码家电/美妆个护/食品饮料/服饰鞋包/家居日用/母婴玩具/运动户外/宠物用品/其他 |
+| posterTypes | 海报类型 | select **multi** | 是 | 主图/白底图/场景图/促销海报/详情头图/社媒图 |
+| countPerType | 每类数量 | number | 否（默认 1，1-6） | 每种类型生成 N 张 |
+| style | 风格 | select | 否 | 简约/高端/活力/国潮/科技感/自然 |
+| slogan | 广告语（可选） | string | 否 | |
+| model | 图像模型 | model(image) | 是 | |
+| textModel | 文案模型 | model(text) | 是 | |
 
 **工作流环节**：
 ```
-start → llm-chat 海报设计文案(jsonMode: {headline, subheadline, layoutHint, colorHint})
-      → image-gen(参考图+prompt) 生成海报 → report 海报配套文案 → save-asset(图片+文案) → end
+start
+→ llm-chat 套图规划(jsonMode)：按产品类型+所选类型×数量生成 shots 数组
+    {shots: [{id, posterType, scene, width, height, prompt, negativePrompt}]}
+→ loop 逐张生成（listExpression=shots）：
+    image-gen（prompt=shot.prompt, referenceImages=商品图, width/height）
+    → save-asset（保存该图，name=类型+序号）
+→ loop-done
+→ report 套图清单报告（每张：类型/场景/尺寸/提示词/资产）
+→ human-review 人工确认
+→ save-asset 保存文案报告 → end
 ```
 
 **处理逻辑**：
-- llm-chat 依据商品信息+类型+风格生成海报文案与构图/配色建议。
-- `image-gen` prompt = 设计文案 + 构图/配色要求 + 保留商品主体，referenceImages=[商品图]。
-- 输出图片 save-asset（category=image）；文案 report 附在报告。
+- **规划段是核心**：系统提示词要求 AI 按产品类型联想真实场景（如数码→办公桌/客厅/通勤地铁；美妆→梳妆台/浴室/出行；食品→餐桌/野餐/办公室下午茶），为每张图产出独立英文 prompt（保留商品主体+场景+光线+风格）。
+- 尺寸：主图/白底图 1:1、场景图/社媒图 3:4、详情头图 16:9（规划段按类型给宽高）。
+- `loop` 遍历 shots 逐张 image-gen（参考图=商品图）→ save-asset。
+- report 汇总全部生成图（清单 + 每张的设计说明），人工确认后文案落库。
 
 **【审查修订】**
-- ⚠️ 依赖扩展已标注（image-gen 补 referenceImages）。
-- **save-asset 引用补充**：image-gen 输出 `images` 数组 → save-asset `content: "{{img1.images.0.url}}"`（模板支持数字下标；file 型自动下载落盘）。
-- 建议：size 映射为 image-gen width/height（如 1:1 → 1024×1024；3:4 → 1024×1365；16:9 → 1280×720），select 值直接填像素更稳。
-- 表单 OK；model(image) 必填合理。
+- 复杂版要点：多选类型（select multi）+ 每类数量 + 套图 loop + 产品类型场景联想。
+- image-gen referenceImages 已在第二批实现，本应用依赖该扩展（已就绪）。
+- 规划段 jsonMode 输出 shots 数组，必须保证 `shots.length = posterTypes.length × countPerType`（提示词强制）。
+- 循环体内 save-asset 的 name 用 `{{loop1.item.posterType}}-{{loop1.index}}`（模板数字下标可用）。
 
 ### 4.3 🎙️ 文章转播客（NotebookLM 形态——变现热点）
 

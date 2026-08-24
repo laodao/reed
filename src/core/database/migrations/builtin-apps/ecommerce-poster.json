@@ -1,8 +1,8 @@
 {
   "kind": "the-bot-workflow",
   "formatVersion": 1,
-  "name": "[内置] 电商商品海报",
-  "description": "商品图片 + 卖点信息 → AI 设计文案与构图 → 参考商品图生成海报/主图 → 配套文案报告",
+  "name": "[内置] 电商商品套图",
+  "description": "商品图+卖点 → 按类型×数量生成整套电商图（主图/白底/场景/促销/详情/社媒），产品类型驱动真实使用场景",
   "category": "ecommerce",
   "graph": {
     "version": 1,
@@ -16,53 +16,70 @@
           "inputs": [
             { "key": "productImage", "label": "商品图片", "type": "file", "required": true },
             { "key": "productInfo", "label": "商品信息/卖点", "type": "textarea", "required": true },
-            { "key": "posterType", "label": "海报类型", "type": "select", "required": true, "options": [
+            { "key": "productCategory", "label": "产品类型", "type": "select", "required": true, "options": [
+              { "label": "数码家电", "value": "digital" },
+              { "label": "美妆个护", "value": "beauty" },
+              { "label": "食品饮料", "value": "food" },
+              { "label": "服饰鞋包", "value": "apparel" },
+              { "label": "家居日用", "value": "home" },
+              { "label": "母婴玩具", "value": "baby" },
+              { "label": "运动户外", "value": "sports" },
+              { "label": "宠物用品", "value": "pet" },
+              { "label": "其他", "value": "other" }
+            ] },
+            { "key": "posterTypes", "label": "海报类型（可多选）", "type": "select", "multi": true, "required": true, "options": [
               { "label": "电商主图", "value": "main" },
+              { "label": "白底图", "value": "white" },
+              { "label": "场景图", "value": "scene" },
               { "label": "促销海报", "value": "promo" },
               { "label": "详情头图", "value": "detail" },
               { "label": "社媒推广图", "value": "social" }
             ] },
+            { "key": "countPerType", "label": "每类数量", "type": "number", "defaultValue": 1, "validation": { "min": 1, "max": 6 } },
             { "key": "style", "label": "风格", "type": "select", "defaultValue": "minimal", "options": [
               { "label": "简约", "value": "minimal" },
               { "label": "高端", "value": "premium" },
               { "label": "活力", "value": "vibrant" },
               { "label": "国潮", "value": "guochao" },
-              { "label": "科技感", "value": "tech" }
+              { "label": "科技感", "value": "tech" },
+              { "label": "自然", "value": "natural" }
             ] },
             { "key": "slogan", "label": "广告语（可选）", "type": "string" },
-            { "key": "size", "label": "尺寸", "type": "select", "defaultValue": "1024x1024", "options": [
-              { "label": "1:1 主图 1024×1024", "value": "1024x1024" },
-              { "label": "3:4 社媒 1024×1365", "value": "1024x1365" },
-              { "label": "16:9 详情 1280×720", "value": "1280x720" }
-            ] },
             { "key": "model", "label": "图像模型", "type": "model", "modelTypes": ["image"], "required": true },
             { "key": "textModel", "label": "文案模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
           ]
         }
       },
       {
-        "id": "copy1",
+        "id": "plan1",
         "type": "llm-chat",
-        "name": "海报设计文案",
+        "name": "套图规划",
         "position": { "x": 320, "y": 200 },
         "config": {
-          "systemPrompt": "你是电商视觉设计师。基于商品信息与海报类型，生成海报文案与构图建议。只输出 JSON：{headline: 主标题(短促有力), subheadline: 副标题(卖点补充), layoutHint: 构图建议(主商品位置/留白/视觉焦点), colorHint: 配色建议, imagePrompt: 用于图像生成的完整英文提示词(描述商品主体+背景+风格+光线+构图，保留商品原貌)}。",
-          "prompt": "商品信息：{{start.productInfo}}\n海报类型：{{start.posterType}}\n风格：{{start.style}}\n广告语（可选）：{{start.slogan}}\n\n请输出 JSON 对象。",
+          "systemPrompt": "你是资深电商视觉规划师。根据商品信息、产品类型、所选海报类型与每类数量，规划整套电商图的生成方案。\n\n【数量约束】shots 数组长度必须 = 所选海报类型数 × 每类数量，逐类型展开（如选 主图+场景图、每类 2 张 → 共 4 个 shot）。\n\n【各类型设计规范】\n- main 主图：纯色或渐变背景，商品居中占画面 60-70%，顶部留白放卖点文案；强调质感与清晰度\n- white 白底图：纯白背景、商品完整入画、无阴影或极浅阴影，电商规范白底图\n- scene 场景图：按产品类型联想真实使用场景（见下），人/环境与商品自然互动，生活感强\n- promo 促销海报：促销氛围（打折/优惠/活动感），醒目构图，可含价格联想元素\n- detail 详情头图：品牌调性大图，产品+核心卖点融合，适合详情页顶部\n- social 社媒推广图：竖版社交传播感，视觉冲击力强，适合小红书/朋友圈\n\n【产品类型 → 场景联想（scene 必用，其他类型可选借鉴）】\n- 数码家电：办公桌工作台/客厅沙发茶几/卧室床头/通勤地铁/咖啡馆/智能家居环境\n- 美妆个护：梳妆台/浴室洗漱/通勤包内/旅行行李箱/闺蜜聚会/晨间护肤\n- 食品饮料：餐桌正餐/周末野餐/办公室下午茶/厨房烹饪/咖啡馆角落/聚会分享\n- 服饰鞋包：都市街拍/通勤路上/健身房/旅行打卡/聚会晚宴/居家休闲\n- 家居日用：客厅/卧室/厨房/阳台/书房/浴室\n- 母婴玩具：婴儿房/客厅游戏区/户外公园/亲子互动/幼儿园\n- 运动户外：健身房/户外跑步/露营/骑行/徒步/球场\n- 宠物用品：家中客厅/阳台/户外遛宠/宠物互动玩耍\n- 其他：与产品调性匹配的通用生活场景\n\n【每张图输出要求】\n每个 shot 输出：{id: 序号, posterType, scene: 中文场景说明, width, height, prompt: 完整英文图像提示词, negativePrompt}。\n\nprompt 编写要求（英文）：① 明确描述商品主体并保持其外观原貌（以参考图为准）② 描述背景/场景/光线/氛围 ③ 融入整体风格（{{start.style}} 对应：minimal=极简留白, premium=奢华质感, vibrant=高饱和活力, guochao=国潮元素, tech=科技感, natural=自然光线）④ 构图指导（主图商品居中留白、场景图人与环境互动）⑤ 适合电商展示的写实质感。\n\nnegativePrompt 通用：low quality, blurry, deformed, extra fingers, watermark, text artifacts, distorted product, wrong proportions\n\n只输出 JSON 对象：{shots: [...]}。",
+          "prompt": "商品信息：{{start.productInfo}}\n产品类型：{{start.productCategory}}\n所选海报类型：{{start.posterTypes}}\n每类数量：{{start.countPerType}}\n风格：{{start.style}}\n广告语（可选）：{{start.slogan}}\n\n请输出 JSON 对象。",
           "jsonMode": true,
           "providerConfigId": "{{start.textModel.providerConfigId}}",
           "modelId": "{{start.textModel.modelId}}"
         }
       },
       {
+        "id": "loop1",
+        "type": "loop",
+        "name": "逐张生成",
+        "position": { "x": 560, "y": 200 },
+        "config": { "listExpression": "{{plan1.parsed.shots}}", "emptyPolicy": "skip" }
+      },
+      {
         "id": "img1",
         "type": "image-gen",
-        "name": "生成海报",
-        "position": { "x": 560, "y": 200 },
+        "name": "生成单图",
+        "position": { "x": 800, "y": 300 },
         "config": {
-          "prompt": "{{copy1.parsed.imagePrompt}}",
-          "negativePrompt": "低质量,模糊,文字错误,水印,变形",
-          "width": 1024,
-          "height": 1024,
+          "prompt": "{{loop1.item.prompt}}",
+          "negativePrompt": "{{loop1.item.negativePrompt}}",
+          "width": "{{loop1.item.width}}",
+          "height": "{{loop1.item.height}}",
           "count": 1,
           "referenceImages": "{{start.productImage.path}}",
           "providerConfigId": "{{start.model.providerConfigId}}",
@@ -70,34 +87,27 @@
         }
       },
       {
-        "id": "split1",
-        "type": "parallel",
-        "name": "并行分流",
-        "position": { "x": 700, "y": 200 },
-        "config": {}
-      },
-      {
-        "id": "save1",
+        "id": "saveImg",
         "type": "save-asset",
-        "name": "保存海报图",
-        "position": { "x": 900, "y": 140 },
+        "name": "保存单图",
+        "position": { "x": 1040, "y": 300 },
         "config": {
           "content": "{{img1.images.0.url}}",
           "kind": "file",
           "category": "image",
-          "subCategory": "电商海报",
-          "name": "{{start.posterType}}海报",
-          "tags": "电商,海报,{{start.style}}"
+          "subCategory": "电商套图",
+          "name": "{{loop1.item.posterType}}-{{loop1.index}}",
+          "tags": "电商,套图,{{loop1.item.posterType}},{{start.productCategory}}"
         }
       },
       {
         "id": "report1",
         "type": "report",
-        "name": "配套文案报告",
-        "position": { "x": 1040, "y": 200 },
+        "name": "套图清单报告",
+        "position": { "x": 800, "y": 60 },
         "config": {
-          "title": "{{start.posterType}} 海报配套文案",
-          "template": "# {{start.posterType}} 海报配套文案\n\n## 主标题\n\n{{copy1.parsed.headline}}\n\n## 副标题\n\n{{copy1.parsed.subheadline}}\n\n## 构图与配色建议\n\n- 构图：{{copy1.parsed.layoutHint}}\n- 配色：{{copy1.parsed.colorHint}}\n\n## 生成提示词\n\n```\n{{copy1.parsed.imagePrompt}}\n```",
+          "title": "电商套图生成清单",
+          "template": "# 电商套图生成清单\n\n商品：{{start.productInfo}}\n产品类型：{{start.productCategory}}\n风格：{{start.style}}\n\n共生成 {{loop1.count}} 张图。\n\n## 生成明细\n\n{{loop1.results}}",
           "format": "markdown"
         }
       },
@@ -105,45 +115,45 @@
         "id": "review1",
         "type": "human-review",
         "name": "人工确认",
-        "position": { "x": 1280, "y": 200 },
+        "position": { "x": 1040, "y": 60 },
         "config": {
           "payload": "{{report1.markdown}}",
-          "editableFields": [{ "key": "output_result", "label": "文案全文", "type": "string" }]
+          "editableFields": [{ "key": "output_result", "label": "清单全文", "type": "string" }]
         }
       },
       {
-        "id": "save2",
+        "id": "save1",
         "type": "save-asset",
-        "name": "保存文案",
-        "position": { "x": 1520, "y": 200 },
+        "name": "保存清单",
+        "position": { "x": 1280, "y": 60 },
         "config": {
           "content": "{{report1.markdown}}",
           "kind": "text",
           "category": "text",
-          "subCategory": "电商海报",
-          "name": "{{start.posterType}}海报文案",
-          "tags": "电商文案,{{start.style}}"
+          "subCategory": "电商套图",
+          "name": "电商套图清单",
+          "tags": "电商套图,{{start.productCategory}}"
         }
       },
       {
         "id": "end",
         "type": "end",
         "name": "结束",
-        "position": { "x": 1760, "y": 200 },
+        "position": { "x": 1520, "y": 60 },
         "config": {}
       }
     ],
     "edges": [
-      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "copy1", "kind": "normal" },
-      { "id": "e2", "sourceNodeId": "copy1", "targetNodeId": "img1", "kind": "normal" },
-      { "id": "e3", "sourceNodeId": "img1", "targetNodeId": "split1", "kind": "normal" },
-      { "id": "e4", "sourceNodeId": "split1", "targetNodeId": "save1", "kind": "normal" },
-      { "id": "e5", "sourceNodeId": "split1", "targetNodeId": "report1", "kind": "normal" },
-      { "id": "e6", "sourceNodeId": "report1", "targetNodeId": "review1", "kind": "normal" },
-      { "id": "e7", "sourceNodeId": "review1", "targetNodeId": "save2", "kind": "approve" },
-      { "id": "e8", "sourceNodeId": "review1", "targetNodeId": "end", "kind": "reject" },
-      { "id": "e9", "sourceNodeId": "save1", "targetNodeId": "end", "kind": "normal" },
-      { "id": "e10", "sourceNodeId": "save2", "targetNodeId": "end", "kind": "normal" }
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "plan1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "plan1", "targetNodeId": "loop1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "loop1", "targetNodeId": "img1", "kind": "loop-body" },
+      { "id": "e4", "sourceNodeId": "img1", "targetNodeId": "saveImg", "kind": "normal" },
+      { "id": "e5", "sourceNodeId": "saveImg", "targetNodeId": "loop1", "kind": "loop-back" },
+      { "id": "e6", "sourceNodeId": "loop1", "targetNodeId": "report1", "kind": "loop-done" },
+      { "id": "e7", "sourceNodeId": "report1", "targetNodeId": "review1", "kind": "normal" },
+      { "id": "e8", "sourceNodeId": "review1", "targetNodeId": "save1", "kind": "approve" },
+      { "id": "e9", "sourceNodeId": "review1", "targetNodeId": "end", "kind": "reject" },
+      { "id": "e10", "sourceNodeId": "save1", "targetNodeId": "end", "kind": "normal" }
     ]
   },
   "triggers": [],
