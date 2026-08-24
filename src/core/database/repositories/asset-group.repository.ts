@@ -63,6 +63,16 @@ export class AssetGroupRepository extends BaseRepository<AssetGroupEntity, Asset
     return e ? this.toDto(e) : null
   }
 
+  /** 按 id 批量查组（资产列表填充组名用；返回 id → 组 映射） */
+  async findByIds(ids: string[]): Promise<Map<string, AssetGroupRecord>> {
+    if (!ids.length) return new Map()
+    const rows = await this.scoped
+      .qb('g')
+      .where('g.id IN (:...ids)', { ids })
+      .getMany()
+    return new Map(rows.map(e => [e.id, this.toDto(e)]))
+  }
+
   /** 按来源（运行）查组——同一次流程产生的组 */
   async findBySource(sourceType: string | null, sourceRef: string | null): Promise<AssetGroupRecord | null> {
     const e = await this.scoped.findOne({ sourceType, sourceRef } as FindOptionsWhere<AssetGroupEntity>)

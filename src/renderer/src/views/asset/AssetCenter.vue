@@ -52,6 +52,10 @@
               <img v-if="item.coverUrl" :src="item.coverUrl" loading="lazy" alt="" />
               <div v-else class="group-placeholder"><span class="report-icon">🖼️</span></div>
               <div class="group-badge">{{ item.memberCount }} 张</div>
+              <!-- 成员缩略图叠放（除封面外的成员，体现套图感） -->
+              <div v-if="item.thumbUrls?.length" class="group-thumbs">
+                <img v-for="(t, i) in item.thumbUrls" :key="i" :src="t" loading="lazy" alt="" />
+              </div>
             </div>
             <div class="card-body">
               <div class="name-row">
@@ -137,15 +141,25 @@
     </div>
 
     <!-- 套图画廊（组资产展开） -->
-    <el-dialog v-model="groupDialogVisible" :title="groupDialogName" width="860px" append-to-body>
+    <el-dialog v-model="groupDialogVisible" :title="groupDialogName" width="880px" append-to-body>
       <div class="group-gallery" v-loading="groupLoading">
-        <div v-if="groupDetail" class="gallery-grid">
-          <div v-for="m in groupDetail.members" :key="m.id" class="gallery-item">
-            <img v-if="m.category === 'image' && previewUrl(m)" :src="previewUrl(m)" loading="lazy" alt="" @click="openPreview(m)" />
-            <div v-else class="gallery-text">{{ m.category === 'text' ? (m.textContent ?? '').slice(0, 300) : m.name }}</div>
-            <div class="gallery-name">{{ m.name }}</div>
+        <template v-if="groupDetail">
+          <div class="gallery-head">
+            <span class="gallery-head-name">{{ groupDetail.group.name }}</span>
+            <el-tag size="small" type="primary" effect="plain">{{ groupDetail.members.length }} 张</el-tag>
+            <span v-if="groupDetail.group.subCategory" class="gallery-head-sub">📁 {{ groupDetail.group.subCategory }}</span>
           </div>
-        </div>
+          <div class="gallery-grid">
+            <div v-for="m in groupDetail.members" :key="m.id" class="gallery-item" @click="openPreview(m)">
+              <img v-if="m.category === 'image' && previewUrl(m)" :src="previewUrl(m)" loading="lazy" alt="" />
+              <div v-else class="gallery-text">{{ m.category === 'text' ? (m.textContent ?? '').slice(0, 300) : m.name }}</div>
+              <div class="gallery-name">
+                <span class="gallery-name-text" :title="m.name">{{ m.name }}</span>
+                <el-tag v-if="m.groupRole === 'cover'" size="small" type="warning" effect="plain" class="gallery-role">封面</el-tag>
+              </div>
+            </div>
+          </div>
+        </template>
         <div v-else-if="!groupLoading" class="empty"><p>组内暂无资产</p></div>
       </div>
     </el-dialog>
@@ -345,6 +359,8 @@ interface DisplayItem {
   name?: string
   cover?: AssetRecord
   coverUrl?: string
+  /** 组卡片封面区右下角叠放的成员缩略图（除封面外最多 2 张，体现套图感） */
+  thumbUrls?: string[]
   memberCount?: number
   subCategory?: string
   createdAt?: string
@@ -368,13 +384,21 @@ const displayItems = computed<DisplayItem[]>(() => {
   for (const [gid, members] of groups) {
     const cover = members.find(m => m.groupRole === 'cover') ?? members[0]
     const sorted = [...members].sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))
+    // 组名：优先组真实名称（后端 list 填充），缺省回退「成员名 等」
+    const groupName = members.find(m => m.groupName)?.groupName
+    // 封面区右下角叠放：除封面外最多 2 张图成员缩略图
+    const thumbs = members
+      .filter(m => m.id !== cover?.id && m.category === 'image' && previewUrl(m))
+      .slice(0, 2)
+      .map(m => previewUrl(m))
     out.push({
       key: `group:${gid}`,
       type: 'group',
       groupId: gid,
-      name: members[0].name ? `${members[0].name} 等` : '套图',
+      name: groupName || (members[0].name ? `${members[0].name} 等` : '套图'),
       cover,
       coverUrl: cover && cover.category === 'image' ? previewUrl(cover) : '',
+      thumbUrls: thumbs,
       memberCount: members.length,
       subCategory: members[0].subCategory ?? undefined,
       createdAt: sorted[0]?.createdAt,
@@ -948,6 +972,8 @@ onMounted(load)
 
 /* 报告类占位（渲染长图异步加载前） */
 .report-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; height: 100%; width: 100%; color: var(--el-text-color-secondary); cursor: zoom-in; }
+/* 组封面缺失占位（无图成员组） */
+.group-placeholder { display: flex; align-items: center; justify-content: center; height: 100%; width: 100%; color: var(--el-text-color-secondary); cursor: zoom-in; }
 .report-icon { font-size: 34px; opacity: .7; }
 .report-hint { font-size: 11px; }
 
@@ -967,10 +993,26 @@ onMounted(load)
 .asset-card { border: 1px solid var(--el-border-color-lighter); border-radius: 10px; overflow: hidden; background: var(--el-bg-color); display: flex; flex-direction: column; transition: border-color .15s, box-shadow .15s; }
 .asset-card:hover { border-color: var(--el-color-primary-light-5); box-shadow: 0 2px 10px rgba(0,0,0,.06); }
 
-.preview { height: 150px; background: var(--el-fill-color-lighter); display: flex; align-items: center; justify-content: center; overflow: hidden; cursor: zoom-in; }
+.preview { height: 150px; background: var(--el-fill-color-lighter); display: flex; align-items: center; justify-content: center; overflow: hidden; cursor: zoom-in; position: relative; }
 .preview img { width: 100%; height: 100%; object-fit: cover; }
 .preview audio { width: 92%; }
 .preview video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+
+/* 组卡片封面区：封面图 + 右上角张数徽标 + 右下角成员缩略图叠放 */
+.group-preview img { display: block; }
+.group-badge {
+  position: absolute; top: 8px; right: 8px;
+  background: rgba(0, 0, 0, .55); color: #fff;
+  font-size: 11px; line-height: 1; padding: 4px 8px; border-radius: 10px;
+  backdrop-filter: blur(2px); letter-spacing: .5px;
+}
+.group-thumbs { position: absolute; right: 8px; bottom: 8px; display: flex; }
+.group-thumbs img {
+  width: 44px; height: 44px; object-fit: cover; border-radius: 6px;
+  border: 2px solid var(--el-bg-color); margin-left: -12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .3);
+}
+.group-thumbs img:first-child { margin-left: 0; }
 .text-preview { width: 100%; height: 100%; padding: 10px 12px; font-size: 12px; color: var(--el-text-color-regular); white-space: pre-wrap; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; cursor: zoom-in; }
 .text-preview.json { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; }
 .text-preview :deep(*) { max-width: 100%; }
@@ -1022,6 +1064,29 @@ onMounted(load)
 .pager { flex-shrink: 0; display: flex; justify-content: flex-end; padding-top: 14px; }
 .empty { color: var(--el-text-color-secondary); text-align: center; padding: 60px 0; }
 .empty .hint { font-size: 12px; margin-top: 6px; max-width: 460px; margin-left: auto; margin-right: auto; }
+
+/* 套图画廊（组资产展开）：头部 + 网格卡片 */
+.group-gallery { max-height: 70vh; overflow-y: auto; padding: 2px 4px 8px; }
+.gallery-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--el-border-color-lighter); }
+.gallery-head-name { font-size: 16px; font-weight: 600; }
+.gallery-head-sub { font-size: 12px; color: var(--el-text-color-secondary); }
+.gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+.gallery-item {
+  border: 1px solid var(--el-border-color-lighter); border-radius: 10px; overflow: hidden;
+  background: var(--el-bg-color); cursor: zoom-in;
+  transition: border-color .15s, box-shadow .15s, transform .15s;
+  display: flex; flex-direction: column;
+}
+.gallery-item:hover { border-color: var(--el-color-primary-light-5); box-shadow: 0 4px 14px rgba(0, 0, 0, .1); transform: translateY(-1px); }
+.gallery-item img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; background: var(--el-fill-color-lighter); }
+.gallery-text { padding: 12px 14px; font-size: 12px; color: var(--el-text-color-regular); min-height: 80px; overflow: hidden; }
+.gallery-name {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  padding: 8px 10px; border-top: 1px solid var(--el-border-color-lighter);
+  font-size: 12px; color: var(--el-text-color-primary); min-width: 0;
+}
+.gallery-name-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.gallery-role { flex-shrink: 0; }
 
 /* 大图预览 */
 .big-preview { display: flex; align-items: center; justify-content: center; min-height: 120px; }

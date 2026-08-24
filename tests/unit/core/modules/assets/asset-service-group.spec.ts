@@ -106,6 +106,22 @@ describe('资产分组（套图）', () => {
     })
     expect(a2.groupId).not.toBe(a1.groupId)
   })
+
+  it('listAssets：组内资产携带组名（组卡片展示真实组名，而非成员文件名）', async () => {
+    await svc.createAsset({
+      content: { kind: 'text', text: '图1' }, category: 'image', name: 'main-0',
+      sourceType: 'workflow', sourceRef: 'run_1', groupName: '套图-2026-08-24',
+    })
+    await svc.createAsset({
+      content: { kind: 'text', text: '图2' }, category: 'image', name: 'promo-5',
+      sourceType: 'workflow', sourceRef: 'run_1', groupName: '套图-2026-08-24',
+    })
+    const { items } = await svc.listAssets({ page: 1, pageSize: 20 })
+    const grouped = items.filter(a => a.groupId)
+    expect(grouped.length).toBe(2)
+    // 组内每条资产都能取到组名（前端聚合组卡片时用）
+    expect(grouped.every(a => a.groupName === '套图-2026-08-24')).toBe(true)
+  })
 })
 
 describe('资产来源跳转（resolveSourceLink）', () => {

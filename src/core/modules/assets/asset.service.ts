@@ -187,9 +187,20 @@ export class AssetService {
     return record
   }
 
-  /** 分页列表 */
+  /** 分页列表（组内资产填充组名，供前端组卡片展示真实组名） */
   async listAssets(params: ListAssetParams): Promise<{ items: AssetRecord[]; total: number }> {
-    return this.repo.listAsset(params)
+    const { items, total } = await this.repo.listAsset(params)
+    // 组名批量填充：收集本页 groupId → 查组 → 回填 groupName（缺省保持 undefined）
+    if (this.groupRepo) {
+      const groupIds = [...new Set(items.map(a => a.groupId).filter((g): g is string => !!g))]
+      if (groupIds.length) {
+        const groups = await this.groupRepo.findByIds(groupIds)
+        for (const a of items) {
+          if (a.groupId) a.groupName = groups.get(a.groupId)?.name ?? null
+        }
+      }
+    }
+    return { items, total }
   }
 
   /** 单条查询 */

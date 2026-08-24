@@ -207,6 +207,8 @@ export interface AssetRecord {
   groupId?: string | null
   /** 组内角色（cover=封面图 | member=组内成员；非组资产为 null） */
   groupRole?: string | null
+  /** 组名（列表查询时随 groupId 填充，供前端组卡片展示真实组名） */
+  groupName?: string | null
   /** 内置资产（全局共享、禁删禁改，允许复制为自有） */
   isBuiltin?: boolean
   createdAt: string
