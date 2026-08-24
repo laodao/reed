@@ -375,3 +375,36 @@ loop1/loop2 生成 → merge1(array-merge 汇总) → check1(form-collect list-c
 - CDP 实测（数据分析流）：insight1 的变量选择器只显示 start 输入 + understand1 输出（下游 report1 被过滤）✓；
   validateGraph 拦截「a 引用下游 c」✓；上游/系统变量引用通过 ✓
 - 主进程改动需重启 dev（electron-vite 不自动 rebuild core 模块）
+
+
+---
+
+## 2026-08-25 追加：局域网团队协作功能——技术选型 + 详细设计方案（未实施）
+
+### 需求
+1. 局域网发现用户 + 邀请加入团队
+2. 共享资产（选成员/团队）；像本地资产一样使用（对话 @、工作流引用、后续模块统一）
+3. 工作流人工环节可指派团队成员，对方 app 弹提示处理
+
+### 方式
+- 3 个并行 subagent 调研：资产与对话引用机制 / 工作流人工环节与通知 / 局域网协作技术选型
+- 设计文档：tasks/2026-08-25-lan-collaboration-design.md（315 行，§需求/现状/选型/详细设计/路线/风险）
+
+### 核心决策
+- P2P 对等 mesh：每实例本地 WS 服务端 + 连接其他实例；mDNS（bonjour-service）主 + UDP 兜底 + 手动 IP
+- 身份：Ed25519 设备密钥 + 6 位邀请码配对 + 信任白名单（Syncthing 模型）；传输预留会话加密
+- 共享资产：**影子资产**（assets 加 origin 两列，成员本地只读行）+ 内容按需拉取（WS 分片/断点续传）；
+  引用句柄（assetId）全系统统一 → 对话 @/工作流/未来模块零改动接入
+- 团队/共享授权：**owner 实例权威**（单写者，成员缓存副本最终一致），撤回即时生效
+- 工作流指派：node_run 加 assignee_id；waiting_review 挂起机制复用；决策 RPC 回发起者实例执行
+  （运行状态单写者）；协作层转发 review-requested → 对方实例本地 emit + **Electron Notification（项目首用）** + 待办入口
+
+### 现状缺口（调研确认）
+- 资产可见性仅「自己 ∪ is_builtin」两档（asset.repository.ts:86-97），无团队档
+- 无任何团队/成员/指派实体；Web 事件只按 ALS 当前用户路由（需扩展按目标 userId）
+- 项目无 Electron 系统 Notification 使用；前端 pendingReviewCount 无 UI 消费方
+- KB 不引用资产（DocumentSource 仅 diary）；对话文件检索不认 assetId 附件
+- V1 限制：重启后 waiting_review 保持挂起但决策需续跑重驱（指派场景需评估从 DB 重建挂起态）
+
+### 实施路线（待评审）
+P1 身份+发现+连接 → P2 团队+邀请 → P3 共享资产（授权/影子/拉取/撤回）→ P4 引用层接入（对话/工作流）→ P5 工作流指派+通知+待办
