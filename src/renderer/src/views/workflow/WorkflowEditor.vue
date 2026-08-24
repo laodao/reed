@@ -14,6 +14,8 @@
         {{ validation.warnings.length }} 条警告
       </span>
       <div class="spacer" />
+      <el-button size="small" :disabled="!canUndo" @click="undo()">↩ 撤销</el-button>
+      <el-button size="small" :disabled="!canRedo" @click="redo()">↪ 重做</el-button>
       <el-button size="small" @click="saveDraft" :loading="saving">保存草稿</el-button>
       <el-button size="small" @click="autoLayout">🧹 一键整理</el-button>
       <el-button size="small" @click="doValidate">校验</el-button>
@@ -44,7 +46,7 @@
       <!-- 画布 -->
       <div class="canvas" @drop="onDrop" @dragover.prevent @dragenter.prevent>
         <VueFlow v-model:nodes="nodes" v-model:edges="edges" :default-edge-options="{ markerEnd: MarkerType.ArrowClosed }"
-          @connect="onConnect" fit-view-on-init :min-zoom="0.2">
+          @connect="onConnect" @edge-click="onEdgeClick" fit-view-on-init :min-zoom="0.2" :delete-key-code="['Delete','Backspace']">
           <Background :gap="20" />
           <Controls />
           <MiniMap />
@@ -52,7 +54,7 @@
           <!-- 自定义节点 -->
           <template #node-wf="nodeProps">
             <div class="wf-node" :class="[nodeProps.data.category, nodeRunState(nodeProps.id), { selected: nodeProps.selected }]"
-              @click="selectedNode = findNode(nodeProps.id)">
+              @click="selectNode(nodeProps.id)">
               <div class="wf-node-head">
                 <span class="wf-node-icon">{{ ICONS[nodeProps.data.category] }}</span>
                 <span class="wf-node-name">{{ nodeProps.data.label }}</span>
@@ -88,9 +90,26 @@
 
       <!-- 配置面板 -->
       <div class="config-area">
-        <NodeConfigPanel v-if="selectedNode" :node="selectedNode" @change="onConfigChanged" @remove="removeSelected" />
+        <!-- 边编辑（选中连线时） -->
+        <div v-if="selectedEdge" class="edge-panel">
+          <div class="edge-panel-title">🔗 连线属性</div>
+          <div class="edge-field">
+            <span class="edge-label">类型</span>
+            <el-tag size="small" :color="edgeKindColor(selectedEdge.kind)" class="edge-kind-tag">{{ edgeKindLabel(selectedEdge.kind) }}</el-tag>
+          </div>
+          <div class="edge-field">
+            <span class="edge-label">文字</span>
+            <el-input v-model="selectedEdgeLabel" size="small" placeholder="连线显示文字（留空=默认）" @change="saveEdgeLabel" />
+          </div>
+          <div class="edge-field edge-src">
+            <span class="edge-label">来源</span>
+            <span class="edge-src-text">{{ edgeNodeName(selectedEdge.source) }} → {{ edgeNodeName(selectedEdge.target) }}</span>
+          </div>
+          <el-button type="danger" size="small" plain style="width:100%; margin-top:10px" @click="deleteSelectedEdge">删除连线</el-button>
+        </div>
+        <NodeConfigPanel v-else-if="selectedNode" :node="selectedNode" @change="onConfigChanged" @remove="removeSelected" />
         <div v-else class="config-empty">
-          <p>👆 点击画布中的节点<br/>在此配置参数</p>
+          <p>👆 点击画布中的节点或连线<br/>在此配置</p>
         </div>
       </div>
     </div>
@@ -125,7 +144,7 @@
 
 <script setup lang="ts">
 defineOptions({ name: 'WorkflowEditor' })
-import { ref, reactive, computed, onMounted, provide, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, provide, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
@@ -164,7 +183,107 @@ watch(nodes, (list: any) => { canvasNodesRef.value = list }, { immediate: true, 
 provide('wfCanvasNodes', canvasNodesRef)
 
 /** 屏幕坐标 → 画布流坐标（拖放落点精确） */
-const { screenToFlowCoordinate, setNodes } = useVueFlow()
+const { screenToFlowCoordinate, setNodes, toObject, fromObject } = useVueFlow()
+
+// ==================== 撤销 / 重做（历史栈快照） ====================
+
+/** 历史快照：{ nodes, edges } 深拷贝 */
+interface EditorSnapshot { nodes: Node[]; edges: Edge[] }
+const undoStack = ref<EditorSnapshot[]>([])
+const redoStack = ref<EditorSnapshot[]>([])
+const canUndo = computed(() => undoStack.value.length > 0)
+const canRedo = computed(() => redoStack.value.length > 0)
+
+function snapshot(): EditorSnapshot {
+  return { nodes: JSON.parse(JSON.stringify(nodes.value)), edges: JSON.parse(JSON.stringify(edges.value)) }
+}
+/** 变更前调用：当前状态入撤销栈（清空重做栈） */
+function pushUndo(): void {
+  undoStack.value.push(snapshot())
+  if (undoStack.value.length > 50) undoStack.value.shift() // 上限防膨胀
+  redoStack.value = []
+}
+function applySnap(s: EditorSnapshot): void {
+  nodes.value = s.nodes
+  edges.value = s.edges
+  setNodes(s.nodes)
+  selectedNode.value = null
+  selectedEdge.value = null
+}
+function undo(): void {
+  const cur = snapshot()
+  const prev = undoStack.value.pop()
+  if (!prev) return
+  redoStack.value.push(cur)
+  applySnap(prev)
+}
+function redo(): void {
+  const cur = snapshot()
+  const next = redoStack.value.pop()
+  if (!next) return
+  undoStack.value.push(cur)
+  applySnap(next)
+}
+// Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y 快捷键
+function onKeydown(e: KeyboardEvent): void {
+  if (!(e.ctrlKey || e.metaKey)) return
+  const k = e.key.toLowerCase()
+  if (k === 'z' && e.shiftKey) { e.preventDefault(); redo() }
+  else if (k === 'z') { e.preventDefault(); undo() }
+  else if (k === 'y') { e.preventDefault(); redo() }
+}
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onKeydown))
+
+// ==================== 连线编辑（选中/删除/改文字） ====================
+
+/** 选中的边（null=无）；选中边时隐藏节点面板 */
+const selectedEdge = ref<{ id: string; kind: WorkflowEdgeKind; branchId?: string; source: string; target: string } | null>(null)
+/** 边文字输入（label override） */
+const selectedEdgeLabel = ref('')
+
+function onEdgeClick({ edge }: { edge: Edge }): void {
+  const d = (edge.data ?? {}) as { kind?: WorkflowEdgeKind; branchId?: string; label?: string }
+  selectedEdge.value = {
+    id: edge.id,
+    kind: d.kind ?? WORKFLOW_EDGE_KINDS.normal,
+    branchId: d.branchId,
+    source: edge.source,
+    target: edge.target,
+  }
+  selectedNode.value = null
+  // 自定义 label 优先；否则恢复默认
+  selectedEdgeLabel.value = d.label ?? ''
+}
+
+function edgeKindLabel(kind: WorkflowEdgeKind): string {
+  return { fail: '失败', approve: '批准', reject: '驳回', 'loop-body': '循环体', 'loop-done': '完成', 'loop-back': '回边', branch: '分支', normal: '正常' }[kind] ?? kind
+}
+function edgeKindColor(kind: WorkflowEdgeKind): string {
+  return { fail: '#ef4444', approve: '#10b981', reject: '#f59e0b', 'loop-body': '#8b5cf6', 'loop-done': '#6366f1', branch: '#0ea5e9', normal: '#909399' }[kind] ?? '#909399'
+}
+function edgeNodeName(id: string): string {
+  return (findNode(id)?.data as { label?: string })?.label ?? id
+}
+/** 保存自定义边文字（写入 edge.data.label；空则恢复默认） */
+function saveEdgeLabel(): void {
+  if (!selectedEdge.value) return
+  pushUndo()
+  const id = selectedEdge.value.id
+  edges.value = edges.value.map(e => {
+    if (e.id !== id) return e
+    const d = { ...((e.data ?? {}) as Record<string, unknown>), label: selectedEdgeLabel.value.trim() || undefined }
+    const label = selectedEdgeLabel.value.trim() || edgeLabel((d.kind as WorkflowEdgeKind) ?? WORKFLOW_EDGE_KINDS.normal, d.branchId as string | undefined)
+    return { ...e, label, data: d }
+  })
+}
+function deleteSelectedEdge(): void {
+  if (!selectedEdge.value) return
+  pushUndo()
+  const id = selectedEdge.value.id
+  edges.value = edges.value.filter(e => e.id !== id)
+  selectedEdge.value = null
+}
 
 /** 分类 → 展示（颜色 / 图标字符） */
 const CATEGORY_META: Record<string, { label: string; icon: string }> = {
@@ -433,6 +552,7 @@ async function doAppPublish() {
 
 // ── 画布交互 ──
 function addNode(type: WorkflowNodeType, pos?: { x: number; y: number }) {
+  pushUndo()
   const catalog = NODE_TYPE_CATALOG_MAP[type]
   const id = `${type.replace(/-/g, '_')}_${Date.now().toString(36)}`
   const config = JSON.parse(JSON.stringify(catalog.defaultConfig))
@@ -464,6 +584,12 @@ function nodeRunState(nodeId: string): string {
 }
 
 function findNode(id: string) { return nodes.value.find(n => n.id === id) ?? null }
+
+/** 选中节点（清除边选中） */
+function selectNode(id: string): void {
+  selectedEdge.value = null
+  selectedNode.value = findNode(id)
+}
 
 /** 智能语义连线：按源节点类型弹出连线类型选择 */
 async function onConnect(conn: Connection) {
@@ -509,11 +635,13 @@ async function onConnect(conn: Connection) {
     data: { kind, ...(branchId ? { branchId } : {}) },
     style: edgeStyle(kind),
   })
+  pushUndo()
 }
 
 /** 一键整理：分层拓扑布局（同层纵向排列，层间横向推进；环/孤岛回退兜底） */
 function autoLayout(): void {
   if (nodes.value.length === 0) return
+  pushUndo()
   const NODE_W = 200, NODE_H = 64, H_GAP = 60, V_GAP = 24
   const X0 = 60, Y0 = 60
   // 邻接表（normal/branch/approve/reject/loop-done/fail 都算流向；loop-back 除外）
@@ -577,12 +705,14 @@ function autoLayout(): void {
 
 function onConfigChanged() {
   if (!selectedNode.value) return
+  pushUndo()
   const wf = (selectedNode.value.data as any).wfNode
   ;(selectedNode.value.data as any).summary = summaryOf(wf.type, wf.config)
 }
 
 function removeSelected() {
   if (!selectedNode.value) return
+  pushUndo()
   const id = selectedNode.value.id
   nodes.value = nodes.value.filter(n => n.id !== id)
   edges.value = edges.value.filter(e => e.source !== id && e.target !== id)
@@ -613,6 +743,15 @@ function removeSelected() {
 .canvas { flex: 1; position: relative; background: #fafafa; }
 .config-area { width: 400px; border-left: 1px solid var(--el-border-color); background: var(--el-bg-color); }
 .config-empty { height: 100%; display: flex; align-items: center; justify-content: center; color: var(--el-text-color-placeholder); text-align: center; line-height: 1.8; }
+
+/* 连线编辑面板 */
+.edge-panel { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.edge-panel-title { font-size: 14px; font-weight: 600; }
+.edge-field { display: flex; flex-direction: column; gap: 4px; }
+.edge-field.edge-src { font-size: 12px; }
+.edge-label { font-size: 12px; font-weight: 600; color: var(--el-text-color-secondary); }
+.edge-kind-tag { align-self: flex-start; }
+.edge-src-text { color: var(--el-text-color-regular); font-size: 12px; word-break: break-all; }
 
 /* ── 自定义节点卡片 ── */
 .wf-node { min-width: 150px; max-width: 210px; background: #fff; border: 2px solid #d1d5db; border-radius: 10px; padding: 0; box-shadow: 0 1px 3px rgba(0,0,0,.08); font-size: 13px; transition: box-shadow .15s; }
