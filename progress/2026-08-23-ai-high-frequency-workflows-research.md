@@ -181,3 +181,26 @@
   draft + published 双图确认 img1.promptExtend=false、plan1 含外观锁定/逐字复用/以参考图为准
 - 注意：脚本查库需 `DataPathService.getInstance().initialize()`（读 data-path-config.json
   自定义路径）+ apps.source_id 关联 workflow_definitions（非 definition_id）
+
+---
+
+## 2026-08-24 追加：套图支持打开所在目录（提交 b88e78ae）
+
+### 背景
+用户反馈「套图为什么不能打开文件夹」：普通资产卡片有 FolderOpened 按钮，
+组卡片只有「查看套图 + 删除组」两个按钮，缺打开目录入口。
+
+### 改动
+- AssetService.resolveGroupFolderPath(groupId)：组详情 → 首个文件型成员
+  （kind=file && storagePath）→ resolveAssetPath；组不存在/无文件成员返回空串
+- asset.handler 新增 asset:group-open-folder：Electron shell.showItemInFolder
+  定位组文件；Web 端返回不可用错误
+- preload/electron-api 增加 assets.groupOpenFolder
+- AssetCenter 组卡片操作区改为：查看套图 + 图标区（打开目录 + 删除组）
+
+### 验证
+- 测试 8 绿（新增 resolveGroupFolderPath 文件成员/纯文本/不存在组 2 用例；
+  注意 Windows 路径断言用 replace(/\\\\/g,'/') 兼容反斜杠）
+- tsc 无错、electron-vite build 全绿
+- CDP 实测：组卡片有 2 个图标按钮（文件夹+删除）；点击打开目录无错误提示
+  （success 分支静默，shell 已定位到套图文件）
