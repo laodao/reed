@@ -1,0 +1,134 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 知识提炼存日记",
+  "description": "文章（粘贴/网页/知识库）→ 读后感/书评式知识提炼 → 人工确认 → 保存到日记",
+  "category": "learning",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 40, "y": 200 },
+        "config": {
+          "inputs": [
+            { "key": "text", "label": "文章内容（粘贴，可多篇用 --- 分隔）", "type": "textarea" },
+            { "key": "url", "label": "文章链接（与粘贴二选一）", "type": "string", "validation": { "pattern": "^https?://.+" } },
+            { "key": "knowledgeBase", "label": "知识库（与粘贴/链接三选一）", "type": "select-dynamic", "source": "knowledgeBases" },
+            { "key": "style", "label": "提炼风格", "type": "select", "defaultValue": "reflection", "options": [
+              { "label": "读后感", "value": "reflection" },
+              { "label": "书评", "value": "review" },
+              { "label": "要点提炼", "value": "summary" },
+              { "label": "批判分析", "value": "critical" }
+            ] },
+            { "key": "length", "label": "篇幅", "type": "select", "defaultValue": "standard", "options": [
+              { "label": "精简", "value": "short" },
+              { "label": "标准", "value": "standard" },
+              { "label": "详尽", "value": "long" }
+            ] },
+            { "key": "title", "label": "日记标题（留空自动生成）", "type": "string" },
+            { "key": "folderId", "label": "日记文件夹 ID（留空自动建「AI 提炼」）", "type": "string" },
+            { "key": "model", "label": "模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
+          ]
+        }
+      },
+      {
+        "id": "cond1",
+        "type": "condition",
+        "name": "来源分流",
+        "position": { "x": 300, "y": 200 },
+        "config": {
+          "branches": [
+            { "branchId": "hasUrl", "label": "网页链接", "conditions": [{ "left": "{{start.url}}", "operator": "not_empty" }] },
+            { "branchId": "hasKb", "label": "知识库", "conditions": [{ "left": "{{start.knowledgeBase}}", "operator": "not_empty" }] },
+            { "branchId": "hasText", "label": "粘贴文本", "conditions": [{ "left": "{{start.text}}", "operator": "not_empty" }] }
+          ],
+          "noMatchPolicy": "fail"
+        }
+      },
+      {
+        "id": "extract1",
+        "type": "web-extract",
+        "name": "网页正文",
+        "position": { "x": 560, "y": 80 },
+        "config": { "url": "{{start.url}}", "maxLength": 100000 }
+      },
+      {
+        "id": "kb1",
+        "type": "kb-retrieve",
+        "name": "知识库检索",
+        "position": { "x": 560, "y": 240 },
+        "config": { "knowledgeBaseId": "{{start.knowledgeBase}}", "query": "{{start.title || '文章内容'}}", "topK": 5, "threshold": 0.3 }
+      },
+      {
+        "id": "merge1",
+        "type": "assign",
+        "name": "合并来源",
+        "position": { "x": 560, "y": 400 },
+        "config": {
+          "assignments": [
+            { "key": "sourceText", "value": "{{extract1.text}}{{kb1.results}}{{start.text}}" }
+          ]
+        }
+      },
+      {
+        "id": "llm1",
+        "type": "llm-chat",
+        "name": "知识提炼",
+        "position": { "x": 800, "y": 200 },
+        "config": {
+          "systemPrompt": "你是知识提炼助手。基于文章内容撰写读后感/书评式提炼，行文自然像人写的读书笔记，不是要点列表。结构建议：开头总评 → 核心观点与论证 → 关键收获 → 个人启发/批判思考。\n\n风格要求：\n- 读后感：结合个人感受，第一人称，真挚自然\n- 书评：客观评述价值与不足，有判断\n- 要点提炼：结构化但不失可读性\n- 批判分析：质疑、对比、多角度\n\n篇幅：精简=300字内；标准=600字左右；详尽=1000字以上。\n\n只输出提炼正文，不要标题、不要解释。",
+          "prompt": "提炼风格：{{start.style}}\n篇幅：{{start.length}}\n\n文章内容：\n{{merge1.values.sourceText}}\n\n请撰写知识提炼。",
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "review1",
+        "type": "human-review",
+        "name": "人工确认",
+        "position": { "x": 1040, "y": 200 },
+        "config": {
+          "payload": "{{llm1.content}}",
+          "interaction": "input",
+          "editableFields": [{ "key": "output_result", "label": "提炼全文", "type": "string" }]
+        }
+      },
+      {
+        "id": "diary1",
+        "type": "save-diary",
+        "name": "保存到日记",
+        "position": { "x": 1280, "y": 200 },
+        "config": {
+          "folderId": "{{start.folderId}}",
+          "title": "{{start.title}}",
+          "content": "{{review1.output_result}}"
+        }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 1520, "y": 200 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "cond1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "cond1", "targetNodeId": "extract1", "kind": "branch", "branchId": "hasUrl" },
+      { "id": "e3", "sourceNodeId": "cond1", "targetNodeId": "kb1", "kind": "branch", "branchId": "hasKb" },
+      { "id": "e4", "sourceNodeId": "cond1", "targetNodeId": "merge1", "kind": "branch", "branchId": "hasText" },
+      { "id": "e5", "sourceNodeId": "extract1", "targetNodeId": "merge1", "kind": "normal" },
+      { "id": "e6", "sourceNodeId": "kb1", "targetNodeId": "merge1", "kind": "normal" },
+      { "id": "e7", "sourceNodeId": "merge1", "targetNodeId": "llm1", "kind": "normal" },
+      { "id": "e8", "sourceNodeId": "llm1", "targetNodeId": "review1", "kind": "normal" },
+      { "id": "e9", "sourceNodeId": "review1", "targetNodeId": "diary1", "kind": "approve" },
+      { "id": "e10", "sourceNodeId": "review1", "targetNodeId": "end", "kind": "reject" },
+      { "id": "e11", "sourceNodeId": "diary1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": null
+}

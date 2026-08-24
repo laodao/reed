@@ -464,4 +464,13 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
       help: 'url=前端可加载链接；path=供下游节点直接使用的本地路径',
     }),
   ],
+  'save-diary': [
+    T('title', '日记标题', { templateHint: true, placeholder: '{{llm1.content}} 或 {{start.title}}' }),
+    T('content', '日记内容（markdown）', { type: 'textarea', templateHint: true, placeholder: '{{llm1.content}}' }),
+    T('folderId', '目标日记文件夹 ID', {
+      templateHint: true,
+      help: '留空 = 自动创建/复用「AI 提炼」根文件夹；可在日记页面「新建目录」后填入目录 ID',
+      placeholder: '留空自动',
+    }),
+  ],
 }

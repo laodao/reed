@@ -91,6 +91,8 @@ export type WorkflowNodeType =
   // 资产（通用资产库：工作流成果沉淀与复用）
   | 'save-asset'
   | 'read-asset'
+  // 日记（知识提炼存日记等场景：成果落日记库，/diary 阅读）
+  | 'save-diary'
   // 新闻采集（内置应用 C1 早报 / C2 周报数据层：预置主题多源抓取链接）
   | 'crawl-news'
 
@@ -303,6 +305,8 @@ export interface WorkflowNodeConfigMap {
     width?: number
     height?: number
     count?: number
+    /** 参考图：本地文件路径数组（file 输入 .path 或下游产物路径），读取为 base64 透传（电商海报保留商品主体） */
+    referenceImages?: unknown
     /** 图像服务 Provider 配置（缺省=图像服务默认） */
     providerConfigId?: string
     modelId?: string
@@ -475,6 +479,15 @@ export interface WorkflowNodeConfigMap {
     assetId: string
     /** 输出模式：url=可访问链接 | path=本地文件路径（文件型） | content=文本/JSON 内容 | metadata=全部元数据 */
     output?: 'url' | 'path' | 'content' | 'metadata'
+  }
+
+  'save-diary': {
+    /** 目标日记文件夹 ID（缺省=自动创建/复用「AI 提炼」根文件夹） */
+    folderId?: string
+    /** 日记标题（模板可用） */
+    title: string
+    /** 日记内容（markdown，模板可用） */
+    content: string
   }
 
   'crawl-news': {
@@ -757,6 +770,7 @@ export const WORKFLOW_NODE_TYPES = {
   'data-table': 'data-table',
   'save-asset': 'save-asset',
   'read-asset': 'read-asset',
+  'save-diary': 'save-diary',
   'crawl-news': 'crawl-news',
 } as const satisfies Record<WorkflowNodeType, WorkflowNodeType>
 

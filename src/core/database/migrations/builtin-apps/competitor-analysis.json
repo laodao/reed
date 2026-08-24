@@ -1,0 +1,170 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 竞品分析报告",
+  "description": "竞品名单 → 逐竞品多轮搜索 → 竞品档案 → 对比矩阵 → 竞争策略建议报告",
+  "category": "research",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 40, "y": 200 },
+        "config": {
+          "inputs": [
+            { "key": "competitors", "label": "竞品名单（每行一个）", "type": "textarea", "required": true },
+            { "key": "industry", "label": "所属行业", "type": "string", "required": true },
+            { "key": "dimensions", "label": "对比维度", "type": "select", "multi": true, "options": [
+              { "label": "产品", "value": "product" },
+              { "label": "定价", "value": "pricing" },
+              { "label": "营销", "value": "marketing" },
+              { "label": "口碑", "value": "reputation" },
+              { "label": "融资/技术", "value": "tech" }
+            ] },
+            { "key": "model", "label": "模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
+          ]
+        }
+      },
+      {
+        "id": "plan1",
+        "type": "llm-chat",
+        "name": "搜索规划",
+        "position": { "x": 320, "y": 200 },
+        "config": {
+          "systemPrompt": "你是竞品分析规划助手。解析竞品名单（每行一个，可能含企业名/产品名），为每个竞品生成**恰好 3 个**搜索查询词：1.产品功能；2.定价/营销；3.口碑/融资技术。只输出 JSON：{plans: [{competitor, queries: [3 个字符串]}]}。每个查询词具体可搜（如「{行业} {竞品} 产品功能」）。",
+          "prompt": "行业：{{start.industry}}\n对比维度：{{start.dimensions}}\n\n竞品名单：\n{{start.competitors}}\n\n请输出 JSON 对象（每个竞品恰好 3 个查询词）。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "loop1",
+        "type": "loop",
+        "name": "逐竞品调研",
+        "position": { "x": 560, "y": 200 },
+        "config": { "listExpression": "{{plan1.parsed.plans}}", "emptyPolicy": "skip" }
+      },
+      {
+        "id": "searchA",
+        "type": "web-search",
+        "name": "搜索词1",
+        "position": { "x": 800, "y": 280 },
+        "config": { "query": "{{loop1.item.queries.0}}", "maxResults": 5 }
+      },
+      {
+        "id": "searchB",
+        "type": "web-search",
+        "name": "搜索词2",
+        "position": { "x": 800, "y": 380 },
+        "config": { "query": "{{loop1.item.queries.1}}", "maxResults": 5 }
+      },
+      {
+        "id": "searchC",
+        "type": "web-search",
+        "name": "搜索词3",
+        "position": { "x": 800, "y": 480 },
+        "config": { "query": "{{loop1.item.queries.2}}", "maxResults": 5 }
+      },
+      {
+        "id": "merge1",
+        "type": "assign",
+        "name": "合并搜索结果",
+        "position": { "x": 1040, "y": 380 },
+        "config": {
+          "assignments": [
+            { "key": "results", "value": "[{{searchA.results}}, {{searchB.results}}, {{searchC.results}}]" }
+          ]
+        }
+      },
+      {
+        "id": "profile1",
+        "type": "llm-chat",
+        "name": "竞品档案",
+        "position": { "x": 1280, "y": 380 },
+        "config": {
+          "systemPrompt": "你是竞品分析师。基于搜索结果整理该竞品的档案。只输出 JSON：{competitor, summary: 一句话定位, product: 产品功能要点, pricing: 定价信息, marketing: 营销动作, reputation: 用户口碑, tech: 融资/技术动态, sources: [{title, url}]}。信息必须来自搜索结果，没有的维度写「未获取到公开信息」，不编造。",
+          "prompt": "行业：{{start.industry}}\n竞品：{{loop1.item.competitor}}\n对比维度：{{start.dimensions}}\n\n搜索结果：\n{{merge1.values.results}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "matrix1",
+        "type": "llm-chat",
+        "name": "对比矩阵",
+        "position": { "x": 800, "y": 60 },
+        "config": {
+          "systemPrompt": "你是商业分析师。综合各竞品档案生成对比矩阵与策略建议。只输出 JSON：{matrix: [每行 {dimension, [竞品值]}] 或表格化文本, positioning: 各竞品定位差异, advantages: 各竞品优劣势, strategy: 竞争策略建议}。",
+          "prompt": "行业：{{start.industry}}\n对比维度：{{start.dimensions}}\n\n各竞品档案：\n{{loop1.results}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "report1",
+        "type": "report",
+        "name": "竞品分析报告",
+        "position": { "x": 1040, "y": 60 },
+        "config": {
+          "title": "{{start.industry}} 竞品分析报告",
+          "template": "# {{start.industry}} 竞品分析报告\n\n## 一、对比矩阵\n\n{{matrix1.parsed.matrix}}\n\n## 二、定位差异\n\n{{matrix1.parsed.positioning}}\n\n## 三、优劣势\n\n{{matrix1.parsed.advantages}}\n\n## 四、竞争策略建议\n\n{{matrix1.parsed.strategy}}\n\n## 五、竞品档案明细\n\n{{loop1.results}}",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "review1",
+        "type": "human-review",
+        "name": "人工确认",
+        "position": { "x": 1280, "y": 60 },
+        "config": {
+          "payload": "{{report1.markdown}}",
+          "editableFields": [{ "key": "output_result", "label": "报告全文", "type": "string" }]
+        }
+      },
+      {
+        "id": "save1",
+        "type": "save-asset",
+        "name": "保存到资产库",
+        "position": { "x": 1520, "y": 60 },
+        "config": {
+          "content": "{{report1.markdown}}",
+          "kind": "text",
+          "category": "text",
+          "subCategory": "竞品分析",
+          "name": "{{start.industry}}竞品分析",
+          "tags": "竞品分析,{{start.industry}}"
+        }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 1760, "y": 60 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "plan1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "plan1", "targetNodeId": "loop1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "loop1", "targetNodeId": "searchA", "kind": "loop-body" },
+      { "id": "e4", "sourceNodeId": "searchA", "targetNodeId": "merge1", "kind": "normal" },
+      { "id": "e5", "sourceNodeId": "searchB", "targetNodeId": "merge1", "kind": "normal" },
+      { "id": "e6", "sourceNodeId": "searchC", "targetNodeId": "merge1", "kind": "normal" },
+      { "id": "e7", "sourceNodeId": "merge1", "targetNodeId": "profile1", "kind": "normal" },
+      { "id": "e8", "sourceNodeId": "profile1", "targetNodeId": "loop1", "kind": "loop-back" },
+      { "id": "e9", "sourceNodeId": "loop1", "targetNodeId": "matrix1", "kind": "loop-done" },
+      { "id": "e10", "sourceNodeId": "matrix1", "targetNodeId": "report1", "kind": "normal" },
+      { "id": "e11", "sourceNodeId": "report1", "targetNodeId": "review1", "kind": "normal" },
+      { "id": "e12", "sourceNodeId": "review1", "targetNodeId": "save1", "kind": "approve" },
+      { "id": "e13", "sourceNodeId": "review1", "targetNodeId": "end", "kind": "reject" },
+      { "id": "e14", "sourceNodeId": "save1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": null
+}

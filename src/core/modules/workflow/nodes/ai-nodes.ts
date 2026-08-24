@@ -19,6 +19,7 @@ import { ImageService } from '../../../services/image.service'
 import { VoiceService } from '../../../services/voice.service'
 import { getVideoMetadata, extractAudioSegment } from '../../episode-production/reference-video/ffmpeg-helpers'
 import { dirname, basename, join } from 'path'
+import { existsSync, readFileSync } from 'fs'
 import type { WorkflowNodeContext } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
@@ -272,6 +273,24 @@ const imageGenNode: WorkflowNodeHandler = {
       count?: number
       providerConfigId?: string
       modelId: string
+      /** 参考图：本地文件路径数组（file 输入 .path 或下游产物路径），读取为 base64 data URL 透传 */
+      referenceImages?: unknown
+    }
+    // 参考图：路径 → base64 data URL（电商海报等场景保留商品主体）
+    let referenceImages: string[] | undefined
+    const rawRefs = cfg.referenceImages
+    if (rawRefs !== undefined && rawRefs !== null) {
+      const list = Array.isArray(rawRefs) ? rawRefs : [rawRefs]
+      const resolved: string[] = []
+      for (const item of list) {
+        const p = stringifyValue(item).trim()
+        if (!p) continue
+        if (!existsSync(p)) {
+          return { status: 'failed', error: `参考图文件不存在: ${p}` }
+        }
+        resolved.push(`data:image/png;base64,${readFileSync(p).toString('base64')}`)
+      }
+      if (resolved.length > 0) referenceImages = resolved
     }
     const resp = await ImageService.generateImage({
       model: cfg.modelId,
@@ -281,6 +300,7 @@ const imageGenNode: WorkflowNodeHandler = {
       height: cfg.height,
       ...(cfg.count ? { count: cfg.count } : {}),
       ...(cfg.providerConfigId ? { providerConfigId: cfg.providerConfigId } : {}),
+      ...(referenceImages ? { referenceImages } : {}),
     } as never)
     if (!resp.success) {
       return { status: 'failed', error: `图像生成失败: ${resp.error ?? '未知错误'}` }

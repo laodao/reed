@@ -759,6 +759,23 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
       { key: 'json', type: 'json', desc: '结构化内容（content 模式，json 型）' },
     ],
   },
+  {
+    type: 'save-diary',
+    label: '保存到日记',
+    description: '把上游产出（读后感/书评式提炼结果）保存为日记条目，/diary 可阅读编辑导出',
+    category: 'general',
+    icon: 'Notebook',
+    controlKind: 'task',
+    cancellable: false,
+    ports: [{ kind: 'normal', label: '出', max: 1 }, { kind: 'fail', label: '失败' }],
+    requiredConfigKeys: ['title', 'content'],
+    defaultConfig: { folderId: '', title: '', content: '' },
+    outputSchema: [
+      { key: 'entryId', type: 'string', desc: '日记条目 ID' },
+      { key: 'title', type: 'string', desc: '日记标题' },
+      { key: 'folderId', type: 'string', desc: '所属目录 ID' },
+    ],
+  },
 
 ]
 

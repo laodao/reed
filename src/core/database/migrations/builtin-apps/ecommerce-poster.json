@@ -1,0 +1,151 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 电商商品海报",
+  "description": "商品图片 + 卖点信息 → AI 设计文案与构图 → 参考商品图生成海报/主图 → 配套文案报告",
+  "category": "ecommerce",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 40, "y": 200 },
+        "config": {
+          "inputs": [
+            { "key": "productImage", "label": "商品图片", "type": "file", "required": true },
+            { "key": "productInfo", "label": "商品信息/卖点", "type": "textarea", "required": true },
+            { "key": "posterType", "label": "海报类型", "type": "select", "required": true, "options": [
+              { "label": "电商主图", "value": "main" },
+              { "label": "促销海报", "value": "promo" },
+              { "label": "详情头图", "value": "detail" },
+              { "label": "社媒推广图", "value": "social" }
+            ] },
+            { "key": "style", "label": "风格", "type": "select", "defaultValue": "minimal", "options": [
+              { "label": "简约", "value": "minimal" },
+              { "label": "高端", "value": "premium" },
+              { "label": "活力", "value": "vibrant" },
+              { "label": "国潮", "value": "guochao" },
+              { "label": "科技感", "value": "tech" }
+            ] },
+            { "key": "slogan", "label": "广告语（可选）", "type": "string" },
+            { "key": "size", "label": "尺寸", "type": "select", "defaultValue": "1024x1024", "options": [
+              { "label": "1:1 主图 1024×1024", "value": "1024x1024" },
+              { "label": "3:4 社媒 1024×1365", "value": "1024x1365" },
+              { "label": "16:9 详情 1280×720", "value": "1280x720" }
+            ] },
+            { "key": "model", "label": "图像模型", "type": "model", "modelTypes": ["image"], "required": true },
+            { "key": "textModel", "label": "文案模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
+          ]
+        }
+      },
+      {
+        "id": "copy1",
+        "type": "llm-chat",
+        "name": "海报设计文案",
+        "position": { "x": 320, "y": 200 },
+        "config": {
+          "systemPrompt": "你是电商视觉设计师。基于商品信息与海报类型，生成海报文案与构图建议。只输出 JSON：{headline: 主标题(短促有力), subheadline: 副标题(卖点补充), layoutHint: 构图建议(主商品位置/留白/视觉焦点), colorHint: 配色建议, imagePrompt: 用于图像生成的完整英文提示词(描述商品主体+背景+风格+光线+构图，保留商品原貌)}。",
+          "prompt": "商品信息：{{start.productInfo}}\n海报类型：{{start.posterType}}\n风格：{{start.style}}\n广告语（可选）：{{start.slogan}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.textModel.providerConfigId}}",
+          "modelId": "{{start.textModel.modelId}}"
+        }
+      },
+      {
+        "id": "img1",
+        "type": "image-gen",
+        "name": "生成海报",
+        "position": { "x": 560, "y": 200 },
+        "config": {
+          "prompt": "{{copy1.parsed.imagePrompt}}",
+          "negativePrompt": "低质量,模糊,文字错误,水印,变形",
+          "width": 1024,
+          "height": 1024,
+          "count": 1,
+          "referenceImages": "{{start.productImage.path}}",
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "split1",
+        "type": "parallel",
+        "name": "并行分流",
+        "position": { "x": 700, "y": 200 },
+        "config": {}
+      },
+      {
+        "id": "save1",
+        "type": "save-asset",
+        "name": "保存海报图",
+        "position": { "x": 900, "y": 140 },
+        "config": {
+          "content": "{{img1.images.0.url}}",
+          "kind": "file",
+          "category": "image",
+          "subCategory": "电商海报",
+          "name": "{{start.posterType}}海报",
+          "tags": "电商,海报,{{start.style}}"
+        }
+      },
+      {
+        "id": "report1",
+        "type": "report",
+        "name": "配套文案报告",
+        "position": { "x": 1040, "y": 200 },
+        "config": {
+          "title": "{{start.posterType}} 海报配套文案",
+          "template": "# {{start.posterType}} 海报配套文案\n\n## 主标题\n\n{{copy1.parsed.headline}}\n\n## 副标题\n\n{{copy1.parsed.subheadline}}\n\n## 构图与配色建议\n\n- 构图：{{copy1.parsed.layoutHint}}\n- 配色：{{copy1.parsed.colorHint}}\n\n## 生成提示词\n\n```\n{{copy1.parsed.imagePrompt}}\n```",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "review1",
+        "type": "human-review",
+        "name": "人工确认",
+        "position": { "x": 1280, "y": 200 },
+        "config": {
+          "payload": "{{report1.markdown}}",
+          "editableFields": [{ "key": "output_result", "label": "文案全文", "type": "string" }]
+        }
+      },
+      {
+        "id": "save2",
+        "type": "save-asset",
+        "name": "保存文案",
+        "position": { "x": 1520, "y": 200 },
+        "config": {
+          "content": "{{report1.markdown}}",
+          "kind": "text",
+          "category": "text",
+          "subCategory": "电商海报",
+          "name": "{{start.posterType}}海报文案",
+          "tags": "电商文案,{{start.style}}"
+        }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 1760, "y": 200 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "copy1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "copy1", "targetNodeId": "img1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "img1", "targetNodeId": "split1", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "split1", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e5", "sourceNodeId": "split1", "targetNodeId": "report1", "kind": "normal" },
+      { "id": "e6", "sourceNodeId": "report1", "targetNodeId": "review1", "kind": "normal" },
+      { "id": "e7", "sourceNodeId": "review1", "targetNodeId": "save2", "kind": "approve" },
+      { "id": "e8", "sourceNodeId": "review1", "targetNodeId": "end", "kind": "reject" },
+      { "id": "e9", "sourceNodeId": "save1", "targetNodeId": "end", "kind": "normal" },
+      { "id": "e10", "sourceNodeId": "save2", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": null
+}
