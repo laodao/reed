@@ -291,3 +291,24 @@ loop1/loop2 生成 → merge1(array-merge 汇总) → check1(form-collect list-c
 ### 待用户确认
 - 看 .exp-consistency 对比图确认 edit-max 商品保持效果是否达标；
   若不理想可再试 wan2.7-image-pro 或调 edit 指令措辞
+
+---
+
+## 2026-08-25 追加：编辑器撤销/连线编辑 + 设置模块主题入库/搜索引擎通用（提交 5c2a3ebd / a1e5b6c9）
+
+### 编辑器（5c2a3ebd）
+- 撤销/重做：历史栈快照（Ctrl+Z/Y + 工具栏），变更点自动入栈
+- 连线编辑：点击边 → 属性面板（类型/文字/来源/删除）；自定义文字存 data.label
+- 连线文字来源：edgeLabel(kind,branchId) 映射，现可覆盖
+- CDP 实测：删除边 30→29、撤销恢复 30
+
+### 设置模块（a1e5b6c9）
+1. 新闻主题入库：news_topics 表 + 实体/仓库/迁移种子 5 内置主题；
+   设置页主题从库读取，自定义主题可改名/删除（内置有来源禁删、删除级联删来源）
+2. 搜索引擎通用配置：custom-api 类型 + CustomApiSearchEngine
+   （通用 OpenAI 兼容 /chat/completions，可配 apiUrl/Key/model）
+   ——任意兼容端点（Perplexity/Exa/DeepSeek 联网等）免写代码接入
+
+### 验证
+- custom-api 单测 5 + 迁移 7 绿；tsc/构建全绿
+- 真实库 news_topics 5 主题 + 75 来源；IPC custom-api 配置创建/删除走通
