@@ -543,6 +543,9 @@ export interface WorkflowEdge {
   kind: WorkflowEdgeKind
   /** kind='branch' 时：条件分支 branchId */
   branchId?: string
+  /** 画布锚点（编辑器用，如 'out-right'/'in-left'；引擎忽略） */
+  sourceHandle?: string
+  targetHandle?: string
 }
 
 /** 整图 */

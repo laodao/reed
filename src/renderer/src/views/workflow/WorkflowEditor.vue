@@ -46,14 +46,15 @@
       <!-- 画布 -->
       <div class="canvas" @drop="onDrop" @dragover.prevent @dragenter.prevent>
         <VueFlow v-model:nodes="nodes" v-model:edges="edges" :default-edge-options="{ markerEnd: MarkerType.ArrowClosed }"
-          @connect="onConnect" @edge-click="onEdgeClick" @pane-click="closeConfigPanel" fit-view-on-init :min-zoom="0.2" :delete-key-code="['Delete','Backspace']">
+          :edges-updatable="true" :edge-updater-radius="14" :connection-radius="30" connection-mode="loose"
+          @connect="onConnect" @edge-click="onEdgeClick" @edge-update="onEdgeUpdate" @pane-click="closeConfigPanel" fit-view-on-init :min-zoom="0.2" :delete-key-code="['Delete','Backspace']">
           <Background :gap="20" />
           <Controls />
           <MiniMap />
 
           <!-- 自定义节点 -->
           <template #node-wf="nodeProps">
-            <div class="wf-node" :class="[nodeProps.data.category, nodeRunState(nodeProps.id), { selected: nodeProps.selected }]"
+            <div class="wf-node" :class="[nodeProps.data.category, nodeRunState(nodeProps.id), { selected: nodeProps.selected, hl: highlightedNodeIds.has(nodeProps.id) }]"
               @click="selectNode(nodeProps.id)">
               <div class="wf-node-head">
                 <span class="wf-node-icon">{{ ICONS[nodeProps.data.category] }}</span>
@@ -164,6 +165,8 @@ import type { WorkflowGraph, WorkflowNodeType, WorkflowEdgeKind } from '@shared/
 import NodeConfigPanel from '@/components/workflow/NodeConfigPanel.vue'
 import RunInputForm from '@/components/workflow/RunInputForm.vue'
 import { useWorkflowStore } from '@/stores/workflow'
+import { computeHighlight, EDGE_HIGHLIGHT_STYLE } from '@/utils/workflow-editor-highlight'
+import type { HighlightSelection } from '@/utils/workflow-editor-highlight'
 
 const route = useRoute()
 const router = useRouter()
@@ -184,7 +187,7 @@ watch(nodes, (list: any) => { canvasNodesRef.value = list }, { immediate: true, 
 provide('wfCanvasNodes', canvasNodesRef)
 
 /** 屏幕坐标 → 画布流坐标（拖放落点精确） */
-const { screenToFlowCoordinate, setNodes, toObject, fromObject } = useVueFlow()
+const { screenToFlowCoordinate, setNodes, setEdges, toObject, fromObject } = useVueFlow()
 
 // ==================== 撤销 / 重做（历史栈快照） ====================
 
@@ -208,8 +211,12 @@ function applySnap(s: EditorSnapshot): void {
   nodes.value = s.nodes
   edges.value = s.edges
   setNodes(s.nodes)
+  // 快照经 JSON 深拷贝会丢弃 undefined 的 handle 键；Vue Flow parseEdge 用 Object.assign(existingEdge, edge)
+  // 合并时会用现有边补全缺失键 → 撤销后锚点残留。显式补回 undefined 键强制覆盖
+  setEdges(s.edges.map(e => ({ ...e, sourceHandle: e.sourceHandle ?? undefined, targetHandle: e.targetHandle ?? undefined })))
   selectedNode.value = null
   selectedEdge.value = null
+  syncHighlight() // 快照里的边样式可能含高亮，按当前（空）选中重置
 }
 function undo(): void {
   const cur = snapshot()
@@ -284,6 +291,52 @@ function deleteSelectedEdge(): void {
   const id = selectedEdge.value.id
   edges.value = edges.value.filter(e => e.id !== id)
   selectedEdge.value = null
+}
+
+// ==================== 选中高亮（节点 ⇄ 相关连线 ⇄ 相邻节点） ====================
+
+/** 高亮集合（纯函数计算：选中节点 → 相连边+另一端节点；选中边 → 自身+两端节点） */
+const highlightedNodeIds = ref<Set<string>>(new Set())
+const highlightedEdgeIds = ref<Set<string>>(new Set())
+
+/** 根据当前选中计算高亮集合，并把高亮描边同步到边对象（取消选中时恢复类型色） */
+function syncHighlight(): void {
+  const sel: HighlightSelection = selectedNode.value
+    ? { kind: 'node', nodeId: selectedNode.value.id }
+    : selectedEdge.value
+      ? { kind: 'edge', edgeId: selectedEdge.value.id, source: selectedEdge.value.source, target: selectedEdge.value.target }
+      : null
+  const r = computeHighlight(sel, edges.value)
+  highlightedNodeIds.value = new Set(r.nodeIds)
+  highlightedEdgeIds.value = new Set(r.edgeIds)
+  // 高亮样式直接写入 edge.style（不进撤销快照语义：快照取交互前状态，applySnap 后会按选中重置）
+  edges.value = edges.value.map(e => {
+    const d = (e.data ?? {}) as { kind?: WorkflowEdgeKind }
+    const base = edgeStyle(d.kind ?? WORKFLOW_EDGE_KINDS.normal)
+    const st = highlightedEdgeIds.value.has(e.id) ? EDGE_HIGHLIGHT_STYLE : base
+    const cur = (e.style ?? {}) as Record<string, string | number | undefined>
+    if ((cur.stroke ?? undefined) === (st.stroke ?? undefined) && (cur.strokeWidth ?? undefined) === (st.strokeWidth ?? undefined)) return e
+    return { ...e, style: st }
+  })
+}
+watch([selectedNode, selectedEdge], () => syncHighlight())
+
+/** 拖拽连线端点重连到新锚点：保留 id/类型/文字等属性，只更新头尾节点与锚点 */
+function onEdgeUpdate({ edge, connection }: { edge: Edge; connection: Connection }): void {
+  if (!connection.source || !connection.target) return
+  pushUndo()
+  // 直接更新 v-model 边数组（唯一数据源：撤销快照/保存草稿都读它），再同步 Vue Flow 内部 store
+  edges.value = edges.value.map(e =>
+    e.id === edge.id
+      ? { ...e, source: connection.source, target: connection.target, sourceHandle: connection.sourceHandle ?? undefined, targetHandle: connection.targetHandle ?? undefined }
+      : e,
+  )
+  setEdges(edges.value)
+  // 若正在编辑这条边的属性，刷新来源显示
+  if (selectedEdge.value?.id === edge.id) {
+    selectedEdge.value = { ...selectedEdge.value, source: connection.source, target: connection.target }
+  }
+  syncHighlight()
 }
 
 /** 分类 → 展示（颜色 / 图标字符） */
@@ -381,6 +434,8 @@ function loadGraph(graph: WorkflowGraph) {
     id: e.id,
     source: e.sourceNodeId,
     target: e.targetNodeId,
+    sourceHandle: e.sourceHandle,
+    targetHandle: e.targetHandle,
     label: edgeLabel(e.kind, e.branchId),
     animated: e.kind !== WORKFLOW_EDGE_KINDS.normal,
     data: { kind: e.kind, branchId: e.branchId },
@@ -422,6 +477,8 @@ function toGraph(): WorkflowGraph {
         targetNodeId: e.target,
         kind: d.kind ?? WORKFLOW_EDGE_KINDS.normal,
         ...(d.branchId ? { branchId: d.branchId } : {}),
+        ...(e.sourceHandle ? { sourceHandle: e.sourceHandle } : {}),
+        ...(e.targetHandle ? { targetHandle: e.targetHandle } : {}),
       }
     }),
   }
@@ -637,6 +694,8 @@ async function onConnect(conn: Connection) {
   edges.value.push({
     id: `e_${Date.now().toString(36)}`,
     source: conn.source, target: conn.target,
+    sourceHandle: conn.sourceHandle ?? undefined,
+    targetHandle: conn.targetHandle ?? undefined,
     label: edgeLabel(kind, branchId),
     animated: kind !== WORKFLOW_EDGE_KINDS.normal,
     data: { kind, ...(branchId ? { branchId } : {}) },
@@ -766,6 +825,8 @@ function removeSelected() {
 .wf-node { min-width: 150px; max-width: 210px; background: #fff; border: 2px solid #d1d5db; border-radius: 10px; padding: 0; box-shadow: 0 1px 3px rgba(0,0,0,.08); font-size: 13px; transition: box-shadow .15s; }
 .wf-node:hover { box-shadow: 0 4px 14px rgba(0,0,0,.12); }
 .wf-node.selected { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.18); }
+/* 关联高亮：选中节点时其相连的边/另一端节点；选中边时两端的节点 */
+.wf-node.hl { border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,.22); }
 .wf-node.flow { border-color: #6366f1; } .wf-node.ai { border-color: #10b981; } .wf-node.general { border-color: #f59e0b; }
 .wf-node-head { display: flex; align-items: center; gap: 6px; padding: 7px 10px; font-weight: 600; }
 .wf-node.flow .wf-node-head { color: #4f46e5; } .wf-node.ai .wf-node-head { color: #059669; } .wf-node.general .wf-node-head { color: #d97706; }
