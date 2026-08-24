@@ -18,11 +18,23 @@ import { WORKFLOW_RUN_EVENT_TYPES } from '@shared/types/workflow.types'
 export interface FormFieldDef {
   key: string
   label: string
-  type: 'string' | 'number' | 'boolean' | 'json' | 'select' | 'file'
+  type: 'string' | 'number' | 'boolean' | 'json' | 'select' | 'file' | 'list-check'
   options?: Array<{ label: string; value: string | number }>
   multi?: boolean
   required?: boolean
   defaultValue?: unknown
+  /**
+   * list-check 专属：数据源模板（{{节点.数组}}，引擎解析后为数组）。
+   * 每项渲染一行（label 取 itemLabel 模板），用户点击确认/取消，
+   * 提交值 = { checked: [...itemKey], unchecked: [...itemKey] }。
+   */
+  source?: string
+  /** list-check 专属：每项显示名模板（如 {{item.name}}；缺省显示序号） */
+  itemLabel?: string
+  /** list-check 专属：每项唯一标识模板（如 {{item.id}}；缺省用数组下标） */
+  itemKey?: string
+  /** list-check 专属：默认全确认（true）还是全未确认 */
+  defaultChecked?: boolean
 }
 
 const formCollectNode: WorkflowNodeHandler = {
@@ -48,6 +60,11 @@ const formCollectNode: WorkflowNodeHandler = {
         if (!f.label?.trim()) errors.push(`字段 ${f.key || '(无key)'} 缺少显示名`)
         if (f.type === 'select' && (!f.options || f.options.length === 0)) {
           errors.push(`下拉字段 ${f.key} 缺少选项`)
+        }
+        // list-check：数据源 + 每项标识模板必填（通用性保证：前端据此渲染行）
+        if (f.type === 'list-check') {
+          if (!f.source?.trim()) errors.push(`逐项确认字段 ${f.key} 缺少数据源（source={{节点.数组}}）`)
+          if (!f.itemKey?.trim()) errors.push(`逐项确认字段 ${f.key} 缺少项标识模板（itemKey={{item.id}}）`)
         }
       }
     }

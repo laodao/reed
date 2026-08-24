@@ -281,6 +281,8 @@ const imageGenNode: WorkflowNodeHandler = {
        * 一致性场景（商品套图/人像）必须显式 false：扩写会弱化参考图约束导致主体漂移。
        */
       promptExtend?: boolean
+      /** 随机种子（一致性：同 prompt+seed 生成同构图；重生成/同主体多场景用） */
+      seed?: number
     }
     // 参考图：路径 → base64 data URL（电商海报等场景保留商品主体）
     let referenceImages: string[] | undefined
@@ -298,15 +300,17 @@ const imageGenNode: WorkflowNodeHandler = {
       }
       if (resolved.length > 0) referenceImages = resolved
     }
+    const actualPrompt = stringifyValue(cfg.prompt)
     const resp = await ImageService.generateImage({
       model: cfg.modelId,
-      prompt: stringifyValue(cfg.prompt),
+      prompt: actualPrompt,
       ...(cfg.negativePrompt ? { negativePrompt: cfg.negativePrompt } : {}),
       width: cfg.width,
       height: cfg.height,
       ...(cfg.count ? { count: cfg.count } : {}),
       ...(cfg.providerConfigId ? { providerConfigId: cfg.providerConfigId } : {}),
       ...(cfg.promptExtend !== undefined ? { promptExtend: cfg.promptExtend } : {}),
+      ...(cfg.seed !== undefined && cfg.seed >= 0 ? { seed: cfg.seed } : {}),
       ...(referenceImages ? { referenceImages } : {}),
     } as never)
     if (!resp.success) {
@@ -340,6 +344,9 @@ const imageGenNode: WorkflowNodeHandler = {
       status: 'succeeded',
       output: {
         ...(taskId ? { taskId } : {}),
+        // 回传实际使用的 prompt（下游确认/重生成环节引用；与 seed 配套）
+        prompt: actualPrompt,
+        ...(cfg.seed !== undefined && cfg.seed >= 0 ? { seed: cfg.seed } : {}),
         images: images.map(im => {
           const out: Record<string, unknown> = {
             width: im.width,

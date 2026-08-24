@@ -57,13 +57,36 @@ describe('电商套图 v2 场景设计环节', () => {
     expect((review.config as { payload?: string }).payload).toBe('{{sceneText.content}}')
   })
 
-  it('双 loop 串联：loop1(plan1.shots) → loop-done → loop2(sceneParse.scenes) → loop-done → report1', () => {
+  it('确认链拓扑：loop2 → merge1 → check1(list-check) → condCheck（regen→loop3→report1 / allOk→report1）', () => {
     const loop1 = node('loop1')
     const loop2 = node('loop2')
     expect((loop1.config as { listExpression?: string }).listExpression).toBe('{{plan1.parsed.shots}}')
     expect((loop2.config as { listExpression?: string }).listExpression).toBe('{{sceneParse.parsed.scenes}}')
+    // loop1 → loop2 串联；loop2 → merge1（汇总）
     expect(edgesOf('loop1').some(e => e.targetNodeId === 'loop2' && e.kind === 'loop-done')).toBe(true)
-    expect(edgesOf('loop2').some(e => e.targetNodeId === 'report1' && e.kind === 'loop-done')).toBe(true)
+    expect(edgesOf('loop2').some(e => e.targetNodeId === 'merge1' && e.kind === 'loop-done')).toBe(true)
+    // merge1 → check1（form-collect list-check）
+    const merge = node('merge1')
+    expect(merge.type).toBe('array-merge')
+    expect((merge.config as { sources?: unknown[] }).sources).toEqual(['{{loop1.results}}', '{{loop2.results}}'])
+    const check = node('check1')
+    expect(check.type).toBe('form-collect')
+    const field = (check.config as { fields?: Array<Record<string, unknown>> }).fields?.[0]
+    expect(field?.type).toBe('list-check')
+    expect(field?.source).toBe('{{merge1.merged}}')
+    expect(field?.itemKey).toBe('{{item.assetId}}')
+    // check1 approve → condCheck；reject → end
+    expect(edgesOf('check1').some(e => e.targetNodeId === 'condCheck' && e.kind === 'approve')).toBe(true)
+    expect(edgesOf('check1').some(e => e.targetNodeId === 'end' && e.kind === 'reject')).toBe(true)
+    // condCheck：regen → loop3（重生成）；allOk → report1
+    expect(edgesOf('condCheck').some(e => e.targetNodeId === 'loop3' && e.branchId === 'regen')).toBe(true)
+    expect(edgesOf('condCheck').some(e => e.targetNodeId === 'report1' && e.branchId === 'allOk')).toBe(true)
+    // loop3 重生成 body：img3 → saveImg3 → loop-back；loop-done → report1
+    const loop3 = node('loop3')
+    expect((loop3.config as { listExpression?: string }).listExpression).toBe('{{check1.values.confirm.uncheckedItems}}')
+    expect(edgesOf('loop3').some(e => e.targetNodeId === 'img3' && e.kind === 'loop-body')).toBe(true)
+    expect(edgesOf('saveImg3').some(e => e.targetNodeId === 'loop3' && e.kind === 'loop-back')).toBe(true)
+    expect(edgesOf('loop3').some(e => e.targetNodeId === 'report1' && e.kind === 'loop-done')).toBe(true)
   })
 
   it('两个 image-gen 都带参考图 + promptExtend:false（商品一致性）', () => {

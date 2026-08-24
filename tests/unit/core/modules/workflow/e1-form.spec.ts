@@ -78,6 +78,16 @@ describe('E1 form-collect：校验器', () => {
     expect(h.validateConfig({ formTitle: 't', fields: [{ key: 's', label: 's', type: 'select' }] } as never).join()).toContain('选项')
     expect(h.validateConfig({ formTitle: 't', fields: FIELDS } as never)).toEqual([])
   })
+
+  it('list-check 字段：缺 source/缺 itemKey 报错；完整声明合法', () => {
+    const h = INTERACTION_NODE_HANDLERS.find(x => x.type === 'form-collect')!
+    // 缺 source
+    expect(h.validateConfig({ formTitle: 't', fields: [{ key: 'c', label: '确认', type: 'list-check' }] } as never).join()).toContain('source')
+    // 缺 itemKey
+    expect(h.validateConfig({ formTitle: 't', fields: [{ key: 'c', label: '确认', type: 'list-check', source: '{{arr}}' }] } as never).join()).toContain('itemKey')
+    // 完整声明
+    expect(h.validateConfig({ formTitle: 't', fields: [{ key: 'c', label: '确认', type: 'list-check', source: '{{arr}}', itemKey: '{{id}}' }] } as never)).toEqual([])
+  })
 })
 
 describe('E1 form-collect：引擎挂起/提交/取消', () => {

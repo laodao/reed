@@ -64,7 +64,7 @@ const saveAssetNode: WorkflowNodeHandler = {
     { key: 'url', type: 'string', desc: '可访问链接（文件型/链接型）' },
   ],
   validateConfig(config) {
-    const cfg = config as { content?: string; kind?: string; category?: string }
+    const cfg = config as { content?: string; kind?: string; category?: string; passthrough?: unknown }
     const errors: string[] = []
     if (stringifyValue(cfg.content).trim() === '') errors.push('内容不能为空')
     const kind = cfg.kind ?? 'auto'
@@ -72,6 +72,9 @@ const saveAssetNode: WorkflowNodeHandler = {
     const cat = cfg.category
     if (cat && cat !== 'auto' && !Object.values(ASSET_CATEGORIES).includes(cat as AssetCategory)) {
       errors.push('资产分类不合法')
+    }
+    if (cfg.passthrough !== undefined && (typeof cfg.passthrough !== 'object' || Array.isArray(cfg.passthrough))) {
+      errors.push('passthrough 必须是对象（{字段: 值模板}）')
     }
     return errors
   },
@@ -86,6 +89,8 @@ const saveAssetNode: WorkflowNodeHandler = {
       description?: string
       enabled?: boolean
       groupName?: string
+      /** 透传字段：{字段: 值}（引擎已解析模板），合并进输出——下游确认/重生成环节引用上游参数 */
+      passthrough?: Record<string, unknown>
     }
     // 保存开关：false = 不落库（流程继续），输出空资产标记
     if (cfg.enabled === false) {
@@ -128,6 +133,7 @@ const saveAssetNode: WorkflowNodeHandler = {
         kind: record.kind,
         url: service.assetPreviewUrl(record),
         groupId: record.groupId ?? '',
+        ...(cfg.passthrough ?? {}),
       },
     }
   },

@@ -313,6 +313,9 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
       help: '多个变量占位拼接为一段文本输出',
     }),
   ],
+  'array-merge': [
+    { key: 'sources', label: '待合并数组', type: 'fields-list', help: '多个 {{节点.数组}} 模板按顺序拼接；每个条目是一个数组来源' },
+  ],
   'parameter-extractor': [
     T('input', '待抽取文本', { type: 'textarea', templateHint: true, placeholder: '{{start.text}} 或 {{web1.text}}' }),
     T('instruction', '抽取要求', { type: 'textarea', placeholder: '例如：抽出人名、地点和时间', collapsible: true }),

@@ -74,4 +74,25 @@ describe('save-asset 节点选项', () => {
       expect.not.objectContaining({ groupName: expect.anything() })
     )
   })
+
+  it('passthrough：透传字段合并进输出（确认环节取 prompt/seed 用）', async () => {
+    const ctx = makeCtx({
+      content: 'C:/img.png', kind: 'file',
+      passthrough: { prompt: 'P1', seed: 42, negativePrompt: 'N1' },
+    })
+    const result = await saveAssetNode.execute(ctx)
+    expect(result.status).toBe('succeeded')
+    const out = (result as { output: Record<string, unknown> }).output
+    expect(out.prompt).toBe('P1')
+    expect(out.seed).toBe(42)
+    expect(out.negativePrompt).toBe('N1')
+    expect(out.assetId).toBe('asset_1')
+  })
+
+  it('passthrough 缺省：不产生多余字段', async () => {
+    const ctx = makeCtx({ content: 'C:/img.png', kind: 'file' })
+    const result = await saveAssetNode.execute(ctx)
+    const out = (result as { output: Record<string, unknown> }).output
+    expect(out.prompt).toBeUndefined()
+  })
 })

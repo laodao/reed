@@ -152,7 +152,8 @@
           "subCategory": "电商套图",
           "name": "{{loop1.item.posterType}}-{{loop1.index}}",
           "tags": "电商,套图,{{loop1.item.posterType}},{{start.productCategory}}",
-          "groupName": "套图-{{sys.today}}"
+          "groupName": "套图-{{sys.today}}",
+          "passthrough": { "prompt": "{{img1.prompt}}", "negativePrompt": "{{loop1.item.negativePrompt}}", "width": "{{loop1.item.width}}", "height": "{{loop1.item.height}}" }
         }
       },
       {
@@ -191,6 +192,90 @@
           "subCategory": "电商套图",
           "name": "场景{{loop2.index}}-{{loop2.item.title}}",
           "tags": "电商,套图,场景图,{{start.productCategory}}",
+          "groupName": "套图-{{sys.today}}",
+          "passthrough": { "prompt": "{{img2.prompt}}", "negativePrompt": "{{loop2.item.negativePrompt}}", "width": "{{loop2.item.width}}", "height": "{{loop2.item.height}}" }
+        }
+      },
+      {
+        "id": "merge1",
+        "type": "array-merge",
+        "name": "汇总全部图",
+        "position": { "x": 2000, "y": 260 },
+        "config": {
+          "sources": ["{{loop1.results}}", "{{loop2.results}}"]
+        }
+      },
+      {
+        "id": "check1",
+        "type": "form-collect",
+        "name": "套图逐张确认",
+        "position": { "x": 2240, "y": 260 },
+        "config": {
+          "formTitle": "套图逐张确认",
+          "fields": [
+            {
+              "key": "confirm",
+              "label": "逐张确认（默认全部已确认；点击切换为需重生成）",
+              "type": "list-check",
+              "source": "{{merge1.merged}}",
+              "itemLabel": "{{item.name}}",
+              "itemKey": "{{item.assetId}}",
+              "defaultChecked": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "condCheck",
+        "type": "condition",
+        "name": "是否有需重生成",
+        "position": { "x": 2480, "y": 260 },
+        "config": {
+          "branches": [
+            { "branchId": "regen", "label": "有需重生成", "conditions": [{ "left": "{{check1.values.confirm.unchecked}}", "operator": "not_empty" }] },
+            { "branchId": "allOk", "label": "全部已确认", "conditions": [] }
+          ],
+          "noMatchPolicy": "fallback",
+          "fallbackBranchId": "allOk"
+        }
+      },
+      {
+        "id": "loop3",
+        "type": "loop",
+        "name": "重新生成（未确认）",
+        "position": { "x": 2720, "y": 260 },
+        "config": { "listExpression": "{{check1.values.confirm.uncheckedItems}}", "emptyPolicy": "skip" }
+      },
+      {
+        "id": "img3",
+        "type": "image-gen",
+        "name": "重生成单图",
+        "position": { "x": 2960, "y": 260 },
+        "config": {
+          "prompt": "{{loop3.item.prompt}}",
+          "negativePrompt": "{{loop3.item.negativePrompt}}",
+          "width": "{{loop3.item.width}}",
+          "height": "{{loop3.item.height}}",
+          "count": 1,
+          "referenceImages": "{{start.productImage.path}}",
+          "promptExtend": false,
+          "seed": 42,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "saveImg3",
+        "type": "save-asset",
+        "name": "保存重生成图",
+        "position": { "x": 3200, "y": 260 },
+        "config": {
+          "content": "{{img3.images.0.path}}",
+          "kind": "file",
+          "category": "image",
+          "subCategory": "电商套图",
+          "name": "{{loop3.item.name}}-v2",
+          "tags": "电商,套图,重生成,{{start.productCategory}}",
           "groupName": "套图-{{sys.today}}"
         }
       },
@@ -201,7 +286,7 @@
         "position": { "x": 800, "y": -120 },
         "config": {
           "title": "电商套图生成清单",
-          "template": "# 电商套图生成清单\n\n商品：{{start.productInfo}}\n产品类型：{{start.productCategory}}\n风格：{{start.style}}\n\n非场景图 {{loop1.count}} 张，场景图 {{loop2.count}} 张。\n\n## 非场景图明细\n\n{{loop1.results}}\n\n## 场景图明细\n\n{{loop2.results}}",
+          "template": "# 电商套图生成清单\n\n商品：{{start.productInfo}}\n产品类型：{{start.productCategory}}\n风格：{{start.style}}\n\n非场景图 {{loop1.count}} 张，场景图 {{loop2.count}} 张。\n\n## 非场景图明细\n\n{{loop1.results}}\n\n## 场景图明细\n\n{{loop2.results}}\n\n## 重生成\n\n{{loop3.results}}",
           "format": "markdown"
         }
       },
@@ -267,7 +352,16 @@
       { "id": "e12", "sourceNodeId": "loop2", "targetNodeId": "img2", "kind": "loop-body" },
       { "id": "e13", "sourceNodeId": "img2", "targetNodeId": "saveImg2", "kind": "normal" },
       { "id": "e14", "sourceNodeId": "saveImg2", "targetNodeId": "loop2", "kind": "loop-back" },
-      { "id": "e15", "sourceNodeId": "loop2", "targetNodeId": "report1", "kind": "loop-done" },
+      { "id": "e15", "sourceNodeId": "loop2", "targetNodeId": "merge1", "kind": "loop-done" },
+      { "id": "e22", "sourceNodeId": "merge1", "targetNodeId": "check1", "kind": "normal" },
+      { "id": "e23", "sourceNodeId": "check1", "targetNodeId": "condCheck", "kind": "approve" },
+      { "id": "e24", "sourceNodeId": "check1", "targetNodeId": "end", "kind": "reject" },
+      { "id": "e25", "sourceNodeId": "condCheck", "targetNodeId": "loop3", "kind": "branch", "branchId": "regen" },
+      { "id": "e26", "sourceNodeId": "condCheck", "targetNodeId": "report1", "kind": "branch", "branchId": "allOk" },
+      { "id": "e27", "sourceNodeId": "loop3", "targetNodeId": "img3", "kind": "loop-body" },
+      { "id": "e28", "sourceNodeId": "img3", "targetNodeId": "saveImg3", "kind": "normal" },
+      { "id": "e29", "sourceNodeId": "saveImg3", "targetNodeId": "loop3", "kind": "loop-back" },
+      { "id": "e30", "sourceNodeId": "loop3", "targetNodeId": "report1", "kind": "loop-done" },
       { "id": "e16", "sourceNodeId": "report1", "targetNodeId": "review1", "kind": "normal" },
       { "id": "e17", "sourceNodeId": "review1", "targetNodeId": "condSave", "kind": "approve" },
       { "id": "e18", "sourceNodeId": "review1", "targetNodeId": "end", "kind": "reject" },

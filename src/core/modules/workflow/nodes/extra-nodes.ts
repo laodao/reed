@@ -36,6 +36,33 @@ const templateTransformNode: WorkflowNodeHandler = {
   },
 }
 
+// ==================== 数组拼接（List 合并） ====================
+
+const arrayMergeNode: WorkflowNodeHandler = {
+  type: 'array-merge',
+  // 纯同步计算（无 IO/无异步）→ control 级：像 assign 一样在 pump 内同步求值，
+  // 不占 runningTasks（task 级 fire-and-forget 会让后续挂起节点 execute 不返回）
+  controlKind: 'control',
+  cancellable: false,
+  outputSchema: [{ key: 'merged', type: 'json', desc: '按 sources 顺序拼接后的数组（非数组项跳过）' }],
+  validateConfig(config) {
+    const cfg = config as { sources?: unknown }
+    if (!Array.isArray(cfg.sources) || cfg.sources.length === 0) {
+      return ['sources 必须是非空数组（每个元素是 {{节点.数组}} 模板）']
+    }
+    return []
+  },
+  async execute(ctx: WorkflowNodeContext) {
+    const cfg = ctx.config as { sources?: unknown[] }
+    // sources 已由引擎 resolveConfigDeep 解析（每个元素可能是数组/undefined/其他）
+    const merged: unknown[] = []
+    for (const item of cfg.sources ?? []) {
+      if (Array.isArray(item)) merged.push(...item)
+    }
+    return { status: 'succeeded', output: { merged } }
+  },
+}
+
 // ==================== 参数提取（LLM 结构化抽取） ====================
 
 /** 字段类型 → JSON Schema 描述 */
@@ -243,6 +270,7 @@ function newsScore(link: { title: string; url: string }): number {
 
 export const EXTRA_NODE_HANDLERS: WorkflowNodeHandler[] = [
   templateTransformNode,
+  arrayMergeNode,
   parameterExtractorNode,
   webExtractNode,
 ]

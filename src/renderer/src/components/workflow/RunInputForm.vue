@@ -43,6 +43,26 @@
           <span v-else class="file-hint">未选择文件</span>
         </div>
 
+        <!-- 逐项确认列表（list-check）：source 数组每行渲染 + 确认/重生成按钮 -->
+        <div v-else-if="item.type === 'list-check'" class="list-check-field">
+          <div v-if="listCheckItems(item).length === 0" class="list-check-empty">暂无可确认项</div>
+          <div v-for="(row, i) in listCheckItems(item)" :key="String(listCheckKey(item, row, i))" class="list-check-row">
+            <span class="list-check-idx">{{ i + 1 }}</span>
+            <span class="list-check-label" :title="String(listCheckKey(item, row, i))">{{ listCheckLabel(item, row, i) }}</span>
+            <el-button
+              size="small"
+              :type="isListChecked(item, row, i) ? 'success' : 'warning'"
+              :plain="isListChecked(item, row, i)"
+              @click="toggleListCheck(item, row, i)"
+            >
+              <el-icon v-if="isListChecked(item, row, i)"><CircleCheckFilled /></el-icon>
+              <el-icon v-else><RefreshLeft /></el-icon>
+              {{ isListChecked(item, row, i) ? '已确认' : '需重生成' }}
+            </el-button>
+          </div>
+          <div class="list-check-hint">点击切换确认状态；「需重生成」的项将在生成后重新生成</div>
+        </div>
+
         <!-- 模型（Provider+模型联动，值 = { providerConfigId, modelId }，节点用 {{start.键.providerConfigId}} 引用） -->
         <div v-else-if="item.type === 'model'">
           <div v-if="modelProviders.length === 0" class="no-model-hint">
@@ -142,6 +162,75 @@ const fileUploadContext = reactive<{ runId?: string; nodeId?: string }>({})
 function setFileUploadContext(ctx: { runId: string; nodeId: string }): void {
   fileUploadContext.runId = ctx.runId
   fileUploadContext.nodeId = ctx.nodeId
+}
+
+// ── 逐项确认列表（type='list-check'）：source 数组逐行确认，输出 { checked, unchecked } ──
+
+/** 每项的勾选状态：行下标 → boolean（默认全确认） */
+const listChecked = reactive<Record<string, boolean>>({})
+const listKeyOf = (item: WorkflowStartInput, row: unknown, i: number): string => `${item.key}::${String(listCheckKey(item, row, i))}`
+
+/** source 解析后的数组（引擎已把模板解析为数组，缺省空数组） */
+function listCheckItems(item: WorkflowStartInput): unknown[] {
+  const src = (item as unknown as { source?: unknown }).source
+  return Array.isArray(src) ? src : []
+}
+
+/** 项唯一 key：itemKey 模板（{{item.xx}}/{{xx}}）或数组下标 */
+function listCheckKey(item: WorkflowStartInput, row: unknown, i: number): string | number {
+  const tpl = (item as unknown as { itemKey?: string }).itemKey
+  const v = tpl ? renderItemTemplate(tpl, row, i) : i
+  return v === '' ? i : v
+}
+
+/** 项显示名：itemLabel 模板（{{item.xx}}/{{xx}}）或「第 N 项」 */
+function listCheckLabel(item: WorkflowStartInput, row: unknown, i: number): string {
+  const tpl = (item as unknown as { itemLabel?: string }).itemLabel
+  const rendered = tpl ? renderItemTemplate(tpl, row, i) : ''
+  return rendered || `第 ${i + 1} 项`
+}
+
+/** 项模板插值：支持 {{item.name}} / {{name}} / {{index}}（row 为对象时取字段） */
+function renderItemTemplate(tpl: string, row: unknown, i: number): string {
+  const obj = row && typeof row === 'object' ? (row as Record<string, unknown>) : {}
+  return tpl
+    .replace(/\{\{\s*item\.([^{}\s]+)\s*\}\}/g, (_m, k: string) => stringifyField(obj[k]))
+    .replace(/\{\{\s*([^{}\s]+)\s*\}\}/g, (m, k: string) =>
+      k === 'index' ? String(i) : (k in obj ? stringifyField(obj[k]) : m)
+    )
+}
+
+function stringifyField(v: unknown): string {
+  if (v === undefined || v === null) return ''
+  return typeof v === 'object' ? JSON.stringify(v) : String(v)
+}
+
+/** 当前行是否已确认（未触碰过 = 默认全确认） */
+function isListChecked(item: WorkflowStartInput, row: unknown, i: number): boolean {
+  const key = listKeyOf(item, row, i)
+  const def = (item as unknown as { defaultChecked?: boolean }).defaultChecked !== false
+  return listChecked[key] ?? def
+}
+
+function toggleListCheck(item: WorkflowStartInput, row: unknown, i: number): void {
+  const key = listKeyOf(item, row, i)
+  listChecked[key] = !isListChecked(item, row, i)
+  touch(item.key)
+}
+
+/** 导出 list-check 提交值：{ checked: [key...], unchecked: [key...], items: [完整 row...] } */
+function listCheckValues(item: WorkflowStartInput): Record<string, unknown> | undefined {
+  const rows = listCheckItems(item)
+  if (rows.length === 0) return undefined
+  const checked: Array<string | number> = []
+  const unchecked: Array<string | number> = []
+  const uncheckedItems: unknown[] = []
+  rows.forEach((row, i) => {
+    const k = listCheckKey(item, row, i)
+    if (isListChecked(item, row, i)) checked.push(k)
+    else { unchecked.push(k); uncheckedItems.push(row) }
+  })
+  return { checked, unchecked, items: rows, uncheckedItems }
 }
 
 /** 数字值（el-input-number 需要 number|null） */
@@ -471,6 +560,9 @@ function getValues(): Record<string, unknown> {
       if (raw !== undefined && raw !== '') {
         try { out[item.key] = JSON.parse(String(raw)) } catch { out[item.key] = raw }
       }
+    } else if (item.type === 'list-check') {
+      const lc = listCheckValues(item)
+      if (lc) out[item.key] = lc
     } else if (values[item.key] !== undefined) {
       out[item.key] = values[item.key]
     }
@@ -492,6 +584,13 @@ defineExpose({ getValues, isValid, setFileUploadContext })
 /* 模型选择（Provider+模型联动下拉） */
 .model-pair { display: flex; gap: 8px; width: 100%; }
 .no-model-hint { font-size: 12px; color: var(--el-color-warning); line-height: 1.5; padding: 2px 0; }
+/* 逐项确认列表（list-check） */
+.list-check-field { display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow-y: auto; }
+.list-check-row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; background: var(--el-bg-color); }
+.list-check-idx { width: 22px; height: 22px; border-radius: 50%; background: var(--el-fill-color); color: var(--el-text-color-secondary); font-size: 11px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.list-check-label { flex: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-check-hint { font-size: 11px; color: var(--el-text-color-secondary); }
+.list-check-empty { font-size: 12px; color: var(--el-text-color-secondary); padding: 8px 0; }
 /* 自动两列：字段多时网格排布，宽字段跨列 */
 .two-col { display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; }
 .two-col :deep(.span-2) { grid-column: 1 / -1; }
