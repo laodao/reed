@@ -16,6 +16,13 @@
         <span class="filter-value">{{ chapterFilter === 0 ? '全部' : `第 ${chapterFilter} 章` }}</span>
       </div>
       <div class="toolbar-actions">
+        <!-- 视图缩放控制 -->
+        <div class="zoom-controls">
+          <el-button size="small" :icon="ZoomOut" circle :disabled="zoomPercent <= 20" title="缩小" @click="zoomAt(1 / 1.2)" />
+          <span class="zoom-percent">{{ zoomPercent }}%</span>
+          <el-button size="small" :icon="ZoomIn" circle :disabled="zoomPercent >= 500" title="放大" @click="zoomAt(1.2)" />
+          <el-button size="small" :icon="FullScreen" circle title="适应视图" @click="fitView" />
+        </div>
         <el-button
           size="small"
           type="primary"
@@ -41,7 +48,18 @@
           <span>完成设定（人物/地点/物品等）后，点击「AI 分析实体关系」构建关系网络；<br />写完章节后事件会自动挂到图谱上</span>
         </div>
 
-        <svg v-else class="graph-svg" :viewBox="`0 0 ${W} ${H}`" @mousedown.self="deselectNode">
+        <svg
+          ref="svgRef"
+          v-else
+          class="graph-svg"
+          :class="{ panning: isPanning }"
+          :viewBox="viewBox"
+          @wheel.prevent="onWheel"
+          @mousedown="onSvgMouseDown"
+          @mousemove="onSvgMouseMove"
+          @mouseup="onSvgMouseUp"
+          @mouseleave="onSvgMouseUp"
+        >
           <!-- 边 -->
           <g v-for="(edge, i) in visibleEdges" :key="`e${edge.id || i}`">
             <line
@@ -167,7 +185,7 @@
  */
 import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Close, MagicStick, Share, Mouse } from '@element-plus/icons-vue'
+import { Close, MagicStick, Share, Mouse, ZoomIn, ZoomOut, FullScreen } from '@element-plus/icons-vue'
 
 const props = defineProps<{
   projectId: string
@@ -175,6 +193,92 @@ const props = defineProps<{
 
 const W = 920
 const H = 600
+
+// ==================== 视图缩放/平移（动态 viewBox） ====================
+
+const svgRef = ref<SVGSVGElement | null>(null)
+const view = ref({ x: 0, y: 0, w: W, h: H })
+const isPanning = ref(false)
+let panStart: { x: number; y: number; viewX: number; viewY: number } | null = null
+
+const viewBox = computed(() => `${view.value.x} ${view.value.y} ${view.value.w} ${view.value.h}`)
+const zoomPercent = computed(() => Math.round((W / view.value.w) * 100))
+
+function svgSize(): { w: number; h: number } {
+  const el = svgRef.value
+  return el ? { w: el.clientWidth || W, h: el.clientHeight || H } : { w: W, h: H }
+}
+
+/** 以视图中心为锚点缩放（保持 W:H 比例，限制 20%~500%） */
+function zoomAt(factor: number): void {
+  const nw = clampNum(view.value.w * factor, W * 0.2, W * 5)
+  const nh = nw * (H / W)
+  view.value = {
+    x: view.value.x + (view.value.w - nw) / 2,
+    y: view.value.y + (view.value.h - nh) / 2,
+    w: nw,
+    h: nh,
+  }
+}
+
+/** 滚轮缩放（锚定鼠标位置） */
+function onWheel(e: WheelEvent): void {
+  const { w: cw, h: ch } = svgSize()
+  const rect = svgRef.value?.getBoundingClientRect()
+  if (!rect) return
+  const mx = e.clientX - rect.left
+  const my = e.clientY - rect.top
+  const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12
+  const nw = clampNum(view.value.w * factor, W * 0.2, W * 5)
+  const nh = nw * (H / W)
+  // 鼠标所在图坐标（保持不动）
+  const gx = view.value.x + (mx / cw) * view.value.w
+  const gy = view.value.y + (my / ch) * view.value.h
+  view.value = {
+    x: gx - (mx / cw) * nw,
+    y: gy - (my / ch) * nh,
+    w: nw,
+    h: nh,
+  }
+}
+
+/** 空白处按下 → 准备平移 */
+function onSvgMouseDown(e: MouseEvent): void {
+  panStart = { x: e.clientX, y: e.clientY, viewX: view.value.x, viewY: view.value.y }
+  isPanning.value = true
+}
+
+function onSvgMouseMove(e: MouseEvent): void {
+  if (!panStart) return
+  const { w: cw, h: ch } = svgSize()
+  const dx = e.clientX - panStart.x
+  const dy = e.clientY - panStart.y
+  view.value = {
+    x: panStart.viewX - (dx / cw) * view.value.w,
+    y: panStart.viewY - (dy / ch) * view.value.h,
+    w: view.value.w,
+    h: view.value.h,
+  }
+}
+
+function onSvgMouseUp(e: MouseEvent): void {
+  const moved = panStart && (Math.abs(e.clientX - panStart.x) > 4 || Math.abs(e.clientY - panStart.y) > 4)
+  if (panStart && !moved) {
+    // 未拖拽 = 点击空白 → 取消选中
+    deselectNode()
+  }
+  panStart = null
+  isPanning.value = false
+}
+
+/** 适应视图（重置） */
+function fitView(): void {
+  view.value = { x: 0, y: 0, w: W, h: H }
+}
+
+function clampNum(v: number, min: number, max: number): number {
+  return Math.min(Math.max(v, min), max)
+}
 
 interface GraphNode { id: string; type: string; name: string; description?: string; chapterNumber?: number }
 interface GraphEdge { id: string; sourceId: string; targetId: string; relationType: string; label?: string; validFromChapter?: number; validUntilChapter?: number }
@@ -499,7 +603,30 @@ onMounted(() => {
 
   .toolbar-actions {
     display: flex;
+    align-items: center;
     gap: 8px;
+  }
+
+  .zoom-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 6px;
+    border-radius: var(--radius-full);
+    background: var(--fill-color-lighter);
+    border: 1px solid var(--border-color-lighter);
+
+    .zoom-percent {
+      min-width: 44px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-color-secondary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    :deep(.el-button) {
+      margin-left: 0;
+    }
   }
 }
 
@@ -522,6 +649,10 @@ onMounted(() => {
   height: 100%;
   cursor: grab;
   background: linear-gradient(180deg, var(--bg-color) 0%, var(--fill-color-lighter) 100%);
+
+  &.panning {
+    cursor: grabbing;
+  }
 }
 
 .graph-edge {
