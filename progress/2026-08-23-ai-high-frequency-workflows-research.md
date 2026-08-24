@@ -312,3 +312,66 @@ loop1/loop2 生成 → merge1(array-merge 汇总) → check1(form-collect list-c
 ### 验证
 - custom-api 单测 5 + 迁移 7 绿；tsc/构建全绿
 - 真实库 news_topics 5 主题 + 75 来源；IPC custom-api 配置创建/删除走通
+
+
+---
+
+## 2026-08-25 追加：编辑器连线重连 + 选中高亮（提交 3a075a27）
+
+### 需求
+1. 连线端点可拖拽到新锚点（如 a→b 的线，把 b 侧从左侧锚点改到底部锚点）
+2. 选中节点 → 高亮相连边 + 另一端节点；选中边 → 高亮自身 + 两端节点
+
+### 实现
+- 重连：`edges-updatable` + `connection-mode="loose"`（允许线头从 target 锚点改到 source 锚点，如左侧→底部）+ `@edge-update` 处理
+  - 更新 v-model 边数组（保留 id/类型/文字，仅改头尾节点与锚点）+ setEdges 同步内部 store；进撤销栈
+- 锚点持久化：`WorkflowEdge` 增加可选 `sourceHandle/targetHandle`（引擎忽略，仅编辑器用）；loadGraph/toGraph 双向序列化
+- 撤销修复（关键坑）：Vue Flow `parseEdge` 用 `Object.assign(existingEdge, edge)` 合并，JSON 深拷贝快照会丢 undefined 键，
+  导致 setEdges 恢复时被现有边补全锚点（撤销后残留 out-bottom）→ applySnap 显式补回 undefined handle 键强制覆盖
+- 高亮：纯函数 `computeHighlight(sel, edges)` → `{nodeIds, edgeIds}`；节点加 `.hl` class（amber 光圈），边改 style（amber 描边加粗）；
+  `syncHighlight()` watch 选中状态实时计算；撤销/重做后重置
+- 单测：`workflow-editor-highlight.spec.ts` 9 例（选中节点/边/自环/去重/顺序稳定）
+
+### 验证
+- 单测 9 绿 + workflow-templates 4 绿；electron-vite build 全绿
+- CDP 实测（数据分析流）：拖拽 target 端到 out-bottom ✓、Ctrl+Z 撤销恢复 ✓、Ctrl+Y 重做 ✓、
+  选中节点关联高亮 ✓、选中边两端高亮 ✓（多轮）
+
+### 已知边界（自动化测试环境限制，真人操作无碍）
+- 电商海报流（23 节点 fit-view 缩放小）拖拽在自动化派发下偶发不触发（约 50%），
+  数据分析流稳定成功；判定为 CDP/JS 事件派发与缩放环境的偶发问题，**待用户真人拖拽验证**
+- 持久化到库未在自动化验证：内置工作流（is_builtin=1）saveDraft 被「禁改」设计拦截（update 直接返回），
+  用户自有工作流可正常保存；toGraph/loadGraph 序列化代码已审查正确
+
+
+---
+
+## 2026-08-25 追加：变量作用域约束（提交 7f9c4f21 附近）
+
+### 用户问题
+1. 节点配置面板变量选择器列出整个工作流所有环节的变量——选了后置环节变量必然报错（引擎不校验，静默空值）
+2. 调研：节点输出存哪？是否全局可访问？内存浪费？业内主流做法？
+
+### 调研结论（现状）
+- 内存：`exec.variables`（根作用域全局 Map<nodeId, output>），运行结束 GC；循环体输出在 scope.states（局部）
+- 数据库：node_run 表每节点一行（output JSON，truncateOutput 有界截断），执行记录展示 + 断点续跑 checkpoint 依赖
+- 任意节点可引用任意节点（无作用域限制）——与执行顺序脱钩
+- 业内主流（n8n 数据流式传递 / Coze、Dify 只列上游 / Step Functions JSONPath 引用先前 state / Airflow XCom 小对象）：
+  核心是「上游可达 + 按需传递」，无全局随便读
+
+### 实现（两层）
+1. 前端：VariablePicker 按拓扑上游过滤（`computeUpstreamNodeIds` 反向 BFS，loop-back 排除）——
+   start 输入/节点输出只显示先于当前节点执行的环节；修复 excludeNodeId 未 unref 导致排除自身失效的隐藏 bug
+2. 后端：graph-validator 规则 9「变量引用可达性」——扫描 config 全部 {{}} 引用（复用 TEMPLATE_RE），
+   被引用节点必须是当前节点拓扑上游（sys/start 豁免；循环体内部放行所属 loop 伪变量；list-check 的 {{item.*}} 行内插值豁免），
+   发布/运行前拦截（error 级）
+
+### 模板修复（新校验暴露的真 bug）
+- competitor-analysis：searchB/searchC 原本不在循环体子图内（loop-body 只连 searchA，searchB/C 运行时无法被激活 → merge1 死等），
+  旧校验未发现；改为串行搜索链 searchA→searchB→searchC→merge1
+
+### 验证
+- 新增测试 17 例（graph-topology 上游 6 + validator 变量引用 6 + 前端 utils 5）全绿；builtin-app-templates 7 绿（全内置模板通过新校验）
+- CDP 实测（数据分析流）：insight1 的变量选择器只显示 start 输入 + understand1 输出（下游 report1 被过滤）✓；
+  validateGraph 拦截「a 引用下游 c」✓；上游/系统变量引用通过 ✓
+- 主进程改动需重启 dev（electron-vite 不自动 rebuild core 模块）
