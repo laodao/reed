@@ -18,8 +18,9 @@ import { TranslationService } from '../../../services/translation.service'
 import { ImageService } from '../../../services/image.service'
 import { VoiceService } from '../../../services/voice.service'
 import { getVideoMetadata, extractAudioSegment } from '../../episode-production/reference-video/ffmpeg-helpers'
-import { dirname, basename, join } from 'path'
+import { dirname, basename, join, isAbsolute } from 'path'
 import { existsSync, readFileSync } from 'fs'
+import { getPathProvider } from '@core/interfaces/path.interface'
 import type { WorkflowNodeContext } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
@@ -325,16 +326,31 @@ const imageGenNode: WorkflowNodeHandler = {
     if (images.length === 0) {
       return { status: 'failed', error: '图像服务未返回图片' }
     }
+    // 输出统一形态：url=远程/可访问链接（若有）、path=本地绝对路径（filePath 相对路径解析）、
+    // localUrl=local-*:// 协议链接（前端可直接加载）
+    const pathProvider = getPathProvider()
+    const dataRoot = pathProvider.getDataPath()
     return {
       status: 'succeeded',
       output: {
         ...(taskId ? { taskId } : {}),
-        images: images.map(im => ({
-          ...(im.url ? { url: im.url } : {}),
-          ...(im.base64 ? { hasBase64: true } : {}),
-          width: im.width,
-          height: im.height,
-        })),
+        images: images.map(im => {
+          const out: Record<string, unknown> = {
+            width: im.width,
+            height: im.height,
+          }
+          if (im.url) out.url = im.url
+          if (im.base64) out.hasBase64 = true
+          // filePath：兼容「纯相对路径」与「local-*:// 协议 URL」两种上游形态 → 本地绝对路径 + local 协议 URL
+          const rawPath = im.filePath
+          if (rawPath) {
+            const stripped = String(rawPath).replace(/^local-[a-z]+:\/\//i, '')
+            const abs = isAbsolute(stripped) ? stripped : join(dataRoot, stripped.replace(/^\/+/, ''))
+            out.path = abs
+            out.localUrl = pathProvider.toAssetUrl(stripped, 'image')
+          }
+          return out
+        }),
       },
     }
   },

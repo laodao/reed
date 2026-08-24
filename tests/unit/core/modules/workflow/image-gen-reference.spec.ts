@@ -26,6 +26,7 @@ vi.mock('@core/services/image.service', () => ({
 import { ImageService } from '@core/services/image.service'
 import { AI_NODE_HANDLERS } from '@core/modules/workflow/nodes/ai-nodes'
 import type { WorkflowNodeContext, WorkflowNodeHandler } from '@core/modules/workflow/engine/node-handler'
+import { registerPathProvider } from '@core/interfaces/path.interface'
 
 const imageGenNode = AI_NODE_HANDLERS.find(n => n.type === 'image-gen') as WorkflowNodeHandler
 
@@ -44,6 +45,16 @@ beforeAll(() => {
   refPath2 = join(tmpdir(), 'wf-ref-2.png')
   require('node:fs').writeFileSync(refPath, 'PNG-DATA-1')
   require('node:fs').writeFileSync(refPath2, 'PNG-DATA-2')
+  // PathProvider（image-gen handler 解析 filePath 用）
+  registerPathProvider(() => ({
+    getDataPath: () => tmpdir(),
+    getUserDataPath: () => tmpdir(),
+    getAppDataPath: () => tmpdir(),
+    getTempPath: () => tmpdir(),
+    getSubDirectories: () => ({}) as never,
+    getSubDirectoryPath: () => tmpdir(),
+    toAssetUrl: (p: string) => 'local-image://' + p.replace(/\\/g, '/').replace(/^\/+/, ''),
+  }))
 })
 
 afterAll(() => {
@@ -88,5 +99,18 @@ describe('image-gen 参考图', () => {
     const result = await imageGenNode.execute(ctx)
     expect(result.status).toBe('failed')
     expect((result as { error?: string }).error).toContain('参考图')
+  })
+
+  it('输出含 path/localUrl：filePath 相对路径解析为绝对路径 + local 协议 URL', async () => {
+    ;(ImageService.generateImage as ReturnType<typeof vi.fn>).mockResolvedValue({
+      success: true,
+      images: [{ filePath: 'images/2026/x.png', width: 512, height: 512 }],
+    })
+    const ctx = makeCtx({ prompt: '海报', modelId: 'm1' })
+    const result = await imageGenNode.execute(ctx)
+    expect(result.status).toBe('succeeded')
+    const out = (result as { output: { images: Array<Record<string, unknown>> } }).output
+    expect(out.images[0].path).toBe(join(tmpdir(), 'images/2026/x.png'))
+    expect(out.images[0].localUrl).toMatch(/^local-image:\/\//)
   })
 })
