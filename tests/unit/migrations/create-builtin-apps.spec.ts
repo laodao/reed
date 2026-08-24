@@ -1,8 +1,8 @@
 /**
  * create-builtin-apps 迁移执行测试（内置高频应用：不做运行时种子、迁移直接 INSERT）
  * @module tests/migrations/create-builtin-apps
- * @description 真实 sqlite DataSource 执行：建三表 → 跑迁移 → 断言 8 工作流 + 8 应用
- *              + 2 默认模板资产落库、user_id=NULL + is_builtin=1、幂等重跑不重复。
+ * @description 真实 sqlite DataSource 执行：建三表 → 跑迁移 → 断言 14 工作流 + 14 应用
+ *              + 3 默认模板资产落库、user_id=NULL + is_builtin=1、幂等重跑不重复。
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { DataSource } from 'typeorm'
@@ -35,9 +35,9 @@ afterAll(async () => {
 })
 
 describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
-  it('插入 8 个内置工作流（user_id NULL + is_builtin=1 + published v1）', async () => {
+  it('插入 14 个内置工作流（user_id NULL + is_builtin=1 + published v1）', async () => {
     const rows = await ds.query(`SELECT id, name, user_id, is_builtin, published_version, draft_graph, published_graph FROM workflow_definitions WHERE is_builtin = 1`)
-    expect(rows.length).toBe(8)
+    expect(rows.length).toBe(14)
     for (const r of rows) {
       expect(r.user_id).toBeNull()
       expect(r.is_builtin).toBe(1)
@@ -47,9 +47,9 @@ describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
     }
   })
 
-  it('插入 8 个内置应用（user_id NULL + is_builtin=1 + 会话渠道开 + 启用）', async () => {
+  it('插入 14 个内置应用（user_id NULL + is_builtin=1 + 会话渠道开 + 启用）', async () => {
     const rows = await ds.query(`SELECT id, name, user_id, is_builtin, enabled, channel_session, channel_api, source_id FROM apps WHERE is_builtin = 1`)
-    expect(rows.length).toBe(8)
+    expect(rows.length).toBe(14)
     for (const r of rows) {
       expect(r.user_id).toBeNull()
       expect(r.is_builtin).toBe(1)
@@ -81,8 +81,8 @@ describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
     const defs = await ds.query(`SELECT count(*) c FROM workflow_definitions WHERE is_builtin = 1`)
     const apps = await ds.query(`SELECT count(*) c FROM apps WHERE is_builtin = 1`)
     const tpls = await ds.query(`SELECT count(*) c FROM assets WHERE is_builtin = 1`)
-    expect(defs[0].c).toBe(8)
-    expect(apps[0].c).toBe(8)
+    expect(defs[0].c).toBe(14)
+    expect(apps[0].c).toBe(14)
     expect(tpls[0].c).toBe(3)
   })
 
@@ -95,7 +95,7 @@ describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
 
   it('内置应用带分类与标签种子（视频文案提取 → 视频处理/视频,文案）', async () => {
     const rows = await ds.query(`SELECT id, category, tags FROM apps WHERE is_builtin = 1`)
-    expect(rows.length).toBe(8)
+    expect(rows.length).toBe(14)
     for (const r of rows) {
       expect(r.category).toBeTruthy()
       const tags = JSON.parse(r.tags)

@@ -20,6 +20,13 @@ import articlePolish from './builtin-apps/article-polish.json'
 import imageCard from './builtin-apps/image-card.json'
 import webpageTranscribe from './builtin-apps/webpage-transcribe.json'
 import videoTranscriptApp from './builtin-apps/video-transcript-app.json'
+// 第一批高频场景（2026-08-23 用户确认开工）
+import weeklyReport from './builtin-apps/weekly-report.json'
+import emailAssistant from './builtin-apps/email-assistant.json'
+import resumeOptimizer from './builtin-apps/resume-optimizer.json'
+import dataAnalysis from './builtin-apps/data-analysis.json'
+import meetingMinutes from './builtin-apps/meeting-minutes.json'
+import industryResearch from './builtin-apps/industry-research.json'
 
 /** 内置工作流 id 前缀（固定，幂等查重依据） */
 const BUILTIN_DEF_PREFIX = 'builtin_def_'
@@ -36,6 +43,13 @@ const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; icon: str
   { file: 'image-card.json', raw: imageCard, appId: `${BUILTIN_APP_PREFIX}image_card`, icon: '🖼️', name: '图文卡片生成', description: '内容规划 + AI 配图 + 长图卡片', category: '图文设计', tags: ['卡片', '配图'] },
   { file: 'webpage-transcribe.json', raw: webpageTranscribe, appId: `${BUILTIN_APP_PREFIX}webpage_transcribe`, icon: '📑', name: '网页正文转写', description: '网页 → 干净 markdown + 元数据', category: '网页工具', tags: ['转写'] },
   { file: 'video-transcript-app.json', raw: videoTranscriptApp, appId: `${BUILTIN_APP_PREFIX}video_transcript`, icon: '🎬', name: '视频文案提取', description: 'B站/YouTube/本地视频 → 文案', category: '视频处理', tags: ['视频', '文案'] },
+  // 第一批高频场景（2026-08-23 用户确认开工）
+  { file: 'weekly-report.json', raw: weeklyReport, appId: `${BUILTIN_APP_PREFIX}weekly_report`, icon: '📊', name: '周报生成器', description: '流水记录 → 结构化周报（完成/进行中/计划/风险）', category: '办公效率', tags: ['周报', '办公'] },
+  { file: 'email-assistant.json', raw: emailAssistant, appId: `${BUILTIN_APP_PREFIX}email_assistant`, icon: '✉️', name: '邮件助手', description: '要点 → 语气合适的正式邮件（中/英多用途）', category: '办公效率', tags: ['邮件', '办公'] },
+  { file: 'resume-optimizer.json', raw: resumeOptimizer, appId: `${BUILTIN_APP_PREFIX}resume_optimizer`, icon: '💼', name: '简历优化', description: '简历诊断 + 逐条优化 + 面试题预测', category: '求职', tags: ['简历', '求职'] },
+  { file: 'data-analysis.json', raw: dataAnalysis, appId: `${BUILTIN_APP_PREFIX}data_analysis`, icon: '📈', name: '数据分析洞察', description: '数据 → 趋势/异常/相关性洞察 + 图表建议', category: '办公效率', tags: ['数据分析', '办公'] },
+  { file: 'meeting-minutes.json', raw: meetingMinutes, appId: `${BUILTIN_APP_PREFIX}meeting_minutes`, icon: '📝', name: '会议纪要生成', description: '录音转写/文字 → 议题/决议/待办结构化纪要', category: '办公效率', tags: ['会议纪要', '办公'] },
+  { file: 'industry-research.json', raw: industryResearch, appId: `${BUILTIN_APP_PREFIX}industry_research`, icon: '🔍', name: '行业深度调研', description: '主题 → 多轮搜索 → 深度研报（含引用来源）', category: '调研', tags: ['调研', '研报'] },
 ]
 
 /** 默认模板资产（user_id=NULL，可复制修改） */

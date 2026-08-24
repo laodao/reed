@@ -1,0 +1,148 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 行业深度调研",
+  "description": "主题 → AI 规划研究子问题 → 多轮联网搜索并逐轮摘要 → 综合研报（含引用来源）→ 人工确认 → 保存资产",
+  "category": "research",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 40, "y": 200 },
+        "config": {
+          "inputs": [
+            { "key": "topic", "label": "调研主题", "type": "textarea", "required": true },
+            { "key": "subQuestionCount", "label": "子问题数量", "type": "number", "defaultValue": 3, "validation": { "min": 1, "max": 5 } },
+            { "key": "focus", "label": "关注维度", "type": "select", "multi": true, "options": [
+              { "label": "市场", "value": "market" },
+              { "label": "竞争", "value": "competition" },
+              { "label": "技术", "value": "technology" },
+              { "label": "政策", "value": "policy" },
+              { "label": "趋势", "value": "trend" },
+              { "label": "风险", "value": "risk" }
+            ] },
+            { "key": "depth", "label": "深度", "type": "select", "defaultValue": "standard", "options": [
+              { "label": "速览", "value": "quick" },
+              { "label": "标准", "value": "standard" },
+              { "label": "深度", "value": "deep" }
+            ] },
+            { "key": "model", "label": "模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
+          ]
+        }
+      },
+      {
+        "id": "plan1",
+        "type": "llm-chat",
+        "name": "研究规划",
+        "position": { "x": 320, "y": 200 },
+        "config": {
+          "systemPrompt": "你是研究规划助手。把调研主题拆解为可搜索的子问题。只输出 JSON：{subQuestions: [字符串数组]}。子问题要具体、可检索、互不重叠，覆盖关注维度。",
+          "prompt": "调研主题：{{start.topic}}\n关注维度：{{start.focus}}\n子问题数量：{{start.subQuestionCount}}\n深度：{{start.depth}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "loop1",
+        "type": "loop",
+        "name": "逐问题搜索",
+        "position": { "x": 560, "y": 200 },
+        "config": { "listExpression": "{{plan1.parsed.subQuestions}}", "emptyPolicy": "skip" }
+      },
+      {
+        "id": "search1",
+        "type": "web-search",
+        "name": "联网搜索",
+        "position": { "x": 800, "y": 300 },
+        "config": { "query": "{{loop1.item}}", "maxResults": 5 }
+      },
+      {
+        "id": "summ1",
+        "type": "llm-chat",
+        "name": "逐轮摘要",
+        "position": { "x": 1040, "y": 300 },
+        "config": {
+          "systemPrompt": "你是调研摘要助手。把搜索结果整理为该子问题的结论摘要，保留来源。只输出 JSON：{summary: 要点摘要, sources: [{title, url}]}。sources 从搜索结果中选取最多 5 条最相关的。",
+          "prompt": "调研主题：{{start.topic}}\n子问题：{{loop1.item}}\n\n搜索结果：\n{{search1.results}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "synth1",
+        "type": "llm-chat",
+        "name": "综合研报",
+        "position": { "x": 800, "y": 60 },
+        "config": {
+          "systemPrompt": "你是行业研究分析师。综合多轮调研摘要，撰写结构化研报。只输出 JSON：{executiveSummary: 执行摘要, sections: [{title, content, sources: [{title, url}]}], risks: [风险列表], outlook: 展望}。内容要基于调研摘要，不编造；引用来源去重。",
+          "prompt": "调研主题：{{start.topic}}\n关注维度：{{start.focus}}\n深度：{{start.depth}}\n\n多轮调研摘要：\n{{loop1.results}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "report1",
+        "type": "report",
+        "name": "研报输出",
+        "position": { "x": 1040, "y": 60 },
+        "config": {
+          "title": "{{start.topic}} 深度调研",
+          "template": "# {{start.topic}} 深度调研报告\n\n## 执行摘要\n\n{{synth1.parsed.executiveSummary}}\n\n## 正文\n\n{{synth1.parsed.sections}}\n\n## 风险\n\n{{synth1.parsed.risks}}\n\n## 展望\n\n{{synth1.parsed.outlook}}",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "review1",
+        "type": "human-review",
+        "name": "人工确认",
+        "position": { "x": 1280, "y": 60 },
+        "config": {
+          "payload": "{{report1.markdown}}",
+          "editableFields": [{ "key": "output_result", "label": "研报全文", "type": "string" }]
+        }
+      },
+      {
+        "id": "save1",
+        "type": "save-asset",
+        "name": "保存到资产库",
+        "position": { "x": 1520, "y": 60 },
+        "config": {
+          "content": "{{report1.markdown}}",
+          "kind": "text",
+          "category": "text",
+          "subCategory": "调研报告",
+          "name": "{{start.topic}}调研",
+          "tags": "调研,{{start.topic}}"
+        }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 1760, "y": 60 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "plan1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "plan1", "targetNodeId": "loop1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "loop1", "targetNodeId": "search1", "kind": "loop-body" },
+      { "id": "e4", "sourceNodeId": "search1", "targetNodeId": "summ1", "kind": "normal" },
+      { "id": "e5", "sourceNodeId": "summ1", "targetNodeId": "loop1", "kind": "loop-back" },
+      { "id": "e6", "sourceNodeId": "loop1", "targetNodeId": "synth1", "kind": "loop-done" },
+      { "id": "e7", "sourceNodeId": "synth1", "targetNodeId": "report1", "kind": "normal" },
+      { "id": "e8", "sourceNodeId": "report1", "targetNodeId": "review1", "kind": "normal" },
+      { "id": "e9", "sourceNodeId": "review1", "targetNodeId": "save1", "kind": "approve" },
+      { "id": "e10", "sourceNodeId": "review1", "targetNodeId": "end", "kind": "reject" },
+      { "id": "e11", "sourceNodeId": "save1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": null
+}

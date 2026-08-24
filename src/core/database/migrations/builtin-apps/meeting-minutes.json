@@ -1,0 +1,127 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 会议纪要生成",
+  "description": "会议录音转写或文字速记 → AI 结构化纪要（议题/决议/待办含负责人与截止时间）→ 人工校对 → 保存资产",
+  "category": "office",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 40, "y": 200 },
+        "config": {
+          "inputs": [
+            { "key": "audio", "label": "会议录音（m4a/wav/mp3，与文字二选一）", "type": "file" },
+            { "key": "text", "label": "会议文字转写/速记（与录音二选一）", "type": "textarea" },
+            { "key": "language", "label": "语音语言", "type": "select", "defaultValue": "auto", "options": [
+              { "label": "自动检测", "value": "auto" },
+              { "label": "中文", "value": "zh" },
+              { "label": "英文", "value": "en" }
+            ] },
+            { "key": "focus", "label": "关注重点", "type": "textarea" },
+            { "key": "model", "label": "纪要模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
+          ]
+        }
+      },
+      {
+        "id": "cond1",
+        "type": "condition",
+        "name": "来源分流",
+        "position": { "x": 300, "y": 200 },
+        "config": {
+          "branches": [
+            { "branchId": "hasAudio", "label": "有录音", "conditions": [{ "left": "{{start.audio.path}}", "operator": "not_empty" }] },
+            { "branchId": "hasText", "label": "有文字", "conditions": [{ "left": "{{start.text}}", "operator": "not_empty" }] }
+          ],
+          "noMatchPolicy": "fail"
+        }
+      },
+      {
+        "id": "stt1",
+        "type": "stt",
+        "name": "语音转写",
+        "position": { "x": 560, "y": 120 },
+        "config": { "audio": "{{start.audio.path}}", "language": "{{start.language}}", "segmentMinutes": 4 }
+      },
+      {
+        "id": "merge1",
+        "type": "assign",
+        "name": "合并文本",
+        "position": { "x": 560, "y": 300 },
+        "config": { "assignments": [{ "key": "transcript", "value": "{{stt1.text}}{{start.text}}" }] }
+      },
+      {
+        "id": "llm1",
+        "type": "llm-chat",
+        "name": "结构化提取",
+        "position": { "x": 800, "y": 200 },
+        "config": {
+          "systemPrompt": "你是会议纪要整理助手。从会议内容中提取结构化纪要。只输出 JSON：{topics: [{name, discussion, conclusion}], decisions: [决策列表], actionItems: [{task, owner, dueDate}]}。无法判断负责人或截止时间的 actionItem 用空字符串。关注重点优先提炼。",
+          "prompt": "关注重点：{{start.focus}}\n\n会议内容：\n{{merge1.values.transcript}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "report1",
+        "type": "report",
+        "name": "纪要报告",
+        "position": { "x": 1040, "y": 200 },
+        "config": {
+          "title": "会议纪要",
+          "template": "# 会议纪要\n\n## 议题讨论\n\n{{llm1.parsed.topics}}\n\n## 决议\n\n{{llm1.parsed.decisions}}\n\n## 待办事项\n\n| 任务 | 负责人 | 截止时间 |\n|---|---|---|\n{{llm1.parsed.actionItems}}",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "review1",
+        "type": "human-review",
+        "name": "人工校对",
+        "position": { "x": 1280, "y": 200 },
+        "config": {
+          "payload": "{{report1.markdown}}",
+          "editableFields": [{ "key": "output_result", "label": "纪要全文", "type": "string" }]
+        }
+      },
+      {
+        "id": "save1",
+        "type": "save-asset",
+        "name": "保存到资产库",
+        "position": { "x": 1520, "y": 200 },
+        "config": {
+          "content": "{{report1.markdown}}",
+          "kind": "text",
+          "category": "text",
+          "subCategory": "会议纪要",
+          "name": "会议纪要-{{sys.today}}",
+          "tags": "会议纪要"
+        }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 1760, "y": 200 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "cond1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "cond1", "targetNodeId": "stt1", "kind": "branch", "branchId": "hasAudio" },
+      { "id": "e3", "sourceNodeId": "cond1", "targetNodeId": "merge1", "kind": "branch", "branchId": "hasText" },
+      { "id": "e4", "sourceNodeId": "stt1", "targetNodeId": "merge1", "kind": "normal" },
+      { "id": "e5", "sourceNodeId": "merge1", "targetNodeId": "llm1", "kind": "normal" },
+      { "id": "e6", "sourceNodeId": "llm1", "targetNodeId": "report1", "kind": "normal" },
+      { "id": "e7", "sourceNodeId": "report1", "targetNodeId": "review1", "kind": "normal" },
+      { "id": "e8", "sourceNodeId": "review1", "targetNodeId": "save1", "kind": "approve" },
+      { "id": "e9", "sourceNodeId": "review1", "targetNodeId": "end", "kind": "reject" },
+      { "id": "e10", "sourceNodeId": "save1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": null
+}

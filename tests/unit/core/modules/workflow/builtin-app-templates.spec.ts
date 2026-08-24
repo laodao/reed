@@ -1,5 +1,5 @@
 /**
- * 内置应用工作流模板合法性测试（8 个深度场景）
+ * 内置应用工作流模板合法性测试（14 个深度场景：8 基础 + 6 第一批高频）
  * @module tests/unit/core/modules/workflow/builtin-app-templates
  * @description 与 renderer workflow-templates.spec 同纪律：模板 JSON 经
  *              importDefinition 同等校验（validateGraph + 节点类型存在性）。
@@ -20,9 +20,9 @@ const templates = files.map(f => {
   return { name: f, raw }
 })
 
-describe('内置应用模板库（8 个深度场景）', () => {
+describe('内置应用模板库（14 个深度场景）', () => {
   it(`找到 ${files.length} 份内置模板`, () => {
-    expect(files.length).toBe(8)
+    expect(files.length).toBe(14)
   })
 
   it('全部为合法导出格式', () => {

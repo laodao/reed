@@ -1,0 +1,119 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 简历优化",
+  "description": "简历 → 诊断（结构/量化/JD匹配/亮点）→ 逐条优化 + 改写后简历 → 面试高频问题预测 → 综合报告",
+  "category": "career",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 40, "y": 200 },
+        "config": {
+          "inputs": [
+            { "key": "resume", "label": "简历全文", "type": "textarea", "required": true, "validation": { "maxLength": 50000 } },
+            { "key": "targetRole", "label": "目标岗位", "type": "string", "required": true },
+            { "key": "jd", "label": "岗位 JD（可选）", "type": "textarea" },
+            { "key": "model", "label": "模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
+          ]
+        }
+      },
+      {
+        "id": "diag1",
+        "type": "llm-chat",
+        "name": "简历诊断",
+        "position": { "x": 320, "y": 140 },
+        "config": {
+          "systemPrompt": "你是资深 HR / 简历顾问。对简历做诊断，输出 JSON：{score: 0-100 整数, issues: [{severity: critical|warning|suggestion, section: 问题所在部分, problem: 问题描述, suggestion: 改进建议}]}。评估维度：结构完整性、量化程度、与目标岗位 JD 的关键词匹配、亮点突出度。问题要具体到原文，不要泛泛而谈。",
+          "prompt": "目标岗位：{{start.targetRole}}\n岗位 JD：{{start.jd}}\n\n简历全文：\n{{start.resume}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "opt1",
+        "type": "llm-chat",
+        "name": "逐条优化",
+        "position": { "x": 560, "y": 140 },
+        "config": {
+          "systemPrompt": "你是简历改写专家。基于诊断结果逐条产出改写建议，并输出优化后的完整简历。输出 JSON：{rewrites: [{issue, rewritten: 改写后表述, reason: 改写理由}], fullResume: 优化后的完整简历 markdown}。改写要保留事实、突出成果与量化、贴合目标岗位关键词，不得虚构经历。",
+          "prompt": "目标岗位：{{start.targetRole}}\n\n诊断结果：\n{{diag1.parsed}}\n\n原始简历：\n{{start.resume}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "inter1",
+        "type": "llm-chat",
+        "name": "面试题预测",
+        "position": { "x": 800, "y": 140 },
+        "config": {
+          "systemPrompt": "你是面试官。基于目标岗位与简历内容，预测 8-10 个高频面试问题并给出答题要点。输出 JSON：{questions: [{question, why: 为什么问, keyPoints: [答题要点]}]}。问题要贴合岗位与简历经历，不要通用模板。",
+          "prompt": "目标岗位：{{start.targetRole}}\n优化后简历：\n{{opt1.parsed.fullResume}}\n\n请输出 JSON 对象。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "report1",
+        "type": "report",
+        "name": "综合报告",
+        "position": { "x": 1040, "y": 140 },
+        "config": {
+          "title": "{{start.targetRole}} 简历优化报告",
+          "template": "# {{start.targetRole}} 简历优化报告\n\n## 一、诊断\n\n- 综合评分：{{diag1.parsed.score}} / 100\n\n{{diag1.parsed.issues}}\n\n## 二、优化建议\n\n{{opt1.parsed.rewrites}}\n\n## 三、优化后简历\n\n{{opt1.parsed.fullResume}}\n\n## 四、面试高频问题预测\n\n{{inter1.parsed.questions}}",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "review1",
+        "type": "human-review",
+        "name": "人工确认",
+        "position": { "x": 1280, "y": 140 },
+        "config": {
+          "payload": "{{report1.markdown}}",
+          "editableFields": [{ "key": "output_result", "label": "报告全文", "type": "string" }]
+        }
+      },
+      {
+        "id": "save1",
+        "type": "save-asset",
+        "name": "保存到资产库",
+        "position": { "x": 1520, "y": 140 },
+        "config": {
+          "content": "{{report1.markdown}}",
+          "kind": "text",
+          "category": "text",
+          "subCategory": "简历",
+          "name": "{{start.targetRole}}简历优化",
+          "tags": "简历,{{start.targetRole}}"
+        }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 1760, "y": 140 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "diag1", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "diag1", "targetNodeId": "opt1", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "opt1", "targetNodeId": "inter1", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "inter1", "targetNodeId": "report1", "kind": "normal" },
+      { "id": "e5", "sourceNodeId": "report1", "targetNodeId": "review1", "kind": "normal" },
+      { "id": "e6", "sourceNodeId": "review1", "targetNodeId": "save1", "kind": "approve" },
+      { "id": "e7", "sourceNodeId": "review1", "targetNodeId": "end", "kind": "reject" },
+      { "id": "e8", "sourceNodeId": "save1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": null
+}
