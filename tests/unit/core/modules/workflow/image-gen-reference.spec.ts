@@ -101,6 +101,22 @@ describe('image-gen 参考图', () => {
     expect((result as { error?: string }).error).toContain('参考图')
   })
 
+  it('promptExtend:false 透传（商品一致性场景关闭提示词扩写，防主体漂移）', async () => {
+    const ctx = makeCtx({ prompt: '杯子', modelId: 'm1', promptExtend: false })
+    const result = await imageGenNode.execute(ctx)
+    expect(result.status).toBe('succeeded')
+    const call = (ImageService.generateImage as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(call.promptExtend).toBe(false)
+  })
+
+  it('promptExtend 缺省不传（provider 用默认值，保持既有行为兼容）', async () => {
+    const ctx = makeCtx({ prompt: '猫', modelId: 'm1' })
+    const result = await imageGenNode.execute(ctx)
+    expect(result.status).toBe('succeeded')
+    const call = (ImageService.generateImage as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(call.promptExtend).toBeUndefined()
+  })
+
   it('输出含 path/localUrl：filePath 相对路径解析为绝对路径 + local 协议 URL', async () => {
     ;(ImageService.generateImage as ReturnType<typeof vi.fn>).mockResolvedValue({
       success: true,

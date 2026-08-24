@@ -119,3 +119,31 @@
   3. 资产来源跳转：resolveSourceLink 反查 run→app/运行详情，卡片徽标点击跳转（执行历史）
   4. 保存开关：save-asset enabled（false 不落库）+ 电商套图产物方式（仅图片/图文文档）
 - 详情见设计文档 §七 与各场景【审查修订】。
+
+---
+
+## 2026-08-24 追加：资产中心套图展示美化（提交 d309c161）
+
+### 背景
+用户反馈「套图展示样式太丑陋」。CDP 实测定位三处问题：
+1. **画廊零样式**：`.gallery-grid/.gallery-item/.gallery-name` 在 CSS 中完全不存在
+   → 默认 block 布局，6 张 1024×1024 原图竖排堆叠，dialog 高 **6444px**（每张 788×1052，滚 6 屏）
+2. **组卡片名错误**：显示「promo-5 等」（最新成员文件名 + 等），而非组真实名称「套图-2026-08-24」
+   —— 后端 list 不返回组名，前端无从展示
+3. **组卡片视觉平淡**：单张封面 + 无样式徽标，无「套图」感
+
+### 改动
+- **后端**：`AssetRecord` 加 `groupName` 字段；`AssetGroupRepository.findByIds(ids)` 批量查组；
+  `AssetService.listAssets` 对本页 groupId 批量填充组名（缺省 undefined）
+- **前端**（AssetCenter.vue）：
+  - 组卡片：真实组名 + 右上角「N 张」半透明徽标 + 右下角成员缩略图叠放（除封面外最多 2 张 44px）
+  - 画廊重做：`gallery-grid` 网格（minmax(200px,1fr) + 14px gap）、卡片圆角/hover 阴影/统一 1:1 封面、
+    组头部信息（组名 + 张数 + 子分类）、封面角标、整卡点击放大预览；dialog max-height 70vh 内滚动
+- **测试**：asset-service-group.spec.ts 新增「listAssets 组内资产携带组名」用例（6/6 绿）
+
+### 验证（CDP 实测）
+- 修复前：dialog 6444px 高 / 组名「promo-5 等」
+- 修复后：dialog **666px** 3 列网格（255×292 卡片×6）一屏尽收 / 组名「套图-2026-08-24」/
+  徽标「6 张」+ 2 张缩略图叠放
+- 回归：assets 全量 28 测试绿；`tsc -p tsconfig.node.json` 无错；electron-vite build 全绿
+- better-sqlite3 切换顺序：kill electron → rebuild:node（跑测试）→ rebuild:electron → 重启 dev

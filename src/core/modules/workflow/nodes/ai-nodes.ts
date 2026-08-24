@@ -276,6 +276,11 @@ const imageGenNode: WorkflowNodeHandler = {
       modelId: string
       /** 参考图：本地文件路径数组（file 输入 .path 或下游产物路径），读取为 base64 data URL 透传 */
       referenceImages?: unknown
+      /**
+       * 是否允许模型/平台扩写提示词。缺省 undefined → provider 默认（DashScope 为 true）。
+       * 一致性场景（商品套图/人像）必须显式 false：扩写会弱化参考图约束导致主体漂移。
+       */
+      promptExtend?: boolean
     }
     // 参考图：路径 → base64 data URL（电商海报等场景保留商品主体）
     let referenceImages: string[] | undefined
@@ -301,6 +306,7 @@ const imageGenNode: WorkflowNodeHandler = {
       height: cfg.height,
       ...(cfg.count ? { count: cfg.count } : {}),
       ...(cfg.providerConfigId ? { providerConfigId: cfg.providerConfigId } : {}),
+      ...(cfg.promptExtend !== undefined ? { promptExtend: cfg.promptExtend } : {}),
       ...(referenceImages ? { referenceImages } : {}),
     } as never)
     if (!resp.success) {
