@@ -83,7 +83,7 @@
             class="graph-node"
             :class="{ selected: selectedNode === node.id, highlighted: highlightSet.has(node.id) }"
             :transform="`translate(${pos(node.id).x}, ${pos(node.id).y})`"
-            @mousedown.stop="selectNode(node)"
+            @mousedown.stop="onNodeMouseDown(node, $event)"
           >
             <circle :r="nodeRadius(node)" :fill="nodeColor(node.type)" class="node-circle">
               <title>{{ typeLabel(node.type) }}：{{ node.name }}</title>
@@ -248,7 +248,54 @@ function onSvgMouseDown(e: MouseEvent): void {
   isPanning.value = true
 }
 
+/** 节点按下：先高亮；区分"点击选中"与"拖动节点" */
+const dragNode = ref<{
+  id: string
+  startClientX: number
+  startClientY: number
+  startPosX: number
+  startPosY: number
+  moved: boolean
+} | null>(null)
+
+function onNodeMouseDown(node: GraphNode, e: MouseEvent): void {
+  e.stopPropagation()
+  selectedNode.value = node.id
+  const p = positions.value[node.id] || { x: W / 2, y: H / 2 }
+  dragNode.value = {
+    id: node.id,
+    startClientX: e.clientX,
+    startClientY: e.clientY,
+    startPosX: p.x,
+    startPosY: p.y,
+    moved: false,
+  }
+}
+
+/** 鼠标在图坐标系中的位置（考虑 viewBox 缩放/平移） */
+function mouseToGraph(e: MouseEvent): { x: number; y: number } {
+  const rect = svgRef.value!.getBoundingClientRect()
+  const { w: cw, h: ch } = svgSize()
+  return {
+    x: view.value.x + ((e.clientX - rect.left) / cw) * view.value.w,
+    y: view.value.y + ((e.clientY - rect.top) / ch) * view.value.h,
+  }
+}
+
 function onSvgMouseMove(e: MouseEvent): void {
+  // 节点拖动优先
+  if (dragNode.value) {
+    const cur = mouseToGraph(e)
+    const start = mouseToGraph({ clientX: dragNode.value.startClientX, clientY: dragNode.value.startClientY } as MouseEvent)
+    const dx = cur.x - start.x
+    const dy = cur.y - start.y
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) dragNode.value.moved = true
+    positions.value[dragNode.value.id] = {
+      x: dragNode.value.startPosX + dx,
+      y: dragNode.value.startPosY + dy,
+    }
+    return
+  }
   if (!panStart) return
   const { w: cw, h: ch } = svgSize()
   const dx = e.clientX - panStart.x
@@ -262,6 +309,15 @@ function onSvgMouseMove(e: MouseEvent): void {
 }
 
 function onSvgMouseUp(e: MouseEvent): void {
+  if (dragNode.value) {
+    if (!dragNode.value.moved) {
+      // 未拖动 = 点击节点 → 选中并显示详情
+      const node = nodes.value.find(n => n.id === dragNode.value!.id)
+      if (node) void selectNode(node)
+    }
+    dragNode.value = null
+    return
+  }
   const moved = panStart && (Math.abs(e.clientX - panStart.x) > 4 || Math.abs(e.clientY - panStart.y) > 4)
   if (panStart && !moved) {
     // 未拖拽 = 点击空白 → 取消选中
@@ -297,7 +353,8 @@ const loading = ref(false)
 const generating = ref(false)
 const nodes = ref<GraphNode[]>([])
 const edges = ref<GraphEdge[]>([])
-const positions = new Map<string, { x: number; y: number }>()
+/** 节点位置（响应式：布局 + 手动拖动共用；键 = 节点 id） */
+const positions = ref<Record<string, { x: number; y: number }>>({})
 const chapterFilter = ref(0)
 const maxChapter = ref(1)
 const selectedNode = ref<string | null>(null)
@@ -346,7 +403,7 @@ function nodeRadius(node: GraphNode): number {
 }
 
 function pos(id: string): { x: number; y: number } {
-  return positions.get(id) || { x: W / 2, y: H / 2 }
+  return positions.value[id] || { x: W / 2, y: H / 2 }
 }
 
 const visibleEdges = computed(() => {
@@ -380,29 +437,34 @@ async function loadGraph(): Promise<void> {
   }
 }
 
-/** 力导向布局（排斥 + 边吸引 + 中心引力） */
+/**
+ * 力导向布局（排斥 + 边吸引 + 中心引力 + 碰撞检测防重叠）。
+ * 每轮迭代后执行子迭代碰撞分离：节点间距 < 最小距离（圆半径和 + 标签空间）则互相推开，
+ * 确保最终布局无重叠。布局结果写入响应式 positions（手动拖动基于同一数据源）。
+ */
 function layout(): void {
   const n = nodes.value.length
   if (n === 0) return
-  positions.clear()
+  const next: Record<string, { x: number; y: number }> = {}
   for (const node of nodes.value) {
-    positions.set(node.id, {
+    next[node.id] = {
       x: W / 2 + (Math.random() - 0.5) * W * 0.6,
       y: H / 2 + (Math.random() - 0.5) * H * 0.6,
-    })
+    }
   }
-  const repulsion = 1300
+  const repulsion = 1400
   const attraction = 0.02
   const center = 0.004
-  for (let iter = 0; iter < 150; iter++) {
+
+  for (let iter = 0; iter < 200; iter++) {
     const forces = new Map<string, { x: number; y: number }>()
     for (const node of nodes.value) forces.set(node.id, { x: 0, y: 0 })
     for (let i = 0; i < n; i++) {
       for (let j = i + 1; j < n; j++) {
         const a = nodes.value[i]
         const b = nodes.value[j]
-        const pa = positions.get(a.id)!
-        const pb = positions.get(b.id)!
+        const pa = next[a.id]
+        const pb = next[b.id]
         const dx = pa.x - pb.x
         const dy = pa.y - pb.y
         const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 24)
@@ -416,8 +478,8 @@ function layout(): void {
       }
     }
     for (const edge of visibleEdges.value) {
-      const pa = positions.get(edge.sourceId)
-      const pb = positions.get(edge.targetId)
+      const pa = next[edge.sourceId]
+      const pb = next[edge.targetId]
       if (!pa || !pb) continue
       const dx = pb.x - pa.x
       const dy = pb.y - pa.y
@@ -428,15 +490,68 @@ function layout(): void {
       forces.get(edge.targetId)!.x -= (dx / dist) * f
       forces.get(edge.targetId)!.y -= (dy / dist) * f
     }
+    // 应用力 + 中心引力
     for (const node of nodes.value) {
-      const p = positions.get(node.id)!
+      const p = next[node.id]
       const f = forces.get(node.id)!
       p.x += f.x + (W / 2 - p.x) * center
       p.y += f.y + (H / 2 - p.y) * center
+    }
+    // 碰撞检测（子迭代直到无重叠）：节点圆 + 标签空间防重叠
+    for (let sub = 0; sub < 6; sub++) {
+      if (!collidePass(next)) break
+    }
+    // 边界约束
+    for (const node of nodes.value) {
+      const p = next[node.id]
       p.x = Math.min(Math.max(p.x, 34), W - 34)
       p.y = Math.min(Math.max(p.y, 34), H - 34)
     }
   }
+  // 收尾：纯碰撞分离（无力导向干扰），确保最终布局严格无重叠
+  for (let sub = 0; sub < 12; sub++) {
+    if (!collidePass(next)) break
+  }
+  positions.value = next
+}
+
+/**
+ * 一轮碰撞分离：节点间距 < 最小距离则互相推开。
+ * @returns 是否有节点发生移动
+ */
+function collidePass(next: Record<string, { x: number; y: number }>): boolean {
+  const n = nodes.value.length
+  let moved = false
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const a = nodes.value[i]
+      const b = nodes.value[j]
+      const pa = next[a.id]
+      const pb = next[b.id]
+      const dx = pb.x - pa.x
+      const dy = pb.y - pa.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      const minDist = (nodeRadius(a) + nodeRadius(b)) * 2 + 16
+      if (dist < minDist && dist > 0.01) {
+        const overlap = ((minDist - dist) / 2) * 0.6
+        const nx = dx / dist
+        const ny = dy / dist
+        pa.x -= nx * overlap
+        pa.y -= ny * overlap
+        pb.x += nx * overlap
+        pb.y += ny * overlap
+        moved = true
+      } else if (dist <= 0.01) {
+        const ang = Math.random() * Math.PI * 2
+        pa.x -= Math.cos(ang) * 24
+        pa.y -= Math.sin(ang) * 24
+        pb.x += Math.cos(ang) * 24
+        pb.y += Math.sin(ang) * 24
+        moved = true
+      }
+    }
+  }
+  return moved
 }
 
 /** 选中实体：拉详情 + 相关实体 + 时间线 + 章节状态 */
