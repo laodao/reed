@@ -46,7 +46,7 @@
       <!-- 画布 -->
       <div class="canvas" @drop="onDrop" @dragover.prevent @dragenter.prevent>
         <VueFlow v-model:nodes="nodes" v-model:edges="edges" :default-edge-options="{ markerEnd: MarkerType.ArrowClosed }"
-          @connect="onConnect" @edge-click="onEdgeClick" fit-view-on-init :min-zoom="0.2" :delete-key-code="['Delete','Backspace']">
+          @connect="onConnect" @edge-click="onEdgeClick" @pane-click="closeConfigPanel" fit-view-on-init :min-zoom="0.2" :delete-key-code="['Delete','Backspace']">
           <Background :gap="20" />
           <Controls />
           <MiniMap />
@@ -88,8 +88,12 @@
         </div>
       </el-drawer>
 
-      <!-- 配置面板 -->
-      <div class="config-area">
+      <!-- 配置面板（默认隐藏，点击节点/连线时显示；可关闭） -->
+      <div v-if="selectedNode || selectedEdge" class="config-area">
+        <div class="config-area-head">
+          <span class="config-area-title">配置</span>
+          <el-button text size="small" @click="closeConfigPanel"><el-icon><Close /></el-icon></el-button>
+        </div>
         <!-- 边编辑（选中连线时） -->
         <div v-if="selectedEdge" class="edge-panel">
           <div class="edge-panel-title">🔗 连线属性</div>
@@ -108,9 +112,6 @@
           <el-button type="danger" size="small" plain style="width:100%; margin-top:10px" @click="deleteSelectedEdge">删除连线</el-button>
         </div>
         <NodeConfigPanel v-else-if="selectedNode" :node="selectedNode" @change="onConfigChanged" @remove="removeSelected" />
-        <div v-else class="config-empty">
-          <p>👆 点击画布中的节点或连线<br/>在此配置</p>
-        </div>
       </div>
     </div>
 
@@ -147,7 +148,7 @@ defineOptions({ name: 'WorkflowEditor' })
 import { ref, reactive, computed, onMounted, onUnmounted, provide, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft } from '@element-plus/icons-vue'
+import { ArrowLeft, Close } from '@element-plus/icons-vue'
 import { VueFlow, Handle, Position, MarkerType, useVueFlow } from '@vue-flow/core'
 import type { Node, Edge, Connection } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
@@ -591,6 +592,12 @@ function selectNode(id: string): void {
   selectedNode.value = findNode(id)
 }
 
+/** 关闭配置面板（清空选中） */
+function closeConfigPanel(): void {
+  selectedNode.value = null
+  selectedEdge.value = null
+}
+
 /** 智能语义连线：按源节点类型弹出连线类型选择 */
 async function onConnect(conn: Connection) {
   const source = findNode(conn.source)
@@ -741,7 +748,9 @@ function removeSelected() {
 .pi-text { font-size: 13px; font-weight: 600; line-height: 1.3; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .canvas { flex: 1; position: relative; background: #fafafa; }
-.config-area { width: 400px; border-left: 1px solid var(--el-border-color); background: var(--el-bg-color); }
+.config-area { width: 400px; border-left: 1px solid var(--el-border-color); background: var(--el-bg-color); display: flex; flex-direction: column; }
+.config-area-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px 6px 14px; border-bottom: 1px solid var(--el-border-color-lighter); }
+.config-area-title { font-size: 12px; font-weight: 600; color: var(--el-text-color-secondary); }
 .config-empty { height: 100%; display: flex; align-items: center; justify-content: center; color: var(--el-text-color-placeholder); text-align: center; line-height: 1.8; }
 
 /* 连线编辑面板 */
