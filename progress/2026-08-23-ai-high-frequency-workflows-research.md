@@ -235,3 +235,31 @@ payload（content 字段 markdown 展示），场景确认可见清单。
 - 注意：template-transform 不支持 each 循环 → 场景清单用 llm-chat 生成文本
 - 引擎单测陷阱：fake handler 直接 return 对象会导致引擎 pump 卡住（task 节点
   fire-and-forget 语义），llm-chat 需走真实 handler + mock callAIStream
+
+---
+
+## 2026-08-25 追加：电商套图逐张确认 + 重生成循环（提交 744f03cf）
+
+### 需求
+1. 生成后有确认环节：每张图一个确认按钮（icon），点击=保留，未点击=重新生成
+2. **必须通用**：流程和表单不能为电商业务写死（用户明确要求）
+
+### 通用能力（非电商专用，任何「生成一批产物逐项确认」可复用）
+- **array-merge 节点**：sources 多数组按序拼接 → merged（control 级纯计算，
+  不占 runningTasks——否则后续挂起节点 execute 不返回，踩坑已修）
+- **form-collect 新增 list-check 字段**：source 模板解析为数组，每行渲染
+  label + 确认按钮（icon），默认全确认；提交 {checked, unchecked, items, uncheckedItems}
+- **image-gen 输出回传 prompt + 支持 seed**：重生成需原 prompt；seed 固定保一致性
+- **save-asset 支持 passthrough**：{字段: 值} 合并进输出（loop 结果携带生成参数）
+
+### 工作流 v3 拓扑
+loop1/loop2 生成 → merge1(array-merge 汇总) → check1(form-collect list-check 逐张确认)
+→ condCheck(unchecked not_empty?) → regen → loop3(遍历 uncheckedItems) → img3(seed=42)
+→ saveImg3(-v2) → report；allOk → 直接 report
+
+### 验证
+- 测试 69 全绿（array-merge 4 / list-check 2 / confirm 链引擎 2 / passthrough 2 / 场景链 8 / 模板 7）
+- 真实执行 v3：5 张图 → 套图确认取消第 1 张(main-0) → condCheck branch:regen
+  → 重生成 main-0-v2(seed 42) → succeeded（138s）
+- 注意：node-registry-consistency 的 validateConfig 抽检为既有基线失败（与改动无关）；
+  表单 Schema 测试因 array-merge 需补 NODE_CONFIG_FORMS 声明（已修）
