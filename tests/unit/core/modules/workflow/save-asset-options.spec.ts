@@ -7,11 +7,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 const mockCreateAsset = vi.fn()
+const mockDeleteAsset = vi.fn()
 
 vi.mock('@core/modules/assets/asset-registry', () => ({
   getAssetService: () => ({
     createAsset: mockCreateAsset,
     assetPreviewUrl: () => 'local-image://x.png',
+    deleteAsset: mockDeleteAsset,
   }),
 }))
 
@@ -94,5 +96,21 @@ describe('save-asset 节点选项', () => {
     const result = await saveAssetNode.execute(ctx)
     const out = (result as { output: Record<string, unknown> }).output
     expect(out.prompt).toBeUndefined()
+  })
+
+  it('replaceAssetId：保存新资产后删除旧资产（重生成替换语义）', async () => {
+    mockDeleteAsset.mockResolvedValue(true)
+    const ctx = makeCtx({ content: 'C:/img.png', kind: 'file', replaceAssetId: 'old_1' })
+    const result = await saveAssetNode.execute(ctx)
+    expect(result.status).toBe('succeeded')
+    expect(mockDeleteAsset).toHaveBeenCalledWith('old_1')
+    // 新资产 id 输出
+    expect((result as { output: Record<string, unknown> }).output.assetId).toBe('asset_1')
+  })
+
+  it('replaceAssetId 缺省：不删除任何资产', async () => {
+    const ctx = makeCtx({ content: 'C:/img.png', kind: 'file' })
+    await saveAssetNode.execute(ctx)
+    expect(mockDeleteAsset).not.toHaveBeenCalled()
   })
 })

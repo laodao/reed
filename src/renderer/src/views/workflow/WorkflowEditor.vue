@@ -15,6 +15,7 @@
       </span>
       <div class="spacer" />
       <el-button size="small" @click="saveDraft" :loading="saving">保存草稿</el-button>
+      <el-button size="small" @click="autoLayout">🧹 一键整理</el-button>
       <el-button size="small" @click="doValidate">校验</el-button>
       <el-button size="small" type="warning" plain @click="showDebug = true">试运行</el-button>
       <el-button size="small" type="primary" @click="doPublish">发布</el-button>
@@ -57,8 +58,11 @@
                 <span class="wf-node-name">{{ nodeProps.data.label }}</span>
               </div>
               <div class="wf-node-summary">{{ nodeProps.data.summary }}</div>
-              <Handle type="target" :position="Position.Left" />
-              <Handle type="source" :position="Position.Right" />
+              <!-- 四向锚点：左/上为入（target），右/下为出（source） -->
+              <Handle type="target" :position="Position.Left" id="in-left" />
+              <Handle type="target" :position="Position.Top" id="in-top" />
+              <Handle type="source" :position="Position.Right" id="out-right" />
+              <Handle type="source" :position="Position.Bottom" id="out-bottom" />
             </div>
           </template>
         </VueFlow>
@@ -160,7 +164,7 @@ watch(nodes, (list: any) => { canvasNodesRef.value = list }, { immediate: true, 
 provide('wfCanvasNodes', canvasNodesRef)
 
 /** 屏幕坐标 → 画布流坐标（拖放落点精确） */
-const { screenToFlowCoordinate } = useVueFlow()
+const { screenToFlowCoordinate, setNodes } = useVueFlow()
 
 /** 分类 → 展示（颜色 / 图标字符） */
 const CATEGORY_META: Record<string, { label: string; icon: string }> = {
@@ -505,6 +509,70 @@ async function onConnect(conn: Connection) {
     data: { kind, ...(branchId ? { branchId } : {}) },
     style: edgeStyle(kind),
   })
+}
+
+/** 一键整理：分层拓扑布局（同层纵向排列，层间横向推进；环/孤岛回退兜底） */
+function autoLayout(): void {
+  if (nodes.value.length === 0) return
+  const NODE_W = 200, NODE_H = 64, H_GAP = 60, V_GAP = 24
+  const X0 = 60, Y0 = 60
+  // 邻接表（normal/branch/approve/reject/loop-done/fail 都算流向；loop-back 除外）
+  const outgoing = new Map<string, string[]>()
+  const incoming = new Map<string, string[]>()
+  for (const node of nodes.value) {
+    outgoing.set(node.id, [])
+    incoming.set(node.id, [])
+  }
+  for (const e of edges.value) {
+    const kind = (e.data as { kind?: string })?.kind
+    if (kind === 'loop-back') continue // 回边不参与分层（防环）
+    outgoing.get(e.source)?.push(e.target)
+    incoming.get(e.target)?.push(e.source)
+  }
+  // Kahn 分层：level[i] = 最长路径深度；有环节点（入度未清零）归最后一层
+  const indeg = new Map<string, number>()
+  for (const [id, ins] of incoming) indeg.set(id, ins.length)
+  const queue: string[] = nodes.value.filter(n => (indeg.get(n.id) ?? 0) === 0).map(n => n.id)
+  const level = new Map<string, number>()
+  for (const n of nodes.value) level.set(n.id, 0)
+  let processed = 0
+  while (queue.length) {
+    const id = queue.shift()!
+    processed++
+    for (const t of outgoing.get(id) ?? []) {
+      level.set(t, Math.max(level.get(t) ?? 0, (level.get(id) ?? 0) + 1))
+      indeg.set(t, (indeg.get(t) ?? 1) - 1)
+      if ((indeg.get(t) ?? 0) === 0) queue.push(t)
+    }
+  }
+  // 环内节点：归入最深层
+  if (processed < nodes.value.length) {
+    const maxLv = Math.max(...[...level.values()], 0)
+    for (const n of nodes.value) {
+      if (!level.has(n.id) || (indeg.get(n.id) ?? 0) > 0) level.set(n.id, maxLv + 1)
+    }
+  }
+  // 按层分组 → 同层纵向排列（居中）
+  const byLevel = new Map<number, string[]>()
+  for (const n of nodes.value) {
+    const lv = level.get(n.id) ?? 0
+    const list = byLevel.get(lv) ?? []
+    list.push(n.id)
+    byLevel.set(lv, list)
+  }
+  const maxInLevel = Math.max(...[...byLevel.values()].map(l => l.length), 1)
+  const update: Record<string, { x: number; y: number }> = {}
+  for (const [lv, ids] of [...byLevel.entries()].sort((a, b) => a[0] - b[0])) {
+    const x = X0 + lv * (NODE_W + H_GAP)
+    const startY = Y0 + (maxInLevel - ids.length) * ((NODE_H + V_GAP) / 2)
+    ids.forEach((id, i) => {
+      update[id] = { x, y: startY + i * (NODE_H + V_GAP) }
+    })
+  }
+  nodes.value = nodes.value.map(n => ({ ...n, position: update[n.id] ?? n.position }))
+  // 同步 Vue Flow 内部节点（v-model 有时不触发画布重排，用官方 setNodes 确保生效）
+  setNodes(nodes.value)
+  ElMessage.success('已整理布局')
 }
 
 function onConfigChanged() {

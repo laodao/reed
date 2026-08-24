@@ -74,7 +74,7 @@
         "name": "场景设计",
         "position": { "x": 320, "y": 260 },
         "config": {
-          "systemPrompt": "你是资深电商场景规划师。根据商品信息、产品类型、风格与场景数量，设计一套真实、有差异化的使用场景（每个场景 = 一张场景图的拍摄/构图方案）。\n\n【数量约束】scenes 数组长度必须严格等于 {{start.sceneCount}}（用户指定场景数量），不得多不得少。\n\n【场景设计原则】\n- 每个场景是一个【真实使用场景】：地点 + 人物行为/环境 + 商品在其中的角色，生活感强，避免同质化（如 4 个场景应覆盖办公/居家/户外/聚会等不同时空，不要 4 个都是办公桌）；\n- 按产品类型联想匹配场景（如 数码家电：办公桌/客厅/通勤/咖啡馆；食品饮料：餐桌/野餐/下午茶/厨房；服饰鞋包：街拍/通勤/健身房/聚会；家居日用：客厅/卧室/厨房/阳台；其他类型类推）；\n- 每个场景输出 {title: 中文场景名（如「通勤地铁上的暖手时刻」）, desc: 中文场景描述（80-120 字，写清地点/人物/氛围/商品角色）, prompt: 完整英文图像提示词, negativePrompt, width, height}。\n\n【商品外观锁定（最高优先级）】\n商品外观以用户上传的商品参考图为准（生成阶段会传入参考图），本规划阶段看不到参考图，因此：\n- 基于商品信息写一段【商品外观描述段】（英文，40-70 词）：只描述商品本身客观特征（品名、材质、配色、形态、关键部件，仅写商品信息中明确提及的），不臆造细节；\n- 所有场景的 prompt 必须逐字复用同一段【商品外观描述段】；\n- 只允许改变：背景/场景、光线、角度、构图、氛围、道具与人物互动；商品本体的形状、颜色、材质、图案、logo、部件绝对禁止改变；\n- negativePrompt 固定追加：different product, changed product, altered design, variant product, wrong color, wrong shape。\n\n【prompt 编写要求（英文）】① 以【商品外观描述段】开头（逐字一致）② 再描述场景地点/人物/光线/氛围 ③ 融入整体风格（{{start.style}}）④ 写实商品摄影质感，场景图人物与商品自然互动。\n\n尺寸建议：场景图默认 1024x1024；竖版社交感场景（如通勤/街拍）可用 768x1024。\n\nnegativePrompt 通用：low quality, blurry, deformed, extra fingers, watermark, text artifacts, distorted product, wrong proportions, different product, changed product, altered design, variant product\n\n只输出 JSON 对象：{scenes: [...]}。",
+          "systemPrompt": "你是资深电商场景规划师。根据商品信息、产品类型、风格与场景数量，设计一套真实、有差异化的使用场景（每个场景 = 一张场景图的拍摄/构图方案）。\n\n【数量约束】scenes 数组长度必须严格等于 {{start.sceneCount}}（用户指定场景数量），不得多不得少。\n\n【场景设计原则】\n- 每个场景是一个【真实使用场景】：地点 + 人物行为/环境 + 商品在其中的角色，生活感强，避免同质化（如 4 个场景应覆盖办公/居家/户外/聚会等不同时空，不要 4 个都是办公桌）；\n- 按产品类型联想匹配场景（如 数码家电：办公桌/客厅/通勤/咖啡馆；食品饮料：餐桌/野餐/下午茶/厨房；服饰鞋包：街拍/通勤/健身房/聚会；家居日用：客厅/卧室/厨房/阳台；其他类型类推）；\n- 每个场景输出 {title: 中文场景名（如「通勤地铁上的暖手时刻」）, desc: 中文场景描述（80-120 字，写清地点/人物/氛围/商品角色）, prompt: 完整英文图像编辑指令, negativePrompt, width, height}。\n\n【商品外观锁定（最高优先级）】\n商品外观以用户上传的商品参考图为准（生成阶段会把参考图喂给图像编辑模型，保持图中商品完全不变、仅更换背景/场景）。因此：\n- prompt 必须写成【图像编辑指令】而非从零描述的生成式 prompt——指令格式：'Keep the product in the reference image completely unchanged (same shape, color, material, pattern, logo). Only change the background/scene to: ...'；\n- 不要重述商品外观细节（编辑模型会从参考图直接复制主体，重述反而干扰）；只需描述【新场景】的地点/人物/光线/氛围/商品与环境的互动；\n- 只允许改变：背景/场景、光线、角度、构图、氛围、道具与人物互动；商品本体的形状、颜色、材质、图案、logo、部件绝对禁止改变；\n- negativePrompt 固定追加：different product, changed product, altered design, variant product, wrong color, wrong shape（商品一致性否定词）。\n\n【prompt 编写要求（英文）】① 以 'Keep the product in the reference image completely unchanged...' 开头 ② 再描述新场景地点/人物/光线/氛围 ③ 融入整体风格（{{start.style}}）④ 写实商品摄影质感，场景图人物与商品自然互动。\n\n尺寸建议：场景图默认 1024x1024；竖版社交感场景（如通勤/街拍）可用 768x1024。\n\nnegativePrompt 通用：low quality, blurry, deformed, extra fingers, watermark, text artifacts, distorted product, wrong proportions, different product, changed product, altered design, variant product\n\n只输出 JSON 对象：{scenes: [...]}。",
           "prompt": "商品信息：{{start.productInfo}}\n产品类型：{{start.productCategory}}\n风格：{{start.style}}\n场景数量：{{start.sceneCount}}\n\n请输出 JSON 对象。",
           "jsonMode": true,
           "providerConfigId": "{{start.textModel.providerConfigId}}",
@@ -109,7 +109,7 @@
         "name": "场景结构化",
         "position": { "x": 1040, "y": 260 },
         "config": {
-          "systemPrompt": "你是结构化解析器。把用户提供的场景清单文本解析为 JSON 数组对象，供图像生成循环使用。\n\n只输出 JSON 对象：{scenes: [{title: 中文场景名, desc: 中文场景描述, prompt: 完整英文图像提示词, negativePrompt, width, height}]}。\n\n要求：\n- 数量以清单中的场景数为准（每节一个场景）；\n- 每个场景补全 prompt：英文，开头描述商品（以清单商品信息为准：品名/材质/配色/形态），再描述该场景地点/人物/光线/氛围，写实商品摄影质感；\n- negativePrompt 固定：low quality, blurry, deformed, extra fingers, watermark, text artifacts, distorted product, wrong proportions, different product, changed product, altered design, variant product；\n- 尺寸：默认 1024x1024，竖版社交感场景 768x1024。",
+          "systemPrompt": "你是结构化解析器。把用户提供的场景清单文本解析为 JSON 数组对象，供图像编辑循环使用。\n\n只输出 JSON 对象：{scenes: [{title: 中文场景名, desc: 中文场景描述, prompt: 完整英文图像编辑指令, negativePrompt, width, height}]}。\n\n要求：\n- 数量以清单中的场景数为准（每节一个场景）；\n- 每个场景补全 prompt：写成【图像编辑指令】——以 'Keep the product in the reference image completely unchanged (same shape, color, material, pattern, logo). Only change the background/scene to: ...' 开头，描述该场景地点/人物/光线/氛围（编辑模型从参考图直接复制商品主体，不要重述商品外观）；\n- negativePrompt 固定：low quality, blurry, deformed, extra fingers, watermark, text artifacts, distorted product, wrong proportions, different product, changed product, altered design, variant product；\n- 尺寸：默认 1024x1024，竖版社交感场景 768x1024。",
           "prompt": "商品信息：{{start.productInfo}}\n场景清单：\n{{sceneReview.content}}\n\n请输出 JSON 对象。",
           "jsonMode": true,
           "providerConfigId": "{{start.textModel.providerConfigId}}",
@@ -274,9 +274,10 @@
           "kind": "file",
           "category": "image",
           "subCategory": "电商套图",
-          "name": "{{loop3.item.name}}-v2",
+          "name": "{{loop3.item.name}}",
           "tags": "电商,套图,重生成,{{start.productCategory}}",
-          "groupName": "套图-{{sys.today}}"
+          "groupName": "套图-{{sys.today}}",
+          "replaceAssetId": "{{loop3.item.assetId}}"
         }
       },
       {

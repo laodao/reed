@@ -142,7 +142,7 @@ describe('电商套图 v3 确认链', () => {
         }),
         n('loop3', 'loop', { listExpression: '{{check1.values.confirm.uncheckedItems}}', emptyPolicy: 'skip' }),
         n('img3', 'image-gen', { prompt: '{{loop3.item.prompt}}', seed: 42 }),
-        n('saveImg3', 'save-asset', { content: '{{img3.images.0.path}}', kind: 'file', name: '{{loop3.item.name}}-v2', groupName: '套图' }),
+        n('saveImg3', 'save-asset', { content: '{{img3.images.0.path}}', kind: 'file', name: '{{loop3.item.name}}', groupName: '套图', replaceAssetId: '{{loop3.item.assetId}}' }),
         n('report1', 'report', { title: '清单', template: '{{loop3.results}}' }),
         n('end', 'end'),
       ],
@@ -199,13 +199,13 @@ describe('电商套图 v3 确认链', () => {
     expect(applied).toBe(true)
     await wait(200)
     expect(runs.final.status).toBe('succeeded')
-    // loop3 重生成 2 张（uncheckedItems），保存为 -v2
+    // loop3 重生成 2 张（uncheckedItems），保存同名（替换语义）
     const save3 = nodeRuns.rows.filter(r => r.nodeId === 'saveImg3' && r.status === 'succeeded')
     expect(save3.length).toBe(2)
-    // 保存名带 -v2（重生成标记），且名称来自 uncheckedItems 的 name
+    // 保存名与未确认项一致（不再 -v2；旧图由 replaceAssetId 删除）
     const savedNames = save3.map(r => r.output?.name)
-    expect(savedNames).toContain('场景1-v2')
-    expect(savedNames).toContain('场景2-v2')
+    expect(savedNames).toContain('场景1')
+    expect(savedNames).toContain('场景2')
     // img3 带固定 seed（一致性）
     const img3Calls = nodeRuns.rows.filter(r => r.nodeId === 'img3' && r.status === 'succeeded')
     expect(img3Calls.every(r => r.output?.seed === 42)).toBe(true)

@@ -91,6 +91,8 @@ const saveAssetNode: WorkflowNodeHandler = {
       groupName?: string
       /** 透传字段：{字段: 值}（引擎已解析模板），合并进输出——下游确认/重生成环节引用上游参数 */
       passthrough?: Record<string, unknown>
+      /** 替换语义：保存新资产成功后删除被替换的旧资产（重生成场景用；旧资产文件一并删除） */
+      replaceAssetId?: string
     }
     // 保存开关：false = 不落库（流程继续），输出空资产标记
     if (cfg.enabled === false) {
@@ -123,6 +125,19 @@ const saveAssetNode: WorkflowNodeHandler = {
       groupName: cfg.groupName?.trim() || undefined,
     })
 
+    // 替换语义：新资产保存成功后删除旧资产（重生成替换，避免同图新旧并存）
+    let replacedId = ''
+    const oldId = cfg.replaceAssetId?.trim()
+    if (oldId && oldId !== record.id) {
+      try {
+        const ok = await service.deleteAsset(oldId)
+        if (ok) replacedId = oldId
+      } catch (e) {
+        // 旧资产删除失败不阻断流程（孤儿资产由资产中心手动清理）
+        console.warn('[save-asset] 替换删除旧资产失败（忽略）:', oldId, e)
+      }
+    }
+
     return {
       status: 'succeeded',
       output: {
@@ -133,6 +148,7 @@ const saveAssetNode: WorkflowNodeHandler = {
         kind: record.kind,
         url: service.assetPreviewUrl(record),
         groupId: record.groupId ?? '',
+        ...(replacedId ? { replacedAssetId: replacedId } : {}),
         ...(cfg.passthrough ?? {}),
       },
     }

@@ -124,10 +124,10 @@ export class DashScopeImageProvider extends BaseImageProvider {
 
   /**
    * 判断是否使用多模态图像生成格式
-   * qwen-image 系列和 wan2.7-image 系列模型使用多模态聊天格式
+   * qwen-image 系列、qwen-image-edit 系列和 wan2.7-image 系列模型使用多模态聊天格式
    */
   private isMultimodalImageModel(model: string): boolean {
-    // qwen-image 系列模型使用多模态聊天格式
+    // qwen-image / qwen-image-edit 系列模型使用多模态聊天格式（edit 支持参考图保持主体）
     if (model.startsWith('qwen-image')) {
       return true
     }
@@ -283,6 +283,32 @@ export class DashScopeImageProvider extends BaseImageProvider {
           textToImage: true,
           imageToImage: false,
           imageEdit: false,
+          maxResolution: '2048x2048',
+          supportedSizes: ['512x512', '1024x1024', '1024x768', '768x1024', '2048x2048']
+        }
+      },
+      {
+        id: 'qwen-image-edit-max',
+        name: 'Qwen Image Edit Max（保持主体换场景）',
+        providerId: 'dashscope',
+        providerName: this.name,
+        features: {
+          textToImage: true,
+          imageToImage: true,
+          imageEdit: true,
+          maxResolution: '2048x2048',
+          supportedSizes: ['512x512', '1024x1024', '1024x768', '768x1024', '2048x2048']
+        }
+      },
+      {
+        id: 'qwen-image-edit-max-2026-01-16',
+        name: 'Qwen Image Edit Max 2026-01（保持主体换场景）',
+        providerId: 'dashscope',
+        providerName: this.name,
+        features: {
+          textToImage: true,
+          imageToImage: true,
+          imageEdit: true,
           maxResolution: '2048x2048',
           supportedSizes: ['512x512', '1024x1024', '1024x768', '768x1024', '2048x2048']
         }
