@@ -8,6 +8,9 @@
  *              - resolveSourceLink：workflow 来源 → 运行详情；app 来源 → 应用会话
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { writeFileSync, unlinkSync } from 'node:fs'
 import { DataSource } from 'typeorm'
 import { createAssetsTables } from '@core/database/migrations/create-assets-tables'
 import { AssetEntity } from '@core/database/entities/asset.entity'
@@ -121,6 +124,43 @@ describe('资产分组（套图）', () => {
     expect(grouped.length).toBe(2)
     // 组内每条资产都能取到组名（前端聚合组卡片时用）
     expect(grouped.every(a => a.groupName === '套图-2026-08-24')).toBe(true)
+  })
+
+  it('resolveGroupFolderPath：返回组内首个文件型成员的绝对路径', async () => {
+    // 真实临时文件（file 形态 createAsset 会复制落盘）
+    const tmpFile = join(tmpdir(), `wf-group-folder-${Date.now()}.png`)
+    writeFileSync(tmpFile, 'PNG-DATA')
+    try {
+      await svc.createAsset({
+        content: { kind: 'text', text: '清单' }, category: 'text', name: '清单',
+        sourceType: 'workflow', sourceRef: 'run_1', groupName: '套图A',
+      })
+      const file = await svc.createAsset({
+        content: { kind: 'file', path: tmpFile }, category: 'image', name: 'main-0',
+        sourceType: 'workflow', sourceRef: 'run_1', groupName: '套图A',
+      })
+      const p = await svc.resolveGroupFolderPath(file.groupId!)
+      // 文件成员在组内 → 返回非空绝对路径（dataPath/assets/...）
+      expect(p).not.toBe('')
+      expect(p.replace(/\\/g, '/').startsWith('C:/mock-data')).toBe(true)
+      // 第一个文件成员（跳过前面的 text 成员）
+      const detail = await svc.getGroupDetail(file.groupId!)
+      expect(detail!.members.find(m => m.name === '清单')!.kind).toBe('text')
+      expect(detail!.members.find(m => m.name === 'main-0')!.kind).toBe('file')
+    } finally {
+      try { unlinkSync(tmpFile) } catch { /* ignore */ }
+    }
+  })
+
+  it('resolveGroupFolderPath：组不存在或纯文本组返回空串', async () => {
+    // 不存在组
+    expect(await svc.resolveGroupFolderPath('ag_none')).toBe('')
+    // 纯文本成员组（无文件）→ 空串（前端提示无本地文件）
+    const t = await svc.createAsset({
+      content: { kind: 'text', text: 'x' }, category: 'text', name: '纯文本',
+      sourceType: 'workflow', sourceRef: 'run_1', groupName: '套图B',
+    })
+    expect(await svc.resolveGroupFolderPath(t.groupId!)).toBe('')
   })
 })
 

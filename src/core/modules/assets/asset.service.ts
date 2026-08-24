@@ -261,6 +261,18 @@ export class AssetService {
     return ''
   }
 
+  /**
+   * 组文件夹打开目标：组内第一个文件型成员的绝对路径（套图/组图文件通常同目录，
+   * 以首个文件成员定位即可）；组不存在或无文件成员返回空串。
+   */
+  async resolveGroupFolderPath(groupId: string): Promise<string> {
+    const detail = await this.getGroupDetail(groupId)
+    if (!detail) return ''
+    const fileMember = detail.members.find(m => m.kind === ASSET_STORAGE_KINDS.file && m.storagePath)
+    if (!fileMember) return ''
+    return this.resolveAssetPath(fileMember)
+  }
+
   // ==================== 分类定义（业务分类实体） ====================
 
   /** 全部分类定义（可选按大类过滤计数；资产中心二级分组 tabs 用） */

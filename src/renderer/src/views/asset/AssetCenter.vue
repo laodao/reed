@@ -68,7 +68,14 @@
             </div>
             <div class="card-actions">
               <el-button size="small" type="primary" plain @click="openGroupGallery(item.groupId!)">查看套图</el-button>
-              <el-button size="small" text type="danger" @click="handleDeleteGroup(item.groupId!)">删除组</el-button>
+              <div class="icon-actions">
+                <el-tooltip content="打开所在目录" placement="top">
+                  <el-button text size="small" @click="openGroupFolder(item.groupId!)"><el-icon><FolderOpened /></el-icon></el-button>
+                </el-tooltip>
+                <el-tooltip content="删除组" placement="top">
+                  <el-button text type="danger" size="small" @click="handleDeleteGroup(item.groupId!)"><el-icon><Delete /></el-icon></el-button>
+                </el-tooltip>
+              </div>
             </div>
           </template>
 
@@ -720,6 +727,12 @@ async function handleUploadTemplate(): Promise<void> {
 
 async function openFolder(asset: AssetRecord): Promise<void> {
   const resp = await api.assets.openFolder(asset.id)
+  if (!resp.success) ElMessage.error(resp.error ?? '打开目录失败')
+}
+
+/** 打开套图/组图所在目录（组内首个文件成员定位） */
+async function openGroupFolder(groupId: string): Promise<void> {
+  const resp = await api.assets.groupOpenFolder(groupId)
   if (!resp.success) ElMessage.error(resp.error ?? '打开目录失败')
 }
 

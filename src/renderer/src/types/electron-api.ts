@@ -69,6 +69,8 @@ export interface AppApi {
     stats(): Promise<IpcResp<{ total: number; byCategory: Record<string, number> }>>
     subCategoryStats(category: string): Promise<IpcResp<Array<{ subCategory: string | null; count: number }>>>
     openFolder(id: string): Promise<IpcResp<{ opened: boolean }>>
+    /** 打开套图/组图所在目录（组内首个文件成员定位） */
+    groupOpenFolder(groupId: string): Promise<IpcResp<{ opened: boolean }>>
     /** 分类定义（业务分类实体：驱动资产中心分组与预览） */
     listCategories(p?: { category?: string }): Promise<IpcResp<AssetCategoryDef[]>>
     createCategory(p: {

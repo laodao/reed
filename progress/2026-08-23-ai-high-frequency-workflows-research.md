@@ -147,3 +147,37 @@
   徽标「6 张」+ 2 张缩略图叠放
 - 回归：assets 全量 28 测试绿；`tsc -p tsconfig.node.json` 无错；electron-vite build 全绿
 - better-sqlite3 切换顺序：kill electron → rebuild:node（跑测试）→ rebuild:electron → 重启 dev
+
+---
+
+## 2026-08-24 追加：电商套图商品一致性修复（提交 28dbbab9）
+
+### 问题
+用户反馈：套图中商品（杯子）每张外观都不同，要求「物品不变、只改变场景」。
+
+### 根因排查（双处）
+1. **prompt_extend 默认开启**：DashScope 多模态路径 `prompt_extend: request.promptExtend ?? true`
+   —— 该功能由 LLM 扩写/改写 prompt，会弱化参考图约束导致主体漂移。
+   人像一致性场景（portrait.service）正是显式传 `promptExtend: false` 才保证一致的，
+   电商套图工作流未传此参数（image-gen 节点当时不支持）。
+2. **提示词设计错误**：plan1 用 DeepSeek 文本模型，**看不到参考图**；
+   旧 systemPrompt 却要求「从参考图提取商品外观描述段」——无法执行，
+   模型只能凭 productInfo 文字想象，每张图的商品描述自然不同。
+   且未要求各 shot 复用同一段商品描述、未加商品一致性否定词。
+
+### 修复
+- **image-gen 节点**：支持 `promptExtend` 配置透传（缺省 undefined 保持兼容）
+- **ecommerce-poster.json**：
+  - img1 显式 `promptExtend: false`（关闭扩写，保留参考图约束）
+  - plan1 systemPrompt 重写【商品外观锁定】：基于商品信息写英文外观描述段（40-70 词、
+    不臆造细节）、所有 shot 逐字复用同一段、只允许改背景/场景/光线/角度/构图/氛围、
+    商品本体禁止改变、生成时以参考图为准、negativePrompt 追加
+    different product / changed product / altered design / variant product / wrong color / wrong shape
+
+### 验证
+- 测试：image-gen-reference 新增 promptExtend 透传 + 缺省 2 用例（10 绿）；
+  builtin-app-templates 7 绿；tsc 无错
+- 真实库（C:/Users/daoge/the-bot/the_bot.db）：dev 启动迁移自动同步，
+  draft + published 双图确认 img1.promptExtend=false、plan1 含外观锁定/逐字复用/以参考图为准
+- 注意：脚本查库需 `DataPathService.getInstance().initialize()`（读 data-path-config.json
+  自定义路径）+ apps.source_id 关联 workflow_definitions（非 definition_id）

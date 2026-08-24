@@ -759,6 +759,7 @@ const electronAPI = {
     stats: () => ipcRenderer.invoke('asset:stats'),
     subCategoryStats: (category: string) => ipcRenderer.invoke('asset:sub-category-stats', { category }),
     openFolder: (id: string) => ipcRenderer.invoke('asset:open-folder', { id }),
+    groupOpenFolder: (groupId: string) => ipcRenderer.invoke('asset:group-open-folder', { groupId }),
     // 分类定义（业务分类实体：驱动资产中心分组与预览）
     listCategories: (p?: { category?: string }) => ipcRenderer.invoke('asset:categories-list', p ?? {}),
     createCategory: (p: {

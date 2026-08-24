@@ -51,6 +51,10 @@ export function registerAssetHandlers(): void {
   ipcBridge.handle('asset:open-folder', (_e, p: { id: string }) =>
     wrap(() => openAssetFolder(p.id))
   )
+  // 组文件夹（套图/组图：组内首个文件成员定位；Web 端不可用）
+  ipcBridge.handle('asset:group-open-folder', (_e, p: { groupId: string }) =>
+    wrap(() => openGroupFolder(p.groupId))
+  )
 
   // ==================== 分类定义（业务分类实体：分组与预览驱动） ====================
   ipcBridge.handle('asset:categories-list', (_e, p: { category?: string }) =>
@@ -108,6 +112,19 @@ async function openAssetFolder(id: string): Promise<{ opened: boolean }> {
   if (!record) throw new Error('资产不存在')
   const absPath = getAssetService().resolveAssetPath(record)
   if (!absPath) throw new Error('该资产无本地文件')
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { shell } = require('electron')
+  shell.showItemInFolder(absPath)
+  return { opened: true }
+}
+
+/** 打开套图/组图所在目录（组内首个文件成员定位；Web 端不可用） */
+async function openGroupFolder(groupId: string): Promise<{ opened: boolean }> {
+  if (!isElectron) {
+    throw new Error('打开所在目录仅桌面端可用')
+  }
+  const absPath = await getAssetService().resolveGroupFolderPath(groupId)
+  if (!absPath) throw new Error('该组内无本地文件（套图文件可能已删除）')
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { shell } = require('electron')
   shell.showItemInFolder(absPath)
