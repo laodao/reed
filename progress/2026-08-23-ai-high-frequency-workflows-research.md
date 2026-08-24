@@ -263,3 +263,31 @@ loop1/loop2 生成 → merge1(array-merge 汇总) → check1(form-collect list-c
   → 重生成 main-0-v2(seed 42) → succeeded（138s）
 - 注意：node-registry-consistency 的 validateConfig 抽检为既有基线失败（与改动无关）；
   表单 Schema 测试因 array-merge 需补 NODE_CONFIG_FORMS 声明（已修）
+
+---
+
+## 2026-08-25 追加：电商套图三改进（提交 8ee83afa）
+
+### 1. 重生成替换旧图
+- 之前：saveImg3 存 -v2 新资产，旧图保留（用户质疑「每次重新生成删旧图了吗」）
+- 现在：save-asset 新增 replaceAssetId——保存新资产成功后删除被替换旧资产（含文件）
+- saveImg3 配置 replaceAssetId={{loop3.item.assetId}}，同名替换，不再 -v2
+
+### 2. 外观一致性（重点）
+- 根因：qwen-image-2.0 参考图遵循度有限（图生图能力弱）
+- 方案：qwen-image-edit-max（专为「保持主体换场景」设计的图像编辑模型）
+  - provider 注册 edit-max 系列 + isMultimodalImageModel 覆盖 qwen-image-edit 前缀
+  - scenePlan/sceneParse prompt 改为【编辑指令式】：「Keep the product in the
+    reference image completely unchanged... Only change the background/scene to...」
+    ——编辑模型从参考图直接复制商品主体，不再重述外观（重述反而干扰）
+- 实测：edit-max 走同一多模态 API 成功；对比图在
+  C:\Users\daoge\the-bot\.exp-consistency\（compare.png 三策略对比）
+
+### 3. 编辑器 UX
+- 四向锚点：in-left/in-top/out-right/out-bottom（Vue Flow Handle）
+- 一键整理：Kahn 分层拓扑布局（同层纵向排列、层间横向推进、环/孤岛回退）
+- CDP 实测：23 节点 4 锚点 + 一键整理生效
+
+### 待用户确认
+- 看 .exp-consistency 对比图确认 edit-max 商品保持效果是否达标；
+  若不理想可再试 wan2.7-image-pro 或调 edit 指令措辞
