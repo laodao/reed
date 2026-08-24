@@ -81,8 +81,8 @@
             <img v-else-if="item.asset.category === 'image' && previewUrl(item.asset)" :src="previewUrl(item.asset)" loading="lazy" alt="" />
             <audio v-else-if="item.asset.category === 'audio' && previewUrl(item.asset)" :src="previewUrl(item.asset)" controls preload="none" @click.stop />
             <video v-else-if="item.asset.category === 'video' && previewUrl(item.asset)" :src="previewUrl(item.asset)" controls preload="none" @click.stop />
-            <div v-else-if="item.asset.category === 'template'" class="template-preview">{{ (item.asset.textContent ?? '').slice(0, 200) }}</div>
-            <div v-else-if="item.asset.category === 'text'" class="text-preview">{{ item.asset.textContent ?? '' }}</div>
+            <div v-else-if="item.asset.category === 'template'" class="text-preview" v-html="renderMdPreview(item.asset.textContent ?? '')"></div>
+            <div v-else-if="item.asset.category === 'text'" class="text-preview" v-html="renderMdPreview(item.asset.textContent ?? '')"></div>
             <div v-else-if="item.asset.category === 'json'" class="text-preview json">{{ item.asset.jsonContent ?? '' }}</div>
             <div v-else-if="item.asset.kind === 'url' && item.asset.url" class="url-preview">
               <span class="url-icon">🔗</span>
@@ -165,14 +165,21 @@
     </div>
 
     <!-- 大图预览（分类驱动：report/markdown/html 显示渲染结果，其余按存储形态） -->
-    <el-dialog v-model="previewVisible" :title="previewAsset?.name ?? '预览'" width="760px" append-to-body>
+    <el-dialog v-model="previewVisible" :title="previewAsset?.name ?? '预览'" width="820px" append-to-body>
+      <div class="preview-toolbar" v-if="isMarkdownAsset(previewAsset)">
+        <el-radio-group v-model="previewMode" size="small">
+          <el-radio-button value="preview">预览</el-radio-button>
+          <el-radio-button value="source">源码</el-radio-button>
+        </el-radio-group>
+      </div>
       <div class="big-preview" v-loading="previewRendering">
         <img v-if="previewAsset && previewUrl(previewAsset) && previewModeOf(previewAsset) === 'auto' && previewAsset.category === 'image'" :src="previewUrl(previewAsset)" alt="" />
         <audio v-else-if="previewAsset && previewModeOf(previewAsset) === 'auto' && previewAsset.category === 'audio'" :src="previewUrl(previewAsset)" controls autoplay />
         <video v-else-if="previewAsset && previewModeOf(previewAsset) === 'auto' && previewAsset.category === 'video'" :src="previewUrl(previewAsset)" controls autoplay style="width:100%" />
         <iframe v-else-if="previewCache[previewAsset?.id ?? '']?.mode === 'html'" class="big-iframe" :srcdoc="previewCache[previewAsset!.id]!.html" sandbox="allow-same-origin"></iframe>
         <img v-else-if="previewImageUrl(previewAsset?.id ?? '')" class="big-render-img" :src="previewImageUrl(previewAsset!.id)!" alt="" />
-        <pre v-else-if="previewAsset?.category === 'text' || previewAsset?.category === 'template'" class="big-text">{{ previewAsset?.textContent }}</pre>
+        <!-- 文本/模板文档：预览=渲染 markdown，源码=原始内容 -->
+        <div v-else-if="isMarkdownAsset(previewAsset)" class="big-md-preview" v-html="previewMode === 'source' ? escapeHtmlMd(previewAsset!.textContent ?? '') : renderMdPreview(previewAsset!.textContent ?? '')"></div>
         <pre v-else-if="previewAsset?.category === 'json'" class="big-text">{{ previewAsset?.jsonContent }}</pre>
         <div v-else-if="previewAsset?.url" class="big-url">
           <a :href="previewAsset.url" target="_blank" rel="noopener">{{ previewAsset.url }}</a>
@@ -400,6 +407,32 @@ const previewRendering = ref(false)
 function previewImageUrl(assetId: string): string | null {
   const r = previewCache[assetId]
   return r?.mode === 'image' ? r.url : null
+}
+
+/** 大预览模式：preview=渲染 markdown | source=原始源码（text/template 文档资产） */
+const previewMode = ref<'preview' | 'source'>('preview')
+
+/** 是否为 markdown 文档资产（text/template 类，内容像文档而非纯数据） */
+function isMarkdownAsset(asset: AssetRecord | null | undefined): boolean {
+  if (!asset) return false
+  if (asset.category !== 'text' && asset.category !== 'template') return false
+  if (!asset.textContent) return false
+  // 有 markdown 特征（标题/列表/引用/表格/代码块）或较长文本 → 渲染
+  return /(^|\n)\s*(#{1,6}\s|[-*+]\s|\d+\.\s|>\s|\||```)/m.test(asset.textContent) || asset.textContent.length > 80
+}
+
+/** markdown 渲染为 HTML（卡片缩略/大预览共用） */
+function renderMdPreview(md: string): string {
+  try {
+    return marked.parse(md, { gfm: true, breaks: true }) as string
+  } catch {
+    return `<pre>${escapeHtmlMd(md)}</pre>`
+  }
+}
+
+/** HTML 转义（源码模式展示原始 markdown） */
+function escapeHtmlMd(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 const KIND_LABELS: Record<string, string> = { file: '文件', url: '链接', text: '文本', json: '数据' }
@@ -778,6 +811,7 @@ async function openPreview(asset: AssetRecord): Promise<void> {
   if (!canPreview(asset)) return
   previewAsset.value = asset
   previewVisible.value = true
+  previewMode.value = 'preview' // 默认渲染预览（文档资产可切源码）
   // 分类驱动模式（report/markdown/html）→ 渲染后展示；其余按存储形态原生呈现
   const mode = previewModeOf(asset)
   if ((mode === ASSET_PREVIEW_MODES.report || mode === ASSET_PREVIEW_MODES.markdown || mode === ASSET_PREVIEW_MODES.html)
@@ -939,6 +973,36 @@ onMounted(load)
 .preview video { width: 100%; height: 100%; object-fit: contain; background: #000; }
 .text-preview { width: 100%; height: 100%; padding: 10px 12px; font-size: 12px; color: var(--el-text-color-regular); white-space: pre-wrap; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; cursor: zoom-in; }
 .text-preview.json { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; }
+.text-preview :deep(*) { max-width: 100%; }
+.text-preview :deep(p) { margin: 2px 0; }
+.text-preview :deep(h1), .text-preview :deep(h2), .text-preview :deep(h3) { margin: 4px 0 2px; font-size: 13px; font-weight: 600; }
+.text-preview :deep(ul), .text-preview :deep(ol) { margin: 2px 0; padding-left: 16px; }
+.text-preview :deep(code) { background: var(--el-fill-color-light); padding: 0 3px; border-radius: 3px; font-size: 11px; }
+.text-preview :deep(pre) { background: var(--el-fill-color-light); padding: 6px; border-radius: 4px; overflow-x: auto; }
+.text-preview :deep(table) { border-collapse: collapse; font-size: 11px; }
+.text-preview :deep(th), .text-preview :deep(td) { border: 1px solid var(--el-border-color-lighter); padding: 2px 6px; }
+.text-preview :deep(blockquote) { border-left: 3px solid var(--el-border-color); margin: 2px 0; padding-left: 8px; color: var(--el-text-color-secondary); }
+.preview-toolbar { display: flex; justify-content: flex-end; margin-bottom: 10px; }
+.big-md-preview {
+  width: 100%; max-height: 70vh; overflow: auto; padding: 20px 24px;
+  font-size: 14px; line-height: 1.8; color: var(--el-text-color-primary);
+  background: var(--el-bg-color); border: 1px solid var(--el-border-color-lighter); border-radius: 8px;
+}
+.big-md-preview :deep(h1) { font-size: 24px; border-bottom: 1px solid var(--el-border-color-lighter); padding-bottom: 8px; }
+.big-md-preview :deep(h2) { font-size: 20px; margin-top: 20px; }
+.big-md-preview :deep(h3) { font-size: 16px; margin-top: 16px; }
+.big-md-preview :deep(p) { margin: 8px 0; }
+.big-md-preview :deep(ul), .big-md-preview :deep(ol) { padding-left: 24px; margin: 8px 0; }
+.big-md-preview :deep(code) { background: var(--el-fill-color-light); padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.big-md-preview :deep(pre) { background: var(--el-fill-color-light); padding: 12px 14px; border-radius: 6px; overflow-x: auto; margin: 8px 0; }
+.big-md-preview :deep(pre code) { background: none; padding: 0; }
+.big-md-preview :deep(table) { border-collapse: collapse; margin: 8px 0; width: 100%; }
+.big-md-preview :deep(th), .big-md-preview :deep(td) { border: 1px solid var(--el-border-color-lighter); padding: 6px 12px; text-align: left; }
+.big-md-preview :deep(th) { background: var(--el-fill-color-light); font-weight: 600; }
+.big-md-preview :deep(blockquote) { border-left: 4px solid var(--el-border-color); margin: 8px 0; padding: 4px 16px; color: var(--el-text-color-secondary); background: var(--el-fill-color-lighter); border-radius: 0 4px 4px 0; }
+.big-md-preview :deep(img) { max-width: 100%; border-radius: 6px; }
+.big-md-preview :deep(a) { color: var(--el-color-primary); }
+.big-md-preview :deep(hr) { border: none; border-top: 1px solid var(--el-border-color-lighter); margin: 16px 0; }
 .url-preview { display: flex; align-items: center; gap: 8px; padding: 0 14px; color: var(--el-color-primary); font-size: 12px; }
 .url-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .doc-preview { font-size: 44px; opacity: .55; }
