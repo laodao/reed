@@ -921,7 +921,9 @@ async function saveCategory(): Promise<void> {
     previewMode,
     previewTemplateId: previewMode === ASSET_PREVIEW_MODES.report ? categoryDraft.value.previewTemplateId : null,
     previewable: categoryDraft.value.previewable,
-    allowedKinds: categoryDraft.value.allowedKinds,
+    // 拷贝为普通数组：v-model 值可能是 reactive proxy，Electron IPC 结构化克隆会抛
+    // "An object could not be cloned"（静默失败）——展开为原生数组再传
+    allowedKinds: [...categoryDraft.value.allowedKinds],
   }
   if (categoryEditing.value?.id) {
     const resp = await api.assets.updateCategory({ id: categoryEditing.value.id, ...payload })
