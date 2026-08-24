@@ -69,11 +69,22 @@ async function newSession(): Promise<void> {
   } else ElMessage.error(resp.error ?? '创建会话失败')
 }
 
-/** 返回来源：从应用列表卡片启动（?from=list）→ 回列表；否则回应用详情 */
-const fromSource = computed(() => (route.query.from === 'list' ? 'list' : 'detail'))
-const backLabel = computed(() => (fromSource.value === 'list' ? '返回应用列表' : '返回应用'))
+/** 返回来源：from=home（首页启动）→ 回首页；from=list（应用列表）→ 回列表；否则回应用详情 */
+const fromSource = computed<'home' | 'list' | 'detail'>(() => {
+  const f = route.query.from
+  if (f === 'home') return 'home'
+  if (f === 'list') return 'list'
+  return 'detail'
+})
+const backLabel = computed(() => {
+  if (fromSource.value === 'home') return '返回首页'
+  if (fromSource.value === 'list') return '返回应用列表'
+  return '返回应用'
+})
 function goBack(): void {
-  router.push(fromSource.value === 'list' ? '/apps' : `/apps/${appId.value}`)
+  if (fromSource.value === 'home') router.push('/')
+  else if (fromSource.value === 'list') router.push('/apps')
+  else router.push(`/apps/${appId.value}`)
 }
 
 async function loadMessages(): Promise<void> {
