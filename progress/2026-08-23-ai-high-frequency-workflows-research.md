@@ -204,3 +204,34 @@
 - tsc 无错、electron-vite build 全绿
 - CDP 实测：组卡片有 2 个图标按钮（文件夹+删除）；点击打开目录无错误提示
   （success 分支静默，shell 已定位到套图文件）
+
+---
+
+## 2026-08-24 追加：电商套图场景设计环节深化（提交 5e0f2c3e 等）
+
+### 需求
+1. 场景数量可配置：默认值（经验值 4）+ 允许修改（1-8）
+2. 先根据商品提示词/商品类型/商品图片设计 n 个场景（文字描述）
+3. 场景设计后向用户确认
+4. 确认后按场景生成套图
+5. 用户确认：场景仅用于「场景图」——其他类型（主图/白底/促销等）仍按「类型×数量」
+
+### 流程（ecommerce-poster.json v2，17 节点）
+start(+sceneCount) → scenePlan(llm jsonMode 设计 n 场景) → sceneText(llm 渲染清单)
+→ sceneReview(human-review 挂起确认；approve→sceneParse / reject→end)
+→ sceneParse(llm jsonMode 文本解析回结构化) → plan1(非场景规划) → loop1(非场景图)
+→ loop-done → loop2(场景图) → loop-done → report1 → review1 → condSave → end
+
+- 商品一致性延续：两个 image-gen 都带 referenceImages + promptExtend:false
+- 场景图与非场景图归同一组（groupName 套图-{{sys.today}}）
+
+### UX 补缺口（关键）
+审核卡片原本不展示送审内容（用户盲批）→ SessionMessageCard 渲染 review
+payload（content 字段 markdown 展示），场景确认可见清单。
+
+### 验证
+- 测试：场景链结构断言 8 用例 + 双 loop 串联引擎测试 + 模板 7（18 全绿）
+- 真实库验证 v2 模板已同步（sceneCount/scenePlan/loop2 均在）
+- 注意：template-transform 不支持 each 循环 → 场景清单用 llm-chat 生成文本
+- 引擎单测陷阱：fake handler 直接 return 对象会导致引擎 pump 卡住（task 节点
+  fire-and-forget 语义），llm-chat 需走真实 handler + mock callAIStream
