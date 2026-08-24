@@ -29,7 +29,8 @@ import type {
   WorkflowValidationResult,
 } from '@shared/types/workflow.types'
 import { NODE_TYPE_CATALOG_MAP } from '@shared/types/workflow-node-catalog'
-import { computeLoopBody, computeReachableSet } from './graph-topology'
+import { computeLoopBody, computeReachableSet, computeUpstreamSet } from './graph-topology'
+import { TEMPLATE_RE } from './variable-resolver'
 import { WORKFLOW_RESERVED_NODE_ID, WORKFLOW_NODE_TYPES } from '@shared/types/workflow.types'
 
 /** 可选的节点配置校验钩子（引擎启动前由 NodeRegistry 注入 handler.validateConfig） */
@@ -324,7 +325,10 @@ export function validateGraph(
     }
   }
 
-  // ---------- 9. 节点 config 深度校验（可选注入） ----------
+  // ---------- 9. 变量引用可达性（被引用节点必须是当前节点拓扑上游） ----------
+  validateVariableReferences(graph, nodeById, edges, addError)
+
+  // ---------- 10. 节点 config 深度校验（可选注入） ----------
   if (options?.validateNodeConfig) {
     for (const node of graph.nodes) {
       for (const err of options.validateNodeConfig(node)) {
@@ -381,4 +385,92 @@ function detectCycle(nodeIds: string[], edges: WorkflowEdge[]): string | null {
     }
   }
   return null
+}
+
+/**
+ * 变量引用可达性校验（规则 9）：
+ * 扫描各节点 config 中的 {{}} 模板引用，被引用节点必须位于当前节点的拓扑上游
+ * （先于当前节点执行）——防止引用后置/未执行环节的输出导致运行时空值或错误结果。
+ *
+ * 豁免：
+ * - {{sys.*}} 系统变量根始终可用
+ * - {{start.*}} start 输入命名空间（当前节点须从 start 可达）
+ * - 循环体内部节点引用所属 loop 的伪变量（{{loop.item}} 等局部可用）
+ */
+function validateVariableReferences(
+  graph: WorkflowGraph,
+  nodeById: Map<string, WorkflowNode>,
+  edges: WorkflowEdge[],
+  addError: (msg: string) => void
+): void {
+  // 各节点上游可达集合（排除 loop-back：loop 不依赖 body 输出）
+  const upstreamOf = new Map<string, Set<string>>()
+  for (const node of graph.nodes) {
+    upstreamOf.set(
+      node.id,
+      computeUpstreamSet(node.id, edges, e => e.kind !== 'loop-back', nodeById)
+    )
+  }
+  // 节点 → 所属循环的 loop 节点集合（body 内可引用该 loop 的 item/index 伪变量）
+  const bodyOf = new Map<string, Set<string>>()
+  for (const loopNode of graph.nodes.filter(n => n.type === 'loop')) {
+    const bodyEntryEdge = edges.find(
+      e => e.sourceNodeId === loopNode.id && e.kind === 'loop-body'
+    )
+    if (!bodyEntryEdge || !nodeById.has(bodyEntryEdge.targetNodeId)) continue
+    const { bodySet } = computeLoopBody(graph, nodeById, loopNode.id, bodyEntryEdge)
+    for (const id of bodySet) {
+      const list = bodyOf.get(id) ?? new Set<string>()
+      list.add(loopNode.id)
+      bodyOf.set(id, list)
+    }
+  }
+  const startId = graph.nodes.find(n => n.type === 'start')?.id
+
+  for (const node of graph.nodes) {
+    const refs = new Set<string>()
+    walkTemplateRefs(node.config, refs)
+    for (const path of refs) {
+      const root = path.split('.')[0]
+      if (root === 'item') continue // list-check 表单字段的行内插值（{{item.xx}}），非工作流变量
+      if (root === 'sys') continue // 系统变量根始终可用
+      if (root === 'start') {
+        // start 输入命名空间：start 节点存在且在当前位置可达（或当前即 start）
+        if (node.id !== startId && !upstreamOf.get(node.id)?.has(startId ?? '')) {
+          addError(
+            `节点 ${node.id} 引用了 start 输入（{{${path}}}），但当前节点不在 start 可达链路内`
+          )
+        }
+        continue
+      }
+      if (!nodeById.has(root)) {
+        addError(`节点 ${node.id} 引用了不存在的节点变量：{{${path}}}`)
+        continue
+      }
+      const upstream = upstreamOf.get(node.id) ?? new Set<string>()
+      if (upstream.has(root)) continue // 上游节点输出：合法
+      // 循环体内部：所属 loop 的伪变量（item/index）局部可用
+      if (bodyOf.get(node.id)?.has(root)) continue
+      addError(
+        `节点 ${node.id} 引用了不在其上游的节点输出：{{${path}}}（${root} 是后置或未执行环节）`
+      )
+    }
+  }
+}
+
+/** 深遍历对象，收集全部 {{}} 模板引用路径（去重，顺序无关） */
+function walkTemplateRefs(value: unknown, out: Set<string>): void {
+  if (typeof value === 'string') {
+    TEMPLATE_RE.lastIndex = 0
+    let m: RegExpExecArray | null
+    while ((m = TEMPLATE_RE.exec(value)) !== null) out.add(m[1])
+    return
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) walkTemplateRefs(item, out)
+    return
+  }
+  if (value !== null && typeof value === 'object') {
+    for (const v of Object.values(value)) walkTemplateRefs(v, out)
+  }
 }

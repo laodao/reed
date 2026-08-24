@@ -52,8 +52,8 @@ function sysVarsSnapshot(): Record<string, unknown> {
   }
 }
 
-/** 占位符语法：{{ root.field.nested }}，允许空白 */
-const TEMPLATE_RE = /\{\{\s*([^{}\s]+(?:\.[^{}\s]+)*)\s*\}\}/g
+/** 占位符语法：{{ root.field.nested }}，允许空白（引擎解析与图校验共用同一正则） */
+export const TEMPLATE_RE = /\{\{\s*([^{}\s]+(?:\.[^{}\s]+)*)\s*\}\}/g
 
 export class VariableResolver {
   constructor(private ctx: VariableResolverContext) {}

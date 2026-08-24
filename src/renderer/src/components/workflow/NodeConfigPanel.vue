@@ -55,11 +55,13 @@ import FieldRenderer from './FormFieldRenderer.vue'
 const props = defineProps<{ node: Node }>()
 const emit = defineEmits<{ (e: 'change'): void; (e: 'remove'): void }>()
 
-/** 变量选择器上下文：画布节点（编辑器 provide）+ 当前节点 id */
+/** 变量选择器上下文：画布节点/边（编辑器 provide）+ 当前节点 id */
 const canvasNodesRef = inject<Ref<any[]>>('wfCanvasNodes', ref([]))
 const canvasNodes = canvasNodesRef
+const canvasEdgesRef = inject<Ref<any[]>>('wfCanvasEdges', ref([]))
 provide('wfPickerContext', {
   nodes: canvasNodes,
+  edges: canvasEdgesRef,
   excludeNodeId: computed(() => props.node.id),
 })
 

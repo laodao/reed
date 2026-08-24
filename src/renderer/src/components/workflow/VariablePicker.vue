@@ -26,12 +26,15 @@
 import { computed } from 'vue'
 import type { Node } from '@vue-flow/core'
 import { NODE_TYPE_CATALOG_MAP } from '@shared/types/workflow-node-catalog'
+import { computeUpstreamNodeIds, type CanvasEdgeLike } from '@/utils/workflow-graph-utils'
 
 const props = defineProps<{
   /** 画布全部节点（数据源） */
   nodes: Node[]
   /** 当前编辑的节点 id（排除自身） */
   excludeNodeId: string
+  /** 画布全部边（按上游可达过滤可引用节点） */
+  edges?: CanvasEdgeLike[]
 }>()
 defineEmits<{ (e: 'insert', path: string): void }>()
 
@@ -44,6 +47,10 @@ const LOOP_FIELDS = [
 ]
 
 const groups = computed(() => {
+  // 上游可达集合（沿入边反向 BFS，loop-back 排除）——只允许引用先于当前节点执行的环节
+  const upstream = computeUpstreamNodeIds(props.excludeNodeId, props.edges ?? [])
+  const startNode = props.nodes.find(n => (n.data as any)?.wfNode?.type === 'start')
+
   const result: Array<{ label: string; items: Array<{ path: string; desc: string }> }> = [
     {
       label: '系统变量',
@@ -55,29 +62,31 @@ const groups = computed(() => {
     },
   ]
 
-  // start 输入参数
-  const startNode = props.nodes.find(n => (n.data as any)?.wfNode?.type === 'start')
+  // start 输入参数（仅当 start 在当前节点上游可达时显示）
   const startInputs: typeof result[0]['items'] = []
   const inputs = ((startNode?.data as any)?.wfNode?.config?.inputs ?? []) as Array<{
     key: string
     label?: string
     type?: string
   }>
-  for (const i of inputs) {
-    if (i.type === 'model') {
-      // 模型字段：拆成 providerConfigId / modelId 两个可引用路径
-      startInputs.push({ path: `start.${i.key}.providerConfigId`, desc: `${i.label || i.key}·Provider` })
-      startInputs.push({ path: `start.${i.key}.modelId`, desc: `${i.label || i.key}·模型` })
-    } else {
-      startInputs.push({ path: `start.${i.key}`, desc: i.label || i.key })
+  if (startNode && upstream.has(startNode.id)) {
+    for (const i of inputs) {
+      if (i.type === 'model') {
+        // 模型字段：拆成 providerConfigId / modelId 两个可引用路径
+        startInputs.push({ path: `start.${i.key}.providerConfigId`, desc: `${i.label || i.key}·Provider` })
+        startInputs.push({ path: `start.${i.key}.modelId`, desc: `${i.label || i.key}·模型` })
+      } else {
+        startInputs.push({ path: `start.${i.key}`, desc: i.label || i.key })
+      }
     }
   }
   if (startInputs.length) result.push({ label: '输入参数', items: startInputs })
 
-  // 各节点输出（outputSchema 目录驱动 + loop 特殊字段）
+  // 各节点输出（outputSchema 目录驱动 + loop 特殊字段）——只列拓扑上游可达节点
   const nodeItems: typeof result[0]['items'] = []
   for (const n of props.nodes) {
     if (n.id === props.excludeNodeId) continue
+    if (!upstream.has(n.id)) continue // 后置/未执行环节：不提供引用
     const wf = (n.data as any)?.wfNode
     if (!wf || wf.type === 'start' || wf.type === 'end') continue
     const fields =

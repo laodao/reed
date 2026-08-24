@@ -112,6 +112,46 @@ export function buildNodeMap(graph: WorkflowGraph): Map<string, WorkflowNode> {
   return new Map(graph.nodes.map(n => [n.id, n]))
 }
 
+/**
+ * 计算某节点的拓扑上游可达集合（不含自身）：沿入边反向 BFS。
+ * 变量引用可达性校验用——被引用节点必须在该集合内（先于当前节点执行）。
+ * @param nodeId 当前节点
+ * @param edges 全部边
+ * @param edgeFilter 边过滤（反向遍历按该条件选边；调用方应排除 loop-back——
+ *                    loop 节点不把循环体节点视为上游，body 输出仅在迭代内局部可用）
+ * @param nodeById 节点表（起点不存在时跳过该边，容错）
+ */
+export function computeUpstreamSet(
+  nodeId: string,
+  edges: WorkflowEdge[],
+  edgeFilter: (e: WorkflowEdge) => boolean,
+  nodeById: Map<string, WorkflowNode>
+): Set<string> {
+  const visited = new Set<string>()
+  const queue: string[] = []
+  const revAdjacency = new Map<string, WorkflowEdge[]>()
+  for (const e of edges) {
+    if (!edgeFilter(e)) continue
+    const list = revAdjacency.get(e.targetNodeId) ?? []
+    list.push(e)
+    revAdjacency.set(e.targetNodeId, list)
+  }
+  for (const e of revAdjacency.get(nodeId) ?? []) {
+    if (nodeById.has(e.sourceNodeId)) queue.push(e.sourceNodeId)
+  }
+  while (queue.length > 0) {
+    const current = queue.shift()!
+    if (visited.has(current)) continue
+    visited.add(current)
+    for (const e of revAdjacency.get(current) ?? []) {
+      if (nodeById.has(e.sourceNodeId) && !visited.has(e.sourceNodeId)) {
+        queue.push(e.sourceNodeId)
+      }
+    }
+  }
+  return visited
+}
+
 /** 某节点的全部入边 */
 export function incomingEdgesOf(graph: WorkflowGraph, nodeId: string): WorkflowEdge[] {
   return graph.edges.filter(e => e.targetNodeId === nodeId)

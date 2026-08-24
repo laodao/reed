@@ -31,7 +31,7 @@ function makeConditionConfig(): any {
       {
         branchId: 'br1',
         label: '分支一',
-        conditions: [{ left: '{{llm1.score}}', operator: 'gt', right: '0.5' }],
+        conditions: [{ left: 'score', operator: 'gt', right: '0.5' }],
       },
     ],
     noMatchPolicy: 'fallback',
@@ -261,7 +261,7 @@ describe('validateGraph 条件分支约束', () => {
     config.branches.push({
       branchId: 'br2',
       label: '分支二',
-      conditions: [{ left: '{{llm1.score}}', operator: 'lte', right: '0.5' }],
+      conditions: [{ left: 'score2', operator: 'lte', right: '0.5' }],
     })
     const graph = makeGraph(
       [
@@ -524,5 +524,152 @@ describe('validateGraph 循环体边界（body 子图语义）', () => {
     const result = validateGraph(graph)
     expect(result.valid).toBe(false)
     expect(result.errors.some(e => e.includes('嵌套'))).toBe(true)
+  })
+})
+
+describe('validateGraph 变量引用可达性（上游节点输出）', () => {
+  /** 引用 b 的输出（b 是 c 的下游/不在 c 上游） */
+  it('引用拓扑上游节点的输出通过校验', () => {
+    const graph = makeGraph(
+      [
+        makeNode('start', 'start', { config: { inputs: [{ key: 'q', label: '问题' }] } as any }),
+        makeNode('a', 'llm-chat', { config: { prompt: '{{start.q}}' } as any }),
+        makeNode('b', 'llm-chat', { config: { prompt: '你基于以下分析回答：{{a.output}}' } as any }),
+        makeNode('end', 'end'),
+      ],
+      [
+        { source: 'start', target: 'a' },
+        { source: 'a', target: 'b' },
+        { source: 'b', target: 'end' },
+      ]
+    )
+    const result = validateGraph(graph)
+    expect(result.errors.filter(e => e.includes('变量') || e.includes('引用'))).toHaveLength(0)
+    expect(result.valid).toBe(true)
+  })
+
+  it('引用后续环节（下游）节点输出报错', () => {
+    const graph = makeGraph(
+      [
+        makeNode('start', 'start'),
+        makeNode('a', 'llm-chat'),
+        makeNode('b', 'llm-chat', { config: { prompt: '{{a.out}}' } as any }),
+        makeNode('c', 'llm-chat', { config: { prompt: '{{b.out}}' } as any }),
+        makeNode('end', 'end'),
+      ],
+      [
+        { source: 'start', target: 'a' },
+        { source: 'a', target: 'c' }, // c 直接依赖 a，b 是并行的另一条支线（非 c 上游）
+        { source: 'start', target: 'b' },
+        { source: 'b', target: 'end' },
+        { source: 'c', target: 'end' },
+      ]
+    )
+    const result = validateGraph(graph)
+    expect(result.valid).toBe(false)
+    expect(result.errors.some(e => e.includes('b') && e.includes('上游'))).toBe(true)
+  })
+
+  it('引用不存在的节点变量报错', () => {
+    const graph = makeGraph(
+      [
+        makeNode('start', 'start'),
+        makeNode('a', 'llm-chat', { config: { prompt: '{{ghost.out}}' } as any }),
+        makeNode('end', 'end'),
+      ],
+      [
+        { source: 'start', target: 'a' },
+        { source: 'a', target: 'end' },
+      ]
+    )
+    const result = validateGraph(graph)
+    expect(result.valid).toBe(false)
+    expect(result.errors.some(e => e.includes('ghost'))).toBe(true)
+  })
+
+  it('sys / start 系统输入始终可引用', () => {
+    const graph = makeGraph(
+      [
+        makeNode('start', 'start', { config: { inputs: [{ key: 'q' }] } as any }),
+        makeNode('a', 'llm-chat', {
+          config: { prompt: '{{sys.now}} {{sys.today}} {{start.q}}' } as any,
+        }),
+        makeNode('end', 'end'),
+      ],
+      [
+        { source: 'start', target: 'a' },
+        { source: 'a', target: 'end' },
+      ]
+    )
+    const result = validateGraph(graph)
+    expect(result.errors.filter(e => e.includes('变量') || e.includes('引用'))).toHaveLength(0)
+    expect(result.valid).toBe(true)
+  })
+
+  it('循环体节点引用 loop.item 伪变量通过；循环体外引用未执行 loop 输出报错', () => {
+    // body 在 loop 体内：引用 {{loop1.item}} 合法
+    const inBody = makeGraph(
+      [
+        makeNode('start', 'start'),
+        makeNode('loop1', 'loop', { config: { listExpression: '{{start.items}}' } as any }),
+        makeNode('body', 'llm-chat', { config: { prompt: '{{loop1.item}}' } as any }),
+        makeNode('end', 'end'),
+      ],
+      [
+        { source: 'start', target: 'loop1' },
+        { source: 'loop1', target: 'body', kind: 'loop-body' },
+        { source: 'body', target: 'loop1', kind: 'loop-back' },
+        { source: 'loop1', target: 'end', kind: 'loop-done' },
+      ]
+    )
+    const inBodyResult = validateGraph(inBody)
+    expect(inBodyResult.errors.filter(e => e.includes('变量') || e.includes('引用'))).toHaveLength(0)
+
+    // 另一个 loop2 与 body 无连线：body 引用 loop2 输出 → 不在上游报错
+    const outBody = makeGraph(
+      [
+        makeNode('start', 'start'),
+        makeNode('loop1', 'loop', { config: { listExpression: '{{start.items}}' } as any }),
+        makeNode('body', 'llm-chat', { config: { prompt: '{{loop2.item}}' } as any }),
+        makeNode('loop2', 'loop', { config: { listExpression: '{{start.items}}' } as any }),
+        makeNode('end', 'end'),
+      ],
+      [
+        { source: 'start', target: 'loop1' },
+        { source: 'loop1', target: 'body', kind: 'loop-body' },
+        { source: 'body', target: 'loop1', kind: 'loop-back' },
+        { source: 'loop1', target: 'end', kind: 'loop-done' },
+        { source: 'start', target: 'loop2' },
+        { source: 'loop2', target: 'end', kind: 'loop-done' },
+      ]
+    )
+    const outBodyResult = validateGraph(outBody)
+    expect(outBodyResult.errors.some(e => e.includes('loop2') && e.includes('上游'))).toBe(true)
+  })
+
+  it('深度嵌套配置（对象/数组字段）中的变量引用同样被校验', () => {
+    const graph = makeGraph(
+      [
+        makeNode('start', 'start'),
+        makeNode('a', 'llm-chat', { config: { out: 'x' } as any }),
+        makeNode('b', 'llm-chat', {
+          config: {
+            messages: [{ role: 'user', content: '看 {{a.out}} 和 {{c.out}}' }],
+            meta: { tags: ['{{c.tag}}'] },
+          } as any,
+        }),
+        makeNode('c', 'llm-chat'),
+        makeNode('end', 'end'),
+      ],
+      [
+        { source: 'start', target: 'a' },
+        { source: 'a', target: 'b' },
+        { source: 'b', target: 'c' },
+        { source: 'c', target: 'end' },
+      ]
+    )
+    const result = validateGraph(graph)
+    expect(result.valid).toBe(false)
+    expect(result.errors.some(e => e.includes('c') && e.includes('上游'))).toBe(true)
   })
 })

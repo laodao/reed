@@ -5,7 +5,7 @@
     <el-input ref="inputRef" :model-value="modelValue as string" :placeholder="field.placeholder"
       @update:model-value="v => set(v)">
       <template v-if="fieldSupportsTemplate(field)" #suffix>
-        <VariablePicker :nodes="pickerNodes.nodes" :exclude-node-id="pickerNodes.excludeNodeId" @insert="p => insertAtCursor(p)" />
+        <VariablePicker :nodes="pickerNodes.nodes" :edges="pickerNodes.edges" :exclude-node-id="pickerNodes.excludeNodeId" @insert="p => insertAtCursor(p)" />
       </template>
     </el-input>
   </div>
@@ -14,7 +14,7 @@
     <el-input ref="inputRef" :model-value="modelValue as string" :placeholder="field.placeholder"
       type="textarea" :rows="4" @update:model-value="v => set(v)" />
     <div v-if="fieldSupportsTemplate(field)" class="ta-picker">
-      <VariablePicker :nodes="pickerNodes.nodes" :exclude-node-id="pickerNodes.excludeNodeId" @insert="p => insertAtCursor(p)" />
+      <VariablePicker :nodes="pickerNodes.nodes" :edges="pickerNodes.edges" :exclude-node-id="pickerNodes.excludeNodeId" @insert="p => insertAtCursor(p)" />
     </div>
   </div>
   <el-input-number v-else-if="field.type === 'number'" :model-value="num(modelValue)" :min="field.min" :max="field.max"
@@ -254,8 +254,8 @@ import VariablePicker from './VariablePicker.vue'
 import { computed, inject, onMounted, reactive, ref, unref, type ComponentPublicInstance, type Ref } from 'vue'
 
 // 变量选择器数据（NodeConfigPanel provide；缺省退化为空）
-const pickerCtx = inject<{ nodes: Ref<any[]>; excludeNodeId: unknown }>('wfPickerContext', { nodes: ref([]), excludeNodeId: '' })
-const pickerNodes = computed(() => ({ nodes: unref(pickerCtx.nodes), excludeNodeId: pickerCtx.excludeNodeId }))
+const pickerCtx = inject<{ nodes: Ref<any[]>; edges?: Ref<any[]>; excludeNodeId: unknown }>('wfPickerContext', { nodes: ref([]), edges: ref([]), excludeNodeId: '' })
+const pickerNodes = computed(() => ({ nodes: unref(pickerCtx.nodes), edges: unref(pickerCtx.edges), excludeNodeId: unref(pickerCtx.excludeNodeId) }))
 const inputRef = ref<ComponentPublicInstance | null>(null)
 
 /** 光标处插入 {{path}}（P10：拿不到原生 ref 时追加末尾兜底） */

@@ -186,6 +186,11 @@ const canvasNodesRef = ref<any[]>([])
 watch(nodes, (list: any) => { canvasNodesRef.value = list }, { immediate: true, deep: true })
 provide('wfCanvasNodes', canvasNodesRef)
 
+/** 变量选择器上游过滤数据源：画布边 */
+const canvasEdgesRef = ref<any[]>([])
+watch(edges, (list: any) => { canvasEdgesRef.value = list }, { immediate: true, deep: true })
+provide('wfCanvasEdges', canvasEdgesRef)
+
 /** 屏幕坐标 → 画布流坐标（拖放落点精确） */
 const { screenToFlowCoordinate, setNodes, setEdges, toObject, fromObject } = useVueFlow()
 
