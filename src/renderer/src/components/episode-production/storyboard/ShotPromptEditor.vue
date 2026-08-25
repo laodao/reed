@@ -109,6 +109,7 @@ import {
   labelOf,
 } from '../shared/param-options'
 import { parsePrompt, serializePrompt, type PromptLine } from './storyboard-prompt-format'
+import { toImageUrl } from '@/utils/asset-url'
 
 export interface MentionEntityImage { id: string; path: string }
 export interface MentionEntity {
@@ -184,6 +185,13 @@ function esc(t: string): string {
 }
 
 // ==================== 渲染：字符串 -> HTML ====================
+/** 取资产 token 应显示的缩略图 URL（指定索引取该图；否则取首图/主图；无图返回空） */
+function entityThumb(hit: MentionEntity, index: number | null): string {
+  const imgs = hit.images ?? []
+  if (imgs.length === 0) return ''
+  const path = index != null ? imgs[Math.min(index - 1, imgs.length - 1)]?.path : imgs[0]?.path
+  return toImageUrl(path || '')
+}
 function buildDescHtml(description: string): string {
   // 描述里的 @[名字@图索引] 高亮为行内 token（从 entities 精确匹配名字）
   return esc(description).replace(ENTITY_RE, (_m0, inner) => {
@@ -191,7 +199,11 @@ function buildDescHtml(description: string): string {
     const hit = (props.entities ?? []).find((e) => e.name === name)
     if (!hit) return `@[${inner}]`
     const display = index != null ? `${name} 图${index}` : name
-    return `<span class="pk-token entity" data-key="@entity" data-entity-id="${esc(hit.id)}" data-img-index="${index ?? ''}" contenteditable="false">@${esc(display)}</span>`
+    const thumb = entityThumb(hit, index)
+    const thumbHtml = thumb
+      ? `<img class="ent-thumb" src="${esc(thumb)}" alt="" />`
+      : ''
+    return `<span class="pk-token entity" data-key="@entity" data-entity-id="${esc(hit.id)}" data-img-index="${index ?? ''}" contenteditable="false"><span class="ent-thumb-wrap">${thumbHtml}</span>@${esc(display)}</span>`
   })
 }
 
@@ -435,8 +447,10 @@ function pickMention(e: MentionEntity, imgIndex?: number | null): void {
   }
   const idx = imgIndex != null ? imgIndex : null
   const display = idx != null ? `${e.name} 图${idx}` : e.name
+  const thumb = entityThumb(e, idx)
+  const thumbHtml = thumb ? `<img class="ent-thumb" src="${esc(thumb)}" alt="" />` : ''
   insertAtCaret(
-    `<span class="pk-token entity" data-key="@entity" data-entity-id="${esc(e.id)}" data-img-index="${idx ?? ''}" contenteditable="false">@${esc(display)}</span>&nbsp;`,
+    `<span class="pk-token entity" data-key="@entity" data-entity-id="${esc(e.id)}" data-img-index="${idx ?? ''}" contenteditable="false"><span class="ent-thumb-wrap">${thumbHtml}</span>@${esc(display)}</span>&nbsp;`,
     descEl,
     insertOffset,
   )
@@ -641,6 +655,8 @@ function onDocMouse(e: MouseEvent): void {
     color: var(--color-primary); background: var(--color-primary-light-9); border: 1px solid var(--color-primary-light-5);
     &:hover { background: var(--color-primary-light-8); }
     &.entity { color: var(--color-success); background: var(--color-success-light-9); border-color: var(--color-success-light-5); }
+    .ent-thumb-wrap { display: inline-block; vertical-align: middle; margin-right: 4px; }
+    .ent-thumb { display: inline-block; width: 20px; height: 20px; border-radius: 3px; object-fit: cover; vertical-align: middle; }
   }
 }
 
