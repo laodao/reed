@@ -580,9 +580,20 @@ function pickParam(opt: ParamOption): void {
 function onKeydown(e: KeyboardEvent): void {
   if (mentionOpen.value) {
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); const d = e.key === 'ArrowUp' ? -1 : 1; activeIdx.value = (activeIdx.value + d + filtered.value.length) % Math.max(1, filtered.value.length) }
-    else if (e.key === 'Enter') { e.preventDefault(); const it = filtered.value[activeIdx.value]; if (it) pickMention(it) }
+    else if (e.key === 'Enter') { e.preventDefault(); const it = filtered.value[activeIdx.value]; if (it) onPickAsset(it) }
     else if (e.key === 'Escape') closeMention()
     return
+  }
+  // Backspace / Delete：光标紧邻 contenteditable=false 的 token → 整删该 token
+  // 避免浏览器把 @[名字@索引] 的 ']' 切掉只剩 '@'，导致误判为正在输入 @
+  if (e.key === 'Backspace' || e.key === 'Delete') {
+    const target = adjacentToken(e.key === 'Backspace' ? 'before' : 'after')
+    if (target) {
+      target.remove()
+      e.preventDefault()
+      emitText()
+      return
+    }
   }
   // 回车：在描述内生成软换行（保留行结构，token 不拆分）
   if (e.key === 'Enter') {
@@ -597,6 +608,39 @@ function onKeydown(e: KeyboardEvent): void {
       }
     }
   }
+}
+/** 找光标前/后紧邻的 contenteditable=false token（pk-token），用于整删 */
+function adjacentToken(dir: 'before' | 'after'): HTMLElement | null {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0) return null
+  const r = sel.getRangeAt(0)
+  if (!r.collapsed) return null // 非折叠选区不做
+  const container = r.startContainer
+  if (container.nodeType === Node.ELEMENT_NODE) {
+    const el = container as HTMLElement
+    if (dir === 'before') {
+      const prev = el.childNodes[r.startOffset - 1]
+      return (prev as HTMLElement)?.classList?.contains('pk-token') ? (prev as HTMLElement) : null
+    } else {
+      const next = el.childNodes[r.startOffset]
+      return (next as HTMLElement)?.classList?.contains('pk-token') ? (next as HTMLElement) : null
+    }
+  } else if (container.nodeType === Node.TEXT_NODE) {
+    const text = container as Text
+    const parentEl = text.parentElement as HTMLElement
+    if (!parentEl) return null
+    // Backspace：光标在文本起点且前一个兄弟是 token；Delete：光标在文本末尾且后一个兄弟是 token
+    const idx = Array.prototype.indexOf.call(parentEl.childNodes, text)
+    if (dir === 'before' && r.startOffset === 0 && text.textContent?.length) {
+      const prev = parentEl.childNodes[idx - 1]
+      return (prev as HTMLElement)?.classList?.contains('pk-token') ? (prev as HTMLElement) : null
+    }
+    if (dir === 'after' && r.startOffset === (text.textContent?.length ?? 0)) {
+      const next = parentEl.childNodes[idx + 1]
+      return (next as HTMLElement)?.classList?.contains('pk-token') ? (next as HTMLElement) : null
+    }
+  }
+  return null
 }
 
 // ==================== 拖图引用 ====================
