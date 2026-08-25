@@ -224,6 +224,33 @@ function onCompositionEnd(): void { composing = false; onInput() }
 function onInput(): void {
   if (rendering || composing) return
   emitText()
+  // 输入时检测是否正在输入 @，以弹出资产选择
+  detectMention()
+}
+
+// ==================== 弹层定位（相对 .prompt-rich 容器）====================
+/** 取某元素相对提示词容器的位置，返回弹层应放置的 left/top */
+function anchorToRoot(el: Element): { left: number; top: number } {
+  const root = editorRef.value?.closest('.prompt-rich')
+  if (!root) return { left: 12, top: 40 }
+  const rr = (root as HTMLElement).getBoundingClientRect()
+  const er = el.getBoundingClientRect()
+  // 弹层出现在元素下方
+  return { left: er.left - rr.left, top: er.bottom - rr.top + 4 }
+}
+/** 取光标（caret）所在位置（用于 @ 提及弹层），定位到光标下方 */
+function caretPopupPos(): { left: number; top: number } {
+  const root = editorRef.value?.closest('.prompt-rich')
+  if (!root) return { left: 12, top: 40 }
+  const sel = window.getSelection()
+  if (sel && sel.rangeCount > 0) {
+    const rect = sel.getRangeAt(0).getBoundingClientRect()
+    if (rect && rect.top > 0) {
+      const rr = (root as HTMLElement).getBoundingClientRect()
+      return { left: rect.left - rr.left, top: rect.bottom - rr.top + 4 }
+    }
+  }
+  return { left: 12, top: 40 }
 }
 
 // ==================== @ 提及 ====================
@@ -231,7 +258,7 @@ const mentionOpen = ref(false)
 const mentionQuery = ref('')
 const mentionStart = ref(0)
 const activeIdx = ref(0)
-const mentionStyle = computed(() => ({ right: '8px', top: '40px' }))
+const mentionStyle = ref<{ left: number; top: number }>({ left: 12, top: 40 })
 const filtered = computed(() => {
   const q = mentionQuery.value.trim().toLowerCase()
   const list = props.entities ?? []
@@ -247,7 +274,7 @@ function detectMention(): void {
   const text = (el.textContent ?? '').replace(/\u00a0/g, ' ')
   const before = text.slice(0, offset)
   const m = before.match(/@([^\s]*)$/)
-  if (m) { mentionStart.value = offset - m[0].length; mentionQuery.value = m[1]; activeIdx.value = 0; openMention() }
+  if (m) { mentionStart.value = offset - m[0].length; mentionQuery.value = m[1]; activeIdx.value = 0; mentionStyle.value = caretPopupPos(); openMention() }
   else closeMention()
 }
 function openMention(): void { if (!mentionOpen.value) { mentionOpen.value = true; void nextTick(() => mentionInput.value?.focus?.()) } }
@@ -291,7 +318,7 @@ function insertAtCaret(html: string): void {
 const paramOpen = ref(false)
 const paramKey = ref('')
 const paramValue = ref('')
-const paramStyle = computed(() => ({ right: '8px', top: '40px' }))
+const paramStyle = ref<{ left: number; top: number }>({ left: 12, top: 40 })
 const paramOptions = computed<ParamOption[]>(() => optionsOf(paramKey.value))
 
 function onClick(e: MouseEvent): void {
@@ -301,6 +328,7 @@ function onClick(e: MouseEvent): void {
     const val = t.getAttribute('data-val') || ''
     paramKey.value = key
     paramValue.value = val || ''
+    paramStyle.value = anchorToRoot(t)
     paramOpen.value = true
     return
   }

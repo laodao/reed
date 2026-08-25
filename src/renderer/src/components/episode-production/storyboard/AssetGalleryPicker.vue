@@ -18,7 +18,6 @@
       <template v-else>
         <div class="picker-head">
           <span class="pk-title">{{ selected.name }}</span>
-          <span class="pk-hint" v-if="images.length">拖拽图片到下方提示词框即可引用</span>
         </div>
         <div class="picker-grid">
           <div
@@ -28,7 +27,15 @@
             draggable="true"
             @dragstart="onDragStart(img, $event)"
           >
-            <el-image :src="toUrl(img.imagePath)" fit="cover" class="asset-img-el" />
+            <el-image
+              :src="toUrl(img.imagePath)"
+              fit="cover"
+              class="asset-img-el"
+              :preview-src-list="[toUrl(img.imagePath)]"
+              :preview-teleported="true"
+              hide-on-click-modal
+              preview-z-index="3000"
+            />
             <div class="asset-img-tag">{{ categoryLabel(img.category) }}</div>
           </div>
           <div v-if="images.length === 0" class="picker-empty-img">该资产暂无图片</div>
@@ -135,10 +142,9 @@ onMounted(() => void load())
 .picker-empty { flex: 1; display: flex; align-items: center; justify-content: center; }
 .picker-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--border-color-lighter); }
 .pk-title { font-size: 13px; font-weight: 600; color: var(--text-color-primary); }
-.pk-hint { font-size: 11px; color: var(--text-color-placeholder); }
 .picker-grid {
   flex: 1; min-height: 0; overflow-y: auto;
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); gap: 8px;
   padding: 10px 12px;
 }
 .asset-img {
