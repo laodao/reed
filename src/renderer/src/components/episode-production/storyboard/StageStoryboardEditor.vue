@@ -268,13 +268,23 @@ async function loadMentionEntities(): Promise<void> {
     const root = (window as any).electronAPI?.episodeProduction?.asset
     const r = await root.projectSummary(props.projectId)
     if (r?.success && r.data) {
-      const build = (list: any[], kind: 'character' | 'location' | 'item'): MentionEntity[] =>
-        (list || []).map((a: any) => ({ id: a.bindingId || a.id, name: a.name, kind }))
-      mentionEntities.value = [
-        ...build(r.data.characters || [], 'character'),
-        ...build(r.data.locations || [], 'location'),
-        ...build(r.data.items || [], 'item'),
-      ]
+      const base: Array<{ id: string; name: string; kind: 'character' | 'location' | 'item' }> = []
+      const build = (list: any[], kind: 'character' | 'location' | 'item') =>
+        (list || []).forEach((a: any) => base.push({ id: a.bindingId || a.id, name: a.name, kind }))
+      build(r.data.characters || [], 'character')
+      build(r.data.locations || [], 'location')
+      build(r.data.items || [], 'item')
+      // 并行取每个资产的图集（用于 @[名字@索引] 精确引用）
+      const withImages = await Promise.all(base.map(async (e) => {
+        try {
+          const imgResp = await root.image.listByAsset(e.kind, e.id)
+          const imgs = (imgResp?.success ? imgResp.data : []) || []
+          return { ...e, images: imgs.map((im: any) => ({ id: im.id, path: im.imagePath || im.url || '' })) }
+        } catch {
+          return { ...e, images: [] }
+        }
+      }))
+      mentionEntities.value = withImages as MentionEntity[]
     }
   } catch (e: any) {
     console.error('[StageStoryboardEditor] 加载资产失败', e)

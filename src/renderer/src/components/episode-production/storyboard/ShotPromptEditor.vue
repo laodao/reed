@@ -25,16 +25,53 @@
       @drop.prevent="onDrop"
     />
 
-    <!-- @ 提及弹层 -->
+    <!-- @ 提及弹层（两段式：先选资产，有多图再选图） -->
     <div v-if="mentionOpen" ref="mentionRef" class="rich-popup" :style="mentionStyle">
-      <div class="popup-search"><el-input ref="mentionInput" v-model="mentionQuery" size="small" placeholder="搜索资产…" @keydown="onMentionKey" /></div>
-      <div class="popup-list">
-        <div v-for="(e, i) in filtered" :key="e.id" class="popup-item" :class="{ active: i === activeIdx }" @mousedown.prevent="pickMention(e)" @mouseenter="activeIdx = i">
+      <div class="popup-search">
+        <el-input
+          v-if="mentionStage === 'asset'"
+          ref="mentionInput"
+          v-model="mentionQuery"
+          size="small"
+          placeholder="搜索资产…"
+          @keydown="onMentionKey"
+        />
+        <div v-else class="popup-back" @click="mentionStage = 'asset'">
+          <el-icon :size="12"><ArrowLeft /></el-icon> 返回资产
+        </div>
+      </div>
+      <!-- 阶段一：资产列表 -->
+      <div v-if="mentionStage === 'asset'" class="popup-list">
+        <div
+          v-for="(e, i) in filtered"
+          :key="e.id"
+          class="popup-item"
+          :class="{ active: i === activeIdx }"
+          @mousedown.prevent="onPickAsset(e)"
+          @mouseenter="activeIdx = i"
+        >
           <span class="pi-icon" :class="e.kind"><el-icon :size="13"><component :is="kindIcon(e.kind)" /></el-icon></span>
           <span class="pi-name">{{ e.name }}</span>
           <span class="pi-kind">{{ kindLabel(e.kind) }}</span>
+          <span class="pi-more" v-if="(e.images?.length ?? 0) > 1">›</span>
         </div>
         <div v-if="filtered.length === 0" class="popup-empty">无匹配资产</div>
+      </div>
+      <!-- 阶段二：选择该资产的图 -->
+      <div v-else class="popup-list">
+        <div class="popup-item" @mousedown.prevent="pickMention(mentionAsset!, null)">
+          <span class="pi-name">{{ mentionAsset?.name }}</span>
+          <span class="pi-kind">资产本体</span>
+        </div>
+        <div
+          v-for="(img, idx) in (mentionAsset?.images ?? [])"
+          :key="img.id"
+          class="popup-item"
+          @mousedown.prevent="pickMention(mentionAsset!, idx + 1)"
+        >
+          <span class="pi-thumb"><img :src="img.path" alt="" /></span>
+          <span class="pi-name">{{ mentionAsset?.name }} 图{{ idx + 1 }}</span>
+        </div>
       </div>
     </div>
 
@@ -65,7 +102,7 @@
  * 参数 token 的选项（景别/运镜/时长/风格）来自 param-options / styleOptions prop。
  */
 import { ref, computed, nextTick, onMounted, watch } from 'vue'
-import { Check, User, Location, Goods } from '@element-plus/icons-vue'
+import { Check, User, Location, Goods, ArrowLeft } from '@element-plus/icons-vue'
 import {
   SHOT_TYPE_OPTIONS,
   CAMERA_MOVEMENT_OPTIONS,
@@ -73,11 +110,34 @@ import {
 } from '../shared/param-options'
 import { parsePrompt, serializePrompt, type PromptLine } from './storyboard-prompt-format'
 
-export interface MentionEntity { id: string; name: string; kind: 'character' | 'location' | 'item' }
+export interface MentionEntityImage { id: string; path: string }
+export interface MentionEntity {
+  id: string
+  name: string
+  kind: 'character' | 'location' | 'item'
+  /** 该资产的图集（用于 @[名字@索引] 精确引用；可为空则只引资产本体） */
+  images?: MentionEntityImage[]
+}
 export interface ParamOption { value: string; label: string }
 
 /** 参数 key 的顺序（渲染顺序 + 序列化顺序） */
 const PARAM_KEYS = ['景别', '运镜', '时长', '风格'] as const
+
+/**
+ * @资产 引用格式：`@[名字@图索引]`。
+ *  - 无图索引：`@[杜十娘]`（只引资产本体，生成时由后端自动选图）
+ *  - 有图索引：`@[杜十娘@1]`（精确引用该资产第 N 张图）
+ * 方括号提供明确边界，后面跟任何文字都不影响识别；也可再次点击弹弹出重新选择。
+ */
+const ENTITY_RE = /@\[([^\]]+)\]/g
+/** 拆出 `名字@图索引` → { name, index }；索引非数字则整体视为名字。 */
+function splitEntityRef(inner: string): { name: string; index: number | null } {
+  const at = inner.lastIndexOf('@')
+  if (at > 0 && /^\d+$/.test(inner.slice(at + 1))) {
+    return { name: inner.slice(0, at), index: Number(inner.slice(at + 1)) }
+  }
+  return { name: inner, index: null }
+}
 
 const props = defineProps<{
   /** 提示词字符串（一个字段，一行=一个镜头） */
@@ -125,12 +185,13 @@ function esc(t: string): string {
 
 // ==================== 渲染：字符串 -> HTML ====================
 function buildDescHtml(description: string): string {
-  // 描述里的 @资产 高亮为行内 token（从 entities 匹配名字）
-  return esc(description).replace(/@([^\s,.。，、！？；：<>{}()[\]"'`]+)/g, (_m0, name) => {
+  // 描述里的 @[名字@图索引] 高亮为行内 token（从 entities 精确匹配名字）
+  return esc(description).replace(ENTITY_RE, (_m0, inner) => {
+    const { name, index } = splitEntityRef(inner)
     const hit = (props.entities ?? []).find((e) => e.name === name)
-    return hit
-      ? `<span class="pk-token entity" data-key="@entity" data-entity-id="${esc(hit.id)}" contenteditable="false">@${esc(name)}</span>`
-      : `@${esc(name)}`
+    if (!hit) return `@[${inner}]`
+    const display = index != null ? `${name} 图${index}` : name
+    return `<span class="pk-token entity" data-key="@entity" data-entity-id="${esc(hit.id)}" data-img-index="${index ?? ''}" contenteditable="false">@${esc(display)}</span>`
   })
 }
 
@@ -171,8 +232,9 @@ function serializeDesc(descEl: HTMLElement): string {
     else if (node.nodeType === Node.ELEMENT_NODE) {
       const em = node as HTMLElement
       if (em.classList.contains('pk-token') && em.getAttribute('data-key') === '@entity') {
-        const name = em.textContent?.replace(/^@/, '') ?? ''
-        out += `@${name}`
+        const name = (em.textContent ?? '').replace(/^@/, '').replace(/\s*图\d+$/, '')
+        const idx = em.getAttribute('data-img-index')
+        out += `@[${name}${idx ? '@' + idx : ''}]`
       } else {
         if (em.tagName === 'BR') out += '\n'
         em.childNodes.forEach(walk)
@@ -295,6 +357,9 @@ const activeIdx = ref(0)
 const mentionDescEl = ref<HTMLElement | null>(null)
 const mentionDescOffset = ref(0)
 const mentionPos = ref<{ left: number; top: number }>({ left: 12, top: 40 })
+/** 两段式选择：asset = 资产列表；image = 该资产的多图选择 */
+const mentionStage = ref<'asset' | 'image'>('asset')
+const mentionAsset = ref<MentionEntity | null>(null)
 const mentionStyle = computed<Record<string, string>>(() => ({
   left: `${mentionPos.value.left}px`,
   top: `${mentionPos.value.top}px`,
@@ -305,6 +370,12 @@ const filtered = computed(() => {
   if (!q) return list
   return list.filter((e) => e.name.toLowerCase().includes(q))
 })
+/** 选择资产：若有>1张图则进入选图阶段，否则直接插入（资产本体） */
+function onPickAsset(e: MentionEntity): void {
+  const n = e.images?.length ?? 0
+  if (n > 1) { mentionAsset.value = e; mentionStage.value = 'image' }
+  else pickMention(e, null)
+}
 
 function detectMention(): void {
   const el = editorRef.value
@@ -316,6 +387,7 @@ function detectMention(): void {
   const m = before.match(/@([^\s]*)$/)
   if (m) {
     mentionStart.value = offset - m[0].length; mentionQuery.value = m[1]; activeIdx.value = 0
+    mentionStage.value = 'asset'; mentionAsset.value = null
     // 捕获光标所在的 .pk-desc 及其内部 offset，选中项时插入到该处（而非最后一行）
     mentionDescEl.value = descUnderCaret()
     mentionDescOffset.value = mentionDescEl.value ? (caretOffsetInDesc(mentionDescEl.value) ?? 0) : 0
@@ -348,22 +420,23 @@ function caretRectOf(): { left: number; top: number; bottom: number } | null {
 }
 function openMention(): void { if (!mentionOpen.value) { mentionOpen.value = true; void nextTick(() => mentionInput.value?.focus?.()) } }
 function closeMention(): void { mentionOpen.value = false; paramOpen.value = false }
-function pickMention(e: MentionEntity): void {
-  // 移除已输入的部分 @query，替换为 @名称；插入到捕获时所在描述的位置
+function pickMention(e: MentionEntity, imgIndex?: number | null): void {
+  // 移除已输入的部分 @query，替换为 @[名字@索引]；插入到捕获时所在描述的位置
   const descEl = mentionDescEl.value
   let insertOffset = mentionDescOffset.value
   if (descEl && insertOffset > 0) {
     const typedLen = (mentionQuery.value || '').length
     const start = Math.max(0, insertOffset - typedLen - 1) // 去掉 @query
-    // 删除该区间文本
     const range = rangeAtOffset(descEl, start)
     const end = rangeAtOffset(descEl, insertOffset)
     range.setEnd(end.endContainer, end.endOffset)
     range.deleteContents()
     insertOffset = start
   }
+  const idx = imgIndex != null ? imgIndex : null
+  const display = idx != null ? `${e.name} 图${idx}` : e.name
   insertAtCaret(
-    `<span class="pk-token entity" data-key="@entity" data-entity-id="${esc(e.id)}" contenteditable="false">@${esc(e.name)}</span>&nbsp;`,
+    `<span class="pk-token entity" data-key="@entity" data-entity-id="${esc(e.id)}" data-img-index="${idx ?? ''}" contenteditable="false">@${esc(display)}</span>&nbsp;`,
     descEl,
     insertOffset,
   )
@@ -371,7 +444,7 @@ function pickMention(e: MentionEntity): void {
 }
 function onMentionKey(e: KeyboardEvent): void {
   if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); const d = e.key === 'ArrowUp' ? -1 : 1; activeIdx.value = (activeIdx.value + d + filtered.value.length) % Math.max(1, filtered.value.length) }
-  else if (e.key === 'Enter') { e.preventDefault(); const it = filtered.value[activeIdx.value]; if (it) pickMention(it) }
+  else if (e.key === 'Enter') { e.preventDefault(); const it = filtered.value[activeIdx.value]; if (it) onPickAsset(it) }
   else if (e.key === 'Escape') closeMention()
 }
 
@@ -461,7 +534,22 @@ function onClick(e: MouseEvent): void {
     void nextTick(() => nextTick(() => refinePopup(t, paramRef.value, paramPos)))
     return
   }
+  // 点击已 @ 引用的资产 token → 重新打开资产弹层（可重新选图/改引用）
+  if (t.classList?.contains('pk-token') && t.getAttribute('data-key') === '@entity') {
+    mentionAsset.value = findEntityByName((t.textContent ?? '').replace(/^@/, '').replace(/\s*图\d+$/, ''))
+    mentionStage.value = 'asset'
+    mentionDescEl.value = descUnderCaret()
+    mentionDescOffset.value = t ? caretOffsetInDesc((t.closest('.pk-desc') as HTMLElement) ?? mentionDescEl.value!) : 0
+    mentionPos.value = anchorToRoot(t)
+    mentionOpen.value = true
+    void nextTick(() => nextTick(() => refinePopup(t, mentionRef.value, mentionPos)))
+    return
+  }
   detectMention()
+}
+/** 按名字查实体（用于点击已引用 token 时定位回弹层） */
+function findEntityByName(name: string): MentionEntity | null {
+  return (props.entities ?? []).find((e) => e.name === name) ?? null
 }
 function pickParam(opt: ParamOption): void {
   const el = editorRef.value
@@ -566,6 +654,7 @@ function onDocMouse(e: MouseEvent): void {
 }
 .popup-search { padding: 6px; border-bottom: 1px solid var(--border-color-lighter); }
 .popup-search :deep(.el-input) { width: 150px; }
+.popup-back { display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 12px; color: var(--color-primary); padding: 3px 4px; &:hover { text-decoration: underline; } }
 .popup-title { padding: 8px 12px; font-size: 12px; font-weight: 600; color: var(--text-color-secondary); border-bottom: 1px solid var(--border-color-lighter); }
 .popup-list { flex: 1; min-height: 0; overflow-y: auto; max-height: 180px; padding: 4px 0; }
 .popup-item {
@@ -579,6 +668,10 @@ function onDocMouse(e: MouseEvent): void {
   }
   .pi-name { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 1; }
   .pi-kind { font-size: 11px; color: var(--text-color-placeholder); flex-shrink: 0; }
+  .pi-more { color: var(--text-color-placeholder); flex-shrink: 0; font-size: 14px; }
+  .pi-thumb { width: 32px; height: 32px; border-radius: 4px; overflow: hidden; flex-shrink: 0; background: var(--fill-color-lighter);
+    img { width: 100%; height: 100%; object-fit: cover; }
+  }
   .check { font-size: 12px; flex-shrink: 0; }
 }
 .popup-empty { padding: 16px; text-align: center; font-size: 12px; color: var(--text-color-placeholder); }
