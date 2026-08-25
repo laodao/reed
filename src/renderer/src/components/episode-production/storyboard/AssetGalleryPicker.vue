@@ -115,6 +115,14 @@ onMounted(() => void load())
   display: flex;
   height: 100%;
   min-height: 0;
+  /* 树固定窄宽，避免长名字把图集网格挤没 */
+  :deep(.asset-tree) {
+    flex: 0 0 160px;
+    min-width: 0;
+    border-right: 1px solid var(--border-color-lighter);
+    .item-name { font-size: 12px; }
+    .done-tag { display: none; }
+  }
 }
 
 .picker-body {
@@ -123,7 +131,6 @@ onMounted(() => void load())
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--border-color-lighter);
 }
 .picker-empty { flex: 1; display: flex; align-items: center; justify-content: center; }
 .picker-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--border-color-lighter); }

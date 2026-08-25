@@ -308,7 +308,7 @@ async function loadMentionEntities(): Promise<void> {
 
 .edit-body { flex: 1; min-height: 0; display: flex; }
 .edit-assets {
-  width: 300px; flex-shrink: 0;
+  width: 360px; flex-shrink: 0;
   border-right: 1px solid var(--border-color-lighter);
   background: var(--bg-color); min-height: 0;
   overflow: hidden;
