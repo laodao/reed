@@ -124,7 +124,7 @@ onMounted(() => void load())
   min-height: 0;
   /* 树固定窄宽，避免长名字把图集网格挤没 */
   :deep(.asset-tree) {
-    flex: 0 0 160px;
+    flex: 0 0 130px;
     min-width: 0;
     border-right: 1px solid var(--border-color-lighter);
     .item-name { font-size: 12px; }
@@ -144,8 +144,8 @@ onMounted(() => void load())
 .pk-title { font-size: 13px; font-weight: 600; color: var(--text-color-primary); }
 .picker-grid {
   flex: 1; min-height: 0; overflow-y: auto;
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); gap: 8px;
-  padding: 10px 12px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 6px;
+  padding: 8px 10px;
 }
 .asset-img {
   position: relative;
