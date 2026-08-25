@@ -291,6 +291,9 @@ const mentionOpen = ref(false)
 const mentionQuery = ref('')
 const mentionStart = ref(0)
 const activeIdx = ref(0)
+/** 打开 @ 弹层时捕获的光标所在描述元素与内部偏移（选中项时插入到该处） */
+const mentionDescEl = ref<HTMLElement | null>(null)
+const mentionDescOffset = ref(0)
 const mentionPos = ref<{ left: number; top: number }>({ left: 12, top: 40 })
 const mentionStyle = computed<Record<string, string>>(() => ({
   left: `${mentionPos.value.left}px`,
@@ -313,6 +316,9 @@ function detectMention(): void {
   const m = before.match(/@([^\s]*)$/)
   if (m) {
     mentionStart.value = offset - m[0].length; mentionQuery.value = m[1]; activeIdx.value = 0
+    // 捕获光标所在的 .pk-desc 及其内部 offset，选中项时插入到该处（而非最后一行）
+    mentionDescEl.value = descUnderCaret()
+    mentionDescOffset.value = mentionDescEl.value ? (caretOffsetInDesc(mentionDescEl.value) ?? 0) : 0
     const caretRect = caretRectOf()
     mentionPos.value = caretRect ? popupPosition(caretRect, POPUP_MAX_W, 120) : caretPopupPos()
     openMention()
@@ -322,6 +328,14 @@ function detectMention(): void {
       if (popup) mentionPos.value = popupPosition(caretRect, popup.offsetWidth || POPUP_MAX_W, popup.offsetHeight || POPUP_MAX_H)
     }))
   } else closeMention()
+}
+/** 光标所在的 .pk-desc 元素（无则 null） */
+function descUnderCaret(): HTMLElement | null {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0) return null
+  const r = sel.getRangeAt(0)
+  const el = (r.startContainer.nodeType === Node.TEXT_NODE ? r.startContainer.parentElement : r.startContainer as Element)?.closest('.pk-desc')
+  return (el as HTMLElement) ?? null
 }
 /** 光标所在处 rect（用于 @ 提及弹层锚点） */
 function caretRectOf(): { left: number; top: number; bottom: number } | null {
@@ -335,7 +349,24 @@ function caretRectOf(): { left: number; top: number; bottom: number } | null {
 function openMention(): void { if (!mentionOpen.value) { mentionOpen.value = true; void nextTick(() => mentionInput.value?.focus?.()) } }
 function closeMention(): void { mentionOpen.value = false; paramOpen.value = false }
 function pickMention(e: MentionEntity): void {
-  insertAtCaret(`<span class="pk-token entity" data-key="@entity" data-entity-id="${esc(e.id)}" contenteditable="false">@${esc(e.name)}</span>&nbsp;`)
+  // 移除已输入的部分 @query，替换为 @名称；插入到捕获时所在描述的位置
+  const descEl = mentionDescEl.value
+  let insertOffset = mentionDescOffset.value
+  if (descEl && insertOffset > 0) {
+    const typedLen = (mentionQuery.value || '').length
+    const start = Math.max(0, insertOffset - typedLen - 1) // 去掉 @query
+    // 删除该区间文本
+    const range = rangeAtOffset(descEl, start)
+    const end = rangeAtOffset(descEl, insertOffset)
+    range.setEnd(end.endContainer, end.endOffset)
+    range.deleteContents()
+    insertOffset = start
+  }
+  insertAtCaret(
+    `<span class="pk-token entity" data-key="@entity" data-entity-id="${esc(e.id)}" contenteditable="false">@${esc(e.name)}</span>&nbsp;`,
+    descEl,
+    insertOffset,
+  )
   closeMention()
 }
 function onMentionKey(e: KeyboardEvent): void {
@@ -344,12 +375,16 @@ function onMentionKey(e: KeyboardEvent): void {
   else if (e.key === 'Escape') closeMention()
 }
 
-/** 在光标处插入 HTML（仅限 .pk-desc 内），随后重新序列化并 emit */
-function insertAtCaret(html: string): void {
+/** 在光标处插入 HTML（仅限 .pk-desc 内），随后重新序列化并 emit。
+ *  若调用方传入了 descEl+offset（来自 detectMention 捕获的目标），则插入到该处，
+ *  否则回退到当前 selection（有则插，无则追加到最后一个 desc）。 */
+function insertAtCaret(html: string, targetDesc?: HTMLElement, targetOffset?: number): void {
   const el = editorRef.value; if (!el) return
   const sel = window.getSelection()
   let range: Range | null = null
-  if (sel && sel.rangeCount > 0) {
+  if (targetDesc && targetOffset != null) {
+    range = rangeAtOffset(targetDesc, targetOffset)
+  } else if (sel && sel.rangeCount > 0) {
     const r = sel.getRangeAt(0)
     const desc = (r.startContainer.nodeType === Node.TEXT_NODE ? r.startContainer.parentElement : r.startContainer as Element)?.closest('.pk-desc')
     if (desc) range = r
@@ -367,6 +402,39 @@ function insertAtCaret(html: string): void {
     if (last) last.insertAdjacentHTML('beforeend', html)
   }
   emitText()
+}
+
+/** 在一个元素内，按「字符偏移」构造 collapse 在对应文本位置的 Range（跨文本节点）。 */
+function rangeAtOffset(root: HTMLElement, offset: number): Range {
+  const range = document.createRange()
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  let remaining = offset
+  let node = walker.nextNode() as Text | null
+  while (node) {
+    const len = node.textContent?.length ?? 0
+    if (remaining <= len) {
+      range.setStart(node, remaining)
+      range.collapse(true)
+      return range
+    }
+    remaining -= len
+    node = walker.nextNode() as Text | null
+  }
+  range.selectNodeContents(root)
+  range.collapse(false)
+  return range
+}
+
+/** 计算光标在 .pk-desc 内的字符偏移（不含 token 高亮文本，只算描述文本）。 */
+function caretOffsetInDesc(descEl: HTMLElement): number | null {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0) return null
+  const r = sel.getRangeAt(0)
+  if (!descEl.contains(r.endContainer)) return null
+  const pre = r.cloneRange()
+  pre.selectNodeContents(descEl)
+  pre.setEnd(r.endContainer, r.endOffset)
+  return pre.toString().replace(/\u00a0/g, ' ').length
 }
 
 // ==================== 参数 token 点击 ====================
