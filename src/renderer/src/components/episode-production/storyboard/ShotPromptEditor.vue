@@ -258,7 +258,11 @@ const mentionOpen = ref(false)
 const mentionQuery = ref('')
 const mentionStart = ref(0)
 const activeIdx = ref(0)
-const mentionStyle = ref<{ left: number; top: number }>({ left: 12, top: 40 })
+const mentionPos = ref<{ left: number; top: number }>({ left: 12, top: 40 })
+const mentionStyle = computed<Record<string, string>>(() => ({
+  left: `${mentionPos.value.left}px`,
+  top: `${mentionPos.value.top}px`,
+}))
 const filtered = computed(() => {
   const q = mentionQuery.value.trim().toLowerCase()
   const list = props.entities ?? []
@@ -274,7 +278,7 @@ function detectMention(): void {
   const text = (el.textContent ?? '').replace(/\u00a0/g, ' ')
   const before = text.slice(0, offset)
   const m = before.match(/@([^\s]*)$/)
-  if (m) { mentionStart.value = offset - m[0].length; mentionQuery.value = m[1]; activeIdx.value = 0; mentionStyle.value = caretPopupPos(); openMention() }
+  if (m) { mentionStart.value = offset - m[0].length; mentionQuery.value = m[1]; activeIdx.value = 0; mentionPos.value = caretPopupPos(); openMention() }
   else closeMention()
 }
 function openMention(): void { if (!mentionOpen.value) { mentionOpen.value = true; void nextTick(() => mentionInput.value?.focus?.()) } }
@@ -318,7 +322,11 @@ function insertAtCaret(html: string): void {
 const paramOpen = ref(false)
 const paramKey = ref('')
 const paramValue = ref('')
-const paramStyle = ref<{ left: number; top: number }>({ left: 12, top: 40 })
+const paramPos = ref<{ left: number; top: number }>({ left: 12, top: 40 })
+const paramStyle = computed<Record<string, string>>(() => ({
+  left: `${paramPos.value.left}px`,
+  top: `${paramPos.value.top}px`,
+}))
 const paramOptions = computed<ParamOption[]>(() => optionsOf(paramKey.value))
 
 function onClick(e: MouseEvent): void {
@@ -328,7 +336,7 @@ function onClick(e: MouseEvent): void {
     const val = t.getAttribute('data-val') || ''
     paramKey.value = key
     paramValue.value = val || ''
-    paramStyle.value = anchorToRoot(t)
+    paramPos.value = anchorToRoot(t)
     paramOpen.value = true
     return
   }
@@ -428,24 +436,29 @@ function onDocMouse(e: MouseEvent): void {
 }
 
 .rich-popup {
-  position: absolute; z-index: 60; width: 220px; max-height: 240px;
+  position: absolute; z-index: 60;
+  /* 宽度贴合内容：参数项都很短，只按最长项撑宽，避免固定 220px 过宽 */
+  width: max-content; min-width: 96px; max-width: 200px;
+  max-height: 240px;
   background: var(--bg-color); border: 1px solid var(--border-color-lighter); border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg); overflow: hidden; display: flex; flex-direction: column;
 }
 .popup-search { padding: 6px; border-bottom: 1px solid var(--border-color-lighter); }
+.popup-search :deep(.el-input) { width: 150px; }
 .popup-title { padding: 8px 12px; font-size: 12px; font-weight: 600; color: var(--text-color-secondary); border-bottom: 1px solid var(--border-color-lighter); }
 .popup-list { flex: 1; min-height: 0; overflow-y: auto; max-height: 180px; padding: 4px 0; }
 .popup-item {
   display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 13px; color: var(--text-color-primary); cursor: pointer;
+  white-space: nowrap;
   &:hover, &.active { background: var(--fill-color-light); }
   .pi-icon { width: 20px; height: 20px; border-radius: 5px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 13px;
     &.character { background: var(--color-primary-light-9); color: var(--color-primary); }
     &.location { background: var(--color-success-light-9); color: var(--color-success); }
     &.item { background: var(--color-warning-light-9); color: var(--color-warning); }
   }
-  .pi-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pi-kind { font-size: 11px; color: var(--text-color-placeholder); }
-  .check { font-size: 12px; }
+  .pi-name { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 1; }
+  .pi-kind { font-size: 11px; color: var(--text-color-placeholder); flex-shrink: 0; }
+  .check { font-size: 12px; flex-shrink: 0; }
 }
 .popup-empty { padding: 16px; text-align: center; font-size: 12px; color: var(--text-color-placeholder); }
 </style>
