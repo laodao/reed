@@ -228,32 +228,48 @@ function onInput(): void {
   detectMention()
 }
 
-// ==================== 弹层定位（浮层，不推挤布局）====================
-/** 提示词容器元素（弹层的定位父级） */
-function popupRoot(): HTMLElement | null {
-  return (editorRef.value?.closest('.prompt-rich') as HTMLElement) ?? null
-}
-/** 取某元素相对容器的位置，弹层放在该元素下方 */
-function anchorToRoot(el: Element): { left: number; top: number } {
-  const root = popupRoot()
-  if (!root) return { left: 12, top: 40 }
-  const rr = root.getBoundingClientRect()
+// ==================== 弹层定位（fixed 视口坐标，浮在最上层）====================
+/**
+ * 计算弹层应放置的位置。
+ * 采用 position:fixed + 视口坐标，完全不受祖先 overflow:hidden 裁剪影响。
+ * 默认放在锚点下方；若超出视口底部则翻到锚点上方，若超出视口右/左则回拉。
+ */
+function placeBelow(el: Element): { left: number; top: number } {
   const er = el.getBoundingClientRect()
-  return { left: er.left - rr.left, top: er.bottom - rr.top + 4 }
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const gap = 4
+  let left = er.left
+  let top = er.bottom + gap
+  // 超出视口右侧/左侧 → 回拉（预留给 max-width 200px）
+  if (left + 200 > vw) left = Math.max(0, vw - 200)
+  if (left < 0) left = 0
+  // 超出视口底部 → 翻到锚点上方
+  if (top + 240 > vh) top = Math.max(0, er.top - 240 - gap)
+  return { left: Math.round(left), top: Math.round(top) }
 }
-/** 取光标（caret）相对容器位置（用于 @ 提及弹层），放在光标下方 */
+/** 锚点为某元素（参数 token），放在其下方 */
+function anchorToRoot(el: Element): { left: number; top: number } {
+  return placeBelow(el)
+}
+/** 锚点为光标（用于 @ 提及弹层），放在光标下方 */
 function caretPopupPos(): { left: number; top: number } {
-  const root = popupRoot()
-  if (!root) return { left: 12, top: 40 }
+  const err = editorRef.value?.getBoundingClientRect()
   const sel = window.getSelection()
   if (sel && sel.rangeCount > 0) {
     const rect = sel.getRangeAt(0).getBoundingClientRect()
     if (rect && rect.top > 0) {
-      const rr = root.getBoundingClientRect()
-      return { left: rect.left - rr.left, top: rect.bottom - rr.top + 4 }
+      const vw = window.innerWidth
+      const vh = window.innerHeight
+      let left = rect.left
+      let top = rect.bottom + 4
+      if (left + 200 > vw) left = Math.max(0, vw - 200)
+      if (left < 0) left = 0
+      if (top + 240 > vh) top = Math.max(0, rect.top - 240 - 4)
+      return { left: Math.round(left), top: Math.round(top) }
     }
   }
-  return { left: 12, top: 40 }
+  return { left: Math.round(err?.left ?? 0), top: Math.round((err?.top ?? 0) + 40) }
 }
 
 // ==================== @ 提及 ====================
@@ -439,7 +455,7 @@ function onDocMouse(e: MouseEvent): void {
 }
 
 .rich-popup {
-  position: absolute; z-index: 2000;
+  position: fixed; z-index: 3000;
   /* 宽度贴合内容：参数项都很短，只按最长项撑宽，避免固定 220px 过宽 */
   width: max-content; min-width: 96px; max-width: 200px;
   max-height: 240px;
