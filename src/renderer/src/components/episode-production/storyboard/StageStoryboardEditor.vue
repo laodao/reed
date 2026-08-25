@@ -54,12 +54,12 @@
             <div v-if="generating" class="gen-overlay"><el-icon class="is-loading" :size="28"><Loading /></el-icon></div>
           </div>
 
-          <!-- 提示词富文本（一个整体框：一行一个镜头，参数为行内可点徽章） -->
+          <!-- 提示词富文本（一个整体框，一行一个镜头；提示词本体就是一个字符串字段） -->
           <ShotPromptEditor
-            v-model:rows="editorRows"
+            v-model="promptText"
             :entities="mentionEntities"
             :style-options="styleOptions"
-            @update:rows="dirty = true"
+            @update:model-value="dirty = true"
           />
 
           <!-- 操作 -->
@@ -85,21 +85,22 @@
  * M5 分镜制作页（tab 宿主内的完整左+中央工作区，参照项目分镜制作页.png）。
  * 左：SHT 分镜列表（选中态）；中：大预览 + 片段提示词富文本 + 生成图像。
  *
- * 数据模型：编辑单位 = 视频片段（一段待生成视频，含多个镜头）。底部提示词框为
- * 一个整体富文本，一行 = 一个镜头，每个镜头的 景别/运镜/时长/风格 取分镜字段
- * （shotType/cameraMovement/duration + 页面级 style），描述取 frameDescription。
- * 保存逐镜写回 storyboard。
+ * 数据模型：编辑单位 = 视频片段（一段待生成视频，含多个镜头）。提示词本体就是一
+ * 个字符串字段（一行一个镜头），富文本只做展示/交互。本组件把当前场次全部镜头的
+ * 参数（shotType/cameraMovement/duration/style）与描述（frameDescription）拼成一个
+ * 多行字符串传给 ShotPromptEditor；保存时把字符串解析回逐镜写回各自 frameDescription，
+ * 并同步 shotType/cameraMovement/duration 列，供下游消费。
  */
 import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { MagicStick, Picture, Loading } from '@element-plus/icons-vue'
 import AssetGalleryPicker from '@/components/episode-production/storyboard/AssetGalleryPicker.vue'
 import ShotPromptEditor, {
-  type ShotPromptRow,
   type MentionEntity,
   type ParamOption,
 } from '@/components/episode-production/storyboard/ShotPromptEditor.vue'
 import { toImageUrl } from '@/utils/asset-url'
+import { buildPromptText, splitPromptText } from '@/components/episode-production/storyboard/storyboard-prompt-format'
 
 const props = defineProps<{
   episodeId: string
@@ -110,7 +111,7 @@ const props = defineProps<{
 const scenes = ref<any[]>([])
 const shots = ref<any[]>([])
 const selectedShot = ref<any>(null)
-const editorRows = ref<ShotPromptRow[]>([])
+const promptText = ref('')
 const generating = ref(false)
 const dirty = ref(false)
 const styleName = ref('cinematic')
@@ -136,9 +137,9 @@ function frameUrl(sb: any): string | null {
 }
 
 async function load(): Promise<void> {
-  if (!props.episodeId) { scenes.value = []; shots.value = []; editorRows.value = []; return }
+  if (!props.episodeId) { scenes.value = []; shots.value = []; promptText.value = ''; return }
   const ep = await window.electronAPI.episodeProduction.getEpisode(props.episodeId)
-  if (!ep.success || !ep.data?.scriptId) { scenes.value = []; shots.value = []; editorRows.value = []; return }
+  if (!ep.success || !ep.data?.scriptId) { scenes.value = []; shots.value = []; promptText.value = ''; return }
 
   const scResp = await window.electronAPI.episodeProduction.listScenes(ep.data.scriptId)
   scenes.value = scResp.success ? (scResp.data || []) : []
@@ -148,30 +149,22 @@ async function load(): Promise<void> {
     if (sbResp.success && sbResp.data?.length) {
       shots.value = sbResp.data
       selectShot(shots.value[0])
-      syncRows()
+      syncPrompt()
       return
     }
   }
   shots.value = []
   selectedShot.value = null
-  editorRows.value = []
+  promptText.value = ''
 }
 
 function selectShot(shot: any): void {
   selectedShot.value = shot
 }
 
-/** 由 shots 构建编辑器 rows（一行一个镜头） */
-function syncRows(): void {
-  editorRows.value = shots.value.map((sb) => ({
-    id: sb.id,
-    shotNumber: sb.shotNumber || 0,
-    shotType: sb.shotType || 'medium',
-    cameraMovement: sb.cameraMovement || 'static',
-    duration: Number(sb.duration) || 4,
-    style: styleName.value,
-    description: sb.frameDescription || '',
-  }))
+/** 由 shots 构建提示词字符串（一行一个镜头） */
+function syncPrompt(): void {
+  promptText.value = buildPromptText(shots.value, styleName.value)
 }
 
 async function onGenerate(): Promise<void> {
@@ -201,24 +194,29 @@ async function onSave(): Promise<void> {
   await doSave()
 }
 
-/** 逐镜写回：把编辑器 rows 里已变更的字段写回各自 storyboard */
+/** 把提示词字符串解析回逐镜写回 frameDescription（并同步各列） */
 async function doSave(): Promise<void> {
-  if (!editorRows.value.length) return
+  if (!promptText.value || !shots.value.length) return
+  const parsed = splitPromptText(promptText.value)
   let saved = 0
   let failed = 0
-  for (const row of editorRows.value) {
-    const sb = shots.value.find((s) => s.id === row.id)
-    if (!sb) continue
+  for (let i = 0; i < shots.value.length; i++) {
+    const sb = shots.value[i]
+    const line = parsed[i] ?? parsed[parsed.length - 1] ?? null
+    if (!line) continue
+    const shotType = line.params['景别']
+    const cameraMovement = line.params['运镜']
+    const duration = Number(line.params['时长']) || sb.duration || 4
     const patch: Record<string, unknown> = {
-      shotType: row.shotType,
-      cameraMovement: row.cameraMovement,
-      duration: row.duration,
-      frameDescription: row.description,
+      frameDescription: line.description,
     }
-    const r = await window.electronAPI.episodeProduction.updateStoryboard(row.id, patch)
+    if (shotType) patch.shotType = shotType
+    if (cameraMovement) patch.cameraMovement = cameraMovement
+    if (duration) patch.duration = duration
+    const r = await window.electronAPI.episodeProduction.updateStoryboard(sb.id, patch)
     if (r.success) {
       saved++
-      const idx = shots.value.findIndex((s) => s.id === row.id)
+      const idx = shots.value.findIndex((s) => s.id === sb.id)
       if (idx !== -1) shots.value[idx] = { ...shots.value[idx], ...patch }
     } else {
       failed++
@@ -243,9 +241,18 @@ async function reloadShot(shotId: string): Promise<void> {
 
 watch(() => props.episodeId, () => void load())
 watch(styleName, () => {
-  // 页面级风格变化 → 同步每行风格 token
-  if (!editorRows.value.length) return
-  editorRows.value = editorRows.value.map((r) => ({ ...r, style: styleName.value }))
+  // 页面级风格变化 → 同步每行风格参数
+  if (!promptText.value) return
+  promptText.value = promptText.value.split('\n').map((line) => {
+    const m = line.match(/^镜头(\d+)\s*\[([^\]]*)\]\s*(.*)$/)
+    if (!m) return line
+    const params = m[2].split('|').filter(Boolean).map((seg) => {
+      const idx = seg.indexOf('=')
+      const key = idx > 0 ? seg.slice(0, idx) : ''
+      return key === '风格' ? `风格=${styleName.value}` : seg
+    })
+    return `镜头${m[1]} [${params.join('|')}] ${m[3]}`
+  }).join('\n')
   dirty.value = true
 })
 onMounted(async () => {

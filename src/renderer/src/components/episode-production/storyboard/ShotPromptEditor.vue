@@ -54,13 +54,15 @@
 /**
  * ShotPromptEditor · 分镜片段提示词富文本编辑器（对齐截图）。
  *
- * 模型：一段待生成的视频片段 = 多个镜头（分镜）。本组件是一个整体 contenteditable，
- * 框内一行 = 一个镜头，格式：
- *   `镜头N: [景别] · [运镜] · [时长] · [风格]. 描述`
- * 其中 4 个参数为行内蓝色可点徽章（点击弹出对应下拉切换），
- * 描述为可编辑普通文本，@资产引用为行内 token，拖图到框内生成 @ 引用。
+ * 核心约定：提示词本体就是一个字符串（一个字段），富文本只是编辑这段字符串的界面层。
+ * 字符串格式（可逆，见 storyboard-prompt-format）：
+ *   一行 = 一个镜头：`镜头N [景别=full|运镜=static|时长=5|风格=cinematic] 描述`
+ *   - 「镜头N」标识分镜行
+ *   - `[ ... ]` 内为镜头参数（key=value 以 | 分隔）→ 界面层解析为蓝色可点 token
+ *   - `] ` 之后到行尾 = 该镜头的描述（普通文本）
  *
- * 通过 `rows: ShotPromptRow[]`（v-model）与外部交互，逐镜写回。
+ * v-model 为字符串；组件内部 parse 字符串 -> 富文本，编辑后再 serialize 回字符串 emit。
+ * 参数 token 的选项（景别/运镜/时长/风格）来自 param-options / styleOptions prop。
  */
 import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import { Check, User, Location, Goods } from '@element-plus/icons-vue'
@@ -69,38 +71,23 @@ import {
   CAMERA_MOVEMENT_OPTIONS,
   labelOf,
 } from '../shared/param-options'
-
-/** 一行（一个镜头/分镜）的结构化数据 */
-export interface ShotPromptRow {
-  /** 分镜 id（用于写回 storyboard） */
-  id: string
-  /** 镜头序号（1-based，用于「镜头N:」标签） */
-  shotNumber: number
-  /** 景别（shotType value） */
-  shotType: string
-  /** 运镜（cameraMovement value） */
-  cameraMovement: string
-  /** 时长（秒） */
-  duration: number
-  /** 风格（style id，一般整段一致） */
-  style: string
-  /** 画面描述 */
-  description: string
-}
+import { parsePrompt, serializePrompt, type PromptLine } from './storyboard-prompt-format'
 
 export interface MentionEntity { id: string; name: string; kind: 'character' | 'location' | 'item' }
-
 export interface ParamOption { value: string; label: string }
 
+/** 参数 key 的顺序（渲染顺序 + 序列化顺序） */
+const PARAM_KEYS = ['景别', '运镜', '时长', '风格'] as const
+
 const props = defineProps<{
-  /** 当前片段的一组镜头 */
-  rows: ShotPromptRow[]
+  /** 提示词字符串（一个字段，一行=一个镜头） */
+  modelValue?: string
   /** @ 可引用的资产实体 */
   entities?: MentionEntity[]
   /** 风格下拉选项（页面级 preset styles） */
   styleOptions?: ParamOption[]
 }>()
-const emit = defineEmits<{ 'update:rows': [ShotPromptRow[]] }>()
+const emit = defineEmits<{ 'update:modelValue': [string] }>()
 
 const editorRef = ref<HTMLElement | null>(null)
 const mentionRef = ref<HTMLElement | null>(null)
@@ -110,23 +97,19 @@ const dragOver = ref(false)
 let rendering = false
 let composing = false
 
-// ==================== 参数 token 定义 ====================
-function paramDefinitions(): Array<{ key: string; options: ParamOption[] }> {
-  return [
-    { key: '景别', options: SHOT_TYPE_OPTIONS },
-    { key: '运镜', options: CAMERA_MOVEMENT_OPTIONS },
-    {
-      key: '时长',
-      options: [2, 3, 4, 5, 6, 8, 10].map((s) => ({ value: String(s), label: formatDuration(s) })),
-    },
-    { key: '风格', options: props.styleOptions?.length ? props.styleOptions : [{ value: 'cinematic', label: 'cinematic' }] },
-  ]
-}
-
+// ==================== 参数选项 ====================
 function formatDuration(sec: number): string {
   const m = Math.floor(sec / 60)
   const s = Math.round(sec % 60)
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+function optionsOf(key: string): ParamOption[] {
+  if (key === '景别') return SHOT_TYPE_OPTIONS
+  if (key === '运镜') return CAMERA_MOVEMENT_OPTIONS
+  if (key === '时长') return [2, 3, 4, 5, 6, 8, 10].map((s) => ({ value: String(s), label: formatDuration(s) }))
+  if (key === '风格') return props.styleOptions?.length ? props.styleOptions : [{ value: 'cinematic', label: 'cinematic' }]
+  return []
 }
 
 function displayValue(key: string, val: string): string {
@@ -140,7 +123,7 @@ function esc(t: string): string {
   return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 }
 
-// ==================== 渲染：rows -> HTML ====================
+// ==================== 渲染：字符串 -> HTML ====================
 function buildDescHtml(description: string): string {
   // 描述里的 @资产 高亮为行内 token（从 entities 匹配名字）
   return esc(description).replace(/@([^\s,.。，、！？；：<>{}()[\]"'`]+)/g, (_m0, name) => {
@@ -151,41 +134,36 @@ function buildDescHtml(description: string): string {
   })
 }
 
-function buildLineHtml(row: ShotPromptRow): string {
-  const toks = paramDefinitions()
-  const findVal = (key: string): string => {
-    if (key === '景别') return row.shotType
-    if (key === '运镜') return row.cameraMovement
-    if (key === '时长') return String(row.duration)
-    return row.style
-  }
-  const toksHtml = toks
-    .map(
-      (d) =>
-        `<span class="pk-token" data-key="${esc(d.key)}" data-val="${esc(findVal(d.key))}" contenteditable="false">${esc(displayValue(d.key, findVal(d.key)))}</span>`,
-    )
+function buildLineHtml(line: PromptLine): string {
+  const toksHtml = PARAM_KEYS.filter((k) => line.params[k] !== undefined)
+    .map((k) => {
+      const v = line.params[k]
+      return `<span class="pk-token" data-key="${esc(k)}" data-val="${esc(v)}" contenteditable="false">${esc(displayValue(k, v))}</span>`
+    })
     .join('<span class="pk-sep" contenteditable="false">·</span>')
+  const shotRow =
+    `<span class="pk-label" contenteditable="false">镜头${line.shotNumber}:</span>` +
+    `${toksHtml ? ` ${toksHtml}` : ''}` +
+    `<span class="pk-dot" contenteditable="false">.</span> `
   return (
-    `<div class="pk-line" data-id="${esc(row.id)}" data-no="${row.shotNumber}">` +
-    `<span class="pk-label" contenteditable="false">镜头${row.shotNumber}:</span>` +
-    ` ${toksHtml}` +
-    `<span class="pk-dot" contenteditable="false">.</span> ` +
-    `<span class="pk-desc">${buildDescHtml(row.description)}</span>` +
+    `<div class="pk-line" data-no="${line.shotNumber}">` + shotRow +
+    `<span class="pk-desc">${buildDescHtml(line.description)}</span>` +
     `</div>`
   )
 }
 
-function renderRows(): void {
+function renderHtml(): void {
   const el = editorRef.value
   if (!el) return
   rendering = true
-  el.innerHTML = props.rows.map(buildLineHtml).join('')
+  const lines = parsePrompt(props.modelValue ?? '')
+  el.innerHTML = lines.map(buildLineHtml).join('')
   void nextTick(() => {
     rendering = false
   })
 }
 
-// ==================== 序列化：DOM -> rows ====================
+// ==================== 序列化：DOM -> 字符串 ====================
 function serializeDesc(descEl: HTMLElement): string {
   let out = ''
   const walk = (node: Node) => {
@@ -205,44 +183,33 @@ function serializeDesc(descEl: HTMLElement): string {
   return out.replace(/\n{2,}/g, '\n').trim()
 }
 
-function currentRows(): ShotPromptRow[] {
+/** 从 DOM 读出结构化行（参数 token + 描述），保持 PARAM_KEYS 顺序 */
+function readLines(): PromptLine[] {
   const el = editorRef.value
   if (!el) return []
-  const rows: ShotPromptRow[] = []
+  const lines: PromptLine[] = []
   el.querySelectorAll('.pk-line').forEach((line) => {
     const lineEl = line as HTMLElement
-    let shotType = ''
-    let cameraMovement = ''
-    let duration = 0
-    let style = ''
+    const params: Record<string, string> = {}
     lineEl.querySelectorAll<HTMLElement>('.pk-token[data-key]').forEach((tok) => {
       if (tok.getAttribute('data-key') === '@entity') return
-      const key = tok.getAttribute('data-key') || ''
-      const val = tok.getAttribute('data-val') || ''
-      if (key === '景别') shotType = val
-      else if (key === '运镜') cameraMovement = val
-      else if (key === '时长') duration = Number(val) || 0
-      else if (key === '风格') style = val
+      params[tok.getAttribute('data-key') || ''] = tok.getAttribute('data-val') || ''
     })
     const descEl = lineEl.querySelector('.pk-desc') as HTMLElement | null
-    rows.push({
-      id: lineEl.getAttribute('data-id') || '',
+    lines.push({
       shotNumber: Number(lineEl.getAttribute('data-no')) || 0,
-      shotType,
-      cameraMovement,
-      duration,
-      style,
+      params,
       description: descEl ? serializeDesc(descEl) : '',
     })
   })
-  return rows
+  return lines
 }
 
-function emitRows(): void {
-  emit('update:rows', currentRows())
+function emitText(): void {
+  emit('update:modelValue', serializePrompt(readLines()))
 }
 
-// ==================== 光标保位（用于 @ / 拖图插入后重渲染）====================
+// ==================== 光标偏移（用于 @ 检测）====================
 function caretOffset(root: HTMLElement): number | null {
   const sel = window.getSelection()
   if (!sel || sel.rangeCount === 0) return null
@@ -256,7 +223,7 @@ function onCompositionStart(): void { composing = true }
 function onCompositionEnd(): void { composing = false; onInput() }
 function onInput(): void {
   if (rendering || composing) return
-  emitRows()
+  emitText()
 }
 
 // ==================== @ 提及 ====================
@@ -317,7 +284,7 @@ function insertAtCaret(html: string): void {
     const last = descs[descs.length - 1]
     if (last) last.insertAdjacentHTML('beforeend', html)
   }
-  emitRows()
+  emitText()
 }
 
 // ==================== 参数 token 点击 ====================
@@ -325,10 +292,7 @@ const paramOpen = ref(false)
 const paramKey = ref('')
 const paramValue = ref('')
 const paramStyle = computed(() => ({ right: '8px', top: '40px' }))
-const paramOptions = computed<ParamOption[]>(() => {
-  const def = paramDefinitions().find((d) => d.key === paramKey.value)
-  return def?.options ?? []
-})
+const paramOptions = computed<ParamOption[]>(() => optionsOf(paramKey.value))
 
 function onClick(e: MouseEvent): void {
   const t = e.target as HTMLElement
@@ -350,7 +314,7 @@ function pickParam(opt: ParamOption): void {
     t.textContent = displayValue(paramKey.value, opt.value)
   }
   paramOpen.value = false
-  emitRows()
+  emitText()
 }
 function onKeydown(e: KeyboardEvent): void {
   if (mentionOpen.value) {
@@ -387,18 +351,18 @@ function kindIcon(kind: string): any { return kind === 'character' ? User : kind
 function kindLabel(kind: string): string { return kind === 'character' ? '角色' : kind === 'location' ? '地点' : '物品' }
 
 watch(
-  () => [props.rows, props.entities] as const,
+  () => [props.modelValue, props.entities] as const,
   () => {
     if (composing) return
     const el = editorRef.value
-    if (el && document.activeElement === el && JSON.stringify(currentRows()) === JSON.stringify(props.rows)) return
-    renderRows()
+    if (el && document.activeElement === el && serializePrompt(readLines()) === (props.modelValue ?? '')) return
+    renderHtml()
   },
   { deep: true },
 )
 
 onMounted(() => {
-  renderRows()
+  renderHtml()
   document.addEventListener('mousedown', onDocMouse)
 })
 function onDocMouse(e: MouseEvent): void {
