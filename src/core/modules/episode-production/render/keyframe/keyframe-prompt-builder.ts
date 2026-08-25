@@ -328,6 +328,16 @@ export function buildKeyframePrompt(
     }
   }
 
+  // 6b. 角色形象一致性（spec：跨分镜/关键帧保持同一人设）。
+  // 明确约束大模型：以参考图 + 上面的角色描述为准，保持面容、衣着、发型、饰品一致，
+  // 不得因镜头/时间/景别变化而改变角色的长相与穿搭。
+  if (input.characters.length > 0) {
+    parts.push(
+      '[角色形象一致性] 严格保持上述每个角色的面部特征、衣着、发型、饰品与参考图一致；' +
+      '同一角色在不同镜头/景别/时刻下必须容貌、装扮、发型、配饰完全相同，不得改变长相或穿错衣服。',
+    )
+  }
+
   // 7. 物品（effective + context）
   for (const it of input.items) {
     const eff = it.effective

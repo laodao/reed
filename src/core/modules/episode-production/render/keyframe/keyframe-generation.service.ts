@@ -53,6 +53,7 @@ import {
   type StyleConfig,
 } from './keyframe-prompt-builder'
 import { pickReferenceImage } from './reference-image-selector'
+import { parseAssetRefOverrides, toRefCandidates } from './parse-asset-refs'
 import type { ImageGenerator } from '@core/modules/episode-production/assets/services/gallery-derivation.service'
 import { createGalleryImageGenerator } from '@core/modules/episode-production/assets/services/image-provider-adapter'
 import type { SceneCharacter } from '@shared/types/episode-production'
@@ -249,6 +250,24 @@ export class KeyframeGenerationService {
      */
     const sbLevelOverrides = parseSbReferenceImageIds((sb as any).referenceImageIds)
 
+    // 打通：frameDescription 里的 @[名字@索引] 显式指定参考图 → 覆盖该资产的自动选图。
+    // 与 storyboard.referenceImageIds 合并（@[..] 命中同名资产时优先）。生成不能因解析失败中断。
+    let effectiveOverrides = sbLevelOverrides
+    try {
+      const refOverrides = await parseAssetRefOverrides(
+        (sb as any).frameDescription ?? '',
+        toRefCandidates(sceneAssets as any),
+        this.imageSvc,
+      )
+      if (refOverrides.length > 0) {
+        const byKey = new Map(sbLevelOverrides.map((o) => [`${o.kind}:${o.bindingId}`, o]))
+        for (const o of refOverrides) byKey.set(`${o.kind}:${o.bindingId}`, o)
+        effectiveOverrides = [...byKey.values()]
+      }
+    } catch (e) {
+      console.error('[keyframe-generation] 解析 @[名字@索引] 失败，忽略：', e)
+    }
+
     const created: StoryboardKeyframe[] = []
     for (const planItem of plan) {
       const kf = await this.generateOneKeyframe({
@@ -258,11 +277,11 @@ export class KeyframeGenerationService {
         sceneAssets,
         styleConfig,
         userPrompt: input.userPrompt ?? null,
-        referenceOverrides: sbLevelOverrides.length > 0 ? sbLevelOverrides : null,
+        referenceOverrides: effectiveOverrides.length > 0 ? effectiveOverrides : null,
       })
       created.push(kf)
-      if (sbLevelOverrides.length > 0) {
-        await this.keyframeRepo.update(kf.id, { referenceOverrides: sbLevelOverrides })
+      if (effectiveOverrides.length > 0) {
+        await this.keyframeRepo.update(kf.id, { referenceOverrides: effectiveOverrides })
       }
     }
     return created
