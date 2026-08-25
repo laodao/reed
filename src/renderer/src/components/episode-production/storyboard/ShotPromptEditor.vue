@@ -228,25 +228,28 @@ function onInput(): void {
   detectMention()
 }
 
-// ==================== 弹层定位（相对 .prompt-rich 容器）====================
-/** 取某元素相对提示词容器的位置，返回弹层应放置的 left/top */
+// ==================== 弹层定位（浮层，不推挤布局）====================
+/** 提示词容器元素（弹层的定位父级） */
+function popupRoot(): HTMLElement | null {
+  return (editorRef.value?.closest('.prompt-rich') as HTMLElement) ?? null
+}
+/** 取某元素相对容器的位置，弹层放在该元素下方 */
 function anchorToRoot(el: Element): { left: number; top: number } {
-  const root = editorRef.value?.closest('.prompt-rich')
+  const root = popupRoot()
   if (!root) return { left: 12, top: 40 }
-  const rr = (root as HTMLElement).getBoundingClientRect()
+  const rr = root.getBoundingClientRect()
   const er = el.getBoundingClientRect()
-  // 弹层出现在元素下方
   return { left: er.left - rr.left, top: er.bottom - rr.top + 4 }
 }
-/** 取光标（caret）所在位置（用于 @ 提及弹层），定位到光标下方 */
+/** 取光标（caret）相对容器位置（用于 @ 提及弹层），放在光标下方 */
 function caretPopupPos(): { left: number; top: number } {
-  const root = editorRef.value?.closest('.prompt-rich')
+  const root = popupRoot()
   if (!root) return { left: 12, top: 40 }
   const sel = window.getSelection()
   if (sel && sel.rangeCount > 0) {
     const rect = sel.getRangeAt(0).getBoundingClientRect()
     if (rect && rect.top > 0) {
-      const rr = (root as HTMLElement).getBoundingClientRect()
+      const rr = root.getBoundingClientRect()
       return { left: rect.left - rr.left, top: rect.bottom - rr.top + 4 }
     }
   }
@@ -436,12 +439,12 @@ function onDocMouse(e: MouseEvent): void {
 }
 
 .rich-popup {
-  position: absolute; z-index: 60;
+  position: absolute; z-index: 2000;
   /* 宽度贴合内容：参数项都很短，只按最长项撑宽，避免固定 220px 过宽 */
   width: max-content; min-width: 96px; max-width: 200px;
   max-height: 240px;
   background: var(--bg-color); border: 1px solid var(--border-color-lighter); border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg); overflow: hidden; display: flex; flex-direction: column;
+  box-shadow: 0 6px 20px rgba(0,0,0,.14); overflow: hidden; display: flex; flex-direction: column;
 }
 .popup-search { padding: 6px; border-bottom: 1px solid var(--border-color-lighter); }
 .popup-search :deep(.el-input) { width: 150px; }
