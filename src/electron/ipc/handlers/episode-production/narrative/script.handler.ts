@@ -15,6 +15,7 @@ import { buildAssetRosterForProject } from '@core/modules/episode-production/nar
 import { EpisodeScenePolisher } from '@core/modules/episode-production/narrative/ai/scene-polisher'
 import { EpisodeScriptGenerator } from '@core/modules/episode-production/narrative/ai/script-generator'
 import { SceneBindingWriter } from '@core/modules/episode-production/narrative/scene-binding-writer'
+import { analyzeScriptToEpisodes } from '@core/modules/episode-production/narrative/services/script-splitter.service'
 
 export function registerScriptHandlers(): void {
   // ==================== 剧本管理 ====================
@@ -34,6 +35,9 @@ export function registerScriptHandlers(): void {
 
   // ==================== AI 润色（场景级 · spec 2026-05-08） ====================
   ipcBridge.handle('ep:polish-scene', handlePolishScene)
+
+  // ==================== 剧本文本分析（粘贴导入拆集 · M1 首页） ====================
+  ipcBridge.handle('ep:analyze-script-text', handleAnalyzeScriptText)
 }
 
 // ==================== 剧本管理处理器 ====================
@@ -478,5 +482,39 @@ async function handleGenerateScenes(
   } catch (error: any) {
     console.error('[handleGenerateScenes] 错误:', error)
     return { success: false, error: error.message || '拆分场景失败' }
+  }
+}
+
+/**
+ * M1 首页导入拆集（粘贴文本版）：
+ * 调纯函数 analyzeScriptToEpisodes(text)（规则切分，零 AI），返回剧集候选列表。
+ * 供「导入拆集」预览步使用；确认后由 batch-create-episodes 落库。
+ */
+async function handleAnalyzeScriptText(
+  _event: any,
+  text: string,
+): Promise<IpcResponse> {
+  try {
+    if (!text || !text.trim()) {
+      return { success: false, error: '剧本内容为空，无法分析' }
+    }
+    const analysis = analyzeScriptToEpisodes(text)
+    if (!analysis.hasStructure || analysis.episodes.length === 0) {
+      return {
+        success: false,
+        error: '未识别到章节结构，请在剧本中用「第X章 / Chapter N / # 标题」分隔每集',
+      }
+    }
+    return {
+      success: true,
+      data: {
+        hasStructure: analysis.hasStructure,
+        structureType: analysis.structureType,
+        episodes: analysis.episodes,
+      },
+    }
+  } catch (e: any) {
+    console.error('[handleAnalyzeScriptText] 异常:', e)
+    return { success: false, error: e?.message ?? '分析剧本文本失败' }
   }
 }

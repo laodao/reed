@@ -67,8 +67,7 @@ export const mainMenuItems: MenuItem[] = [
     path: '/episode-production',
     label: '剧集制作',
     description: '剧本生成与视频制作',
-    icon: markRaw(VideoCamera),
-    hidden: true // 功能开发中，暂不显示入口
+    icon: markRaw(VideoCamera)
   },
   {
     path: '/knowledge-base',

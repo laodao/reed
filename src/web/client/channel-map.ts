@@ -590,6 +590,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.aiGenerateText': { channel: 'ep:ai-generate-text' },
   // 「批量创建剧集」分析剧本文件 + 批量建集
   'episodeProduction.analyzeScriptFile': { channel: 'ep:analyze-script-file' },
+  'episodeProduction.analyzeScriptText': { channel: 'ep:analyze-script-text' },
   'episodeProduction.batchCreateEpisodes': { channel: 'ep:batch-create-episodes' },
   'episodeProduction.batchIdentifyEntities': { channel: 'ep:batch-identify-entities' },
   // FU5-B2 ① 内容 stage 整理 / 取舍
@@ -693,6 +694,15 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.onStoryboardProgress': { channel: 'ep:storyboard-progress', legacyEventArg: true },
   'episodeProduction.onStoryboardsProgress': { channel: 'ep:storyboards-progress', legacyEventArg: true },
   'episodeProduction.onSynthesisProgress': { channel: 'ep:synthesis-progress', legacyEventArg: true },
+  // P6 对话式制作 Agent
+  'episodeProduction.agentSend': { channel: 'ep:agent:send' },
+  'episodeProduction.agentHistory': { channel: 'ep:agent:history' },
+  'episodeProduction.agentCancel': { channel: 'ep:agent:cancel' },
+  'episodeProduction.agentState': { channel: 'ep:agent:state' },
+  // episodeProduction.onAgentEvent(projectId, episodeId, cb) — 后端 emit(`ep-agent:${projectId}:${episodeId}`, event)
+  'episodeProduction.onAgentEvent': {
+    eventChannel: (projectId: string, episodeId: string) => `ep-agent:${projectId}:${episodeId}`,
+  },
   'oss.listConfigs': { channel: 'oss:list-configs' },
   'oss.getConfig': { channel: 'oss:get-config' },
   'oss.createConfig': { channel: 'oss:create-config' },

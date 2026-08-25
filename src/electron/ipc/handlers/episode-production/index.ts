@@ -35,6 +35,7 @@ import { registerVideoSegmentHandlers } from './render/video-segment.handler'
 import { registerAudioHandlers } from './render/audio.handler'
 import { registerComposeHandlers } from './compose.handler'
 import { registerWorkflowHandlers } from './workflow.handler'
+import { registerEpisodeAgentHandlers } from './agent.handler'
 
 /**
  * 注册剧集制作模块所有 IPC handler（V2 老 channel + V2.5 新增资产域 ep:asset:* channel）
@@ -81,4 +82,5 @@ export function registerEpisodeProductionHandlers(): void {
   registerAudioHandlers()
   registerComposeHandlers()
   registerWorkflowHandlers()
+  registerEpisodeAgentHandlers()
 }

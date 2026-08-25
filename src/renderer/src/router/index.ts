@@ -219,18 +219,26 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/episode-production',
-    name: 'EpisodeProjectList',
-    // FU5-B1：切到 V2（按原型 §1 重写 + 用 listProjectsSummary 聚合数据）
-    // 旧 EpisodeProjectList.vue 暂保留作参考，下个 phase 删除
-    component: () => import('@/views/EpisodeProjectListV2.vue'),
+    name: 'EpisodeHome',
+    // 菜单入口 → 首页：导入剧本卡（中间文本框）+ 底部最近项目横向滑动
+    component: () => import('@/views/EpisodeHome.vue'),
     meta: {
       title: '剧集制作'
     }
   },
   {
+    path: '/episode-production/all',
+    name: 'EpisodeProjectList',
+    // 「更多项目」→ 项目列表页（卡片网格 + 新建项目）
+    component: () => import('@/views/EpisodeProjectListV3.vue'),
+    meta: {
+      title: '项目列表'
+    }
+  },
+  {
     path: '/episode-production/:projectId',
     name: 'EpisodeProjectShortcut',
-    // 旧路径：直接访问项目无 episodeId 时，beforeEnter 选首集 redirect
+    // 旧路径：直接访问项目无 episodeId 时，beforeEnter 选首集 redirect 到新版工作台或剧本创建页
     beforeEnter: async (to) => {
       const projectId = to.params.projectId as string
       try {
@@ -238,21 +246,35 @@ const routes: RouteRecordRaw[] = [
         const resp = await api.listEpisodes(projectId)
         if (resp?.success && Array.isArray(resp.data) && resp.data.length > 0) {
           const first = resp.data[0]
-          return `/episode-production/${projectId}/episode/${first.id}`
+          return `/episode-production/${projectId}/studio/${first.id}`
         }
-        return '/episode-production'
+        return `/episode-production/${projectId}/creator`
       } catch {
-        return '/episode-production'
+        return `/episode-production/${projectId}/creator`
       }
     },
     // 给 vue-router 一个空的 component 占位，避免报 missing component 警告
     component: { template: '<div />' },
   },
   {
+    // 无剧本空项目 → 剧本创建页（上传剧本 / AI 生成剧本）
+    path: '/episode-production/:projectId/creator',
+    name: 'EpisodeCreator',
+    component: () => import('@/views/EpisodeCreator.vue'),
+    meta: { title: '剧集制作' },
+  },
+  {
     path: '/episode-production/:projectId/episode/:episodeId',
     name: 'EpisodeWorkbench',
     component: () => import('@/views/EpisodeWorkbench.vue'),
     meta: { title: '剧集编辑' },
+  },
+  {
+    // 新版工作台（三段式 + 右侧 agent）：菜单入口 → 项目列表 → 本工作台
+    path: '/episode-production/:projectId/studio/:episodeId',
+    name: 'EpisodeAgentStudio',
+    component: () => import('@/views/EpisodeStudio.vue'),
+    meta: { title: '剧集制作' },
   },
   {
     path: '/episode-production/:projectId/production/:sceneId',

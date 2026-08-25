@@ -221,6 +221,7 @@ const IPC_CHANNELS = {
   EP_AI_GENERATE_TEXT: 'ep:ai-generate-text',
   // 「批量创建剧集」分析剧本文件 + 批量建集
   EP_ANALYZE_SCRIPT_FILE: 'ep:analyze-script-file',
+  EP_ANALYZE_SCRIPT_TEXT: 'ep:analyze-script-text',
   EP_BATCH_CREATE_EPISODES: 'ep:batch-create-episodes',
   EP_BATCH_IDENTIFY_ENTITIES: 'ep:batch-identify-entities',
   // FU5-B2 ① 内容 stage 整理 / 取舍（覆写三数组）
@@ -2313,6 +2314,9 @@ const electronAPI = {
     /** 「批量创建剧集」：选剧本文件 → 按章节拆分预览 */
     analyzeScriptFile: () =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_ANALYZE_SCRIPT_FILE),
+    /** M1 首页「导入拆集」：粘贴剧本文本 → 按章节拆分预览（纯函数，零 AI） */
+    analyzeScriptText: (text: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.EP_ANALYZE_SCRIPT_TEXT, text),
     /** 「批量创建剧集」：确认后批量建集 */
     batchCreateEpisodes: (req: EpBatchCreateEpisodesRequest) =>
       ipcRenderer.invoke(IPC_CHANNELS.EP_BATCH_CREATE_EPISODES, req),
@@ -2671,6 +2675,22 @@ const electronAPI = {
       const handler = (_event: any, data: any) => callback(_event, data)
       ipcRenderer.on('ep:synthesis-progress', handler)
       return () => ipcRenderer.removeListener('ep:synthesis-progress', handler)
+    },
+
+    // ===== P6 对话式制作 Agent（剧本/资产/分镜右侧助手） =====
+    agentSend: (projectId: string, episodeId: string, message: string, providerConfigId?: string, modelId?: string) =>
+      ipcRenderer.invoke('ep:agent:send', projectId, episodeId, message, providerConfigId, modelId),
+    agentHistory: (episodeId: string) =>
+      ipcRenderer.invoke('ep:agent:history', episodeId),
+    agentCancel: (projectId: string, episodeId: string) =>
+      ipcRenderer.invoke('ep:agent:cancel', projectId, episodeId),
+    agentState: (projectId: string, episodeId: string) =>
+      ipcRenderer.invoke('ep:agent:state', projectId, episodeId),
+    onAgentEvent: (projectId: string, episodeId: string, callback: (event: any, data: any) => void) => {
+      const channel = `ep-agent:${projectId}:${episodeId}`
+      const listener = (_event: any, data: any) => callback(data)
+      ipcRenderer.on(channel, listener)
+      return () => ipcRenderer.removeListener(channel, listener)
     }
   },
 
