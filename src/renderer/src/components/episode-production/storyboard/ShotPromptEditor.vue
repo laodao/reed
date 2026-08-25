@@ -229,28 +229,49 @@ function onInput(): void {
 }
 
 // ==================== 弹层定位（fixed 视口坐标，浮在最上层）====================
+const POPUP_MAX_W = 200
+const POPUP_MAX_H = 240
 /**
- * 计算弹层应放置的位置。
- * 采用 position:fixed + 视口坐标，完全不受祖先 overflow:hidden 裁剪影响。
- * 默认放在锚点下方；若超出视口底部则翻到锚点上方，若超出视口右/左则回拉。
+ * 基于锚点 rect 计算弹层位置。pw/ph 为弹层真实尺寸（未测得时用初值）。
+ * 默认放锚点下方；超出视口底部则按真实高度翻到锚点上方；超出右/左则回拉。
  */
-function placeBelow(el: Element): { left: number; top: number } {
-  const er = el.getBoundingClientRect()
+function popupPosition(
+  ar: { left: number; top: number; bottom: number },
+  pw: number,
+  ph: number,
+): { left: number; top: number } {
   const vw = window.innerWidth
   const vh = window.innerHeight
   const gap = 4
-  let left = er.left
-  let top = er.bottom + gap
-  // 超出视口右侧/左侧 → 回拉（预留给 max-width 200px）
-  if (left + 200 > vw) left = Math.max(0, vw - 200)
+  let left = ar.left
+  let top = ar.bottom + gap
+  if (left + pw > vw) left = Math.max(0, vw - pw)
   if (left < 0) left = 0
-  // 超出视口底部 → 翻到锚点上方
-  if (top + 240 > vh) top = Math.max(0, er.top - 240 - gap)
+  // 超出视口底部 → 翻到锚点上方，用真实高度贴住锚点顶（避免空出一截）
+  if (top + ph > vh) top = Math.max(0, ar.top - ph - gap)
   return { left: Math.round(left), top: Math.round(top) }
 }
-/** 锚点为某元素（参数 token），放在其下方 */
+/** 参数 token 锚点 rect */
+function anchorRectOf(el: Element): { left: number; top: number; bottom: number } {
+  const r = el.getBoundingClientRect()
+  return { left: r.left, top: r.top, bottom: r.bottom }
+}
+/** 初始位置（下方），供弹层渲染前放置；翻转等精细调整由 refinePopup 完成 */
 function anchorToRoot(el: Element): { left: number; top: number } {
-  return placeBelow(el)
+  const ar = anchorRectOf(el)
+  return popupPosition(ar, POPUP_MAX_W, 120)
+}
+/** 弹层渲染后用真实尺寸校正位置，确保向上翻时贴住锚点顶部（无空出一截） */
+function refinePopup(
+  anchorEl: Element | null,
+  popupEl: HTMLElement | null,
+  pos: { value: { left: number; top: number } },
+): void {
+  if (!anchorEl || !popupEl) return
+  const ar = anchorRectOf(anchorEl)
+  const pw = popupEl.offsetWidth || POPUP_MAX_W
+  const ph = popupEl.offsetHeight || POPUP_MAX_H
+  pos.value = popupPosition(ar, pw, ph)
 }
 /** 锚点为光标（用于 @ 提及弹层），放在光标下方 */
 function caretPopupPos(): { left: number; top: number } {
@@ -259,14 +280,7 @@ function caretPopupPos(): { left: number; top: number } {
   if (sel && sel.rangeCount > 0) {
     const rect = sel.getRangeAt(0).getBoundingClientRect()
     if (rect && rect.top > 0) {
-      const vw = window.innerWidth
-      const vh = window.innerHeight
-      let left = rect.left
-      let top = rect.bottom + 4
-      if (left + 200 > vw) left = Math.max(0, vw - 200)
-      if (left < 0) left = 0
-      if (top + 240 > vh) top = Math.max(0, rect.top - 240 - 4)
-      return { left: Math.round(left), top: Math.round(top) }
+      return popupPosition({ left: rect.left, top: rect.top, bottom: rect.bottom }, POPUP_MAX_W, POPUP_MAX_H * 0.5)
     }
   }
   return { left: Math.round(err?.left ?? 0), top: Math.round((err?.top ?? 0) + 40) }
@@ -297,8 +311,26 @@ function detectMention(): void {
   const text = (el.textContent ?? '').replace(/\u00a0/g, ' ')
   const before = text.slice(0, offset)
   const m = before.match(/@([^\s]*)$/)
-  if (m) { mentionStart.value = offset - m[0].length; mentionQuery.value = m[1]; activeIdx.value = 0; mentionPos.value = caretPopupPos(); openMention() }
-  else closeMention()
+  if (m) {
+    mentionStart.value = offset - m[0].length; mentionQuery.value = m[1]; activeIdx.value = 0
+    const caretRect = caretRectOf()
+    mentionPos.value = caretRect ? popupPosition(caretRect, POPUP_MAX_W, 120) : caretPopupPos()
+    openMention()
+    // 渲染后用真实尺寸校正定位（双 nextTick 确保 DOM 已布局）
+    if (caretRect) void nextTick(() => nextTick(() => {
+      const popup = mentionRef.value
+      if (popup) mentionPos.value = popupPosition(caretRect, popup.offsetWidth || POPUP_MAX_W, popup.offsetHeight || POPUP_MAX_H)
+    }))
+  } else closeMention()
+}
+/** 光标所在处 rect（用于 @ 提及弹层锚点） */
+function caretRectOf(): { left: number; top: number; bottom: number } | null {
+  const sel = window.getSelection()
+  if (sel && sel.rangeCount > 0) {
+    const r = sel.getRangeAt(0).getBoundingClientRect()
+    if (r && r.top > 0) return { left: r.left, top: r.top, bottom: r.bottom }
+  }
+  return null
 }
 function openMention(): void { if (!mentionOpen.value) { mentionOpen.value = true; void nextTick(() => mentionInput.value?.focus?.()) } }
 function closeMention(): void { mentionOpen.value = false; paramOpen.value = false }
@@ -357,6 +389,8 @@ function onClick(e: MouseEvent): void {
     paramValue.value = val || ''
     paramPos.value = anchorToRoot(t)
     paramOpen.value = true
+    // 渲染后用真实尺寸校正定位（双 nextTick 确保 DOM 已布局，修正向上翻的高度偏差）
+    void nextTick(() => nextTick(() => refinePopup(t, paramRef.value, paramPos)))
     return
   }
   detectMention()
