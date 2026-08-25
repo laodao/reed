@@ -4,9 +4,10 @@
     <div class="edit-toolbar">
       <div class="tb-left">
         <span v-if="currentScene" class="tb-title">场次 {{ currentScene.sceneNumber }}：{{ currentScene.location }}</span>
-        <el-tag v-if="selectedShot" size="small" round effect="plain" type="info">镜 SHT-{{ pad(selectedShot.shotNumber) }}</el-tag>
+        <el-tag size="small" round effect="plain" type="info">{{ shots.length }} 镜</el-tag>
       </div>
       <div class="tb-right">
+        <span class="tb-label">画面风格</span>
         <el-select v-model="styleName" size="small" placeholder="画面风格" class="style-select">
           <el-option v-for="s in stylePresets" :key="s.id" :label="s.name" :value="s.id" />
         </el-select>
@@ -53,15 +54,12 @@
             <div v-if="generating" class="gen-overlay"><el-icon class="is-loading" :size="28"><Loading /></el-icon></div>
           </div>
 
-          <!-- 提示词富文本（一个富文本框：逐镜头行 + 行内参数token + @引用 + 拖图） -->
+          <!-- 提示词富文本（一个整体框：一行一个镜头，参数为行内可点徽章） -->
           <ShotPromptEditor
-            v-model="localShot.frameDescription"
+            v-model:rows="editorRows"
             :entities="mentionEntities"
-            :keyframe-count="selectedShot.keyframeCount"
-            :shot-type="selectedShot.shotType"
-            :duration="selectedShot.duration"
-            :style="styleName"
-            @update:model-value="dirty = true"
+            :style-options="styleOptions"
+            @update:rows="dirty = true"
           />
 
           <!-- 操作 -->
@@ -85,15 +83,22 @@
 <script setup lang="ts">
 /**
  * M5 分镜制作页（tab 宿主内的完整左+中央工作区，参照项目分镜制作页.png）。
- * 左：SHT 分镜列表（选中态）；中：大预览 + 镜头字段 + 提示词 + 生成图像。
- * 数据：getEpisode→scriptId→listScenes→listStoryboards(sceneId)。单镜生成 generateStoryboardImage。
+ * 左：SHT 分镜列表（选中态）；中：大预览 + 片段提示词富文本 + 生成图像。
+ *
+ * 数据模型：编辑单位 = 视频片段（一段待生成视频，含多个镜头）。底部提示词框为
+ * 一个整体富文本，一行 = 一个镜头，每个镜头的 景别/运镜/时长/风格 取分镜字段
+ * （shotType/cameraMovement/duration + 页面级 style），描述取 frameDescription。
+ * 保存逐镜写回 storyboard。
  */
 import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { MagicStick, Picture, Loading } from '@element-plus/icons-vue'
 import AssetGalleryPicker from '@/components/episode-production/storyboard/AssetGalleryPicker.vue'
-import ShotPromptEditor from '@/components/episode-production/storyboard/ShotPromptEditor.vue'
-import type { MentionEntity } from '@/components/episode-production/storyboard/ShotPromptEditor.vue'
+import ShotPromptEditor, {
+  type ShotPromptRow,
+  type MentionEntity,
+  type ParamOption,
+} from '@/components/episode-production/storyboard/ShotPromptEditor.vue'
 import { toImageUrl } from '@/utils/asset-url'
 
 const props = defineProps<{
@@ -105,27 +110,16 @@ const props = defineProps<{
 const scenes = ref<any[]>([])
 const shots = ref<any[]>([])
 const selectedShot = ref<any>(null)
-const localShot = ref<any>(null)
+const editorRows = ref<ShotPromptRow[]>([])
 const generating = ref(false)
 const dirty = ref(false)
 const styleName = ref('cinematic')
 const stylePresets = ref<Array<{ id: string; name: string }>>([])
 const mentionEntities = ref<MentionEntity[]>([])
 
-const SHOT_TYPES = [
-  { value: 'extreme_long', label: '大远景' }, { value: 'long', label: '远景' }, { value: 'full', label: '全景' },
-  { value: 'medium', label: '中景' }, { value: 'medium_close', label: '中近景' }, { value: 'close', label: '近景' },
-  { value: 'extreme_close', label: '特写' }, { value: 'detail', label: '大特写' },
-]
-const ANGLES = [
-  { value: 'eye_level', label: '平视' }, { value: 'high', label: '俯拍' }, { value: 'low', label: '仰拍' },
-  { value: 'dutch', label: '荷兰角' }, { value: 'birds_eye', label: '鸟瞰' }, { value: 'worms_eye', label: '虫视' },
-]
-const MOVEMENTS = [
-  { value: 'static', label: '固定' }, { value: 'pan_left', label: '左摇' }, { value: 'pan_right', label: '右摇' },
-  { value: 'dolly_in', label: '推镜' }, { value: 'dolly_out', label: '拉镜' }, { value: 'zoom_in', label: '变焦推' },
-  { value: 'zoom_out', label: '变焦拉' }, { value: 'handheld', label: '手持' }, { value: 'orbit', label: '环绕' },
-]
+const styleOptions = computed<ParamOption[]>(() =>
+  stylePresets.value.map((p) => ({ value: p.id, label: p.name })),
+)
 
 const currentScene = computed(() => scenes.value.find(s => s.id === selectedShot.value?.sceneScriptId) || null)
 
@@ -142,9 +136,9 @@ function frameUrl(sb: any): string | null {
 }
 
 async function load(): Promise<void> {
-  if (!props.episodeId) { scenes.value = []; shots.value = []; return }
+  if (!props.episodeId) { scenes.value = []; shots.value = []; editorRows.value = []; return }
   const ep = await window.electronAPI.episodeProduction.getEpisode(props.episodeId)
-  if (!ep.success || !ep.data?.scriptId) { scenes.value = []; shots.value = []; return }
+  if (!ep.success || !ep.data?.scriptId) { scenes.value = []; shots.value = []; editorRows.value = []; return }
 
   const scResp = await window.electronAPI.episodeProduction.listScenes(ep.data.scriptId)
   scenes.value = scResp.success ? (scResp.data || []) : []
@@ -154,19 +148,30 @@ async function load(): Promise<void> {
     if (sbResp.success && sbResp.data?.length) {
       shots.value = sbResp.data
       selectShot(shots.value[0])
+      syncRows()
       return
     }
   }
   shots.value = []
   selectedShot.value = null
+  editorRows.value = []
 }
 
 function selectShot(shot: any): void {
   selectedShot.value = shot
-  localShot.value = {
-    frameDescription: shot.frameDescription || '',
-  }
-  dirty.value = false
+}
+
+/** 由 shots 构建编辑器 rows（一行一个镜头） */
+function syncRows(): void {
+  editorRows.value = shots.value.map((sb) => ({
+    id: sb.id,
+    shotNumber: sb.shotNumber || 0,
+    shotType: sb.shotType || 'medium',
+    cameraMovement: sb.cameraMovement || 'static',
+    duration: Number(sb.duration) || 4,
+    style: styleName.value,
+    description: sb.frameDescription || '',
+  }))
 }
 
 async function onGenerate(): Promise<void> {
@@ -196,18 +201,34 @@ async function onSave(): Promise<void> {
   await doSave()
 }
 
+/** 逐镜写回：把编辑器 rows 里已变更的字段写回各自 storyboard */
 async function doSave(): Promise<void> {
-  if (!selectedShot.value || !localShot.value) return
-  const patch = {
-    frameDescription: localShot.value.frameDescription,
+  if (!editorRows.value.length) return
+  let saved = 0
+  let failed = 0
+  for (const row of editorRows.value) {
+    const sb = shots.value.find((s) => s.id === row.id)
+    if (!sb) continue
+    const patch: Record<string, unknown> = {
+      shotType: row.shotType,
+      cameraMovement: row.cameraMovement,
+      duration: row.duration,
+      frameDescription: row.description,
+    }
+    const r = await window.electronAPI.episodeProduction.updateStoryboard(row.id, patch)
+    if (r.success) {
+      saved++
+      const idx = shots.value.findIndex((s) => s.id === row.id)
+      if (idx !== -1) shots.value[idx] = { ...shots.value[idx], ...patch }
+    } else {
+      failed++
+    }
   }
-  const r = await window.electronAPI.episodeProduction.updateStoryboard(selectedShot.value.id, patch)
-  if (r.success) {
-    ElMessage.success('已保存')
+  if (failed > 0) {
+    ElMessage.error(`保存失败 ${failed} 处`)
+  } else if (saved > 0) {
+    ElMessage.success(`已保存 ${saved} 个镜头`)
     dirty.value = false
-    selectedShot.value = { ...selectedShot.value, ...patch }
-  } else {
-    ElMessage.error(r.error || '保存失败')
   }
 }
 
@@ -221,6 +242,12 @@ async function reloadShot(shotId: string): Promise<void> {
 }
 
 watch(() => props.episodeId, () => void load())
+watch(styleName, () => {
+  // 页面级风格变化 → 同步每行风格 token
+  if (!editorRows.value.length) return
+  editorRows.value = editorRows.value.map((r) => ({ ...r, style: styleName.value }))
+  dirty.value = true
+})
 onMounted(async () => {
   const sp = await window.electronAPI.episodeProduction.getStylePresets()
   if (sp.success && sp.data?.length) stylePresets.value = sp.data
@@ -267,6 +294,8 @@ async function loadMentionEntities(): Promise<void> {
   border-bottom: 1px solid var(--border-color-lighter);
   .tb-left { display: flex; align-items: center; gap: 8px; }
   .tb-title { font-size: 14px; font-weight: 600; color: var(--text-color-primary); }
+  .tb-right { display: flex; align-items: center; gap: 8px; }
+  .tb-label { font-size: 12px; color: var(--text-color-secondary); }
   .style-select { width: 140px; }
 }
 
@@ -315,13 +344,6 @@ async function loadMentionEntities(): Promise<void> {
   .preview-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--text-color-placeholder); .pe-text { font-size: 13px; } }
   .gen-overlay { position: absolute; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 26px; }
 }
-
-.shot-fields { margin-top: 14px; }
-.field-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.f-label { font-size: 12px; color: var(--text-color-secondary); }
-.f-select { width: 120px; }
-.dur-input { width: 90px; }
-.field-desc { margin-top: 10px; }
 
 .edit-actions { display: flex; gap: 8px; margin-top: 12px; }
 .no-shot { flex: 1; display: flex; align-items: center; justify-content: center; }
