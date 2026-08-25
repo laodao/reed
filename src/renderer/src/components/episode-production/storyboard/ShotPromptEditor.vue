@@ -396,7 +396,9 @@ function detectMention(): void {
   if (offset == null) { closeMention(); return }
   const text = (el.textContent ?? '').replace(/\u00a0/g, ' ')
   const before = text.slice(0, offset)
-  const m = before.match(/@([^\s]*)$/)
+  // 只在「真正正在输入 @」时弹：@ 后紧跟的必须是普通字符（不含 [ ] @ 与空白）。
+  // 这样已生成的 @[名字@索引] token（后面有 [）不会被当作正在输入，光标在其后点/输入不再误弹。
+  const m = before.match(/@([^[\]@\s]*)$/)
   if (m) {
     mentionStart.value = offset - m[0].length; mentionQuery.value = m[1]; activeIdx.value = 0
     mentionStage.value = 'asset'; mentionAsset.value = null
