@@ -14,6 +14,13 @@
         <el-select v-model="styleName" size="small" placeholder="画面风格" class="style-select">
           <el-option v-for="s in stylePresets" :key="s.id" :label="s.name" :value="s.id" />
         </el-select>
+        <span class="tb-label">视频模型</span>
+        <el-select v-model="videoProviderId" size="small" placeholder="视频服务" class="provider-select" @change="onVideoProviderChange">
+          <el-option v-for="p in videoProviders" :key="p.providerConfigId" :label="p.name" :value="p.providerConfigId" :disabled="!p.ready" />
+        </el-select>
+        <el-select v-model="videoModelId" size="small" placeholder="模型" class="model-select">
+          <el-option v-for="m in videoModels" :key="m.id" :label="m.name" :value="m.id" />
+        </el-select>
       </div>
     </div>
 
@@ -49,10 +56,19 @@
         <template v-if="selectedShot">
           <!-- 预览区 -->
           <div class="preview-area">
-            <el-image v-if="frameUrl(selectedShot)" :src="frameUrl(selectedShot)" fit="contain" class="preview-img" />
+            <video
+              v-if="videoUrl(selectedShot)"
+              :src="videoUrl(selectedShot)!"
+              class="preview-video"
+              controls
+              autoplay
+              loop
+              muted
+            />
+            <el-image v-else-if="frameUrl(selectedShot)" :src="frameUrl(selectedShot)" fit="contain" class="preview-img" />
             <div v-else class="preview-empty">
-              <el-icon :size="40"><Picture /></el-icon>
-              <span class="pe-text">编辑提示词 + 生成</span>
+              <el-icon :size="40"><VideoCamera /></el-icon>
+              <span class="pe-text">编辑提示词 + 生成视频</span>
             </div>
             <div v-if="generating" class="gen-overlay"><el-icon class="is-loading" :size="28"><Loading /></el-icon></div>
           </div>
@@ -68,8 +84,8 @@
           <!-- 操作 -->
           <div class="edit-actions">
             <el-button type="primary" :loading="generating" @click="onGenerate">
-              <el-icon><MagicStick /></el-icon>
-              生成图像
+              <el-icon><VideoCamera /></el-icon>
+              生成视频
             </el-button>
             <el-button :disabled="!dirty" @click="onSave">保存</el-button>
           </div>
@@ -96,13 +112,13 @@
  */
 import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { MagicStick, Picture, Loading, ArrowLeft } from '@element-plus/icons-vue'
+import { Picture, Loading, ArrowLeft, VideoCamera } from '@element-plus/icons-vue'
 import AssetGalleryPicker from '@/components/episode-production/storyboard/AssetGalleryPicker.vue'
 import ShotPromptEditor, {
   type MentionEntity,
   type ParamOption,
 } from '@/components/episode-production/storyboard/ShotPromptEditor.vue'
-import { toImageUrl } from '@/utils/asset-url'
+import { toImageUrl, toVideoUrl } from '@/utils/asset-url'
 import { buildPromptText, splitPromptText } from '@/components/episode-production/storyboard/storyboard-prompt-format'
 
 const props = defineProps<{
@@ -123,6 +139,11 @@ const dirty = ref(false)
 const styleName = ref('cinematic')
 const stylePresets = ref<Array<{ id: string; name: string }>>([])
 const mentionEntities = ref<MentionEntity[]>([])
+// 视频 provider / model（生成视频用）
+const videoProviders = ref<Array<{ providerConfigId: string; name: string; ready: boolean; models: Array<{ id: string; name: string }> }>>([])
+const videoProviderId = ref('')
+const videoModelId = ref('')
+const videoModels = computed(() => videoProviders.value.find(p => p.providerConfigId === videoProviderId.value)?.models ?? [])
 
 const styleOptions = computed<ParamOption[]>(() =>
   stylePresets.value.map((p) => ({ value: p.id, label: p.name })),
@@ -140,6 +161,10 @@ function frameUrl(sb: any): string | null {
   const img = sb.frameImage
   const p = img?.filePath || img?.url || (sb as any).frameImagePath
   return p ? toImageUrl(p) : null
+}
+function videoUrl(sb: any): string | null {
+  const vp = sb.videoPath
+  return vp ? toVideoUrl(vp) : null
 }
 
 async function load(): Promise<void> {
@@ -177,16 +202,20 @@ function syncPrompt(): void {
 
 async function onGenerate(): Promise<void> {
   if (!selectedShot.value || generating.value) return
+  if (!videoProviderId.value || !videoModelId.value) {
+    ElMessage.warning('请先在右上角选择视频模型')
+    return
+  }
   generating.value = true
   try {
-    // 先保存字段，再生成图像
+    // 先保存字段（含提示词 → frameDescription），再用提示词直接生成视频
     await doSave()
-    const r = await window.electronAPI.episodeProduction.generateStoryboardImage(
+    const r = await window.electronAPI.episodeProduction.generateVideoSegment(
       selectedShot.value.id,
-      styleName.value,
+      { forceMode: 'text2video', providerConfigId: videoProviderId.value, modelId: videoModelId.value },
     )
     if (r.success) {
-      ElMessage.success('图像已生成')
+      ElMessage.success('视频已生成')
       await reloadShot(selectedShot.value.id)
     } else {
       ElMessage.error(r.error || '生成失败')
@@ -196,6 +225,27 @@ async function onGenerate(): Promise<void> {
   } finally {
     generating.value = false
   }
+}
+
+/** 加载可用的视频 provider（带模型的），默认选第一个可用的 */
+async function loadVideoProviders(): Promise<void> {
+  try {
+    const r = await window.electronAPI.episodeProduction.listVideoProviders()
+    const list = (r.success ? r.data : []) || []
+    videoProviders.value = list
+    const firstReady = list.find(p => p.ready && p.models.length > 0) ?? list[0]
+    if (firstReady) {
+      videoProviderId.value = firstReady.providerConfigId
+      videoModelId.value = firstReady.models[0]?.id ?? ''
+    }
+  } catch (e: any) {
+    console.error('[StageStoryboardEditor] 加载视频模型失败', e)
+  }
+}
+
+function onVideoProviderChange(): void {
+  // 切换服务时选中其第一个模型
+  videoModelId.value = videoModels.value[0]?.id ?? ''
 }
 
 async function onSave(): Promise<void> {
@@ -266,6 +316,7 @@ watch(styleName, () => {
 onMounted(async () => {
   const sp = await window.electronAPI.episodeProduction.getStylePresets()
   if (sp.success && sp.data?.length) stylePresets.value = sp.data
+  void loadVideoProviders()
   await loadMentionEntities()
   void load()
 })
@@ -322,6 +373,8 @@ async function loadMentionEntities(): Promise<void> {
   .tb-right { display: flex; align-items: center; gap: 8px; }
   .tb-label { font-size: 12px; color: var(--text-color-secondary); }
   .style-select { width: 140px; }
+  .provider-select { width: 130px; }
+  .model-select { width: 140px; }
 }
 
 .edit-body { flex: 1; min-height: 0; display: flex; }
@@ -366,6 +419,7 @@ async function loadMentionEntities(): Promise<void> {
   display: flex; align-items: center; justify-content: center;
   overflow: hidden;
   .preview-img { max-width: 100%; max-height: 100%; }
+  .preview-video { max-width: 100%; max-height: 100%; object-fit: contain; }
   .preview-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--text-color-placeholder); .pe-text { font-size: 13px; } }
   .gen-overlay { position: absolute; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 26px; }
 }
