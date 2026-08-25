@@ -1,22 +1,30 @@
 <template>
   <div class="stage-storyboard-tab">
-    <!-- 子导航：列表 / 制作 -->
-    <div class="mode-tabs">
-      <button :class="{ active: mode === 'list' }" @click="mode = 'list'">分镜列表</button>
-      <button :class="{ active: mode === 'edit' }" @click="mode = 'edit'">分镜制作</button>
-    </div>
-
-    <!-- 内容按模式切换 -->
+    <!-- 分镜 tab 默认=列表；点击场次进入该场制作，可返回列表 -->
     <div class="mode-body">
-      <StageStoryboardView v-if="mode === 'list'" :episode-id="episodeId" :project-id="projectId" :context-hint="contextHint" />
-      <StageStoryboardEditor v-else :episode-id="episodeId" :project-id="projectId" :context-hint="contextHint" />
+      <StageStoryboardView
+        v-if="view === 'list'"
+        :episode-id="episodeId"
+        :project-id="projectId"
+        :context-hint="contextHint"
+        @enter-scene="onEnterScene"
+      />
+      <StageStoryboardEditor
+        v-else
+        :episode-id="episodeId"
+        :project-id="projectId"
+        :scene-id="editingSceneId"
+        :context-hint="contextHint"
+        @go-back="view = 'list'; editingSceneId = null"
+      />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 /**
- * 分镜 tab 宿主：列表（M4）/ 制作（M5）子模式切换。
+ * 分镜 tab 宿主：默认=列表（M4）；点击某个场次 → 进入该场分镜制作（M5），可返回列表。
+ * 不再使用「分镜列表/分镜制作」子 tab 切换。
  */
 import { ref } from 'vue'
 import StageStoryboardView from '@/components/episode-production/storyboard/StageStoryboardView.vue'
@@ -28,7 +36,13 @@ defineProps<{
   contextHint?: string | null
 }>()
 
-const mode = ref<'list' | 'edit'>('list')
+const view = ref<'list' | 'edit'>('list')
+const editingSceneId = ref<string | null>(null)
+
+function onEnterScene(sceneId: string): void {
+  editingSceneId.value = sceneId
+  view.value = 'edit'
+}
 </script>
 
 <style lang="scss" scoped>
@@ -38,26 +52,6 @@ const mode = ref<'list' | 'edit'>('list')
   height: 100%;
   min-height: 0;
   background: var(--bg-color-page);
-}
-
-.mode-tabs {
-  flex-shrink: 0;
-  display: flex;
-  gap: 2px;
-  padding: 6px 16px 0;
-  background: var(--bg-color);
-  border-bottom: 1px solid var(--border-color-lighter);
-  button {
-    border: none;
-    background: transparent;
-    padding: 8px 16px;
-    font-size: 13px;
-    color: var(--text-color-secondary);
-    cursor: pointer;
-    border-bottom: 2px solid transparent;
-    &.active { color: var(--color-primary); border-bottom-color: var(--color-primary); font-weight: 600; }
-    &:hover { color: var(--color-primary); }
-  }
 }
 
 .mode-body { flex: 1; min-height: 0; }

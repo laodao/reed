@@ -28,12 +28,15 @@
         <!-- 按场次分组 -->
         <div v-else class="sb-scenes">
           <div v-for="sc in scenes" :key="sc.id" class="sb-scene-group" :data-scene="sc.id">
-            <div class="group-head">
+            <div class="group-head" @click="onEnterScene(sc)">
               <span class="group-title">场次 {{ sc.sceneNumber }}：{{ sc.location }}</span>
-              <span v-if="storyboards[sc.id]?.length" class="done-mark">制作中</span>
+              <span class="group-actions">
+                <span v-if="storyboards[sc.id]?.length" class="done-mark">制作中</span>
+                <span class="enter-link">进入制作 →</span>
+              </span>
             </div>
             <div class="group-shots">
-              <div v-for="sb in (storyboards[sc.id] || [])" :key="sb.id" class="shot-tile" @click="onOpenShot(sb)">
+              <div v-for="sb in (storyboards[sc.id] || [])" :key="sb.id" class="shot-tile" @click="onEnterScene(sc)">
                 <div class="tile-preview">
                   <el-image v-if="frameUrl(sb)" :src="frameUrl(sb)" fit="cover" class="tile-img" />
                   <div v-else class="tile-empty"><el-icon :size="18"><Picture /></el-icon><span>待生成</span></div>
@@ -44,8 +47,8 @@
                 </div>
               </div>
               <!-- 无分镜时占位 -->
-              <div v-if="!(storyboards[sc.id] || []).length" class="shot-tile empty-tile" @click="onGenerateScene(sc)">
-                <div class="tile-empty"><el-icon :size="18"><Plus /></el-icon><span>生成分镜</span></div>
+              <div v-if="!(storyboards[sc.id] || []).length" class="shot-tile empty-tile" @click="onEnterScene(sc)">
+                <div class="tile-empty"><el-icon :size="18"><Plus /></el-icon><span>进入制作</span></div>
               </div>
             </div>
           </div>
@@ -72,6 +75,7 @@ const props = defineProps<{
   projectId: string
   contextHint?: string | null
 }>()
+const emit = defineEmits<{ 'enter-scene': [sceneId: string] }>()
 
 const script = ref<any>(null)
 const scenes = ref<any[]>([])
@@ -105,22 +109,9 @@ function onSelectScene(sc: any): void {
   el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 }
 
-async function onGenerateScene(sc: any): Promise<void> {
-  if (generating.value) return
-  generating.value = true
-  try {
-    const r = await window.electronAPI.episodeProduction.generateStoryboard(sc.id)
-    if (r.success) {
-      ElMessage.success(`已生成场次 ${sc.sceneNumber} 的分镜`)
-      await loadStoryboards(sc.id)
-    } else {
-      ElMessage.error(r.error || '生成失败')
-    }
-  } catch (e: any) {
-    ElMessage.error(e?.message || '生成失败')
-  } finally {
-    generating.value = false
-  }
+/** 点击场次 → 进入该场分镜制作 */
+function onEnterScene(sc: any): void {
+  emit('enter-scene', sc.id)
 }
 
 async function onGenerateAll(): Promise<void> {
@@ -139,10 +130,6 @@ async function onGenerateAll(): Promise<void> {
   } finally {
     generating.value = false
   }
-}
-
-function onOpenShot(sb: any): void {
-  ElMessage.info('分镜详情编辑（M5）将在后续提供')
 }
 
 function frameUrl(sb: any): string | null {

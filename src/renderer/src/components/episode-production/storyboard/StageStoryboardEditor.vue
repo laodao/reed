@@ -3,6 +3,9 @@
     <!-- 顶部工具条 -->
     <div class="edit-toolbar">
       <div class="tb-left">
+        <el-button text size="small" @click="emit('go-back')">
+          <el-icon><ArrowLeft /></el-icon> 返回分镜列表
+        </el-button>
         <span v-if="currentScene" class="tb-title">场次 {{ currentScene.sceneNumber }}：{{ currentScene.location }}</span>
         <el-tag size="small" round effect="plain" type="info">{{ shots.length }} 镜</el-tag>
       </div>
@@ -93,7 +96,7 @@
  */
 import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { MagicStick, Picture, Loading } from '@element-plus/icons-vue'
+import { MagicStick, Picture, Loading, ArrowLeft } from '@element-plus/icons-vue'
 import AssetGalleryPicker from '@/components/episode-production/storyboard/AssetGalleryPicker.vue'
 import ShotPromptEditor, {
   type MentionEntity,
@@ -105,8 +108,11 @@ import { buildPromptText, splitPromptText } from '@/components/episode-productio
 const props = defineProps<{
   episodeId: string
   projectId: string
+  /** 指定编辑的场次（来自列表页点击）；为空则取第一个有分镜的场次 */
+  sceneId?: string | null
   contextHint?: string | null
 }>()
+const emit = defineEmits<{ 'go-back': [] }>()
 
 const scenes = ref<any[]>([])
 const shots = ref<any[]>([])
@@ -143,8 +149,10 @@ async function load(): Promise<void> {
 
   const scResp = await window.electronAPI.episodeProduction.listScenes(ep.data.scriptId)
   scenes.value = scResp.success ? (scResp.data || []) : []
-  // 找第一个有分镜的场景
-  for (const sc of scenes.value) {
+  // 优先加载指定场次（来自列表页点击）；否则取第一个有分镜的场次
+  const target = props.sceneId ? scenes.value.find(s => s.id === props.sceneId) : null
+  const order = target ? [target, ...scenes.value.filter(s => s.id !== target.id)] : scenes.value
+  for (const sc of order) {
     const sbResp = await window.electronAPI.episodeProduction.listStoryboards(sc.id)
     if (sbResp.success && sbResp.data?.length) {
       shots.value = sbResp.data
@@ -239,7 +247,7 @@ async function reloadShot(shotId: string): Promise<void> {
   }
 }
 
-watch(() => props.episodeId, () => void load())
+watch(() => [props.episodeId, props.sceneId] as const, () => void load())
 watch(styleName, () => {
   // 页面级风格变化 → 同步每行风格参数
   if (!promptText.value) return
