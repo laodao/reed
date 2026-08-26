@@ -57,6 +57,7 @@ import { computeFaceMetrics, type Point, type FaceMetrics } from './faceMetrics'
 import { transformLandmarks, type WarpParams } from './bandWarp'
 import { buildFaceEditPrompt } from './paramPrompt'
 import { defaultMakeup } from './makeupRenderer'
+import { toImageUrl } from '@/utils/asset-url'
 import type { MakeupState } from './makeupRenderer'
 import type { PortraitVariant } from '../../../../../shared/types/portrait.types'
 
@@ -238,7 +239,8 @@ async function runDetect() {
   detecting.value = true; failure.value = null
   landmarks.value = []; metrics.value = null
   // 防御：variant 缺失时给出友好错误，避免读取 null.imagePath 崩溃
-  const src = props.variant?.imagePath
+  // 用 toImageUrl 归一化：兼容旧数据中未带 local-image:// 前缀的相对路径
+  const src = toImageUrl(props.variant?.imagePath)
   if (!src) {
     detecting.value = false
     failure.value = { reason: 'missing_variant', message: '缺少变体图片，无法进行面容分析' }

@@ -3,6 +3,11 @@
     <div class="canvas-wrap">
       <canvas ref="glCanvas" class="gl-canvas"></canvas>
       <canvas ref="overlayCanvas" class="overlay"></canvas>
+      <!-- 图片加载/WebGL 失败时显示原因，避免纯黑块无法定位 -->
+      <div v-if="loadError" class="annotator-error">
+        <div class="ae-ico">!</div>
+        <p>{{ loadError }}</p>
+      </div>
     </div>
     <div class="annotator-toolbar">
       <label class="toggle">
@@ -58,6 +63,8 @@ const glCanvas = ref<HTMLCanvasElement | null>(null)
 const overlayCanvas = ref<HTMLCanvasElement | null>(null)
 const showPointsInner = ref(props.showPoints)
 const showThirdsInner = ref(props.showThirds)
+/** 加载/渲染失败原因（显示在画布上，替代黑块） */
+const loadError = ref('')
 
 let renderer: FaceWarpRenderer | null = null
 let imgEl: HTMLImageElement | null = null
@@ -162,6 +169,7 @@ function drawOverlay() {
 
 async function initImage(url: string) {
   imgReady = false
+  loadError.value = ''
   try {
     imgEl = await loadImg(url)
     imgReady = true
@@ -171,8 +179,9 @@ async function initImage(url: string) {
     }
     rebuildTexture()
     renderWarpView()
-  } catch (e) {
+  } catch (e: any) {
     console.warn('[FaceAnnotator] 图片加载失败:', e)
+    loadError.value = `图片加载失败：${e?.message || '未知错误'}\n${url}`
   }
 }
 
@@ -204,8 +213,9 @@ onMounted(async () => {
   if (!glCanvas.value) return
   try {
     renderer = new FaceWarpRenderer(glCanvas.value)
-  } catch (e) {
+  } catch (e: any) {
     console.error('[FaceAnnotator] WebGL2 初始化失败:', e)
+    loadError.value = `WebGL2 渲染初始化失败：${e?.message || '未知错误'}`
     return
   }
   if (props.imageSrc) await initImage(props.imageSrc)
@@ -251,6 +261,34 @@ defineExpose({
   min-height: 0;
   display: flex;
   line-height: 0;
+}
+.annotator-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #1a1d24;
+  color: #a8b0c0;
+  padding: 20px;
+  text-align: center;
+  white-space: pre-wrap;
+  font-size: 12px;
+  line-height: 1.5;
+
+  .ae-ico {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 17px;
+    color: #e6a23c;
+  }
 }
 .gl-canvas {
   display: block;
