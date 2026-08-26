@@ -15,7 +15,7 @@
       aria-multiline="true"
       spellcheck="false"
       :class="{ 'is-dragover': dragOver }"
-      @input="onInput"
+      @input="onInput($event)"
       @keydown="onKeydown"
       @click="onClick"
       @compositionstart="onCompositionStart"
@@ -295,10 +295,17 @@ function caretOffset(root: HTMLElement): number | null {
 
 function onCompositionStart(): void { composing = true }
 function onCompositionEnd(): void { composing = false; onInput() }
-function onInput(): void {
+function onInput(e?: Event): void {
   if (rendering || composing) return
   emitText()
-  // 输入时检测是否正在输入 @，以弹出资产选择
+  // 只在「插入文本」时检测是否输入 @（弹出资产选择）；删除类操作不弹，
+  // 避免删 token / 删 @ 边界的残留 @ 被误判为在输入 @。
+  const type = (e as InputEvent | undefined)?.inputType ?? ''
+  const isInsertion = type === 'insertText' || type === 'insertCompositionText' || type === 'insertParagraph' || (e && !/^delete/.test(type))
+  if (type && !isInsertion) {
+    closeMention()
+    return
+  }
   detectMention()
 }
 
