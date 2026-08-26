@@ -11,10 +11,11 @@
 
 /**
  * 角色资产生成的 framing 模式：
- *   - 'fullBody'  全身（主图、视角、服装、姿势）
+ *   - 'fullBody'  全身（视角、服装、姿势等派生图）
  *   - 'upperBody' 上半身（表情 — 重点是脸 + 手势，不要求脚到地）
+ *   - 'bust'      半身定妆（角色定妆/主图 — 上半身 + 白色背景，供派生参考）
  */
-export type CharacterFraming = 'fullBody' | 'upperBody'
+export type CharacterFraming = 'fullBody' | 'upperBody' | 'bust'
 
 /** 共用约束：纯色背景 / 无帽子 / 无首饰 / 光照均匀 / 无阴影 */
 const COMMON_CONSTRAINT = [
@@ -29,11 +30,16 @@ const COMMON_CONSTRAINT = [
 const FRAMING_SUFFIX: Record<CharacterFraming, string> = {
   fullBody: '直立全身（standing full body, head to toe in frame）',
   upperBody: '上半身（upper body shot, from waist up, head and hands visible）',
+  bust: '半身定妆照（bust portrait, upper body shot, head and shoulders visible, waist-up）',
 }
+
+/** 半身定妆的背景硬约束：纯白背景（角色定妆基准，便于后期抠图/派生） */
+const BUST_BACKGROUND_CONSTRAINT = '纯白背景（pure white background, clean white backdrop, no shadow on background）'
 
 /** 正面 prompt 末尾追加的硬约束（中英双写，提升各家 provider 的命中率） */
 export function characterConstraintSuffix(framing: CharacterFraming = 'fullBody'): string {
-  return `${FRAMING_SUFFIX[framing]}，${COMMON_CONSTRAINT}`
+  const bg = framing === 'bust' ? `${BUST_BACKGROUND_CONSTRAINT}, ${COMMON_CONSTRAINT}` : COMMON_CONSTRAINT
+  return `${FRAMING_SUFFIX[framing]}，${bg}`
 }
 
 /** 共用 negative：帽子 / 首饰 / 杂背景 / 强烈阴影 */
@@ -74,10 +80,11 @@ const COMMON_NEGATIVE = [
   'underexposed',
 ]
 
-/** framing 对应的 negative（fullBody 多禁止"半身/特写"，upperBody 不加这条） */
+/** framing 对应的 negative（fullBody 多禁止"半身/特写"，upperBody/bust 不加这条） */
 const FRAMING_NEGATIVE: Record<CharacterFraming, string[]> = {
   fullBody: ['cropped', 'half body', 'close-up', 'portrait crop', 'cut off legs'],
   upperBody: ['extreme close-up', 'face only crop'],
+  bust: ['full body', 'legs visible', 'cropped head'],
 }
 
 /** negative prompt（可与已有 negativePrompt 拼接） */
@@ -115,10 +122,13 @@ export function mergeCharacterNegative(
 /**
  * 由派生 category 决定 framing：
  *   - expression → upperBody（表情图，关注脸和上半身）
- *   - 其他（view / outfit / pose / main） → fullBody
+ *   - main       → bust（半身定妆照，白背景，供派生参考）
+ *   - 其他（view / outfit / pose） → fullBody
  */
 export function framingForCategory(category: string): CharacterFraming {
-  return category === 'expression' ? 'upperBody' : 'fullBody'
+  if (category === 'expression') return 'upperBody'
+  if (category === 'main') return 'bust'
+  return 'fullBody'
 }
 
 /**

@@ -391,8 +391,8 @@ async function executeGenerateAsset(
   let prompt = buildAssetIdentityPrompt(kind, eff, storyBg)
   let negativePrompt: string | undefined
   if (kind === 'character') {
-    prompt = appendCharacterConstraints(prompt, 'fullBody')
-    negativePrompt = mergeCharacterNegative(undefined, 'fullBody')
+    prompt = appendCharacterConstraints(prompt, 'bust')
+    negativePrompt = mergeCharacterNegative(undefined, 'bust')
   } else if (kind === 'location') {
     prompt = appendLocationNoHumanConstraint(prompt)
     negativePrompt = mergeLocationNoHumanNegative(undefined)
