@@ -15,11 +15,21 @@ vi.mock('@core/interfaces/event.interface', () => ({
   }),
 }))
 
+// mock 数据源服务（executeQueryDatabase 动态 import；sendMessage 的 listEligible 也要可用）
+const datasourceMock = vi.hoisted(() => ({
+  getDataSourceService: vi.fn(),
+}))
+vi.mock('@core/modules/workflow/datasource/datasource.service', () => ({
+  getDataSourceService: datasourceMock.getDataSourceService,
+  registerDataSourceService: vi.fn(),
+}))
+
 import {
   normalizeEpDecision,
   epAgentConversationId,
   EpisodeProductionAgentService,
   detectChoiceForAssetImage,
+  detectChoiceForDatabase,
 } from '@core/modules/episode-production/agent/ep-agent-workflow.service'
 import { extractJsonObject } from '@core/modules/episode-production/agent/ep-agent-actions'
 import {
@@ -31,6 +41,7 @@ import type { EpAgentProductionState } from '@core/modules/episode-production/ag
 
 beforeEach(() => {
   emitted.length = 0
+  datasourceMock.getDataSourceService.mockReset()
 })
 
 // ==================== normalizeEpDecision ====================
@@ -267,5 +278,85 @@ describe('detectChoiceForAssetImage 规则检测', () => {
 
   it('非生成图意图 → 返回 null', () => {
     expect(detectChoiceForAssetImage('帮我拆分场景', state)).toBeNull()
+  })
+})
+
+// ==================== detectChoiceForDatabase（Agent 查询外部数据库） ====================
+describe('detectChoiceForDatabase 规则检测', () => {
+  const names = ['金融业务库', '客户库']
+
+  it('用户想查外部数据但未点名数据源 → 构造 query_database choice', () => {
+    const c = detectChoiceForDatabase('帮我查一下最近订单数据', names)
+    expect(c).toEqual({ actionType: 'query_database', param: 'dataSourceId', choices: ['金融业务库', '客户库'], prompt: '请选择要查询的数据源' })
+  })
+
+  it('已点名数据源 → 返回 null（交回 AI 执行）', () => {
+    expect(detectChoiceForDatabase('查一下金融业务库的订单', names)).toBeNull()
+  })
+
+  it('无已配置数据源 → 返回 null（让 AI 建议先配置）', () => {
+    expect(detectChoiceForDatabase('查一下订单数据', [])).toBeNull()
+  })
+
+  it('纯剧集内部查询不触发（查剧本/查场景）', () => {
+    expect(detectChoiceForDatabase('帮我查一下剧本生成情况', names)).toBeNull()
+    expect(detectChoiceForDatabase('查一下场景列表', names)).toBeNull()
+  })
+
+  it('普通对话不触发', () => {
+    expect(detectChoiceForDatabase('你好，帮我看看这个剧本', names)).toBeNull()
+  })
+})
+
+// ==================== executeQueryDatabase（Agent 查询外部数据库动作） ====================
+describe('executeQueryDatabase 动作执行', () => {
+  it('参数化 SELECT 执行成功 → ok + 预览数据', async () => {
+    const execute = vi.fn().mockResolvedValue({
+      columns: ['id', 'name'],
+      rows: [{ id: 1, name: 'a' }],
+      rowCount: 1,
+      durationMs: 5,
+    })
+    datasourceMock.getDataSourceService.mockReturnValue({ execute } as any)
+    const { __epAgentTest } = await import('@core/modules/episode-production/agent/ep-agent-actions')
+    const ctx = { projectId: 'p1', episodeId: 'ep1', db: {}, ai: {}, emit: () => {} } as any
+    const summary = await __epAgentTest.executeQueryDatabase(ctx, {
+      type: 'query_database',
+      params: { dataSourceId: 'ds_1', sql: 'SELECT * FROM t WHERE id>$1', params: [1] },
+    })
+    expect(summary.status).toBe('ok')
+    expect(summary.message).toContain('返回 1 行')
+    expect(execute).toHaveBeenCalledWith('ds_1', 'SELECT * FROM t WHERE id>$1', [1])
+    expect(summary.data.rowCount).toBe(1)
+  })
+
+  it('缺数据源 → error；缺 SQL → error；非 SELECT → error', async () => {
+    const execute = vi.fn().mockResolvedValue({ columns: [], rows: [], rowCount: 0, durationMs: 1 })
+    datasourceMock.getDataSourceService.mockReturnValue({ execute } as any)
+    const { __epAgentTest } = await import('@core/modules/episode-production/agent/ep-agent-actions')
+    const ctx = { projectId: 'p1', episodeId: 'ep1', db: {}, ai: {}, emit: () => {} } as any
+    const noDs = await __epAgentTest.executeQueryDatabase(ctx, { type: 'query_database', params: { sql: 'SELECT 1' } })
+    expect(noDs.status).toBe('error')
+    const noSql = await __epAgentTest.executeQueryDatabase(ctx, { type: 'query_database', params: { dataSourceId: 'ds_1' } })
+    expect(noSql.status).toBe('error')
+    const dml = await __epAgentTest.executeQueryDatabase(ctx, {
+      type: 'query_database',
+      params: { dataSourceId: 'ds_1', sql: 'DELETE FROM t' },
+    })
+    expect(dml.status).toBe('error')
+    expect(execute).not.toHaveBeenCalled()
+  })
+
+  it('执行抛错 → error 且带回错误信息', async () => {
+    const execute = vi.fn().mockRejectedValue(new Error('connection refused'))
+    datasourceMock.getDataSourceService.mockReturnValue({ execute } as any)
+    const { __epAgentTest } = await import('@core/modules/episode-production/agent/ep-agent-actions')
+    const ctx = { projectId: 'p1', episodeId: 'ep1', db: {}, ai: {}, emit: () => {} } as any
+    const summary = await __epAgentTest.executeQueryDatabase(ctx, {
+      type: 'query_database',
+      params: { dataSourceId: 'ds_1', sql: 'SELECT * FROM t' },
+    })
+    expect(summary.status).toBe('error')
+    expect(summary.message).toContain('connection refused')
   })
 })

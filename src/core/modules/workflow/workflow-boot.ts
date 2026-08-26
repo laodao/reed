@@ -160,10 +160,18 @@ export async function initWorkflowSubsystem(): Promise<WorkflowSubsystem> {
     const { DataSourceService, registerDataSourceService } = await import('./datasource/datasource.service')
     const { registerDataSourceDriver } = await import('./datasource/datasource-executor.service')
     const { PostgresDriverAdapter } = await import('./datasource/drivers/postgresql-driver')
+    const { MySqlDriverAdapter } = await import('./datasource/drivers/mysql-driver')
+    const { SqlServerDriverAdapter } = await import('./datasource/drivers/sqlserver-driver')
+    const { ClickHouseDriverAdapter } = await import('./datasource/drivers/clickhouse-driver')
     registerDataSourceDriver(new PostgresDriverAdapter())
+    registerDataSourceDriver(new MySqlDriverAdapter())
+    registerDataSourceDriver(new SqlServerDriverAdapter())
+    registerDataSourceDriver(new ClickHouseDriverAdapter())
     registerDataSourceService(new DataSourceService(db.dataSources!))
-  } catch (e) {
-    logger.error('[workflow-boot] 数据源服务/驱动装配失败（继续启动）', e)
+  } catch (e: any) {
+    logger.error(
+      `[workflow-boot] 数据源服务/驱动装配失败（继续启动）: ${e?.message || e} | stack: ${e?.stack || ''}`,
+    )
   }
   // 10. 通用资产库：保存资产/读取资产节点与资产中心 IPC 取用
   if (!db.assets) {

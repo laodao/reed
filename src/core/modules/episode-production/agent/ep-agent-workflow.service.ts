@@ -42,6 +42,7 @@ const VALID_ACTION_TYPES = new Set<EpAgentActionType>([
   'generate_item_asset',
   'update_entity',
   'delete_entity',
+  'query_database',
 ])
 
 /** 对话消息的 conversationId 约定：ep-agent:${episodeId} */
@@ -178,9 +179,21 @@ export class EpisodeProductionAgentService {
     // 1. 生产状态（决策前快照）
     let state = await computeEpProductionState(m, projectId, episodeId)
 
+    // 1.2 数据源名单（供 query_database 规则 choice + 决策上下文注入）
+    let dataSourceNames: string[] = []
+    try {
+      const { getDataSourceService } = await import('@core/modules/workflow/datasource/datasource.service')
+      const list = await getDataSourceService().listEligible()
+      dataSourceNames = list.map((s) => s.name)
+    } catch {
+      dataSourceNames = []
+    }
+
     // 1.5 规则型多轮确认：用户想给资产生成"图"，但没点名字 → 引擎直接发候选 choice，
     //     保证生成哪个由用户从项目真实资产里选，不依赖 AI 临场判断。
-    const ruleChoice = detectChoiceForAssetImage(userMsg, state)
+    const ruleChoice =
+      detectChoiceForAssetImage(userMsg, state) ??
+      detectChoiceForDatabase(userMsg, dataSourceNames)
     if (ruleChoice) {
       this.emit(projectId, episodeId, { type: 'choice:request', choice: ruleChoice })
       const prompt = ruleChoice.prompt || `请选择要生成${assetLabelFor(ruleChoice.actionType)}：`
@@ -196,7 +209,7 @@ export class EpisodeProductionAgentService {
     // 2. AI 决策
     this.emit(projectId, episodeId, { type: 'stage', stage: 'deciding' })
     const history = await m.lwDesignMessages.getByConversationId(conversationId)
-    const decCtx = buildEpDecisionContext(userMsg, state, history)
+    const decCtx = buildEpDecisionContext(userMsg, state, history, { dataSourceNames })
     let decision: EpAgentDecision = { actions: [] }
     try {
       const raw = await ai.agentDecide(decCtx, providerConfigId, modelId)
@@ -329,4 +342,34 @@ export function detectChoiceForAssetImage(
   const choices = (candidates || []).filter(Boolean)
   if (choices.length === 0) return null // 无候选 → 交回 AI（可能需先建资产）
   return { actionType, param: 'name', choices, prompt }
+}
+
+/**
+ * 检测"用户想查外部数据库但没说哪个数据源"的意图 → 用已配置数据源名单构造 choice。
+ * 规则（确定性）：
+ *   - 消息含明确的外部数据词：数据库 / 订单 / 库存 / 用户表 / 报表 / 数据源 / "查一下订单" 等；
+ *   - 纯剧集内部查询（查剧本/场景/分镜）不触发；
+ *   - 已配置数据源名单非空 → 构造 query_database choice（param=dataSourceId）；
+ *   - 名单为空 → 返回 null（让 AI 建议先去设置里添加数据源）。
+ */
+export function detectChoiceForDatabase(
+  msg: string,
+  dataSourceNames: string[],
+): EpAgentChoice | null {
+  const lower = msg || ''
+  // 触发词：明确指向"外部数据库/业务数据"的表达。避免误伤剧集内部查询。
+  const wantsQuery = /(查|看).{0,6}(订单|库存|报表|用户表|销售|财务|数据|记录)|查询数据库|数据库.*(查|看)|数据源|查表/.test(lower)
+  if (!wantsQuery) return null
+
+  // 用户已点名某个数据源？→ 交回 AI 正常执行
+  if (dataSourceNames.some((n) => n && lower.includes(n))) return null
+
+  const choices = (dataSourceNames || []).filter(Boolean)
+  if (choices.length === 0) return null // 无数据源 → 交回 AI（建议先配置）
+  return {
+    actionType: 'query_database',
+    param: 'dataSourceId',
+    choices,
+    prompt: '请选择要查询的数据源',
+  }
 }

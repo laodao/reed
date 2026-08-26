@@ -73,6 +73,7 @@ const ACTION_LABELS: Record<string, string> = {
   generate_item_asset: '生成物品图',
   update_entity: '修改资产',
   delete_entity: '删除资产',
+  query_database: '查询数据库',
 }
 
 /**
@@ -134,6 +135,7 @@ async function dispatchEpAction(
     case 'generate_char_asset': return executeGenerateAsset(ctx, 'character', action)
     case 'generate_location_asset': return executeGenerateAsset(ctx, 'location', action)
     case 'generate_item_asset': return executeGenerateAsset(ctx, 'item', action)
+    case 'query_database': return executeQueryDatabase(ctx, action)
     default:
       return { type: action.type, status: 'error', message: `未知动作类型：${action.type}` }
   }
@@ -569,8 +571,63 @@ function assetLabel(kind: AssetKind): string {
   return kind === 'character' ? '角色' : kind === 'location' ? '地点' : '物品'
 }
 
+// ==================== 动作：query_database（外部数据库查询） ====================
+
+/**
+ * 查询外部数据库（工作流数据源）。参数化 SQL，禁止字符串拼接（防注入）。
+ * - params.dataSourceId（必填，数据源 id，用户经 choice 选择）
+ * - params.sql（必填，SQL 模板，参数用 $1,$2 占位）
+ * - params.params（可选，JSON 数组，与占位符一一对应）
+ * 结果摘要：rows 前若干行 + 行数。不落库、不改剧集数据——纯读取。
+ */
+async function executeQueryDatabase(
+  ctx: EpAgentExecutionContext,
+  action: EpAgentAction,
+): Promise<EpAgentActionSummary> {
+  const { getDataSourceService } = await import('@core/modules/workflow/datasource/datasource.service')
+  const ds = getDataSourceService()
+  const params = action.params || {}
+  const dataSourceId = params.dataSourceId
+  const sql = params.sql
+  if (!dataSourceId || typeof dataSourceId !== 'string') {
+    return { type: 'query_database', status: 'error', message: '查询数据库：缺少数据源（请先选择要查询的数据源）' }
+  }
+  if (!sql || typeof sql !== 'string' || !sql.trim()) {
+    return { type: 'query_database', status: 'error', message: '查询数据库：缺少 SQL 语句' }
+  }
+
+  let parameters: unknown[] = []
+  if (params.params !== undefined) {
+    if (!Array.isArray(params.params)) {
+      return { type: 'query_database', status: 'error', message: '查询数据库：params 必须是数组' }
+    }
+    parameters = params.params
+  }
+
+  // 只允许 SELECT 开头（防止 Agent 通过该动作改外部库数据；写操作走工作流节点显式配置）
+  const trimmed = sql.trim().toLowerCase()
+  if (!trimmed.startsWith('select') && !trimmed.startsWith('with')) {
+    return { type: 'query_database', status: 'error', message: '查询数据库：仅允许 SELECT 查询（写操作请在工作流「数据表」节点中显式配置）' }
+  }
+
+  try {
+    const result = await ds.execute(dataSourceId, sql, parameters)
+    const preview = result.rows.slice(0, 8)
+    const previewText = JSON.stringify(preview).slice(0, 600)
+    return {
+      type: 'query_database',
+      status: 'ok',
+      message: `查询数据库成功：返回 ${result.rowCount} 行（${result.durationMs}ms）`,
+      data: { columns: result.columns, rows: preview, rowCount: result.rowCount, full: false, previewText },
+    }
+  } catch (e: any) {
+    return { type: 'query_database', status: 'error', message: `查询数据库失败：${e?.message || '未知错误'}`, error: e?.message }
+  }
+}
+
 /** 供测试用的 standalone ensureBinding 纯度导出（可选） */
 export const __epAgentTest = {
   extractJsonObject,
   resolveScriptId,
+  executeQueryDatabase,
 }

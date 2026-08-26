@@ -43,3 +43,29 @@ Node（data-table）外部模式  = 绑 dataSourceId + sql + params → 路由�
   oracle/hadoop/flink/druid 需另行评估（原生模块/HTTP SQL 网关）。
 - 遗留：node-registry-consistency / tool-call / tool.service / yt-dlp 等测试失败为**预存问题**，
   与本次改动无关（基线已失败）。
+
+## 二期：MySQL / SQL Server / ClickHouse 驱动 + Agent 查询数据库
+
+### 驱动适配器（全部走统一注册表，注册于 workflow-boot）
+- `mysql-driver.ts`：mysql2/promise，占位符 `?`，getConnection/query/release/pool.end
+- `sqlserver-driver.ts`：mssql@10（**注意：mssql 12 依赖 Node 20.13+ 的 diagnostics_channel.tracingChannel，
+  Electron 28 内置 Node 18.18 不支持 → 必须锁 mssql@10**），$1 → @p1 归一 + input 绑定
+- `clickhouse-driver.ts`：HTTP 接口（fetch，零新依赖），JSONEachRow 解析，$1 → {p1:Type} + param_p1
+
+### Agent 自动生成 SQL（剧集制作 Agent）
+- `ep-agent.types.ts`：新增 `query_database` 动作
+- `ep-agent-workflow.service.ts`：`detectChoiceForDatabase`（用户说查订单/库存等但未点名数据源 →
+  列出已配置数据源 choice）；sendMessage 注入数据源名单到决策上下文
+- `ep-agent-actions.ts`：`executeQueryDatabase`（参数化 SELECT 执行，**仅允许 SELECT/CTE，禁止写**，
+  结果预览前 8 行）
+- `ep-agent-context.ts`：决策提示词加 query_database 动作 + 规则 0.1/8 泛化
+
+### 端到端验证（真实 Electron 环境）
+1. 四个驱动装配成功（无 boot 错误）；MySQL/SQLServer/ClickHouse 数据源 testConnection
+   均真实发起连接并优雅失败（ECONNREFUSED / Failed to connect / fetch failed）——证明驱动注册与路由正常
+2. 设置页数据源 tab CRUD 正常（临时数据已清理）
+3. 测试：datasource 三驱动 + service + ep-agent = 55 项全过
+
+### 依赖变更
+- 新增：mysql2@^3.24.2、mssql@^10.0.4（mssql 必须 ≤10，Electron Node 18 兼容）
+

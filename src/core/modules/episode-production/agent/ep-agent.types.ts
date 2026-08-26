@@ -26,6 +26,7 @@ export type EpAgentActionType =
   | 'generate_item_asset'      // 为物品生成主图
   | 'update_entity'            // 修改已有资产（角色/地点/物品）
   | 'delete_entity'            // 删除已有资产（角色/地点/物品）
+  | 'query_database'           // 查询外部数据库（工作流数据源：参数化 SQL 读真实第三方库）
 
 /** AI 决策输出（system prompt 约束为纯 JSON） */
 export interface EpAgentAction {

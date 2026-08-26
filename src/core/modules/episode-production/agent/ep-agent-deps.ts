@@ -198,6 +198,7 @@ const ACTION_DEPENDENCIES: Record<EpAgentActionType, (s: EpAgentProductionState)
   generate_item_asset: () => [],
   update_entity: () => [],
   delete_entity: () => [],
+  query_database: () => [],
 }
 
 export function checkEpActionDependency(

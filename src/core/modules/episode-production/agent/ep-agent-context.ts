@@ -26,9 +26,11 @@ const DECISION_SYSTEM_PROMPT = `你是专业剧集制作项目的 AI 制作助�
 - generate_item_asset: 为物品生成主图。params.name（必填）、params.requirements（可选）
 - update_entity: 修改已有资产（角色/地点/物品）。params.type（character/location/item）、params.id（可选，优先按 id）、params.name（可选，按名定位）、params.patch（要改的字段）
 - delete_entity: 删除已有资产。params.type、params.id（可选）、params.name（可选）
+- query_database: 查询外部数据库（工作流「数据表」节点配置的数据源）。params.dataSourceId（必填，数据源 id，用 choice 让用户从【候选数据源名单】选）、params.sql（必填，SELECT 查询，参数用 $1,$2 占位）、params.params（可选，JSON 数组参数值）。仅允许 SELECT/CTE 读取，禁止写操作。
 
 决策规则：
 0. 【最高优先级】用户想生成某个资产的图/内容，但**没有明确指定哪个**（如"给某个角色生成定妆图"）时：**必须输出 choice 让用户选，禁止用大段文字反过来问"给谁做"**。choice 的 choices 从【项目当前状态】的资产名单取（角色/地点/物品名，不要编造）。
+0.1 用户想查外部数据库（如"查一下订单数据"），但**没有指定哪个数据源**时：输出 choice 让用户从【候选数据源名单】选（actionType=query_database, param=dataSourceId, choices=数据源名）。只有用户明确给了数据源名/或引擎多轮确认后带参指令时才直接输出 query_database。
 1. 先判断用户意图：需要改项目数据时才输出 actions；纯提问/咨询/建议时 actions 为空数组，此时可以正常用文字回答。
 2. 遵守数据依赖（引擎会校验，但你要主动避免）：
    - split_scenes 需要剧本已存在；generate_storyboards 需要已有场景。
@@ -39,7 +41,7 @@ const DECISION_SYSTEM_PROMPT = `你是专业剧集制作项目的 AI 制作助�
 6. 生成单个资产的图时，用 generate_char_asset/location_asset/item_asset，params.name 给出角色/地点/物品名；项目里没有该资产时引擎会 attempt 创建后再生成。
 7. 【多轮确认】若动作所需的必填参数（如 generate_char_asset 的 params.name）无法从整个对话里确定，**不要输出该 action、不要用文字追问**，改为输出 choice：
    {"choice":{"actionType":"generate_char_asset","param":"name","choices":["项目里的角色名列表"],"prompt":"请选择要生成定妆图的角色"}}
-8. 用户消息形如 "generate_char_asset param name=杜十娘" 时，是引擎多轮确认后的带参指令，直接输出对应 action（用该 name），不要再用 choice 追问。
+8. 用户消息形如 "generate_char_asset param name=杜十娘" / "query_database param dataSourceId=金融库" 时，是引擎多轮确认后的带参指令，直接输出对应 action（用该参数），不要再用 choice 追问。
 
 输出约束（必须严格遵守）：
 - 生成图/内容但未指定实体 → 优先 choice，actions 里不要出现缺少必填参数的 action。
@@ -52,11 +54,17 @@ export function buildEpDecisionContext(
   userMessage: string,
   state: EpAgentProductionState,
   history: EpAgentHistoryItem[],
+  extra?: { dataSourceNames?: string[] },
 ): { systemPrompt: string; userPrompt: string } {
   const historyText = history
     .slice(-EP_AGENT_HISTORY_LIMIT)
     .map(m => `${m.role === 'user' ? '用户' : '助手'}：${m.content.slice(0, 200)}`)
     .join('\n')
+
+  const dataSourcesText =
+    extra?.dataSourceNames && extra.dataSourceNames.length > 0
+      ? `- 数据源：${extra.dataSourceNames.join('、')}`
+      : '（未配置数据源——用户要查外部数据库时，请建议先在「设置 → 数据库数据源」添加）'
 
   const userPrompt = `【项目当前状态】
 ${epStateToSummary(state)}
@@ -65,6 +73,9 @@ ${epStateToSummary(state)}
 - 角色：${state.assets.characters.names.join('、') || '（无）'}
 - 地点：${state.assets.locations.names.join('、') || '（无）'}
 - 物品：${state.assets.items.names.join('、') || '（无）'}
+
+【候选数据源名单】（query_database 的 choice 用）
+${dataSourcesText}
 
 【最近对话】
 ${historyText || '（无）'}
