@@ -17,9 +17,10 @@
  */
 export type CharacterFraming = 'fullBody' | 'upperBody' | 'bust'
 
-/** 共用约束：纯色背景 / 光照均匀 / 无阴影（帽子、首饰交由用户自由控制，不再硬约束） */
+/** 共用约束：固定纯白背景 / 光照均匀 / 无阴影（帽子、首饰交由用户自由控制，不再硬约束）。
+ * 背景统一为纯白并固定颜色，保证资产的主图与派生图（视角/表情/服装等）背景一致。 */
 const COMMON_CONSTRAINT = [
-  '纯色背景（plain solid color background, no scenery, no ground）',
+  '纯白背景（pure white background, clean white backdrop, no shadow on background）',
   '光照与参考图保持一致（match lighting from reference, preserve original lighting intensity）',
   '正面均匀光照、无任何阴影（front flat even lighting, shadowless, no shadow on body, no shadow on background, no ground shadow）',
 ].join('，')

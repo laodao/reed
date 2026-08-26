@@ -42,6 +42,8 @@ const props = defineProps<{
   projectId: string
   episodeId: string
   contextHint?: string | null
+  /** 外部（如 Agent 助手"去查看"）指定要定位的资产 */
+  externalAsset?: { kind: 'character' | 'location' | 'item'; id: string; name: string } | null
 }>()
 
 const summary = reactive<{ characters: any[]; locations: any[]; items: any[] }>({ characters: [], locations: [], items: [] })
@@ -109,6 +111,17 @@ async function onCreate(): Promise<void> {
 }
 
 watch(() => [props.projectId, props.episodeId], () => void load())
+// Agent 助手"去查看"跳转：按外部指定资产定位选中
+watch(() => props.externalAsset, (asset) => {
+  if (!asset?.id) return
+  const item = findSummary(asset.kind, asset.id)
+  selected.value = {
+    kind: asset.kind,
+    id: asset.id,
+    name: asset.name,
+    thumb: item?.mainImagePath,
+  }
+})
 onMounted(() => void load())
 </script>
 

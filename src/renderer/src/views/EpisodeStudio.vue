@@ -45,6 +45,7 @@
             :episode-id="episodeId"
             :project-id="projectId"
             :context-hint="ctx.contextHint.value"
+            :external-asset="ctx.selectedAsset.value"
             @data-changed="onTabDataChanged"
           />
         </div>
