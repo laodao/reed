@@ -8,7 +8,6 @@
       </div>
     </div>
 
-    <template>
       <!-- 消息列表 -->
       <div ref="scrollRef" class="panel-scroll">
         <div class="inner">
@@ -102,7 +101,6 @@
           </div>
         </div>
       </div>
-    </template>
   </div>
 </template>
 
@@ -216,8 +214,9 @@ onMounted(async () => {
 .ep-agent-panel {
   display: flex;
   flex-direction: column;
-  height: 100%;
   min-width: 0;
+  flex: 1;
+  min-height: 0;
   background: var(--bg-color-page);
   border-left: 1px solid var(--border-color-lighter);
 }

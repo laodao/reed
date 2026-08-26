@@ -95,6 +95,8 @@ watch(agentVisible, persist)
   min-height: 0;
   transition: width var(--transition-normal);
   border-left: 1px solid var(--border-color-lighter);
+  display: flex;
+  flex-direction: column;
 
   &.collapsed {
     width: 40px;
@@ -117,8 +119,12 @@ watch(agentVisible, persist)
   }
 
   .agent-wrap {
-    height: 100%;
+    /* 绝对定位占满右侧槽位，彻底解除 height 链不确定性 */
+    position: absolute;
+    inset: 0;
     min-height: 0;
+    display: flex;
+    flex-direction: column;
   }
 }
 </style>
