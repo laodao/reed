@@ -108,7 +108,7 @@ async function onCreate(): Promise<void> {
   }
 }
 
-watch(() => props.projectId, () => void load())
+watch(() => [props.projectId, props.episodeId], () => void load())
 onMounted(() => void load())
 </script>
 

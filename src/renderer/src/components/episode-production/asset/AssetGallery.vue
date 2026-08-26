@@ -79,7 +79,7 @@
  * "已定妆"判定：该 label 的图存在（listByAsset）；无则"待生成"+可点加号。
  * 生成主图用 generateMainFor；派生用 derive.single（有主图才可用）。
  */
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onActivated } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Picture, MagicStick, Plus, Upload, Loading, Check } from '@element-plus/icons-vue'
 import { toImageUrl } from '@/utils/asset-url'
@@ -262,6 +262,9 @@ async function onSavePrompt(): Promise<void> {
     const r = await root.image.update(sel.id, { prompt: text })
     if (r?.success) {
       ElMessage.success('提示词已保存')
+      // 同步内存图集数据，避免后续判定（sel.prompt）与 DB 不一致
+      const cur = images.value.find(i => i.id === sel.id)
+      if (cur) cur.prompt = text
     } else if (r?.error && /不存在/.test(r.error)) {
       // 行已被删除/替换（占位行被清理、生成复用等）：重建承载提示词，不丢用户输入
       ElMessage.warning('原记录已不存在，已为你重新保存')
@@ -318,6 +321,8 @@ async function onSaveNow(): Promise<void> {
 
 watch(() => [props.assetId, props.kind], () => void load())
 onMounted(() => void load())
+// keep-alive 缓存组件被重新激活时（从其它 tab/路由切回）重新拉取，保证显示最新提示词
+onActivated(() => void load())
 </script>
 
 <style lang="scss" scoped>
