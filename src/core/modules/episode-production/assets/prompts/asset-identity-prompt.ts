@@ -167,3 +167,27 @@ export function prependIdentity(identity: string, body: string): string {
   if (!b) return i
   return `${i}，${b}`
 }
+
+/**
+ * 时代特征约束：把故事年代（+地域）追加到 prompt 末尾，
+ * 确保人物服饰、发型、妆容符合时代特征。
+ *
+ * 用途：用户在图集里编辑的提示词通常不含年代；系统拼接（buildAssetIdentityPrompt）
+ * 已含「故事年代」段，但用户编辑的 override 需要在此补上，避免生成的人像不符合时代。
+ * 已包含相同约束时不重复追加；无年代信息时原样返回。
+ */
+export function appendEraConstraint(
+  prompt: string,
+  storyBg?: StoryBackground | null,
+): string {
+  const era = (storyBg?.era ?? '').toString().trim()
+  if (!era) return (prompt ?? '').trim()
+  const region = (storyBg?.region ?? '').toString().trim()
+  const suffix = region
+    ? `人物服饰、发型、妆容符合${era}、${region}的时代特征（period-appropriate clothing, hairstyle and accessories）`
+    : `人物服饰、发型、妆容符合${era}的时代特征（period-appropriate clothing, hairstyle and accessories）`
+  const t = (prompt ?? '').trim()
+  if (!t) return suffix
+  if (t.includes(suffix)) return t
+  return `${t}，${suffix}`
+}

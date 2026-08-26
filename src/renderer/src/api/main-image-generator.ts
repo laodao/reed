@@ -15,7 +15,7 @@ import {
   appendCharacterConstraints,
   mergeCharacterNegative,
 } from '@core/modules/episode-production/assets/prompts/character-constraints'
-import { buildAssetIdentityPrompt } from '@core/modules/episode-production/assets/prompts/asset-identity-prompt'
+import { buildAssetIdentityPrompt, appendEraConstraint } from '@core/modules/episode-production/assets/prompts/asset-identity-prompt'
 import { useEpEpisodeStore } from '@/stores/episode-production'
 
 type AssetType = 'character' | 'location' | 'item'
@@ -122,10 +122,15 @@ export async function generateMainFor(
   // 用户编辑的提示词优先；未编辑时用系统从 effective 拼接的 prompt
   let prompt = isOverride ? userPrompt as string : basePrompt
   let negativePrompt = baseNegative
-  if (isOverride && assetType === 'character') {
-    // buildPromptFromEffective 已对 base prompt 加过定妆约束；override 分支需手动补
-    prompt = appendCharacterConstraints(prompt, 'bust')
-    negativePrompt = mergeCharacterNegative(undefined, 'bust')
+  if (isOverride) {
+    // 用户编辑的提示词通常不含年代 → 补时代特征（服饰/发型/妆容符合故事年代），
+    // 避免生成的人像不符合时代；系统拼接的 basePrompt 已含「故事年代」段。
+    prompt = appendEraConstraint(prompt, readStoryBackgroundFromCurrentEpisode())
+    if (assetType === 'character') {
+      // buildPromptFromEffective 已对 base prompt 加过定妆约束；override 分支需手动补
+      prompt = appendCharacterConstraints(prompt, 'bust')
+      negativePrompt = mergeCharacterNegative(undefined, 'bust')
+    }
   }
 
   const root = (window as any).electronAPI?.episodeProduction?.asset
