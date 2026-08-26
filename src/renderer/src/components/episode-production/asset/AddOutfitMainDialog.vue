@@ -6,7 +6,7 @@
   -->
   <el-dialog
     v-model="visible"
-    title="新增正面全身（换装）"
+    title="新增正面全身"
     width="520px"
     destroy-on-close
     append-to-body
@@ -15,13 +15,13 @@
     <el-form label-position="top" @submit.prevent>
       <el-form-item label="方式">
         <el-radio-group v-model="form.mode">
-          <el-radio value="generate">✨ AI 生成（换装）</el-radio>
+          <el-radio value="generate">✨ AI 生成</el-radio>
           <el-radio value="upload">⬆ 直接上传正面全身图</el-radio>
         </el-radio-group>
       </el-form-item>
 
       <template v-if="form.mode === 'generate'">
-        <el-form-item label="换装描述（提示词）">
+        <el-form-item label="描述（可选）">
           <el-input
             v-model="form.prompt"
             type="textarea"
@@ -34,7 +34,7 @@
           <div class="dialog-hint">将以第一张正面全身图的面容/发型为基准，仅按描述更换造型</div>
         </el-form-item>
 
-        <el-form-item label="换装参考图（可选）">
+        <el-form-item label="参考图（可选）">
           <el-upload
             :auto-upload="false"
             :show-file-list="false"
@@ -75,7 +75,7 @@
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
       <el-button type="primary" :loading="submitting" :disabled="!canSubmit" @click="onSubmit">
-        {{ form.mode === 'generate' ? '✨ 生成换装主图' : '⬆ 上传主图' }}
+        {{ form.mode === 'generate' ? '✨ 生成主图' : '⬆ 上传主图' }}
       </el-button>
     </template>
   </el-dialog>
@@ -185,26 +185,27 @@ async function onSubmit(): Promise<void> {
     if (form.mode === 'upload') {
       if (!form.mainFile) return
       const base64 = await readAsBase64(form.mainFile)
+      const label = `主图${props.mainCount + 1}`
       const resp = await api.image.uploadMainAdd({
         fileName: form.mainFile.name,
         base64,
         assetType: props.assetType,
         assetId: props.assetId,
-        label: `换装${props.mainCount + 1}`,
+        label,
       })
       if (!resp?.success) { ElMessage.error(resp?.error || '上传主图失败'); return }
-      ElMessage.success(`已上传正面全身（换装${props.mainCount + 1}）`)
+      ElMessage.success(`已上传正面全身（${label}）`)
     } else {
       if (!api.image.addMain) { ElMessage.error('addMain IPC 未暴露'); return }
-      // 换装 prompt：用户描述优先，未编辑用系统拼接；均补 fullBody/年代约束
+      // 描述优先，未编辑用系统拼接；均补 fullBody/年代约束
       const { prompt, negativePrompt } = await buildMainImagePrompt(
         props.assetType,
         props.assetId,
         { promptOverride: form.prompt.trim() || undefined },
       )
-      // 参考图：第一张主图（面容基准）+ 用户上传的换装参考图
+      // 参考图：第一张主图（面容基准，若有）+ 用户上传的参考图
       const refs = [props.firstMainPath, form.refPath || null].filter((p): p is string => !!p)
-      const label = `换装${props.mainCount + 1}`
+      const label = `主图${props.mainCount + 1}`
       const resp = await api.image.addMain({
         assetType: props.assetType,
         assetId: props.assetId,

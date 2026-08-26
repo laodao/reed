@@ -6,7 +6,7 @@
         <span class="top-title">{{ kindLabel }}定妆：{{ assetName }}</span>
       </div>
       <div class="top-actions">
-        <el-button v-if="hasMain" text size="small" @click="showAddOutfit = true">
+        <el-button text size="small" @click="showAddOutfit = true">
           <el-icon><Plus /></el-icon>
           新增正面全身
         </el-button>
@@ -31,8 +31,6 @@
           <div class="nav-thumb" :class="{ derived: !!navImage(item.label)?.derivedFromImageId }">
             <el-image v-if="navImage(item.label)?.imagePath" :src="toUrl(navImage(item.label)!.imagePath)" fit="cover" class="thumb-img" />
             <div v-else class="thumb-empty"><el-icon :size="16"><Picture /></el-icon></div>
-            <span v-if="navImage(item.label)?.derivedFromImageId" class="derived-badge">衍</span>
-            <span v-else-if="item.label === 'main' && mainImages.length > 1" class="main-count-badge">{{ selectedMainIndex + 1 }}/{{ mainImages.length }}</span>
           </div>
           <div class="nav-info">
             <div class="nav-name">{{ item.title }}</div>
@@ -491,18 +489,6 @@ onActivated(() => void load())
     &.derived {
       width: 36px; height: 36px;
       border: 1px dashed var(--border-color-light);
-      .derived-badge {
-        position: absolute; right: -4px; bottom: -4px;
-        width: 14px; height: 14px; border-radius: 50%;
-        background: var(--color-info); color: #fff;
-        font-size: 9px; line-height: 14px; text-align: center;
-      }
-    }
-    .main-count-badge {
-      position: absolute; right: -4px; bottom: -4px;
-      min-width: 16px; height: 14px; border-radius: 7px; padding: 0 3px;
-      background: var(--color-primary); color: #fff;
-      font-size: 9px; line-height: 14px; text-align: center;
     }
   }
   .nav-info { flex: 1; min-width: 0; }
