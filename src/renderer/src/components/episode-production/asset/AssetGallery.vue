@@ -105,7 +105,7 @@ const localPrompt = ref('')
 const navItems = computed(() => {
   if (props.kind === 'character') {
     return [
-      { label: 'main', title: '正面全身', category: 'main' },
+      { label: 'main', title: '正面定妆', category: 'main' },
       { label: 'front_half', title: '正面半身', category: 'view' },
       { label: 'left_3q', title: '左侧半身', category: 'view' },
       { label: 'right_3q', title: '右侧半身', category: 'view' },
@@ -183,14 +183,9 @@ async function onGenerate(item: { label: string; category: string }): Promise<vo
     // 保证生成时使用用户最新编辑的提示词，且生成后输入框内容不丢。
     await onSavePrompt()
     if (item.label === 'main') {
-      // 生成主图：用户编辑过（占位行无图 / 文本有改动）时用用户提示词，否则用系统拼接
-      const sel = imageByLabel('main')
-      const override =
-        sel && !sel.imagePath && localPrompt.value.trim()
-          ? localPrompt.value
-          : localPrompt.value !== (sel?.prompt || '')
-            ? localPrompt.value
-            : undefined
+      // 生成主图：输入框当前内容（非空）即生图提示词——用户编辑过用它，
+      // 未编辑沿用当前设置；避免生成后 load 被系统拼接 prompt 覆盖（还原）。
+      const override = localPrompt.value.trim() ? localPrompt.value : undefined
       const img = await generateMainFor(
         props.kind,
         props.assetId,

@@ -17,11 +17,9 @@
  */
 export type CharacterFraming = 'fullBody' | 'upperBody' | 'bust'
 
-/** 共用约束：纯色背景 / 无帽子 / 无首饰 / 光照均匀 / 无阴影 */
+/** 共用约束：纯色背景 / 光照均匀 / 无阴影（帽子、首饰交由用户自由控制，不再硬约束） */
 const COMMON_CONSTRAINT = [
   '纯色背景（plain solid color background, no scenery, no ground）',
-  '无帽子（no hat, no headwear, no hood）',
-  '无首饰（no jewelry, no accessories, no earrings, no necklace）',
   '光照与参考图保持一致（match lighting from reference, preserve original lighting intensity）',
   '正面均匀光照、无任何阴影（front flat even lighting, shadowless, no shadow on body, no shadow on background, no ground shadow）',
 ].join('，')
@@ -42,18 +40,8 @@ export function characterConstraintSuffix(framing: CharacterFraming = 'fullBody'
   return `${FRAMING_SUFFIX[framing]}，${bg}`
 }
 
-/** 共用 negative：帽子 / 首饰 / 杂背景 / 强烈阴影 */
+/** 共用 negative：杂背景 / 强烈阴影（帽子、首饰不再禁止，交由用户自由控制） */
 const COMMON_NEGATIVE = [
-  'hat',
-  'cap',
-  'hood',
-  'helmet',
-  'headwear',
-  'crown',
-  'jewelry',
-  'necklace',
-  'earrings',
-  'accessories',
   'busy background',
   'complex background',
   'scenery background',

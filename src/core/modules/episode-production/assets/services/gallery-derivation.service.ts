@@ -216,7 +216,7 @@ export class GalleryDerivationService {
       prompt = prependIdentity(identity, prompt)
     }
 
-    // 角色资产硬约束：纯色背景 / 无帽子无首饰；
+    // 角色资产硬约束：纯色背景 / 光照均匀无阴影（帽子、首饰不约束，交用户控制）；
     // framing 按 category 决定（expression → 上半身；其他 → 全身）。
     if (input.assetType === 'character') {
       const framing = framingForCategory(input.category)

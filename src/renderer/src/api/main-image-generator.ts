@@ -65,7 +65,7 @@ async function buildPromptFromEffective(
   // 用户上传的参考图（spec 2026-05-09）— 透传给后端 generateMain
   const referenceImagePath = (eff.referenceImagePath as string | null | undefined) ?? null
 
-  // 角色主图硬约束（半身定妆照、纯白背景、无帽子无首饰），与派生侧共享同一约束源
+  // 角色主图硬约束（半身定妆照、纯白背景、光照均匀），与派生侧共享同一约束源
   if (assetType === 'character') {
     prompt = appendCharacterConstraints(prompt, 'bust')
     return {
