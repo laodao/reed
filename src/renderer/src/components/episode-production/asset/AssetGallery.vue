@@ -260,15 +260,28 @@ async function onSavePrompt(): Promise<void> {
   if (sel?.id) {
     if (text === (sel.prompt || '')) return
     const r = await root.image.update(sel.id, { prompt: text })
-    if (r?.success) ElMessage.success('提示词已保存')
-    else ElMessage.error(r?.error || '保存失败')
+    if (r?.success) {
+      ElMessage.success('提示词已保存')
+    } else if (r?.error && /不存在/.test(r.error)) {
+      // 行已被删除/替换（占位行被清理、生成复用等）：重建承载提示词，不丢用户输入
+      ElMessage.warning('原记录已不存在，已为你重新保存')
+      await saveAsPlaceholder(text)
+    } else {
+      ElMessage.error(r?.error || '保存失败')
+    }
     return
   }
 
   // 待生成 slot（尚无 asset_image 行）：内容为空无需保存；非空则创建占位行承载提示词
+  if (!text.trim()) return
+  await saveAsPlaceholder(text)
+}
+
+/** 保存到图集 slot 的占位行（无行时创建 imagePath='' 的占位行；有则更新） */
+async function saveAsPlaceholder(text: string): Promise<void> {
   const item = selectedItem.value
   if (!item) return
-  if (!text.trim()) return
+  const root = (window as any).electronAPI?.episodeProduction?.asset
   const r = await root.image.savePrompt({
     assetType: props.kind,
     assetId: props.assetId,
@@ -277,8 +290,13 @@ async function onSavePrompt(): Promise<void> {
     prompt: text,
   })
   if (r?.success && r.data) {
-    // 把占位行并入 images（不整表刷新，避免 selectedLabel 跳回 main）
+    // 清理同 slot 的失效占位行（imagePath='' 且 id 不同）：占位行被外部删除/替换后
+    // 前端残留行会遮蔽新行（selectedImage 兜底取到旧行），这里一并移除。
     const saved = r.data
+    images.value = images.value.filter(i =>
+      !(i.label === saved.label && i.imagePath === '' && i.id !== saved.id),
+    )
+    // 把占位行并入 images（不整表刷新，避免 selectedLabel 跳回 main）
     const idx = images.value.findIndex(i => i.id === saved.id)
     if (idx >= 0) images.value[idx] = saved
     else images.value.push(saved)
