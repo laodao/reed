@@ -48,7 +48,8 @@ describe('transformLandmarks', () => {
     [374]: { x: 0.58, y: 0.31 },  // EYE_LOWER_R
     // 鼻梁/鼻尖/鼻翼
     [168]: { x: 0.50, y: 0.22 },  // NOSE_BRIDGE_TOP
-    [1]:   { x: 0.50, y: 0.38 },  // NOSE_TIP
+    [1]:   { x: 0.50, y: 0.38 },  // NOSE_TIP（近似旧索引）
+    [4]:   { x: 0.50, y: 0.38 },  // NOSE_TIP（pronasale）
     [129]: { x: 0.44, y: 0.40 },  // ALA_LEFT
     [358]: { x: 0.56, y: 0.40 },  // ALA_RIGHT
     // 唇部

@@ -5,10 +5,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   clamp, smoothstep, piecewise,
-  buildFieldParams, evalField,
+  buildFieldParams, evalField, localGauss2D,
 } from '@/components/portrait/geometry/displacementField'
 import { measureFace } from '@/components/portrait/geometry/faceMeasure'
 import type { Point } from '@/components/portrait/geometry/faceMetrics'
+import type { FieldParams } from '@/components/portrait/geometry/displacementField'
+import type { FaceMeasure } from '@/components/portrait/geometry/faceMeasure'
 
 // ── 共享的测试用 M ──
 function makeLM(over: Record<number, Point>): Point[] {
@@ -21,7 +23,7 @@ const baseLM = makeLM({
   [14]:  { x: 0.50, y: 0.50 }, [152]: { x: 0.50, y: 0.85 },
   [234]: { x: 0.28, y: 0.50 }, [454]: { x: 0.72, y: 0.50 },
   [468]: { x: 0.40, y: 0.26 }, [473]: { x: 0.60, y: 0.26 },
-  [168]: { x: 0.50, y: 0.24 }, [1]: { x: 0.50, y: 0.40 },
+  [168]: { x: 0.50, y: 0.24 }, [1]: { x: 0.50, y: 0.40 }, [4]: { x: 0.50, y: 0.40 },
   [129]: { x: 0.44, y: 0.42 }, [358]: { x: 0.56, y: 0.42 },
   [13]:  { x: 0.50, y: 0.48 }, [61]: { x: 0.42, y: 0.48 },
   [291]: { x: 0.58, y: 0.48 },
@@ -127,5 +129,131 @@ describe('evalField', () => {
     expect(ny2).toBeCloseTo(0, 3) // 首部不变
     const [, ny3] = evalField(0.5, 1.0, F, testM)
     expect(ny3).toBeCloseTo(1, 3) // 尾部不变
+  })
+})
+
+// ── localGauss2D 紧支撑 ──
+describe('localGauss2D', () => {
+  it('中心点权重为 1', () => {
+    expect(localGauss2D(0.5, 0.5, 0.5, 0.5, 0.05)).toBe(1)
+  })
+  it('2.4σ 半径外精确为 0（普通高斯尾部无限，这里是局部性的关键）', () => {
+    const sigma = 0.05
+    const R = sigma * 2.4
+    expect(localGauss2D(0.5 + R * 1.01, 0.5, 0.5, 0.5, sigma)).toBe(0)
+    expect(localGauss2D(0.5, 0.5 - R * 2, 0.5, 0.5, sigma)).toBe(0)
+  })
+  it('1.5σ 内仍有显著权重（核心区域正常作用）', () => {
+    expect(localGauss2D(0.55, 0.5, 0.5, 0.5, 0.05)).toBeGreaterThan(0.2)
+  })
+})
+
+// ── 局部性：五官精调尽量不影响其它区域 ──
+describe('evalField 局部性（减少跨区域联动）', () => {
+  /** 断言一组归一化坐标在给定参数下基本不动（|位移| < 1e-4） */
+  function expectUnmoved(F: FieldParams, M: FaceMeasure, points: Array<[number, number]>) {
+    for (const [x, y] of points) {
+      const [nx, ny] = evalField(x, y, F, M)
+      expect(Math.abs(nx - x)).toBeLessThan(1e-4)
+      expect(Math.abs(ny - y)).toBeLessThan(1e-4)
+    }
+  }
+
+  // 测试人脸（baseLM）的各区域代表点（归一化）
+  const glabella = [0.50, 0.22] as [number, number]   // 眉心
+  const noseBridge = [0.50, 0.24] as [number, number] // 鼻梁顶
+  const noseTip = [0.50, 0.40] as [number, number]    // 鼻尖
+  const philtrum = [0.50, 0.44] as [number, number]   // 人中
+  const upperLip = [0.50, 0.46] as [number, number]   // 上唇顶
+  const mouthCornerL = [0.42, 0.48] as [number, number] // 左嘴角
+  const chin = [0.50, 0.60] as [number, number]       // 下巴
+  const chinLow = [0.50, 0.52] as [number, number]    // 下唇下方
+  const noseAlar = [0.44, 0.42] as [number, number]   // 左鼻翼
+
+  it('眼睛大小（eyeSize=1.4 最大档）：眉心/鼻梁/鼻尖/嘴/下巴全不动', () => {
+    const F = buildFieldParams(testM, { eyeSize: 1.4 })
+    expectUnmoved(F, testM, [glabella, noseBridge, noseTip, upperLip, mouthCornerL, chin, philtrum, noseAlar])
+    // 眼睛区域本身仍有效果（眼外角被外推）
+    const [ox, oy] = evalField(0.38, 0.27, F, testM)
+    expect(ox).not.toBeCloseTo(0.38, 4)
+    expect(oy).not.toBeCloseTo(0.27, 4)
+  })
+
+  it('眼角上扬（eyeTilt=0.25）：眉心/鼻梁/鼻尖/嘴/下巴全不动', () => {
+    const F = buildFieldParams(testM, { eyeTilt: 0.25 })
+    expectUnmoved(F, testM, [glabella, noseBridge, noseTip, upperLip, mouthCornerL, chin])
+    // 眼外角仍上移
+    const [, oy] = evalField(0.38, 0.27, F, testM)
+    expect(oy).toBeLessThan(0.27)
+  })
+
+  it('眼睛拉长（eyeLen=1.2）：眉心/鼻梁/鼻尖/嘴/下巴全不动', () => {
+    const F = buildFieldParams(testM, { eyeLen: 1.2 })
+    expectUnmoved(F, testM, [glabella, noseBridge, noseTip, upperLip, mouthCornerL, chin])
+  })
+
+  it('鼻尖上翘（noseTipLift=0.02）：上唇/嘴角/鼻翼/人中全不动（原先会带飞嘴巴）', () => {
+    const F = buildFieldParams(testM, { noseTipLift: 0.02 })
+    expectUnmoved(F, testM, [upperLip, mouthCornerL, noseAlar, philtrum])
+    // 鼻尖本身仍上翘
+    const [, ny] = evalField(0.50, 0.40, F, testM)
+    expect(ny).toBeLessThan(0.40)
+  })
+
+  it('鼻尖大小（noseTipSize=1.2）：上唇/嘴角/鼻翼不动', () => {
+    const F = buildFieldParams(testM, { noseTipSize: 1.2 })
+    expectUnmoved(F, testM, [upperLip, mouthCornerL, noseAlar])
+    // 鼻尖下方仍扩张
+    const [, ny] = evalField(0.50, 0.42, F, testM)
+    expect(ny).toBeGreaterThan(0.42)
+  })
+
+  it('嘴唇厚薄（lip=1.6）：下巴/人中全不动（原先会推下巴）', () => {
+    const F = buildFieldParams(testM, { lip: 1.6 })
+    expectUnmoved(F, testM, [chin, chinLow, philtrum])
+    // 上唇顶仍上移、下唇底仍下移
+    const [, uy] = evalField(0.50, 0.46, F, testM)
+    expect(uy).toBeLessThan(0.46)
+    const [, ly] = evalField(0.50, 0.50, F, testM)
+    expect(ly).toBeGreaterThan(0.50)
+  })
+
+  it('唇峰高低（cupidH=0.015）：鼻尖/人中不动（原先会影响鼻尖）', () => {
+    const F = buildFieldParams(testM, { cupidH: 0.015 })
+    expectUnmoved(F, testM, [noseTip, philtrum])
+    // 唇峰（上唇顶中点）仍上移
+    const [, ny] = evalField(0.50, 0.46, F, testM)
+    expect(ny).toBeLessThan(0.46)
+  })
+
+  it('嘴角上扬（mouthCorner=0.02）：下巴/鼻尖/人中不动（原先会波及下巴）', () => {
+    const F = buildFieldParams(testM, { mouthCorner: 0.02 })
+    expectUnmoved(F, testM, [chin, chinLow, noseTip, philtrum])
+    // 嘴角本身仍上移
+    const [, my] = evalField(0.42, 0.48, F, testM)
+    expect(my).toBeLessThan(0.48)
+  })
+
+  it('颧骨高低（cheekUp=0.02）：眼睛/鼻子/嘴全不动', () => {
+    const F = buildFieldParams(testM, { cheekUp: 0.02 })
+    expectUnmoved(F, testM, [[0.40, 0.26], noseTip, upperLip, mouthCornerL])
+    // 颧骨点本身仍上移
+    const [, cy] = evalField(0.24, 0.58, F, testM)
+    expect(cy).toBeLessThan(0.58)
+  })
+
+  it('颧骨突起（cheekProject=0.25）：眼睛/鼻子/嘴/面中不动，且左右颧骨向外推（原先方向错乱）', () => {
+    const F = buildFieldParams(testM, { cheekProject: 0.25 })
+    expectUnmoved(F, testM, [[0.40, 0.26], noseTip, upperLip, mouthCornerL, [0.50, 0.58]])
+    // 左颧骨向左（x 减小）、右颧骨向右（x 增大）
+    const [lx] = evalField(0.24, 0.58, F, testM)
+    expect(lx).toBeLessThan(0.24)
+    const [rx] = evalField(0.76, 0.58, F, testM)
+    expect(rx).toBeGreaterThan(0.76)
+  })
+
+  it('颧骨宽（cheekW=1.2）：眼睛/鼻子/嘴不动', () => {
+    const F = buildFieldParams(testM, { cheekW: 1.2 })
+    expectUnmoved(F, testM, [[0.40, 0.26], noseTip, upperLip, mouthCornerL])
   })
 })
