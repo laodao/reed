@@ -19,6 +19,7 @@ import {
   normalizeEpDecision,
   epAgentConversationId,
   EpisodeProductionAgentService,
+  detectChoiceForAssetImage,
 } from '@core/modules/episode-production/agent/ep-agent-workflow.service'
 import { extractJsonObject } from '@core/modules/episode-production/agent/ep-agent-actions'
 import {
@@ -234,5 +235,37 @@ describe('sendMessage choice 分支（多轮确认）', () => {
     const assistant = messages.filter((m) => m.role === 'assistant')
     expect(assistant.length).toBeGreaterThan(0)
     expect(assistant[0].content).toContain('杜十娘')
+  })
+})
+
+// ==================== detectChoiceForAssetImage（规则型多轮确认） ====================
+
+describe('detectChoiceForAssetImage 规则检测', () => {
+  const state: EpAgentProductionState = {
+    episode: { id: 'ep1', hasScript: true },
+    scenes: { total: 1, countWithBindings: 1, locations: [] },
+    storyboards: { total: 0, scenesCovered: 0, scenesTotal: 1 },
+    assets: {
+      characters: { count: 2, names: ['杜十娘', '李甲'] },
+      locations: { count: 0, names: [] },
+      items: { count: 1, names: ['百宝箱'] },
+    },
+  }
+
+  it('要给角色生成定妆图但未点名 → 构造角色候选 choice', () => {
+    const c = detectChoiceForAssetImage('给某个角色生成定妆图', state)
+    expect(c).toEqual({ actionType: 'generate_char_asset', param: 'name', choices: ['杜十娘', '李甲'], prompt: '请选择要生成定妆图的角色' })
+  })
+
+  it('已点名具体角色 → 返回 null（交回 AI 正常执行）', () => {
+    expect(detectChoiceForAssetImage('给杜十娘生成定妆图', state)).toBeNull()
+  })
+
+  it('地点意图 → 构造地点候选（无候选返回 null）', () => {
+    expect(detectChoiceForAssetImage('给一个地点生成主图', state)).toBeNull() // 无地点候选
+  })
+
+  it('非生成图意图 → 返回 null', () => {
+    expect(detectChoiceForAssetImage('帮我拆分场景', state)).toBeNull()
   })
 })

@@ -18,8 +18,8 @@
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { LongWritingAIService } from '@core/services/longwriting-ai.service'
 import type {
-  EpAgentAction,
   EpAgentActionSummary,
+  EpAgentChoice,
   EpAgentDecision,
   EpAgentEvent,
   EpAgentSendResult,
@@ -178,6 +178,21 @@ export class EpisodeProductionAgentService {
     // 1. 生产状态（决策前快照）
     let state = await computeEpProductionState(m, projectId, episodeId)
 
+    // 1.5 规则型多轮确认：用户想给资产生成"图"，但没点名字 → 引擎直接发候选 choice，
+    //     保证生成哪个由用户从项目真实资产里选，不依赖 AI 临场判断。
+    const ruleChoice = detectChoiceForAssetImage(userMsg, state)
+    if (ruleChoice) {
+      this.emit(projectId, episodeId, { type: 'choice:request', choice: ruleChoice })
+      const prompt = ruleChoice.prompt || `请选择要生成${assetLabelFor(ruleChoice.actionType)}：`
+      const assistantMsg = await m.lwDesignMessages.add(conversationId, {
+        role: 'assistant',
+        content: `${prompt}\n候选：${ruleChoice.choices.join('、')}`,
+        timestamp: Date.now(),
+        metadata: JSON.stringify({ choice: ruleChoice }),
+      })
+      return { conversationId, assistantMessage: assistantMsg, actionSummaries: [], suggestions: [], choice: ruleChoice }
+    }
+
     // 2. AI 决策
     this.emit(projectId, episodeId, { type: 'stage', stage: 'deciding' })
     const history = await m.lwDesignMessages.getByConversationId(conversationId)
@@ -259,4 +274,59 @@ export class EpisodeProductionAgentService {
 
     return { conversationId, assistantMessage, actionSummaries, suggestions }
   }
+}
+
+// ==================== 规则型多轮确认（引擎主动构造 choice） ====================
+
+/** 生成某类资产的 action 映射（供 prompt 文案） */
+function assetLabelFor(actionType: EpAgentActionType): string {
+  switch (actionType) {
+    case 'generate_char_asset': return '角色定妆图'
+    case 'generate_location_asset': return '地点主图'
+    case 'generate_item_asset': return '物品主图'
+    default: return '资产图'
+  }
+}
+
+/**
+ * 检测"用户想给资产生成图但没说具体哪个"的意图，能命中则用项目真实资产名构造 choice。
+ * 规则（确定性，不依赖 AI 临场发挥）：
+ *   - 消息含"定妆/主图/生成...图"等生成图意图；
+ *   - 消息里出现了某个现有资产名 → 返回 null（让引擎走 AI，用户已点名）；
+ *   - 否则按消息提及的类别（角色/地点/物品）取候选名，构造 choice。
+ */
+export function detectChoiceForAssetImage(
+  msg: string,
+  state: EpAgentProductionState,
+): EpAgentChoice | null {
+  const lower = msg || ''
+  // 判断是否"生成图"意图
+  const wantsImage = /定妆|主图|生成.+图|角色图|人物图|形象图/.test(lower)
+  if (!wantsImage) return null
+
+  // 用户已点名某个现有资产？→ 交回 AI 正常执行
+  const allNames = [
+    ...state.assets.characters.names,
+    ...state.assets.locations.names,
+    ...state.assets.items.names,
+  ]
+  if (allNames.some((n) => n && lower.includes(n))) return null
+
+  // 按类别判断：消息里含"角色/人"→ 角色；"地点" → 地点；"物品" → 物品；默认角色
+  const isLocation = /地点|场景|外景|地点图/.test(lower)
+  const isItem = /物品|道具|物件/.test(lower)
+  let actionType: EpAgentActionType
+  let candidates: string[]
+  let prompt: string
+  if (isLocation) {
+    actionType = 'generate_location_asset'; candidates = state.assets.locations.names; prompt = '请选择要生成主图的地点'
+  } else if (isItem) {
+    actionType = 'generate_item_asset'; candidates = state.assets.items.names; prompt = '请选择要生成主图的物品'
+  } else {
+    actionType = 'generate_char_asset'; candidates = state.assets.characters.names; prompt = '请选择要生成定妆图的角色'
+  }
+
+  const choices = (candidates || []).filter(Boolean)
+  if (choices.length === 0) return null // 无候选 → 交回 AI（可能需先建资产）
+  return { actionType, param: 'name', choices, prompt }
 }
