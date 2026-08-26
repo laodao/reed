@@ -70,49 +70,7 @@ export class MainImageUploadService {
    * 6) 新行写入 isMain=1, category='main'
    */
   async upload(input: MainImageUploadInput): Promise<AssetImageEntity> {
-    if (!input.buffer || input.buffer.byteLength === 0) {
-      throw new MainImageUploadValidationError('文件为空', 'EMPTY')
-    }
-    if (input.buffer.byteLength > MAX_BYTES) {
-      throw new MainImageUploadValidationError(
-        `文件超过 ${MAX_BYTES / 1024 / 1024}MB 上限`,
-        'TOO_LARGE',
-      )
-    }
-
-    let metadata: sharp.Metadata
-    try {
-      metadata = await sharp(input.buffer).metadata()
-    } catch (e) {
-      throw new MainImageUploadValidationError(
-        `无法解析图像（损坏或格式不支持）：${(e as Error).message}`,
-        'BAD_FORMAT',
-      )
-    }
-
-    const format = metadata.format
-    if (!format || !ALLOWED_FORMATS.includes(format as AllowedFormat)) {
-      throw new MainImageUploadValidationError(
-        `不支持的图像格式：${format ?? '未知'}（仅支持 jpeg/png/webp）`,
-        'BAD_FORMAT',
-      )
-    }
-
-    const { width, height } = metadata
-    if (!width || !height) {
-      throw new MainImageUploadValidationError('无法读取图像尺寸', 'BAD_DIMENSIONS')
-    }
-
-    // 写入：dataPath/asset-images/{assetType}-{assetId}-main-{timestamp}.{ext}
-    const ext = format === 'jpeg' ? 'jpg' : format
-    const timestamp = Date.now()
-    const fileName = `${input.assetType}-${input.assetId}-main-${timestamp}.${ext}`
-    const relPath = path.posix.join('asset-images', fileName)
-    const dataPath = this.pathProvider.getDataPath()
-    const absPath = path.join(dataPath, relPath)
-
-    await fs.mkdir(path.dirname(absPath), { recursive: true })
-    await fs.writeFile(absPath, input.buffer)
+    const relPath = await this.saveImageFile(input.buffer, input.fileName)
 
     // 先写新图，再调 setAsMain 使旧主图 isMain→0，新图 isMain→1
     const newImage = await this.imageService.addImage({
@@ -132,14 +90,44 @@ export class MainImageUploadService {
   }
 
   /**
+   * 上传一张图作为"新增主图"（多主图模型：不替换/降级旧主图）。
+   * 文件保存后创建 category='main' 行，再 switchDefaultMain 把 isMain 切到新图
+   * （旧主图保持 category='main'、isMain=0，可继续查看/切换）。
+   */
+  async uploadAdditionalMain(
+    input: MainImageUploadInput & { label?: string },
+  ): Promise<AssetImageEntity> {
+    const relPath = await this.saveImageFile(input.buffer, input.fileName)
+
+    const newImage = await this.imageService.addImage({
+      assetType: input.assetType,
+      assetId: input.assetId,
+      category: 'main',
+      imagePath: relPath,
+      isMain: false,
+      label: input.label?.trim() || null,
+      userId: input.userId,
+    })
+    // 切默认主图（不动 category，多主图兼容）
+    await this.imageService.switchDefaultMain(newImage.id)
+    return newImage
+  }
+
+  /**
    * 保存参考图文件（不落 asset_image 行）：仅校验 + 写文件，返回相对路径，
    * 供"新增主图（换装）"等场景把用户上传的图作为生成 reference。
    */
   async saveReferenceFile(input: { buffer: Buffer; fileName: string }): Promise<{ path: string }> {
-    if (!input.buffer || input.buffer.byteLength === 0) {
+    const relPath = await this.saveImageFile(input.buffer, input.fileName)
+    return { path: relPath }
+  }
+
+  /** 校验图像 + 写入 asset-images/ 目录，返回相对路径 */
+  private async saveImageFile(buffer: Buffer, _fileName: string): Promise<string> {
+    if (!buffer || buffer.byteLength === 0) {
       throw new MainImageUploadValidationError('文件为空', 'EMPTY')
     }
-    if (input.buffer.byteLength > MAX_BYTES) {
+    if (buffer.byteLength > MAX_BYTES) {
       throw new MainImageUploadValidationError(
         `文件超过 ${MAX_BYTES / 1024 / 1024}MB 上限`,
         'TOO_LARGE',
@@ -148,13 +136,14 @@ export class MainImageUploadService {
 
     let metadata: sharp.Metadata
     try {
-      metadata = await sharp(input.buffer).metadata()
+      metadata = await sharp(buffer).metadata()
     } catch (e) {
       throw new MainImageUploadValidationError(
         `无法解析图像（损坏或格式不支持）：${(e as Error).message}`,
         'BAD_FORMAT',
       )
     }
+
     const format = metadata.format
     if (!format || !ALLOWED_FORMATS.includes(format as AllowedFormat)) {
       throw new MainImageUploadValidationError(
@@ -164,12 +153,13 @@ export class MainImageUploadService {
     }
 
     const ext = format === 'jpeg' ? 'jpg' : format
-    const fileName = `ref-${Date.now()}.${ext}`
+    const timestamp = Date.now()
+    const fileName = `main-${timestamp}.${ext}`
     const relPath = path.posix.join('asset-images', fileName)
     const dataPath = this.pathProvider.getDataPath()
     const absPath = path.join(dataPath, relPath)
     await fs.mkdir(path.dirname(absPath), { recursive: true })
-    await fs.writeFile(absPath, input.buffer)
-    return { path: relPath }
+    await fs.writeFile(absPath, buffer)
+    return relPath
   }
 }

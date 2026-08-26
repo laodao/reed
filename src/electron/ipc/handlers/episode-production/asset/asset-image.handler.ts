@@ -52,6 +52,7 @@ export function registerAssetImageHandlers(): void {
   ipcBridge.handle('ep:asset:image:save-prompt', handleSavePrompt)
   ipcBridge.handle('ep:asset:image:generate-main', handleGenerateMain)
   ipcBridge.handle('ep:asset:image:upload-main-file', handleUploadMainFile)
+  ipcBridge.handle('ep:asset:image:upload-main-add', handleUploadAdditionalMain)
   ipcBridge.handle('ep:asset:image:upload-ref', handleUploadRefImage)
   // spec 2026-05-09 多主图模型新增 channel
   ipcBridge.handle('ep:asset:image:add-main', handleAddAdditionalMain)
@@ -248,6 +249,39 @@ async function handleUploadRefImage(
     const data = await svc.saveReferenceFile({
       buffer: Buffer.from(input.base64, 'base64'),
       fileName: input.fileName,
+    })
+    return { success: true, data }
+  } catch (err: any) {
+    if (err instanceof MainImageUploadValidationError) {
+      return { success: false, error: `[${err.code}] ${err.message}` }
+    }
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+/**
+ * 上传一张图作为"新增主图"（多主图模型：不替换旧主图，新图成为默认 isMain=1）。
+ */
+async function handleUploadAdditionalMain(
+  _event: any,
+  input: {
+    fileName: string
+    base64: string
+    assetType: AssetType
+    assetId: string
+    label?: string | null
+  },
+): Promise<IpcResponse> {
+  try {
+    const ds = requireDataSource()
+    const imageSvc = new AssetImageService(ds)
+    const svc = new MainImageUploadService(getPathProvider(), imageSvc)
+    const data = await svc.uploadAdditionalMain({
+      buffer: Buffer.from(input.base64, 'base64'),
+      fileName: input.fileName,
+      assetType: input.assetType,
+      assetId: input.assetId,
+      label: input.label,
     })
     return { success: true, data }
   } catch (err: any) {

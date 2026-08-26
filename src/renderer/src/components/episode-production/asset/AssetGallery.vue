@@ -4,9 +4,6 @@
     <div class="gallery-top">
       <div class="top-left">
         <span class="top-title">{{ kindLabel }}定妆：{{ assetName }}</span>
-        <span class="top-view-pills">
-          <span v-for="p in viewPills" :key="p" class="pill" :class="{ active: selectedLabel === p }" @click="selectByPill(p)">{{ p }}</span>
-        </span>
       </div>
       <div class="top-actions">
         <el-button v-if="hasMain" text size="small" @click="showAddOutfit = true">
@@ -149,8 +146,6 @@ const navItems = computed(() => {
   ]
 })
 
-const viewPills = computed(() => navItems.value.map(i => i.title))
-
 const kindLabel = computed(() => props.kind === 'character' ? '角色' : props.kind === 'location' ? '地点' : '物品')
 
 function imageByLabel(label: string): any | null {
@@ -250,11 +245,6 @@ function selectLabel(label: string): void {
   selectedLabel.value = label
   const sel = imageByLabel(label)
   localPrompt.value = stripSystemConstraints(sel?.prompt || '')
-}
-
-function selectByPill(title: string): void {
-  const item = navItems.value.find(i => i.title === title)
-  if (item) selectLabel(item.label)
 }
 
 async function onGenerate(item: { label: string; category: string }): Promise<void> {

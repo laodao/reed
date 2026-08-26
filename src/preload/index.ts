@@ -341,6 +341,7 @@ const IPC_CHANNELS = {
 
   // 主图文件上传（双端 · follow-up）
   EP_ASSET_IMAGE_UPLOAD_MAIN_FILE: 'ep:asset:image:upload-main-file',
+  EP_ASSET_IMAGE_UPLOAD_MAIN_ADD: 'ep:asset:image:upload-main-add',
   EP_ASSET_IMAGE_UPLOAD_REF: 'ep:asset:image:upload-ref',
 
   // spec 2026-05-09 多主图模型新增
@@ -2535,6 +2536,9 @@ const electronAPI = {
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_GENERATE_MAIN, input),
         uploadMainFile: (input: { fileName: string; base64: string; assetType: string; assetId: string }) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_UPLOAD_MAIN_FILE, input),
+        /** 上传一张图作为"新增主图"（多主图：不替换旧主图，新图成为默认） */
+        uploadMainAdd: (input: { fileName: string; base64: string; assetType: string; assetId: string; label?: string | null }) =>
+          ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_UPLOAD_MAIN_ADD, input),
         /** 上传参考图（保存文件返回路径，不落 asset_image 行；供换装生成作 reference） */
         uploadReference: (input: { fileName: string; base64: string }) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_UPLOAD_REF, input),

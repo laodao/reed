@@ -13,44 +13,69 @@
     @close="reset"
   >
     <el-form label-position="top" @submit.prevent>
-      <el-form-item label="换装描述（提示词）">
-        <el-input
-          v-model="form.prompt"
-          type="textarea"
-          :rows="4"
-          placeholder="描述新的造型 / 服饰，如：身穿红色绣花长裙，头戴金步摇…（留空则按资产设定生成）"
-          :maxlength="800"
-          show-word-limit
-          resize="none"
-        />
-        <div class="dialog-hint">将以第一张正面全身图的面容/发型为基准，仅按描述更换造型</div>
+      <el-form-item label="方式">
+        <el-radio-group v-model="form.mode">
+          <el-radio value="generate">✨ AI 生成（换装）</el-radio>
+          <el-radio value="upload">⬆ 直接上传正面全身图</el-radio>
+        </el-radio-group>
       </el-form-item>
 
-      <el-form-item label="换装参考图（可选）">
-        <el-upload
-          :auto-upload="false"
-          :show-file-list="false"
-          :limit="1"
-          accept="image/jpeg,image/png,image/webp"
-          :on-change="onFilePicked"
-        >
-          <el-button :loading="uploading">
-            <el-icon><Upload /></el-icon>
-            {{ form.refPath ? '更换参考图' : '上传参考图' }}
-          </el-button>
-        </el-upload>
-        <div v-if="form.refPath" class="ref-preview">
-          <img :src="toImageUrl(form.refPath)" alt="参考图" class="ref-thumb" />
-          <span class="dialog-hint">已上传，将作为生成参考</span>
-        </div>
-        <div v-else class="dialog-hint">支持 jpeg / png / webp · 最大 20MB</div>
-      </el-form-item>
+      <template v-if="form.mode === 'generate'">
+        <el-form-item label="换装描述（提示词）">
+          <el-input
+            v-model="form.prompt"
+            type="textarea"
+            :rows="4"
+            placeholder="描述新的造型 / 服饰，如：身穿红色绣花长裙，头戴金步摇…（留空则按资产设定生成）"
+            :maxlength="800"
+            show-word-limit
+            resize="none"
+          />
+          <div class="dialog-hint">将以第一张正面全身图的面容/发型为基准，仅按描述更换造型</div>
+        </el-form-item>
+
+        <el-form-item label="换装参考图（可选）">
+          <el-upload
+            :auto-upload="false"
+            :show-file-list="false"
+            :limit="1"
+            accept="image/jpeg,image/png,image/webp"
+            :on-change="onRefPicked"
+          >
+            <el-button :loading="uploading">
+              <el-icon><Upload /></el-icon>
+              {{ form.refPath ? '更换参考图' : '上传参考图' }}
+            </el-button>
+          </el-upload>
+          <div v-if="form.refPath" class="ref-preview">
+            <img :src="toImageUrl(form.refPath)" alt="参考图" class="ref-thumb" />
+            <span class="dialog-hint">已上传，将作为生成参考</span>
+          </div>
+          <div v-else class="dialog-hint">支持 jpeg / png / webp · 最大 20MB</div>
+        </el-form-item>
+      </template>
+
+      <template v-else>
+        <el-form-item label="正面全身图文件">
+          <el-upload
+            :auto-upload="false"
+            :show-file-list="true"
+            :limit="1"
+            accept="image/jpeg,image/png,image/webp"
+            :on-change="onMainFilePicked"
+            :on-remove="onMainFileRemoved"
+          >
+            <el-button>选择图片</el-button>
+          </el-upload>
+          <div class="dialog-hint">直接上传一张正面全身图作为新主图（不执行 AI 生成），支持 jpeg / png / webp · 最大 20MB</div>
+        </el-form-item>
+      </template>
     </el-form>
 
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="onSubmit">
-        ✨ 生成换装主图
+      <el-button type="primary" :loading="submitting" :disabled="!canSubmit" @click="onSubmit">
+        {{ form.mode === 'generate' ? '✨ 生成换装主图' : '⬆ 上传主图' }}
       </el-button>
     </template>
   </el-dialog>
@@ -84,20 +109,36 @@ const visible = computed({
   set: (v) => emit('update:modelValue', v),
 })
 
-const form = reactive<{ prompt: string; refPath: string }>({ prompt: '', refPath: '' })
+interface FormState {
+  mode: 'generate' | 'upload'
+  prompt: string
+  refPath: string
+  mainFile: File | null
+}
+
+const form = reactive<FormState>({
+  mode: 'generate',
+  prompt: '',
+  refPath: '',
+  mainFile: null,
+})
+
 const uploading = ref(false)
 const submitting = ref(false)
 
 watch(visible, (v) => { if (v) reset() })
 
 function reset(): void {
+  form.mode = 'generate'
   form.prompt = ''
   form.refPath = ''
+  form.mainFile = null
   uploading.value = false
   submitting.value = false
 }
 
-async function onFilePicked(file: UploadFile): Promise<void> {
+/** 生成模式：上传换装参考图（保存为 reference 文件） */
+async function onRefPicked(file: UploadFile): Promise<void> {
   const raw = file.raw as File | undefined
   if (!raw) return
   if (!raw.type.startsWith('image/')) { ElMessage.warning('请选择图片文件'); return }
@@ -117,36 +158,69 @@ async function onFilePicked(file: UploadFile): Promise<void> {
   }
 }
 
+/** 上传模式：选择正面全身图文件（提交时上传为主图） */
+function onMainFilePicked(file: UploadFile): void {
+  const raw = file.raw as File | undefined
+  if (!raw) return
+  if (!raw.type.startsWith('image/')) { ElMessage.warning('请选择图片文件'); form.mainFile = null; return }
+  if (raw.size > 20 * 1024 * 1024) { ElMessage.warning('图片过大（>20MB）'); form.mainFile = null; return }
+  form.mainFile = raw
+}
+
+function onMainFileRemoved(): void {
+  form.mainFile = null
+}
+
+const canSubmit = computed(() => {
+  if (form.mode === 'upload') return form.mainFile !== null
+  return true // generate 模式：提示词/参考图都可选
+})
+
 async function onSubmit(): Promise<void> {
-  if (submitting.value) return
+  if (submitting.value || !canSubmit.value) return
   submitting.value = true
   try {
     const api = (window as any).electronAPI?.episodeProduction?.asset
-    if (!api?.image?.addMain) { ElMessage.error('addMain IPC 未暴露'); return }
-    // 换装 prompt：用户描述优先，未编辑用系统拼接；均补 fullBody/年代约束
-    const { prompt, negativePrompt } = await buildMainImagePrompt(
-      props.assetType,
-      props.assetId,
-      { promptOverride: form.prompt.trim() || undefined },
-    )
-    // 参考图：第一张主图（面容基准）+ 用户上传的换装参考图
-    const refs = [props.firstMainPath, form.refPath || null].filter((p): p is string => !!p)
-    const label = `换装${props.mainCount + 1}`
-    const resp = await api.image.addMain({
-      assetType: props.assetType,
-      assetId: props.assetId,
-      prompt,
-      negativePrompt: negativePrompt ?? undefined,
-      referenceImagePaths: refs.length > 0 ? refs : undefined,
-      label,
-      makeDefault: true,
-    })
-    if (!resp?.success) { ElMessage.error(resp?.error || '生成失败'); return }
-    ElMessage.success(`已新增正面全身（${label}）`)
+    if (!api?.image) { ElMessage.error('asset.image IPC 未暴露'); return }
+    if (form.mode === 'upload') {
+      if (!form.mainFile) return
+      const base64 = await readAsBase64(form.mainFile)
+      const resp = await api.image.uploadMainAdd({
+        fileName: form.mainFile.name,
+        base64,
+        assetType: props.assetType,
+        assetId: props.assetId,
+        label: `换装${props.mainCount + 1}`,
+      })
+      if (!resp?.success) { ElMessage.error(resp?.error || '上传主图失败'); return }
+      ElMessage.success(`已上传正面全身（换装${props.mainCount + 1}）`)
+    } else {
+      if (!api.image.addMain) { ElMessage.error('addMain IPC 未暴露'); return }
+      // 换装 prompt：用户描述优先，未编辑用系统拼接；均补 fullBody/年代约束
+      const { prompt, negativePrompt } = await buildMainImagePrompt(
+        props.assetType,
+        props.assetId,
+        { promptOverride: form.prompt.trim() || undefined },
+      )
+      // 参考图：第一张主图（面容基准）+ 用户上传的换装参考图
+      const refs = [props.firstMainPath, form.refPath || null].filter((p): p is string => !!p)
+      const label = `换装${props.mainCount + 1}`
+      const resp = await api.image.addMain({
+        assetType: props.assetType,
+        assetId: props.assetId,
+        prompt,
+        negativePrompt: negativePrompt ?? undefined,
+        referenceImagePaths: refs.length > 0 ? refs : undefined,
+        label,
+        makeDefault: true,
+      })
+      if (!resp?.success) { ElMessage.error(resp?.error || '生成失败'); return }
+      ElMessage.success(`已新增正面全身（${label}）`)
+    }
     emit('submitted')
     visible.value = false
   } catch (e: any) {
-    ElMessage.error('生成失败：' + (e?.message ?? '未知错误'))
+    ElMessage.error('提交失败：' + (e?.message ?? '未知错误'))
   } finally {
     submitting.value = false
   }
