@@ -8,10 +8,16 @@
           <span v-for="p in viewPills" :key="p" class="pill" :class="{ active: selectedLabel === p }" @click="selectByPill(p)">{{ p }}</span>
         </span>
       </div>
-      <el-button text size="small" @click="onDeriveAll" :disabled="!hasMain">
-        <el-icon><Upload /></el-icon>
-        按需提货
-      </el-button>
+      <div class="top-actions">
+        <el-button v-if="hasMain" text size="small" :loading="generating" @click="onAddMain">
+          <el-icon><Plus /></el-icon>
+          新增正面全身
+        </el-button>
+        <el-button text size="small" @click="onDeriveAll" :disabled="!hasMain">
+          <el-icon><Upload /></el-icon>
+          按需提货
+        </el-button>
+      </div>
     </div>
 
     <!-- 主体：左图集导航 + 右大图预览 -->
@@ -25,9 +31,10 @@
           :class="{ active: selectedLabel === item.label }"
           @click="selectLabel(item.label)"
         >
-          <div class="nav-thumb">
+          <div class="nav-thumb" :class="{ derived: !!imageByLabel(item.label)?.derivedFromImageId }">
             <el-image v-if="imageByLabel(item.label)?.imagePath" :src="toUrl(imageByLabel(item.label)!.imagePath)" fit="cover" class="thumb-img" />
             <div v-else class="thumb-empty"><el-icon :size="16"><Picture /></el-icon></div>
+            <span v-if="imageByLabel(item.label)?.derivedFromImageId" class="derived-badge">衍</span>
           </div>
           <div class="nav-info">
             <div class="nav-name">{{ item.title }}</div>
@@ -81,7 +88,7 @@ import { ElMessage } from 'element-plus'
 import { Picture, MagicStick, Plus, Upload, Loading } from '@element-plus/icons-vue'
 import { toImageUrl } from '@/utils/asset-url'
 import { stripSystemConstraints } from '@core/modules/episode-production/assets/prompts/asset-identity-prompt'
-import { generateMainFor } from '@/api/main-image-generator'
+import { generateMainFor, buildMainImagePrompt } from '@/api/main-image-generator'
 import { useAssetImageActions } from '@/composables/use-asset-image-actions'
 
 const props = defineProps<{
@@ -182,34 +189,32 @@ async function onGenerate(item: { label: string; category: string }): Promise<vo
     // 保证生成时使用用户最新编辑的提示词，且生成后输入框内容不丢。
     await onSavePrompt()
     if (item.label === 'main') {
-      // 生成主图：输入框当前内容（非空）即生图提示词——用户编辑过用它，
-      // 未编辑沿用当前设置；避免生成后 load 被系统拼接 prompt 覆盖（还原）。
-      const override = localPrompt.value.trim() ? localPrompt.value : undefined
-      const img = await generateMainFor(
-        props.kind,
-        props.assetId,
-        override ? { promptOverride: override } : undefined,
-      )
-      void img
-      ElMessage.success('主图已生成')
+      // 已有主图 → 新增换装（以第一张主图为基准，不替换旧基准）；
+      // 无主图 → 生成第一张基准主图（自定义提示词优先）。
+      if (hasMain.value) {
+        await doAddMain()
+      } else {
+        const override = localPrompt.value.trim() ? localPrompt.value : undefined
+        const img = await generateMainFor(
+          props.kind,
+          props.assetId,
+          override ? { promptOverride: override } : undefined,
+        )
+        void img
+        ElMessage.success('主图已生成')
+      }
     } else {
       const root = (window as any).electronAPI?.episodeProduction?.asset
       const main = imageByLabel('main')
-      // 派生用"目标 slot 自己的纯净提示词"：优先该 slot 已保存的（剥离约束），
-      // 否则仅当正在编辑该 slot 时用输入框内容，避免把其它 slot（如主图的半身
-      // 定妆约束）串到派生图（全身照）上。
-      const slotImg = images.value.find(i => i.label === item.label)
-      const addPrompt =
-        (slotImg?.prompt ? stripSystemConstraints(slotImg.prompt) : '')
-        || (item.label === selectedLabel.value ? localPrompt.value.trim() : '')
-        || item.title
+      // 派生图系统固定：以主图为参考，提示词由服务端按 slot 语义拼
+      // （身份锚点 + 该图角度/景别描述 + 固定约束），不传用户自定义提示词，
+      // 保证同一资产各角度图的面容/发型/服饰/背景一致。
       const r = await root.derive.single({
         assetType: props.kind,
         assetId: props.assetId,
         category: item.category,
         label: item.label,
         baseImageId: main?.id || null,
-        additionalPrompt: addPrompt,
       })
       if (!r?.success) { ElMessage.error(r?.error || '生成失败'); generating.value = false; return }
       ElMessage.success(`${item.title} 已生成`)
@@ -228,6 +233,52 @@ async function onGenerateCurrent(): Promise<void> {
   await onGenerate(item)
 }
 
+/**
+ * 新增正面全身图（换装）：以第一张主图为面容/形象基准（reference），
+ * 输入框内容作换装描述；新主图成为默认（isMain=1），后续派生图基于它生成。
+ * 调用方负责 generating 状态。
+ */
+async function doAddMain(): Promise<void> {
+  const root = (window as any).electronAPI?.episodeProduction?.asset
+  if (!root?.image?.addMain) throw new Error('image.addMain IPC 未暴露')
+  // 第一张主图（created_at 最早且有图）作基准
+  const mains = images.value.filter(i => i.category === 'main' && i.imagePath)
+  const firstMain = [...mains].sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0))[0]
+  if (!firstMain) { ElMessage.warning('请先生成第一张正面全身图'); return }
+
+  // 换装描述：输入框内容优先（用户自定义），未编辑用系统拼接；都补 fullBody/年代约束
+  const { prompt, negativePrompt } = await buildMainImagePrompt(
+    props.kind,
+    props.assetId,
+    { promptOverride: localPrompt.value.trim() || undefined },
+  )
+  const label = `换装${mains.length + 1}`
+  const r = await root.image.addMain({
+    assetType: props.kind,
+    assetId: props.assetId,
+    prompt,
+    negativePrompt: negativePrompt ?? undefined,
+    referenceImagePath: firstMain.imagePath,
+    label,
+    makeDefault: true,
+  })
+  if (!r?.success) { ElMessage.error(r?.error || '生成失败'); return }
+  ElMessage.success(`已新增正面全身（${label}）`)
+  await load()
+}
+
+async function onAddMain(): Promise<void> {
+  if (!props.assetId || generating.value) return
+  generating.value = true
+  try {
+    await doAddMain()
+  } catch (e: any) {
+    ElMessage.error(e?.message || '生成失败')
+  } finally {
+    generating.value = false
+  }
+}
+
 async function onDeriveAll(): Promise<void> {
   if (!props.assetId || !hasMain.value || generating.value) return
   generating.value = true
@@ -237,18 +288,13 @@ async function onDeriveAll(): Promise<void> {
   try {
     const root = (window as any).electronAPI?.episodeProduction?.asset
     for (const item of items) {
-      // 该 slot 已编辑过提示词（占位行/已有图）→ 用剥离约束后的用户内容；
-      // 否则用 slot 标题作补充提示
-      const existing = images.value.find(i => i.label === item.label)
-      const addPrompt = (existing?.prompt ? stripSystemConstraints(existing.prompt) : '')
-        || item.title
+      // 派生图系统固定（服务端按 slot 拼角度/景别 + 身份锚点），不传用户提示词
       const r = await root.derive.single({
         assetType: props.kind,
         assetId: props.assetId,
         category: item.category,
         label: item.label,
         baseImageId: imageByLabel('main')?.id || null,
-        additionalPrompt: addPrompt,
       })
       if (!r?.success) { ElMessage.warning(`${item.title} 失败：${r?.error}`) }
     }
@@ -346,6 +392,7 @@ onActivated(() => void load())
   .top-left { display: flex; align-items: center; gap: 14px; }
   .top-title { font-size: 14px; font-weight: 600; color: var(--text-color-primary); }
   .top-view-pills { display: flex; gap: 6px; }
+  .top-actions { display: flex; align-items: center; gap: 4px; }
   .pill {
     font-size: 12px;
     color: var(--text-color-secondary);
@@ -386,8 +433,20 @@ onActivated(() => void load())
     background: var(--fill-color-lighter);
     overflow: hidden; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
+    position: relative;
     .thumb-img { width: 100%; height: 100%; object-fit: cover; }
     .thumb-empty { color: var(--text-color-placeholder); }
+    // 衍生图（半身/角度等）：小缩略 + 角标，与主图区分
+    &.derived {
+      width: 36px; height: 36px;
+      border: 1px dashed var(--border-color-light);
+      .derived-badge {
+        position: absolute; right: -4px; bottom: -4px;
+        width: 14px; height: 14px; border-radius: 50%;
+        background: var(--color-info); color: #fff;
+        font-size: 9px; line-height: 14px; text-align: center;
+      }
+    }
   }
   .nav-info { flex: 1; min-width: 0; }
   .nav-name { font-size: 13px; color: var(--text-color-primary); font-weight: 500; }

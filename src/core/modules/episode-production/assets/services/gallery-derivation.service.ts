@@ -40,6 +40,7 @@ import {
   prependIdentity,
   type StoryBackground,
 } from '@core/modules/episode-production/assets/prompts/asset-identity-prompt'
+import { viewHintForLabel } from '@core/modules/episode-production/assets/prompts/character-view-hints'
 import { CharacterAssetService } from './character-asset.service'
 import { LocationAssetService } from './location-asset.service'
 import { ItemAssetService } from './item-asset.service'
@@ -198,7 +199,15 @@ export class GalleryDerivationService {
     }
     const base = baseList[0]  // 单值兼容现有 derivedFromImageId 字段
 
-    let prompt = input.additionalPrompt ?? `${input.category} · ${input.label}`
+    // 角色派生：系统固定模板 —— 该 slot 的角度/景别描述（如"正面半身"）。
+    // 有角度映射的 slot（main/半身/侧面/全身）忽略调用方传入的用户提示词，
+    // 保证同一角色不同角度仅角度/景别变化；无映射（expression/outfit/pose）
+    // 仍用调用方描述（表情/服饰需要具体描述才能生成）。
+    const isCharacter = input.assetType === 'character'
+    const viewHint = isCharacter ? viewHintForLabel(input.label) : null
+    let prompt = viewHint
+      ? viewHint.viewHint
+      : (input.additionalPrompt ?? `${input.category} · ${input.label}`)
     let negativePrompt = input.negativePrompt
 
     /*
@@ -217,9 +226,9 @@ export class GalleryDerivationService {
     }
 
     // 角色资产硬约束：纯色背景 / 光照均匀无阴影（帽子、首饰不约束，交用户控制）；
-    // framing 按 category 决定（expression → 上半身；其他 → 全身）。
+    // framing 按 slot 语义（半身 → upperBody；全身 → fullBody），不再按 category 一刀切。
     if (input.assetType === 'character') {
-      const framing = framingForCategory(input.category)
+      const framing = viewHint?.framing ?? framingForCategory(input.category)
       prompt = appendCharacterConstraints(prompt, framing)
       negativePrompt = mergeCharacterNegative(negativePrompt, framing)
       // 派生场景（有 base ref）注入身份保持文本约束（face / hair / build / skin tone preservation）

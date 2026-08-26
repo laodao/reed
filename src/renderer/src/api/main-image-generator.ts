@@ -102,6 +102,33 @@ function readStoryBackgroundFromCurrentEpisode(): {
 }
 
 /**
+ * 构建"正面全身主图"的完整 prompt（用户自定义优先，未编辑用系统拼接）。
+ * 供 generateMainFor（首张基准）与新增主图（换装）共用。
+ */
+export async function buildMainImagePrompt(
+  assetType: AssetType,
+  assetId: string,
+  opts?: { promptOverride?: string },
+): Promise<{ prompt: string; negativePrompt?: string; referenceImagePath?: string | null }> {
+  const { prompt: basePrompt, negativePrompt: baseNegative, referenceImagePath } =
+    await buildPromptFromEffective(assetType, assetId)
+
+  const userPrompt = opts?.promptOverride?.trim()
+  if (!userPrompt) {
+    return { prompt: basePrompt, negativePrompt: baseNegative, referenceImagePath }
+  }
+
+  // 用户编辑的提示词优先；补年代特征与角色定妆约束（base prompt 已含，override 需手动补）
+  let prompt = appendEraConstraint(userPrompt, readStoryBackgroundFromCurrentEpisode())
+  let negativePrompt = baseNegative
+  if (assetType === 'character') {
+    prompt = appendCharacterConstraints(prompt, 'fullBody')
+    negativePrompt = mergeCharacterNegative(undefined, 'fullBody')
+  }
+  return { prompt, negativePrompt, referenceImagePath }
+}
+
+/**
  * 为某资产生成主图：拉 effective → 拼 prompt → 调 generate-main IPC。
  * 返回新 main 的 AssetImageEntity（含 imagePath、isMain=1）。
  *
@@ -114,24 +141,11 @@ export async function generateMainFor(
   assetId: string,
   opts?: { promptOverride?: string },
 ): Promise<AssetImageEntity> {
-  const { prompt: basePrompt, negativePrompt: baseNegative, referenceImagePath } =
-    await buildPromptFromEffective(assetType, assetId)
-
-  const userPrompt = opts?.promptOverride?.trim()
-  const isOverride = !!userPrompt
-  // 用户编辑的提示词优先；未编辑时用系统从 effective 拼接的 prompt
-  let prompt = isOverride ? userPrompt as string : basePrompt
-  let negativePrompt = baseNegative
-  if (isOverride) {
-    // 用户编辑的提示词通常不含年代 → 补时代特征（服饰/发型/妆容符合故事年代），
-    // 避免生成的人像不符合时代；系统拼接的 basePrompt 已含「故事年代」段。
-    prompt = appendEraConstraint(prompt, readStoryBackgroundFromCurrentEpisode())
-    if (assetType === 'character') {
-      // buildPromptFromEffective 已对 base prompt 加过定妆约束；override 分支需手动补
-      prompt = appendCharacterConstraints(prompt, 'fullBody')
-      negativePrompt = mergeCharacterNegative(undefined, 'fullBody')
-    }
-  }
+  const { prompt, negativePrompt, referenceImagePath } = await buildMainImagePrompt(
+    assetType,
+    assetId,
+    opts,
+  )
 
   const root = (window as any).electronAPI?.episodeProduction?.asset
   if (!root?.image?.generateMain) {
