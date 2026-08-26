@@ -40,7 +40,7 @@
     </div>
 
     <!-- AI 结果对比 -->
-    <FaceCompareDialog v-model="showCompare" :original-src="variant.imagePath" :new-variant="aiResultVariant" @keep="onAiKeep" @discarded="onAiDone" />
+    <FaceCompareDialog v-model="showCompare" :original-src="variant?.imagePath ?? ''" :new-variant="aiResultVariant" @keep="onAiKeep" @discarded="onAiDone" />
   </div>
 </template>
 
@@ -237,11 +237,18 @@ function onAiDone() { aiResultVariant.value = null; emit('saved') }
 async function runDetect() {
   detecting.value = true; failure.value = null
   landmarks.value = []; metrics.value = null
-  imageSrc.value = props.variant.imagePath
+  // 防御：variant 缺失时给出友好错误，避免读取 null.imagePath 崩溃
+  const src = props.variant?.imagePath
+  if (!src) {
+    detecting.value = false
+    failure.value = { reason: 'missing_variant', message: '缺少变体图片，无法进行面容分析' }
+    return
+  }
+  imageSrc.value = src
   try {
     const [result, img] = await Promise.all([
-      detectFaceLandmarks(props.variant.imagePath, props.variant.id),
-      loadSourceImage(props.variant.imagePath),
+      detectFaceLandmarks(src, props.variant.id),
+      loadSourceImage(src),
     ])
     sourceImage.value = img; detecting.value = false
     if (isDetectFailure(result)) { failure.value = result; return }
