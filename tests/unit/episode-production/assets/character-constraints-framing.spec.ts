@@ -19,8 +19,8 @@ describe('character-constraints · 半身定妆(bust) framing', () => {
     expect(neg).toMatch(/legs visible/)
   })
 
-  it('main category → bust（主图即半身定妆）', () => {
-    expect(framingForCategory('main')).toBe('bust')
+  it('main category → fullBody（主图为正面全身照）', () => {
+    expect(framingForCategory('main')).toBe('fullBody')
   })
 
   it('view/outfit/pose → fullBody（派生图仍全身）', () => {

@@ -106,7 +106,7 @@ const localPrompt = ref('')
 const navItems = computed(() => {
   if (props.kind === 'character') {
     return [
-      { label: 'main', title: '正面定妆', category: 'main' },
+      { label: 'main', title: '正面全身', category: 'main' },
       { label: 'front_half', title: '正面半身', category: 'view' },
       { label: 'left_3q', title: '左侧半身', category: 'view' },
       { label: 'right_3q', title: '右侧半身', category: 'view' },

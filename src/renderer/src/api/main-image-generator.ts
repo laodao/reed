@@ -65,12 +65,12 @@ async function buildPromptFromEffective(
   // 用户上传的参考图（spec 2026-05-09）— 透传给后端 generateMain
   const referenceImagePath = (eff.referenceImagePath as string | null | undefined) ?? null
 
-  // 角色主图硬约束（半身定妆照、纯白背景、光照均匀），与派生侧共享同一约束源
+  // 角色主图硬约束（正面定妆全身照、纯色背景、光照均匀），与派生侧共享同一约束源
   if (assetType === 'character') {
-    prompt = appendCharacterConstraints(prompt, 'bust')
+    prompt = appendCharacterConstraints(prompt, 'fullBody')
     return {
       prompt,
-      negativePrompt: mergeCharacterNegative(undefined, 'bust'),
+      negativePrompt: mergeCharacterNegative(undefined, 'fullBody'),
       referenceImagePath,
     }
   }
@@ -128,8 +128,8 @@ export async function generateMainFor(
     prompt = appendEraConstraint(prompt, readStoryBackgroundFromCurrentEpisode())
     if (assetType === 'character') {
       // buildPromptFromEffective 已对 base prompt 加过定妆约束；override 分支需手动补
-      prompt = appendCharacterConstraints(prompt, 'bust')
-      negativePrompt = mergeCharacterNegative(undefined, 'bust')
+      prompt = appendCharacterConstraints(prompt, 'fullBody')
+      negativePrompt = mergeCharacterNegative(undefined, 'fullBody')
     }
   }
 

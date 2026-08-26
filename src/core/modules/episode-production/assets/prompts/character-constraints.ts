@@ -110,12 +110,11 @@ export function mergeCharacterNegative(
 /**
  * 由派生 category 决定 framing：
  *   - expression → upperBody（表情图，关注脸和上半身）
- *   - main       → bust（半身定妆照，白背景，供派生参考）
+ *   - main       → fullBody（正面定妆全身照，供派生参考）
  *   - 其他（view / outfit / pose） → fullBody
  */
 export function framingForCategory(category: string): CharacterFraming {
   if (category === 'expression') return 'upperBody'
-  if (category === 'main') return 'bust'
   return 'fullBody'
 }
 
