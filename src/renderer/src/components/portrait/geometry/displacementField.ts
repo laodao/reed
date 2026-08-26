@@ -217,24 +217,25 @@ export function evalField(x: number, y: number, F: FieldParams, M: FaceMeasure):
     dx += (x - M.midX) * (F.philW - 1) * mpx * mpy
   }
 
-  // ── 嘴唇厚薄（绕唇缝中线纵向缩放，全量带 = 上唇顶~下唇外缘底，上下对称；过渡带外归零 → 不推人中与下巴）──
-  // yLip 用 0 号点（上唇外缘/唇峰），yMouth 用 17 号点（下唇外缘底）→ 上下唇都被完整覆盖
+  // ── 嘴唇厚薄（上唇统一上移、下唇统一下移，幅度 = 唇高变化的一半；唇缝处平滑过渡）
+  //   位移量与"点到唇缝的距离"无关 → 上唇峰必然随上唇整体移动，上下唇对称
+  //   yLip 用 0 号点（上唇外缘/唇峰），yMouth 用 17 号点（下唇外缘底）→ 覆盖完整上下唇
   if (F.lip !== 1) {
-    // 上唇高（yLip 到 yMouth 的一半）作为过渡带宽基准
-    const upperLipH = Math.max(0.012, (M.yMouth - M.yLip) * 0.5)
-    const yBand = upperLipH * 0.35
+    const lipH = Math.max(0.02, M.yMouth - M.yLip) // 嘴唇总高
+    const amp = (F.lip - 1) * lipH * 0.5           // 每侧唇厚变化量
+    const yBand = lipH * 0.2                        // 上下过渡带（外推到人中/下巴前归零）
     let yw = 1
     if (y < M.yLip) {
-      // 上过渡带：[yLip - yBand, yLip] 从 0 升到 1；之外（人中）为 0
       yw = smoothstep(M.yLip - yBand, M.yLip, y)
     } else if (y > M.yMouth) {
-      // 下过渡带：[yMouth, yMouth + yBand] 从 1 降到 0；之外（下巴）为 0
       yw = 1 - smoothstep(M.yMouth, M.yMouth + yBand, y)
     }
     if (yw > 0) {
       const mlx = 1 - smoothstep(M.mouthHalfW * 0.8, M.mouthHalfW * 1.35, Math.abs(x - M.mouthC.x))
-      const dyy = y - M.mouthC.y
-      dy += dyy * (F.lip - 1) * mlx * yw
+      // 唇缝过渡：|y - 唇缝| 从 0（唇缝不动）到 lipH*0.3 线性升到 1（上唇峰/下唇底全量）
+      const seamW = Math.min(1, Math.abs(y - M.mouthC.y) / (lipH * 0.3))
+      const side = y < M.mouthC.y ? -1 : 1
+      dy += side * amp * mlx * yw * seamW
     }
   }
 
@@ -283,22 +284,24 @@ export function evalField(x: number, y: number, F: FieldParams, M: FaceMeasure):
     if (F.noseTipLift !== 0) dy += -F.noseTipLift * w
   }
 
-  // 唇峰高低（只抬/压上唇顶部的中间唇峰带：x 窄 → 只动唇峰不动整片上唇；y 浅 → 只影响上唇上半；
-  // 向鼻尖方向 0.005 内归零 → 不碰人中与鼻尖）
+  // 唇峰高低（还原原始语义：上唇顶带整体上下平移；锚定真实唇峰位置 lipTopPt（不用脸中线，
+  //   歪嘴/侧脸也不错位）；y 向鼻尖方向 0.006 内快速归零、向下唇方向平滑衰减 → 不碰鼻尖/人中/下唇）
   if (F.cupidH !== 0) {
-    const upperLipH = Math.max(0.01, (M.yMouth - M.yLip) * 0.5)
-    let yw = 1
-    if (y < M.yLip) {
-      // 上方（鼻尖方向）：[yLip - 0.005, yLip] 从 0 升到 1，之外为 0
-      yw = smoothstep(M.yLip - 0.005, M.yLip, y)
-    } else if (y > M.yLip + upperLipH * 0.5) {
-      // 向下唇方向：0.5→0.9 倍上唇高内衰减归零，不影响唇缝与下唇
-      yw = 1 - smoothstep(M.yLip + upperLipH * 0.5, M.yLip + upperLipH * 0.9, y)
-    }
-    if (yw > 0) {
-      // x：唇峰核心 = 中间 0.25×嘴半宽，向两侧 0.55×嘴半宽平滑归零（形成 M 形弧度）
-      const xw = 1 - smoothstep(M.mouthHalfW * 0.25, M.mouthHalfW * 0.55, Math.abs(x - M.midX))
-      if (xw > 0) dy += -F.cupidH * xw * yw
+    const p = M.lipTopPt
+    const sx = M.mouthHalfW * 0.45 // x 方向影响半径（≈ 上唇顶轮廓宽度）
+    // x：以唇峰真实 x 为锚的高斯 × 紧支撑（0.6sx 内全量、1.6sx 归零 → M 形弧度）
+    const gx = Math.exp(-((x - p.x) ** 2) / (2 * sx * sx))
+    const xw = gx * (1 - smoothstep(sx * 0.6, sx * 1.6, Math.abs(x - p.x)))
+    if (xw > 0) {
+      // y：向鼻尖方向快速归零；向下唇方向 0.25×上唇高内全量、1.8 倍半径处归零（不碰唇缝/下唇）
+      const sy = Math.max(0.01, (M.yMouth - M.yLip) * 0.25)
+      let yw = 1
+      if (y < p.y) {
+        yw = smoothstep(p.y - 0.006, p.y, y)
+      } else if (y > p.y + sy) {
+        yw = 1 - smoothstep(p.y + sy, p.y + sy * 1.8, y)
+      }
+      if (yw > 0) dy += -F.cupidH * xw * yw
     }
   }
 

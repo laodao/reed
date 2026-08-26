@@ -209,20 +209,21 @@ describe('evalField 局部性（减少跨区域联动）', () => {
     expect(ny).toBeGreaterThan(0.42)
   })
 
-  it('嘴唇厚薄（lip=1.6）：下巴/人中全不动（原先会推下巴），且上下唇对称调整（原先只动上唇）', () => {
+  it('嘴唇厚薄（lip=1.6）：下巴/人中全不动，且上唇峰/下唇底对称移动（上唇峰不被钉死）', () => {
     const F = buildFieldParams(testM, { lip: 1.6 })
     expectUnmoved(F, testM, [chin, chinLow, philtrum])
-    // 上唇顶仍上移
+    // 上唇峰（上唇顶）与下唇外缘对称移动，幅度相等
     const [, uy] = evalField(0.50, 0.46, F, testM)
-    expect(uy).toBeLessThan(0.46)
-    // 下唇内缘与下唇外缘（17 号点）都下移——下嘴唇同样被调整
-    const [, ly1] = evalField(0.50, 0.50, F, testM)
-    expect(ly1).toBeGreaterThan(0.50)
     const [, ly2] = evalField(0.50, 0.52, F, testM)
+    expect(uy).toBeLessThan(0.46)
     expect(ly2).toBeGreaterThan(0.52)
+    expect(Math.abs(uy - 0.46)).toBeCloseTo(Math.abs(ly2 - 0.52), 3)
+    // 唇缝基本不动
+    const [, sy] = evalField(0.50, 0.49, F, testM)
+    expect(Math.abs(sy - 0.49)).toBeLessThan(1e-4)
   })
 
-  it('唇峰高低（cupidH=0.015）：鼻尖/人中/上唇两侧/唇缝全不动（原先整片上唇变形）', () => {
+  it('唇峰高低（cupidH=0.015）：上唇顶带整体上移（M 形弧度），鼻尖/人中/唇缝/下唇/嘴角全不动', () => {
     const F = buildFieldParams(testM, { cupidH: 0.015 })
     expectUnmoved(F, testM, [noseTip, philtrum, [0.44, 0.46], [0.50, 0.49]])
     // 唇峰（上唇顶中点）仍上移
