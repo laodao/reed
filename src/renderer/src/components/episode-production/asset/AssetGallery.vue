@@ -45,6 +45,18 @@
           <el-button v-if="!imageByLabel(item.label)" text circle size="small" class="nav-add" @click.stop="onGenerate(item)">
             <el-icon><Plus /></el-icon>
           </el-button>
+          <el-button
+            v-else-if="imageByLabel(item.label)?.derivedFromImageId"
+            text
+            circle
+            size="small"
+            class="nav-regen"
+            :loading="generating"
+            title="重新生成"
+            @click.stop="onRegenerate(item)"
+          >
+            <el-icon><Refresh /></el-icon>
+          </el-button>
         </div>
       </aside>
 
@@ -61,8 +73,8 @@
           </div>
         </div>
         <div class="preview-bottom">
-          <el-input v-model="localPrompt" type="textarea" :rows="5" resize="vertical" placeholder="镜头提示词…" class="prompt-input" @blur="onSavePrompt" />
-          <el-button type="primary" circle :loading="generating" title="生成图片" @click="onGenerateCurrent">
+          <el-input v-model="localPrompt" type="textarea" :rows="5" resize="vertical" placeholder="镜头提示词…" class="prompt-input" :disabled="!isMainSlot" :title="isMainSlot ? '' : '派生图提示词由系统固定，以主图为参考'" @blur="onSavePrompt" />
+          <el-button type="primary" circle :loading="generating" title="生成图片" :disabled="!isMainSlot" @click="onGenerateCurrent">
             <el-icon><MagicStick /></el-icon>
           </el-button>
         </div>
@@ -85,7 +97,7 @@
  */
 import { ref, computed, watch, onMounted, onActivated } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Picture, MagicStick, Plus, Upload, Loading } from '@element-plus/icons-vue'
+import { Picture, MagicStick, Plus, Upload, Loading, Refresh } from '@element-plus/icons-vue'
 import { toImageUrl } from '@/utils/asset-url'
 import { stripSystemConstraints } from '@core/modules/episode-production/assets/prompts/asset-identity-prompt'
 import { generateMainFor, buildMainImagePrompt } from '@/api/main-image-generator'
@@ -137,6 +149,9 @@ const selectedItem = computed(() => navItems.value.find(i => i.label === selecte
 const selectedImage = computed(() => imageByLabel(selectedLabel.value))
 
 const hasMain = computed(() => !!imageByLabel('main'))
+
+/** 当前是否主图槽位（主图可自定义提示词；派生图系统固定，提示词/生成禁用） */
+const isMainSlot = computed(() => selectedLabel.value === 'main')
 
 function toUrl(path?: string): string {
   return path ? toImageUrl(path) : ''
@@ -231,6 +246,36 @@ async function onGenerateCurrent(): Promise<void> {
   const item = selectedItem.value
   if (!item) return
   await onGenerate(item)
+}
+
+/**
+ * 重新生成衍生图：以主图为参考，系统固定提示词重新生成；
+ * 生成成功后再删除旧衍生图，避免同 label 多行残留。
+ */
+async function onRegenerate(item: { label: string; category: string }): Promise<void> {
+  if (!props.assetId || generating.value) return
+  generating.value = true
+  try {
+    const root = (window as any).electronAPI?.episodeProduction?.asset
+    const main = imageByLabel('main')
+    const r = await root.derive.single({
+      assetType: props.kind,
+      assetId: props.assetId,
+      category: item.category,
+      label: item.label,
+      baseImageId: main?.id || null,
+    })
+    if (!r?.success) { ElMessage.error(r?.error || '重新生成失败'); return }
+    // 删除旧衍生图（保留新生成的）
+    const old = images.value.find(i => i.label === item.label && i.id !== r.data?.id)
+    if (old?.id) await root.image.delete(old.id)
+    ElMessage.success(`${item.title} 已重新生成`)
+    await load()
+  } catch (e: any) {
+    ElMessage.error(e?.message || '重新生成失败')
+  } finally {
+    generating.value = false
+  }
 }
 
 /**
@@ -452,6 +497,9 @@ onActivated(() => void load())
   .nav-name { font-size: 13px; color: var(--text-color-primary); font-weight: 500; }
   .nav-status { font-size: 11px; margin-top: 2px; &.done { color: var(--color-success); } &.pending { color: var(--text-color-placeholder); } }
   .nav-add { color: var(--color-primary); }
+  .nav-regen { color: var(--color-info); }
+  .nav-add, .nav-regen { opacity: 0; transition: opacity var(--transition-fast); }
+  .nav-item:hover .nav-add, .nav-item:hover .nav-regen { opacity: 1; }
 }
 
 .gallery-preview {
