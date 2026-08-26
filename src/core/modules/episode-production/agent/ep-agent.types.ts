@@ -37,6 +37,20 @@ export interface EpAgentAction {
 export interface EpAgentDecision {
   reply?: string
   actions?: EpAgentAction[]
+  /** 需要用户先选择的参数（多轮确认）。如生成定妆图但未指定角色 → choice.param='name', choices=角色名单 */
+  choice?: EpAgentChoice
+}
+
+/** 多轮确认：需要用户从一组候选里选一个（供 action 的某个 params 字段） */
+export interface EpAgentChoice {
+  /** 需要填充的 action 类型 */
+  actionType: EpAgentActionType
+  /** 需要填充的 params 字段名（如 'name'） */
+  param: string
+  /** 供用户选择的候选（如角色名列表） */
+  choices: string[]
+  /** 提示语（如何选择） */
+  prompt?: string
 }
 
 // ==================== 执行摘要 / 事件 ====================
@@ -53,6 +67,8 @@ export interface EpAgentActionSummary {
   changed?: EpAgentPanelSection[]
   /** 预览数据（前端对话内嵌预览卡用） */
   data?: any
+  /** 跳转意图（前端可据此自动切 tab / 定位） */
+  nav?: EpAgentNavTarget
   /** 失败原因（status=error 时） */
   error?: string
 }
@@ -64,6 +80,16 @@ export type EpAgentPanelSection =
   | 'storyboards'
   | 'assets'
 
+/**
+ * 动作结果跳转意图：前端 action:done 后据此自动切到对应 tab/定位。
+ * tab 对应工作台 tab（script/asset/storyboard/compose）；asset 用于切到资产页定位某资产。
+ */
+export interface EpAgentNavTarget {
+  tab: 'script' | 'asset' | 'storyboard' | 'compose'
+  sceneId?: string | null
+  asset?: { kind: 'character' | 'location' | 'item'; id: string; name: string } | null
+}
+
 /** 推给前端的事件（channel: ep-agent:${projectId}:${episodeId}） */
 export type EpAgentEvent =
   | { type: 'stage'; stage: 'deciding' | 'acting' | 'summarizing' }
@@ -73,6 +99,7 @@ export type EpAgentEvent =
   | { type: 'reply:content'; content: string }
   | { type: 'reply:done'; suggestions: string[] }
   | { type: 'error'; error: string }
+  | { type: 'choice:request'; choice: EpAgentChoice }
 
 // ==================== 生产状态（引擎实时计算，不持久化） ====================
 
@@ -121,6 +148,8 @@ export interface EpAgentSendResult {
   actionSummaries: EpAgentActionSummary[]
   /** 下一步建议 chips */
   suggestions: string[]
+  /** 待用户选择的多轮确认（有值表示本轮未执行动作，需用户先选择） */
+  choice?: EpAgentChoice | null
 }
 
 /** 对话历史条目（含可选元数据） */

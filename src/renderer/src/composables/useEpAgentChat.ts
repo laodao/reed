@@ -32,6 +32,13 @@ export interface EpAgentChatMessage {
 
 export type EpAgentChatStage = 'idle' | 'deciding' | 'acting' | 'summarizing'
 
+export interface EpAgentPendingChoice {
+  actionType: string
+  param: string
+  choices: string[]
+  prompt?: string
+}
+
 interface EpAgentChatOptions {
   projectId: string | Ref<string>
   episodeId: string | Ref<string>
@@ -66,6 +73,8 @@ export function useEpAgentChat(options: EpAgentChatOptions) {
   const suggestions = ref<string[]>([])
   const currentActionLabel = ref<string>('')
   const error = ref<string>('')
+  /** 待用户选择的多轮确认（AI 请求先选候选再执行） */
+  const pendingChoice = ref<EpAgentPendingChoice | null>(null)
 
   let currentAssistant: EpAgentChatMessage | null = null
   let unsubAgent: (() => void) | null = null
@@ -190,6 +199,15 @@ export function useEpAgentChat(options: EpAgentChatOptions) {
         }
         stage.value = 'idle'
         break
+      case 'choice:request':
+        // AI 请求用户先选择候选再执行动作
+        pendingChoice.value = event.choice || null
+        if (currentAssistant) {
+          currentAssistant.status = 'done'
+          currentAssistant.content = (event.choice?.prompt || '请选择：') + '\n' + (event.choice?.choices || []).join('、')
+        }
+        stage.value = 'idle'
+        break
       case 'error':
         appendError(event.error || '发生错误')
         break
@@ -211,6 +229,16 @@ export function useEpAgentChat(options: EpAgentChatOptions) {
     await send(text)
   }
 
+  /** 多轮确认：用户选定候选 → 拼成带参指令发送（带 choice 标记让引擎直接执行） */
+  async function sendChoice(choice: EpAgentPendingChoice, selected: string): Promise<void> {
+    if (sending.value) return
+    pendingChoice.value = null
+    const param = choice.param
+    // 把选择结果作为明确指令发送（引擎决策时应直接执行对应动作）
+    const text = `${choice.actionType} param ${param}=${selected}`
+    await send(text)
+  }
+
   return {
     messages,
     sending,
@@ -218,8 +246,10 @@ export function useEpAgentChat(options: EpAgentChatOptions) {
     suggestions,
     currentActionLabel,
     error,
+    pendingChoice,
     send,
     sendSuggestion,
+    sendChoice,
     cancel,
     loadHistory,
     clear,

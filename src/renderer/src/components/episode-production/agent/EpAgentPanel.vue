@@ -53,6 +53,7 @@
                       <Remove v-else />
                     </el-icon>
                     <span class="as-text">{{ a.message }}</span>
+                    <button v-if="a.nav" class="as-jump" @click="onJump(a.nav)">去查看 <el-icon :size="11"><ArrowRight /></el-icon></button>
                   </div>
                 </div>
 
@@ -66,6 +67,21 @@
                     {{ s }}
                     <el-icon class="chip-arrow"><ArrowRight /></el-icon>
                   </button>
+                </div>
+
+                <!-- 多轮确认：AI 请求先选候选再执行 -->
+                <div v-if="chat.pendingChoice.value && msg === lastAssistant" class="choice-box">
+                  <div class="choice-title">{{ chat.pendingChoice.value.prompt || '请选择：' }}</div>
+                  <div class="choice-list">
+                    <button
+                      v-for="c in chat.pendingChoice.value.choices"
+                      :key="c"
+                      class="chip choice"
+                      @click="onChoice(c)"
+                    >
+                      {{ c }}
+                    </button>
+                  </div>
                 </div>
               </div>
             </template>
@@ -117,13 +133,22 @@ import { useEpAgentChat } from '@/composables/useEpAgentChat'
 const props = defineProps<{
   projectId: string
   episodeId: string
+  /** 当前激活 tab（script/asset/storyboard/compose），用于动作后自动切换判断 */
+  activeTab?: string
   /** 当前上下文提示（如"当前选中场景""当前选中角色"），用于欢迎语/引导 chips */
   contextHint?: string | null
 }>()
 
 const emit = defineEmits<{
   (e: 'dataChanged', sections: string[]): void
+  (e: 'navigate', target: { tab: 'script' | 'asset' | 'storyboard' | 'compose'; sceneId?: string | null; asset?: { kind: 'character' | 'location' | 'item'; id: string; name: string } | null } | null): void
 }>()
+
+/** 动作结果跳转入口：切到对应 tab / 定位 */
+function onJump(nav: any): void {
+  if (!nav) return
+  emit('navigate', nav)
+}
 
 const chat = useEpAgentChat({
   projectId: props.projectId,
@@ -169,15 +194,19 @@ const thinkingText = computed(() => {
   }
 })
 
+function handleAgentEvent(ev: any): void {
+  if (ev.type !== 'action:done') return
+  const summary = ev.summary
+  if (summary?.changed?.length) emit('dataChanged', summary.changed)
+  // 动作带跳转意图 → 自动切到对应tab/定位
+  if (summary?.nav) emit('navigate', summary.nav)
+}
+
 async function onSend(): Promise<void> {
   const text = draft.value.trim()
   if (!text || chat.sending.value) return
   draft.value = ''
-  const unsub = window.electronAPI.episodeProduction.onAgentEvent(props.projectId, props.episodeId, (ev: any) => {
-    if (ev.type === 'action:done' && ev.summary?.changed?.length) {
-      emit('dataChanged', ev.summary.changed)
-    }
-  })
+  const unsub = window.electronAPI.episodeProduction.onAgentEvent(props.projectId, props.episodeId, handleAgentEvent)
   await chat.send(text)
   unsub()
   scrollToBottom()
@@ -185,12 +214,19 @@ async function onSend(): Promise<void> {
 
 function onSuggestion(text: string): void {
   if (chat.sending.value) return
-  const unsub = window.electronAPI.episodeProduction.onAgentEvent(props.projectId, props.episodeId, (ev: any) => {
-    if (ev.type === 'action:done' && ev.summary?.changed?.length) {
-      emit('dataChanged', ev.summary.changed)
-    }
-  })
+  const unsub = window.electronAPI.episodeProduction.onAgentEvent(props.projectId, props.episodeId, handleAgentEvent)
   void chat.sendSuggestion(text).then(() => {
+    unsub()
+    scrollToBottom()
+  })
+}
+
+/** 多轮确认：用户选定候选 → 发送带参指令执行 */
+function onChoice(selected: string): void {
+  const choice = chat.pendingChoice.value
+  if (!choice || chat.sending.value) return
+  const unsub = window.electronAPI.episodeProduction.onAgentEvent(props.projectId, props.episodeId, handleAgentEvent)
+  void chat.sendChoice(choice, selected).then(() => {
     unsub()
     scrollToBottom()
   })
@@ -304,10 +340,14 @@ onMounted(async () => {
 .action-progress { display: flex; flex-direction: column; gap: 5px; padding: 8px 10px; border-radius: 8px; background: var(--fill-color-lighter); border: 1px solid var(--border-color-lighter); .action-label { font-size: 11px; color: var(--text-color-secondary); } }
 
 .action-summaries { display: flex; flex-direction: column; gap: 5px; }
-.action-summary { display: flex; align-items: flex-start; gap: 6px; font-size: 12px; color: var(--text-color-regular); padding: 6px 9px; border-radius: 8px; background: var(--fill-color-lighter); border: 1px solid var(--border-color-lighter); .icon { margin-top: 2px; color: var(--color-success); flex-shrink: 0; } &.error .icon { color: var(--color-danger); } &.skipped .icon { color: var(--text-color-placeholder); } .as-text { flex: 1; } }
+.action-summary { display: flex; align-items: flex-start; gap: 6px; font-size: 12px; color: var(--text-color-regular); padding: 6px 9px; border-radius: 8px; background: var(--fill-color-lighter); border: 1px solid var(--border-color-lighter); .icon { margin-top: 2px; color: var(--color-success); flex-shrink: 0; } &.error .icon { color: var(--color-danger); } &.skipped .icon { color: var(--text-color-placeholder); } .as-text { flex: 1; } .as-jump { border: none; background: transparent; color: var(--color-primary); font-size: 12px; cursor: pointer; flex-shrink: 0; display: inline-flex; align-items: center; gap: 2px; padding: 0; &:hover { text-decoration: underline; } } }
 
 .err { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--color-danger); padding: 6px 10px; border-radius: 8px; background: var(--color-danger-light-9); }
 .sug-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.choice-box { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: 8px; background: var(--color-primary-light-9); border: 1px solid var(--color-primary-light-5); }
+.choice-title { font-size: 12px; color: var(--text-color-regular); }
+.choice-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip.choice { border-color: var(--color-primary-light-5); color: var(--color-primary); }
 .chip-arrow { font-size: 11px; opacity: .7; }
 .bottom-space { height: 6px; }
 

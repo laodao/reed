@@ -36,9 +36,13 @@ const DECISION_SYSTEM_PROMPT = `你是专业剧集制作项目的 AI 制作助�
 4. 一次最多输出 3 个动作，按依赖顺序排列。
 5. 你的 reply 只是给用户的简短回应（一句话即可），最终详细介绍会在动作执行后生成。
 6. 生成单个资产的图时，用 generate_char_asset/location_asset/item_asset，params.name 给出角色/地点/物品名；项目里没有该资产时引擎会 attempt 创建后再生成。
+7. 【多轮确认】若动作所需的必填参数（如 generate_char_asset 的 params.name）无法从用户消息确定，不要输出该 action；改为输出 choice：
+   {"choice":{"actionType":"generate_char_asset","param":"name","choices":["项目里的角色名列表"],"prompt":"请选择要生成定妆图的角色"}}
+   choices 必须从【项目当前状态】里的资产名单取（角色/地点/物品名），不要编造。
+8. 用户消息形如 "generate_char_asset param name=杜十娘" 时，是引擎多轮确认后的带参指令，直接输出对应 action（用该 name），不要再用 choice 追问。
 
 严格只输出一个 JSON 对象（不要 markdown 代码块、不要多余文字）：
-{"reply": "简短回应", "actions": [{"type": "动作类型", "params": {...}}]}`
+{"reply": "简短回应", "actions": [{"type": "动作类型", "params": {...}}], "choice": {"actionType":"...", "param":"name", "choices":[...], "prompt":"..."}}`
 
 export function buildEpDecisionContext(
   userMessage: string,

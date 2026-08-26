@@ -68,6 +68,25 @@ describe('normalizeEpDecision 决策解析', () => {
     )
     expect(d.actions!.length).toBeLessThanOrEqual(3)
   })
+
+  it('多轮确认：解析 choice（actionType/param/choices）', () => {
+    const d = normalizeEpDecision(
+      '{"reply":"你要给哪个角色生成定妆图？","choice":{"actionType":"generate_char_asset","param":"name","choices":["杜十娘","李甲"],"prompt":"请选择"}}',
+    )
+    expect(d.choice).toEqual({
+      actionType: 'generate_char_asset',
+      param: 'name',
+      choices: ['杜十娘', '李甲'],
+      prompt: '请选择',
+    })
+  })
+
+  it('choice 缺字段/候选为空时忽略', () => {
+    const d1 = normalizeEpDecision('{"reply":"x","choice":{"actionType":"generate_char_asset"}}')
+    const d2 = normalizeEpDecision('{"reply":"x","choice":{"actionType":"generate_char_asset","param":"name","choices":[]}}')
+    expect(d1.choice).toBeUndefined()
+    expect(d2.choice).toBeUndefined()
+  })
 })
 
 // ==================== extractJsonObject ====================

@@ -54,8 +54,10 @@
         <EpAgentPanel
           :project-id="projectId"
           :episode-id="episodeId"
+          :active-tab="activeTab"
           :context-hint="ctx.contextHint.value"
           @data-changed="onAgentDataChanged"
+          @navigate="onAgentNavigate"
         />
       </template>
     </EpisodeStudioLayout>
@@ -146,6 +148,14 @@ async function onEpisodeChange(): Promise<void> {
 
 function onAgentDataChanged(_sections: string[]): void {
   void loadEpisode()
+}
+
+/** agent 发起跳转：切到对应 tab，并按需定位场景/资产 */
+function onAgentNavigate(target: { tab: EpStudioTab; sceneId?: string | null; asset?: { kind: 'character' | 'location' | 'item'; id: string; name: string } | null } | null): void {
+  if (!target?.tab) return
+  ctx.setTab(target.tab)
+  if (target.sceneId) ctx.setScene(target.sceneId)
+  if (target.asset) ctx.setAsset(target.asset)
 }
 
 function onTabDataChanged(_sections: string[]): void {

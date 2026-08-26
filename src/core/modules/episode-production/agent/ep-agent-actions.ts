@@ -223,6 +223,7 @@ async function executeGenerateScript(
       synopsis: result.synopsis,
       scenesCount: result.scenes.length,
     },
+    nav: { tab: 'script' },
   }
 }
 
@@ -289,6 +290,7 @@ async function executeSplitScenes(ctx: EpAgentExecutionContext): Promise<EpAgent
     message: `已从剧本拆分出 ${sceneRecords.length} 场`,
     changed,
     data: { scenesCount: sceneRecords.length },
+    nav: { tab: 'script' },
   }
 }
 
@@ -356,6 +358,7 @@ async function executeGenerateStoryboards(
     message: `已为 ${scenes.length} 场生成 ${total} 个分镜`,
     changed,
     data: { scenesCount: scenes.length, storyboardsCount: total },
+    nav: { tab: 'storyboard' },
   }
 }
 
@@ -425,6 +428,7 @@ async function executeGenerateAsset(
     message: `已为${label}「${name}」生成主图（asset_image 已落库）`,
     changed,
     data: { assetType: kind, assetId: bindingId, imagePath: img.imagePath },
+    nav: { tab: 'asset', asset: { kind, id: bindingId, name } },
   }
 }
 

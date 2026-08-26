@@ -63,9 +63,30 @@ export function normalizeEpDecision(raw: string): EpAgentDecision {
       params: a.params && typeof a.params === 'object' ? a.params : {},
     }))
 
+  // 多轮确认：需要用户先选一个候选再执行动作
+  let choice: EpAgentDecision['choice']
+  if (obj.choice && typeof obj.choice === 'object') {
+    const c = obj.choice
+    if (
+      typeof c.actionType === 'string' &&
+      VALID_ACTION_TYPES.has(c.actionType as EpAgentActionType) &&
+      typeof c.param === 'string' &&
+      Array.isArray(c.choices) &&
+      c.choices.length > 0
+    ) {
+      choice = {
+        actionType: c.actionType as EpAgentActionType,
+        param: c.param,
+        choices: c.choices.map((x: any) => String(x)).filter(Boolean),
+        prompt: typeof c.prompt === 'string' ? c.prompt : undefined,
+      }
+    }
+  }
+
   return {
     reply: typeof obj.reply === 'string' ? obj.reply : undefined,
     actions,
+    choice,
   }
 }
 
@@ -169,6 +190,20 @@ export class EpisodeProductionAgentService {
     } catch (e: any) {
       console.error('[EpAgent] 决策调用失败，降级为纯对话:', e?.message || e)
       decision = { actions: [] }
+    }
+
+    // 2.5 多轮确认：AI 需要用户先选一个候选（如"为哪个角色生成定妆图"）
+    if (decision.choice) {
+      const choice = decision.choice
+      this.emit(projectId, episodeId, { type: 'choice:request', choice })
+      const prompt = choice.prompt || `请选择${choice.param === 'name' ? '一个名称' : choice.param}：`
+      const assistantMsg = await m.lwDesignMessages.add(conversationId, {
+        role: 'assistant',
+        content: `${prompt}\n候选：${choice.choices.join('、')}`,
+        timestamp: Date.now(),
+        metadata: JSON.stringify({ choice }),
+      })
+      return { conversationId, assistantMessage: assistantMsg, actionSummaries: [], suggestions: [], choice }
     }
 
     // 3. 执行动作
