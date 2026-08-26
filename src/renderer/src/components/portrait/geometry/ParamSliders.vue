@@ -75,7 +75,7 @@ const groupFeatures: ParamMeta[] = [
   { key: 'eyeSize', label: '眼睛大小', min: 70, max: 140, div: 100, neutral: 1 },
   { key: 'eyeTilt', label: '眼角上扬', min: -25, max: 25, div: 100, neutral: 0 },
   { key: 'eyeLen', label: '眼睛拉长', min: 85, max: 120, div: 100, neutral: 1 },
-  { key: 'noseTipLift', label: '鼻尖上翘', min: -2, max: 2, div: 100, neutral: 0 },
+  { key: 'noseTipLift', label: '鼻尖上翘', min: -1, max: 1, div: 100, neutral: 0 },
   { key: 'noseTipSize', label: '鼻尖大小', min: 80, max: 120, div: 100, neutral: 1 },
   { key: 'lip', label: '嘴唇厚薄', min: 60, max: 160, div: 100, neutral: 1 },
   { key: 'cupidH', label: '唇峰高低', min: -15, max: 15, div: 1000, neutral: 0 },

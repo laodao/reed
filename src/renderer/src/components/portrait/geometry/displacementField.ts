@@ -6,6 +6,9 @@
  *   纵向：piecewise 分段线性 y 重映射，首尾钉死在 0/1。
  *   横向：(滑块值-1) × (点到支点向量) × 遮罩(点位置)。
  *   纯函数，不依赖 canvas/DOM，可单测。
+ *
+ *   注：除 eyeSize（眼睛大小）与 noseTipLift/noseTipSize（鼻尖上翘/大小）外，
+ *   其余参数保持原始实现（gauss2D 无限尾部），按用户要求还原。
  */
 import type { FaceMeasure } from './faceMeasure'
 import type { WarpParams } from './bandWarp'
@@ -128,9 +131,8 @@ function gauss2D(px: number, py: number, cx: number, cy: number, sigma: number):
 
 /**
  * 紧支撑高斯：标准高斯形状 × 平滑削尾，在 2.4σ 处精确归零。
- * 普通高斯（gauss2D）尾部无限延伸——即使远处权重极小（如 1e-6），
- * 在网格变形中也会让全脸每个像素产生微位移，用户感知为"整张脸都在变"。
- * 五官精调一律使用本函数，把影响范围严格限定在目标区域附近。
+ * 仅 eyeSize（眼睛大小）与 noseTip（鼻尖上翘/大小）使用——把影响范围
+ * 严格限定在目标区域附近，避免普通高斯无限尾部造成的跨区域联动。
  * @param sigma 高斯标准差（归一化坐标）
  */
 export function localGauss2D(px: number, py: number, cx: number, cy: number, sigma: number): number {
@@ -153,12 +155,12 @@ export function evalField(x: number, y: number, F: FieldParams, M: FaceMeasure):
   // ── 纵向：三庭重映射 ──
   const ny = piecewise(y, F.ysIn, F.ysOut)
 
-  // ── 横向：眼距（每只眼睛高斯加权平移，紧支撑限定在眼周）──
+  // ── 横向：眼距（每只眼睛高斯加权平移）──
   let dx = 0
   if (F.eye !== 0) {
     for (const e of M.eyes) {
       const dir = Math.sign(e.x - M.midX) || 1
-      const w = localGauss2D(x, y, e.x, e.y, M.eyeSigma * 0.85)
+      const w = gauss2D(x, y, e.x, e.y, M.eyeSigma)
       dx += F.eye * M.eyeGap * dir * w
     }
   }
@@ -183,7 +185,7 @@ export function evalField(x: number, y: number, F: FieldParams, M: FaceMeasure):
 
   let dy = 0
 
-  // ── 眼睛大小（绕虹膜径向缩放，紧支撑限定在眼周；σ≈0.55 眼半径 ≈ 2.4σ 止于眉下/鼻梁前）──
+  // ── 眼睛大小（绕虹膜径向缩放，紧支撑限定在眼周；σ≈0.55 眼半径，止于眉下/鼻梁前）──
   if (F.eyeSize !== 1) {
     for (const e of M.eyes) {
       const ex = x - e.x, ey = y - e.y
@@ -217,26 +219,13 @@ export function evalField(x: number, y: number, F: FieldParams, M: FaceMeasure):
     dx += (x - M.midX) * (F.philW - 1) * mpx * mpy
   }
 
-  // ── 嘴唇厚薄（上唇统一上移、下唇统一下移，幅度 = 唇高变化的一半；唇缝处平滑过渡）
-  //   位移量与"点到唇缝的距离"无关 → 上唇峰必然随上唇整体移动，上下唇对称
-  //   yLip 用 0 号点（上唇外缘/唇峰），yMouth 用 17 号点（下唇外缘底）→ 覆盖完整上下唇
+  // ── 嘴唇厚薄（绕唇中线纵向缩放）──
   if (F.lip !== 1) {
-    const lipH = Math.max(0.02, M.yMouth - M.yLip) // 嘴唇总高
-    const amp = (F.lip - 1) * lipH * 0.5           // 每侧唇厚变化量
-    const yBand = lipH * 0.2                        // 上下过渡带（外推到人中/下巴前归零）
-    let yw = 1
-    if (y < M.yLip) {
-      yw = smoothstep(M.yLip - yBand, M.yLip, y)
-    } else if (y > M.yMouth) {
-      yw = 1 - smoothstep(M.yMouth, M.yMouth + yBand, y)
-    }
-    if (yw > 0) {
-      const mlx = 1 - smoothstep(M.mouthHalfW * 0.8, M.mouthHalfW * 1.35, Math.abs(x - M.mouthC.x))
-      // 唇缝过渡：|y - 唇缝| 从 0（唇缝不动）到 lipH*0.3 线性升到 1（上唇峰/下唇底全量）
-      const seamW = Math.min(1, Math.abs(y - M.mouthC.y) / (lipH * 0.3))
-      const side = y < M.mouthC.y ? -1 : 1
-      dy += side * amp * mlx * yw * seamW
-    }
+    const sy = M.mouthHalfW * 0.5
+    const mlx = 1 - smoothstep(M.mouthHalfW * 0.9, M.mouthHalfW * 1.6, Math.abs(x - M.mouthC.x))
+    const dyy = y - M.mouthC.y
+    const mly = Math.exp(-(dyy * dyy) / (2 * sy * sy))
+    dy += dyy * (F.lip - 1) * mlx * mly
   }
 
   // ── 嘴巴宽窄 ──
@@ -256,24 +245,25 @@ export function evalField(x: number, y: number, F: FieldParams, M: FaceMeasure):
 
   // ── 五官精调 ──
 
-  // 眼角上扬 / 眼睛拉长（紧支撑：2.4σ≈1.44 眼半径，止于眉心/鼻梁之前）
+  // 眼角上扬 / 眼睛拉长
   if (F.eyeTilt !== 0 || F.eyeLen !== 1) {
     for (let i = 0; i < 2; i++) {
       const c = M.eyes[i], oc = M.eyeOuter[i]
-      const wL = localGauss2D(x, y, c.x, c.y, M.eyeRadius * 0.6)
       if (F.eyeLen !== 1) {
-        dx += (x - c.x) * (F.eyeLen - 1) * wL
+        const w = gauss2D(x, y, c.x, c.y, M.eyeRadius)
+        dx += (x - c.x) * (F.eyeLen - 1) * w
       }
       if (F.eyeTilt !== 0) {
+        const w = gauss2D(x, y, c.x, c.y, M.eyeRadius * 1.2)
         const dir = Math.sign(oc.x - c.x) || -1
         const theta = -dir * F.eyeTilt
-        dx += -(y - c.y) * theta * wL
-        dy += (x - c.x) * theta * wL
+        dx += -(y - c.y) * theta * w
+        dy += (x - c.x) * theta * w
       }
     }
   }
 
-  // 鼻尖上翘 / 大小（紧支撑：2.4σ≈0.62 鼻半宽，止于鼻翼/人中/上唇之前，不再带飞嘴巴）
+  // 鼻尖上翘 / 大小（紧支撑：2.4σ≈0.62 鼻半宽，止于鼻翼/人中/上唇之前）
   if (F.noseTipLift !== 0 || F.noseTipSize !== 1) {
     const t = M.noseTip
     const w = localGauss2D(x, y, t.x, t.y, M.noseHalfW * 0.26)
@@ -284,46 +274,28 @@ export function evalField(x: number, y: number, F: FieldParams, M: FaceMeasure):
     if (F.noseTipLift !== 0) dy += -F.noseTipLift * w
   }
 
-  // 唇峰高低（还原原始语义：上唇顶带整体上下平移；锚定真实唇峰位置 lipTopPt（不用脸中线，
-  //   歪嘴/侧脸也不错位）；y 向鼻尖方向 0.006 内快速归零、向下唇方向平滑衰减 → 不碰鼻尖/人中/下唇）
+  // 唇峰高低
   if (F.cupidH !== 0) {
-    const p = M.lipTopPt
-    const sx = M.mouthHalfW * 0.45 // x 方向影响半径（≈ 上唇顶轮廓宽度）
-    // x：以唇峰真实 x 为锚的高斯 × 紧支撑（0.6sx 内全量、1.6sx 归零 → M 形弧度）
-    const gx = Math.exp(-((x - p.x) ** 2) / (2 * sx * sx))
-    const xw = gx * (1 - smoothstep(sx * 0.6, sx * 1.6, Math.abs(x - p.x)))
-    if (xw > 0) {
-      // y：向鼻尖方向快速归零；向下唇方向 0.25×上唇高内全量、1.8 倍半径处归零（不碰唇缝/下唇）
-      const sy = Math.max(0.01, (M.yMouth - M.yLip) * 0.25)
-      let yw = 1
-      if (y < p.y) {
-        yw = smoothstep(p.y - 0.006, p.y, y)
-      } else if (y > p.y + sy) {
-        yw = 1 - smoothstep(p.y + sy, p.y + sy * 1.8, y)
-      }
-      if (yw > 0) dy += -F.cupidH * xw * yw
-    }
+    const w = gauss2D(x, y, M.midX, M.lipTopPt.y, M.mouthHalfW * 0.4)
+    dy += -F.cupidH * w
   }
 
-  // 嘴角上扬（紧支撑：σ≈0.28 嘴半宽，止于下巴/脸颊过渡区之前）
+  // 嘴角上扬
   if (F.mouthCorner !== 0) {
     for (const mc of M.mCorners) {
-      dy += -F.mouthCorner * localGauss2D(x, y, mc.x, mc.y, M.mouthHalfW * 0.28)
+      dy += -F.mouthCorner * gauss2D(x, y, mc.x, mc.y, M.mouthHalfW * 0.6)
     }
   }
 
-  // 颧骨宽 / 高低 / 突起（紧支撑：半径从 0.5 半脸宽收窄到 ≈0.3 半脸宽，不再波及眼/鼻/嘴）
+  // 颧骨宽 / 高低 / 突起
   if (F.cheekW !== 1 || F.cheekUp !== 0 || F.cheekProject !== 0) {
     for (const cb of M.cheekbones) {
-      const w = localGauss2D(x, y, cb.x, cb.y, M.halfW * 0.3)
+      const w = gauss2D(x, y, cb.x, cb.y, M.halfW * 0.5)
       if (F.cheekW !== 1) dx += (x - M.midX) * (F.cheekW - 1) * w * 0.5
       if (F.cheekUp !== 0) dy += -F.cheekUp * w
       if (F.cheekProject !== 0) {
-        // 突起 = 颧骨区域沿 x 背离面中轴外推（左脸向左、右脸向右），幅度受半脸宽约束
-        const dirX = Math.sign(cb.x - M.midX) || 1
-        dx += dirX * F.cheekProject * w * (M.halfW * 0.3)
-        // 轻微纵向分量：跟随脸颊弧度，避免纯横向的生硬感
-        dy += (y - cb.y) * F.cheekProject * w * 0.15
+        dx += (x - cb.x) * F.cheekProject * w
+        dy += (y - cb.y) * F.cheekProject * w
       }
     }
   }

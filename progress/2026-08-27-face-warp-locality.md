@@ -102,3 +102,23 @@
 
 **验证：** geometry 目录 123 测试全绿；lip 测试新增"上唇峰/下唇底对称位移 + 唇缝不动"断言；ESLint 0 error。
 
+---
+
+## 第四轮（用户最终决定：仅保留眼睛大小/鼻尖大小/鼻尖上翘，其余全部还原）
+
+**用户指令：**
+1. 保留眼睛大小（eyeSize）、鼻尖大小（noseTipSize）的修改；
+2. 鼻尖上翘（noseTipLift）调整步幅太大，需要调小；
+3. 其它本次优化全部还原。
+
+**执行：**
+- `displacementField.ts`：以原始版本（71b1a186）为基准整体重建，仅保留两处局部化优化：
+  - `eyeSize`：`localGauss2D(σ=0.55×眼半径)`（紧支撑，止于眉下/鼻梁前）；
+  - `noseTip`（上翘+大小）：`localGauss2D(σ=0.26×鼻半宽)`（紧支撑，止于鼻翼/人中/上唇前）。
+  - 其余参数（眼距/眼角上扬/眼睛拉长/嘴唇厚薄/唇峰高低/嘴角上扬/颧骨宽高低突起/鼻梁宽/鼻翼宽/人中宽/嘴宽/下巴宽/脸宽/下颌宽/三庭带）全部还原为原始 gauss2D 无限尾部实现；`localGauss2D` 工具函数保留（仅上述两个参数使用）。
+- `faceMeasure.ts` / `landmarkIndices.ts`：`yMouth` 还原回下唇内缘中点（14 号点），移除 `LM_LOWER_LIP_OUTER = 17`。
+- `ParamSliders.vue` / `bandWarp.ts` 注释：`noseTipLift` 范围从 ±2（±0.02）收窄为 ±1（±0.01），步幅减半（最大位移 20px → 10px@1024）。
+- 测试：`displacementField.spec.ts` 保留基础测试 + `localGauss2D` + eyeSize/noseTipLift/noseTipSize 局部性测试（noseTipLift 用新范围 0.01），删除已还原参数的局部性测试；`faceMeasure.spec.ts` / `bandWarp.spec.ts` 移除 17 号点数据。
+
+**验证：** geometry 目录 10 文件 115 测试全绿；与原始版本 diff 仅剩 eyeSize/noseTip 两处局部化 + localGauss2D 工具函数 + 注释/import 清理；ESLint 0 error（bandWarp.ts 的 3 个 unused import 为原始遗留，未改动）。
+

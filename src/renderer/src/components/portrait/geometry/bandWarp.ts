@@ -45,7 +45,7 @@ export interface WarpParams {
   eyeSize?: number        // 眼睛大小 0.70–1.40, 默认 1
   eyeTilt?: number        // 眼角上扬 -0.25–0.25, 默认 0
   eyeLen?: number         // 眼睛拉长 0.85–1.20, 默认 1
-  noseTipLift?: number    // 鼻尖上翘 -0.02–0.02, 默认 0
+  noseTipLift?: number    // 鼻尖上翘 -0.01–0.01, 默认 0
   noseTipSize?: number    // 鼻尖大小 0.80–1.20, 默认 1
   lip?: number            // 嘴唇厚薄 0.60–1.60, 默认 1
   cupidH?: number         // 唇峰高低 -0.015–0.015, 默认 0
