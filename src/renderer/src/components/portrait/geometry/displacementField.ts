@@ -217,11 +217,12 @@ export function evalField(x: number, y: number, F: FieldParams, M: FaceMeasure):
     dx += (x - M.midX) * (F.philW - 1) * mpx * mpy
   }
 
-  // ── 嘴唇厚薄（绕唇中线纵向缩放，唇带遮罩：全量带=上唇顶~下唇底，上下过渡带外归零 → 不推人中与下巴）──
+  // ── 嘴唇厚薄（绕唇缝中线纵向缩放，全量带 = 上唇顶~下唇外缘底，上下对称；过渡带外归零 → 不推人中与下巴）──
+  // yLip 用 0 号点（上唇外缘/唇峰），yMouth 用 17 号点（下唇外缘底）→ 上下唇都被完整覆盖
   if (F.lip !== 1) {
     // 上唇高（yLip 到 yMouth 的一半）作为过渡带宽基准
     const upperLipH = Math.max(0.012, (M.yMouth - M.yLip) * 0.5)
-    const yBand = upperLipH * 0.5
+    const yBand = upperLipH * 0.35
     let yw = 1
     if (y < M.yLip) {
       // 上过渡带：[yLip - yBand, yLip] 从 0 升到 1；之外（人中）为 0
@@ -282,21 +283,22 @@ export function evalField(x: number, y: number, F: FieldParams, M: FaceMeasure):
     if (F.noseTipLift !== 0) dy += -F.noseTipLift * w
   }
 
-  // 唇峰高低（只影响上唇顶部带：y 在唇峰附近、x 在嘴宽内；向鼻尖方向 0.004 内归零 → 不碰鼻尖）
+  // 唇峰高低（只抬/压上唇顶部的中间唇峰带：x 窄 → 只动唇峰不动整片上唇；y 浅 → 只影响上唇上半；
+  // 向鼻尖方向 0.005 内归零 → 不碰人中与鼻尖）
   if (F.cupidH !== 0) {
     const upperLipH = Math.max(0.01, (M.yMouth - M.yLip) * 0.5)
-    const yCore = M.yLip + upperLipH * 0.9 // 唇峰作用核心下界
     let yw = 1
     if (y < M.yLip) {
-      // 上方（鼻尖方向）：[yLip - 0.004, yLip] 从 0 升到 1，之外（鼻尖/人中）为 0
-      yw = smoothstep(M.yLip - 0.004, M.yLip, y)
-    } else if (y > yCore) {
-      // 向下唇方向平滑衰减
-      yw = 1 - smoothstep(yCore, yCore + upperLipH * 0.5, y)
+      // 上方（鼻尖方向）：[yLip - 0.005, yLip] 从 0 升到 1，之外为 0
+      yw = smoothstep(M.yLip - 0.005, M.yLip, y)
+    } else if (y > M.yLip + upperLipH * 0.5) {
+      // 向下唇方向：0.5→0.9 倍上唇高内衰减归零，不影响唇缝与下唇
+      yw = 1 - smoothstep(M.yLip + upperLipH * 0.5, M.yLip + upperLipH * 0.9, y)
     }
     if (yw > 0) {
-      const xw = 1 - smoothstep(M.mouthHalfW * 0.55, M.mouthHalfW * 1.05, Math.abs(x - M.midX))
-      dy += -F.cupidH * xw * yw
+      // x：唇峰核心 = 中间 0.25×嘴半宽，向两侧 0.55×嘴半宽平滑归零（形成 M 形弧度）
+      const xw = 1 - smoothstep(M.mouthHalfW * 0.25, M.mouthHalfW * 0.55, Math.abs(x - M.midX))
+      if (xw > 0) dy += -F.cupidH * xw * yw
     }
   }
 

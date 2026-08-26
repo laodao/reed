@@ -40,10 +40,12 @@ export const LM_JAW_ANGLE_LEFT = 365
 
 /** 鼻梁中上段（鼻梁纵线 6→197→195→5→168 的第二节，眼鼻分界） */
 export const LM_NOSE_BRIDGE_197 = 197
-/** 上唇中点（外唇轮廓 Cupid's bow 中央，上下唇高度分界之上锚点） */
+/** 上唇中点（外唇轮廓 Cupid's bow 中央尖端，唇峰最高点） */
 export const LM_UPPER_LIP_MID = 0
-/** 下唇中点（下唇内缘底部中央，嘴唇段与下巴段分界） */
+/** 下唇内缘中点（唇缝下缘；嘴唇厚度/嘴部下界请用 LM_LOWER_LIP_OUTER=17） */
 export const LM_LOWER_LIP_MID = 14
+/** 下唇外缘中点（下唇底部，嘴唇完整下界） */
+export const LM_LOWER_LIP_OUTER = 17
 /** 鼻尖（pronasale，最突出点） */
 export const LM_NOSE_TIP = 4
 /** 左嘴角 */

@@ -54,6 +54,7 @@ describe('transformLandmarks', () => {
     [358]: { x: 0.56, y: 0.40 },  // ALA_RIGHT
     // 唇部
     [13]:  { x: 0.50, y: 0.44 },  // LIP_INNER_UP
+    [17]:  { x: 0.50, y: 0.50 },  // LOWER_LIP_OUTER（下唇外缘）
     [61]:  { x: 0.42, y: 0.45 },  // MOUTH_LEFT
     [291]: { x: 0.58, y: 0.45 },  // MOUTH_RIGHT
     // 眼角/颧骨

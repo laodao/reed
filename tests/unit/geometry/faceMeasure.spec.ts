@@ -33,6 +33,7 @@ const base = makeLM({
   [358]: { x: 0.56, y: 0.42 },  // ALA_RIGHT
   // 唇部
   [13]:  { x: 0.50, y: 0.48 },  // LIP_INNER_UP
+  [17]:  { x: 0.50, y: 0.52 },  // LOWER_LIP_OUTER（下唇外缘，yMouth）
   [61]:  { x: 0.42, y: 0.48 },  // MOUTH_LEFT
   [291]: { x: 0.58, y: 0.48 },  // MOUTH_RIGHT
   // 眼角/颧骨

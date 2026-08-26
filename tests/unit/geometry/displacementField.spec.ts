@@ -27,6 +27,7 @@ const baseLM = makeLM({
   [129]: { x: 0.44, y: 0.42 }, [358]: { x: 0.56, y: 0.42 },
   [13]:  { x: 0.50, y: 0.48 }, [61]: { x: 0.42, y: 0.48 },
   [291]: { x: 0.58, y: 0.48 },
+  [17]:  { x: 0.50, y: 0.52 }, // 下唇外缘中点（嘴部/下巴分界，yMouth）
   [33]:  { x: 0.38, y: 0.27 }, [263]: { x: 0.62, y: 0.27 },
   [116]: { x: 0.24, y: 0.58 }, [345]: { x: 0.76, y: 0.58 },
 })
@@ -167,7 +168,7 @@ describe('evalField 局部性（减少跨区域联动）', () => {
   const upperLip = [0.50, 0.46] as [number, number]   // 上唇顶
   const mouthCornerL = [0.42, 0.48] as [number, number] // 左嘴角
   const chin = [0.50, 0.60] as [number, number]       // 下巴
-  const chinLow = [0.50, 0.52] as [number, number]    // 下唇下方
+  const chinLow = [0.50, 0.54] as [number, number]    // 下唇外缘下方（下巴顶部）
   const noseAlar = [0.44, 0.42] as [number, number]   // 左鼻翼
 
   it('眼睛大小（eyeSize=1.4 最大档）：眉心/鼻梁/鼻尖/嘴/下巴全不动', () => {
@@ -208,19 +209,22 @@ describe('evalField 局部性（减少跨区域联动）', () => {
     expect(ny).toBeGreaterThan(0.42)
   })
 
-  it('嘴唇厚薄（lip=1.6）：下巴/人中全不动（原先会推下巴）', () => {
+  it('嘴唇厚薄（lip=1.6）：下巴/人中全不动（原先会推下巴），且上下唇对称调整（原先只动上唇）', () => {
     const F = buildFieldParams(testM, { lip: 1.6 })
     expectUnmoved(F, testM, [chin, chinLow, philtrum])
-    // 上唇顶仍上移、下唇底仍下移
+    // 上唇顶仍上移
     const [, uy] = evalField(0.50, 0.46, F, testM)
     expect(uy).toBeLessThan(0.46)
-    const [, ly] = evalField(0.50, 0.50, F, testM)
-    expect(ly).toBeGreaterThan(0.50)
+    // 下唇内缘与下唇外缘（17 号点）都下移——下嘴唇同样被调整
+    const [, ly1] = evalField(0.50, 0.50, F, testM)
+    expect(ly1).toBeGreaterThan(0.50)
+    const [, ly2] = evalField(0.50, 0.52, F, testM)
+    expect(ly2).toBeGreaterThan(0.52)
   })
 
-  it('唇峰高低（cupidH=0.015）：鼻尖/人中不动（原先会影响鼻尖）', () => {
+  it('唇峰高低（cupidH=0.015）：鼻尖/人中/上唇两侧/唇缝全不动（原先整片上唇变形）', () => {
     const F = buildFieldParams(testM, { cupidH: 0.015 })
-    expectUnmoved(F, testM, [noseTip, philtrum])
+    expectUnmoved(F, testM, [noseTip, philtrum, [0.44, 0.46], [0.50, 0.49]])
     // 唇峰（上唇顶中点）仍上移
     const [, ny] = evalField(0.50, 0.46, F, testM)
     expect(ny).toBeLessThan(0.46)

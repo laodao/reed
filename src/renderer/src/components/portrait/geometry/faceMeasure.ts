@@ -12,7 +12,7 @@ import {
   LM_SUBNASALE,
   LM_CHIN_BOTTOM,
   LM_UPPER_LIP_MID,
-  LM_LOWER_LIP_MID,
+  LM_LOWER_LIP_OUTER,
   LM_NOSE_TIP,
 } from './landmarkIndices'
 
@@ -115,7 +115,8 @@ export function measureFace(landmarks: Point[]): FaceMeasure {
   const yEye = (g(LM_EYE_LOWER_L).y + g(LM_EYE_LOWER_R).y) / 2
   const yNose = g(LM_SUBNASALE).y
   const yLip = g(LM_UPPER_LIP_MID).y
-  const yMouth = g(LM_LOWER_LIP_MID).y
+  // 嘴部/下巴分界用下唇外缘中点（17），而非下唇内缘中点（14）——保证嘴唇带包含完整下唇
+  const yMouth = g(LM_LOWER_LIP_OUTER).y
   const yChin = g(LM_CHIN_BOTTOM).y
 
   // ── 眼睛 ──
