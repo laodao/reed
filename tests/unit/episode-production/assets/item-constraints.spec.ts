@@ -9,7 +9,29 @@ import { describe, it, expect } from 'vitest'
 import {
   appendItemIdentityPreservation,
   mergeItemIdentityNegative,
+  appendItemConstraints,
+  mergeItemNegative,
 } from '@core/modules/episode-production/assets/prompts/item-constraints'
+
+describe('item-constraints · 主图硬约束（白背景 + 产品视角锚点）', () => {
+  it('主图约束含纯白背景（非含糊纯色）', () => {
+    const suffix = appendItemConstraints('一把青铜剑')
+    expect(suffix).toMatch(/white background/i)
+    expect(suffix).toMatch(/纯白背景|白色背景/)
+  })
+
+  it('主图约束含标准产品视角 + 完整无裁切', () => {
+    const suffix = appendItemConstraints('')
+    expect(suffix).toMatch(/standard product photography/i)
+    expect(suffix).toMatch(/entire object fully visible|full object visible/i)
+  })
+
+  it('negative 禁杂背景/多人/裁切', () => {
+    const neg = mergeItemNegative(null)
+    expect(neg).toMatch(/busy background/)
+    expect(neg).toMatch(/cropped/)
+  })
+})
 
 describe('item-constraints · 身份保持约束（v3 spec 缩减后）', () => {
   describe('appendItemIdentityPreservation', () => {

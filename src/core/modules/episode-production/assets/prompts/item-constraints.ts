@@ -11,10 +11,12 @@
  * 双端共用：core 包，不依赖 fs / browser API。
  */
 
-/** 通用硬约束：纯色背景、居中、无文本 */
+/** 通用硬约束：纯白背景、居中、无文本、标准产品视角 */
 const ITEM_CONSTRAINT_SUFFIX = [
   '物品居中清晰呈现（item centered in frame, full object visible, well-lit, sharp focus）',
-  '纯色背景（plain solid color background, no scenery, no environment）',
+  '标准产品视角（standard product photography angle, front three-quarter view，正视/略侧视）',
+  '物体完整无裁切（entire object fully visible, not cropped）',
+  '纯白背景（pure white background, clean white backdrop, studio product shot, no scenery, no environment）',
   '无文字、无水印、无 logo（no text, no watermark, no logo, no signature）',
   '正面均匀光照、无强烈阴影（front flat even lighting, soft shadows only, no harsh shadow）',
 ].join('，')

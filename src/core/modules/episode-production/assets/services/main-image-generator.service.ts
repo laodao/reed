@@ -20,6 +20,8 @@ import type { ImageGenerator } from './gallery-derivation.service'
 import {
   appendLocationNoHumanConstraint,
   mergeLocationNoHumanNegative,
+  appendLocationBaseComposition,
+  mergeLocationBaseCompositionNegative,
 } from '../prompts/location-constraints'
 import {
   appendItemConstraints,
@@ -80,7 +82,10 @@ export class MainImageGeneratorService {
     let effectiveNegative = input.negativePrompt
     if (input.assetType === 'location') {
       effectivePrompt = appendLocationNoHumanConstraint(input.prompt)
+      // 主图作为派生基准：补稳定全景构图锚点
+      effectivePrompt = appendLocationBaseComposition(effectivePrompt)
       effectiveNegative = mergeLocationNoHumanNegative(input.negativePrompt)
+      effectiveNegative = mergeLocationBaseCompositionNegative(effectiveNegative)
     }
     if (input.assetType === 'item') {
       effectivePrompt = appendItemConstraints(input.prompt)
@@ -163,7 +168,10 @@ export class MainImageGeneratorService {
     let effectiveNegative = input.negativePrompt
     if (input.assetType === 'location') {
       effectivePrompt = appendLocationNoHumanConstraint(input.prompt)
+      // 主图作为派生基准：补稳定全景构图锚点
+      effectivePrompt = appendLocationBaseComposition(effectivePrompt)
       effectiveNegative = mergeLocationNoHumanNegative(input.negativePrompt)
+      effectiveNegative = mergeLocationBaseCompositionNegative(effectiveNegative)
     }
 
     const refPaths: string[] = []

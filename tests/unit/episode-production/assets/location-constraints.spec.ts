@@ -4,7 +4,32 @@ import {
   mergeLocationNoHumanNegative,
   LOCATION_NO_HUMAN_SUFFIX,
   LOCATION_NO_HUMAN_NEGATIVE,
+  appendLocationBaseComposition,
+  mergeLocationBaseCompositionNegative,
+  LOCATION_BASE_COMPOSITION_SUFFIX,
 } from '@core/modules/episode-production/assets/prompts/location-constraints'
+
+describe('location-constraints · 主图基础构图锚点', () => {
+  it('主图构图约束含标准全景 + 水平构图 + 无畸变', () => {
+    const suffix = appendLocationBaseComposition('')
+    expect(suffix).toMatch(/wide establishing shot/i)
+    expect(suffix).toMatch(/straight-on|level camera/i)
+    expect(suffix).toMatch(/no fisheye|no extreme lens distortion/i)
+  })
+
+  it('空 prompt 返回完整构图后缀，已含则幂等', () => {
+    expect(appendLocationBaseComposition('')).toBe(LOCATION_BASE_COMPOSITION_SUFFIX)
+    const once = appendLocationBaseComposition('古风茶馆')
+    const twice = appendLocationBaseComposition(once)
+    expect(twice).toBe(once)
+  })
+
+  it('negative 禁极端视角/倾斜地平线', () => {
+    const neg = mergeLocationBaseCompositionNegative(null)
+    expect(neg).toMatch(/fisheye/)
+    expect(neg).toMatch(/tilted horizon/)
+  })
+})
 
 describe('location-constraints · 无人约束', () => {
   it('appendLocationNoHumanConstraint: 空 prompt 返回完整后缀', () => {

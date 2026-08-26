@@ -92,6 +92,41 @@ export function mergeLocationNoHumanNegative(userNegative?: string | null): stri
 }
 
 /**
+ * 地点主图基础构图锚点（spec：主图作为角度/时间/天气派生图的基准）。
+ * 主图建立稳定的正面全景视角、完整场地、顺光自然，避免派生后机位漂移。
+ */
+export const LOCATION_BASE_COMPOSITION_SUFFIX =
+  '标准场地全景（wide establishing shot of the location, front view, entire space visible），' +
+  '水平构图、地平线稳定（level camera, stable horizon, straight-on composition），' +
+  '自然均匀光照、无明显透视畸变（natural even daylight, no extreme lens distortion, no fisheye）'
+
+const LOCATION_BASE_COMPOSITION_NEGATIVE = [
+  'extreme close-up',
+  'drastic angle',
+  'extreme wide distortion',
+  'fisheye',
+  'tilted horizon',
+  'upside down',
+  'overhead top-down',
+  'extreme low angle',
+].join(', ')
+
+/** 把地点主图基础构图追加到主 prompt 末尾。已包含则不重复。 */
+export function appendLocationBaseComposition(prompt: string): string {
+  const trimmed = (prompt ?? '').trim()
+  if (!trimmed) return LOCATION_BASE_COMPOSITION_SUFFIX
+  if (trimmed.includes(LOCATION_BASE_COMPOSITION_SUFFIX)) return trimmed
+  return `${trimmed}，${LOCATION_BASE_COMPOSITION_SUFFIX}`
+}
+
+/** 合并地点主图基础构图 negative。 */
+export function mergeLocationBaseCompositionNegative(userNegative?: string | null): string {
+  const u = (userNegative ?? '').trim()
+  if (!u) return LOCATION_BASE_COMPOSITION_NEGATIVE
+  return `${u}, ${LOCATION_BASE_COMPOSITION_NEGATIVE}`
+}
+
+/**
  * spec 2026-05-09 review：变体维度锁（'variant' 新派生路径专用）
  *
  * 旧 angle_variant 路径只锁"光照 / 时间 / 天气"。新模型合并到 'variant' 后，
