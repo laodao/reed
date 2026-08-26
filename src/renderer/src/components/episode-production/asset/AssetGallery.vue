@@ -42,7 +42,7 @@
               {{ imageByLabel(item.label) ? '已定妆' : '待生成' }}
             </div>
           </div>
-          <el-button v-if="!imageByLabel(item.label)" text circle size="small" class="nav-add" @click.stop="onGenerate(item)">
+          <el-button v-if="!imageByLabel(item.label)?.imagePath" text circle size="small" class="nav-add" title="生成" @click.stop="onGenerate(item)">
             <el-icon><Plus /></el-icon>
           </el-button>
           <el-button
@@ -498,8 +498,6 @@ onActivated(() => void load())
   .nav-status { font-size: 11px; margin-top: 2px; &.done { color: var(--color-success); } &.pending { color: var(--text-color-placeholder); } }
   .nav-add { color: var(--color-primary); }
   .nav-regen { color: var(--color-info); }
-  .nav-add, .nav-regen { opacity: 0; transition: opacity var(--transition-fast); }
-  .nav-item:hover .nav-add, .nav-item:hover .nav-regen { opacity: 1; }
 }
 
 .gallery-preview {
