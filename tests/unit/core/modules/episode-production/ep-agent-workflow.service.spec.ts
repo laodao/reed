@@ -18,6 +18,7 @@ vi.mock('@core/interfaces/event.interface', () => ({
 import {
   normalizeEpDecision,
   epAgentConversationId,
+  EpisodeProductionAgentService,
 } from '@core/modules/episode-production/agent/ep-agent-workflow.service'
 import { extractJsonObject } from '@core/modules/episode-production/agent/ep-agent-actions'
 import {
@@ -189,5 +190,49 @@ describe('buildEpSuggestions 下一步建议', () => {
 describe('epAgentConversationId', () => {
   it('约定 ep-agent:${episodeId}', () => {
     expect(epAgentConversationId('ep-123')).toBe('ep-agent:ep-123')
+  })
+})
+
+// ==================== sendMessage 多轮确认 choice 分支 ====================
+
+describe('sendMessage choice 分支（多轮确认）', () => {
+  it('AI 输出 choice 时发出 choice:request、不执行动作、返回 choice', async () => {
+    EpisodeProductionAgentService.resetInstance()
+    const messages: Array<{ role: string; content: string; timestamp: number; metadata?: string }> = []
+    const db = {
+      lwDesignMessages: {
+        add: async (_conv: string, m: any) => { messages.push(m); return m },
+        getByConversationId: async () => messages,
+      },
+    } as any
+    const ai = {
+      agentDecide: async () =>
+        JSON.stringify({
+          reply: '你要给哪个角色生成定妆图？',
+          choice: { actionType: 'generate_char_asset', param: 'name', choices: ['杜十娘', '李甲'], prompt: '请选择角色' },
+        }),
+    } as any
+
+    const svc = EpisodeProductionAgentService.getInstance(db, ai)
+    const res = await svc.sendMessage('p1', 'ep1', '为某个角色生成定妆图')
+
+    // 返回 choice（未执行动作）
+    expect(res.choice).toEqual({
+      actionType: 'generate_char_asset',
+      param: 'name',
+      choices: ['杜十娘', '李甲'],
+      prompt: '请选择角色',
+    })
+    expect(res.actionSummaries).toHaveLength(0)
+
+    // 发出了 choice:request 事件
+    const evt = emitted.find((e) => e.data?.type === 'choice:request')
+    expect(evt).toBeTruthy()
+    expect(evt!.data.choice.choices).toContain('杜十娘')
+
+    // 持久化了一条 assistant 消息提示选择
+    const assistant = messages.filter((m) => m.role === 'assistant')
+    expect(assistant.length).toBeGreaterThan(0)
+    expect(assistant[0].content).toContain('杜十娘')
   })
 })
