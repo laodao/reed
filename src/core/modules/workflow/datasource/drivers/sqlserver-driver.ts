@@ -3,10 +3,11 @@
  * @module core/modules/workflow/datasource/drivers/sqlserver-driver
  * @description 使用 mssql (tedious) 连接外部 SQL Server 数据库。
  *              - testConnection：SELECT 1 + 版本探测
- *              - query：参数化执行（占位符 @p1,@p2,... 按位置绑定），输出统一 QueryResult
+ *              - query：统一 $1,$2 占位符 → 翻译为 @p1,@p2 并按编号 input 绑定，输出统一 QueryResult
  */
 
 import sql from 'mssql'
+import { replaceDollarPlaceholders } from '../placeholder-utils'
 import type {
   DataSourceConnectionParams,
   DataSourceDriverAdapter,
@@ -30,11 +31,6 @@ function buildConfig(params: DataSourceConnectionParams): sql.config {
     requestTimeout: 30_000,
     pool: { max: 5, min: 0, idleTimeoutMillis: 30_000 },
   }
-}
-
-/** SQL Server 占位符归一：把 SQL 里的 $1,$2 或 :name 转成 @p1,@p2（调用方已按 pg 风格写 SQL 时） */
-function normalizePlaceholders(sqlText: string): string {
-  return sqlText.replace(/\$(\d+)/g, (_m, n) => `@p${n}`)
 }
 
 export class SqlServerDriverAdapter implements DataSourceDriverAdapter {
@@ -74,11 +70,12 @@ export class SqlServerDriverAdapter implements DataSourceDriverAdapter {
     try {
       pool = await new sql.ConnectionPool(buildConfig(params)).connect()
       const request = pool.request()
-      const normalized = normalizePlaceholders(sqlText)
+      // 统一 $n → @pn；按编号 input 绑定（乱序 $2,$1 也正确）
+      const { sql: sqlRendered } = replaceDollarPlaceholders(sqlText, parameters, (index) => `@p${index}`)
       parameters.forEach((value, i) => {
         request.input(`p${i + 1}`, value as any)
       })
-      const res = await request.query(normalized)
+      const res = await request.query(sqlRendered)
       const rows = (res.recordset ?? []) as Array<Record<string, unknown>>
       const columns = res.recordset?.length
         ? Object.keys(res.recordset[0])

@@ -46,12 +46,18 @@ describe('MySqlDriverAdapter', () => {
     expect(res.message).toContain('ER_ACCESS_DENIED_ERROR')
   })
 
-  it('query: 参数化查询 → rows/columns/rowCount', async () => {
+  it('query: 统一 $1,$2 占位符 → 翻译为 mysql2 的 ?，参数按出现顺序', async () => {
     mConn.query.mockResolvedValue([[{ id: 1, name: 'a' }], [{ name: 'id' }, { name: 'name' }]])
-    const res = await adapter.query(params as any, 'SELECT * FROM t WHERE id=?', [1])
+    const res = await adapter.query(params as any, 'SELECT * FROM t WHERE id>$1 AND name=$2', [1, 'a'])
     expect(res.rows).toEqual([{ id: 1, name: 'a' }])
     expect(res.columns).toEqual(['id', 'name'])
-    expect(mConn.query).toHaveBeenCalledWith('SELECT * FROM t WHERE id=?', [1])
+    expect(mConn.query).toHaveBeenCalledWith('SELECT * FROM t WHERE id>? AND name=?', [1, 'a'])
+  })
+
+  it('query: 乱序 $2,$1 → 参数按占位符出现顺序收集', async () => {
+    mConn.query.mockResolvedValue([[], []])
+    await adapter.query(params as any, 'WHERE name=$2 AND id=$1', [10, 'a'])
+    expect(mConn.query).toHaveBeenCalledWith('WHERE name=? AND id=?', ['a', 10])
   })
 
   it('query: DML → rowCount 取 affectedRows', async () => {

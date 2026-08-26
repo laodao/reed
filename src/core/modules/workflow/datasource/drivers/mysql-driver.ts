@@ -3,12 +3,12 @@
  * @module core/modules/workflow/datasource/drivers/mysql-driver
  * @description 使用 mysql2 (promise API) 连接外部 MySQL 数据库。
  *              - testConnection：SELECT 1 + 版本探测
- *              - query：参数化执行（占位符 ?），输出统一 QueryResult
- *              占位符归一：SQL 中 $1,$2 → 转换或直接要求 ?（由调用方按驱动方言写 SQL；
- *              MySQL 用 ? 占位符，参数顺序对应）。
+ *              - query：统一 $1,$2 占位符 → 翻译为 mysql2 的 ?（按占位符出现顺序收集参数值）
+ *              输出统一 QueryResult。
  */
 
 import { createPool } from 'mysql2/promise'
+import { replaceDollarPlaceholders } from '../placeholder-utils'
 import type {
   DataSourceConnectionParams,
   DataSourceDriverAdapter,
@@ -64,7 +64,7 @@ export class MySqlDriverAdapter implements DataSourceDriverAdapter {
 
   async query(
     params: DataSourceConnectionParams,
-    sql: string,
+    sqlText: string,
     parameters: ReadonlyArray<unknown> = [],
   ): Promise<DataSourceQueryResult> {
     const started = Date.now()
@@ -72,7 +72,9 @@ export class MySqlDriverAdapter implements DataSourceDriverAdapter {
     try {
       const conn = await pool.getConnection()
       try {
-        const [rows, fields] = await conn.query(sql, parameters as unknown[])
+        // 统一 $n → mysql2 的 ?；参数值按占位符出现顺序收集（支持乱序 $2,$1）
+        const { sql, orderedValues } = replaceDollarPlaceholders(sqlText, parameters, () => '?')
+        const [rows, fields] = await conn.query(sql, orderedValues)
         const columns = Array.isArray(fields)
           ? fields.map((f: any) => f.name)
           : (fields as any)?.map?.((f: any) => f.name) ?? []

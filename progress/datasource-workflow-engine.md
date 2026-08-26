@@ -69,3 +69,14 @@ Node（data-table）外部模式  = 绑 dataSourceId + sql + params → 路由�
 ### 依赖变更
 - 新增：mysql2@^3.24.2、mssql@^10.0.4（mssql 必须 ≤10，Electron Node 18 兼容）
 
+## 三期：统一占位符 $1,$2（跨驱动方言归一）
+- 新增 `placeholder-utils.ts`：共享 `replaceDollarPlaceholders`（扫描 $n + 按编号收集参数值，支持乱序 $2,$1 / 复用 / 多位数 $10）
+- MySQL：$n → mysql2 的 `?`，参数按**占位符出现顺序**收集（乱序也正确）
+- SQL Server：$n → `@pn`，按编号 input 绑定
+- ClickHouse：$n → `{pn:Type}` + param_pn
+- PostgreSQL：原生 $n 无需改动
+- 类型/表单 help 统一声明"参数用 $1,$2 占位"
+- 修复：sqlserver-driver 局部变量 sql 与 import sql 同名 → vite 重命名 TDZ 崩溃 → 改名 sqlRendered
+- 测试：placeholder-utils(6) + 三驱动翻译 + service + node + ep-agent = 71 项全过
+
+

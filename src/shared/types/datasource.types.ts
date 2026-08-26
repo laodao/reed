@@ -134,7 +134,11 @@ export interface DataSourceDriverAdapter {
   readonly driver: DataSourceDriver
   /** 测试连接（SELECT 1 / ping） */
   testConnection(params: DataSourceConnectionParams): Promise<DataSourceTestResult>
-  /** 执行 SQL。params 是参数化占位符（$1,$2,... 或者 :name 由驱动归一化） */
+  /**
+   * 执行 SQL。参数化占位符**统一约定为 $1,$2,...**（各驱动翻译成自身方言：
+   * MySQL ? / SQL Server @pn / ClickHouse {pn:Type}）。
+   * 调用方以 $n 写占位符，值经 parameters 数组传入（下标 0 ↔ $1）。
+   */
   query(
     params: DataSourceConnectionParams,
     sql: string,

@@ -9,6 +9,7 @@
  *              适合读取/聚合场景；写操作（INSERT）走 HTTP 也有支持。
  */
 
+import { replaceDollarPlaceholders } from '../placeholder-utils'
 import type {
   DataSourceConnectionParams,
   DataSourceDriverAdapter,
@@ -34,18 +35,19 @@ function buildHeaders(params: DataSourceConnectionParams): Record<string, string
   return headers
 }
 
-/** 把 SQL 里的 $1,$2 转成 ClickHouse 的 {p1:Type} 参数并收集参数值（urlParams） */
+/**
+ * 把 SQL 里的 $1,$2 转成 ClickHouse 的 {p1:Type} 参数并收集参数值（urlParams）。
+ * 用共享 replaceDollarPlaceholders：统一 $n 语义 + 支持乱序。
+ */
 function normalizeParams(
   sqlText: string,
   parameters: ReadonlyArray<unknown>,
 ): { sql: string; urlParams: URLSearchParams } {
   const urlParams = new URLSearchParams()
-  const sql = sqlText.replace(/\$(\d+)/g, (_m, n) => {
-    const i = Number(n) - 1
-    const raw = parameters[i]
+  const { sql } = replaceDollarPlaceholders(sqlText, parameters, (index, raw) => {
     const type = inferType(raw)
-    urlParams.set(`param_p${i + 1}`, raw == null ? '' : String(raw))
-    return `{p${i + 1}:${type}}`
+    urlParams.set(`param_p${index}`, raw == null ? '' : String(raw))
+    return `{p${index}:${type}}`
   })
   return { sql, urlParams }
 }
