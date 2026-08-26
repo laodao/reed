@@ -191,3 +191,48 @@ export function appendEraConstraint(
   if (t.includes(suffix)) return t
   return `${t}，${suffix}`
 }
+
+/**
+ * 系统自动追加的提示词段（约束 / 身份标记段）。
+ * 这些段由拼接代码生成，不应作为"用户内容"展示或二次拼接。
+ */
+const SYSTEM_SEGMENT_PATTERNS: RegExp[] = [
+  // 构图 framing（半身定妆照 / 直立全身 / 上半身）——要求带括号，避免误删用户自己的话
+  /半身定妆照（[^，]*/g,
+  /直立全身（[^，]*/g,
+  /上半身（[^，]*/g,
+  // 背景 / 光照 / 无阴影约束
+  /纯白背景（[^，]*/g,
+  /纯色背景（[^，]*/g,
+  /光照与参考图保持一致（[^，]*/g,
+  /正面均匀光照、无任何阴影（[^，]*/g,
+  // 身份保持
+  /保持人物身份（[^，]*/g,
+  // 年代特征约束（人物服饰、发型、妆容符合…）
+  /人物服饰、发型、妆容符合[^，]*/g,
+  // 身份段里的故事背景标记（故事年代/地域/背景：xxx）
+  /故事年代：[^，]*/g,
+  /故事地域：[^，]*/g,
+  /故事背景：[^，]*/g,
+]
+
+/**
+ * 从提示词中剥离系统自动追加的段，返回"用户内容"。
+ *
+ * 用途：图集提示词框只展示 / 编辑用户内容——落库的 prompt 是"用户内容 + 系统约束"
+ * 的完整拼接，若把完整拼接回填到输入框，用户再生成时基于它二次拼接，会造成
+ * 约束重复追加、以及把其它 slot（如主图的半身约束）串到派生图（全身照）上。
+ * 生成前调用方仍会用 appendEraConstraint / appendCharacterConstraints 拼回约束。
+ */
+export function stripSystemConstraints(prompt: string): string {
+  let t = (prompt ?? '').trim()
+  for (const re of SYSTEM_SEGMENT_PATTERNS) {
+    t = t.replace(re, '')
+  }
+  // 清理剥离后的残留：连续中文逗号、首尾逗号、多余空白
+  return t
+    .replace(/，{2,}/g, '，')
+    .replace(/^，+|，+$/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}

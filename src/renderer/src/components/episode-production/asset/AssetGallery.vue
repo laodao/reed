@@ -83,6 +83,7 @@ import { ref, computed, watch, onMounted, onActivated } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Picture, MagicStick, Plus, Upload, Loading, Check } from '@element-plus/icons-vue'
 import { toImageUrl } from '@/utils/asset-url'
+import { stripSystemConstraints } from '@core/modules/episode-production/assets/prompts/asset-identity-prompt'
 import { generateMainFor } from '@/api/main-image-generator'
 import { useAssetImageActions } from '@/composables/use-asset-image-actions'
 
@@ -155,7 +156,9 @@ async function load(): Promise<void> {
       selectedLabel.value = firstWithImg?.label || 'main'
     }
     const sel = imageByLabel(selectedLabel.value)
-    localPrompt.value = sel?.prompt || ''
+    // 输入框只显示"用户内容"（剥离系统自动追加的约束段），
+    // 避免用户基于完整拼接再次生成时约束重复追加 / 串 slot
+    localPrompt.value = stripSystemConstraints(sel?.prompt || '')
   } catch (e: any) {
     console.error('[AssetGallery] 加载失败', e)
     images.value = []
@@ -167,7 +170,7 @@ async function load(): Promise<void> {
 function selectLabel(label: string): void {
   selectedLabel.value = label
   const sel = imageByLabel(label)
-  localPrompt.value = sel?.prompt || ''
+  localPrompt.value = stripSystemConstraints(sel?.prompt || '')
 }
 
 function selectByPill(title: string): void {
@@ -196,13 +199,21 @@ async function onGenerate(item: { label: string; category: string }): Promise<vo
     } else {
       const root = (window as any).electronAPI?.episodeProduction?.asset
       const main = imageByLabel('main')
+      // 派生用"目标 slot 自己的纯净提示词"：优先该 slot 已保存的（剥离约束），
+      // 否则仅当正在编辑该 slot 时用输入框内容，避免把其它 slot（如主图的半身
+      // 定妆约束）串到派生图（全身照）上。
+      const slotImg = images.value.find(i => i.label === item.label)
+      const addPrompt =
+        (slotImg?.prompt ? stripSystemConstraints(slotImg.prompt) : '')
+        || (item.label === selectedLabel.value ? localPrompt.value.trim() : '')
+        || item.title
       const r = await root.derive.single({
         assetType: props.kind,
         assetId: props.assetId,
         category: item.category,
         label: item.label,
         baseImageId: main?.id || null,
-        additionalPrompt: localPrompt.value.trim() || item.title,
+        additionalPrompt: addPrompt,
       })
       if (!r?.success) { ElMessage.error(r?.error || '生成失败'); generating.value = false; return }
       ElMessage.success(`${item.title} 已生成`)
@@ -230,9 +241,11 @@ async function onDeriveAll(): Promise<void> {
   try {
     const root = (window as any).electronAPI?.episodeProduction?.asset
     for (const item of items) {
-      // 该 slot 已编辑过提示词（占位行）→ 用占位行 prompt；否则用 slot 标题作补充提示
+      // 该 slot 已编辑过提示词（占位行/已有图）→ 用剥离约束后的用户内容；
+      // 否则用 slot 标题作补充提示
       const existing = images.value.find(i => i.label === item.label)
-      const addPrompt = existing?.prompt?.trim() || item.title
+      const addPrompt = (existing?.prompt ? stripSystemConstraints(existing.prompt) : '')
+        || item.title
       const r = await root.derive.single({
         assetType: props.kind,
         assetId: props.assetId,
@@ -259,7 +272,9 @@ async function onSavePrompt(): Promise<void> {
 
   // 已有图：更新该行
   if (sel?.id) {
-    if (text === (sel.prompt || '')) return
+    // 输入框显示的是剥离约束后的用户内容；落库是完整拼接。
+    // 用户没改动时（纯净内容与库里的用户部分相同）不覆盖落库的完整拼接。
+    if (text === stripSystemConstraints(sel.prompt || '')) return
     const r = await root.image.update(sel.id, { prompt: text })
     if (r?.success) {
       ElMessage.success('提示词已保存')
