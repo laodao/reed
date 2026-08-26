@@ -145,9 +145,15 @@ async function load(): Promise<void> {
     const root = (window as any).electronAPI?.episodeProduction?.asset
     const r = await root.image.listByAsset(props.kind, props.assetId)
     images.value = r?.success ? r.data : []
-    // 默认选中：已有图的第一个，否则 main
-    const firstWithImg = navItems.value.find(i => imageByLabel(i.label)?.imagePath)
-    selectedLabel.value = firstWithImg?.label || 'main'
+    // 仅当当前选中的 slot 无效时才重置为默认：
+    // 保留用户在树切换 / 重新加载前选中的 slot（如"正面半身"），
+    // 否则每次 load 都跳回 main，用户改过的非 main 提示词看起来像"没保存"。
+    const currentLabel = selectedLabel.value
+    const currentSlotValid = navItems.value.some(i => i.label === currentLabel)
+    if (!currentSlotValid) {
+      const firstWithImg = navItems.value.find(i => imageByLabel(i.label)?.imagePath)
+      selectedLabel.value = firstWithImg?.label || 'main'
+    }
     const sel = imageByLabel(selectedLabel.value)
     localPrompt.value = sel?.prompt || ''
   } catch (e: any) {
