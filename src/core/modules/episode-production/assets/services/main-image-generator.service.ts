@@ -40,6 +40,11 @@ export interface GenerateMainInput {
    * 提供时会作为 imageGen.generate.referenceImagePaths 输入，让 AI 沿用参考图的视觉风格。
    */
   referenceImagePath?: string | null
+  /**
+   * 多参考图（换装等场景：第一张主图作面容基准 + 用户上传的换装参考图）。
+   * 优先级高于 referenceImagePath；全部非空路径会进 referenceImagePaths。
+   */
+  referenceImagePaths?: string[] | null
 }
 
 export class MainImageGeneratorService {
@@ -205,7 +210,13 @@ export class MainImageGeneratorService {
     }
 
     const refPaths: string[] = []
-    if (input.referenceImagePath && input.referenceImagePath.trim()) {
+    // 多参考图优先（换装：第一张主图基准 + 用户上传图）；无则回退单 referenceImagePath
+    const multiRefs = (input.referenceImagePaths ?? [])
+      .map(p => (p ?? '').trim())
+      .filter(Boolean)
+    if (multiRefs.length > 0) {
+      refPaths.push(...multiRefs)
+    } else if (input.referenceImagePath && input.referenceImagePath.trim()) {
       refPaths.push(input.referenceImagePath.trim())
     }
 

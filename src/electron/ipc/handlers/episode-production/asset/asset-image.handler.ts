@@ -52,6 +52,7 @@ export function registerAssetImageHandlers(): void {
   ipcBridge.handle('ep:asset:image:save-prompt', handleSavePrompt)
   ipcBridge.handle('ep:asset:image:generate-main', handleGenerateMain)
   ipcBridge.handle('ep:asset:image:upload-main-file', handleUploadMainFile)
+  ipcBridge.handle('ep:asset:image:upload-ref', handleUploadRefImage)
   // spec 2026-05-09 多主图模型新增 channel
   ipcBridge.handle('ep:asset:image:add-main', handleAddAdditionalMain)
   ipcBridge.handle('ep:asset:image:switch-main', handleSwitchDefaultMain)
@@ -222,6 +223,31 @@ async function handleUploadMainFile(
       fileName: input.fileName,
       assetType: input.assetType,
       assetId: input.assetId,
+    })
+    return { success: true, data }
+  } catch (err: any) {
+    if (err instanceof MainImageUploadValidationError) {
+      return { success: false, error: `[${err.code}] ${err.message}` }
+    }
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+/**
+ * 上传参考图文件（不落 asset_image 行）：保存到 asset-images/ 返回相对路径，
+ * 供"新增主图（换装）"把用户上传的图作为生成 reference。
+ */
+async function handleUploadRefImage(
+  _event: any,
+  input: { fileName: string; base64: string },
+): Promise<IpcResponse> {
+  try {
+    const ds = requireDataSource()
+    const imageSvc = new AssetImageService(ds)
+    const svc = new MainImageUploadService(getPathProvider(), imageSvc)
+    const data = await svc.saveReferenceFile({
+      buffer: Buffer.from(input.base64, 'base64'),
+      fileName: input.fileName,
     })
     return { success: true, data }
   } catch (err: any) {

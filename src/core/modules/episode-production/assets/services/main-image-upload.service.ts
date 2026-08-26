@@ -130,4 +130,46 @@ export class MainImageUploadService {
     // 重新取更新后的 entity 返回
     return (await this.imageService.getMainImage(input.assetType, input.assetId))!
   }
+
+  /**
+   * 保存参考图文件（不落 asset_image 行）：仅校验 + 写文件，返回相对路径，
+   * 供"新增主图（换装）"等场景把用户上传的图作为生成 reference。
+   */
+  async saveReferenceFile(input: { buffer: Buffer; fileName: string }): Promise<{ path: string }> {
+    if (!input.buffer || input.buffer.byteLength === 0) {
+      throw new MainImageUploadValidationError('文件为空', 'EMPTY')
+    }
+    if (input.buffer.byteLength > MAX_BYTES) {
+      throw new MainImageUploadValidationError(
+        `文件超过 ${MAX_BYTES / 1024 / 1024}MB 上限`,
+        'TOO_LARGE',
+      )
+    }
+
+    let metadata: sharp.Metadata
+    try {
+      metadata = await sharp(input.buffer).metadata()
+    } catch (e) {
+      throw new MainImageUploadValidationError(
+        `无法解析图像（损坏或格式不支持）：${(e as Error).message}`,
+        'BAD_FORMAT',
+      )
+    }
+    const format = metadata.format
+    if (!format || !ALLOWED_FORMATS.includes(format as AllowedFormat)) {
+      throw new MainImageUploadValidationError(
+        `不支持的图像格式：${format ?? '未知'}（仅支持 jpeg/png/webp）`,
+        'BAD_FORMAT',
+      )
+    }
+
+    const ext = format === 'jpeg' ? 'jpg' : format
+    const fileName = `ref-${Date.now()}.${ext}`
+    const relPath = path.posix.join('asset-images', fileName)
+    const dataPath = this.pathProvider.getDataPath()
+    const absPath = path.join(dataPath, relPath)
+    await fs.mkdir(path.dirname(absPath), { recursive: true })
+    await fs.writeFile(absPath, input.buffer)
+    return { path: relPath }
+  }
 }

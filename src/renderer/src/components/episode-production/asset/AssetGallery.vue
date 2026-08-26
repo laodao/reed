@@ -9,7 +9,7 @@
         </span>
       </div>
       <div class="top-actions">
-        <el-button v-if="hasMain" text size="small" :loading="generating" @click="onAddMain">
+        <el-button v-if="hasMain" text size="small" @click="showAddOutfit = true">
           <el-icon><Plus /></el-icon>
           新增正面全身
         </el-button>
@@ -29,12 +29,13 @@
           :key="item.label"
           class="nav-item"
           :class="{ active: selectedLabel === item.label }"
-          @click="selectLabel(item.label)"
+          @click="onNavClick(item)"
         >
-          <div class="nav-thumb" :class="{ derived: !!imageByLabel(item.label)?.derivedFromImageId }">
-            <el-image v-if="imageByLabel(item.label)?.imagePath" :src="toUrl(imageByLabel(item.label)!.imagePath)" fit="cover" class="thumb-img" />
+          <div class="nav-thumb" :class="{ derived: !!navImage(item.label)?.derivedFromImageId }">
+            <el-image v-if="navImage(item.label)?.imagePath" :src="toUrl(navImage(item.label)!.imagePath)" fit="cover" class="thumb-img" />
             <div v-else class="thumb-empty"><el-icon :size="16"><Picture /></el-icon></div>
-            <span v-if="imageByLabel(item.label)?.derivedFromImageId" class="derived-badge">衍</span>
+            <span v-if="navImage(item.label)?.derivedFromImageId" class="derived-badge">衍</span>
+            <span v-else-if="item.label === 'main' && mainImages.length > 1" class="main-count-badge">{{ selectedMainIndex + 1 }}/{{ mainImages.length }}</span>
           </div>
           <div class="nav-info">
             <div class="nav-name">{{ item.title }}</div>
@@ -85,6 +86,16 @@
     <div v-if="!assetId" class="empty">
       <el-empty description="左侧选择资产，或让右侧助手生成定妆图" />
     </div>
+
+    <!-- 新增正面全身（换装）对话框 -->
+    <AddOutfitMainDialog
+      v-model="showAddOutfit"
+      :asset-type="kind"
+      :asset-id="assetId || ''"
+      :first-main-path="firstMainPath"
+      :main-count="mainCount"
+      @submitted="onAddOutfitSubmitted"
+    />
   </div>
 </template>
 
@@ -100,8 +111,9 @@ import { ElMessage } from 'element-plus'
 import { Picture, MagicStick, Plus, Upload, Loading, Refresh } from '@element-plus/icons-vue'
 import { toImageUrl } from '@/utils/asset-url'
 import { stripSystemConstraints } from '@core/modules/episode-production/assets/prompts/asset-identity-prompt'
-import { generateMainFor, buildMainImagePrompt } from '@/api/main-image-generator'
+import { generateMainFor } from '@/api/main-image-generator'
 import { useAssetImageActions } from '@/composables/use-asset-image-actions'
+import AddOutfitMainDialog from '@/components/episode-production/asset/AddOutfitMainDialog.vue'
 
 const props = defineProps<{
   assetId: string | null
@@ -146,12 +158,59 @@ function imageByLabel(label: string): any | null {
 }
 
 const selectedItem = computed(() => navItems.value.find(i => i.label === selectedLabel.value) || navItems.value[0])
-const selectedImage = computed(() => imageByLabel(selectedLabel.value))
+
+/** 全部有图主图（category=main 且有 imagePath） */
+const mainImages = computed(() => images.value.filter(i => i.category === 'main' && i.imagePath))
+/** 主图槽位当前查看的索引（多主图切换；不影响生成/派生用的默认主图） */
+const selectedMainIndex = ref(0)
+
+/** 导航/预览显示的图：main 槽位多主图时按 selectedMainIndex 取；其余按 label */
+function navImage(label: string): any | null {
+  if (label === 'main' && mainImages.value.length > 1) {
+    return mainImages.value[Math.min(selectedMainIndex.value, mainImages.value.length - 1)] ?? imageByLabel('main')
+  }
+  return imageByLabel(label)
+}
+
+const selectedImage = computed(() => {
+  if (selectedLabel.value === 'main') {
+    const mains = mainImages.value
+    if (mains.length > 1) {
+      return mains[Math.min(selectedMainIndex.value, mains.length - 1)]
+    }
+  }
+  return imageByLabel(selectedLabel.value)
+})
+
+/** 导航点击：main 槽位多主图时循环切换；其余正常选中 */
+function onNavClick(item: { label: string; category: string }): void {
+  if (item.label === 'main' && mainImages.value.length > 1) {
+    selectedMainIndex.value = (selectedMainIndex.value + 1) % mainImages.value.length
+  }
+  selectLabel(item.label)
+}
 
 const hasMain = computed(() => !!imageByLabel('main'))
 
 /** 当前是否主图槽位（主图可自定义提示词；派生图系统固定，提示词/生成禁用） */
 const isMainSlot = computed(() => selectedLabel.value === 'main')
+
+/** 新增正面全身（换装）对话框显隐 */
+const showAddOutfit = ref(false)
+
+/** 第一张主图（created_at 最早且有图）——换装基准 */
+const firstMainPath = computed<string | null>(() => {
+  const mains = images.value.filter(i => i.category === 'main' && i.imagePath)
+  const first = [...mains].sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0))[0]
+  return first?.imagePath ?? null
+})
+
+/** 已有主图数量（换装标签用） */
+const mainCount = computed(() => images.value.filter(i => i.category === 'main' && i.imagePath).length)
+
+function onAddOutfitSubmitted(): void {
+  void load()
+}
 
 function toUrl(path?: string): string {
   return path ? toImageUrl(path) : ''
@@ -164,6 +223,8 @@ async function load(): Promise<void> {
     const root = (window as any).electronAPI?.episodeProduction?.asset
     const r = await root.image.listByAsset(props.kind, props.assetId)
     images.value = r?.success ? r.data : []
+    // 切换资产后主图查看索引归零
+    selectedMainIndex.value = 0
     // 仅当当前选中的 slot 无效时才重置为默认：
     // 保留用户在树切换 / 重新加载前选中的 slot（如"正面半身"），
     // 否则每次 load 都跳回 main，用户改过的非 main 提示词看起来像"没保存"。
@@ -204,20 +265,21 @@ async function onGenerate(item: { label: string; category: string }): Promise<vo
     // 保证生成时使用用户最新编辑的提示词，且生成后输入框内容不丢。
     await onSavePrompt()
     if (item.label === 'main') {
-      // 已有主图 → 新增换装（以第一张主图为基准，不替换旧基准）；
+      // 已有主图 → 弹出"新增正面全身（换装）"对话框（输入提示词/上传参考图）；
       // 无主图 → 生成第一张基准主图（自定义提示词优先）。
       if (hasMain.value) {
-        await doAddMain()
-      } else {
-        const override = localPrompt.value.trim() ? localPrompt.value : undefined
-        const img = await generateMainFor(
-          props.kind,
-          props.assetId,
-          override ? { promptOverride: override } : undefined,
-        )
-        void img
-        ElMessage.success('主图已生成')
+        generating.value = false
+        showAddOutfit.value = true
+        return
       }
+      const override = localPrompt.value.trim() ? localPrompt.value : undefined
+      const img = await generateMainFor(
+        props.kind,
+        props.assetId,
+        override ? { promptOverride: override } : undefined,
+      )
+      void img
+      ElMessage.success('主图已生成')
     } else {
       const root = (window as any).electronAPI?.episodeProduction?.asset
       const main = imageByLabel('main')
@@ -273,52 +335,6 @@ async function onRegenerate(item: { label: string; category: string }): Promise<
     await load()
   } catch (e: any) {
     ElMessage.error(e?.message || '重新生成失败')
-  } finally {
-    generating.value = false
-  }
-}
-
-/**
- * 新增正面全身图（换装）：以第一张主图为面容/形象基准（reference），
- * 输入框内容作换装描述；新主图成为默认（isMain=1），后续派生图基于它生成。
- * 调用方负责 generating 状态。
- */
-async function doAddMain(): Promise<void> {
-  const root = (window as any).electronAPI?.episodeProduction?.asset
-  if (!root?.image?.addMain) throw new Error('image.addMain IPC 未暴露')
-  // 第一张主图（created_at 最早且有图）作基准
-  const mains = images.value.filter(i => i.category === 'main' && i.imagePath)
-  const firstMain = [...mains].sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0))[0]
-  if (!firstMain) { ElMessage.warning('请先生成第一张正面全身图'); return }
-
-  // 换装描述：输入框内容优先（用户自定义），未编辑用系统拼接；都补 fullBody/年代约束
-  const { prompt, negativePrompt } = await buildMainImagePrompt(
-    props.kind,
-    props.assetId,
-    { promptOverride: localPrompt.value.trim() || undefined },
-  )
-  const label = `换装${mains.length + 1}`
-  const r = await root.image.addMain({
-    assetType: props.kind,
-    assetId: props.assetId,
-    prompt,
-    negativePrompt: negativePrompt ?? undefined,
-    referenceImagePath: firstMain.imagePath,
-    label,
-    makeDefault: true,
-  })
-  if (!r?.success) { ElMessage.error(r?.error || '生成失败'); return }
-  ElMessage.success(`已新增正面全身（${label}）`)
-  await load()
-}
-
-async function onAddMain(): Promise<void> {
-  if (!props.assetId || generating.value) return
-  generating.value = true
-  try {
-    await doAddMain()
-  } catch (e: any) {
-    ElMessage.error(e?.message || '生成失败')
   } finally {
     generating.value = false
   }
@@ -491,6 +507,12 @@ onActivated(() => void load())
         background: var(--color-info); color: #fff;
         font-size: 9px; line-height: 14px; text-align: center;
       }
+    }
+    .main-count-badge {
+      position: absolute; right: -4px; bottom: -4px;
+      min-width: 16px; height: 14px; border-radius: 7px; padding: 0 3px;
+      background: var(--color-primary); color: #fff;
+      font-size: 9px; line-height: 14px; text-align: center;
     }
   }
   .nav-info { flex: 1; min-width: 0; }
