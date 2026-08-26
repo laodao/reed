@@ -55,6 +55,9 @@
         </div>
         <div class="preview-bottom">
           <el-input v-model="localPrompt" type="textarea" :rows="5" resize="vertical" placeholder="镜头提示词…" class="prompt-input" @blur="onSavePrompt" />
+          <el-button type="primary" plain circle :loading="saving" title="保存提示词" @click="onSaveNow">
+            <el-icon><Check /></el-icon>
+          </el-button>
           <el-button type="primary" circle :loading="generating" title="生成图片" @click="onGenerateCurrent">
             <el-icon><MagicStick /></el-icon>
           </el-button>
@@ -78,7 +81,7 @@
  */
 import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Picture, MagicStick, Plus, Upload, Loading } from '@element-plus/icons-vue'
+import { Picture, MagicStick, Plus, Upload, Loading, Check } from '@element-plus/icons-vue'
 import { toImageUrl } from '@/utils/asset-url'
 import { generateMainFor } from '@/api/main-image-generator'
 import { useAssetImageActions } from '@/composables/use-asset-image-actions'
@@ -94,6 +97,7 @@ const props = defineProps<{
 const images = ref<any[]>([])
 const loading = ref(false)
 const generating = ref(false)
+const saving = ref(false)
 const selectedLabel = ref('main')
 const localPrompt = ref('')
 
@@ -281,6 +285,16 @@ async function onSavePrompt(): Promise<void> {
     ElMessage.success('提示词已保存')
   } else {
     ElMessage.error(r?.error || '保存失败')
+  }
+}
+
+/** 保存按钮：显式触发一次保存（与失焦自动保存同一逻辑） */
+async function onSaveNow(): Promise<void> {
+  saving.value = true
+  try {
+    await onSavePrompt()
+  } finally {
+    saving.value = false
   }
 }
 
