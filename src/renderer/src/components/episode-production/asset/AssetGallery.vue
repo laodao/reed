@@ -10,9 +10,13 @@
           <el-icon><Plus /></el-icon>
           新增正面全身
         </el-button>
-        <el-button text size="small" @click="onDeriveAll" :disabled="!hasMain">
-          <el-icon><Upload /></el-icon>
-          按需提货
+        <el-button text size="small" @click="showBatchDerive = true" :disabled="!hasMain">
+          <el-icon><MagicStick /></el-icon>
+          一键生成
+        </el-button>
+        <el-button text size="small" @click="showLinkPortrait = true">
+          <el-icon><Link /></el-icon>
+          关联人像
         </el-button>
       </div>
     </div>
@@ -91,6 +95,22 @@
       :main-count="mainCount"
       @submitted="onAddOutfitSubmitted"
     />
+
+    <!-- 一键生成对话框 -->
+    <BatchDeriveDialog
+      v-model="showBatchDerive"
+      :items="pendingDeriveItems"
+      :generating="generating"
+      @confirm="onBatchDerive"
+    />
+
+    <!-- 关联人像对话框 -->
+    <LinkPortraitDialog
+      v-model="showLinkPortrait"
+      :asset-type="kind"
+      :asset-id="assetId || ''"
+      @submitted="onAddOutfitSubmitted"
+    />
   </div>
 </template>
 
@@ -103,12 +123,14 @@
  */
 import { ref, computed, watch, onMounted, onActivated } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Picture, MagicStick, Plus, Upload, Loading, Refresh } from '@element-plus/icons-vue'
+import { Picture, MagicStick, Plus, Upload, Loading, Refresh, Link } from '@element-plus/icons-vue'
 import { toImageUrl } from '@/utils/asset-url'
 import { stripSystemConstraints } from '@core/modules/episode-production/assets/prompts/asset-identity-prompt'
 import { generateMainFor } from '@/api/main-image-generator'
 import { useAssetImageActions } from '@/composables/use-asset-image-actions'
 import AddOutfitMainDialog from '@/components/episode-production/asset/AddOutfitMainDialog.vue'
+import BatchDeriveDialog from '@/components/episode-production/asset/BatchDeriveDialog.vue'
+import LinkPortraitDialog from '@/components/episode-production/asset/LinkPortraitDialog.vue'
 
 const props = defineProps<{
   assetId: string | null
@@ -190,6 +212,17 @@ const isMainSlot = computed(() => selectedLabel.value === 'main')
 
 /** 新增正面全身（换装）对话框显隐 */
 const showAddOutfit = ref(false)
+/** 一键生成对话框显隐 */
+const showBatchDerive = ref(false)
+/** 关联人像对话框显隐 */
+const showLinkPortrait = ref(false)
+
+/** 待生成的衍生 slot（无图），供一键生成对话框勾选 */
+const pendingDeriveItems = computed(() =>
+  navItems.value
+    .filter(i => i.label !== 'main' && !imageByLabel(i.label)?.imagePath)
+    .map(i => ({ label: i.label, title: i.title, category: i.category })),
+)
 
 /** 第一张主图（created_at 最早且有图）——换装基准 */
 const firstMainPath = computed<string | null>(() => {
@@ -328,26 +361,27 @@ async function onRegenerate(item: { label: string; category: string }): Promise<
   }
 }
 
-async function onDeriveAll(): Promise<void> {
-  if (!props.assetId || !hasMain.value || generating.value) return
+/** 一键生成：按勾选的 slot 批量派生（以主图为参考，系统固定提示词） */
+async function onBatchDerive(labels: string[]): Promise<void> {
+  if (!props.assetId || labels.length === 0 || generating.value) return
   generating.value = true
-  // 先保存当前编辑的提示词，避免按需提货漏掉最新编辑
-  await onSavePrompt()
-  const items = navItems.value.filter(i => i.label !== 'main' && !imageByLabel(i.label)?.imagePath)
   try {
     const root = (window as any).electronAPI?.episodeProduction?.asset
-    for (const item of items) {
-      // 派生图系统固定（服务端按 slot 拼角度/景别 + 身份锚点），不传用户提示词
+    const main = imageByLabel('main')
+    let ok = 0
+    for (const label of labels) {
+      const item = navItems.value.find(i => i.label === label)
+      if (!item) continue
       const r = await root.derive.single({
         assetType: props.kind,
         assetId: props.assetId,
         category: item.category,
         label: item.label,
-        baseImageId: imageByLabel('main')?.id || null,
+        baseImageId: main?.id || null,
       })
-      if (!r?.success) { ElMessage.warning(`${item.title} 失败：${r?.error}`) }
+      if (r?.success) ok++
     }
-    ElMessage.success('按需提货完成')
+    ElMessage.success(`已生成 ${ok} 张图`)
     await load()
   } catch (e: any) {
     ElMessage.error(e?.message || '批量生成失败')
