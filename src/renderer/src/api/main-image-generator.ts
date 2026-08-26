@@ -105,16 +105,29 @@ function readStoryBackgroundFromCurrentEpisode(): {
  * 为某资产生成主图：拉 effective → 拼 prompt → 调 generate-main IPC。
  * 返回新 main 的 AssetImageEntity（含 imagePath、isMain=1）。
  *
+ * @param opts.promptOverride 用户在图集提示词框编辑的文本；非空时优先于系统拼接的
+ *   effective prompt 作为生图 prompt（角色仍会叠加定妆硬约束）。
  * @throws 拉 effective 失败 / prompt 为空 / IPC 调用失败 / provider 出错
  */
 export async function generateMainFor(
   assetType: AssetType,
   assetId: string,
+  opts?: { promptOverride?: string },
 ): Promise<AssetImageEntity> {
-  const { prompt, negativePrompt, referenceImagePath } = await buildPromptFromEffective(
-    assetType,
-    assetId,
-  )
+  const { prompt: basePrompt, negativePrompt: baseNegative, referenceImagePath } =
+    await buildPromptFromEffective(assetType, assetId)
+
+  const userPrompt = opts?.promptOverride?.trim()
+  const isOverride = !!userPrompt
+  // 用户编辑的提示词优先；未编辑时用系统从 effective 拼接的 prompt
+  let prompt = isOverride ? userPrompt as string : basePrompt
+  let negativePrompt = baseNegative
+  if (isOverride && assetType === 'character') {
+    // buildPromptFromEffective 已对 base prompt 加过定妆约束；override 分支需手动补
+    prompt = appendCharacterConstraints(prompt, 'bust')
+    negativePrompt = mergeCharacterNegative(undefined, 'bust')
+  }
+
   const root = (window as any).electronAPI?.episodeProduction?.asset
   if (!root?.image?.generateMain) {
     throw new Error('image.generateMain IPC 未暴露')

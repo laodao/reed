@@ -661,6 +661,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'episodeProduction.asset.image.setAsMain': { channel: 'ep:asset:image:set-as-main' },
   'episodeProduction.asset.image.delete': { channel: 'ep:asset:image:delete' },
   'episodeProduction.asset.image.update': { channel: 'ep:asset:image:update' },
+  'episodeProduction.asset.image.savePrompt': { channel: 'ep:asset:image:save-prompt' },
   'episodeProduction.asset.image.generateMain': { channel: 'ep:asset:image:generate-main' },
   'episodeProduction.asset.image.uploadMainFile': { channel: 'ep:asset:image:upload-main-file' },
   // spec 2026-05-09 多主图模型

@@ -131,4 +131,31 @@ describe('MainImageGeneratorService', () => {
     expect(cb2Main).toBeTruthy()
     expect(cb1Main?.id).not.toBe(cb2Main?.id)
   })
+
+  it('generateMain: 复用 savePrompt 创建的占位行（无孤儿行）', async () => {
+    // 用户先在图集提示词框编辑 → savePrompt 创建 imagePath='' 的占位行
+    const placeholder = await imageSvc.savePrompt({
+      assetType: 'character',
+      assetId: 'cb1',
+      category: 'main',
+      label: null,
+      prompt: '用户编辑的提示词',
+    })
+    expect(placeholder.imagePath).toBe('')
+    expect(placeholder.isMain).toBe(0)
+
+    const result = await svc.generateMain({
+      assetType: 'character',
+      assetId: 'cb1',
+      prompt: '系统拼接的提示词',
+    })
+    // 复用占位行 id（回填真实图信息），而不是 INSERT 新行
+    expect(result.id).toBe(placeholder.id)
+    expect(result.imagePath).toBe('/mock/main-1.jpg')
+    expect(result.isMain).toBe(1)
+    expect(result.prompt).toContain('系统拼接的提示词')
+
+    const all = await imageSvc.listByAsset('character', 'cb1')
+    expect(all).toHaveLength(1)
+  })
 })

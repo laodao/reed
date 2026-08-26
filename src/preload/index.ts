@@ -297,6 +297,7 @@ const IPC_CHANNELS = {
   EP_ASSET_IMAGE_SET_AS_MAIN: 'ep:asset:image:set-as-main',
   EP_ASSET_IMAGE_DELETE: 'ep:asset:image:delete',
   EP_ASSET_IMAGE_UPDATE: 'ep:asset:image:update',
+  EP_ASSET_IMAGE_SAVE_PROMPT: 'ep:asset:image:save-prompt',
   EP_ASSET_IMAGE_GENERATE_MAIN: 'ep:asset:image:generate-main',
   EP_ASSET_ENRICH_SETTINGS: 'ep:asset:enrich-settings',
   /** spec 2026-05-09 ep-redesign §3.2 B2 · AI 正向字段提取 */
@@ -2521,6 +2522,14 @@ const electronAPI = {
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_DELETE, id),
         update: (id: string, patch: any) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_UPDATE, id, patch),
+        /** 保存图集 slot 提示词（有图更新行；无图创建占位行承载提示词） */
+        savePrompt: (input: {
+          assetType: string
+          assetId: string
+          category: string
+          label?: string | null
+          prompt: string
+        }) => ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_SAVE_PROMPT, input),
         generateMain: (input: any) =>
           ipcRenderer.invoke(IPC_CHANNELS.EP_ASSET_IMAGE_GENERATE_MAIN, input),
         uploadMainFile: (input: { fileName: string; base64: string; assetType: string; assetId: string }) =>

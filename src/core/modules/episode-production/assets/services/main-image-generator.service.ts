@@ -115,6 +115,36 @@ export class MainImageGeneratorService {
       )
       .execute()
 
+    // 复用"待生成占位行"（imagePath='' 且 category='main'）：用户在生成前编辑的提示词
+    // 由 savePrompt 落在占位行上，生成成功后直接回填为真实主图，避免产生孤儿行。
+    const placeholder = await this.imageRepo.findOne({
+      where: {
+        assetType: input.assetType,
+        assetId: input.assetId,
+        category: 'main',
+        imagePath: '',
+      },
+    })
+    if (placeholder) {
+      await this.imageRepo.update(
+        { id: placeholder.id },
+        {
+          label: null,
+          imagePath: result.imagePath,
+          thumbnailPath: result.thumbnailPath ?? null,
+          isMain: 1,
+          sortOrder: 0,
+          derivedFromImageId: null,
+          prompt: effectivePrompt,
+          negativePrompt: effectiveNegative ?? null,
+          updatedAt: new Date(),
+        },
+      )
+      return (await this.imageRepo.findOne({
+        where: { id: placeholder.id },
+      })) as AssetImageEntity
+    }
+
     // 写新主图
     const entity = this.imageRepo.create({
       id: this.generateId(),

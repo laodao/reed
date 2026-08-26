@@ -49,6 +49,7 @@ export function registerAssetImageHandlers(): void {
   ipcBridge.handle('ep:asset:image:set-as-main', handleSetAsMain)
   ipcBridge.handle('ep:asset:image:delete', handleDeleteImage)
   ipcBridge.handle('ep:asset:image:update', handleUpdateImage)
+  ipcBridge.handle('ep:asset:image:save-prompt', handleSavePrompt)
   ipcBridge.handle('ep:asset:image:generate-main', handleGenerateMain)
   ipcBridge.handle('ep:asset:image:upload-main-file', handleUploadMainFile)
   // spec 2026-05-09 多主图模型新增 channel
@@ -156,6 +157,29 @@ async function handleUpdateImage(
   try {
     await buildService().updateImage(imageId, patch)
     return { success: true, data: { updated: true } }
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) }
+  }
+}
+
+/**
+ * 保存某图集 slot 的提示词（有图更新行；无图创建占位行承载提示词）。
+ * 解决"待生成资产提示词无法保存"：asset_image 尚无记录时也能落盘，
+ * 生成主图时占位行会被复用（见 MainImageGeneratorService.generateMain）。
+ */
+async function handleSavePrompt(
+  _event: any,
+  input: {
+    assetType: AssetType
+    assetId: string
+    category: AssetImageCategory
+    label?: string | null
+    prompt: string
+  },
+): Promise<IpcResponse> {
+  try {
+    const data = await buildService().savePrompt(input)
+    return { success: true, data }
   } catch (err: any) {
     return { success: false, error: err?.message ?? String(err) }
   }

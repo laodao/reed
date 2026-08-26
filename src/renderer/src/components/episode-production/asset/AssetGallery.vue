@@ -54,10 +54,9 @@
           </div>
         </div>
         <div class="preview-bottom">
-          <el-input v-model="localPrompt" type="textarea" :rows="2" resize="none" placeholder="镜头提示词…" class="prompt-input" @blur="onSavePrompt" />
-          <el-button type="primary" :loading="generating" @click="onGenerateCurrent">
+          <el-input v-model="localPrompt" type="textarea" :rows="5" resize="vertical" placeholder="镜头提示词…" class="prompt-input" @blur="onSavePrompt" />
+          <el-button type="primary" circle :loading="generating" title="生成图片" @click="onGenerateCurrent">
             <el-icon><MagicStick /></el-icon>
-            生成图片
           </el-button>
         </div>
       </main>
@@ -170,8 +169,24 @@ async function onGenerate(item: { label: string; category: string }): Promise<vo
   if (!props.assetId || generating.value) return
   generating.value = true
   try {
+    // 先落盘当前编辑的提示词（待生成 slot 会建占位行；已有图则更新），
+    // 保证生成时使用用户最新编辑的提示词，且生成后输入框内容不丢。
+    await onSavePrompt()
     if (item.label === 'main') {
-      const img = await generateMainFor(props.kind, props.assetId)
+      // 生成主图：用户编辑过（占位行无图 / 文本有改动）时用用户提示词，否则用系统拼接
+      const sel = imageByLabel('main')
+      const override =
+        sel && !sel.imagePath && localPrompt.value.trim()
+          ? localPrompt.value
+          : localPrompt.value !== (sel?.prompt || '')
+            ? localPrompt.value
+            : undefined
+      const img = await generateMainFor(
+        props.kind,
+        props.assetId,
+        override ? { promptOverride: override } : undefined,
+      )
+      void img
       ElMessage.success('主图已生成')
     } else {
       const root = (window as any).electronAPI?.episodeProduction?.asset
@@ -182,7 +197,7 @@ async function onGenerate(item: { label: string; category: string }): Promise<vo
         category: item.category,
         label: item.label,
         baseImageId: main?.id || null,
-        additionalPrompt: item.title,
+        additionalPrompt: localPrompt.value.trim() || item.title,
       })
       if (!r?.success) { ElMessage.error(r?.error || '生成失败'); generating.value = false; return }
       ElMessage.success(`${item.title} 已生成`)
@@ -204,17 +219,22 @@ async function onGenerateCurrent(): Promise<void> {
 async function onDeriveAll(): Promise<void> {
   if (!props.assetId || !hasMain.value || generating.value) return
   generating.value = true
+  // 先保存当前编辑的提示词，避免按需提货漏掉最新编辑
+  await onSavePrompt()
   const items = navItems.value.filter(i => i.label !== 'main' && !imageByLabel(i.label)?.imagePath)
   try {
     const root = (window as any).electronAPI?.episodeProduction?.asset
     for (const item of items) {
+      // 该 slot 已编辑过提示词（占位行）→ 用占位行 prompt；否则用 slot 标题作补充提示
+      const existing = images.value.find(i => i.label === item.label)
+      const addPrompt = existing?.prompt?.trim() || item.title
       const r = await root.derive.single({
         assetType: props.kind,
         assetId: props.assetId,
         category: item.category,
         label: item.label,
         baseImageId: imageByLabel('main')?.id || null,
-        additionalPrompt: item.title,
+        additionalPrompt: addPrompt,
       })
       if (!r?.success) { ElMessage.warning(`${item.title} 失败：${r?.error}`) }
     }
@@ -228,13 +248,40 @@ async function onDeriveAll(): Promise<void> {
 }
 
 async function onSavePrompt(): Promise<void> {
-  const sel = selectedImage.value
-  if (!sel?.id) return
-  if (localPrompt.value === (sel.prompt || '')) return
+  const text = localPrompt.value
   const root = (window as any).electronAPI?.episodeProduction?.asset
-  const r = await root.image.update(sel.id, { prompt: localPrompt.value })
-  if (r?.success) ElMessage.success('提示词已保存')
-  else ElMessage.error(r?.error || '保存失败')
+  const sel = selectedImage.value
+
+  // 已有图：更新该行
+  if (sel?.id) {
+    if (text === (sel.prompt || '')) return
+    const r = await root.image.update(sel.id, { prompt: text })
+    if (r?.success) ElMessage.success('提示词已保存')
+    else ElMessage.error(r?.error || '保存失败')
+    return
+  }
+
+  // 待生成 slot（尚无 asset_image 行）：内容为空无需保存；非空则创建占位行承载提示词
+  const item = selectedItem.value
+  if (!item) return
+  if (!text.trim()) return
+  const r = await root.image.savePrompt({
+    assetType: props.kind,
+    assetId: props.assetId,
+    category: item.category,
+    label: item.label === 'main' ? null : item.label,
+    prompt: text,
+  })
+  if (r?.success && r.data) {
+    // 把占位行并入 images（不整表刷新，避免 selectedLabel 跳回 main）
+    const saved = r.data
+    const idx = images.value.findIndex(i => i.id === saved.id)
+    if (idx >= 0) images.value[idx] = saved
+    else images.value.push(saved)
+    ElMessage.success('提示词已保存')
+  } else {
+    ElMessage.error(r?.error || '保存失败')
+  }
 }
 
 watch(() => [props.assetId, props.kind], () => void load())
@@ -327,7 +374,12 @@ onMounted(() => void load())
   margin: 14px 20px 0;
   border-radius: var(--radius-lg);
   overflow: hidden;
-  .preview-img { max-width: 100%; max-height: 100%; }
+  .preview-img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    :deep(.el-image__inner) { object-fit: contain; }
+  }
   .preview-empty {
     display: flex;
     flex-direction: column;
@@ -350,7 +402,7 @@ onMounted(() => void load())
   padding: 12px 20px 16px;
   .prompt-input {
     flex: 1;
-    :deep(.el-textarea__inner) { font-size: 13px; }
+    :deep(.el-textarea__inner) { font-size: 13px; line-height: 1.6; }
   }
 }
 

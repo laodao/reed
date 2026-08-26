@@ -14,6 +14,7 @@
 
 import { randomBytes } from 'crypto'
 import type { DataSource, Repository } from 'typeorm'
+import { getCurrentUserId } from '@core/context/user-context'
 import {
   AssetImageEntity,
   type AssetType,
@@ -21,6 +22,17 @@ import {
 } from '@core/database/entities/episode-production/asset-image.entity'
 
 export type { AssetType, AssetImageCategory }
+
+/** 提示词保存入参（有图更新行；无图创建 imagePath='' 的占位行承载提示词） */
+export interface SavePromptInput {
+  assetType: AssetType
+  assetId: string
+  /** 占位行的用途分类（无已有行时使用；main 之外的 slot 如 view/variant） */
+  category: AssetImageCategory
+  /** 占位行 label（对应图集 slot，如 front_half / variant_1；main slot 传 null） */
+  label?: string | null
+  prompt: string
+}
 
 /** 添加一张图的入参 */
 export interface AddImageInput {
@@ -242,9 +254,97 @@ export class AssetImageService {
     >,
   ): Promise<void> {
     if (Object.keys(patch).length === 0) return
-    await this.repo.update(
+    const result = await this.repo.update(
       { id: imageId },
       { ...patch, updatedAt: new Date() },
     )
+    if (result && result.affected === 0) {
+      throw new Error(`AssetImage 不存在: ${imageId}`)
+    }
+  }
+
+  /**
+   * 保存某 asset 某个图集 slot 的提示词。
+   *
+   * 目标行解析：
+   *   - label 有值（view/variant slot，如 front_half / variant_1）：只按 label 精确匹配，
+   *     无匹配则创建对应 slot 的占位行（imagePath=''）。绝不兜底到主图（避免写错行）。
+   *   - label 为空（main slot）：isMain=1 的默认主图 → 最早的 category='main' 行 →
+   *     创建 main 占位行。
+   *
+   * 占位行 imagePath 为空字符串，前端按 `!!imagePath` 判定仍为"待生成"；
+   * 生成主图时会被复用（见 MainImageGeneratorService.generateMain），不会产生孤儿行。
+   */
+  async savePrompt(input: SavePromptInput): Promise<AssetImageEntity> {
+    if (!input.prompt.trim()) {
+      throw new Error('提示词不能为空')
+    }
+
+    const slotLabel = input.label?.trim() || null
+
+    // ── 非 main slot：只按 label 精确匹配 ──
+    if (slotLabel) {
+      const target = await this.repo.findOne({
+        where: {
+          assetType: input.assetType,
+          assetId: input.assetId,
+          label: slotLabel,
+        },
+      })
+      if (target) {
+        await this.repo.update(
+          { id: target.id },
+          { prompt: input.prompt, updatedAt: new Date() },
+        )
+        return (await this.repo.findOne({ where: { id: target.id } })) as AssetImageEntity
+      }
+      return await this.createPlaceholder(input, slotLabel)
+    }
+
+    // ── main slot：默认主图 → 最早 main 行 → 占位行 ──
+    let target = await this.repo.findOne({
+      where: { assetType: input.assetType, assetId: input.assetId, isMain: 1 },
+    })
+    if (!target) {
+      target = await this.repo.findOne({
+        where: { assetType: input.assetType, assetId: input.assetId, category: 'main' },
+        order: { createdAt: 'ASC' },
+      })
+    }
+    if (target) {
+      await this.repo.update(
+        { id: target.id },
+        { prompt: input.prompt, updatedAt: new Date() },
+      )
+      return (await this.repo.findOne({ where: { id: target.id } })) as AssetImageEntity
+    }
+    return await this.createPlaceholder(input, null)
+  }
+
+  /** 创建 imagePath='' 的占位行（承载待生成提示词） */
+  private async createPlaceholder(
+    input: SavePromptInput,
+    label: string | null,
+  ): Promise<AssetImageEntity> {
+    const entity = this.repo.create({
+      id: this.generateId(),
+      userId: getCurrentUserId() ?? null,
+      assetType: input.assetType,
+      assetId: input.assetId,
+      category: input.category,
+      label,
+      imagePath: '',
+      thumbnailPath: null,
+      // 占位行一律 isMain=0：避免 getMainImage（isMain=1）把无图行当主图返回给消费方；
+      // 前端 imageByLabel 的 category='main' 兜底仍能选中它作为当前编辑对象。
+      isMain: 0,
+      sortOrder: 0,
+      derivedFromImageId: null,
+      prompt: input.prompt,
+      negativePrompt: null,
+      createdAt: new Date(),
+      updatedAt: null,
+    } as Partial<AssetImageEntity>)
+    return await this.repo.save(entity)
   }
 }
