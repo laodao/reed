@@ -6,10 +6,11 @@
  *  - data-table：op=insert/query/update/delete 操作数据表（insert 支持按名自动建表）
  */
 
-import type { WorkflowNodeContext } from '../engine/node-handler'
+import type { WorkflowNodeContext, WorkflowNodeExecutionResult } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
 import { getVariableDataService } from '../variables/variable-data.service'
+import { getDataSourceService } from '../datasource/datasource.service'
 import { VARIABLE_SCOPES, type VariableScope } from '@shared/types/variable.types'
 
 // ==================== 变量 ====================
@@ -60,19 +61,29 @@ const dataTableNode: WorkflowNodeHandler = {
   validateConfig(config) {
     const cfg = config as { op?: string }
     const errors: string[] = []
-    if (!cfg.op || !['insert', 'query', 'update', 'delete'].includes(cfg.op)) {
-      errors.push('op 必须是 insert/query/update/delete')
+    if (!cfg.op || !['insert', 'query', 'update', 'delete', 'execute'].includes(cfg.op)) {
+      errors.push('op 必须是 insert/query/update/delete/execute')
     }
     return errors
   },
   async execute(ctx: WorkflowNodeContext) {
     const cfg = ctx.config as {
-      op: 'insert' | 'query' | 'update' | 'delete'
+      op: 'insert' | 'query' | 'update' | 'delete' | 'execute'
+      dataSourceId?: string
       tableId?: string
       tableName?: string
       row?: string
       rowId?: string
+      sql?: string
+      params?: string
     }
+
+    // 外部数据源模式：读写第三方数据库（路由到数据源驱动）
+    if (cfg.dataSourceId) {
+      return executeExternalDataTable(ctx, cfg)
+    }
+
+    // 内置数据表模式（本应用 wf_data_table_*）
     const svc = getVariableDataService()
     switch (cfg.op) {
       case 'insert': {
@@ -105,8 +116,43 @@ const dataTableNode: WorkflowNodeHandler = {
         await svc.deleteRow(cfg.rowId)
         return { status: 'succeeded', output: { ok: true } }
       }
+      default:
+        return { status: 'failed', error: 'data-table: 内置模式不支持 execute，请配置数据源', retryable: false }
     }
   },
+}
+
+/**
+ * 外部数据源模式：路由到 DataSourceService 执行 SQL（参数化，防注入）。
+ * - query/execute：执行 SQL（SELECT 或 DML/DDL），返回 rows/columns/rowCount
+ * SQL 占位符用 $1,$2,...，值取自 params（JSON 数组）。
+ */
+async function executeExternalDataTable(
+  ctx: WorkflowNodeContext,
+  cfg: { op: 'insert' | 'query' | 'update' | 'delete' | 'execute'; dataSourceId: string; sql?: string; params?: string },
+): Promise<WorkflowNodeExecutionResult> {
+  const ds = getDataSourceService()
+  if (!cfg.sql || !cfg.sql.trim()) {
+    return { status: 'failed', error: 'data-table: 外部数据源模式需要填写 SQL', retryable: false }
+  }
+  let parameters: unknown[] = []
+  if (cfg.params) {
+    try {
+      const parsed = JSON.parse(cfg.params)
+      if (Array.isArray(parsed)) parameters = parsed
+    } catch {
+      return { status: 'failed', error: 'data-table: params 必须是 JSON 数组', retryable: false }
+    }
+  }
+  try {
+    const result = await ds.execute(cfg.dataSourceId, cfg.sql, parameters)
+    return {
+      status: 'succeeded',
+      output: { columns: result.columns, rows: result.rows, rowCount: result.rowCount, durationMs: result.durationMs },
+    }
+  } catch (e: any) {
+    return { status: 'failed', error: e?.message || '外部数据源执行失败', retryable: true }
+  }
 }
 
 export const VARIABLE_NODE_HANDLERS: WorkflowNodeHandler[] = [variableNode, dataTableNode]

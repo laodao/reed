@@ -50,6 +50,7 @@ export { ReferenceVideoAnalysisEntity } from './episode-production/reference-vid
 export { ImageAssetEntity } from './image-asset.entity'
 export { LwCharacterEntity } from './lw-character.entity'
 export { OSSConfigEntity } from './oss-config.entity'
+export { DataSourceEntity } from './datasource.entity'
 export { LwProjectEntity } from './lw-project.entity'
 export { LwProjectModelConfigEntity } from './lw-project-model-config.entity'
 export { LwStoryOverviewEntity } from './lw-story-overview.entity'

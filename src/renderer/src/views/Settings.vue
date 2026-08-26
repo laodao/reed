@@ -169,6 +169,11 @@
           <EmailSettings />
         </el-tab-pane>
 
+        <!-- 数据源（工作流「数据表」节点连接的外部数据库） -->
+        <el-tab-pane label="数据库数据源" name="datasource">
+          <DataSourceManager />
+        </el-tab-pane>
+
         <!-- 数据管理 -->
         <el-tab-pane label="数据路径" name="data">
           <div class="settings-section">
@@ -692,6 +697,7 @@ import AddProviderDialog from '@/components/settings/AddProviderDialog.vue'
 import AddSearchEngineDialog from '@/components/settings/AddSearchEngineDialog.vue'
 import ToolSettings from '@/components/settings/ToolSettings.vue'
 import EmailSettings from '@/components/settings/EmailSettings.vue'
+import DataSourceManager from '@/components/settings/DataSourceManager.vue'
 import type {
   ProviderTemplate,
   UserProviderConfig

@@ -96,6 +96,7 @@ import { StoryboardCharacterRepository } from '@core/database/repositories/story
 import { StoryboardKeyframeRepository } from '@core/database/repositories/storyboard-keyframe.repository'
 import { ImageAssetRepository } from '@core/database/repositories/image-asset.repository'
 import { OSSConfigRepository } from '@core/database/repositories/oss-config.repository'
+import { DataSourceRepository } from '@core/database/repositories/datasource.repository'
 import { AssetImageRepository } from '@core/database/repositories/asset-image.repository'
 import { AssetRepository } from '@core/database/repositories/asset.repository'
 import { AssetGroupRepository } from '@core/database/repositories/asset-group.repository'
@@ -114,6 +115,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   providerConfigs: ProviderConfigRepository | null
   searchEngineConfigs: SearchEngineConfigRepository | null
   ossConfigs: OSSConfigRepository | null
+  dataSources: DataSourceRepository | null
   // 对话 / 角色
   dialogs: DialogRepository | null
   messages: MessageRepository | null
@@ -223,6 +225,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.providerConfigs = new ProviderConfigRepository(ds)
     this.searchEngineConfigs = new SearchEngineConfigRepository(ds)
     this.ossConfigs = new OSSConfigRepository(ds)
+    this.dataSources = new DataSourceRepository(ds)
 
     this.dialogs = new DialogRepository(ds)
     this.messages = new MessageRepository(ds)

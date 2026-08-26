@@ -155,6 +155,16 @@ export async function initWorkflowSubsystem(): Promise<WorkflowSubsystem> {
   } catch (e) {
     logger.error('[workflow-boot] 变量/数据表服务装配失败（继续启动）', e)
   }
+  // 9.1 数据源：外部数据库连接服务 + 驱动注册（data-table 节点外部模式取用）
+  try {
+    const { DataSourceService, registerDataSourceService } = await import('./datasource/datasource.service')
+    const { registerDataSourceDriver } = await import('./datasource/datasource-executor.service')
+    const { PostgresDriverAdapter } = await import('./datasource/drivers/postgresql-driver')
+    registerDataSourceDriver(new PostgresDriverAdapter())
+    registerDataSourceService(new DataSourceService(db.dataSources!))
+  } catch (e) {
+    logger.error('[workflow-boot] 数据源服务/驱动装配失败（继续启动）', e)
+  }
   // 10. 通用资产库：保存资产/读取资产节点与资产中心 IPC 取用
   if (!db.assets) {
     throw new Error('资产仓库未初始化（数据库管理器缺少 assets 仓库）')

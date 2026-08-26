@@ -158,6 +158,17 @@ async function loadDynamicOptions() {
       }
     } catch { /* 列表失败时退化为手填 */ }
   }
+  if (sources.has('dataSources')) {
+    try {
+      const resp = await api.datasource.listEligible()
+      if (resp.success && resp.data) {
+        dynamicOptions.value.dataSources = resp.data.map((s: any) => ({
+          label: `${s.name}（${s.host}:${s.port}/${s.database}）`,
+          value: s.id,
+        }))
+      }
+    } catch { /* 列表失败时退化为手填 */ }
+  }
 }
 watch(() => props.node.id, loadDynamicOptions, { immediate: true })
 

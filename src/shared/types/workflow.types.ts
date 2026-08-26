@@ -450,13 +450,20 @@ export interface WorkflowNodeConfigMap {
   }
 
   'data-table': {
-    /** insert=插入行（表不存在按名自动建）/ query=查全部 / update=按 rowId 更新 / delete=按 rowId 删 */
-    op: 'insert' | 'query' | 'update' | 'delete'
+    /** 内置模式：insert=插入行（表不存在按名自动建）/ query=查全部 / update=按 rowId 更新 / delete=按 rowId 删
+     *  外部模式（dataSourceId 已设置）：query=执行 SELECT / execute=执行 DML/DDL */
+    op: 'insert' | 'query' | 'update' | 'delete' | 'execute'
+    /** 可选：数据源 id。设置后读写第三方数据库（外部连接）；留空则读写本应用内置数据表 */
+    dataSourceId?: string
     tableId?: string
     tableName?: string
     /** insert/update 的行 JSON（模板可用，如 {"name":"{{start.name}}"}） */
     row?: string
     rowId?: string
+    /** 外部模式 SQL（SELECT/DML；参数用 $1,$2 占位，值取自 params） */
+    sql?: string
+    /** 外部模式参数值（JSON 数组，与 SQL 占位符一一对应） */
+    params?: string
   }
 
   'save-asset': {

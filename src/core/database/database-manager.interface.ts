@@ -82,6 +82,7 @@ import type { WorkflowRunRepository } from './repositories/workflow-run.reposito
 import type { WorkflowNodeRunRepository } from './repositories/workflow-node-run.repository'
 import type { MessageRepository } from './repositories/message.repository'
 import type { OSSConfigRepository } from './repositories/oss-config.repository'
+import type { DataSourceRepository } from './repositories/datasource.repository'
 import type { PortraitCharacterRepository } from './repositories/portrait-character.repository'
 import type { PortraitProjectRepository } from './repositories/portrait-project.repository'
 import type { PortraitVariantRepository } from './repositories/portrait-variant.repository'
@@ -122,6 +123,8 @@ export interface ICoreDatabaseManager {
   providerConfigs: ProviderConfigRepository | null
   searchEngineConfigs: SearchEngineConfigRepository | null
   ossConfigs: OSSConfigRepository | null
+  /** 第三方数据库数据源（工作流「数据库」节点连接配置） */
+  dataSources: DataSourceRepository | null
 
   // ---- 对话 / 角色 ----
   dialogs: DialogRepository | null

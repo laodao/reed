@@ -366,7 +366,16 @@ const IPC_CHANNELS = {
   OSS_SET_DEFAULT: 'oss:set-default',
   OSS_TOGGLE_ENABLED: 'oss:toggle-enabled',
   OSS_TEST_CONNECTION: 'oss:test-connection',
-  OSS_UPLOAD_FILE: 'oss:upload-file'
+  OSS_UPLOAD_FILE: 'oss:upload-file',
+
+  // 数据源（第三方数据库）
+  DATASOURCE_LIST: 'datasource:list',
+  DATASOURCE_LIST_ELIGIBLE: 'datasource:list-eligible',
+  DATASOURCE_CREATE: 'datasource:create',
+  DATASOURCE_UPDATE: 'datasource:update',
+  DATASOURCE_DELETE: 'datasource:delete',
+  DATASOURCE_TOGGLE_ENABLED: 'datasource:toggle-enabled',
+  DATASOURCE_TEST_CONNECTION: 'datasource:test-connection'
 } as const
 
 /**
@@ -2740,6 +2749,35 @@ const electronAPI = {
       fileName?: string
     }) =>
       ipcRenderer.invoke(IPC_CHANNELS.OSS_UPLOAD_FILE, request)
+  },
+
+  datasource: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.DATASOURCE_LIST),
+    listEligible: () => ipcRenderer.invoke(IPC_CHANNELS.DATASOURCE_LIST_ELIGIBLE),
+    create: (req: {
+      name: string
+      driver: string
+      host: string
+      port: number
+      database: string
+      username?: string
+      password?: string
+      ssl?: boolean
+    }) => ipcRenderer.invoke(IPC_CHANNELS.DATASOURCE_CREATE, req),
+    update: (id: string, req: {
+      name?: string
+      driver?: string
+      host?: string
+      port?: number
+      database?: string
+      username?: string
+      password?: string
+      ssl?: boolean
+      isEnabled?: boolean
+    }) => ipcRenderer.invoke(IPC_CHANNELS.DATASOURCE_UPDATE, { id, req }),
+    delete: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.DATASOURCE_DELETE, id),
+    toggleEnabled: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.DATASOURCE_TOGGLE_ENABLED, id),
+    testConnection: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.DATASOURCE_TEST_CONNECTION, id)
   },
 
   // 错误处理

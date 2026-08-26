@@ -4,18 +4,29 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('@core/modules/workflow/variables/variable-data.service', () => ({
-  getVariableDataService: vi.fn(),
-  registerVariableDataService: vi.fn(),
+vi.mock('@core/modules/workflow/variables/variable-data.service', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@core/modules/workflow/variables/variable-data.service')>()
+  return {
+    ...actual,
+    getVariableDataService: vi.fn(),
+    registerVariableDataService: vi.fn(),
+  }
+})
+
+vi.mock('@core/modules/workflow/datasource/datasource.service', () => ({
+  getDataSourceService: vi.fn(),
+  registerDataSourceService: vi.fn(),
 }))
 
 import { VARIABLE_NODE_HANDLERS } from '@core/modules/workflow/nodes/variable-nodes'
 import { getVariableDataService } from '@core/modules/workflow/variables/variable-data.service'
+import { getDataSourceService } from '@core/modules/workflow/datasource/datasource.service'
 import { VariableDataService } from '@core/modules/workflow/variables/variable-data.service'
 import { NODE_TYPE_CATALOG_MAP } from '@shared/types/workflow-node-catalog'
 import { WORKFLOW_NODE_TYPES } from '@shared/types/workflow.types'
 
 const svcMock = vi.mocked(getVariableDataService)
+const dsMock = vi.mocked(getDataSourceService)
 const [variableNode, dataTableNode] = VARIABLE_NODE_HANDLERS
 
 const baseCtx = (config: Record<string, unknown>) =>
@@ -87,7 +98,7 @@ describe('variable 节点', () => {
 })
 
 describe('data-table 节点', () => {
-  beforeEach(() => { svcMock.mockReset() })
+  beforeEach(() => { svcMock.mockReset(); dsMock.mockReset() })
 
   it('insert 自动建表 + 返回 tableId/rowId；query 全查', async () => {
     const { defs, rows } = setupSvc()
@@ -123,6 +134,34 @@ describe('data-table 节点', () => {
     expect(bad.status).toBe('failed')
     const noRowId = await dataTableNode.execute(baseCtx({ op: 'update', row: '{}' }))
     expect(noRowId.status).toBe('failed')
+  })
+
+  it('外部数据源模式：dataSourceId 已设 → 路由到数据源执行 SQL（参数化）', async () => {
+    const fakeDs = {
+      execute: vi.fn().mockResolvedValue({ columns: ['id', 'name'], rows: [{ id: 1, name: 'a' }], rowCount: 1, durationMs: 3 }),
+    }
+    dsMock.mockReturnValue(fakeDs as never)
+    const r = await dataTableNode.execute(baseCtx({
+      op: 'query', dataSourceId: 'ds_1', sql: 'SELECT * FROM t WHERE id=$1', params: '[1]',
+    }))
+    expect(r.status).toBe('succeeded')
+    if (r.status === 'succeeded') {
+      expect(r.output.rows).toEqual([{ id: 1, name: 'a' }])
+      expect(r.output.columns).toEqual(['id', 'name'])
+    }
+    expect(fakeDs.execute).toHaveBeenCalledWith('ds_1', 'SELECT * FROM t WHERE id=$1', [1])
+  })
+
+  it('外部数据源模式：缺 SQL → failed；params 非法 JSON → failed；执行抛错 → failed 可重试', async () => {
+    const fakeDs = { execute: vi.fn().mockRejectedValue(new Error('连接超时')) }
+    dsMock.mockReturnValue(fakeDs as never)
+    const noSql = await dataTableNode.execute(baseCtx({ op: 'query', dataSourceId: 'ds_1' }))
+    expect(noSql.status).toBe('failed')
+    const badParams = await dataTableNode.execute(baseCtx({ op: 'query', dataSourceId: 'ds_1', sql: 'SELECT 1', params: 'not-json' }))
+    expect(badParams.status).toBe('failed')
+    const throwing = await dataTableNode.execute(baseCtx({ op: 'query', dataSourceId: 'ds_1', sql: 'SELECT 1' }))
+    expect(throwing.status).toBe('failed')
+    if (throwing.status === 'failed') expect(throwing.retryable).toBe(true)
   })
 })
 

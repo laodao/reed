@@ -101,6 +101,7 @@ import { StoryboardCharacterRepository } from '@core/database/repositories/story
 import { StoryboardKeyframeRepository } from '@core/database/repositories/storyboard-keyframe.repository'
 import { ImageAssetRepository } from '@core/database/repositories/image-asset.repository'
 import { OSSConfigRepository } from '@core/database/repositories/oss-config.repository'
+import { DataSourceRepository } from '@core/database/repositories/datasource.repository'
 import { DataPathService } from '../services/data-path.service'
 import { LanceDBService } from '@core/services/lance-db.service'
 
@@ -238,6 +239,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
 
   // OSS 配置仓库
   public ossConfigs: OSSConfigRepository | null = null
+  public dataSources: DataSourceRepository | null = null
 
   private constructor() {
     // 默认使用 userData 路径，后续会在 initialize 中更新
@@ -4340,6 +4342,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.ossConfigs = new OSSConfigRepository(this.dataSource)
     await this.ossConfigs.initTable()
     console.log('[DatabaseManager] OSS 配置仓库已初始化')
+
+    // 初始化数据源仓库（第三方数据库连接；表通过 initTable 创建）
+    this.dataSources = new DataSourceRepository(this.dataSource)
+    await this.dataSources.initTable()
+    console.log('[DatabaseManager] 数据源仓库已初始化')
   }
 
   /**
