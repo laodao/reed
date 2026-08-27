@@ -81,9 +81,15 @@ export class WorkflowDefinitionEntity {
   /**
    * C3 分享令牌（免登录独立页）：启用分享时生成的随机 token；null = 未分享。
    * 唯一索引（NULL 不参与唯一性，SQLite/PG 均允许多行 NULL）。
+   * ⚠️ 2026-08-27 安全整改：新令牌只存 sha256 hash（share_token_hash），
+   * 本列仅保留历史明文（迁移期兼容；新启用分享时置 null）。
    */
   @Column({ name: 'share_token', type: 'varchar', nullable: true })
   shareToken!: string | null
+
+  /** C3 分享令牌的 sha256 hash（新启用分享时存此列，不明文落库） */
+  @Column({ name: 'share_token_hash', type: 'varchar', nullable: true })
+  shareTokenHash!: string | null
 
   @Column({ name: 'created_at', type: 'datetime', nullable: true })
   createdAt!: Date | null

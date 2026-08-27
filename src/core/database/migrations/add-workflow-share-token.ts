@@ -26,10 +26,21 @@ export async function addWorkflowShareToken(ds: DataSource): Promise<void> {
     console.log('[add-workflow-share-token] 加列 share_token')
   }
 
+  // 安全整改（2026-08-27）：新分享令牌只存 sha256 hash，不明文落库
+  if (!(await checkColumnExists(ds, 'workflow_definitions', 'share_token_hash', isPg))) {
+    await ds.query(`ALTER TABLE workflow_definitions ADD COLUMN share_token_hash ${varcharType}`)
+    console.log('[add-workflow-share-token] 加列 share_token_hash')
+  }
+
   if (!(await checkIndexExists(ds, 'idx_wf_def_share_token', isPg))) {
     // 唯一索引：NULL 不参与唯一性（未分享的多行互不冲突）
     await ds.query(`CREATE UNIQUE INDEX idx_wf_def_share_token ON workflow_definitions (share_token)`)
     console.log('[add-workflow-share-token] 加唯一索引 idx_wf_def_share_token')
+  }
+
+  if (!(await checkIndexExists(ds, 'idx_wf_def_share_token_hash', isPg))) {
+    await ds.query(`CREATE UNIQUE INDEX idx_wf_def_share_token_hash ON workflow_definitions (share_token_hash)`)
+    console.log('[add-workflow-share-token] 加唯一索引 idx_wf_def_share_token_hash')
   }
 }
 

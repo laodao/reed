@@ -125,19 +125,25 @@ export class WorkflowDefinitionService {
 
   // ==================== C3 分享（免登录独立页） ====================
 
-  /** 启用分享：仅已发布定义可分享；生成 256bit 随机令牌（幂等——已分享则原样返回） */
+  /** 启用分享：仅已发布定义可分享；生成 256bit 随机令牌，**只存 sha256 hash**（不明文落库）。
+   *  明文 token 仅在本次响应返回（前端展示/复制链接）。已分享时轮换令牌（旧链接失效，
+   *  分享即授权语义一致；轮换成本低）。 */
   async enableShare(id: string): Promise<WorkflowDefinitionRecord | null> {
     const def = await this.repo.getById(id)
     if (!def) throw new Error('工作流不存在')
     if (def.publishedVersion <= 0) throw new Error('只有已发布的工作流才能分享')
-    if (def.shareToken) return def
     const token = crypto.randomBytes(32).toString('hex')
-    return this.repo.update(id, { shareToken: token })
+    const hash = crypto.createHash('sha256').update(token).digest('hex')
+    // 新令牌存 hash；历史明文列置 null（存量数据保留在 share_token 列，查询按 hash 优先 + 明文兼容）
+    const updated = await this.repo.update(id, { shareToken: null, shareTokenHash: hash })
+    if (!updated) throw new Error('启用分享失败')
+    // 明文 token 仅本次响应返回（不落库）
+    return { ...updated, shareToken: token }
   }
 
-  /** 停止分享：清除令牌（历史分享链接立即失效） */
+  /** 停止分享：清除令牌 hash 与历史明文（历史分享链接立即失效） */
   async disableShare(id: string): Promise<WorkflowDefinitionRecord | null> {
-    return this.repo.update(id, { shareToken: null })
+    return this.repo.update(id, { shareToken: null, shareTokenHash: null })
   }
 
   /**

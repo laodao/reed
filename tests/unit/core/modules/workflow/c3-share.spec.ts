@@ -31,13 +31,25 @@ function setup() {
 }
 
 describe('C3 分享：enableShare / disableShare', () => {
-  it('已发布定义启用分享 → 生成 64 位 hex 令牌；幂等（重复启用原样返回）', async () => {
+  it('已发布定义启用分享 → 返回 64 位 hex 明文令牌；落库只存 sha256 hash（不明文）', async () => {
     const { repo, service } = setup()
-    repo.rows.set('d1', { id: 'd1', name: 'wf', publishedVersion: 3, shareToken: null })
+    repo.rows.set('d1', { id: 'd1', name: 'wf', publishedVersion: 3, shareToken: null, shareTokenHash: null })
     const r1 = await service.enableShare('d1')
     expect(r1!.shareToken).toMatch(/^[0-9a-f]{64}$/)
+    // 明文只出现在响应；库中 share_token 为 null、share_token_hash 为 sha256
+    expect(repo.rows.get('d1').shareToken).toBeNull()
+    expect(repo.rows.get('d1').shareTokenHash).toMatch(/^[0-9a-f]{64}$/)
+    expect(repo.rows.get('d1').shareTokenHash).not.toBe(r1!.shareToken)
+  })
+
+  it('重复启用 → 轮换新令牌（旧令牌立即失效）', async () => {
+    const { repo, service } = setup()
+    repo.rows.set('d1', { id: 'd1', name: 'wf', publishedVersion: 3, shareToken: null, shareTokenHash: null })
+    const r1 = await service.enableShare('d1')
+    const firstHash = repo.rows.get('d1').shareTokenHash
     const r2 = await service.enableShare('d1')
-    expect(r2!.shareToken).toBe(r1!.shareToken)
+    expect(r2!.shareToken).not.toBe(r1!.shareToken)
+    expect(repo.rows.get('d1').shareTokenHash).not.toBe(firstHash) // 轮换 → 新 hash
   })
 
   it('未发布定义不可分享', async () => {
@@ -46,11 +58,12 @@ describe('C3 分享：enableShare / disableShare', () => {
     await expect(service.enableShare('d2')).rejects.toThrow('发布')
   })
 
-  it('停止分享清除令牌 → 历史链接立即失效（findByShareToken 落空）', async () => {
+  it('停止分享清除令牌 hash 与历史明文 → 历史链接立即失效', async () => {
     const { repo, service } = setup()
-    repo.rows.set('d3', { id: 'd3', name: 'wf', publishedVersion: 1, shareToken: 'tok_abc', userId: 'u1' })
+    repo.rows.set('d3', { id: 'd3', name: 'wf', publishedVersion: 1, shareToken: 'tok_abc', shareTokenHash: 'h'.repeat(64), userId: 'u1' })
     await service.disableShare('d3')
     expect(repo.rows.get('d3').shareToken).toBeNull()
+    expect(repo.rows.get('d3').shareTokenHash).toBeNull()
     expect(await repo.findByShareToken('tok_abc')).toBeNull()
   })
 })

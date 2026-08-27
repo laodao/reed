@@ -21,6 +21,7 @@ import type {
 import { WorkflowDefinitionEntity } from '../entities/workflow-definition.entity'
 import { BaseRepository } from '../base-repository'
 import { getCurrentUserId } from '@core/context/user-context'
+import { createHash } from 'node:crypto'
 import { createLogger } from '@core/utils/logger'
 
 const logger = createLogger('WorkflowDefinitionRepository')
@@ -43,6 +44,8 @@ export interface WorkflowDefinitionRecord {
   lastFireAt: Date | null
   lastRunAt: Date | null
   shareToken: string | null
+  /** 分享令牌 sha256 hash（新启用分享时存此列；历史明文在 shareToken 兼容） */
+  shareTokenHash: string | null
   /** 内置工作流（全局共享，禁删禁改；1=内置） */
   isBuiltin?: boolean
   createdAt: Date | null
@@ -74,8 +77,10 @@ export interface UpdateWorkflowDefinitionInput {
   nextFireAt?: Date | null
   lastFireAt?: Date | null
   lastRunAt?: Date | null
-  /** C3 分享令牌（service 生成/清除；null = 停止分享） */
+  /** C3 分享令牌（service 生成/清除；null = 停止分享）。⚠️ 新令牌存 shareTokenHash */
   shareToken?: string | null
+  /** C3 分享令牌 sha256 hash（service 生成/清除；null = 停止分享） */
+  shareTokenHash?: string | null
 }
 
 /** 到期 cron 触发器扫描结果（跨租户） */
@@ -123,6 +128,7 @@ export class WorkflowDefinitionRepository extends BaseRepository<
       lastFireAt: e.lastFireAt,
       lastRunAt: e.lastRunAt,
       shareToken: e.shareToken,
+      shareTokenHash: e.shareTokenHash,
       isBuiltin: e.isBuiltin === 1,
       createdAt: e.createdAt,
       updatedAt: e.updatedAt,
@@ -225,6 +231,7 @@ export class WorkflowDefinitionRepository extends BaseRepository<
     if (patch.lastFireAt !== undefined) partial.lastFireAt = patch.lastFireAt
     if (patch.lastRunAt !== undefined) partial.lastRunAt = patch.lastRunAt
     if (patch.shareToken !== undefined) partial.shareToken = patch.shareToken
+    if (patch.shareTokenHash !== undefined) partial.shareTokenHash = patch.shareTokenHash
 
     await this.scoped.update({ id } as FindOptionsWhere<WorkflowDefinitionEntity>, partial)
     return this.getById(id)
@@ -267,9 +274,11 @@ export class WorkflowDefinitionRepository extends BaseRepository<
    * runWithUserAsync(该 userId) 再执行后续业务（以定义所有者身份运行）。
    */
   async findByShareToken(token: string): Promise<WorkflowDefinitionRecord | null> {
+    // hash 优先（新令牌），明文兼容（历史存量令牌）
+    const hash = crypto.createHash('sha256').update(token).digest('hex')
     const e = await this.repo
       .createQueryBuilder('d')
-      .where('d.share_token = :token', { token })
+      .where('d.share_token_hash = :hash OR d.share_token = :token', { hash, token })
       .andWhere('d.published_version > 0')
       .getOne()
     return e ? this.toDto(e) : null
