@@ -626,7 +626,13 @@ export function registerLongWritingHandlers(): void {
 
   ipcBridge.handle(CHANNELS.DELETE_FACTION, async (_event, id: string) => {
     try {
+      const dbManager = getCoreDatabaseManager()
+      const faction = await dbManager.lwFactions?.getById(id)
       const result = await service.deleteFaction(id)
+      if (result && faction) {
+        // 阶段2：实体删除级联清理图谱边（faction/skill 此前漏接，残留悬空边）
+        await cleanupEntityGraphEdges(faction.projectId, 'faction', id)
+      }
       return { success: result }
     } catch (error: any) {
       return { success: false, error: error.message }
@@ -973,7 +979,13 @@ ${map.aiGeneratedData ? `详细信息：${JSON.stringify(map.aiGeneratedData).sl
 
   ipcBridge.handle(CHANNELS.DELETE_SKILL, async (_event, id: string) => {
     try {
+      const dbManager = getCoreDatabaseManager()
+      const skill = await dbManager.lwSkills?.getById(id)
       const result = await service.deleteSkill(id)
+      if (result && skill) {
+        // 阶段2：实体删除级联清理图谱边（faction/skill 此前漏接，残留悬空边）
+        await cleanupEntityGraphEdges(skill.projectId, 'skill', id)
+      }
       return { success: result }
     } catch (error: any) {
       return { success: false, error: error.message }
