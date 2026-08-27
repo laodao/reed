@@ -74,6 +74,9 @@ export async function createAssetCategories(ds: DataSource): Promise<void> {
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_asset_categories_sort ON asset_categories (sort_order)`)
 
   // 内置分类种子（按 name 幂等：已存在则更新定义，缺失则插入）
+  // 占位符按方言生成：PG 只认 $n（node-pg 不做 ? → $n 转换，? 在 PG 是 jsonb 运算符），
+  // SQLite 用 ?。SELECT 查重分支此前已按 isPg 处理，INSERT/UPDATE 漏了——Web 端首启必崩。
+  const ph = (n: number) => (isPg ? `$${n}` : '?')
   const now = new Date().toISOString()
   let inserted = 0
   for (const c of BUILTIN_CATEGORIES) {
@@ -86,13 +89,13 @@ export async function createAssetCategories(ds: DataSource): Promise<void> {
       await ds.query(
         `INSERT INTO asset_categories
           (id, name, code, allowed_kinds, previewable, preview_mode, preview_template_id, sort_order, is_builtin, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (${ph(1)}, ${ph(2)}, ${ph(3)}, ${ph(4)}, ${ph(5)}, ${ph(6)}, ${ph(7)}, ${ph(8)}, ${ph(9)}, ${ph(10)}, ${ph(11)})`,
         [id, c.name, c.code, JSON.stringify(['text']), 1, c.previewMode, c.previewTemplateId, c.sortOrder, 1, now, now],
       )
       inserted++
     } else {
       await ds.query(
-        `UPDATE asset_categories SET preview_mode = ?, preview_template_id = ?, sort_order = ?, updated_at = ? WHERE name = ?`,
+        `UPDATE asset_categories SET preview_mode = ${ph(1)}, preview_template_id = ${ph(2)}, sort_order = ${ph(3)}, updated_at = ${ph(4)} WHERE name = ${ph(5)}`,
         [c.previewMode, c.previewTemplateId, c.sortOrder, now, c.name],
       )
     }

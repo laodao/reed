@@ -88,6 +88,19 @@ export function validateGraph(
     }
   }
 
+  // ---------- 1.5 choose 审核 × 超时批准组合禁止 ----------
+  // choose 决策必须携带用户所选选项；超时批准路径无默认选项，applyReviewDecision
+  // 对非 reject 决策强制校验 choice ∈ options → 必抛 → 运行永久挂起。
+  // 配置错误应在发布前拦截（引擎超时路径已加 try/catch 转 fail 兜底，见 tickReviewTimeouts）。
+  for (const node of graph.nodes) {
+    if (isChooseReview(node)) {
+      const cfg = node.config as { timeoutPolicy?: string }
+      if (cfg.timeoutPolicy === 'approve') {
+        addError(`节点 ${node.id}：choose 交互不支持「超时批准」（超时批准无默认选项，审核超时后必失败），请改用「超时失败」或为 choose 提供默认选项`)
+      }
+    }
+  }
+
   // ---------- 2. start 约束 ----------
   const startNodes = graph.nodes.filter(n => n.type === 'start')
   if (startNodes.length === 0) {

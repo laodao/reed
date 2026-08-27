@@ -131,8 +131,10 @@ async function generateCurrent(): Promise<void> {
   if (!currentLeaf.value) return
 
   // 阶段2：写前校验（目标章节时间点的实体状态冲突检测）
+  // 返回语义：true=继续 / false=用户在冲突弹窗点取消（中止生成）/ null=校验服务异常（降级放行）。
+  // 旧代码 `=== null` 判定把两者弄反：用户取消无效、服务异常反而误阻断。
   const conflicts = await runPreGenerationCheck(currentLeaf.value.id)
-  if (conflicts === null) return // 用户取消
+  if (conflicts === false) return // 用户取消
 
   const outlineId = currentLeaf.value.id
   const eventId = `chapter-${outlineId}-${Date.now()}`

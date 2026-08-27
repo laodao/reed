@@ -469,9 +469,9 @@ function toGraph(): WorkflowGraph {
     nodes: nodes.value.map(vf => {
       const wfNode = JSON.parse(JSON.stringify((vf.data as any).wfNode))
       wfNode.position = { x: Math.round(vf.position.x), y: Math.round(vf.position.y) }
-      wfNode.name = (vf.data as any).label?.includes(': ')
-        ? (vf.data as any).label.split(': ').slice(1).join(': ')
-        : (vf.data as any).label
+      // name 由配置面板表单直接维护（NodeConfigPanel v-model="wfNode.name"），
+      // 不再从画布 label 反解——label 是"类型: 名称"显示串，名称含 ": " 会被
+      // split(': ').slice(1) 截断丢字（如"步骤1: 生成"保存后变"生成"）
       return wfNode
     }),
     edges: edges.value.map(e => {
@@ -498,19 +498,32 @@ async function saveDraft() {
   } finally { saving.value = false }
 }
 
-async function doValidate() {
+/** 校验图：失败（IPC 报错/网络异常）时明确提示并返回 false，不再让 undefined 崩溃发布流程 */
+async function doValidate(): Promise<boolean> {
   await saveDraftSilent()
-  const resp = await api().validateGraph(toGraph())
-  if (resp.success) validation.value = resp.data
-  if (!resp.data.valid) ElMessage.warning(`校验未通过：${resp.data.errors.slice(0, 3).join('；')}`)
-  else ElMessage.success('校验通过')
+  try {
+    const resp = await api().validateGraph(toGraph())
+    if (!resp.success) {
+      validation.value = null
+      ElMessage.error(resp.error ?? '校验请求失败')
+      return false
+    }
+    validation.value = resp.data
+    if (!resp.data.valid) ElMessage.warning(`校验未通过：${resp.data.errors.slice(0, 3).join('；')}`)
+    else ElMessage.success('校验通过')
+    return true
+  } catch (e: any) {
+    validation.value = null
+    ElMessage.error(`校验请求失败：${e?.message ?? String(e)}`)
+    return false
+  }
 }
 async function saveDraftSilent() {
   await api().saveDraft(definition.value.id, toGraph()).catch(() => {})
 }
 
 async function doPublish() {
-  await doValidate()
+  if (!(await doValidate())) return
   if (validation.value && !validation.value.valid) return
   await ElMessageBox.confirm(`发布「${definition.value.name}」为 v${(definition.value.publishedVersion ?? 0) + 1}？发布后定时/事件触发生效。`, '发布')
   const resp = await api().publishDefinition({ id: definition.value.id })

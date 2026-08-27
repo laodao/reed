@@ -39,7 +39,7 @@ const BUILTIN_APP_PREFIX = 'builtin_app_'
 
 /** 内置工作流模板清单：文件 → { 定义 id, 应用 id, 应用名, 图标, 描述, 原始 JSON } */
 const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; icon: string; name: string; description: string; category: string; tags: string[] }> = [
-  { file: 'daily-news-brief.json', raw: dailyNewsBrief, appId: `${BUILTIN_APP_PREFIX}daily_news`, icon: '📰', name: '每日热点早报', description: '全球媒体采集 + AI 生成早报长图', category: '新闻资讯', tags: ['早报', '新闻'] },
+  { file: 'daily-news-brief.json', raw: dailyNewsBrief, appId: `${BUILTIN_APP_PREFIX}daily_news`, icon: '📰', name: '每日热点早报', description: '首页→AI 定位栏目→AI 筛选新闻→抓正文→早报长图，正文与报告可存知识库', category: '新闻资讯', tags: ['早报', '新闻'] },
   { file: 'industry-weekly.json', raw: industryWeekly, appId: `${BUILTIN_APP_PREFIX}industry_weekly`, icon: '📈', name: '行业动态周报', description: '行业趋势分析周报长图（模板可自定义）', category: '新闻资讯', tags: ['周报', '行业'] },
   { file: 'multi-platform-copy.json', raw: multiPlatformCopy, appId: `${BUILTIN_APP_PREFIX}multi_platform`, icon: '✍️', name: '多平台文案生成', description: '公众号/小红书/微博/知乎/抖音 文案', category: '文案写作', tags: ['文案', '自媒体'] },
   { file: 'webpage-summary.json', raw: webpageSummary, appId: `${BUILTIN_APP_PREFIX}webpage_summary`, icon: '📄', name: '网页摘要入库', description: '网页结构化摘要 → 知识库 + 资产库', category: '网页工具', tags: ['摘要'] },
@@ -112,6 +112,8 @@ export async function createBuiltinApps(ds: DataSource): Promise<void> {
     const settings = raw.settings ?? null
 
     // 幂等：定义已存在则更新图与触发器（版本不变，避免破坏引用）；不存在则插入
+    // 占位符按方言生成：PG 只认 $n（node-pg 不做 ? → $n 转换，? 在 PG 是 jsonb 运算符）
+    const ph = (n: number) => (isPg ? `$${n}` : '?')
     const existing = await ds.query(
       isPg ? `SELECT 1 FROM workflow_definitions WHERE id = $1 LIMIT 1` : `SELECT 1 FROM workflow_definitions WHERE id = ? LIMIT 1`,
       [defId]
@@ -120,14 +122,14 @@ export async function createBuiltinApps(ds: DataSource): Promise<void> {
       await ds.query(
         `INSERT INTO workflow_definitions
           (id, user_id, name, description, category, draft_graph, published_graph, published_version, published_at, triggers, settings, is_builtin, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (${ph(1)}, ${ph(2)}, ${ph(3)}, ${ph(4)}, ${ph(5)}, ${ph(6)}, ${ph(7)}, ${ph(8)}, ${ph(9)}, ${ph(10)}, ${ph(11)}, ${ph(12)}, ${ph(13)}, ${ph(14)})`,
         [defId, null, raw.name ?? app.name, raw.description ?? app.description, raw.category ?? 'builtin',
          JSON.stringify(graph), JSON.stringify(graph), 1, now, JSON.stringify(triggers), settings ? JSON.stringify(settings) : null, 1, now, now]
       )
       insertedDefs++
     } else {
       await ds.query(
-        `UPDATE workflow_definitions SET draft_graph = ?, published_graph = ?, triggers = ?, updated_at = ? WHERE id = ?`,
+        `UPDATE workflow_definitions SET draft_graph = ${ph(1)}, published_graph = ${ph(2)}, triggers = ${ph(3)}, updated_at = ${ph(4)} WHERE id = ${ph(5)}`,
         [JSON.stringify(graph), JSON.stringify(graph), JSON.stringify(triggers), now, defId]
       )
     }
@@ -141,13 +143,13 @@ export async function createBuiltinApps(ds: DataSource): Promise<void> {
       await ds.query(
         `INSERT INTO apps
           (id, user_id, name, icon, description, category, tags, source_kind, source_id, source_version, channel_session, channel_share, channel_api, enabled, is_builtin, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (${ph(1)}, ${ph(2)}, ${ph(3)}, ${ph(4)}, ${ph(5)}, ${ph(6)}, ${ph(7)}, ${ph(8)}, ${ph(9)}, ${ph(10)}, ${ph(11)}, ${ph(12)}, ${ph(13)}, ${ph(14)}, ${ph(15)}, ${ph(16)}, ${ph(17)})`,
         [app.appId, null, app.name, app.icon, app.description, app.category, JSON.stringify(app.tags), 'workflow', defId, 1, 1, 0, 0, 1, 1, publishedAt(appIndex), now]
       )
       insertedApps++
     } else {
       await ds.query(
-        `UPDATE apps SET name = ?, icon = ?, description = ?, category = ?, tags = ?, source_version = ?, created_at = ?, updated_at = ? WHERE id = ?`,
+        `UPDATE apps SET name = ${ph(1)}, icon = ${ph(2)}, description = ${ph(3)}, category = ${ph(4)}, tags = ${ph(5)}, source_version = ${ph(6)}, created_at = ${ph(7)}, updated_at = ${ph(8)} WHERE id = ${ph(9)}`,
         [app.name, app.icon, app.description, app.category, JSON.stringify(app.tags), 1, publishedAt(appIndex), now, app.appId]
       )
     }
@@ -161,10 +163,11 @@ export async function createBuiltinApps(ds: DataSource): Promise<void> {
       [tpl.id]
     )
     if (tplExisting.length === 0) {
+      const ph = (n: number) => (isPg ? `$${n}` : '?')
       await ds.query(
         `INSERT INTO assets
           (id, user_id, category, sub_category, name, kind, text_content, source_type, is_builtin, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (${ph(1)}, ${ph(2)}, ${ph(3)}, ${ph(4)}, ${ph(5)}, ${ph(6)}, ${ph(7)}, ${ph(8)}, ${ph(9)}, ${ph(10)}, ${ph(11)})`,
         [tpl.id, null, 'template', tpl.subCategory, tpl.name, 'text', tpl.content, 'builtin', 1, now, now]
       )
       insertedTemplates++

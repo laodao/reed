@@ -58,6 +58,23 @@ export class ChapterGraphProcessor {
     if (!m) return { events: [], states: [], edges: [], stateCount: 0 }
     const { projectId, outlineId, chapterContent, chapterNumber, providerConfigId, modelId } = input
 
+    // ============ 0. 幂等清理（重跑 = 重建） ============
+    // 每次保存章节（含自动保存）都触发流水线；事件/边是纯 insert，旧事件 id 每次新生成，
+    // 不去重会导致 lw_events / lw_graph_edges 数据膨胀、图谱视图出现重复事件节点与边。
+    // 先删本章旧事件及其关联边（实体状态是 upsert 幂等，无需清理）。
+    if (m.lwEvents && m.lwGraphEdges) {
+      try {
+        const oldEvents = await m.lwEvents.listByChapter(projectId, chapterNumber)
+        const oldIds = oldEvents.map((e) => e.id).filter(Boolean)
+        if (oldIds.length > 0) {
+          await m.lwGraphEdges.deleteBySourceEventIds(projectId, oldIds)
+        }
+        await m.lwEvents.deleteByChapter(projectId, chapterNumber)
+      } catch (e) {
+        console.warn('[ChapterGraphProcessor] 本章旧数据清理失败（继续执行）:', e)
+      }
+    }
+
     // ============ 1. 提取事件 → 落库 lw_events ============
     const events: StoryEvent[] = []
     try {

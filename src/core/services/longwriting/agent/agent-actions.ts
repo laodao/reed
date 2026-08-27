@@ -148,19 +148,25 @@ async function executeGenerateOverview(ctx: AgentExecutionContext, action: Agent
   }
   const d = resp.data
 
-  const overview = await db?.lwStoryOverviews?.getByProjectId(projectId)
+  let overview = await db?.lwStoryOverviews?.getByProjectId(projectId)
+  const patch = {
+    title: d.title || overview?.title || '未命名',
+    storyType: d.storyType || overview?.storyType || null,
+    summary: d.summary || overview?.summary || '',
+    coreConflict: d.coreConflict || overview?.coreConflict || '',
+    coreIdea: input || overview?.coreIdea || null,
+    keyCharacters: d.keyCharacters || [],
+    keyLocations: d.keyLocations || [],
+    estimatedChapters: d.estimatedChapters ?? overview?.estimatedChapters ?? null,
+    isSaved: true,
+  }
   if (overview) {
-    await db.lwStoryOverviews.update(overview.id, {
-      title: d.title || overview.title,
-      storyType: d.storyType || overview.storyType,
-      summary: d.summary || overview.summary,
-      coreConflict: d.coreConflict || overview.coreConflict,
-      coreIdea: input || overview.coreIdea,
-      keyCharacters: d.keyCharacters || [],
-      keyLocations: d.keyLocations || [],
-      estimatedChapters: d.estimatedChapters,
-      isSaved: true,
-    })
+    await db.lwStoryOverviews.update(overview.id, patch)
+  } else {
+    // overview 行缺失（历史遗留/异常库）：先建行再更新——否则 AI 生成结果被丢弃，
+    // 却仍返回 status:'ok'（假成功反馈，前端按 changed 刷新拿到的是空数据）
+    overview = await db.lwStoryOverviews.create(projectId)
+    await db.lwStoryOverviews.update(overview.id, patch)
   }
 
   const title = d.title || '未命名'

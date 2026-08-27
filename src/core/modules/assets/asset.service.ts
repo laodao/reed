@@ -134,12 +134,13 @@ export class AssetService {
     if (groupName && this.groupRepo) {
       const sourceType = input.sourceType ?? null
       const sourceRef = input.sourceRef ?? null
-      // 同一来源（运行）内同名组复用；跨来源不合并（避免不同运行串组）
-      let group = sourceRef ? await this.groupRepo.findBySource(sourceType, sourceRef) : null
-      // 同名不同源：按名称在组表里找本来源下是否已有（findBySource 已按 source 定位，
-      // 若组名不同则需新建——先查本来源是否已有该组名）
+      // 同一来源（运行）内**同名组**复用；跨来源不合并（避免不同运行串组）。
+      // 修复：按 (sourceType, sourceRef, name) 精确匹配——旧实现 findBySource 只按来源查，
+      // 同一运行里第二个不同组名会被静默并入第一个组（组名/封面语义错乱）。
+      let group = sourceRef
+        ? await this.groupRepo.findBySourceAndName(sourceType, sourceRef, groupName)
+        : null
       if (!group) {
-        // 简易实现：组名直接作为组标识的一部分（同名组在同来源内唯一）
         const created = await this.groupRepo.create({
           name: groupName,
           category: category,

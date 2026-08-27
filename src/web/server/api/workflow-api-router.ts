@@ -180,8 +180,11 @@ async function streamRunEvents(opts: {
   heartbeat.unref?.()
   req.on('close', close)
 
-  // 4) 订阅后复查（窗口内到达终态的事件已错过——查库兜底）
-  const recheck = await runService.getRunDetail(runId)
+  // 4) 订阅后复查（窗口内到达终态的事件已错过——查库兜底）。
+  //    必须包 runWithUserAsync：BaseRepository.scoped 按 ALS userId 过滤，
+  //    裸调用在 ALS 缺失时按 userId IS NULL 查 → 真实用户的运行永远查不到，
+  //    兜底形同虚设（3fa04834 引入时即缺，Web 端 SSE 挂起无人发现）。
+  const recheck = await runWithUserAsync(ownerUserId, () => runService.getRunDetail(runId))
   if (recheck && TERMINAL_STATUSES.has(recheck.run.status)) {
     finishIfTerminal(recheck.run.status)
   }

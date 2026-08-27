@@ -111,6 +111,11 @@ export class LwEventRepository extends BaseRepository<LwEventEntity, StoryEvent>
     return this.scoped.delete({ projectId, chapterNumber } as any)
   }
 
+  /** 查本章事件（章节图谱"重跑=重建"时先取旧事件 id 以级联删边） */
+  async listByChapter(projectId: string, chapterNumber: number): Promise<StoryEvent[]> {
+    return this.scoped.find({ projectId, chapterNumber } as any)
+  }
+
   async deleteByProjectId(projectId: string): Promise<number> {
     return this.scoped.delete({ projectId } as any)
   }

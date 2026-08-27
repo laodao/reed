@@ -79,6 +79,20 @@ export class AssetGroupRepository extends BaseRepository<AssetGroupEntity, Asset
     return e ? this.toDto(e) : null
   }
 
+  /** 按「来源 + 组名」精确查组（同一次运行内不同组名不并组） */
+  async findBySourceAndName(
+    sourceType: string | null,
+    sourceRef: string | null,
+    name: string,
+  ): Promise<AssetGroupRecord | null> {
+    const e = await this.scoped.findOne({
+      sourceType,
+      sourceRef,
+      name,
+    } as FindOptionsWhere<AssetGroupEntity>)
+    return e ? this.toDto(e) : null
+  }
+
   async create(data: CreateAssetGroupInput): Promise<AssetGroupRecord> {
     const now = new Date()
     const entity = await this.scoped.save({

@@ -128,6 +128,8 @@ export async function createNewsSources(ds: DataSource): Promise<void> {
   }
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_news_topics_user ON news_topics (user_id)`)
   // 预置 5 内置主题（幂等：缺失补插；名称同步更新）
+  // 占位符按方言生成：PG 只认 $n（node-pg 不做 ? → $n 转换，? 在 PG 是 jsonb 运算符）
+  const ph = (n: number) => (isPg ? `$${n}` : '?')
   {
     const now = new Date().toISOString()
     let inserted = 0
@@ -138,12 +140,12 @@ export async function createNewsSources(ds: DataSource): Promise<void> {
       )
       if (existing.length === 0) {
         await ds.query(
-          `INSERT INTO news_topics (id, user_id, name, is_builtin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO news_topics (id, user_id, name, is_builtin, created_at, updated_at) VALUES (${ph(1)}, ${ph(2)}, ${ph(3)}, ${ph(4)}, ${ph(5)}, ${ph(6)})`,
           [t.id, null, t.name, 1, now, now]
         )
         inserted++
       } else {
-        await ds.query(`UPDATE news_topics SET name = ?, updated_at = ? WHERE id = ?`, [t.name, now, t.id])
+        await ds.query(`UPDATE news_topics SET name = ${ph(1)}, updated_at = ${ph(2)} WHERE id = ${ph(3)}`, [t.name, now, t.id])
       }
     }
     console.log(`[create-news-sources] 预置主题完成：新增 ${inserted} 个内置主题（共 ${BUILTIN_TOPICS.length}）`)
@@ -182,7 +184,7 @@ export async function createNewsSources(ds: DataSource): Promise<void> {
     if (existing.length === 0) {
       await ds.query(
         `INSERT INTO news_sources (id, user_id, topic_id, name, url, is_builtin, enabled, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (${ph(1)}, ${ph(2)}, ${ph(3)}, ${ph(4)}, ${ph(5)}, ${ph(6)}, ${ph(7)}, ${ph(8)}, ${ph(9)}, ${ph(10)})`,
         [s.id, null, s.topicId, s.name, s.url, 1, 1, parseInt(s.id.slice(-2), 10), now, now]
       )
       inserted++
@@ -194,7 +196,7 @@ export async function createNewsSources(ds: DataSource): Promise<void> {
       ))[0]
       if (row && (row.name !== s.name || row.url !== s.url)) {
         await ds.query(
-          `UPDATE news_sources SET name = ?, url = ?, sort_order = ?, updated_at = ? WHERE id = ?`,
+          `UPDATE news_sources SET name = ${ph(1)}, url = ${ph(2)}, sort_order = ${ph(3)}, updated_at = ${ph(4)} WHERE id = ${ph(5)}`,
           [s.name, s.url, parseInt(s.id.slice(-2), 10), now, s.id]
         )
         updated++

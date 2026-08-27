@@ -6,6 +6,7 @@
  */
 
 import type { DataSource } from 'typeorm'
+import { In } from 'typeorm'
 import type {
   GraphEdge,
   GraphEntityType,
@@ -156,6 +157,15 @@ export class LwGraphEdgeRepository extends BaseRepository<LwGraphEdgeEntity, Gra
       targetId: entityId,
     } as any)
     return affected + affected2
+  }
+
+  /** 按事件 id 批量删除边（章节图谱重跑 = 重建时清理指向旧事件的边） */
+  async deleteBySourceEventIds(projectId: string, eventIds: string[]): Promise<number> {
+    if (!eventIds.length) return 0
+    return this.scoped.delete({
+      projectId,
+      sourceId: In(eventIds),
+    } as any)
   }
 
   async deleteByProjectId(projectId: string): Promise<number> {

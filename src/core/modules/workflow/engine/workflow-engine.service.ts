@@ -616,10 +616,19 @@ export class WorkflowEngineService {
           if (!state.waitExpiresAt || state.waitExpiresAt > now) continue
           const policy = state.reviewTimeoutPolicy ?? 'fail'
           if (policy === WORKFLOW_REVIEW_TIMEOUT_POLICIES.approve) {
-            await this.applyReviewDecision(exec, scope, state, {
-              decision: WORKFLOW_REVIEW_DECISIONS.timeoutApprove,
-              decidedAt: now.toISOString(),
-            })
+            try {
+              await this.applyReviewDecision(exec, scope, state, {
+                decision: WORKFLOW_REVIEW_DECISIONS.timeoutApprove,
+                decidedAt: now.toISOString(),
+              })
+            } catch (e) {
+              // choose 交互 + timeoutPolicy=approve：applyReviewDecision 对非 reject 决策
+              // 强制 choice ∈ options，超时路径无 choice 必抛——若不拦，异常逃出 tick，
+              // 运行永久 suspended + waitExpiresAt 过期每 tick 重复抛错刷日志，且中断
+              // 同 tick 其余运行的超时扫描。转 fail 收敛（校验器另禁止该组合，见 graph-validator）。
+              console.warn('[engine] 审核超时批准失败（choose 无默认选项），转失败:', e instanceof Error ? e.message : String(e))
+              await this.handleNodeFailure(exec, scope, exec.nodeById.get(state.nodeId)!, state, '审核超时批准失败（choose 节点无默认选项）', false)
+            }
           } else if (policy === WORKFLOW_REVIEW_TIMEOUT_POLICIES.reject) {
             await this.applyReviewDecision(exec, scope, state, {
               decision: WORKFLOW_REVIEW_DECISIONS.timeoutReject,
