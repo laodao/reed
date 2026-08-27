@@ -14,6 +14,11 @@ class MemAppRepo {
   rows: Map<string, any> = new Map()
   seq = 0
   updateCalls: Array<{ id: string; patch: any }> = []
+  /** per-user pinned 偏好桩（setPinned 写偏好表，不改全局行） */
+  prefs = new Map<string, { pinned: number }>()
+  async setUserPinned(userId: string, appId: string, pinned: boolean) {
+    this.prefs.set(`${userId}:${appId}`, { pinned: pinned ? 1 : 0 })
+  }
   async findById(id: string) { return this.rows.get(id) ?? null }
   async findBySource(sourceKind: string, sourceId: string) {
     return [...this.rows.values()].find(r => r.sourceKind === sourceKind && r.sourceId === sourceId) ?? null
@@ -64,13 +69,16 @@ describe('AppDefinitionService 元信息（固定/分类/标签）', () => {
     service = new AppDefinitionService(apps as any, sessions as any, defs as any, new MemMessages() as any)
   })
 
-  it('setPinned：pinned=1/0 透传', async () => {
+  it('setPinned：写 per-user 偏好，不改全局共享行', async () => {
     await apps.create({ name: 'A', sourceId: 'd1' })
-    const pinned = await service.setPinned('app_1', true)
-    expect(pinned?.pinned).toBe(1)
-    expect(apps.updateCalls[0].patch).toMatchObject({ pinned: 1 })
-    const unpinned = await service.setPinned('app_1', false)
-    expect(unpinned?.pinned).toBe(0)
+    await service.setPinned('app_1', true)
+    // 写入 per-user 偏好（而非改全局 apps.pinned——内置/全局行跨用户污染修复）
+    expect(apps.prefs.size).toBeGreaterThan(0)
+    expect([...apps.prefs.values()][0]).toMatchObject({ pinned: 1 })
+    expect(apps.rows.get('app_1').pinned).toBe(0) // 全局行未被改写
+    expect(apps.updateCalls.some(c => c.patch?.pinned !== undefined)).toBe(false)
+    await service.setPinned('app_1', false)
+    expect([...apps.prefs.values()][0]).toMatchObject({ pinned: 0 })
   })
 
   it('updateMeta：category/tags 透传（undefined 不覆盖）', async () => {
