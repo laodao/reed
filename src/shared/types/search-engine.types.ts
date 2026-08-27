@@ -79,6 +79,8 @@ export interface SearchEngineTemplate {
   category: SearchEngineCategory
   /** 图标（emoji 或 URL） */
   icon?: string
+  /** 品牌官网地址（用于抓取真实品牌图标，渲染层 FaviconIcon 使用） */
+  siteUrl?: string
   /** 认证配置 */
   authConfig: SearchEngineAuthConfig
   /** 默认最大结果数 */

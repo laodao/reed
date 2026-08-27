@@ -133,6 +133,8 @@ export interface ProviderTemplate {
   capabilities: ProviderCapability[]
   /** 图标（emoji 或 URL） */
   icon?: string
+  /** 品牌官网地址（用于抓取真实品牌图标，渲染层 FaviconIcon 使用） */
+  siteUrl?: string
   /** API 配置 */
   apiConfig: ApiConfigTemplate
   /** 图像生成参数配置 */
