@@ -124,6 +124,7 @@ import { registerToolHandlers } from './ipc/handlers/tool.handler'
 import { registerEmailHandlers } from './ipc/handlers/email.handler'
 import { registerAssetHandlers } from './ipc/handlers/asset.handler'
 import { registerNewsSourceHandlers } from './ipc/handlers/news-source.handler'
+import { registerFaviconHandlers } from './ipc/handlers/favicon.handler'
 import { registerDiaryHandlers } from './ipc/handlers/diary.handler'
 import { registerEpisodeProductionHandlers } from './ipc/handlers/episode-production'
 import { registerOSSHandlers } from './ipc/handlers/oss.handler'
@@ -359,6 +360,7 @@ function initIpcHandlers(): void {
   registerEmailHandlers()
   registerAssetHandlers()
   registerNewsSourceHandlers()
+  registerFaviconHandlers()
   registerDiaryHandlers()
   registerEpisodeProductionHandlers()
   registerOSSHandlers()

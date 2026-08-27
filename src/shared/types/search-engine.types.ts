@@ -13,8 +13,14 @@ export type SearchEngineType =
   | 'google-web'  // Google 网页抓取
   | 'zhipu'       // 智谱 AI - API
   | 'tavily'      // Tavily - API
+  | 'perplexity'  // Perplexity - API（OpenAI 兼容）
+  | 'deepseek-web'// DeepSeek 联网 - API（OpenAI 兼容）
+  | 'bocha'       // 博查 AI 搜索 - API
+  | 'bing-api'    // 必应 Web Search API（Azure） - API
+  | 'google-cse'  // Google Custom Search JSON API - API
+  | 'searxng'     // SearXNG - 自托管（无需 API Key）
   | 'model'       // 模型内置搜索
-  | 'custom-api'  // 通用 API 型（OpenAI 兼容 /chat/completions；可配置 URL/Key/模型）
+  | 'custom-api'  // 自定义搜索引擎（OpenAI 兼容 /chat/completions；可配置 URL/Key/模型）
 
 /**
  * 搜索引擎分类

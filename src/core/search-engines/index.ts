@@ -17,6 +17,11 @@ import { GoogleWebSearchEngine } from './google-web-search-engine'
 import { ZhipuSearchEngine } from './zhipu-search-engine'
 import { TavilySearchEngine } from './tavily-search-engine'
 import { CustomApiSearchEngine } from './custom-api-search-engine'
+import { PerplexitySearchEngine, DeepSeekWebSearchEngine } from './openai-compat-preset-search-engine'
+import { BochaSearchEngine } from './bocha-search-engine'
+import { BingApiSearchEngine } from './bing-api-search-engine'
+import { GoogleCseSearchEngine } from './google-cse-search-engine'
+import { SearxngSearchEngine } from './searxng-search-engine'
 
 /**
  * 搜索引擎模板预定义
@@ -122,9 +127,168 @@ export const SEARCH_ENGINE_TEMPLATES: SearchEngineTemplate[] = [
     priority: 11
   },
   {
+    id: 'perplexity',
+    name: 'Perplexity',
+    description: 'Perplexity 联网搜索（sonar-pro），OpenAI 兼容接口',
+    category: 'api',
+    icon: '✨',
+    authConfig: {
+      requiresApiKey: true,
+      apiKeyLabel: 'API Key',
+      apiKeyPlaceholder: '请输入 Perplexity API Key',
+      requiresExtraConfig: true,
+      extraConfigFields: [
+        {
+          key: 'apiUrl',
+          label: 'API 地址',
+          type: 'string',
+          default: 'https://api.perplexity.ai',
+          placeholder: 'https://api.perplexity.ai',
+          description: 'Perplexity API 基础地址，默认为官方地址'
+        },
+        {
+          key: 'model',
+          label: '模型名',
+          type: 'string',
+          default: 'sonar-pro',
+          placeholder: 'sonar / sonar-pro / sonar-reasoning-pro',
+          description: '用于联网搜索的模型名'
+        }
+      ]
+    },
+    defaultMaxResults: 5,
+    maxResultsLimit: 10,
+    isOfficial: true,
+    priority: 12
+  },
+  {
+    id: 'deepseek-web',
+    name: 'DeepSeek 联网',
+    description: 'DeepSeek 联网搜索（OpenAI 兼容端点）',
+    category: 'api',
+    icon: '🐋',
+    authConfig: {
+      requiresApiKey: true,
+      apiKeyLabel: 'API Key',
+      apiKeyPlaceholder: '请输入 DeepSeek API Key',
+      requiresExtraConfig: true,
+      extraConfigFields: [
+        {
+          key: 'apiUrl',
+          label: 'API 地址',
+          type: 'string',
+          default: 'https://api.deepseek.com',
+          placeholder: 'https://api.deepseek.com',
+          description: 'DeepSeek API 基础地址，默认为官方地址'
+        },
+        {
+          key: 'model',
+          label: '模型名',
+          type: 'string',
+          default: 'deepseek-chat',
+          placeholder: 'deepseek-chat / deepseek-reasoner',
+          description: '用于联网搜索的模型名'
+        }
+      ]
+    },
+    defaultMaxResults: 5,
+    maxResultsLimit: 10,
+    isOfficial: true,
+    priority: 13
+  },
+  {
+    id: 'bocha',
+    name: '博查 AI 搜索',
+    description: '博查 AI 联网搜索 API，中文搜索质量高',
+    category: 'api',
+    icon: '🍵',
+    authConfig: {
+      requiresApiKey: true,
+      apiKeyLabel: 'API Key',
+      apiKeyPlaceholder: '请输入博查 API Key',
+      requiresExtraConfig: false
+    },
+    defaultMaxResults: 5,
+    maxResultsLimit: 10,
+    isOfficial: true,
+    priority: 14
+  },
+  {
+    id: 'searxng',
+    name: 'SearXNG',
+    description: '自托管元搜索引擎，无需 API Key（需配置实例地址）',
+    category: 'api',
+    icon: '🧭',
+    authConfig: {
+      requiresApiKey: false,
+      apiKeyLabel: 'API Key',
+      apiKeyPlaceholder: 'SearXNG 无需 API Key',
+      requiresExtraConfig: true,
+      extraConfigFields: [
+        {
+          key: 'apiUrl',
+          label: '实例地址',
+          type: 'string',
+          default: 'http://localhost:8080',
+          placeholder: 'https://search.example.com',
+          required: true,
+          description: '自托管 SearXNG 实例基础地址（启用 JSON API）'
+        }
+      ]
+    },
+    defaultMaxResults: 5,
+    maxResultsLimit: 10,
+    isOfficial: false,
+    priority: 15
+  },
+  {
+    id: 'bing-api',
+    name: '必应搜索 API',
+    description: '微软必应 Web Search API（Azure），返回结构化结果',
+    category: 'api',
+    icon: '🔎',
+    authConfig: {
+      requiresApiKey: true,
+      apiKeyLabel: 'API Key',
+      apiKeyPlaceholder: '请输入必应 Web Search API Key（Ocp-Apim-Subscription-Key）',
+      requiresExtraConfig: false
+    },
+    defaultMaxResults: 5,
+    maxResultsLimit: 10,
+    isOfficial: true,
+    priority: 16
+  },
+  {
+    id: 'google-cse',
+    name: 'Google 自定义搜索',
+    description: 'Google Custom Search JSON API——需 API Key + Search Engine ID（cx）',
+    category: 'api',
+    icon: '🌐',
+    authConfig: {
+      requiresApiKey: true,
+      apiKeyLabel: 'API Key',
+      apiKeyPlaceholder: '请输入 Google API Key',
+      requiresExtraConfig: true,
+      extraConfigFields: [
+        {
+          key: 'cx',
+          label: 'Search Engine ID',
+          type: 'string',
+          placeholder: '如 0123456789abcdef0123',
+          required: true,
+          description: 'Google 自定义搜索引擎 ID（Programmable Search Engine 控制台获取）'
+        }
+      ]
+    },
+    defaultMaxResults: 5,
+    maxResultsLimit: 10,
+    isOfficial: true,
+    priority: 17
+  },
+  {
     id: 'custom-api',
-    name: '通用 API 搜索',
-    description: '接入任意 OpenAI 兼容搜索 API（Perplexity/Exa/DeepSeek 联网等）——填 API 地址 + Key + 模型名',
+    name: '自定义搜索引擎',
+    description: '接入任意 OpenAI 兼容的联网搜索 API（Perplexity/DeepSeek/Kimi 等）——填 API 地址 + Key + 模型名',
     category: 'api',
     icon: '🔌',
     authConfig: {
@@ -155,7 +319,7 @@ export const SEARCH_ENGINE_TEMPLATES: SearchEngineTemplate[] = [
     defaultMaxResults: 5,
     maxResultsLimit: 10,
     isOfficial: false,
-    priority: 12
+    priority: 20
   },
 
   // ========== 模型内置搜索 ==========
@@ -209,6 +373,18 @@ export function createSearchEngine(
       return new ZhipuSearchEngine(config)
     case 'tavily':
       return new TavilySearchEngine(config)
+    case 'perplexity':
+      return new PerplexitySearchEngine(config)
+    case 'deepseek-web':
+      return new DeepSeekWebSearchEngine(config)
+    case 'bocha':
+      return new BochaSearchEngine(config)
+    case 'bing-api':
+      return new BingApiSearchEngine(config)
+    case 'google-cse':
+      return new GoogleCseSearchEngine(config)
+    case 'searxng':
+      return new SearxngSearchEngine(config)
     case 'custom-api':
       return new CustomApiSearchEngine(config)
     case 'model':
@@ -289,5 +465,11 @@ export {
   GoogleWebSearchEngine,
   ZhipuSearchEngine,
   TavilySearchEngine,
-  CustomApiSearchEngine
+  CustomApiSearchEngine,
+  PerplexitySearchEngine,
+  DeepSeekWebSearchEngine,
+  BochaSearchEngine,
+  BingApiSearchEngine,
+  GoogleCseSearchEngine,
+  SearxngSearchEngine
 }

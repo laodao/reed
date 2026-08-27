@@ -253,6 +253,18 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'searchEngine.search': { channel: 'search-engine:search' },
   'searchEngine.getDisabledQuickEngines': { channel: 'search-engine:get-disabled-quick' },
   'searchEngine.setQuickEngineEnabled': { channel: 'search-engine:set-quick-enabled', wrap: (engineId, enabled) => [{ engineId, enabled }] },
+  // ==================== 新闻来源 / 主题（与 preload newsSource/newsTopic 严格同步） ====================
+  'newsSource.list': { channel: 'newsSource:list' },
+  'newsSource.get': { channel: 'newsSource:get', wrap: (id) => [{ id }] },
+  'newsSource.create': { channel: 'newsSource:create' },
+  'newsSource.update': { channel: 'newsSource:update' },
+  'newsSource.delete': { channel: 'newsSource:delete', wrap: (id) => [{ id }] },
+  'newsTopic.list': { channel: 'newsTopic:list' },
+  'newsTopic.create': { channel: 'newsTopic:create' },
+  'newsTopic.update': { channel: 'newsTopic:update' },
+  'newsTopic.delete': { channel: 'newsTopic:delete', wrap: (id) => [{ id }] },
+  // ==================== 网站 favicon（与 preload favicon 严格同步） ====================
+  'favicon.get': { channel: 'favicon:get', wrap: (url) => [{ url }] },
   'longwriting.getProjects': { channel: 'longwriting:getProjects' },
   'longwriting.getProject': { channel: 'longwriting:getProject' },
   'longwriting.createProject': { channel: 'longwriting:createProject' },

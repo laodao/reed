@@ -118,6 +118,10 @@ export interface AppApi {
     update(p: { id: string; name?: string }): Promise<IpcResp<{ id: string; name: string; isBuiltin: boolean } | null>>
     delete(id: string): Promise<IpcResp<{ deleted: boolean }>>
   }
+  /** 网站 favicon（新闻来源图标：按站点 URL 抓取并缓存） */
+  favicon: {
+    get(url: string): Promise<IpcResp<{ domain: string; dataUrl?: string }>>
+  }
   file: {
     openDialog(options?: { multiple?: boolean; filters?: Array<{ name: string; extensions: string[] }> }): Promise<{
       success: boolean

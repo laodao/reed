@@ -223,8 +223,9 @@ export class SearchEngineService {
           return { success: false, message: response.error || '连接测试失败' }
         }
       } else {
-        // 网页抓取型引擎，直接测试
-        const response = await executeSearch(templateId, 'test search', undefined, 1)
+        // 网页抓取型引擎 / 无需 Key 但需配置的引擎（如 SearXNG），直接测试；
+        // 传入 config 以便携带 extraConfig（实例地址等）
+        const response = await executeSearch(templateId, 'test search', config || undefined, 1)
 
         if (response.success) {
           return { success: true, message: '连接测试成功' }

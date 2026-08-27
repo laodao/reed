@@ -810,6 +810,11 @@ const electronAPI = {
     delete: (id: string) => ipcRenderer.invoke('newsTopic:delete', { id }),
   },
 
+  // ==================== 网站 favicon（新闻来源图标） ====================
+  favicon: {
+    get: (url: string) => ipcRenderer.invoke('favicon:get', { url }),
+  },
+
   // ==================== P0 工具模块（片1：第三方 API 工具） ====================
   tools: {
     listCredentials: () => ipcRenderer.invoke('tool:list-credentials'),

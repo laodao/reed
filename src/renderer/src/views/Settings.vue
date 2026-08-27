@@ -36,7 +36,7 @@
                   </transition>
                 </div>
                 <div class="theme-info">
-                  <span class="theme-name">{{ themeNames[theme.id] || theme.id }}</span>
+                  <span class="theme-name">{{ theme.name }}</span>
                   <span class="theme-desc">{{ theme.description }}</span>
                 </div>
               </div>
@@ -265,7 +265,7 @@
             <div class="section-header">
               <div>
                 <h3>搜索引擎配置</h3>
-                <p class="section-desc">配置联网搜索所需的搜索引擎（智谱 AI、Tavily 需要 API Key）</p>
+                <p class="section-desc">预置智谱 AI、Tavily、Perplexity、DeepSeek、博查、必应 API、Google 等 API 型搜索引擎（需 API Key），支持自定义搜索引擎</p>
               </div>
               <el-button type="primary" @click="openAddSearchEngineDialog">
                 <el-icon><Plus /></el-icon>
@@ -371,7 +371,7 @@
 
             <div v-else class="empty-config">
               <p>暂无已配置的搜索引擎</p>
-              <p class="hint">智谱 AI、Tavily 等 API 型搜索引擎需要配置 API Key 后才能使用</p>
+              <p class="hint">智谱 AI、Tavily、Perplexity、DeepSeek、博查等 API 型搜索引擎需要配置 API Key 后才能使用</p>
             </div>
           </div>
         </el-tab-pane>
@@ -384,54 +384,67 @@
                 <h3>新闻来源</h3>
                 <p class="section-desc">管理早报/行业动态的数据源——按主题分组，工作流「新闻采集」节点可多选引用</p>
               </div>
-              <el-button type="primary" @click="openAddNewsSourceDialog">
-                <el-icon><Plus /></el-icon>
-                添加来源
-              </el-button>
+              <div class="section-header-actions">
+                <el-button type="primary" plain @click="openAddNewsTopicDialog">
+                  <el-icon><Plus /></el-icon>
+                  添加主题
+                </el-button>
+                <el-button type="primary" @click="openAddNewsSourceDialog">
+                  <el-icon><Plus /></el-icon>
+                  添加来源
+                </el-button>
+              </div>
             </div>
 
-            <!-- 按主题分组展示 -->
-            <div v-for="topic in newsSourceTopics" :key="topic.id" class="search-engine-group">
-              <div class="group-title-row">
-                <h4 class="group-title">{{ topic.label }}（{{ sourcesOfTopic(topic.id).length }}）</h4>
-                <div class="group-title-actions">
+            <!-- 按主题分组展示（点击主题标题可折叠/展开其下来源） -->
+            <div v-for="topic in newsSourceTopics" :key="topic.id" class="search-engine-group news-topic-group">
+              <div
+                class="group-title-row news-topic-header"
+                :class="{ collapsed: isTopicCollapsed(topic.id) }"
+                @click="toggleTopic(topic.id)"
+              >
+                <div class="news-topic-title">
+                  <el-icon class="topic-chevron"><ArrowRight /></el-icon>
+                  <h4 class="group-title">{{ topic.label }}（{{ sourcesOfTopic(topic.id).length }}）</h4>
+                </div>
+                <div class="group-title-actions" @click.stop>
                   <el-button v-if="!topic.isBuiltin" text size="small" @click="editNewsTopic(topic)">改主题名</el-button>
                   <el-button v-if="!topic.isBuiltin" text type="danger" size="small" @click="deleteNewsTopic(topic)">删除主题</el-button>
                 </div>
               </div>
-              <p class="group-desc">内置主题预置全球知名媒体源；可新增自定义主题，来源按主题归组</p>
-              <div v-if="sourcesOfTopic(topic.id).length" class="provider-config-list">
-                <div
-                  v-for="source in sourcesOfTopic(topic.id)"
-                  :key="source.id"
-                  class="provider-config-item"
-                  :class="{ disabled: !source.enabled, 'is-default': false }"
-                >
-                  <div class="config-icon">📰</div>
-                  <div class="config-info">
-                    <div class="config-header">
-                      <span class="config-name">{{ source.name }}</span>
-                      <el-tag v-if="source.isBuiltin" type="warning" size="small" effect="plain">内置</el-tag>
-                      <el-tag v-else type="success" size="small" effect="plain">自定义</el-tag>
-                    </div>
-                    <div class="config-details">
-                      <span class="config-template" :title="source.url">{{ source.url }}</span>
+              <transition name="topic-collapse">
+                <div v-show="!isTopicCollapsed(topic.id)" class="news-topic-body">
+                  <p class="group-desc">内置主题预置全球知名媒体源；可新增自定义主题，来源按主题归组</p>
+                  <div v-if="sourcesOfTopic(topic.id).length" class="provider-config-list">
+                    <div
+                      v-for="source in sourcesOfTopic(topic.id)"
+                      :key="source.id"
+                      class="provider-config-item"
+                      :class="{ disabled: !source.enabled, 'is-default': false }"
+                    >
+                      <div class="config-icon">
+                        <FaviconIcon :url="source.url" :size="28" fallback="📰" />
+                      </div>
+                      <div class="config-info">
+                        <div class="config-header">
+                          <span class="config-name">{{ source.name }}</span>
+                          <el-tag v-if="source.isBuiltin" type="warning" size="small" effect="plain">内置</el-tag>
+                          <el-tag v-else type="success" size="small" effect="plain">自定义</el-tag>
+                        </div>
+                        <div class="config-details">
+                          <span class="config-template" :title="source.url">{{ source.url }}</span>
+                        </div>
+                      </div>
+                      <div class="config-actions">
+                        <el-switch v-model="source.enabled" @change="toggleNewsSourceEnabled(source)" />
+                        <el-button text size="small" :disabled="source.isBuiltin" @click="editNewsSource(source)">编辑</el-button>
+                        <el-button text type="danger" size="small" :disabled="source.isBuiltin" @click="deleteNewsSource(source)">删除</el-button>
+                      </div>
                     </div>
                   </div>
-                  <div class="config-actions">
-                    <el-switch v-model="source.enabled" @change="toggleNewsSourceEnabled(source)" />
-                    <el-button text size="small" :disabled="source.isBuiltin" @click="editNewsSource(source)">编辑</el-button>
-                    <el-button text type="danger" size="small" :disabled="source.isBuiltin" @click="deleteNewsSource(source)">删除</el-button>
-                  </div>
+                  <div v-else class="empty-config"><p>该主题暂无来源</p></div>
                 </div>
-              </div>
-              <div v-else class="empty-config"><p>该主题暂无来源</p></div>
-            </div>
-            <div class="news-topic-add">
-              <el-button type="primary" plain size="small" @click="openAddNewsTopicDialog">
-                <el-icon><Plus /></el-icon>
-                添加主题
-              </el-button>
+              </transition>
             </div>
           </div>
         </el-tab-pane>
@@ -689,12 +702,13 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, FolderOpened, Download, Upload, Delete, Plus, Folder, InfoFilled, MoreFilled } from '@element-plus/icons-vue'
+import { Check, FolderOpened, Download, Upload, Delete, Plus, Folder, InfoFilled, MoreFilled, ArrowRight } from '@element-plus/icons-vue'
 import { useTheme, availableThemes, type ThemeConfig } from '@/composables/useTheme'
 import { useSkin, SKIN_OPTIONS } from '@/composables/useSkin'
 import { useAppSettings, fontSizeConfig, languageConfig, type FontSize, type Language } from '@/composables/useAppSettings'
 import AddProviderDialog from '@/components/settings/AddProviderDialog.vue'
 import AddSearchEngineDialog from '@/components/settings/AddSearchEngineDialog.vue'
+import FaviconIcon from '@/components/common/FaviconIcon.vue'
 import ToolSettings from '@/components/settings/ToolSettings.vue'
 import EmailSettings from '@/components/settings/EmailSettings.vue'
 import DataSourceManager from '@/components/settings/DataSourceManager.vue'
@@ -718,20 +732,7 @@ interface SearchEngineConfigWithState extends UserSearchEngineConfig {
   testing?: boolean
 }
 
-// 主题名称映射
-const themeNames: Record<string, string> = {
-  techBlue: '科技蓝',
-  emerald: '翡翠绿',
-  purple: '紫罗兰',
-  flame: '火焰橙',
-  cosmic: '深空紫',
-  midnight: '暗夜黑',
-  chineseRed: '朱砂红',
-  jadeGreen: '翡翠青',
-  inkBlue: '黛蓝',
-  goldAmber: '琥珀黄',
-  plumPurple: '梅子青'
-}
+// 主题名称直接用 useTheme.availableThemes 里的 name 字段（中文）
 
 // 主题
 const { currentTheme, setTheme } = useTheme()
@@ -801,6 +802,19 @@ const newsSourceTopics = ref<Array<{ id: string; label: string; isBuiltin: boole
 const showNewsTopicDialog = ref(false)
 const editingNewsTopic = ref<{ id: string; isBuiltin: boolean } | undefined>(undefined)
 const newsTopicName = ref('')
+/** 已折叠的主题 id 集合（点击主题标题可折叠/展开其下来源） */
+const collapsedTopicIds = ref<Set<string>>(new Set())
+
+function isTopicCollapsed(topicId: string): boolean {
+  return collapsedTopicIds.value.has(topicId)
+}
+
+function toggleTopic(topicId: string): void {
+  const next = new Set(collapsedTopicIds.value)
+  if (next.has(topicId)) next.delete(topicId)
+  else next.add(topicId)
+  collapsedTopicIds.value = next
+}
 
 async function loadNewsTopics(): Promise<void> {
   const api = (window as unknown as { electronAPI: any }).electronAPI
@@ -1699,7 +1713,9 @@ onMounted(async () => {
     }
 
     :deep(.el-tab-pane) {
-      height: 100%;
+      // 底部留白放在 pane 上：滚动到底或内容不满一屏时都与容器下边框保持间距
+      min-height: 100%;
+      padding-bottom: 56px;
     }
   }
 }
@@ -2210,11 +2226,73 @@ onMounted(async () => {
   margin: 0 0 4px 0;
 }
 
-/* 新闻主题：标题行（名称 + 操作按钮） */
+/* 新闻主题：标题行（名称 + 操作按钮），整行可点击折叠 */
 .group-title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .group-title-row .group-title { margin: 0; }
 .group-title-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
-.news-topic-add { margin-top: 14px; display: flex; justify-content: flex-end; }
+
+/* 头部操作按钮组（添加主题 在 添加来源 左侧） */
+.section-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* 新闻主题折叠 */
+.news-topic-group {
+  border: 1px solid var(--border-color-lighter);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  background: var(--bg-color);
+  transition: border-color var(--transition-normal);
+
+  &:hover {
+    border-color: var(--color-primary-light);
+  }
+}
+
+.news-topic-header {
+  cursor: pointer;
+  user-select: none;
+  padding: 4px 0;
+
+  .news-topic-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .topic-chevron {
+    font-size: 14px;
+    color: var(--text-secondary);
+    transition: transform var(--transition-normal);
+  }
+
+  &.collapsed .topic-chevron {
+    transform: rotate(90deg);
+  }
+
+  &:hover .topic-chevron {
+    color: var(--color-primary);
+  }
+}
+
+.news-topic-body {
+  padding-top: 4px;
+}
+
+.topic-collapse-enter-active,
+.topic-collapse-leave-active {
+  transition: opacity var(--transition-normal), transform var(--transition-normal);
+  transform-origin: top;
+}
+
+.topic-collapse-enter-from,
+.topic-collapse-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
 
 // OSS 配置列表样式
 .oss-config-list {

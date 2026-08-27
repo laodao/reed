@@ -62,8 +62,8 @@
           <el-input v-model="form.name" placeholder="如：我的智谱搜索" />
         </el-form-item>
 
-        <!-- API 密钥 -->
-        <el-form-item label="API Key" prop="apiKey">
+        <!-- API 密钥（仅需要 Key 的模板显示） -->
+        <el-form-item v-if="needsApiKey" label="API Key" prop="apiKey">
           <el-input
             v-model="form.apiKey"
             type="password"
@@ -71,6 +71,9 @@
             :placeholder="selectedTemplate?.authConfig.apiKeyPlaceholder || '请输入 API Key'"
           />
           <div v-if="isEdit" class="form-hint">留空则保持原有密钥不变</div>
+        </el-form-item>
+        <el-form-item v-else label="API Key">
+          <div class="form-hint">该搜索引擎无需 API Key</div>
         </el-form-item>
 
         <!-- 额外配置字段（如 API 地址） -->
@@ -152,14 +155,17 @@ const visible = computed({
 
 const isEdit = computed(() => !!props.editConfig)
 
-// 筛选需要 API Key 的模板
-const apiTemplates = computed(() => {
-  const existingTemplateIds = props.existingConfigs
-    .filter(c => c.isEnabled)
-    .map(c => c.templateId)
+/** 当前所选模板是否需要 API Key（编辑模式视为需要，兼容存量配置） */
+const needsApiKey = computed(() => {
+  if (isEdit.value) return true
+  return !!selectedTemplate.value?.authConfig.requiresApiKey
+})
 
+// 筛选可配置的 API 型模板（需要 Key 或需要额外配置项；SearXNG 等无需 Key 也要出现）
+const apiTemplates = computed(() => {
   return props.templates.filter(t =>
-    t.authConfig.requiresApiKey && t.category === 'api'
+    t.category === 'api' &&
+    (t.authConfig.requiresApiKey || t.authConfig.requiresExtraConfig)
   )
 })
 
@@ -189,7 +195,7 @@ const rules = {
   apiKey: [
     {
       validator: (_rule: any, value: string, callback: any) => {
-        if (!isEdit.value && !value) {
+        if (needsApiKey.value && !isEdit.value && !value) {
           callback(new Error('请输入 API Key'))
         } else {
           callback()
@@ -340,6 +346,11 @@ watch(visible, (val) => {
 
 <style lang="scss" scoped>
 .add-search-engine-dialog {
+  // 对话框内容与边框保持舒适间距
+  :deep(.el-dialog__body) {
+    padding: 20px 24px 24px;
+  }
+
   .template-select {
     h4 {
       margin: 0 0 16px 0;
@@ -372,6 +383,9 @@ watch(visible, (val) => {
     border-radius: var(--radius-md);
     cursor: pointer;
     transition: all var(--transition-normal);
+    // 关键：禁止卡片内容（nowrap 描述）把 grid 列撑出容器，
+    // 否则卡片右缘会溢出到对话框边框（无右侧间距）
+    min-width: 0;
 
     &:hover {
       border-color: var(--color-primary-light);

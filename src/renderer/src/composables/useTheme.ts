@@ -1,6 +1,6 @@
 /**
  * 主题管理 Composable
- * 基于中国传统色设计的惊艳主题系列
+ * 五类配色：淡雅（浅主色）/ 清新 / 鲜艳（深饱和辅色）/ 暖色 / 沉稳
  */
 
 import { ref, watch, onMounted } from 'vue'
@@ -17,107 +17,113 @@ export interface ThemeConfig {
 
 // 可用主题列表
 export const availableThemes: ThemeConfig[] = [
-  // ==================== 惊艳主题系列（中国传统色） ====================
+  // ==================== 淡雅系（主色调浅，整体柔和） ====================
   {
-    id: 'palace-red',
-    name: '故宫红墙',
-    primary: '#c94043',
-    gradient: 'linear-gradient(135deg, #c94043 0%, #e8886a 100%)',
-    description: '朱砂配月白·大气华贵',
-    category: '惊艳系列'
+    id: 'cloud-blue',
+    name: '云水蓝',
+    primary: '#6fa8dc',
+    gradient: 'linear-gradient(135deg, #6fa8dc 0%, #a8ccf0 100%)',
+    description: '浅蓝如云·轻盈淡雅',
+    category: '淡雅系'
   },
   {
-    id: 'blue-porcelain',
-    name: '青花瓷韵',
-    primary: '#2e4a62',
-    gradient: 'linear-gradient(135deg, #2e4a62 0%, #5a7d9a 100%)',
-    description: '钴蓝配月白·清雅脱俗',
-    category: '惊艳系列'
+    id: 'light-lavender',
+    name: '淡雾紫',
+    primary: '#9b8ad6',
+    gradient: 'linear-gradient(135deg, #9b8ad6 0%, #bfb2ea 100%)',
+    description: '薰衣薄雾·温柔恬静',
+    category: '淡雅系'
+  },
+  // ==================== 清新系 ====================
+  {
+    id: 'ocean-blue',
+    name: '海盐蓝',
+    primary: '#4a7fbf',
+    gradient: 'linear-gradient(135deg, #4a7fbf 0%, #7fb3e8 100%)',
+    description: '海风拂面·清透辽阔',
+    category: '清新系'
   },
   {
-    id: 'misty-rain',
-    name: '烟雨江南',
-    primary: '#4a5568',
-    gradient: 'linear-gradient(135deg, #5a6878 0%, #7a8a9a 100%)',
-    description: '黛蓝配藕粉·温婉诗意',
-    category: '惊艳系列'
+    id: 'mint-green',
+    name: '薄荷青',
+    primary: '#3fa88a',
+    gradient: 'linear-gradient(135deg, #3fa88a 0%, #6fc9b0 100%)',
+    description: '薄荷微凉·自然清新',
+    category: '清新系'
+  },
+  // ==================== 鲜艳系（辅色深饱和） ====================
+  {
+    id: 'vivid-orange',
+    name: '活力橙',
+    primary: '#f26b2e',
+    gradient: 'linear-gradient(135deg, #f26b2e 0%, #ff9d5c 100%)',
+    description: '橙光跃动·明快热烈',
+    category: '鲜艳系'
   },
   {
-    id: 'bamboo-breeze',
-    name: '竹影清风',
-    primary: '#5d8a66',
-    gradient: 'linear-gradient(135deg, #5d8a66 0%, #7db587 100%)',
-    description: '竹青配米白·清新雅致',
-    category: '惊艳系列'
+    id: 'electric-purple',
+    name: '电光紫',
+    primary: '#7c4df0',
+    gradient: 'linear-gradient(135deg, #7c4df0 0%, #a97ff7 100%)',
+    description: '电光流转·炫酷醒目',
+    category: '鲜艳系'
+  },
+  // ==================== 暖色系 ====================
+  {
+    id: 'sunset-orange',
+    name: '落日橘',
+    primary: '#e2804e',
+    gradient: 'linear-gradient(135deg, #e2804e 0%, #f5b07e 100%)',
+    description: '落日余晖·温暖明亮',
+    category: '暖色系'
   },
   {
-    id: 'dawn-purple',
-    name: '紫禁晨曦',
-    primary: '#7d5a6a',
-    gradient: 'linear-gradient(135deg, #7d5a6a 0%, #a08090 100%)',
-    description: '紫檀配杏黄·高贵典雅',
-    category: '惊艳系列'
+    id: 'rose-pink',
+    name: '玫瑰粉',
+    primary: '#d96a8a',
+    gradient: 'linear-gradient(135deg, #d96a8a 0%, #eda0b0 100%)',
+    description: '玫瑰微醺·柔美浪漫',
+    category: '暖色系'
+  },
+  // ==================== 沉稳系 ====================
+  {
+    id: 'deep-navy',
+    name: '深海蓝',
+    primary: '#3f5f9e',
+    gradient: 'linear-gradient(135deg, #3f5f9e 0%, #6f8fc8 100%)',
+    description: '深海静谧·深邃可靠',
+    category: '沉稳系'
   },
   {
-    id: 'ginkgo-gold',
-    name: '金秋银杏',
-    primary: '#c9a04a',
-    gradient: 'linear-gradient(135deg, #c9a04a 0%, #e0c070 100%)',
-    description: '琥珀配墨绿·温暖醇厚',
-    category: '惊艳系列'
-  },
-  {
-    id: 'peach-blossom',
-    name: '胭脂桃夭',
-    primary: '#e07878',
-    gradient: 'linear-gradient(135deg, #e07878 0%, #f0a8a0 100%)',
-    description: '胭脂配柳绿·娇艳动人',
-    category: '惊艳系列'
-  },
-  {
-    id: 'pine-moon',
-    name: '松风水月',
-    primary: '#4a7570',
-    gradient: 'linear-gradient(135deg, #4a7570 0%, #6a958f 100%)',
-    description: '松绿配月白·幽静清远',
-    category: '惊艳系列'
-  },
-  // ==================== 经典主题 ====================
-  {
-    id: 'sky-cyan',
-    name: '天青色',
-    primary: '#5b8c85',
-    gradient: 'linear-gradient(135deg, #5b8c85 0%, #7ba39c 100%)',
-    description: '雨过天青云破处·温润如玉',
-    category: '经典主题'
-  },
-  {
-    id: 'tech-blue',
-    name: '科技蓝',
-    primary: '#4a7cb8',
-    gradient: 'linear-gradient(135deg, #4a7cb8 0%, #6a9cd8 100%)',
-    description: '清新科技感·沉稳可靠',
-    category: '经典主题'
+    id: 'slate-gray',
+    name: '石墨灰',
+    primary: '#5d6b7e',
+    gradient: 'linear-gradient(135deg, #5d6b7e 0%, #8595aa 100%)',
+    description: '石墨质感·简约高级',
+    category: '沉稳系'
   }
 ]
 
 // 当前主题
-const currentTheme = ref<string>('palace-red')
+const currentTheme = ref<string>('cloud-blue')
 
 // 主题颜色映射（用于 Element Plus）
 const themeColorMap: Record<string, { primary: string; light: string; dark: string }> = {
-  // 惊艳系列
-  'palace-red': { primary: '#c94043', light: '#e06567', dark: '#a32e31' },
-  'blue-porcelain': { primary: '#2e4a62', light: '#4a6a85', dark: '#1e3548' },
-  'misty-rain': { primary: '#4a5568', light: '#6b7a8f', dark: '#374151' },
-  'bamboo-breeze': { primary: '#5d8a66', light: '#7aa384', dark: '#4a7052' },
-  'dawn-purple': { primary: '#7d5a6a', light: '#9a7889', dark: '#5f4351' },
-  'ginkgo-gold': { primary: '#c9a04a', light: '#ddb86a', dark: '#a88535' },
-  'peach-blossom': { primary: '#e07878', light: '#f09898', dark: '#c85a5a' },
-  'pine-moon': { primary: '#4a7570', light: '#6a9590', dark: '#3a5a56' },
-  // 经典主题
-  'sky-cyan': { primary: '#5b8c85', light: '#7ba39c', dark: '#4a7570' },
-  'tech-blue': { primary: '#4a7cb8', light: '#6a9cd8', dark: '#3a6ca0' }
+  // 淡雅系
+  'cloud-blue': { primary: '#6fa8dc', light: '#8fc0ea', dark: '#4f8ac4' },
+  'light-lavender': { primary: '#9b8ad6', light: '#b4a6e6', dark: '#7c6ab8' },
+  // 清新系
+  'ocean-blue': { primary: '#4a7fbf', light: '#6fa3db', dark: '#35679e' },
+  'mint-green': { primary: '#3fa88a', light: '#5fc0a3', dark: '#2f8a72' },
+  // 鲜艳系
+  'vivid-orange': { primary: '#f26b2e', light: '#f8946a', dark: '#cf4f14' },
+  'electric-purple': { primary: '#7c4df0', light: '#9c7af5', dark: '#5f35c8' },
+  // 暖色系
+  'sunset-orange': { primary: '#e2804e', light: '#f0a37c', dark: '#c2653a' },
+  'rose-pink': { primary: '#d96a8a', light: '#e88fa8', dark: '#b84f6f' },
+  // 沉稳系
+  'deep-navy': { primary: '#3f5f9e', light: '#6484bd', dark: '#2e4a80' },
+  'slate-gray': { primary: '#5d6b7e', light: '#7d8da1', dark: '#45536a' }
 }
 
 // 应用主题到 DOM
@@ -128,7 +134,7 @@ const applyTheme = (themeId: string) => {
 
 // 更新 Element Plus 主题变量
 const updateElementPlusTheme = (themeId: string) => {
-  const colors = themeColorMap[themeId] || themeColorMap['palace-red']
+  const colors = themeColorMap[themeId] || themeColorMap['cloud-blue']
   if (!colors) return
 
   const root = document.documentElement

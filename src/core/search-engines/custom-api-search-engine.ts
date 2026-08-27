@@ -2,8 +2,11 @@
  * 通用 API 型搜索引擎（OpenAI 兼容 /chat/completions）
  * @module search-engines/custom-api-search-engine
  * @description 用户自定义 API 搜索引擎：填 API 地址 + Key + 模型名即可接入
- *              任意 OpenAI 兼容搜索端点（如 Perplexity、Exa、DeepSeek 联网等）。
+ *              任意 OpenAI 兼容搜索端点（如 Perplexity、DeepSeek 联网等）。
  *              配置项通用（apiUrl/model），支持在提示词中要求返回链接。
+ *
+ *              预置引擎（Perplexity / DeepSeek 联网）通过子类覆盖
+ *              defaultApiUrl / defaultModel 复用本类实现。
  */
 
 import { BaseSearchEngine } from './base-search-engine'
@@ -11,24 +14,30 @@ import type { WebSearchResultItem, WebSearchResponse, SearchEngineType } from '@
 
 export class CustomApiSearchEngine extends BaseSearchEngine {
   readonly type: SearchEngineType = 'custom-api'
-  readonly name: string = '通用 API 搜索'
+  readonly name: string = '自定义搜索引擎'
 
   private readonly timeout = 60000
 
-  /** API 基础 URL（必填：extraConfig.apiUrl） */
-  private get baseUrl(): string {
-    return (this.config.extraConfig?.apiUrl as string | undefined)?.replace(/\/+$/, '') || ''
+  /** 子类可覆盖的默认 API 基础 URL（extraConfig.apiUrl 缺省时使用） */
+  protected defaultApiUrl = ''
+
+  /** 子类可覆盖的默认模型名（extraConfig.model 缺省时使用） */
+  protected defaultModel = ''
+
+  /** API 基础 URL（必填：extraConfig.apiUrl；缺省回落子类默认值） */
+  protected get baseUrl(): string {
+    return (this.config.extraConfig?.apiUrl as string | undefined)?.replace(/\/+$/, '') || this.defaultApiUrl
   }
 
-  /** 模型名（extraConfig.model；缺省 web-search-pro 类常见默认） */
-  private get model(): string {
-    return (this.config.extraConfig?.model as string | undefined) || ''
+  /** 模型名（extraConfig.model；缺省回落子类默认值） */
+  protected get model(): string {
+    return (this.config.extraConfig?.model as string | undefined) || this.defaultModel
   }
 
   async search(query: string, maxResults: number = 5): Promise<WebSearchResponse> {
     const startTime = this.getTimestamp()
     if (!this.config.apiKey) {
-      return this.createErrorResponse('通用 API 搜索需要配置 API Key', query)
+      return this.createErrorResponse('自定义搜索引擎需要配置 API Key', query)
     }
     if (!this.baseUrl) {
       return this.createErrorResponse('请配置 API 地址（apiUrl）', query)
@@ -96,7 +105,7 @@ export class CustomApiSearchEngine extends BaseSearchEngine {
               title: this.truncateText(title, 100),
               url: this.normalizeUrl(url),
               snippet: this.truncateText(snippet, 200),
-              source: 'custom-api',
+              source: this.type,
               sourceName: this.name,
             })
           }
@@ -118,7 +127,7 @@ export class CustomApiSearchEngine extends BaseSearchEngine {
             title: this.truncateText(title, 100),
             url: this.normalizeUrl(url),
             snippet: this.truncateText(rest.join(' | '), 200),
-            source: 'custom-api',
+            source: this.type,
             sourceName: this.name,
           })
         }
