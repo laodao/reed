@@ -39,9 +39,16 @@ export class WorkflowDefinitionEntity {
   @Column({ name: 'category', type: 'varchar', nullable: true })
   category!: string | null
 
-  /** 内置工作流（1=user_id NULL 全局共享，禁删禁改，允许复制；0=用户自有） */
+  /** 内置工作流（1=user_id NULL 全局共享，允许编辑，可复制；0=用户自有） */
   @Column({ name: 'is_builtin', type: 'integer', default: 0, nullable: true })
   isBuiltin!: number | null
+
+  /**
+   * 内置模板版本：内置定义记录"当前模板版本号"；用户保存草稿/发布内置工作流时置 0
+   * （表示已接管），create-builtin-apps 迁移对 0 跳过模板同步（不再重置用户修改）。
+   */
+  @Column({ name: 'template_version', type: 'integer', default: 0, nullable: true })
+  templateVersion!: number | null
 
   /** 草稿图（WorkflowGraph JSON；新建时可含 start/end 骨架） */
   @Column({ name: 'draft_graph', type: 'text', nullable: true })

@@ -29,7 +29,7 @@
       <div v-if="apps.length" class="app-grid">
         <div v-for="app in apps" :key="app.id" class="app-card" :class="{ disabled: app.enabled !== 1 }">
           <div class="card-head">
-            <span class="app-emoji">{{ app.icon || '📦' }}</span>
+            <span class="app-emoji">{{ resolveAppIcon(app.icon, app.category) }}</span>
             <div class="card-info">
               <div class="app-name" :title="app.name">{{ app.name }}
                 <el-tag v-if="app.isBuiltin" size="small" type="warning" effect="plain" style="margin-left: 6px">内置</el-tag>
@@ -107,6 +107,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, View, Star, CopyDocument, Delete } from '@element-plus/icons-vue'
 import type { AppRecord } from '@shared/types/app.types'
 import { electronApi } from '@/types/electron-api'
+import { resolveAppIcon } from '../../utils/app-icons'
 
 const router = useRouter()
 const api = electronApi()

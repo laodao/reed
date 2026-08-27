@@ -10,6 +10,7 @@ import { createWorkflowTables } from '@core/database/migrations/create-workflow-
 import { createAppsTables } from '@core/database/migrations/create-apps-tables'
 import { createAssetsTables } from '@core/database/migrations/create-assets-tables'
 import { createBuiltinApps } from '@core/database/migrations/create-builtin-apps'
+import { addWorkflowTemplateVersion } from '@core/database/migrations/add-workflow-template-version'
 import { WorkflowDefinitionEntity } from '@core/database/entities/workflow-definition.entity'
 import { AppEntity } from '@core/database/entities/app.entity'
 import { AssetEntity } from '@core/database/entities/asset.entity'
@@ -25,6 +26,7 @@ beforeAll(async () => {
   })
   await ds.initialize()
   await createWorkflowTables(ds)
+  await addWorkflowTemplateVersion(ds)
   await createAppsTables(ds)
   await createAssetsTables(ds)
   await createBuiltinApps(ds)
@@ -112,5 +114,31 @@ describe('create-builtin-apps 迁移执行（真实 sqlite）', () => {
   it('内置应用 pinned 缺省为 0（固定到首页需用户主动操作）', async () => {
     const rows = await ds.query(`SELECT pinned FROM apps WHERE is_builtin = 1`)
     for (const r of rows) expect(r.pinned ?? 0).toBe(0)
+  })
+
+  it('内置定义写入 template_version=1（跟随模板）', async () => {
+    const rows = await ds.query(`SELECT template_version FROM workflow_definitions WHERE is_builtin = 1`)
+    expect(rows.length).toBe(17)
+    for (const r of rows) expect(r.template_version).toBe(1)
+  })
+
+  it('用户接管（template_version=0）后，迁移不再覆盖内置定义内容', async () => {
+    const defId = 'builtin_def_daily-news-brief' // defId = 前缀 + 文件名去 .json
+    // 模拟用户修改内置工作流（保存草稿后 template_version 被 repository 置 0）
+    await ds.query(
+      `UPDATE workflow_definitions SET draft_graph = '{"version":1,"nodes":[],"edges":[]}', template_version = 0 WHERE id = '${defId}'`
+    )
+    // 迁移重跑：已接管的定义不被模板重置
+    await createBuiltinApps(ds)
+    const row = await ds.query(
+      `SELECT draft_graph, template_version FROM workflow_definitions WHERE id = '${defId}'`
+    )
+    expect(row[0].template_version).toBe(0) // 仍是接管态
+    expect(JSON.parse(row[0].draft_graph)).toEqual({ version: 1, nodes: [], edges: [] }) // 用户内容保留
+    // 未接管的定义仍被同步（内容 = 模板）
+    const untouched = await ds.query(
+      `SELECT template_version FROM workflow_definitions WHERE id = 'builtin_def_industry-weekly'`
+    )
+    expect(untouched[0].template_version).toBe(1)
   })
 })

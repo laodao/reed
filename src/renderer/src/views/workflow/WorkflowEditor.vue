@@ -20,6 +20,7 @@
       <el-button size="small" @click="autoLayout">🧹 一键整理</el-button>
       <el-button size="small" @click="doValidate">校验</el-button>
       <el-button size="small" type="warning" plain @click="showDebug = true">试运行</el-button>
+      <el-button size="small" @click="openVersions">历史版本</el-button>
       <el-button size="small" type="primary" @click="doPublish">发布</el-button>
       <el-button size="small" type="success" plain @click="openAppPublish">发布为应用</el-button>
       <el-button size="small" type="info" plain @click="openShare">分享</el-button>
@@ -50,7 +51,8 @@
           @connect="onConnect" @edge-click="onEdgeClick" @edge-update="onEdgeUpdate" @pane-click="closeConfigPanel" fit-view-on-init :min-zoom="0.2" :delete-key-code="['Delete','Backspace']">
           <Background :gap="20" />
           <Controls />
-          <MiniMap />
+          <!-- pannable：点击/拖拽缩略图（白色视口框）可同步平移画布 -->
+          <MiniMap :pannable="true" />
 
           <!-- 自定义节点 -->
           <template #node-wf="nodeProps">
@@ -141,13 +143,33 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 版本历史（发布快照；恢复到草稿） -->
+    <el-dialog v-model="showVersions" title="版本历史" width="620px">
+      <el-empty v-if="!versions.length" description="暂无历史版本（每次发布生成一条快照）" />
+      <el-table v-else :data="versions" size="small" max-height="380">
+        <el-table-column label="版本" width="70">
+          <template #default="{ row }">v{{ row.version }}</template>
+        </el-table-column>
+        <el-table-column label="发布时间" width="160">
+          <template #default="{ row }">{{ formatVersionTime(row.createdAt) }}</template>
+        </el-table-column>
+        <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip />
+        <el-table-column label="操作" width="130">
+          <template #default="{ row }">
+            <el-button text type="primary" size="small" :loading="restoringId === row.id" @click="restoreVersion(row)">恢复到草稿</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div v-if="versions.length" class="version-hint">恢复后内容回到当前草稿（图/触发器/设置），请手动保存或重新发布</div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 defineOptions({ name: 'WorkflowEditor' })
-import { ref, reactive, computed, onMounted, onUnmounted, provide, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { ref, reactive, computed, onMounted, onUnmounted, provide, watch, nextTick } from 'vue'
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Close } from '@element-plus/icons-vue'
 import { VueFlow, Handle, Position, MarkerType, useVueFlow } from '@vue-flow/core'
@@ -167,6 +189,7 @@ import RunInputForm from '@/components/workflow/RunInputForm.vue'
 import { useWorkflowStore } from '@/stores/workflow'
 import { computeHighlight, EDGE_HIGHLIGHT_STYLE } from '@/utils/workflow-editor-highlight'
 import type { HighlightSelection } from '@/utils/workflow-editor-highlight'
+import { iconForWorkflowCategory } from '../../utils/app-icons'
 
 const route = useRoute()
 const router = useRouter()
@@ -178,6 +201,53 @@ const dragType = ref<WorkflowNodeType | ''>('')
 const paletteSearch = ref('')
 const saving = ref(false)
 const validation = ref<{ valid: boolean; errors: string[]; warnings: string[] } | null>(null)
+
+// ==================== 未保存修改检测（返回/离开时提示） ====================
+
+/** 是否有未保存修改（内容指纹对比：忽略 style 等纯展示字段） */
+const dirty = ref(false)
+
+/** 内容指纹：节点结构/位置/配置 + 边结构/文字（不含 style 高亮等展示态） */
+function contentFingerprint(): string {
+  // 类型断链：Vue Flow Node/Edge 泛型在 vue-tsc 下实例化过深（TS2589），
+  // 指纹只关心可 JSON 序列化内容，用 unknown 中转避免深度泛型传播
+  const nodesFp: unknown[] = (nodes.value as any[]).map(n => ({
+    id: n.id, type: n.type, position: n.position, data: n.data,
+  }))
+  const edgesFp: unknown[] = (edges.value as any[]).map(e => ({
+    id: e.id, source: e.source, target: e.target,
+    sourceHandle: e.sourceHandle ?? null, targetHandle: e.targetHandle ?? null,
+    label: e.label ?? null, data: e.data ?? null,
+  }))
+  return JSON.stringify({ nodes: nodesFp, edges: edgesFp })
+}
+let savedFingerprint = ''
+
+/** 重置基线（加载/保存成功后调用）：当前内容视为已保存 */
+function resetDirtyBaseline(): void {
+  savedFingerprint = contentFingerprint()
+  dirty.value = false
+}
+
+watch([nodes, edges], () => { dirty.value = contentFingerprint() !== savedFingerprint }, { deep: true })
+
+/** 离开守卫：有未保存修改时确认（返回按钮/浏览器后退/其他导航统一拦截） */
+onBeforeRouteLeave(async (_to, _from, next) => {
+  if (!dirty.value) { next(); return }
+  try {
+    await ElMessageBox.confirm('当前工作流有未保存的修改，是否保存后再离开？', '离开编辑器', {
+      distinguishCancelAndClose: true,
+      confirmButtonText: '保存并离开',
+      cancelButtonText: '不保存',
+      type: 'warning',
+    })
+    await saveDraftSilent()
+    next()
+  } catch (action) {
+    if (action === 'cancel') next() // 明确选择不保存 → 直接离开
+    else next(false) // 关闭对话框 → 留在编辑器
+  }
+})
 
 const api = () => (window as never as { electronAPI: any }).electronAPI.workflow
 
@@ -450,6 +520,8 @@ function loadGraph(graph: WorkflowGraph) {
     data: { kind: e.kind, branchId: e.branchId },
     style: edgeStyle(e.kind),
   }))
+  // 加载完成后：当前内容视为已保存基线（等 watch 跑完再重置）
+  nextTick(resetDirtyBaseline)
 }
 
 function edgeLabel(kind: WorkflowEdgeKind, branchId?: string): string {
@@ -497,7 +569,7 @@ async function saveDraft() {
   saving.value = true
   try {
     const resp = await api().saveDraft(definition.value.id, toGraph())
-    if (resp.success) ElMessage.success('草稿已保存')
+    if (resp.success) { ElMessage.success('草稿已保存'); resetDirtyBaseline() }
     else ElMessage.error(resp.error)
   } finally { saving.value = false }
 }
@@ -523,7 +595,8 @@ async function doValidate(): Promise<boolean> {
   }
 }
 async function saveDraftSilent() {
-  await api().saveDraft(definition.value.id, toGraph()).catch(() => {})
+  const resp = await api().saveDraft(definition.value.id, toGraph()).catch(() => null)
+  if (resp?.success) resetDirtyBaseline()
 }
 
 async function doPublish() {
@@ -533,6 +606,48 @@ async function doPublish() {
   const resp = await api().publishDefinition({ id: definition.value.id })
   if (resp.success) { ElMessage.success('已发布'); definition.value.publishedVersion = (definition.value.publishedVersion ?? 0) + 1 }
   else ElMessage.error(resp.error)
+}
+
+// ── 版本历史（发布快照 + 恢复到草稿） ──
+const showVersions = ref(false)
+const versions = ref<any[]>([])
+const restoringId = ref('')
+
+async function openVersions() {
+  if (!definition.value) return
+  const resp = await api().listVersions(definition.value.id)
+  if (resp.success) { versions.value = resp.data ?? []; showVersions.value = true }
+  else ElMessage.error(resp.error ?? '加载版本历史失败')
+}
+
+function formatVersionTime(t: string | null): string {
+  return t ? new Date(t).toLocaleString('zh-CN') : '—'
+}
+
+/** 恢复到历史版本：版本快照应用为当前草稿（覆盖未保存修改），需手动保存/发布 */
+async function restoreVersion(row: any) {
+  if (!definition.value) return
+  try {
+    await ElMessageBox.confirm(
+      `恢复到 v${row.version}（${formatVersionTime(row.createdAt)}）？当前草稿将被该版本内容覆盖，恢复后请手动保存或发布。`,
+      '恢复到历史版本',
+      { type: 'warning', confirmButtonText: '恢复', cancelButtonText: '取消' }
+    )
+  } catch {
+    return
+  }
+  restoringId.value = row.id
+  try {
+    const resp = await api().restoreVersion({ definitionId: definition.value.id, versionId: row.id })
+    if (!resp.success) { ElMessage.error(resp.error ?? '恢复失败'); return }
+    // 更新定义并重载画布（restoreVersion 已把内容落库为草稿 → 基线随之更新）
+    definition.value = { ...definition.value, ...resp.data }
+    if (resp.data?.draftGraph) loadGraph(resp.data.draftGraph)
+    ElMessage.success(`已恢复到 v${row.version} 草稿，可继续编辑或重新发布`)
+    showVersions.value = false
+  } finally {
+    restoringId.value = ''
+  }
 }
 
 // ── 分享（C3 免登录独立页；仅 Web 端生效，PC 端提示） ──
@@ -599,7 +714,8 @@ async function openAppPublish() {
   } else {
     appPublishMode.value = 'create'
     appForm.name = definition.value.name ?? ''
-    appForm.icon = ''
+    // 未填图标时按工作流分类自动带出合适图标（用户可改）
+    appForm.icon = iconForWorkflowCategory(definition.value.category)
     appForm.channelSession = true
     appForm.channelShare = false
     appForm.channelApi = true

@@ -171,8 +171,9 @@ const reportNode: WorkflowNodeHandler = {
       template: string
       format: 'markdown' | 'docx'
     }
-    // 模板已由引擎深解析（多占位拼接为字符串）——直接作为 markdown 全文
-    const markdown = stringifyValue(cfg.template)
+    // 模板已由引擎深解析（多占位拼接为字符串）——但模板字段是"模板文本"语义，
+    // 经 read-asset 间接引入的模板资产内容中的 {{}} 占位在此渲染（与 report-image 同纪律）
+    const markdown = ctx.resolveTemplate<string>(stringifyValue(cfg.template))
     const title = stringifyValue(cfg.title) || '报告'
     const output: Record<string, unknown> = { markdown, format: cfg.format ?? 'markdown', title }
 
@@ -212,7 +213,10 @@ const reportImageNode: WorkflowNodeHandler = {
   },
   async execute(ctx: WorkflowNodeContext) {
     const cfg = ctx.config as { title: string; template: string; templateId?: string; width?: number }
-    const markdown = stringifyValue(cfg.template)
+    // template 字段是"模板文本"语义：可能经 read-asset 等间接引入（如模板资产内容），
+    // 其中的 {{start.xx}} / {{gen1.xx}} 占位需在此渲染（引擎深解析只处理 config 直接引用的模板；
+    // 直接写在 config 里的模板已被解析为实值，此处无 {{}} 则原样返回）
+    const markdown = ctx.resolveTemplate<string>(stringifyValue(cfg.template))
     const title = stringifyValue(cfg.title) || '长图报告'
     // 排版模板：按 templateId 选择（早报/周报/通用版式），未知 id 回退通用文档
     const layout = DOCUMENT_TEMPLATES[cfg.templateId ?? ''] ?? DOCUMENT_TEMPLATES.generic
@@ -224,7 +228,8 @@ const reportImageNode: WorkflowNodeHandler = {
     const output: Record<string, unknown> = {
       markdown,
       format: rendered.format,
-      html: rendered.html.slice(0, 100_000), // 超长 HTML 截断防 node_run 膨胀（正文以 markdown 为准）
+      // html 仅作预览/打印兜底（正文以 markdown 为准）：上限 1M 防 node_run 膨胀
+      html: rendered.html.slice(0, 1_000_000),
       title,
     }
     if (rendered.format === 'image') {

@@ -642,6 +642,23 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
       { key: 'failedSources', type: 'json', desc: '抓取失败的源 [{ name, url, error }]' },
     ],
   },
+  {
+    type: 'crawl-links',
+    label: '批量抓链接',
+    description: '并发抓取一批页面（专栏/二级页）→ 提取页面内链接合并去重（两级采集的第二步）',
+    category: 'general',
+    icon: 'Link',
+    controlKind: 'task',
+    cancellable: true,
+    ports: [{ kind: 'normal', label: '出', max: 1 }, { kind: 'fail', label: '失败' }],
+    requiredConfigKeys: ['urls'],
+    defaultConfig: { urls: [], maxLinks: 50, maxConcurrent: 5 },
+    outputSchema: [
+      { key: 'links', type: 'json', desc: '[{ title, url, source }] 各页面链接合并去重' },
+      { key: 'count', type: 'number', desc: '链接总数' },
+      { key: 'failedUrls', type: 'json', desc: '抓取失败的页面 [{ url, error }]' },
+    ],
+  },
   // ==================== A2 扩展 ====================
   {
     type: 'kb-qa',

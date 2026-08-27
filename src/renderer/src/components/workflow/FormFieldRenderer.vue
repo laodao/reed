@@ -123,14 +123,39 @@
             <el-option label="新闻来源库（可多选）" value="newsSources" />
             <el-option label="知识库" value="knowledgeBases" />
           </el-select>
+          <el-checkbox v-model="item.multi" size="small" @change="syncInputs" title="多选（提交值为数组）">多选</el-checkbox>
           <span class="model-types-hint">{{ dynamicRefHint(item) }}</span>
+        </div>
+        <!-- 级联（声明式联动）：跟随同表单某字段值，自动填充本字段中"选项元数据[匹配属性]==跟随值"的选项 -->
+        <div v-if="item.type === 'select-dynamic' || item.type === 'select'" class="input-card-linkage">
+          <span class="default-label">级联</span>
+          <el-select :model-value="item.linkage?.watch ?? ''" size="small" placeholder="跟随字段（可选）" clearable style="width: 160px"
+            @update:model-value="v => setLinkage(item, 'watch', v)" @clear="setLinkage(item, 'watch', '')">
+            <el-option v-for="f in otherInputKeys(item.key)" :key="f.key" :label="f.label || f.key" :value="f.key" />
+          </el-select>
+          <el-input v-if="item.linkage?.watch" :model-value="item.linkage.matchBy ?? ''" size="small" placeholder="选项属性（如 topicId）" style="width: 170px"
+            @update:model-value="v => setLinkage(item, 'matchBy', v)" />
+          <span v-if="item.linkage?.watch" class="model-types-hint">
+            联动：跟随「{{ inputLabel(item.linkage.watch) }}」自动填充选项属性 {{ item.linkage.matchBy || '?' }} 匹配的项（多选=全选）
+          </span>
+        </div>
+        <!-- 数据来源（select 也可声明 source：选项由内置数据源加载；留空=手写下方选项） -->
+        <div v-if="item.type === 'select'" class="input-card-modeltypes">
+          <span class="default-label">数据来源</span>
+          <el-select v-model="item.source" size="small" placeholder="静态选项（留空）" clearable style="width: 220px" @change="syncInputs">
+            <el-option label="模板资产（资产中心·模板）" value="assets:template" />
+            <el-option label="预置新闻主题" value="newsTopics" />
+            <el-option label="新闻来源库（可多选）" value="newsSources" />
+            <el-option label="知识库" value="knowledgeBases" />
+          </el-select>
+          <span class="model-types-hint">选数据源后选项由系统加载（可与级联组合）；留空=手写下方选项</span>
         </div>
         <div v-if="item.type !== 'select' && item.type !== 'model'" class="input-card-default">
           <span class="default-label">默认值</span>
           <el-input :model-value="String(item.defaultValue ?? '')" placeholder="定时触发时用" size="small"
             @update:model-value="v => { item.defaultValue = v; syncInputs() }" />
         </div>
-        <div v-if="item.type === 'select'" class="options-table">
+        <div v-if="item.type === 'select' && !item.source" class="options-table">
           <div class="options-table-row options-table-head">
             <span class="opt-idx">#</span>
             <span class="opt-label">选项</span>
@@ -345,6 +370,32 @@ const inputs = computed<WorkflowStartInput[]>(() => {
 })
 function syncInputs() { emit('change') }
 
+/** 级联声明写入（watch 清空则删除 linkage，保持 JSON 干净） */
+function setLinkage(item: WorkflowStartInput, key: 'watch' | 'matchBy', v: unknown): void {
+  if (!item.linkage) item.linkage = { watch: '', matchBy: '' }
+  if (key === 'watch') {
+    const watch = String(v ?? '').trim()
+    if (!watch) item.linkage = undefined // 未选跟随字段 → 无级联
+    else item.linkage.watch = watch
+  } else {
+    item.linkage.matchBy = String(v ?? '').trim()
+  }
+  syncInputs()
+}
+
+/** 同表单其他字段（级联可选的被监听字段，排除自身） */
+function otherInputKeys(excludeKey: string): Array<{ key: string; label: string }> {
+  return inputs.value
+    .filter(f => f.key && f.key !== excludeKey)
+    .map(f => ({ key: f.key as string, label: f.label || f.key as string }))
+}
+
+/** 字段显示名（级联提示文案用） */
+function inputLabel(key: string): string {
+  const f = inputs.value.find(x => x.key === key)
+  return f ? f.label || key : key
+}
+
 /** 校验配置面板展开状态（按行 index；简单场景删除错位可接受） */
 const validationOpen = reactive<Record<number, boolean>>({})
 
@@ -515,4 +566,7 @@ onMounted(loadTools)
 .oas-hint { color: var(--el-text-color-secondary); font-size: 12px; margin-top: 4px; }
 .param-key { font-size: 12px; min-width: 90px; color: var(--el-text-color-regular); }
 .param-key .req { color: var(--el-color-danger); margin-left: 2px; }
+/* 开始输入字段：数据来源 / 级联（联动）配置行 */
+.input-card-linkage { display: flex; gap: 8px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+.input-card-linkage .model-types-hint { width: 100%; }
 </style>

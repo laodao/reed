@@ -360,6 +360,16 @@ async function initDatabase(): Promise<void> {
   )
   await addWorkflowShareToken(ds)
 
+  // 内置模板接管标记 + 版本历史表（与 Electron 端同构）
+  const { addWorkflowTemplateVersion } = await import(
+    '@core/database/migrations/add-workflow-template-version'
+  )
+  await addWorkflowTemplateVersion(ds)
+  const { createWorkflowDefinitionVersionsTable } = await import(
+    '@core/database/migrations/create-workflow-definition-versions'
+  )
+  await createWorkflowDefinitionVersionsTable(ds)
+
   // D1 QA 知识库：kb_qa_pairs 问答对表（与 Electron 端同构）
   const { createKbQaPairs } = await import(
     '@core/database/migrations/create-kb-qa-pairs'

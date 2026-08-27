@@ -23,10 +23,10 @@
         <!-- 布尔 -->
         <el-switch v-else-if="item.type === 'boolean'" v-model="values[item.key]" @change="touch(item.key)" />
 
-        <!-- 下拉（multi 多选） -->
+        <!-- 下拉（multi 多选；有 source=从数据源加载选项，否则手写选项） -->
         <el-select v-else-if="item.type === 'select'" v-model="values[item.key]"
           :multiple="!!item.multi" clearable filterable placeholder="请选择" style="width: 100%" @change="touch(item.key)">
-          <el-option v-for="o in item.options ?? []" :key="String(o.value)" :label="o.label" :value="o.value" />
+          <el-option v-for="o in item.source ? dynamicOptions(item) : (item.options ?? [])" :key="String(o.value)" :label="o.label" :value="o.value" />
         </el-select>
 
         <!-- JSON -->
@@ -112,6 +112,7 @@
 import { reactive, computed, ref, watch, nextTick } from 'vue'
 import type { WorkflowStartInput } from '@shared/types/workflow.types'
 import { toPlainData } from '../../utils/plain-data'
+import { linkageFieldValue, type LinkageOption } from '../../utils/form-linkage'
 
 const props = defineProps<{
   inputs: WorkflowStartInput[]
@@ -239,8 +240,12 @@ const numValues = reactive<Record<string, number | undefined>>({})
 
 // ── 动态下拉（type='select-dynamic'）：模板资产等 ──
 
-/** 动态选项缓存：source → 选项列表（label/value） */
-const dynamicCache = reactive<Record<string, Array<{ label: string; value: string }>>>({})
+/**
+ * 动态选项缓存：source → 选项列表。
+ * 选项保留完整元数据（如 newsSources 的 topicId），供声明式联动（linkage）过滤——
+ * 任何 source 的选项都可附带任意元数据，联动声明按 matchBy 匹配。
+ */
+const dynamicCache = reactive<Record<string, LinkageOption[]>>({})
 /** 加载中标记：source → boolean */
 const dynamicBusy = reactive<Record<string, boolean>>({})
 
@@ -249,8 +254,8 @@ function dynamicSourceOf(item: WorkflowStartInput): string {
   return item.source ?? ''
 }
 
-/** 字段动态选项（按 source 缓存取；assets:template → 模板资产列表） */
-function dynamicOptions(item: WorkflowStartInput): Array<{ label: string; value: string }> {
+/** 字段动态选项（按 source 缓存取；保留元数据供联动过滤） */
+function dynamicOptions(item: WorkflowStartInput): LinkageOption[] {
   const src = dynamicSourceOf(item)
   return dynamicCache[src] ?? []
 }
@@ -264,15 +269,51 @@ function dynamicLabel(item: WorkflowStartInput): string {
   return dynamicSourceOf(item) === 'assets:template' ? '模板' : '选项'
 }
 
-/** 是否有动态下拉字段 */
+// ── 声明式联动（通用机制，字段声明驱动，不感知业务字段名） ──
+// linkage: { watch, matchBy } —— 监听 watch 字段值 X，本字段自动填充所有
+// "选项元数据[matchBy] === X" 的选项（multi 全选 / 单选填值）。
+
+/** 联动目标字段的选项来源（select-dynamic 用动态缓存；select 用静态 options） */
+function linkageOptionsOf(item: WorkflowStartInput): LinkageOption[] {
+  if (item.type === 'select-dynamic') return dynamicOptions(item)
+  return (item.options ?? []) as unknown as LinkageOption[]
+}
+
+/** 应用单个字段的联动填充（源字段空 → 清空目标字段） */
+function applyLinkage(item: WorkflowStartInput): void {
+  if (!item.linkage) return
+  const watchVal = values[item.linkage.watch]
+  const next = linkageFieldValue(item.linkage, watchVal, linkageOptionsOf(item), item.multi)
+  values[item.key] = next
+  touch(item.key)
+}
+
+/** 所有 linkage 源字段的当前值（依赖收集：任一源字段值变化 → 联动重算） */
+const linkageSources = computed(() => {
+  const map: Record<string, unknown> = {}
+  for (const item of props.inputs) {
+    if (item.linkage) map[item.linkage.watch] = values[item.linkage.watch]
+  }
+  return map
+})
+watch(linkageSources, () => {
+  for (const item of props.inputs) if (item.linkage) applyLinkage(item)
+})
+// 动态选项加载完成后再联动一次（选项到位后填充才有意义）
+watch(dynamicCache, () => {
+  for (const item of props.inputs) if (item.linkage) applyLinkage(item)
+}, { deep: true })
+
+/** 是否有动态下拉字段（select-dynamic 或声明了 source 的 select） */
 function hasDynamic(keys: WorkflowStartInput[]): boolean {
-  return keys.some(i => i.type === 'select-dynamic')
+  return keys.some(i => i.type === 'select-dynamic' || (i.type === 'select' && !!i.source))
 }
 
 /** 拉取动态选项：assets:template → 资产中心模板大类列表（值=资产 ID）；newsTopics → 预置新闻主题（值=主题 id） */
 async function loadDynamicOptions(keys: WorkflowStartInput[]): Promise<void> {
   for (const item of keys) {
-    if (item.type !== 'select-dynamic') continue
+    const isDynamic = item.type === 'select-dynamic' || (item.type === 'select' && !!item.source)
+    if (!isDynamic) continue
     const src = dynamicSourceOf(item)
     if (dynamicCache[src] || dynamicBusy[src]) continue
     if (src === 'assets:template') {
@@ -325,9 +366,11 @@ async function loadDynamicOptions(keys: WorkflowStartInput[]): Promise<void> {
         const resp = await api.list({})
         const TOPIC_LABELS: Record<string, string> = { ai: '人工智能', finance: '全球财经', energy: '新能源', tech: '科技产业', world: '国际时政' }
         if (resp.success && resp.data) {
+          // 选项保留 topicId 元数据：供 sourceIds 等字段的 linkage 声明（watch=topic, matchBy=topicId）过滤
           dynamicCache[src] = resp.data.map(s => ({
             label: `${TOPIC_LABELS[s.topicId] ?? s.topicId} · ${s.name}${s.isBuiltin ? '' : '（自定义）'}`,
             value: s.id,
+            topicId: s.topicId,
           }))
         } else {
           dynamicCache[src] = []

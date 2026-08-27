@@ -35,8 +35,13 @@
           <span class="err" :title="row.error">{{ row.error || '—' }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="120">
+      <el-table-column label="操作" width="170">
         <template #default="{ row }">
+          <el-tooltip content="重跑（使用该次运行的输入）" placement="top">
+            <el-button circle size="small" type="success" plain :loading="rerunningId === row.id" @click="handleRerun(row)">
+              <el-icon><RefreshRight /></el-icon>
+            </el-button>
+          </el-tooltip>
           <el-tooltip content="详情" placement="top">
             <el-button circle size="small" type="primary" plain @click="router.push(`/workflow/run/${row.id}`)">
               <el-icon><View /></el-icon>
@@ -65,7 +70,8 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, View, Delete } from '@element-plus/icons-vue'
+import { ArrowLeft, View, Delete, RefreshRight } from '@element-plus/icons-vue'
+import { toPlainData } from '../../utils/plain-data'
 
 const STATUS_LABEL: Record<string, string> = {
   pending: '排队中', running: '运行中', waiting_review: '待审核', succeeded: '成功',
@@ -106,6 +112,30 @@ async function handleDelete(row: any): Promise<void> {
   const resp = await api().deleteRun(row.id)
   if (resp.success) { ElMessage.success('已删除'); await load() }
   else ElMessage.error(resp.error ?? '删除失败')
+}
+
+/** 重跑：使用该次运行的输入（startInputs）直接重新运行该工作流，并跳转详情 */
+const rerunningId = ref('')
+async function handleRerun(row: any): Promise<void> {
+  rerunningId.value = row.id
+  try {
+    const resp = await api().startRun({
+      definitionId: row.definitionId,
+      // startInputs 来自列表数据（Vue reactive Proxy），IPC 结构化克隆无法克隆 Proxy，
+      // 必须先 toPlainData 纯化，否则抛 "An object could not be cloned"
+      inputs: toPlainData(row.startInputs ?? {}),
+    })
+    if (resp.success) {
+      ElMessage.success(resp.data?.status === 'skipped' ? '已有运行中实例，本次触发已跳过' : '已重新运行')
+      if (resp.data?.id) router.push(`/workflow/run/${resp.data.id}`)
+      else await load() // 无运行 id（异常返回）→ 刷新列表
+    } else ElMessage.error(resp.error ?? '重跑失败')
+  } catch (e: any) {
+    // IPC/网络异常（非 {success:false} 形态）——显式提示，避免静默无反应
+    ElMessage.error(`重跑失败：${e?.message ?? String(e)}`)
+  } finally {
+    rerunningId.value = ''
+  }
 }
 
 function formatTime(t?: string | null): string {

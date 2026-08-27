@@ -28,14 +28,15 @@ export class ElectronDocumentRenderer implements IHtmlRenderer {
   }
 
   async htmlToImage(html: string, opts?: { width?: number }): Promise<Buffer> {
-    // 长图：宽度按模板（默认 750），高度取内容实际高度（上限 20000 防失控）
+    // 长图：宽度按模板（默认 750），高度取内容实际高度。
+    // 上限 100000（原 20000 会把长报告截断成半张图）；等渲染稳定后再截图
     return this.withWindow(html, opts?.width ?? 750, async (win) => {
       const height = await win.webContents.executeJavaScript(
-        'Math.min(20000, Math.ceil(document.documentElement.scrollHeight))'
+        'Math.min(100000, Math.ceil(document.documentElement.scrollHeight))'
       )
       win.setBounds({ height: Math.max(200, height) })
-      // 等一帧渲染稳定
-      await new Promise<void>(r => setTimeout(r, 120))
+      // 等两帧渲染稳定（图片/字体加载后高度可能再变）
+      await new Promise<void>(r => setTimeout(r, 250))
       const image = await win.webContents.capturePage()
       return image.toPNG()
     })

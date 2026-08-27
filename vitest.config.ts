@@ -11,6 +11,12 @@ export default defineConfig({
     hookTimeout: 30_000,
     globals: false,
     setupFiles: ['./tests/unit/setup.ts'],
+    server: {
+      deps: {
+        // node: 内置模块（如 node:sqlite）保持原生加载，不交给 Vite 转换
+        external: ['node:sqlite'],
+      },
+    },
     environmentOptions: {
       happy_dom: {},
     },

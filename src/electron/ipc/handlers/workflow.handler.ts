@@ -64,6 +64,17 @@ export function registerWorkflowHandlers(): void {
       return { updated: true }
     })
   )
+  // ==================== 版本历史（发布快照 + 恢复） ====================
+  ipcBridge.handle('wf:list-versions', (_e, p: { definitionId: string }) =>
+    wrap(() => subsystem().definitionService.listVersions(p.definitionId))
+  )
+  ipcBridge.handle('wf:restore-version', (_e, p: { definitionId: string; versionId: string }) =>
+    wrap(async () => {
+      const result = await subsystem().definitionService.restoreVersion(p.definitionId, p.versionId)
+      if (!result.success) throw new Error(result.error)
+      return result.definition
+    })
+  )
   ipcBridge.handle('wf:export-definition', (_e, p: { id: string }) =>
     wrap(async () => {
       const data = await subsystem().definitionService.exportDefinition(p.id)

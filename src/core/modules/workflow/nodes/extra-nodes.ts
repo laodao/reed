@@ -14,6 +14,7 @@ import { stringifyValue } from '../engine/variable-resolver'
 import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from '@shared/types/workflow.types'
 import { parse } from 'node-html-parser'
 import { validateOutboundUrl } from '@core/utils/outbound-url'
+import { politeFetch } from './http-politeness'
 
 // ==================== 模板转换 ====================
 
@@ -138,7 +139,7 @@ const parameterExtractorNode: WorkflowNodeHandler = {
 
 // ==================== 网页正文提取 ====================
 
-/** 极简 HTML 正文提取：去脚本/样式/标签，压缩空白 */
+/** 极简 HTML 正文提取：去脚本/样式/标签，压缩空白（兜底方案） */
 function htmlToText(html: string): { title: string; text: string } {
   const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)
   const cleaned = html
@@ -153,6 +154,127 @@ function htmlToText(html: string): { title: string; text: string } {
     .replace(/\n\s*\n+/g, '\n')
     .trim()
   return { title: (titleMatch?.[1] ?? '').trim(), text: cleaned }
+}
+
+// ==================== 正文提取（启发式：文本密度选主内容容器） ====================
+
+/** 噪声标签：站级导航/交互/元信息，其文本不是正文，直接移除 */
+const ARTICLE_NOISE_TAGS = [
+  'script', 'style', 'noscript', 'iframe', 'form', 'button', 'input', 'select', 'textarea',
+  'nav', 'footer', 'header', 'aside', 'svg', 'canvas', 'template',
+]
+
+/** 正文候选块级标签（按文本密度评分选主内容容器） */
+const ARTICLE_BLOCK_TAGS = new Set(['article', 'main', 'section', 'div', 'td', 'blockquote'])
+
+/** 标题提取：og:title 优先，其次 <title> */
+function extractDocumentTitle(html: string): string {
+  const og = html.match(/<meta[^>]+property=["']og:title["'][^>]*content=["']([^"']+)/i)
+  const doc = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)
+  return (og?.[1] ?? doc?.[1] ?? '').trim()
+}
+
+/** 元素内全部链接文本长度（评估链接密集度：正文容器链接占比应低） */
+function linkTextLengthOf(el: HTMLElement): number {
+  let n = 0
+  for (const a of el.querySelectorAll('a')) {
+    n += (a.textContent ?? '').replace(/\s+/g, '').length
+  }
+  return n
+}
+
+/** 元素内非链接正文长度（= 总文本 − 链接文本；正文判据用非链接文本更准确） */
+function nonLinkTextLengthOf(el: HTMLElement): number {
+  const total = (el.textContent ?? '').replace(/\s+/g, '').length
+  return Math.max(0, total - linkTextLengthOf(el))
+}
+
+/**
+ * 文本密度启发式选正文容器：
+ * 正文长度 = 非链接文本；density = 正文长度 / 链接文本长度（链接越少越像正文），
+ * 结合长度取最高分；正文 <100 字不作为容器（导航/相关阅读列表等链接块除外）。
+ */
+function pickMainContent(root: HTMLElement): HTMLElement | null {
+  let best: HTMLElement | null = null
+  let bestDensity = 0
+  let bestLen = 0
+  const walk = (el: HTMLElement) => {
+    const tag = el.tagName?.toLowerCase() ?? ''
+    if (ARTICLE_BLOCK_TAGS.has(tag)) {
+      const len = nonLinkTextLengthOf(el)
+      if (len >= 100) {
+        const linkLen = linkTextLengthOf(el)
+        const density = linkLen === 0 ? len : len / linkLen
+        if (density > bestDensity || (density === bestDensity && len > bestLen)) {
+          bestDensity = density
+          bestLen = len
+          best = el
+        }
+      }
+    }
+    for (const child of el.childNodes) {
+      if (child.nodeType === 1) walk(child as HTMLElement)
+    }
+  }
+  walk(root)
+  return best
+}
+
+/**
+ * 正文容器 → 结构化文本：段落/标题/列表项换行输出；
+ * 跳过链接文本与"链接密集子块"（相关阅读/导航残留），避免按钮、评论混入。
+ */
+function containerText(el: HTMLElement): string {
+  const parts: string[] = []
+  const collect = (node: HTMLElement) => {
+    for (const child of node.childNodes) {
+      if (child.nodeType !== 1) continue
+      const c = child as HTMLElement
+      const tag = c.tagName?.toLowerCase() ?? ''
+      if (tag === 'a') continue // 链接文本不作为正文
+      // 链接密集子块（相关阅读/评论入口等）跳过：文本短且链接占大头
+      if (['div', 'section', 'ul', 'ol', 'aside'].includes(tag)) {
+        const text = (c.textContent ?? '').replace(/\s+/g, '')
+        const linkLen = linkTextLengthOf(c)
+        if (text.length < 200 && linkLen > 0 && linkLen / Math.max(1, text.length) > 0.4) continue
+        if (text.length < 100 && linkLen > 0) continue
+      }
+      if (['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'blockquote', 'br', 'tr'].includes(tag)) {
+        const t = (c.textContent ?? '').trim()
+        if (t) parts.push(t)
+      } else {
+        collect(c)
+      }
+    }
+  }
+  collect(el)
+  return parts.join('\n').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim()
+}
+
+/**
+ * 正文提取（启发式，替代"抓全部文字"）：
+ * 移除导航/按钮/评论等噪声 → 文本密度选正文容器 → 结构化文本（段落换行）。
+ * 标题：正文容器内 h1 优先（比 <title> 准确），否则 og:title / <title>。
+ * 无正文容器或正文过短（页面无文章）→ 回退极简 htmlToText（保持兼容）。
+ */
+export function extractArticleContent(html: string): { title: string; text: string } {
+  const fallback = htmlToText(html)
+  const docTitle = extractDocumentTitle(html) // og:title > <title>
+  try {
+    const root = parse(html)
+    for (const tag of ARTICLE_NOISE_TAGS) {
+      for (const el of root.querySelectorAll(tag)) el.remove()
+    }
+    const main = pickMainContent(root)
+    if (!main) return { title: docTitle, text: fallback.text }
+    const text = containerText(main)
+    if (text.length < 60) return { title: docTitle, text: fallback.text } // 正文太短视为噪声残留
+    const h1 = main.querySelector('h1')
+    const h1Text = (h1?.textContent ?? '').trim()
+    return { title: h1Text || docTitle, text }
+  } catch {
+    return { title: docTitle, text: fallback.text }
+  }
 }
 
 /**
@@ -198,7 +320,15 @@ const webExtractNode: WorkflowNodeHandler = {
     return []
   },
   async execute(ctx: WorkflowNodeContext) {
-    const cfg = ctx.config as { url: string; maxLength?: number; maxLinks?: number }
+    const cfg = ctx.config as {
+      url: string
+      maxLength?: number
+      maxLinks?: number
+      /** 爬取礼貌（可选，缺省走工作流默认）：请求前随机间隔 / 同站并发 */
+      delayMsMin?: number
+      delayMsMax?: number
+      hostConcurrency?: number
+    }
     const timeout = Math.min(WORKFLOW_DEFAULTS.httpRequestTimeoutMs, WORKFLOW_LIMITS.httpTimeoutMs)
     const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(timeout)])
     let html: string
@@ -208,13 +338,19 @@ const webExtractNode: WorkflowNodeHandler = {
       if (!guard.ok) {
         return { status: 'failed', error: `URL 校验失败：${guard.reason}`, retryable: false }
       }
-      const res = await fetch(String(cfg.url), { signal, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; the-bot-workflow)' } })
+      // 礼貌抓取：同站单线程 + 随机间隔（跨节点共享限速）
+      const res = await politeFetch(String(cfg.url), { signal, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; the-bot-workflow)' } }, {
+        delayMsMin: cfg.delayMsMin,
+        delayMsMax: cfg.delayMsMax,
+        hostConcurrency: cfg.hostConcurrency,
+      })
       if (!res.ok) return { status: 'failed', error: `请求失败：HTTP ${res.status}` }
       html = await res.text()
     } catch (e) {
       return { status: 'failed', error: `网页获取失败: ${e instanceof Error ? e.message : String(e)}` }
     }
-    const { title, text } = htmlToText(html)
+    // 正文提取（启发式：文本密度选主内容容器，剔除导航/按钮/评论等噪声）
+    const { title, text } = extractArticleContent(html)
     const max = cfg.maxLength && cfg.maxLength > 0 ? cfg.maxLength : 100_000
     // 智能截断：按句子/段落边界，不切半（内容完整性优先）
     const trimmed = text.length > max ? truncateTextSmart(text, max) : text

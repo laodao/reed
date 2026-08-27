@@ -40,6 +40,10 @@ export interface CatalogFormField {
     /** OAS 参数编辑（kv-list + 按接口声明生成参数行） */
     | 'oas-params'
   placeholder?: string
+  /** kv-list 的键占位提示（如 headers / assignments） */
+  keyPlaceholder?: string
+  /** kv-list 的值占位提示 */
+  valuePlaceholder?: string
   /** select 的静态选项 */
   options?: Array<{ label: string; value: string | number }>
   /** select / select-dynamic 是否多选（提交值为数组） */
@@ -183,6 +187,11 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     { key: 'knowledgeBaseId', label: '知识库', type: 'select-dynamic', source: 'knowledgeBases' },
     T('title', '文档标题', { templateHint: true }),
     T('content', '文档内容', { type: 'textarea', templateHint: true, placeholder: '{{llm1.content}}' }),
+    T('sourceKey', '来源键（幂等覆盖）', {
+      templateHint: true,
+      help: '可选。传值时同一知识库内同键文档会被覆盖更新（重复运行不堆积）；留空=每次新建文档',
+    }),
+    { key: 'passthrough', label: '透传字段', type: 'kv-list', keyPlaceholder: '输出字段名', valuePlaceholder: '值，支持 {{模板}}', help: '合并进本节点输出（循环体内可透传正文供下游聚合引用）', collapsible: true },
     { key: 'waitForCompletion', label: '等待入库完成', type: 'switch', help: '关闭 = 提交即成功（后台处理）' },
   ],
   'web-search': [
@@ -330,6 +339,9 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     T('url', '网页地址', { templateHint: true, placeholder: 'https://...' }),
     { key: 'maxLength', label: '正文最大长度', type: 'number', group: '参数', help: '超长截断（默认 100000）' },
     { key: 'maxLinks', label: '链接提取数量上限', type: 'number', group: '参数', help: '页面内链接提取上限（默认 30，0=不提取）' },
+    { key: 'delayMsMin', label: '随机间隔下限（毫秒）', type: 'number', group: '爬取礼貌', help: '请求前随机等待（默认 800）' },
+    { key: 'delayMsMax', label: '随机间隔上限（毫秒）', type: 'number', group: '爬取礼貌', help: '请求前随机等待（默认 2500）' },
+    { key: 'hostConcurrency', label: '同站并发', type: 'number', group: '爬取礼貌', min: 1, max: 10, help: '同一网站最大并发（默认 1=单线程）' },
   ],
 
   'crawl-news': [
@@ -342,6 +354,24 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
     }),
     { key: 'maxLinks', label: '每源链接上限', type: 'number', group: '参数', min: 1, max: 50, help: '每源提取链接上限（默认 30）' },
     { key: 'maxSources', label: '并行源数量', type: 'number', group: '参数', min: 1, max: 10, help: '并行抓取的源数量上限（默认 10）' },
+    { key: 'delayMsMin', label: '随机间隔下限（毫秒）', type: 'number', group: '爬取礼貌', help: '请求前随机等待（默认 800）' },
+    { key: 'delayMsMax', label: '随机间隔上限（毫秒）', type: 'number', group: '爬取礼貌', help: '请求前随机等待（默认 2500）' },
+    { key: 'hostConcurrency', label: '同站并发', type: 'number', group: '爬取礼貌', min: 1, max: 10, help: '同一网站最大并发（默认 1=单线程）' },
+  ],
+
+  'crawl-links': [
+    T('urls', '待抓取页面列表', {
+      type: 'textarea',
+      templateHint: true,
+      placeholder: '{{pick1.parsed}}',
+      help: 'JSON 数组（string[] 或 [{name,url}]）或 {{上游节点.数组}} 模板；并发抓取后提取页面内链接',
+    }),
+    { key: 'maxLinks', label: '每页链接上限', type: 'number', group: '参数', min: 1, max: 100, help: '每页提取链接上限（默认 50）' },
+    { key: 'maxConcurrent', label: '并行数量', type: 'number', group: '参数', min: 1, max: 10, help: '并行抓取的页面数（默认 5）' },
+    { key: 'timeoutMs', label: '抓取超时（毫秒）', type: 'number', group: '参数', help: '留空 = 工作流默认（30s）' },
+    { key: 'delayMsMin', label: '随机间隔下限（毫秒）', type: 'number', group: '爬取礼貌', help: '请求前随机等待（默认 800）' },
+    { key: 'delayMsMax', label: '随机间隔上限（毫秒）', type: 'number', group: '爬取礼貌', help: '请求前随机等待（默认 2500）' },
+    { key: 'hostConcurrency', label: '同站并发', type: 'number', group: '爬取礼貌', min: 1, max: 10, help: '同一网站最大并发（默认 1=单线程）' },
   ],
 
   'kb-qa': [

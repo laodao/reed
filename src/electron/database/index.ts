@@ -8,6 +8,7 @@ import Database from 'better-sqlite3'
 import { app } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
+import { migrateLegacySettingsTable } from '@core/database/migrations/migrate-legacy-settings-table'
 import { SettingsRepository } from '@core/database/repositories/settings.repository'
 import { ApiKeyRepository } from '@core/database/repositories/api-key.repository'
 import { UserRepository } from '@core/database/repositories/user.repository'
@@ -680,6 +681,17 @@ export class DatabaseManager implements ICoreDatabaseManager {
     )
     await addWorkflowShareToken(this.dataSource)
 
+    // 内置模板接管标记：definitions 加 template_version 列（幂等；存量内置置 1）
+    const { addWorkflowTemplateVersion } = await import(
+      '@core/database/migrations/add-workflow-template-version'
+    )
+    await addWorkflowTemplateVersion(this.dataSource)
+    // 版本历史表：workflow_definition_versions（发布快照 + 恢复）
+    const { createWorkflowDefinitionVersionsTable } = await import(
+      '@core/database/migrations/create-workflow-definition-versions'
+    )
+    await createWorkflowDefinitionVersionsTable(this.dataSource)
+
     // D1 QA 知识库：kb_qa_pairs 问答对表（幂等，双语种）
     const { createKbQaPairs } = await import(
       '@core/database/migrations/create-kb-qa-pairs'
@@ -773,6 +785,16 @@ export class DatabaseManager implements ICoreDatabaseManager {
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `)
+
+    // 旧版 settings 表（id 主键）迁移为 key 主键：
+    // 旧表 INSERT 不提供 id 会触发 NOT NULL 约束失败（新键保存报错），
+    // CREATE TABLE IF NOT EXISTS 不会重建已存在的旧表，须显式迁移（幂等）。
+    try {
+      migrateLegacySettingsTable(this.db)
+    } catch (e) {
+      // 迁移失败不阻断启动（保持原有行为），仅记录日志
+      console.error('[DatabaseManager] settings 表旧结构迁移失败（非致命）:', e)
+    }
 
     // API密钥表
     this.db.exec(`

@@ -36,6 +36,11 @@ import ecommercePoster from './builtin-apps/ecommerce-poster.json'
 const BUILTIN_DEF_PREFIX = 'builtin_def_'
 /** 内置应用 id 前缀 */
 const BUILTIN_APP_PREFIX = 'builtin_app_'
+/**
+ * 内置模板版本号：模板内容升级时递增。迁移只同步 template_version != 0 的定义
+ * （用户保存草稿/发布内置工作流后 template_version 置 0 = 已接管，不再被模板重置）。
+ */
+const BUILTIN_TEMPLATE_VERSION = 1
 
 /** 内置工作流模板清单：文件 → { 定义 id, 应用 id, 应用名, 图标, 描述, 原始 JSON } */
 const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; icon: string; name: string; description: string; category: string; tags: string[] }> = [
@@ -121,16 +126,19 @@ export async function createBuiltinApps(ds: DataSource): Promise<void> {
     if (existing.length === 0) {
       await ds.query(
         `INSERT INTO workflow_definitions
-          (id, user_id, name, description, category, draft_graph, published_graph, published_version, published_at, triggers, settings, is_builtin, created_at, updated_at)
-         VALUES (${ph(1)}, ${ph(2)}, ${ph(3)}, ${ph(4)}, ${ph(5)}, ${ph(6)}, ${ph(7)}, ${ph(8)}, ${ph(9)}, ${ph(10)}, ${ph(11)}, ${ph(12)}, ${ph(13)}, ${ph(14)})`,
+          (id, user_id, name, description, category, draft_graph, published_graph, published_version, published_at, triggers, settings, is_builtin, template_version, created_at, updated_at)
+         VALUES (${ph(1)}, ${ph(2)}, ${ph(3)}, ${ph(4)}, ${ph(5)}, ${ph(6)}, ${ph(7)}, ${ph(8)}, ${ph(9)}, ${ph(10)}, ${ph(11)}, ${ph(12)}, ${ph(13)}, ${ph(14)}, ${ph(15)})`,
         [defId, null, raw.name ?? app.name, raw.description ?? app.description, raw.category ?? 'builtin',
-         JSON.stringify(graph), JSON.stringify(graph), 1, now, JSON.stringify(triggers), settings ? JSON.stringify(settings) : null, 1, now, now]
+         JSON.stringify(graph), JSON.stringify(graph), 1, now, JSON.stringify(triggers), settings ? JSON.stringify(settings) : null, 1, BUILTIN_TEMPLATE_VERSION, now, now]
       )
       insertedDefs++
     } else {
+      // 只同步未被用户接管的定义（template_version != 0；接管后用户修改不被模板重置）
       await ds.query(
-        `UPDATE workflow_definitions SET draft_graph = ${ph(1)}, published_graph = ${ph(2)}, triggers = ${ph(3)}, updated_at = ${ph(4)} WHERE id = ${ph(5)}`,
-        [JSON.stringify(graph), JSON.stringify(graph), JSON.stringify(triggers), now, defId]
+        `UPDATE workflow_definitions
+           SET draft_graph = ${ph(1)}, published_graph = ${ph(2)}, triggers = ${ph(3)}, settings = ${ph(4)}, template_version = ${ph(5)}, updated_at = ${ph(6)}
+         WHERE id = ${ph(7)} AND (template_version IS NULL OR template_version != 0)`,
+        [JSON.stringify(graph), JSON.stringify(graph), JSON.stringify(triggers), settings ? JSON.stringify(settings) : null, BUILTIN_TEMPLATE_VERSION, now, defId]
       )
     }
 

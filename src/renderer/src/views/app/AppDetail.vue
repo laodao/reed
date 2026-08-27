@@ -5,7 +5,7 @@
     </div>
 
     <div class="detail-header" v-if="app">
-      <span class="app-emoji">{{ app.icon || '📦' }}</span>
+      <span class="app-emoji">{{ resolveAppIcon(app?.icon, app?.category) }}</span>
       <div class="info">
         <div class="page-title">{{ app.name }}
           <el-tag v-if="app.isBuiltin" type="warning" effect="plain" size="small" style="margin-left: 8px">内置</el-tag>
@@ -27,8 +27,11 @@
     </div>
 
     <!-- 分类/标签编辑弹窗 -->
-    <el-dialog v-model="metaEditorVisible" title="编辑应用分类与标签" width="460px" append-to-body>
+    <el-dialog v-model="metaEditorVisible" title="编辑应用信息" width="460px" append-to-body>
       <el-form label-width="72px" label-position="left">
+        <el-form-item label="图标">
+          <el-input v-model="metaDraft.icon" placeholder="emoji，如 📰（留空自动按分类显示）" maxlength="4" style="width: 180px" />
+        </el-form-item>
         <el-form-item label="分类">
           <el-input v-model="metaDraft.category" placeholder="如 新闻资讯 / 文案写作 / 视频处理" />
         </el-form-item>
@@ -133,6 +136,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import type { AppRecord, AppSessionRecord } from '@shared/types/app.types'
 import { electronApi } from '@/types/electron-api'
+import { resolveAppIcon } from '../../utils/app-icons'
 
 const route = useRoute()
 const router = useRouter()
@@ -383,11 +387,12 @@ async function saveCron(): Promise<void> {
 }
 
 const metaEditorVisible = ref(false)
-const metaDraft = ref<{ category: string; tagsText: string }>({ category: '', tagsText: '' })
+const metaDraft = ref<{ icon: string; category: string; tagsText: string }>({ icon: '', category: '', tagsText: '' })
 
 function openMetaEditor(): void {
   if (!app.value) return
   metaDraft.value = {
+    icon: app.value.icon ?? '',
     category: app.value.category ?? '',
     tagsText: app.value.tags.join(','),
   }
@@ -395,9 +400,10 @@ function openMetaEditor(): void {
 }
 
 async function saveMeta(): Promise<void> {
+  const icon = metaDraft.value.icon.trim() || null
   const category = metaDraft.value.category.trim() || null
   const tags = metaDraft.value.tagsText.split(/[,，]/).map(t => t.trim()).filter(Boolean)
-  const resp = await api.app.updateMeta({ id: appId.value, category, tags })
+  const resp = await api.app.updateMeta({ id: appId.value, icon, category, tags })
   if (resp.success) {
     app.value = resp.data ?? app.value
     metaEditorVisible.value = false

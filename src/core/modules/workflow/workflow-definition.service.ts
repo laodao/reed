@@ -20,9 +20,13 @@ import type {
   DueCronTriggerRow,
   UpdateWorkflowDefinitionInput,
   WorkflowDefinitionRecord,
+  WorkflowDefinitionSortBy,
+  WorkflowDefinitionVersionRecord,
+  WorkflowSortOrder,
 } from '../../database/repositories/workflow-definition.repository'
 import type { WorkflowDefinitionRepository } from '../../database/repositories/workflow-definition.repository'
 import { createLogger } from '@core/utils/logger'
+import { getCurrentUserId } from '@core/context/user-context'
 
 const logger = createLogger('WorkflowDefinitionService')
 
@@ -97,7 +101,13 @@ export class WorkflowDefinitionService {
     return this.repo.getById(id)
   }
 
-  list(params: { keyword?: string; page: number; pageSize: number }) {
+  list(params: {
+    keyword?: string
+    page: number
+    pageSize: number
+    sortBy?: WorkflowDefinitionSortBy
+    sortOrder?: WorkflowSortOrder
+  }) {
     return this.repo.list(params)
   }
 
@@ -247,9 +257,56 @@ export class WorkflowDefinitionService {
       nextFireAt: null,
       lastFireAt: null,
     })
+    // 固化不可变版本快照（发布历史；失败不阻断发布，仅告警）
+    try {
+      const effectiveSettings = settings !== undefined ? settings : def.settings
+      await this.repo.createVersion({
+        definitionId: id,
+        version: updated?.publishedVersion ?? def.publishedVersion + 1,
+        name: updated?.name ?? def.name,
+        description: updated?.description ?? def.description,
+        category: updated?.category ?? def.category,
+        graph,
+        triggers: effectiveTriggers ?? [],
+        settings: effectiveSettings ?? null,
+        createdBy: getCurrentUserId(),
+      })
+    } catch (e) {
+      logger.warn('[WorkflowDefinitionService] 版本快照写入失败（不影响发布结果）', e)
+    }
     // 发布后刷新调度状态与事件索引（否则 cron 永不触发、事件触发器不生效）
     await this.refreshSchedule(id)
     return { success: true, definition: updated ?? undefined }
+  }
+
+  /** 版本历史列表（按版本号降序；定义不可见返回空） */
+  listVersions(definitionId: string): Promise<WorkflowDefinitionVersionRecord[]> {
+    return this.repo.listVersions(definitionId)
+  }
+
+  /**
+   * 恢复历史版本：版本快照应用为**当前草稿**（图/触发器/设置，不自动发布）。
+   * 用户确认后保存/发布即产生新版本——历史版本保持不可变。
+   */
+  async restoreVersion(
+    definitionId: string,
+    versionId: string
+  ): Promise<{ success: boolean; error?: string; definition?: WorkflowDefinitionRecord }> {
+    const def = await this.repo.getById(definitionId)
+    if (!def) return { success: false, error: '工作流不存在' }
+    const version = await this.repo.getVersion(versionId)
+    if (!version || version.definitionId !== definitionId) {
+      return { success: false, error: '版本不存在' }
+    }
+    const updated = await this.repo.update(definitionId, {
+      draftGraph: version.graph,
+      triggers: version.triggers,
+      settings: version.settings,
+    })
+    if (!updated) return { success: false, error: '恢复失败' }
+    // 触发器变更会影响调度——刷新
+    await this.refreshSchedule(definitionId)
+    return { success: true, definition: updated }
   }
 
   /** 导出：剥离 id/userId/调度状态，只含定义性数据（不含任何密钥） */

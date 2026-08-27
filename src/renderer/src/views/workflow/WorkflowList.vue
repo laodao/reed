@@ -3,6 +3,8 @@
     <div class="page-header">
       <h2>工作流</h2>
       <div class="actions">
+        <el-input v-model="search" placeholder="按名称搜索…" clearable size="small" style="width: 200px"
+          @keyup.enter="onSearch" @clear="onSearch" />
         <el-button @click="showImport = true">导入</el-button>
         <el-button @click="showTemplates = true">从模板创建</el-button>
         <el-button type="primary" @click="handleCreate">新建工作流</el-button>
@@ -11,7 +13,7 @@
 
     <!-- 表格区：固定高度内部滚动，表头 sticky（分页固定在底部） -->
     <div class="table-wrap">
-      <el-table :data="items" v-loading="loading" height="100%" empty-text="暂无工作流，点击右上角新建">
+      <el-table :data="items" v-loading="loading" height="100%" empty-text="暂无工作流，点击右上角新建" @sort-change="handleSortChange">
         <el-table-column type="index" label="#" width="50" align="center" />
         <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
         <el-table-column label="发布状态" width="110" align="center">
@@ -21,13 +23,13 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="创建时间" width="160">
+        <el-table-column prop="createdAt" label="创建时间" width="160" sortable="custom">
           <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
         </el-table-column>
-        <el-table-column label="发布时间" width="160">
+        <el-table-column prop="publishedAt" label="发布时间" width="160" sortable="custom">
           <template #default="{ row }">{{ formatTime(row.publishedAt) }}</template>
         </el-table-column>
-        <el-table-column label="最近运行" width="160">
+        <el-table-column prop="lastRunAt" label="最近运行" width="160" sortable="custom">
           <template #default="{ row }">{{ formatTime(row.lastRunAt) }}</template>
         </el-table-column>
         <el-table-column label="操作" width="230" fixed="right" align="center">
@@ -126,6 +128,11 @@ const showImport = ref(false)
 const runningDef = ref<any>(null)
 const starting = ref(false)
 
+// ---- 搜索与排序（默认创建时间降序；表头点击切换字段/方向） ----
+const search = ref('')
+const sortBy = ref<'createdAt' | 'publishedAt' | 'lastRunAt'>('createdAt')
+const sortOrder = ref<'asc' | 'desc'>('desc')
+
 // ---- 分页（表头/分页固定，表格内部滚动） ----
 const page = ref(1)
 const pageSize = ref(20)
@@ -173,7 +180,13 @@ async function createFromTemplate(tpl: any) {
 async function load() {
   loading.value = true
   try {
-    const resp = await api().listDefinitions({ page: page.value, pageSize: pageSize.value })
+    const resp = await api().listDefinitions({
+      page: page.value,
+      pageSize: pageSize.value,
+      keyword: search.value.trim() || undefined,
+      sortBy: sortBy.value,
+      sortOrder: sortOrder.value,
+    })
     if (resp.success && resp.data) {
       items.value = resp.data.items
       total.value = resp.data.total ?? 0
@@ -181,6 +194,26 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+/** 搜索：回到第一页并重载 */
+function onSearch() {
+  page.value = 1
+  void load()
+}
+
+/** 表头排序（点击切换字段与方向） */
+function handleSortChange({ prop, order }: { prop: string | null; order: string | null }) {
+  if (prop === 'createdAt' || prop === 'publishedAt' || prop === 'lastRunAt') {
+    sortBy.value = prop
+    sortOrder.value = order === 'ascending' ? 'asc' : 'desc'
+  } else {
+    // 取消排序 → 恢复默认（创建时间降序）
+    sortBy.value = 'createdAt'
+    sortOrder.value = 'desc'
+  }
+  page.value = 1
+  void load()
 }
 
 function handlePageChange() {

@@ -163,6 +163,8 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'workflow.reportToPdf': { channel: 'wf:report-to-pdf' },
   'workflow.uploadFormFile': { channel: 'wf:form-upload' },
   'workflow.disableShare': { channel: 'wf:disable-share' },
+  'workflow.listVersions': { channel: 'wf:list-versions' },
+  'workflow.restoreVersion': { channel: 'wf:restore-version' },
   'workflow.onRunEvent': { channel: 'wf:run-event' },
   // ==================== 应用（与 preload app/appSession 严格同步） ====================
   'app.list': { channel: 'app:list' },

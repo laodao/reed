@@ -95,6 +95,8 @@ export type WorkflowNodeType =
   | 'save-diary'
   // 新闻采集（内置应用 C1 早报 / C2 周报数据层：预置主题多源抓取链接）
   | 'crawl-news'
+  // 批量抓取页面提取链接（两级采集：专栏页 → 新闻链接）
+  | 'crawl-links'
 
 // ==================== 开始节点输入参数 ====================
 
@@ -110,13 +112,23 @@ export interface WorkflowStartInput {
   /** type='select' 时是否多选（提交值为数组） */
   multi?: boolean
   /**
-   * type='select-dynamic' 时的数据源标识：
+   * type='select' 或 type='select-dynamic' 时的数据来源标识（选项由系统从数据源加载；
+   * select 留空 = 手写 options）：
    * - 'assets:template'：模板资产列表（值=资产 ID；read-asset 节点引用 {{start.键}}）
    * - 'newsTopics'：预置新闻主题列表（值=主题 id；crawl-news 节点 {{start.键}}）
+   * - 'newsSources'：新闻来源库列表（值=来源 ID；crawl-news 节点 {{start.键}}）
    * - 'knowledgeBases'：用户知识库列表（值=知识库 ID；kb-ingest/kb-qa 节点引用）
    * - 'assetCategories'：已定义业务分类列表（值=分类名；save-asset 节点 subCategory）
    */
-  source?: 'assets:template' | 'newsTopics' | 'knowledgeBases' | 'assetCategories'
+  source?: 'assets:template' | 'newsTopics' | 'newsSources' | 'knowledgeBases' | 'assetCategories'
+  /**
+   * 声明式联动（通用机制，工作流数据声明驱动，表单引擎不感知业务字段）：
+   * 监听 watch 字段的值 X，本字段自动填充所有"选项元数据[matchBy] === X"的选项
+   * （multi 填数组=全选，单选填首个匹配值）。用于 select / select-dynamic。
+   * 例：sourceIds 字段 { linkage: { watch: 'topic', matchBy: 'topicId' } } ——
+   * 切换主题时自动选中该主题下的全部新闻来源（选项缓存需保留 topicId 元数据）。
+   */
+  linkage?: { watch: string; matchBy: string }
   /**
    * type='model' 时的模型类型过滤（留空=全部可用模型）。
    * 提交值为 { providerConfigId, modelId }，节点配置用 {{start.键.providerConfigId}} / {{start.键.modelId}} 引用。
@@ -281,6 +293,10 @@ export interface WorkflowNodeConfigMap {
     content: string
     /** 是否等待入库完成（false=提交即成功，默认 true） */
     waitForCompletion?: boolean
+    /** 可选来源键：传值时按 (workflow, sourceKey) 幂等 upsert，重复运行覆盖不堆积 */
+    sourceKey?: string
+    /** 透传字段：{字段: 值模板}，合并进输出（循环体内供下游聚合引用） */
+    passthrough?: Record<string, unknown>
   }
 
   'web-search': {
@@ -388,6 +404,14 @@ export interface WorkflowNodeConfigMap {
     url: string
     /** 正文最大长度（默认 100_000） */
     maxLength?: number
+    /** 页面内链接提取上限（默认 30，0=不提取） */
+    maxLinks?: number
+    /** 爬取礼貌：请求前随机间隔下限（毫秒；缺省 800） */
+    delayMsMin?: number
+    /** 爬取礼貌：请求前随机间隔上限（毫秒；缺省 2500） */
+    delayMsMax?: number
+    /** 爬取礼貌：同一网站最大并发（缺省 1=单线程，上限 10） */
+    hostConcurrency?: number
   }
 
   'kb-qa': {
@@ -506,12 +530,37 @@ export interface WorkflowNodeConfigMap {
   'crawl-news': {
     /** 预置主题 id（NEWS_TOPICS；与 customUrls 二选一，可都填合并） */
     topicId?: string
+    /** 新闻来源库 ID 列表（多选） */
+    sourceIds?: string[] | string
     /** 自定义 URL 列表（JSON：string[] 或 [{name,url}]，或逗号/换行分隔） */
     customUrls?: string
     /** 每源链接提取上限（默认 30，上限 50） */
     maxLinks?: number
     /** 并行抓取的源数量上限（默认 10，上限 10） */
     maxSources?: number
+    /** 爬取礼貌：请求前随机间隔下限（毫秒；缺省 800） */
+    delayMsMin?: number
+    /** 爬取礼貌：请求前随机间隔上限（毫秒；缺省 2500） */
+    delayMsMax?: number
+    /** 爬取礼貌：同一网站最大并发（缺省 1=单线程，上限 10） */
+    hostConcurrency?: number
+  }
+
+  'crawl-links': {
+    /** 待抓取页面 URL 列表（数组模板，如 {{pick1.parsed}}） */
+    urls: unknown
+    /** 每页链接提取上限（默认 50，上限 100） */
+    maxLinks?: number
+    /** 并行抓取数量（默认 5，上限 10） */
+    maxConcurrent?: number
+    /** 抓取超时毫秒（默认走工作流默认值，上限 300s） */
+    timeoutMs?: number
+    /** 爬取礼貌：请求前随机间隔下限（毫秒；缺省 800） */
+    delayMsMin?: number
+    /** 爬取礼貌：请求前随机间隔上限（毫秒；缺省 2500） */
+    delayMsMax?: number
+    /** 爬取礼貌：同一网站最大并发（缺省 1=单线程，上限 10） */
+    hostConcurrency?: number
   }
 }
 
@@ -788,6 +837,7 @@ export const WORKFLOW_NODE_TYPES = {
   'read-asset': 'read-asset',
   'save-diary': 'save-diary',
   'crawl-news': 'crawl-news',
+  'crawl-links': 'crawl-links',
 } as const satisfies Record<WorkflowNodeType, WorkflowNodeType>
 
 /** 出边类型常量（键=值，与 WorkflowEdgeKind 一一对应） */
@@ -956,8 +1006,9 @@ export const WORKFLOW_DEFAULTS = {
   maxDurationMs: 30 * 60_000,
   /** 循环最大迭代 100 次 */
   maxLoopIterations: 100,
-  /** 节点输出截断 64k 字符 */
-  maxOutputChars: 64_000,
+  /** 节点输出截断 512k 字符（2026-08-27 从 64k 提升：长文本节点（网页正文/报告 markdown）
+   *  此前在引擎层被截断导致早报内容缺失；工作流级 settings.maxOutputChars 可再覆盖，上限 1M） */
+  maxOutputChars: 512_000,
   /** 节点重试封顶 5 次 */
   maxRetryCount: 5,
   /** 单运行并行节点上限 5 */
@@ -974,6 +1025,11 @@ export const WORKFLOW_DEFAULTS = {
   reviewTimeoutTickMs: 30_000,
   /** HTTP 请求节点默认超时（封顶 WORKFLOW_LIMITS.httpTimeoutMs） */
   httpRequestTimeoutMs: 30_000,
+  /** 爬取礼貌：请求前随机间隔（毫秒）——同站单线程 + 随机延迟，降低反爬/打爆概率 */
+  crawlDelayMsMin: 800,
+  crawlDelayMsMax: 2_500,
+  /** 爬取礼貌：同一网站（host）最大并发（1 = 同站单线程） */
+  crawlHostConcurrency: 1,
   /** 知识库入库等待：轮询间隔 / 总超时 */
   kbIngestPollIntervalMs: 500,
   kbIngestWaitTimeoutMs: 120_000,
@@ -999,6 +1055,9 @@ export const WORKFLOW_LIMITS = {
   retryDelayMs: 60_000,
   httpTimeoutMs: 300_000,
   imagePollTimeoutMs: 600_000,
+  /** 爬取礼貌硬上限：随机间隔上限 / 同站最大并发 */
+  crawlDelayMsMax: 60_000,
+  crawlHostConcurrency: 10,
   /** 代码节点沙箱执行超时（防死循环拖垮引擎） */
   codeTimeoutMs: 5_000,
   /** 子工作流节点等待子运行终态的超时 */

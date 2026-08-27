@@ -18,6 +18,7 @@ import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from '@shared/types/workflow.types
 import { extractPageLinks } from './extra-nodes'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { validateOutboundUrl } from '@core/utils/outbound-url'
+import { politeFetch } from './http-politeness'
 
 const UA = 'Mozilla/5.0 (compatible; the-bot-workflow)'
 
@@ -131,6 +132,10 @@ const crawlNewsNode: WorkflowNodeHandler = {
       customUrls?: string
       maxLinks?: number
       maxSources?: number
+      /** 爬取礼貌（可选，缺省走工作流默认）：请求前随机间隔 / 同站并发 */
+      delayMsMin?: number
+      delayMsMax?: number
+      hostConcurrency?: number
     }
     const sources = await resolveSourceUrls(cfg.topicId, cfg.sourceIds, cfg.customUrls)
     if (sources.length === 0) {
@@ -147,9 +152,14 @@ const crawlNewsNode: WorkflowNodeHandler = {
 
     const fetchOne = async (s: { name: string; url: string }) => {
       try {
-        const res = await fetch(s.url, {
+        // 礼貌抓取：同站单线程 + 随机间隔（跨节点共享限速）
+        const res = await politeFetch(s.url, {
           signal: AbortSignal.timeout(timeout),
           headers: { 'User-Agent': UA, Accept: 'text/html' },
+        }, {
+          delayMsMin: cfg.delayMsMin,
+          delayMsMax: cfg.delayMsMax,
+          hostConcurrency: cfg.hostConcurrency,
         })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const html = await res.text()
@@ -259,6 +269,10 @@ const crawlLinksNode: WorkflowNodeHandler = {
       maxLinks?: number
       maxConcurrent?: number
       timeoutMs?: number
+      /** 爬取礼貌（可选，缺省走工作流默认）：请求前随机间隔 / 同站并发 */
+      delayMsMin?: number
+      delayMsMax?: number
+      hostConcurrency?: number
     }
     const targets = parseUrlList(cfg.urls)
     if (targets.length === 0) {
@@ -280,9 +294,14 @@ const crawlLinksNode: WorkflowNodeHandler = {
 
     const fetchOne = async (t: { name: string; url: string }) => {
       try {
-        const res = await fetch(t.url, {
+        // 礼貌抓取：同站单线程 + 随机间隔（跨节点共享限速）
+        const res = await politeFetch(t.url, {
           signal: AbortSignal.timeout(timeout),
           headers: { 'User-Agent': UA, Accept: 'text/html' },
+        }, {
+          delayMsMin: cfg.delayMsMin,
+          delayMsMax: cfg.delayMsMax,
+          hostConcurrency: cfg.hostConcurrency,
         })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const html = await res.text()

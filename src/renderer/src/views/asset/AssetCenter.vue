@@ -336,6 +336,7 @@ import {
 } from '@shared/types/asset.types'
 import { electronApi } from '@/types/electron-api'
 import { marked } from 'marked'
+import { buildCategoryTabs, type AssetStats } from './category-tabs'
 
 const api = electronApi()
 
@@ -347,7 +348,8 @@ const keyword = ref('')
 const page = ref(1)
 const pageSize = ref(12)
 const total = ref(0)
-const stats = ref<Record<string, number>>({})
+/** 资产中心统计（total + 各大类计数；「全部」标签取 total） */
+const stats = ref<AssetStats>({ total: 0, byCategory: {} })
 const subStats = ref<Array<{ subCategory: string | null; count: number }>>([])
 
 /** 来源跳转缓存：assetId → 来源链接（需求 3） */
@@ -471,15 +473,8 @@ function escapeHtmlMd(s: string): string {
 const KIND_LABELS: Record<string, string> = { file: '文件', url: '链接', text: '文本', json: '数据' }
 const PREVIEW_MODE_LABELS = ASSET_PREVIEW_MODE_LABELS
 
-/** 分类标签（全部 + 各大类带计数） */
-const categoryTabs = computed<Array<{ value: AssetCategory | ''; label: string; count: number }>>(() => [
-  { value: '', label: '全部', count: stats.value.total ?? 0 },
-  ...(Object.keys(ASSET_CATEGORY_LABELS) as AssetCategory[]).map(c => ({
-    value: c,
-    label: ASSET_CATEGORY_LABELS[c],
-    count: stats.value[c] ?? 0,
-  })),
-])
+/** 分类标签（全部 + 各大类带计数；统一走 buildCategoryTabs，保证 total 生效） */
+const categoryTabs = computed(() => buildCategoryTabs(stats.value, ASSET_CATEGORY_LABELS))
 
 /** 二级业务分类标签：已定义分类（带计数）+ 未定义但有资产的子分类（标未定义） */
 const subCategoryTabs = computed<Array<{ value: string; label: string; count: number | null; defined: boolean }>>(() => {
@@ -573,7 +568,8 @@ async function load(): Promise<void> {
       items.value = listResp.data?.items ?? []
       total.value = listResp.data?.total ?? 0
     } else ElMessage.error(listResp.error ?? '加载失败')
-    if (statsResp.success) stats.value = statsResp.data?.byCategory ?? {}
+    // 资产中心统计：保存完整 { total, byCategory }——只存 byCategory 会导致「全部」恒为 0
+    if (statsResp.success) stats.value = statsResp.data ?? { total: 0, byCategory: {} }
     // 二级业务分类：当前大类下的已定义分类（带计数）+ 资产聚合补差
     if (catsResp.success) definedCategories.value = catsResp.data ?? []
     else definedCategories.value = []

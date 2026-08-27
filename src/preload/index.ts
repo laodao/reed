@@ -681,7 +681,7 @@ const electronAPI = {
   // 文件对话框
   workflow: {
     // ==================== 定义 ====================
-    listDefinitions: (p: { keyword?: string; page: number; pageSize: number }) =>
+    listDefinitions: (p: { keyword?: string; page: number; pageSize: number; sortBy?: string; sortOrder?: string }) =>
       ipcRenderer.invoke('wf:list-definitions', p),
     getDefinition: (id: string) => ipcRenderer.invoke('wf:get-definition', { id }),
     createDefinition: (p: { name: string; description?: string }) =>
@@ -721,6 +721,9 @@ const electronAPI = {
     reportToPdf: (p: { markdown: string; title?: string }) => ipcRenderer.invoke('wf:report-to-pdf', p),
     uploadFormFile: (p: { runId: string; nodeId: string; fileName: string; base64: string }) => ipcRenderer.invoke('wf:form-upload', p),
     disableShare: (id: string) => ipcRenderer.invoke('wf:disable-share', { id }),
+    // ==================== 版本历史 ====================
+    listVersions: (definitionId: string) => ipcRenderer.invoke('wf:list-versions', { definitionId }),
+    restoreVersion: (p: { definitionId: string; versionId: string }) => ipcRenderer.invoke('wf:restore-version', p),
     // ==================== 实时事件（返回取消订阅函数） ====================
     onRunEvent: (callback: (data: any) => void) => {
       const handler = (_event: any, data: any) => callback(data)

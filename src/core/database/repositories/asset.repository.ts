@@ -5,7 +5,7 @@
  *              在 toDto/写入处手工序列化（与 workflow-run.repository 同纪律）。
  */
 
-import type { DataSource, FindOptionsWhere } from 'typeorm'
+import type { DataSource, FindOptionsWhere, SelectQueryBuilder } from 'typeorm'
 import type { AssetCategory, AssetRecord } from '@shared/types/asset.types'
 import { AssetEntity } from '../entities/asset.entity'
 import { BaseRepository } from '../base-repository'
@@ -96,21 +96,72 @@ export class AssetRepository extends BaseRepository<AssetEntity, AssetRecord> {
     return e ? this.toDto(e) : null
   }
 
-  /** 分页列表（创建时间倒序——最新资产在前；含全局内置） */
+  /**
+   * 分页列表（创建时间倒序——最新资产在前；含全局内置）。
+   *
+   * 分页单位是「展示卡片」而非资产记录：同组（groupId）资产在前端会聚合成一张组卡片，
+   * 若按记录分页会导致每页卡片数忽多忽少、同一组被拆到多页重复出现。
+   * 这里先按卡片键（单资产=自身 id，组=group_id）折叠分页，再取本页卡片的完整记录，
+   * 保证：每页恰好 pageSize 张卡片（末页除外）、组不跨页、total=卡片总数。
+   * 排序键：组卡片取组内最新成员时间（与前端聚合展示一致），内置资产靠后。
+   */
   async listAsset(params: ListAssetParams): Promise<{ items: AssetRecord[]; total: number }> {
     const userId = getCurrentUserId()
-    const qb = this.repo
+    // 卡片键：单资产 → 自身 id；组内成员 → group_id
+    const cardKeyExpr = 'CASE WHEN a.group_id IS NULL THEN a.id ELSE a.group_id END'
+    const scopeCond = userId
+      ? '(a.user_id = :userId OR a.is_builtin = 1)'
+      : '(a.user_id IS NULL OR a.is_builtin = 1)'
+    const scopeParams = userId ? { userId } : {}
+
+    // 1) 本页卡片键（过滤在折叠前应用：组内任一成员命中即整组计入）
+    const keyQb = this.repo
       .createQueryBuilder('a')
-      .where(
-        userId ? '(a.user_id = :userId OR a.is_builtin = 1)' : '(a.user_id IS NULL OR a.is_builtin = 1)',
-        userId ? { userId } : {},
-      )
-      // 统一时间降序：创建时间倒序；is_builtin 仅作同时间稳定次级（内置资产放后）
+      .select(cardKeyExpr, 'card_key')
+      .addSelect('MAX(a.created_at)', 'latest_created_at')
+      .addSelect('MIN(a.is_builtin)', 'min_builtin')
+      .where(scopeCond, scopeParams)
+    this.applyAssetListFilters(keyQb, params)
+    keyQb
+      .groupBy(cardKeyExpr)
+      .orderBy('latest_created_at', 'DESC')
+      .addOrderBy('min_builtin', 'ASC')
+      .addOrderBy('card_key', 'ASC')
+      .offset((params.page - 1) * params.pageSize)
+      .limit(params.pageSize)
+    const keyRows = await keyQb.getRawMany()
+    const keys: string[] = keyRows.map(r => r.card_key as string)
+
+    // 2) 卡片总数（组算一张）
+    const totalQb = this.repo
+      .createQueryBuilder('a')
+      .select(`COUNT(DISTINCT ${cardKeyExpr})`, 'total')
+      .where(scopeCond, scopeParams)
+    this.applyAssetListFilters(totalQb, params)
+    const totalRow = await totalQb.getRawOne()
+    const total = Number(totalRow?.total ?? 0)
+
+    // 3) 取本页卡片的完整记录：单资产按 id；组取全部成员（过滤与 1) 一致，
+    //    保证组卡片只含「当前过滤下可见」的成员，与旧行为（过滤后再聚合）一致）
+    if (!keys.length) return { items: [], total }
+    const itemQb = this.repo
+      .createQueryBuilder('a')
+      .where(scopeCond, scopeParams)
+    this.applyAssetListFilters(itemQb, params)
+    itemQb
+      .andWhere('(a.id IN (:...keys) OR a.group_id IN (:...keys))', { keys })
       .orderBy('a.created_at', 'DESC')
       .addOrderBy('a.is_builtin', 'ASC')
       .addOrderBy('a.id', 'ASC')
-      .skip((params.page - 1) * params.pageSize)
-      .take(params.pageSize)
+    const rows = await itemQb.getMany()
+    return { items: this.toDtoList(rows), total }
+  }
+
+  /** 列表过滤条件（category / subCategory / keyword），卡片折叠前逐条记录应用 */
+  private applyAssetListFilters(
+    qb: SelectQueryBuilder<AssetEntity>,
+    params: ListAssetParams,
+  ): void {
     if (params.category) {
       qb.andWhere('a.category = :cat', { cat: params.category })
     }
@@ -121,8 +172,6 @@ export class AssetRepository extends BaseRepository<AssetEntity, AssetRecord> {
     if (kw) {
       qb.andWhere('(LOWER(a.name) LIKE LOWER(:kw) OR LOWER(a.description) LIKE LOWER(:kw) OR LOWER(a.tags) LIKE LOWER(:kw))', { kw: `%${kw}%` })
     }
-    const [rows, total] = await qb.getManyAndCount()
-    return { items: this.toDtoList(rows), total }
   }
 
   /** 指定大类下的子分类计数（资产中心二级分组；含内置） */
