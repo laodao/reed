@@ -25,7 +25,9 @@
           class="template-card"
           @click="selectTemplate(template)"
         >
-          <div class="template-icon">{{ template.icon }}</div>
+          <div class="template-icon">
+            <FaviconIcon :url="template.siteUrl" :size="24" :fallback="template.icon" />
+          </div>
           <div class="template-info">
             <span class="template-name">{{ template.name }}</span>
             <span class="template-desc">{{ template.description }}</span>
@@ -75,7 +77,9 @@
           >
             <!-- 模板信息 -->
             <div v-if="!isEdit && selectedTemplate" class="selected-template">
-              <span class="template-icon-lg">{{ selectedTemplate.icon }}</span>
+              <span class="template-icon-lg">
+                <FaviconIcon :url="selectedTemplate.siteUrl" :size="32" :fallback="selectedTemplate.icon" />
+              </span>
               <div class="template-details">
                 <span class="template-name">{{ selectedTemplate.name }}</span>
                 <span class="template-desc">{{ selectedTemplate.description }}</span>
@@ -412,6 +416,7 @@
 import { ref, reactive, computed, watch } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { Delete, Plus, Loading, Picture, VideoCamera, Camera, Document, Cpu, Search, SetUp, Refresh, InfoFilled, Setting, List } from '@element-plus/icons-vue'
+import FaviconIcon from '@/components/common/FaviconIcon.vue'
 import type {
   ProviderTemplate,
   ModelDefinition

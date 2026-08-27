@@ -16,6 +16,7 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
   // OpenAI 兼容格式提供商
   {
     id: 'openai',
+    siteUrl: 'https://openai.com',
     name: 'OpenAI',
     description: 'OpenAI 官方 API，支持 GPT-4、GPT-3.5、DALL-E 等模型',
     category: 'openai-compatible',
@@ -44,6 +45,7 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
   },
   {
     id: 'deepseek',
+    siteUrl: 'https://www.deepseek.com',
     name: 'DeepSeek',
     description: 'DeepSeek API，性价比高的国产大模型',
     category: 'openai-compatible',
@@ -73,6 +75,7 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
   // 智谱AI（合并原 GLM 对话和 CogView 图像生成）
   {
     id: 'zhipu',
+    siteUrl: 'https://www.zhipuai.cn',
     name: '智谱AI',
     description: '智谱AI 大模型平台，支持 GLM 对话模型和 CogView 图像生成',
     category: 'openai-compatible',
@@ -130,6 +133,7 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
   // 阿里百炼平台（合并原通义千问对话和通义万相图像生成）
   {
     id: 'bailian',
+    siteUrl: 'https://bailian.console.aliyun.com',
     name: '阿里百炼平台',
     description: '阿里云百炼平台，支持通义千问对话模型和通义万相图像生成',
     category: 'openai-compatible',
@@ -196,6 +200,7 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
   },
   {
     id: 'moonshot',
+    siteUrl: 'https://www.moonshot.cn',
     name: 'Moonshot',
     description: '月之暗面 Kimi 模型',
     category: 'openai-compatible',
@@ -225,6 +230,7 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
   // 火山引擎（支持对话和图像生成）
   {
     id: 'volcengine',
+    siteUrl: 'https://www.volcengine.com',
     name: '火山引擎',
     description: '火山引擎方舟平台，支持豆包等对话模型和图像生成',
     category: 'openai-compatible',
@@ -285,6 +291,7 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
   // MiniMax
   {
     id: 'minimax',
+    siteUrl: 'https://platform.minimaxi.com',
     name: 'MiniMax',
     description: 'MiniMax 大模型平台，支持对话和图像生成',
     category: 'openai-compatible',
@@ -341,6 +348,7 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
   // Anthropic 格式
   {
     id: 'anthropic',
+    siteUrl: 'https://www.anthropic.com',
     name: 'Anthropic',
     description: 'Anthropic Claude 系列模型',
     category: 'anthropic',
@@ -373,6 +381,7 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
   // Google 格式
   {
     id: 'google',
+    siteUrl: 'https://gemini.google.com',
     name: 'Google AI',
     description: 'Google Gemini 系列模型',
     category: 'google',

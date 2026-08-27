@@ -49,7 +49,10 @@
                 :command="`quick:${engine.id}`"
                 :class="{ 'is-active': searchEngineSelection?.type === 'quick' && searchEngineSelection?.engine === engine.id }"
               >
-                {{ engine.icon }} {{ engine.name }}
+                <span class="search-engine-option">
+                  <FaviconIcon :url="engine.siteUrl" :size="16" :fallback="engine.icon" />
+                  {{ engine.name }}
+                </span>
               </el-dropdown-item>
 
               <!-- 已配置的搜索引擎 -->
@@ -63,7 +66,10 @@
                   :command="`configured:${config.id}`"
                   :class="{ 'is-active': searchEngineSelection?.configId === config.id }"
                 >
-                  {{ config.name }}
+                  <span class="search-engine-option">
+                    <FaviconIcon :url="searchEngineSiteUrlOf(config.templateId)" :size="16" :fallback="searchEngineIconOf(config.templateId)" />
+                    {{ config.name }}
+                  </span>
                 </el-dropdown-item>
               </template>
 
@@ -287,6 +293,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { Paperclip, Search, Cpu, Collection, VideoPause, Promotion, Close, Document, Check, Setting } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import FaviconIcon from '@/components/common/FaviconIcon.vue'
 import type { Message, Attachment, SearchEngineType, SearchEngineConfigId } from '../../../shared/types'
 import type { SearchEngineTemplate, UserSearchEngineConfig } from '../../../shared/types/search-engine.types'
 import type { DialogWebSearchConfig } from '../../../shared/types/dialog.types'
@@ -493,6 +500,14 @@ const searchEngineConfigs = ref<UserSearchEngineConfig[]>([])
 const disabledQuickEngines = ref<string[]>([])
 const enableThinkingChain = ref(false)
 const selectedKnowledgeBaseIds = ref<string[]>([])
+
+// 按模板 id 取搜索引擎图标/官网（用于已配置列表显示真实品牌图标）
+const searchEngineIconOf = (templateId: string): string => {
+  return searchEngineTemplates.value.find(t => t.id === templateId)?.icon || '🔍'
+}
+const searchEngineSiteUrlOf = (templateId: string): string => {
+  return searchEngineTemplates.value.find(t => t.id === templateId)?.siteUrl || ''
+}
 
 // 加载搜索引擎模板和配置
 async function loadSearchEngines(): Promise<void> {
@@ -766,6 +781,13 @@ function handleKeydown(event: KeyboardEvent): void {
   border-top: 1px solid #e2e8f0;
   background: #fff;
   padding: 10px 16px;
+}
+
+// 搜索引擎下拉选项（品牌图标 + 名称）
+.search-engine-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .toolbar {

@@ -1039,6 +1039,12 @@ const getTemplateIcon = (templateId: string): string => {
   return template?.icon || '🔌'
 }
 
+// 获取模板品牌官网（用于抓取真实品牌图标）
+const getTemplateSiteUrl = (templateId: string): string => {
+  const template = templates.value.find((t) => t.id === templateId)
+  return template?.siteUrl || ''
+}
+
 // 打开添加提供商对话框
 const openAddDialog = () => {
   editingConfig.value = undefined
@@ -1159,6 +1165,12 @@ const getSearchEngineTemplateName = (templateId: string): string => {
 const getSearchEngineTemplateIcon = (templateId: string): string => {
   const template = searchEngineTemplates.value.find((t) => t.id === templateId)
   return template?.icon || '🔍'
+}
+
+// 获取搜索引擎品牌官网（用于抓取真实品牌图标）
+const getSearchEngineTemplateSiteUrl = (templateId: string): string => {
+  const template = searchEngineTemplates.value.find((t) => t.id === templateId)
+  return template?.siteUrl || ''
 }
 
 // 打开添加搜索引擎对话框

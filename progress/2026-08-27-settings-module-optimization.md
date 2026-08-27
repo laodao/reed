@@ -110,3 +110,19 @@
   （#7c4df0）——辅色深饱和（secondary 不浅）。
 - 保留清新（海盐蓝/薄荷青）、暖色（落日橘/玫瑰粉）、沉稳（深海蓝/石墨灰），
   共 10 套五类配色；默认主题改为云水蓝。
+
+## 第三轮：品牌真实图标（AI 提供商 / 搜索引擎）
+- `ProviderTemplate` / `SearchEngineTemplate` 类型新增 `siteUrl`（品牌官网）。
+- 提供商模板（单一事实源 `src/core/services/provider-template.service.ts`，
+  顺带把孤儿文件 `constants/provider-templates.ts` 改为再导出，避免两份漂移）
+  补齐 9 家官网：openai/deepseek/zhipu/bailian/moonshot/volcengine/minimax/
+  anthropic/gemini。
+- 搜索引擎模板补齐 11 家官网：baidu/bing-web/bing-api/google-web/google-cse/
+  zhipu/tavily/perplexity/deepseek-web/bocha/searxng。
+- 渲染层统一改用 FaviconIcon（复用 favicon 服务缓存）：
+  - 设置页：AI 提供商列表、已配置搜索引擎列表、快速搜索列表
+  - 添加提供商/添加搜索引擎对话框：模板卡片 + 选中模板图标
+  - ChatInput：快速搜索 / 已配置搜索引擎下拉选项（16px 品牌图标）
+- `FaviconIcon` 修复空 URL 时 loading 卡住的问题（直接回落兜底 emoji）。
+- 实测：DeepSeek/火山/智谱/百炼/百度/必应/Tavily 等显示真实图标；
+  Google（被墙）、vllm（custom-model 无官网）回落原 emoji，符合预期。
