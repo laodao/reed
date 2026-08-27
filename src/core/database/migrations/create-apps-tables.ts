@@ -56,6 +56,24 @@ export async function createAppsTables(ds: DataSource): Promise<void> {
     console.log('[create-apps-tables] 表 app_sessions 创建完成')
   }
 
+  // 用户应用偏好表（per-user pinned/enabled 覆盖）：内置应用是 user_id=NULL 的全局共享行，
+  // "固定到首页/启停"若直接写全局行会跨用户污染（Web 多租户）。偏好行按 (user_id, app_id)
+  // 唯一，读路径 COALESCE(偏好, 全局)。
+  if (!(await checkTableExists(ds, 'app_user_prefs', isPg))) {
+    await ds.query(`
+      CREATE TABLE app_user_prefs (
+        user_id     ${vc} NOT NULL,
+        app_id      ${vc} NOT NULL,
+        pinned      INTEGER DEFAULT 0,
+        enabled     INTEGER DEFAULT 1,
+        created_at  ${dt},
+        updated_at  ${dt},
+        PRIMARY KEY (user_id, app_id)
+      )
+    `)
+    console.log('[create-apps-tables] 表 app_user_prefs 创建完成')
+  }
+
   // 索引幂等补建（IF NOT EXISTS）：表已存在但索引缺失（半失败迁移/历史库）的场景也能补齐；
   // sqlite 与 postgres 均支持 IF NOT EXISTS（PG 9.5+ / SQLite 3.3+）
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_apps_user ON apps (user_id)`)

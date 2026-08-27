@@ -37,6 +37,11 @@ class MemAppRepo {
   async findByShareToken(token: string) {
     return [...this.rows.values()].find(r => r.shareToken === token && r.enabled === 1 && (r.channelShare ?? 0) === 1) ?? null
   }
+  /** per-user pinned 偏好桩（setPinned 写偏好表，不改全局行） */
+  prefs = new Map<string, { pinned: number }>()
+  async setUserPinned(userId: string, appId: string, pinned: boolean) {
+    this.prefs.set(`${userId}:${appId}`, { pinned: pinned ? 1 : 0 })
+  }
 }
 class MemSessionRepo {
   rows: Map<string, any> = new Map()

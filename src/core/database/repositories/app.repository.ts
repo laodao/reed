@@ -8,6 +8,7 @@
 import type { DataSource, FindOptionsWhere } from 'typeorm'
 import type { AppRecord } from '@shared/types/app.types'
 import { AppEntity } from '../entities/app.entity'
+import { AppUserPrefsEntity } from '../entities/app-user-prefs.entity'
 import { BaseRepository } from '../base-repository'
 import { getCurrentUserId } from '@core/context/user-context'
 import { createHash } from 'node:crypto'
@@ -101,10 +102,18 @@ export class AppRepository extends BaseRepository<AppEntity, AppRecord> {
       qb.andWhere('(a.user_id IS NULL OR a.is_builtin = 1)')
     }
     const e = await qb.getOne()
-    return e ? this.toDto(e) : null
+    if (!e) return null
+    const dto = this.toDto(e)
+    // per-user pinned 归并（用户个人"固定到首页"）
+    if (userId) {
+      const pref = await this.dataSource
+        .getRepository(AppUserPrefsEntity)
+        .findOne({ where: { userId, appId: id } })
+      if (pref?.pinned != null) dto.pinned = pref.pinned
+    }
+    return dto
   }
 
-  /** 分页列表（创建时间降序——最新发布的在前；含全局内置） */
   /** 分页列表（创建时间降序——最新发布的在前；含全局内置；keyword/category/pinned 筛选） */
   async listApp(params: ListAppParams): Promise<{ items: AppRecord[]; total: number }> {
     const userId = getCurrentUserId()
@@ -129,10 +138,17 @@ export class AppRepository extends BaseRepository<AppEntity, AppRecord> {
       qb.andWhere('a.category = :cat', { cat: params.category })
     }
     if (params.pinned !== undefined) {
-      qb.andWhere(params.pinned ? 'a.pinned = 1' : '(a.pinned IS NULL OR a.pinned = 0)')
+      // per-user 归并：COALESCE(用户偏好.pinned, 全局行.pinned) = 1（相关子查询，避免 JOIN 影响分页）
+      qb.andWhere(
+        userId
+          ? `COALESCE((SELECT p.pinned FROM app_user_prefs p WHERE p.app_id = a.id AND p.user_id = :prefUid), a.pinned) = :pin`
+          : 'a.pinned = :pin',
+        userId ? { prefUid: userId, pin: params.pinned ? 1 : 0 } : { pin: params.pinned ? 1 : 0 },
+      )
     }
     const [rows, total] = await qb.getManyAndCount()
-    return { items: this.toDtoList(rows), total }
+    const items = await this.mergeUserPrefs(rows, userId)
+    return { items, total }
   }
 
   /** 分类计数（AppList 分类筛选 tabs / 首页分组；含全局内置） */
@@ -224,6 +240,45 @@ export class AppRepository extends BaseRepository<AppEntity, AppRecord> {
     const existing = await this.findById(id)
     if (existing?.isBuiltin) return 0
     return this.scoped.delete({ id } as FindOptionsWhere<AppEntity>)
+  }
+
+  /**
+   * 固定/取消固定到首页（per-user 偏好）：写 app_user_prefs，**不改全局共享行**——
+   * 内置应用 user_id=NULL 是全局行，直接写 pinned 会跨用户污染（Web 多租户）。
+   */
+  async setUserPinned(userId: string, appId: string, pinned: boolean): Promise<void> {
+    const repo = this.dataSource.getRepository(AppUserPrefsEntity)
+    const now = new Date()
+    const existing = await repo.findOne({ where: { userId, appId } })
+    if (existing) {
+      await repo.update({ userId, appId }, { pinned: pinned ? 1 : 0, updatedAt: now })
+    } else {
+      await repo.save(repo.create({
+        userId,
+        appId,
+        pinned: pinned ? 1 : 0,
+        enabled: 1,
+        createdAt: now,
+        updatedAt: now,
+      }))
+    }
+  }
+
+  /** 把当前用户的应用偏好合并进列表（有效 pinned = COALESCE(用户偏好, 全局行)） */
+  private async mergeUserPrefs(rows: AppEntity[], userId: string | null): Promise<AppRecord[]> {
+    const items = rows.map(e => this.toDto(e))
+    if (!userId || items.length === 0) return items
+    const prefs = await this.dataSource
+      .getRepository(AppUserPrefsEntity)
+      .createQueryBuilder('p')
+      .where('p.user_id = :userId AND p.app_id IN (:...ids)', { userId, ids: items.map(i => i.id) })
+      .getMany()
+    const prefMap = new Map(prefs.map(p => [p.appId, p]))
+    for (const item of items) {
+      const pref = prefMap.get(item.id)
+      if (pref && pref.pinned != null) item.pinned = pref.pinned
+    }
+    return items
   }
 
   /**

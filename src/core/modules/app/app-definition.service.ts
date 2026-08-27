@@ -14,6 +14,7 @@ import { APPLICATION_SOURCE_KINDS } from '@shared/types/app.types'
 import type { AppRepository, UpdateAppInput } from '../../database/repositories/app.repository'
 import type { AppSessionRepository } from '../../database/repositories/app-session.repository'
 import type { WorkflowDefinitionRepository } from '../../database/repositories/workflow-definition.repository'
+import { getCurrentUserId, LOCAL_DEFAULT_USER_ID } from '@core/context/user-context'
 import { createLogger } from '@core/utils/logger'
 
 const logger = createLogger('AppDefinitionService')
@@ -46,9 +47,13 @@ export class AppDefinitionService {
     return this.apps.countByCategory()
   }
 
-  /** 固定/取消固定到首页（内置应用同样允许——首页入口是用户个人行为） */
+  /** 固定/取消固定到首页（**用户个人行为**：写 per-user 偏好，不改全局共享行——
+   *  内置应用 user_id=NULL，直接改 pinned 会让 Web 端所有用户互相污染） */
   async setPinned(id: string, pinned: boolean): Promise<AppRecord | null> {
-    return this.apps.update(id, { pinned: pinned ? 1 : 0 })
+    const app = await this.apps.findById(id)
+    if (!app) return null
+    await this.apps.setUserPinned(getCurrentUserId() ?? LOCAL_DEFAULT_USER_ID, id, pinned)
+    return this.apps.findById(id)
   }
 
   /** 更新应用元信息（名称/图标/描述/分类/标签；内置应用除 pinned 外禁改由 repository 保证） */
