@@ -905,7 +905,9 @@ export class KnowledgeBaseService {
           if (r.chunkId.startsWith(QA_CHUNK_ID_PREFIX)) continue
           if (threshold !== null && r.score < threshold) continue // H3：阈值作用于原始余弦（保留既有语义）
           vecScores.set(r.chunkId, r.score)
-          if (vecScores.size >= topK) break
+          // 混合模式不按 topK 截断：候选集必须是 topK*3 的完整并集（排名第 topK+1~
+          // 3topK 的向量命中才能被 BM25 同向命中"顶"进融合）；纯向量模式才截断到 topK
+          if (vectorWeight >= 1 && vecScores.size >= topK) break
         }
       }
 

@@ -116,7 +116,11 @@ export class WorkflowDefinitionService {
   }
 
   async delete(id: string): Promise<number> {
-    return this.repo.delete(id)
+    const affected = await this.repo.delete(id)
+    // 删除后刷新调度状态与事件索引：否则已删定义的 cron 状态 / 事件触发器
+    // 残留内存索引，每次事件触发一次"工作流不存在"错误日志（报告分组 7 🟡5）
+    if (affected > 0) await this.refreshSchedule(id)
+    return affected
   }
 
   // ==================== C3 分享（免登录独立页） ====================

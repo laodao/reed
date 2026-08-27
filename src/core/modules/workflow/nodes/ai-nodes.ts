@@ -19,7 +19,7 @@ import { ImageService } from '../../../services/image.service'
 import { VoiceService } from '../../../services/voice.service'
 import { getVideoMetadata, extractAudioSegment } from '../../episode-production/reference-video/ffmpeg-helpers'
 import { dirname, basename, join, isAbsolute } from 'path'
-import { existsSync, readFileSync } from 'fs'
+import { existsSync, readFileSync, rmSync } from 'fs'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import type { WorkflowNodeContext } from '../engine/node-handler'
 import type { WorkflowNodeHandler } from '../engine/node-handler'
@@ -106,11 +106,14 @@ const kbIngestNode: WorkflowNodeHandler = {
     { key: 'status', type: 'string', desc: 'waitForCompletion=false 时为 submitted' },
   ],
   validateConfig(config) {
-    const cfg = config as { knowledgeBaseId?: string; title?: string; content?: string }
+    const cfg = config as { knowledgeBaseId?: string; title?: string; content?: string; passthrough?: unknown }
     const errors: string[] = []
     if (!cfg.knowledgeBaseId) errors.push('必须选择知识库')
     if (stringifyValue(cfg.title).trim() === '') errors.push('文档标题不能为空')
     if (stringifyValue(cfg.content).trim() === '') errors.push('文档内容不能为空')
+    if (cfg.passthrough !== undefined && (typeof cfg.passthrough !== 'object' || Array.isArray(cfg.passthrough))) {
+      errors.push('passthrough 必须是对象（{字段: 值模板}）')
+    }
     return errors
   },
   async execute(ctx: WorkflowNodeContext) {
@@ -119,13 +122,24 @@ const kbIngestNode: WorkflowNodeHandler = {
       title: string
       content: string
       waitForCompletion?: boolean
+      /** 可选来源键：传值时按 (workflow, sourceKey) 幂等 upsert——重复运行覆盖不堆积 */
+      sourceKey?: string
+      /** 透传字段：{字段: 值}（引擎已解析模板），合并进输出——循环体内供下游聚合引用正文 */
+      passthrough?: Record<string, unknown>
+    }
+    const kbId = stringifyValue(cfg.knowledgeBaseId).trim()
+    // 知识库未选（模板解析为空）→ 跳过保存，流程继续
+    if (!kbId) {
+      return { status: 'succeeded', output: { documentId: '', status: 'skipped', ...(cfg.passthrough ?? {}) } }
     }
     const service = new KnowledgeBaseService()
     const title = stringifyValue(cfg.title)
-    const resp = await service.addDocument(cfg.knowledgeBaseId, {
+    const sourceKey = stringifyValue(cfg.sourceKey).trim()
+    const resp = await service.addDocument(kbId, {
       name: title,
       type: 'text',
       content: stringifyValue(cfg.content),
+      ...(sourceKey ? { source: { type: 'workflow' as const, id: sourceKey } } : {}),
     })
     const result = unwrap(resp, '知识库入库')
     // AddDocumentResult 含文档记录（防御式取 id）
@@ -134,12 +148,12 @@ const kbIngestNode: WorkflowNodeHandler = {
       ?? ''
 
     if (!cfg.waitForCompletion) {
-      return { status: 'succeeded', output: { documentId, status: NODE_SUBMITTED_STATUS } }
+      return { status: 'succeeded', output: { documentId, status: NODE_SUBMITTED_STATUS, ...(cfg.passthrough ?? {}) } }
     }
     // 等待后台解析/向量化完成（轮询文档状态）
     const doc = await pollUntil(
       async () => {
-        const docsResp = await service.getDocuments(cfg.knowledgeBaseId)
+        const docsResp = await service.getDocuments(kbId)
         const docs = unwrap(docsResp, '读取知识库文档') ?? []
         const doc = (docs as Array<{ id?: string; documentId?: string; status?: string }>).find(
           d => d.id === documentId || d.documentId === documentId
@@ -153,7 +167,7 @@ const kbIngestNode: WorkflowNodeHandler = {
     if (doc.status === 'failed') {
       return { status: 'failed', error: '知识库文档处理失败', retryable: true }
     }
-    return { status: 'succeeded', output: { documentId, status: 'completed' } }
+    return { status: 'succeeded', output: { documentId, status: 'completed', ...(cfg.passthrough ?? {}) } }
   },
 }
 
@@ -440,19 +454,28 @@ async function transcribeLongAudio(
   const dir = dirname(audioPath)
   const base = basename(audioPath).replace(/\.wav$/i, '')
   const texts: string[] = []
-  for (let i = 0; i < totalSegs; i++) {
-    const startSec = i * segmentSec
-    const segPath = join(dir, `${base}_seg${i + 1}.wav`)
-    await extractAudioSegment(audioPath, segPath, startSec, segmentSec)
-    ctx.emitProgress(Math.round(((i + 1) / totalSegs) * 90), `转写第 ${i + 1}/${totalSegs} 段`)
-    const resp = await VoiceService.recognizeSpeech({
-      audioPath: segPath,
-      ...(opts.language ? { language: opts.language as never } : {}),
-      ...(opts.providerId ? { providerId: opts.providerId } : {}),
-      ...(opts.modelId ? { modelId: opts.modelId } : {}),
-    } as never)
-    const data = unwrap(resp, `语音识别（第 ${i + 1} 段）`)
-    texts.push(data.text ?? '')
+  const segPaths: string[] = []
+  try {
+    for (let i = 0; i < totalSegs; i++) {
+      const startSec = i * segmentSec
+      const segPath = join(dir, `${base}_seg${i + 1}.wav`)
+      segPaths.push(segPath)
+      await extractAudioSegment(audioPath, segPath, startSec, segmentSec)
+      ctx.emitProgress(Math.round(((i + 1) / totalSegs) * 90), `转写第 ${i + 1}/${totalSegs} 段`)
+      const resp = await VoiceService.recognizeSpeech({
+        audioPath: segPath,
+        ...(opts.language ? { language: opts.language as never } : {}),
+        ...(opts.providerId ? { providerId: opts.providerId } : {}),
+        ...(opts.modelId ? { modelId: opts.modelId } : {}),
+      } as never)
+      const data = unwrap(resp, `语音识别（第 ${i + 1} 段）`)
+      texts.push(data.text ?? '')
+    }
+  } finally {
+    // 清理分段临时 wav（长音频多次运行磁盘累积，报告分组 17 🟡3）
+    for (const p of segPaths) {
+      try { rmSync(p, { force: true }) } catch { /* 已删/占用则忽略 */ }
+    }
   }
   const joined = texts
     .map((t, i) => (t.trim() ? (totalSegs > 1 ? `【第 ${i + 1} 段】\n${t.trim()}` : t.trim()) : ''))

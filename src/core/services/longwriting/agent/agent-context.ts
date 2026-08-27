@@ -73,7 +73,7 @@ const DECISION_SYSTEM_PROMPT = `你是长文写作项目的 AI 创作助手，�
      若概要缺失，优先输出 generate_overview（用户给了想法时），或直接建议用户先描述想法。
    - write_chapter 需要大纲存在且有待写节点；没有大纲时不要输出 write_chapter，先建议生成大纲。
 3. 已有数据不要盲目重复生成；补充生成时在 requirements 里写明"不要重复已有：xxx"。
-4. 一次最多输出 2 个动作，按依赖顺序排列。
+4. 一次最多输出 3 个动作（引擎上限 AGENT_MAX_ACTIONS_PER_TURN=3），按依赖顺序排列。
 5. 你的 reply 只是给用户的简短回应（一句话即可），最终详细介绍会在动作执行后生成。
 6. 用户要求修改/删除某实体时，用 update_entity / delete_entity（params 必须带可定位的 id 或可唯一识别的名称 name；用名称时引擎会解析）。
 

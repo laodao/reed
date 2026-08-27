@@ -133,8 +133,6 @@ import { useEpAgentChat } from '@/composables/useEpAgentChat'
 const props = defineProps<{
   projectId: string
   episodeId: string
-  /** 当前激活 tab（script/asset/storyboard/compose），用于动作后自动切换判断 */
-  activeTab?: string
   /** 当前上下文提示（如"当前选中场景""当前选中角色"），用于欢迎语/引导 chips */
   contextHint?: string | null
 }>()

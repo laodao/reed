@@ -100,15 +100,9 @@ const voiceCloneNode: WorkflowNodeHandler = {
     const language = stringifyValue(cfg.language).trim() || undefined
 
     const absPath = resolveAssetPath(samplePath)
-    // 时长自动探测（10-20s 校验由服务层做）
+    // 时长自动探测（10-20s 校验由 VoiceCloneService.validateCloneRequest 统一做，
+    // 避免规则两处写死漂移——此处仅探测并透传 durationSec）
     const durationSec = await probeAudioDuration(absPath)
-    if (durationSec < 10 || durationSec > 20) {
-      return {
-        status: 'failed',
-        error: `样本音频时长 ${durationSec.toFixed(1)}s，需在 10-20 秒`,
-        retryable: false,
-      }
-    }
 
     const resp = await VoiceCloneService.cloneVoice({
       name,

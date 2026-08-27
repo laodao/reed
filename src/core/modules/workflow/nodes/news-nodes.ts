@@ -159,7 +159,7 @@ const crawlNewsNode: WorkflowNodeHandler = {
           seen.add(l.url)
           links.push({ ...l, source: s.name })
         }
-        ctx.emitProgress(Math.round((links.length / (sources.length * maxLinksPerSource)) * 100).toString())
+        ctx.emitProgress(Math.round((links.length / (sources.length * maxLinksPerSource)) * 100))
       } catch (e) {
         failedSources.push({ name: s.name, url: s.url, error: e instanceof Error ? e.message : String(e) })
       }

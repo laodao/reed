@@ -108,12 +108,20 @@ export class WorkflowTriggerScheduler {
     this.started = false
   }
 
-  /** cron tick：扫描到期 → 按 userId 分组 → 触发或推进（整体兜底，绝不外抛） */
+  /** cron tick：扫描到期 → 按 userId 分组 → 触发或推进（整体兜底，绝不外抛）。
+   *  重入守卫：tickInner 全异步，单次 tick 超过 tickMs 时两轮并发会重复扫描/触发——
+   *  in-flight 标志让下一轮直接跳过（互斥能兜住大部分，但 startRun 的
+   *  findMutexHolders→create 非事务，存在竞态窗，不应并发）。 */
+  private tickInFlight = false
   async tick(now = new Date()): Promise<void> {
+    if (this.tickInFlight) return
+    this.tickInFlight = true
     try {
       await this.tickInner(now)
     } catch (e) {
       logger.error('[WorkflowTriggerScheduler] tick 异常', e)
+    } finally {
+      this.tickInFlight = false
     }
   }
 

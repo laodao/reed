@@ -52,7 +52,9 @@ export class AppSessionMessageRepository extends BaseRepository<AppSessionMessag
   async getBySessionId(sessionId: string): Promise<Message[]> {
     const es = await this.scoped.find({
       where: { sessionId } as FindOptionsWhere<AppSessionMessageEntity>,
-      order: { createdAt: 'ASC' } as any,
+      // id 次级排序：SQLite datetime 秒级精度，startRun 连写的 user 气泡 + runStatus
+      // 卡同秒时纯 createdAt 顺序不定（报告分组 16 🟡）
+      order: { createdAt: 'ASC', id: 'ASC' } as any,
     })
     return this.toDtoList(es)
   }
