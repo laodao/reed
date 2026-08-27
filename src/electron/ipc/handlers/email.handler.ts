@@ -45,6 +45,13 @@ export interface SaveEmailAccountInput {
 }
 
 export function registerEmailHandlers(): void {
+  // Web 端安全边界：邮件收发（IMAP/SMTP）会让服务器向外连接任意 host:port，
+  // 多租户下构成受限 SSRF；邮箱功能面向桌面单用户，Web 端整体不注册。
+  const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
+  if (!isElectron) {
+    console.log('[EmailHandlers] Web 端：邮件通道未注册（服务器外连 IMAP/SMTP 属 SSRF 面）')
+    return
+  }
   // ==================== 邮箱账号 CRUD ====================
   ipcBridge.handle('email:list-accounts', () =>
     wrap(() => listAccounts())
@@ -62,9 +69,14 @@ export function registerEmailHandlers(): void {
   )
 }
 
-/** 列表：取全部邮箱账号（passEnc 密文原样带出，前端不展示明文） */
+/** 列表：取全部邮箱账号，剥离 passEnc 密文（渲染端/浏览器均不需要密文） */
 async function listAccounts(): Promise<EmailAccount[]> {
-  return emailRepo().list()
+  const rows = await emailRepo().list()
+  return rows.map((r: any) => {
+    const { passEnc, ...safe } = r
+    void passEnc
+    return { ...safe, hasPassword: !!r.passEnc }
+  })
 }
 
 /** 保存（新增/编辑）：授权码加密后落库；编辑时留空保留原密文 */
