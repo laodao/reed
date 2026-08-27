@@ -58,7 +58,7 @@ const routes: RouteRecordRaw[] = [
     path: '/portrait/geometry',
     name: 'FaceGeometryPage',
     component: () => import('@/views/FaceGeometryPage.vue'),
-    meta: { keepAlive: true, title: '面容分析' },
+    meta: { keepAlive: true, title: '面部微调' },
   },
   {
     path: '/portrait-templates',

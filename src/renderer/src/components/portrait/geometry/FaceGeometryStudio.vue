@@ -243,7 +243,7 @@ async function runDetect() {
   const src = toImageUrl(props.variant?.imagePath)
   if (!src) {
     detecting.value = false
-    failure.value = { reason: 'missing_variant', message: '缺少变体图片，无法进行面容分析' }
+    failure.value = { reason: 'missing_variant', message: '缺少变体图片，无法进行面部微调' }
     return
   }
   imageSrc.value = src

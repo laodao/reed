@@ -5,7 +5,7 @@
     <FaceGeometryStudio v-if="variant" :variant="variant" @saved="onSaved" />
     <div v-else class="fgp-error">
       <div class="fgp-error-ico">?</div>
-      <p>缺少有效的面容分析参数（变体/图片信息）。</p>
+      <p>缺少有效的面部微调参数（变体/图片信息）。</p>
       <el-button @click="$router.push('/portrait')">返回人像设计</el-button>
     </div>
   </div>

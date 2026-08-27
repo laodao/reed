@@ -47,7 +47,7 @@
           🎯 只改面部
         </el-button>
         <el-button class="geometry-btn" @click="openGeometryStudio">
-          📐 面容分析
+          📐 面部微调
         </el-button>
       </div>
     </template>

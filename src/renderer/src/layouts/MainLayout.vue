@@ -163,7 +163,7 @@ const pathTitleMap: Record<string, string> = {
   '/voice/stt': '语音转文本',
   '/voice/clone': '声音复刻',
   '/knowledge-base': '知识库',
-  '/portrait/geometry': '面容分析',
+  '/portrait/geometry': '面部微调',
   '/assistant': '智能助手',
   '/assets': '资产管理',
   '/settings': '设置'
