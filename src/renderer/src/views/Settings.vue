@@ -103,7 +103,7 @@
                 :class="{ disabled: !config.isEnabled, 'is-default': config.isDefault }"
               >
                 <div class="config-icon">
-                  {{ getTemplateIcon(config.templateId) }}
+                  <FaviconIcon :url="getTemplateSiteUrl(config.templateId)" :size="28" :fallback="getTemplateIcon(config.templateId)" />
                 </div>
                 <div class="config-info">
                   <div class="config-header">
@@ -284,7 +284,9 @@
                   class="quick-engine-item"
                   :class="{ disabled: disabledQuickEngines.includes(engine.id) }"
                 >
-                  <div class="engine-icon">{{ engine.icon }}</div>
+                  <div class="engine-icon">
+                    <FaviconIcon :url="engine.siteUrl" :size="20" :fallback="engine.icon" />
+                  </div>
                   <div class="engine-info">
                     <span class="engine-name">{{ engine.name }}</span>
                     <span class="engine-desc">{{ engine.description }}</span>
@@ -308,7 +310,7 @@
                   :class="{ disabled: !config.isEnabled, 'is-default': config.isDefault }"
                 >
                   <div class="config-icon">
-                    {{ getSearchEngineTemplateIcon(config.templateId) }}
+                    <FaviconIcon :url="getSearchEngineTemplateSiteUrl(config.templateId)" :size="28" :fallback="getSearchEngineTemplateIcon(config.templateId)" />
                   </div>
                   <div class="config-info">
                     <div class="config-header">
