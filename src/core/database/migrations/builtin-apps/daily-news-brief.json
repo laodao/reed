@@ -77,7 +77,7 @@
         "type": "web-extract",
         "name": "抓取正文",
         "position": { "x": 1580, "y": 260 },
-        "config": { "url": "{{loop1.item.url}}", "maxLength": 100000, "maxLinks": 0 }
+        "config": { "url": "{{loop1.item.url}}", "maxLength": 100000, "maxLinks": 0, "onError": "skip" }
       },
       {
         "id": "saveKb1",
@@ -90,7 +90,7 @@
           "content": "{{extract1.text}}",
           "sourceKey": "{{loop1.item.url}}",
           "waitForCompletion": false,
-          "passthrough": { "title": "{{extract1.title}}", "text": "{{extract1.text}}", "url": "{{loop1.item.url}}" }
+          "passthrough": { "title": "{{extract1.title}}", "text": "{{extract1.text}}", "url": "{{loop1.item.url}}", "skipped": "{{extract1.skipped}}" }
         }
       },
       {

@@ -313,6 +313,7 @@ const webExtractNode: WorkflowNodeHandler = {
     { key: 'text', type: 'string', desc: '正文文本' },
     { key: 'length', type: 'number', desc: '文本长度' },
     { key: 'links', type: 'json', desc: '页面内链接 [{ title, url }]（去重/过滤，最多 maxLinks 条）' },
+    { key: 'skipped', type: 'boolean', desc: '抓取失败被跳过（onError=skip 时输出空结果并置 true）' },
   ],
   validateConfig(config) {
     const cfg = config as { url?: string }
@@ -328,14 +329,27 @@ const webExtractNode: WorkflowNodeHandler = {
       delayMsMin?: number
       delayMsMax?: number
       hostConcurrency?: number
+      /**
+       * 抓取失败处理策略（可选，默认 fail）：
+       * - fail：节点失败（默认，报错并可能触发重试/fail 边）
+       * - skip：返回空结果（title/text 为空、skipped=true），适合批量采集场景
+       *   （如早报逐条抓取正文），单个链接不可达不阻断整个流程
+       */
+      onError?: 'fail' | 'skip'
     }
     const timeout = Math.min(WORKFLOW_DEFAULTS.httpRequestTimeoutMs, WORKFLOW_LIMITS.httpTimeoutMs)
     const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(timeout)])
+    // onError=skip：抓取失败时返回空结果而非报错
+    const skipResult = () => ({
+      status: 'succeeded' as const,
+      output: { title: '', text: '', length: 0, links: [], skipped: true },
+    })
     let html: string
     try {
       // SSRF 防护：url 可经 {{模板}} 注入（内置应用"网页摘要入库"即 {{start.url}}）
       const guard = validateOutboundUrl(String(cfg.url))
       if (!guard.ok) {
+        // SSRF/校验失败属配置问题，不因 onError=skip 静默吞掉
         return { status: 'failed', error: `URL 校验失败：${guard.reason}`, retryable: false }
       }
       // 礼貌抓取：同站单线程 + 随机间隔（跨节点共享限速）
@@ -344,9 +358,13 @@ const webExtractNode: WorkflowNodeHandler = {
         delayMsMax: cfg.delayMsMax,
         hostConcurrency: cfg.hostConcurrency,
       })
-      if (!res.ok) return { status: 'failed', error: `请求失败：HTTP ${res.status}` }
+      if (!res.ok) {
+        if (cfg.onError === 'skip') return skipResult()
+        return { status: 'failed', error: `请求失败：HTTP ${res.status}` }
+      }
       html = await res.text()
     } catch (e) {
+      if (cfg.onError === 'skip') return skipResult()
       return { status: 'failed', error: `网页获取失败: ${e instanceof Error ? e.message : String(e)}` }
     }
     // 正文提取（启发式：文本密度选主内容容器，剔除导航/按钮/评论等噪声）

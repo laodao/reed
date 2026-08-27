@@ -126,3 +126,39 @@
 - `FaviconIcon` 修复空 URL 时 loading 卡住的问题（直接回落兜底 emoji）。
 - 实测：DeepSeek/火山/智谱/百炼/百度/必应/Tavily 等显示真实图标；
   Google（被墙）、vllm（custom-model 无官网）回落原 emoji，符合预期。
+
+## 第四轮：每日热点早报抓取容错（bug 修复）
+
+### 现象
+用户重跑「每日热点早报」（id wfrun_1787849366563_829fl3f4t 等）两次均失败，
+错误「循环体内节点失败且未恢复」；此前 14:21 同参数运行成功。
+
+### 根因（数据库 workflow_node_runs 排查）
+- loop1「逐条抓取正文」循环体的 extract1（web-extract「抓取正文」）抓
+  `https://x.com/amir/status/...`（X/Twitter 帖子链接）时网络失败
+  （`网页获取失败: fetch failed`，被墙/反爬）。
+- web-extract 节点对网络失败直接返回 `status: 'failed'`，引擎把失败上抛为
+  循环体失败 → loop1 失败 → 整个早报运行失败。
+- 即：**单个 URL 抓取失败导致整个早报流程失败**，缺少采集容错。
+
+### 修复
+1. `extra-nodes.ts` web-extract 节点新增 `onError: 'fail' | 'skip'` 配置
+   （默认 fail 保持兼容）：
+   - `skip`：网络/超时/HTTP 非 2xx 失败时返回空结果
+     `{ title:'', text:'', length:0, links:[], skipped:true }`，不报错；
+   - SSRF/URL 校验失败仍报错（配置问题不静默吞掉）。
+2. `daily-news-brief.json`（内置早报模板）：
+   - extract1 配置 `onError: "skip"`；
+   - saveKb1 passthrough 增加 `skipped` 字段，循环结果可感知跳过项。
+3. 用户数据库同步：内置定义 `builtin_def_daily-news-brief` 已被用户接管
+   （template_version=0，模板不同步），用脚本直接更新
+   draft_graph/published_graph（先备份
+   `dataPath/workflow_definitions_backup_<ts>.json`）。
+4. 新增流程级容错测试：循环内某个 URL fetch 抛错 → 该项被跳过
+   （skipped=true 空结果）、正常项照常抓取、链路仍 succeeded。
+
+### 验证
+- `daily-news-brief-flow.spec.ts` 4 用例全过（含新增容错用例）；
+  web-extract 相关测试 21 项全过；`npm run build` 成功。
+- 数据库读回确认：extract1.config.onError="skip"、
+  saveKb1.passthrough.skipped 已生效。

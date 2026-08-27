@@ -274,4 +274,58 @@ describe('每日热点早报新链路（两级采集 + 知识库保存）', () =
     expect(report.markdown).toContain('生成的正文章节') // {{gen1.content}} 已解析
     expect(report.markdown).not.toContain('{{') // 不再残留未解析占位
   })
+
+  it('容错：循环内某个 URL 抓取失败（onError=skip）→ 跳过该项，链路仍 succeeded', async () => {
+    // 新闻页 fetch：/news/2 抛网络错误（模拟被墙/超时/反爬），其余正常
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url)
+      if (u.includes('/news/bad')) throw new Error('fetch failed')
+      if (u.includes('/news/')) {
+        return { ok: true, status: 200, text: async () => `<html><head><title>新闻页 ${u}</title></head><body><p>这是一篇足够长的新闻正文内容，包含可被报告引用的有效信息。</p></body></html>` }
+      }
+      if (u.includes('/ai') || u.includes('/tech')) {
+        return { ok: true, status: 200, text: async () => `<html><body>
+          <a href="/news/good">AI 突破新闻标题足够长值得收录</a>
+          <a href="/news/bad">被墙站点新闻标题足够长值得收录</a>
+          <a href="/">首页</a>
+        </body></html>` }
+      }
+      return { ok: true, status: 200, text: async () => `<html><body>
+        <a href="/ai">AI 频道</a>
+        <a href="/">首页</a>
+      </body></html>` }
+    }))
+    const aiQueue = [
+      JSON.stringify([{ title: 'AI 频道', url: 'https://news.example.com/ai' }]),
+      JSON.stringify([
+        { title: '正常新闻', url: 'https://news.example.com/news/good', reason: '重要' },
+        { title: '被墙新闻', url: 'https://news.example.com/news/bad', reason: '抓不到' },
+      ]),
+      '# AI 热点早报（容错）\n\n## 今日要点\n- **正常新闻**：要点\n\n*由 The Bot 自动生成*',
+    ]
+    callAIStreamMock.mockImplementation(async () => ({ content: aiQueue.shift() ?? '' }))
+
+    const { engine, runs, nodeRuns } = makeEngine()
+    await runWithUser('u1', () =>
+      engine.execute({
+        runId: 'run_news_skip', userId: 'u1', definitionId: 'd1',
+        graph: testGraph(),
+        startInputs: baseInputs({ kbId: 'kb-1' }),
+        settings: { maxOutputChars: 800000, maxNodeRuns: 50 } as never,
+      } as ExecuteRunInput)
+    )
+    await wait(400)
+    // 关键：某个 URL 抓取失败不再让整个流程失败
+    expect(runs.final.status).toBe('succeeded')
+    // 失败的 extract1 被跳过（skipped=true 空结果），正常项照常抓取
+    const loopOut = nodeRuns.outputOf('loop1')
+    expect(loopOut.results).toHaveLength(2)
+    const bad = loopOut.results.find((r: { url?: string }) => String(r.url ?? '').includes('/news/bad'))
+    expect(bad?.skipped).toBe(true)
+    const good = loopOut.results.find((r: { url?: string }) => String(r.url ?? '').includes('/news/good'))
+    expect(good?.text).toContain('足够长的新闻正文内容')
+    // 报告正常生成
+    const report = nodeRuns.outputOf('report_default')
+    expect(report.markdown).toContain('AI 热点早报（容错）')
+  })
 })
