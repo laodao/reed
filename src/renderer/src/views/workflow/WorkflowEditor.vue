@@ -246,7 +246,11 @@ function onKeydown(e: KeyboardEvent): void {
   else if (k === 'y') { e.preventDefault(); redo() }
 }
 onMounted(() => window.addEventListener('keydown', onKeydown))
-onUnmounted(() => window.removeEventListener('keydown', onKeydown))
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeydown)
+  // 取消实时事件订阅（subscribe 幂等 + 卸载清理，避免监听器累积）
+  wfStore.unsubscribeAll()
+})
 
 // ==================== 连线编辑（选中/删除/改文字） ====================
 

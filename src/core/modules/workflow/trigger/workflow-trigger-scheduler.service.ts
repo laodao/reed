@@ -29,6 +29,15 @@ import { createLogger } from '@core/utils/logger'
 
 const logger = createLogger('WorkflowTriggerScheduler')
 
+/**
+ * 事件触发风暴防护：同一工作流定义在 1 分钟滑动窗口内最多触发这么多次。
+ * 事件触发无去重/自环检测（领域事件可被工作流节点产出——kb 文档完成、图像生成完成
+ * 等），"运行 → 发事件 → 再触发"可形成无限自触发链；跨工作流互相触发可无限乒乓。
+ * 限流让任何单条链在 1 分钟内衰减到静默（超限记 skipped 由 runService 互斥兜底），
+ * 而非无限烧 LLM/存储。内存单实例实现（部署多实例时按实例分别计数，可接受）。
+ */
+const EVENT_TRIGGER_MAX_PER_MINUTE = 20
+
 /** 定时器注入接口（测试用 fake timers） */
 export interface SchedulerTimer {
   setInterval(fn: () => void, ms: number): unknown
@@ -68,6 +77,8 @@ export class WorkflowTriggerScheduler {
     userId: string | null
     match?: Record<string, string | number | boolean>
   }>>()
+  /** 事件触发限流：definitionId → 最近触发时间戳（滑动窗口，防风暴/自环） */
+  private eventTriggerWindow = new Map<string, number[]>()
   private started = false
 
   constructor(
@@ -210,6 +221,11 @@ export class WorkflowTriggerScheduler {
       if (t.userId !== event.userId) continue
       // 可选 payload 等值过滤（AND）
       if (t.match && !matchPayload(t.match, event.payload)) continue
+      // 风暴防护：滑动窗口限流（自触发链/跨工作流乒乓在此衰减到静默）
+      if (!this.allowEventTrigger(t.definitionId)) {
+        logger.warn(`[WorkflowTriggerScheduler] 事件触发限流：${t.definitionId} 在 1 分钟内触发超过 ${EVENT_TRIGGER_MAX_PER_MINUTE} 次，本次跳过（疑似自触发链/事件风暴）`)
+        continue
+      }
       try {
         await runWithUserAsync(t.userId ?? LOCAL_DEFAULT_USER_ID, () =>
           this.deps.runService.startRun({
@@ -222,6 +238,20 @@ export class WorkflowTriggerScheduler {
         logger.error(`[WorkflowTriggerScheduler] 事件触发失败: ${t.definitionId}`, e)
       }
     }
+  }
+
+  /** 滑动窗口限流：1 分钟内每定义最多 EVENT_TRIGGER_MAX_PER_MINUTE 次事件触发 */
+  private allowEventTrigger(definitionId: string): boolean {
+    const now = Date.now()
+    const windowStart = now - 60_000
+    const stamps = (this.eventTriggerWindow.get(definitionId) ?? []).filter((ts) => ts > windowStart)
+    if (stamps.length >= EVENT_TRIGGER_MAX_PER_MINUTE) {
+      this.eventTriggerWindow.set(definitionId, stamps)
+      return false
+    }
+    stamps.push(now)
+    this.eventTriggerWindow.set(definitionId, stamps)
+    return true
   }
 
   /** 计算 fromDate 之后的首个触发点（表达式无效返回 null 并记日志） */

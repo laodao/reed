@@ -669,8 +669,8 @@ async function executeUpdateEntity(ctx: AgentExecutionContext, action: AgentActi
   const id = params.id
   const patch = params.patch
 
-  if (!type || !id || !patch || typeof patch !== 'object') {
-    return { type: 'update_entity', status: 'error', message: 'update_entity 需要 type/id/patch 参数' }
+  if (!type || !patch || typeof patch !== 'object') {
+    return { type: 'update_entity', status: 'error', message: 'update_entity 需要 type/patch 参数（可传 id 或 name 定位）' }
   }
 
   const repo = entityRepo(db, type)
@@ -678,11 +678,27 @@ async function executeUpdateEntity(ctx: AgentExecutionContext, action: AgentActi
     return { type: 'update_entity', status: 'error', message: `不支持的实体类型：${type}` }
   }
 
+  // 名称 → ID 解析：决策上下文只暴露实体**名称**（stateToSummary 不输出内部 id），
+  // 用户说"把苏婉儿的性格改成…"时 AI 只能传名称——旧实现直接按 params.id 查 → 必失败。
   let targetId = id
   if (type === 'overview') {
     const overview = await repo.getByProjectId(projectId)
     if (!overview) return { type: 'update_entity', status: 'error', message: '故事概要不存在' }
     targetId = overview.id
+  } else if (!targetId || !(await repo.getById(targetId))) {
+    const name = params.name
+    if (name) {
+      try {
+        const { GraphService } = await import('../graph/graph.service')
+        const [hit] = await new GraphService(db).resolveEntities(projectId, [{ type, name: String(name) }] as any)
+        if (hit?.resolved && hit.id) targetId = hit.id
+      } catch (e) {
+        console.error('[AgentAction] 名称解析失败（继续按 id 处理）:', e)
+      }
+    }
+    if (!targetId) {
+      return { type: 'update_entity', status: 'error', message: `${ENTITY_TYPE_LABELS[type] || type}不存在：未找到 id「${id ?? ''}」或名称「${params.name ?? ''}」对应的实体` }
+    }
   }
 
   const updated = await repo.update(targetId, patch)
@@ -705,8 +721,8 @@ async function executeDeleteEntity(ctx: AgentExecutionContext, action: AgentActi
   const type = params.type
   const id = params.id
 
-  if (!type || !id) {
-    return { type: 'delete_entity', status: 'error', message: 'delete_entity 需要 type/id 参数' }
+  if (!type) {
+    return { type: 'delete_entity', status: 'error', message: 'delete_entity 需要 type 参数（可传 id 或 name 定位）' }
   }
 
   const repo = entityRepo(db, type)
@@ -714,8 +730,26 @@ async function executeDeleteEntity(ctx: AgentExecutionContext, action: AgentActi
     return { type: 'delete_entity', status: 'error', message: `不支持的实体类型：${type}` }
   }
 
-  const before = await repo.getById(id)
-  const ok = await repo.delete(id)
+  // 名称 → ID 解析（同 update_entity：决策上下文只暴露名称）
+  let targetId = id
+  if (type !== 'overview' && (!targetId || !(await repo.getById(targetId)))) {
+    const name = params.name
+    if (name) {
+      try {
+        const { GraphService } = await import('../graph/graph.service')
+        const [hit] = await new GraphService(db).resolveEntities(projectId, [{ type, name: String(name) }] as any)
+        if (hit?.resolved && hit.id) targetId = hit.id
+      } catch (e) {
+        console.error('[AgentAction] 名称解析失败（继续按 id 处理）:', e)
+      }
+    }
+    if (!targetId) {
+      return { type: 'delete_entity', status: 'error', message: `${ENTITY_TYPE_LABELS[type] || type}不存在：未找到 id「${id ?? ''}」或名称「${params.name ?? ''}」对应的实体` }
+    }
+  }
+
+  const before = await repo.getById(targetId)
+  const ok = await repo.delete(targetId)
   if (!ok) {
     return { type: 'delete_entity', status: 'error', message: `${ENTITY_TYPE_LABELS[type] || type}不存在或删除失败` }
   }
@@ -723,7 +757,7 @@ async function executeDeleteEntity(ctx: AgentExecutionContext, action: AgentActi
   // 级联清理图谱边（character/location/item）
   if (type === 'character' || type === 'location' || type === 'item') {
     try {
-      await db?.lwGraphEdges?.deleteByEntity(projectId, type, id)
+      await db?.lwGraphEdges?.deleteByEntity(projectId, type, targetId)
     } catch (e) {
       console.error('[AgentAction] 清理图谱边失败（不影响删除）:', e)
     }
@@ -732,7 +766,7 @@ async function executeDeleteEntity(ctx: AgentExecutionContext, action: AgentActi
   return {
     type: 'delete_entity',
     status: 'ok',
-    message: `已删除${ENTITY_TYPE_LABELS[type] || type}：${before?.name || id}`,
+    message: `已删除${ENTITY_TYPE_LABELS[type] || type}：${before?.name || targetId}`,
     changed: [type === 'character' ? 'characters' : type === 'location' || type === 'faction' || type === 'skill' || type === 'item' ? 'world' : type === 'plot' ? 'plots' : type === 'outline' ? 'outline' : 'overview'],
   }
 }

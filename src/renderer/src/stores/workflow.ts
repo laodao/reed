@@ -29,6 +29,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const pendingReviewCount = ref(0)
 
   let unsubscribers: Array<() => void> = []
+  /** 订阅幂等标志：反复进出运行详情页/编辑器不再累积 ipcRenderer 监听器 */
+  let subscribed = false
 
   function applyEvent(e: WfRunEvent) {
     if (e.type === 'node-status' && e.runId && e.nodeId) {
@@ -53,8 +55,12 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
   }
 
-  /** 订阅实时事件（页面 setup 调用一次） */
+  /** 订阅实时事件（页面 setup 调用一次；幂等——重复调用不累积监听器） */
   function subscribe() {
+    if (subscribed) return
+    subscribed = true
+    // 新订阅周期重置待审核计数（review-requested 只增不减，长期使用徽标失真）
+    pendingReviewCount.value = 0
     const api = (window as never as { electronAPI: { workflow: { onRunEvent: (cb: (e: WfRunEvent) => void) => () => void } } }).electronAPI
     unsubscribers.push(api.workflow.onRunEvent(applyEvent))
   }
@@ -62,6 +68,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   function unsubscribeAll() {
     unsubscribers.forEach(fn => fn())
     unsubscribers = []
+    subscribed = false
   }
 
   /** 清理某运行的状态（离开详情页用） */

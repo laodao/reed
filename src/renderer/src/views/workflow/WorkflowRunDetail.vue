@@ -353,6 +353,8 @@ onMounted(() => {
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
   store.clearRun(runId.value)
+  // 离开页面取消实时事件订阅（否则监听器累积，同事件触发 N 次通知）
+  store.unsubscribeAll()
 })
 </script>
 
