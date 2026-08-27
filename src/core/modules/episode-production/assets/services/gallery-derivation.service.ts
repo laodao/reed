@@ -197,6 +197,12 @@ export class GalleryDerivationService {
         `无法派生：${input.assetType}/${input.assetId} 没有可用基图`,
       )
     }
+    // 基图必须是真实图片：imagePath='' 的占位行（仅承载待生成提示词）不能当参考，
+    // 否则 readImageAsDataUrl('') 静默返回 undefined → 生成无身份参考的派生图。
+    const emptyBase = baseList.find((b) => !b.imagePath)
+    if (emptyBase) {
+      throw new Error('无法派生：主图尚未生成（当前只有待生成提示词）。请先生成主图')
+    }
     const base = baseList[0]  // 单值兼容现有 derivedFromImageId 字段
 
     // 角色派生：系统固定模板 —— 该 slot 的角度/景别描述（如"正面半身"）。
@@ -282,6 +288,25 @@ export class GalleryDerivationService {
       input.category,
     )
     const sortOrder = existing.length
+
+    // 复用同 label 的占位行（imagePath='' 的"待生成提示词"行）——否则同一 slot 会出现
+    // 占位行 + 真实图两行，前端按 createdAt 先命中占位行，真实图被遮蔽显示"待生成"。
+    // （与 MainImageGeneratorService.generateMain 对 main 占位行的复用逻辑对齐。）
+    const allRows = await this.imageSvc.listByAsset(input.assetType, input.assetId)
+    const placeholder = allRows.find(
+      (r) => r.label === input.label && !r.imagePath,
+    )
+    if (placeholder) {
+      await this.imageSvc.updateImage(placeholder.id, {
+        imagePath: result.imagePath,
+        thumbnailPath: result.thumbnailPath ?? undefined,
+        prompt,
+        negativePrompt: negativePrompt ?? undefined,
+        derivedFromImageId: base.id,
+        sortOrder,
+      })
+      return (await this.imageSvc.getById(placeholder.id)) as AssetImageEntity
+    }
 
     return await this.imageSvc.addImage({
       assetType: input.assetType,

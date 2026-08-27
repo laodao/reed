@@ -17,6 +17,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from '@shared/types/workflow.types'
+import { validateOutboundUrl } from '@core/utils/outbound-url'
 
 export type HttpResponseType = 'auto' | 'text' | 'json' | 'base64' | 'file'
 
@@ -84,6 +85,12 @@ export async function executeHttpFetch(
   input: HttpFetchInput,
   cancelSignal: AbortSignal
 ): Promise<{ ok: true; output: HttpFetchOutput } | { ok: false; error: string }> {
+  // SSRF 防护：url 用户可控（可经 {{模板}} 由运行输入注入），
+  // 拒绝非 http/https 协议与内网/环回/保留地址（Web 端多租户必需）
+  const guard = validateOutboundUrl(input.url)
+  if (!guard.ok) {
+    return { ok: false, error: `URL 校验失败：${guard.reason}` }
+  }
   const timeout = Math.min(input.timeoutMs ?? WORKFLOW_DEFAULTS.httpRequestTimeoutMs, WORKFLOW_LIMITS.httpTimeoutMs)
   // 运行取消信号 + 超时信号合并
   const signal = AbortSignal.any([cancelSignal, AbortSignal.timeout(timeout)])

@@ -6,7 +6,7 @@
         <span class="top-title">{{ kindLabel }}定妆：{{ assetName }}</span>
       </div>
       <div class="top-actions">
-        <el-button text size="small" @click="showAddOutfit = true">
+        <el-button text size="small" :disabled="!assetId" @click="showAddOutfit = true">
           <el-icon><Plus /></el-icon>
           新增正面全身
         </el-button>
@@ -14,7 +14,7 @@
           <el-icon><MagicStick /></el-icon>
           一键生成
         </el-button>
-        <el-button text size="small" @click="showLinkPortrait = true">
+        <el-button text size="small" :disabled="!assetId" @click="showLinkPortrait = true">
           <el-icon><Link /></el-icon>
           关联人像
         </el-button>
@@ -38,8 +38,8 @@
           </div>
           <div class="nav-info">
             <div class="nav-name">{{ item.title }}</div>
-            <div class="nav-status" :class="imageByLabel(item.label) ? 'done' : 'pending'">
-              {{ imageByLabel(item.label) ? '已定妆' : '待生成' }}
+            <div class="nav-status" :class="imageByLabel(item.label)?.imagePath ? 'done' : 'pending'">
+              {{ imageByLabel(item.label)?.imagePath ? '已定妆' : '待生成' }}
             </div>
           </div>
           <el-button v-if="!imageByLabel(item.label)?.imagePath" text circle size="small" class="nav-add" title="生成" @click.stop="onGenerate(item)">
@@ -145,6 +145,8 @@ const loading = ref(false)
 const generating = ref(false)
 const selectedLabel = ref('main')
 const localPrompt = ref('')
+/** 最近一次从 DB 加载/保存的输入框内容快照（onActivated 防覆盖未保存编辑用） */
+let loadedPrompt = ''
 
 // 图集导航项（角色/地点/物品通用模板）
 const navItems = computed(() => {
@@ -205,7 +207,7 @@ function onNavClick(item: { label: string; category: string }): void {
   selectLabel(item.label)
 }
 
-const hasMain = computed(() => !!imageByLabel('main'))
+const hasMain = computed(() => !!imageByLabel('main')?.imagePath)
 
 /** 当前是否主图槽位（主图可自定义提示词；派生图系统固定，提示词/生成禁用） */
 const isMainSlot = computed(() => selectedLabel.value === 'main')
@@ -264,6 +266,7 @@ async function load(): Promise<void> {
     // 输入框只显示"用户内容"（剥离系统自动追加的约束段），
     // 避免用户基于完整拼接再次生成时约束重复追加 / 串 slot
     localPrompt.value = stripSystemConstraints(sel?.prompt || '')
+    loadedPrompt = localPrompt.value
   } catch (e: any) {
     console.error('[AssetGallery] 加载失败', e)
     images.value = []
@@ -276,6 +279,7 @@ function selectLabel(label: string): void {
   selectedLabel.value = label
   const sel = imageByLabel(label)
   localPrompt.value = stripSystemConstraints(sel?.prompt || '')
+  loadedPrompt = localPrompt.value
 }
 
 async function onGenerate(item: { label: string; category: string }): Promise<void> {
@@ -402,11 +406,15 @@ async function onSavePrompt(): Promise<void> {
     if (text === stripSystemConstraints(sel.prompt || '')) return
     const r = await root.image.update(sel.id, { prompt: text })
     if (r?.success) {
-      ElMessage.success('提示词已保存')
+      // 清空提示词是明确的用户操作，但要提示后果——避免"清空后生成静默改用系统拼接"无感知
+      ElMessage[text.trim() ? 'success' : 'warning'](
+        text.trim() ? '提示词已保存' : '提示词已清空，生成时将使用系统提示词',
+      )
       // 同步内存图集数据，避免后续判定（sel.prompt）与 DB 不一致
       const cur = images.value.find(i => i.id === sel.id)
       if (cur) cur.prompt = text
-    } else if (r?.error && /不存在/.test(r.error)) {
+      loadedPrompt = text
+    } else if (r?.code === 'NOT_FOUND' || (r?.error && /不存在/.test(r.error))) {
       // 行已被删除/替换（占位行被清理、生成复用等）：重建承载提示词，不丢用户输入
       ElMessage.warning('原记录已不存在，已为你重新保存')
       await saveAsPlaceholder(text)
@@ -452,8 +460,12 @@ async function saveAsPlaceholder(text: string): Promise<void> {
 
 watch(() => [props.assetId, props.kind], () => void load())
 onMounted(() => void load())
-// keep-alive 缓存组件被重新激活时（从其它 tab/路由切回）重新拉取，保证显示最新提示词
-onActivated(() => void load())
+// keep-alive 缓存组件被重新激活时（从其它 tab/路由切回）重新拉取，保证显示最新提示词；
+// 但输入框有未保存编辑时跳过刷新，避免用 DB 旧值覆盖用户正在写的内容
+onActivated(() => {
+  if (localPrompt.value.trim() !== loadedPrompt.trim()) return
+  void load()
+})
 </script>
 
 <style lang="scss" scoped>

@@ -160,6 +160,11 @@ async function handleUpdateImage(
     await buildService().updateImage(imageId, patch)
     return { success: true, data: { updated: true } }
   } catch (err: any) {
+    // 带错误码 NOT_FOUND：前端据此区分"行已被删除/替换"做占位重建，
+    // 不再依赖错误文案正则（文案一改回退逻辑会静默退化）。
+    if (err?.message?.includes('不存在')) {
+      return { success: false, code: 'NOT_FOUND', error: err?.message ?? String(err) }
+    }
     return { success: false, error: err?.message ?? String(err) }
   }
 }

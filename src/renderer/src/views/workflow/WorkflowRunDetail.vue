@@ -99,6 +99,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useWorkflowStore } from '@/stores/workflow'
 import { saveBlobAs } from '@/utils/file-saver'
+import { toImageUrl } from '../../utils/asset-url'
 import RunInputForm from '@/components/workflow/RunInputForm.vue'
 import { WORKFLOW_RUN_TERMINAL_STATUSES } from '@shared/types/workflow.types'
 
@@ -213,7 +214,8 @@ async function showOutput(row: any) {
 }
 
 function isReportRow(row: any): boolean {
-  return row.nodeType === 'report' && !!row.output?.markdown
+  // report（markdown/docx）与 report-image（长图）共用报告操作区
+  return ['report', 'report-image'].includes(row.nodeType) && !!row.output?.markdown
 }
 /** 打开带标题的报告窗口（修复：原实现无 <title> 导致窗口全部"未命名"） */
 async function openReportWindow(row: any): Promise<Window | null> {
@@ -221,7 +223,12 @@ async function openReportWindow(row: any): Promise<Window | null> {
   if (!w) return null
   const title = `${row.output?.title || row.nodeName || '报告'} - The Bot`
   const markdown = row.output.markdown as string
-  w.document.write(`<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>${escapeHtml(title)}</title>
+  const bodyHtml = await renderMarkdown(markdown)
+  // 安全：marked v17 不消毒原始 HTML，报告 markdown 可来自 LLM/知识库/网页抓取
+  // （提示注入污染）。把正文放进 sandbox iframe 的 srcdoc——无 allow-scripts /
+  // allow-same-origin，恶意 <script>/事件属性无法执行，也无法访问外层窗口的
+  // electronAPI（堵死 XSS→任意文件写/RCE 链）。srcdoc 内嵌内容需做属性转义。
+  const srcdoc = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>${escapeHtml(title)}</title>
 <style>
   body { font-family: 'Microsoft YaHei', sans-serif; max-width: 860px; margin: 0 auto; padding: 32px 24px; line-height: 1.8; color: #2c3e50; }
   pre { background: #f6f8fa; padding: 14px; border-radius: 8px; overflow-x: auto; }
@@ -230,7 +237,12 @@ async function openReportWindow(row: any): Promise<Window | null> {
   img { max-width: 100%; }
   blockquote { border-left: 4px solid #ddd; margin: 12px 0; padding: 4px 16px; color: #666; }
 </style></head><body>
-${await renderMarkdown(markdown)}
+${bodyHtml}
+</body></html>`
+  const escapedSrcdoc = srcdoc.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+  w.document.write(`<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>${escapeHtml(title)}</title>
+<style>html, body { margin: 0; height: 100%; } iframe { width: 100%; height: 100%; border: 0; display: block; }</style></head><body>
+<iframe sandbox="" srcdoc="${escapedSrcdoc}" title="报告内容"></iframe>
 </body></html>`)
   w.document.close()
   w.document.title = title
@@ -248,7 +260,31 @@ async function renderMarkdown(md: string): Promise<string> {
 }
 
 async function previewReport(row: any) {
+  const output = row.output ?? {}
+  // report-image 桌面端：展示完整 PNG 长图（不截断、无 JSON 滚动条）
+  if (row.nodeType === 'report-image' && output.filePath) {
+    openImageWindow(output)
+    return
+  }
   if (!(await openReportWindow(row))) ElMessage.error('弹窗被拦截，请允许弹窗后重试')
+}
+
+/** 打开完整长图预览窗口（整图加载，无内容截断；窗口内按宽度适配展示） */
+function openImageWindow(output: any): void {
+  const w = window.open('', '_blank')
+  if (!w) { ElMessage.error('弹窗被拦截，请允许弹窗后重试'); return }
+  const title = `${output.title || '长图报告'} - The Bot`
+  const imgUrl = toImageUrl(output.filePath as string)
+  w.document.write(`<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>${escapeHtml(title)}</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #ececec; }
+  .wrap { display: flex; justify-content: center; }
+  .long-img { display: block; width: 100%; height: auto; max-width: 900px; box-shadow: 0 2px 12px rgba(0,0,0,.15); }
+</style></head><body>
+<div class="wrap"><img class="long-img" src="${escapeHtml(imgUrl)}" alt="${escapeHtml(title)}" /></div>
+</body></html>`)
+  w.document.close()
+  w.document.title = title
 }
 /** 导出 PDF：文档工具层排版（中文字体/表格/代码块），saveBlobAs 落盘 */
 async function printReport(row: any) {

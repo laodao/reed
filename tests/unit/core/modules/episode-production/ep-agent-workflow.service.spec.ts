@@ -308,6 +308,74 @@ describe('detectChoiceForDatabase 规则检测', () => {
   })
 })
 
+// ==================== 规则引擎误拦截回归（疑问/否定句不劫持） ====================
+describe('detectChoiceForAssetImage 疑问/否定句豁免', () => {
+  const state: EpAgentProductionState = {
+    episode: { id: 'ep1', hasScript: true },
+    scenes: { total: 1, countWithBindings: 1, locations: [] },
+    storyboards: { total: 0, scenesCovered: 0, scenesTotal: 1 },
+    assets: {
+      characters: { count: 2, names: ['杜十娘', '李甲'] },
+      locations: { count: 0, names: [] },
+      items: { count: 1, names: ['百宝箱'] },
+    },
+  }
+
+  it('疑问句不拦截（交回 AI 回答）', () => {
+    expect(detectChoiceForAssetImage('定妆图为什么没生成出来？', state)).toBeNull()
+    expect(detectChoiceForAssetImage('主图是什么意思？', state)).toBeNull()
+    expect(detectChoiceForAssetImage('怎么收费？', state)).toBeNull()
+  })
+
+  it('否定/暂缓句不拦截', () => {
+    expect(detectChoiceForAssetImage('先别生成主图', state)).toBeNull()
+    expect(detectChoiceForAssetImage('先不要生成定妆图', state)).toBeNull()
+  })
+
+  it('正常祈使句仍构造 choice', () => {
+    const c = detectChoiceForAssetImage('给某个角色生成定妆图', state)
+    expect(c).not.toBeNull()
+    expect(c!.actionType).toBe('generate_char_asset')
+  })
+})
+
+// ==================== isReadOnlySql（SQL 只读守卫加固） ====================
+describe('isReadOnlySql 只读守卫', () => {
+  it('合法 SELECT 放行（含末尾分号、WITH CTE 读）', async () => {
+    const { isReadOnlySql } = await import('@core/modules/episode-production/agent/ep-agent-actions')
+    expect(isReadOnlySql('SELECT * FROM t').ok).toBe(true)
+    expect(isReadOnlySql('select 1;').ok).toBe(true)
+    expect(isReadOnlySql('WITH recent AS (SELECT * FROM t) SELECT * FROM recent').ok).toBe(true)
+  })
+
+  it('字符串字面量内的写字样不误伤', async () => {
+    const { isReadOnlySql } = await import('@core/modules/episode-production/agent/ep-agent-actions')
+    expect(isReadOnlySql("SELECT action FROM logs WHERE note = 'delete me'").ok).toBe(true)
+    expect(isReadOnlySql('SELECT * FROM t WHERE name = \'update_time\'').ok).toBe(true)
+  })
+
+  it('拒绝 CTE 写（WITH d AS (DELETE ...) SELECT）', async () => {
+    const { isReadOnlySql } = await import('@core/modules/episode-production/agent/ep-agent-actions')
+    const r = isReadOnlySql('WITH d AS (DELETE FROM t RETURNING *) SELECT * FROM d')
+    expect(r.ok).toBe(false)
+    expect(r.reason).toMatch(/只读/)
+  })
+
+  it('拒绝多语句（SELECT 1; DROP TABLE t）', async () => {
+    const { isReadOnlySql } = await import('@core/modules/episode-production/agent/ep-agent-actions')
+    const r = isReadOnlySql('SELECT 1; DROP TABLE t')
+    expect(r.ok).toBe(false)
+    expect(r.reason).toMatch(/多语句/)
+  })
+
+  it('拒绝非 SELECT 开头（DELETE / INSERT / UPDATE）', async () => {
+    const { isReadOnlySql } = await import('@core/modules/episode-production/agent/ep-agent-actions')
+    expect(isReadOnlySql('DELETE FROM t').ok).toBe(false)
+    expect(isReadOnlySql('INSERT INTO t VALUES (1)').ok).toBe(false)
+    expect(isReadOnlySql('UPDATE t SET a=1').ok).toBe(false)
+  })
+})
+
 // ==================== executeQueryDatabase（Agent 查询外部数据库动作） ====================
 describe('executeQueryDatabase 动作执行', () => {
   it('参数化 SELECT 执行成功 → ok + 预览数据', async () => {
@@ -358,5 +426,26 @@ describe('executeQueryDatabase 动作执行', () => {
     })
     expect(summary.status).toBe('error')
     expect(summary.message).toContain('connection refused')
+  })
+
+  it('choice/带参指令传数据源名称 → 自动解析为 id 后执行', async () => {
+    const execute = vi.fn().mockResolvedValue({ columns: ['id'], rows: [{ id: 1 }], rowCount: 1, durationMs: 3 })
+    datasourceMock.getDataSourceService.mockReturnValue({
+      get: async (id: string) => (id === 'ds_1' ? { id: 'ds_1', name: '金融业务库' } : null),
+      listEligible: async () => [
+        { id: 'ds_1', name: '金融业务库' },
+        { id: 'ds_2', name: '客户库' },
+      ],
+      execute,
+    } as any)
+    const { __epAgentTest } = await import('@core/modules/episode-production/agent/ep-agent-actions')
+    const ctx = { projectId: 'p1', episodeId: 'ep1', db: {}, ai: {}, emit: () => {} } as any
+    // 用户从 choice 里选了"客户库"（名称），前端拼成 dataSourceId=客户库
+    const summary = await __epAgentTest.executeQueryDatabase(ctx, {
+      type: 'query_database',
+      params: { dataSourceId: '客户库', sql: 'SELECT * FROM t' },
+    })
+    expect(summary.status).toBe('ok')
+    expect(execute).toHaveBeenCalledWith('ds_2', 'SELECT * FROM t', [])
   })
 })

@@ -22,9 +22,46 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { ImageService } from '@core/services/image.service'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
-import { resolveAssetPath } from '@core/utils/asset-path'
+import { getPathProvider } from '@core/interfaces/path.interface'
 import type { ImageGenerator } from './gallery-derivation.service'
 import type { PanoramaImageGenerator } from './panorama-generator.service'
+
+/** 允许作为参考图的本地文件扩展名 */
+const ALLOWED_REF_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'])
+
+/**
+ * 把参考图路径解析为 dataPath 内的绝对路径（安全校验版）。
+ *
+ * referenceImagePaths 来自 IPC 入参（客户端可控），不能信任其指向任意文件——
+ * 否则恶意调用可把 /etc/passwd、data-web/secure-key 等内容 base64 后外发到
+ * 第三方图像 provider。规则：
+ *   - http(s)/data:/local-image:// 等协议 URL 不是本地文件，返回 null（走纯 prompt）；
+ *   - 绝对路径与 ../ 逃逸一律拒绝，解析后必须落在 dataPath 内；
+ *   - 扩展名白名单（jpg/jpeg/png/webp/gif/bmp）。
+ */
+function resolveSafeReferencePath(relativeOrAbsPath: string): string | null {
+  const raw = (relativeOrAbsPath ?? '').trim()
+  if (!raw) return null
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) return null
+  try {
+    const dataPath = getPathProvider().getDataPath()
+    const abs = path.isAbsolute(raw) ? raw : path.join(dataPath, raw)
+    const normalized = path.normalize(abs)
+    const prefix = dataPath.endsWith(path.sep) ? dataPath : dataPath + path.sep
+    if (normalized !== dataPath && !normalized.startsWith(prefix)) {
+      console.warn('[image-provider-adapter] 拒绝越界参考图路径:', raw)
+      return null
+    }
+    const ext = path.extname(normalized).toLowerCase()
+    if (!ALLOWED_REF_EXT.has(ext)) {
+      console.warn('[image-provider-adapter] 拒绝非图片扩展名参考图:', raw)
+      return null
+    }
+    return normalized
+  } catch {
+    return null
+  }
+}
 
 /**
  * 把磁盘上的图像文件读成 data URL（用于把"主图"作为参考图传给 provider）。
@@ -32,8 +69,8 @@ import type { PanoramaImageGenerator } from './panorama-generator.service'
  */
 function readImageAsDataUrl(relativeOrAbsPath: string): string | undefined {
   try {
-    const abs = resolveAssetPath(relativeOrAbsPath)
-    if (!fs.existsSync(abs)) return undefined
+    const abs = resolveSafeReferencePath(relativeOrAbsPath)
+    if (!abs || !fs.existsSync(abs)) return undefined
     const buf = fs.readFileSync(abs)
     const ext = path.extname(abs).toLowerCase().replace(/^\./, '') || 'png'
     const mime =

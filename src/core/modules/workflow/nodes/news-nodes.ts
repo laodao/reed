@@ -17,6 +17,7 @@ import { stringifyValue } from '../engine/variable-resolver'
 import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from '@shared/types/workflow.types'
 import { extractPageLinks } from './extra-nodes'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
+import { validateOutboundUrl } from '@core/utils/outbound-url'
 
 const UA = 'Mozilla/5.0 (compatible; the-bot-workflow)'
 
@@ -30,7 +31,10 @@ export async function resolveSourceUrls(
   const seen = new Set<string>()
   const push = (name: string, url: string) => {
     const u = url.trim()
-    if (!u || !/^https?:\/\//i.test(u) || seen.has(u)) return
+    // scheme 白名单 + 内网/环回/保留地址拦截（防 SSRF：Web 端多租户下
+    // 自定义 URL 可被用来扫描内网/云元数据）
+    const guard = validateOutboundUrl(u)
+    if (!guard.ok || seen.has(u)) return
     seen.add(u)
     out.push({ name, url: u })
   }
@@ -182,5 +186,137 @@ const crawlNewsNode: WorkflowNodeHandler = {
   },
 }
 
+/**
+ * 解析待抓取页面列表：JSON 数组（string[] 或 [{name,url}]）/ 运行时数组 /
+ * 逗号换行分隔的 URL 列表；校验 http(s) 前缀并去重。
+ */
+export function parseUrlList(raw: unknown): Array<{ name: string; url: string }> {
+  const out: Array<{ name: string; url: string }> = []
+  const seen = new Set<string>()
+  const push = (name: string, url: string) => {
+    const u = url.trim()
+    if (!u || !/^https?:\/\//i.test(u) || seen.has(u)) return
+    seen.add(u)
+    out.push({ name: name.trim() || u, url: u })
+  }
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim()
+    if (!trimmed) return out
+    try {
+      const parsed = JSON.parse(trimmed)
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) {
+          if (typeof item === 'string') push(item, item)
+          else if (item && typeof item === 'object') {
+            const o = item as { name?: unknown; url?: unknown }
+            if (typeof o.url === 'string') push(String(o.name ?? o.url), o.url)
+          }
+        }
+        return out
+      }
+    } catch {
+      /* 非 JSON → 按行/逗号拆 */
+    }
+    for (const u of trimmed.split(/[\n,]/)) {
+      const clean = u.trim()
+      if (clean) push(clean, clean)
+    }
+  } else if (Array.isArray(raw)) {
+    for (const item of raw) {
+      if (typeof item === 'string') push(item, item)
+      else if (item && typeof item === 'object') {
+        const o = item as { name?: unknown; url?: unknown }
+        if (typeof o.url === 'string') push(String(o.name ?? o.url), o.url)
+      }
+    }
+  }
+  return out
+}
+
+/** 批量抓取页面 → 提取页面内链接（两级采集第二步：专栏页/二级页 → 新闻链接） */
+const crawlLinksNode: WorkflowNodeHandler = {
+  type: 'crawl-links',
+  controlKind: 'task',
+  cancellable: true,
+  outputSchema: [
+    { key: 'links', type: 'json', desc: '[{ title, url, source }] 各页面链接合并去重' },
+    { key: 'count', type: 'number', desc: '链接总数' },
+    { key: 'failedUrls', type: 'json', desc: '抓取失败的页面 [{ url, error }]' },
+  ],
+  validateConfig(config) {
+    const cfg = config as { urls?: unknown }
+    const raw = cfg.urls
+    const asText = typeof raw === 'string' ? raw.trim() : ''
+    const asArr = Array.isArray(raw) ? raw : []
+    if (!asText && asArr.length === 0) {
+      return ['待抓取页面列表不能为空（JSON 数组或 {{节点.数组}} 模板）']
+    }
+    return []
+  },
+  async execute(ctx: WorkflowNodeContext) {
+    const cfg = ctx.config as {
+      urls: unknown
+      maxLinks?: number
+      maxConcurrent?: number
+      timeoutMs?: number
+    }
+    const targets = parseUrlList(cfg.urls)
+    if (targets.length === 0) {
+      return { status: 'failed', error: '待抓取页面列表为空', retryable: false }
+    }
+    const maxLinksPerPage = Math.min(cfg.maxLinks && cfg.maxLinks > 0 ? cfg.maxLinks : 50, 100)
+    const maxConcurrent = Math.min(
+      cfg.maxConcurrent && cfg.maxConcurrent > 0 ? cfg.maxConcurrent : 5,
+      10
+    )
+    const timeout = Math.min(
+      cfg.timeoutMs && cfg.timeoutMs > 0 ? cfg.timeoutMs : WORKFLOW_DEFAULTS.httpRequestTimeoutMs,
+      WORKFLOW_LIMITS.httpTimeoutMs
+    )
+
+    const seen = new Set<string>()
+    const links: Array<{ title: string; url: string; source: string }> = []
+    const failedUrls: Array<{ url: string; error: string }> = []
+
+    const fetchOne = async (t: { name: string; url: string }) => {
+      try {
+        const res = await fetch(t.url, {
+          signal: AbortSignal.timeout(timeout),
+          headers: { 'User-Agent': UA, Accept: 'text/html' },
+        })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const html = await res.text()
+        const pageLinks = extractPageLinks(html, t.url, maxLinksPerPage)
+        for (const l of pageLinks) {
+          if (seen.has(l.url)) continue
+          seen.add(l.url)
+          links.push({ ...l, source: t.name })
+        }
+      } catch (e) {
+        failedUrls.push({ url: t.url, error: e instanceof Error ? e.message : String(e) })
+      }
+    }
+
+    // 分批并发（每批 maxConcurrent 个）
+    for (let i = 0; i < targets.length; i += maxConcurrent) {
+      const batch = targets.slice(i, i + maxConcurrent)
+      await Promise.all(batch.map(fetchOne))
+    }
+
+    if (links.length === 0 && failedUrls.length > 0) {
+      return {
+        status: 'failed',
+        error: `全部 ${failedUrls.length} 个页面抓取失败（如 ${failedUrls[0].url}: ${failedUrls[0].error}）`,
+        retryable: true,
+      }
+    }
+    ctx.emitProgress(100)
+    return {
+      status: 'succeeded',
+      output: { links, count: links.length, failedUrls },
+    }
+  },
+}
+
 /** 新闻类节点集合 */
-export const NEWS_NODE_HANDLERS: WorkflowNodeHandler[] = [crawlNewsNode]
+export const NEWS_NODE_HANDLERS: WorkflowNodeHandler[] = [crawlNewsNode, crawlLinksNode]

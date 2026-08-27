@@ -16,9 +16,13 @@ class MemAppRepo {
     return [...this.rows.values()].find(r => r.sourceKind === sourceKind && r.sourceId === sourceId) ?? null
   }
   async create(i: any) {
+    // 模拟 TypeORM save 语义：undefined 字段不落库（走 DB 默认值），
+    // 避免 ...i 展开把显式 undefined 覆盖掉本仓库的默认值（channelSession=1 等）
+    const clean: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(i ?? {})) if (v !== undefined) clean[k] = v
     const id = `app_${++this.seq}`
     const row = { id, userId: 'u1', sourceKind: APPLICATION_SOURCE_KINDS.workflow,
-      channelSession: 1, channelShare: 0, channelApi: 1, enabled: 1, shareToken: null, createdAt: new Date(), updatedAt: new Date(), ...i }
+      channelSession: 1, channelShare: 0, channelApi: 1, enabled: 1, shareToken: null, createdAt: new Date(), updatedAt: new Date(), ...clean }
     this.rows.set(id, row)
     return { ...row }
   }

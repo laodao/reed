@@ -5,18 +5,26 @@ import {
   framingForCategory,
 } from '@core/modules/episode-production/assets/prompts/character-constraints'
 
-describe('character-constraints · 半身定妆(bust) framing', () => {
-  it('bust → 半身 + 白色背景（非全身、非纯色模糊）', () => {
-    const suffix = characterConstraintSuffix('bust')
-    expect(suffix).toMatch(/bust portrait/)
+describe('character-constraints · framing 语义', () => {
+  it('fullBody → 直立全身 + 纯白背景（主图/派生图基准）', () => {
+    const suffix = characterConstraintSuffix('fullBody')
+    expect(suffix).toMatch(/standing full body/)
     expect(suffix).toMatch(/white background/i)
-    expect(suffix).toMatch(/白色背景|纯白/)
+    expect(suffix).toMatch(/纯白/)
+    // 半身 bust 已下线：fullBody 不允许出现 bust 文案
+    expect(suffix).not.toMatch(/bust/)
   })
 
-  it('bust negative 禁止全身/露腿（确保半身）', () => {
-    const neg = characterConstraintNegative('bust')
-    expect(neg).toMatch(/full body/)
-    expect(neg).toMatch(/legs visible/)
+  it('upperBody → 上半身（表情图）', () => {
+    const suffix = characterConstraintSuffix('upperBody')
+    expect(suffix).toMatch(/upper body shot/)
+    expect(suffix).not.toMatch(/full body/)
+  })
+
+  it('fullBody negative 禁止半身/特写', () => {
+    const neg = characterConstraintNegative('fullBody')
+    expect(neg).toMatch(/half body/)
+    expect(neg).toMatch(/cropped/)
   })
 
   it('main category → fullBody（主图为正面全身照）', () => {

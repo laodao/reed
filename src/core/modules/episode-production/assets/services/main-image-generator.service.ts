@@ -69,6 +69,16 @@ export class MainImageGeneratorService {
     return `ai_${randomBytes(8).toString('hex')}`
   }
 
+  /** 资产引用校验：assetType 合法 + assetId 非空（防止 asset_id='' 孤儿行 / 非法类型） */
+  private requireAssetRef(assetType: string, assetId: string): void {
+    if (assetType !== 'character' && assetType !== 'location' && assetType !== 'item') {
+      throw new Error(`非法资产类型：${assetType}`)
+    }
+    if (!assetId || typeof assetId !== 'string' || !assetId.trim()) {
+      throw new Error('缺少资产 ID（assetId 不能为空）')
+    }
+  }
+
   /**
    * 流程：
    * 1. 调 imageGen.generate（无 referenceImagePaths：主图本身没有上游图）
@@ -77,6 +87,7 @@ export class MainImageGeneratorService {
    *    重复处理已涵盖，但走 INSERT 更显式 + 与流程语义对齐）
    */
   async generateMain(input: GenerateMainInput): Promise<AssetImageEntity> {
+    this.requireAssetRef(input.assetType, input.assetId)
     if (!input.prompt.trim()) {
       throw new Error('生成主图需要 prompt（请检查资产 effective 数据）')
     }
@@ -192,6 +203,7 @@ export class MainImageGeneratorService {
     makeDefault?: boolean
     metadata?: Record<string, unknown> | null
   }): Promise<AssetImageEntity> {
+    this.requireAssetRef(input.assetType, input.assetId)
     if (!input.prompt.trim()) {
       throw new Error('生成主图需要 prompt（请检查资产 effective 数据）')
     }
@@ -291,6 +303,7 @@ export class MainImageGeneratorService {
     /** 不传 → 自动用 isMain=1 主图作 reference */
     baseImageId?: string | null
   }): Promise<AssetImageEntity[]> {
+    this.requireAssetRef(input.assetType, input.assetId)
     if (!input.prompt.trim()) {
       throw new Error('生成多角度参考图需要 prompt（请检查资产 effective 数据）')
     }

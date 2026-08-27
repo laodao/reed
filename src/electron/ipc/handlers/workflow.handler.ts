@@ -86,15 +86,28 @@ export function registerWorkflowHandlers(): void {
   // 表单文件上传（E1 form-collect：落盘 workflow-uploads + 尽力解析文本）
   ipcBridge.handle('wf:form-upload', (_e, p: { runId: string; nodeId: string; fileName: string; base64: string }) =>
     wrap(async () => {
-      const { join } = await import('path')
+      const path = await import('path')
       const { mkdirSync, writeFileSync } = await import('fs')
       const { getPathProvider } = await import('@core/interfaces/path.interface')
       const { extractTextFromFile, inferFileType } = await import('@core/utils/extract-text')
-      const dir = join(getPathProvider().getDataPath(), 'workflow-uploads', p.runId)
+      // 安全净化：runId/nodeId 只允许安全标识符（系统生成的 run/node id），
+      // 否则 '../../x' 之类可逃逸 workflow-uploads 目录任意写文件（Web 端任意登录用户可达）
+      if (!/^[A-Za-z0-9_-]+$/.test(p.runId)) throw new Error('非法 runId')
+      if (!/^[A-Za-z0-9_-]+$/.test(p.nodeId)) throw new Error('非法 nodeId')
+      // base64 解码后大小上限 10MB（防内存/磁盘 DoS）
+      const buffer = Buffer.from(p.base64, 'base64')
+      if (buffer.byteLength > 10 * 1024 * 1024) throw new Error('文件超过 10MB 上限')
+      const dataPath = getPathProvider().getDataPath()
+      const uploadBase = path.resolve(dataPath, 'workflow-uploads')
+      const dir = path.resolve(uploadBase, p.runId)
+      // 解析后必须仍在 workflow-uploads 内（双保险）
+      if (dir !== uploadBase && !dir.startsWith(uploadBase + path.sep)) {
+        throw new Error('非法上传目录')
+      }
       mkdirSync(dir, { recursive: true })
       const safeName = p.fileName.replace(/[\/:*?"<>|]/g, '_')
-      const filePath = join(dir, `${p.nodeId}_${Date.now().toString(36)}_${safeName}`)
-      writeFileSync(filePath, Buffer.from(p.base64, 'base64'))
+      const filePath = path.join(dir, `${p.nodeId}_${Date.now().toString(36)}_${safeName}`)
+      writeFileSync(filePath, buffer)
       // 尽力解析文本（pdf/docx/xlsx/txt...）；解析失败不影响上传（值仍有 path/name）
       let text: string | undefined
       try {

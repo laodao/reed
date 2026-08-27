@@ -17,6 +17,19 @@ import { spawn } from 'node:child_process'
 
 const logger = createLogger('ToolService')
 
+/**
+ * 平台门禁：本地命令执行能力（kind=cli / scanInstalledCommands）仅桌面端可用。
+ * Web 端是多租户 HTTP 服务，若放行，任意登录用户可保存 kind=cli 工具并运行，
+ * 即在服务器上执行任意命令（RCE）——与"桌面单用户信任模型"直接冲突。
+ */
+const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
+
+function requireDesktopCli(): void {
+  if (!isElectron) {
+    throw new Error('本地命令行工具仅在桌面端可用（Web 端不支持 kind=cli）')
+  }
+}
+
 type CredentialRepoLike = {
   list(): Promise<ToolCredential[]>
   findById(id: string): Promise<ToolCredential | null>
@@ -127,6 +140,8 @@ export class ToolService {
     timeoutMs?: number
     stdoutType?: 'text' | 'json'
   }): Promise<CustomTool> {
+    // Web 端禁止保存 kind=cli 工具（执行已拦截，保存层也一并拦截防误导）
+    if (input.kind === TOOL_KINDS.cli) requireDesktopCli()
     return this.customTools.create({
       ...input,
       kind: input.kind ?? TOOL_KINDS.api,
@@ -144,8 +159,9 @@ export class ToolService {
 
   // ==================== 本地命令工具 ====================
 
-  /** 扫描 PATH 下可执行程序（供"已装程序选择"下拉） */
+  /** 扫描 PATH 下可执行程序（供"已装程序选择"下拉）——仅桌面端 */
   async scanInstalledCommands(): Promise<Array<{ name: string; path: string }>> {
+    requireDesktopCli()
     const fsMod = await import('node:fs')
     const pathMod = await import('node:path')
     const sep = pathMod.delimiter
@@ -183,8 +199,9 @@ export class ToolService {
       input.type === 'preset' ? PRESET_TOOL_MAP[input.toolId] ?? null : await this.customTools.findById(input.toolId)
     if (!tool) throw new Error(`工具不存在：${input.toolId}`)
 
-    // CLI 工具：spawn 本地命令（参数按 argsTemplate 的 {{param}} 占位映射）
+    // CLI 工具：spawn 本地命令（参数按 argsTemplate 的 {{param}} 占位映射）——仅桌面端
     if (tool.kind === TOOL_KINDS.cli) {
+      requireDesktopCli()
       return this.runCli(tool, input.params ?? {}, input.signal)
     }
 

@@ -70,7 +70,7 @@ describe('applyForcedContext（验收 1.6）', () => {
   })
 
   it('include → included=true（即使低优先级）', () => {
-    const sections = [makeSection('a', 11, [makeItem('i1', 11, '内容', 0.1)])])
+    const sections = [makeSection('a', 11, [makeItem('i1', 11, '内容', 0.1)])]
     const forcedIds = applyForcedContext(sections, [{ itemId: 'i1', action: 'include' }])
     expect(sections[0].items[0].included).toBe(true)
     expect(forcedIds.has('i1')).toBe(true)

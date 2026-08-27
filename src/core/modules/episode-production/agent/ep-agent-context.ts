@@ -26,7 +26,7 @@ const DECISION_SYSTEM_PROMPT = `你是专业剧集制作项目的 AI 制作助�
 - generate_item_asset: 为物品生成主图。params.name（必填）、params.requirements（可选）
 - update_entity: 修改已有资产（角色/地点/物品）。params.type（character/location/item）、params.id（可选，优先按 id）、params.name（可选，按名定位）、params.patch（要改的字段）
 - delete_entity: 删除已有资产。params.type、params.id（可选）、params.name（可选）
-- query_database: 查询外部数据库（工作流「数据表」节点配置的数据源）。params.dataSourceId（必填，数据源 id，用 choice 让用户从【候选数据源名单】选）、params.sql（必填，SELECT 查询，参数用 $1,$2 占位）、params.params（可选，JSON 数组参数值）。仅允许 SELECT/CTE 读取，禁止写操作。
+- query_database: 查询外部数据库（工作流「数据表」节点配置的数据源）。params.dataSourceId（必填，数据源 id，可从【候选数据源名单】的名称（id）里取，名称或 id 均可，引擎会自动解析）、params.sql（必填，SELECT 查询，参数用 $1,$2 占位）、params.params（可选，JSON 数组参数值）。仅允许 SELECT/CTE 读取，禁止写操作。
 
 决策规则：
 0. 【最高优先级】用户想生成某个资产的图/内容，但**没有明确指定哪个**（如"给某个角色生成定妆图"）时：**必须输出 choice 让用户选，禁止用大段文字反过来问"给谁做"**。choice 的 choices 从【项目当前状态】的资产名单取（角色/地点/物品名，不要编造）。
@@ -54,16 +54,18 @@ export function buildEpDecisionContext(
   userMessage: string,
   state: EpAgentProductionState,
   history: EpAgentHistoryItem[],
-  extra?: { dataSourceNames?: string[] },
+  extra?: { dataSources?: Array<{ id: string; name: string }> },
 ): { systemPrompt: string; userPrompt: string } {
   const historyText = history
     .slice(-EP_AGENT_HISTORY_LIMIT)
     .map(m => `${m.role === 'user' ? '用户' : '助手'}：${m.content.slice(0, 200)}`)
     .join('\n')
 
+  // 数据源以「名称（id）」成对注入：choice/带参指令里 dataSourceId 填名称或括号内 id 均可，
+  // 引擎执行时会按名称自动解析（见 executeQueryDatabase 的 name→id 兜底）。
   const dataSourcesText =
-    extra?.dataSourceNames && extra.dataSourceNames.length > 0
-      ? `- 数据源：${extra.dataSourceNames.join('、')}`
+    extra?.dataSources && extra.dataSources.length > 0
+      ? `- 数据源：${extra.dataSources.map(s => `${s.name}（${s.id}）`).join('、')}`
       : '（未配置数据源——用户要查外部数据库时，请建议先在「设置 → 数据库数据源」添加）'
 
   const userPrompt = `【项目当前状态】

@@ -19,6 +19,7 @@ import { createProvider } from '@core/providers'
 import { PROVIDER_TEMPLATES } from '@core/services/provider-template.service'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import { createLogger } from '@core/utils/logger'
+import { validateOutboundUrl } from '@core/utils/outbound-url'
 import type { ProviderTemplate, UserProviderConfig, ChatContext } from '@shared/types'
 
 const aiLogger = createLogger('ai-call')
@@ -571,7 +572,11 @@ function mimeOf(path: string): string {
 export async function toImageDataUrl(input: string, fetchFn: typeof fetch = fetch): Promise<string> {
   const raw = String(input ?? '').trim()
   if (raw.startsWith('data:')) return raw
-  if (/^https?:\/\//.test(raw)) {
+  if (/^https?:\/\//i.test(raw)) {
+    // SSRF 防护：imageInput 用户可控（可经 {{模板}} 注入），Web 多租户下
+    // 拒绝内网/环回/保留地址，防止借服务器打内网/云元数据
+    const guard = validateOutboundUrl(raw)
+    if (!guard.ok) throw new Error(`图片 URL 校验失败：${guard.reason}`)
     const res = await fetchFn(raw, { signal: AbortSignal.timeout(30_000) })
     if (!res.ok) throw new Error(`图片拉取失败：HTTP ${res.status}`)
     const buf = Buffer.from(await res.arrayBuffer())
@@ -579,6 +584,13 @@ export async function toImageDataUrl(input: string, fetchFn: typeof fetch = fetc
     return `data:${mime};base64,${buf.toString('base64')}`
   }
   if (/^[a-zA-Z]:[\\/]/.test(raw) || raw.startsWith('/')) {
+    // 绝对路径读文件仅桌面端允许（本机用户传自己的截图）；
+    // Web 端是多租户服务器，禁用该分支——否则任意登录用户可让服务器读
+    // /etc/passwd、data-web/secure-key 等任意文件并 base64 外发到 VLM provider
+    const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
+    if (!isElectron) {
+      throw new Error('本地文件图片输入仅在桌面端可用（Web 端请使用 dataUrl 或 http(s) URL）')
+    }
     // 动态引入 fs（浏览器端不可用，此函数仅在 Node 端调用）
     const { readFileSync } = await import('fs')
     const buf = readFileSync(raw)

@@ -25,10 +25,13 @@ function toFsPath(p: string): string {
   return resolveAssetPath(stripped)
 }
 
-const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
+/** 运行时判断 Electron 环境（函数而非模块加载常量：允许测试注入 process.versions.electron） */
+function isElectronEnv(): boolean {
+  return !!(process.versions as Record<string, string | undefined>)?.electron
+}
 
 function loadElectron(): { BrowserWindow?: any; dialog?: any } {
-  if (!isElectron) return {}
+  if (!isElectronEnv()) return {}
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const e = require('electron')
   return { BrowserWindow: e.BrowserWindow, dialog: e.dialog }
@@ -57,16 +60,26 @@ const MIME_BY_EXT: Record<string, string> = {
 const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp']
 
 /**
- * 注册文件操作相关的 IPC 处理器
+ * 注册文件操作相关的 IPC 处理器。
+ *
+ * 安全边界：本地文件读写通道（read/write/copy）仅桌面端注册——Web 端是
+ * 多租户 HTTP 服务，任意登录用户可经 POST /api/ipc/file:write-binary 以服务器
+ * 权限写任意路径（任意文件写）或读任意文件（任意文件读）。Web 端浏览器文件
+ * 访问本就走 file input / 上传接口，不需要这些通道。对话框类通道保留注册
+ * （内部已有 isElectron 守卫，Web 端返回"仅桌面端可用"）。
  */
 export function registerFileHandlers(): void {
   ipcBridge.handle('file:open-dialog', handleOpenDialog)
+  ipcBridge.handle('file:save-dialog', handleSaveDialog)
+  ipcBridge.handle('file:open-folder-dialog', handleOpenFolderDialog)
+  if (!isElectronEnv()) {
+    console.log('[FileHandlers] Web 端：本地文件读写通道未注册（安全边界）')
+    return
+  }
   ipcBridge.handle('file:read-base64', handleReadBase64)
   ipcBridge.handle('file:read-text', handleReadText)
-  ipcBridge.handle('file:save-dialog', handleSaveDialog)
   ipcBridge.handle('file:write-text', handleWriteText)
   ipcBridge.handle('file:write-binary', handleWriteBinary)
-  ipcBridge.handle('file:open-folder-dialog', handleOpenFolderDialog)
   ipcBridge.handle('file:copy', handleCopy)
 }
 
@@ -80,7 +93,7 @@ async function handleOpenDialog(
     filters?: Array<{ name: string; extensions: string[] }>
   }
 ): Promise<{ success: boolean; files?: any[]; error?: string }> {
-  if (!isElectron) {
+  if (!isElectronEnv()) {
     // Web 端：通过 HTML <input type="file"> 实现，这里固定返回空列表，前端不应直接调用
     return { success: false, error: '请在前端使用 file input 选择文件', files: [] }
   }
@@ -177,7 +190,7 @@ async function handleSaveDialog(
     filters?: Array<{ name: string; extensions: string[] }>
   }
 ): Promise<{ success: boolean; filePath?: string | null; error?: string }> {
-  if (!isElectron) {
+  if (!isElectronEnv()) {
     return { success: false, error: '该功能仅在桌面端可用' }
   }
   try {
@@ -243,7 +256,7 @@ async function handleWriteBinary(
 async function handleOpenFolderDialog(
   _event: any
 ): Promise<{ success: boolean; filePath?: string | null; error?: string }> {
-  if (!isElectron) {
+  if (!isElectronEnv()) {
     return { success: false, error: '该功能仅在桌面端可用' }
   }
   try {

@@ -15,6 +15,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { resolveAssetPath } from '@core/utils/asset-path'
+import { validateOutboundUrl } from '@core/utils/outbound-url'
 import { ASSET_CATEGORIES, type AssetCategory } from '@shared/types/asset.types'
 
 /** 常见扩展名 → MIME（探测不到时兜底 application/octet-stream） */
@@ -87,11 +88,21 @@ export class AssetStorageService {
 
   /** 远程 URL 下载落盘 */
   async downloadFromUrl(url: string, category: AssetCategory, name?: string): Promise<SavedFileInfo> {
-    const resp = await fetch(url)
+    // SSRF 防护：url 用户可控（asset:create / save-asset 节点），Web 多租户下
+    // 拒绝内网/环回/保留地址，防止借服务器打内网/云元数据
+    const guard = validateOutboundUrl(url)
+    if (!guard.ok) {
+      throw new Error(`下载 URL 校验失败：${guard.reason}`)
+    }
+    const resp = await fetch(url, { signal: AbortSignal.timeout(30_000) })
     if (!resp.ok) {
       throw new Error(`下载失败: HTTP ${resp.status}`)
     }
     const buffer = Buffer.from(await resp.arrayBuffer())
+    // 响应大小上限 50MB（防 OOM）
+    if (buffer.byteLength > 50 * 1024 * 1024) {
+      throw new Error('下载内容超过 50MB 上限')
+    }
     const mimeType = resp.headers.get('content-type')?.split(';')[0]?.trim() || undefined
     return this.writeBuffer(buffer, category, name, mimeType)
   }
@@ -159,9 +170,19 @@ export class AssetStorageService {
       return Buffer.from(source.slice(comma + 1), 'base64')
     }
     if (/^local-(image|file|video):\/\//i.test(source)) {
-      return fs.readFileSync(this.resolveStoredPath(stripLocalScheme(source)))
+      const abs = this.resolveStoredPath(stripLocalScheme(source))
+      // 内部相对路径形态：解析后必须仍在 dataPath 内（防 ../ 逃逸读任意文件）
+      if (!isWithinDataPath(abs)) {
+        throw new Error('资产路径越界（仅允许 dataPath 内的资产文件）')
+      }
+      return fs.readFileSync(abs)
     }
-    // 本地路径（绝对 / 相对 dataPath）
+    // 裸本地路径（绝对 / 相对 dataPath）：仅桌面端允许（本机用户导入自己的文件）；
+    // Web 端是多租户服务器，禁用——否则任意登录用户可读 /etc/passwd、secure-key 并入库回读
+    const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
+    if (!isElectron) {
+      throw new Error('本地路径资产导入仅在桌面端可用（Web 端请使用上传接口或 http(s) URL）')
+    }
     return fs.readFileSync(resolveAssetPath(source))
   }
 
@@ -183,6 +204,14 @@ export class AssetStorageService {
 }
 
 // ==================== 工具函数 ====================
+
+/** 判断绝对路径是否在 dataPath 内（含等于 dataPath 自身） */
+function isWithinDataPath(absPath: string): boolean {
+  const dataPath = getPathProvider().getDataPath()
+  const normalized = path.normalize(absPath)
+  const prefix = dataPath.endsWith(path.sep) ? dataPath : dataPath + path.sep
+  return normalized === dataPath || normalized.startsWith(prefix)
+}
 
 /** 提取扩展名（小写，无点） */
 function extOf(fileNameOrUrl: string): string {

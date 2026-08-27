@@ -135,6 +135,8 @@ async function dispatchEpAction(
     case 'generate_char_asset': return executeGenerateAsset(ctx, 'character', action)
     case 'generate_location_asset': return executeGenerateAsset(ctx, 'location', action)
     case 'generate_item_asset': return executeGenerateAsset(ctx, 'item', action)
+    case 'update_entity': return executeUpdateEntity(ctx, action)
+    case 'delete_entity': return executeDeleteEntity(ctx, action)
     case 'query_database': return executeQueryDatabase(ctx, action)
     default:
       return { type: action.type, status: 'error', message: `未知动作类型：${action.type}` }
@@ -571,7 +573,218 @@ function assetLabel(kind: AssetKind): string {
   return kind === 'character' ? '角色' : kind === 'location' ? '地点' : '物品'
 }
 
+// ==================== 动作：update_entity / delete_entity（修改/删除资产） ====================
+
+/**
+ * 按 id 或名称解析资产 binding（只解析不创建）。
+ * 决策上下文只向 AI 暴露资产名称（不暴露内部 id），因此 name 是主定位键；
+ * id 传入时优先精确匹配。找不到返回 null。
+ */
+async function resolveBindingId(
+  m: any,
+  kind: AssetKind,
+  projectId: string,
+  params: Record<string, unknown>,
+): Promise<string | null> {
+  if (params.id && typeof params.id === 'string') {
+    const byId = await getBindingById(m, kind, params.id)
+    if (byId) return byId.id
+  }
+  if (params.name && typeof params.name === 'string') {
+    const byName = await findBindingByName(m, kind, projectId, params.name)
+    if (byName) return byName.id
+  }
+  return null
+}
+
+/** 实例化对应类型的资产服务（供 update/delete 动作复用） */
+function getAssetServiceFor(kind: AssetKind, m: any) {
+  if (kind === 'character') return new CharacterAssetService(m.dataSource)
+  if (kind === 'location') return new LocationAssetService(m.dataSource, new AssetImageService(m.dataSource))
+  return new ItemAssetService(m.dataSource)
+}
+
+/**
+ * 修改资产（update_entity）。
+ * params: { type: 'character'|'location'|'item', id? / name?, patch: { name?, description?, appearance?, outfit?, ... } }
+ * - 定位失败（id/name 都找不到）→ 明确报错，不静默创建（与 generate_*_asset 的 ensureBinding 语义不同）。
+ * - linked_lw 走 override 字段，standalone 走 standalone 字段；character 额外支持身份块字段。
+ */
+async function executeUpdateEntity(
+  ctx: EpAgentExecutionContext,
+  action: EpAgentAction,
+): Promise<EpAgentActionSummary> {
+  const { db } = ctx
+  const m = db ?? getCoreDatabaseManager()
+  const params = (action.params || {}) as Record<string, any>
+  const kind = normalizeAssetKind(params.type)
+  if (!kind) throw new Error('修改资产：缺少 type（character / location / item）')
+
+  const projectId = await resolveProjectId(m, ctx.episodeId)
+  if (!projectId) throw new Error('剧集所属项目不存在，无法修改资产')
+
+  const bindingId = await resolveBindingId(m, kind, projectId, params)
+  if (!bindingId) {
+    const target = params.name ?? params.id ?? ''
+    throw new Error(`项目中没有${assetLabel(kind)}「${target}」，无法修改`)
+  }
+
+  const patch = (params.patch ?? {}) as Record<string, any>
+  if (typeof patch !== 'object' || Array.isArray(patch) || Object.keys(patch).length === 0) {
+    throw new Error('修改资产：patch 为空，请告诉我要改什么')
+  }
+
+  const svc = getAssetServiceFor(kind, m)
+  const binding = await getBindingById(m, kind, bindingId)
+
+  // 身份块字段（name/description/appearance/outfit）按 sourceType 分发
+  if (binding?.sourceType === 'standalone') {
+    const sp: Partial<{ name: string; description: string }> = {}
+    if ('name' in patch && patch.name != null) sp.name = String(patch.name)
+    if ('description' in patch && patch.description != null) sp.description = String(patch.description)
+    await svc.updateStandalone(bindingId, sp)
+  } else {
+    const op: Partial<{
+      name: string | null
+      description: string | null
+      appearance: string | null
+      outfit: string | null
+    }> = {}
+    if ('name' in patch) op.name = patch.name == null ? null : String(patch.name)
+    if ('description' in patch) op.description = patch.description == null ? null : String(patch.description)
+    if ('appearance' in patch && kind === 'character') op.appearance = patch.appearance == null ? null : String(patch.appearance)
+    if ('outfit' in patch && kind === 'character') op.outfit = patch.outfit == null ? null : String(patch.outfit)
+    await svc.updateOverride(bindingId, op)
+  }
+
+  // character 扩展字段（gender/age/race/alias/role/styleAnchors/outfitsExtra）
+  if (kind === 'character') {
+    const extra: Partial<{
+      alias: string | null
+      role: string | null
+      gender: string | null
+      age: number | null
+      race: string | null
+      voiceSpeed: number | null
+      voicePitch: number | null
+      voiceEmotion: string | null
+      styleAnchors: string[] | null
+      outfitsExtra: string[] | null
+    }> = {}
+    if ('alias' in patch) extra.alias = patch.alias == null ? null : String(patch.alias)
+    if ('role' in patch) extra.role = patch.role == null ? null : String(patch.role)
+    if ('gender' in patch) extra.gender = patch.gender == null ? null : String(patch.gender)
+    if ('age' in patch) extra.age = patch.age == null ? null : Number(patch.age)
+    if ('race' in patch) extra.race = patch.race == null ? null : String(patch.race)
+    if ('styleAnchors' in patch) extra.styleAnchors = Array.isArray(patch.styleAnchors) ? patch.styleAnchors.map(String) : null
+    if ('outfitsExtra' in patch) extra.outfitsExtra = Array.isArray(patch.outfitsExtra) ? patch.outfitsExtra.map(String) : null
+    await (svc as CharacterAssetService).updateExtra(bindingId, extra)
+  }
+
+  return {
+    type: 'update_entity',
+    status: 'ok',
+    message: `已修改${assetLabel(kind)}「${params.name ?? bindingId}」：${Object.keys(patch).join('、')}`,
+    changed: ['assets'],
+    data: { assetType: kind, assetId: bindingId },
+    nav: { tab: 'asset', asset: { kind, id: bindingId, name: (params.name as string) ?? undefined } },
+  }
+}
+
+/**
+ * 删除资产（delete_entity）。
+ * params: { type: 'character'|'location'|'item', id? / name? }
+ */
+async function executeDeleteEntity(
+  ctx: EpAgentExecutionContext,
+  action: EpAgentAction,
+): Promise<EpAgentActionSummary> {
+  const { db } = ctx
+  const m = db ?? getCoreDatabaseManager()
+  const params = (action.params || {}) as Record<string, any>
+  const kind = normalizeAssetKind(params.type)
+  if (!kind) throw new Error('删除资产：缺少 type（character / location / item）')
+
+  const projectId = await resolveProjectId(m, ctx.episodeId)
+  if (!projectId) throw new Error('剧集所属项目不存在，无法删除资产')
+
+  const bindingId = await resolveBindingId(m, kind, projectId, params)
+  if (!bindingId) {
+    const target = params.name ?? params.id ?? ''
+    throw new Error(`项目中没有${assetLabel(kind)}「${target}」，无法删除`)
+  }
+
+  const svc = getAssetServiceFor(kind, m)
+  await svc.delete(bindingId)
+
+  return {
+    type: 'delete_entity',
+    status: 'ok',
+    message: `已删除${assetLabel(kind)}「${params.name ?? bindingId}」`,
+    changed: ['assets'],
+    data: { assetType: kind, assetId: bindingId },
+    nav: { tab: 'asset' },
+  }
+}
+
+/** 归一化资产类型参数（容错 AI 输出的别名） */
+function normalizeAssetKind(raw: unknown): AssetKind | null {
+  const v = String(raw ?? '').trim().toLowerCase()
+  if (v === 'character' || v === '角色' || v === '人物') return 'character'
+  if (v === 'location' || v === '地点' || v === '场景') return 'location'
+  if (v === 'item' || v === '物品' || v === '道具') return 'item'
+  return null
+}
+
 // ==================== 动作：query_database（外部数据库查询） ====================
+
+/**
+ * 只读 SQL 守卫（防 Agent 生成 / 提示词注入的 SQL 改外部库）。
+ *
+ * 防线（判定前先剥离字符串字面量与注释，避免 `SELECT 'delete'` 等误伤）：
+ *  1. 语句必须以 select / with 开头；
+ *  2. 拒绝多语句——剥离后出现分号且其后还有内容（`SELECT 1; DROP TABLE t`）；
+ *  3. 拒绝写关键字——剥离后含 insert/update/delete/merge/drop/... 即拒，
+ *     覆盖 CTE 写（`WITH d AS (DELETE FROM t RETURNING *) SELECT * FROM d`）与
+ *     数据修改 CTE、`SELECT ... FOR UPDATE` 等伪装写法。
+ *
+ * 注意：本守卫不是完整 SQL 解析器，只读数据库账号仍是最终兜底（建议在设置页提示用户）。
+ */
+export function isReadOnlySql(sql: string): { ok: boolean; reason?: string } {
+  const t = (sql ?? '').trim()
+  if (!t) return { ok: false, reason: 'SQL 为空' }
+  const stripped = stripSqlLiterals(t).trim()
+  if (!/^(select|with)\b/i.test(stripped)) {
+    return { ok: false, reason: '仅允许 SELECT 查询（写操作请在工作流「数据表」节点中显式配置）' }
+  }
+  // 多语句：剥离字符串后检查分号（允许语句末尾一个分号）
+  const semiIdx = stripped.indexOf(';')
+  if (semiIdx !== -1 && stripped.slice(semiIdx + 1).trim() !== '') {
+    return { ok: false, reason: '仅允许单条查询语句（拒绝多语句）' }
+  }
+  // 写关键字（词边界；已剥离字符串字面量，列名/字符串里的字样不误伤）
+  if (/\b(insert|update|delete|merge|drop|alter|truncate|create|grant|revoke|copy|call|replace|vacuum|attach|detach|comment|reindex|do|execute)\b/i.test(stripped)) {
+    return { ok: false, reason: '仅允许只读查询（检测到写操作关键字）' }
+  }
+  return { ok: true }
+}
+
+/** 剥离 SQL 字符串字面量 / 标识符引用 / 注释，返回只剩语法骨架的文本 */
+function stripSqlLiterals(sql: string): string {
+  return sql
+    // 美元引用（$$...$$ 与 tag$$...$$）
+    .replace(/([a-z_]*)\$\$[\s\S]*?\$\$/gi, ' ')
+    // 单引号字符串（含 '' 转义）
+    .replace(/'([^']|'')*'/g, ' ')
+    // 双引号标识符（含 "" 转义）
+    .replace(/"([^"]|"")*"/g, ' ')
+    // 反引号标识符
+    .replace(/`[^`]*`/g, ' ')
+    // 行注释
+    .replace(/--[^\n]*/g, ' ')
+    // 块注释
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+}
 
 /**
  * 查询外部数据库（工作流数据源）。参数化 SQL，禁止字符串拼接（防注入）。
@@ -604,14 +817,29 @@ async function executeQueryDatabase(
     parameters = params.params
   }
 
-  // 只允许 SELECT 开头（防止 Agent 通过该动作改外部库数据；写操作走工作流节点显式配置）
-  const trimmed = sql.trim().toLowerCase()
-  if (!trimmed.startsWith('select') && !trimmed.startsWith('with')) {
-    return { type: 'query_database', status: 'error', message: '查询数据库：仅允许 SELECT 查询（写操作请在工作流「数据表」节点中显式配置）' }
+  // 只允许 SELECT 查询（防止 Agent 通过该动作改外部库数据；写操作走工作流节点显式配置）
+  const guard = isReadOnlySql(sql)
+  if (!guard.ok) {
+    return { type: 'query_database', status: 'error', message: `查询数据库：${guard.reason}` }
   }
 
   try {
-    const result = await ds.execute(dataSourceId, sql, parameters)
+    // choice / 决策上下文提供给 Agent 的是数据源**名称**（用户可见），而执行按主键 id 查库。
+    // 这里做 name→id 兜底：先按 id 精确匹配，失败则按启用名单中的名称精确匹配一次，
+    // 否则原样交给 execute（其内部会报"数据源不存在"）。mock/降级环境下 get/listEligible
+    // 可能不可用，用 try/catch 兜住，不影响主路径。
+    let resolvedDataSourceId = dataSourceId
+    try {
+      const config = await ds.get(dataSourceId)
+      if (!config) {
+        const eligible = await ds.listEligible()
+        const hit = eligible.find((s) => s.name === dataSourceId)
+        if (hit) resolvedDataSourceId = hit.id
+      }
+    } catch {
+      // 保持原 id 交给 execute 层反馈
+    }
+    const result = await ds.execute(resolvedDataSourceId, sql, parameters)
     const preview = result.rows.slice(0, 8)
     const previewText = JSON.stringify(preview).slice(0, 600)
     return {
@@ -625,9 +853,10 @@ async function executeQueryDatabase(
   }
 }
 
-/** 供测试用的 standalone ensureBinding 纯度导出（可选） */
+/** 供测试用的 standalone 纯度导出（可选） */
 export const __epAgentTest = {
   extractJsonObject,
   resolveScriptId,
   executeQueryDatabase,
+  isReadOnlySql,
 }

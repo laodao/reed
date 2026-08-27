@@ -118,10 +118,14 @@ export async function buildMainImagePrompt(
     return { prompt: basePrompt, negativePrompt: baseNegative, referenceImagePath }
   }
 
-  // 用户编辑的提示词优先；补年代特征与角色定妆约束（base prompt 已含，override 需手动补）
-  let prompt = appendEraConstraint(userPrompt, readStoryBackgroundFromCurrentEpisode())
+  // 用户编辑的提示词优先；补角色定妆约束（base prompt 已含，override 需手动补）。
+  // 年代/地域约束只对 character 追加——appendEraConstraint 的文案是"人物服饰、发型、
+  // 妆容符合时代特征"，对 location/item 会注入语义噪音（诱导在场景里加人），
+  // 这两类资产的中性"故事年代"段已由 buildAssetIdentityPrompt 提供。
+  let prompt = userPrompt
   let negativePrompt = baseNegative
   if (assetType === 'character') {
+    prompt = appendEraConstraint(userPrompt, readStoryBackgroundFromCurrentEpisode())
     prompt = appendCharacterConstraints(prompt, 'fullBody')
     negativePrompt = mergeCharacterNegative(undefined, 'fullBody')
   }

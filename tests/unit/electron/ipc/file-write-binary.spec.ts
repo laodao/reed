@@ -23,6 +23,9 @@ import { registerFileHandlers } from '@electron/ipc/handlers/file.handler'
 
 describe('file:write-binary', () => {
   beforeAll(() => {
+    // 模拟 Electron 环境：registerFileHandlers 按环境分流，
+    // 非 Electron（Web）端为安全边界不注册本地文件读写通道
+    ;(process.versions as Record<string, string | undefined>).electron = '28.0.0'
     registerFileHandlers()
   })
 
@@ -68,8 +71,11 @@ describe('file:write-binary', () => {
   })
 
   it('非法路径返回错误而非抛异常', async () => {
+    // 跨平台必失败的路径：os.tmpdir() 下不存在的多级目录。
+    // （旧用例 Z:\不存在的目录\x.png 在 Linux 上是合法相对文件名，会真实落盘 + 污染仓库）
+    const bad = path.join(os.tmpdir(), 'wb-nonexistent-dir-xx', 'sub', 'x.png')
     const result = (await invokeIpc('file:write-binary', [
-      { filePath: 'Z:\\不存在的目录\\x.png', base64: Buffer.from('x').toString('base64') },
+      { filePath: bad, base64: Buffer.from('x').toString('base64') },
     ])) as { success: boolean; error?: string }
 
     expect(result.success).toBe(false)

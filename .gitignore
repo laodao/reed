@@ -29,3 +29,6 @@ tests/reports/*
 .claude/worktrees/
 # 测试覆盖率报告
 coverage/
+
+# 运行日志（含 playwright console 日志）——不得入库
+*.log

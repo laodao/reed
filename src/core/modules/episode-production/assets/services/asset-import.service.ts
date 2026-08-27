@@ -75,15 +75,12 @@ export class AssetImportService {
       throw new Error(`PortraitVariant not found: ${input.variantId}`)
     }
 
-    return await this.imageSvc.addImage({
-      assetType: input.targetAssetType,
-      assetId: input.targetAssetId,
-      category: input.asCategory,
-      label: input.asLabel ?? v.angle,
-      imagePath: v.imagePath,
-      prompt: v.prompt ?? undefined,
-      isMain: input.asMain ?? false,
-    })
+    return await this.writeImported(
+      // 未显式指定 slot label 时回退到变体角度（历史行为；对话框调用方对非 main slot 都传了 label）
+      { ...input, asLabel: input.asLabel ?? v.angle },
+      v.imagePath,
+      v.prompt ?? undefined,
+    )
   }
 
   /**
@@ -101,14 +98,55 @@ export class AssetImportService {
       throw new Error(`Image not found: ${input.imageId}`)
     }
 
-    return await this.imageSvc.addImage({
+    return await this.writeImported(
+      input,
+      img.filePath,
+      img.prompt ?? undefined,
+    )
+  }
+
+  /**
+   * 统一写入：
+   * - asMain=true 时走「addImage(isMain:false) + setAsMain」范式（对齐 main-image-upload），
+   *   setAsMain 会把同资产旧 isMain=1 降级，避免产生双主图（is_main 唯一性不变量）。
+   * - asLabel 有值时按 (assetType, assetId, label) 查重：已存在行（占位行或真实图）复用更新，
+   *   避免"关联人像对已占用 slot 重复导入"产生同 label 多行遮蔽真实图。
+   */
+  private async writeImported(
+    input: ImportFromPortraitVariantInput | ImportFromImageInput,
+    imagePath: string,
+    prompt: string | undefined,
+  ): Promise<AssetImageEntity> {
+    const label = input.asLabel ?? null
+
+    // 同 slot 已有行 → 复用更新（占位行 imagePath='' 直接回填；真实图则覆盖路径）
+    if (label) {
+      const all = await this.imageSvc.listByAsset(
+        input.targetAssetType,
+        input.targetAssetId,
+      )
+      const existing = all.find((r) => r.label === label)
+      if (existing) {
+        await this.imageSvc.updateImage(existing.id, {
+          imagePath,
+          prompt: prompt ?? null,
+        })
+        if (input.asMain) await this.imageSvc.setAsMain(existing.id)
+        return (await this.imageSvc.getById(existing.id)) as AssetImageEntity
+      }
+    }
+
+    const newImage = await this.imageSvc.addImage({
       assetType: input.targetAssetType,
       assetId: input.targetAssetId,
       category: input.asCategory,
-      label: input.asLabel,
-      imagePath: img.filePath,
-      prompt: img.prompt ?? undefined,
-      isMain: input.asMain ?? false,
+      label,
+      imagePath,
+      prompt,
+      // 先落 isMain=false，asMain=true 时由 setAsMain 统一升主图（自动降级旧主图）
+      isMain: false,
     })
+    if (input.asMain) await this.imageSvc.setAsMain(newImage.id)
+    return newImage
   }
 }

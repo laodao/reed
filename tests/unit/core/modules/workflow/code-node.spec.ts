@@ -14,10 +14,15 @@ const baseCtx = (config: Record<string, unknown>) =>
   ({ config, runId: 'run_1', nodeId: 'code1', signal: new AbortController().signal, logger: { warn: () => {}, debug: () => {}, info: () => {}, error: () => {} } }) as never
 
 describe('code：沙箱执行', () => {
-  it('基础计算：return 对象作为输出', async () => {
-    const r = await handler.execute(baseCtx({ language: 'js', code: 'return { sum: (inputs.a ?? 0) + (inputs.b ?? 0) }', inputs: [{ key: 'a', value: '2' }, { key: 'b', value: '3' }] }))
-    expect(r.status).toBe('succeeded')
-    if (r.status === 'succeeded') expect(r.output.result).toEqual({ sum: '23' })  // 模板注入值为字符串 → 字符串拼接
+  it('非 Electron 环境（Web/测试）禁止执行 → failed（平台门禁，防服务端 RCE）', async () => {
+    const r = await handler.execute(baseCtx({ language: 'js', code: 'return { sum: 1 }', inputs: [] }))
+    expect(r.status).toBe('failed')
+    if (r.status === 'failed') expect(r.error).toContain('桌面端')
+  })
+
+  it('runCodeInSandbox 纯函数：return 对象作为输出', async () => {
+    const r = await runCodeInSandbox('return { sum: (inputs.a ?? 0) + (inputs.b ?? 0) }', { a: '2', b: '3' }, 1000)
+    expect(r).toEqual({ sum: '23' })  // 模板注入值为字符串 → 字符串拼接
   })
 
   it('输入注入：直接引用 inputs 对象', async () => {

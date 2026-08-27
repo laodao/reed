@@ -119,7 +119,7 @@ import ShotPromptEditor, {
   type ParamOption,
 } from '@/components/episode-production/storyboard/ShotPromptEditor.vue'
 import { toImageUrl, toVideoUrl } from '@/utils/asset-url'
-import { buildPromptText, splitPromptText } from '@/components/episode-production/storyboard/storyboard-prompt-format'
+import { buildPromptText, splitPromptText, type PromptLine } from '@/components/episode-production/storyboard/storyboard-prompt-format'
 
 const props = defineProps<{
   episodeId: string
@@ -256,12 +256,21 @@ async function onSave(): Promise<void> {
 async function doSave(): Promise<void> {
   if (!promptText.value || !shots.value.length) return
   const parsed = splitPromptText(promptText.value)
+  // 按「镜头N」编号对齐写回，而不是按下标位置：用户在编辑器里删/插行后，
+  // 位置对齐会把后续镜头的描述整体前移/后移写错对象（串镜污染）。
+  // 编号缺失的行（非标准行）不会命中任何镜头 → 跳过，不覆盖。
+  const byShotNo = new Map<number, PromptLine>()
+  for (const line of parsed) byShotNo.set(line.shotNumber, line)
   let saved = 0
   let failed = 0
-  for (let i = 0; i < shots.value.length; i++) {
-    const sb = shots.value[i]
-    const line = parsed[i] ?? parsed[parsed.length - 1] ?? null
-    if (!line) continue
+  let unmatched = 0
+  for (const sb of shots.value) {
+    const no = sb.shotNumber || 0
+    const line = byShotNo.get(no)
+    if (!line) {
+      unmatched++
+      continue
+    }
     const shotType = line.params['景别']
     const cameraMovement = line.params['运镜']
     const duration = Number(line.params['时长']) || sb.duration || 4
@@ -279,6 +288,12 @@ async function doSave(): Promise<void> {
     } else {
       failed++
     }
+  }
+  // 行数与镜头数不一致时明确提示（防静默串镜/漏镜）
+  if (parsed.length !== shots.value.length) {
+    ElMessage.warning(
+      `提示词行数（${parsed.length}）与镜头数（${shots.value.length}）不一致，已按镜头编号对齐保存${unmatched > 0 ? `，${unmatched} 个镜头无对应行未改动` : ''}；请检查是否有遗漏`,
+    )
   }
   if (failed > 0) {
     ElMessage.error(`保存失败 ${failed} 处`)

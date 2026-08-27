@@ -866,7 +866,7 @@ function renderSourceCodeBlock(language: string, code: string, isOpen: boolean =
   return `
     <div class="code-block-wrapper ${openClass}">
       <div class="code-header">
-        <span class="language">${language || 'code'}${isOpen ? ' (输出中...)' : ''}</span>
+        <span class="language">${escapeHtml(language) || 'code'}${isOpen ? ' (输出中...)' : ''}</span>
         <button class="copy-btn" data-code-b64="${encodedCode}" ${isOpen ? 'disabled title="代码块尚未完成"' : ''}>
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
           <span>复制</span>
@@ -919,7 +919,7 @@ function renderCodeBlock(language: string, code: string, isOpen: boolean = false
   return `
     <div class="code-block-wrapper ${openClass}">
       <div class="code-header">
-        <span class="language">${language || 'code'}${isOpen ? ' (输出中...)' : ''}</span>
+        <span class="language">${escapeHtml(language) || 'code'}${isOpen ? ' (输出中...)' : ''}</span>
         <button class="copy-btn" data-code-b64="${encodedCode}" ${isOpen ? 'disabled title="代码块尚未完成"' : ''}>
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
           <span>复制</span>
@@ -1245,7 +1245,7 @@ function renderContentForImage(content: string): string {
       return `
         <div style="background:#1e293b;border-radius:8px;overflow:hidden;margin:10px 0;">
           <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#334155;border-bottom:1px solid #475569;">
-            <span style="font-size:12px;color:#94a3b8;text-transform:lowercase;">${language || 'code'}</span>
+            <span style="font-size:12px;color:#94a3b8;text-transform:lowercase;">${escapeHtml(language) || 'code'}</span>
           </div>
           <div style="display:flex;overflow-x:auto;">
             <div style="padding:12px 0;min-width:40px;text-align:right;background:#1e293b;border-right:1px solid #475569;">

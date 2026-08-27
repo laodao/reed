@@ -376,6 +376,9 @@ const activeIdx = ref(0)
 const mentionDescEl = ref<HTMLElement | null>(null)
 const mentionDescOffset = ref(0)
 const mentionPos = ref<{ left: number; top: number }>({ left: 12, top: 40 })
+/** 点击已引用 @token「改引用」时记录被点的 token 元素；pickMention 直接替换它，
+ *  避免走"删除 @query 再插入"路径导致旧 token 残留 + 误删用户字符。 */
+let replacingToken: HTMLElement | null = null
 /** 两段式选择：asset = 资产列表；image = 该资产的多图选择 */
 const mentionStage = ref<'asset' | 'image'>('asset')
 const mentionAsset = ref<MentionEntity | null>(null)
@@ -407,6 +410,8 @@ function detectMention(): void {
   // 这样已生成的 @[名字@索引] token（后面有 [）不会被当作正在输入，光标在其后点/输入不再误弹。
   const m = before.match(/@([^[\]@\s]*)$/)
   if (m) {
+    // 正常输入新 @ 引用（非改引用）——清空替换目标
+    replacingToken = null
     mentionStart.value = offset - m[0].length; mentionQuery.value = m[1]; activeIdx.value = 0
     mentionStage.value = 'asset'; mentionAsset.value = null
     // 捕获光标所在的 .pk-desc 及其内部 offset，选中项时插入到该处（而非最后一行）
@@ -440,8 +445,28 @@ function caretRectOf(): { left: number; top: number; bottom: number } | null {
   return null
 }
 function openMention(): void { if (!mentionOpen.value) { mentionOpen.value = true; void nextTick(() => mentionInput.value?.focus?.()) } }
-function closeMention(): void { mentionOpen.value = false; paramOpen.value = false }
+function closeMention(): void { mentionOpen.value = false; paramOpen.value = false; replacingToken = null }
 function pickMention(e: MentionEntity, imgIndex?: number | null): void {
+  // 改引用：被点的旧 token 直接替换为新 token，跳过「删除 @query」路径——
+  // 该路径在 query 为空时会把 -1 偏移误删成用户真实字符，且旧 token 残留造成重复引用。
+  if (replacingToken && replacingToken.isConnected) {
+    const idx = imgIndex != null ? imgIndex : null
+    const display = idx != null ? `${e.name} 图${idx}` : e.name
+    const thumb = entityThumb(e, idx)
+    const thumbHtml = thumb ? `<img class="ent-thumb" src="${esc(thumb)}" alt="" />` : ''
+    const span = document.createElement('span')
+    span.className = 'pk-token entity'
+    span.setAttribute('data-key', '@entity')
+    span.setAttribute('data-entity-id', e.id)
+    span.setAttribute('data-img-index', idx ?? '')
+    span.setAttribute('contenteditable', 'false')
+    span.innerHTML = `<span class="ent-thumb-wrap">${thumbHtml}</span>@${esc(display)}`
+    replacingToken.replaceWith(span)
+    replacingToken = null
+    closeMention()
+    emitText()
+    return
+  }
   // 移除已输入的部分 @query，替换为 @[名字@索引]；插入到捕获时所在描述的位置
   const descEl = mentionDescEl.value
   let insertOffset = mentionDescOffset.value
@@ -559,6 +584,9 @@ function onClick(e: MouseEvent): void {
   }
   // 点击已 @ 引用的资产 token → 重新打开资产弹层（可重新选图/改引用）
   if (t.classList?.contains('pk-token') && t.getAttribute('data-key') === '@entity') {
+    // 记录被点的 token：选中新实体后直接替换它（pickMention 的 replacingToken 分支），
+    // 不再走"删除已输入 @query 再插入"路径（该路径会重复插入 + 误删用户字符）
+    replacingToken = t
     mentionAsset.value = findEntityByName((t.textContent ?? '').replace(/^@/, '').replace(/\s*图\d+$/, ''))
     mentionStage.value = 'asset'
     mentionDescEl.value = descUnderCaret()

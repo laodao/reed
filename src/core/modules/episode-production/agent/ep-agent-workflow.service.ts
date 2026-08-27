@@ -180,20 +180,20 @@ export class EpisodeProductionAgentService {
     let state = await computeEpProductionState(m, projectId, episodeId)
 
     // 1.2 数据源名单（供 query_database 规则 choice + 决策上下文注入）
-    let dataSourceNames: string[] = []
+    let dataSources: Array<{ id: string; name: string }> = []
     try {
       const { getDataSourceService } = await import('@core/modules/workflow/datasource/datasource.service')
       const list = await getDataSourceService().listEligible()
-      dataSourceNames = list.map((s) => s.name)
+      dataSources = list.map((s) => ({ id: s.id, name: s.name }))
     } catch {
-      dataSourceNames = []
+      dataSources = []
     }
 
     // 1.5 规则型多轮确认：用户想给资产生成"图"，但没点名字 → 引擎直接发候选 choice，
     //     保证生成哪个由用户从项目真实资产里选，不依赖 AI 临场判断。
     const ruleChoice =
       detectChoiceForAssetImage(userMsg, state) ??
-      detectChoiceForDatabase(userMsg, dataSourceNames)
+      detectChoiceForDatabase(userMsg, dataSources.map((d) => d.name))
     if (ruleChoice) {
       this.emit(projectId, episodeId, { type: 'choice:request', choice: ruleChoice })
       const prompt = ruleChoice.prompt || `请选择要生成${assetLabelFor(ruleChoice.actionType)}：`
@@ -209,7 +209,7 @@ export class EpisodeProductionAgentService {
     // 2. AI 决策
     this.emit(projectId, episodeId, { type: 'stage', stage: 'deciding' })
     const history = await m.lwDesignMessages.getByConversationId(conversationId)
-    const decCtx = buildEpDecisionContext(userMsg, state, history, { dataSourceNames })
+    const decCtx = buildEpDecisionContext(userMsg, state, history, { dataSources })
     let decision: EpAgentDecision = { actions: [] }
     try {
       const raw = await ai.agentDecide(decCtx, providerConfigId, modelId)
@@ -313,6 +313,9 @@ export function detectChoiceForAssetImage(
   state: EpAgentProductionState,
 ): EpAgentChoice | null {
   const lower = msg || ''
+  // 疑问 / 否定 / 咨询句式不拦截：这类消息应交给 AI 正常回答，否则
+  // 「定妆图为什么没生成出来？」「先别生成主图」会被关键词正则劫持成选资产流程。
+  if (/[？?]|吗|呢|怎么|为什么|啥|什么|哪个|哪张|别|不|没有|无需|先别|暂时/.test(lower)) return null
   // 判断是否"生成图"意图
   const wantsImage = /定妆|主图|生成.+图|角色图|人物图|形象图/.test(lower)
   if (!wantsImage) return null

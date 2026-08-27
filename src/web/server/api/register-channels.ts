@@ -33,6 +33,7 @@ import { registerNewsSourceHandlers } from '@electron/ipc/handlers/news-source.h
 import { registerDiaryHandlers } from '@electron/ipc/handlers/diary.handler'
 import { registerPortraitHandlers } from '@electron/ipc/handlers/portrait.handler'
 import { registerEpisodeProductionHandlers } from '@electron/ipc/handlers/episode-production'
+import { registerDataSourceHandlers } from '@electron/ipc/handlers/datasource.handler'
 import { registerFileHandlers } from '@electron/ipc/handlers/file.handler'
 import { registerExportHandlers } from '@electron/ipc/handlers/export.handler'
 import { registerDataPathHandlers } from '@electron/ipc/handlers/data-path.handler'
@@ -63,6 +64,9 @@ export async function registerAllWebChannels(): Promise<void> {
   registerDiaryHandlers()
   registerPortraitHandlers()
   registerEpisodeProductionHandlers()
+  // 数据源：Web 端仓储/服务/驱动已由 workflow-boot 装配（web-database-manager +
+  // initWorkflowSubsystem），此前只缺 IPC 这一环，导致 Web 端数据源管理不可用
+  registerDataSourceHandlers()
   registerFileHandlers()
   registerExportHandlers()
   // data-path 仅在 Electron 端有意义，函数内部已 isElectron 判断

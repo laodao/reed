@@ -13,6 +13,7 @@ import type { WorkflowNodeHandler } from '../engine/node-handler'
 import { stringifyValue } from '../engine/variable-resolver'
 import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from '@shared/types/workflow.types'
 import { parse } from 'node-html-parser'
+import { validateOutboundUrl } from '@core/utils/outbound-url'
 
 // ==================== 模板转换 ====================
 
@@ -154,6 +155,33 @@ function htmlToText(html: string): { title: string; text: string } {
   return { title: (titleMatch?.[1] ?? '').trim(), text: cleaned }
 }
 
+/**
+ * 智能截断：在内容预算（max − 标记长度）内从后往前找句末/段落边界，
+ * 找到则在边界处截断（不切半句子）；无句末边界回退软边界（空格/逗号/顿号），
+ * 最后才硬切；始终追加「…[已截断]」标记。
+ */
+export function truncateTextSmart(text: string, max: number): string {
+  if (text.length <= max) return text
+  const marker = '…[已截断]'
+  const contentBudget = max - marker.length
+  if (contentBudget <= 0) return marker
+  const searchable = text.slice(0, contentBudget)
+  // 1. 句末/段落边界（取最后一个）
+  let cut = -1
+  const re = /[。！？!?；;\n]/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(searchable)) !== null) cut = m.index
+  if (cut >= 0) return searchable.slice(0, cut + 1) + marker
+  // 2. 软边界（空格/逗号/顿号；切掉分隔符本身）
+  let softCut = -1
+  const soft = /[\s，,、]/g
+  let sm: RegExpExecArray | null
+  while ((sm = soft.exec(searchable)) !== null) softCut = sm.index
+  if (softCut >= 0) return searchable.slice(0, softCut) + marker
+  // 3. 无任何边界 → 硬切
+  return searchable + marker
+}
+
 const webExtractNode: WorkflowNodeHandler = {
   type: 'web-extract',
   controlKind: 'task',
@@ -175,6 +203,11 @@ const webExtractNode: WorkflowNodeHandler = {
     const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(timeout)])
     let html: string
     try {
+      // SSRF 防护：url 可经 {{模板}} 注入（内置应用"网页摘要入库"即 {{start.url}}）
+      const guard = validateOutboundUrl(String(cfg.url))
+      if (!guard.ok) {
+        return { status: 'failed', error: `URL 校验失败：${guard.reason}`, retryable: false }
+      }
       const res = await fetch(String(cfg.url), { signal, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; the-bot-workflow)' } })
       if (!res.ok) return { status: 'failed', error: `请求失败：HTTP ${res.status}` }
       html = await res.text()
@@ -183,7 +216,8 @@ const webExtractNode: WorkflowNodeHandler = {
     }
     const { title, text } = htmlToText(html)
     const max = cfg.maxLength && cfg.maxLength > 0 ? cfg.maxLength : 100_000
-    const trimmed = text.length > max ? text.slice(0, max) + '…[已截断]' : text
+    // 智能截断：按句子/段落边界，不切半（内容完整性优先）
+    const trimmed = text.length > max ? truncateTextSmart(text, max) : text
     const links = extractPageLinks(html, String(cfg.url), cfg.maxLinks ?? 30)
     return { status: 'succeeded', output: { title, text: trimmed, length: trimmed.length, links } }
   },

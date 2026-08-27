@@ -16,6 +16,7 @@
 
 import * as fs from 'fs/promises'
 import * as path from 'path'
+import { randomBytes } from 'crypto'
 import sharp from 'sharp'
 import type { AssetImageEntity } from '@core/database/entities/episode-production/asset-image.entity'
 import type { IPathProvider } from '@core/interfaces/path.interface'
@@ -47,10 +48,20 @@ export interface MainImageUploadInput {
 export class MainImageUploadValidationError extends Error {
   constructor(
     message: string,
-    public readonly code: 'EMPTY' | 'TOO_LARGE' | 'BAD_FORMAT' | 'BAD_DIMENSIONS',
+    public readonly code: 'EMPTY' | 'TOO_LARGE' | 'BAD_FORMAT' | 'BAD_DIMENSIONS' | 'BAD_REF',
   ) {
     super(message)
     this.name = 'MainImageUploadValidationError'
+  }
+}
+
+/** 资产引用校验：assetType 合法 + assetId 非空（防止 asset_id='' 孤儿行 / 非法类型） */
+function requireAssetRef(assetType: string, assetId: string): void {
+  if (assetType !== 'character' && assetType !== 'location' && assetType !== 'item') {
+    throw new MainImageUploadValidationError(`非法资产类型：${assetType}`, 'BAD_REF')
+  }
+  if (!assetId || typeof assetId !== 'string' || !assetId.trim()) {
+    throw new MainImageUploadValidationError('缺少资产 ID（assetId 不能为空）', 'BAD_REF')
   }
 }
 
@@ -70,7 +81,8 @@ export class MainImageUploadService {
    * 6) 新行写入 isMain=1, category='main'
    */
   async upload(input: MainImageUploadInput): Promise<AssetImageEntity> {
-    const relPath = await this.saveImageFile(input.buffer, input.fileName)
+    requireAssetRef(input.assetType, input.assetId)
+    const relPath = await this.saveImageFile(input.buffer, input.fileName, `${input.assetType}-${input.assetId}`)
 
     // 先写新图，再调 setAsMain 使旧主图 isMain→0，新图 isMain→1
     const newImage = await this.imageService.addImage({
@@ -97,7 +109,8 @@ export class MainImageUploadService {
   async uploadAdditionalMain(
     input: MainImageUploadInput & { label?: string },
   ): Promise<AssetImageEntity> {
-    const relPath = await this.saveImageFile(input.buffer, input.fileName)
+    requireAssetRef(input.assetType, input.assetId)
+    const relPath = await this.saveImageFile(input.buffer, input.fileName, `${input.assetType}-${input.assetId}`)
 
     const newImage = await this.imageService.addImage({
       assetType: input.assetType,
@@ -123,7 +136,11 @@ export class MainImageUploadService {
   }
 
   /** 校验图像 + 写入 asset-images/ 目录，返回相对路径 */
-  private async saveImageFile(buffer: Buffer, _fileName: string): Promise<string> {
+  private async saveImageFile(
+    buffer: Buffer,
+    _fileName: string,
+    owner?: string,
+  ): Promise<string> {
     if (!buffer || buffer.byteLength === 0) {
       throw new MainImageUploadValidationError('文件为空', 'EMPTY')
     }
@@ -153,8 +170,10 @@ export class MainImageUploadService {
     }
 
     const ext = format === 'jpeg' ? 'jpg' : format
-    const timestamp = Date.now()
-    const fileName = `main-${timestamp}.${ext}`
+    // 文件名带资产归属前缀 + 随机后缀：避免 `main-${ts}` 丢失归属（无法追踪/清理），
+    // 也避免同毫秒并发上传互相覆盖。参考图（无归属）用 ref- 前缀。
+    const ownerPart = owner ? `${owner}-` : 'ref-'
+    const fileName = `${ownerPart}${Date.now()}-${randomBytes(4).toString('hex')}.${ext}`
     const relPath = path.posix.join('asset-images', fileName)
     const dataPath = this.pathProvider.getDataPath()
     const absPath = path.join(dataPath, relPath)

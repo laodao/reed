@@ -71,6 +71,16 @@ const codeNode: WorkflowNodeHandler = {
     return errors
   },
   async execute(ctx: WorkflowNodeContext) {
+    // 平台门禁：vm 沙箱非完整安全边界（文件头注释已自认），仅桌面单用户场景可接受。
+    // Web 端是多租户服务器，放行等于"服务端执行任意用户 JS"（RCE），必须禁用。
+    const isElectron = !!(process.versions as Record<string, string | undefined>)?.electron
+    if (!isElectron) {
+      return {
+        status: 'failed',
+        error: '代码（code）节点仅在桌面端可用（Web 端不支持在服务端执行任意 JS）',
+        retryable: false,
+      }
+    }
     const cfg = ctx.config as {
       code: string
       inputs?: Array<{ key: string; value: string }>
