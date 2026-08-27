@@ -109,6 +109,13 @@ export function registerKnowledgeBaseHandlers(): void {
   // 检索知识库
   ipcBridge.handle('knowledge-base:search', handleSearch)
 
+  // ==================== 知识库目录（分组/分类） ====================
+
+  ipcBridge.handle('kb:folder-list', handleListKbFolders)
+  ipcBridge.handle('kb:folder-create', handleCreateKbFolder)
+  ipcBridge.handle('kb:folder-rename', handleRenameKbFolder)
+  ipcBridge.handle('kb:folder-delete', handleDeleteKbFolder)
+
   // ==================== Embedding 模型 ====================
 
   // 获取可用的 Embedding 模型
@@ -180,6 +187,31 @@ async function handleDeleteKnowledgeBase(
 ): Promise<IpcResponse<void>> {
   const service = getKnowledgeBaseService()
   return await service.deleteKnowledgeBase(id)
+}
+
+// ==================== 知识库目录处理器 ====================
+
+async function handleListKbFolders(_event: any): Promise<IpcResponse<any[]>> {
+  const service = getKnowledgeBaseService()
+  return await service.listKbFolders()
+}
+
+async function handleCreateKbFolder(_event: any, name: string): Promise<IpcResponse<any>> {
+  const service = getKnowledgeBaseService()
+  return await service.createKbFolder(name)
+}
+
+async function handleRenameKbFolder(
+  _event: any,
+  data: { id: string; name: string }
+): Promise<IpcResponse<void>> {
+  const service = getKnowledgeBaseService()
+  return await service.renameKbFolder(data.id, data.name)
+}
+
+async function handleDeleteKbFolder(_event: any, id: string): Promise<IpcResponse<void>> {
+  const service = getKnowledgeBaseService()
+  return await service.deleteKbFolder(id)
 }
 
 // ==================== 文档管理处理器 ====================

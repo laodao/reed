@@ -232,6 +232,7 @@ export function useKnowledgeBase() {
     createForm.value.description = ''
     createForm.value.embeddingModel = ''
     createForm.value.embeddingDimension = 1536
+    createForm.value.folderId = null
     delete createForm.value.embeddingConfig
     selectedEmbeddingModel.value = null
   }

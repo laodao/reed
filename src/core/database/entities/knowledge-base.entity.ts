@@ -49,6 +49,10 @@ export class KnowledgeBaseEntity {
   @Column({ name: 'rerank_config', type: 'text', nullable: true })
   rerankConfig!: string | null
 
+  /** 所属目录 id（kb_folders；null = 未分类） */
+  @Column({ name: 'folder_id', type: 'varchar', nullable: true })
+  folderId!: string | null
+
   @Column({ name: 'document_count', type: 'integer', default: 0 })
   documentCount!: number
 

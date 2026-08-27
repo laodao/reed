@@ -62,7 +62,9 @@ export class KbQaPairRepository extends BaseRepository<KbQaPairEntity, KbQaPairR
   async listByKnowledgeBaseId(knowledgeBaseId: string, keyword?: string): Promise<KbQaPairRecord[]> {
     const qb = this.scoped
       .qb('q')
-      .where('q.knowledge_base_id = :kbId', { kbId })
+      // 修复：此前误用未声明的 `{ kbId }` 简写（参数名是 knowledgeBaseId）→
+      // 点击 QA tab 即抛 ReferenceError: kbId is not defined
+      .where('q.knowledge_base_id = :kbId', { kbId: knowledgeBaseId })
       .orderBy('q.created_at', 'DESC')
     if (keyword?.trim()) {
       qb.andWhere('(LOWER(q.question) LIKE LOWER(:kw) OR LOWER(q.answer) LIKE LOWER(:kw))', {

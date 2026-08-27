@@ -1092,6 +1092,11 @@ const electronAPI = {
   knowledgeBase: {
     // 获取知识库列表
     list: () => ipcRenderer.invoke('knowledge-base:list'),
+    // 知识库目录（分组/分类）
+    listFolders: () => ipcRenderer.invoke('kb:folder-list'),
+    createFolder: (name: string) => ipcRenderer.invoke('kb:folder-create', name),
+    renameFolder: (id: string, name: string) => ipcRenderer.invoke('kb:folder-rename', { id, name }),
+    deleteFolder: (id: string) => ipcRenderer.invoke('kb:folder-delete', id),
     // D1 QA 问答对
     listQaPairs: (knowledgeBaseId: string, keyword?: string) => ipcRenderer.invoke('kb-qa:list', { knowledgeBaseId, keyword }),
     addQaPair: (p: { knowledgeBaseId: string; question: string; answer: string; similarQuestions?: string[] }) => ipcRenderer.invoke('kb-qa:add', p),
@@ -1111,11 +1116,14 @@ const electronAPI = {
       embeddingDimension: number
       providerConfigId?: string
       ollamaBaseUrl?: string
+      folderId?: string | null
     }) => ipcRenderer.invoke('knowledge-base:create', data),
     // 更新知识库
     update: (id: string, data: Partial<{
       name: string
       description: string
+      rerankConfig?: string | null
+      folderId?: string | null
     }>) => ipcRenderer.invoke('knowledge-base:update', { id, request: data }),
     // 删除知识库
     delete: (id: string) => ipcRenderer.invoke('knowledge-base:delete', id),

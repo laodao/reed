@@ -29,6 +29,7 @@ import type { KbDocumentRepository } from './repositories/kb-document.repository
 import type { KbInvertedIndexRepository } from './repositories/kb-inverted-index.repository'
 import type { KbVectorRepository } from './repositories/kb-vector.repository'
 import type { KbQaPairRepository } from './repositories/kb-qa-pair.repository'
+import type { KbFolderRepository } from './repositories/kb-folder.repository'
 import type { AppRepository } from './repositories/app.repository'
 import type { AppSessionRepository } from './repositories/app-session.repository'
 import type { AppSessionMessageRepository } from './repositories/app-session-message.repository'
@@ -145,6 +146,8 @@ export interface ICoreDatabaseManager {
   kbInvertedIndex: KbInvertedIndexRepository | null
   kbVectors: KbVectorRepository | null
   kbQaPairs: KbQaPairRepository | null
+  /** 知识库目录（分组/分类，如 it 行业、能源行业） */
+  kbFolders: KbFolderRepository | null
   appDefinitions: AppRepository | null
   appSessions: AppSessionRepository | null
   /** 应用会话消息（独立表，隔离 AI 对话表） */

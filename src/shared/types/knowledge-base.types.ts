@@ -46,6 +46,8 @@ export interface KnowledgeBase {
   embeddingConfig?: string
   /** D2 重排序配置 JSON 字符串（{ providerConfigId, modelId }）；null/空 = 未启用 */
   rerankConfig?: string | null
+  /** 所属目录 id（kb_folders；null = 未分类） */
+  folderId?: string | null
   /** 切分策略 */
   splitStrategy?: SplitStrategy
   /** 切分配置（JSON） */
@@ -76,6 +78,8 @@ export interface CreateKnowledgeBaseRequest {
   embeddingDimension: number
   /** Embedding 配置 */
   embeddingConfig?: EmbeddingConfig
+  /** 所属目录 id（可空 = 未分类） */
+  folderId?: string | null
 }
 
 /**
@@ -88,6 +92,21 @@ export interface UpdateKnowledgeBaseRequest {
   description?: string
   /** D2 重排序配置 JSON（null = 关闭 rerank） */
   rerankConfig?: string | null
+  /** 所属目录 id（null = 移到未分类） */
+  folderId?: string | null
+}
+
+/**
+ * 知识库目录（kb_folders；分组/分类，如 it 行业、能源行业）
+ */
+export interface KnowledgeBaseFolder {
+  id: string
+  name: string
+  /** 父目录 id（预留多级；null = 一级目录） */
+  parentId?: string | null
+  sortOrder?: number
+  createdAt?: Date | string | null
+  updatedAt?: Date | string | null
 }
 
 /**
@@ -403,9 +422,9 @@ export interface KnowledgeBaseStats {
  * 同一 KB 中 (type, id) 二元组唯一对应一篇文档；用于跨模块导入（如日记）的去重 upsert。
  */
 export interface DocumentSource {
-  /** 来源类型；后续可扩展 'character' / 'long-writing-chapter' 等 */
-  type: 'diary'
-  /** 来源在所属模块内的稳定 ID（如 diaryEntry.id） */
+  /** 来源类型；'diary'=日记导入；'workflow'=工作流节点保存（按 sourceKey 幂等覆盖） */
+  type: 'diary' | 'workflow'
+  /** 来源在所属模块内的稳定 ID（如 diaryEntry.id / 工作流 sourceKey） */
   id: string
 }
 

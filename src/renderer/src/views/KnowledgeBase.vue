@@ -4,10 +4,15 @@
     <div class="page-sidebar">
       <div class="sidebar-header">
         <h3>知识库</h3>
-        <el-button type="primary" size="small" @click="openCreateDialog">
-          <el-icon><Plus /></el-icon>
-          新建
-        </el-button>
+        <div class="sidebar-header-actions">
+          <el-button text size="small" title="新建目录" @click="openCreateFolderDialog">
+            <el-icon><FolderAdd /></el-icon>
+          </el-button>
+          <el-button type="primary" size="small" @click="openCreateDialog">
+            <el-icon><Plus /></el-icon>
+            新建
+          </el-button>
+        </div>
       </div>
 
       <div class="sidebar-content">
@@ -26,37 +31,55 @@
           </div>
 
           <div v-else class="kb-list">
-            <div
-              v-for="kb in knowledgeBases"
-              :key="kb.id"
-              class="kb-item"
-              :class="{ active: currentKnowledgeBase?.id === kb.id }"
-              @click="selectKnowledgeBase(kb.id)"
-            >
-              <div class="kb-icon">
-                <el-icon><Folder /></el-icon>
-              </div>
-              <div class="kb-info">
-                <div class="kb-name">{{ kb.name }}</div>
-                <div class="kb-stats">
-                  <span>{{ kb.documentCount }} 文档</span>
-                  <span>{{ kb.vectorCount }} 向量</span>
-                </div>
-              </div>
-              <div class="kb-actions" @click.stop>
-                <el-dropdown trigger="click" @command="handleKbAction($event, kb)">
+            <!-- 按目录分组展示（it 行业 / 能源行业 / 未分类） -->
+            <template v-for="group in kbByFolder" :key="group.folderId ?? '__uncat__'">
+              <div class="kb-group-header">
+                <span class="kb-group-name">{{ group.folderName }}</span>
+                <span class="kb-group-count">{{ group.items.length }}</span>
+                <el-dropdown v-if="group.folderId" trigger="click" @command="(cmd: string) => cmd === 'rename' ? openRenameFolderDialog({ id: group.folderId, name: group.folderName }) : handleDeleteFolder({ id: group.folderId, name: group.folderName })">
                   <el-button text size="small" @click.stop>
                     <el-icon><MoreFilled /></el-icon>
                   </el-button>
                   <template #dropdown>
                     <el-dropdown-menu>
-                      <el-dropdown-item command="edit">编辑</el-dropdown-item>
-                      <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
+                      <el-dropdown-item command="rename">重命名</el-dropdown-item>
+                      <el-dropdown-item command="delete" divided>删除目录</el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>
               </div>
-            </div>
+              <div
+                v-for="kb in group.items"
+                :key="kb.id"
+                class="kb-item"
+                :class="{ active: currentKnowledgeBase?.id === kb.id }"
+                @click="selectKnowledgeBase(kb.id)"
+              >
+                <div class="kb-icon">
+                  <el-icon><Folder /></el-icon>
+                </div>
+                <div class="kb-info">
+                  <div class="kb-name">{{ kb.name }}</div>
+                  <div class="kb-stats">
+                    <span>{{ kb.documentCount }} 文档</span>
+                    <span>{{ kb.vectorCount }} 向量</span>
+                  </div>
+                </div>
+                <div class="kb-actions" @click.stop>
+                  <el-dropdown trigger="click" @command="handleKbAction($event, kb)">
+                    <el-button text size="small" @click.stop>
+                      <el-icon><MoreFilled /></el-icon>
+                    </el-button>
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item command="edit">编辑</el-dropdown-item>
+                        <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
+                </div>
+              </div>
+            </template>
           </div>
         </el-scrollbar>
       </div>
@@ -328,12 +351,40 @@
             请先在设置中添加提供商并启用 Embedding 模型
           </div>
         </el-form-item>
+        <el-form-item label="所属目录">
+          <el-select v-model="createForm.folderId" clearable placeholder="未分类" style="width: 100%">
+            <el-option v-for="f in kbFolders" :key="f.id" :label="f.name" :value="f.id" />
+          </el-select>
+          <div class="form-tip">按目录分组组织知识库（如 it 行业、能源行业）；留空为未分类</div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showCreateDialog = false">取消</el-button>
         <el-button type="primary" :loading="isLoading" @click="handleCreateKnowledgeBase">
           创建
         </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 目录管理对话框（新建/重命名） -->
+    <el-dialog
+      v-model="folderDialogVisible"
+      :title="folderDialogMode === 'rename' ? '重命名目录' : '新建目录'"
+      width="420px"
+      :close-on-click-modal="false"
+    >
+      <el-form label-width="80px" @submit.prevent>
+        <el-form-item label="目录名称">
+          <el-input
+            v-model="folderNameInput"
+            placeholder="如：it 行业、能源行业"
+            @keyup.enter="handleSaveFolder"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="folderDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleSaveFolder">保存</el-button>
       </template>
     </el-dialog>
 
@@ -369,6 +420,11 @@
               :label="m.name" :value="m.providerConfigId + '::' + m.id" />
           </el-select>
           <div class="rerank-hint">检索后按相关度重排（需提供商含 rerank 类型模型）</div>
+        </el-form-item>
+        <el-form-item label="所属目录">
+          <el-select v-model="editForm.folderId" clearable placeholder="未分类" style="width: 100%">
+            <el-option v-for="f in kbFolders" :key="f.id" :label="f.name" :value="f.id" />
+          </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -568,6 +624,7 @@ import {
   Plus,
   FolderOpened,
   Folder,
+  FolderAdd,
   MoreFilled,
   Search,
   Upload,
@@ -788,6 +845,94 @@ const addingWebpage = ref(false)
 // 编辑的知识库
 const editingKb = ref<KnowledgeBase | null>(null)
 
+// ==================== 知识库目录（分组/分类，如 it 行业、能源行业） ====================
+const kbFolders = ref<Array<{ id: string; name: string; parentId?: string | null }>>([])
+const folderLoading = ref(false)
+const folderDialogVisible = ref(false)
+const folderDialogMode = ref<'create' | 'rename'>('create')
+const folderEditingId = ref<string | null>(null)
+const folderNameInput = ref('')
+
+/** 加载目录列表 */
+async function loadFolders(): Promise<void> {
+  folderLoading.value = true
+  try {
+    const resp = await window.electronAPI.knowledgeBase.listFolders()
+    if (resp.success) kbFolders.value = resp.data ?? []
+  } catch (e: any) {
+    console.error('[KnowledgeBase] 加载目录失败', e)
+  } finally {
+    folderLoading.value = false
+  }
+}
+
+/** 知识库按目录分组：folderId -> 组内列表（未分类 = null 键） */
+const kbByFolder = computed<Array<{ folderId: string | null; folderName: string; items: KnowledgeBase[] }>>(() => {
+  const groups = new Map<string | null, KnowledgeBase[]>()
+  for (const kb of knowledgeBases.value) {
+    const key = kb.folderId ?? null
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(kb)
+  }
+  const out: Array<{ folderId: string | null; folderName: string; items: KnowledgeBase[] }> = []
+  for (const folder of kbFolders.value) {
+    const items = groups.get(folder.id) ?? []
+    out.push({ folderId: folder.id, folderName: folder.name, items })
+  }
+  const uncategorized = groups.get(null) ?? []
+  if (uncategorized.length > 0) out.push({ folderId: null, folderName: '未分类', items: uncategorized })
+  return out
+})
+
+function openCreateFolderDialog(): void {
+  folderDialogMode.value = 'create'
+  folderEditingId.value = null
+  folderNameInput.value = ''
+  folderDialogVisible.value = true
+}
+
+function openRenameFolderDialog(folder: { id: string; name: string }): void {
+  folderDialogMode.value = 'rename'
+  folderEditingId.value = folder.id
+  folderNameInput.value = folder.name
+  folderDialogVisible.value = true
+}
+
+async function handleSaveFolder(): Promise<void> {
+  const name = folderNameInput.value.trim()
+  if (!name) { ElMessage.warning('请输入目录名称'); return }
+  if (folderDialogMode.value === 'rename' && folderEditingId.value) {
+    const resp = await window.electronAPI.knowledgeBase.renameFolder(folderEditingId.value, name)
+    if (resp.success) ElMessage.success('已重命名')
+    else ElMessage.error(resp.error ?? '重命名失败')
+  } else {
+    const resp = await window.electronAPI.knowledgeBase.createFolder(name)
+    if (resp.success) ElMessage.success('目录已创建')
+    else ElMessage.error(resp.error ?? '创建失败')
+  }
+  folderDialogVisible.value = false
+  await loadFolders()
+}
+
+async function handleDeleteFolder(folder: { id: string; name: string }): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      `删除目录「${folder.name}」后，其中的知识库将移到「未分类」（知识库与数据不受影响）。确定删除？`,
+      '删除目录',
+      { type: 'warning' },
+    )
+    const resp = await window.electronAPI.knowledgeBase.deleteFolder(folder.id)
+    if (resp.success) {
+      ElMessage.success('目录已删除')
+      await Promise.all([loadFolders(), loadKnowledgeBases()])
+    } else {
+      ElMessage.error(resp.error ?? '删除失败')
+    }
+  } catch {
+    // 取消删除
+  }
+}
+
 // 创建表单校验规则
 const createRules: FormRules = {
   name: [
@@ -815,7 +960,8 @@ function handleKbAction(action: string, kb: KnowledgeBase): void {
     editingKb.value = kb
     editForm.value = {
       name: kb.name,
-      description: kb.description || ''
+      description: kb.description || '',
+      folderId: kb.folderId ?? null
     }
     showEditDialog.value = true
     // D2：回填 rerank 选择值
@@ -1061,6 +1207,11 @@ async function handleAddWebpage(): Promise<void> {
     addingWebpage.value = false
   }
 }
+
+// 加载知识库目录（与 composable 内的知识库列表加载并行）
+onMounted(() => {
+  void loadFolders()
+})
 </script>
 
 <style scoped>
@@ -1085,6 +1236,38 @@ async function handleAddWebpage(): Promise<void> {
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--el-border-color-light);
+}
+
+.sidebar-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* 目录分组标题 */
+.kb-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.kb-group-name {
+  font-weight: 600;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-group-count {
+  background: var(--el-fill-color-light);
+  border-radius: 8px;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 16px;
 }
 
 .sidebar-header h3 {

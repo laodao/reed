@@ -35,6 +35,7 @@ import type {
   SplitStrategy,
   DocumentSource,
   AddDocumentResult,
+  KnowledgeBaseFolder,
 } from '@shared/types/knowledge-base.types'
 
 // 常量配置
@@ -190,13 +191,70 @@ export class KnowledgeBaseService {
     }
   }
 
+  // ==================== 知识库目录（分组/分类） ====================
+
+  async listKbFolders(): Promise<{ success: boolean; data?: KnowledgeBaseFolder[]; error?: string }> {
+    try {
+      const db = getCoreDatabaseManager()
+      if (!db.kbFolders) return { success: false, error: '数据库未初始化' }
+      return { success: true, data: await db.kbFolders.listAll() }
+    } catch (e: any) {
+      return { success: false, error: e.message }
+    }
+  }
+
+  async createKbFolder(name: string): Promise<{ success: boolean; data?: KnowledgeBaseFolder; error?: string }> {
+    try {
+      const db = getCoreDatabaseManager()
+      if (!db.kbFolders) return { success: false, error: '数据库未初始化' }
+      const trimmed = name?.trim()
+      if (!trimmed) return { success: false, error: '目录名称不能为空' }
+      const existing = await db.kbFolders.listAll()
+      if (existing.some(f => f.name === trimmed)) {
+        return { success: false, error: '目录名称已存在' }
+      }
+      return { success: true, data: await db.kbFolders.create({ name: trimmed }) }
+    } catch (e: any) {
+      return { success: false, error: e.message }
+    }
+  }
+
+  async renameKbFolder(id: string, name: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const db = getCoreDatabaseManager()
+      if (!db.kbFolders) return { success: false, error: '数据库未初始化' }
+      const trimmed = name?.trim()
+      if (!trimmed) return { success: false, error: '目录名称不能为空' }
+      await db.kbFolders.update(id, { name: trimmed })
+      return { success: true }
+    } catch (e: any) {
+      return { success: false, error: e.message }
+    }
+  }
+
+  /** 删除目录：目录下的知识库移到"未分类"（folder_id=null），不级联删库 */
+  async deleteKbFolder(id: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const db = getCoreDatabaseManager()
+      if (!db.kbFolders || !db.knowledgeBases) return { success: false, error: '数据库未初始化' }
+      await db.kbFolders.delete(id)
+      // 目录内知识库归未分类
+      const list = await db.knowledgeBases.findAll()
+      for (const kb of list) {
+        if (kb.folderId === id) await db.knowledgeBases.update(kb.id, { folderId: null })
+      }
+      return { success: true }
+    } catch (e: any) {
+      return { success: false, error: e.message }
+    }
+  }
+
   async deleteKnowledgeBase(id: string): Promise<{ success: boolean; error?: string }> {
     try {
       const db = getCoreDatabaseManager()
       if (!db.knowledgeBases || !db.kbDocuments || !db.kbChunks || !db.kbVectors || !db.kbInvertedIndex) {
         return { success: false, error: '数据库未初始化' }
       }
-
       // 删除文件
       const dataPath = getPathProvider().getDataPath()
       const kbDir = path.join(dataPath, 'knowledge-base', id)

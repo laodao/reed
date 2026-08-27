@@ -21,6 +21,7 @@ import { VoiceRepository } from '@core/database/repositories/voice.repository'
 import { ClonedVoiceRepository } from '@core/database/repositories/cloned-voice.repository'
 import { DesignedVoiceRepository } from '@core/database/repositories/designed-voice.repository'
 import { KnowledgeBaseRepository } from '@core/database/repositories/knowledge-base.repository'
+import { KbFolderRepository } from '@core/database/repositories/kb-folder.repository'
 import { KbDocumentRepository } from '@core/database/repositories/kb-document.repository'
 import { KbChunkRepository } from '@core/database/repositories/kb-chunk.repository'
 import { KbVectorRepository } from '@core/database/repositories/kb-vector.repository'
@@ -142,6 +143,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
   public clonedVoices: ClonedVoiceRepository | null = null
   public designedVoices: DesignedVoiceRepository | null = null
   public knowledgeBases: KnowledgeBaseRepository | null = null
+  public kbFolders: KbFolderRepository | null = null
   public kbDocuments: KbDocumentRepository | null = null
   public kbChunks: KbChunkRepository | null = null
   public kbVectors: KbVectorRepository | null = null
@@ -683,6 +685,11 @@ export class DatabaseManager implements ICoreDatabaseManager {
       '@core/database/migrations/create-kb-qa-pairs'
     )
     await createKbQaPairs(this.dataSource)
+    // 知识库目录：kb_folders 表 + knowledge_bases.folder_id（幂等，双语种）
+    const { createKbFolders } = await import(
+      '@core/database/migrations/create-kb-folders'
+    )
+    await createKbFolders(this.dataSource)
     // 应用模块：apps / app_sessions 表（幂等，双语种；消息复用 messages 无需建表）
     const { createAppsTables } = await import(
       '@core/database/migrations/create-apps-tables'
@@ -4244,6 +4251,7 @@ export class DatabaseManager implements ICoreDatabaseManager {
     this.clonedVoices = new ClonedVoiceRepository(this.dataSource)
     this.designedVoices = new DesignedVoiceRepository(this.dataSource)
     this.knowledgeBases = new KnowledgeBaseRepository(this.dataSource)
+    this.kbFolders = new KbFolderRepository(this.dataSource)
     this.kbDocuments = new KbDocumentRepository(this.dataSource)
     this.kbChunks = new KbChunkRepository(this.dataSource)
     // KbVectorRepository 使用 LanceDB，不再需要 SQLite 连接

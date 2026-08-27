@@ -32,6 +32,7 @@ export class KnowledgeBaseRepository extends BaseRepository<
       embeddingDimension: e.embeddingDimension,
       embeddingConfig: e.embeddingConfig || undefined,
       rerankConfig: e.rerankConfig || undefined,
+      folderId: e.folderId ?? null,
       documentCount: e.documentCount,
       vectorCount: e.vectorCount,
       totalSize: e.totalSize,
@@ -68,6 +69,7 @@ export class KnowledgeBaseRepository extends BaseRepository<
       embeddingProvider: provider,
       embeddingDimension: request.embeddingDimension,
       embeddingConfig: configString,
+      folderId: request.folderId ?? null,
       documentCount: 0,
       vectorCount: 0,
       totalSize: 0,
@@ -96,6 +98,10 @@ export class KnowledgeBaseRepository extends BaseRepository<
     }
     if (request.rerankConfig !== undefined) {
       existing.rerankConfig = request.rerankConfig ?? null
+      changed = true
+    }
+    if (request.folderId !== undefined) {
+      existing.folderId = request.folderId ?? null
       changed = true
     }
 

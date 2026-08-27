@@ -26,6 +26,7 @@ import { KbDocumentRepository } from '@core/database/repositories/kb-document.re
 import { KbChunkRepository } from '@core/database/repositories/kb-chunk.repository'
 import { KbVectorRepository } from '@core/database/repositories/kb-vector.repository'
 import { KbQaPairRepository } from '@core/database/repositories/kb-qa-pair.repository'
+import { KbFolderRepository } from '@core/database/repositories/kb-folder.repository'
 import { AppRepository } from '@core/database/repositories/app.repository'
 import { AppSessionRepository } from '@core/database/repositories/app-session.repository'
 import { AppSessionMessageRepository } from '@core/database/repositories/app-session-message.repository'
@@ -128,6 +129,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   designedVoices: DesignedVoiceRepository | null
   // 知识库
   knowledgeBases: KnowledgeBaseRepository | null
+  kbFolders: KbFolderRepository | null
   kbDocuments: KbDocumentRepository | null
   kbChunks: KbChunkRepository | null
   kbInvertedIndex: KbInvertedIndexRepository | null
@@ -238,6 +240,7 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.designedVoices = new DesignedVoiceRepository(ds)
 
     this.knowledgeBases = new KnowledgeBaseRepository(ds)
+    this.kbFolders = new KbFolderRepository(ds)
     this.kbDocuments = new KbDocumentRepository(ds)
     this.kbChunks = new KbChunkRepository(ds)
     this.kbInvertedIndex = new KbInvertedIndexRepository(ds)
