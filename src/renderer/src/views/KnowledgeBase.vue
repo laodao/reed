@@ -100,45 +100,52 @@
 
       <!-- 已选择知识库时显示 -->
       <template v-else>
-        <!-- 知识库标题栏 -->
+        <!-- 知识库标题栏（含统计信息） -->
         <div class="main-header">
           <div class="header-left">
-            <h2>{{ currentKnowledgeBase?.name }}</h2>
+            <div class="header-title-row">
+              <h2>{{ currentKnowledgeBase?.name }}</h2>
+              <div class="header-stats">
+                <span class="header-stat"><b>{{ currentKnowledgeBase?.documentCount || 0 }}</b> 文档</span>
+                <span class="header-stat"><b>{{ currentKnowledgeBase?.vectorCount || 0 }}</b> 向量</span>
+                <span class="header-stat"><b>{{ formatFileSize(currentKnowledgeBase?.totalSize || 0) }}</b> 总大小</span>
+              </div>
+            </div>
             <span v-if="currentKnowledgeBase?.description" class="description">
               {{ currentKnowledgeBase.description }}
             </span>
           </div>
           <div class="header-right">
-            <!-- 检索对文档与 QA 两个数据面都有效（QA 命中直出、未命中走文档 RAG），保留在标题栏 -->
+            <!-- 检索对文档与 QA 两个数据面都有效（QA 命中直出、未命中走文档 RAG） -->
             <el-button @click="openSearchPanel = true">
               <el-icon><Search /></el-icon>
               检索知识库
             </el-button>
-            <!-- 添加网页 / 上传文档 是文档向操作，已移入「文档」tab 区（见文档列表头部） -->
+            <!-- 添加网页 / 上传文档 是文档向操作，在「文档」tab 区头部 -->
           </div>
         </div>
 
-        <!-- 统计信息 -->
-        <div class="stats-bar">
-          <div class="stat-item">
-            <span class="stat-value">{{ currentKnowledgeBase?.documentCount || 0 }}</span>
-            <span class="stat-label">文档</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-value">{{ currentKnowledgeBase?.vectorCount || 0 }}</span>
-            <span class="stat-label">向量</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-value">{{ formatFileSize(currentKnowledgeBase?.totalSize || 0) }}</span>
-            <span class="stat-label">总大小</span>
-          </div>
+        <!-- 数据面页签：文档 / QA 问答对 -->
+        <div class="data-tabs">
+          <button
+            type="button"
+            class="data-tab"
+            :class="{ active: activeDataTab === 'docs' }"
+            @click="activeDataTab = 'docs'"
+          >
+            文档
+            <span class="tab-count">{{ documents.length }}</span>
+          </button>
+          <button
+            type="button"
+            class="data-tab"
+            :class="{ active: activeDataTab === 'qa' }"
+            @click="activeDataTab = 'qa'"
+          >
+            QA 问答对
+            <span class="tab-count">{{ qaPairs.length }}</span>
+          </button>
         </div>
-
-        <!-- D1：文档 / QA 问答对 两个数据面切换 -->
-        <el-radio-group v-model="activeDataTab" size="small" style="margin-bottom: 12px">
-          <el-radio-button value="docs">文档</el-radio-button>
-          <el-radio-button value="qa">QA 问答对</el-radio-button>
-        </el-radio-group>
 
         <!-- 文档列表 -->
         <div v-show="activeDataTab === 'docs'" class="document-section">
@@ -1395,13 +1402,38 @@ onMounted(() => {
 }
 
 .header-left h2 {
-  margin: 0 0 4px 0;
+  margin: 0;
   font-size: 20px;
 }
 
-.header-left .description {
+/* 标题 + 统计信息同行 */
+.header-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.header-stats {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  font-size: 13px;
   color: var(--el-text-color-secondary);
-  font-size: 14px;
+}
+
+.header-stat b {
+  color: var(--el-color-primary);
+  font-weight: 600;
+  font-size: 15px;
+  margin-right: 2px;
+}
+
+.header-left .description {
+  display: block;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  margin-top: 4px;
 }
 
 .header-right {
@@ -1409,30 +1441,53 @@ onMounted(() => {
   gap: 12px;
 }
 
-/* 统计栏 */
-.stats-bar {
-  padding: 16px 24px;
-  background-color: var(--el-bg-color);
+/* 数据面页签（文档 / QA 问答对） */
+.data-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 24px;
   border-bottom: 1px solid var(--el-border-color-light);
-  display: flex;
-  gap: 32px;
+  background: var(--el-bg-color);
 }
 
-.stat-item {
+.data-tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  cursor: pointer;
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 14px;
+  font-size: 14px;
+  color: var(--el-text-color-secondary);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.2s, border-color 0.2s;
 }
 
-.stat-value {
-  font-size: 24px;
-  font-weight: 600;
+.data-tab:hover {
   color: var(--el-color-primary);
 }
 
-.stat-label {
+.data-tab.active {
+  color: var(--el-color-primary);
+  font-weight: 600;
+  border-bottom-color: var(--el-color-primary);
+}
+
+.tab-count {
+  font-size: 11px;
+  background: var(--el-fill-color-light);
+  border-radius: 8px;
+  padding: 0 6px;
+  line-height: 16px;
   color: var(--el-text-color-secondary);
-  font-size: 14px;
+}
+
+.data-tab.active .tab-count {
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
 }
 
 /* 文档区域 */
