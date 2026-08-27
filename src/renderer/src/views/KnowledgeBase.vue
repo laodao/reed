@@ -109,18 +109,12 @@
             </span>
           </div>
           <div class="header-right">
+            <!-- 检索对文档与 QA 两个数据面都有效（QA 命中直出、未命中走文档 RAG），保留在标题栏 -->
             <el-button @click="openSearchPanel = true">
               <el-icon><Search /></el-icon>
               检索知识库
             </el-button>
-            <el-button @click="showAddWebpageDialog = true">
-              <el-icon><Link /></el-icon>
-              添加网页
-            </el-button>
-            <el-button type="primary" @click="selectAndUploadFiles">
-              <el-icon><Upload /></el-icon>
-              上传文档
-            </el-button>
+            <!-- 添加网页 / 上传文档 是文档向操作，已移入「文档」tab 区（见文档列表头部） -->
           </div>
         </div>
 
@@ -151,6 +145,16 @@
           <div class="section-header">
             <h3>文档列表</h3>
             <span class="doc-count">共 {{ documentCount }} 个文档</span>
+            <div class="section-actions">
+              <el-button size="small" @click="showAddWebpageDialog = true">
+                <el-icon><Link /></el-icon>
+                添加网页
+              </el-button>
+              <el-button size="small" type="primary" @click="selectAndUploadFiles">
+                <el-icon><Upload /></el-icon>
+                上传文档
+              </el-button>
+            </div>
           </div>
 
           <el-table
@@ -258,7 +262,7 @@
           <div class="section-header">
             <h3>QA 问答对</h3>
             <span class="doc-count">共 {{ qaPairs.length }} 条（命中即直出答案，未命中走文档 RAG）</span>
-            <div style="display: flex; gap: 8px">
+            <div class="section-actions">
               <el-button size="small" type="primary" @click="openQaDialog()">新增问答</el-button>
               <el-button size="small" @click="qaImportInput?.click()">导入 xlsx</el-button>
               <el-button size="small" @click="handleExportQa">导出 xlsx</el-button>
@@ -1447,6 +1451,12 @@ onMounted(() => {
 
 .section-header h3 {
   margin: 0;
+}
+
+.section-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
 }
 
 .doc-count {
