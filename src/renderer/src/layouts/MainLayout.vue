@@ -406,9 +406,8 @@ watch(
     inset: 0;
     pointer-events: none;
 
-    // 对话框、抽屉等需要可交互
+    // 对话框、消息框需要可交互 + 居中
     .el-dialog,
-    .el-drawer,
     .el-message-box {
       pointer-events: auto;
       position: absolute !important;
@@ -417,6 +416,17 @@ watch(
       top: 50% !important;
       left: 50% !important;
       transform: translate(-50%, -50%);
+    }
+    // 抽屉（Drawer）保持自身方向定位（direction="rtl" 贴右 / ttb 贴顶），
+    // 不做居中——否则 el-drawer 会被上面的 translate(-50%,-50%) 顶成居中弹窗。
+    // 只重置居中用的 top/left/transform，保留 right/bottom 让 .el-drawer.rtl 等方向类生效。
+    .el-drawer {
+      pointer-events: auto;
+      position: absolute !important;
+      margin: 0 !important;
+      top: auto !important;
+      left: auto !important;
+      transform: none !important;
     }
   }
 }
