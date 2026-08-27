@@ -111,6 +111,7 @@
  */
 import { reactive, computed, ref, watch, nextTick } from 'vue'
 import type { WorkflowStartInput } from '@shared/types/workflow.types'
+import { toPlainData } from '../../utils/plain-data'
 
 const props = defineProps<{
   inputs: WorkflowStartInput[]
@@ -378,10 +379,10 @@ function hasModel(keys: WorkflowStartInput[]): boolean {
 
 /** 拉取启用 Provider 列表，按各字段 modelTypes 过滤模型；同时按默认 Provider 预填默认值 */
 async function loadModelProviders(): Promise<void> {
-  const api = (window as never as { electronAPI: { providerConfig: { list: () => Promise<{ success: boolean; configs?: Array<Record<string, any>> }> } } }).electronAPI.providerConfig
+  const api = (window as never as { electronAPI: { providerConfig: { list: () => Promise<{ success: boolean; data?: Array<Record<string, any>> }> } } }).electronAPI.providerConfig
   try {
     const resp = await api.list()
-    const list: Array<Record<string, any>> = resp.success ? (resp.configs ?? []) : []
+    const list: Array<Record<string, any>> = resp.success ? (resp.data ?? []) : []
     const enabled = list.filter(c => c.isEnabled !== false && c.isEnabled !== 0)
     // 全局候选（不按字段过滤，字段粒度在 currentModelOptions 过滤）；保留模型 type 供匹配
     modelProviders.value = enabled.map(c => ({
@@ -567,7 +568,12 @@ function getValues(): Record<string, unknown> {
       out[item.key] = values[item.key]
     }
   }
-  return out
+  // 关键：values / modelSelections / listChecked 均为 Vue reactive，从中取出的
+  // 数组与对象（多选 sourceIds、文件对象、list-check 的 items 等）仍是 Proxy，
+  // Electron IPC（V8 structured clone）无法克隆 Proxy，直接传给 startRun /
+  // reviewDecide 会抛 "An object could not be cloned"。统一经 toPlainData
+  // 转回普通 JSON 数据后再跨进程传输。
+  return toPlainData(out)
 }
 
 defineExpose({ getValues, isValid, setFileUploadContext })

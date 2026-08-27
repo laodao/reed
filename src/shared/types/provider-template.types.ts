@@ -219,10 +219,12 @@ export interface ProviderTemplateListResponse {
 
 /**
  * IPC 响应类型 - 配置列表
+ * 遵循统一契约 { success, data, error }（此前误用 configs 字段，消费端被迫
+ * `(resp as any).configs` 打补丁——已统一为 data）
  */
 export interface ProviderConfigListResponse {
   success: boolean
-  configs?: UserProviderConfig[]
+  data?: UserProviderConfig[]
   error?: string
 }
 

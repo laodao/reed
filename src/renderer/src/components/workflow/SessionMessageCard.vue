@@ -66,6 +66,7 @@
  */
 import { ref, computed, watch } from 'vue'
 import RunInputForm from '@/components/workflow/RunInputForm.vue'
+import { sanitizeHtml } from '@/utils/sanitize-html'
 import { WORKFLOW_SESSION_CARDS as CARDS } from '@shared/types/app.types'
 import type { Message } from '@shared/types/message.types'
 
@@ -103,7 +104,7 @@ const reviewPayloadText = computed(() => {
   return readable.map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`).join('\n\n')
 })
 
-/** 送审内容 markdown 渲染（与 report 卡片同源） */
+/** 送审内容 markdown 渲染（与 report 卡片同源）；marked 透传原始 HTML，经 sanitizeHtml 消毒 */
 const renderedReviewPayload = ref('')
 watch(
   reviewPayloadText,
@@ -112,9 +113,9 @@ watch(
     if (!text) return
     try {
       const { marked } = await import('marked')
-      renderedReviewPayload.value = await marked.marked(text, { gfm: true, breaks: true, async: true })
+      renderedReviewPayload.value = sanitizeHtml(await marked.marked(text, { gfm: true, breaks: true, async: true }))
     } catch {
-      renderedReviewPayload.value = text
+      renderedReviewPayload.value = sanitizeHtml(text)
     }
   },
   { immediate: true },
@@ -160,7 +161,7 @@ function decideWithForm(): void {
   })
 }
 
-// ---- report markdown 内联渲染（marked，异步；失败回退纯文本） ----
+// ---- report markdown 内联渲染（marked，异步；失败回退纯文本；输出消毒） ----
 const renderedMd = ref('')
 watch(
   card,
@@ -169,9 +170,9 @@ watch(
     if (c?.card !== CARDS.report) return
     try {
       const { marked } = await import('marked')
-      renderedMd.value = await marked.marked(c.markdown, { gfm: true, breaks: true, async: true })
+      renderedMd.value = sanitizeHtml(await marked.marked(c.markdown, { gfm: true, breaks: true, async: true }))
     } catch {
-      renderedMd.value = c.markdown
+      renderedMd.value = sanitizeHtml(c.markdown)
     }
   },
   { immediate: true },

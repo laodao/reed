@@ -192,8 +192,8 @@ export function useChat() {
       if (!providerConfigId) {
         // 获取提供商配置列表
         const response = await window.electronAPI.providerConfig.list()
-        if (response.success && response.configs) {
-          const enabledConfigs = response.configs.filter((c: any) => c.isEnabled)
+        if (response.success && response.data) {
+          const enabledConfigs = response.data.filter((c: any) => c.isEnabled)
           if (enabledConfigs.length > 0) {
             // 优先使用默认提供商
             const defaultConfig = enabledConfigs.find((c: any) => c.isDefault) || enabledConfigs[0]

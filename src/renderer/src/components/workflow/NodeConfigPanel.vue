@@ -103,8 +103,8 @@ async function loadDynamicOptions() {
   if (fields.value.some(f => f.type === 'model-pair')) {
     try {
       const resp = await api.providerConfig.list()
-      // 通道返回形状是 { success, configs }（apiKey 已脱敏）
-      const list: any[] = (resp as any).configs ?? []
+      // 通道返回形状是 { success, data }（apiKey 已脱敏）
+      const list: any[] = (resp as any).data ?? []
       if (resp.success && Array.isArray(list)) {
         const nodeType: string = wfNode.value.type
         const allowed = NODE_MODEL_TYPES[nodeType] ?? ['text', 'chat', 'multimodal', 'audio', 'image', 'embedding', 'rerank']
@@ -117,7 +117,7 @@ async function loadDynamicOptions() {
               .filter((m: any) => !m.type || allowed.includes(m.type))
               .map((m: any) => ({ label: m.name || m.id, value: m.id })),
           }))
-          .filter(p => p.models.length > 0 || true) // 无模型的 Provider 仍可选（引擎有 fallback 链）
+          // 无模型的 Provider 仍可选（引擎有 fallback 链）——不做 models 过滤
       }
     } catch (e) {
       console.warn('[WorkflowEditor] Provider 列表加载失败', e)

@@ -1003,8 +1003,8 @@ const loadTemplates = async () => {
 const loadProviderConfigs = async () => {
   try {
     const result = await window.electronAPI.providerConfig.list()
-    if (result.success && result.configs) {
-      providerConfigs.value = result.configs
+    if (result.success && result.data) {
+      providerConfigs.value = result.data
     }
   } catch (error) {
     console.error('加载提供商配置失败:', error)
@@ -1113,8 +1113,8 @@ const loadSearchEngineTemplates = async () => {
 const loadSearchEngineConfigs = async () => {
   try {
     const result = await window.electronAPI.searchEngine.list()
-    if (result.success && result.configs) {
-      searchEngineConfigs.value = result.configs
+    if (result.success && result.data) {
+      searchEngineConfigs.value = result.data
     }
   } catch (error) {
     console.error('加载搜索引擎配置失败:', error)

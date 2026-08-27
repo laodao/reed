@@ -16,7 +16,18 @@
  * 注意：串行不损失吞吐——SQLite 写本来就是单写者，所谓"并发"只是交错。
  */
 
+import { AsyncLocalStorage } from 'async_hooks'
 import type { DataSource, QueryRunner } from 'typeorm'
+
+/**
+ * 事务重入标记：包装 DataSource.transaction，在事务回调执行期间置位。
+ *
+ * 背景：仓库层存在"transaction(async () => { this.scoped.save(...) })"反模式——
+ * 回调忽略事务 manager，内部走全局 EntityManager → 新建 QueryRunner（本门代理后
+ * txnDepth=0）→ 排队等待外层事务持有的锁 → 外层 await 内层 → 确定性死锁挂起。
+ * 本标记让"事务内调用全局 manager"在门内被立即识别并抛明确错误，而不是永久挂起。
+ */
+const txnAls = new AsyncLocalStorage<boolean>()
 
 /** 互斥锁：acquire 排队（FIFO），release 放行下一个 */
 class Mutex {
@@ -62,6 +73,14 @@ function gateQueryRunner(runner: QueryRunner, mutex: Mutex): QueryRunner {
           return (...args: unknown[]) => {
             // 事务内直通（已持锁，不再排队——避免自锁）
             if (txnDepth > 0) return (target.query as (...a: unknown[]) => Promise<unknown>)(...args)
+            // 死锁防护：当前异步链正处在一个事务回调内（外层事务持锁），
+            // 此时调用全局 manager 会新建 runner 排队等外层锁 → 永久挂起。
+            // 抛明确错误指导改用回调 manager（transaction(manager => ...)）。
+            if (txnAls.getStore()) {
+              return Promise.reject(
+                new Error('SQLite 串行门：事务回调内禁止调用全局 manager/仓库方法（会死锁）。请改用 transaction(async (manager) => { manager.getRepository(...) })')
+              )
+            }
             return mutex.runExclusive(() => (target.query as (...a: unknown[]) => Promise<unknown>)(...args))
           }
         case 'startTransaction':
@@ -76,6 +95,10 @@ function gateQueryRunner(runner: QueryRunner, mutex: Mutex): QueryRunner {
                 throw e
               }
               return
+            }
+            // 同上：事务回调内再开新事务（全局 manager 的写入路径）→ 死锁，直接报错
+            if (txnAls.getStore()) {
+              throw new Error('SQLite 串行门：事务回调内禁止再次开启事务（请使用回调 manager 的 getRepository 操作）')
             }
             releaseLock = await mutex.acquire()
             txnDepth = 1
@@ -120,6 +143,15 @@ function gateQueryRunner(runner: QueryRunner, mutex: Mutex): QueryRunner {
 export function installSqliteSerialGate(ds: DataSource): void {
   const dialect = (ds.options as { type?: string }).type
   if (dialect !== 'sqlite' && dialect !== 'better-sqlite3') return
+
+  // 包装 transaction：回调执行期间置 ALS 标记（门内据此识别"事务内调用全局 manager"）
+  const origTransaction = ds.transaction.bind(ds)
+  ds.transaction = ((...args: unknown[]) => {
+    const cb = args[args.length - 1] as (manager?: unknown) => Promise<unknown>
+    const wrapped = (manager?: unknown) => txnAls.run(true, () => cb(manager))
+    const newArgs = args.length > 1 ? [...args.slice(0, -1), wrapped] : [wrapped]
+    return origTransaction(...(newArgs as never))
+  }) as typeof ds.transaction
 
   const mutex = new Mutex()
   const original = ds.createQueryRunner.bind(ds)

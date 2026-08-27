@@ -71,7 +71,7 @@ async function handleListConfigs(_event: any): Promise<ProviderConfigListRespons
   try {
     const dbManager = getCoreDatabaseManager()
     if (!dbManager.providerConfigs) {
-      return { success: true, configs: [] }
+      return { success: true, data: [] }
     }
 
     const configs = await dbManager.providerConfigs.getAll()
@@ -83,7 +83,7 @@ async function handleListConfigs(_event: any): Promise<ProviderConfigListRespons
       accessKeySecret: config.accessKeySecret ? '******' : undefined
     }))
 
-    return { success: true, configs: safeConfigs }
+    return { success: true, data: safeConfigs }
   } catch (error) {
     console.error('获取配置列表失败:', error)
     return {

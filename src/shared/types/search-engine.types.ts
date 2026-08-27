@@ -159,11 +159,11 @@ export interface SearchEngineTemplateListResponse {
 }
 
 /**
- * IPC 响应类型 - 配置列表
+ * IPC 响应类型 - 配置列表（统一 { success, data, error } 契约）
  */
 export interface SearchEngineConfigListResponse {
   success: boolean
-  configs?: UserSearchEngineConfig[]
+  data?: UserSearchEngineConfig[]
   error?: string
 }
 

@@ -329,6 +329,7 @@ import { ref, onMounted, computed, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, EditPen, FolderOpened, CopyDocument, Delete } from '@element-plus/icons-vue'
 import { toFileUrl, toImageUrl, toVideoUrl } from '@/utils/asset-url'
+import { sanitizeHtml } from '@/utils/sanitize-html'
 import {
   ASSET_CATEGORY_LABELS, ASSET_PREVIEW_MODES, ASSET_PREVIEW_MODE_LABELS,
   type AssetCategory, type AssetCategoryDef, type AssetPreviewMode, type AssetPreviewResult, type AssetPreviewTemplateOption, type AssetRecord,
@@ -452,10 +453,11 @@ function isMarkdownAsset(asset: AssetRecord | null | undefined): boolean {
   return /(^|\n)\s*(#{1,6}\s|[-*+]\s|\d+\.\s|>\s|\||```)/m.test(asset.textContent) || asset.textContent.length > 80
 }
 
-/** markdown 渲染为 HTML（卡片缩略/大预览共用） */
+/** markdown 渲染为 HTML（卡片缩略/大预览共用）；marked 透传原始 HTML（可被提示注入污染），
+ *  输出经 sanitizeHtml 消毒后再进 v-html（剥脚本/事件属性/javascript: URL） */
 function renderMdPreview(md: string): string {
   try {
-    return marked.parse(md, { gfm: true, breaks: true }) as string
+    return sanitizeHtml(marked.parse(md, { gfm: true, breaks: true }) as string)
   } catch {
     return `<pre>${escapeHtmlMd(md)}</pre>`
   }
@@ -799,7 +801,7 @@ const templateDraft = ref<{ name: string; subCategory: string; content: string }
 
 const renderedTemplate = computed(() => {
   try {
-    return marked.parse(templateDraft.value.content || '*(空白模板)*') as string
+    return sanitizeHtml(marked.parse(templateDraft.value.content || '*(空白模板)*') as string)
   } catch {
     return '<p>模板渲染失败</p>'
   }

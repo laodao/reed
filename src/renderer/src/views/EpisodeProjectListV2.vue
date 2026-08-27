@@ -296,8 +296,8 @@ async function loadProviderConfigs(): Promise<void> {
     providerTemplates.value = templatesResponse.templates
   }
   const response = await window.electronAPI.providerConfig.list()
-  if (response.success && response.configs) {
-    providerConfigs.value = response.configs.filter((c: UserProviderConfig) => c.isEnabled)
+  if (response.success && response.data) {
+    providerConfigs.value = response.data.filter((c: UserProviderConfig) => c.isEnabled)
   }
 }
 

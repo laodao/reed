@@ -505,8 +505,8 @@ async function loadSearchEngines(): Promise<void> {
     if (templatesRes.success && templatesRes.templates) {
       searchEngineTemplates.value = templatesRes.templates
     }
-    if (configsRes.success && configsRes.configs) {
-      searchEngineConfigs.value = configsRes.configs
+    if (configsRes.success && configsRes.data) {
+      searchEngineConfigs.value = configsRes.data
     }
     if (disabledRes.success && disabledRes.disabledEngines) {
       disabledQuickEngines.value = disabledRes.disabledEngines

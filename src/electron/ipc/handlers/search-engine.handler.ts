@@ -81,7 +81,7 @@ async function handleListConfigs(_event: any): Promise<SearchEngineConfigListRes
 
     return {
       success: true,
-      configs: safeConfigs
+      data: safeConfigs
     }
   } catch (error) {
     console.error('获取搜索引擎配置列表失败:', error)
