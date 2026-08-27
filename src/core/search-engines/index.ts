@@ -30,6 +30,7 @@ export const SEARCH_ENGINE_TEMPLATES: SearchEngineTemplate[] = [
   // ========== 网页抓取型搜索引擎 ==========
   {
     id: 'baidu',
+    siteUrl: 'https://www.baidu.com',
     name: '百度',
     description: '中国最大的搜索引擎，适合中文内容搜索',
     category: 'web-scrape',
@@ -44,6 +45,7 @@ export const SEARCH_ENGINE_TEMPLATES: SearchEngineTemplate[] = [
   },
   {
     id: 'bing-web',
+    siteUrl: 'https://www.bing.com',
     name: '必应',
     description: '微软必应搜索引擎，支持中英文搜索',
     category: 'web-scrape',
@@ -58,6 +60,7 @@ export const SEARCH_ENGINE_TEMPLATES: SearchEngineTemplate[] = [
   },
   {
     id: 'google-web',
+    siteUrl: 'https://www.google.com',
     name: 'Google',
     description: '全球最大的搜索引擎，搜索结果丰富',
     category: 'web-scrape',
@@ -74,6 +77,7 @@ export const SEARCH_ENGINE_TEMPLATES: SearchEngineTemplate[] = [
   // ========== API 型搜索引擎 ==========
   {
     id: 'zhipu',
+    siteUrl: 'https://www.zhipuai.cn',
     name: '智谱 AI',
     description: '智谱 AI 联网搜索，返回结构化结果',
     category: 'api',
@@ -101,6 +105,7 @@ export const SEARCH_ENGINE_TEMPLATES: SearchEngineTemplate[] = [
   },
   {
     id: 'tavily',
+    siteUrl: 'https://tavily.com',
     name: 'Tavily',
     description: '专为 AI 设计的搜索 API，返回精准结果',
     category: 'api',
@@ -128,6 +133,7 @@ export const SEARCH_ENGINE_TEMPLATES: SearchEngineTemplate[] = [
   },
   {
     id: 'perplexity',
+    siteUrl: 'https://www.perplexity.ai',
     name: 'Perplexity',
     description: 'Perplexity 联网搜索（sonar-pro），OpenAI 兼容接口',
     category: 'api',
@@ -163,6 +169,7 @@ export const SEARCH_ENGINE_TEMPLATES: SearchEngineTemplate[] = [
   },
   {
     id: 'deepseek-web',
+    siteUrl: 'https://www.deepseek.com',
     name: 'DeepSeek 联网',
     description: 'DeepSeek 联网搜索（OpenAI 兼容端点）',
     category: 'api',
@@ -198,6 +205,7 @@ export const SEARCH_ENGINE_TEMPLATES: SearchEngineTemplate[] = [
   },
   {
     id: 'bocha',
+    siteUrl: 'https://www.bochaai.com',
     name: '博查 AI 搜索',
     description: '博查 AI 联网搜索 API，中文搜索质量高',
     category: 'api',
@@ -215,6 +223,7 @@ export const SEARCH_ENGINE_TEMPLATES: SearchEngineTemplate[] = [
   },
   {
     id: 'searxng',
+    siteUrl: 'https://docs.searxng.org',
     name: 'SearXNG',
     description: '自托管元搜索引擎，无需 API Key（需配置实例地址）',
     category: 'api',
@@ -243,6 +252,7 @@ export const SEARCH_ENGINE_TEMPLATES: SearchEngineTemplate[] = [
   },
   {
     id: 'bing-api',
+    siteUrl: 'https://www.bing.com',
     name: '必应搜索 API',
     description: '微软必应 Web Search API（Azure），返回结构化结果',
     category: 'api',
@@ -260,6 +270,7 @@ export const SEARCH_ENGINE_TEMPLATES: SearchEngineTemplate[] = [
   },
   {
     id: 'google-cse',
+    siteUrl: 'https://www.google.com',
     name: 'Google 自定义搜索',
     description: 'Google Custom Search JSON API——需 API Key + Search Engine ID（cx）',
     category: 'api',

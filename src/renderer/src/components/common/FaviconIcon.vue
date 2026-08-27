@@ -41,7 +41,13 @@ const boxStyle = computed(() => ({
 }))
 
 async function load(): Promise<void> {
-  if (!props.url || loadFailed.value) return
+  if (!props.url) {
+    // 无站点 URL（如自定义模板）：直接显示兜底图标
+    loadFailed.value = true
+    loading.value = false
+    return
+  }
+  if (loadFailed.value) return
   loading.value = true
   try {
     const api = (window as unknown as { electronAPI?: { favicon?: { get(url: string): Promise<any> } } })
@@ -49,6 +55,7 @@ async function load(): Promise<void> {
     const resp = await api?.favicon?.get(props.url)
     if (resp?.success && resp.data?.dataUrl) {
       dataUrl.value = resp.data.dataUrl
+      loading.value = false
       return
     }
   } catch (e) {
