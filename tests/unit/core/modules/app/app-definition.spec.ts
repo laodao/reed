@@ -137,15 +137,21 @@ describe('AppDefinitionService：渠道与启停', () => {
 })
 
 describe('AppDefinitionService：分享令牌', () => {
-  it('enableShare 生成 64 位 hex 且幂等（重复启用原样）；disableShare 清除', async () => {
+  it('enableShare 返回 64 位 hex 明文，落库只存 hash；重复启用轮换；disableShare 清除', async () => {
     const { apps, service } = setup()
-    apps.rows.set('a1', { id: 'a1', userId: 'u1', channelSession: 1, enabled: 1, shareToken: null })
+    apps.rows.set('a1', { id: 'a1', userId: 'u1', channelSession: 1, enabled: 1, shareToken: null, shareTokenHash: null })
     const r1 = await service.enableShare('a1')
     expect(r1!.shareToken).toMatch(/^[0-9a-f]{64}$/)
+    // 明文只在响应；库中存 hash（且不等于明文）
+    expect(apps.rows.get('a1').shareToken).toBeNull()
+    expect(apps.rows.get('a1').shareTokenHash).toMatch(/^[0-9a-f]{64}$/)
+    expect(apps.rows.get('a1').shareTokenHash).not.toBe(r1!.shareToken)
+    // 重复启用 → 轮换新令牌（旧链接失效）
     const r2 = await service.enableShare('a1')
-    expect(r2!.shareToken).toBe(r1!.shareToken)
+    expect(r2!.shareToken).not.toBe(r1!.shareToken)
     const d = await service.disableShare('a1')
     expect(d!.shareToken).toBeNull()
+    expect(d!.shareTokenHash).toBeNull()
   })
 
   it('getByShareToken：channel_share=0 或 enabled=0 → null；合法 → 返回', async () => {

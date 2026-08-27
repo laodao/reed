@@ -10,6 +10,7 @@ import type { AppRecord } from '@shared/types/app.types'
 import { AppEntity } from '../entities/app.entity'
 import { BaseRepository } from '../base-repository'
 import { getCurrentUserId } from '@core/context/user-context'
+import { createHash } from 'node:crypto'
 
 export interface CreateAppInput {
   name: string
@@ -36,6 +37,8 @@ export interface UpdateAppInput {
   channelShare?: number
   channelApi?: number
   shareToken?: string | null
+  /** 分享令牌 sha256 hash（安全整改：新令牌不明文落库） */
+  shareTokenHash?: string | null
   enabled?: number
   lastRunAt?: Date | null
   /** 来源工作流的发布版本快照（createFromWorkflow 版本演进时更新） */
@@ -79,6 +82,7 @@ export class AppRepository extends BaseRepository<AppEntity, AppRecord> {
       channelShare: e.channelShare,
       channelApi: e.channelApi,
       shareToken: e.shareToken,
+      shareTokenHash: e.shareTokenHash,
       enabled: e.enabled,
       isBuiltin: e.isBuiltin === 1,
       lastRunAt: e.lastRunAt,
@@ -206,6 +210,7 @@ export class AppRepository extends BaseRepository<AppEntity, AppRecord> {
     if (patch.channelShare !== undefined) partial.channelShare = patch.channelShare
     if (patch.channelApi !== undefined) partial.channelApi = patch.channelApi
     if (patch.shareToken !== undefined) partial.shareToken = patch.shareToken
+    if (patch.shareTokenHash !== undefined) partial.shareTokenHash = patch.shareTokenHash
     if (patch.enabled !== undefined) partial.enabled = patch.enabled
     if (patch.lastRunAt !== undefined) partial.lastRunAt = patch.lastRunAt
     if (patch.sourceVersion !== undefined) partial.sourceVersion = patch.sourceVersion
@@ -227,9 +232,11 @@ export class AppRepository extends BaseRepository<AppEntity, AppRecord> {
    * ⚠️ 跨租户例外：调用方拿到 userId 后必须 runWithUserAsync(该 userId)。
    */
   async findByShareToken(token: string): Promise<AppRecord | null> {
+    // hash 优先（新令牌），明文兼容（历史存量令牌）
+    const hash = createHash('sha256').update(token).digest('hex')
     const e = await this.repo
       .createQueryBuilder('a')
-      .where('a.share_token = :token', { token })
+      .where('a.share_token_hash = :hash OR a.share_token = :token', { hash, token })
       .andWhere('a.enabled = 1')
       .andWhere('a.channel_share = 1')
       .getOne()

@@ -65,9 +65,13 @@ export class AppEntity {
   @Column({ name: 'channel_api', type: 'integer', default: 1 })
   channelApi!: number
 
-  /** 分享令牌（256bit hex；NULL=未分享） */
+  /** 分享令牌（256bit hex；NULL=未分享）。⚠️ 安全整改：新令牌只存 share_token_hash，本列仅历史兼容 */
   @Column({ name: 'share_token', type: 'varchar', nullable: true })
   shareToken!: string | null
+
+  /** 分享令牌 sha256 hash（新启用分享时存此列，不明文落库） */
+  @Column({ name: 'share_token_hash', type: 'varchar', nullable: true })
+  shareTokenHash!: string | null
 
   /** 应用启停（停用=全部渠道失效） */
   @Column({ name: 'enabled', type: 'integer', default: 1 })

@@ -65,6 +65,8 @@ export interface AppRecord {
   channelShare: number
   channelApi: number
   shareToken: string | null
+  /** 分享令牌 sha256 hash（安全整改：新令牌不明文落库；渲染端不消费此字段） */
+  shareTokenHash?: string | null
   enabled: number
   /** 内置应用（全局共享、禁删禁改，允许复制为自有） */
   isBuiltin?: boolean

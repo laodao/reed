@@ -172,17 +172,21 @@ export class AppDefinitionService {
     return this.apps.update(id, update)
   }
 
-  /** 启用分享：生成 256bit 令牌（幂等——已分享则原样返回） */
+  /** 启用分享：生成 256bit 令牌，**只存 sha256 hash**（不明文落库）；明文仅在响应返回。
+   *  已分享时轮换新令牌（旧链接失效，与分享即授权语义一致）。 */
   async enableShare(id: string): Promise<AppRecord | null> {
     const app = await this.apps.findById(id)
     if (!app) return null
-    if (app.shareToken) return app
-    return this.apps.update(id, { shareToken: crypto.randomBytes(32).toString('hex') })
+    const token = crypto.randomBytes(32).toString('hex')
+    const hash = crypto.createHash('sha256').update(token).digest('hex')
+    const updated = await this.apps.update(id, { shareToken: null, shareTokenHash: hash })
+    if (!updated) return null
+    return { ...updated, shareToken: token }
   }
 
-  /** 停用分享：清令牌（历史链接即刻失效） */
+  /** 停用分享：清令牌 hash 与历史明文（历史链接即刻失效） */
   async disableShare(id: string): Promise<AppRecord | null> {
-    return this.apps.update(id, { shareToken: null })
+    return this.apps.update(id, { shareToken: null, shareTokenHash: null })
   }
 
   /** 应用启停 */

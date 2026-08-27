@@ -29,6 +29,7 @@ export async function createAppsTables(ds: DataSource): Promise<void> {
         channel_share   INTEGER DEFAULT 0,
         channel_api     INTEGER DEFAULT 1,
         share_token     ${vc},
+        share_token_hash ${vc},
         enabled         INTEGER DEFAULT 1,
         last_run_at     ${dt},
         created_at      ${dt},
@@ -66,8 +67,11 @@ export async function createAppsTables(ds: DataSource): Promise<void> {
   await ensureColumn(ds, 'apps', 'category', vc, isPg)
   await ensureColumn(ds, 'apps', 'tags', vc, isPg)
   await ensureColumn(ds, 'apps', 'pinned', isPg ? 'integer DEFAULT 0' : 'INTEGER DEFAULT 0', isPg)
+  // 安全整改（2026-08-27）：分享令牌只存 sha256 hash（share_token_hash），不明文落库
+  await ensureColumn(ds, 'apps', 'share_token_hash', vc, isPg)
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_apps_category ON apps (category)`)
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_apps_pinned ON apps (pinned)`)
+  await ds.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_apps_share_token_hash ON apps (share_token_hash)`)
 }
 
 /** 幂等补列（SQLite: PRAGMA 查列；PG: information_schema） */
