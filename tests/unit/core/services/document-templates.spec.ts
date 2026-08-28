@@ -67,6 +67,24 @@ describe('DOCUMENT_TEMPLATES 注册表', () => {
     expect(html).toContain('background:#0b1220')
     expect(html).toContain('color:#e2e8f0')
   })
+
+  it('通用模板（generic）为卡片式排版：章节卡片 + 要点引用卡 + 彩色表头（长图不再纯黑白）', async () => {
+    const html = await renderTemplateHtml('# 标题\n\n## 🔥 爆点速览\n\n> 要点一\n\n| 时间 | 事件 |\n| --- | --- |\n| 1月 | 爆料 |', {
+      template: DOCUMENT_TEMPLATES.generic,
+      title: '吃瓜',
+    })
+    // 章节标题卡片（底色块 + 左彩条）
+    expect(html).toContain('h2 { font-size:19px; color:#b03a2e')
+    expect(html).toContain('border-left:5px solid #e8604c')
+    // 要点引用卡浅色底色
+    expect(html).toContain('background:#fdeeea')
+    // 表格彩色表头
+    expect(html).toContain('th { background:#e8604c')
+    // markdown 结构与 emoji 正常渲染（> 引用块 → blockquote 卡片）
+    expect(html).toContain('<blockquote>')
+    expect(html).toContain('🔥 爆点速览')
+    expect(html).toContain('<th>时间</th>')
+  })
 })
 
 describe('排版模板选项与内置应用一致性', () => {
@@ -98,14 +116,18 @@ describe('排版模板选项与内置应用一致性', () => {
     }
   })
 
-  it('内置吃瓜工作流 start 输入的模板选项全部在注册表中（动态 templateId 防漂移）', () => {
+  it('内置吃瓜工作流：风格由提示词驱动（无 template 下拉），report1 用通用排版 templateId 有效', () => {
     const raw = JSON.parse(readFileSync(resolve(__dirname, '../../../../src/core/database/migrations/builtin-apps/gossip-event-report.json'), 'utf-8')) as { graph: WorkflowGraph }
     const start = raw.graph.nodes.find(n => n.type === 'start')
-    const templateInput = (start?.config?.inputs as Array<{ key?: string; options?: Array<{ value?: string }> }>)?.find(i => i.key === 'template')
-    expect(templateInput?.options?.length ?? 0).toBeGreaterThanOrEqual(3)
-    for (const opt of templateInput?.options ?? []) {
-      expect(DOCUMENT_TEMPLATES[opt.value ?? ''], `start 模板选项 ${opt.value} 未注册`).toBeDefined()
-    }
+    const inputs = (start?.config?.inputs as Array<{ key?: string; type?: string }>) ?? []
+    // 通用化：风格走 stylePrompt 提示词，不再绑定预设视觉模板下拉
+    expect(inputs.some(i => i.key === 'stylePrompt' && i.type === 'textarea')).toBe(true)
+    expect(inputs.some(i => i.key === 'template')).toBe(false)
+    // 长图仍用通用排版（generic），其 templateId 必须在注册表中（防漂移）
+    const report = raw.graph.nodes.find(n => n.type === 'report-image')
+    const tid = (report?.config as { templateId?: string })?.templateId
+    expect(tid).toBe('generic')
+    expect(DOCUMENT_TEMPLATES[tid as string]).toBeDefined()
   })
 
   it('report-image 目录缺省配置 templateId=generic 有效', () => {

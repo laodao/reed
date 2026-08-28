@@ -51,18 +51,30 @@ function zhWeek(): string {
 }
 
 export const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
-  /** 通用文档（日记/报告缺省） */
+  /** 通用文档（日记/报告缺省）——卡片式通用排版：暖橙章节卡片、要点引用卡、彩色表头（内容 icon 由提示词驱动） */
   generic: {
     id: 'generic',
     name: '通用文档',
     width: 800,
     css: `
-      :root { --accent:#409eff; --accent-soft:#ecf5ff; --line:#e4e7ed; }
-      body { font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; padding: 32px 40px; font-size: 15px; }
-      h1 { font-size: 24px; border-bottom: 2px solid var(--line); padding-bottom: 10px; }
-      h2 { font-size: 19px; margin-top: 26px; }
-      h3 { font-size: 16px; }
-      ${BASE_CSS}`,
+      ${BASE_CSS}
+      :root { --accent:#e8604c; --accent-soft:#fdeeea; --line:#f2ddd8; }
+      body { font-family:'Microsoft YaHei','PingFang SC',sans-serif; background:#fff; color:#33343d; padding:32px 40px; font-size:15px; }
+      h1 { font-size:24px; color:#2c3e50; border-bottom:2px solid var(--line); padding-bottom:10px; }
+      /* 章节标题卡片：白底圆角卡 + 左彩条 + 浅色底（章节 icon/emoji 由正文内容提供） */
+      h2 { font-size:19px; color:#b03a2e; margin-top:28px; padding:10px 14px; background:#fff; border:1px solid var(--line); border-left:5px solid #e8604c; border-radius:10px; font-weight:700; box-shadow:0 1px 3px rgba(232,96,76,.10); }
+      h3 { font-size:16px; color:#d3543f; margin-top:18px; }
+      /* 要点卡片（> 引用块）：浅底圆角 + 左彩条 */
+      blockquote { border:1px solid #f2ddd8; border-left:5px solid #e8604c; background:#fdeeea; color:#6b3a38; border-radius:0 10px 10px 0; padding:12px 16px; }
+      /* 表格：彩色表头 + 浅边框 */
+      table { border-radius:8px; overflow:hidden; }
+      th { background:#e8604c; color:#fff; border-color:#e8604c; }
+      td { border-color:#f2ddd8; }
+      strong { color:#c0392b; }
+      a { color:#d3543f; }
+      /* 列表：圆点间距增强可读性 */
+      ul { padding-left:1.3em; }
+      li { margin:4px 0; }`,
     header: title => `<h1 style="margin-top:0">${escapeHtml(title)}</h1>`,
   },
 

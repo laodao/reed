@@ -109,4 +109,32 @@ start（事件关键词/报告模板/搜索引擎/抓取篇数/吃瓜偏好/知�
 - [x] 实跑（百度引擎，两轮成功）
 - [x] 来源链接修复并重跑验证
 - [x] 向用户展示报告 markdown + 长图
-- [ ] 提交并推送（含上一批未提交的循环错误策略/社交过滤修复）
+- [x] 提交并推送（含上一批未提交的循环错误策略/社交过滤修复）
+
+---
+
+## V2+ 演进记录（2026-08-28 下午）
+
+### 模板/渲染演进（已提交 a69eef2a ~ eccc20e4）
+- 港式小报重做（gossipHK）、信息图信息卡结构（gossipInfographic）、民国报纸风（gossipMinguo）、滚动条根治（applyLongImageFix 纯函数 + 双测量高度 + li 溢出补漏）。
+- **通用化**（用户拍板"纯提示词+通用排版"）：风格从预设视觉模板下拉改为 `stylePrompt` 提示词驱动；吃瓜工作流 report1 固定用 generic 通用排版；DOCUMENT_TEMPLATES 14 套保留供其它工作流/用户自选。
+- **繁简开关**：start.traditional（默认 false=简体），gen1/copyN/script1 三处都遵守。
+- **多产出扩展**：parallel 三流 = 长图流（gen1→report1→save1/saveKb1→saveImg1）+ 文案循环流（loop2 按 start.platforms → copyN → saveCopyN）+ 脚本流（script1 口播稿+分镜表+字幕音效 → saveScript1）→ merge2 汇合 → notify。
+- 实测跑通 `wfrun_1787934579564_anj5zisve`（384s）：长图/公众号文案/小红书文案/短视频脚本/文字报告 5 项全部入库。
+
+### 本轮：长图美化 + 文案加长（用户反馈"太素/纯黑白"、"文案太短"）
+1. **gen1 提示词加"长图排版结构（视觉要求）"**：每个 ## 标题带 emoji 图标（🔥📅👥🗣️⚔️💬🧭🔗）、关键要点/金句用 `> 引用块`（渲染成带底色卡片）、时间线/人物/表态/来源用 markdown 表格（表头彩色）、重要数字/人名加粗、禁输出 HTML。
+2. **generic 模板 CSS 升级为卡片式通用排版**：暖橙红系（--accent:#e8604c）——h2 白底圆角卡 + 左彩条 + 浅底、blockquote 浅底圆角要点卡、表格彩色表头（th 橙底白字）、strong/a 配色。markdown 无法表达颜色，配色必须 CSS 配合（这正是"通用排版"本体，其它用 generic 的工作流同步受益）。
+3. **copyN 提示词按平台给明确篇幅**：公众号 1500-2500 字（5-8 分节，禁两三段）、小红书 600-1000 字（来龙去脉讲清 + 3-6 标签）、微博 150 字内、通用 800-1500 字；prompt 要求"扩写细节、串联因果、补充背景，写足字数再收尾"。
+4. **测试**：gossip-event-report.spec.ts（gen1 排版断言 + copyN 字数断言）、document-templates.spec.ts（修复通用化遗留失败测试：start 已无 template 下拉 → 断言 stylePrompt + report1=generic；新增 generic 卡片配色回归断言）。
+5. **发现 template_version=0**：吃瓜定义曾被标记"用户接管"（用户打开保存过），启动迁移不再覆盖 → 通过官方业务路径 `wf:save-draft` 将最新 graph 写入 draft_graph（手动触发运行优先用 draftGraph），保持接管状态不变。
+
+### 本轮实测（`wfrun_1787936184312_ootnvwv7s`，398s，28 节点全 succeeded）
+- **长图** `workflow-reports/wfrun_1787936184312_ootnvwv7s_report1.png`（1474×6240，1.08MB）→ 资产 `asset_1787936526600_jstccrowf`：
+  - gen1 输出含 emoji 章节图标（🔥 爆点速览 / 📅 事件时间线…）、`> 引用块` 要点卡、时间线表格、🔸 前缀列表、加粗导语；
+  - 像素采样验证：暖橙/红 5.76% + 浅粉卡片底 5.86%——配色真实渲染，不再是纯黑白。
+- **公众号文案** `asset_1787936446098_blmj4o06w`：1890 字（1509 汉字，此前 1209）——吸睛标题+导语+## 01/02/03 分节+金句+结尾，达 1500-2500 区间。
+- **小红书文案** `asset_1787936525446_rugd1tlod`：994 字（742 汉字）——emoji 分行 + 编号段落 + 话题标签，达 600-1000 区间。
+- 吃瓜报告 `asset_1787936526596_3j0aj44ev`、短视频脚本 `asset_1787936582801_fwjnr3qp3` 同步入库。
+
+

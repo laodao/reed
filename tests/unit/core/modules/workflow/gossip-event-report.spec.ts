@@ -82,6 +82,10 @@ describe('吃瓜热点事件分析报告 工作流', () => {
     expect(String(copy.prompt)).toContain('{{analyze1.parsed}}')
     expect(String(copy.systemPrompt)).toContain('{{loop2.item}}')
     expect(String(copy.systemPrompt)).toContain('{{start.stylePrompt}}')
+    // 文案按平台有明确篇幅要求（防"太短"）
+    expect(String(copy.systemPrompt)).toContain('1500-2500')
+    expect(String(copy.systemPrompt)).toContain('600-1000')
+    expect(String(copy.prompt)).toContain('扩写细节')
     const script = configOf('script1')
     expect(String(script.prompt)).toContain('{{analyze1.parsed}}')
     expect(String(script.systemPrompt)).toContain('{{start.videoDuration}}')
@@ -89,12 +93,18 @@ describe('吃瓜热点事件分析报告 工作流', () => {
     expect(configOf('saveScript1').subCategory).toBe('短视频脚本')
   })
 
-  it('gen1 提示词：按风格提示词驱动（无预设模板条目）+ 含繁简规则', () => {
+  it('gen1 提示词：按风格提示词驱动（无预设模板条目）+ 含繁简规则 + 长图排版结构（icon/卡片/表格）', () => {
     const gen = configOf('gen1')
     const sp = String(gen.systemPrompt)
     expect(sp).toContain('{{start.stylePrompt}}')
     expect(sp).toContain('{{start.traditional}}')
     expect(sp).toContain('默认用简体字')
+    // 长图视觉要求：emoji 章节图标、引用块要点卡片、表格、禁 HTML（配色由通用排版 CSS 承担）
+    expect(sp).toContain('长图排版结构')
+    expect(sp).toContain('emoji')
+    expect(sp).toContain('引用块')
+    expect(sp).toContain('markdown 表格')
+    expect(sp).toContain('HTML')
     // 已移除预设视觉模板条目（通用化）
     expect(sp).not.toContain('gossipMinguo')
     expect(sp).not.toContain('gossipInfographic')
