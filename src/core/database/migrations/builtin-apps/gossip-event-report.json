@@ -148,6 +148,13 @@
         "config": { "content": "{{report1.markdown}}", "kind": "text", "category": "text", "subCategory": "吃瓜报告", "name": "{{start.event}}吃瓜报告-{{sys.today}}", "tags": "吃瓜,{{start.event}}" }
       },
       {
+        "id": "saveImg1",
+        "type": "save-asset",
+        "name": "长图存资产库",
+        "position": { "x": 2620, "y": 620 },
+        "config": { "content": "{{report1.filePath}}", "kind": "file", "category": "image", "subCategory": "吃瓜长图", "name": "{{start.event}}吃瓜长图-{{sys.today}}", "tags": "吃瓜,{{start.event}}" }
+      },
+      {
         "id": "notify1",
         "type": "app-notify",
         "name": "完成通知",
@@ -177,8 +184,9 @@
       { "id": "e12", "sourceNodeId": "cond1", "targetNodeId": "saveKb1", "kind": "branch", "branchId": "hasKb" },
       { "id": "e13", "sourceNodeId": "cond1", "targetNodeId": "save1", "kind": "branch", "branchId": "noKb" },
       { "id": "e14", "sourceNodeId": "saveKb1", "targetNodeId": "save1", "kind": "normal" },
-      { "id": "e15", "sourceNodeId": "save1", "targetNodeId": "notify1", "kind": "normal" },
-      { "id": "e16", "sourceNodeId": "notify1", "targetNodeId": "end", "kind": "normal" }
+      { "id": "e15", "sourceNodeId": "save1", "targetNodeId": "saveImg1", "kind": "normal" },
+      { "id": "e16", "sourceNodeId": "saveImg1", "targetNodeId": "notify1", "kind": "normal" },
+      { "id": "e17", "sourceNodeId": "notify1", "targetNodeId": "end", "kind": "normal" }
     ]
   },
   "triggers": [],
