@@ -20,6 +20,17 @@
             { "key": "maxItems", "label": "最多抓取报道篇数", "type": "number", "defaultValue": 6 },
             { "key": "request", "label": "吃瓜偏好（可选）", "type": "textarea", "required": false, "defaultValue": "", "help": "如：重点讲感情纠葛细节 / 客观中立不要带节奏" },
             { "key": "traditional", "label": "报告用繁体字（默认简体）", "type": "boolean", "required": false, "defaultValue": false, "help": "关闭=简体（默认）；开启=全文繁体" },
+            { "key": "platforms", "label": "自媒体平台（多选，每个平台生成一份文案）", "type": "select", "required": false, "multi": true, "defaultValue": ["公众号"], "options": [
+              { "label": "公众号", "value": "公众号" },
+              { "label": "小红书", "value": "小红书" },
+              { "label": "微博", "value": "微博" },
+              { "label": "通用", "value": "通用" }
+            ] },
+            { "key": "videoDuration", "label": "短视频时长（秒）", "type": "select", "required": false, "defaultValue": 60, "options": [
+              { "label": "30 秒", "value": 30 },
+              { "label": "60 秒", "value": 60 },
+              { "label": "90 秒", "value": 90 }
+            ] },
             { "key": "kbId", "label": "知识库（保存报告，可选）", "type": "select-dynamic", "source": "knowledgeBases" },
             { "key": "model", "label": "模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
           ]
@@ -87,6 +98,13 @@
         }
       },
       {
+        "id": "parallel1",
+        "type": "parallel",
+        "name": "并行产出（长图/文案/脚本）",
+        "position": { "x": 1700, "y": 400 },
+        "config": {}
+      },
+      {
         "id": "gen1",
         "type": "llm-chat",
         "name": "按风格提示词生成报告",
@@ -147,6 +165,58 @@
         "config": { "content": "{{report1.filePath}}", "kind": "file", "category": "image", "subCategory": "吃瓜长图", "name": "{{start.event}}吃瓜长图-{{sys.today}}", "tags": "吃瓜,{{start.event}}" }
       },
       {
+        "id": "loop2",
+        "type": "loop",
+        "name": "逐平台生成文案",
+        "position": { "x": 1840, "y": 120 },
+        "config": { "listExpression": "{{start.platforms}}", "emptyPolicy": "skip", "errorPolicy": "skip" }
+      },
+      {
+        "id": "copyN",
+        "type": "llm-chat",
+        "name": "生成平台文案",
+        "position": { "x": 2000, "y": 120 },
+        "config": {
+          "systemPrompt": "你是自媒体文案编辑，为吃瓜事件按所选平台写文案。当前平台：{{loop2.item}}。\n- 公众号：完整图文长文——吸睛标题、导语、正文分节（## 或加粗）、金句、结尾引导互动；适合公众号图文。\n- 小红书：标题 + emoji 分行短段落 + 结尾标签（#吃瓜 等），口语化、种草式、留互动钩子。\n- 微博：150 字内短文案 + 2-4 个话题词（#…），快节奏、有梗。\n- 通用：中等长度、结构清晰。\n要求：事实/当事人自述/网传严格标注；风格提示词（{{start.stylePrompt}}）若填写则叠加生效；繁简按开关（{{start.traditional}}，true 才繁体）。只输出文案正文，不要解释。",
+          "prompt": "事件：{{start.event}}\n平台：{{loop2.item}}\n风格提示词：{{start.stylePrompt}}\n\n结构化分析：\n{{analyze1.parsed}}\n\n请生成该平台的吃瓜文案 markdown。",
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "saveCopyN",
+        "type": "save-asset",
+        "name": "文案存资产库",
+        "position": { "x": 2160, "y": 120 },
+        "config": { "content": "{{copyN.content}}", "kind": "text", "category": "text", "subCategory": "自媒体文案", "name": "{{start.event}}文案-{{loop2.item}}-{{sys.today}}", "tags": "吃瓜,{{start.event}},{{loop2.item}}" }
+      },
+      {
+        "id": "script1",
+        "type": "llm-chat",
+        "name": "生成短视频脚本",
+        "position": { "x": 2000, "y": 700 },
+        "config": {
+          "systemPrompt": "你是短视频编导。为「{{start.event}}」生成约 {{start.videoDuration}} 秒的竖版短视频脚本，用 markdown 输出：\n1. ## 脚本概览：主题、时长、定位（吃瓜向）\n2. ## 口播稿：按镜头分段（1 钩子开场 → 2 事件核心 → 3 反转/金句 → 4 结尾引导），每段给口播文字\n3. ## 分镜表（表格）：镜头 | 画面 | 口播 | 字幕 | 音效/BGM | 时长(秒)\n4. ## 发布文案与话题标签\n要求：基于素材事实，标注（事实/当事人自述/网传）；风格提示词（{{start.stylePrompt}}）叠加；繁简按开关（{{start.traditional}}，true 才繁体）。只输出脚本 markdown，不要解释。",
+          "prompt": "事件：{{start.event}}\n时长：{{start.videoDuration}} 秒\n\n结构化分析：\n{{analyze1.parsed}}\n\n请生成短视频脚本。",
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "saveScript1",
+        "type": "save-asset",
+        "name": "脚本存资产库",
+        "position": { "x": 2160, "y": 700 },
+        "config": { "content": "{{script1.content}}", "kind": "text", "category": "text", "subCategory": "短视频脚本", "name": "{{start.event}}短视频脚本-{{sys.today}}", "tags": "吃瓜,{{start.event}}" }
+      },
+      {
+        "id": "merge2",
+        "type": "parallel-merge",
+        "name": "汇合产出",
+        "position": { "x": 2600, "y": 400 },
+        "config": { "waitPolicy": "all", "outputMode": "merge" }
+      },
+      {
         "id": "notify1",
         "type": "app-notify",
         "name": "完成通知",
@@ -170,15 +240,25 @@
       { "id": "e6", "sourceNodeId": "loop1", "targetNodeId": "extract1", "kind": "loop-body" },
       { "id": "e7", "sourceNodeId": "extract1", "targetNodeId": "loop1", "kind": "loop-back" },
       { "id": "e8", "sourceNodeId": "loop1", "targetNodeId": "analyze1", "kind": "loop-done" },
-      { "id": "e9", "sourceNodeId": "analyze1", "targetNodeId": "gen1", "kind": "normal" },
-      { "id": "e10", "sourceNodeId": "gen1", "targetNodeId": "report1", "kind": "normal" },
-      { "id": "e11", "sourceNodeId": "report1", "targetNodeId": "cond1", "kind": "normal" },
-      { "id": "e12", "sourceNodeId": "cond1", "targetNodeId": "saveKb1", "kind": "branch", "branchId": "hasKb" },
-      { "id": "e13", "sourceNodeId": "cond1", "targetNodeId": "save1", "kind": "branch", "branchId": "noKb" },
-      { "id": "e14", "sourceNodeId": "saveKb1", "targetNodeId": "save1", "kind": "normal" },
-      { "id": "e15", "sourceNodeId": "save1", "targetNodeId": "saveImg1", "kind": "normal" },
-      { "id": "e16", "sourceNodeId": "saveImg1", "targetNodeId": "notify1", "kind": "normal" },
-      { "id": "e17", "sourceNodeId": "notify1", "targetNodeId": "end", "kind": "normal" }
+      { "id": "e9", "sourceNodeId": "analyze1", "targetNodeId": "parallel1", "kind": "normal" },
+      { "id": "e10", "sourceNodeId": "parallel1", "targetNodeId": "gen1", "kind": "normal" },
+      { "id": "e11", "sourceNodeId": "gen1", "targetNodeId": "report1", "kind": "normal" },
+      { "id": "e12", "sourceNodeId": "report1", "targetNodeId": "cond1", "kind": "normal" },
+      { "id": "e13", "sourceNodeId": "cond1", "targetNodeId": "saveKb1", "kind": "branch", "branchId": "hasKb" },
+      { "id": "e14", "sourceNodeId": "cond1", "targetNodeId": "save1", "kind": "branch", "branchId": "noKb" },
+      { "id": "e15", "sourceNodeId": "saveKb1", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e16", "sourceNodeId": "save1", "targetNodeId": "saveImg1", "kind": "normal" },
+      { "id": "e17", "sourceNodeId": "saveImg1", "targetNodeId": "merge2", "kind": "normal" },
+      { "id": "e18", "sourceNodeId": "parallel1", "targetNodeId": "loop2", "kind": "normal" },
+      { "id": "e19", "sourceNodeId": "loop2", "targetNodeId": "copyN", "kind": "loop-body" },
+      { "id": "e20", "sourceNodeId": "copyN", "targetNodeId": "saveCopyN", "kind": "normal" },
+      { "id": "e21", "sourceNodeId": "saveCopyN", "targetNodeId": "loop2", "kind": "loop-back" },
+      { "id": "e22", "sourceNodeId": "loop2", "targetNodeId": "merge2", "kind": "loop-done" },
+      { "id": "e23", "sourceNodeId": "parallel1", "targetNodeId": "script1", "kind": "normal" },
+      { "id": "e24", "sourceNodeId": "script1", "targetNodeId": "saveScript1", "kind": "normal" },
+      { "id": "e25", "sourceNodeId": "saveScript1", "targetNodeId": "merge2", "kind": "normal" },
+      { "id": "e26", "sourceNodeId": "merge2", "targetNodeId": "notify1", "kind": "normal" },
+      { "id": "e27", "sourceNodeId": "notify1", "targetNodeId": "end", "kind": "normal" }
     ]
   },
   "triggers": [],

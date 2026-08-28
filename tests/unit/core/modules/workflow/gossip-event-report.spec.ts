@@ -46,6 +46,47 @@ describe('吃瓜热点事件分析报告 工作流', () => {
     const trad = byKey.get('traditional')!
     expect(trad.type).toBe('boolean')
     expect(trad.defaultValue).toBe(false)
+    // 自媒体平台多选 + 视频时长
+    const platforms = byKey.get('platforms')!
+    expect(platforms.type).toBe('select')
+    expect(platforms.multi).toBe(true)
+    expect(platforms.defaultValue).toEqual(['公众号'])
+    const video = byKey.get('videoDuration')!
+    expect(video.type).toBe('select')
+    expect(video.defaultValue).toBe(60)
+  })
+
+  it('并行产出：analyze1 → parallel → 长图流/文案循环/脚本流 → merge2 汇合', () => {
+    expect(byId.has('parallel1')).toBe(true)
+    expect(byId.has('merge2')).toBe(true)
+    const e = graph.edges
+    expect(e.find(x => x.sourceNodeId === 'analyze1' && x.targetNodeId === 'parallel1')).toBeTruthy()
+    // 三条并行分支
+    expect(e.find(x => x.sourceNodeId === 'parallel1' && x.targetNodeId === 'gen1')).toBeTruthy()
+    expect(e.find(x => x.sourceNodeId === 'parallel1' && x.targetNodeId === 'loop2')).toBeTruthy()
+    expect(e.find(x => x.sourceNodeId === 'parallel1' && x.targetNodeId === 'script1')).toBeTruthy()
+    // 文案循环（loop2）：body copyN→saveCopyN，done→merge2
+    const copyLoop = configOf('loop2')
+    expect(copyLoop.listExpression).toBe('{{start.platforms}}')
+    expect(copyLoop.emptyPolicy).toBe('skip')
+    expect(e.find(x => x.sourceNodeId === 'loop2' && x.targetNodeId === 'copyN' && x.kind === 'loop-body')).toBeTruthy()
+    expect(e.find(x => x.sourceNodeId === 'saveCopyN' && x.targetNodeId === 'loop2' && x.kind === 'loop-back')).toBeTruthy()
+    expect(e.find(x => x.sourceNodeId === 'loop2' && x.targetNodeId === 'merge2' && x.kind === 'loop-done')).toBeTruthy()
+    // 三条流都汇合到 merge2，merge2→notify
+    expect(e.filter(x => x.targetNodeId === 'merge2').length).toBe(3)
+    expect(e.find(x => x.sourceNodeId === 'merge2' && x.targetNodeId === 'notify1')).toBeTruthy()
+  })
+
+  it('文案与脚本节点引用分析结果、平台、时长、风格与繁简', () => {
+    const copy = configOf('copyN')
+    expect(String(copy.prompt)).toContain('{{analyze1.parsed}}')
+    expect(String(copy.systemPrompt)).toContain('{{loop2.item}}')
+    expect(String(copy.systemPrompt)).toContain('{{start.stylePrompt}}')
+    const script = configOf('script1')
+    expect(String(script.prompt)).toContain('{{analyze1.parsed}}')
+    expect(String(script.systemPrompt)).toContain('{{start.videoDuration}}')
+    expect(configOf('saveCopyN').subCategory).toBe('自媒体文案')
+    expect(configOf('saveScript1').subCategory).toBe('短视频脚本')
   })
 
   it('gen1 提示词：按风格提示词驱动（无预设模板条目）+ 含繁简规则', () => {
