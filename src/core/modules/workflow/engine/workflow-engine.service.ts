@@ -153,6 +153,17 @@ class ScopeState {
   /** 静默或挂起收敛标记 */
   settledAt: Deferred | null = null
   failed = false
+  /**
+   * 所属循环节点 id（仅循环迭代作用域有值）：用于迭代级错误策略判定——
+   * 循环配置 errorPolicy=skip 时，迭代内节点失败不传播到运行级（不 abort），
+   * 由循环驱动器跳过该迭代继续。
+   */
+  loopOwnerId: string | null = null
+  /**
+   * 该迭代已按循环 errorPolicy=skip 跳过（体内节点失败但循环继续）。
+   * 置位后本 scope 不再视为"未恢复失败"（anyUnrecoveredFailure / anyScopeFailure 跳过）。
+   */
+  iterationSkippedByPolicy = false
 
   constructor(
     /** 作用域键：'root' 或 `${loopNodeId}:${iterationIndex}` */
@@ -297,7 +308,10 @@ class RunExecution {
       return false
     }
     if (check(this.rootScope)) return true
-    for (const scope of this.loopScopes.values()) if (check(scope)) return true
+    for (const scope of this.loopScopes.values()) {
+      if (scope.iterationSkippedByPolicy) continue // 已按 errorPolicy=skip 跳过，不算未恢复失败
+      if (check(scope)) return true
+    }
     return false
   }
 
@@ -1150,6 +1164,25 @@ export class WorkflowEngineService {
       return
     }
 
+    // 迭代级错误策略：循环配置 errorPolicy=skip 时，迭代内节点失败不传播到运行级。
+    // 只标记本迭代失败（停止迭代内后续节点调度）+ 记录失败，不 abort 运行、
+    // 不置 pendingFailureError——循环驱动器据此跳过该迭代继续跑其余迭代。
+    if (scope.loopOwnerId && this.loopErrorPolicy(exec, scope.loopOwnerId) === 'skip') {
+      state.status = 'failed'
+      state.error = error
+      state.completedSeq = ++scope.activationCounter
+      scope.failed = true // 停止本迭代内后续节点（pump 检查 scope.failed）
+      scope.iterationSkippedByPolicy = true // 循环驱动器/失败汇聚据此跳过本迭代
+      await this.deps.nodeRuns.patchNode(exec.input.runId, node.id, state.iterationIndex, {
+        status: WORKFLOW_NODE_RUN_STATUSES.failed,
+        error,
+        finishedAt: new Date(),
+        durationMs: Date.now() - state.startedAtMs,
+      })
+      this.emitNodeStatus(exec, state)
+      return
+    }
+
     // ⚠️ 同步置位（先于下方首个 await）：abort 后漂浮的重入 pump 会立刻跑，
     // 必须让它们能区分"失败中止"与"用户取消"（见 pump 顶部 aborted 分支）
     state.status = 'failed'
@@ -1227,6 +1260,7 @@ export class WorkflowEngineService {
         continue
       }
       const loopScope = new ScopeState(scopeKey, i, bodyInfo.bodySet)
+      loopScope.loopOwnerId = node.id
       loopScope.loopPseudoVars.set(node.id, { item: list[i], index: i, list })
       exec.loopScopes.set(scopeKey, loopScope)
 
@@ -1241,7 +1275,14 @@ export class WorkflowEngineService {
       // 读到的是 running 状态（输出未落），results 汇聚为 null（C1 早报复现）。
       await this.waitScopeSettled(exec, loopScope)
       if (exec.suspended) return // 挂起：resumeSuspended 从本迭代续驱
-      if (loopScope.failed) break
+      if (loopScope.failed) {
+        // 迭代级失败：errorPolicy=skip → 跳过本迭代继续；否则中断循环（fail 策略）
+        if (this.loopErrorPolicy(exec, node.id) === 'skip') {
+          driver.results.push({ error: this.firstIterationError(loopScope), skipped: true })
+          continue
+        }
+        break
+      }
       if (exec.finished) return
 
       driver.results.push(this.collectIterationResult(exec, loopScope, node))
@@ -1249,18 +1290,43 @@ export class WorkflowEngineService {
 
     if (parentScope.failed || exec.finished) return
     if (this.anyScopeFailure(exec)) {
-      // body 存在未恢复失败 → 循环节点失败（走 loop 的 fail 边或运行失败）
+      // body 存在未恢复失败 → 循环节点失败（走 loop 的 fail 边或运行失败）。
+      // 错误信息带上第一个失败节点与原因，便于运行详情直接定位（无需展开节点表）
+      const detail = this.firstLoopFailureDetail(exec)
       await this.handleNodeFailure(
         exec,
         parentScope,
         node,
         state,
-        '循环体内节点失败且未恢复',
+        detail ? `循环体内节点失败且未恢复（${detail}）` : '循环体内节点失败且未恢复',
         false
       )
       return
     }
     await this.completeLoop(exec, parentScope, node, state, driver.results, list)
+  }
+
+  /** 循环迭代作用域内第一个失败节点（未按策略跳过）的 "节点名: 错误" 摘要 */
+  private firstLoopFailureDetail(exec: RunExecution): string | null {
+    for (const scope of exec.loopScopes.values()) {
+      if (scope.iterationSkippedByPolicy) continue
+      for (const st of scope.states.values()) {
+        if (st.status !== WORKFLOW_NODE_RUN_STATUSES.failed) continue
+        const node = exec.nodeById.get(st.nodeId)
+        const name = node?.name ?? st.nodeId
+        const err = st.error ? String(st.error).slice(0, 120) : '未知错误'
+        return `${name}: ${err}`
+      }
+    }
+    return null
+  }
+
+  /** 迭代作用域内第一个失败节点的错误（skip 策略下 results 占位用） */
+  private firstIterationError(scope: ScopeState): string {
+    for (const st of scope.states.values()) {
+      if (st.status === WORKFLOW_NODE_RUN_STATUSES.failed) return st.error ?? '迭代内节点失败'
+    }
+    return '迭代内节点失败'
   }
 
   /** 续驱已推进部分迭代的循环（resumeSuspended 调用） */
@@ -1451,9 +1517,16 @@ export class WorkflowEngineService {
 
   private anyScopeFailure(exec: RunExecution): boolean {
     for (const scope of exec.loopScopes.values()) {
-      if (scope.failed) return true
+      if (scope.failed && !scope.iterationSkippedByPolicy) return true
     }
     return false
+  }
+
+  /** 循环节点的迭代错误策略（缺省 fail=失败即循环失败；skip=跳过失败迭代继续） */
+  private loopErrorPolicy(exec: RunExecution, loopNodeId: string): 'fail' | 'skip' {
+    const loopNode = exec.nodeById.get(loopNodeId)
+    const policy = (loopNode?.config as { errorPolicy?: string } | undefined)?.errorPolicy
+    return policy === 'skip' ? 'skip' : 'fail'
   }
 
   private findScopeOfNode(exec: RunExecution, nodeId: string): ScopeState | null {

@@ -199,6 +199,11 @@ const crawlNewsNode: WorkflowNodeHandler = {
 /**
  * 解析待抓取页面列表：JSON 数组（string[] 或 [{name,url}]）/ 运行时数组 /
  * 逗号换行分隔的 URL 列表；校验 http(s) 前缀并去重。
+ *
+ * 支持嵌套结构展平（LLM 分组输出场景，如「按来源分组，每来源最多 N 个栏目页」）：
+ * - [{ source, items: [{title,url}] }] / [{ source, links: [...] }]：展平所有 items/links
+ * - [{ name, url }] / [{ title, url }]：直接取 url
+ * - string[]：元素即 URL
  */
 export function parseUrlList(raw: unknown): Array<{ name: string; url: string }> {
   const out: Array<{ name: string; url: string }> = []
@@ -209,19 +214,30 @@ export function parseUrlList(raw: unknown): Array<{ name: string; url: string }>
     seen.add(u)
     out.push({ name: name.trim() || u, url: u })
   }
+  const walk = (item: unknown, fallbackName?: string): void => {
+    if (typeof item === 'string') {
+      push(item, item)
+      return
+    }
+    if (!item || typeof item !== 'object') return
+    const o = item as Record<string, unknown>
+    // 嵌套数组优先展平（[{source, items:[...]}] / [{source, links:[...]}] 分组输出）
+    const nested = Array.isArray(o.items) ? o.items : Array.isArray(o.links) ? o.links : null
+    if (nested) {
+      for (const child of nested) walk(child, typeof o.source === 'string' ? o.source : fallbackName)
+      return
+    }
+    if (typeof o.url === 'string') {
+      push(String(o.name ?? o.title ?? fallbackName ?? o.url), o.url)
+    }
+  }
   if (typeof raw === 'string') {
     const trimmed = raw.trim()
     if (!trimmed) return out
     try {
       const parsed = JSON.parse(trimmed)
       if (Array.isArray(parsed)) {
-        for (const item of parsed) {
-          if (typeof item === 'string') push(item, item)
-          else if (item && typeof item === 'object') {
-            const o = item as { name?: unknown; url?: unknown }
-            if (typeof o.url === 'string') push(String(o.name ?? o.url), o.url)
-          }
-        }
+        for (const item of parsed) walk(item)
         return out
       }
     } catch {
@@ -232,13 +248,7 @@ export function parseUrlList(raw: unknown): Array<{ name: string; url: string }>
       if (clean) push(clean, clean)
     }
   } else if (Array.isArray(raw)) {
-    for (const item of raw) {
-      if (typeof item === 'string') push(item, item)
-      else if (item && typeof item === 'object') {
-        const o = item as { name?: unknown; url?: unknown }
-        if (typeof o.url === 'string') push(String(o.name ?? o.url), o.url)
-      }
-    }
+    for (const item of raw) walk(item)
   }
   return out
 }

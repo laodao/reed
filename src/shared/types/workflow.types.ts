@@ -233,6 +233,12 @@ export interface WorkflowNodeConfigMap {
     listExpression: string
     /** 空列表策略：skip=直接走 done 边（输出空 results，默认） | fail=节点失败 */
     emptyPolicy?: 'skip' | 'fail'
+    /**
+     * 迭代错误策略：fail=任一迭代体内节点失败则循环失败（默认，现有行为）
+     * | skip=失败迭代被跳过（results 对应位置记 { error, skipped:true }），
+     * 循环继续跑完其余迭代，最后成功。适用于批量采集等"单条失败不应中断整体"的场景。
+     */
+    errorPolicy?: 'fail' | 'skip'
   }
 
   delay: {

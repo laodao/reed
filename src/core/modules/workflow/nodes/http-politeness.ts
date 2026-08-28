@@ -95,7 +95,13 @@ export async function politeFetch(
       const ms = min + Math.floor(Math.random() * (max - min + 1))
       await sleep(ms)
     }
-    return await fetch(url, init)
+    try {
+      return await fetch(url, init)
+    } catch (e) {
+      // 包装网络错误：附 URL + 底层原因（如 DNS/TLS/超时），供节点错误信息与日志排查
+      const cause = e instanceof Error ? (e.cause instanceof Error ? e.cause.message : e.message) : String(e)
+      throw new Error(`请求失败 ${host}（${cause}）`, { cause: e })
+    }
   } finally {
     throttle.release()
   }

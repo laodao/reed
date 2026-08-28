@@ -278,6 +278,10 @@ const loopNode: WorkflowNodeHandler<any, 'loop'> = {
     if (policy !== undefined && !['skip', 'fail'].includes(policy)) {
       return ['emptyPolicy 只能是 skip 或 fail']
     }
+    const errPolicy = (config as { errorPolicy?: string }).errorPolicy
+    if (errPolicy !== undefined && !['skip', 'fail'].includes(errPolicy)) {
+      return ['errorPolicy 只能是 skip 或 fail']
+    }
     return []
   },
   async execute() {

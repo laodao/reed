@@ -46,6 +46,31 @@ describe('parseUrlList', () => {
     expect(parseUrlList(undefined)).toEqual([])
     expect(parseUrlList('')).toEqual([])
   })
+
+  it('嵌套分组结构展平：[{source, items:[{title,url}]}]（LLM 按来源分组输出）', () => {
+    const raw = JSON.stringify([
+      { source: '来源A', items: [{ title: '栏目1', url: 'https://a.com/col1' }, { title: '栏目2', url: 'https://a.com/col2' }] },
+      { source: '来源B', items: [{ title: '栏目3', url: 'https://b.com/col3' }] },
+    ])
+    expect(parseUrlList(raw)).toEqual([
+      { name: '栏目1', url: 'https://a.com/col1' },
+      { name: '栏目2', url: 'https://a.com/col2' },
+      { name: '栏目3', url: 'https://b.com/col3' },
+    ])
+  })
+
+  it('嵌套 links 键同样展平，且跨分组去重', () => {
+    const raw = [
+      { source: 'A', links: [{ url: 'https://a.com/1' }] },
+      { source: 'B', links: [{ url: 'https://a.com/1' }, { url: 'https://b.com/2' }] },
+    ]
+    expect(parseUrlList(raw).map(u => u.url)).toEqual(['https://a.com/1', 'https://b.com/2'])
+  })
+
+  it('嵌套 items 中 source 用作 name 兜底', () => {
+    const raw = JSON.stringify([{ source: '来源A', items: [{ url: 'https://a.com/col1' }] }])
+    expect(parseUrlList(raw)).toEqual([{ name: '来源A', url: 'https://a.com/col1' }])
+  })
 })
 
 describe('crawl-links handler execute', () => {

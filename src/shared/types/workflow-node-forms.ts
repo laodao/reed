@@ -136,6 +136,14 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
         { label: '节点失败', value: 'fail' },
       ],
     }),
+    T('errorPolicy', '迭代错误策略', {
+      type: 'select',
+      options: [
+        { label: '节点失败（默认）', value: 'fail' },
+        { label: '跳过失败迭代继续', value: 'skip' },
+      ],
+      help: 'skip：迭代体内节点失败时跳过该次迭代（results 对应位置记 { error, skipped:true }），循环继续跑完其余迭代；适合批量采集等单条失败不应中断整体的场景。',
+    }),
   ],
   delay: [
     T('durationMs', '等待时长（毫秒）', { templateHint: true, placeholder: '1000 或 {{start.waitMs}}' }),
@@ -196,7 +204,8 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
   ],
   'web-search': [
     T('query', '搜索关键词', { type: 'textarea', templateHint: true }),
-    T('engineType', '搜索引擎类型', { help: '留空 = 用户默认引擎', group: '参数' }),
+    { key: 'searchConfigId', label: '搜索引擎（已配置）', type: 'select-dynamic', source: 'searchEngineConfigs', group: '参数', help: '选择「设置 → 搜索引擎」中已配置的引擎；留空 = 系统默认引擎' },
+    T('engineType', '搜索引擎类型', { help: '留空 = 按上面的配置/用户默认引擎自动解析', group: '参数' }),
     { key: 'maxResults', label: '结果数量', type: 'number', min: 1, max: 20, group: '参数' },
   ],
   translate: [
@@ -432,6 +441,9 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
         { label: '周报·商务金', value: 'industryWeekly' },
         { label: '周报·墨绿', value: 'industryWeeklyGreen' },
         { label: '周报·深色', value: 'industryWeeklyDark' },
+        { label: '吃瓜·娱乐小报', value: 'gossipTabloid' },
+        { label: '吃瓜·事件梳理', value: 'gossipTimeline' },
+        { label: '吃瓜·公众号文', value: 'gossipArticle' },
       ],
     },
   ],

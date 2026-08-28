@@ -5,7 +5,7 @@
  *              标题与正文段落；标题优先级 h1 > og:title > <title>；无正文容器回退。
  */
 import { describe, it, expect } from 'vitest'
-import { extractArticleContent } from '@core/modules/workflow/nodes/extra-nodes'
+import { extractArticleContent, extractPageLinks } from '@core/modules/workflow/nodes/extra-nodes'
 
 const NEWS_HTML = `<!DOCTYPE html><html><head>
   <title>官网标题 - 示例新闻站</title>
@@ -74,5 +74,46 @@ describe('无正文页面回退', () => {
   it('损坏 HTML 不抛错（回退）', () => {
     const { text } = extractArticleContent('<div>未闭合的标签<p>文字')
     expect(typeof text).toBe('string')
+  })
+})
+
+describe('extractPageLinks 社交/短内容平台过滤', () => {
+  const html = (links: string) => `<html><body>${links}</body></html>`
+  const a = (href: string, title: string) => `<a href="${href}">${title}</a>`
+
+  it('排除 x.com / twitter 推文链接（普通 fetch 无正文，正文采集应跳过）', () => {
+    const out = extractPageLinks(
+      html(a('https://x.com/amir/status/2092786156085899518', '英伟达收购 Hugging Face') +
+          a('https://www.qbitai.com/2026/08/478164.html', '量子位：英伟达AI服务器将涨价15%')),
+      'https://example.com', 50
+    )
+    const urls = out.map(l => l.url)
+    expect(urls).not.toContain('https://x.com/amir/status/2092786156085899518')
+    expect(urls).toContain('https://www.qbitai.com/2026/08/478164.html')
+  })
+
+  it('排除 facebook/instagram/youtube/weibo 等平台链接', () => {
+    const out = extractPageLinks(
+      html(a('https://www.facebook.com/posts/123', 'Facebook 帖子') +
+          a('https://www.instagram.com/p/abc/', 'Instagram 帖子') +
+          a('https://www.youtube.com/watch?v=xyz', 'YouTube 视频') +
+          a('https://weibo.com/123456', '微博') +
+          a('https://spectrum.ieee.org/article', 'IEEE Spectrum 文章')),
+      'https://example.com', 50
+    )
+    const urls = out.map(l => l.url)
+    expect(urls).not.toContain('https://www.facebook.com/posts/123')
+    expect(urls).not.toContain('https://www.instagram.com/p/abc/')
+    expect(urls).not.toContain('https://www.youtube.com/watch?v=xyz')
+    expect(urls).not.toContain('https://weibo.com/123456')
+    expect(urls).toContain('https://spectrum.ieee.org/article')
+  })
+
+  it('正常新闻站链接不受影响', () => {
+    const out = extractPageLinks(
+      html(a('https://news.example.com/story/1', '某媒体深度报道标题足够长')),
+      'https://example.com', 50
+    )
+    expect(out.some(l => l.url === 'https://news.example.com/story/1')).toBe(true)
   })
 })

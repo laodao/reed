@@ -382,9 +382,31 @@ const webExtractNode: WorkflowNodeHandler = {
  * - 去重（按 href 归一化后的绝对 URL）
  * - 过滤：空/非 http(s)/javascript:/mailto:/纯锚点/站外忽略（站外保留，便于跨源抓取）
  * - 导航链接过滤：短文本（首页/资讯/更多/登录等菜单项）、纯图标/纯数字、href 指向站点根
+ * - 社交/短内容平台过滤：x.com/twitter/facebook/instagram/youtube 等（普通 fetch 无正文，
+ *   抓了也没文章内容——新闻正文采集场景应排除，避免 LLM 选中后抓取必失败）
  * - 新闻特征优先：标题较长或含日期/编号特征的链接排在前面（maxLinks 截断时优先保留真实条目）
  * - 最多 maxLinks 条（0 = 不提取）
  */
+
+/** 社交/短内容平台域名：普通 HTTP 抓取拿不到文章正文（需登录/JS 渲染），正文采集场景排除 */
+const SOCIAL_MEDIA_HOSTS = new Set([
+  'x.com', 'twitter.com', 'www.twitter.com', 'mobile.twitter.com', 't.co',
+  'facebook.com', 'www.facebook.com', 'm.facebook.com', 'fb.com',
+  'instagram.com', 'www.instagram.com',
+  'youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be', 'shorts',
+  'weibo.com', 'weibo.cn', 'tieba.baidu.com',
+  'tiktok.com', 'www.tiktok.com', 'threads.net', 'bsky.app', 'reddit.com', 'www.reddit.com',
+])
+
+function isSocialMediaUrl(absUrl: string): boolean {
+  try {
+    const host = new URL(absUrl).hostname.toLowerCase()
+    return SOCIAL_MEDIA_HOSTS.has(host)
+  } catch {
+    return false
+  }
+}
+
 export function extractPageLinks(html: string, baseUrl: string, maxLinks: number): Array<{ title: string; url: string }> {
   if (!maxLinks || maxLinks <= 0) return []
   const root = parse(html)
@@ -412,6 +434,8 @@ export function extractPageLinks(html: string, baseUrl: string, maxLinks: number
     if (!title) continue
     // 导航链接过滤（短菜单项/纯图标/纯数字）
     if (isNavLink(title, abs, base)) continue
+    // 社交/短内容平台过滤（普通 fetch 无正文，排除避免下游抓取必失败）
+    if (isSocialMediaUrl(abs)) continue
     out.push({ title: title.slice(0, 200), url: abs })
   }
   // 新闻特征优先：长标题/含日期或编号 → 前置；保持原顺序稳定

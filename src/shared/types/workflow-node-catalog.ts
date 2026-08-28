@@ -149,7 +149,7 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
       { kind: 'loop-done', label: '完成', required: true, max: 1 },
     ],
     requiredConfigKeys: ['listExpression'],
-    defaultConfig: { listExpression: '{{start.items}}', emptyPolicy: 'skip' },
+    defaultConfig: { listExpression: '{{start.items}}', emptyPolicy: 'skip', errorPolicy: 'fail' },
     outputSchema: [
       { key: 'item', type: 'json', desc: '当前迭代元素（循环体内引用）' },
       { key: 'index', type: 'number', desc: '当前迭代下标（循环体内引用）' },
@@ -624,6 +624,7 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
       { key: 'text', type: 'string', desc: '正文文本' },
       { key: 'length', type: 'number', desc: '文本长度' },
       { key: 'links', type: 'json', desc: '页面内链接 [{ title, url }]（去重/过滤，最多 maxLinks 条）' },
+      { key: 'skipped', type: 'boolean', desc: '抓取失败被跳过（onError=skip 时输出空结果并置 true）' },
     ],
   },
   {

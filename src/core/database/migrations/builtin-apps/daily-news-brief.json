@@ -38,8 +38,8 @@
         "name": "AI 定位栏目页",
         "position": { "x": 560, "y": 320 },
         "config": {
-          "systemPrompt": "你是新闻编辑。下面是从新闻媒体首页抓取的链接列表。请挑选出与主题相关的栏目页/专题页/二级频道页（如「AI 频道」「科技产业」「公司新闻」「能源要闻」等专栏首页），不要挑选具体的新闻文章页。",
-          "prompt": "主题：{{start.topic}}\n\n候选链接（标题+URL）：\n{{crawl1.links}}\n\n只输出 JSON 数组，每项 {\"title\":\"页面标题\",\"url\":\"完整URL\"}，最多 8 个。不要输出任何解释。",
+          "systemPrompt": "你是新闻编辑。下面是从各新闻媒体首页抓取的链接列表（每条带来源 source 字段）。请**按来源分组**挑选与主题相关的栏目页/专题页/二级频道页（如「AI 频道」「科技产业」「人工智能」「大模型」「llm」等专栏首页），不要挑选具体的新闻文章页。每个来源最多挑选 8 个栏目页；来源较多时优先选与主题最相关的来源。",
+          "prompt": "主题：{{start.topic}}\n\n候选链接（标题+URL+来源）：\n{{crawl1.links}}\n\n只输出 JSON 数组，每项 {\"source\":\"来源名\",\"items\":[{\"title\":\"栏目页标题\",\"url\":\"完整URL\"}]}，每个 source 的 items 最多 8 个。不要输出任何解释。",
           "jsonMode": true,
           "providerConfigId": "{{start.model.providerConfigId}}",
           "modelId": "{{start.model.modelId}}"
@@ -58,7 +58,7 @@
         "name": "AI 筛选新闻链接",
         "position": { "x": 1080, "y": 320 },
         "config": {
-          "systemPrompt": "你是新闻编辑。从候选链接中挑选与主题最相关、最有新闻价值的文章条目。",
+          "systemPrompt": "你是新闻编辑。从候选链接中挑选与主题最相关、最有新闻价值的文章条目。注意：只选可抓取正文的新闻文章页（媒体官网文章、报道页）；排除社交媒体与短内容平台链接（x.com/twitter/facebook/instagram/youtube/weibo 等推文或短视频页——这些页面无法抓取正文）。",
           "prompt": "主题：{{start.topic}}\n用户效果要求：{{start.request}}\n\n候选链接（标题+来源+URL）：\n{{col1.links}}\n\n只输出 JSON 数组，每项 {\"title\":\"标题\",\"url\":\"完整URL\",\"reason\":\"不超过20字的入选理由\"}，最多 {{start.maxItems}} 条。不要输出任何解释。",
           "jsonMode": true,
           "providerConfigId": "{{start.model.providerConfigId}}",
@@ -70,7 +70,7 @@
         "type": "loop",
         "name": "逐条抓取正文",
         "position": { "x": 1340, "y": 320 },
-        "config": { "listExpression": "{{pick2.parsed}}", "emptyPolicy": "skip" }
+        "config": { "listExpression": "{{pick2.parsed}}", "emptyPolicy": "skip", "errorPolicy": "skip" }
       },
       {
         "id": "extract1",
