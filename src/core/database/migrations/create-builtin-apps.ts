@@ -31,6 +31,8 @@ import industryResearch from './builtin-apps/industry-research.json'
 import knowledgeRefine from './builtin-apps/knowledge-refine.json'
 import competitorAnalysis from './builtin-apps/competitor-analysis.json'
 import ecommercePoster from './builtin-apps/ecommerce-poster.json'
+// 吃瓜热点事件分析报告（2026-08-28 用户确认开工）
+import gossipEventReport from './builtin-apps/gossip-event-report.json'
 
 /** 内置工作流 id 前缀（固定，幂等查重依据） */
 const BUILTIN_DEF_PREFIX = 'builtin_def_'
@@ -63,6 +65,8 @@ const BUILTIN_APPS: Array<{ file: string; raw: unknown; appId: string; icon: str
   { file: 'knowledge-refine.json', raw: knowledgeRefine, appId: `${BUILTIN_APP_PREFIX}knowledge_refine`, icon: '🎓', name: '知识提炼存日记', description: '文章 → 读后感/书评式提炼 → 保存到日记', category: '学习', tags: ['知识提炼', '日记'] },
   { file: 'competitor-analysis.json', raw: competitorAnalysis, appId: `${BUILTIN_APP_PREFIX}competitor_analysis`, icon: '🏆', name: '竞品分析报告', description: '竞品名单 → 逐竞品搜索 → 对比矩阵 + 策略建议', category: '调研', tags: ['竞品分析', '商业'] },
   { file: 'ecommerce-poster.json', raw: ecommercePoster, appId: `${BUILTIN_APP_PREFIX}ecommerce_poster`, icon: '🛍️', name: '电商商品海报', description: '商品图+卖点 → AI 生成海报/主图 + 配套文案', category: '电商', tags: ['电商', '海报'] },
+  // 吃瓜热点事件分析报告（2026-08-28 用户确认开工）
+  { file: 'gossip-event-report.json', raw: gossipEventReport, appId: `${BUILTIN_APP_PREFIX}gossip_event_report`, icon: '🍉', name: '吃瓜热点速报', description: '热点事件关键词 → 搜索抓取 → AI 分析 → 吃瓜报告长图（娱乐小报/事件梳理/公众号三风格）', category: '娱乐八卦', tags: ['吃瓜', '热点', '八卦'] },
 ]
 
 /** 默认模板资产（user_id=NULL，可复制修改） */

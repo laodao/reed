@@ -194,13 +194,25 @@ const webSearchNode: WorkflowNodeHandler = {
       maxResults?: number
     }
     const service = getSearchEngineService()
-    // 未指定引擎时用用户默认配置
+    // 搜索引擎解析优先级：显式 engineType > 已配置引擎（configId）> quick: 免Key 快速引擎 > 用户默认配置
     let engineType = cfg.engineType as never
     let configId = cfg.searchConfigId
+    if (!engineType && typeof configId === 'string' && configId.startsWith('quick:')) {
+      // quick: 前缀 = 免 Key 快速引擎（百度/必应/Google 等网页抓取型），无需配置
+      engineType = configId.slice('quick:'.length) as never
+      configId = undefined
+    }
+    if (!engineType && configId) {
+      const stored = await service.getConfig(configId)
+      if (stored?.templateId) {
+        engineType = stored.templateId as never
+      }
+    }
     if (!engineType) {
       const def = await service.getDefaultConfig()
-      if (def?.engineType) {
-        engineType = def.engineType
+      // 配置字段为 templateId（用户默认引擎）
+      if (def?.templateId) {
+        engineType = def.templateId as never
         configId = configId ?? def.id
       } else {
         return { status: 'failed', error: '未配置搜索引擎', retryable: false }

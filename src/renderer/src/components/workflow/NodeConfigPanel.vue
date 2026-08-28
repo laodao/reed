@@ -169,6 +169,21 @@ async function loadDynamicOptions() {
       }
     } catch { /* 列表失败时退化为手填 */ }
   }
+  if (sources.has('searchEngineConfigs')) {
+    try {
+      // 免 Key 快速引擎（网页抓取型）优先，值用 quick: 前缀；其后是已配置引擎
+      const tplResp = await api.searchEngine.getTemplates()
+      const quick = (tplResp.success ? (tplResp.data ?? []) : [])
+        .filter((t: any) => t.category === 'web-scrape' && t.id !== 'model')
+        .map((t: any) => ({ label: `${t.name}（免Key）`, value: `quick:${t.id}` }))
+      const resp = await api.searchEngine.list()
+      const configured = (resp.success ? (resp.data ?? []) : []).map((c: any) => ({
+        label: `${c.name}${c.isDefault ? '（默认）' : ''}`,
+        value: c.id,
+      }))
+      dynamicOptions.value.searchEngineConfigs = [...quick, ...configured]
+    } catch { /* 列表失败时退化为手填 */ }
+  }
 }
 watch(() => props.node.id, loadDynamicOptions, { immediate: true })
 

@@ -1,5 +1,5 @@
 /**
- * 文档排版模板测试：7 套模板齐全且可渲染 / 表单选项与模板注册表一致 / 内置应用 templateId 有效
+ * 文档排版模板测试：10 套模板齐全且可渲染 / 表单选项与模板注册表一致 / 内置应用 templateId 有效
  * @module tests/core/services/document-templates
  */
 import { describe, it, expect } from 'vitest'
@@ -10,7 +10,7 @@ import { NODE_CONFIG_FORMS } from '@shared/types/workflow-node-forms'
 import { NODE_TYPE_CATALOG_MAP } from '@shared/types/workflow-node-catalog'
 import type { WorkflowGraph } from '@shared/types/workflow.types'
 
-/** 全部模板 id（早报/周报/通用/对话） */
+/** 全部模板 id（早报/周报/通用/对话/吃瓜） */
 const EXPECTED_IDS = [
   'generic',
   'morningReport',
@@ -20,10 +20,13 @@ const EXPECTED_IDS = [
   'industryWeeklyGreen',
   'industryWeeklyDark',
   'chatTranscript',
+  'gossipTabloid',
+  'gossipTimeline',
+  'gossipArticle',
 ]
 
 describe('DOCUMENT_TEMPLATES 注册表', () => {
-  it('包含全部预期模板（早报×3 / 周报×3 / 通用 / 对话）', () => {
+  it('包含全部预期模板（早报×3 / 周报×3 / 通用 / 对话 / 吃瓜×3）', () => {
     for (const id of EXPECTED_IDS) {
       expect(DOCUMENT_TEMPLATES[id], `缺少模板 ${id}`).toBeDefined()
     }
@@ -42,8 +45,8 @@ describe('DOCUMENT_TEMPLATES 注册表', () => {
       expect(html, id).toContain('&lt;标题&gt;')
       // 正文区入口（body 开始即页眉之后）
       expect(html, id).toContain('</style></head><body>')
-      // 报告族模板（早报×3/周报×3）有卡片页眉与页脚；通用/对话模板结构不同
-      const reportFamily = ['morningReport', 'morningReportBlue', 'morningReportMinimal', 'industryWeekly', 'industryWeeklyGreen', 'industryWeeklyDark']
+      // 报告族模板（早报×3/周报×3/吃瓜×3）有卡片页眉与页脚；通用/对话模板结构不同
+      const reportFamily = ['morningReport', 'morningReportBlue', 'morningReportMinimal', 'industryWeekly', 'industryWeeklyGreen', 'industryWeeklyDark', 'gossipTabloid', 'gossipTimeline', 'gossipArticle']
       if (reportFamily.includes(id)) {
         expect(html, id).toContain('doc-header')
         expect(html, id).toContain('doc-footer')
@@ -75,7 +78,7 @@ describe('排版模板选项与内置应用一致性', () => {
     }
   })
 
-  it('内置应用 report-image 节点的 templateId 全部有效', () => {
+  it('内置应用 report-image 节点的 templateId 全部有效（动态模板表达式跳过，运行时按输入解析）', () => {
     const dir = resolve(__dirname, '../../../../src/core/database/migrations/builtin-apps')
     const files = readdirSync(dir).filter(f => f.endsWith('.json'))
     expect(files.length).toBeGreaterThan(0)
@@ -85,8 +88,20 @@ describe('排版模板选项与内置应用一致性', () => {
         if (node.type !== 'report-image') continue
         const tid = (node.config as { templateId?: string })?.templateId
         expect(tid, `${f}/${node.id} 缺 templateId`).toBeTruthy()
+        // 静态 templateId 必须在注册表；{{...}} 模板表达式由 start 输入在运行时解析
+        if (typeof tid === 'string' && tid.includes('{{')) continue
         expect(DOCUMENT_TEMPLATES[tid as string], `${f}/${node.id} templateId=${tid} 未注册`).toBeDefined()
       }
+    }
+  })
+
+  it('内置吃瓜工作流 start 输入的模板选项全部在注册表中（动态 templateId 防漂移）', () => {
+    const raw = JSON.parse(readFileSync(resolve(__dirname, '../../../../src/core/database/migrations/builtin-apps/gossip-event-report.json'), 'utf-8')) as { graph: WorkflowGraph }
+    const start = raw.graph.nodes.find(n => n.type === 'start')
+    const templateInput = (start?.config?.inputs as Array<{ key?: string; options?: Array<{ value?: string }> }>)?.find(i => i.key === 'template')
+    expect(templateInput?.options?.length ?? 0).toBeGreaterThanOrEqual(3)
+    for (const opt of templateInput?.options ?? []) {
+      expect(DOCUMENT_TEMPLATES[opt.value ?? ''], `start 模板选项 ${opt.value} 未注册`).toBeDefined()
     }
   })
 

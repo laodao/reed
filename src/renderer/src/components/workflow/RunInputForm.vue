@@ -380,6 +380,29 @@ async function loadDynamicOptions(keys: WorkflowStartInput[]): Promise<void> {
       } finally {
         dynamicBusy[src] = false
       }
+    } else if (src === 'searchEngineConfigs') {
+      dynamicBusy[src] = true
+      try {
+        const api = (window as never as { electronAPI: { searchEngine: {
+          getTemplates: () => Promise<{ success: boolean; data?: Array<{ id: string; name: string; category?: string }> }>,
+          list: () => Promise<{ success: boolean; data?: Array<{ id: string; name: string; isDefault?: boolean }> }>,
+        } } }).electronAPI.searchEngine
+        // 免 Key 快速引擎（网页抓取型，无需配置）优先，值用 quick: 前缀；其后是已配置引擎
+        const tplResp = await api.getTemplates()
+        const quick = (tplResp.success ? (tplResp.data ?? []) : [])
+          .filter(t => t.category === 'web-scrape' && t.id !== 'model')
+          .map(t => ({ label: `${t.name}（免Key）`, value: `quick:${t.id}` }))
+        const resp = await api.list()
+        const configured = (resp.success ? (resp.data ?? []) : []).map(c => ({
+          label: `${c.name}${c.isDefault ? '（默认）' : ''}`,
+          value: c.id,
+        }))
+        dynamicCache[src] = [...quick, ...configured]
+      } catch {
+        dynamicCache[src] = []
+      } finally {
+        dynamicBusy[src] = false
+      }
     } else if (src === 'assetCategories') {
       dynamicBusy[src] = true
       try {

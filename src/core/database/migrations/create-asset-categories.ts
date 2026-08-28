@@ -33,6 +33,7 @@ const BUILTIN_CATEGORIES: Array<{
   { code: 'webpage_transcript', name: '网页转写', previewMode: 'markdown', previewTemplateId: null, sortOrder: 70 },
   { code: 'image_card', name: '图文卡片', previewMode: 'markdown', previewTemplateId: null, sortOrder: 80 },
   { code: 'polished_article', name: '润色稿', previewMode: 'markdown', previewTemplateId: null, sortOrder: 90 },
+  { code: 'gossip_report', name: '吃瓜报告', previewMode: 'report', previewTemplateId: 'gossipTabloid', sortOrder: 95 },
 ]
 
 export async function createAssetCategories(ds: DataSource): Promise<void> {
