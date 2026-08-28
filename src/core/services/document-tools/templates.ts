@@ -196,72 +196,95 @@ export const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
     footer: () => `</div><div class="doc-footer">由 The Bot 工作流生成 · 行业周报</div>`,
   },
 
-  /** 吃瓜速报·娱乐小报风（港媒/香港娱乐杂志大字报：品红+明黄警示色、爆点标题块、锯齿饰边） */
+  /** 吃瓜速报·娱乐小报风 V2（港媒头条红黑：白底 + 红黑横幅 + 红底白字章节标签，克制醒目） */
   gossipTabloid: {
     id: 'gossipTabloid',
     name: '吃瓜·娱乐小报',
     width: 750,
     css: `
-      :root { --accent:#e91e63; --accent-soft:#fdf0f5; --line:#f5c6d4; }
-      body { font-family:'Microsoft YaHei','PingFang SC',sans-serif; background:#fff; color:#262626; font-size:15px; }
-      .doc-header { background:linear-gradient(135deg,#a8104c,#e91e63 55%,#ff8f00); color:#fff; padding:30px 34px 26px; }
-      .doc-header h1 { margin:0 0 8px; font-size:27px; font-weight:900; letter-spacing:1px; text-shadow:2px 2px 0 rgba(0,0,0,.28); }
-      .doc-header .date { opacity:.95; font-size:13px; font-weight:600; }
-      .doc-header::after { content:''; display:block; height:6px; margin:16px -34px -26px; background:repeating-linear-gradient(45deg,#ffb300 0 10px,#262626 10px 20px); }
-      .doc-body { padding:26px 32px 32px; }
-      .doc-body h2 { font-size:19px; color:#111; margin:28px 0 10px; padding:6px 14px; background:#ffd54f; border-radius:4px 14px 4px 14px; font-weight:800; box-shadow:3px 3px 0 #e91e63; }
-      .doc-body h3 { font-size:16px; color:#c2185b; margin-top:18px; font-weight:700; }
-      .doc-body strong { color:#c2185b; }
-      .doc-body blockquote { border-left:6px solid #ffb300; background:#fff8e1; color:#5a4400; border-radius:0 8px 8px 0; }
-      .doc-body table th { background:#fdf0f5; color:#a8104c; }
-      .doc-body hr { border:none; border-top:3px double #e91e63; margin:22px 0; }
-      .doc-footer { background:#262626; color:#ffd54f; font-size:12px; text-align:center; padding:12px; font-weight:600; }`,
+      ${BASE_CSS}
+      :root { --accent:#e53935; --accent-soft:#fff3f2; --line:#f0d5d4; }
+      body { font-family:'Microsoft YaHei','PingFang SC',sans-serif; background:#fff; color:#2b2b2b; font-size:15px; }
+      .doc-header { background:linear-gradient(135deg,#1a1a1a 0%,#2f0f0f 45%,#c62828 100%); color:#fff; padding:30px 34px 26px; position:relative; overflow:hidden; }
+      .doc-header::before { content:'🔥'; position:absolute; right:26px; top:18px; font-size:34px; opacity:.85; }
+      .doc-header h1 { margin:0 0 8px; font-size:28px; font-weight:900; letter-spacing:2px; line-height:1.3; }
+      .doc-header .date { display:inline-block; margin-top:4px; padding:3px 12px; background:#ffb300; color:#1a1a1a; font-size:12px; font-weight:700; border-radius:3px; letter-spacing:1px; }
+      .doc-header::after { content:''; display:block; height:4px; margin:18px -34px -26px; background:linear-gradient(90deg,#ffb300 0 40%,#e53935 40% 70%,#1a1a1a 70%); }
+      .doc-body { padding:26px 34px 34px; }
+      .doc-body h1 { font-size:24px; color:#c62828; border-bottom:3px double #e53935; padding-bottom:10px; }
+      .doc-body h2 { font-size:17px; color:#fff; margin:30px 0 12px; padding:7px 14px; background:#e53935; border-radius:4px; font-weight:800; letter-spacing:1px; box-shadow:0 2px 0 #b71c1c; }
+      .doc-body h3 { font-size:16px; color:#c62828; margin-top:20px; font-weight:700; }
+      .doc-body strong { color:#c62828; }
+      .doc-body blockquote { border-left:5px solid #e53935; background:#fff3f2; color:#6b3a38; border-radius:0 8px 8px 0; }
+      .doc-body table { border-radius:8px; overflow:hidden; }
+      .doc-body table th { background:#e53935; color:#fff; border-color:#e53935; }
+      .doc-body table td { border-color:#f0d5d4; }
+      .doc-body a { color:#c62828; }
+      .doc-body hr { border:none; border-top:2px dashed #e5b9b7; margin:24px 0; }
+      .doc-footer { background:#1a1a1a; color:#ffb300; font-size:12px; text-align:center; padding:13px; font-weight:600; letter-spacing:1px; }`,
     header: title => `<div class="doc-header"><h1>${escapeHtml(title)}</h1><div class="date">📰 独家速报 · ${zhToday()}</div></div><div class="doc-body">`,
     footer: () => `</div><div class="doc-footer">🍉 本报告由 The Bot 工作流自动生成 · 吃瓜有度，不信谣不传谣</div>`,
   },
 
-  /** 吃瓜速报·事件梳理图风（专业事件分析图：藏青底 + 琥珀色时间线条、信息卡片式分节） */
+  /** 吃瓜速报·事件梳理图风 V2（专业信息图：CSS 计数器章节编号徽章 + 时间线圆点竖线列表，蓝金配色） */
   gossipTimeline: {
     id: 'gossipTimeline',
     name: '吃瓜·事件梳理',
     width: 800,
     css: `
-      :root { --accent:#c96f1a; --accent-soft:#fdf3e7; --line:#e8ddcf; }
-      body { font-family:'Microsoft YaHei','PingFang SC',sans-serif; background:#fff; color:#2d3748; font-size:15px; }
-      .doc-header { background:linear-gradient(135deg,#16324f,#2c4f6e); color:#fff; padding:32px 38px 28px; border-bottom:4px solid #c96f1a; }
+      ${BASE_CSS}
+      :root { --accent:#1f5f8b; --accent-soft:#eef5fa; --line:#dce7ef; }
+      body { font-family:'Microsoft YaHei','PingFang SC',sans-serif; background:#fbfcfd; color:#33404d; font-size:15px; }
+      .doc-header { background:linear-gradient(135deg,#122c44,#1f5f8b); color:#fff; padding:32px 40px 28px; border-bottom:3px solid #c9a06b; }
       .doc-header h1 { margin:0 0 8px; font-size:25px; font-weight:700; letter-spacing:1px; }
-      .doc-header .date { color:#c9a06b; font-size:13px; }
-      .doc-body { padding:26px 38px 34px; }
-      .doc-body h2 { font-size:18px; color:#16324f; margin:30px 0 12px; padding-left:14px; border-left:5px solid #c96f1a; font-weight:700; }
-      .doc-body h3 { font-size:16px; color:#2c4f6e; margin-top:18px; }
-      .doc-body strong { color:#16324f; }
-      .doc-body blockquote { border-left:4px solid #c96f1a; background:#fdf8f0; color:#6b5636; }
-      .doc-body table th { background:#fdf3e7; color:#8a5a1c; }
-      .doc-body hr { border:none; border-top:1px solid var(--line); margin:22px 0; }
-      .doc-footer { padding:14px 38px; background:#16324f; color:#b9c8d6; font-size:12px; text-align:center; }`,
+      .doc-header .date { color:#c9a06b; font-size:13px; letter-spacing:1px; }
+      .doc-body { padding:28px 40px 36px; counter-reset: sec; }
+      .doc-body h1 { font-size:22px; color:#122c44; border-bottom:2px solid var(--line); padding-bottom:10px; }
+      .doc-body h2 { counter-increment: sec; font-size:18px; color:#122c44; margin:34px 0 14px; padding-left:44px; position:relative; font-weight:700; }
+      .doc-body h2::before { content:counter(sec, decimal-leading-zero); position:absolute; left:0; top:50%; transform:translateY(-50%); width:32px; height:32px; border-radius:50%; background:#1f5f8b; color:#fff; font-size:14px; font-weight:700; display:flex; align-items:center; justify-content:center; box-shadow:0 0 0 3px #d6e6f2; }
+      .doc-body h3 { font-size:16px; color:#1f5f8b; margin-top:18px; }
+      .doc-body strong { color:#122c44; }
+      /* 时间线条目：竖线 + 圆点节点 */
+      .doc-body ul { list-style:none; margin:10px 0 18px; padding-left:0; }
+      .doc-body ul li { position:relative; padding:7px 0 7px 24px; border-left:2px solid #cfe0ec; margin-left:11px; }
+      .doc-body ul li::before { content:''; position:absolute; left:-7px; top:15px; width:12px; height:12px; border-radius:50%; background:#c9a06b; border:2px solid #fff; box-shadow:0 0 0 2px #c9a06b; }
+      .doc-body ul li:last-child { border-left-color:transparent; }
+      .doc-body blockquote { border-left:4px solid #1f5f8b; background:#eef5fa; color:#3d5870; border-radius:0 8px 8px 0; }
+      .doc-body table { border-radius:8px; overflow:hidden; }
+      .doc-body table th { background:#1f5f8b; color:#fff; border-color:#1f5f8b; }
+      .doc-body table td { border-color:var(--line); }
+      .doc-body a { color:#1f5f8b; }
+      .doc-body hr { border:none; border-top:1px solid var(--line); margin:24px 0; }
+      .doc-footer { padding:14px 40px; background:#122c44; color:#b9c8d6; font-size:12px; text-align:center; letter-spacing:1px; }`,
     header: title => `<div class="doc-header"><h1>${escapeHtml(title)}</h1><div class="date">事件梳理 · ${zhToday()}</div></div><div class="doc-body">`,
     footer: () => `</div><div class="doc-footer">由 The Bot 工作流生成 · 事件分析报告</div>`,
   },
 
-  /** 吃瓜速报·公众号吃瓜文风（米白底橙字、卡片式小节、阅读舒适耐分享） */
+  /** 吃瓜速报·公众号吃瓜文风 V2（暖橙阅读排版：首段放大导语 + 橙色章节条 + 浅橙引用卡片，耐读舒适） */
   gossipArticle: {
     id: 'gossipArticle',
     name: '吃瓜·公众号文',
     width: 720,
     css: `
-      :root { --accent:#e8621d; --accent-soft:#fef0e7; --line:#f3e3d3; }
-      body { font-family:'Microsoft YaHei','PingFang SC',sans-serif; background:#fdf9f2; color:#3a3330; font-size:15px; }
-      .doc-header { padding:34px 36px 22px; border-bottom:1px solid var(--line); }
-      .doc-header h1 { margin:0; font-size:26px; font-weight:800; color:#2c241f; letter-spacing:1px; }
-      .doc-header .date { margin-top:10px; color:#a8947f; font-size:12px; }
-      .doc-body { padding:22px 36px 30px; }
-      .doc-body h2 { font-size:19px; color:#e8621d; margin:28px 0 12px; font-weight:800; }
+      ${BASE_CSS}
+      :root { --accent:#e8621d; --accent-soft:#fff1e6; --line:#f2e2d2; }
+      body { font-family:'Microsoft YaHei','PingFang SC',sans-serif; background:#fdf9f2; color:#3a3330; font-size:15.5px; }
+      .doc-header { padding:36px 38px 24px; border-bottom:2px solid #e8621d; }
+      .doc-header h1 { margin:0; font-size:27px; font-weight:800; color:#2c241f; letter-spacing:1px; line-height:1.35; }
+      .doc-header .date { margin-top:12px; color:#b08a6b; font-size:12.5px; letter-spacing:1px; }
+      .doc-body { padding:24px 38px 32px; }
+      .doc-body h1 { font-size:23px; color:#2c241f; border-bottom:1px solid var(--line); padding-bottom:10px; }
+      .doc-body p:first-of-type { font-size:16.5px; color:#5c4d42; line-height:1.9; }
+      .doc-body h2 { font-size:19px; color:#e8621d; margin:30px 0 14px; padding-left:14px; border-left:5px solid #e8621d; font-weight:800; letter-spacing:.5px; }
       .doc-body h3 { font-size:16px; color:#5c4d42; margin-top:18px; }
       .doc-body strong { color:#d84315; }
-      .doc-body blockquote { border-left:4px solid #ffd9bd; background:#fff6ec; color:#7a5c3c; border-radius:0 8px 8px 0; }
-      .doc-body hr { border:none; border-top:2px dashed #f0d5bc; margin:22px 0; }
-      .doc-body table th { background:#fef0e7; color:#b0440f; }
-      .doc-footer { padding:14px 36px; background:#fff6ec; color:#a4876b; font-size:12px; text-align:center; }`,
+      .doc-body blockquote { border-left:4px solid #f5b98f; background:#fff4e9; color:#7a5c3c; border-radius:0 10px 10px 0; padding:12px 16px; }
+      .doc-body table { border-radius:8px; overflow:hidden; }
+      .doc-body table th { background:#e8621d; color:#fff; border-color:#e8621d; }
+      .doc-body table td { border-color:var(--line); }
+      .doc-body a { color:#d84315; }
+      .doc-body hr { border:none; border-top:2px dashed #f0d5bc; margin:26px 0; }
+      .doc-footer { padding:14px 38px; background:#fff1e6; color:#a4876b; font-size:12px; text-align:center; letter-spacing:1px; }`,
     header: title => `<div class="doc-header"><h1>${escapeHtml(title)}</h1><div class="date">✍️ ${zhToday()}</div></div><div class="doc-body">`,
     footer: () => `</div><div class="doc-footer">本文由 The Bot 工作流生成 · 吃瓜有度，理性冲浪</div>`,
   },
