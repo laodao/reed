@@ -444,6 +444,8 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
         { label: '吃瓜·娱乐小报', value: 'gossipTabloid' },
         { label: '吃瓜·事件梳理', value: 'gossipTimeline' },
         { label: '吃瓜·公众号文', value: 'gossipArticle' },
+        { label: '吃瓜·港式小报', value: 'gossipHK' },
+        { label: '吃瓜·信息图', value: 'gossipInfographic' },
       ],
     },
   ],

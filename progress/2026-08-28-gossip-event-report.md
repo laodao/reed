@@ -1,5 +1,14 @@
 # 吃瓜热点事件分析报告 工作流（2026-08-28）
 
+## 模板重设计 V3（用户反馈"不美观"，追加港式小报 + 信息图，并修复长图滚动条）
+
+用户三点反馈：①香港小报风格模板 ②参照蓝金信息海报（附件）做模板 ③**生成图不能有滚动条**（反复强调）。
+
+- **滚动条根治**：定位到 `ElectronDocumentRenderer.htmlToImage` 只按内容高度设窗口，但没隐藏滚动条、没防内容横向撑破——吃瓜报告里的超长 baidu 跳转 URL 撑出横向滚动条被拍进图。新增 `applyLongImageFix`（core 纯函数）：截图时注入 `::-webkit-scrollbar{display:none}` + `html,body{overflow-x/y:hidden}` + 长 URL/表格/图片 `max-width:100%; overflow-wrap:anywhere; word-break:break-word`；并双重测量内容高度（等字体/图片加载稳定后再 setBounds）再截图。仅作用于截图，不影响 HTML 预览/PDF。配套单测 `document-tools.spec.ts`（4 例）防回归。
+- **港式小报风 gossipHK**：报头白底大红刊名（宋体）+ 双黑线、超大红字标题、黄黑爆点分区、米黄报纸底、黑表头黄字、黑页脚黄字——香港娱乐八卦报质感。
+- **信息图风 gossipInfographic**：参照附件蓝金信息海报——深蓝渐变头 + 金色"最新时间"胶囊徽章、白色圆角卡片章节（左侧蓝圆角图标块）、蓝色圆点列表、浅蓝引用卡片、淡蓝底。
+- 工作流 start 模板选项 + report-image 表单 option 均新增两套；默认模板改为 gossipHK；模板库 13 套。
+
 ## 模板重设计（V2，用户反馈 V1 不美观后重做）
 
 V1 问题：双重标题（页眉标题 + 正文 # 大标题）、配色杂乱（品红+明黄+橙+黑+锯齿条纹，廉价感）。

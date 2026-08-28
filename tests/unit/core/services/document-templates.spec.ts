@@ -1,5 +1,5 @@
 /**
- * 文档排版模板测试：10 套模板齐全且可渲染 / 表单选项与模板注册表一致 / 内置应用 templateId 有效
+ * 文档排版模板测试：13 套模板齐全且可渲染 / 表单选项与模板注册表一致 / 内置应用 templateId 有效
  * @module tests/core/services/document-templates
  */
 import { describe, it, expect } from 'vitest'
@@ -23,10 +23,12 @@ const EXPECTED_IDS = [
   'gossipTabloid',
   'gossipTimeline',
   'gossipArticle',
+  'gossipHK',
+  'gossipInfographic',
 ]
 
 describe('DOCUMENT_TEMPLATES 注册表', () => {
-  it('包含全部预期模板（早报×3 / 周报×3 / 通用 / 对话 / 吃瓜×3）', () => {
+  it('包含全部预期模板（早报×3 / 周报×3 / 通用 / 对话 / 吃瓜×5）', () => {
     for (const id of EXPECTED_IDS) {
       expect(DOCUMENT_TEMPLATES[id], `缺少模板 ${id}`).toBeDefined()
     }
@@ -45,8 +47,8 @@ describe('DOCUMENT_TEMPLATES 注册表', () => {
       expect(html, id).toContain('&lt;标题&gt;')
       // 正文区入口（body 开始即页眉之后）
       expect(html, id).toContain('</style></head><body>')
-      // 报告族模板（早报×3/周报×3/吃瓜×3）有卡片页眉与页脚；通用/对话模板结构不同
-      const reportFamily = ['morningReport', 'morningReportBlue', 'morningReportMinimal', 'industryWeekly', 'industryWeeklyGreen', 'industryWeeklyDark', 'gossipTabloid', 'gossipTimeline', 'gossipArticle']
+      // 报告族模板（早报×3/周报×3/吃瓜×5）有卡片页眉与页脚；通用/对话模板结构不同
+      const reportFamily = ['morningReport', 'morningReportBlue', 'morningReportMinimal', 'industryWeekly', 'industryWeeklyGreen', 'industryWeeklyDark', 'gossipTabloid', 'gossipTimeline', 'gossipArticle', 'gossipHK', 'gossipInfographic']
       if (reportFamily.includes(id)) {
         expect(html, id).toContain('doc-header')
         expect(html, id).toContain('doc-footer')

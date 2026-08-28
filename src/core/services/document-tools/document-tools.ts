@@ -41,6 +41,27 @@ export interface RenderedDocument {
 export type DocumentOutputFormat = 'image' | 'pdf' | 'docx' | 'html'
 
 /**
+ * 长图截图专用样式：隐藏滚动条 + 防内容横向撑破。
+ * 长图按内容实际高度整页截图，超长 URL/表格若不换行会撑出横向滚动条并被打进截图，
+ * 或 window 高度与内容差几像素时出现纵向滚动条。此 CSS 从布局层根治（仅用于截图，
+ * 不影响 HTML 预览/PDF——预览仍需可滚动）。
+ * @param html 排版 HTML（renderTemplateHtml 输出）
+ * @returns 注入样式后的 HTML
+ */
+export const LONG_IMAGE_FIX_CSS = `
+  html, body { overflow-x: hidden !important; overflow-y: hidden !important; }
+  ::-webkit-scrollbar { width: 0 !important; height: 0 !important; display: none !important; }
+  img, table, pre, code, a, blockquote, td, th, strong, em { max-width: 100% !important; overflow-wrap: anywhere !important; word-break: break-word !important; }
+`
+
+/** 把长图滚动条修复样式注入排版 HTML（在 </head> 前追加） */
+export function applyLongImageFix(html: string): string {
+  const injected = `<style>${LONG_IMAGE_FIX_CSS}</style>`
+  if (/<\/head>/i.test(html)) return html.replace(/<\/head>/i, `${injected}</head>`)
+  return html + injected
+}
+
+/**
  * 文档工具服务：markdown/HTML → 排版产物。
  * docx/html 为纯 core 能力；image/pdf 依赖注入的平台渲染器。
  */

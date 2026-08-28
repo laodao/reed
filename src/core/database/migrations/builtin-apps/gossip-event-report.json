@@ -15,9 +15,11 @@
         "config": {
           "inputs": [
             { "key": "event", "label": "事件关键词", "type": "string", "required": true, "defaultValue": "", "placeholder": "如：孙宇晨 景甜" },
-            { "key": "template", "label": "报告模板", "type": "select", "required": true, "defaultValue": "gossipTabloid", "options": [
-              { "label": "娱乐小报风（港媒大字报）", "value": "gossipTabloid" },
-              { "label": "事件梳理图风（专业时间线）", "value": "gossipTimeline" },
+            { "key": "template", "label": "报告模板", "type": "select", "required": true, "defaultValue": "gossipHK", "options": [
+              { "label": "港式小报风（香港娱乐报）", "value": "gossipHK" },
+              { "label": "信息图风（蓝金信息海报）", "value": "gossipInfographic" },
+              { "label": "娱乐小报风（红黑头条）", "value": "gossipTabloid" },
+              { "label": "事件梳理图风（编号时间线）", "value": "gossipTimeline" },
               { "label": "公众号吃瓜文风", "value": "gossipArticle" },
               { "label": "早报·商务蓝", "value": "morningReportBlue" },
               { "label": "通用文档", "value": "generic" }

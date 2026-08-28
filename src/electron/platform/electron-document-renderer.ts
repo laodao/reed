@@ -12,6 +12,7 @@ import * as path from 'path'
 import * as os from 'os'
 
 import type { IHtmlRenderer } from '@core/services/document-tools/document-tools'
+import { applyLongImageFix } from '@core/services/document-tools/document-tools'
 
 /** 渲染并发保护：隐藏窗口逐次创建销毁，简单串行即可（避免同时开多窗口） */
 let renderLock: Promise<unknown> = Promise.resolve()
@@ -28,15 +29,24 @@ export class ElectronDocumentRenderer implements IHtmlRenderer {
   }
 
   async htmlToImage(html: string, opts?: { width?: number }): Promise<Buffer> {
+    // 注入滚动条修复 + 防溢宽样式（超长 URL/表格不再撑出滚动条、不挤窄内容）
+    const fixedHtml = applyLongImageFix(html)
     // 长图：宽度按模板（默认 750），高度取内容实际高度。
-    // 上限 100000（原 20000 会把长报告截断成半张图）；等渲染稳定后再截图
-    return this.withWindow(html, opts?.width ?? 750, async (win) => {
-      const height = await win.webContents.executeJavaScript(
-        'Math.min(100000, Math.ceil(document.documentElement.scrollHeight))'
-      )
-      win.setBounds({ height: Math.max(200, height) })
-      // 等两帧渲染稳定（图片/字体加载后高度可能再变）
+    // 上限 100000（原 20000 会把长报告截断成半张图）；等渲染稳定后测两帧取稳定高度再截图
+    return this.withWindow(fixedHtml, opts?.width ?? 750, async (win) => {
+      const measure = () =>
+        win.webContents.executeJavaScript(
+          'Math.min(100000, Math.ceil(document.documentElement.scrollHeight))'
+        )
+      // 首帧测量（隐藏滚动条后的布局高度）
+      const h1 = await measure()
+      // 等字体/图片加载完再测，取高度较大值，避免底部被裁
       await new Promise<void>(r => setTimeout(r, 250))
+      const h2 = await measure()
+      const height = Math.min(100000, Math.max(200, h1, h2))
+      win.setBounds({ height })
+      // 等窗口重排稳定后再截图
+      await new Promise<void>(r => setTimeout(r, 300))
       const image = await win.webContents.capturePage()
       return image.toPNG()
     })
