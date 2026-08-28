@@ -336,9 +336,8 @@ export const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
       .doc-header .date { display:inline-block; margin-top:6px; padding:3px 12px; background:#f0a843; color:#163f72; font-size:12px; font-weight:700; border-radius:20px; letter-spacing:1px; }
       .doc-body { padding:26px 40px 34px; }
       .doc-body h1 { font-size:22px; color:#163f72; border-bottom:2px solid var(--line); padding-bottom:10px; }
-      /* 卡片式章节标题：左侧圆角图标块 + 深蓝字 */
-      .doc-body h2 { font-size:18px; color:#163f72; margin:32px 0 12px; padding:8px 12px 8px 42px; background:#fff; border:1px solid var(--line); border-radius:10px; position:relative; font-weight:700; box-shadow:0 1px 3px rgba(31,78,140,.08); }
-      .doc-body h2::before { content:''; position:absolute; left:14px; top:50%; transform:translateY(-50%); width:18px; height:18px; border-radius:5px; background:#1f4e8c; }
+      /* 卡片式章节标题：白底圆角卡 + 左蓝竖条 + 深蓝粗体（emoji 由内容提供） */
+      .doc-body h2 { font-size:18px; color:#163f72; margin:30px 0 14px; padding:10px 14px; background:#fff; border:1px solid var(--line); border-left:5px solid #1f4e8c; border-radius:10px; font-weight:700; box-shadow:0 1px 3px rgba(31,78,140,.08); }
       .doc-body h3 { font-size:16px; color:#1f4e8c; margin-top:18px; }
       .doc-body strong { color:#163f72; }
       .doc-body blockquote { border:1px solid #dbe6f2; border-left:5px solid #1f4e8c; background:#eef4fb; color:#3d5870; border-radius:10px; padding:12px 16px; }
