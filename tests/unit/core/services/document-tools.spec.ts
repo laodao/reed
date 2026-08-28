@@ -42,8 +42,8 @@ describe('applyLongImageFix（长图无滚动条）', () => {
     }
   })
 
-  it('关键防溢宽选择器覆盖长 URL/表格/图片/代码（长图横滚根因）', () => {
-    for (const sel of ['a', 'table', 'img', 'pre', 'code', 'blockquote', 'td', 'th']) {
+  it('关键防溢宽选择器覆盖长 URL/表格/图片/代码/列表项（长图横滚与裁切根因）', () => {
+    for (const sel of ['a', 'table', 'img', 'pre', 'code', 'blockquote', 'td', 'th', 'li', 'ol', 'ul', 'p', 'h2', 'h3']) {
       expect(LONG_IMAGE_FIX_CSS, `缺 ${sel}`).toContain(sel)
     }
   })

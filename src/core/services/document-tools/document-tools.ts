@@ -51,7 +51,10 @@ export type DocumentOutputFormat = 'image' | 'pdf' | 'docx' | 'html'
 export const LONG_IMAGE_FIX_CSS = `
   html, body { overflow-x: hidden !important; overflow-y: hidden !important; }
   ::-webkit-scrollbar { width: 0 !important; height: 0 !important; display: none !important; }
-  img, table, pre, code, a, blockquote, td, th, strong, em { max-width: 100% !important; overflow-wrap: anywhere !important; word-break: break-word !important; }
+  /* 防内容横向撑破：覆盖块级容器与列表项（长标题/长 URL 在 li 里也会撑破容器） */
+  img, table, pre, code, a, blockquote, td, th, strong, em, li, ol, ul, p, h1, h2, h3, h4 {
+    max-width: 100% !important; overflow-wrap: anywhere !important; word-break: break-word !important; box-sizing: border-box !important;
+  }
 `
 
 /** 把长图滚动条修复样式注入排版 HTML（在 </head> 前追加） */
