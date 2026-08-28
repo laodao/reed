@@ -101,6 +101,32 @@ const httpRequestNode: WorkflowNodeHandler = {
 
 // ==================== LLM 对话 ====================
 
+/**
+ * 从 LLM 输出中稳健提取 JSON（jsonMode 兜底）。
+ * 模型常把 JSON 包进 ```json 代码块，或前置"好的，以下是 JSON："等说明文字，或包裹不完整；
+ * 依次尝试：整体 → 剥离代码块 → 截取首个 {/[ 到末个 }/]。
+ */
+function extractJson(text: string): unknown {
+  const t = text.trim()
+  // 1. 整体直接解析（最常见的纯 JSON）
+  try { return JSON.parse(t) } catch { /* 继续兜底 */ }
+  // 2. 剥离 ```json ... ``` 代码块包裹
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fence) {
+    try { return JSON.parse(fence[1].trim()) } catch { /* 继续兜底 */ }
+  }
+  // 3. 带前后说明：截取首个 {/[ 到末个 }/] 之间的片段
+  const start = t.search(/[\[{]/)
+  if (start >= 0) {
+    const closer = t[start] === '[' ? ']' : '}'
+    const end = t.lastIndexOf(closer)
+    if (end > start) {
+      try { return JSON.parse(t.slice(start, end + 1)) } catch { /* 交给调用方报错 */ }
+    }
+  }
+  throw new Error('不是有效 JSON')
+}
+
 const llmChatNode: WorkflowNodeHandler = {
   type: 'llm-chat',
   controlKind: 'task',
@@ -176,9 +202,7 @@ const llmChatNode: WorkflowNodeHandler = {
     const output: Record<string, unknown> = { content }
     if (cfg.jsonMode) {
       try {
-        // 容错提取（模型可能带 ```json 包裹）
-        const match = content.match(/```(?:json)?\s*([\s\S]*?)```/)
-        output.parsed = JSON.parse((match ? match[1] : content).trim())
+        output.parsed = extractJson(content)
       } catch {
         return { status: 'failed', error: 'jsonMode 输出不是有效 JSON', retryable: false }
       }
