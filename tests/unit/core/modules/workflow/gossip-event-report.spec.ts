@@ -27,27 +27,17 @@ describe('吃瓜热点事件分析报告 工作流', () => {
     expect(result.valid, result.errors.join('；')).toBe(true)
   })
 
-  it('start 输入：事件必填、模板下拉（默认娱乐小报风）、搜索引擎动态源、模型', () => {
+  it('start 输入：事件必填、风格提示词（非模板下拉）、搜索引擎动态源、模型', () => {
     const start = byId.get('start') as WorkflowNode
     const inputs = (start.config.inputs ?? []) as Array<{
       key: string; type: string; required?: boolean; defaultValue?: unknown; source?: string; options?: Array<{ value: string }>
     }>
     const byKey = new Map(inputs.map(i => [i.key, i]))
     expect(byKey.get('event')?.required).toBe(true)
-    const template = byKey.get('template')!
-    expect(template.type).toBe('select')
-    expect(template.defaultValue).toBe('gossipMinguo')
-    const values = (template.options ?? []).map(o => o.value)
-    expect(values).toContain('gossipMinguo')
-    expect(values).toContain('gossipInfographic')
-    expect(values).toContain('gossipHK')
-    expect(values).toContain('gossipTabloid')
-    expect(values).toContain('gossipTimeline')
-    expect(values).toContain('gossipArticle')
-    for (const v of values) {
-      expect(NODE_TYPE_CATALOG_MAP['report-image']).toBeDefined() // 模板有效性由 document-templates.spec 校验
-      void v
-    }
+    // 通用化：风格由提示词驱动，不再绑定预设视觉模板下拉
+    const style = byKey.get('stylePrompt')!
+    expect(style.type).toBe('textarea')
+    expect(byKey.get('template')).toBeUndefined()
     const se = byKey.get('searchEngine')!
     expect(se.type).toBe('select-dynamic')
     expect(se.source).toBe('searchEngineConfigs')
@@ -58,12 +48,16 @@ describe('吃瓜热点事件分析报告 工作流', () => {
     expect(trad.defaultValue).toBe(false)
   })
 
-  it('gen1 提示词含繁简规则（默认简体，开关 true 才繁体，含民国模板）', () => {
+  it('gen1 提示词：按风格提示词驱动（无预设模板条目）+ 含繁简规则', () => {
     const gen = configOf('gen1')
     const sp = String(gen.systemPrompt)
+    expect(sp).toContain('{{start.stylePrompt}}')
     expect(sp).toContain('{{start.traditional}}')
     expect(sp).toContain('默认用简体字')
-    expect(sp).toContain('民国报纸')
+    // 已移除预设视觉模板条目（通用化）
+    expect(sp).not.toContain('gossipMinguo')
+    expect(sp).not.toContain('gossipInfographic')
+    expect(String(gen.prompt)).toContain('{{start.stylePrompt}}')
   })
 
   it('搜索×2 都引用 start.searchEngine 配置，且两次查询角度互补', () => {
@@ -92,12 +86,12 @@ describe('吃瓜热点事件分析报告 工作流', () => {
     expect(configOf('pick1').jsonMode).toBe(true)
     const gen = configOf('gen1')
     expect(String(gen.prompt)).toContain('{{analyze1.parsed}}')
-    expect(String(gen.systemPrompt)).toContain('gossipTabloid')
+    expect(String(gen.systemPrompt)).not.toContain('gossipTabloid')
   })
 
-  it('长图节点：templateId 动态引用 start.template，标题带事件名', () => {
+  it('长图节点：用通用排版（generic），标题带事件名', () => {
     const report = configOf('report1')
-    expect(report.templateId).toBe('{{start.template}}')
+    expect(report.templateId).toBe('generic')
     expect(String(report.title)).toContain('{{start.event}}')
     expect(String(report.template)).toContain('{{gen1.content}}')
   })
