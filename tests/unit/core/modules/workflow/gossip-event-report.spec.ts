@@ -36,10 +36,11 @@ describe('吃瓜热点事件分析报告 工作流', () => {
     expect(byKey.get('event')?.required).toBe(true)
     const template = byKey.get('template')!
     expect(template.type).toBe('select')
-    expect(template.defaultValue).toBe('gossipHK')
+    expect(template.defaultValue).toBe('gossipMinguo')
     const values = (template.options ?? []).map(o => o.value)
-    expect(values).toContain('gossipHK')
+    expect(values).toContain('gossipMinguo')
     expect(values).toContain('gossipInfographic')
+    expect(values).toContain('gossipHK')
     expect(values).toContain('gossipTabloid')
     expect(values).toContain('gossipTimeline')
     expect(values).toContain('gossipArticle')

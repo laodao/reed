@@ -354,6 +354,50 @@ export const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
     footer: () => `</div><div class="doc-footer">由 The Bot 工作流生成 · 事件分析信息图</div>`,
   },
 
+  /** 吃瓜速报·民国报纸风（米黄宣纸、毛笔报名、民国纪年、双线栏框、朱红印章，复古报刊） */
+  gossipMinguo: {
+    id: 'gossipMinguo',
+    name: '吃瓜·民国报纸',
+    width: 780,
+    css: `
+      ${BASE_CSS}
+      :root { --accent:#9e2b25; --accent-soft:#efe0c8; --line:#b9a98c; }
+      body { font-family:'SimSun','Songti SC','STSong',serif; background:#f1e8d3; color:#241f1a; font-size:16px; letter-spacing:.5px; }
+      /* 版面四周细框（报纸版面框） */
+      .doc-header, .doc-body, .doc-footer { margin-left:14px; margin-right:14px; border-left:1px solid #9e8f74; border-right:1px solid #9e8f74; }
+      .doc-header { background:inherit; padding:22px 38px 18px; border-bottom:3px double #241f1a; }
+      /* 报名：毛笔楷书大字，两侧引线 */
+      .doc-header .masthead { font-family:'STKaiti','KaiTi','SimKai',serif; font-size:20px; color:#241f1a; letter-spacing:8px; text-align:center; }
+      .doc-header .masthead::before, .doc-header .masthead::after { content:'———'; color:#9e8f74; }
+      /* 大标题：超大楷体（民国报刊标题），墨黑 */
+      .doc-header h1 { margin:8px 0 4px; font-family:'STKaiti','KaiTi','SimKai',serif; font-size:32px; font-weight:700; color:#1a1815; text-align:center; letter-spacing:3px; line-height:1.3; border-bottom:2px solid #241f1a; padding-bottom:12px; }
+      .doc-header .date { display:block; text-align:center; color:#241f1a; font-size:13px; letter-spacing:2px; margin-top:8px; }
+      .doc-body { padding:24px 42px 32px; }
+      .doc-body h1 { font-family:'STKaiti','KaiTi','SimKai',serif; font-size:24px; color:#1a1815; border-bottom:3px double #241f1a; padding-bottom:8px; }
+      /* 章节：楷体 + 〔〕朱红括号 + 下细线（报纸专栏） */
+      .doc-body h2 { font-family:'STKaiti','KaiTi','SimKai',serif; font-size:20px; color:#241f1a; margin:32px 0 12px; padding-bottom:6px; border-bottom:1px solid #241f1a; font-weight:700; letter-spacing:1px; }
+      .doc-body h2::before { content:'〔 '; color:#9e2b25; }
+      .doc-body h2::after { content:' 〕'; color:#9e2b25; }
+      .doc-body h3 { font-size:17px; color:#9e2b25; margin-top:18px; font-family:'STKaiti','KaiTi','SimKai',serif; }
+      .doc-body strong { color:#9e2b25; }
+      /* 引文：楷书 + 浅黄笺 + 朱红竖条 */
+      .doc-body blockquote { font-family:'STKaiti','KaiTi','SimKai',serif; border-left:3px solid #9e2b25; background:#efe0c8; color:#3a2f24; padding:12px 18px; }
+      /* 表格：复古双线 */
+      .doc-body table { border:1px solid #9e8f74; }
+      .doc-body table th { background:#efe0c8; color:#241f1a; border:1px solid #9e8f74; font-family:'SimHei','Microsoft YaHei',sans-serif; }
+      .doc-body table td { border:1px solid #b9a98c; }
+      .doc-body a { color:#9e2b25; }
+      .doc-body hr { border:none; border-top:1px solid #bbb; border-bottom:1px solid #bbb; height:1px; margin:26px 0; }
+      /* 页脚：报馆署名 + 朱红圆章 */
+      .doc-footer { position:relative; background:#e9dcc0; color:#4a3f30; font-size:12px; text-align:center; padding:14px; letter-spacing:1px; }
+      .doc-footer::before { content:'本報訊'; position:absolute; right:26px; top:50%; transform:translateY(-50%) rotate(-12deg); color:#b03a2e; border:2px solid #b03a2e; border-radius:50%; width:56px; height:56px; text-align:center; line-height:52px; font-size:13px; font-weight:700; opacity:.85; }`,
+    header: title => {
+      const y = new Date().getFullYear() - 1911
+      return `<div class="doc-header"><div class="masthead">吃瓜日報</div><h1>${escapeHtml(title)}</h1><span class="date">中華民國 ${y} 年 · ${zhToday()}</span></div><div class="doc-body">`
+    },
+    footer: () => `</div><div class="doc-footer">本報由 The Bot 工作流編輯 · 民國風吃瓜實錄</div>`,
+  },
+
   /** AI 对话记录（气泡式，仅 PC/长图场景；PDF 也可用） */
   chatTranscript: {
     id: 'chatTranscript',

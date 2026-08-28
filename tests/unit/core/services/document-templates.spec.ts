@@ -25,10 +25,11 @@ const EXPECTED_IDS = [
   'gossipArticle',
   'gossipHK',
   'gossipInfographic',
+  'gossipMinguo',
 ]
 
 describe('DOCUMENT_TEMPLATES 注册表', () => {
-  it('包含全部预期模板（早报×3 / 周报×3 / 通用 / 对话 / 吃瓜×5）', () => {
+  it('包含全部预期模板（早报×3 / 周报×3 / 通用 / 对话 / 吃瓜×6）', () => {
     for (const id of EXPECTED_IDS) {
       expect(DOCUMENT_TEMPLATES[id], `缺少模板 ${id}`).toBeDefined()
     }
@@ -48,7 +49,7 @@ describe('DOCUMENT_TEMPLATES 注册表', () => {
       // 正文区入口（body 开始即页眉之后）
       expect(html, id).toContain('</style></head><body>')
       // 报告族模板（早报×3/周报×3/吃瓜×5）有卡片页眉与页脚；通用/对话模板结构不同
-      const reportFamily = ['morningReport', 'morningReportBlue', 'morningReportMinimal', 'industryWeekly', 'industryWeeklyGreen', 'industryWeeklyDark', 'gossipTabloid', 'gossipTimeline', 'gossipArticle', 'gossipHK', 'gossipInfographic']
+      const reportFamily = ['morningReport', 'morningReportBlue', 'morningReportMinimal', 'industryWeekly', 'industryWeeklyGreen', 'industryWeeklyDark', 'gossipTabloid', 'gossipTimeline', 'gossipArticle', 'gossipHK', 'gossipInfographic', 'gossipMinguo']
       if (reportFamily.includes(id)) {
         expect(html, id).toContain('doc-header')
         expect(html, id).toContain('doc-footer')
