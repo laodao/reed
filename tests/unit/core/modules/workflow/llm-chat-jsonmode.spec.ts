@@ -60,6 +60,24 @@ describe('llm-chat jsonMode 解析', () => {
     expect(((r as any).output as any).parsed).toEqual([1, 2, 3])
   })
 
+  it('首次输出非 JSON → 自动重试一次，第二次有效 JSON → parsed', async () => {
+    callAIStreamMock
+      .mockResolvedValueOnce({ content: '抱歉，以下是整理结果（非 JSON）：……', usage: null })
+      .mockResolvedValueOnce({ content: '{"ok":true}', usage: null })
+    const r = await handler.execute(makeCtx({ prompt: 'p', jsonMode: true }) as never)
+    expect(r.status).toBe('succeeded')
+    expect(((r as any).output as any).parsed).toEqual({ ok: true })
+    expect(callAIStreamMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('连续多次非 JSON → failed（最多重试 2 次，共 3 次调用）', async () => {
+    callAIStreamMock.mockResolvedValue({ content: '仍不是 JSON', usage: null })
+    const r = await handler.execute(makeCtx({ prompt: 'p', jsonMode: true }) as never)
+    expect(r.status).toBe('failed')
+    expect((r as any).error).toContain('jsonMode')
+    expect(callAIStreamMock).toHaveBeenCalledTimes(3)
+  })
+
   it('非 JSON → failed（明确报错，不静默）', async () => {
     callAIStreamMock.mockResolvedValue({ content: '这不是 JSON', usage: null })
     const r = await handler.execute(makeCtx({ prompt: 'p', jsonMode: true }) as never)

@@ -186,26 +186,44 @@ const llmChatNode: WorkflowNodeHandler = {
 
     // 公共 AI 调用层：统一 modelId fallback 链（显式→config 默认→用户启用→模板内置）
     // + AbortSignal 真取消 + 增量进度回调
-    const { content, usage } = await callAIStream({
-      prompt: String(cfg.prompt),
-      systemPrompt: cfg.systemPrompt,
-      providerConfigId: cfg.providerConfigId,
-      modelId: cfg.modelId,
-      temperature: cfg.temperature,
-      maxTokens: cfg.maxTokens,
-      signal: ctx.signal,
-      onDelta: delta => ctx.emitProgress(-1, delta.slice(-50)),
-    }).catch(e => {
-      throw new Error(`LLM 调用失败: ${e instanceof Error ? e.message : String(e)}`)
-    })
+    const doCall = async (): Promise<{ content: string; usage?: unknown }> => {
+      const r = await callAIStream({
+        prompt: String(cfg.prompt),
+        systemPrompt: cfg.systemPrompt,
+        providerConfigId: cfg.providerConfigId,
+        modelId: cfg.modelId,
+        temperature: cfg.temperature,
+        maxTokens: cfg.maxTokens,
+        signal: ctx.signal,
+        onDelta: delta => ctx.emitProgress(-1, delta.slice(-50)),
+      }).catch(e => {
+        throw new Error(`LLM 调用失败: ${e instanceof Error ? e.message : String(e)}`)
+      })
+      return { content: String(r?.content ?? ''), usage: r?.usage }
+    }
+    let { content, usage } = await doCall()
 
     const output: Record<string, unknown> = { content }
     if (cfg.jsonMode) {
-      try {
-        output.parsed = extractJson(content)
-      } catch {
-        return { status: 'failed', error: 'jsonMode 输出不是有效 JSON', retryable: false }
+      // jsonMode 容错：输出可能被截断/带说明文字，解析失败时自动重试（最多 3 次）
+      let parsed: unknown
+      let ok = false
+      for (let attempt = 1; attempt <= 3 && !ok; attempt++) {
+        try {
+          parsed = extractJson(content)
+          ok = true
+        } catch {
+          if (attempt < 3) {
+            ctx.emitProgress(-1, `jsonMode 输出解析失败，重试 ${attempt}/2`)
+            const retry = await doCall()
+            content = retry.content
+            usage = retry.usage
+            output.content = content
+          }
+        }
       }
+      if (!ok) return { status: 'failed', error: 'jsonMode 输出不是有效 JSON', retryable: true }
+      output.parsed = parsed
     }
     if (usage) output.usage = usage
     return { status: 'succeeded', output }
