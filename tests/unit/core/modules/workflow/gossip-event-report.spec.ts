@@ -52,6 +52,18 @@ describe('吃瓜热点事件分析报告 工作流', () => {
     expect(se.type).toBe('select-dynamic')
     expect(se.source).toBe('searchEngineConfigs')
     expect(byKey.get('model')?.type).toBe('model')
+    // 繁简开关：默认简体（false）
+    const trad = byKey.get('traditional')!
+    expect(trad.type).toBe('boolean')
+    expect(trad.defaultValue).toBe(false)
+  })
+
+  it('gen1 提示词含繁简规则（默认简体，开关 true 才繁体，含民国模板）', () => {
+    const gen = configOf('gen1')
+    const sp = String(gen.systemPrompt)
+    expect(sp).toContain('{{start.traditional}}')
+    expect(sp).toContain('默认用简体字')
+    expect(sp).toContain('民国报纸')
   })
 
   it('搜索×2 都引用 start.searchEngine 配置，且两次查询角度互补', () => {
