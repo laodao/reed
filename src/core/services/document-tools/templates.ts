@@ -289,33 +289,36 @@ export const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
     footer: () => `</div><div class="doc-footer">本文由 The Bot 工作流生成 · 吃瓜有度，理性冲浪</div>`,
   },
 
-  /** 吃瓜速报·港式小报风（香港娱乐八卦报章：报头刊名 + 超大红字标题 + 黄黑爆点，报纸质感） */
+  /** 吃瓜速报·港式八卦报（香港娱乐报章/八卦杂志：白底红黑大字、刊头线、红字栏目标题、"爆/独家"标签） */
   gossipHK: {
     id: 'gossipHK',
     name: '吃瓜·港式小报',
     width: 760,
     css: `
       ${BASE_CSS}
-      :root { --accent:#d0021b; --accent-soft:#fdeaea; --line:#e0d6c2; }
-      body { font-family:'Microsoft YaHei','PingFang SC',sans-serif; background:#fdf7e8; color:#161311; font-size:15px; }
-      /* 报头：白底 + 大红刊名 + 双黑线 */
-      .doc-header { background:#fff; padding:14px 34px 22px; border-bottom:4px double #111; }
-      .doc-header h1 { margin:0; font-family:'Songti SC','SimSun','Microsoft YaHei',serif; font-size:30px; font-weight:900; color:#d0021b; letter-spacing:2px; text-shadow:1.5px 1.5px 0 rgba(0,0,0,.12); line-height:1.3; }
-      .doc-header .date { display:inline-block; margin-top:8px; padding:2px 10px; background:#111; color:#ffc400; font-size:12px; font-weight:700; border-radius:3px; letter-spacing:1px; }
+      :root { --accent:#d0021b; --accent-soft:#fff3f3; --line:#e8e8e8; }
+      body { font-family:'Microsoft YaHei','PingFang SC',sans-serif; background:#fffefb; color:#1a1a1a; font-size:15px; }
+      /* 报头：白底 + 正中大红报头名 + 顶部「獨家/今日頭條」标签 + 刊头双线 */
+      .doc-header { background:#fff; padding:18px 34px 0; border-bottom:4px double #111; text-align:center; }
+      .doc-header .kicker { display:inline-block; margin-bottom:6px; padding:2px 14px; background:#d0021b; color:#fff; font-size:12px; font-weight:700; letter-spacing:2px; border-radius:2px; }
+      .doc-header h1 { margin:2px 0 6px; font-family:'Songti SC','SimSun','Microsoft YaHei',serif; font-size:30px; font-weight:900; color:#d0021b; letter-spacing:2px; text-shadow:1px 1px 0 rgba(0,0,0,.12); line-height:1.3; }
+      .doc-header .date { display:block; padding:6px 0 12px; color:#444; font-size:12px; letter-spacing:2px; border-top:1px solid #e2e2e2; margin-top:6px; }
       .doc-body { padding:24px 34px 32px; }
-      .doc-body h1 { font-family:'Songti SC','SimSun',serif; font-size:25px; color:#d0021b; border-bottom:3px double #111; padding-bottom:8px; }
-      .doc-body h2 { font-size:18px; color:#ffc400; margin:30px 0 12px; padding:7px 14px; background:#111; border-left:6px solid #d0021b; font-weight:800; letter-spacing:1px; }
+      .doc-body h1 { font-family:'Songti SC','SimSun',serif; font-size:26px; color:#d0021b; border-bottom:3px double #111; padding-bottom:8px; letter-spacing:1px; }
+      /* 栏目标题：红字 + 黑色粗下划线 + 红菱形前缀（报纸栏目感） */
+      .doc-body h2 { font-size:19px; color:#d0021b; margin:30px 0 12px; padding:4px 0 6px; border-bottom:3px solid #111; font-weight:800; letter-spacing:1px; }
+      .doc-body h2::before { content:'◆ '; color:#d0021b; }
       .doc-body h3 { font-size:16px; color:#d0021b; margin-top:18px; font-weight:700; }
       .doc-body strong { color:#c9002b; }
-      .doc-body blockquote { border-left:6px solid #d0021b; background:#111; color:#ffc400; padding:10px 16px; border-radius:0 6px 6px 0; }
-      .doc-body blockquote strong { color:#ffc400; }
+      .doc-body blockquote { border-left:6px solid #d0021b; background:#fff3d6; color:#7a2a00; padding:10px 16px; }
+      .doc-body blockquote strong { color:#a00; }
       .doc-body table { border-radius:6px; overflow:hidden; }
-      .doc-body table th { background:#111; color:#ffc400; border-color:#111; }
-      .doc-body table td { border-color:#e0d6c2; }
+      .doc-body table th { background:#d0021b; color:#fff; border-color:#d0021b; }
+      .doc-body table td { border-color:var(--line); }
       .doc-body a { color:#d0021b; }
-      .doc-body hr { border:none; border-top:3px double #111; margin:26px 0; }
-      .doc-footer { background:#111; color:#ffc400; font-size:12px; text-align:center; padding:13px; font-weight:700; letter-spacing:1px; }`,
-    header: title => `<div class="doc-header"><h1>${escapeHtml(title)}</h1><div class="date">📰 娛樂熱話 · ${zhToday()}</div></div><div class="doc-body">`,
+      .doc-body hr { border:none; border-top:2px solid #ddd; margin:24px 0; }
+      .doc-footer { background:#d0021b; color:#fff; font-size:12px; text-align:center; padding:13px; font-weight:700; letter-spacing:1px; }`,
+    header: title => `<div class="doc-header"><span class="kicker">🔥 獨家 · 今日頭條</span><h1>${escapeHtml(title)}</h1><span class="date">📰 娛樂熱話 · ${zhToday()}</span></div><div class="doc-body">`,
     footer: () => `</div><div class="doc-footer">🍉 本報由 The Bot 工作流自動生成 · 食瓜有度，不信謠不傳謠</div>`,
   },
 
