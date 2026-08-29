@@ -9,6 +9,11 @@
         :placeholder="placeholder"
         spellcheck="false"
       />
+      <!-- 评审 #102：加载失败可见 + 可重试，不再静默永久只读 -->
+      <div v-if="loadFailed" class="editor-load-failed">
+        <span>编辑器加载失败，当前为只读模式</span>
+        <el-button size="small" type="primary" @click="retryLoad">重试加载</el-button>
+      </div>
     </div>
 
     <!-- 空闲后动态挂载重型编辑器（bytemd 模块按需加载） -->
@@ -34,6 +39,7 @@
  * 让页面先渲染可交互，编辑器随后无缝替换。
  */
 import { ref, shallowRef, onMounted, type Component } from 'vue'
+import { ElButton } from 'element-plus'
 import { scheduleIdleLoad } from '@/utils/lazy-libs'
 
 const props = defineProps<{
@@ -51,19 +57,29 @@ const emit = defineEmits<{
  * 重型编辑器组件（动态加载，null = 尚未加载完成）
  */
 const heavyComponent = shallowRef<Component | null>(null)
+/** 评审 #102：动态 import 失败置 true（占位区显示错误与重试按钮） */
+const loadFailed = ref(false)
+
+function loadHeavy(): void {
+  import('./MarkdownEditorHeavy.vue')
+    .then(m => {
+      heavyComponent.value = m.default
+      loadFailed.value = false
+    })
+    .catch(err => {
+      console.error('Markdown 编辑器加载失败:', err)
+      loadFailed.value = true
+    })
+}
+
+function retryLoad(): void {
+  loadFailed.value = false
+  // 重试立即加载（不再等空闲）
+  loadHeavy()
+}
 
 onMounted(() => {
-  scheduleIdleLoad(() => {
-    // 动态加载重型编辑器，加载完成后替换占位
-    import('./MarkdownEditorHeavy.vue')
-      .then(m => {
-        heavyComponent.value = m.default
-      })
-      .catch(err => {
-        console.error('Markdown 编辑器加载失败:', err)
-        // 加载失败时保持占位（只读文本域），不阻塞页面
-      })
-  })
+  scheduleIdleLoad(loadHeavy)
 })
 </script>
 
@@ -75,6 +91,18 @@ onMounted(() => {
   width: 100%;
   display: flex;
   flex-direction: column;
+
+  // 评审 #102：加载失败提示条
+  .editor-load-failed {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 10px;
+    font-size: 12px;
+    color: var(--el-color-danger);
+    background: var(--el-color-danger-light-9);
+  }
 
   // 占位：样式与真实编辑器接近，避免页面"空一块"
   .editor-loading {
