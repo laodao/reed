@@ -101,6 +101,36 @@ export function registerAssetHandlers(): void {
   ipcBridge.handle('asset:group-detail', (_e, p: { groupId: string }) =>
     wrap(() => getAssetService().getGroupDetail(p.groupId))
   )
+  // 资产下载（桌面端弹保存对话框 + 复制/写文件；Web 端由浏览器直接下载，不经过本通道）
+  ipcBridge.handle('asset:download', (_e, p: { id: string }) =>
+    wrap(async () => {
+      if (!isElectron) {
+        throw new Error('下载仅桌面端可用（Web 端由浏览器直接下载）')
+      }
+      const record = await getAssetService().getAsset(p.id)
+      if (!record) throw new Error('资产不存在')
+      const payload = await getAssetService().buildDownloadPayload(record)
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { dialog } = require('electron')
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const fs = require('fs/promises')
+      const filters = payload.kind === 'file'
+        ? [{ name: '文件', extensions: ['*'] }]
+        : payload.fileName.endsWith('.url')
+          ? [{ name: 'URL 快捷方式', extensions: ['url'] }]
+          : payload.fileName.endsWith('.json')
+            ? [{ name: 'JSON', extensions: ['json'] }]
+            : [{ name: 'Markdown / 文本', extensions: ['md', 'txt'] }]
+      const res = await dialog.showSaveDialog({ defaultPath: payload.fileName, filters })
+      if (res.canceled || !res.filePath) return { canceled: true }
+      if (payload.kind === 'file') {
+        await fs.copyFile(payload.sourcePath!, res.filePath)
+      } else {
+        await fs.writeFile(res.filePath, payload.content!, 'utf-8')
+      }
+      return { filePath: res.filePath }
+    })
+  )
 }
 
 /** 打开资产所在目录（桌面端 shell.showItemInFolder；Web 端不可用） */

@@ -17,6 +17,7 @@ import { AssetGroupRepository } from '@core/database/repositories/asset-group.re
 import { AssetCategoryRepository } from '@core/database/repositories/asset-category.repository'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { AssetStorageService } from './asset-storage.service'
+import { buildUrlShortcut, ensureExtension, sanitizeFileName, type AssetDownloadPayload } from './asset-download'
 import { DOCUMENT_TEMPLATES } from '@core/services/document-tools/templates'
 import { getDocumentTools } from '@core/services/document-tools/document-tools'
 
@@ -260,6 +261,36 @@ export class AssetService {
       return this.storage.resolveStoredPath(record.storagePath)
     }
     return ''
+  }
+
+  /**
+   * 资产下载载荷（按存储形态生成文件名与内容）：
+   * - file：复制源文件（sourcePath=绝对路径，文件名取存储文件名）
+   * - text：下载为 .md（内容 textContent）
+   * - json：下载为 .json（内容 jsonContent）
+   * - url ：下载为 .url 快捷方式（InternetShortcut）
+   * 无内容/无文件抛错（调用方提示）。
+   */
+  async buildDownloadPayload(record: AssetRecord): Promise<AssetDownloadPayload> {
+    if (record.kind === ASSET_STORAGE_KINDS.file && record.storagePath) {
+      const abs = this.resolveAssetPath(record)
+      if (!abs) throw new Error('该资产无本地文件')
+      return { fileName: sanitizeFileName(basenameOf(record.storagePath)), kind: 'file', sourcePath: abs }
+    }
+    if (record.kind === ASSET_STORAGE_KINDS.text) {
+      const content = record.textContent ?? ''
+      if (!content.trim()) throw new Error('该资产无文本内容')
+      return { fileName: ensureExtension(record.name, 'md'), kind: 'text', content }
+    }
+    if (record.kind === ASSET_STORAGE_KINDS.json) {
+      const content = record.jsonContent ?? ''
+      if (!content.trim()) throw new Error('该资产无数据内容')
+      return { fileName: ensureExtension(record.name, 'json'), kind: 'text', content }
+    }
+    if (record.kind === ASSET_STORAGE_KINDS.url && record.url) {
+      return { fileName: ensureExtension(record.name, 'url'), kind: 'text', content: buildUrlShortcut(record.url) }
+    }
+    throw new Error('该资产暂不支持下载')
   }
 
   /**

@@ -124,6 +124,9 @@
           <div class="card-actions">
             <el-button size="small" type="primary" plain :disabled="!canPreview(item.asset)" @click="openPreview(item.asset)">预览</el-button>
             <div class="icon-actions">
+              <el-tooltip content="下载" placement="top">
+                <el-button text size="small" @click="handleDownload(item.asset)"><el-icon><Download /></el-icon></el-button>
+              </el-tooltip>
               <el-tooltip v-if="item.asset.category === 'template'" content="编辑模板" placement="top">
                 <el-button text size="small" @click="openTemplateEditor(item.asset)"><el-icon><EditPen /></el-icon></el-button>
               </el-tooltip>
@@ -163,6 +166,9 @@
               <div class="gallery-name">
                 <span class="gallery-name-text" :title="m.name">{{ m.name }}</span>
                 <el-tag v-if="m.groupRole === 'cover'" size="small" type="warning" effect="plain" class="gallery-role">封面</el-tag>
+                <el-button text circle size="small" class="gallery-dl" title="下载" @click.stop="handleDownload(m)">
+                  <el-icon><Download /></el-icon>
+                </el-button>
               </div>
             </div>
           </div>
@@ -177,7 +183,7 @@
         v-model:current-page="page"
         v-model:page-size="pageSize"
         :total="total"
-        :page-sizes="[12, 24, 48]"
+        :page-sizes="[15, 30, 60]"
         layout="total, sizes, prev, pager, next"
         background
         @current-change="handlePageChange"
@@ -187,25 +193,54 @@
 
     <!-- 大图预览（分类驱动：report/markdown/html 显示渲染结果，其余按存储形态） -->
     <el-dialog v-model="previewVisible" :title="previewAsset?.name ?? '预览'" width="820px" append-to-body>
-      <div class="preview-toolbar" v-if="isMarkdownAsset(previewAsset)">
-        <el-radio-group v-model="previewMode" size="small">
-          <el-radio-button value="preview">预览</el-radio-button>
-          <el-radio-button value="source">源码</el-radio-button>
-        </el-radio-group>
+      <div class="preview-toolbar">
+        <div class="pt-left">
+          <el-radio-group v-if="hasSourceView(previewAsset)" v-model="previewMode" size="small">
+            <el-radio-button value="preview">预览</el-radio-button>
+            <el-radio-button value="source">源码</el-radio-button>
+          </el-radio-group>
+          <!-- 图片预览缩放（参考人像设计预览） -->
+          <div v-else-if="previewImgList.length" class="zoom-ctrl">
+            <el-button size="small" :icon="ZoomOut" :disabled="previewZoom <= MIN_ZOOM" title="缩小" @click="zoomOut" />
+            <el-button size="small" text @click="zoomReset" title="还原比例">{{ Math.round(previewZoom * 100) }}%</el-button>
+            <el-button size="small" :icon="ZoomIn" :disabled="previewZoom >= MAX_ZOOM" title="放大" @click="zoomIn" />
+          </div>
+        </div>
+        <el-button size="small" :disabled="!previewAsset" @click="handleDownload(previewAsset!)">
+          <el-icon><Download /></el-icon> 下载
+        </el-button>
       </div>
       <div class="big-preview" v-loading="previewRendering">
-        <img v-if="previewAsset && previewUrl(previewAsset) && previewModeOf(previewAsset) === 'auto' && previewAsset.category === 'image'" :src="previewUrl(previewAsset)" alt="" />
+        <!-- 源码模式：显示原文（report 长图/HTML 渲染类 或 markdown 文档的 textContent） -->
+        <div v-if="previewMode === 'source' && hasSourceView(previewAsset)" class="big-md-preview" v-html="escapeHtmlMd(previewAsset!.textContent ?? '')"></div>
+        <!-- 图片（原生 image / report 渲染长图）：浅灰画布 + 弹窗内缩放 + 点击进全屏查看器 -->
+        <div v-else-if="previewImgList.length" class="big-img-wrap">
+          <el-image
+            :src="previewImgList[0]"
+            fit="contain"
+            class="big-img"
+            :style="{ transform: `scale(${previewZoom})` }"
+            :preview-src-list="previewImgList"
+            preview-teleported
+          />
+        </div>
         <audio v-else-if="previewAsset && previewModeOf(previewAsset) === 'auto' && previewAsset.category === 'audio'" :src="previewUrl(previewAsset)" controls autoplay />
         <video v-else-if="previewAsset && previewModeOf(previewAsset) === 'auto' && previewAsset.category === 'video'" :src="previewUrl(previewAsset)" controls autoplay style="width:100%" />
         <iframe v-else-if="previewCache[previewAsset?.id ?? '']?.mode === 'html'" class="big-iframe" :srcdoc="previewCache[previewAsset!.id]!.html" sandbox="allow-same-origin"></iframe>
-        <img v-else-if="previewImageUrl(previewAsset?.id ?? '')" class="big-render-img" :src="previewImageUrl(previewAsset!.id)!" alt="" />
-        <!-- 文本/模板文档：预览=渲染 markdown，源码=原始内容 -->
-        <div v-else-if="isMarkdownAsset(previewAsset)" class="big-md-preview" v-html="previewMode === 'source' ? escapeHtmlMd(previewAsset!.textContent ?? '') : renderMdPreview(previewAsset!.textContent ?? '')"></div>
+        <!-- 文本/模板文档（预览模式）：渲染 markdown -->
+        <div v-else-if="isMarkdownAsset(previewAsset)" class="big-md-preview" v-html="renderMdPreview(previewAsset!.textContent ?? '')"></div>
         <pre v-else-if="previewAsset?.category === 'json'" class="big-text">{{ previewAsset?.jsonContent }}</pre>
         <div v-else-if="previewAsset?.url" class="big-url">
           <a :href="previewAsset.url" target="_blank" rel="noopener">{{ previewAsset.url }}</a>
         </div>
         <div v-else class="big-hint">该资产无可预览内容</div>
+      </div>
+      <!-- 元信息条（参考人像设计 preview-info） -->
+      <div v-if="previewAsset" class="preview-meta">
+        <div class="meta-row"><span class="k">类型</span><span class="v">{{ categoryLabel(previewAsset.category) }} · {{ KIND_LABELS[previewAsset.kind] ?? previewAsset.kind }}</span></div>
+        <div class="meta-row"><span class="k">大小</span><span class="v">{{ formatSize(previewAsset.sizeBytes) }}</span></div>
+        <div class="meta-row"><span class="k">创建</span><span class="v">{{ formatDate(previewAsset.createdAt) }}</span></div>
+        <div class="meta-row" v-if="previewAsset.subCategory"><span class="k">分类</span><span class="v">{{ previewAsset.subCategory }}</span></div>
       </div>
     </el-dialog>
 
@@ -325,10 +360,12 @@
  * report → 渲染长图（桌面端 PNG / Web 端 HTML）；markdown/html → 渲染排版 HTML；
  * auto/其他 → 按存储形态原生呈现。
  */
-import { ref, onMounted, computed, reactive } from 'vue'
+import { ref, onMounted, computed, reactive, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, EditPen, FolderOpened, CopyDocument, Delete } from '@element-plus/icons-vue'
-import { toFileUrl, toImageUrl, toVideoUrl } from '@/utils/asset-url'
+import { Search, EditPen, FolderOpened, CopyDocument, Delete, Download, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
+import { toFileUrl, toImageUrl, toVideoUrl, isElectronRenderer } from '@/utils/asset-url'
+import { saveBlobAs } from '@/utils/file-saver'
+import { buildWebAssetDownload } from '@/utils/asset-download'
 import { sanitizeHtml } from '@/utils/sanitize-html'
 import {
   ASSET_CATEGORY_LABELS, ASSET_PREVIEW_MODES, ASSET_PREVIEW_MODE_LABELS,
@@ -346,7 +383,7 @@ const activeCategory = ref<AssetCategory | ''>('')
 const activeSubCategory = ref<string>('')
 const keyword = ref('')
 const page = ref(1)
-const pageSize = ref(12)
+const pageSize = ref(15)
 const total = ref(0)
 /** 资产中心统计（total + 各大类计数；「全部」标签取 total） */
 const stats = ref<AssetStats>({ total: 0, byCategory: {} })
@@ -453,6 +490,22 @@ function isMarkdownAsset(asset: AssetRecord | null | undefined): boolean {
   if (!asset.textContent) return false
   // 有 markdown 特征（标题/列表/引用/表格/代码块）或较长文本 → 渲染
   return /(^|\n)\s*(#{1,6}\s|[-*+]\s|\d+\.\s|>\s|\||```)/m.test(asset.textContent) || asset.textContent.length > 80
+}
+
+/**
+ * 是否有可切换的「源码」（显示原文 textContent）：
+ * report/markdown/html 渲染类（长图/HTML 预览 + 可切原文），或一般 markdown 文档。
+ * 修复：report 报告资产预览出长图时，「源码」切换被图片分支短路，原文无法查看。
+ */
+function hasSourceView(asset: AssetRecord | null | undefined): boolean {
+  if (!asset) return false
+  if (asset.category !== 'text' && asset.category !== 'template') return false
+  if (!asset.textContent) return false
+  const mode = previewModeOf(asset)
+  return mode === ASSET_PREVIEW_MODES.report
+    || mode === ASSET_PREVIEW_MODES.markdown
+    || mode === ASSET_PREVIEW_MODES.html
+    || isMarkdownAsset(asset)
 }
 
 /** markdown 渲染为 HTML（卡片缩略/大预览共用）；marked 透传原始 HTML（可被提示注入污染），
@@ -790,6 +843,36 @@ async function handleDelete(asset: AssetRecord): Promise<void> {
   else ElMessage.error(resp.error ?? '删除失败')
 }
 
+/**
+ * 下载资产：
+ * - 桌面端：主进程弹保存对话框 + 复制文件 / 写文本（file 型复制源文件，text/json/url 生成 .md/.json/.url）
+ * - Web 端：浏览器下载（file 型 fetch 资产 URL → Blob；text/json/url 组装文本 → Blob）
+ */
+async function handleDownload(asset: AssetRecord): Promise<void> {
+  try {
+    if (isElectronRenderer()) {
+      const resp = await api.assets.download(asset.id)
+      if (!resp.success) { ElMessage.error(resp.error ?? '下载失败'); return }
+      if (resp.data?.canceled) return // 用户取消保存对话框
+      ElMessage.success('已下载')
+      return
+    }
+    // Web 端：浏览器下载
+    const payload = buildWebAssetDownload(asset, previewUrl(asset))
+    if (!payload) { ElMessage.error('该资产暂不支持下载'); return }
+    if (payload.fetchUrl) {
+      const res = await fetch(payload.fetchUrl)
+      if (!res.ok) { ElMessage.error('获取文件失败'); return }
+      await saveBlobAs(await res.blob(), { defaultName: payload.fileName, mimeType: payload.mimeType })
+    } else {
+      await saveBlobAs(payload.content ?? '', { defaultName: payload.fileName, mimeType: payload.mimeType })
+    }
+    ElMessage.success('已开始下载')
+  } catch (e: any) {
+    ElMessage.error(e?.message || '下载失败')
+  }
+}
+
 // ---- 模板编辑器（新建/编辑/保存） ----
 const templateEditorVisible = ref(false)
 const templateEditing = ref<AssetRecord | null>(null)
@@ -842,6 +925,31 @@ async function saveTemplate(): Promise<void> {
 // ---- 大图预览（分类驱动渲染） ----
 const previewVisible = ref(false)
 const previewAsset = ref<AssetRecord | null>(null)
+
+/** 预览弹窗中的图片 URL 列表（原生 image / report 渲染长图；供 el-image 查看器放大缩小） */
+const previewImgList = computed<string[]>(() => {
+  const a = previewAsset.value
+  if (!a) return []
+  if (previewUrl(a) && previewModeOf(a) === ASSET_PREVIEW_MODES.auto && a.category === 'image') return [previewUrl(a)]
+  const rendered = previewImageUrl(a.id)
+  return rendered ? [rendered] : []
+})
+
+/** 预览图缩放（弹窗内直接放大/缩小，参考人像设计预览；点击图片仍进全屏查看器） */
+const previewZoom = ref(1)
+const MIN_ZOOM = 0.5
+const MAX_ZOOM = 3
+function zoomIn(): void {
+  previewZoom.value = Math.min(MAX_ZOOM, +(previewZoom.value + 0.25).toFixed(2))
+}
+function zoomOut(): void {
+  previewZoom.value = Math.max(MIN_ZOOM, +(previewZoom.value - 0.25).toFixed(2))
+}
+function zoomReset(): void {
+  previewZoom.value = 1
+}
+// 切换预览资产时还原缩放
+watch(previewAsset, () => { previewZoom.value = 1 })
 async function openPreview(asset: AssetRecord): Promise<void> {
   if (!canPreview(asset)) return
   previewAsset.value = asset
@@ -1037,7 +1145,9 @@ onMounted(load)
 .text-preview :deep(table) { border-collapse: collapse; font-size: 11px; }
 .text-preview :deep(th), .text-preview :deep(td) { border: 1px solid var(--el-border-color-lighter); padding: 2px 6px; }
 .text-preview :deep(blockquote) { border-left: 3px solid var(--el-border-color); margin: 2px 0; padding-left: 8px; color: var(--el-text-color-secondary); }
-.preview-toolbar { display: flex; justify-content: flex-end; margin-bottom: 10px; }
+.preview-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; min-height: 28px; gap: 10px; }
+.pt-left { display: flex; align-items: center; gap: 8px; }
+.zoom-ctrl { display: flex; align-items: center; gap: 2px; }
 .big-md-preview {
   width: 100%; max-height: 70vh; overflow: auto; padding: 20px 24px;
   font-size: 14px; line-height: 1.8; color: var(--el-text-color-primary);
@@ -1100,13 +1210,34 @@ onMounted(load)
 }
 .gallery-name-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
 .gallery-role { flex-shrink: 0; }
+.gallery-dl { flex-shrink: 0; color: var(--el-text-color-secondary); }
 
 /* 大图预览 */
 .big-preview { display: flex; align-items: center; justify-content: center; min-height: 120px; }
 .big-preview img { max-width: 100%; max-height: 70vh; }
+/* 图片预览画布（参考人像设计 preview-img）：浅灰底 + 圆角，缩放后滚动查看 */
+.big-img-wrap {
+  width: 100%;
+  max-height: 62vh;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--el-fill-color-lighter);
+  border-radius: 8px;
+  border: 1px solid var(--el-border-color-lighter);
+}
+.big-img { transition: transform .15s ease; }
+.big-preview :deep(.el-image) { width: 100%; display: flex; align-items: center; justify-content: center; }
+.big-preview :deep(.el-image__inner) { max-width: 100%; max-height: 60vh; object-fit: contain; }
 .big-preview audio { width: 90%; }
+/* 元信息条（参考人像设计 preview-info） */
+.preview-meta { margin-top: 12px; background: var(--el-fill-color-lighter); border-radius: 8px; padding: 10px 14px; }
+.meta-row { display: flex; font-size: 12.5px; margin-bottom: 6px; }
+.meta-row:last-child { margin-bottom: 0; }
+.meta-row .k { color: var(--el-text-color-secondary); width: 48px; flex-shrink: 0; }
+.meta-row .v { color: var(--el-text-color-primary); flex: 1; }
 .big-iframe { width: 100%; height: 62vh; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; background: #fff; }
-.big-render-img { max-width: 100%; max-height: 70vh; box-shadow: 0 2px 12px rgba(0,0,0,.12); }
 .big-text { max-height: 60vh; overflow: auto; width: 100%; white-space: pre-wrap; word-break: break-all; font-size: 13px; }
 .big-url { word-break: break-all; }
 .big-hint { color: var(--el-text-color-secondary); }

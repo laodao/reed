@@ -61,13 +61,13 @@ describe('AssetService 分类定义管理', () => {
     ds = built.ds
   })
 
-  it('listAssetCategories：内置 9 分类 + 当前大类资产计数合并', async () => {
+  it('listAssetCategories：内置 10 分类（含吃瓜报告）+ 当前大类资产计数合并', async () => {
     // 早报分类下 2 条 text 资产 + 1 条 image 资产
     await svc.createAsset({ content: { kind: 'text', text: '# 早报A' }, category: 'text', subCategory: '早报', name: 'A' })
     await svc.createAsset({ content: { kind: 'text', text: '# 早报B' }, category: 'text', subCategory: '早报', name: 'B' })
     await svc.createAsset({ content: { kind: 'text', text: 'x' }, category: 'image', subCategory: '早报', name: 'C' })
     const all = await svc.listAssetCategories()
-    expect(all.length).toBe(9)
+    expect(all.length).toBe(10)
     const textStats = await svc.listAssetCategories('text')
     const morning = textStats.find(c => c.name === '早报')
     expect(morning?.count).toBe(2)
@@ -78,7 +78,7 @@ describe('AssetService 分类定义管理', () => {
     expect(cat.name).toBe('产品周报')
     expect(cat.previewMode).toBe('report')
     expect(cat.isBuiltin).toBe(false)
-    expect(await svc.listAssetCategories()).toHaveLength(10)
+    expect(await svc.listAssetCategories()).toHaveLength(11)
   })
 
   it('createAssetCategory：重名抛错', async () => {
