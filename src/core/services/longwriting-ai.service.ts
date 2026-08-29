@@ -80,11 +80,27 @@ export class LongWritingAIService {
   }
 
   /**
-   * 取消指定 eventId 的流式生成（中断 provider 请求）
+   * 取消指定 eventId 的生成（中断流式请求；非流式为竞态丢弃）
    */
   cancelGeneration(eventId: string): void {
     const ctrl = this.abortControllers.get(eventId)
     if (ctrl) ctrl.abort()
+  }
+
+  /**
+   * 取消某项目名下全部进行中的 AI 生成（评审 #43：打断不再只打断总结——
+   * 决策/动作/总结的 eventId 均含 `-{projectId}-` 片段，统一按此匹配 abort）
+   * @returns 取消的调用数
+   */
+  cancelAllForProject(projectId: string): number {
+    let n = 0
+    for (const [eventId, ctrl] of this.abortControllers) {
+      if (eventId.includes(`-${projectId}-`)) {
+        ctrl.abort()
+        n++
+      }
+    }
+    return n
   }
 
   // ==================== Agent 对话基础能力（对话式工作流） ====================
@@ -97,8 +113,9 @@ export class LongWritingAIService {
     context: { systemPrompt: string; userPrompt: string },
     providerConfigId?: string,
     modelId?: string,
+    eventId?: string
   ): Promise<string> {
-    return this.callAI(context.userPrompt, context.systemPrompt, 1280, providerConfigId, modelId)
+    return this.callAI(context.userPrompt, context.systemPrompt, 1280, providerConfigId, modelId, eventId)
   }
 
   /**
@@ -174,7 +191,8 @@ export class LongWritingAIService {
     systemPrompt?: string,
     maxTokens?: number,
     providerConfigId?: string,
-    modelId?: string
+    modelId?: string,
+    eventId?: string
   ): Promise<string> {
     const providerInfo = await this.getProviderConfig(providerConfigId)
     if (!providerInfo) {
@@ -206,10 +224,24 @@ export class LongWritingAIService {
       ]
     }
 
-    // 调用 AI（非流式）
-    const result = await provider.chatSync(context)
-
-    return result.content || ''
+    // 调用 AI（非流式）。评审 #43：传 eventId 时登记 AbortController，
+    // 取消立即以「已取消」抛出（竞态丢弃后续结果，不等服务端返回）
+    const controller = eventId ? new AbortController() : null
+    if (eventId && controller) this.abortControllers.set(eventId, controller)
+    try {
+      const syncPromise = provider.chatSync(context)
+      if (!controller) {
+        const result = await syncPromise
+        return result.content || ''
+      }
+      const aborted = new Promise<never>((_, reject) => {
+        controller.signal.addEventListener('abort', () => reject(new Error('已取消')), { once: true })
+      })
+      const result = await Promise.race([syncPromise, aborted])
+      return result.content || ''
+    } finally {
+      if (eventId) this.abortControllers.delete(eventId)
+    }
   }
 
   /**

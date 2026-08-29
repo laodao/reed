@@ -163,6 +163,7 @@ function makeFakeAi(over: Record<string, unknown> = {}) {
     generateFactions: vi.fn(async () => ({ success: true, data: [] })),
     polishBackground: vi.fn(async () => ({ success: true, data: { content: '时代背景描述' } })),
     cancelGeneration: vi.fn(),
+    cancelAllForProject: vi.fn(() => 1),
     ...over,
   }
 }
@@ -404,8 +405,28 @@ describe('AgentWorkflowService.sendMessage 编排', () => {
       expect(emitted.some(e => e.data?.type === 'reply:start')).toBe(true)
     })
     svc.cancel('p1')
-    expect(ai.cancelGeneration).toHaveBeenCalled()
+    // 评审 #43：打断按项目全量取消（决策/动作/总结统一）
+    expect(ai.cancelAllForProject).toHaveBeenCalledWith('p1')
     resolveSummarize('已取消')
     await pending
+  })
+
+  it('并发 sendMessage：第二轮被拒，不覆盖 eventId（评审#42）', async () => {
+    const db = makeFakeDb()
+    let resolveSummarize!: (v: string) => void
+    const ai = makeFakeAi({
+      agentSummarize: vi.fn(
+        () => new Promise<string>(res => { resolveSummarize = res }),
+      ),
+    })
+    const svc = AgentWorkflowService.getInstance(db, ai)
+    const first = svc.sendMessage('p1', '第一轮')
+    // 第一轮未完成时发起第二轮 → 拒绝
+    await expect(svc.sendMessage('p1', '第二轮')).rejects.toThrow('上一轮对话仍在处理中')
+    resolveSummarize('完成')
+    await first
+    // 完成后可再次发起
+    const second = await svc.sendMessage('p1', '第三轮')
+    expect(second).toBeTruthy()
   })
 })

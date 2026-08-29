@@ -68,8 +68,10 @@ export class AgentWorkflowService {
   private readonly db: any
   private readonly ai: LongWritingAIService | null
 
-  /** 进行中的总结 eventId（cancel 用） */
+  /** 进行中的总结 eventId（兼容保留；cancel 已升级为按项目全量取消） */
   private readonly activeSummaryEventIds = new Map<string, string>()
+  /** 项目级互斥（评审 #42）：同项目上一轮未结束时拒绝新消息，防 eventId 互相覆盖 */
+  private readonly busyProjects = new Set<string>()
 
   private constructor(db?: any, ai?: LongWritingAIService | null) {
     this.db = db ?? null
@@ -113,12 +115,12 @@ export class AgentWorkflowService {
     return computeProductionState(this.manager(), projectId)
   }
 
-  /** 中断当前轮的总结生成 */
+  /**
+   * 中断当前轮的 AI 生成（评审 #43：决策/动作/总结统一可打断——
+   * 三类调用都登记在同项目前缀的 AbortController 下）
+   */
   cancel(projectId: string): void {
-    const eventId = this.activeSummaryEventIds.get(projectId)
-    if (eventId) {
-      this.aiService().cancelGeneration(eventId)
-    }
+    this.aiService().cancelAllForProject(projectId)
   }
 
   /**
@@ -126,6 +128,19 @@ export class AgentWorkflowService {
    * 事件流推送全程（stage / action:start / action:done / reply:start / reply:content / reply:done / error）。
    */
   async sendMessage(projectId: string, message: string, opts?: { providerConfigId?: string; modelId?: string }): Promise<AgentSendResult> {
+    // 评审 #42：同项目串行——并发第二轮会覆盖 eventId 且互相污染上下文
+    if (this.busyProjects.has(projectId)) {
+      throw new Error('上一轮对话仍在处理中，请等待完成或点击打断后再发送')
+    }
+    this.busyProjects.add(projectId)
+    try {
+      return await this.doSendMessage(projectId, message, opts)
+    } finally {
+      this.busyProjects.delete(projectId)
+    }
+  }
+
+  private async doSendMessage(projectId: string, message: string, opts?: { providerConfigId?: string; modelId?: string }): Promise<AgentSendResult> {
     const m = this.manager()
     if (!m?.lwDesignMessages) {
       throw new Error('数据库未初始化')
@@ -146,8 +161,10 @@ export class AgentWorkflowService {
     const history = await m.lwDesignMessages.getByConversationId(conversationId)
     const decCtx = buildDecisionContext(userMsg, state, history)
     let decision: AgentDecision = { actions: [] }
+    // 评审 #43：决策调用登记 eventId，可被 cancel(projectId) 打断
+    const decideEventId = `agent-decide-${projectId}-${Date.now()}`
     try {
-      const raw = await ai.agentDecide(decCtx, providerConfigId, modelId)
+      const raw = await ai.agentDecide(decCtx, providerConfigId, modelId, decideEventId)
       decision = normalizeDecision(raw)
       console.log(`[AgentWorkflow] 决策: ${JSON.stringify(decision).slice(0, 300)}`)
     } catch (e: any) {
