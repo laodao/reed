@@ -48,6 +48,8 @@ AgentToolResult（统一返回，给模型读的）
 
 **覆盖优先级**（jsonSchema 三来源，本文新增）：① catalog/custom_tools 手工编写的 `inputSchema`（最高）→ ② 从 `NODE_CONFIG_FORMS` 表单 schema 自动推导 → ③ 推导不出关键字段则该工具**不可导出**（不进白名单候选，宁缺毋滥）。
 
+**加载期校验纪律**（本文新增，cordis 评估吸收原则，见 20-cordis-evaluation.md §4-3）：schema 声明处即校验处——catalog 注册 `inputSchema` 时立即做 JSON Schema 合法性校验（fail-fast，非法 schema 在启动期报错而非等 LLM 调用时暴雷）；与 §10 的一致性测试扩展（`checkRegistryConsistency` 模式）同批落地。
+
 ## 4. 数据模型
 
 ### 4.1 新增表：`agent_tool_calls`（工具调用审计，本文新增）

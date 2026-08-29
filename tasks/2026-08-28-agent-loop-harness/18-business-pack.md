@@ -334,6 +334,16 @@ install 校验失败 → 不落库；物化中途失败 → status=failed，可�
 
 物化产物按来源区别：`workflow_definitions`（pack_ref 命中）保留行、置 archived（存量 run 引用不断链）；`quality_policies`/`memory_entries`（包前缀命中）置 archived 不删除（审计留痕，15 号状态机既有取值）；包私有工具节点若仍被存量定义引用 → 拒绝卸载并列出引用清单。
 
+### 6.5 三条外部借鉴的设计纪律（cordis 评估结论，详见 20 号文档）
+
+以下来自 cordis 时空可组合性框架的评估（20-cordis-evaluation.md），经"我们的需求是否真实存在"标尺收缩后采纳的 3 条：
+
+1. **effect 必须带逆操作（revertible effects）**：物化的每个动作（落快照行、UPSERT 技能/策略/模板、注册私有节点）必须同时登记逆操作；卸载 = 逆操作栈反序执行，保证系统回到"未安装态"。§6.2 的补偿与 §6.4 的处置规则按此纪律重写为显式逆操作清单，而非口头约定。
+2. **依赖声明 + 就绪才激活（reactive coeffects）**：`minKernelVersion` 保留为安装期静态校验（§7-9）；**运行时语义另行补齐**——包可声明运行时依赖（内核契约版本、其他包 packId、内核服务名），依赖未就绪时包处于 `pending`（新增状态，区别于 failed），依赖上线自动激活、下线自动停用回 pending。包状态机（§6.1）据此增加 `pending` 态。
+3. **配置 schema 即校验器、加载时 fail-fast**：Pack Manifest 的 schema 声明处即校验处（§6.2 第一步），非法 manifest 在安装期拒绝；节点 config 同纪律（见 14 号文档）。
+
+> cordis 的其余机制（fiber 生命周期树、增量 reconciliation、HMR、isolate/intercept）经评估为"包带活代码"场景的解法，本平台包为数据清单，暂不采纳；触发再评估的条件见 20 号文档 §4/§5。
+
 ## 7. 失败模式与边界
 
 1. **安装中途崩溃**：物化按幂等 UPSERT 设计，重试 install 以 manifest_hash 幂等；status=failed 的包对 resolve 不可见。

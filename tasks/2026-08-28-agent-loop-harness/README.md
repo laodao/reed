@@ -23,6 +23,7 @@
 - [17-quality-gate.md](./17-quality-gate.md) —— 质量门与验证器：四层验证、带反馈重试、质量分沿树聚合
 - [18-business-pack.md](./18-business-pack.md) —— 业务包架构：平台业务无关内核之上，各类业务以包接入（Pack Manifest、内核与包边界、ai-coding/approval/content-production 示例包、包级度量回流）
 - [19-refactoring-assessment.md](./19-refactoring-assessment.md) —— 现有系统重构评估：全量模块盘点、A/B/C/D 四类修改清单、可行性结论、工作量估算（180-250 人日）与迁移策略
+- [20-cordis-evaluation.md](./20-cordis-evaluation.md) —— cordis 插件框架调研：时空可组合性机制与 business-pack 的范式错位分析、复用三选项、收缩后吸收的 3 条原则与终局参考定位
 
 ## 核心结论（TL;DR）
 

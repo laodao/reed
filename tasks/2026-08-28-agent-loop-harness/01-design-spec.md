@@ -381,6 +381,7 @@ agent-loop 节点 config：`maxIterations`（默认 20）、`maxTokens`、`maxTo
 - [17-quality-gate.md](./17-quality-gate.md) —— 质量门与验证器（本文 §6）
 - [18-business-pack.md](./18-business-pack.md) —— 业务包架构（业务无关内核之上，各类业务以包接入；本文 §2 业务包层）
 - [19-refactoring-assessment.md](./19-refactoring-assessment.md) —— 现有系统重构评估（模块盘点、修改清单、可行性与工作量）
+- [20-cordis-evaluation.md](./20-cordis-evaluation.md) —— cordis 插件框架调研评估（外部框架复用决策记录）
 
 ---
 
