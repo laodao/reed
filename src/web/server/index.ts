@@ -226,6 +226,15 @@ async function bootstrap(): Promise<void> {
     )
   }
 
+  // 业务包子系统（第一期：包内核；失败不致命，与 Electron 端平级）。
+  // 不依赖 workflow，放在工作流子系统初始化之前（P4 起业务包的 activate 会复用 workflow 等设施）。
+  try {
+    const { initPackSubsystem } = await import('@core/packs/kernel')
+    await initPackSubsystem()
+  } catch (e: any) {
+    console.warn('[web-server] 业务包子系统启动失败（不致命）', e)
+  }
+
   // 工作流子系统：引擎装配 + boot 恢复 + 触发调度器（失败不致命，与 Electron 端平级）
   try {
     const { initWorkflowSubsystem } = await import('@core/modules/workflow/workflow-boot')
@@ -434,6 +443,13 @@ async function initDatabase(): Promise<void> {
     '@core/database/migrations/create-lw-graph-tables'
   )
   await createLwGraphTables(ds)
+
+  // 业务包内核（第一期）：business_packs / business_pack_bindings 两表
+  // （synchronize 已按 entity 建表，此处幂等补索引；与 Electron 端 runMultiTenantMigrations 同构）
+  const { createPackTables } = await import(
+    '@core/database/migrations/create-pack-tables'
+  )
+  await createPackTables(ds)
 
   const dm = new WebDatabaseManager(ds)
   registerCoreDatabaseManager(() => dm)

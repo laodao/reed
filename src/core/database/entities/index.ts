@@ -110,3 +110,6 @@ export { ToolCredentialEntity } from './tool-credential.entity'
 export { CustomToolEntity } from './custom-tool.entity'
 export { EmailAccountEntity } from './email-account.entity'
 export { WorkflowVariableEntity, DataTableDefEntity, DataTableRowEntity } from './variable.entities'
+// 业务包内核（第一期）：包快照 + 启用/配置覆写（binding user_id NULL = 全局默认行）
+export { BusinessPackEntity } from './business-pack.entity'
+export { BusinessPackBindingEntity } from './business-pack-binding.entity'

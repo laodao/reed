@@ -92,7 +92,7 @@ process.on('uncaughtException', (err: any) => {
 import { setFlagsFromString } from 'v8'
 setFlagsFromString('--max-old-space-size=4096')
 
-import { app, BrowserWindow, shell, ipcMain, protocol, net, dialog } from 'electron'
+import { app, BrowserWindow, shell, protocol, dialog } from 'electron'
 import { join } from 'path'
 import * as path from 'path'
 import { DataPathService } from './services/data-path.service'
@@ -429,6 +429,15 @@ app.whenReady().then(async () => {
     console.log('[boot] VoiceCloneJobScheduler 已启动')
   } catch (e: any) {
     console.warn('[boot] VoiceCloneJobScheduler 启动失败（不致命）:', e?.message ?? e)
+  }
+
+  // 业务包子系统（第一期：包内核——注册表/快照物化/启用态恢复/IPC 守卫；失败不致命）。
+  // 不依赖 workflow，放在工作流子系统初始化之前（P4 起业务包的 activate 会复用 workflow 等设施）。
+  try {
+    const { initPackSubsystem } = await import('@core/packs/kernel')
+    await initPackSubsystem()
+  } catch (e: any) {
+    console.warn('[boot] 业务包子系统启动失败（不致命）', e)
   }
 
   // 工作流子系统：引擎装配 + boot 恢复 + 触发调度器（失败不致命）

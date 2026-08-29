@@ -67,6 +67,7 @@ import { LwVectorIndexRepository } from '@core/database/repositories/lw-vector-i
 import { WorkflowDefinitionRepository } from '@core/database/repositories/workflow-definition.repository'
 import { WorkflowRunRepository } from '@core/database/repositories/workflow-run.repository'
 import { WorkflowNodeRunRepository } from '@core/database/repositories/workflow-node-run.repository'
+import { PackBindingRepository, PackRepository } from '@core/database/repositories/business-pack.repositories'
 import { LwPlotCharacterRepository } from '@core/database/repositories/lw-plot-character.repository'
 import { LwPlotLocationRepository } from '@core/database/repositories/lw-plot-location.repository'
 import { LwOutlineCharacterRepository } from '@core/database/repositories/lw-outline-character.repository'
@@ -184,6 +185,9 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
   workflowDefinitions: WorkflowDefinitionRepository | null
   workflowRuns: WorkflowRunRepository | null
   workflowNodeRuns: WorkflowNodeRunRepository | null
+  // 业务包内核（第一期）
+  packs: PackRepository | null
+  packBindings: PackBindingRepository | null
   // 长文关联表
   lwPlotCharacters: LwPlotCharacterRepository | null
   lwPlotLocations: LwPlotLocationRepository | null
@@ -294,6 +298,9 @@ export class WebDatabaseManager implements ICoreDatabaseManager {
     this.workflowDefinitions = new WorkflowDefinitionRepository(ds)
     this.workflowRuns = new WorkflowRunRepository(ds)
     this.workflowNodeRuns = new WorkflowNodeRunRepository(ds)
+    // 业务包内核（第一期）：包快照 + 启用/配置覆写
+    this.packs = new PackRepository(ds)
+    this.packBindings = new PackBindingRepository(ds)
 
     this.lwPlotCharacters = new LwPlotCharacterRepository(ds)
     this.lwPlotLocations = new LwPlotLocationRepository(ds)

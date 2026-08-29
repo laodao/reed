@@ -12,6 +12,7 @@
  */
 
 import { registerIpc } from './ipc-bridge'
+import { guardIpcHandler } from '../packs/ipc-guard'
 
 export type ElectronCompatHandler = (event: any, ...args: any[]) => unknown | Promise<unknown>
 
@@ -31,24 +32,29 @@ function getElectronIpcMain(): any {
   if (!isElectronMain) return null
   if (cachedIpcMain !== null) return cachedIpcMain
   // 用 require 而非 import，避免在非 Electron 端打包/解析时报错
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
   cachedIpcMain = require('electron').ipcMain
   return cachedIpcMain
 }
 
 export const ipcBridge: IpcBridge = {
   handle(channel: string, handler: ElectronCompatHandler): void {
+    // 0. 业务包 IPC 守卫：明确属于某包且该包被禁用/pending 的 channel 统一拦截
+    //    （归属未声明的 channel 放行；详见 core/packs/ipc-guard）。
+    //    在注册点包一层 → Electron（ipcMain）与 Web（invokeIpc）两条路径同时生效。
+    const guarded = guardIpcHandler(channel, handler) as ElectronCompatHandler
+
     // 1. 总是注册到跨平台桥（Web HTTP 路由从此取）
     //    Web 端没有真实 IpcMainInvokeEvent，传一个 fake 占位对象。
     const fakeEvent = { sender: { send: () => {} } }
     registerIpc(channel, async (...args: unknown[]) => {
-      return handler(fakeEvent, ...args)
+      return guarded(fakeEvent, ...args)
     })
 
     // 2. 若在 Electron 主进程，额外注册到 ipcMain
     const ipcMain = getElectronIpcMain()
     if (ipcMain) {
-      ipcMain.handle(channel, handler)
+      ipcMain.handle(channel, guarded)
     }
   },
 
