@@ -214,6 +214,18 @@
           <div class="model-section">
             <div class="section-header">
               <span class="section-title">API 模型</span>
+              <div v-if="apiModels.length > 0" class="model-search">
+                <el-input
+                  v-model="apiModelSearch"
+                  placeholder="搜索模型"
+                  clearable
+                  size="small"
+                >
+                  <template #prefix>
+                    <el-icon><Search /></el-icon>
+                  </template>
+                </el-input>
+              </div>
               <el-button
                 type="primary"
                 size="small"
@@ -224,11 +236,10 @@
                 从 API 刷新
               </el-button>
             </div>
-            <div class="section-desc">从提供商 API 获取的模型列表，点击"添加"按钮将模型添加到启用列表</div>
 
             <div v-if="apiModels.length > 0" class="model-list api-models">
               <div
-                v-for="model in apiModels"
+                v-for="model in filteredApiModels"
                 :key="model.id"
                 class="model-card"
                 :class="{ enabled: isModelEnabled(model.id) }"
@@ -236,31 +247,55 @@
                 <div class="model-card-main">
                   <div class="model-card-info">
                     <span class="model-name">{{ model.name }}</span>
-                    <span class="model-id">{{ model.id }}</span>
                   </div>
                   <div class="model-card-features">
-                    <el-tag v-if="model.type === 'multimodal'" type="success" size="small">多模态</el-tag>
-                    <el-tag v-else-if="model.type === 'image'" type="warning" size="small">图像</el-tag>
-                    <el-tag v-else-if="model.type === 'video'" type="danger" size="small">视频</el-tag>
-                    <el-tag v-else-if="model.type === 'audio'" type="info" size="small">音频</el-tag>
-                    <el-tag v-else-if="model.type === 'embedding'" size="small">嵌入</el-tag>
-                    <el-tag v-else-if="model.type === 'rerank'" size="small">重排序</el-tag>
-                    <el-tag v-if="model.supportsThinking" type="primary" size="small">思考</el-tag>
-                    <el-tag v-if="model.supportsWebSearch" type="primary" size="small">联网</el-tag>
-                    <el-tag v-if="model.supportsTools" type="primary" size="small">工具</el-tag>
+                    <el-tooltip v-if="model.type === 'multimodal'" content="多模态" placement="top">
+                      <el-icon class="feature-icon multimodal"><Grid /></el-icon>
+                    </el-tooltip>
+                    <el-tooltip v-else-if="model.type === 'image'" content="图像生成" placement="top">
+                      <el-icon class="feature-icon image"><PictureFilled /></el-icon>
+                    </el-tooltip>
+                    <el-tooltip v-else-if="model.type === 'video'" content="视频生成" placement="top">
+                      <el-icon class="feature-icon video"><Film /></el-icon>
+                    </el-tooltip>
+                    <el-tooltip v-else-if="model.type === 'audio'" content="音频" placement="top">
+                      <el-icon class="feature-icon audio"><Mic /></el-icon>
+                    </el-tooltip>
+                    <el-tooltip v-else-if="model.type === 'embedding'" content="嵌入" placement="top">
+                      <el-icon class="feature-icon embedding"><Coin /></el-icon>
+                    </el-tooltip>
+                    <el-tooltip v-else-if="model.type === 'rerank'" content="重排序" placement="top">
+                      <el-icon class="feature-icon rerank"><Sort /></el-icon>
+                    </el-tooltip>
+                    <el-tooltip v-if="model.supportsThinking" content="深度思考" placement="top">
+                      <el-icon class="feature-icon thinking"><MagicStick /></el-icon>
+                    </el-tooltip>
+                    <el-tooltip v-if="model.supportsWebSearch" content="联网搜索" placement="top">
+                      <el-icon class="feature-icon websearch"><Search /></el-icon>
+                    </el-tooltip>
+                    <el-tooltip v-if="model.supportsTools" content="工具调用" placement="top">
+                      <el-icon class="feature-icon tools"><Tools /></el-icon>
+                    </el-tooltip>
                   </div>
                 </div>
                 <div class="model-card-actions">
-                  <el-button
-                    v-if="!isModelEnabled(model.id)"
-                    type="primary"
-                    size="small"
-                    @click="addModelToEnabled(model)"
-                  >
-                    添加
-                  </el-button>
-                  <span v-else class="enabled-label">已启用</span>
+                  <el-tooltip v-if="!isModelEnabled(model.id)" content="添加到启用列表" placement="top">
+                    <el-button
+                      type="primary"
+                      size="small"
+                      circle
+                      @click="addModelToEnabled(model)"
+                    >
+                      <el-icon><Plus /></el-icon>
+                    </el-button>
+                  </el-tooltip>
+                  <el-tooltip v-else content="已启用" placement="top">
+                    <el-icon class="enabled-icon"><CircleCheckFilled /></el-icon>
+                  </el-tooltip>
                 </div>
+              </div>
+              <div v-if="filteredApiModels.length === 0" class="empty-hint search-empty">
+                <span>没有匹配"{{ apiModelSearch }}"的模型</span>
               </div>
             </div>
             <div v-else class="empty-hint">
@@ -283,8 +318,6 @@
                 添加自定义模型
               </el-button>
             </div>
-            <div class="section-desc">启用的模型将显示在对话界面的模型选择列表中</div>
-
             <div v-if="enabledModelList.length > 0" class="model-list enabled-models">
               <div
                 v-for="model in enabledModelList"
@@ -297,27 +330,48 @@
                       {{ model.name }}
                       <el-tag v-if="isCustomModel(model.id)" type="warning" size="small">自定义</el-tag>
                     </span>
-                    <span class="model-id">{{ model.id }}</span>
                   </div>
                   <div class="model-card-features">
-                    <el-tag v-if="model.type === 'multimodal'" type="success" size="small">多模态</el-tag>
-                    <el-tag v-else-if="model.type === 'image'" type="warning" size="small">图像</el-tag>
-                    <el-tag v-else-if="model.type === 'video'" type="danger" size="small">视频</el-tag>
-                    <el-tag v-else-if="model.type === 'audio'" type="info" size="small">音频</el-tag>
-                    <el-tag v-else-if="model.type === 'embedding'" size="small">嵌入</el-tag>
-                    <el-tag v-else-if="model.type === 'rerank'" size="small">重排序</el-tag>
-                    <el-tag v-if="model.supportsThinking" type="primary" size="small">思考</el-tag>
-                    <el-tag v-if="model.supportsWebSearch" type="primary" size="small">联网</el-tag>
-                    <el-tag v-if="model.supportsTools" type="primary" size="small">工具</el-tag>
+                    <el-tooltip v-if="model.type === 'multimodal'" content="多模态" placement="top">
+                      <el-icon class="feature-icon multimodal"><Grid /></el-icon>
+                    </el-tooltip>
+                    <el-tooltip v-else-if="model.type === 'image'" content="图像生成" placement="top">
+                      <el-icon class="feature-icon image"><PictureFilled /></el-icon>
+                    </el-tooltip>
+                    <el-tooltip v-else-if="model.type === 'video'" content="视频生成" placement="top">
+                      <el-icon class="feature-icon video"><Film /></el-icon>
+                    </el-tooltip>
+                    <el-tooltip v-else-if="model.type === 'audio'" content="音频" placement="top">
+                      <el-icon class="feature-icon audio"><Mic /></el-icon>
+                    </el-tooltip>
+                    <el-tooltip v-else-if="model.type === 'embedding'" content="嵌入" placement="top">
+                      <el-icon class="feature-icon embedding"><Coin /></el-icon>
+                    </el-tooltip>
+                    <el-tooltip v-else-if="model.type === 'rerank'" content="重排序" placement="top">
+                      <el-icon class="feature-icon rerank"><Sort /></el-icon>
+                    </el-tooltip>
+                    <el-tooltip v-if="model.supportsThinking" content="深度思考" placement="top">
+                      <el-icon class="feature-icon thinking"><MagicStick /></el-icon>
+                    </el-tooltip>
+                    <el-tooltip v-if="model.supportsWebSearch" content="联网搜索" placement="top">
+                      <el-icon class="feature-icon websearch"><Search /></el-icon>
+                    </el-tooltip>
+                    <el-tooltip v-if="model.supportsTools" content="工具调用" placement="top">
+                      <el-icon class="feature-icon tools"><Tools /></el-icon>
+                    </el-tooltip>
                   </div>
                 </div>
                 <div class="model-card-actions">
-                  <el-button type="primary" text size="small" @click="editModelCapabilities(model)">
-                    编辑
-                  </el-button>
-                  <el-button type="danger" text size="small" @click="removeModelFromEnabled(model.id)">
-                    移除
-                  </el-button>
+                  <el-tooltip content="编辑模型" placement="top">
+                    <el-button type="primary" text size="small" @click="editModelCapabilities(model)">
+                      <el-icon><EditPen /></el-icon>
+                    </el-button>
+                  </el-tooltip>
+                  <el-tooltip content="从启用列表移除" placement="top">
+                    <el-button type="danger" text size="small" @click="removeModelFromEnabled(model.id)">
+                      <el-icon><Remove /></el-icon>
+                    </el-button>
+                  </el-tooltip>
                 </div>
               </div>
             </div>
@@ -415,11 +469,12 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { Delete, Plus, Loading, Picture, VideoCamera, Camera, Document, Cpu, Search, SetUp, Refresh, InfoFilled, Setting, List } from '@element-plus/icons-vue'
+import { Delete, Plus, Loading, Search, Refresh, InfoFilled, Setting, List, Grid, PictureFilled, Film, Mic, Coin, Sort, MagicStick, Tools, EditPen, Remove, CircleCheckFilled } from '@element-plus/icons-vue'
 import FaviconIcon from '@/components/common/FaviconIcon.vue'
 import type {
   ProviderTemplate,
-  ModelDefinition
+  ModelDefinition,
+  UserProviderConfig
 } from '../../../../shared/types/provider-template.types'
 
 // Props
@@ -496,31 +551,17 @@ const customModelForm = reactive({
 // 从 API 获取的模型列表（用于与现有模型对比）
 const apiModels = ref<ModelDefinition[]>([])
 
-// 所有模型（已启用的模型 + API 获取的模型）
-const allModels = computed(() => {
-  // 获取已启用模型的 ID 集合
-  const enabledModelIds = new Set(form.models.map((m) => m.id))
+// API 模型搜索关键字
+const apiModelSearch = ref('')
 
-  // 用于合并模型的 Map
-  const modelsMap = new Map<string, ModelDefinition>()
-
-  // 先添加已启用的模型
-  form.models.forEach((m) => {
-    modelsMap.set(m.id, m)
-  })
-
-  // 如果已从 API 获取模型，添加 API 模型（排除已启用的）
-  if (apiModels.value.length > 0) {
-    apiModels.value.forEach((m) => {
-      if (!enabledModelIds.has(m.id)) {
-        modelsMap.set(m.id, m)
-      }
-    })
-  }
-
-  return Array.from(modelsMap.values())
+// 过滤后的 API 模型列表
+const filteredApiModels = computed(() => {
+  const keyword = apiModelSearch.value.trim().toLowerCase()
+  if (!keyword) return apiModels.value
+  return apiModels.value.filter(
+    (m) => m.id.toLowerCase().includes(keyword) || (m.name || '').toLowerCase().includes(keyword)
+  )
 })
-
 
 // 判断是否是自定义模型（不在 API 列表中的模型）
 const isCustomModel = (modelId: string): boolean => {
@@ -530,19 +571,6 @@ const isCustomModel = (modelId: string): boolean => {
 // 判断模型是否已启用
 const isModelEnabled = (modelId: string): boolean => {
   return form.models.some((m) => m.id === modelId)
-}
-
-// 切换模型启用状态
-const toggleModelEnabled = (model: ModelDefinition) => {
-  const index = form.models.findIndex((m) => m.id === model.id)
-  if (index > -1) {
-    form.models.splice(index, 1)
-  } else {
-    form.models.push({
-      ...model,
-      name: model.name || model.id
-    })
-  }
 }
 
 // 添加 API 模型到启用列表（弹出对话框让用户确认）
@@ -838,6 +866,7 @@ const handleClose = () => {
   form.isDefault = false
   customHeadersList.value = []
   apiModels.value = []
+  apiModelSearch.value = ''
   activeCollapse.value = []
   // 重置加载状态，防止关闭对话框后状态残留
   loadingModels.value = false
@@ -883,23 +912,6 @@ const editModelCapabilities = (model: ModelDefinition) => {
   customModelForm.supportsWebSearch = model.supportsWebSearch || false
   customModelForm.supportsTools = model.supportsTools || false
   showAddCustomModel.value = true
-}
-
-// 删除模型
-const deleteCustomModel = (modelId: string) => {
-  const index = form.models.findIndex((m) => m.id === modelId)
-  if (index > -1) {
-    form.models.splice(index, 1)
-  }
-}
-
-// 移除模型（统一处理）
-const removeModel = (modelId: string) => {
-  const index = form.models.findIndex((m) => m.id === modelId)
-  if (index > -1) {
-    form.models.splice(index, 1)
-    ElMessage.success('已移除模型')
-  }
 }
 
 // 添加或更新模型
@@ -1324,13 +1336,21 @@ watch(visible, (val) => {
   }
 }
 
+// 模型搜索框（位于"API 模型"标题与刷新按钮之间）
+.model-search {
+  flex: 1;
+  min-width: 0;
+  margin: 0 12px;
+}
+
 // 模型列表
 .model-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
-  max-height: 200px;
+  max-height: 320px;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 8px;
   background: var(--bg-color-page);
   border-radius: var(--radius-sm);
@@ -1341,6 +1361,8 @@ watch(visible, (val) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  min-width: 0;
+  overflow: hidden;
   padding: 10px 12px;
   background: var(--bg-color);
   border: 1px solid var(--border-color-lighter);
@@ -1369,39 +1391,83 @@ watch(visible, (val) => {
     flex-direction: column;
     gap: 2px;
     min-width: 0;
+    overflow: hidden;
 
     .model-name {
       font-size: 13px;
       font-weight: 500;
       color: var(--text-primary);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .model-id {
-      font-size: 11px;
-      color: var(--text-secondary);
-      font-family: monospace;
+      display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
   }
 
   .model-card-features {
     display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    margin-left: 8px;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 6px;
+    margin-left: auto;
+    padding-left: 8px;
+    flex-shrink: 0;
+
+    .feature-icon {
+      font-size: 15px;
+
+      &.multimodal {
+        color: #409eff;
+      }
+
+      &.image {
+        color: #e6a23c;
+      }
+
+      &.video {
+        color: #f56c6c;
+      }
+
+      &.audio {
+        color: #13c2c2;
+      }
+
+      &.embedding {
+        color: #9254de;
+      }
+
+      &.rerank {
+        color: #eb2f96;
+      }
+
+      &.thinking {
+        color: #67c23a;
+      }
+
+      &.websearch {
+        color: #1890ff;
+      }
+
+      &.tools {
+        color: #fa541c;
+      }
+    }
   }
 
   .model-card-actions {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
     flex-shrink: 0;
+    margin-left: 8px;
 
-    .enabled-label {
-      font-size: 12px;
-      color: var(--color-primary);
+    .el-button {
+      margin-left: 0;
+    }
+
+    .enabled-icon {
+      font-size: 18px;
+      color: #67c23a;
     }
   }
 }
@@ -1413,6 +1479,11 @@ watch(visible, (val) => {
   font-size: 13px;
   background: var(--bg-color-page);
   border-radius: var(--radius-sm);
+
+  &.search-empty {
+    grid-column: 1 / -1;
+    background: transparent;
+  }
 }
 
 .model-management {
@@ -1623,10 +1694,11 @@ watch(visible, (val) => {
 <style lang="scss">
 .add-provider-dialog {
   .el-dialog {
-    height: 80vh;
+    height: 92vh;
+    max-width: 96vw;
     display: flex;
     flex-direction: column;
-    margin-top: 10vh !important;
+    margin-top: 4vh !important;
     overflow: hidden;
   }
 
