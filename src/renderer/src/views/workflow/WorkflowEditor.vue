@@ -48,7 +48,8 @@
       <div class="canvas" @drop="onDrop" @dragover.prevent @dragenter.prevent>
         <VueFlow v-model:nodes="nodes" v-model:edges="edges" :default-edge-options="{ markerEnd: MarkerType.ArrowClosed }"
           :edges-updatable="true" :edge-updater-radius="14" :connection-radius="30" connection-mode="loose"
-          @connect="onConnect" @edge-click="onEdgeClick" @edge-update="onEdgeUpdate" @pane-click="closeConfigPanel" fit-view-on-init :min-zoom="0.2" :delete-key-code="['Delete','Backspace']">
+          @connect="onConnect" @edge-click="onEdgeClick" @edge-update="onEdgeUpdate" @pane-click="closeConfigPanel" fit-view-on-init :min-zoom="0.2" :delete-key-code="['Delete','Backspace']"
+          @nodes-change="onNodesChange" @edges-change="onEdgesChange" @node-drag-start="onNodeDragStart">
           <Background :gap="20" />
           <Controls />
           <!-- pannable：点击/拖拽缩略图（白色视口框）可同步平移画布 -->
@@ -172,7 +173,8 @@ import { ref, reactive, computed, onMounted, onUnmounted, provide, watch, nextTi
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Close } from '@element-plus/icons-vue'
-import { VueFlow, Handle, Position, MarkerType, useVueFlow } from '@vue-flow/core'
+import { VueFlow, Handle, Position, MarkerType, useVueFlow, type NodeChange, type EdgeChange } from '@vue-flow/core'
+import { shouldMergeConfigUndo } from '@/utils/undo-merge'
 import type { Node, Edge, Connection } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
@@ -907,11 +909,31 @@ function autoLayout(): void {
   ElMessage.success('已整理布局')
 }
 
+// 评审 #82：配置连续编辑合并入栈——同节点 800ms 内多次 change 记为一条历史
+let lastConfigPush: { nodeId: string; at: number } | null = null
+const CONFIG_UNDO_MERGE_MS = 800
+
 function onConfigChanged() {
   if (!selectedNode.value) return
-  pushUndo()
+  if (!shouldMergeConfigUndo(lastConfigPush, selectedNode.value.id, Date.now(), CONFIG_UNDO_MERGE_MS)) {
+    pushUndo()
+  }
+  lastConfigPush = { nodeId: selectedNode.value.id, at: Date.now() }
   const wf = (selectedNode.value.data as any).wfNode
   ;(selectedNode.value.data as any).summary = summaryOf(wf.type, wf.config)
+}
+
+// 评审 #82：键盘 Delete/Backspace 删除节点/边 → 先入栈再让 Vue Flow 应用变更
+// （nodesChange/edgesChange 先于 v-model 更新触发，此刻快照仍是删除前状态）
+function onNodesChange(changes: NodeChange[]) {
+  if (changes.some(c => c.type === 'remove')) pushUndo()
+}
+function onEdgesChange(changes: EdgeChange[]) {
+  if (changes.some(c => c.type === 'remove')) pushUndo()
+}
+// 拖动入栈：drag-start 时快照拖动前位置（drag-stop 时 v-model 已是新位置）
+function onNodeDragStart(): void {
+  pushUndo()
 }
 
 function removeSelected() {

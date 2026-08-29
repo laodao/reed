@@ -109,6 +109,7 @@ import {
   labelOf,
 } from '../shared/param-options'
 import { parsePrompt, serializePrompt, type PromptLine } from './storyboard-prompt-format'
+import { splitEntityRef, serializeEntityToken } from '@/utils/shot-prompt-token'
 import { toImageUrl } from '@/utils/asset-url'
 
 export interface MentionEntityImage { id: string; path: string }
@@ -132,18 +133,7 @@ const PARAM_KEYS = ['景别', '运镜', '时长', '风格'] as const
  */
 const ENTITY_RE = /@\[([^\]]+)\]/g
 /** 拆出 `名字@图索引` → { name, index }；索引非数字则整体视为名字。 */
-function splitEntityRef(inner: string): { name: string; index: number | null; id: string | null } {
-  // 评审 #48：三段协议 `名字@索引@实体id`（id 可选；旧两段格式完全兼容）
-  const parts = inner.split('@')
-  const name = parts.shift() ?? ''
-  let index: number | null = null
-  let id: string | null = null
-  for (const part of parts) {
-    if (/^\d+$/.test(part) && index === null) index = Number(part)
-    else if (part) id = part
-  }
-  return { name, index, id }
-}
+
 
 const props = defineProps<{
   /** 提示词字符串（一个字段，一行=一个镜头） */
@@ -254,7 +244,7 @@ function serializeDesc(descEl: HTMLElement): string {
         const idx = em.getAttribute('data-img-index')
         // 评审 #48：序列化携带实体 id（三方段协议），资产改名后仍可解析
         const entityId = em.getAttribute('data-entity-id')
-        out += `@[${name}${idx ? '@' + idx : ''}${entityId ? '@' + entityId : ''}]`
+        out += serializeEntityToken(name, idx ? Number(idx) : null, entityId)
       } else {
         if (em.tagName === 'BR') out += '\n'
         em.childNodes.forEach(walk)
