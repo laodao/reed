@@ -1,0 +1,150 @@
+{
+  "kind": "the-bot-workflow",
+  "formatVersion": 1,
+  "name": "[内置] 长文写作",
+  "description": "分阶段写长文：先写故事线 → 再生成章节大纲 → 逐章写作（多轮对话自动承接前文）→ 合并成完整长文存入资产库。解决单次 LLM 无法完成长文的问题",
+  "category": "内容创作",
+  "graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "name": "开始",
+        "position": { "x": 40, "y": 320 },
+        "config": {
+          "inputs": [
+            { "key": "topic", "label": "主题", "type": "string", "required": true, "defaultValue": "", "placeholder": "如：一个关于 AI 觉醒的长篇小说" },
+            { "key": "premise", "label": "设定/背景（可选）", "type": "textarea", "required": false, "defaultValue": "", "help": "世界观、人物、年代、风格基调等补充设定" },
+            { "key": "chapterCount", "label": "目标章节数", "type": "number", "defaultValue": 5, "min": 1, "max": 50 },
+            { "key": "wordCountPerChapter", "label": "每章目标字数", "type": "number", "defaultValue": 1200, "min": 100, "max": 5000 },
+            { "key": "style", "label": "文风", "type": "select", "defaultValue": "通俗小说", "options": [
+              { "label": "通俗小说", "value": "通俗小说" },
+              { "label": "网文爽文", "value": "网文爽文" },
+              { "label": "严肃文学", "value": "严肃文学" },
+              { "label": "科普说明", "value": "科普说明" },
+              { "label": "商业文案", "value": "商业文案" }
+            ] },
+            { "key": "traditional", "label": "用繁体字（默认简体）", "type": "boolean", "required": false, "defaultValue": false, "help": "关闭=简体（默认）；开启=全文繁体" },
+            { "key": "kbId", "label": "知识库（可选，保存长文）", "type": "select-dynamic", "source": "knowledgeBases" },
+            { "key": "model", "label": "模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
+          ]
+        }
+      },
+      {
+        "id": "storyline",
+        "type": "llm-chat",
+        "name": "构思故事线",
+        "position": { "x": 300, "y": 320 },
+        "config": {
+          "systemPrompt": "你是资深长文/小说策划。根据主题与设定构思一条有起承转合、有核心冲突与张力的故事线（或文章主线）。要求：创意新颖、逻辑自洽、结构清晰；繁简按开关决定（{{start.traditional}} 为 true 才繁体）。只输出故事线正文，不要任何解释。",
+          "prompt": "主题：{{start.topic}}\n设定/背景：{{start.premise}}\n文风：{{start.style}}\n\n请构思故事线（含核心冲突、情节走向、高潮亮点），可用分段写出关键节点。",
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "outline",
+        "type": "llm-chat",
+        "name": "生成章节大纲",
+        "position": { "x": 560, "y": 320 },
+        "config": {
+          "systemPrompt": "你是内容编辑，基于故事线输出章节大纲。只输出 JSON 数组，不要任何解释或代码块包裹：\n[{\"title\":\"章节标题\",\"summary\":\"本章要点（一句话）\"}, ...]\n章节数不超过目标；繁简按开关（{{start.traditional}}，true 才繁体）。",
+          "prompt": "故事线：\n{{storyline.content}}\n\n目标章节数：{{start.chapterCount}}\n文风：{{start.style}}\n\n请输出章节大纲 JSON 数组，每章含 title 与 summary。",
+          "jsonMode": true,
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "loop1",
+        "type": "loop",
+        "name": "逐章写作",
+        "position": { "x": 820, "y": 320 },
+        "config": { "listExpression": "{{outline.parsed}}", "emptyPolicy": "skip", "errorPolicy": "skip" }
+      },
+      {
+        "id": "chapter",
+        "type": "llm-chat",
+        "name": "写作本章",
+        "position": { "x": 1080, "y": 240 },
+        "config": {
+          "systemPrompt": "你是小说/长文作者，按大纲逐章写作。要求：\n1. 只依据给出的故事线与大纲，内容连贯、有细节与画面感，不编造大纲外的设定；\n2. 输出本章 markdown，开篇用 ## 章节标题；正文充分展开，达到目标字数；\n3. 承接前文（多轮对话已把前面章节带入上下文）：保持剧情与人物状态前后一致，不冲突、不重复；\n4. 繁简按开关（{{start.traditional}}，true 才繁体）；\n5. 只输出本章正文，不要解释或其它内容。",
+          "prompt": "主题：{{start.topic}}\n文风：{{start.style}}\n故事线：\n{{storyline.content}}\n\n完整大纲：\n{{outline.parsed}}\n\n当前章节：第 {{loop1.index}} 章「{{loop1.item.title}}」\n本章要点：{{loop1.item.summary}}\n目标字数：{{start.wordCountPerChapter}} 字\n\n请写这一章。",
+          "providerConfigId": "{{start.model.providerConfigId}}",
+          "modelId": "{{start.model.modelId}}"
+        }
+      },
+      {
+        "id": "concat1",
+        "type": "code",
+        "name": "合并成完整长文",
+        "position": { "x": 1320, "y": 320 },
+        "config": {
+          "language": "js",
+          "code": "const chapters = Array.isArray(inputs.chapters) ? inputs.chapters : [];\nconst title = (inputs.title || '').trim();\nconst body = chapters.map(function (c, i) {\n  const text = c && c.content ? c.content : (typeof c === 'string' ? c : '');\n  const head = (c && c.title) ? '## ' + c.title + '\\n\\n' : '';\n  return (i > 0 ? '\\n\\n' : '') + head + text;\n}).join('');\nreturn (title ? title + '\\n\\n' : '') + body;",
+          "inputs": [
+            { "key": "chapters", "value": "{{loop1.results}}" },
+            { "key": "title", "value": "{{start.topic}}" }
+          ]
+        }
+      },
+      {
+        "id": "cond1",
+        "type": "condition",
+        "name": "是否存知识库",
+        "position": { "x": 1580, "y": 320 },
+        "config": {
+          "branches": [
+            { "branchId": "hasKb", "label": "存知识库", "conditions": [{ "left": "{{start.kbId}}", "operator": "not_empty" }] },
+            { "branchId": "noKb", "label": "跳过知识库", "conditions": [{ "left": "{{start.kbId}}", "operator": "is_empty" }] }
+          ],
+          "noMatchPolicy": "fallback",
+          "fallbackBranchId": "noKb"
+        }
+      },
+      {
+        "id": "saveKb1",
+        "type": "kb-ingest",
+        "name": "长文存知识库",
+        "position": { "x": 1840, "y": 220 },
+        "config": {
+          "knowledgeBaseId": "{{start.kbId}}",
+          "title": "「长文」{{start.topic}}-{{sys.today}}",
+          "content": "{{concat1.result}}",
+          "sourceKey": "longform-{{start.topic}}-{{sys.today}}",
+          "waitForCompletion": false
+        }
+      },
+      {
+        "id": "save1",
+        "type": "save-asset",
+        "name": "长文存资产库",
+        "position": { "x": 1840, "y": 420 },
+        "config": { "content": "{{concat1.result}}", "kind": "text", "category": "text", "subCategory": "长文写作", "name": "{{start.topic}}长文-{{sys.today}}", "tags": "长文,{{start.topic}}" }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "name": "结束",
+        "position": { "x": 2100, "y": 320 },
+        "config": {}
+      }
+    ],
+    "edges": [
+      { "id": "e1", "sourceNodeId": "start", "targetNodeId": "storyline", "kind": "normal" },
+      { "id": "e2", "sourceNodeId": "storyline", "targetNodeId": "outline", "kind": "normal" },
+      { "id": "e3", "sourceNodeId": "outline", "targetNodeId": "loop1", "kind": "normal" },
+      { "id": "e4", "sourceNodeId": "loop1", "targetNodeId": "chapter", "kind": "loop-body" },
+      { "id": "e5", "sourceNodeId": "chapter", "targetNodeId": "loop1", "kind": "loop-back" },
+      { "id": "e6", "sourceNodeId": "loop1", "targetNodeId": "concat1", "kind": "loop-done" },
+      { "id": "e7", "sourceNodeId": "concat1", "targetNodeId": "cond1", "kind": "normal" },
+      { "id": "e8", "sourceNodeId": "cond1", "targetNodeId": "saveKb1", "kind": "branch", "branchId": "hasKb" },
+      { "id": "e9", "sourceNodeId": "cond1", "targetNodeId": "save1", "kind": "branch", "branchId": "noKb" },
+      { "id": "e10", "sourceNodeId": "saveKb1", "targetNodeId": "save1", "kind": "normal" },
+      { "id": "e11", "sourceNodeId": "save1", "targetNodeId": "end", "kind": "normal" }
+    ]
+  },
+  "triggers": [],
+  "settings": { "multiTurn": true, "maxOutputChars": 1000000 }
+}
