@@ -127,7 +127,10 @@ function createEdgesDDL(isPg: boolean): string {
  * 把 lw_character_relations 老数据导入 lw_graph_edges（幂等）。
  * - source/target_type='character'，relation_type=原值（空则 'related'）
  * - valid_from_chapter=1（老数据无时间线，视为自第 1 章起有效）
- * - user_id 置 NULL：老表无 user_id 列，与老数据在 scoped 查询下的可见性行为保持一致
+ * - user_id 取所属角色的 c.user_id（评审 #64：置 NULL 会让 scoped 查询下
+ *   桌面/租户用户看不到迁移数据；老关系表虽无 user_id，但角色行有归属）
+ * - 源表内部重复行（同 character+related+relation）先按身份三元组 GROUP BY
+ *   去重——确定性拼接 id 会撞主键使整个迁移失败
  * - project_id 从 lw_story_characters 反查
  */
 async function migrateCharacterRelations(ds: DataSource, isPg: boolean): Promise<void> {
@@ -142,21 +145,32 @@ async function migrateCharacterRelations(ds: DataSource, isPg: boolean): Promise
          relation_type, label, valid_from_chapter, valid_until_chapter, description,
          created_at, updated_at)
       SELECT
-        'edge_migrated_' || cr.character_id || '_' || cr.related_character_id || '_' || COALESCE(cr.relation_type, 'rel'),
-        NULL,
-        c.project_id,
-        'character', cr.character_id, 'character', cr.related_character_id,
-        COALESCE(cr.relation_type, 'related'),
-        cr.relation_type,
-        1, NULL, cr.relation_description,
-        COALESCE(EXTRACT(EPOCH FROM cr.created_at)::bigint, EXTRACT(EPOCH FROM NOW())::bigint) * 1000,
-        COALESCE(EXTRACT(EPOCH FROM cr.created_at)::bigint, EXTRACT(EPOCH FROM NOW())::bigint) * 1000
-      FROM lw_character_relations cr
-      JOIN lw_story_characters c ON c.id = cr.character_id
+        'edge_migrated_' || g.character_id || '_' || g.related_character_id || '_' || g.rel,
+        g.owner_user_id,
+        g.project_id,
+        'character', g.character_id, 'character', g.related_character_id,
+        COALESCE(g.relation_type, 'related'),
+        g.relation_type,
+        1, NULL, g.relation_description,
+        g.created_ms, g.created_ms
+      FROM (
+        SELECT
+          cr.character_id,
+          cr.related_character_id,
+          COALESCE(cr.relation_type, 'rel') AS rel,
+          MAX(cr.relation_type) AS relation_type,
+          MAX(cr.relation_description) AS relation_description,
+          MAX(c.user_id) AS owner_user_id,
+          MAX(c.project_id) AS project_id,
+          COALESCE(EXTRACT(EPOCH FROM MAX(cr.created_at))::bigint, EXTRACT(EPOCH FROM NOW())::bigint) * 1000 AS created_ms
+        FROM lw_character_relations cr
+        JOIN lw_story_characters c ON c.id = cr.character_id
+        GROUP BY cr.character_id, cr.related_character_id, COALESCE(cr.relation_type, 'rel')
+      ) g
       WHERE NOT EXISTS (
         SELECT 1 FROM lw_graph_edges ge
-        WHERE ge.source_id = cr.character_id AND ge.target_id = cr.related_character_id
-          AND ge.relation_type = COALESCE(cr.relation_type, 'related')
+        WHERE ge.source_id = g.character_id AND ge.target_id = g.related_character_id
+          AND ge.relation_type = COALESCE(g.relation_type, 'related')
       )
     `)
   } else {
@@ -166,21 +180,32 @@ async function migrateCharacterRelations(ds: DataSource, isPg: boolean): Promise
          relation_type, label, valid_from_chapter, valid_until_chapter, description,
          created_at, updated_at)
       SELECT
-        'edge_migrated_' || cr.character_id || '_' || cr.related_character_id || '_' || COALESCE(cr.relation_type, 'rel'),
-        NULL,
-        c.project_id,
-        'character', cr.character_id, 'character', cr.related_character_id,
-        COALESCE(cr.relation_type, 'related'),
-        cr.relation_type,
-        1, NULL, cr.relation_description,
-        CAST(strftime('%s', COALESCE(cr.created_at, 'now')) AS INTEGER) * 1000,
-        CAST(strftime('%s', COALESCE(cr.created_at, 'now')) AS INTEGER) * 1000
-      FROM lw_character_relations cr
-      JOIN lw_story_characters c ON c.id = cr.character_id
+        'edge_migrated_' || g.character_id || '_' || g.related_character_id || '_' || g.rel,
+        g.owner_user_id,
+        g.project_id,
+        'character', g.character_id, 'character', g.related_character_id,
+        COALESCE(g.relation_type, 'related'),
+        g.relation_type,
+        1, NULL, g.relation_description,
+        g.created_ms, g.created_ms
+      FROM (
+        SELECT
+          cr.character_id,
+          cr.related_character_id,
+          COALESCE(cr.relation_type, 'rel') AS rel,
+          MAX(cr.relation_type) AS relation_type,
+          MAX(cr.relation_description) AS relation_description,
+          MAX(c.user_id) AS owner_user_id,
+          MAX(c.project_id) AS project_id,
+          CAST(strftime('%s', COALESCE(MAX(cr.created_at), 'now')) AS INTEGER) * 1000 AS created_ms
+        FROM lw_character_relations cr
+        JOIN lw_story_characters c ON c.id = cr.character_id
+        GROUP BY cr.character_id, cr.related_character_id, COALESCE(cr.relation_type, 'rel')
+      ) g
       WHERE NOT EXISTS (
         SELECT 1 FROM lw_graph_edges ge
-        WHERE ge.source_id = cr.character_id AND ge.target_id = cr.related_character_id
-          AND ge.relation_type = COALESCE(cr.relation_type, 'related')
+        WHERE ge.source_id = g.character_id AND ge.target_id = g.related_character_id
+          AND ge.relation_type = COALESCE(g.relation_type, 'related')
       )
     `)
   }

@@ -6,6 +6,7 @@
  * 分步失败可重跑（每步独立提交，不阻断已确认章节）。
  */
 
+import crypto from 'node:crypto'
 import { getCoreDatabaseManager, type ICoreDatabaseManager } from '@core/database/database-manager.interface'
 import { LongWritingAIService } from '@core/services/longwriting-ai.service'
 import { GraphService } from './graph.service'
@@ -37,6 +38,18 @@ export class ChapterGraphProcessor {
   private readonly db: ICoreDatabaseManager | null
   private readonly ai: LongWritingAIService | null
 
+  /**
+   * 评审 #61：内容 hash 缓存——同章节同内容不重跑 3 次 AI。
+   * key = projectId:chapterNumber，value = 上次成功流水线的内容 sha256。
+   * 进程级缓存（重启后首跑会重新执行，数据侧幂等由清理步骤保证）。
+   */
+  private static readonly contentHashes = new Map<string, string>()
+
+  /** 测试用：清空内容 hash 缓存（spec beforeEach 调用，防跨用例短路） */
+  static clearContentHashCache(): void {
+    ChapterGraphProcessor.contentHashes.clear()
+  }
+
   constructor(db?: ICoreDatabaseManager | null, ai?: LongWritingAIService | null) {
     this.db = db ?? null
     this.ai = ai ?? null
@@ -57,6 +70,15 @@ export class ChapterGraphProcessor {
     const m = this.manager()
     if (!m) return { events: [], states: [], edges: [], stateCount: 0 }
     const { projectId, outlineId, chapterContent, chapterNumber, providerConfigId, modelId } = input
+
+    // ============ 0a. 内容未变短路（评审 #61） ============
+    // 每次保存章节（含自动保存）都触发流水线，但内容没改就不必重跑 3 次 AI：
+    // 内容 hash 与上次成功运行一致 → 直接返回空结果（调用方按"无事发生"处理）。
+    const contentKey = `${projectId}:${chapterNumber}`
+    const contentHash = crypto.createHash('sha256').update(chapterContent).digest('hex')
+    if (ChapterGraphProcessor.contentHashes.get(contentKey) === contentHash) {
+      return { events: [], states: [], edges: [], stateCount: 0 }
+    }
 
     // ============ 0. 幂等清理（重跑 = 重建） ============
     // 每次保存章节（含自动保存）都触发流水线；事件/边是纯 insert，旧事件 id 每次新生成，
@@ -196,6 +218,8 @@ export class ChapterGraphProcessor {
       console.error('[ChapterGraphProcessor] 章节状态摘要提取失败:', e)
     }
 
+    // 评审 #61：流水线全程成功才记 hash——中途失败的内容下次保存仍会重跑
+    ChapterGraphProcessor.contentHashes.set(contentKey, contentHash)
     return {
       events,
       states,

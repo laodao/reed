@@ -143,4 +143,19 @@ describe('createLwGraphTables 迁移', () => {
     expect(tables).toContain('lw_events')
     await ds.destroy()
   })
+
+  it('评审#64：迁移行带角色归属 user_id；源表重复行不撞主键', async () => {
+    const ds = await buildDs(true)
+    // 角色行带 user_id（归属者），关系表插入重复行（同 character+related+relation_type）
+    await ds.query(`INSERT INTO lw_story_characters (id, user_id, project_id, name) VALUES ('c9', 'user-x', 'proj-x', '测试角色'), ('c8', 'user-x', 'proj-x', '对手')`)
+    await ds.query(`INSERT INTO lw_character_relations (id, character_id, related_character_id, relation_type, relation_description) VALUES ('rel-a', 'c9', 'c8', 'ally', '盟友')`)
+    await ds.query(`INSERT INTO lw_character_relations (id, character_id, related_character_id, relation_type, relation_description) VALUES ('rel-b', 'c9', 'c8', 'ally', '盟友(重复行)')`)
+    // 迁移不抛错（内部重复被 GROUP BY 收敛，确定性 id 不再撞主键）
+    await createLwGraphTables(ds)
+    const rows = await ds.query(`SELECT user_id, source_id, target_id FROM lw_graph_edges WHERE id = 'edge_migrated_c9_c8_ally'`)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].user_id).toBe('user-x')
+    expect(rows[0].source_id).toBe('c9')
+    await ds.destroy()
+  })
 })

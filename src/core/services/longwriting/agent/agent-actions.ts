@@ -642,6 +642,30 @@ async function executeWriteChapter(ctx: AgentExecutionContext, action: AgentActi
   }
 }
 
+/**
+ * 评审 #58：名称 → ID 解析。plot/outline 不在图谱实体类型（GraphEntityType）内，
+ * GraphService.resolveEntities 对它们恒失败——这里按仓库字段直接匹配
+ * （plot 用 title，outline 用 name）；同名取第一个并告警。
+ */
+async function resolveNameToId(db: any, projectId: string, type: string, name: string): Promise<string | null> {
+  if (type === 'plot' || type === 'outline') {
+    const repo = entityRepo(db, type)
+    if (!repo?.getByProjectId) return null
+    const list = (await repo.getByProjectId(projectId)) as Array<Record<string, unknown>>
+    const key = type === 'plot' ? 'title' : 'name'
+    const target = name.trim()
+    const hits = list.filter(x => typeof x[key] === 'string' && (x[key] as string).trim() === target)
+    if (hits.length === 0) return null
+    if (hits.length > 1) {
+      console.warn(`[AgentAction] 「${ENTITY_TYPE_LABELS[type] || type}」存在 ${hits.length} 个同名实体「${target}」，取第一个（${hits[0].id}）`)
+    }
+    return String(hits[0].id)
+  }
+  const { GraphService } = await import('../graph/graph.service')
+  const [hit] = await new GraphService(db).resolveEntities(projectId, [{ type, name }] as any)
+  return hit?.resolved && hit.id ? hit.id : null
+}
+
 /** 实体类型 → 落库仓库（overview 特殊处理） */
 function entityRepo(db: any, type: string): any {
   const map: Record<string, any> = {
@@ -689,9 +713,8 @@ async function executeUpdateEntity(ctx: AgentExecutionContext, action: AgentActi
     const name = params.name
     if (name) {
       try {
-        const { GraphService } = await import('../graph/graph.service')
-        const [hit] = await new GraphService(db).resolveEntities(projectId, [{ type, name: String(name) }] as any)
-        if (hit?.resolved && hit.id) targetId = hit.id
+        const resolved = await resolveNameToId(db, projectId, type, String(name))
+        if (resolved) targetId = resolved
       } catch (e) {
         console.error('[AgentAction] 名称解析失败（继续按 id 处理）:', e)
       }
@@ -736,9 +759,8 @@ async function executeDeleteEntity(ctx: AgentExecutionContext, action: AgentActi
     const name = params.name
     if (name) {
       try {
-        const { GraphService } = await import('../graph/graph.service')
-        const [hit] = await new GraphService(db).resolveEntities(projectId, [{ type, name: String(name) }] as any)
-        if (hit?.resolved && hit.id) targetId = hit.id
+        const resolved = await resolveNameToId(db, projectId, type, String(name))
+        if (resolved) targetId = resolved
       } catch (e) {
         console.error('[AgentAction] 名称解析失败（继续按 id 处理）:', e)
       }
@@ -754,8 +776,8 @@ async function executeDeleteEntity(ctx: AgentExecutionContext, action: AgentActi
     return { type: 'delete_entity', status: 'error', message: `${ENTITY_TYPE_LABELS[type] || type}不存在或删除失败` }
   }
 
-  // 级联清理图谱边（character/location/item）
-  if (type === 'character' || type === 'location' || type === 'item') {
+  // 级联清理图谱边（评审 #63：faction/skill 与 handler 路径补齐，不再残留悬空边）
+  if (['character', 'location', 'item', 'faction', 'skill'].includes(type)) {
     try {
       await db?.lwGraphEdges?.deleteByEntity(projectId, type, targetId)
     } catch (e) {

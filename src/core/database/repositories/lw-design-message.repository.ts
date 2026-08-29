@@ -55,10 +55,14 @@ export class LwDesignMessageRepository extends BaseRepository<
     const now = Date.now()
     const timestamp = message.timestamp || now
 
+    // 评审 #66：MAX(sort_order) 补 user_id 过滤（与同文件 scoped 读路径一致）——
+    // 裸 qb 不带 user_id 时，不同租户的同名 conversation_id 会互相顶高 sort_order
+    const userId = getCurrentUserId()
     const maxOrder = await this.repo
       .createQueryBuilder('m')
       .select('MAX(m.sort_order)', 'max')
       .where('m.conversation_id = :cid', { cid: conversationId })
+      .andWhere(userId === null ? 'm.user_id IS NULL' : 'm.user_id = :uid', userId === null ? {} : { uid: userId })
       .getRawOne()
     const sortOrder = (Number(maxOrder?.max) || -1) + 1
 

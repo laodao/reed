@@ -1581,13 +1581,14 @@ ${extraPrompt.trim()}` : ''}
       // 1. 生效关系边（本章时间点）
       const edgeLines: string[] = []
       const seenEdges = new Set<string>()
-      // 实体 ID → 名称缓存（避免向 prompt 注入 UUID）
-      const nameCache = new Map<string, string>()
-      const nameOf = async (type: string, id: string): Promise<string> => {
+      // 实体 ID → 名称缓存；评审 #62：实体已删（悬空边）不注入 UUID 占位，
+      // 整条边跳过——UUID 对 AI 是噪声还可能被当名字复述
+      const nameCache = new Map<string, string | null>()
+      const nameOf = async (type: string, id: string): Promise<string | null> => {
         const key = `${type}:${id}`
         if (nameCache.has(key)) return nameCache.get(key)!
-        const node = await graph.getNode(projectId, type as any, id)
-        const name = node?.name || id
+        const node = await graph.getNode(projectId, type as any, id).catch(() => null)
+        const name = node?.name ?? null
         nameCache.set(key, name)
         return name
       }
@@ -1597,10 +1598,11 @@ ${extraPrompt.trim()}` : ''}
           const key = `${e.sourceId}:${e.targetId}:${e.relationType}`
           if (seenEdges.has(key)) continue
           seenEdges.add(key)
-          const validFrom = e.validFromChapter !== undefined ? `自第${e.validFromChapter}章起` : ''
-          const validUntil = e.validUntilChapter !== undefined ? `，至第${e.validUntilChapter}章失效` : ''
           const srcName = await nameOf(e.sourceType, e.sourceId)
           const tgtName = await nameOf(e.targetType, e.targetId)
+          if (!srcName || !tgtName) continue // 悬空边：实体已删，跳过
+          const validFrom = e.validFromChapter !== undefined ? `自第${e.validFromChapter}章起` : ''
+          const validUntil = e.validUntilChapter !== undefined ? `，至第${e.validUntilChapter}章失效` : ''
           edgeLines.push(`- ${srcName} → ${tgtName}：${e.relationType}${e.label ? `（${e.label}）` : ''}（${validFrom}${validUntil}）`)
         }
       }

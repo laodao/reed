@@ -2,7 +2,7 @@
  * ChapterGraphProcessor 单测（fake db + fake aiService）
  * 覆盖：事件提取→落库（名称→ID 解析）、状态提取→upsert、自动建边（事件→实体 involves）、章节状态摘要、分步失败容错。
  */
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ChapterGraphProcessor } from '@core/services/longwriting/graph/chapter-graph.processor'
 
 function makeFakeDb() {
@@ -57,6 +57,10 @@ function makeFakeAi(over: Record<string, unknown> = {}) {
 }
 
 describe('ChapterGraphProcessor', () => {
+  beforeEach(() => {
+    // 评审 #61：内容 hash 缓存跨用例清空，防同内容短路影响断言
+    ChapterGraphProcessor.clearContentHashCache()
+  })
   it('完整流水线：事件→状态→建边→摘要', async () => {
     const db = makeFakeDb()
     const ai = makeFakeAi()
@@ -112,6 +116,24 @@ describe('ChapterGraphProcessor', () => {
     expect(result.events).toHaveLength(1)
     expect(db.eventsStore[0].involvedEntities).toEqual([]) // 未解析的实体被过滤
     expect(result.edges).toHaveLength(0) // 无涉及实体 → 无边
+  })
+
+  it('内容未变的二次保存 → 0 次 AI 调用（评审#61 幂等短路）', async () => {
+    const ai = makeFakeAi()
+    const proc = new ChapterGraphProcessor(makeFakeDb() as any, ai as any)
+    const input = { projectId: 'p9', outlineId: 'o1', chapterContent: '固定内容', chapterNumber: 1 }
+    const r1 = await proc.process(input)
+    expect(r1.events.length).toBeGreaterThan(0)
+    const callsAfterFirst = ai.extractChapterEvents.mock.calls.length
+    expect(callsAfterFirst).toBe(1)
+    // 同章节同内容：短路，不再消耗 AI
+    const r2 = await proc.process(input)
+    expect(r2.events).toHaveLength(0)
+    expect(r2.states).toHaveLength(0)
+    expect(ai.extractChapterEvents.mock.calls.length).toBe(1)
+    // 内容变化 → 重跑
+    await proc.process({ ...input, chapterContent: '内容已修改' })
+    expect(ai.extractChapterEvents.mock.calls.length).toBe(2)
   })
 
   it('空事件 + 空状态：流水线不报错', async () => {
