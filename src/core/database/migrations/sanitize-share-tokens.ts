@@ -26,6 +26,11 @@ async function sanitizeTable(
   plainCol: string,
   hashCol: string,
 ): Promise<void> {
+  // 目标表可能尚未创建（注册顺序：本迁移早于 create-apps-tables）——无表则跳过，等表建好后重跑自然幂等
+  if (!(await tableExists(ds, isPg, table))) {
+    logger.info(`[sanitize-share-tokens] 表 ${table} 不存在，跳过（后续启动会重跑）`)
+    return
+  }
   // 双方言占位符：PG 用 $n，SQLite 用 ?
   const ph = (n: number) => (isPg ? `$${n}` : '?')
   // 1) 明文回填 hash（仅 hash 缺失的行；已 hash 的行不动）
@@ -43,4 +48,17 @@ async function sanitizeTable(
 
   // 2) 清空明文列（hash 已就位或本来就无明文）
   await ds.query(`UPDATE ${table} SET ${plainCol} = NULL WHERE ${plainCol} IS NOT NULL AND ${hashCol} IS NOT NULL`)
+}
+
+/** 表存在性检查（双方言；与 create-apps-tables 的惯例一致，各迁移文件本地定义） */
+async function tableExists(ds: DataSource, isPg: boolean, table: string): Promise<boolean> {
+  if (isPg) {
+    const rows = await ds.query(
+      `SELECT 1 FROM information_schema.tables WHERE table_name = $1 AND table_schema = current_schema() LIMIT 1`,
+      [table]
+    )
+    return rows.length > 0
+  }
+  const rows = await ds.query(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1`, [table])
+  return rows.length > 0
 }

@@ -445,6 +445,12 @@ async function initDatabase(): Promise<void> {
   )
   await createLwGraphTables(ds)
 
+  // provider_configs 补 default_model 列（与 Electron 端 runMultiTenantMigrations 同构登记）
+  const { addProviderConfigDefaultModel } = await import(
+    '@core/database/migrations/add-provider-config-default-model'
+  )
+  await addProviderConfigDefaultModel(ds)
+
   // 业务包内核（第一期）：business_packs / business_pack_bindings 两表
   // （synchronize 已按 entity 建表，此处幂等补索引；与 Electron 端 runMultiTenantMigrations 同构）
   const { createPackTables } = await import(

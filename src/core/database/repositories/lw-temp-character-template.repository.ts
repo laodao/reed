@@ -419,9 +419,22 @@ export class LwTempCharacterTemplateRepository extends BaseRepository<
     const count = await this.scoped.count()
     if (count > 0) return
     console.log('[LwTempCharacterTemplateRepository] 初始化默认临时角色模板数据...')
-    await this.dataSource.transaction(async () => {
+    // 串行门纪律：事务回调内必须用回调参数 manager 的仓储，
+    // 禁止调用 this.upsert（其内部走全局代理，会触发串行门死锁保护抛错）
+    await this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(LwTempCharacterTemplateEntity)
+      const now = Date.now()
       for (const template of DEFAULT_CHARACTER_TEMPLATES) {
-        await this.upsert(template)
+        const existing = await repo.findOneBy({ type: template.type } as object)
+        if (existing) continue
+        await repo.save(
+          repo.create({
+            id: this.generateId(),
+            ...template,
+            createdAt: now,
+            updatedAt: now,
+          })
+        )
       }
     })
     console.log(

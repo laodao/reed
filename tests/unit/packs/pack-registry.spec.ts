@@ -87,7 +87,7 @@ describe('PackRegistry 依赖解析与级联', () => {
     expect(betaActivate).toHaveBeenCalledTimes(1)
   })
 
-  it('禁用依赖 → 依赖方自动回 pending；重新启用 → 自动再激活', async () => {
+  it('禁用依赖 → 依赖方自动回 pending；重新启用 → 自动恢复启用（无 disposer 不重跑 activate）', async () => {
     const registry = new PackRegistry()
     await registry.registerPack(makePack('alpha'))
     const betaActivate = vi.fn()
@@ -102,7 +102,8 @@ describe('PackRegistry 依赖解析与级联', () => {
     await registry.setEnabled('alpha', true)
     expect(registry.getPackState('alpha')).toBe('enabled')
     expect(registry.getPackState('beta')).toBe('enabled')
-    expect(betaActivate).toHaveBeenCalledTimes(2)
+    // betaActivate 未返回 disposer → 贡献从未卸载，恢复时只翻状态不重跑（防重复注册）
+    expect(betaActivate).toHaveBeenCalledTimes(1)
   })
 
   it('依赖方自身被禁用时不随依赖上线激活', async () => {
@@ -145,6 +146,27 @@ describe('PackRegistry 依赖解析与级联', () => {
 })
 
 describe('PackRegistry 禁用的逆操作纪律（disposer LIFO）', () => {
+  it('activate 无 disposer 的包：禁用→启用只翻状态，不重跑 activate（防重复注册）', async () => {
+    const calls: string[] = []
+    const registry = new PackRegistry()
+    await registry.registerPack(
+      makePack('alpha', {
+        activate: () => {
+          calls.push('activate')
+          // 不返回 disposer——贡献不可卸载（如 IPC channel 注册）
+        },
+      }),
+    )
+    expect(calls).toEqual(['activate'])
+
+    await registry.setEnabled('alpha', false)
+    expect(registry.getPackState('alpha')).toBe('disabled')
+
+    await registry.setEnabled('alpha', true)
+    expect(registry.getPackState('alpha')).toBe('enabled')
+    expect(calls).toEqual(['activate']) // 关键断言：activate 未被重跑
+  })
+
   it('禁用 → disposer 栈反序执行；再启用 → 重新激活收集新栈', async () => {
     const calls: string[] = []
     const registry = new PackRegistry()

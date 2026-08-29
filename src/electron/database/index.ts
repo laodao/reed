@@ -766,6 +766,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
     )
     await addKbRerankConfig(this.dataSource)
 
+    // provider_configs 补 default_model 列（存量库缺列会被 drift 检查阻断启动，幂等，双语种）
+    const { addProviderConfigDefaultModel } = await import(
+      '@core/database/migrations/add-provider-config-default-model'
+    )
+    await addProviderConfigDefaultModel(this.dataSource)
+
     // 业务包内核（第一期）：business_packs / business_pack_bindings 两表（幂等，双语种；
     // Web 端 initDatabase 有同构调用，两处必须同步）
     const { createPackTables } = await import(

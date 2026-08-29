@@ -48,6 +48,12 @@ interface PackEntry {
   state: PackState
   /** 激活期收集的 disposer 栈（禁用时 LIFO 反序执行） */
   disposers: PackDisposer[]
+  /**
+   * 贡献是否仍然存活（activate 成功 = true；停用时有 disposer 被执行 = false）。
+   * 用于"停用未卸载贡献（disposer 为空）→ 重新启用只翻状态、不重跑 activate"——
+   * 否则重复注册 IPC channel 等贡献会抛异常把包打成 failed。
+   */
+  contributionsLive: boolean
   /** 导致 pending 的未就绪依赖（state='pending' 时有值） */
   missingDependencies: string[]
 }
@@ -70,6 +76,7 @@ export class PackRegistry {
       desiredEnabled: def.manifest.defaultEnabled ?? true,
       state: 'registered',
       disposers: [],
+      contributionsLive: false,
       missingDependencies: [],
     })
     try {
@@ -183,6 +190,12 @@ export class PackRegistry {
         entry.missingDependencies = runtimeMissing
         continue
       }
+      // 贡献仍存活（上次停用没有逆操作可执行）→ 只翻状态，不重跑 activate
+      if (entry.contributionsLive) {
+        entry.state = 'enabled'
+        entry.missingDependencies = []
+        continue
+      }
       await this.activate(id, entry)
       if (entry.state === 'enabled') {
         entry.missingDependencies = []
@@ -197,6 +210,7 @@ export class PackRegistry {
       const result = await entry.def.activate?.(ctx)
       entry.disposers = normalizeDisposers(result)
       entry.state = 'enabled'
+      entry.contributionsLive = true
       logger.info(`[pack-registry] 包 "${id}" 已激活（${entry.disposers.length} 个贡献）`)
     } catch (e) {
       // 激活异常：标 failed（依赖方视角 = 未启用 → pending）；下次重算仍会重试
@@ -215,6 +229,11 @@ export class PackRegistry {
       } catch (e) {
         logger.error(`[pack-registry] 包 "${id}" 的 disposer 执行异常（继续执行其余逆操作）`, e)
       }
+    }
+    // 有逆操作被执行才视为贡献已卸载；disposer 为空 → 贡献仍存活（IPC 注册等进程级贡献
+    // 本期不可卸载），重新启用时只翻状态、不重跑 activate
+    if (disposers.length > 0) {
+      entry.contributionsLive = false
     }
     logger.info(`[pack-registry] 包 "${id}" 已停用（${disposers.length} 个逆操作已执行）`)
   }
