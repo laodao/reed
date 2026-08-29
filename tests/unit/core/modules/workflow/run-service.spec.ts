@@ -293,6 +293,27 @@ describe('WorkflowRunService', () => {
     }
   })
 
+  it('续跑 + parallel-merge：mergeArrivals 重建，merge 输出非空（评审#32）', async () => {
+    const { service, runs, nodeRuns, definitions } = setup()
+    const graph = g(
+      [n('start', 'start'), n('a', 'delay', { durationMs: 1 }), n('b', 'delay', { durationMs: 1 }), n('m', 'parallel-merge', { waitPolicy: 'all' }), n('end', 'end')],
+      [['start', 'a'], ['start', 'b'], ['a', 'm'], ['b', 'm'], ['m', 'end']]
+    )
+    definitions.rows.set('def1', def('def1', graph))
+    // 源运行：a/b 已完成留 checkpoint，运行中断（模拟并行等齐前中断）
+    const first = await runs.create({ definitionId: 'def1', definitionVersion: 1, graphSnapshot: graph, triggerType: 'manual', status: 'interrupted' })
+    nodeRuns.rows.push({ runId: first.id, nodeId: 'start', nodeType: 'start', nodeName: 'start', iterationIndex: 0, status: 'succeeded', output: {} })
+    nodeRuns.rows.push({ runId: first.id, nodeId: 'a', nodeType: 'delay', nodeName: 'a', iterationIndex: 0, status: 'succeeded', output: { text: 'A输出' } })
+    nodeRuns.rows.push({ runId: first.id, nodeId: 'b', nodeType: 'delay', nodeName: 'b', iterationIndex: 0, status: 'succeeded', output: { text: 'B输出' } })
+    const resumed = await runWithUser('u1', () => service.resumeRun(first.id))
+    await wait(150)
+    const mergeRow = nodeRuns.rows.find(r => r.runId === resumed.id && r.nodeId === 'm')
+    expect(mergeRow?.status).toBe('succeeded')
+    expect(mergeRow.output.a).toMatchObject({ text: 'A输出' })
+    expect(mergeRow.output.b).toMatchObject({ text: 'B输出' })
+    expect((await runs.getById(resumed.id)).status).toBe('succeeded')
+  })
+
   it('续跑互斥：同工作流有挂起运行时拒绝续跑（waiting_review 源也占互斥）', async () => {
     const { service, runs, definitions } = setup()
     const graph = g(

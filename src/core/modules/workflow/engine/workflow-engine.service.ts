@@ -1519,16 +1519,24 @@ export class WorkflowEngineService {
       for (const edge of exec.outgoingOf(cp.nodeId)) {
         if (edge.kind === WORKFLOW_EDGE_KINDS[WORKFLOW_EDGE_KINDS['loop-back']] || edge.kind === WORKFLOW_EDGE_KINDS[WORKFLOW_EDGE_KINDS['loop-body']] || edge.kind === WORKFLOW_EDGE_KINDS[WORKFLOW_EDGE_KINDS['loop-done']]) continue
         if (edge.kind === WORKFLOW_EDGE_KINDS.fail) continue // failed_recovered 的 fail 边：checkpoint 只含 succeeded
-        if (route) {
-          const matches =
-            edge.kind === 'branch'
+        const matches =
+          route
+            ? edge.kind === 'branch'
               ? route === encodeWorkflowHandleId('branch', edge.branchId)
               : route === encodeWorkflowHandleId(edge.kind)
-          if (matches) void exec.rootScope.activationSeqs.set(edge.id, ++exec.rootScope.activationCounter)
-        } else if (edge.kind === 'normal') {
-          void exec.rootScope.activationSeqs.set(edge.id, ++exec.rootScope.activationCounter)
-        }
+            : edge.kind === 'normal'
+        if (!matches) continue
+        // 评审 #32：重放统一走 activateEdge——除记激活序号外，还向 parallel-merge
+        // 目标补 mergeArrivals（此前手工只置 seq，续跑后 merge 输出恒为空）
+        this.activateEdge(exec, exec.rootScope, edge)
       }
+    }
+    // 评审 #32 配套：装配完成后统一抬高 completedSeq 到当前激活计数，
+    // 保证重放的入边激活不会被 C1 规则（seq > completedSeq）误判为「新激活」
+    // 而重跑已成功节点——落实「已成功节点不再执行」的注释承诺。
+    for (const cp of checkpoints) {
+      const st = exec.rootScope.states.get(cp.nodeId)
+      if (st) st.completedSeq = exec.rootScope.activationCounter
     }
   }
 
