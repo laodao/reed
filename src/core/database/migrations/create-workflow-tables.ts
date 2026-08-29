@@ -14,6 +14,9 @@
  */
 
 import type { DataSource } from 'typeorm'
+import { createLogger } from '@core/utils/logger'
+
+const logger = createLogger('create-workflow-tables')
 
 /**
  * 创建工作流三表（若不存在）。
@@ -195,6 +198,46 @@ async function ensureRunIndexes(ds: DataSource, isPg: boolean): Promise<void> {
   await ensureIndex(ds, isPg, 'idx_wf_run_user', 'workflow_runs', '(user_id)')
   await ensureIndex(ds, isPg, 'idx_wf_run_def_status', 'workflow_runs', '(definition_id, status)')
   await ensureIndex(ds, isPg, 'idx_wf_run_status', 'workflow_runs', '(status)')
+  await ensureMutexUniqueIndex(ds, isPg)
+}
+
+/**
+ * 评审 #31/#40：同工作流互斥的 DB 兜底——(user_id, definition_id) 在活动状态
+ * （pending/running/waiting_review）上部分唯一。check-then-create 的竞态窗口
+ * 由本索引收口：并发第二个插入直接被 DB 拒绝（service 层捕获后转 skipped 留痕）。
+ * PG 与 SQLite 均支持带 WHERE 的部分唯一索引；user_id 为 NULL 的行互不冲突
+ * （两方言默认 NULL ≠ NULL，桌面单用户/匿名场景不受影响）。
+ */
+async function ensureMutexUniqueIndex(ds: DataSource, isPg: boolean): Promise<void> {
+  const indexName = 'uq_wf_run_mutex'
+  if (await checkIndexExists(ds, indexName, isPg)) return
+  // 建索引前收敛存量并发行：同 (user_id, definition_id) 的多条活动行只留一条，
+  // 其余转 interrupted（可续跑）。正常安装本查询命中 0 行——并发行只能是历史竞态产物。
+  try {
+    await ds.query(`
+      UPDATE workflow_runs SET status = 'interrupted',
+        error = '互斥收敛：同工作流存在并发活动行（建唯一索引前清理）'
+      WHERE status IN ('pending','running','waiting_review')
+        AND id NOT IN (
+          SELECT MIN(id) FROM workflow_runs
+          WHERE status IN ('pending','running','waiting_review')
+          GROUP BY user_id, definition_id
+        )
+    `)
+  } catch (e) {
+    logger.warn('[createWorkflowTables] 互斥并发行收敛失败（继续尝试建索引）', e)
+  }
+  try {
+    await ds.query(
+      `CREATE UNIQUE INDEX ${indexName} ON workflow_runs (user_id, definition_id) WHERE status IN ('pending','running','waiting_review')`
+    )
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e)
+    if (!/already exists|duplicate/i.test(message)) {
+      // 建不出来不阻断 boot（如存量脏数据残留），仅告警——应用层 check-then-create 仍在
+      logger.warn('[createWorkflowTables] 互斥部分唯一索引创建失败（互斥退回应用层检查）', e)
+    }
+  }
 }
 
 async function ensureNodeRunIndexes(ds: DataSource, isPg: boolean): Promise<void> {

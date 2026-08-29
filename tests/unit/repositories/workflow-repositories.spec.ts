@@ -242,6 +242,26 @@ describe.each(getTestDialects())('Workflow Repositories [%s]', dialect => {
       expect(updated?.finishedAt).not.toBeNull()
     })
 
+    it('互斥部分唯一索引：同租户同定义并发活动行被 DB 拒绝；不同租户互不影响（评审#31/#40）', async () => {
+      // 测试库由 synchronize 建表——先跑迁移装上部分唯一索引（与 boot 行为一致）
+      await createWorkflowTables(tds.ds)
+      await asUser('user-a', () =>
+        runs.create({ definitionId: 'dU', definitionVersion: 1, graphSnapshot: makeGraph(), triggerType: 'manual', status: 'running' })
+      )
+      // 同 user + 同 def + 活动状态 → 唯一索引拒绝
+      await expect(asUser('user-a', () =>
+        runs.create({ definitionId: 'dU', definitionVersion: 1, graphSnapshot: makeGraph(), triggerType: 'manual', status: 'pending' })
+      )).rejects.toThrow()
+      // 终态行不受索引约束
+      await asUser('user-a', () =>
+        runs.create({ definitionId: 'dU', definitionVersion: 1, graphSnapshot: makeGraph(), triggerType: 'manual', status: 'skipped', skipReason: 'x' })
+      )
+      // 不同租户同定义：互不影响（多租户隔离语义）
+      await asUser('user-b', () =>
+        runs.create({ definitionId: 'dU', definitionVersion: 1, graphSnapshot: makeGraph(), triggerType: 'manual', status: 'running' })
+      )
+    })
+
     it('transitionIfStatus：条件迁移原子生效，终态不被覆盖（评审#34/#35）', async () => {
       const pending = await asUser('user-a', () =>
         runs.create({ definitionId: 'd10', definitionVersion: 1, graphSnapshot: makeGraph(), triggerType: 'manual', status: 'pending' })
@@ -267,17 +287,23 @@ describe.each(getTestDialects())('Workflow Repositories [%s]', dialect => {
       expect((await asUser('user-a', () => runs.getById(done.id)))?.status).toBe('succeeded')
     })
 
-    it('findMutexHolders：只返回 pending/running/waiting_review', async () => {
+    it('findMutexHolders：只返回 pending/running/waiting_review（互斥唯一索引下同定义至多 1 条活动）', async () => {
+      // 评审 #31/#40：部分唯一索引保证同 (user, definition) 至多 1 条活动行
       await asUser('user-a', async () => {
         await runs.create({ definitionId: 'd1', definitionVersion: 1, graphSnapshot: makeGraph(), triggerType: 'manual', status: 'running' })
-        await runs.create({ definitionId: 'd1', definitionVersion: 1, graphSnapshot: makeGraph(), triggerType: 'manual', status: 'waiting_review' })
         await runs.create({ definitionId: 'd1', definitionVersion: 1, graphSnapshot: makeGraph(), triggerType: 'manual', status: 'succeeded' })
         await runs.create({ definitionId: 'd1', definitionVersion: 1, graphSnapshot: makeGraph(), triggerType: 'manual', status: 'skipped', skipReason: '测试' })
-        await runs.create({ definitionId: 'd2', definitionVersion: 1, graphSnapshot: makeGraph(), triggerType: 'manual', status: 'running' })
+        await runs.create({ definitionId: 'd2', definitionVersion: 1, graphSnapshot: makeGraph(), triggerType: 'manual', status: 'waiting_review' })
       })
       const holders = await asUser('user-a', () => runs.findMutexHolders('d1'))
-      expect(holders).toHaveLength(2)
-      expect(holders.every(r => ['running', 'waiting_review'].includes(r.status))).toBe(true)
+      expect(holders).toHaveLength(1)
+      expect(holders[0].status).toBe('running')
+      // 终态行不占互斥
+      const holdersD1AfterCancel = await asUser('user-a', async () => {
+        await runs.transitionIfStatus(holders[0].id, ['running'], { status: 'cancelled', finishedAt: new Date() })
+        return runs.findMutexHolders('d1')
+      })
+      expect(holdersD1AfterCancel).toHaveLength(0)
     })
 
     it('listByDefinition 状态过滤 + 分页', async () => {

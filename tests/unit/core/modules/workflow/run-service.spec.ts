@@ -18,6 +18,16 @@ class MemRuns {
   rows: Map<string, any> = new Map()
   seq = 0
   async create(i: any) {
+    // 模拟互斥部分唯一索引（评审#31/#40）：同 (userId, definitionId) 的活动行唯一
+    if (['pending', 'running', 'waiting_review'].includes(i.status)) {
+      const uid = i.userId ?? 'u1'
+      const dup = [...this.rows.values()].some(r =>
+        r.definitionId === i.definitionId && r.userId === uid &&
+        ['pending', 'running', 'waiting_review'].includes(r.status))
+      if (dup) {
+        throw Object.assign(new Error('UNIQUE constraint failed: workflow_runs.user_id, workflow_runs.definition_id'), { code: 'SQLITE_CONSTRAINT_UNIQUE' })
+      }
+    }
     const id = `r${++this.seq}`
     this.rows.set(id, { id, userId: 'u1', status: i.status ?? 'pending', ...i, createdAt: new Date() })
     return this.rows.get(id)
@@ -197,6 +207,24 @@ describe('WorkflowRunService', () => {
     const second = await runWithUser('u1', () => service.startRun({ definitionId: 'def1', triggerType: 'cron' }))
     expect(second.status).toBe('skipped')
     expect(second.skipReason).toContain('运行中')
+  })
+
+  it('并发 startRun 竞态：互斥唯一索引兜底转 skipped，绝不双跑（评审#31/#40）', async () => {
+    const { service, runs, definitions } = setup()
+    const graph = g(
+      [n('start', 'start'), n('d', 'delay', { durationMs: 30 }), n('end', 'end')],
+      [['start', 'd'], ['d', 'end']]
+    )
+    definitions.rows.set('def1', def('def1', graph))
+    // 同时启动两次：互斥检查（check）都可能在对方插入（create）前通过——唯一索引兜底
+    await Promise.all([
+      runWithUser('u1', () => service.startRun({ definitionId: 'def1', triggerType: 'manual' })),
+      runWithUser('u1', () => service.startRun({ definitionId: 'def1', triggerType: 'manual' })),
+    ])
+    await wait(120)
+    const statuses = [...runs.rows.values()].map((r: any) => r.status)
+    expect(statuses.filter(s => s === 'skipped')).toHaveLength(1)
+    expect(statuses.filter(s => ['pending', 'running', 'succeeded'].includes(s))).toHaveLength(1)
   })
 
   it('审核：human-review 挂起 → reviewDecide 批准 → 终态 succeeded', async () => {

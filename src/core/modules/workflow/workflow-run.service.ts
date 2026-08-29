@@ -55,6 +55,14 @@ export interface StartRunInput {
   usePublishedGraph?: boolean
 }
 
+/** 唯一约束冲突识别（评审 #31/#40）：SQLite 与 PG 的报错形态 */
+function isUniqueConstraintError(e: unknown): boolean {
+  const code = (e as { code?: string; driverError?: { code?: string } }) ?? {}
+  if (code.code === '23505' || code.driverError?.code === '23505') return true
+  const msg = e instanceof Error ? e.message : String(e)
+  return /UNIQUE constraint failed|duplicate key value violates unique constraint/i.test(msg)
+}
+
 export class WorkflowRunService {
   /** 排队待启动的运行（全局并发超限时 FIFO） */
   private queue: Array<{ runId: string; userId: string; execInput: ExecuteRunInput }> = []
@@ -100,7 +108,6 @@ export class WorkflowRunService {
       ? (def.publishedGraph || def.draftGraph)
       : ((input.triggerType === WORKFLOW_TRIGGER_TYPES.manual && def.draftGraph) || def.publishedGraph || def.draftGraph)
     if (!graph || graph.nodes.length === 0) throw new Error('工作流没有可执行的图')
-
     // start 输入参数：required + 扩展规则校验，defaultValue 合并（定时/事件触发无来源时用默认值）
     const startNode = graph.nodes.find(n => n.type === WORKFLOW_NODE_TYPES.start)
     const inputDefs = (startNode?.config as { inputs?: WorkflowStartInput[] } | undefined)?.inputs ?? []
@@ -164,16 +171,35 @@ export class WorkflowRunService {
       throw new Error(`输入参数校验失败：${problems.join('；')}`)
     }
 
-    const run = await this.deps.runs.create({
-      definitionId: input.definitionId,
-      definitionVersion: def.publishedVersion,
-      graphSnapshot: graph,
-      triggerType: input.triggerType,
-      triggerInfo: input.triggerInfo,
-      startInputs: mergedInputs,
-      status: WORKFLOW_RUN_STATUSES.pending,
-      timeoutAt: new Date(Date.now() + (def.settings?.maxDurationMs ?? WORKFLOW_DEFAULTS.maxDurationMs)),
-    })
+    // 评审 #31/#40：check-then-create 的竞态窗口由部分唯一索引兜底——
+    // 并发第二个活动行插入被 DB 拒绝，此处捕获后与互斥检查同语义转 skipped 留痕
+    let run: WorkflowRunRecord
+    try {
+      run = await this.deps.runs.create({
+        definitionId: input.definitionId,
+        definitionVersion: def.publishedVersion,
+        graphSnapshot: graph,
+        triggerType: input.triggerType,
+        triggerInfo: input.triggerInfo,
+        startInputs: mergedInputs,
+        status: WORKFLOW_RUN_STATUSES.pending,
+        timeoutAt: new Date(Date.now() + (def.settings?.maxDurationMs ?? WORKFLOW_DEFAULTS.maxDurationMs)),
+      })
+    } catch (e) {
+      if (isUniqueConstraintError(e)) {
+        return this.deps.runs.create({
+          definitionId: input.definitionId,
+          definitionVersion: def.publishedVersion,
+          graphSnapshot: graph,
+          triggerType: input.triggerType,
+          triggerInfo: input.triggerInfo,
+          startInputs: mergedInputs,
+          status: WORKFLOW_RUN_STATUSES.skipped,
+          skipReason: '同工作流已有运行中实例（并发启动被互斥约束拦截）',
+        })
+      }
+      throw e
+    }
     await this.launch(run.id, run.userId ?? LOCAL_DEFAULT_USER_ID, input.definitionId, graph, this.effectiveSettings(def.settings), mergedInputs, undefined, input.configOverrides, input.triggerInfo)
     return (await this.deps.runs.getById(run.id)) ?? run
   }
@@ -331,6 +357,12 @@ export class WorkflowRunService {
       // 评审 #33：续跑运行同样带定义级执行死线（否则重启/续跑链无限挂）
       timeoutAt: new Date(Date.now() + (def.settings?.maxDurationMs ?? WORKFLOW_DEFAULTS.maxDurationMs)),
       resumedFromRunId: sourceRunId,
+    }).catch(e => {
+      // 评审 #31/#40：检查与插入之间被并发运行抢先（唯一索引拒绝）——给出与互斥检查一致的出路提示
+      if (isUniqueConstraintError(e)) {
+        throw new Error('同工作流已有运行中实例（并发竞态，请稍后重试）')
+      }
+      throw e
     })
     await this.launch(
       run.id,
