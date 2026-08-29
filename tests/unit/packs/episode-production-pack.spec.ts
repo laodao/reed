@@ -27,7 +27,7 @@ function collectHandlerFiles(dir: string): string[] {
 
 /** 从全部 handler 源码中提取 ipcBridge.handle 的 channel 字面量 */
 function extractHandlerChannels(): string[] {
-  const dir = resolve(process.cwd(), 'src/electron/ipc/handlers/episode-production')
+  const dir = resolve(process.cwd(), 'src/core/packs/episode-production/handlers')
   const channels: string[] = []
   for (const file of collectHandlerFiles(dir)) {
     const source = readFileSync(file, 'utf-8')

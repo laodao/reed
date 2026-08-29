@@ -1,10 +1,12 @@
 /**
  * 剧集制作内置业务包（后端接线）
  * @module core/packs/episode-production
- * @description 原地登记式：handler 文件原地不动（@electron/ipc/handlers/episode-production/
- *              目录下 project/episode/asset/narrative/render/compose/workflow/agent 共
- *              25 个 handler 文件），本包只在 activate 时调用其统一入口
- *              registerEpisodeProductionHandlers()。
+ * @description 物理收拢式：handler 目录已整体搬入包目录（./handlers/ 下
+ *              project/episode/asset/narrative/render/compose/workflow/agent 共
+ *              25 个 handler 文件），本包在 activate 时调用其统一入口
+ *              registerEpisodeProductionHandlers()。业务服务层
+ *              （@core/modules/episode-production/**）被 Web 端 upload-router 等
+ *              壳代码直接引用且为双端共用，留在原地不搬。
  *              manifest 的 id/name/version/dependencies 与前端骨架
  *             （renderer/packs/episode-production）保持一致。
  *
@@ -27,7 +29,7 @@
  *              服务单例不卸载（静态类无法卸载），故 activate 不返回 disposer。
  */
 
-import { registerEpisodeProductionHandlers } from '@electron/ipc/handlers/episode-production'
+import { registerEpisodeProductionHandlers } from './handlers'
 import type { PackDefinition } from '../registry'
 
 export const episodeProductionPack: PackDefinition = {

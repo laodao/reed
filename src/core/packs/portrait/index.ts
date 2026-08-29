@@ -1,8 +1,9 @@
 /**
  * 人像设计内置业务包（后端接线）
  * @module core/packs/portrait
- * @description 原地登记式：handler 文件原地不动（@electron/ipc/handlers/portrait.handler），
- *              本包只在 activate 时调用其 registerPortraitHandlers()。
+ * @description 物理收拢式：handler 与其专属的 PortraitService 均已搬入包目录
+ *              （./handlers/portrait.handler、./services/portrait.service），
+ *              本包在 activate 时调用 registerPortraitHandlers()。
  *              manifest 的 id/name/version 与前端骨架（renderer/packs/portrait）保持一致。
  *
  *              禁用语义本期到"IPC 守卫统一拦截 portrait:*"为止——handler 注册保留、
@@ -11,7 +12,7 @@
  *              移除能力，逆操作不完整，统一交给守卫拦截）。
  */
 
-import { registerPortraitHandlers } from '@electron/ipc/handlers/portrait.handler'
+import { registerPortraitHandlers } from './handlers/portrait.handler'
 import type { PackDefinition } from '../registry'
 
 export const portraitPack: PackDefinition = {

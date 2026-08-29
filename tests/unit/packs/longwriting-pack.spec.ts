@@ -14,7 +14,7 @@ import { longwritingPack } from '@core/packs/longwriting'
 /** 从 handler 源码的 CHANNELS 常量表中提取全部 channel 字面量 */
 function extractHandlerChannels(): string[] {
   const source = readFileSync(
-    resolve(process.cwd(), 'src/electron/ipc/handlers/longwriting.handler.ts'),
+    resolve(process.cwd(), 'src/core/packs/longwriting/handlers/longwriting.handler.ts'),
     'utf-8',
   )
   // 截取 const CHANNELS = { ... } 区块（表结束于 registerLongWritingHandlers 之前）

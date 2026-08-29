@@ -1,6 +1,6 @@
 /**
  * PortraitService.editFace（只修改面部）单元测试
- * @see src/core/services/portrait.service.ts
+ * @see src/core/packs/portrait/services/portrait.service.ts
  *
  * 验证目标（spec 2026-07-24 新版人像设计 §5.2 D5）：
  * 1. 模板（占位符解析）+ 指令叠加进 prompt；focusRegion 默认 face；strength 默认 0.5
@@ -38,7 +38,7 @@ vi.mock('@core/utils/asset-path', () => ({
 
 import { ImageService } from '@core/services/image.service'
 import * as dbModule from '@core/database/database-manager.interface'
-import { PortraitService } from '@core/services/portrait.service'
+import { PortraitService } from '@core/packs/portrait/services/portrait.service'
 import type { PortraitCharacter, PortraitVariant } from '@shared/types/portrait.types'
 
 // ====================================================================

@@ -1,6 +1,6 @@
 /**
  * PortraitService 单元测试 —— 聚焦"图片尺寸选择"链路
- * @see src/core/services/portrait.service.ts
+ * @see src/core/packs/portrait/services/portrait.service.ts
  *
  * 验证目标（spec 2026-07-19 人像分辨率选择）：
  * 1. changeClothes / changeBackground / generateAngles / editImage 四个入口
@@ -40,7 +40,7 @@ vi.mock('@core/interfaces/event.interface', () => ({
 
 import { ImageService } from '@core/services/image.service'
 import * as dbModule from '@core/database/database-manager.interface'
-import { PortraitService } from '@core/services/portrait.service'
+import { PortraitService } from '@core/packs/portrait/services/portrait.service'
 import {
   DEFAULT_PORTRAIT_HEIGHT,
   DEFAULT_PORTRAIT_WIDTH,

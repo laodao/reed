@@ -1,10 +1,13 @@
 /**
  * 内置业务包清单（双端共用）
  * @module core/packs/builtin-packs
- * @description 现有业务"原地登记式"迁移为内置包的登记处：Electron（src/electron/index.ts）
+ * @description 现有业务收编为内置包的登记处：Electron（src/electron/index.ts）
  *              与 Web（src/web/server/index.ts）启动时把它交给 initPackSubsystem()，
  *              由包内核统一注册/激活（IPC handler 在包 activate 时登记，替代原先的
  *              initIpcHandlers()/registerAllWebChannels() 平铺调用）。
+ *              物理搬迁（2026-08-29）：7 个包的 handler 及单包专属 service 已搬入各自
+ *              包目录（handlers/、services/ 子目录），包边界实体化；被壳/他包/Web 端
+ *              共用的 service 仍留在 @core/services、@core/modules 原地。
  *
  *              批次记录：
  *              - P4 第一批：skills / diary / portrait（最薄的三个，handler 零改动迁移）。

@@ -1,15 +1,17 @@
 /**
  * 技能库内置业务包（后端接线）
  * @module core/packs/skills
- * @description 原地登记式：handler 文件原地不动（@electron/ipc/handlers/skill.handler），
- *              本包只在 activate 时调用其 registerSkillHandlers()。
+ * @description 物理收拢式：handler 已搬入包目录（./handlers/skill.handler），
+ *              本包在 activate 时调用其 registerSkillHandlers()。
+ *              skill-registry/skill.service 属 workflow 模块（壳共用），留在
+ *              @core/modules/workflow/skills 不搬。
  *              manifest 的 id/name/version 与前端骨架（renderer/packs/skills）保持一致。
  *
  *              禁用语义本期到"IPC 守卫统一拦截 skill:*"为止——handler 注册保留、
  *              服务单例不卸载（静态类无法卸载），故 activate 不返回 disposer。
  */
 
-import { registerSkillHandlers } from '@electron/ipc/handlers/skill.handler'
+import { registerSkillHandlers } from './handlers/skill.handler'
 import type { PackDefinition } from '../registry'
 
 export const skillsPack: PackDefinition = {

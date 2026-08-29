@@ -57,3 +57,90 @@ PC 端真机启动暴露并修复了 4 个阻塞（前 3 个为存量 bug，与�
 - CDP 冒烟 `scripts/e2e-pack-smoke.cjs` 6/6 通过：pack.list 7 包、菜单渲染、6 条业务路由可达、禁用 skills → skill:* 被 `PACK_DISABLED` 拦截、依赖语义（禁 voice-design → EP pending 且 ep:* 被拦）、恢复启用。
 - PG 方言补验（the-bot-test-pg 容器）：迁移双表 + 表达式唯一索引 `(pack_id, COALESCE(user_id,''))` 在 PG 实测通过；sanitize/default_model 迁移幂等通过。
 - 遗留：PG 方言全套件仍受存量实体 `datetime` 类型（56 处）阻塞（非本次引入）；ABI 双态冲突（测试需 Node ABI、应用需 Electron ABI）需以 rebuild 命令切换。
+
+## 逐模块 e2e（2026-08-29，CDP 真机，scripts/e2e-pack-*.cjs）
+
+对 7 个内置业务包逐个跑端到端 IPC 测试（playwright 连 CDP `http://127.0.0.1:9333`，真实调用 `window.electronAPI.*`，真实用户库，测试实体一律 `E2E-` 前缀并在用例内清理，实测无残留）。脚本：`scripts/e2e-pack-{skills,diary,chat,portrait,voice-design,longwriting,episode-production}.cjs`。
+
+### 结果概览
+
+| 包 | 结果 | 覆盖要点 |
+|---|---|---|
+| skills | ✅ 8/8 | list/create/get/resolve/update/forkBuiltin/remove，inputs schema 持久化验证 |
+| diary | ✅ 15/16 | 16 个 diary:* channel 全覆盖（目录嵌套/重命名/日记 CRUD/搜索/反链/移动/HTML+DOCX+PDF 导出） |
+| chat | ✅ 8/8 | role/dialog/message 全套 CRUD + chat:send 真实 AI 流式（deepseek-v4-flash-0731，回复落库）+ chat:stop |
+| portrait | ✅ 8/9（1 项环境受限） | 提示词模板 save/apply/delete、项目/角色 CRUD、变体列表；AI 生图因 API key 无效跳过 |
+| voice-design | ✅ 5/6（1 项环境受限） | providers/voices/history/cloned-list 查询；TTS 因 API key 无效跳过 |
+| longwriting | ✅ 11/11 | 项目/概要/背景/角色/地点/势力/情节/大纲/章节/记忆/字典/向导/向量索引/导出 + AI generateStoryOverview 真实生成成功 |
+| episode-production | ✅ 10/10（含 2 项已知存量失败的反向验证） | 项目/剧集（outline 模式）CRUD、资产域查询、linked_lw 角色资产全链路、预设/provider 查询、门控/进度 |
+
+结论：**7 个包的 IPC 收编与守卫未引入任何功能回归**；所有 CRUD/查询类 channel 在重构后正常工作。
+
+### 失败项根因分类
+
+**A. 本次包架构重构引入：0 项。**
+
+**B. 存量问题（与重构无关，git log 证实涉及文件最后提交均早于本分支）：**
+
+1. **diary 目录重命名不级联更新子目录/日记文件路径**（`src/core/services/diary.service.ts:125` updateFolder 只改自身 `path`）。重命名父目录后对子目录执行 `diary:move-entry` 必现 ENOENT（源路径已是新名、目标路径仍按旧名拼接）。e2e-pack-diary.cjs 步骤 12 实测复现。
+2. **EP 真实库 schema 漂移：NOT NULL 残留**（生产不跑 synchronize，且 `relax-binding-lw-id-nullable` 迁移的 SQLite 分支是空转注释、"依赖 synchronize"，从未真正重建表）：
+   - `video_episodes.outline_id NOT NULL` → uploaded 模式建剧集必炸（`relax-episode-script-outline-id` 只处理了 episode_scripts 表，漏了 video_episodes）。前端 `ScriptImportCard.vue:197` 等入口实际受影响。
+   - `character_bindings.long_writing_character_id NOT NULL` → standalone 角色资产无法创建。
+   - 另：`video_projects.config NOT NULL`，`ep:create-project` 不传 config 即撞约束（`NewProjectDialog` 传了 config 所以主流程无碍，但 `ScriptImportCard.vue` 的 `createProject(name)` 调用会炸）。
+   - e2e-pack-episode-production.cjs 步骤 3b/7b 做了反向验证，确认错误信息符合上述判断。
+
+**C. 环境 / AI 额度限制：2 项。**
+
+- portrait AI 生图、voice TTS：provider `阿里百炼平台-tokenplan`（pc_mtee10tz_ijz2yq1ro）的图像/语音接口报 `Invalid API-key provided`（同一配置的 LLM 模型可用，疑似该 key 未开通 wan2.7-image / qwen-audio 权限）。非代码问题。
+
+### 遗留风险
+
+真实用户库的 SQLite schema 漂移（NOT NULL 残留）使 EP 的 uploaded 建集与 standalone 资产两条用户路径在当前库上实际不可用，需要一期专门的 SQLite 表重建迁移（与包架构无关，但比包架构更影响用户）。
+
+---
+
+## 物理搬迁（2026-08-29 下午）
+
+将 7 个内置业务包的后端代码实体从 `src/electron/ipc/handlers/` 与 `@core/services` 收拢进各自包目录（`src/core/packs/<id>/handlers|services/`），包边界实体化。纯移动 + import 路径改写，零业务逻辑变更。前端视图（renderer/views/）本期不搬。
+
+### 每包搬迁清单
+
+| 包 | 搬入 handlers/ | 搬入 services/ |
+|---|---|---|
+| skills | `skill.handler.ts` | —（skill-registry/skill.service 属 workflow 模块，壳共用，留下） |
+| diary | `diary.handler.ts` | `diary-export.service.ts`（仅 diary.handler 引用） |
+| portrait | `portrait.handler.ts` | `portrait.service.ts`（仅 portrait.handler + 其单测引用） |
+| chat | `chat/dialog/message/role.handler.ts`（4 个） | `chat.service.ts`（仅 chat.handler 引用） |
+| voice-design | `voice.handler.ts` | `voice-design.service.ts`（仅 voice.handler 引用） |
+| longwriting | `longwriting.handler.ts` | `longwriting.service.ts`、`material-processor.service.ts`（均仅 handler 引用）、`lw-migration.service.ts`（仅 handler 动态 import，electron 专属，随包走） |
+| episode-production | 整个 `handlers/episode-production/` 目录（25 个 handler 文件 + 统一入口 index.ts，内部相对结构原样保留） | — |
+
+### 判定为共用而留下的 service
+
+| service | 引用方（除本包外） |
+|---|---|
+| `@core/services/diary.service` | workflow 壳 `modules/workflow/nodes/diary-nodes.ts` |
+| `@core/services/voice.service` | EP 音频三件套（dialogue/scene-audio/narration-synthesis）+ workflow `ai-nodes.ts` |
+| `@core/services/voice-clone.service` | `voice-clone-job-scheduler` + workflow `voice-clone-nodes.ts` |
+| `@core/services/voice-clone-job-scheduler` | 双端壳启动（`electron/index.ts`、`web/server/index.ts`） |
+| `@core/services/longwriting-ai.service`、`longwriting/agent/agent-workflow.service` | EP 包 `ep-agent-workflow.service` 复用（已知跨包耦合） |
+| `@core/modules/episode-production/**`（EP 业务服务层） | Web 壳 `upload-router.ts` 直接引用 asset-image/panorama 等服务，且整体双端共用 |
+| `@core/modules/workflow/skills/**`（skill-registry/skill.service） | workflow 壳 |
+
+不确定归属的一律留下，无遗漏搬迁。
+
+### 路径改写要点
+
+- 包 index.ts 改为从 `./handlers/...` 相对导入，头注释由"原地登记式"改为"物理收拢式"并记录共用 service 判定。
+- `longwriting.handler` 与 EP 4 个 handler 的 `./_platform`、`../../_platform` 改为别名 `@electron/ipc/handlers/_platform`（_platform 仍为壳层其他 handler 共用，留在原地）。
+- `lw-migration.service` 的 `../database/index` 改为 `@electron/database/index`。
+- 包内 handler↔service 用包内相对路径（`../services/...`），跨包/跨层一律走 `@core/@shared@electron` 别名，无深相对路径。
+- 受影响测试同步改路径（纯路径，未动断言）：`tests/unit/packs/longwriting-pack.spec.ts`、`episode-production-pack.spec.ts`（读 handler 源码做前缀覆盖断言）、`tests/unit/episode-production/render/infer-subject-support.spec.ts`、`tests/unit/services/portrait*.spec.ts`（7 个）。
+- renderer 与 web/client 均不 import `core/packs`，`web:client:build` 不涉及（跳过）。
+
+### 验证结果
+
+- `npx electron-vite build`：✅ 通过（20.1s）。
+- `npx vue-tsc --noEmit`：993 条错误 ≤ 基线 1005，净增 0；触及文件中无新增错误、无 TS2307 模块解析错误（全部 TS2307 均为 renderer 存量）。
+- 重启应用（CDP 9333）+ `e2e-pack-smoke.cjs`：✅ 6/6。
+- 逐模块 e2e：skills 8/8、diary 15/16（move-entry 为已确认存量 bug）、chat 8/8、portrait 8/9（AI 生图 key 无效，同基线）、voice-design 5/6（TTS key 无效，同基线）、longwriting 11/11、episode-production 10/10——均不劣于搬迁前基线。

@@ -1,8 +1,11 @@
 /**
  * 长文写作内置业务包（后端接线）
  * @module core/packs/longwriting
- * @description 原地登记式：handler 文件原地不动（@electron/ipc/handlers/longwriting.handler），
- *              本包只在 activate 时调用其 registerLongWritingHandlers()。
+ * @description 物理收拢式：handler 已搬入包目录（./handlers/longwriting.handler），
+ *              其专属的 LongWritingService / MaterialProcessorService / LwMigrationService
+ *              一并搬入（./services/）；LongWritingAIService 与 AgentWorkflowService 被
+ *              剧集制作包的 Agent 工作流复用，留在 @core/services 不搬。
+ *              本包在 activate 时调用 registerLongWritingHandlers()。
  *              manifest 的 id/name/version 与前端骨架（renderer/packs/longwriting）保持一致。
  *
  *              归属说明：longwriting.handler 一个文件承载长文写作全业务（项目/设定/角色/势力/
@@ -20,7 +23,7 @@
  *              服务单例不卸载（静态类无法卸载），故 activate 不返回 disposer。
  */
 
-import { registerLongWritingHandlers } from '@electron/ipc/handlers/longwriting.handler'
+import { registerLongWritingHandlers } from './handlers/longwriting.handler'
 import type { PackDefinition } from '../registry'
 
 export const longwritingPack: PackDefinition = {

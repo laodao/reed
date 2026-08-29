@@ -1,8 +1,11 @@
 /**
  * 声音设计内置业务包（后端接线）
  * @module core/packs/voice-design
- * @description 原地登记式：handler 文件原地不动（@electron/ipc/handlers/voice.handler），
- *              本包只在 activate 时调用其 registerVoiceHandlers()。
+ * @description 物理收拢式：handler 已搬入包目录（./handlers/voice.handler），
+ *              其专属的 VoiceDesignService 一并搬入（./services/voice-design.service）；
+ *              VoiceService/VoiceCloneService 被剧集制作与 workflow 语音节点共用、
+ *              VoiceCloneJobScheduler 被双端壳启动引用，均留在 @core/services 不搬。
+ *              本包在 activate 时调用 registerVoiceHandlers()。
  *              manifest 的 id/name/version 与前端骨架（renderer/packs/voice-design）保持一致。
  *
  *              归属说明：voice.handler 一个文件承载语音全家桶（TTS/STT/复刻/设计），
@@ -13,7 +16,7 @@
  *              服务单例不卸载（静态类无法卸载），故 activate 不返回 disposer。
  */
 
-import { registerVoiceHandlers } from '@electron/ipc/handlers/voice.handler'
+import { registerVoiceHandlers } from './handlers/voice.handler'
 import type { PackDefinition } from '../registry'
 
 export const voiceDesignPack: PackDefinition = {

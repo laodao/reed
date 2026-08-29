@@ -1,8 +1,9 @@
 /**
  * AI 对话内置业务包（后端接线）
  * @module core/packs/chat
- * @description 原地登记式：handler 文件原地不动（@electron/ipc/handlers/chat|dialog|message|role.handler），
- *              本包只在 activate 时调用各自的 register*Handlers()。
+ * @description 物理收拢式：chat/dialog/message/role 四个 handler 已搬入包目录
+ *              （./handlers/），chat 专属的 ChatService 一并搬入（./services/chat.service）；
+ *              本包在 activate 时调用各自的 register*Handlers()。
  *              manifest 的 id/name/version 与前端骨架（renderer/packs/chat）保持一致。
  *
  *              归属说明：chat（流式对话收发）、dialog（会话管理）、message（消息记录）、
@@ -12,10 +13,10 @@
  *              handler 注册保留、服务单例不卸载（静态类无法卸载），故 activate 不返回 disposer。
  */
 
-import { registerChatHandlers } from '@electron/ipc/handlers/chat.handler'
-import { registerDialogHandlers } from '@electron/ipc/handlers/dialog.handler'
-import { registerMessageHandlers } from '@electron/ipc/handlers/message.handler'
-import { registerRoleHandlers } from '@electron/ipc/handlers/role.handler'
+import { registerChatHandlers } from './handlers/chat.handler'
+import { registerDialogHandlers } from './handlers/dialog.handler'
+import { registerMessageHandlers } from './handlers/message.handler'
+import { registerRoleHandlers } from './handlers/role.handler'
 import type { PackDefinition } from '../registry'
 
 export const chatPack: PackDefinition = {
