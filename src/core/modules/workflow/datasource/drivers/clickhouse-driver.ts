@@ -4,7 +4,9 @@
  * @description 通过 ClickHouse HTTP 接口（默认 8123 端口）执行 SQL，零新依赖（fetch）。
  *              - testConnection：SELECT version()
  *              - query：HTTP POST，默认 JSONEachRow 输出；参数化用 ClickHouse 的
- *                {name:Type} 语法 + param_* 查询参数
+ *                {name:Type} 语法 + param_* 参数
+ *              安全（评审 #24）：SQL 与参数值只走 POST body（form-urlencoded），
+ *              不进 URL query string——URL 会落代理访问日志/查询日志，等于泄露整条查询。
  *              注意：ClickHouse 的 HTTP 接口对复杂 DML 支持有限（主要面向 OLAP 查询），
  *              适合读取/聚合场景；写操作（INSERT）走 HTTP 也有支持。
  */
@@ -17,17 +19,17 @@ import type {
   DataSourceTestResult,
 } from '@shared/types/datasource.types'
 
-function buildUrl(params: DataSourceConnectionParams, query: string): URL {
+function buildUrl(params: DataSourceConnectionParams): URL {
   const scheme = params.ssl ? 'https' : 'http'
   const host = params.host.includes(':') && !params.host.startsWith('[') ? `[${params.host}]` : params.host
   const url = new URL(`${scheme}://${host}:${params.port}/`)
-  url.searchParams.set('query', query)
+  // URL 只放非敏感的输出格式声明；query 与 param_* 一律走 POST body
   url.searchParams.set('default_format', 'JSONEachRow')
   return url
 }
 
 function buildHeaders(params: DataSourceConnectionParams): Record<string, string> {
-  const headers: Record<string, string> = { 'Content-Type': 'text/plain' }
+  const headers: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded' }
   if (params.username) {
     const token = Buffer.from(`${params.username}:${params.password ?? ''}`).toString('base64')
     headers['Authorization'] = `Basic ${token}`
@@ -36,20 +38,27 @@ function buildHeaders(params: DataSourceConnectionParams): Record<string, string
 }
 
 /**
- * 把 SQL 里的 $1,$2 转成 ClickHouse 的 {p1:Type} 参数并收集参数值（urlParams）。
+ * 把 SQL 里的 $1,$2 转成 ClickHouse 的 {p1:Type} 参数并收集参数值（bodyParams）。
  * 用共享 replaceDollarPlaceholders：统一 $n 语义 + 支持乱序。
  */
 function normalizeParams(
   sqlText: string,
   parameters: ReadonlyArray<unknown>,
-): { sql: string; urlParams: URLSearchParams } {
-  const urlParams = new URLSearchParams()
+): { sql: string; bodyParams: URLSearchParams } {
+  const bodyParams = new URLSearchParams()
   const { sql } = replaceDollarPlaceholders(sqlText, parameters, (index, raw) => {
     const type = inferType(raw)
-    urlParams.set(`param_p${index}`, raw == null ? '' : String(raw))
+    bodyParams.set(`param_p${index}`, raw == null ? '' : String(raw))
     return `{p${index}:${type}}`
   })
-  return { sql, urlParams }
+  return { sql, bodyParams }
+}
+
+/** 组装 POST body：query 字段 + param_* 参数字段（ClickHouse 表单编码协议） */
+function buildBody(query: string, bodyParams: URLSearchParams): URLSearchParams {
+  const body = new URLSearchParams(bodyParams)
+  body.set('query', query)
+  return body
 }
 
 function inferType(v: unknown): string {
@@ -64,8 +73,13 @@ export class ClickHouseDriverAdapter implements DataSourceDriverAdapter {
   async testConnection(params: DataSourceConnectionParams): Promise<DataSourceTestResult> {
     const started = Date.now()
     try {
-      const url = buildUrl(params, 'SELECT version() AS v')
-      const res = await fetch(url.toString(), { method: 'POST', headers: buildHeaders(params), signal: AbortSignal.timeout(8_000) })
+      const url = buildUrl(params)
+      const res = await fetch(url.toString(), {
+        method: 'POST',
+        headers: buildHeaders(params),
+        body: buildBody('SELECT version() AS v', new URLSearchParams()).toString(),
+        signal: AbortSignal.timeout(8_000),
+      })
       const text = await res.text()
       if (!res.ok) return { success: false, message: `HTTP ${res.status}: ${text.slice(0, 200)}`, durationMs: Date.now() - started }
       const rows = parseJsonEachRow(text)
@@ -87,11 +101,15 @@ export class ClickHouseDriverAdapter implements DataSourceDriverAdapter {
     parameters: ReadonlyArray<unknown> = [],
   ): Promise<DataSourceQueryResult> {
     const started = Date.now()
-    // 参数归一：$1 → {p1:Type}，并附加 param_p1 值
-    const { sql, urlParams } = normalizeParams(sqlText, parameters)
-    const url = buildUrl(params, sql)
-    for (const [k, v] of urlParams.entries()) url.searchParams.set(k, v)
-    const res = await fetch(url.toString(), { method: 'POST', headers: buildHeaders(params), signal: AbortSignal.timeout(30_000) })
+    // 参数归一：$1 → {p1:Type}，param_p1 值进 POST body
+    const { sql, bodyParams } = normalizeParams(sqlText, parameters)
+    const url = buildUrl(params)
+    const res = await fetch(url.toString(), {
+      method: 'POST',
+      headers: buildHeaders(params),
+      body: buildBody(sql, bodyParams).toString(),
+      signal: AbortSignal.timeout(30_000),
+    })
     const text = await res.text()
     if (!res.ok) {
       throw new Error(`ClickHouse HTTP ${res.status}: ${text.slice(0, 300)}`)
