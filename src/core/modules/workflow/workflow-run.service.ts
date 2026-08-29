@@ -309,7 +309,7 @@ export class WorkflowRunService {
     if (!applied) {
       return {
         success: false,
-        error: '运行不在活动挂起状态（应用重启后的待审核运行请先续跑）',
+        error: '决策未生效：运行不在活动挂起状态（应用重启后请先续跑），或提交被校验拒绝（如必填缺失/选项非法）',
       }
     }
     return { success: true }

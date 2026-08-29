@@ -13,6 +13,7 @@
  *              ALS 纪律不变：execute/续驱均须 runWithUserAsync(run.userId)。
  */
 
+import type { FormFieldDef } from '../nodes/interaction-nodes'
 import { runWithUserAsync } from '@core/context/user-context'
 import type {
   WorkflowEdge,
@@ -522,6 +523,30 @@ export class WorkflowEngineService {
     const filteredEdits = review.editedValues
       ? Object.fromEntries(Object.entries(review.editedValues).filter(([k]) => editableKeys.has(k)))
       : undefined
+    // 评审 #101：form-collect 服务端约束校验——必填非空 + 下拉值必须在 options 内。
+    // 此前只靠渲染端校验，直接调 wf:review-decide 可提交空必填/任意选项值。
+    if (isFormCollect && !isReject) {
+      const fields = ((node.config as { fields?: Array<FormFieldDef> }).fields ?? [])
+      const problems: string[] = []
+      for (const f of fields) {
+        const v = filteredEdits?.[f.key]
+        const empty = v === undefined || v === null || (typeof v === 'string' && v.trim() === '') || (Array.isArray(v) && v.length === 0)
+        if (f.required && empty) {
+          problems.push(`「${f.label || f.key}」为必填项`)
+          continue
+        }
+        if (f.type === 'select' && !empty) {
+          const optionValues = (f.options ?? []).map(o => o.value)
+          const values = Array.isArray(v) ? v : [v]
+          if (values.some(x => !optionValues.includes(x as never))) {
+            problems.push(`「${f.label || f.key}」的值不在可选项内`)
+          }
+        }
+      }
+      if (problems.length > 0) {
+        throw new Error(`表单校验失败：${problems.join('；')}`)
+      }
+    }
     let output: Record<string, unknown>
     if (isFormCollect) {
       output = { values: { ...filteredEdits }, cancelled: isReject }

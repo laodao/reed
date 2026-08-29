@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest'
 import { WorkflowEngineService, type ExecuteRunInput } from '@core/modules/workflow/engine/workflow-engine.service'
 import { createNodeRegistry } from '@core/modules/workflow/engine/node-registry'
 import { CONTROL_NODE_HANDLERS } from '@core/modules/workflow/nodes/control-nodes'
+import { INTERACTION_NODE_HANDLERS } from '@core/modules/workflow/nodes/interaction-nodes'
 import type { WorkflowEngineDeps, WorkflowEventPort, WorkflowNodeRunPort, WorkflowRunPort } from '@core/modules/workflow/engine/ports'
 import type { WorkflowRunEvent, WorkflowGraph, WorkflowNode } from '@shared/types/workflow.types'
 import type { WorkflowNodeHandler } from '@core/modules/workflow/engine/node-handler'
@@ -90,7 +91,7 @@ function makeEngine() {
   const runs = new FakeRuns()
   const nodeRuns = new FakeNodeRuns()
   const events = new FakeEvents()
-  const registry = createNodeRegistry([...CONTROL_NODE_HANDLERS, echo, review, boom()])
+  const registry = createNodeRegistry([...CONTROL_NODE_HANDLERS, ...INTERACTION_NODE_HANDLERS, echo, review, boom()])
   const engine = new WorkflowEngineService({ runs, nodeRuns, events } as WorkflowEngineDeps, registry)
   return { engine, runs, nodeRuns, events }
 }
@@ -303,6 +304,64 @@ describe('取消', () => {
 })
 
 // ==================== 续跑装配 ====================
+
+describe('form-collect 服务端校验（评审#101）', () => {
+  function formGraph() {
+    return g(
+      [n('start', 'start'), n('f', 'form-collect', {
+        formTitle: '资料收集',
+        fields: [
+          { key: 'name', label: '姓名', type: 'string', required: true },
+          { key: 'level', label: '等级', type: 'select', options: [{ label: '高', value: 'high' }, { label: '低', value: 'low' }] },
+        ],
+      }), n('end', 'end')],
+      [['start', 'f'], ['f', 'end']]
+    )
+  }
+
+  it('必填缺失 → 拒绝并保持挂起', async () => {
+    const { engine, nodeRuns } = makeEngine()
+    const st = await exec2(engine, input(formGraph()))
+    expect(st).toBe('waiting_review')
+    const applied = await runWithUser('u1', () =>
+      engine.resumeReview('run_1', 'f', { decision: 'approve_with_changes', editedValues: { level: 'high' } })
+    )
+    expect(applied).toBe(false)
+    expect(nodeRuns.statusOf('f')).toBe('waiting_review') // 保持挂起
+  })
+
+  it('下拉值不在 options 内 → 拒绝并保持挂起', async () => {
+    const { engine, nodeRuns } = makeEngine()
+    await exec2(engine, input(formGraph()))
+    const applied = await runWithUser('u1', () =>
+      engine.resumeReview('run_1', 'f', { decision: 'approve_with_changes', editedValues: { name: '张三', level: '顶级' } })
+    )
+    expect(applied).toBe(false)
+    expect(nodeRuns.statusOf('f')).toBe('waiting_review')
+  })
+
+  it('合法提交 → 通过并成功终态', async () => {
+    const { engine, nodeRuns } = makeEngine()
+    await exec2(engine, input(formGraph()))
+    const applied = await runWithUser('u1', () =>
+      engine.resumeReview('run_1', 'f', { decision: 'approve_with_changes', editedValues: { name: '张三', level: 'high' } })
+    )
+    expect(applied).toBe(true)
+    const done = await waitMs(50)
+    void done
+    expect(nodeRuns.outputOf('f')).toMatchObject({ values: { name: '张三', level: 'high' } })
+  })
+
+  it('reject（取消）不受必填校验约束', async () => {
+    const { engine, nodeRuns } = makeEngine()
+    await exec2(engine, input(formGraph()))
+    const applied = await runWithUser('u1', () =>
+      engine.resumeReview('run_1', 'f', { decision: 'reject' })
+    )
+    expect(applied).toBe(true)
+    expect(nodeRuns.outputOf('f')).toMatchObject({ cancelled: true })
+  })
+})
 
 describe('断点续跑（checkpoint 装配）', () => {
   it('已成功节点不重执行：按 checkpoint 恢复变量与边激活，从断点继续', async () => {
