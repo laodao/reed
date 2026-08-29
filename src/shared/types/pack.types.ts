@@ -105,6 +105,12 @@ export interface PackInfo {
 /** 禁用包的 IPC 调用统一错误码（IPC 守卫返回） */
 export const PACK_DISABLED_ERROR_CODE = 'PACK_DISABLED'
 
+/** pack:setEnabled 请求体（切换全局启用态；per-user 覆写留待管理 UI 落地） */
+export interface SetPackEnabledRequest {
+  packId: string
+  enabled: boolean
+}
+
 // ==================== 校验器（纪律 3：注册期 fail-fast） ====================
 
 export class PackManifestError extends Error {

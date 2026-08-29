@@ -38,6 +38,7 @@ import { registerDataSourceHandlers } from '@electron/ipc/handlers/datasource.ha
 import { registerFileHandlers } from '@electron/ipc/handlers/file.handler'
 import { registerExportHandlers } from '@electron/ipc/handlers/export.handler'
 import { registerDataPathHandlers } from '@electron/ipc/handlers/data-path.handler'
+import { registerPackHandlers } from '@electron/ipc/handlers/pack.handler'
 
 export async function registerAllWebChannels(): Promise<void> {
   // 已迁移到 ipcBridge 的 handler：导入即注册（在 Web 端运行时
@@ -73,4 +74,6 @@ export async function registerAllWebChannels(): Promise<void> {
   registerExportHandlers()
   // data-path 仅在 Electron 端有意义，函数内部已 isElectron 判断
   registerDataPathHandlers()
+  // 业务包（pack:list / pack:setEnabled）：Web 端同样经 ipcBridge 暴露
+  registerPackHandlers()
 }

@@ -15,6 +15,7 @@ import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 
 import App from './App.vue'
 import router from './router'
+import { installBuiltinPackages } from './packs'
 import { useUserStore, type CurrentUser } from './stores/user'
 
 import './styles/index.scss'
@@ -41,6 +42,10 @@ export async function mountApp(opts: MountOptions = {}): Promise<void> {
   const app = createApp(App)
   const pinia = createPinia()
   app.use(pinia)
+  // 业务包装配：注册内置包 → 拉启用态 → 动态挂路由/菜单。
+  // 必须在 app.use(router) 前完成——use(router) 会触发首次导航解析，
+  // 包路由未挂上时首屏直达链接（如 #/diary）会 404。
+  await installBuiltinPackages(router)
   app.use(router)
   app.use(ElementPlus)
   for (const [key, component] of Object.entries(ElementPlusIconsVue)) {

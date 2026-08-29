@@ -1,6 +1,12 @@
 /**
- * Vue Router 配置
+ * Vue Router 配置（壳路由表）
  * @module renderer/router
+ * @description 业务包架构（P3）改造后，本文件只保留壳路由：
+ *              壳功能页（首页/设置/工作流/应用/资产/知识库）+ 旧路由兼容 redirect
+ *              + 能力迁移重定向（redirectToApp）。
+ *              7 个业务包的路由已搬入 src/renderer/src/packs/<name>/index.ts，
+ *              由 mount.ts 的 installBuiltinPackages(router) 在 app.use(router) 前
+ *              经 router.addRoute 动态注册（禁用/依赖未就绪的包不注册）。
  */
 
 import { createRouter, createWebHashHistory, RouteRecordRaw } from 'vue-router'
@@ -24,7 +30,7 @@ function redirectToApp(appName: string) {
 }
 
 /**
- * 路由配置
+ * 壳路由配置（业务包路由见 src/renderer/src/packs/）
  */
 const routes: RouteRecordRaw[] = [
   {
@@ -34,39 +40,6 @@ const routes: RouteRecordRaw[] = [
     meta: {
       keepAlive: true,
       title: '首页'
-    }
-  },
-  {
-    path: '/chat',
-    name: 'Chat',
-    component: () => import('@/views/Chat.vue'),
-    meta: {
-      keepAlive: true,
-      title: 'AI 对话'
-    }
-  },
-  {
-    path: '/portrait',
-    name: 'Portrait',
-    component: () => import('@/views/Portrait.vue'),
-    meta: {
-      keepAlive: true,
-      title: '人像设计'
-    }
-  },
-  {
-    path: '/portrait/geometry',
-    name: 'FaceGeometryPage',
-    component: () => import('@/views/FaceGeometryPage.vue'),
-    meta: { keepAlive: true, title: '面部微调' },
-  },
-  {
-    path: '/portrait-templates',
-    name: 'PortraitTemplates',
-    component: () => import('@/views/PortraitTemplates.vue'),
-    meta: {
-      keepAlive: true,
-      title: '提示词模板库'
     }
   },
   // ==================== 能力应用迁移（阶段三） ====================
@@ -98,12 +71,6 @@ const routes: RouteRecordRaw[] = [
     component: { template: '<div />' },
   },
   {
-    path: '/voice/design',
-    name: 'VoiceDesign',
-    component: () => import('@/views/voice/VoiceDesign.vue'),
-    meta: { title: '声音设计' },
-  },
-  {
     path: '/workflow',
     name: 'WorkflowList',
     component: () => import('@/views/workflow/WorkflowList.vue'),
@@ -127,13 +94,6 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/asset/AssetCenter.vue'),
     // 不缓存：资产实时变化（工作流随时保存新资产），每次进入取最新数据
     meta: { title: '资产管理' },
-  },
-  {
-    path: '/skills',
-    name: 'SkillLibrary',
-    component: () => import('@/views/skills/SkillLibrary.vue'),
-    // 不缓存：技能实时变化（导入/新建/复制后立即可见）
-    meta: { title: '技能库' },
   },
   {
     // 会话页必须有 sessionId（新建会话由列表/详情页创建后跳转；无 id 路由已废弃）
@@ -183,117 +143,9 @@ const routes: RouteRecordRaw[] = [
       title: '知识库'
     }
   },
-  {
-    path: '/assistant',
-    name: 'Assistant',
-    component: () => import('@/views/Assistant.vue'),
-    meta: {
-      title: '智能助手'
-    }
-  },
-  {
-    path: '/longwriting',
-    name: 'LongWriting',
-    component: () => import('@/views/LongWriting.vue'),
-    meta: {
-      title: '长文写作'
-    }
-  },
-  {
-    path: '/story-editor/:id',
-    name: 'StoryEditor',
-    component: () => import('@/views/StoryEditor.vue'),
-    meta: {
-      title: '故事编辑'
-    }
-  },
-  {
-    path: '/comment-editor/:id',
-    name: 'CommentEditor',
-    component: () => import('@/views/CommentEditor.vue'),
-    meta: {
-      title: '评论编辑'
-    }
-  },
-  {
-    path: '/diary',
-    name: 'Diary',
-    component: () => import('@/views/Diary.vue'),
-    meta: {
-      keepAlive: true,
-      title: '日记'
-    }
-  },
-  {
-    path: '/episode-production',
-    name: 'EpisodeHome',
-    // 菜单入口 → 首页：导入剧本卡（中间文本框）+ 底部最近项目横向滑动
-    component: () => import('@/views/EpisodeHome.vue'),
-    meta: {
-      title: '剧集制作'
-    }
-  },
-  {
-    path: '/episode-production/all',
-    name: 'EpisodeProjectList',
-    // 「更多项目」→ 项目列表页（卡片网格 + 新建项目）
-    component: () => import('@/views/EpisodeProjectListV3.vue'),
-    meta: {
-      title: '项目列表'
-    }
-  },
-  {
-    path: '/episode-production/:projectId',
-    name: 'EpisodeProjectShortcut',
-    // 旧路径：直接访问项目无 episodeId 时，beforeEnter 选首集 redirect 到新版工作台或剧本创建页
-    beforeEnter: async (to) => {
-      const projectId = to.params.projectId as string
-      try {
-        const api = (window as any).electronAPI?.episodeProduction
-        const resp = await api.listEpisodes(projectId)
-        if (resp?.success && Array.isArray(resp.data) && resp.data.length > 0) {
-          const first = resp.data[0]
-          return `/episode-production/${projectId}/studio/${first.id}`
-        }
-        return `/episode-production/${projectId}/creator`
-      } catch {
-        return `/episode-production/${projectId}/creator`
-      }
-    },
-    // 给 vue-router 一个空的 component 占位，避免报 missing component 警告
-    component: { template: '<div />' },
-  },
-  {
-    // 无剧本空项目 → 剧本创建页（上传剧本 / AI 生成剧本）
-    path: '/episode-production/:projectId/creator',
-    name: 'EpisodeCreator',
-    component: () => import('@/views/EpisodeCreator.vue'),
-    meta: { title: '剧集制作' },
-  },
-  {
-    path: '/episode-production/:projectId/episode/:episodeId',
-    name: 'EpisodeWorkbench',
-    component: () => import('@/views/EpisodeWorkbench.vue'),
-    meta: { title: '剧集编辑' },
-  },
-  {
-    // 新版工作台（三段式 + 右侧 agent）：菜单入口 → 项目列表 → 本工作台
-    path: '/episode-production/:projectId/studio/:episodeId',
-    name: 'EpisodeAgentStudio',
-    component: () => import('@/views/EpisodeStudio.vue'),
-    meta: { title: '剧集制作' },
-  },
-  {
-    path: '/episode-production/:projectId/production/:sceneId',
-    name: 'EpisodeProduction',
-    component: () => import('@/views/EpisodeProductionPage.vue'),
-    meta: {
-      title: '画面制作'
-    }
-  },
   // =====================================================
   // 旧路由兼容 redirect（1 个版本周期后移除）
-  // 旧 path: /story-to-video → 新 /episode-production
+  // 旧 path: /story-to-video → 新 /episode-production（episode-production 包）
   // =====================================================
   { path: '/story-to-video', redirect: '/episode-production' },
   {
@@ -317,7 +169,7 @@ const routes: RouteRecordRaw[] = [
 ]
 
 /**
- * 创建路由实例
+ * 创建路由实例（仅壳路由；业务包路由由 installBuiltinPackages 动态注册）
  */
 const router = createRouter({
   history: createWebHashHistory(),

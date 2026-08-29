@@ -378,7 +378,11 @@ const IPC_CHANNELS = {
   DATASOURCE_UPDATE: 'datasource:update',
   DATASOURCE_DELETE: 'datasource:delete',
   DATASOURCE_TOGGLE_ENABLED: 'datasource:toggle-enabled',
-  DATASOURCE_TEST_CONNECTION: 'datasource:test-connection'
+  DATASOURCE_TEST_CONNECTION: 'datasource:test-connection',
+
+  // 业务包（包内核：启用态查询/切换）
+  PACK_LIST: 'pack:list',
+  PACK_SET_ENABLED: 'pack:setEnabled'
 } as const
 
 /**
@@ -2825,6 +2829,13 @@ const electronAPI = {
     delete: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.DATASOURCE_DELETE, id),
     toggleEnabled: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.DATASOURCE_TOGGLE_ENABLED, id),
     testConnection: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.DATASOURCE_TEST_CONNECTION, id)
+  },
+
+  // 业务包（包内核：启用态查询/切换——前端装配时据 pack:list 决定挂哪些包的路由/菜单）
+  pack: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.PACK_LIST),
+    setEnabled: (packId: string, enabled: boolean) =>
+      ipcRenderer.invoke(IPC_CHANNELS.PACK_SET_ENABLED, { packId, enabled })
   },
 
   // 错误处理

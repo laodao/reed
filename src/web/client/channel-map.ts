@@ -765,4 +765,7 @@ export const CHANNEL_OVERRIDES: Record<string, ChannelEntry> = {
   'oss.toggleEnabled': { channel: 'oss:toggle-enabled' },
   'oss.testConnection': { channel: 'oss:test-connection' },
   'oss.uploadFile': { channel: 'oss:upload-file' },
+  // 业务包（pack:list 走兜底推导也能对上；setEnabled 因 camelCase 需显式映射 + 参数包对象）
+  'pack.list': { channel: 'pack:list' },
+  'pack.setEnabled': { channel: 'pack:setEnabled', wrap: (packId, enabled) => [{ packId, enabled }] },
 }

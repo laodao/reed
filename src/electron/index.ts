@@ -130,6 +130,7 @@ import { registerDiaryHandlers } from './ipc/handlers/diary.handler'
 import { registerEpisodeProductionHandlers } from './ipc/handlers/episode-production'
 import { registerOSSHandlers } from './ipc/handlers/oss.handler'
 import { registerDataSourceHandlers } from './ipc/handlers/datasource.handler'
+import { registerPackHandlers } from './ipc/handlers/pack.handler'
 import * as fs from 'fs'
 
 // 在 app ready 之前注册协议权限（重要！）
@@ -367,6 +368,7 @@ function initIpcHandlers(): void {
   registerEpisodeProductionHandlers()
   registerOSSHandlers()
   registerDataSourceHandlers()
+  registerPackHandlers()
 }
 
 // 应用就绪
