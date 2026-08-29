@@ -18,6 +18,7 @@ import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from '@shared/types/workflow.types
 import { extractPageLinks } from './extra-nodes'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { validateOutboundUrl } from '@core/utils/outbound-url'
+import { readTextWithLimit } from './response-body'
 import { politeFetch } from './http-politeness'
 
 const UA = 'Mozilla/5.0 (compatible; the-bot-workflow)'
@@ -162,7 +163,7 @@ const crawlNewsNode: WorkflowNodeHandler = {
           hostConcurrency: cfg.hostConcurrency,
         })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const html = await res.text()
+        const html = await readTextWithLimit(res)
         const pageLinks = extractPageLinks(html, s.url, maxLinksPerSource)
         for (const l of pageLinks) {
           if (seen.has(l.url)) continue
@@ -319,7 +320,7 @@ const crawlLinksNode: WorkflowNodeHandler = {
           hostConcurrency: cfg.hostConcurrency,
         })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const html = await res.text()
+        const html = await readTextWithLimit(res)
         const pageLinks = extractPageLinks(html, t.url, maxLinksPerPage)
         for (const l of pageLinks) {
           if (seen.has(l.url)) continue

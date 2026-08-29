@@ -15,6 +15,7 @@ import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from '@shared/types/workflow.types
 import { parse } from 'node-html-parser'
 import { validateOutboundUrl } from '@core/utils/outbound-url'
 import { politeFetch } from './http-politeness'
+import { readTextWithLimit } from './response-body'
 
 // ==================== 模板转换 ====================
 
@@ -362,7 +363,7 @@ const webExtractNode: WorkflowNodeHandler = {
         if (cfg.onError === 'skip') return skipResult()
         return { status: 'failed', error: `请求失败：HTTP ${res.status}` }
       }
-      html = await res.text()
+      html = await readTextWithLimit(res)
     } catch (e) {
       if (cfg.onError === 'skip') return skipResult()
       return { status: 'failed', error: `网页获取失败: ${e instanceof Error ? e.message : String(e)}` }

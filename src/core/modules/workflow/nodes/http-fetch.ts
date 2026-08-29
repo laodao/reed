@@ -10,7 +10,8 @@
  *              - base64：二进制响应转 base64 字符串（小 payload 内联用，Web/桌面通吃）
  *              - file：二进制响应落盘（大文件推荐；落盘目录 outputDir，缺省 dataPath/workflow-media/http）
  *
- *              二进制走 arrayBuffer 整体读入（TTS 音频等 MB 级无压力）；超大响应将来可换流式管道。
+ *              二进制与文本统一走 response-body 限长读取（评审 #100）：默认 50MB 上限，
+ *              有 content-length 在读流前拒绝，无声明头时流式累计超限即中止。
  */
 
 import * as fs from 'fs'
@@ -18,6 +19,7 @@ import * as path from 'path'
 import { getPathProvider } from '@core/interfaces/path.interface'
 import { WORKFLOW_DEFAULTS, WORKFLOW_LIMITS } from '@shared/types/workflow.types'
 import { validateOutboundUrl } from '@core/utils/outbound-url'
+import { readBodyWithLimit } from './response-body'
 
 export type HttpResponseType = 'auto' | 'text' | 'json' | 'base64' | 'file'
 
@@ -118,7 +120,13 @@ export async function executeHttpFetch(
   const binaryMode = mode === 'base64' || mode === 'file' || (mode === 'auto' && isBinaryContentType(contentType))
 
   if (binaryMode) {
-    const buf = Buffer.from(await res.arrayBuffer())
+    // 评审 #100：响应体限长读取，恶意/超大响应不再全量入内存
+    let buf: Buffer
+    try {
+      buf = await readBodyWithLimit(res)
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
     if (mode === 'base64') {
       const base64 = buf.toString('base64')
       return {
@@ -152,8 +160,13 @@ export async function executeHttpFetch(
     }
   }
 
-  // 文本 / JSON 模式
-  const body = await res.text()
+  // 文本 / JSON 模式（评审 #100：限长读取）
+  let body: string
+  try {
+    body = (await readBodyWithLimit(res)).toString('utf8')
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
   let json: unknown
   if (mode !== 'text') {
     try {
