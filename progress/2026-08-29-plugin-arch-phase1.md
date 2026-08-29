@@ -42,3 +42,18 @@
 
 - 运行时动态启停（applyPacks 一次性应用 + 桥表缺 removeHandler 逆操作）；包管理 UI（Settings 列表 + setEnabled 入口）；per-user binding 的 Web 端生效验证。
 - 物理搬迁（可选第二步）：边界勘探本期已完成，搬迁时内核零改动、只改 import 路径。
+
+## 启动冒烟（2026-08-29 补记，提交 1febab05）
+
+PC 端真机启动暴露并修复了 4 个阻塞（前 3 个为存量 bug，与本架构无关但在本分支一并修复）：
+
+1. **sanitize-share-tokens 迁移缺表存在性检查**：注册顺序早于 create-apps-tables，旧库无 apps 表必崩（"no such table: apps"）→ 加双方言存在性检查跳过。
+2. **provider_configs.default_model 缺列**：entity 有列但历史无迁移，旧库被 drift 检查阻断 → 补 `add-provider-config-default-model` 迁移（双端登记）。
+3. **lw 临时角色/地点模板串行门反模式**：`transaction(async () => { this.upsert(...) })` 回调内走全局代理 → 改用事务 manager 仓储（评审 🔴#39 同类；其余 12 处存量站点未动，留专项）。
+4. **包重复激活 bug（本架构新增代码）**：activate 无 disposer 的包禁用后再启用会重跑 activate，重复注册 IPC channel 抛错把包打成 failed → registry 增加 contributionsLive 语义：无逆操作可执行时恢复启用只翻状态不重跑；含单测 + 修正一条锁定旧语义的存量断言。
+
+验证：
+- PC 端（DISPLAY=:1）启动成功：`[pack-kernel] 业务包子系统已启动（7 个内置包）`，7 包全部激活，工作流子系统正常。
+- CDP 冒烟 `scripts/e2e-pack-smoke.cjs` 6/6 通过：pack.list 7 包、菜单渲染、6 条业务路由可达、禁用 skills → skill:* 被 `PACK_DISABLED` 拦截、依赖语义（禁 voice-design → EP pending 且 ep:* 被拦）、恢复启用。
+- PG 方言补验（the-bot-test-pg 容器）：迁移双表 + 表达式唯一索引 `(pack_id, COALESCE(user_id,''))` 在 PG 实测通过；sanitize/default_model 迁移幂等通过。
+- 遗留：PG 方言全套件仍受存量实体 `datetime` 类型（56 处）阻塞（非本次引入）；ABI 双态冲突（测试需 Node ABI、应用需 Electron ABI）需以 rebuild 命令切换。
