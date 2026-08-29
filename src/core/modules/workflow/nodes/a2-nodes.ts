@@ -235,7 +235,7 @@ const reportImageNode: WorkflowNodeHandler = {
     if (rendered.format === 'image') {
       const dir = join(getPathProvider().getDataPath(), 'workflow-reports')
       mkdirSync(dir, { recursive: true })
-      const safeId = `${ctx.runId}_${ctx.nodeId}`.replace(/[^\w.-]/g, '_')
+      const safeId = `${ctx.runId}_${ctx.nodeId}${ctx.iterationIndex > 0 ? `_i${ctx.iterationIndex}` : ''}`.replace(/[^\w.-]/g, '_')
       const filePath = join(dir, `${safeId}.png`)
       writeFileSync(filePath, rendered.buffer)
       output.filePath = filePath

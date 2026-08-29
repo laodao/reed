@@ -1,8 +1,8 @@
 {
   "kind": "the-bot-workflow",
   "formatVersion": 1,
-  "name": "[内置] 电商详情长图",
-  "description": "商品图+卖点+规格 → 先按卖点/规格规划 N 张介绍图 → 逐张生成（锁参考图商品、图文对应）→ 排版成竖版详情长图",
+  "name": "[内置] 电商详情图",
+  "description": "商品图+卖点+规格 → 先按卖点/规格规划 N 张，再逐张生成「卖点宣传卡」（大标题+说明+卖点特效图+参数，文字合到图中）",
   "category": "ecommerce",
   "graph": {
     "version": 1,
@@ -27,7 +27,7 @@
               { "label": "宠物用品", "value": "pet" },
               { "label": "其他", "value": "other" }
             ] },
-            { "key": "style", "label": "风格", "type": "select", "defaultValue": "premium", "options": [
+            { "key": "style", "label": "风格", "type": "select", "defaultValue": "tech", "options": [
               { "label": "简约", "value": "minimal" },
               { "label": "高端", "value": "premium" },
               { "label": "活力", "value": "vibrant" },
@@ -40,8 +40,8 @@
               { "label": "小红书 3:4 竖图", "value": "xiaohongshu" },
               { "label": "抖音电商 3:4", "value": "douyin" },
               { "label": "自定义尺寸", "value": "custom" }
-            ], "description": "详情长图配图建议竖版；竖版平台用对应比例" },
-            { "key": "maxSlides", "label": "介绍图张数", "type": "number", "defaultValue": 4, "validation": { "min": 2, "max": 8 }, "description": "按卖点/规格规划几张介绍图（每张配一个卖点/规格点）" },
+            ], "description": "详情图建议竖版；竖版平台用对应比例" },
+            { "key": "maxSlides", "label": "卖点宣传图张数", "type": "number", "defaultValue": 4, "validation": { "min": 2, "max": 8 }, "description": "按卖点/规格规划几张（每张一个卖点/规格点，图文合一）" },
             { "key": "model", "label": "图像模型", "type": "model", "modelTypes": ["image"], "required": true, "description": "商品一致性关键：请选支持图像编辑/主体保留的模型（如火山 Seedream 4.5/5.0、百炼 Qwen-Image-Edit）" },
             { "key": "textModel", "label": "文案模型", "type": "model", "modelTypes": ["text", "multimodal"], "required": true }
           ]
@@ -53,8 +53,8 @@
         "name": "详情图规划（卖点×规格）",
         "position": { "x": 320, "y": 200 },
         "config": {
-          "systemPrompt": "你是资深电商详情页策划。根据商品信息、卖点、产品类型、风格与图片规格，规划 N 张「商品介绍图」。\n\n【数量约束】slides 数组长度必须严格等于 {{start.maxSlides}}（用户指定张数）。\n\n【每张介绍图 = 一个卖点/规格点】【图文对应】\n逐张拆解，每张聚焦一个明确的卖点或规格点（如 高速马达/风力、负离子/柔顺、精准温控、磁吸配件、轻巧便携、容量、材质、续航、适用场景等——从商品信息里提炼，规格也作为独立的点），每张输出：\n{id: 序号, title: 该点标题（中文，8-20 字，突出卖点）, desc: 说明文字（中文 40-80 字，讲清该点带来的好处）, prompt: 完整英文图像编辑指令, negativePrompt, }\n\n【商品外观锁定（最高优先级）】\n商品外观以用户上传的商品参考图为准（生成阶段会把参考图作为编辑底图喂给图像编辑模型）。因此 prompt 必须写成【图像编辑指令】而非从零描述的生成式 prompt——格式：'Keep the product in the reference image completely unchanged (same shape, color, material, texture, pattern, logo). Only change the background/scene/composition to: ...'；不要重述商品外观细节，只描述「体现该卖点/规格点」的画面。\n\n【卖点视觉化】\n配图要能表达该卖点/规格点：高速风力→气流/飞扬发丝/动态；负离子→柔顺亮泽发丝；恒温→温暖舒适氛围；磁吸配件→圆环/风嘴特写；便携→旅行收纳；容量/材质→对应特写或场景；仅只改变背景/场景/构图/道具/氛围，把卖点融入画面，禁止出现任何文字。\n\n【风格与质感一致】\n保持参考图的整体绘画风格与质感（插画则插画、照片则照片），只更换背景/场景/光线/构图。\n\n【图片规格】\n配图尺寸按用户所选规格（{{start.specPreset}}）：通用1:1→1024x1024；小红书/抖音电商 3:4→1080x1440（竖版）；自定义→{{start.customWidth}}x{{start.customHeight}}。\n\n只输出 JSON 对象：{slides: [...]}。",
-          "prompt": "商品信息：{{start.productInfo}}\n产品类型：{{start.productCategory}}\n风格：{{start.style}}\n图片规格：{{start.specPreset}}\n介绍图张数：{{start.maxSlides}}\n\n请输出 JSON 对象。",
+          "systemPrompt": "你是资深电商详情策划。根据商品信息、卖点、规格与产品类型、风格，规划 N 张「卖点宣传图」（每张 = 一个卖点或规格点，图文合一）。\n\n【数量约束】slides 数组长度必须严格等于 {{start.maxSlides}}。\n\n【每张介绍图 = 一个卖点/规格点】逐张拆解，聚焦一个明确的卖点或规格点（如 高速马达/风力、负离子/柔顺、精准温控、磁吸配件、轻巧便携、容量、材质、油耗、续航等），每张输出：\n{id: 序号, title: 该点标题（中文，8-20 字，突出卖点）, desc: 说明文字（中文，40-80 字，讲清该点带来的好处）, prompt: 完整英文图像编辑指令, specs: [{label,value}]（2-4 个参数点，从商品信息/规格提炼，如 转速/功率/容量/材质/寿命/音量）, negativePrompt}\n\n【商品外观锁定（最高优先级）】\n商品外观以用户上传的商品参考图为准（生成阶段会把参考图作为编辑底图喂给图像编辑模型）。因此 prompt 必须写成【图像编辑指令】而非从零描述的生成式 prompt——格式：'Keep the product in the reference image completely unchanged (same shape, color, material, texture, pattern, logo). Only change the background/scene/composition to: ...'；不要重述商品外观细节，只描述「体现该卖点/规格点」的画面。\n\n【卖点视觉化】\n配图要能表达该卖点/规格点：高速风力→气流/飞扬发丝/动态；负离子→柔顺亮泽发丝；恒温→温暖舒适氛围；磁吸配件→圆环/风嘴特写；容量/材质→对应特写或场景；仅只改变背景/场景/构图/道具/氛围。\n\n【禁文字】配图中禁止出现任何文字（文字由图卡排版模板呈现）；negativePrompt 追加：text, letters, characters, typography。\n\n【风格与质感一致】保持参考图的整体绘画风格与质感（插画则插画、照片则照片）。\n\n【图片规格】配图尺寸按用户所选规格（{{start.specPreset}}）：通用1:1→1024x1024；小红书/抖音电商 3:4→1080x1440（竖版）；自定义→{{start.customWidth}}x{{start.customHeight}}。\n\n只输出 JSON 对象：{slides: [...]}。",
+          "prompt": "商品信息：{{start.productInfo}}\n产品类型：{{start.productCategory}}\n风格：{{start.style}}\n图片规格：{{start.specPreset}}\n卖点宣传图张数：{{start.maxSlides}}\n\n请输出 JSON 对象。",
           "jsonMode": true,
           "providerConfigId": "{{start.textModel.providerConfigId}}",
           "modelId": "{{start.textModel.modelId}}"
@@ -63,15 +63,15 @@
       {
         "id": "loop1",
         "type": "loop",
-        "name": "逐张生成（详情图）",
+        "name": "逐张生成（卖点宣传卡）",
         "position": { "x": 560, "y": 200 },
         "config": { "listExpression": "{{detailPlan.parsed.slides}}", "emptyPolicy": "skip" }
       },
       {
         "id": "img1",
         "type": "image-gen",
-        "name": "生成详情配图",
-        "position": { "x": 800, "y": 200 },
+        "name": "生成卖点特效图",
+        "position": { "x": 800, "y": 160 },
         "config": {
           "prompt": "{{loop1.item.prompt}}",
           "negativePrompt": "{{loop1.item.negativePrompt}}",
@@ -85,12 +85,37 @@
         }
       },
       {
-        "id": "saveImg1",
-        "type": "save-asset",
-        "name": "保存详情配图",
-        "position": { "x": 1040, "y": 200 },
+        "id": "cardMd",
+        "type": "code",
+        "name": "拼装卖点卡 markdown",
+        "position": { "x": 1040, "y": 160 },
         "config": {
-          "content": "{{img1.images.0.path}}",
+          "code": "const it = inputs.sellPoint || {};\nconst url = String(inputs.imgUrl || '');\nconst specs = Array.isArray(it.specs) ? it.specs : [];\nlet md = String(it.desc || '');\nmd += '\\n\\n![卖点](' + url + ')';\nif (specs.length) {\n  md += '\\n\\n| 参数 | 说明 |\\n|---|---|\\n' + specs.map(x => '| ' + (x.label || '') + ' | ' + (x.value || '') + ' |').join('\\n');\n}\nreturn { markdown: md };",
+          "inputs": [
+            { "key": "sellPoint", "value": "{{loop1.item}}" },
+            { "key": "imgUrl", "value": "{{img1.images.0.localUrl}}" }
+          ]
+        }
+      },
+      {
+        "id": "card1",
+        "type": "report-image",
+        "name": "渲染卖点宣传卡",
+        "position": { "x": 1280, "y": 200 },
+        "config": {
+          "title": "{{loop1.item.title}}",
+          "template": "{{cardMd.result.markdown}}",
+          "templateId": "ecommerceSellpoint",
+          "width": 1080
+        }
+      },
+      {
+        "id": "saveCard",
+        "type": "save-asset",
+        "name": "保存卖点宣传卡",
+        "position": { "x": 1520, "y": 200 },
+        "config": {
+          "content": "{{card1.filePath}}",
           "kind": "file",
           "category": "image",
           "subCategory": "电商详情",
@@ -101,51 +126,10 @@
         }
       },
       {
-        "id": "buildMd",
-        "type": "code",
-        "name": "拼装图文 markdown",
-        "position": { "x": 1280, "y": 200 },
-        "config": {
-          "code": "const s = Array.isArray(inputs.slides) ? inputs.slides : [];\nconst imgs = Array.isArray(inputs.imgResults) ? inputs.imgResults : [];\nconst name = String(inputs.productInfo || '商品详情').split(/[。；;\\n]/)[0].slice(0, 20);\nconst parts = ['# ' + name + '\\n'];\ns.forEach((it, i) => {\n  const r = imgs[i];\n  const url = r && r.url ? r.url : '';\n  parts.push('## ' + it.title + '\\n\\n![' + it.title + '](' + url + ')\\n\\n' + it.desc);\n});\nreturn { markdown: parts.join('\\n\\n') };",
-          "inputs": [
-            { "key": "slides", "value": "{{detailPlan.parsed.slides}}" },
-            { "key": "imgResults", "value": "{{loop1.results}}" },
-            { "key": "productInfo", "value": "{{start.productInfo}}" }
-          ]
-        }
-      },
-      {
-        "id": "detailImg",
-        "type": "report-image",
-        "name": "渲染详情长图",
-        "position": { "x": 1520, "y": 200 },
-        "config": {
-          "title": "{{start.productInfo}}",
-          "template": "{{buildMd.result.markdown}}",
-          "templateId": "generic",
-          "width": 1080
-        }
-      },
-      {
-        "id": "save1",
-        "type": "save-asset",
-        "name": "保存详情长图",
-        "position": { "x": 1760, "y": 200 },
-        "config": {
-          "content": "{{detailImg.filePath}}",
-          "kind": "file",
-          "category": "image",
-          "subCategory": "电商详情",
-          "name": "电商详情长图",
-          "tags": "电商,详情长图,{{start.productCategory}}",
-          "groupName": "电商详情图-{{sys.today}}"
-        }
-      },
-      {
         "id": "end",
         "type": "end",
         "name": "结束",
-        "position": { "x": 2000, "y": 200 },
+        "position": { "x": 1760, "y": 200 },
         "config": {}
       }
     ],
@@ -153,12 +137,11 @@
       { "id": "e1", "sourceNodeId": "start", "targetNodeId": "detailPlan", "kind": "normal" },
       { "id": "e2", "sourceNodeId": "detailPlan", "targetNodeId": "loop1", "kind": "normal" },
       { "id": "e8", "sourceNodeId": "loop1", "targetNodeId": "img1", "kind": "loop-body" },
-      { "id": "e9", "sourceNodeId": "img1", "targetNodeId": "saveImg1", "kind": "normal" },
-      { "id": "e10", "sourceNodeId": "saveImg1", "targetNodeId": "loop1", "kind": "loop-back" },
-      { "id": "e11", "sourceNodeId": "loop1", "targetNodeId": "buildMd", "kind": "loop-done" },
-      { "id": "e12", "sourceNodeId": "buildMd", "targetNodeId": "detailImg", "kind": "normal" },
-      { "id": "e13", "sourceNodeId": "detailImg", "targetNodeId": "save1", "kind": "normal" },
-      { "id": "e14", "sourceNodeId": "save1", "targetNodeId": "end", "kind": "normal" }
+      { "id": "e9", "sourceNodeId": "img1", "targetNodeId": "cardMd", "kind": "normal" },
+      { "id": "e10", "sourceNodeId": "cardMd", "targetNodeId": "card1", "kind": "normal" },
+      { "id": "e11", "sourceNodeId": "card1", "targetNodeId": "saveCard", "kind": "normal" },
+      { "id": "e12", "sourceNodeId": "saveCard", "targetNodeId": "loop1", "kind": "loop-back" },
+      { "id": "e13", "sourceNodeId": "loop1", "targetNodeId": "end", "kind": "loop-done" }
     ]
   },
   "triggers": [],
