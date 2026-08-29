@@ -242,6 +242,31 @@ describe.each(getTestDialects())('Workflow Repositories [%s]', dialect => {
       expect(updated?.finishedAt).not.toBeNull()
     })
 
+    it('transitionIfStatus：条件迁移原子生效，终态不被覆盖（评审#34/#35）', async () => {
+      const pending = await asUser('user-a', () =>
+        runs.create({ definitionId: 'd10', definitionVersion: 1, graphSnapshot: makeGraph(), triggerType: 'manual', status: 'pending' })
+      )
+      const done = await asUser('user-a', () =>
+        runs.create({ definitionId: 'd10', definitionVersion: 1, graphSnapshot: makeGraph(), triggerType: 'manual', status: 'succeeded' })
+      )
+      // pending → cancelled：命中
+      const moved = await asUser('user-a', () =>
+        runs.transitionIfStatus(pending.id, ['pending', 'waiting_review'], {
+          status: 'cancelled',
+          finishedAt: new Date(),
+          cancelRequestedAt: new Date(),
+        })
+      )
+      expect(moved).toBe(true)
+      expect((await asUser('user-a', () => runs.getById(pending.id)))?.status).toBe('cancelled')
+      // 已终态行：不命中、不覆盖
+      const moved2 = await asUser('user-a', () =>
+        runs.transitionIfStatus(done.id, ['pending', 'waiting_review'], { status: 'cancelled', finishedAt: new Date() })
+      )
+      expect(moved2).toBe(false)
+      expect((await asUser('user-a', () => runs.getById(done.id)))?.status).toBe('succeeded')
+    })
+
     it('findMutexHolders：只返回 pending/running/waiting_review', async () => {
       await asUser('user-a', async () => {
         await runs.create({ definitionId: 'd1', definitionVersion: 1, graphSnapshot: makeGraph(), triggerType: 'manual', status: 'running' })

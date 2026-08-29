@@ -58,6 +58,8 @@ export interface StartRunInput {
 export class WorkflowRunService {
   /** 排队待启动的运行（全局并发超限时 FIFO） */
   private queue: Array<{ runId: string; userId: string; execInput: ExecuteRunInput }> = []
+  /** 评审 #35：重启后 keptWaiting 审核运行的死线定时器（runId → timer），到期释放互斥槽 */
+  private reviewTimeoutTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly maxConcurrentRuns: number
 
   constructor(private readonly deps: WorkflowRunServiceDeps) {
@@ -245,24 +247,25 @@ export class WorkflowRunService {
     }
   }
 
-  /** 取消：活动运行走引擎；排队/仅库中运行直接改库 */
+  /** 取消：活动运行走引擎；排队/仅库中运行原子条件落库 */
   async cancelRun(runId: string, userId: string): Promise<boolean> {
     const cancelledByEngine = await runWithUserAsync(userId, () =>
       this.deps.engine.cancelRun(runId)
     )
     if (cancelledByEngine) return true
-    // 排队中未启动：从队列移除并直接落库
+    // 排队中未启动：从队列移除并落库
     const idx = this.queue.findIndex(q => q.runId === runId)
     if (idx >= 0) this.queue.splice(idx, 1)
     const run = await this.deps.runs.getById(runId)
     if (!run) return false
     if ([WORKFLOW_RUN_STATUSES.pending, WORKFLOW_RUN_STATUSES.waiting_review].includes(run.status)) {
-      await this.deps.runs.update(runId, {
+      // 评审 #34：原子条件迁移（UPDATE ... WHERE status IN），
+      // 消除「读-判-写」窗口里与 resumeReview/引擎完结交错的终态覆盖
+      return this.deps.runs.transitionIfStatus(runId, [WORKFLOW_RUN_STATUSES.pending, WORKFLOW_RUN_STATUSES.waiting_review], {
         status: WORKFLOW_RUN_STATUSES.cancelled,
         finishedAt: new Date(),
         cancelRequestedAt: new Date(),
       })
-      return true
     }
     return false
   }
@@ -311,6 +314,9 @@ export class WorkflowRunService {
     }
     const graph = source.graphSnapshot
     if (!graph) throw new Error('源运行缺少图快照')
+    // 评审 #33：续跑运行沿用定义当前的执行设置与死线
+    const def = await this.deps.definitions.getById(source.definitionId)
+    if (!def) throw new Error('源工作流定义不存在（可能已被删除）')
 
     const checkpoints = await this.deps.nodeRuns.findSucceededWithOutput(sourceRunId)
     const run = await this.deps.runs.create({
@@ -322,6 +328,8 @@ export class WorkflowRunService {
       triggerInfo: { ...((source.triggerInfo as Record<string, unknown> | null) ?? {}), resumedFrom: sourceRunId },
       startInputs: source.startInputs,
       status: WORKFLOW_RUN_STATUSES.pending,
+      // 评审 #33：续跑运行同样带定义级执行死线（否则重启/续跑链无限挂）
+      timeoutAt: new Date(Date.now() + (def.settings?.maxDurationMs ?? WORKFLOW_DEFAULTS.maxDurationMs)),
       resumedFromRunId: sourceRunId,
     })
     await this.launch(
@@ -329,7 +337,8 @@ export class WorkflowRunService {
       run.userId ?? LOCAL_DEFAULT_USER_ID,
       source.definitionId,
       graph,
-      null,
+      // 评审 #33：续跑丢定义级执行设置（并发/循环/超时全落默认）——按 startRun 同款装配
+      this.effectiveSettings(def.settings),
       source.startInputs,
       // 只装配根作用域 checkpoint（iteration 0）；循环体迭代行随未完成循环重跑
       checkpoints
@@ -379,6 +388,40 @@ export class WorkflowRunService {
   }
 
   /**
+   * 评审 #35：为重启后仍在挂起审核的运行注册死线定时器。
+   * 引擎的 tickReviewTimeouts 只遍历内存 activeExecutions，重启后纯库态的
+   * waiting_review 运行无人看管——到点将其转 interrupted（可续跑），互斥槽随之释放。
+   * 条件迁移保证与「用户先取消/续跑」并发时安全（状态已变则 no-op）。
+   */
+  private armWaitingReviewTimeout(run: WorkflowRunRecord): void {
+    if (!run.timeoutAt) return
+    const delay = run.timeoutAt.getTime() - Date.now()
+    if (delay <= 0) return
+    if (this.reviewTimeoutTimers.has(run.id)) return
+    // setTimeout 延迟上限 2^31-1 ms（≈24.8 天），钳到上限内
+    const timer = setTimeout(() => {
+      this.reviewTimeoutTimers.delete(run.id)
+      void runWithUserAsync(run.userId ?? LOCAL_DEFAULT_USER_ID, async () => {
+        const moved = await this.deps.runs.transitionIfStatus(
+          run.id,
+          [WORKFLOW_RUN_STATUSES.waiting_review],
+          {
+            status: WORKFLOW_RUN_STATUSES.interrupted,
+            finishedAt: new Date(),
+            error: '审核等待已超时（应用重启后中断）',
+          }
+        )
+        if (moved) {
+          logger.info(`[WorkflowRunService] 重启后挂起审核运行 ${run.id} 到期转 interrupted，互斥槽已释放`)
+        }
+      }).catch(() => {})
+    }, Math.min(delay, 2_147_483_647))
+    // 定时器不阻止进程退出
+    ;(timer as { unref?: () => void }).unref?.()
+    this.reviewTimeoutTimers.set(run.id, timer)
+  }
+
+  /**
    * boot 恢复：跨租户扫描在途运行，按 userId 分组处理。
    * - running/pending 且 timeout_at 已过 → timed_out
    * - running/pending 未超时 → interrupted（不自动续跑，等用户操作）
@@ -416,6 +459,9 @@ export class WorkflowRunService {
         for (const run of runs) {
           if (run.status === 'waiting_review') {
             result.keptWaiting++
+            // 评审 #35：重启后未到期的挂起审核也要在死线到点被处理——
+            // 否则 keptWaiting 运行永久占互斥槽堵死该定义（tickReviewTimeouts 只扫内存态）
+            this.armWaitingReviewTimeout(run)
             continue
           }
           const timedOut = run.timeoutAt ? run.timeoutAt.getTime() < now : false

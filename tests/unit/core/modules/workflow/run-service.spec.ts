@@ -2,7 +2,7 @@
  * 工作流运行服务测试：互斥跳过 / 启动到终态 / 审核委托 / 续跑
  * @module tests/workflow/run-service
  */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { WorkflowRunService } from '@core/modules/workflow/workflow-run.service'
 import { WorkflowEngineService } from '@core/modules/workflow/engine/workflow-engine.service'
 import { createNodeRegistry } from '@core/modules/workflow/engine/node-registry'
@@ -31,6 +31,13 @@ class MemRuns {
     Object.assign(row, patch)
     return row
   }
+  // 评审 #34/#35：与真仓库同语义的条件迁移（真实原子性由 SQL WHERE 保证，见 workflow-repositories.spec）
+  async transitionIfStatus(id: string, fromStatuses: readonly string[], patch: { status: string; finishedAt?: Date | null; error?: string | null; cancelRequestedAt?: Date }) {
+    const row = this.rows.get(id)
+    if (!row || !fromStatuses.includes(row.status)) return false
+    Object.assign(row, patch)
+    return true
+  }
   async findMutexHolders(defId: string) {
     return [...this.rows.values()].filter(
       (r: any) => r.definitionId === defId && ['pending', 'running', 'waiting_review'].includes(r.status)
@@ -58,6 +65,7 @@ class MemNodeRuns {
   async findSucceededWithOutput(runId: string) {
     return this.rows.filter(r => r.runId === runId && r.status === 'succeeded' && r.output)
   }
+  async scanExpiredWaitingReview(_now: Date) { return [] }
   async findWaitingReview() {
     return this.rows.filter(r => r.status === 'waiting_review')
   }
@@ -228,6 +236,61 @@ describe('WorkflowRunService', () => {
     await runs.create({ definitionId: 'd2', definitionVersion: 1, graphSnapshot: g([], []), triggerType: 'manual', status: 'waiting_review', timeoutAt: null })
     const result = await service.recoverOnBoot()
     expect(result).toEqual({ timedOut: 0, interrupted: 1, keptWaiting: 1 })
+  })
+
+  it('续跑继承定义级执行设置与死线（评审#33）', async () => {
+    const { service, runs, definitions, engine } = setup()
+    const graph = g(
+      [n('start', 'start'), n('d', 'delay', { durationMs: 5 }), n('bad', 'boom'), n('end', 'end')],
+      [['start', 'd'], ['d', 'bad'], ['bad', 'end']]
+    )
+    definitions.rows.set('def1', def('def1', graph))
+    const first = await runWithUser('u1', () => service.startRun({ definitionId: 'def1', triggerType: 'manual' }))
+    await wait(60)
+    expect((await runs.getById(first.id)).status).toBe('failed')
+
+    // 定义配置执行设置：maxDurationMs=12345
+    definitions.rows.get('def1').settings = { maxDurationMs: 12345 }
+    const execSpy = vi.spyOn(engine, 'execute')
+    const resumed = await runWithUser('u1', () => service.resumeRun(first.id))
+    // 1) launch 收到的 settings 是定义级装配结果
+    const execInput = execSpy.mock.calls[0][0] as any
+    expect(execInput.settings?.maxDurationMs).toBe(12345)
+    // 2) 运行行带死线（≈ now + 12345）
+    const row = await runs.getById(resumed.id)
+    expect(row.timeoutAt).not.toBeNull()
+    const delta = new Date(row.timeoutAt as any).getTime() - new Date(row.createdAt as any).getTime()
+    expect(delta).toBeGreaterThan(12000)
+    expect(delta).toBeLessThanOrEqual(13000)
+    vi.restoreAllMocks()
+  })
+
+  it('cancelRun 原子条件迁移：可取消状态生效；已终态不覆盖返回 false（评审#34）', async () => {
+    const { service, runs } = setup()
+    const pendingRun = await runs.create({ definitionId: 'd1', definitionVersion: 1, graphSnapshot: g([], []), triggerType: 'manual', status: 'pending' })
+    expect(await runWithUser('u1', () => service.cancelRun(pendingRun.id, 'u1'))).toBe(true)
+    expect((await runs.getById(pendingRun.id)).status).toBe('cancelled')
+
+    const doneRun = await runs.create({ definitionId: 'd2', definitionVersion: 1, graphSnapshot: g([], []), triggerType: 'manual', status: 'succeeded' })
+    expect(await runWithUser('u1', () => service.cancelRun(doneRun.id, 'u1'))).toBe(false)
+    expect((await runs.getById(doneRun.id)).status).toBe('succeeded')
+  })
+
+  it('boot 恢复：未到期挂起审核在死线到点转 interrupted，释放互斥（评审#35）', async () => {
+    vi.useFakeTimers()
+    try {
+      const { service, runs } = setup()
+      await runs.create({ definitionId: 'd1', definitionVersion: 1, graphSnapshot: g([], []), triggerType: 'manual', status: 'waiting_review', timeoutAt: new Date(Date.now() + 60_000) })
+      const result = await service.recoverOnBoot()
+      expect(result.keptWaiting).toBe(1)
+      expect((await runs.getById('r1'))?.status ?? [...runs.rows.values()][0].status).toBe('waiting_review')
+      // 推进到死线之后
+      vi.setSystemTime(Date.now() + 61_000)
+      await vi.advanceTimersByTimeAsync(61_000)
+      expect([...runs.rows.values()][0].status).toBe('interrupted')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('续跑互斥：同工作流有挂起运行时拒绝续跑（waiting_review 源也占互斥）', async () => {

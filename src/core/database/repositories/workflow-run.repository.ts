@@ -177,6 +177,28 @@ export class WorkflowRunRepository extends BaseRepository<WorkflowRunEntity, Wor
     return this.getById(id)
   }
 
+  /**
+   * 原子条件状态迁移（评审 #34/#35）：仅当运行当前 status ∈ fromStatuses 时应用 patch。
+   * 单条 UPDATE ... WHERE id AND status IN(...)，消除「读-判-写」竞态窗口；
+   * 返回是否发生迁移（false = 状态已被并发路径改变，调用方按需处理）。
+   */
+  async transitionIfStatus(
+    id: string,
+    fromStatuses: readonly WorkflowRunStatus[],
+    patch: { status: WorkflowRunStatus; finishedAt?: Date | null; error?: string | null; cancelRequestedAt?: Date }
+  ): Promise<boolean> {
+    const partial: Partial<WorkflowRunEntity> = { status: patch.status, updatedAt: new Date() }
+    if (patch.finishedAt !== undefined) partial.finishedAt = patch.finishedAt
+    if (patch.error !== undefined) partial.error = patch.error
+    if (patch.cancelRequestedAt !== undefined) partial.cancelRequestedAt = patch.cancelRequestedAt
+    // scoped 代理的 update 返回受影响行数（number）
+    const affected = await this.scoped.update(
+      { id, status: In([...fromStatuses]) } as FindOptionsWhere<WorkflowRunEntity>,
+      partial
+    )
+    return affected > 0
+  }
+
   /** 同工作流当前占用互斥的运行（pending/running/waiting_review） */
   async findMutexHolders(definitionId: string): Promise<WorkflowRunRecord[]> {
     const rows = await this.scoped.find({
