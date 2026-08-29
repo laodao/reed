@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { SqlServerDriverAdapter } from '@core/modules/workflow/datasource/drivers/sqlserver-driver'
+import { closeAllPools } from '@core/modules/workflow/datasource/drivers/pool-cache'
 
 const params = { host: 'sql.internal', port: 1433, database: 'erp', username: 'sa', password: 'pw', ssl: true } as const
 
@@ -29,7 +30,9 @@ describe('SqlServerDriverAdapter', () => {
   const adapter = new SqlServerDriverAdapter()
   const { mPool, mRequest } = mocks
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    // 评审 #25：池按指纹复用——每条用例前清空缓存，避免跨用例串池
+    await closeAllPools()
     mPool.connect.mockReset()
     mPool.request.mockReset()
     mPool.close.mockReset()
@@ -45,7 +48,16 @@ describe('SqlServerDriverAdapter', () => {
     const res = await adapter.testConnection(params as any)
     expect(res.success).toBe(true)
     expect(res.serverVersion).toContain('SQL Server')
-    expect(mPool.close).toHaveBeenCalled()
+    // 评审 #25：池常驻复用，单次调用后不销毁
+    expect(mPool.close).not.toHaveBeenCalled()
+  })
+
+  it('pool-cache：同配置两次查询只 connect 一次（评审#25）', async () => {
+    mRequest.query.mockResolvedValue({ recordset: [{ id: 1 }], rowsAffected: [1] })
+    await adapter.query(params as any, 'SELECT 1')
+    await adapter.query(params as any, 'SELECT 2')
+    expect(mPool.connect).toHaveBeenCalledTimes(1)
+    expect(mPool.close).not.toHaveBeenCalled()
   })
 
   it('testConnection: 连接失败 → 失败不抛', async () => {

@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { MySqlDriverAdapter } from '@core/modules/workflow/datasource/drivers/mysql-driver'
+import { closeAllPools } from '@core/modules/workflow/datasource/drivers/pool-cache'
 
 const params = { host: 'db.internal', port: 3306, database: 'shop', username: 'app', password: 'pw' } as const
 
@@ -21,7 +22,10 @@ const createPoolMock = vi.mocked(createPool)
 describe('MySqlDriverAdapter', () => {
   const adapter = new MySqlDriverAdapter()
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    // 评审 #25：池按指纹复用——每条用例前清空缓存与调用计数，避免跨用例串池
+    await closeAllPools()
+    createPoolMock.mockClear()
     mPool.getConnection.mockReset()
     mPool.end.mockReset()
     mConn.query.mockReset()
@@ -36,7 +40,16 @@ describe('MySqlDriverAdapter', () => {
     expect(res.success).toBe(true)
     expect(res.serverVersion).toBe('8.0.36')
     expect(mConn.release).toHaveBeenCalled()
-    expect(mPool.end).toHaveBeenCalled()
+    // 评审 #25：池常驻复用，单次调用后不销毁
+    expect(mPool.end).not.toHaveBeenCalled()
+  })
+
+  it('pool-cache：同配置两次查询只 createPool 一次（评审#25）', async () => {
+    mConn.query.mockResolvedValue([[{ id: 1 }], []])
+    await adapter.query(params as any, 'SELECT 1')
+    await adapter.query(params as any, 'SELECT 2')
+    expect(createPoolMock).toHaveBeenCalledTimes(1)
+    expect(mPool.end).not.toHaveBeenCalled()
   })
 
   it('testConnection: 连接失败 → 失败不抛', async () => {

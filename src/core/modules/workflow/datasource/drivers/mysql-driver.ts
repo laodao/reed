@@ -8,6 +8,7 @@
  */
 
 import { createPool } from 'mysql2/promise'
+import { acquirePooled, evictPooled } from './pool-cache'
 import { replaceDollarPlaceholders } from '../placeholder-utils'
 import type {
   DataSourceConnectionParams,
@@ -35,8 +36,8 @@ export class MySqlDriverAdapter implements DataSourceDriverAdapter {
 
   async testConnection(params: DataSourceConnectionParams): Promise<DataSourceTestResult> {
     const started = Date.now()
-    const pool = createMysqlPool(params)
     try {
+      const pool = await acquirePooled('mysql', params, () => createMysqlPool(params), p => p.end())
       const conn = await pool.getConnection()
       try {
         const [rows] = await conn.query('SELECT VERSION() AS v, DATABASE() AS db')
@@ -52,13 +53,12 @@ export class MySqlDriverAdapter implements DataSourceDriverAdapter {
         conn.release()
       }
     } catch (e: any) {
+      await evictPooled('mysql', params)
       return {
         success: false,
         message: e?.message || '连接失败',
         durationMs: Date.now() - started,
       }
-    } finally {
-      await pool.end().catch(() => undefined)
     }
   }
 
@@ -68,8 +68,8 @@ export class MySqlDriverAdapter implements DataSourceDriverAdapter {
     parameters: ReadonlyArray<unknown> = [],
   ): Promise<DataSourceQueryResult> {
     const started = Date.now()
-    const pool = createMysqlPool(params)
     try {
+      const pool = await acquirePooled('mysql', params, () => createMysqlPool(params), p => p.end())
       const conn = await pool.getConnection()
       try {
         // 统一 $n → mysql2 的 ?；参数值按占位符出现顺序收集（支持乱序 $2,$1）
@@ -88,8 +88,10 @@ export class MySqlDriverAdapter implements DataSourceDriverAdapter {
       } finally {
         conn.release()
       }
-    } finally {
-      await pool.end().catch(() => undefined)
+    } catch (e) {
+      // 池内连接可能已死：驱逐坏池，下次调用重建
+      await evictPooled('mysql', params)
+      throw e
     }
   }
 }

@@ -8,6 +8,7 @@
 
 import sql from 'mssql'
 import { replaceDollarPlaceholders } from '../placeholder-utils'
+import { acquirePooled, evictPooled } from './pool-cache'
 import type {
   DataSourceConnectionParams,
   DataSourceDriverAdapter,
@@ -38,9 +39,12 @@ export class SqlServerDriverAdapter implements DataSourceDriverAdapter {
 
   async testConnection(params: DataSourceConnectionParams): Promise<DataSourceTestResult> {
     const started = Date.now()
-    let pool: sql.ConnectionPool | null = null
     try {
-      pool = await new sql.ConnectionPool(buildConfig(params)).connect()
+      const pool = await acquirePooled<sql.ConnectionPool>(
+        'sqlserver', params,
+        () => new sql.ConnectionPool(buildConfig(params)).connect(),
+        p => p.close()
+      )
       const res = await pool.request().query('SELECT @@VERSION AS v')
       const v = res.recordset?.[0]?.v as string | undefined
       return {
@@ -50,13 +54,12 @@ export class SqlServerDriverAdapter implements DataSourceDriverAdapter {
         durationMs: Date.now() - started,
       }
     } catch (e: any) {
+      await evictPooled('sqlserver', params)
       return {
         success: false,
         message: e?.message || '连接失败',
         durationMs: Date.now() - started,
       }
-    } finally {
-      if (pool) await pool.close().catch(() => undefined)
     }
   }
 
@@ -66,9 +69,12 @@ export class SqlServerDriverAdapter implements DataSourceDriverAdapter {
     parameters: ReadonlyArray<unknown> = [],
   ): Promise<DataSourceQueryResult> {
     const started = Date.now()
-    let pool: sql.ConnectionPool | null = null
     try {
-      pool = await new sql.ConnectionPool(buildConfig(params)).connect()
+      const pool = await acquirePooled<sql.ConnectionPool>(
+        'sqlserver', params,
+        () => new sql.ConnectionPool(buildConfig(params)).connect(),
+        p => p.close()
+      )
       const request = pool.request()
       // 统一 $n → @pn；按编号 input 绑定（乱序 $2,$1 也正确）
       const { sql: sqlRendered } = replaceDollarPlaceholders(sqlText, parameters, (index) => `@p${index}`)
@@ -86,8 +92,10 @@ export class SqlServerDriverAdapter implements DataSourceDriverAdapter {
         rowCount: res.rowsAffected?.[0] ?? rows.length,
         durationMs: Date.now() - started,
       }
-    } finally {
-      if (pool) await pool.close().catch(() => undefined)
+    } catch (e) {
+      // 池内连接可能已死：驱逐坏池，下次调用重建
+      await evictPooled('sqlserver', params)
+      throw e
     }
   }
 }
