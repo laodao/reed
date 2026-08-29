@@ -117,6 +117,16 @@ src/
 3. 渲染进程通过 `window.electronAPI` 调用 IPC 方法
 4. 所有 IPC 调用返回统一的 `{ success, data?, error? }` 格式
 
+## 业务包架构（2026-08 落地）
+
+系统按"业务无关内核 + 内置业务包"组织（设计文档：`tasks/2026-08-28-agent-loop-harness/`，尤其 18 号与 19 号）：
+
+- **包内核**：`src/core/packs/`（registry / pack.service / kernel / ipc-guard）+ `src/renderer/src/packs/`（前端注册表与各包路由/菜单贡献）；共享契约 `src/shared/types/pack.types.ts`。
+- **内置业务包**（7 个）：skills、diary、portrait、chat、voice-design、longwriting、episode-production。清单在 `src/core/packs/builtin-packs.ts`（后端）与 `src/renderer/src/packs/index.ts`（前端）。
+- **新业务的接入规则**：新增业务功能须以包形式接入——manifest 声明 `contributions.ipcChannelPrefixes`，handler 注册放包的 `activate()`，路由/菜单放前端包模块；**禁止**再向 `initIpcHandlers()` / `registerAllWebChannels()` / 路由表 / 菜单表平铺业务条目（那里只剩壳级平台功能）。
+- **跨包纪律**：包间依赖须在 manifest `dependencies` 显式声明（现状实例：episode-production → voice-design）；禁止产生新的跨包私有引用，共享能力下沉壳/公共层。
+- **启用/禁用**：禁用 = 前端入口消失 + IPC 守卫按前缀统一拦截（`PACK_DISABLED`）；本期服务实例不卸载、在途数据不动。
+
 ## 安全规范
 
 - API 密钥必须加密存储（使用 SecureStorage）
