@@ -33,6 +33,7 @@
 </template>
 
 <script setup lang="ts">
+import { toImageUrl } from '@/utils/asset-url'
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { PortraitVariant } from '../../../../../shared/types/portrait.types'
@@ -59,10 +60,8 @@ const discarding = ref(false)
 
 // 新图地址：service 返回相对路径（images/...），转渲染端 asset URL
 const newImageSrc = computed(() => {
-  const p = props.newVariant?.imagePath ?? ''
-  if (!p) return ''
-  if (p.startsWith('local-image://') || p.startsWith('http') || p.startsWith('data:')) return p
-  return `local-image://${p.replace(/^\//, '')}`
+  // 评审 #92：走 toImageUrl 归一化（Web 端手写 local-image:// 会裂图）
+  return toImageUrl(props.newVariant?.imagePath)
 })
 
 async function handleDiscard() {

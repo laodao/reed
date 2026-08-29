@@ -7,8 +7,10 @@
  *
  * 规则：
  *  - `@[名字]`（无图索引）→ 不生成 override（让自动评分挑图），返回空。
- *  - `@[名字@N]` → 匹配场景资产 effective.name，取其 listByAsset 的第 N 张图 imageId。
- *     匹配不到资产 / 图索引越界 / 同名歧义 → 丢弃该项（不阻断生成）。
+ *  - `@[名字@N]` → 按名匹配场景资产，取其 listByAsset 的第 N 张图 imageId。
+ *  - `@[名字@N@实体id]`（评审 #48 新增第三段，编辑器序列化时写入）→ 优先按 id 匹配，
+ *     改名不再悬空；id 未命中回退按名（兼容跨项目/旧数据复制场景）。
+ *     匹配不到资产 / 图索引越界 → 丢弃该项（不阻断生成）。
  *
  * 纯计算 + 一次 listByAsset；不 touch typeorm（图列表由调用方注入的 imageSvc 提供，便于单测）。
  */
@@ -25,13 +27,17 @@ export interface RefAssetCandidate {
 
 const REF_RE = /@\[([^\]]+)\]/g
 
-/** 拆 `名字@索引` */
-function splitNameIndex(inner: string): { name: string; index: number | null } {
-  const at = inner.lastIndexOf('@')
-  if (at > 0 && /^\d+$/.test(inner.slice(at + 1))) {
-    return { name: inner.slice(0, at).trim(), index: Number(inner.slice(at + 1)) }
+/** 拆 `名字[@索引][@实体id]`（评审 #48：第三段为可选实体 id） */
+export function splitRefToken(inner: string): { name: string; index: number | null; id: string | null } {
+  const parts = inner.split('@')
+  const name = (parts.shift() ?? '').trim()
+  let index: number | null = null
+  let id: string | null = null
+  for (const part of parts) {
+    if (/^\d+$/.test(part) && index === null) index = Number(part)
+    else if (part) id = part.trim()
   }
-  return { name: inner.trim(), index: null }
+  return { name, index, id }
 }
 
 /**
@@ -51,12 +57,12 @@ export async function parseAssetRefOverrides(
   const seen = new Set<string>()
 
   for (const m of text.matchAll(REF_RE)) {
-    const { name, index } = splitNameIndex(m[1])
-    if (!name) continue
+    const { name, index, id } = splitRefToken(m[1])
+    if (!name && !id) continue
     if (index == null) continue // 只点名资产，不指定图 → 自动评分
 
-    // 按名字匹配场景资产（同名取第一个）
-    const hit = assets.find((a) => a.name === name)
+    // 评审 #48：优先按 id 匹配（改名不悬空），回退按名（旧格式/跨场景复制）
+    const hit = (id && assets.find((a) => a.bindingId === id)) || assets.find((a) => a.name === name)
     if (!hit) continue
     const key = `${hit.kind}:${hit.bindingId}`
     if (seen.has(key)) continue // 同名同资产只取一次（图索引不同也保留第一个）

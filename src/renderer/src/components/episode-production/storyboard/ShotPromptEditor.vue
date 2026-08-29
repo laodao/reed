@@ -132,12 +132,17 @@ const PARAM_KEYS = ['景别', '运镜', '时长', '风格'] as const
  */
 const ENTITY_RE = /@\[([^\]]+)\]/g
 /** 拆出 `名字@图索引` → { name, index }；索引非数字则整体视为名字。 */
-function splitEntityRef(inner: string): { name: string; index: number | null } {
-  const at = inner.lastIndexOf('@')
-  if (at > 0 && /^\d+$/.test(inner.slice(at + 1))) {
-    return { name: inner.slice(0, at), index: Number(inner.slice(at + 1)) }
+function splitEntityRef(inner: string): { name: string; index: number | null; id: string | null } {
+  // 评审 #48：三段协议 `名字@索引@实体id`（id 可选；旧两段格式完全兼容）
+  const parts = inner.split('@')
+  const name = parts.shift() ?? ''
+  let index: number | null = null
+  let id: string | null = null
+  for (const part of parts) {
+    if (/^\d+$/.test(part) && index === null) index = Number(part)
+    else if (part) id = part
   }
-  return { name: inner, index: null }
+  return { name, index, id }
 }
 
 const props = defineProps<{
@@ -195,8 +200,9 @@ function entityThumb(hit: MentionEntity, index: number | null): string {
 function buildDescHtml(description: string): string {
   // 描述里的 @[名字@图索引] 高亮为行内 token（从 entities 精确匹配名字）
   return esc(description).replace(ENTITY_RE, (_m0, inner) => {
-    const { name, index } = splitEntityRef(inner)
-    const hit = (props.entities ?? []).find((e) => e.name === name)
+    const { name, index, id } = splitEntityRef(inner)
+    // 评审 #48：id 优先匹配（资产改名后 token 不悬空），回退按名（旧格式）
+    const hit = (id && (props.entities ?? []).find((e) => e.id === id)) || (props.entities ?? []).find((e) => e.name === name)
     if (!hit) return `@[${inner}]`
     const display = index != null ? `${name} 图${index}` : name
     const thumb = entityThumb(hit, index)
@@ -246,7 +252,9 @@ function serializeDesc(descEl: HTMLElement): string {
       if (em.classList.contains('pk-token') && em.getAttribute('data-key') === '@entity') {
         const name = (em.textContent ?? '').replace(/^@/, '').replace(/\s*图\d+$/, '')
         const idx = em.getAttribute('data-img-index')
-        out += `@[${name}${idx ? '@' + idx : ''}]`
+        // 评审 #48：序列化携带实体 id（三方段协议），资产改名后仍可解析
+        const entityId = em.getAttribute('data-entity-id')
+        out += `@[${name}${idx ? '@' + idx : ''}${entityId ? '@' + entityId : ''}]`
       } else {
         if (em.tagName === 'BR') out += '\n'
         em.childNodes.forEach(walk)

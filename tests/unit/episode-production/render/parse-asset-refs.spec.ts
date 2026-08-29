@@ -9,6 +9,23 @@ const imageSvc = (map: Record<string, Array<{ id: string }>>) => ({
 })
 
 describe('parse-asset-refs', () => {
+  it('评审#48：三方段 @[名字@索引@id] 优先按 id 匹配——改名不悬空', async () => {
+    const assets = [{ kind: 'character', bindingId: 'b-1', name: '新名字' }]
+    const listByAsset = vi.fn(async () => [{ id: 'img-1' }, { id: 'img-2' }])
+    // 名字是旧的、id 是新的 → id 命中
+    const out = await parseAssetRefOverrides('@[旧名字@2@b-1]', assets as any, { listByAsset } as any)
+    expect(out).toEqual([{ kind: 'character', bindingId: 'b-1', imageId: 'img-2' }])
+  })
+
+  it('评审#48：id 未命中回退按名；旧两段格式不受影响', async () => {
+    const assets = [{ kind: 'location', bindingId: 'b-9', name: '青云宗' }]
+    const listByAsset = vi.fn(async () => [{ id: 'img-9' }])
+    const byIdMiss = await parseAssetRefOverrides('@[青云宗@1@b-miss]', assets as any, { listByAsset } as any)
+    expect(byIdMiss).toEqual([{ kind: 'location', bindingId: 'b-9', imageId: 'img-9' }])
+    const legacy = await parseAssetRefOverrides('@[青云宗@1]', assets as any, { listByAsset } as any)
+    expect(legacy).toEqual([{ kind: 'location', bindingId: 'b-9', imageId: 'img-9' }])
+  })
+
   it('解析 @[名字@索引] 命中场景资产，取第 N 张图生成 override', async () => {
     const assets = [
       { kind: 'character', bindingId: 'cb_1', name: '杜十娘' },

@@ -97,6 +97,12 @@ export class AssetImageService {
   }
 
   /** 列出某 asset 的全部图（按 sort_order 升序，相同 sort_order 按 created_at 升序） */
+  /** 全量图像相对路径（评审 #57：孤儿参考图清扫用，不做用户过滤——文件清扫按路径比对） */
+  async listAllImagePaths(): Promise<string[]> {
+    const rows = await this.repo.find({ select: { imagePath: true } })
+    return rows.map(r => r.imagePath).filter((p): p is string => !!p)
+  }
+
   async listByAsset(
     assetType: AssetType,
     assetId: string,

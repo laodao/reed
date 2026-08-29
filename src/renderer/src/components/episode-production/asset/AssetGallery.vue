@@ -121,6 +121,7 @@
  * "已定妆"判定：该 label 的图存在（listByAsset）；无则"待生成"+可点加号。
  * 生成主图用 generateMainFor；派生用 derive.single（有主图才可用）。
  */
+import { summarizeBatchResults } from '@/utils/batch-summary'
 import { ref, computed, watch, onMounted, onActivated } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Picture, MagicStick, Plus, Upload, Loading, Refresh, Link } from '@element-plus/icons-vue'
@@ -372,20 +373,28 @@ async function onBatchDerive(labels: string[]): Promise<void> {
   try {
     const root = (window as any).electronAPI?.episodeProduction?.asset
     const main = imageByLabel('main')
-    let ok = 0
+    const results: Array<{ ok: boolean; error?: string }> = []
     for (const label of labels) {
       const item = navItems.value.find(i => i.label === label)
       if (!item) continue
-      const r = await root.derive.single({
-        assetType: props.kind,
-        assetId: props.assetId,
-        category: item.category,
-        label: item.label,
-        baseImageId: main?.id || null,
-      })
-      if (r?.success) ok++
+      try {
+        const r = await root.derive.single({
+          assetType: props.kind,
+          assetId: props.assetId,
+          category: item.category,
+          label: item.label,
+          baseImageId: main?.id || null,
+        })
+        results.push({ ok: !!r?.success, error: r?.success ? undefined : (r?.error ?? undefined) })
+      } catch (e: any) {
+        results.push({ ok: false, error: e?.message || '请求失败' })
+      }
     }
-    ElMessage.success(`已生成 ${ok} 张图`)
+    // 评审 #56：全失败弹 error、部分失败弹 warning，不再"已生成 0 张图"假成功
+    const summary = summarizeBatchResults(results)
+    if (summary.level === 'success') ElMessage.success(summary.message)
+    else if (summary.level === 'warning') ElMessage.warning(summary.message)
+    else ElMessage.error(summary.message)
     await load()
   } catch (e: any) {
     ElMessage.error(e?.message || '批量生成失败')

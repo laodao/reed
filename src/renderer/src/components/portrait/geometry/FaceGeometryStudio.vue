@@ -217,7 +217,8 @@ async function onAiKeep() {
   const v = aiResultVariant.value; aiResultVariant.value = null
   if (v?.imagePath) {
     try {
-      const url = v.imagePath.startsWith('local-image://') || v.imagePath.startsWith('http') ? v.imagePath : `local-image://${v.imagePath.replace(/^\//, '')}`
+      // 评审 #92：走 toImageUrl 归一化（Electron/Web 双端正确，Web 端手写 local-image:// 必裂图）
+      const url = toImageUrl(v.imagePath)
       const result = await detectFaceLandmarks(url, v.id)
       if (!isDetectFailure(result)) {
         const newMetrics = computeFaceMetrics(result.landmarks)

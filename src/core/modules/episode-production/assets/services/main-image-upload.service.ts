@@ -29,6 +29,13 @@ type AllowedFormat = (typeof ALLOWED_FORMATS)[number]
 /** 单文件硬上限：20MB */
 const MAX_BYTES = 20 * 1024 * 1024
 
+/** 孤儿参考图判定年龄：落盘超过 24h 且无引用才删（评审 #57） */
+const ORPHAN_SWEEP_MAX_AGE_MS = 24 * 60 * 60 * 1000
+/** 清扫节流间隔：最多每 6 小时一次 */
+const ORPHAN_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000
+/** 上次实际清扫时间（模块级，跨实例共享） */
+let lastOrphanSweepAt = 0
+
 export interface MainImageUploadInput {
   /** 资产类型：character / location / item */
   assetType: AssetType
@@ -132,7 +139,49 @@ export class MainImageUploadService {
    */
   async saveReferenceFile(input: { buffer: Buffer; fileName: string }): Promise<{ path: string }> {
     const relPath = await this.saveImageFile(input.buffer, input.fileName)
+    // 评审 #57：落盘后顺手做一次节流清扫（最多每 6 小时一次，失败不影响本次保存）
+    void this.sweepOrphanReferenceFilesIfDue().catch(() => undefined)
     return { path: relPath }
+  }
+
+  /**
+   * 评审 #57：清理孤儿参考图。saveReferenceFile 落盘后若前端未提交，
+   * ref- 文件会永久滞留堆积。清扫规则：asset-images/ 下 ref- 前缀文件，
+   * mtime 早于 maxAgeMs（默认 24h）且未被任何 asset_images.image_path 引用 → 删除。
+   * @returns 扫描数与已删除文件（相对路径）
+   */
+  async sweepOrphanReferenceFiles(opts: { maxAgeMs?: number } = {}): Promise<{ scanned: number; deleted: string[] }> {
+    const maxAgeMs = opts.maxAgeMs ?? ORPHAN_SWEEP_MAX_AGE_MS
+    const dir = path.join(this.pathProvider.getDataPath(), 'asset-images')
+    let names: string[]
+    try {
+      names = await fs.readdir(dir)
+    } catch {
+      return { scanned: 0, deleted: [] } // 目录不存在（还没上传过）→ 无事可扫
+    }
+    const refFiles = names.filter(n => n.startsWith('ref-'))
+    if (refFiles.length === 0) return { scanned: 0, deleted: [] }
+    const referenced = new Set(await this.imageService.listAllImagePaths())
+    const cutoff = Date.now() - maxAgeMs
+    const deleted: string[] = []
+    for (const name of refFiles) {
+      const rel = `asset-images/${name}`
+      if (referenced.has(rel)) continue
+      const abs = path.join(dir, name)
+      const st = await fs.stat(abs).catch(() => null)
+      if (!st || st.mtimeMs > cutoff) continue // 太新：可能仍在流程中
+      await fs.unlink(abs).catch(() => undefined)
+      deleted.push(rel)
+    }
+    return { scanned: refFiles.length, deleted }
+  }
+
+  /** 节流版清扫（模块级时间戳，最多每 6 小时实际执行一次） */
+  private async sweepOrphanReferenceFilesIfDue(): Promise<void> {
+    const now = Date.now()
+    if (now - lastOrphanSweepAt < ORPHAN_SWEEP_INTERVAL_MS) return
+    lastOrphanSweepAt = now
+    await this.sweepOrphanReferenceFiles()
   }
 
   /** 校验图像 + 写入 asset-images/ 目录，返回相对路径 */
