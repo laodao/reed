@@ -423,10 +423,19 @@ describe('AgentWorkflowService.sendMessage 编排', () => {
     const first = svc.sendMessage('p1', '第一轮')
     // 第一轮未完成时发起第二轮 → 拒绝
     await expect(svc.sendMessage('p1', '第二轮')).rejects.toThrow('上一轮对话仍在处理中')
+    // 等第一轮走到总结阶段再放行
+    await vi.waitFor(() => {
+      expect(ai.agentSummarize).toHaveBeenCalled()
+    })
     resolveSummarize('完成')
     await first
-    // 完成后可再次发起
-    const second = await svc.sendMessage('p1', '第三轮')
+    // 完成后互斥释放，可再次发起（第三轮同样走到总结并放行）
+    const third = svc.sendMessage('p1', '第三轮')
+    await vi.waitFor(() => {
+      expect(ai.agentSummarize).toHaveBeenCalledTimes(2)
+    })
+    resolveSummarize('完成')
+    const second = await third
     expect(second).toBeTruthy()
   })
 })
