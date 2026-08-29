@@ -13,6 +13,11 @@ import { NODE_TYPE_CATALOG_MAP } from '@shared/types/workflow-node-catalog'
 
 /** 导入副本的名称后缀（用户可识别非原创定义） */
 const IMPORT_NAME_SUFFIX = '（导入）'
+
+/** 桌面端判定（调用时读取，便于测试 stub）：内置模板编辑门禁用（评审 #70/#71） */
+function isDesktopEnv(): boolean {
+  return !!(process.versions as Record<string, string | undefined> | undefined)?.electron
+}
 import { previewCronExpression } from './trigger/workflow-trigger-scheduler.service'
 import { WORKFLOW_TRIGGER_TYPES, WORKFLOW_EXPORT_KIND, WORKFLOW_EXPORT_FORMAT_VERSION } from '@shared/types/workflow.types'
 import type {
@@ -117,6 +122,12 @@ export class WorkflowDefinitionService {
   }
 
   async update(id: string, patch: UpdateWorkflowDefinitionInput) {
+    // 评审 #70/#71：内置模板是多租户共享行（Web 端一处编辑即污染所有租户）——
+    // Web 端禁止改内容；桌面单用户维持可编辑。updateTriggers 同门禁。
+    const def = await this.repo.getById(id)
+    if (def?.isBuiltin && !isDesktopEnv()) {
+      throw new Error('内置工作流模板不可修改（多租户共享），请复制为自定义工作流后再编辑')
+    }
     const updated = await this.repo.update(id, patch)
     // 触发器或发布图变更会影响调度——刷新
     if (patch.triggers !== undefined || patch.publishedGraph !== undefined) {
@@ -220,6 +231,10 @@ export class WorkflowDefinitionService {
   async updateTriggers(id: string, triggers: WorkflowTrigger[]): Promise<{ success: boolean; error?: string }> {
     const def = await this.repo.getById(id)
     if (!def) return { success: false, error: '工作流不存在' }
+    // 评审 #70：内置工作流 cron 调度配置同样属于模板内容，Web 端任意租户可改属越权
+    if (def.isBuiltin && !isDesktopEnv()) {
+      return { success: false, error: '内置工作流模板不可修改调度配置（多租户共享），请复制为自定义工作流' }
+    }
     const errors = this.validateTriggers(triggers)
     if (errors.length > 0) return { success: false, error: errors.join('；') }
     await this.repo.updateTriggersOnly(id, {

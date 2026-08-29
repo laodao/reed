@@ -106,11 +106,41 @@ describe('WorkflowDefinitionService.updateTriggers', () => {
     expect(repo.updateCalls[0].patch.triggers).toEqual([{ type: 'cron', expression: '0 8 * * *', enabled: false }])
   })
 
-  it('内置定义允许更新触发器（定时是全局调度配置；走 updateTriggersOnly）', async () => {
+  it('内置定义允许更新触发器（桌面单用户；走 updateTriggersOnly）', async () => {
     repo.def = { id: 'builtin_def_x', name: '内置', triggers: [], publishedVersion: 1, isBuiltin: true }
-    const result = await service.updateTriggers('builtin_def_x', [{ type: 'cron', expression: '0 8 * * *', preset: 'daily', enabled: true }])
-    expect(result.success).toBe(true)
-    expect(repo.updateCalls[0].id).toBe('builtin_def_x')
-    expect(repo.def.triggers).toEqual([{ type: 'cron', expression: '0 8 * * *', preset: 'daily', enabled: true }])
+    // 桌面端判定依赖 process.versions.electron（vitest 跑在 Node，需显式 stub）
+    vi.stubGlobal('process', { ...globalThis.process, versions: { ...(globalThis.process as any).versions, electron: '28.0.0' } })
+    try {
+      const result = await service.updateTriggers('builtin_def_x', [{ type: 'cron', expression: '0 8 * * *', preset: 'daily', enabled: true }])
+      expect(result.success).toBe(true)
+      expect(repo.updateCalls[0].id).toBe('builtin_def_x')
+      expect(repo.def.triggers).toEqual([{ type: 'cron', expression: '0 8 * * *', preset: 'daily', enabled: true }])
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('内置定义 Web 端拒绝改调度配置（评审#70）', async () => {
+    repo.def = { id: 'builtin_def_x', name: '内置', triggers: [], publishedVersion: 1, isBuiltin: true }
+    vi.stubGlobal('process', { ...globalThis.process, versions: {} }) // 非 Electron 环境
+    try {
+      const result = await service.updateTriggers('builtin_def_x', [{ type: 'cron', expression: '0 8 * * *', enabled: true }])
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('内置工作流模板不可修改')
+      expect(repo.updateCalls.length).toBe(0)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('内置定义 Web 端拒绝改内容（update 整图/名称，评审#71）', async () => {
+    repo.def = { id: 'builtin_def_x', name: '内置', triggers: [], publishedVersion: 1, isBuiltin: true }
+    vi.stubGlobal('process', { ...globalThis.process, versions: {} })
+    try {
+      await expect(service.update('builtin_def_x', { name: '改名' })).rejects.toThrow('内置工作流模板不可修改')
+      expect(repo.updateCalls.length).toBe(0)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })
