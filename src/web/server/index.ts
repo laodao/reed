@@ -239,7 +239,10 @@ async function bootstrap(): Promise<void> {
   // 工作流子系统：引擎装配 + boot 恢复 + 触发调度器（失败不致命，与 Electron 端平级）
   try {
     const { initWorkflowSubsystem } = await import('@core/modules/workflow/workflow-boot')
-    await initWorkflowSubsystem()
+    const { WsEventChannel } = await import('@core/services/event-system/channels/ws.channel')
+    // ws 通道（10-event-system §5.4）：平台事件 workflow.run.* → wf:run-event，
+    // 按事件自带 userId 路由到目标用户的 WS 连接（不再依赖 emit 时刻 ALS 上下文）
+    await initWorkflowSubsystem({ eventChannels: [new WsEventChannel()] })
   } catch (e: any) {
     console.warn('[web-server] 工作流子系统启动失败（不致命）', e)
   }
@@ -363,6 +366,12 @@ async function initDatabase(): Promise<void> {
     '@core/database/migrations/create-workflow-tables'
   )
   await createWorkflowTables(ds)
+
+  // 通用事件系统：platform_events / cursors / dead_letters 三表（与 Electron 端同构；10-event-system §4）
+  const { createPlatformEventTables } = await import(
+    '@core/database/migrations/create-platform-event-tables'
+  )
+  await createPlatformEventTables(ds)
 
   // C3 免登录独立页：definitions 加 share_token 列 + 唯一索引（与 Electron 端同构）
   const { addWorkflowShareToken } = await import(

@@ -113,3 +113,9 @@ export { WorkflowVariableEntity, DataTableDefEntity, DataTableRowEntity } from '
 // 业务包内核（第一期）：包快照 + 启用/配置覆写（binding user_id NULL = 全局默认行）
 export { BusinessPackEntity } from './business-pack.entity'
 export { BusinessPackBindingEntity } from './business-pack-binding.entity'
+// 通用事件系统（10-event-system §4）：事件存储 / 持久消费者游标 / 死信队列
+export {
+  PlatformEventEntity,
+  PlatformEventCursorEntity,
+  PlatformEventDeadLetterEntity,
+} from './platform-event.entities'

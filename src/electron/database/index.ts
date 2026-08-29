@@ -680,6 +680,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
     )
     await createWorkflowTables(this.dataSource)
 
+    // 通用事件系统：platform_events / cursors / dead_letters 三表（幂等，双语种；10-event-system §4）
+    const { createPlatformEventTables } = await import(
+      '@core/database/migrations/create-platform-event-tables'
+    )
+    await createPlatformEventTables(this.dataSource)
+
     // C3 免登录独立页：definitions 加 share_token 列 + 唯一索引（幂等，双语种）
     const { addWorkflowShareToken } = await import(
       '@core/database/migrations/add-workflow-share-token'

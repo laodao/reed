@@ -121,6 +121,7 @@ import { registerFaviconHandlers } from './ipc/handlers/favicon.handler'
 import { registerOSSHandlers } from './ipc/handlers/oss.handler'
 import { registerDataSourceHandlers } from './ipc/handlers/datasource.handler'
 import { registerPackHandlers } from './ipc/handlers/pack.handler'
+import { registerEventAdminHandlers } from './ipc/handlers/event-admin.handler'
 import * as fs from 'fs'
 
 // 在 app ready 之前注册协议权限（重要！）
@@ -352,6 +353,8 @@ function initIpcHandlers(): void {
   registerOSSHandlers()
   registerDataSourceHandlers()
   registerPackHandlers()
+  // 事件系统管理面（10-event-system §5.3/§8）：DLQ 收口 + 消费者水位
+  registerEventAdminHandlers()
 }
 
 // 应用就绪
@@ -434,7 +437,9 @@ app.whenReady().then(async () => {
     registerDocumentTools(new DocumentToolsService(new ElectronDocumentRenderer()))
 
     const { initWorkflowSubsystem } = await import('@core/modules/workflow/workflow-boot')
-    await initWorkflowSubsystem()
+    const { IpcEventChannel } = await import('@core/services/event-system/channels/ipc.channel')
+    // ipc 通道（10-event-system §5.4）：平台事件 workflow.run.* → wf:run-event 推渲染进程
+    await initWorkflowSubsystem({ eventChannels: [new IpcEventChannel()] })
   } catch (e: any) {
     console.warn('[boot] 工作流子系统启动失败（不致命）', e)
   }

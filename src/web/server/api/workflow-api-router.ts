@@ -15,8 +15,9 @@
  *              override：{ [nodeId]: { [configKey]: value } } 一次性配置覆盖，
  *              引擎在模板解析前浅合并，不修改定义图（对齐 Bisheng override）。
  *
- *              SSE 实现：web-event-emitter 的服务端 tapEvents（不依赖 WS 客户端
- *              在线），按 tap 携带的 ALS userId + 载荷 runId 双重过滤；连接时先推
+ *              SSE 实现：M2 起优先走平台事件混合流（event-system/run-event-stream：
+ *              聚合 {workflow_run, runId} 的 replay+订阅，不依赖 WS 客户端在线）；
+ *              总线未就绪时回退 web-event-emitter 的服务端 tapEvents。连接时先推
  *              run/nodeRuns 快照（晚订阅不丢终态），终态事件推完即关流。
  */
 
@@ -25,6 +26,9 @@ import { runWithUserAsync } from '@core/context/user-context'
 import { requireAuth } from '../auth/middleware'
 import { WebSocketEventEmitter } from '../platform/web-event-emitter'
 import { getWorkflowSubsystem } from '@core/modules/workflow/workflow-boot'
+import { getEventBusIfReady } from '@core/services/event-system/event-bus.service'
+import { createRunEventStream } from '@core/services/event-system/run-event-stream'
+import type { EventBus } from '@shared/types/event.types'
 import {
   WORKFLOW_NODE_TYPES,
   WORKFLOW_RUN_EVENT_CHANNEL,
@@ -68,7 +72,7 @@ export interface WorkflowApiDeps {
   }
 }
 
-/** 事件 tap 订阅面（测试可注入） */
+/** 事件 tap 订阅面（测试可注入；总线未就绪时的存量回退路径） */
 export interface EventTapSource {
   tapEvents(cb: (channel: string, data: unknown, userId: string | null) => void): () => void
 }
@@ -115,6 +119,8 @@ const SSE_HEADERS = {
  *
  * 竞态防护（review#3）：快照判定非终态 → 订阅 tap 之间存在窗口，终态事件可能恰好
  * 在窗口内发出而被错过——订阅后**复查一次** run 状态，已终态则补 done 关流。
+ * M2 平台化后事件源切换为聚合 replay+订阅混合流（replay 本身覆盖该窗口），
+ * 复查保留为兜底（契约不变）。
  *
  * @param sanitize 快照脱敏函数（免登录面用：剔除 userId 等租户字段）；缺省原样
  */
@@ -125,6 +131,8 @@ async function streamRunEvents(opts: {
   ownerUserId: string
   runService: WorkflowApiDeps['runService']
   tapSource: EventTapSource
+  /** 平台事件总线访问器（M2；返回 null 时回退 tap 源） */
+  getEventBus: () => EventBus | null
   fetchDetail: () => Promise<NonNullable<Awaited<ReturnType<WorkflowApiDeps['runService']['getRunDetail']>>>> | null
   sanitize?: <T>(snapshot: T) => T
 }): Promise<void> {
@@ -148,31 +156,47 @@ async function streamRunEvents(opts: {
     return
   }
 
-  // 2) 订阅后续事件（ALS userId + runId 双重过滤）
+  // 2) 订阅后续事件（租户 + runId 过滤；载荷仍是 WorkflowRunEvent 五型）
   let closed = false
+  let unsubscribe: () => void | Promise<void> = () => {}
   const close = (): void => {
     if (closed) return
     closed = true
-    unsubscribe()
+    void unsubscribe()
     clearInterval(heartbeat)
     res.end()
   }
   const finishIfTerminal = (status: string): boolean => {
+    if (closed) return true
     if (!TERMINAL_STATUSES.has(status)) return false
     send('done', { status })
     close()
     return true
   }
-  const unsubscribe = tapSource.tapEvents((channel, data, emitUserId) => {
-    if (closed || channel !== WORKFLOW_RUN_EVENT_CHANNEL) return
-    if (emitUserId !== ownerUserId) return // 跨租户事件不推
-    const payload = data as RunEventPayload
-    if (payload?.runId !== runId) return
+  const onRunEvent = (payload: RunEventPayload): void => {
+    if (closed || payload?.runId !== runId) return
     send(payload.type, payload)
     if (payload.type === WORKFLOW_RUN_EVENT_TYPES.runStatus && typeof payload.status === 'string') {
       finishIfTerminal(payload.status)
     }
-  })
+  }
+
+  const bus = opts.getEventBus()
+  if (bus) {
+    // M2 平台化路径（§5.4 sse 行）：聚合 {workflow_run, runId} 的 replay+订阅混合流——
+    // replay 覆盖"快照→订阅"窗口的历史事件，实时事件按 id 去重直通（seq 有序）
+    const stream = createRunEventStream(bus, runId, ownerUserId)
+    unsubscribe = () => stream.close()
+    await stream.start(onRunEvent)
+  } else {
+    // 总线未就绪回退存量 tap（事件流不断；至多一次语义与存量一致）
+    const untap = tapSource.tapEvents((channel, data, emitUserId) => {
+      if (closed || channel !== WORKFLOW_RUN_EVENT_CHANNEL) return
+      if (emitUserId !== ownerUserId) return // 跨租户事件不推
+      onRunEvent(data as RunEventPayload)
+    })
+    unsubscribe = untap
+  }
   // 3) 心跳注释（防中间层空闲断连）
   const heartbeat = setInterval(() => {
     if (!closed) res.write(': heartbeat\n\n')
@@ -193,9 +217,12 @@ async function streamRunEvents(opts: {
 export function createWorkflowApiRouter(deps: {
   getDeps: () => WorkflowApiDeps
   tapSource?: EventTapSource
+  /** 平台事件总线访问器（M2 SSE 平台化；缺省取全局单例，测试可注入） */
+  getEventBus?: () => EventBus | null
 }): Router {
   const router = Router()
   const tapSource: EventTapSource = deps.tapSource ?? WebSocketEventEmitter.getInstance()
+  const getEventBus = deps.getEventBus ?? getEventBusIfReady
 
   /** 统一错误响应 */
   const fail = (res: Response, e: unknown): void => {
@@ -254,6 +281,7 @@ export function createWorkflowApiRouter(deps: {
       res, req, runId, ownerUserId: userId,
       runService: deps.getDeps().runService,
       tapSource,
+      getEventBus,
       fetchDetail: async () => {
         // 租户校验：非本人运行返回 404（不泄露存在性）
         const d = await runWithUserAsync(userId, () => deps.getDeps().runService.getRunDetail(runId))
@@ -373,6 +401,7 @@ export function createWorkflowApiRouter(deps: {
       // 快照脱敏：免登录面不回传 userId 等租户信息（nodeRuns 只保留展示字段）
       const sanitize = <T extends { run?: Record<string, unknown>; nodeRuns?: unknown[] }>(snap: T): T => {
         if (snap.run) {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { userId: _omit, triggerInfo: _omit2, ...runSafe } = snap.run
           snap.run = runSafe as T['run']
         }
@@ -396,6 +425,7 @@ export function createWorkflowApiRouter(deps: {
         res, req, runId, ownerUserId: owner,
         runService,
         tapSource,
+        getEventBus,
         sanitize,
         fetchDetail: async () => {
           const detail = await runWithUserAsync(owner, () => runService.getRunDetail(runId))

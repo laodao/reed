@@ -30,6 +30,7 @@ import { registerFileHandlers } from '@electron/ipc/handlers/file.handler'
 import { registerExportHandlers } from '@electron/ipc/handlers/export.handler'
 import { registerDataPathHandlers } from '@electron/ipc/handlers/data-path.handler'
 import { registerPackHandlers } from '@electron/ipc/handlers/pack.handler'
+import { registerEventAdminHandlers } from '@electron/ipc/handlers/event-admin.handler'
 
 export async function registerAllWebChannels(): Promise<void> {
   // 已迁移到 ipcBridge 的 handler：导入即注册（在 Web 端运行时
@@ -62,4 +63,7 @@ export async function registerAllWebChannels(): Promise<void> {
   registerDataPathHandlers()
   // 业务包（pack:list / pack:setEnabled）：Web 端同样经 ipcBridge 暴露
   registerPackHandlers()
+  // 事件系统管理面（10-event-system §5.3/§8）：经 POST /api/ipc/event-admin:* 暴露，
+  // ipc-router 全局 requireAuth，满足"管理面仅注册到鉴权 REST"
+  registerEventAdminHandlers()
 }
