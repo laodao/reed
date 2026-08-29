@@ -98,7 +98,7 @@ describe('E1 form-collect：引擎挂起/提交/取消', () => {
 
   it('挂起 → review-requested 事件携带表单 schema → 提交值进 { values } 沿 approve 边', async () => {
     const { engine, runs, nodeRuns } = makeEngine()
-    let status = await runWithUser('u1', () => engine.execute(input(graph())))
+    const status = await runWithUser('u1', () => engine.execute(input(graph())))
     expect(status).toBe('waiting_review')
     const evt = events.find(e => e.type === 'review-requested')
     expect(evt).toMatchObject({ nodeId: 'f' })
@@ -135,12 +135,13 @@ describe('E1 form-collect：引擎挂起/提交/取消', () => {
   it('未声明字段的提交值被过滤（editableKeys=声明字段）', async () => {
     const { engine, nodeRuns } = makeEngine()
     await runWithUser('u1', () => engine.execute(input(graph())))
+    // 评审 #101：服务端校验上线后，提交须满足必填（doc）——未声明的 hacker 仍被白名单过滤
     await runWithUser('u1', () =>
-      engine.resumeReview('run_1', 'f', { decision: 'approve_with_changes', editedValues: { targetLang: 'ja', hacker: 'x' } } as any)
+      engine.resumeReview('run_1', 'f', { decision: 'approve_with_changes', editedValues: { doc: { path: 'C:/up/a.pdf', name: 'a.pdf', text: '内容' }, targetLang: 'ja', hacker: 'x' } } as any)
     )
     await wait(150)
     const out = nodeRuns.outputOf('f')
-    expect(out.values).toEqual({ targetLang: 'ja' })
+    expect(out.values).toEqual({ doc: { path: 'C:/up/a.pdf', name: 'a.pdf', text: '内容' }, targetLang: 'ja' })
     expect(out.values.hacker).toBeUndefined()
   })
 })
