@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { PerplexitySearchEngine, DeepSeekWebSearchEngine } from '@core/search-engines/openai-compat-preset-search-engine'
 import type { UserSearchEngineConfig } from '@shared/types/search-engine.types'
 
-describe('OpenAI 兼容预置引擎（Perplexity / DeepSeek 联网）', () => {
+describe('OpenAI 兼容预置引擎（Perplexity / DeepSeek 生成）', () => {
   const fetchMock = vi.fn()
   beforeEach(() => {
     vi.stubGlobal('fetch', fetchMock)
@@ -33,13 +33,15 @@ describe('OpenAI 兼容预置引擎（Perplexity / DeepSeek 联网）', () => {
     expect(resp.results[0].source).toBe('perplexity')
   })
 
-  it('DeepSeek 联网：回落官方端点与 deepseek-chat', async () => {
+  it('DeepSeek 生成：回落官方端点与 deepseek-chat，且名称诚实标注「模型生成」', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({ choices: [{ message: { content: '标题A | https://a.com | 摘要A' } }] }),
     })
     const engine = new DeepSeekWebSearchEngine({ apiKey: 'key_1' } as UserSearchEngineConfig)
     expect(engine.type).toBe('deepseek-web')
+    // 诚实命名：不再自称为真实联网搜索（模型无浏览能力，链接可能编造）
+    expect(engine.name).toBe('DeepSeek（模型生成）')
     const resp = await engine.search('测试查询', 5)
     expect(resp.success).toBe(true)
     const [url, init] = fetchMock.mock.calls[0]

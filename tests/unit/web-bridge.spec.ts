@@ -56,4 +56,25 @@ describe('web bridge channel-map', () => {
       'voice:stt-completed',
     )
   })
+
+  it('assets.* 覆盖映射到单数 asset:* 后端通道（复数命名空间→单数 channel）', () => {
+    // preload 命名空间是 assets（复数），后端 handler 注册的是 asset:*（单数）；
+    // 必须显式覆盖，否则 Web fallback 生成 'assets:list' 与 'asset:list' 不匹配。
+    expect(CHANNEL_OVERRIDES['assets.list']?.channel).toBe('asset:list')
+    expect(CHANNEL_OVERRIDES['assets.stats']?.channel).toBe('asset:stats')
+    expect(CHANNEL_OVERRIDES['assets.openFolder']?.channel).toBe('asset:open-folder')
+    expect(CHANNEL_OVERRIDES['assets.listCategories']?.channel).toBe('asset:categories-list')
+    expect(CHANNEL_OVERRIDES['assets.deleteCategory']?.channel).toBe('asset:category-delete')
+    expect(CHANNEL_OVERRIDES['assets.download']?.channel).toBe('asset:download')
+  })
+
+  it('assets.* 单参数方法 wrap 成后端期望的对象形态', () => {
+    expect(CHANNEL_OVERRIDES['assets.get']?.wrap?.('id-1')).toEqual([{ id: 'id-1' }])
+    expect(CHANNEL_OVERRIDES['assets.delete']?.wrap?.('id-2')).toEqual([{ id: 'id-2' }])
+    expect(CHANNEL_OVERRIDES['assets.previewRender']?.wrap?.('a-9')).toEqual([{ assetId: 'a-9' }])
+    expect(CHANNEL_OVERRIDES['assets.groupDetail']?.wrap?.('g-1')).toEqual([{ groupId: 'g-1' }])
+    // listCategories 接受可选对象；空调用需兜底为 {}（后端 `p.category || undefined` 不能收到 undefined）
+    expect(CHANNEL_OVERRIDES['assets.listCategories']?.wrap?.({ category: 'news' })).toEqual([{ category: 'news' }])
+    expect(CHANNEL_OVERRIDES['assets.listCategories']?.wrap?.()).toEqual([{}])
+  })
 })

@@ -69,4 +69,10 @@ describe('默认值与硬性上限一致性', () => {
       WORKFLOW_LIMITS.maxConcurrentRuns
     )
   })
+
+  it('maxNodeRuns 默认 ≥ maxLoopIterations（否则合法循环被护栏误杀）', () => {
+    expect(WORKFLOW_DEFAULTS.maxNodeRuns).toBeGreaterThanOrEqual(
+      WORKFLOW_DEFAULTS.maxLoopIterations
+    )
+  })
 })

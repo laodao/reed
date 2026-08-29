@@ -21,6 +21,7 @@
 import * as path from 'path'
 import * as fs from 'fs'
 import { getPathProvider } from '@core/interfaces/path.interface'
+import { isPrivateHostname, validateOutboundUrl } from '@core/utils/outbound-url'
 
 export interface FaviconResult {
   /** 规范化域名（hostname） */
@@ -139,6 +140,10 @@ export class FaviconService {
   }
 
   private async fetchFavicon(domain: string): Promise<string | null> {
+    // 防 SSRF：拒绝内网/环回/保留地址 host。domain 源自用户可控 URL（favicon:get），
+    // 多租户 Web 端若不拦截，可被借道扫描内网/云元数据并回读。
+    if (isPrivateHostname(domain)) return null
+
     // 候选 1：站点根目录 favicon.ico（国内/国际站点普遍存在，最快）
     const ico = await this.fetchImage(`https://${domain}/favicon.ico`)
     if (ico) return ico
@@ -184,7 +189,12 @@ export class FaviconService {
       const href = extractLinkIconHref(html)
       if (!href) return null
       try {
-        return new URL(href, `https://${domain}/`).toString()
+        const abs = new URL(href, `https://${domain}/`).toString()
+        // HTML link href 本身可为任意绝对 URL（例如指向内网/环回地址），
+        // 再封装一次出向校验：非 http(s) 或私网地址一律跳过，防 HTML 注入式 SSRF。
+        const guard = validateOutboundUrl(abs)
+        if (!guard.ok) return null
+        return abs
       } catch {
         return null
       }

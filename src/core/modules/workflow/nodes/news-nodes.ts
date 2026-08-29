@@ -211,6 +211,11 @@ export function parseUrlList(raw: unknown): Array<{ name: string; url: string }>
   const push = (name: string, url: string) => {
     const u = url.trim()
     if (!u || !/^https?:\/\//i.test(u) || seen.has(u)) return
+    // 与 crawl-news 的 resolveSourceUrls 一致：拦截内网/环回/保留地址（防 SSRF）。
+    // crawl-links 的输入 URL 可能来自上游 LLM 输出或分享链访客，Web 端多租户下
+    // 直接 fetch 内网/云元数据属高危面。
+    const guard = validateOutboundUrl(u)
+    if (!guard.ok) return
     seen.add(u)
     out.push({ name: name.trim() || u, url: u })
   }

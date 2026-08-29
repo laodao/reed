@@ -10,7 +10,7 @@
  * - 持久化：onStateChange 回调（由调用方写 lw_projects.stage/progress/wizard_state）
  */
 
-import { ref, computed, type ComputedRef } from 'vue'
+import { ref, reactive, computed, type ComputedRef } from 'vue'
 
 export interface WizardStepDef {
   key: string
@@ -77,7 +77,9 @@ export function useWizardProgress(options: UseWizardProgressOptions): UseWizardP
   )
   const currentIndex = ref(initialIndex)
   const skipped = ref<string[]>(options.initialSkipped ?? [])
-  const doneCache = new Map<string, boolean>()
+  // reactive Map：doneCache 变化（refresh 重查）必须驱动 progress/completedCount 重算；
+  // 若用裸 Map，progress 缓存后会停留在旧值（进度条不刷新）。
+  const doneCache = reactive(new Map<string, boolean>())
 
   const currentStep = computed(() => steps[currentIndex.value])
 

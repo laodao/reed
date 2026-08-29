@@ -182,6 +182,39 @@ describe('favicon.service', () => {
       expect(r.dataUrl).toContain('data:image/png;base64,')
       expect(fetchMock).toHaveBeenCalled()
     })
+
+    it('内网/环回/保留地址域名 → 直接返回无 dataUrl，不发起任何网络请求（防 SSRF）', async () => {
+      for (const url of ['http://127.0.0.1/', 'http://169.254.169.254/latest/meta-data/', 'http://localhost/', 'http://192.168.1.1/']) {
+        fetchMock.mockClear()
+        FaviconService.getInstance().clearMemoryCache()
+        const r = await FaviconService.getInstance().getFavicon(url)
+        expect(r.dataUrl).toBeUndefined()
+        expect(fetchMock).not.toHaveBeenCalled()
+      }
+    })
+
+    it('HTML link icon href 指向内网 → 跳过该图标，落到境外兜底，不请求内网', async () => {
+      fetchMock
+        // 1) /favicon.ico 404
+        .mockResolvedValueOnce({ ok: false, status: 404, body: null })
+        // 2) 首页 HTML（link href 指向内网元数据）
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          body: { getReader: () => makeReader('<html><head><link rel="icon" href="http://169.254.169.254/latest/meta-data/"></head></html>') },
+        })
+        // 3) DuckDuckGo 兜底失败
+        .mockResolvedValueOnce({ ok: false, status: 404, body: null })
+        // 4) Google s2 兜底成功
+        .mockResolvedValueOnce(okResponse(null, { 'content-type': 'image/png' }))
+
+      const r = await FaviconService.getInstance().getFavicon('https://example.org/')
+      expect(r.dataUrl).toContain('data:image/png;base64,')
+      // 全程未请求内网地址
+      expect(fetchMock.mock.calls.some((c: unknown[]) => String(c[0]).includes('169.254.169.254'))).toBe(false)
+      // 最后一次是 Google s2 兜底
+      expect(String(fetchMock.mock.calls[fetchMock.mock.calls.length - 1][0])).toContain('google.com/s2/favicons')
+    })
   })
 })
 

@@ -170,8 +170,8 @@ export const SEARCH_ENGINE_TEMPLATES: SearchEngineTemplate[] = [
   {
     id: 'deepseek-web',
     siteUrl: 'https://www.deepseek.com',
-    name: 'DeepSeek 联网',
-    description: 'DeepSeek 联网搜索（OpenAI 兼容端点）',
+    name: 'DeepSeek（模型生成）',
+    description: '用 DeepSeek 模型生成搜索结果。注意：模型无实时联网能力，只会依据训练知识作答，返回的链接可能是模型编造、不准确——请谨慎使用并二次核实（非真实联网搜索）',
     category: 'api',
     icon: '🐋',
     authConfig: {
@@ -194,7 +194,7 @@ export const SEARCH_ENGINE_TEMPLATES: SearchEngineTemplate[] = [
           type: 'string',
           default: 'deepseek-chat',
           placeholder: 'deepseek-chat / deepseek-reasoner',
-          description: '用于联网搜索的模型名'
+          description: '用于生成的模型名'
         }
       ]
     },
@@ -249,24 +249,6 @@ export const SEARCH_ENGINE_TEMPLATES: SearchEngineTemplate[] = [
     maxResultsLimit: 10,
     isOfficial: false,
     priority: 15
-  },
-  {
-    id: 'bing-api',
-    siteUrl: 'https://www.bing.com',
-    name: '必应搜索 API',
-    description: '微软必应 Web Search API（Azure），返回结构化结果',
-    category: 'api',
-    icon: '🔎',
-    authConfig: {
-      requiresApiKey: true,
-      apiKeyLabel: 'API Key',
-      apiKeyPlaceholder: '请输入必应 Web Search API Key（Ocp-Apim-Subscription-Key）',
-      requiresExtraConfig: false
-    },
-    defaultMaxResults: 5,
-    maxResultsLimit: 10,
-    isOfficial: true,
-    priority: 16
   },
   {
     id: 'google-cse',

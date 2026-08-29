@@ -98,6 +98,18 @@ describe('useWizardProgress 向导状态机', () => {
     expect(w.progress.value).toBe(33)
   })
 
+  it('refresh 后数据变化会响应式更新 progress（doneCache 须可响应）', async () => {
+    const checkStep = makeDoneSet([])
+    const w = useWizardProgress({ steps: STORY_WIZARD_STEPS, checkStep })
+    // 首次 refresh：无完成 → progress 0（会被求值并缓存）
+    await w.refresh()
+    expect(w.progress.value).toBe(0)
+    // 随后数据到位并再次 refresh：progress 必须实时更新，而非停留在旧值
+    checkStep.mockImplementation(async (key: string) => ['idea', 'characters'].includes(key))
+    await w.refresh()
+    expect(w.progress.value).toBe(33)
+  })
+
   it('optional 步骤标记（world 可选，其余必选）', () => {
     expect(STORY_WIZARD_STEPS.find(s => s.key === 'world')?.optional).toBe(true)
     expect(STORY_WIZARD_STEPS.find(s => s.key === 'idea')?.optional).toBeUndefined()

@@ -24,6 +24,15 @@ vi.mock('@core/modules/workflow/datasource/datasource.service', () => ({
   registerDataSourceService: vi.fn(),
 }))
 
+// mock ep-agent-deps 的 computeEpProductionState（依赖状态刷新，#49），其余函数保留原实现
+const epDepsMock = vi.hoisted(() => ({
+  computeEpProductionState: vi.fn(),
+}))
+vi.mock('@core/modules/episode-production/agent/ep-agent-deps', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@core/modules/episode-production/agent/ep-agent-deps')>()
+  return { ...actual, computeEpProductionState: epDepsMock.computeEpProductionState }
+})
+
 import {
   normalizeEpDecision,
   epAgentConversationId,
@@ -31,7 +40,7 @@ import {
   detectChoiceForAssetImage,
   detectChoiceForDatabase,
 } from '@core/modules/episode-production/agent/ep-agent-workflow.service'
-import { extractJsonObject } from '@core/modules/episode-production/agent/ep-agent-actions'
+import { extractJsonObject, executeEpActions } from '@core/modules/episode-production/agent/ep-agent-actions'
 import {
   epStateToSummary,
   checkEpActionDependency,
@@ -42,6 +51,14 @@ import type { EpAgentProductionState } from '@core/modules/episode-production/ag
 beforeEach(() => {
   emitted.length = 0
   datasourceMock.getDataSourceService.mockReset()
+  // 默认让 computeEpProductionState 返回合法空状态，避免 mock 返回 undefined 破坏其它用例
+  epDepsMock.computeEpProductionState.mockReset()
+  epDepsMock.computeEpProductionState.mockResolvedValue({
+    episode: { id: 'e1', title: null, episodeNumber: null, status: null, hasScript: false, synopsis: null, scriptContent: null },
+    scenes: { total: 0, countWithBindings: 0, locations: [] },
+    storyboards: { total: 0, scenesCovered: 0, scenesTotal: 0 },
+    assets: { characters: { count: 0, names: [] }, locations: { count: 0, names: [] }, items: { count: 0, names: [] } },
+  })
 })
 
 // ==================== normalizeEpDecision ====================
@@ -373,6 +390,56 @@ describe('isReadOnlySql 只读守卫', () => {
     expect(isReadOnlySql('DELETE FROM t').ok).toBe(false)
     expect(isReadOnlySql('INSERT INTO t VALUES (1)').ok).toBe(false)
     expect(isReadOnlySql('UPDATE t SET a=1').ok).toBe(false)
+  })
+
+  it('拒绝 SELECT INTO（建表/写文件，绕过只读语义）', async () => {
+    const { isReadOnlySql } = await import('@core/modules/episode-production/agent/ep-agent-actions')
+    expect(isReadOnlySql('SELECT * INTO new_table FROM users').ok).toBe(false)
+    expect(isReadOnlySql('SELECT a, b INTO OUTFILE \'/tmp/x\' FROM t').ok).toBe(false)
+  })
+})
+
+// ==================== executeEpActions 依赖状态刷新（#49） ====================
+describe('executeEpActions 依赖状态刷新', () => {
+  const makeState = (hasScript: boolean) => ({
+    episode: { id: 'e1', title: null, episodeNumber: null, status: null, hasScript, synopsis: null, scriptContent: null },
+    scenes: { total: 0, countWithBindings: 0, locations: [] as string[] },
+    storyboards: { total: 0, scenesCovered: 0, scenesTotal: 0 },
+    assets: {
+      characters: { count: 0, names: [] as string[] },
+      locations: { count: 0, names: [] as string[] },
+      items: { count: 0, names: [] as string[] },
+    },
+  })
+  const makeCtx = () => ({ projectId: 'p1', episodeId: 'e1', db: {} as any, emit: vi.fn() }) as any
+
+  it('同一轮先 generate_script 再 split_scenes：用更新后的状态，split_scenes 不被误判 skipped', async () => {
+    // 决策前状态：无剧本（split_scenes 本会跳过）；动作执行后应重算为 hasScript=true
+    const beforeState = makeState(false)
+    const afterState = makeState(true)
+    epDepsMock.computeEpProductionState.mockResolvedValue(afterState)
+
+    const summaries = await executeEpActions(
+      makeCtx(),
+      [{ type: 'generate_script', params: {} }, { type: 'split_scenes', params: {} }],
+      beforeState,
+    )
+    // generate_script：mock db 下真实执行因"剧集不存在"失败 → error（非 skipped）
+    expect(summaries[0].status).toBe('error')
+    // 关键：split_scenes 依赖 hasScript——generate_script 后已重算为 true → 不该再 skipped
+    expect(summaries[1].status).not.toBe('skipped')
+    expect(epDepsMock.computeEpProductionState).toHaveBeenCalled()
+  })
+
+  it('不满足依赖的动作 skipped，不触发状态刷新', async () => {
+    epDepsMock.computeEpProductionState.mockResolvedValue(makeState(false))
+    const summaries = await executeEpActions(
+      makeCtx(),
+      [{ type: 'generate_storyboards', params: {} }],
+      makeState(false),
+    )
+    expect(summaries[0].status).toBe('skipped')
+    expect(epDepsMock.computeEpProductionState).not.toHaveBeenCalled()
   })
 })
 

@@ -41,7 +41,7 @@ import type {
   EpAgentPanelSection,
   EpAgentProductionState,
 } from './ep-agent.types'
-import { checkEpActionDependency } from './ep-agent-deps'
+import { checkEpActionDependency, computeEpProductionState } from './ep-agent-deps'
 
 // ==================== JSON 容错解析（复用长文 agent 实现） ====================
 
@@ -85,10 +85,13 @@ export async function executeEpActions(
   state: EpAgentProductionState,
 ): Promise<EpAgentActionSummary[]> {
   const summaries: EpAgentActionSummary[] = []
+  // 依赖校验用"当前"生产状态而非决策前快照（#49）：同一轮前面动作可能已生成剧本/场景，
+  // 复用快照会让后续依赖动作被误判 skipped（如 generate_script → split_scenes）。
+  let currentState = state
   for (const action of actions) {
     if (!action?.type) continue
 
-    const dep = checkEpActionDependency(action.type, state)
+    const dep = checkEpActionDependency(action.type, currentState)
     if (!dep.ok) {
       const s: EpAgentActionSummary = {
         type: action.type,
@@ -119,6 +122,11 @@ export async function executeEpActions(
     }
     summaries.push(summary)
     ctx.emit({ type: 'action:done', summary })
+    // 动作实际执行（成功或失败）后重算生产状态，供后续动作的依赖校验读取最新值；
+    // 失败也需重算——动作可能部分写入（如脚本已生成）。skipped 未执行则跳过。
+    if (summary.status !== 'skipped') {
+      currentState = await computeEpProductionState(ctx.db, ctx.projectId, ctx.episodeId)
+    }
   }
   return summaries
 }
@@ -763,7 +771,9 @@ export function isReadOnlySql(sql: string): { ok: boolean; reason?: string } {
     return { ok: false, reason: '仅允许单条查询语句（拒绝多语句）' }
   }
   // 写关键字（词边界；已剥离字符串字面量，列名/字符串里的字样不误伤）
-  if (/\b(insert|update|delete|merge|drop|alter|truncate|create|grant|revoke|copy|call|replace|vacuum|attach|detach|comment|reindex|do|execute)\b/i.test(stripped)) {
+  // 含 `into`：`SELECT ... INTO new_table`（POSTGRES/MySQL）会**建表/写文件**，
+  // 属写操作却以 select 开头且无分号，不加 `into` 即可绕过只读守卫。
+  if (/\b(insert|update|delete|merge|drop|alter|truncate|create|grant|revoke|copy|call|replace|vacuum|attach|detach|comment|reindex|do|execute|into)\b/i.test(stripped)) {
     return { ok: false, reason: '仅允许只读查询（检测到写操作关键字）' }
   }
   return { ok: true }

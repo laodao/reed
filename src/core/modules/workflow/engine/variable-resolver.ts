@@ -135,22 +135,30 @@ export function stringifyValue(value: unknown): string {
  * 深度解析对象中的全部字符串字段（引擎准备节点 config 时用：
  * handler 拿到的 config 已是全实参）。
  * 循环数组/普通对象；非字符串原样保留。
+ *
+ * @param skipKeys 仅对**顶层**这些键跳过模板解析（保留原样），用于
+ *                 注入敏感字段（如 data-table 外部模式的 sql —— 必须
+ *                 $1,$2 参数化，禁止 {{}} 拼接上游变量进 SQL 文本）。
  */
-export function resolveConfigDeep<T>(config: T, resolve: (template: string) => unknown): T {
-  return deepWalk(config, resolve) as T
+export function resolveConfigDeep<T>(
+  config: T,
+  resolve: (template: string) => unknown,
+  skipKeys?: ReadonlySet<string>,
+): T {
+  return deepWalk(config, resolve, skipKeys, true) as T
 }
 
-function deepWalk(value: unknown, resolve: (t: string) => unknown): unknown {
+function deepWalk(value: unknown, resolve: (t: string) => unknown, skipKeys?: ReadonlySet<string>, isRoot = false): unknown {
   if (typeof value === 'string') {
     return resolve(value)
   }
   if (Array.isArray(value)) {
-    return value.map(item => deepWalk(item, resolve))
+    return value.map(item => deepWalk(item, resolve, skipKeys, false))
   }
   if (value !== null && typeof value === 'object') {
     const out: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(value)) {
-      out[k] = deepWalk(v, resolve)
+      out[k] = isRoot && skipKeys?.has(k) ? v : deepWalk(v, resolve, skipKeys, false)
     }
     return out
   }

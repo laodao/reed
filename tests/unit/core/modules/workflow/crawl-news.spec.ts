@@ -5,7 +5,7 @@
  *              节点校验（来源至少其一）。
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { resolveSourceUrls } from '@core/modules/workflow/nodes/news-nodes'
+import { resolveSourceUrls, parseUrlList } from '@core/modules/workflow/nodes/news-nodes'
 import { NEWS_TOPICS, getNewsTopicSources, NEWS_TOPIC_LABELS } from '@shared/types/news-topics'
 import { NODE_TYPE_CATALOG_MAP } from '@shared/types/workflow-node-catalog'
 
@@ -142,5 +142,31 @@ describe('resolveSourceUrls（async）', () => {
 describe('crawl-news 目录注册', () => {
   it('crawl-news 存在于节点目录', () => {
     expect(NODE_TYPE_CATALOG_MAP['crawl-news']).toBeDefined()
+  })
+})
+
+describe('parseUrlList（crawl-links 输入解析——防 SSRF）', () => {
+  it('过滤内网/环回/保留地址 URL（与 crawl-news 同款出向校验）', () => {
+    const urls = parseUrlList(
+      '["https://public.com","http://127.0.0.1/x","http://169.254.169.254/latest/meta-data/","http://localhost/y","http://192.168.1.1/"]'
+    )
+    expect(urls.map(u => u.url)).toEqual(['https://public.com'])
+  })
+
+  it('仅允许 http(s)，过滤其它协议与空串', () => {
+    const urls = parseUrlList('["ftp://x.com","javascript:alert(1)","","https://ok.com"]')
+    expect(urls.map(u => u.url)).toEqual(['https://ok.com'])
+  })
+
+  it('支持对象数组与嵌套 items 展平（LLM 分组输出场景）', () => {
+    const urls = parseUrlList(
+      '[{"source":"A","items":[{"title":"t","url":"https://a.com"}]},"https://b.com"]'
+    )
+    expect(urls.map(u => u.url)).toEqual(['https://a.com', 'https://b.com'])
+  })
+
+  it('过滤嵌套/对象数组窗体中的内网地址', () => {
+    const urls = parseUrlList('[{"name":"内网","url":"http://10.0.0.5/"},"https://ok.com"]')
+    expect(urls.map(u => u.url)).toEqual(['https://ok.com'])
   })
 })
