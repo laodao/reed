@@ -8,12 +8,15 @@
  *
  *              批次记录：
  *              - P4 第一批：skills / diary / portrait（最薄的三个，handler 零改动迁移）。
- *              后续批次（chat / voice-design / longwriting / episode-production）继续在此追加。
+ *              - P4 第二批：chat（chat/dialog/message/role 四 handler）/ voice-design（voice）。
+ *              后续批次（longwriting / episode-production）继续在此追加。
  */
 
 import type { PackDefinition } from './registry'
 import { skillsPack } from './skills'
 import { diaryPack } from './diary'
 import { portraitPack } from './portrait'
+import { chatPack } from './chat'
+import { voiceDesignPack } from './voice-design'
 
-export const builtinPacks: PackDefinition[] = [skillsPack, diaryPack, portraitPack]
+export const builtinPacks: PackDefinition[] = [skillsPack, diaryPack, portraitPack, chatPack, voiceDesignPack]

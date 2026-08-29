@@ -103,15 +103,10 @@ import { ElectronBroadcastEventEmitter } from './services/electron-event-emitter
 import { SecureStorageService } from './services/secure-storage.service'
 import { registerSettingsHandlers } from './ipc/handlers/settings.handler'
 import { registerApiKeyHandlers } from './ipc/handlers/api-key.handler'
-import { registerDialogHandlers } from './ipc/handlers/dialog.handler'
-import { registerMessageHandlers } from './ipc/handlers/message.handler'
-import { registerRoleHandlers } from './ipc/handlers/role.handler'
 import { registerProviderConfigHandlers } from './ipc/handlers/provider-config.handler'
-import { registerChatHandlers } from './ipc/handlers/chat.handler'
 import { registerImageHandlers } from './ipc/handlers/image.handler'
 import { registerFileHandlers } from './ipc/handlers/file.handler'
 import { registerTranslationHandlers } from './ipc/handlers/translation.handler'
-import { registerVoiceHandlers } from './ipc/handlers/voice.handler'
 import { registerDataPathHandlers } from './ipc/handlers/data-path.handler'
 import { registerKnowledgeBaseHandlers } from './ipc/handlers/knowledge-base.handler'
 import { registerExportHandlers } from './ipc/handlers/export.handler'
@@ -338,20 +333,15 @@ function createWindow(): void {
 function initIpcHandlers(): void {
   registerSettingsHandlers()
   registerApiKeyHandlers()
-  registerDialogHandlers()
-  registerMessageHandlers()
-  registerRoleHandlers()
   registerProviderConfigHandlers()
-  registerChatHandlers()
   registerImageHandlers()
   registerFileHandlers()
   registerTranslationHandlers()
-  registerVoiceHandlers()
   registerDataPathHandlers()
   registerKnowledgeBaseHandlers()
   registerExportHandlers()
-  // skills/diary/portrait 三个业务的 handler 已迁移为内置业务包（core/packs/builtin-packs），
-  // 由包内核激活时注册，不再在此平铺（避免重复注册）
+  // skills/diary/portrait/chat/voice-design 五个业务的 handler 已迁移为内置业务包
+  // （core/packs/builtin-packs），由包内核激活时注册，不再在此平铺（避免重复注册）
   registerSearchEngineHandlers()
   registerLongWritingHandlers()
   registerWorkflowHandlers()

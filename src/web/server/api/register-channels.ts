@@ -12,16 +12,11 @@
 
 import { registerSettingsHandlers } from '@electron/ipc/handlers/settings.handler'
 import { registerApiKeyHandlers } from '@electron/ipc/handlers/api-key.handler'
-import { registerRoleHandlers } from '@electron/ipc/handlers/role.handler'
-import { registerMessageHandlers } from '@electron/ipc/handlers/message.handler'
-import { registerDialogHandlers } from '@electron/ipc/handlers/dialog.handler'
 import { registerOSSHandlers } from '@electron/ipc/handlers/oss.handler'
 import { registerProviderConfigHandlers } from '@electron/ipc/handlers/provider-config.handler'
 import { registerSearchEngineHandlers } from '@electron/ipc/handlers/search-engine.handler'
 import { registerTranslationHandlers } from '@electron/ipc/handlers/translation.handler'
-import { registerVoiceHandlers } from '@electron/ipc/handlers/voice.handler'
 import { registerImageHandlers } from '@electron/ipc/handlers/image.handler'
-import { registerChatHandlers } from '@electron/ipc/handlers/chat.handler'
 import { registerKnowledgeBaseHandlers } from '@electron/ipc/handlers/knowledge-base.handler'
 import { registerLongWritingHandlers } from '@electron/ipc/handlers/longwriting.handler'
 import { registerWorkflowHandlers } from '@electron/ipc/handlers/workflow.handler'
@@ -43,16 +38,11 @@ export async function registerAllWebChannels(): Promise<void> {
   // process.versions.electron 不存在，不会触发 ipcMain.handle 分支）
   registerSettingsHandlers()
   registerApiKeyHandlers()
-  registerRoleHandlers()
-  registerMessageHandlers()
-  registerDialogHandlers()
   registerOSSHandlers()
   registerProviderConfigHandlers()
   registerSearchEngineHandlers()
   registerTranslationHandlers()
-  registerVoiceHandlers()
   registerImageHandlers()
-  registerChatHandlers()
   registerKnowledgeBaseHandlers()
   registerLongWritingHandlers()
   registerWorkflowHandlers()
@@ -62,9 +52,9 @@ export async function registerAllWebChannels(): Promise<void> {
   registerAssetHandlers()
   registerNewsSourceHandlers()
   registerFaviconHandlers()
-  // skills/diary/portrait 三个业务的 handler 已迁移为内置业务包（core/packs/builtin-packs），
-  // 由包内核激活时注册，不再在此平铺（避免重复注册；skill 系 channel 此前 Web 端未登记，
-  // 迁移后随 skills 包激活在 Web 端补齐）
+  // skills/diary/portrait/chat/voice-design 五个业务的 handler 已迁移为内置业务包
+  // （core/packs/builtin-packs），由包内核激活时注册，不再在此平铺（避免重复注册；
+  // skill 系 channel 此前 Web 端未登记，迁移后随 skills 包激活在 Web 端补齐）
   registerEpisodeProductionHandlers()
   // 数据源：Web 端仓储/服务/驱动已由 workflow-boot 装配（web-database-manager +
   // initWorkflowSubsystem），此前只缺 IPC 这一环，导致 Web 端数据源管理不可用
