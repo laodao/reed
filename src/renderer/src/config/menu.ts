@@ -23,6 +23,7 @@ import { Connection,
   VideoCamera,
   Box,
   Collection,
+  MagicStick,
 } from '@element-plus/icons-vue'
 
 export interface MenuItem {
@@ -98,6 +99,12 @@ export const mainMenuItems: MenuItem[] = [
     label: '资产管理',
     description: '工作流成果统一沉淀——按分类查看、预览、复用',
     icon: markRaw(Collection)
+  },
+  {
+    path: '/skills',
+    label: '技能库',
+    description: 'AI 技能包管理——内置预置 + 自定义技能，工作流「技能调用」节点使用',
+    icon: markRaw(MagicStick)
   }
 ]
 

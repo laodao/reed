@@ -102,6 +102,8 @@ export interface AppApi {
     sourceLink(assetId: string): Promise<IpcResp<AssetSourceLink | null>>
     /** 资产组详情（需求 2：组卡片 → 组内成员画廊） */
     groupDetail(groupId: string): Promise<IpcResp<{ group: AssetGroupRecord; members: AssetRecord[] } | null>>
+    /** 下载资产到本地（桌面端弹保存对话框；Web 端由浏览器直接下载，不经过此通道） */
+    download(id: string): Promise<IpcResp<{ filePath?: string; canceled?: boolean }>>
   }
   /** 新闻来源库（内置应用 C1 早报 / C2 周报的数据源管理） */
   newsSource: {
@@ -121,6 +123,29 @@ export interface AppApi {
   /** 网站 favicon（新闻来源图标：按站点 URL 抓取并缓存） */
   favicon: {
     get(url: string): Promise<IpcResp<{ domain: string; dataUrl?: string }>>
+  }
+  /** 技能库（Skill 技能包：内置只读 + 用户技能管理；工作流 skill-call 节点调用） */
+  skills: {
+    list(): Promise<IpcResp<Array<{
+      id: string
+      name: string
+      description: string
+      whenToUse?: string
+      category: string
+      source: 'builtin' | 'user'
+      dirPath?: string | null
+      inputs: Array<{ key: string; label?: string; type?: string; required?: boolean; defaultValue?: unknown; options?: Array<{ label: string; value: string | number }>; help?: string }>
+      outputDesc?: string
+      updatedAt?: string
+    }>>>
+    get(id: string): Promise<IpcResp<any | null>>
+    resolve(id: string): Promise<IpcResp<any | null>>
+    create(input: Record<string, unknown>): Promise<IpcResp<any | null>>
+    update(id: string, patch: Record<string, unknown>): Promise<IpcResp<any | null>>
+    remove(id: string): Promise<IpcResp<{ removed: boolean }>>
+    importFromPath(path: string): Promise<IpcResp<any | null>>
+    exportToPath(id: string, destDir: string): Promise<IpcResp<{ path: string }>>
+    forkBuiltin(id: string): Promise<IpcResp<any | null>>
   }
   file: {
     openDialog(options?: { multiple?: boolean; filters?: Array<{ name: string; extensions: string[] }> }): Promise<{

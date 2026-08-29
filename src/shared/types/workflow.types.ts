@@ -70,6 +70,8 @@ export type WorkflowNodeType =
   | 'stt'
   | 'voice-clone'
   | 'video-extract-audio'
+  // 技能（Skill 技能包调用）
+  | 'skill-call'
   // 通用
   | 'http-request'
   | 'app-notify'
@@ -450,6 +452,17 @@ export interface WorkflowNodeConfigMap {
     params?: Array<{ key: string; value: string }>
     /** 响应处理模式：auto=按 content-type（二进制→落盘 filePath）| text | json | base64 | file */
     responseType?: 'auto' | 'text' | 'json' | 'base64' | 'file'
+  }
+
+  'skill-call': {
+    /** 技能 id（select-dynamic source=skills） */
+    skillId: string
+    /** 技能参数（键=技能 inputs schema 的 key；值支持 {{工作流变量}}） */
+    inputs?: Array<{ key: string; value: string }>
+    providerConfigId?: string
+    modelId?: string
+    temperature?: number
+    maxTokens?: number
   }
 
   'code': {
@@ -1021,8 +1034,8 @@ export const WORKFLOW_DEFAULTS = {
   maxParallelNodes: 5,
   /** 全局并发运行数 3 */
   maxConcurrentRuns: 3,
-  /** 单节点最大执行次数 50（对齐 Bisheng max_steps，防成环死循环） */
-  maxNodeRuns: 50,
+  /** 单节点最大执行次数 100（按节点计；必须 ≥ maxLoopIterations，否则合法循环提前被护栏误杀） */
+  maxNodeRuns: 100,
   /** cron 调度间隔 30s */
   cronTickMs: 30_000,
   /** cron 错过宽限窗口 = 2 × tick（超过视为错过，推进到未来首个触发点） */

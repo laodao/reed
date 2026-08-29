@@ -123,6 +123,7 @@
             <el-option label="新闻来源库（可多选）" value="newsSources" />
             <el-option label="知识库" value="knowledgeBases" />
             <el-option label="搜索引擎（已配置）" value="searchEngineConfigs" />
+            <el-option label="技能库" value="skills" />
           </el-select>
           <el-checkbox v-model="item.multi" size="small" @change="syncInputs" title="多选（提交值为数组）">多选</el-checkbox>
           <span class="model-types-hint">{{ dynamicRefHint(item) }}</span>
@@ -149,6 +150,7 @@
             <el-option label="新闻来源库（可多选）" value="newsSources" />
             <el-option label="知识库" value="knowledgeBases" />
             <el-option label="搜索引擎（已配置）" value="searchEngineConfigs" />
+            <el-option label="技能库" value="skills" />
           </el-select>
           <span class="model-types-hint">选数据源后选项由系统加载（可与级联组合）；留空=手写下方选项</span>
         </div>
@@ -267,6 +269,38 @@
       <el-input v-model="item.value" :placeholder="typeHint(item.type)" size="small" @change="syncToolParams" />
     </div>
     <div v-if="!toolParamRows.length" class="oas-hint">选择工具后按参数 schema 生成；值支持 {{模板}} 变量引用</div>
+  </div>
+
+  <!-- 技能：技能下拉（内置 + 用户，选中后按 inputs schema 预生成参数） -->
+  <div v-else-if="field.type === 'skill-select'" class="field-with-picker">
+    <el-select :model-value="String(modelValue ?? '')" placeholder="选择技能" clearable filterable
+      style="width: 100%" @update:model-value="onSkillSelected">
+      <el-option-group v-for="g in skillGroups" :key="g" :label="g">
+        <el-option v-for="s in skillList.filter(x => x.group === g)" :key="s.id" :label="s.label" :value="s.id" />
+      </el-option-group>
+    </el-select>
+    <div v-if="selectedSkill?.description" class="oas-hint">{{ selectedSkill.description }}</div>
+  </div>
+
+  <!-- 技能：参数编辑（按选中技能 inputs schema 生成行，值支持 {{模板}}） -->
+  <div v-else-if="field.type === 'skill-params'" class="kv-list">
+    <div v-for="(item, i) in skillParamRows" :key="i" class="kv-row skill-param-row">
+      <span class="param-key" :title="item.help">{{ item.label }}<span v-if="item.required" class="req">*</span></span>
+      <el-input v-if="item.type === 'string' || item.type === 'textarea'" v-model="item.value"
+        :type="item.type === 'textarea' ? 'textarea' : undefined" :rows="item.type === 'textarea' ? 3 : undefined"
+        :placeholder="item.help || '值，支持 {{模板}}'" size="small" @change="syncSkillParams" />
+      <el-input-number v-else-if="item.type === 'number'" :model-value="Number(item.value) || undefined"
+        size="small" style="width: 160px"
+        @update:model-value="v => { item.value = v === undefined || v === null ? '' : String(v); syncSkillParams() }" />
+      <el-switch v-else-if="item.type === 'boolean'" :model-value="item.booleanValue" size="small"
+        @update:model-value="v => { item.booleanValue = !!v; syncSkillParams() }" />
+      <el-select v-else-if="item.type === 'select'" v-model="item.value" size="small" style="width: 100%"
+        @change="syncSkillParams">
+        <el-option v-for="o in item.options" :key="String(o.value)" :label="o.label" :value="String(o.value)" />
+      </el-select>
+      <el-input v-else v-model="item.value" :placeholder="item.help || '值，支持 {{模板}}'" size="small" @change="syncSkillParams" />
+    </div>
+    <div v-if="!skillParamRows.length" class="oas-hint">选择技能后按参数 schema 自动带出；参数值支持 {{变量}} 引用</div>
   </div>
 </template>
 
@@ -522,7 +556,68 @@ function typeHint(t: string): string {
   return { string: '文本，支持 {{模板}}', number: '数字', boolean: 'true/false', json: 'JSON', select: '下拉选项值' }[t] ?? '值，支持 {{模板}}'
 }
 
-onMounted(loadTools)
+// ── 技能（skill-call 节点：技能下拉 / 参数按 inputs schema 生成） ──
+const skillList = ref<Array<Record<string, unknown> & { group: string; label: string }>>([])
+const skillGroups = computed(() => [...new Set(skillList.value.map(s => s.group))])
+const selectedSkill = computed(() => skillList.value.find(s => s.id === String(props.model['skillId'] ?? '')))
+
+async function loadSkills() {
+  try {
+    const api = (window as never as { electronAPI: { skills: any } }).electronAPI.skills
+    const r = await api.list()
+    const all = r?.data ?? []
+    skillList.value = all.map((s: any) => ({
+      ...s,
+      group: s.source === 'builtin' ? '内置技能' : '我的技能',
+      label: `[${s.source === 'builtin' ? '内置' : '自定义'}] ${s.name}（${s.id}）`,
+    }))
+  } catch {
+    // 技能列表拉取失败静默（节点配置仍可手填 skillId）
+  }
+}
+
+function onSkillSelected(v: unknown) {
+  set(v)
+  const s = skillList.value.find(x => x.id === String(v ?? ''))
+  const schema = (s as any)?.inputs ?? []
+  if (schema.length && !(props.model['inputs'] as any[] ?? []).length) {
+    props.model['inputs'] = schema.map((f: any) => ({
+      key: f.key,
+      value: f.defaultValue !== undefined ? String(f.defaultValue) : '',
+    }))
+    emit('change')
+  }
+}
+
+/** 参数行：技能 inputs schema 与已填值合并（label/required/type/options 来自技能定义） */
+const skillParamRows = computed<Array<{ key: string; label: string; required: boolean; type: string; value: string; booleanValue: boolean; options: Array<{ label: string; value: string | number }>; help: string }>>(() => {
+  const schema = (selectedSkill.value as any)?.inputs ?? []
+  const filled = new Map((props.model['inputs'] as Array<{ key: string; value: string }> ?? []).map(p => [p.key, p.value]))
+  return schema.map((f: any) => {
+    const raw = filled.get(f.key)
+    const isBool = f.type === 'boolean'
+    return {
+      key: f.key,
+      label: f.label || f.key,
+      required: !!f.required,
+      type: f.type ?? 'string',
+      value: raw !== undefined ? String(raw) : (f.defaultValue !== undefined ? String(f.defaultValue) : ''),
+      booleanValue: isBool ? (raw === 'true' || (raw === undefined && !!f.defaultValue)) : false,
+      options: f.options ?? [],
+      help: f.help ?? '',
+    }
+  })
+})
+
+function syncSkillParams() {
+  props.model['inputs'] = skillParamRows.value.map(r => ({
+    key: r.key,
+    value: r.type === 'boolean' ? (r.booleanValue ? 'true' : 'false') : String(r.value ?? ''),
+  }))
+  emit('change')
+}
+
+onMounted(() => { loadTools(); loadSkills() })
 </script>
 
 <style scoped>

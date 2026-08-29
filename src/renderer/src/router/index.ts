@@ -129,6 +129,13 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '资产管理' },
   },
   {
+    path: '/skills',
+    name: 'SkillLibrary',
+    component: () => import('@/views/skills/SkillLibrary.vue'),
+    // 不缓存：技能实时变化（导入/新建/复制后立即可见）
+    meta: { title: '技能库' },
+  },
+  {
     // 会话页必须有 sessionId（新建会话由列表/详情页创建后跳转；无 id 路由已废弃）
     path: '/apps/:id/session/:sessionId',
     name: 'AppSession',

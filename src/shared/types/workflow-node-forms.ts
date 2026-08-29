@@ -39,6 +39,16 @@ export interface CatalogFormField {
     | 'oas-operations'
     /** OAS 参数编辑（kv-list + 按接口声明生成参数行） */
     | 'oas-params'
+    /** P0 工具：工具下拉（预设+自定义，选中后按 schema 预生成参数） */
+    | 'tool-select'
+    /** P0 工具：凭据下拉 */
+    | 'tool-credential-select'
+    /** P0 工具：参数编辑（按选中工具 schema 生成行） */
+    | 'tool-params'
+    /** 技能下拉（技能库，选中后按 inputs schema 带出参数区） */
+    | 'skill-select'
+    /** 技能参数编辑（按选中技能 inputs schema 生成行，值支持 {{模板}}） */
+    | 'skill-params'
   placeholder?: string
   /** kv-list 的键占位提示（如 headers / assignments） */
   keyPlaceholder?: string
@@ -48,8 +58,8 @@ export interface CatalogFormField {
   options?: Array<{ label: string; value: string | number }>
   /** select / select-dynamic 是否多选（提交值为数组） */
   multi?: boolean
-  /** select-dynamic 的数据源标识 */
-  source?: 'knowledgeBases' | 'newsTopics' | 'assets' | 'newsSources' | 'assetCategories' | 'dataSources'
+  /** select-dynamic 的数据源标识（编辑器按 source 拉取选项） */
+  source?: 'knowledgeBases' | 'newsTopics' | 'assets' | 'newsSources' | 'assetCategories' | 'dataSources' | 'searchEngineConfigs' | 'skills'
   help?: string
   /** 字段值支持 {{}} 模板的提示标记（表单角标） */
   templateHint?: boolean
@@ -182,6 +192,13 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
       placeholder: '本地路径 / http(s) URL / base64，多张用逗号或换行分隔（最多4张，当前取第一张）',
     }),
   ],
+  'skill-call': [
+    { key: 'skillId', label: '技能', type: 'skill-select', help: '从技能库选择（内置 + 自定义）；选中后按技能参数 schema 自动带出参数区' },
+    { key: 'inputs', label: '技能参数', type: 'skill-params', help: '参数值支持 {{工作流变量}} 引用（如 {{start.material}}）', collapsible: true },
+    { key: 'providerConfigId', label: '模型', type: 'model-pair', group: '模型', help: '留空 = 按默认 Provider 自动回退选择' },
+    { key: 'temperature', label: '温度', type: 'slider', min: 0, max: 2, step: 0.1, group: '参数' },
+    { key: 'maxTokens', label: '最大 Token', type: 'number', group: '参数' },
+  ],
   'kb-retrieve': [
     { key: 'knowledgeBaseId', label: '知识库', type: 'select-dynamic', source: 'knowledgeBases' },
     T('query', '查询内容', { type: 'textarea', templateHint: true, placeholder: '{{start.question}}' }),
@@ -298,7 +315,7 @@ export const NODE_CONFIG_FORMS: Record<WorkflowNodeType, CatalogFormField[]> = {
       { label: '执行 SQL execute', value: 'execute' },
     ] },
     { key: 'dataSourceId', label: '数据源', type: 'select-dynamic', source: 'dataSources', help: '选外部数据库=读写第三方库；留空=读写本应用内置数据表', group: '数据源' },
-    { key: 'sql', label: 'SQL', type: 'textarea', templateHint: true, help: '外部数据源模式用：SELECT/DML，参数统一用 $1,$2 占位（各库自动翻译），值取自下方 params', group: '外部数据库' },
+    { key: 'sql', label: 'SQL', type: 'textarea', noTemplate: true, help: '外部数据源模式用：SELECT/DML，参数统一用 $1,$2 占位（各库自动翻译），值取自下方 params。sql 不支持 {{}} 模板，防止上游变量被拼接进 SQL 文本', group: '外部数据库' },
     { key: 'params', label: '参数（JSON 数组）', type: 'textarea', help: '与 $1,$2 占位符一一对应，如 [123, "2024-01-01"]；留空=无参数', group: '外部数据库' },
     { key: 'tableId', label: '表 ID', group: '内置数据表', help: 'insert 可留空按 tableName 自动建表；query/update/delete 必填其一' },
     { key: 'tableName', label: '表名', group: '内置数据表', help: '表不存在时 insert 自动创建（列从 row 键推导）' },

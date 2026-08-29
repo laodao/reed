@@ -231,6 +231,26 @@ export const NODE_TYPE_CATALOG: readonly WorkflowCatalogEntry[] = [
     ],
   },
   {
+    type: 'skill-call',
+    label: '技能调用',
+    description: '调用技能包：选技能 → 按参数填值 → AI 按技能模板生成（自动拼接技能参考文档）',
+    category: 'ai',
+    icon: 'MagicStick',
+    controlKind: 'task',
+    cancellable: true,
+    ports: [
+      { kind: 'normal', label: '出', max: 1 },
+      { kind: 'fail', label: '失败' },
+    ],
+    requiredConfigKeys: ['skillId'],
+    defaultConfig: { skillId: '', inputs: [], providerConfigId: '', modelId: '' },
+    outputSchema: [
+      { key: 'content', type: 'string', desc: '技能执行结果（模型回复全文）' },
+      { key: 'skillId', type: 'string', desc: '实际执行的技能 id' },
+      { key: 'usage', type: 'json', desc: 'token 用量 { promptTokens, completionTokens }' },
+    ],
+  },
+  {
     type: 'kb-retrieve',
     label: '知识库检索',
     description: '向量检索知识库文档片段',

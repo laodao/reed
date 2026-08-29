@@ -121,6 +121,7 @@ import { registerLongWritingHandlers } from './ipc/handlers/longwriting.handler'
 import { registerWorkflowHandlers } from './ipc/handlers/workflow.handler'
 import { registerAppHandlers } from './ipc/handlers/app.handler'
 import { registerToolHandlers } from './ipc/handlers/tool.handler'
+import { registerSkillHandlers } from './ipc/handlers/skill.handler'
 import { registerEmailHandlers } from './ipc/handlers/email.handler'
 import { registerAssetHandlers } from './ipc/handlers/asset.handler'
 import { registerNewsSourceHandlers } from './ipc/handlers/news-source.handler'
@@ -357,6 +358,7 @@ function initIpcHandlers(): void {
   registerWorkflowHandlers()
   registerAppHandlers()
   registerToolHandlers()
+  registerSkillHandlers()
   registerEmailHandlers()
   registerAssetHandlers()
   registerNewsSourceHandlers()

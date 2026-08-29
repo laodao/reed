@@ -403,6 +403,24 @@ async function loadDynamicOptions(keys: WorkflowStartInput[]): Promise<void> {
       } finally {
         dynamicBusy[src] = false
       }
+    } else if (src === 'skills') {
+      dynamicBusy[src] = true
+      try {
+        const api = (window as never as { electronAPI: { skills: { list: () => Promise<{ success: boolean; data?: Array<{ id: string; name: string; source: string }> }> } } }).electronAPI.skills
+        const resp = await api.list()
+        if (resp.success && resp.data) {
+          dynamicCache[src] = resp.data.map(s => ({
+            label: `${s.source === 'builtin' ? '（内置）' : '（自定义）'} ${s.name}（${s.id}）`,
+            value: s.id,
+          }))
+        } else {
+          dynamicCache[src] = []
+        }
+      } catch {
+        dynamicCache[src] = []
+      } finally {
+        dynamicBusy[src] = false
+      }
     } else if (src === 'assetCategories') {
       dynamicBusy[src] = true
       try {

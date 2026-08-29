@@ -184,6 +184,17 @@ async function loadDynamicOptions() {
       dynamicOptions.value.searchEngineConfigs = [...quick, ...configured]
     } catch { /* 列表失败时退化为手填 */ }
   }
+  if (sources.has('skills')) {
+    try {
+      const resp = await api.skills.list()
+      if (resp.success && resp.data) {
+        dynamicOptions.value.skills = resp.data.map((s: any) => ({
+          label: `${s.source === 'builtin' ? '（内置）' : '（自定义）'} ${s.name}（${s.id}）`,
+          value: s.id,
+        }))
+      }
+    } catch { /* 列表失败时退化为手填 */ }
+  }
 }
 watch(() => props.node.id, loadDynamicOptions, { immediate: true })
 

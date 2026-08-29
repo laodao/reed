@@ -794,6 +794,7 @@ const electronAPI = {
     previewTemplates: () => ipcRenderer.invoke('asset:preview-templates'),
     sourceLink: (assetId: string) => ipcRenderer.invoke('asset:source-link', { assetId }),
     groupDetail: (groupId: string) => ipcRenderer.invoke('asset:group-detail', { groupId }),
+    download: (id: string) => ipcRenderer.invoke('asset:download', { id }),
   },
 
   // ==================== 新闻来源库（内置应用 C1 早报 / C2 周报的数据源） ====================
@@ -844,6 +845,19 @@ const electronAPI = {
     updateCustom: (id: string, patch: Record<string, unknown>) => ipcRenderer.invoke('tool:update-custom', { id, patch }),
     deleteCustom: (id: string) => ipcRenderer.invoke('tool:delete-custom', { id }),
     presets: () => ipcRenderer.invoke('tool:presets'),
+  },
+
+  // ==================== 技能模块（Skill 技能包：内置只读 + 用户技能库管理） ====================
+  skills: {
+    list: () => ipcRenderer.invoke('skill:list'),
+    get: (id: string) => ipcRenderer.invoke('skill:get', { id }),
+    resolve: (id: string) => ipcRenderer.invoke('skill:resolve', { id }),
+    create: (input: Record<string, unknown>) => ipcRenderer.invoke('skill:create', { input }),
+    update: (id: string, patch: Record<string, unknown>) => ipcRenderer.invoke('skill:update', { id, patch }),
+    remove: (id: string) => ipcRenderer.invoke('skill:remove', { id }),
+    importFromPath: (path: string) => ipcRenderer.invoke('skill:import', { path }),
+    exportToPath: (id: string, destDir: string) => ipcRenderer.invoke('skill:export', { id, destDir }),
+    forkBuiltin: (id: string) => ipcRenderer.invoke('skill:fork', { id }),
   },
 
   // ==================== P0 邮箱模块（邮件收发工具：邮箱账号配置） ====================

@@ -141,6 +141,14 @@ export async function initWorkflowSubsystem(): Promise<WorkflowSubsystem> {
   } catch (e) {
     logger.error('[workflow-boot] 工具服务装配失败（继续启动）', e)
   }
+  // 7.1 技能：技能包服务（内置只读 + 用户技能目录管理），注册全局取用（skill-call 节点 / IPC）
+  try {
+    const { SkillService } = await import('./skills/skill.service')
+    const { registerSkillService } = await import('./skills/skill-registry')
+    registerSkillService(new SkillService())
+  } catch (e) {
+    logger.error('[workflow-boot] 技能服务装配失败（继续启动）', e)
+  }
   // 8. P0 子工作流：runService 访问注册（sub-workflow 节点取用，避免循环依赖）
   try {
     const { registerRunServiceAccess } = await import('./run-service-access')
