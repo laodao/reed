@@ -1546,26 +1546,61 @@ export class KnowledgeBaseService {
       if (!old) return { success: false, error: 'QA 对不存在' }
       const kb = await db.knowledgeBases.findById(old.knowledgeBaseId)
       if (!kb) return { success: false, error: '知识库不存在' }
+      // 评审 #75：补偿回滚基线——任何变更前先快照（防仓库实现返回活引用被原地改写）
+      const rollbackTo = { question: old.question, answer: old.answer, similarQuestions: old.similarQuestions }
 
       const question = (patch.question ?? old.question).trim()
       const answer = (patch.answer ?? old.answer).trim()
       const similar = (patch.similarQuestions ?? old.similarQuestions).map(x => x.trim()).filter(Boolean)
       if (!question || !answer) return { success: false, error: '问题和答案都不能为空' }
 
-      // 删旧变体向量（确定性重建：按旧变体数枚举 chunkId）
+      // 评审 #75：更新必须原子——任意一步失败都不得留下「有行无向量」或「文本与向量不一致」。
+      // 顺序：先算新向量（不动库）→ 快照旧向量（补偿用）→ 删旧向量 → 改文本 → 写新向量；
+      // 任一步失败则恢复快照向量并回滚文本行。
+      const vectors = await this.getEmbeddingVectors(
+        [question, ...similar].map(t => t.trim()).filter(Boolean),
+        this.parseEmbeddingConfig(kb),
+      )
+      if (!vectors) throw new Error('生成 QA 向量失败')
+
+      // 快照旧变体向量（向量存储无跨库事务，用快照做补偿回滚）
       const oldChunkIds = Array.from({ length: this.qaVariantCount(old) }, (_, i) =>
         KnowledgeBaseService.qaVectorChunkId(id, i)
       )
+      const oldVectors: Array<{ chunkId: string; knowledgeBaseId: string; vector: number[] }> = []
+      for (const chunkId of oldChunkIds) {
+        const rec = await db.kbVectors.getByChunkId(chunkId).catch(() => null)
+        if (rec && rec.knowledgeBaseId === kb.id) oldVectors.push({ chunkId: rec.chunkId, knowledgeBaseId: rec.knowledgeBaseId, vector: rec.vector })
+      }
+
+      // 删旧变体向量（确定性重建：按旧变体数枚举 chunkId）
       for (const chunkId of oldChunkIds) await db.kbVectors.deleteByChunkId(chunkId)
 
-      const updated = await db.kbQaPairs.update(id, { question, answer, similarQuestions: similar })
-      const added = await this.embedQaPair(kb, id, question, similar)
-      await db.knowledgeBases.updateStats(kb.id, {
-        documentCount: kb.documentCount,
-        vectorCount: Math.max(0, (kb.vectorCount ?? 0) - oldChunkIds.length) + added,
-        totalSize: kb.totalSize,
-      })
-      return { success: true, data: updated ?? undefined }
+      try {
+        const updated = await db.kbQaPairs.update(id, { question, answer, similarQuestions: similar })
+        await db.kbVectors.createBatch(
+          vectors.map((vector, i) => ({
+            chunkId: KnowledgeBaseService.qaVectorChunkId(id, i),
+            knowledgeBaseId: kb.id,
+            vector,
+          }))
+        )
+        await db.knowledgeBases.updateStats(kb.id, {
+          documentCount: kb.documentCount,
+          vectorCount: Math.max(0, (kb.vectorCount ?? 0) - oldChunkIds.length) + vectors.length,
+          totalSize: kb.totalSize,
+        })
+        return { success: true, data: updated ?? undefined }
+      } catch (e) {
+        // 补偿：清掉可能写了一半的新向量 → 恢复旧向量 → 回滚文本行
+        console.error('[KB] 更新 QA 对失败，执行补偿回滚:', e)
+        await db.kbVectors.deleteByChunkIds(
+          vectors.map((_, i) => KnowledgeBaseService.qaVectorChunkId(id, i))
+        ).catch(() => {})
+        if (oldVectors.length) await db.kbVectors.createBatch(oldVectors).catch(() => {})
+        await db.kbQaPairs.update(id, { ...rollbackTo }).catch(() => {})
+        throw e
+      }
     } catch (e: any) {
       console.error('[KB] 更新 QA 对失败:', e)
       return { success: false, error: e.message }

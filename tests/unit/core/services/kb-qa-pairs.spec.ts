@@ -45,8 +45,18 @@ class MemKbs {
 class MemVectors {
   inserted: Array<{ chunkId: string; knowledgeBaseId: string; vector: number[] }> = []
   deleted: string[] = []
-  async createBatch(items: any[]) { this.inserted.push(...items); return items }
+  /** 评审 #75：可注入的写入失败（测试补偿回滚） */
+  failCreateBatch: Error | null = null
+  async createBatch(items: any[]) {
+    if (this.failCreateBatch) throw this.failCreateBatch
+    this.inserted.push(...items)
+    return items
+  }
+  async getByChunkId(chunkId: string) {
+    return this.inserted.find(x => x.chunkId === chunkId) ?? null
+  }
   async deleteByChunkId(chunkId: string) { this.deleted.push(chunkId) }
+  async deleteByChunkIds(chunkIds: string[]) { this.deleted.push(...chunkIds) }
   async searchSimilar(kbId: string, _v: number[], topK: number) {
     return this.inserted
       .filter(x => x.knowledgeBaseId === kbId)
@@ -77,6 +87,7 @@ const embedMock = vi.fn(async (texts: string[]) => texts.map(t => [t.length]))
 const svc = new KnowledgeBaseService()
 beforeEach(() => {
   qa.rows.clear(); vectors.inserted = []; vectors.deleted = []; kbs.statsCalls = []
+  vectors.failCreateBatch = null
   kbs.row = { id: 'kb1', name: '测试库', documentCount: 0, vectorCount: 0, totalSize: 0, embeddingConfig: null }
   embedMock.mockClear()
 })
@@ -104,6 +115,39 @@ describe('D1：QA 对 CRUD 与向量化', () => {
     expect(vectors.deleted).toHaveLength(2)
     expect(vectors.inserted.at(-1)!.chunkId).toBe(`qa:${pairId}:0`)
     expect((await qa.findById(pairId)).question).toBe('q1-new')
+  })
+
+  it('updateQaPair 写向量失败 → 补偿回滚：旧向量恢复、文本回滚、无孤儿（评审#75）', async () => {
+    const r = await svc.addQaPair('kb1', { question: 'q1', answer: 'a1', similarQuestions: ['s1'] })
+    const pairId = r.data!.id
+    const oldInserted = [...vectors.inserted]
+    // 新向量写入阶段失败
+    vectors.failCreateBatch = new Error('向量库写入失败')
+    const res = await svc.updateQaPair(pairId, { question: 'q1-改', answer: 'a1-改' })
+    expect(res.success).toBe(false)
+    expect(res.error).toContain('向量库写入失败')
+    // 文本行回滚为旧值
+    const row = await qa.findById(pairId)
+    expect(row.question).toBe('q1')
+    expect(row.answer).toBe('a1')
+    expect(row.similarQuestions).toEqual(['s1'])
+    // 旧向量已恢复（快照重建），当前无残留新向量
+    const restored = await Promise.all(oldInserted.map(x => vectors.getByChunkId(x.chunkId)))
+    for (const rec of restored) expect(rec).not.toBeNull()
+  })
+
+  it('updateQaPair 生成向量失败（嵌入阶段）→ 不动任何数据', async () => {
+    const r = await svc.addQaPair('kb1', { question: 'q2', answer: 'a2' })
+    const pairId = r.data!.id
+    const insertedBefore = [...vectors.inserted]
+    const deletedBefore = [...vectors.deleted]
+    embedMock.mockImplementationOnce(async () => { throw new Error('嵌入服务不可用') })
+    const res = await svc.updateQaPair(pairId, { question: 'q2-改' })
+    expect(res.success).toBe(false)
+    // 未删除任何旧向量、未改文本
+    expect(vectors.deleted).toEqual(deletedBefore)
+    expect(vectors.inserted).toEqual(insertedBefore)
+    expect((await qa.findById(pairId)).question).toBe('q2')
   })
 
   it('deleteQaPair：向量与行一并删除（幂等）', async () => {
