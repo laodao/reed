@@ -684,7 +684,7 @@ const electronAPI = {
     listDefinitions: (p: { keyword?: string; page: number; pageSize: number; sortBy?: string; sortOrder?: string }) =>
       ipcRenderer.invoke('wf:list-definitions', p),
     getDefinition: (id: string) => ipcRenderer.invoke('wf:get-definition', { id }),
-    createDefinition: (p: { name: string; description?: string }) =>
+    createDefinition: (p: { name: string; description?: string; settings?: Record<string, unknown> }) =>
       ipcRenderer.invoke('wf:create-definition', p),
     updateDefinition: (id: string, patch: Record<string, unknown>) =>
       ipcRenderer.invoke('wf:update-definition', { id, patch }),

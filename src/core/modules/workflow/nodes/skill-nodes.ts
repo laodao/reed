@@ -74,7 +74,8 @@ const skillCallNode: WorkflowNodeHandler = {
     const refsText = (skill.references ?? []).map(r => `[${r.name}]\n${r.content}`).join('\n\n')
     const finalPrompt = refsText ? `${body}\n\n===== 参考资料 =====\n${refsText}` : body
 
-    // 4. AI 生成（公共调用层：modelId fallback 链 + AbortSignal 真取消 + 增量进度）
+    // 4. AI 生成（公共调用层：modelId fallback 链 + AbortSignal 真取消 + 增量进度 + 多轮历史）
+    const history = ctx.getLLMHistory?.() ?? []
     const r = await callAIStream({
       prompt: finalPrompt,
       systemPrompt,
@@ -82,6 +83,7 @@ const skillCallNode: WorkflowNodeHandler = {
       modelId: cfg.modelId,
       temperature: cfg.temperature,
       maxTokens: cfg.maxTokens,
+      messages: history.length > 0 ? history : undefined,
       signal: ctx.signal,
       onDelta: d => ctx.emitProgress(-1, d.slice(-50)),
     })
@@ -89,6 +91,9 @@ const skillCallNode: WorkflowNodeHandler = {
 
     const output: Record<string, unknown> = { content: String(r?.content ?? ''), skillId }
     if (r?.usage) output.usage = r.usage
+    // 多轮对话：登记本轮（multiTurn 开启时生效）
+    ctx.recordLLMTurn?.('user', finalPrompt)
+    ctx.recordLLMTurn?.('assistant', String(r?.content ?? ''))
     return { status: 'succeeded', output }
   },
 }

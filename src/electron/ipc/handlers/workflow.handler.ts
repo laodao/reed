@@ -27,7 +27,7 @@ export function registerWorkflowHandlers(): void {
   ipcBridge.handle('wf:get-definition', (_e, p: { id: string }) =>
     wrap(() => subsystem().definitionService.getById(p.id))
   )
-  ipcBridge.handle('wf:create-definition', (_e, p: { name: string; description?: string }) =>
+  ipcBridge.handle('wf:create-definition', (_e, p: { name: string; description?: string; settings?: Record<string, unknown> }) =>
     wrap(() => subsystem().definitionService.create(p))
   )
   ipcBridge.handle('wf:update-definition', (_e, p: { id: string; patch: Record<string, unknown> }) =>

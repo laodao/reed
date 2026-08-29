@@ -477,6 +477,11 @@ export interface CallAIStreamOptions {
   providerConfigId?: string
   modelId?: string
   temperature?: number
+  /**
+   * 前置对话历史（多轮）：按顺序拼在本次 prompt 之前（role: user/assistant 交替）。
+   * 工作流 multiTurn 开启时由 llm-chat / skill-call 节点注入前面 LLM 轮次。
+   */
+  messages?: Array<{ role: 'user' | 'assistant'; content: string }>
   /** 取消信号（AbortSignal 真中断——所有 provider 实现均支持） */
   signal?: AbortSignal
   /** 增量回调（每个 delta 触发一次） */
@@ -520,7 +525,7 @@ export async function callAIStream(opts: CallAIStreamOptions): Promise<CallAIStr
 
   const context: ChatContext = {
     systemPrompt: opts.systemPrompt ?? '',
-    messages: [{ role: 'user', content: opts.prompt }],
+    messages: [...(opts.messages ?? []), { role: 'user', content: opts.prompt }],
   }
 
   const t0 = Date.now()

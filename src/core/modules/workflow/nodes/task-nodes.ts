@@ -185,8 +185,9 @@ const llmChatNode: WorkflowNodeHandler = {
     }
 
     // 公共 AI 调用层：统一 modelId fallback 链（显式→config 默认→用户启用→模板内置）
-    // + AbortSignal 真取消 + 增量进度回调
+    // + AbortSignal 真取消 + 增量进度回调 + 多轮对话历史（multiTurn 开启时注入前序轮次）
     const doCall = async (): Promise<{ content: string; usage?: unknown }> => {
+      const history = ctx.getLLMHistory?.() ?? []
       const r = await callAIStream({
         prompt: String(cfg.prompt),
         systemPrompt: cfg.systemPrompt,
@@ -194,6 +195,7 @@ const llmChatNode: WorkflowNodeHandler = {
         modelId: cfg.modelId,
         temperature: cfg.temperature,
         maxTokens: cfg.maxTokens,
+        messages: history.length > 0 ? history : undefined,
         signal: ctx.signal,
         onDelta: delta => ctx.emitProgress(-1, delta.slice(-50)),
       }).catch(e => {
@@ -226,6 +228,9 @@ const llmChatNode: WorkflowNodeHandler = {
       output.parsed = parsed
     }
     if (usage) output.usage = usage
+    // 多轮对话：登记本轮（成功路径；jsonMode 重试后取最终 content）
+    ctx.recordLLMTurn?.('user', String(cfg.prompt))
+    ctx.recordLLMTurn?.('assistant', content)
     return { status: 'succeeded', output }
   },
 }

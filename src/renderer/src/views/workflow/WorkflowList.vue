@@ -92,6 +92,23 @@
       </template>
     </el-dialog>
 
+    <!-- 新建工作流对话框 -->
+    <el-dialog v-model="showCreate" title="新建工作流" width="480px">
+      <el-form label-width="110px" label-position="left">
+        <el-form-item label="工作流名称" required>
+          <el-input v-model="createForm.name" placeholder="如：长文写作 / 每日早报" />
+        </el-form-item>
+        <el-form-item label="多轮对话">
+          <el-switch v-model="createForm.multiTurn" />
+          <div class="hint">开启后工作流内 LLM 节点按执行顺序共享对话上下文（前面 LLM 调用结果会进入后续节点的历史）；关闭=节点间仅靠 {{变量}} 显式传递（默认）</div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showCreate = false">取消</el-button>
+        <el-button type="primary" :disabled="!createForm.name.trim()" @click="confirmCreate">创建</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 模板选择对话框 -->
     <el-dialog v-model="showTemplates" title="从模板创建" width="560px">
       <div v-for="tpl in builtinTemplates" :key="tpl.name" class="tpl-card" @click="createFromTemplate(tpl)">
@@ -125,6 +142,8 @@ const items = ref<any[]>([])
 const loading = ref(false)
 const showRunInputs = ref(false)
 const showImport = ref(false)
+const showCreate = ref(false)
+const createForm = ref({ name: '', multiTurn: false })
 const runningDef = ref<any>(null)
 const starting = ref(false)
 
@@ -221,10 +240,16 @@ function handlePageChange() {
 }
 
 async function handleCreate() {
-  const { value } = await ElMessageBox.prompt('工作流名称', '新建工作流', { inputValue: '未命名工作流' })
-  const resp = await api().createDefinition({ name: value })
+  createForm.value = { name: '', multiTurn: false }
+  showCreate.value = true
+}
+
+async function confirmCreate() {
+  const value = createForm.value.name.trim()
+  if (!value) return
+  const resp = await api().createDefinition({ name: value, settings: { multiTurn: createForm.value.multiTurn } })
   if (resp.success) {
-    ElMessage.success('已创建')
+    ElMessage.success(`已创建${createForm.value.multiTurn ? '（已开启多轮对话）' : ''}`)
     await load()
     if (resp.data?.id) router.push(`/workflow/editor/${resp.data.id}`)
   } else ElMessage.error(resp.error)

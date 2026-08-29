@@ -47,6 +47,17 @@ import { createLogger } from '@core/utils/logger'
 
 const logger = createLogger('WorkflowEngine')
 
+/**
+ * data-table 节点外部模式：sql 字段**不参与** {{}} 模板解析（保留原样），
+ * 必须用 $1,$2 参数化占位（见字段帮助）。否则上游变量（webhook/LLM 输出等）
+ * 会被字符串直接拼进 SQL 文本造成注入——这正是该字段参数化的原因。
+ * 其余节点/字段仍走统一深解析。
+ */
+const DATA_TABLE_TEMPLATE_SKIP_KEYS: ReadonlySet<string> = new Set(['sql'])
+function templateSkipKeysFor(nodeType: string): ReadonlySet<string> | undefined {
+  return nodeType === 'data-table' ? DATA_TABLE_TEMPLATE_SKIP_KEYS : undefined
+}
+
 /** 运行统计（落库 stats 列的形状） */
 export interface RunExecutionStats {
   totalNodes: number
@@ -205,6 +216,8 @@ class RunExecution {
   readonly loopBodies = new Map<string, LoopBodyInfo>()
   readonly abortController = new AbortController()
   readonly settings: ResolvedExecutionSettings
+  /** 多轮对话累积器：按执行完成顺序记录 LLM 轮次（workflow settings.multiTurn 开启时生效） */
+  readonly llmHistory: Array<{ role: 'user' | 'assistant'; content: string }> = []
 
   suspended = false
   finished = false
@@ -874,8 +887,11 @@ export class WorkflowEngineService {
     // C3 override：模板解析前浅合并一次性覆盖（不修改定义图；值可含模板）
     const overrides = exec.input.configOverrides?.[node.id]
     const rawConfig = overrides && Object.keys(overrides).length > 0 ? { ...node.config, ...overrides } : node.config
-    const resolvedConfig = resolveConfigDeep(rawConfig, t =>
-      exec.resolver.resolve(t, this.localContextFor(exec, scope))
+    const resolvedConfig = resolveConfigDeep(
+      rawConfig,
+      t =>
+        exec.resolver.resolve(t, this.localContextFor(exec, scope)),
+      templateSkipKeysFor(node.type),
     )
 
     const state: NodeExecutionState = {
@@ -1136,8 +1152,11 @@ export class WorkflowEngineService {
         await this.markCancelled(exec, state)
         return
       }
-      const resolvedConfig = resolveConfigDeep(node.config, t =>
-        exec.resolver.resolve(t, this.localContextFor(exec, scope))
+      const resolvedConfig = resolveConfigDeep(
+        node.config,
+        t =>
+          exec.resolver.resolve(t, this.localContextFor(exec, scope)),
+        templateSkipKeysFor(node.type),
       )
       await this.runNode(exec, scope, node, state, resolvedConfig)
       return
@@ -1624,6 +1643,11 @@ export class WorkflowEngineService {
         exec.resolver.resolve(template, this.localContextFor(exec, scope)) as T,
       getVariable: (path: string) =>
         exec.resolver.resolve(`{{${path}}}`, this.localContextFor(exec, scope)),
+      // 多轮对话：multiTurn 开启时，LLM 节点读历史/登记本轮；关闭时返回空（行为与无状态单轮一致）
+      getLLMHistory: () => (exec.settings.multiTurn ? exec.llmHistory : []),
+      recordLLMTurn: (role, content) => {
+        if (exec.settings.multiTurn) exec.llmHistory.push({ role, content })
+      },
     }
   }
 

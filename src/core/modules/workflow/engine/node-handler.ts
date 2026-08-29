@@ -55,6 +55,13 @@ export interface WorkflowNodeContext<TConfig = Record<string, unknown>> {
   resolveTemplate<T = string>(template: string): T
   /** 变量上下文只读视图（按路径取值；优先 resolveTemplate） */
   getVariable(path: string): unknown
+  /**
+   * 多轮对话：获取已执行 LLM 轮次历史（工作流 settings.multiTurn 开启时非空；否则返回空数组）。
+   * llm-chat / skill-call 节点用它把前序对话作为历史 messages 传给模型。
+   */
+  getLLMHistory?(): Array<{ role: 'user' | 'assistant'; content: string }>
+  /** 多轮对话：登记本轮 LLM 调用（user=发送给模型的 prompt；assistant=模型输出）。仅 multiTurn 开启时生效 */
+  recordLLMTurn?(role: 'user' | 'assistant', content: string): void
 }
 
 /** 节点日志接口（引擎实现：写 node_run.error/logs + console） */

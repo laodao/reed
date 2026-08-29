@@ -27,6 +27,8 @@ export interface ResolvedExecutionSettings {
   maxRetryCount: number
   maxParallelNodes: number
   maxNodeRuns: number
+  /** 多轮对话（布尔透传：true=LLM 节点共享对话上下文；默认 false） */
+  multiTurn: boolean
 }
 
 const clamp = (value: number | undefined, fallback: number, limit: number): number => {
@@ -54,6 +56,7 @@ export function resolveExecutionSettings(
     maxRetryCount: clamp(s.maxRetryCount, maxRetryCount, WORKFLOW_LIMITS.maxRetryCount),
     maxParallelNodes: clamp(s.maxParallelNodes, maxParallelNodes, WORKFLOW_LIMITS.maxParallelNodes),
     maxNodeRuns: clamp(s.maxNodeRuns, maxNodeRuns, WORKFLOW_LIMITS.maxNodeRuns),
+    multiTurn: s.multiTurn === true,
   }
 }
 

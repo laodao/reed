@@ -658,6 +658,12 @@ export interface WorkflowExecutionSettings {
   maxParallelNodes?: number
   /** 单节点最大执行次数（防环/重入失控；封顶 1000） */
   maxNodeRuns?: number
+  /**
+   * 多轮对话：开启后工作流内 LLM 节点按执行顺序共享对话上下文——
+   * 前面 LLM 调用的 prompt 与输出会作为后续 LLM 节点的历史 messages 传入。
+   * 默认 false（节点间仅靠 {{变量}} 显式注入，保持无状态单轮）。
+   */
+  multiTurn?: boolean
 }
 
 // ==================== 触发器 ====================
@@ -1036,6 +1042,8 @@ export const WORKFLOW_DEFAULTS = {
   maxConcurrentRuns: 3,
   /** 单节点最大执行次数 100（按节点计；必须 ≥ maxLoopIterations，否则合法循环提前被护栏误杀） */
   maxNodeRuns: 100,
+  /** 多轮对话默认关闭（节点间仅靠 {{变量}} 显式注入，保持无状态单轮） */
+  multiTurn: false,
   /** cron 调度间隔 30s */
   cronTickMs: 30_000,
   /** cron 错过宽限窗口 = 2 × tick（超过视为错过，推进到未来首个触发点） */
