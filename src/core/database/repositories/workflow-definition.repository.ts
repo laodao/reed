@@ -391,11 +391,12 @@ export class WorkflowDefinitionRepository extends BaseRepository<
    * runWithUserAsync(该 userId) 再执行后续业务（以定义所有者身份运行）。
    */
   async findByShareToken(token: string): Promise<WorkflowDefinitionRecord | null> {
-    // hash 优先（新令牌），明文兼容（历史存量令牌）
+    // 评审 #74：只按 hash 查（sanitize-share-tokens 迁移已把存量明文回填为 hash 并清空明文列，
+    // DB 中不再有明文令牌，明文兼容查找已无存在必要）
     const hash = crypto.createHash('sha256').update(token).digest('hex')
     const e = await this.repo
       .createQueryBuilder('d')
-      .where('d.share_token_hash = :hash OR d.share_token = :token', { hash, token })
+      .where('d.share_token_hash = :hash', { hash })
       .andWhere('d.published_version > 0')
       .getOne()
     return e ? this.toDto(e) : null

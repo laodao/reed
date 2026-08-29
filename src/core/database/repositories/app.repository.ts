@@ -287,11 +287,11 @@ export class AppRepository extends BaseRepository<AppEntity, AppRecord> {
    * ⚠️ 跨租户例外：调用方拿到 userId 后必须 runWithUserAsync(该 userId)。
    */
   async findByShareToken(token: string): Promise<AppRecord | null> {
-    // hash 优先（新令牌），明文兼容（历史存量令牌）
+    // 评审 #74：只按 hash 查（sanitize-share-tokens 迁移已回填并清空存量明文）
     const hash = createHash('sha256').update(token).digest('hex')
     const e = await this.repo
       .createQueryBuilder('a')
-      .where('a.share_token_hash = :hash OR a.share_token = :token', { hash, token })
+      .where('a.share_token_hash = :hash', { hash })
       .andWhere('a.enabled = 1')
       .andWhere('a.channel_share = 1')
       .getOne()

@@ -85,6 +85,10 @@ export async function createAppsTables(ds: DataSource): Promise<void> {
   await ensureColumn(ds, 'apps', 'category', vc, isPg)
   await ensureColumn(ds, 'apps', 'tags', vc, isPg)
   await ensureColumn(ds, 'apps', 'pinned', isPg ? 'integer DEFAULT 0' : 'INTEGER DEFAULT 0', isPg)
+  // 评审 #69：历史污染清理——「固定到首页」已改为 per-user 偏好表（app_user_prefs），
+  // 全局 apps.pinned 列只可能是 8/23 批写入的污染值，一次性归零（幂等；新用户
+  // 无偏好行时 fallback 读到 0=未固定，个人固定值仍从 prefs 表生效）。
+  await ds.query(`UPDATE apps SET pinned = 0 WHERE pinned = 1`)
   // 安全整改（2026-08-27）：分享令牌只存 sha256 hash（share_token_hash），不明文落库
   await ensureColumn(ds, 'apps', 'share_token_hash', vc, isPg)
   await ds.query(`CREATE INDEX IF NOT EXISTS idx_apps_category ON apps (category)`)

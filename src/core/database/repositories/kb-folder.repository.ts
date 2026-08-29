@@ -6,7 +6,6 @@
 import type { DataSource, FindOptionsWhere } from 'typeorm'
 import { randomUUID } from 'crypto'
 import { KbFolderEntity } from '../entities/kb-folder.entity'
-import { KnowledgeBaseEntity } from '../entities/knowledge-base.entity'
 import { BaseRepository } from '../base-repository'
 
 /** 目录 DTO */
@@ -77,12 +76,7 @@ export class KbFolderRepository extends BaseRepository<KbFolderEntity, KbFolderR
 
   async delete(id: string): Promise<number> {
     return this.scoped.delete({ id } as FindOptionsWhere<KbFolderEntity>)
-  }
-
-  /** 目录下的知识库数量（删除目录时提示用） */
-  async countKnowledgeBases(folderId: string): Promise<number> {
-    return this.dataSource
-      .getRepository(KnowledgeBaseEntity)
-      .count({ where: { folderId } as FindOptionsWhere<KnowledgeBaseEntity> })
-  }
+  }  // 评审 #78：countKnowledgeBases（跨租户裸查 + 全仓无调用方的死代码）已删除。
+  // 若未来删除目录需要提示"目录下还有知识库"，请走 KnowledgeBaseRepository
+  // 的 scoped 查询（带 user_id 过滤），不要在目录仓库里裸查他表。
 }

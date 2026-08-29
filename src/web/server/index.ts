@@ -360,6 +360,12 @@ async function initDatabase(): Promise<void> {
   )
   await addWorkflowShareToken(ds)
 
+  // 评审 #74：分享令牌存量明文清理（回填 hash + 清明文，幂等双语种）
+  const { sanitizeShareTokens } = await import(
+    '@core/database/migrations/sanitize-share-tokens'
+  )
+  await sanitizeShareTokens(ds)
+
   // 内置模板接管标记 + 版本历史表（与 Electron 端同构）
   const { addWorkflowTemplateVersion } = await import(
     '@core/database/migrations/add-workflow-template-version'

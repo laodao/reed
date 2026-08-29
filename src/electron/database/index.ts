@@ -681,6 +681,12 @@ export class DatabaseManager implements ICoreDatabaseManager {
     )
     await addWorkflowShareToken(this.dataSource)
 
+    // 评审 #74：分享令牌存量明文清理（回填 hash + 清明文，幂等双语种）
+    const { sanitizeShareTokens } = await import(
+      '@core/database/migrations/sanitize-share-tokens'
+    )
+    await sanitizeShareTokens(this.dataSource)
+
     // 内置模板接管标记：definitions 加 template_version 列（幂等；存量内置置 1）
     const { addWorkflowTemplateVersion } = await import(
       '@core/database/migrations/add-workflow-template-version'
