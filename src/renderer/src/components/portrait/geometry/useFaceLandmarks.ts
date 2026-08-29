@@ -15,7 +15,7 @@ export interface DetectResult {
 }
 
 export interface DetectFailure {
-  reason: 'no_face' | 'face_too_small' | 'load_failed' | 'detect_failed'
+  reason: 'no_face' | 'face_too_small' | 'load_failed' | 'detect_failed' | 'missing_variant'
   message: string
 }
 
