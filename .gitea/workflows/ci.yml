@@ -1,0 +1,31 @@
+# CI（评审 #97：远程仓库此前无任何 CI 配置，质量完全依赖个人自律）
+# 等价本地命令：
+#   npm ci --ignore-scripts && npm rebuild better-sqlite3
+#   npm run lint
+#   SKIP_PG_TESTS=1 npx vitest run tests/unit
+# 说明：typecheck（npx vue-tsc --noEmit）已可运行，但存量 1000+ 条历史类型
+# 错误待专项清偿，暂不进 CI 阻断（见 tasks/2026-08-29-review-fix-plan.md）。
+name: CI
+
+on:
+  push:
+    branches: ['*']
+  pull_request:
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: 安装依赖（跳过 Electron 原生重建，测试用系统 Node ABI）
+        run: npm ci --ignore-scripts
+      - name: 重建测试所需原生模块
+        run: npm rebuild better-sqlite3
+      - name: Lint
+        run: npm run lint
+      - name: 单元测试（SQLite 矩阵）
+        run: SKIP_PG_TESTS=1 npx vitest run tests/unit
