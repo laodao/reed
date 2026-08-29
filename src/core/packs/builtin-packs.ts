@@ -10,7 +10,8 @@
  *              - P4 第一批：skills / diary / portrait（最薄的三个，handler 零改动迁移）。
  *              - P4 第二批：chat（chat/dialog/message/role 四 handler）/ voice-design（voice）。
  *              - P4 第三批：longwriting（longwriting.handler 单文件 202 个 channel）。
- *              后续批次（episode-production）继续在此追加。
+ *              - P4 第四批：episode-production（episode-production/ 目录 25 个 handler
+ *                文件 175 个 channel，统一入口 registerEpisodeProductionHandlers）。
  */
 
 import type { PackDefinition } from './registry'
@@ -20,6 +21,7 @@ import { portraitPack } from './portrait'
 import { chatPack } from './chat'
 import { voiceDesignPack } from './voice-design'
 import { longwritingPack } from './longwriting'
+import { episodeProductionPack } from './episode-production'
 
 export const builtinPacks: PackDefinition[] = [
   skillsPack,
@@ -28,4 +30,5 @@ export const builtinPacks: PackDefinition[] = [
   chatPack,
   voiceDesignPack,
   longwritingPack,
+  episodeProductionPack,
 ]

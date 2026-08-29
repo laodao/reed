@@ -25,7 +25,6 @@ import { registerEmailHandlers } from '@electron/ipc/handlers/email.handler'
 import { registerAssetHandlers } from '@electron/ipc/handlers/asset.handler'
 import { registerNewsSourceHandlers } from '@electron/ipc/handlers/news-source.handler'
 import { registerFaviconHandlers } from '@electron/ipc/handlers/favicon.handler'
-import { registerEpisodeProductionHandlers } from '@electron/ipc/handlers/episode-production'
 import { registerDataSourceHandlers } from '@electron/ipc/handlers/datasource.handler'
 import { registerFileHandlers } from '@electron/ipc/handlers/file.handler'
 import { registerExportHandlers } from '@electron/ipc/handlers/export.handler'
@@ -50,10 +49,10 @@ export async function registerAllWebChannels(): Promise<void> {
   registerAssetHandlers()
   registerNewsSourceHandlers()
   registerFaviconHandlers()
-  // skills/diary/portrait/chat/voice-design/longwriting 六个业务的 handler 已迁移为内置业务包
-  // （core/packs/builtin-packs），由包内核激活时注册，不再在此平铺（避免重复注册；
-  // skill 系 channel 此前 Web 端未登记，迁移后随 skills 包激活在 Web 端补齐）
-  registerEpisodeProductionHandlers()
+  // skills/diary/portrait/chat/voice-design/longwriting/episode-production 七个业务的
+  // handler 已迁移为内置业务包（core/packs/builtin-packs），由包内核激活时注册，不再在
+  // 此平铺（避免重复注册；skill 系 channel 此前 Web 端未登记，迁移后随 skills 包激活在
+  // Web 端补齐；episode-production 此前双端登记一致，迁移后行为无差异）
   // 数据源：Web 端仓储/服务/驱动已由 workflow-boot 装配（web-database-manager +
   // initWorkflowSubsystem），此前只缺 IPC 这一环，导致 Web 端数据源管理不可用
   registerDataSourceHandlers()

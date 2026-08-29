@@ -118,7 +118,6 @@ import { registerEmailHandlers } from './ipc/handlers/email.handler'
 import { registerAssetHandlers } from './ipc/handlers/asset.handler'
 import { registerNewsSourceHandlers } from './ipc/handlers/news-source.handler'
 import { registerFaviconHandlers } from './ipc/handlers/favicon.handler'
-import { registerEpisodeProductionHandlers } from './ipc/handlers/episode-production'
 import { registerOSSHandlers } from './ipc/handlers/oss.handler'
 import { registerDataSourceHandlers } from './ipc/handlers/datasource.handler'
 import { registerPackHandlers } from './ipc/handlers/pack.handler'
@@ -339,8 +338,9 @@ function initIpcHandlers(): void {
   registerDataPathHandlers()
   registerKnowledgeBaseHandlers()
   registerExportHandlers()
-  // skills/diary/portrait/chat/voice-design/longwriting 六个业务的 handler 已迁移为内置业务包
-  // （core/packs/builtin-packs），由包内核激活时注册，不再在此平铺（避免重复注册）
+  // skills/diary/portrait/chat/voice-design/longwriting/episode-production 七个业务的
+  // handler 已迁移为内置业务包（core/packs/builtin-packs），由包内核激活时注册，
+  // 不再在此平铺（避免重复注册）
   registerSearchEngineHandlers()
   registerWorkflowHandlers()
   registerAppHandlers()
@@ -349,7 +349,6 @@ function initIpcHandlers(): void {
   registerAssetHandlers()
   registerNewsSourceHandlers()
   registerFaviconHandlers()
-  registerEpisodeProductionHandlers()
   registerOSSHandlers()
   registerDataSourceHandlers()
   registerPackHandlers()
