@@ -21,6 +21,7 @@ import { simpleParser, type Attachment } from 'mailparser'
 import { getCoreDatabaseManager } from '@core/database/database-manager.interface'
 import { getSecureStorage } from '@core/interfaces/storage.interface'
 import type { EmailAccountRepository } from '@core/database/repositories/email-account.repository'
+import type { EmailAccountEntity } from '@core/database/entities/email-account.entity'
 import type {
   EmailAccount,
   EmailAttachmentDownloadParams,
@@ -56,15 +57,18 @@ export class EmailService {
     return dbManager.emailAccounts
   }
 
-  /** 取账号（不存在直接抛错，由各方法 catch 成统一错误结构） */
-  private static async getAccount(accountId: string): Promise<EmailAccount> {
-    const acc = await this.getRepository().findById(accountId)
+  /**
+   * 取账号原始实体（含 passEnc 密文，仅服务端内存使用；评审 #16：DTO 已剥离密文）。
+   * 不存在直接抛错，由各方法 catch 成统一错误结构。
+   */
+  private static async getAccount(accountId: string): Promise<EmailAccountEntity> {
+    const acc = await this.getRepository().getRawById(accountId)
     if (!acc) throw new Error(`邮箱账号不存在：${accountId}`)
     return acc
   }
 
   /** 解密授权码（SecureStorage；解密失败抛错提示重新保存） */
-  private static decryptPass(acc: EmailAccount): string {
+  private static decryptPass(acc: EmailAccountEntity): string {
     try {
       return getSecureStorage().decrypt(acc.passEnc)
     } catch (e) {
@@ -82,7 +86,7 @@ export class EmailService {
    * IMAP 通用执行器：每次新建连接，执行 fn 后必 logout（失败兜底 close），
    * 保证连接不泄漏；socketTimeout 设 60s 防挂死。
    */
-  private static async withImap<T>(acc: EmailAccount, fn: (client: ImapFlow) => Promise<T>): Promise<T> {
+  private static async withImap<T>(acc: EmailAccountEntity, fn: (client: ImapFlow) => Promise<T>): Promise<T> {
     const pass = this.decryptPass(acc)
     const client = new ImapFlow({
       host: acc.imapHost,

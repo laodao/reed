@@ -32,10 +32,7 @@ export interface EmailAccount {
   smtpSecure: boolean
   /** 邮箱账号 */
   user: string
-  /** 授权码/密码密文：仅服务端内部使用（SecureStorage 加密存 pass_enc）；
-   *  列表/详情对渲染端不可见（handler 层剥离），渲染端用 hasPassword 判断是否已配置 */
-  passEnc?: string
-  /** 是否已配置密码（handler 层从 passEnc 存在性派生） */
+  /** 是否已配置密码（仓库层从 pass_enc 存在性派生；密文不出仓库层——评审 #16） */
   hasPassword?: boolean
   /** 发件人显示名 */
   fromName: string

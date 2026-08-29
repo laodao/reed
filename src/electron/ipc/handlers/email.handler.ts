@@ -4,7 +4,7 @@
  * @description 薄适配层：email:* 通道 → EmailService（测试连接）+ email_accounts 仓库（账号 CRUD）。
  *              业务在 core 的 EmailService / EmailAccountRepository（架构铁律：handler 不写业务）。
  *              安全纪律：授权码（pass）明文只从渲染进程进入，本层经 SecureStorage 加密后落库
- *              （passEnc），绝不明文持久化；列表/详情均不返回明文。
+ *              （passEnc），绝不明文持久化；密文不出仓库层（评审 #16），渲染端只见 hasPassword。
  */
 
 import { ipcBridge } from '@core/ipc/bridge-adapter'
@@ -69,14 +69,9 @@ export function registerEmailHandlers(): void {
   )
 }
 
-/** 列表：取全部邮箱账号，剥离 passEnc 密文（渲染端/浏览器均不需要密文） */
+/** 列表：取全部邮箱账号（评审 #16：passEnc 已在仓库 toDto 层剥离，DTO 仅含 hasPassword 布尔） */
 async function listAccounts(): Promise<EmailAccount[]> {
-  const rows = await emailRepo().list()
-  return rows.map((r: any) => {
-    const { passEnc, ...safe } = r
-    void passEnc
-    return { ...safe, hasPassword: !!r.passEnc }
-  })
+  return emailRepo().list()
 }
 
 /** 保存（新增/编辑）：授权码加密后落库；编辑时留空保留原密文 */

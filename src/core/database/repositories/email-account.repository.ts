@@ -2,8 +2,9 @@
  * 邮箱账号仓库（邮件收发）
  * @module core/database/repositories/email-account.repository
  * @description 多租户（继承 BaseRepository 的 scoped 按 userId 自动过滤）；
- *              passEnc 为 SecureStorage 加密后的密文，create/update 由 service 层负责加密传入，
- *              toDto 原样带出，解密在 service 层完成。
+ *              passEnc 为 SecureStorage 加密后的密文，create/update 由 service 层负责加密传入。
+ *              安全（评审 #16）：DTO 一律不携带 passEnc 密文（渲染端/浏览器无任何需要），
+ *              服务层连接前解密走 getRawById 取原始实体。
  */
 
 import type { DataSource, FindOptionsWhere } from 'typeorm'
@@ -62,12 +63,20 @@ export class EmailAccountRepository extends BaseRepository<EmailAccountEntity, E
       smtpPort: e.smtpPort,
       smtpSecure: e.smtpSecure,
       user: e.user,
-      // 密文原样带出，解密在 service 层
-      passEnc: e.passEnc,
+      // 评审 #16：密文不出仓库 DTO 层；是否已配置密码用布尔派生
+      hasPassword: !!e.passEnc,
       fromName: e.fromName ?? '',
       createdAt: e.createdAt,
       updatedAt: e.updatedAt,
     }
+  }
+
+  /**
+   * 取原始实体（含 passEnc 密文）——仅限服务端连接前解密使用，
+   * 任何返回渲染端的路径都必须走 toDto 系方法。
+   */
+  async getRawById(id: string): Promise<EmailAccountEntity | null> {
+    return this.scoped.findOne({ id } as FindOptionsWhere<EmailAccountEntity>)
   }
 
   async list(): Promise<EmailAccount[]> {
