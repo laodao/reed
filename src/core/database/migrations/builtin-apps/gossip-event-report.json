@@ -196,7 +196,7 @@
         "name": "生成短视频脚本",
         "position": { "x": 2000, "y": 700 },
         "config": {
-          "systemPrompt": "你是短视频编导。为「{{start.event}}」生成约 {{start.videoDuration}} 秒的竖版短视频脚本，用 markdown 输出：\n1. ## 脚本概览：主题、时长、定位（吃瓜向）\n2. ## 口播稿：按镜头分段（1 钩子开场 → 2 事件核心 → 3 反转/金句 → 4 结尾引导），每段给口播文字\n3. ## 分镜表（表格）：镜头 | 画面 | 口播 | 字幕 | 音效/BGM | 时长(秒)\n4. ## 发布文案与话题标签\n要求：基于素材事实，标注（事实/当事人自述/网传）；风格提示词（{{start.stylePrompt}}）叠加；繁简按开关（{{start.traditional}}，true 才繁体）。只输出脚本 markdown，不要解释。",
+          "systemPrompt": "你是短视频编导。为「{{start.event}}」生成约 {{start.videoDuration}} 秒的竖版吃瓜短视频脚本。**关键要求：先写完整、连贯的口播文案（能一口气读完的整段解说，信息密度高），再依据文案拆分分镜——每个镜头的「口播」列必须放文案中切分出的完整句子，不能是一两句摘要**。用 markdown 输出：\n1. ## 脚本概览：主题、时长、定位（吃瓜向）\n2. ## 完整口播文案：把事件讲完整、有起承转合的一整段口播（约 250-400 字，按「1 钩子开场 → 2 事件核心（来龙去脉）→ 3 反转/金句 → 4 结尾引导」时间线展开，能一口气读下来，不是要点罗列）\n3. ## 分镜表（表格）：镜头 | 画面 | 口播 | 字幕 | 音效/BGM | 时长(秒) —— 口播列 = 上面文案按镜头切分后的完整句子（不缩写），画面列给可执行画面描述（人物/场景/运镜/贴纸字幕）\n4. ## 发布文案与话题标签\n要求：基于素材事实，标注（事实/当事人自述/网传）；风格提示词（{{start.stylePrompt}}）叠加；繁简按开关（{{start.traditional}}，true 才繁体）。只输出脚本 markdown，不要解释。",
           "prompt": "事件：{{start.event}}\n时长：{{start.videoDuration}} 秒\n\n结构化分析：\n{{analyze1.parsed}}\n\n请生成短视频脚本。",
           "providerConfigId": "{{start.model.providerConfigId}}",
           "modelId": "{{start.model.modelId}}"
