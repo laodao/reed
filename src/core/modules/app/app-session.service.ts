@@ -224,6 +224,8 @@ export class AppSessionService {
     if (!session) throw new Error('会话不存在')
     const app = await this.apps.findById(session.appId)
     if (!app || app.enabled !== 1) throw new Error('应用不可用或已停用')
+    // 评审 #72：渠道关闭后已建会话同样不可再启动运行（对齐 createSession 的渠道开关语义）
+    if (app.channelSession !== 1) throw new Error('应用未开启会话渠道')
     if (!app.sourceId) throw new Error('源工作流不存在')
 
     // 多轮：未提供 inputs 时沿用上次提交的参数（defaultValue 合并由 runService 完成）

@@ -242,6 +242,15 @@ describe('AppSessionService：startRun 与多轮', () => {
     expect(runCard).toBeTruthy()
   })
 
+  it('渠道关闭后已建会话 startRun → 抛"应用未开启会话渠道"（评审#72）', async () => {
+    const { apps, svc } = makeService()
+    seedApp(apps)
+    const s = await svc.createSession('a1') // 先建会话（渠道开着）
+    apps.rows.set('a1', { ...apps.rows.get('a1'), channelSession: 0 }) // 再关渠道
+    startRunImpl = async () => ({ id: 'r', status: 'running' })
+    await expect(svc.startRun(s.id, {})).rejects.toThrow('应用未开启会话渠道')
+  })
+
   it('startRun 互斥（返回 skipped）→ 抛"运行进行中"', async () => {
     const { apps, svc } = makeService()
     startRunImpl = async () => ({ id: 'r', status: 'skipped', skipReason: '同工作流已有运行中实例' })
