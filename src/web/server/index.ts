@@ -230,7 +230,8 @@ async function bootstrap(): Promise<void> {
   // 不依赖 workflow，放在工作流子系统初始化之前（P4 起业务包的 activate 会复用 workflow 等设施）。
   try {
     const { initPackSubsystem } = await import('@core/packs/kernel')
-    await initPackSubsystem()
+    const { builtinPacks } = await import('@core/packs/builtin-packs')
+    await initPackSubsystem(builtinPacks)
   } catch (e: any) {
     console.warn('[web-server] 业务包子系统启动失败（不致命）', e)
   }

@@ -115,18 +115,15 @@ import { registerVoiceHandlers } from './ipc/handlers/voice.handler'
 import { registerDataPathHandlers } from './ipc/handlers/data-path.handler'
 import { registerKnowledgeBaseHandlers } from './ipc/handlers/knowledge-base.handler'
 import { registerExportHandlers } from './ipc/handlers/export.handler'
-import { registerPortraitHandlers } from './ipc/handlers/portrait.handler'
 import { registerSearchEngineHandlers } from './ipc/handlers/search-engine.handler'
 import { registerLongWritingHandlers } from './ipc/handlers/longwriting.handler'
 import { registerWorkflowHandlers } from './ipc/handlers/workflow.handler'
 import { registerAppHandlers } from './ipc/handlers/app.handler'
 import { registerToolHandlers } from './ipc/handlers/tool.handler'
-import { registerSkillHandlers } from './ipc/handlers/skill.handler'
 import { registerEmailHandlers } from './ipc/handlers/email.handler'
 import { registerAssetHandlers } from './ipc/handlers/asset.handler'
 import { registerNewsSourceHandlers } from './ipc/handlers/news-source.handler'
 import { registerFaviconHandlers } from './ipc/handlers/favicon.handler'
-import { registerDiaryHandlers } from './ipc/handlers/diary.handler'
 import { registerEpisodeProductionHandlers } from './ipc/handlers/episode-production'
 import { registerOSSHandlers } from './ipc/handlers/oss.handler'
 import { registerDataSourceHandlers } from './ipc/handlers/datasource.handler'
@@ -353,18 +350,17 @@ function initIpcHandlers(): void {
   registerDataPathHandlers()
   registerKnowledgeBaseHandlers()
   registerExportHandlers()
-  registerPortraitHandlers()
+  // skills/diary/portrait 三个业务的 handler 已迁移为内置业务包（core/packs/builtin-packs），
+  // 由包内核激活时注册，不再在此平铺（避免重复注册）
   registerSearchEngineHandlers()
   registerLongWritingHandlers()
   registerWorkflowHandlers()
   registerAppHandlers()
   registerToolHandlers()
-  registerSkillHandlers()
   registerEmailHandlers()
   registerAssetHandlers()
   registerNewsSourceHandlers()
   registerFaviconHandlers()
-  registerDiaryHandlers()
   registerEpisodeProductionHandlers()
   registerOSSHandlers()
   registerDataSourceHandlers()
@@ -437,7 +433,8 @@ app.whenReady().then(async () => {
   // 不依赖 workflow，放在工作流子系统初始化之前（P4 起业务包的 activate 会复用 workflow 等设施）。
   try {
     const { initPackSubsystem } = await import('@core/packs/kernel')
-    await initPackSubsystem()
+    const { builtinPacks } = await import('@core/packs/builtin-packs')
+    await initPackSubsystem(builtinPacks)
   } catch (e: any) {
     console.warn('[boot] 业务包子系统启动失败（不致命）', e)
   }

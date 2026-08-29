@@ -33,7 +33,7 @@ let subsystem: PackSubsystem | null = null
 /**
  * 初始化业务包子系统（幂等；重复调用返回既有实例）。
  * 必须在数据库管理器注册之后调用。
- * @param builtinPacks 内置包定义清单（第一期为空——现有业务迁移为包在 P4 逐包接入）
+ * @param builtinPacks 内置包定义清单（见 ./builtin-packs；现有业务在 P4 逐批迁移接入）
  */
 export async function initPackSubsystem(builtinPacks: PackDefinition[] = []): Promise<PackSubsystem> {
   if (subsystem) return subsystem
