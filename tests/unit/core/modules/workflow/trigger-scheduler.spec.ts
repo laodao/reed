@@ -156,4 +156,29 @@ describe('事件触发', () => {
     await scheduler.start() // 幂等
     scheduler.stop()
   })
+
+  it('recomputeOne 对已删除定义刷新事件索引——删除后事件不再触发（评审#37）', async () => {
+    const { scheduler, definitions, runService } = makeScheduler()
+    definitions.rows.set('d1', {
+      id: 'd1', userId: 'user-a', publishedVersion: 1, nextFireAt: null, lastFireAt: null,
+      triggers: [{ type: 'event', eventName: 'kb:document-completed', enabled: true }],
+    })
+    await scheduler.start()
+    try {
+      runWithUser('user-a', () => publishDomainEvent('kb:document-completed', {}))
+      await new Promise(r => setTimeout(r, 10))
+      expect(runService.starts).toHaveLength(1)
+
+      // 删除定义（行已不存在），随后 recomputeOne（delete 路径调用）
+      definitions.rows.delete('d1')
+      await scheduler.recomputeOne('d1')
+
+      runWithUser('user-a', () => publishDomainEvent('kb:document-completed', {}))
+      await new Promise(r => setTimeout(r, 10))
+      // 已删定义不得再被事件触发
+      expect(runService.starts).toHaveLength(1)
+    } finally {
+      scheduler.stop()
+    }
+  })
 })

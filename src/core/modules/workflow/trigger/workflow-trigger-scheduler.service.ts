@@ -179,10 +179,15 @@ export class WorkflowTriggerScheduler {
     }
   }
 
-  /** 发布/启停触发器后立即刷新该定义的调度状态 */
+  /** 发布/启停/删除触发器后刷新该定义的调度状态 */
   async recomputeOne(definitionId: string): Promise<void> {
     const def = await this.deps.definitions.getById(definitionId)
-    if (!def) return
+    if (!def) {
+      // 评审 #37：定义已删除时不得早退——事件索引里还挂着它的触发器，
+      // 全量重建（scanEventTriggers 查库，已删行自然剔除）后不再空触发。
+      await this.refreshEventIndex()
+      return
+    }
     const cron = def.triggers.find(
       (t): t is Extract<WorkflowTrigger, { type: 'cron' }> => t.type === WORKFLOW_TRIGGER_TYPES.cron && t.enabled
     )
