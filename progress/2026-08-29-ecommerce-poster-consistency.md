@@ -47,3 +47,23 @@
 
 ## 待验证
 - [ ] 重启 dev server 后，用 Seedream-4.5 实测同一商品多张海报，核对形/色/材质/logo 一致性。
+
+## 实测结果（2026-08-29 二次，Seedream-4.5 已跑通）
+用 `dev:debug`（CDP 9222）注入 startRun，参考图 `workflow-uploads/set-tumbler.png`（扁平插画保温杯），输入 main+scene+promo、场景数 3、minimal，跑至"套图逐张确认"(check1) 挂起，共生成 5 张：
+- 主图、促销海报、3 张场景图。
+- **商品本体一致性大幅改善**：形/雾蓝配色/深蓝盖/白色反光条/浅蓝底座在 5 张图里全部保持（此前 qwen-image 连形/色都会变）——编辑指令式 + Seedream 生效。
+
+### 观测到的次生问题（本轮已修）
+1. **场景间风格不统一**：参考图为插画风，但 scene_0(办公桌)/scene_1(地铁) 被"写实化"，scene_2(阳台) 保留插画风 → 主体一致但画风漂移。
+   修复：plan1/scenePlan/sceneParse 的 systemPrompt 新增【风格与质感一致】约束——保持参考图整体绘画风格与质感（插画则插画、实拍则照片），不得切换画风。
+2. **促销海报英文文案乱码**（"Drendi For tce smanred..."）。
+   修复：plan1 新增【画面无文字】约束——图中禁止出现任何文字/字母/品牌字样/乱码，文字交由后期排版。
+3. **生成图 JPEG 字节存成 .png 扩展名**（Seedream 返回 jpeg，保存组写死 .png）。
+   修复：新增 `src/core/utils/image-format.ts`（detectImageFormat 按魔术字节识别 ext/mime），`image.service.ts` 两处保存按格式定扩展名与 mimeType，不再写死 .png。
+
+### 测试
+- `tests/unit/utils/image-format.spec.ts`（7 例）：detectImageFormat 识别 png/jpg/webp/gif/bmp + 兜底。
+- `tests/unit/migrations/builtin-app-ecommerce-consistency.spec.ts`（8 例）：新增"风格与质感一致""禁止出现任何文字"断言。
+
+### 下次验证
+用户将提供**外形更复杂的物品**重新实测；届时重启 dev:debug 同步新模板（含风格一致/禁文字）后跑一遍即可。

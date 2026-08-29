@@ -62,6 +62,20 @@ describe('电商套图商品主体一致性（内置模板约束）', () => {
     expect(sp).toMatch(/shape, color, material|形状、颜色、材质|形状、颜色、材质、图案、logo/i)
   })
 
+  it('三个视觉规划节点都应约束"风格/质感与参考图一致"（防同套图风格漂移）', () => {
+    const names = ['套图规划（非场景）', '场景设计', '场景结构化']
+    for (const name of names) {
+      const sp = llmPromptByName(name)
+      expect(sp, `${name} 应约束风格一致`).toContain('风格与质感一致')
+      expect(sp, `${name} 应引用"保持参考图"`).toContain('保持参考图')
+    }
+  })
+
+  it('plan1 应禁止图中出现文字（消除促销海报 AI 乱码文案）', () => {
+    const sp = llmPromptByName('套图规划（非场景）')
+    expect(sp).toContain('禁止出现任何文字')
+  })
+
   it('所有 image-gen 节点必须显式关闭 prompt 扩写（promptExtend=false）', () => {
     expect(imageGenNodes.length).toBeGreaterThan(0)
     for (const node of imageGenNodes) {
