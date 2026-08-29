@@ -96,7 +96,7 @@ describe('MainImageUploadService', () => {
       assetId: 'ch1',
     })
 
-    expect(result.imagePath).toMatch(/^asset-images\/character-ch1-main-\d+\.png$/)
+    expect(result.imagePath).toMatch(/^asset-images\/character-ch1-\d+-[0-9a-f]{8}\.png$/)
     expect(result.assetType).toBe('character')
     expect(result.assetId).toBe('ch1')
     expect(result.category).toBe('main')

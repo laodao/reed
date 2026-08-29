@@ -10,7 +10,7 @@
  */
 
 import { Pool } from 'pg'
-import { acquirePooled, evictPooled } from './pool-cache'
+import { acquirePooled, evictPooled, isConnectionClassError } from './pool-cache'
 import type {
   DataSourceConnectionParams,
   DataSourceDriverAdapter,
@@ -79,8 +79,10 @@ export class PostgresDriverAdapter implements DataSourceDriverAdapter {
         durationMs: Date.now() - started,
       }
     } catch (e) {
-      // 池内连接可能已死（网络断/服务重启）：驱逐坏池，下次调用重建
-      await evictPooled('pg', params)
+      // 仅连接/网络/认证类失败才驱逐池；SQL 语法/约束等查询层错误保留池（评审 #25 后续）
+      if (isConnectionClassError(e)) {
+        await evictPooled('pg', params)
+      }
       throw e
     }
   }
