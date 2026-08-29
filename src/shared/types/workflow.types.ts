@@ -674,8 +674,14 @@ export type WorkflowTrigger =
   | { type: 'manual' }
   | {
       type: 'cron'
-      /** cron 表达式（5 段：分 时 日 月 周，本地时区） */
+      /** cron 表达式（5 段：分 时 日 月 周） */
       expression: string
+      /**
+       * IANA 时区（如 Asia/Shanghai）：表达式的解释时区。
+       * 缺省 = 进程本地时区（桌面端语义不变；Web 端 UTC 服务器建议显式配置，
+       * 否则「每天 9 点」会随部署环境漂移——评审 #36）。
+       */
+      timezone?: string
       /** 预设标识：every-minute / hourly / daily / weekly / monthly / custom（UI 还原用） */
       preset?: string
       enabled: boolean

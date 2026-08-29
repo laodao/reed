@@ -70,6 +70,19 @@ describe('previewCronExpression', () => {
     expect(r.error).toBeTruthy()
   })
 })
+  it('timezone 按指定 IANA 时区解释表达式（评审#36）：上海 9 点 = UTC 1 点', () => {
+    const r = previewCronExpression('0 9 * * *', 'Asia/Shanghai')
+    expect(r.valid).toBe(true)
+    const d = new Date(r.next5[0])
+    expect(d.getUTCHours()).toBe(1)
+    expect(d.getUTCMinutes()).toBe(0)
+  })
+
+  it('非法 timezone → 预览无效（不静默回落本地时区）', () => {
+    const r = previewCronExpression('0 9 * * *', 'Not/AZone')
+    expect(r.valid).toBe(false)
+    expect(r.error).toBeTruthy()
+  })
 
 describe('cron tick', () => {
   it('grace 内到期：触发一次 + 推进 nextFireAt + 记 lastFireAt', async () => {
@@ -180,5 +193,19 @@ describe('事件触发', () => {
     } finally {
       scheduler.stop()
     }
+  })
+
+  it('recomputeOne 按 cron 触发器的 timezone 计算 nextFireAt（评审#36）', async () => {
+    const { scheduler, definitions } = makeScheduler()
+    definitions.rows.set('d1', {
+      id: 'd1', userId: 'user-a', publishedVersion: 1, nextFireAt: null, lastFireAt: null,
+      triggers: [{ type: 'cron', expression: '0 9 * * *', timezone: 'Asia/Shanghai', enabled: true }],
+    })
+    await scheduler.recomputeOne('d1')
+    const patch = definitions.updates.find(([id]) => id === 'd1')
+    expect(patch).toBeTruthy()
+    const next = new Date(patch![1].nextFireAt)
+    // 上海 09:00 = UTC 01:00（不限具体哪天，只验时区换算）
+    expect(next.getUTCHours()).toBe(1)
   })
 })

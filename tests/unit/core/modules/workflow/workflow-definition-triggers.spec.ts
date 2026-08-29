@@ -77,6 +77,14 @@ describe('WorkflowDefinitionService.updateTriggers', () => {
     expect(repo.updateCalls.length).toBe(0)
   })
 
+  it('cron 时区非法拒绝（评审#36）', async () => {
+    const triggers = [{ type: 'cron', expression: '0 9 * * *', timezone: 'Not/AZone', enabled: true }] as unknown as WorkflowTrigger[]
+    const result = await service.updateTriggers('def-1', triggers)
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('时区无效')
+    expect(repo.updateCalls.length).toBe(0)
+  })
+
   it('定义不存在报错', async () => {
     repo.def = null
     const result = await service.updateTriggers('nope', [])

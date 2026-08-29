@@ -50,13 +50,13 @@ const defaultTimer: SchedulerTimer = {
 }
 
 /** cron 表达式预览结果（编辑器即时反馈） */
-export function previewCronExpression(expression: string): {
+export function previewCronExpression(expression: string, timezone?: string): {
   valid: boolean
   next5: string[]
   error?: string
 } {
   try {
-    const interval = CronExpressionParser.parse(expression)
+    const interval = CronExpressionParser.parse(expression, timezone ? { tz: timezone } : undefined)
     const next5: string[] = []
     for (let i = 0; i < 5; i++) {
       next5.push(interval.next().toDate().toISOString())
@@ -169,7 +169,8 @@ export class WorkflowTriggerScheduler {
         const nextFire = this.computeNext(
           cronTriggers[0].expression,
           // 从当前时间起算（错过的不补）
-          now
+          now,
+          cronTriggers[0].timezone
         )
         await this.deps.definitions.update(row.id, {
           nextFireAt: nextFire,
@@ -192,7 +193,7 @@ export class WorkflowTriggerScheduler {
       (t): t is Extract<WorkflowTrigger, { type: 'cron' }> => t.type === WORKFLOW_TRIGGER_TYPES.cron && t.enabled
     )
     if (cron && def.publishedVersion > 0) {
-      const next = this.computeNext(cron.expression, new Date())
+      const next = this.computeNext(cron.expression, new Date(), cron.timezone)
       await this.deps.definitions.update(definitionId, { nextFireAt: next })
     } else {
       // 无启用的 cron：清调度状态
@@ -267,10 +268,13 @@ export class WorkflowTriggerScheduler {
     return true
   }
 
-  /** 计算 fromDate 之后的首个触发点（表达式无效返回 null 并记日志） */
-  private computeNext(expression: string, fromDate: Date): Date | null {
+  /** 计算 fromDate 之后的首个触发点（表达式无效返回 null 并记日志；timezone 为 IANA 名称，缺省进程本地时区） */
+  private computeNext(expression: string, fromDate: Date, timezone?: string): Date | null {
     try {
-      return CronExpressionParser.parse(expression, { currentDate: fromDate }).next().toDate()
+      return CronExpressionParser.parse(expression, {
+        currentDate: fromDate,
+        ...(timezone ? { tz: timezone } : {}),
+      }).next().toDate()
     } catch (e) {
       logger.error(`[WorkflowTriggerScheduler] cron 表达式无效: ${expression}`, e)
       return null

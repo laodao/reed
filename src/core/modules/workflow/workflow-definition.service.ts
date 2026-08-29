@@ -179,14 +179,22 @@ export class WorkflowDefinitionService {
    */
   validateTriggers(triggers: unknown[]): string[] {
     const errors: string[] = []
-    const list = triggers as Array<{ type?: string; expression?: string; enabled?: boolean; eventName?: string }>
+    const list = triggers as Array<{ type?: string; expression?: string; timezone?: string; enabled?: boolean; eventName?: string }>
     const enabledCron = list.filter(t => t.type === WORKFLOW_TRIGGER_TYPES.cron && t.enabled)
     if (enabledCron.length > 1) {
       errors.push('V1 限制：每个工作流只能启用 1 个定时触发器')
     }
     for (const t of enabledCron) {
-      const preview = previewCronExpression(t.expression ?? '')
+      const preview = previewCronExpression(t.expression ?? '', t.timezone)
       if (!preview.valid) errors.push(`cron 表达式无效：${t.expression}（${preview.error}）`)
+      // 评审 #36：timezone 必须是可解析的 IANA 名称——写错了不如不配（静默回落本地时区）
+      if (t.timezone) {
+        try {
+          new Intl.DateTimeFormat('en-US', { timeZone: t.timezone })
+        } catch {
+          errors.push(`时区无效：${t.timezone}（需 IANA 名称，如 Asia/Shanghai）`)
+        }
+      }
     }
     for (const t of list.filter(x => x.type === WORKFLOW_TRIGGER_TYPES.event && x.enabled)) {
       if (!t.eventName) errors.push('事件触发器缺少 eventName')
